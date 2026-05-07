@@ -104,6 +104,59 @@ def test_cli_version_flag():
     assert "1.2.0" in result.stdout
 
 
+def test_workspace_service_maintenance_commands(tmp_path: Path):
+    source = Path("examples/spring-cloud-demo")
+    target = tmp_path / "workspace-maintenance-demo"
+    import shutil
+    shutil.copytree(source, target)
+    workspace = target / ".memory-center" / "workspace.yaml"
+    lines = workspace.read_text(encoding="utf-8").splitlines()
+    lines = [f"root: {target.as_posix()}" if line.startswith("root:") else line for line in lines]
+    workspace.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    runner = CliRunner()
+
+    add_result = runner.invoke(
+        app,
+        [
+            "workspace",
+            "add-service",
+            "--workspace",
+            str(workspace),
+            "--name",
+            "ucap-cloud-open-api",
+            "--path",
+            "ucap-cloud-open-api",
+            "--type",
+            "spring-boot-service",
+            "--service-name",
+            "ucap-cloud-open-api",
+        ],
+    )
+    assert add_result.exit_code == 0
+    config = load_workspace_config(workspace)
+    assert any(item.name == "ucap-cloud-open-api" and item.path == "ucap-cloud-open-api" for item in config.services)
+
+    list_result = runner.invoke(app, ["workspace", "list-services", "--workspace", str(workspace)])
+    assert list_result.exit_code == 0
+    assert "ucap-cloud-open-api" in list_result.stdout
+
+    remove_result = runner.invoke(
+        app,
+        [
+            "workspace",
+            "remove-service",
+            "--workspace",
+            str(workspace),
+            "--name",
+            "ucap-cloud-open-api",
+        ],
+    )
+    assert remove_result.exit_code == 0
+    config_after = load_workspace_config(workspace)
+    assert all(item.name != "ucap-cloud-open-api" for item in config_after.services)
+
+
 def test_graph_query_context_and_impact(tmp_path):
     from memory_center.core.config import load_workspace_config
     from memory_center.core.indexer import reindex_workspace

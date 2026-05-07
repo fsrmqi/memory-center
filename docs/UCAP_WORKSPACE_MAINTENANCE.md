@@ -20,10 +20,13 @@
 
 - [workspace.yaml](</Users/cuijiaqi/javaworkspace/ucap/.memory-center/workspace.yaml>)
 
-后续新增或删除项目，核心只有两件事：
+后续新增或删除项目，推荐优先使用 CLI：
 
-1. 改 `services`
-2. 执行一次 `reindex`
+- `memory-center workspace add-service`
+- `memory-center workspace remove-service`
+- `memory-center workspace list-services`
+
+如果确实需要，也可以手工改 `services`。
 
 `reindex` 会自动一起更新：
 
@@ -47,6 +50,41 @@
 ```text
 /Users/cuijiaqi/javaworkspace/ucap/ucap-cloud-open-api
 ```
+
+### 方式 A：推荐，直接用 CLI
+
+服务型项目：
+
+```bash
+memory-center workspace add-service \
+  --workspace /Users/cuijiaqi/javaworkspace/ucap/.memory-center/workspace.yaml \
+  --name ucap-cloud-open-api \
+  --path ucap-cloud-open-api \
+  --type spring-boot-service \
+  --service-name ucap-cloud-open-api
+```
+
+公共库项目：
+
+```bash
+memory-center workspace add-service \
+  --workspace /Users/cuijiaqi/javaworkspace/ucap/.memory-center/workspace.yaml \
+  --name ucap-cloud-open-api \
+  --path ucap-cloud-open-api \
+  --type shared-library \
+  --service-name ucap-cloud-open-api \
+  --tag common \
+  --tag contract
+```
+
+查看当前服务列表：
+
+```bash
+memory-center workspace list-services \
+  --workspace /Users/cuijiaqi/javaworkspace/ucap/.memory-center/workspace.yaml
+```
+
+### 方式 B：手工修改 YAML
 
 ### 步骤 1：确认目录存在
 
@@ -151,6 +189,21 @@ memory-center query \
 /Users/cuijiaqi/javaworkspace/ucap/ucap-cloud-open-api
 ```
 
+### 方式 A：推荐，直接用 CLI
+
+```bash
+memory-center workspace remove-service \
+  --workspace /Users/cuijiaqi/javaworkspace/ucap/.memory-center/workspace.yaml \
+  --name ucap-cloud-open-api
+```
+
+这里的 `--name` 可以传：
+
+- `service.name`
+- 或 `service.path`
+
+### 方式 B：手工修改 YAML
+
 ### 步骤 1：编辑 `workspace.yaml`
 
 把对应的 `service` 整段删掉。
@@ -228,6 +281,27 @@ memory-center query \
 ```bash
 memory-center reindex \
   --workspace /Users/cuijiaqi/javaworkspace/ucap/.memory-center/workspace.yaml
+```
+
+### 推荐的命令版模板
+
+新增：
+
+```bash
+memory-center workspace add-service \
+  --workspace /Users/cuijiaqi/javaworkspace/ucap/.memory-center/workspace.yaml \
+  --name REPLACE_PROJECT_NAME \
+  --path REPLACE_PROJECT_DIR \
+  --type spring-boot-service \
+  --service-name REPLACE_SERVICE_NAME
+```
+
+删除：
+
+```bash
+memory-center workspace remove-service \
+  --workspace /Users/cuijiaqi/javaworkspace/ucap/.memory-center/workspace.yaml \
+  --name REPLACE_PROJECT_NAME
 ```
 
 ---

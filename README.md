@@ -180,6 +180,12 @@ pytest -q
 
 ## Quick start / 快速开始
 
+Workspace maintenance helpers / 工作区配置维护命令：
+
+- `memory-center workspace list-services`
+- `memory-center workspace add-service`
+- `memory-center workspace remove-service`
+
 ### 1. Create a workspace / 初始化工作区
 
 ```bash
