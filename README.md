@@ -84,6 +84,7 @@ Detailed local setup and multi-project workflow / 详细本地初始化与多项
 
 - [docs/LOCAL_USAGE_GUIDE.md](./docs/LOCAL_USAGE_GUIDE.md)
 - [docs/UCAP_ALL_SETUP.md](./docs/UCAP_ALL_SETUP.md)
+- [docs/UCAP_WORKSPACE_MAINTENANCE.md](./docs/UCAP_WORKSPACE_MAINTENANCE.md)
 
 ---
 

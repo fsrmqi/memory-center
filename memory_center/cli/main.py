@@ -7,7 +7,7 @@ import typer
 from rich import print
 
 from memory_center import __version__
-from memory_center.core.config import load_workspace_config, write_default_workspace
+from memory_center.core.config import add_workspace_service, load_workspace_config, remove_workspace_service, write_default_workspace
 from memory_center.core.exporters import export_mermaid
 from memory_center.core.indexer import reindex_workspace
 from memory_center.core.instructions import write_agent_instructions
@@ -37,8 +37,10 @@ from memory_center.http.server import serve_http
 app = typer.Typer(help="Memory Center CLI")
 registry_app = typer.Typer(help="Global registry commands")
 group_app = typer.Typer(help="Workspace group commands")
+workspace_app = typer.Typer(help="Workspace config maintenance commands")
 app.add_typer(registry_app, name="registry")
 app.add_typer(group_app, name="group")
+app.add_typer(workspace_app, name="workspace")
 
 
 def _version_callback(value: bool):
@@ -234,6 +236,45 @@ def group_impact_cmd(
 ):
     """Run cross-workspace impact analysis for a logical group."""
     print(group_impact(name, target, direction, max_depth))
+
+
+@workspace_app.command("list-services")
+def workspace_list_services(workspace: str = typer.Option(...)):
+    """List configured services in workspace.yaml."""
+    config = load_workspace_config(workspace)
+    print({"workspace": config.workspace, "root": str(config.root_path), "services": [item.__dict__ for item in config.services]})
+
+
+@workspace_app.command("add-service")
+def workspace_add_service(
+    workspace: str = typer.Option(...),
+    name: str = typer.Option(...),
+    path: str = typer.Option(...),
+    service_type: str = typer.Option("spring-boot-service", "--type"),
+    service_name: Optional[str] = typer.Option(None),
+    tag: Optional[List[str]] = typer.Option(None),
+):
+    """Add or replace one service entry in workspace.yaml."""
+    result = add_workspace_service(workspace, name, path, service_type, service_name, tag)
+    result["next_steps"] = [
+        f"memory-center reindex --workspace {Path(workspace).expanduser().resolve()}",
+        f"memory-center doctor --workspace {Path(workspace).expanduser().resolve()} --self-test",
+    ]
+    print(result)
+
+
+@workspace_app.command("remove-service")
+def workspace_remove_service(
+    workspace: str = typer.Option(...),
+    name: str = typer.Option(..., help="Service name or path to remove."),
+):
+    """Remove one service entry from workspace.yaml by name or path."""
+    result = remove_workspace_service(workspace, name)
+    result["next_steps"] = [
+        f"memory-center reindex --workspace {Path(workspace).expanduser().resolve()}",
+        f"memory-center doctor --workspace {Path(workspace).expanduser().resolve()} --self-test",
+    ]
+    print(result)
 
 
 @app.command("serve-http")
