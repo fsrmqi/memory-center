@@ -88,6 +88,43 @@ Detailed local setup and multi-project workflow / 详细本地初始化与多项
 
 ## Installation / 安装
 
+### One-command install / 一条命令安装
+
+If you have the repository locally:
+
+如果仓库已经在本地：
+
+```bash
+cd memory-center
+bash install.sh
+```
+
+After you publish the repository URL, you can also install like GitNexus:
+
+仓库地址发布后，也可以像 GitNexus 一样直接安装：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/your-org/memory-center/main/install.sh | bash
+```
+
+The installer uses `pipx` by default and exposes:
+
+安装脚本默认使用 `pipx`，安装后会暴露：
+
+- `memory-center`
+- `memory-center-mcp`
+- `memory-center-http`
+
+Verify installation:
+
+安装后验证：
+
+```bash
+memory-center --version
+```
+
+### Development install / 开发环境安装
+
 ```bash
 python -m venv .venv
 source .venv/bin/activate

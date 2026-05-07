@@ -6,6 +6,7 @@ from typing import List, Optional
 import typer
 from rich import print
 
+from memory_center import __version__
 from memory_center.core.config import load_workspace_config, write_default_workspace
 from memory_center.core.exporters import export_mermaid
 from memory_center.core.indexer import reindex_workspace
@@ -38,6 +39,19 @@ registry_app = typer.Typer(help="Global registry commands")
 group_app = typer.Typer(help="Workspace group commands")
 app.add_typer(registry_app, name="registry")
 app.add_typer(group_app, name="group")
+
+
+def _version_callback(value: bool):
+    if value:
+        print({"name": "memory-center", "version": __version__})
+        raise typer.Exit()
+
+
+@app.callback()
+def main_callback(
+    version: bool = typer.Option(False, "--version", help="Show Memory Center version and exit.", is_eager=True, callback=_version_callback),
+):
+    """Memory Center CLI entrypoint."""
 
 
 @app.command()

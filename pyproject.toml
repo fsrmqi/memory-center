@@ -47,10 +47,10 @@ dev = [
 all = ["mcp>=1.2.0", "litellm>=1.40.0", "sentence-transformers>=3.0.0", "tree-sitter>=0.22.0", "tree-sitter-java>=0.21.0"]
 
 [project.urls]
-Homepage = "https://github.com/your-org/memory-center"
-Documentation = "https://github.com/your-org/memory-center/tree/main/docs"
-Issues = "https://github.com/your-org/memory-center/issues"
-Source = "https://github.com/your-org/memory-center"
+Homepage = "https://github.com/fsrmqi/memory-center"
+Documentation = "https://github.com/fsrmqi/memory-center/tree/main/docs"
+Issues = "https://github.com/fsrmqi/memory-center/issues"
+Source = "https://github.com/fsrmqi/memory-center"
 
 [project.scripts]
 memory-center = "memory_center.cli.main:app"

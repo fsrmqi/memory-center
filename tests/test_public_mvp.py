@@ -96,6 +96,14 @@ def test_record_case_cli_writes_history(tmp_path: Path):
     assert rows[-1]["risk_points"] == ["Feign 契约兼容"]
 
 
+def test_cli_version_flag():
+    runner = CliRunner()
+    result = runner.invoke(app, ["--version"])
+    assert result.exit_code == 0
+    assert "memory-center" in result.stdout
+    assert "1.2.0" in result.stdout
+
+
 def test_graph_query_context_and_impact(tmp_path):
     from memory_center.core.config import load_workspace_config
     from memory_center.core.indexer import reindex_workspace
