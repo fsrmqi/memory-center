@@ -212,6 +212,7 @@ def memory_query(workspace_file: str | Path, query: str, limit: int = 20, node_t
         "workspace": config.workspace,
         "query": query,
         "matches": merged,
+        "retrieval_summary": _summarize_query_matches(merged, limit),
         "semantic_hits": semantic_hits[:limit],
         "related_rules": related_rules,
         "historical_cases": related_cases,
@@ -582,10 +583,13 @@ def _merge_workspace_query_hits(
                 "exact_score": 0.0,
                 "semantic_score": 0.0,
                 "best_rank": rank,
+                "retrieval_sources": [],
             },
         )
         item["exact_score"] += _rrf(rank)
         item["best_rank"] = min(item["best_rank"], rank)
+        if "exact" not in item["retrieval_sources"]:
+            item["retrieval_sources"].append("exact")
 
     for semantic_rank, hit in enumerate(semantic_hits, start=1):
         node_id = hit.get("node_id")
@@ -603,9 +607,12 @@ def _merge_workspace_query_hits(
                 "exact_score": 0.0,
                 "semantic_score": 0.0,
                 "best_rank": semantic_rank + 1000,
+                "retrieval_sources": [],
             },
         )
         item["semantic_score"] = max(item["semantic_score"], float(hit.get("score", 0.0)))
+        if "semantic" not in item["retrieval_sources"]:
+            item["retrieval_sources"].append("semantic")
 
     resolved_target_types = _resolve_group_target_types(query, sorted(t for t in target_types if t))
     matches = list(merged.values())
@@ -616,8 +623,11 @@ def _merge_workspace_query_hits(
 def _workspace_query_match_key(item: Dict[str, Any], target_types: List[str]) -> tuple:
     node = item.get("node", {})
     priority = _query_node_priority(node.get("type", ""), target_types)
+    sources = set(item.get("retrieval_sources", []))
+    hybrid_rank = 0 if {"exact", "semantic"} <= sources else 1 if "exact" in sources else 2 if "semantic" in sources else 3
     return (
         priority,
+        hybrid_rank,
         -float(item.get("exact_score", 0.0)),
         -float(item.get("semantic_score", 0.0)),
         int(item.get("best_rank", 9999)),
@@ -707,6 +717,10 @@ def _summarize_group_query_matches(matches: List[Dict[str, Any]], limit: int) ->
         if {"exact", "semantic"} <= sources:
             summary["hybrid_matches"] += 1
     return summary
+
+
+def _summarize_query_matches(matches: List[Dict[str, Any]], limit: int) -> Dict[str, int]:
+    return _summarize_group_query_matches(matches, limit)
 
 
 def _load_group_data(members: List[Dict[str, Any]]) -> List[Dict[str, Any]]:

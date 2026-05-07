@@ -72,6 +72,10 @@ def test_graph_query_context_and_impact(tmp_path):
     query_result = memory_query(workspace, "oldPubTime ArticleFeignClient", 5)
     assert query_result["matches"]
     assert query_result["semantic_hits"]
+    assert query_result["retrieval_summary"]["exact_matches"] >= 1
+    assert query_result["retrieval_summary"]["semantic_matches"] >= 1
+    assert query_result["retrieval_summary"]["returned_matches"] == len(query_result["matches"])
+    assert any("semantic" in item["retrieval_sources"] for item in query_result["matches"])
     status = workspace_status(workspace)
     assert status["semantic_index"]["ready"] is True
     assert status["index_counts"]["semantic_docs"] > 0
@@ -232,6 +236,8 @@ def test_http_bridge_routes(tmp_path: Path):
 
         query = json.loads(urlopen(f"{base}/workspace/query?text=ArticleFeignClient").read().decode("utf-8"))
         assert query["matches"]
+        assert query["retrieval_summary"]["exact_matches"] >= 1
+        assert query["retrieval_summary"]["semantic_matches"] >= 1
 
         group_query_payload = json.loads(urlopen(f"{base}/group/query?group=http-group&text=article-pubtime-change").read().decode("utf-8"))
         assert group_query_payload["related_bridges"]

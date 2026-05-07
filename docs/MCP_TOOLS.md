@@ -9,7 +9,7 @@ Memory Center exposes graph-first project memory to AI coding agents through MCP
 | Tool | Description / 说明 |
 |---|---|
 | `workspace_sniff_tool(intent, limit)` | Retrieve task context: services, files, rules, topology hints, historical cases. / 任务开始前召回服务、文件、规则、拓扑、历史经验。 |
-| `memory_query_tool(query, limit)` | Graph-aware search across files, symbols, endpoints, Feign clients, topics and fields. / 基于图谱查询文件、符号、接口、Feign、Topic、字段。 |
+| `memory_query_tool(query, limit)` | Graph-aware hybrid search across files, symbols, endpoints, Feign clients, topics and fields, with exact/semantic retrieval metadata. / 基于图谱的混合检索，查询文件、符号、接口、Feign、Topic、字段，并返回精确/语义召回来源信息。 |
 | `memory_context_tool(name, max_depth)` | 360-degree context for a graph node. / 返回某个节点的上下游上下文。 |
 | `memory_impact_tool(target, direction, max_depth)` | Impact analysis for DTO, Feign, MQ topic, endpoint, service or file. / 对 DTO、Feign、消息主题、接口、服务、文件做影响面分析。 |
 | `memory_detect_changes_tool(scope)` | Map local git diff to affected files, projects, rules and risk level. / 把本地 Git diff 映射为影响项目、规则和风险等级。 |
