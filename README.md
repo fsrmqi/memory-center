@@ -83,6 +83,7 @@ Solved tasks can be recorded as JSONL task memory and later used for search, wik
 Detailed local setup and multi-project workflow / 详细本地初始化与多项目使用流程：
 
 - [docs/LOCAL_USAGE_GUIDE.md](./docs/LOCAL_USAGE_GUIDE.md)
+- [docs/UCAP_ALL_SETUP.md](./docs/UCAP_ALL_SETUP.md)
 
 ---
 
