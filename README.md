@@ -167,6 +167,19 @@ Reindex also builds the local semantic node index used by hybrid retrieval.
 
 重建索引时也会同步构建本地语义节点索引，供混合检索使用。
 
+By default the semantic index uses the built-in sparse backend. If `sentence-transformers` is installed, you can switch to a local embedding backend with:
+
+默认情况下语义索引使用内置稀疏后端。如果安装了 `sentence-transformers`，可以通过下面的环境变量切换到本地 embedding backend：
+
+```bash
+pip install -e .[semantic-local]
+```
+
+```bash
+export MEMORY_CENTER_SEMANTIC_BACKEND=sentence-transformers
+export MEMORY_CENTER_EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2
+```
+
 ### 3. Query task context / 查询任务上下文
 
 ```bash
@@ -187,9 +200,17 @@ Local query now uses hybrid retrieval: graph/FTS exact hits plus an offline spar
 
 当前查询已支持本地混合召回：图谱/FTS 精确命中 + 基于图节点构建的离线稀疏语义索引。
 
+When a local embedding backend is enabled, the same query path upgrades to dense semantic retrieval automatically, while keeping the sparse backend as a safe fallback.
+
+启用本地 embedding backend 后，同一套查询路径会自动升级为 dense semantic retrieval，同时保留稀疏后端作为安全 fallback。
+
 Workspace query now also exposes `retrieval_summary` and per-match `retrieval_sources`, so agents can tell whether a hit came from exact graph lookup, semantic recall, or both.
 
 工作区查询现在也会返回 `retrieval_summary` 和每条结果的 `retrieval_sources`，便于 Agent 判断命中来自图谱精确检索、语义召回，还是二者混合。
+
+Workspace status and group status also expose semantic backend information, so you can verify whether the active index is using `sparse` or `sentence-transformers`.
+
+工作区状态和分组状态现在也会暴露语义 backend 信息，便于确认当前索引实际使用的是 `sparse` 还是 `sentence-transformers`。
 
 Group query keeps the same hybrid model and now exposes `retrieval_summary` plus per-match `retrieval_sources` so agents can distinguish exact hits from semantic-only recalls.
 

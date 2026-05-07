@@ -28,9 +28,10 @@ class RegexJavaParser:
         fields, field_types = _parse_fields(cleaned)
         method_spans = _parse_method_spans(cleaned)
         methods = sorted({item["name"] for item in method_spans})
+        method_variable_types = _parse_method_variable_types(cleaned, method_spans)
         bean_injections = _parse_bean_injections(cleaned, classes, field_types)
-        method_calls = _parse_method_calls(cleaned, method_spans)
-        dto_field_usages = _parse_dto_field_usages(cleaned, method_spans)
+        method_calls = _parse_method_calls(cleaned, method_spans, method_variable_types, field_types)
+        dto_field_usages = _parse_dto_field_usages(cleaned, method_spans, method_variable_types, field_types)
         config_usages = _parse_config_usages(cleaned)
         data_resources = _parse_data_resources(cleaned)
 
@@ -43,6 +44,7 @@ class RegexJavaParser:
             fields=fields,
             annotations=annotations,
             field_types=field_types,
+            method_variable_types=method_variable_types,
             bean_injections=bean_injections,
             method_calls=method_calls,
             dto_field_usages=dto_field_usages,
@@ -85,13 +87,13 @@ def _parse_method_spans(text: str) -> List[Dict[str, Any]]:
         r"(?:@\w+(?:\([^)]*\))?\s*)*"
         r"(?:public|private|protected)\s+"
         r"(?:static\s+)?[\w<>, ?\.\[\]]+\s+"
-        r"(\w+)\s*\([^;{}]*\)\s*(?:throws\s+[\w, ]+\s*)?\{",
+        r"(\w+)\s*\(([^;{}]*)\)\s*(?:throws\s+[\w, ]+\s*)?\{",
         re.M,
     )
     spans: List[Dict[str, Any]] = []
     for match in pattern.finditer(text):
         end = _matching_brace_end(text, match.end() - 1)
-        spans.append({"name": match.group(1), "start": match.start(), "end": end, "line": _line_of(text, match.start())})
+        spans.append({"name": match.group(1), "params": match.group(2), "start": match.start(), "end": end, "line": _line_of(text, match.start())})
     return spans
 
 
@@ -177,7 +179,32 @@ def _parse_params(params: str) -> Dict[str, str]:
     return out
 
 
-def _parse_method_calls(text: str, method_spans: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def _parse_method_variable_types(text: str, method_spans: List[Dict[str, Any]]) -> Dict[str, Dict[str, str]]:
+    out: Dict[str, Dict[str, str]] = {}
+    local_decl = re.compile(
+        r"(?:^|[;{]\s*|\n\s*)"
+        r"(?:final\s+)?(?P<type>[\w<>\.\[\]]+)\s+"
+        r"(?P<name>[a-zA-Z_]\w*)\s*(?:=|;)",
+        re.M,
+    )
+    foreach_decl = re.compile(r"for\s*\(\s*(?:final\s+)?(?P<type>[\w<>\.\[\]]+)\s+(?P<name>[a-zA-Z_]\w*)\s*:", re.M)
+    for span in method_spans:
+        vars_for_method = _parse_params(span.get("params", ""))
+        body = text[span["start"]:span["end"]]
+        for match in local_decl.finditer(body):
+            vars_for_method.setdefault(match.group("name"), _simple_type(match.group("type")))
+        for match in foreach_decl.finditer(body):
+            vars_for_method.setdefault(match.group("name"), _simple_type(match.group("type")))
+        out[span["name"]] = vars_for_method
+    return out
+
+
+def _parse_method_calls(
+    text: str,
+    method_spans: List[Dict[str, Any]],
+    method_variable_types: Dict[str, Dict[str, str]],
+    field_types: Dict[str, str],
+) -> List[Dict[str, Any]]:
     calls: List[Dict[str, Any]] = []
     pattern = re.compile(r"(?P<receiver>\b[a-zA-Z_]\w*)\s*\.\s*(?P<method>[a-zA-Z_]\w*)\s*\(", re.M)
     ignored = {"log", "logger", "System", "Objects", "String", "Collections", "Arrays", "Optional", "Map", "List", "Set"}
@@ -186,21 +213,38 @@ def _parse_method_calls(text: str, method_spans: List[Dict[str, Any]]) -> List[D
         method = m.group("method")
         if receiver in ignored or method in {"stream", "map", "filter", "collect", "of", "empty", "println"}:
             continue
-        calls.append({"receiver": receiver, "method_name": method, "owner_method": _owner_method(method_spans, m.start()), "line": _line_of(text, m.start())})
+        owner_method = _owner_method(method_spans, m.start())
+        receiver_type = (method_variable_types.get(owner_method or "", {}).get(receiver) or field_types.get(receiver))
+        calls.append(
+            {
+                "receiver": receiver,
+                "receiver_type": receiver_type,
+                "method_name": method,
+                "owner_method": owner_method,
+                "line": _line_of(text, m.start()),
+            }
+        )
     return calls
 
 
-def _parse_dto_field_usages(text: str, method_spans: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def _parse_dto_field_usages(
+    text: str,
+    method_spans: List[Dict[str, Any]],
+    method_variable_types: Dict[str, Dict[str, str]],
+    field_types: Dict[str, str],
+) -> List[Dict[str, Any]]:
     usages: List[Dict[str, Any]] = []
     pattern = re.compile(r"(?P<receiver>\b[a-zA-Z_]\w*)\s*\.\s*(?P<accessor>get|set|is)(?P<field>[A-Z]\w*)\s*\(", re.M)
     for m in pattern.finditer(text):
         field = m.group("field")
         field_name = field[:1].lower() + field[1:]
+        owner_method = _owner_method(method_spans, m.start())
         usages.append({
             "receiver": m.group("receiver"),
+            "receiver_type": (method_variable_types.get(owner_method or "", {}).get(m.group("receiver")) or field_types.get(m.group("receiver"))),
             "accessor": m.group("accessor"),
             "field": field_name,
-            "owner_method": _owner_method(method_spans, m.start()),
+            "owner_method": owner_method,
             "line": _line_of(text, m.start()),
         })
     return usages

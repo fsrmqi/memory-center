@@ -14,6 +14,7 @@ class JavaParseResult:
     fields: List[str] = field(default_factory=list)
     annotations: List[str] = field(default_factory=list)
     field_types: Dict[str, str] = field(default_factory=dict)
+    method_variable_types: Dict[str, Dict[str, str]] = field(default_factory=dict)
     bean_injections: List[Dict[str, Any]] = field(default_factory=list)
     method_calls: List[Dict[str, Any]] = field(default_factory=list)
     dto_field_usages: List[Dict[str, Any]] = field(default_factory=list)

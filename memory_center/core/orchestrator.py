@@ -224,14 +224,18 @@ def group_status(group: str, home: str | Path | None = None) -> Dict[str, Any]:
     workspaces = []
     totals = {"files": 0, "symbols": 0, "apis": 0, "feigns": 0, "mq": 0, "cases": 0}
     semantic_ready = 0
+    semantic_backends: Dict[str, int] = {}
     group_data = _load_group_data(resolved["members"])
     for member in resolved["members"]:
         status = workspace_status(member["workspace_file"])
         workspaces.append(status)
         for key, value in status.get("index_counts", {}).items():
             totals[key] = totals.get(key, 0) + int(value)
-        if status.get("semantic_index", {}).get("ready"):
+        semantic = status.get("semantic_index", {})
+        if semantic.get("ready"):
             semantic_ready += 1
+        backend = semantic.get("backend", "unknown")
+        semantic_backends[backend] = semantic_backends.get(backend, 0) + 1
     bridges = _build_group_bridges(group_data)
     return {
         "group": group,
@@ -243,6 +247,7 @@ def group_status(group: str, home: str | Path | None = None) -> Dict[str, Any]:
             "workspace_count": len(workspaces),
             "doc_count": totals.get("semantic_docs", 0),
             "ready": semantic_ready == len(workspaces) if workspaces else False,
+            "backends": semantic_backends,
         },
         "bridge_counts": _count_bridges(bridges),
         "bridges": bridges[:50],

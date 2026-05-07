@@ -97,6 +97,7 @@ def parse_java_symbols(project: str, rel: str, text: str) -> JavaSymbol:
         annotations=parsed.annotations,
         imports=parsed.imports,
         field_types=parsed.field_types,
+        method_variable_types=parsed.method_variable_types,
         bean_injections=parsed.bean_injections,
         method_calls=parsed.method_calls,
         dto_field_usages=parsed.dto_field_usages,
@@ -144,12 +145,11 @@ def parse_feign_clients(project: str, rel: str, text: str, symbol: JavaSymbol) -
 def parse_mq_endpoints(project: str, rel: str, text: str, symbol: JavaSymbol) -> List[MqEndpoint]:
     endpoints: List[MqEndpoint] = []
     class_name = (symbol.classes or [Path(rel).stem])[0]
-    method_name = (symbol.methods or [None])[0]
-    for args in re.findall(r"@KafkaListener\s*\(([^)]*)\)", text, flags=re.S):
+    for args, method_name in _listener_annotations(text, "KafkaListener"):
         topic = extract_named_value(args, "topics") or extract_named_value(args, "topic") or extract_first_string(args) or "unknown-topic"
         group = extract_named_value(args, "groupId") or extract_named_value(args, "group")
         endpoints.append(MqEndpoint(project, rel, "kafka", clean_topic(topic), group, class_name, method_name))
-    for args in re.findall(r"@RocketMQMessageListener\s*\(([^)]*)\)", text, flags=re.S):
+    for args, method_name in _listener_annotations(text, "RocketMQMessageListener"):
         topic = extract_named_value(args, "topic") or "unknown-topic"
         group = extract_named_value(args, "consumerGroup") or extract_named_value(args, "selectorExpression")
         endpoints.append(MqEndpoint(project, rel, "rocketmq", clean_topic(topic), group, class_name, method_name))
@@ -212,6 +212,15 @@ def clean_topic(topic: str) -> str:
     return topic.strip().strip("{}").strip().strip('"')
 
 
+def _listener_annotations(text: str, annotation: str) -> List[tuple[str, str | None]]:
+    pattern = re.compile(
+        rf"@{annotation}\s*\(([^)]*)\)\s*(?:\n|\r|\s)*(?:@[\w()\"=,{{}}./\s]+\s*)*"
+        r"(?:public|private|protected)\s+(?:static\s+)?[\w<>, ?\.\[\]]+\s+(\w+)\s*\(",
+        re.MULTILINE,
+    )
+    return [(args, method_name) for args, method_name in pattern.findall(text)]
+
+
 def flatten_dict(data: Dict[str, Any], prefix: str = "") -> Dict[str, str]:
     out: Dict[str, str] = {}
     for k, v in data.items():
@@ -245,6 +254,7 @@ def build_graph_store(config: WorkspaceConfig, store: WorkspaceStore) -> Dict[st
     declared_method_ids: set[str] = set()
     field_locations: Dict[str, List[str]] = {}
     field_type_by_file: Dict[str, Dict[str, str]] = {}
+    method_variable_types_by_file: Dict[str, Dict[str, Dict[str, str]]] = {}
 
     for svc in config.services:
         sid = node_id("Service", svc.name)
@@ -267,6 +277,7 @@ def build_graph_store(config: WorkspaceConfig, store: WorkspaceStore) -> Dict[st
     for sym in symbols:
         fid = node_id("File", sym["file"])
         field_type_by_file[sym["file"]] = sym.get("field_types", {})
+        method_variable_types_by_file[sym["file"]] = sym.get("method_variable_types", {})
         for cls in sym.get("classes", []) + sym.get("interfaces", []):
             cid = node_id("Class", sym["project"], cls)
             class_locations.setdefault(cls, []).append({"id": cid, "project": sym["project"], "file": sym["file"]})
@@ -330,6 +341,7 @@ def build_graph_store(config: WorkspaceConfig, store: WorkspaceStore) -> Dict[st
         owner_class = owner_classes[0] if owner_classes else Path(sym["file"]).stem
         owner_class_id = node_id("Class", sym["project"], owner_class)
         file_field_types = field_type_by_file.get(sym["file"], {})
+        file_method_variable_types = method_variable_types_by_file.get(sym["file"], {})
 
         for inj in sym.get("bean_injections", []):
             target_type = inj.get("type")
@@ -341,7 +353,8 @@ def build_graph_store(config: WorkspaceConfig, store: WorkspaceStore) -> Dict[st
         for call in sym.get("method_calls", []):
             target_method = call.get("method_name")
             receiver = call.get("receiver")
-            receiver_type = file_field_types.get(receiver)
+            owner_method = call.get("owner_method") or ""
+            receiver_type = call.get("receiver_type") or file_method_variable_types.get(owner_method, {}).get(receiver) or file_field_types.get(receiver)
             source_id = _source_method_id(sym, owner_class, call) or owner_class_id
             target_ids = []
             if receiver_type and class_locations.get(receiver_type):
@@ -355,8 +368,27 @@ def build_graph_store(config: WorkspaceConfig, store: WorkspaceStore) -> Dict[st
 
         for usage in sym.get("dto_field_usages", []):
             source_id = _source_method_id(sym, owner_class, usage) or owner_class_id
-            for fid in field_locations.get(usage.get("field"), [])[:5]:
-                edges.append(GraphEdge(edge_id("READS_FIELD", source_id, fid), source_id, fid, "READS_FIELD", 0.62, {"evidence": usage}))
+            receiver_type = usage.get("receiver_type")
+            matching_fields = []
+            if receiver_type:
+                matching_fields.extend(
+                    field_id
+                    for field_id in field_locations.get(usage.get("field"), [])
+                    if f":{receiver_type}:" in field_id
+                )
+            if not matching_fields:
+                matching_fields = field_locations.get(usage.get("field"), [])[:5]
+            for fid in matching_fields[:5]:
+                edges.append(
+                    GraphEdge(
+                        edge_id("READS_FIELD", source_id, fid),
+                        source_id,
+                        fid,
+                        "READS_FIELD",
+                        0.74 if receiver_type else 0.62,
+                        {"evidence": usage, "receiver_type": receiver_type},
+                    )
+                )
 
         for usage in sym.get("config_usages", []):
             key = usage.get("key")

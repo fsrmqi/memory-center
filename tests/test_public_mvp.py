@@ -2,6 +2,7 @@ from pathlib import Path
 import json
 import socket
 import threading
+import os
 from urllib.request import urlopen
 
 from memory_center.core.config import load_workspace_config
@@ -78,6 +79,7 @@ def test_graph_query_context_and_impact(tmp_path):
     assert any("semantic" in item["retrieval_sources"] for item in query_result["matches"])
     status = workspace_status(workspace)
     assert status["semantic_index"]["ready"] is True
+    assert status["semantic_index"]["backend"] == "sparse"
     assert status["index_counts"]["semantic_docs"] > 0
     context = memory_context(workspace, "ArticleFeignClient")
     assert context["found"] is True
@@ -116,6 +118,7 @@ def test_trusted_graph_edges_and_evidence_based_impact(tmp_path: Path):
     assert any(edge["type"] == "READS_FIELD" for edge in upstream)
     assert any(edge["evidence"] for edge in upstream)
     assert any(edge["source"]["name"] == "ArticleMoveConsumer.consume" for edge in upstream)
+    assert any(edge["type"] == "READS_FIELD" and edge["evidence"].get("receiver_type") == "MoveArticleRequest" for edge in upstream)
 
     urlmd5 = graph.find_nodes("urlmd5", types=["Field"], limit=5)[0]
     urlmd5_upstream = graph.neighbors(urlmd5["id"], direction="upstream", max_depth=3, limit=100)
@@ -124,6 +127,9 @@ def test_trusted_graph_edges_and_evidence_based_impact(tmp_path: Path):
     consumer = graph.find_nodes("ArticleMoveConsumer", types=["Class"], limit=5)[0]
     consumer_outgoing = graph.neighbors(consumer["id"], direction="downstream", max_depth=1, limit=50)
     assert any(edge["type"] == "INJECTS_BEAN" and edge["target"]["name"] == "ArticleMoveService" for edge in consumer_outgoing)
+
+    mq_index = store.read_json("mq-index.json", [])
+    assert any(item["class_name"] == "ArticleMoveConsumer" and item["method_name"] == "consume" for item in mq_index)
 
     move_service = graph.find_nodes("ArticleMoveService", types=["Class"], limit=5)[0]
     service_outgoing = graph.neighbors(move_service["id"], direction="downstream", max_depth=1, limit=50)
@@ -166,6 +172,7 @@ def test_group_query_and_status(tmp_path: Path):
     assert status["semantic_index"]["ready"] is True
     assert status["semantic_index"]["ready_workspace_count"] == 2
     assert status["semantic_index"]["doc_count"] >= 2
+    assert status["semantic_index"]["backends"]["sparse"] == 2
     assert status["bridge_counts"]["FEIGN_SERVICE"] >= 2
     assert status["bridge_counts"]["FEIGN_ENDPOINT"] >= 2
     assert status["bridge_counts"]["MQ_TOPIC_CONFIG"] >= 2
@@ -244,6 +251,7 @@ def test_http_bridge_routes(tmp_path: Path):
         assert status["workspace_count"] == 1
         assert "bridge_counts" in status
         assert status["semantic_index"]["ready"] is True
+        assert status["semantic_index"]["backends"]["sparse"] == 1
 
         query = json.loads(urlopen(f"{base}/workspace/query?text=ArticleFeignClient").read().decode("utf-8"))
         assert query["matches"]
@@ -266,6 +274,62 @@ def test_http_bridge_routes(tmp_path: Path):
             os.environ.pop("HOME", None)
         else:
             os.environ["HOME"] = old_home
+
+
+def test_local_embedding_backend_is_optional_and_selectable(tmp_path: Path):
+    import shutil
+    import memory_center.core.semantic as semantic
+
+    source = Path("examples/spring-cloud-demo")
+    target = tmp_path / "semantic-backend-demo"
+    shutil.copytree(source, target)
+    workspace = target / ".memory-center" / "workspace.yaml"
+    lines = workspace.read_text(encoding="utf-8").splitlines()
+    lines = [f"root: {target.as_posix()}" if line.startswith("root:") else line for line in lines]
+    workspace.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    config = load_workspace_config(workspace)
+    store = WorkspaceStore(workspace)
+    ensure_default_rules(store)
+
+    old_backend = os.environ.get("MEMORY_CENTER_SEMANTIC_BACKEND")
+    old_model = os.environ.get("MEMORY_CENTER_EMBEDDING_MODEL")
+    old_loader = semantic._load_sentence_transformer_model
+
+    class FakeSentenceTransformer:
+        def encode(self, texts, normalize_embeddings=True):
+            vectors = []
+            for text in texts:
+                length = float(len(text) or 1)
+                vowels = float(sum(1 for ch in text.lower() if ch in "aeiou") or 1)
+                vectors.append([length, vowels])
+            return vectors
+
+    try:
+        os.environ["MEMORY_CENTER_SEMANTIC_BACKEND"] = "sentence-transformers"
+        os.environ["MEMORY_CENTER_EMBEDDING_MODEL"] = "fake-local-model"
+        semantic._load_sentence_transformer_model = lambda model_name: FakeSentenceTransformer()
+        counts = reindex_workspace(config, store)
+        assert counts["semantic_docs"] > 0
+
+        stats = semantic.semantic_index_stats(workspace)
+        assert stats["backend"] == "sentence-transformers"
+        assert stats["requested_backend"] == "sentence-transformers"
+        assert stats["model"] == "fake-local-model"
+
+        hits = semantic.semantic_query(workspace, "ArticleFeignClient", limit=3)
+        assert hits
+        assert all(item["backend"] == "sentence-transformers" for item in hits)
+    finally:
+        semantic._load_sentence_transformer_model = old_loader
+        if old_backend is None:
+            os.environ.pop("MEMORY_CENTER_SEMANTIC_BACKEND", None)
+        else:
+            os.environ["MEMORY_CENTER_SEMANTIC_BACKEND"] = old_backend
+        if old_model is None:
+            os.environ.pop("MEMORY_CENTER_EMBEDDING_MODEL", None)
+        else:
+            os.environ["MEMORY_CENTER_EMBEDDING_MODEL"] = old_model
 
 
 def _copy_demo_workspace(tmp_path: Path, name: str) -> Path:

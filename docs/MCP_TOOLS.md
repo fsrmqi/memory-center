@@ -9,7 +9,7 @@ Memory Center exposes graph-first project memory to AI coding agents through MCP
 | Tool | Description / 说明 |
 |---|---|
 | `workspace_sniff_tool(intent, limit)` | Retrieve task context: services, files, rules, topology hints, historical cases. / 任务开始前召回服务、文件、规则、拓扑、历史经验。 |
-| `memory_query_tool(query, limit)` | Graph-aware hybrid search across files, symbols, endpoints, Feign clients, topics and fields, with exact/semantic retrieval metadata. / 基于图谱的混合检索，查询文件、符号、接口、Feign、Topic、字段，并返回精确/语义召回来源信息。 |
+| `memory_query_tool(query, limit)` | Graph-aware hybrid search across files, symbols, endpoints, Feign clients, topics and fields, with exact/semantic retrieval metadata and optional local embedding backend support. / 基于图谱的混合检索，查询文件、符号、接口、Feign、Topic、字段，并返回精确/语义召回来源信息，同时支持可选本地 embedding backend。 |
 | `memory_context_tool(name, max_depth)` | 360-degree context for a graph node, with retrieval entrypoints and evidence summary. / 返回某个节点的上下游上下文，并附带召回入口和证据摘要。 |
 | `memory_impact_tool(target, direction, max_depth)` | Impact analysis for DTO, Feign, MQ topic, endpoint, service or file, with lookup provenance and evidence summary. / 对 DTO、Feign、消息主题、接口、服务、文件做影响面分析，并附带命中来源和证据摘要。 |
 | `memory_detect_changes_tool(scope)` | Map local git diff to affected files, projects, rules and risk level. / 把本地 Git diff 映射为影响项目、规则和风险等级。 |
@@ -20,9 +20,9 @@ Memory Center exposes graph-first project memory to AI coding agents through MCP
 | `workspace_record_case_tool(task, projects, files, flow, risk_points, verified_by)` | Record validated task memory. / 完成验证后沉淀任务经验。 |
 | `memory_generate_wiki_tool(output_dir)` | Generate bilingual architecture wiki. / 生成双语架构 Wiki。 |
 | `memory_generate_skills_tool(output_dir)` | Generate Agent skill files from task memory. / 根据历史任务生成 Agent Skill。 |
-| `workspace_status_tool()` | Return index and memory status. / 返回索引和记忆状态。 |
+| `workspace_status_tool()` | Return index and memory status, including semantic backend readiness. / 返回索引和记忆状态，包含语义 backend 就绪情况。 |
 | `group_query_tool(group, query, limit)` | Run a merged query across registered workspaces in one logical group, with exact/semantic retrieval metadata. / 对逻辑分组中的多个工作区做聚合查询，并返回精确/语义召回来源信息。 |
-| `group_status_tool(group)` | Return aggregated group status, including semantic index readiness and document counts. / 返回逻辑分组聚合状态，包含语义索引就绪度与文档数。 |
+| `group_status_tool(group)` | Return aggregated group status, including semantic index readiness, document counts and backend distribution. / 返回逻辑分组聚合状态，包含语义索引就绪度、文档数和 backend 分布。 |
 | `group_impact_tool(group, target, direction, max_depth)` | Run cross-workspace impact analysis with lookup provenance, graph evidence and bridge evidence. / 结合命中来源、图谱证据和 bridge 证据做跨工作区影响面分析。 |
 
 ## Resources / 资源
