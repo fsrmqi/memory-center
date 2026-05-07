@@ -189,8 +189,21 @@ def memory_query(workspace_file: str | Path, query: str, limit: int = 20, node_t
                 seen_nodes[item["id"]] = item
         exact_nodes = list(seen_nodes.values())[:limit]
     semantic_hits = semantic_query(workspace_file, query, limit=max(limit * 3, 20))
+    enriched_semantic_hits = []
+    for hit in semantic_hits:
+        node = graph.node_by_id(hit.get("node_id", ""))
+        if not node:
+            node = {
+                "id": hit.get("node_id", ""),
+                "type": hit.get("type", ""),
+                "name": hit.get("name", ""),
+                "project": hit.get("project", ""),
+                "file_path": hit.get("file_path", ""),
+            }
+        enriched_semantic_hits.append({**hit, "node": node})
+    semantic_hits = enriched_semantic_hits
     if node_types:
-        semantic_hits = [item for item in semantic_hits if item.get("type") in node_types]
+        semantic_hits = [item for item in semantic_hits if item.get("node", {}).get("type") in node_types]
     merged = _merge_workspace_query_hits(graph, query, exact_nodes, semantic_hits, limit)
     related_rules = match_rules(store, intent=query, files=[item["node"].get("file_path", "") for item in merged])[:10]
     cases = store.read_jsonl("cross-service-task-memory.jsonl", limit=200)
@@ -209,18 +222,27 @@ def group_status(group: str, home: str | Path | None = None) -> Dict[str, Any]:
     resolved = resolve_group(group, home)
     workspaces = []
     totals = {"files": 0, "symbols": 0, "apis": 0, "feigns": 0, "mq": 0, "cases": 0}
+    semantic_ready = 0
     group_data = _load_group_data(resolved["members"])
     for member in resolved["members"]:
         status = workspace_status(member["workspace_file"])
         workspaces.append(status)
         for key, value in status.get("index_counts", {}).items():
             totals[key] = totals.get(key, 0) + int(value)
+        if status.get("semantic_index", {}).get("ready"):
+            semantic_ready += 1
     bridges = _build_group_bridges(group_data)
     return {
         "group": group,
         "workspace_count": len(workspaces),
         "missing_members": resolved["missing"],
         "index_totals": totals,
+        "semantic_index": {
+            "ready_workspace_count": semantic_ready,
+            "workspace_count": len(workspaces),
+            "doc_count": totals.get("semantic_docs", 0),
+            "ready": semantic_ready == len(workspaces) if workspaces else False,
+        },
         "bridge_counts": _count_bridges(bridges),
         "bridges": bridges[:50],
         "workspaces": workspaces,
@@ -254,13 +276,27 @@ def group_query(group: str, query: str, limit: int = 20, node_types: List[str] |
                     "rrf_score": 0.0,
                     "semantic_score": 0.0,
                     "best_rank": rank,
+                    "retrieval_sources": [],
                 },
             )
             current["rrf_score"] += float(item.get("exact_score", _rrf(rank)))
             current["semantic_score"] = max(current["semantic_score"], float(item.get("semantic_score", 0.0)))
             current["best_rank"] = min(current["best_rank"], rank)
+            if "exact" not in current["retrieval_sources"]:
+                current["retrieval_sources"].append("exact")
+    for entry in workspace_results:
+        for hit in entry["result"].get("semantic_hits", []):
+            _merge_group_semantic_hit(
+                merged,
+                entry["workspace_ref"],
+                entry["workspace"],
+                hit,
+                entry["result"].get("matches", []),
+                target_types,
+            )
     resolved_target_types = _resolve_group_target_types(query, sorted(t for t in target_types if t))
-    merged_matches = sorted(merged.values(), key=lambda item: _group_query_match_key(item, resolved_target_types))[:limit]
+    merged_all = sorted(merged.values(), key=lambda item: _group_query_match_key(item, resolved_target_types))
+    merged_matches = merged_all[:limit]
     bridges = _sort_bridges(_filter_bridges(bridges, query, limit), resolved_target_types)
     return {
         "group": group,
@@ -268,6 +304,7 @@ def group_query(group: str, query: str, limit: int = 20, node_types: List[str] |
         "workspace_count": len(workspace_results),
         "missing_members": resolved["missing"],
         "merged_matches": merged_matches,
+        "retrieval_summary": _summarize_group_query_matches(merged_all, limit),
         "target_types": resolved_target_types,
         "related_bridges": bridges,
         "workspace_results": workspace_results,
@@ -591,8 +628,11 @@ def _workspace_query_match_key(item: Dict[str, Any], target_types: List[str]) ->
 def _group_query_match_key(item: Dict[str, Any], target_types: List[str]) -> tuple:
     node = item.get("node", {})
     priority = _query_node_priority(node.get("type", ""), target_types)
+    sources = set(item.get("retrieval_sources", []))
+    hybrid_rank = 0 if {"exact", "semantic"} <= sources else 1 if "exact" in sources else 2 if "semantic" in sources else 3
     return (
         priority,
+        hybrid_rank,
         -float(item.get("rrf_score", 0.0)),
         -float(item.get("semantic_score", 0.0)),
         int(item.get("best_rank", 9999)),
@@ -612,6 +652,61 @@ def _query_node_priority(node_type: str, target_types: List[str]) -> int:
     if not priorities:
         priorities.update({"Class": 0, "Method": 1, "Field": 2, "File": 3})
     return priorities.get(node_type, 20)
+
+
+def _merge_group_semantic_hit(
+    merged: Dict[str, Dict[str, Any]],
+    workspace_ref: str,
+    workspace_name: str,
+    hit: Dict[str, Any],
+    workspace_matches: List[Dict[str, Any]],
+    target_types: set[str],
+) -> None:
+    node = hit.get("node") or {}
+    node_id = node.get("id")
+    if not node_id:
+        return
+    if node.get("type"):
+        target_types.add(node.get("type"))
+    key = f"{workspace_ref}:{node_id}"
+    current = merged.setdefault(
+        key,
+        {
+            "workspace_ref": workspace_ref,
+            "workspace": workspace_name,
+            "node": node,
+            "neighbors": _find_group_query_neighbors(workspace_matches, node_id),
+            "rrf_score": 0.0,
+            "semantic_score": 0.0,
+            "best_rank": 9999,
+            "retrieval_sources": [],
+        },
+    )
+    current["semantic_score"] = max(current["semantic_score"], float(hit.get("score", 0.0)))
+    if "semantic" not in current["retrieval_sources"]:
+        current["retrieval_sources"].append("semantic")
+    if not current.get("neighbors"):
+        current["neighbors"] = _find_group_query_neighbors(workspace_matches, node_id)
+
+
+def _find_group_query_neighbors(workspace_matches: List[Dict[str, Any]], node_id: str) -> List[Dict[str, Any]]:
+    for item in workspace_matches:
+        if item.get("node", {}).get("id") == node_id:
+            return item.get("neighbors", [])
+    return []
+
+
+def _summarize_group_query_matches(matches: List[Dict[str, Any]], limit: int) -> Dict[str, int]:
+    summary = {"exact_matches": 0, "semantic_matches": 0, "hybrid_matches": 0, "total_matches": len(matches), "returned_matches": min(len(matches), limit)}
+    for item in matches:
+        sources = set(item.get("retrieval_sources", []))
+        if "exact" in sources:
+            summary["exact_matches"] += 1
+        if "semantic" in sources:
+            summary["semantic_matches"] += 1
+        if {"exact", "semantic"} <= sources:
+            summary["hybrid_matches"] += 1
+    return summary
 
 
 def _load_group_data(members: List[Dict[str, Any]]) -> List[Dict[str, Any]]:

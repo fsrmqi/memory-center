@@ -187,6 +187,10 @@ Local query now uses hybrid retrieval: graph/FTS exact hits plus an offline spar
 
 当前查询已支持本地混合召回：图谱/FTS 精确命中 + 基于图节点构建的离线稀疏语义索引。
 
+Group query keeps the same hybrid model and now exposes `retrieval_summary` plus per-match `retrieval_sources` so agents can distinguish exact hits from semantic-only recalls.
+
+分组查询也沿用同样的混合召回模型，并额外返回 `retrieval_summary` 与每条结果的 `retrieval_sources`，便于 Agent 区分精确命中和纯语义召回。
+
 ### 5. 360-degree context / 符号上下文
 
 ```bash
@@ -251,7 +255,7 @@ Available MCP tools / MCP 工具：
 | `memory_generate_skills_tool` | Generate Agent skills / 生成 Agent Skills |
 | `workspace_status_tool` | Index status / 索引状态 |
 | `group_query_tool` | Merged query across a registered group / 逻辑分组聚合查询 |
-| `group_status_tool` | Aggregated group status / 逻辑分组聚合状态 |
+| `group_status_tool` | Aggregated group status, including semantic index readiness / 逻辑分组聚合状态，包含语义索引就绪度 |
 | `group_impact_tool` | Cross-workspace impact analysis / 跨工作区影响面分析 |
 
 Available MCP resources / MCP 资源：

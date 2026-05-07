@@ -152,6 +152,9 @@ def test_group_query_and_status(tmp_path: Path):
     status = group_status("backend-platform", home=home)
     assert status["workspace_count"] == 2
     assert status["index_totals"]["files"] >= 10
+    assert status["semantic_index"]["ready"] is True
+    assert status["semantic_index"]["ready_workspace_count"] == 2
+    assert status["semantic_index"]["doc_count"] >= 2
     assert status["bridge_counts"]["FEIGN_SERVICE"] >= 2
     assert status["bridge_counts"]["FEIGN_ENDPOINT"] >= 2
     assert status["bridge_counts"]["MQ_TOPIC_CONFIG"] >= 2
@@ -162,6 +165,10 @@ def test_group_query_and_status(tmp_path: Path):
     assert any(item["node"]["name"] == "ArticleFeignClient" for item in result["merged_matches"])
     assert result["target_types"][0] == "FeignClient"
     assert result["merged_matches"][0]["node"]["type"] == "FeignClient"
+    assert result["retrieval_summary"]["exact_matches"] >= 1
+    assert result["retrieval_summary"]["semantic_matches"] >= 1
+    assert result["retrieval_summary"]["returned_matches"] == len(result["merged_matches"])
+    assert any("semantic" in item["retrieval_sources"] for item in result["merged_matches"])
     assert any(bridge["type"] in {"FEIGN_SERVICE", "FEIGN_ENDPOINT"} for bridge in result["related_bridges"])
 
     mq_result = group_query("backend-platform", "article-pubtime-change", limit=10, home=home)
@@ -221,12 +228,14 @@ def test_http_bridge_routes(tmp_path: Path):
         status = json.loads(urlopen(f"{base}/group/status?group=http-group").read().decode("utf-8"))
         assert status["workspace_count"] == 1
         assert "bridge_counts" in status
+        assert status["semantic_index"]["ready"] is True
 
         query = json.loads(urlopen(f"{base}/workspace/query?text=ArticleFeignClient").read().decode("utf-8"))
         assert query["matches"]
 
         group_query_payload = json.loads(urlopen(f"{base}/group/query?group=http-group&text=article-pubtime-change").read().decode("utf-8"))
         assert group_query_payload["related_bridges"]
+        assert group_query_payload["retrieval_summary"]["semantic_matches"] >= 1
 
         group_impact_payload = json.loads(urlopen(f"{base}/group/impact?group=http-group&target=ArticleFeignClient").read().decode("utf-8"))
         assert group_impact_payload["found"] is True
