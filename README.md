@@ -124,6 +124,42 @@ Verify installation:
 memory-center --version
 ```
 
+If `pipx` was installed but the current shell still says `command not found: pipx`, add the user bin directory to `PATH` first.
+
+如果 `pipx` 已经安装，但当前 shell 仍然提示 `command not found: pipx`，先把用户 bin 目录加到 `PATH`。
+
+Common macOS fix / macOS 常见修复：
+
+```bash
+export PATH="$HOME/Library/Python/3.9/bin:$PATH"
+```
+
+Then rerun:
+
+然后重新执行：
+
+```bash
+bash install.sh
+```
+
+### Enable MCP / 启用 MCP
+
+The base install does not bundle MCP dependencies by default. To enable `memory-center-mcp`:
+
+基础安装默认不附带 MCP 依赖。如果你要启用 `memory-center-mcp`：
+
+```bash
+pipx inject memory-center "mcp>=1.2.0"
+```
+
+Then verify:
+
+然后验证：
+
+```bash
+memory-center-mcp --workspace /path/to/.memory-center/workspace.yaml
+```
+
 ### Development install / 开发环境安装
 
 ```bash

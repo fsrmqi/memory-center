@@ -20,6 +20,17 @@ need_cmd() {
   command -v "$1" >/dev/null 2>&1
 }
 
+user_bin_dir() {
+  "$PYTHON_BIN" - <<'PY'
+import site
+import sys
+base = site.USER_BASE
+if not base:
+    sys.exit(1)
+print(base + "/bin")
+PY
+}
+
 if ! need_cmd "$PYTHON_BIN"; then
   fail "python3 not found. Install Python 3.10+ first."
 fi
@@ -28,11 +39,31 @@ if ! need_cmd pipx; then
   say "pipx not found. Installing pipx with ${PYTHON_BIN} -m pip --user pipx ..."
   "$PYTHON_BIN" -m pip install --user pipx || fail "Failed to install pipx."
   "$PYTHON_BIN" -m pipx ensurepath || true
+  USER_BIN="$(user_bin_dir 2>/dev/null || true)"
+  if [[ -n "${USER_BIN:-}" ]]; then
+    export PATH="${USER_BIN}:$PATH"
+  fi
   export PATH="$HOME/.local/bin:$PATH"
 fi
 
 if ! need_cmd pipx; then
-  fail "pipx is still not available in PATH. Open a new shell or add \$HOME/.local/bin to PATH."
+  USER_BIN="$(user_bin_dir 2>/dev/null || true)"
+  say ""
+  say "pipx is installed, but the current shell cannot find it yet."
+  say "Run one of the following, then rerun install.sh:"
+  if [[ -n "${USER_BIN:-}" ]]; then
+    say "  export PATH=\"${USER_BIN}:\$PATH\""
+  fi
+  say "  export PATH=\"\$HOME/.local/bin:\$PATH\""
+  say ""
+  say "To make it permanent in zsh:"
+  if [[ -n "${USER_BIN:-}" ]]; then
+    say "  echo 'export PATH=\"${USER_BIN}:\$PATH\"' >> ~/.zshrc"
+  else
+    say "  echo 'export PATH=\"\$HOME/.local/bin:\$PATH\"' >> ~/.zshrc"
+  fi
+  say "  source ~/.zshrc"
+  fail "pipx is still not available in PATH."
 fi
 
 PACKAGE_SPEC="$INSTALL_TARGET"
@@ -64,6 +95,9 @@ say "Memory Center installed."
 say ""
 say "Verify:"
 say "  memory-center --version"
+say ""
+say "Enable MCP later if needed:"
+say "  pipx inject memory-center \"mcp>=1.2.0\""
 say ""
 say "Example:"
 say "  memory-center doctor --workspace /path/to/.memory-center/workspace.yaml --self-test"

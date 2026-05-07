@@ -145,6 +145,30 @@ source ~/.zshrc
 memory-center --version
 ```
 
+### 启用 MCP
+
+基础安装完成后，如果你要启动：
+
+```bash
+memory-center-mcp
+```
+
+还需要给 pipx 环境注入 MCP 依赖：
+
+```bash
+export PATH="$HOME/Library/Python/3.9/bin:$PATH"
+pipx inject memory-center "mcp>=1.2.0"
+```
+
+验证方式：
+
+```bash
+memory-center-mcp \
+  --workspace /Users/cuijiaqi/javaworkspace/ucap/.memory-center/workspace.yaml
+```
+
+如果命令启动后保持运行、不再报 `No module named 'mcp'`，说明 MCP server 已经可用。
+
 ---
 
 ## 5. `ucap-all` 的 workspace 配置
