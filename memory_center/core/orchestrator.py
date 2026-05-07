@@ -198,7 +198,7 @@ def memory_context(workspace_file: str | Path, name: str, max_depth: int = 2) ->
     matches = graph.find_nodes(name, limit=10)
     if not matches:
         return {"name": name, "found": False, "matches": []}
-    node = matches[0]
+    node = _best_match(matches, name)
     return {
         "name": name,
         "found": True,
@@ -209,16 +209,38 @@ def memory_context(workspace_file: str | Path, name: str, max_depth: int = 2) ->
 
 
 def memory_impact(workspace_file: str | Path, target: str, direction: str = "upstream", max_depth: int = 3) -> Dict[str, Any]:
+    """Evidence-based impact analysis.
+
+    Impacts are intentionally split into confirmed/probable/possible buckets so
+    AI agents do not treat weak static-analysis hints as exact compiler truth.
+    """
     _, store = load_context(workspace_file)
     graph = GraphStore(store.graph_db_path)
     matches = graph.find_nodes(target, limit=5)
     if not matches:
-        return {"target": target, "found": False, "risk_level": "unknown", "impacts": []}
-    node = matches[0]
+        return {
+            "target": target,
+            "found": False,
+            "risk_level": "unknown",
+            "confirmed_impacts": [],
+            "probable_impacts": [],
+            "possible_impacts": [],
+            "unknown_risks": _unknown_static_analysis_risks(),
+        }
+    node = _best_match(matches, target)
     impacts = graph.neighbors(node["id"], direction=direction, max_depth=max_depth, limit=300)
-    impacted_projects = sorted({x.get("source", {}).get("project") for x in impacts if x.get("source", {}).get("project")} | {x.get("target", {}).get("project") for x in impacts if x.get("target", {}).get("project")})
-    risky_types = {"DTO", "FeignClient", "FeignMethod", "MQTopic", "MQConsumer", "Endpoint"}
-    risk_level = "high" if node["type"] in risky_types or len(impacted_projects) >= 3 else "medium" if impacts else "low"
+    confirmed = [x for x in impacts if float(x.get("confidence", 0)) >= 0.80]
+    probable = [x for x in impacts if 0.55 <= float(x.get("confidence", 0)) < 0.80]
+    possible = [x for x in impacts if float(x.get("confidence", 0)) < 0.55]
+    impacted_projects = sorted(
+        {x.get("source", {}).get("project") for x in impacts if x.get("source", {}).get("project")}
+        | {x.get("target", {}).get("project") for x in impacts if x.get("target", {}).get("project")}
+    )
+    risky_types = {"DTO", "Field", "FeignClient", "FeignMethod", "MQTopic", "MQConsumer", "Endpoint", "ConfigKey"}
+    if node["type"] in risky_types or len(impacted_projects) >= 3 or confirmed:
+        risk_level = "high" if node["type"] in risky_types or len(impacted_projects) >= 3 else "medium"
+    else:
+        risk_level = "low" if impacts else "unknown"
     rules = match_rules(store, intent=f"impact {target} {node['type']}", files=[node.get("file_path", "")])[:12]
     return {
         "target": node,
@@ -227,9 +249,17 @@ def memory_impact(workspace_file: str | Path, target: str, direction: str = "ups
         "max_depth": max_depth,
         "risk_level": risk_level,
         "impacted_projects": impacted_projects,
-        "impacts": impacts,
+        "confirmed_impacts": confirmed,
+        "probable_impacts": probable,
+        "possible_impacts": possible,
         "required_rules": rules,
         "review_checklist": _impact_checklist(node, risk_level),
+        "unknown_risks": _unknown_static_analysis_risks(),
+        "explanation": {
+            "confirmed": "confidence >= 0.80, usually direct declarations, annotations, config, or contract edges",
+            "probable": "0.55 <= confidence < 0.80, usually import, Feign endpoint match, inferred method/field usage",
+            "possible": "confidence < 0.55, weak hints only; verify manually",
+        },
     }
 
 
@@ -244,14 +274,14 @@ def memory_contracts(workspace_file: str | Path) -> Dict[str, Any]:
 
 
 def memory_detect_changes(workspace_file: str | Path, scope: str = "staged") -> Dict[str, Any]:
-    """Map git changes to graph nodes and risks.
+    """Map local git changes to graph nodes and rules.
 
-    scope supports: staged, working, head. This command shells out only to local
-    git and never sends code outside the machine.
+    This is a conservative pre-review signal, not a replacement for tests or code review.
     """
     import subprocess
 
     config, store = load_context(workspace_file)
+    graph = GraphStore(store.graph_db_path)
     changed: List[str] = []
     for svc in config.services:
         repo = config.root_path / svc.path
@@ -272,23 +302,63 @@ def memory_detect_changes(workspace_file: str | Path, scope: str = "staged") -> 
     changed_text = " ".join(changed)
     rules = match_rules(store, intent=f"git changes {changed_text}", files=changed)[:20]
     affected_projects = sorted({f.get("project") for f in matched_files})
+    graph_hits = []
+    for file in changed[:50]:
+        graph_hits.extend(graph.find_nodes(file, types=["File"], limit=5))
+    confirmed_edges = []
+    for hit in graph_hits[:20]:
+        confirmed_edges.extend(graph.neighbors(hit["id"], direction="both", max_depth=1, limit=20))
     high_markers = ["common-api", "Feign", "Message", "Consumer", "Controller", "DTO", "application.yml", "bootstrap.yml"]
-    risk_level = "high" if any(m in changed_text for m in high_markers) else "medium" if changed else "low"
+    risk_level = "high" if any(m in changed_text for m in high_markers) or any(e.get("type") in {"IMPLEMENTS_FEIGN", "CONSUMES_TOPIC", "READS_FIELD"} for e in confirmed_edges) else "medium" if changed else "low"
     return {
         "scope": scope,
         "changed_files": changed,
         "matched_index_files": matched_files,
         "affected_projects": affected_projects,
         "risk_level": risk_level,
+        "graph_evidence": confirmed_edges[:50],
         "rules": rules,
         "review_checklist": [
             "检查公共 DTO / Feign / MQ Message 是否存在兼容性风险",
             "检查 Kafka/RocketMQ 消费是否幂等、可重试、可观测",
             "检查 ES/Mongo/DB 写入是否具备失败明细与补偿策略",
             "检查日志是否包含 chainId、siteCode、uid、业务主键",
+            "如果 graph_evidence 为空，不代表无影响；可能是索引精度不足或尚未 reindex",
         ],
+        "unknown_risks": _unknown_static_analysis_risks(),
     }
 
+
+
+def _best_match(matches: List[Dict[str, Any]], query: str = "") -> Dict[str, Any]:
+    q = (query or "").lower()
+    priority = {
+        "Class": 0,
+        "FeignClient": 1,
+        "FeignMethod": 2,
+        "Method": 3,
+        "Field": 4,
+        "Endpoint": 5,
+        "MQTopic": 6,
+        "MQConsumer": 7,
+        "ConfigKey": 8,
+        "File": 20,
+    }
+
+    def key(item: Dict[str, Any]):
+        name = (item.get("name") or "").lower()
+        exact = 0 if name == q or name.endswith("." + q) else 1
+        return (exact, priority.get(item.get("type"), 10), len(item.get("id", "")))
+
+    return sorted(matches, key=key)[0]
+
+def _unknown_static_analysis_risks() -> List[str]:
+    return [
+        "反射、动态代理、AOP 切面、运行时生成调用链未做精确解析",
+        "MyBatis XML / SQL 字段引用当前只做轻量级索引，未做完整 SQL 语义分析",
+        "远程 Nacos 配置未默认拉取；只分析本地 application/bootstrap 配置",
+        "泛型、重载、继承分派和条件 Bean 的类型解析仍可能存在保守估计",
+    ]
 
 def _impact_checklist(node: Dict[str, Any], risk_level: str) -> List[str]:
     base = ["确认上游调用方", "确认下游实现方", "确认是否需要联调或回放历史消息"]

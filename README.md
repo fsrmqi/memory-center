@@ -39,8 +39,8 @@ Memory Center stores code and service relationships as graph nodes and edges in 
 
 记忆中心把项目关系沉淀为本地 SQLite 图存储：
 
-- Nodes / 节点：Workspace, Service, File, Class, Method, Field, Endpoint, FeignClient, FeignMethod, MQTopic, MQConsumer, Rule, TaskMemory
-- Edges / 边：CONTAINS, DECLARES, EXPOSES_ENDPOINT, CALLS_SERVICE, IMPLEMENTS_FEIGN, CONSUMES_TOPIC, IMPORTS, RELATED_TO_MEMORY
+- Nodes / 节点：Workspace, Service, File, Class, Method, Field, Endpoint, FeignClient, FeignMethod, MQTopic, MQConsumer, ConfigKey, MongoCollection, EsIndex, Rule, TaskMemory
+- Edges / 边：CONTAINS, DECLARES, EXPOSES_ENDPOINT, HANDLES_ENDPOINT, CALLS_SERVICE, IMPLEMENTS_FEIGN, CONSUMES_TOPIC, IMPORTS, INJECTS_BEAN, CALLS_METHOD, READS_FIELD, READS_CONFIG, USES_DATA_RESOURCE, RELATED_TO_MEMORY
 
 This makes impact analysis and context retrieval deterministic and explainable.
 
@@ -57,6 +57,9 @@ Current scanner supports:
 - `@KafkaListener`
 - `@RocketMQMessageListener`
 - Java class/interface/method/field/import
+- Bean injection hints: `@Autowired`, `@Resource`, `@Inject`, constructor/Lombok-style final fields
+- Method-call hints, DTO getter/setter field usage, `@Value` / `@ConfigurationProperties` config usage
+- MongoDB / Elasticsearch resource hints
 - `application.yml`, `application.yaml`, `bootstrap.yml`, `bootstrap.yaml`
 - service topology and Feign/MQ contract indexes
 
@@ -184,6 +187,11 @@ memory-center context \
 ```
 
 ### 6. Impact analysis / 影响面分析
+
+Impact results are evidence-based and split into `confirmed_impacts`, `probable_impacts`, `possible_impacts`, and `unknown_risks`.
+
+影响分析会按证据强弱拆分为 `confirmed_impacts`、`probable_impacts`、`possible_impacts` 和 `unknown_risks`，避免 AI 把弱推断当成精确结论。
+
 
 ```bash
 memory-center impact \
@@ -313,15 +321,21 @@ This prepares future multi-workspace querying and organization-level memory.
 
 ## Roadmap / 路线图
 
-- v1.1: graph-first store, impact/context/detect-changes, wiki and skill generation
-- v1.2: Maven multi-module dependency graph
-- v1.3: tree-sitter-java AST parser
-- v1.4: Nacos config snapshot indexing
-- v1.5: SQLite FTS5 + optional embeddings + RRF ranking
-- v1.6: web graph API and Mermaid architecture maps
+- v1.2: trusted graph release, parser plug-in architecture, evidence-based impact, FTS5 fallback search, MCP security docs
+- v1.3: Maven multi-module dependency graph and group-level aggregated graph
+- v1.4: optional tree-sitter-java AST parser and JavaParser sidecar
+- v1.5: Nacos config snapshot indexing and configuration-key lineage
+- v1.6: optional embeddings + RRF ranking + process-flow extraction
+- v1.7: web graph API and Mermaid architecture maps
 - v2.0: stable public component for Spring Cloud AI coding workflows
 
 ---
+
+## Security model / 安全模型
+
+Memory Center is local-first and read-only by default. Query/context/impact/contract tools do not modify business source code. Write tools are limited to Memory Center artifacts such as task memory, wiki, and generated skills. See `docs/MCP_SECURITY.md`.
+
+记忆中心默认本地优先、只读优先。查询、上下文、影响分析、契约查看不会修改业务源码；写入类工具只写记忆、Wiki、Skill 等 Memory Center 产物。详见 `docs/MCP_SECURITY.md`。
 
 ## License / 许可证
 

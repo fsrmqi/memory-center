@@ -38,6 +38,15 @@ class JavaSymbol:
     annotations: List[str] = field(default_factory=list)
     imports: List[str] = field(default_factory=list)
 
+    # Evidence-oriented relationship facts. These are intentionally plain dicts so
+    # future parsers can add richer payloads without changing public schemas.
+    field_types: Dict[str, str] = field(default_factory=dict)
+    bean_injections: List[Dict[str, Any]] = field(default_factory=list)
+    method_calls: List[Dict[str, Any]] = field(default_factory=list)
+    dto_field_usages: List[Dict[str, Any]] = field(default_factory=list)
+    config_usages: List[Dict[str, Any]] = field(default_factory=list)
+    data_resources: List[Dict[str, Any]] = field(default_factory=list)
+
 
 @dataclass
 class ApiEndpoint:

@@ -104,13 +104,9 @@ def export_mermaid_cmd(workspace: str = typer.Option(...), output: Optional[str]
 
 
 @app.command()
-def doctor(workspace: str = typer.Option(...)):
-    """Validate workspace configuration and index health."""
-    print(run_doctor(workspace))
-
-
-if __name__ == "__main__":
-    app()
+def doctor(workspace: str = typer.Option(...), self_test: bool = typer.Option(False, help="Run lightweight query smoke tests.")):
+    """Validate workspace configuration, index health and optional smoke tests."""
+    print(run_doctor(workspace, self_test=self_test))
 
 
 @app.command("query")
@@ -182,3 +178,6 @@ def group_create(name: str = typer.Option(...)):
 def group_add(name: str = typer.Option(...), repo: str = typer.Option(...)):
     """Add a registered workspace to a logical group."""
     print(add_to_group(name, repo))
+
+if __name__ == "__main__":
+    app()

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
@@ -29,10 +29,10 @@ class GraphEdge:
 
 
 class GraphStore:
-    """Small SQLite graph store used by Memory Center.
+    """Portable SQLite graph store.
 
-    It intentionally keeps the graph model simple and portable. Public users can
-    inspect or back up the graph.db file without running an external graph server.
+    The graph is deliberately simple: node/edge tables plus an optional FTS5
+    search table. This keeps Memory Center local-first and easy to inspect.
     """
 
     def __init__(self, db_path: str | Path):
@@ -73,63 +73,33 @@ class GraphStore:
                 CREATE INDEX IF NOT EXISTS idx_edges_type ON edges(type);
                 """
             )
+            try:
+                conn.execute(
+                    "CREATE VIRTUAL TABLE IF NOT EXISTS node_search USING fts5(id UNINDEXED, type, name, project, file_path, content)"
+                )
+            except sqlite3.OperationalError:
+                # Some embedded sqlite builds do not include FTS5. LIKE search remains available.
+                pass
 
     def clear(self) -> None:
         with self.connect() as conn:
             conn.execute("DELETE FROM edges")
             conn.execute("DELETE FROM nodes")
+            try:
+                conn.execute("DELETE FROM node_search")
+            except sqlite3.OperationalError:
+                pass
 
     def upsert_node(self, node: GraphNode) -> None:
-        with self.connect() as conn:
-            conn.execute(
-                """
-                INSERT INTO nodes(id, type, name, project, file_path, line, metadata_json)
-                VALUES(?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(id) DO UPDATE SET
-                  type=excluded.type,
-                  name=excluded.name,
-                  project=excluded.project,
-                  file_path=excluded.file_path,
-                  line=excluded.line,
-                  metadata_json=excluded.metadata_json
-                """,
-                (
-                    node.id,
-                    node.type,
-                    node.name,
-                    node.project,
-                    node.file_path,
-                    node.line,
-                    json.dumps(node.metadata or {}, ensure_ascii=False),
-                ),
-            )
+        self.bulk_write([node], [])
 
     def upsert_edge(self, edge: GraphEdge) -> None:
-        with self.connect() as conn:
-            conn.execute(
-                """
-                INSERT INTO edges(id, source_id, target_id, type, confidence, metadata_json)
-                VALUES(?, ?, ?, ?, ?, ?)
-                ON CONFLICT(id) DO UPDATE SET
-                  source_id=excluded.source_id,
-                  target_id=excluded.target_id,
-                  type=excluded.type,
-                  confidence=excluded.confidence,
-                  metadata_json=excluded.metadata_json
-                """,
-                (
-                    edge.id,
-                    edge.source_id,
-                    edge.target_id,
-                    edge.type,
-                    edge.confidence,
-                    json.dumps(edge.metadata or {}, ensure_ascii=False),
-                ),
-            )
+        self.bulk_write([], [edge])
 
     def bulk_write(self, nodes: Iterable[GraphNode], edges: Iterable[GraphEdge]) -> None:
         with self.connect() as conn:
             for node in nodes:
+                metadata_json = json.dumps(node.metadata or {}, ensure_ascii=False)
                 conn.execute(
                     """
                     INSERT INTO nodes(id, type, name, project, file_path, line, metadata_json)
@@ -142,7 +112,7 @@ class GraphStore:
                       line=excluded.line,
                       metadata_json=excluded.metadata_json
                     """,
-                    (node.id, node.type, node.name, node.project, node.file_path, node.line, json.dumps(node.metadata or {}, ensure_ascii=False)),
+                    (node.id, node.type, node.name, node.project, node.file_path, node.line, metadata_json),
                 )
             for edge in edges:
                 conn.execute(
@@ -159,15 +129,64 @@ class GraphStore:
                     (edge.id, edge.source_id, edge.target_id, edge.type, edge.confidence, json.dumps(edge.metadata or {}, ensure_ascii=False)),
                 )
 
+    def rebuild_search_index(self) -> None:
+        with self.connect() as conn:
+            try:
+                conn.execute("DELETE FROM node_search")
+                rows = conn.execute("SELECT * FROM nodes").fetchall()
+                for row in rows:
+                    content = " ".join(
+                        [row["id"], row["type"], row["name"], row["project"] or "", row["file_path"] or "", row["metadata_json"] or ""]
+                    )
+                    conn.execute(
+                        "INSERT INTO node_search(id, type, name, project, file_path, content) VALUES(?, ?, ?, ?, ?, ?)",
+                        (row["id"], row["type"], row["name"], row["project"], row["file_path"], content),
+                    )
+            except sqlite3.OperationalError:
+                pass
+
     def node_by_id(self, node_id: str) -> Optional[Dict[str, Any]]:
         with self.connect() as conn:
             row = conn.execute("SELECT * FROM nodes WHERE id=?", (node_id,)).fetchone()
         return _row_node(row) if row else None
 
     def find_nodes(self, query: str, types: List[str] | None = None, limit: int = 20) -> List[Dict[str, Any]]:
+        query = (query or "").strip()
+        if not query:
+            return []
+        rows = self._find_nodes_fts(query, types, limit)
+        if not rows:
+            rows = self._find_nodes_like(query, types, limit)
+        return rows
+
+    def _find_nodes_fts(self, query: str, types: List[str] | None, limit: int) -> List[Dict[str, Any]]:
+        safe_terms = [t.replace('"', "") for t in query.replace("-", " ").replace("/", " ").split() if t.strip()]
+        if not safe_terms:
+            return []
+        fts_query = " OR ".join(f'"{t}"' for t in safe_terms[:8])
+        sql = """
+            SELECT n.*
+            FROM node_search s
+            JOIN nodes n ON n.id=s.id
+            WHERE node_search MATCH ?
+        """
+        args: List[Any] = [fts_query]
+        if types:
+            sql += " AND n.type IN (%s)" % ",".join("?" for _ in types)
+            args.extend(types)
+        sql += " LIMIT ?"
+        args.append(limit)
+        try:
+            with self.connect() as conn:
+                rows = conn.execute(sql, args).fetchall()
+            return [_row_node(r) for r in rows]
+        except sqlite3.OperationalError:
+            return []
+
+    def _find_nodes_like(self, query: str, types: List[str] | None, limit: int) -> List[Dict[str, Any]]:
         q = f"%{query.lower()}%"
-        sql = "SELECT * FROM nodes WHERE lower(name) LIKE ? OR lower(id) LIKE ? OR lower(file_path) LIKE ?"
-        args: List[Any] = [q, q, q]
+        sql = "SELECT * FROM nodes WHERE lower(name) LIKE ? OR lower(id) LIKE ? OR lower(file_path) LIKE ? OR lower(metadata_json) LIKE ?"
+        args: List[Any] = [q, q, q, q]
         if types:
             sql += " AND type IN (%s)" % ",".join("?" for _ in types)
             args.extend(types)
@@ -198,8 +217,8 @@ class GraphStore:
                     clauses.append("e.source_id=?")
                     args.append(current)
                 sql = f"""
-                    SELECT e.*, ns.type AS source_type, ns.name AS source_name, ns.project AS source_project,
-                           nt.type AS target_type, nt.name AS target_name, nt.project AS target_project
+                    SELECT e.*, ns.type AS source_type, ns.name AS source_name, ns.project AS source_project, ns.file_path AS source_file,
+                           nt.type AS target_type, nt.name AS target_name, nt.project AS target_project, nt.file_path AS target_file
                     FROM edges e
                     LEFT JOIN nodes ns ON ns.id=e.source_id
                     LEFT JOIN nodes nt ON nt.id=e.target_id
@@ -233,6 +252,13 @@ def edge_id(edge_type: str, source_id: str, target_id: str) -> str:
     return f"{edge_type}:{source_id}->{target_id}"
 
 
+def _loads_json(value: str) -> Dict[str, Any]:
+    try:
+        return json.loads(value or "{}")
+    except Exception:
+        return {}
+
+
 def _row_node(row: sqlite3.Row) -> Dict[str, Any]:
     return {
         "id": row["id"],
@@ -241,18 +267,20 @@ def _row_node(row: sqlite3.Row) -> Dict[str, Any]:
         "project": row["project"],
         "file_path": row["file_path"],
         "line": row["line"],
-        "metadata": json.loads(row["metadata_json"] or "{}"),
+        "metadata": _loads_json(row["metadata_json"]),
     }
 
 
 def _row_edge(row: sqlite3.Row) -> Dict[str, Any]:
+    metadata = _loads_json(row["metadata_json"])
     return {
         "id": row["id"],
         "type": row["type"],
         "source_id": row["source_id"],
         "target_id": row["target_id"],
         "confidence": row["confidence"],
-        "metadata": json.loads(row["metadata_json"] or "{}"),
-        "source": {"type": row["source_type"], "name": row["source_name"], "project": row["source_project"]},
-        "target": {"type": row["target_type"], "name": row["target_name"], "project": row["target_project"]},
+        "metadata": metadata,
+        "evidence": metadata.get("evidence", metadata),
+        "source": {"type": row["source_type"], "name": row["source_name"], "project": row["source_project"], "file_path": row["source_file"]},
+        "target": {"type": row["target_type"], "name": row["target_name"], "project": row["target_project"], "file_path": row["target_file"]},
     }
