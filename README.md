@@ -80,6 +80,10 @@ Solved tasks can be recorded as JSONL task memory and later used for search, wik
 
 已解决任务会沉淀为任务记忆，可用于后续召回、Wiki 生成和 Agent Skill 生成。
 
+Detailed local setup and multi-project workflow / 详细本地初始化与多项目使用流程：
+
+- [docs/LOCAL_USAGE_GUIDE.md](./docs/LOCAL_USAGE_GUIDE.md)
+
 ---
 
 ## Installation / 安装

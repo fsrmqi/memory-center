@@ -5,6 +5,9 @@ import threading
 import os
 from urllib.request import urlopen
 
+from typer.testing import CliRunner
+
+from memory_center.cli.main import app
 from memory_center.core.config import load_workspace_config
 from memory_center.core.exporters import export_mermaid
 from memory_center.core.indexer import reindex_workspace
@@ -52,6 +55,45 @@ def test_demo_workspace_indexes_spring_cloud_patterns(tmp_path: Path):
 
     report = doctor(workspace)
     assert report["ok"] is True
+
+
+def test_record_case_cli_writes_history(tmp_path: Path):
+    source = Path("examples/spring-cloud-demo")
+    target = tmp_path / "record-case-demo"
+    import shutil
+    shutil.copytree(source, target)
+    workspace = target / ".memory-center" / "workspace.yaml"
+    lines = workspace.read_text(encoding="utf-8").splitlines()
+    lines = [f"root: {target.as_posix()}" if line.startswith("root:") else line for line in lines]
+    workspace.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        [
+            "record-case",
+            "--workspace",
+            str(workspace),
+            "--task",
+            "验证 ArticleFeignClient 影响面",
+            "--project",
+            "task-service",
+            "--file",
+            "task-service/src/main/java/com/example/task/ArticleMoveService.java",
+            "--flow",
+            "query -> context -> impact",
+            "--risk-point",
+            "Feign 契约兼容",
+            "--verified-by",
+            "unit-test",
+        ],
+    )
+    assert result.exit_code == 0
+    store = WorkspaceStore(workspace)
+    rows = store.read_jsonl("cross-service-task-memory.jsonl", limit=10)
+    assert rows
+    assert rows[-1]["task"] == "验证 ArticleFeignClient 影响面"
+    assert rows[-1]["risk_points"] == ["Feign 契约兼容"]
 
 
 def test_graph_query_context_and_impact(tmp_path):

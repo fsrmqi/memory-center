@@ -21,6 +21,7 @@ from memory_center.core.orchestrator import (
     memory_query,
     workspace_check_contract,
     workspace_check_rules,
+    workspace_record_case,
     workspace_sniff,
     workspace_status,
     workspace_trace,
@@ -158,6 +159,20 @@ def generate_wiki_cmd(workspace: str = typer.Option(...), output: Optional[str] 
 def generate_skills_cmd(workspace: str = typer.Option(...), output: Optional[str] = typer.Option(None)):
     """Generate Claude/agent skills from historical task memory."""
     print(generate_skills(workspace, output))
+
+
+@app.command("record-case")
+def record_case_cmd(
+    workspace: str = typer.Option(...),
+    task: str = typer.Option(...),
+    project: List[str] = typer.Option(...),
+    file: List[str] = typer.Option(...),
+    flow: str = typer.Option(""),
+    risk_point: Optional[List[str]] = typer.Option(None),
+    verified_by: Optional[List[str]] = typer.Option(None),
+):
+    """Record a validated task into workspace historical memory."""
+    print(workspace_record_case(workspace, task, project, file, flow, risk_point, verified_by))
 
 
 @registry_app.command("add")
