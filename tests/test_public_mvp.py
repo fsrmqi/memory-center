@@ -79,8 +79,15 @@ def test_graph_query_context_and_impact(tmp_path):
     status = workspace_status(workspace)
     assert status["semantic_index"]["ready"] is True
     assert status["index_counts"]["semantic_docs"] > 0
-    assert memory_context(workspace, "ArticleFeignClient")["found"] is True
-    assert memory_impact(workspace, "MoveArticleRequest")["found"] is True
+    context = memory_context(workspace, "ArticleFeignClient")
+    assert context["found"] is True
+    assert context["lookup"]["retrieval_summary"]["exact_matches"] >= 1
+    assert context["lookup"]["entrypoints"]
+    assert "INJECTS_BEAN" in context["evidence_summary"]["edge_types"]
+    impact = memory_impact(workspace, "MoveArticleRequest")
+    assert impact["found"] is True
+    assert impact["lookup"]["retrieval_summary"]["semantic_matches"] >= 1
+    assert impact["evidence_summary"]["confirmed_count"] >= 0
 
 
 def test_trusted_graph_edges_and_evidence_based_impact(tmp_path: Path):
@@ -183,6 +190,10 @@ def test_group_query_and_status(tmp_path: Path):
     assert impact["risk_level"] in {"high", "medium"}
     assert impact["impacted_workspaces"] == ["demo-a", "demo-b"]
     assert "FeignClient" in impact["target_types"]
+    assert impact["lookup"]["retrieval_summary"]["exact_matches"] >= 1
+    assert impact["lookup"]["entrypoints"]
+    assert impact["evidence_summary"]["bridge_evidence_count"] >= 1
+    assert "FEIGN_ENDPOINT" in impact["evidence_summary"]["bridge_types"]
     assert impact["confirmed_impacts"] or impact["probable_impacts"]
     assert all(bridge["type"] in {"FEIGN_SERVICE", "FEIGN_ENDPOINT"} for bridge in impact["related_bridges"])
     assert impact["related_bridges"][0]["type"] == "FEIGN_ENDPOINT"
@@ -246,6 +257,8 @@ def test_http_bridge_routes(tmp_path: Path):
         group_impact_payload = json.loads(urlopen(f"{base}/group/impact?group=http-group&target=ArticleFeignClient").read().decode("utf-8"))
         assert group_impact_payload["found"] is True
         assert "FeignClient" in group_impact_payload["target_types"]
+        assert group_impact_payload["lookup"]["entrypoints"]
+        assert group_impact_payload["evidence_summary"]["bridge_evidence_count"] >= 1
     finally:
         server.shutdown()
         server.server_close()

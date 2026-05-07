@@ -322,6 +322,7 @@ def group_impact(
     resolved = resolve_group(group, home)
     group_data = _load_group_data(resolved["members"])
     bridges = _build_group_bridges(group_data)
+    lookup = group_query(group, target, limit=8, home=home)
     workspace_impacts = []
     confirmed: List[Dict[str, Any]] = []
     probable: List[Dict[str, Any]] = []
@@ -388,6 +389,8 @@ def group_impact(
         "confirmed_impacts": confirmed[:200],
         "probable_impacts": probable[:200],
         "possible_impacts": possible[:200],
+        "lookup": _build_lookup_payload(lookup, match_key="merged_matches"),
+        "evidence_summary": _build_group_impact_evidence_summary(confirmed, probable, possible, bridge_candidates),
         "target_types": resolved_target_types,
         "related_bridges": bridge_candidates[:50],
         "workspace_impacts": workspace_impacts,
@@ -398,16 +401,21 @@ def group_impact(
 
 def memory_context(workspace_file: str | Path, name: str, max_depth: int = 2) -> Dict[str, Any]:
     graph = _graph(workspace_file)
-    matches = graph.find_nodes(name, limit=10)
+    lookup = memory_query(workspace_file, name, limit=8)
+    matches = [item.get("node", {}) for item in lookup.get("matches", []) if item.get("node")]
     if not matches:
-        return {"name": name, "found": False, "matches": []}
+        return {"name": name, "found": False, "matches": [], "lookup": _build_lookup_payload(lookup)}
     node = _best_match(matches, name)
+    incoming = graph.neighbors(node["id"], direction="upstream", max_depth=max_depth, limit=100)
+    outgoing = graph.neighbors(node["id"], direction="downstream", max_depth=max_depth, limit=100)
     return {
         "name": name,
         "found": True,
         "node": node,
-        "incoming": graph.neighbors(node["id"], direction="upstream", max_depth=max_depth, limit=100),
-        "outgoing": graph.neighbors(node["id"], direction="downstream", max_depth=max_depth, limit=100),
+        "incoming": incoming,
+        "outgoing": outgoing,
+        "lookup": _build_lookup_payload(lookup),
+        "evidence_summary": _build_context_evidence_summary(incoming, outgoing),
     }
 
 
@@ -419,7 +427,8 @@ def memory_impact(workspace_file: str | Path, target: str, direction: str = "ups
     """
     _, store = load_context(workspace_file)
     graph = GraphStore(store.graph_db_path)
-    matches = graph.find_nodes(target, limit=5)
+    lookup = memory_query(workspace_file, target, limit=8)
+    matches = [item.get("node", {}) for item in lookup.get("matches", []) if item.get("node")]
     if not matches:
         return {
             "target": target,
@@ -428,6 +437,7 @@ def memory_impact(workspace_file: str | Path, target: str, direction: str = "ups
             "confirmed_impacts": [],
             "probable_impacts": [],
             "possible_impacts": [],
+            "lookup": _build_lookup_payload(lookup),
             "unknown_risks": _unknown_static_analysis_risks(),
         }
     node = _best_match(matches, target)
@@ -455,6 +465,8 @@ def memory_impact(workspace_file: str | Path, target: str, direction: str = "ups
         "confirmed_impacts": confirmed,
         "probable_impacts": probable,
         "possible_impacts": possible,
+        "lookup": _build_lookup_payload(lookup),
+        "evidence_summary": _build_impact_evidence_summary(confirmed, probable, possible),
         "required_rules": rules,
         "review_checklist": _impact_checklist(node, risk_level),
         "unknown_risks": _unknown_static_analysis_risks(),
@@ -721,6 +733,65 @@ def _summarize_group_query_matches(matches: List[Dict[str, Any]], limit: int) ->
 
 def _summarize_query_matches(matches: List[Dict[str, Any]], limit: int) -> Dict[str, int]:
     return _summarize_group_query_matches(matches, limit)
+
+
+def _build_lookup_payload(result: Dict[str, Any], match_key: str = "matches", limit: int = 5) -> Dict[str, Any]:
+    matches = result.get(match_key, [])[:limit]
+    return {
+        "query": result.get("query", result.get("target", result.get("name", ""))),
+        "retrieval_summary": result.get("retrieval_summary", {}),
+        "entrypoints": [
+            {
+                "node": item.get("node", {}),
+                "retrieval_sources": item.get("retrieval_sources", []),
+                "exact_score": item.get("exact_score", item.get("rrf_score", 0.0)),
+                "semantic_score": item.get("semantic_score", 0.0),
+                "workspace_ref": item.get("workspace_ref", ""),
+                "workspace": item.get("workspace", ""),
+            }
+            for item in matches
+        ],
+    }
+
+
+def _build_context_evidence_summary(incoming: List[Dict[str, Any]], outgoing: List[Dict[str, Any]]) -> Dict[str, Any]:
+    all_edges = incoming + outgoing
+    return {
+        "incoming_edges": len(incoming),
+        "outgoing_edges": len(outgoing),
+        "high_confidence_edges": sum(1 for item in all_edges if float(item.get("confidence", 0.0)) >= 0.80),
+        "edge_types": sorted({item.get("type", "") for item in all_edges if item.get("type")}),
+    }
+
+
+def _build_impact_evidence_summary(confirmed: List[Dict[str, Any]], probable: List[Dict[str, Any]], possible: List[Dict[str, Any]]) -> Dict[str, Any]:
+    impacts = confirmed + probable + possible
+    return {
+        "confirmed_count": len(confirmed),
+        "probable_count": len(probable),
+        "possible_count": len(possible),
+        "edge_types": sorted({item.get("type", "") for item in impacts if item.get("type")}),
+    }
+
+
+def _build_group_impact_evidence_summary(
+    confirmed: List[Dict[str, Any]],
+    probable: List[Dict[str, Any]],
+    possible: List[Dict[str, Any]],
+    bridges: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    all_items = confirmed + probable + possible
+    graph_items = [item for item in all_items if item.get("kind") == "graph"]
+    bridge_items = [item for item in all_items if item.get("kind") == "bridge"]
+    return {
+        "confirmed_count": len(confirmed),
+        "probable_count": len(probable),
+        "possible_count": len(possible),
+        "graph_evidence_count": len(graph_items),
+        "bridge_evidence_count": len(bridge_items),
+        "bridge_types": sorted({item.get("type", "") for item in bridges if item.get("type")}),
+        "graph_edge_types": sorted({item.get("impact", {}).get("type", "") for item in graph_items if item.get("impact", {}).get("type")}),
+    }
 
 
 def _load_group_data(members: List[Dict[str, Any]]) -> List[Dict[str, Any]]:

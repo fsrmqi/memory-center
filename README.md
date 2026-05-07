@@ -203,11 +203,19 @@ memory-center context \
   --name ArticleFeignClient
 ```
 
+Context output now includes `lookup` and `evidence_summary`, so agents can see both the retrieval entrypoints and the graph evidence density behind the selected node.
+
+上下文输出现在会包含 `lookup` 和 `evidence_summary`，便于 Agent 同时看到命中的召回入口，以及该节点背后的图谱证据密度。
+
 ### 6. Impact analysis / 影响面分析
 
 Impact results are evidence-based and split into `confirmed_impacts`, `probable_impacts`, `possible_impacts`, and `unknown_risks`.
 
 影响分析会按证据强弱拆分为 `confirmed_impacts`、`probable_impacts`、`possible_impacts` 和 `unknown_risks`，避免 AI 把弱推断当成精确结论。
+
+Impact output also includes `lookup` and `evidence_summary`, making it explicit whether analysis started from exact graph hits, semantic recall, bridge evidence, or a mix of them.
+
+影响分析输出也会包含 `lookup` 和 `evidence_summary`，明确标识分析入口来自图谱精确命中、语义召回、bridge 证据，还是它们的组合。
 
 
 ```bash
