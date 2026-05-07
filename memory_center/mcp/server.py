@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from memory_center.core.orchestrator import (
+    group_impact,
     group_query,
     group_status,
     memory_context,
@@ -108,6 +109,11 @@ def create_server(workspace_file: str):
     def group_status_tool(group: str):
         """Return aggregated index status for all workspaces in a logical group."""
         return group_status(group)
+
+    @mcp.tool()
+    def group_impact_tool(group: str, target: str, direction: str = "upstream", max_depth: int = 3):
+        """Run cross-workspace impact analysis across a logical group."""
+        return group_impact(group, target, direction, max_depth)
 
     @mcp.resource("memory-center://status")
     def status_resource():

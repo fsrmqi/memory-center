@@ -198,34 +198,41 @@ def group_status(group: str, home: str | Path | None = None) -> Dict[str, Any]:
     resolved = resolve_group(group, home)
     workspaces = []
     totals = {"files": 0, "symbols": 0, "apis": 0, "feigns": 0, "mq": 0, "cases": 0}
+    group_data = _load_group_data(resolved["members"])
     for member in resolved["members"]:
         status = workspace_status(member["workspace_file"])
         workspaces.append(status)
         for key, value in status.get("index_counts", {}).items():
             totals[key] = totals.get(key, 0) + int(value)
+    bridges = _build_group_bridges(group_data)
     return {
         "group": group,
         "workspace_count": len(workspaces),
         "missing_members": resolved["missing"],
         "index_totals": totals,
+        "bridge_counts": _count_bridges(bridges),
+        "bridges": bridges[:50],
         "workspaces": workspaces,
     }
 
 
 def group_query(group: str, query: str, limit: int = 20, node_types: List[str] | None = None, home: str | Path | None = None) -> Dict[str, Any]:
     resolved = resolve_group(group, home)
+    group_data = _load_group_data(resolved["members"])
+    bridges = _build_group_bridges(group_data)
     workspace_results = []
     merged: Dict[str, Dict[str, Any]] = {}
     for member in resolved["members"]:
         result = memory_query(member["workspace_file"], query, limit=limit, node_types=node_types)
-        workspace_name = result.get("workspace", member["name"])
-        workspace_results.append({"workspace": workspace_name, "workspace_file": member["workspace_file"], "result": result})
+        workspace_ref = member["name"]
+        workspace_name = result.get("workspace", workspace_ref)
+        workspace_results.append({"workspace_ref": workspace_ref, "workspace": workspace_name, "workspace_file": member["workspace_file"], "result": result})
         for rank, item in enumerate(result.get("matches", []), start=1):
             node = item.get("node", {})
-            key = f"{workspace_name}:{node.get('id', rank)}"
+            key = f"{workspace_ref}:{node.get('id', rank)}"
             current = merged.setdefault(
                 key,
-                {"workspace": workspace_name, "node": node, "neighbors": item.get("neighbors", []), "rrf_score": 0.0, "best_rank": rank},
+                {"workspace_ref": workspace_ref, "workspace": workspace_name, "node": node, "neighbors": item.get("neighbors", []), "rrf_score": 0.0, "best_rank": rank},
             )
             current["rrf_score"] += _rrf(rank)
             current["best_rank"] = min(current["best_rank"], rank)
@@ -236,7 +243,80 @@ def group_query(group: str, query: str, limit: int = 20, node_types: List[str] |
         "workspace_count": len(workspace_results),
         "missing_members": resolved["missing"],
         "merged_matches": merged_matches,
+        "related_bridges": _filter_bridges(bridges, query, limit),
         "workspace_results": workspace_results,
+    }
+
+
+def group_impact(
+    group: str,
+    target: str,
+    direction: str = "upstream",
+    max_depth: int = 3,
+    home: str | Path | None = None,
+) -> Dict[str, Any]:
+    resolved = resolve_group(group, home)
+    group_data = _load_group_data(resolved["members"])
+    bridges = _build_group_bridges(group_data)
+    workspace_impacts = []
+    confirmed: List[Dict[str, Any]] = []
+    probable: List[Dict[str, Any]] = []
+    possible: List[Dict[str, Any]] = []
+    impacted_projects = set()
+    impacted_workspaces = set()
+
+    for member in resolved["members"]:
+        result = memory_impact(member["workspace_file"], target, direction=direction, max_depth=max_depth)
+        workspace_impacts.append({"workspace_ref": member["name"], "workspace_file": member["workspace_file"], "impact": result})
+        if not result.get("found"):
+            continue
+        impacted_workspaces.add(member["name"])
+        impacted_projects.update(result.get("impacted_projects", []))
+        for item in result.get("confirmed_impacts", []):
+            confirmed.append({"workspace_ref": member["name"], "workspace": result["target"].get("project", result.get("target", {}).get("name", "")), "kind": "graph", "impact": item})
+        for item in result.get("probable_impacts", []):
+            probable.append({"workspace_ref": member["name"], "workspace": result["target"].get("project", result.get("target", {}).get("name", "")), "kind": "graph", "impact": item})
+        for item in result.get("possible_impacts", []):
+            possible.append({"workspace_ref": member["name"], "workspace": result["target"].get("project", result.get("target", {}).get("name", "")), "kind": "graph", "impact": item})
+
+    for bridge in _filter_bridges(bridges, target, limit=100):
+        record = {"kind": "bridge", "impact": bridge}
+        impacted_workspaces.update([bridge.get("source_workspace", ""), bridge.get("target_workspace", "")])
+        impacted_projects.update([bridge.get("source_project", ""), bridge.get("target_project", "")])
+        confidence = float(bridge.get("confidence", 0))
+        if confidence >= 0.80:
+            confirmed.append(record)
+        elif confidence >= 0.55:
+            probable.append(record)
+        else:
+            possible.append(record)
+
+    impacted_projects.discard("")
+    impacted_workspaces.discard("")
+    found = any(item["impact"].get("found") for item in workspace_impacts) or bool(confirmed or probable or possible)
+    if confirmed or len(impacted_workspaces) >= 2:
+        risk_level = "high"
+    elif probable:
+        risk_level = "medium"
+    else:
+        risk_level = "low" if found else "unknown"
+
+    return {
+        "group": group,
+        "target": target,
+        "direction": direction,
+        "max_depth": max_depth,
+        "found": found,
+        "risk_level": risk_level,
+        "impacted_workspaces": sorted(impacted_workspaces),
+        "impacted_projects": sorted(impacted_projects),
+        "confirmed_impacts": confirmed[:200],
+        "probable_impacts": probable[:200],
+        "possible_impacts": possible[:200],
+        "related_bridges": _filter_bridges(bridges, target, limit=50),
+        "workspace_impacts": workspace_impacts,
+        "missing_members": resolved["missing"],
+        "unknown_risks": _unknown_static_analysis_risks(),
     }
 
 
@@ -402,6 +482,189 @@ def _best_match(matches: List[Dict[str, Any]], query: str = "") -> Dict[str, Any
 
 def _rrf(rank: int, k: int = 60) -> float:
     return 1.0 / (k + rank)
+
+
+def _load_group_data(members: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    items = []
+    for member in members:
+        config, store = load_context(member["workspace_file"])
+        items.append(
+            {
+                "name": member["name"],
+                "workspace_ref": member["name"],
+                "workspace": config.workspace,
+                "workspace_file": member["workspace_file"],
+                "services": [s.__dict__ for s in config.services],
+                "feigns": store.read_json("feign-index.json", []),
+                "apis": store.read_json("api-index.json", []),
+                "mq": store.read_json("mq-index.json", []),
+                "configs": store.read_json("config-index.json", []),
+            }
+        )
+    return items
+
+
+def _build_group_bridges(group_data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    bridges: List[Dict[str, Any]] = []
+    service_targets: Dict[str, List[Dict[str, Any]]] = {}
+    apis: List[Dict[str, Any]] = []
+    mq_topics: Dict[str, List[Dict[str, Any]]] = {}
+    config_keys: Dict[str, List[Dict[str, Any]]] = {}
+    config_values: Dict[str, List[Dict[str, Any]]] = {}
+
+    for item in group_data:
+        for svc in item["services"]:
+            for key in {svc.get("name"), svc.get("service_name")}:
+                if key:
+                    service_targets.setdefault(str(key), []).append({"workspace_ref": item["workspace_ref"], "workspace": item["workspace"], "service": svc})
+        for api in item["apis"]:
+            apis.append({"workspace_ref": item["workspace_ref"], "workspace": item["workspace"], **api})
+        for mq in item["mq"]:
+            mq_topics.setdefault(mq.get("topic", ""), []).append({"workspace_ref": item["workspace_ref"], "workspace": item["workspace"], **mq})
+        for cfg in item["configs"]:
+            for key, value in cfg.get("values", {}).items():
+                entry = {"workspace_ref": item["workspace_ref"], "workspace": item["workspace"], "project": cfg.get("project"), "path": cfg.get("path"), "key": key, "value": value}
+                config_keys.setdefault(key, []).append(entry)
+                config_values.setdefault(value, []).append(entry)
+
+    for item in group_data:
+        for feign in item["feigns"]:
+            target_service = feign.get("target_service")
+            for target in service_targets.get(target_service, []):
+                bridges.append(
+                    {
+                        "type": "FEIGN_SERVICE",
+                        "confidence": 0.95,
+                        "source_workspace": item["workspace_ref"],
+                        "source_workspace_name": item["workspace"],
+                        "source_project": feign.get("project"),
+                        "source_file": feign.get("file"),
+                        "target_workspace": target["workspace_ref"],
+                        "target_workspace_name": target["workspace"],
+                        "target_project": target["service"].get("name"),
+                        "target_file": "",
+                        "summary": f"{feign.get('interface')} -> {target_service}",
+                        "evidence": {"target_service": target_service, "feign": feign.get("interface")},
+                    }
+                )
+            for method in feign.get("methods", []):
+                for api in apis:
+                    if method.get("http_method") == api.get("http_method") and method.get("path") == api.get("path"):
+                        bridges.append(
+                            {
+                                "type": "FEIGN_ENDPOINT",
+                                "confidence": 0.88,
+                                "source_workspace": item["workspace_ref"],
+                                "source_workspace_name": item["workspace"],
+                                "source_project": feign.get("project"),
+                                "source_file": feign.get("file"),
+                                "target_workspace": api.get("workspace_ref"),
+                                "target_workspace_name": api.get("workspace"),
+                                "target_project": api.get("project"),
+                                "target_file": api.get("file"),
+                                "summary": f"{feign.get('interface')}.{method.get('method_name')} -> {api.get('http_method')} {api.get('path')}",
+                                "evidence": {"path": api.get("path"), "http_method": api.get("http_method")},
+                            }
+                        )
+
+    for topic, consumers in mq_topics.items():
+        if not topic:
+            continue
+        for consumer in consumers:
+            for cfg in config_values.get(topic, []):
+                bridges.append(
+                    {
+                        "type": "MQ_TOPIC_CONFIG",
+                        "confidence": 0.84,
+                        "source_workspace": cfg.get("workspace_ref"),
+                        "source_workspace_name": cfg.get("workspace"),
+                        "source_project": cfg.get("project"),
+                        "source_file": cfg.get("path"),
+                        "target_workspace": consumer.get("workspace_ref"),
+                        "target_workspace_name": consumer.get("workspace"),
+                        "target_project": consumer.get("project"),
+                        "target_file": consumer.get("file"),
+                        "summary": f"{cfg.get('key')} = {topic} -> consumer {consumer.get('class_name')}",
+                        "evidence": {"topic": topic, "config_key": cfg.get("key")},
+                    }
+                )
+        if len(consumers) >= 2:
+            primary = consumers[0]
+            for other in consumers[1:]:
+                bridges.append(
+                    {
+                        "type": "MQ_TOPIC_SHARED",
+                        "confidence": 0.72,
+                        "source_workspace": primary.get("workspace_ref"),
+                        "source_workspace_name": primary.get("workspace"),
+                        "source_project": primary.get("project"),
+                        "source_file": primary.get("file"),
+                        "target_workspace": other.get("workspace_ref"),
+                        "target_workspace_name": other.get("workspace"),
+                        "target_project": other.get("project"),
+                        "target_file": other.get("file"),
+                        "summary": f"shared topic {topic}",
+                        "evidence": {"topic": topic},
+                    }
+                )
+
+    for key, entries in config_keys.items():
+        if len(entries) < 2:
+            continue
+        primary = entries[0]
+        for other in entries[1:]:
+            bridges.append(
+                {
+                    "type": "CONFIG_KEY_SHARED",
+                    "confidence": 0.66,
+                    "source_workspace": primary.get("workspace_ref"),
+                    "source_workspace_name": primary.get("workspace"),
+                    "source_project": primary.get("project"),
+                    "source_file": primary.get("path"),
+                    "target_workspace": other.get("workspace_ref"),
+                    "target_workspace_name": other.get("workspace"),
+                    "target_project": other.get("project"),
+                    "target_file": other.get("path"),
+                    "summary": f"shared config key {key}",
+                    "evidence": {"config_key": key, "values": [primary.get('value'), other.get('value')]},
+                }
+            )
+
+    deduped: Dict[str, Dict[str, Any]] = {}
+    for bridge in bridges:
+        key = "|".join(
+            [
+                bridge.get("type", ""),
+                bridge.get("source_workspace", ""),
+                bridge.get("source_project", ""),
+                bridge.get("target_workspace", ""),
+                bridge.get("target_project", ""),
+                bridge.get("summary", ""),
+            ]
+        )
+        deduped[key] = bridge
+    return list(deduped.values())
+
+
+def _count_bridges(bridges: List[Dict[str, Any]]) -> Dict[str, int]:
+    counts: Dict[str, int] = {}
+    for bridge in bridges:
+        bridge_type = bridge.get("type", "unknown")
+        counts[bridge_type] = counts.get(bridge_type, 0) + 1
+    return counts
+
+
+def _filter_bridges(bridges: List[Dict[str, Any]], query: str, limit: int) -> List[Dict[str, Any]]:
+    tokens = tokenize(query)
+    if not tokens:
+        return bridges[:limit]
+    matched = []
+    for bridge in bridges:
+        haystack = json.dumps(bridge, ensure_ascii=False).lower()
+        if any(token in haystack for token in tokens):
+            matched.append(bridge)
+    matched.sort(key=lambda item: (-float(item.get("confidence", 0)), item.get("summary", "")))
+    return matched[:limit]
 
 def _unknown_static_analysis_risks() -> List[str]:
     return [

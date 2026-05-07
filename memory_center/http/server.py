@@ -7,6 +7,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from memory_center.core.orchestrator import group_query, group_status, memory_query, workspace_status
+from memory_center.core.orchestrator import group_impact
 
 
 def create_handler(default_workspace: str | Path | None = None) -> type[BaseHTTPRequestHandler]:
@@ -63,6 +64,12 @@ def _route_request(path: str, params: dict, default_workspace: str | None) -> di
         query = _require_one(params, "text")
         limit = int(params.get("limit", ["20"])[0])
         return group_query(group, query, limit=limit)
+    if path == "/group/impact":
+        group = _require_one(params, "group")
+        target = _require_one(params, "target")
+        direction = params.get("direction", ["upstream"])[0]
+        max_depth = int(params.get("max_depth", ["3"])[0])
+        return group_impact(group, target, direction=direction, max_depth=max_depth)
     raise FileNotFoundError(f"Unknown route: {path}")
 
 

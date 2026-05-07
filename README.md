@@ -243,6 +243,7 @@ Available MCP tools / MCP 工具：
 | `workspace_status_tool` | Index status / 索引状态 |
 | `group_query_tool` | Merged query across a registered group / 逻辑分组聚合查询 |
 | `group_status_tool` | Aggregated group status / 逻辑分组聚合状态 |
+| `group_impact_tool` | Cross-workspace impact analysis / 跨工作区影响面分析 |
 
 Available MCP resources / MCP 资源：
 
@@ -317,11 +318,20 @@ memory-center group create --name backend-platform
 memory-center group add --name backend-platform --repo content-risk-platform
 memory-center group status --name backend-platform
 memory-center group query --name backend-platform --text ArticleFeignClient
+memory-center group impact --name backend-platform --target ArticleFeignClient
 ```
 
 This enables group-level querying and organization-level memory.
 
 现在已经可以做 group 级聚合查询和状态汇总。
+
+`group status` returns aggregated index counts and `bridge_counts`.
+
+`group status` 会返回聚合索引统计和 `bridge_counts`。
+
+`group query` returns merged search results plus `related_bridges`, such as Feign → service, Feign → endpoint, MQ topic ↔ config, and shared config-key hints.
+
+`group query` 除了聚合搜索结果，还会返回 `related_bridges`，例如 Feign → 服务、Feign → 接口、MQ Topic ↔ 配置、共享配置键等跨工作区线索。
 
 ## HTTP bridge / HTTP 桥接
 
@@ -349,6 +359,7 @@ Example routes:
 - `GET /workspace/query?workspace=/path/to/.memory-center/workspace.yaml&text=ArticleFeignClient`
 - `GET /group/status?group=backend-platform`
 - `GET /group/query?group=backend-platform&text=ArticleFeignClient`
+- `GET /group/impact?group=backend-platform&target=ArticleFeignClient`
 
 ---
 

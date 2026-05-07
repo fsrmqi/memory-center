@@ -124,7 +124,7 @@ def test_trusted_graph_edges_and_evidence_based_impact(tmp_path: Path):
 
 
 def test_group_query_and_status(tmp_path: Path):
-    from memory_center.core.orchestrator import group_query, group_status
+    from memory_center.core.orchestrator import group_impact, group_query, group_status
 
     workspace_a = _copy_demo_workspace(tmp_path, "group-demo-a")
     workspace_b = _copy_demo_workspace(tmp_path, "group-demo-b")
@@ -144,11 +144,24 @@ def test_group_query_and_status(tmp_path: Path):
     status = group_status("backend-platform", home=home)
     assert status["workspace_count"] == 2
     assert status["index_totals"]["files"] >= 10
+    assert status["bridge_counts"]["FEIGN_SERVICE"] >= 2
+    assert status["bridge_counts"]["FEIGN_ENDPOINT"] >= 2
+    assert status["bridge_counts"]["MQ_TOPIC_CONFIG"] >= 2
 
     result = group_query("backend-platform", "ArticleFeignClient", limit=5, home=home)
     assert result["workspace_count"] == 2
     assert result["merged_matches"]
     assert any(item["node"]["name"] == "ArticleFeignClient" for item in result["merged_matches"])
+    assert any(bridge["type"] in {"FEIGN_SERVICE", "FEIGN_ENDPOINT"} for bridge in result["related_bridges"])
+
+    mq_result = group_query("backend-platform", "article-pubtime-change", limit=10, home=home)
+    assert any(bridge["type"] == "MQ_TOPIC_CONFIG" for bridge in mq_result["related_bridges"])
+
+    impact = group_impact("backend-platform", "ArticleFeignClient", home=home)
+    assert impact["found"] is True
+    assert impact["risk_level"] in {"high", "medium"}
+    assert impact["impacted_workspaces"] == ["demo-a", "demo-b"]
+    assert impact["confirmed_impacts"] or impact["probable_impacts"]
 
 
 def test_http_bridge_routes(tmp_path: Path):
@@ -180,9 +193,16 @@ def test_http_bridge_routes(tmp_path: Path):
 
         status = json.loads(urlopen(f"{base}/group/status?group=http-group").read().decode("utf-8"))
         assert status["workspace_count"] == 1
+        assert "bridge_counts" in status
 
         query = json.loads(urlopen(f"{base}/workspace/query?text=ArticleFeignClient").read().decode("utf-8"))
         assert query["matches"]
+
+        group_query_payload = json.loads(urlopen(f"{base}/group/query?group=http-group&text=article-pubtime-change").read().decode("utf-8"))
+        assert group_query_payload["related_bridges"]
+
+        group_impact_payload = json.loads(urlopen(f"{base}/group/impact?group=http-group&target=ArticleFeignClient").read().decode("utf-8"))
+        assert group_impact_payload["found"] is True
     finally:
         server.shutdown()
         server.server_close()

@@ -23,6 +23,7 @@ Memory Center exposes graph-first project memory to AI coding agents through MCP
 | `workspace_status_tool()` | Return index and memory status. / 返回索引和记忆状态。 |
 | `group_query_tool(group, query, limit)` | Run a merged query across registered workspaces in one logical group. / 对逻辑分组中的多个工作区做聚合查询。 |
 | `group_status_tool(group)` | Return aggregated group status. / 返回逻辑分组聚合状态。 |
+| `group_impact_tool(group, target, direction, max_depth)` | Run cross-workspace impact analysis with bridge evidence. / 结合 bridge 证据做跨工作区影响面分析。 |
 
 ## Resources / 资源
 

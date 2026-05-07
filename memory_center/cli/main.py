@@ -11,6 +11,7 @@ from memory_center.core.exporters import export_mermaid
 from memory_center.core.indexer import reindex_workspace
 from memory_center.core.instructions import write_agent_instructions
 from memory_center.core.orchestrator import (
+    group_impact,
     group_query,
     group_status,
     memory_context,
@@ -193,6 +194,17 @@ def group_status_cmd(name: str = typer.Option(...)):
 def group_query_cmd(name: str = typer.Option(...), text: str = typer.Option(...), limit: int = typer.Option(20)):
     """Run a merged query across all workspaces in a logical group."""
     print(group_query(name, text, limit))
+
+
+@group_app.command("impact")
+def group_impact_cmd(
+    name: str = typer.Option(...),
+    target: str = typer.Option(...),
+    direction: str = typer.Option("upstream"),
+    max_depth: int = typer.Option(3),
+):
+    """Run cross-workspace impact analysis for a logical group."""
+    print(group_impact(name, target, direction, max_depth))
 
 
 @app.command("serve-http")
