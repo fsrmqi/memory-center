@@ -104,7 +104,7 @@ After you publish the repository URL, you can also install like GitNexus:
 仓库地址发布后，也可以像 GitNexus 一样直接安装：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/your-org/memory-center/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/fsrmqi/memory-center/main/install.sh | bash
 ```
 
 The installer uses `pipx` by default and exposes:
