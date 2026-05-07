@@ -161,7 +161,13 @@ def test_group_query_and_status(tmp_path: Path):
     assert impact["found"] is True
     assert impact["risk_level"] in {"high", "medium"}
     assert impact["impacted_workspaces"] == ["demo-a", "demo-b"]
+    assert "FeignClient" in impact["target_types"]
     assert impact["confirmed_impacts"] or impact["probable_impacts"]
+    assert all(bridge["type"] in {"FEIGN_SERVICE", "FEIGN_ENDPOINT"} for bridge in impact["related_bridges"])
+
+    topic_impact = group_impact("backend-platform", "article-pubtime-change", home=home)
+    assert topic_impact["found"] is True
+    assert all(bridge["type"] in {"MQ_TOPIC_CONFIG", "MQ_TOPIC_SHARED"} for bridge in topic_impact["related_bridges"])
 
 
 def test_http_bridge_routes(tmp_path: Path):
@@ -203,6 +209,7 @@ def test_http_bridge_routes(tmp_path: Path):
 
         group_impact_payload = json.loads(urlopen(f"{base}/group/impact?group=http-group&target=ArticleFeignClient").read().decode("utf-8"))
         assert group_impact_payload["found"] is True
+        assert "FeignClient" in group_impact_payload["target_types"]
     finally:
         server.shutdown()
         server.server_close()

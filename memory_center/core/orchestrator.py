@@ -264,12 +264,14 @@ def group_impact(
     possible: List[Dict[str, Any]] = []
     impacted_projects = set()
     impacted_workspaces = set()
+    target_types = set()
 
     for member in resolved["members"]:
         result = memory_impact(member["workspace_file"], target, direction=direction, max_depth=max_depth)
         workspace_impacts.append({"workspace_ref": member["name"], "workspace_file": member["workspace_file"], "impact": result})
         if not result.get("found"):
             continue
+        target_types.add(result.get("target", {}).get("type", ""))
         impacted_workspaces.add(member["name"])
         impacted_projects.update(result.get("impacted_projects", []))
         for item in result.get("confirmed_impacts", []):
@@ -279,7 +281,9 @@ def group_impact(
         for item in result.get("possible_impacts", []):
             possible.append({"workspace_ref": member["name"], "workspace": result["target"].get("project", result.get("target", {}).get("name", "")), "kind": "graph", "impact": item})
 
-    for bridge in _filter_bridges(bridges, target, limit=100):
+    resolved_target_types = _resolve_group_target_types(target, sorted(t for t in target_types if t))
+    bridge_candidates = _filter_impact_bridges(bridges, target, resolved_target_types, limit=100)
+    for bridge in bridge_candidates:
         record = {"kind": "bridge", "impact": bridge}
         impacted_workspaces.update([bridge.get("source_workspace", ""), bridge.get("target_workspace", "")])
         impacted_projects.update([bridge.get("source_project", ""), bridge.get("target_project", "")])
@@ -313,7 +317,8 @@ def group_impact(
         "confirmed_impacts": confirmed[:200],
         "probable_impacts": probable[:200],
         "possible_impacts": possible[:200],
-        "related_bridges": _filter_bridges(bridges, target, limit=50),
+        "target_types": resolved_target_types,
+        "related_bridges": bridge_candidates[:50],
         "workspace_impacts": workspace_impacts,
         "missing_members": resolved["missing"],
         "unknown_risks": _unknown_static_analysis_risks(),
@@ -665,6 +670,49 @@ def _filter_bridges(bridges: List[Dict[str, Any]], query: str, limit: int) -> Li
             matched.append(bridge)
     matched.sort(key=lambda item: (-float(item.get("confidence", 0)), item.get("summary", "")))
     return matched[:limit]
+
+
+def _filter_impact_bridges(bridges: List[Dict[str, Any]], target: str, target_types: List[str], limit: int) -> List[Dict[str, Any]]:
+    allowed_types = _bridge_types_for_target(target, target_types)
+    filtered = [bridge for bridge in bridges if bridge.get("type") in allowed_types] if allowed_types else list(bridges)
+    return _filter_bridges(filtered, target, limit)
+
+
+def _bridge_types_for_target(target: str, target_types: List[str]) -> set[str]:
+    allowed: set[str] = set()
+    for target_type in target_types:
+        if target_type in {"FeignClient", "FeignMethod", "Endpoint"}:
+            allowed.update({"FEIGN_SERVICE", "FEIGN_ENDPOINT"})
+        elif target_type in {"MQTopic", "MQConsumer"}:
+            allowed.update({"MQ_TOPIC_CONFIG", "MQ_TOPIC_SHARED"})
+        elif target_type == "ConfigKey":
+            allowed.update({"CONFIG_KEY_SHARED", "MQ_TOPIC_CONFIG"})
+    target_lower = target.lower()
+    if not allowed:
+        if "feign" in target_lower or "controller" in target_lower or target_lower.startswith("/"):
+            allowed.update({"FEIGN_SERVICE", "FEIGN_ENDPOINT"})
+        elif "topic" in target_lower or "kafka" in target_lower or "rocketmq" in target_lower:
+            allowed.update({"MQ_TOPIC_CONFIG", "MQ_TOPIC_SHARED"})
+        elif "." in target_lower:
+            allowed.update({"CONFIG_KEY_SHARED", "MQ_TOPIC_CONFIG"})
+    return allowed
+
+
+def _resolve_group_target_types(target: str, target_types: List[str]) -> List[str]:
+    resolved = set(t for t in target_types if t)
+    target_lower = target.lower()
+    topic_like = any(token in target_lower for token in ["topic", "kafka", "rocketmq"]) or "-" in target_lower
+    if "feign" in target_lower:
+        resolved.update({"FeignClient", "FeignMethod"})
+    if target_lower.startswith("/") or any(token in target_lower for token in ["controller", "endpoint"]):
+        resolved.add("Endpoint")
+    if topic_like:
+        resolved.add("MQTopic")
+    if "." in target_lower and not topic_like:
+        resolved.add("ConfigKey")
+    if topic_like and "MQTopic" in resolved:
+        resolved.discard("ConfigKey")
+    return sorted(resolved)
 
 def _unknown_static_analysis_risks() -> List[str]:
     return [
