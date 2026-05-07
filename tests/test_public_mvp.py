@@ -1,12 +1,18 @@
 from pathlib import Path
+import json
+import socket
+import threading
+from urllib.request import urlopen
 
 from memory_center.core.config import load_workspace_config
 from memory_center.core.exporters import export_mermaid
 from memory_center.core.indexer import reindex_workspace
 from memory_center.core.orchestrator import workspace_sniff, workspace_trace
+from memory_center.core.registry import add_to_group, create_group, register_workspace
 from memory_center.core.rules import ensure_default_rules
 from memory_center.core.store import WorkspaceStore
 from memory_center.core.validators import doctor
+from memory_center.http.server import create_handler
 
 
 def test_demo_workspace_indexes_spring_cloud_patterns(tmp_path: Path):
@@ -115,3 +121,91 @@ def test_trusted_graph_edges_and_evidence_based_impact(tmp_path: Path):
     report = doctor(workspace, self_test=True)
     assert report["ok"] is True
     assert report["self_test"]["query_matches"] > 0
+
+
+def test_group_query_and_status(tmp_path: Path):
+    from memory_center.core.orchestrator import group_query, group_status
+
+    workspace_a = _copy_demo_workspace(tmp_path, "group-demo-a")
+    workspace_b = _copy_demo_workspace(tmp_path, "group-demo-b")
+    for workspace in [workspace_a, workspace_b]:
+        config = load_workspace_config(workspace)
+        store = WorkspaceStore(workspace)
+        ensure_default_rules(store)
+        reindex_workspace(config, store)
+
+    home = tmp_path / "home" / ".memory-center"
+    register_workspace("demo-a", workspace_a, home=home)
+    register_workspace("demo-b", workspace_b, home=home)
+    create_group("backend-platform", home=home)
+    add_to_group("backend-platform", "demo-a", home=home)
+    add_to_group("backend-platform", "demo-b", home=home)
+
+    status = group_status("backend-platform", home=home)
+    assert status["workspace_count"] == 2
+    assert status["index_totals"]["files"] >= 10
+
+    result = group_query("backend-platform", "ArticleFeignClient", limit=5, home=home)
+    assert result["workspace_count"] == 2
+    assert result["merged_matches"]
+    assert any(item["node"]["name"] == "ArticleFeignClient" for item in result["merged_matches"])
+
+
+def test_http_bridge_routes(tmp_path: Path):
+    from http.server import ThreadingHTTPServer
+
+    workspace = _copy_demo_workspace(tmp_path, "http-demo")
+    config = load_workspace_config(workspace)
+    store = WorkspaceStore(workspace)
+    ensure_default_rules(store)
+    reindex_workspace(config, store)
+
+    home = tmp_path / "home" / ".memory-center"
+    register_workspace("http-demo", workspace, home=home)
+    create_group("http-group", home=home)
+    add_to_group("http-group", "http-demo", home=home)
+
+    # Route closures use the default registry home, so point HOME at the temp registry.
+    import os
+    old_home = os.environ.get("HOME")
+    os.environ["HOME"] = str(home.parent)
+    try:
+        server = ThreadingHTTPServer(("127.0.0.1", _free_port()), create_handler(workspace))
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        base = f"http://127.0.0.1:{server.server_port}"
+
+        health = json.loads(urlopen(f"{base}/health").read().decode("utf-8"))
+        assert health["ok"] is True
+
+        status = json.loads(urlopen(f"{base}/group/status?group=http-group").read().decode("utf-8"))
+        assert status["workspace_count"] == 1
+
+        query = json.loads(urlopen(f"{base}/workspace/query?text=ArticleFeignClient").read().decode("utf-8"))
+        assert query["matches"]
+    finally:
+        server.shutdown()
+        server.server_close()
+        if old_home is None:
+            os.environ.pop("HOME", None)
+        else:
+            os.environ["HOME"] = old_home
+
+
+def _copy_demo_workspace(tmp_path: Path, name: str) -> Path:
+    import shutil
+
+    source = Path("examples/spring-cloud-demo")
+    target = tmp_path / name
+    shutil.copytree(source, target)
+    workspace = target / ".memory-center" / "workspace.yaml"
+    lines = workspace.read_text(encoding="utf-8").splitlines()
+    lines = [f"root: {target.as_posix()}" if line.startswith("root:") else line for line in lines]
+    workspace.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return workspace
+
+
+def _free_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        return int(sock.getsockname()[1])

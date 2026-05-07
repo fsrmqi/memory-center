@@ -5,6 +5,8 @@ from pathlib import Path
 from typing import List, Optional
 
 from memory_center.core.orchestrator import (
+    group_query,
+    group_status,
     memory_context,
     memory_contracts,
     memory_detect_changes,
@@ -96,6 +98,16 @@ def create_server(workspace_file: str):
     def workspace_status_tool():
         """Return workspace index and memory status."""
         return workspace_status(_WORKSPACE_FILE)
+
+    @mcp.tool()
+    def group_query_tool(group: str, query: str, limit: int = 20):
+        """Run a merged query across all workspaces registered in a logical group."""
+        return group_query(group, query, limit)
+
+    @mcp.tool()
+    def group_status_tool(group: str):
+        """Return aggregated index status for all workspaces in a logical group."""
+        return group_status(group)
 
     @mcp.resource("memory-center://status")
     def status_resource():

@@ -54,6 +54,7 @@ Source = "https://github.com/your-org/memory-center"
 [project.scripts]
 memory-center = "memory_center.cli.main:app"
 memory-center-mcp = "memory_center.mcp.server:main"
+memory-center-http = "memory_center.http.server:main"
 
 [build-system]
 requires = ["setuptools>=68", "wheel"]

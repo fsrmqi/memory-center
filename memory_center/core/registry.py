@@ -5,11 +5,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List
 
-DEFAULT_HOME = Path.home() / ".memory-center"
-
-
 def registry_path(home: str | Path | None = None) -> Path:
-    base = Path(home).expanduser() if home else DEFAULT_HOME
+    base = Path(home).expanduser() if home else (Path.home() / ".memory-center")
     base.mkdir(parents=True, exist_ok=True)
     return base / "registry.json"
 
@@ -45,6 +42,10 @@ def list_workspaces(home: str | Path | None = None) -> List[Dict[str, Any]]:
     return load_registry(home).get("repos", [])
 
 
+def list_groups(home: str | Path | None = None) -> List[Dict[str, Any]]:
+    return load_registry(home).get("groups", [])
+
+
 def create_group(name: str, members: List[str] | None = None, home: str | Path | None = None) -> Dict[str, Any]:
     data = load_registry(home)
     groups = [g for g in data.get("groups", []) if g.get("name") != name]
@@ -69,6 +70,24 @@ def add_to_group(group: str, repo_name: str, home: str | Path | None = None) -> 
         target["members"].append(repo_name)
     save_registry(data, home)
     return {"group": group, "members": target["members"]}
+
+
+def resolve_group(group: str, home: str | Path | None = None) -> Dict[str, Any]:
+    data = load_registry(home)
+    groups = {item.get("name"): item for item in data.get("groups", [])}
+    repos = {item.get("name"): item for item in data.get("repos", [])}
+    target = groups.get(group)
+    if target is None:
+        raise FileNotFoundError(f"Group not found: {group}")
+    members = []
+    missing = []
+    for name in target.get("members", []):
+        repo = repos.get(name)
+        if repo:
+            members.append(repo)
+        else:
+            missing.append(name)
+    return {"group": group, "members": members, "missing": missing}
 
 
 def resolve_workspace(name_or_path: str, home: str | Path | None = None) -> Path:

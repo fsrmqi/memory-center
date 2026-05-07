@@ -11,6 +11,8 @@ from memory_center.core.exporters import export_mermaid
 from memory_center.core.indexer import reindex_workspace
 from memory_center.core.instructions import write_agent_instructions
 from memory_center.core.orchestrator import (
+    group_query,
+    group_status,
     memory_context,
     memory_contracts,
     memory_detect_changes,
@@ -27,6 +29,7 @@ from memory_center.core.store import WorkspaceStore
 from memory_center.core.validators import doctor as run_doctor
 from memory_center.core.registry import add_to_group, create_group, list_workspaces, register_workspace, resolve_workspace
 from memory_center.core.wiki import generate_skills, generate_wiki
+from memory_center.http.server import serve_http
 
 app = typer.Typer(help="Memory Center CLI")
 registry_app = typer.Typer(help="Global registry commands")
@@ -178,6 +181,29 @@ def group_create(name: str = typer.Option(...)):
 def group_add(name: str = typer.Option(...), repo: str = typer.Option(...)):
     """Add a registered workspace to a logical group."""
     print(add_to_group(name, repo))
+
+
+@group_app.command("status")
+def group_status_cmd(name: str = typer.Option(...)):
+    """Show aggregated status for all workspaces in a logical group."""
+    print(group_status(name))
+
+
+@group_app.command("query")
+def group_query_cmd(name: str = typer.Option(...), text: str = typer.Option(...), limit: int = typer.Option(20)):
+    """Run a merged query across all workspaces in a logical group."""
+    print(group_query(name, text, limit))
+
+
+@app.command("serve-http")
+def serve_http_cmd(
+    workspace: Optional[str] = typer.Option(None, help="Default workspace.yaml for workspace routes."),
+    host: str = typer.Option("127.0.0.1"),
+    port: int = typer.Option(8765),
+):
+    """Serve a lightweight local HTTP bridge for workspace and group queries."""
+    print({"http": "starting", "host": host, "port": port, "workspace": workspace})
+    serve_http(workspace, host=host, port=port)
 
 if __name__ == "__main__":
     app()

@@ -241,6 +241,8 @@ Available MCP tools / MCP 工具：
 | `memory_generate_wiki_tool` | Generate bilingual wiki / 生成双语 Wiki |
 | `memory_generate_skills_tool` | Generate Agent skills / 生成 Agent Skills |
 | `workspace_status_tool` | Index status / 索引状态 |
+| `group_query_tool` | Merged query across a registered group / 逻辑分组聚合查询 |
+| `group_status_tool` | Aggregated group status / 逻辑分组聚合状态 |
 
 Available MCP resources / MCP 资源：
 
@@ -313,9 +315,40 @@ Create logical groups:
 ```bash
 memory-center group create --name backend-platform
 memory-center group add --name backend-platform --repo content-risk-platform
+memory-center group status --name backend-platform
+memory-center group query --name backend-platform --text ArticleFeignClient
 ```
 
-This prepares future multi-workspace querying and organization-level memory.
+This enables group-level querying and organization-level memory.
+
+现在已经可以做 group 级聚合查询和状态汇总。
+
+## HTTP bridge / HTTP 桥接
+
+Use the local HTTP bridge when you want Web UI, IDE integrations, or lightweight automation to reuse the same query backend:
+
+当你希望 Web UI、IDE 集成或轻量自动化复用同一套查询后端时，可以使用本地 HTTP bridge：
+
+```bash
+memory-center serve-http \
+  --workspace /path/to/.memory-center/workspace.yaml \
+  --host 127.0.0.1 \
+  --port 8765
+```
+
+Or:
+
+```bash
+memory-center-http --workspace /path/to/.memory-center/workspace.yaml
+```
+
+Example routes:
+
+- `GET /health`
+- `GET /workspace/status?workspace=/path/to/.memory-center/workspace.yaml`
+- `GET /workspace/query?workspace=/path/to/.memory-center/workspace.yaml&text=ArticleFeignClient`
+- `GET /group/status?group=backend-platform`
+- `GET /group/query?group=backend-platform&text=ArticleFeignClient`
 
 ---
 

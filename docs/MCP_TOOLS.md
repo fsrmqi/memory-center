@@ -21,6 +21,8 @@ Memory Center exposes graph-first project memory to AI coding agents through MCP
 | `memory_generate_wiki_tool(output_dir)` | Generate bilingual architecture wiki. / 生成双语架构 Wiki。 |
 | `memory_generate_skills_tool(output_dir)` | Generate Agent skill files from task memory. / 根据历史任务生成 Agent Skill。 |
 | `workspace_status_tool()` | Return index and memory status. / 返回索引和记忆状态。 |
+| `group_query_tool(group, query, limit)` | Run a merged query across registered workspaces in one logical group. / 对逻辑分组中的多个工作区做聚合查询。 |
+| `group_status_tool(group)` | Return aggregated group status. / 返回逻辑分组聚合状态。 |
 
 ## Resources / 资源
 

@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 from .config import load_workspace_config
+from .registry import resolve_group
 from .rules import match_rules
 from .store import WorkspaceStore
 
@@ -193,6 +194,52 @@ def memory_query(workspace_file: str | Path, query: str, limit: int = 20, node_t
     return {"workspace": config.workspace, "query": query, "matches": expanded, "related_rules": related_rules, "historical_cases": related_cases}
 
 
+def group_status(group: str, home: str | Path | None = None) -> Dict[str, Any]:
+    resolved = resolve_group(group, home)
+    workspaces = []
+    totals = {"files": 0, "symbols": 0, "apis": 0, "feigns": 0, "mq": 0, "cases": 0}
+    for member in resolved["members"]:
+        status = workspace_status(member["workspace_file"])
+        workspaces.append(status)
+        for key, value in status.get("index_counts", {}).items():
+            totals[key] = totals.get(key, 0) + int(value)
+    return {
+        "group": group,
+        "workspace_count": len(workspaces),
+        "missing_members": resolved["missing"],
+        "index_totals": totals,
+        "workspaces": workspaces,
+    }
+
+
+def group_query(group: str, query: str, limit: int = 20, node_types: List[str] | None = None, home: str | Path | None = None) -> Dict[str, Any]:
+    resolved = resolve_group(group, home)
+    workspace_results = []
+    merged: Dict[str, Dict[str, Any]] = {}
+    for member in resolved["members"]:
+        result = memory_query(member["workspace_file"], query, limit=limit, node_types=node_types)
+        workspace_name = result.get("workspace", member["name"])
+        workspace_results.append({"workspace": workspace_name, "workspace_file": member["workspace_file"], "result": result})
+        for rank, item in enumerate(result.get("matches", []), start=1):
+            node = item.get("node", {})
+            key = f"{workspace_name}:{node.get('id', rank)}"
+            current = merged.setdefault(
+                key,
+                {"workspace": workspace_name, "node": node, "neighbors": item.get("neighbors", []), "rrf_score": 0.0, "best_rank": rank},
+            )
+            current["rrf_score"] += _rrf(rank)
+            current["best_rank"] = min(current["best_rank"], rank)
+    merged_matches = sorted(merged.values(), key=lambda item: (-item["rrf_score"], item["best_rank"]))[:limit]
+    return {
+        "group": group,
+        "query": query,
+        "workspace_count": len(workspace_results),
+        "missing_members": resolved["missing"],
+        "merged_matches": merged_matches,
+        "workspace_results": workspace_results,
+    }
+
+
 def memory_context(workspace_file: str | Path, name: str, max_depth: int = 2) -> Dict[str, Any]:
     graph = _graph(workspace_file)
     matches = graph.find_nodes(name, limit=10)
@@ -351,6 +398,10 @@ def _best_match(matches: List[Dict[str, Any]], query: str = "") -> Dict[str, Any
         return (exact, priority.get(item.get("type"), 10), len(item.get("id", "")))
 
     return sorted(matches, key=key)[0]
+
+
+def _rrf(rank: int, k: int = 60) -> float:
+    return 1.0 / (k + rank)
 
 def _unknown_static_analysis_risks() -> List[str]:
     return [
