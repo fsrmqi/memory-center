@@ -1,0 +1,328 @@
+# Memory Center / 记忆中心
+
+> **MCP-native project memory and knowledge graph service for AI coding agents.**
+>
+> **面向 AI 编程助手的 MCP 项目记忆服务：多 Agent 公共空间、项目上下文、知识图谱、影响分析、经验沉淀。**
+
+Memory Center is designed for teams that use Codex, Claude Code, Cursor, GitHub Copilot, Gemini or other coding agents on large Spring Cloud workspaces. It turns a multi-repository backend system into a local, queryable, graph-first memory center.
+
+记忆中心用于解决大型 Spring Cloud 多项目场景下 AI 编程助手“每次从零理解项目、跨服务影响面不清、历史经验无法沉淀、规则容易忘记”的问题。它会把多个项目索引成一个本地知识图谱，并通过 MCP tools/resources/prompts 提供给 AI Agent 使用。
+
+---
+
+## Why / 为什么需要 Memory Center
+
+Traditional coding agents often rely on ad-hoc file reads and grep. That works for small repositories, but it is fragile for Spring Cloud systems where one change may cross:
+
+传统 AI 编程助手一般靠临时读文件、grep、搜索关键词。小项目可以，大型 Spring Cloud 项目很容易失效，因为一个改动往往横跨：
+
+- Gateway routes / 网关路由
+- Feign clients / Feign 契约
+- Controllers / HTTP API
+- Kafka or RocketMQ consumers / 消息消费
+- DTOs and MQ messages / 公共 DTO 与消息体
+- Elasticsearch, MongoDB, Redis, MySQL / 多种数据资源
+- Nacos or application.yml configuration / 配置中心与本地配置
+- Historical fixes and team rules / 历史经验与团队规范
+
+Memory Center precomputes these relationships before the agent starts editing.
+
+记忆中心的核心思想是：**不要让 AI 每次临时理解项目，而是在索引阶段提前构建服务图、调用图、契约图、消息图、规则图、经验图。**
+
+---
+
+## Core ideas / 核心思想
+
+### 1. Graph-first project memory / 图优先的项目记忆
+
+Memory Center stores code and service relationships as graph nodes and edges in a local SQLite graph store:
+
+记忆中心把项目关系沉淀为本地 SQLite 图存储：
+
+- Nodes / 节点：Workspace, Service, File, Class, Method, Field, Endpoint, FeignClient, FeignMethod, MQTopic, MQConsumer, Rule, TaskMemory
+- Edges / 边：CONTAINS, DECLARES, EXPOSES_ENDPOINT, CALLS_SERVICE, IMPLEMENTS_FEIGN, CONSUMES_TOPIC, IMPORTS, RELATED_TO_MEMORY
+
+This makes impact analysis and context retrieval deterministic and explainable.
+
+这样 AI 查询上下文时不是靠猜，而是沿着真实的工程关系返回影响面。
+
+### 2. Spring Cloud deep indexing / Spring Cloud 深度索引
+
+Current scanner supports:
+
+当前支持扫描：
+
+- `@RestController`, `@Controller`, `@RequestMapping`, `@GetMapping`, `@PostMapping`, `@PutMapping`, `@DeleteMapping`
+- `@FeignClient`
+- `@KafkaListener`
+- `@RocketMQMessageListener`
+- Java class/interface/method/field/import
+- `application.yml`, `application.yaml`, `bootstrap.yml`, `bootstrap.yaml`
+- service topology and Feign/MQ contract indexes
+
+### 3. MCP-native agent access / MCP 原生接入
+
+Memory Center exposes tools, resources and prompts through MCP so coding agents can follow the same workflow:
+
+记忆中心通过 MCP 暴露工具、资源和提示词，让不同 Agent 使用同一套流程：
+
+1. `workspace_sniff_tool(intent)` before code search / 任务开始先取上下文
+2. `memory_context_tool(name)` or `memory_impact_tool(target)` before editing important contracts / 改重要契约前做上下文和影响分析
+3. `workspace_check_rules_tool(...)` before file changes / 编辑前检查规则
+4. `workspace_record_case_tool(...)` after validation / 完成后沉淀经验
+
+### 4. Experience memory / 经验沉淀
+
+Solved tasks can be recorded as JSONL task memory and later used for search, wiki generation and agent skills.
+
+已解决任务会沉淀为任务记忆，可用于后续召回、Wiki 生成和 Agent Skill 生成。
+
+---
+
+## Installation / 安装
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -e .[mcp]
+```
+
+For development:
+
+```bash
+pip install -e .[dev,mcp]
+pytest -q
+```
+
+---
+
+## Quick start / 快速开始
+
+### 1. Create a workspace / 初始化工作区
+
+```bash
+memory-center init \
+  --workspace-root /path/to/spring-cloud-root \
+  --name content-risk-platform
+```
+
+Edit:
+
+```text
+/path/to/spring-cloud-root/.memory-center/workspace.yaml
+```
+
+Example:
+
+```yaml
+workspace: content-risk-platform
+root: ..
+services:
+  - name: common-api
+    path: common-api
+    type: shared-library
+    tags: [contract]
+  - name: article-service
+    path: article-service
+    type: spring-boot-service
+    service_name: article-service
+  - name: task-service
+    path: task-service
+    type: spring-boot-task
+    service_name: task-service
+```
+
+### 2. Reindex / 重建索引
+
+```bash
+memory-center reindex \
+  --workspace /path/to/spring-cloud-root/.memory-center/workspace.yaml
+```
+
+This generates:
+
+```text
+.memory-center/
+  index/
+    file-index.json
+    java-symbol-index.json
+    api-index.json
+    feign-index.json
+    mq-index.json
+    config-index.json
+    service-topology.json
+  graph/
+    graph.db
+  memory/
+    cross-service-task-memory.jsonl
+  rules/
+    default-rules.yaml
+```
+
+### 3. Query task context / 查询任务上下文
+
+```bash
+memory-center sniff \
+  --workspace examples/spring-cloud-demo/.memory-center/workspace.yaml \
+  --intent "oldPubTime newPubTime ArticleFeignClient 文章发布时间迁移"
+```
+
+### 4. Graph query / 图谱查询
+
+```bash
+memory-center query \
+  --workspace examples/spring-cloud-demo/.memory-center/workspace.yaml \
+  --text "oldPubTime ArticleFeignClient"
+```
+
+### 5. 360-degree context / 符号上下文
+
+```bash
+memory-center context \
+  --workspace examples/spring-cloud-demo/.memory-center/workspace.yaml \
+  --name ArticleFeignClient
+```
+
+### 6. Impact analysis / 影响面分析
+
+```bash
+memory-center impact \
+  --workspace examples/spring-cloud-demo/.memory-center/workspace.yaml \
+  --target MoveArticleRequest \
+  --direction upstream
+```
+
+### 7. Detect git changes / 变更影响分析
+
+```bash
+memory-center detect-changes \
+  --workspace /path/to/.memory-center/workspace.yaml \
+  --scope staged
+```
+
+### 8. Generate wiki and skills / 生成 Wiki 和 Agent Skills
+
+```bash
+memory-center generate-wiki --workspace examples/spring-cloud-demo/.memory-center/workspace.yaml
+memory-center generate-skills --workspace examples/spring-cloud-demo/.memory-center/workspace.yaml
+```
+
+---
+
+## MCP server / MCP 服务
+
+```bash
+memory-center-mcp \
+  --workspace /path/to/.memory-center/workspace.yaml
+```
+
+Available MCP tools / MCP 工具：
+
+| Tool | Purpose / 用途 |
+|---|---|
+| `workspace_sniff_tool` | Task-level context retrieval / 任务上下文召回 |
+| `memory_query_tool` | Graph-aware search / 图谱检索 |
+| `memory_context_tool` | 360-degree node context / 符号、服务、契约上下文 |
+| `memory_impact_tool` | Impact analysis / 影响面分析 |
+| `memory_detect_changes_tool` | Git diff risk mapping / Git 变更风险映射 |
+| `memory_contracts_tool` | API/Feign/MQ contract list / 契约列表 |
+| `workspace_trace_tool` | Cross-service trace hints / 跨服务追踪 |
+| `workspace_check_contract_tool` | Contract safety check / 契约变更检查 |
+| `workspace_check_rules_tool` | Rule matching / 规则匹配 |
+| `workspace_record_case_tool` | Record solved task memory / 任务经验沉淀 |
+| `memory_generate_wiki_tool` | Generate bilingual wiki / 生成双语 Wiki |
+| `memory_generate_skills_tool` | Generate Agent skills / 生成 Agent Skills |
+| `workspace_status_tool` | Index status / 索引状态 |
+
+Available MCP resources / MCP 资源：
+
+- `memory-center://status`
+- `memory-center://contracts`
+- `memory-center://topology`
+
+Available MCP prompts / MCP 提示词：
+
+- `detect_impact(target)`
+- `spring_cloud_safe_change(task)`
+
+---
+
+## Recommended AI agent protocol / 推荐 Agent 协议
+
+Before a coding agent changes code:
+
+AI 编程助手改代码前必须执行：
+
+```text
+1. Call workspace_sniff_tool(intent)
+2. For important contract/topic/service symbols, call memory_context_tool or memory_impact_tool
+3. Before editing files, call workspace_check_rules_tool
+4. If changing DTO/Feign/MQ Message, call workspace_check_contract_tool
+5. After validation, call workspace_record_case_tool
+```
+
+---
+
+## Example: Spring Cloud data migration / 示例：文章发布时间迁移
+
+User task:
+
+```text
+新增一个消费任务，消费 accountCode/accountType/url/urlmd5/pageType/oldPubTime/newPubTime，
+根据 oldPubTime 找旧数据，再按 newPubTime 挪到对应表。
+```
+
+Memory Center should return:
+
+记忆中心应返回：
+
+- Entry service: `task-service` consumer / 入口服务：消费任务
+- Contract service: `common-api` DTO or Feign client / 契约服务：公共 DTO 或 Feign 接口
+- Business service: `article-service` controller/service/repository / 业务服务
+- Related topic: Kafka/RocketMQ topic / 相关 Topic
+- Required rules: idempotency, contract compatibility, data migration, ES bulk safety / 必检规则
+- Historical cases: similar task records / 历史案例
+- Impact path: Consumer → Service → Feign → Controller → ArchiveService → ES/Mongo/DB / 影响链路
+
+---
+
+## Global registry / 全局 Registry
+
+You can register many workspaces globally:
+
+可以把多个工作区注册到全局：
+
+```bash
+memory-center registry add \
+  --name content-risk-platform \
+  --workspace /path/to/.memory-center/workspace.yaml
+
+memory-center registry list
+```
+
+Create logical groups:
+
+```bash
+memory-center group create --name backend-platform
+memory-center group add --name backend-platform --repo content-risk-platform
+```
+
+This prepares future multi-workspace querying and organization-level memory.
+
+---
+
+## Roadmap / 路线图
+
+- v1.1: graph-first store, impact/context/detect-changes, wiki and skill generation
+- v1.2: Maven multi-module dependency graph
+- v1.3: tree-sitter-java AST parser
+- v1.4: Nacos config snapshot indexing
+- v1.5: SQLite FTS5 + optional embeddings + RRF ranking
+- v1.6: web graph API and Mermaid architecture maps
+- v2.0: stable public component for Spring Cloud AI coding workflows
+
+---
+
+## License / 许可证
+
+Apache-2.0

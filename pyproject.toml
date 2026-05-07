@@ -1,0 +1,75 @@
+[project]
+name = "memory-center"
+version = "1.1.0"
+description = "Memory Center is an MCP-native project memory service and multi-agent shared context center for coding agents"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+authors = [
+  { name = "Memory Center Contributors" }
+]
+keywords = [
+  "mcp", "model-context-protocol", "ai-agent", "coding-agent", "spring-cloud",
+  "project-memory", "multi-agent", "java", "devtools", "memory-center", "code-indexing", "knowledge-graph", "impact-analysis"
+]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: Apache Software License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Software Development :: Build Tools",
+  "Topic :: Software Development :: Quality Assurance",
+  "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = [
+  "pyyaml>=6.0.1",
+  "filelock>=3.13.1",
+  "typer>=0.12.3",
+  "rich>=13.7.1",
+]
+
+[project.optional-dependencies]
+mcp = ["mcp>=1.2.0"]
+semantic = ["litellm>=1.40.0"]
+dev = [
+  "pytest>=8.0.0",
+  "pytest-cov>=5.0.0",
+  "ruff>=0.5.0",
+  "mypy>=1.10.0",
+  "build>=1.2.1",
+  "twine>=5.1.0",
+]
+all = ["mcp>=1.2.0", "litellm>=1.40.0"]
+
+[project.urls]
+Homepage = "https://github.com/your-org/memory-center"
+Documentation = "https://github.com/your-org/memory-center/tree/main/docs"
+Issues = "https://github.com/your-org/memory-center/issues"
+Source = "https://github.com/your-org/memory-center"
+
+[project.scripts]
+memory-center = "memory_center.cli.main:app"
+memory-center-mcp = "memory_center.mcp.server:main"
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["memory_center*"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-q"

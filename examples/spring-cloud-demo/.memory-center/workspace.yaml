@@ -1,0 +1,15 @@
+workspace: spring-cloud-demo
+root: ..
+services:
+  - name: common-api
+    path: common-api
+    type: shared-library
+    tags: [contract]
+  - name: article-service
+    path: article-service
+    type: spring-boot-service
+    service_name: article-service
+  - name: task-service
+    path: task-service
+    type: spring-boot-task
+    service_name: task-service

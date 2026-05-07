@@ -1,0 +1,46 @@
+# Workspace Spec / 工作区配置规范
+
+## 中文
+
+Memory Center 使用 `.memory-center/workspace.yaml` 描述一个多项目工作区。
+
+```yaml
+workspace: content-risk-platform
+root: /Users/you/javaworkspace/workspace/origin
+language:
+  - zh-CN
+  - en-US
+services:
+  - name: article-service
+    path: article-service
+    type: spring-boot-service
+    service_name: article-service
+    port: 18081
+    tags: [business]
+
+  - name: common-api
+    path: common-api
+    type: shared-library
+    tags: [contract]
+```
+
+### 字段说明
+
+| 字段 | 必填 | 说明 |
+|---|---|---|
+| `workspace` | 是 | 工作区名称。 |
+| `root` | 是 | 多项目根目录。相对路径会基于 `workspace.yaml` 所在目录解析。 |
+| `language` | 否 | 文档语言偏好，例如 `zh-CN`、`en-US`。 |
+| `services` | 是 | 服务和公共库列表。 |
+| `services[].name` | 是 | Memory Center 内部项目名。 |
+| `services[].path` | 是 | 相对于 root 的项目路径。 |
+| `services[].type` | 否 | `spring-boot-service`、`spring-cloud-gateway`、`spring-boot-task`、`shared-library`。 |
+| `services[].service_name` | 否 | Spring Cloud 注册名，通常对应 `spring.application.name`。 |
+| `services[].port` | 否 | 服务端口。 |
+| `services[].tags` | 否 | 标签，例如 `contract`、`common`、`engine`、`task`。 |
+
+## English
+
+The workspace file declares repositories and services managed by Memory Center.
+
+Relative `root` values are resolved against the directory containing `workspace.yaml`, which makes examples portable.

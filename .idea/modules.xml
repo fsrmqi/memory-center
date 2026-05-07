@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="ProjectModuleManager">
+    <modules>
+      <module fileurl="file://$PROJECT_DIR$/examples/spring-cloud-demo/article-service/article-service.iml" filepath="$PROJECT_DIR$/examples/spring-cloud-demo/article-service/article-service.iml" />
+      <module fileurl="file://$PROJECT_DIR$/examples/spring-cloud-demo/common-api/common-api.iml" filepath="$PROJECT_DIR$/examples/spring-cloud-demo/common-api/common-api.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/memory-center.iml" filepath="$PROJECT_DIR$/.idea/memory-center.iml" />
+      <module fileurl="file://$PROJECT_DIR$/examples/spring-cloud-demo/task-service/task-service.iml" filepath="$PROJECT_DIR$/examples/spring-cloud-demo/task-service/task-service.iml" />
+    </modules>
+  </component>
+</project>

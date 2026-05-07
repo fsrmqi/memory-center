@@ -1,0 +1,27 @@
+workspace: content-risk-platform
+root: /Users/you/javaworkspace/workspace/origin
+services:
+  - name: gateway
+    path: gateway
+    type: spring-cloud-gateway
+    service_name: content-gateway
+  - name: article-service
+    path: article-service
+    type: spring-boot-service
+    service_name: article-service
+  - name: task-service
+    path: task
+    type: spring-boot-task
+    service_name: task-service
+  - name: risk-engine
+    path: risk-engine
+    type: spring-boot-service
+    service_name: risk-engine
+  - name: common-api
+    path: common-api
+    type: shared-library
+    tags: [contract]
+  - name: common-core
+    path: common-core
+    type: shared-library
+    tags: [common]
