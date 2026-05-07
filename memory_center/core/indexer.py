@@ -239,6 +239,7 @@ def build_graph_store(config: WorkspaceConfig, store: WorkspaceStore) -> Dict[st
 
     class_locations: Dict[str, List[Dict[str, Any]]] = {}
     method_locations: Dict[str, List[str]] = {}
+    declared_method_ids: set[str] = set()
     field_locations: Dict[str, List[str]] = {}
     field_type_by_file: Dict[str, Dict[str, str]] = {}
 
@@ -270,6 +271,7 @@ def build_graph_store(config: WorkspaceConfig, store: WorkspaceStore) -> Dict[st
             edges.append(GraphEdge(edge_id("DECLARES", fid, cid), fid, cid, "DECLARES", 1.0, {"evidence": "class/interface declaration"}))
             for m in sym.get("methods", []):
                 mid = node_id("Method", sym["project"], cls, m)
+                declared_method_ids.add(mid)
                 method_locations.setdefault(m, []).append(mid)
                 nodes.append(GraphNode(mid, "Method", f"{cls}.{m}", sym["project"], sym["file"], metadata={"method": m}))
                 edges.append(GraphEdge(edge_id("DECLARES", cid, mid), cid, mid, "DECLARES", 1.0, {"evidence": "method declaration"}))
@@ -337,20 +339,19 @@ def build_graph_store(config: WorkspaceConfig, store: WorkspaceStore) -> Dict[st
             target_method = call.get("method_name")
             receiver = call.get("receiver")
             receiver_type = file_field_types.get(receiver)
-            source_methods = [node_id("Method", sym["project"], owner_class, m) for m in sym.get("methods", [])] or [owner_class_id]
-            source_id = source_methods[0]
+            source_id = _source_method_id(sym, owner_class, call) or owner_class_id
             target_ids = []
             if receiver_type and class_locations.get(receiver_type):
                 for loc in class_locations[receiver_type]:
                     target_ids.append(node_id("Method", loc["project"], receiver_type, target_method))
             target_ids.extend(method_locations.get(target_method, [])[:3])
             for tid in sorted(set(target_ids)):
-                nodes.append(GraphNode(tid, "Method", tid.split(":")[-1], metadata={"inferred": True}))
+                if tid not in declared_method_ids:
+                    nodes.append(GraphNode(tid, "Method", tid.split(":")[-1], metadata={"inferred": True}))
                 edges.append(GraphEdge(edge_id("CALLS_METHOD", source_id, tid), source_id, tid, "CALLS_METHOD", 0.58 if not receiver_type else 0.68, {"evidence": call, "receiver_type": receiver_type}))
 
         for usage in sym.get("dto_field_usages", []):
-            source_methods = [node_id("Method", sym["project"], owner_class, m) for m in sym.get("methods", [])] or [owner_class_id]
-            source_id = source_methods[0]
+            source_id = _source_method_id(sym, owner_class, usage) or owner_class_id
             for fid in field_locations.get(usage.get("field"), [])[:5]:
                 edges.append(GraphEdge(edge_id("READS_FIELD", source_id, fid), source_id, fid, "READS_FIELD", 0.62, {"evidence": usage}))
 
@@ -379,6 +380,13 @@ def _endpoint_matches(feign: Dict[str, Any], method: Dict[str, Any], api: Dict[s
         return True
     base = feign.get("base_path") or ""
     return bool(base and feign_path.replace(base, "") == api_path)
+
+
+def _source_method_id(sym: Dict[str, Any], owner_class: str, fact: Dict[str, Any]) -> str | None:
+    owner_method = fact.get("owner_method")
+    if not owner_method:
+        return None
+    return node_id("Method", sym["project"], owner_class, owner_method)
 
 
 def topology_service_project(topology: Dict[str, Any], service_name: str | None) -> str | None:

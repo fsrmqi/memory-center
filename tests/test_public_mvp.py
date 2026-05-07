@@ -91,6 +91,19 @@ def test_trusted_graph_edges_and_evidence_based_impact(tmp_path: Path):
     upstream = graph.neighbors(field["id"], direction="upstream", max_depth=3, limit=100)
     assert any(edge["type"] == "READS_FIELD" for edge in upstream)
     assert any(edge["evidence"] for edge in upstream)
+    assert any(edge["source"]["name"] == "ArticleMoveConsumer.consume" for edge in upstream)
+
+    urlmd5 = graph.find_nodes("urlmd5", types=["Field"], limit=5)[0]
+    urlmd5_upstream = graph.neighbors(urlmd5["id"], direction="upstream", max_depth=3, limit=100)
+    assert any(edge["type"] == "READS_FIELD" and edge["source"]["name"] == "ArticleMoveService.move" for edge in urlmd5_upstream)
+
+    consumer = graph.find_nodes("ArticleMoveConsumer", types=["Class"], limit=5)[0]
+    consumer_outgoing = graph.neighbors(consumer["id"], direction="downstream", max_depth=1, limit=50)
+    assert any(edge["type"] == "INJECTS_BEAN" and edge["target"]["name"] == "ArticleMoveService" for edge in consumer_outgoing)
+
+    move_service = graph.find_nodes("ArticleMoveService", types=["Class"], limit=5)[0]
+    service_outgoing = graph.neighbors(move_service["id"], direction="downstream", max_depth=1, limit=50)
+    assert any(edge["type"] == "INJECTS_BEAN" and edge["target"]["name"] == "ArticleFeignClient" for edge in service_outgoing)
 
     impact = memory_impact(workspace, "newPubTime", direction="upstream")
     assert impact["found"] is True
@@ -98,3 +111,7 @@ def test_trusted_graph_edges_and_evidence_based_impact(tmp_path: Path):
     assert "probable_impacts" in impact
     assert "possible_impacts" in impact
     assert "unknown_risks" in impact
+
+    report = doctor(workspace, self_test=True)
+    assert report["ok"] is True
+    assert report["self_test"]["query_matches"] > 0

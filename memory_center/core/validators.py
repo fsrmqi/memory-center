@@ -42,10 +42,11 @@ def doctor(workspace_file: str | Path, self_test: bool = False) -> Dict[str, Any
     smoke: Dict[str, Any] | None = None
     if self_test:
         status = workspace_status(workspace_file)
-        query = memory_query(workspace_file, config.workspace, limit=5)
-        smoke = {"status_ok": bool(status.get("workspace")), "query_matches": len(query.get("matches", []))}
+        query_text = config.services[0].name if config.services else config.workspace
+        query = memory_query(workspace_file, query_text, limit=5)
+        smoke = {"status_ok": bool(status.get("workspace")), "query": query_text, "query_matches": len(query.get("matches", []))}
         checks.append(_check("self_test:status", smoke["status_ok"], "workspace_status returned"))
-        checks.append(_check("self_test:query", smoke["query_matches"] >= 0, "memory_query returned"))
+        checks.append(_check("self_test:query", smoke["query_matches"] > 0, f"memory_query matched {query_text!r}"))
 
     failed = [item for item in checks if not item["ok"]]
     return {
