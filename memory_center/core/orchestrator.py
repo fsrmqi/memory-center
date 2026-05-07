@@ -7,6 +7,7 @@ from typing import Any, Dict, List
 from .config import load_workspace_config
 from .registry import resolve_group
 from .rules import match_rules
+from .semantic import semantic_index_stats, semantic_query
 from .store import WorkspaceStore
 
 
@@ -29,7 +30,9 @@ def workspace_status(workspace_file: str | Path) -> Dict[str, Any]:
             "feigns": len(store.read_json("feign-index.json", [])),
             "mq": len(store.read_json("mq-index.json", [])),
             "cases": len(store.read_jsonl("cross-service-task-memory.jsonl", limit=1000)),
+            "semantic_docs": semantic_index_stats(workspace_file).get("doc_count", 0),
         },
+        "semantic_index": semantic_index_stats(workspace_file),
         "topology": store.read_json("service-topology.json", {}),
     }
 
@@ -178,20 +181,28 @@ def memory_query(workspace_file: str | Path, query: str, limit: int = 20, node_t
     """
     config, store = load_context(workspace_file)
     graph = GraphStore(store.graph_db_path)
-    nodes = graph.find_nodes(query, types=node_types, limit=limit)
-    if not nodes:
+    exact_nodes = graph.find_nodes(query, types=node_types, limit=limit)
+    if not exact_nodes:
         seen_nodes = {}
         for token in tokenize(query):
             for item in graph.find_nodes(token, types=node_types, limit=limit):
                 seen_nodes[item["id"]] = item
-        nodes = list(seen_nodes.values())[:limit]
-    expanded = []
-    for node in nodes[: min(limit, 10)]:
-        expanded.append({"node": node, "neighbors": graph.neighbors(node["id"], direction="both", max_depth=1, limit=20)})
-    related_rules = match_rules(store, intent=query, files=[n.get("file_path", "") for n in nodes])[:10]
+        exact_nodes = list(seen_nodes.values())[:limit]
+    semantic_hits = semantic_query(workspace_file, query, limit=max(limit * 3, 20))
+    if node_types:
+        semantic_hits = [item for item in semantic_hits if item.get("type") in node_types]
+    merged = _merge_workspace_query_hits(graph, query, exact_nodes, semantic_hits, limit)
+    related_rules = match_rules(store, intent=query, files=[item["node"].get("file_path", "") for item in merged])[:10]
     cases = store.read_jsonl("cross-service-task-memory.jsonl", limit=200)
     related_cases = [c for c in cases if any(k in json.dumps(c, ensure_ascii=False).lower() for k in tokenize(query))][-5:]
-    return {"workspace": config.workspace, "query": query, "matches": expanded, "related_rules": related_rules, "historical_cases": related_cases}
+    return {
+        "workspace": config.workspace,
+        "query": query,
+        "matches": merged,
+        "semantic_hits": semantic_hits[:limit],
+        "related_rules": related_rules,
+        "historical_cases": related_cases,
+    }
 
 
 def group_status(group: str, home: str | Path | None = None) -> Dict[str, Any]:
@@ -222,6 +233,7 @@ def group_query(group: str, query: str, limit: int = 20, node_types: List[str] |
     bridges = _build_group_bridges(group_data)
     workspace_results = []
     merged: Dict[str, Dict[str, Any]] = {}
+    target_types = set()
     for member in resolved["members"]:
         result = memory_query(member["workspace_file"], query, limit=limit, node_types=node_types)
         workspace_ref = member["name"]
@@ -229,21 +241,35 @@ def group_query(group: str, query: str, limit: int = 20, node_types: List[str] |
         workspace_results.append({"workspace_ref": workspace_ref, "workspace": workspace_name, "workspace_file": member["workspace_file"], "result": result})
         for rank, item in enumerate(result.get("matches", []), start=1):
             node = item.get("node", {})
+            if node.get("type"):
+                target_types.add(node.get("type"))
             key = f"{workspace_ref}:{node.get('id', rank)}"
             current = merged.setdefault(
                 key,
-                {"workspace_ref": workspace_ref, "workspace": workspace_name, "node": node, "neighbors": item.get("neighbors", []), "rrf_score": 0.0, "best_rank": rank},
+                {
+                    "workspace_ref": workspace_ref,
+                    "workspace": workspace_name,
+                    "node": node,
+                    "neighbors": item.get("neighbors", []),
+                    "rrf_score": 0.0,
+                    "semantic_score": 0.0,
+                    "best_rank": rank,
+                },
             )
-            current["rrf_score"] += _rrf(rank)
+            current["rrf_score"] += float(item.get("exact_score", _rrf(rank)))
+            current["semantic_score"] = max(current["semantic_score"], float(item.get("semantic_score", 0.0)))
             current["best_rank"] = min(current["best_rank"], rank)
-    merged_matches = sorted(merged.values(), key=lambda item: (-item["rrf_score"], item["best_rank"]))[:limit]
+    resolved_target_types = _resolve_group_target_types(query, sorted(t for t in target_types if t))
+    merged_matches = sorted(merged.values(), key=lambda item: _group_query_match_key(item, resolved_target_types))[:limit]
+    bridges = _sort_bridges(_filter_bridges(bridges, query, limit), resolved_target_types)
     return {
         "group": group,
         "query": query,
         "workspace_count": len(workspace_results),
         "missing_members": resolved["missing"],
         "merged_matches": merged_matches,
-        "related_bridges": _filter_bridges(bridges, query, limit),
+        "target_types": resolved_target_types,
+        "related_bridges": bridges,
         "workspace_results": workspace_results,
     }
 
@@ -297,6 +323,13 @@ def group_impact(
 
     impacted_projects.discard("")
     impacted_workspaces.discard("")
+    confirmed = _filter_group_impact_records(confirmed, resolved_target_types)
+    probable = _filter_group_impact_records(probable, resolved_target_types)
+    possible = _filter_group_impact_records(possible, resolved_target_types)
+    confirmed = _sort_group_impact_records(confirmed, resolved_target_types)
+    probable = _sort_group_impact_records(probable, resolved_target_types)
+    possible = _sort_group_impact_records(possible, resolved_target_types)
+    bridge_candidates = _sort_bridges(bridge_candidates, resolved_target_types)
     found = any(item["impact"].get("found") for item in workspace_impacts) or bool(confirmed or probable or possible)
     if confirmed or len(impacted_workspaces) >= 2:
         risk_level = "high"
@@ -487,6 +520,98 @@ def _best_match(matches: List[Dict[str, Any]], query: str = "") -> Dict[str, Any
 
 def _rrf(rank: int, k: int = 60) -> float:
     return 1.0 / (k + rank)
+
+
+def _merge_workspace_query_hits(
+    graph: GraphStore,
+    query: str,
+    exact_nodes: List[Dict[str, Any]],
+    semantic_hits: List[Dict[str, Any]],
+    limit: int,
+) -> List[Dict[str, Any]]:
+    merged: Dict[str, Dict[str, Any]] = {}
+    target_types = set()
+
+    for rank, node in enumerate(exact_nodes, start=1):
+        node_id = node.get("id")
+        if not node_id:
+            continue
+        target_types.add(node.get("type", ""))
+        item = merged.setdefault(
+            node_id,
+            {
+                "node": node,
+                "neighbors": graph.neighbors(node_id, direction="both", max_depth=1, limit=20),
+                "exact_score": 0.0,
+                "semantic_score": 0.0,
+                "best_rank": rank,
+            },
+        )
+        item["exact_score"] += _rrf(rank)
+        item["best_rank"] = min(item["best_rank"], rank)
+
+    for semantic_rank, hit in enumerate(semantic_hits, start=1):
+        node_id = hit.get("node_id")
+        if not node_id:
+            continue
+        node = graph.node_by_id(node_id)
+        if not node:
+            continue
+        target_types.add(node.get("type", ""))
+        item = merged.setdefault(
+            node_id,
+            {
+                "node": node,
+                "neighbors": graph.neighbors(node_id, direction="both", max_depth=1, limit=20),
+                "exact_score": 0.0,
+                "semantic_score": 0.0,
+                "best_rank": semantic_rank + 1000,
+            },
+        )
+        item["semantic_score"] = max(item["semantic_score"], float(hit.get("score", 0.0)))
+
+    resolved_target_types = _resolve_group_target_types(query, sorted(t for t in target_types if t))
+    matches = list(merged.values())
+    matches.sort(key=lambda item: _workspace_query_match_key(item, resolved_target_types))
+    return matches[:limit]
+
+
+def _workspace_query_match_key(item: Dict[str, Any], target_types: List[str]) -> tuple:
+    node = item.get("node", {})
+    priority = _query_node_priority(node.get("type", ""), target_types)
+    return (
+        priority,
+        -float(item.get("exact_score", 0.0)),
+        -float(item.get("semantic_score", 0.0)),
+        int(item.get("best_rank", 9999)),
+        node.get("name", ""),
+    )
+
+
+def _group_query_match_key(item: Dict[str, Any], target_types: List[str]) -> tuple:
+    node = item.get("node", {})
+    priority = _query_node_priority(node.get("type", ""), target_types)
+    return (
+        priority,
+        -float(item.get("rrf_score", 0.0)),
+        -float(item.get("semantic_score", 0.0)),
+        int(item.get("best_rank", 9999)),
+        node.get("name", ""),
+    )
+
+
+def _query_node_priority(node_type: str, target_types: List[str]) -> int:
+    priorities: Dict[str, int] = {}
+    types = set(target_types)
+    if {"FeignClient", "FeignMethod", "Endpoint"} & types:
+        priorities.update({"FeignClient": 0, "FeignMethod": 1, "Endpoint": 2, "Class": 3, "Method": 4, "File": 5})
+    if {"MQTopic", "MQConsumer"} & types:
+        priorities.update({"MQTopic": 0, "MQConsumer": 1, "ConfigKey": 2, "Class": 3, "File": 4})
+    if "ConfigKey" in types:
+        priorities.update({"ConfigKey": 0, "Class": 1, "File": 2})
+    if not priorities:
+        priorities.update({"Class": 0, "Method": 1, "Field": 2, "File": 3})
+    return priorities.get(node_type, 20)
 
 
 def _load_group_data(members: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -712,7 +837,122 @@ def _resolve_group_target_types(target: str, target_types: List[str]) -> List[st
         resolved.add("ConfigKey")
     if topic_like and "MQTopic" in resolved:
         resolved.discard("ConfigKey")
-    return sorted(resolved)
+    return _sort_target_types(list(resolved))
+
+
+def _sort_target_types(target_types: List[str]) -> List[str]:
+    priority = {
+        "FeignClient": 0,
+        "FeignMethod": 1,
+        "Endpoint": 2,
+        "MQTopic": 3,
+        "MQConsumer": 4,
+        "ConfigKey": 5,
+        "Field": 6,
+        "Method": 7,
+        "Class": 8,
+        "File": 20,
+    }
+    return sorted({item for item in target_types if item}, key=lambda item: (priority.get(item, 10), item))
+
+
+def _filter_group_impact_records(records: List[Dict[str, Any]], target_types: List[str]) -> List[Dict[str, Any]]:
+    allowed_edges = _graph_edge_types_for_target(target_types)
+    filtered = []
+    for record in records:
+        if record.get("kind") != "graph":
+            filtered.append(record)
+            continue
+        edge_type = record.get("impact", {}).get("type")
+        if not allowed_edges or edge_type in allowed_edges:
+            filtered.append(record)
+    return filtered
+
+
+def _sort_group_impact_records(records: List[Dict[str, Any]], target_types: List[str]) -> List[Dict[str, Any]]:
+    return sorted(records, key=lambda item: _group_impact_record_key(item, target_types))
+
+
+def _group_impact_record_key(record: Dict[str, Any], target_types: List[str]) -> tuple:
+    impact = record.get("impact", {})
+    if record.get("kind") == "bridge":
+        return _bridge_sort_key(impact, target_types)
+    edge_type = impact.get("type", "")
+    confidence = -float(impact.get("confidence", 0))
+    depth = int(impact.get("depth", 99))
+    priority = _graph_edge_priority(edge_type, target_types)
+    return (priority, confidence, depth, edge_type)
+
+
+def _graph_edge_types_for_target(target_types: List[str]) -> set[str]:
+    allowed: set[str] = set()
+    types = set(target_types)
+    if {"FeignClient", "FeignMethod", "Endpoint"} & types:
+        allowed.update({"INJECTS_BEAN", "IMPORTS", "CALLS_SERVICE", "IMPLEMENTS_FEIGN", "CALLS_METHOD", "HANDLES_ENDPOINT"})
+    if {"MQTopic", "MQConsumer"} & types:
+        allowed.update({"CONSUMES_TOPIC", "READS_CONFIG", "CALLS_METHOD", "INJECTS_BEAN"})
+    if "ConfigKey" in types:
+        allowed.update({"READS_CONFIG", "DECLARES_CONFIG"})
+    if "Field" in types:
+        allowed.update({"READS_FIELD", "CALLS_METHOD", "INJECTS_BEAN"})
+    if not allowed and "Class" in types:
+        allowed.update({"INJECTS_BEAN", "CALLS_METHOD", "IMPORTS"})
+    return allowed
+
+
+def _graph_edge_priority(edge_type: str, target_types: List[str]) -> int:
+    priorities: Dict[str, int] = {}
+    types = set(target_types)
+    if {"FeignClient", "FeignMethod", "Endpoint"} & types:
+        priorities.update(
+            {
+                "CALLS_SERVICE": 0,
+                "IMPLEMENTS_FEIGN": 1,
+                "HANDLES_ENDPOINT": 2,
+                "INJECTS_BEAN": 3,
+                "CALLS_METHOD": 4,
+                "IMPORTS": 5,
+            }
+        )
+    if {"MQTopic", "MQConsumer"} & types:
+        priorities.update(
+            {
+                "CONSUMES_TOPIC": 0,
+                "READS_CONFIG": 1,
+                "CALLS_METHOD": 2,
+                "INJECTS_BEAN": 3,
+            }
+        )
+    if "ConfigKey" in types:
+        priorities.update({"READS_CONFIG": 0, "DECLARES_CONFIG": 1})
+    if "Field" in types:
+        priorities.update({"READS_FIELD": 0, "CALLS_METHOD": 1, "INJECTS_BEAN": 2})
+    if not priorities:
+        priorities.update({"INJECTS_BEAN": 0, "CALLS_METHOD": 1, "IMPORTS": 2})
+    return priorities.get(edge_type, 20)
+
+
+def _sort_bridges(bridges: List[Dict[str, Any]], target_types: List[str]) -> List[Dict[str, Any]]:
+    return sorted(bridges, key=lambda item: _bridge_sort_key(item, target_types))
+
+
+def _bridge_sort_key(bridge: Dict[str, Any], target_types: List[str]) -> tuple:
+    bridge_type = bridge.get("type", "")
+    confidence = -float(bridge.get("confidence", 0))
+    priority = _bridge_priority(bridge_type, target_types)
+    return (priority, confidence, bridge_type, bridge.get("summary", ""))
+
+
+def _bridge_priority(bridge_type: str, target_types: List[str]) -> int:
+    priorities: Dict[str, int] = {}
+    types = set(target_types)
+    if {"FeignClient", "FeignMethod", "Endpoint"} & types:
+        priorities.update({"FEIGN_ENDPOINT": 0, "FEIGN_SERVICE": 1})
+    if {"MQTopic", "MQConsumer"} & types:
+        priorities.update({"MQ_TOPIC_CONFIG": 0, "MQ_TOPIC_SHARED": 1})
+    if "ConfigKey" in types:
+        priorities.update({"MQ_TOPIC_CONFIG": 0, "CONFIG_KEY_SHARED": 1})
+    return priorities.get(bridge_type, 20)
 
 def _unknown_static_analysis_risks() -> List[str]:
     return [

@@ -6,6 +6,7 @@ from typing import Any, Dict, List
 from .config import load_workspace_config
 from .graph import GraphStore
 from .orchestrator import memory_query, workspace_status
+from .semantic import semantic_index_stats, SEMANTIC_INDEX_FILE
 from .store import WorkspaceStore
 
 
@@ -30,6 +31,7 @@ def doctor(workspace_file: str | Path, self_test: bool = False) -> Dict[str, Any
         "mq-index.json",
         "config-index.json",
         "service-topology.json",
+        SEMANTIC_INDEX_FILE,
     ]:
         p = store.index_dir / name
         checks.append(_check(f"index:{name}", p.exists(), str(p)))
@@ -38,6 +40,8 @@ def doctor(workspace_file: str | Path, self_test: bool = False) -> Dict[str, Any
     counts = graph.counts()
     checks.append(_check("graph:nodes", counts.get("nodes", 0) > 0, str(counts)))
     checks.append(_check("graph:edges", counts.get("edges", 0) > 0, str(counts)))
+    semantic = semantic_index_stats(workspace_file)
+    checks.append(_check("semantic:docs", semantic.get("doc_count", 0) > 0, str(semantic)))
 
     smoke: Dict[str, Any] | None = None
     if self_test:

@@ -36,6 +36,7 @@ def test_demo_workspace_indexes_spring_cloud_patterns(tmp_path: Path):
     assert counts["apis"] >= 1
     assert counts["feigns"] >= 1
     assert counts["mq"] >= 1
+    assert counts["semantic_docs"] > 0
 
     sniffed = workspace_sniff(workspace, "oldPubTime newPubTime Kafka ArticleFeignClient move")
     assert sniffed["candidate_files"]
@@ -55,7 +56,7 @@ def test_demo_workspace_indexes_spring_cloud_patterns(tmp_path: Path):
 def test_graph_query_context_and_impact(tmp_path):
     from memory_center.core.config import load_workspace_config
     from memory_center.core.indexer import reindex_workspace
-    from memory_center.core.orchestrator import memory_context, memory_impact, memory_query
+    from memory_center.core.orchestrator import memory_context, memory_impact, memory_query, workspace_status
     from memory_center.core.rules import ensure_default_rules
     from memory_center.core.store import WorkspaceStore
 
@@ -67,7 +68,13 @@ def test_graph_query_context_and_impact(tmp_path):
 
     assert counts["graph_nodes"] > 0
     assert counts["graph_edges"] > 0
-    assert memory_query(workspace, "oldPubTime ArticleFeignClient", 5)["matches"]
+    assert counts["semantic_docs"] > 0
+    query_result = memory_query(workspace, "oldPubTime ArticleFeignClient", 5)
+    assert query_result["matches"]
+    assert query_result["semantic_hits"]
+    status = workspace_status(workspace)
+    assert status["semantic_index"]["ready"] is True
+    assert status["index_counts"]["semantic_docs"] > 0
     assert memory_context(workspace, "ArticleFeignClient")["found"] is True
     assert memory_impact(workspace, "MoveArticleRequest")["found"] is True
 
@@ -121,6 +128,7 @@ def test_trusted_graph_edges_and_evidence_based_impact(tmp_path: Path):
     report = doctor(workspace, self_test=True)
     assert report["ok"] is True
     assert report["self_test"]["query_matches"] > 0
+    assert any(item["name"] == "semantic:docs" and item["ok"] for item in report["checks"])
 
 
 def test_group_query_and_status(tmp_path: Path):
@@ -152,6 +160,8 @@ def test_group_query_and_status(tmp_path: Path):
     assert result["workspace_count"] == 2
     assert result["merged_matches"]
     assert any(item["node"]["name"] == "ArticleFeignClient" for item in result["merged_matches"])
+    assert result["target_types"][0] == "FeignClient"
+    assert result["merged_matches"][0]["node"]["type"] == "FeignClient"
     assert any(bridge["type"] in {"FEIGN_SERVICE", "FEIGN_ENDPOINT"} for bridge in result["related_bridges"])
 
     mq_result = group_query("backend-platform", "article-pubtime-change", limit=10, home=home)
@@ -164,10 +174,21 @@ def test_group_query_and_status(tmp_path: Path):
     assert "FeignClient" in impact["target_types"]
     assert impact["confirmed_impacts"] or impact["probable_impacts"]
     assert all(bridge["type"] in {"FEIGN_SERVICE", "FEIGN_ENDPOINT"} for bridge in impact["related_bridges"])
+    assert impact["related_bridges"][0]["type"] == "FEIGN_ENDPOINT"
+    assert all(
+        item["impact"]["type"] not in {"CONTAINS", "DECLARES"}
+        for item in impact["confirmed_impacts"] + impact["probable_impacts"] + impact["possible_impacts"]
+        if item.get("kind") == "graph"
+    )
+    graph_types = [item["impact"]["type"] for item in impact["confirmed_impacts"] + impact["probable_impacts"] if item.get("kind") == "graph"]
+    assert "INJECTS_BEAN" in graph_types
+    assert "IMPORTS" in graph_types
+    assert graph_types.index("INJECTS_BEAN") < graph_types.index("IMPORTS")
 
     topic_impact = group_impact("backend-platform", "article-pubtime-change", home=home)
     assert topic_impact["found"] is True
     assert all(bridge["type"] in {"MQ_TOPIC_CONFIG", "MQ_TOPIC_SHARED"} for bridge in topic_impact["related_bridges"])
+    assert topic_impact["related_bridges"][0]["type"] == "MQ_TOPIC_CONFIG"
 
 
 def test_http_bridge_routes(tmp_path: Path):

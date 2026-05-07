@@ -9,6 +9,7 @@ import yaml
 from .graph import GraphEdge, GraphNode, GraphStore, edge_id, node_id
 from .indexing import RegexJavaParser
 from .models import ApiEndpoint, FeignClient, JavaSymbol, MqEndpoint, WorkspaceConfig, to_dict
+from .semantic import build_workspace_semantic_index
 from .store import WorkspaceStore
 
 JAVA_EXTENSIONS = {".java"}
@@ -54,6 +55,7 @@ def reindex_workspace(config: WorkspaceConfig, store: WorkspaceStore) -> Dict[st
     store.write_json("config-index.json", config_index)
     store.write_json("service-topology.json", topology)
     graph_counts = build_graph_store(config, store)
+    semantic_counts = build_workspace_semantic_index(store.workspace_file)
     return {
         "files": len(file_index),
         "symbols": len(symbol_index),
@@ -63,6 +65,7 @@ def reindex_workspace(config: WorkspaceConfig, store: WorkspaceStore) -> Dict[st
         "configs": len(config_index),
         "graph_nodes": graph_counts.get("nodes", 0),
         "graph_edges": graph_counts.get("edges", 0),
+        "semantic_docs": semantic_counts.get("doc_count", 0),
     }
 
 

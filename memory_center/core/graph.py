@@ -242,6 +242,11 @@ class GraphStore:
             edges = conn.execute("SELECT COUNT(*) FROM edges").fetchone()[0]
         return {"nodes": nodes, "edges": edges}
 
+    def all_nodes(self) -> List[Dict[str, Any]]:
+        with self.connect() as conn:
+            rows = conn.execute("SELECT * FROM nodes").fetchall()
+        return [_row_node(row) for row in rows]
+
 
 def node_id(kind: str, *parts: str) -> str:
     body = ":".join(str(p).strip().replace(" ", "_") for p in parts if str(p).strip())

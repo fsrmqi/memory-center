@@ -154,6 +154,7 @@ This generates:
     mq-index.json
     config-index.json
     service-topology.json
+    semantic-node-index.json
   graph/
     graph.db
   memory/
@@ -161,6 +162,10 @@ This generates:
   rules/
     default-rules.yaml
 ```
+
+Reindex also builds the local semantic node index used by hybrid retrieval.
+
+重建索引时也会同步构建本地语义节点索引，供混合检索使用。
 
 ### 3. Query task context / 查询任务上下文
 
@@ -177,6 +182,10 @@ memory-center query \
   --workspace examples/spring-cloud-demo/.memory-center/workspace.yaml \
   --text "oldPubTime ArticleFeignClient"
 ```
+
+Local query now uses hybrid retrieval: graph/FTS exact hits plus an offline sparse semantic index built from graph nodes.
+
+当前查询已支持本地混合召回：图谱/FTS 精确命中 + 基于图节点构建的离线稀疏语义索引。
 
 ### 5. 360-degree context / 符号上下文
 
