@@ -23,9 +23,15 @@ from memory_center.core.orchestrator import (
     workspace_check_contract,
     workspace_check_rules,
     workspace_record_case,
+    workspace_recent_sessions,
     workspace_sniff,
+    workspace_start_session,
     workspace_status,
+    workspace_session_summary,
     workspace_trace,
+    workspace_log_session_event,
+    workspace_end_session,
+    workspace_resume_context,
 )
 from memory_center.core.rules import ensure_default_rules
 from memory_center.core.store import WorkspaceStore
@@ -191,6 +197,67 @@ def record_case_cmd(
     print(workspace_record_case(workspace, task, project, file, flow, risk_point, verified_by))
 
 
+@app.command("start-session")
+def start_session_cmd(
+    workspace: str = typer.Option(...),
+    intent: str = typer.Option(...),
+    session_id: Optional[str] = typer.Option(None),
+):
+    """Start a lightweight session-memory record for the current task."""
+    print(workspace_start_session(workspace, intent, session_id=session_id))
+
+
+@app.command("log-session-event")
+def log_session_event_cmd(
+    workspace: str = typer.Option(...),
+    session_id: str = typer.Option(...),
+    event_type: str = typer.Option(...),
+    payload: str = typer.Option("{}", help="JSON payload or plain text."),
+):
+    """Append one session event into session memory."""
+    parsed_payload = _parse_event_payload(payload)
+    print(workspace_log_session_event(workspace, session_id, event_type, parsed_payload))
+
+
+@app.command("end-session")
+def end_session_cmd(
+    workspace: str = typer.Option(...),
+    session_id: str = typer.Option(...),
+    outcome: str = typer.Option(""),
+    verified_by: Optional[List[str]] = typer.Option(None),
+):
+    """Finalize one session and generate a summary record."""
+    print(workspace_end_session(workspace, session_id, outcome=outcome, verified_by=verified_by))
+
+
+@app.command("recent-sessions")
+def recent_sessions_cmd(
+    workspace: str = typer.Option(...),
+    limit: int = typer.Option(10),
+):
+    """Show recent summarized sessions for this workspace."""
+    print(workspace_recent_sessions(workspace, limit=limit))
+
+
+@app.command("session-summary")
+def session_summary_cmd(
+    workspace: str = typer.Option(...),
+    session_id: str = typer.Option(...),
+):
+    """Show one session summary with raw recorded events."""
+    print(workspace_session_summary(workspace, session_id))
+
+
+@app.command("resume-context")
+def resume_context_cmd(
+    workspace: str = typer.Option(...),
+    intent: str = typer.Option(...),
+    limit: int = typer.Option(5),
+):
+    """Retrieve related sessions, cases and entrypoints for a new session."""
+    print(workspace_resume_context(workspace, intent, limit=limit))
+
+
 @registry_app.command("add")
 def registry_add(name: str = typer.Option(...), workspace: str = typer.Option(...)):
     """Register a workspace globally under ~/.memory-center/registry.json."""
@@ -286,6 +353,16 @@ def serve_http_cmd(
     """Serve a lightweight local HTTP bridge for workspace and group queries."""
     print({"http": "starting", "host": host, "port": port, "workspace": workspace})
     serve_http(workspace, host=host, port=port)
+
+
+def _parse_event_payload(payload: str):
+    try:
+        import json
+
+        value = json.loads(payload)
+        return value if isinstance(value, dict) else {"value": value}
+    except Exception:
+        return {"text": payload}
 
 if __name__ == "__main__":
     app()

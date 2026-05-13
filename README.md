@@ -158,7 +158,15 @@ Then verify:
 然后验证：
 
 ```bash
-memory-center-mcp --workspace /path/to/.memory-center/workspace.yaml
+memory-center-mcp --workspace /Users/cuijiaqi/javaworkspace/ucap/.memory-center/workspace.yaml
+```
+
+If your MCP client requires an absolute command path, use:
+
+如果你的 MCP 客户端要求命令绝对路径，可以使用：
+
+```bash
+/Users/cuijiaqi/.local/bin/memory-center-mcp --workspace /Users/cuijiaqi/javaworkspace/ucap/.memory-center/workspace.yaml
 ```
 
 ### Development install / 开发环境安装
@@ -331,6 +339,33 @@ memory-center impact \
   --direction upstream
 ```
 
+### 6.5 Session memory / 会话长期记忆
+
+You can now keep lightweight task-session memory inside the same workspace:
+
+现在也可以在同一个 workspace 里记录轻量的任务会话记忆：
+
+```bash
+memory-center start-session \
+  --workspace examples/spring-cloud-demo/.memory-center/workspace.yaml \
+  --intent "修复 Feign 调用链"
+
+memory-center log-session-event \
+  --workspace examples/spring-cloud-demo/.memory-center/workspace.yaml \
+  --session-id session-xxxx \
+  --event-type tool_call \
+  --payload '{"tool_name":"memory_query_tool","query":"ArticleFeignClient"}'
+
+memory-center end-session \
+  --workspace examples/spring-cloud-demo/.memory-center/workspace.yaml \
+  --session-id session-xxxx \
+  --outcome "完成 Feign 调用链定位"
+
+memory-center resume-context \
+  --workspace examples/spring-cloud-demo/.memory-center/workspace.yaml \
+  --intent "继续处理 Feign 调用链"
+```
+
 ### 7. Detect git changes / 变更影响分析
 
 ```bash
@@ -346,13 +381,45 @@ memory-center generate-wiki --workspace examples/spring-cloud-demo/.memory-cente
 memory-center generate-skills --workspace examples/spring-cloud-demo/.memory-center/workspace.yaml
 ```
 
+### 9. Real-world `ucap-all` examples / `ucap-all` 真实路径示例
+
+If you are using the shared UCAP workspace discussed in the docs, you can copy these commands directly:
+
+如果你正在使用文档中那套 `ucap-all` 公共空间，下面这些命令可以直接复制：
+
+```bash
+memory-center status \
+  --workspace /Users/cuijiaqi/javaworkspace/ucap/.memory-center/workspace.yaml
+
+memory-center query \
+  --workspace /Users/cuijiaqi/javaworkspace/ucap/.memory-center/workspace.yaml \
+  --text "ucap-cloud-back"
+
+memory-center context \
+  --workspace /Users/cuijiaqi/javaworkspace/ucap/.memory-center/workspace.yaml \
+  --name ucap-cloud-back
+
+memory-center impact \
+  --workspace /Users/cuijiaqi/javaworkspace/ucap/.memory-center/workspace.yaml \
+  --target ucap-cloud-back \
+  --direction upstream
+
+memory-center start-session \
+  --workspace /Users/cuijiaqi/javaworkspace/ucap/.memory-center/workspace.yaml \
+  --intent "继续处理 ucap-cloud-back Feign 调用链"
+
+memory-center resume-context \
+  --workspace /Users/cuijiaqi/javaworkspace/ucap/.memory-center/workspace.yaml \
+  --intent "继续处理 ucap-cloud-back Feign 调用链"
+```
+
 ---
 
 ## MCP server / MCP 服务
 
 ```bash
 memory-center-mcp \
-  --workspace /path/to/.memory-center/workspace.yaml
+  --workspace /Users/cuijiaqi/javaworkspace/ucap/.memory-center/workspace.yaml
 ```
 
 Available MCP tools / MCP 工具：

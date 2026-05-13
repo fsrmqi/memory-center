@@ -13,10 +13,16 @@ from memory_center.core.orchestrator import (
     memory_detect_changes,
     memory_impact,
     memory_query,
+    workspace_end_session,
+    workspace_log_session_event,
+    workspace_recent_sessions,
+    workspace_resume_context,
     workspace_check_contract,
     workspace_check_rules,
     workspace_record_case,
+    workspace_session_summary,
     workspace_sniff,
+    workspace_start_session,
     workspace_status,
     workspace_trace,
 )
@@ -84,6 +90,36 @@ def create_server(workspace_file: str):
     def workspace_record_case_tool(task: str, projects: List[str], files: List[str], flow: str = "", risk_points: List[str] | None = None, verified_by: List[str] | None = None):
         """Record a solved task into cross-service memory after validation."""
         return workspace_record_case(_WORKSPACE_FILE, task, projects, files, flow, risk_points, verified_by)
+
+    @mcp.tool()
+    def workspace_start_session_tool(intent: str, session_id: str = ""):
+        """Start one lightweight task session for later resume/review."""
+        return workspace_start_session(_WORKSPACE_FILE, intent, session_id=session_id or None)
+
+    @mcp.tool()
+    def workspace_log_session_event_tool(session_id: str, event_type: str, payload: dict | None = None):
+        """Append one session event such as prompt, tool_call, tool_result or note."""
+        return workspace_log_session_event(_WORKSPACE_FILE, session_id, event_type, payload)
+
+    @mcp.tool()
+    def workspace_end_session_tool(session_id: str, outcome: str = "", verified_by: List[str] | None = None):
+        """End one session and generate a reusable summary."""
+        return workspace_end_session(_WORKSPACE_FILE, session_id, outcome, verified_by)
+
+    @mcp.tool()
+    def workspace_recent_sessions_tool(limit: int = 10):
+        """List recent summarized sessions for this workspace."""
+        return workspace_recent_sessions(_WORKSPACE_FILE, limit)
+
+    @mcp.tool()
+    def workspace_session_summary_tool(session_id: str):
+        """Read one session summary together with recorded raw events."""
+        return workspace_session_summary(_WORKSPACE_FILE, session_id)
+
+    @mcp.tool()
+    def workspace_resume_context_tool(intent: str, limit: int = 5):
+        """Resume a new task by mixing related sessions, cases and query entrypoints."""
+        return workspace_resume_context(_WORKSPACE_FILE, intent, limit)
 
     @mcp.tool()
     def memory_generate_wiki_tool(output_dir: str | None = None):

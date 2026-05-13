@@ -6,8 +6,16 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from memory_center.core.orchestrator import group_query, group_status, memory_query, workspace_status
-from memory_center.core.orchestrator import group_impact
+from memory_center.core.orchestrator import (
+    group_impact,
+    group_query,
+    group_status,
+    memory_query,
+    workspace_recent_sessions,
+    workspace_resume_context,
+    workspace_session_summary,
+    workspace_status,
+)
 
 
 def create_handler(default_workspace: str | Path | None = None) -> type[BaseHTTPRequestHandler]:
@@ -57,6 +65,19 @@ def _route_request(path: str, params: dict, default_workspace: str | None) -> di
         query = _require_one(params, "text")
         limit = int(params.get("limit", ["20"])[0])
         return memory_query(workspace, query, limit=limit)
+    if path == "/workspace/sessions/recent":
+        workspace = _require_workspace(params, default_workspace)
+        limit = int(params.get("limit", ["10"])[0])
+        return workspace_recent_sessions(workspace, limit=limit)
+    if path == "/workspace/session/summary":
+        workspace = _require_workspace(params, default_workspace)
+        session_id = _require_one(params, "session_id")
+        return workspace_session_summary(workspace, session_id)
+    if path == "/workspace/resume-context":
+        workspace = _require_workspace(params, default_workspace)
+        query = _require_one(params, "text")
+        limit = int(params.get("limit", ["5"])[0])
+        return workspace_resume_context(workspace, query, limit=limit)
     if path == "/group/status":
         return group_status(_require_one(params, "group"))
     if path == "/group/query":

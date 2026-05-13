@@ -57,6 +57,11 @@ class WorkspaceStore:
                 continue
         return rows
 
+    def find_jsonl(self, name: str, predicate, limit: int = 200) -> List[Dict[str, Any]]:
+        rows = self.read_jsonl(name, limit=5000)
+        matched = [row for row in rows if predicate(row)]
+        return matched[-limit:]
+
     @property
     def graph_db_path(self) -> Path:
         return self.graph_dir / "graph.db"

@@ -1,14 +1,19 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import json
 from pathlib import Path
 from typing import Any, Dict, List
+from uuid import uuid4
 
 from .config import load_workspace_config
 from .registry import resolve_group
 from .rules import match_rules
 from .semantic import semantic_index_stats, semantic_query
 from .store import WorkspaceStore
+
+SESSION_EVENTS_FILE = "session-events.jsonl"
+SESSION_SUMMARIES_FILE = "session-summaries.jsonl"
 
 
 def load_context(workspace_file: str | Path):
@@ -30,6 +35,8 @@ def workspace_status(workspace_file: str | Path) -> Dict[str, Any]:
             "feigns": len(store.read_json("feign-index.json", [])),
             "mq": len(store.read_json("mq-index.json", [])),
             "cases": len(store.read_jsonl("cross-service-task-memory.jsonl", limit=1000)),
+            "session_events": len(store.read_jsonl(SESSION_EVENTS_FILE, limit=5000)),
+            "session_summaries": len(store.read_jsonl(SESSION_SUMMARIES_FILE, limit=1000)),
             "semantic_docs": semantic_index_stats(workspace_file).get("doc_count", 0),
         },
         "semantic_index": semantic_index_stats(workspace_file),
@@ -137,6 +144,224 @@ def workspace_record_case(workspace_file: str | Path, task: str, projects: List[
     }
     store.append_jsonl("cross-service-task-memory.jsonl", item)
     return {"recorded": True, "case": item}
+
+
+def workspace_start_session(
+    workspace_file: str | Path,
+    intent: str,
+    session_id: str | None = None,
+    metadata: Dict[str, Any] | None = None,
+) -> Dict[str, Any]:
+    config, store = load_context(workspace_file)
+    sid = session_id or _new_session_id()
+    item = {
+        "session_id": sid,
+        "workspace": config.workspace,
+        "event_type": "session_start",
+        "intent": intent,
+        "payload": metadata or {},
+    }
+    store.append_jsonl(SESSION_EVENTS_FILE, item)
+    return {
+        "started": True,
+        "session_id": sid,
+        "workspace": config.workspace,
+        "intent": intent,
+        "created_at": item.get("created_at"),
+    }
+
+
+def workspace_log_session_event(
+    workspace_file: str | Path,
+    session_id: str,
+    event_type: str,
+    payload: Dict[str, Any] | None = None,
+) -> Dict[str, Any]:
+    config, store = load_context(workspace_file)
+    item = {
+        "session_id": session_id,
+        "workspace": config.workspace,
+        "event_type": event_type,
+        "payload": payload or {},
+    }
+    store.append_jsonl(SESSION_EVENTS_FILE, item)
+    return {
+        "logged": True,
+        "session_id": session_id,
+        "workspace": config.workspace,
+        "event_type": event_type,
+        "created_at": item.get("created_at"),
+    }
+
+
+def workspace_end_session(
+    workspace_file: str | Path,
+    session_id: str,
+    outcome: str = "",
+    verified_by: List[str] | None = None,
+) -> Dict[str, Any]:
+    config, store = load_context(workspace_file)
+    workspace_log_session_event(
+        workspace_file,
+        session_id,
+        "session_end",
+        {"outcome": outcome, "verified_by": verified_by or []},
+    )
+    events = _session_events(store, session_id)
+    summary = _build_session_summary(config.workspace, session_id, events, outcome, verified_by or [])
+    store.append_jsonl(SESSION_SUMMARIES_FILE, summary)
+    return {
+        "ended": True,
+        "session_id": session_id,
+        "workspace": config.workspace,
+        "summary": summary,
+    }
+
+
+def workspace_recent_sessions(workspace_file: str | Path, limit: int = 10) -> Dict[str, Any]:
+    config, store = load_context(workspace_file)
+    summaries = store.read_jsonl(SESSION_SUMMARIES_FILE, limit=max(limit, 1))
+    return {
+        "workspace": config.workspace,
+        "recent_sessions": list(reversed(summaries[-limit:])),
+    }
+
+
+def workspace_session_summary(workspace_file: str | Path, session_id: str) -> Dict[str, Any]:
+    config, store = load_context(workspace_file)
+    summaries = store.find_jsonl(SESSION_SUMMARIES_FILE, lambda row: row.get("session_id") == session_id, limit=1)
+    events = _session_events(store, session_id)
+    return {
+        "workspace": config.workspace,
+        "session_id": session_id,
+        "found": bool(summaries or events),
+        "summary": summaries[-1] if summaries else None,
+        "events": events[-50:],
+    }
+
+
+def workspace_resume_context(workspace_file: str | Path, intent: str, limit: int = 5) -> Dict[str, Any]:
+    config, store = load_context(workspace_file)
+    query_result = memory_query(workspace_file, intent, limit=limit)
+    summaries = store.read_jsonl(SESSION_SUMMARIES_FILE, limit=500)
+    tokens = tokenize(intent)
+    related_sessions = []
+    for item in summaries:
+        haystack = json.dumps(item, ensure_ascii=False).lower()
+        score = sum(1 for token in tokens if token in haystack)
+        if score > 0:
+            related_sessions.append({**item, "match_score": score})
+    related_sessions.sort(key=lambda item: (-int(item.get("match_score", 0)), item.get("created_at", "")))
+    related_cases = [
+        item
+        for item in store.read_jsonl("cross-service-task-memory.jsonl", limit=300)
+        if any(token in json.dumps(item, ensure_ascii=False).lower() for token in tokens)
+    ][-limit:]
+    return {
+        "workspace": config.workspace,
+        "intent": intent,
+        "retrieval_summary": query_result.get("retrieval_summary", {}),
+        "related_sessions": related_sessions[:limit],
+        "related_cases": related_cases,
+        "entrypoints": query_result.get("matches", [])[:limit],
+        "suggested_context": _suggest_resume_context(intent, related_sessions[:limit], related_cases, query_result.get("matches", [])[:limit]),
+    }
+
+
+def _new_session_id() -> str:
+    return f"session-{uuid4().hex[:12]}"
+
+
+def _session_events(store: WorkspaceStore, session_id: str) -> List[Dict[str, Any]]:
+    return store.find_jsonl(SESSION_EVENTS_FILE, lambda row: row.get("session_id") == session_id, limit=1000)
+
+
+def _build_session_summary(
+    workspace: str,
+    session_id: str,
+    events: List[Dict[str, Any]],
+    outcome: str,
+    verified_by: List[str],
+) -> Dict[str, Any]:
+    intent = ""
+    for item in events:
+        if item.get("event_type") == "session_start":
+            intent = item.get("intent", "")
+            break
+    event_types = [item.get("event_type", "") for item in events if item.get("event_type")]
+    tool_calls = []
+    files = set()
+    projects = set()
+    notable_terms = []
+    for item in events:
+        payload = item.get("payload", {}) or {}
+        if item.get("event_type") == "tool_call":
+            tool_name = payload.get("tool_name") or payload.get("name")
+            if tool_name:
+                tool_calls.append(tool_name)
+        for key in ["file", "file_path", "path"]:
+            value = payload.get(key)
+            if isinstance(value, str) and value:
+                files.add(value)
+        value = payload.get("project")
+        if isinstance(value, str) and value:
+            projects.add(value)
+        for field in ["query", "target", "name", "intent"]:
+            value = payload.get(field)
+            if isinstance(value, str) and value:
+                notable_terms.append(value)
+    unique_tools = list(dict.fromkeys(tool_calls))
+    summary_text = outcome or _summary_text(intent, unique_tools, files, projects, event_types)
+    return {
+        "session_id": session_id,
+        "workspace": workspace,
+        "intent": intent,
+        "event_count": len(events),
+        "event_types": sorted(set(event_types)),
+        "tool_calls": unique_tools,
+        "projects": sorted(projects),
+        "files": sorted(files)[:50],
+        "outcome": outcome,
+        "verified_by": verified_by,
+        "summary": summary_text,
+        "notable_terms": notable_terms[-10:],
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+def _summary_text(intent: str, tool_calls: List[str], files: set[str], projects: set[str], event_types: List[str]) -> str:
+    parts = []
+    if intent:
+        parts.append(f"任务意图：{intent}")
+    if tool_calls:
+        parts.append(f"调用工具：{', '.join(tool_calls[:6])}")
+    if projects:
+        parts.append(f"涉及项目：{', '.join(sorted(projects)[:6])}")
+    if files:
+        parts.append(f"涉及文件数：{len(files)}")
+    if event_types:
+        parts.append(f"事件类型：{', '.join(sorted(set(event_types))[:6])}")
+    return "；".join(parts) if parts else "会话已结束，暂无可提炼摘要。"
+
+
+def _suggest_resume_context(
+    intent: str,
+    related_sessions: List[Dict[str, Any]],
+    related_cases: List[Dict[str, Any]],
+    entrypoints: List[Dict[str, Any]],
+) -> List[str]:
+    hints = [f"当前意图：{intent}"]
+    if related_sessions:
+        latest = related_sessions[0]
+        hints.append(f"最近相关会话：{latest.get('summary') or latest.get('intent')}")
+    if related_cases:
+        latest_case = related_cases[-1]
+        hints.append(f"最近相关经验：{latest_case.get('task')}")
+    if entrypoints:
+        top = entrypoints[0].get("node", {})
+        if top.get("name"):
+            hints.append(f"优先入口：{top.get('type', 'Node')} {top.get('name')}")
+    return hints
 
 
 def tokenize(text: str) -> List[str]:

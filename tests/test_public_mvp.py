@@ -157,6 +157,54 @@ def test_workspace_service_maintenance_commands(tmp_path: Path):
     assert all(item.name != "ucap-cloud-open-api" for item in config_after.services)
 
 
+def test_session_memory_flow(tmp_path: Path):
+    from memory_center.core.orchestrator import (
+        workspace_end_session,
+        workspace_log_session_event,
+        workspace_recent_sessions,
+        workspace_resume_context,
+        workspace_session_summary,
+        workspace_start_session,
+    )
+
+    source = Path("examples/spring-cloud-demo")
+    target = tmp_path / "session-memory-demo"
+    import shutil
+    shutil.copytree(source, target)
+    workspace = target / ".memory-center" / "workspace.yaml"
+    lines = workspace.read_text(encoding="utf-8").splitlines()
+    lines = [f"root: {target.as_posix()}" if line.startswith("root:") else line for line in lines]
+    workspace.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    config = load_workspace_config(workspace)
+    store = WorkspaceStore(workspace)
+    ensure_default_rules(store)
+    reindex_workspace(config, store)
+
+    started = workspace_start_session(workspace, "修复 ArticleFeignClient 调用链")
+    session_id = started["session_id"]
+    workspace_log_session_event(workspace, session_id, "user_prompt", {"intent": "修复 ArticleFeignClient 调用链"})
+    workspace_log_session_event(workspace, session_id, "tool_call", {"tool_name": "memory_query_tool", "query": "ArticleFeignClient"})
+    workspace_log_session_event(workspace, session_id, "tool_result", {"project": "task-service", "file_path": "task-service/src/main/java/com/example/task/ArticleMoveService.java"})
+    ended = workspace_end_session(workspace, session_id, outcome="完成 Feign 调用链定位", verified_by=["manual-check"])
+
+    assert ended["ended"] is True
+    assert ended["summary"]["tool_calls"] == ["memory_query_tool"]
+
+    summary = workspace_session_summary(workspace, session_id)
+    assert summary["found"] is True
+    assert summary["summary"]["outcome"] == "完成 Feign 调用链定位"
+    assert summary["events"]
+
+    recent = workspace_recent_sessions(workspace, limit=5)
+    assert recent["recent_sessions"]
+    assert recent["recent_sessions"][0]["session_id"] == session_id
+
+    resume = workspace_resume_context(workspace, "ArticleFeignClient 调用链", limit=3)
+    assert resume["related_sessions"]
+    assert resume["suggested_context"]
+
+
 def test_graph_query_context_and_impact(tmp_path):
     from memory_center.core.config import load_workspace_config
     from memory_center.core.indexer import reindex_workspace
@@ -360,6 +408,9 @@ def test_http_bridge_routes(tmp_path: Path):
         assert query["matches"]
         assert query["retrieval_summary"]["exact_matches"] >= 1
         assert query["retrieval_summary"]["semantic_matches"] >= 1
+
+        session_recent = json.loads(urlopen(f"{base}/workspace/sessions/recent?limit=5").read().decode("utf-8"))
+        assert "recent_sessions" in session_recent
 
         group_query_payload = json.loads(urlopen(f"{base}/group/query?group=http-group&text=article-pubtime-change").read().decode("utf-8"))
         assert group_query_payload["related_bridges"]
