@@ -126,12 +126,16 @@ def _route_request(path: str, params: dict, default_workspace: str | None) -> di
         title = params.get("title", [""])[0]
         create_if_missing = params.get("create_if_missing", ["true"])[0].lower() == "true"
         include_archived = params.get("include_archived", ["false"])[0].lower() == "true"
-        return resolve_task_space(workspace, intent=intent, title=title, create_if_missing=create_if_missing, include_archived=include_archived)
+        limit_candidates = int(params.get("limit_candidates", ["3"])[0])
+        return resolve_task_space(workspace, intent=intent, title=title, create_if_missing=create_if_missing, include_archived=include_archived, limit_candidates=limit_candidates)
     if path == "/workspace/task-space/create":
         workspace = _require_workspace(params, default_workspace)
         title = params.get("title", [""])[0]
         intent = params.get("intent", [""])[0]
-        return create_task_space(workspace, title=title, intent=intent)
+        owner = params.get("owner", [""])[0]
+        tags = [item for item in params.get("tag", []) if item]
+        priority = params.get("priority", ["medium"])[0]
+        return create_task_space(workspace, title=title, intent=intent, owner=owner, tags=tags, priority=priority)
     if path == "/workspace/task-artifact":
         workspace = _require_workspace(params, default_workspace)
         task_id = _require_one(params, "task_id")

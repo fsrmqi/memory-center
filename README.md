@@ -392,6 +392,10 @@ When a new conversation starts, you do not have to pass `task_id` every time. Th
 
 当你开启一个新对话时，不需要每次都手填 `task_id`。系统可以根据自然语言意图自动匹配最相关的已有任务空间，只有在匹配不到时才会新建。
 
+Task spaces now also support `owner`, `tags`, and `priority`, and `resolve-task` returns top candidates so the match is explainable instead of fully black-box.
+
+任务空间现在还支持 `owner`、`tags`、`priority`，并且 `resolve-task` 会返回前几个候选结果，让匹配过程可解释，而不是完全黑盒。
+
 For long-running projects, do not feed the full artifact documents every time. Use artifact outline/context retrieval and compact old change logs:
 
 对于长期运行项目，不要每次都整篇读取共享工件。优先使用提纲/相关片段检索，并定期压缩归档旧的 change-log：

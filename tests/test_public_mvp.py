@@ -73,6 +73,8 @@ def test_demo_workspace_indexes_spring_cloud_patterns(tmp_path: Path):
     assert sniffed["symbolic_context"]["flow_flags"]["has_contract"] is True
     assert sniffed["symbolic_context"]["flow_flags"]["has_mq"] is True
     assert sniffed["symbolic_context"]["flow_flags"]["risk_level"] == "high"
+    assert "resolved_task" in sniffed
+    assert "task_candidates" in sniffed
     assert "workspace_check_contract (Feign/API)" in sniffed["symbolic_context"]["flow_mermaid"]
     assert "MQ compatibility review" in sniffed["symbolic_context"]["flow_mermaid"]
 
@@ -223,13 +225,17 @@ def test_workspace_artifacts_flow(tmp_path: Path):
     archive = get_artifact(workspace, "change-log.archive.md")
     assert "历史记录" in archive["content"]
 
-    created_task = create_task_space(workspace, title="修复 Feign DTO 兼容")
+    created_task = create_task_space(workspace, title="修复 Feign DTO 兼容", owner="cjq", tags=["feign", "dto"], priority="high")
     assert created_task["created"] is True
+    assert created_task["owner"] == "cjq"
+    assert created_task["priority"] == "high"
     tasks = list_task_spaces(workspace)
     assert tasks["active_tasks"]
     task_id = created_task["task_id"]
     task_context = get_task_artifact(workspace, task_id, "context")
     assert "修复 Feign DTO 兼容" in task_context["content"]
+    task_summary = get_task_artifact(workspace, task_id, "current_summary")
+    assert "Current Summary / 当前最短上下文" in task_summary["content"]
     updated_task = update_task_artifact(workspace, task_id, "plan", "# Plan\n\n先做影响分析")
     assert updated_task["updated"] is True
     changed_task = append_task_change_log(workspace, task_id, "完成第一轮分析", keep_recent=5)
@@ -241,9 +247,10 @@ def test_workspace_artifacts_flow(tmp_path: Path):
 
     active_task = create_task_space(workspace, title="站点连通性告警治理")
     update_task_artifact(workspace, active_task["task_id"], "plan", "# Plan\n\n处理站点连通性告警与告警链路")
-    resolved = resolve_task_space(workspace, intent="继续处理站点告警连通性问题", create_if_missing=False)
+    resolved = resolve_task_space(workspace, intent="继续处理站点告警连通性问题", create_if_missing=False, limit_candidates=3)
     assert resolved["resolved"] is True
     assert resolved["task_id"] == active_task["task_id"]
+    assert resolved["candidates"]
     status_updated = update_task_status(workspace, active_task["task_id"], "blocked")
     assert status_updated["status"] == "blocked"
 
@@ -301,8 +308,10 @@ def test_artifact_sync_from_sniff_and_case(tmp_path: Path):
     assert synced_sniff["task_id"] == task["task_id"]
     context = get_task_artifact(workspace, task["task_id"], "context")
     plan = get_task_artifact(workspace, task["task_id"], "plan")
+    summary_artifact = get_task_artifact(workspace, task["task_id"], "current_summary")
     assert "Current Task Context / 当前任务上下文" in context["content"]
     assert "Suggested Plan / 建议执行计划" in plan["content"]
+    assert "Risk level" in summary_artifact["content"]
 
     auto_synced_sniff = workspace_sync_sniff_to_artifacts(workspace, "继续处理 Feign DTO 兼容改造", limit=5)
     assert auto_synced_sniff["synced"] is True
@@ -317,8 +326,10 @@ def test_artifact_sync_from_sniff_and_case(tmp_path: Path):
     assert synced_case["synced"] is True
     design = get_task_artifact(workspace, task["task_id"], "design")
     change_log = get_task_artifact(workspace, task["task_id"], "change_log")
+    current_summary = get_task_artifact(workspace, task["task_id"], "current_summary")
     assert "Session Learnings / 会话沉淀" in design["content"]
     assert "Session `" in change_log["content"]
+    assert "Session:" in current_summary["content"]
 
     auto_synced_case = workspace_sync_case_to_artifacts(workspace, session_id)
     assert auto_synced_case["synced"] is True
@@ -428,6 +439,7 @@ def test_graph_query_context_and_impact(tmp_path):
     assert status["semantic_index"]["ready"] is True
     assert status["semantic_index"]["backend"] == "sparse"
     assert status["index_counts"]["semantic_docs"] > 0
+    assert "active_task_spaces" in status
     context = memory_context(workspace, "ArticleFeignClient")
     assert context["found"] is True
     assert context["lookup"]["retrieval_summary"]["exact_matches"] >= 1

@@ -114,9 +114,9 @@ def create_server(workspace_file: str):
         return compact_change_log(_WORKSPACE_FILE, keep_recent)
 
     @mcp.tool()
-    def workspace_task_space_create_tool(title: str = "", intent: str = ""):
+    def workspace_task_space_create_tool(title: str = "", intent: str = "", owner: str = "", tags: List[str] | None = None, priority: str = "medium"):
         """Create one task-specific artifact space from a custom title or intent."""
-        return create_task_space(_WORKSPACE_FILE, title=title, intent=intent)
+        return create_task_space(_WORKSPACE_FILE, title=title, intent=intent, owner=owner, tags=tags, priority=priority)
 
     @mcp.tool()
     def workspace_task_space_list_tool(include_archived: bool = False):
@@ -124,9 +124,9 @@ def create_server(workspace_file: str):
         return list_task_spaces(_WORKSPACE_FILE, include_archived=include_archived)
 
     @mcp.tool()
-    def workspace_task_space_resolve_tool(intent: str, title: str = "", create_if_missing: bool = True, include_archived: bool = False):
+    def workspace_task_space_resolve_tool(intent: str, title: str = "", create_if_missing: bool = True, include_archived: bool = False, limit_candidates: int = 3):
         """Resolve one task space from natural language; create one if needed."""
-        return resolve_task_space(_WORKSPACE_FILE, intent=intent, title=title, create_if_missing=create_if_missing, include_archived=include_archived)
+        return resolve_task_space(_WORKSPACE_FILE, intent=intent, title=title, create_if_missing=create_if_missing, include_archived=include_archived, limit_candidates=limit_candidates)
 
     @mcp.tool()
     def workspace_task_artifact_get_tool(task_id: str, name: str):

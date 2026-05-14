@@ -12,6 +12,7 @@ from .artifacts import (
     create_task_space,
     get_artifact,
     get_task_artifact,
+    list_task_spaces,
     resolve_task_space,
     update_artifact,
     update_task_artifact,
@@ -34,6 +35,7 @@ def load_context(workspace_file: str | Path):
 
 def workspace_status(workspace_file: str | Path) -> Dict[str, Any]:
     config, store = load_context(workspace_file)
+    active_tasks = _active_task_summaries(workspace_file, limit=5)
     return {
         "workspace": config.workspace,
         "root": str(config.root_path),
@@ -50,6 +52,7 @@ def workspace_status(workspace_file: str | Path) -> Dict[str, Any]:
             "semantic_docs": semantic_index_stats(workspace_file).get("doc_count", 0),
         },
         "semantic_index": semantic_index_stats(workspace_file),
+        "active_task_spaces": active_tasks,
         "topology": store.read_json("service-topology.json", {}),
     }
 
@@ -72,6 +75,13 @@ def workspace_sniff(workspace_file: str | Path, intent: str, limit: int = 12) ->
     related_cases = [x for x in cases if any(k in json.dumps(x, ensure_ascii=False).lower() for k in keywords)][-5:]
     rules = match_rules(store, intent=intent, files=[x["path"] for x in matched_files])[:10]
     sniff_risk_level = _sniff_risk_level(intent, matched_files, related_feigns, related_apis, related_mq, rules)
+    task_resolution = resolve_task_space(
+        workspace_file,
+        intent=intent,
+        create_if_missing=False,
+        limit_candidates=3,
+        related_texts=[item.get("task", "") for item in related_cases],
+    )
 
     return {
         "workspace": config.workspace,
@@ -84,6 +94,8 @@ def workspace_sniff(workspace_file: str | Path, intent: str, limit: int = 12) ->
         "related_mq": related_mq,
         "related_rules": rules,
         "historical_cases": related_cases,
+        "task_candidates": task_resolution.get("candidates", []),
+        "resolved_task": {key: task_resolution.get(key) for key in ["resolved", "task_id", "title", "status", "owner", "tags", "priority", "score"]},
         "symbolic_context": _build_sniff_symbolic_context(intent, sniff_risk_level, matched_services, matched_files, related_feigns, related_apis, related_mq, related_cases),
         "next_steps": [
             "先调用 memory_search_code 缩小入口范围，再用 memory_symbol 定位关键符号",
@@ -341,7 +353,13 @@ def workspace_sync_sniff_to_artifacts(
     if resolved_task_id:
         resolved_info = {"task_id": resolved_task_id, "created": False}
     else:
-        resolved_info = resolve_task_space(workspace_file, intent=intent, title=title.strip(), create_if_missing=True)
+        resolved_info = resolve_task_space(
+            workspace_file,
+            intent=intent,
+            title=title.strip(),
+            create_if_missing=True,
+            related_texts=[item.get("task", "") for item in sniff.get("historical_cases", [])],
+        )
         resolved_task_id = str(resolved_info["task_id"])
     context_content = _merge_artifact_section(
         get_task_artifact(workspace_file, resolved_task_id, "context").get("content", ""),
@@ -353,15 +371,17 @@ def workspace_sync_sniff_to_artifacts(
         "Suggested Plan / 建议执行计划",
         _render_sniff_plan_markdown(sniff),
     )
+    summary_content = _render_task_current_summary_from_sniff(sniff, resolved_info or {})
     update_task_artifact(workspace_file, resolved_task_id, "context", context_content)
     update_task_artifact(workspace_file, resolved_task_id, "plan", plan_content)
+    update_task_artifact(workspace_file, resolved_task_id, "current_summary", summary_content)
     return {
         "workspace": config.workspace,
         "synced": True,
         "intent": intent,
         "task_id": resolved_task_id,
         "task_resolution": resolved_info,
-        "updated_artifacts": ["context", "plan"],
+        "updated_artifacts": ["context", "plan", "current_summary"],
         "risk_level": sniff.get("risk_level", "unknown"),
     }
 
@@ -388,11 +408,13 @@ def workspace_sync_case_to_artifacts(
     if resolved_task_id:
         resolved_info = {"task_id": resolved_task_id, "created": False}
     else:
+        related_texts = [ref.get("query", "") or ref.get("target", "") for ref in case.get("evidence_refs", [])]
         resolved_info = resolve_task_space(
             workspace_file,
             intent=case.get("task", ""),
             title=title.strip() or case.get("task", ""),
             create_if_missing=True,
+            related_texts=related_texts,
         )
         resolved_task_id = str(resolved_info["task_id"])
     design_content = _merge_artifact_section(
@@ -400,7 +422,9 @@ def workspace_sync_case_to_artifacts(
         "Session Learnings / 会话沉淀",
         _render_case_markdown(case),
     )
+    summary_content = _render_task_current_summary_from_case(case, resolved_info or {}, session_id)
     update_task_artifact(workspace_file, resolved_task_id, "design", design_content)
+    update_task_artifact(workspace_file, resolved_task_id, "current_summary", summary_content)
     append_task_change_log(workspace_file, resolved_task_id, _render_change_log_entry(case, session_id))
     return {
         "workspace": config.workspace,
@@ -408,13 +432,37 @@ def workspace_sync_case_to_artifacts(
         "synced": True,
         "task_id": resolved_task_id,
         "task_resolution": resolved_info,
-        "updated_artifacts": ["design", "change_log"],
+        "updated_artifacts": ["design", "change_log", "current_summary"],
         "task": case.get("task", ""),
     }
 
 
 def _new_session_id() -> str:
     return f"session-{uuid4().hex[:12]}"
+
+
+def _active_task_summaries(workspace_file: str | Path, limit: int = 5) -> List[Dict[str, Any]]:
+    tasks = list_task_spaces(workspace_file, include_archived=False).get("active_tasks", [])
+    sorted_tasks = sorted(tasks, key=lambda item: (item.get("status") != "active", item.get("updated_at", "")), reverse=True)
+    rows = []
+    for item in sorted_tasks[:limit]:
+        try:
+            summary = get_task_artifact(workspace_file, str(item.get("task_id", "")), "current_summary").get("content", "")
+        except Exception:
+            summary = ""
+        rows.append(
+            {
+                "task_id": item.get("task_id", ""),
+                "title": item.get("title", ""),
+                "status": item.get("status", ""),
+                "owner": item.get("owner", ""),
+                "tags": item.get("tags", []),
+                "priority": item.get("priority", "medium"),
+                "updated_at": item.get("updated_at", ""),
+                "summary_preview": _trim_summary(summary),
+            }
+        )
+    return rows
 
 
 def _session_events(store: WorkspaceStore, session_id: str) -> List[Dict[str, Any]]:
@@ -1196,6 +1244,43 @@ def _render_change_log_entry(case: Dict[str, Any], session_id: str) -> str:
         f"- Projects: {', '.join(case.get('projects', []))}\n"
         f"- Risk points: {risk_points or 'None'}"
     )
+
+
+def _render_task_current_summary_from_sniff(sniff: Dict[str, Any], resolved_info: Dict[str, Any]) -> str:
+    services = ", ".join(sniff.get("matched_services", [])[:4]) or "None"
+    top_files = ", ".join(item.get("path", "") for item in sniff.get("candidate_files", [])[:3]) or "None"
+    next_steps = "\n".join(f"- {item}" for item in sniff.get("next_steps", [])[:4])
+    return (
+        "# Current Summary / 当前最短上下文\n\n"
+        f"- Intent: {sniff.get('intent', '')}\n"
+        f"- Risk level: {sniff.get('risk_level', 'unknown')}\n"
+        f"- Resolved task: {resolved_info.get('title', resolved_info.get('task_id', ''))}\n"
+        f"- Services: {services}\n"
+        f"- Top files: {top_files}\n\n"
+        "## Next Steps\n\n"
+        f"{next_steps}\n"
+    )
+
+
+def _render_task_current_summary_from_case(case: Dict[str, Any], resolved_info: Dict[str, Any], session_id: str) -> str:
+    risk_points = ", ".join(case.get("risk_points", [])[:4]) or "None"
+    projects = ", ".join(case.get("projects", [])[:6]) or "None"
+    return (
+        "# Current Summary / 当前最短上下文\n\n"
+        f"- Task: {case.get('task', '')}\n"
+        f"- Session: {session_id}\n"
+        f"- Resolved task: {resolved_info.get('title', resolved_info.get('task_id', ''))}\n"
+        f"- Projects: {projects}\n"
+        f"- Flow: {case.get('flow', '')}\n"
+        f"- Risk points: {risk_points}\n"
+    )
+
+
+def _trim_summary(text: str, limit: int = 220) -> str:
+    normalized = " ".join(text.split())
+    if len(normalized) <= limit:
+        return normalized
+    return normalized[: limit - 3] + "..."
 
 
 def _build_sniff_symbolic_context(

@@ -20,6 +20,9 @@ DEFAULT_ARTIFACTS = {
     "test_plan": "test-plan.md",
     "change_log": "change-log.md",
 }
+TASK_ONLY_ARTIFACTS = {
+    "current_summary": "current-summary.md",
+}
 
 TASKS_DIR = "tasks"
 ARCHIVE_DIR = "archive/tasks"
@@ -225,7 +228,7 @@ def create_task_space(
         "updated_at": datetime.now().isoformat(),
     }
     _write_task_meta(store, task_dir, meta)
-    for key, filename in DEFAULT_ARTIFACTS.items():
+    for key, filename in _artifact_mapping(include_task_only=True).items():
         path = task_dir / filename
         if not path.exists():
             path.write_text(_default_task_artifact_content(config.workspace, task_title, key), encoding="utf-8")
@@ -248,14 +251,18 @@ def resolve_task_space(
     create_if_missing: bool = True,
     include_archived: bool = False,
     limit_candidates: int = 3,
+    related_texts: List[str] | None = None,
 ) -> Dict[str, object]:
     config = load_workspace_config(workspace_file)
     candidates = list_task_spaces(workspace_file, include_archived=include_archived)
     keyword_text = title.strip() or intent.strip()
     keywords = _tokenize_text(keyword_text)
+    hint_keywords: List[str] = []
+    for text in related_texts or []:
+        hint_keywords.extend(_tokenize_text(text))
     scored = []
     for task in candidates["active_tasks"] + candidates.get("archived_tasks", []):
-        score = _task_match_score(workspace_file, task, keywords)
+        score = _task_match_score(workspace_file, task, keywords, hint_keywords)
         if score <= 0:
             continue
         scored.append({**task, "score": score})
@@ -343,7 +350,7 @@ def get_task_artifact(workspace_file: str | Path, task_id: str, name: str) -> Di
     config = load_workspace_config(workspace_file)
     store = WorkspaceStore(workspace_file)
     task_dir, meta = _resolve_task_dir(store, task_id)
-    key, filename = _resolve_artifact_name(name)
+    key, filename = _resolve_artifact_name(name, include_task_only=True)
     path = task_dir / filename
     return {
         "workspace": config.workspace,
@@ -360,7 +367,7 @@ def update_task_artifact(workspace_file: str | Path, task_id: str, name: str, co
     config = load_workspace_config(workspace_file)
     store = WorkspaceStore(workspace_file)
     task_dir, meta = _resolve_task_dir(store, task_id)
-    key, filename = _resolve_artifact_name(name)
+    key, filename = _resolve_artifact_name(name, include_task_only=True)
     path = task_dir / filename
     with FileLock(str(store.lock_file)):
         path.write_text(content, encoding="utf-8")
@@ -470,16 +477,21 @@ def auto_archive_task_spaces(workspace_file: str | Path, retention_days: int = 3
     }
 
 
-def _resolve_artifact_name(name: str) -> tuple[str, str]:
+def _resolve_artifact_name(name: str, include_task_only: bool = False) -> tuple[str, str]:
     normalized = name.strip().lower().replace("-", "_")
-    if normalized in DEFAULT_ARTIFACTS:
-        return normalized, DEFAULT_ARTIFACTS[normalized]
-    for key, filename in DEFAULT_ARTIFACTS.items():
+    mapping = _artifact_mapping(include_task_only=include_task_only)
+    if normalized in mapping:
+        return normalized, mapping[normalized]
+    for key, filename in mapping.items():
         if normalized == filename.lower().replace("-", "_").replace(".md", ""):
             return key, filename
         if normalized == filename.lower():
             return key, filename
     raise ValueError(f"unknown artifact: {name}")
+
+
+def _artifact_mapping(include_task_only: bool = False) -> Dict[str, str]:
+    return {**DEFAULT_ARTIFACTS, **(TASK_ONLY_ARTIFACTS if include_task_only else {})}
 
 
 def _default_artifact_content(workspace_name: str, artifact_name: str) -> str:
@@ -490,6 +502,7 @@ def _default_artifact_content(workspace_name: str, artifact_name: str) -> str:
         "plan": "Plan / 开发计划",
         "test_plan": "Test Plan / 测试策略",
         "change_log": "Change Log / 变更记录",
+        "current_summary": "Current Summary / 当前最短上下文",
     }
     title = title_map[artifact_name]
     return (
@@ -580,9 +593,10 @@ def _resolve_task_dir(store: WorkspaceStore, task_id: str) -> tuple[Path, Dict[s
     raise ValueError(f"unknown task space: {task_id}")
 
 
-def _task_match_score(workspace_file: str | Path, task: Dict[str, object], keywords: List[str]) -> int:
+def _task_match_score(workspace_file: str | Path, task: Dict[str, object], keywords: List[str], hint_keywords: List[str] | None = None) -> int:
     if not keywords:
-        return 0
+        keywords = []
+    hint_keywords = hint_keywords or []
     haystack_parts = [
         str(task.get("title", "")),
         str(task.get("intent", "")),
@@ -592,13 +606,14 @@ def _task_match_score(workspace_file: str | Path, task: Dict[str, object], keywo
         str(task.get("priority", "")),
     ]
     try:
-        for artifact_name in ["context.md", "requirement.md", "design.md", "plan.md", "test-plan.md"]:
+        for artifact_name in ["current-summary.md", "context.md", "requirement.md", "design.md", "plan.md", "test-plan.md"]:
             artifact = get_task_artifact(workspace_file, str(task.get("task_id", "")), artifact_name)
             haystack_parts.append(_trim_text(str(artifact.get("content", "")), 800))
     except Exception:
         pass
     haystack = " ".join(haystack_parts).lower()
     score = sum(1 for token in keywords if token in haystack)
+    score += sum(1 for token in hint_keywords if token in haystack)
     if str(task.get("status", "")) == "active":
         score += 2
     elif str(task.get("status", "")) == "draft":
