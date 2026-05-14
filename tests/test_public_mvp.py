@@ -76,6 +76,10 @@ def test_demo_workspace_indexes_spring_cloud_patterns(tmp_path: Path):
     assert sniffed["symbolic_context"]["flow_flags"]["risk_level"] == "high"
     assert "resolved_task" in sniffed
     assert "task_candidates" in sniffed
+    assert "auto_sync_recommendation" in sniffed
+    assert "recommended" in sniffed["auto_sync_recommendation"]
+    assert "score_threshold" in sniffed["auto_sync_recommendation"]
+    assert "reason" in sniffed["auto_sync_recommendation"]
     assert "workspace_check_contract (Feign/API)" in sniffed["symbolic_context"]["flow_mermaid"]
     assert "MQ compatibility review" in sniffed["symbolic_context"]["flow_mermaid"]
 
@@ -233,6 +237,10 @@ def test_workspace_artifacts_flow(tmp_path: Path):
     tasks = list_task_spaces(workspace)
     assert tasks["active_tasks"]
     task_id = created_task["task_id"]
+    status_after_create = workspace_status(workspace)
+    assert status_after_create["current_focus_task"]
+    assert status_after_create["current_focus_task"]["task_id"] == task_id
+    assert "focus_reason" in status_after_create["current_focus_task"]
     task_context = get_task_artifact(workspace, task_id, "context")
     assert "修复 Feign DTO 兼容" in task_context["content"]
     task_summary = get_task_artifact(workspace, task_id, "current_summary")
@@ -252,6 +260,8 @@ def test_workspace_artifacts_flow(tmp_path: Path):
     assert resolved["resolved"] is True
     assert resolved["task_id"] == active_task["task_id"]
     assert resolved["candidates"]
+    assert "match_reasons" in resolved
+    assert "artifact_hits" in resolved["match_reasons"]
     status_updated = update_task_status(workspace, active_task["task_id"], "blocked")
     assert status_updated["status"] == "blocked"
 
@@ -304,17 +314,28 @@ def test_artifact_sync_from_sniff_and_case(tmp_path: Path):
     reindex_workspace(config, store)
 
     task = create_task_space(workspace, title="Feign DTO 兼容改造")
-    synced_sniff = workspace_sync_sniff_to_artifacts(workspace, "修改 Feign DTO 并评估 MQ 影响", limit=5, task_id=task["task_id"])
+    synced_sniff = workspace_sync_sniff_to_artifacts(
+        workspace,
+        "修改 Feign DTO 并评估 MQ 影响",
+        limit=5,
+        task_id=task["task_id"],
+        auto_sync_mode="strict",
+    )
     assert synced_sniff["synced"] is True
     assert synced_sniff["task_id"] == task["task_id"]
+    assert synced_sniff["auto_sync_mode"] == "strict"
+    assert "auto_sync_recommendation" in synced_sniff
     context = get_task_artifact(workspace, task["task_id"], "context")
     plan = get_task_artifact(workspace, task["task_id"], "plan")
     summary_artifact = get_task_artifact(workspace, task["task_id"], "current_summary")
     assert "Current Task Context / 当前任务上下文" in context["content"]
     assert "Suggested Plan / 建议执行计划" in plan["content"]
     assert "Risk level" in summary_artifact["content"]
+    task_spaces = list_task_spaces(workspace)
+    task_row = next(item for item in task_spaces["active_tasks"] if item["task_id"] == task["task_id"])
+    assert task_row["last_activity_source"] == "sync_sniff_artifacts"
 
-    auto_synced_sniff = workspace_sync_sniff_to_artifacts(workspace, "继续处理 Feign DTO 兼容改造", limit=5)
+    auto_synced_sniff = workspace_sync_sniff_to_artifacts(workspace, "继续处理 Feign DTO 兼容改造", limit=5, auto_sync_mode="balanced")
     assert auto_synced_sniff["synced"] is True
     assert auto_synced_sniff["task_id"] == task["task_id"]
 
@@ -323,17 +344,28 @@ def test_artifact_sync_from_sniff_and_case(tmp_path: Path):
     workspace_log_session_event(workspace, session_id, "tool_call", {"tool_name": "memory_query_tool", "query": "ArticleFeignClient", "project": "task-service"})
     workspace_end_session(workspace, session_id, outcome="完成 Feign 调用链定位", verified_by=["manual-check"])
 
-    synced_case = workspace_sync_case_to_artifacts(workspace, session_id, task_id=task["task_id"])
+    synced_case = workspace_sync_case_to_artifacts(
+        workspace,
+        session_id,
+        task_id=task["task_id"],
+        auto_sync_mode="strict",
+    )
     assert synced_case["synced"] is True
+    assert synced_case["auto_sync_mode"] == "strict"
+    assert "auto_sync_recommendation" in synced_case
     design = get_task_artifact(workspace, task["task_id"], "design")
     change_log = get_task_artifact(workspace, task["task_id"], "change_log")
     current_summary = get_task_artifact(workspace, task["task_id"], "current_summary")
     assert "Session Learnings / 会话沉淀" in design["content"]
     assert "Session `" in change_log["content"]
     assert "Session:" in current_summary["content"]
+    task_spaces_after = list_task_spaces(workspace)
+    task_row_after = next(item for item in task_spaces_after["active_tasks"] if item["task_id"] == task["task_id"])
+    assert task_row_after["last_activity_source"] == "sync_case_artifacts"
 
-    auto_synced_case = workspace_sync_case_to_artifacts(workspace, session_id)
+    auto_synced_case = workspace_sync_case_to_artifacts(workspace, session_id, auto_sync_mode="aggressive")
     assert auto_synced_case["synced"] is True
+    assert auto_synced_case["auto_sync_mode"] == "aggressive"
     # Auto-resolve picks the best-matching task; any existing task_id is acceptable.
     assert auto_synced_case["task_id"]
     all_tasks = list_task_spaces(workspace)
@@ -445,6 +477,7 @@ def test_graph_query_context_and_impact(tmp_path):
     assert status["semantic_index"]["backend"] == "sparse"
     assert status["index_counts"]["semantic_docs"] > 0
     assert "active_task_spaces" in status
+    assert "current_focus_task" in status
     context = memory_context(workspace, "ArticleFeignClient")
     assert context["found"] is True
     assert context["lookup"]["retrieval_summary"]["exact_matches"] >= 1
@@ -654,8 +687,15 @@ def test_http_bridge_routes(tmp_path: Path):
         task_id = task_space["task_id"]
         task_spaces = json.loads(urlopen(f"{base}/workspace/task-spaces").read().decode("utf-8"))
         assert task_spaces["active_tasks"]
-        sniff_sync = json.loads(urlopen(f"{base}/workspace/artifacts/sync-sniff?intent=HTTP%20Feign%20task&limit=5&task_id={task_id}").read().decode("utf-8"))
+        sniff_sync = json.loads(
+            urlopen(
+                f"{base}/workspace/artifacts/sync-sniff?intent=HTTP%20Feign%20task&limit=5&task_id={task_id}&auto_sync_mode=aggressive"
+            )
+            .read()
+            .decode("utf-8")
+        )
         assert sniff_sync["synced"] is True
+        assert sniff_sync["auto_sync_mode"] == "aggressive"
 
         query = json.loads(urlopen(f"{base}/workspace/query?text=ArticleFeignClient").read().decode("utf-8"))
         assert query["matches"]
@@ -680,8 +720,15 @@ def test_http_bridge_routes(tmp_path: Path):
         suggested_case = json.loads(urlopen(f"{base}/workspace/suggest-case?session_id={session_id}").read().decode("utf-8"))
         assert suggested_case["found"] is True
         assert suggested_case["draft_case"]["task"]
-        case_sync = json.loads(urlopen(f"{base}/workspace/artifacts/sync-case?session_id={session_id}&task_id={task_id}").read().decode("utf-8"))
+        case_sync = json.loads(
+            urlopen(
+                f"{base}/workspace/artifacts/sync-case?session_id={session_id}&task_id={task_id}&auto_sync_mode=strict"
+            )
+            .read()
+            .decode("utf-8")
+        )
         assert case_sync["synced"] is True
+        assert case_sync["auto_sync_mode"] == "strict"
         task_context = json.loads(urlopen(f"{base}/workspace/task-artifact?task_id={task_id}&name=context").read().decode("utf-8"))
         assert task_context["task_id"] == task_id
 
@@ -824,6 +871,55 @@ def test_write_paths_record_last_activity_source(tmp_path: Path):
     listed3 = list_task_spaces(workspace)
     task_entry3 = next(t for t in listed3["active_tasks"] if t["task_id"] == task_id)
     assert task_entry3["last_activity_source"] == "update_task_status"
+
+
+def test_sniff_auto_sync_mode_strategies():
+    from memory_center.core.orchestrator import _build_sniff_auto_sync_recommendation
+
+    task_resolution = {
+        "resolved": True,
+        "task_id": "task-1",
+        "score": 3,
+        "score_threshold": 3,
+        "candidates": [{"task_id": "task-1"}],
+    }
+
+    strict = _build_sniff_auto_sync_recommendation(task_resolution, "medium", auto_sync_mode="strict")
+    balanced = _build_sniff_auto_sync_recommendation(task_resolution, "medium", auto_sync_mode="balanced")
+    aggressive = _build_sniff_auto_sync_recommendation(task_resolution, "high", auto_sync_mode="aggressive")
+    fallback = _build_sniff_auto_sync_recommendation(task_resolution, "medium", auto_sync_mode="unknown-mode")
+
+    assert strict["mode"] == "strict"
+    assert strict["recommended"] is False
+    assert balanced["mode"] == "balanced"
+    assert balanced["recommended"] is True
+    assert aggressive["mode"] == "aggressive"
+    assert aggressive["recommended"] is True
+    assert fallback["mode"] == "balanced"
+
+
+def test_case_risk_level_with_evidence_refs():
+    from memory_center.core.orchestrator import _case_risk_level
+
+    low_case = {
+        "risk_points": [],
+        "evidence_refs": [{"event_type": "tool_call", "tool_name": "memory_symbol_tool", "query": "ArticleMoveService"}],
+    }
+    medium_case = {
+        "risk_points": ["字段兼容待验证"],
+        "evidence_refs": [{"event_type": "tool_call", "tool_name": "memory_impact_tool", "target": "MoveArticleRequest"}],
+    }
+    high_case = {
+        "risk_points": ["Feign contract 兼容风险", "MQ topic 变更风险"],
+        "evidence_refs": [
+            {"event_type": "tool_call", "tool_name": "workspace_check_contract_tool", "query": "ArticleFeignClient"},
+            {"event_type": "tool_call", "tool_name": "memory_query_tool", "query": "article-pubtime-change topic kafka"},
+        ],
+    }
+
+    assert _case_risk_level(low_case) == "low"
+    assert _case_risk_level(medium_case) in {"medium", "high"}
+    assert _case_risk_level(high_case) == "high"
 
 
 def _copy_demo_workspace(tmp_path: Path, name: str) -> Path:

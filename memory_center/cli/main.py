@@ -124,9 +124,14 @@ def status(workspace: str = typer.Option(...)):
 
 
 @app.command()
-def sniff(workspace: str = typer.Option(...), intent: str = typer.Option(...), limit: int = typer.Option(12)):
+def sniff(
+    workspace: str = typer.Option(...),
+    intent: str = typer.Option(...),
+    limit: int = typer.Option(12),
+    auto_sync_mode: str = typer.Option("balanced", help="Auto sync recommendation mode: strict|balanced|aggressive"),
+):
     """Retrieve workspace context for a coding task intent."""
-    print(workspace_sniff(workspace, intent, limit))
+    print(workspace_sniff(workspace, intent, limit, auto_sync_mode=auto_sync_mode))
 
 
 @app.command()
@@ -370,9 +375,19 @@ def sync_sniff_artifacts_cmd(
     limit: int = typer.Option(12),
     task_id: str = typer.Option(""),
     title: str = typer.Option(""),
+    auto_sync_mode: str = typer.Option("balanced", help="Auto sync recommendation mode: strict|balanced|aggressive"),
 ):
     """Sync sniff result into shared context.md and plan.md."""
-    print(workspace_sync_sniff_to_artifacts(workspace, intent, limit=limit, task_id=task_id, title=title))
+    print(
+        workspace_sync_sniff_to_artifacts(
+            workspace,
+            intent,
+            limit=limit,
+            task_id=task_id,
+            title=title,
+            auto_sync_mode=auto_sync_mode,
+        )
+    )
 
 
 @app.command("sync-case-artifacts")
@@ -381,9 +396,18 @@ def sync_case_artifacts_cmd(
     session_id: str = typer.Option(...),
     task_id: str = typer.Option(""),
     title: str = typer.Option(""),
+    auto_sync_mode: str = typer.Option("balanced", help="Auto sync recommendation mode: strict|balanced|aggressive"),
 ):
     """Sync one suggested case into design.md and change-log.md."""
-    print(workspace_sync_case_to_artifacts(workspace, session_id, task_id=task_id, title=title))
+    print(
+        workspace_sync_case_to_artifacts(
+            workspace,
+            session_id,
+            task_id=task_id,
+            title=title,
+            auto_sync_mode=auto_sync_mode,
+        )
+    )
 
 
 @registry_app.command("add")

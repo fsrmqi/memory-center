@@ -278,7 +278,8 @@ export MEMORY_CENTER_EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2
 ```bash
 memory-center sniff \
   --workspace examples/spring-cloud-demo/.memory-center/workspace.yaml \
-  --intent "oldPubTime newPubTime ArticleFeignClient 文章发布时间迁移"
+  --intent "oldPubTime newPubTime ArticleFeignClient 文章发布时间迁移" \
+  --auto-sync-mode balanced
 ```
 
 ### 4. Graph query / 图谱查询
@@ -345,9 +346,11 @@ You can now keep lightweight task-session memory inside the same workspace:
 
 现在也可以在同一个 workspace 里记录轻量的任务会话记忆：
 
-`workspace_sniff` 现在会返回 `symbolic_context`，适合在长任务开始前先做低 Token 的符号化规划；其中同时包含 `entities_mermaid`（实体聚焦图）和 `flow_mermaid`（任务流程图），并且 `flow_mermaid` 会根据本次命中的 Feign/API、MQ、Config、历史 Case 动态切换流程分支，同时按 `risk_level` 决定是否强制插入 `memory_impact -> memory_plan_change -> memory_verify_checklist` 这条更严格主链路。`workspace_suggest_case` 会返回 `evidence_refs`，用于把 case 草稿回溯到原始事件；workspace 级 `query/context/impact` 会返回 `progressive` 的 `summary / evidence / detail` 三层视图，便于按需展开。
+`workspace_sniff` 现在会返回 `symbolic_context`，适合在长任务开始前先做低 Token 的符号化规划；其中同时包含 `entities_mermaid`（实体聚焦图）和 `flow_mermaid`（任务流程图），并且 `flow_mermaid` 会根据本次命中的 Feign/API、MQ、Config、历史 Case 动态切换流程分支，同时按 `risk_level` 决定是否强制插入 `memory_impact -> memory_plan_change -> memory_verify_checklist` 这条更严格主链路。`workspace_sniff` 还会返回 `auto_sync_recommendation`（含 `recommended/confidence/reason/score_threshold/mode`）帮助判断是否自动同步到任务空间，并支持 `auto_sync_mode=strict|balanced|aggressive` 三档策略。`workspace_suggest_case` 会返回 `evidence_refs`，用于把 case 草稿回溯到原始事件；workspace 级 `query/context/impact` 会返回 `progressive` 的 `summary / evidence / detail` 三层视图，便于按需展开。
+`sync-case-artifacts` 的风险等级也已升级为 `risk_points + evidence_refs` 联合评分，并在返回中提供 `risk_evidence`（含 score、signals、evidence_type_counts），用于解释自动同步策略的风险判断依据。
 
-`workspace_sniff` now returns `symbolic_context` for low-token planning, including both `entities_mermaid` and `flow_mermaid`. `workspace_suggest_case` returns `evidence_refs` back to raw events, and workspace `query/context/impact` responses now include a `progressive` view with `summary / evidence / detail` layers.
+`workspace_sniff` now returns `symbolic_context` for low-token planning, including both `entities_mermaid` and `flow_mermaid`. It also returns `auto_sync_recommendation` (`recommended/confidence/reason/score_threshold/mode`) so agents can decide whether to auto-sync into task spaces, with `auto_sync_mode=strict|balanced|aggressive`. `workspace_suggest_case` returns `evidence_refs` back to raw events, and workspace `query/context/impact` responses now include a `progressive` view with `summary / evidence / detail` layers.
+`sync-case-artifacts` now computes risk from both `risk_points` and typed `evidence_refs`, and returns `risk_evidence` (score/signals/evidence_type_counts) to explain why a sync recommendation is conservative or aggressive.
 
 Group-level `query` and `impact` now expose the same `progressive` structure, so agents can use one consistent disclosure pattern across single-workspace and multi-workspace workflows.
 
@@ -364,11 +367,13 @@ You can also sync task outputs back into shared artifacts:
 ```bash
 memory-center sync-sniff-artifacts \
   --workspace /Users/cuijiaqi/javaworkspace/ucap/.memory-center/workspace.yaml \
-  --intent "修改 Feign DTO 并评估 MQ 影响"
+  --intent "修改 Feign DTO 并评估 MQ 影响" \
+  --auto-sync-mode balanced
 
 memory-center sync-case-artifacts \
   --workspace /Users/cuijiaqi/javaworkspace/ucap/.memory-center/workspace.yaml \
-  --session-id session-xxxx
+  --session-id session-xxxx \
+  --auto-sync-mode balanced
 ```
 
 For longer-running work, prefer task-specific spaces under `artifacts/tasks/<task-title-slug>/`, so the same requirement keeps its own `context/design/plan/change-log`, and stale task spaces can be archived automatically after N days.

@@ -70,14 +70,27 @@ def create_server(workspace_file: str):
     mcp = FastMCP("Memory Center")
 
     @mcp.tool()
-    def workspace_sniff_tool(intent: str, limit: int = 12):
+    def workspace_sniff_tool(intent: str, limit: int = 12, auto_sync_mode: str = "balanced"):
         """Before any code task, retrieve services, files, rules, topology hints and historical cases."""
-        return workspace_sniff(_WORKSPACE_FILE, intent, limit)
+        return workspace_sniff(_WORKSPACE_FILE, intent, limit, auto_sync_mode=auto_sync_mode)
 
     @mcp.tool()
-    def workspace_sync_sniff_artifacts_tool(intent: str, limit: int = 12, task_id: str = "", title: str = ""):
+    def workspace_sync_sniff_artifacts_tool(
+        intent: str,
+        limit: int = 12,
+        task_id: str = "",
+        title: str = "",
+        auto_sync_mode: str = "balanced",
+    ):
         """Sync sniff result into shared context and plan artifacts."""
-        return workspace_sync_sniff_to_artifacts(_WORKSPACE_FILE, intent, limit, task_id=task_id, title=title)
+        return workspace_sync_sniff_to_artifacts(
+            _WORKSPACE_FILE,
+            intent,
+            limit,
+            task_id=task_id,
+            title=title,
+            auto_sync_mode=auto_sync_mode,
+        )
 
     @mcp.tool()
     def workspace_artifact_list_tool():
@@ -275,9 +288,20 @@ def create_server(workspace_file: str):
         return workspace_suggest_case(_WORKSPACE_FILE, session_id)
 
     @mcp.tool()
-    def workspace_sync_case_artifacts_tool(session_id: str, task_id: str = "", title: str = ""):
+    def workspace_sync_case_artifacts_tool(
+        session_id: str,
+        task_id: str = "",
+        title: str = "",
+        auto_sync_mode: str = "balanced",
+    ):
         """Sync one suggested case into shared design and change-log artifacts."""
-        return workspace_sync_case_to_artifacts(_WORKSPACE_FILE, session_id, task_id=task_id, title=title)
+        return workspace_sync_case_to_artifacts(
+            _WORKSPACE_FILE,
+            session_id,
+            task_id=task_id,
+            title=title,
+            auto_sync_mode=auto_sync_mode,
+        )
 
     @mcp.tool()
     def memory_generate_wiki_tool(output_dir: str | None = None):

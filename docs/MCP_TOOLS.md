@@ -8,7 +8,7 @@ Memory Center exposes graph-first project memory to AI coding agents through MCP
 
 | Tool | Description / 说明 |
 |---|---|
-| `workspace_sniff_tool(intent, limit)` | Retrieve task context: services, files, rules, topology hints, historical cases, plus `symbolic_context` for low-token planning. `symbolic_context` now includes both `entities_mermaid` and `flow_mermaid`. / 任务开始前召回服务、文件、规则、拓扑、历史经验，并返回低 Token 规划用的 `symbolic_context`；其中同时包含 `entities_mermaid` 和 `flow_mermaid`。 |
+| `workspace_sniff_tool(intent, limit, auto_sync_mode)` | Retrieve task context: services, files, rules, topology hints, historical cases, plus `symbolic_context` for low-token planning. `symbolic_context` includes both `entities_mermaid` and `flow_mermaid`; response also includes `resolved_task`, `task_candidates`, and `auto_sync_recommendation` for explainable task-space routing. `auto_sync_mode` supports `strict|balanced|aggressive`. / 任务开始前召回服务、文件、规则、拓扑、历史经验，并返回低 Token 规划用的 `symbolic_context`（含 `entities_mermaid` 与 `flow_mermaid`）；同时返回 `resolved_task`、`task_candidates` 和 `auto_sync_recommendation`，便于可解释地路由到任务空间。`auto_sync_mode` 支持 `strict|balanced|aggressive`。 |
 | `workspace_artifact_list_tool()` | List shared workspace artifacts such as context, requirement, design, plan, test plan and change log. / 列出共享工件，如 context、requirement、design、plan、test plan、change log。 |
 | `workspace_artifact_get_tool(name)` | Read one shared artifact. / 读取一个共享工件。 |
 | `workspace_artifact_outline_tool(name)` | Read only the section outline of one artifact. / 只读取共享工件的章节提纲。 |
@@ -16,8 +16,8 @@ Memory Center exposes graph-first project memory to AI coding agents through MCP
 | `workspace_artifact_update_tool(name, content)` | Replace one shared artifact content. / 覆盖更新一个共享工件。 |
 | `workspace_append_change_log_tool(entry)` | Append one timestamped change-log entry. / 追加一条带时间戳的 change-log 记录。 |
 | `workspace_compact_change_log_tool(keep_recent)` | Archive older change-log entries to keep shared context compact. / 归档较早的 change-log 记录，保持共享上下文精简。 |
-| `workspace_sync_sniff_artifacts_tool(intent, limit)` | Sync one sniff result into shared `context.md` and `plan.md`. / 把一次 sniff 结果同步进共享 `context.md` 和 `plan.md`。 |
-| `workspace_sync_case_artifacts_tool(session_id)` | Sync one suggested case into shared `design.md` and `change-log.md`. / 把一次建议 case 同步进共享 `design.md` 和 `change-log.md`。 |
+| `workspace_sync_sniff_artifacts_tool(intent, limit, task_id, title, auto_sync_mode)` | Sync one sniff result into shared `context.md` and `plan.md`, with the same `auto_sync_mode` strategy (`strict|balanced|aggressive`) used by sniff recommendation. / 把一次 sniff 结果同步进共享 `context.md` 和 `plan.md`，并支持与 sniff 建议一致的 `auto_sync_mode` 策略（`strict|balanced|aggressive`）。 |
+| `workspace_sync_case_artifacts_tool(session_id, task_id, title, auto_sync_mode)` | Sync one suggested case into shared `design.md` and `change-log.md`, with the same `auto_sync_mode` strategy (`strict|balanced|aggressive`) used by task routing recommendation. The response includes `risk_evidence` to explain risk scoring from `risk_points + evidence_refs`. / 把一次建议 case 同步进共享 `design.md` 和 `change-log.md`，并支持与任务路由建议一致的 `auto_sync_mode` 策略（`strict|balanced|aggressive`）。返回会包含 `risk_evidence`，用于解释基于 `risk_points + evidence_refs` 的风险评分。 |
 | `workspace_task_space_create_tool(title, intent)` | Create one task-specific artifact space from a custom title or intent. / 通过自定义标题或任务意图创建任务工件空间。 |
 | `workspace_task_space_list_tool(include_archived)` | List active or archived task-specific artifact spaces. / 列出活跃或已归档的任务工件空间。 |
 | `workspace_task_space_resolve_tool(intent, title, create_if_missing, include_archived)` | Resolve the most relevant task space from natural language, and create one only if needed. / 根据自然语言解析最相关的任务工件空间，只有在必要时才新建。 |
@@ -51,7 +51,7 @@ Memory Center exposes graph-first project memory to AI coding agents through MCP
 | `workspace_suggest_case_tool(session_id)` | Suggest one record-case draft from a finished session, including `evidence_refs` back to raw events. / 从已结束会话自动生成一条经验沉淀草稿，并附带可回溯原始事件的 `evidence_refs`。 |
 | `memory_generate_wiki_tool(output_dir)` | Generate bilingual architecture wiki. / 生成双语架构 Wiki。 |
 | `memory_generate_skills_tool(output_dir)` | Generate Agent skill files from task memory. / 根据历史任务生成 Agent Skill。 |
-| `workspace_status_tool()` | Return index and memory status, including semantic backend readiness. / 返回索引和记忆状态，包含语义 backend 就绪情况。 |
+| `workspace_status_tool()` | Return index and memory status, including semantic backend readiness, active task spaces, and `current_focus_task` with `focus_reason`. / 返回索引和记忆状态，包含语义 backend 就绪情况、活跃任务空间，以及带 `focus_reason` 的 `current_focus_task`。 |
 | `group_query_tool(group, query, limit)` | Run a merged query across registered workspaces in one logical group, with exact/semantic retrieval metadata and `progressive` summary/evidence/detail views. / 对逻辑分组中的多个工作区做聚合查询，并返回精确/语义召回来源信息，以及 `progressive` 的摘要/证据/细节分层视图。 |
 | `group_status_tool(group)` | Return aggregated group status, including semantic index readiness, document counts and backend distribution. / 返回逻辑分组聚合状态，包含语义索引就绪度、文档数和 backend 分布。 |
 | `group_impact_tool(group, target, direction, max_depth)` | Run cross-workspace impact analysis with lookup provenance, graph evidence, bridge evidence and `progressive` layered views. / 结合命中来源、图谱证据、bridge 证据和 `progressive` 分层视图做跨工作区影响面分析。 |

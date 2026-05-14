@@ -272,11 +272,19 @@ def resolve_task_space(
         hint_keywords.extend(_tokenize_text(text))
     scored = []
     for task in candidates["active_tasks"] + candidates.get("archived_tasks", []):
-        score = _task_match_score(workspace_file, task, keywords, hint_keywords)
+        analysis = _task_match_analysis(workspace_file, task, keywords, hint_keywords)
+        score = int(analysis["score"])
         if score <= 0:
             continue
-        scored.append({**task, "score": score})
-    scored.sort(key=lambda item: (-int(item["score"]), item.get("updated_at", ""), item.get("task_id", "")))
+        scored.append({**task, **analysis})
+    scored.sort(
+        key=lambda item: (
+            -int(item["score"]),
+            _task_status_priority(str(item.get("status", ""))),
+            _sortable_dt_value(str(item.get("updated_at", ""))),
+            str(item.get("task_id", "")),
+        )
+    )
     candidate_rows = [
         {
             "task_id": item["task_id"],
@@ -286,6 +294,7 @@ def resolve_task_space(
             "tags": item.get("tags", []),
             "priority": item.get("priority", "medium"),
             "score": item["score"],
+            "match_reasons": item.get("match_reasons", {}),
             "path": item["path"],
         }
         for item in scored[: max(limit_candidates, 1)]
@@ -304,6 +313,7 @@ def resolve_task_space(
             "tags": top.get("tags", []),
             "priority": top.get("priority", "medium"),
             "path": top["path"],
+            "match_reasons": top.get("match_reasons", {}),
             "candidates": candidate_rows,
             "score_threshold": score_threshold,
         }
@@ -608,6 +618,24 @@ def _list_task_dir_entries(root: Path, archived: bool) -> List[Dict[str, object]
     return rows
 
 
+def _task_status_priority(status: str) -> int:
+    order = {
+        "active": 0,
+        "blocked": 1,
+        "draft": 2,
+        "done": 3,
+        "archived": 4,
+    }
+    return order.get(status.strip().lower(), 9)
+
+
+def _sortable_dt_value(value: str) -> float:
+    dt = _parse_dt(value)
+    if not dt:
+        return float("inf")
+    return -dt.timestamp()
+
+
 def _resolve_task_dir(store: WorkspaceStore, task_id: str) -> tuple[Path, Dict[str, object]]:
     from .store import _safe_path
 
@@ -624,9 +652,13 @@ def _resolve_task_dir(store: WorkspaceStore, task_id: str) -> tuple[Path, Dict[s
     raise ValueError(f"unknown task space: {task_id}")
 
 
-def _task_match_score(workspace_file: str | Path, task: Dict[str, object], keywords: List[str], hint_keywords: List[str] | None = None) -> int:
-    if not keywords:
-        keywords = []
+def _task_match_analysis(
+    workspace_file: str | Path,
+    task: Dict[str, object],
+    keywords: List[str],
+    hint_keywords: List[str] | None = None,
+) -> Dict[str, object]:
+    keywords = keywords or []
     hint_keywords = hint_keywords or []
     haystack_parts = [
         str(task.get("title", "")),
@@ -636,22 +668,41 @@ def _task_match_score(workspace_file: str | Path, task: Dict[str, object], keywo
         " ".join(task.get("tags", []) if isinstance(task.get("tags", []), list) else []),
         str(task.get("priority", "")),
     ]
+    artifact_hits: List[str] = []
     try:
         for artifact_name in ["current-summary.md", "context.md", "requirement.md", "design.md", "plan.md", "test-plan.md"]:
             artifact = get_task_artifact(workspace_file, str(task.get("task_id", "")), artifact_name)
-            haystack_parts.append(_trim_text(str(artifact.get("content", "")), 800))
+            trimmed = _trim_text(str(artifact.get("content", "")), 800)
+            haystack_parts.append(trimmed)
+            artifact_text = trimmed.lower()
+            if any(token in artifact_text for token in keywords + hint_keywords):
+                artifact_hits.append(artifact_name)
     except Exception:
         pass
     haystack = " ".join(haystack_parts).lower()
-    score = sum(1 for token in keywords if token in haystack)
-    score += sum(1 for token in hint_keywords if token in haystack)
+    matched_keywords = [token for token in keywords if token in haystack]
+    matched_hint_keywords = [token for token in hint_keywords if token in haystack]
+    score = len(matched_keywords) + len(matched_hint_keywords)
+    status_boost = 0
     if str(task.get("status", "")) == "active":
-        score += 2
+        status_boost = 2
     elif str(task.get("status", "")) == "draft":
-        score += 1
+        status_boost = 1
+    score += status_boost
+    priority_boost = 0
     if str(task.get("priority", "")) == "high":
-        score += 1
-    return score
+        priority_boost = 1
+    score += priority_boost
+    return {
+        "score": score,
+        "match_reasons": {
+            "matched_keywords": matched_keywords[:8],
+            "matched_hint_keywords": matched_hint_keywords[:8],
+            "artifact_hits": artifact_hits[:6],
+            "status_boost": status_boost,
+            "priority_boost": priority_boost,
+        },
+    }
 
 
 def _parse_dt(value: str):

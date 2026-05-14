@@ -180,13 +180,28 @@ def _route_request(path: str, params: dict, default_workspace: str | None) -> di
         limit = _parse_int(params, "limit", 12)
         task_id = params.get("task_id", [""])[0]
         title = params.get("title", [""])[0]
-        return workspace_sync_sniff_to_artifacts(workspace, intent, limit=limit, task_id=task_id, title=title)
+        auto_sync_mode = params.get("auto_sync_mode", ["balanced"])[0]
+        return workspace_sync_sniff_to_artifacts(
+            workspace,
+            intent,
+            limit=limit,
+            task_id=task_id,
+            title=title,
+            auto_sync_mode=auto_sync_mode,
+        )
     if path == "/workspace/artifacts/sync-case":
         workspace = _require_workspace(params, default_workspace)
         session_id = _require_one(params, "session_id")
         task_id = params.get("task_id", [""])[0]
         title = params.get("title", [""])[0]
-        return workspace_sync_case_to_artifacts(workspace, session_id, task_id=task_id, title=title)
+        auto_sync_mode = params.get("auto_sync_mode", ["balanced"])[0]
+        return workspace_sync_case_to_artifacts(
+            workspace,
+            session_id,
+            task_id=task_id,
+            title=title,
+            auto_sync_mode=auto_sync_mode,
+        )
     if path == "/workspace/query":
         workspace = _require_workspace(params, default_workspace)
         query = _require_one(params, "text")

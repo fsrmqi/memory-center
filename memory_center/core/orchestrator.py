@@ -14,6 +14,7 @@ from .artifacts import (
     get_task_artifact,
     list_task_spaces,
     resolve_task_space,
+    touch_task_activity,
     update_artifact,
     update_task_artifact,
 )
@@ -37,6 +38,9 @@ def load_context(workspace_file: str | Path):
 def workspace_status(workspace_file: str | Path) -> Dict[str, Any]:
     config, store = load_context(workspace_file)
     active_tasks = _active_task_summaries(workspace_file, limit=5)
+    current_focus_task = dict(active_tasks[0]) if active_tasks else None
+    if current_focus_task:
+        current_focus_task["focus_reason"] = _build_focus_reason(current_focus_task)
     return {
         "workspace": config.workspace,
         "root": str(config.root_path),
@@ -54,11 +58,17 @@ def workspace_status(workspace_file: str | Path) -> Dict[str, Any]:
         },
         "semantic_index": semantic_index_stats(workspace_file),
         "active_task_spaces": active_tasks,
+        "current_focus_task": current_focus_task,
         "topology": store.read_json("service-topology.json", {}),
     }
 
 
-def workspace_sniff(workspace_file: str | Path, intent: str, limit: int = 12) -> Dict[str, Any]:
+def workspace_sniff(
+    workspace_file: str | Path,
+    intent: str,
+    limit: int = 12,
+    auto_sync_mode: str = "balanced",
+) -> Dict[str, Any]:
     config, store = load_context(workspace_file)
     file_index = store.read_json("file-index.json", [])
     symbols = store.read_json("java-symbol-index.json", [])
@@ -74,6 +84,7 @@ def workspace_sniff(workspace_file: str | Path, intent: str, limit: int = 12) ->
     related_feigns = [x for x in feigns if any(k in json.dumps(x, ensure_ascii=False).lower() for k in keywords)][:limit]
     related_mq = [x for x in mq if any(k in json.dumps(x, ensure_ascii=False).lower() for k in keywords)][:limit]
     related_cases = [x for x in cases if any(k in json.dumps(x, ensure_ascii=False).lower() for k in keywords)][-5:]
+    recent_sessions = store.read_jsonl(SESSION_SUMMARIES_FILE, limit=30)
     rules = match_rules(store, intent=intent, files=[x["path"] for x in matched_files])[:10]
     sniff_risk_level = _sniff_risk_level(intent, matched_files, related_feigns, related_apis, related_mq, rules)
     task_resolution = resolve_task_space(
@@ -81,8 +92,9 @@ def workspace_sniff(workspace_file: str | Path, intent: str, limit: int = 12) ->
         intent=intent,
         create_if_missing=False,
         limit_candidates=3,
-        related_texts=[item.get("task", "") for item in related_cases],
+        related_texts=[item.get("task", "") for item in related_cases] + [item.get("summary", "") or item.get("intent", "") for item in recent_sessions],
     )
+    auto_sync = _build_sniff_auto_sync_recommendation(task_resolution, sniff_risk_level, auto_sync_mode=auto_sync_mode)
 
     return {
         "workspace": config.workspace,
@@ -96,7 +108,22 @@ def workspace_sniff(workspace_file: str | Path, intent: str, limit: int = 12) ->
         "related_rules": rules,
         "historical_cases": related_cases,
         "task_candidates": task_resolution.get("candidates", []),
-        "resolved_task": {key: task_resolution.get(key) for key in ["resolved", "task_id", "title", "status", "owner", "tags", "priority", "score"]},
+        "resolved_task": {
+            key: task_resolution.get(key)
+            for key in [
+                "resolved",
+                "task_id",
+                "title",
+                "status",
+                "owner",
+                "tags",
+                "priority",
+                "score",
+                "match_reasons",
+                "score_threshold",
+            ]
+        },
+        "auto_sync_recommendation": auto_sync,
         "symbolic_context": _build_sniff_symbolic_context(intent, sniff_risk_level, matched_services, matched_files, related_feigns, related_apis, related_mq, related_cases),
         "next_steps": [
             "先调用 memory_search_code 缩小入口范围，再用 memory_symbol 定位关键符号",
@@ -346,20 +373,22 @@ def workspace_sync_sniff_to_artifacts(
     limit: int = 12,
     task_id: str = "",
     title: str = "",
+    auto_sync_mode: str = "balanced",
 ) -> Dict[str, Any]:
     config, _ = load_context(workspace_file)
-    sniff = workspace_sniff(workspace_file, intent, limit=limit)
+    sniff = workspace_sniff(workspace_file, intent, limit=limit, auto_sync_mode=auto_sync_mode)
     resolved_task_id = task_id.strip()
     resolved_info = None
     if resolved_task_id:
         resolved_info = {"task_id": resolved_task_id, "created": False}
     else:
+        recent_sessions = WorkspaceStore(workspace_file).read_jsonl(SESSION_SUMMARIES_FILE, limit=30)
         resolved_info = resolve_task_space(
             workspace_file,
             intent=intent,
             title=title.strip(),
             create_if_missing=True,
-            related_texts=[item.get("task", "") for item in sniff.get("historical_cases", [])],
+            related_texts=[item.get("task", "") for item in sniff.get("historical_cases", [])] + [item.get("summary", "") or item.get("intent", "") for item in recent_sessions],
         )
         resolved_task_id = str(resolved_info["task_id"])
     context_content = _merge_artifact_section(
@@ -373,9 +402,10 @@ def workspace_sync_sniff_to_artifacts(
         _render_sniff_plan_markdown(sniff),
     )
     summary_content = _render_task_current_summary_from_sniff(sniff, resolved_info or {})
-    update_task_artifact(workspace_file, resolved_task_id, "context", context_content)
-    update_task_artifact(workspace_file, resolved_task_id, "plan", plan_content)
-    update_task_artifact(workspace_file, resolved_task_id, "current_summary", summary_content)
+    update_task_artifact(workspace_file, resolved_task_id, "context", context_content, source="sync_sniff_artifacts")
+    update_task_artifact(workspace_file, resolved_task_id, "plan", plan_content, source="sync_sniff_artifacts")
+    update_task_artifact(workspace_file, resolved_task_id, "current_summary", summary_content, source="sync_sniff_artifacts")
+    touch_task_activity(workspace_file, resolved_task_id, "sync_sniff_artifacts")
     return {
         "workspace": config.workspace,
         "synced": True,
@@ -384,6 +414,8 @@ def workspace_sync_sniff_to_artifacts(
         "task_resolution": resolved_info,
         "updated_artifacts": ["context", "plan", "current_summary"],
         "risk_level": sniff.get("risk_level", "unknown"),
+        "auto_sync_mode": auto_sync_mode,
+        "auto_sync_recommendation": sniff.get("auto_sync_recommendation", {}),
     }
 
 
@@ -392,6 +424,7 @@ def workspace_sync_case_to_artifacts(
     session_id: str,
     task_id: str = "",
     title: str = "",
+    auto_sync_mode: str = "balanced",
 ) -> Dict[str, Any]:
     config, _ = load_context(workspace_file)
     draft = workspace_suggest_case(workspace_file, session_id)
@@ -401,21 +434,26 @@ def workspace_sync_case_to_artifacts(
             "session_id": session_id,
             "synced": False,
             "updated_artifacts": [],
+            "auto_sync_mode": auto_sync_mode,
             "hint": draft.get("hint", "会话不存在。"),
         }
     case = draft.get("draft_case", {})
+    case_risk = _case_risk_profile(case)
+    case_risk_level = case_risk["risk_level"]
     resolved_task_id = task_id.strip()
     resolved_info = None
     if resolved_task_id:
         resolved_info = {"task_id": resolved_task_id, "created": False}
     else:
         related_texts = [ref.get("query", "") or ref.get("target", "") for ref in case.get("evidence_refs", [])]
+        score_threshold = _score_threshold_for_sync_mode(auto_sync_mode)
         resolved_info = resolve_task_space(
             workspace_file,
             intent=case.get("task", ""),
             title=title.strip() or case.get("task", ""),
             create_if_missing=True,
             related_texts=related_texts,
+            score_threshold=score_threshold,
         )
         resolved_task_id = str(resolved_info["task_id"])
     design_content = _merge_artifact_section(
@@ -424,9 +462,11 @@ def workspace_sync_case_to_artifacts(
         _render_case_markdown(case),
     )
     summary_content = _render_task_current_summary_from_case(case, resolved_info or {}, session_id)
-    update_task_artifact(workspace_file, resolved_task_id, "design", design_content)
-    update_task_artifact(workspace_file, resolved_task_id, "current_summary", summary_content)
+    update_task_artifact(workspace_file, resolved_task_id, "design", design_content, source="sync_case_artifacts")
+    update_task_artifact(workspace_file, resolved_task_id, "current_summary", summary_content, source="sync_case_artifacts")
     append_task_change_log(workspace_file, resolved_task_id, _render_change_log_entry(case, session_id))
+    touch_task_activity(workspace_file, resolved_task_id, "sync_case_artifacts")
+    auto_sync = _build_sniff_auto_sync_recommendation(resolved_info or {}, case_risk_level, auto_sync_mode=auto_sync_mode)
     return {
         "workspace": config.workspace,
         "session_id": session_id,
@@ -435,6 +475,10 @@ def workspace_sync_case_to_artifacts(
         "task_resolution": resolved_info,
         "updated_artifacts": ["design", "change_log", "current_summary"],
         "task": case.get("task", ""),
+        "risk_level": case_risk_level,
+        "risk_evidence": case_risk,
+        "auto_sync_mode": auto_sync_mode,
+        "auto_sync_recommendation": auto_sync,
     }
 
 
@@ -444,7 +488,14 @@ def _new_session_id() -> str:
 
 def _active_task_summaries(workspace_file: str | Path, limit: int = 5) -> List[Dict[str, Any]]:
     tasks = list_task_spaces(workspace_file, include_archived=False).get("active_tasks", [])
-    sorted_tasks = sorted(tasks, key=lambda item: (item.get("status") != "active", item.get("updated_at", "")), reverse=True)
+    sorted_tasks = sorted(
+        tasks,
+        key=lambda item: (
+            0 if item.get("status") == "active" else 1,
+            -(datetime.fromisoformat(item.get("updated_at", datetime.min.isoformat())).timestamp() if item.get("updated_at") else 0),
+            item.get("task_id", ""),
+        ),
+    )
     rows = []
     for item in sorted_tasks[:limit]:
         try:
@@ -461,9 +512,179 @@ def _active_task_summaries(workspace_file: str | Path, limit: int = 5) -> List[D
                 "priority": item.get("priority", "medium"),
                 "updated_at": item.get("updated_at", ""),
                 "summary_preview": _trim_summary(summary),
+                "last_activity_source": item.get("last_activity_source", ""),
             }
         )
     return rows
+
+
+def _build_focus_reason(task: Dict[str, Any]) -> str:
+    parts = []
+    status = str(task.get("status", "")).strip().lower()
+    if status == "active":
+        parts.append("状态为 active")
+    priority = str(task.get("priority", "")).strip().lower()
+    if priority in {"high", "critical"}:
+        parts.append(f"优先级 {priority}")
+    source = str(task.get("last_activity_source", "")).strip()
+    if source:
+        parts.append(f"最近活动来源 {source}")
+    updated_at = str(task.get("updated_at", "")).strip()
+    if updated_at:
+        parts.append(f"最近更新时间 {updated_at}")
+    return "；".join(parts) if parts else "按任务状态与最近活动综合排序。"
+
+
+def _build_sniff_auto_sync_recommendation(
+    task_resolution: Dict[str, Any],
+    risk_level: str,
+    auto_sync_mode: str = "balanced",
+) -> Dict[str, Any]:
+    mode = (auto_sync_mode or "balanced").strip().lower()
+    if mode not in {"strict", "balanced", "aggressive"}:
+        mode = "balanced"
+    resolved = bool(task_resolution.get("resolved"))
+    task_id = str(task_resolution.get("task_id", "") or "")
+    score = int(task_resolution.get("score", 0) or 0)
+    score_threshold = int(task_resolution.get("score_threshold", 3) or 3)
+    candidates = task_resolution.get("candidates", []) or []
+    recommendation = {
+        "recommended": False,
+        "confidence": "low",
+        "task_id": task_id if resolved else "",
+        "score": score,
+        "score_threshold": score_threshold,
+        "reason": "",
+        "mode": mode,
+        "fallback": "未满足自动同步条件时，建议先人工确认 task_candidates 再同步。",
+    }
+    if not resolved or not task_id:
+        recommendation["reason"] = "未命中明确任务空间，建议先人工确认候选任务。"
+        return recommendation
+
+    delta = score - score_threshold
+    strict = mode == "strict"
+    aggressive = mode == "aggressive"
+
+    if strict:
+        if delta >= 2 and risk_level == "low":
+            recommendation["recommended"] = True
+            recommendation["confidence"] = "high"
+            recommendation["reason"] = "strict 模式下，分数显著高于阈值且风险较低，可自动同步。"
+            return recommendation
+        recommendation["reason"] = "strict 模式要求更高，建议人工确认任务空间后再同步。"
+        return recommendation
+
+    if delta >= 2:
+        recommendation["recommended"] = True
+        recommendation["confidence"] = "high"
+        recommendation["reason"] = "匹配分数明显高于阈值，可自动同步到已命中任务空间。"
+        return recommendation
+
+    if aggressive and delta >= 0:
+        recommendation["recommended"] = True
+        recommendation["confidence"] = "medium"
+        recommendation["reason"] = "aggressive 模式下，只要达到阈值就自动同步。"
+        return recommendation
+
+    if delta >= 0 and risk_level in {"low", "medium"}:
+        recommendation["recommended"] = True
+        recommendation["confidence"] = "medium"
+        recommendation["reason"] = "匹配达到阈值且风险等级可控，建议自动同步。"
+        return recommendation
+
+    recommendation["confidence"] = "medium" if delta >= 0 else "low"
+    if risk_level == "high":
+        recommendation["reason"] = "当前风险等级较高，建议先人工确认再同步。"
+    else:
+        recommendation["reason"] = "匹配分数接近阈值，建议优先确认候选任务。"
+    if candidates:
+        recommendation["fallback"] = "可优先检查 task_candidates[0] 的 match_reasons，再决定是否同步。"
+    return recommendation
+
+
+def _score_threshold_for_sync_mode(auto_sync_mode: str) -> int:
+    mode = (auto_sync_mode or "balanced").strip().lower()
+    if mode == "strict":
+        return 4
+    if mode == "aggressive":
+        return 1
+    return 3
+
+
+def _case_risk_level(case: Dict[str, Any]) -> str:
+    return _case_risk_profile(case)["risk_level"]
+
+
+def _case_risk_profile(case: Dict[str, Any]) -> Dict[str, Any]:
+    risk_points = case.get("risk_points", [])
+    refs = case.get("evidence_refs", []) if isinstance(case.get("evidence_refs", []), list) else []
+
+    score = 0
+    matched_signals: List[str] = []
+    point_text = json.dumps(risk_points, ensure_ascii=False).lower()
+    for token, weight, label in [
+        ("contract", 3, "risk_points:contract"),
+        ("feign", 3, "risk_points:feign"),
+        ("mq", 3, "risk_points:mq"),
+        ("topic", 2, "risk_points:topic"),
+        ("dto", 2, "risk_points:dto"),
+        ("config", 2, "risk_points:config"),
+        ("兼容", 3, "risk_points:compatibility"),
+        ("breaking", 3, "risk_points:breaking"),
+    ]:
+        if token in point_text:
+            score += weight
+            matched_signals.append(label)
+
+    high_ref_types = {"contract", "mq", "dto", "config"}
+    medium_ref_types = {"impact", "cross_service", "symbol"}
+    counted_ref_types: Dict[str, int] = {}
+    for ref in refs:
+        ref_type = _classify_case_evidence_ref(ref)
+        counted_ref_types[ref_type] = counted_ref_types.get(ref_type, 0) + 1
+        if ref_type in high_ref_types:
+            score += 2
+            matched_signals.append(f"evidence:{ref_type}")
+        elif ref_type in medium_ref_types:
+            score += 1
+            matched_signals.append(f"evidence:{ref_type}")
+
+    if score >= 5:
+        level = "high"
+    elif score >= 2:
+        level = "medium"
+    else:
+        level = "low"
+
+    return {
+        "risk_level": level,
+        "score": score,
+        "signals": matched_signals[:20],
+        "evidence_type_counts": counted_ref_types,
+    }
+
+
+def _classify_case_evidence_ref(ref: Dict[str, Any]) -> str:
+    haystack = json.dumps(ref, ensure_ascii=False).lower()
+    tool_name = str(ref.get("tool_name", "")).lower()
+    event_type = str(ref.get("event_type", "")).lower()
+
+    if any(mark in tool_name for mark in ["check_contract", "contract"]) or any(mark in haystack for mark in ["feign", "contract", "endpoint"]):
+        return "contract"
+    if any(mark in haystack for mark in ["kafka", "rocketmq", "mq", "topic", "consumer"]):
+        return "mq"
+    if any(mark in haystack for mark in ["dto", "request", "response", "field"]):
+        return "dto"
+    if any(mark in haystack for mark in ["application.yml", "bootstrap.yml", "config", "nacos"]):
+        return "config"
+    if any(mark in tool_name for mark in ["impact", "plan_change"]):
+        return "impact"
+    if "tool_call" in event_type and any(mark in haystack for mark in ["service", "client"]):
+        return "cross_service"
+    if any(mark in tool_name for mark in ["symbol", "query", "context", "callers", "callees"]):
+        return "symbol"
+    return "other"
 
 
 def _session_events(store: WorkspaceStore, session_id: str) -> List[Dict[str, Any]]:
