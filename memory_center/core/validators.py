@@ -36,8 +36,8 @@ def doctor(workspace_file: str | Path, self_test: bool = False) -> Dict[str, Any
         p = store.index_dir / name
         checks.append(_check(f"index:{name}", p.exists(), str(p)))
 
-    graph = GraphStore(store.graph_db_path)
-    counts = graph.counts()
+    with GraphStore(store.graph_db_path) as graph:
+        counts = graph.counts()
     checks.append(_check("graph:nodes", counts.get("nodes", 0) > 0, str(counts)))
     checks.append(_check("graph:edges", counts.get("edges", 0) > 0, str(counts)))
     semantic = semantic_index_stats(workspace_file)

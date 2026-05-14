@@ -8,6 +8,14 @@ from typing import Any, Dict, Iterable, List
 from filelock import FileLock
 
 
+def _safe_path(base: Path, name: str) -> Path:
+    resolved_base = base.resolve()
+    candidate = (resolved_base / name).resolve()
+    if not candidate.is_relative_to(resolved_base):
+        raise ValueError(f"invalid path: {name}")
+    return candidate
+
+
 class WorkspaceStore:
     def __init__(self, workspace_file: str | Path):
         self.workspace_file = Path(workspace_file).expanduser().resolve()
@@ -33,7 +41,7 @@ class WorkspaceStore:
             return default
         try:
             return json.loads(path.read_text(encoding="utf-8"))
-        except Exception:
+        except (json.JSONDecodeError, UnicodeDecodeError):
             return default
 
     def append_jsonl(self, name: str, item: Dict[str, Any]) -> None:
@@ -54,7 +62,7 @@ class WorkspaceStore:
                 continue
             try:
                 rows.append(json.loads(line))
-            except Exception:
+            except (json.JSONDecodeError, UnicodeDecodeError):
                 continue
         return rows
 
@@ -64,29 +72,29 @@ class WorkspaceStore:
         return matched[-limit:]
 
     def write_artifact(self, name: str, content: str) -> Path:
-        path = self.artifacts_dir / name
+        path = _safe_path(self.artifacts_dir, name)
         with FileLock(str(self.lock_file)):
             path.write_text(content, encoding="utf-8")
         return path
 
     def read_artifact(self, name: str, default: str = "") -> str:
-        path = self.artifacts_dir / name
+        path = _safe_path(self.artifacts_dir, name)
         if not path.exists():
             return default
         try:
             return path.read_text(encoding="utf-8")
-        except Exception:
+        except (OSError, UnicodeDecodeError):
             return default
 
     def append_artifact(self, name: str, content: str) -> Path:
-        path = self.artifacts_dir / name
+        path = _safe_path(self.artifacts_dir, name)
         with FileLock(str(self.lock_file)):
             with path.open("a", encoding="utf-8") as f:
                 f.write(content)
         return path
 
     def artifact_exists(self, name: str) -> bool:
-        return (self.artifacts_dir / name).exists()
+        return _safe_path(self.artifacts_dir, name).exists()
 
     @property
     def graph_db_path(self) -> Path:

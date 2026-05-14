@@ -234,7 +234,6 @@ def flatten_dict(data: Dict[str, Any], prefix: str = "") -> Dict[str, str]:
 
 def build_graph_store(config: WorkspaceConfig, store: WorkspaceStore) -> Dict[str, int]:
     graph = GraphStore(store.graph_db_path)
-    graph.clear()
     nodes: List[GraphNode] = []
     edges: List[GraphEdge] = []
 
@@ -401,7 +400,7 @@ def build_graph_store(config: WorkspaceConfig, store: WorkspaceStore) -> Dict[st
             nodes.append(GraphNode(rid, resource.get("kind", "DataResource"), resource.get("name", "unknown"), sym["project"], sym["file"], metadata=resource))
             edges.append(GraphEdge(edge_id("USES_DATA_RESOURCE", owner_class_id, rid), owner_class_id, rid, "USES_DATA_RESOURCE", 0.72, {"evidence": resource}))
 
-    graph.bulk_write(nodes, edges)
+    graph.rebuild(nodes, edges)
     graph.rebuild_search_index()
     counts = graph.counts()
     store.write_json("graph-summary.json", counts)

@@ -102,7 +102,7 @@ def _route_request(path: str, params: dict, default_workspace: str | None) -> di
     if path == "/workspace/artifact/context":
         workspace = _require_workspace(params, default_workspace)
         intent = _require_one(params, "intent")
-        limit = int(params.get("limit", ["6"])[0])
+        limit = _parse_int(params, "limit", 6)
         return artifact_context(workspace, intent, limit=limit)
     if path == "/workspace/artifact/update":
         workspace = _require_workspace(params, default_workspace)
@@ -115,7 +115,7 @@ def _route_request(path: str, params: dict, default_workspace: str | None) -> di
         return append_change_log(workspace, entry)
     if path == "/workspace/change-log/compact":
         workspace = _require_workspace(params, default_workspace)
-        keep_recent = int(params.get("keep_recent", ["30"])[0])
+        keep_recent = _parse_int(params, "keep_recent", 30)
         return compact_change_log(workspace, keep_recent=keep_recent)
     if path == "/workspace/task-spaces":
         workspace = _require_workspace(params, default_workspace)
@@ -127,8 +127,8 @@ def _route_request(path: str, params: dict, default_workspace: str | None) -> di
         title = params.get("title", [""])[0]
         create_if_missing = params.get("create_if_missing", ["true"])[0].lower() == "true"
         include_archived = params.get("include_archived", ["false"])[0].lower() == "true"
-        limit_candidates = int(params.get("limit_candidates", ["3"])[0])
-        score_threshold = int(params.get("score_threshold", ["3"])[0])
+        limit_candidates = _parse_int(params, "limit_candidates", 3)
+        score_threshold = _parse_int(params, "score_threshold", 3)
         return resolve_task_space(workspace, intent=intent, title=title, create_if_missing=create_if_missing, include_archived=include_archived, limit_candidates=limit_candidates, score_threshold=score_threshold)
     if path == "/workspace/task-space/create":
         workspace = _require_workspace(params, default_workspace)
@@ -153,7 +153,7 @@ def _route_request(path: str, params: dict, default_workspace: str | None) -> di
         workspace = _require_workspace(params, default_workspace)
         task_id = _require_one(params, "task_id")
         entry = _require_one(params, "entry")
-        keep_recent = int(params.get("keep_recent", ["30"])[0])
+        keep_recent = _parse_int(params, "keep_recent", 30)
         return append_task_change_log(workspace, task_id, entry, keep_recent=keep_recent)
     if path == "/workspace/task-space/archive":
         workspace = _require_workspace(params, default_workspace)
@@ -172,12 +172,12 @@ def _route_request(path: str, params: dict, default_workspace: str | None) -> di
         return touch_task_activity(workspace, task_id, source)
     if path == "/workspace/task-spaces/auto-archive":
         workspace = _require_workspace(params, default_workspace)
-        retention_days = int(params.get("retention_days", ["30"])[0])
+        retention_days = _parse_int(params, "retention_days", 30)
         return auto_archive_task_spaces(workspace, retention_days=retention_days)
     if path == "/workspace/artifacts/sync-sniff":
         workspace = _require_workspace(params, default_workspace)
         intent = _require_one(params, "intent")
-        limit = int(params.get("limit", ["12"])[0])
+        limit = _parse_int(params, "limit", 12)
         task_id = params.get("task_id", [""])[0]
         title = params.get("title", [""])[0]
         return workspace_sync_sniff_to_artifacts(workspace, intent, limit=limit, task_id=task_id, title=title)
@@ -190,36 +190,36 @@ def _route_request(path: str, params: dict, default_workspace: str | None) -> di
     if path == "/workspace/query":
         workspace = _require_workspace(params, default_workspace)
         query = _require_one(params, "text")
-        limit = int(params.get("limit", ["20"])[0])
+        limit = _parse_int(params, "limit", 20)
         return memory_query(workspace, query, limit=limit)
     if path == "/workspace/search-code":
         workspace = _require_workspace(params, default_workspace)
         query = _require_one(params, "text")
         scope = params.get("scope", [""])[0]
-        limit = int(params.get("limit", ["20"])[0])
+        limit = _parse_int(params, "limit", 20)
         return memory_search_code(workspace, query, scope=scope, limit=limit)
     if path == "/workspace/symbol":
         workspace = _require_workspace(params, default_workspace)
         name = _require_one(params, "name")
-        limit = int(params.get("limit", ["10"])[0])
+        limit = _parse_int(params, "limit", 10)
         return memory_symbol(workspace, name, limit=limit)
     if path == "/workspace/callers":
         workspace = _require_workspace(params, default_workspace)
         symbol = _require_one(params, "symbol")
-        depth = int(params.get("depth", ["2"])[0])
-        limit = int(params.get("limit", ["80"])[0])
+        depth = _parse_int(params, "depth", 2)
+        limit = _parse_int(params, "limit", 80, max_val=500)
         return memory_callers(workspace, symbol, depth=depth, limit=limit)
     if path == "/workspace/callees":
         workspace = _require_workspace(params, default_workspace)
         symbol = _require_one(params, "symbol")
-        depth = int(params.get("depth", ["2"])[0])
-        limit = int(params.get("limit", ["80"])[0])
+        depth = _parse_int(params, "depth", 2)
+        limit = _parse_int(params, "limit", 80, max_val=500)
         return memory_callees(workspace, symbol, depth=depth, limit=limit)
     if path == "/workspace/plan-change":
         workspace = _require_workspace(params, default_workspace)
         target = _require_one(params, "target")
         direction = params.get("direction", ["upstream"])[0]
-        max_depth = int(params.get("max_depth", ["3"])[0])
+        max_depth = _parse_int(params, "max_depth", 3)
         return memory_plan_change(workspace, target, direction=direction, max_depth=max_depth)
     if path == "/workspace/verify-checklist":
         workspace = _require_workspace(params, default_workspace)
@@ -227,7 +227,7 @@ def _route_request(path: str, params: dict, default_workspace: str | None) -> di
         return memory_verify_checklist(workspace, target)
     if path == "/workspace/sessions/recent":
         workspace = _require_workspace(params, default_workspace)
-        limit = int(params.get("limit", ["10"])[0])
+        limit = _parse_int(params, "limit", 10)
         return workspace_recent_sessions(workspace, limit=limit)
     if path == "/workspace/session/summary":
         workspace = _require_workspace(params, default_workspace)
@@ -236,7 +236,7 @@ def _route_request(path: str, params: dict, default_workspace: str | None) -> di
     if path == "/workspace/resume-context":
         workspace = _require_workspace(params, default_workspace)
         query = _require_one(params, "text")
-        limit = int(params.get("limit", ["5"])[0])
+        limit = _parse_int(params, "limit", 5)
         return workspace_resume_context(workspace, query, limit=limit)
     if path == "/workspace/suggest-case":
         workspace = _require_workspace(params, default_workspace)
@@ -247,13 +247,13 @@ def _route_request(path: str, params: dict, default_workspace: str | None) -> di
     if path == "/group/query":
         group = _require_one(params, "group")
         query = _require_one(params, "text")
-        limit = int(params.get("limit", ["20"])[0])
+        limit = _parse_int(params, "limit", 20)
         return group_query(group, query, limit=limit)
     if path == "/group/impact":
         group = _require_one(params, "group")
         target = _require_one(params, "target")
         direction = params.get("direction", ["upstream"])[0]
-        max_depth = int(params.get("max_depth", ["3"])[0])
+        max_depth = _parse_int(params, "max_depth", 3)
         return group_impact(group, target, direction=direction, max_depth=max_depth)
     raise FileNotFoundError(f"Unknown route: {path}")
 
@@ -270,6 +270,15 @@ def _require_one(params: dict, key: str) -> str:
     if not value:
         raise ValueError(f"{key} query param is required")
     return value
+
+
+def _parse_int(params: dict, key: str, default: int, min_val: int = 1, max_val: int = 10000) -> int:
+    raw = params.get(key, [str(default)])[0]
+    try:
+        value = int(raw)
+    except (ValueError, TypeError):
+        raise ValueError(f"{key} must be an integer, got: {raw!r}")
+    return max(min_val, min(value, max_val))
 
 
 def main() -> None:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
@@ -38,12 +39,25 @@ class GraphStore:
     def __init__(self, db_path: str | Path):
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        self._conn: Optional[sqlite3.Connection] = None
         self._init_schema()
 
     def connect(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
-        return conn
+        if self._conn is None:
+            self._conn = sqlite3.connect(self.db_path)
+            self._conn.row_factory = sqlite3.Row
+        return self._conn
+
+    def close(self) -> None:
+        if self._conn is not None:
+            self._conn.close()
+            self._conn = None
+
+    def __enter__(self) -> "GraphStore":
+        return self
+
+    def __exit__(self, *exc: Any) -> None:
+        self.close()
 
     def _init_schema(self) -> None:
         with self.connect() as conn:
@@ -82,13 +96,43 @@ class GraphStore:
                 pass
 
     def clear(self) -> None:
-        with self.connect() as conn:
-            conn.execute("DELETE FROM edges")
-            conn.execute("DELETE FROM nodes")
-            try:
-                conn.execute("DELETE FROM node_search")
-            except sqlite3.OperationalError:
-                pass
+        conn = self.connect()
+        conn.execute("DELETE FROM edges")
+        conn.execute("DELETE FROM nodes")
+        try:
+            conn.execute("DELETE FROM node_search")
+        except sqlite3.OperationalError:
+            pass
+        conn.commit()
+
+    def rebuild(self, nodes: Iterable[GraphNode], edges: Iterable[GraphEdge]) -> None:
+        conn = self.connect()
+        conn.execute("DELETE FROM edges")
+        conn.execute("DELETE FROM nodes")
+        try:
+            conn.execute("DELETE FROM node_search")
+        except sqlite3.OperationalError:
+            pass
+        for node in nodes:
+            metadata_json = json.dumps(node.metadata or {}, ensure_ascii=False)
+            conn.execute(
+                """INSERT INTO nodes(id, type, name, project, file_path, line, metadata_json)
+                   VALUES(?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(id) DO UPDATE SET
+                     type=excluded.type, name=excluded.name, project=excluded.project,
+                     file_path=excluded.file_path, line=excluded.line, metadata_json=excluded.metadata_json""",
+                (node.id, node.type, node.name, node.project, node.file_path, node.line, metadata_json),
+            )
+        for edge in edges:
+            conn.execute(
+                """INSERT INTO edges(id, source_id, target_id, type, confidence, metadata_json)
+                   VALUES(?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(id) DO UPDATE SET
+                     source_id=excluded.source_id, target_id=excluded.target_id, type=excluded.type,
+                     confidence=excluded.confidence, metadata_json=excluded.metadata_json""",
+                (edge.id, edge.source_id, edge.target_id, edge.type, edge.confidence, json.dumps(edge.metadata or {}, ensure_ascii=False)),
+            )
+        conn.commit()
 
     def upsert_node(self, node: GraphNode) -> None:
         self.bulk_write([node], [])
@@ -160,7 +204,8 @@ class GraphStore:
         return rows
 
     def _find_nodes_fts(self, query: str, types: List[str] | None, limit: int) -> List[Dict[str, Any]]:
-        safe_terms = [t.replace('"', "") for t in query.replace("-", " ").replace("/", " ").split() if t.strip()]
+        safe_terms = [_sanitize_fts_term(t) for t in query.replace("-", " ").replace("/", " ").split() if t.strip()]
+        safe_terms = [t for t in safe_terms if t]
         if not safe_terms:
             return []
         fts_query = " OR ".join(f'"{t}"' for t in safe_terms[:8])
@@ -198,42 +243,47 @@ class GraphStore:
 
     def neighbors(self, node_id: str, direction: str = "both", max_depth: int = 2, limit: int = 200) -> List[Dict[str, Any]]:
         seen = {node_id}
-        frontier = [(node_id, 0)]
+        frontier = [node_id]
         results: List[Dict[str, Any]] = []
-        with self.connect() as conn:
-            while frontier and len(results) < limit:
-                current, depth = frontier.pop(0)
-                if depth >= max_depth:
-                    continue
-                clauses = []
-                args: List[Any] = []
-                if direction in {"both", "downstream", "outgoing"}:
-                    clauses.append("e.source_id=?")
-                    args.append(current)
-                if direction in {"both", "upstream", "incoming"}:
-                    clauses.append("e.target_id=?")
-                    args.append(current)
-                if not clauses:
-                    clauses.append("e.source_id=?")
-                    args.append(current)
-                sql = f"""
-                    SELECT e.*, ns.type AS source_type, ns.name AS source_name, ns.project AS source_project, ns.file_path AS source_file,
-                           nt.type AS target_type, nt.name AS target_name, nt.project AS target_project, nt.file_path AS target_file
-                    FROM edges e
-                    LEFT JOIN nodes ns ON ns.id=e.source_id
-                    LEFT JOIN nodes nt ON nt.id=e.target_id
-                    WHERE {' OR '.join(clauses)}
-                    LIMIT ?
-                """
-                rows = conn.execute(sql, [*args, limit]).fetchall()
-                for row in rows:
-                    rec = _row_edge(row)
-                    rec["depth"] = depth + 1
-                    results.append(rec)
-                    next_id = row["target_id"] if row["source_id"] == current else row["source_id"]
-                    if next_id not in seen:
-                        seen.add(next_id)
-                        frontier.append((next_id, depth + 1))
+        conn = self.connect()
+        for depth in range(max_depth):
+            if not frontier or len(results) >= limit:
+                break
+            clauses: List[str] = []
+            args: List[Any] = []
+            frontier_set = set(frontier)
+            if direction in {"both", "downstream", "outgoing"}:
+                placeholders = ",".join("?" for _ in frontier)
+                clauses.append(f"e.source_id IN ({placeholders})")
+                args.extend(frontier)
+            if direction in {"both", "upstream", "incoming"}:
+                placeholders = ",".join("?" for _ in frontier)
+                clauses.append(f"e.target_id IN ({placeholders})")
+                args.extend(frontier)
+            if not clauses:
+                placeholders = ",".join("?" for _ in frontier)
+                clauses.append(f"e.source_id IN ({placeholders})")
+                args.extend(frontier)
+            sql = f"""
+                SELECT e.*, ns.type AS source_type, ns.name AS source_name, ns.project AS source_project, ns.file_path AS source_file,
+                       nt.type AS target_type, nt.name AS target_name, nt.project AS target_project, nt.file_path AS target_file
+                FROM edges e
+                LEFT JOIN nodes ns ON ns.id=e.source_id
+                LEFT JOIN nodes nt ON nt.id=e.target_id
+                WHERE {' OR '.join(clauses)}
+                LIMIT ?
+            """
+            rows = conn.execute(sql, [*args, limit - len(results)]).fetchall()
+            next_frontier: List[str] = []
+            for row in rows:
+                rec = _row_edge(row)
+                rec["depth"] = depth + 1
+                results.append(rec)
+                next_id = row["target_id"] if row["source_id"] in frontier_set else row["source_id"]
+                if next_id not in seen:
+                    seen.add(next_id)
+                    next_frontier.append(next_id)
+            frontier = next_frontier
         return results[:limit]
 
     def counts(self) -> Dict[str, int]:
@@ -255,6 +305,10 @@ def node_id(kind: str, *parts: str) -> str:
 
 def edge_id(edge_type: str, source_id: str, target_id: str) -> str:
     return f"{edge_type}:{source_id}->{target_id}"
+
+
+def _sanitize_fts_term(term: str) -> str:
+    return re.sub(r"[^\w一-鿿]", "", term)
 
 
 def _loads_json(value: str) -> Dict[str, Any]:

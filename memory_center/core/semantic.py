@@ -18,8 +18,8 @@ DEFAULT_SENTENCE_TRANSFORMER_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 
 def ensure_workspace_semantic_index(workspace_file: str | Path) -> Dict[str, Any]:
     store = WorkspaceStore(workspace_file)
-    graph = GraphStore(store.graph_db_path)
-    counts = graph.counts()
+    with GraphStore(store.graph_db_path) as graph:
+        counts = graph.counts()
     cached = store.read_json(SEMANTIC_INDEX_FILE, {})
     backend = _requested_backend()
     model_name = _requested_model_name(backend)
@@ -35,8 +35,8 @@ def ensure_workspace_semantic_index(workspace_file: str | Path) -> Dict[str, Any
 
 def build_workspace_semantic_index(workspace_file: str | Path) -> Dict[str, Any]:
     store = WorkspaceStore(workspace_file)
-    graph = GraphStore(store.graph_db_path)
-    nodes = graph.all_nodes()
+    with GraphStore(store.graph_db_path) as graph:
+        nodes = graph.all_nodes()
     docs = []
     df: Dict[str, int] = {}
     backend = _requested_backend()
@@ -96,6 +96,7 @@ def build_workspace_semantic_index(workspace_file: str | Path) -> Dict[str, Any]
         "requested_model": requested_model,
         "backend": actual_backend,
         "model": model_name,
+        "df": df,
         "docs": docs,
     }
     store.write_json(SEMANTIC_INDEX_FILE, payload)
@@ -213,7 +214,7 @@ def _sparse_semantic_query(index: Dict[str, Any], query: str, limit: int) -> Lis
         return []
     query_counts = _count_tokens(tokens)
     doc_count = max(index.get("doc_count", 1), 1)
-    df = _estimate_df(index)
+    df = index.get("df") or _estimate_df(index)
     query_vector = {}
     total = sum(query_counts.values()) or 1
     for token, count in query_counts.items():

@@ -608,12 +608,14 @@ def _list_task_dir_entries(root: Path, archived: bool) -> List[Dict[str, object]
 
 
 def _resolve_task_dir(store: WorkspaceStore, task_id: str) -> tuple[Path, Dict[str, object]]:
+    from .store import _safe_path
+
     slug = task_id.strip()
-    active = store.artifacts_dir / TASKS_DIR / slug
+    active = _safe_path(store.artifacts_dir, f"{TASKS_DIR}/{slug}")
     if active.exists():
         meta = _read_task_meta(active)
         return active, meta
-    archived = store.artifacts_dir / ARCHIVE_DIR / slug
+    archived = _safe_path(store.artifacts_dir, f"{ARCHIVE_DIR}/{slug}")
     if archived.exists():
         meta = _read_task_meta(archived)
         meta["archived"] = True
