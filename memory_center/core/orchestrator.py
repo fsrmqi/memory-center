@@ -22,6 +22,7 @@ from .registry import resolve_group
 from .rules import match_rules
 from .semantic import semantic_index_stats, semantic_query
 from .store import WorkspaceStore
+from .text_utils import base_tokenize
 
 SESSION_EVENTS_FILE = "session-events.jsonl"
 SESSION_SUMMARIES_FILE = "session-summaries.jsonl"
@@ -558,8 +559,7 @@ def _suggest_resume_context(
 
 
 def tokenize(text: str) -> List[str]:
-    raw = "".join(ch.lower() if ch.isalnum() or "\u4e00" <= ch <= "\u9fff" else " " for ch in text)
-    words = [w for w in raw.split() if len(w) >= 2]
+    words = base_tokenize(text)
     # keep entire Chinese phrase fragments poorly but useful for mixed tasks
     for token in ["kafka", "rocketmq", "feign", "controller", "oldpubtime", "newpubtime", "es", "mongo", "redis", "nacos"]:
         if token in text.lower() and token not in words:

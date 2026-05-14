@@ -11,6 +11,7 @@ from filelock import FileLock
 
 from .config import load_workspace_config
 from .store import WorkspaceStore
+from .text_utils import base_tokenize
 
 DEFAULT_ARTIFACTS = {
     "context": "context.md",
@@ -701,8 +702,7 @@ def _split_change_log_entries(content: str) -> tuple[str, List[str]]:
 
 
 def _tokenize_text(text: str) -> List[str]:
-    raw = "".join(ch.lower() if ch.isalnum() or "\u4e00" <= ch <= "\u9fff" else " " for ch in text)
-    return sorted({item for item in raw.split() if len(item) >= 2})
+    return base_tokenize(text)
 
 
 def _section_score(section: Dict[str, object], keywords: List[str]) -> int:
