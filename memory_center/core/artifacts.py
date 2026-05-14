@@ -68,7 +68,13 @@ def get_artifact(workspace_file: str | Path, name: str) -> Dict[str, object]:
     config = load_workspace_config(workspace_file)
     store = WorkspaceStore(workspace_file)
     ensure_default_artifacts(workspace_file)
-    key, filename = _resolve_artifact_name(name)
+    try:
+        key, filename = _resolve_artifact_name(name)
+    except ValueError:
+        # Allow reading raw artifact files (e.g. change-log.archive.md) by exact filename.
+        if not store.artifact_exists(name):
+            raise
+        key, filename = name, name
     content = store.read_artifact(filename, "")
     return {
         "workspace": config.workspace,
