@@ -134,7 +134,7 @@ def test_cli_version_flag():
     result = runner.invoke(app, ["--version"])
     assert result.exit_code == 0
     assert "memory-center" in result.stdout
-    assert "1.2.0" in result.stdout
+    assert "1.3.0" in result.stdout
 
 
 def test_workspace_service_maintenance_commands(tmp_path: Path):
