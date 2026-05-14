@@ -8,14 +8,18 @@ Memory Center exposes graph-first project memory to AI coding agents through MCP
 
 | Tool | Description / 说明 |
 |---|---|
-| `workspace_sniff_tool(intent, limit)` | Retrieve task context: services, files, rules, topology hints, historical cases. / 任务开始前召回服务、文件、规则、拓扑、历史经验。 |
-| `memory_query_tool(query, limit)` | Graph-aware hybrid search across files, symbols, endpoints, Feign clients, topics and fields, with exact/semantic retrieval metadata and optional local embedding backend support. / 基于图谱的混合检索，查询文件、符号、接口、Feign、Topic、字段，并返回精确/语义召回来源信息，同时支持可选本地 embedding backend。 |
+| `workspace_sniff_tool(intent, limit)` | Retrieve task context: services, files, rules, topology hints, historical cases, plus `symbolic_context` for low-token planning. `symbolic_context` now includes both `entities_mermaid` and `flow_mermaid`. / 任务开始前召回服务、文件、规则、拓扑、历史经验，并返回低 Token 规划用的 `symbolic_context`；其中同时包含 `entities_mermaid` 和 `flow_mermaid`。 |
+| `workspace_artifact_list_tool()` | List shared workspace artifacts such as context, requirement, design, plan, test plan and change log. / 列出共享工件，如 context、requirement、design、plan、test plan、change log。 |
+| `workspace_artifact_get_tool(name)` | Read one shared artifact. / 读取一个共享工件。 |
+| `workspace_artifact_update_tool(name, content)` | Replace one shared artifact content. / 覆盖更新一个共享工件。 |
+| `workspace_append_change_log_tool(entry)` | Append one timestamped change-log entry. / 追加一条带时间戳的 change-log 记录。 |
+| `memory_query_tool(query, limit)` | Graph-aware hybrid search across files, symbols, endpoints, Feign clients, topics and fields, with exact/semantic retrieval metadata and `progressive` summary/evidence/detail views. / 基于图谱的混合检索，查询文件、符号、接口、Feign、Topic、字段，并返回精确/语义召回来源信息，以及 `progressive` 的摘要/证据/细节分层视图。 |
 | `memory_search_code_tool(query, scope, limit)` | Keyword search over indexed files and symbol hints, useful for quick entrypoint discovery. / 在索引文件与符号提示上做关键词搜索，适合快速找入口。 |
 | `memory_symbol_tool(name, limit)` | Resolve one symbol and return best match with candidates. / 解析一个符号并返回最佳命中及候选。 |
 | `memory_callers_tool(symbol, depth, limit)` | Find upstream callers for a symbol. / 查询某符号的上游调用方。 |
 | `memory_callees_tool(symbol, depth, limit)` | Find downstream callees for a symbol. / 查询某符号的下游被调方。 |
-| `memory_context_tool(name, max_depth)` | 360-degree context for a graph node, with retrieval entrypoints and evidence summary. / 返回某个节点的上下游上下文，并附带召回入口和证据摘要。 |
-| `memory_impact_tool(target, direction, max_depth)` | Impact analysis for DTO, Feign, MQ topic, endpoint, service or file, with lookup provenance and evidence summary. / 对 DTO、Feign、消息主题、接口、服务、文件做影响面分析，并附带命中来源和证据摘要。 |
+| `memory_context_tool(name, max_depth)` | 360-degree context for a graph node, with retrieval entrypoints, evidence summary and `progressive` layered view. / 返回某个节点的上下游上下文，并附带召回入口、证据摘要和 `progressive` 分层视图。 |
+| `memory_impact_tool(target, direction, max_depth)` | Impact analysis for DTO, Feign, MQ topic, endpoint, service or file, with lookup provenance, evidence summary and `progressive` layered view. / 对 DTO、Feign、消息主题、接口、服务、文件做影响面分析，并附带命中来源、证据摘要和 `progressive` 分层视图。 |
 | `memory_plan_change_tool(target, direction, max_depth)` | Build an actionable change plan from impact and rule evidence. / 基于影响面与规则证据生成可执行改动计划。 |
 | `memory_verify_checklist_tool(target)` | Build verification checklist before merge/release. / 生成合并/发布前验证清单。 |
 | `memory_detect_changes_tool(scope)` | Map local git diff to affected files, projects, rules and risk level. / 把本地 Git diff 映射为影响项目、规则和风险等级。 |
@@ -30,13 +34,13 @@ Memory Center exposes graph-first project memory to AI coding agents through MCP
 | `workspace_recent_sessions_tool(limit)` | Read recent summarized sessions. / 查看最近会话摘要。 |
 | `workspace_session_summary_tool(session_id)` | Read one session summary and raw events. / 查看单次会话摘要和原始事件。 |
 | `workspace_resume_context_tool(intent, limit)` | Resume a new task from related sessions, cases and entrypoints. / 基于相关会话、经验和入口点恢复新任务上下文。 |
-| `workspace_suggest_case_tool(session_id)` | Suggest one record-case draft from a finished session. / 从已结束会话自动生成一条经验沉淀草稿。 |
+| `workspace_suggest_case_tool(session_id)` | Suggest one record-case draft from a finished session, including `evidence_refs` back to raw events. / 从已结束会话自动生成一条经验沉淀草稿，并附带可回溯原始事件的 `evidence_refs`。 |
 | `memory_generate_wiki_tool(output_dir)` | Generate bilingual architecture wiki. / 生成双语架构 Wiki。 |
 | `memory_generate_skills_tool(output_dir)` | Generate Agent skill files from task memory. / 根据历史任务生成 Agent Skill。 |
 | `workspace_status_tool()` | Return index and memory status, including semantic backend readiness. / 返回索引和记忆状态，包含语义 backend 就绪情况。 |
-| `group_query_tool(group, query, limit)` | Run a merged query across registered workspaces in one logical group, with exact/semantic retrieval metadata. / 对逻辑分组中的多个工作区做聚合查询，并返回精确/语义召回来源信息。 |
+| `group_query_tool(group, query, limit)` | Run a merged query across registered workspaces in one logical group, with exact/semantic retrieval metadata and `progressive` summary/evidence/detail views. / 对逻辑分组中的多个工作区做聚合查询，并返回精确/语义召回来源信息，以及 `progressive` 的摘要/证据/细节分层视图。 |
 | `group_status_tool(group)` | Return aggregated group status, including semantic index readiness, document counts and backend distribution. / 返回逻辑分组聚合状态，包含语义索引就绪度、文档数和 backend 分布。 |
-| `group_impact_tool(group, target, direction, max_depth)` | Run cross-workspace impact analysis with lookup provenance, graph evidence and bridge evidence. / 结合命中来源、图谱证据和 bridge 证据做跨工作区影响面分析。 |
+| `group_impact_tool(group, target, direction, max_depth)` | Run cross-workspace impact analysis with lookup provenance, graph evidence, bridge evidence and `progressive` layered views. / 结合命中来源、图谱证据、bridge 证据和 `progressive` 分层视图做跨工作区影响面分析。 |
 
 ## Resources / 资源
 

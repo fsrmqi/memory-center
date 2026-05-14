@@ -23,6 +23,7 @@ from memory_center.core.orchestrator import (
     workspace_suggest_case,
     workspace_status,
 )
+from memory_center.core.artifacts import append_change_log, get_artifact, list_artifacts, update_artifact
 
 
 def create_handler(default_workspace: str | Path | None = None) -> type[BaseHTTPRequestHandler]:
@@ -67,6 +68,22 @@ def _route_request(path: str, params: dict, default_workspace: str | None) -> di
     if path == "/workspace/status":
         workspace = _require_workspace(params, default_workspace)
         return workspace_status(workspace)
+    if path == "/workspace/artifacts":
+        workspace = _require_workspace(params, default_workspace)
+        return list_artifacts(workspace)
+    if path == "/workspace/artifact":
+        workspace = _require_workspace(params, default_workspace)
+        name = _require_one(params, "name")
+        return get_artifact(workspace, name)
+    if path == "/workspace/artifact/update":
+        workspace = _require_workspace(params, default_workspace)
+        name = _require_one(params, "name")
+        content = _require_one(params, "content")
+        return update_artifact(workspace, name, content)
+    if path == "/workspace/change-log/append":
+        workspace = _require_workspace(params, default_workspace)
+        entry = _require_one(params, "entry")
+        return append_change_log(workspace, entry)
     if path == "/workspace/query":
         workspace = _require_workspace(params, default_workspace)
         query = _require_one(params, "text")

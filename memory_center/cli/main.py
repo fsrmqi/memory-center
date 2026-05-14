@@ -7,6 +7,13 @@ import typer
 from rich import print
 
 from memory_center import __version__
+from memory_center.core.artifacts import (
+    append_change_log,
+    ensure_default_artifacts,
+    get_artifact,
+    list_artifacts,
+    update_artifact,
+)
 from memory_center.core.config import add_workspace_service, load_workspace_config, remove_workspace_service, write_default_workspace
 from memory_center.core.exporters import export_mermaid
 from memory_center.core.indexer import reindex_workspace
@@ -51,9 +58,11 @@ app = typer.Typer(help="Memory Center CLI")
 registry_app = typer.Typer(help="Global registry commands")
 group_app = typer.Typer(help="Workspace group commands")
 workspace_app = typer.Typer(help="Workspace config maintenance commands")
+artifact_app = typer.Typer(help="Shared workspace artifacts commands")
 app.add_typer(registry_app, name="registry")
 app.add_typer(group_app, name="group")
 app.add_typer(workspace_app, name="workspace")
+app.add_typer(artifact_app, name="artifact")
 
 
 def _version_callback(value: bool):
@@ -75,6 +84,7 @@ def init(workspace_root: str = typer.Option(...), name: str = typer.Option("dev-
     workspace_file = write_default_workspace(workspace_root, name)
     store = WorkspaceStore(workspace_file)
     ensure_default_rules(store)
+    ensure_default_artifacts(workspace_file)
     write_agent_instructions(store, workspace_root)
     print(f"[green]Initialized:[/green] {workspace_file}")
     print("Edit workspace.yaml services, then run: memory-center reindex --workspace <workspace.yaml>")
@@ -87,6 +97,7 @@ def reindex(workspace: str = typer.Option(...)):
     store = WorkspaceStore(workspace)
     counts = reindex_workspace(config, store)
     ensure_default_rules(store)
+    ensure_default_artifacts(workspace)
     write_agent_instructions(store, config.root_path)
     print({"reindexed": True, "counts": counts})
 
@@ -421,6 +432,40 @@ def workspace_remove_service(
         f"memory-center doctor --workspace {Path(workspace).expanduser().resolve()} --self-test",
     ]
     print(result)
+
+
+@artifact_app.command("list")
+def artifact_list_cmd(workspace: str = typer.Option(...)):
+    """List shared workspace artifacts."""
+    print(list_artifacts(workspace))
+
+
+@artifact_app.command("get")
+def artifact_get_cmd(
+    workspace: str = typer.Option(...),
+    name: str = typer.Option(...),
+):
+    """Read one shared artifact."""
+    print(get_artifact(workspace, name))
+
+
+@artifact_app.command("update")
+def artifact_update_cmd(
+    workspace: str = typer.Option(...),
+    name: str = typer.Option(...),
+    content: str = typer.Option(...),
+):
+    """Replace one shared artifact content."""
+    print(update_artifact(workspace, name, content))
+
+
+@artifact_app.command("append-change-log")
+def artifact_append_change_log_cmd(
+    workspace: str = typer.Option(...),
+    entry: str = typer.Option(...),
+):
+    """Append one timestamped entry into change-log.md."""
+    print(append_change_log(workspace, entry))
 
 
 @app.command("serve-http")

@@ -345,6 +345,18 @@ You can now keep lightweight task-session memory inside the same workspace:
 
 现在也可以在同一个 workspace 里记录轻量的任务会话记忆：
 
+`workspace_sniff` 现在会返回 `symbolic_context`，适合在长任务开始前先做低 Token 的符号化规划；其中同时包含 `entities_mermaid`（实体聚焦图）和 `flow_mermaid`（任务流程图），并且 `flow_mermaid` 会根据本次命中的 Feign/API、MQ、Config、历史 Case 动态切换流程分支，同时按 `risk_level` 决定是否强制插入 `memory_impact -> memory_plan_change -> memory_verify_checklist` 这条更严格主链路。`workspace_suggest_case` 会返回 `evidence_refs`，用于把 case 草稿回溯到原始事件；workspace 级 `query/context/impact` 会返回 `progressive` 的 `summary / evidence / detail` 三层视图，便于按需展开。
+
+`workspace_sniff` now returns `symbolic_context` for low-token planning, including both `entities_mermaid` and `flow_mermaid`. `workspace_suggest_case` returns `evidence_refs` back to raw events, and workspace `query/context/impact` responses now include a `progressive` view with `summary / evidence / detail` layers.
+
+Group-level `query` and `impact` now expose the same `progressive` structure, so agents can use one consistent disclosure pattern across single-workspace and multi-workspace workflows.
+
+group 级 `query` 和 `impact` 现在也会返回同样的 `progressive` 结构，这样单 workspace 与多 workspace 场景可以使用同一套渐进式披露模式。
+
+The workspace now also includes a shared `artifacts/` layer for multi-agent collaboration, with default artifacts such as `context.md`, `requirement.md`, `design.md`, `plan.md`, `test-plan.md`, and `change-log.md`.
+
+现在 workspace 还包含一个面向多智能体协作的共享 `artifacts/` 层，默认提供 `context.md`、`requirement.md`、`design.md`、`plan.md`、`test-plan.md`、`change-log.md` 等共享工件。
+
 ```bash
 memory-center start-session \
   --workspace examples/spring-cloud-demo/.memory-center/workspace.yaml \

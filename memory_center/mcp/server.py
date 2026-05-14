@@ -33,6 +33,7 @@ from memory_center.core.orchestrator import (
     workspace_status,
     workspace_trace,
 )
+from memory_center.core.artifacts import append_change_log, get_artifact, list_artifacts, update_artifact
 from memory_center.core.wiki import generate_skills, generate_wiki
 
 _WORKSPACE_FILE: Optional[str] = None
@@ -52,6 +53,26 @@ def create_server(workspace_file: str):
     def workspace_sniff_tool(intent: str, limit: int = 12):
         """Before any code task, retrieve services, files, rules, topology hints and historical cases."""
         return workspace_sniff(_WORKSPACE_FILE, intent, limit)
+
+    @mcp.tool()
+    def workspace_artifact_list_tool():
+        """List shared workspace artifacts such as context, requirement, design, plan and change log."""
+        return list_artifacts(_WORKSPACE_FILE)
+
+    @mcp.tool()
+    def workspace_artifact_get_tool(name: str):
+        """Read one shared workspace artifact."""
+        return get_artifact(_WORKSPACE_FILE, name)
+
+    @mcp.tool()
+    def workspace_artifact_update_tool(name: str, content: str):
+        """Replace one shared workspace artifact content."""
+        return update_artifact(_WORKSPACE_FILE, name, content)
+
+    @mcp.tool()
+    def workspace_append_change_log_tool(entry: str):
+        """Append one timestamped entry to the shared change log."""
+        return append_change_log(_WORKSPACE_FILE, entry)
 
     @mcp.tool()
     def memory_query_tool(query: str, limit: int = 20):

@@ -61,10 +61,12 @@ def workspace_sniff(workspace_file: str | Path, intent: str, limit: int = 12) ->
     related_mq = [x for x in mq if any(k in json.dumps(x, ensure_ascii=False).lower() for k in keywords)][:limit]
     related_cases = [x for x in cases if any(k in json.dumps(x, ensure_ascii=False).lower() for k in keywords)][-5:]
     rules = match_rules(store, intent=intent, files=[x["path"] for x in matched_files])[:10]
+    sniff_risk_level = _sniff_risk_level(intent, matched_files, related_feigns, related_apis, related_mq, rules)
 
     return {
         "workspace": config.workspace,
         "intent": intent,
+        "risk_level": sniff_risk_level,
         "matched_services": matched_services,
         "candidate_files": matched_files,
         "related_apis": related_apis,
@@ -72,6 +74,7 @@ def workspace_sniff(workspace_file: str | Path, intent: str, limit: int = 12) ->
         "related_mq": related_mq,
         "related_rules": rules,
         "historical_cases": related_cases,
+        "symbolic_context": _build_sniff_symbolic_context(intent, sniff_risk_level, matched_services, matched_files, related_feigns, related_apis, related_mq, related_cases),
         "next_steps": [
             "先调用 memory_search_code 缩小入口范围，再用 memory_symbol 定位关键符号",
             "对关键符号调用 memory_callers / memory_callees 理清上下游调用链",
@@ -275,6 +278,7 @@ def workspace_suggest_case(workspace_file: str | Path, session_id: str) -> Dict[
         "flow": flow,
         "risk_points": risk_points,
         "verified_by": summary.get("verified_by", []),
+        "evidence_refs": _build_case_evidence_refs(events),
     }
     return {
         "workspace": config.workspace,
@@ -483,6 +487,7 @@ def memory_query(workspace_file: str | Path, query: str, limit: int = 20, node_t
         "query": query,
         "matches": merged,
         "retrieval_summary": _summarize_query_matches(merged, limit),
+        "progressive": _build_query_progressive_view(query, merged, semantic_hits[:limit], related_cases),
         "semantic_hits": semantic_hits[:limit],
         "related_rules": related_rules,
         "historical_cases": related_cases,
@@ -581,6 +586,7 @@ def group_query(group: str, query: str, limit: int = 20, node_types: List[str] |
         "missing_members": resolved["missing"],
         "merged_matches": merged_matches,
         "retrieval_summary": _summarize_group_query_matches(merged_all, limit),
+        "progressive": _build_group_query_progressive_view(group, query, merged_matches, bridges, workspace_results, limit),
         "target_types": resolved_target_types,
         "related_bridges": bridges,
         "workspace_results": workspace_results,
@@ -666,6 +672,7 @@ def group_impact(
         "possible_impacts": possible[:200],
         "lookup": _build_lookup_payload(lookup, match_key="merged_matches"),
         "evidence_summary": _build_group_impact_evidence_summary(confirmed, probable, possible, bridge_candidates),
+        "progressive": _build_group_impact_progressive_view(group, target, confirmed, probable, possible, bridge_candidates, impacted_workspaces, impacted_projects),
         "target_types": resolved_target_types,
         "related_bridges": bridge_candidates[:50],
         "workspace_impacts": workspace_impacts,
@@ -691,6 +698,7 @@ def memory_context(workspace_file: str | Path, name: str, max_depth: int = 2) ->
         "outgoing": outgoing,
         "lookup": _build_lookup_payload(lookup),
         "evidence_summary": _build_context_evidence_summary(incoming, outgoing),
+        "progressive": _build_context_progressive_view(node, incoming, outgoing),
     }
 
 
@@ -780,6 +788,7 @@ def memory_search_code(workspace_file: str | Path, query: str, scope: str = "", 
         "scope": scope,
         "hits": hits[:limit],
         "total_hits": len(hits),
+        "progressive": _build_search_progressive_view(query, scope, hits[:limit]),
         "tips": [
             "命中后可继续调用 memory_symbol / memory_context 深挖。",
             "改动前建议调用 memory_impact 和 workspace_check_rules。",
@@ -875,6 +884,7 @@ def memory_impact(workspace_file: str | Path, target: str, direction: str = "ups
             "probable_impacts": [],
             "possible_impacts": [],
             "lookup": _build_lookup_payload(lookup),
+            "progressive": _build_impact_progressive_view(target, None, [], [], []),
             "unknown_risks": _unknown_static_analysis_risks(),
         }
     node = _best_match(matches, target)
@@ -904,6 +914,7 @@ def memory_impact(workspace_file: str | Path, target: str, direction: str = "ups
         "possible_impacts": possible,
         "lookup": _build_lookup_payload(lookup),
         "evidence_summary": _build_impact_evidence_summary(confirmed, probable, possible),
+        "progressive": _build_impact_progressive_view(target, node, confirmed, probable, possible),
         "required_rules": rules,
         "review_checklist": _impact_checklist(node, risk_level),
         "unknown_risks": _unknown_static_analysis_risks(),
@@ -1008,6 +1019,385 @@ def _best_match(matches: List[Dict[str, Any]], query: str = "") -> Dict[str, Any
 def _event_payload(event: Dict[str, Any]) -> Dict[str, Any]:
     payload = event.get("payload", {})
     return payload if isinstance(payload, dict) else {}
+
+
+def _build_case_evidence_refs(events: List[Dict[str, Any]], limit: int = 12) -> List[Dict[str, Any]]:
+    refs: List[Dict[str, Any]] = []
+    for idx, event in enumerate(events[-limit:], start=max(len(events) - limit, 0) + 1):
+        payload = _event_payload(event)
+        ref = {
+            "event_index": idx,
+            "event_type": event.get("event_type", ""),
+            "created_at": event.get("created_at", ""),
+        }
+        for key in ["tool_name", "query", "target", "name", "project", "file_path", "path"]:
+            value = payload.get(key)
+            if isinstance(value, str) and value:
+                ref[key] = value
+        refs.append(ref)
+    return refs
+
+
+def _build_sniff_symbolic_context(
+    intent: str,
+    risk_level: str,
+    matched_services: List[str],
+    matched_files: List[Dict[str, Any]],
+    related_feigns: List[Dict[str, Any]],
+    related_apis: List[Dict[str, Any]],
+    related_mq: List[Dict[str, Any]],
+    related_cases: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    service_nodes = [item for item in matched_services[:4] if item]
+    file_nodes = [Path(item.get("path", "")).name for item in matched_files[:4] if item.get("path")]
+    feign_nodes = [item.get("interface", "") for item in related_feigns[:3] if item.get("interface")]
+    api_nodes = [f"{item.get('http_method', '')} {item.get('path', '')}".strip() for item in related_apis[:3] if item.get("path")]
+    mq_nodes = [item.get("topic", "") for item in related_mq[:3] if item.get("topic")]
+    case_nodes = [item.get("task", "") for item in related_cases[-2:] if item.get("task")]
+    lines = ["flowchart LR", '  I["Intent"]']
+    for idx, service in enumerate(service_nodes, start=1):
+        node_id = f"S{idx}"
+        lines.append(f'  {node_id}["Service: {service}"]')
+        lines.append(f"  I --> {node_id}")
+    for idx, name in enumerate(file_nodes, start=1):
+        node_id = f"F{idx}"
+        lines.append(f'  {node_id}["File: {name}"]')
+        lines.append(f"  I --> {node_id}")
+    for idx, name in enumerate(feign_nodes, start=1):
+        node_id = f"G{idx}"
+        lines.append(f'  {node_id}["Feign: {name}"]')
+        lines.append(f"  I --> {node_id}")
+    for idx, name in enumerate(api_nodes, start=1):
+        node_id = f"A{idx}"
+        lines.append(f'  {node_id}["API: {name}"]')
+        lines.append(f"  I --> {node_id}")
+    for idx, name in enumerate(mq_nodes, start=1):
+        node_id = f"M{idx}"
+        lines.append(f'  {node_id}["MQ: {name}"]')
+        lines.append(f"  I --> {node_id}")
+    for idx, name in enumerate(case_nodes, start=1):
+        node_id = f"C{idx}"
+        lines.append(f'  {node_id}["Case: {name}"]')
+        lines.append(f"  I -.-> {node_id}")
+    has_contract = bool(feign_nodes or api_nodes)
+    has_mq = bool(mq_nodes)
+    has_cases = bool(case_nodes)
+    has_config = any(token in intent.lower() for token in ["config", "nacos", "bootstrap", "application.yml", "application.yaml"])
+    flow_lines = [
+        "flowchart TD",
+        '  T["Task Intent"] --> S["memory_search_code"]',
+        '  S --> Y["memory_symbol"]',
+        '  Y --> C["memory_callers / memory_callees"]',
+    ]
+    if risk_level == "high":
+        flow_lines.extend(
+            [
+                '  C --> I["memory_impact"]',
+                '  I --> P["memory_plan_change"]',
+                '  P --> V["memory_verify_checklist"]',
+            ]
+        )
+    elif risk_level == "medium":
+        flow_lines.extend(
+            [
+                '  C --> P["memory_plan_change"]',
+                '  P --> V["memory_verify_checklist"]',
+            ]
+        )
+    else:
+        flow_lines.append('  C --> V["memory_verify_checklist"]')
+    if has_contract:
+        flow_lines.append(f'  {"P" if risk_level != "low" else "V"} --> K["workspace_check_contract (Feign/API)"]')
+        flow_lines.append('  K --> R["workspace_check_rules"]')
+    if has_mq:
+        flow_lines.append(f'  {"P" if risk_level != "low" else "V"} --> M["MQ compatibility review"]')
+        flow_lines.append('  M --> R["workspace_check_rules"]')
+    if has_config:
+        flow_lines.append(f'  {"P" if risk_level != "low" else "V"} --> G["Config diff review"]')
+        flow_lines.append('  G --> R["workspace_check_rules"]')
+    if not (has_contract or has_mq or has_config):
+        flow_lines.append(f'  {"P" if risk_level != "low" else "V"} --> R["workspace_check_rules"]')
+    if has_cases:
+        flow_lines.append('  R --> H["Review historical cases"]')
+        flow_lines.append('  H --> E["Edit & Test"]')
+    else:
+        flow_lines.append('  R --> E["Edit & Test"]')
+    flow_lines.append('  E --> W["workspace_record_case"]')
+    return {
+        "intent": intent,
+        "focus_entities": {
+            "services": service_nodes,
+            "files": file_nodes,
+            "feigns": feign_nodes,
+            "apis": api_nodes,
+            "mq_topics": mq_nodes,
+            "cases": case_nodes,
+        },
+        "mermaid": "\n".join(lines),
+        "entities_mermaid": "\n".join(lines),
+        "flow_mermaid": "\n".join(flow_lines),
+        "flow_flags": {
+            "risk_level": risk_level,
+            "has_contract": has_contract,
+            "has_mq": has_mq,
+            "has_config": has_config,
+            "has_cases": has_cases,
+        },
+    }
+
+
+def _build_progressive_levels(summary: Dict[str, Any], evidence: Dict[str, Any], detail: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "level": "summary-evidence-detail",
+        "summary": summary,
+        "evidence": evidence,
+        "detail": detail,
+    }
+
+
+def _sniff_risk_level(
+    intent: str,
+    matched_files: List[Dict[str, Any]],
+    related_feigns: List[Dict[str, Any]],
+    related_apis: List[Dict[str, Any]],
+    related_mq: List[Dict[str, Any]],
+    rules: List[Dict[str, Any]],
+) -> str:
+    text = intent.lower()
+    paths = " ".join(item.get("path", "").lower() for item in matched_files)
+    must_rules = sum(1 for item in rules if item.get("severity") == "must")
+    if related_feigns or related_apis or related_mq:
+        return "high"
+    if any(token in text for token in ["dto", "feign", "mq", "message", "contract", "topic", "config"]):
+        return "high"
+    if any(token in paths for token in ["feign", "controller", "consumer", "message", "dto", "config"]):
+        return "high"
+    if must_rules >= 2:
+        return "medium"
+    return "low"
+
+
+def _build_search_progressive_view(query: str, scope: str, hits: List[Dict[str, Any]]) -> Dict[str, Any]:
+    return _build_progressive_levels(
+        {
+            "query": query,
+            "scope": scope,
+            "top_hit_count": len(hits),
+            "top_paths": [item.get("path", "") for item in hits[:3]],
+        },
+        {
+            "top_projects": sorted({item.get("project", "") for item in hits[:5] if item.get("project")}),
+            "scored_hits": [{"path": item.get("path", ""), "score": item.get("score", 0)} for item in hits[:5]],
+        },
+        {
+            "next_action": "对 top_paths 调用 memory_symbol / memory_context 深挖。",
+            "full_paths": [item.get("path", "") for item in hits],
+        },
+    )
+
+
+def _build_query_progressive_view(query: str, matches: List[Dict[str, Any]], semantic_hits: List[Dict[str, Any]], related_cases: List[Dict[str, Any]]) -> Dict[str, Any]:
+    top_nodes = [item.get("node", {}) for item in matches[:3]]
+    return _build_progressive_levels(
+        {
+            "query": query,
+            "top_nodes": [f"{item.get('type', '')}:{item.get('name', '')}" for item in top_nodes if item.get("name")],
+            "top_sources": [item.get("retrieval_sources", []) for item in matches[:3]],
+        },
+        {
+            "entrypoints": [
+                {
+                    "id": item.get("node", {}).get("id", ""),
+                    "type": item.get("node", {}).get("type", ""),
+                    "name": item.get("node", {}).get("name", ""),
+                    "exact_score": item.get("exact_score", 0.0),
+                    "semantic_score": item.get("semantic_score", 0.0),
+                }
+                for item in matches[:5]
+            ],
+            "semantic_candidates": [
+                {
+                    "node_id": item.get("node_id", ""),
+                    "name": item.get("node", {}).get("name", ""),
+                    "score": item.get("score", 0.0),
+                }
+                for item in semantic_hits[:5]
+            ],
+        },
+        {
+            "neighbor_preview": {
+                item.get("node", {}).get("name", ""): [edge.get("type", "") for edge in item.get("neighbors", [])[:4]]
+                for item in matches[:3]
+            },
+            "related_case_tasks": [item.get("task", "") for item in related_cases[-3:]],
+        },
+    )
+
+
+def _build_context_progressive_view(node: Dict[str, Any], incoming: List[Dict[str, Any]], outgoing: List[Dict[str, Any]]) -> Dict[str, Any]:
+    return _build_progressive_levels(
+        {
+            "node": f"{node.get('type', '')}:{node.get('name', '')}",
+            "incoming_count": len(incoming),
+            "outgoing_count": len(outgoing),
+        },
+        {
+            "incoming_edge_types": sorted({item.get("type", "") for item in incoming if item.get("type")}),
+            "outgoing_edge_types": sorted({item.get("type", "") for item in outgoing if item.get("type")}),
+            "high_confidence_edges": [
+                item.get("type", "")
+                for item in (incoming + outgoing)
+                if float(item.get("confidence", 0.0)) >= 0.80
+            ][:8],
+        },
+        {
+            "incoming_preview": [f"{item.get('source', {}).get('name', '')} -> {item.get('type', '')}" for item in incoming[:8]],
+            "outgoing_preview": [f"{item.get('type', '')} -> {item.get('target', {}).get('name', '')}" for item in outgoing[:8]],
+        },
+    )
+
+
+def _build_impact_progressive_view(
+    target: str,
+    node: Dict[str, Any] | None,
+    confirmed: List[Dict[str, Any]],
+    probable: List[Dict[str, Any]],
+    possible: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    node_label = target if not node else f"{node.get('type', '')}:{node.get('name', '')}"
+    return _build_progressive_levels(
+        {
+            "target": node_label,
+            "confirmed_count": len(confirmed),
+            "probable_count": len(probable),
+            "possible_count": len(possible),
+        },
+        {
+            "confirmed_edge_types": sorted({item.get("type", "") for item in confirmed if item.get("type")}),
+            "probable_edge_types": sorted({item.get("type", "") for item in probable if item.get("type")}),
+            "top_confirmed": [
+                f"{item.get('type', '')}:{item.get('source', {}).get('name', '')}->{item.get('target', {}).get('name', '')}"
+                for item in confirmed[:5]
+            ],
+        },
+        {
+            "probable_preview": [
+                f"{item.get('type', '')}:{item.get('source', {}).get('name', '')}->{item.get('target', {}).get('name', '')}"
+                for item in probable[:5]
+            ],
+            "possible_preview": [
+                f"{item.get('type', '')}:{item.get('source', {}).get('name', '')}->{item.get('target', {}).get('name', '')}"
+                for item in possible[:5]
+            ],
+        },
+    )
+
+
+def _build_group_query_progressive_view(
+    group: str,
+    query: str,
+    merged_matches: List[Dict[str, Any]],
+    bridges: List[Dict[str, Any]],
+    workspace_results: List[Dict[str, Any]],
+    limit: int,
+) -> Dict[str, Any]:
+    top_nodes = [item.get("node", {}) for item in merged_matches[:3]]
+    return _build_progressive_levels(
+        {
+            "group": group,
+            "query": query,
+            "workspace_count": len(workspace_results),
+            "top_nodes": [f"{item.get('type', '')}:{item.get('name', '')}" for item in top_nodes if item.get("name")],
+        },
+        {
+            "entrypoints": [
+                {
+                    "workspace_ref": item.get("workspace_ref", ""),
+                    "type": item.get("node", {}).get("type", ""),
+                    "name": item.get("node", {}).get("name", ""),
+                    "retrieval_sources": item.get("retrieval_sources", []),
+                    "rrf_score": item.get("rrf_score", 0.0),
+                    "semantic_score": item.get("semantic_score", 0.0),
+                }
+                for item in merged_matches[: min(limit, 5)]
+            ],
+            "bridge_preview": [
+                {
+                    "type": item.get("type", ""),
+                    "summary": item.get("summary", ""),
+                    "confidence": item.get("confidence", 0.0),
+                }
+                for item in bridges[:5]
+            ],
+        },
+        {
+            "workspace_breakdown": [
+                {
+                    "workspace_ref": item.get("workspace_ref", ""),
+                    "workspace": item.get("workspace", ""),
+                    "top_match_count": len(item.get("result", {}).get("matches", [])),
+                    "retrieval_summary": item.get("result", {}).get("retrieval_summary", {}),
+                }
+                for item in workspace_results
+            ],
+            "neighbor_preview": {
+                item.get("node", {}).get("name", ""): [edge.get("type", "") for edge in item.get("neighbors", [])[:4]]
+                for item in merged_matches[:3]
+            },
+        },
+    )
+
+
+def _build_group_impact_progressive_view(
+    group: str,
+    target: str,
+    confirmed: List[Dict[str, Any]],
+    probable: List[Dict[str, Any]],
+    possible: List[Dict[str, Any]],
+    bridges: List[Dict[str, Any]],
+    impacted_workspaces: set[str],
+    impacted_projects: set[str],
+) -> Dict[str, Any]:
+    return _build_progressive_levels(
+        {
+            "group": group,
+            "target": target,
+            "impacted_workspace_count": len(impacted_workspaces),
+            "impacted_project_count": len(impacted_projects),
+            "confirmed_count": len(confirmed),
+            "probable_count": len(probable),
+            "possible_count": len(possible),
+        },
+        {
+            "bridge_types": sorted({item.get("type", "") for item in bridges if item.get("type")}),
+            "top_bridges": [
+                {
+                    "type": item.get("type", ""),
+                    "summary": item.get("summary", ""),
+                    "confidence": item.get("confidence", 0.0),
+                }
+                for item in bridges[:5]
+            ],
+            "top_confirmed": [
+                _group_impact_record_label(item)
+                for item in confirmed[:5]
+            ],
+        },
+        {
+            "confirmed_preview": [_group_impact_record_label(item) for item in confirmed[:8]],
+            "probable_preview": [_group_impact_record_label(item) for item in probable[:8]],
+            "possible_preview": [_group_impact_record_label(item) for item in possible[:8]],
+            "impacted_workspaces": sorted(impacted_workspaces),
+            "impacted_projects": sorted(impacted_projects),
+        },
+    )
+
+
+def _group_impact_record_label(item: Dict[str, Any]) -> str:
+    impact = item.get("impact", {}) if isinstance(item, dict) else {}
+    if item.get("kind") == "bridge":
+        return f"{impact.get('type', '')}:{impact.get('summary', '')}"
+    return f"{impact.get('type', '')}:{impact.get('source', {}).get('name', '')}->{impact.get('target', {}).get('name', '')}"
 
 
 def _suggest_risk_points(summary: Dict[str, Any], events: List[Dict[str, Any]]) -> List[str]:

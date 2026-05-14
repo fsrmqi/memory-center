@@ -15,10 +15,11 @@ class WorkspaceStore:
         self.index_dir = self.base_dir / "index"
         self.rules_dir = self.base_dir / "rules"
         self.memory_dir = self.base_dir / "memory"
+        self.artifacts_dir = self.base_dir / "artifacts"
         self.instructions_dir = self.base_dir / "instructions"
         self.graph_dir = self.base_dir / "graph"
         self.lock_file = self.base_dir / "store.lock"
-        for p in [self.index_dir, self.rules_dir, self.memory_dir, self.instructions_dir, self.graph_dir]:
+        for p in [self.index_dir, self.rules_dir, self.memory_dir, self.artifacts_dir, self.instructions_dir, self.graph_dir]:
             p.mkdir(parents=True, exist_ok=True)
 
     def write_json(self, name: str, data: Any) -> None:
@@ -61,6 +62,31 @@ class WorkspaceStore:
         rows = self.read_jsonl(name, limit=5000)
         matched = [row for row in rows if predicate(row)]
         return matched[-limit:]
+
+    def write_artifact(self, name: str, content: str) -> Path:
+        path = self.artifacts_dir / name
+        with FileLock(str(self.lock_file)):
+            path.write_text(content, encoding="utf-8")
+        return path
+
+    def read_artifact(self, name: str, default: str = "") -> str:
+        path = self.artifacts_dir / name
+        if not path.exists():
+            return default
+        try:
+            return path.read_text(encoding="utf-8")
+        except Exception:
+            return default
+
+    def append_artifact(self, name: str, content: str) -> Path:
+        path = self.artifacts_dir / name
+        with FileLock(str(self.lock_file)):
+            with path.open("a", encoding="utf-8") as f:
+                f.write(content)
+        return path
+
+    def artifact_exists(self, name: str) -> bool:
+        return (self.artifacts_dir / name).exists()
 
     @property
     def graph_db_path(self) -> Path:

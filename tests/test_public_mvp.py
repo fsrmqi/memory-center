@@ -8,6 +8,7 @@ from urllib.request import urlopen
 from typer.testing import CliRunner
 
 from memory_center.cli.main import app
+from memory_center.core.artifacts import append_change_log, get_artifact, list_artifacts, update_artifact
 from memory_center.core.config import load_workspace_config
 from memory_center.core.exporters import export_mermaid
 from memory_center.core.indexer import reindex_workspace
@@ -45,6 +46,18 @@ def test_demo_workspace_indexes_spring_cloud_patterns(tmp_path: Path):
     sniffed = workspace_sniff(workspace, "oldPubTime newPubTime Kafka ArticleFeignClient move")
     assert sniffed["candidate_files"]
     assert sniffed["related_rules"]
+    assert sniffed["risk_level"] == "high"
+    assert "symbolic_context" in sniffed
+    assert "mermaid" in sniffed["symbolic_context"]
+    assert "entities_mermaid" in sniffed["symbolic_context"]
+    assert "flow_mermaid" in sniffed["symbolic_context"]
+    assert "memory_search_code" in sniffed["symbolic_context"]["flow_mermaid"]
+    assert "memory_impact" in sniffed["symbolic_context"]["flow_mermaid"]
+    assert sniffed["symbolic_context"]["flow_flags"]["has_contract"] is True
+    assert sniffed["symbolic_context"]["flow_flags"]["has_mq"] is True
+    assert sniffed["symbolic_context"]["flow_flags"]["risk_level"] == "high"
+    assert "workspace_check_contract (Feign/API)" in sniffed["symbolic_context"]["flow_mermaid"]
+    assert "MQ compatibility review" in sniffed["symbolic_context"]["flow_mermaid"]
 
     traced = workspace_trace(workspace, "article-pubtime-change")
     assert traced["matched_mq"]
@@ -157,6 +170,31 @@ def test_workspace_service_maintenance_commands(tmp_path: Path):
     assert all(item.name != "ucap-cloud-open-api" for item in config_after.services)
 
 
+def test_workspace_artifacts_flow(tmp_path: Path):
+    source = Path("examples/spring-cloud-demo")
+    target = tmp_path / "artifact-demo"
+    import shutil
+    shutil.copytree(source, target)
+    workspace = target / ".memory-center" / "workspace.yaml"
+    lines = workspace.read_text(encoding="utf-8").splitlines()
+    lines = [f"root: {target.as_posix()}" if line.startswith("root:") else line for line in lines]
+    workspace.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    artifacts = list_artifacts(workspace)
+    assert artifacts["artifacts"]
+    assert any(item["name"] == "context" for item in artifacts["artifacts"])
+
+    update = update_artifact(workspace, "context", "# Context\n\n共享上下文")
+    assert update["updated"] is True
+    artifact = get_artifact(workspace, "context")
+    assert "共享上下文" in artifact["content"]
+
+    changed = append_change_log(workspace, "新增共享工件能力")
+    assert changed["appended"] is True
+    change_log = get_artifact(workspace, "change_log")
+    assert "新增共享工件能力" in change_log["content"]
+
+
 def test_session_memory_flow(tmp_path: Path):
     from memory_center.core.orchestrator import (
         workspace_suggest_case,
@@ -209,6 +247,7 @@ def test_session_memory_flow(tmp_path: Path):
     assert draft["found"] is True
     assert draft["draft_case"]["task"]
     assert "risk_points" in draft["draft_case"]
+    assert draft["draft_case"]["evidence_refs"]
 
 
 def test_graph_query_context_and_impact(tmp_path):
@@ -245,8 +284,10 @@ def test_graph_query_context_and_impact(tmp_path):
     assert query_result["retrieval_summary"]["semantic_matches"] >= 1
     assert query_result["retrieval_summary"]["returned_matches"] == len(query_result["matches"])
     assert any("semantic" in item["retrieval_sources"] for item in query_result["matches"])
+    assert query_result["progressive"]["summary"]["top_nodes"]
     code_search = memory_search_code(workspace, "ArticleFeignClient", scope="task-service", limit=5)
     assert code_search["hits"]
+    assert code_search["progressive"]["summary"]["top_hit_count"] >= 1
     symbol = memory_symbol(workspace, "ArticleMoveService", limit=5)
     assert symbol["found"] is True
     callers = memory_callers(workspace, "ArticleMoveService", depth=2, limit=20)
@@ -262,10 +303,12 @@ def test_graph_query_context_and_impact(tmp_path):
     assert context["lookup"]["retrieval_summary"]["exact_matches"] >= 1
     assert context["lookup"]["entrypoints"]
     assert "INJECTS_BEAN" in context["evidence_summary"]["edge_types"]
+    assert context["progressive"]["summary"]["node"]
     impact = memory_impact(workspace, "MoveArticleRequest")
     assert impact["found"] is True
     assert impact["lookup"]["retrieval_summary"]["semantic_matches"] >= 1
     assert impact["evidence_summary"]["confirmed_count"] >= 0
+    assert impact["progressive"]["summary"]["target"]
     plan = memory_plan_change(workspace, "MoveArticleRequest")
     assert plan["found"] is True
     assert plan["plan"]
@@ -368,10 +411,13 @@ def test_group_query_and_status(tmp_path: Path):
     assert result["retrieval_summary"]["semantic_matches"] >= 1
     assert result["retrieval_summary"]["returned_matches"] == len(result["merged_matches"])
     assert any("semantic" in item["retrieval_sources"] for item in result["merged_matches"])
+    assert result["progressive"]["summary"]["top_nodes"]
+    assert result["progressive"]["evidence"]["entrypoints"]
     assert any(bridge["type"] in {"FEIGN_SERVICE", "FEIGN_ENDPOINT"} for bridge in result["related_bridges"])
 
     mq_result = group_query("backend-platform", "article-pubtime-change", limit=10, home=home)
     assert any(bridge["type"] == "MQ_TOPIC_CONFIG" for bridge in mq_result["related_bridges"])
+    assert mq_result["progressive"]["evidence"]["bridge_preview"]
 
     impact = group_impact("backend-platform", "ArticleFeignClient", home=home)
     assert impact["found"] is True
@@ -382,6 +428,8 @@ def test_group_query_and_status(tmp_path: Path):
     assert impact["lookup"]["entrypoints"]
     assert impact["evidence_summary"]["bridge_evidence_count"] >= 1
     assert "FEIGN_ENDPOINT" in impact["evidence_summary"]["bridge_types"]
+    assert impact["progressive"]["summary"]["impacted_workspace_count"] >= 1
+    assert impact["progressive"]["evidence"]["top_bridges"]
     assert impact["confirmed_impacts"] or impact["probable_impacts"]
     assert all(bridge["type"] in {"FEIGN_SERVICE", "FEIGN_ENDPOINT"} for bridge in impact["related_bridges"])
     assert impact["related_bridges"][0]["type"] == "FEIGN_ENDPOINT"
@@ -399,6 +447,7 @@ def test_group_query_and_status(tmp_path: Path):
     assert topic_impact["found"] is True
     assert all(bridge["type"] in {"MQ_TOPIC_CONFIG", "MQ_TOPIC_SHARED"} for bridge in topic_impact["related_bridges"])
     assert topic_impact["related_bridges"][0]["type"] == "MQ_TOPIC_CONFIG"
+    assert topic_impact["progressive"]["detail"]["impacted_workspaces"]
 
 
 def test_http_bridge_routes(tmp_path: Path):
@@ -439,6 +488,15 @@ def test_http_bridge_routes(tmp_path: Path):
         assert status["semantic_index"]["ready"] is True
         assert status["semantic_index"]["backends"]["sparse"] == 1
 
+        artifacts = json.loads(urlopen(f"{base}/workspace/artifacts").read().decode("utf-8"))
+        assert artifacts["artifacts"]
+        context_artifact = json.loads(urlopen(f"{base}/workspace/artifact?name=context").read().decode("utf-8"))
+        assert context_artifact["name"] == "context"
+        updated_artifact = json.loads(urlopen(f"{base}/workspace/artifact/update?name=context&content=HTTP-shared-context").read().decode("utf-8"))
+        assert updated_artifact["updated"] is True
+        changed_artifact = json.loads(urlopen(f"{base}/workspace/change-log/append?entry=HTTP-change-log-entry").read().decode("utf-8"))
+        assert changed_artifact["appended"] is True
+
         query = json.loads(urlopen(f"{base}/workspace/query?text=ArticleFeignClient").read().decode("utf-8"))
         assert query["matches"]
         assert query["retrieval_summary"]["exact_matches"] >= 1
@@ -466,12 +524,14 @@ def test_http_bridge_routes(tmp_path: Path):
         group_query_payload = json.loads(urlopen(f"{base}/group/query?group=http-group&text=article-pubtime-change").read().decode("utf-8"))
         assert group_query_payload["related_bridges"]
         assert group_query_payload["retrieval_summary"]["semantic_matches"] >= 1
+        assert group_query_payload["progressive"]["summary"]["workspace_count"] == 1
 
         group_impact_payload = json.loads(urlopen(f"{base}/group/impact?group=http-group&target=ArticleFeignClient").read().decode("utf-8"))
         assert group_impact_payload["found"] is True
         assert "FeignClient" in group_impact_payload["target_types"]
         assert group_impact_payload["lookup"]["entrypoints"]
         assert group_impact_payload["evidence_summary"]["bridge_evidence_count"] >= 1
+        assert group_impact_payload["progressive"]["evidence"]["top_bridges"]
     finally:
         server.shutdown()
         server.server_close()
