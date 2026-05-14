@@ -22,6 +22,7 @@ from memory_center.core.artifacts import (
     list_artifacts,
     list_task_spaces,
     resolve_task_space,
+    touch_task_activity,
     update_task_status,
     update_task_artifact,
     update_artifact,
@@ -563,9 +564,10 @@ def artifact_resolve_task_cmd(
     create_if_missing: bool = typer.Option(True),
     include_archived: bool = typer.Option(False),
     limit_candidates: int = typer.Option(3),
+    score_threshold: int = typer.Option(3, help="Minimum score to auto-match an existing task space."),
 ):
     """Resolve one task space from natural language; create one if needed."""
-    print(resolve_task_space(workspace, intent=intent, title=title, create_if_missing=create_if_missing, include_archived=include_archived, limit_candidates=limit_candidates))
+    print(resolve_task_space(workspace, intent=intent, title=title, create_if_missing=create_if_missing, include_archived=include_archived, limit_candidates=limit_candidates, score_threshold=score_threshold))
 
 
 @artifact_app.command("get-task")
@@ -627,6 +629,16 @@ def artifact_auto_archive_tasks_cmd(
 ):
     """Auto-archive stale task artifact spaces by retention days."""
     print(auto_archive_task_spaces(workspace, retention_days=retention_days))
+
+
+@artifact_app.command("touch-task-activity")
+def artifact_touch_task_activity_cmd(
+    workspace: str = typer.Option(...),
+    task_id: str = typer.Option(...),
+    source: str = typer.Option(..., help="Caller identifier, e.g. sync-sniff, sync-case, mcp."),
+):
+    """Record last activity source for a task space."""
+    print(touch_task_activity(workspace, task_id, source))
 
 
 @app.command("serve-http")

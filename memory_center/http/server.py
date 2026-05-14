@@ -39,6 +39,7 @@ from memory_center.core.artifacts import (
     list_artifacts,
     list_task_spaces,
     resolve_task_space,
+    touch_task_activity,
     update_task_status,
     update_artifact,
     update_task_artifact,
@@ -127,7 +128,8 @@ def _route_request(path: str, params: dict, default_workspace: str | None) -> di
         create_if_missing = params.get("create_if_missing", ["true"])[0].lower() == "true"
         include_archived = params.get("include_archived", ["false"])[0].lower() == "true"
         limit_candidates = int(params.get("limit_candidates", ["3"])[0])
-        return resolve_task_space(workspace, intent=intent, title=title, create_if_missing=create_if_missing, include_archived=include_archived, limit_candidates=limit_candidates)
+        score_threshold = int(params.get("score_threshold", ["3"])[0])
+        return resolve_task_space(workspace, intent=intent, title=title, create_if_missing=create_if_missing, include_archived=include_archived, limit_candidates=limit_candidates, score_threshold=score_threshold)
     if path == "/workspace/task-space/create":
         workspace = _require_workspace(params, default_workspace)
         title = params.get("title", [""])[0]
@@ -163,6 +165,11 @@ def _route_request(path: str, params: dict, default_workspace: str | None) -> di
         task_id = _require_one(params, "task_id")
         status = _require_one(params, "status")
         return update_task_status(workspace, task_id, status)
+    if path == "/workspace/task-space/touch-activity":
+        workspace = _require_workspace(params, default_workspace)
+        task_id = _require_one(params, "task_id")
+        source = _require_one(params, "source")
+        return touch_task_activity(workspace, task_id, source)
     if path == "/workspace/task-spaces/auto-archive":
         workspace = _require_workspace(params, default_workspace)
         retention_days = int(params.get("retention_days", ["30"])[0])

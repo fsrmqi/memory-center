@@ -49,6 +49,7 @@ from memory_center.core.artifacts import (
     list_artifacts,
     list_task_spaces,
     resolve_task_space,
+    touch_task_activity,
     update_task_status,
     update_artifact,
     update_task_artifact,
@@ -124,9 +125,9 @@ def create_server(workspace_file: str):
         return list_task_spaces(_WORKSPACE_FILE, include_archived=include_archived)
 
     @mcp.tool()
-    def workspace_task_space_resolve_tool(intent: str, title: str = "", create_if_missing: bool = True, include_archived: bool = False, limit_candidates: int = 3):
-        """Resolve one task space from natural language; create one if needed."""
-        return resolve_task_space(_WORKSPACE_FILE, intent=intent, title=title, create_if_missing=create_if_missing, include_archived=include_archived, limit_candidates=limit_candidates)
+    def workspace_task_space_resolve_tool(intent: str, title: str = "", create_if_missing: bool = True, include_archived: bool = False, limit_candidates: int = 3, score_threshold: int = 3):
+        """Resolve one task space from natural language; create one if needed. Score below threshold will not auto-match."""
+        return resolve_task_space(_WORKSPACE_FILE, intent=intent, title=title, create_if_missing=create_if_missing, include_archived=include_archived, limit_candidates=limit_candidates, score_threshold=score_threshold)
 
     @mcp.tool()
     def workspace_task_artifact_get_tool(task_id: str, name: str):
@@ -157,6 +158,11 @@ def create_server(workspace_file: str):
     def workspace_task_status_tool(task_id: str, status: str):
         """Update one task-specific space status: draft/active/blocked/done/archived."""
         return update_task_status(_WORKSPACE_FILE, task_id, status)
+
+    @mcp.tool()
+    def workspace_task_activity_touch_tool(task_id: str, source: str):
+        """Record last activity source for a task space (e.g. sync-sniff, sync-case, mcp)."""
+        return touch_task_activity(_WORKSPACE_FILE, task_id, source)
 
     @mcp.tool()
     def memory_query_tool(query: str, limit: int = 20):

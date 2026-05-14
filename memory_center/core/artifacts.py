@@ -27,6 +27,7 @@ TASK_ONLY_ARTIFACTS = {
 TASKS_DIR = "tasks"
 ARCHIVE_DIR = "archive/tasks"
 TASK_STATUSES = {"draft", "active", "blocked", "done", "archived"}
+DEFAULT_RESOLVE_SCORE_THRESHOLD = 3
 
 
 def ensure_default_artifacts(workspace_file: str | Path) -> List[Dict[str, str]]:
@@ -224,6 +225,7 @@ def create_task_space(
         "owner": owner.strip(),
         "tags": tags or [],
         "priority": priority.strip().lower() or "medium",
+        "last_activity_source": "create_task_space",
         "created_at": datetime.now().isoformat(),
         "updated_at": datetime.now().isoformat(),
     }
@@ -252,6 +254,7 @@ def resolve_task_space(
     include_archived: bool = False,
     limit_candidates: int = 3,
     related_texts: List[str] | None = None,
+    score_threshold: int = DEFAULT_RESOLVE_SCORE_THRESHOLD,
 ) -> Dict[str, object]:
     config = load_workspace_config(workspace_file)
     candidates = list_task_spaces(workspace_file, include_archived=include_archived)
@@ -280,7 +283,7 @@ def resolve_task_space(
         }
         for item in scored[: max(limit_candidates, 1)]
     ]
-    if scored:
+    if scored and int(scored[0]["score"]) >= score_threshold:
         top = scored[0]
         return {
             "workspace": config.workspace,
@@ -295,6 +298,7 @@ def resolve_task_space(
             "priority": top.get("priority", "medium"),
             "path": top["path"],
             "candidates": candidate_rows,
+            "score_threshold": score_threshold,
         }
     if not create_if_missing:
         return {
@@ -307,9 +311,10 @@ def resolve_task_space(
             "status": "",
             "path": "",
             "candidates": candidate_rows,
+            "score_threshold": score_threshold,
         }
     created = create_task_space(workspace_file, title=title, intent=intent)
-    return {**created, "resolved": True, "score": 0, "candidates": candidate_rows}
+    return {**created, "resolved": True, "score": 0, "candidates": candidate_rows, "score_threshold": score_threshold}
 
 
 def list_task_spaces(workspace_file: str | Path, include_archived: bool = False) -> Dict[str, object]:
@@ -324,7 +329,7 @@ def list_task_spaces(workspace_file: str | Path, include_archived: bool = False)
     }
 
 
-def update_task_status(workspace_file: str | Path, task_id: str, status: str) -> Dict[str, object]:
+def update_task_status(workspace_file: str | Path, task_id: str, status: str, source: str = "update_task_status") -> Dict[str, object]:
     config = load_workspace_config(workspace_file)
     store = WorkspaceStore(workspace_file)
     normalized = status.strip().lower()
@@ -335,7 +340,7 @@ def update_task_status(workspace_file: str | Path, task_id: str, status: str) ->
     task_dir, meta = _resolve_task_dir(store, task_id)
     meta["status"] = normalized
     meta["archived"] = False
-    _touch_task_meta(store, task_dir, meta)
+    _touch_task_meta(store, task_dir, meta, source=source)
     return {
         "workspace": config.workspace,
         "updated": True,
@@ -363,7 +368,7 @@ def get_task_artifact(workspace_file: str | Path, task_id: str, name: str) -> Di
     }
 
 
-def update_task_artifact(workspace_file: str | Path, task_id: str, name: str, content: str) -> Dict[str, object]:
+def update_task_artifact(workspace_file: str | Path, task_id: str, name: str, content: str, source: str = "update_task_artifact") -> Dict[str, object]:
     config = load_workspace_config(workspace_file)
     store = WorkspaceStore(workspace_file)
     task_dir, meta = _resolve_task_dir(store, task_id)
@@ -371,7 +376,7 @@ def update_task_artifact(workspace_file: str | Path, task_id: str, name: str, co
     path = task_dir / filename
     with FileLock(str(store.lock_file)):
         path.write_text(content, encoding="utf-8")
-    _touch_task_meta(store, task_dir, meta)
+    _touch_task_meta(store, task_dir, meta, source=source)
     return {
         "workspace": config.workspace,
         "updated": True,
@@ -383,7 +388,7 @@ def update_task_artifact(workspace_file: str | Path, task_id: str, name: str, co
     }
 
 
-def append_task_change_log(workspace_file: str | Path, task_id: str, entry: str, keep_recent: int = 30) -> Dict[str, object]:
+def append_task_change_log(workspace_file: str | Path, task_id: str, entry: str, keep_recent: int = 30, source: str = "append_task_change_log") -> Dict[str, object]:
     config = load_workspace_config(workspace_file)
     store = WorkspaceStore(workspace_file)
     task_dir, meta = _resolve_task_dir(store, task_id)
@@ -394,7 +399,7 @@ def append_task_change_log(workspace_file: str | Path, task_id: str, entry: str,
     with FileLock(str(store.lock_file)):
         with path.open("a", encoding="utf-8") as f:
             f.write(content)
-    _touch_task_meta(store, task_dir, meta)
+    _touch_task_meta(store, task_dir, meta, source=source)
     compact = compact_task_change_log(workspace_file, task_id, keep_recent=keep_recent)
     return {
         "workspace": config.workspace,
@@ -545,10 +550,26 @@ def _read_task_meta(task_dir: Path) -> Dict[str, object]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def _touch_task_meta(store: WorkspaceStore, task_dir: Path, meta: Dict[str, object]) -> None:
+def _touch_task_meta(store: WorkspaceStore, task_dir: Path, meta: Dict[str, object], source: str = "") -> None:
     meta = dict(meta)
     meta["updated_at"] = datetime.now().isoformat()
+    if source:
+        meta["last_activity_source"] = source
     _write_task_meta(store, task_dir, meta)
+
+
+def touch_task_activity(workspace_file: str | Path, task_id: str, source: str) -> Dict[str, object]:
+    config = load_workspace_config(workspace_file)
+    store = WorkspaceStore(workspace_file)
+    task_dir, meta = _resolve_task_dir(store, task_id)
+    meta["last_activity_source"] = source
+    _touch_task_meta(store, task_dir, meta)
+    return {
+        "workspace": config.workspace,
+        "task_id": meta["task_id"],
+        "last_activity_source": source,
+        "updated_at": meta["updated_at"],
+    }
 
 
 def _list_task_dir_entries(root: Path, archived: bool) -> List[Dict[str, object]]:
@@ -570,6 +591,7 @@ def _list_task_dir_entries(root: Path, archived: bool) -> List[Dict[str, object]
                 "owner": meta.get("owner", ""),
                 "tags": meta.get("tags", []),
                 "priority": meta.get("priority", "medium"),
+                "last_activity_source": meta.get("last_activity_source", ""),
                 "created_at": meta.get("created_at", ""),
                 "updated_at": meta.get("updated_at", ""),
                 "archived": archived or bool(meta.get("archived", False)),

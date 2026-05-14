@@ -2,8 +2,8 @@
   {
     "project": "common-api",
     "service_name": "common-api",
-    "path": "common-api/src/main/java/com/example/api/ArticleFeignClient.java",
-    "suffix": ".java"
+    "path": "common-api/common-api.iml",
+    "suffix": ".iml"
   },
   {
     "project": "common-api",
@@ -18,6 +18,18 @@
     "suffix": ".java"
   },
   {
+    "project": "common-api",
+    "service_name": "common-api",
+    "path": "common-api/src/main/java/com/example/api/ArticleFeignClient.java",
+    "suffix": ".java"
+  },
+  {
+    "project": "article-service",
+    "service_name": "article-service",
+    "path": "article-service/article-service.iml",
+    "suffix": ".iml"
+  },
+  {
     "project": "article-service",
     "service_name": "article-service",
     "path": "article-service/application.yml",
@@ -28,6 +40,12 @@
     "service_name": "article-service",
     "path": "article-service/src/main/java/com/example/article/ArticleController.java",
     "suffix": ".java"
+  },
+  {
+    "project": "task-service",
+    "service_name": "task-service",
+    "path": "task-service/task-service.iml",
+    "suffix": ".iml"
   },
   {
     "project": "task-service",

@@ -22,6 +22,7 @@ from memory_center.core.artifacts import (
     list_artifacts,
     list_task_spaces,
     resolve_task_space,
+    touch_task_activity,
     update_task_status,
     update_artifact,
     update_task_artifact,
@@ -754,6 +755,71 @@ def test_local_embedding_backend_is_optional_and_selectable(tmp_path: Path):
             os.environ.pop("MEMORY_CENTER_EMBEDDING_MODEL", None)
         else:
             os.environ["MEMORY_CENTER_EMBEDDING_MODEL"] = old_model
+
+
+def test_resolve_task_score_threshold(tmp_path: Path):
+    """Resolve respects score_threshold: below threshold does not auto-match, above does."""
+    workspace = _copy_demo_workspace(tmp_path, "resolve-threshold")
+
+    created = create_task_space(workspace, title="站点连通性告警治理")
+    task_id = created["task_id"]
+    update_task_artifact(workspace, task_id, "plan", "# Plan\n\n处理站点连通性告警")
+
+    # Threshold above actual score (score=2 from status=active) — should NOT match
+    resolved_high = resolve_task_space(workspace, intent="继续处理站点告警连通性问题", create_if_missing=False, score_threshold=3)
+    assert resolved_high["resolved"] is False
+    assert resolved_high["task_id"] == ""
+    assert resolved_high["score_threshold"] == 3
+
+    # Threshold at or below actual score — SHOULD match
+    resolved_low = resolve_task_space(workspace, intent="继续处理站点告警连通性问题", create_if_missing=False, score_threshold=1)
+    assert resolved_low["resolved"] is True
+    assert resolved_low["task_id"] == task_id
+    assert resolved_low["score_threshold"] == 1
+
+
+def test_touch_task_activity(tmp_path: Path):
+    """touch_task_activity updates last_activity_source and updated_at."""
+    workspace = _copy_demo_workspace(tmp_path, "touch-activity")
+    created = create_task_space(workspace, title="touch 测试任务", intent="测试 last_activity_source")
+    task_id = created["task_id"]
+
+    # Initial source set by create_task_space
+    listed = list_task_spaces(workspace)
+    task_entry = next(t for t in listed["active_tasks"] if t["task_id"] == task_id)
+    assert task_entry["last_activity_source"] == "create_task_space"
+
+    # Update via touch_task_activity
+    result = touch_task_activity(workspace, task_id, "sync-sniff")
+    assert result["last_activity_source"] == "sync-sniff"
+    assert result["task_id"] == task_id
+
+    # Confirm persisted
+    listed2 = list_task_spaces(workspace)
+    task_entry2 = next(t for t in listed2["active_tasks"] if t["task_id"] == task_id)
+    assert task_entry2["last_activity_source"] == "sync-sniff"
+
+
+def test_write_paths_record_last_activity_source(tmp_path: Path):
+    """update_task_artifact and append_task_change_log write last_activity_source."""
+    workspace = _copy_demo_workspace(tmp_path, "activity-source-write")
+    created = create_task_space(workspace, title="write path 源追踪")
+    task_id = created["task_id"]
+
+    update_task_artifact(workspace, task_id, "plan", "# Plan\n\n第一步", source="sync-sniff")
+    listed = list_task_spaces(workspace)
+    task_entry = next(t for t in listed["active_tasks"] if t["task_id"] == task_id)
+    assert task_entry["last_activity_source"] == "sync-sniff"
+
+    append_task_change_log(workspace, task_id, "完成第一步", source="mcp")
+    listed2 = list_task_spaces(workspace)
+    task_entry2 = next(t for t in listed2["active_tasks"] if t["task_id"] == task_id)
+    assert task_entry2["last_activity_source"] == "mcp"
+
+    update_task_status(workspace, task_id, "blocked")
+    listed3 = list_task_spaces(workspace)
+    task_entry3 = next(t for t in listed3["active_tasks"] if t["task_id"] == task_id)
+    assert task_entry3["last_activity_source"] == "update_task_status"
 
 
 def _copy_demo_workspace(tmp_path: Path, name: str) -> Path:
