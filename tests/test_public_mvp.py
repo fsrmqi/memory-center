@@ -8,7 +8,7 @@ from urllib.request import urlopen
 from typer.testing import CliRunner
 
 from memory_center.cli.main import app
-from memory_center.core.artifacts import append_change_log, get_artifact, list_artifacts, update_artifact
+from memory_center.core.artifacts import append_change_log, artifact_context, artifact_outline, compact_change_log, get_artifact, list_artifacts, update_artifact
 from memory_center.core.config import load_workspace_config
 from memory_center.core.exporters import export_mermaid
 from memory_center.core.indexer import reindex_workspace
@@ -193,6 +193,61 @@ def test_workspace_artifacts_flow(tmp_path: Path):
     assert changed["appended"] is True
     change_log = get_artifact(workspace, "change_log")
     assert "新增共享工件能力" in change_log["content"]
+
+    outline = artifact_outline(workspace, "change_log")
+    assert outline["sections"]
+    context = artifact_context(workspace, "共享工件", limit=3)
+    assert "summary" in context
+
+    for idx in range(35):
+        append_change_log(workspace, f"历史记录 {idx}")
+    compacted = compact_change_log(workspace, keep_recent=10)
+    assert compacted["compacted"] is True
+    archive = get_artifact(workspace, "change-log.archive.md")
+    assert "历史记录" in archive["content"]
+
+
+def test_artifact_sync_from_sniff_and_case(tmp_path: Path):
+    from memory_center.core.orchestrator import (
+        workspace_end_session,
+        workspace_log_session_event,
+        workspace_start_session,
+        workspace_sync_case_to_artifacts,
+        workspace_sync_sniff_to_artifacts,
+    )
+
+    source = Path("examples/spring-cloud-demo")
+    target = tmp_path / "artifact-sync-demo"
+    import shutil
+    shutil.copytree(source, target)
+    workspace = target / ".memory-center" / "workspace.yaml"
+    lines = workspace.read_text(encoding="utf-8").splitlines()
+    lines = [f"root: {target.as_posix()}" if line.startswith("root:") else line for line in lines]
+    workspace.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    config = load_workspace_config(workspace)
+    store = WorkspaceStore(workspace)
+    ensure_default_rules(store)
+    reindex_workspace(config, store)
+
+    synced_sniff = workspace_sync_sniff_to_artifacts(workspace, "修改 Feign DTO 并评估 MQ 影响", limit=5)
+    assert synced_sniff["synced"] is True
+    context = get_artifact(workspace, "context")
+    plan = get_artifact(workspace, "plan")
+    assert "Current Task Context / 当前任务上下文" in context["content"]
+    assert "Suggested Plan / 建议执行计划" in plan["content"]
+
+    started = workspace_start_session(workspace, "修复 ArticleFeignClient 调用链")
+    session_id = started["session_id"]
+    workspace_log_session_event(workspace, session_id, "tool_call", {"tool_name": "memory_query_tool", "query": "ArticleFeignClient", "project": "task-service"})
+    workspace_end_session(workspace, session_id, outcome="完成 Feign 调用链定位", verified_by=["manual-check"])
+
+    synced_case = workspace_sync_case_to_artifacts(workspace, session_id)
+    assert synced_case["synced"] is True
+    design = get_artifact(workspace, "design")
+    change_log = get_artifact(workspace, "change_log")
+    assert "Session Learnings / 会话沉淀" in design["content"]
+    assert "Session `" in change_log["content"]
 
 
 def test_session_memory_flow(tmp_path: Path):
@@ -492,10 +547,18 @@ def test_http_bridge_routes(tmp_path: Path):
         assert artifacts["artifacts"]
         context_artifact = json.loads(urlopen(f"{base}/workspace/artifact?name=context").read().decode("utf-8"))
         assert context_artifact["name"] == "context"
+        context_outline = json.loads(urlopen(f"{base}/workspace/artifact/outline?name=context").read().decode("utf-8"))
+        assert context_outline["sections"]
+        context_search = json.loads(urlopen(f"{base}/workspace/artifact/context?intent=shared%20context&limit=3").read().decode("utf-8"))
+        assert "summary" in context_search
         updated_artifact = json.loads(urlopen(f"{base}/workspace/artifact/update?name=context&content=HTTP-shared-context").read().decode("utf-8"))
         assert updated_artifact["updated"] is True
         changed_artifact = json.loads(urlopen(f"{base}/workspace/change-log/append?entry=HTTP-change-log-entry").read().decode("utf-8"))
         assert changed_artifact["appended"] is True
+        compacted_log = json.loads(urlopen(f"{base}/workspace/change-log/compact?keep_recent=5").read().decode("utf-8"))
+        assert "compacted" in compacted_log
+        sniff_sync = json.loads(urlopen(f"{base}/workspace/artifacts/sync-sniff?intent=HTTP%20Feign%20task&limit=5").read().decode("utf-8"))
+        assert sniff_sync["synced"] is True
 
         query = json.loads(urlopen(f"{base}/workspace/query?text=ArticleFeignClient").read().decode("utf-8"))
         assert query["matches"]
@@ -520,6 +583,8 @@ def test_http_bridge_routes(tmp_path: Path):
         suggested_case = json.loads(urlopen(f"{base}/workspace/suggest-case?session_id={session_id}").read().decode("utf-8"))
         assert suggested_case["found"] is True
         assert suggested_case["draft_case"]["task"]
+        case_sync = json.loads(urlopen(f"{base}/workspace/artifacts/sync-case?session_id={session_id}").read().decode("utf-8"))
+        assert case_sync["synced"] is True
 
         group_query_payload = json.loads(urlopen(f"{base}/group/query?group=http-group&text=article-pubtime-change").read().decode("utf-8"))
         assert group_query_payload["related_bridges"]

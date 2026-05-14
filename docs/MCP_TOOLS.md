@@ -11,8 +11,13 @@ Memory Center exposes graph-first project memory to AI coding agents through MCP
 | `workspace_sniff_tool(intent, limit)` | Retrieve task context: services, files, rules, topology hints, historical cases, plus `symbolic_context` for low-token planning. `symbolic_context` now includes both `entities_mermaid` and `flow_mermaid`. / 任务开始前召回服务、文件、规则、拓扑、历史经验，并返回低 Token 规划用的 `symbolic_context`；其中同时包含 `entities_mermaid` 和 `flow_mermaid`。 |
 | `workspace_artifact_list_tool()` | List shared workspace artifacts such as context, requirement, design, plan, test plan and change log. / 列出共享工件，如 context、requirement、design、plan、test plan、change log。 |
 | `workspace_artifact_get_tool(name)` | Read one shared artifact. / 读取一个共享工件。 |
+| `workspace_artifact_outline_tool(name)` | Read only the section outline of one artifact. / 只读取共享工件的章节提纲。 |
+| `workspace_artifact_context_tool(intent, limit)` | Retrieve only relevant snippets from artifacts for one intent, instead of loading full documents. / 针对当前意图只召回相关片段，而不是整篇读取工件。 |
 | `workspace_artifact_update_tool(name, content)` | Replace one shared artifact content. / 覆盖更新一个共享工件。 |
 | `workspace_append_change_log_tool(entry)` | Append one timestamped change-log entry. / 追加一条带时间戳的 change-log 记录。 |
+| `workspace_compact_change_log_tool(keep_recent)` | Archive older change-log entries to keep shared context compact. / 归档较早的 change-log 记录，保持共享上下文精简。 |
+| `workspace_sync_sniff_artifacts_tool(intent, limit)` | Sync one sniff result into shared `context.md` and `plan.md`. / 把一次 sniff 结果同步进共享 `context.md` 和 `plan.md`。 |
+| `workspace_sync_case_artifacts_tool(session_id)` | Sync one suggested case into shared `design.md` and `change-log.md`. / 把一次建议 case 同步进共享 `design.md` 和 `change-log.md`。 |
 | `memory_query_tool(query, limit)` | Graph-aware hybrid search across files, symbols, endpoints, Feign clients, topics and fields, with exact/semantic retrieval metadata and `progressive` summary/evidence/detail views. / 基于图谱的混合检索，查询文件、符号、接口、Feign、Topic、字段，并返回精确/语义召回来源信息，以及 `progressive` 的摘要/证据/细节分层视图。 |
 | `memory_search_code_tool(query, scope, limit)` | Keyword search over indexed files and symbol hints, useful for quick entrypoint discovery. / 在索引文件与符号提示上做关键词搜索，适合快速找入口。 |
 | `memory_symbol_tool(name, limit)` | Resolve one symbol and return best match with candidates. / 解析一个符号并返回最佳命中及候选。 |

@@ -22,8 +22,10 @@ from memory_center.core.orchestrator import (
     workspace_session_summary,
     workspace_suggest_case,
     workspace_status,
+    workspace_sync_case_to_artifacts,
+    workspace_sync_sniff_to_artifacts,
 )
-from memory_center.core.artifacts import append_change_log, get_artifact, list_artifacts, update_artifact
+from memory_center.core.artifacts import append_change_log, artifact_context, artifact_outline, compact_change_log, get_artifact, list_artifacts, update_artifact
 
 
 def create_handler(default_workspace: str | Path | None = None) -> type[BaseHTTPRequestHandler]:
@@ -75,6 +77,15 @@ def _route_request(path: str, params: dict, default_workspace: str | None) -> di
         workspace = _require_workspace(params, default_workspace)
         name = _require_one(params, "name")
         return get_artifact(workspace, name)
+    if path == "/workspace/artifact/outline":
+        workspace = _require_workspace(params, default_workspace)
+        name = _require_one(params, "name")
+        return artifact_outline(workspace, name)
+    if path == "/workspace/artifact/context":
+        workspace = _require_workspace(params, default_workspace)
+        intent = _require_one(params, "intent")
+        limit = int(params.get("limit", ["6"])[0])
+        return artifact_context(workspace, intent, limit=limit)
     if path == "/workspace/artifact/update":
         workspace = _require_workspace(params, default_workspace)
         name = _require_one(params, "name")
@@ -84,6 +95,19 @@ def _route_request(path: str, params: dict, default_workspace: str | None) -> di
         workspace = _require_workspace(params, default_workspace)
         entry = _require_one(params, "entry")
         return append_change_log(workspace, entry)
+    if path == "/workspace/change-log/compact":
+        workspace = _require_workspace(params, default_workspace)
+        keep_recent = int(params.get("keep_recent", ["30"])[0])
+        return compact_change_log(workspace, keep_recent=keep_recent)
+    if path == "/workspace/artifacts/sync-sniff":
+        workspace = _require_workspace(params, default_workspace)
+        intent = _require_one(params, "intent")
+        limit = int(params.get("limit", ["12"])[0])
+        return workspace_sync_sniff_to_artifacts(workspace, intent, limit=limit)
+    if path == "/workspace/artifacts/sync-case":
+        workspace = _require_workspace(params, default_workspace)
+        session_id = _require_one(params, "session_id")
+        return workspace_sync_case_to_artifacts(workspace, session_id)
     if path == "/workspace/query":
         workspace = _require_workspace(params, default_workspace)
         query = _require_one(params, "text")

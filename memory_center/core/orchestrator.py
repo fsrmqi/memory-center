@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Dict, List
 from uuid import uuid4
 
+from .artifacts import append_change_log, get_artifact, update_artifact
 from .config import load_workspace_config
 from .registry import resolve_group
 from .rules import match_rules
@@ -314,6 +315,58 @@ def workspace_resume_context(workspace_file: str | Path, intent: str, limit: int
         "related_cases": related_cases,
         "entrypoints": query_result.get("matches", [])[:limit],
         "suggested_context": _suggest_resume_context(intent, related_sessions[:limit], related_cases, query_result.get("matches", [])[:limit]),
+    }
+
+
+def workspace_sync_sniff_to_artifacts(workspace_file: str | Path, intent: str, limit: int = 12) -> Dict[str, Any]:
+    config, _ = load_context(workspace_file)
+    sniff = workspace_sniff(workspace_file, intent, limit=limit)
+    context_content = _merge_artifact_section(
+        get_artifact(workspace_file, "context").get("content", ""),
+        "Current Task Context / 当前任务上下文",
+        _render_sniff_context_markdown(sniff),
+    )
+    plan_content = _merge_artifact_section(
+        get_artifact(workspace_file, "plan").get("content", ""),
+        "Suggested Plan / 建议执行计划",
+        _render_sniff_plan_markdown(sniff),
+    )
+    update_artifact(workspace_file, "context", context_content)
+    update_artifact(workspace_file, "plan", plan_content)
+    return {
+        "workspace": config.workspace,
+        "synced": True,
+        "intent": intent,
+        "updated_artifacts": ["context", "plan"],
+        "risk_level": sniff.get("risk_level", "unknown"),
+    }
+
+
+def workspace_sync_case_to_artifacts(workspace_file: str | Path, session_id: str) -> Dict[str, Any]:
+    config, _ = load_context(workspace_file)
+    draft = workspace_suggest_case(workspace_file, session_id)
+    if not draft.get("found"):
+        return {
+            "workspace": config.workspace,
+            "session_id": session_id,
+            "synced": False,
+            "updated_artifacts": [],
+            "hint": draft.get("hint", "会话不存在。"),
+        }
+    case = draft.get("draft_case", {})
+    design_content = _merge_artifact_section(
+        get_artifact(workspace_file, "design").get("content", ""),
+        "Session Learnings / 会话沉淀",
+        _render_case_markdown(case),
+    )
+    update_artifact(workspace_file, "design", design_content)
+    append_change_log(workspace_file, _render_change_log_entry(case, session_id))
+    return {
+        "workspace": config.workspace,
+        "session_id": session_id,
+        "synced": True,
+        "updated_artifacts": ["design", "change_log"],
+        "task": case.get("task", ""),
     }
 
 
@@ -1036,6 +1089,70 @@ def _build_case_evidence_refs(events: List[Dict[str, Any]], limit: int = 12) -> 
                 ref[key] = value
         refs.append(ref)
     return refs
+
+
+def _merge_artifact_section(existing: str, section_title: str, body: str) -> str:
+    marker = f"## {section_title}"
+    if marker in existing:
+        prefix = existing.split(marker, 1)[0].rstrip()
+        return f"{prefix}\n\n{marker}\n\n{body.strip()}\n"
+    suffix = f"\n\n{marker}\n\n{body.strip()}\n"
+    return existing.rstrip() + suffix if existing.strip() else f"{marker}\n\n{body.strip()}\n"
+
+
+def _render_sniff_context_markdown(sniff: Dict[str, Any]) -> str:
+    lines = [
+        f"- Intent: {sniff.get('intent', '')}",
+        f"- Risk level: {sniff.get('risk_level', 'unknown')}",
+        "",
+        "### Focus Services",
+    ]
+    lines.extend([f"- {item}" for item in sniff.get("matched_services", [])[:6]] or ["- None"])
+    lines.append("")
+    lines.append("### Candidate Files")
+    lines.extend([f"- {item.get('path', '')}" for item in sniff.get("candidate_files", [])[:8]] or ["- None"])
+    return "\n".join(lines)
+
+
+def _render_sniff_plan_markdown(sniff: Dict[str, Any]) -> str:
+    lines = [
+        f"- Intent: {sniff.get('intent', '')}",
+        "",
+        "### Next Steps",
+    ]
+    lines.extend([f"- {item}" for item in sniff.get("next_steps", [])] or ["- None"])
+    return "\n".join(lines)
+
+
+def _render_case_markdown(case: Dict[str, Any]) -> str:
+    lines = [
+        f"- Task: {case.get('task', '')}",
+        f"- Projects: {', '.join(case.get('projects', []))}",
+        f"- Flow: {case.get('flow', '')}",
+        "",
+        "### Risk Points",
+    ]
+    lines.extend([f"- {item}" for item in case.get("risk_points", [])] or ["- None"])
+    lines.append("")
+    lines.append("### Evidence Refs")
+    lines.extend(
+        [
+            f"- [{item.get('event_type', '')}] {item.get('tool_name', '') or item.get('query', '') or item.get('target', '')}"
+            for item in case.get("evidence_refs", [])[:10]
+        ]
+        or ["- None"]
+    )
+    return "\n".join(lines)
+
+
+def _render_change_log_entry(case: Dict[str, Any], session_id: str) -> str:
+    risk_points = ", ".join(case.get("risk_points", [])[:4])
+    return (
+        f"Session `{session_id}` synced into shared artifacts.\n\n"
+        f"- Task: {case.get('task', '')}\n"
+        f"- Projects: {', '.join(case.get('projects', []))}\n"
+        f"- Risk points: {risk_points or 'None'}"
+    )
 
 
 def _build_sniff_symbolic_context(

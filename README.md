@@ -357,6 +357,39 @@ The workspace now also includes a shared `artifacts/` layer for multi-agent coll
 
 现在 workspace 还包含一个面向多智能体协作的共享 `artifacts/` 层，默认提供 `context.md`、`requirement.md`、`design.md`、`plan.md`、`test-plan.md`、`change-log.md` 等共享工件。
 
+You can also sync task outputs back into shared artifacts:
+
+你现在还可以把任务结果反向同步回共享工件：
+
+```bash
+memory-center sync-sniff-artifacts \
+  --workspace /Users/cuijiaqi/javaworkspace/ucap/.memory-center/workspace.yaml \
+  --intent "修改 Feign DTO 并评估 MQ 影响"
+
+memory-center sync-case-artifacts \
+  --workspace /Users/cuijiaqi/javaworkspace/ucap/.memory-center/workspace.yaml \
+  --session-id session-xxxx
+```
+
+For long-running projects, do not feed the full artifact documents every time. Use artifact outline/context retrieval and compact old change logs:
+
+对于长期运行项目，不要每次都整篇读取共享工件。优先使用提纲/相关片段检索，并定期压缩归档旧的 change-log：
+
+```bash
+memory-center artifact outline \
+  --workspace /Users/cuijiaqi/javaworkspace/ucap/.memory-center/workspace.yaml \
+  --name context
+
+memory-center artifact context \
+  --workspace /Users/cuijiaqi/javaworkspace/ucap/.memory-center/workspace.yaml \
+  --intent "Feign DTO 兼容改动" \
+  --limit 6
+
+memory-center artifact compact-change-log \
+  --workspace /Users/cuijiaqi/javaworkspace/ucap/.memory-center/workspace.yaml \
+  --keep-recent 30
+```
+
 ```bash
 memory-center start-session \
   --workspace examples/spring-cloud-demo/.memory-center/workspace.yaml \

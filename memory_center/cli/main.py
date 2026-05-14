@@ -8,10 +8,20 @@ from rich import print
 
 from memory_center import __version__
 from memory_center.core.artifacts import (
+    append_task_change_log,
+    archive_task_space,
     append_change_log,
+    auto_archive_task_spaces,
+    artifact_context,
+    artifact_outline,
+    compact_change_log,
+    create_task_space,
     ensure_default_artifacts,
     get_artifact,
+    get_task_artifact,
     list_artifacts,
+    list_task_spaces,
+    update_task_artifact,
     update_artifact,
 )
 from memory_center.core.config import add_workspace_service, load_workspace_config, remove_workspace_service, write_default_workspace
@@ -41,6 +51,8 @@ from memory_center.core.orchestrator import (
     workspace_start_session,
     workspace_status,
     workspace_session_summary,
+    workspace_sync_case_to_artifacts,
+    workspace_sync_sniff_to_artifacts,
     workspace_trace,
     workspace_log_session_event,
     workspace_end_session,
@@ -348,6 +360,25 @@ def suggest_case_cmd(
     print(workspace_suggest_case(workspace, session_id))
 
 
+@app.command("sync-sniff-artifacts")
+def sync_sniff_artifacts_cmd(
+    workspace: str = typer.Option(...),
+    intent: str = typer.Option(...),
+    limit: int = typer.Option(12),
+):
+    """Sync sniff result into shared context.md and plan.md."""
+    print(workspace_sync_sniff_to_artifacts(workspace, intent, limit=limit))
+
+
+@app.command("sync-case-artifacts")
+def sync_case_artifacts_cmd(
+    workspace: str = typer.Option(...),
+    session_id: str = typer.Option(...),
+):
+    """Sync one suggested case into design.md and change-log.md."""
+    print(workspace_sync_case_to_artifacts(workspace, session_id))
+
+
 @registry_app.command("add")
 def registry_add(name: str = typer.Option(...), workspace: str = typer.Option(...)):
     """Register a workspace globally under ~/.memory-center/registry.json."""
@@ -449,6 +480,25 @@ def artifact_get_cmd(
     print(get_artifact(workspace, name))
 
 
+@artifact_app.command("outline")
+def artifact_outline_cmd(
+    workspace: str = typer.Option(...),
+    name: str = typer.Option(...),
+):
+    """Read one artifact outline instead of full content."""
+    print(artifact_outline(workspace, name))
+
+
+@artifact_app.command("context")
+def artifact_context_cmd(
+    workspace: str = typer.Option(...),
+    intent: str = typer.Option(...),
+    limit: int = typer.Option(6),
+):
+    """Retrieve only relevant artifact snippets for the current intent."""
+    print(artifact_context(workspace, intent, limit=limit))
+
+
 @artifact_app.command("update")
 def artifact_update_cmd(
     workspace: str = typer.Option(...),
@@ -466,6 +516,85 @@ def artifact_append_change_log_cmd(
 ):
     """Append one timestamped entry into change-log.md."""
     print(append_change_log(workspace, entry))
+
+
+@artifact_app.command("compact-change-log")
+def artifact_compact_change_log_cmd(
+    workspace: str = typer.Option(...),
+    keep_recent: int = typer.Option(30),
+):
+    """Archive older change-log entries to avoid oversized shared context."""
+    print(compact_change_log(workspace, keep_recent=keep_recent))
+
+
+@artifact_app.command("create-task")
+def artifact_create_task_cmd(
+    workspace: str = typer.Option(...),
+    title: str = typer.Option(""),
+    intent: str = typer.Option(""),
+):
+    """Create one task-specific artifact space from a custom title or intent."""
+    print(create_task_space(workspace, title=title, intent=intent))
+
+
+@artifact_app.command("list-tasks")
+def artifact_list_tasks_cmd(
+    workspace: str = typer.Option(...),
+    include_archived: bool = typer.Option(False),
+):
+    """List active or archived task artifact spaces."""
+    print(list_task_spaces(workspace, include_archived=include_archived))
+
+
+@artifact_app.command("get-task")
+def artifact_get_task_cmd(
+    workspace: str = typer.Option(...),
+    task_id: str = typer.Option(...),
+    name: str = typer.Option(...),
+):
+    """Read one task-space artifact."""
+    print(get_task_artifact(workspace, task_id, name))
+
+
+@artifact_app.command("update-task")
+def artifact_update_task_cmd(
+    workspace: str = typer.Option(...),
+    task_id: str = typer.Option(...),
+    name: str = typer.Option(...),
+    content: str = typer.Option(...),
+):
+    """Replace one task-space artifact content."""
+    print(update_task_artifact(workspace, task_id, name, content))
+
+
+@artifact_app.command("append-task-change-log")
+def artifact_append_task_change_log_cmd(
+    workspace: str = typer.Option(...),
+    task_id: str = typer.Option(...),
+    entry: str = typer.Option(...),
+    keep_recent: int = typer.Option(30),
+):
+    """Append one timestamped entry into a task-space change log."""
+    print(append_task_change_log(workspace, task_id, entry, keep_recent=keep_recent))
+
+
+@artifact_app.command("archive-task")
+def artifact_archive_task_cmd(
+    workspace: str = typer.Option(...),
+    task_id: str = typer.Option(...),
+    reason: str = typer.Option(""),
+):
+    """Archive one task artifact space manually."""
+    print(archive_task_space(workspace, task_id, reason=reason))
+
+
+@artifact_app.command("auto-archive-tasks")
+def artifact_auto_archive_tasks_cmd(
+    workspace: str = typer.Option(...),
+    retention_days: int = typer.Option(30),
+):
+    """Auto-archive stale task artifact spaces by retention days."""
+    print(auto_archive_task_spaces(workspace, retention_days=retention_days))
 
 
 @app.command("serve-http")

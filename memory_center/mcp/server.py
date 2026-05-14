@@ -32,8 +32,10 @@ from memory_center.core.orchestrator import (
     workspace_start_session,
     workspace_status,
     workspace_trace,
+    workspace_sync_case_to_artifacts,
+    workspace_sync_sniff_to_artifacts,
 )
-from memory_center.core.artifacts import append_change_log, get_artifact, list_artifacts, update_artifact
+from memory_center.core.artifacts import append_change_log, artifact_context, artifact_outline, compact_change_log, get_artifact, list_artifacts, update_artifact
 from memory_center.core.wiki import generate_skills, generate_wiki
 
 _WORKSPACE_FILE: Optional[str] = None
@@ -55,6 +57,11 @@ def create_server(workspace_file: str):
         return workspace_sniff(_WORKSPACE_FILE, intent, limit)
 
     @mcp.tool()
+    def workspace_sync_sniff_artifacts_tool(intent: str, limit: int = 12):
+        """Sync sniff result into shared context and plan artifacts."""
+        return workspace_sync_sniff_to_artifacts(_WORKSPACE_FILE, intent, limit)
+
+    @mcp.tool()
     def workspace_artifact_list_tool():
         """List shared workspace artifacts such as context, requirement, design, plan and change log."""
         return list_artifacts(_WORKSPACE_FILE)
@@ -65,6 +72,16 @@ def create_server(workspace_file: str):
         return get_artifact(_WORKSPACE_FILE, name)
 
     @mcp.tool()
+    def workspace_artifact_outline_tool(name: str):
+        """Read one shared workspace artifact outline without loading full content."""
+        return artifact_outline(_WORKSPACE_FILE, name)
+
+    @mcp.tool()
+    def workspace_artifact_context_tool(intent: str, limit: int = 6):
+        """Retrieve only relevant artifact snippets for the current intent."""
+        return artifact_context(_WORKSPACE_FILE, intent, limit)
+
+    @mcp.tool()
     def workspace_artifact_update_tool(name: str, content: str):
         """Replace one shared workspace artifact content."""
         return update_artifact(_WORKSPACE_FILE, name, content)
@@ -73,6 +90,11 @@ def create_server(workspace_file: str):
     def workspace_append_change_log_tool(entry: str):
         """Append one timestamped entry to the shared change log."""
         return append_change_log(_WORKSPACE_FILE, entry)
+
+    @mcp.tool()
+    def workspace_compact_change_log_tool(keep_recent: int = 30):
+        """Archive older change-log entries to keep shared context compact."""
+        return compact_change_log(_WORKSPACE_FILE, keep_recent)
 
     @mcp.tool()
     def memory_query_tool(query: str, limit: int = 20):
@@ -183,6 +205,11 @@ def create_server(workspace_file: str):
     def workspace_suggest_case_tool(session_id: str):
         """Suggest one record-case draft from a finished session."""
         return workspace_suggest_case(_WORKSPACE_FILE, session_id)
+
+    @mcp.tool()
+    def workspace_sync_case_artifacts_tool(session_id: str):
+        """Sync one suggested case into shared design and change-log artifacts."""
+        return workspace_sync_case_to_artifacts(_WORKSPACE_FILE, session_id)
 
     @mcp.tool()
     def memory_generate_wiki_tool(output_dir: str | None = None):
