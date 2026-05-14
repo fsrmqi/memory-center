@@ -35,7 +35,24 @@ from memory_center.core.orchestrator import (
     workspace_sync_case_to_artifacts,
     workspace_sync_sniff_to_artifacts,
 )
-from memory_center.core.artifacts import append_change_log, artifact_context, artifact_outline, compact_change_log, get_artifact, list_artifacts, update_artifact
+from memory_center.core.artifacts import (
+    append_change_log,
+    append_task_change_log,
+    archive_task_space,
+    artifact_context,
+    artifact_outline,
+    auto_archive_task_spaces,
+    compact_change_log,
+    create_task_space,
+    get_artifact,
+    get_task_artifact,
+    list_artifacts,
+    list_task_spaces,
+    resolve_task_space,
+    update_task_status,
+    update_artifact,
+    update_task_artifact,
+)
 from memory_center.core.wiki import generate_skills, generate_wiki
 
 _WORKSPACE_FILE: Optional[str] = None
@@ -57,9 +74,9 @@ def create_server(workspace_file: str):
         return workspace_sniff(_WORKSPACE_FILE, intent, limit)
 
     @mcp.tool()
-    def workspace_sync_sniff_artifacts_tool(intent: str, limit: int = 12):
+    def workspace_sync_sniff_artifacts_tool(intent: str, limit: int = 12, task_id: str = "", title: str = ""):
         """Sync sniff result into shared context and plan artifacts."""
-        return workspace_sync_sniff_to_artifacts(_WORKSPACE_FILE, intent, limit)
+        return workspace_sync_sniff_to_artifacts(_WORKSPACE_FILE, intent, limit, task_id=task_id, title=title)
 
     @mcp.tool()
     def workspace_artifact_list_tool():
@@ -95,6 +112,51 @@ def create_server(workspace_file: str):
     def workspace_compact_change_log_tool(keep_recent: int = 30):
         """Archive older change-log entries to keep shared context compact."""
         return compact_change_log(_WORKSPACE_FILE, keep_recent)
+
+    @mcp.tool()
+    def workspace_task_space_create_tool(title: str = "", intent: str = ""):
+        """Create one task-specific artifact space from a custom title or intent."""
+        return create_task_space(_WORKSPACE_FILE, title=title, intent=intent)
+
+    @mcp.tool()
+    def workspace_task_space_list_tool(include_archived: bool = False):
+        """List active or archived task-specific artifact spaces."""
+        return list_task_spaces(_WORKSPACE_FILE, include_archived=include_archived)
+
+    @mcp.tool()
+    def workspace_task_space_resolve_tool(intent: str, title: str = "", create_if_missing: bool = True, include_archived: bool = False):
+        """Resolve one task space from natural language; create one if needed."""
+        return resolve_task_space(_WORKSPACE_FILE, intent=intent, title=title, create_if_missing=create_if_missing, include_archived=include_archived)
+
+    @mcp.tool()
+    def workspace_task_artifact_get_tool(task_id: str, name: str):
+        """Read one artifact inside a task-specific space."""
+        return get_task_artifact(_WORKSPACE_FILE, task_id, name)
+
+    @mcp.tool()
+    def workspace_task_artifact_update_tool(task_id: str, name: str, content: str):
+        """Replace one artifact inside a task-specific space."""
+        return update_task_artifact(_WORKSPACE_FILE, task_id, name, content)
+
+    @mcp.tool()
+    def workspace_task_append_change_log_tool(task_id: str, entry: str, keep_recent: int = 30):
+        """Append one timestamped entry into a task-specific change log."""
+        return append_task_change_log(_WORKSPACE_FILE, task_id, entry, keep_recent=keep_recent)
+
+    @mcp.tool()
+    def workspace_task_archive_tool(task_id: str, reason: str = ""):
+        """Archive one task-specific artifact space manually."""
+        return archive_task_space(_WORKSPACE_FILE, task_id, reason=reason)
+
+    @mcp.tool()
+    def workspace_task_auto_archive_tool(retention_days: int = 30):
+        """Auto-archive task-specific artifact spaces older than retention_days."""
+        return auto_archive_task_spaces(_WORKSPACE_FILE, retention_days=retention_days)
+
+    @mcp.tool()
+    def workspace_task_status_tool(task_id: str, status: str):
+        """Update one task-specific space status: draft/active/blocked/done/archived."""
+        return update_task_status(_WORKSPACE_FILE, task_id, status)
 
     @mcp.tool()
     def memory_query_tool(query: str, limit: int = 20):
@@ -207,9 +269,9 @@ def create_server(workspace_file: str):
         return workspace_suggest_case(_WORKSPACE_FILE, session_id)
 
     @mcp.tool()
-    def workspace_sync_case_artifacts_tool(session_id: str):
+    def workspace_sync_case_artifacts_tool(session_id: str, task_id: str = "", title: str = ""):
         """Sync one suggested case into shared design and change-log artifacts."""
-        return workspace_sync_case_to_artifacts(_WORKSPACE_FILE, session_id)
+        return workspace_sync_case_to_artifacts(_WORKSPACE_FILE, session_id, task_id=task_id, title=title)
 
     @mcp.tool()
     def memory_generate_wiki_tool(output_dir: str | None = None):

@@ -8,7 +8,24 @@ from urllib.request import urlopen
 from typer.testing import CliRunner
 
 from memory_center.cli.main import app
-from memory_center.core.artifacts import append_change_log, artifact_context, artifact_outline, compact_change_log, get_artifact, list_artifacts, update_artifact
+from memory_center.core.artifacts import (
+    append_change_log,
+    append_task_change_log,
+    archive_task_space,
+    artifact_context,
+    artifact_outline,
+    auto_archive_task_spaces,
+    compact_change_log,
+    create_task_space,
+    get_artifact,
+    get_task_artifact,
+    list_artifacts,
+    list_task_spaces,
+    resolve_task_space,
+    update_task_status,
+    update_artifact,
+    update_task_artifact,
+)
 from memory_center.core.config import load_workspace_config
 from memory_center.core.exporters import export_mermaid
 from memory_center.core.indexer import reindex_workspace
@@ -206,6 +223,54 @@ def test_workspace_artifacts_flow(tmp_path: Path):
     archive = get_artifact(workspace, "change-log.archive.md")
     assert "历史记录" in archive["content"]
 
+    created_task = create_task_space(workspace, title="修复 Feign DTO 兼容")
+    assert created_task["created"] is True
+    tasks = list_task_spaces(workspace)
+    assert tasks["active_tasks"]
+    task_id = created_task["task_id"]
+    task_context = get_task_artifact(workspace, task_id, "context")
+    assert "修复 Feign DTO 兼容" in task_context["content"]
+    updated_task = update_task_artifact(workspace, task_id, "plan", "# Plan\n\n先做影响分析")
+    assert updated_task["updated"] is True
+    changed_task = append_task_change_log(workspace, task_id, "完成第一轮分析", keep_recent=5)
+    assert changed_task["appended"] is True
+    archived_task = archive_task_space(workspace, task_id, reason="done")
+    assert archived_task["archived"] is True
+    listed = list_task_spaces(workspace, include_archived=True)
+    assert listed["archived_tasks"]
+
+    active_task = create_task_space(workspace, title="站点连通性告警治理")
+    update_task_artifact(workspace, active_task["task_id"], "plan", "# Plan\n\n处理站点连通性告警与告警链路")
+    resolved = resolve_task_space(workspace, intent="继续处理站点告警连通性问题", create_if_missing=False)
+    assert resolved["resolved"] is True
+    assert resolved["task_id"] == active_task["task_id"]
+    status_updated = update_task_status(workspace, active_task["task_id"], "blocked")
+    assert status_updated["status"] == "blocked"
+
+
+def test_auto_archive_task_spaces(tmp_path: Path):
+    source = Path("examples/spring-cloud-demo")
+    target = tmp_path / "task-auto-archive-demo"
+    import shutil
+    shutil.copytree(source, target)
+    workspace = target / ".memory-center" / "workspace.yaml"
+    lines = workspace.read_text(encoding="utf-8").splitlines()
+    lines = [f"root: {target.as_posix()}" if line.startswith("root:") else line for line in lines]
+    workspace.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    created = create_task_space(workspace, title="历史任务")
+    task_id = created["task_id"]
+    task_dir = Path(created["path"])
+    meta_path = task_dir / "meta.json"
+    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    meta["updated_at"] = "2020-01-01T00:00:00"
+    meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    archived = auto_archive_task_spaces(workspace, retention_days=30)
+    assert archived["archived_count"] == 1
+    listed = list_task_spaces(workspace, include_archived=True)
+    assert listed["archived_tasks"]
+
 
 def test_artifact_sync_from_sniff_and_case(tmp_path: Path):
     from memory_center.core.orchestrator import (
@@ -230,24 +295,34 @@ def test_artifact_sync_from_sniff_and_case(tmp_path: Path):
     ensure_default_rules(store)
     reindex_workspace(config, store)
 
-    synced_sniff = workspace_sync_sniff_to_artifacts(workspace, "修改 Feign DTO 并评估 MQ 影响", limit=5)
+    task = create_task_space(workspace, title="Feign DTO 兼容改造")
+    synced_sniff = workspace_sync_sniff_to_artifacts(workspace, "修改 Feign DTO 并评估 MQ 影响", limit=5, task_id=task["task_id"])
     assert synced_sniff["synced"] is True
-    context = get_artifact(workspace, "context")
-    plan = get_artifact(workspace, "plan")
+    assert synced_sniff["task_id"] == task["task_id"]
+    context = get_task_artifact(workspace, task["task_id"], "context")
+    plan = get_task_artifact(workspace, task["task_id"], "plan")
     assert "Current Task Context / 当前任务上下文" in context["content"]
     assert "Suggested Plan / 建议执行计划" in plan["content"]
+
+    auto_synced_sniff = workspace_sync_sniff_to_artifacts(workspace, "继续处理 Feign DTO 兼容改造", limit=5)
+    assert auto_synced_sniff["synced"] is True
+    assert auto_synced_sniff["task_id"] == task["task_id"]
 
     started = workspace_start_session(workspace, "修复 ArticleFeignClient 调用链")
     session_id = started["session_id"]
     workspace_log_session_event(workspace, session_id, "tool_call", {"tool_name": "memory_query_tool", "query": "ArticleFeignClient", "project": "task-service"})
     workspace_end_session(workspace, session_id, outcome="完成 Feign 调用链定位", verified_by=["manual-check"])
 
-    synced_case = workspace_sync_case_to_artifacts(workspace, session_id)
+    synced_case = workspace_sync_case_to_artifacts(workspace, session_id, task_id=task["task_id"])
     assert synced_case["synced"] is True
-    design = get_artifact(workspace, "design")
-    change_log = get_artifact(workspace, "change_log")
+    design = get_task_artifact(workspace, task["task_id"], "design")
+    change_log = get_task_artifact(workspace, task["task_id"], "change_log")
     assert "Session Learnings / 会话沉淀" in design["content"]
     assert "Session `" in change_log["content"]
+
+    auto_synced_case = workspace_sync_case_to_artifacts(workspace, session_id)
+    assert auto_synced_case["synced"] is True
+    assert auto_synced_case["task_id"] == task["task_id"]
 
 
 def test_session_memory_flow(tmp_path: Path):
@@ -557,7 +632,12 @@ def test_http_bridge_routes(tmp_path: Path):
         assert changed_artifact["appended"] is True
         compacted_log = json.loads(urlopen(f"{base}/workspace/change-log/compact?keep_recent=5").read().decode("utf-8"))
         assert "compacted" in compacted_log
-        sniff_sync = json.loads(urlopen(f"{base}/workspace/artifacts/sync-sniff?intent=HTTP%20Feign%20task&limit=5").read().decode("utf-8"))
+        task_space = json.loads(urlopen(f"{base}/workspace/task-space/create?title=HTTP%20Feign%20Task").read().decode("utf-8"))
+        assert task_space["created"] is True
+        task_id = task_space["task_id"]
+        task_spaces = json.loads(urlopen(f"{base}/workspace/task-spaces").read().decode("utf-8"))
+        assert task_spaces["active_tasks"]
+        sniff_sync = json.loads(urlopen(f"{base}/workspace/artifacts/sync-sniff?intent=HTTP%20Feign%20task&limit=5&task_id={task_id}").read().decode("utf-8"))
         assert sniff_sync["synced"] is True
 
         query = json.loads(urlopen(f"{base}/workspace/query?text=ArticleFeignClient").read().decode("utf-8"))
@@ -583,8 +663,10 @@ def test_http_bridge_routes(tmp_path: Path):
         suggested_case = json.loads(urlopen(f"{base}/workspace/suggest-case?session_id={session_id}").read().decode("utf-8"))
         assert suggested_case["found"] is True
         assert suggested_case["draft_case"]["task"]
-        case_sync = json.loads(urlopen(f"{base}/workspace/artifacts/sync-case?session_id={session_id}").read().decode("utf-8"))
+        case_sync = json.loads(urlopen(f"{base}/workspace/artifacts/sync-case?session_id={session_id}&task_id={task_id}").read().decode("utf-8"))
         assert case_sync["synced"] is True
+        task_context = json.loads(urlopen(f"{base}/workspace/task-artifact?task_id={task_id}&name=context").read().decode("utf-8"))
+        assert task_context["task_id"] == task_id
 
         group_query_payload = json.loads(urlopen(f"{base}/group/query?group=http-group&text=article-pubtime-change").read().decode("utf-8"))
         assert group_query_payload["related_bridges"]

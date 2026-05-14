@@ -25,7 +25,24 @@ from memory_center.core.orchestrator import (
     workspace_sync_case_to_artifacts,
     workspace_sync_sniff_to_artifacts,
 )
-from memory_center.core.artifacts import append_change_log, artifact_context, artifact_outline, compact_change_log, get_artifact, list_artifacts, update_artifact
+from memory_center.core.artifacts import (
+    append_change_log,
+    append_task_change_log,
+    archive_task_space,
+    artifact_context,
+    artifact_outline,
+    auto_archive_task_spaces,
+    compact_change_log,
+    create_task_space,
+    get_artifact,
+    get_task_artifact,
+    list_artifacts,
+    list_task_spaces,
+    resolve_task_space,
+    update_task_status,
+    update_artifact,
+    update_task_artifact,
+)
 
 
 def create_handler(default_workspace: str | Path | None = None) -> type[BaseHTTPRequestHandler]:
@@ -99,15 +116,66 @@ def _route_request(path: str, params: dict, default_workspace: str | None) -> di
         workspace = _require_workspace(params, default_workspace)
         keep_recent = int(params.get("keep_recent", ["30"])[0])
         return compact_change_log(workspace, keep_recent=keep_recent)
+    if path == "/workspace/task-spaces":
+        workspace = _require_workspace(params, default_workspace)
+        include_archived = params.get("include_archived", ["false"])[0].lower() == "true"
+        return list_task_spaces(workspace, include_archived=include_archived)
+    if path == "/workspace/task-space/resolve":
+        workspace = _require_workspace(params, default_workspace)
+        intent = _require_one(params, "intent")
+        title = params.get("title", [""])[0]
+        create_if_missing = params.get("create_if_missing", ["true"])[0].lower() == "true"
+        include_archived = params.get("include_archived", ["false"])[0].lower() == "true"
+        return resolve_task_space(workspace, intent=intent, title=title, create_if_missing=create_if_missing, include_archived=include_archived)
+    if path == "/workspace/task-space/create":
+        workspace = _require_workspace(params, default_workspace)
+        title = params.get("title", [""])[0]
+        intent = params.get("intent", [""])[0]
+        return create_task_space(workspace, title=title, intent=intent)
+    if path == "/workspace/task-artifact":
+        workspace = _require_workspace(params, default_workspace)
+        task_id = _require_one(params, "task_id")
+        name = _require_one(params, "name")
+        return get_task_artifact(workspace, task_id, name)
+    if path == "/workspace/task-artifact/update":
+        workspace = _require_workspace(params, default_workspace)
+        task_id = _require_one(params, "task_id")
+        name = _require_one(params, "name")
+        content = _require_one(params, "content")
+        return update_task_artifact(workspace, task_id, name, content)
+    if path == "/workspace/task-change-log/append":
+        workspace = _require_workspace(params, default_workspace)
+        task_id = _require_one(params, "task_id")
+        entry = _require_one(params, "entry")
+        keep_recent = int(params.get("keep_recent", ["30"])[0])
+        return append_task_change_log(workspace, task_id, entry, keep_recent=keep_recent)
+    if path == "/workspace/task-space/archive":
+        workspace = _require_workspace(params, default_workspace)
+        task_id = _require_one(params, "task_id")
+        reason = params.get("reason", [""])[0]
+        return archive_task_space(workspace, task_id, reason=reason)
+    if path == "/workspace/task-space/status":
+        workspace = _require_workspace(params, default_workspace)
+        task_id = _require_one(params, "task_id")
+        status = _require_one(params, "status")
+        return update_task_status(workspace, task_id, status)
+    if path == "/workspace/task-spaces/auto-archive":
+        workspace = _require_workspace(params, default_workspace)
+        retention_days = int(params.get("retention_days", ["30"])[0])
+        return auto_archive_task_spaces(workspace, retention_days=retention_days)
     if path == "/workspace/artifacts/sync-sniff":
         workspace = _require_workspace(params, default_workspace)
         intent = _require_one(params, "intent")
         limit = int(params.get("limit", ["12"])[0])
-        return workspace_sync_sniff_to_artifacts(workspace, intent, limit=limit)
+        task_id = params.get("task_id", [""])[0]
+        title = params.get("title", [""])[0]
+        return workspace_sync_sniff_to_artifacts(workspace, intent, limit=limit, task_id=task_id, title=title)
     if path == "/workspace/artifacts/sync-case":
         workspace = _require_workspace(params, default_workspace)
         session_id = _require_one(params, "session_id")
-        return workspace_sync_case_to_artifacts(workspace, session_id)
+        task_id = params.get("task_id", [""])[0]
+        title = params.get("title", [""])[0]
+        return workspace_sync_case_to_artifacts(workspace, session_id, task_id=task_id, title=title)
     if path == "/workspace/query":
         workspace = _require_workspace(params, default_workspace)
         query = _require_one(params, "text")

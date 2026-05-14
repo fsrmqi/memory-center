@@ -6,7 +6,16 @@ from pathlib import Path
 from typing import Any, Dict, List
 from uuid import uuid4
 
-from .artifacts import append_change_log, get_artifact, update_artifact
+from .artifacts import (
+    append_change_log,
+    append_task_change_log,
+    create_task_space,
+    get_artifact,
+    get_task_artifact,
+    resolve_task_space,
+    update_artifact,
+    update_task_artifact,
+)
 from .config import load_workspace_config
 from .registry import resolve_group
 from .rules import match_rules
@@ -318,31 +327,51 @@ def workspace_resume_context(workspace_file: str | Path, intent: str, limit: int
     }
 
 
-def workspace_sync_sniff_to_artifacts(workspace_file: str | Path, intent: str, limit: int = 12) -> Dict[str, Any]:
+def workspace_sync_sniff_to_artifacts(
+    workspace_file: str | Path,
+    intent: str,
+    limit: int = 12,
+    task_id: str = "",
+    title: str = "",
+) -> Dict[str, Any]:
     config, _ = load_context(workspace_file)
     sniff = workspace_sniff(workspace_file, intent, limit=limit)
+    resolved_task_id = task_id.strip()
+    resolved_info = None
+    if resolved_task_id:
+        resolved_info = {"task_id": resolved_task_id, "created": False}
+    else:
+        resolved_info = resolve_task_space(workspace_file, intent=intent, title=title.strip(), create_if_missing=True)
+        resolved_task_id = str(resolved_info["task_id"])
     context_content = _merge_artifact_section(
-        get_artifact(workspace_file, "context").get("content", ""),
+        get_task_artifact(workspace_file, resolved_task_id, "context").get("content", ""),
         "Current Task Context / 当前任务上下文",
         _render_sniff_context_markdown(sniff),
     )
     plan_content = _merge_artifact_section(
-        get_artifact(workspace_file, "plan").get("content", ""),
+        get_task_artifact(workspace_file, resolved_task_id, "plan").get("content", ""),
         "Suggested Plan / 建议执行计划",
         _render_sniff_plan_markdown(sniff),
     )
-    update_artifact(workspace_file, "context", context_content)
-    update_artifact(workspace_file, "plan", plan_content)
+    update_task_artifact(workspace_file, resolved_task_id, "context", context_content)
+    update_task_artifact(workspace_file, resolved_task_id, "plan", plan_content)
     return {
         "workspace": config.workspace,
         "synced": True,
         "intent": intent,
+        "task_id": resolved_task_id,
+        "task_resolution": resolved_info,
         "updated_artifacts": ["context", "plan"],
         "risk_level": sniff.get("risk_level", "unknown"),
     }
 
 
-def workspace_sync_case_to_artifacts(workspace_file: str | Path, session_id: str) -> Dict[str, Any]:
+def workspace_sync_case_to_artifacts(
+    workspace_file: str | Path,
+    session_id: str,
+    task_id: str = "",
+    title: str = "",
+) -> Dict[str, Any]:
     config, _ = load_context(workspace_file)
     draft = workspace_suggest_case(workspace_file, session_id)
     if not draft.get("found"):
@@ -354,17 +383,31 @@ def workspace_sync_case_to_artifacts(workspace_file: str | Path, session_id: str
             "hint": draft.get("hint", "会话不存在。"),
         }
     case = draft.get("draft_case", {})
+    resolved_task_id = task_id.strip()
+    resolved_info = None
+    if resolved_task_id:
+        resolved_info = {"task_id": resolved_task_id, "created": False}
+    else:
+        resolved_info = resolve_task_space(
+            workspace_file,
+            intent=case.get("task", ""),
+            title=title.strip() or case.get("task", ""),
+            create_if_missing=True,
+        )
+        resolved_task_id = str(resolved_info["task_id"])
     design_content = _merge_artifact_section(
-        get_artifact(workspace_file, "design").get("content", ""),
+        get_task_artifact(workspace_file, resolved_task_id, "design").get("content", ""),
         "Session Learnings / 会话沉淀",
         _render_case_markdown(case),
     )
-    update_artifact(workspace_file, "design", design_content)
-    append_change_log(workspace_file, _render_change_log_entry(case, session_id))
+    update_task_artifact(workspace_file, resolved_task_id, "design", design_content)
+    append_task_change_log(workspace_file, resolved_task_id, _render_change_log_entry(case, session_id))
     return {
         "workspace": config.workspace,
         "session_id": session_id,
         "synced": True,
+        "task_id": resolved_task_id,
+        "task_resolution": resolved_info,
         "updated_artifacts": ["design", "change_log"],
         "task": case.get("task", ""),
     }

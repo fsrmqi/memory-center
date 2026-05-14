@@ -23,6 +23,7 @@ DEFAULT_ARTIFACTS = {
 
 TASKS_DIR = "tasks"
 ARCHIVE_DIR = "archive/tasks"
+TASK_STATUSES = {"draft", "active", "blocked", "done", "archived"}
 
 
 def ensure_default_artifacts(workspace_file: str | Path) -> List[Dict[str, str]]:
@@ -198,7 +199,14 @@ def compact_change_log(workspace_file: str | Path, keep_recent: int = 30) -> Dic
     }
 
 
-def create_task_space(workspace_file: str | Path, title: str = "", intent: str = "") -> Dict[str, object]:
+def create_task_space(
+    workspace_file: str | Path,
+    title: str = "",
+    intent: str = "",
+    owner: str = "",
+    tags: List[str] | None = None,
+    priority: str = "medium",
+) -> Dict[str, object]:
     config = load_workspace_config(workspace_file)
     store = WorkspaceStore(workspace_file)
     task_title = (title or intent or f"task-{uuid4().hex[:8]}").strip()
@@ -210,6 +218,9 @@ def create_task_space(workspace_file: str | Path, title: str = "", intent: str =
         "title": task_title,
         "intent": intent,
         "status": "active",
+        "owner": owner.strip(),
+        "tags": tags or [],
+        "priority": priority.strip().lower() or "medium",
         "created_at": datetime.now().isoformat(),
         "updated_at": datetime.now().isoformat(),
     }
@@ -223,8 +234,75 @@ def create_task_space(workspace_file: str | Path, title: str = "", intent: str =
         "created": True,
         "task_id": slug,
         "title": task_title,
+        "owner": meta["owner"],
+        "tags": meta["tags"],
+        "priority": meta["priority"],
         "path": str(task_dir),
     }
+
+
+def resolve_task_space(
+    workspace_file: str | Path,
+    intent: str,
+    title: str = "",
+    create_if_missing: bool = True,
+    include_archived: bool = False,
+    limit_candidates: int = 3,
+) -> Dict[str, object]:
+    config = load_workspace_config(workspace_file)
+    candidates = list_task_spaces(workspace_file, include_archived=include_archived)
+    keyword_text = title.strip() or intent.strip()
+    keywords = _tokenize_text(keyword_text)
+    scored = []
+    for task in candidates["active_tasks"] + candidates.get("archived_tasks", []):
+        score = _task_match_score(workspace_file, task, keywords)
+        if score <= 0:
+            continue
+        scored.append({**task, "score": score})
+    scored.sort(key=lambda item: (-int(item["score"]), item.get("updated_at", ""), item.get("task_id", "")))
+    candidate_rows = [
+        {
+            "task_id": item["task_id"],
+            "title": item["title"],
+            "status": item.get("status", "active"),
+            "owner": item.get("owner", ""),
+            "tags": item.get("tags", []),
+            "priority": item.get("priority", "medium"),
+            "score": item["score"],
+            "path": item["path"],
+        }
+        for item in scored[: max(limit_candidates, 1)]
+    ]
+    if scored:
+        top = scored[0]
+        return {
+            "workspace": config.workspace,
+            "resolved": True,
+            "created": False,
+            "task_id": top["task_id"],
+            "title": top["title"],
+            "score": top["score"],
+            "status": top.get("status", "active"),
+            "owner": top.get("owner", ""),
+            "tags": top.get("tags", []),
+            "priority": top.get("priority", "medium"),
+            "path": top["path"],
+            "candidates": candidate_rows,
+        }
+    if not create_if_missing:
+        return {
+            "workspace": config.workspace,
+            "resolved": False,
+            "created": False,
+            "task_id": "",
+            "title": "",
+            "score": 0,
+            "status": "",
+            "path": "",
+            "candidates": candidate_rows,
+        }
+    created = create_task_space(workspace_file, title=title, intent=intent)
+    return {**created, "resolved": True, "score": 0, "candidates": candidate_rows}
 
 
 def list_task_spaces(workspace_file: str | Path, include_archived: bool = False) -> Dict[str, object]:
@@ -236,6 +314,28 @@ def list_task_spaces(workspace_file: str | Path, include_archived: bool = False)
         "workspace": config.workspace,
         "active_tasks": active,
         "archived_tasks": archived,
+    }
+
+
+def update_task_status(workspace_file: str | Path, task_id: str, status: str) -> Dict[str, object]:
+    config = load_workspace_config(workspace_file)
+    store = WorkspaceStore(workspace_file)
+    normalized = status.strip().lower()
+    if normalized not in TASK_STATUSES:
+        raise ValueError(f"unknown task status: {status}")
+    if normalized == "archived":
+        return archive_task_space(workspace_file, task_id, reason="status=archived")
+    task_dir, meta = _resolve_task_dir(store, task_id)
+    meta["status"] = normalized
+    meta["archived"] = False
+    _touch_task_meta(store, task_dir, meta)
+    return {
+        "workspace": config.workspace,
+        "updated": True,
+        "task_id": meta["task_id"],
+        "title": meta["title"],
+        "status": normalized,
+        "path": str(task_dir),
     }
 
 
@@ -454,6 +554,9 @@ def _list_task_dir_entries(root: Path, archived: bool) -> List[Dict[str, object]
                 "title": meta.get("title", item.name),
                 "intent": meta.get("intent", ""),
                 "status": meta.get("status", "active"),
+                "owner": meta.get("owner", ""),
+                "tags": meta.get("tags", []),
+                "priority": meta.get("priority", "medium"),
                 "created_at": meta.get("created_at", ""),
                 "updated_at": meta.get("updated_at", ""),
                 "archived": archived or bool(meta.get("archived", False)),
@@ -475,6 +578,34 @@ def _resolve_task_dir(store: WorkspaceStore, task_id: str) -> tuple[Path, Dict[s
         meta["archived"] = True
         return archived, meta
     raise ValueError(f"unknown task space: {task_id}")
+
+
+def _task_match_score(workspace_file: str | Path, task: Dict[str, object], keywords: List[str]) -> int:
+    if not keywords:
+        return 0
+    haystack_parts = [
+        str(task.get("title", "")),
+        str(task.get("intent", "")),
+        str(task.get("status", "")),
+        str(task.get("owner", "")),
+        " ".join(task.get("tags", []) if isinstance(task.get("tags", []), list) else []),
+        str(task.get("priority", "")),
+    ]
+    try:
+        for artifact_name in ["context.md", "requirement.md", "design.md", "plan.md", "test-plan.md"]:
+            artifact = get_task_artifact(workspace_file, str(task.get("task_id", "")), artifact_name)
+            haystack_parts.append(_trim_text(str(artifact.get("content", "")), 800))
+    except Exception:
+        pass
+    haystack = " ".join(haystack_parts).lower()
+    score = sum(1 for token in keywords if token in haystack)
+    if str(task.get("status", "")) == "active":
+        score += 2
+    elif str(task.get("status", "")) == "draft":
+        score += 1
+    if str(task.get("priority", "")) == "high":
+        score += 1
+    return score
 
 
 def _parse_dt(value: str):

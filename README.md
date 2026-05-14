@@ -371,6 +371,27 @@ memory-center sync-case-artifacts \
   --session-id session-xxxx
 ```
 
+For longer-running work, prefer task-specific spaces under `artifacts/tasks/<task-title-slug>/`, so the same requirement keeps its own `context/design/plan/change-log`, and stale task spaces can be archived automatically after N days.
+
+对于周期更长的任务，建议使用 `artifacts/tasks/<任务标题-slug>/` 这种按需求分空间的方式，让同一需求拥有自己的 `context/design/plan/change-log`；过期任务空间还可以按保留天数自动归档。
+
+```bash
+memory-center artifact create-task \
+  --workspace /Users/cuijiaqi/javaworkspace/ucap/.memory-center/workspace.yaml \
+  --title "Feign DTO 兼容改造"
+
+memory-center artifact list-tasks \
+  --workspace /Users/cuijiaqi/javaworkspace/ucap/.memory-center/workspace.yaml
+
+memory-center artifact auto-archive-tasks \
+  --workspace /Users/cuijiaqi/javaworkspace/ucap/.memory-center/workspace.yaml \
+  --retention-days 30
+```
+
+When a new conversation starts, you do not have to pass `task_id` every time. The system can resolve the most relevant existing task space from your natural-language intent, and only create a new one when nothing matches well enough.
+
+当你开启一个新对话时，不需要每次都手填 `task_id`。系统可以根据自然语言意图自动匹配最相关的已有任务空间，只有在匹配不到时才会新建。
+
 For long-running projects, do not feed the full artifact documents every time. Use artifact outline/context retrieval and compact old change logs:
 
 对于长期运行项目，不要每次都整篇读取共享工件。优先使用提纲/相关片段检索，并定期压缩归档旧的 change-log：

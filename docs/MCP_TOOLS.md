@@ -18,6 +18,15 @@ Memory Center exposes graph-first project memory to AI coding agents through MCP
 | `workspace_compact_change_log_tool(keep_recent)` | Archive older change-log entries to keep shared context compact. / 归档较早的 change-log 记录，保持共享上下文精简。 |
 | `workspace_sync_sniff_artifacts_tool(intent, limit)` | Sync one sniff result into shared `context.md` and `plan.md`. / 把一次 sniff 结果同步进共享 `context.md` 和 `plan.md`。 |
 | `workspace_sync_case_artifacts_tool(session_id)` | Sync one suggested case into shared `design.md` and `change-log.md`. / 把一次建议 case 同步进共享 `design.md` 和 `change-log.md`。 |
+| `workspace_task_space_create_tool(title, intent)` | Create one task-specific artifact space from a custom title or intent. / 通过自定义标题或任务意图创建任务工件空间。 |
+| `workspace_task_space_list_tool(include_archived)` | List active or archived task-specific artifact spaces. / 列出活跃或已归档的任务工件空间。 |
+| `workspace_task_space_resolve_tool(intent, title, create_if_missing, include_archived)` | Resolve the most relevant task space from natural language, and create one only if needed. / 根据自然语言解析最相关的任务工件空间，只有在必要时才新建。 |
+| `workspace_task_artifact_get_tool(task_id, name)` | Read one artifact inside a task-specific space. / 读取任务工件空间中的单个文档。 |
+| `workspace_task_artifact_update_tool(task_id, name, content)` | Replace one artifact inside a task-specific space. / 更新任务工件空间中的单个文档。 |
+| `workspace_task_append_change_log_tool(task_id, entry, keep_recent)` | Append one timestamped entry into a task-specific change log. / 追加一条带时间戳的任务变更记录。 |
+| `workspace_task_status_tool(task_id, status)` | Update one task-specific space status: `draft / active / blocked / done / archived`. / 更新任务工件空间状态：`draft / active / blocked / done / archived`。 |
+| `workspace_task_archive_tool(task_id, reason)` | Archive one task-specific artifact space manually. / 手动归档一个任务工件空间。 |
+| `workspace_task_auto_archive_tool(retention_days)` | Auto-archive task-specific artifact spaces older than retention_days. / 按保留天数自动归档过期任务工件空间。 |
 | `memory_query_tool(query, limit)` | Graph-aware hybrid search across files, symbols, endpoints, Feign clients, topics and fields, with exact/semantic retrieval metadata and `progressive` summary/evidence/detail views. / 基于图谱的混合检索，查询文件、符号、接口、Feign、Topic、字段，并返回精确/语义召回来源信息，以及 `progressive` 的摘要/证据/细节分层视图。 |
 | `memory_search_code_tool(query, scope, limit)` | Keyword search over indexed files and symbol hints, useful for quick entrypoint discovery. / 在索引文件与符号提示上做关键词搜索，适合快速找入口。 |
 | `memory_symbol_tool(name, limit)` | Resolve one symbol and return best match with candidates. / 解析一个符号并返回最佳命中及候选。 |

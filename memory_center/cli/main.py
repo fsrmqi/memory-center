@@ -21,6 +21,8 @@ from memory_center.core.artifacts import (
     get_task_artifact,
     list_artifacts,
     list_task_spaces,
+    resolve_task_space,
+    update_task_status,
     update_task_artifact,
     update_artifact,
 )
@@ -365,18 +367,22 @@ def sync_sniff_artifacts_cmd(
     workspace: str = typer.Option(...),
     intent: str = typer.Option(...),
     limit: int = typer.Option(12),
+    task_id: str = typer.Option(""),
+    title: str = typer.Option(""),
 ):
     """Sync sniff result into shared context.md and plan.md."""
-    print(workspace_sync_sniff_to_artifacts(workspace, intent, limit=limit))
+    print(workspace_sync_sniff_to_artifacts(workspace, intent, limit=limit, task_id=task_id, title=title))
 
 
 @app.command("sync-case-artifacts")
 def sync_case_artifacts_cmd(
     workspace: str = typer.Option(...),
     session_id: str = typer.Option(...),
+    task_id: str = typer.Option(""),
+    title: str = typer.Option(""),
 ):
     """Sync one suggested case into design.md and change-log.md."""
-    print(workspace_sync_case_to_artifacts(workspace, session_id))
+    print(workspace_sync_case_to_artifacts(workspace, session_id, task_id=task_id, title=title))
 
 
 @registry_app.command("add")
@@ -532,9 +538,12 @@ def artifact_create_task_cmd(
     workspace: str = typer.Option(...),
     title: str = typer.Option(""),
     intent: str = typer.Option(""),
+    owner: str = typer.Option(""),
+    tag: Optional[List[str]] = typer.Option(None),
+    priority: str = typer.Option("medium"),
 ):
     """Create one task-specific artifact space from a custom title or intent."""
-    print(create_task_space(workspace, title=title, intent=intent))
+    print(create_task_space(workspace, title=title, intent=intent, owner=owner, tags=tag, priority=priority))
 
 
 @artifact_app.command("list-tasks")
@@ -544,6 +553,19 @@ def artifact_list_tasks_cmd(
 ):
     """List active or archived task artifact spaces."""
     print(list_task_spaces(workspace, include_archived=include_archived))
+
+
+@artifact_app.command("resolve-task")
+def artifact_resolve_task_cmd(
+    workspace: str = typer.Option(...),
+    intent: str = typer.Option(...),
+    title: str = typer.Option(""),
+    create_if_missing: bool = typer.Option(True),
+    include_archived: bool = typer.Option(False),
+    limit_candidates: int = typer.Option(3),
+):
+    """Resolve one task space from natural language; create one if needed."""
+    print(resolve_task_space(workspace, intent=intent, title=title, create_if_missing=create_if_missing, include_archived=include_archived, limit_candidates=limit_candidates))
 
 
 @artifact_app.command("get-task")
@@ -586,6 +608,16 @@ def artifact_archive_task_cmd(
 ):
     """Archive one task artifact space manually."""
     print(archive_task_space(workspace, task_id, reason=reason))
+
+
+@artifact_app.command("update-task-status")
+def artifact_update_task_status_cmd(
+    workspace: str = typer.Option(...),
+    task_id: str = typer.Option(...),
+    status: str = typer.Option(...),
+):
+    """Update one task space status: draft/active/blocked/done/archived."""
+    print(update_task_status(workspace, task_id, status))
 
 
 @artifact_app.command("auto-archive-tasks")
