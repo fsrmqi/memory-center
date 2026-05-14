@@ -10,10 +10,17 @@ from memory_center.core.orchestrator import (
     group_impact,
     group_query,
     group_status,
+    memory_callers,
+    memory_callees,
+    memory_plan_change,
     memory_query,
+    memory_search_code,
+    memory_symbol,
+    memory_verify_checklist,
     workspace_recent_sessions,
     workspace_resume_context,
     workspace_session_summary,
+    workspace_suggest_case,
     workspace_status,
 )
 
@@ -65,6 +72,39 @@ def _route_request(path: str, params: dict, default_workspace: str | None) -> di
         query = _require_one(params, "text")
         limit = int(params.get("limit", ["20"])[0])
         return memory_query(workspace, query, limit=limit)
+    if path == "/workspace/search-code":
+        workspace = _require_workspace(params, default_workspace)
+        query = _require_one(params, "text")
+        scope = params.get("scope", [""])[0]
+        limit = int(params.get("limit", ["20"])[0])
+        return memory_search_code(workspace, query, scope=scope, limit=limit)
+    if path == "/workspace/symbol":
+        workspace = _require_workspace(params, default_workspace)
+        name = _require_one(params, "name")
+        limit = int(params.get("limit", ["10"])[0])
+        return memory_symbol(workspace, name, limit=limit)
+    if path == "/workspace/callers":
+        workspace = _require_workspace(params, default_workspace)
+        symbol = _require_one(params, "symbol")
+        depth = int(params.get("depth", ["2"])[0])
+        limit = int(params.get("limit", ["80"])[0])
+        return memory_callers(workspace, symbol, depth=depth, limit=limit)
+    if path == "/workspace/callees":
+        workspace = _require_workspace(params, default_workspace)
+        symbol = _require_one(params, "symbol")
+        depth = int(params.get("depth", ["2"])[0])
+        limit = int(params.get("limit", ["80"])[0])
+        return memory_callees(workspace, symbol, depth=depth, limit=limit)
+    if path == "/workspace/plan-change":
+        workspace = _require_workspace(params, default_workspace)
+        target = _require_one(params, "target")
+        direction = params.get("direction", ["upstream"])[0]
+        max_depth = int(params.get("max_depth", ["3"])[0])
+        return memory_plan_change(workspace, target, direction=direction, max_depth=max_depth)
+    if path == "/workspace/verify-checklist":
+        workspace = _require_workspace(params, default_workspace)
+        target = _require_one(params, "target")
+        return memory_verify_checklist(workspace, target)
     if path == "/workspace/sessions/recent":
         workspace = _require_workspace(params, default_workspace)
         limit = int(params.get("limit", ["10"])[0])
@@ -78,6 +118,10 @@ def _route_request(path: str, params: dict, default_workspace: str | None) -> di
         query = _require_one(params, "text")
         limit = int(params.get("limit", ["5"])[0])
         return workspace_resume_context(workspace, query, limit=limit)
+    if path == "/workspace/suggest-case":
+        workspace = _require_workspace(params, default_workspace)
+        session_id = _require_one(params, "session_id")
+        return workspace_suggest_case(workspace, session_id)
     if path == "/group/status":
         return group_status(_require_one(params, "group"))
     if path == "/group/query":

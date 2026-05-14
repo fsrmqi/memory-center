@@ -10,8 +10,14 @@ Memory Center exposes graph-first project memory to AI coding agents through MCP
 |---|---|
 | `workspace_sniff_tool(intent, limit)` | Retrieve task context: services, files, rules, topology hints, historical cases. / 任务开始前召回服务、文件、规则、拓扑、历史经验。 |
 | `memory_query_tool(query, limit)` | Graph-aware hybrid search across files, symbols, endpoints, Feign clients, topics and fields, with exact/semantic retrieval metadata and optional local embedding backend support. / 基于图谱的混合检索，查询文件、符号、接口、Feign、Topic、字段，并返回精确/语义召回来源信息，同时支持可选本地 embedding backend。 |
+| `memory_search_code_tool(query, scope, limit)` | Keyword search over indexed files and symbol hints, useful for quick entrypoint discovery. / 在索引文件与符号提示上做关键词搜索，适合快速找入口。 |
+| `memory_symbol_tool(name, limit)` | Resolve one symbol and return best match with candidates. / 解析一个符号并返回最佳命中及候选。 |
+| `memory_callers_tool(symbol, depth, limit)` | Find upstream callers for a symbol. / 查询某符号的上游调用方。 |
+| `memory_callees_tool(symbol, depth, limit)` | Find downstream callees for a symbol. / 查询某符号的下游被调方。 |
 | `memory_context_tool(name, max_depth)` | 360-degree context for a graph node, with retrieval entrypoints and evidence summary. / 返回某个节点的上下游上下文，并附带召回入口和证据摘要。 |
 | `memory_impact_tool(target, direction, max_depth)` | Impact analysis for DTO, Feign, MQ topic, endpoint, service or file, with lookup provenance and evidence summary. / 对 DTO、Feign、消息主题、接口、服务、文件做影响面分析，并附带命中来源和证据摘要。 |
+| `memory_plan_change_tool(target, direction, max_depth)` | Build an actionable change plan from impact and rule evidence. / 基于影响面与规则证据生成可执行改动计划。 |
+| `memory_verify_checklist_tool(target)` | Build verification checklist before merge/release. / 生成合并/发布前验证清单。 |
 | `memory_detect_changes_tool(scope)` | Map local git diff to affected files, projects, rules and risk level. / 把本地 Git diff 映射为影响项目、规则和风险等级。 |
 | `memory_contracts_tool()` | List API/Feign/MQ contracts and contract rules. / 列出接口、Feign、MQ 契约及相关规则。 |
 | `workspace_trace_tool(entry)` | Trace candidates by class, endpoint, Feign client or topic. / 按类名、接口、Feign、Topic 追踪候选链路。 |
@@ -24,6 +30,7 @@ Memory Center exposes graph-first project memory to AI coding agents through MCP
 | `workspace_recent_sessions_tool(limit)` | Read recent summarized sessions. / 查看最近会话摘要。 |
 | `workspace_session_summary_tool(session_id)` | Read one session summary and raw events. / 查看单次会话摘要和原始事件。 |
 | `workspace_resume_context_tool(intent, limit)` | Resume a new task from related sessions, cases and entrypoints. / 基于相关会话、经验和入口点恢复新任务上下文。 |
+| `workspace_suggest_case_tool(session_id)` | Suggest one record-case draft from a finished session. / 从已结束会话自动生成一条经验沉淀草稿。 |
 | `memory_generate_wiki_tool(output_dir)` | Generate bilingual architecture wiki. / 生成双语架构 Wiki。 |
 | `memory_generate_skills_tool(output_dir)` | Generate Agent skill files from task memory. / 根据历史任务生成 Agent Skill。 |
 | `workspace_status_tool()` | Return index and memory status, including semantic backend readiness. / 返回索引和记忆状态，包含语义 backend 就绪情况。 |

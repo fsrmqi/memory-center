@@ -159,6 +159,7 @@ def test_workspace_service_maintenance_commands(tmp_path: Path):
 
 def test_session_memory_flow(tmp_path: Path):
     from memory_center.core.orchestrator import (
+        workspace_suggest_case,
         workspace_end_session,
         workspace_log_session_event,
         workspace_recent_sessions,
@@ -204,11 +205,27 @@ def test_session_memory_flow(tmp_path: Path):
     assert resume["related_sessions"]
     assert resume["suggested_context"]
 
+    draft = workspace_suggest_case(workspace, session_id)
+    assert draft["found"] is True
+    assert draft["draft_case"]["task"]
+    assert "risk_points" in draft["draft_case"]
+
 
 def test_graph_query_context_and_impact(tmp_path):
     from memory_center.core.config import load_workspace_config
     from memory_center.core.indexer import reindex_workspace
-    from memory_center.core.orchestrator import memory_context, memory_impact, memory_query, workspace_status
+    from memory_center.core.orchestrator import (
+        memory_callers,
+        memory_callees,
+        memory_context,
+        memory_impact,
+        memory_plan_change,
+        memory_query,
+        memory_search_code,
+        memory_symbol,
+        memory_verify_checklist,
+        workspace_status,
+    )
     from memory_center.core.rules import ensure_default_rules
     from memory_center.core.store import WorkspaceStore
 
@@ -228,6 +245,14 @@ def test_graph_query_context_and_impact(tmp_path):
     assert query_result["retrieval_summary"]["semantic_matches"] >= 1
     assert query_result["retrieval_summary"]["returned_matches"] == len(query_result["matches"])
     assert any("semantic" in item["retrieval_sources"] for item in query_result["matches"])
+    code_search = memory_search_code(workspace, "ArticleFeignClient", scope="task-service", limit=5)
+    assert code_search["hits"]
+    symbol = memory_symbol(workspace, "ArticleMoveService", limit=5)
+    assert symbol["found"] is True
+    callers = memory_callers(workspace, "ArticleMoveService", depth=2, limit=20)
+    assert callers["found"] is True
+    callees = memory_callees(workspace, "ArticleMoveService", depth=2, limit=20)
+    assert callees["found"] is True
     status = workspace_status(workspace)
     assert status["semantic_index"]["ready"] is True
     assert status["semantic_index"]["backend"] == "sparse"
@@ -241,6 +266,11 @@ def test_graph_query_context_and_impact(tmp_path):
     assert impact["found"] is True
     assert impact["lookup"]["retrieval_summary"]["semantic_matches"] >= 1
     assert impact["evidence_summary"]["confirmed_count"] >= 0
+    plan = memory_plan_change(workspace, "MoveArticleRequest")
+    assert plan["found"] is True
+    assert plan["plan"]
+    checklist = memory_verify_checklist(workspace, "MoveArticleRequest")
+    assert checklist["checklist"]
 
 
 def test_trusted_graph_edges_and_evidence_based_impact(tmp_path: Path):
@@ -373,12 +403,17 @@ def test_group_query_and_status(tmp_path: Path):
 
 def test_http_bridge_routes(tmp_path: Path):
     from http.server import ThreadingHTTPServer
+    from memory_center.core.orchestrator import workspace_end_session, workspace_log_session_event, workspace_start_session
 
     workspace = _copy_demo_workspace(tmp_path, "http-demo")
     config = load_workspace_config(workspace)
     store = WorkspaceStore(workspace)
     ensure_default_rules(store)
     reindex_workspace(config, store)
+    session = workspace_start_session(workspace, "HTTP bridge route test")
+    session_id = session["session_id"]
+    workspace_log_session_event(workspace, session_id, "tool_call", {"tool_name": "memory_query_tool", "query": "ArticleFeignClient", "project": "task-service"})
+    workspace_end_session(workspace, session_id, outcome="HTTP route validation", verified_by=["test"])
 
     home = tmp_path / "home" / ".memory-center"
     register_workspace("http-demo", workspace, home=home)
@@ -408,9 +443,25 @@ def test_http_bridge_routes(tmp_path: Path):
         assert query["matches"]
         assert query["retrieval_summary"]["exact_matches"] >= 1
         assert query["retrieval_summary"]["semantic_matches"] >= 1
+        search = json.loads(urlopen(f"{base}/workspace/search-code?text=ArticleFeignClient&scope=task-service").read().decode("utf-8"))
+        assert search["hits"]
+        symbol = json.loads(urlopen(f"{base}/workspace/symbol?name=ArticleMoveService").read().decode("utf-8"))
+        assert symbol["found"] is True
+        callers = json.loads(urlopen(f"{base}/workspace/callers?symbol=ArticleMoveService&depth=2").read().decode("utf-8"))
+        assert callers["found"] is True
+        callees = json.loads(urlopen(f"{base}/workspace/callees?symbol=ArticleMoveService&depth=2").read().decode("utf-8"))
+        assert callees["found"] is True
+        plan = json.loads(urlopen(f"{base}/workspace/plan-change?target=MoveArticleRequest").read().decode("utf-8"))
+        assert plan["found"] is True
+        checklist = json.loads(urlopen(f"{base}/workspace/verify-checklist?target=MoveArticleRequest").read().decode("utf-8"))
+        assert checklist["checklist"]
 
         session_recent = json.loads(urlopen(f"{base}/workspace/sessions/recent?limit=5").read().decode("utf-8"))
         assert "recent_sessions" in session_recent
+        assert session_recent["recent_sessions"]
+        suggested_case = json.loads(urlopen(f"{base}/workspace/suggest-case?session_id={session_id}").read().decode("utf-8"))
+        assert suggested_case["found"] is True
+        assert suggested_case["draft_case"]["task"]
 
         group_query_payload = json.loads(urlopen(f"{base}/group/query?group=http-group&text=article-pubtime-change").read().decode("utf-8"))
         assert group_query_payload["related_bridges"]

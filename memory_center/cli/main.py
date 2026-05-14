@@ -15,11 +15,17 @@ from memory_center.core.orchestrator import (
     group_impact,
     group_query,
     group_status,
+    memory_callers,
+    memory_callees,
     memory_context,
     memory_contracts,
     memory_detect_changes,
     memory_impact,
+    memory_plan_change,
     memory_query,
+    memory_search_code,
+    memory_symbol,
+    memory_verify_checklist,
     workspace_check_contract,
     workspace_check_rules,
     workspace_record_case,
@@ -32,6 +38,7 @@ from memory_center.core.orchestrator import (
     workspace_log_session_event,
     workspace_end_session,
     workspace_resume_context,
+    workspace_suggest_case,
 )
 from memory_center.core.rules import ensure_default_rules
 from memory_center.core.store import WorkspaceStore
@@ -142,6 +149,49 @@ def query_cmd(workspace: str = typer.Option(...), text: str = typer.Option(...),
     print(memory_query(workspace, text, limit))
 
 
+@app.command("search-code")
+def search_code_cmd(
+    workspace: str = typer.Option(...),
+    text: str = typer.Option(...),
+    scope: str = typer.Option(""),
+    limit: int = typer.Option(20),
+):
+    """Keyword search over indexed files/symbol hints."""
+    print(memory_search_code(workspace, text, scope=scope, limit=limit))
+
+
+@app.command("symbol")
+def symbol_cmd(
+    workspace: str = typer.Option(...),
+    name: str = typer.Option(...),
+    limit: int = typer.Option(10),
+):
+    """Resolve one symbol and return best match candidates."""
+    print(memory_symbol(workspace, name, limit=limit))
+
+
+@app.command("callers")
+def callers_cmd(
+    workspace: str = typer.Option(...),
+    symbol: str = typer.Option(...),
+    depth: int = typer.Option(2),
+    limit: int = typer.Option(80),
+):
+    """Find upstream callers for one symbol."""
+    print(memory_callers(workspace, symbol, depth=depth, limit=limit))
+
+
+@app.command("callees")
+def callees_cmd(
+    workspace: str = typer.Option(...),
+    symbol: str = typer.Option(...),
+    depth: int = typer.Option(2),
+    limit: int = typer.Option(80),
+):
+    """Find downstream callees for one symbol."""
+    print(memory_callees(workspace, symbol, depth=depth, limit=limit))
+
+
 @app.command("context")
 def context_cmd(workspace: str = typer.Option(...), name: str = typer.Option(...), max_depth: int = typer.Option(2)):
     """Return 360-degree context for a symbol, endpoint, topic, service or file."""
@@ -169,6 +219,26 @@ def detect_changes_cmd(workspace: str = typer.Option(...), scope: str = typer.Op
 def contracts_cmd(workspace: str = typer.Option(...)):
     """List Feign/API/MQ contracts discovered in the workspace."""
     print(memory_contracts(workspace))
+
+
+@app.command("plan-change")
+def plan_change_cmd(
+    workspace: str = typer.Option(...),
+    target: str = typer.Option(...),
+    direction: str = typer.Option("upstream"),
+    max_depth: int = typer.Option(3),
+):
+    """Generate one actionable change plan from impact evidence."""
+    print(memory_plan_change(workspace, target, direction=direction, max_depth=max_depth))
+
+
+@app.command("verify-checklist")
+def verify_checklist_cmd(
+    workspace: str = typer.Option(...),
+    target: str = typer.Option(...),
+):
+    """Generate one verification checklist for a target change."""
+    print(memory_verify_checklist(workspace, target))
 
 
 @app.command("generate-wiki")
@@ -256,6 +326,15 @@ def resume_context_cmd(
 ):
     """Retrieve related sessions, cases and entrypoints for a new session."""
     print(workspace_resume_context(workspace, intent, limit=limit))
+
+
+@app.command("suggest-case")
+def suggest_case_cmd(
+    workspace: str = typer.Option(...),
+    session_id: str = typer.Option(...),
+):
+    """Suggest one record-case draft from a finished session."""
+    print(workspace_suggest_case(workspace, session_id))
 
 
 @registry_app.command("add")

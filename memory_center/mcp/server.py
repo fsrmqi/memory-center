@@ -8,15 +8,22 @@ from memory_center.core.orchestrator import (
     group_impact,
     group_query,
     group_status,
+    memory_callers,
+    memory_callees,
     memory_context,
     memory_contracts,
     memory_detect_changes,
     memory_impact,
+    memory_plan_change,
     memory_query,
+    memory_search_code,
+    memory_symbol,
+    memory_verify_checklist,
     workspace_end_session,
     workspace_log_session_event,
     workspace_recent_sessions,
     workspace_resume_context,
+    workspace_suggest_case,
     workspace_check_contract,
     workspace_check_rules,
     workspace_record_case,
@@ -52,6 +59,26 @@ def create_server(workspace_file: str):
         return memory_query(_WORKSPACE_FILE, query, limit)
 
     @mcp.tool()
+    def memory_search_code_tool(query: str, scope: str = "", limit: int = 20):
+        """Keyword code search for project/path/symbol hints before deep graph traversal."""
+        return memory_search_code(_WORKSPACE_FILE, query, scope, limit)
+
+    @mcp.tool()
+    def memory_symbol_tool(name: str, limit: int = 10):
+        """Resolve one symbol and provide best match plus nearby candidates."""
+        return memory_symbol(_WORKSPACE_FILE, name, limit)
+
+    @mcp.tool()
+    def memory_callers_tool(symbol: str, depth: int = 2, limit: int = 80):
+        """Find upstream callers for a symbol (method/class/feign/topic/config)."""
+        return memory_callers(_WORKSPACE_FILE, symbol, depth, limit)
+
+    @mcp.tool()
+    def memory_callees_tool(symbol: str, depth: int = 2, limit: int = 80):
+        """Find downstream callees for a symbol (method/class/feign/topic/config)."""
+        return memory_callees(_WORKSPACE_FILE, symbol, depth, limit)
+
+    @mcp.tool()
     def memory_context_tool(name: str, max_depth: int = 2):
         """Return 360-degree context for a service, endpoint, Feign method, topic, file or symbol."""
         return memory_context(_WORKSPACE_FILE, name, max_depth)
@@ -70,6 +97,16 @@ def create_server(workspace_file: str):
     def memory_contracts_tool():
         """List discovered Feign/API/MQ contracts and contract-related rules."""
         return memory_contracts(_WORKSPACE_FILE)
+
+    @mcp.tool()
+    def memory_plan_change_tool(target: str, direction: str = "upstream", max_depth: int = 3):
+        """Create one actionable change plan from impact and rule evidence."""
+        return memory_plan_change(_WORKSPACE_FILE, target, direction, max_depth)
+
+    @mcp.tool()
+    def memory_verify_checklist_tool(target: str):
+        """Generate one verification checklist before merge/release."""
+        return memory_verify_checklist(_WORKSPACE_FILE, target)
 
     @mcp.tool()
     def workspace_trace_tool(entry: str):
@@ -120,6 +157,11 @@ def create_server(workspace_file: str):
     def workspace_resume_context_tool(intent: str, limit: int = 5):
         """Resume a new task by mixing related sessions, cases and query entrypoints."""
         return workspace_resume_context(_WORKSPACE_FILE, intent, limit)
+
+    @mcp.tool()
+    def workspace_suggest_case_tool(session_id: str):
+        """Suggest one record-case draft from a finished session."""
+        return workspace_suggest_case(_WORKSPACE_FILE, session_id)
 
     @mcp.tool()
     def memory_generate_wiki_tool(output_dir: str | None = None):

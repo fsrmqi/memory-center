@@ -428,14 +428,27 @@ Available MCP tools / MCP 工具：
 |---|---|
 | `workspace_sniff_tool` | Task-level context retrieval / 任务上下文召回 |
 | `memory_query_tool` | Graph-aware search / 图谱检索 |
+| `memory_search_code_tool` | Keyword code search / 关键词代码搜索 |
+| `memory_symbol_tool` | Resolve symbol best match / 符号定位与候选解析 |
+| `memory_callers_tool` | Upstream callers of a symbol / 查询上游调用方 |
+| `memory_callees_tool` | Downstream callees of a symbol / 查询下游被调方 |
 | `memory_context_tool` | 360-degree node context / 符号、服务、契约上下文 |
 | `memory_impact_tool` | Impact analysis / 影响面分析 |
+| `memory_plan_change_tool` | Actionable change plan / 可执行改动计划 |
+| `memory_verify_checklist_tool` | Pre-merge verification checklist / 合并前验证清单 |
 | `memory_detect_changes_tool` | Git diff risk mapping / Git 变更风险映射 |
 | `memory_contracts_tool` | API/Feign/MQ contract list / 契约列表 |
 | `workspace_trace_tool` | Cross-service trace hints / 跨服务追踪 |
 | `workspace_check_contract_tool` | Contract safety check / 契约变更检查 |
 | `workspace_check_rules_tool` | Rule matching / 规则匹配 |
 | `workspace_record_case_tool` | Record solved task memory / 任务经验沉淀 |
+| `workspace_start_session_tool` | Start session memory / 开始会话记忆 |
+| `workspace_log_session_event_tool` | Append session event / 追加会话事件 |
+| `workspace_end_session_tool` | End session and summarize / 结束会话并生成摘要 |
+| `workspace_recent_sessions_tool` | Read recent sessions / 查看最近会话 |
+| `workspace_session_summary_tool` | Read one session summary / 查看单次会话摘要 |
+| `workspace_resume_context_tool` | Resume context by intent / 按意图恢复会话上下文 |
+| `workspace_suggest_case_tool` | Suggest case draft from session / 从会话生成经验草稿 |
 | `memory_generate_wiki_tool` | Generate bilingual wiki / 生成双语 Wiki |
 | `memory_generate_skills_tool` | Generate Agent skills / 生成 Agent Skills |
 | `workspace_status_tool` | Index status / 索引状态 |
@@ -555,6 +568,13 @@ Example routes:
 - `GET /health`
 - `GET /workspace/status?workspace=/path/to/.memory-center/workspace.yaml`
 - `GET /workspace/query?workspace=/path/to/.memory-center/workspace.yaml&text=ArticleFeignClient`
+- `GET /workspace/search-code?workspace=/path/to/.memory-center/workspace.yaml&text=ArticleFeignClient&scope=task-service`
+- `GET /workspace/symbol?workspace=/path/to/.memory-center/workspace.yaml&name=ArticleMoveService`
+- `GET /workspace/callers?workspace=/path/to/.memory-center/workspace.yaml&symbol=ArticleMoveService&depth=2`
+- `GET /workspace/callees?workspace=/path/to/.memory-center/workspace.yaml&symbol=ArticleMoveService&depth=2`
+- `GET /workspace/plan-change?workspace=/path/to/.memory-center/workspace.yaml&target=MoveArticleRequest`
+- `GET /workspace/verify-checklist?workspace=/path/to/.memory-center/workspace.yaml&target=MoveArticleRequest`
+- `GET /workspace/suggest-case?workspace=/path/to/.memory-center/workspace.yaml&session_id=session-xxxx`
 - `GET /group/status?group=backend-platform`
 - `GET /group/query?group=backend-platform&text=ArticleFeignClient`
 - `GET /group/impact?group=backend-platform&target=ArticleFeignClient`

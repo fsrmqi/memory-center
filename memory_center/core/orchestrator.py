@@ -73,10 +73,11 @@ def workspace_sniff(workspace_file: str | Path, intent: str, limit: int = 12) ->
         "related_rules": rules,
         "historical_cases": related_cases,
         "next_steps": [
-            "阅读 candidate_files 中排名靠前的入口文件",
-            "如果涉及 DTO/Feign/MQ Message，先调用 workspace_check_contract",
-            "编辑前调用 workspace_check_rules",
-            "完成后调用 workspace_record_case 沉淀经验",
+            "先调用 memory_search_code 缩小入口范围，再用 memory_symbol 定位关键符号",
+            "对关键符号调用 memory_callers / memory_callees 理清上下游调用链",
+            "改动前调用 memory_plan_change 与 memory_verify_checklist，明确风险与验证项",
+            "如果涉及 DTO/Feign/MQ Message，再调用 workspace_check_contract",
+            "编辑前调用 workspace_check_rules，完成后调用 workspace_record_case 沉淀经验",
         ],
     }
 
@@ -237,6 +238,50 @@ def workspace_session_summary(workspace_file: str | Path, session_id: str) -> Di
         "found": bool(summaries or events),
         "summary": summaries[-1] if summaries else None,
         "events": events[-50:],
+    }
+
+
+def workspace_suggest_case(workspace_file: str | Path, session_id: str) -> Dict[str, Any]:
+    config, _ = load_context(workspace_file)
+    session = workspace_session_summary(workspace_file, session_id)
+    if not session.get("found"):
+        return {
+            "workspace": config.workspace,
+            "session_id": session_id,
+            "found": False,
+            "draft_case": None,
+            "hint": "session_id 不存在，先调用 workspace_start_session / workspace_end_session。",
+        }
+    summary = session.get("summary") or {}
+    events = session.get("events", [])
+    files = [item for item in summary.get("files", []) if isinstance(item, str) and item]
+    projects = [item for item in summary.get("projects", []) if isinstance(item, str) and item]
+    if not projects:
+        projects = sorted(
+            {
+                payload_project
+                for event in events
+                for payload_project in [_event_payload(event).get("project", "")]
+                if payload_project
+            }
+        )
+    tool_calls = summary.get("tool_calls", [])
+    risk_points = _suggest_risk_points(summary, events)
+    flow = " -> ".join(tool_calls[:8]) if tool_calls else "sniff -> query -> context -> impact -> verify"
+    draft = {
+        "task": summary.get("intent") or f"会话任务 {session_id}",
+        "projects": projects,
+        "files": files[:30],
+        "flow": flow,
+        "risk_points": risk_points,
+        "verified_by": summary.get("verified_by", []),
+    }
+    return {
+        "workspace": config.workspace,
+        "session_id": session_id,
+        "found": True,
+        "draft_case": draft,
+        "hint": "确认后可直接调用 workspace_record_case / record-case 入库。",
     }
 
 
@@ -649,6 +694,168 @@ def memory_context(workspace_file: str | Path, name: str, max_depth: int = 2) ->
     }
 
 
+def memory_symbol(workspace_file: str | Path, name: str, limit: int = 10) -> Dict[str, Any]:
+    lookup = memory_query(workspace_file, name, limit=limit, node_types=["Class", "Method", "Field", "FeignClient", "FeignMethod", "Endpoint", "MQTopic", "MQConsumer", "ConfigKey", "File"])
+    matches = [item.get("node", {}) for item in lookup.get("matches", []) if item.get("node")]
+    if not matches:
+        return {"name": name, "found": False, "matches": [], "lookup": _build_lookup_payload(lookup)}
+    best = _best_match(matches, name)
+    return {
+        "name": name,
+        "found": True,
+        "best_match": best,
+        "matches": lookup.get("matches", [])[:limit],
+        "lookup": _build_lookup_payload(lookup),
+    }
+
+
+def memory_callers(workspace_file: str | Path, symbol: str, depth: int = 2, limit: int = 80) -> Dict[str, Any]:
+    graph = _graph(workspace_file)
+    info = memory_symbol(workspace_file, symbol, limit=8)
+    if not info.get("found"):
+        return {"symbol": symbol, "found": False, "callers": [], "lookup": info.get("lookup", {})}
+    node = info["best_match"]
+    edges = graph.neighbors(node["id"], direction="upstream", max_depth=depth, limit=max(limit, 20))
+    callers = _filter_call_edges(edges, direction="upstream")[:limit]
+    return {
+        "symbol": symbol,
+        "found": True,
+        "target": node,
+        "depth": depth,
+        "callers": callers,
+        "lookup": info.get("lookup", {}),
+    }
+
+
+def memory_callees(workspace_file: str | Path, symbol: str, depth: int = 2, limit: int = 80) -> Dict[str, Any]:
+    graph = _graph(workspace_file)
+    info = memory_symbol(workspace_file, symbol, limit=8)
+    if not info.get("found"):
+        return {"symbol": symbol, "found": False, "callees": [], "lookup": info.get("lookup", {})}
+    node = info["best_match"]
+    edges = graph.neighbors(node["id"], direction="downstream", max_depth=depth, limit=max(limit, 20))
+    callees = _filter_call_edges(edges, direction="downstream")[:limit]
+    return {
+        "symbol": symbol,
+        "found": True,
+        "target": node,
+        "depth": depth,
+        "callees": callees,
+        "lookup": info.get("lookup", {}),
+    }
+
+
+def memory_search_code(workspace_file: str | Path, query: str, scope: str = "", limit: int = 20) -> Dict[str, Any]:
+    config, store = load_context(workspace_file)
+    keywords = tokenize(query)
+    files = store.read_json("file-index.json", [])
+    symbols = store.read_json("java-symbol-index.json", [])
+    symbol_map = {item.get("file", ""): item for item in symbols}
+    scope_l = scope.lower().strip()
+    hits: List[Dict[str, Any]] = []
+    for item in files:
+        path = item.get("path", "")
+        if scope_l and scope_l not in path.lower():
+            continue
+        text = f"{path} {item.get('project', '')} {item.get('service_name', '')}".lower()
+        symbol_item = symbol_map.get(path, {})
+        symbol_text = json.dumps(symbol_item, ensure_ascii=False).lower()
+        score = sum(1 for token in keywords if token in text or token in symbol_text)
+        if score <= 0:
+            continue
+        hits.append(
+            {
+                "project": item.get("project", ""),
+                "service_name": item.get("service_name", ""),
+                "path": path,
+                "score": score,
+                "symbol_count": int(symbol_item.get("class_count", 0)) + int(symbol_item.get("method_count", 0)) + int(symbol_item.get("field_count", 0)),
+                "suffix": item.get("suffix", ""),
+            }
+        )
+    hits.sort(key=lambda row: (-int(row.get("score", 0)), -int(row.get("symbol_count", 0)), row.get("path", "")))
+    return {
+        "workspace": config.workspace,
+        "query": query,
+        "scope": scope,
+        "hits": hits[:limit],
+        "total_hits": len(hits),
+        "tips": [
+            "命中后可继续调用 memory_symbol / memory_context 深挖。",
+            "改动前建议调用 memory_impact 和 workspace_check_rules。",
+        ],
+    }
+
+
+def memory_plan_change(workspace_file: str | Path, target: str, direction: str = "upstream", max_depth: int = 3) -> Dict[str, Any]:
+    impact = memory_impact(workspace_file, target, direction=direction, max_depth=max_depth)
+    if not impact.get("found"):
+        return {
+            "target": target,
+            "found": False,
+            "plan": [],
+            "hint": "未找到目标节点，先用 memory_search_code / memory_symbol 定位。",
+            "impact": impact,
+        }
+    plan = [
+        "1) 先确认目标节点与影响范围（context + impact）。",
+        "2) 优先处理 high confidence 影响点，再处理 probable/possible。",
+        "3) 执行契约兼容检查（DTO/Feign/MQ/Config）。",
+        "4) 增量改动并同步补测试，执行回归与静态检查。",
+        "5) 完成后记录 case，沉淀流程与风险点。",
+    ]
+    return {
+        "target": impact.get("target", {}),
+        "found": True,
+        "risk_level": impact.get("risk_level", "unknown"),
+        "plan": plan,
+        "required_rules": impact.get("required_rules", []),
+        "review_checklist": impact.get("review_checklist", []),
+        "impact": {
+            "confirmed_count": len(impact.get("confirmed_impacts", [])),
+            "probable_count": len(impact.get("probable_impacts", [])),
+            "possible_count": len(impact.get("possible_impacts", [])),
+            "impacted_projects": impact.get("impacted_projects", []),
+        },
+    }
+
+
+def memory_verify_checklist(workspace_file: str | Path, target: str) -> Dict[str, Any]:
+    impact = memory_impact(workspace_file, target, direction="upstream", max_depth=3)
+    checklist = list(impact.get("review_checklist", []))
+    target_type = (impact.get("target", {}) or {}).get("type", "")
+    if target_type in {"FeignClient", "FeignMethod", "Endpoint"}:
+        checklist.extend(
+            [
+                "校验调用方与被调方请求/响应结构兼容。",
+                "校验 HTTP 状态码与错误码约定是否一致。",
+            ]
+        )
+    if target_type in {"MQTopic", "MQConsumer"}:
+        checklist.extend(
+            [
+                "校验消息 schema 向后兼容与默认值策略。",
+                "校验消费幂等、重试与死信处理。",
+            ]
+        )
+    if target_type in {"ConfigKey"}:
+        checklist.extend(
+            [
+                "校验默认配置和环境覆盖是否一致。",
+                "校验灰度发布期间新旧配置都可工作。",
+            ]
+        )
+    deduped = list(dict.fromkeys(checklist))
+    return {
+        "target": target,
+        "found": impact.get("found", False),
+        "risk_level": impact.get("risk_level", "unknown"),
+        "target_type": target_type,
+        "checklist": deduped,
+        "required_rules": impact.get("required_rules", []),
+    }
+
+
 def memory_impact(workspace_file: str | Path, target: str, direction: str = "upstream", max_depth: int = 3) -> Dict[str, Any]:
     """Evidence-based impact analysis.
 
@@ -796,6 +1003,54 @@ def _best_match(matches: List[Dict[str, Any]], query: str = "") -> Dict[str, Any
         return (exact, priority.get(item.get("type"), 10), len(item.get("id", "")))
 
     return sorted(matches, key=key)[0]
+
+
+def _event_payload(event: Dict[str, Any]) -> Dict[str, Any]:
+    payload = event.get("payload", {})
+    return payload if isinstance(payload, dict) else {}
+
+
+def _suggest_risk_points(summary: Dict[str, Any], events: List[Dict[str, Any]]) -> List[str]:
+    text = json.dumps(summary, ensure_ascii=False).lower()
+    for event in events:
+        text += " " + json.dumps(_event_payload(event), ensure_ascii=False).lower()
+    points: List[str] = []
+    if any(token in text for token in ["feign", "endpoint", "controller"]):
+        points.append("Feign/API 契约兼容性")
+    if any(token in text for token in ["kafka", "rocketmq", "topic", "consumer"]):
+        points.append("MQ 消息兼容与消费幂等")
+    if any(token in text for token in ["config", "bootstrap", "application.yml", "nacos"]):
+        points.append("配置键变更与环境一致性")
+    if any(token in text for token in ["dto", "field", "request", "response"]):
+        points.append("DTO 字段变更兼容性")
+    if not points:
+        points.append("跨服务影响面复核")
+    return points
+
+
+def _filter_call_edges(edges: List[Dict[str, Any]], direction: str) -> List[Dict[str, Any]]:
+    preferred = {
+        "CALLS_METHOD",
+        "CALLS_SERVICE",
+        "IMPLEMENTS_FEIGN",
+        "HANDLES_ENDPOINT",
+        "CONSUMES_TOPIC",
+        "READS_FIELD",
+        "READS_CONFIG",
+        "INJECTS_BEAN",
+        "IMPORTS",
+    }
+    filtered = [item for item in edges if item.get("type") in preferred]
+    filtered.sort(
+        key=lambda item: (
+            -float(item.get("confidence", 0.0)),
+            int(item.get("depth", 99)),
+            item.get("type", ""),
+        )
+    )
+    if direction == "upstream":
+        return filtered
+    return filtered
 
 
 def _rrf(rank: int, k: int = 60) -> float:
