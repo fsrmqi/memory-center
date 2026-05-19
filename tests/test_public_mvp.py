@@ -9,6 +9,7 @@ from typer.testing import CliRunner
 
 from memory_center.cli.main import app
 from memory_center.core.artifacts import (
+    ARTIFACT_WRITE_AUDIT_FILE,
     append_change_log,
     append_task_change_log,
     archive_task_space,
@@ -244,6 +245,7 @@ def test_workspace_artifacts_flow(tmp_path: Path):
     update = update_artifact(workspace, "context", "# Context\n\n共享上下文")
     assert update["updated"] is True
     assert update["write_mode"] in {"append_guarded", "append_full_document", "initial_write"}
+    assert "artifact-write-audit.jsonl" in update["audit_ref"]
     artifact = get_artifact(workspace, "context")
     assert "共享上下文" in artifact["content"]
     assert "Fill this artifact collaboratively." in artifact["content"]
@@ -283,6 +285,7 @@ def test_workspace_artifacts_flow(tmp_path: Path):
     updated_task = update_task_artifact(workspace, task_id, "plan", "# Plan\n\n先做影响分析")
     assert updated_task["updated"] is True
     assert updated_task["write_mode"] in {"append_guarded", "append_full_document", "initial_write"}
+    assert "artifact-write-audit.jsonl" in updated_task["audit_ref"]
     task_plan = get_task_artifact(workspace, task_id, "plan")
     assert "Title: 修复 Feign DTO 兼容" in task_plan["content"]
     assert "先做影响分析" in task_plan["content"]
@@ -950,6 +953,12 @@ def test_append_only_artifact_guards_against_overwrite(tmp_path: Path):
     assert task_update["write_mode"] == "append_guarded"
     assert original_task_plan in guarded_task_plan
     assert "模型想覆盖任务计划" in guarded_task_plan
+
+    store = WorkspaceStore(workspace)
+    audit_rows = store.read_jsonl(ARTIFACT_WRITE_AUDIT_FILE, limit=20)
+    assert audit_rows
+    assert any(row["scope"] == "workspace" and row["write_mode"] == "append_guarded" for row in audit_rows)
+    assert any(row["scope"] == "task_space" and row["write_mode"] == "append_guarded" for row in audit_rows)
 
 
 def test_sniff_auto_sync_mode_strategies():

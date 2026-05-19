@@ -114,6 +114,10 @@ For core task-memory artifacts such as `context.md`, `requirement.md`, `design.m
 
 对于 `context.md`、`requirement.md`、`design.md`、`plan.md`、`test-plan.md`、`change-log.md` 以及任务空间里的 `current-summary.md` 这类核心记忆工件，记忆中心现在默认强制“只能尾部追加，不能整篇覆盖”。
 
+Each protected write also records `write_mode` and an `audit_ref` into `memory/artifact-write-audit.jsonl`, so you can later inspect whether a model attempted a full overwrite or was downgraded to guarded append.
+
+每次受保护的工件写入还会把 `write_mode` 和 `audit_ref` 记录到 `memory/artifact-write-audit.jsonl`，这样后续可以追查模型到底是正常追加，还是曾经试图整篇覆盖后被降级成受保护追加。
+
 Detailed local setup and multi-project workflow / 详细本地初始化与多项目使用流程：
 
 - [docs/LOCAL_USAGE_GUIDE.md](./docs/LOCAL_USAGE_GUIDE.md)

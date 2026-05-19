@@ -707,6 +707,7 @@ artifacts/memory-blocks/
 - 对 `context / requirement / design / plan / test_plan / change_log / current_summary` 这类核心记忆工件，`update` 路径默认启用 append-only 保护。
 - 如果新内容不是“在现有内容基础上扩展”的完整文档，系统会自动转成尾部追加，而不是覆盖原文。
 - 返回里的 `write_mode` 会标识本次实际采用的是 `initial_write / append_full_document / append_guarded / deduplicated_noop / replace`。
+- 同时会返回 `audit_ref`，指向 `memory/artifact-write-audit.jsonl` 中对应的审计记录。
 
 #### `workspace_task_status_tool`
 

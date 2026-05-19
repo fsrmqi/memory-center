@@ -44,6 +44,7 @@ TASKS_DIR = "tasks"
 ARCHIVE_DIR = "archive/tasks"
 TASK_STATUSES = {"draft", "active", "blocked", "done", "archived"}
 DEFAULT_RESOLVE_SCORE_THRESHOLD = 3
+ARTIFACT_WRITE_AUDIT_FILE = "artifact-write-audit.jsonl"
 
 
 def ensure_default_artifacts(workspace_file: str | Path) -> List[Dict[str, str]]:
@@ -128,6 +129,15 @@ def update_artifact(workspace_file: str | Path, name: str, content: str) -> Dict
     existing = store.read_artifact(filename, "")
     next_content, mode = _merge_append_only_artifact(existing, content, key)
     path = store.write_artifact(filename, next_content)
+    audit = _record_artifact_write_audit(
+        store,
+        scope="workspace",
+        artifact_name=key,
+        file_name=filename,
+        write_mode=mode,
+        before_bytes=len(existing.encode("utf-8")),
+        after_bytes=len(next_content.encode("utf-8")),
+    )
     return {
         "workspace": config.workspace,
         "updated": True,
@@ -136,6 +146,7 @@ def update_artifact(workspace_file: str | Path, name: str, content: str) -> Dict
         "path": str(path),
         "bytes": len(next_content.encode("utf-8")),
         "write_mode": mode,
+        "audit_ref": audit,
     }
 
 
@@ -434,6 +445,17 @@ def update_task_artifact(workspace_file: str | Path, task_id: str, name: str, co
     with FileLock(str(store.lock_file)):
         path.write_text(next_content, encoding="utf-8")
     _touch_task_meta(store, task_dir, meta, source=source)
+    audit = _record_artifact_write_audit(
+        store,
+        scope="task_space",
+        artifact_name=key,
+        file_name=filename,
+        write_mode=mode,
+        before_bytes=len(existing.encode("utf-8")),
+        after_bytes=len(next_content.encode("utf-8")),
+        task_id=meta["task_id"],
+        source=source,
+    )
     return {
         "workspace": config.workspace,
         "updated": True,
@@ -443,6 +465,7 @@ def update_task_artifact(workspace_file: str | Path, task_id: str, name: str, co
         "file": filename,
         "path": str(path),
         "write_mode": mode,
+        "audit_ref": audit,
     }
 
 
@@ -573,6 +596,32 @@ def _merge_append_only_artifact(existing: str, incoming: str, artifact_key: str)
         return existing, "deduplicated_noop"
     separator = "\n\n" if existing.strip() and not existing.endswith("\n\n") else ""
     return existing.rstrip() + separator + addition + ("\n" if not addition.endswith("\n") else ""), "append_guarded"
+
+
+def _record_artifact_write_audit(
+    store: WorkspaceStore,
+    scope: str,
+    artifact_name: str,
+    file_name: str,
+    write_mode: str,
+    before_bytes: int,
+    after_bytes: int,
+    task_id: str = "",
+    source: str = "",
+) -> str:
+    item = {
+        "scope": scope,
+        "artifact_name": artifact_name,
+        "file_name": file_name,
+        "task_id": task_id,
+        "source": source,
+        "write_mode": write_mode,
+        "before_bytes": before_bytes,
+        "after_bytes": after_bytes,
+    }
+    store.append_jsonl(ARTIFACT_WRITE_AUDIT_FILE, item)
+    created_at = item.get("created_at", "")
+    return f"memory/{ARTIFACT_WRITE_AUDIT_FILE}#{created_at}" if created_at else f"memory/{ARTIFACT_WRITE_AUDIT_FILE}"
 
 
 def _default_artifact_content(workspace_name: str, artifact_name: str) -> str:
