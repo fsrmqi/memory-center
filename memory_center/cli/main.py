@@ -293,9 +293,31 @@ def record_case_cmd(
     flow: str = typer.Option(""),
     risk_point: Optional[List[str]] = typer.Option(None),
     verified_by: Optional[List[str]] = typer.Option(None),
+    source_session_id: str = typer.Option(""),
+    source_task_id: str = typer.Option(""),
+    valid_from: str = typer.Option(""),
+    valid_to: str = typer.Option(""),
+    superseded_by: str = typer.Option(""),
+    current_truth: bool = typer.Option(True),
 ):
     """Record a validated task into workspace historical memory."""
-    print(workspace_record_case(workspace, task, project, file, flow, risk_point, verified_by))
+    print(
+        workspace_record_case(
+            workspace,
+            task,
+            project,
+            file,
+            flow,
+            risk_point,
+            verified_by,
+            source_session_id=source_session_id,
+            source_task_id=source_task_id,
+            valid_from=valid_from,
+            valid_to=valid_to,
+            superseded_by=superseded_by,
+            current_truth=current_truth,
+        )
+    )
 
 
 @app.command("start-session")

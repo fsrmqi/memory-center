@@ -21,8 +21,23 @@ DEFAULT_ARTIFACTS = {
     "test_plan": "test-plan.md",
     "change_log": "change-log.md",
 }
+CORE_MEMORY_BLOCKS = {
+    "workspace_profile": "memory-blocks/workspace-profile.md",
+    "team_rules": "memory-blocks/team-rules.md",
+    "architecture_invariants": "memory-blocks/architecture-invariants.md",
+    "active_migration_policy": "memory-blocks/active-migration-policy.md",
+}
 TASK_ONLY_ARTIFACTS = {
     "current_summary": "current-summary.md",
+}
+APPEND_ONLY_ARTIFACT_KEYS = {
+    "context",
+    "requirement",
+    "design",
+    "plan",
+    "test_plan",
+    "change_log",
+    "current_summary",
 }
 
 TASKS_DIR = "tasks"
@@ -39,6 +54,12 @@ def ensure_default_artifacts(workspace_file: str | Path) -> List[Dict[str, str]]
         if store.artifact_exists(filename):
             continue
         content = _default_artifact_content(config.workspace, key)
+        store.write_artifact(filename, content)
+        created.append({"name": key, "file": filename})
+    for key, filename in CORE_MEMORY_BLOCKS.items():
+        if store.artifact_exists(filename):
+            continue
+        content = _default_core_memory_block_content(config.workspace, key)
         store.write_artifact(filename, content)
         created.append({"name": key, "file": filename})
     return created
@@ -62,7 +83,21 @@ def list_artifacts(workspace_file: str | Path) -> Dict[str, object]:
                 "preview": content.splitlines()[:3],
             }
         )
-    return {"workspace": config.workspace, "artifacts": items}
+    blocks = []
+    for key, filename in CORE_MEMORY_BLOCKS.items():
+        path = store.artifacts_dir / filename
+        content = store.read_artifact(filename, "")
+        blocks.append(
+            {
+                "name": key,
+                "file": filename,
+                "path": str(path),
+                "exists": path.exists(),
+                "bytes": len(content.encode("utf-8")),
+                "preview": content.splitlines()[:3],
+            }
+        )
+    return {"workspace": config.workspace, "artifacts": items, "core_memory_blocks": blocks}
 
 
 def get_artifact(workspace_file: str | Path, name: str) -> Dict[str, object]:
@@ -90,14 +125,17 @@ def update_artifact(workspace_file: str | Path, name: str, content: str) -> Dict
     store = WorkspaceStore(workspace_file)
     ensure_default_artifacts(workspace_file)
     key, filename = _resolve_artifact_name(name)
-    path = store.write_artifact(filename, content)
+    existing = store.read_artifact(filename, "")
+    next_content, mode = _merge_append_only_artifact(existing, content, key)
+    path = store.write_artifact(filename, next_content)
     return {
         "workspace": config.workspace,
         "updated": True,
         "name": key,
         "file": filename,
         "path": str(path),
-        "bytes": len(content.encode("utf-8")),
+        "bytes": len(next_content.encode("utf-8")),
+        "write_mode": mode,
     }
 
 
@@ -146,7 +184,7 @@ def artifact_context(workspace_file: str | Path, intent: str, limit: int = 6) ->
     ensure_default_artifacts(workspace_file)
     keywords = _tokenize_text(intent)
     snippets = []
-    for artifact_name in list(DEFAULT_ARTIFACTS.values()) + ["change-log.archive.md"]:
+    for artifact_name in list(DEFAULT_ARTIFACTS.values()) + list(CORE_MEMORY_BLOCKS.values()) + ["change-log.archive.md"]:
         if not store.artifact_exists(artifact_name):
             continue
         content = store.read_artifact(artifact_name, "")
@@ -391,8 +429,10 @@ def update_task_artifact(workspace_file: str | Path, task_id: str, name: str, co
     task_dir, meta = _resolve_task_dir(store, task_id)
     key, filename = _resolve_artifact_name(name, include_task_only=True)
     path = task_dir / filename
+    existing = path.read_text(encoding="utf-8") if path.exists() else ""
+    next_content, mode = _merge_append_only_artifact(existing, content, key)
     with FileLock(str(store.lock_file)):
-        path.write_text(content, encoding="utf-8")
+        path.write_text(next_content, encoding="utf-8")
     _touch_task_meta(store, task_dir, meta, source=source)
     return {
         "workspace": config.workspace,
@@ -402,6 +442,7 @@ def update_task_artifact(workspace_file: str | Path, task_id: str, name: str, co
         "name": key,
         "file": filename,
         "path": str(path),
+        "write_mode": mode,
     }
 
 
@@ -513,7 +554,25 @@ def _resolve_artifact_name(name: str, include_task_only: bool = False) -> tuple[
 
 
 def _artifact_mapping(include_task_only: bool = False) -> Dict[str, str]:
-    return {**DEFAULT_ARTIFACTS, **(TASK_ONLY_ARTIFACTS if include_task_only else {})}
+    if include_task_only:
+        return {**DEFAULT_ARTIFACTS, **TASK_ONLY_ARTIFACTS}
+    return {**DEFAULT_ARTIFACTS, **CORE_MEMORY_BLOCKS}
+
+
+def _merge_append_only_artifact(existing: str, incoming: str, artifact_key: str) -> tuple[str, str]:
+    if artifact_key not in APPEND_ONLY_ARTIFACT_KEYS:
+        return incoming, "replace"
+    if not existing.strip():
+        return incoming, "initial_write"
+    if incoming.startswith(existing):
+        return incoming, "append_full_document"
+    addition = incoming.strip()
+    if not addition:
+        return existing, "noop"
+    if addition in existing:
+        return existing, "deduplicated_noop"
+    separator = "\n\n" if existing.strip() and not existing.endswith("\n\n") else ""
+    return existing.rstrip() + separator + addition + ("\n" if not addition.endswith("\n") else ""), "append_guarded"
 
 
 def _default_artifact_content(workspace_name: str, artifact_name: str) -> str:
@@ -540,6 +599,45 @@ def _default_artifact_content(workspace_name: str, artifact_name: str) -> str:
 def _default_task_artifact_content(workspace_name: str, task_title: str, artifact_name: str) -> str:
     content = _default_artifact_content(workspace_name, artifact_name)
     return content + f"\n## Task\n\n- Title: {task_title}\n"
+
+
+def _default_core_memory_block_content(workspace_name: str, block_name: str) -> str:
+    title_map = {
+        "workspace_profile": "Workspace Profile / 工作区画像",
+        "team_rules": "Team Rules / 团队规则块",
+        "architecture_invariants": "Architecture Invariants / 架构不变量",
+        "active_migration_policy": "Active Migration Policy / 当前迁移策略",
+    }
+    content_map = {
+        "workspace_profile": [
+            "- Fill the dominant business domains and critical systems in this workspace.",
+            "- 补充这个 workspace 的核心业务域、关键系统与主要风险风格。",
+        ],
+        "team_rules": [
+            "- Keep stable cross-task rules here instead of burying them in one case.",
+            "- 把跨任务稳定生效的团队规则沉淀在这里。",
+        ],
+        "architecture_invariants": [
+            "- Record truths that should remain valid across refactors and migrations.",
+            "- 记录跨重构、跨迁移都应保持成立的架构事实。",
+        ],
+        "active_migration_policy": [
+            "- Record temporary but currently active compatibility / migration policy.",
+            "- 记录当前仍在生效的兼容期、迁移期、灰度期策略。",
+        ],
+    }
+    body = "\n".join(content_map.get(block_name, ["- Fill this memory block collaboratively."]))
+    return (
+        f"# {title_map.get(block_name, block_name)}\n\n"
+        f"- Workspace: {workspace_name}\n"
+        "- Memory layer: L3_workspace_profile\n"
+        "- Last updated: TBD\n\n"
+        "## Notes\n\n"
+        "- Core memory blocks should stay stable and reusable.\n"
+        "- 核心记忆块适合沉淀稳定、长期有效、跨任务可复用的信息。\n\n"
+        "## Content\n\n"
+        f"{body}\n"
+    )
 
 
 def _slugify_task_title(title: str) -> str:

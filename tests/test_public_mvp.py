@@ -87,6 +87,7 @@ def test_demo_workspace_indexes_spring_cloud_patterns(tmp_path: Path):
     assert "workspace_sync_case_artifacts" in "\n".join(sniffed["next_steps"])
     assert "workspace_end_session" in sniffed["symbolic_context"]["flow_mermaid"]
     assert "workspace_sync_case_artifacts" in sniffed["symbolic_context"]["flow_mermaid"]
+    assert sniffed["source_refs"]
 
     traced = workspace_trace(workspace, "article-pubtime-change")
     assert traced["matched_mq"]
@@ -128,6 +129,10 @@ def test_record_case_cli_writes_history(tmp_path: Path):
             "Feign 契约兼容",
             "--verified-by",
             "unit-test",
+            "--source-session-id",
+            "session-demo-1",
+            "--source-task-id",
+            "task-demo-1",
         ],
     )
     assert result.exit_code == 0
@@ -136,6 +141,11 @@ def test_record_case_cli_writes_history(tmp_path: Path):
     assert rows
     assert rows[-1]["task"] == "验证 ArticleFeignClient 影响面"
     assert rows[-1]["risk_points"] == ["Feign 契约兼容"]
+    assert rows[-1]["memory_layer"] == "L1_case_atom"
+    assert rows[-1]["source_session_id"] == "session-demo-1"
+    assert rows[-1]["source_task_id"] == "task-demo-1"
+    assert rows[-1]["current_truth"] is True
+    assert rows[-1]["valid_from"]
 
 
 def test_cli_version_flag():
@@ -233,8 +243,10 @@ def test_workspace_artifacts_flow(tmp_path: Path):
 
     update = update_artifact(workspace, "context", "# Context\n\n共享上下文")
     assert update["updated"] is True
+    assert update["write_mode"] in {"append_guarded", "append_full_document", "initial_write"}
     artifact = get_artifact(workspace, "context")
     assert "共享上下文" in artifact["content"]
+    assert "Fill this artifact collaboratively." in artifact["content"]
 
     changed = append_change_log(workspace, "新增共享工件能力")
     assert changed["appended"] is True
@@ -270,6 +282,10 @@ def test_workspace_artifacts_flow(tmp_path: Path):
     assert "Current Summary / 当前最短上下文" in task_summary["content"]
     updated_task = update_task_artifact(workspace, task_id, "plan", "# Plan\n\n先做影响分析")
     assert updated_task["updated"] is True
+    assert updated_task["write_mode"] in {"append_guarded", "append_full_document", "initial_write"}
+    task_plan = get_task_artifact(workspace, task_id, "plan")
+    assert "Title: 修复 Feign DTO 兼容" in task_plan["content"]
+    assert "先做影响分析" in task_plan["content"]
     changed_task = append_task_change_log(workspace, task_id, "完成第一轮分析", keep_recent=5)
     assert changed_task["appended"] is True
     archived_task = archive_task_space(workspace, task_id, reason="done")
@@ -353,7 +369,10 @@ def test_artifact_sync_from_sniff_and_case(tmp_path: Path):
     summary_artifact = get_task_artifact(workspace, task["task_id"], "current_summary")
     assert "Current Task Context / 当前任务上下文" in context["content"]
     assert "Suggested Plan / 建议执行计划" in plan["content"]
+    assert "### Source Refs" in context["content"]
+    assert "### Source Refs" in plan["content"]
     assert "Risk level" in summary_artifact["content"]
+    assert "Source ref types" in summary_artifact["content"]
     task_spaces = list_task_spaces(workspace)
     task_row = next(item for item in task_spaces["active_tasks"] if item["task_id"] == task["task_id"])
     assert task_row["last_activity_source"] == "sync_sniff_artifacts"
@@ -380,8 +399,11 @@ def test_artifact_sync_from_sniff_and_case(tmp_path: Path):
     change_log = get_task_artifact(workspace, task["task_id"], "change_log")
     current_summary = get_task_artifact(workspace, task["task_id"], "current_summary")
     assert "Session Learnings / 会话沉淀" in design["content"]
+    assert "### Source Refs" in design["content"]
     assert "Session `" in change_log["content"]
+    assert "payload_ref" in design["content"]
     assert "Session:" in current_summary["content"]
+    assert "Evidence refs with payload_ref" in current_summary["content"]
     task_spaces_after = list_task_spaces(workspace)
     task_row_after = next(item for item in task_spaces_after["active_tasks"] if item["task_id"] == task["task_id"])
     assert task_row_after["last_activity_source"] == "sync_case_artifacts"
@@ -426,15 +448,21 @@ def test_session_memory_flow(tmp_path: Path):
     workspace_log_session_event(workspace, session_id, "user_prompt", {"intent": "修复 ArticleFeignClient 调用链"})
     workspace_log_session_event(workspace, session_id, "tool_call", {"tool_name": "memory_query_tool", "query": "ArticleFeignClient"})
     workspace_log_session_event(workspace, session_id, "tool_result", {"project": "task-service", "file_path": "task-service/src/main/java/com/example/task/ArticleMoveService.java"})
+    large_payload = {"tool_name": "memory_context_tool", "query": "ArticleFeignClient", "project": "task-service", "blob": "X" * 6000}
+    offloaded = workspace_log_session_event(workspace, session_id, "tool_result", large_payload)
     ended = workspace_end_session(workspace, session_id, outcome="完成 Feign 调用链定位", verified_by=["manual-check"])
 
     assert ended["ended"] is True
     assert ended["summary"]["tool_calls"] == ["memory_query_tool"]
+    assert offloaded["payload_ref"]
 
     summary = workspace_session_summary(workspace, session_id)
     assert summary["found"] is True
     assert summary["summary"]["outcome"] == "完成 Feign 调用链定位"
     assert summary["events"]
+    assert any(event.get("payload_ref") for event in summary["events"])
+    assert summary["session_overview"]["memory_layer"] == "L0_session_events"
+    assert summary["session_overview"]["payload_ref_count"] >= 1
 
     recent = workspace_recent_sessions(workspace, limit=5)
     assert recent["recent_sessions"]
@@ -449,6 +477,8 @@ def test_session_memory_flow(tmp_path: Path):
     assert draft["draft_case"]["task"]
     assert "risk_points" in draft["draft_case"]
     assert draft["draft_case"]["evidence_refs"]
+    assert draft["draft_case"]["source_session_id"] == session_id
+    assert draft["draft_case"]["source_refs"]
 
 
 def test_graph_query_context_and_impact(tmp_path):
@@ -499,6 +529,12 @@ def test_graph_query_context_and_impact(tmp_path):
     assert status["semantic_index"]["ready"] is True
     assert status["semantic_index"]["backend"] == "sparse"
     assert status["index_counts"]["semantic_docs"] > 0
+    assert "memory_layers" in status
+    assert status["memory_layers"]["L0_session_events"]["event_count"] >= 0
+    assert "core_memory_blocks" in status
+    assert status["core_memory_blocks"]["block_count"] >= 4
+    assert "memory_overview" in status
+    assert status["memory_overview"]["layer_order"][0] == "L0_session_events"
     assert "active_task_spaces" in status
     assert "current_focus_task" in status
     context = memory_context(workspace, "ArticleFeignClient")
@@ -693,6 +729,7 @@ def test_http_bridge_routes(tmp_path: Path):
 
         artifacts = json.loads(urlopen(f"{base}/workspace/artifacts").read().decode("utf-8"))
         assert artifacts["artifacts"]
+        assert artifacts["core_memory_blocks"]
         context_artifact = json.loads(urlopen(f"{base}/workspace/artifact?name=context").read().decode("utf-8"))
         assert context_artifact["name"] == "context"
         context_outline = json.loads(urlopen(f"{base}/workspace/artifact/outline?name=context").read().decode("utf-8"))
@@ -894,6 +931,25 @@ def test_write_paths_record_last_activity_source(tmp_path: Path):
     listed3 = list_task_spaces(workspace)
     task_entry3 = next(t for t in listed3["active_tasks"] if t["task_id"] == task_id)
     assert task_entry3["last_activity_source"] == "update_task_status"
+
+
+def test_append_only_artifact_guards_against_overwrite(tmp_path: Path):
+    workspace = _copy_demo_workspace(tmp_path, "append-only-guards")
+
+    original = get_artifact(workspace, "context")["content"]
+    updated = update_artifact(workspace, "context", "# Context\n\n模型想整篇覆盖")
+    guarded = get_artifact(workspace, "context")["content"]
+    assert updated["write_mode"] == "append_guarded"
+    assert original in guarded
+    assert "模型想整篇覆盖" in guarded
+
+    task = create_task_space(workspace, title="append only task")
+    original_task_plan = get_task_artifact(workspace, task["task_id"], "plan")["content"]
+    task_update = update_task_artifact(workspace, task["task_id"], "plan", "# Plan\n\n模型想覆盖任务计划")
+    guarded_task_plan = get_task_artifact(workspace, task["task_id"], "plan")["content"]
+    assert task_update["write_mode"] == "append_guarded"
+    assert original_task_plan in guarded_task_plan
+    assert "模型想覆盖任务计划" in guarded_task_plan
 
 
 def test_sniff_auto_sync_mode_strategies():

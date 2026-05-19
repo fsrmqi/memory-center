@@ -272,7 +272,7 @@ graph.counts()
 |------|------|--------|------|
 | `intent` | `string` | **必填** | 任务描述文本 |
 | `limit` | `int` | `12` | 候选文件最大数量 |
-| `auto_sync_mode` | `string` | `"balanced"` | 自动同步工件模式（`off` / `balanced` / `full`） |
+| `auto_sync_mode` | `string` | `"balanced"` | 自动同步工件模式（`strict` / `balanced` / `aggressive`） |
 
 **返回字段：**
 
@@ -288,6 +288,7 @@ related_mq         : list[dict]   相关 MQ 端点
 related_rules      : list[dict]   匹配到的架构规则（含 score）
 historical_cases   : list[dict]   匹配到的历史经验案例
 task_candidates    : list[dict]   匹配到的任务空间候选
+source_refs        : list[dict]   结构化来源引用（file / feign / api / mq / case）
 resolved_task      : dict         自动解析的任务空间信息
 auto_sync_recommendation : dict   工件自动同步建议
 symbolic_context   : dict         符号化上下文摘要
@@ -484,6 +485,12 @@ next_steps         : list[str]    推荐的下一步操作
 | `flow` | `string` | `""` | 数据流描述 |
 | `risk_points` | `list[str]` | `null` | 风险点 |
 | `verified_by` | `list[str]` | `null` | 验证方式（测试名、命令等） |
+| `source_session_id` | `string` | `""` | 可选来源 Session ID |
+| `source_task_id` | `string` | `""` | 可选来源任务空间 ID |
+| `valid_from` | `string` | `当前时间` | 该经验开始生效的时间 |
+| `valid_to` | `string` | `""` | 该经验失效时间（空表示未设置） |
+| `superseded_by` | `string` | `""` | 被哪条新经验替代 |
+| `current_truth` | `bool` | `true` | 当前是否仍视为有效事实 |
 
 **存储位置：** `memory/cross-service-task-memory.jsonl`
 
@@ -496,6 +503,12 @@ next_steps         : list[str]    推荐的下一步操作
   "flow": "Controller → Service → Repository(新表写入) → 标记旧记录",
   "risk_points": ["跨月分表", "MQ 重复消费"],
   "verified_by": ["test_migration_cross_month()", "手动验证 dev 环境"],
+  "memory_layer": "L1_case_atom",
+  "source_session_id": "session-abc123",
+  "source_task_id": "dto-migration",
+  "source_refs": [
+    {"type": "session_event", "tool_name": "memory_impact_tool", "target": "MoveArticleRequest"}
+  ],
   "created_at": "2025-05-10T10:30:00+00:00"
 }
 ```
@@ -515,7 +528,7 @@ next_steps         : list[str]    推荐的下一步操作
 |------|------|--------|------|
 | `session_id` | `string` | **必填** | Session ID |
 | `event_type` | `string` | **必填** | 事件类型（`prompt` / `tool_call` / `tool_result` / `note`） |
-| `payload` | `dict` | `null` | 事件负载 |
+| `payload` | `dict` | `null` | 事件负载；体积过大时会自动外置到 `memory/refs/` 并返回 `payload_ref` |
 
 #### `workspace_end_session_tool`
 
@@ -537,6 +550,17 @@ next_steps         : list[str]    推荐的下一步操作
 |------|------|--------|------|
 | `session_id` | `string` | **必填** | Session ID |
 
+**返回补充字段：**
+
+```text
+session_overview.memory_layer              = L0_session_events
+session_overview.event_count               = 原始事件数
+session_overview.event_type_counts         = 各事件类型计数
+session_overview.payload_ref_count         = 外置 payload 数量
+session_overview.source_ref_like_event_count = 含 query/target/file/project 等来源线索的事件数
+session_overview.payload_refs              = 前若干个外置 payload_ref
+```
+
 #### `workspace_resume_context_tool`
 
 **描述：** 根据新任务意图，从历史 Session、案例和查询入口中混合召回相关上下文。
@@ -554,6 +578,14 @@ next_steps         : list[str]    推荐的下一步操作
 |------|------|--------|------|
 | `session_id` | `string` | **必填** | 已结束的 Session ID |
 
+**返回补充字段：**
+
+- `draft_case.memory_layer = L1_case_atom`
+- `draft_case.source_session_id`
+- `draft_case.source_task_id`
+- `draft_case.source_refs`
+- `draft_case.evidence_refs`
+
 #### `workspace_sync_case_artifacts_tool`
 
 **描述：** 将推荐的 case 同步到共享 design 和 change-log 工件。
@@ -566,6 +598,23 @@ next_steps         : list[str]    推荐的下一步操作
 | `auto_sync_mode` | `string` | `"balanced"` | 同步模式 |
 
 ### 3.9 共享工件管理
+
+除常规共享工件外，系统还会自动生成一组 L3 核心记忆块：
+
+```text
+artifacts/memory-blocks/
+  workspace-profile.md
+  team-rules.md
+  architecture-invariants.md
+  active-migration-policy.md
+```
+
+它们适合沉淀：
+
+- 跨任务稳定有效的团队规则
+- 长期成立的架构不变量
+- 当前仍在生效的迁移/兼容策略
+- 对整个 workspace 的高层画像
 
 #### `workspace_artifact_list_tool`
 
@@ -599,7 +648,7 @@ next_steps         : list[str]    推荐的下一步操作
 | 参数 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
 | `name` | `string` | **必填** | 工件名 |
-| `content` | `string` | **必填** | 新内容（完整替换） |
+| `content` | `string` | **必填** | 新内容（对核心记忆工件默认按尾部追加保护处理，不允许模型整篇覆盖） |
 
 #### `workspace_append_change_log_tool`
 
@@ -653,6 +702,12 @@ next_steps         : list[str]    推荐的下一步操作
 | `task_id` | `string` | **必填** | 任务空间 ID |
 | `name` | `string` | **必填** | 工件名 |
 
+说明：
+
+- 对 `context / requirement / design / plan / test_plan / change_log / current_summary` 这类核心记忆工件，`update` 路径默认启用 append-only 保护。
+- 如果新内容不是“在现有内容基础上扩展”的完整文档，系统会自动转成尾部追加，而不是覆盖原文。
+- 返回里的 `write_mode` 会标识本次实际采用的是 `initial_write / append_full_document / append_guarded / deduplicated_noop / replace`。
+
 #### `workspace_task_status_tool`
 
 | 参数 | 类型 | 默认值 | 说明 |
@@ -698,7 +753,20 @@ next_steps         : list[str]    推荐的下一步操作
 
 #### `workspace_status_tool`
 
-无参数。返回工作区完整状态，包含索引统计、语义索引状态、活跃任务空间、当前焦点任务、拓扑。
+无参数。返回工作区完整状态，包含索引统计、语义索引状态、分层记忆统计、活跃任务空间、当前焦点任务、拓扑。
+
+**返回补充字段：**
+
+```text
+memory_layers.L0_session_events   = 原始会话事件层
+memory_layers.L1_case_atoms       = 经验原子层
+memory_layers.L2_task_spaces      = 任务空间层
+memory_layers.L3_workspace_profile = 工作区画像层
+
+memory_overview.layer_order       = 固定层顺序
+memory_overview.layer_counts      = 各层统计值
+memory_overview.highlights        = 面向 CLI/MCP/HTTP 的概览摘要
+```
 
 #### `group_query_tool`
 
@@ -992,15 +1060,15 @@ change-log.archive.md    ← 更早的条目追加到这里
 
 ### 5.4 工件自动同步
 
-`sniff` 结果可通过 `workspace_sync_sniff_artifacts_tool` 自动同步到 `context.md` 和 `plan.md`，减少 Agent 手动写入。
+`sniff` 结果可通过 `workspace_sync_sniff_artifacts_tool` 同步到 `context.md` 和 `plan.md`，减少 Agent 手动写入。
 
 `auto_sync_mode` 控制同步行为：
 
 | 模式 | 行为 |
 |------|------|
-| `off` | 不自动同步 |
-| `balanced` | 高风险时才同步 |
-| `full` | 总是同步 |
+| `strict` | 高阈值匹配，建议人工确认后同步 |
+| `balanced` | 默认策略，匹配分数与风险等级共同决定建议 |
+| `aggressive` | 低阈值匹配，更积极地自动命中任务空间 |
 
 ---
 
@@ -1318,8 +1386,9 @@ memory-center serve-http \
    → （Agent 编码）
 
 5. [经验沉淀]
-   → workspace_record_case_tool(...)       # 记录经验
    → workspace_end_session_tool(...)       # 结束 Session
+   → workspace_sync_case_artifacts_tool(...) # 同步 design/change-log/current-summary
+   → workspace_record_case_tool(...)       # 记录长期经验
 ```
 
 ### 11.3 Agent 指令文件
@@ -1403,8 +1472,10 @@ intent 文本       →  orchestrator.sniff     →  （不存储，返回结果
                     →  orchestrator.query
 
 task 案例         →  orchestrator.record    →  cross-service-task-memory.jsonl
+                                              （含 source_session_id / source_task_id / source_refs）
 session 事件      →  orchestrator.session   →  session-events.jsonl
                                                     session-summaries.jsonl
+                                                    memory/refs/sessions/*
 
 工件内容          →  artifacts.py           →  artifacts/*.md
 任务空间          →  artifacts.py           →  artifacts/tasks/{id}/*.md

@@ -23,11 +23,12 @@ class WorkspaceStore:
         self.index_dir = self.base_dir / "index"
         self.rules_dir = self.base_dir / "rules"
         self.memory_dir = self.base_dir / "memory"
+        self.refs_dir = self.memory_dir / "refs"
         self.artifacts_dir = self.base_dir / "artifacts"
         self.instructions_dir = self.base_dir / "instructions"
         self.graph_dir = self.base_dir / "graph"
         self.lock_file = self.base_dir / "store.lock"
-        for p in [self.index_dir, self.rules_dir, self.memory_dir, self.artifacts_dir, self.instructions_dir, self.graph_dir]:
+        for p in [self.index_dir, self.rules_dir, self.memory_dir, self.refs_dir, self.artifacts_dir, self.instructions_dir, self.graph_dir]:
             p.mkdir(parents=True, exist_ok=True)
 
     def write_json(self, name: str, data: Any) -> None:
@@ -71,8 +72,16 @@ class WorkspaceStore:
         matched = [row for row in rows if predicate(row)]
         return matched[-limit:]
 
+    def write_memory_ref_json(self, name: str, data: Any) -> str:
+        path = _safe_path(self.memory_dir, name)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with FileLock(str(self.lock_file)):
+            path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        return str(path.relative_to(self.base_dir))
+
     def write_artifact(self, name: str, content: str) -> Path:
         path = _safe_path(self.artifacts_dir, name)
+        path.parent.mkdir(parents=True, exist_ok=True)
         with FileLock(str(self.lock_file)):
             path.write_text(content, encoding="utf-8")
         return path
@@ -88,6 +97,7 @@ class WorkspaceStore:
 
     def append_artifact(self, name: str, content: str) -> Path:
         path = _safe_path(self.artifacts_dir, name)
+        path.parent.mkdir(parents=True, exist_ok=True)
         with FileLock(str(self.lock_file)):
             with path.open("a", encoding="utf-8") as f:
                 f.write(content)

@@ -9,6 +9,7 @@ from uuid import uuid4
 from .artifacts import (
     append_change_log,
     append_task_change_log,
+    CORE_MEMORY_BLOCKS,
     create_task_space,
     get_artifact,
     get_task_artifact,
@@ -27,6 +28,7 @@ from .text_utils import base_tokenize
 
 SESSION_EVENTS_FILE = "session-events.jsonl"
 SESSION_SUMMARIES_FILE = "session-summaries.jsonl"
+EVENT_PAYLOAD_INLINE_LIMIT = 4000
 
 
 def load_context(workspace_file: str | Path):
@@ -39,6 +41,8 @@ def workspace_status(workspace_file: str | Path) -> Dict[str, Any]:
     config, store = load_context(workspace_file)
     active_tasks = _active_task_summaries(workspace_file, limit=5)
     current_focus_task = dict(active_tasks[0]) if active_tasks else None
+    memory_layers = _build_memory_layers(store, active_tasks)
+    core_memory_blocks = _build_core_memory_blocks_status(store)
     if current_focus_task:
         current_focus_task["focus_reason"] = _build_focus_reason(current_focus_task)
     return {
@@ -57,6 +61,9 @@ def workspace_status(workspace_file: str | Path) -> Dict[str, Any]:
             "semantic_docs": semantic_index_stats(workspace_file).get("doc_count", 0),
         },
         "semantic_index": semantic_index_stats(workspace_file),
+        "memory_layers": memory_layers,
+        "memory_overview": _build_memory_overview(memory_layers),
+        "core_memory_blocks": core_memory_blocks,
         "active_task_spaces": active_tasks,
         "current_focus_task": current_focus_task,
         "topology": store.read_json("service-topology.json", {}),
@@ -95,6 +102,7 @@ def workspace_sniff(
         related_texts=[item.get("task", "") for item in related_cases] + [item.get("summary", "") or item.get("intent", "") for item in recent_sessions],
     )
     auto_sync = _build_sniff_auto_sync_recommendation(task_resolution, sniff_risk_level, auto_sync_mode=auto_sync_mode)
+    source_refs = _build_sniff_source_refs(matched_files, related_feigns, related_apis, related_mq, related_cases)
 
     return {
         "workspace": config.workspace,
@@ -108,6 +116,7 @@ def workspace_sniff(
         "related_rules": rules,
         "historical_cases": related_cases,
         "task_candidates": task_resolution.get("candidates", []),
+        "source_refs": source_refs,
         "resolved_task": {
             key: task_resolution.get(key)
             for key in [
@@ -187,7 +196,22 @@ def workspace_check_rules(workspace_file: str | Path, projects: List[str] | None
     return {"projects": projects or [], "change_type": change_type, "files": files or [], "rules": rules}
 
 
-def workspace_record_case(workspace_file: str | Path, task: str, projects: List[str], files: List[str], flow: str = "", risk_points: List[str] | None = None, verified_by: List[str] | None = None) -> Dict[str, Any]:
+def workspace_record_case(
+    workspace_file: str | Path,
+    task: str,
+    projects: List[str],
+    files: List[str],
+    flow: str = "",
+    risk_points: List[str] | None = None,
+    verified_by: List[str] | None = None,
+    source_session_id: str = "",
+    source_task_id: str = "",
+    source_refs: List[Dict[str, Any]] | None = None,
+    valid_from: str = "",
+    valid_to: str = "",
+    superseded_by: str = "",
+    current_truth: bool = True,
+) -> Dict[str, Any]:
     _, store = load_context(workspace_file)
     item = {
         "task": task,
@@ -196,6 +220,14 @@ def workspace_record_case(workspace_file: str | Path, task: str, projects: List[
         "flow": flow,
         "risk_points": risk_points or [],
         "verified_by": verified_by or [],
+        "memory_layer": "L1_case_atom",
+        "source_session_id": source_session_id.strip(),
+        "source_task_id": source_task_id.strip(),
+        "source_refs": source_refs or [],
+        "valid_from": valid_from.strip() or datetime.now(timezone.utc).isoformat(),
+        "valid_to": valid_to.strip(),
+        "superseded_by": superseded_by.strip(),
+        "current_truth": bool(current_truth) and not superseded_by.strip() and not valid_to.strip(),
     }
     store.append_jsonl("cross-service-task-memory.jsonl", item)
     return {"recorded": True, "case": item}
@@ -233,11 +265,14 @@ def workspace_log_session_event(
     payload: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
     config, store = load_context(workspace_file)
+    prepared_payload, payload_ref, payload_bytes = _prepare_session_event_payload(store, session_id, event_type, payload or {})
     item = {
         "session_id": session_id,
         "workspace": config.workspace,
         "event_type": event_type,
-        "payload": payload or {},
+        "payload": prepared_payload,
+        "payload_ref": payload_ref,
+        "payload_bytes": payload_bytes,
     }
     store.append_jsonl(SESSION_EVENTS_FILE, item)
     return {
@@ -245,6 +280,8 @@ def workspace_log_session_event(
         "session_id": session_id,
         "workspace": config.workspace,
         "event_type": event_type,
+        "payload_ref": payload_ref,
+        "payload_bytes": payload_bytes,
         "created_at": item.get("created_at"),
     }
 
@@ -286,12 +323,14 @@ def workspace_session_summary(workspace_file: str | Path, session_id: str) -> Di
     config, store = load_context(workspace_file)
     summaries = store.find_jsonl(SESSION_SUMMARIES_FILE, lambda row: row.get("session_id") == session_id, limit=1)
     events = _session_events(store, session_id)
+    session_overview = _build_session_overview(events)
     return {
         "workspace": config.workspace,
         "session_id": session_id,
         "found": bool(summaries or events),
         "summary": summaries[-1] if summaries else None,
         "events": events[-50:],
+        "session_overview": session_overview,
     }
 
 
@@ -329,6 +368,10 @@ def workspace_suggest_case(workspace_file: str | Path, session_id: str) -> Dict[
         "flow": flow,
         "risk_points": risk_points,
         "verified_by": summary.get("verified_by", []),
+        "memory_layer": "L1_case_atom",
+        "source_session_id": session_id,
+        "source_task_id": "",
+        "source_refs": _build_event_source_refs(events),
         "evidence_refs": _build_case_evidence_refs(events),
     }
     return {
@@ -415,6 +458,8 @@ def workspace_sync_sniff_to_artifacts(
         "task_resolution": resolved_info,
         "updated_artifacts": ["context", "plan", "current_summary"],
         "risk_level": sniff.get("risk_level", "unknown"),
+        "source_refs": sniff.get("source_refs", []),
+        "memory_layer": "L2_task_space",
         "auto_sync_mode": auto_sync_mode,
         "auto_sync_recommendation": sniff.get("auto_sync_recommendation", {}),
     }
@@ -478,6 +523,9 @@ def workspace_sync_case_to_artifacts(
         "task": case.get("task", ""),
         "risk_level": case_risk_level,
         "risk_evidence": case_risk,
+        "source_session_id": case.get("source_session_id", session_id),
+        "source_refs": case.get("source_refs", []),
+        "memory_layer": "L2_task_space",
         "auto_sync_mode": auto_sync_mode,
         "auto_sync_recommendation": auto_sync,
     }
@@ -519,6 +567,81 @@ def _active_task_summaries(workspace_file: str | Path, limit: int = 5) -> List[D
     return rows
 
 
+def _build_memory_layers(store: WorkspaceStore, active_tasks: List[Dict[str, Any]]) -> Dict[str, Any]:
+    refs_count = sum(1 for _ in store.refs_dir.rglob("*") if _.is_file()) if store.refs_dir.exists() else 0
+    case_rows = store.read_jsonl("cross-service-task-memory.jsonl", limit=5000)
+    current_truth_cases = sum(1 for item in case_rows if item.get("current_truth", True))
+    superseded_cases = sum(1 for item in case_rows if item.get("superseded_by"))
+    return {
+        "L0_session_events": {
+            "description": "原始会话事件与外置 payload 引用",
+            "event_count": len(store.read_jsonl(SESSION_EVENTS_FILE, limit=5000)),
+            "ref_count": refs_count,
+        },
+        "L1_case_atoms": {
+            "description": "可复用任务经验原子（record-case / suggest-case）",
+            "case_count": len(case_rows),
+            "current_truth_count": current_truth_cases,
+            "superseded_count": superseded_cases,
+        },
+        "L2_task_spaces": {
+            "description": "任务空间工件（context/plan/design/change-log/current-summary）",
+            "active_task_space_count": len(active_tasks),
+        },
+        "L3_workspace_profile": {
+            "description": "工作区协议、规则、拓扑与团队约束",
+            "instruction_files": 5,
+            "rule_file_count": len(list(store.rules_dir.glob("*.yaml"))),
+        },
+    }
+
+
+def _build_memory_overview(memory_layers: Dict[str, Any]) -> Dict[str, Any]:
+    l0 = memory_layers.get("L0_session_events", {})
+    l1 = memory_layers.get("L1_case_atoms", {})
+    l2 = memory_layers.get("L2_task_spaces", {})
+    l3 = memory_layers.get("L3_workspace_profile", {})
+    return {
+        "layer_order": ["L0_session_events", "L1_case_atoms", "L2_task_spaces", "L3_workspace_profile"],
+        "layer_counts": {
+            "L0_session_events": int(l0.get("event_count", 0)),
+            "L1_case_atoms": int(l1.get("case_count", 0)),
+            "L2_task_spaces": int(l2.get("active_task_space_count", 0)),
+            "L3_workspace_profile": int(l3.get("rule_file_count", 0)),
+        },
+        "highlights": [
+            f"L0 events={int(l0.get('event_count', 0))}, refs={int(l0.get('ref_count', 0))}",
+            f"L1 cases={int(l1.get('case_count', 0))}, current_truth={int(l1.get('current_truth_count', 0))}, superseded={int(l1.get('superseded_count', 0))}",
+            f"L2 active_task_spaces={int(l2.get('active_task_space_count', 0))}",
+            f"L3 rules={int(l3.get('rule_file_count', 0))}, instructions={int(l3.get('instruction_files', 0))}",
+        ],
+    }
+
+
+def _build_core_memory_blocks_status(store: WorkspaceStore) -> Dict[str, Any]:
+    blocks = []
+    filled_count = 0
+    for key, filename in CORE_MEMORY_BLOCKS.items():
+        content = store.read_artifact(filename, "")
+        has_custom_content = "## Content" in content and "Fill" not in content.split("## Content", 1)[1]
+        if has_custom_content:
+            filled_count += 1
+        blocks.append(
+            {
+                "name": key,
+                "file": filename,
+                "exists": store.artifact_exists(filename),
+                "filled": has_custom_content,
+                "preview": content.splitlines()[:4],
+            }
+        )
+    return {
+        "block_count": len(blocks),
+        "filled_count": filled_count,
+        "blocks": blocks,
+    }
+
+
 def _build_focus_reason(task: Dict[str, Any]) -> str:
     parts = []
     status = str(task.get("status", "")).strip().lower()
@@ -534,6 +657,37 @@ def _build_focus_reason(task: Dict[str, Any]) -> str:
     if updated_at:
         parts.append(f"最近更新时间 {updated_at}")
     return "；".join(parts) if parts else "按任务状态与最近活动综合排序。"
+
+
+def _build_session_overview(events: List[Dict[str, Any]]) -> Dict[str, Any]:
+    payload_ref_count = 0
+    source_ref_like_count = 0
+    event_types: Dict[str, int] = {}
+    payload_refs: List[str] = []
+    for event in events:
+        event_type = str(event.get("event_type", "") or "")
+        if event_type:
+            event_types[event_type] = event_types.get(event_type, 0) + 1
+        payload_ref = str(event.get("payload_ref", "") or "")
+        if payload_ref:
+            payload_ref_count += 1
+            payload_refs.append(payload_ref)
+        payload = _event_payload(event)
+        if any(isinstance(payload.get(key), str) and payload.get(key) for key in ["tool_name", "query", "target", "file_path", "path", "project"]):
+            source_ref_like_count += 1
+    return {
+        "memory_layer": "L0_session_events",
+        "event_count": len(events),
+        "event_type_counts": event_types,
+        "payload_ref_count": payload_ref_count,
+        "source_ref_like_event_count": source_ref_like_count,
+        "payload_refs": payload_refs[:10],
+        "highlights": [
+            f"events={len(events)}",
+            f"payload_refs={payload_ref_count}",
+            f"source_ref_like_events={source_ref_like_count}",
+        ],
+    }
 
 
 def _build_sniff_auto_sync_recommendation(
@@ -710,7 +864,7 @@ def _build_session_summary(
     projects = set()
     notable_terms = []
     for item in events:
-        payload = item.get("payload", {}) or {}
+        payload = _event_payload(item)
         if item.get("event_type") == "tool_call":
             tool_name = payload.get("tool_name") or payload.get("name")
             if tool_name:
@@ -1387,6 +1541,55 @@ def _event_payload(event: Dict[str, Any]) -> Dict[str, Any]:
     return payload if isinstance(payload, dict) else {}
 
 
+def _prepare_session_event_payload(
+    store: WorkspaceStore,
+    session_id: str,
+    event_type: str,
+    payload: Dict[str, Any],
+) -> tuple[Dict[str, Any], str, int]:
+    safe_payload = payload if isinstance(payload, dict) else {}
+    payload_bytes = len(json.dumps(safe_payload, ensure_ascii=False).encode("utf-8"))
+    if payload_bytes <= EVENT_PAYLOAD_INLINE_LIMIT:
+        return safe_payload, "", payload_bytes
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+    ref_name = f"refs/sessions/{session_id}/{timestamp}-{event_type}.json"
+    payload_ref = store.write_memory_ref_json(ref_name, safe_payload)
+    compact = _compact_session_payload(safe_payload)
+    compact["_payload_offloaded"] = True
+    compact["_payload_ref"] = payload_ref
+    compact["_payload_keys"] = sorted(safe_payload.keys())[:20]
+    compact["_payload_bytes"] = payload_bytes
+    return compact, payload_ref, payload_bytes
+
+
+def _compact_session_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+    compact: Dict[str, Any] = {}
+    preferred_keys = [
+        "tool_name",
+        "query",
+        "target",
+        "name",
+        "project",
+        "file",
+        "file_path",
+        "path",
+        "intent",
+        "outcome",
+        "text",
+        "summary",
+        "note",
+    ]
+    for key in preferred_keys:
+        value = payload.get(key)
+        if isinstance(value, str) and value:
+            compact[key] = value[:300]
+        elif isinstance(value, (int, float, bool)):
+            compact[key] = value
+    if "verified_by" in payload and isinstance(payload.get("verified_by"), list):
+        compact["verified_by"] = payload.get("verified_by", [])[:10]
+    return compact
+
+
 def _build_case_evidence_refs(events: List[Dict[str, Any]], limit: int = 12) -> List[Dict[str, Any]]:
     refs: List[Dict[str, Any]] = []
     for idx, event in enumerate(events[-limit:], start=max(len(events) - limit, 0) + 1):
@@ -1396,11 +1599,63 @@ def _build_case_evidence_refs(events: List[Dict[str, Any]], limit: int = 12) -> 
             "event_type": event.get("event_type", ""),
             "created_at": event.get("created_at", ""),
         }
+        payload_ref = event.get("payload_ref", "")
+        if isinstance(payload_ref, str) and payload_ref:
+            ref["payload_ref"] = payload_ref
         for key in ["tool_name", "query", "target", "name", "project", "file_path", "path"]:
             value = payload.get(key)
             if isinstance(value, str) and value:
                 ref[key] = value
         refs.append(ref)
+    return refs
+
+
+def _build_event_source_refs(events: List[Dict[str, Any]], limit: int = 20) -> List[Dict[str, Any]]:
+    refs: List[Dict[str, Any]] = []
+    for event in events[-limit:]:
+        payload = _event_payload(event)
+        event_type = str(event.get("event_type", "") or "")
+        payload_ref = str(event.get("payload_ref", "") or "")
+        entry = {
+            "type": "session_event",
+            "event_type": event_type,
+            "created_at": event.get("created_at", ""),
+        }
+        for key in ["tool_name", "query", "target", "project", "file_path", "path"]:
+            value = payload.get(key)
+            if isinstance(value, str) and value:
+                entry[key] = value
+        if payload_ref:
+            entry["payload_ref"] = payload_ref
+        if len(entry) > 3:
+            refs.append(entry)
+    return refs
+
+
+def _build_sniff_source_refs(
+    matched_files: List[Dict[str, Any]],
+    related_feigns: List[Dict[str, Any]],
+    related_apis: List[Dict[str, Any]],
+    related_mq: List[Dict[str, Any]],
+    related_cases: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    refs: List[Dict[str, Any]] = []
+    for item in matched_files[:6]:
+        path = item.get("path", "")
+        if path:
+            refs.append({"type": "file", "path": path, "project": item.get("project", ""), "score": item.get("score", 0)})
+    for item in related_feigns[:4]:
+        if item.get("interface"):
+            refs.append({"type": "feign", "name": item.get("interface", ""), "project": item.get("project", ""), "path": item.get("file", "")})
+    for item in related_apis[:4]:
+        if item.get("path"):
+            refs.append({"type": "api", "name": f"{item.get('http_method', '')} {item.get('path', '')}".strip(), "project": item.get("project", ""), "path": item.get("file", "")})
+    for item in related_mq[:4]:
+        if item.get("topic"):
+            refs.append({"type": "mq", "name": item.get("topic", ""), "project": item.get("project", ""), "path": item.get("file", "")})
+    for item in related_cases[-3:]:
+        if item.get("task"):
+            refs.append({"type": "case", "task": item.get("task", ""), "created_at": item.get("created_at", "")})
     return refs
 
 
@@ -1424,6 +1679,15 @@ def _render_sniff_context_markdown(sniff: Dict[str, Any]) -> str:
     lines.append("")
     lines.append("### Candidate Files")
     lines.extend([f"- {item.get('path', '')}" for item in sniff.get("candidate_files", [])[:8]] or ["- None"])
+    lines.append("")
+    lines.append("### Source Refs")
+    lines.extend(
+        [
+            f"- [{item.get('type', '')}] {item.get('name', '') or item.get('task', '') or item.get('path', '')}"
+            for item in sniff.get("source_refs", [])[:10]
+        ]
+        or ["- None"]
+    )
     return "\n".join(lines)
 
 
@@ -1434,6 +1698,15 @@ def _render_sniff_plan_markdown(sniff: Dict[str, Any]) -> str:
         "### Next Steps",
     ]
     lines.extend([f"- {item}" for item in sniff.get("next_steps", [])] or ["- None"])
+    lines.append("")
+    lines.append("### Source Refs")
+    lines.extend(
+        [
+            f"- [{item.get('type', '')}] {item.get('name', '') or item.get('task', '') or item.get('path', '')}"
+            for item in sniff.get("source_refs", [])[:10]
+        ]
+        or ["- None"]
+    )
     return "\n".join(lines)
 
 
@@ -1442,15 +1715,27 @@ def _render_case_markdown(case: Dict[str, Any]) -> str:
         f"- Task: {case.get('task', '')}",
         f"- Projects: {', '.join(case.get('projects', []))}",
         f"- Flow: {case.get('flow', '')}",
+        f"- Memory layer: {case.get('memory_layer', 'L1_case_atom')}",
+        f"- Source session: {case.get('source_session_id', '') or 'None'}",
         "",
         "### Risk Points",
     ]
     lines.extend([f"- {item}" for item in case.get("risk_points", [])] or ["- None"])
     lines.append("")
+    lines.append("### Source Refs")
+    lines.extend(
+        [
+            f"- [{item.get('type', '')}] {item.get('tool_name', '') or item.get('query', '') or item.get('target', '') or item.get('file_path', '') or item.get('payload_ref', '')}"
+            for item in case.get("source_refs", [])[:10]
+        ]
+        or ["- None"]
+    )
+    lines.append("")
     lines.append("### Evidence Refs")
     lines.extend(
         [
             f"- [{item.get('event_type', '')}] {item.get('tool_name', '') or item.get('query', '') or item.get('target', '')}"
+            + (f" (payload_ref: {item.get('payload_ref', '')})" if item.get("payload_ref") else "")
             for item in case.get("evidence_refs", [])[:10]
         ]
         or ["- None"]
@@ -1472,13 +1757,21 @@ def _render_task_current_summary_from_sniff(sniff: Dict[str, Any], resolved_info
     services = ", ".join(sniff.get("matched_services", [])[:4]) or "None"
     top_files = ", ".join(item.get("path", "") for item in sniff.get("candidate_files", [])[:3]) or "None"
     next_steps = "\n".join(f"- {item}" for item in sniff.get("next_steps", [])[:4])
+    source_ref_names = ", ".join(
+        item.get("name", "") or item.get("task", "") or Path(item.get("path", "")).name
+        for item in sniff.get("source_refs", [])[:3]
+    ) or "None"
+    source_ref_types = ", ".join(item.get("type", "") for item in sniff.get("source_refs", [])[:5]) or "None"
     return (
         "# Current Summary / 当前最短上下文\n\n"
         f"- Intent: {sniff.get('intent', '')}\n"
+        f"- Memory layer: L2_task_space\n"
         f"- Risk level: {sniff.get('risk_level', 'unknown')}\n"
         f"- Resolved task: {resolved_info.get('title', resolved_info.get('task_id', ''))}\n"
         f"- Services: {services}\n"
         f"- Top files: {top_files}\n\n"
+        f"- Source ref types: {source_ref_types}\n"
+        f"- Source ref highlights: {source_ref_names}\n\n"
         "## Next Steps\n\n"
         f"{next_steps}\n"
     )
@@ -1487,14 +1780,18 @@ def _render_task_current_summary_from_sniff(sniff: Dict[str, Any], resolved_info
 def _render_task_current_summary_from_case(case: Dict[str, Any], resolved_info: Dict[str, Any], session_id: str) -> str:
     risk_points = ", ".join(case.get("risk_points", [])[:4]) or "None"
     projects = ", ".join(case.get("projects", [])[:6]) or "None"
+    payload_ref_count = sum(1 for item in case.get("evidence_refs", []) if item.get("payload_ref"))
     return (
         "# Current Summary / 当前最短上下文\n\n"
         f"- Task: {case.get('task', '')}\n"
         f"- Session: {session_id}\n"
+        f"- Memory layer: {case.get('memory_layer', 'L1_case_atom')}\n"
         f"- Resolved task: {resolved_info.get('title', resolved_info.get('task_id', ''))}\n"
         f"- Projects: {projects}\n"
         f"- Flow: {case.get('flow', '')}\n"
         f"- Risk points: {risk_points}\n"
+        f"- Source refs: {len(case.get('source_refs', []))}\n"
+        f"- Evidence refs with payload_ref: {payload_ref_count}\n"
     )
 
 

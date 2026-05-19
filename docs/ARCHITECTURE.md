@@ -74,6 +74,15 @@ Indexer 扫描每个服务，生成：
 - 风险点是什么。
 - 如何验证。
 
+当前实现把记忆分成四层：
+
+- `L0_session_events`：原始会话事件与 `memory/refs/` 外置证据
+- `L1_case_atoms`：`workspace_record_case` 写入的可复用经验原子
+- `L2_task_spaces`：`artifacts/tasks/...` 下的 context/plan/design/change-log/current-summary
+- `L3_workspace_profile`：workspace 规则、指令文件、拓扑与团队约束
+
+这样高层任务空间与长期经验可以持续回溯到底层 session evidence，而不会丢失原始上下文。
+
 ### 5. Agent Protocol 层
 
 Memory Center 会生成 Agent 指令文件：

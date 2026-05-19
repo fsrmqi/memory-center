@@ -41,9 +41,9 @@ Memory Center exposes graph-first project memory to AI coding agents through MCP
 | `workspace_trace_tool(entry)` | Trace candidates by class, endpoint, Feign client or topic. / 按类名、接口、Feign、Topic 追踪候选链路。 |
 | `workspace_check_contract_tool(contract_file, change_type)` | Check safety before modifying shared DTO/Feign/MQ contracts. / 修改公共 DTO、Feign、MQ Message 前检查。 |
 | `workspace_check_rules_tool(projects, change_type, files)` | Match architecture rules before editing. / 编辑前匹配架构规则。 |
-| `workspace_record_case_tool(task, projects, files, flow, risk_points, verified_by)` | Record validated task memory. / 完成验证后沉淀任务经验。 |
+| `workspace_record_case_tool(task, projects, files, flow, risk_points, verified_by, source_session_id, source_task_id)` | Record validated task memory, optionally linking it back to one session/task space. / 完成验证后沉淀任务经验，并可选回链到 session/task space。 |
 | `workspace_start_session_tool(intent, session_id)` | Start a lightweight long-memory session. / 开始一个轻量长期记忆会话。 |
-| `workspace_log_session_event_tool(session_id, event_type, payload)` | Append one session event like prompt/tool/result/note. / 追加一次会话事件，例如提问、工具调用、工具结果、备注。 |
+| `workspace_log_session_event_tool(session_id, event_type, payload)` | Append one session event like prompt/tool/result/note. Large payloads may be offloaded into `memory/refs/` with `payload_ref`. / 追加一次会话事件，例如提问、工具调用、工具结果、备注。体积过大的 payload 会自动外置到 `memory/refs/` 并返回 `payload_ref`。 |
 | `workspace_end_session_tool(session_id, outcome, verified_by)` | End a session and generate a summary. / 结束会话并生成摘要。 |
 | `workspace_recent_sessions_tool(limit)` | Read recent summarized sessions. / 查看最近会话摘要。 |
 | `workspace_session_summary_tool(session_id)` | Read one session summary and raw events. / 查看单次会话摘要和原始事件。 |
@@ -51,7 +51,7 @@ Memory Center exposes graph-first project memory to AI coding agents through MCP
 | `workspace_suggest_case_tool(session_id)` | Suggest one record-case draft from a finished session, including `evidence_refs` back to raw events. / 从已结束会话自动生成一条经验沉淀草稿，并附带可回溯原始事件的 `evidence_refs`。 |
 | `memory_generate_wiki_tool(output_dir)` | Generate bilingual architecture wiki. / 生成双语架构 Wiki。 |
 | `memory_generate_skills_tool(output_dir)` | Generate Agent skill files from task memory. / 根据历史任务生成 Agent Skill。 |
-| `workspace_status_tool()` | Return index and memory status, including semantic backend readiness, active task spaces, and `current_focus_task` with `focus_reason`. / 返回索引和记忆状态，包含语义 backend 就绪情况、活跃任务空间，以及带 `focus_reason` 的 `current_focus_task`。 |
+| `workspace_status_tool()` | Return index and memory status, including semantic backend readiness, layered memory counts (`L0/L1/L2/L3`), active task spaces, and `current_focus_task` with `focus_reason`. / 返回索引和记忆状态，包含语义 backend 就绪情况、分层记忆统计（`L0/L1/L2/L3`）、活跃任务空间，以及带 `focus_reason` 的 `current_focus_task`。 |
 | `group_query_tool(group, query, limit)` | Run a merged query across registered workspaces in one logical group, with exact/semantic retrieval metadata and `progressive` summary/evidence/detail views. / 对逻辑分组中的多个工作区做聚合查询，并返回精确/语义召回来源信息，以及 `progressive` 的摘要/证据/细节分层视图。 |
 | `group_status_tool(group)` | Return aggregated group status, including semantic index readiness, document counts and backend distribution. / 返回逻辑分组聚合状态，包含语义索引就绪度、文档数和 backend 分布。 |
 | `group_impact_tool(group, target, direction, max_depth)` | Run cross-workspace impact analysis with lookup provenance, graph evidence, bridge evidence and `progressive` layered views. / 结合命中来源、图谱证据、bridge 证据和 `progressive` 分层视图做跨工作区影响面分析。 |

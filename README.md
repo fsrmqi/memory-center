@@ -82,6 +82,38 @@ Solved tasks can be recorded as JSONL task memory and later used for search, wik
 
 已解决任务会沉淀为任务记忆，可用于后续召回、Wiki 生成和 Agent Skill 生成。
 
+### 5. Layered memory model / 分层记忆模型
+
+Memory Center separates evidence and reusable structure through four layers:
+
+记忆中心通过四层模型把“原始证据”和“可复用结构”分开管理：
+
+- `L0_session_events` / `L0 会话事件`：raw prompt/tool/result/note events, plus offloaded large payload refs in `memory/refs/`
+- `L1_case_atoms` / `L1 经验原子`：validated reusable cases written by `workspace_record_case`
+- `L2_task_spaces` / `L2 任务空间`：task-scoped `context/plan/design/change-log/current-summary`
+- `L3_workspace_profile` / `L3 工作区画像`：rules, instructions, topology and team operating protocol
+
+This makes one task traceable from task-space summaries down to raw session evidence.
+
+这样一个任务就可以从任务空间摘要一路追溯到原始 session 证据。
+
+The workspace now also ships with L3 core memory blocks under `artifacts/memory-blocks/`:
+
+现在 workspace 还会默认生成一组 L3 核心记忆块，位于 `artifacts/memory-blocks/`：
+
+- `workspace-profile.md`
+- `team-rules.md`
+- `architecture-invariants.md`
+- `active-migration-policy.md`
+
+They are meant for stable cross-task knowledge that should not be buried inside one session or one case.
+
+这些块适合沉淀跨任务稳定有效的信息，而不是把它们埋进单次 session 或单条 case。
+
+For core task-memory artifacts such as `context.md`, `requirement.md`, `design.md`, `plan.md`, `test-plan.md`, `change-log.md`, and task-space `current-summary.md`, Memory Center now enforces append-only writes by default.
+
+对于 `context.md`、`requirement.md`、`design.md`、`plan.md`、`test-plan.md`、`change-log.md` 以及任务空间里的 `current-summary.md` 这类核心记忆工件，记忆中心现在默认强制“只能尾部追加，不能整篇覆盖”。
+
 Detailed local setup and multi-project workflow / 详细本地初始化与多项目使用流程：
 
 - [docs/LOCAL_USAGE_GUIDE.md](./docs/LOCAL_USAGE_GUIDE.md)
@@ -348,10 +380,10 @@ You can now keep lightweight task-session memory inside the same workspace:
 
 现在也可以在同一个 workspace 里记录轻量的任务会话记忆：
 
-`workspace_sniff` 现在会返回 `symbolic_context`，适合在长任务开始前先做低 Token 的符号化规划；其中同时包含 `entities_mermaid`（实体聚焦图）和 `flow_mermaid`（任务流程图），并且 `flow_mermaid` 会根据本次命中的 Feign/API、MQ、Config、历史 Case 动态切换流程分支，同时按 `risk_level` 决定是否强制插入 `memory_impact -> memory_plan_change -> memory_verify_checklist` 这条更严格主链路。`workspace_sniff` 还会返回 `auto_sync_recommendation`（含 `recommended/confidence/reason/score_threshold/mode`）帮助判断是否自动同步到任务空间，并支持 `auto_sync_mode=strict|balanced|aggressive` 三档策略。`workspace_suggest_case` 会返回 `evidence_refs`，用于把 case 草稿回溯到原始事件；workspace 级 `query/context/impact` 会返回 `progressive` 的 `summary / evidence / detail` 三层视图，便于按需展开。
+`workspace_sniff` 现在会返回 `symbolic_context`，适合在长任务开始前先做低 Token 的符号化规划；其中同时包含 `entities_mermaid`（实体聚焦图）和 `flow_mermaid`（任务流程图），并且 `flow_mermaid` 会根据本次命中的 Feign/API、MQ、Config、历史 Case 动态切换流程分支，同时按 `risk_level` 决定是否强制插入 `memory_impact -> memory_plan_change -> memory_verify_checklist` 这条更严格主链路。`workspace_sniff` 还会返回 `auto_sync_recommendation`（含 `recommended/confidence/reason/score_threshold/mode`）帮助判断是否自动同步到任务空间，并支持 `auto_sync_mode=strict|balanced|aggressive` 三档策略。`workspace_suggest_case` 会返回 `evidence_refs`，用于把 case 草稿回溯到原始事件；workspace 级 `query/context/impact` 会返回 `progressive` 的 `summary / evidence / detail` 三层视图，便于按需展开。`workspace_sniff` 还会返回 `source_refs`，把 file/Feign/API/MQ/case 命中结果暴露为结构化来源引用；`workspace_suggest_case` / `workspace_record_case` 则支持 `source_session_id`、`source_task_id`、`source_refs`，便于把 L1 经验原子追溯回 L0 会话与 L2 任务空间。对于体积过大的 session event payload，系统会自动把完整内容外置到 `memory/refs/sessions/...`，事件本体只保留关键摘要与 `payload_ref`。
 `sync-case-artifacts` 的风险等级也已升级为 `risk_points + evidence_refs` 联合评分，并在返回中提供 `risk_evidence`（含 score、signals、evidence_type_counts），用于解释自动同步策略的风险判断依据。
 
-`workspace_sniff` now returns `symbolic_context` for low-token planning, including both `entities_mermaid` and `flow_mermaid`. It also returns `auto_sync_recommendation` (`recommended/confidence/reason/score_threshold/mode`) so agents can decide whether to auto-sync into task spaces, with `auto_sync_mode=strict|balanced|aggressive`. `workspace_suggest_case` returns `evidence_refs` back to raw events, and workspace `query/context/impact` responses now include a `progressive` view with `summary / evidence / detail` layers.
+`workspace_sniff` now returns `symbolic_context` for low-token planning, including both `entities_mermaid` and `flow_mermaid`. It also returns `auto_sync_recommendation` (`recommended/confidence/reason/score_threshold/mode`) so agents can decide whether to auto-sync into task spaces, with `auto_sync_mode=strict|balanced|aggressive`. `workspace_suggest_case` returns `evidence_refs` back to raw events, and workspace `query/context/impact` responses now include a `progressive` view with `summary / evidence / detail` layers. `workspace_sniff` also returns `source_refs` so file/Feign/API/MQ/case hits can be reused as structured provenance; `workspace_suggest_case` / `workspace_record_case` support `source_session_id`, `source_task_id`, and `source_refs` so one L1 case atom can trace back to both L0 session evidence and L2 task-space artifacts. Large session payloads are automatically offloaded into `memory/refs/sessions/...`, while the event keeps a compact summary plus `payload_ref`.
 `sync-case-artifacts` now computes risk from both `risk_points` and typed `evidence_refs`, and returns `risk_evidence` (score/signals/evidence_type_counts) to explain why a sync recommendation is conservative or aggressive.
 
 Group-level `query` and `impact` now expose the same `progressive` structure, so agents can use one consistent disclosure pattern across single-workspace and multi-workspace workflows.

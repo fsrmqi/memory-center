@@ -248,9 +248,36 @@ def create_server(workspace_file: str):
         return workspace_check_rules(_WORKSPACE_FILE, projects, change_type, files)
 
     @mcp.tool()
-    def workspace_record_case_tool(task: str, projects: List[str], files: List[str], flow: str = "", risk_points: List[str] | None = None, verified_by: List[str] | None = None):
+    def workspace_record_case_tool(
+        task: str,
+        projects: List[str],
+        files: List[str],
+        flow: str = "",
+        risk_points: List[str] | None = None,
+        verified_by: List[str] | None = None,
+        source_session_id: str = "",
+        source_task_id: str = "",
+        valid_from: str = "",
+        valid_to: str = "",
+        superseded_by: str = "",
+        current_truth: bool = True,
+    ):
         """Record a solved task into cross-service memory after validation."""
-        return workspace_record_case(_WORKSPACE_FILE, task, projects, files, flow, risk_points, verified_by)
+        return workspace_record_case(
+            _WORKSPACE_FILE,
+            task,
+            projects,
+            files,
+            flow,
+            risk_points,
+            verified_by,
+            source_session_id=source_session_id,
+            source_task_id=source_task_id,
+            valid_from=valid_from,
+            valid_to=valid_to,
+            superseded_by=superseded_by,
+            current_truth=current_truth,
+        )
 
     @mcp.tool()
     def workspace_start_session_tool(intent: str, session_id: str = ""):
