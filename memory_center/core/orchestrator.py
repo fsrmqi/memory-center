@@ -128,9 +128,10 @@ def workspace_sniff(
         "next_steps": [
             "先调用 memory_search_code 缩小入口范围，再用 memory_symbol 定位关键符号",
             "对关键符号调用 memory_callers / memory_callees 理清上下游调用链",
+            "如果这是持续任务或多人协作任务，优先调用 workspace_sync_sniff_artifacts 把 context/plan 写入任务空间",
             "改动前调用 memory_plan_change 与 memory_verify_checklist，明确风险与验证项",
             "如果涉及 DTO/Feign/MQ Message，再调用 workspace_check_contract",
-            "编辑前调用 workspace_check_rules，完成后调用 workspace_record_case 沉淀经验",
+            "长任务建议同时开启 workspace_start_session / workspace_log_session_event，结束后再调用 workspace_sync_case_artifacts 与 workspace_record_case",
         ],
     }
 
@@ -1588,7 +1589,13 @@ def _build_sniff_symbolic_context(
         flow_lines.append('  H --> E["Edit & Test"]')
     else:
         flow_lines.append('  R --> E["Edit & Test"]')
-    flow_lines.append('  E --> W["workspace_record_case"]')
+    flow_lines.extend(
+        [
+            '  E --> S["workspace_end_session"]',
+            '  S --> Y["workspace_sync_case_artifacts"]',
+            '  Y --> W["workspace_record_case"]',
+        ]
+    )
     return {
         "intent": intent,
         "focus_entities": {

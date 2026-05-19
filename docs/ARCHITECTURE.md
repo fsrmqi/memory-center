@@ -63,7 +63,7 @@ Indexer 扫描每个服务，生成：
 
 ### 4. Memory 层
 
-任务完成后，Agent 调用 `workspace_record_case` 写入经验。
+任务完成后，Agent 可以先调用 `workspace_end_session` 与 `workspace_sync_case_artifacts` 把结论同步回任务空间，再调用 `workspace_record_case` 写入长期经验。
 
 经验不是聊天记录，而是可检索的工程事实：
 

@@ -70,9 +70,11 @@ Memory Center exposes tools, resources and prompts through MCP so coding agents 
 记忆中心通过 MCP 暴露工具、资源和提示词，让不同 Agent 使用同一套流程：
 
 1. `workspace_sniff_tool(intent)` before code search / 任务开始先取上下文
-2. `memory_context_tool(name)` or `memory_impact_tool(target)` before editing important contracts / 改重要契约前做上下文和影响分析
-3. `workspace_check_rules_tool(...)` before file changes / 编辑前检查规则
-4. `workspace_record_case_tool(...)` after validation / 完成后沉淀经验
+2. `workspace_sync_sniff_artifacts_tool(...)` for long-running or collaborative tasks / 长任务或多人协作任务先把上下文写入任务空间
+3. `memory_context_tool(name)` or `memory_impact_tool(target)` before editing important contracts / 改重要契约前做上下文和影响分析
+4. `workspace_check_rules_tool(...)` before file changes / 编辑前检查规则
+5. `workspace_end_session_tool(...)` + `workspace_sync_case_artifacts_tool(...)` after validation / 验证后先结束会话并把结论同步回任务空间
+6. `workspace_record_case_tool(...)` after validation / 完成后再沉淀长期经验
 
 ### 4. Experience memory / 经验沉淀
 
@@ -552,10 +554,13 @@ AI 编程助手改代码前必须执行：
 
 ```text
 1. Call workspace_sniff_tool(intent)
-2. For important contract/topic/service symbols, call memory_context_tool or memory_impact_tool
-3. Before editing files, call workspace_check_rules_tool
-4. If changing DTO/Feign/MQ Message, call workspace_check_contract_tool
-5. After validation, call workspace_record_case_tool
+2. For long-running or collaborative tasks, call workspace_sync_sniff_artifacts_tool to write context/plan into task space
+3. For important contract/topic/service symbols, call memory_context_tool or memory_impact_tool
+4. Before editing files, call workspace_check_rules_tool
+5. If changing DTO/Feign/MQ Message, call workspace_check_contract_tool
+6. For long tasks, record key steps with workspace_start_session_tool / workspace_log_session_event_tool
+7. After validation, call workspace_end_session_tool, then workspace_sync_case_artifacts_tool
+8. Finally call workspace_record_case_tool
 ```
 
 ---

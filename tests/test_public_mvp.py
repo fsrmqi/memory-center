@@ -30,6 +30,7 @@ from memory_center.core.artifacts import (
 from memory_center.core.config import load_workspace_config
 from memory_center.core.exporters import export_mermaid
 from memory_center.core.indexer import reindex_workspace
+from memory_center.core.instructions import write_agent_instructions
 from memory_center.core.orchestrator import workspace_sniff, workspace_trace
 from memory_center.core.registry import add_to_group, create_group, register_workspace
 from memory_center.core.rules import ensure_default_rules
@@ -82,6 +83,10 @@ def test_demo_workspace_indexes_spring_cloud_patterns(tmp_path: Path):
     assert "reason" in sniffed["auto_sync_recommendation"]
     assert "workspace_check_contract (Feign/API)" in sniffed["symbolic_context"]["flow_mermaid"]
     assert "MQ compatibility review" in sniffed["symbolic_context"]["flow_mermaid"]
+    assert "workspace_sync_sniff_artifacts" in "\n".join(sniffed["next_steps"])
+    assert "workspace_sync_case_artifacts" in "\n".join(sniffed["next_steps"])
+    assert "workspace_end_session" in sniffed["symbolic_context"]["flow_mermaid"]
+    assert "workspace_sync_case_artifacts" in sniffed["symbolic_context"]["flow_mermaid"]
 
     traced = workspace_trace(workspace, "article-pubtime-change")
     assert traced["matched_mq"]
@@ -139,6 +144,24 @@ def test_cli_version_flag():
     assert result.exit_code == 0
     assert "memory-center" in result.stdout
     assert "1.3.0" in result.stdout
+
+
+def test_write_agent_instructions_includes_sync_workflow(tmp_path: Path):
+    workspace_root = tmp_path / "workspace-root"
+    workspace_root.mkdir()
+    store = WorkspaceStore(tmp_path / ".memory-center" / "workspace.yaml")
+
+    write_agent_instructions(store, workspace_root)
+
+    agents = (workspace_root / "AGENTS.md").read_text(encoding="utf-8")
+    claude = (workspace_root / "CLAUDE.md").read_text(encoding="utf-8")
+
+    for content in [agents, claude]:
+        assert "<!-- memory-center:start -->" in content
+        assert "workspace_sync_sniff_artifacts" in content
+        assert "workspace_start_session" in content
+        assert "workspace_sync_case_artifacts" in content
+        assert "workspace_record_case" in content
 
 
 def test_workspace_service_maintenance_commands(tmp_path: Path):

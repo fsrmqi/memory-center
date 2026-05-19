@@ -356,9 +356,12 @@ def create_server(workspace_file: str):
     @mcp.prompt()
     def spring_cloud_safe_change(task: str) -> str:
         return (
-            "For this Spring Cloud task, call workspace_sniff_tool first, then memory_context_tool or "
-            "memory_impact_tool for important contracts. Before editing, call workspace_check_rules_tool. "
-            "After validation, call workspace_record_case_tool. Task: " + task
+            "For this Spring Cloud task, call workspace_sniff_tool first. If this is a multi-step or "
+            "collaborative task, sync the sniff result with workspace_sync_sniff_artifacts_tool, then use "
+            "memory_context_tool or memory_impact_tool for important contracts. Before editing, call "
+            "workspace_check_rules_tool. For long tasks, record key steps with workspace_start_session_tool / "
+            "workspace_log_session_event_tool, then end the session, sync conclusions with "
+            "workspace_sync_case_artifacts_tool, and finally call workspace_record_case_tool. Task: " + task
         )
 
     return mcp

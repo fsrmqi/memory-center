@@ -70,11 +70,17 @@ Memory Center exposes graph-first project memory to AI coding agents through MCP
 ## Recommended agent behavior / 推荐 Agent 行为
 
 1. Call `workspace_sniff_tool` before broad code exploration.
-2. Call `memory_context_tool` or `memory_impact_tool` before modifying contracts.
-3. Call `workspace_check_rules_tool` before editing.
-4. Call `workspace_record_case_tool` after validation.
+2. For long-running or collaborative tasks, call `workspace_sync_sniff_artifacts_tool` to write context/plan into task space.
+3. Call `memory_context_tool` or `memory_impact_tool` before modifying contracts.
+4. Call `workspace_check_rules_tool` before editing.
+5. For long tasks, use `workspace_start_session_tool` / `workspace_log_session_event_tool` during the process.
+6. After validation, call `workspace_end_session_tool`, then `workspace_sync_case_artifacts_tool`.
+7. Finally call `workspace_record_case_tool`.
 
 1. 大范围搜索代码前，先调用 `workspace_sniff_tool`。
-2. 修改契约前，调用 `memory_context_tool` 或 `memory_impact_tool`。
-3. 编辑前，调用 `workspace_check_rules_tool`。
-4. 验证完成后，调用 `workspace_record_case_tool` 沉淀经验。
+2. 对于长任务或多人协作任务，先调用 `workspace_sync_sniff_artifacts_tool` 把上下文和计划写入任务空间。
+3. 修改契约前，调用 `memory_context_tool` 或 `memory_impact_tool`。
+4. 编辑前，调用 `workspace_check_rules_tool`。
+5. 长任务过程中，使用 `workspace_start_session_tool` / `workspace_log_session_event_tool` 持续记录关键过程。
+6. 验证完成后，先调用 `workspace_end_session_tool`，再调用 `workspace_sync_case_artifacts_tool` 回写任务空间。
+7. 最后调用 `workspace_record_case_tool` 沉淀长期经验。
