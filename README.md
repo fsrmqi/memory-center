@@ -552,6 +552,7 @@ Available MCP tools / MCP 工具：
 | `memory_verify_checklist_tool` | Pre-merge verification checklist / 合并前验证清单 |
 | `memory_write_judge_tool` | Judge whether info should go to L0/L1/L2/L3 / 判断信息应写入 L0/L1/L2/L3 哪一层 |
 | `memory_plan_write_tool` | Build executable write plan from judge result / 基于裁决结果生成可执行写入计划 |
+| `memory_execute_write_tool` | Execute ready write steps from the plan / 执行写入计划中已就绪的步骤 |
 | `memory_detect_changes_tool` | Git diff risk mapping / Git 变更风险映射 |
 | `memory_contracts_tool` | API/Feign/MQ contract list / 契约列表 |
 | `workspace_trace_tool` | Cross-service trace hints / 跨服务追踪 |

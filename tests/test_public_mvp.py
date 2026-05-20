@@ -32,7 +32,7 @@ from memory_center.core.config import load_workspace_config
 from memory_center.core.exporters import export_mermaid
 from memory_center.core.indexer import reindex_workspace
 from memory_center.core.instructions import write_agent_instructions
-from memory_center.core.orchestrator import memory_plan_write, memory_write_judge, workspace_sniff, workspace_trace
+from memory_center.core.orchestrator import memory_execute_write, memory_plan_write, memory_write_judge, workspace_sniff, workspace_trace
 from memory_center.core.registry import add_to_group, create_group, register_workspace
 from memory_center.core.rules import ensure_default_rules
 from memory_center.core.store import WorkspaceStore
@@ -352,6 +352,16 @@ def test_memory_write_judge_and_plan_write(tmp_path: Path):
     )
     assert l0_plan["memory_layer"] == "L0_session_events"
     assert l0_plan["plan"]["steps"][0]["tool"] == "workspace_start_session"
+
+    executed = memory_execute_write(
+        workspace,
+        text="团队规范：DTO 变更必须保兼容并记录迁移策略。",
+        source="note",
+        intent="更新团队规则",
+    )
+    assert executed["memory_layer"] == "L3_workspace_profile"
+    assert executed["executed"]
+    assert executed["executed"][0]["tool"] == "workspace_artifact_update"
 
 
 def test_auto_archive_task_spaces(tmp_path: Path):
@@ -822,6 +832,12 @@ def test_http_bridge_routes(tmp_path: Path):
         assert plan["found"] is True
         checklist = json.loads(urlopen(f"{base}/workspace/verify-checklist?target=MoveArticleRequest").read().decode("utf-8"))
         assert checklist["checklist"]
+        judge = json.loads(urlopen(f"{base}/workspace/memory-write-judge?text=团队规范%EF%BC%9ADTO%E5%8F%98%E6%9B%B4%E9%9C%80%E5%90%91%E5%90%8E%E5%85%BC%E5%AE%B9&source=note&intent=%E6%9B%B4%E6%96%B0%E5%9B%A2%E9%98%9F%E8%A7%84%E5%88%99").read().decode("utf-8"))
+        assert judge["decision"]["selected_layer"] == "L3_workspace_profile"
+        plan_write = json.loads(urlopen(f"{base}/workspace/memory-plan-write?text=HTTP%20task%20context&source=note&intent=HTTP%20task").read().decode("utf-8"))
+        assert plan_write["memory_layer"] == "L2_task_spaces"
+        execute_write = json.loads(urlopen(f"{base}/workspace/memory-execute-write?text=HTTP%20team%20rule&source=note&intent=update%20rule").read().decode("utf-8"))
+        assert execute_write["executed"]
 
         session_recent = json.loads(urlopen(f"{base}/workspace/sessions/recent?limit=5").read().decode("utf-8"))
         assert "recent_sessions" in session_recent

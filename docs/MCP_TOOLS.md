@@ -38,6 +38,7 @@ Memory Center exposes graph-first project memory to AI coding agents through MCP
 | `memory_verify_checklist_tool(target)` | Build verification checklist before merge/release. / 生成合并/发布前验证清单。 |
 | `memory_write_judge_tool(text, source, intent, prefer_layer, projects, files)` | Judge which layer should receive this information: `L0_session_events / L1_case_atoms / L2_task_spaces / L3_workspace_profile`, with confidence, score and suggested tool. / 判断输入信息应写入哪个记忆层：`L0_session_events / L1_case_atoms / L2_task_spaces / L3_workspace_profile`，并返回置信度、评分和建议工具。 |
 | `memory_plan_write_tool(text, source, intent, session_id, task_id, title, prefer_layer, projects, files)` | Build one executable write plan from judge result, including readiness and example args for each step. / 基于裁决结果生成可执行写入计划，包含每步是否可执行与示例参数。 |
+| `memory_execute_write_tool(text, source, intent, session_id, task_id, title, prefer_layer, projects, files)` | Execute the ready steps from `memory_plan_write_tool`, returning executed tool results and the resolved `session_id` when applicable. / 执行 `memory_plan_write_tool` 中已就绪的步骤，并返回实际执行结果以及可解析出的 `session_id`。 |
 | `memory_detect_changes_tool(scope)` | Map local git diff to affected files, projects, rules and risk level. / 把本地 Git diff 映射为影响项目、规则和风险等级。 |
 | `memory_contracts_tool()` | List API/Feign/MQ contracts and contract rules. / 列出接口、Feign、MQ 契约及相关规则。 |
 | `workspace_trace_tool(entry)` | Trace candidates by class, endpoint, Feign client or topic. / 按类名、接口、Feign、Topic 追踪候选链路。 |

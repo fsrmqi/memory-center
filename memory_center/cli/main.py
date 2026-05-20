@@ -47,6 +47,7 @@ from memory_center.core.orchestrator import (
     memory_symbol,
     memory_verify_checklist,
     memory_plan_write,
+    memory_execute_write,
     memory_write_judge,
     workspace_check_contract,
     workspace_check_rules,
@@ -314,6 +315,36 @@ def memory_plan_write_cmd(
     """Build an executable write plan after memory layer judgment."""
     print(
         memory_plan_write(
+            workspace,
+            text=text,
+            source=source,
+            intent=intent,
+            session_id=session_id,
+            task_id=task_id,
+            title=title,
+            prefer_layer=prefer_layer,
+            projects=project,
+            files=file,
+        )
+    )
+
+
+@app.command("memory-execute-write")
+def memory_execute_write_cmd(
+    workspace: str = typer.Option(...),
+    text: str = typer.Option(...),
+    source: str = typer.Option("note"),
+    intent: str = typer.Option(""),
+    session_id: str = typer.Option(""),
+    task_id: str = typer.Option(""),
+    title: str = typer.Option(""),
+    prefer_layer: str = typer.Option(""),
+    project: Optional[List[str]] = typer.Option(None),
+    file: Optional[List[str]] = typer.Option(None),
+):
+    """Execute the ready steps from memory_plan_write."""
+    print(
+        memory_execute_write(
             workspace,
             text=text,
             source=source,

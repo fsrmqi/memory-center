@@ -12,11 +12,14 @@ from memory_center.core.orchestrator import (
     group_status,
     memory_callers,
     memory_callees,
+    memory_execute_write,
     memory_plan_change,
+    memory_plan_write,
     memory_query,
     memory_search_code,
     memory_symbol,
     memory_verify_checklist,
+    memory_write_judge,
     workspace_recent_sessions,
     workspace_resume_context,
     workspace_session_summary,
@@ -236,6 +239,33 @@ def _route_request(path: str, params: dict, default_workspace: str | None) -> di
         direction = params.get("direction", ["upstream"])[0]
         max_depth = _parse_int(params, "max_depth", 3)
         return memory_plan_change(workspace, target, direction=direction, max_depth=max_depth)
+    if path == "/workspace/memory-write-judge":
+        workspace = _require_workspace(params, default_workspace)
+        text = _require_one(params, "text")
+        source = params.get("source", ["note"])[0]
+        intent = params.get("intent", [""])[0]
+        prefer_layer = params.get("prefer_layer", [""])[0]
+        return memory_write_judge(workspace, text=text, source=source, intent=intent, prefer_layer=prefer_layer, projects=params.get("project", []) or None, files=params.get("file", []) or None)
+    if path == "/workspace/memory-plan-write":
+        workspace = _require_workspace(params, default_workspace)
+        text = _require_one(params, "text")
+        source = params.get("source", ["note"])[0]
+        intent = params.get("intent", [""])[0]
+        session_id = params.get("session_id", [""])[0]
+        task_id = params.get("task_id", [""])[0]
+        title = params.get("title", [""])[0]
+        prefer_layer = params.get("prefer_layer", [""])[0]
+        return memory_plan_write(workspace, text=text, source=source, intent=intent, session_id=session_id, task_id=task_id, title=title, prefer_layer=prefer_layer, projects=params.get("project", []) or None, files=params.get("file", []) or None)
+    if path == "/workspace/memory-execute-write":
+        workspace = _require_workspace(params, default_workspace)
+        text = _require_one(params, "text")
+        source = params.get("source", ["note"])[0]
+        intent = params.get("intent", [""])[0]
+        session_id = params.get("session_id", [""])[0]
+        task_id = params.get("task_id", [""])[0]
+        title = params.get("title", [""])[0]
+        prefer_layer = params.get("prefer_layer", [""])[0]
+        return memory_execute_write(workspace, text=text, source=source, intent=intent, session_id=session_id, task_id=task_id, title=title, prefer_layer=prefer_layer, projects=params.get("project", []) or None, files=params.get("file", []) or None)
     if path == "/workspace/verify-checklist":
         workspace = _require_workspace(params, default_workspace)
         target = _require_one(params, "target")

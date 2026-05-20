@@ -20,6 +20,7 @@ from memory_center.core.orchestrator import (
     memory_symbol,
     memory_verify_checklist,
     memory_plan_write,
+    memory_execute_write,
     memory_write_judge,
     workspace_end_session,
     workspace_log_session_event,
@@ -268,6 +269,32 @@ def create_server(workspace_file: str):
     ):
         """Build one executable write plan from memory_write_judge decision."""
         return memory_plan_write(
+            _WORKSPACE_FILE,
+            text=text,
+            source=source,
+            intent=intent,
+            session_id=session_id,
+            task_id=task_id,
+            title=title,
+            prefer_layer=prefer_layer,
+            projects=projects,
+            files=files,
+        )
+
+    @mcp.tool()
+    def memory_execute_write_tool(
+        text: str,
+        source: str = "note",
+        intent: str = "",
+        session_id: str = "",
+        task_id: str = "",
+        title: str = "",
+        prefer_layer: str = "",
+        projects: List[str] | None = None,
+        files: List[str] | None = None,
+    ):
+        """Execute the ready write steps derived from memory_plan_write."""
+        return memory_execute_write(
             _WORKSPACE_FILE,
             text=text,
             source=source,

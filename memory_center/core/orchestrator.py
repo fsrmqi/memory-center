@@ -29,6 +29,18 @@ from .text_utils import base_tokenize
 SESSION_EVENTS_FILE = "session-events.jsonl"
 SESSION_SUMMARIES_FILE = "session-summaries.jsonl"
 EVENT_PAYLOAD_INLINE_LIMIT = 4000
+LAYER_L0 = "L0_session_events"
+LAYER_L1 = "L1_case_atoms"
+LAYER_L2 = "L2_task_spaces"
+LAYER_L3 = "L3_workspace_profile"
+MEMORY_LAYER_ORDER = [LAYER_L0, LAYER_L1, LAYER_L2, LAYER_L3]
+TOOL_WORKSPACE_LOG_SESSION_EVENT = "workspace_log_session_event"
+TOOL_WORKSPACE_START_SESSION = "workspace_start_session"
+TOOL_WORKSPACE_RECORD_CASE = "workspace_record_case"
+TOOL_WORKSPACE_SUGGEST_CASE = "workspace_suggest_case"
+TOOL_WORKSPACE_SYNC_SNIFF_ARTIFACTS = "workspace_sync_sniff_artifacts"
+TOOL_WORKSPACE_SYNC_CASE_ARTIFACTS = "workspace_sync_case_artifacts"
+TOOL_WORKSPACE_ARTIFACT_UPDATE = "workspace_artifact_update"
 
 
 def load_context(workspace_file: str | Path):
@@ -436,55 +448,50 @@ def memory_write_judge(
     normalized_source = (source or "").strip().lower()
     preferred = (prefer_layer or "").strip().upper()
 
-    layer_scores: Dict[str, int] = {
-        "L0_session_events": 0,
-        "L1_case_atoms": 0,
-        "L2_task_spaces": 0,
-        "L3_workspace_profile": 0,
-    }
+    layer_scores: Dict[str, int] = {layer: 0 for layer in MEMORY_LAYER_ORDER}
     reasons: List[str] = []
 
     if normalized_source in {"tool_call", "tool_result", "user_prompt", "note", "session_event"}:
-        layer_scores["L0_session_events"] += 3
+        layer_scores[LAYER_L0] += 3
         reasons.append("来源属于会话过程事件，优先归档 L0。")
 
     if any(k in normalized_text for k in ["经验", "复盘", "教训", "风险", "兼容", "验证", "best practice", "lessons learned"]):
-        layer_scores["L1_case_atoms"] += 4
+        layer_scores[LAYER_L1] += 4
         reasons.append("文本包含经验/风险/验证特征，适合沉淀 L1 case。")
 
     if any(k in normalized_text for k in ["任务", "计划", "方案", "context", "plan", "design", "change log", "当前", "next step", "todo"]):
-        layer_scores["L2_task_spaces"] += 4
+        layer_scores[LAYER_L2] += 4
         reasons.append("文本包含任务执行上下文特征，适合写入 L2 task space。")
 
     if any(
         k in normalized_text
         for k in ["团队", "规范", "规则", "约束", "invariant", "workspace", "profile", "迁移策略", "migration", "governance", "guardrail"]
     ):
-        layer_scores["L3_workspace_profile"] += 5
+        layer_scores[LAYER_L3] += 5
         reasons.append("文本包含团队规则/架构约束特征，适合写入 L3 workspace profile。")
 
     if normalized_intent and any(k in normalized_intent for k in ["修复", "改造", "实现", "任务", "需求"]):
-        layer_scores["L2_task_spaces"] += 2
+        layer_scores[LAYER_L2] += 2
         reasons.append("当前 intent 偏执行任务，增强 L2 权重。")
 
     if projects:
-        layer_scores["L1_case_atoms"] += 1
-        layer_scores["L2_task_spaces"] += 1
+        layer_scores[LAYER_L1] += 1
+        layer_scores[LAYER_L2] += 1
     if files:
-        layer_scores["L1_case_atoms"] += 1
-        layer_scores["L2_task_spaces"] += 2
+        layer_scores[LAYER_L1] += 1
+        layer_scores[LAYER_L2] += 2
 
     if preferred in {"L0", "L0_SESSION_EVENTS"}:
-        layer_scores["L0_session_events"] += 3
+        layer_scores[LAYER_L0] += 3
         reasons.append("用户偏好层级指向 L0。")
     if preferred in {"L1", "L1_CASE_ATOMS"}:
-        layer_scores["L1_case_atoms"] += 3
+        layer_scores[LAYER_L1] += 3
         reasons.append("用户偏好层级指向 L1。")
     if preferred in {"L2", "L2_TASK_SPACES"}:
-        layer_scores["L2_task_spaces"] += 3
+        layer_scores[LAYER_L2] += 3
         reasons.append("用户偏好层级指向 L2。")
     if preferred in {"L3", "L3_WORKSPACE_PROFILE"}:
-        layer_scores["L3_workspace_profile"] += 3
+        layer_scores[LAYER_L3] += 3
         reasons.append("用户偏好层级指向 L3。")
 
     ranked = sorted(layer_scores.items(), key=lambda item: item[1], reverse=True)
@@ -493,16 +500,16 @@ def memory_write_judge(
     second_score = ranked[1][1]
     confidence = "high" if top_score - second_score >= 3 else ("medium" if top_score - second_score >= 1 else "low")
 
-    suggested_tool = "workspace_log_session_event"
+    suggested_tool = TOOL_WORKSPACE_LOG_SESSION_EVENT
     suggested_action = "记录为会话事件（L0）"
-    if selected_layer == "L1_case_atoms":
-        suggested_tool = "workspace_record_case"
+    if selected_layer == LAYER_L1:
+        suggested_tool = TOOL_WORKSPACE_RECORD_CASE
         suggested_action = "沉淀为可复用案例（L1）"
-    elif selected_layer == "L2_task_spaces":
-        suggested_tool = "workspace_sync_sniff_artifacts / workspace_sync_case_artifacts"
+    elif selected_layer == LAYER_L2:
+        suggested_tool = f"{TOOL_WORKSPACE_SYNC_SNIFF_ARTIFACTS} / {TOOL_WORKSPACE_SYNC_CASE_ARTIFACTS}"
         suggested_action = "同步到任务空间文档（L2）"
-    elif selected_layer == "L3_workspace_profile":
-        suggested_tool = "workspace_artifact_update"
+    elif selected_layer == LAYER_L3:
+        suggested_tool = TOOL_WORKSPACE_ARTIFACT_UPDATE
         suggested_action = "写入工作区核心记忆块（L3）"
 
     return {
@@ -551,11 +558,11 @@ def memory_plan_write(
     selected_layer = judge["decision"]["selected_layer"]
     steps: List[Dict[str, Any]] = []
 
-    if selected_layer == "L0_session_events":
+    if selected_layer == LAYER_L0:
         if session_id.strip():
             steps.append(
                 {
-                    "tool": "workspace_log_session_event",
+                    "tool": TOOL_WORKSPACE_LOG_SESSION_EVENT,
                     "ready": True,
                     "purpose": "将信息作为会话事件写入 L0。",
                     "example_args": {
@@ -568,7 +575,7 @@ def memory_plan_write(
         else:
             steps.append(
                 {
-                    "tool": "workspace_start_session",
+                    "tool": TOOL_WORKSPACE_START_SESSION,
                     "ready": True,
                     "purpose": "缺少 session_id，先创建会话。",
                     "example_args": {"intent": intent or "写入记忆事件"},
@@ -576,18 +583,18 @@ def memory_plan_write(
             )
             steps.append(
                 {
-                    "tool": "workspace_log_session_event",
+                    "tool": TOOL_WORKSPACE_LOG_SESSION_EVENT,
                     "ready": False,
                     "purpose": "会话创建后写入事件。",
                     "required": ["session_id"],
                     "example_args": {"event_type": source or "note", "payload": {"text": text[:2000]}},
                 }
             )
-    elif selected_layer == "L1_case_atoms":
+    elif selected_layer == LAYER_L1:
         ready = bool(projects and files)
         steps.append(
             {
-                "tool": "workspace_record_case",
+                "tool": TOOL_WORKSPACE_RECORD_CASE,
                 "ready": ready,
                 "purpose": "将信息沉淀为 L1 案例。",
                 "required": ([] if ready else ["projects", "files"]) + ([] if text.strip() else ["text/task"]),
@@ -603,17 +610,17 @@ def memory_plan_write(
         if session_id.strip():
             steps.append(
                 {
-                    "tool": "workspace_suggest_case",
+                    "tool": TOOL_WORKSPACE_SUGGEST_CASE,
                     "ready": True,
                     "purpose": "也可先用会话自动草拟 case 再确认入库。",
                     "example_args": {"session_id": session_id.strip()},
                 }
             )
-    elif selected_layer == "L2_task_spaces":
+    elif selected_layer == LAYER_L2:
         if session_id.strip():
             steps.append(
                 {
-                    "tool": "workspace_sync_case_artifacts",
+                    "tool": TOOL_WORKSPACE_SYNC_CASE_ARTIFACTS,
                     "ready": True,
                     "purpose": "从会话内容同步到 L2 任务空间（design/change-log/current-summary）。",
                     "example_args": {"session_id": session_id.strip(), "task_id": task_id.strip(), "title": title.strip()},
@@ -622,7 +629,7 @@ def memory_plan_write(
         else:
             steps.append(
                 {
-                    "tool": "workspace_sync_sniff_artifacts",
+                    "tool": TOOL_WORKSPACE_SYNC_SNIFF_ARTIFACTS,
                     "ready": bool(intent.strip()),
                     "purpose": "从 intent 推导并同步到 L2 任务空间（context/plan/current-summary）。",
                     "required": [] if intent.strip() else ["intent"],
@@ -633,7 +640,7 @@ def memory_plan_write(
         artifact_name = _choose_l3_artifact_name(text)
         steps.append(
             {
-                "tool": "workspace_artifact_update",
+                "tool": TOOL_WORKSPACE_ARTIFACT_UPDATE,
                 "ready": True,
                 "purpose": "写入 L3 核心记忆块。",
                 "example_args": {
@@ -652,6 +659,105 @@ def memory_plan_write(
             "ready": all(bool(step.get("ready", False)) for step in steps),
             "steps": steps,
         },
+    }
+
+
+def memory_execute_write(
+    workspace_file: str | Path,
+    text: str,
+    source: str = "note",
+    intent: str = "",
+    session_id: str = "",
+    task_id: str = "",
+    title: str = "",
+    prefer_layer: str = "",
+    projects: List[str] | None = None,
+    files: List[str] | None = None,
+) -> Dict[str, Any]:
+    plan_result = memory_plan_write(
+        workspace_file,
+        text=text,
+        source=source,
+        intent=intent,
+        session_id=session_id,
+        task_id=task_id,
+        title=title,
+        prefer_layer=prefer_layer,
+        projects=projects,
+        files=files,
+    )
+    executed: List[Dict[str, Any]] = []
+    current_session_id = session_id.strip()
+    for step in plan_result.get("plan", {}).get("steps", []):
+        tool = str(step.get("tool", "") or "")
+        if tool == TOOL_WORKSPACE_START_SESSION:
+            result = workspace_start_session(workspace_file, step.get("example_args", {}).get("intent", intent or "写入记忆事件"))
+            current_session_id = str(result.get("session_id", "") or current_session_id)
+            executed.append({"tool": tool, "result": result})
+            continue
+        if not step.get("ready", False):
+            if tool == TOOL_WORKSPACE_LOG_SESSION_EVENT and current_session_id:
+                result = workspace_log_session_event(
+                    workspace_file,
+                    current_session_id,
+                    step.get("example_args", {}).get("event_type", source or "note"),
+                    step.get("example_args", {}).get("payload", {"text": text[:2000], "intent": intent}),
+                )
+                executed.append({"tool": tool, "result": result, "auto_resolved": True})
+                continue
+            executed.append({"tool": tool, "skipped": True, "reason": "missing_required_args", "required": step.get("required", [])})
+            continue
+        if tool == TOOL_WORKSPACE_LOG_SESSION_EVENT:
+            result = workspace_log_session_event(
+                workspace_file,
+                current_session_id or step.get("example_args", {}).get("session_id", ""),
+                step.get("example_args", {}).get("event_type", source or "note"),
+                step.get("example_args", {}).get("payload", {"text": text[:2000], "intent": intent}),
+            )
+        elif tool == TOOL_WORKSPACE_RECORD_CASE:
+            result = workspace_record_case(
+                workspace_file,
+                step.get("example_args", {}).get("task", intent or text[:80] or "memory_execute_write"),
+                step.get("example_args", {}).get("projects", projects or []),
+                step.get("example_args", {}).get("files", files or []),
+                step.get("example_args", {}).get("flow", "memory_write_judge -> memory_plan_write -> memory_execute_write"),
+                step.get("example_args", {}).get("risk_points", [text[:120]] if text.strip() else []),
+                source_session_id=current_session_id,
+                source_task_id=task_id.strip(),
+            )
+        elif tool == TOOL_WORKSPACE_SUGGEST_CASE:
+            result = workspace_suggest_case(workspace_file, current_session_id or step.get("example_args", {}).get("session_id", ""))
+        elif tool == TOOL_WORKSPACE_SYNC_CASE_ARTIFACTS:
+            result = workspace_sync_case_to_artifacts(
+                workspace_file,
+                current_session_id or step.get("example_args", {}).get("session_id", ""),
+                task_id=step.get("example_args", {}).get("task_id", task_id.strip()),
+                title=step.get("example_args", {}).get("title", title.strip()),
+            )
+        elif tool == TOOL_WORKSPACE_SYNC_SNIFF_ARTIFACTS:
+            result = workspace_sync_sniff_to_artifacts(
+                workspace_file,
+                step.get("example_args", {}).get("intent", intent or text[:80]),
+                task_id=step.get("example_args", {}).get("task_id", task_id.strip()),
+                title=step.get("example_args", {}).get("title", title.strip()),
+            )
+        elif tool == TOOL_WORKSPACE_ARTIFACT_UPDATE:
+            result = update_artifact(
+                workspace_file,
+                step.get("example_args", {}).get("name", "workspace_profile"),
+                step.get("example_args", {}).get("content", f"## Update\n\n{text[:2000]}"),
+            )
+        else:
+            executed.append({"tool": tool, "skipped": True, "reason": "unsupported_tool"})
+            continue
+        executed.append({"tool": tool, "result": result})
+    return {
+        "workspace": plan_result.get("workspace"),
+        "memory_layer": plan_result.get("memory_layer"),
+        "confidence": plan_result.get("confidence"),
+        "judge": plan_result.get("judge"),
+        "executed": executed,
+        "session_id": current_session_id,
     }
 
 
@@ -817,22 +923,22 @@ def _build_memory_layers(store: WorkspaceStore, active_tasks: List[Dict[str, Any
     current_truth_cases = sum(1 for item in case_rows if item.get("current_truth", True))
     superseded_cases = sum(1 for item in case_rows if item.get("superseded_by"))
     return {
-        "L0_session_events": {
+        LAYER_L0: {
             "description": "原始会话事件与外置 payload 引用",
             "event_count": len(store.read_jsonl(SESSION_EVENTS_FILE, limit=5000)),
             "ref_count": refs_count,
         },
-        "L1_case_atoms": {
+        LAYER_L1: {
             "description": "可复用任务经验原子（record-case / suggest-case）",
             "case_count": len(case_rows),
             "current_truth_count": current_truth_cases,
             "superseded_count": superseded_cases,
         },
-        "L2_task_spaces": {
+        LAYER_L2: {
             "description": "任务空间工件（context/plan/design/change-log/current-summary）",
             "active_task_space_count": len(active_tasks),
         },
-        "L3_workspace_profile": {
+        LAYER_L3: {
             "description": "工作区协议、规则、拓扑与团队约束",
             "instruction_files": 5,
             "rule_file_count": len(list(store.rules_dir.glob("*.yaml"))),
@@ -841,17 +947,17 @@ def _build_memory_layers(store: WorkspaceStore, active_tasks: List[Dict[str, Any
 
 
 def _build_memory_overview(memory_layers: Dict[str, Any]) -> Dict[str, Any]:
-    l0 = memory_layers.get("L0_session_events", {})
-    l1 = memory_layers.get("L1_case_atoms", {})
-    l2 = memory_layers.get("L2_task_spaces", {})
-    l3 = memory_layers.get("L3_workspace_profile", {})
+    l0 = memory_layers.get(LAYER_L0, {})
+    l1 = memory_layers.get(LAYER_L1, {})
+    l2 = memory_layers.get(LAYER_L2, {})
+    l3 = memory_layers.get(LAYER_L3, {})
     return {
-        "layer_order": ["L0_session_events", "L1_case_atoms", "L2_task_spaces", "L3_workspace_profile"],
+        "layer_order": MEMORY_LAYER_ORDER,
         "layer_counts": {
-            "L0_session_events": int(l0.get("event_count", 0)),
-            "L1_case_atoms": int(l1.get("case_count", 0)),
-            "L2_task_spaces": int(l2.get("active_task_space_count", 0)),
-            "L3_workspace_profile": int(l3.get("rule_file_count", 0)),
+            LAYER_L0: int(l0.get("event_count", 0)),
+            LAYER_L1: int(l1.get("case_count", 0)),
+            LAYER_L2: int(l2.get("active_task_space_count", 0)),
+            LAYER_L3: int(l3.get("rule_file_count", 0)),
         },
         "highlights": [
             f"L0 events={int(l0.get('event_count', 0))}, refs={int(l0.get('ref_count', 0))}",
@@ -931,7 +1037,7 @@ def _build_session_overview(events: List[Dict[str, Any]]) -> Dict[str, Any]:
         if any(isinstance(payload.get(key), str) and payload.get(key) for key in ["tool_name", "query", "target", "file_path", "path", "project"]):
             source_ref_like_count += 1
     return {
-        "memory_layer": "L0_session_events",
+        "memory_layer": LAYER_L0,
         "event_count": len(events),
         "event_type_counts": event_types,
         "payload_ref_count": payload_ref_count,

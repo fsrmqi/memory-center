@@ -462,6 +462,25 @@ plan.steps[].required= 缺失参数（若有）
 plan.steps[].example_args = 示例参数
 ```
 
+#### `memory_execute_write_tool`
+
+**描述：** 对 `memory_plan_write_tool` 的 ready 步骤做薄执行封装，适合 Agent 不想自己手工拼接最后一步时直接调用。
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| 参数集合 | 与 `memory_plan_write_tool` 相同 | — | 执行前会先生成计划，再执行 ready 步骤 |
+
+**返回：**
+
+```text
+memory_layer         = 本次执行对应的记忆层
+confidence           = 裁决置信度
+judge                = 原裁决结果
+executed[].tool      = 实际执行的工具名
+executed[].result    = 实际工具返回
+session_id           = 若过程中自动创建 session，则返回新 session_id
+```
+
 #### `memory_detect_changes_tool`
 
 **描述：** 将本地 Git 变更映射到受影响的项目、图节点和规则。
