@@ -25,6 +25,7 @@ from .rules import match_rules
 from .semantic import semantic_index_stats, semantic_query
 from .store import WorkspaceStore
 from .text_utils import base_tokenize
+from .write_receipts import WRITE_RECEIPTS_FILE, build_write_receipt, persist_write_receipt, query_write_receipts
 
 SESSION_EVENTS_FILE = "session-events.jsonl"
 SESSION_SUMMARIES_FILE = "session-summaries.jsonl"
@@ -75,6 +76,7 @@ def workspace_status(workspace_file: str | Path) -> Dict[str, Any]:
         "semantic_index": semantic_index_stats(workspace_file),
         "memory_layers": memory_layers,
         "memory_overview": _build_memory_overview(memory_layers),
+        "write_receipts_overview": _build_write_receipts_overview(store),
         "core_memory_blocks": core_memory_blocks,
         "active_task_spaces": active_tasks,
         "current_focus_task": current_focus_task,
@@ -252,7 +254,23 @@ def workspace_record_case(
         "current_truth": bool(current_truth) and not superseded_by.strip() and not valid_to.strip(),
     }
     store.append_jsonl("cross-service-task-memory.jsonl", item)
-    return {"recorded": True, "case": item}
+    receipt = persist_write_receipt(
+        store,
+        build_write_receipt(
+            layer=LAYER_L1,
+            action=TOOL_WORKSPACE_RECORD_CASE,
+            scope="memory",
+            target="cross-service-task-memory.jsonl",
+            target_file="memory/cross-service-task-memory.jsonl",
+            source_session_id=item.get("source_session_id", ""),
+            task_id=item.get("source_task_id", ""),
+        ),
+    )
+    return {
+        "recorded": True,
+        "case": item,
+        "write_receipt": receipt,
+    }
 
 
 def workspace_start_session(
@@ -297,6 +315,19 @@ def workspace_log_session_event(
         "payload_bytes": payload_bytes,
     }
     store.append_jsonl(SESSION_EVENTS_FILE, item)
+    receipt = persist_write_receipt(
+        store,
+        build_write_receipt(
+            layer=LAYER_L0,
+            action=TOOL_WORKSPACE_LOG_SESSION_EVENT,
+            scope="memory",
+            target=event_type,
+            target_file=f"memory/{SESSION_EVENTS_FILE}",
+            session_id=session_id,
+            payload_ref=payload_ref,
+            bytes_written=payload_bytes,
+        ),
+    )
     return {
         "logged": True,
         "session_id": session_id,
@@ -305,6 +336,7 @@ def workspace_log_session_event(
         "payload_ref": payload_ref,
         "payload_bytes": payload_bytes,
         "created_at": item.get("created_at"),
+        "write_receipt": receipt,
     }
 
 
@@ -757,7 +789,123 @@ def memory_execute_write(
         "confidence": plan_result.get("confidence"),
         "judge": plan_result.get("judge"),
         "executed": executed,
+        "write_receipts": [item["result"].get("write_receipt") for item in executed if isinstance(item.get("result"), dict) and item["result"].get("write_receipt")],
         "session_id": current_session_id,
+    }
+
+
+def workspace_write_receipts(
+    workspace_file: str | Path,
+    layer: str = "",
+    action: str = "",
+    scope: str = "",
+    task_id: str = "",
+    session_id: str = "",
+    limit: int = 50,
+) -> Dict[str, Any]:
+    config, _ = load_context(workspace_file)
+    return {
+        "workspace": config.workspace,
+        **query_write_receipts(
+            str(workspace_file),
+            layer=layer,
+            action=action,
+            scope=scope,
+            task_id=task_id,
+            session_id=session_id,
+            limit=limit,
+        ),
+    }
+
+
+def workspace_replay_write_chain(
+    workspace_file: str | Path,
+    task_id: str = "",
+    session_id: str = "",
+    limit: int = 100,
+) -> Dict[str, Any]:
+    config, _ = load_context(workspace_file)
+    result = query_write_receipts(
+        str(workspace_file),
+        task_id=task_id,
+        session_id=session_id,
+        limit=limit,
+    )
+    receipts = result.get("receipts", [])
+    timeline = [
+        {
+            "index": idx + 1,
+            "layer": row.get("layer", ""),
+            "action": row.get("action", ""),
+            "scope": row.get("scope", ""),
+            "target": row.get("target", ""),
+            "task_id": row.get("task_id", ""),
+            "session_id": row.get("session_id", "") or row.get("source_session_id", ""),
+            "receipt_ref": row.get("receipt_ref", ""),
+            "created_at": row.get("created_at", ""),
+        }
+        for idx, row in enumerate(receipts)
+    ]
+    return {
+        "workspace": config.workspace,
+        "task_id": task_id,
+        "session_id": session_id,
+        "timeline": timeline,
+        "summary": {
+            **result.get("summary", {}),
+            "timeline_count": len(timeline),
+        },
+    }
+
+
+def memory_eval_write_quality(
+    workspace_file: str | Path,
+    task_id: str = "",
+    session_id: str = "",
+    intent: str = "",
+    limit: int = 100,
+) -> Dict[str, Any]:
+    config, _ = load_context(workspace_file)
+    replay = workspace_replay_write_chain(workspace_file, task_id=task_id, session_id=session_id, limit=limit)
+    receipts = replay.get("timeline", [])
+    layers = {item.get("layer", "") for item in receipts}
+    findings: List[Dict[str, Any]] = []
+    score = 100
+
+    has_l0 = LAYER_L0 in layers
+    has_l1 = LAYER_L1 in layers
+    has_l2 = LAYER_L2 in layers
+    has_l3 = LAYER_L3 in layers
+
+    if session_id and not has_l0:
+        findings.append({"severity": "medium", "code": "missing_l0", "message": "存在 session_id，但没有对应的 L0 会话事件写入。"})
+        score -= 20
+    if task_id and not has_l2:
+        findings.append({"severity": "high", "code": "missing_l2", "message": "存在 task_id，但没有对应的 L2 任务空间写入。"})
+        score -= 30
+    if session_id and not has_l1:
+        findings.append({"severity": "medium", "code": "missing_l1", "message": "存在 session_id，但没有沉淀为 L1 case memory。"})
+        score -= 15
+    if "规则" in intent or "规范" in intent or "invariant" in intent.lower():
+        if not has_l3:
+            findings.append({"severity": "medium", "code": "missing_l3", "message": "意图看起来属于规则/规范类，但没有对应的 L3 核心记忆块写入。"})
+            score -= 20
+    if not receipts:
+        findings.append({"severity": "high", "code": "no_receipts", "message": "没有找到任何 write receipts，无法证明记忆写入链路已执行。"})
+        score = 0
+
+    quality = "high" if score >= 85 else ("medium" if score >= 60 else "low")
+    return {
+        "workspace": config.workspace,
+        "task_id": task_id,
+        "session_id": session_id,
+        "intent": intent,
+        "score": max(0, score),
+        "quality": quality,
+        "receipt_count": len(receipts),
+        "layers_present": sorted(layer for layer in layers if layer),
+        "findings": findings,
+        "replay_summary": replay.get("summary", {}),
     }
 
 
@@ -812,6 +960,15 @@ def workspace_sync_sniff_to_artifacts(
         "memory_layer": "L2_task_space",
         "auto_sync_mode": auto_sync_mode,
         "auto_sync_recommendation": sniff.get("auto_sync_recommendation", {}),
+        "write_receipt": build_write_receipt(
+            layer=LAYER_L2,
+            action=TOOL_WORKSPACE_SYNC_SNIFF_ARTIFACTS,
+            scope="task_space",
+            target="context,plan,current_summary",
+            target_file="artifacts/tasks/*",
+            task_id=resolved_task_id,
+            updated_artifacts=["context", "plan", "current_summary"],
+        ),
     }
 
 
@@ -878,6 +1035,16 @@ def workspace_sync_case_to_artifacts(
         "memory_layer": "L2_task_space",
         "auto_sync_mode": auto_sync_mode,
         "auto_sync_recommendation": auto_sync,
+        "write_receipt": build_write_receipt(
+            layer=LAYER_L2,
+            action=TOOL_WORKSPACE_SYNC_CASE_ARTIFACTS,
+            scope="task_space",
+            target="design,change_log,current_summary",
+            target_file="artifacts/tasks/*",
+            task_id=resolved_task_id,
+            session_id=session_id,
+            updated_artifacts=["design", "change_log", "current_summary"],
+        ),
     }
 
 
@@ -965,6 +1132,30 @@ def _build_memory_overview(memory_layers: Dict[str, Any]) -> Dict[str, Any]:
             f"L2 active_task_spaces={int(l2.get('active_task_space_count', 0))}",
             f"L3 rules={int(l3.get('rule_file_count', 0))}, instructions={int(l3.get('instruction_files', 0))}",
         ],
+    }
+
+
+def _build_write_receipts_overview(store: WorkspaceStore) -> Dict[str, Any]:
+    rows = store.read_jsonl(WRITE_RECEIPTS_FILE, limit=5000)
+    layers: Dict[str, int] = {}
+    actions: Dict[str, int] = {}
+    scopes: Dict[str, int] = {}
+    for row in rows:
+        layer = str(row.get("layer", "") or "")
+        action = str(row.get("action", "") or "")
+        scope = str(row.get("scope", "") or "")
+        if layer:
+            layers[layer] = layers.get(layer, 0) + 1
+        if action:
+            actions[action] = actions.get(action, 0) + 1
+        if scope:
+            scopes[scope] = scopes.get(scope, 0) + 1
+    return {
+        "total": len(rows),
+        "layer_counts": layers,
+        "action_counts": actions,
+        "scope_counts": scopes,
+        "recent_receipts": rows[-5:],
     }
 
 

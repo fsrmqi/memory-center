@@ -553,6 +553,9 @@ Available MCP tools / MCP 工具：
 | `memory_write_judge_tool` | Judge whether info should go to L0/L1/L2/L3 / 判断信息应写入 L0/L1/L2/L3 哪一层 |
 | `memory_plan_write_tool` | Build executable write plan from judge result / 基于裁决结果生成可执行写入计划 |
 | `memory_execute_write_tool` | Execute ready write steps from the plan / 执行写入计划中已就绪的步骤 |
+| `workspace_write_receipts_tool` | Query persisted write receipts / 查询已持久化的写入回执 |
+| `workspace_replay_write_chain_tool` | Replay one write chain by task or session / 按任务或会话回放写入链路 |
+| `memory_eval_write_quality_tool` | Evaluate whether write coverage is complete / 评估写入覆盖是否完整 |
 | `memory_detect_changes_tool` | Git diff risk mapping / Git 变更风险映射 |
 | `memory_contracts_tool` | API/Feign/MQ contract list / 契约列表 |
 | `workspace_trace_tool` | Cross-service trace hints / 跨服务追踪 |

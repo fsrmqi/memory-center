@@ -21,6 +21,7 @@ from memory_center.core.orchestrator import (
     memory_verify_checklist,
     memory_plan_write,
     memory_execute_write,
+    memory_eval_write_quality,
     memory_write_judge,
     workspace_end_session,
     workspace_log_session_event,
@@ -37,6 +38,8 @@ from memory_center.core.orchestrator import (
     workspace_trace,
     workspace_sync_case_to_artifacts,
     workspace_sync_sniff_to_artifacts,
+    workspace_write_receipts,
+    workspace_replay_write_chain,
 )
 from memory_center.core.artifacts import (
     append_change_log,
@@ -306,6 +309,36 @@ def create_server(workspace_file: str):
             projects=projects,
             files=files,
         )
+
+    @mcp.tool()
+    def workspace_write_receipts_tool(
+        layer: str = "",
+        action: str = "",
+        scope: str = "",
+        task_id: str = "",
+        session_id: str = "",
+        limit: int = 50,
+    ):
+        """Query persisted write receipts by layer/action/scope/task/session."""
+        return workspace_write_receipts(
+            _WORKSPACE_FILE,
+            layer=layer,
+            action=action,
+            scope=scope,
+            task_id=task_id,
+            session_id=session_id,
+            limit=limit,
+        )
+
+    @mcp.tool()
+    def workspace_replay_write_chain_tool(task_id: str = "", session_id: str = "", limit: int = 100):
+        """Replay one write chain by task_id or session_id."""
+        return workspace_replay_write_chain(_WORKSPACE_FILE, task_id=task_id, session_id=session_id, limit=limit)
+
+    @mcp.tool()
+    def memory_eval_write_quality_tool(task_id: str = "", session_id: str = "", intent: str = "", limit: int = 100):
+        """Evaluate whether receipts cover the expected write layers."""
+        return memory_eval_write_quality(_WORKSPACE_FILE, task_id=task_id, session_id=session_id, intent=intent, limit=limit)
 
     @mcp.tool()
     def workspace_trace_tool(entry: str):

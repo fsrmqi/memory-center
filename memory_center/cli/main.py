@@ -64,6 +64,9 @@ from memory_center.core.orchestrator import (
     workspace_end_session,
     workspace_resume_context,
     workspace_suggest_case,
+    workspace_write_receipts,
+    workspace_replay_write_chain,
+    memory_eval_write_quality,
 )
 from memory_center.core.rules import ensure_default_rules
 from memory_center.core.store import WorkspaceStore
@@ -357,6 +360,53 @@ def memory_execute_write_cmd(
             files=file,
         )
     )
+
+
+@app.command("write-receipts")
+def write_receipts_cmd(
+    workspace: str = typer.Option(...),
+    layer: str = typer.Option(""),
+    action: str = typer.Option(""),
+    scope: str = typer.Option(""),
+    task_id: str = typer.Option(""),
+    session_id: str = typer.Option(""),
+    limit: int = typer.Option(50),
+):
+    """Query persisted write receipts."""
+    print(
+        workspace_write_receipts(
+            workspace,
+            layer=layer,
+            action=action,
+            scope=scope,
+            task_id=task_id,
+            session_id=session_id,
+            limit=limit,
+        )
+    )
+
+
+@app.command("replay-write-chain")
+def replay_write_chain_cmd(
+    workspace: str = typer.Option(...),
+    task_id: str = typer.Option(""),
+    session_id: str = typer.Option(""),
+    limit: int = typer.Option(100),
+):
+    """Replay one write chain by task_id or session_id."""
+    print(workspace_replay_write_chain(workspace, task_id=task_id, session_id=session_id, limit=limit))
+
+
+@app.command("eval-write-quality")
+def eval_write_quality_cmd(
+    workspace: str = typer.Option(...),
+    task_id: str = typer.Option(""),
+    session_id: str = typer.Option(""),
+    intent: str = typer.Option(""),
+    limit: int = typer.Option(100),
+):
+    """Evaluate write quality from persisted receipts."""
+    print(memory_eval_write_quality(workspace, task_id=task_id, session_id=session_id, intent=intent, limit=limit))
 
 
 @app.command("generate-wiki")

@@ -13,6 +13,7 @@ from memory_center.core.orchestrator import (
     memory_callers,
     memory_callees,
     memory_execute_write,
+    memory_eval_write_quality,
     memory_plan_change,
     memory_plan_write,
     memory_query,
@@ -27,6 +28,8 @@ from memory_center.core.orchestrator import (
     workspace_status,
     workspace_sync_case_to_artifacts,
     workspace_sync_sniff_to_artifacts,
+    workspace_replay_write_chain,
+    workspace_write_receipts,
 )
 from memory_center.core.artifacts import (
     append_change_log,
@@ -266,6 +269,34 @@ def _route_request(path: str, params: dict, default_workspace: str | None) -> di
         title = params.get("title", [""])[0]
         prefer_layer = params.get("prefer_layer", [""])[0]
         return memory_execute_write(workspace, text=text, source=source, intent=intent, session_id=session_id, task_id=task_id, title=title, prefer_layer=prefer_layer, projects=params.get("project", []) or None, files=params.get("file", []) or None)
+    if path == "/workspace/write-receipts":
+        workspace = _require_workspace(params, default_workspace)
+        return workspace_write_receipts(
+            workspace,
+            layer=params.get("layer", [""])[0],
+            action=params.get("action", [""])[0],
+            scope=params.get("scope", [""])[0],
+            task_id=params.get("task_id", [""])[0],
+            session_id=params.get("session_id", [""])[0],
+            limit=_parse_int(params, "limit", 50),
+        )
+    if path == "/workspace/replay-write-chain":
+        workspace = _require_workspace(params, default_workspace)
+        return workspace_replay_write_chain(
+            workspace,
+            task_id=params.get("task_id", [""])[0],
+            session_id=params.get("session_id", [""])[0],
+            limit=_parse_int(params, "limit", 100),
+        )
+    if path == "/workspace/eval-write-quality":
+        workspace = _require_workspace(params, default_workspace)
+        return memory_eval_write_quality(
+            workspace,
+            task_id=params.get("task_id", [""])[0],
+            session_id=params.get("session_id", [""])[0],
+            intent=params.get("intent", [""])[0],
+            limit=_parse_int(params, "limit", 100),
+        )
     if path == "/workspace/verify-checklist":
         workspace = _require_workspace(params, default_workspace)
         target = _require_one(params, "target")

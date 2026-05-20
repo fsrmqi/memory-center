@@ -12,6 +12,7 @@ from filelock import FileLock
 from .config import load_workspace_config
 from .store import WorkspaceStore
 from .text_utils import base_tokenize
+from .write_receipts import WRITE_RECEIPTS_FILE, build_write_receipt, persist_write_receipt
 
 DEFAULT_ARTIFACTS = {
     "context": "context.md",
@@ -138,6 +139,19 @@ def update_artifact(workspace_file: str | Path, name: str, content: str) -> Dict
         before_bytes=len(existing.encode("utf-8")),
         after_bytes=len(next_content.encode("utf-8")),
     )
+    receipt = persist_write_receipt(
+        store,
+        build_write_receipt(
+            layer="L3_workspace_profile" if key in CORE_MEMORY_BLOCKS else "L2_task_spaces",
+            action="update_artifact",
+            scope="workspace",
+            target=key,
+            target_file=filename,
+            write_mode=mode,
+            audit_ref=audit,
+            bytes_written=len(next_content.encode("utf-8")),
+        ),
+    )
     return {
         "workspace": config.workspace,
         "updated": True,
@@ -147,6 +161,7 @@ def update_artifact(workspace_file: str | Path, name: str, content: str) -> Dict
         "bytes": len(next_content.encode("utf-8")),
         "write_mode": mode,
         "audit_ref": audit,
+        "write_receipt": receipt,
     }
 
 
@@ -407,6 +422,19 @@ def update_task_status(workspace_file: str | Path, task_id: str, status: str, so
     meta["status"] = normalized
     meta["archived"] = False
     _touch_task_meta(store, task_dir, meta, source=source)
+    receipt = persist_write_receipt(
+        store,
+        build_write_receipt(
+            layer="L2_task_spaces",
+            action=source,
+            scope="task_space",
+            target=key,
+            target_file=filename,
+            write_mode=mode,
+            audit_ref=audit,
+            task_id=meta["task_id"],
+        ),
+    )
     return {
         "workspace": config.workspace,
         "updated": True,
@@ -466,6 +494,7 @@ def update_task_artifact(workspace_file: str | Path, task_id: str, name: str, co
         "path": str(path),
         "write_mode": mode,
         "audit_ref": audit,
+        "write_receipt": receipt,
     }
 
 

@@ -32,7 +32,7 @@ from memory_center.core.config import load_workspace_config
 from memory_center.core.exporters import export_mermaid
 from memory_center.core.indexer import reindex_workspace
 from memory_center.core.instructions import write_agent_instructions
-from memory_center.core.orchestrator import memory_execute_write, memory_plan_write, memory_write_judge, workspace_sniff, workspace_trace
+from memory_center.core.orchestrator import memory_eval_write_quality, memory_execute_write, memory_plan_write, memory_write_judge, workspace_replay_write_chain, workspace_sniff, workspace_trace, workspace_write_receipts
 from memory_center.core.registry import add_to_group, create_group, register_workspace
 from memory_center.core.rules import ensure_default_rules
 from memory_center.core.store import WorkspaceStore
@@ -142,7 +142,9 @@ def test_record_case_cli_writes_history(tmp_path: Path):
     assert result.exit_code == 0
     store = WorkspaceStore(workspace)
     rows = store.read_jsonl("cross-service-task-memory.jsonl", limit=10)
+    receipt_rows = store.read_jsonl("write-receipts.jsonl", limit=20)
     assert rows
+    assert receipt_rows
     assert rows[-1]["task"] == "验证 ArticleFeignClient 影响面"
     assert rows[-1]["risk_points"] == ["Feign 契约兼容"]
     assert rows[-1]["memory_layer"] == "L1_case_atom"
@@ -362,6 +364,20 @@ def test_memory_write_judge_and_plan_write(tmp_path: Path):
     assert executed["memory_layer"] == "L3_workspace_profile"
     assert executed["executed"]
     assert executed["executed"][0]["tool"] == "workspace_artifact_update"
+    assert executed["write_receipts"]
+    assert executed["write_receipts"][0]["layer"] == "L3_workspace_profile"
+    store = WorkspaceStore(workspace)
+    receipt_rows = store.read_jsonl("write-receipts.jsonl", limit=20)
+    assert receipt_rows
+    assert any(row.get("layer") == "L3_workspace_profile" for row in receipt_rows)
+    queried = workspace_write_receipts(workspace, layer="L3_workspace_profile", limit=10)
+    assert queried["receipts"]
+    assert queried["summary"]["total"] >= 1
+    replay = workspace_replay_write_chain(workspace, limit=20)
+    assert replay["timeline"]
+    quality = memory_eval_write_quality(workspace, intent="更新团队规则", limit=20)
+    assert quality["receipt_count"] >= 1
+    assert quality["quality"] in {"high", "medium", "low"}
 
 
 def test_auto_archive_task_spaces(tmp_path: Path):
@@ -838,6 +854,13 @@ def test_http_bridge_routes(tmp_path: Path):
         assert plan_write["memory_layer"] == "L2_task_spaces"
         execute_write = json.loads(urlopen(f"{base}/workspace/memory-execute-write?text=HTTP%20team%20rule&source=note&intent=update%20rule").read().decode("utf-8"))
         assert execute_write["executed"]
+        assert execute_write["write_receipts"]
+        write_receipts = json.loads(urlopen(f"{base}/workspace/write-receipts?limit=10").read().decode("utf-8"))
+        assert write_receipts["receipts"]
+        replay_chain = json.loads(urlopen(f"{base}/workspace/replay-write-chain?limit=10").read().decode("utf-8"))
+        assert "timeline" in replay_chain
+        eval_quality = json.loads(urlopen(f"{base}/workspace/eval-write-quality?intent=update%20rule&limit=10").read().decode("utf-8"))
+        assert "quality" in eval_quality
 
         session_recent = json.loads(urlopen(f"{base}/workspace/sessions/recent?limit=5").read().decode("utf-8"))
         assert "recent_sessions" in session_recent

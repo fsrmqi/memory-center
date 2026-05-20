@@ -433,6 +433,51 @@ decision.suggested_tool   = 建议调用的写入工具
 decision.suggested_action = 建议动作说明
 ```
 
+多个写入型工具现在会附带统一 `write_receipt`：
+
+```text
+write_receipt.layer            = L0/L1/L2/L3
+write_receipt.action           = 实际写入动作名
+write_receipt.scope            = memory | workspace | task_space
+write_receipt.target           = 写入目标名
+write_receipt.target_file      = 目标文件
+write_receipt.task_id          = 相关任务空间 ID（若有）
+write_receipt.session_id       = 相关 session ID（若有）
+write_receipt.updated_artifacts= 更新的工件列表（若有）
+write_receipt.payload_ref      = 外置 payload 引用（若有）
+```
+
+所有已持久化的回执会追加写入：
+
+```text
+memory/write-receipts.jsonl
+```
+
+这让外部系统可以不依赖单次接口返回，直接按时间线扫描所有写入动作。
+
+可通过以下入口查询：
+
+- CLI: `memory-center write-receipts --workspace ... --layer L2_task_spaces`
+- MCP: `workspace_write_receipts_tool(layer="L2_task_spaces")`
+- HTTP: `/workspace/write-receipts?layer=L2_task_spaces`
+
+进一步的高级入口：
+
+- `workspace_replay_write_chain(...)`
+  按 task/session 回放完整写入链，适合排查“这次任务到底写到了哪些层”。
+- `memory_eval_write_quality(...)`
+  基于回执评估写入质量，输出 `score / quality / findings`，适合做 memory eval 或自动巡检。
+
+`workspace_status()` 现在也会返回：
+
+```text
+write_receipts_overview.total
+write_receipts_overview.layer_counts
+write_receipts_overview.action_counts
+write_receipts_overview.scope_counts
+write_receipts_overview.recent_receipts
+```
+
 #### `memory_plan_write_tool`
 
 **描述：** 基于 `memory_write_judge_tool` 结果生成可执行写入计划（不直接执行写入）。
