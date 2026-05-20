@@ -384,6 +384,7 @@ def test_memory_write_judge_and_plan_write(tmp_path: Path):
     assert "items" in unresolved
     resume_packet = workspace_resume_packet(workspace, intent="更新团队规则", limit=5)
     assert "next_recommended_actions" in resume_packet
+    assert resume_packet["resume_rule_profile"] in {"default", "rule_update", "implementation"}
     recent_evidence = workspace_recent_evidence(workspace, limit=5)
     assert "evidence" in recent_evidence
     model_profile = workspace_model_profile("deepseek-r1")
@@ -884,6 +885,7 @@ def test_http_bridge_routes(tmp_path: Path):
         assert "actions" in next_actions
         resume_packet = json.loads(urlopen(f"{base}/workspace/resume-packet?intent=update%20rule&limit=10").read().decode("utf-8"))
         assert "next_recommended_actions" in resume_packet
+        assert "resume_rule_profile" in resume_packet
         model_profile = json.loads(urlopen(f"{base}/workspace/model-profile?model_name=deepseek-r1").read().decode("utf-8"))
         assert model_profile["normalized_model"] == "deepseek"
         handoff_packet = json.loads(urlopen(f"{base}/workspace/handoff-packet?target_model=glm-4&intent=update%20rule&limit=10").read().decode("utf-8"))

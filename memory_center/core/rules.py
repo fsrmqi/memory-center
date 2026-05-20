@@ -67,11 +67,183 @@ DEFAULT_RULES = [
     }
 ]
 
+DEFAULT_HANDOFF_PROFILES = {
+    "profiles": {
+        "codex": {
+            "strengths": ["代码修改执行力强", "多文件实现推进快", "适合 task-first 交接"],
+            "handoff_style": "task-first",
+            "preferred_payload": ["task_id", "current_summary", "next_recommended_actions", "latest_receipts"],
+            "avoid": ["过长背景铺垫", "缺少可执行动作"],
+        },
+        "claude-code": {
+            "strengths": ["复杂上下文理解强", "风险分析与方案梳理好", "适合 context-first 交接"],
+            "handoff_style": "context-first",
+            "preferred_payload": ["task_title", "current_summary", "recent_evidence", "unresolved_items", "next_recommended_actions"],
+            "avoid": ["只有文件列表没有原因", "缺少任务阶段说明"],
+        },
+        "cursor-agent": {
+            "strengths": ["IDE 内短回路高效", "适合 file-first 接手", "适合跟随 task space 修改"],
+            "handoff_style": "file-first",
+            "preferred_payload": ["task_id", "current_summary", "recent_evidence", "next_recommended_actions"],
+            "avoid": ["大段历史堆叠", "没有文件入口的抽象描述"],
+        },
+        "gemini": {
+            "strengths": ["高层概览与长文阅读好", "适合 overview-first 接棒", "适合大范围交叉核对"],
+            "handoff_style": "overview-first",
+            "preferred_payload": ["task_title", "current_phase", "current_summary", "recent_evidence"],
+            "avoid": ["碎片化细节堆砌", "没有总体目标"],
+        },
+        "deepseek": {
+            "strengths": ["证据驱动推理清晰", "诊断与比较能力强", "适合 evidence-first 接手"],
+            "handoff_style": "evidence-first",
+            "preferred_payload": ["current_summary", "recent_evidence", "unresolved_items", "next_recommended_actions"],
+            "avoid": ["无依据结论", "只给结论不附证据"],
+        },
+        "glm": {
+            "strengths": ["中文工作流友好", "任务摘要接棒顺畅", "适合 summary-first 交接"],
+            "handoff_style": "summary-first",
+            "preferred_payload": ["task_title", "current_summary", "unresolved_items", "next_recommended_actions"],
+            "avoid": ["结构混乱", "大量低价值日志"],
+        },
+        "qwen": {
+            "strengths": ["中文代码协作顺滑", "说明与执行平衡好", "适合 balanced 交接"],
+            "handoff_style": "balanced",
+            "preferred_payload": ["task_title", "current_summary", "recent_evidence", "next_recommended_actions"],
+            "avoid": ["只有抽象目标没有执行入口", "上下文缺少阶段说明"],
+        },
+        "minimax": {
+            "strengths": ["长文摘要友好", "适合 overview + summary 混合交接"],
+            "handoff_style": "overview-first",
+            "preferred_payload": ["task_title", "current_phase", "current_summary", "unresolved_items"],
+            "avoid": ["无重点的证据堆砌", "缺少高层目标"],
+        },
+        "mimo": {
+            "strengths": ["轻量快速切换友好", "适合最小交接包"],
+            "handoff_style": "minimal-first",
+            "preferred_payload": ["task_id", "current_summary", "next_recommended_actions"],
+            "avoid": ["超长上下文", "低价值历史噪声"],
+        },
+        "generic-mcp-agent": {
+            "strengths": ["适配任意 MCP Agent", "通用性最好"],
+            "handoff_style": "balanced",
+            "preferred_payload": ["task_id", "current_summary", "recent_evidence", "next_recommended_actions", "latest_receipts"],
+            "avoid": ["依赖特定 IDE 假设", "依赖特定模型习惯"],
+        },
+    }
+}
+
+DEFAULT_RESUME_RULES = {
+    "default": {
+        "fields": [
+            "task_id",
+            "task_title",
+            "task_status",
+            "current_phase",
+            "current_summary",
+            "latest_receipts",
+            "recent_evidence",
+            "next_recommended_actions",
+            "unresolved_items",
+            "verification_pending",
+        ],
+        "evidence_limit": 5,
+        "receipt_limit": 5,
+        "action_limit": 5,
+        "unresolved_limit": 5,
+    },
+    "profiles": {
+        "rule_update": {
+            "trigger_keywords": ["规则", "规范", "invariant", "migration", "策略"],
+            "fields": [
+                "task_id",
+                "task_title",
+                "current_phase",
+                "current_summary",
+                "recent_evidence",
+                "unresolved_items",
+                "next_recommended_actions",
+                "verification_pending",
+            ],
+            "evidence_limit": 6,
+            "receipt_limit": 4,
+            "action_limit": 6,
+            "unresolved_limit": 6,
+        },
+        "implementation": {
+            "trigger_keywords": ["修复", "改造", "实现", "开发", "需求"],
+            "fields": [
+                "task_id",
+                "task_title",
+                "task_status",
+                "current_phase",
+                "current_summary",
+                "latest_receipts",
+                "next_recommended_actions",
+                "unresolved_items",
+            ],
+            "evidence_limit": 4,
+            "receipt_limit": 6,
+            "action_limit": 6,
+            "unresolved_limit": 5,
+        },
+    },
+}
+
+DEFAULT_HANDOFF_RULES = {
+    "default": {
+        "done_limit": 5,
+        "next_limit": 5,
+        "evidence_limit": 5,
+        "risk_limit": 5,
+        "include_sections": [
+            "what_has_been_done",
+            "what_not_to_repeat",
+            "what_is_risky",
+            "what_to_check_next",
+            "minimal_required_context",
+            "recent_evidence",
+            "notes",
+        ],
+    },
+    "profiles": {
+        "evidence_first": {
+            "trigger_models": ["deepseek"],
+            "done_limit": 4,
+            "next_limit": 4,
+            "evidence_limit": 8,
+            "risk_limit": 6,
+        },
+        "task_first": {
+            "trigger_models": ["codex", "cursor-agent", "mimo"],
+            "done_limit": 6,
+            "next_limit": 6,
+            "evidence_limit": 4,
+            "risk_limit": 4,
+        },
+        "summary_first": {
+            "trigger_models": ["glm", "qwen", "minimax", "gemini", "claude-code"],
+            "done_limit": 4,
+            "next_limit": 5,
+            "evidence_limit": 5,
+            "risk_limit": 5,
+        },
+    },
+}
+
 
 def ensure_default_rules(store: WorkspaceStore) -> Path:
     path = store.rules_dir / "global-rules.yaml"
     if not path.exists():
         path.write_text(yaml.safe_dump({"rules": DEFAULT_RULES}, allow_unicode=True, sort_keys=False), encoding="utf-8")
+    handoff_path = store.rules_dir / "handoff-profiles.yaml"
+    if not handoff_path.exists():
+        handoff_path.write_text(yaml.safe_dump(DEFAULT_HANDOFF_PROFILES, allow_unicode=True, sort_keys=False), encoding="utf-8")
+    resume_path = store.rules_dir / "resume-rules.yaml"
+    if not resume_path.exists():
+        resume_path.write_text(yaml.safe_dump(DEFAULT_RESUME_RULES, allow_unicode=True, sort_keys=False), encoding="utf-8")
+    handoff_rules_path = store.rules_dir / "handoff-rules.yaml"
+    if not handoff_rules_path.exists():
+        handoff_rules_path.write_text(yaml.safe_dump(DEFAULT_HANDOFF_RULES, allow_unicode=True, sort_keys=False), encoding="utf-8")
     return path
 
 

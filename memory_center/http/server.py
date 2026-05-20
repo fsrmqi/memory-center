@@ -24,6 +24,7 @@ from memory_center.core.orchestrator import (
     workspace_handoff_packet,
     workspace_handoff_history,
     workspace_model_profile,
+    workspace_continuity_dashboard,
     workspace_next_actions,
     workspace_recent_evidence,
     workspace_recent_sessions,
@@ -371,6 +372,15 @@ def _route_request(path: str, params: dict, default_workspace: str | None) -> di
             task_id=params.get("task_id", [""])[0],
             session_id=params.get("session_id", [""])[0],
             limit=_parse_int(params, "limit", 50),
+        )
+    if path == "/workspace/continuity-dashboard":
+        workspace = _require_workspace(params, default_workspace)
+        return workspace_continuity_dashboard(
+            workspace,
+            intent=params.get("intent", [""])[0],
+            task_id=params.get("task_id", [""])[0],
+            session_id=params.get("session_id", [""])[0],
+            limit=_parse_int(params, "limit", 10),
         )
     if path == "/workspace/resume-context":
         workspace = _require_workspace(params, default_workspace)

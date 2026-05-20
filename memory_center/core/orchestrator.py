@@ -21,7 +21,7 @@ from .artifacts import (
 )
 from .config import load_workspace_config
 from .registry import resolve_group
-from .rules import match_rules
+from .rules import DEFAULT_HANDOFF_PROFILES, DEFAULT_HANDOFF_RULES, DEFAULT_RESUME_RULES, ensure_default_rules, match_rules
 from .semantic import semantic_index_stats, semantic_query
 from .store import WorkspaceStore
 from .text_utils import base_tokenize
@@ -583,7 +583,7 @@ def workspace_resume_packet(
     intent: str = "",
     limit: int = 10,
 ) -> Dict[str, Any]:
-    config, _ = load_context(workspace_file)
+    config, store = load_context(workspace_file)
     resolved_task_id = task_id.strip()
     focus_task = workspace_status(workspace_file).get("current_focus_task")
     if not resolved_task_id and focus_task:
@@ -594,11 +594,12 @@ def workspace_resume_packet(
         tasks = list_task_spaces(workspace_file, include_archived=True)
         task_meta = next((item for item in tasks.get("active_tasks", []) + tasks.get("archived_tasks", []) if item.get("task_id") == resolved_task_id), None)
         current_summary = get_task_artifact(workspace_file, resolved_task_id, "current_summary").get("content", "")
-    evidence = workspace_recent_evidence(workspace_file, task_id=resolved_task_id, session_id=session_id, limit=limit).get("evidence", [])
-    next_actions = workspace_next_actions(workspace_file, task_id=resolved_task_id, session_id=session_id, intent=intent or current_summary, limit=limit).get("actions", [])
-    unresolved = workspace_unresolved_items(workspace_file, task_id=resolved_task_id, session_id=session_id, intent=intent or current_summary, limit=limit).get("items", [])
+    resume_rules = _load_resume_rules(store, intent or current_summary)
+    evidence = workspace_recent_evidence(workspace_file, task_id=resolved_task_id, session_id=session_id, limit=int(resume_rules.get("evidence_limit", limit))).get("evidence", [])
+    next_actions = workspace_next_actions(workspace_file, task_id=resolved_task_id, session_id=session_id, intent=intent or current_summary, limit=int(resume_rules.get("action_limit", limit))).get("actions", [])
+    unresolved = workspace_unresolved_items(workspace_file, task_id=resolved_task_id, session_id=session_id, intent=intent or current_summary, limit=int(resume_rules.get("unresolved_limit", limit))).get("items", [])
     replay = workspace_replay_write_chain(workspace_file, task_id=resolved_task_id, session_id=session_id, limit=limit)
-    return {
+    packet = {
         "workspace": config.workspace,
         "task_id": resolved_task_id,
         "session_id": session_id,
@@ -606,90 +607,35 @@ def workspace_resume_packet(
         "task_status": (task_meta or {}).get("status", ""),
         "current_summary": current_summary,
         "current_phase": _infer_task_phase(current_summary, replay.get("timeline", [])),
-        "latest_receipts": replay.get("timeline", [])[-5:],
+        "latest_receipts": replay.get("timeline", [])[-int(resume_rules.get("receipt_limit", 5)):],
         "recent_evidence": evidence,
         "next_recommended_actions": next_actions,
         "unresolved_items": unresolved,
         "verification_pending": bool(unresolved),
+        "resume_rule_profile": resume_rules.get("profile_name", "default"),
     }
+    fields = resume_rules.get("fields", list(packet.keys()))
+    filtered = {"workspace": config.workspace}
+    for key in fields:
+        if key in packet:
+            filtered[key] = packet[key]
+    filtered["resume_rule_profile"] = packet.get("resume_rule_profile", "default")
+    return filtered
 
 
-def workspace_model_profile(model_name: str) -> Dict[str, Any]:
+def workspace_model_profile(model_name: str, workspace_file: str | Path | None = None) -> Dict[str, Any]:
     normalized = _normalize_model_name(model_name)
-    profiles = {
-        "codex": {
-            "model": "codex",
-            "strengths": ["代码修改执行力强", "多文件实现推进快", "适合 task-first 交接"],
-            "handoff_style": "task-first",
-            "preferred_payload": ["task_id", "current_summary", "next_recommended_actions", "latest_receipts"],
-            "avoid": ["过长背景铺垫", "缺少可执行动作"],
-        },
-        "claude-code": {
-            "model": "claude-code",
-            "strengths": ["复杂上下文理解强", "风险分析与方案梳理好", "适合 context-first 交接"],
-            "handoff_style": "context-first",
-            "preferred_payload": ["task_title", "current_summary", "recent_evidence", "unresolved_items", "next_recommended_actions"],
-            "avoid": ["只有文件列表没有原因", "缺少任务阶段说明"],
-        },
-        "cursor-agent": {
-            "model": "cursor-agent",
-            "strengths": ["IDE 内短回路高效", "适合 file-first 接手", "适合跟随 task space 修改"],
-            "handoff_style": "file-first",
-            "preferred_payload": ["task_id", "current_summary", "recent_evidence", "next_recommended_actions"],
-            "avoid": ["大段历史堆叠", "没有文件入口的抽象描述"],
-        },
-        "gemini": {
-            "model": "gemini",
-            "strengths": ["高层概览与长文阅读好", "适合 overview-first 接棒", "适合大范围交叉核对"],
-            "handoff_style": "overview-first",
-            "preferred_payload": ["task_title", "current_phase", "current_summary", "recent_evidence"],
-            "avoid": ["碎片化细节堆砌", "没有总体目标"],
-        },
-        "deepseek": {
-            "model": "deepseek",
-            "strengths": ["证据驱动推理清晰", "诊断与比较能力强", "适合 evidence-first 接手"],
-            "handoff_style": "evidence-first",
-            "preferred_payload": ["current_summary", "recent_evidence", "unresolved_items", "next_recommended_actions"],
-            "avoid": ["无依据结论", "只给结论不附证据"],
-        },
-        "glm": {
-            "model": "glm",
-            "strengths": ["中文工作流友好", "任务摘要接棒顺畅", "适合 summary-first 交接"],
-            "handoff_style": "summary-first",
-            "preferred_payload": ["task_title", "current_summary", "unresolved_items", "next_recommended_actions"],
-            "avoid": ["结构混乱", "大量低价值日志"],
-        },
-        "qwen": {
-            "model": "qwen",
-            "strengths": ["中文代码协作顺滑", "说明与执行平衡好", "适合 balanced 交接"],
-            "handoff_style": "balanced",
-            "preferred_payload": ["task_title", "current_summary", "recent_evidence", "next_recommended_actions"],
-            "avoid": ["只有抽象目标没有执行入口", "上下文缺少阶段说明"],
-        },
-        "minimax": {
-            "model": "minimax",
-            "strengths": ["长文摘要友好", "适合 overview + summary 混合交接"],
-            "handoff_style": "overview-first",
-            "preferred_payload": ["task_title", "current_phase", "current_summary", "unresolved_items"],
-            "avoid": ["无重点的证据堆砌", "缺少高层目标"],
-        },
-        "mimo": {
-            "model": "mimo",
-            "strengths": ["轻量快速切换友好", "适合最小交接包"],
-            "handoff_style": "minimal-first",
-            "preferred_payload": ["task_id", "current_summary", "next_recommended_actions"],
-            "avoid": ["超长上下文", "低价值历史噪声"],
-        },
-        "generic-mcp-agent": {
-            "model": "generic-mcp-agent",
-            "strengths": ["适配任意 MCP Agent", "通用性最好"],
-            "handoff_style": "balanced",
-            "preferred_payload": ["task_id", "current_summary", "recent_evidence", "next_recommended_actions", "latest_receipts"],
-            "avoid": ["依赖特定 IDE 假设", "依赖特定模型习惯"],
-        },
-    }
-    profile = profiles.get(normalized, profiles["generic-mcp-agent"])
-    return {"requested_model": model_name, "normalized_model": normalized, **profile}
+    profiles = dict(DEFAULT_HANDOFF_PROFILES.get("profiles", {}))
+    if workspace_file:
+        import yaml
+
+        store = WorkspaceStore(workspace_file)
+        ensure_default_rules(store)
+        path = store.rules_dir / "handoff-profiles.yaml"
+        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        profiles.update(data.get("profiles", {}))
+    profile = profiles.get(normalized, profiles.get("generic-mcp-agent", {}))
+    return {"requested_model": model_name, "normalized_model": normalized, "model": normalized, **profile}
 
 
 def workspace_handoff_packet(
@@ -701,7 +647,8 @@ def workspace_handoff_packet(
     limit: int = 10,
 ) -> Dict[str, Any]:
     config, store = load_context(workspace_file)
-    profile = workspace_model_profile(target_model)
+    profile = workspace_model_profile(target_model, workspace_file=workspace_file)
+    handoff_rules = _load_handoff_rules(store, profile.get("normalized_model", ""))
     resume_packet = workspace_resume_packet(workspace_file, task_id=task_id, session_id=session_id, intent=intent, limit=limit)
     quality = memory_eval_write_quality(
         workspace_file,
@@ -721,21 +668,23 @@ def workspace_handoff_packet(
     ]
     if quality.get("findings"):
         notes.append(f"当前记忆覆盖缺口：{quality['findings'][0].get('message', '')}")
+    packet_body = {
+        "what_has_been_done": resume_packet.get("latest_receipts", [])[-int(handoff_rules.get("done_limit", 5)):],
+        "what_not_to_repeat": profile.get("avoid", []),
+        "what_is_risky": quality.get("findings", [])[: int(handoff_rules.get("risk_limit", 5))],
+        "what_to_check_next": resume_packet.get("next_recommended_actions", [])[: int(handoff_rules.get("next_limit", 5))],
+        "minimal_required_context": minimal_context,
+        "recent_evidence": resume_packet.get("recent_evidence", [])[: int(handoff_rules.get("evidence_limit", 5))],
+        "notes": notes,
+    }
     packet = {
         "workspace": config.workspace,
         "target_model": target_model,
         "task_id": resume_packet.get("task_id", ""),
         "session_id": session_id,
         "model_profile": profile,
-        "handoff_packet": {
-            "what_has_been_done": resume_packet.get("latest_receipts", [])[-5:],
-            "what_not_to_repeat": profile.get("avoid", []),
-            "what_is_risky": quality.get("findings", []),
-            "what_to_check_next": resume_packet.get("next_recommended_actions", [])[:5],
-            "minimal_required_context": minimal_context,
-            "recent_evidence": resume_packet.get("recent_evidence", [])[:5],
-            "notes": notes,
-        },
+        "handoff_rule_profile": handoff_rules.get("profile_name", "default"),
+        "handoff_packet": {k: v for k, v in packet_body.items() if k in handoff_rules.get("include_sections", list(packet_body.keys()))},
     }
     history_item = {
         "target_model": target_model,
@@ -750,6 +699,34 @@ def workspace_handoff_packet(
     store.append_jsonl("handoff-history.jsonl", history_item)
     packet["handoff_ref"] = "memory/handoff-history.jsonl"
     return packet
+
+
+def workspace_continuity_dashboard(
+    workspace_file: str | Path,
+    intent: str = "",
+    task_id: str = "",
+    session_id: str = "",
+    limit: int = 10,
+) -> Dict[str, Any]:
+    status = workspace_status(workspace_file)
+    focus_task_id = task_id or (status.get("current_focus_task") or {}).get("task_id", "")
+    resume_packet = workspace_resume_packet(workspace_file, task_id=focus_task_id, session_id=session_id, intent=intent, limit=limit)
+    next_actions = workspace_next_actions(workspace_file, task_id=focus_task_id, session_id=session_id, intent=intent, limit=limit)
+    unresolved = workspace_unresolved_items(workspace_file, task_id=focus_task_id, session_id=session_id, intent=intent, limit=limit)
+    receipts = workspace_write_receipts(workspace_file, task_id=focus_task_id, session_id=session_id, limit=limit)
+    handoffs = workspace_handoff_history(workspace_file, task_id=focus_task_id, session_id=session_id, limit=limit)
+    evidence = workspace_recent_evidence(workspace_file, task_id=focus_task_id, session_id=session_id, limit=limit)
+    return {
+        "workspace": status.get("workspace", ""),
+        "focus_task": status.get("current_focus_task"),
+        "continuity_overview": status.get("continuity_overview", {}),
+        "resume_packet": resume_packet,
+        "next_actions": next_actions.get("actions", []),
+        "unresolved_items": unresolved.get("items", []),
+        "recent_receipts": receipts.get("receipts", [])[-5:],
+        "recent_handoffs": handoffs.get("handoffs", [])[-5:],
+        "recent_evidence": evidence.get("evidence", [])[-5:],
+    }
 
 
 def workspace_handoff_history(
@@ -1526,6 +1503,45 @@ def _normalize_model_name(model_name: str) -> str:
     if raw.startswith("mimo"):
         return "mimo"
     return "generic-mcp-agent"
+
+
+def _load_resume_rules(store: WorkspaceStore, text: str) -> Dict[str, Any]:
+    import yaml
+
+    ensure_default_rules(store)
+    path = store.rules_dir / "resume-rules.yaml"
+    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    default = dict(DEFAULT_RESUME_RULES.get("default", {}))
+    default.update(data.get("default", {}))
+    normalized = (text or "").lower()
+    for profile_name, profile in (data.get("profiles", {}) or {}).items():
+        triggers = [str(item).lower() for item in profile.get("trigger_keywords", [])]
+        if triggers and any(token in normalized for token in triggers):
+            merged = dict(default)
+            merged.update(profile)
+            merged["profile_name"] = profile_name
+            return merged
+    default["profile_name"] = "default"
+    return default
+
+
+def _load_handoff_rules(store: WorkspaceStore, normalized_model: str) -> Dict[str, Any]:
+    import yaml
+
+    ensure_default_rules(store)
+    path = store.rules_dir / "handoff-rules.yaml"
+    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    default = dict(DEFAULT_HANDOFF_RULES.get("default", {}))
+    default.update(data.get("default", {}))
+    for profile_name, profile in (data.get("profiles", {}) or {}).items():
+        trigger_models = [str(item).lower() for item in profile.get("trigger_models", [])]
+        if trigger_models and normalized_model in trigger_models:
+            merged = dict(default)
+            merged.update(profile)
+            merged["profile_name"] = profile_name
+            return merged
+    default["profile_name"] = "default"
+    return default
 
 
 def _build_core_memory_blocks_status(store: WorkspaceStore) -> Dict[str, Any]:

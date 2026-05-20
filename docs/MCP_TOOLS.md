@@ -46,6 +46,8 @@ Memory Center exposes graph-first project memory to AI coding agents through MCP
 | `workspace_unresolved_items_tool(task_id, session_id, intent, limit)` | Return unresolved items for one task/session. / 返回一个任务或会话的未解决事项。 |
 | `workspace_next_actions_tool(task_id, session_id, intent, limit)` | Suggest next actions for one task/session. / 为一个任务或会话推荐下一步动作。 |
 | `workspace_resume_packet_tool(task_id, session_id, intent, limit)` | Build a compact resume packet for the next model/session. / 为下一个模型或下一次会话生成紧凑的恢复包。 |
+
+`workspace_resume_packet_tool` is now rule-driven and returns `resume_rule_profile` so you can see which resume profile shaped the packet. / `workspace_resume_packet_tool` 现在由规则驱动，并会返回 `resume_rule_profile`，用于说明本次恢复包命中了哪条规则画像。
 | `workspace_model_profile_tool(model_name)` | Normalize one target model name and return its handoff preference profile. / 规范化目标模型名称，并返回其交接偏好画像。 |
 | `workspace_handoff_packet_tool(target_model, task_id, session_id, intent, limit)` | Build one handoff packet tailored to the target model. / 按目标模型生成一份专用交接包。 |
 | `workspace_handoff_history_tool(target_model, task_id, session_id, limit)` | Query persisted handoff history. / 查询已持久化的交接历史。 |

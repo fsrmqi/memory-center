@@ -62,6 +62,7 @@ from memory_center.core.orchestrator import (
     workspace_trace,
     workspace_log_session_event,
     workspace_end_session,
+    workspace_continuity_dashboard,
     workspace_next_actions,
     workspace_recent_evidence,
     workspace_handoff_packet,
@@ -603,6 +604,18 @@ def handoff_history_cmd(
 ):
     """Query persisted handoff history."""
     print(workspace_handoff_history(workspace, target_model=target_model, task_id=task_id, session_id=session_id, limit=limit))
+
+
+@app.command("continuity-dashboard")
+def continuity_dashboard_cmd(
+    workspace: str = typer.Option(...),
+    intent: str = typer.Option(""),
+    task_id: str = typer.Option(""),
+    session_id: str = typer.Option(""),
+    limit: int = typer.Option(10),
+):
+    """Build one continuity dashboard for daily work."""
+    print(workspace_continuity_dashboard(workspace, intent=intent, task_id=task_id, session_id=session_id, limit=limit))
 
 
 @app.command("suggest-case")

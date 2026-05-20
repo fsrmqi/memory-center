@@ -30,6 +30,7 @@ from memory_center.core.orchestrator import (
     workspace_handoff_packet,
     workspace_handoff_history,
     workspace_model_profile,
+    workspace_continuity_dashboard,
     workspace_resume_packet,
     workspace_resume_context,
     workspace_suggest_case,
@@ -458,6 +459,11 @@ def create_server(workspace_file: str):
     def workspace_handoff_history_tool(target_model: str = "", task_id: str = "", session_id: str = "", limit: int = 50):
         """Query persisted handoff history."""
         return workspace_handoff_history(_WORKSPACE_FILE, target_model=target_model, task_id=task_id, session_id=session_id, limit=limit)
+
+    @mcp.tool()
+    def workspace_continuity_dashboard_tool(intent: str = "", task_id: str = "", session_id: str = "", limit: int = 10):
+        """Build one daily continuity dashboard."""
+        return workspace_continuity_dashboard(_WORKSPACE_FILE, intent=intent, task_id=task_id, session_id=session_id, limit=limit)
 
     @mcp.tool()
     def workspace_suggest_case_tool(session_id: str):
