@@ -39,6 +39,39 @@ services:
 | `services[].port` | 否 | 服务端口。 |
 | `services[].tags` | 否 | 标签，例如 `contract`、`common`、`engine`、`task`。 |
 
+### Multi-Root 示例（推荐）/ Multi-Root Example (Recommended)
+
+当项目分散在不同父目录时，可以在同一个 workspace 里混用相对路径和绝对路径：
+
+```yaml
+workspace: shared-engineering-workspace
+root: /Users/you/work/a
+language:
+  - zh-CN
+  - en-US
+services:
+  - name: account-service
+    path: account-service
+    type: spring-boot-service
+    service_name: account-service
+
+  - name: billing-service
+    path: /Users/you/work/b/billing-service
+    type: spring-boot-service
+    service_name: billing-service
+
+  - name: common-contract
+    path: /Users/you/work/c/common-contract
+    type: shared-library
+    tags: [contract]
+```
+
+说明：
+
+- `root` 仍然是 workspace 默认根目录。
+- `services[].path` 为相对路径时，按 `root` 解析。
+- `services[].path` 为绝对路径时，按绝对路径直接索引，不要求在 `root` 目录下。
+
 ## English
 
 The workspace file declares repositories and services managed by Memory Center.

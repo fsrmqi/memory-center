@@ -144,6 +144,33 @@ services:
     tags: [contract]
 ```
 
+如果是多项目跨目录（不在同一个父目录），可以这样配置：
+
+```yaml
+workspace: backend-platform
+root: /work/a
+language:
+  - zh-CN
+  - en-US
+services:
+  - name: gateway
+    path: gateway
+    type: spring-cloud-gateway
+    service_name: gateway
+  - name: user-service
+    path: /work/b/user-service
+    type: spring-boot-service
+    service_name: user-service
+  - name: common-api
+    path: /work/c/common-api
+    type: shared-library
+    tags: [contract]
+```
+
+这表示：
+- `gateway` 按 `root=/work/a` 下的相对路径解析
+- `user-service` 和 `common-api` 直接使用绝对路径索引
+
 ### 然后重建索引
 
 ```bash
