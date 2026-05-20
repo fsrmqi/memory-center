@@ -19,6 +19,8 @@ from memory_center.core.orchestrator import (
     memory_search_code,
     memory_symbol,
     memory_verify_checklist,
+    memory_plan_write,
+    memory_write_judge,
     workspace_end_session,
     workspace_log_session_event,
     workspace_recent_sessions,
@@ -231,6 +233,52 @@ def create_server(workspace_file: str):
     def memory_verify_checklist_tool(target: str):
         """Generate one verification checklist before merge/release."""
         return memory_verify_checklist(_WORKSPACE_FILE, target)
+
+    @mcp.tool()
+    def memory_write_judge_tool(
+        text: str,
+        source: str = "note",
+        intent: str = "",
+        prefer_layer: str = "",
+        projects: List[str] | None = None,
+        files: List[str] | None = None,
+    ):
+        """Judge whether input should be written to L0/L1/L2/L3 memory layer."""
+        return memory_write_judge(
+            _WORKSPACE_FILE,
+            text=text,
+            source=source,
+            intent=intent,
+            prefer_layer=prefer_layer,
+            projects=projects,
+            files=files,
+        )
+
+    @mcp.tool()
+    def memory_plan_write_tool(
+        text: str,
+        source: str = "note",
+        intent: str = "",
+        session_id: str = "",
+        task_id: str = "",
+        title: str = "",
+        prefer_layer: str = "",
+        projects: List[str] | None = None,
+        files: List[str] | None = None,
+    ):
+        """Build one executable write plan from memory_write_judge decision."""
+        return memory_plan_write(
+            _WORKSPACE_FILE,
+            text=text,
+            source=source,
+            intent=intent,
+            session_id=session_id,
+            task_id=task_id,
+            title=title,
+            prefer_layer=prefer_layer,
+            projects=projects,
+            files=files,
+        )
 
     @mcp.tool()
     def workspace_trace_tool(entry: str):

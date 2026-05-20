@@ -36,6 +36,8 @@ Memory Center exposes graph-first project memory to AI coding agents through MCP
 | `memory_impact_tool(target, direction, max_depth)` | Impact analysis for DTO, Feign, MQ topic, endpoint, service or file, with lookup provenance, evidence summary and `progressive` layered view. / 对 DTO、Feign、消息主题、接口、服务、文件做影响面分析，并附带命中来源、证据摘要和 `progressive` 分层视图。 |
 | `memory_plan_change_tool(target, direction, max_depth)` | Build an actionable change plan from impact and rule evidence. / 基于影响面与规则证据生成可执行改动计划。 |
 | `memory_verify_checklist_tool(target)` | Build verification checklist before merge/release. / 生成合并/发布前验证清单。 |
+| `memory_write_judge_tool(text, source, intent, prefer_layer, projects, files)` | Judge which layer should receive this information: `L0_session_events / L1_case_atoms / L2_task_spaces / L3_workspace_profile`, with confidence, score and suggested tool. / 判断输入信息应写入哪个记忆层：`L0_session_events / L1_case_atoms / L2_task_spaces / L3_workspace_profile`，并返回置信度、评分和建议工具。 |
+| `memory_plan_write_tool(text, source, intent, session_id, task_id, title, prefer_layer, projects, files)` | Build one executable write plan from judge result, including readiness and example args for each step. / 基于裁决结果生成可执行写入计划，包含每步是否可执行与示例参数。 |
 | `memory_detect_changes_tool(scope)` | Map local git diff to affected files, projects, rules and risk level. / 把本地 Git diff 映射为影响项目、规则和风险等级。 |
 | `memory_contracts_tool()` | List API/Feign/MQ contracts and contract rules. / 列出接口、Feign、MQ 契约及相关规则。 |
 | `workspace_trace_tool(entry)` | Trace candidates by class, endpoint, Feign client or topic. / 按类名、接口、Feign、Topic 追踪候选链路。 |
@@ -70,17 +72,19 @@ Memory Center exposes graph-first project memory to AI coding agents through MCP
 ## Recommended agent behavior / 推荐 Agent 行为
 
 1. Call `workspace_sniff_tool` before broad code exploration.
-2. For long-running or collaborative tasks, call `workspace_sync_sniff_artifacts_tool` to write context/plan into task space.
-3. Call `memory_context_tool` or `memory_impact_tool` before modifying contracts.
-4. Call `workspace_check_rules_tool` before editing.
-5. For long tasks, use `workspace_start_session_tool` / `workspace_log_session_event_tool` during the process.
-6. After validation, call `workspace_end_session_tool`, then `workspace_sync_case_artifacts_tool`.
-7. Finally call `workspace_record_case_tool`.
+2. Call `memory_write_judge_tool` or `memory_plan_write_tool` before writing memory, so the agent knows whether to write L0/L1/L2/L3.
+3. For long-running or collaborative tasks, call `workspace_sync_sniff_artifacts_tool` to write context/plan into task space.
+4. Call `memory_context_tool` or `memory_impact_tool` before modifying contracts.
+5. Call `workspace_check_rules_tool` before editing.
+6. For long tasks, use `workspace_start_session_tool` / `workspace_log_session_event_tool` during the process.
+7. After validation, call `workspace_end_session_tool`, then `workspace_sync_case_artifacts_tool`.
+8. Finally call `workspace_record_case_tool`.
 
 1. 大范围搜索代码前，先调用 `workspace_sniff_tool`。
-2. 对于长任务或多人协作任务，先调用 `workspace_sync_sniff_artifacts_tool` 把上下文和计划写入任务空间。
-3. 修改契约前，调用 `memory_context_tool` 或 `memory_impact_tool`。
-4. 编辑前，调用 `workspace_check_rules_tool`。
-5. 长任务过程中，使用 `workspace_start_session_tool` / `workspace_log_session_event_tool` 持续记录关键过程。
-6. 验证完成后，先调用 `workspace_end_session_tool`，再调用 `workspace_sync_case_artifacts_tool` 回写任务空间。
-7. 最后调用 `workspace_record_case_tool` 沉淀长期经验。
+2. 写入记忆前，先调用 `memory_write_judge_tool` 或 `memory_plan_write_tool`，明确应写到 L0 / L1 / L2 / L3 哪一层。
+3. 对于长任务或多人协作任务，先调用 `workspace_sync_sniff_artifacts_tool` 把上下文和计划写入任务空间。
+4. 修改契约前，调用 `memory_context_tool` 或 `memory_impact_tool`。
+5. 编辑前，调用 `workspace_check_rules_tool`。
+6. 长任务过程中，使用 `workspace_start_session_tool` / `workspace_log_session_event_tool` 持续记录关键过程。
+7. 验证完成后，先调用 `workspace_end_session_tool`，再调用 `workspace_sync_case_artifacts_tool` 回写任务空间。
+8. 最后调用 `workspace_record_case_tool` 沉淀长期经验。

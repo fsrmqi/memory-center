@@ -103,6 +103,14 @@ def workspace_sniff(
     )
     auto_sync = _build_sniff_auto_sync_recommendation(task_resolution, sniff_risk_level, auto_sync_mode=auto_sync_mode)
     source_refs = _build_sniff_source_refs(matched_files, related_feigns, related_apis, related_mq, related_cases)
+    write_judge_recommendation = memory_write_judge(
+        workspace_file,
+        text=intent,
+        source="sniff_intent",
+        intent=intent,
+        projects=matched_services[:5],
+        files=[item.get("path", "") for item in matched_files[:8]],
+    )
 
     return {
         "workspace": config.workspace,
@@ -133,10 +141,12 @@ def workspace_sniff(
             ]
         },
         "auto_sync_recommendation": auto_sync,
+        "write_judge_recommendation": write_judge_recommendation.get("decision", {}),
         "symbolic_context": _build_sniff_symbolic_context(intent, sniff_risk_level, matched_services, matched_files, related_feigns, related_apis, related_mq, related_cases),
         "next_steps": [
             "先调用 memory_search_code 缩小入口范围，再用 memory_symbol 定位关键符号",
             "对关键符号调用 memory_callers / memory_callees 理清上下游调用链",
+            "先调用 memory_write_judge / memory_plan_write 判断信息应写入 L0/L1/L2/L3，再执行对应写入工具",
             "如果这是持续任务或多人协作任务，优先调用 workspace_sync_sniff_artifacts 把 context/plan 写入任务空间",
             "改动前调用 memory_plan_change 与 memory_verify_checklist，明确风险与验证项",
             "如果涉及 DTO/Feign/MQ Message，再调用 workspace_check_contract",
@@ -411,6 +421,240 @@ def workspace_resume_context(workspace_file: str | Path, intent: str, limit: int
     }
 
 
+def memory_write_judge(
+    workspace_file: str | Path,
+    text: str,
+    source: str = "note",
+    intent: str = "",
+    prefer_layer: str = "",
+    projects: List[str] | None = None,
+    files: List[str] | None = None,
+) -> Dict[str, Any]:
+    config, _ = load_context(workspace_file)
+    normalized_text = (text or "").strip().lower()
+    normalized_intent = (intent or "").strip().lower()
+    normalized_source = (source or "").strip().lower()
+    preferred = (prefer_layer or "").strip().upper()
+
+    layer_scores: Dict[str, int] = {
+        "L0_session_events": 0,
+        "L1_case_atoms": 0,
+        "L2_task_spaces": 0,
+        "L3_workspace_profile": 0,
+    }
+    reasons: List[str] = []
+
+    if normalized_source in {"tool_call", "tool_result", "user_prompt", "note", "session_event"}:
+        layer_scores["L0_session_events"] += 3
+        reasons.append("来源属于会话过程事件，优先归档 L0。")
+
+    if any(k in normalized_text for k in ["经验", "复盘", "教训", "风险", "兼容", "验证", "best practice", "lessons learned"]):
+        layer_scores["L1_case_atoms"] += 4
+        reasons.append("文本包含经验/风险/验证特征，适合沉淀 L1 case。")
+
+    if any(k in normalized_text for k in ["任务", "计划", "方案", "context", "plan", "design", "change log", "当前", "next step", "todo"]):
+        layer_scores["L2_task_spaces"] += 4
+        reasons.append("文本包含任务执行上下文特征，适合写入 L2 task space。")
+
+    if any(
+        k in normalized_text
+        for k in ["团队", "规范", "规则", "约束", "invariant", "workspace", "profile", "迁移策略", "migration", "governance", "guardrail"]
+    ):
+        layer_scores["L3_workspace_profile"] += 5
+        reasons.append("文本包含团队规则/架构约束特征，适合写入 L3 workspace profile。")
+
+    if normalized_intent and any(k in normalized_intent for k in ["修复", "改造", "实现", "任务", "需求"]):
+        layer_scores["L2_task_spaces"] += 2
+        reasons.append("当前 intent 偏执行任务，增强 L2 权重。")
+
+    if projects:
+        layer_scores["L1_case_atoms"] += 1
+        layer_scores["L2_task_spaces"] += 1
+    if files:
+        layer_scores["L1_case_atoms"] += 1
+        layer_scores["L2_task_spaces"] += 2
+
+    if preferred in {"L0", "L0_SESSION_EVENTS"}:
+        layer_scores["L0_session_events"] += 3
+        reasons.append("用户偏好层级指向 L0。")
+    if preferred in {"L1", "L1_CASE_ATOMS"}:
+        layer_scores["L1_case_atoms"] += 3
+        reasons.append("用户偏好层级指向 L1。")
+    if preferred in {"L2", "L2_TASK_SPACES"}:
+        layer_scores["L2_task_spaces"] += 3
+        reasons.append("用户偏好层级指向 L2。")
+    if preferred in {"L3", "L3_WORKSPACE_PROFILE"}:
+        layer_scores["L3_workspace_profile"] += 3
+        reasons.append("用户偏好层级指向 L3。")
+
+    ranked = sorted(layer_scores.items(), key=lambda item: item[1], reverse=True)
+    selected_layer = ranked[0][0]
+    top_score = ranked[0][1]
+    second_score = ranked[1][1]
+    confidence = "high" if top_score - second_score >= 3 else ("medium" if top_score - second_score >= 1 else "low")
+
+    suggested_tool = "workspace_log_session_event"
+    suggested_action = "记录为会话事件（L0）"
+    if selected_layer == "L1_case_atoms":
+        suggested_tool = "workspace_record_case"
+        suggested_action = "沉淀为可复用案例（L1）"
+    elif selected_layer == "L2_task_spaces":
+        suggested_tool = "workspace_sync_sniff_artifacts / workspace_sync_case_artifacts"
+        suggested_action = "同步到任务空间文档（L2）"
+    elif selected_layer == "L3_workspace_profile":
+        suggested_tool = "workspace_artifact_update"
+        suggested_action = "写入工作区核心记忆块（L3）"
+
+    return {
+        "workspace": config.workspace,
+        "input": {
+            "source": source,
+            "intent": intent,
+            "prefer_layer": prefer_layer,
+            "projects": projects or [],
+            "files": files or [],
+            "text_preview": text[:240],
+        },
+        "decision": {
+            "selected_layer": selected_layer,
+            "confidence": confidence,
+            "layer_scores": layer_scores,
+            "reasons": reasons[:8],
+            "suggested_tool": suggested_tool,
+            "suggested_action": suggested_action,
+        },
+    }
+
+
+def memory_plan_write(
+    workspace_file: str | Path,
+    text: str,
+    source: str = "note",
+    intent: str = "",
+    session_id: str = "",
+    task_id: str = "",
+    title: str = "",
+    prefer_layer: str = "",
+    projects: List[str] | None = None,
+    files: List[str] | None = None,
+) -> Dict[str, Any]:
+    config, _ = load_context(workspace_file)
+    judge = memory_write_judge(
+        workspace_file,
+        text=text,
+        source=source,
+        intent=intent,
+        prefer_layer=prefer_layer,
+        projects=projects,
+        files=files,
+    )
+    selected_layer = judge["decision"]["selected_layer"]
+    steps: List[Dict[str, Any]] = []
+
+    if selected_layer == "L0_session_events":
+        if session_id.strip():
+            steps.append(
+                {
+                    "tool": "workspace_log_session_event",
+                    "ready": True,
+                    "purpose": "将信息作为会话事件写入 L0。",
+                    "example_args": {
+                        "session_id": session_id.strip(),
+                        "event_type": source or "note",
+                        "payload": {"text": text[:2000], "intent": intent},
+                    },
+                }
+            )
+        else:
+            steps.append(
+                {
+                    "tool": "workspace_start_session",
+                    "ready": True,
+                    "purpose": "缺少 session_id，先创建会话。",
+                    "example_args": {"intent": intent or "写入记忆事件"},
+                }
+            )
+            steps.append(
+                {
+                    "tool": "workspace_log_session_event",
+                    "ready": False,
+                    "purpose": "会话创建后写入事件。",
+                    "required": ["session_id"],
+                    "example_args": {"event_type": source or "note", "payload": {"text": text[:2000]}},
+                }
+            )
+    elif selected_layer == "L1_case_atoms":
+        ready = bool(projects and files)
+        steps.append(
+            {
+                "tool": "workspace_record_case",
+                "ready": ready,
+                "purpose": "将信息沉淀为 L1 案例。",
+                "required": ([] if ready else ["projects", "files"]) + ([] if text.strip() else ["text/task"]),
+                "example_args": {
+                    "task": intent or "待补充任务标题",
+                    "projects": projects or [],
+                    "files": files or [],
+                    "flow": "memory_write_judge -> record_case",
+                    "risk_points": [text[:120]] if text.strip() else [],
+                },
+            }
+        )
+        if session_id.strip():
+            steps.append(
+                {
+                    "tool": "workspace_suggest_case",
+                    "ready": True,
+                    "purpose": "也可先用会话自动草拟 case 再确认入库。",
+                    "example_args": {"session_id": session_id.strip()},
+                }
+            )
+    elif selected_layer == "L2_task_spaces":
+        if session_id.strip():
+            steps.append(
+                {
+                    "tool": "workspace_sync_case_artifacts",
+                    "ready": True,
+                    "purpose": "从会话内容同步到 L2 任务空间（design/change-log/current-summary）。",
+                    "example_args": {"session_id": session_id.strip(), "task_id": task_id.strip(), "title": title.strip()},
+                }
+            )
+        else:
+            steps.append(
+                {
+                    "tool": "workspace_sync_sniff_artifacts",
+                    "ready": bool(intent.strip()),
+                    "purpose": "从 intent 推导并同步到 L2 任务空间（context/plan/current-summary）。",
+                    "required": [] if intent.strip() else ["intent"],
+                    "example_args": {"intent": intent or text[:80], "task_id": task_id.strip(), "title": title.strip()},
+                }
+            )
+    else:
+        artifact_name = _choose_l3_artifact_name(text)
+        steps.append(
+            {
+                "tool": "workspace_artifact_update",
+                "ready": True,
+                "purpose": "写入 L3 核心记忆块。",
+                "example_args": {
+                    "name": artifact_name,
+                    "content": f"## Update\n\n{text[:2000]}",
+                },
+            }
+        )
+
+    return {
+        "workspace": config.workspace,
+        "memory_layer": selected_layer,
+        "confidence": judge["decision"]["confidence"],
+        "judge": judge["decision"],
+        "plan": {
+            "ready": all(bool(step.get("ready", False)) for step in steps),
+            "steps": steps,
+        },
+    }
+
+
 def workspace_sync_sniff_to_artifacts(
     workspace_file: str | Path,
     intent: str,
@@ -640,6 +884,17 @@ def _build_core_memory_blocks_status(store: WorkspaceStore) -> Dict[str, Any]:
         "filled_count": filled_count,
         "blocks": blocks,
     }
+
+
+def _choose_l3_artifact_name(text: str) -> str:
+    normalized = (text or "").lower()
+    if any(k in normalized for k in ["团队", "协作", "code review", "评审", "规范", "rules", "约定"]):
+        return "team_rules"
+    if any(k in normalized for k in ["架构", "invariant", "分层", "模块边界", "边界", "design principle"]):
+        return "architecture_invariants"
+    if any(k in normalized for k in ["迁移", "migration", "cutover", "灰度", "兼容期"]):
+        return "active_migration_policy"
+    return "workspace_profile"
 
 
 def _build_focus_reason(task: Dict[str, Any]) -> str:

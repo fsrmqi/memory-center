@@ -46,6 +46,8 @@ from memory_center.core.orchestrator import (
     memory_search_code,
     memory_symbol,
     memory_verify_checklist,
+    memory_plan_write,
+    memory_write_judge,
     workspace_check_contract,
     workspace_check_rules,
     workspace_record_case,
@@ -270,6 +272,60 @@ def verify_checklist_cmd(
 ):
     """Generate one verification checklist for a target change."""
     print(memory_verify_checklist(workspace, target))
+
+
+@app.command("memory-write-judge")
+def memory_write_judge_cmd(
+    workspace: str = typer.Option(...),
+    text: str = typer.Option(...),
+    source: str = typer.Option("note"),
+    intent: str = typer.Option(""),
+    prefer_layer: str = typer.Option(""),
+    project: Optional[List[str]] = typer.Option(None),
+    file: Optional[List[str]] = typer.Option(None),
+):
+    """Judge which memory layer (L0/L1/L2/L3) the input should be written to."""
+    print(
+        memory_write_judge(
+            workspace,
+            text=text,
+            source=source,
+            intent=intent,
+            prefer_layer=prefer_layer,
+            projects=project,
+            files=file,
+        )
+    )
+
+
+@app.command("memory-plan-write")
+def memory_plan_write_cmd(
+    workspace: str = typer.Option(...),
+    text: str = typer.Option(...),
+    source: str = typer.Option("note"),
+    intent: str = typer.Option(""),
+    session_id: str = typer.Option(""),
+    task_id: str = typer.Option(""),
+    title: str = typer.Option(""),
+    prefer_layer: str = typer.Option(""),
+    project: Optional[List[str]] = typer.Option(None),
+    file: Optional[List[str]] = typer.Option(None),
+):
+    """Build an executable write plan after memory layer judgment."""
+    print(
+        memory_plan_write(
+            workspace,
+            text=text,
+            source=source,
+            intent=intent,
+            session_id=session_id,
+            task_id=task_id,
+            title=title,
+            prefer_layer=prefer_layer,
+            projects=project,
+            files=file,
+        )
+    )
 
 
 @app.command("generate-wiki")

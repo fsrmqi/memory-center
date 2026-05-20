@@ -32,7 +32,7 @@ from memory_center.core.config import load_workspace_config
 from memory_center.core.exporters import export_mermaid
 from memory_center.core.indexer import reindex_workspace
 from memory_center.core.instructions import write_agent_instructions
-from memory_center.core.orchestrator import workspace_sniff, workspace_trace
+from memory_center.core.orchestrator import memory_plan_write, memory_write_judge, workspace_sniff, workspace_trace
 from memory_center.core.registry import add_to_group, create_group, register_workspace
 from memory_center.core.rules import ensure_default_rules
 from memory_center.core.store import WorkspaceStore
@@ -86,6 +86,9 @@ def test_demo_workspace_indexes_spring_cloud_patterns(tmp_path: Path):
     assert "MQ compatibility review" in sniffed["symbolic_context"]["flow_mermaid"]
     assert "workspace_sync_sniff_artifacts" in "\n".join(sniffed["next_steps"])
     assert "workspace_sync_case_artifacts" in "\n".join(sniffed["next_steps"])
+    assert "memory_write_judge / memory_plan_write" in "\n".join(sniffed["next_steps"])
+    assert "write_judge_recommendation" in sniffed
+    assert "selected_layer" in sniffed["write_judge_recommendation"]
     assert "workspace_end_session" in sniffed["symbolic_context"]["flow_mermaid"]
     assert "workspace_sync_case_artifacts" in sniffed["symbolic_context"]["flow_mermaid"]
     assert sniffed["source_refs"]
@@ -170,9 +173,12 @@ def test_write_agent_instructions_includes_sync_workflow(tmp_path: Path):
     for content in [agents, claude]:
         assert "<!-- memory-center:start -->" in content
         assert "workspace_sync_sniff_artifacts" in content
+        assert "memory_write_judge" in content
+        assert "memory_plan_write" in content
         assert "workspace_start_session" in content
         assert "workspace_sync_case_artifacts" in content
         assert "workspace_record_case" in content
+        assert "只允许尾部追加" in content
 
 
 def test_workspace_service_maintenance_commands(tmp_path: Path):
@@ -306,6 +312,46 @@ def test_workspace_artifacts_flow(tmp_path: Path):
     assert "artifact_hits" in resolved["match_reasons"]
     status_updated = update_task_status(workspace, active_task["task_id"], "blocked")
     assert status_updated["status"] == "blocked"
+
+
+def test_memory_write_judge_and_plan_write(tmp_path: Path):
+    source = Path("examples/spring-cloud-demo")
+    target = tmp_path / "memory-judge-demo"
+    import shutil
+    shutil.copytree(source, target)
+    workspace = target / ".memory-center" / "workspace.yaml"
+    lines = workspace.read_text(encoding="utf-8").splitlines()
+    lines = [f"root: {target.as_posix()}" if line.startswith("root:") else line for line in lines]
+    workspace.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    l3_judge = memory_write_judge(
+        workspace,
+        text="团队规范：所有 DTO 变更必须向后兼容，并在迁移策略中记录灰度周期。",
+        source="note",
+        intent="更新团队规则",
+    )
+    assert l3_judge["decision"]["selected_layer"] == "L3_workspace_profile"
+    assert l3_judge["decision"]["suggested_tool"] == "workspace_artifact_update"
+
+    l2_plan = memory_plan_write(
+        workspace,
+        text="外链处理任务新增 Kafka 校验与计划更新",
+        source="note",
+        intent="外链处理任务持续推进",
+        task_id="",
+    )
+    assert l2_plan["memory_layer"] == "L2_task_spaces"
+    assert l2_plan["plan"]["steps"]
+    assert l2_plan["plan"]["steps"][0]["tool"] in {"workspace_sync_sniff_artifacts", "workspace_sync_case_artifacts"}
+
+    l0_plan = memory_plan_write(
+        workspace,
+        text="本轮调用了 memory_query_tool 并确认风险点",
+        source="tool_result",
+        intent="记录调试过程",
+    )
+    assert l0_plan["memory_layer"] == "L0_session_events"
+    assert l0_plan["plan"]["steps"][0]["tool"] == "workspace_start_session"
 
 
 def test_auto_archive_task_spaces(tmp_path: Path):

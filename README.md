@@ -70,11 +70,12 @@ Memory Center exposes tools, resources and prompts through MCP so coding agents 
 记忆中心通过 MCP 暴露工具、资源和提示词，让不同 Agent 使用同一套流程：
 
 1. `workspace_sniff_tool(intent)` before code search / 任务开始先取上下文
-2. `workspace_sync_sniff_artifacts_tool(...)` for long-running or collaborative tasks / 长任务或多人协作任务先把上下文写入任务空间
-3. `memory_context_tool(name)` or `memory_impact_tool(target)` before editing important contracts / 改重要契约前做上下文和影响分析
-4. `workspace_check_rules_tool(...)` before file changes / 编辑前检查规则
-5. `workspace_end_session_tool(...)` + `workspace_sync_case_artifacts_tool(...)` after validation / 验证后先结束会话并把结论同步回任务空间
-6. `workspace_record_case_tool(...)` after validation / 完成后再沉淀长期经验
+2. `memory_write_judge_tool(...)` or `memory_plan_write_tool(...)` before writing memory / 写入记忆前先裁决写到 L0/L1/L2/L3 哪一层
+3. `workspace_sync_sniff_artifacts_tool(...)` for long-running or collaborative tasks / 长任务或多人协作任务先把上下文写入任务空间
+4. `memory_context_tool(name)` or `memory_impact_tool(target)` before editing important contracts / 改重要契约前做上下文和影响分析
+5. `workspace_check_rules_tool(...)` before file changes / 编辑前检查规则
+6. `workspace_end_session_tool(...)` + `workspace_sync_case_artifacts_tool(...)` after validation / 验证后先结束会话并把结论同步回任务空间
+7. `workspace_record_case_tool(...)` after validation / 完成后再沉淀长期经验
 
 ### 4. Experience memory / 经验沉淀
 
@@ -549,6 +550,8 @@ Available MCP tools / MCP 工具：
 | `memory_impact_tool` | Impact analysis / 影响面分析 |
 | `memory_plan_change_tool` | Actionable change plan / 可执行改动计划 |
 | `memory_verify_checklist_tool` | Pre-merge verification checklist / 合并前验证清单 |
+| `memory_write_judge_tool` | Judge whether info should go to L0/L1/L2/L3 / 判断信息应写入 L0/L1/L2/L3 哪一层 |
+| `memory_plan_write_tool` | Build executable write plan from judge result / 基于裁决结果生成可执行写入计划 |
 | `memory_detect_changes_tool` | Git diff risk mapping / Git 变更风险映射 |
 | `memory_contracts_tool` | API/Feign/MQ contract list / 契约列表 |
 | `workspace_trace_tool` | Cross-service trace hints / 跨服务追踪 |
@@ -590,13 +593,15 @@ AI 编程助手改代码前必须执行：
 
 ```text
 1. Call workspace_sniff_tool(intent)
-2. For long-running or collaborative tasks, call workspace_sync_sniff_artifacts_tool to write context/plan into task space
-3. For important contract/topic/service symbols, call memory_context_tool or memory_impact_tool
-4. Before editing files, call workspace_check_rules_tool
-5. If changing DTO/Feign/MQ Message, call workspace_check_contract_tool
-6. For long tasks, record key steps with workspace_start_session_tool / workspace_log_session_event_tool
-7. After validation, call workspace_end_session_tool, then workspace_sync_case_artifacts_tool
-8. Finally call workspace_record_case_tool
+2. Call memory_write_judge_tool(text=intent, source="sniff_intent", intent=intent)
+3. Call memory_plan_write_tool(...) if you need executable write steps
+4. For long-running or collaborative tasks, call workspace_sync_sniff_artifacts_tool to write context/plan into task space
+5. For important contract/topic/service symbols, call memory_context_tool or memory_impact_tool
+6. Before editing files, call workspace_check_rules_tool
+7. If changing DTO/Feign/MQ Message, call workspace_check_contract_tool
+8. For long tasks, record key steps with workspace_start_session_tool / workspace_log_session_event_tool
+9. After validation, call workspace_end_session_tool, then workspace_sync_case_artifacts_tool
+10. Finally call workspace_record_case_tool
 ```
 
 ---

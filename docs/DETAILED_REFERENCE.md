@@ -291,6 +291,7 @@ task_candidates    : list[dict]   匹配到的任务空间候选
 source_refs        : list[dict]   结构化来源引用（file / feign / api / mq / case）
 resolved_task      : dict         自动解析的任务空间信息
 auto_sync_recommendation : dict   工件自动同步建议
+write_judge_recommendation : dict 写入裁决建议（selected_layer/confidence/suggested_tool）
 symbolic_context   : dict         符号化上下文摘要
 next_steps         : list[str]    推荐的下一步操作
 ```
@@ -407,6 +408,59 @@ next_steps         : list[str]    推荐的下一步操作
 | 参数 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
 | `target` | `string` | **必填** | 变更目标 |
+
+#### `memory_write_judge_tool`
+
+**描述：** 对一条输入信息进行写入裁决，判断应写入 `L0/L1/L2/L3` 哪一层记忆。
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `text` | `string` | **必填** | 待判断的信息文本 |
+| `source` | `string` | `"note"` | 信息来源（如 `tool_result` / `user_prompt` / `note`） |
+| `intent` | `string` | `""` | 当前任务意图，用于辅助裁决 |
+| `prefer_layer` | `string` | `""` | 偏好层级（`L0`/`L1`/`L2`/`L3`） |
+| `projects` | `list[str]` | `null` | 相关项目列表（可选） |
+| `files` | `list[str]` | `null` | 相关文件列表（可选） |
+
+**返回：**
+
+```text
+decision.selected_layer   = L0_session_events | L1_case_atoms | L2_task_spaces | L3_workspace_profile
+decision.confidence       = high | medium | low
+decision.layer_scores     = 各层评分
+decision.reasons          = 裁决理由列表
+decision.suggested_tool   = 建议调用的写入工具
+decision.suggested_action = 建议动作说明
+```
+
+#### `memory_plan_write_tool`
+
+**描述：** 基于 `memory_write_judge_tool` 结果生成可执行写入计划（不直接执行写入）。
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `text` | `string` | **必填** | 待写入信息文本 |
+| `source` | `string` | `"note"` | 来源类型 |
+| `intent` | `string` | `""` | 当前意图 |
+| `session_id` | `string` | `""` | Session ID（用于 L0/L2 case 同步路径） |
+| `task_id` | `string` | `""` | 目标任务空间 ID（用于 L2） |
+| `title` | `string` | `""` | 任务标题（用于 L2 解析） |
+| `prefer_layer` | `string` | `""` | 偏好层级 |
+| `projects` | `list[str]` | `null` | 相关项目 |
+| `files` | `list[str]` | `null` | 相关文件 |
+
+**返回：**
+
+```text
+memory_layer         = 本次判定层级
+confidence           = 裁决置信度
+judge                = 与 memory_write_judge 相同的 decision 结构
+plan.ready           = 是否可直接执行（缺参数时为 false）
+plan.steps[].tool    = 建议调用工具名
+plan.steps[].ready   = 该步是否可执行
+plan.steps[].required= 缺失参数（若有）
+plan.steps[].example_args = 示例参数
+```
 
 #### `memory_detect_changes_tool`
 
@@ -971,9 +1025,11 @@ related_rules:
 next_steps:
   - 先调用 memory_search_code 缩小入口范围
   - 对关键符号调用 memory_callers / memory_callees 理清调用链
+  - 先调用 memory_write_judge / memory_plan_write 判断应写入 L0/L1/L2/L3
+  - 长任务优先调用 workspace_sync_sniff_artifacts 把 context/plan 写入任务空间
   - 改动前调用 memory_plan_change 与 memory_verify_checklist
   - 涉及 DTO/Feign/MQ 再调用 workspace_check_contract
-  - 完成后调用 workspace_record_case 沉淀经验
+  - 完成后调用 workspace_sync_case_artifacts 与 workspace_record_case 沉淀经验
 ```
 
 ### 4.9 生成
