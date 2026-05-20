@@ -25,6 +25,28 @@ class WorkspaceConfig:
     def root_path(self) -> Path:
         return Path(self.root).expanduser().resolve()
 
+    def resolve_service_path(self, service: ServiceConfig) -> Path:
+        raw = Path(service.path).expanduser()
+        if raw.is_absolute():
+            return raw.resolve()
+        return (self.root_path / raw).resolve()
+
+    def service_logical_prefix(self, service: ServiceConfig) -> str:
+        raw = Path(service.path).expanduser()
+        if not raw.is_absolute():
+            return raw.as_posix().strip("/") or service.name
+        resolved = raw.resolve()
+        try:
+            return resolved.relative_to(self.root_path).as_posix().strip("/") or service.name
+        except ValueError:
+            return service.name
+
+    def service_logical_file_path(self, service: ServiceConfig, file_path: Path) -> str:
+        service_root = self.resolve_service_path(service)
+        relative = file_path.resolve().relative_to(service_root).as_posix()
+        prefix = self.service_logical_prefix(service)
+        return f"{prefix}/{relative}".strip("/")
+
 
 @dataclass
 class JavaSymbol:

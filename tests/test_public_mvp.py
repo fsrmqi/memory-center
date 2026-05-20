@@ -105,6 +105,61 @@ def test_demo_workspace_indexes_spring_cloud_patterns(tmp_path: Path):
     assert report["ok"] is True
 
 
+def test_workspace_supports_absolute_service_paths_across_multiple_roots(tmp_path: Path):
+    import shutil
+    import yaml
+
+    source = Path("examples/spring-cloud-demo")
+    root_a = tmp_path / "root-a"
+    root_b = tmp_path / "root-b"
+    root_c = tmp_path / "root-c"
+    root_a.mkdir()
+    root_b.mkdir()
+    root_c.mkdir()
+
+    shutil.copytree(source / "article-service", root_a / "article-service")
+    shutil.copytree(source / "task-service", root_b / "task-service")
+    shutil.copytree(source / "common-api", root_c / "common-api")
+
+    memory_dir = root_a / ".memory-center"
+    memory_dir.mkdir()
+    workspace = memory_dir / "workspace.yaml"
+    workspace.write_text(
+        yaml.safe_dump(
+            {
+                "workspace": "multi-root-demo",
+                "root": str(root_a),
+                "services": [
+                    {"name": "article-service", "path": "article-service", "type": "spring-boot-service", "service_name": "article-service"},
+                    {"name": "task-service", "path": str((root_b / "task-service").resolve()), "type": "spring-boot-service", "service_name": "task-service"},
+                    {"name": "common-api", "path": str((root_c / "common-api").resolve()), "type": "shared-library", "tags": ["contract"]},
+                ],
+            },
+            allow_unicode=True,
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    config = load_workspace_config(workspace)
+    store = WorkspaceStore(workspace)
+    counts = reindex_workspace(config, store)
+    ensure_default_rules(store)
+
+    assert counts["files"] > 0
+    file_index = store.read_json("file-index.json", [])
+    assert any(item["project"] == "task-service" for item in file_index)
+    assert any(item["project"] == "common-api" for item in file_index)
+    assert any(item["path"].startswith("task-service/") for item in file_index)
+    assert any(item["path"].startswith("common-api/") for item in file_index)
+    assert any(item.get("abs_path", "").endswith("task-service/src/main/java/com/example/task/ArticleMoveService.java") for item in file_index)
+
+    sniffed = workspace_sniff(workspace, "ArticleFeignClient move")
+    assert sniffed["candidate_files"]
+    report = doctor(workspace)
+    assert report["ok"] is True
+
+
 def test_record_case_cli_writes_history(tmp_path: Path):
     source = Path("examples/spring-cloud-demo")
     target = tmp_path / "record-case-demo"

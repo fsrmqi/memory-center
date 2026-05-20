@@ -2531,7 +2531,7 @@ def memory_detect_changes(workspace_file: str | Path, scope: str = "staged") -> 
     graph = GraphStore(store.graph_db_path)
     changed: List[str] = []
     for svc in config.services:
-        repo = config.root_path / svc.path
+        repo = config.resolve_service_path(svc)
         if not (repo / ".git").exists():
             continue
         cmd = ["git", "diff", "--name-only"]
@@ -2541,7 +2541,13 @@ def memory_detect_changes(workspace_file: str | Path, scope: str = "staged") -> 
             cmd = ["git", "diff", "--name-only", "HEAD~1..HEAD"]
         try:
             out = subprocess.check_output(cmd, cwd=repo, text=True, stderr=subprocess.DEVNULL)
-            changed.extend([f"{svc.path}/{line.strip()}" for line in out.splitlines() if line.strip()])
+            changed.extend(
+                [
+                    f"{config.service_logical_prefix(svc)}/{line.strip()}".strip("/")
+                    for line in out.splitlines()
+                    if line.strip()
+                ]
+            )
         except Exception:
             continue
     file_index = store.read_json("file-index.json", [])

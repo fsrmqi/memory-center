@@ -20,7 +20,7 @@ def doctor(workspace_file: str | Path, self_test: bool = False) -> Dict[str, Any
     checks.append(_check("root_exists", config.root_path.exists(), str(config.root_path)))
 
     for service in config.services:
-        path = config.root_path / service.path
+        path = config.resolve_service_path(service)
         checks.append(_check(f"service_path:{service.name}", path.exists(), str(path)))
 
     for name in [

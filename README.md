@@ -8,6 +8,10 @@ Memory Center is designed for teams that use Codex, Claude Code, Cursor, GitHub 
 
 记忆中心用于解决大型 Spring Cloud 多项目场景下 AI 编程助手“每次从零理解项目、跨服务影响面不清、历史经验无法沉淀、规则容易忘记”的问题。它会把多个项目索引成一个本地知识图谱，并通过 MCP tools/resources/prompts 提供给 AI Agent 使用。
 
+`services[].path` now supports both relative paths and absolute paths, so one workspace can index projects spread across different parent directories.
+
+`services[].path` 现在同时支持相对路径和绝对路径，因此一个 workspace 可以索引分散在不同父目录下的多个项目。
+
 ---
 
 ## Why / 为什么需要 Memory Center

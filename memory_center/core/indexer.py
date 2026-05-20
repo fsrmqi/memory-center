@@ -30,12 +30,21 @@ def reindex_workspace(config: WorkspaceConfig, store: WorkspaceStore) -> Dict[st
     config_index: List[Dict[str, Any]] = []
 
     for svc in config.services:
-        service_root = config.root_path / svc.path
+        service_root = config.resolve_service_path(svc)
         if not service_root.exists():
             continue
         for path in walk_project(service_root):
-            rel = path.relative_to(config.root_path).as_posix()
-            file_index.append({"project": svc.name, "service_name": svc.service_name or svc.name, "path": rel, "suffix": path.suffix})
+            rel = config.service_logical_file_path(svc, path)
+            file_index.append(
+                {
+                    "project": svc.name,
+                    "service_name": svc.service_name or svc.name,
+                    "path": rel,
+                    "abs_path": str(path.resolve()),
+                    "service_root": str(service_root),
+                    "suffix": path.suffix,
+                }
+            )
             if path.suffix in JAVA_EXTENSIONS:
                 text = safe_read(path)
                 symbol = parse_java_symbols(svc.name, rel, text)
@@ -164,7 +173,18 @@ def parse_yaml_config(path: Path) -> Dict[str, str]:
 
 
 def build_topology(config: WorkspaceConfig, feigns: List[Dict], apis: List[Dict], mq: List[Dict], config_index: List[Dict]) -> Dict[str, Any]:
-    services = [{"name": s.name, "service_name": s.service_name or s.name, "path": s.path, "type": s.type, "tags": s.tags} for s in config.services]
+    services = [
+        {
+            "name": s.name,
+            "service_name": s.service_name or s.name,
+            "path": s.path,
+            "resolved_path": str(config.resolve_service_path(s)),
+            "logical_prefix": config.service_logical_prefix(s),
+            "type": s.type,
+            "tags": s.tags,
+        }
+        for s in config.services
+    ]
     service_names = {s["service_name"]: s["name"] for s in services}
     feign_edges = [{"from_project": f["project"], "to_service": f["target_service"], "to_project": service_names.get(f["target_service"]), "client": f["interface"], "file": f["file"]} for f in feigns]
     mq_topics: Dict[str, Dict[str, Any]] = {}

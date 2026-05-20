@@ -33,7 +33,7 @@ services:
 | `language` | 否 | 文档语言偏好，例如 `zh-CN`、`en-US`。 |
 | `services` | 是 | 服务和公共库列表。 |
 | `services[].name` | 是 | Memory Center 内部项目名。 |
-| `services[].path` | 是 | 相对于 root 的项目路径。 |
+| `services[].path` | 是 | 项目路径。既支持相对于 `root` 的路径，也支持绝对路径；绝对路径可用于把分散在不同父目录下的项目纳入同一个 workspace。 |
 | `services[].type` | 否 | `spring-boot-service`、`spring-cloud-gateway`、`spring-boot-task`、`shared-library`。 |
 | `services[].service_name` | 否 | Spring Cloud 注册名，通常对应 `spring.application.name`。 |
 | `services[].port` | 否 | 服务端口。 |
