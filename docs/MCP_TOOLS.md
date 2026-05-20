@@ -30,6 +30,7 @@ Memory Center exposes graph-first project memory to AI coding agents through MCP
 | `memory_query_tool(query, limit)` | Graph-aware hybrid search across files, symbols, endpoints, Feign clients, topics and fields, with exact/semantic retrieval metadata and `progressive` summary/evidence/detail views. / 基于图谱的混合检索，查询文件、符号、接口、Feign、Topic、字段，并返回精确/语义召回来源信息，以及 `progressive` 的摘要/证据/细节分层视图。 |
 | `memory_search_code_tool(query, scope, limit)` | Keyword search over indexed files and symbol hints, useful for quick entrypoint discovery. / 在索引文件与符号提示上做关键词搜索，适合快速找入口。 |
 | `memory_symbol_tool(name, limit)` | Resolve one symbol and return best match with candidates. / 解析一个符号并返回最佳命中及候选。 |
+| `workspace_lookup_hint_tool(query, intent, limit)` | Suggest whether one lookup task should prefer Memory Center tools or local search first. / 建议一个检索任务应优先走 Memory Center 工具还是本地搜索。 |
 | `memory_callers_tool(symbol, depth, limit)` | Find upstream callers for a symbol. / 查询某符号的上游调用方。 |
 | `memory_callees_tool(symbol, depth, limit)` | Find downstream callees for a symbol. / 查询某符号的下游被调方。 |
 | `memory_context_tool(name, max_depth)` | 360-degree context for a graph node, with retrieval entrypoints, evidence summary and `progressive` layered view. / 返回某个节点的上下游上下文，并附带召回入口、证据摘要和 `progressive` 分层视图。 |
@@ -42,6 +43,7 @@ Memory Center exposes graph-first project memory to AI coding agents through MCP
 | `workspace_write_receipts_tool(layer, action, scope, task_id, session_id, limit)` | Query persisted write receipts by layer/action/scope/task/session. / 按 layer、action、scope、task、session 查询已持久化的写入回执。 |
 | `workspace_replay_write_chain_tool(task_id, session_id, limit)` | Replay one write chain in time order. / 按时间顺序回放一条写入链路。 |
 | `memory_eval_write_quality_tool(task_id, session_id, intent, limit)` | Evaluate whether the observed receipts cover the expected memory layers. / 评估当前写入回执是否覆盖了预期的记忆层。 |
+| `memory_tool_usage_report_tool(limit)` | Summarize recent Memory Center usage and suspected bypass cases. / 汇总近期 Memory Center 使用情况与疑似绕过案例。 |
 | `workspace_recent_evidence_tool(task_id, session_id, limit)` | Return recent evidence from session events and write receipts. / 返回来自 session 事件和写入回执的近期证据。 |
 | `workspace_unresolved_items_tool(task_id, session_id, intent, limit)` | Return unresolved items for one task/session. / 返回一个任务或会话的未解决事项。 |
 | `workspace_next_actions_tool(task_id, session_id, intent, limit)` | Suggest next actions for one task/session. / 为一个任务或会话推荐下一步动作。 |
@@ -57,6 +59,25 @@ Memory Center exposes graph-first project memory to AI coding agents through MCP
 | `memory_eval_handoff_tool(target_model, task_id, session_id, intent, limit)` | Evaluate handoff packet quality. / 评估交接包质量。 |
 
 Write tools now try to return a normalized `write_receipt` when they actually persist memory or artifacts. / 写入类工具在真正落盘时会尽量返回统一的 `write_receipt` 回执结构。
+
+## Stable response schemas / 稳定返回协议
+
+The following response families expose explicit `schema.name` and `schema.version` metadata so downstream tools can bind to stable contracts.
+
+以下返回族会显式暴露 `schema.name` 和 `schema.version`，方便下游工具绑定稳定协议。
+
+| Schema | Produced by / 产出入口 | Contract highlights / 协议重点 |
+|---|---|---|
+| `write_receipt` | write tools / 写入类工具 | `layer`, `action`, `scope`, `target`, `task_id`, `session_id`, `receipt_ref` |
+| `timeline_item` | timeline query internals / 时间线项 | `kind`, `created_at`, `task_id`, `session_id`, `layer`, `action`, `scope`, `target` |
+| `timeline_result` | `workspace_replay_write_chain_tool`, timeline query consumers / 时间线结果 | `timeline`, `limit`, `filters` |
+| `eval_result` | `memory_eval_write_quality_tool`, `memory_eval_resume_tool`, `memory_eval_handoff_tool` | `score`, `quality`, `findings` |
+| `resume_packet` | `workspace_resume_packet_tool` | `current_summary`, `next_recommended_actions`, `unresolved_items`, `resume_rule_profile` |
+| `handoff_packet` | `workspace_handoff_packet_tool` | `target_model`, `model_profile`, `handoff_rule_profile`, `minimal_required_context`, `what_to_check_next` |
+| `workspace_continuity_dashboard` | `workspace_continuity_dashboard_tool` | `focus_task`, `resume_packet`, `next_actions`, `recent_evidence` |
+| `workspace_dashboard` | `workspace_dashboard_tool` | `focus_task`, `continuity_overview`, `write_receipts_overview`, `active_tasks`, `focus_resume_eval` |
+
+Current canonical timeline kinds are `session_event`, `write_receipt`, and `handoff`. / 当前正式时间线类型为 `session_event`、`write_receipt`、`handoff`。
 | `memory_detect_changes_tool(scope)` | Map local git diff to affected files, projects, rules and risk level. / 把本地 Git diff 映射为影响项目、规则和风险等级。 |
 | `memory_contracts_tool()` | List API/Feign/MQ contracts and contract rules. / 列出接口、Feign、MQ 契约及相关规则。 |
 | `workspace_trace_tool(entry)` | Trace candidates by class, endpoint, Feign client or topic. / 按类名、接口、Feign、Topic 追踪候选链路。 |
@@ -91,19 +112,21 @@ Write tools now try to return a normalized `write_receipt` when they actually pe
 ## Recommended agent behavior / 推荐 Agent 行为
 
 1. Call `workspace_sniff_tool` before broad code exploration.
-2. Call `memory_write_judge_tool` or `memory_plan_write_tool` before writing memory, so the agent knows whether to write L0/L1/L2/L3.
-3. For long-running or collaborative tasks, call `workspace_sync_sniff_artifacts_tool` to write context/plan into task space.
-4. Call `memory_context_tool` or `memory_impact_tool` before modifying contracts.
-5. Call `workspace_check_rules_tool` before editing.
-6. For long tasks, use `workspace_start_session_tool` / `workspace_log_session_event_tool` during the process.
-7. After validation, call `workspace_end_session_tool`, then `workspace_sync_case_artifacts_tool`.
-8. Finally call `workspace_record_case_tool`.
+2. For class/method/Feign/Topic/config/call-chain lookup, prefer `memory_symbol_tool`, `memory_search_code_tool`, `workspace_trace_tool`, `memory_callers_tool`, and `memory_callees_tool` before raw repo-wide text search.
+3. Call `memory_write_judge_tool` or `memory_plan_write_tool` before writing memory, so the agent knows whether to write L0/L1/L2/L3.
+4. For long-running or collaborative tasks, call `workspace_sync_sniff_artifacts_tool` to write context/plan into task space.
+5. Call `memory_context_tool` or `memory_impact_tool` before modifying contracts.
+6. Call `workspace_check_rules_tool` before editing.
+7. For long tasks, use `workspace_start_session_tool` / `workspace_log_session_event_tool` during the process.
+8. After validation, call `workspace_end_session_tool`, then `workspace_sync_case_artifacts_tool`.
+9. Finally call `workspace_record_case_tool`.
 
 1. 大范围搜索代码前，先调用 `workspace_sniff_tool`。
-2. 写入记忆前，先调用 `memory_write_judge_tool` 或 `memory_plan_write_tool`，明确应写到 L0 / L1 / L2 / L3 哪一层。
-3. 对于长任务或多人协作任务，先调用 `workspace_sync_sniff_artifacts_tool` 把上下文和计划写入任务空间。
-4. 修改契约前，调用 `memory_context_tool` 或 `memory_impact_tool`。
-5. 编辑前，调用 `workspace_check_rules_tool`。
-6. 长任务过程中，使用 `workspace_start_session_tool` / `workspace_log_session_event_tool` 持续记录关键过程。
-7. 验证完成后，先调用 `workspace_end_session_tool`，再调用 `workspace_sync_case_artifacts_tool` 回写任务空间。
-8. 最后调用 `workspace_record_case_tool` 沉淀长期经验。
+2. 找类 / 找方法 / 找 Feign / 找 Topic / 找配置项 / 找调用链时，优先调用 `memory_symbol_tool`、`memory_search_code_tool`、`workspace_trace_tool`、`memory_callers_tool`、`memory_callees_tool`，不要先做全仓库文本搜索。
+3. 写入记忆前，先调用 `memory_write_judge_tool` 或 `memory_plan_write_tool`，明确应写到 L0 / L1 / L2 / L3 哪一层。
+4. 对于长任务或多人协作任务，先调用 `workspace_sync_sniff_artifacts_tool` 把上下文和计划写入任务空间。
+5. 修改契约前，调用 `memory_context_tool` 或 `memory_impact_tool`。
+6. 编辑前，调用 `workspace_check_rules_tool`。
+7. 长任务过程中，使用 `workspace_start_session_tool` / `workspace_log_session_event_tool` 持续记录关键过程。
+8. 验证完成后，先调用 `workspace_end_session_tool`，再调用 `workspace_sync_case_artifacts_tool` 回写任务空间。
+9. 最后调用 `workspace_record_case_tool` 沉淀长期经验。

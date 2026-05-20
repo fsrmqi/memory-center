@@ -21,6 +21,7 @@ from memory_center.core.orchestrator import (
     memory_verify_checklist,
     memory_plan_write,
     memory_execute_write,
+    memory_tool_usage_report,
     memory_eval_write_quality,
     memory_eval_resume,
     memory_eval_handoff,
@@ -34,6 +35,7 @@ from memory_center.core.orchestrator import (
     workspace_model_profile,
     workspace_continuity_dashboard,
     workspace_dashboard,
+    workspace_lookup_hint,
     workspace_resume_packet,
     workspace_resume_context,
     workspace_suggest_case,
@@ -250,6 +252,11 @@ def create_server(workspace_file: str):
         return memory_verify_checklist(_WORKSPACE_FILE, target)
 
     @mcp.tool()
+    def workspace_lookup_hint_tool(query: str, intent: str = "", limit: int = 8):
+        """Suggest whether to use Memory Center lookup tools or local search first."""
+        return workspace_lookup_hint(_WORKSPACE_FILE, query=query, intent=intent, limit=limit)
+
+    @mcp.tool()
     def memory_write_judge_tool(
         text: str,
         source: str = "note",
@@ -360,6 +367,11 @@ def create_server(workspace_file: str):
     def memory_eval_handoff_tool(target_model: str, task_id: str = "", session_id: str = "", intent: str = "", limit: int = 20):
         """Evaluate handoff packet quality."""
         return memory_eval_handoff(_WORKSPACE_FILE, target_model=target_model, task_id=task_id, session_id=session_id, intent=intent, limit=limit)
+
+    @mcp.tool()
+    def memory_tool_usage_report_tool(limit: int = 200):
+        """Summarize recent Memory Center vs external tool usage and lookup adoption."""
+        return memory_tool_usage_report(_WORKSPACE_FILE, limit=limit)
 
     @mcp.tool()
     def workspace_trace_tool(entry: str):

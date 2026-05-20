@@ -478,6 +478,76 @@ write_receipts_overview.scope_counts
 write_receipts_overview.recent_receipts
 ```
 
+### 稳定 Schema 层
+
+当前核心返回已经正式 schema 化，外部系统可以优先依赖 `schema.name` 与 `schema.version` 做协议分发：
+
+```text
+write_receipt.schema.name                   = write_receipt
+timeline_query(...).schema.name            = timeline_result
+memory_eval_write_quality(...).schema.name = eval_result
+memory_eval_resume(...).schema.name        = eval_result
+memory_eval_handoff(...).schema.name       = eval_result
+workspace_resume_packet(...).schema.name   = resume_packet
+workspace_handoff_packet(...).schema.name  = handoff_packet
+workspace_continuity_dashboard(...).schema.name = workspace_continuity_dashboard
+workspace_dashboard(...).schema.name       = workspace_dashboard
+```
+
+建议把下面这些结构视为当前稳定契约：
+
+```text
+write_receipt
+  - layer / action / scope / target / target_file
+  - task_id / session_id / receipt_ref
+
+timeline_item
+  - kind / created_at
+  - task_id / session_id
+  - layer / action / scope / target
+  - receipt_ref / raw
+
+timeline_result
+  - timeline
+  - limit
+  - filters
+
+eval_result
+  - score
+  - quality
+  - findings
+
+resume_packet
+  - task_id
+  - current_summary
+  - next_recommended_actions
+  - unresolved_items
+  - resume_rule_profile
+
+handoff_packet
+  - target_model
+  - model_profile
+  - handoff_rule_profile
+  - minimal_required_context
+  - what_to_check_next
+
+workspace_dashboard
+  - focus_task
+  - continuity_overview
+  - write_receipts_overview
+  - active_tasks
+  - recent_handoffs
+  - focus_resume_eval
+```
+
+当前正式的 `timeline_item.kind` 取值为：
+
+```text
+session_event
+write_receipt
+handoff
+```
+
 #### `memory_plan_write_tool`
 
 **描述：** 基于 `memory_write_judge_tool` 结果生成可执行写入计划（不直接执行写入）。

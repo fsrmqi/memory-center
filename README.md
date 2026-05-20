@@ -564,6 +564,8 @@ Available MCP tools / MCP 工具：
 | `workspace_write_receipts_tool` | Query persisted write receipts / 查询已持久化的写入回执 |
 | `workspace_replay_write_chain_tool` | Replay one write chain by task or session / 按任务或会话回放写入链路 |
 | `memory_eval_write_quality_tool` | Evaluate whether write coverage is complete / 评估写入覆盖是否完整 |
+| `workspace_lookup_hint_tool` | Suggest whether to use Memory Center lookup or local search first / 建议优先走 Memory Center 检索还是本地搜索 |
+| `memory_tool_usage_report_tool` | Summarize recent Memory Center usage and suspected bypasses / 汇总近期 Memory Center 使用情况与疑似绕过 |
 | `workspace_recent_evidence_tool` | Show recent evidence for continuity / 查看连续性相关近期证据 |
 | `workspace_unresolved_items_tool` | Show unresolved items for one task/session / 查看任务或会话的未解决事项 |
 | `workspace_next_actions_tool` | Suggest next actions for one task/session / 推荐任务或会话的下一步动作 |
@@ -572,13 +574,25 @@ Available MCP tools / MCP 工具：
 | `workspace_handoff_packet_tool` | Build a model-specific handoff packet / 生成面向目标模型的专用交接包 |
 | `workspace_handoff_history_tool` | Query persisted handoff history / 查询已持久化的交接历史 |
 
-Supported model targets for handoff now include `codex`, `claude-code`, `cursor-agent`, `gemini`, `deepseek`, `glm`, and generic MCP agents.
+Supported model targets for handoff now include `codex`, `claude-code`, `cursor-agent`, `gemini`, `deepseek`, `glm`, `qwen`, `minimax`, `mimo`, and generic MCP agents.
 
-目前交接能力已支持 `codex`、`claude-code`、`cursor-agent`、`gemini`、`deepseek`、`glm` 以及通用 MCP Agent。
+目前交接能力已支持 `codex`、`claude-code`、`cursor-agent`、`gemini`、`deepseek`、`glm`、`qwen`、`minimax`、`mimo` 以及通用 MCP Agent。
 
 `workspace_resume_packet` is now rule-driven by `rules/resume-rules.yaml`, and model handoff preferences are driven by `rules/handoff-profiles.yaml`.
 
 `workspace_resume_packet` 现在由 `rules/resume-rules.yaml` 驱动，模型交接偏好由 `rules/handoff-profiles.yaml` 驱动。
+
+Write placement, auto-sync strategy, and eval penalties can now also be tuned through:
+
+- `rules/write-policy-rules.yaml`
+- `rules/auto-sync-rules.yaml`
+- `rules/eval-rules.yaml`
+
+现在写入层级判定、自动同步策略和评估扣分项也都可以通过下面这些规则文件调整：
+
+- `rules/write-policy-rules.yaml`
+- `rules/auto-sync-rules.yaml`
+- `rules/eval-rules.yaml`
 
 Daily continuity view is now available through `workspace_continuity_dashboard`, which aggregates focus task, resume packet, next actions, unresolved items, receipts, handoffs and evidence.
 
@@ -600,9 +614,42 @@ Resume and handoff packets can now be evaluated through `memory_eval_resume` and
 
 现在还可以通过 `memory_eval_resume` 和 `memory_eval_handoff` 评估恢复包与交接包的质量，让连续性能力从“有接口”变成“可量化”。
 
+`workspace_lookup_hint` can now route lookup-style questions toward `memory_symbol/search_code/trace/callers/callees` or suggest local search when the query is too small and local.
+
+现在还可以通过 `workspace_lookup_hint` 给“找类 / 找方法 / 找调用链”这类问题做检索路由建议，告诉 Agent 该优先走 `memory_symbol/search_code/trace/callers/callees`，还是先本地搜索更划算。
+
+`memory_tool_usage_report` summarizes recent Memory Center tool adoption and flags suspected bypasses where lookup-like tool calls did not use Memory Center.
+
+`memory_tool_usage_report` 会汇总近期 Memory Center 工具使用率，并标记那些“看起来在找类/符号/调用链，但没有走 Memory Center”的疑似绕过场景。
+
+For fixed regressions, `memory_eval_regression_suite` now aggregates write/resume/handoff evals into one suite-level score.
+
+为了做固定回归，`memory_eval_regression_suite` 现在会把 write/resume/handoff 三类评估聚合成一份 suite 级结果。
+
 Under the hood, session events, write receipts and handoff history are now converging toward one shared timeline substrate, so replay, dashboard, evidence lookup and eval can reuse the same chronological model.
 
 在底层，session events、write receipts 和 handoff history 现在开始收敛到同一套 timeline substrate，这样 replay、dashboard、evidence lookup 和 eval 可以复用同一个时间线模型。
+
+## Stable Schemas / 稳定协议
+
+The following response families now carry explicit schema metadata through `schema.name` and `schema.version`, so external CLI wrappers, MCP clients, HTTP consumers, exporters and future UI layers can bind to stable contracts instead of loose dictionaries.
+
+以下核心返回现在都会带 `schema.name` 和 `schema.version`，方便 CLI 包装层、MCP 客户端、HTTP 消费方、导出器和后续 UI 直接绑定稳定协议，而不是依赖松散的字典结构。
+
+| Schema | Purpose / 用途 | Stable payload highlights / 稳定字段重点 |
+|---|---|---|
+| `write_receipt` | One persisted write action / 单次持久化写入动作 | `layer`, `action`, `scope`, `target`, `target_file`, `task_id`, `session_id`, `receipt_ref` |
+| `timeline_item` | One chronological event / 单个时间线事件 | `kind`, `created_at`, `task_id`, `session_id`, `layer`, `action`, `scope`, `target`, `receipt_ref` |
+| `timeline_result` | Timeline query result / 时间线查询结果 | `timeline`, `limit`, `filters` |
+| `eval_result` | Unified eval output / 统一评估结果 | `score`, `quality`, `findings` |
+| `resume_packet` | Cross-session resume contract / 跨会话恢复协议 | `task_id`, `current_summary`, `next_recommended_actions`, `unresolved_items`, `resume_rule_profile` |
+| `handoff_packet` | Cross-model handoff contract / 跨模型交接协议 | `target_model`, `model_profile`, `handoff_rule_profile`, `minimal_required_context`, `what_to_check_next` |
+| `workspace_continuity_dashboard` | Task continuity view / 单任务连续性视图 | `focus_task`, `resume_packet`, `next_actions`, `unresolved_items`, `recent_evidence` |
+| `workspace_dashboard` | Workspace operational dashboard / 工作区总面板 | `focus_task`, `continuity_overview`, `write_receipts_overview`, `active_tasks`, `recent_handoffs`, `focus_resume_eval` |
+
+Timeline consumers should treat `session_event`, `write_receipt`, and `handoff` as the three current canonical `timeline_item.kind` values.
+
+使用 timeline 的外部系统目前应把 `session_event`、`write_receipt`、`handoff` 视为三种正式的 `timeline_item.kind` 枚举值。
 | `memory_detect_changes_tool` | Git diff risk mapping / Git 变更风险映射 |
 | `memory_contracts_tool` | API/Feign/MQ contract list / 契约列表 |
 | `workspace_trace_tool` | Cross-service trace hints / 跨服务追踪 |
@@ -644,15 +691,16 @@ AI 编程助手改代码前必须执行：
 
 ```text
 1. Call workspace_sniff_tool(intent)
-2. Call memory_write_judge_tool(text=intent, source="sniff_intent", intent=intent)
-3. Call memory_plan_write_tool(...) if you need executable write steps
-4. For long-running or collaborative tasks, call workspace_sync_sniff_artifacts_tool to write context/plan into task space
-5. For important contract/topic/service symbols, call memory_context_tool or memory_impact_tool
-6. Before editing files, call workspace_check_rules_tool
-7. If changing DTO/Feign/MQ Message, call workspace_check_contract_tool
-8. For long tasks, record key steps with workspace_start_session_tool / workspace_log_session_event_tool
-9. After validation, call workspace_end_session_tool, then workspace_sync_case_artifacts_tool
-10. Finally call workspace_record_case_tool
+2. For class/method/Feign/Topic/config/call-chain lookup, call memory_symbol_tool / memory_search_code_tool / workspace_trace_tool / memory_callers_tool / memory_callees_tool before raw repo-wide text search
+3. Call memory_write_judge_tool(text=intent, source="sniff_intent", intent=intent)
+4. Call memory_plan_write_tool(...) if you need executable write steps
+5. For long-running or collaborative tasks, call workspace_sync_sniff_artifacts_tool to write context/plan into task space
+6. For important contract/topic/service symbols, call memory_context_tool or memory_impact_tool
+7. Before editing files, call workspace_check_rules_tool
+8. If changing DTO/Feign/MQ Message, call workspace_check_contract_tool
+9. For long tasks, record key steps with workspace_start_session_tool / workspace_log_session_event_tool
+10. After validation, call workspace_end_session_tool, then workspace_sync_case_artifacts_tool
+11. Finally call workspace_record_case_tool
 ```
 
 ---

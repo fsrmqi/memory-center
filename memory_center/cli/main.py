@@ -47,10 +47,12 @@ from memory_center.core.orchestrator import (
     memory_symbol,
     memory_verify_checklist,
     memory_plan_write,
+    memory_tool_usage_report,
     memory_execute_write,
     memory_write_judge,
     workspace_check_contract,
     workspace_check_rules,
+    workspace_lookup_hint,
     workspace_record_case,
     workspace_recent_sessions,
     workspace_sniff,
@@ -443,6 +445,26 @@ def eval_handoff_cmd(
 ):
     """Evaluate handoff packet quality."""
     print(memory_eval_handoff(workspace, target_model=target_model, task_id=task_id, session_id=session_id, intent=intent, limit=limit))
+
+
+@app.command("lookup-hint")
+def lookup_hint_cmd(
+    workspace: str = typer.Option(...),
+    query: str = typer.Option(...),
+    intent: str = typer.Option(""),
+    limit: int = typer.Option(8),
+):
+    """Suggest whether to use Memory Center lookup tools or local search first."""
+    print(workspace_lookup_hint(workspace, query=query, intent=intent, limit=limit))
+
+
+@app.command("tool-usage-report")
+def tool_usage_report_cmd(
+    workspace: str = typer.Option(...),
+    limit: int = typer.Option(200),
+):
+    """Summarize recent Memory Center vs external tool usage and lookup adoption."""
+    print(memory_tool_usage_report(workspace, limit=limit))
 
 
 @app.command("generate-wiki")

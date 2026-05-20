@@ -230,6 +230,114 @@ DEFAULT_HANDOFF_RULES = {
     },
 }
 
+DEFAULT_WRITE_POLICY_RULES = {
+    "default": {
+        "source_layer_boosts": {
+            "tool_call": { "L0_session_events": 3 },
+            "tool_result": { "L0_session_events": 3 },
+            "user_prompt": { "L0_session_events": 3 },
+            "note": { "L0_session_events": 3 },
+            "session_event": { "L0_session_events": 3 },
+        },
+        "keyword_layer_boosts": [
+            {
+                "keywords": ["经验", "复盘", "教训", "风险", "兼容", "验证", "best practice", "lessons learned"],
+                "layer": "L1_case_atoms",
+                "score": 4,
+                "reason": "文本包含经验/风险/验证特征，适合沉淀 L1 case。",
+            },
+            {
+                "keywords": ["任务", "计划", "方案", "context", "plan", "design", "change log", "当前", "next step", "todo"],
+                "layer": "L2_task_spaces",
+                "score": 4,
+                "reason": "文本包含任务执行上下文特征，适合写入 L2 task space。",
+            },
+            {
+                "keywords": ["团队", "规范", "规则", "约束", "invariant", "workspace", "profile", "迁移策略", "migration", "governance", "guardrail"],
+                "layer": "L3_workspace_profile",
+                "score": 5,
+                "reason": "文本包含团队规则/架构约束特征，适合写入 L3 workspace profile。",
+            },
+        ],
+        "intent_layer_boosts": [
+            {
+                "keywords": ["修复", "改造", "实现", "任务", "需求"],
+                "layer": "L2_task_spaces",
+                "score": 2,
+                "reason": "当前 intent 偏执行任务，增强 L2 权重。",
+            }
+        ],
+        "projects_present_boosts": {
+            "L1_case_atoms": 1,
+            "L2_task_spaces": 1,
+        },
+        "files_present_boosts": {
+            "L1_case_atoms": 1,
+            "L2_task_spaces": 2,
+        },
+        "prefer_layer_boost": 3,
+    }
+}
+
+DEFAULT_AUTO_SYNC_RULES = {
+    "default": {
+        "mode_aliases": {
+            "safe": "strict",
+            "strict": "strict",
+            "balanced": "balanced",
+            "aggressive": "aggressive",
+        },
+        "modes": {
+            "strict": {
+                "min_delta": 2,
+                "allowed_risk_levels": ["low"],
+                "fallback": "strict 模式下建议优先人工确认 task_candidates。",
+            },
+            "balanced": {
+                "min_delta": 0,
+                "allowed_risk_levels": ["low", "medium"],
+                "fallback": "balanced 模式下可先检查 task_candidates[0] 再决定是否同步。",
+            },
+            "aggressive": {
+                "min_delta": 0,
+                "allowed_risk_levels": ["low", "medium", "high"],
+                "fallback": "aggressive 模式会优先推进自动同步，但高风险任务仍建议人工复核。",
+            },
+        },
+    }
+}
+
+DEFAULT_EVAL_RULES = {
+    "write_quality": {
+        "penalties": {
+            "missing_l0": 20,
+            "missing_l1": 15,
+            "missing_l2": 30,
+            "missing_l3": 20,
+            "no_receipts": 100,
+        },
+        "rule_intent_keywords": ["规则", "规范", "invariant"],
+    },
+    "resume": {
+        "penalties": {
+            "missing_current_summary": 30,
+            "missing_next_actions": 20,
+            "missing_unresolved_items": 15,
+            "verification_flag_without_items": 10,
+            "missing_resume_rule_profile": 10,
+        }
+    },
+    "handoff": {
+        "penalties": {
+            "missing_minimal_context": 30,
+            "missing_next_checks": 20,
+            "missing_do_not_repeat": 15,
+            "missing_handoff_rule_profile": 10,
+            "missing_model_profile": 10,
+        }
+    },
+}
+
 
 def ensure_default_rules(store: WorkspaceStore) -> Path:
     path = store.rules_dir / "global-rules.yaml"
@@ -244,6 +352,15 @@ def ensure_default_rules(store: WorkspaceStore) -> Path:
     handoff_rules_path = store.rules_dir / "handoff-rules.yaml"
     if not handoff_rules_path.exists():
         handoff_rules_path.write_text(yaml.safe_dump(DEFAULT_HANDOFF_RULES, allow_unicode=True, sort_keys=False), encoding="utf-8")
+    write_policy_path = store.rules_dir / "write-policy-rules.yaml"
+    if not write_policy_path.exists():
+        write_policy_path.write_text(yaml.safe_dump(DEFAULT_WRITE_POLICY_RULES, allow_unicode=True, sort_keys=False), encoding="utf-8")
+    auto_sync_path = store.rules_dir / "auto-sync-rules.yaml"
+    if not auto_sync_path.exists():
+        auto_sync_path.write_text(yaml.safe_dump(DEFAULT_AUTO_SYNC_RULES, allow_unicode=True, sort_keys=False), encoding="utf-8")
+    eval_rules_path = store.rules_dir / "eval-rules.yaml"
+    if not eval_rules_path.exists():
+        eval_rules_path.write_text(yaml.safe_dump(DEFAULT_EVAL_RULES, allow_unicode=True, sort_keys=False), encoding="utf-8")
     return path
 
 
@@ -278,3 +395,18 @@ def match_rules(store: WorkspaceStore, intent: str = "", files: List[str] | None
             matched.append(item)
     matched.sort(key=lambda x: x["score"], reverse=True)
     return matched
+
+
+def load_yaml_rule_config(store: WorkspaceStore, file_name: str, default_data: Dict[str, Any]) -> Dict[str, Any]:
+    ensure_default_rules(store)
+    path = store.rules_dir / file_name
+    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    merged = dict(default_data)
+    for key, value in data.items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            nested = dict(merged[key])
+            nested.update(value)
+            merged[key] = nested
+        else:
+            merged[key] = value
+    return merged

@@ -32,9 +32,10 @@ from memory_center.core.config import load_workspace_config
 from memory_center.core.exporters import export_mermaid, export_workspace_dashboard_html, export_workspace_dashboard_markdown
 from memory_center.core.indexer import reindex_workspace
 from memory_center.core.instructions import write_agent_instructions
-from memory_center.core.orchestrator import memory_eval_handoff, memory_eval_resume, memory_eval_write_quality, memory_execute_write, memory_plan_write, memory_write_judge, workspace_continuity_dashboard, workspace_dashboard, workspace_handoff_history, workspace_handoff_packet, workspace_model_profile, workspace_next_actions, workspace_recent_evidence, workspace_replay_write_chain, workspace_resume_packet, workspace_sniff, workspace_trace, workspace_unresolved_items, workspace_write_receipts
+from memory_center.core.orchestrator import memory_eval_handoff, memory_eval_regression_suite, memory_eval_resume, memory_eval_write_quality, memory_execute_write, memory_plan_write, memory_tool_usage_report, memory_write_judge, workspace_continuity_dashboard, workspace_dashboard, workspace_handoff_history, workspace_handoff_packet, workspace_log_session_event, workspace_lookup_hint, workspace_model_profile, workspace_next_actions, workspace_recent_evidence, workspace_replay_write_chain, workspace_resume_packet, workspace_sniff, workspace_start_session, workspace_trace, workspace_unresolved_items, workspace_write_receipts
 from memory_center.core.registry import add_to_group, create_group, register_workspace
 from memory_center.core.rules import ensure_default_rules
+from memory_center.core.schemas import validate_schema_payload
 from memory_center.core.store import WorkspaceStore
 from memory_center.core.timeline import timeline_query
 from memory_center.core.validators import doctor
@@ -57,6 +58,9 @@ def test_demo_workspace_indexes_spring_cloud_patterns(tmp_path: Path):
     store = WorkspaceStore(workspace)
     counts = reindex_workspace(config, store)
     ensure_default_rules(store)
+    assert (store.rules_dir / "write-policy-rules.yaml").exists()
+    assert (store.rules_dir / "auto-sync-rules.yaml").exists()
+    assert (store.rules_dir / "eval-rules.yaml").exists()
 
     assert counts["files"] >= 5
     assert counts["apis"] >= 1
@@ -90,6 +94,8 @@ def test_demo_workspace_indexes_spring_cloud_patterns(tmp_path: Path):
     assert "memory_write_judge / memory_plan_write" in "\n".join(sniffed["next_steps"])
     assert "write_judge_recommendation" in sniffed
     assert "selected_layer" in sniffed["write_judge_recommendation"]
+    assert "lookup_hint" in sniffed
+    assert "preferred_tools" in sniffed["lookup_hint"]
     assert "workspace_end_session" in sniffed["symbolic_context"]["flow_mermaid"]
     assert "workspace_sync_case_artifacts" in sniffed["symbolic_context"]["flow_mermaid"]
     assert sniffed["source_refs"]
@@ -507,6 +513,10 @@ def test_memory_write_judge_and_plan_write(tmp_path: Path):
     handoff_eval = memory_eval_handoff(workspace, target_model="glm-4", intent="更新团队规则", limit=10)
     assert handoff_eval["quality"] in {"high", "medium", "low"}
     assert handoff_eval["schema"]["name"] == "eval_result"
+    regression_suite = memory_eval_regression_suite(workspace, target_model="glm-4", intent="更新团队规则", limit=10)
+    assert regression_suite["suite_name"] == "memory_eval_regression_suite"
+    assert regression_suite["components"]["write_quality"]["schema"]["name"] == "eval_result"
+    assert regression_suite["schema"]["name"] == "eval_result"
     handoff_history = workspace_handoff_history(workspace, target_model="glm-4", limit=10)
     assert handoff_history["handoffs"]
     dashboard = workspace_continuity_dashboard(workspace, intent="更新团队规则", limit=5)
@@ -516,14 +526,69 @@ def test_memory_write_judge_and_plan_write(tmp_path: Path):
     workspace_dash = workspace_dashboard(workspace, intent="更新团队规则", limit=5)
     assert "active_tasks" in workspace_dash
     assert "focus_dashboard" in workspace_dash
+    assert "tool_usage_report" in workspace_dash
+    assert "summary" in workspace_dash["tool_usage_report"]
     assert workspace_dash["schema"]["name"] == "workspace_dashboard"
     timeline = timeline_query(str(workspace), kinds=["write_receipt", "handoff"], limit=20)
     assert timeline["timeline"]
     assert timeline["schema"]["name"] == "timeline_result"
+    assert timeline["filters"]["kinds"] == ["handoff", "write_receipt"]
+    filtered_timeline = timeline_query(str(workspace), kinds=["write_receipt"], layer="L3_workspace_profile", limit=20)
+    assert filtered_timeline["timeline"]
+    assert all(item["layer"] == "L3_workspace_profile" for item in filtered_timeline["timeline"])
+    lookup_hint = workspace_lookup_hint(workspace, query="ArticleFeignClient 调用链", intent="找谁调用它", limit=5)
+    assert lookup_hint["schema"]["name"] == "lookup_hint"
+    assert lookup_hint["should_use_memory_center"] is True
+    assert lookup_hint["preferred_tools"]
     markdown = export_workspace_dashboard_markdown(workspace, intent="更新团队规则", limit=5)
     html = export_workspace_dashboard_html(workspace, intent="更新团队规则", limit=5)
     assert "Workspace Dashboard" in markdown
     assert "<!doctype html>" in html.lower()
+
+
+def test_schema_validation_guard():
+    validate_schema_payload(
+        "write_receipt",
+        {
+            "layer": "L1_case_atoms",
+            "action": "workspace_record_case",
+            "scope": "memory",
+            "target": "cross-service-task-memory.jsonl",
+            "target_file": "memory/cross-service-task-memory.jsonl",
+        },
+    )
+    try:
+        validate_schema_payload("timeline_result", {"timeline": [], "summary": {}})
+        raised = False
+    except ValueError:
+        raised = True
+    assert raised is True
+
+
+def test_tool_usage_report_and_lookup_hint(tmp_path: Path):
+    source = Path("examples/spring-cloud-demo")
+    target = tmp_path / "usage-demo"
+    import shutil
+    shutil.copytree(source, target)
+    workspace = target / ".memory-center" / "workspace.yaml"
+    lines = workspace.read_text(encoding="utf-8").splitlines()
+    lines = [f"root: {target.as_posix()}" if line.startswith("root:") else line for line in lines]
+    workspace.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    session = workspace_start_session(workspace, "分析 ArticleFeignClient 调用链")
+    session_id = session["session_id"]
+    workspace_log_session_event(workspace, session_id, "tool_call", {"tool_name": "memory_symbol_tool", "query": "ArticleFeignClient"})
+    workspace_log_session_event(workspace, session_id, "tool_call", {"tool_name": "rg", "query": "ArticleController class"})
+
+    report = memory_tool_usage_report(workspace, limit=20)
+    assert report["schema"]["name"] == "tool_usage_report"
+    assert report["summary"]["total_tool_calls"] >= 2
+    assert report["lookup_tool_counts"]["memory_symbol_tool"] >= 1
+    assert report["suspected_bypass"]
+
+    hint = workspace_lookup_hint(workspace, query="ArticleController 类", intent="想找调用链", limit=5)
+    assert hint["recommended_path"] in {"symbol_lookup", "call_chain", "cross_service_analysis"}
+    assert "memory_" in " ".join(hint["preferred_tools"]) or "workspace_" in " ".join(hint["preferred_tools"])
 
 
 def test_auto_archive_task_spaces(tmp_path: Path):

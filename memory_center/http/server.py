@@ -16,6 +16,7 @@ from memory_center.core.orchestrator import (
     memory_eval_write_quality,
     memory_eval_resume,
     memory_eval_handoff,
+    memory_tool_usage_report,
     memory_plan_change,
     memory_plan_write,
     memory_query,
@@ -25,6 +26,7 @@ from memory_center.core.orchestrator import (
     memory_write_judge,
     workspace_handoff_packet,
     workspace_handoff_history,
+    workspace_lookup_hint,
     workspace_model_profile,
     workspace_continuity_dashboard,
     workspace_dashboard,
@@ -230,6 +232,12 @@ def _route_request(path: str, params: dict, default_workspace: str | None) -> di
         scope = params.get("scope", [""])[0]
         limit = _parse_int(params, "limit", 20)
         return memory_search_code(workspace, query, scope=scope, limit=limit)
+    if path == "/workspace/lookup-hint":
+        workspace = _require_workspace(params, default_workspace)
+        query = _require_one(params, "query")
+        intent = params.get("intent", [""])[0]
+        limit = _parse_int(params, "limit", 8)
+        return workspace_lookup_hint(workspace, query=query, intent=intent, limit=limit)
     if path == "/workspace/symbol":
         workspace = _require_workspace(params, default_workspace)
         name = _require_one(params, "name")
@@ -326,6 +334,12 @@ def _route_request(path: str, params: dict, default_workspace: str | None) -> di
             session_id=params.get("session_id", [""])[0],
             intent=params.get("intent", [""])[0],
             limit=_parse_int(params, "limit", 20),
+        )
+    if path == "/workspace/tool-usage-report":
+        workspace = _require_workspace(params, default_workspace)
+        return memory_tool_usage_report(
+            workspace,
+            limit=_parse_int(params, "limit", 200),
         )
     if path == "/workspace/verify-checklist":
         workspace = _require_workspace(params, default_workspace)

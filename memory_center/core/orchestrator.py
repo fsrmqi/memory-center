@@ -22,7 +22,17 @@ from .artifacts import (
 from .config import load_workspace_config
 from .evals import EvalResultBuilder
 from .registry import resolve_group
-from .rules import DEFAULT_HANDOFF_PROFILES, DEFAULT_HANDOFF_RULES, DEFAULT_RESUME_RULES, ensure_default_rules, match_rules
+from .rules import (
+    DEFAULT_AUTO_SYNC_RULES,
+    DEFAULT_EVAL_RULES,
+    DEFAULT_HANDOFF_PROFILES,
+    DEFAULT_HANDOFF_RULES,
+    DEFAULT_RESUME_RULES,
+    DEFAULT_WRITE_POLICY_RULES,
+    ensure_default_rules,
+    load_yaml_rule_config,
+    match_rules,
+)
 from .schemas import with_schema
 from .semantic import semantic_index_stats, semantic_query
 from .store import WorkspaceStore
@@ -93,6 +103,7 @@ def workspace_sniff(
     intent: str,
     limit: int = 12,
     auto_sync_mode: str = "balanced",
+    include_lookup_hint: bool = True,
 ) -> Dict[str, Any]:
     config, store = load_context(workspace_file)
     file_index = store.read_json("file-index.json", [])
@@ -119,7 +130,7 @@ def workspace_sniff(
         limit_candidates=3,
         related_texts=[item.get("task", "") for item in related_cases] + [item.get("summary", "") or item.get("intent", "") for item in recent_sessions],
     )
-    auto_sync = _build_sniff_auto_sync_recommendation(task_resolution, sniff_risk_level, auto_sync_mode=auto_sync_mode)
+    auto_sync = _build_sniff_auto_sync_recommendation(store, task_resolution, sniff_risk_level, auto_sync_mode=auto_sync_mode)
     source_refs = _build_sniff_source_refs(matched_files, related_feigns, related_apis, related_mq, related_cases)
     write_judge_recommendation = memory_write_judge(
         workspace_file,
@@ -129,6 +140,7 @@ def workspace_sniff(
         projects=matched_services[:5],
         files=[item.get("path", "") for item in matched_files[:8]],
     )
+    lookup_hint = workspace_lookup_hint(workspace_file, query=intent, intent=intent, limit=min(limit, 6)) if include_lookup_hint else None
 
     return {
         "workspace": config.workspace,
@@ -160,6 +172,12 @@ def workspace_sniff(
         },
         "auto_sync_recommendation": auto_sync,
         "write_judge_recommendation": write_judge_recommendation.get("decision", {}),
+        "lookup_hint": {
+            "recommended_path": lookup_hint.get("recommended_path", "") if lookup_hint else "",
+            "preferred_tools": lookup_hint.get("preferred_tools", []) if lookup_hint else [],
+            "should_use_memory_center": lookup_hint.get("should_use_memory_center", False) if lookup_hint else False,
+            "reasons": lookup_hint.get("reasons", []) if lookup_hint else [],
+        },
         "symbolic_context": _build_sniff_symbolic_context(intent, sniff_risk_level, matched_services, matched_files, related_feigns, related_apis, related_mq, related_cases),
         "next_steps": [
             "先调用 memory_search_code 缩小入口范围，再用 memory_symbol 定位关键符号",
@@ -188,6 +206,146 @@ def workspace_trace(workspace_file: str | Path, entry: str) -> Dict[str, Any]:
         "matched_mq": [x for x in mq if entry_lower in json.dumps(x, ensure_ascii=False).lower()],
         "topology_hint": topology,
     }
+
+
+def workspace_lookup_hint(
+    workspace_file: str | Path,
+    query: str,
+    intent: str = "",
+    limit: int = 8,
+) -> Dict[str, Any]:
+    config, _ = load_context(workspace_file)
+    normalized = f"{query} {intent}".strip().lower()
+    reasons: List[str] = []
+    preferred_tools: List[str] = []
+    recommended_path = "local_search"
+    should_use_memory_center = False
+
+    if any(token in normalized for token in ["controller", "service", "client", "feign", "dto", "entity", "mapper", "consumer", "producer", "topic", "config", "class", "method", "类", "方法", "配置"]):
+        preferred_tools = ["memory_symbol_tool", "memory_search_code_tool"]
+        recommended_path = "symbol_lookup"
+        should_use_memory_center = True
+        reasons.append("查询看起来在找类、方法、Feign、Topic 或配置项，优先走符号/索引检索更稳。")
+
+    if any(token in normalized for token in ["谁调用", "调用链", "caller", "callee", "upstream", "downstream", "依赖", "链路"]):
+        preferred_tools = ["memory_callers_tool", "memory_callees_tool", "workspace_trace_tool"]
+        recommended_path = "call_chain"
+        should_use_memory_center = True
+        reasons.append("查询包含调用链或依赖分析语义，适合先走图谱链路工具。")
+
+    if any(token in normalized for token in ["跨服务", "影响", "风险", "契约", "mq", "kafka", "rocketmq", "api", "接口"]):
+        preferred_tools = ["workspace_sniff_tool", "memory_impact_tool", "memory_context_tool"]
+        recommended_path = "cross_service_analysis"
+        should_use_memory_center = True
+        reasons.append("查询涉及跨服务、契约或风险分析，Memory Center 的上下文价值更高。")
+
+    if not preferred_tools and any(token in normalized for token in ["文件", "路径", "字符串", "关键字", "grep", "文本"]):
+        preferred_tools = ["memory_search_code_tool"]
+        recommended_path = "keyword_lookup"
+        should_use_memory_center = True
+        reasons.append("查询偏关键词入口定位，先走代码索引检索通常比全仓库扫描更省上下文。")
+
+    if not preferred_tools:
+        preferred_tools = ["local_search", "memory_search_code_tool"]
+        reasons.append("查询更像局部实现细节确认，可先本地搜索；若范围扩大，再切到 Memory Center。")
+
+    sniff = workspace_sniff(workspace_file, query or intent, limit=min(limit, 6), include_lookup_hint=False)
+    return with_schema(
+        "lookup_hint",
+        {
+            "workspace": config.workspace,
+            "query": query,
+            "intent": intent,
+            "recommended_path": recommended_path,
+            "preferred_tools": preferred_tools,
+            "reasons": reasons,
+            "should_use_memory_center": should_use_memory_center,
+            "sniff_risk_level": sniff.get("risk_level", ""),
+            "matched_services": sniff.get("matched_services", [])[:5],
+            "candidate_files": sniff.get("candidate_files", [])[:5],
+            "fallback": "若推荐结果不足以定位，再退回本地 grep / rg 做小范围确认。",
+        },
+    )
+
+
+def memory_tool_usage_report(
+    workspace_file: str | Path,
+    limit: int = 200,
+) -> Dict[str, Any]:
+    config, store = load_context(workspace_file)
+    events = store.read_jsonl(SESSION_EVENTS_FILE, limit=max(limit, 1))
+    tool_counts: Dict[str, int] = {}
+    lookup_tool_counts: Dict[str, int] = {}
+    memory_center_calls = 0
+    external_calls = 0
+    suspected_bypass: List[Dict[str, Any]] = []
+    lookup_tools = {
+        "memory_symbol_tool",
+        "memory_search_code_tool",
+        "workspace_trace_tool",
+        "memory_callers_tool",
+        "memory_callees_tool",
+        "memory_context_tool",
+        "memory_impact_tool",
+        "workspace_sniff_tool",
+    }
+
+    for event in events:
+        if event.get("event_type") != "tool_call":
+            continue
+        payload = _event_payload(event)
+        tool_name = str(payload.get("tool_name") or payload.get("name") or "")
+        if not tool_name:
+            continue
+        tool_counts[tool_name] = tool_counts.get(tool_name, 0) + 1
+        is_memory_center = tool_name.startswith("memory_") or tool_name.startswith("workspace_")
+        if is_memory_center:
+            memory_center_calls += 1
+        else:
+            external_calls += 1
+        if tool_name in lookup_tools:
+            lookup_tool_counts[tool_name] = lookup_tool_counts.get(tool_name, 0) + 1
+        payload_text = json.dumps(payload, ensure_ascii=False).lower()
+        if not is_memory_center and any(token in payload_text for token in ["class", "method", "feign", "topic", "caller", "callee", "symbol", "controller", "service", "类", "方法", "调用链"]):
+            suspected_bypass.append(
+                {
+                    "session_id": event.get("session_id", ""),
+                    "tool_name": tool_name,
+                    "query": payload.get("query", "") or payload.get("target", "") or payload.get("text", ""),
+                    "reason": "看起来是在做类/符号/调用链检索，但没有走 Memory Center 工具。",
+                }
+            )
+
+    total_tool_calls = memory_center_calls + external_calls
+    summary = {
+        "total_tool_calls": total_tool_calls,
+        "memory_center_calls": memory_center_calls,
+        "external_calls": external_calls,
+        "memory_center_ratio": round((memory_center_calls / total_tool_calls), 3) if total_tool_calls else 0.0,
+        "lookup_tool_total": sum(lookup_tool_counts.values()),
+        "suspected_bypass_count": len(suspected_bypass),
+    }
+    adoption_hints: List[str] = []
+    if sum(lookup_tool_counts.values()) == 0:
+        adoption_hints.append("最近会话里几乎没有使用 Memory Center 的 lookup 工具，找类/符号很可能仍主要依赖本地搜索。")
+    if suspected_bypass:
+        adoption_hints.append("检测到疑似绕过案例，建议继续把类/符号/调用链检索优先协议前置到生成指令里。")
+    if summary["memory_center_ratio"] < 0.4 and total_tool_calls:
+        adoption_hints.append("Memory Center 工具调用占比较低，可能意味着协议优先级还不够高，或返回结果还不够有吸引力。")
+    if not adoption_hints:
+        adoption_hints.append("近期使用情况正常，Memory Center 已经开始承担主要检索与连续性职责。")
+
+    return with_schema(
+        "tool_usage_report",
+        {
+            "workspace": config.workspace,
+            "summary": summary,
+            "tool_counts": dict(sorted(tool_counts.items(), key=lambda item: (-item[1], item[0]))[:20]),
+            "lookup_tool_counts": dict(sorted(lookup_tool_counts.items(), key=lambda item: (-item[1], item[0]))),
+            "suspected_bypass": suspected_bypass[:20],
+            "adoption_hints": adoption_hints,
+        },
+    )
 
 
 def workspace_check_contract(workspace_file: str | Path, contract_file: str, change_type: str) -> Dict[str, Any]:
@@ -782,6 +940,7 @@ def workspace_dashboard(
         intent=intent,
         limit=min(limit, 10),
     )
+    usage_report = memory_tool_usage_report(workspace_file, limit=max(limit * 10, 50))
     return with_schema(
         "workspace_dashboard",
         {
@@ -797,6 +956,12 @@ def workspace_dashboard(
         "recent_handoffs": handoffs,
         "focus_dashboard": focus_dashboard,
         "focus_resume_eval": focus_resume_eval,
+        "tool_usage_report": {
+            "summary": usage_report.get("summary", {}),
+            "lookup_tool_counts": usage_report.get("lookup_tool_counts", {}),
+            "suspected_bypass": usage_report.get("suspected_bypass", [])[:5],
+            "adoption_hints": usage_report.get("adoption_hints", []),
+        },
         },
     )
 
@@ -836,7 +1001,7 @@ def memory_write_judge(
     projects: List[str] | None = None,
     files: List[str] | None = None,
 ) -> Dict[str, Any]:
-    config, _ = load_context(workspace_file)
+    config, store = load_context(workspace_file)
     normalized_text = (text or "").strip().lower()
     normalized_intent = (intent or "").strip().lower()
     normalized_source = (source or "").strip().lower()
@@ -844,48 +1009,51 @@ def memory_write_judge(
 
     layer_scores: Dict[str, int] = {layer: 0 for layer in MEMORY_LAYER_ORDER}
     reasons: List[str] = []
+    policy = _load_write_policy_rules(store)
 
-    if normalized_source in {"tool_call", "tool_result", "user_prompt", "note", "session_event"}:
-        layer_scores[LAYER_L0] += 3
-        reasons.append("来源属于会话过程事件，优先归档 L0。")
+    for layer, boost in (policy.get("source_layer_boosts", {}).get(normalized_source, {}) or {}).items():
+        if layer in layer_scores:
+            layer_scores[layer] += int(boost or 0)
+    if normalized_source in (policy.get("source_layer_boosts", {}) or {}):
+        reasons.append("来源命中了 write-policy-rules 的 source_layer_boosts。")
 
-    if any(k in normalized_text for k in ["经验", "复盘", "教训", "风险", "兼容", "验证", "best practice", "lessons learned"]):
-        layer_scores[LAYER_L1] += 4
-        reasons.append("文本包含经验/风险/验证特征，适合沉淀 L1 case。")
+    for rule in policy.get("keyword_layer_boosts", []) or []:
+        keywords = [str(item).lower() for item in rule.get("keywords", [])]
+        if keywords and any(token in normalized_text for token in keywords):
+            layer = str(rule.get("layer", "") or "")
+            if layer in layer_scores:
+                layer_scores[layer] += int(rule.get("score", 0) or 0)
+                reasons.append(str(rule.get("reason", f"文本命中 {layer} 规则。")))
 
-    if any(k in normalized_text for k in ["任务", "计划", "方案", "context", "plan", "design", "change log", "当前", "next step", "todo"]):
-        layer_scores[LAYER_L2] += 4
-        reasons.append("文本包含任务执行上下文特征，适合写入 L2 task space。")
-
-    if any(
-        k in normalized_text
-        for k in ["团队", "规范", "规则", "约束", "invariant", "workspace", "profile", "迁移策略", "migration", "governance", "guardrail"]
-    ):
-        layer_scores[LAYER_L3] += 5
-        reasons.append("文本包含团队规则/架构约束特征，适合写入 L3 workspace profile。")
-
-    if normalized_intent and any(k in normalized_intent for k in ["修复", "改造", "实现", "任务", "需求"]):
-        layer_scores[LAYER_L2] += 2
-        reasons.append("当前 intent 偏执行任务，增强 L2 权重。")
+    for rule in policy.get("intent_layer_boosts", []) or []:
+        keywords = [str(item).lower() for item in rule.get("keywords", [])]
+        if normalized_intent and keywords and any(token in normalized_intent for token in keywords):
+            layer = str(rule.get("layer", "") or "")
+            if layer in layer_scores:
+                layer_scores[layer] += int(rule.get("score", 0) or 0)
+                reasons.append(str(rule.get("reason", f"意图命中 {layer} 规则。")))
 
     if projects:
-        layer_scores[LAYER_L1] += 1
-        layer_scores[LAYER_L2] += 1
+        for layer, boost in (policy.get("projects_present_boosts", {}) or {}).items():
+            if layer in layer_scores:
+                layer_scores[layer] += int(boost or 0)
     if files:
-        layer_scores[LAYER_L1] += 1
-        layer_scores[LAYER_L2] += 2
+        for layer, boost in (policy.get("files_present_boosts", {}) or {}).items():
+            if layer in layer_scores:
+                layer_scores[layer] += int(boost or 0)
 
+    prefer_boost = int(policy.get("prefer_layer_boost", 3) or 3)
     if preferred in {"L0", "L0_SESSION_EVENTS"}:
-        layer_scores[LAYER_L0] += 3
+        layer_scores[LAYER_L0] += prefer_boost
         reasons.append("用户偏好层级指向 L0。")
     if preferred in {"L1", "L1_CASE_ATOMS"}:
-        layer_scores[LAYER_L1] += 3
+        layer_scores[LAYER_L1] += prefer_boost
         reasons.append("用户偏好层级指向 L1。")
     if preferred in {"L2", "L2_TASK_SPACES"}:
-        layer_scores[LAYER_L2] += 3
+        layer_scores[LAYER_L2] += prefer_boost
         reasons.append("用户偏好层级指向 L2。")
     if preferred in {"L3", "L3_WORKSPACE_PROFILE"}:
-        layer_scores[LAYER_L3] += 3
+        layer_scores[LAYER_L3] += prefer_boost
         reasons.append("用户偏好层级指向 L3。")
 
     ranked = sorted(layer_scores.items(), key=lambda item: item[1], reverse=True)
@@ -1223,11 +1391,13 @@ def memory_eval_write_quality(
     intent: str = "",
     limit: int = 100,
 ) -> Dict[str, Any]:
-    config, _ = load_context(workspace_file)
+    config, store = load_context(workspace_file)
     replay = workspace_replay_write_chain(workspace_file, task_id=task_id, session_id=session_id, limit=limit)
     receipts = replay.get("timeline", [])
     layers = {item.get("layer", "") for item in receipts}
     builder = EvalResultBuilder()
+    penalties = (_load_eval_rules(store).get("write_quality", {}) or {}).get("penalties", {})
+    rule_keywords = [str(item).lower() for item in ((_load_eval_rules(store).get("write_quality", {}) or {}).get("rule_intent_keywords", []) or [])]
 
     has_l0 = LAYER_L0 in layers
     has_l1 = LAYER_L1 in layers
@@ -1235,16 +1405,16 @@ def memory_eval_write_quality(
     has_l3 = LAYER_L3 in layers
 
     if session_id and not has_l0:
-        builder.add("medium", "missing_l0", "存在 session_id，但没有对应的 L0 会话事件写入。", 20)
+        builder.add("medium", "missing_l0", "存在 session_id，但没有对应的 L0 会话事件写入。", int(penalties.get("missing_l0", 20)))
     if task_id and not has_l2:
-        builder.add("high", "missing_l2", "存在 task_id，但没有对应的 L2 任务空间写入。", 30)
+        builder.add("high", "missing_l2", "存在 task_id，但没有对应的 L2 任务空间写入。", int(penalties.get("missing_l2", 30)))
     if session_id and not has_l1:
-        builder.add("medium", "missing_l1", "存在 session_id，但没有沉淀为 L1 case memory。", 15)
-    if "规则" in intent or "规范" in intent or "invariant" in intent.lower():
+        builder.add("medium", "missing_l1", "存在 session_id，但没有沉淀为 L1 case memory。", int(penalties.get("missing_l1", 15)))
+    if any(keyword in intent.lower() for keyword in rule_keywords):
         if not has_l3:
-            builder.add("medium", "missing_l3", "意图看起来属于规则/规范类，但没有对应的 L3 核心记忆块写入。", 20)
+            builder.add("medium", "missing_l3", "意图看起来属于规则/规范类，但没有对应的 L3 核心记忆块写入。", int(penalties.get("missing_l3", 20)))
     if not receipts:
-        builder.add("high", "no_receipts", "没有找到任何 write receipts，无法证明记忆写入链路已执行。", 100)
+        builder.add("high", "no_receipts", "没有找到任何 write receipts，无法证明记忆写入链路已执行。", int(penalties.get("no_receipts", 100)))
 
     return builder.finalize(
         workspace=config.workspace,
@@ -1264,20 +1434,21 @@ def memory_eval_resume(
     intent: str = "",
     limit: int = 20,
 ) -> Dict[str, Any]:
-    config, _ = load_context(workspace_file)
+    config, store = load_context(workspace_file)
     packet = workspace_resume_packet(workspace_file, task_id=task_id, session_id=session_id, intent=intent, limit=limit)
     builder = EvalResultBuilder()
+    penalties = (_load_eval_rules(store).get("resume", {}) or {}).get("penalties", {})
 
     if not packet.get("current_summary"):
-        builder.add("high", "missing_current_summary", "恢复包缺少 current_summary。", 30)
+        builder.add("high", "missing_current_summary", "恢复包缺少 current_summary。", int(penalties.get("missing_current_summary", 30)))
     if not packet.get("next_recommended_actions"):
-        builder.add("medium", "missing_next_actions", "恢复包缺少 next_recommended_actions。", 20)
+        builder.add("medium", "missing_next_actions", "恢复包缺少 next_recommended_actions。", int(penalties.get("missing_next_actions", 20)))
     if "unresolved_items" not in packet:
-        builder.add("medium", "missing_unresolved_items", "恢复包缺少 unresolved_items。", 15)
+        builder.add("medium", "missing_unresolved_items", "恢复包缺少 unresolved_items。", int(penalties.get("missing_unresolved_items", 15)))
     if packet.get("verification_pending") and not packet.get("unresolved_items"):
-        builder.add("low", "verification_flag_without_items", "verification_pending 为真，但没有明确未解决事项。", 10)
+        builder.add("low", "verification_flag_without_items", "verification_pending 为真，但没有明确未解决事项。", int(penalties.get("verification_flag_without_items", 10)))
     if not packet.get("resume_rule_profile"):
-        builder.add("low", "missing_resume_rule_profile", "恢复包未声明命中的规则画像。", 10)
+        builder.add("low", "missing_resume_rule_profile", "恢复包未声明命中的规则画像。", int(penalties.get("missing_resume_rule_profile", 10)))
 
     return builder.finalize(
         workspace=config.workspace,
@@ -1296,7 +1467,7 @@ def memory_eval_handoff(
     intent: str = "",
     limit: int = 20,
 ) -> Dict[str, Any]:
-    config, _ = load_context(workspace_file)
+    config, store = load_context(workspace_file)
     packet = workspace_handoff_packet(
         workspace_file,
         target_model=target_model,
@@ -1307,17 +1478,18 @@ def memory_eval_handoff(
     )
     handoff_body = packet.get("handoff_packet", {})
     builder = EvalResultBuilder()
+    penalties = (_load_eval_rules(store).get("handoff", {}) or {}).get("penalties", {})
 
     if not handoff_body.get("minimal_required_context"):
-        builder.add("high", "missing_minimal_context", "交接包缺少 minimal_required_context。", 30)
+        builder.add("high", "missing_minimal_context", "交接包缺少 minimal_required_context。", int(penalties.get("missing_minimal_context", 30)))
     if not handoff_body.get("what_to_check_next"):
-        builder.add("medium", "missing_next_checks", "交接包缺少 what_to_check_next。", 20)
+        builder.add("medium", "missing_next_checks", "交接包缺少 what_to_check_next。", int(penalties.get("missing_next_checks", 20)))
     if not handoff_body.get("what_not_to_repeat"):
-        builder.add("medium", "missing_do_not_repeat", "交接包缺少 what_not_to_repeat。", 15)
+        builder.add("medium", "missing_do_not_repeat", "交接包缺少 what_not_to_repeat。", int(penalties.get("missing_do_not_repeat", 15)))
     if not packet.get("handoff_rule_profile"):
-        builder.add("low", "missing_handoff_rule_profile", "交接包未声明命中的 handoff 规则画像。", 10)
+        builder.add("low", "missing_handoff_rule_profile", "交接包未声明命中的 handoff 规则画像。", int(penalties.get("missing_handoff_rule_profile", 10)))
     if not packet.get("model_profile", {}).get("normalized_model"):
-        builder.add("low", "missing_model_profile", "交接包缺少标准化模型画像。", 10)
+        builder.add("low", "missing_model_profile", "交接包缺少标准化模型画像。", int(penalties.get("missing_model_profile", 10)))
 
     return builder.finalize(
         workspace=config.workspace,
@@ -1327,6 +1499,48 @@ def memory_eval_handoff(
         handoff_rule_profile=packet.get("handoff_rule_profile", ""),
         normalized_model=packet.get("model_profile", {}).get("normalized_model", ""),
     )
+
+
+def memory_eval_regression_suite(
+    workspace_file: str | Path,
+    *,
+    task_id: str = "",
+    session_id: str = "",
+    intent: str = "",
+    target_model: str = "codex",
+    limit: int = 20,
+) -> Dict[str, Any]:
+    config, _ = load_context(workspace_file)
+    write_eval = memory_eval_write_quality(workspace_file, task_id=task_id, session_id=session_id, intent=intent, limit=limit)
+    resume_eval = memory_eval_resume(workspace_file, task_id=task_id, session_id=session_id, intent=intent, limit=limit)
+    handoff_eval = memory_eval_handoff(
+        workspace_file,
+        target_model=target_model,
+        task_id=task_id,
+        session_id=session_id,
+        intent=intent,
+        limit=limit,
+    )
+    components = {
+        "write_quality": write_eval,
+        "resume": resume_eval,
+        "handoff": handoff_eval,
+    }
+    scores = [int(item.get("score", 0) or 0) for item in components.values()]
+    avg_score = int(sum(scores) / len(scores)) if scores else 0
+    suite = with_schema(
+        "eval_result",
+        {
+            "workspace": config.workspace,
+            "score": avg_score,
+            "quality": "high" if avg_score >= 85 else ("medium" if avg_score >= 60 else "low"),
+            "findings": [finding for result in components.values() for finding in result.get("findings", [])],
+            "components": components,
+            "suite_name": "memory_eval_regression_suite",
+            "target_model": target_model,
+        },
+    )
+    return suite
 
 
 def workspace_sync_sniff_to_artifacts(
@@ -1439,7 +1653,7 @@ def workspace_sync_case_to_artifacts(
     update_task_artifact(workspace_file, resolved_task_id, "current_summary", summary_content, source="sync_case_artifacts")
     append_task_change_log(workspace_file, resolved_task_id, _render_change_log_entry(case, session_id))
     touch_task_activity(workspace_file, resolved_task_id, "sync_case_artifacts")
-    auto_sync = _build_sniff_auto_sync_recommendation(resolved_info or {}, case_risk_level, auto_sync_mode=auto_sync_mode)
+    auto_sync = _build_sniff_auto_sync_recommendation(store, resolved_info or {}, case_risk_level, auto_sync_mode=auto_sync_mode)
     return {
         "workspace": config.workspace,
         "session_id": session_id,
@@ -1633,11 +1847,7 @@ def _normalize_model_name(model_name: str) -> str:
 
 
 def _load_resume_rules(store: WorkspaceStore, text: str) -> Dict[str, Any]:
-    import yaml
-
-    ensure_default_rules(store)
-    path = store.rules_dir / "resume-rules.yaml"
-    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    data = load_yaml_rule_config(store, "resume-rules.yaml", DEFAULT_RESUME_RULES)
     default = dict(DEFAULT_RESUME_RULES.get("default", {}))
     default.update(data.get("default", {}))
     normalized = (text or "").lower()
@@ -1653,11 +1863,7 @@ def _load_resume_rules(store: WorkspaceStore, text: str) -> Dict[str, Any]:
 
 
 def _load_handoff_rules(store: WorkspaceStore, normalized_model: str) -> Dict[str, Any]:
-    import yaml
-
-    ensure_default_rules(store)
-    path = store.rules_dir / "handoff-rules.yaml"
-    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    data = load_yaml_rule_config(store, "handoff-rules.yaml", DEFAULT_HANDOFF_RULES)
     default = dict(DEFAULT_HANDOFF_RULES.get("default", {}))
     default.update(data.get("default", {}))
     for profile_name, profile in (data.get("profiles", {}) or {}).items():
@@ -1669,6 +1875,18 @@ def _load_handoff_rules(store: WorkspaceStore, normalized_model: str) -> Dict[st
             return merged
     default["profile_name"] = "default"
     return default
+
+
+def _load_write_policy_rules(store: WorkspaceStore) -> Dict[str, Any]:
+    return load_yaml_rule_config(store, "write-policy-rules.yaml", DEFAULT_WRITE_POLICY_RULES).get("default", {})
+
+
+def _load_auto_sync_rules(store: WorkspaceStore) -> Dict[str, Any]:
+    return load_yaml_rule_config(store, "auto-sync-rules.yaml", DEFAULT_AUTO_SYNC_RULES).get("default", {})
+
+
+def _load_eval_rules(store: WorkspaceStore) -> Dict[str, Any]:
+    return load_yaml_rule_config(store, "eval-rules.yaml", DEFAULT_EVAL_RULES)
 
 
 def _build_core_memory_blocks_status(store: WorkspaceStore) -> Dict[str, Any]:
@@ -1755,13 +1973,19 @@ def _build_session_overview(events: List[Dict[str, Any]]) -> Dict[str, Any]:
 
 
 def _build_sniff_auto_sync_recommendation(
+    store: WorkspaceStore,
     task_resolution: Dict[str, Any],
     risk_level: str,
     auto_sync_mode: str = "balanced",
 ) -> Dict[str, Any]:
-    mode = (auto_sync_mode or "balanced").strip().lower()
-    if mode not in {"strict", "balanced", "aggressive"}:
+    policy = _load_auto_sync_rules(store)
+    aliases = policy.get("mode_aliases", {}) or {}
+    raw_mode = (auto_sync_mode or "balanced").strip().lower()
+    mode = str(aliases.get(raw_mode, raw_mode) or "balanced")
+    modes = policy.get("modes", {}) or {}
+    if mode not in modes:
         mode = "balanced"
+    mode_policy = modes.get(mode, {})
     resolved = bool(task_resolution.get("resolved"))
     task_id = str(task_resolution.get("task_id", "") or "")
     score = int(task_resolution.get("score", 0) or 0)
@@ -1775,24 +1999,15 @@ def _build_sniff_auto_sync_recommendation(
         "score_threshold": score_threshold,
         "reason": "",
         "mode": mode,
-        "fallback": "未满足自动同步条件时，建议先人工确认 task_candidates 再同步。",
+        "fallback": str(mode_policy.get("fallback", "未满足自动同步条件时，建议先人工确认 task_candidates 再同步。")),
     }
     if not resolved or not task_id:
         recommendation["reason"] = "未命中明确任务空间，建议先人工确认候选任务。"
         return recommendation
 
     delta = score - score_threshold
-    strict = mode == "strict"
-    aggressive = mode == "aggressive"
-
-    if strict:
-        if delta >= 2 and risk_level == "low":
-            recommendation["recommended"] = True
-            recommendation["confidence"] = "high"
-            recommendation["reason"] = "strict 模式下，分数显著高于阈值且风险较低，可自动同步。"
-            return recommendation
-        recommendation["reason"] = "strict 模式要求更高，建议人工确认任务空间后再同步。"
-        return recommendation
+    allowed_risks = {str(item) for item in mode_policy.get("allowed_risk_levels", [])}
+    min_delta = int(mode_policy.get("min_delta", 0) or 0)
 
     if delta >= 2:
         recommendation["recommended"] = True
@@ -1800,16 +2015,10 @@ def _build_sniff_auto_sync_recommendation(
         recommendation["reason"] = "匹配分数明显高于阈值，可自动同步到已命中任务空间。"
         return recommendation
 
-    if aggressive and delta >= 0:
+    if delta >= min_delta and risk_level in allowed_risks:
         recommendation["recommended"] = True
-        recommendation["confidence"] = "medium"
-        recommendation["reason"] = "aggressive 模式下，只要达到阈值就自动同步。"
-        return recommendation
-
-    if delta >= 0 and risk_level in {"low", "medium"}:
-        recommendation["recommended"] = True
-        recommendation["confidence"] = "medium"
-        recommendation["reason"] = "匹配达到阈值且风险等级可控，建议自动同步。"
+        recommendation["confidence"] = "high" if mode == "strict" else "medium"
+        recommendation["reason"] = f"{mode} 模式命中 auto-sync-rules 条件，建议自动同步。"
         return recommendation
 
     recommendation["confidence"] = "medium" if delta >= 0 else "low"
