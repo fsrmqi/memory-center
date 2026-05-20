@@ -32,7 +32,7 @@ from memory_center.core.config import load_workspace_config
 from memory_center.core.exporters import export_mermaid
 from memory_center.core.indexer import reindex_workspace
 from memory_center.core.instructions import write_agent_instructions
-from memory_center.core.orchestrator import memory_eval_write_quality, memory_execute_write, memory_plan_write, memory_write_judge, workspace_replay_write_chain, workspace_sniff, workspace_trace, workspace_write_receipts
+from memory_center.core.orchestrator import memory_eval_write_quality, memory_execute_write, memory_plan_write, memory_write_judge, workspace_handoff_history, workspace_handoff_packet, workspace_model_profile, workspace_next_actions, workspace_recent_evidence, workspace_replay_write_chain, workspace_resume_packet, workspace_sniff, workspace_trace, workspace_unresolved_items, workspace_write_receipts
 from memory_center.core.registry import add_to_group, create_group, register_workspace
 from memory_center.core.rules import ensure_default_rules
 from memory_center.core.store import WorkspaceStore
@@ -378,6 +378,21 @@ def test_memory_write_judge_and_plan_write(tmp_path: Path):
     quality = memory_eval_write_quality(workspace, intent="更新团队规则", limit=20)
     assert quality["receipt_count"] >= 1
     assert quality["quality"] in {"high", "medium", "low"}
+    next_actions = workspace_next_actions(workspace, intent="更新团队规则", limit=5)
+    assert next_actions["actions"]
+    unresolved = workspace_unresolved_items(workspace, intent="更新团队规则", limit=5)
+    assert "items" in unresolved
+    resume_packet = workspace_resume_packet(workspace, intent="更新团队规则", limit=5)
+    assert "next_recommended_actions" in resume_packet
+    recent_evidence = workspace_recent_evidence(workspace, limit=5)
+    assert "evidence" in recent_evidence
+    model_profile = workspace_model_profile("deepseek-r1")
+    assert model_profile["normalized_model"] == "deepseek"
+    handoff = workspace_handoff_packet(workspace, target_model="glm-4", intent="更新团队规则", limit=5)
+    assert handoff["model_profile"]["normalized_model"] == "glm"
+    assert "handoff_packet" in handoff
+    handoff_history = workspace_handoff_history(workspace, target_model="glm-4", limit=10)
+    assert handoff_history["handoffs"]
 
 
 def test_auto_archive_task_spaces(tmp_path: Path):
@@ -861,6 +876,20 @@ def test_http_bridge_routes(tmp_path: Path):
         assert "timeline" in replay_chain
         eval_quality = json.loads(urlopen(f"{base}/workspace/eval-write-quality?intent=update%20rule&limit=10").read().decode("utf-8"))
         assert "quality" in eval_quality
+        recent_evidence = json.loads(urlopen(f"{base}/workspace/recent-evidence?limit=10").read().decode("utf-8"))
+        assert "evidence" in recent_evidence
+        unresolved_items = json.loads(urlopen(f"{base}/workspace/unresolved-items?intent=update%20rule&limit=10").read().decode("utf-8"))
+        assert "items" in unresolved_items
+        next_actions = json.loads(urlopen(f"{base}/workspace/next-actions?intent=update%20rule&limit=10").read().decode("utf-8"))
+        assert "actions" in next_actions
+        resume_packet = json.loads(urlopen(f"{base}/workspace/resume-packet?intent=update%20rule&limit=10").read().decode("utf-8"))
+        assert "next_recommended_actions" in resume_packet
+        model_profile = json.loads(urlopen(f"{base}/workspace/model-profile?model_name=deepseek-r1").read().decode("utf-8"))
+        assert model_profile["normalized_model"] == "deepseek"
+        handoff_packet = json.loads(urlopen(f"{base}/workspace/handoff-packet?target_model=glm-4&intent=update%20rule&limit=10").read().decode("utf-8"))
+        assert "handoff_packet" in handoff_packet
+        handoff_history = json.loads(urlopen(f"{base}/workspace/handoff-history?target_model=glm-4&limit=10").read().decode("utf-8"))
+        assert handoff_history["handoffs"]
 
         session_recent = json.loads(urlopen(f"{base}/workspace/sessions/recent?limit=5").read().decode("utf-8"))
         assert "recent_sessions" in session_recent

@@ -12,6 +12,10 @@ Memory Center（记忆中心）是一个 **面向 AI 编程助手的 MCP 原生�
 
 **解决思路：** 预先扫描项目结构，构建本地知识图谱（Graph-first），将项目的关系、契约、规则和历史经验统一存储，通过 MCP 协议暴露给 AI Agent，使 Agent 在编码前就能获取完整上下文。
 
+后续分批实施路线见：
+
+- [IMPLEMENTATION_ROADMAP.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/IMPLEMENTATION_ROADMAP.md)
+
 ---
 
 ## 二、整体架构

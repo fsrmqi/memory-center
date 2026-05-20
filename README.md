@@ -29,6 +29,10 @@ Memory Center precomputes these relationships before the agent starts editing.
 
 记忆中心的核心思想是：**不要让 AI 每次临时理解项目，而是在索引阶段提前构建服务图、调用图、契约图、消息图、规则图、经验图。**
 
+实施路线图请见：
+
+- [docs/IMPLEMENTATION_ROADMAP.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/IMPLEMENTATION_ROADMAP.md)
+
 ---
 
 ## Core ideas / 核心思想
@@ -556,6 +560,17 @@ Available MCP tools / MCP 工具：
 | `workspace_write_receipts_tool` | Query persisted write receipts / 查询已持久化的写入回执 |
 | `workspace_replay_write_chain_tool` | Replay one write chain by task or session / 按任务或会话回放写入链路 |
 | `memory_eval_write_quality_tool` | Evaluate whether write coverage is complete / 评估写入覆盖是否完整 |
+| `workspace_recent_evidence_tool` | Show recent evidence for continuity / 查看连续性相关近期证据 |
+| `workspace_unresolved_items_tool` | Show unresolved items for one task/session / 查看任务或会话的未解决事项 |
+| `workspace_next_actions_tool` | Suggest next actions for one task/session / 推荐任务或会话的下一步动作 |
+| `workspace_resume_packet_tool` | Build a resume packet for the next model/session / 生成给下一个模型或会话的恢复包 |
+| `workspace_model_profile_tool` | Return a normalized handoff profile for one target model / 返回目标模型的标准化交接画像 |
+| `workspace_handoff_packet_tool` | Build a model-specific handoff packet / 生成面向目标模型的专用交接包 |
+| `workspace_handoff_history_tool` | Query persisted handoff history / 查询已持久化的交接历史 |
+
+Supported model targets for handoff now include `codex`, `claude-code`, `cursor-agent`, `gemini`, `deepseek`, `glm`, and generic MCP agents.
+
+目前交接能力已支持 `codex`、`claude-code`、`cursor-agent`、`gemini`、`deepseek`、`glm` 以及通用 MCP Agent。
 | `memory_detect_changes_tool` | Git diff risk mapping / Git 变更风险映射 |
 | `memory_contracts_tool` | API/Feign/MQ contract list / 契约列表 |
 | `workspace_trace_tool` | Cross-service trace hints / 跨服务追踪 |

@@ -21,13 +21,20 @@ from memory_center.core.orchestrator import (
     memory_symbol,
     memory_verify_checklist,
     memory_write_judge,
+    workspace_handoff_packet,
+    workspace_handoff_history,
+    workspace_model_profile,
+    workspace_next_actions,
+    workspace_recent_evidence,
     workspace_recent_sessions,
+    workspace_resume_packet,
     workspace_resume_context,
     workspace_session_summary,
     workspace_suggest_case,
     workspace_status,
     workspace_sync_case_to_artifacts,
     workspace_sync_sniff_to_artifacts,
+    workspace_unresolved_items,
     workspace_replay_write_chain,
     workspace_write_receipts,
 )
@@ -309,6 +316,62 @@ def _route_request(path: str, params: dict, default_workspace: str | None) -> di
         workspace = _require_workspace(params, default_workspace)
         session_id = _require_one(params, "session_id")
         return workspace_session_summary(workspace, session_id)
+    if path == "/workspace/recent-evidence":
+        workspace = _require_workspace(params, default_workspace)
+        return workspace_recent_evidence(
+            workspace,
+            task_id=params.get("task_id", [""])[0],
+            session_id=params.get("session_id", [""])[0],
+            limit=_parse_int(params, "limit", 10),
+        )
+    if path == "/workspace/unresolved-items":
+        workspace = _require_workspace(params, default_workspace)
+        return workspace_unresolved_items(
+            workspace,
+            task_id=params.get("task_id", [""])[0],
+            session_id=params.get("session_id", [""])[0],
+            intent=params.get("intent", [""])[0],
+            limit=_parse_int(params, "limit", 10),
+        )
+    if path == "/workspace/next-actions":
+        workspace = _require_workspace(params, default_workspace)
+        return workspace_next_actions(
+            workspace,
+            task_id=params.get("task_id", [""])[0],
+            session_id=params.get("session_id", [""])[0],
+            intent=params.get("intent", [""])[0],
+            limit=_parse_int(params, "limit", 8),
+        )
+    if path == "/workspace/resume-packet":
+        workspace = _require_workspace(params, default_workspace)
+        return workspace_resume_packet(
+            workspace,
+            task_id=params.get("task_id", [""])[0],
+            session_id=params.get("session_id", [""])[0],
+            intent=params.get("intent", [""])[0],
+            limit=_parse_int(params, "limit", 10),
+        )
+    if path == "/workspace/model-profile":
+        return workspace_model_profile(_require_one(params, "model_name"))
+    if path == "/workspace/handoff-packet":
+        workspace = _require_workspace(params, default_workspace)
+        return workspace_handoff_packet(
+            workspace,
+            target_model=_require_one(params, "target_model"),
+            task_id=params.get("task_id", [""])[0],
+            session_id=params.get("session_id", [""])[0],
+            intent=params.get("intent", [""])[0],
+            limit=_parse_int(params, "limit", 10),
+        )
+    if path == "/workspace/handoff-history":
+        workspace = _require_workspace(params, default_workspace)
+        return workspace_handoff_history(
+            workspace,
+            target_model=params.get("target_model", [""])[0],
+            task_id=params.get("task_id", [""])[0],
+            session_id=params.get("session_id", [""])[0],
+            limit=_parse_int(params, "limit", 50),
+        )
     if path == "/workspace/resume-context":
         workspace = _require_workspace(params, default_workspace)
         query = _require_one(params, "text")

@@ -42,6 +42,13 @@ Memory Center exposes graph-first project memory to AI coding agents through MCP
 | `workspace_write_receipts_tool(layer, action, scope, task_id, session_id, limit)` | Query persisted write receipts by layer/action/scope/task/session. / 按 layer、action、scope、task、session 查询已持久化的写入回执。 |
 | `workspace_replay_write_chain_tool(task_id, session_id, limit)` | Replay one write chain in time order. / 按时间顺序回放一条写入链路。 |
 | `memory_eval_write_quality_tool(task_id, session_id, intent, limit)` | Evaluate whether the observed receipts cover the expected memory layers. / 评估当前写入回执是否覆盖了预期的记忆层。 |
+| `workspace_recent_evidence_tool(task_id, session_id, limit)` | Return recent evidence from session events and write receipts. / 返回来自 session 事件和写入回执的近期证据。 |
+| `workspace_unresolved_items_tool(task_id, session_id, intent, limit)` | Return unresolved items for one task/session. / 返回一个任务或会话的未解决事项。 |
+| `workspace_next_actions_tool(task_id, session_id, intent, limit)` | Suggest next actions for one task/session. / 为一个任务或会话推荐下一步动作。 |
+| `workspace_resume_packet_tool(task_id, session_id, intent, limit)` | Build a compact resume packet for the next model/session. / 为下一个模型或下一次会话生成紧凑的恢复包。 |
+| `workspace_model_profile_tool(model_name)` | Normalize one target model name and return its handoff preference profile. / 规范化目标模型名称，并返回其交接偏好画像。 |
+| `workspace_handoff_packet_tool(target_model, task_id, session_id, intent, limit)` | Build one handoff packet tailored to the target model. / 按目标模型生成一份专用交接包。 |
+| `workspace_handoff_history_tool(target_model, task_id, session_id, limit)` | Query persisted handoff history. / 查询已持久化的交接历史。 |
 
 Write tools now try to return a normalized `write_receipt` when they actually persist memory or artifacts. / 写入类工具在真正落盘时会尽量返回统一的 `write_receipt` 回执结构。
 | `memory_detect_changes_tool(scope)` | Map local git diff to affected files, projects, rules and risk level. / 把本地 Git diff 映射为影响项目、规则和风险等级。 |

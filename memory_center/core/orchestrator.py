@@ -77,6 +77,7 @@ def workspace_status(workspace_file: str | Path) -> Dict[str, Any]:
         "memory_layers": memory_layers,
         "memory_overview": _build_memory_overview(memory_layers),
         "write_receipts_overview": _build_write_receipts_overview(store),
+        "continuity_overview": _build_continuity_overview(workspace_file, active_tasks),
         "core_memory_blocks": core_memory_blocks,
         "active_task_spaces": active_tasks,
         "current_focus_task": current_focus_task,
@@ -462,6 +463,321 @@ def workspace_resume_context(workspace_file: str | Path, intent: str, limit: int
         "related_cases": related_cases,
         "entrypoints": query_result.get("matches", [])[:limit],
         "suggested_context": _suggest_resume_context(intent, related_sessions[:limit], related_cases, query_result.get("matches", [])[:limit]),
+    }
+
+
+def workspace_recent_evidence(
+    workspace_file: str | Path,
+    task_id: str = "",
+    session_id: str = "",
+    limit: int = 10,
+) -> Dict[str, Any]:
+    config, store = load_context(workspace_file)
+    evidence: List[Dict[str, Any]] = []
+    if session_id.strip():
+        session = workspace_session_summary(workspace_file, session_id.strip())
+        for event in session.get("events", [])[-limit:]:
+            payload = _event_payload(event)
+            evidence.append(
+                {
+                    "source": "session_event",
+                    "event_type": event.get("event_type", ""),
+                    "session_id": session_id.strip(),
+                    "payload_ref": event.get("payload_ref", ""),
+                    "project": payload.get("project", ""),
+                    "file_path": payload.get("file_path", "") or payload.get("path", ""),
+                    "tool_name": payload.get("tool_name", ""),
+                    "query": payload.get("query", "") or payload.get("target", ""),
+                    "created_at": event.get("created_at", ""),
+                }
+            )
+    if task_id.strip():
+        receipts = workspace_write_receipts(workspace_file, task_id=task_id.strip(), limit=limit).get("receipts", [])
+        for row in receipts[-limit:]:
+            evidence.append(
+                {
+                    "source": "write_receipt",
+                    "layer": row.get("layer", ""),
+                    "action": row.get("action", ""),
+                    "task_id": task_id.strip(),
+                    "session_id": row.get("session_id", "") or row.get("source_session_id", ""),
+                    "target": row.get("target", ""),
+                    "receipt_ref": row.get("receipt_ref", ""),
+                    "created_at": row.get("created_at", ""),
+                }
+            )
+    return {
+        "workspace": config.workspace,
+        "task_id": task_id,
+        "session_id": session_id,
+        "evidence": evidence[-limit:],
+    }
+
+
+def workspace_unresolved_items(
+    workspace_file: str | Path,
+    task_id: str = "",
+    session_id: str = "",
+    intent: str = "",
+    limit: int = 10,
+) -> Dict[str, Any]:
+    config, _ = load_context(workspace_file)
+    unresolved: List[str] = []
+    quality = memory_eval_write_quality(workspace_file, task_id=task_id, session_id=session_id, intent=intent, limit=max(limit, 20))
+    for finding in quality.get("findings", []):
+        unresolved.append(str(finding.get("message", "") or "").strip())
+    if task_id.strip():
+        current_summary = get_task_artifact(workspace_file, task_id.strip(), "current_summary").get("content", "")
+        if "Verification pending" in current_summary or "verification_pending" in current_summary.lower():
+            unresolved.append("任务摘要显示仍有待验证项。")
+    seen = set()
+    unique = []
+    for item in unresolved:
+        if item and item not in seen:
+            seen.add(item)
+            unique.append(item)
+    return {
+        "workspace": config.workspace,
+        "task_id": task_id,
+        "session_id": session_id,
+        "items": unique[:limit],
+    }
+
+
+def workspace_next_actions(
+    workspace_file: str | Path,
+    task_id: str = "",
+    session_id: str = "",
+    intent: str = "",
+    limit: int = 8,
+) -> Dict[str, Any]:
+    config, _ = load_context(workspace_file)
+    actions: List[str] = []
+    quality = memory_eval_write_quality(workspace_file, task_id=task_id, session_id=session_id, intent=intent, limit=max(limit, 20))
+    layer_set = set(quality.get("layers_present", []))
+    if session_id.strip() and LAYER_L0 not in layer_set:
+        actions.append("先补 `workspace_log_session_event`，把关键过程写入 L0 session memory。")
+    if task_id.strip() and LAYER_L2 not in layer_set:
+        actions.append("先补 `workspace_sync_sniff_artifacts` 或 `workspace_sync_case_artifacts`，把任务上下文写入 L2 task space。")
+    if session_id.strip() and LAYER_L1 not in layer_set:
+        actions.append("补 `workspace_record_case`，把当前会话沉淀为 L1 case memory。")
+    if any(k in intent.lower() for k in ["规则", "规范", "migration", "invariant"]) and LAYER_L3 not in layer_set:
+        actions.append("补 `memory_execute_write` 或 `workspace_artifact_update`，把规则类信息写入 L3 核心记忆块。")
+    unresolved = workspace_unresolved_items(workspace_file, task_id=task_id, session_id=session_id, intent=intent, limit=limit).get("items", [])
+    if unresolved:
+        actions.append(f"优先处理未解决项：{unresolved[0]}")
+    if not actions:
+        actions.append("继续沿当前任务推进，优先核对验证项与风险点是否已覆盖。")
+    return {
+        "workspace": config.workspace,
+        "task_id": task_id,
+        "session_id": session_id,
+        "actions": actions[:limit],
+    }
+
+
+def workspace_resume_packet(
+    workspace_file: str | Path,
+    task_id: str = "",
+    session_id: str = "",
+    intent: str = "",
+    limit: int = 10,
+) -> Dict[str, Any]:
+    config, _ = load_context(workspace_file)
+    resolved_task_id = task_id.strip()
+    focus_task = workspace_status(workspace_file).get("current_focus_task")
+    if not resolved_task_id and focus_task:
+        resolved_task_id = str(focus_task.get("task_id", "") or "")
+    task_meta = None
+    current_summary = ""
+    if resolved_task_id:
+        tasks = list_task_spaces(workspace_file, include_archived=True)
+        task_meta = next((item for item in tasks.get("active_tasks", []) + tasks.get("archived_tasks", []) if item.get("task_id") == resolved_task_id), None)
+        current_summary = get_task_artifact(workspace_file, resolved_task_id, "current_summary").get("content", "")
+    evidence = workspace_recent_evidence(workspace_file, task_id=resolved_task_id, session_id=session_id, limit=limit).get("evidence", [])
+    next_actions = workspace_next_actions(workspace_file, task_id=resolved_task_id, session_id=session_id, intent=intent or current_summary, limit=limit).get("actions", [])
+    unresolved = workspace_unresolved_items(workspace_file, task_id=resolved_task_id, session_id=session_id, intent=intent or current_summary, limit=limit).get("items", [])
+    replay = workspace_replay_write_chain(workspace_file, task_id=resolved_task_id, session_id=session_id, limit=limit)
+    return {
+        "workspace": config.workspace,
+        "task_id": resolved_task_id,
+        "session_id": session_id,
+        "task_title": (task_meta or {}).get("title", ""),
+        "task_status": (task_meta or {}).get("status", ""),
+        "current_summary": current_summary,
+        "current_phase": _infer_task_phase(current_summary, replay.get("timeline", [])),
+        "latest_receipts": replay.get("timeline", [])[-5:],
+        "recent_evidence": evidence,
+        "next_recommended_actions": next_actions,
+        "unresolved_items": unresolved,
+        "verification_pending": bool(unresolved),
+    }
+
+
+def workspace_model_profile(model_name: str) -> Dict[str, Any]:
+    normalized = _normalize_model_name(model_name)
+    profiles = {
+        "codex": {
+            "model": "codex",
+            "strengths": ["代码修改执行力强", "多文件实现推进快", "适合 task-first 交接"],
+            "handoff_style": "task-first",
+            "preferred_payload": ["task_id", "current_summary", "next_recommended_actions", "latest_receipts"],
+            "avoid": ["过长背景铺垫", "缺少可执行动作"],
+        },
+        "claude-code": {
+            "model": "claude-code",
+            "strengths": ["复杂上下文理解强", "风险分析与方案梳理好", "适合 context-first 交接"],
+            "handoff_style": "context-first",
+            "preferred_payload": ["task_title", "current_summary", "recent_evidence", "unresolved_items", "next_recommended_actions"],
+            "avoid": ["只有文件列表没有原因", "缺少任务阶段说明"],
+        },
+        "cursor-agent": {
+            "model": "cursor-agent",
+            "strengths": ["IDE 内短回路高效", "适合 file-first 接手", "适合跟随 task space 修改"],
+            "handoff_style": "file-first",
+            "preferred_payload": ["task_id", "current_summary", "recent_evidence", "next_recommended_actions"],
+            "avoid": ["大段历史堆叠", "没有文件入口的抽象描述"],
+        },
+        "gemini": {
+            "model": "gemini",
+            "strengths": ["高层概览与长文阅读好", "适合 overview-first 接棒", "适合大范围交叉核对"],
+            "handoff_style": "overview-first",
+            "preferred_payload": ["task_title", "current_phase", "current_summary", "recent_evidence"],
+            "avoid": ["碎片化细节堆砌", "没有总体目标"],
+        },
+        "deepseek": {
+            "model": "deepseek",
+            "strengths": ["证据驱动推理清晰", "诊断与比较能力强", "适合 evidence-first 接手"],
+            "handoff_style": "evidence-first",
+            "preferred_payload": ["current_summary", "recent_evidence", "unresolved_items", "next_recommended_actions"],
+            "avoid": ["无依据结论", "只给结论不附证据"],
+        },
+        "glm": {
+            "model": "glm",
+            "strengths": ["中文工作流友好", "任务摘要接棒顺畅", "适合 summary-first 交接"],
+            "handoff_style": "summary-first",
+            "preferred_payload": ["task_title", "current_summary", "unresolved_items", "next_recommended_actions"],
+            "avoid": ["结构混乱", "大量低价值日志"],
+        },
+        "qwen": {
+            "model": "qwen",
+            "strengths": ["中文代码协作顺滑", "说明与执行平衡好", "适合 balanced 交接"],
+            "handoff_style": "balanced",
+            "preferred_payload": ["task_title", "current_summary", "recent_evidence", "next_recommended_actions"],
+            "avoid": ["只有抽象目标没有执行入口", "上下文缺少阶段说明"],
+        },
+        "minimax": {
+            "model": "minimax",
+            "strengths": ["长文摘要友好", "适合 overview + summary 混合交接"],
+            "handoff_style": "overview-first",
+            "preferred_payload": ["task_title", "current_phase", "current_summary", "unresolved_items"],
+            "avoid": ["无重点的证据堆砌", "缺少高层目标"],
+        },
+        "mimo": {
+            "model": "mimo",
+            "strengths": ["轻量快速切换友好", "适合最小交接包"],
+            "handoff_style": "minimal-first",
+            "preferred_payload": ["task_id", "current_summary", "next_recommended_actions"],
+            "avoid": ["超长上下文", "低价值历史噪声"],
+        },
+        "generic-mcp-agent": {
+            "model": "generic-mcp-agent",
+            "strengths": ["适配任意 MCP Agent", "通用性最好"],
+            "handoff_style": "balanced",
+            "preferred_payload": ["task_id", "current_summary", "recent_evidence", "next_recommended_actions", "latest_receipts"],
+            "avoid": ["依赖特定 IDE 假设", "依赖特定模型习惯"],
+        },
+    }
+    profile = profiles.get(normalized, profiles["generic-mcp-agent"])
+    return {"requested_model": model_name, "normalized_model": normalized, **profile}
+
+
+def workspace_handoff_packet(
+    workspace_file: str | Path,
+    target_model: str,
+    task_id: str = "",
+    session_id: str = "",
+    intent: str = "",
+    limit: int = 10,
+) -> Dict[str, Any]:
+    config, store = load_context(workspace_file)
+    profile = workspace_model_profile(target_model)
+    resume_packet = workspace_resume_packet(workspace_file, task_id=task_id, session_id=session_id, intent=intent, limit=limit)
+    quality = memory_eval_write_quality(
+        workspace_file,
+        task_id=resume_packet.get("task_id", ""),
+        session_id=session_id,
+        intent=intent or resume_packet.get("current_summary", ""),
+        limit=limit,
+    )
+    minimal_context = {
+        key: resume_packet.get(key)
+        for key in profile.get("preferred_payload", [])
+        if key in resume_packet
+    }
+    notes = [
+        f"交接风格：{profile.get('handoff_style', 'balanced')}",
+        f"优先发挥：{'、'.join(profile.get('strengths', [])[:3])}",
+    ]
+    if quality.get("findings"):
+        notes.append(f"当前记忆覆盖缺口：{quality['findings'][0].get('message', '')}")
+    packet = {
+        "workspace": config.workspace,
+        "target_model": target_model,
+        "task_id": resume_packet.get("task_id", ""),
+        "session_id": session_id,
+        "model_profile": profile,
+        "handoff_packet": {
+            "what_has_been_done": resume_packet.get("latest_receipts", [])[-5:],
+            "what_not_to_repeat": profile.get("avoid", []),
+            "what_is_risky": quality.get("findings", []),
+            "what_to_check_next": resume_packet.get("next_recommended_actions", [])[:5],
+            "minimal_required_context": minimal_context,
+            "recent_evidence": resume_packet.get("recent_evidence", [])[:5],
+            "notes": notes,
+        },
+    }
+    history_item = {
+        "target_model": target_model,
+        "normalized_model": profile.get("normalized_model", ""),
+        "task_id": packet.get("task_id", ""),
+        "session_id": session_id,
+        "intent": intent,
+        "current_phase": resume_packet.get("current_phase", ""),
+        "quality": quality.get("quality", ""),
+        "score": quality.get("score", 0),
+    }
+    store.append_jsonl("handoff-history.jsonl", history_item)
+    packet["handoff_ref"] = "memory/handoff-history.jsonl"
+    return packet
+
+
+def workspace_handoff_history(
+    workspace_file: str | Path,
+    target_model: str = "",
+    task_id: str = "",
+    session_id: str = "",
+    limit: int = 50,
+) -> Dict[str, Any]:
+    config, store = load_context(workspace_file)
+    rows = store.read_jsonl("handoff-history.jsonl", limit=5000)
+    normalized_target = _normalize_model_name(target_model) if target_model else ""
+    matched = []
+    for row in rows:
+        if normalized_target and row.get("normalized_model") != normalized_target:
+            continue
+        if task_id and row.get("task_id") != task_id:
+            continue
+        if session_id and row.get("session_id") != session_id:
+            continue
+        matched.append(row)
+    return {
+        "workspace": config.workspace,
+        "handoffs": matched[-limit:],
+        "summary": {
+            "total": len(matched),
+            "models": sorted({row.get("normalized_model", "") for row in matched if row.get("normalized_model")}),
+        },
     }
 
 
@@ -1157,6 +1473,59 @@ def _build_write_receipts_overview(store: WorkspaceStore) -> Dict[str, Any]:
         "scope_counts": scopes,
         "recent_receipts": rows[-5:],
     }
+
+
+def _build_continuity_overview(workspace_file: str | Path, active_tasks: List[Dict[str, Any]]) -> Dict[str, Any]:
+    resumable = 0
+    blocked = 0
+    for task in active_tasks:
+        if task.get("summary_preview"):
+            resumable += 1
+        if task.get("status") == "blocked":
+            blocked += 1
+    return {
+        "active_task_count": len(active_tasks),
+        "resumable_task_count": resumable,
+        "blocked_task_count": blocked,
+        "focus_task_id": active_tasks[0].get("task_id", "") if active_tasks else "",
+    }
+
+
+def _infer_task_phase(current_summary: str, timeline: List[Dict[str, Any]]) -> str:
+    summary_lower = (current_summary or "").lower()
+    actions = {item.get("action", "") for item in timeline}
+    if TOOL_WORKSPACE_SYNC_CASE_ARTIFACTS in actions or "session:" in summary_lower:
+        return "conclusion_synced"
+    if TOOL_WORKSPACE_SYNC_SNIFF_ARTIFACTS in actions or "risk level" in summary_lower:
+        return "context_synced"
+    if TOOL_WORKSPACE_LOG_SESSION_EVENT in actions:
+        return "in_progress"
+    if current_summary.strip():
+        return "drafted"
+    return "unknown"
+
+
+def _normalize_model_name(model_name: str) -> str:
+    raw = (model_name or "").strip().lower()
+    if raw in {"codex", "openai-codex"}:
+        return "codex"
+    if raw in {"claude", "claude-code", "claudecode"}:
+        return "claude-code"
+    if raw in {"cursor", "cursor-agent", "cursorai"}:
+        return "cursor-agent"
+    if raw.startswith("gemini"):
+        return "gemini"
+    if raw.startswith("deepseek"):
+        return "deepseek"
+    if raw.startswith("glm") or raw.startswith("chatglm"):
+        return "glm"
+    if raw.startswith("qwen"):
+        return "qwen"
+    if raw.startswith("minimax"):
+        return "minimax"
+    if raw.startswith("mimo"):
+        return "mimo"
+    return "generic-mcp-agent"
 
 
 def _build_core_memory_blocks_status(store: WorkspaceStore) -> Dict[str, Any]:

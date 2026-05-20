@@ -26,6 +26,11 @@ from memory_center.core.orchestrator import (
     workspace_end_session,
     workspace_log_session_event,
     workspace_recent_sessions,
+    workspace_recent_evidence,
+    workspace_handoff_packet,
+    workspace_handoff_history,
+    workspace_model_profile,
+    workspace_resume_packet,
     workspace_resume_context,
     workspace_suggest_case,
     workspace_check_contract,
@@ -38,8 +43,10 @@ from memory_center.core.orchestrator import (
     workspace_trace,
     workspace_sync_case_to_artifacts,
     workspace_sync_sniff_to_artifacts,
+    workspace_unresolved_items,
     workspace_write_receipts,
     workspace_replay_write_chain,
+    workspace_next_actions,
 )
 from memory_center.core.artifacts import (
     append_change_log,
@@ -416,6 +423,41 @@ def create_server(workspace_file: str):
     def workspace_resume_context_tool(intent: str, limit: int = 5):
         """Resume a new task by mixing related sessions, cases and query entrypoints."""
         return workspace_resume_context(_WORKSPACE_FILE, intent, limit)
+
+    @mcp.tool()
+    def workspace_recent_evidence_tool(task_id: str = "", session_id: str = "", limit: int = 10):
+        """Return recent evidence from receipts and session events."""
+        return workspace_recent_evidence(_WORKSPACE_FILE, task_id=task_id, session_id=session_id, limit=limit)
+
+    @mcp.tool()
+    def workspace_unresolved_items_tool(task_id: str = "", session_id: str = "", intent: str = "", limit: int = 10):
+        """Return unresolved items for one task/session."""
+        return workspace_unresolved_items(_WORKSPACE_FILE, task_id=task_id, session_id=session_id, intent=intent, limit=limit)
+
+    @mcp.tool()
+    def workspace_next_actions_tool(task_id: str = "", session_id: str = "", intent: str = "", limit: int = 8):
+        """Suggest next actions for one task/session."""
+        return workspace_next_actions(_WORKSPACE_FILE, task_id=task_id, session_id=session_id, intent=intent, limit=limit)
+
+    @mcp.tool()
+    def workspace_resume_packet_tool(task_id: str = "", session_id: str = "", intent: str = "", limit: int = 10):
+        """Build one resume packet for the next model/session."""
+        return workspace_resume_packet(_WORKSPACE_FILE, task_id=task_id, session_id=session_id, intent=intent, limit=limit)
+
+    @mcp.tool()
+    def workspace_model_profile_tool(model_name: str):
+        """Return one normalized model profile for handoff."""
+        return workspace_model_profile(model_name)
+
+    @mcp.tool()
+    def workspace_handoff_packet_tool(target_model: str, task_id: str = "", session_id: str = "", intent: str = "", limit: int = 10):
+        """Build one handoff packet for the target model."""
+        return workspace_handoff_packet(_WORKSPACE_FILE, target_model=target_model, task_id=task_id, session_id=session_id, intent=intent, limit=limit)
+
+    @mcp.tool()
+    def workspace_handoff_history_tool(target_model: str = "", task_id: str = "", session_id: str = "", limit: int = 50):
+        """Query persisted handoff history."""
+        return workspace_handoff_history(_WORKSPACE_FILE, target_model=target_model, task_id=task_id, session_id=session_id, limit=limit)
 
     @mcp.tool()
     def workspace_suggest_case_tool(session_id: str):
