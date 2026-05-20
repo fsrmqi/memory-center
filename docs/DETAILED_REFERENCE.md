@@ -1,6 +1,6 @@
 # Memory Center 详细技术参考手册
 
-> 版本：1.3.0  |  配套文档：[PROJECT_OVERVIEW.md](PROJECT_OVERVIEW.md)
+> 版本：2.0.0  |  配套文档：[PROJECT_OVERVIEW.md](PROJECT_OVERVIEW.md)
 
 ---
 

@@ -1,6 +1,6 @@
 # Memory Center 项目全景文档
 
-> 版本：1.3.0  |  语言：Python 3.10+  |  状态：Beta
+> 版本：2.0.0  |  语言：Python 3.10+  |  状态：Beta
 
 ---
 
@@ -665,7 +665,7 @@ Memory Center 遵循 **本地优先、只读默认** 原则：
 ```toml
 [project]
 name = "memory-center"
-version = "1.3.0"
+version = "2.0.0"
 requires-python = ">=3.10"
 dependencies = ["pyyaml", "filelock", "typer", "rich"]
 

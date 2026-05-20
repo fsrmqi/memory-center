@@ -264,7 +264,7 @@ def test_cli_version_flag():
     result = runner.invoke(app, ["--version"])
     assert result.exit_code == 0
     assert "memory-center" in result.stdout
-    assert "1.3.0" in result.stdout
+    assert "2.0.0" in result.stdout
 
 
 def test_write_agent_instructions_includes_sync_workflow(tmp_path: Path):
