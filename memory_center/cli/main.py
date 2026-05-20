@@ -28,7 +28,7 @@ from memory_center.core.artifacts import (
     update_artifact,
 )
 from memory_center.core.config import add_workspace_service, load_workspace_config, remove_workspace_service, write_default_workspace
-from memory_center.core.exporters import export_mermaid
+from memory_center.core.exporters import export_mermaid, export_workspace_dashboard_html, export_workspace_dashboard_markdown
 from memory_center.core.indexer import reindex_workspace
 from memory_center.core.instructions import write_agent_instructions
 from memory_center.core.orchestrator import (
@@ -63,6 +63,7 @@ from memory_center.core.orchestrator import (
     workspace_log_session_event,
     workspace_end_session,
     workspace_continuity_dashboard,
+    workspace_dashboard,
     workspace_next_actions,
     workspace_recent_evidence,
     workspace_handoff_packet,
@@ -75,6 +76,8 @@ from memory_center.core.orchestrator import (
     workspace_write_receipts,
     workspace_replay_write_chain,
     memory_eval_write_quality,
+    memory_eval_resume,
+    memory_eval_handoff,
 )
 from memory_center.core.rules import ensure_default_rules
 from memory_center.core.store import WorkspaceStore
@@ -417,6 +420,31 @@ def eval_write_quality_cmd(
     print(memory_eval_write_quality(workspace, task_id=task_id, session_id=session_id, intent=intent, limit=limit))
 
 
+@app.command("eval-resume")
+def eval_resume_cmd(
+    workspace: str = typer.Option(...),
+    task_id: str = typer.Option(""),
+    session_id: str = typer.Option(""),
+    intent: str = typer.Option(""),
+    limit: int = typer.Option(20),
+):
+    """Evaluate resume packet quality."""
+    print(memory_eval_resume(workspace, task_id=task_id, session_id=session_id, intent=intent, limit=limit))
+
+
+@app.command("eval-handoff")
+def eval_handoff_cmd(
+    workspace: str = typer.Option(...),
+    target_model: str = typer.Option(...),
+    task_id: str = typer.Option(""),
+    session_id: str = typer.Option(""),
+    intent: str = typer.Option(""),
+    limit: int = typer.Option(20),
+):
+    """Evaluate handoff packet quality."""
+    print(memory_eval_handoff(workspace, target_model=target_model, task_id=task_id, session_id=session_id, intent=intent, limit=limit))
+
+
 @app.command("generate-wiki")
 def generate_wiki_cmd(workspace: str = typer.Option(...), output: Optional[str] = typer.Option(None)):
     """Generate bilingual Markdown architecture wiki from indexes and memory."""
@@ -616,6 +644,36 @@ def continuity_dashboard_cmd(
 ):
     """Build one continuity dashboard for daily work."""
     print(workspace_continuity_dashboard(workspace, intent=intent, task_id=task_id, session_id=session_id, limit=limit))
+
+
+@app.command("workspace-dashboard")
+def workspace_dashboard_cmd(
+    workspace: str = typer.Option(...),
+    intent: str = typer.Option(""),
+    limit: int = typer.Option(10),
+):
+    """Build one workspace-level dashboard for daily work."""
+    print(workspace_dashboard(workspace, intent=intent, limit=limit))
+
+
+@app.command("export-workspace-dashboard")
+def export_workspace_dashboard_cmd(
+    workspace: str = typer.Option(...),
+    output: str = typer.Option(...),
+    format: str = typer.Option("html", help="html|markdown"),
+    intent: str = typer.Option(""),
+    limit: int = typer.Option(10),
+):
+    """Export one workspace dashboard to HTML or Markdown."""
+    fmt = format.strip().lower()
+    if fmt == "html":
+        content = export_workspace_dashboard_html(workspace, intent=intent, limit=limit)
+    elif fmt in {"md", "markdown"}:
+        content = export_workspace_dashboard_markdown(workspace, intent=intent, limit=limit)
+    else:
+        raise typer.BadParameter("format must be html or markdown")
+    Path(output).write_text(content, encoding="utf-8")
+    print({"exported": True, "format": fmt, "output": output})
 
 
 @app.command("suggest-case")

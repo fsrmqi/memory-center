@@ -51,6 +51,10 @@ Memory Center exposes graph-first project memory to AI coding agents through MCP
 | `workspace_model_profile_tool(model_name)` | Normalize one target model name and return its handoff preference profile. / 规范化目标模型名称，并返回其交接偏好画像。 |
 | `workspace_handoff_packet_tool(target_model, task_id, session_id, intent, limit)` | Build one handoff packet tailored to the target model. / 按目标模型生成一份专用交接包。 |
 | `workspace_handoff_history_tool(target_model, task_id, session_id, limit)` | Query persisted handoff history. / 查询已持久化的交接历史。 |
+| `workspace_continuity_dashboard_tool(intent, task_id, session_id, limit)` | Build one aggregated daily continuity dashboard. / 构建一个聚合的日常连续性面板。 |
+| `workspace_dashboard_tool(intent, limit)` | Build one workspace-level operational dashboard. / 构建一个 workspace 级别的工作总面板。 |
+| `memory_eval_resume_tool(task_id, session_id, intent, limit)` | Evaluate resume packet quality. / 评估恢复包质量。 |
+| `memory_eval_handoff_tool(target_model, task_id, session_id, intent, limit)` | Evaluate handoff packet quality. / 评估交接包质量。 |
 
 Write tools now try to return a normalized `write_receipt` when they actually persist memory or artifacts. / 写入类工具在真正落盘时会尽量返回统一的 `write_receipt` 回执结构。
 | `memory_detect_changes_tool(scope)` | Map local git diff to affected files, projects, rules and risk level. / 把本地 Git diff 映射为影响项目、规则和风险等级。 |

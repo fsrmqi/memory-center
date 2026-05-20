@@ -29,13 +29,14 @@ from memory_center.core.artifacts import (
     update_task_artifact,
 )
 from memory_center.core.config import load_workspace_config
-from memory_center.core.exporters import export_mermaid
+from memory_center.core.exporters import export_mermaid, export_workspace_dashboard_html, export_workspace_dashboard_markdown
 from memory_center.core.indexer import reindex_workspace
 from memory_center.core.instructions import write_agent_instructions
-from memory_center.core.orchestrator import memory_eval_write_quality, memory_execute_write, memory_plan_write, memory_write_judge, workspace_handoff_history, workspace_handoff_packet, workspace_model_profile, workspace_next_actions, workspace_recent_evidence, workspace_replay_write_chain, workspace_resume_packet, workspace_sniff, workspace_trace, workspace_unresolved_items, workspace_write_receipts
+from memory_center.core.orchestrator import memory_eval_handoff, memory_eval_resume, memory_eval_write_quality, memory_execute_write, memory_plan_write, memory_write_judge, workspace_continuity_dashboard, workspace_dashboard, workspace_handoff_history, workspace_handoff_packet, workspace_model_profile, workspace_next_actions, workspace_recent_evidence, workspace_replay_write_chain, workspace_resume_packet, workspace_sniff, workspace_trace, workspace_unresolved_items, workspace_write_receipts
 from memory_center.core.registry import add_to_group, create_group, register_workspace
 from memory_center.core.rules import ensure_default_rules
 from memory_center.core.store import WorkspaceStore
+from memory_center.core.timeline import timeline_query
 from memory_center.core.validators import doctor
 from memory_center.http.server import create_handler
 
@@ -152,6 +153,55 @@ def test_record_case_cli_writes_history(tmp_path: Path):
     assert rows[-1]["source_task_id"] == "task-demo-1"
     assert rows[-1]["current_truth"] is True
     assert rows[-1]["valid_from"]
+
+
+def test_export_workspace_dashboard_cli(tmp_path: Path):
+    source = Path("examples/spring-cloud-demo")
+    target = tmp_path / "dashboard-export-demo"
+    import shutil
+    shutil.copytree(source, target)
+    workspace = target / ".memory-center" / "workspace.yaml"
+    lines = workspace.read_text(encoding="utf-8").splitlines()
+    lines = [f"root: {target.as_posix()}" if line.startswith("root:") else line for line in lines]
+    workspace.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    runner = CliRunner()
+    html_output = tmp_path / "dashboard.html"
+    md_output = tmp_path / "dashboard.md"
+    html_result = runner.invoke(
+        app,
+        [
+            "export-workspace-dashboard",
+            "--workspace",
+            str(workspace),
+            "--output",
+            str(html_output),
+            "--format",
+            "html",
+            "--intent",
+            "更新团队规则",
+        ],
+    )
+    md_result = runner.invoke(
+        app,
+        [
+            "export-workspace-dashboard",
+            "--workspace",
+            str(workspace),
+            "--output",
+            str(md_output),
+            "--format",
+            "markdown",
+            "--intent",
+            "更新团队规则",
+        ],
+    )
+    assert html_result.exit_code == 0
+    assert md_result.exit_code == 0
+    assert html_output.exists()
+    assert md_output.exists()
+    assert "Workspace Dashboard" in md_output.read_text(encoding="utf-8")
+    assert "<!doctype html>" in html_output.read_text(encoding="utf-8").lower()
 
 
 def test_cli_version_flag():
@@ -375,9 +425,11 @@ def test_memory_write_judge_and_plan_write(tmp_path: Path):
     assert queried["summary"]["total"] >= 1
     replay = workspace_replay_write_chain(workspace, limit=20)
     assert replay["timeline"]
+    assert replay["schema"]["name"] == "timeline_result"
     quality = memory_eval_write_quality(workspace, intent="更新团队规则", limit=20)
     assert quality["receipt_count"] >= 1
     assert quality["quality"] in {"high", "medium", "low"}
+    assert quality["schema"]["name"] == "eval_result"
     next_actions = workspace_next_actions(workspace, intent="更新团队规则", limit=5)
     assert next_actions["actions"]
     unresolved = workspace_unresolved_items(workspace, intent="更新团队规则", limit=5)
@@ -385,6 +437,10 @@ def test_memory_write_judge_and_plan_write(tmp_path: Path):
     resume_packet = workspace_resume_packet(workspace, intent="更新团队规则", limit=5)
     assert "next_recommended_actions" in resume_packet
     assert resume_packet["resume_rule_profile"] in {"default", "rule_update", "implementation"}
+    assert resume_packet["schema"]["name"] == "resume_packet"
+    resume_eval = memory_eval_resume(workspace, intent="更新团队规则", limit=10)
+    assert resume_eval["quality"] in {"high", "medium", "low"}
+    assert resume_eval["schema"]["name"] == "eval_result"
     recent_evidence = workspace_recent_evidence(workspace, limit=5)
     assert "evidence" in recent_evidence
     model_profile = workspace_model_profile("deepseek-r1")
@@ -392,8 +448,27 @@ def test_memory_write_judge_and_plan_write(tmp_path: Path):
     handoff = workspace_handoff_packet(workspace, target_model="glm-4", intent="更新团队规则", limit=5)
     assert handoff["model_profile"]["normalized_model"] == "glm"
     assert "handoff_packet" in handoff
+    assert handoff["schema"]["name"] == "handoff_packet"
+    handoff_eval = memory_eval_handoff(workspace, target_model="glm-4", intent="更新团队规则", limit=10)
+    assert handoff_eval["quality"] in {"high", "medium", "low"}
+    assert handoff_eval["schema"]["name"] == "eval_result"
     handoff_history = workspace_handoff_history(workspace, target_model="glm-4", limit=10)
     assert handoff_history["handoffs"]
+    dashboard = workspace_continuity_dashboard(workspace, intent="更新团队规则", limit=5)
+    assert "resume_packet" in dashboard
+    assert "recent_handoffs" in dashboard
+    assert dashboard["schema"]["name"] == "workspace_continuity_dashboard"
+    workspace_dash = workspace_dashboard(workspace, intent="更新团队规则", limit=5)
+    assert "active_tasks" in workspace_dash
+    assert "focus_dashboard" in workspace_dash
+    assert workspace_dash["schema"]["name"] == "workspace_dashboard"
+    timeline = timeline_query(str(workspace), kinds=["write_receipt", "handoff"], limit=20)
+    assert timeline["timeline"]
+    assert timeline["schema"]["name"] == "timeline_result"
+    markdown = export_workspace_dashboard_markdown(workspace, intent="更新团队规则", limit=5)
+    html = export_workspace_dashboard_html(workspace, intent="更新团队规则", limit=5)
+    assert "Workspace Dashboard" in markdown
+    assert "<!doctype html>" in html.lower()
 
 
 def test_auto_archive_task_spaces(tmp_path: Path):
@@ -877,6 +952,10 @@ def test_http_bridge_routes(tmp_path: Path):
         assert "timeline" in replay_chain
         eval_quality = json.loads(urlopen(f"{base}/workspace/eval-write-quality?intent=update%20rule&limit=10").read().decode("utf-8"))
         assert "quality" in eval_quality
+        eval_resume = json.loads(urlopen(f"{base}/workspace/eval-resume?intent=update%20rule&limit=10").read().decode("utf-8"))
+        assert "quality" in eval_resume
+        eval_handoff = json.loads(urlopen(f"{base}/workspace/eval-handoff?target_model=glm-4&intent=update%20rule&limit=10").read().decode("utf-8"))
+        assert "quality" in eval_handoff
         recent_evidence = json.loads(urlopen(f"{base}/workspace/recent-evidence?limit=10").read().decode("utf-8"))
         assert "evidence" in recent_evidence
         unresolved_items = json.loads(urlopen(f"{base}/workspace/unresolved-items?intent=update%20rule&limit=10").read().decode("utf-8"))
@@ -892,6 +971,15 @@ def test_http_bridge_routes(tmp_path: Path):
         assert "handoff_packet" in handoff_packet
         handoff_history = json.loads(urlopen(f"{base}/workspace/handoff-history?target_model=glm-4&limit=10").read().decode("utf-8"))
         assert handoff_history["handoffs"]
+        continuity_dashboard = json.loads(urlopen(f"{base}/workspace/continuity-dashboard?intent=update%20rule&limit=10").read().decode("utf-8"))
+        assert "resume_packet" in continuity_dashboard
+        workspace_dashboard_payload = json.loads(urlopen(f"{base}/workspace/dashboard?intent=update%20rule&limit=10").read().decode("utf-8"))
+        assert "active_tasks" in workspace_dashboard_payload
+        assert "focus_resume_eval" in workspace_dashboard_payload
+        eval_resume = json.loads(urlopen(f"{base}/workspace/eval-resume?intent=update%20rule&limit=10").read().decode("utf-8"))
+        assert "quality" in eval_resume
+        eval_handoff = json.loads(urlopen(f"{base}/workspace/eval-handoff?target_model=glm-4&intent=update%20rule&limit=10").read().decode("utf-8"))
+        assert "quality" in eval_handoff
 
         session_recent = json.loads(urlopen(f"{base}/workspace/sessions/recent?limit=5").read().decode("utf-8"))
         assert "recent_sessions" in session_recent

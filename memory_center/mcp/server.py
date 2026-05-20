@@ -22,6 +22,8 @@ from memory_center.core.orchestrator import (
     memory_plan_write,
     memory_execute_write,
     memory_eval_write_quality,
+    memory_eval_resume,
+    memory_eval_handoff,
     memory_write_judge,
     workspace_end_session,
     workspace_log_session_event,
@@ -31,6 +33,7 @@ from memory_center.core.orchestrator import (
     workspace_handoff_history,
     workspace_model_profile,
     workspace_continuity_dashboard,
+    workspace_dashboard,
     workspace_resume_packet,
     workspace_resume_context,
     workspace_suggest_case,
@@ -349,6 +352,16 @@ def create_server(workspace_file: str):
         return memory_eval_write_quality(_WORKSPACE_FILE, task_id=task_id, session_id=session_id, intent=intent, limit=limit)
 
     @mcp.tool()
+    def memory_eval_resume_tool(task_id: str = "", session_id: str = "", intent: str = "", limit: int = 20):
+        """Evaluate resume packet quality."""
+        return memory_eval_resume(_WORKSPACE_FILE, task_id=task_id, session_id=session_id, intent=intent, limit=limit)
+
+    @mcp.tool()
+    def memory_eval_handoff_tool(target_model: str, task_id: str = "", session_id: str = "", intent: str = "", limit: int = 20):
+        """Evaluate handoff packet quality."""
+        return memory_eval_handoff(_WORKSPACE_FILE, target_model=target_model, task_id=task_id, session_id=session_id, intent=intent, limit=limit)
+
+    @mcp.tool()
     def workspace_trace_tool(entry: str):
         """Trace cross-service candidates by class name, Feign client, Controller endpoint, or MQ topic."""
         return workspace_trace(_WORKSPACE_FILE, entry)
@@ -464,6 +477,11 @@ def create_server(workspace_file: str):
     def workspace_continuity_dashboard_tool(intent: str = "", task_id: str = "", session_id: str = "", limit: int = 10):
         """Build one daily continuity dashboard."""
         return workspace_continuity_dashboard(_WORKSPACE_FILE, intent=intent, task_id=task_id, session_id=session_id, limit=limit)
+
+    @mcp.tool()
+    def workspace_dashboard_tool(intent: str = "", limit: int = 10):
+        """Build one workspace-level dashboard."""
+        return workspace_dashboard(_WORKSPACE_FILE, intent=intent, limit=limit)
 
     @mcp.tool()
     def workspace_suggest_case_tool(session_id: str):

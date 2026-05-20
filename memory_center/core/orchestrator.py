@@ -20,11 +20,14 @@ from .artifacts import (
     update_task_artifact,
 )
 from .config import load_workspace_config
+from .evals import EvalResultBuilder
 from .registry import resolve_group
 from .rules import DEFAULT_HANDOFF_PROFILES, DEFAULT_HANDOFF_RULES, DEFAULT_RESUME_RULES, ensure_default_rules, match_rules
+from .schemas import with_schema
 from .semantic import semantic_index_stats, semantic_query
 from .store import WorkspaceStore
 from .text_utils import base_tokenize
+from .timeline import timeline_query
 from .write_receipts import WRITE_RECEIPTS_FILE, build_write_receipt, persist_write_receipt, query_write_receipts
 
 SESSION_EVENTS_FILE = "session-events.jsonl"
@@ -472,38 +475,37 @@ def workspace_recent_evidence(
     session_id: str = "",
     limit: int = 10,
 ) -> Dict[str, Any]:
-    config, store = load_context(workspace_file)
+    config, _ = load_context(workspace_file)
+    result = timeline_query(str(workspace_file), task_id=task_id.strip(), session_id=session_id.strip(), kinds=["session_event", "write_receipt"], limit=limit)
     evidence: List[Dict[str, Any]] = []
-    if session_id.strip():
-        session = workspace_session_summary(workspace_file, session_id.strip())
-        for event in session.get("events", [])[-limit:]:
-            payload = _event_payload(event)
+    for item in result.get("timeline", []):
+        if item.get("kind") == "session_event":
+            raw = item.get("raw", {})
+            payload = raw.get("payload", {}) if isinstance(raw.get("payload"), dict) else {}
             evidence.append(
                 {
                     "source": "session_event",
-                    "event_type": event.get("event_type", ""),
-                    "session_id": session_id.strip(),
-                    "payload_ref": event.get("payload_ref", ""),
+                    "event_type": item.get("action", ""),
+                    "session_id": item.get("session_id", ""),
+                    "payload_ref": raw.get("payload_ref", ""),
                     "project": payload.get("project", ""),
                     "file_path": payload.get("file_path", "") or payload.get("path", ""),
                     "tool_name": payload.get("tool_name", ""),
                     "query": payload.get("query", "") or payload.get("target", ""),
-                    "created_at": event.get("created_at", ""),
+                    "created_at": item.get("created_at", ""),
                 }
             )
-    if task_id.strip():
-        receipts = workspace_write_receipts(workspace_file, task_id=task_id.strip(), limit=limit).get("receipts", [])
-        for row in receipts[-limit:]:
+        elif item.get("kind") == "write_receipt":
             evidence.append(
                 {
                     "source": "write_receipt",
-                    "layer": row.get("layer", ""),
-                    "action": row.get("action", ""),
-                    "task_id": task_id.strip(),
-                    "session_id": row.get("session_id", "") or row.get("source_session_id", ""),
-                    "target": row.get("target", ""),
-                    "receipt_ref": row.get("receipt_ref", ""),
-                    "created_at": row.get("created_at", ""),
+                    "layer": item.get("layer", ""),
+                    "action": item.get("action", ""),
+                    "task_id": item.get("task_id", ""),
+                    "session_id": item.get("session_id", ""),
+                    "target": item.get("target", ""),
+                    "receipt_ref": item.get("receipt_ref", ""),
+                    "created_at": item.get("created_at", ""),
                 }
             )
     return {
@@ -620,7 +622,7 @@ def workspace_resume_packet(
         if key in packet:
             filtered[key] = packet[key]
     filtered["resume_rule_profile"] = packet.get("resume_rule_profile", "default")
-    return filtered
+    return with_schema("resume_packet", filtered)
 
 
 def workspace_model_profile(model_name: str, workspace_file: str | Path | None = None) -> Dict[str, Any]:
@@ -698,7 +700,7 @@ def workspace_handoff_packet(
     }
     store.append_jsonl("handoff-history.jsonl", history_item)
     packet["handoff_ref"] = "memory/handoff-history.jsonl"
-    return packet
+    return with_schema("handoff_packet", packet)
 
 
 def workspace_continuity_dashboard(
@@ -716,7 +718,9 @@ def workspace_continuity_dashboard(
     receipts = workspace_write_receipts(workspace_file, task_id=focus_task_id, session_id=session_id, limit=limit)
     handoffs = workspace_handoff_history(workspace_file, task_id=focus_task_id, session_id=session_id, limit=limit)
     evidence = workspace_recent_evidence(workspace_file, task_id=focus_task_id, session_id=session_id, limit=limit)
-    return {
+    return with_schema(
+        "workspace_continuity_dashboard",
+        {
         "workspace": status.get("workspace", ""),
         "focus_task": status.get("current_focus_task"),
         "continuity_overview": status.get("continuity_overview", {}),
@@ -726,7 +730,75 @@ def workspace_continuity_dashboard(
         "recent_receipts": receipts.get("receipts", [])[-5:],
         "recent_handoffs": handoffs.get("handoffs", [])[-5:],
         "recent_evidence": evidence.get("evidence", [])[-5:],
-    }
+        },
+    )
+
+
+def workspace_dashboard(
+    workspace_file: str | Path,
+    intent: str = "",
+    limit: int = 10,
+) -> Dict[str, Any]:
+    status = workspace_status(workspace_file)
+    active_tasks = status.get("active_task_spaces", [])[: max(limit, 1)]
+    low_quality_tasks: List[Dict[str, Any]] = []
+    resumable_tasks: List[Dict[str, Any]] = []
+    blocked_tasks: List[Dict[str, Any]] = []
+
+    for task in active_tasks:
+        task_id = str(task.get("task_id", "") or "")
+        title = str(task.get("title", "") or "")
+        summary_preview = str(task.get("summary_preview", "") or "")
+        quality = memory_eval_write_quality(workspace_file, task_id=task_id, intent=title or summary_preview, limit=10)
+        entry = {
+            "task_id": task_id,
+            "title": title,
+            "status": task.get("status", ""),
+            "priority": task.get("priority", ""),
+            "quality": quality.get("quality", ""),
+            "score": quality.get("score", 0),
+            "receipt_count": quality.get("receipt_count", 0),
+            "summary_preview": summary_preview,
+        }
+        if task.get("status") == "blocked":
+            blocked_tasks.append(entry)
+        if summary_preview:
+            resumable_tasks.append(entry)
+        if quality.get("quality") != "high":
+            low_quality_tasks.append(entry)
+
+    timeline = timeline_query(str(workspace_file), kinds=["write_receipt", "handoff"], limit=limit * 3).get("timeline", [])
+    receipts = [item for item in timeline if item.get("kind") == "write_receipt"][-limit:]
+    handoffs = [item.get("raw", item) for item in timeline if item.get("kind") == "handoff"][-limit:]
+    focus_task = status.get("current_focus_task")
+    focus_dashboard = (
+        workspace_continuity_dashboard(workspace_file, intent=intent, task_id=(focus_task or {}).get("task_id", ""), limit=min(limit, 5))
+        if focus_task
+        else None
+    )
+    focus_resume_eval = memory_eval_resume(
+        workspace_file,
+        task_id=(focus_task or {}).get("task_id", ""),
+        intent=intent,
+        limit=min(limit, 10),
+    )
+    return with_schema(
+        "workspace_dashboard",
+        {
+        "workspace": status.get("workspace", ""),
+        "focus_task": focus_task,
+        "continuity_overview": status.get("continuity_overview", {}),
+        "write_receipts_overview": status.get("write_receipts_overview", {}),
+        "active_tasks": active_tasks,
+        "resumable_tasks": resumable_tasks[:limit],
+        "blocked_tasks": blocked_tasks[:limit],
+        "low_quality_tasks": sorted(low_quality_tasks, key=lambda item: (item.get("score", 0), item.get("task_id", "")))[:limit],
+        "recent_receipts": receipts,
+        "recent_handoffs": handoffs,
+        "focus_dashboard": focus_dashboard,
+        "focus_resume_eval": focus_resume_eval,
+        },
+    )
 
 
 def workspace_handoff_history(
@@ -736,16 +808,13 @@ def workspace_handoff_history(
     session_id: str = "",
     limit: int = 50,
 ) -> Dict[str, Any]:
-    config, store = load_context(workspace_file)
-    rows = store.read_jsonl("handoff-history.jsonl", limit=5000)
+    config, _ = load_context(workspace_file)
     normalized_target = _normalize_model_name(target_model) if target_model else ""
+    timeline = timeline_query(str(workspace_file), task_id=task_id, session_id=session_id, kinds=["handoff"], limit=5000).get("timeline", [])
     matched = []
-    for row in rows:
+    for item in timeline:
+        row = item.get("raw", {})
         if normalized_target and row.get("normalized_model") != normalized_target:
-            continue
-        if task_id and row.get("task_id") != task_id:
-            continue
-        if session_id and row.get("session_id") != session_id:
             continue
         matched.append(row)
     return {
@@ -1118,13 +1187,8 @@ def workspace_replay_write_chain(
     limit: int = 100,
 ) -> Dict[str, Any]:
     config, _ = load_context(workspace_file)
-    result = query_write_receipts(
-        str(workspace_file),
-        task_id=task_id,
-        session_id=session_id,
-        limit=limit,
-    )
-    receipts = result.get("receipts", [])
+    result = timeline_query(str(workspace_file), task_id=task_id, session_id=session_id, kinds=["write_receipt", "handoff"], limit=limit)
+    receipts = result.get("timeline", [])
     timeline = [
         {
             "index": idx + 1,
@@ -1133,8 +1197,9 @@ def workspace_replay_write_chain(
             "scope": row.get("scope", ""),
             "target": row.get("target", ""),
             "task_id": row.get("task_id", ""),
-            "session_id": row.get("session_id", "") or row.get("source_session_id", ""),
+            "session_id": row.get("session_id", ""),
             "receipt_ref": row.get("receipt_ref", ""),
+            "kind": row.get("kind", ""),
             "created_at": row.get("created_at", ""),
         }
         for idx, row in enumerate(receipts)
@@ -1162,8 +1227,7 @@ def memory_eval_write_quality(
     replay = workspace_replay_write_chain(workspace_file, task_id=task_id, session_id=session_id, limit=limit)
     receipts = replay.get("timeline", [])
     layers = {item.get("layer", "") for item in receipts}
-    findings: List[Dict[str, Any]] = []
-    score = 100
+    builder = EvalResultBuilder()
 
     has_l0 = LAYER_L0 in layers
     has_l1 = LAYER_L1 in layers
@@ -1171,35 +1235,98 @@ def memory_eval_write_quality(
     has_l3 = LAYER_L3 in layers
 
     if session_id and not has_l0:
-        findings.append({"severity": "medium", "code": "missing_l0", "message": "存在 session_id，但没有对应的 L0 会话事件写入。"})
-        score -= 20
+        builder.add("medium", "missing_l0", "存在 session_id，但没有对应的 L0 会话事件写入。", 20)
     if task_id and not has_l2:
-        findings.append({"severity": "high", "code": "missing_l2", "message": "存在 task_id，但没有对应的 L2 任务空间写入。"})
-        score -= 30
+        builder.add("high", "missing_l2", "存在 task_id，但没有对应的 L2 任务空间写入。", 30)
     if session_id and not has_l1:
-        findings.append({"severity": "medium", "code": "missing_l1", "message": "存在 session_id，但没有沉淀为 L1 case memory。"})
-        score -= 15
+        builder.add("medium", "missing_l1", "存在 session_id，但没有沉淀为 L1 case memory。", 15)
     if "规则" in intent or "规范" in intent or "invariant" in intent.lower():
         if not has_l3:
-            findings.append({"severity": "medium", "code": "missing_l3", "message": "意图看起来属于规则/规范类，但没有对应的 L3 核心记忆块写入。"})
-            score -= 20
+            builder.add("medium", "missing_l3", "意图看起来属于规则/规范类，但没有对应的 L3 核心记忆块写入。", 20)
     if not receipts:
-        findings.append({"severity": "high", "code": "no_receipts", "message": "没有找到任何 write receipts，无法证明记忆写入链路已执行。"})
-        score = 0
+        builder.add("high", "no_receipts", "没有找到任何 write receipts，无法证明记忆写入链路已执行。", 100)
 
-    quality = "high" if score >= 85 else ("medium" if score >= 60 else "low")
-    return {
-        "workspace": config.workspace,
-        "task_id": task_id,
-        "session_id": session_id,
-        "intent": intent,
-        "score": max(0, score),
-        "quality": quality,
-        "receipt_count": len(receipts),
-        "layers_present": sorted(layer for layer in layers if layer),
-        "findings": findings,
-        "replay_summary": replay.get("summary", {}),
-    }
+    return builder.finalize(
+        workspace=config.workspace,
+        task_id=task_id,
+        session_id=session_id,
+        intent=intent,
+        receipt_count=len(receipts),
+        layers_present=sorted(layer for layer in layers if layer),
+        replay_summary=replay.get("summary", {}),
+    )
+
+
+def memory_eval_resume(
+    workspace_file: str | Path,
+    task_id: str = "",
+    session_id: str = "",
+    intent: str = "",
+    limit: int = 20,
+) -> Dict[str, Any]:
+    config, _ = load_context(workspace_file)
+    packet = workspace_resume_packet(workspace_file, task_id=task_id, session_id=session_id, intent=intent, limit=limit)
+    builder = EvalResultBuilder()
+
+    if not packet.get("current_summary"):
+        builder.add("high", "missing_current_summary", "恢复包缺少 current_summary。", 30)
+    if not packet.get("next_recommended_actions"):
+        builder.add("medium", "missing_next_actions", "恢复包缺少 next_recommended_actions。", 20)
+    if "unresolved_items" not in packet:
+        builder.add("medium", "missing_unresolved_items", "恢复包缺少 unresolved_items。", 15)
+    if packet.get("verification_pending") and not packet.get("unresolved_items"):
+        builder.add("low", "verification_flag_without_items", "verification_pending 为真，但没有明确未解决事项。", 10)
+    if not packet.get("resume_rule_profile"):
+        builder.add("low", "missing_resume_rule_profile", "恢复包未声明命中的规则画像。", 10)
+
+    return builder.finalize(
+        workspace=config.workspace,
+        task_id=packet.get("task_id", ""),
+        session_id=session_id,
+        intent=intent,
+        resume_rule_profile=packet.get("resume_rule_profile", ""),
+    )
+
+
+def memory_eval_handoff(
+    workspace_file: str | Path,
+    target_model: str,
+    task_id: str = "",
+    session_id: str = "",
+    intent: str = "",
+    limit: int = 20,
+) -> Dict[str, Any]:
+    config, _ = load_context(workspace_file)
+    packet = workspace_handoff_packet(
+        workspace_file,
+        target_model=target_model,
+        task_id=task_id,
+        session_id=session_id,
+        intent=intent,
+        limit=limit,
+    )
+    handoff_body = packet.get("handoff_packet", {})
+    builder = EvalResultBuilder()
+
+    if not handoff_body.get("minimal_required_context"):
+        builder.add("high", "missing_minimal_context", "交接包缺少 minimal_required_context。", 30)
+    if not handoff_body.get("what_to_check_next"):
+        builder.add("medium", "missing_next_checks", "交接包缺少 what_to_check_next。", 20)
+    if not handoff_body.get("what_not_to_repeat"):
+        builder.add("medium", "missing_do_not_repeat", "交接包缺少 what_not_to_repeat。", 15)
+    if not packet.get("handoff_rule_profile"):
+        builder.add("low", "missing_handoff_rule_profile", "交接包未声明命中的 handoff 规则画像。", 10)
+    if not packet.get("model_profile", {}).get("normalized_model"):
+        builder.add("low", "missing_model_profile", "交接包缺少标准化模型画像。", 10)
+
+    return builder.finalize(
+        workspace=config.workspace,
+        target_model=target_model,
+        task_id=packet.get("task_id", ""),
+        session_id=session_id,
+        handoff_rule_profile=packet.get("handoff_rule_profile", ""),
+        normalized_model=packet.get("model_profile", {}).get("normalized_model", ""),
+    )
 
 
 def workspace_sync_sniff_to_artifacts(

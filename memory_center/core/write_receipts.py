@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
+from .schemas import with_schema
 from .store import WorkspaceStore
 
 WRITE_RECEIPTS_FILE = "write-receipts.jsonl"
@@ -22,7 +23,9 @@ def build_write_receipt(
     write_mode: str = "",
     audit_ref: str = "",
 ) -> Dict[str, Any]:
-    return {
+    return with_schema(
+        "write_receipt",
+        {
         "layer": layer,
         "action": action,
         "scope": scope,
@@ -36,7 +39,8 @@ def build_write_receipt(
         "bytes_written": bytes_written,
         "write_mode": write_mode,
         "audit_ref": audit_ref,
-    }
+        },
+    )
 
 
 def persist_write_receipt(store: WorkspaceStore, receipt: Dict[str, Any]) -> Dict[str, Any]:

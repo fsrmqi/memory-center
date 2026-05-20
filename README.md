@@ -575,6 +575,30 @@ Supported model targets for handoff now include `codex`, `claude-code`, `cursor-
 `workspace_resume_packet` is now rule-driven by `rules/resume-rules.yaml`, and model handoff preferences are driven by `rules/handoff-profiles.yaml`.
 
 `workspace_resume_packet` 现在由 `rules/resume-rules.yaml` 驱动，模型交接偏好由 `rules/handoff-profiles.yaml` 驱动。
+
+Daily continuity view is now available through `workspace_continuity_dashboard`, which aggregates focus task, resume packet, next actions, unresolved items, receipts, handoffs and evidence.
+
+现在还提供了日常连续性视图 `workspace_continuity_dashboard`，会汇总当前焦点任务、恢复包、下一步动作、未解决事项、回执、交接历史和近期证据。
+
+At the workspace level, `workspace_dashboard` provides a broader operational view: active tasks, resumable tasks, blocked tasks, low-quality tasks, recent handoffs and recent write receipts.
+
+在 workspace 级别，`workspace_dashboard` 会进一步提供更宽的运营视图：活跃任务、可恢复任务、阻塞任务、低质量任务、最近交接和最近写入回执。
+
+The dashboard also includes `focus_resume_eval`, so the current focus task has a directly visible resume-quality signal.
+
+总面板现在还会包含 `focus_resume_eval`，让当前焦点任务的恢复包质量直接可见。
+
+You can now export the workspace dashboard as HTML or Markdown with `memory-center export-workspace-dashboard --format html|markdown`.
+
+现在还可以通过 `memory-center export-workspace-dashboard --format html|markdown` 导出 workspace 总面板的 HTML 或 Markdown 版本。
+
+Resume and handoff packets can now be evaluated through `memory_eval_resume` and `memory_eval_handoff`, so continuity quality is no longer implicit.
+
+现在还可以通过 `memory_eval_resume` 和 `memory_eval_handoff` 评估恢复包与交接包的质量，让连续性能力从“有接口”变成“可量化”。
+
+Under the hood, session events, write receipts and handoff history are now converging toward one shared timeline substrate, so replay, dashboard, evidence lookup and eval can reuse the same chronological model.
+
+在底层，session events、write receipts 和 handoff history 现在开始收敛到同一套 timeline substrate，这样 replay、dashboard、evidence lookup 和 eval 可以复用同一个时间线模型。
 | `memory_detect_changes_tool` | Git diff risk mapping / Git 变更风险映射 |
 | `memory_contracts_tool` | API/Feign/MQ contract list / 契约列表 |
 | `workspace_trace_tool` | Cross-service trace hints / 跨服务追踪 |

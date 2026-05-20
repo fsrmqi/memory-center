@@ -14,6 +14,8 @@ from memory_center.core.orchestrator import (
     memory_callees,
     memory_execute_write,
     memory_eval_write_quality,
+    memory_eval_resume,
+    memory_eval_handoff,
     memory_plan_change,
     memory_plan_write,
     memory_query,
@@ -25,6 +27,7 @@ from memory_center.core.orchestrator import (
     workspace_handoff_history,
     workspace_model_profile,
     workspace_continuity_dashboard,
+    workspace_dashboard,
     workspace_next_actions,
     workspace_recent_evidence,
     workspace_recent_sessions,
@@ -305,6 +308,25 @@ def _route_request(path: str, params: dict, default_workspace: str | None) -> di
             intent=params.get("intent", [""])[0],
             limit=_parse_int(params, "limit", 100),
         )
+    if path == "/workspace/eval-resume":
+        workspace = _require_workspace(params, default_workspace)
+        return memory_eval_resume(
+            workspace,
+            task_id=params.get("task_id", [""])[0],
+            session_id=params.get("session_id", [""])[0],
+            intent=params.get("intent", [""])[0],
+            limit=_parse_int(params, "limit", 20),
+        )
+    if path == "/workspace/eval-handoff":
+        workspace = _require_workspace(params, default_workspace)
+        return memory_eval_handoff(
+            workspace,
+            target_model=_require_one(params, "target_model"),
+            task_id=params.get("task_id", [""])[0],
+            session_id=params.get("session_id", [""])[0],
+            intent=params.get("intent", [""])[0],
+            limit=_parse_int(params, "limit", 20),
+        )
     if path == "/workspace/verify-checklist":
         workspace = _require_workspace(params, default_workspace)
         target = _require_one(params, "target")
@@ -380,6 +402,13 @@ def _route_request(path: str, params: dict, default_workspace: str | None) -> di
             intent=params.get("intent", [""])[0],
             task_id=params.get("task_id", [""])[0],
             session_id=params.get("session_id", [""])[0],
+            limit=_parse_int(params, "limit", 10),
+        )
+    if path == "/workspace/dashboard":
+        workspace = _require_workspace(params, default_workspace)
+        return workspace_dashboard(
+            workspace,
+            intent=params.get("intent", [""])[0],
             limit=_parse_int(params, "limit", 10),
         )
     if path == "/workspace/resume-context":
