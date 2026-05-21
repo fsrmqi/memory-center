@@ -10,3 +10,6 @@ build/
 .memory-center/index/
 .memory-center/memory/
 .DS_Store
+/.idea/
+/.github/
+/.claude/
