@@ -340,6 +340,29 @@ next_steps         : list[str]    推荐的下一步操作
 | `name` | `string` | **必填** | 类名 / 方法名 / 接口名 |
 | `limit` | `int` | `10` | 候选数量 |
 
+#### `workspace_lookup_hint_tool`
+
+**描述：** 对检索类问题做路由建议，判断应优先调用 Memory Center 的符号/调用链工具，还是先做本地小范围搜索。
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `query` | `string` | **必填** | 检索查询文本 |
+| `intent` | `string` | `""` | 当前任务意图（可选） |
+| `limit` | `int` | `8` | 用于辅助判断的上下文深度 |
+
+**返回：**
+
+```text
+schema.name             = lookup_hint
+recommended_path        = symbol_lookup | call_chain | cross_service_analysis | keyword_lookup | local_search
+preferred_tools         = 推荐优先调用的工具列表
+should_use_memory_center= 是否建议优先走 Memory Center
+reasons                 = 推荐原因
+sniff_risk_level        = low/medium/high
+matched_services        = 命中的服务
+candidate_files         = 候选文件摘要
+```
+
 ### 3.3 调用链遍历
 
 #### `memory_callers_tool` / `memory_callees_tool`
@@ -594,6 +617,30 @@ judge                = 原裁决结果
 executed[].tool      = 实际执行的工具名
 executed[].result    = 实际工具返回
 session_id           = 若过程中自动创建 session，则返回新 session_id
+```
+
+#### `memory_tool_usage_report_tool`
+
+**描述：** 汇总近期工具调用，统计 Memory Center 使用率，并标记疑似绕过场景（例如看起来在找类/调用链但没走 Memory Center）。
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `limit` | `int` | `200` | 统计最近 session-events 条数 |
+
+**返回：**
+
+```text
+schema.name                     = tool_usage_report
+summary.total_tool_calls        = 总调用次数
+summary.memory_center_calls     = Memory Center 调用次数
+summary.external_calls          = 外部工具调用次数
+summary.memory_center_ratio     = Memory Center 调用占比
+summary.lookup_tool_total       = lookup 工具调用总数
+summary.suspected_bypass_count  = 疑似绕过数量
+tool_counts                     = 各工具调用计数
+lookup_tool_counts              = lookup 工具调用计数
+suspected_bypass                = 疑似绕过明细
+adoption_hints                  = 使用建议
 ```
 
 #### `memory_detect_changes_tool`
@@ -1508,12 +1555,14 @@ memory-center serve-http \
 | `GET` | `/workspace/status` | 工作区状态 | `workspace_status_tool` |
 | `POST` | `/workspace/query` | 图感知搜索 | `memory_query_tool` |
 | `POST` | `/workspace/search-code` | 关键词搜索 | `memory_search_code_tool` |
+| `GET` | `/workspace/lookup-hint` | 检索路由建议 | `workspace_lookup_hint_tool` |
 | `GET` | `/workspace/symbol` | 符号解析 | `memory_symbol_tool` |
 | `GET` | `/workspace/callers` | 上游调用链 | `memory_callers_tool` |
 | `GET` | `/workspace/callees` | 下游调用链 | `memory_callees_tool` |
 | `POST` | `/workspace/plan-change` | 变更计划 | `memory_plan_change_tool` |
 | `POST` | `/workspace/verify-checklist` | 验证检查清单 | `memory_verify_checklist_tool` |
 | `POST` | `/workspace/detect-changes` | Git 变更检测 | `memory_detect_changes_tool` |
+| `GET` | `/workspace/tool-usage-report` | 工具使用率与疑似绕过分析 | `memory_tool_usage_report_tool` |
 | `GET` | `/workspace/artifacts` | 工件列表 | `workspace_artifact_list_tool` |
 | `GET` | `/workspace/artifacts/{name}` | 读取工件 | `workspace_artifact_get_tool` |
 | `PUT` | `/workspace/artifacts/{name}` | 更新工件 | `workspace_artifact_update_tool` |
@@ -1562,6 +1611,7 @@ memory-center serve-http \
    → workspace_sniff_tool(intent)          # 获取上下文 + 风险评估
 
 2. [深入分析]
+   → workspace_lookup_hint_tool(query, intent) # 先判断检索路由（Memory Center vs 本地搜索）
    → memory_search_code_tool(query)        # 缩小范围
    → memory_symbol_tool(name)              # 定位符号
    → memory_callers_tool(symbol)           # 上游调用链
