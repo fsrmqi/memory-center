@@ -233,7 +233,7 @@ def workspace_lookup_hint(
     limit: int = 8,
     sniff_context: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
-    config, _ = load_context(workspace_file)
+    config, store = load_context(workspace_file)
     normalized = f"{query} {intent}".strip().lower()
     reasons: List[str] = []
     preferred_tools: List[str] = []
@@ -573,7 +573,7 @@ def workspace_session_summary(workspace_file: str | Path, session_id: str) -> Di
 
 
 def workspace_suggest_case(workspace_file: str | Path, session_id: str) -> Dict[str, Any]:
-    config, _ = load_context(workspace_file)
+    config, store = load_context(workspace_file)
     session = workspace_session_summary(workspace_file, session_id)
     if not session.get("found"):
         return {
@@ -655,39 +655,41 @@ def workspace_recent_evidence(
     session_id: str = "",
     limit: int = 10,
 ) -> Dict[str, Any]:
-    config, _ = load_context(workspace_file)
+    config, store = load_context(workspace_file)
     result = timeline_query(str(workspace_file), task_id=task_id.strip(), session_id=session_id.strip(), kinds=["session_event", "write_receipt"], limit=limit)
     evidence: List[Dict[str, Any]] = []
     for item in result.get("timeline", []):
         if item.get("kind") == "session_event":
             raw = item.get("raw", {})
             payload = raw.get("payload", {}) if isinstance(raw.get("payload"), dict) else {}
-            evidence.append(
-                {
-                    "source": "session_event",
-                    "event_type": item.get("action", ""),
-                    "session_id": item.get("session_id", ""),
-                    "payload_ref": raw.get("payload_ref", ""),
-                    "project": payload.get("project", ""),
-                    "file_path": payload.get("file_path", "") or payload.get("path", ""),
-                    "tool_name": payload.get("tool_name", ""),
-                    "query": payload.get("query", "") or payload.get("target", ""),
-                    "created_at": item.get("created_at", ""),
-                }
-            )
+            entry = {
+                "ref_id": f"ev:{item.get('session_id', '')}:{item.get('action', '')}:{len(evidence) + 1}",
+                "source": "session_event",
+                "event_type": item.get("action", ""),
+                "session_id": item.get("session_id", ""),
+                "payload_ref": raw.get("payload_ref", ""),
+                "project": payload.get("project", ""),
+                "file_path": payload.get("file_path", "") or payload.get("path", ""),
+                "tool_name": payload.get("tool_name", ""),
+                "query": payload.get("query", "") or payload.get("target", ""),
+                "created_at": item.get("created_at", ""),
+            }
+            entry["summary"] = _summarize_ref(entry)
+            evidence.append(entry)
         elif item.get("kind") == "write_receipt":
-            evidence.append(
-                {
-                    "source": "write_receipt",
-                    "layer": item.get("layer", ""),
-                    "action": item.get("action", ""),
-                    "task_id": item.get("task_id", ""),
-                    "session_id": item.get("session_id", ""),
-                    "target": item.get("target", ""),
-                    "receipt_ref": item.get("receipt_ref", ""),
-                    "created_at": item.get("created_at", ""),
-                }
-            )
+            entry = {
+                "ref_id": f"wr:{item.get('layer', '')}:{item.get('action', '')}:{len(evidence) + 1}",
+                "source": "write_receipt",
+                "layer": item.get("layer", ""),
+                "action": item.get("action", ""),
+                "task_id": item.get("task_id", ""),
+                "session_id": item.get("session_id", ""),
+                "target": item.get("target", ""),
+                "receipt_ref": item.get("receipt_ref", ""),
+                "created_at": item.get("created_at", ""),
+            }
+            entry["summary"] = _summarize_ref(entry)
+            evidence.append(entry)
     return {
         "workspace": config.workspace,
         "task_id": task_id,
@@ -1641,7 +1643,7 @@ def workspace_sync_case_to_artifacts(
     title: str = "",
     auto_sync_mode: str = "balanced",
 ) -> Dict[str, Any]:
-    config, _ = load_context(workspace_file)
+    config, store = load_context(workspace_file)
     draft = workspace_suggest_case(workspace_file, session_id)
     if not draft.get("found"):
         return {
@@ -2015,7 +2017,14 @@ def _compact_sniff_result(result: Dict[str, Any]) -> Dict[str, Any]:
             }
             for item in result.get("task_candidates", [])[:2]
         ],
-        "source_refs": result.get("source_refs", [])[:5],
+        "source_refs": [
+            {
+                "ref_id": item.get("ref_id", ""),
+                "type": item.get("type", ""),
+                "summary": item.get("summary", ""),
+            }
+            for item in result.get("source_refs", [])[:5]
+        ],
         "resolved_task": result.get("resolved_task", {}),
         "auto_sync_recommendation": result.get("auto_sync_recommendation", {}),
         "write_judge_recommendation": result.get("write_judge_recommendation", {}),
@@ -2032,6 +2041,19 @@ def _compact_sniff_result(result: Dict[str, Any]) -> Dict[str, Any]:
         },
         "next_steps": result.get("next_steps", [])[:4],
     }
+
+
+def _summarize_ref(ref: Dict[str, Any]) -> str:
+    parts = [
+        str(ref.get("tool_name", "") or ""),
+        str(ref.get("query", "") or ref.get("target", "") or ref.get("name", "") or ref.get("task", "") or ""),
+        str(ref.get("file_path", "") or ref.get("path", "") or ""),
+        str(ref.get("payload_ref", "") or ref.get("receipt_ref", "") or ""),
+    ]
+    text = " | ".join(part for part in parts if part).strip()
+    if not text:
+        text = str(ref.get("type", "") or ref.get("event_type", "") or ref.get("source", "") or "ref")
+    return text[:140]
 
 
 def _compact_workspace_status(result: Dict[str, Any]) -> Dict[str, Any]:
@@ -3075,6 +3097,7 @@ def _build_case_evidence_refs(events: List[Dict[str, Any]], limit: int = 12) -> 
     for idx, event in enumerate(events[-limit:], start=max(len(events) - limit, 0) + 1):
         payload = _event_payload(event)
         ref = {
+            "ref_id": f"ev:{event.get('session_id', '')}:{event.get('event_type', '')}:{idx}",
             "event_index": idx,
             "event_type": event.get("event_type", ""),
             "created_at": event.get("created_at", ""),
@@ -3086,17 +3109,19 @@ def _build_case_evidence_refs(events: List[Dict[str, Any]], limit: int = 12) -> 
             value = payload.get(key)
             if isinstance(value, str) and value:
                 ref[key] = value
+        ref["summary"] = _summarize_ref(ref)
         refs.append(ref)
     return refs
 
 
 def _build_event_source_refs(events: List[Dict[str, Any]], limit: int = 20) -> List[Dict[str, Any]]:
     refs: List[Dict[str, Any]] = []
-    for event in events[-limit:]:
+    for idx, event in enumerate(events[-limit:], start=max(len(events) - limit, 0) + 1):
         payload = _event_payload(event)
         event_type = str(event.get("event_type", "") or "")
         payload_ref = str(event.get("payload_ref", "") or "")
         entry = {
+            "ref_id": f"src:{event.get('session_id', '')}:{event_type}:{idx}",
             "type": "session_event",
             "event_type": event_type,
             "created_at": event.get("created_at", ""),
@@ -3108,6 +3133,7 @@ def _build_event_source_refs(events: List[Dict[str, Any]], limit: int = 20) -> L
         if payload_ref:
             entry["payload_ref"] = payload_ref
         if len(entry) > 3:
+            entry["summary"] = _summarize_ref(entry)
             refs.append(entry)
     return refs
 
@@ -3120,22 +3146,32 @@ def _build_sniff_source_refs(
     related_cases: List[Dict[str, Any]],
 ) -> List[Dict[str, Any]]:
     refs: List[Dict[str, Any]] = []
-    for item in matched_files[:6]:
+    for idx, item in enumerate(matched_files[:6], start=1):
         path = item.get("path", "")
         if path:
-            refs.append({"type": "file", "path": path, "project": item.get("project", ""), "score": item.get("score", 0)})
-    for item in related_feigns[:4]:
+            ref = {"ref_id": f"src:file:{idx}", "type": "file", "path": path, "project": item.get("project", ""), "score": item.get("score", 0)}
+            ref["summary"] = _summarize_ref(ref)
+            refs.append(ref)
+    for idx, item in enumerate(related_feigns[:4], start=1):
         if item.get("interface"):
-            refs.append({"type": "feign", "name": item.get("interface", ""), "project": item.get("project", ""), "path": item.get("file", "")})
-    for item in related_apis[:4]:
+            ref = {"ref_id": f"src:feign:{idx}", "type": "feign", "name": item.get("interface", ""), "project": item.get("project", ""), "path": item.get("file", "")}
+            ref["summary"] = _summarize_ref(ref)
+            refs.append(ref)
+    for idx, item in enumerate(related_apis[:4], start=1):
         if item.get("path"):
-            refs.append({"type": "api", "name": f"{item.get('http_method', '')} {item.get('path', '')}".strip(), "project": item.get("project", ""), "path": item.get("file", "")})
-    for item in related_mq[:4]:
+            ref = {"ref_id": f"src:api:{idx}", "type": "api", "name": f"{item.get('http_method', '')} {item.get('path', '')}".strip(), "project": item.get("project", ""), "path": item.get("file", "")}
+            ref["summary"] = _summarize_ref(ref)
+            refs.append(ref)
+    for idx, item in enumerate(related_mq[:4], start=1):
         if item.get("topic"):
-            refs.append({"type": "mq", "name": item.get("topic", ""), "project": item.get("project", ""), "path": item.get("file", "")})
-    for item in related_cases[-3:]:
+            ref = {"ref_id": f"src:mq:{idx}", "type": "mq", "name": item.get("topic", ""), "project": item.get("project", ""), "path": item.get("file", "")}
+            ref["summary"] = _summarize_ref(ref)
+            refs.append(ref)
+    for idx, item in enumerate(related_cases[-3:], start=1):
         if item.get("task"):
-            refs.append({"type": "case", "task": item.get("task", ""), "created_at": item.get("created_at", "")})
+            ref = {"ref_id": f"src:case:{idx}", "type": "case", "task": item.get("task", ""), "created_at": item.get("created_at", "")}
+            ref["summary"] = _summarize_ref(ref)
+            refs.append(ref)
     return refs
 
 
@@ -3163,7 +3199,7 @@ def _render_sniff_context_markdown(sniff: Dict[str, Any]) -> str:
     lines.append("### Source Refs")
     lines.extend(
         [
-            f"- [{item.get('type', '')}] {item.get('name', '') or item.get('task', '') or item.get('path', '')}"
+            f"- [{item.get('type', '')}] {_render_ref_label(item)}"
             for item in sniff.get("source_refs", [])[:10]
         ]
         or ["- None"]
@@ -3182,7 +3218,7 @@ def _render_sniff_plan_markdown(sniff: Dict[str, Any]) -> str:
     lines.append("### Source Refs")
     lines.extend(
         [
-            f"- [{item.get('type', '')}] {item.get('name', '') or item.get('task', '') or item.get('path', '')}"
+            f"- [{item.get('type', '')}] {_render_ref_label(item)}"
             for item in sniff.get("source_refs", [])[:10]
         ]
         or ["- None"]
@@ -3205,7 +3241,7 @@ def _render_case_markdown(case: Dict[str, Any]) -> str:
     lines.append("### Source Refs")
     lines.extend(
         [
-            f"- [{item.get('type', '')}] {item.get('tool_name', '') or item.get('query', '') or item.get('target', '') or item.get('file_path', '') or item.get('payload_ref', '')}"
+            f"- [{item.get('type', '')}] {_render_ref_label(item)}"
             for item in case.get("source_refs", [])[:10]
         ]
         or ["- None"]
@@ -3214,7 +3250,7 @@ def _render_case_markdown(case: Dict[str, Any]) -> str:
     lines.append("### Evidence Refs")
     lines.extend(
         [
-            f"- [{item.get('event_type', '')}] {item.get('tool_name', '') or item.get('query', '') or item.get('target', '')}"
+            f"- [{item.get('event_type', '')}] {_render_ref_label(item)}"
             + (f" (payload_ref: {item.get('payload_ref', '')})" if item.get("payload_ref") else "")
             for item in case.get("evidence_refs", [])[:10]
         ]
@@ -3238,7 +3274,7 @@ def _render_task_current_summary_from_sniff(sniff: Dict[str, Any], resolved_info
     top_files = ", ".join(item.get("path", "") for item in sniff.get("candidate_files", [])[:3]) or "None"
     next_steps = "\n".join(f"- {item}" for item in sniff.get("next_steps", [])[:4])
     source_ref_names = ", ".join(
-        item.get("name", "") or item.get("task", "") or Path(item.get("path", "")).name
+        _render_ref_label(item)
         for item in sniff.get("source_refs", [])[:3]
     ) or "None"
     source_ref_types = ", ".join(item.get("type", "") for item in sniff.get("source_refs", [])[:5]) or "None"
@@ -3280,6 +3316,13 @@ def _trim_summary(text: str, limit: int = 220) -> str:
     if len(normalized) <= limit:
         return normalized
     return normalized[: limit - 3] + "..."
+
+
+def _render_ref_label(ref: Dict[str, Any]) -> str:
+    return (
+        str(ref.get("summary", "") or "")
+        or str(ref.get("name", "") or ref.get("task", "") or ref.get("query", "") or ref.get("target", "") or ref.get("file_path", "") or ref.get("path", "") or ref.get("payload_ref", "") or ref.get("ref_id", "") or "ref")
+    )
 
 
 def _build_sniff_symbolic_context(
