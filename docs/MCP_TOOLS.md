@@ -8,7 +8,7 @@ Memory Center exposes graph-first project memory to AI coding agents through MCP
 
 | Tool | Description / 说明 |
 |---|---|
-| `workspace_sniff_tool(intent, limit, auto_sync_mode)` | Retrieve task context: services, files, rules, topology hints, historical cases, plus `symbolic_context` for low-token planning. `symbolic_context` includes both `entities_mermaid` and `flow_mermaid`; response also includes `resolved_task`, `task_candidates`, and `auto_sync_recommendation` for explainable task-space routing. `auto_sync_mode` supports `strict|balanced|aggressive`. / 任务开始前召回服务、文件、规则、拓扑、历史经验，并返回低 Token 规划用的 `symbolic_context`（含 `entities_mermaid` 与 `flow_mermaid`）；同时返回 `resolved_task`、`task_candidates` 和 `auto_sync_recommendation`，便于可解释地路由到任务空间。`auto_sync_mode` 支持 `strict|balanced|aggressive`。 |
+| `workspace_sniff_tool(intent, limit, auto_sync_mode, view)` | Retrieve task context: services, files, rules, topology hints, historical cases, plus `symbolic_context` for low-token planning. `symbolic_context` includes both `entities_mermaid` and `flow_mermaid`; response also includes `resolved_task`, `task_candidates`, and `auto_sync_recommendation` for explainable task-space routing. `auto_sync_mode` supports `strict|balanced|aggressive`. `view` supports `compact|full`, and MCP defaults to `compact` to reduce token usage. / 任务开始前召回服务、文件、规则、拓扑、历史经验，并返回低 Token 规划用的 `symbolic_context`（含 `entities_mermaid` 与 `flow_mermaid`）；同时返回 `resolved_task`、`task_candidates` 和 `auto_sync_recommendation`，便于可解释地路由到任务空间。`auto_sync_mode` 支持 `strict|balanced|aggressive`。`view` 支持 `compact|full`，MCP 默认使用 `compact` 降低 token。 |
 | `workspace_artifact_list_tool()` | List shared workspace artifacts such as context, requirement, design, plan, test plan and change log. / 列出共享工件，如 context、requirement、design、plan、test plan、change log。 |
 | `workspace_artifact_get_tool(name)` | Read one shared artifact. / 读取一个共享工件。 |
 | `workspace_artifact_outline_tool(name)` | Read only the section outline of one artifact. / 只读取共享工件的章节提纲。 |
@@ -47,14 +47,14 @@ Memory Center exposes graph-first project memory to AI coding agents through MCP
 | `workspace_recent_evidence_tool(task_id, session_id, limit)` | Return recent evidence from session events and write receipts. / 返回来自 session 事件和写入回执的近期证据。 |
 | `workspace_unresolved_items_tool(task_id, session_id, intent, limit)` | Return unresolved items for one task/session. / 返回一个任务或会话的未解决事项。 |
 | `workspace_next_actions_tool(task_id, session_id, intent, limit)` | Suggest next actions for one task/session. / 为一个任务或会话推荐下一步动作。 |
-| `workspace_resume_packet_tool(task_id, session_id, intent, limit)` | Build a compact resume packet for the next model/session. / 为下一个模型或下一次会话生成紧凑的恢复包。 |
+| `workspace_resume_packet_tool(task_id, session_id, intent, limit, view)` | Build a resume packet for the next model/session. `view=compact|full`, and compact is recommended for model-facing calls. / 为下一个模型或下一次会话生成恢复包。`view` 支持 `compact|full`，模型调用建议使用 `compact`。 |
 
 `workspace_resume_packet_tool` is now rule-driven and returns `resume_rule_profile` so you can see which resume profile shaped the packet. / `workspace_resume_packet_tool` 现在由规则驱动，并会返回 `resume_rule_profile`，用于说明本次恢复包命中了哪条规则画像。
 | `workspace_model_profile_tool(model_name)` | Normalize one target model name and return its handoff preference profile. / 规范化目标模型名称，并返回其交接偏好画像。 |
 | `workspace_handoff_packet_tool(target_model, task_id, session_id, intent, limit)` | Build one handoff packet tailored to the target model. / 按目标模型生成一份专用交接包。 |
 | `workspace_handoff_history_tool(target_model, task_id, session_id, limit)` | Query persisted handoff history. / 查询已持久化的交接历史。 |
-| `workspace_continuity_dashboard_tool(intent, task_id, session_id, limit)` | Build one aggregated daily continuity dashboard. / 构建一个聚合的日常连续性面板。 |
-| `workspace_dashboard_tool(intent, limit)` | Build one workspace-level operational dashboard. / 构建一个 workspace 级别的工作总面板。 |
+| `workspace_continuity_dashboard_tool(intent, task_id, session_id, limit, view)` | Build one aggregated daily continuity dashboard. `view=compact|full`, MCP defaults to `compact`. / 构建一个聚合的日常连续性面板。`view` 支持 `compact|full`，MCP 默认 `compact`。 |
+| `workspace_dashboard_tool(intent, limit, view)` | Build one workspace-level operational dashboard. `view=compact|full`, MCP defaults to `compact`. / 构建一个 workspace 级别的工作总面板。`view` 支持 `compact|full`，MCP 默认 `compact`。 |
 | `memory_eval_resume_tool(task_id, session_id, intent, limit)` | Evaluate resume packet quality. / 评估恢复包质量。 |
 | `memory_eval_handoff_tool(target_model, task_id, session_id, intent, limit)` | Evaluate handoff packet quality. / 评估交接包质量。 |
 
@@ -93,7 +93,7 @@ Current canonical timeline kinds are `session_event`, `write_receipt`, and `hand
 | `workspace_suggest_case_tool(session_id)` | Suggest one record-case draft from a finished session, including `evidence_refs` back to raw events. / 从已结束会话自动生成一条经验沉淀草稿，并附带可回溯原始事件的 `evidence_refs`。 |
 | `memory_generate_wiki_tool(output_dir)` | Generate bilingual architecture wiki. / 生成双语架构 Wiki。 |
 | `memory_generate_skills_tool(output_dir)` | Generate Agent skill files from task memory. / 根据历史任务生成 Agent Skill。 |
-| `workspace_status_tool()` | Return index and memory status, including semantic backend readiness, layered memory counts (`L0/L1/L2/L3`), active task spaces, and `current_focus_task` with `focus_reason`. / 返回索引和记忆状态，包含语义 backend 就绪情况、分层记忆统计（`L0/L1/L2/L3`）、活跃任务空间，以及带 `focus_reason` 的 `current_focus_task`。 |
+| `workspace_status_tool(view)` | Return index and memory status, including semantic backend readiness, layered memory counts (`L0/L1/L2/L3`), active task spaces, and `current_focus_task` with `focus_reason`. `view=compact|full`, MCP defaults to `compact`. / 返回索引和记忆状态，包含语义 backend 就绪情况、分层记忆统计（`L0/L1/L2/L3`）、活跃任务空间，以及带 `focus_reason` 的 `current_focus_task`。`view` 支持 `compact|full`，MCP 默认 `compact`。 |
 | `group_query_tool(group, query, limit)` | Run a merged query across registered workspaces in one logical group, with exact/semantic retrieval metadata and `progressive` summary/evidence/detail views. / 对逻辑分组中的多个工作区做聚合查询，并返回精确/语义召回来源信息，以及 `progressive` 的摘要/证据/细节分层视图。 |
 | `group_status_tool(group)` | Return aggregated group status, including semantic index readiness, document counts and backend distribution. / 返回逻辑分组聚合状态，包含语义索引就绪度、文档数和 backend 分布。 |
 | `group_impact_tool(group, target, direction, max_depth)` | Run cross-workspace impact analysis with lookup provenance, graph evidence, bridge evidence and `progressive` layered views. / 结合命中来源、图谱证据、bridge 证据和 `progressive` 分层视图做跨工作区影响面分析。 |

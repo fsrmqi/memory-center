@@ -419,20 +419,33 @@ def update_task_status(workspace_file: str | Path, task_id: str, status: str, so
     if normalized == "archived":
         return archive_task_space(workspace_file, task_id, reason="status=archived")
     task_dir, meta = _resolve_task_dir(store, task_id)
+    before_meta = dict(meta)
     meta["status"] = normalized
     meta["archived"] = False
     _touch_task_meta(store, task_dir, meta, source=source)
+    audit = _record_artifact_write_audit(
+        store,
+        scope="task_space",
+        artifact_name="task_status",
+        file_name="meta.json",
+        write_mode="replace",
+        before_bytes=len(json.dumps(before_meta, ensure_ascii=False).encode("utf-8")),
+        after_bytes=len(json.dumps(meta, ensure_ascii=False).encode("utf-8")),
+        task_id=meta["task_id"],
+        source=source,
+    )
     receipt = persist_write_receipt(
         store,
         build_write_receipt(
             layer="L2_task_spaces",
             action=source,
             scope="task_space",
-            target=key,
-            target_file=filename,
-            write_mode=mode,
+            target="task_status",
+            target_file="meta.json",
+            write_mode="replace",
             audit_ref=audit,
             task_id=meta["task_id"],
+            bytes_written=len(json.dumps(meta, ensure_ascii=False).encode("utf-8")),
         ),
     )
     return {
@@ -442,6 +455,7 @@ def update_task_status(workspace_file: str | Path, task_id: str, status: str, so
         "title": meta["title"],
         "status": normalized,
         "path": str(task_dir),
+        "write_receipt": receipt,
     }
 
 
@@ -483,6 +497,20 @@ def update_task_artifact(workspace_file: str | Path, task_id: str, name: str, co
         after_bytes=len(next_content.encode("utf-8")),
         task_id=meta["task_id"],
         source=source,
+    )
+    receipt = persist_write_receipt(
+        store,
+        build_write_receipt(
+            layer="L2_task_spaces",
+            action=source,
+            scope="task_space",
+            target=key,
+            target_file=filename,
+            task_id=meta["task_id"],
+            write_mode=mode,
+            audit_ref=audit,
+            bytes_written=len(next_content.encode("utf-8")),
+        ),
     )
     return {
         "workspace": config.workspace,

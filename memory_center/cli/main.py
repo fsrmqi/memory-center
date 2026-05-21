@@ -78,6 +78,7 @@ from memory_center.core.orchestrator import (
     workspace_write_receipts,
     workspace_replay_write_chain,
     memory_eval_write_quality,
+    memory_eval_regression_suite,
     memory_eval_resume,
     memory_eval_handoff,
 )
@@ -445,6 +446,28 @@ def eval_handoff_cmd(
 ):
     """Evaluate handoff packet quality."""
     print(memory_eval_handoff(workspace, target_model=target_model, task_id=task_id, session_id=session_id, intent=intent, limit=limit))
+
+
+@app.command("eval-regression-suite")
+def eval_regression_suite_cmd(
+    workspace: str = typer.Option(...),
+    target_model: str = typer.Option("codex"),
+    task_id: str = typer.Option(""),
+    session_id: str = typer.Option(""),
+    intent: str = typer.Option(""),
+    limit: int = typer.Option(20),
+):
+    """Run the aggregated write/resume/handoff regression suite."""
+    print(
+        memory_eval_regression_suite(
+            workspace,
+            target_model=target_model,
+            task_id=task_id,
+            session_id=session_id,
+            intent=intent,
+            limit=limit,
+        )
+    )
 
 
 @app.command("lookup-hint")

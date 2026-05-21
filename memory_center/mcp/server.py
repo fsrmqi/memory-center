@@ -23,6 +23,7 @@ from memory_center.core.orchestrator import (
     memory_execute_write,
     memory_tool_usage_report,
     memory_eval_write_quality,
+    memory_eval_regression_suite,
     memory_eval_resume,
     memory_eval_handoff,
     memory_write_judge,
@@ -89,9 +90,9 @@ def create_server(workspace_file: str):
     mcp = FastMCP("Memory Center")
 
     @mcp.tool()
-    def workspace_sniff_tool(intent: str, limit: int = 12, auto_sync_mode: str = "balanced"):
+    def workspace_sniff_tool(intent: str, limit: int = 12, auto_sync_mode: str = "balanced", view: str = "compact"):
         """Before any code task, retrieve services, files, rules, topology hints and historical cases."""
-        return workspace_sniff(_WORKSPACE_FILE, intent, limit, auto_sync_mode=auto_sync_mode)
+        return workspace_sniff(_WORKSPACE_FILE, intent, limit, auto_sync_mode=auto_sync_mode, view=view)
 
     @mcp.tool()
     def workspace_sync_sniff_artifacts_tool(
@@ -369,6 +370,18 @@ def create_server(workspace_file: str):
         return memory_eval_handoff(_WORKSPACE_FILE, target_model=target_model, task_id=task_id, session_id=session_id, intent=intent, limit=limit)
 
     @mcp.tool()
+    def memory_eval_regression_suite_tool(target_model: str = "codex", task_id: str = "", session_id: str = "", intent: str = "", limit: int = 20):
+        """Run one aggregated write/resume/handoff regression suite."""
+        return memory_eval_regression_suite(
+            _WORKSPACE_FILE,
+            target_model=target_model,
+            task_id=task_id,
+            session_id=session_id,
+            intent=intent,
+            limit=limit,
+        )
+
+    @mcp.tool()
     def memory_tool_usage_report_tool(limit: int = 200):
         """Summarize recent Memory Center vs external tool usage and lookup adoption."""
         return memory_tool_usage_report(_WORKSPACE_FILE, limit=limit)
@@ -486,14 +499,14 @@ def create_server(workspace_file: str):
         return workspace_handoff_history(_WORKSPACE_FILE, target_model=target_model, task_id=task_id, session_id=session_id, limit=limit)
 
     @mcp.tool()
-    def workspace_continuity_dashboard_tool(intent: str = "", task_id: str = "", session_id: str = "", limit: int = 10):
+    def workspace_continuity_dashboard_tool(intent: str = "", task_id: str = "", session_id: str = "", limit: int = 10, view: str = "compact"):
         """Build one daily continuity dashboard."""
-        return workspace_continuity_dashboard(_WORKSPACE_FILE, intent=intent, task_id=task_id, session_id=session_id, limit=limit)
+        return workspace_continuity_dashboard(_WORKSPACE_FILE, intent=intent, task_id=task_id, session_id=session_id, limit=limit, view=view)
 
     @mcp.tool()
-    def workspace_dashboard_tool(intent: str = "", limit: int = 10):
+    def workspace_dashboard_tool(intent: str = "", limit: int = 10, view: str = "compact"):
         """Build one workspace-level dashboard."""
-        return workspace_dashboard(_WORKSPACE_FILE, intent=intent, limit=limit)
+        return workspace_dashboard(_WORKSPACE_FILE, intent=intent, limit=limit, view=view)
 
     @mcp.tool()
     def workspace_suggest_case_tool(session_id: str):
@@ -527,9 +540,9 @@ def create_server(workspace_file: str):
         return generate_skills(_WORKSPACE_FILE, output_dir)
 
     @mcp.tool()
-    def workspace_status_tool():
+    def workspace_status_tool(view: str = "compact"):
         """Return workspace index and memory status."""
-        return workspace_status(_WORKSPACE_FILE)
+        return workspace_status(_WORKSPACE_FILE, view=view)
 
     @mcp.tool()
     def group_query_tool(group: str, query: str, limit: int = 20):

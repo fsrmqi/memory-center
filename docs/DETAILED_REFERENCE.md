@@ -273,6 +273,7 @@ graph.counts()
 | `intent` | `string` | **必填** | 任务描述文本 |
 | `limit` | `int` | `12` | 候选文件最大数量 |
 | `auto_sync_mode` | `string` | `"balanced"` | 自动同步工件模式（`strict` / `balanced` / `aggressive`） |
+| `view` | `string` | `"full"` | 返回视图（`compact` / `full`）。MCP/HTTP 推荐 `compact`，本地 CLI/调试可用 `full`。 |
 
 **返回字段：**
 
@@ -295,6 +296,13 @@ write_judge_recommendation : dict 写入裁决建议（selected_layer/confidence
 symbolic_context   : dict         符号化上下文摘要
 next_steps         : list[str]    推荐的下一步操作
 ```
+
+`compact` 视图会压缩：
+- `candidate_files`
+- `task_candidates`
+- `symbolic_context`
+- `next_steps`
+- 大型 `related_*` 列表会收敛为计数摘要
 
 #### `workspace_sync_sniff_artifacts_tool`
 
@@ -989,6 +997,10 @@ artifacts/memory-blocks/
 
 #### `workspace_status_tool`
 
+支持 `view=compact|full`：
+- `compact`：适合模型，保留 `index_counts / memory_overview / current_focus_task / continuity_overview`
+- `full`：保留完整 `services / topology / core_memory_blocks / active_task_spaces`
+
 无参数。返回工作区完整状态，包含索引统计、语义索引状态、分层记忆统计、活跃任务空间、当前焦点任务、拓扑。
 
 **返回补充字段：**
@@ -1553,24 +1565,30 @@ memory-center serve-http \
 |------|------|------|--------------|
 | `GET` | `/health` | 健康检查 | — |
 | `GET` | `/workspace/status` | 工作区状态 | `workspace_status_tool` |
-| `POST` | `/workspace/query` | 图感知搜索 | `memory_query_tool` |
-| `POST` | `/workspace/search-code` | 关键词搜索 | `memory_search_code_tool` |
+可附加 `view=compact|full`
+| `GET` | `/workspace/query` | 图感知搜索 | `memory_query_tool` |
+| `GET` | `/workspace/search-code` | 关键词搜索 | `memory_search_code_tool` |
+| `GET` | `/workspace/sniff` | 任务嗅探 | `workspace_sniff_tool` |
 | `GET` | `/workspace/lookup-hint` | 检索路由建议 | `workspace_lookup_hint_tool` |
 | `GET` | `/workspace/symbol` | 符号解析 | `memory_symbol_tool` |
 | `GET` | `/workspace/callers` | 上游调用链 | `memory_callers_tool` |
 | `GET` | `/workspace/callees` | 下游调用链 | `memory_callees_tool` |
-| `POST` | `/workspace/plan-change` | 变更计划 | `memory_plan_change_tool` |
-| `POST` | `/workspace/verify-checklist` | 验证检查清单 | `memory_verify_checklist_tool` |
-| `POST` | `/workspace/detect-changes` | Git 变更检测 | `memory_detect_changes_tool` |
+| `GET` | `/workspace/plan-change` | 变更计划 | `memory_plan_change_tool` |
+| `GET` | `/workspace/verify-checklist` | 验证检查清单 | `memory_verify_checklist_tool` |
+| `GET` | `/workspace/detect-changes` | Git 变更检测 | `memory_detect_changes_tool` |
+| `GET` | `/workspace/eval-regression-suite` | 聚合回归评估 | `memory_eval_regression_suite_tool` |
 | `GET` | `/workspace/tool-usage-report` | 工具使用率与疑似绕过分析 | `memory_tool_usage_report_tool` |
+| `GET` | `/workspace/resume-packet` | 恢复包 | `workspace_resume_packet_tool` |
+| `GET` | `/workspace/continuity-dashboard` | 连续性面板 | `workspace_continuity_dashboard_tool` |
+| `GET` | `/workspace/dashboard` | 工作区总面板 | `workspace_dashboard_tool` |
 | `GET` | `/workspace/artifacts` | 工件列表 | `workspace_artifact_list_tool` |
-| `GET` | `/workspace/artifacts/{name}` | 读取工件 | `workspace_artifact_get_tool` |
-| `PUT` | `/workspace/artifacts/{name}` | 更新工件 | `workspace_artifact_update_tool` |
+| `GET` | `/workspace/artifact?name=...` | 读取工件 | `workspace_artifact_get_tool` |
+| `GET` | `/workspace/artifact/update?name=...&content=...` | 更新工件 | `workspace_artifact_update_tool` |
 | `GET` | `/workspace/task-spaces` | 任务空间列表 | `workspace_task_space_list_tool` |
-| `POST` | `/workspace/task-spaces` | 创建任务空间 | `workspace_task_space_create_tool` |
+| `GET` | `/workspace/task-space/create` | 创建任务空间 | `workspace_task_space_create_tool` |
 | `GET` | `/group/status` | 分组状态 | `group_status_tool` |
-| `POST` | `/group/query` | 分组查询 | `group_query_tool` |
-| `POST` | `/group/impact` | 分组影响分析 | `group_impact_tool` |
+| `GET` | `/group/query` | 分组查询 | `group_query_tool` |
+| `GET` | `/group/impact` | 分组影响分析 | `group_impact_tool` |
 
 ---
 

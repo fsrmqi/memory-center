@@ -63,7 +63,7 @@ def load_context(workspace_file: str | Path):
     return config, store
 
 
-def workspace_status(workspace_file: str | Path) -> Dict[str, Any]:
+def workspace_status(workspace_file: str | Path, view: str = "full") -> Dict[str, Any]:
     config, store = load_context(workspace_file)
     active_tasks = _active_task_summaries(workspace_file, limit=5)
     current_focus_task = dict(active_tasks[0]) if active_tasks else None
@@ -71,7 +71,7 @@ def workspace_status(workspace_file: str | Path) -> Dict[str, Any]:
     core_memory_blocks = _build_core_memory_blocks_status(store)
     if current_focus_task:
         current_focus_task["focus_reason"] = _build_focus_reason(current_focus_task)
-    return {
+    result = {
         "workspace": config.workspace,
         "root": str(config.root_path),
         "services": [s.__dict__ for s in config.services],
@@ -96,6 +96,7 @@ def workspace_status(workspace_file: str | Path) -> Dict[str, Any]:
         "current_focus_task": current_focus_task,
         "topology": store.read_json("service-topology.json", {}),
     }
+    return _compact_workspace_status(result) if _is_compact_view(view) else result
 
 
 def workspace_sniff(
@@ -104,6 +105,7 @@ def workspace_sniff(
     limit: int = 12,
     auto_sync_mode: str = "balanced",
     include_lookup_hint: bool = True,
+    view: str = "full",
 ) -> Dict[str, Any]:
     config, store = load_context(workspace_file)
     file_index = store.read_json("file-index.json", [])
@@ -140,9 +142,24 @@ def workspace_sniff(
         projects=matched_services[:5],
         files=[item.get("path", "") for item in matched_files[:8]],
     )
-    lookup_hint = workspace_lookup_hint(workspace_file, query=intent, intent=intent, limit=min(limit, 6)) if include_lookup_hint else None
+    lookup_hint_context = {
+        "risk_level": sniff_risk_level,
+        "matched_services": matched_services,
+        "candidate_files": matched_files,
+    }
+    lookup_hint = (
+        workspace_lookup_hint(
+            workspace_file,
+            query=intent,
+            intent=intent,
+            limit=min(limit, 6),
+            sniff_context=lookup_hint_context,
+        )
+        if include_lookup_hint
+        else None
+    )
 
-    return {
+    result = {
         "workspace": config.workspace,
         "intent": intent,
         "risk_level": sniff_risk_level,
@@ -189,6 +206,7 @@ def workspace_sniff(
             "长任务建议同时开启 workspace_start_session / workspace_log_session_event，结束后再调用 workspace_sync_case_artifacts 与 workspace_record_case",
         ],
     }
+    return _compact_sniff_result(result) if _is_compact_view(view) else result
 
 
 def workspace_trace(workspace_file: str | Path, entry: str) -> Dict[str, Any]:
@@ -213,6 +231,7 @@ def workspace_lookup_hint(
     query: str,
     intent: str = "",
     limit: int = 8,
+    sniff_context: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
     config, _ = load_context(workspace_file)
     normalized = f"{query} {intent}".strip().lower()
@@ -249,7 +268,10 @@ def workspace_lookup_hint(
         preferred_tools = ["local_search", "memory_search_code_tool"]
         reasons.append("查询更像局部实现细节确认，可先本地搜索；若范围扩大，再切到 Memory Center。")
 
-    sniff = workspace_sniff(workspace_file, query or intent, limit=min(limit, 6), include_lookup_hint=False)
+    if sniff_context is None:
+        sniff = workspace_sniff(workspace_file, query or intent, limit=min(limit, 6), include_lookup_hint=False)
+    else:
+        sniff = sniff_context
     return with_schema(
         "lookup_hint",
         {
@@ -742,6 +764,7 @@ def workspace_resume_packet(
     session_id: str = "",
     intent: str = "",
     limit: int = 10,
+    view: str = "full",
 ) -> Dict[str, Any]:
     config, store = load_context(workspace_file)
     resolved_task_id = task_id.strip()
@@ -780,7 +803,8 @@ def workspace_resume_packet(
         if key in packet:
             filtered[key] = packet[key]
     filtered["resume_rule_profile"] = packet.get("resume_rule_profile", "default")
-    return with_schema("resume_packet", filtered)
+    result = with_schema("resume_packet", filtered)
+    return _compact_resume_packet(result) if _is_compact_view(view) else result
 
 
 def workspace_model_profile(model_name: str, workspace_file: str | Path | None = None) -> Dict[str, Any]:
@@ -867,6 +891,7 @@ def workspace_continuity_dashboard(
     task_id: str = "",
     session_id: str = "",
     limit: int = 10,
+    view: str = "full",
 ) -> Dict[str, Any]:
     status = workspace_status(workspace_file)
     focus_task_id = task_id or (status.get("current_focus_task") or {}).get("task_id", "")
@@ -876,7 +901,7 @@ def workspace_continuity_dashboard(
     receipts = workspace_write_receipts(workspace_file, task_id=focus_task_id, session_id=session_id, limit=limit)
     handoffs = workspace_handoff_history(workspace_file, task_id=focus_task_id, session_id=session_id, limit=limit)
     evidence = workspace_recent_evidence(workspace_file, task_id=focus_task_id, session_id=session_id, limit=limit)
-    return with_schema(
+    result = with_schema(
         "workspace_continuity_dashboard",
         {
         "workspace": status.get("workspace", ""),
@@ -890,12 +915,14 @@ def workspace_continuity_dashboard(
         "recent_evidence": evidence.get("evidence", [])[-5:],
         },
     )
+    return _compact_continuity_dashboard(result) if _is_compact_view(view) else result
 
 
 def workspace_dashboard(
     workspace_file: str | Path,
     intent: str = "",
     limit: int = 10,
+    view: str = "full",
 ) -> Dict[str, Any]:
     status = workspace_status(workspace_file)
     active_tasks = status.get("active_task_spaces", [])[: max(limit, 1)]
@@ -941,7 +968,7 @@ def workspace_dashboard(
         limit=min(limit, 10),
     )
     usage_report = memory_tool_usage_report(workspace_file, limit=max(limit * 10, 50))
-    return with_schema(
+    result = with_schema(
         "workspace_dashboard",
         {
         "workspace": status.get("workspace", ""),
@@ -964,6 +991,7 @@ def workspace_dashboard(
         },
         },
     )
+    return _compact_workspace_dashboard(result) if _is_compact_view(view) else result
 
 
 def workspace_handoff_history(
@@ -1939,6 +1967,179 @@ def _build_focus_reason(task: Dict[str, Any]) -> str:
     if updated_at:
         parts.append(f"最近更新时间 {updated_at}")
     return "；".join(parts) if parts else "按任务状态与最近活动综合排序。"
+
+
+def _is_compact_view(view: str) -> bool:
+    return (view or "").strip().lower() == "compact"
+
+
+def _compact_task_rows(rows: List[Dict[str, Any]], limit: int = 5) -> List[Dict[str, Any]]:
+    return [
+        {
+            "task_id": row.get("task_id", ""),
+            "title": row.get("title", ""),
+            "status": row.get("status", ""),
+            "priority": row.get("priority", ""),
+            "updated_at": row.get("updated_at", ""),
+            "summary_preview": row.get("summary_preview", ""),
+        }
+        for row in rows[:limit]
+    ]
+
+
+def _compact_sniff_result(result: Dict[str, Any]) -> Dict[str, Any]:
+    symbolic = result.get("symbolic_context", {}) or {}
+    focus_entities = symbolic.get("focus_entities", {}) or {}
+    return {
+        "workspace": result.get("workspace", ""),
+        "intent": result.get("intent", ""),
+        "risk_level": result.get("risk_level", ""),
+        "matched_services": result.get("matched_services", [])[:5],
+        "candidate_files": [
+            {"project": item.get("project", ""), "path": item.get("path", ""), "score": item.get("score", 0)}
+            for item in result.get("candidate_files", [])[:5]
+        ],
+        "related_summary": {
+            "api_count": len(result.get("related_apis", []) or []),
+            "feign_count": len(result.get("related_feigns", []) or []),
+            "mq_count": len(result.get("related_mq", []) or []),
+            "rule_count": len(result.get("related_rules", []) or []),
+            "case_count": len(result.get("historical_cases", []) or []),
+        },
+        "task_candidates": [
+            {
+                "task_id": item.get("task_id", ""),
+                "title": item.get("title", ""),
+                "status": item.get("status", ""),
+                "score": item.get("score", 0),
+            }
+            for item in result.get("task_candidates", [])[:2]
+        ],
+        "source_refs": result.get("source_refs", [])[:5],
+        "resolved_task": result.get("resolved_task", {}),
+        "auto_sync_recommendation": result.get("auto_sync_recommendation", {}),
+        "write_judge_recommendation": result.get("write_judge_recommendation", {}),
+        "lookup_hint": result.get("lookup_hint", {}),
+        "symbolic_context": {
+            "flow_flags": symbolic.get("flow_flags", {}),
+            "flow_mermaid": symbolic.get("flow_mermaid", ""),
+            "focus_entities": {
+                "services": focus_entities.get("services", [])[:3],
+                "files": focus_entities.get("files", [])[:4],
+                "apis": focus_entities.get("apis", [])[:3],
+                "feigns": focus_entities.get("feigns", [])[:3],
+            },
+        },
+        "next_steps": result.get("next_steps", [])[:4],
+    }
+
+
+def _compact_workspace_status(result: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "workspace": result.get("workspace", ""),
+        "root": result.get("root", ""),
+        "index_counts": result.get("index_counts", {}),
+        "semantic_index": result.get("semantic_index", {}),
+        "memory_layers": result.get("memory_layers", {}),
+        "memory_overview": result.get("memory_overview", {}),
+        "write_receipts_overview": {
+            "total": (result.get("write_receipts_overview", {}) or {}).get("total", 0),
+            "layer_counts": (result.get("write_receipts_overview", {}) or {}).get("layer_counts", {}),
+            "action_counts": (result.get("write_receipts_overview", {}) or {}).get("action_counts", {}),
+        },
+        "continuity_overview": result.get("continuity_overview", {}),
+        "core_memory_blocks": {
+            "block_count": (result.get("core_memory_blocks", {}) or {}).get("block_count", 0),
+            "filled_count": (result.get("core_memory_blocks", {}) or {}).get("filled_count", 0),
+        },
+        "active_task_spaces": _compact_task_rows(result.get("active_task_spaces", []), limit=5),
+        "current_focus_task": result.get("current_focus_task", {}),
+    }
+
+
+def _compact_resume_packet(result: Dict[str, Any]) -> Dict[str, Any]:
+    return with_schema(
+        "resume_packet",
+        {
+            "workspace": result.get("workspace", ""),
+            "task_id": result.get("task_id", ""),
+            "task_title": result.get("task_title", ""),
+            "task_status": result.get("task_status", ""),
+            "current_phase": result.get("current_phase", ""),
+            "current_summary": _trim_summary(str(result.get("current_summary", "") or "")),
+            "next_recommended_actions": result.get("next_recommended_actions", [])[:3],
+            "unresolved_items": result.get("unresolved_items", [])[:3],
+            "verification_pending": result.get("verification_pending", False),
+            "resume_rule_profile": result.get("resume_rule_profile", ""),
+        },
+    )
+
+
+def _compact_continuity_dashboard(result: Dict[str, Any]) -> Dict[str, Any]:
+    resume_packet = result.get("resume_packet", {}) or {}
+    return with_schema(
+        "workspace_continuity_dashboard",
+        {
+            "workspace": result.get("workspace", ""),
+            "focus_task": result.get("focus_task", {}),
+            "continuity_overview": result.get("continuity_overview", {}),
+            "resume_packet": {
+                "task_id": resume_packet.get("task_id", ""),
+                "task_title": resume_packet.get("task_title", ""),
+                "current_phase": resume_packet.get("current_phase", ""),
+                "resume_rule_profile": resume_packet.get("resume_rule_profile", ""),
+                "next_recommended_actions": resume_packet.get("next_recommended_actions", [])[:3],
+                "unresolved_items": resume_packet.get("unresolved_items", [])[:3],
+            },
+            "next_actions": result.get("next_actions", [])[:3],
+            "unresolved_items": result.get("unresolved_items", [])[:3],
+            "recent_receipts": result.get("recent_receipts", [])[:3],
+            "recent_handoffs": result.get("recent_handoffs", [])[:3],
+            "recent_evidence": result.get("recent_evidence", [])[:3],
+        },
+    )
+
+
+def _compact_workspace_dashboard(result: Dict[str, Any]) -> Dict[str, Any]:
+    focus_dashboard = result.get("focus_dashboard", {}) or {}
+    focus_resume_eval = result.get("focus_resume_eval", {}) or {}
+    tool_usage_report = result.get("tool_usage_report", {}) or {}
+    write_receipts_overview = result.get("write_receipts_overview", {}) or {}
+    return with_schema(
+        "workspace_dashboard",
+        {
+            "workspace": result.get("workspace", ""),
+            "focus_task": result.get("focus_task", {}),
+            "continuity_overview": result.get("continuity_overview", {}),
+            "write_receipts_overview": {
+                "total": write_receipts_overview.get("total", 0),
+                "layer_counts": write_receipts_overview.get("layer_counts", {}),
+                "action_counts": write_receipts_overview.get("action_counts", {}),
+            },
+            "active_tasks": _compact_task_rows(result.get("active_tasks", []), limit=5),
+            "resumable_tasks": _compact_task_rows(result.get("resumable_tasks", []), limit=5),
+            "blocked_tasks": _compact_task_rows(result.get("blocked_tasks", []), limit=5),
+            "low_quality_tasks": _compact_task_rows(result.get("low_quality_tasks", []), limit=5),
+            "recent_receipts": result.get("recent_receipts", [])[:3],
+            "recent_handoffs": result.get("recent_handoffs", [])[:3],
+            "focus_dashboard": {
+                "focus_task": focus_dashboard.get("focus_task", {}),
+                "next_actions": focus_dashboard.get("next_actions", [])[:3],
+                "unresolved_items": focus_dashboard.get("unresolved_items", [])[:3],
+            },
+            "focus_resume_eval": {
+                "quality": focus_resume_eval.get("quality", ""),
+                "score": focus_resume_eval.get("score", 0),
+                "findings": focus_resume_eval.get("findings", [])[:3],
+            },
+            "tool_usage_report": {
+                "summary": tool_usage_report.get("summary", {}),
+                "lookup_tool_counts": tool_usage_report.get("lookup_tool_counts", {}),
+                "suspected_bypass": tool_usage_report.get("suspected_bypass", [])[:3],
+                "adoption_hints": tool_usage_report.get("adoption_hints", [])[:2],
+            },
+        },
+    )
 
 
 def _build_session_overview(events: List[Dict[str, Any]]) -> Dict[str, Any]:

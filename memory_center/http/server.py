@@ -14,6 +14,7 @@ from memory_center.core.orchestrator import (
     memory_callees,
     memory_execute_write,
     memory_eval_write_quality,
+    memory_eval_regression_suite,
     memory_eval_resume,
     memory_eval_handoff,
     memory_tool_usage_report,
@@ -106,7 +107,14 @@ def _route_request(path: str, params: dict, default_workspace: str | None) -> di
         return {"ok": True, "default_workspace": default_workspace}
     if path == "/workspace/status":
         workspace = _require_workspace(params, default_workspace)
-        return workspace_status(workspace)
+        return workspace_status(workspace, view=params.get("view", ["compact"])[0])
+    if path == "/workspace/sniff":
+        workspace = _require_workspace(params, default_workspace)
+        intent = _require_one(params, "intent")
+        limit = _parse_int(params, "limit", 12)
+        auto_sync_mode = params.get("auto_sync_mode", ["balanced"])[0]
+        view = params.get("view", ["compact"])[0]
+        return workspace_sniff(workspace, intent, limit=limit, auto_sync_mode=auto_sync_mode, view=view)
     if path == "/workspace/artifacts":
         workspace = _require_workspace(params, default_workspace)
         return list_artifacts(workspace)
@@ -335,6 +343,16 @@ def _route_request(path: str, params: dict, default_workspace: str | None) -> di
             intent=params.get("intent", [""])[0],
             limit=_parse_int(params, "limit", 20),
         )
+    if path == "/workspace/eval-regression-suite":
+        workspace = _require_workspace(params, default_workspace)
+        return memory_eval_regression_suite(
+            workspace,
+            target_model=params.get("target_model", ["codex"])[0],
+            task_id=params.get("task_id", [""])[0],
+            session_id=params.get("session_id", [""])[0],
+            intent=params.get("intent", [""])[0],
+            limit=_parse_int(params, "limit", 20),
+        )
     if path == "/workspace/tool-usage-report":
         workspace = _require_workspace(params, default_workspace)
         return memory_tool_usage_report(
@@ -387,6 +405,7 @@ def _route_request(path: str, params: dict, default_workspace: str | None) -> di
             session_id=params.get("session_id", [""])[0],
             intent=params.get("intent", [""])[0],
             limit=_parse_int(params, "limit", 10),
+            view=params.get("view", ["compact"])[0],
         )
     if path == "/workspace/model-profile":
         return workspace_model_profile(_require_one(params, "model_name"))
@@ -417,6 +436,7 @@ def _route_request(path: str, params: dict, default_workspace: str | None) -> di
             task_id=params.get("task_id", [""])[0],
             session_id=params.get("session_id", [""])[0],
             limit=_parse_int(params, "limit", 10),
+            view=params.get("view", ["compact"])[0],
         )
     if path == "/workspace/dashboard":
         workspace = _require_workspace(params, default_workspace)
@@ -424,6 +444,7 @@ def _route_request(path: str, params: dict, default_workspace: str | None) -> di
             workspace,
             intent=params.get("intent", [""])[0],
             limit=_parse_int(params, "limit", 10),
+            view=params.get("view", ["compact"])[0],
         )
     if path == "/workspace/resume-context":
         workspace = _require_workspace(params, default_workspace)

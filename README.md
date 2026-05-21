@@ -622,9 +622,17 @@ Resume and handoff packets can now be evaluated through `memory_eval_resume` and
 
 `memory_tool_usage_report` 会汇总近期 Memory Center 工具使用率，并标记那些“看起来在找类/符号/调用链，但没有走 Memory Center”的疑似绕过场景。
 
+To reduce model-side token usage, `workspace_sniff`, `workspace_status`, `workspace_resume_packet`, `workspace_continuity_dashboard`, and `workspace_dashboard` now support `view=compact|full`. MCP defaults to `compact`; use `full` for local debugging or manual inspection.
+
+为了降低模型侧 token 消耗，`workspace_sniff`、`workspace_status`、`workspace_resume_packet`、`workspace_continuity_dashboard`、`workspace_dashboard` 现在都支持 `view=compact|full`。MCP 默认使用 `compact`；本地调试或人工排查时再切 `full`。
+
 For fixed regressions, `memory_eval_regression_suite` now aggregates write/resume/handoff evals into one suite-level score.
 
 为了做固定回归，`memory_eval_regression_suite` 现在会把 write/resume/handoff 三类评估聚合成一份 suite 级结果。
+
+It is now exposed through CLI, MCP, and HTTP as `eval-regression-suite`, `memory_eval_regression_suite_tool`, and `/workspace/eval-regression-suite`.
+
+它现在已经通过 CLI、MCP、HTTP 三条入口暴露出来：`eval-regression-suite`、`memory_eval_regression_suite_tool`、`/workspace/eval-regression-suite`。
 
 Under the hood, session events, write receipts and handoff history are now converging toward one shared timeline substrate, so replay, dashboard, evidence lookup and eval can reuse the same chronological model.
 
