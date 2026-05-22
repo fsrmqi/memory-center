@@ -22,4 +22,3 @@ build/
 .memory-center/index/
 .memory-center/memory/
 .memory-center/graph/
-/examples/spring-cloud-demo/.memory-center/*
