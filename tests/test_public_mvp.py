@@ -166,6 +166,51 @@ def test_workspace_supports_absolute_service_paths_across_multiple_roots(tmp_pat
     assert report["ok"] is True
 
 
+def test_reindex_workspace_supports_project_and_path_filters(tmp_path: Path):
+    import shutil
+
+    source = Path("examples/spring-cloud-demo")
+    target = tmp_path / "incremental-index-demo"
+    shutil.copytree(source, target)
+    workspace = target / ".memory-center" / "workspace.yaml"
+    lines = workspace.read_text(encoding="utf-8").splitlines()
+    lines = [f"root: {target.as_posix()}" if line.startswith("root:") else line for line in lines]
+    workspace.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    config = load_workspace_config(workspace)
+    store = WorkspaceStore(workspace)
+    counts_before = reindex_workspace(config, store)
+
+    added_file = target / "task-service" / "src" / "main" / "java" / "com" / "example" / "task" / "IncrementalIndexSmoke.java"
+    added_file.parent.mkdir(parents=True, exist_ok=True)
+    added_file.write_text(
+        "package com.example.task;\n\npublic class IncrementalIndexSmoke {\n    public void ping() {}\n}\n",
+        encoding="utf-8",
+    )
+
+    counts_after_project = reindex_workspace(config, store, projects=["task-service"])
+    file_index = store.read_json("file-index.json", [])
+    symbol_index = store.read_json("java-symbol-index.json", [])
+    assert counts_after_project["mode"] == "partial"
+    assert "task-service" in counts_after_project["filtered_projects"]
+    assert any(item.get("path", "").endswith("IncrementalIndexSmoke.java") for item in file_index)
+    assert any("IncrementalIndexSmoke" in item.get("classes", []) for item in symbol_index)
+    assert counts_after_project["files"] >= counts_before["files"] + 1
+
+    added_file_two = target / "task-service" / "src" / "main" / "java" / "com" / "example" / "task" / "IncrementalPathOnly.java"
+    added_file_two.write_text(
+        "package com.example.task;\n\npublic class IncrementalPathOnly {}\n",
+        encoding="utf-8",
+    )
+
+    logical_path = "task-service/src/main/java/com/example/task/IncrementalPathOnly.java"
+    counts_after_path = reindex_workspace(config, store, paths=[logical_path])
+    file_index_after_path = store.read_json("file-index.json", [])
+    assert counts_after_path["mode"] == "partial"
+    assert logical_path in counts_after_path["filtered_paths"]
+    assert any(item.get("path", "") == logical_path for item in file_index_after_path)
+
+
 def test_record_case_cli_writes_history(tmp_path: Path):
     source = Path("examples/spring-cloud-demo")
     target = tmp_path / "record-case-demo"

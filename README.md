@@ -283,6 +283,40 @@ memory-center reindex \
   --workspace /path/to/spring-cloud-root/.memory-center/workspace.yaml
 ```
 
+For large workspaces, partial rebuilds are now supported:
+
+```bash
+memory-center reindex \
+  --workspace /path/to/.memory-center/workspace.yaml \
+  --project task-service
+
+memory-center reindex \
+  --workspace /path/to/.memory-center/workspace.yaml \
+  --path task-service/src/main/java/com/example/task/ArticleMoveService.java
+
+memory-center reindex \
+  --workspace /path/to/.memory-center/workspace.yaml \
+  --changed-only \
+  --scope all
+```
+
+对于大 workspace，现在也支持局部重建：
+
+```bash
+memory-center reindex \
+  --workspace /path/to/.memory-center/workspace.yaml \
+  --project task-service
+
+memory-center reindex \
+  --workspace /path/to/.memory-center/workspace.yaml \
+  --path task-service/src/main/java/com/example/task/ArticleMoveService.java
+
+memory-center reindex \
+  --workspace /path/to/.memory-center/workspace.yaml \
+  --changed-only \
+  --scope all
+```
+
 This generates:
 
 ```text
@@ -502,6 +536,41 @@ memory-center detect-changes \
 ```bash
 memory-center generate-wiki --workspace examples/spring-cloud-demo/.memory-center/workspace.yaml
 memory-center generate-skills --workspace examples/spring-cloud-demo/.memory-center/workspace.yaml
+```
+
+### 8.1 Workflow shortcuts / 一键工作流命令
+
+```bash
+memory-center work-start \
+  --workspace /path/to/.memory-center/workspace.yaml \
+  --intent "ArticleFeignClient 调用链"
+
+memory-center work-log \
+  --workspace /path/to/.memory-center/workspace.yaml \
+  --session-id session-xxx \
+  --event-type note \
+  --payload '{"note":"补充风险点"}'
+
+memory-center work-sync \
+  --workspace /path/to/.memory-center/workspace.yaml \
+  --intent "ArticleFeignClient 调用链"
+
+memory-center work-resume \
+  --workspace /path/to/.memory-center/workspace.yaml \
+  --task-id some-task
+
+memory-center work-handoff \
+  --workspace /path/to/.memory-center/workspace.yaml \
+  --target-model glm-4 \
+  --task-id some-task
+
+memory-center work-close \
+  --workspace /path/to/.memory-center/workspace.yaml \
+  --session-id session-xxx \
+  --outcome "done"
+
+memory-center work-health \
+  --workspace /path/to/.memory-center/workspace.yaml
 ```
 
 ### 9. Real-world `ucap-all` examples / `ucap-all` 真实路径示例

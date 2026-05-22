@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Any, Dict, Iterable, List
+from typing import Any, Dict, Iterable, List, Sequence
 
 import yaml
 
@@ -20,8 +20,25 @@ IGNORED_DIRS = {
 }
 
 
-def reindex_workspace(config: WorkspaceConfig, store: WorkspaceStore) -> Dict[str, int]:
+def reindex_workspace(
+    config: WorkspaceConfig,
+    store: WorkspaceStore,
+    *,
+    projects: Sequence[str] | None = None,
+    paths: Sequence[str] | None = None,
+) -> Dict[str, int]:
     """Rebuild deterministic indexes and the local evidence graph."""
+    project_filter = {item.strip() for item in (projects or []) if item and item.strip()}
+    path_filters = [item.strip() for item in (paths or []) if item and item.strip()]
+    partial = bool(project_filter or path_filters)
+
+    old_file_index: List[Dict[str, Any]] = store.read_json("file-index.json", [])
+    old_symbol_index: List[Dict[str, Any]] = store.read_json("java-symbol-index.json", [])
+    old_api_index: List[Dict[str, Any]] = store.read_json("api-index.json", [])
+    old_feign_index: List[Dict[str, Any]] = store.read_json("feign-index.json", [])
+    old_mq_index: List[Dict[str, Any]] = store.read_json("mq-index.json", [])
+    old_config_index: List[Dict[str, Any]] = store.read_json("config-index.json", [])
+
     file_index: List[Dict[str, Any]] = []
     symbol_index: List[Dict[str, Any]] = []
     api_index: List[Dict[str, Any]] = []
@@ -30,10 +47,14 @@ def reindex_workspace(config: WorkspaceConfig, store: WorkspaceStore) -> Dict[st
     config_index: List[Dict[str, Any]] = []
 
     for svc in config.services:
+        if project_filter and svc.name not in project_filter:
+            continue
         service_root = config.resolve_service_path(svc)
         if not service_root.exists():
             continue
         for path in walk_project(service_root):
+            if path_filters and not _path_matches_filters(config, svc, path, path_filters):
+                continue
             rel = config.service_logical_file_path(svc, path)
             file_index.append(
                 {
@@ -55,27 +76,102 @@ def reindex_workspace(config: WorkspaceConfig, store: WorkspaceStore) -> Dict[st
             elif path.name in CONFIG_NAMES:
                 config_index.append({"project": svc.name, "path": rel, "values": parse_yaml_config(path)})
 
-    topology = build_topology(config, feign_index, api_index, mq_index, config_index)
-    store.write_json("file-index.json", file_index)
-    store.write_json("java-symbol-index.json", symbol_index)
-    store.write_json("api-index.json", api_index)
-    store.write_json("feign-index.json", feign_index)
-    store.write_json("mq-index.json", mq_index)
-    store.write_json("config-index.json", config_index)
+    if partial:
+        merged_file_index = _merge_index_rows(old_file_index, file_index, project_filter, path_filters)
+        merged_symbol_index = _merge_index_rows(old_symbol_index, symbol_index, project_filter, path_filters, path_key="file")
+        merged_api_index = _merge_index_rows(old_api_index, api_index, project_filter, path_filters, path_key="file")
+        merged_feign_index = _merge_index_rows(old_feign_index, feign_index, project_filter, path_filters, path_key="file")
+        merged_mq_index = _merge_index_rows(old_mq_index, mq_index, project_filter, path_filters, path_key="file")
+        merged_config_index = _merge_index_rows(old_config_index, config_index, project_filter, path_filters)
+    else:
+        merged_file_index = file_index
+        merged_symbol_index = symbol_index
+        merged_api_index = api_index
+        merged_feign_index = feign_index
+        merged_mq_index = mq_index
+        merged_config_index = config_index
+
+    topology = build_topology(config, merged_feign_index, merged_api_index, merged_mq_index, merged_config_index)
+    store.write_json("file-index.json", merged_file_index)
+    store.write_json("java-symbol-index.json", merged_symbol_index)
+    store.write_json("api-index.json", merged_api_index)
+    store.write_json("feign-index.json", merged_feign_index)
+    store.write_json("mq-index.json", merged_mq_index)
+    store.write_json("config-index.json", merged_config_index)
     store.write_json("service-topology.json", topology)
     graph_counts = build_graph_store(config, store)
     semantic_counts = build_workspace_semantic_index(store.workspace_file)
     return {
-        "files": len(file_index),
-        "symbols": len(symbol_index),
-        "apis": len(api_index),
-        "feigns": len(feign_index),
-        "mq": len(mq_index),
-        "configs": len(config_index),
+        "mode": "partial" if partial else "full",
+        "filtered_projects": sorted(project_filter),
+        "filtered_paths": path_filters,
+        "scanned_files": len(file_index),
+        "files": len(merged_file_index),
+        "symbols": len(merged_symbol_index),
+        "apis": len(merged_api_index),
+        "feigns": len(merged_feign_index),
+        "mq": len(merged_mq_index),
+        "configs": len(merged_config_index),
         "graph_nodes": graph_counts.get("nodes", 0),
         "graph_edges": graph_counts.get("edges", 0),
         "semantic_docs": semantic_counts.get("doc_count", 0),
     }
+
+
+def _path_matches_filters(config: WorkspaceConfig, svc, path: Path, path_filters: Sequence[str]) -> bool:
+    logical = config.service_logical_file_path(svc, path).replace("\\", "/")
+    absolute = str(path.resolve()).replace("\\", "/")
+    candidates = {logical, absolute}
+    for raw_filter in path_filters:
+        normalized = raw_filter.replace("\\", "/").strip("/")
+        normalized_abs = raw_filter.replace("\\", "/")
+        for candidate in candidates:
+            probe = candidate.strip("/")
+            if probe == normalized or probe.startswith(normalized + "/"):
+                return True
+            if candidate == normalized_abs or candidate.startswith(normalized_abs.rstrip("/") + "/"):
+                return True
+    return False
+
+
+def _row_matches_scope(
+    row: Dict[str, Any],
+    project_filter: set[str],
+    path_filters: Sequence[str],
+    *,
+    path_key: str = "path",
+) -> bool:
+    project = str(row.get("project", "") or "")
+    if project_filter and project in project_filter:
+        return True
+    if not path_filters:
+        return False
+    path_value = str(row.get(path_key, "") or row.get("path", "") or "")
+    abs_path = str(row.get("abs_path", "") or "")
+    for raw_filter in path_filters:
+        normalized = raw_filter.replace("\\", "/").strip("/")
+        normalized_abs = raw_filter.replace("\\", "/")
+        probe = path_value.replace("\\", "/").strip("/")
+        if probe == normalized or probe.startswith(normalized + "/"):
+            return True
+        if abs_path and (abs_path == normalized_abs or abs_path.startswith(normalized_abs.rstrip("/") + "/")):
+            return True
+    return False
+
+
+def _merge_index_rows(
+    existing: List[Dict[str, Any]],
+    refreshed: List[Dict[str, Any]],
+    project_filter: set[str],
+    path_filters: Sequence[str],
+    *,
+    path_key: str = "path",
+) -> List[Dict[str, Any]]:
+    kept = [
+        row for row in existing
+        if not _row_matches_scope(row, project_filter, path_filters, path_key=path_key)
+    ]
+    return kept + refreshed
 
 
 def walk_project(root: Path) -> Iterable[Path]:

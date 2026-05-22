@@ -128,11 +128,22 @@ def init(workspace_root: str = typer.Option(...), name: str = typer.Option("dev-
 
 
 @app.command()
-def reindex(workspace: str = typer.Option(...)):
+def reindex(
+    workspace: str = typer.Option(...),
+    project: Optional[List[str]] = typer.Option(None, help="Only rebuild indexes for these projects."),
+    path: Optional[List[str]] = typer.Option(None, help="Only rebuild indexes for these logical or absolute paths."),
+    changed_only: bool = typer.Option(False, help="Use changed files from memory-detect-changes as reindex scope."),
+    scope: str = typer.Option("staged", help="When --changed-only is set: staged|head|all"),
+):
     """Rebuild file, symbol, API, Feign, MQ, config and topology indexes."""
     config = load_workspace_config(workspace)
     store = WorkspaceStore(workspace)
-    counts = reindex_workspace(config, store)
+    selected_paths = list(path or [])
+    if changed_only:
+        change_scope = "unstaged" if scope == "all" else scope
+        changed = memory_detect_changes(workspace, change_scope)
+        selected_paths.extend(changed.get("changed_files", []))
+    counts = reindex_workspace(config, store, projects=project, paths=selected_paths)
     ensure_default_rules(store)
     ensure_default_artifacts(workspace)
     write_agent_instructions(store, config.root_path)
@@ -770,6 +781,198 @@ def workspace_dashboard_cmd(
 ):
     """Build one workspace-level dashboard for daily work."""
     print(workspace_dashboard(workspace, intent=intent, limit=limit, view=view, budget=budget))
+
+
+@app.command("work-start")
+def work_start_cmd(
+    workspace: str = typer.Option(...),
+    intent: str = typer.Option(...),
+    limit: int = typer.Option(8),
+    auto_sync_mode: str = typer.Option("balanced"),
+    sync_task_space: bool = typer.Option(True, help="Automatically sync context/plan when sniff recommends it or resolves a task."),
+    budget: str = typer.Option("medium", help="small|medium|large"),
+):
+    """Start one task workflow: sniff, optional sync, then start session."""
+    sniff_result = workspace_sniff(workspace, intent, limit=limit, auto_sync_mode=auto_sync_mode, view="compact", budget=budget)
+    synced = None
+    resolved_task = sniff_result.get("resolved_task", {}) or {}
+    auto_sync = sniff_result.get("auto_sync_recommendation", {}) or {}
+    if sync_task_space and (auto_sync.get("recommended") or resolved_task.get("task_id")):
+        synced = workspace_sync_sniff_to_artifacts(
+            workspace,
+            intent,
+            limit=limit,
+            task_id=str(resolved_task.get("task_id", "") or ""),
+            title=str(resolved_task.get("title", "") or ""),
+            auto_sync_mode=auto_sync_mode,
+        )
+    session = workspace_start_session(workspace, intent)
+    print(
+        {
+            "workflow": "work-start",
+            "workspace": workspace,
+            "sniff": sniff_result,
+            "sync_sniff": synced,
+            "session": session,
+        }
+    )
+
+
+@app.command("work-log")
+def work_log_cmd(
+    workspace: str = typer.Option(...),
+    session_id: str = typer.Option(...),
+    event_type: str = typer.Option("note"),
+    payload: str = typer.Option("{}", help="JSON payload or plain text."),
+):
+    """Append one workflow event into session memory."""
+    parsed_payload = _parse_event_payload(payload)
+    print({"workflow": "work-log", "result": workspace_log_session_event(workspace, session_id, event_type, parsed_payload)})
+
+
+@app.command("work-sync")
+def work_sync_cmd(
+    workspace: str = typer.Option(...),
+    intent: str = typer.Option(""),
+    session_id: str = typer.Option(""),
+    task_id: str = typer.Option(""),
+    title: str = typer.Option(""),
+    limit: int = typer.Option(8),
+    auto_sync_mode: str = typer.Option("balanced"),
+):
+    """Sync current task context or case back into task space."""
+    if session_id.strip():
+        print(
+            {
+                "workflow": "work-sync",
+                "mode": "case",
+                "result": workspace_sync_case_to_artifacts(
+                    workspace,
+                    session_id,
+                    task_id=task_id,
+                    title=title,
+                    auto_sync_mode=auto_sync_mode,
+                ),
+            }
+        )
+        return
+    if intent.strip():
+        print(
+            {
+                "workflow": "work-sync",
+                "mode": "sniff",
+                "result": workspace_sync_sniff_to_artifacts(
+                    workspace,
+                    intent,
+                    limit=limit,
+                    task_id=task_id,
+                    title=title,
+                    auto_sync_mode=auto_sync_mode,
+                ),
+            }
+        )
+        return
+    raise typer.BadParameter("work-sync requires either --session-id or --intent")
+
+
+@app.command("work-resume")
+def work_resume_cmd(
+    workspace: str = typer.Option(...),
+    task_id: str = typer.Option(""),
+    session_id: str = typer.Option(""),
+    intent: str = typer.Option(""),
+    limit: int = typer.Option(8),
+    budget: str = typer.Option("medium", help="small|medium|large"),
+):
+    """Resume one task with compact packet, next actions, and unresolved items."""
+    print(
+        {
+            "workflow": "work-resume",
+            "resume_packet": workspace_resume_packet(workspace, task_id=task_id, session_id=session_id, intent=intent, limit=limit, view="compact", budget=budget),
+            "next_actions": workspace_next_actions(workspace, task_id=task_id, session_id=session_id, intent=intent, limit=limit),
+            "unresolved_items": workspace_unresolved_items(workspace, task_id=task_id, session_id=session_id, intent=intent, limit=limit),
+            "recent_evidence": workspace_recent_evidence(workspace, task_id=task_id, session_id=session_id, limit=min(limit, 5), budget=budget),
+        }
+    )
+
+
+@app.command("work-handoff")
+def work_handoff_cmd(
+    workspace: str = typer.Option(...),
+    target_model: str = typer.Option(...),
+    task_id: str = typer.Option(""),
+    session_id: str = typer.Option(""),
+    intent: str = typer.Option(""),
+    limit: int = typer.Option(8),
+    budget: str = typer.Option("medium", help="small|medium|large"),
+):
+    """Build one compact handoff package for the target model."""
+    print(
+        {
+            "workflow": "work-handoff",
+            "handoff_packet": workspace_handoff_packet(workspace, target_model=target_model, task_id=task_id, session_id=session_id, intent=intent, limit=limit),
+            "recent_evidence": workspace_recent_evidence(workspace, task_id=task_id, session_id=session_id, limit=min(limit, 5), budget=budget),
+            "tool_usage_report": memory_tool_usage_report(workspace, limit=50),
+        }
+    )
+
+
+@app.command("work-close")
+def work_close_cmd(
+    workspace: str = typer.Option(...),
+    session_id: str = typer.Option(...),
+    outcome: str = typer.Option(""),
+    task_id: str = typer.Option(""),
+    title: str = typer.Option(""),
+    auto_sync_mode: str = typer.Option("balanced"),
+    record_case: bool = typer.Option(True, help="Auto record the suggested case after syncing."),
+    verified_by: Optional[List[str]] = typer.Option(None),
+):
+    """Close one task workflow: end session, sync case, optionally record case."""
+    ended = workspace_end_session(workspace, session_id, outcome=outcome, verified_by=verified_by)
+    synced = workspace_sync_case_to_artifacts(workspace, session_id, task_id=task_id, title=title, auto_sync_mode=auto_sync_mode)
+    draft = workspace_suggest_case(workspace, session_id)
+    recorded = None
+    case = draft.get("draft_case", {}) if draft.get("found") else {}
+    if record_case and case.get("projects") and case.get("files"):
+        recorded = workspace_record_case(
+            workspace,
+            case.get("task", outcome or "work-close"),
+            case.get("projects", []),
+            case.get("files", []),
+            case.get("flow", ""),
+            case.get("risk_points", []),
+            verified_by=case.get("verified_by", []) or verified_by,
+            source_session_id=session_id,
+            source_task_id=task_id,
+        )
+    print(
+        {
+            "workflow": "work-close",
+            "ended": ended,
+            "sync_case": synced,
+            "suggested_case": draft,
+            "record_case": recorded,
+        }
+    )
+
+
+@app.command("work-health")
+def work_health_cmd(
+    workspace: str = typer.Option(...),
+    intent: str = typer.Option("Memory Center work health"),
+    target_model: str = typer.Option("codex"),
+    limit: int = typer.Option(5),
+):
+    """Run one compact health check for workflow readiness."""
+    print(
+        {
+            "workflow": "work-health",
+            "status": workspace_status(workspace, view="compact", budget="medium"),
+            "tool_usage_report": memory_tool_usage_report(workspace, limit=50),
+            "regression_suite": memory_eval_regression_suite(workspace, intent=intent, target_model=target_model, limit=limit),
+        }
+    )
 
 
 @app.command("export-workspace-dashboard")

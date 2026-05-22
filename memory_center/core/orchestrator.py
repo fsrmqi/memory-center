@@ -3061,22 +3061,29 @@ def memory_detect_changes(workspace_file: str | Path, scope: str = "staged") -> 
         repo = config.resolve_service_path(svc)
         if not (repo / ".git").exists():
             continue
-        cmd = ["git", "diff", "--name-only"]
+        commands = [["git", "diff", "--name-only"]]
         if scope == "staged":
-            cmd = ["git", "diff", "--name-only", "--cached"]
+            commands = [["git", "diff", "--name-only", "--cached"]]
         elif scope == "head":
-            cmd = ["git", "diff", "--name-only", "HEAD~1..HEAD"]
+            commands = [["git", "diff", "--name-only", "HEAD~1..HEAD"]]
+        elif scope == "all":
+            commands = [
+                ["git", "diff", "--name-only"],
+                ["git", "diff", "--name-only", "--cached"],
+            ]
         try:
-            out = subprocess.check_output(cmd, cwd=repo, text=True, stderr=subprocess.DEVNULL)
-            changed.extend(
-                [
-                    f"{config.service_logical_prefix(svc)}/{line.strip()}".strip("/")
-                    for line in out.splitlines()
-                    if line.strip()
-                ]
-            )
+            for cmd in commands:
+                out = subprocess.check_output(cmd, cwd=repo, text=True, stderr=subprocess.DEVNULL)
+                changed.extend(
+                    [
+                        f"{config.service_logical_prefix(svc)}/{line.strip()}".strip("/")
+                        for line in out.splitlines()
+                        if line.strip()
+                    ]
+                )
         except Exception:
             continue
+    changed = sorted(dict.fromkeys(changed))
     file_index = store.read_json("file-index.json", [])
     matched_files = [f for f in file_index if f.get("path") in changed]
     changed_text = " ".join(changed)

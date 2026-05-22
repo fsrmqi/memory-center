@@ -178,6 +178,23 @@ memory-center reindex \
   --workspace /path/to/backend-platform/.memory-center/workspace.yaml
 ```
 
+如果 workspace 很大，也可以局部重建：
+
+```bash
+memory-center reindex \
+  --workspace /path/to/backend-platform/.memory-center/workspace.yaml \
+  --project user-service
+
+memory-center reindex \
+  --workspace /path/to/backend-platform/.memory-center/workspace.yaml \
+  --path user-service/src/main/java/com/example/user/UserMoveService.java
+
+memory-center reindex \
+  --workspace /path/to/backend-platform/.memory-center/workspace.yaml \
+  --changed-only \
+  --scope all
+```
+
 建议紧接着做健康检查：
 
 ```bash
@@ -231,6 +248,41 @@ memory-center status \
 ---
 
 ## 5. Daily Single-Workspace Workflow / 单工作区日常工作流
+
+### 4.1 一键工作流命令 / Workflow Shortcuts
+
+```bash
+memory-center work-start \
+  --workspace /path/to/backend-platform/.memory-center/workspace.yaml \
+  --intent "ArticleFeignClient 调用链"
+
+memory-center work-log \
+  --workspace /path/to/backend-platform/.memory-center/workspace.yaml \
+  --session-id session-xxx \
+  --event-type note \
+  --payload '{"note":"补充风险点"}'
+
+memory-center work-sync \
+  --workspace /path/to/backend-platform/.memory-center/workspace.yaml \
+  --intent "ArticleFeignClient 调用链"
+
+memory-center work-resume \
+  --workspace /path/to/backend-platform/.memory-center/workspace.yaml \
+  --task-id some-task
+
+memory-center work-handoff \
+  --workspace /path/to/backend-platform/.memory-center/workspace.yaml \
+  --target-model glm-4 \
+  --task-id some-task
+
+memory-center work-close \
+  --workspace /path/to/backend-platform/.memory-center/workspace.yaml \
+  --session-id session-xxx \
+  --outcome "done"
+
+memory-center work-health \
+  --workspace /path/to/backend-platform/.memory-center/workspace.yaml
+```
 
 ### 5.1 理解任务上下文
 
