@@ -10,6 +10,16 @@ build/
 .memory-center/index/
 .memory-center/memory/
 .DS_Store
+*.iml
+.cursor/
+
+# IDE / AI editor configs
 /.idea/
 /.github/
 /.claude/
+
+# Generated index data (rebuild with `memory-center reindex`)
+.memory-center/index/
+.memory-center/memory/
+.memory-center/graph/
+/examples/spring-cloud-demo/.memory-center/*
