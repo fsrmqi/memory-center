@@ -43,6 +43,8 @@ from memory_center.core.orchestrator import (
     memory_impact,
     memory_plan_change,
     memory_query,
+    memory_ref_batch,
+    memory_ref_get,
     memory_search_code,
     memory_symbol,
     memory_verify_checklist,
@@ -138,9 +140,13 @@ def reindex(workspace: str = typer.Option(...)):
 
 
 @app.command()
-def status(workspace: str = typer.Option(...)):
+def status(
+    workspace: str = typer.Option(...),
+    view: str = typer.Option("full", help="full|compact"),
+    budget: str = typer.Option("medium", help="small|medium|large"),
+):
     """Print workspace index and memory status."""
-    print(workspace_status(workspace))
+    print(workspace_status(workspace, view=view, budget=budget))
 
 
 @app.command()
@@ -149,9 +155,11 @@ def sniff(
     intent: str = typer.Option(...),
     limit: int = typer.Option(12),
     auto_sync_mode: str = typer.Option("balanced", help="Auto sync recommendation mode: strict|balanced|aggressive"),
+    view: str = typer.Option("full", help="full|compact"),
+    budget: str = typer.Option("medium", help="small|medium|large"),
 ):
     """Retrieve workspace context for a coding task intent."""
-    print(workspace_sniff(workspace, intent, limit, auto_sync_mode=auto_sync_mode))
+    print(workspace_sniff(workspace, intent, limit, auto_sync_mode=auto_sync_mode, view=view, budget=budget))
 
 
 @app.command()
@@ -470,6 +478,44 @@ def eval_regression_suite_cmd(
     )
 
 
+@app.command("regression-smoke")
+def regression_smoke_cmd(
+    workspace: str = typer.Option(...),
+    intent: str = typer.Option("Memory Center regression smoke"),
+    target_model: str = typer.Option("codex"),
+    limit: int = typer.Option(5),
+):
+    """Run one end-to-end smoke check across write, resume, handoff, refs, and compact views."""
+    task = create_task_space(workspace, title="regression-smoke")
+    update = update_task_artifact(workspace, task["task_id"], "context", "## Context\n\nRegression smoke")
+    session = workspace_start_session(workspace, intent)
+    workspace_log_session_event(
+        workspace,
+        session["session_id"],
+        "tool_call",
+        {"tool_name": "memory_query_tool", "query": "ArticleFeignClient", "project": "task-service"},
+    )
+    workspace_end_session(workspace, session["session_id"], outcome="smoke complete")
+    sync_sniff = workspace_sync_sniff_to_artifacts(workspace, "ArticleFeignClient 调用链", task_id=task["task_id"], limit=limit)
+    sync_case = workspace_sync_case_to_artifacts(workspace, session["session_id"], task_id=task["task_id"])
+    refs = workspace_recent_evidence(workspace, session_id=session["session_id"], limit=3)
+    first_ref = (refs.get("evidence", []) or [{}])[0].get("ref_id", "")
+    report = {
+        "workspace": workspace,
+        "task_id": task["task_id"],
+        "task_artifact_write": bool(update.get("write_receipt")),
+        "sync_sniff": bool(sync_sniff.get("synced")),
+        "sync_case": bool(sync_case.get("synced")),
+        "recent_evidence_count": len(refs.get("evidence", [])),
+        "first_ref": memory_ref_get(workspace, first_ref) if first_ref else None,
+        "regression_suite": memory_eval_regression_suite(workspace, task_id=task["task_id"], session_id=session["session_id"], intent=intent, target_model=target_model, limit=limit),
+        "status_compact": workspace_status(workspace, view="compact"),
+        "resume_compact": workspace_resume_packet(workspace, task_id=task["task_id"], session_id=session["session_id"], intent=intent, view="compact"),
+        "dashboard_compact": workspace_dashboard(workspace, intent=intent, limit=limit, view="compact"),
+    }
+    print(report)
+
+
 @app.command("lookup-hint")
 def lookup_hint_cmd(
     workspace: str = typer.Option(...),
@@ -488,6 +534,24 @@ def tool_usage_report_cmd(
 ):
     """Summarize recent Memory Center vs external tool usage and lookup adoption."""
     print(memory_tool_usage_report(workspace, limit=limit))
+
+
+@app.command("ref-get")
+def ref_get_cmd(
+    workspace: str = typer.Option(...),
+    ref_id: str = typer.Option(...),
+):
+    """Resolve one short memory reference id into full raw content."""
+    print(memory_ref_get(workspace, ref_id=ref_id))
+
+
+@app.command("ref-batch")
+def ref_batch_cmd(
+    workspace: str = typer.Option(...),
+    ref_id: List[str] = typer.Option(...),
+):
+    """Resolve multiple short memory reference ids."""
+    print(memory_ref_batch(workspace, ref_ids=ref_id))
 
 
 @app.command("generate-wiki")
@@ -605,9 +669,10 @@ def recent_evidence_cmd(
     task_id: str = typer.Option(""),
     session_id: str = typer.Option(""),
     limit: int = typer.Option(10),
+    budget: str = typer.Option("medium", help="small|medium|large"),
 ):
     """Show recent evidence from task receipts and session events."""
-    print(workspace_recent_evidence(workspace, task_id=task_id, session_id=session_id, limit=limit))
+    print(workspace_recent_evidence(workspace, task_id=task_id, session_id=session_id, limit=limit, budget=budget))
 
 
 @app.command("unresolved-items")
@@ -641,9 +706,11 @@ def resume_packet_cmd(
     session_id: str = typer.Option(""),
     intent: str = typer.Option(""),
     limit: int = typer.Option(10),
+    view: str = typer.Option("full", help="full|compact"),
+    budget: str = typer.Option("medium", help="small|medium|large"),
 ):
     """Build one resume packet for the next model/session."""
-    print(workspace_resume_packet(workspace, task_id=task_id, session_id=session_id, intent=intent, limit=limit))
+    print(workspace_resume_packet(workspace, task_id=task_id, session_id=session_id, intent=intent, limit=limit, view=view, budget=budget))
 
 
 @app.command("model-profile")
@@ -686,9 +753,11 @@ def continuity_dashboard_cmd(
     task_id: str = typer.Option(""),
     session_id: str = typer.Option(""),
     limit: int = typer.Option(10),
+    view: str = typer.Option("full", help="full|compact"),
+    budget: str = typer.Option("medium", help="small|medium|large"),
 ):
     """Build one continuity dashboard for daily work."""
-    print(workspace_continuity_dashboard(workspace, intent=intent, task_id=task_id, session_id=session_id, limit=limit))
+    print(workspace_continuity_dashboard(workspace, intent=intent, task_id=task_id, session_id=session_id, limit=limit, view=view, budget=budget))
 
 
 @app.command("workspace-dashboard")
@@ -696,9 +765,11 @@ def workspace_dashboard_cmd(
     workspace: str = typer.Option(...),
     intent: str = typer.Option(""),
     limit: int = typer.Option(10),
+    view: str = typer.Option("full", help="full|compact"),
+    budget: str = typer.Option("medium", help="small|medium|large"),
 ):
     """Build one workspace-level dashboard for daily work."""
-    print(workspace_dashboard(workspace, intent=intent, limit=limit))
+    print(workspace_dashboard(workspace, intent=intent, limit=limit, view=view, budget=budget))
 
 
 @app.command("export-workspace-dashboard")

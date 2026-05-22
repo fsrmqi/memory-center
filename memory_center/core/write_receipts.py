@@ -8,6 +8,15 @@ from .store import WorkspaceStore
 WRITE_RECEIPTS_FILE = "write-receipts.jsonl"
 
 
+def _receipt_id(layer: str, action: str, target: str) -> str:
+    return f"wr:{layer}:{action}:{target}"[:160]
+
+
+def _receipt_summary(layer: str, action: str, target: str) -> str:
+    text = " | ".join(part for part in [layer, action, target] if part)
+    return text[:140]
+
+
 def build_write_receipt(
     layer: str,
     action: str,
@@ -26,6 +35,8 @@ def build_write_receipt(
     return with_schema(
         "write_receipt",
         {
+        "receipt_id": _receipt_id(layer, action, target),
+        "summary": _receipt_summary(layer, action, target),
         "layer": layer,
         "action": action,
         "scope": scope,

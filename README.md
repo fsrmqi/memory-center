@@ -566,6 +566,8 @@ Available MCP tools / MCP 工具：
 | `memory_eval_write_quality_tool` | Evaluate whether write coverage is complete / 评估写入覆盖是否完整 |
 | `workspace_lookup_hint_tool` | Suggest whether to use Memory Center lookup or local search first / 建议优先走 Memory Center 检索还是本地搜索 |
 | `memory_tool_usage_report_tool` | Summarize recent Memory Center usage and suspected bypasses / 汇总近期 Memory Center 使用情况与疑似绕过 |
+| `memory_ref_get_tool` | Expand one short reference id into raw evidence / 把一个短引用 ID 展开成原始证据 |
+| `memory_ref_batch_tool` | Expand multiple short reference ids / 批量展开多个短引用 ID |
 | `workspace_recent_evidence_tool` | Show recent evidence for continuity / 查看连续性相关近期证据 |
 | `workspace_unresolved_items_tool` | Show unresolved items for one task/session / 查看任务或会话的未解决事项 |
 | `workspace_next_actions_tool` | Suggest next actions for one task/session / 推荐任务或会话的下一步动作 |
@@ -622,9 +624,9 @@ Resume and handoff packets can now be evaluated through `memory_eval_resume` and
 
 `memory_tool_usage_report` 会汇总近期 Memory Center 工具使用率，并标记那些“看起来在找类/符号/调用链，但没有走 Memory Center”的疑似绕过场景。
 
-To reduce model-side token usage, `workspace_sniff`, `workspace_status`, `workspace_resume_packet`, `workspace_continuity_dashboard`, and `workspace_dashboard` now support `view=compact|full`. MCP defaults to `compact`; use `full` for local debugging or manual inspection.
+To reduce model-side token usage, `workspace_sniff`, `workspace_status`, `workspace_resume_packet`, `workspace_recent_evidence`, `workspace_continuity_dashboard`, and `workspace_dashboard` now support `view=compact|full` plus `budget=small|medium|large`. MCP defaults to `compact + medium`; use `full` for local debugging or manual inspection.
 
-为了降低模型侧 token 消耗，`workspace_sniff`、`workspace_status`、`workspace_resume_packet`、`workspace_continuity_dashboard`、`workspace_dashboard` 现在都支持 `view=compact|full`。MCP 默认使用 `compact`；本地调试或人工排查时再切 `full`。
+为了降低模型侧 token 消耗，`workspace_sniff`、`workspace_status`、`workspace_resume_packet`、`workspace_recent_evidence`、`workspace_continuity_dashboard`、`workspace_dashboard` 现在都支持 `view=compact|full`，并新增 `budget=small|medium|large`。MCP 默认使用 `compact + medium`；本地调试或人工排查时再切 `full`。
 
 For fixed regressions, `memory_eval_regression_suite` now aggregates write/resume/handoff evals into one suite-level score.
 
@@ -633,6 +635,14 @@ For fixed regressions, `memory_eval_regression_suite` now aggregates write/resum
 It is now exposed through CLI, MCP, and HTTP as `eval-regression-suite`, `memory_eval_regression_suite_tool`, and `/workspace/eval-regression-suite`.
 
 它现在已经通过 CLI、MCP、HTTP 三条入口暴露出来：`eval-regression-suite`、`memory_eval_regression_suite_tool`、`/workspace/eval-regression-suite`。
+
+Short references can now be expanded through `memory_ref_get` / `memory_ref_batch`, so compact evidence can stay tiny until the model explicitly needs the raw payload.
+
+现在短引用也可以通过 `memory_ref_get` / `memory_ref_batch` 再展开回原始内容，因此默认上下文可以保持很轻，只有模型明确需要时才取细节。
+
+For one-command health checks, `memory-center regression-smoke --workspace ...` now runs write, session, sync, ref expansion, compact views, and regression suite checks together.
+
+为了做一键健康检查，现在可以直接运行 `memory-center regression-smoke --workspace ...`，它会一起检查写入、session、sync、短引用展开、compact 视图和 regression suite。
 
 Under the hood, session events, write receipts and handoff history are now converging toward one shared timeline substrate, so replay, dashboard, evidence lookup and eval can reuse the same chronological model.
 
@@ -646,10 +656,12 @@ The following response families now carry explicit schema metadata through `sche
 
 | Schema | Purpose / 用途 | Stable payload highlights / 稳定字段重点 |
 |---|---|---|
-| `write_receipt` | One persisted write action / 单次持久化写入动作 | `layer`, `action`, `scope`, `target`, `target_file`, `task_id`, `session_id`, `receipt_ref` |
+| `write_receipt` | One persisted write action / 单次持久化写入动作 | `receipt_id`, `summary`, `layer`, `action`, `scope`, `target`, `target_file`, `task_id`, `session_id`, `receipt_ref` |
 | `timeline_item` | One chronological event / 单个时间线事件 | `kind`, `created_at`, `task_id`, `session_id`, `layer`, `action`, `scope`, `target`, `receipt_ref` |
 | `timeline_result` | Timeline query result / 时间线查询结果 | `timeline`, `limit`, `filters` |
 | `eval_result` | Unified eval output / 统一评估结果 | `score`, `quality`, `findings` |
+| `memory_ref` | One expanded short reference / 单个短引用展开结果 | `ref_id`, `kind`, `summary`, `raw` |
+| `memory_ref_batch` | Batch expanded short references / 批量短引用展开结果 | `requested`, `found_count`, `refs` |
 | `resume_packet` | Cross-session resume contract / 跨会话恢复协议 | `task_id`, `current_summary`, `next_recommended_actions`, `unresolved_items`, `resume_rule_profile` |
 | `handoff_packet` | Cross-model handoff contract / 跨模型交接协议 | `target_model`, `model_profile`, `handoff_rule_profile`, `minimal_required_context`, `what_to_check_next` |
 | `workspace_continuity_dashboard` | Task continuity view / 单任务连续性视图 | `focus_task`, `resume_packet`, `next_actions`, `unresolved_items`, `recent_evidence` |

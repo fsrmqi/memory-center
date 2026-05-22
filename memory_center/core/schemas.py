@@ -14,11 +14,13 @@ SCHEMA_VERSIONS = {
     "workspace_dashboard": 1,
     "lookup_hint": 1,
     "tool_usage_report": 1,
+    "memory_ref": 1,
+    "memory_ref_batch": 1,
 }
 
 SCHEMA_REQUIRED_FIELDS = {
-    "write_receipt": {"layer", "action", "scope", "target", "target_file"},
-    "timeline_item": {"kind", "created_at", "task_id", "session_id", "layer", "action", "scope", "target"},
+    "write_receipt": {"receipt_id", "summary", "layer", "action", "scope", "target", "target_file"},
+    "timeline_item": {"kind", "ref_id", "summary", "created_at", "task_id", "session_id", "layer", "action", "scope", "target"},
     "timeline_result": {"timeline", "summary", "filters"},
     "eval_result": {"score", "quality", "findings"},
     "resume_packet": {"resume_rule_profile"},
@@ -27,6 +29,8 @@ SCHEMA_REQUIRED_FIELDS = {
     "workspace_dashboard": {"focus_task", "continuity_overview", "write_receipts_overview", "active_tasks", "recent_handoffs", "focus_resume_eval"},
     "lookup_hint": {"workspace", "query", "recommended_path", "preferred_tools", "reasons", "should_use_memory_center"},
     "tool_usage_report": {"workspace", "summary", "tool_counts", "lookup_tool_counts", "adoption_hints"},
+    "memory_ref": {"ref_id", "kind", "summary", "raw"},
+    "memory_ref_batch": {"refs", "requested", "found_count"},
 }
 
 

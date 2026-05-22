@@ -130,6 +130,14 @@ def _map_session_event(row: Dict[str, Any]) -> Dict[str, Any]:
         "timeline_item",
         {
         "kind": "session_event",
+        "ref_id": f"ev:{row.get('session_id', '')}:{row.get('event_type', '')}:{row.get('created_at', '')}",
+        "summary": " | ".join(
+            part for part in [
+                str(payload.get("tool_name", "") or ""),
+                str(payload.get("query", "") or payload.get("target", "") or row.get("event_type", "") or ""),
+                str(row.get("payload_ref", "") or ""),
+            ] if part
+        )[:140],
         "created_at": row.get("created_at", ""),
         "task_id": "",
         "session_id": row.get("session_id", ""),
@@ -148,6 +156,8 @@ def _map_write_receipt(row: Dict[str, Any]) -> Dict[str, Any]:
         "timeline_item",
         {
         "kind": "write_receipt",
+        "ref_id": row.get("receipt_id", "") or row.get("receipt_ref", ""),
+        "summary": row.get("summary", ""),
         "created_at": row.get("created_at", ""),
         "task_id": row.get("task_id", ""),
         "session_id": row.get("session_id", "") or row.get("source_session_id", ""),
@@ -166,6 +176,14 @@ def _map_handoff(row: Dict[str, Any]) -> Dict[str, Any]:
         "timeline_item",
         {
         "kind": "handoff",
+        "ref_id": f"handoff:{row.get('session_id', '')}:{row.get('normalized_model', '')}:{row.get('created_at', '')}",
+        "summary": " | ".join(
+            part for part in [
+                str(row.get("normalized_model", "") or row.get("target_model", "") or ""),
+                str(row.get("current_phase", "") or ""),
+                str(row.get("quality", "") or ""),
+            ] if part
+        )[:140],
         "created_at": row.get("created_at", ""),
         "task_id": row.get("task_id", ""),
         "session_id": row.get("session_id", ""),

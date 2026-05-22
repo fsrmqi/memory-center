@@ -79,6 +79,19 @@ class WorkspaceStore:
             path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
         return str(path.relative_to(self.base_dir))
 
+    def read_memory_ref_json(self, ref: str, default: Any = None) -> Any:
+        default = {} if default is None else default
+        normalized = ref.replace("\\", "/").lstrip("/")
+        if normalized.startswith("memory/"):
+            normalized = normalized[len("memory/") :]
+        path = _safe_path(self.memory_dir, normalized)
+        if not path.exists():
+            return default
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError, OSError):
+            return default
+
     def write_artifact(self, name: str, content: str) -> Path:
         path = _safe_path(self.artifacts_dir, name)
         path.parent.mkdir(parents=True, exist_ok=True)

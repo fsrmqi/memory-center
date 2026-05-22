@@ -274,6 +274,7 @@ graph.counts()
 | `limit` | `int` | `12` | 候选文件最大数量 |
 | `auto_sync_mode` | `string` | `"balanced"` | 自动同步工件模式（`strict` / `balanced` / `aggressive`） |
 | `view` | `string` | `"full"` | 返回视图（`compact` / `full`）。MCP/HTTP 推荐 `compact`，本地 CLI/调试可用 `full`。 |
+| `budget` | `string` | `"medium"` | 预算档位（`small` / `medium` / `large`），用于控制 compact 视图下的条目数量。 |
 
 **返回字段：**
 
@@ -303,6 +304,11 @@ next_steps         : list[str]    推荐的下一步操作
 - `symbolic_context`
 - `next_steps`
 - 大型 `related_*` 列表会收敛为计数摘要
+
+`budget` 会进一步控制 compact 的规模：
+- `small`：尽量给最少条目，适合上下文极紧时
+- `medium`：默认平衡档
+- `large`：仍是 compact 结构，但会保留更多条目
 
 #### `workspace_sync_sniff_artifacts_tool`
 
@@ -649,6 +655,42 @@ tool_counts                     = 各工具调用计数
 lookup_tool_counts              = lookup 工具调用计数
 suspected_bypass                = 疑似绕过明细
 adoption_hints                  = 使用建议
+```
+
+#### `memory_ref_get_tool`
+
+**描述：** 把一个短引用 ID 展开成原始证据内容，适合在 `compact` 视图下按需取细节。
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `ref_id` | `string` | **必填** | 短引用 ID，例如 `ev:...`、`src:...`、`wr:...` |
+
+**返回：**
+
+```text
+schema.name = memory_ref
+ref_id      = 原始短引用 ID
+kind        = session_event | write_receipt | payload_ref | unknown
+summary     = 摘要文本
+raw         = 原始内容
+found       = 是否解析成功
+```
+
+#### `memory_ref_batch_tool`
+
+**描述：** 批量展开多个短引用 ID。
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `ref_ids` | `list[string]` | **必填** | 多个短引用 ID |
+
+**返回：**
+
+```text
+schema.name = memory_ref_batch
+requested   = 原始请求的 ref_ids
+found_count = 成功展开数量
+refs        = memory_ref 列表
 ```
 
 #### `memory_detect_changes_tool`
@@ -1000,6 +1042,9 @@ artifacts/memory-blocks/
 支持 `view=compact|full`：
 - `compact`：适合模型，保留 `index_counts / memory_overview / current_focus_task / continuity_overview`
 - `full`：保留完整 `services / topology / core_memory_blocks / active_task_spaces`
+
+支持 `budget=small|medium|large`：
+- 影响 `active_task_spaces` 等列表在 compact 视图下的保留数量
 
 无参数。返回工作区完整状态，包含索引统计、语义索引状态、分层记忆统计、活跃任务空间、当前焦点任务、拓扑。
 
@@ -1566,9 +1611,11 @@ memory-center serve-http \
 | `GET` | `/health` | 健康检查 | — |
 | `GET` | `/workspace/status` | 工作区状态 | `workspace_status_tool` |
 可附加 `view=compact|full`
+可附加 `budget=small|medium|large`
 | `GET` | `/workspace/query` | 图感知搜索 | `memory_query_tool` |
 | `GET` | `/workspace/search-code` | 关键词搜索 | `memory_search_code_tool` |
 | `GET` | `/workspace/sniff` | 任务嗅探 | `workspace_sniff_tool` |
+可附加 `view=compact|full&budget=small|medium|large`
 | `GET` | `/workspace/lookup-hint` | 检索路由建议 | `workspace_lookup_hint_tool` |
 | `GET` | `/workspace/symbol` | 符号解析 | `memory_symbol_tool` |
 | `GET` | `/workspace/callers` | 上游调用链 | `memory_callers_tool` |
@@ -1578,9 +1625,12 @@ memory-center serve-http \
 | `GET` | `/workspace/detect-changes` | Git 变更检测 | `memory_detect_changes_tool` |
 | `GET` | `/workspace/eval-regression-suite` | 聚合回归评估 | `memory_eval_regression_suite_tool` |
 | `GET` | `/workspace/tool-usage-report` | 工具使用率与疑似绕过分析 | `memory_tool_usage_report_tool` |
+| `GET` | `/workspace/ref-get` | 展开单个短引用 | `memory_ref_get_tool` |
+| `GET` | `/workspace/ref-batch` | 批量展开短引用 | `memory_ref_batch_tool` |
 | `GET` | `/workspace/resume-packet` | 恢复包 | `workspace_resume_packet_tool` |
 | `GET` | `/workspace/continuity-dashboard` | 连续性面板 | `workspace_continuity_dashboard_tool` |
 | `GET` | `/workspace/dashboard` | 工作区总面板 | `workspace_dashboard_tool` |
+以上三个端点也都支持 `view=compact|full&budget=small|medium|large`
 | `GET` | `/workspace/artifacts` | 工件列表 | `workspace_artifact_list_tool` |
 | `GET` | `/workspace/artifact?name=...` | 读取工件 | `workspace_artifact_get_tool` |
 | `GET` | `/workspace/artifact/update?name=...&content=...` | 更新工件 | `workspace_artifact_update_tool` |

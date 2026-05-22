@@ -32,7 +32,7 @@ from memory_center.core.config import load_workspace_config
 from memory_center.core.exporters import export_mermaid, export_workspace_dashboard_html, export_workspace_dashboard_markdown
 from memory_center.core.indexer import reindex_workspace
 from memory_center.core.instructions import write_agent_instructions
-from memory_center.core.orchestrator import memory_eval_handoff, memory_eval_regression_suite, memory_eval_resume, memory_eval_write_quality, memory_execute_write, memory_plan_write, memory_tool_usage_report, memory_write_judge, workspace_continuity_dashboard, workspace_dashboard, workspace_handoff_history, workspace_handoff_packet, workspace_log_session_event, workspace_lookup_hint, workspace_model_profile, workspace_next_actions, workspace_recent_evidence, workspace_replay_write_chain, workspace_resume_packet, workspace_sniff, workspace_start_session, workspace_trace, workspace_unresolved_items, workspace_write_receipts
+from memory_center.core.orchestrator import memory_eval_handoff, memory_eval_regression_suite, memory_eval_resume, memory_eval_write_quality, memory_execute_write, memory_plan_write, memory_ref_batch, memory_ref_get, memory_tool_usage_report, memory_write_judge, workspace_continuity_dashboard, workspace_dashboard, workspace_handoff_history, workspace_handoff_packet, workspace_log_session_event, workspace_lookup_hint, workspace_model_profile, workspace_next_actions, workspace_recent_evidence, workspace_replay_write_chain, workspace_resume_packet, workspace_sniff, workspace_start_session, workspace_trace, workspace_unresolved_items, workspace_write_receipts
 from memory_center.core.registry import add_to_group, create_group, register_workspace
 from memory_center.core.rules import ensure_default_rules
 from memory_center.core.schemas import validate_schema_payload
@@ -477,6 +477,8 @@ def test_memory_write_judge_and_plan_write(tmp_path: Path):
     assert executed["executed"][0]["tool"] == "workspace_artifact_update"
     assert executed["write_receipts"]
     assert executed["write_receipts"][0]["layer"] == "L3_workspace_profile"
+    assert executed["write_receipts"][0]["receipt_id"].startswith("wr:")
+    assert executed["write_receipts"][0]["summary"]
     store = WorkspaceStore(workspace)
     receipt_rows = store.read_jsonl("write-receipts.jsonl", limit=20)
     assert receipt_rows
@@ -504,6 +506,12 @@ def test_memory_write_judge_and_plan_write(tmp_path: Path):
     assert resume_eval["schema"]["name"] == "eval_result"
     recent_evidence = workspace_recent_evidence(workspace, limit=5)
     assert "evidence" in recent_evidence
+    assert recent_evidence["evidence"][0]["ref_id"]
+    assert recent_evidence["evidence"][0]["summary"]
+    ref_detail = memory_ref_get(workspace, recent_evidence["evidence"][0]["ref_id"])
+    assert ref_detail["found"] is True
+    ref_batch = memory_ref_batch(workspace, [recent_evidence["evidence"][0]["ref_id"]])
+    assert ref_batch["found_count"] == 1
     model_profile = workspace_model_profile("deepseek-r1")
     assert model_profile["normalized_model"] == "deepseek"
     handoff = workspace_handoff_packet(workspace, target_model="glm-4", intent="更新团队规则", limit=5)
@@ -817,6 +825,7 @@ def test_graph_query_context_and_impact(tmp_path):
     assert status["index_counts"]["semantic_docs"] > 0
     assert "memory_layers" in status
     assert status["memory_layers"]["L0_session_events"]["event_count"] >= 0
+    assert status["memory_layers"]["L3_workspace_profile"]["instruction_files"] >= 0
     assert "core_memory_blocks" in status
     assert status["core_memory_blocks"]["block_count"] >= 4
     assert "memory_overview" in status

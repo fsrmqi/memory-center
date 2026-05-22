@@ -16,6 +16,8 @@ from memory_center.core.orchestrator import (
     memory_impact,
     memory_plan_change,
     memory_query,
+    memory_ref_batch,
+    memory_ref_get,
     memory_search_code,
     memory_symbol,
     memory_verify_checklist,
@@ -90,9 +92,9 @@ def create_server(workspace_file: str):
     mcp = FastMCP("Memory Center")
 
     @mcp.tool()
-    def workspace_sniff_tool(intent: str, limit: int = 12, auto_sync_mode: str = "balanced", view: str = "compact"):
+    def workspace_sniff_tool(intent: str, limit: int = 12, auto_sync_mode: str = "balanced", view: str = "compact", budget: str = "medium"):
         """Before any code task, retrieve services, files, rules, topology hints and historical cases."""
-        return workspace_sniff(_WORKSPACE_FILE, intent, limit, auto_sync_mode=auto_sync_mode, view=view)
+        return workspace_sniff(_WORKSPACE_FILE, intent, limit, auto_sync_mode=auto_sync_mode, view=view, budget=budget)
 
     @mcp.tool()
     def workspace_sync_sniff_artifacts_tool(
@@ -387,6 +389,16 @@ def create_server(workspace_file: str):
         return memory_tool_usage_report(_WORKSPACE_FILE, limit=limit)
 
     @mcp.tool()
+    def memory_ref_get_tool(ref_id: str):
+        """Resolve one short memory reference id into the underlying raw content."""
+        return memory_ref_get(_WORKSPACE_FILE, ref_id=ref_id)
+
+    @mcp.tool()
+    def memory_ref_batch_tool(ref_ids: List[str]):
+        """Resolve multiple short memory reference ids."""
+        return memory_ref_batch(_WORKSPACE_FILE, ref_ids=ref_ids)
+
+    @mcp.tool()
     def workspace_trace_tool(entry: str):
         """Trace cross-service candidates by class name, Feign client, Controller endpoint, or MQ topic."""
         return workspace_trace(_WORKSPACE_FILE, entry)
@@ -464,9 +476,9 @@ def create_server(workspace_file: str):
         return workspace_resume_context(_WORKSPACE_FILE, intent, limit)
 
     @mcp.tool()
-    def workspace_recent_evidence_tool(task_id: str = "", session_id: str = "", limit: int = 10):
+    def workspace_recent_evidence_tool(task_id: str = "", session_id: str = "", limit: int = 10, budget: str = "medium"):
         """Return recent evidence from receipts and session events."""
-        return workspace_recent_evidence(_WORKSPACE_FILE, task_id=task_id, session_id=session_id, limit=limit)
+        return workspace_recent_evidence(_WORKSPACE_FILE, task_id=task_id, session_id=session_id, limit=limit, budget=budget)
 
     @mcp.tool()
     def workspace_unresolved_items_tool(task_id: str = "", session_id: str = "", intent: str = "", limit: int = 10):
@@ -479,9 +491,9 @@ def create_server(workspace_file: str):
         return workspace_next_actions(_WORKSPACE_FILE, task_id=task_id, session_id=session_id, intent=intent, limit=limit)
 
     @mcp.tool()
-    def workspace_resume_packet_tool(task_id: str = "", session_id: str = "", intent: str = "", limit: int = 10):
+    def workspace_resume_packet_tool(task_id: str = "", session_id: str = "", intent: str = "", limit: int = 10, view: str = "compact", budget: str = "medium"):
         """Build one resume packet for the next model/session."""
-        return workspace_resume_packet(_WORKSPACE_FILE, task_id=task_id, session_id=session_id, intent=intent, limit=limit)
+        return workspace_resume_packet(_WORKSPACE_FILE, task_id=task_id, session_id=session_id, intent=intent, limit=limit, view=view, budget=budget)
 
     @mcp.tool()
     def workspace_model_profile_tool(model_name: str):
@@ -499,14 +511,14 @@ def create_server(workspace_file: str):
         return workspace_handoff_history(_WORKSPACE_FILE, target_model=target_model, task_id=task_id, session_id=session_id, limit=limit)
 
     @mcp.tool()
-    def workspace_continuity_dashboard_tool(intent: str = "", task_id: str = "", session_id: str = "", limit: int = 10, view: str = "compact"):
+    def workspace_continuity_dashboard_tool(intent: str = "", task_id: str = "", session_id: str = "", limit: int = 10, view: str = "compact", budget: str = "medium"):
         """Build one daily continuity dashboard."""
-        return workspace_continuity_dashboard(_WORKSPACE_FILE, intent=intent, task_id=task_id, session_id=session_id, limit=limit, view=view)
+        return workspace_continuity_dashboard(_WORKSPACE_FILE, intent=intent, task_id=task_id, session_id=session_id, limit=limit, view=view, budget=budget)
 
     @mcp.tool()
-    def workspace_dashboard_tool(intent: str = "", limit: int = 10, view: str = "compact"):
+    def workspace_dashboard_tool(intent: str = "", limit: int = 10, view: str = "compact", budget: str = "medium"):
         """Build one workspace-level dashboard."""
-        return workspace_dashboard(_WORKSPACE_FILE, intent=intent, limit=limit, view=view)
+        return workspace_dashboard(_WORKSPACE_FILE, intent=intent, limit=limit, view=view, budget=budget)
 
     @mcp.tool()
     def workspace_suggest_case_tool(session_id: str):
@@ -540,9 +552,9 @@ def create_server(workspace_file: str):
         return generate_skills(_WORKSPACE_FILE, output_dir)
 
     @mcp.tool()
-    def workspace_status_tool(view: str = "compact"):
+    def workspace_status_tool(view: str = "compact", budget: str = "medium"):
         """Return workspace index and memory status."""
-        return workspace_status(_WORKSPACE_FILE, view=view)
+        return workspace_status(_WORKSPACE_FILE, view=view, budget=budget)
 
     @mcp.tool()
     def group_query_tool(group: str, query: str, limit: int = 20):
