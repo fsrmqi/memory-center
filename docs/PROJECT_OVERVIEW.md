@@ -15,6 +15,7 @@ Memory Center（记忆中心）是一个 **面向 AI 编程助手的 MCP 原生�
 后续分批实施路线见：
 
 - [IMPLEMENTATION_ROADMAP.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/IMPLEMENTATION_ROADMAP.md)
+- [NEXT_PHASE_MASTER_PLAN.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/NEXT_PHASE_MASTER_PLAN.md)
 
 ---
 
