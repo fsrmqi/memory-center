@@ -4,6 +4,8 @@
       "name": "common-api",
       "service_name": "common-api",
       "path": "common-api",
+      "resolved_path": "/Users/cuijiaqi/Ai-common-skills/memory-center/examples/spring-cloud-demo/common-api",
+      "logical_prefix": "common-api",
       "type": "shared-library",
       "tags": [
         "contract"
@@ -13,6 +15,8 @@
       "name": "article-service",
       "service_name": "article-service",
       "path": "article-service",
+      "resolved_path": "/Users/cuijiaqi/Ai-common-skills/memory-center/examples/spring-cloud-demo/article-service",
+      "logical_prefix": "article-service",
       "type": "spring-boot-service",
       "tags": []
     },
@@ -20,6 +24,8 @@
       "name": "task-service",
       "service_name": "task-service",
       "path": "task-service",
+      "resolved_path": "/Users/cuijiaqi/Ai-common-skills/memory-center/examples/spring-cloud-demo/task-service",
+      "logical_prefix": "task-service",
       "type": "spring-boot-task",
       "tags": []
     }
