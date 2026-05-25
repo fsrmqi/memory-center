@@ -79,6 +79,14 @@ class WorkspaceStore:
         matched = [row for row in rows if predicate(row)]
         return matched[-limit:]
 
+    def read_jsonl_prefer_backend(self, name: str, limit: int = 50) -> List[Dict[str, Any]]:
+        rows = self.read_jsonl_via_backend(name, limit=limit)
+        return rows or self.read_jsonl(name, limit=limit)
+
+    def find_jsonl_prefer_backend(self, name: str, predicate, limit: int = 200) -> List[Dict[str, Any]]:
+        rows = self.find_jsonl_via_backend(name, predicate, limit=limit)
+        return rows or self.find_jsonl(name, predicate, limit=limit)
+
     def write_memory_ref_json(self, name: str, data: Any) -> str:
         path = _safe_path(self.memory_dir, name)
         path.parent.mkdir(parents=True, exist_ok=True)

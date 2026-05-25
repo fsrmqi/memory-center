@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import html
+import json
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -285,11 +286,14 @@ def export_workbench_index_html(workspace_file: str | Path) -> str:
 """
 
 
-def export_focus_task_html(workspace_file: str | Path, intent: str = "", limit: int = 10) -> str:
+def export_focus_task_html(workspace_file: str | Path, intent: str = "", task_id: str = "", limit: int = 10) -> str:
+    from .artifacts import get_task_artifact
     from .orchestrator import workspace_continuity_dashboard
 
-    dashboard = workspace_continuity_dashboard(workspace_file, intent=intent, limit=limit, view="compact", budget="medium")
+    dashboard = workspace_continuity_dashboard(workspace_file, intent=intent, task_id=task_id, limit=limit, view="compact", budget="medium")
     focus = dashboard.get("focus_task") or {}
+    resolved_task_id = str(focus.get("task_id", "") or "")
+    current_summary = get_task_artifact(workspace_file, resolved_task_id, "current_summary").get("content", "") if resolved_task_id else ""
     return f"""<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -317,6 +321,7 @@ def export_focus_task_html(workspace_file: str | Path, intent: str = "", limit: 
       <section class="card"><h2>Next Actions</h2>{_render_simple_list_html(dashboard.get('next_actions', []))}</section>
       <section class="card"><h2>Unresolved Items</h2>{_render_simple_list_html(dashboard.get('unresolved_items', []))}</section>
       <section class="card"><h2>Recent Evidence</h2>{_render_ref_list_html(dashboard.get('recent_evidence', []))}</section>
+      <section class="card"><h2>Current Summary</h2><div class="muted">{html.escape(str(current_summary))}</div></section>
     </div>
   </div>
 </body>
@@ -523,6 +528,39 @@ def export_memory_backend_html(workspace_file: str | Path, limit: int = 20) -> s
       <section class="card"><h2>Recent Records</h2><ul>{record_items}</ul></section>
       <section class="card"><h2>Recent Refs</h2><ul>{ref_items}</ul></section>
     </div>
+  </div>
+</body>
+</html>
+"""
+
+
+def export_ref_html(workspace_file: str | Path, ref_id: str) -> str:
+    from .orchestrator import memory_ref_get
+
+    payload = memory_ref_get(workspace_file, ref_id)
+    raw = payload.get("raw")
+    raw_text = html.escape(json.dumps(raw, ensure_ascii=False, indent=2) if raw is not None else "null")
+    return f"""<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Reference Detail</title>
+  <style>
+    body {{ margin:0; font-family: Georgia, 'Noto Serif SC', serif; background:#f6f1e8; color:#1e1a16; }}
+    .wrap {{ max-width: 1080px; margin: 0 auto; padding: 28px; }}
+    .card {{ background:#fffdf8; border:1px solid #d9cfc1; border-radius:16px; padding:18px; }}
+    .muted {{ color:#6d6357; }}
+    pre {{ white-space: pre-wrap; word-break: break-word; background:#f2ece3; padding:14px; border-radius:12px; }}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="card">
+      <h1>{html.escape(str(payload.get('ref_id', 'Reference')))}</h1>
+      <div class="muted">{html.escape(str(payload.get('summary', '')))}</div>
+      <pre>{raw_text}</pre>
+    </section>
   </div>
 </body>
 </html>

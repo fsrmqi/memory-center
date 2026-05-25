@@ -1204,6 +1204,8 @@ def test_http_bridge_routes(tmp_path: Path):
         assert "Workspace Dashboard" in ui_dashboard
         ui_task = urlopen(f"{base}/ui/task?workspace={workspace}").read().decode("utf-8")
         assert "Next Actions" in ui_task
+        ui_task_specific = urlopen(f"{base}/ui/task?workspace={workspace}&task_id={task_id}").read().decode("utf-8")
+        assert task_id in ui_task_specific or "Current Summary" in ui_task_specific
         ui_timeline = urlopen(f"{base}/ui/timeline?workspace={workspace}").read().decode("utf-8")
         assert "Timeline" in ui_timeline
         ui_receipts = urlopen(f"{base}/ui/receipts?workspace={workspace}").read().decode("utf-8")
@@ -1214,6 +1216,9 @@ def test_http_bridge_routes(tmp_path: Path):
         assert "Memory Backend" in ui_backend
         ui_index_freshness = urlopen(f"{base}/ui/index-freshness?workspace={workspace}").read().decode("utf-8")
         assert "Index Freshness" in ui_index_freshness
+        first_ref_id = recent_evidence["evidence"][0]["ref_id"]
+        ui_ref = urlopen(f"{base}/ui/ref?workspace={workspace}&ref_id={first_ref_id}").read().decode("utf-8")
+        assert first_ref_id in ui_ref
         eval_resume = json.loads(urlopen(f"{base}/workspace/eval-resume?intent=update%20rule&limit=10").read().decode("utf-8"))
         assert "quality" in eval_resume
         eval_handoff = json.loads(urlopen(f"{base}/workspace/eval-handoff?target_model=glm-4&intent=update%20rule&limit=10").read().decode("utf-8"))

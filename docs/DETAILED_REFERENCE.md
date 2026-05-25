@@ -1637,11 +1637,13 @@ memory-center serve-http \
 /ui/dashboard
 /ui/continuity
 /ui/task
+/ui/task?task_id=...
 /ui/timeline
 /ui/receipts
 /ui/usage
 /ui/backend
 /ui/index-freshness
+/ui/ref?ref_id=...
 ```
 
 ### 10.2 端点清单

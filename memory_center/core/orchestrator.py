@@ -115,7 +115,7 @@ def workspace_sniff(
     apis = store.read_json("api-index.json", [])
     feigns = store.read_json("feign-index.json", [])
     mq = store.read_json("mq-index.json", [])
-    cases = store.read_jsonl("cross-service-task-memory.jsonl", limit=200)
+    cases = store.read_jsonl_prefer_backend("cross-service-task-memory.jsonl", limit=200)
 
     keywords = tokenize(intent)
     matched_files = rank_files(file_index, symbols, keywords)[:limit]
@@ -124,7 +124,7 @@ def workspace_sniff(
     related_feigns = [x for x in feigns if any(k in json.dumps(x, ensure_ascii=False).lower() for k in keywords)][:limit]
     related_mq = [x for x in mq if any(k in json.dumps(x, ensure_ascii=False).lower() for k in keywords)][:limit]
     related_cases = [x for x in cases if any(k in json.dumps(x, ensure_ascii=False).lower() for k in keywords)][-5:]
-    recent_sessions = store.read_jsonl(SESSION_SUMMARIES_FILE, limit=30)
+    recent_sessions = store.read_jsonl_prefer_backend(SESSION_SUMMARIES_FILE, limit=30)
     rules = match_rules(store, intent=intent, files=[x["path"] for x in matched_files])[:10]
     sniff_risk_level = _sniff_risk_level(intent, matched_files, related_feigns, related_apis, related_mq, rules)
     task_resolution = resolve_task_space(
@@ -297,7 +297,7 @@ def memory_tool_usage_report(
     limit: int = 200,
 ) -> Dict[str, Any]:
     config, store = load_context(workspace_file)
-    events = store.read_jsonl(SESSION_EVENTS_FILE, limit=max(limit, 1))
+    events = store.read_jsonl_prefer_backend(SESSION_EVENTS_FILE, limit=max(limit, 1))
     tool_counts: Dict[str, int] = {}
     lookup_tool_counts: Dict[str, int] = {}
     memory_center_calls = 0
@@ -626,7 +626,7 @@ def workspace_suggest_case(workspace_file: str | Path, session_id: str) -> Dict[
 def workspace_resume_context(workspace_file: str | Path, intent: str, limit: int = 5) -> Dict[str, Any]:
     config, store = load_context(workspace_file)
     query_result = memory_query(workspace_file, intent, limit=limit)
-    summaries = store.read_jsonl(SESSION_SUMMARIES_FILE, limit=500)
+    summaries = store.read_jsonl_prefer_backend(SESSION_SUMMARIES_FILE, limit=500)
     tokens = tokenize(intent)
     related_sessions = []
     for item in summaries:
@@ -637,7 +637,7 @@ def workspace_resume_context(workspace_file: str | Path, intent: str, limit: int
     related_sessions.sort(key=lambda item: (-int(item.get("match_score", 0)), item.get("created_at", "")))
     related_cases = [
         item
-        for item in store.read_jsonl("cross-service-task-memory.jsonl", limit=300)
+        for item in store.read_jsonl_prefer_backend("cross-service-task-memory.jsonl", limit=300)
         if any(token in json.dumps(item, ensure_ascii=False).lower() for token in tokens)
     ][-limit:]
     return {
@@ -1920,7 +1920,7 @@ def _active_task_summaries(workspace_file: str | Path, limit: int = 5) -> List[D
 
 def _build_memory_layers(config, store: WorkspaceStore, active_tasks: List[Dict[str, Any]]) -> Dict[str, Any]:
     refs_count = sum(1 for _ in store.refs_dir.rglob("*") if _.is_file()) if store.refs_dir.exists() else 0
-    case_rows = store.read_jsonl("cross-service-task-memory.jsonl", limit=5000)
+    case_rows = store.read_jsonl_prefer_backend("cross-service-task-memory.jsonl", limit=5000)
     current_truth_cases = sum(1 for item in case_rows if item.get("current_truth", True))
     superseded_cases = sum(1 for item in case_rows if item.get("superseded_by"))
     instruction_targets = [
@@ -1934,7 +1934,7 @@ def _build_memory_layers(config, store: WorkspaceStore, active_tasks: List[Dict[
     return {
         LAYER_L0: {
             "description": "原始会话事件与外置 payload 引用",
-            "event_count": len(store.read_jsonl(SESSION_EVENTS_FILE, limit=5000)),
+            "event_count": len(store.read_jsonl_prefer_backend(SESSION_EVENTS_FILE, limit=5000)),
             "ref_count": refs_count,
         },
         LAYER_L1: {
@@ -1978,7 +1978,7 @@ def _build_memory_overview(memory_layers: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _build_write_receipts_overview(store: WorkspaceStore) -> Dict[str, Any]:
-    rows = store.read_jsonl(WRITE_RECEIPTS_FILE, limit=5000)
+    rows = store.read_jsonl_prefer_backend(WRITE_RECEIPTS_FILE, limit=5000)
     layers: Dict[str, int] = {}
     actions: Dict[str, int] = {}
     scopes: Dict[str, int] = {}

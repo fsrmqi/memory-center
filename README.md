@@ -746,6 +746,8 @@ You can also query the mirrored backend directly through `memory-backend-query` 
 
 `workspace_recent_sessions`、`workspace_session_summary`、`workspace_write_receipts` 现在也已经优先复用镜像后的 SQLite backend，并在必要时回退到原始 JSONL。
 
+`workspace_sniff` 的历史 case/session 召回、`workspace_resume_context`、`memory_tool_usage_report`、`write_receipts_overview` 现在也已经优先复用镜像后的 SQLite backend。
+
 Under the hood, session events, write receipts and handoff history are now converging toward one shared timeline substrate, so replay, dashboard, evidence lookup and eval can reuse the same chronological model.
 
 在底层，session events、write receipts 和 handoff history 现在开始收敛到同一套 timeline substrate，这样 replay、dashboard、evidence lookup 和 eval 可以复用同一个时间线模型。
@@ -905,11 +907,13 @@ You can also open the built-in local workbench pages:
 - `/ui/dashboard`
 - `/ui/continuity`
 - `/ui/task`
+- `/ui/task?task_id=...`
 - `/ui/timeline`
 - `/ui/receipts`
 - `/ui/usage`
 - `/ui/backend`
 - `/ui/index-freshness`
+- `/ui/ref?ref_id=...`
 
 现在也可以直接打开内置本地工作台页面：
 
@@ -917,11 +921,13 @@ You can also open the built-in local workbench pages:
 - `/ui/dashboard`
 - `/ui/continuity`
 - `/ui/task`
+- `/ui/task?task_id=...`
 - `/ui/timeline`
 - `/ui/receipts`
 - `/ui/usage`
 - `/ui/backend`
 - `/ui/index-freshness`
+- `/ui/ref?ref_id=...`
 
 Or:
 

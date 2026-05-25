@@ -11,6 +11,7 @@ from memory_center.core.exporters import (
     export_focus_task_html,
     export_index_freshness_html,
     export_receipts_html,
+    export_ref_html,
     export_memory_backend_html,
     export_timeline_html,
     export_usage_report_html,
@@ -115,7 +116,16 @@ def create_handler(default_workspace: str | Path | None = None) -> type[BaseHTTP
                     html_text = export_focus_task_html(
                         workspace,
                         intent=params.get("intent", [""])[0],
+                        task_id=params.get("task_id", [""])[0],
                         limit=_parse_int(params, "limit", 10),
+                    )
+                    self._write_html(200, html_text)
+                    return
+                if parsed.path == "/ui/ref":
+                    workspace = _require_workspace(params, workspace_file)
+                    html_text = export_ref_html(
+                        workspace,
+                        ref_id=_require_one(params, "ref_id"),
                     )
                     self._write_html(200, html_text)
                     return
