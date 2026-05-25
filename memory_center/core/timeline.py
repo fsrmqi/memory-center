@@ -21,6 +21,7 @@ def timeline_query(
     scope: str = "",
     target_contains: str = "",
     limit: int = 100,
+    backend: str = "auto",
 ) -> Dict[str, Any]:
     store = WorkspaceStore(workspace_file)
     wanted = set(kinds or ["session_event", "write_receipt", "handoff"])
@@ -33,6 +34,7 @@ def timeline_query(
         action=action,
         scope=scope,
         target_contains=target_contains,
+        backend=backend,
     )
 
     items.sort(key=lambda item: (str(item.get("created_at", "") or ""), str(item.get("kind", "") or ""), str(item.get("target", "") or "")))
@@ -54,6 +56,7 @@ def timeline_query(
                 "scope": scope,
                 "target_contains": target_contains,
                 "limit": limit,
+                "backend": backend,
             },
         },
     )
@@ -69,28 +72,40 @@ def collect_timeline_items(
     action: str = "",
     scope: str = "",
     target_contains: str = "",
+    backend: str = "auto",
 ) -> List[Dict[str, Any]]:
     wanted = set(kinds or ["session_event", "write_receipt", "handoff"])
     items: List[Dict[str, Any]] = []
+    use_backend = backend in {"auto", "sqlite"} and bool(store.memory_backend_stats().get("collections"))
 
     if "session_event" in wanted:
-        for row in store.read_jsonl(SESSION_EVENTS_FILE, limit=5000):
+        session_rows = _load_collection_rows(store, SESSION_EVENTS_FILE, use_backend=use_backend)
+        for row in session_rows:
             item = _map_session_event(row)
             if _match_timeline_item(item, task_id=task_id, session_id=session_id, layer=layer, action=action, scope=scope, target_contains=target_contains):
                 items.append(item)
 
     if "write_receipt" in wanted:
-        for row in store.read_jsonl(WRITE_RECEIPTS_FILE, limit=5000):
+        receipt_rows = _load_collection_rows(store, WRITE_RECEIPTS_FILE, use_backend=use_backend)
+        for row in receipt_rows:
             item = _map_write_receipt(row)
             if _match_timeline_item(item, task_id=task_id, session_id=session_id, layer=layer, action=action, scope=scope, target_contains=target_contains):
                 items.append(item)
 
     if "handoff" in wanted:
-        for row in store.read_jsonl(HANDOFF_HISTORY_FILE, limit=5000):
+        handoff_rows = _load_collection_rows(store, HANDOFF_HISTORY_FILE, use_backend=use_backend)
+        for row in handoff_rows:
             item = _map_handoff(row)
             if _match_timeline_item(item, task_id=task_id, session_id=session_id, layer=layer, action=action, scope=scope, target_contains=target_contains):
                 items.append(item)
     return items
+
+
+def _load_collection_rows(store: WorkspaceStore, collection: str, *, use_backend: bool) -> List[Dict[str, Any]]:
+    if use_backend:
+        rows = store.memory_backend_query_records(collection=collection, limit=5000).get("records", [])
+        return [item.get("payload", {}) for item in rows if isinstance(item.get("payload", {}), dict)]
+    return store.read_jsonl(collection, limit=5000)
 
 
 def _match_timeline_item(

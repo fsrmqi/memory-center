@@ -694,6 +694,22 @@ Resume and handoff packets can now be evaluated through `memory_eval_resume` and
 
 `memory_tool_usage_report` 会汇总近期 Memory Center 工具使用率，并标记那些“看起来在找类/符号/调用链，但没有走 Memory Center”的疑似绕过场景。
 
+The evaluation layer now also includes:
+
+- `memory_eval_index_freshness`
+- `memory_eval_tool_adoption`
+- `memory_eval_context_weight`
+
+These help answer whether indexes are stale, whether models are actually using Memory Center, and whether compact payloads are still too heavy.
+
+评测层现在还额外包含：
+
+- `memory_eval_index_freshness`
+- `memory_eval_tool_adoption`
+- `memory_eval_context_weight`
+
+它们分别用于判断索引是否过期、模型是否真的在使用 Memory Center、以及 compact payload 是否仍然偏重。
+
 To reduce model-side token usage, `workspace_sniff`, `workspace_status`, `workspace_resume_packet`, `workspace_recent_evidence`, `workspace_continuity_dashboard`, and `workspace_dashboard` now support `view=compact|full` plus `budget=small|medium|large`. MCP defaults to `compact + medium`; use `full` for local debugging or manual inspection.
 
 为了降低模型侧 token 消耗，`workspace_sniff`、`workspace_status`、`workspace_resume_packet`、`workspace_recent_evidence`、`workspace_continuity_dashboard`、`workspace_dashboard` 现在都支持 `view=compact|full`，并新增 `budget=small|medium|large`。MCP 默认使用 `compact + medium`；本地调试或人工排查时再切 `full`。
@@ -713,6 +729,18 @@ Short references can now be expanded through `memory_ref_get` / `memory_ref_batc
 For one-command health checks, `memory-center regression-smoke --workspace ...` now runs write, session, sync, ref expansion, compact views, and regression suite checks together.
 
 为了做一键健康检查，现在可以直接运行 `memory-center regression-smoke --workspace ...`，它会一起检查写入、session、sync、短引用展开、compact 视图和 regression suite。
+
+The first unified backend step is now in place: session events, session summaries, handoff history, case atoms, write receipts, and ref metadata are mirrored into a local SQLite `memory.db`, while JSONL/Markdown files remain the source of truth.
+
+统一后端的第一步也已经落地：session events、session summaries、handoff history、case atoms、write receipts 和 ref metadata 现在会镜像写入本地 SQLite `memory.db`，同时继续保留 JSONL/Markdown 作为主落盘形态。
+
+You can also query the mirrored backend directly through `memory-backend-query` / `memory_backend_query_tool` / `/workspace/memory-backend-query`.
+
+现在也可以直接查询这层镜像后端：`memory-backend-query` / `memory_backend_query_tool` / `/workspace/memory-backend-query`。
+
+`timeline_query` and the higher-level evidence/replay views can now read from the mirrored SQLite backend in `auto/sqlite` mode, so the backend is already starting to participate in real read paths instead of being write-only.
+
+`timeline_query` 以及上层的 evidence/replay 视图现在也已经可以在 `auto/sqlite` 模式下直接读取镜像后的 SQLite backend，这意味着后端已经开始参与真实读路径，而不只是写入镜像。
 
 Under the hood, session events, write receipts and handoff history are now converging toward one shared timeline substrate, so replay, dashboard, evidence lookup and eval can reuse the same chronological model.
 
@@ -866,6 +894,26 @@ memory-center serve-http \
   --host 127.0.0.1 \
   --port 8765
 ```
+
+You can also open the built-in local workbench pages:
+
+- `/ui`
+- `/ui/dashboard`
+- `/ui/continuity`
+- `/ui/task`
+- `/ui/timeline`
+- `/ui/usage`
+- `/ui/backend`
+
+现在也可以直接打开内置本地工作台页面：
+
+- `/ui`
+- `/ui/dashboard`
+- `/ui/continuity`
+- `/ui/task`
+- `/ui/timeline`
+- `/ui/usage`
+- `/ui/backend`
 
 Or:
 

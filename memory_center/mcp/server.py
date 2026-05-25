@@ -16,6 +16,7 @@ from memory_center.core.orchestrator import (
     memory_impact,
     memory_plan_change,
     memory_query,
+    memory_backend_query,
     memory_ref_batch,
     memory_ref_get,
     memory_search_code,
@@ -26,6 +27,9 @@ from memory_center.core.orchestrator import (
     memory_tool_usage_report,
     memory_eval_write_quality,
     memory_eval_regression_suite,
+    memory_eval_index_freshness,
+    memory_eval_tool_adoption,
+    memory_eval_context_weight,
     memory_eval_resume,
     memory_eval_handoff,
     memory_write_judge,
@@ -384,6 +388,21 @@ def create_server(workspace_file: str):
         )
 
     @mcp.tool()
+    def memory_eval_index_freshness_tool(scope: str = "all"):
+        """Evaluate whether current indexes look stale relative to git changes."""
+        return memory_eval_index_freshness(_WORKSPACE_FILE, scope=scope)
+
+    @mcp.tool()
+    def memory_eval_tool_adoption_tool(limit: int = 200):
+        """Evaluate recent Memory Center tool adoption quality."""
+        return memory_eval_tool_adoption(_WORKSPACE_FILE, limit=limit)
+
+    @mcp.tool()
+    def memory_eval_context_weight_tool(intent: str = "", limit: int = 8):
+        """Evaluate whether compact budgeted payloads are still too heavy."""
+        return memory_eval_context_weight(_WORKSPACE_FILE, intent=intent, limit=limit)
+
+    @mcp.tool()
     def memory_tool_usage_report_tool(limit: int = 200):
         """Summarize recent Memory Center vs external tool usage and lookup adoption."""
         return memory_tool_usage_report(_WORKSPACE_FILE, limit=limit)
@@ -397,6 +416,11 @@ def create_server(workspace_file: str):
     def memory_ref_batch_tool(ref_ids: List[str]):
         """Resolve multiple short memory reference ids."""
         return memory_ref_batch(_WORKSPACE_FILE, ref_ids=ref_ids)
+
+    @mcp.tool()
+    def memory_backend_query_tool(collection: str = "", record_id: str = "", created_after: str = "", ref_path: str = "", limit: int = 50):
+        """Query the mirrored SQLite memory backend."""
+        return memory_backend_query(_WORKSPACE_FILE, collection=collection, record_id=record_id, created_after=created_after, ref_path=ref_path, limit=limit)
 
     @mcp.tool()
     def workspace_trace_tool(entry: str):
@@ -456,6 +480,42 @@ def create_server(workspace_file: str):
         return workspace_log_session_event(_WORKSPACE_FILE, session_id, event_type, payload)
 
     @mcp.tool()
+    def workspace_work_start_tool(intent: str, limit: int = 8, auto_sync_mode: str = "balanced", sync_task_space: bool = True, budget: str = "medium"):
+        """Start one task workflow: sniff, optional sync, then start session."""
+        sniff_result = workspace_sniff(_WORKSPACE_FILE, intent, limit=limit, auto_sync_mode=auto_sync_mode, view="compact", budget=budget)
+        synced = None
+        resolved_task = sniff_result.get("resolved_task", {}) or {}
+        auto_sync = sniff_result.get("auto_sync_recommendation", {}) or {}
+        if sync_task_space and (auto_sync.get("recommended") or resolved_task.get("task_id")):
+            synced = workspace_sync_sniff_to_artifacts(
+                _WORKSPACE_FILE,
+                intent,
+                limit=limit,
+                task_id=str(resolved_task.get("task_id", "") or ""),
+                title=str(resolved_task.get("title", "") or ""),
+                auto_sync_mode=auto_sync_mode,
+            )
+        session = workspace_start_session(_WORKSPACE_FILE, intent)
+        return {"workflow": "work-start", "sniff": sniff_result, "sync_sniff": synced, "session": session}
+
+    @mcp.tool()
+    def workspace_work_sync_tool(intent: str = "", session_id: str = "", task_id: str = "", title: str = "", limit: int = 8, auto_sync_mode: str = "balanced"):
+        """Sync current task context or case back into task space."""
+        if session_id.strip():
+            return {
+                "workflow": "work-sync",
+                "mode": "case",
+                "result": workspace_sync_case_to_artifacts(_WORKSPACE_FILE, session_id, task_id=task_id, title=title, auto_sync_mode=auto_sync_mode),
+            }
+        if intent.strip():
+            return {
+                "workflow": "work-sync",
+                "mode": "sniff",
+                "result": workspace_sync_sniff_to_artifacts(_WORKSPACE_FILE, intent, limit=limit, task_id=task_id, title=title, auto_sync_mode=auto_sync_mode),
+            }
+        raise ValueError("workspace_work_sync_tool requires intent or session_id")
+
+    @mcp.tool()
     def workspace_end_session_tool(session_id: str, outcome: str = "", verified_by: List[str] | None = None):
         """End one session and generate a reusable summary."""
         return workspace_end_session(_WORKSPACE_FILE, session_id, outcome, verified_by)
@@ -496,6 +556,17 @@ def create_server(workspace_file: str):
         return workspace_resume_packet(_WORKSPACE_FILE, task_id=task_id, session_id=session_id, intent=intent, limit=limit, view=view, budget=budget)
 
     @mcp.tool()
+    def workspace_work_resume_tool(task_id: str = "", session_id: str = "", intent: str = "", limit: int = 8, budget: str = "medium"):
+        """Resume one task with compact packet, next actions, unresolved items, and recent evidence."""
+        return {
+            "workflow": "work-resume",
+            "resume_packet": workspace_resume_packet(_WORKSPACE_FILE, task_id=task_id, session_id=session_id, intent=intent, limit=limit, view="compact", budget=budget),
+            "next_actions": workspace_next_actions(_WORKSPACE_FILE, task_id=task_id, session_id=session_id, intent=intent, limit=limit),
+            "unresolved_items": workspace_unresolved_items(_WORKSPACE_FILE, task_id=task_id, session_id=session_id, intent=intent, limit=limit),
+            "recent_evidence": workspace_recent_evidence(_WORKSPACE_FILE, task_id=task_id, session_id=session_id, limit=min(limit, 5), budget=budget),
+        }
+
+    @mcp.tool()
     def workspace_model_profile_tool(model_name: str):
         """Return one normalized model profile for handoff."""
         return workspace_model_profile(model_name)
@@ -504,6 +575,16 @@ def create_server(workspace_file: str):
     def workspace_handoff_packet_tool(target_model: str, task_id: str = "", session_id: str = "", intent: str = "", limit: int = 10):
         """Build one handoff packet for the target model."""
         return workspace_handoff_packet(_WORKSPACE_FILE, target_model=target_model, task_id=task_id, session_id=session_id, intent=intent, limit=limit)
+
+    @mcp.tool()
+    def workspace_work_handoff_tool(target_model: str, task_id: str = "", session_id: str = "", intent: str = "", limit: int = 8, budget: str = "medium"):
+        """Build one compact handoff workflow package."""
+        return {
+            "workflow": "work-handoff",
+            "handoff_packet": workspace_handoff_packet(_WORKSPACE_FILE, target_model=target_model, task_id=task_id, session_id=session_id, intent=intent, limit=limit),
+            "recent_evidence": workspace_recent_evidence(_WORKSPACE_FILE, task_id=task_id, session_id=session_id, limit=min(limit, 5), budget=budget),
+            "tool_usage_report": memory_tool_usage_report(_WORKSPACE_FILE, limit=50),
+        }
 
     @mcp.tool()
     def workspace_handoff_history_tool(target_model: str = "", task_id: str = "", session_id: str = "", limit: int = 50):
@@ -519,6 +600,38 @@ def create_server(workspace_file: str):
     def workspace_dashboard_tool(intent: str = "", limit: int = 10, view: str = "compact", budget: str = "medium"):
         """Build one workspace-level dashboard."""
         return workspace_dashboard(_WORKSPACE_FILE, intent=intent, limit=limit, view=view, budget=budget)
+
+    @mcp.tool()
+    def workspace_work_close_tool(session_id: str, outcome: str = "", task_id: str = "", title: str = "", auto_sync_mode: str = "balanced", record_case: bool = True, verified_by: List[str] | None = None):
+        """Close one task workflow: end session, sync case, optionally record case."""
+        ended = workspace_end_session(_WORKSPACE_FILE, session_id, outcome, verified_by)
+        synced = workspace_sync_case_to_artifacts(_WORKSPACE_FILE, session_id, task_id=task_id, title=title, auto_sync_mode=auto_sync_mode)
+        draft = workspace_suggest_case(_WORKSPACE_FILE, session_id)
+        recorded = None
+        case = draft.get("draft_case", {}) if draft.get("found") else {}
+        if record_case and case.get("projects") and case.get("files"):
+            recorded = workspace_record_case(
+                _WORKSPACE_FILE,
+                case.get("task", outcome or "work-close"),
+                case.get("projects", []),
+                case.get("files", []),
+                case.get("flow", ""),
+                case.get("risk_points", []),
+                verified_by=case.get("verified_by", []) or verified_by,
+                source_session_id=session_id,
+                source_task_id=task_id,
+            )
+        return {"workflow": "work-close", "ended": ended, "sync_case": synced, "suggested_case": draft, "record_case": recorded}
+
+    @mcp.tool()
+    def workspace_work_health_tool(intent: str = "Memory Center work health", target_model: str = "codex", limit: int = 5):
+        """Run one compact workflow health check."""
+        return {
+            "workflow": "work-health",
+            "status": workspace_status(_WORKSPACE_FILE, view="compact", budget="medium"),
+            "tool_usage_report": memory_tool_usage_report(_WORKSPACE_FILE, limit=50),
+            "regression_suite": memory_eval_regression_suite(_WORKSPACE_FILE, intent=intent, target_model=target_model, limit=limit),
+        }
 
     @mcp.tool()
     def workspace_suggest_case_tool(session_id: str):

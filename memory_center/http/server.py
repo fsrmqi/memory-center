@@ -6,6 +6,15 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+from memory_center.core.exporters import (
+    export_continuity_dashboard_html,
+    export_focus_task_html,
+    export_memory_backend_html,
+    export_timeline_html,
+    export_usage_report_html,
+    export_workbench_index_html,
+    export_workspace_dashboard_html,
+)
 from memory_center.core.orchestrator import (
     group_impact,
     group_query,
@@ -15,8 +24,12 @@ from memory_center.core.orchestrator import (
     memory_execute_write,
     memory_eval_write_quality,
     memory_eval_regression_suite,
+    memory_eval_index_freshness,
+    memory_eval_tool_adoption,
+    memory_eval_context_weight,
     memory_eval_resume,
     memory_eval_handoff,
+    memory_backend_query,
     memory_ref_batch,
     memory_ref_get,
     memory_tool_usage_report,
@@ -76,6 +89,59 @@ def create_handler(default_workspace: str | Path | None = None) -> type[BaseHTTP
             parsed = urlparse(self.path)
             params = parse_qs(parsed.query)
             try:
+                if parsed.path == "/ui":
+                    self._write_html(200, export_workbench_index_html(_require_workspace(params, workspace_file)))
+                    return
+                if parsed.path == "/ui/dashboard":
+                    workspace = _require_workspace(params, workspace_file)
+                    html_text = export_workspace_dashboard_html(workspace, intent=params.get("intent", [""])[0], limit=_parse_int(params, "limit", 10))
+                    self._write_html(200, html_text)
+                    return
+                if parsed.path == "/ui/continuity":
+                    workspace = _require_workspace(params, workspace_file)
+                    html_text = export_continuity_dashboard_html(
+                        workspace,
+                        intent=params.get("intent", [""])[0],
+                        task_id=params.get("task_id", [""])[0],
+                        session_id=params.get("session_id", [""])[0],
+                        limit=_parse_int(params, "limit", 10),
+                    )
+                    self._write_html(200, html_text)
+                    return
+                if parsed.path == "/ui/task":
+                    workspace = _require_workspace(params, workspace_file)
+                    html_text = export_focus_task_html(
+                        workspace,
+                        intent=params.get("intent", [""])[0],
+                        limit=_parse_int(params, "limit", 10),
+                    )
+                    self._write_html(200, html_text)
+                    return
+                if parsed.path == "/ui/timeline":
+                    workspace = _require_workspace(params, workspace_file)
+                    html_text = export_timeline_html(
+                        workspace,
+                        intent=params.get("intent", [""])[0],
+                        limit=_parse_int(params, "limit", 20),
+                    )
+                    self._write_html(200, html_text)
+                    return
+                if parsed.path == "/ui/usage":
+                    workspace = _require_workspace(params, workspace_file)
+                    html_text = export_usage_report_html(
+                        workspace,
+                        limit=_parse_int(params, "limit", 50),
+                    )
+                    self._write_html(200, html_text)
+                    return
+                if parsed.path == "/ui/backend":
+                    workspace = _require_workspace(params, workspace_file)
+                    html_text = export_memory_backend_html(
+                        workspace,
+                        limit=_parse_int(params, "limit", 20),
+                    )
+                    self._write_html(200, html_text)
+                    return
                 payload = _route_request(parsed.path, params, workspace_file)
                 self._write_json(200, payload)
             except FileNotFoundError as exc:
@@ -92,6 +158,14 @@ def create_handler(default_workspace: str | Path | None = None) -> type[BaseHTTP
             body = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
             self.send_response(status)
             self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def _write_html(self, status: int, body_text: str) -> None:
+            body = body_text.encode("utf-8")
+            self.send_response(status)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
@@ -355,6 +429,15 @@ def _route_request(path: str, params: dict, default_workspace: str | None) -> di
             intent=params.get("intent", [""])[0],
             limit=_parse_int(params, "limit", 20),
         )
+    if path == "/workspace/eval-index-freshness":
+        workspace = _require_workspace(params, default_workspace)
+        return memory_eval_index_freshness(workspace, scope=params.get("scope", ["all"])[0])
+    if path == "/workspace/eval-tool-adoption":
+        workspace = _require_workspace(params, default_workspace)
+        return memory_eval_tool_adoption(workspace, limit=_parse_int(params, "limit", 200))
+    if path == "/workspace/eval-context-weight":
+        workspace = _require_workspace(params, default_workspace)
+        return memory_eval_context_weight(workspace, intent=params.get("intent", [""])[0], limit=_parse_int(params, "limit", 8))
     if path == "/workspace/tool-usage-report":
         workspace = _require_workspace(params, default_workspace)
         return memory_tool_usage_report(
@@ -368,6 +451,16 @@ def _route_request(path: str, params: dict, default_workspace: str | None) -> di
         workspace = _require_workspace(params, default_workspace)
         ref_ids = [item for item in params.get("ref_id", []) if item]
         return memory_ref_batch(workspace, ref_ids=ref_ids)
+    if path == "/workspace/memory-backend-query":
+        workspace = _require_workspace(params, default_workspace)
+        return memory_backend_query(
+            workspace,
+            collection=params.get("collection", [""])[0],
+            record_id=params.get("record_id", [""])[0],
+            created_after=params.get("created_after", [""])[0],
+            ref_path=params.get("ref_path", [""])[0],
+            limit=_parse_int(params, "limit", 50),
+        )
     if path == "/workspace/verify-checklist":
         workspace = _require_workspace(params, default_workspace)
         target = _require_one(params, "target")
@@ -389,6 +482,37 @@ def _route_request(path: str, params: dict, default_workspace: str | None) -> di
             limit=_parse_int(params, "limit", 10),
             budget=params.get("budget", ["medium"])[0],
         )
+    if path == "/workspace/work-start":
+        workspace = _require_workspace(params, default_workspace)
+        intent = _require_one(params, "intent")
+        limit = _parse_int(params, "limit", 8)
+        auto_sync_mode = params.get("auto_sync_mode", ["balanced"])[0]
+        budget = params.get("budget", ["medium"])[0]
+        sniff_result = workspace_sniff(workspace, intent, limit=limit, auto_sync_mode=auto_sync_mode, view="compact", budget=budget)
+        synced = None
+        resolved_task = sniff_result.get("resolved_task", {}) or {}
+        auto_sync = sniff_result.get("auto_sync_recommendation", {}) or {}
+        if params.get("sync_task_space", ["true"])[0].lower() == "true" and (auto_sync.get("recommended") or resolved_task.get("task_id")):
+            synced = workspace_sync_sniff_to_artifacts(
+                workspace,
+                intent,
+                limit=limit,
+                task_id=str(resolved_task.get("task_id", "") or ""),
+                title=str(resolved_task.get("title", "") or ""),
+                auto_sync_mode=auto_sync_mode,
+            )
+        session = workspace_start_session(workspace, intent)
+        return {"workflow": "work-start", "sniff": sniff_result, "sync_sniff": synced, "session": session}
+    if path == "/workspace/work-sync":
+        workspace = _require_workspace(params, default_workspace)
+        session_id = params.get("session_id", [""])[0]
+        task_id = params.get("task_id", [""])[0]
+        title = params.get("title", [""])[0]
+        auto_sync_mode = params.get("auto_sync_mode", ["balanced"])[0]
+        if session_id:
+            return {"workflow": "work-sync", "mode": "case", "result": workspace_sync_case_to_artifacts(workspace, session_id, task_id=task_id, title=title, auto_sync_mode=auto_sync_mode)}
+        intent = _require_one(params, "intent")
+        return {"workflow": "work-sync", "mode": "sniff", "result": workspace_sync_sniff_to_artifacts(workspace, intent, limit=_parse_int(params, "limit", 8), task_id=task_id, title=title, auto_sync_mode=auto_sync_mode)}
     if path == "/workspace/unresolved-items":
         workspace = _require_workspace(params, default_workspace)
         return workspace_unresolved_items(
@@ -418,6 +542,20 @@ def _route_request(path: str, params: dict, default_workspace: str | None) -> di
             view=params.get("view", ["compact"])[0],
             budget=params.get("budget", ["medium"])[0],
         )
+    if path == "/workspace/work-resume":
+        workspace = _require_workspace(params, default_workspace)
+        task_id = params.get("task_id", [""])[0]
+        session_id = params.get("session_id", [""])[0]
+        intent = params.get("intent", [""])[0]
+        limit = _parse_int(params, "limit", 8)
+        budget = params.get("budget", ["medium"])[0]
+        return {
+            "workflow": "work-resume",
+            "resume_packet": workspace_resume_packet(workspace, task_id=task_id, session_id=session_id, intent=intent, limit=limit, view="compact", budget=budget),
+            "next_actions": workspace_next_actions(workspace, task_id=task_id, session_id=session_id, intent=intent, limit=limit),
+            "unresolved_items": workspace_unresolved_items(workspace, task_id=task_id, session_id=session_id, intent=intent, limit=limit),
+            "recent_evidence": workspace_recent_evidence(workspace, task_id=task_id, session_id=session_id, limit=min(limit, 5), budget=budget),
+        }
     if path == "/workspace/model-profile":
         return workspace_model_profile(_require_one(params, "model_name"))
     if path == "/workspace/handoff-packet":
@@ -430,6 +568,20 @@ def _route_request(path: str, params: dict, default_workspace: str | None) -> di
             intent=params.get("intent", [""])[0],
             limit=_parse_int(params, "limit", 10),
         )
+    if path == "/workspace/work-handoff":
+        workspace = _require_workspace(params, default_workspace)
+        target_model = _require_one(params, "target_model")
+        task_id = params.get("task_id", [""])[0]
+        session_id = params.get("session_id", [""])[0]
+        intent = params.get("intent", [""])[0]
+        limit = _parse_int(params, "limit", 8)
+        budget = params.get("budget", ["medium"])[0]
+        return {
+            "workflow": "work-handoff",
+            "handoff_packet": workspace_handoff_packet(workspace, target_model=target_model, task_id=task_id, session_id=session_id, intent=intent, limit=limit),
+            "recent_evidence": workspace_recent_evidence(workspace, task_id=task_id, session_id=session_id, limit=min(limit, 5), budget=budget),
+            "tool_usage_report": memory_tool_usage_report(workspace, limit=50),
+        }
     if path == "/workspace/handoff-history":
         workspace = _require_workspace(params, default_workspace)
         return workspace_handoff_history(
@@ -459,6 +611,43 @@ def _route_request(path: str, params: dict, default_workspace: str | None) -> di
             view=params.get("view", ["compact"])[0],
             budget=params.get("budget", ["medium"])[0],
         )
+    if path == "/workspace/work-close":
+        workspace = _require_workspace(params, default_workspace)
+        session_id = _require_one(params, "session_id")
+        outcome = params.get("outcome", [""])[0]
+        task_id = params.get("task_id", [""])[0]
+        title = params.get("title", [""])[0]
+        auto_sync_mode = params.get("auto_sync_mode", ["balanced"])[0]
+        record_case = params.get("record_case", ["true"])[0].lower() == "true"
+        ended = workspace_end_session(workspace, session_id, outcome=outcome, verified_by=params.get("verified_by", []) or None)
+        synced = workspace_sync_case_to_artifacts(workspace, session_id, task_id=task_id, title=title, auto_sync_mode=auto_sync_mode)
+        draft = workspace_suggest_case(workspace, session_id)
+        recorded = None
+        case = draft.get("draft_case", {}) if draft.get("found") else {}
+        if record_case and case.get("projects") and case.get("files"):
+            recorded = workspace_record_case(
+                workspace,
+                case.get("task", outcome or "work-close"),
+                case.get("projects", []),
+                case.get("files", []),
+                case.get("flow", ""),
+                case.get("risk_points", []),
+                verified_by=case.get("verified_by", []) or params.get("verified_by", []) or None,
+                source_session_id=session_id,
+                source_task_id=task_id,
+            )
+        return {"workflow": "work-close", "ended": ended, "sync_case": synced, "suggested_case": draft, "record_case": recorded}
+    if path == "/workspace/work-health":
+        workspace = _require_workspace(params, default_workspace)
+        intent = params.get("intent", ["Memory Center work health"])[0]
+        target_model = params.get("target_model", ["codex"])[0]
+        limit = _parse_int(params, "limit", 5)
+        return {
+            "workflow": "work-health",
+            "status": workspace_status(workspace, view="compact", budget="medium"),
+            "tool_usage_report": memory_tool_usage_report(workspace, limit=50),
+            "regression_suite": memory_eval_regression_suite(workspace, intent=intent, target_model=target_model, limit=limit),
+        }
     if path == "/workspace/resume-context":
         workspace = _require_workspace(params, default_workspace)
         query = _require_one(params, "text")

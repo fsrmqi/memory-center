@@ -693,6 +693,32 @@ found_count = 成功展开数量
 refs        = memory_ref 列表
 ```
 
+#### `memory_backend_query_tool`
+
+**描述：** 查询镜像到 `memory.db` 的 SQLite 统一后端，适合做更稳定的观察、统计和后续平台化查询。
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `collection` | `string` | `""` | 记录集合名，例如 `session-events.jsonl` |
+| `record_id` | `string` | `""` | 精确记录 ID |
+| `created_after` | `string` | `""` | 起始时间（ISO 格式） |
+| `ref_path` | `string` | `""` | 需要查询的 ref 路径 |
+| `limit` | `int` | `50` | 最大返回数量 |
+
+**返回：**
+
+```text
+records.count = 命中的镜像记录数
+records.records[].collection
+records.records[].record_id
+records.records[].created_at
+records.records[].payload
+refs.count = 命中的 ref 数
+refs.refs[].ref_path
+refs.refs[].created_at
+refs.refs[].payload
+```
+
 #### `memory_detect_changes_tool`
 
 **描述：** 将本地 Git 变更映射到受影响的项目、图节点和规则。
@@ -1604,6 +1630,18 @@ memory-center serve-http \
   --port 8090
 ```
 
+工作台页面入口：
+
+```text
+/ui
+/ui/dashboard
+/ui/continuity
+/ui/task
+/ui/timeline
+/ui/usage
+/ui/backend
+```
+
 ### 10.2 端点清单
 
 | 方法 | 路径 | 说明 | 对应 MCP Tool |
@@ -1624,12 +1662,22 @@ memory-center serve-http \
 | `GET` | `/workspace/verify-checklist` | 验证检查清单 | `memory_verify_checklist_tool` |
 | `GET` | `/workspace/detect-changes` | Git 变更检测 | `memory_detect_changes_tool` |
 | `GET` | `/workspace/eval-regression-suite` | 聚合回归评估 | `memory_eval_regression_suite_tool` |
+| `GET` | `/workspace/eval-index-freshness` | 索引新鲜度评估 | `memory_eval_index_freshness_tool` |
+| `GET` | `/workspace/eval-tool-adoption` | 工具采用率评估 | `memory_eval_tool_adoption_tool` |
+| `GET` | `/workspace/eval-context-weight` | 上下文重量评估 | `memory_eval_context_weight_tool` |
 | `GET` | `/workspace/tool-usage-report` | 工具使用率与疑似绕过分析 | `memory_tool_usage_report_tool` |
 | `GET` | `/workspace/ref-get` | 展开单个短引用 | `memory_ref_get_tool` |
 | `GET` | `/workspace/ref-batch` | 批量展开短引用 | `memory_ref_batch_tool` |
+| `GET` | `/workspace/memory-backend-query` | 查询镜像 SQLite memory backend | `memory_backend_query_tool` |
+| `GET` | `/workspace/work-start` | 开始任务工作流 | `workspace_work_start_tool` |
+| `GET` | `/workspace/work-sync` | 同步任务工作流 | `workspace_work_sync_tool` |
 | `GET` | `/workspace/resume-packet` | 恢复包 | `workspace_resume_packet_tool` |
+| `GET` | `/workspace/work-resume` | 恢复任务工作流 | `workspace_work_resume_tool` |
 | `GET` | `/workspace/continuity-dashboard` | 连续性面板 | `workspace_continuity_dashboard_tool` |
 | `GET` | `/workspace/dashboard` | 工作区总面板 | `workspace_dashboard_tool` |
+| `GET` | `/workspace/work-handoff` | 交接任务工作流 | `workspace_work_handoff_tool` |
+| `GET` | `/workspace/work-close` | 关闭任务工作流 | `workspace_work_close_tool` |
+| `GET` | `/workspace/work-health` | 工作流健康检查 | `workspace_work_health_tool` |
 以上三个端点也都支持 `view=compact|full&budget=small|medium|large`
 | `GET` | `/workspace/artifacts` | 工件列表 | `workspace_artifact_list_tool` |
 | `GET` | `/workspace/artifact?name=...` | 读取工件 | `workspace_artifact_get_tool` |

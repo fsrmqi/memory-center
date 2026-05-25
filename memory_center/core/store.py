@@ -7,6 +7,8 @@ from typing import Any, Dict, Iterable, List
 
 from filelock import FileLock
 
+from .memory_backend import MemoryBackendStore
+
 
 def _safe_path(base: Path, name: str) -> Path:
     resolved_base = base.resolve()
@@ -28,6 +30,7 @@ class WorkspaceStore:
         self.instructions_dir = self.base_dir / "instructions"
         self.graph_dir = self.base_dir / "graph"
         self.lock_file = self.base_dir / "store.lock"
+        self._memory_backend: MemoryBackendStore | None = None
         for p in [self.index_dir, self.rules_dir, self.memory_dir, self.refs_dir, self.artifacts_dir, self.instructions_dir, self.graph_dir]:
             p.mkdir(parents=True, exist_ok=True)
 
@@ -52,6 +55,10 @@ class WorkspaceStore:
         with FileLock(str(self.lock_file)):
             with path.open("a", encoding="utf-8") as f:
                 f.write(json.dumps(item, ensure_ascii=False) + "\n")
+        try:
+            self.memory_backend().append_record(name, item, record_id=self._infer_record_id(name, item))
+        except Exception:
+            pass
 
     def read_jsonl(self, name: str, limit: int = 50) -> List[Dict[str, Any]]:
         path = self.memory_dir / name
@@ -77,7 +84,12 @@ class WorkspaceStore:
         path.parent.mkdir(parents=True, exist_ok=True)
         with FileLock(str(self.lock_file)):
             path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-        return str(path.relative_to(self.base_dir))
+        ref = str(path.relative_to(self.base_dir))
+        try:
+            self.memory_backend().upsert_ref(ref, data)
+        except Exception:
+            pass
+        return ref
 
     def read_memory_ref_json(self, ref: str, default: Any = None) -> Any:
         default = {} if default is None else default
@@ -122,3 +134,34 @@ class WorkspaceStore:
     @property
     def graph_db_path(self) -> Path:
         return self.graph_dir / "graph.db"
+
+    @property
+    def memory_db_path(self) -> Path:
+        return self.memory_dir / "memory.db"
+
+    def memory_backend(self) -> MemoryBackendStore:
+        if self._memory_backend is None:
+            self._memory_backend = MemoryBackendStore(self.memory_db_path)
+        return self._memory_backend
+
+    def memory_backend_stats(self) -> Dict[str, Any]:
+        return self.memory_backend().stats()
+
+    def memory_backend_query_records(self, *, collection: str = "", record_id: str = "", created_after: str = "", limit: int = 50) -> Dict[str, Any]:
+        return self.memory_backend().query_records(collection=collection, record_id=record_id, created_after=created_after, limit=limit)
+
+    def memory_backend_query_refs(self, *, ref_path: str = "", limit: int = 50) -> Dict[str, Any]:
+        return self.memory_backend().query_refs(ref_path=ref_path, limit=limit)
+
+    def _infer_record_id(self, collection: str, item: Dict[str, Any]) -> str:
+        if collection == "write-receipts.jsonl":
+            return str(item.get("receipt_id", "") or item.get("receipt_ref", "") or "")
+        if collection == "session-events.jsonl":
+            return str(item.get("session_id", "") or "") + ":" + str(item.get("event_type", "") or "")
+        if collection == "session-summaries.jsonl":
+            return str(item.get("session_id", "") or "")
+        if collection == "handoff-history.jsonl":
+            return str(item.get("session_id", "") or "") + ":" + str(item.get("normalized_model", "") or "")
+        if collection == "cross-service-task-memory.jsonl":
+            return str(item.get("task", "") or "")
+        return ""

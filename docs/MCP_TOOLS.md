@@ -46,6 +46,7 @@ Memory Center exposes graph-first project memory to AI coding agents through MCP
 | `memory_tool_usage_report_tool(limit)` | Summarize recent Memory Center usage and suspected bypass cases. / 汇总近期 Memory Center 使用情况与疑似绕过案例。 |
 | `memory_ref_get_tool(ref_id)` | Expand one short reference id into raw content. / 把一个短引用 ID 展开成原始内容。 |
 | `memory_ref_batch_tool(ref_ids)` | Expand multiple short reference ids. / 批量展开多个短引用 ID。 |
+| `memory_backend_query_tool(collection, record_id, created_after, ref_path, limit)` | Query the mirrored SQLite memory backend. / 查询镜像 SQLite memory backend。 |
 | `workspace_recent_evidence_tool(task_id, session_id, limit, budget)` | Return recent evidence from session events and write receipts. `budget` supports `small|medium|large`. / 返回来自 session 事件和写入回执的近期证据。`budget` 支持 `small|medium|large`。 |
 | `workspace_unresolved_items_tool(task_id, session_id, intent, limit)` | Return unresolved items for one task/session. / 返回一个任务或会话的未解决事项。 |
 | `workspace_next_actions_tool(task_id, session_id, intent, limit)` | Suggest next actions for one task/session. / 为一个任务或会话推荐下一步动作。 |
@@ -90,14 +91,20 @@ Current canonical timeline kinds are `session_event`, `write_receipt`, and `hand
 | `workspace_record_case_tool(task, projects, files, flow, risk_points, verified_by, source_session_id, source_task_id)` | Record validated task memory, optionally linking it back to one session/task space. / 完成验证后沉淀任务经验，并可选回链到 session/task space。 |
 | `workspace_start_session_tool(intent, session_id)` | Start a lightweight long-memory session. / 开始一个轻量长期记忆会话。 |
 | `workspace_log_session_event_tool(session_id, event_type, payload)` | Append one session event like prompt/tool/result/note. Large payloads may be offloaded into `memory/refs/` with `payload_ref`. / 追加一次会话事件，例如提问、工具调用、工具结果、备注。体积过大的 payload 会自动外置到 `memory/refs/` 并返回 `payload_ref`。 |
+| `workspace_work_start_tool(intent, limit, auto_sync_mode, sync_task_space, budget)` | Start one task workflow by combining sniff, optional sync, and session start. / 开始一个任务工作流，组合 sniff、可选 sync 和 session start。 |
+| `workspace_work_sync_tool(intent, session_id, task_id, title, limit, auto_sync_mode)` | Sync current task context or case back into task space. / 把当前任务上下文或 case 同步回任务空间。 |
 | `workspace_end_session_tool(session_id, outcome, verified_by)` | End a session and generate a summary. / 结束会话并生成摘要。 |
 | `workspace_recent_sessions_tool(limit)` | Read recent summarized sessions. / 查看最近会话摘要。 |
 | `workspace_session_summary_tool(session_id)` | Read one session summary and raw events. / 查看单次会话摘要和原始事件。 |
 | `workspace_resume_context_tool(intent, limit)` | Resume a new task from related sessions, cases and entrypoints. / 基于相关会话、经验和入口点恢复新任务上下文。 |
 | `workspace_suggest_case_tool(session_id)` | Suggest one record-case draft from a finished session, including `evidence_refs` back to raw events. / 从已结束会话自动生成一条经验沉淀草稿，并附带可回溯原始事件的 `evidence_refs`。 |
+| `workspace_work_resume_tool(task_id, session_id, intent, limit, budget)` | Resume one task workflow with packet, next actions, unresolved items, and recent evidence. / 恢复一个任务工作流，返回恢复包、下一步、未解决项和近期证据。 |
+| `workspace_work_handoff_tool(target_model, task_id, session_id, intent, limit, budget)` | Build one compact handoff workflow package for the target model. / 为目标模型生成一个紧凑的工作流交接包。 |
 | `memory_generate_wiki_tool(output_dir)` | Generate bilingual architecture wiki. / 生成双语架构 Wiki。 |
 | `memory_generate_skills_tool(output_dir)` | Generate Agent skill files from task memory. / 根据历史任务生成 Agent Skill。 |
 | `workspace_status_tool(view, budget)` | Return index and memory status, including semantic backend readiness, layered memory counts (`L0/L1/L2/L3`), active task spaces, and `current_focus_task` with `focus_reason`. `view=compact|full`, `budget=small|medium|large`, MCP defaults to `compact + medium`. / 返回索引和记忆状态，包含语义 backend 就绪情况、分层记忆统计（`L0/L1/L2/L3`）、活跃任务空间，以及带 `focus_reason` 的 `current_focus_task`。`view` 支持 `compact|full`，`budget` 支持 `small|medium|large`，MCP 默认 `compact + medium`。 |
+| `workspace_work_close_tool(session_id, outcome, task_id, title, auto_sync_mode, record_case, verified_by)` | Close one task workflow by ending session, syncing case, and optionally recording long-term memory. / 关闭一个任务工作流：结束会话、同步 case，并可选沉淀长期记忆。 |
+| `workspace_work_health_tool(intent, target_model, limit)` | Run one compact workflow health check. / 运行一个紧凑的工作流健康检查。 |
 | `group_query_tool(group, query, limit)` | Run a merged query across registered workspaces in one logical group, with exact/semantic retrieval metadata and `progressive` summary/evidence/detail views. / 对逻辑分组中的多个工作区做聚合查询，并返回精确/语义召回来源信息，以及 `progressive` 的摘要/证据/细节分层视图。 |
 | `group_status_tool(group)` | Return aggregated group status, including semantic index readiness, document counts and backend distribution. / 返回逻辑分组聚合状态，包含语义索引就绪度、文档数和 backend 分布。 |
 | `group_impact_tool(group, target, direction, max_depth)` | Run cross-workspace impact analysis with lookup provenance, graph evidence, bridge evidence and `progressive` layered views. / 结合命中来源、图谱证据、bridge 证据和 `progressive` 分层视图做跨工作区影响面分析。 |

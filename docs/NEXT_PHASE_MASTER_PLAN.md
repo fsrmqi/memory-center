@@ -336,5 +336,6 @@
 - short refs
 - `memory_ref_get / memory_ref_batch`
 - `regression-smoke`
+- first-step SQLite unified memory mirror (`memory.db`)
 
 因此这份文档不是从零规划，而是下一阶段的统一收口方案。

@@ -89,6 +89,7 @@ def workspace_status(workspace_file: str | Path, view: str = "full", budget: str
         "semantic_index": semantic_index_stats(workspace_file),
         "memory_layers": memory_layers,
         "memory_overview": _build_memory_overview(memory_layers),
+        "memory_backend": store.memory_backend_stats(),
         "write_receipts_overview": _build_write_receipts_overview(store),
         "continuity_overview": _build_continuity_overview(workspace_file, active_tasks),
         "core_memory_blocks": core_memory_blocks,
@@ -739,6 +740,23 @@ def memory_ref_batch(workspace_file: str | Path, ref_ids: List[str]) -> Dict[str
             "refs": refs,
         },
     )
+
+
+def memory_backend_query(
+    workspace_file: str | Path,
+    *,
+    collection: str = "",
+    record_id: str = "",
+    created_after: str = "",
+    ref_path: str = "",
+    limit: int = 50,
+) -> Dict[str, Any]:
+    config, store = load_context(workspace_file)
+    return {
+        "workspace": config.workspace,
+        "records": store.memory_backend_query_records(collection=collection, record_id=record_id, created_after=created_after, limit=limit),
+        "refs": store.memory_backend_query_refs(ref_path=ref_path, limit=limit),
+    }
 
 
 def workspace_unresolved_items(
@@ -1624,6 +1642,105 @@ def memory_eval_regression_suite(
         },
     )
     return suite
+
+
+def memory_eval_index_freshness(
+    workspace_file: str | Path,
+    scope: str = "all",
+) -> Dict[str, Any]:
+    config, store = load_context(workspace_file)
+    builder = EvalResultBuilder()
+    changed = memory_detect_changes(workspace_file, scope=scope)
+    changed_files = changed.get("changed_files", []) or []
+    semantic = semantic_index_stats(workspace_file)
+    index_files = [
+        store.index_dir / "file-index.json",
+        store.index_dir / "java-symbol-index.json",
+        store.index_dir / "api-index.json",
+        store.index_dir / "feign-index.json",
+        store.index_dir / "mq-index.json",
+        store.index_dir / "config-index.json",
+        store.index_dir / "service-topology.json",
+        store.index_dir / "semantic-node-index.json",
+        store.graph_dir / "graph.db",
+    ]
+    existing = [path for path in index_files if path.exists()]
+    latest_index_mtime = max((path.stat().st_mtime for path in existing), default=0.0)
+    stale_changed_files = []
+    for rel in changed_files[:200]:
+        matched = next((row for row in store.read_json("file-index.json", []) if row.get("path") == rel), None)
+        abs_path = Path(matched.get("abs_path", "")) if matched and matched.get("abs_path") else None
+        if abs_path and abs_path.exists() and abs_path.stat().st_mtime > latest_index_mtime:
+            stale_changed_files.append(rel)
+    if changed_files and stale_changed_files:
+        builder.add("high", "stale_index_after_changes", "存在变更文件比当前索引更新，建议执行增量或全量 reindex。", 35)
+    if not semantic.get("ready"):
+        builder.add("medium", "semantic_not_ready", "语义索引未就绪，query/context/impact 的召回质量会下降。", 20)
+    if not existing:
+        builder.add("high", "missing_index_files", "未发现任何索引文件，workspace 处于未初始化索引状态。", 100)
+    return builder.finalize(
+        workspace=config.workspace,
+        scope=scope,
+        changed_file_count=len(changed_files),
+        stale_changed_files=stale_changed_files[:20],
+        semantic_index=semantic,
+        latest_index_mtime=latest_index_mtime,
+    )
+
+
+def memory_eval_tool_adoption(
+    workspace_file: str | Path,
+    limit: int = 200,
+) -> Dict[str, Any]:
+    config, _ = load_context(workspace_file)
+    report = memory_tool_usage_report(workspace_file, limit=limit)
+    summary = report.get("summary", {}) or {}
+    builder = EvalResultBuilder()
+    if float(summary.get("memory_center_ratio", 0.0)) < 0.25 and int(summary.get("total_tool_calls", 0)) > 0:
+        builder.add("medium", "low_memory_center_ratio", "近期工具调用中 Memory Center 占比较低，模型可能仍主要依赖本地搜索。", 25)
+    if int(summary.get("lookup_tool_total", 0)) == 0 and int(summary.get("total_tool_calls", 0)) > 0:
+        builder.add("medium", "no_lookup_tool_usage", "近期没有使用 Memory Center lookup 工具，类/符号检索可能未按协议走。", 20)
+    if int(summary.get("suspected_bypass_count", 0)) > 0:
+        builder.add("high", "suspected_bypass_detected", "检测到疑似绕过 Memory Center 的检索行为。", min(40, int(summary.get("suspected_bypass_count", 0)) * 10))
+    return builder.finalize(
+        workspace=config.workspace,
+        usage_report=report,
+        total_tool_calls=summary.get("total_tool_calls", 0),
+        memory_center_ratio=summary.get("memory_center_ratio", 0.0),
+    )
+
+
+def memory_eval_context_weight(
+    workspace_file: str | Path,
+    intent: str = "",
+    limit: int = 8,
+) -> Dict[str, Any]:
+    config, _ = load_context(workspace_file)
+    sniff_small = workspace_sniff(workspace_file, intent or "context weight", limit=limit, view="compact", budget="small")
+    sniff_large = workspace_sniff(workspace_file, intent or "context weight", limit=limit, view="compact", budget="large")
+    resume_small = workspace_resume_packet(workspace_file, intent=intent, limit=limit, view="compact", budget="small")
+    dashboard_small = workspace_dashboard(workspace_file, intent=intent, limit=limit, view="compact", budget="small")
+    builder = EvalResultBuilder()
+    sniff_small_chars = len(json.dumps(sniff_small, ensure_ascii=False))
+    sniff_large_chars = len(json.dumps(sniff_large, ensure_ascii=False))
+    resume_small_chars = len(json.dumps(resume_small, ensure_ascii=False))
+    dashboard_small_chars = len(json.dumps(dashboard_small, ensure_ascii=False))
+    if sniff_small_chars > 4500:
+        builder.add("medium", "sniff_small_too_heavy", "sniff 在 small budget 下仍偏重，建议继续压缩字段或条目数。", 20)
+    if resume_small_chars > 2800:
+        builder.add("medium", "resume_small_too_heavy", "resume packet 在 small budget 下仍偏重。", 15)
+    if dashboard_small_chars > 5200:
+        builder.add("medium", "dashboard_small_too_heavy", "workspace dashboard 在 small budget 下仍偏重。", 20)
+    if sniff_large_chars <= sniff_small_chars:
+        builder.add("low", "budget_not_effective", "budget small/large 的输出规模没有明显拉开。", 10)
+    return builder.finalize(
+        workspace=config.workspace,
+        intent=intent,
+        sniff_small_chars=sniff_small_chars,
+        sniff_large_chars=sniff_large_chars,
+        resume_small_chars=resume_small_chars,
+        dashboard_small_chars=dashboard_small_chars,
+    )
 
 
 def workspace_sync_sniff_to_artifacts(

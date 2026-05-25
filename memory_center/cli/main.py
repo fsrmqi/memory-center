@@ -43,6 +43,7 @@ from memory_center.core.orchestrator import (
     memory_impact,
     memory_plan_change,
     memory_query,
+    memory_backend_query,
     memory_ref_batch,
     memory_ref_get,
     memory_search_code,
@@ -81,6 +82,9 @@ from memory_center.core.orchestrator import (
     workspace_replay_write_chain,
     memory_eval_write_quality,
     memory_eval_regression_suite,
+    memory_eval_index_freshness,
+    memory_eval_tool_adoption,
+    memory_eval_context_weight,
     memory_eval_resume,
     memory_eval_handoff,
 )
@@ -489,6 +493,34 @@ def eval_regression_suite_cmd(
     )
 
 
+@app.command("eval-index-freshness")
+def eval_index_freshness_cmd(
+    workspace: str = typer.Option(...),
+    scope: str = typer.Option("all"),
+):
+    """Evaluate whether indexes look stale relative to current git changes."""
+    print(memory_eval_index_freshness(workspace, scope=scope))
+
+
+@app.command("eval-tool-adoption")
+def eval_tool_adoption_cmd(
+    workspace: str = typer.Option(...),
+    limit: int = typer.Option(200),
+):
+    """Evaluate recent Memory Center tool adoption quality."""
+    print(memory_eval_tool_adoption(workspace, limit=limit))
+
+
+@app.command("eval-context-weight")
+def eval_context_weight_cmd(
+    workspace: str = typer.Option(...),
+    intent: str = typer.Option(""),
+    limit: int = typer.Option(8),
+):
+    """Evaluate whether compact budgeted payloads are still too heavy."""
+    print(memory_eval_context_weight(workspace, intent=intent, limit=limit))
+
+
 @app.command("regression-smoke")
 def regression_smoke_cmd(
     workspace: str = typer.Option(...),
@@ -563,6 +595,19 @@ def ref_batch_cmd(
 ):
     """Resolve multiple short memory reference ids."""
     print(memory_ref_batch(workspace, ref_ids=ref_id))
+
+
+@app.command("memory-backend-query")
+def memory_backend_query_cmd(
+    workspace: str = typer.Option(...),
+    collection: str = typer.Option(""),
+    record_id: str = typer.Option(""),
+    created_after: str = typer.Option(""),
+    ref_path: str = typer.Option(""),
+    limit: int = typer.Option(50),
+):
+    """Query mirrored SQLite memory backend records and refs."""
+    print(memory_backend_query(workspace, collection=collection, record_id=record_id, created_after=created_after, ref_path=ref_path, limit=limit))
 
 
 @app.command("generate-wiki")
