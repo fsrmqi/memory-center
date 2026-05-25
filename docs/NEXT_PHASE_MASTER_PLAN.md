@@ -65,6 +65,27 @@
 
 ## 三、一次性整体改造的 6 个工作包
 
+### 当前完成度总览
+
+| 工作包 | 当前状态 | 已实现 | 仍待推进 |
+|---|---|---|---|
+| 工作包 1：增量索引系统 | `进行中` | `reindex --project`、`--path`、`--changed-only`、`--scope staged|head|all` 第一版已落地 | 真正的局部 graph rebuild、局部 semantic rebuild、更精细的 changed-only 更新 |
+| 工作包 2：统一轻量上下文协议 | `大部分完成` | `view=compact|full`、`budget=small|medium|large` 已覆盖高频大返回 | 更细的 token 估算与模型偏好预算映射 |
+| 工作包 3：统一引用与时间线系统 | `大部分完成` | `ref_id + summary`、`memory_ref_get`、`memory_ref_batch`、timeline 短引用化 | 更彻底的 `timeline <-> ref` 双向导航与页面级 drill-down |
+| 工作包 4：一键工作流系统 | `大部分完成` | `work-start/work-log/work-sync/work-resume/work-handoff/work-close/work-health` 已覆盖 CLI/MCP/HTTP | 更强的自动策略编排与 workflow 质量评测 |
+| 工作包 5：可视化工作台 | `进行中` | `/ui`、`/ui/dashboard`、`/ui/continuity`、`/ui/task`、`/ui/timeline`、`/ui/receipts`、`/ui/usage`、`/ui/backend`、`/ui/index-freshness` | 更强交互、筛选、联动、展开细节、常驻更像产品 |
+| 工作包 6：统一后端与评测体系 | `进行中` | SQLite `memory.db` 镜像后端、后端查询入口、`memory_eval_*` 增强 | 更深层查询路径切换到 SQLite、真正统一 backend 策略、更多长期趋势评测 |
+
+### 当前阶段判断
+
+当前系统已经从“功能集合”推进到了“可日常使用的协作底座”，但还没有达到“全部实现”的验收状态。  
+离最终目标最近的剩余重点是：
+
+1. 让增量索引从第一版变成更真实的局部重建
+2. 让 SQLite 后端从镜像/局部查询推进到更多真实读路径
+3. 让工作台从可看推进到更强交互和联动
+4. 做一轮更系统的 completion audit 与文档一致性审计
+
 ## 工作包 1：增量索引系统
 
 ### 目标
@@ -339,3 +360,100 @@
 - first-step SQLite unified memory mirror (`memory.db`)
 
 因此这份文档不是从零规划，而是下一阶段的统一收口方案。
+
+---
+
+## 八、外部参考与吸收方向
+
+以下外部项目已经被纳入本方案的参考范围，目的不是照搬，而是吸收对日常使用体验最有价值的部分。
+
+### 参考落地时机总览
+
+| 参考来源 | 当前阶段立即做 | 下一阶段继续做 | 后续产品化阶段再做 |
+|---|---|---|---|
+| `mattpocock/skills` | `work-*` 一键工作流、低 token 输出风格 | 更强约束的 workflow 模板、面向模型的超压缩输出 | 更完整的 skill 体系与自动生成 |
+| `rohitg00/agentmemory` | `compact/full + budget`、short refs、`memory_ref_get / batch`、`memory_eval_context_weight` | 正式 token benchmark、top-K only 策略加强、hybrid retrieval 优化 | 更深层数据库化与长期成本对比 |
+| `Understand-Anything` | `/ui/dashboard`、`/ui/continuity`、`/ui/task`、`/ui/timeline`、`/ui/usage`、`/ui/backend`、`/ui/index-freshness` | guided tour、任务学习路径、页面联动 | 更强交互式图形体验与 persona-adaptive UI |
+
+### 1. `mattpocock/skills`
+
+最值得借鉴的是：
+
+- 把高频工程动作收成 skill / workflow
+- 用超压缩输出降低 token
+- 把 handoff 做成结构化技能，而不是临时口头说明
+
+已吸收：
+
+- `work-start / work-sync / work-resume / work-handoff / work-close / work-health`
+- 低 token 的 `compact + budget`
+
+还可继续吸收：
+
+- 更强约束的 workflow skill 模板
+- 面向不同模型的超压缩输出模式
+
+建议落地时机：
+
+- 当前阶段：保持现有 `work-*` 工作流持续打磨
+- 下一阶段：把 workflow 模板再标准化，减少模型自由发挥
+- 后续阶段：再考虑 skill 自动生成与更大规模 skill 市场化组织
+
+### 2. `rohitg00/agentmemory`
+
+最值得借鉴的是：
+
+- 用 benchmark 驱动 token 优化
+- top-K only 的上下文策略
+- `BM25 + vector + graph` 组合检索思路
+- “记忆数据库”而不是“把所有内容喂进上下文”
+
+已吸收：
+
+- `compact/full`
+- `budget=small|medium|large`
+- `short refs`
+- `memory_ref_get / memory_ref_batch`
+- `memory_eval_context_weight`
+
+还可继续吸收：
+
+- 更正式的 token benchmark
+- 更系统的向量 / hybrid 检索权重策略
+
+建议落地时机：
+
+- 当前阶段：继续沿 `compact + budget + short refs` 这条线收口
+- 下一阶段：补 benchmark、top-K only 和 hybrid retrieval 的量化验证
+- 后续阶段：再考虑更深的数据库化与长期成本仪表盘
+
+### 3. `Lum1104/Understand-Anything`
+
+最值得借鉴的是：
+
+- 图不是为了炫技，而是为了教学和导航
+- 交互式 dashboard / guided tour
+- 结构图、timeline、usage、diff/impact 可视化
+
+已吸收：
+
+- `/ui/dashboard`
+- `/ui/continuity`
+- `/ui/task`
+- `/ui/timeline`
+- `/ui/receipts`
+- `/ui/usage`
+- `/ui/backend`
+- `/ui/index-freshness`
+
+还可继续吸收：
+
+- guided tour / onboarding
+- 更强的人设/视角自适应视图
+- 更深入的图形交互
+
+建议落地时机：
+
+- 当前阶段：把现有工作台页面补全到能日常看
+- 下一阶段：加入 guided tour / onboarding 与 task/timeline 联动
+- 后续阶段：再做更重的交互图与 persona-adaptive UI

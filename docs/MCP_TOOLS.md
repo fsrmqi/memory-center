@@ -43,6 +43,9 @@ Memory Center exposes graph-first project memory to AI coding agents through MCP
 | `workspace_write_receipts_tool(layer, action, scope, task_id, session_id, limit)` | Query persisted write receipts by layer/action/scope/task/session. / 按 layer、action、scope、task、session 查询已持久化的写入回执。 |
 | `workspace_replay_write_chain_tool(task_id, session_id, limit)` | Replay one write chain in time order. / 按时间顺序回放一条写入链路。 |
 | `memory_eval_write_quality_tool(task_id, session_id, intent, limit)` | Evaluate whether the observed receipts cover the expected memory layers. / 评估当前写入回执是否覆盖了预期的记忆层。 |
+| `memory_eval_index_freshness_tool(scope)` | Evaluate whether indexes look stale relative to current git changes. / 评估当前索引相对 git 变更是否已经过期。 |
+| `memory_eval_tool_adoption_tool(limit)` | Evaluate recent Memory Center tool adoption quality. / 评估近期 Memory Center 工具采用率。 |
+| `memory_eval_context_weight_tool(intent, limit)` | Evaluate whether compact budgeted payloads are still too heavy. / 评估 compact + budget 返回是否仍然偏重。 |
 | `memory_tool_usage_report_tool(limit)` | Summarize recent Memory Center usage and suspected bypass cases. / 汇总近期 Memory Center 使用情况与疑似绕过案例。 |
 | `memory_ref_get_tool(ref_id)` | Expand one short reference id into raw content. / 把一个短引用 ID 展开成原始内容。 |
 | `memory_ref_batch_tool(ref_ids)` | Expand multiple short reference ids. / 批量展开多个短引用 ID。 |

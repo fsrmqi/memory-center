@@ -9,6 +9,8 @@ from urllib.parse import parse_qs, urlparse
 from memory_center.core.exporters import (
     export_continuity_dashboard_html,
     export_focus_task_html,
+    export_index_freshness_html,
+    export_receipts_html,
     export_memory_backend_html,
     export_timeline_html,
     export_usage_report_html,
@@ -126,6 +128,14 @@ def create_handler(default_workspace: str | Path | None = None) -> type[BaseHTTP
                     )
                     self._write_html(200, html_text)
                     return
+                if parsed.path == "/ui/receipts":
+                    workspace = _require_workspace(params, workspace_file)
+                    html_text = export_receipts_html(
+                        workspace,
+                        limit=_parse_int(params, "limit", 20),
+                    )
+                    self._write_html(200, html_text)
+                    return
                 if parsed.path == "/ui/usage":
                     workspace = _require_workspace(params, workspace_file)
                     html_text = export_usage_report_html(
@@ -140,6 +150,11 @@ def create_handler(default_workspace: str | Path | None = None) -> type[BaseHTTP
                         workspace,
                         limit=_parse_int(params, "limit", 20),
                     )
+                    self._write_html(200, html_text)
+                    return
+                if parsed.path == "/ui/index-freshness":
+                    workspace = _require_workspace(params, workspace_file)
+                    html_text = export_index_freshness_html(workspace)
                     self._write_html(200, html_text)
                     return
                 payload = _route_request(parsed.path, params, workspace_file)

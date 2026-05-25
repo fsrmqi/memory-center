@@ -902,8 +902,10 @@ You can also open the built-in local workbench pages:
 - `/ui/continuity`
 - `/ui/task`
 - `/ui/timeline`
+- `/ui/receipts`
 - `/ui/usage`
 - `/ui/backend`
+- `/ui/index-freshness`
 
 现在也可以直接打开内置本地工作台页面：
 
@@ -912,8 +914,10 @@ You can also open the built-in local workbench pages:
 - `/ui/continuity`
 - `/ui/task`
 - `/ui/timeline`
+- `/ui/receipts`
 - `/ui/usage`
 - `/ui/backend`
+- `/ui/index-freshness`
 
 Or:
 

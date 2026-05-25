@@ -1206,10 +1206,14 @@ def test_http_bridge_routes(tmp_path: Path):
         assert "Next Actions" in ui_task
         ui_timeline = urlopen(f"{base}/ui/timeline?workspace={workspace}").read().decode("utf-8")
         assert "Timeline" in ui_timeline
+        ui_receipts = urlopen(f"{base}/ui/receipts?workspace={workspace}").read().decode("utf-8")
+        assert "Receipts" in ui_receipts
         ui_usage = urlopen(f"{base}/ui/usage?workspace={workspace}").read().decode("utf-8")
         assert "Usage Report" in ui_usage
         ui_backend = urlopen(f"{base}/ui/backend?workspace={workspace}").read().decode("utf-8")
         assert "Memory Backend" in ui_backend
+        ui_index_freshness = urlopen(f"{base}/ui/index-freshness?workspace={workspace}").read().decode("utf-8")
+        assert "Index Freshness" in ui_index_freshness
         eval_resume = json.loads(urlopen(f"{base}/workspace/eval-resume?intent=update%20rule&limit=10").read().decode("utf-8"))
         assert "quality" in eval_resume
         eval_handoff = json.loads(urlopen(f"{base}/workspace/eval-handoff?target_model=glm-4&intent=update%20rule&limit=10").read().decode("utf-8"))

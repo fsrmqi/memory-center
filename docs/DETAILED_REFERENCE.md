@@ -1638,8 +1638,10 @@ memory-center serve-http \
 /ui/continuity
 /ui/task
 /ui/timeline
+/ui/receipts
 /ui/usage
 /ui/backend
+/ui/index-freshness
 ```
 
 ### 10.2 端点清单

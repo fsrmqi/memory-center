@@ -273,8 +273,10 @@ def export_workbench_index_html(workspace_file: str | Path) -> str:
       <a class="card" href="/ui/continuity"><h2>Continuity Dashboard</h2><p>Resume packet, unresolved items, recent evidence.</p></a>
       <a class="card" href="/ui/task"><h2>Focus Task</h2><p>Current summary, next actions, and unresolved items.</p></a>
       <a class="card" href="/ui/timeline"><h2>Timeline</h2><p>Recent receipts, handoffs, and evidence refs.</p></a>
+      <a class="card" href="/ui/receipts"><h2>Receipts</h2><p>Recent write receipts and receipt summaries.</p></a>
       <a class="card" href="/ui/usage"><h2>Usage Report</h2><p>Lookup adoption and suspected bypasses.</p></a>
       <a class="card" href="/ui/backend"><h2>Memory Backend</h2><p>Mirrored SQLite collections, records, and refs.</p></a>
+      <a class="card" href="/ui/index-freshness"><h2>Index Freshness</h2><p>Stale index signals and semantic readiness.</p></a>
       <a class="card" href="/workspace/status?view=compact&budget=medium"><h2>Workspace Status JSON</h2><p>Compact machine-readable status.</p></a>
     </div>
   </div>
@@ -394,6 +396,84 @@ def export_usage_report_html(workspace_file: str | Path, limit: int = 50) -> str
       <section class="card"><h2>Summary</h2><div class="muted">Total calls: {summary.get('total_tool_calls', 0)}</div><div class="muted">Memory Center ratio: {summary.get('memory_center_ratio', 0)}</div><div class="muted">Bypasses: {summary.get('suspected_bypass_count', 0)}</div><div class="muted">Mirrored session events: {backend.get('records', {}).get('count', 0)}</div></section>
       <section class="card"><h2>Adoption Hints</h2>{_render_simple_list_html(report.get('adoption_hints', []))}</section>
       <section class="card"><h2>Bypass Samples</h2>{_render_ref_list_html([{'ref_id': item.get('session_id', ''), 'summary': item.get('reason', '') + ' | ' + str(item.get('query', ''))} for item in report.get('suspected_bypass', [])])}</section>
+    </div>
+  </div>
+</body>
+</html>
+"""
+
+
+def export_receipts_html(workspace_file: str | Path, limit: int = 20) -> str:
+    from .orchestrator import workspace_write_receipts
+
+    payload = workspace_write_receipts(workspace_file, limit=limit)
+    rows = payload.get("receipts", [])
+    items = "".join(
+        f"<li><strong>{html.escape(str(item.get('receipt_id', '')))}</strong> "
+        f"<span class='muted'>{html.escape(str(item.get('summary', '')))}</span></li>"
+        for item in rows
+    ) or "<div class='muted'>None</div>"
+    return f"""<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Receipts</title>
+  <style>
+    body {{ margin:0; font-family: Georgia, 'Noto Serif SC', serif; background:#f6f1e8; color:#1e1a16; }}
+    .wrap {{ max-width: 980px; margin: 0 auto; padding: 28px; }}
+    .card {{ background:#fffdf8; border:1px solid #d9cfc1; border-radius:16px; padding:18px; }}
+    .muted {{ color:#6d6357; }}
+    ul {{ margin:8px 0 0; padding-left:18px; }}
+    li {{ margin:6px 0; }}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="card">
+      <h1>Receipts</h1>
+      <div class="muted">Total: {payload.get('summary', {}).get('total', 0)}</div>
+      <ul>{items}</ul>
+    </section>
+  </div>
+</body>
+</html>
+"""
+
+
+def export_index_freshness_html(workspace_file: str | Path) -> str:
+    from .orchestrator import memory_eval_index_freshness
+
+    payload = memory_eval_index_freshness(workspace_file, scope="all")
+    findings = "".join(
+        f"<li><strong>{html.escape(str(item.get('severity', '')))}</strong> "
+        f"<span class='muted'>{html.escape(str(item.get('message', '')))}</span></li>"
+        for item in payload.get("findings", [])
+    ) or "<div class='muted'>None</div>"
+    stale = "".join(f"<li>{html.escape(str(item))}</li>" for item in payload.get("stale_changed_files", [])) or "<div class='muted'>None</div>"
+    return f"""<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Index Freshness</title>
+  <style>
+    body {{ margin:0; font-family: Georgia, 'Noto Serif SC', serif; background:#f6f1e8; color:#1e1a16; }}
+    .wrap {{ max-width: 980px; margin: 0 auto; padding: 28px; }}
+    .grid {{ display:grid; grid-template-columns: repeat(auto-fit,minmax(260px,1fr)); gap:18px; }}
+    .card {{ background:#fffdf8; border:1px solid #d9cfc1; border-radius:16px; padding:18px; }}
+    .muted {{ color:#6d6357; }}
+    ul {{ margin:8px 0 0; padding-left:18px; }}
+    li {{ margin:6px 0; }}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Index Freshness</h1>
+    <div class="grid">
+      <section class="card"><h2>Summary</h2><div class="muted">Quality: {payload.get('quality', '')}</div><div class="muted">Score: {payload.get('score', 0)}</div><div class="muted">Changed files: {payload.get('changed_file_count', 0)}</div></section>
+      <section class="card"><h2>Stale Changed Files</h2><ul>{stale}</ul></section>
+      <section class="card"><h2>Findings</h2><ul>{findings}</ul></section>
     </div>
   </div>
 </body>
