@@ -74,7 +74,8 @@ def query_write_receipts(
     limit: int = 50,
 ) -> Dict[str, Any]:
     store = WorkspaceStore(workspace_file)
-    rows = store.read_jsonl(WRITE_RECEIPTS_FILE, limit=5000)
+    backend_rows = store.read_jsonl_via_backend(WRITE_RECEIPTS_FILE, limit=5000)
+    rows = backend_rows or store.read_jsonl(WRITE_RECEIPTS_FILE, limit=5000)
     matched = []
     for row in rows:
         if layer and row.get("layer") != layer:

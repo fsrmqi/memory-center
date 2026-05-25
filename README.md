@@ -742,6 +742,10 @@ You can also query the mirrored backend directly through `memory-backend-query` 
 
 `timeline_query` 以及上层的 evidence/replay 视图现在也已经可以在 `auto/sqlite` 模式下直接读取镜像后的 SQLite backend，这意味着后端已经开始参与真实读路径，而不只是写入镜像。
 
+`workspace_recent_sessions`、`workspace_session_summary`、`workspace_write_receipts` 现在也会优先复用镜像后的 SQLite backend，并在需要时回退到原始 JSONL。
+
+`workspace_recent_sessions`、`workspace_session_summary`、`workspace_write_receipts` 现在也已经优先复用镜像后的 SQLite backend，并在必要时回退到原始 JSONL。
+
 Under the hood, session events, write receipts and handoff history are now converging toward one shared timeline substrate, so replay, dashboard, evidence lookup and eval can reuse the same chronological model.
 
 在底层，session events、write receipts 和 handoff history 现在开始收敛到同一套 timeline substrate，这样 replay、dashboard、evidence lookup 和 eval 可以复用同一个时间线模型。

@@ -153,6 +153,15 @@ class WorkspaceStore:
     def memory_backend_query_refs(self, *, ref_path: str = "", limit: int = 50) -> Dict[str, Any]:
         return self.memory_backend().query_refs(ref_path=ref_path, limit=limit)
 
+    def read_jsonl_via_backend(self, name: str, limit: int = 50) -> List[Dict[str, Any]]:
+        rows = self.memory_backend_query_records(collection=name, limit=limit).get("records", [])
+        return [item.get("payload", {}) for item in rows if isinstance(item.get("payload", {}), dict)]
+
+    def find_jsonl_via_backend(self, name: str, predicate, limit: int = 200) -> List[Dict[str, Any]]:
+        rows = self.read_jsonl_via_backend(name, limit=5000)
+        matched = [row for row in rows if predicate(row)]
+        return matched[-limit:]
+
     def _infer_record_id(self, collection: str, item: Dict[str, Any]) -> str:
         if collection == "write-receipts.jsonl":
             return str(item.get("receipt_id", "") or item.get("receipt_ref", "") or "")

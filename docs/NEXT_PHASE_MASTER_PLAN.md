@@ -74,7 +74,7 @@
 | 工作包 3：统一引用与时间线系统 | `大部分完成` | `ref_id + summary`、`memory_ref_get`、`memory_ref_batch`、timeline 短引用化 | 更彻底的 `timeline <-> ref` 双向导航与页面级 drill-down |
 | 工作包 4：一键工作流系统 | `大部分完成` | `work-start/work-log/work-sync/work-resume/work-handoff/work-close/work-health` 已覆盖 CLI/MCP/HTTP | 更强的自动策略编排与 workflow 质量评测 |
 | 工作包 5：可视化工作台 | `进行中` | `/ui`、`/ui/dashboard`、`/ui/continuity`、`/ui/task`、`/ui/timeline`、`/ui/receipts`、`/ui/usage`、`/ui/backend`、`/ui/index-freshness` | 更强交互、筛选、联动、展开细节、常驻更像产品 |
-| 工作包 6：统一后端与评测体系 | `进行中` | SQLite `memory.db` 镜像后端、后端查询入口、`memory_eval_*` 增强 | 更深层查询路径切换到 SQLite、真正统一 backend 策略、更多长期趋势评测 |
+| 工作包 6：统一后端与评测体系 | `进行中` | SQLite `memory.db` 镜像后端、后端查询入口、`memory_eval_*` 增强、`timeline/recent_sessions/session_summary/write_receipts` 优先复用 SQLite 读路径 | 更深层查询路径切换到 SQLite、真正统一 backend 策略、更多长期趋势评测 |
 
 ### 当前阶段判断
 
