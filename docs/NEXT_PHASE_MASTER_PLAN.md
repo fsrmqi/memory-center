@@ -374,6 +374,7 @@
 | `mattpocock/skills` | `work-*` 一键工作流、低 token 输出风格 | 更强约束的 workflow 模板、面向模型的超压缩输出 | 更完整的 skill 体系与自动生成 |
 | `rohitg00/agentmemory` | `compact/full + budget`、short refs、`memory_ref_get / batch`、`memory_eval_context_weight` | 正式 token benchmark、top-K only 策略加强、hybrid retrieval 优化 | 更深层数据库化与长期成本对比 |
 | `Understand-Anything` | `/ui/dashboard`、`/ui/continuity`、`/ui/task`、`/ui/timeline`、`/ui/usage`、`/ui/backend`、`/ui/index-freshness` | guided tour、任务学习路径、页面联动 | 更强交互式图形体验与 persona-adaptive UI |
+| `rtk-ai/rtk` | `compact/full + budget`、short refs、工作流压缩思路 | 命令输出前置压缩层、按命令类型定制压缩器、token gain 观测 | 更强的代理层、自动命令重写与长期压缩策略 |
 
 ### 1. `mattpocock/skills`
 
@@ -459,3 +460,30 @@
 - 当前阶段：把现有工作台页面补全到能日常看
 - 下一阶段：加入 guided tour / onboarding 与 task/timeline 联动
 - 后续阶段：再做更重的交互图与 persona-adaptive UI
+
+### 4. `rtk-ai/rtk`
+
+最值得借鉴的是：
+
+- 把命令输出在进入模型前就做压缩
+- 针对不同命令类型做专门压缩器，而不是一刀切
+- 对压缩前后 token/字符收益做可观测统计
+
+已吸收：
+
+- `compact/full`
+- `budget=small|medium|large`
+- short refs
+- 轻量工作流输出风格
+
+还可继续吸收：
+
+- 命令输出前置压缩层
+- `git status` / `git diff` / `rg` / `pytest` 等专门压缩器
+- token gain / gain graph / discover 这类观测能力
+
+建议落地时机：
+
+- 当前阶段：继续沿 `compact + budget + short refs` 压上下文
+- 下一阶段：补命令输出前置压缩层与高频命令压缩器
+- 后续阶段：再做自动代理层和长期压缩策略
