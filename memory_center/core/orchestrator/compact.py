@@ -185,3 +185,33 @@ def _compact_workspace_dashboard(result: Dict[str, Any], budget: str = "medium")
             },
         },
     )
+
+
+def _compact_handoff_packet(result: Dict[str, Any], budget: str = "medium") -> Dict[str, Any]:
+    limits = _budget_limits(budget)
+    packet = result.get("handoff_packet", {}) or {}
+    model_profile = result.get("model_profile", {}) or {}
+    return with_schema(
+        "handoff_packet",
+        {
+            "workspace": result.get("workspace", ""),
+            "target_model": result.get("target_model", ""),
+            "task_id": result.get("task_id", ""),
+            "session_id": result.get("session_id", ""),
+            "model_profile": {
+                "normalized_model": model_profile.get("normalized_model", ""),
+                "handoff_style": model_profile.get("handoff_style", ""),
+            },
+            "handoff_rule_profile": result.get("handoff_rule_profile", ""),
+            "handoff_packet": {
+                "what_has_been_done": packet.get("what_has_been_done", [])[: limits["events"]],
+                "what_not_to_repeat": packet.get("what_not_to_repeat", [])[: limits["findings"]],
+                "what_is_risky": packet.get("what_is_risky", [])[: limits["findings"]],
+                "what_to_check_next": packet.get("what_to_check_next", [])[: limits["steps"]],
+                "minimal_required_context": packet.get("minimal_required_context", {}),
+                "recent_evidence": packet.get("recent_evidence", [])[: limits["events"]],
+                "notes": packet.get("notes", [])[:2],
+            },
+            "handoff_ref": result.get("handoff_ref", ""),
+        },
+    )

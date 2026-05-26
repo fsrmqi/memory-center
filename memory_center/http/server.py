@@ -592,6 +592,8 @@ def _route_request(path: str, params: dict, default_workspace: str | None) -> di
             session_id=params.get("session_id", [""])[0],
             intent=params.get("intent", [""])[0],
             limit=_parse_int(params, "limit", 10),
+            view=params.get("view", ["compact"])[0],
+            budget=params.get("budget", ["medium"])[0],
         )
     if path == "/workspace/work-handoff":
         workspace = _require_workspace(params, default_workspace)
@@ -603,7 +605,7 @@ def _route_request(path: str, params: dict, default_workspace: str | None) -> di
         budget = params.get("budget", ["medium"])[0]
         return {
             "workflow": "work-handoff",
-            "handoff_packet": workspace_handoff_packet(workspace, target_model=target_model, task_id=task_id, session_id=session_id, intent=intent, limit=limit),
+            "handoff_packet": workspace_handoff_packet(workspace, target_model=target_model, task_id=task_id, session_id=session_id, intent=intent, limit=limit, view="compact", budget=budget),
             "recent_evidence": workspace_recent_evidence(workspace, task_id=task_id, session_id=session_id, limit=min(limit, 5), budget=budget),
             "tool_usage_report": memory_tool_usage_report(workspace, limit=50),
         }

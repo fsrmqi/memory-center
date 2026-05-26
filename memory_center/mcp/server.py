@@ -572,16 +572,16 @@ def create_server(workspace_file: str):
         return workspace_model_profile(model_name)
 
     @mcp.tool()
-    def workspace_handoff_packet_tool(target_model: str, task_id: str = "", session_id: str = "", intent: str = "", limit: int = 10):
+    def workspace_handoff_packet_tool(target_model: str, task_id: str = "", session_id: str = "", intent: str = "", limit: int = 10, view: str = "compact", budget: str = "medium"):
         """Build one handoff packet for the target model."""
-        return workspace_handoff_packet(_WORKSPACE_FILE, target_model=target_model, task_id=task_id, session_id=session_id, intent=intent, limit=limit)
+        return workspace_handoff_packet(_WORKSPACE_FILE, target_model=target_model, task_id=task_id, session_id=session_id, intent=intent, limit=limit, view=view, budget=budget)
 
     @mcp.tool()
     def workspace_work_handoff_tool(target_model: str, task_id: str = "", session_id: str = "", intent: str = "", limit: int = 8, budget: str = "medium"):
         """Build one compact handoff workflow package."""
         return {
             "workflow": "work-handoff",
-            "handoff_packet": workspace_handoff_packet(_WORKSPACE_FILE, target_model=target_model, task_id=task_id, session_id=session_id, intent=intent, limit=limit),
+            "handoff_packet": workspace_handoff_packet(_WORKSPACE_FILE, target_model=target_model, task_id=task_id, session_id=session_id, intent=intent, limit=limit, view="compact", budget=budget),
             "recent_evidence": workspace_recent_evidence(_WORKSPACE_FILE, task_id=task_id, session_id=session_id, limit=min(limit, 5), budget=budget),
             "tool_usage_report": memory_tool_usage_report(_WORKSPACE_FILE, limit=50),
         }

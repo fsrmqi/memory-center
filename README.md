@@ -714,6 +714,10 @@ To reduce model-side token usage, `workspace_sniff`, `workspace_status`, `worksp
 
 为了降低模型侧 token 消耗，`workspace_sniff`、`workspace_status`、`workspace_resume_packet`、`workspace_recent_evidence`、`workspace_continuity_dashboard`、`workspace_dashboard` 现在都支持 `view=compact|full`，并新增 `budget=small|medium|large`。MCP 默认使用 `compact + medium`；本地调试或人工排查时再切 `full`。
 
+`workspace_handoff_packet` now follows the same `view=compact|full` and `budget=small|medium|large` contract, so the context-light protocol is aligned across sniff/resume/handoff/dashboard.
+
+`workspace_handoff_packet` 现在也已经补齐 `view=compact|full` 和 `budget=small|medium|large`，因此轻量上下文协议在 sniff / resume / handoff / dashboard 这几条主链路上已经对齐。
+
 For fixed regressions, `memory_eval_regression_suite` now aggregates write/resume/handoff evals into one suite-level score.
 
 为了做固定回归，`memory_eval_regression_suite` 现在会把 write/resume/handoff 三类评估聚合成一份 suite 级结果。

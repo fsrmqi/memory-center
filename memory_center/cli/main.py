@@ -785,9 +785,11 @@ def handoff_packet_cmd(
     session_id: str = typer.Option(""),
     intent: str = typer.Option(""),
     limit: int = typer.Option(10),
+    view: str = typer.Option("full", help="full|compact"),
+    budget: str = typer.Option("medium", help="small|medium|large"),
 ):
     """Build one handoff packet for the target model."""
-    print(workspace_handoff_packet(workspace, target_model=target_model, task_id=task_id, session_id=session_id, intent=intent, limit=limit))
+    print(workspace_handoff_packet(workspace, target_model=target_model, task_id=task_id, session_id=session_id, intent=intent, limit=limit, view=view, budget=budget))
 
 
 @app.command("handoff-history")
@@ -955,7 +957,7 @@ def work_handoff_cmd(
     print(
         {
             "workflow": "work-handoff",
-            "handoff_packet": workspace_handoff_packet(workspace, target_model=target_model, task_id=task_id, session_id=session_id, intent=intent, limit=limit),
+            "handoff_packet": workspace_handoff_packet(workspace, target_model=target_model, task_id=task_id, session_id=session_id, intent=intent, limit=limit, view="compact", budget=budget),
             "recent_evidence": workspace_recent_evidence(workspace, task_id=task_id, session_id=session_id, limit=min(limit, 5), budget=budget),
             "tool_usage_report": memory_tool_usage_report(workspace, limit=50),
         }

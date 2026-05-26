@@ -22,6 +22,7 @@ from .common import (
     TOOL_WORKSPACE_LOG_SESSION_EVENT,
     TOOL_WORKSPACE_SYNC_CASE_ARTIFACTS,
     TOOL_WORKSPACE_SYNC_SNIFF_ARTIFACTS,
+    _is_compact_view,
     _load_handoff_rules,
     _load_resume_rules,
     _normalize_model_name,
@@ -29,7 +30,7 @@ from .common import (
     load_context,
     tokenize,
 )
-from .compact import _compact_resume_packet
+from .compact import _compact_handoff_packet, _compact_resume_packet
 from .query import memory_query
 from .session import workspace_recent_evidence
 
@@ -227,6 +228,8 @@ def workspace_handoff_packet(
     session_id: str = "",
     intent: str = "",
     limit: int = 10,
+    view: str = "full",
+    budget: str = "medium",
 ) -> Dict[str, Any]:
     from .eval import memory_eval_write_quality
 
@@ -234,7 +237,7 @@ def workspace_handoff_packet(
     profile = workspace_model_profile(target_model, workspace_file=workspace_file)
     handoff_rules = _load_handoff_rules(store, profile.get("normalized_model", ""))
     resume_packet = workspace_resume_packet(
-        workspace_file, task_id=task_id, session_id=session_id, intent=intent, limit=limit
+        workspace_file, task_id=task_id, session_id=session_id, intent=intent, limit=limit, view=view, budget=budget
     )
     quality = memory_eval_write_quality(
         workspace_file,
@@ -288,7 +291,10 @@ def workspace_handoff_packet(
     }
     store.append_jsonl("handoff-history.jsonl", history_item)
     packet["handoff_ref"] = "memory/handoff-history.jsonl"
-    return with_schema("handoff_packet", packet)
+    result = with_schema("handoff_packet", packet)
+    if _is_compact_view(view):
+        return _compact_handoff_packet(result, budget=budget)
+    return result
 
 
 def workspace_handoff_history(
