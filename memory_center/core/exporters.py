@@ -324,6 +324,17 @@ def export_workbench_index_html(workspace_file: str | Path) -> str:
       <h1>Memory Center Workbench</h1>
       <p>Services indexed: {service_count}</p>
     </section>
+    <section class="card" style="margin-bottom:22px;">
+      <h2>Quick Start / 快速入门</h2>
+      <ol style="margin:0;padding-left:18px;color:var(--muted);">
+        <li><strong>Start a task</strong>: <code>work-start --intent "your task"</code></li>
+        <li><strong>Find symbols</strong>: <code>lookup-hint --query "ArticleService"</code></li>
+        <li><strong>Partial reindex</strong>: <code>reindex --changed-only --scope staged</code></li>
+        <li><strong>Resume next day</strong>: <code>work-resume --task-id your-task</code></li>
+        <li><strong>Handoff to another model</strong>: <code>work-handoff --target-model claude-code</code></li>
+        <li><strong>Close and record</strong>: <code>work-close --session-id your-session</code></li>
+      </ol>
+    </section>
     <div class="grid">
       <a class="card" href="/ui/dashboard"><h2>Workspace Dashboard</h2><p>Focus task, receipts, handoffs, adoption.</p></a>
       <a class="card" href="/ui/continuity"><h2>Continuity Dashboard</h2><p>Resume packet, unresolved items, recent evidence.</p></a>

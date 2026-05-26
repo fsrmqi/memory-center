@@ -30,6 +30,7 @@ from memory_center.core.orchestrator import (
     memory_eval_index_freshness,
     memory_eval_tool_adoption,
     memory_eval_context_weight,
+    memory_eval_workflow_orchestration,
     memory_eval_resume,
     memory_eval_handoff,
     memory_write_judge,
@@ -401,6 +402,11 @@ def create_server(workspace_file: str):
     def memory_eval_context_weight_tool(intent: str = "", limit: int = 8):
         """Evaluate whether compact budgeted payloads are still too heavy."""
         return memory_eval_context_weight(_WORKSPACE_FILE, intent=intent, limit=limit)
+
+    @mcp.tool()
+    def memory_eval_workflow_orchestration_tool(task_id: str = "", session_id: str = "", intent: str = "", limit: int = 20):
+        """Evaluate whether a workflow follows the recommended start→log→sync→close pattern."""
+        return memory_eval_workflow_orchestration(_WORKSPACE_FILE, task_id=task_id, session_id=session_id, intent=intent, limit=limit)
 
     @mcp.tool()
     def memory_tool_usage_report_tool(limit: int = 200):

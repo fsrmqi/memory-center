@@ -56,13 +56,26 @@ def _normalize_budget(budget: str) -> str:
     return value if value in {"small", "medium", "large"} else "medium"
 
 
-def _budget_limits(budget: str) -> Dict[str, int]:
+MODEL_BUDGET_PROFILES: Dict[str, Dict[str, int]] = {
+    "codex": {"services": 3, "files": 4, "refs": 4, "steps": 3, "tasks": 3, "events": 3, "findings": 3},
+    "claude-code": {"services": 5, "files": 5, "refs": 5, "steps": 4, "tasks": 5, "events": 4, "findings": 4},
+    "gemini": {"services": 4, "files": 4, "refs": 4, "steps": 3, "tasks": 4, "events": 3, "findings": 3},
+    "deepseek": {"services": 3, "files": 3, "refs": 3, "steps": 2, "tasks": 3, "events": 2, "findings": 2},
+    "cursor-agent": {"services": 4, "files": 4, "refs": 4, "steps": 3, "tasks": 4, "events": 3, "findings": 3},
+    "glm": {"services": 3, "files": 3, "refs": 3, "steps": 2, "tasks": 3, "events": 2, "findings": 2},
+    "qwen": {"services": 4, "files": 4, "refs": 4, "steps": 3, "tasks": 4, "events": 3, "findings": 3},
+    "generic-mcp-agent": {"services": 5, "files": 5, "refs": 5, "steps": 4, "tasks": 5, "events": 4, "findings": 4},
+}
+
+
+def _budget_limits(budget: str, model: str = "") -> Dict[str, int]:
     normalized = _normalize_budget(budget)
+    model_profile = MODEL_BUDGET_PROFILES.get(_normalize_model_name(model or ""), MODEL_BUDGET_PROFILES["generic-mcp-agent"])
     if normalized == "small":
-        return {"services": 3, "files": 3, "refs": 3, "steps": 2, "tasks": 3, "events": 2, "findings": 2}
+        return {k: max(1, v // 2) for k, v in model_profile.items()}
     if normalized == "large":
-        return {"services": 8, "files": 8, "refs": 8, "steps": 6, "tasks": 8, "events": 6, "findings": 6}
-    return {"services": 5, "files": 5, "refs": 5, "steps": 4, "tasks": 5, "events": 4, "findings": 4}
+        return model_profile
+    return {k: max(2, int(v * 0.7)) for k, v in model_profile.items()}
 
 
 def _normalize_model_name(model_name: str) -> str:

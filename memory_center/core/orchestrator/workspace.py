@@ -66,11 +66,11 @@ def workspace_status(workspace_file: str | Path, view: str = "full", budget: str
         "root": str(config.root_path),
         "services": [s.__dict__ for s in config.services],
         "index_counts": {
-            "files": len(store.read_json("file-index.json", [])),
-            "symbols": len(store.read_json("java-symbol-index.json", [])),
-            "apis": len(store.read_json("api-index.json", [])),
-            "feigns": len(store.read_json("feign-index.json", [])),
-            "mq": len(store.read_json("mq-index.json", [])),
+            "files": len(store.read_json_prefer_backend("file-index.json", [])),
+            "symbols": len(store.read_json_prefer_backend("java-symbol-index.json", [])),
+            "apis": len(store.read_json_prefer_backend("api-index.json", [])),
+            "feigns": len(store.read_json_prefer_backend("feign-index.json", [])),
+            "mq": len(store.read_json_prefer_backend("mq-index.json", [])),
             "cases": len(store.read_jsonl_prefer_backend("cross-service-task-memory.jsonl", limit=1000)),
             "session_events": len(store.read_jsonl_prefer_backend(SESSION_EVENTS_FILE, limit=5000)),
             "session_summaries": len(store.read_jsonl_prefer_backend(SESSION_SUMMARIES_FILE, limit=1000)),
@@ -85,7 +85,7 @@ def workspace_status(workspace_file: str | Path, view: str = "full", budget: str
         "core_memory_blocks": core_memory_blocks,
         "active_task_spaces": active_tasks,
         "current_focus_task": current_focus_task,
-        "topology": store.read_json("service-topology.json", {}),
+        "topology": store.read_json_prefer_backend("service-topology.json", {}),
     }
     return _compact_workspace_status(result, budget=budget) if _is_compact_view(view) else result
 

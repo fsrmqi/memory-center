@@ -85,6 +85,7 @@ from memory_center.core.orchestrator import (
     memory_eval_index_freshness,
     memory_eval_tool_adoption,
     memory_eval_context_weight,
+    memory_eval_workflow_orchestration,
     memory_eval_resume,
     memory_eval_handoff,
 )
@@ -520,6 +521,18 @@ def eval_context_weight_cmd(
 ):
     """Evaluate whether compact budgeted payloads are still too heavy."""
     print(memory_eval_context_weight(workspace, intent=intent, limit=limit))
+
+
+@app.command("eval-workflow-orchestration")
+def eval_workflow_orchestration_cmd(
+    workspace: str = typer.Option(...),
+    task_id: str = typer.Option("", help="Evaluate workflow for a specific task."),
+    session_id: str = typer.Option("", help="Evaluate workflow for a specific session."),
+    intent: str = typer.Option("", help="Intent for evaluation context."),
+    limit: int = typer.Option(20),
+):
+    """Evaluate whether a workflow follows the recommended start→log→sync→close pattern."""
+    print(memory_eval_workflow_orchestration(workspace, task_id=task_id, session_id=session_id, intent=intent, limit=limit))
 
 
 @app.command("regression-smoke")

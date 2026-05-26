@@ -20,7 +20,7 @@ def ensure_workspace_semantic_index(workspace_file: str | Path) -> Dict[str, Any
     store = WorkspaceStore(workspace_file)
     with GraphStore(store.graph_db_path) as graph:
         counts = graph.counts()
-    cached = store.read_json(SEMANTIC_INDEX_FILE, {})
+    cached = store.read_json_prefer_backend(SEMANTIC_INDEX_FILE, {})
     backend = _requested_backend()
     model_name = _requested_model_name(backend)
     if (
@@ -106,7 +106,7 @@ def build_workspace_semantic_index(workspace_file: str | Path) -> Dict[str, Any]
 def build_workspace_semantic_index_partial(workspace_file: str | Path, changed_node_ids: set[str]) -> Dict[str, Any]:
     """Rebuild semantic docs only for changed nodes, keeping untouched docs."""
     store = WorkspaceStore(workspace_file)
-    existing = store.read_json(SEMANTIC_INDEX_FILE, {})
+    existing = store.read_json_prefer_backend(SEMANTIC_INDEX_FILE, {})
     if not existing.get("docs"):
         return build_workspace_semantic_index(workspace_file)
     kept_docs = [doc for doc in existing.get("docs", []) if doc.get("node_id") not in changed_node_ids]
@@ -163,7 +163,6 @@ def build_workspace_semantic_index_partial(workspace_file: str | Path, changed_n
     if backend == "sentence-transformers" and actual_backend == "sentence-transformers":
         model = _load_sentence_transformer_model(model_name)
         if model is not None and new_docs:
-            texts = [_node_text({"type": d.get("type", ""), "name": d.get("name", ""), "project": d.get("project", ""), "file_path": d.get("file_path", ""), "metadata": store.read_json("java-symbol-index.json", [])}) for d in new_docs]
             texts = [f"{d.get('type', '')} {d.get('name', '')} {d.get('project', '')} {d.get('file_path', '')}" for d in new_docs]
             dense_vectors = model.encode(texts, normalize_embeddings=True)
             for doc, vector in zip(new_docs, dense_vectors):

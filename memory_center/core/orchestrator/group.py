@@ -297,10 +297,10 @@ def _load_group_data(members: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                 "workspace": config.workspace,
                 "workspace_file": str(workspace_file),
                 "services": [s.__dict__ for s in config.services],
-                "feigns": store.read_json("feign-index.json", []),
-                "apis": store.read_json("api-index.json", []),
-                "mq": store.read_json("mq-index.json", []),
-                "configs": store.read_json("config-index.json", []),
+                "feigns": store.read_json_prefer_backend("feign-index.json", []),
+                "apis": store.read_json_prefer_backend("api-index.json", []),
+                "mq": store.read_json_prefer_backend("mq-index.json", []),
+                "configs": store.read_json_prefer_backend("config-index.json", []),
             })
         except Exception:
             continue

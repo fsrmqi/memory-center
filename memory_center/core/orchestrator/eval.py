@@ -207,7 +207,7 @@ def memory_eval_index_freshness(
     latest_index_mtime = max((path.stat().st_mtime for path in existing), default=0.0)
     stale_changed_files = []
     for rel in changed_files[:200]:
-        matched = next((row for row in store.read_json("file-index.json", []) if row.get("path") == rel), None)
+        matched = next((row for row in store.read_json_prefer_backend("file-index.json", []) if row.get("path") == rel), None)
         abs_path = Path(matched.get("abs_path", "")) if matched and matched.get("abs_path") else None
         if abs_path and abs_path.exists() and abs_path.stat().st_mtime > latest_index_mtime:
             stale_changed_files.append(rel)
@@ -249,6 +249,22 @@ def memory_eval_tool_adoption(
         total_tool_calls=summary.get("total_tool_calls", 0),
         memory_center_ratio=summary.get("memory_center_ratio", 0.0),
     )
+
+
+def memory_eval_workflow_orchestration(
+    workspace_file: str | Path,
+    task_id: str = "",
+    session_id: str = "",
+    intent: str = "",
+    limit: int = 20,
+) -> Dict[str, Any]:
+    from .evals import eval_workflow_orchestration
+    from .session import workspace_recent_evidence
+
+    config, store = load_context(workspace_file)
+    evidence = workspace_recent_evidence(workspace_file, task_id=task_id, session_id=session_id, limit=limit, budget="large")
+    events = evidence.get("evidence", [])
+    return eval_workflow_orchestration(events, intent=intent)
 
 
 def memory_eval_context_weight(

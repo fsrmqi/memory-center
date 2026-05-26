@@ -188,7 +188,8 @@ def _compact_workspace_dashboard(result: Dict[str, Any], budget: str = "medium")
 
 
 def _compact_handoff_packet(result: Dict[str, Any], budget: str = "medium") -> Dict[str, Any]:
-    limits = _budget_limits(budget)
+    model_name = (result.get("model_profile", {}) or {}).get("normalized_model", "")
+    limits = _budget_limits(budget, model=model_name)
     packet = result.get("handoff_packet", {}) or {}
     model_profile = result.get("model_profile", {}) or {}
     return with_schema(

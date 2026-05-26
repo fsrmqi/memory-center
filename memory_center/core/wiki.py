@@ -12,8 +12,8 @@ def generate_wiki(workspace_file: str | Path, output_dir: str | Path | None = No
     out = Path(output_dir) if output_dir else store.base_dir / "wiki"
     out.mkdir(parents=True, exist_ok=True)
     status = workspace_status(workspace_file)
-    topology = store.read_json("service-topology.json", {})
-    cases = store.read_jsonl("cross-service-task-memory.jsonl", limit=1000)
+    topology = store.read_json_prefer_backend("service-topology.json", {})
+    cases = store.read_jsonl_prefer_backend("cross-service-task-memory.jsonl", limit=1000)
 
     (out / "overview.md").write_text(_overview(config.workspace, status, topology), encoding="utf-8")
     service_dir = out / "services"
