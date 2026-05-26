@@ -33,6 +33,7 @@ from memory_center.core.orchestrator import (
     memory_eval_workflow_orchestration,
     memory_eval_resume,
     memory_eval_handoff,
+    memory_eval_token_gain,
     memory_write_judge,
     workspace_end_session,
     workspace_log_session_event,
@@ -407,6 +408,11 @@ def create_server(workspace_file: str):
     def memory_eval_workflow_orchestration_tool(task_id: str = "", session_id: str = "", intent: str = "", limit: int = 20):
         """Evaluate whether a workflow follows the recommended start→log→sync→close pattern."""
         return memory_eval_workflow_orchestration(_WORKSPACE_FILE, task_id=task_id, session_id=session_id, intent=intent, limit=limit)
+
+    @mcp.tool()
+    def memory_eval_token_gain_tool(tool_name: str = "", budget: str = "", model: str = "", limit: int = 200):
+        """Evaluate token savings from compact operations (similar to rtk gain)."""
+        return memory_eval_token_gain(_WORKSPACE_FILE, tool_name=tool_name, budget=budget, model=model, limit=limit)
 
     @mcp.tool()
     def memory_tool_usage_report_tool(limit: int = 200):

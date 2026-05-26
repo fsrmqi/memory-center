@@ -32,6 +32,30 @@
     "suffix": ".java"
   },
   {
+    "project": "article-service",
+    "service_name": "article-service",
+    "path": "article-service/article-service.iml",
+    "abs_path": "/Users/cuijiaqi/Ai-common-skills/memory-center/examples/spring-cloud-demo/article-service/article-service.iml",
+    "service_root": "/Users/cuijiaqi/Ai-common-skills/memory-center/examples/spring-cloud-demo/article-service",
+    "suffix": ".iml"
+  },
+  {
+    "project": "article-service",
+    "service_name": "article-service",
+    "path": "article-service/application.yml",
+    "abs_path": "/Users/cuijiaqi/Ai-common-skills/memory-center/examples/spring-cloud-demo/article-service/application.yml",
+    "service_root": "/Users/cuijiaqi/Ai-common-skills/memory-center/examples/spring-cloud-demo/article-service",
+    "suffix": ".yml"
+  },
+  {
+    "project": "article-service",
+    "service_name": "article-service",
+    "path": "article-service/src/main/java/com/example/article/ArticleController.java",
+    "abs_path": "/Users/cuijiaqi/Ai-common-skills/memory-center/examples/spring-cloud-demo/article-service/src/main/java/com/example/article/ArticleController.java",
+    "service_root": "/Users/cuijiaqi/Ai-common-skills/memory-center/examples/spring-cloud-demo/article-service",
+    "suffix": ".java"
+  },
+  {
     "project": "task-service",
     "service_name": "task-service",
     "path": "task-service/task-service.iml",
@@ -61,30 +85,6 @@
     "path": "task-service/src/main/java/com/example/task/ArticleMoveService.java",
     "abs_path": "/Users/cuijiaqi/Ai-common-skills/memory-center/examples/spring-cloud-demo/task-service/src/main/java/com/example/task/ArticleMoveService.java",
     "service_root": "/Users/cuijiaqi/Ai-common-skills/memory-center/examples/spring-cloud-demo/task-service",
-    "suffix": ".java"
-  },
-  {
-    "project": "article-service",
-    "service_name": "article-service",
-    "path": "article-service/article-service.iml",
-    "abs_path": "/Users/cuijiaqi/Ai-common-skills/memory-center/examples/spring-cloud-demo/article-service/article-service.iml",
-    "service_root": "/Users/cuijiaqi/Ai-common-skills/memory-center/examples/spring-cloud-demo/article-service",
-    "suffix": ".iml"
-  },
-  {
-    "project": "article-service",
-    "service_name": "article-service",
-    "path": "article-service/application.yml",
-    "abs_path": "/Users/cuijiaqi/Ai-common-skills/memory-center/examples/spring-cloud-demo/article-service/application.yml",
-    "service_root": "/Users/cuijiaqi/Ai-common-skills/memory-center/examples/spring-cloud-demo/article-service",
-    "suffix": ".yml"
-  },
-  {
-    "project": "article-service",
-    "service_name": "article-service",
-    "path": "article-service/src/main/java/com/example/article/ArticleController.java",
-    "abs_path": "/Users/cuijiaqi/Ai-common-skills/memory-center/examples/spring-cloud-demo/article-service/src/main/java/com/example/article/ArticleController.java",
-    "service_root": "/Users/cuijiaqi/Ai-common-skills/memory-center/examples/spring-cloud-demo/article-service",
     "suffix": ".java"
   }
 ]

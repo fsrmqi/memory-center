@@ -88,6 +88,7 @@ from memory_center.core.orchestrator import (
     memory_eval_workflow_orchestration,
     memory_eval_resume,
     memory_eval_handoff,
+    memory_eval_token_gain,
 )
 from memory_center.core.rules import ensure_default_rules
 from memory_center.core.store import WorkspaceStore
@@ -533,6 +534,18 @@ def eval_workflow_orchestration_cmd(
 ):
     """Evaluate whether a workflow follows the recommended start→log→sync→close pattern."""
     print(memory_eval_workflow_orchestration(workspace, task_id=task_id, session_id=session_id, intent=intent, limit=limit))
+
+
+@app.command("eval-token-gain")
+def eval_token_gain_cmd(
+    workspace: str = typer.Option(...),
+    tool_name: str = typer.Option("", help="Filter by tool name."),
+    budget: str = typer.Option("", help="Filter by budget."),
+    model: str = typer.Option("", help="Filter by model."),
+    limit: int = typer.Option(200),
+):
+    """Evaluate token savings from compact operations (similar to rtk gain)."""
+    print(memory_eval_token_gain(workspace, tool_name=tool_name, budget=budget, model=model, limit=limit))
 
 
 @app.command("regression-smoke")

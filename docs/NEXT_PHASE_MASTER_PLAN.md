@@ -69,8 +69,8 @@
 
 | 工作包 | 当前状态 | 已实现 | 仍待推进 |
 |---|---|---|---|
-| 工作包 1：增量索引系统 | `接近完成` | `reindex --project`、`--path`、`--changed-only`、`--scope staged|head|all`、局部 JSON index merge、局部 graph rebuild（`partial_rebuild`）、局部 semantic rebuild（`build_workspace_semantic_index_partial`）、删除文件检测与处理 | 更细的 token 估算与真正的增量 semantic 算法仍可继续打磨 |
-| 工作包 2：统一轻量上下文协议 | `接近完成` | `view=compact|full`、`budget=small|medium|large` 已覆盖 `sniff/status/resume/recent_evidence/continuity/dashboard/handoff`、模型偏好预算映射（`MODEL_BUDGET_PROFILES`）、handoff packet 使用目标模型预算 | 更细的 token 估算与 benchmark 仍可继续打磨 |
+| 工作包 1：增量索引系统 | **完成** | `reindex --project`、`--path`、`--changed-only`、`--scope staged|head|all`、局部 JSON index merge、局部 graph rebuild（`partial_rebuild`）、局部 semantic rebuild（`build_workspace_semantic_index_partial`）、删除文件检测与处理、语义 IDF 一致性修复、跨项目 Feign→Endpoint 边保留、`semantic_index_stats` 统一 `read_json_prefer_backend`、`read_json` 全面替换 | 更细粒度的增量策略仍可继续打磨 |
+| 工作包 2：统一轻量上下文协议 | **大部分完成** | `view=compact|full`、`budget=small|medium|large` 已覆盖 `sniff/status/resume/recent_evidence/continuity/dashboard/handoff`、模型偏好预算映射（`MODEL_BUDGET_PROFILES`）、handoff packet 使用目标模型预算、`token_utils` 估算函数、`tracking` token gain 日志、工具专用 payload 压缩器（git/pytest/grep）、`memory_eval_token_gain`、compact 函数内置 gain 测量 | rtk 发现/会话历史扫描、更强的 per-command 压缩器仍可继续打磨 |
 | 工作包 3：统一引用与时间线系统 | `大部分完成` | `ref_id + summary`、`memory_ref_get`、`memory_ref_batch`、timeline 短引用化、`/ui/ref` 已落地 | 更彻底的 `timeline <-> ref` 双向导航、timeline/task/ref 页面联动 drill-down 仍待补完 |
 | 工作包 4：一键工作流系统 | `大部分完成` | `work-start/work-log/work-sync/work-resume/work-handoff/work-close/work-health` 已覆盖 CLI/MCP/HTTP、`memory_eval_workflow_orchestration` 工作流编排评测 | 更强约束的 workflow 模板仍可继续增强 |
 | 工作包 5：可视化工作台 | `大部分完成` | `/ui` 侧栏导航 + 快速入门指引、`/ui/dashboard` 筛选表单、`/ui/task` 跨页链接到 timeline、`/ui/timeline` 链接到 ref、`/ui/backend` 筛选、`/ui/receipts` 筛选、`/ui/continuity`、`/ui/usage`、`/ui/index-freshness` | guided tour / onboarding 交互仍可继续打磨 |
@@ -78,17 +78,17 @@
 
 ### 当前阶段判断
 
-当前系统已经从“功能集合”推进到了“可日常使用的协作底座”，但还没有达到“全部实现”的验收状态。  
+当前系统已经从“功能集合”推进到了“可日常使用的协作底座”，但还没有达到“全部实现”的验收状态。
 离最终目标最近的剩余重点是：
 
-1. **先收完 WP1**：让增量索引从第一版变成更真实的局部 graph / semantic 重建
-2. **WP1 完成后，主线优先转向外部参考思想吸收**，特别是对日常效率提升最大的：
+1. ~~**先收完 WP1**~~：**已完成** — 增量索引从第一版推进到真实的局部 graph / semantic 重建（IDF 一致性修复、跨项目边保留、read_json_prefer_backend 统一）
+2. ~~**rtk-ai/rtk 吸收**~~：**基本完成** — token 估算函数（`token_utils.py`）、gain 日志（`tracking.py`）、工具专用 payload 压缩器（git/pytest/grep）、`memory_eval_token_gain` 评测工具
+3. **下一批外部参考思想吸收**，特别是：
    - `rohitg00/agentmemory`：token benchmark、top-K only、hybrid retrieval
-   - `rtk-ai/rtk`：命令输出前置压缩层、专门命令压缩器、token gain 观测
    - `mattpocock/skills`：更强约束的 workflow 模板与超压缩输出
-3. 让 SQLite 后端从镜像/局部查询推进到更多真实读路径，进一步接管统一读取
-4. 让工作台从可看推进到更强交互、联动和 guided tour
-5. 做一轮更系统的 completion audit 与文档一致性审计
+4. 让 SQLite 后端从镜像/局部查询推进到更多真实读路径，进一步接管统一读取
+5. 让工作台从可看推进到更强交互、联动和 guided tour
+6. 做一轮更系统的 completion audit 与文档一致性审计
 
 ## 工作包 1：增量索引系统
 
@@ -318,25 +318,23 @@
 - 然后收口底层数据结构
 - 最后做体验层和平台层
 
-### WP1 完成后的立即主线
+### 当前主线（WP1 + rtk 已完成后的下一步）
 
-当 WP1（增量索引）收口后，下一阶段优先顺序应调整为：
+WP1（增量索引）和 rtk-ai/rtk 吸收都已完成，下一阶段优先顺序：
 
 1. `rohitg00/agentmemory`
    - 正式 token benchmark
    - top-K only
    - hybrid retrieval 强化
-2. `rtk-ai/rtk`
-   - 命令输出前置压缩层
-   - `git status / git diff / rg / pytest` 专门压缩器
-   - token gain / discover
-3. `mattpocock/skills`
+2. `mattpocock/skills`
    - 更强约束的 workflow 模板
    - 更激进的超压缩输出模式
-4. `Understand-Anything`
+3. `Understand-Anything`
    - guided tour
    - onboarding
    - 页面联动
+4. SQLite 后端进一步接管统一读取
+5. 更系统的 completion audit 与文档一致性审计
 
 ---
 
@@ -358,17 +356,13 @@
 
 ## 六、收益排序
 
-如果只按“真正提升效率”的角度排序，收益最高的是：
+如果只按”真正提升效率”的角度排序，收益最高的是：
 
-1. 增量索引
-2. 外部参考思想吸收：
-   - token benchmark
-   - top-K only
-   - 命令输出前置压缩层
-   - workflow skill 模板
-3. 预算化轻量返回
-4. 一键工作流
-5. 常驻工作台
+1. ~~增量索引~~ **已完成**
+2. ~~命令输出前置压缩层 / token gain 观测（rtk）~~ **已完成**
+3. token benchmark + top-K only + hybrid retrieval（agentmemory）
+4. 更强约束的 workflow 模板（mattpocock/skills）
+5. 常驻工作台 guided tour
 6. 统一后端
 7. 更完整评测
 
@@ -388,6 +382,10 @@
 - `memory_ref_get / memory_ref_batch`
 - `regression-smoke`
 - first-step SQLite unified memory mirror (`memory.db`)
+- **token 估算与 gain 观测**（`token_utils.py` + `tracking.py`）
+- **工具专用 payload 压缩器**（git/pytest/grep Stats Extraction / Failure Focus / Grouping）
+- **`memory_eval_token_gain`** per-tool savings 评测
+- **增量索引真正可用**（IDF 一致性修复、跨项目边保留、read_json_prefer_backend 全面统一）
 
 因此这份文档不是从零规划，而是下一阶段的统一收口方案。
 
@@ -404,7 +402,7 @@
 | `mattpocock/skills` | `work-*` 一键工作流、低 token 输出风格 | 更强约束的 workflow 模板、面向模型的超压缩输出 | 更完整的 skill 体系与自动生成 |
 | `rohitg00/agentmemory` | `compact/full + budget`、short refs、`memory_ref_get / batch`、`memory_eval_context_weight` | 正式 token benchmark、top-K only 策略加强、hybrid retrieval 优化 | 更深层数据库化与长期成本对比 |
 | `Understand-Anything` | `/ui/dashboard`、`/ui/continuity`、`/ui/task`、`/ui/timeline`、`/ui/usage`、`/ui/backend`、`/ui/index-freshness` | guided tour、任务学习路径、页面联动 | 更强交互式图形体验与 persona-adaptive UI |
-| `rtk-ai/rtk` | `compact/full + budget`、short refs、工作流压缩思路 | 命令输出前置压缩层、按命令类型定制压缩器、token gain 观测 | 更强的代理层、自动命令重写与长期压缩策略 |
+| `rtk-ai/rtk` | `compact/full + budget`、short refs、工作流压缩思路、**`token_utils`**、**`tracking` gain 日志**、**工具专用 payload 压缩器（git/pytest/grep）**、**`memory_eval_token_gain`** | rtk discover 模式、更完整命令压缩器矩阵、per-model 趋势仪表盘 | 更强的代理层、自动命令重写与长期压缩策略 |
 
 ### 1. `mattpocock/skills`
 
@@ -505,15 +503,21 @@
 - `budget=small|medium|large`
 - short refs
 - 轻量工作流输出风格
+- `token_utils.py`：token 估算函数（`estimate_tokens`、`measure_payload_size`、`compute_savings`）
+- `tracking.py`：token gain 日志（`token-gain-log.jsonl`）、per-tool / per-budget 汇总查询
+- 工具专用 payload 压缩器（git Stats Extraction、pytest Failure Focus、grep Grouping by Pattern）
+- `memory_eval_token_gain`：token gain 评测工具（MCP + CLI）
+- `memory_eval_context_weight` 增强：token 数 + savings_pct 量化
+- compact 函数内置 gain 测量（workspace_sniff/status/dashboard/continuity/resume/handoff）
 
 还可继续吸收：
 
-- 命令输出前置压缩层
-- `git status` / `git diff` / `rg` / `pytest` 等专门压缩器
-- token gain / gain graph / discover 这类观测能力
+- rtk `discover` 模式：扫描会话历史找"未压缩"的高频命令
+- `rtk gain` 更细粒度的 per-model / per-budget 趋势仪表盘
+- 更多命令专用压缩器（docker / npm / cargo / go）
 
 建议落地时机：
 
-- 当前阶段：继续沿 `compact + budget + short refs` 压上下文
-- 下一阶段：补命令输出前置压缩层与高频命令压缩器
-- 后续阶段：再做自动代理层和长期压缩策略
+- 当前阶段：~~沿 `compact + budget + short refs` 压上下文~~ **已完成**
+- 下一阶段：~~补命令输出前置压缩层与高频命令压缩器~~ **已完成**
+- 后续阶段：补 discover 模式、更完整的命令压缩器矩阵、长期趋势仪表盘
