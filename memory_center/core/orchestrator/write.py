@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 from ..artifacts import update_artifact
+from ..schemas import with_schema
 from ..timeline import timeline_query
 from ..write_receipts import build_write_receipt, persist_write_receipt, query_write_receipts
 from .common import (
@@ -468,13 +469,22 @@ def workspace_replay_write_chain(
         }
         for idx, row in enumerate(receipts)
     ]
-    return {
-        "workspace": config.workspace,
-        "task_id": task_id,
-        "session_id": session_id,
-        "timeline": timeline,
-        "summary": {
-            **result.get("summary", {}),
-            "timeline_count": len(timeline),
+    return with_schema(
+        "timeline_result",
+        {
+            "workspace": config.workspace,
+            "task_id": task_id,
+            "session_id": session_id,
+            "timeline": timeline,
+            "summary": {
+                **result.get("summary", {}),
+                "timeline_count": len(timeline),
+            },
+            "filters": {
+                "task_id": task_id,
+                "session_id": session_id,
+                "kinds": ["write_receipt", "handoff"],
+                "limit": limit,
+            },
         },
-    }
+    )

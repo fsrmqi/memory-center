@@ -138,8 +138,14 @@ def group_impact(
             "direction": direction,
             "found": False,
             "risk_level": "unknown",
+            "impacted_workspaces": [],
+            "confirmed_impacts": [],
+            "probable_impacts": [],
+            "possible_impacts": [],
             "impacts": [],
-            "progressive": _build_group_impact_progressive_view(group, target, [], []),
+            "related_bridges": [],
+            "lookup": _build_lookup_payload(memory_query("", target, limit=5)),
+            "progressive": _build_group_impact_progressive_view(group, target, [], [], []),
             "unknown_risks": _unknown_static_analysis_risks(),
         }
 
@@ -175,6 +181,8 @@ def group_impact(
     sorted_bridges = _sort_bridges(impact_bridges, target_types)
 
     filtered_records = _filter_group_impact_records(all_impacts, target_types)
+    # Exclude non-call edges like CONTAINS, DECLARES that don't represent real impact
+    filtered_records = [r for r in filtered_records if r.get("type", "") not in {"CONTAINS", "DECLARES"}]
     sorted_records = _sort_group_impact_records(filtered_records, target_types)
 
     impacted_projects = sorted({
@@ -197,6 +205,43 @@ def group_impact(
 
     evidence_summary = _build_group_impact_evidence_summary(sorted_records, sorted_bridges)
 
+    # Split impacts by confidence band, wrapping each in {kind, impact} structure
+    confirmed_impacts = [_wrap_graph_impact(item, "confirmed") for item in sorted_records if item.get("_confidence_band") == "confirmed"]
+    probable_impacts = [_wrap_graph_impact(item, "probable") for item in sorted_records if item.get("_confidence_band") == "probable"]
+    possible_impacts = [_wrap_graph_impact(item, "possible") for item in sorted_records if item.get("_confidence_band") == "possible"]
+
+    impacted_workspaces = sorted({
+        item.get("_workspace", "")
+        for item in sorted_records
+        if item.get("_workspace")
+    })
+
+    # Build lookup payload from merged per-workspace queries
+    lookup_entries: List[Dict[str, Any]] = []
+    for member in group_data:
+        try:
+            member_lookup = memory_query(member.get("workspace_file", ""), target, limit=5)
+            for match in member_lookup.get("matches", []):
+                lookup_entries.append({
+                    "node": match.get("node", {}),
+                    "retrieval_sources": match.get("retrieval_sources", []),
+                    "exact_score": match.get("exact_score", match.get("rrf_score", 0.0)),
+                    "semantic_score": match.get("semantic_score", 0.0),
+                    "workspace_ref": member.get("name", ""),
+                    "workspace": member.get("workspace", ""),
+                })
+        except Exception:
+            continue
+    lookup_payload = {
+        "query": target,
+        "retrieval_summary": {
+            "exact_matches": sum(1 for item in lookup_entries if "exact" in item.get("retrieval_sources", [])),
+            "semantic_matches": sum(1 for item in lookup_entries if "semantic" in item.get("retrieval_sources", [])),
+            "total_matches": len(lookup_entries),
+        },
+        "entrypoints": lookup_entries,
+    }
+
     return {
         "group": group,
         "target": target,
@@ -205,16 +250,36 @@ def group_impact(
         "found": bool(sorted_records or sorted_bridges),
         "risk_level": risk_level,
         "impacted_projects": impacted_projects,
+        "impacted_workspaces": impacted_workspaces,
+        "target_types": target_types,
+        "confirmed_impacts": confirmed_impacts,
+        "probable_impacts": probable_impacts,
+        "possible_impacts": possible_impacts,
         "impacts": sorted_records[:50],
-        "bridges": sorted_bridges[:30],
+        "related_bridges": sorted_bridges[:30],
         "evidence_summary": evidence_summary,
-        "progressive": _build_group_impact_progressive_view(group, target, sorted_records, workspace_refs),
+        "lookup": lookup_payload,
+        "progressive": _build_group_impact_progressive_view(group, target, sorted_records, workspace_refs, sorted_bridges, impacted_workspaces),
         "unknown_risks": _unknown_static_analysis_risks(),
         "errors": errors,
     }
 
 
 # ---- private helpers: data loading -----------------------------------------
+
+
+def _wrap_graph_impact(record: Dict[str, Any], band: str) -> Dict[str, Any]:
+    return {
+        "kind": "graph",
+        "impact": {
+            "type": record.get("type", ""),
+            "source": record.get("source", {}),
+            "target": record.get("target", {}),
+        },
+        "confidence": float(record.get("confidence", 0)),
+        "_workspace": record.get("_workspace", ""),
+        "_confidence_band": band,
+    }
 
 
 def _load_group_data(members: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -405,29 +470,40 @@ def _filter_impact_bridges(
     target_tokens = set(tokenize(target))
     matched: List[Dict[str, Any]] = []
     for bridge in bridges:
-        name_lower = (bridge.get("node_name", "") or "").lower()
-        node_type = bridge.get("node_type", "")
-        if name_lower == target_lower or name_lower.endswith("." + target_lower):
-            matched.append({**bridge, "_match_kind": "exact_name"})
+        bridge_type = bridge.get("type", "")
+        summary_lower = (bridge.get("summary", "") or "").lower()
+        # Match by bridge type falling into target_types categories
+        bridge_category = _bridge_type_category(bridge_type)
+        if target_lower in summary_lower or any(token in summary_lower for token in target_tokens):
+            matched.append({**bridge, "_match_kind": "token"})
             continue
-        if node_type in target_types and any(token in name_lower for token in target_tokens):
+        if bridge_category in target_types:
             matched.append({**bridge, "_match_kind": "type_token"})
             continue
-        if any(token in name_lower for token in target_tokens):
-            matched.append({**bridge, "_match_kind": "token"})
     matched.sort(key=lambda item: (
         0 if item.get("_match_kind") == "exact_name" else 1 if item.get("_match_kind") == "type_token" else 2,
-        -float(item.get("exact_score", 0.0)),
-        -float(item.get("semantic_score", 0.0)),
+        -float(item.get("confidence", 0.0)),
     ))
     return matched[:limit]
 
 
+def _bridge_type_category(bridge_type: str) -> str:
+    category_map = {
+        "FEIGN_SERVICE": "FeignClient",
+        "FEIGN_ENDPOINT": "Endpoint",
+        "MQ_TOPIC_CONFIG": "MQTopic",
+        "MQ_TOPIC_SHARED": "MQTopic",
+        "CONFIG_KEY_SHARED": "ConfigKey",
+    }
+    return category_map.get(bridge_type, "")
+
+
 def _bridge_types_for_target(bridge: Dict[str, Any], target_types: List[str]) -> str:
-    node_type = bridge.get("node_type", "")
-    if node_type in target_types:
-        return node_type
-    return "other"
+    bridge_type = bridge.get("type", "")
+    category = _bridge_type_category(bridge_type)
+    if category in target_types:
+        return category
+    return bridge_type if bridge_type in target_types else "other"
 
 
 def _sort_bridges(bridges: List[Dict[str, Any]], target_types: List[str]) -> List[Dict[str, Any]]:
@@ -435,31 +511,36 @@ def _sort_bridges(bridges: List[Dict[str, Any]], target_types: List[str]) -> Lis
 
 
 def _bridge_sort_key(bridge: Dict[str, Any], target_types: List[str]) -> tuple:
-    bridge_type = _bridge_types_for_target(bridge, target_types)
+    bridge_type = bridge.get("type", "")
     priority = _bridge_priority(bridge_type, target_types)
-    combined = float(bridge.get("_combined_score", 0.0))
-    exact_score = float(bridge.get("exact_score", 0.0))
-    semantic_score = float(bridge.get("semantic_score", 0.0))
-    best_rank = int(bridge.get("best_rank", 9999))
+    type_order = _bridge_type_order(bridge_type)
+    confidence = float(bridge.get("confidence", 0.0))
     return (
         priority,
-        -combined,
-        -exact_score,
-        -semantic_score,
-        best_rank,
-        bridge.get("node_name", ""),
+        type_order,
+        -confidence,
+        bridge.get("summary", ""),
     )
+
+
+def _bridge_type_order(bridge_type: str) -> int:
+    order = {
+        "FEIGN_ENDPOINT": 0, "FEIGN_SERVICE": 1,
+        "MQ_TOPIC_CONFIG": 0, "MQ_TOPIC_SHARED": 1,
+        "CONFIG_KEY_SHARED": 0,
+    }
+    return order.get(bridge_type, 10)
 
 
 def _bridge_priority(bridge_type: str, target_types: List[str]) -> int:
     priority_map: Dict[str, int] = {}
     types = set(target_types)
     if {"FeignClient", "FeignMethod", "Endpoint"} & types:
-        priority_map.update({"FeignClient": 0, "FeignMethod": 1, "Endpoint": 2, "Class": 3, "Method": 4, "File": 5})
+        priority_map.update({"FEIGN_ENDPOINT": 0, "FEIGN_SERVICE": 1, "FeignClient": 2, "FeignMethod": 3, "Endpoint": 4, "Class": 5, "Method": 6, "File": 7})
     if {"MQTopic", "MQConsumer"} & types:
-        priority_map.update({"MQTopic": 0, "MQConsumer": 1, "ConfigKey": 2, "Class": 3, "File": 4})
+        priority_map.update({"MQ_TOPIC_CONFIG": 0, "MQ_TOPIC_SHARED": 1, "MQTopic": 2, "MQConsumer": 3, "ConfigKey": 4, "Class": 5, "File": 6})
     if "ConfigKey" in types:
-        priority_map.update({"ConfigKey": 0, "Class": 1, "File": 2})
+        priority_map.update({"CONFIG_KEY_SHARED": 0, "ConfigKey": 1, "Class": 2, "File": 3})
     if not priority_map:
         priority_map.update({"Class": 0, "Method": 1, "Field": 2, "File": 3})
     if bridge_type in priority_map:
@@ -628,11 +709,13 @@ def _build_group_impact_progressive_view(
     target: str,
     impact_records: List[Dict[str, Any]],
     workspace_refs: List[Dict[str, Any]],
+    bridges: List[Dict[str, Any]] = [],
+    impacted_workspaces: List[str] = [],
 ) -> Dict[str, Any]:
     confirmed_count = sum(1 for item in impact_records if item.get("_confidence_band") == "confirmed")
     probable_count = sum(1 for item in impact_records if item.get("_confidence_band") == "probable")
     possible_count = sum(1 for item in impact_records if item.get("_confidence_band") == "possible")
-    impacted_workspaces = sorted({
+    workspace_names = sorted({
         item.get("_workspace", "")
         for item in impact_records
         if item.get("_workspace")
@@ -643,7 +726,8 @@ def _build_group_impact_progressive_view(
             "target": target,
             "member_count": len(workspace_refs),
             "total_impacts": len(impact_records),
-            "impacted_workspaces": impacted_workspaces,
+            "impacted_workspace_count": len(workspace_names),
+            "impacted_workspaces": workspace_names,
         },
         {
             "confirmed_count": confirmed_count,
@@ -651,8 +735,17 @@ def _build_group_impact_progressive_view(
             "possible_count": possible_count,
             "workspaces_queried": [ref.get("name", "") for ref in workspace_refs],
             "type_distribution": _type_distribution_from_impacts(impact_records),
+            "top_bridges": [
+                {
+                    "type": item.get("type", ""),
+                    "summary": item.get("summary", ""),
+                    "confidence": item.get("confidence", 0.0),
+                }
+                for item in bridges[:5]
+            ],
         },
         {
+            "impacted_workspaces": workspace_names,
             "next_action": "Inspect each impacted workspace individually with memory_context and memory_impact.",
             "impact_preview": [
                 _group_impact_record_label(item)
@@ -691,13 +784,19 @@ def _build_group_impact_evidence_summary(
         for item in impact_records
         if item.get("type")
     })
-    bridge_workspaces = sorted({item.get("workspace_name", "") for item in bridges if item.get("workspace_name")})
+    bridge_types_set = sorted({
+        item.get("type", "")
+        for item in bridges
+        if item.get("type")
+    })
+    combined_types = sorted(set(edge_types) | set(bridge_types_set))
+    bridge_workspaces = sorted({item.get("source_workspace_name", "") or item.get("workspace_name", "") for item in bridges if (item.get("source_workspace_name", "") or item.get("workspace_name", ""))})
     return {
         "confirmed_count": confirmed,
         "probable_count": probable,
         "possible_count": possible,
-        "edge_types": edge_types,
-        "bridge_count": len(bridges),
+        "bridge_types": combined_types,
+        "bridge_evidence_count": len(bridges),
         "bridge_workspaces": bridge_workspaces,
     }
 

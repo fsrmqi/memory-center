@@ -17,6 +17,7 @@ from .common import (
     LAYER_L2,
     TOOL_WORKSPACE_SYNC_CASE_ARTIFACTS,
     TOOL_WORKSPACE_SYNC_SNIFF_ARTIFACTS,
+    _build_sniff_auto_sync_recommendation,
     _build_sniff_source_refs,
     _case_risk_level,
     _case_risk_profile,
@@ -62,6 +63,8 @@ def workspace_sync_sniff_to_artifacts(
 
     touch_task_activity(workspace_file, resolved_task_id, source="sync_sniff_artifacts")
 
+    auto_sync = _build_sniff_auto_sync_recommendation(store, resolved, sniff.get("risk_level", ""), auto_sync_mode=auto_sync_mode)
+
     context_body = _render_sniff_context_markdown(sniff)
     existing_context = ""
     try:
@@ -101,6 +104,7 @@ def workspace_sync_sniff_to_artifacts(
         "title": resolved.get("title", ""),
         "intent": intent,
         "auto_sync_mode": auto_sync_mode,
+        "auto_sync_recommendation": auto_sync,
         "updated_artifacts": updated_artifacts,
         "resolved": resolved,
         "sniff_summary": {
@@ -204,6 +208,7 @@ def workspace_sync_case_to_artifacts(
         "title": resolved.get("title", ""),
         "session_id": session_id,
         "auto_sync_mode": auto_sync_mode,
+        "auto_sync_recommendation": _build_sniff_auto_sync_recommendation(store, resolved, risk_profile.get("risk_level", ""), auto_sync_mode=auto_sync_mode),
         "updated_artifacts": updated_artifacts,
         "resolved": resolved,
         "case_summary": {
