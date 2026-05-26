@@ -43,14 +43,14 @@ def generate_cursor_rules(
     hook_list = "\n".join(active_hooks)
 
     content = f"""# Memory Center Integration (Cursor)
-#
-# This workspace uses Memory Center as project memory service.
-# Hook lifecycle mapping:
+
+This workspace uses Memory Center as project memory service.
+Hook lifecycle mapping:
 {hook_list}
-#
-# Before editing code: call mc_analyze for impact and rules check.
-# After session ends: call mc_close to sync and record experience.
-# Use mc_start to begin any coding task with workspace context.
+
+Before editing code: call mc_analyze for impact and rules check.
+After session ends: call mc_close to sync and record experience.
+Use mc_start to begin any coding task with workspace context.
 
 <!-- memory-center:start -->
 {hook_list}

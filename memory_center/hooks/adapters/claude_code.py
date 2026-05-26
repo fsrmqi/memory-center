@@ -60,11 +60,12 @@ def generate_claude_code_hooks(
                 "type": "prompt",
                 "prompt": prompt_template,
                 "timeout": timeout,
-                "statusMessage": f"Memory Center: {event_name}",
+                "statusMessage": f"Analyzing task type",
             })
         else:
             # Soft/guard mode: run a shell command via run-hook
-            command = f"memory-center run-hook --workspace {workspace} --hook {event_name}"
+            # Quote the workspace path to handle spaces
+            command = f"memory-center run-hook --workspace \"{workspace}\" --hook {event_name}"
             hook_entry["hooks"].append({
                 "type": "command",
                 "command": command,

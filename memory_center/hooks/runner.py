@@ -146,9 +146,9 @@ def run_hook(
     if mode == "suggest":
         prompt_template = hook_spec.get("prompt_template", "")
         arguments = ""
-        stdin_json = stdin_json or {}
-        if stdin_json.get("prompt"):
-            arguments = stdin_json["prompt"]
+        local_stdin = stdin_json or {}
+        if local_stdin.get("prompt"):
+            arguments = local_stdin["prompt"]
         rendered = prompt_template.replace("$ARGUMENTS", arguments)
         return {
             "exit_code": 0,
@@ -301,10 +301,8 @@ def run_hook(
     # Run cleanup actions
     _run_cleanup(cleanup_actions)
 
-    # Soft mode always returns exit_code=0
-    exit_code = 0 if mode == "soft" else 0  # guard mode already handled above
     return {
-        "exit_code": exit_code,
+        "exit_code": 0,
         "system_message": system_message,
         "hook_result": hook_result,
         "mode": mode,
