@@ -76,38 +76,6 @@
     "data_resources": []
   },
   {
-    "project": "article-service",
-    "file": "article-service/src/main/java/com/example/article/ArticleController.java",
-    "package": "com.example.article",
-    "classes": [
-      "ArticleController"
-    ],
-    "interfaces": [],
-    "methods": [
-      "moveArticle"
-    ],
-    "fields": [],
-    "annotations": [
-      "PostMapping",
-      "RequestMapping",
-      "RestController"
-    ],
-    "imports": [
-      "org.springframework.web.bind.annotation.PostMapping",
-      "org.springframework.web.bind.annotation.RequestMapping",
-      "org.springframework.web.bind.annotation.RestController"
-    ],
-    "field_types": {},
-    "method_variable_types": {
-      "moveArticle": {}
-    },
-    "bean_injections": [],
-    "method_calls": [],
-    "dto_field_usages": [],
-    "config_usages": [],
-    "data_resources": []
-  },
-  {
     "project": "task-service",
     "file": "task-service/src/main/java/com/example/task/ArticleMoveConsumer.java",
     "package": "com.example.task",
@@ -265,6 +233,38 @@
         "line": 16
       }
     ],
+    "config_usages": [],
+    "data_resources": []
+  },
+  {
+    "project": "article-service",
+    "file": "article-service/src/main/java/com/example/article/ArticleController.java",
+    "package": "com.example.article",
+    "classes": [
+      "ArticleController"
+    ],
+    "interfaces": [],
+    "methods": [
+      "moveArticle"
+    ],
+    "fields": [],
+    "annotations": [
+      "PostMapping",
+      "RequestMapping",
+      "RestController"
+    ],
+    "imports": [
+      "org.springframework.web.bind.annotation.PostMapping",
+      "org.springframework.web.bind.annotation.RequestMapping",
+      "org.springframework.web.bind.annotation.RestController"
+    ],
+    "field_types": {},
+    "method_variable_types": {
+      "moveArticle": {}
+    },
+    "bean_injections": [],
+    "method_calls": [],
+    "dto_field_usages": [],
     "config_usages": [],
     "data_resources": []
   }

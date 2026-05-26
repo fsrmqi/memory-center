@@ -365,7 +365,7 @@ def build_graph_store(config: WorkspaceConfig, store: WorkspaceStore, *, project
 
     file_index = store.read_json_prefer_backend("file-index.json", [])
     symbols = store.read_json_prefer_backend("java-symbol-index.json", [])
-    apis = store.read_json_prefer_backend("api-index.json", [])
+    apis_full = store.read_json_prefer_backend("api-index.json", [])
     feigns = store.read_json_prefer_backend("feign-index.json", [])
     mq = store.read_json_prefer_backend("mq-index.json", [])
     configs = store.read_json_prefer_backend("config-index.json", [])
@@ -374,10 +374,12 @@ def build_graph_store(config: WorkspaceConfig, store: WorkspaceStore, *, project
     if partial:
         file_index = [r for r in file_index if _row_matches_scope(r, pf, pfs)]
         symbols = [r for r in symbols if _row_matches_scope(r, pf, pfs, path_key="file")]
-        apis = [r for r in apis if _row_matches_scope(r, pf, pfs, path_key="file")]
+        apis = [r for r in apis_full if _row_matches_scope(r, pf, pfs, path_key="file")]
         feigns = [r for r in feigns if _row_matches_scope(r, pf, pfs, path_key="file")]
         mq = [r for r in mq if _row_matches_scope(r, pf, pfs, path_key="file")]
         configs = [r for r in configs if _row_matches_scope(r, pf, pfs)]
+    else:
+        apis = apis_full
 
     class_locations: Dict[str, List[Dict[str, Any]]] = {}
     method_locations: Dict[str, List[str]] = {}
@@ -454,7 +456,7 @@ def build_graph_store(config: WorkspaceConfig, store: WorkspaceStore, *, project
             fm_id = node_id("FeignMethod", f["project"], f["interface"], method.get("method_name", "unknown"))
             nodes.append(GraphNode(fm_id, "FeignMethod", f"{f['interface']}.{method.get('method_name')}", f["project"], f["file"], metadata=method))
             edges.append(GraphEdge(edge_id("DECLARES", fc_id, fm_id), fc_id, fm_id, "DECLARES", 1.0, {"evidence": "Feign interface method"}))
-            for api in apis:
+            for api in apis_full if partial else apis:
                 if _endpoint_matches(f, method, api):
                     ep_id = node_id("Endpoint", api["project"], api["http_method"], api["path"])
                     edges.append(GraphEdge(edge_id("IMPLEMENTS_FEIGN", fm_id, ep_id), fm_id, ep_id, "IMPLEMENTS_FEIGN", 0.78, {"evidence": "HTTP method/path matched Feign method to Controller endpoint"}))

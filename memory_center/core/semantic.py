@@ -114,6 +114,7 @@ def build_workspace_semantic_index_partial(workspace_file: str | Path, changed_n
         changed_nodes = [n for n in graph.all_nodes() if n.get("id") in changed_node_ids]
     new_docs: List[Dict[str, Any]] = []
     df_existing: Dict[str, int] = existing.get("df") or {}
+    existing_doc_count = max(int(existing.get("doc_count", 0)), 1)
     df_new: Dict[str, int] = {}
     for node in changed_nodes:
         text = _node_text(node)
@@ -155,8 +156,15 @@ def build_workspace_semantic_index_partial(workspace_file: str | Path, changed_n
         vector = doc.get("sparse_vector", {})
         if not vector:
             continue
-        norm = math.sqrt(sum(value * value for value in vector.values())) or 1.0
-        doc["sparse_norm"] = norm
+        # Re-scale sparse_vector from old IDF to merged IDF so all docs share the same baseline.
+        # old weight = (tf/total) * idf_old; new weight = (tf/total) * idf_new = old * idf_new / idf_old
+        rescaled = {}
+        for token, old_weight in vector.items():
+            idf_new = math.log((1 + doc_count) / (1 + df.get(token, 0))) + 1.0
+            idf_old = math.log((1 + existing_doc_count) / (1 + df_existing.get(token, 0))) + 1.0
+            rescaled[token] = old_weight * idf_new / idf_old
+        doc["sparse_vector"] = rescaled
+        doc["sparse_norm"] = math.sqrt(sum(value * value for value in rescaled.values())) or 1.0
     backend = DEFAULT_SEMANTIC_BACKEND
     actual_backend = existing.get("backend", DEFAULT_SEMANTIC_BACKEND)
     model_name = existing.get("model")
@@ -193,7 +201,7 @@ def semantic_query(workspace_file: str | Path, query: str, limit: int = 20) -> L
 
 def semantic_index_stats(workspace_file: str | Path) -> Dict[str, Any]:
     store = WorkspaceStore(workspace_file)
-    payload = store.read_json(SEMANTIC_INDEX_FILE, {})
+    payload = store.read_json_prefer_backend(SEMANTIC_INDEX_FILE, {})
     return {
         "version": payload.get("version"),
         "node_count": int(payload.get("node_count", 0)),
