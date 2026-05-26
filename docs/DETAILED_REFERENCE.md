@@ -262,9 +262,61 @@ graph.counts()
 
 ## 三、MCP Tools 完整参数规格
 
-### 3.1 任务嗅探
+> **重要变更：** MCP 工具面已从原先的 82 个原子工具合并为 **8 个 facade（门面）工具**。每个 facade 内部路由到相同的 orchestrator 函数，底层 Python 接口不变。**CLI 和 HTTP 仍然暴露所有细粒度原子命令**，只有 MCP tool surface 发生了变化。这大幅减少了 token 开销（约 85%），并将工具面从"实现层接口"变成"任务层接口"。
+>
+> 8 个 facade 工具：`mc_start`、`mc_lookup`、`mc_analyze`、`mc_sync`、`mc_resume`、`mc_handoff`、`mc_close`、`mc_admin`
+>
+> 下文先列出 8 个 facade 的参数规格与内部路由，然后保留原子工具的详细参数作为 CLI/HTTP 参考。
 
-#### `workspace_sniff_tool`
+### 3.0 Facade 工具总览与路由
+
+| Facade | MCP 调用方式 | 内部路由的原子操作 | CLI/HTTP 对应命令 |
+|--------|-------------|-------------------|-----------------|
+| `mc_start` | `mc_start(intent, limit, auto_sync_mode, sync_task_space, budget)` | `workspace_sniff` → `workspace_sync_sniff_to_artifacts`（可选）→ `workspace_start_session` | `sniff`, `start-session` |
+| `mc_lookup` | `mc_lookup(query, mode, intent, name, scope, symbol, chain_direction, depth, entry, ref_id, ref_ids, limit)` | 按mode路由: `auto→lookup_hint→最佳策略`, `symbol→memory_symbol`, `code→memory_search_code`, `query→memory_query`, `trace→workspace_trace`, `chain→memory_callers/memory_callees`, `context→memory_context`, `contracts→memory_contracts`, `ref→memory_ref_get/memory_ref_batch`, `backend→memory_backend_query` | `query`, `search-code`, `symbol`, `callers`, `callees`, `context`, `contracts`, `trace` |
+| `mc_analyze` | `mc_analyze(target, depth, direction, max_depth, contract_file, change_type, projects, files, scope)` | `depth=quick→memory_impact`, `standard→impact+memory_plan_change+workspace_check_rules`, `full→standard+workspace_check_contract+memory_verify_checklist`; `target=""→memory_detect_changes` | `impact`, `plan-change`, `verify-checklist`, `detect-changes`, `check-contract`, `check-rules` |
+| `mc_sync` | `mc_sync(intent, session_id, task_id, title, limit, auto_sync_mode)` | `session_id→workspace_sync_case_to_artifacts`, `intent→workspace_sync_sniff_to_artifacts` | 无直接 CLI 命令，通过 `sniff` 的 `auto_sync_mode` 参数间接调用 |
+| `mc_resume` | `mc_resume(intent, task_id, session_id, limit, budget)` | `workspace_resume_packet` + `workspace_next_actions` + `workspace_unresolved_items` + `workspace_recent_evidence` | 无直接 CLI 命令 |
+| `mc_handoff` | `mc_handoff(target_model, task_id, session_id, intent, limit, budget)` | `workspace_handoff_packet` + `workspace_recent_evidence` + `memory_tool_usage_report` | 无直接 CLI 命令 |
+| `mc_close` | `mc_close(session_id, outcome, task_id, title, auto_sync_mode, record_case, verified_by)` | `workspace_end_session` → `workspace_sync_case_to_artifacts` → `workspace_suggest_case` → `workspace_record_case`（可选） | `end-session`, `record-case` |
+| `mc_admin` | `mc_admin(action, view, budget, ...)` | 按action路由至约 50 个管理/评估/生成操作 | `status`, `dashboard`, 所有 HTTP `/workspace/*` 端点 |
+
+### 3.0.1 `mc_lookup` mode 路由详情
+
+| mode | 内部函数 | 说明 |
+|------|---------|------|
+| `auto` | `workspace_lookup_hint` → 自动路由到最佳工具 | 系统决策，推荐大多数 MCP 调用使用 |
+| `symbol` | `memory_symbol` | 解析类名/方法名/接口名 |
+| `code` | `memory_search_code` | 关键词代码搜索 |
+| `query` | `memory_query` | 图感知混合检索 |
+| `trace` | `workspace_trace` | 跨服务追踪 |
+| `chain` | `memory_callers` / `memory_callees`（由 `chain_direction` 选择） | 调用链分析 |
+| `context` | `memory_context` | 360° 全景上下文 |
+| `contracts` | `memory_contracts` | 列出所有 Feign/API/MQ 契约 |
+| `ref` | `memory_ref_get` / `memory_ref_batch`（由 `ref_ids` 是否提供选择） | 短引用 ID 展开 |
+| `backend` | `memory_backend_query` | SQLite 统一后端查询 |
+
+### 3.0.2 `mc_analyze` depth 路由详情
+
+| depth | 执行步骤 |
+|-------|---------|
+| `quick` | 仅 `memory_impact`（或 `target=""` 时 `memory_detect_changes`） |
+| `standard` | quick + `memory_plan_change` + `workspace_check_rules` |
+| `full` | standard + `workspace_check_contract`（若提供 `contract_file`）+ `memory_verify_checklist` |
+
+### 3.0.3 `mc_admin` action 列表
+
+status, dashboard, continuity, health, artifact_list, artifact_get, artifact_outline, artifact_context, artifact_update, change_log_append, change_log_compact, task_create, task_list, task_resolve, task_get, task_update, task_change_log_append, task_archive, task_auto_archive, task_status, task_activity_touch, session_start, session_log, session_end, session_recent, session_summary, model_profile, handoff_history, write_judge, write_plan, write_execute, receipts, replay, backend_query, eval_write_quality, eval_resume, eval_handoff, eval_regression_suite, eval_index_freshness, eval_tool_adoption, eval_context_weight, eval_workflow_orchestration, eval_token_gain, tool_usage_report, generate_wiki, generate_skills, group_status, group_query, group_impact
+
+---
+
+### 3.1 任务嗅探（Facade: `mc_start`）
+
+> **MCP 调用方式：** `mc_start(intent, limit=12, auto_sync_mode="balanced", sync_task_space=True, budget="medium")`
+>
+> 内部依次调用 `workspace_sniff` → `workspace_sync_sniff_to_artifacts`（可选）→ `workspace_start_session`，返回整合上下文含 `sniff`、`sync_sniff`、`session` 三个部分。
+
+#### `workspace_sniff_tool`（原子工具，CLI/HTTP 仍可用）
 
 **描述：** 编码前自动收集上下文（核心入口工具），返回相关文件、服务、API、Feign、MQ、规则、历史案例。
 
@@ -310,7 +362,7 @@ next_steps         : list[str]    推荐的下一步操作
 - `medium`：默认平衡档
 - `large`：仍是 compact 结构，但会保留更多条目
 
-#### `workspace_sync_sniff_artifacts_tool`
+#### `workspace_sync_sniff_artifacts_tool`（原子工具，MCP 通过 `mc_sync(intent=...)` 调用）
 
 **描述：** 将 sniff 结果同步写入共享 context 和 plan 工件。
 
@@ -322,9 +374,13 @@ next_steps         : list[str]    推荐的下一步操作
 | `title` | `string` | `""` | 任务标题 |
 | `auto_sync_mode` | `string` | `"balanced"` | 同步模式 |
 
-### 3.2 图谱查询
+### 3.2 图谱查询（Facade: `mc_lookup`）
 
-#### `memory_query_tool`
+> **MCP 调用方式：** `mc_lookup(query, mode="auto", intent="", name="", scope="", symbol="", chain_direction="callers", depth=2, entry="", ref_id="", ref_ids=None, limit=20)`
+>
+> `mode` 参数选择内部路由策略（见 3.0.1 路由表）。`mode="auto"` 时系统通过 `workspace_lookup_hint` 自动选择最佳检索路径。
+
+#### `memory_query_tool`（原子工具，MCP 通过 `mc_lookup(mode="query")` 调用）
 
 **描述：** 图感知混合搜索，同时查询文件索引、符号、服务、契约、规则和记忆。
 
@@ -335,7 +391,7 @@ next_steps         : list[str]    推荐的下一步操作
 
 **返回：** 融合后的排序结果列表，每条包含 `source`（来源索引）和 `score`。
 
-#### `memory_search_code_tool`
+#### `memory_search_code_tool`（原子工具，MCP 通过 `mc_lookup(mode="code")` 调用）
 
 **描述：** 轻量关键词代码搜索，用于缩小范围后再做图遍历。
 
@@ -345,7 +401,7 @@ next_steps         : list[str]    推荐的下一步操作
 | `scope` | `string` | `""` | 限定范围（服务名或路径前缀） |
 | `limit` | `int` | `20` | 最大返回条数 |
 
-#### `memory_symbol_tool`
+#### `memory_symbol_tool`（原子工具，MCP 通过 `mc_lookup(mode="symbol")` 调用）
 
 **描述：** 符号解析，返回最佳匹配及附近候选。
 
@@ -354,7 +410,7 @@ next_steps         : list[str]    推荐的下一步操作
 | `name` | `string` | **必填** | 类名 / 方法名 / 接口名 |
 | `limit` | `int` | `10` | 候选数量 |
 
-#### `workspace_lookup_hint_tool`
+#### `workspace_lookup_hint_tool`（原子工具，MCP 通过 `mc_lookup(mode="auto")` 内部调用）
 
 **描述：** 对检索类问题做路由建议，判断应优先调用 Memory Center 的符号/调用链工具，还是先做本地小范围搜索。
 
@@ -377,9 +433,13 @@ matched_services        = 命中的服务
 candidate_files         = 候选文件摘要
 ```
 
-### 3.3 调用链遍历
+### 3.3 调用链遍历（Facade: `mc_lookup(mode="chain")`）
 
-#### `memory_callers_tool` / `memory_callees_tool`
+> **MCP 调用方式：** `mc_lookup(query, mode="chain", symbol="...", chain_direction="callers", depth=2, limit=80)`
+>
+> `chain_direction` 选择上游 (`callers`) 或下游 (`callees`)。
+
+#### `memory_callers_tool` / `memory_callees_tool`（原子工具，MCP 通过 `mc_lookup(mode="chain")` 调用）
 
 **描述：** BFS 多跳遍历上游调用方 / 下游被调用方。
 
@@ -407,9 +467,13 @@ candidate_files         = 候选文件摘要
 }
 ```
 
-### 3.4 上下文与影响分析
+### 3.4 上下文与影响分析（Facade: `mc_analyze`）
 
-#### `memory_context_tool`
+> **MCP 调用方式：** `mc_analyze(target, depth="standard", direction="upstream", max_depth=3, contract_file="", change_type="modify", projects=None, files=None, scope="staged")`
+>
+> `depth` 参数控制分析深度（见 3.0.2 路由表）。`target=""` 时运行 `detect-changes` 而非 `impact`。
+
+#### `memory_context_tool`（原子工具，MCP 通过 `mc_lookup(mode="context")` 调用）
 
 **描述：** 对任意符号返回 360° 全面上下文（上游、下游、规则、历史案例）。
 
@@ -418,7 +482,7 @@ candidate_files         = 候选文件摘要
 | `name` | `string` | **必填** | 服务名 / 端点 / Feign 方法 / Topic / 文件 / 符号 |
 | `max_depth` | `int` | `2` | 遍历深度 |
 
-#### `memory_impact_tool`
+#### `memory_impact_tool`（原子工具，MCP 通过 `mc_analyze(depth="quick")` 调用）
 
 **描述：** 影响面分析，返回受影响的节点、规则和风险评估。
 
@@ -428,7 +492,7 @@ candidate_files         = 候选文件摘要
 | `direction` | `string` | `"upstream"` | 分析方向（`upstream` / `downstream`） |
 | `max_depth` | `int` | `3` | 遍历深度 |
 
-#### `memory_plan_change_tool`
+#### `memory_plan_change_tool`（原子工具，MCP 通过 `mc_analyze(depth="standard"/"full")` 调用）
 
 **描述：** 基于影响分析自动生成变更计划。
 
@@ -438,7 +502,7 @@ candidate_files         = 候选文件摘要
 | `direction` | `string` | `"upstream"` | 分析方向 |
 | `max_depth` | `int` | `3` | 遍历深度 |
 
-#### `memory_verify_checklist_tool`
+#### `memory_verify_checklist_tool`（原子工具，MCP 通过 `mc_analyze(depth="full")` 调用）
 
 **描述：** 生成合并前验证检查清单。
 
@@ -446,7 +510,7 @@ candidate_files         = 候选文件摘要
 |------|------|--------|------|
 | `target` | `string` | **必填** | 变更目标 |
 
-#### `memory_write_judge_tool`
+#### `memory_write_judge_tool`（原子工具，MCP 通过 `mc_admin(action="write_judge")` 调用）
 
 **描述：** 对一条输入信息进行写入裁决，判断应写入 `L0/L1/L2/L3` 哪一层记忆。
 
@@ -495,7 +559,7 @@ memory/write-receipts.jsonl
 可通过以下入口查询：
 
 - CLI: `memory-center write-receipts --workspace ... --layer L2_task_spaces`
-- MCP: `workspace_write_receipts_tool(layer="L2_task_spaces")`
+- MCP: `mc_admin(action="receipts", layer="L2_task_spaces")`
 - HTTP: `/workspace/write-receipts?layer=L2_task_spaces`
 
 进一步的高级入口：

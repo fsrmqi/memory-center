@@ -78,13 +78,13 @@ Memory Center exposes tools, resources and prompts through MCP so coding agents 
 
 记忆中心通过 MCP 暴露工具、资源和提示词，让不同 Agent 使用同一套流程：
 
-1. `workspace_sniff_tool(intent)` before code search / 任务开始先取上下文
-2. `memory_write_judge_tool(...)` or `memory_plan_write_tool(...)` before writing memory / 写入记忆前先裁决写到 L0/L1/L2/L3 哪一层
-3. `workspace_sync_sniff_artifacts_tool(...)` for long-running or collaborative tasks / 长任务或多人协作任务先把上下文写入任务空间
-4. `memory_context_tool(name)` or `memory_impact_tool(target)` before editing important contracts / 改重要契约前做上下文和影响分析
-5. `workspace_check_rules_tool(...)` before file changes / 编辑前检查规则
-6. `workspace_end_session_tool(...)` + `workspace_sync_case_artifacts_tool(...)` after validation / 验证后先结束会话并把结论同步回任务空间
-7. `workspace_record_case_tool(...)` after validation / 完成后再沉淀长期经验
+1. `mc_start(intent)` before code search / 任务开始先取上下文
+2. `mc_lookup(mode="auto", query=intent)` for any knowledge lookup — it routes to the best search strategy automatically / 任何知识检索用统一入口，自动路由到最佳策略
+3. `mc_analyze(target, depth="standard")` before editing important contracts — returns impact, plan, and rules in one call / 改重要契约前做影响面和规则分析，一次返回影响面、改动计划和规则检查
+4. `mc_sync(intent)` for long-running or collaborative tasks / 长任务或多人协作任务先把上下文写入任务空间
+5. `mc_close(session_id)` after validation to end session, sync case, and optionally record experience / 验证后结束会话、同步 case 并可选沉淀经验
+6. `mc_resume(intent)` when returning to a previous task / 回到之前的任务时用恢复包
+7. `mc_handoff(target_model)` when switching models or sessions / 切换模型或会话时生成交接包
 
 ### 4. Experience memory / 经验沉淀
 
@@ -614,45 +614,37 @@ memory-center-mcp \
   --workspace /Users/cuijiaqi/javaworkspace/ucap/.memory-center/workspace.yaml
 ```
 
-Available MCP tools / MCP 工具：
+Available MCP tools (8 facade tools) / MCP 工具（8 个任务级 facade）：
 
 | Tool | Purpose / 用途 |
 |---|---|
-| `workspace_sniff_tool` | Task-level context retrieval / 任务上下文召回 |
-| `memory_query_tool` | Graph-aware search / 图谱检索 |
-| `memory_search_code_tool` | Keyword code search / 关键词代码搜索 |
-| `memory_symbol_tool` | Resolve symbol best match / 符号定位与候选解析 |
-| `memory_callers_tool` | Upstream callers of a symbol / 查询上游调用方 |
-| `memory_callees_tool` | Downstream callees of a symbol / 查询下游被调方 |
-| `memory_context_tool` | 360-degree node context / 符号、服务、契约上下文 |
-| `memory_impact_tool` | Impact analysis / 影响面分析 |
-| `memory_plan_change_tool` | Actionable change plan / 可执行改动计划 |
-| `memory_verify_checklist_tool` | Pre-merge verification checklist / 合并前验证清单 |
-| `memory_write_judge_tool` | Judge whether info should go to L0/L1/L2/L3 / 判断信息应写入 L0/L1/L2/L3 哪一层 |
-| `memory_plan_write_tool` | Build executable write plan from judge result / 基于裁决结果生成可执行写入计划 |
-| `memory_execute_write_tool` | Execute ready write steps from the plan / 执行写入计划中已就绪的步骤 |
-| `workspace_write_receipts_tool` | Query persisted write receipts / 查询已持久化的写入回执 |
-| `workspace_replay_write_chain_tool` | Replay one write chain by task or session / 按任务或会话回放写入链路 |
-| `memory_eval_write_quality_tool` | Evaluate whether write coverage is complete / 评估写入覆盖是否完整 |
-| `workspace_lookup_hint_tool` | Suggest whether to use Memory Center lookup or local search first / 建议优先走 Memory Center 检索还是本地搜索 |
-| `memory_tool_usage_report_tool` | Summarize recent Memory Center usage and suspected bypasses / 汇总近期 Memory Center 使用情况与疑似绕过 |
-| `memory_ref_get_tool` | Expand one short reference id into raw evidence / 把一个短引用 ID 展开成原始证据 |
-| `memory_ref_batch_tool` | Expand multiple short reference ids / 批量展开多个短引用 ID |
-| `workspace_recent_evidence_tool` | Show recent evidence for continuity / 查看连续性相关近期证据 |
-| `workspace_unresolved_items_tool` | Show unresolved items for one task/session / 查看任务或会话的未解决事项 |
-| `workspace_next_actions_tool` | Suggest next actions for one task/session / 推荐任务或会话的下一步动作 |
-| `workspace_resume_packet_tool` | Build a resume packet for the next model/session / 生成给下一个模型或会话的恢复包 |
-| `workspace_model_profile_tool` | Return a normalized handoff profile for one target model / 返回目标模型的标准化交接画像 |
-| `workspace_handoff_packet_tool` | Build a model-specific handoff packet / 生成面向目标模型的专用交接包 |
-| `workspace_handoff_history_tool` | Query persisted handoff history / 查询已持久化的交接历史 |
+| `mc_start` | Start task workflow: sniff → sync → start session / 开始任务：上下文召回 → 同步 → 启动会话 |
+| `mc_lookup` | Unified knowledge lookup (auto/symbol/code/query/trace/chain/context/contracts/ref/backend) / 统一知识检索，mode 自动路由到最佳策略 |
+| `mc_analyze` | Change impact analysis (quick/standard/full depth) / 变更影响面分析，按 depth 逐层深入 |
+| `mc_sync` | Sync context to workspace artifacts (sniff or case) / 同步上下文到工件 |
+| `mc_resume` | Resume task with consolidated context / 恢复任务上下文 |
+| `mc_handoff` | Build handoff package for another model / 为目标模型生成交接包 |
+| `mc_close` | Close task workflow: end session → sync case → record experience / 关闭任务工作流 |
+| `mc_admin` | Admin router (status/dashboard/eval/artifact/session/group etc.) / 管理路由，action 选择子操作 |
+
+> **Note**: CLI and HTTP still expose all fine-grained atomic commands. Only the MCP surface uses facade tools. See [docs/MCP_TOOLS.md](./docs/MCP_TOOLS.md) for full facade routing details.
+>
+> **注意**：CLI 和 HTTP 仍保留所有细粒度原子命令。只有 MCP 工具面使用 facade 工具。完整路由细节见 [docs/MCP_TOOLS.md](./docs/MCP_TOOLS.md)。
+
+**Hooks auto-trigger** / **Hooks 自动触发**（不依赖模型决策）：
+
+- SessionStart → auto `memory-center sniff` 加载工作区上下文
+- PreToolUse (Edit|Write) → auto `memory-center check-rules` 检查架构规则
+- Stop → auto `memory-center end-session` 关闭并同步
+- UserPromptSubmit → LLM 判断是否编码任务，提醒调用 mc_start
 
 Supported model targets for handoff now include `codex`, `claude-code`, `cursor-agent`, `gemini`, `deepseek`, `glm`, `qwen`, `minimax`, `mimo`, and generic MCP agents.
 
 目前交接能力已支持 `codex`、`claude-code`、`cursor-agent`、`gemini`、`deepseek`、`glm`、`qwen`、`minimax`、`mimo` 以及通用 MCP Agent。
 
-`workspace_resume_packet` is now rule-driven by `rules/resume-rules.yaml`, and model handoff preferences are driven by `rules/handoff-profiles.yaml`.
+`mc_resume` is now rule-driven by `rules/resume-rules.yaml`, and model handoff preferences are driven by `rules/handoff-profiles.yaml`.
 
-`workspace_resume_packet` 现在由 `rules/resume-rules.yaml` 驱动，模型交接偏好由 `rules/handoff-profiles.yaml` 驱动。
+`mc_resume` 现在由 `rules/resume-rules.yaml` 驱动，模型交接偏好由 `rules/handoff-profiles.yaml` 驱动。
 
 Write placement, auto-sync strategy, and eval penalties can now also be tuned through:
 
@@ -666,13 +658,13 @@ Write placement, auto-sync strategy, and eval penalties can now also be tuned th
 - `rules/auto-sync-rules.yaml`
 - `rules/eval-rules.yaml`
 
-Daily continuity view is now available through `workspace_continuity_dashboard`, which aggregates focus task, resume packet, next actions, unresolved items, receipts, handoffs and evidence.
+Daily continuity view is now available through `mc_admin(action="continuity")`, which aggregates focus task, resume packet, next actions, unresolved items, receipts, handoffs and evidence.
 
-现在还提供了日常连续性视图 `workspace_continuity_dashboard`，会汇总当前焦点任务、恢复包、下一步动作、未解决事项、回执、交接历史和近期证据。
+现在还提供了日常连续性视图 `mc_admin(action="continuity")`，会汇总当前焦点任务、恢复包、下一步动作、未解决事项、回执、交接历史和近期证据。
 
-At the workspace level, `workspace_dashboard` provides a broader operational view: active tasks, resumable tasks, blocked tasks, low-quality tasks, recent handoffs and recent write receipts.
+At the workspace level, `mc_admin(action="dashboard")` provides a broader operational view: active tasks, resumable tasks, blocked tasks, low-quality tasks, recent handoffs and recent write receipts.
 
-在 workspace 级别，`workspace_dashboard` 会进一步提供更宽的运营视图：活跃任务、可恢复任务、阻塞任务、低质量任务、最近交接和最近写入回执。
+在 workspace 级别，`mc_admin(action="dashboard")` 会进一步提供更宽的运营视图：活跃任务、可恢复任务、阻塞任务、低质量任务、最近交接和最近写入回执。
 
 The dashboard also includes `focus_resume_eval`, so the current focus task has a directly visible resume-quality signal.
 
@@ -682,31 +674,31 @@ You can now export the workspace dashboard as HTML or Markdown with `memory-cent
 
 现在还可以通过 `memory-center export-workspace-dashboard --format html|markdown` 导出 workspace 总面板的 HTML 或 Markdown 版本。
 
-Resume and handoff packets can now be evaluated through `memory_eval_resume` and `memory_eval_handoff`, so continuity quality is no longer implicit.
+Resume and handoff packets can now be evaluated through `mc_admin(action=”eval_resume”)` and `mc_admin(action=”eval_handoff”)`, so continuity quality is no longer implicit.
 
-现在还可以通过 `memory_eval_resume` 和 `memory_eval_handoff` 评估恢复包与交接包的质量，让连续性能力从“有接口”变成“可量化”。
+现在还可以通过 `mc_admin(action=”eval_resume”)` 和 `mc_admin(action=”eval_handoff”)` 评估恢复包与交接包的质量，让连续性能力从”有接口”变成”可量化”。
 
-`workspace_lookup_hint` can now route lookup-style questions toward `memory_symbol/search_code/trace/callers/callees` or suggest local search when the query is too small and local.
+`mc_lookup(mode=”auto”)` can now route lookup-style questions toward the best search strategy, or suggest local search when the query is too small and local.
 
-现在还可以通过 `workspace_lookup_hint` 给“找类 / 找方法 / 找调用链”这类问题做检索路由建议，告诉 Agent 该优先走 `memory_symbol/search_code/trace/callers/callees`，还是先本地搜索更划算。
+现在还可以通过 `mc_lookup(mode=”auto”)` 给”找类 / 找方法 / 找调用链”这类问题做检索路由建议，告诉 Agent 该优先走哪个检索策略，还是先本地搜索更划算。
 
-`memory_tool_usage_report` summarizes recent Memory Center tool adoption and flags suspected bypasses where lookup-like tool calls did not use Memory Center.
+`mc_admin(action=”tool_usage_report”)` summarizes recent Memory Center tool adoption and flags suspected bypasses where lookup-like tool calls did not use Memory Center.
 
-`memory_tool_usage_report` 会汇总近期 Memory Center 工具使用率，并标记那些“看起来在找类/符号/调用链，但没有走 Memory Center”的疑似绕过场景。
+`mc_admin(action=”tool_usage_report”)` 会汇总近期 Memory Center 工具使用率，并标记那些”看起来在找类/符号/调用链，但没有走 Memory Center”的疑似绕过场景。
 
 The evaluation layer now also includes:
 
-- `memory_eval_index_freshness`
-- `memory_eval_tool_adoption`
-- `memory_eval_context_weight`
+- `mc_admin(action="eval_index_freshness")`
+- `mc_admin(action="eval_tool_adoption")`
+- `mc_admin(action="eval_context_weight")`
 
 These help answer whether indexes are stale, whether models are actually using Memory Center, and whether compact payloads are still too heavy.
 
 评测层现在还额外包含：
 
-- `memory_eval_index_freshness`
-- `memory_eval_tool_adoption`
-- `memory_eval_context_weight`
+- `mc_admin(action="eval_index_freshness")`
+- `mc_admin(action="eval_tool_adoption")`
+- `mc_admin(action="eval_context_weight")`
 
 它们分别用于判断索引是否过期、模型是否真的在使用 Memory Center、以及 compact payload 是否仍然偏重。
 
