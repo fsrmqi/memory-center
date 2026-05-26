@@ -158,17 +158,20 @@ def create_server(workspace_file: str):
         if mode == "auto":
             hint = workspace_lookup_hint(wf, query=query, intent=intent, limit=limit)
             preferred = hint.get("preferred_tools", [])
-            if "memory_symbol" in preferred and (name or query):
+            # preferred_tools returns names with "_tool" suffix (e.g. "memory_symbol_tool")
+            # Strip suffix for cleaner matching
+            preferred_bare = [t.replace("_tool", "") for t in preferred]
+            if "memory_symbol" in preferred_bare and (name or query):
                 return {"mode_used": "symbol", "result": memory_symbol(wf, name or query, limit)}
-            if "memory_search_code" in preferred:
+            if "memory_search_code" in preferred_bare:
                 return {"mode_used": "code", "result": memory_search_code(wf, query, scope, limit)}
-            if "memory_context" in preferred and (name or query):
+            if "memory_context" in preferred_bare and (name or query):
                 return {"mode_used": "context", "result": memory_context(wf, name or query, depth)}
-            if "workspace_trace" in preferred and (entry or query):
+            if "workspace_trace" in preferred_bare and (entry or query):
                 return {"mode_used": "trace", "result": workspace_trace(wf, entry or query)}
-            if "memory_callers" in preferred and (symbol or query):
+            if "memory_callers" in preferred_bare and (symbol or query):
                 return {"mode_used": "chain-callers", "result": memory_callers(wf, symbol or query, depth, limit)}
-            if "memory_callees" in preferred and (symbol or query):
+            if "memory_callees" in preferred_bare and (symbol or query):
                 return {"mode_used": "chain-callees", "result": memory_callees(wf, symbol or query, depth, limit)}
             return {"mode_used": "query", "result": memory_query(wf, query, limit), "lookup_hint": hint}
         if mode == "symbol":

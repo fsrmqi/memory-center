@@ -67,14 +67,14 @@
 
 ### 当前完成度总览
 
-| 工作包 | 当前状态 | 已实现 | 仍待推进 |
+| 工作包 | 当前状态 | 已交付 | 后续可迭代方向 |
 |---|---|---|---|
-| 工作包 1：增量索引系统 | **完成** | `reindex --project`、`--path`、`--changed-only`、`--scope staged|head|all`、局部 JSON index merge、局部 graph rebuild（`partial_rebuild`）、局部 semantic rebuild（`build_workspace_semantic_index_partial`）、删除文件检测与处理、语义 IDF 一致性修复、跨项目 Feign→Endpoint 边保留、`semantic_index_stats` 统一 `read_json_prefer_backend`、`read_json` 全面替换 | 更细粒度的增量策略仍可继续打磨 |
-| 工作包 2：统一轻量上下文协议 | **大部分完成** | `view=compact|full`、`budget=small|medium|large` 已覆盖 `sniff/status/resume/recent_evidence/continuity/dashboard/handoff`、模型偏好预算映射（`MODEL_BUDGET_PROFILES`）、handoff packet 使用目标模型预算、`token_utils` 估算函数、`tracking` token gain 日志、工具专用 payload 压缩器（git/pytest/grep）、`memory_eval_token_gain`、compact 函数内置 gain 测量 | rtk 发现/会话历史扫描、更强的 per-command 压缩器仍可继续打磨 |
-| 工作包 3：统一引用与时间线系统 | `大部分完成` | `ref_id + summary`、`memory_ref_get`、`memory_ref_batch`、timeline 短引用化、`/ui/ref` 已落地 | 更彻底的 `timeline <-> ref` 双向导航、timeline/task/ref 页面联动 drill-down 仍待补完 |
-| 工作包 4：一键工作流系统 | `大部分完成` | `work-start/work-log/work-sync/work-resume/work-handoff/work-close/work-health` 已覆盖 CLI/MCP/HTTP、`memory_eval_workflow_orchestration` 工作流编排评测 | 更强约束的 workflow 模板仍可继续增强 |
-| 工作包 5：可视化工作台 | `大部分完成` | `/ui` 侧栏导航 + 快速入门指引、`/ui/dashboard` 筛选表单、`/ui/task` 跨页链接到 timeline、`/ui/timeline` 链接到 ref、`/ui/backend` 筛选、`/ui/receipts` 筛选、`/ui/continuity`、`/ui/usage`、`/ui/index-freshness` | guided tour / onboarding 交互仍可继续打磨 |
-| 工作包 6：统一后端与评测体系 | `大部分完成` | SQLite `memory.db` 镜像后端（含 `index_mirror` 表）、后端查询入口支持 project/type 过滤、确定性索引读路径全面切换到 `read_json_prefer_backend`（workspace status / query / impact / eval / group / wiki / semantic）、`memory_eval_*` 增强（含 `workflow_orchestration` 评测） | 更深层评测与长期趋势仪表盘仍可继续做 |
+| 工作包 1：增量索引系统 | ✅ 已交付 | `reindex --project`、`--path`、`--changed-only`、`--scope staged|head|all`、局部 JSON index merge、局部 graph rebuild（`partial_rebuild`）、局部 semantic rebuild（`build_workspace_semantic_index_partial`）、删除文件检测与处理、语义 IDF 一致性修复、跨项目 Feign→Endpoint 边保留、`semantic_index_stats` 统一 `read_json_prefer_backend`、`read_json` 全面替换 | 更细粒度的增量策略（如 file-level diff-based partial rebuild） |
+| 工作包 2：统一轻量上下文协议 | ✅ 大部分已交付 | `view=compact|full`、`budget=small|medium|large` 已覆盖 `sniff/status/resume/recent_evidence/continuity/dashboard/handoff`、模型偏好预算映射（`MODEL_BUDGET_PROFILES`）、handoff packet 使用目标模型预算、`token_utils` 估算函数、`tracking` token gain 日志、工具专用 payload 压缩器（git/pytest/grep）、`memory_eval_token_gain`、compact 函数内置 gain 测量 | rtk discover 模式、per-command 压缩器矩阵扩展 |
+| 工作包 3：统一引用与时间线系统 | ✅ 大部分已交付 | `ref_id + summary`、`memory_ref_get`、`memory_ref_batch`、timeline 短引用化、`/ui/ref` 已落地 | `timeline <-> ref` 双向导航、timeline/task/ref 页面联动 drill-down |
+| 工作包 4：一键工作流系统 | ✅ 已交付 | CLI `work-start/work-log/work-sync/work-resume/work-handoff/work-close/work-health`、`memory_eval_workflow_orchestration` 工作流编排评测、**MCP facade 工具重构（82→8：mc_start/mc_lookup/mc_analyze/mc_sync/mc_resume/mc_handoff/mc_close/mc_admin）**、**Hooks 自动触发配置（SessionStart→sniff、PreToolUse→check-rules、Stop→close、UserPromptSubmit→任务类型判断）** | 更强约束的 workflow 模板、mc_admin 拆分（如未来需要） |
+| 工作包 5：可视化工作台 | ✅ 大部分已交付 | `/ui` 侧栏导航 + 快速入门指引、`/ui/dashboard` 筛选表单、`/ui/task` 跨页链接到 timeline、`/ui/timeline` 链接到 ref、`/ui/backend` 筛选、`/ui/receipts` 筛选、`/ui/continuity`、`/ui/usage`、`/ui/index-freshness` | guided tour / onboarding 交互 |
+| 工作包 6：统一后端与评测体系 | ✅ 大部分已交付 | SQLite `memory.db` 镜像后端（含 `index_mirror` 表）、后端查询入口支持 project/type 过滤、确定性索引读路径全面切换到 `read_json_prefer_backend`（workspace status / query / impact / eval / group / wiki / semantic）、`memory_eval_*` 增强（含 `workflow_orchestration` 评测） | 更多主读路径切到 SQLite、长期趋势仪表盘 |
 
 ### 当前阶段判断
 
@@ -86,7 +86,9 @@
 3. **下一批外部参考思想吸收**，特别是：
    - `rohitg00/agentmemory`：token benchmark、top-K only、hybrid retrieval
    - `mattpocock/skills`：更强约束的 workflow 模板与超压缩输出
-4. 让 SQLite 后端从镜像/局部查询推进到更多真实读路径，进一步接管统一读取
+4. ~~**MCP facade 重构**~~：**已完成** — 82 个原子 MCP 工具重构为 8 个任务级 facade 工具（mc_start/mc_lookup/mc_analyze/mc_sync/mc_resume/mc_handoff/mc_close/mc_admin），token 开销从 ~28k 降至 ~2.3k（92% 减少）
+5. ~~**Hooks 自动触发**~~：**已完成** — SessionStart→sniff、PreToolUse→check-rules、Stop→close、UserPromptSubmit→任务类型判断，不依赖模型决策
+6. 让 SQLite 后端从镜像/局部查询推进到更多真实读路径，进一步接管统一读取
 5. 让工作台从可看推进到更强交互、联动和 guided tour
 6. 做一轮更系统的 completion audit 与文档一致性审计
 
@@ -342,15 +344,23 @@ WP1（增量索引）和 rtk-ai/rtk 吸收都已完成，下一阶段优先顺�
 
 理想情况下，日常工作流应变成：
 
-1. 开始任务：`work-start`
-2. 找入口：`lookup-hint`
-3. 只改局部：`reindex --changed-only`
-4. 模型拿 `compact + medium`
-5. 要细节时：`memory_ref_get`
-6. 中途换模型：`work-handoff`
-7. 第二天继续：`work-resume`
-8. 收尾：`work-close`
-9. 打开工作台看全局状态
+1. 开始任务：`mc_start`（或 `work-start` CLI）
+2. 找入口/查代码：`mc_lookup` mode=auto（自动路由到最佳检索策略）
+3. 修改代码前：`mc_analyze`（影响面+规则检查+契约检查）
+4. 保存进度：`mc_sync`
+5. 只改局部：`reindex --changed-only`
+6. 模型拿 `compact + medium`
+7. 要细节时：`mc_lookup` mode=ref（展开短引用）
+8. 中途换模型：`mc_handoff`
+9. 第二天继续：`mc_resume`
+10. 收尾：`mc_close`
+
+**Hooks 自动触发补充：**
+
+- SessionStart → 自动 sniff 加载工作区上下文
+- PreToolUse (Edit|Write) → 自动 check-rules 检查架构规则
+- Stop → 自动 end-session 关闭并同步
+- UserPromptSubmit → LLM 判断是否编码任务，提醒调用 mc_start
 
 ---
 
@@ -360,11 +370,12 @@ WP1（增量索引）和 rtk-ai/rtk 吸收都已完成，下一阶段优先顺�
 
 1. ~~增量索引~~ **已完成**
 2. ~~命令输出前置压缩层 / token gain 观测（rtk）~~ **已完成**
-3. token benchmark + top-K only + hybrid retrieval（agentmemory）
-4. 更强约束的 workflow 模板（mattpocock/skills）
-5. 常驻工作台 guided tour
-6. 统一后端
-7. 更完整评测
+3. ~~MCP facade 重构 + Hooks 自动触发~~ **已完成**（82→8 facade 工具，92% token 减少；4 个 hooks 事件自动触发）
+4. token benchmark + top-K only + hybrid retrieval（agentmemory）
+5. 更强约束的 workflow 模板（mattpocock/skills）
+6. 常驻工作台 guided tour
+7. 统一后端
+8. 更完整评测
 
 ---
 
@@ -386,6 +397,9 @@ WP1（增量索引）和 rtk-ai/rtk 吸收都已完成，下一阶段优先顺�
 - **工具专用 payload 压缩器**（git/pytest/grep Stats Extraction / Failure Focus / Grouping）
 - **`memory_eval_token_gain`** per-tool savings 评测
 - **增量索引真正可用**（IDF 一致性修复、跨项目边保留、read_json_prefer_backend 全面统一）
+- **MCP facade 工具重构**（82→8：mc_start/mc_lookup/mc_analyze/mc_sync/mc_resume/mc_handoff/mc_close/mc_admin，token 开销从 ~28k 降至 ~2.3k）
+- **Hooks 自动触发**（SessionStart→sniff、PreToolUse→check-rules、Stop→close、UserPromptSubmit→任务类型判断，不依赖模型决策）
+- **CLAUDE.md facade 路由规则**（明确每个 facade 的触发场景和自动行为）
 
 因此这份文档不是从零规划，而是下一阶段的统一收口方案。
 
@@ -399,8 +413,8 @@ WP1（增量索引）和 rtk-ai/rtk 吸收都已完成，下一阶段优先顺�
 
 | 参考来源 | 当前阶段立即做 | 下一阶段继续做 | 后续产品化阶段再做 |
 |---|---|---|---|
-| `mattpocock/skills` | `work-*` 一键工作流、低 token 输出风格 | 更强约束的 workflow 模板、面向模型的超压缩输出 | 更完整的 skill 体系与自动生成 |
-| `rohitg00/agentmemory` | `compact/full + budget`、short refs、`memory_ref_get / batch`、`memory_eval_context_weight` | 正式 token benchmark、top-K only 策略加强、hybrid retrieval 优化 | 更深层数据库化与长期成本对比 |
+| `mattpocock/skills` | `work-*` 一键工作流、低 token 输出风格、**MCP facade 工具重构（82→8）**、**Hooks 自动触发** | 更强约束的 workflow 模板、面向模型的超压缩输出 | 更完整的 skill 体系与自动生成 |
+| `rohitg00/agentmemory` | `compact/full + budget`、short refs、`memory_ref_get / batch`、`memory_eval_context_weight`、**facade mc_lookup 统一检索路由** | 正式 token benchmark、top-K only 策略加强、hybrid retrieval 优化 | 更深层数据库化与长期成本对比 |
 | `Understand-Anything` | `/ui/dashboard`、`/ui/continuity`、`/ui/task`、`/ui/timeline`、`/ui/usage`、`/ui/backend`、`/ui/index-freshness` | guided tour、任务学习路径、页面联动 | 更强交互式图形体验与 persona-adaptive UI |
 | `rtk-ai/rtk` | `compact/full + budget`、short refs、工作流压缩思路、**`token_utils`**、**`tracking` gain 日志**、**工具专用 payload 压缩器（git/pytest/grep）**、**`memory_eval_token_gain`** | rtk discover 模式、更完整命令压缩器矩阵、per-model 趋势仪表盘 | 更强的代理层、自动命令重写与长期压缩策略 |
 
@@ -416,6 +430,8 @@ WP1（增量索引）和 rtk-ai/rtk 吸收都已完成，下一阶段优先顺�
 
 - `work-start / work-sync / work-resume / work-handoff / work-close / work-health`
 - 低 token 的 `compact + budget`
+- **MCP facade 工具重构（82→8 个任务级 facade）**：把原子工具从"实现层接口"重构为"任务层接口"，模型选择成本从 82 个选项降到 8 个
+- **Hooks 自动触发**：SessionStart→sniff、PreToolUse→check-rules、Stop→close、UserPromptSubmit→任务类型判断，不依赖模型决策
 
 还可继续吸收：
 
@@ -562,12 +578,18 @@ WP1（增量索引）和 rtk-ai/rtk 吸收都已完成，下一阶段优先顺�
 ### 4. 工作流系统的真正做法
 
 - `work-*` 保持为 orchestrator 能力的组合层
+- **MCP facade 工具**提供任务级接口（mc_start/mc_lookup/mc_analyze/mc_sync/mc_resume/mc_handoff/mc_close/mc_admin），内部路由到 orchestrator 原子函数
 - 不重复发明业务逻辑
 - 每个 workflow 都应返回：
   - `workflow`
   - `核心步骤结果`
   - `receipts`
   - `next actions / unresolved`
+- **Hooks 自动触发**在关键时机执行，不依赖模型决策：
+  - SessionStart → `memory-center sniff` 加载工作区上下文
+  - PreToolUse (Edit|Write) → `memory-center check-rules` 检查架构规则
+  - Stop → `memory-center end-session` 关闭并同步
+  - UserPromptSubmit → LLM 判断是否编码任务，提醒调用 mc_start
 
 ### 5. 工作台系统的真正做法
 
@@ -600,4 +622,12 @@ WP1（增量索引）和 rtk-ai/rtk 吸收都已完成，下一阶段优先顺�
   - 更正式的 token benchmark / top-K only / hybrid retrieval
   - completion audit 与最终文档一致性审计
 
-这意味着系统已经从“功能集合”进入“收口与产品化”阶段。
+这意味着系统已经从”功能集合”进入”收口与产品化”阶段。
+
+**最新完成的工作（facade + hooks）**：
+
+- MCP tool surface 从 82 个原子工具重构为 8 个任务级 facade（mc_start/mc_lookup/mc_analyze/mc_sync/mc_resume/mc_handoff/mc_close/mc_admin），token 开销从 ~28k 降至 ~2.3k（92% 减少）
+- 4 个 hooks 事件配置：SessionStart→sniff、PreToolUse→check-rules、Stop→close、UserPromptSubmit→任务类型判断
+- CLAUDE.md 增加 facade 路由规则，明确每个 facade 的触发场景和自动行为
+- CLI/HTTP 保持不变（82+ 原子命令仍供人类使用）
+- 新增 `tests/test_mcp_facades.py` 覆盖 facade 路由
