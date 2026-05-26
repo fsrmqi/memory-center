@@ -124,27 +124,38 @@ def memory_detect_changes(workspace_file: str | Path, scope: str = "staged") -> 
     config, store = load_context(workspace_file)
     graph = GraphStore(store.graph_db_path)
     changed: List[str] = []
+    deleted: List[str] = []
     for svc in config.services:
         repo = config.resolve_service_path(svc)
         if not (repo / ".git").exists():
             continue
         commands = [["git", "diff", "--name-only"]]
+        delete_commands = [["git", "diff", "--diff-filter=D", "--name-only"]]
         if scope == "staged":
             commands = [["git", "diff", "--name-only", "--cached"]]
+            delete_commands = [["git", "diff", "--diff-filter=D", "--name-only", "--cached"]]
         elif scope == "head":
             commands = [["git", "diff", "--name-only", "HEAD~1..HEAD"]]
+            delete_commands = [["git", "diff", "--diff-filter=D", "--name-only", "HEAD~1..HEAD"]]
         elif scope == "all":
             commands = [["git", "diff", "--name-only"], ["git", "diff", "--name-only", "--cached"]]
+            delete_commands = [["git", "diff", "--diff-filter=D", "--name-only"], ["git", "diff", "--diff-filter=D", "--name-only", "--cached"]]
         try:
             for cmd in commands:
                 out = subprocess.check_output(cmd, cwd=repo, text=True, stderr=subprocess.DEVNULL)
                 changed.extend(
                     [f"{config.service_logical_prefix(svc)}/{line.strip()}".strip("/") for line in out.splitlines() if line.strip()]
                 )
+            for cmd in delete_commands:
+                out = subprocess.check_output(cmd, cwd=repo, text=True, stderr=subprocess.DEVNULL)
+                deleted.extend(
+                    [f"{config.service_logical_prefix(svc)}/{line.strip()}".strip("/") for line in out.splitlines() if line.strip()]
+                )
         except Exception:
             continue
     changed = sorted(dict.fromkeys(changed))
-    file_index = store.read_json("file-index.json", [])
+    deleted = sorted(dict.fromkeys(deleted))
+    file_index = store.read_json_prefer_backend("file-index.json", [])
     matched_files = [f for f in file_index if f.get("path") in changed]
     changed_text = " ".join(changed)
     rules = match_rules(store, intent=f"git changes {changed_text}", files=changed)[:20]
@@ -160,6 +171,7 @@ def memory_detect_changes(workspace_file: str | Path, scope: str = "staged") -> 
     return {
         "scope": scope,
         "changed_files": changed,
+        "deleted_files": deleted,
         "matched_index_files": matched_files,
         "affected_projects": affected_projects,
         "risk_level": risk_level,

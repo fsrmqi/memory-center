@@ -9,7 +9,7 @@ import yaml
 from .graph import GraphEdge, GraphNode, GraphStore, edge_id, node_id
 from .indexing import RegexJavaParser
 from .models import ApiEndpoint, FeignClient, JavaSymbol, MqEndpoint, WorkspaceConfig, to_dict
-from .semantic import build_workspace_semantic_index
+from .semantic import build_workspace_semantic_index, build_workspace_semantic_index_partial
 from .store import WorkspaceStore
 
 JAVA_EXTENSIONS = {".java"}
@@ -32,12 +32,12 @@ def reindex_workspace(
     path_filters = [item.strip() for item in (paths or []) if item and item.strip()]
     partial = bool(project_filter or path_filters)
 
-    old_file_index: List[Dict[str, Any]] = store.read_json("file-index.json", [])
-    old_symbol_index: List[Dict[str, Any]] = store.read_json("java-symbol-index.json", [])
-    old_api_index: List[Dict[str, Any]] = store.read_json("api-index.json", [])
-    old_feign_index: List[Dict[str, Any]] = store.read_json("feign-index.json", [])
-    old_mq_index: List[Dict[str, Any]] = store.read_json("mq-index.json", [])
-    old_config_index: List[Dict[str, Any]] = store.read_json("config-index.json", [])
+    old_file_index: List[Dict[str, Any]] = store.read_json_prefer_backend("file-index.json", [])
+    old_symbol_index: List[Dict[str, Any]] = store.read_json_prefer_backend("java-symbol-index.json", [])
+    old_api_index: List[Dict[str, Any]] = store.read_json_prefer_backend("api-index.json", [])
+    old_feign_index: List[Dict[str, Any]] = store.read_json_prefer_backend("feign-index.json", [])
+    old_mq_index: List[Dict[str, Any]] = store.read_json_prefer_backend("mq-index.json", [])
+    old_config_index: List[Dict[str, Any]] = store.read_json_prefer_backend("config-index.json", [])
 
     file_index: List[Dict[str, Any]] = []
     symbol_index: List[Dict[str, Any]] = []
@@ -99,8 +99,12 @@ def reindex_workspace(
     store.write_json("mq-index.json", merged_mq_index)
     store.write_json("config-index.json", merged_config_index)
     store.write_json("service-topology.json", topology)
-    graph_counts = build_graph_store(config, store)
-    semantic_counts = build_workspace_semantic_index(store.workspace_file)
+    graph_counts = build_graph_store(config, store, project_filter=project_filter, path_filters=path_filters)
+    if partial:
+        changed_ids = set(graph_counts.get("changed_node_ids", []))
+        semantic_counts = build_workspace_semantic_index_partial(store.workspace_file, changed_ids) if changed_ids else build_workspace_semantic_index(store.workspace_file)
+    else:
+        semantic_counts = build_workspace_semantic_index(store.workspace_file)
     return {
         "mode": "partial" if partial else "full",
         "filtered_projects": sorted(project_filter),
@@ -348,21 +352,32 @@ def flatten_dict(data: Dict[str, Any], prefix: str = "") -> Dict[str, str]:
     return out
 
 
-def build_graph_store(config: WorkspaceConfig, store: WorkspaceStore) -> Dict[str, int]:
+def build_graph_store(config: WorkspaceConfig, store: WorkspaceStore, *, project_filter: set[str] | None = None, path_filters: Sequence[str] | None = None) -> Dict[str, Any]:
     graph = GraphStore(store.graph_db_path)
     nodes: List[GraphNode] = []
     edges: List[GraphEdge] = []
+    partial = bool(project_filter or path_filters)
+    pf = project_filter or set()
+    pfs = list(path_filters or [])
 
     ws_id = node_id("Workspace", config.workspace)
     nodes.append(GraphNode(ws_id, "Workspace", config.workspace))
 
-    file_index = store.read_json("file-index.json", [])
-    symbols = store.read_json("java-symbol-index.json", [])
-    apis = store.read_json("api-index.json", [])
-    feigns = store.read_json("feign-index.json", [])
-    mq = store.read_json("mq-index.json", [])
-    configs = store.read_json("config-index.json", [])
-    topology = store.read_json("service-topology.json", {})
+    file_index = store.read_json_prefer_backend("file-index.json", [])
+    symbols = store.read_json_prefer_backend("java-symbol-index.json", [])
+    apis = store.read_json_prefer_backend("api-index.json", [])
+    feigns = store.read_json_prefer_backend("feign-index.json", [])
+    mq = store.read_json_prefer_backend("mq-index.json", [])
+    configs = store.read_json_prefer_backend("config-index.json", [])
+    topology = store.read_json_prefer_backend("service-topology.json", {})
+
+    if partial:
+        file_index = [r for r in file_index if _row_matches_scope(r, pf, pfs)]
+        symbols = [r for r in symbols if _row_matches_scope(r, pf, pfs, path_key="file")]
+        apis = [r for r in apis if _row_matches_scope(r, pf, pfs, path_key="file")]
+        feigns = [r for r in feigns if _row_matches_scope(r, pf, pfs, path_key="file")]
+        mq = [r for r in mq if _row_matches_scope(r, pf, pfs, path_key="file")]
+        configs = [r for r in configs if _row_matches_scope(r, pf, pfs)]
 
     class_locations: Dict[str, List[Dict[str, Any]]] = {}
     method_locations: Dict[str, List[str]] = {}
@@ -372,6 +387,8 @@ def build_graph_store(config: WorkspaceConfig, store: WorkspaceStore) -> Dict[st
     method_variable_types_by_file: Dict[str, Dict[str, Dict[str, str]]] = {}
 
     for svc in config.services:
+        if pf and svc.name not in pf:
+            continue
         sid = node_id("Service", svc.name)
         nodes.append(GraphNode(sid, "Service", svc.name, svc.name, metadata={"service_name": svc.service_name or svc.name, "path": svc.path, "type": svc.type, "tags": svc.tags}))
         edges.append(GraphEdge(edge_id("CONTAINS", ws_id, sid), ws_id, sid, "CONTAINS", 1.0, {"evidence": "workspace.yaml service"}))
@@ -516,11 +533,14 @@ def build_graph_store(config: WorkspaceConfig, store: WorkspaceStore) -> Dict[st
             nodes.append(GraphNode(rid, resource.get("kind", "DataResource"), resource.get("name", "unknown"), sym["project"], sym["file"], metadata=resource))
             edges.append(GraphEdge(edge_id("USES_DATA_RESOURCE", owner_class_id, rid), owner_class_id, rid, "USES_DATA_RESOURCE", 0.72, {"evidence": resource}))
 
-    graph.rebuild(nodes, edges)
-    graph.rebuild_search_index()
-    counts = graph.counts()
-    store.write_json("graph-summary.json", counts)
-    return counts
+    if partial:
+        graph_counts = graph.partial_rebuild(nodes, edges, pf, pfs)
+    else:
+        graph.rebuild(nodes, edges)
+        graph.rebuild_search_index()
+        graph_counts = graph.counts()
+    store.write_json("graph-summary.json", graph_counts)
+    return graph_counts
 
 
 def _endpoint_matches(feign: Dict[str, Any], method: Dict[str, Any], api: Dict[str, Any]) -> bool:

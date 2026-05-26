@@ -286,6 +286,62 @@ class GraphStore:
             frontier = next_frontier
         return results[:limit]
 
+    def remove_by_scope(self, project_filter: set[str], path_filters: list[str]) -> set[str]:
+        """Remove nodes/edges matching project or path scope. Returns removed node IDs."""
+        with self.connect() as conn:
+            conditions: list[str] = []
+            args: list[Any] = []
+            if project_filter:
+                placeholders = ",".join("?" for _ in project_filter)
+                conditions.append(f"project IN ({placeholders})")
+                args.extend(sorted(project_filter))
+            for pf in path_filters:
+                normalized = pf.replace("\\", "/").strip("/")
+                conditions.append("file_path LIKE ?")
+                args.append(normalized + "%")
+            if not conditions:
+                return set()
+            where = " OR ".join(conditions)
+            removed_ids = [row["id"] for row in conn.execute(f"SELECT id FROM nodes WHERE {where}", args).fetchall()]
+            if not removed_ids:
+                return set()
+            placeholders = ",".join("?" for _ in removed_ids)
+            conn.execute(f"DELETE FROM edges WHERE source_id IN ({placeholders}) OR target_id IN ({placeholders})", removed_ids * 2)
+            conn.execute(f"DELETE FROM nodes WHERE id IN ({placeholders})", removed_ids)
+            try:
+                conn.execute(f"DELETE FROM node_search WHERE id IN ({placeholders})", removed_ids)
+            except sqlite3.OperationalError:
+                pass
+            return set(removed_ids)
+
+    def partial_rebuild(self, nodes: Iterable[GraphNode], edges: Iterable[GraphEdge], project_filter: set[str], path_filters: list[str]) -> Dict[str, Any]:
+        """Remove scope-matched nodes/edges, then upsert refreshed ones."""
+        removed_ids = self.remove_by_scope(project_filter, path_filters)
+        refreshed_nodes = list(nodes)
+        refreshed_edges = list(edges)
+        self.bulk_write(refreshed_nodes, refreshed_edges)
+        refreshed_ids = {node.id for node in refreshed_nodes}
+        changed_ids = removed_ids | refreshed_ids
+        self._upsert_search_rows([node for node in refreshed_nodes if node.id in changed_ids])
+        counts = self.counts()
+        counts["changed_node_ids"] = list(changed_ids)
+        return counts
+
+    def _upsert_search_rows(self, node_dicts: Iterable[GraphNode]) -> None:
+        """Insert/update FTS rows for a subset of nodes."""
+        with self.connect() as conn:
+            try:
+                for node in node_dicts:
+                    metadata_json = json.dumps(node.metadata or {}, ensure_ascii=False)
+                    content = " ".join([node.id, node.type, node.name, node.project, node.file_path, metadata_json])
+                    conn.execute("DELETE FROM node_search WHERE id=?", (node.id,))
+                    conn.execute(
+                        "INSERT INTO node_search(id, type, name, project, file_path, content) VALUES(?, ?, ?, ?, ?, ?)",
+                        (node.id, node.type, node.name, node.project, node.file_path, content),
+                    )
+            except sqlite3.OperationalError:
+                pass
+
     def counts(self) -> Dict[str, int]:
         with self.connect() as conn:
             nodes = conn.execute("SELECT COUNT(*) FROM nodes").fetchone()[0]

@@ -1466,6 +1466,96 @@ def test_case_risk_level_with_evidence_refs():
     assert _case_risk_level(high_case) == "high"
 
 
+def test_partial_reindex_only_touches_changed_project(tmp_path: Path):
+    """Partial reindex with --project only rebuilds graph nodes for that project."""
+    from memory_center.core.config import load_workspace_config
+    from memory_center.core.graph import GraphStore
+
+    workspace = _copy_demo_workspace(tmp_path, "partial-reindex")
+    config = load_workspace_config(workspace)
+    store = WorkspaceStore(workspace)
+    ensure_default_rules(store)
+
+    full_counts = reindex_workspace(config, store)
+    assert full_counts["mode"] == "full"
+    assert full_counts["graph_nodes"] > 0
+
+    graph = GraphStore(store.graph_db_path)
+    full_nodes_before = graph.counts()["nodes"]
+
+    partial_counts = reindex_workspace(config, store, projects=["user-service"])
+    assert partial_counts["mode"] == "partial"
+    assert partial_counts["graph_nodes"] > 0
+    assert partial_counts["graph_nodes"] == full_nodes_before
+
+
+def test_index_mirror_on_write_and_prefer_backend(tmp_path: Path):
+    """write_json mirrors to SQLite; read_json_prefer_backend returns same data."""
+    from memory_center.core.config import load_workspace_config
+
+    workspace = _copy_demo_workspace(tmp_path, "index-mirror")
+    config = load_workspace_config(workspace)
+    store = WorkspaceStore(workspace)
+    ensure_default_rules(store)
+    reindex_workspace(config, store)
+
+    file_index_from_file = store.read_json("file-index.json", [])
+    file_index_from_backend = store.read_json_prefer_backend("file-index.json", [])
+    assert file_index_from_file == file_index_from_backend
+    assert len(file_index_from_backend) > 0
+
+
+def test_backend_query_with_project_and_type(tmp_path: Path):
+    """memory_backend_query supports project and payload_type filtering."""
+    workspace = _copy_demo_workspace(tmp_path, "backend-query-filter")
+    config = load_workspace_config(workspace)
+    store = WorkspaceStore(workspace)
+    ensure_default_rules(store)
+    reindex_workspace(config, store)
+
+    from memory_center.core.orchestrator import workspace_start_session, workspace_log_session_event
+
+    session = workspace_start_session(workspace, "backend query test")
+    workspace_log_session_event(workspace, session["session_id"], "tool_call", {"tool_name": "memory_query_tool", "project": "task-service", "query": "ArticleFeignClient"})
+    workspace_log_session_event(workspace, session["session_id"], "tool_call", {"tool_name": "memory_symbol_tool", "project": "article-service", "query": "ArticleService"})
+
+    result_all = memory_backend_query(workspace, collection="session-events.jsonl", limit=50)
+    assert result_all["records"]["count"] >= 2
+
+    result_by_project = memory_backend_query(workspace, collection="session-events.jsonl", project="task-service", limit=50)
+    assert result_by_project["records"]["count"] >= 1
+
+
+def test_export_html_contains_sidebar(tmp_path: Path):
+    """UI pages contain navigation sidebar with links to all pages."""
+    workspace = _copy_demo_workspace(tmp_path, "ui-sidebar")
+    config = load_workspace_config(workspace)
+    store = WorkspaceStore(workspace)
+    ensure_default_rules(store)
+    reindex_workspace(config, store)
+
+    html_output = export_workspace_dashboard_html(workspace, intent="sidebar test", limit=5)
+    assert "<nav" in html_output
+    assert "/ui/dashboard" in html_output
+    assert "/ui/timeline" in html_output
+    assert "/ui/backend" in html_output
+    assert "工作台" in html_output
+
+
+def test_export_dashboard_contains_filters(tmp_path: Path):
+    """Dashboard HTML contains interactive filter form."""
+    workspace = _copy_demo_workspace(tmp_path, "ui-filter")
+    config = load_workspace_config(workspace)
+    store = WorkspaceStore(workspace)
+    ensure_default_rules(store)
+    reindex_workspace(config, store)
+
+    html_output = export_workspace_dashboard_html(workspace, intent="filter test", limit=5)
+    assert "<form" in html_output
+    assert "intent" in html_output
+    assert "limit" in html_output
+
+
 def _copy_demo_workspace(tmp_path: Path, name: str) -> Path:
     import shutil
 

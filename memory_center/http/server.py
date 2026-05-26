@@ -484,6 +484,8 @@ def _route_request(path: str, params: dict, default_workspace: str | None) -> di
             record_id=params.get("record_id", [""])[0],
             created_after=params.get("created_after", [""])[0],
             ref_path=params.get("ref_path", [""])[0],
+            project=params.get("project", [""])[0],
+            payload_type=params.get("payload_type", [""])[0],
             limit=_parse_int(params, "limit", 50),
         )
     if path == "/workspace/verify-checklist":

@@ -69,12 +69,12 @@
 
 | 工作包 | 当前状态 | 已实现 | 仍待推进 |
 |---|---|---|---|
-| 工作包 1：增量索引系统 | `进行中` | `reindex --project`、`--path`、`--changed-only`、`--scope staged|head|all` 第一版已落地 | 真正的局部 graph rebuild、局部 semantic rebuild、更精细的 changed-only 更新 |
+| 工作包 1：增量索引系统 | `接近完成` | `reindex --project`、`--path`、`--changed-only`、`--scope staged|head|all`、局部 JSON index merge、局部 graph rebuild（`partial_rebuild`）、局部 semantic rebuild（`build_workspace_semantic_index_partial`）、删除文件检测与处理 | 更细的 token 估算与真正的增量 semantic 算法仍可继续打磨 |
 | 工作包 2：统一轻量上下文协议 | `接近完成` | `view=compact|full`、`budget=small|medium|large` 已覆盖 `sniff/status/resume/recent_evidence/continuity/dashboard/handoff` | 更细的 token 估算与模型偏好预算映射仍待做 |
 | 工作包 3：统一引用与时间线系统 | `大部分完成` | `ref_id + summary`、`memory_ref_get`、`memory_ref_batch`、timeline 短引用化、`/ui/ref` 已落地 | 更彻底的 `timeline <-> ref` 双向导航、timeline/task/ref 页面联动 drill-down 仍待补完 |
 | 工作包 4：一键工作流系统 | `大部分完成` | `work-start/work-log/work-sync/work-resume/work-handoff/work-close/work-health` 已覆盖 CLI/MCP/HTTP | 更强的自动策略编排与 workflow 质量评测仍待增强 |
-| 工作包 5：可视化工作台 | `进行中` | `/ui`、`/ui/dashboard`、`/ui/continuity`、`/ui/task`、`/ui/task?task_id=...`、`/ui/ref?ref_id=...`、`/ui/timeline`、`/ui/receipts`、`/ui/usage`、`/ui/backend`、`/ui/index-freshness` | 更强交互、筛选、联动、guided tour / onboarding、常驻更像产品仍待做 |
-| 工作包 6：统一后端与评测体系 | `进行中` | SQLite `memory.db` 镜像后端、后端查询入口、`memory_eval_*` 增强、`timeline/recent_sessions/session_summary/write_receipts/workspace_sniff/resume_context/tool_usage_report/query/status` 已优先复用 SQLite 读路径 | 更深层查询路径切换到 SQLite、真正统一 backend 策略、更多长期趋势评测仍待做 |
+| 工作包 5：可视化工作台 | `大部分完成` | `/ui` 侧栏导航、`/ui/dashboard` 筛选表单、`/ui/task` 跨页链接到 timeline、`/ui/timeline` 链接到 ref、`/ui/backend` 筛选、`/ui/receipts` 筛选、`/ui/continuity`、`/ui/usage`、`/ui/index-freshness` | guided tour / onboarding、常驻更像产品仍待做 |
+| 工作包 6：统一后端与评测体系 | `大部分完成` | SQLite `memory.db` 镜像后端（含 `index_mirror` 表）、后端查询入口支持 project/type 过滤、`memory_eval_*` 增强、`timeline/recent_sessions/session_summary/write_receipts/workspace_sniff/resume_context/tool_usage_report/query/status` 及确定性索引读路径已优先复用 SQLite（`read_json_prefer_backend`） | 更深层查询路径全面切换到 SQLite、真正统一 backend 策略、更多长期趋势评测仍待做 |
 
 ### 当前阶段判断
 

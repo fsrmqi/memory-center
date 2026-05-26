@@ -8,10 +8,38 @@ from typing import Any, Dict, List
 from .store import WorkspaceStore
 
 
+def _nav_sidebar_html(workspace_param: str) -> str:
+    """Generate a shared navigation sidebar HTML fragment with bilingual labels."""
+    ws = html.escape(workspace_param)
+    links = [
+        ("/ui", "Workbench / 工作台"),
+        ("/ui/dashboard", "Dashboard / 总面板"),
+        ("/ui/continuity", "Continuity / 连续性"),
+        ("/ui/task", "Focus Task / 焦点任务"),
+        ("/ui/timeline", "Timeline / 时间线"),
+        ("/ui/receipts", "Receipts / 写入回执"),
+        ("/ui/usage", "Usage / 使用报告"),
+        ("/ui/backend", "Backend / 后端"),
+        ("/ui/index-freshness", "Freshness / 索引新鲜度"),
+    ]
+    items = "".join(
+        f'<li><a href="{path}?workspace={ws}" style="display:block;padding:6px 8px;color:var(--ink);text-decoration:none;border-radius:6px;">{label}</a></li>'
+        for path, label in links
+    )
+    return (
+        '<nav style="position:fixed;top:0;left:0;width:220px;height:100vh;'
+        'background:var(--panel);border-right:1px solid var(--line);'
+        'padding:18px 12px;font-size:14px;z-index:100;overflow-y:auto;">'
+        '<div style="font-weight:700;margin-bottom:14px;color:var(--accent);">Memory Center</div>'
+        f'<ul style="list-style:none;padding:0;margin:0;">{items}</ul>'
+        '</nav>'
+    )
+
+
 def export_mermaid(workspace_file: str | Path) -> str:
     """Export a coarse service topology diagram in Mermaid format."""
     store = WorkspaceStore(workspace_file)
-    topology = store.read_json("service-topology.json", {})
+    topology = store.read_json_prefer_backend("service-topology.json", {})
     lines: List[str] = ["flowchart LR"]
 
     services = topology.get("services", [])
@@ -43,7 +71,7 @@ def export_mermaid(workspace_file: str | Path) -> str:
 
 def topology_summary(workspace_file: str | Path) -> Dict[str, Any]:
     store = WorkspaceStore(workspace_file)
-    topology = store.read_json("service-topology.json", {})
+    topology = store.read_json_prefer_backend("service-topology.json", {})
     return {
         "service_count": len(topology.get("services", [])),
         "feign_edge_count": len(topology.get("feign_edges", [])),
@@ -96,6 +124,8 @@ def export_workspace_dashboard_html(workspace_file: str | Path, intent: str = ""
     dashboard = workspace_dashboard(workspace_file, intent=intent, limit=limit)
     focus_task = dashboard.get("focus_task") or {}
     focus_eval = dashboard.get("focus_resume_eval") or {}
+    workspace_param = str(Path(workspace_file).resolve())
+    sidebar = _nav_sidebar_html(workspace_param)
     return f"""<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -113,7 +143,7 @@ def export_workspace_dashboard_html(workspace_file: str | Path, intent: str = ""
       --accent-2: #2f6b5a;
     }}
     body {{ margin: 0; font-family: Georgia, 'Noto Serif SC', serif; background: linear-gradient(180deg, #efe6d8, var(--bg)); color: var(--ink); }}
-    .wrap {{ max-width: 1180px; margin: 0 auto; padding: 28px; }}
+    .wrap {{ max-width: 1180px; margin-left: 240px; padding: 28px; }}
     .hero {{ padding: 24px; background: var(--panel); border: 1px solid var(--line); border-radius: 18px; box-shadow: 0 12px 30px rgba(0,0,0,.05); }}
     h1,h2 {{ margin: 0 0 12px; }}
     .meta {{ color: var(--muted); display: flex; gap: 18px; flex-wrap: wrap; }}
@@ -124,10 +154,21 @@ def export_workspace_dashboard_html(workspace_file: str | Path, intent: str = ""
     li {{ margin: 6px 0; }}
     .score {{ color: var(--accent-2); font-weight: 700; }}
     .muted {{ color: var(--muted); }}
+    .filter-form {{ display:flex; gap:10px; align-items:center; margin-bottom:18px; padding:14px; background:var(--panel); border:1px solid var(--line); border-radius:12px; }}
+    .filter-form input, .filter-form button {{ font-family:inherit; font-size:14px; padding:6px 12px; border:1px solid var(--line); border-radius:8px; background:var(--bg); color:var(--ink); }}
+    .filter-form button {{ background:var(--accent); color:#fff; border:none; cursor:pointer; }}
+    .filter-form button:hover {{ background:#a05838; }}
   </style>
 </head>
 <body>
+  {sidebar}
   <div class="wrap">
+    <form class="filter-form" method="get" action="/ui/dashboard">
+      <input name="workspace" value="{html.escape(workspace_param)}" type="hidden">
+      <input name="intent" placeholder="Intent / 查询意图">
+      <input name="limit" type="number" value="{limit}" min="1" max="100">
+      <button type="submit">Refresh / 刷新</button>
+    </form>
     <section class="hero">
       <h1>Workspace Dashboard</h1>
       <div class="meta">
@@ -178,6 +219,8 @@ def export_continuity_dashboard_html(
     dashboard = workspace_continuity_dashboard(workspace_file, intent=intent, task_id=task_id, session_id=session_id, limit=limit, view="compact", budget="medium")
     focus_task = dashboard.get("focus_task") or {}
     resume_packet = dashboard.get("resume_packet") or {}
+    workspace_param = str(Path(workspace_file).resolve())
+    sidebar = _nav_sidebar_html(workspace_param)
     return f"""<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -195,7 +238,7 @@ def export_continuity_dashboard_html(
       --accent-soft: #e1efef;
     }}
     body {{ margin: 0; font-family: Georgia, 'Noto Serif SC', serif; background: var(--bg); color: var(--ink); }}
-    .wrap {{ max-width: 1080px; margin: 0 auto; padding: 28px; }}
+    .wrap {{ max-width: 1080px; margin-left: 240px; padding: 28px; }}
     .hero, .card {{ background: var(--panel); border: 1px solid var(--line); border-radius: 16px; }}
     .hero {{ padding: 24px; }}
     .meta {{ color: var(--muted); display:flex; gap:16px; flex-wrap:wrap; }}
@@ -209,6 +252,7 @@ def export_continuity_dashboard_html(
   </style>
 </head>
 <body>
+  {sidebar}
   <div class="wrap">
     <section class="hero">
       <h1>Continuity Dashboard</h1>
@@ -245,8 +289,10 @@ def export_continuity_dashboard_html(
 
 def export_workbench_index_html(workspace_file: str | Path) -> str:
     store = WorkspaceStore(workspace_file)
-    topology = store.read_json("service-topology.json", {})
+    topology = store.read_json_prefer_backend("service-topology.json", {})
     service_count = len(topology.get("services", []))
+    workspace_param = str(Path(workspace_file).resolve())
+    sidebar = _nav_sidebar_html(workspace_param)
     return f"""<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -254,16 +300,25 @@ def export_workbench_index_html(workspace_file: str | Path) -> str:
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Memory Center Workbench</title>
   <style>
-    body {{ margin: 0; font-family: Georgia, 'Noto Serif SC', serif; background: #f7f1ea; color: #211c17; }}
-    .wrap {{ max-width: 980px; margin: 0 auto; padding: 32px; }}
+    :root {{
+      --bg: #f7f1ea;
+      --panel: #fffdf9;
+      --ink: #211c17;
+      --muted: #6f6559;
+      --line: #ddd2c4;
+      --accent: #8c4b2f;
+    }}
+    body {{ margin: 0; font-family: Georgia, 'Noto Serif SC', serif; background: var(--bg); color: var(--ink); }}
+    .wrap {{ max-width: 980px; margin-left: 240px; padding: 32px; }}
     .hero {{ margin-bottom: 22px; }}
     .grid {{ display:grid; grid-template-columns: repeat(auto-fit,minmax(220px,1fr)); gap:18px; }}
-    .card {{ display:block; text-decoration:none; color:inherit; padding:20px; background:#fffdf9; border:1px solid #ddd2c4; border-radius:16px; }}
+    .card {{ display:block; text-decoration:none; color:inherit; padding:20px; background:var(--panel); border:1px solid var(--line); border-radius:16px; }}
     h1,h2 {{ margin:0 0 10px; }}
-    p {{ margin:0; color:#6f6559; }}
+    p {{ margin:0; color:var(--muted); }}
   </style>
 </head>
 <body>
+  {sidebar}
   <div class="wrap">
     <section class="hero">
       <h1>Memory Center Workbench</h1>
@@ -294,6 +349,8 @@ def export_focus_task_html(workspace_file: str | Path, intent: str = "", task_id
     focus = dashboard.get("focus_task") or {}
     resolved_task_id = str(focus.get("task_id", "") or "")
     current_summary = get_task_artifact(workspace_file, resolved_task_id, "current_summary").get("content", "") if resolved_task_id else ""
+    workspace_param = str(Path(workspace_file).resolve())
+    sidebar = _nav_sidebar_html(workspace_param)
     return f"""<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -301,21 +358,34 @@ def export_focus_task_html(workspace_file: str | Path, intent: str = "", task_id
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Focus Task</title>
   <style>
-    body {{ margin:0; font-family: Georgia, 'Noto Serif SC', serif; background:#f6f1e8; color:#1e1a16; }}
-    .wrap {{ max-width: 980px; margin: 0 auto; padding: 28px; }}
-    .hero,.card {{ background:#fffdf8; border:1px solid #d9cfc1; border-radius:16px; }}
+    :root {{
+      --bg: #f6f1e8;
+      --panel: #fffdf8;
+      --ink: #1e1a16;
+      --muted: #6d6357;
+      --line: #d9cfc1;
+      --accent: #8c4b2f;
+      --accent-2: #2f6b5a;
+    }}
+    body {{ margin:0; font-family: Georgia, 'Noto Serif SC', serif; background:var(--bg); color:var(--ink); }}
+    .wrap {{ max-width: 980px; margin-left: 240px; padding: 28px; }}
+    .hero,.card {{ background:var(--panel); border:1px solid var(--line); border-radius:16px; }}
     .hero {{ padding:24px; margin-bottom:18px; }}
     .grid {{ display:grid; grid-template-columns: repeat(auto-fit,minmax(280px,1fr)); gap:18px; }}
     .card {{ padding:18px; }}
-    .muted {{ color:#6d6357; }}
+    .muted {{ color:var(--muted); }}
     ul {{ margin:8px 0 0; padding-left:18px; }}
+    .cross-link {{ display:inline-block; margin-top:14px; padding:8px 14px; background:var(--accent-2); color:#fff; border-radius:8px; text-decoration:none; font-size:14px; }}
+    .cross-link:hover {{ background:#3a8068; }}
   </style>
 </head>
 <body>
+  {sidebar}
   <div class="wrap">
     <section class="hero">
       <h1>{html.escape(str(focus.get('title', '') or focus.get('task_id', 'Focus Task')))}</h1>
       <div class="muted">{html.escape(str(focus.get('focus_reason', '')))}</div>
+      <a class="cross-link" href="/ui/timeline?workspace={html.escape(workspace_param)}&task_id={html.escape(resolved_task_id)}">View Timeline → / 查看时间线</a>
     </section>
     <div class="grid">
       <section class="card"><h2>Next Actions</h2>{_render_simple_list_html(dashboard.get('next_actions', []))}</section>
@@ -332,6 +402,8 @@ def export_focus_task_html(workspace_file: str | Path, intent: str = "", task_id
 def export_timeline_html(workspace_file: str | Path, intent: str = "", limit: int = 20) -> str:
     from .orchestrator import memory_backend_query, workspace_replay_write_chain, workspace_status
 
+    workspace_param = str(Path(workspace_file).resolve())
+    sidebar = _nav_sidebar_html(workspace_param)
     focus = workspace_status(workspace_file, view="compact", budget="medium").get("current_focus_task") or {}
     task_id = str(focus.get("task_id", "") or "")
     timeline = workspace_replay_write_chain(workspace_file, task_id=task_id, limit=limit).get("timeline", [])
@@ -339,7 +411,8 @@ def export_timeline_html(workspace_file: str | Path, intent: str = "", limit: in
     items = "".join(
         f"<li><strong>{html.escape(str(item.get('kind', '')))}</strong> "
         f"<span class='chip'>{html.escape(str(item.get('action', '')))}</span> "
-        f"<span class='muted'>{html.escape(str(item.get('target', '')))}</span></li>"
+        f"<a href='/ui/ref?workspace={html.escape(workspace_param)}&ref_id={html.escape(str(item.get('ref_id', '')))}' style='color:var(--accent);text-decoration:none;'>"
+        f"<span class='muted'>{html.escape(str(item.get('target', '')))}</span></a></li>"
         for item in timeline
     ) or "<div class='muted'>None</div>"
     return f"""<!doctype html>
@@ -349,16 +422,25 @@ def export_timeline_html(workspace_file: str | Path, intent: str = "", limit: in
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Timeline</title>
   <style>
-    body {{ margin:0; font-family: Georgia, 'Noto Serif SC', serif; background:#f6f1e8; color:#1e1a16; }}
-    .wrap {{ max-width: 980px; margin: 0 auto; padding: 28px; }}
-    .card {{ background:#fffdf8; border:1px solid #d9cfc1; border-radius:16px; padding:18px; }}
-    .chip {{ display:inline-block; padding:4px 10px; border-radius:999px; background:#efe3d4; color:#8c4b2f; font-size:12px; margin-right:8px; }}
-    .muted {{ color:#6d6357; }}
+    :root {{
+      --bg: #f6f1e8;
+      --panel: #fffdf8;
+      --ink: #1e1a16;
+      --muted: #6d6357;
+      --line: #d9cfc1;
+      --accent: #8c4b2f;
+    }}
+    body {{ margin:0; font-family: Georgia, 'Noto Serif SC', serif; background:var(--bg); color:var(--ink); }}
+    .wrap {{ max-width: 980px; margin-left: 240px; padding: 28px; }}
+    .card {{ background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:18px; }}
+    .chip {{ display:inline-block; padding:4px 10px; border-radius:999px; background:#efe3d4; color:var(--accent); font-size:12px; margin-right:8px; }}
+    .muted {{ color:var(--muted); }}
     ul {{ margin:8px 0 0; padding-left:18px; }}
     li {{ margin:6px 0; }}
   </style>
 </head>
 <body>
+  {sidebar}
   <div class="wrap">
     <section class="card">
       <h1>Timeline</h1>
@@ -375,6 +457,8 @@ def export_timeline_html(workspace_file: str | Path, intent: str = "", limit: in
 def export_usage_report_html(workspace_file: str | Path, limit: int = 50) -> str:
     from .orchestrator import memory_backend_query, memory_tool_usage_report
 
+    workspace_param = str(Path(workspace_file).resolve())
+    sidebar = _nav_sidebar_html(workspace_param)
     report = memory_tool_usage_report(workspace_file, limit=limit)
     backend = memory_backend_query(workspace_file, collection="session-events.jsonl", limit=min(limit, 10))
     summary = report.get("summary", {}) or {}
@@ -385,16 +469,25 @@ def export_usage_report_html(workspace_file: str | Path, limit: int = 50) -> str
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Usage Report</title>
   <style>
-    body {{ margin:0; font-family: Georgia, 'Noto Serif SC', serif; background:#f6f1e8; color:#1e1a16; }}
-    .wrap {{ max-width: 980px; margin: 0 auto; padding: 28px; }}
+    :root {{
+      --bg: #f6f1e8;
+      --panel: #fffdf8;
+      --ink: #1e1a16;
+      --muted: #6d6357;
+      --line: #d9cfc1;
+      --accent: #8c4b2f;
+    }}
+    body {{ margin:0; font-family: Georgia, 'Noto Serif SC', serif; background:var(--bg); color:var(--ink); }}
+    .wrap {{ max-width: 980px; margin-left: 240px; padding: 28px; }}
     .grid {{ display:grid; grid-template-columns: repeat(auto-fit,minmax(220px,1fr)); gap:18px; }}
-    .card {{ background:#fffdf8; border:1px solid #d9cfc1; border-radius:16px; padding:18px; }}
-    .muted {{ color:#6d6357; }}
+    .card {{ background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:18px; }}
+    .muted {{ color:var(--muted); }}
     ul {{ margin:8px 0 0; padding-left:18px; }}
     li {{ margin:6px 0; }}
   </style>
 </head>
 <body>
+  {sidebar}
   <div class="wrap">
     <h1>Usage Report</h1>
     <div class="grid">
@@ -411,6 +504,8 @@ def export_usage_report_html(workspace_file: str | Path, limit: int = 50) -> str
 def export_receipts_html(workspace_file: str | Path, limit: int = 20) -> str:
     from .orchestrator import workspace_write_receipts
 
+    workspace_param = str(Path(workspace_file).resolve())
+    sidebar = _nav_sidebar_html(workspace_param)
     payload = workspace_write_receipts(workspace_file, limit=limit)
     rows = payload.get("receipts", [])
     items = "".join(
@@ -425,16 +520,37 @@ def export_receipts_html(workspace_file: str | Path, limit: int = 20) -> str:
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Receipts</title>
   <style>
-    body {{ margin:0; font-family: Georgia, 'Noto Serif SC', serif; background:#f6f1e8; color:#1e1a16; }}
-    .wrap {{ max-width: 980px; margin: 0 auto; padding: 28px; }}
-    .card {{ background:#fffdf8; border:1px solid #d9cfc1; border-radius:16px; padding:18px; }}
-    .muted {{ color:#6d6357; }}
+    :root {{
+      --bg: #f6f1e8;
+      --panel: #fffdf8;
+      --ink: #1e1a16;
+      --muted: #6d6357;
+      --line: #d9cfc1;
+      --accent: #8c4b2f;
+    }}
+    body {{ margin:0; font-family: Georgia, 'Noto Serif SC', serif; background:var(--bg); color:var(--ink); }}
+    .wrap {{ max-width: 980px; margin-left: 240px; padding: 28px; }}
+    .card {{ background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:18px; }}
+    .muted {{ color:var(--muted); }}
     ul {{ margin:8px 0 0; padding-left:18px; }}
     li {{ margin:6px 0; }}
+    .filter-form {{ display:flex; gap:10px; align-items:center; margin-bottom:18px; padding:14px; background:var(--panel); border:1px solid var(--line); border-radius:12px; }}
+    .filter-form input, .filter-form select, .filter-form button {{ font-family:inherit; font-size:14px; padding:6px 12px; border:1px solid var(--line); border-radius:8px; background:var(--bg); color:var(--ink); }}
+    .filter-form select {{ cursor:pointer; }}
+    .filter-form button {{ background:var(--accent); color:#fff; border:none; cursor:pointer; }}
+    .filter-form button:hover {{ background:#a05838; }}
   </style>
 </head>
 <body>
+  {sidebar}
   <div class="wrap">
+    <form class="filter-form" method="get" action="/ui/receipts">
+      <input name="workspace" value="{html.escape(workspace_param)}" type="hidden">
+      <select name="layer"><option value="">All</option><option>L0</option><option>L1</option><option>L2</option><option>L3</option></select>
+      <select name="action"><option value="">All</option><option>workspace_record_case</option><option>workspace_log_session_event</option><option>update_task_artifact</option><option>sync_sniff_artifacts</option></select>
+      <input name="limit" type="number" value="{limit}" min="1" max="100">
+      <button type="submit">Filter / 篮选</button>
+    </form>
     <section class="card">
       <h1>Receipts</h1>
       <div class="muted">Total: {payload.get('summary', {}).get('total', 0)}</div>
@@ -449,6 +565,8 @@ def export_receipts_html(workspace_file: str | Path, limit: int = 20) -> str:
 def export_index_freshness_html(workspace_file: str | Path) -> str:
     from .orchestrator import memory_eval_index_freshness
 
+    workspace_param = str(Path(workspace_file).resolve())
+    sidebar = _nav_sidebar_html(workspace_param)
     payload = memory_eval_index_freshness(workspace_file, scope="all")
     findings = "".join(
         f"<li><strong>{html.escape(str(item.get('severity', '')))}</strong> "
@@ -463,16 +581,25 @@ def export_index_freshness_html(workspace_file: str | Path) -> str:
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Index Freshness</title>
   <style>
-    body {{ margin:0; font-family: Georgia, 'Noto Serif SC', serif; background:#f6f1e8; color:#1e1a16; }}
-    .wrap {{ max-width: 980px; margin: 0 auto; padding: 28px; }}
+    :root {{
+      --bg: #f6f1e8;
+      --panel: #fffdf8;
+      --ink: #1e1a16;
+      --muted: #6d6357;
+      --line: #d9cfc1;
+      --accent: #8c4b2f;
+    }}
+    body {{ margin:0; font-family: Georgia, 'Noto Serif SC', serif; background:var(--bg); color:var(--ink); }}
+    .wrap {{ max-width: 980px; margin-left: 240px; padding: 28px; }}
     .grid {{ display:grid; grid-template-columns: repeat(auto-fit,minmax(260px,1fr)); gap:18px; }}
-    .card {{ background:#fffdf8; border:1px solid #d9cfc1; border-radius:16px; padding:18px; }}
-    .muted {{ color:#6d6357; }}
+    .card {{ background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:18px; }}
+    .muted {{ color:var(--muted); }}
     ul {{ margin:8px 0 0; padding-left:18px; }}
     li {{ margin:6px 0; }}
   </style>
 </head>
 <body>
+  {sidebar}
   <div class="wrap">
     <h1>Index Freshness</h1>
     <div class="grid">
@@ -488,6 +615,8 @@ def export_index_freshness_html(workspace_file: str | Path) -> str:
 
 def export_memory_backend_html(workspace_file: str | Path, limit: int = 20) -> str:
     store = WorkspaceStore(workspace_file)
+    workspace_param = str(Path(workspace_file).resolve())
+    sidebar = _nav_sidebar_html(workspace_param)
     stats = store.memory_backend_stats()
     records = store.memory_backend_query_records(limit=limit)
     refs = store.memory_backend_query_refs(limit=limit)
@@ -511,17 +640,45 @@ def export_memory_backend_html(workspace_file: str | Path, limit: int = 20) -> s
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Memory Backend</title>
   <style>
-    body {{ margin:0; font-family: Georgia, 'Noto Serif SC', serif; background:#f6f1e8; color:#1e1a16; }}
-    .wrap {{ max-width: 1080px; margin: 0 auto; padding: 28px; }}
+    :root {{
+      --bg: #f6f1e8;
+      --panel: #fffdf8;
+      --ink: #1e1a16;
+      --muted: #6d6357;
+      --line: #d9cfc1;
+      --accent: #8c4b2f;
+    }}
+    body {{ margin:0; font-family: Georgia, 'Noto Serif SC', serif; background:var(--bg); color:var(--ink); }}
+    .wrap {{ max-width: 1080px; margin-left: 240px; padding: 28px; }}
     .grid {{ display:grid; grid-template-columns: repeat(auto-fit,minmax(260px,1fr)); gap:18px; }}
-    .card {{ background:#fffdf8; border:1px solid #d9cfc1; border-radius:16px; padding:18px; }}
-    .muted {{ color:#6d6357; }}
+    .card {{ background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:18px; }}
+    .muted {{ color:var(--muted); }}
     ul {{ margin:8px 0 0; padding-left:18px; }}
     li {{ margin:6px 0; }}
+    .filter-form {{ display:flex; gap:10px; align-items:center; margin-bottom:18px; padding:14px; background:var(--panel); border:1px solid var(--line); border-radius:12px; }}
+    .filter-form input, .filter-form select, .filter-form button {{ font-family:inherit; font-size:14px; padding:6px 12px; border:1px solid var(--line); border-radius:8px; background:var(--bg); color:var(--ink); }}
+    .filter-form select {{ cursor:pointer; }}
+    .filter-form button {{ background:var(--accent); color:#fff; border:none; cursor:pointer; }}
+    .filter-form button:hover {{ background:#a05838; }}
   </style>
 </head>
 <body>
+  {sidebar}
   <div class="wrap">
+    <form class="filter-form" method="get" action="/ui/backend">
+      <input name="workspace" value="{html.escape(workspace_param)}" type="hidden">
+      <select name="collection">
+        <option value="">All collections</option>
+        <option value="session-events.jsonl">session-events.jsonl</option>
+        <option value="write-receipts.jsonl">write-receipts.jsonl</option>
+        <option value="session-summaries.jsonl">session-summaries.jsonl</option>
+        <option value="handoff-history.jsonl">handoff-history.jsonl</option>
+        <option value="cross-service-task-memory.jsonl">cross-service-task-memory.jsonl</option>
+      </select>
+      <input name="project" placeholder="Project / 项目">
+      <input name="limit" type="number" value="{limit}" min="1" max="100">
+      <button type="submit">Filter / 篮选</button>
+    </form>
     <h1>Memory Backend</h1>
     <div class="grid">
       <section class="card"><h2>Collections</h2><ul>{collections}</ul><div class="muted">Refs: {stats.get('ref_count', 0)}</div></section>
@@ -537,6 +694,8 @@ def export_memory_backend_html(workspace_file: str | Path, limit: int = 20) -> s
 def export_ref_html(workspace_file: str | Path, ref_id: str) -> str:
     from .orchestrator import memory_ref_get
 
+    workspace_param = str(Path(workspace_file).resolve())
+    sidebar = _nav_sidebar_html(workspace_param)
     payload = memory_ref_get(workspace_file, ref_id)
     raw = payload.get("raw")
     raw_text = html.escape(json.dumps(raw, ensure_ascii=False, indent=2) if raw is not None else "null")
@@ -547,14 +706,23 @@ def export_ref_html(workspace_file: str | Path, ref_id: str) -> str:
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Reference Detail</title>
   <style>
-    body {{ margin:0; font-family: Georgia, 'Noto Serif SC', serif; background:#f6f1e8; color:#1e1a16; }}
-    .wrap {{ max-width: 1080px; margin: 0 auto; padding: 28px; }}
-    .card {{ background:#fffdf8; border:1px solid #d9cfc1; border-radius:16px; padding:18px; }}
-    .muted {{ color:#6d6357; }}
+    :root {{
+      --bg: #f6f1e8;
+      --panel: #fffdf8;
+      --ink: #1e1a16;
+      --muted: #6d6357;
+      --line: #d9cfc1;
+      --accent: #8c4b2f;
+    }}
+    body {{ margin:0; font-family: Georgia, 'Noto Serif SC', serif; background:var(--bg); color:var(--ink); }}
+    .wrap {{ max-width: 1080px; margin-left: 240px; padding: 28px; }}
+    .card {{ background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:18px; }}
+    .muted {{ color:var(--muted); }}
     pre {{ white-space: pre-wrap; word-break: break-word; background:#f2ece3; padding:14px; border-radius:12px; }}
   </style>
 </head>
 <body>
+  {sidebar}
   <div class="wrap">
     <section class="card">
       <h1>{html.escape(str(payload.get('ref_id', 'Reference')))}</h1>

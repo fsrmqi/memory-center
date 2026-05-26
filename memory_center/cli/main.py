@@ -147,6 +147,7 @@ def reindex(
         change_scope = "unstaged" if scope == "all" else scope
         changed = memory_detect_changes(workspace, change_scope)
         selected_paths.extend(changed.get("changed_files", []))
+        selected_paths.extend(changed.get("deleted_files", []))
     counts = reindex_workspace(config, store, projects=project, paths=selected_paths)
     ensure_default_rules(store)
     ensure_default_artifacts(workspace)
@@ -604,10 +605,12 @@ def memory_backend_query_cmd(
     record_id: str = typer.Option(""),
     created_after: str = typer.Option(""),
     ref_path: str = typer.Option(""),
+    project: str = typer.Option("", help="Filter records by project name."),
+    payload_type: str = typer.Option("", help="Filter records by payload type."),
     limit: int = typer.Option(50),
 ):
     """Query mirrored SQLite memory backend records and refs."""
-    print(memory_backend_query(workspace, collection=collection, record_id=record_id, created_after=created_after, ref_path=ref_path, limit=limit))
+    print(memory_backend_query(workspace, collection=collection, record_id=record_id, created_after=created_after, ref_path=ref_path, project=project, payload_type=payload_type, limit=limit))
 
 
 @app.command("generate-wiki")

@@ -140,8 +140,8 @@ def memory_callees(workspace_file: str | Path, symbol: str, depth: int = 2, limi
 def memory_search_code(workspace_file: str | Path, query: str, scope: str = "", limit: int = 20) -> Dict[str, Any]:
     config, store = load_context(workspace_file)
     keywords = tokenize(query)
-    files = store.read_json("file-index.json", [])
-    symbols = store.read_json("java-symbol-index.json", [])
+    files = store.read_json_prefer_backend("file-index.json", [])
+    symbols = store.read_json_prefer_backend("java-symbol-index.json", [])
     symbol_map = {item.get("file", ""): item for item in symbols}
     scope_l = scope.lower().strip()
     hits: List[Dict[str, Any]] = []
@@ -183,9 +183,9 @@ def memory_search_code(workspace_file: str | Path, query: str, scope: str = "", 
 def memory_contracts(workspace_file: str | Path) -> Dict[str, Any]:
     _, store = load_context(workspace_file)
     return {
-        "feign_contracts": store.read_json("feign-index.json", []),
-        "mq_contracts": store.read_json("mq-index.json", []),
-        "api_contracts": store.read_json("api-index.json", []),
+        "feign_contracts": store.read_json_prefer_backend("feign-index.json", []),
+        "mq_contracts": store.read_json_prefer_backend("mq-index.json", []),
+        "api_contracts": store.read_json_prefer_backend("api-index.json", []),
         "rules": match_rules(store, intent="contract feign dto message api", scopes=["contract", "dto", "feign", "message"]),
     }
 
@@ -240,12 +240,14 @@ def memory_backend_query(
     record_id: str = "",
     created_after: str = "",
     ref_path: str = "",
+    project: str = "",
+    payload_type: str = "",
     limit: int = 50,
 ) -> Dict[str, Any]:
     config, store = load_context(workspace_file)
     return {
         "workspace": config.workspace,
-        "records": store.memory_backend_query_records(collection=collection, record_id=record_id, created_after=created_after, limit=limit),
+        "records": store.memory_backend_query_records(collection=collection, record_id=record_id, created_after=created_after, project=project, payload_type=payload_type, limit=limit),
         "refs": store.memory_backend_query_refs(ref_path=ref_path, limit=limit),
     }
 

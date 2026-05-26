@@ -418,9 +418,9 @@ def create_server(workspace_file: str):
         return memory_ref_batch(_WORKSPACE_FILE, ref_ids=ref_ids)
 
     @mcp.tool()
-    def memory_backend_query_tool(collection: str = "", record_id: str = "", created_after: str = "", ref_path: str = "", limit: int = 50):
+    def memory_backend_query_tool(collection: str = "", record_id: str = "", created_after: str = "", ref_path: str = "", project: str = "", payload_type: str = "", limit: int = 50):
         """Query the mirrored SQLite memory backend."""
-        return memory_backend_query(_WORKSPACE_FILE, collection=collection, record_id=record_id, created_after=created_after, ref_path=ref_path, limit=limit)
+        return memory_backend_query(_WORKSPACE_FILE, collection=collection, record_id=record_id, created_after=created_after, ref_path=ref_path, project=project, payload_type=payload_type, limit=limit)
 
     @mcp.tool()
     def workspace_trace_tool(entry: str):

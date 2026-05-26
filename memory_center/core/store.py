@@ -38,6 +38,10 @@ class WorkspaceStore:
         path = self.index_dir / name
         with FileLock(str(self.lock_file)):
             path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        try:
+            self.memory_backend().upsert_index(name, data)
+        except Exception:
+            pass
 
     def read_json(self, name: str, default: Any) -> Any:
         path = self.index_dir / name
@@ -155,8 +159,15 @@ class WorkspaceStore:
     def memory_backend_stats(self) -> Dict[str, Any]:
         return self.memory_backend().stats()
 
-    def memory_backend_query_records(self, *, collection: str = "", record_id: str = "", created_after: str = "", limit: int = 50) -> Dict[str, Any]:
-        return self.memory_backend().query_records(collection=collection, record_id=record_id, created_after=created_after, limit=limit)
+    def memory_backend_query_records(self, *, collection: str = "", record_id: str = "", created_after: str = "", project: str = "", payload_type: str = "", limit: int = 50) -> Dict[str, Any]:
+        return self.memory_backend().query_records(collection=collection, record_id=record_id, created_after=created_after, project=project, payload_type=payload_type, limit=limit)
+
+    def read_json_prefer_backend(self, name: str, default: Any) -> Any:
+        """Read deterministic index preferring SQLite backend, fall back to file."""
+        result = self.memory_backend().read_index(name)
+        if result is not None:
+            return result
+        return self.read_json(name, default)
 
     def memory_backend_query_refs(self, *, ref_path: str = "", limit: int = 50) -> Dict[str, Any]:
         return self.memory_backend().query_refs(ref_path=ref_path, limit=limit)
