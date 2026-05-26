@@ -631,12 +631,16 @@ Available MCP tools (8 facade tools) / MCP 工具（8 个任务级 facade）：
 >
 > **注意**：CLI 和 HTTP 仍保留所有细粒度原子命令。只有 MCP 工具面使用 facade 工具。完整路由细节见 [docs/MCP_TOOLS.md](./docs/MCP_TOOLS.md)。
 
-**Hooks auto-trigger** / **Hooks 自动触发**（不依赖模型决策）：
+**Recommended hook mapping** / **推荐 Hook 映射**（需宿主客户端支持）：
 
 - SessionStart → auto `memory-center sniff` 加载工作区上下文
 - PreToolUse (Edit|Write) → auto `memory-center check-rules` 检查架构规则
 - Stop → auto `memory-center end-session` 关闭并同步
 - UserPromptSubmit → LLM 判断是否编码任务，提醒调用 mc_start
+
+These hook behaviors are not enforced by Memory Center itself. They are intended as recommended host-client integrations when the surrounding agent/runtime supports lifecycle hooks.
+
+这些 Hook 行为并不是 Memory Center 自身强制执行的，而是建议在宿主客户端 / agent runtime 支持生命周期 Hook 时接入。
 
 Supported model targets for handoff now include `codex`, `claude-code`, `cursor-agent`, `gemini`, `deepseek`, `glm`, `qwen`, `minimax`, `mimo`, and generic MCP agents.
 
