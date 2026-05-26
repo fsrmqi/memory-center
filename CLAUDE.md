@@ -10,6 +10,8 @@ Memory Center 是面向 AI 编程助手的 MCP 项目记忆服务。
 - 面向用户的文档保持中英文双语。
 - 不提交真实私有 workspace 生成数据。
 
+MCP tool surface: 8 facade tools (mc_start, mc_lookup, mc_analyze, mc_sync, mc_resume, mc_handoff, mc_close, mc_admin). Do NOT add atomic tools back to MCP — keep facade-only surface. CLI and HTTP keep fine-grained interfaces unchanged.
+
 Core commands:
 
 ```bash
