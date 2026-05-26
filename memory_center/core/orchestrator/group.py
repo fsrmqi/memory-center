@@ -630,9 +630,7 @@ def _merge_group_semantic_hit(
         "semantic_score": float(hit.get("score", 0.0)),
         "best_rank": 1000,
         "retrieval_sources": ["semantic"],
-        "neighbors": neighbors,
         "seen_in_workspaces": [workspace_name],
-        "workspace_ref": workspace_ref,
     }
 
 
