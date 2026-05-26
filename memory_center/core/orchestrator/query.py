@@ -51,7 +51,7 @@ def memory_query(workspace_file: str | Path, query: str, limit: int = 20, node_t
         semantic_hits = [item for item in semantic_hits if item.get("node", {}).get("type") in node_types]
     merged = _merge_workspace_query_hits(graph, query, exact_nodes, semantic_hits, limit)
     related_rules = match_rules(store, intent=query, files=[item["node"].get("file_path", "") for item in merged])[:10]
-    cases = store.read_jsonl("cross-service-task-memory.jsonl", limit=200)
+    cases = store.read_jsonl_prefer_backend("cross-service-task-memory.jsonl", limit=200)
     related_cases = [c for c in cases if any(k in json.dumps(c, ensure_ascii=False).lower() for k in tokenize(query))][-5:]
     return {
         "workspace": config.workspace,

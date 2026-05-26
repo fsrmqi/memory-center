@@ -596,7 +596,7 @@ def _render_task_list_html(tasks: List[Dict[str, Any]]) -> str:
     if not tasks:
         return "<div class='muted'>None</div>"
     items = "".join(
-        f"<li><strong>{html.escape(str(item.get('title', item.get('task_id', ''))))}</strong> "
+        f"<li><strong><a href=\"/ui/task?task_id={html.escape(str(item.get('task_id', '')))}\">{html.escape(str(item.get('title', item.get('task_id', ''))))}</a></strong> "
         f"<span class='chip'>{html.escape(str(item.get('status', '')))}</span> "
         f"<span class='chip'>quality={html.escape(str(item.get('quality', '')))}</span> "
         f"<span class='chip'>score={html.escape(str(item.get('score', '')))}</span></li>"
@@ -639,7 +639,7 @@ def _render_ref_list_html(rows: List[Dict[str, Any]]) -> str:
     if not rows:
         return "<div class='muted'>None</div>"
     items = "".join(
-        f"<li><strong>{html.escape(str(item.get('ref_id', '')))}</strong> "
+        f"<li><strong><a href=\"/ui/ref?ref_id={html.escape(str(item.get('ref_id', '')))}\">{html.escape(str(item.get('ref_id', '')))}</a></strong> "
         f"<span class='muted'>{html.escape(str(item.get('summary', '')))}</span></li>"
         for item in rows
     )
