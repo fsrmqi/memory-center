@@ -33,6 +33,38 @@ MCP tool surface: 8 facade tools only. Do NOT add atomic tools back to MCP — k
 - 任务结束时 Stop hook 自动调用 `mc_close` 关闭 session
 - 其他场景用 `mc_lookup` (mode="auto") 自动路由
 
+## Hook Host Integration Layer (宿主集成层)
+
+Hook 是宿主集成方案，不是 memory-center 核心能力。核心能力是记忆/图谱/上下文/工作流，Hook 是"宿主在什么时机自动调哪些能力"。
+
+**架构：**
+- `hooks.yaml` — 声明式配置，定义生命周期事件→facade 映射和模式
+- `memory-center run-hook` — host-agnostic runner，从 stdin 读 JSON，解析参数，调度到 orchestrator
+- `memory-center generate-hooks --host claude-code` — 生成宿主特定配置（Claude Code settings.json）
+
+**4 个标准 Hook 映射：**
+
+| Hook 事件 | Facade | 模式 | 说明 |
+|-----------|--------|------|------|
+| session_start | mc_start | soft | 不阻塞，只注入上下文 |
+| pre_edit | mc_analyze | guard | must-severity 规则匹配时阻塞（exit 2） |
+| session_stop | mc_close | soft | 不阻塞，关闭并同步 |
+| user_prompt_submit | mc_start | suggest | 注入提示，不执行命令 |
+
+**模式说明：**
+- soft: 执行但不阻塞主流程（exit 0）
+- guard: 风险规则匹配时阻塞（exit 2，Claude Code PreToolUse 会阻止编辑）
+- suggest: 只注入提示文本，不执行 shell 命令
+- off: 跳过
+
+**CLI 命令：**
+```bash
+memory-center run-hook --workspace <workspace.yaml> --hook session_start
+memory-center generate-hooks --workspace <workspace.yaml> --host claude-code
+```
+
+**注意：** `run-hook` 是 CLI-only 入口，不作为 MCP tool。宿主通过 shell 命令调用。MCP 客户端直接调 facade。
+
 Core commands:
 
 ```bash

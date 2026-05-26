@@ -631,16 +631,28 @@ Available MCP tools (8 facade tools) / MCP 工具（8 个任务级 facade）：
 >
 > **注意**：CLI 和 HTTP 仍保留所有细粒度原子命令。只有 MCP 工具面使用 facade 工具。完整路由细节见 [docs/MCP_TOOLS.md](./docs/MCP_TOOLS.md)。
 
-**Recommended hook mapping** / **推荐 Hook 映射**（需宿主客户端支持）：
+**Hook host integration** / **宿主集成层**（`memory_center/hooks/`）：
 
-- SessionStart → auto `memory-center sniff` 加载工作区上下文
-- PreToolUse (Edit|Write) → auto `memory-center check-rules` 检查架构规则
-- Stop → auto `memory-center end-session` 关闭并同步
-- UserPromptSubmit → LLM 判断是否编码任务，提醒调用 mc_start
+Hook 是宿主集成方案，不是 Memory Center 核心能力。它定义宿主（Claude Code / Codex / Cursor）在什么生命周期点自动触发哪些 facade 调用。
 
-These hook behaviors are not enforced by Memory Center itself. They are intended as recommended host-client integrations when the surrounding agent/runtime supports lifecycle hooks.
+| Hook 事件 | Facade | 模式 | 说明 |
+|-----------|--------|------|------|
+| `session_start` | `mc_start` | soft | 不阻塞，注入上下文 |
+| `pre_edit` | `mc_analyze` | guard | must-severity 规则匹配时阻塞编辑 |
+| `session_stop` | `mc_close` | soft | 不阻塞，关闭并同步 |
+| `user_prompt_submit` | `mc_start` | suggest | 注入提示，不执行命令 |
 
-这些 Hook 行为并不是 Memory Center 自身强制执行的，而是建议在宿主客户端 / agent runtime 支持生命周期 Hook 时接入。
+模式说明：soft（不阻塞），guard（风险规则匹配时阻塞，exit 2），suggest（只注入提示），off（禁用）。
+
+配置文件：每 workspace 的 `.memory-center/hooks.yaml`（声明式，不同 workspace 可有不同策略）。
+
+CLI 命令：
+```bash
+memory-center run-hook --workspace <workspace.yaml> --hook session_start  # 执行 hook
+memory-center generate-hooks --workspace <workspace.yaml> --host claude-code  # 生成宿主配置
+```
+
+详见 [docs/HOOK_SPEC.md](./docs/HOOK_SPEC.md) 和 [docs/HOOK_ADAPTERS.md](./docs/HOOK_ADAPTERS.md)。
 
 Supported model targets for handoff now include `codex`, `claude-code`, `cursor-agent`, `gemini`, `deepseek`, `glm`, `qwen`, `minimax`, `mimo`, and generic MCP agents.
 
