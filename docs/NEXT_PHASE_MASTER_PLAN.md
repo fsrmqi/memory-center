@@ -521,3 +521,83 @@ WP1（增量索引）和 rtk-ai/rtk 吸收都已完成，下一阶段优先顺�
 - 当前阶段：~~沿 `compact + budget + short refs` 压上下文~~ **已完成**
 - 下一阶段：~~补命令输出前置压缩层与高频命令压缩器~~ **已完成**
 - 后续阶段：补 discover 模式、更完整的命令压缩器矩阵、长期趋势仪表盘
+
+---
+
+## 九、真正的实现思想 / Implementation Tactics
+
+这一节描述“具体应该怎么做”，避免主计划只停留在目标和清单层面。
+
+### 1. 增量索引的真正做法
+
+- 先确定作用域：`project / path / changed_files`
+- JSON 索引层继续做 merge，而不是整份重写
+- graph 层做局部删除 + 局部重建
+- semantic 层保留未变节点，只重建 changed node，并修正必要的全局统计
+
+### 2. 轻量上下文协议的真正做法
+
+- 高层返回统一遵循：
+  - 摘要
+  - top-K
+  - ref 展开
+- `compact` 负责结构裁剪
+- `budget` 负责条目裁剪
+- 所有高频入口尽量统一 token 估算与 gain 记录
+
+### 3. 引用与时间线的真正做法
+
+- 所有引用统一：
+  - `ref_id`
+  - `kind`
+  - `summary`
+  - `raw`
+- 所有 timeline item 统一：
+  - `kind`
+  - `ref_id`
+  - `summary`
+  - `task_id / session_id / created_at`
+- 页面优先展示 summary，点击再 drill-down 到 `/ui/ref`
+
+### 4. 工作流系统的真正做法
+
+- `work-*` 保持为 orchestrator 能力的组合层
+- 不重复发明业务逻辑
+- 每个 workflow 都应返回：
+  - `workflow`
+  - `核心步骤结果`
+  - `receipts`
+  - `next actions / unresolved`
+
+### 5. 工作台系统的真正做法
+
+- `/ui` 作为目录页
+- `/ui/dashboard` 看全局
+- `/ui/continuity` 看恢复
+- `/ui/task` 看任务
+- `/ui/timeline` 看事件/回执链
+- `/ui/ref` 看原始细节
+- `/ui/backend` 看统一后端
+
+### 6. 统一后端的真正做法
+
+- 文件系统继续保留为兼容层
+- SQLite 优先接管“高频读路径”
+- 新增能力先写镜像，再切查询，再看是否值得切主路径
+- 避免一次性全量切换，始终保留 fallback
+
+---
+
+## 十、当前审计结论 / Current Audit Notes
+
+基于当前代码结构、CLI/MCP/HTTP 入口、工作台页面、SQLite 后端与主计划对照，当前判断如下：
+
+- 未发现新的明显阻断性运行时 bug
+- 主计划里的多数高频能力已经落地
+- 剩余工作主要集中在：
+  - 更深的 SQLite 主读路径统一
+  - 更完整的 guided tour / onboarding / 页面联动
+  - 更正式的 token benchmark / top-K only / hybrid retrieval
+  - completion audit 与最终文档一致性审计
+
+这意味着系统已经从“功能集合”进入“收口与产品化”阶段。

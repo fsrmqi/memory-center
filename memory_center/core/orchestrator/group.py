@@ -569,14 +569,6 @@ def _infer_target_types(target: str) -> set:
     return resolved
 
 
-def _sort_target_types(target_types: List[str]) -> List[str]:
-    priority = {
-        "FeignClient": 0, "FeignMethod": 1, "Endpoint": 2, "MQTopic": 3, "MQConsumer": 4,
-        "ConfigKey": 5, "Field": 6, "Method": 7, "Class": 8, "File": 20,
-    }
-    return sorted({item for item in target_types if item}, key=lambda item: (priority.get(item, 10), item))
-
-
 def _group_query_match_key(item: Dict[str, Any], target_types: List[str]) -> tuple:
     node = item.get("node", {})
     node_type = node.get("type", "") or item.get("node_type", "")

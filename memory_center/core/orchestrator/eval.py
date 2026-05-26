@@ -259,7 +259,7 @@ def memory_eval_workflow_orchestration(
     intent: str = "",
     limit: int = 20,
 ) -> Dict[str, Any]:
-    from .evals import eval_workflow_orchestration
+    from ..evals import eval_workflow_orchestration
     from .session import workspace_recent_evidence
 
     config, store = load_context(workspace_file)

@@ -567,20 +567,6 @@ def _build_continuity_overview(workspace_file: str | Path, active_tasks: List[Di
     }
 
 
-def _infer_task_phase(current_summary: str, timeline: List[Dict[str, Any]]) -> str:
-    summary_lower = (current_summary or "").lower()
-    actions = {item.get("action", "") for item in timeline}
-    if TOOL_WORKSPACE_SYNC_CASE_ARTIFACTS in actions or "session:" in summary_lower:
-        return "conclusion_synced"
-    if TOOL_WORKSPACE_SYNC_SNIFF_ARTIFACTS in actions or "risk level" in summary_lower:
-        return "context_synced"
-    if TOOL_WORKSPACE_LOG_SESSION_EVENT in actions:
-        return "in_progress"
-    if current_summary.strip():
-        return "drafted"
-    return "unknown"
-
-
 def _build_focus_reason(task: Dict[str, Any]) -> str:
     parts = []
     status = str(task.get("status", "")).strip().lower()

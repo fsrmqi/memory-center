@@ -502,6 +502,8 @@ def _build_sniff_auto_sync_recommendation(
 
 
 def _best_match(matches: List[Dict[str, Any]], query: str = "") -> Dict[str, Any]:
+    if not matches:
+        return {}
     q = (query or "").lower()
 
     def key(item: Dict[str, Any]):
