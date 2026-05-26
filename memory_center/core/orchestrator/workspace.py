@@ -100,11 +100,11 @@ def workspace_sniff(
     budget: str = "medium",
 ) -> Dict[str, Any]:
     config, store = load_context(workspace_file)
-    file_index = store.read_json("file-index.json", [])
-    symbols = store.read_json("java-symbol-index.json", [])
-    apis = store.read_json("api-index.json", [])
-    feigns = store.read_json("feign-index.json", [])
-    mq = store.read_json("mq-index.json", [])
+    file_index = store.read_json_prefer_backend("file-index.json", [])
+    symbols = store.read_json_prefer_backend("java-symbol-index.json", [])
+    apis = store.read_json_prefer_backend("api-index.json", [])
+    feigns = store.read_json_prefer_backend("feign-index.json", [])
+    mq = store.read_json_prefer_backend("mq-index.json", [])
     cases = store.read_jsonl_prefer_backend("cross-service-task-memory.jsonl", limit=200)
 
     keywords = tokenize(intent)
@@ -203,10 +203,10 @@ def workspace_sniff(
 
 def workspace_trace(workspace_file: str | Path, entry: str) -> Dict[str, Any]:
     _, store = load_context(workspace_file)
-    topology = store.read_json("service-topology.json", {})
-    apis = store.read_json("api-index.json", [])
-    feigns = store.read_json("feign-index.json", [])
-    mq = store.read_json("mq-index.json", [])
+    topology = store.read_json_prefer_backend("service-topology.json", {})
+    apis = store.read_json_prefer_backend("api-index.json", [])
+    feigns = store.read_json_prefer_backend("feign-index.json", [])
+    mq = store.read_json_prefer_backend("mq-index.json", [])
     entry_lower = entry.lower()
     return {
         "entry": entry,
@@ -716,9 +716,9 @@ def _build_sniff_symbolic_context(
 
 def workspace_check_contract(workspace_file: str | Path, contract_file: str, change_type: str) -> Dict[str, Any]:
     _, store = load_context(workspace_file)
-    files = store.read_json("file-index.json", [])
-    feigns = store.read_json("feign-index.json", [])
-    mq = store.read_json("mq-index.json", [])
+    files = store.read_json_prefer_backend("file-index.json", [])
+    feigns = store.read_json_prefer_backend("feign-index.json", [])
+    mq = store.read_json_prefer_backend("mq-index.json", [])
     basename = Path(contract_file).stem.lower()
     affected = []
     for item in files:
