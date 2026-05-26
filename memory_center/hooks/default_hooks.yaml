@@ -1,0 +1,60 @@
+# hooks.yaml — Host integration specification for Memory Center
+# This file declares which lifecycle events trigger which Memory Center
+# capability, with mode constraints. It is NOT part of the core;
+# it defines host-agnostic integration behavior.
+
+version: "1.0"
+
+hooks:
+  session_start:
+    facade: mc_start
+    mode: soft                # soft=never-block, guard=block-on-risk, suggest=inject-prompt, off=disabled
+    params:
+      intent_from: event      # 'event'=stdin JSON prompt field, 'static'=fixed string
+      auto_sync_mode: balanced
+      budget: small
+      view: compact
+    timeout: 30
+    async: true
+
+  pre_edit:
+    facade: mc_analyze
+    mode: guard               # guard mode: return exit-code 2 if high-risk rules match
+    params:
+      target_from: tool_input_file  # Extract file_path from PreToolUse stdin JSON
+      depth: quick
+      change_type: general
+    filter:
+      tool_matcher: "Edit|Write"
+      file_patterns:
+        - "**/common-api/**/*.java"
+        - "**/*Feign*.java"
+        - "**/*Message.java"
+        - "**/*DTO.java"
+    timeout: 15
+    async: true
+
+  session_stop:
+    facade: mc_close
+    mode: soft
+    params:
+      session_id_from: file          # Read from /tmp/memory-center-session-id
+      outcome: "session ended"
+    cleanup:
+      - delete_session_id_file
+    timeout: 15
+    async: true
+
+  user_prompt_submit:
+    facade: mc_start
+    mode: suggest               # suggest = inject prompt, no shell command
+    prompt_template: |
+      The user submitted a prompt. Determine if this is a coding task that should use
+      Memory Center's mc_start facade first. If the prompt involves: modifying code,
+      understanding architecture, tracing call chains, analyzing impact, debugging,
+      or any Spring Cloud task — respond with: {"decision":"allow","reason":"Coding task
+      detected — recommend calling mc_start first to load workspace context."}.
+      For simple questions or non-code topics — respond with: {"decision":"allow",
+      "reason":"Not a coding task, no Memory Center context needed."}.
+      The prompt content: $ARGUMENTS
+    timeout: 10

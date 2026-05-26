@@ -96,6 +96,11 @@ from memory_center.core.validators import doctor as run_doctor
 from memory_center.core.registry import add_to_group, create_group, list_workspaces, register_workspace, resolve_workspace
 from memory_center.core.wiki import generate_skills, generate_wiki
 from memory_center.http.server import serve_http
+from memory_center.hooks.spec import ensure_default_hooks, load_hooks_config
+from memory_center.hooks.runner import run_hook_cli
+from memory_center.hooks.adapters.claude_code import write_claude_code_settings, generate_claude_code_hooks
+from memory_center.hooks.adapters.codex import generate_codex_scripts
+from memory_center.hooks.adapters.cursor import generate_cursor_rules
 
 app = typer.Typer(help="Memory Center CLI")
 registry_app = typer.Typer(help="Global registry commands")
@@ -127,6 +132,7 @@ def init(workspace_root: str = typer.Option(...), name: str = typer.Option("dev-
     workspace_file = write_default_workspace(workspace_root, name)
     store = WorkspaceStore(workspace_file)
     ensure_default_rules(store)
+    ensure_default_hooks(store)
     ensure_default_artifacts(workspace_file)
     write_agent_instructions(store, workspace_root)
     print(f"[green]Initialized:[/green] {workspace_file}")
@@ -152,6 +158,7 @@ def reindex(
         selected_paths.extend(changed.get("deleted_files", []))
     counts = reindex_workspace(config, store, projects=project, paths=selected_paths)
     ensure_default_rules(store)
+    ensure_default_hooks(store)
     ensure_default_artifacts(workspace)
     write_agent_instructions(store, config.root_path)
     print({"reindexed": True, "counts": counts})
@@ -1396,6 +1403,48 @@ def _parse_event_payload(payload: str):
         return value if isinstance(value, dict) else {"value": value}
     except Exception:
         return {"text": payload}
+
+
+@app.command("run-hook")
+def run_hook_cmd(
+    workspace: str = typer.Option(..., help="Path to .memory-center/workspace.yaml"),
+    hook: str = typer.Option(..., help="Hook event name: session_start, pre_edit, session_stop, user_prompt_submit"),
+):
+    """Execute a hook defined in hooks.yaml. Host-agnostic lifecycle event runner.
+
+    Reads stdin JSON from the host, resolves parameters, dispatches to
+    the appropriate Memory Center facade, and outputs a structured result.
+    Process exit code: 0=allow, 2=block (guard mode), 1=error.
+    """
+    exit_code = run_hook_cli(workspace, hook)
+    raise typer.Exit(code=exit_code)
+
+
+@app.command("generate-hooks")
+def generate_hooks_cmd(
+    workspace: str = typer.Option(..., help="Path to .memory-center/workspace.yaml"),
+    host: str = typer.Option("claude-code", help="Target host: claude-code, codex, cursor"),
+    output: str = typer.Option("", help="Output path. Default: auto-detect based on host."),
+):
+    """Generate host-specific hook configuration from hooks.yaml.
+
+    For claude-code: writes .claude/settings.local.json with hooks section.
+    For codex: generates shell wrapper scripts in .codex-hooks/.
+    For cursor: generates .cursorrules additions.
+    """
+    config = load_hooks_config(workspace)
+    if host == "claude-code":
+        result = write_claude_code_settings(workspace, output_path=output or None, hooks_config=config)
+        print({"host": "claude-code", "output_path": str(result), "hooks": generate_claude_code_hooks(workspace, config)})
+    elif host == "codex":
+        scripts = generate_codex_scripts(workspace, output_dir=output or None, hooks_config=config)
+        print({"host": "codex", "generated_scripts": [str(s) for s in scripts]})
+    elif host == "cursor":
+        rules_path = generate_cursor_rules(workspace, output_path=output or None, hooks_config=config)
+        print({"host": "cursor", "output_path": str(rules_path)})
+    else:
+        print({"error": f"Unknown host: {host}. Valid hosts: claude-code, codex, cursor"})
+        raise typer.Exit(code=1)
 
 if __name__ == "__main__":
     app()
