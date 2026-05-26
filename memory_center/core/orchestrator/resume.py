@@ -30,9 +30,10 @@ from .common import (
     load_context,
     tokenize,
 )
-from .compact import _compact_handoff_packet, _compact_resume_packet
+from .compact import _compact_handoff_packet, _compact_resume_packet, _measure_compact_gain
 from .query import memory_query
 from .session import workspace_recent_evidence
+from ..tracking import log_token_gain
 
 
 def workspace_resume_packet(
@@ -112,7 +113,10 @@ def workspace_resume_packet(
     filtered["resume_rule_profile"] = packet.get("resume_rule_profile", "default")
     result = with_schema("resume_packet", filtered)
     if (view or "").strip().lower() == "compact":
-        return _compact_resume_packet(result, budget=budget)
+        compact = _compact_resume_packet(result, budget=budget)
+        gain = _measure_compact_gain(result, compact)
+        log_token_gain(workspace_file, "workspace_resume_packet", budget=budget, model="", raw_tokens=gain["raw_tokens"], compact_tokens=gain["compact_tokens"], view=view)
+        return compact
     return result
 
 
@@ -293,7 +297,10 @@ def workspace_handoff_packet(
     packet["handoff_ref"] = "memory/handoff-history.jsonl"
     result = with_schema("handoff_packet", packet)
     if _is_compact_view(view):
-        return _compact_handoff_packet(result, budget=budget)
+        compact = _compact_handoff_packet(result, budget=budget)
+        gain = _measure_compact_gain(result, compact)
+        log_token_gain(workspace_file, "workspace_handoff_packet", budget=budget, model=target_model, raw_tokens=gain["raw_tokens"], compact_tokens=gain["compact_tokens"], view=view)
+        return compact
     return result
 
 

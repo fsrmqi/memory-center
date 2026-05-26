@@ -42,10 +42,12 @@ from .compact import (
     _compact_sniff_result,
     _compact_workspace_dashboard,
     _compact_workspace_status,
+    _measure_compact_gain,
 )
 from .session import workspace_recent_evidence
 from .write import memory_write_judge, workspace_write_receipts
 from .query import memory_tool_usage_report
+from ..tracking import log_token_gain
 
 
 # ---------------------------------------------------------------------------
@@ -87,7 +89,12 @@ def workspace_status(workspace_file: str | Path, view: str = "full", budget: str
         "current_focus_task": current_focus_task,
         "topology": store.read_json_prefer_backend("service-topology.json", {}),
     }
-    return _compact_workspace_status(result, budget=budget) if _is_compact_view(view) else result
+    if _is_compact_view(view):
+        compact = _compact_workspace_status(result, budget=budget)
+        gain = _measure_compact_gain(result, compact)
+        log_token_gain(workspace_file, "workspace_status", budget=budget, model="", raw_tokens=gain["raw_tokens"], compact_tokens=gain["compact_tokens"], view=view)
+        return compact
+    return result
 
 
 def workspace_sniff(
@@ -198,7 +205,12 @@ def workspace_sniff(
             "长任务建议同时开启 workspace_start_session / workspace_log_session_event，结束后再调用 workspace_sync_case_artifacts 与 workspace_record_case",
         ],
     }
-    return _compact_sniff_result(result, budget=budget) if _is_compact_view(view) else result
+    if _is_compact_view(view):
+        compact = _compact_sniff_result(result, budget=budget)
+        gain = _measure_compact_gain(result, compact)
+        log_token_gain(workspace_file, "workspace_sniff", budget=budget, model="", raw_tokens=gain["raw_tokens"], compact_tokens=gain["compact_tokens"], view=view)
+        return compact
+    return result
 
 
 def workspace_trace(workspace_file: str | Path, entry: str) -> Dict[str, Any]:
@@ -369,7 +381,12 @@ def workspace_dashboard(
         },
         },
     )
-    return _compact_workspace_dashboard(result, budget=budget) if _is_compact_view(view) else result
+    if _is_compact_view(view):
+        compact = _compact_workspace_dashboard(result, budget=budget)
+        gain = _measure_compact_gain(result, compact)
+        log_token_gain(workspace_file, "workspace_dashboard", budget=budget, model="", raw_tokens=gain["raw_tokens"], compact_tokens=gain["compact_tokens"], view=view)
+        return compact
+    return result
 
 
 def workspace_continuity_dashboard(
@@ -406,7 +423,12 @@ def workspace_continuity_dashboard(
         "recent_evidence": evidence.get("evidence", [])[-5:],
         },
     )
-    return _compact_continuity_dashboard(result, budget=budget) if _is_compact_view(view) else result
+    if _is_compact_view(view):
+        compact = _compact_continuity_dashboard(result, budget=budget)
+        gain = _measure_compact_gain(result, compact)
+        log_token_gain(workspace_file, "workspace_continuity_dashboard", budget=budget, model="", raw_tokens=gain["raw_tokens"], compact_tokens=gain["compact_tokens"], view=view)
+        return compact
+    return result
 
 
 # ---------------------------------------------------------------------------

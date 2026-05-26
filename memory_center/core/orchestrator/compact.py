@@ -1,9 +1,18 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List
+import json
+from typing import Any, Dict, List, Tuple
 
 from ..schemas import with_schema
+from ..token_utils import estimate_tokens, compute_savings
 from .common import _budget_limits, _trim_summary
+
+
+def _measure_compact_gain(raw_result: Dict[str, Any], compact_result: Dict[str, Any]) -> Dict[str, Any]:
+    """Measure token savings from raw to compact. Returns savings dict for gain logging."""
+    raw_tokens = estimate_tokens(json.dumps(raw_result, ensure_ascii=False))
+    compact_tokens = estimate_tokens(json.dumps(compact_result, ensure_ascii=False))
+    return compute_savings(raw_tokens, compact_tokens)
 
 
 def _compact_task_rows(rows: List[Dict[str, Any]], limit: int = 5) -> List[Dict[str, Any]]:

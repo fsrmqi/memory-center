@@ -7,6 +7,7 @@ from typing import Any, Dict
 from ..evals import EvalResultBuilder
 from ..schemas import with_schema
 from ..semantic import semantic_index_stats
+from ..token_utils import estimate_tokens
 from .common import (
     LAYER_L0,
     LAYER_L1,
@@ -285,6 +286,20 @@ def memory_eval_context_weight(
     sniff_large_chars = len(json.dumps(sniff_large, ensure_ascii=False))
     resume_small_chars = len(json.dumps(resume_small, ensure_ascii=False))
     dashboard_small_chars = len(json.dumps(dashboard_small, ensure_ascii=False))
+    sniff_small_tokens = estimate_tokens(json.dumps(sniff_small, ensure_ascii=False))
+    sniff_large_tokens = estimate_tokens(json.dumps(sniff_large, ensure_ascii=False))
+    resume_small_tokens = estimate_tokens(json.dumps(resume_small, ensure_ascii=False))
+    dashboard_small_tokens = estimate_tokens(json.dumps(dashboard_small, ensure_ascii=False))
+    # Also get full-view token counts for savings comparison
+    sniff_full = workspace_sniff(workspace_file, intent or "context weight", limit=limit, view="full", budget="large")
+    sniff_full_tokens = estimate_tokens(json.dumps(sniff_full, ensure_ascii=False))
+    sniff_savings_pct = round((1 - sniff_small_tokens / (sniff_full_tokens or 1)) * 100, 1)
+    resume_full = workspace_resume_packet(workspace_file, intent=intent, limit=limit, view="full", budget="medium")
+    resume_full_tokens = estimate_tokens(json.dumps(resume_full, ensure_ascii=False))
+    resume_savings_pct = round((1 - resume_small_tokens / (resume_full_tokens or 1)) * 100, 1)
+    dashboard_full = workspace_dashboard(workspace_file, intent=intent, limit=limit, view="full", budget="medium")
+    dashboard_full_tokens = estimate_tokens(json.dumps(dashboard_full, ensure_ascii=False))
+    dashboard_savings_pct = round((1 - dashboard_small_tokens / (dashboard_full_tokens or 1)) * 100, 1)
     if sniff_small_chars > 4500:
         builder.add("medium", "sniff_small_too_heavy", "sniff 在 small budget 下仍偏重，建议继续压缩字段或条目数。", 20)
     if resume_small_chars > 2800:
@@ -293,6 +308,10 @@ def memory_eval_context_weight(
         builder.add("medium", "dashboard_small_too_heavy", "workspace dashboard 在 small budget 下仍偏重。", 20)
     if sniff_large_chars <= sniff_small_chars:
         builder.add("low", "budget_not_effective", "budget small/large 的输出规模没有明显拉开。", 10)
+    if sniff_savings_pct < 40:
+        builder.add("low", "sniff_savings_low", f"sniff compact 只省了 {sniff_savings_pct}% token，压缩效果不足。", 10)
+    if resume_savings_pct < 40:
+        builder.add("low", "resume_savings_low", f"resume compact 只省了 {resume_savings_pct}% token，压缩效果不足。", 10)
     return builder.finalize(
         workspace=config.workspace,
         intent=intent,
@@ -300,4 +319,54 @@ def memory_eval_context_weight(
         sniff_large_chars=sniff_large_chars,
         resume_small_chars=resume_small_chars,
         dashboard_small_chars=dashboard_small_chars,
+        sniff_small_tokens=sniff_small_tokens,
+        sniff_large_tokens=sniff_large_tokens,
+        sniff_full_tokens=sniff_full_tokens,
+        sniff_savings_pct=sniff_savings_pct,
+        resume_small_tokens=resume_small_tokens,
+        resume_full_tokens=resume_full_tokens,
+        resume_savings_pct=resume_savings_pct,
+        dashboard_small_tokens=dashboard_small_tokens,
+        dashboard_full_tokens=dashboard_full_tokens,
+        dashboard_savings_pct=dashboard_savings_pct,
+    )
+
+
+def memory_eval_token_gain(
+    workspace_file: str | Path,
+    *,
+    tool_name: str = "",
+    budget: str = "",
+    model: str = "",
+    limit: int = 200,
+) -> Dict[str, Any]:
+    """Evaluate token savings from compact operations, similar to rtk's gain command."""
+    from ..tracking import query_token_gain
+
+    config, _ = load_context(workspace_file)
+    gain_report = query_token_gain(
+        workspace_file,
+        tool_name=tool_name,
+        budget=budget,
+        model=model,
+        limit=limit,
+    )
+    builder = EvalResultBuilder()
+    overall_pct = gain_report.get("overall_savings_pct", 0)
+    if overall_pct < 30 and gain_report.get("total_records", 0) > 5:
+        builder.add("medium", "low_overall_savings", f"整体 compact savings 仅 {overall_pct}%，压缩效果不足。", 20)
+    if gain_report.get("total_records", 0) == 0:
+        builder.add("low", "no_gain_records", "尚未有任何 compact gain 记录，compact 视图可能未被调用。", 10)
+    bottom = gain_report.get("bottom_5_savings", [])
+    for entry in bottom[:3]:
+        if entry.get("avg_savings_pct", 100) < 30:
+            builder.add("low", f"low_savings_{entry.get('tool', '')}", f"{entry.get('tool')} compact 平均省 {entry.get('avg_savings_pct')}% token。", 10)
+    return builder.finalize(
+        workspace=config.workspace,
+        overall_savings_pct=overall_pct,
+        total_records=gain_report.get("total_records", 0),
+        total_saved_tokens=gain_report.get("total_saved_tokens", 0),
+        per_tool_stats=gain_report.get("per_tool_stats", {}),
+        top_5_savings=gain_report.get("top_5_savings", []),
+        bottom_5_savings=gain_report.get("bottom_5_savings", []),
     )

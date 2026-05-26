@@ -218,6 +218,12 @@ def _prepare_session_event_payload(
 
 
 def _compact_session_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+    # Try tool-specific compressor first; fall back to generic extraction
+    tool_name = str(payload.get("tool_name", "") or "").lower()
+    compressed = _compact_tool_payload(payload, tool_name)
+    if compressed:
+        return compressed
+    # Generic fallback: extract preferred keys
     compact: Dict[str, Any] = {}
     preferred_keys = [
         "tool_name", "query", "target", "name", "project", "file", "file_path", "path",
@@ -231,6 +237,79 @@ def _compact_session_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
             compact[key] = value
     if "verified_by" in payload and isinstance(payload.get("verified_by"), list):
         compact["verified_by"] = payload.get("verified_by", [])[:10]
+    return compact
+
+
+def _compact_tool_payload(payload: Dict[str, Any], tool_name: str) -> Dict[str, Any] | None:
+    """Tool-specific payload compressor, inspired by rtk's per-command compression strategies.
+
+    Returns None if no specialized compressor matches, causing fallback to generic extraction.
+    """
+    text = json.dumps(payload, ensure_ascii=False).lower()
+
+    # Strategy: Stats Extraction — git status / git diff
+    if tool_name in {"git", "bash"} and ("git status" in text or "git diff" in text):
+        return _compact_git_stats(payload)
+
+    # Strategy: Failure Focus — pytest / cargo test / go test
+    if any(marker in tool_name for marker in ["pytest", "test", "vitest", "cargo"]):
+        return _compact_test_result(payload)
+
+    # Strategy: Grouping by Pattern — grep / rg / search
+    if any(marker in tool_name for marker in ["grep", "rg", "search", "find"]):
+        return _compact_search_result(payload)
+
+    return None
+
+
+def _compact_git_stats(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Stats Extraction for git commands: keep only summary counts."""
+    compact = {"tool_name": payload.get("tool_name", ""), "command": "git"}
+    # Try to extract common git fields
+    for key in ["branch", "ahead", "behind", "staged", "unstaged", "untracked", "insertions", "deletions", "files_changed", "conflicts"]:
+        value = payload.get(key)
+        if value is not None:
+            compact[key] = value
+    # If raw output exists, try to extract a short summary
+    output = str(payload.get("output", "") or payload.get("stdout", "") or "")
+    if output and len(output) > 200:
+        compact["output_summary"] = output[:200]
+    return compact
+
+
+def _compact_test_result(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Failure Focus for test commands: keep only failures + totals."""
+    compact = {"tool_name": payload.get("tool_name", "")}
+    # Extract test result summary fields
+    for key in ["passed", "failed", "errors", "skipped", "total", "test_count", "failure_count", "duration", "exit_code", "status"]:
+        value = payload.get(key)
+        if value is not None:
+            compact[key] = value
+    # Keep failed test names only (truncate list)
+    failed_names = payload.get("failed_tests", payload.get("failures", []))
+    if isinstance(failed_names, list) and failed_names:
+        compact["failed_tests"] = [str(n)[:80] for n in failed_names[:8]]
+    return compact
+
+
+def _compact_search_result(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Grouping by Pattern for search commands: keep counts + top matches."""
+    compact = {"tool_name": payload.get("tool_name", ""), "query": str(payload.get("query", "") or payload.get("pattern", "") or "")[:120]}
+    # Extract count fields
+    for key in ["total_matches", "match_count", "file_count", "count"]:
+        value = payload.get(key)
+        if value is not None:
+            compact[key] = value
+    # Keep top matches grouped by file
+    matches = payload.get("matches", payload.get("results", []))
+    if isinstance(matches, list) and matches:
+        files: Dict[str, int] = {}
+        for m in matches[:20]:
+            f = str(m.get("file", m.get("path", "")) or "")[:60]
+            if f:
+                files[f] = files.get(f, 0) + 1
+        if files:
+            compact["files_with_matches"] = dict(sorted(files.items(), key=lambda kv: -kv[1])[:5])
     return compact
 
 
