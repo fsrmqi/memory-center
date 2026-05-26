@@ -70,21 +70,22 @@
 | 工作包 | 当前状态 | 已实现 | 仍待推进 |
 |---|---|---|---|
 | 工作包 1：增量索引系统 | `进行中` | `reindex --project`、`--path`、`--changed-only`、`--scope staged|head|all` 第一版已落地 | 真正的局部 graph rebuild、局部 semantic rebuild、更精细的 changed-only 更新 |
-| 工作包 2：统一轻量上下文协议 | `大部分完成` | `view=compact|full`、`budget=small|medium|large` 已覆盖高频大返回 | 更细的 token 估算与模型偏好预算映射 |
-| 工作包 3：统一引用与时间线系统 | `大部分完成` | `ref_id + summary`、`memory_ref_get`、`memory_ref_batch`、timeline 短引用化 | 更彻底的 `timeline <-> ref` 双向导航与页面级 drill-down |
-| 工作包 4：一键工作流系统 | `大部分完成` | `work-start/work-log/work-sync/work-resume/work-handoff/work-close/work-health` 已覆盖 CLI/MCP/HTTP | 更强的自动策略编排与 workflow 质量评测 |
-| 工作包 5：可视化工作台 | `进行中` | `/ui`、`/ui/dashboard`、`/ui/continuity`、`/ui/task`、`/ui/timeline`、`/ui/receipts`、`/ui/usage`、`/ui/backend`、`/ui/index-freshness` | 更强交互、筛选、联动、展开细节、常驻更像产品 |
-| 工作包 6：统一后端与评测体系 | `进行中` | SQLite `memory.db` 镜像后端、后端查询入口、`memory_eval_*` 增强、`timeline/recent_sessions/session_summary/write_receipts/workspace_sniff resume_context tool_usage_report` 优先复用 SQLite 读路径 | 更深层查询路径切换到 SQLite、真正统一 backend 策略、更多长期趋势评测 |
+| 工作包 2：统一轻量上下文协议 | `大部分完成` | `view=compact|full`、`budget=small|medium|large` 已覆盖 `sniff/status/resume/recent_evidence/continuity/dashboard` | `workspace_handoff_packet` 仍未接入 `view/budget`；更细的 token 估算与模型偏好预算映射仍待做 |
+| 工作包 3：统一引用与时间线系统 | `大部分完成` | `ref_id + summary`、`memory_ref_get`、`memory_ref_batch`、timeline 短引用化、`/ui/ref` 已落地 | 更彻底的 `timeline <-> ref` 双向导航、timeline/task/ref 页面联动 drill-down 仍待补完 |
+| 工作包 4：一键工作流系统 | `大部分完成` | `work-start/work-log/work-sync/work-resume/work-handoff/work-close/work-health` 已覆盖 CLI/MCP/HTTP | 更强的自动策略编排与 workflow 质量评测仍待增强 |
+| 工作包 5：可视化工作台 | `进行中` | `/ui`、`/ui/dashboard`、`/ui/continuity`、`/ui/task`、`/ui/task?task_id=...`、`/ui/ref?ref_id=...`、`/ui/timeline`、`/ui/receipts`、`/ui/usage`、`/ui/backend`、`/ui/index-freshness` | 更强交互、筛选、联动、guided tour / onboarding、常驻更像产品仍待做 |
+| 工作包 6：统一后端与评测体系 | `进行中` | SQLite `memory.db` 镜像后端、后端查询入口、`memory_eval_*` 增强、`timeline/recent_sessions/session_summary/write_receipts/workspace_sniff/resume_context/tool_usage_report/query/status` 已优先复用 SQLite 读路径 | 更深层查询路径切换到 SQLite、真正统一 backend 策略、更多长期趋势评测仍待做 |
 
 ### 当前阶段判断
 
 当前系统已经从“功能集合”推进到了“可日常使用的协作底座”，但还没有达到“全部实现”的验收状态。  
 离最终目标最近的剩余重点是：
 
-1. 让增量索引从第一版变成更真实的局部重建
-2. 让 SQLite 后端从镜像/局部查询推进到更多真实读路径
-3. 让工作台从可看推进到更强交互和联动
-4. 做一轮更系统的 completion audit 与文档一致性审计
+1. 让增量索引从第一版变成更真实的局部 graph / semantic 重建
+2. 给 `workspace_handoff_packet` 补齐 `view/budget`，让轻量上下文协议彻底闭环
+3. 让 SQLite 后端从镜像/局部查询推进到更多真实读路径，进一步接管统一读取
+4. 让工作台从可看推进到更强交互、联动和 guided tour
+5. 做一轮更系统的 completion audit 与文档一致性审计
 
 ## 工作包 1：增量索引系统
 
@@ -392,6 +393,7 @@
 
 - 更强约束的 workflow skill 模板
 - 面向不同模型的超压缩输出模式
+- 更强的 workflow 质量评测
 
 建议落地时机：
 
@@ -420,6 +422,7 @@
 
 - 更正式的 token benchmark
 - 更系统的向量 / hybrid 检索权重策略
+- 更强的 top-K only 与预算量化体系
 
 建议落地时机：
 
