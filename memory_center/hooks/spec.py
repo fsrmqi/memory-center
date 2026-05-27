@@ -20,6 +20,51 @@ _VALID_PARAM_FROM = ("event", "tool_input_file", "file", "static")
 _HOOK_EVENT_NAMES = ("session_start", "pre_edit", "session_stop", "user_prompt_submit")
 _SESSION_ID_FILE = Path("/tmp/memory-center-session-id")
 
+DEFAULT_HOOKS = {
+    "version": "1.0",
+    "hooks": {
+        "session_start": {
+            "enabled": True,
+            "facade": "mc_start",
+            "mode": "soft",
+            "params": {
+                "intent_from": "event",
+                "intent": "",
+                "budget": "medium",
+            },
+        },
+        "pre_edit": {
+            "enabled": True,
+            "facade": "mc_analyze",
+            "mode": "suggest",
+            "params": {
+                "target_from": "file",
+                "depth": "standard",
+                "direction": "upstream",
+            },
+        },
+        "session_stop": {
+            "enabled": True,
+            "facade": "mc_close",
+            "mode": "soft",
+            "params": {
+                "session_id_from": "tool_input_file",
+                "outcome_from": "event",
+                "record_case": True,
+            },
+        },
+        "user_prompt_submit": {
+            "enabled": True,
+            "facade": "mc_start",
+            "mode": "suggest",
+            "params": {
+                "intent_from": "event",
+                "budget": "medium",
+            },
+        },
+    },
+}
+
 
 def _default_hooks_yaml_path() -> Path:
     return Path(__file__).parent / "default_hooks.yaml"
@@ -28,7 +73,9 @@ def _default_hooks_yaml_path() -> Path:
 def load_default_hooks() -> Dict[str, Any]:
     """Load the shipped default hooks.yaml."""
     path = _default_hooks_yaml_path()
-    return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    if path.exists():
+        return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    return DEFAULT_HOOKS
 
 
 def load_hooks_config(workspace_file: str | Path) -> Dict[str, Any]:

@@ -1,6 +1,6 @@
 [project]
 name = "memory-center"
-version = "2.0.7"
+version = "2.0.8"
 description = "Memory Center is an MCP-native project memory service and multi-agent shared context center for coding agents"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -63,6 +63,9 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 include = ["memory_center*"]
+
+[tool.setuptools.package-data]
+memory_center = ["hooks/*.yaml", "templates/**/*.md", "templates/**/*.txt"]
 
 [tool.ruff]
 line-length = 120
