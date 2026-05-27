@@ -82,22 +82,28 @@ def _get_workspace_file(workspace: str) -> str:
 
 
 def _matches_file_patterns(file_path: str, patterns: list[str]) -> bool:
-    """Check if a file path matches any of the given glob patterns."""
+    """Check if a file path matches any of the given glob patterns, supporting **."""
     if not patterns:
         return True
     from fnmatch import fnmatch
-    normalized = file_path.replace("\\", "/")
+    norm_path = file_path.replace("\\", "/")
+    name = norm_path.rsplit("/", 1)[-1]
     for pattern in patterns:
         norm_pattern = pattern.replace("\\", "/")
-        # Try matching full path against the pattern
-        if fnmatch(normalized, norm_pattern):
-            return True
-        # Try matching just the filename
-        name = normalized.rsplit("/", 1)[-1]
-        if fnmatch(name, norm_pattern):
-            return True
-        if fnmatch(name, norm_pattern.lstrip("/")):
-            return True
+        if "**" not in norm_pattern:
+            if fnmatch(norm_path, norm_pattern) or fnmatch(name, norm_pattern) or fnmatch(name, norm_pattern.lstrip("/")):
+                return True
+        else:
+            # Support ** recursive glob patterns
+            parts = norm_pattern.split("**")
+            if len(parts) == 2:
+                prefix = parts[0].rstrip("/")
+                suffix = parts[1].lstrip("/")
+                if prefix and not norm_path.startswith(prefix):
+                    continue
+                remaining = norm_path[len(prefix):].lstrip("/") if prefix else norm_path
+                if fnmatch(remaining, suffix) or fnmatch(Path(remaining).name if "/" in remaining else remaining, suffix):
+                    return True
     return False
 
 

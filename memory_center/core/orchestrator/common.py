@@ -586,13 +586,23 @@ def _resolve_memory_ref(store: WorkspaceStore, ref_id: str) -> Dict[str, Any] | 
                 ordinal = int(ordinal_text)
             except ValueError:
                 ordinal = 0
-            filtered = [
-                event for event in rows
-                if str(event.get("session_id", "") or "") == session_id
-                and str(event.get("event_type", "") or "") == event_type
-            ]
-            if ordinal > 0 and ordinal <= len(filtered):
-                event = filtered[ordinal - 1]
+            # The ordinal in ref_id is a global position across ALL session events.
+            # Resolve it directly from the full event list rather than the
+            # filtered subset, since global ordinal doesn't match local index.
+            all_rows = store.read_jsonl(SESSION_EVENTS_FILE, limit=5000)
+            if ordinal > 0 and ordinal <= len(all_rows):
+                event = all_rows[ordinal - 1]
+            else:
+                # Fallback: try as local position within session+type subset
+                filtered = [
+                    ev for ev in all_rows
+                    if str(ev.get("session_id", "") or "") == session_id
+                    and str(ev.get("event_type", "") or "") == event_type
+                ]
+                if ordinal > 0 and ordinal <= len(filtered):
+                    event = filtered[ordinal - 1]
+                else:
+                    return None
                 payload = _event_payload(event)
                 raw = {"event": event, "payload": payload}
                 return {"kind": "session_event", "summary": _summarize_ref({**payload, "event_type": event.get("event_type", ""), "payload_ref": event.get("payload_ref", "")}), "raw": raw}
@@ -725,15 +735,18 @@ def tokenize(text: str) -> List[str]:
 
 
 def rank_files(file_index: List[Dict], symbols: List[Dict], keywords: List[str]) -> List[Dict]:
-    symbol_by_file = {s["file"]: s for s in symbols}
+    symbol_entries = {}
+    for s in symbols:
+        symbol_entries.setdefault(s["file"], []).append(s)
     ranked = []
     for item in file_index:
-        haystack = (item.get("path", "") + " " + json.dumps(symbol_by_file.get(item.get("path"), {}), ensure_ascii=False)).lower()
-        score = sum(1 for k in keywords if k in haystack)
         path = item.get("path", "")
+        file_syms = symbol_entries.get(path, [])
+        haystack = (path + " " + json.dumps(file_syms, ensure_ascii=False)).lower()
+        score = sum(1 for k in keywords if k in haystack)
         if any(mark in path for mark in ["Consumer", "Listener", "Feign", "Controller", "Service", "Repository", "Mapper"]):
             score += 1
         if score > 0:
-            ranked.append({**item, "score": score, "symbols": symbol_by_file.get(path, {})})
+            ranked.append({**item, "score": score, "symbols": file_syms})
     ranked.sort(key=lambda x: x["score"], reverse=True)
     return ranked

@@ -81,7 +81,8 @@ def group_query(
             node = item.get("node", {})
             if node.get("type"):
                 target_types.add(node.get("type"))
-            key = f"{workspace_ref}:{node.get('id', rank)}"
+            node_id = node.get("id") or f"{node.get('type', 'unknown')}:{node.get('name', 'unknown')}:{workspace_ref}:{rank}"
+            key = f"{workspace_ref}:{node_id}"
             current = merged.setdefault(key, {
                 "workspace_ref": workspace_ref,
                 "workspace": workspace_name,
@@ -555,14 +556,17 @@ def _resolve_group_target_types(target: str, target_types: List[str] | None = No
 def _infer_target_types(target: str) -> set:
     resolved: set = set()
     target_lower = target.lower()
-    topic_like = any(token in target_lower for token in ["topic", "kafka", "rocketmq"]) or "-" in target_lower
+    # Hyphenated names that don't look like service/app names are likely topics/queues
+    service_indicators = {"service", "api", "common", "gateway", "server", "app", "web", "ui", "frontend", "backend", "admin", "portal"}
+    hyphen_like = "-" in target_lower and not any(ind in target_lower for ind in service_indicators)
+    topic_like = hyphen_like or any(token in target_lower for token in ["topic", "kafka", "rocketmq", "consumer", "producer", "listener"])
     if "feign" in target_lower:
         resolved.update({"FeignClient", "FeignMethod"})
     if target_lower.startswith("/") or any(token in target_lower for token in ["controller", "endpoint"]):
         resolved.add("Endpoint")
     if topic_like:
         resolved.add("MQTopic")
-    if "." in target_lower and not topic_like:
+    if "." in target_lower and not topic_like and "feign" not in target_lower and not target_lower.startswith("/"):
         resolved.add("ConfigKey")
     if topic_like and "MQTopic" in resolved:
         resolved.discard("ConfigKey")

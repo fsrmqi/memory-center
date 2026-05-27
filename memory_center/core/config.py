@@ -72,7 +72,7 @@ def add_workspace_service(
     tags: list[str] | None = None,
 ) -> Dict[str, Any]:
     data = load_workspace_data(workspace_file)
-    services = [item for item in data.get("services", []) if item.get("name") != name and item.get("path") != path]
+    services = [item for item in data.get("services", []) if item.get("name") != name]
     item: Dict[str, Any] = {
         "name": name,
         "path": path,

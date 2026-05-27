@@ -9,6 +9,27 @@ import yaml
 from .models import Rule
 from .store import WorkspaceStore
 
+
+def _glob_match(path: str, pattern: str) -> bool:
+    """Match a file path against a glob pattern, supporting ** for recursive matching."""
+    from fnmatch import fnmatch
+    if "**" not in pattern:
+        return fnmatch(path, pattern) or fnmatch(Path(path).name, pattern)
+    # Replace ** with recursive matching logic
+    norm_path = path.replace("\\", "/")
+    norm_pattern = pattern.replace("\\", "/")
+    # Split pattern into segments around **
+    parts = norm_pattern.split("**")
+    if len(parts) == 2:
+        prefix = parts[0].rstrip("/")
+        suffix = parts[1].lstrip("/")
+        if prefix and not norm_path.startswith(prefix):
+            return False
+        remaining = norm_path[len(prefix):].lstrip("/") if prefix else norm_path
+        return fnmatch(remaining, suffix) or fnmatch(Path(remaining).name, suffix)
+    # Fallback for complex ** patterns
+    return fnmatch(norm_path, norm_pattern)
+
 DEFAULT_RULES = [
     {
         "id": "MQ-001",
@@ -385,7 +406,7 @@ def match_rules(store: WorkspaceStore, intent: str = "", files: List[str] | None
             score += 3
         if any(k.lower() in intent_lower for k in rule.trigger_keywords):
             score += 2
-        if files and any(any(fnmatch.fnmatch(f, pattern) for pattern in rule.file_patterns) for f in files):
+        if files and any(any(_glob_match(f, pattern) for pattern in rule.file_patterns) for f in files):
             score += 3
         if not files and not intent and not scopes:
             score = 1
@@ -401,12 +422,15 @@ def load_yaml_rule_config(store: WorkspaceStore, file_name: str, default_data: D
     ensure_default_rules(store)
     path = store.rules_dir / file_name
     data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    merged = dict(default_data)
-    for key, value in data.items():
+    return _deep_merge(default_data, data)
+
+
+def _deep_merge(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
+    """Recursively merge override into base. Dicts are merged recursively; other values are overwritten."""
+    merged = dict(base)
+    for key, value in override.items():
         if isinstance(value, dict) and isinstance(merged.get(key), dict):
-            nested = dict(merged[key])
-            nested.update(value)
-            merged[key] = nested
+            merged[key] = _deep_merge(merged[key], value)
         else:
             merged[key] = value
     return merged

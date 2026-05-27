@@ -557,7 +557,7 @@ def export_receipts_html(workspace_file: str | Path, limit: int = 20) -> str:
   <div class="wrap">
     <form class="filter-form" method="get" action="/ui/receipts">
       <input name="workspace" value="{html.escape(workspace_param)}" type="hidden">
-      <select name="layer"><option value="">All</option><option>L0</option><option>L1</option><option>L2</option><option>L3</option></select>
+      <select name="layer"><option value="">All</option><option>L0_session_events</option><option>L1_case_atoms</option><option>L2_task_spaces</option><option>L3_workspace_profile</option></select>
       <select name="action"><option value="">All</option><option>workspace_record_case</option><option>workspace_log_session_event</option><option>update_task_artifact</option><option>sync_sniff_artifacts</option></select>
       <input name="limit" type="number" value="{limit}" min="1" max="100">
       <button type="submit">Filter / 篮选</button>

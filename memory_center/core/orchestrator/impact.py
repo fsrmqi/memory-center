@@ -38,7 +38,7 @@ def memory_impact(workspace_file: str | Path, target: str, direction: str = "ups
     )
     risky_types = {"DTO", "Field", "FeignClient", "FeignMethod", "MQTopic", "MQConsumer", "Endpoint", "ConfigKey"}
     if node["type"] in risky_types or len(impacted_projects) >= 3 or confirmed:
-        risk_level = "high" if node["type"] in risky_types or len(impacted_projects) >= 3 else "medium"
+        risk_level = "high"
     else:
         risk_level = "low" if impacts else "unknown"
     rules = match_rules(store, intent=f"impact {target} {node['type']}", files=[node.get("file_path", "")])[:12]

@@ -421,7 +421,9 @@ def _query_node_priority(node_type: str, target_types: List[str]) -> int:
 def _resolve_query_target_types(target: str, target_types: List[str]) -> List[str]:
     resolved = set(t for t in target_types if t)
     target_lower = target.lower()
-    topic_like = any(token in target_lower for token in ["topic", "kafka", "rocketmq", "consumer", "producer", "listener"])
+    service_indicators = {"service", "api", "common", "gateway", "server", "app", "web", "ui", "frontend", "backend", "admin", "portal"}
+    hyphen_like = "-" in target_lower and not any(ind in target_lower for ind in service_indicators)
+    topic_like = hyphen_like or any(token in target_lower for token in ["topic", "kafka", "rocketmq", "consumer", "producer", "listener"])
     if "feign" in target_lower:
         resolved.update({"FeignClient", "FeignMethod"})
     if target_lower.startswith("/") or any(token in target_lower for token in ["controller", "endpoint"]):

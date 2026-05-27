@@ -194,15 +194,17 @@ def create_handler(default_workspace: str | Path | None = None) -> type[BaseHTTP
             except Exception:
                 body_data = {}
             try:
-                # Merge body data into params (body values take precedence)
-                merged_params = {**params}
+                # Merge body data into params; body values extend rather than overwrite
+                merged_params = dict(params)  # shallow copy of query-string params
                 for key, value in body_data.items():
                     if isinstance(value, list):
-                        merged_params[key] = value
-                    elif isinstance(value, str):
-                        merged_params[key] = [value]
+                        # Extend existing query-string list with body list
+                        existing = merged_params.get(key, [])
+                        merged_params[key] = existing + [str(v) for v in value]
                     else:
-                        merged_params[key] = [_json.dumps(value, ensure_ascii=False)]
+                        # Append body value to existing query-string list
+                        existing = merged_params.get(key, [])
+                        merged_params[key] = existing + [str(value)]
                 payload = _route_request(parsed.path, merged_params, workspace_file)
                 self._write_json(200, payload)
             except FileNotFoundError as exc:
