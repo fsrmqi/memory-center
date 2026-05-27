@@ -75,7 +75,7 @@ def topology_summary(workspace_file: str | Path) -> Dict[str, Any]:
     return {
         "service_count": len(topology.get("services", [])),
         "feign_edge_count": len(topology.get("feign_edges", [])),
-        "mq_topic_count": len(topology.get("mq_topics", {})),
+        "mq_topic_count": len(topology.get("mq_topics", [])),
         "services": topology.get("services", []),
     }
 

@@ -6,6 +6,7 @@ shell wrapper scripts that call `memory-center run-hook`.
 from __future__ import annotations
 
 import json
+import shlex
 from pathlib import Path
 from typing import Any, Dict
 
@@ -52,21 +53,20 @@ def generate_codex_scripts(
         script_path = output_dir / script_name
 
         if mode == "suggest":
-            # Suggest mode: output the prompt template as a comment in the script
+            # Suggest mode: output the prompt template via safe heredoc
             prompt = spec.get("prompt_template", "")
-            prompt_json = json.dumps({"type": "prompt", "prompt": "See above template"})
             content = f"""#!/bin/bash
 # Memory Center hook: {event_name} (suggest mode)
 # This hook injects a prompt into the Codex session.
-# Prompt template:
+cat <<'__MC_PROMPT_EOF__'
 {prompt}
-echo '{prompt_json}'
+__MC_PROMPT_EOF__
 """
         else:
             content = f"""#!/bin/bash
 # Memory Center hook: {event_name} ({mode} mode)
 # Reads stdin JSON and dispatches to memory-center run-hook.
-memory-center run-hook --workspace {workspace} --hook {event_name}
+memory-center run-hook --workspace {shlex.quote(workspace)} --hook {event_name}
 """
 
         script_path.write_text(content, encoding="utf-8")

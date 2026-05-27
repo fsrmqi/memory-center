@@ -595,7 +595,7 @@ def _find_group_query_neighbors(workspace_matches: List[Dict[str, Any]], node_id
 
 def _merge_group_semantic_hit(
     merged: Dict[str, Dict[str, Any]],
-    workspace_ref: Dict[str, Any],
+    workspace_ref: str,
     workspace_name: str,
     hit: Dict[str, Any],
     workspace_matches: List[Dict[str, Any]],

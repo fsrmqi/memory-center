@@ -54,7 +54,7 @@ def eval_workflow_orchestration(tool_events: List[Dict[str, Any]], intent: str =
     tool_names = [str(e.get("tool_name", "") or e.get("payload", {}).get("tool_name", "")) for e in tool_events]
 
     has_start = any("work-start" in t or "workspace_sniff" in t or "workspace_start_session" in t for t in tool_names)
-    has_log = any("work-log" in t or "workspace_log_session_event" in t or "session_event" in et for t, et in zip(tool_names, event_types))
+    has_log = any("work-log" in t or "workspace_log_session_event" in t or "session_event" in et for t, et in __import__("itertools").zip_longest(tool_names, event_types, fillvalue=""))
     has_sync = any("work-sync" in t or "sync_sniff" in t or "sync_case" in t for t in tool_names)
     has_close = any("work-close" in t or "workspace_end_session" in t or "workspace_suggest_case" in t for t in tool_names)
     has_lookup = any(t in {"memory_symbol_tool", "memory_query_tool", "workspace_trace_tool", "memory_callers_tool", "memory_callees_tool"} for t in tool_names)

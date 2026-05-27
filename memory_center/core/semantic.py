@@ -177,7 +177,7 @@ def build_workspace_semantic_index_partial(workspace_file: str | Path, changed_n
                 doc["dense_vector"] = [float(value) for value in vector]
     payload = {
         "version": SEMANTIC_INDEX_VERSION,
-        "node_count": existing.get("node_count", 0),
+        "node_count": len(merged_docs),
         "doc_count": len(merged_docs),
         "requested_backend": backend,
         "requested_model": existing.get("requested_model"),

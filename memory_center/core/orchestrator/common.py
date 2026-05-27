@@ -618,7 +618,8 @@ def _case_risk_level(case: Dict[str, Any]) -> str:
 
 def _case_risk_profile(case: Dict[str, Any]) -> Dict[str, Any]:
     risk_points = case.get("risk_points", [])
-    refs = case.get("evidence_refs", []) if isinstance(case.get("evidence_refs", []), list) else []
+    raw_refs = case.get("evidence_refs", [])
+    refs = raw_refs if isinstance(raw_refs, list) else []
     score = 0
     matched_signals: List[str] = []
     point_text = json.dumps(risk_points, ensure_ascii=False).lower()

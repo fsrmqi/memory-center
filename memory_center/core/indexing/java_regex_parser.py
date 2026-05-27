@@ -54,9 +54,49 @@ class RegexJavaParser:
 
 
 def _strip_comments(text: str) -> str:
-    text = re.sub(r"/\*.*?\*/", "", text, flags=re.S)
-    text = re.sub(r"//.*", "", text)
-    return text
+    """Remove Java comments while preserving string and character literals."""
+    result: list[str] = []
+    i = 0
+    n = len(text)
+    while i < n:
+        # Skip string literals
+        if text[i] == '"':
+            j = i + 1
+            while j < n:
+                if text[j] == '\\':
+                    j += 2
+                elif text[j] == '"':
+                    j += 1
+                    break
+                else:
+                    j += 1
+            result.append(text[i:j])
+            i = j
+        # Skip char literals
+        elif text[i] == "'":
+            j = i + 1
+            while j < n:
+                if text[j] == '\\':
+                    j += 2
+                elif text[j] == "'":
+                    j += 1
+                    break
+                else:
+                    j += 1
+            result.append(text[i:j])
+            i = j
+        # Block comment
+        elif i + 1 < n and text[i] == '/' and text[i + 1] == '*':
+            end = text.find("*/", i + 2)
+            i = end + 2 if end != -1 else n
+        # Line comment
+        elif i + 1 < n and text[i] == '/' and text[i + 1] == '/':
+            end = text.find("\n", i + 2)
+            i = end + 1 if end != -1 else n
+        else:
+            result.append(text[i])
+            i += 1
+    return "".join(result)
 
 
 def _first_group(pattern: str, text: str) -> str | None:
@@ -99,15 +139,42 @@ def _parse_method_spans(text: str) -> List[Dict[str, Any]]:
 
 def _matching_brace_end(text: str, open_pos: int) -> int:
     depth = 0
-    for pos in range(open_pos, len(text)):
+    n = len(text)
+    pos = open_pos
+    while pos < n:
         ch = text[pos]
+        # Skip string literals
+        if ch == '"':
+            pos += 1
+            while pos < n:
+                if text[pos] == '\\':
+                    pos += 2
+                elif text[pos] == '"':
+                    pos += 1
+                    break
+                else:
+                    pos += 1
+            continue
+        # Skip char literals
+        if ch == "'":
+            pos += 1
+            while pos < n:
+                if text[pos] == '\\':
+                    pos += 2
+                elif text[pos] == "'":
+                    pos += 1
+                    break
+                else:
+                    pos += 1
+            continue
         if ch == "{":
             depth += 1
         elif ch == "}":
             depth -= 1
             if depth == 0:
                 return pos + 1
-    return len(text)
+        pos += 1
+    return n
 
 
 def _owner_method(method_spans: List[Dict[str, Any]], pos: int) -> str | None:

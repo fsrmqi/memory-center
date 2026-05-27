@@ -799,7 +799,6 @@ def test_artifact_sync_from_sniff_and_case(tmp_path: Path):
     assert "Source References" in design["content"]
     assert "Case synced" in change_log["content"] or "Source session" in change_log["content"]
     assert "Source Session" in current_summary["content"]
-    assert "Source Session" in current_summary["content"]
     task_spaces_after = list_task_spaces(workspace)
     task_row_after = next(item for item in task_spaces_after["active_tasks"] if item["task_id"] == task["task_id"])
     assert task_row_after["last_activity_source"] == "sync_case_artifacts"

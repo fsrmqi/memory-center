@@ -104,7 +104,7 @@ def collect_timeline_items(
 def _load_collection_rows(store: WorkspaceStore, collection: str, *, use_backend: bool) -> List[Dict[str, Any]]:
     if use_backend:
         rows = store.memory_backend_query_records(collection=collection, limit=5000).get("records", [])
-        return [item.get("payload", {}) for item in rows if isinstance(item.get("payload", {}), dict)]
+        return [item.get("payload", {}) if isinstance(item.get("payload"), dict) else item for item in rows]
     return store.read_jsonl(collection, limit=5000)
 
 
@@ -140,27 +140,33 @@ def _match_timeline_item(
 
 
 def _map_session_event(row: Dict[str, Any]) -> Dict[str, Any]:
+    # Support both formats: full record (from JSONL) and unwrapped payload (from backend)
     payload = row.get("payload", {}) if isinstance(row.get("payload"), dict) else {}
+    session_id = row.get("session_id", "") or payload.get("session_id", "")
+    event_type = row.get("event_type", "") or payload.get("event_type", "")
+    created_at = row.get("created_at", "") or payload.get("created_at", "")
+    payload_ref = row.get("payload_ref", "") or payload.get("payload_ref", "")
+    effective_payload = payload if payload else row
     return with_schema(
         "timeline_item",
         {
         "kind": "session_event",
-        "ref_id": f"ev:{row.get('session_id', '')}:{row.get('event_type', '')}:{row.get('created_at', '')}",
+        "ref_id": f"ev:{session_id}:{event_type}:{created_at}",
         "summary": " | ".join(
             part for part in [
-                str(payload.get("tool_name", "") or ""),
-                str(payload.get("query", "") or payload.get("target", "") or row.get("event_type", "") or ""),
-                str(row.get("payload_ref", "") or ""),
+                str(effective_payload.get("tool_name", "") or ""),
+                str(effective_payload.get("query", "") or effective_payload.get("target", "") or event_type or ""),
+                str(payload_ref or ""),
             ] if part
         )[:140],
-        "created_at": row.get("created_at", ""),
+        "created_at": created_at,
         "task_id": "",
-        "session_id": row.get("session_id", ""),
+        "session_id": session_id,
         "layer": "L0_session_events",
-        "action": row.get("event_type", ""),
+        "action": event_type,
         "scope": "memory",
-        "target": payload.get("tool_name", "") or payload.get("query", "") or payload.get("target", "") or row.get("event_type", ""),
-        "payload_ref": row.get("payload_ref", ""),
+        "target": effective_payload.get("tool_name", "") or effective_payload.get("query", "") or effective_payload.get("target", "") or event_type,
+        "payload_ref": payload_ref,
         "raw": row,
         },
     )

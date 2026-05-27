@@ -584,12 +584,12 @@ def archive_task_space(workspace_file: str | Path, task_id: str, reason: str = "
                 if child.is_file():
                     child.unlink()
         task_dir.rename(target)
-    meta["status"] = "archived"
-    meta["archived"] = True
-    meta["archived_at"] = datetime.now().isoformat()
-    if reason:
-        meta["archive_reason"] = reason
-    _write_task_meta(store, target, meta)
+        meta["status"] = "archived"
+        meta["archived"] = True
+        meta["archived_at"] = datetime.now().isoformat()
+        if reason:
+            meta["archive_reason"] = reason
+        _write_task_meta_unlocked(target, meta)
     return {
         "workspace": config.workspace,
         "archived": True,
@@ -649,7 +649,7 @@ def _merge_append_only_artifact(existing: str, incoming: str, artifact_key: str)
     addition = incoming.strip()
     if not addition:
         return existing, "noop"
-    if addition in existing:
+    if f"\n{addition}\n" in f"\n{existing}\n":
         return existing, "deduplicated_noop"
     separator = "\n\n" if existing.strip() and not existing.endswith("\n\n") else ""
     return existing.rstrip() + separator + addition + ("\n" if not addition.endswith("\n") else ""), "append_guarded"
@@ -761,7 +761,13 @@ def _write_task_meta(store: WorkspaceStore, task_dir: Path, meta: Dict[str, obje
     meta = dict(meta)
     meta.setdefault("updated_at", datetime.now().isoformat())
     with FileLock(str(store.lock_file)):
-        _task_meta_path(task_dir).write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+        _write_task_meta_unlocked(task_dir, meta)
+
+
+def _write_task_meta_unlocked(task_dir: Path, meta: Dict[str, object]) -> None:
+    meta = dict(meta)
+    meta.setdefault("updated_at", datetime.now().isoformat())
+    _task_meta_path(task_dir).write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def _read_task_meta(task_dir: Path) -> Dict[str, object]:

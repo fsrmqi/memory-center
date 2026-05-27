@@ -60,7 +60,7 @@ Use mc_start to begin any coding task with workspace context.
     # Append to existing .cursorrules if it has a managed block
     if output_path.exists():
         existing = output_path.read_text(encoding="utf-8")
-        if "<!-- memory-center:start -->" in existing:
+        if "<!-- memory-center:start -->" in existing and "<!-- memory-center:end -->" in existing:
             start = existing.index("<!-- memory-center:start -->")
             end = existing.index("<!-- memory-center:end -->") + len("<!-- memory-center:end -->")
             output_path.write_text(existing[:start] + content + existing[end:], encoding="utf-8")

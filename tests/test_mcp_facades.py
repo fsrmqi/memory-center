@@ -222,32 +222,34 @@ def test_mc_admin_dispatch_table_coverage(tmp_path: Path):
 def test_mc_lookup_invalid_mode_raises(tmp_path: Path):
     """Verify that an invalid mode string raises ValueError with helpful message."""
     wf = _setup_workspace(tmp_path)
-    # Simulate what mc_lookup does for invalid mode
-    mode = "nonexistent"
-    valid_modes = "auto, symbol, code, query, trace, chain, context, contracts, ref, backend"
-    try:
-        # The actual mc_lookup facade would raise this
-        raise ValueError(f"Unknown mc_lookup mode: {mode}. Valid: {valid_modes}")
-    except ValueError as e:
-        assert "Unknown mc_lookup mode" in str(e)
-        assert "nonexistent" in str(e)
+    if not HAS_MCP:
+        pytest.skip("mcp package not installed")
+    server = create_server(wf)
+    mc_lookup = server._tool_manager._tools["mc_lookup"]
+    import asyncio
+    with pytest.raises(ValueError, match="Unknown mc_lookup mode"):
+        asyncio.get_event_loop().run_until_complete(mc_lookup.fn(query="test", mode="nonexistent"))
 
 
 def test_mc_admin_invalid_action_raises(tmp_path: Path):
     """Verify that an invalid action string raises ValueError with action list."""
-    # The mc_admin facade validates action strings
-    action = "nonexistent_action"
-    valid_actions = "status, dashboard, artifact_list"
-    try:
-        raise ValueError(f"Unknown mc_admin action: {action}. Valid actions: {valid_actions}")
-    except ValueError as e:
-        assert "Unknown mc_admin action" in str(e)
-        assert "nonexistent_action" in str(e)
+    wf = _setup_workspace(tmp_path)
+    if not HAS_MCP:
+        pytest.skip("mcp package not installed")
+    server = create_server(wf)
+    mc_admin = server._tool_manager._tools["mc_admin"]
+    import asyncio
+    with pytest.raises(ValueError, match="Unknown mc_admin action"):
+        asyncio.get_event_loop().run_until_complete(mc_admin.fn(action="nonexistent_action"))
 
 
 def test_mc_sync_requires_intent_or_session_id(tmp_path: Path):
     """Verify mc_sync raises ValueError when neither intent nor session_id is provided."""
-    try:
-        raise ValueError("mc_sync requires intent or session_id")
-    except ValueError as e:
-        assert "mc_sync requires intent or session_id" in str(e)
+    wf = _setup_workspace(tmp_path)
+    if not HAS_MCP:
+        pytest.skip("mcp package not installed")
+    server = create_server(wf)
+    mc_sync = server._tool_manager._tools["mc_sync"]
+    import asyncio
+    with pytest.raises(ValueError, match="mc_sync requires intent or session_id"):
+        asyncio.get_event_loop().run_until_complete(mc_sync.fn())

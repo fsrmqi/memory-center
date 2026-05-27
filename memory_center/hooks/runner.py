@@ -191,6 +191,7 @@ def run_hook(
 
     # Dispatch to facade
     hook_result: Any = None
+    system_message = ""
     try:
         if facade == "mc_start":
             sniff_result = workspace_sniff(

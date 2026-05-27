@@ -9,6 +9,8 @@ from filelock import FileLock
 
 from .memory_backend import MemoryBackendStore
 
+_MISSING = object()
+
 
 def _safe_path(base: Path, name: str) -> Path:
     resolved_base = base.resolve()
@@ -103,18 +105,17 @@ class WorkspaceStore:
             pass
         return ref
 
-    def read_memory_ref_json(self, ref: str, default: Any = None) -> Any:
-        default = {} if default is None else default
+    def read_memory_ref_json(self, ref: str, default: Any = _MISSING) -> Any:
         normalized = ref.replace("\\", "/").lstrip("/")
         if normalized.startswith("memory/"):
             normalized = normalized[len("memory/") :]
         path = _safe_path(self.memory_dir, normalized)
         if not path.exists():
-            return default
+            return {} if default is _MISSING else default
         try:
             return json.loads(path.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, UnicodeDecodeError, OSError):
-            return default
+            return {} if default is _MISSING else default
 
     def write_artifact(self, name: str, content: str) -> Path:
         path = _safe_path(self.artifacts_dir, name)

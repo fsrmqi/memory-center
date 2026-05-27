@@ -551,7 +551,7 @@ def _endpoint_matches(feign: Dict[str, Any], method: Dict[str, Any], api: Dict[s
     if feign_path == api_path:
         return True
     base = feign.get("base_path") or ""
-    return bool(base and feign_path.replace(base, "") == api_path)
+    return bool(base and feign_path.startswith(base) and feign_path[len(base):] == api_path)
 
 
 def _source_method_id(sym: Dict[str, Any], owner_class: str, fact: Dict[str, Any]) -> str | None:
