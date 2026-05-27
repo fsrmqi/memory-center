@@ -146,7 +146,8 @@ def _map_session_event(row: Dict[str, Any]) -> Dict[str, Any]:
     event_type = row.get("event_type", "") or payload.get("event_type", "")
     created_at = row.get("created_at", "") or payload.get("created_at", "")
     payload_ref = row.get("payload_ref", "") or payload.get("payload_ref", "")
-    effective_payload = payload if payload or row.get("payload") is None else row
+    # If payload was already unwrapped by _load_collection_rows (no nested "payload" dict), use row directly
+    effective_payload = payload if payload else row
     return with_schema(
         "timeline_item",
         {

@@ -39,11 +39,11 @@ class WorkspaceStore:
     def write_json(self, name: str, data: Any) -> None:
         path = self.index_dir / name
         with FileLock(str(self.lock_file)):
-            path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-        try:
-            self.memory_backend().upsert_index(name, data)
-        except Exception:
-            pass
+            path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+            try:
+                self.memory_backend().upsert_index(name, data)
+            except Exception:
+                pass
 
     def read_json(self, name: str, default: Any) -> Any:
         path = self.index_dir / name
@@ -65,10 +65,10 @@ class WorkspaceStore:
         with FileLock(str(self.lock_file)):
             with path.open("a", encoding="utf-8") as f:
                 f.write(json.dumps(item, ensure_ascii=False) + "\n")
-        try:
-            self.memory_backend().append_record(name, item, record_id=self._infer_record_id(name, item))
-        except Exception:
-            pass
+            try:
+                self.memory_backend().append_record(name, item, record_id=self._infer_record_id(name, item))
+            except Exception:
+                pass
 
     def read_jsonl(self, name: str, limit: int = 50) -> List[Dict[str, Any]]:
         path = self.memory_dir / name
@@ -101,12 +101,12 @@ class WorkspaceStore:
         path = _safe_path(self.memory_dir, name)
         path.parent.mkdir(parents=True, exist_ok=True)
         with FileLock(str(self.lock_file)):
-            path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-        ref = str(path.relative_to(self.base_dir))
-        try:
-            self.memory_backend().upsert_ref(ref, data)
-        except Exception:
-            pass
+            path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+            ref = str(path.relative_to(self.base_dir))
+            try:
+                self.memory_backend().upsert_ref(ref, data)
+            except Exception:
+                pass
         return ref
 
     def read_memory_ref_json(self, ref: str, default: Any = _MISSING) -> Any:

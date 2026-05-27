@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import shutil
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 import re
 from typing import Dict, List
@@ -171,7 +171,7 @@ def append_change_log(workspace_file: str | Path, entry: str) -> Dict[str, objec
     store = WorkspaceStore(workspace_file)
     ensure_default_artifacts(workspace_file)
     filename = DEFAULT_ARTIFACTS["change_log"]
-    stamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
     content = f"\n## {stamp}\n\n{entry.strip()}\n"
     path = store.append_artifact(filename, content)
     compact = compact_change_log(workspace_file, keep_recent=30)
@@ -533,7 +533,7 @@ def append_task_change_log(workspace_file: str | Path, task_id: str, entry: str,
     task_dir, meta = _resolve_task_dir(store, task_id)
     filename = DEFAULT_ARTIFACTS["change_log"]
     path = task_dir / filename
-    stamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
     content = f"\n## {stamp}\n\n{entry.strip()}\n"
     with FileLock(str(store.lock_file)):
         with path.open("a", encoding="utf-8") as f:

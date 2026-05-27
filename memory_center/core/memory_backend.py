@@ -61,7 +61,17 @@ class MemoryBackendStore:
             conn.execute("ALTER TABLE json_records ADD COLUMN type TEXT DEFAULT ''")
         except sqlite3.OperationalError:
             pass
+        try:
+            conn.execute("ALTER TABLE json_records ADD COLUMN session_id TEXT DEFAULT ''")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            conn.execute("ALTER TABLE json_records ADD COLUMN project TEXT DEFAULT ''")
+        except sqlite3.OperationalError:
+            pass
         conn.execute("CREATE INDEX IF NOT EXISTS idx_json_records_type ON json_records(type)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_json_records_session_id ON json_records(session_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_json_records_project ON json_records(project)")
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS refs (
@@ -84,16 +94,22 @@ class MemoryBackendStore:
 
     def append_record(self, collection: str, payload: Dict[str, Any], record_id: str = "") -> None:
         payload_type = str(payload.get("type", "") or "")
+        # Extract session_id/project: may be at top level or nested inside a "payload" sub-dict
+        nested_payload = payload.get("payload", {}) if isinstance(payload.get("payload"), dict) else {}
+        payload_session_id = str(payload.get("session_id", "") or nested_payload.get("session_id", "") or "")
+        payload_project = str(payload.get("project", "") or nested_payload.get("project", "") or "")
         with self.connect() as conn:
             conn.execute(
                 """
-                INSERT INTO json_records(collection, record_id, type, created_at, payload_json)
-                VALUES(?, ?, ?, ?, ?)
+                INSERT INTO json_records(collection, record_id, type, session_id, project, created_at, payload_json)
+                VALUES(?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     collection,
                     record_id,
                     payload_type,
+                    payload_session_id,
+                    payload_project,
                     str(payload.get("created_at", "") or ""),
                     json.dumps(payload, ensure_ascii=False),
                 ),
@@ -138,7 +154,7 @@ class MemoryBackendStore:
         session_id: str = "",
         limit: int = 50,
     ) -> Dict[str, Any]:
-        sql = "SELECT collection, record_id, type, created_at, payload_json FROM json_records WHERE 1=1"
+        sql = "SELECT collection, record_id, type, session_id, project, created_at, payload_json FROM json_records WHERE 1=1"
         args: list[Any] = []
         if collection:
             sql += " AND collection = ?"
@@ -153,24 +169,11 @@ class MemoryBackendStore:
             sql += " AND type = ?"
             args.append(payload_type)
         if session_id:
-            # Match session_id field precisely, avoiding source_session_id false positives
-            # and prefix-match false positives. Match value followed by comma, closing
-            # brace (with optional whitespace), or end of JSON string.
-            sql += " AND (payload_json LIKE ? OR payload_json LIKE ? OR payload_json LIKE ? OR payload_json LIKE ? OR payload_json LIKE ? OR payload_json LIKE ?)"
-            close_brace = '}'
-            args.append(f'"session_id": "{session_id}",')
-            args.append(f'"session_id": "{session_id}"{close_brace}')
-            args.append(f'"session_id": "{session_id}" {close_brace}')
-            args.append(f'"session_id":"{session_id}",')
-            args.append(f'"session_id":"{session_id}"{close_brace}')
-            args.append(f'"session_id":"{session_id}" {close_brace}')
+            sql += " AND session_id = ?"
+            args.append(session_id)
         if project:
-            # Match project field in JSON payload more precisely than bare substring
-            # Use JSON key-value pattern to reduce false positives (e.g. searching "api"
-            # won't match "api-version" in other fields)
-            sql += " AND (payload_json LIKE ? OR payload_json LIKE ?)"
-            args.append(f'%"project": "{project}"%')
-            args.append(f'%"project":"{project}"%')
+            sql += " AND project = ?"
+            args.append(project)
         sql += " ORDER BY id DESC LIMIT ?"
         args.append(limit)
         with self.connect() as conn:
@@ -180,6 +183,8 @@ class MemoryBackendStore:
                 "collection": str(row["collection"]),
                 "record_id": str(row["record_id"]),
                 "type": str(row["type"]),
+                "session_id": str(row["session_id"]),
+                "project": str(row["project"]),
                 "created_at": str(row["created_at"]),
                 "payload": json.loads(str(row["payload_json"])),
             }

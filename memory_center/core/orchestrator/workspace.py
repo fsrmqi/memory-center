@@ -307,7 +307,7 @@ def workspace_dashboard(
 
     from ..timeline import timeline_query
 
-    status = workspace_status(workspace_file, view=view, budget=budget)
+    status = workspace_status(workspace_file, view="full", budget=budget)
     active_tasks = status.get("active_task_spaces", [])[: max(limit, 1)]
     low_quality_tasks: List[Dict[str, Any]] = []
     resumable_tasks: List[Dict[str, Any]] = []
@@ -401,7 +401,7 @@ def workspace_continuity_dashboard(
     # Lazy import to avoid circular dependency with .resume
     from .resume import workspace_resume_packet, workspace_next_actions, workspace_unresolved_items, workspace_handoff_history
 
-    status = workspace_status(workspace_file, view=view, budget=budget)
+    status = workspace_status(workspace_file, view="full", budget=budget)
     focus_task_id = task_id or (status.get("current_focus_task") or {}).get("task_id", "")
     resume_packet = workspace_resume_packet(workspace_file, task_id=focus_task_id, session_id=session_id, intent=intent, limit=limit, view=view, budget=budget)
     next_actions = workspace_next_actions(workspace_file, task_id=focus_task_id, session_id=session_id, intent=intent, limit=limit)

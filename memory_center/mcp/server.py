@@ -104,6 +104,18 @@ class _WorkspaceContext:
     def __init__(self, workspace_file: str):
         self.workspace_file = workspace_file
 
+
+def _parse_payload(payload_str: str) -> Dict[str, Any] | None:
+    """Parse a JSON string payload for MCP tool compatibility."""
+    if not payload_str:
+        return None
+    try:
+        import json
+        result = json.loads(payload_str)
+        return result if isinstance(result, dict) else None
+    except (json.JSONDecodeError, ValueError):
+        return None
+
 def create_server(workspace_file: str):
     try:
         from mcp.server.fastmcp import FastMCP
@@ -221,7 +233,7 @@ def create_server(workspace_file: str):
         result = {"workflow": "mc-analyze", "depth": depth, "impact": impact_result}
         if depth in ("standard", "full") and target:
             result["plan"] = memory_plan_change(wf, target, direction, max_depth)
-            result["rules"] = workspace_check_rules(wf, projects, "general", files)
+            result["rules"] = workspace_check_rules(wf, projects, change_type, files)
         if depth == "full" and target:
             if contract_file:
                 result["contract"] = workspace_check_contract(wf, contract_file, change_type)
@@ -337,7 +349,7 @@ def create_server(workspace_file: str):
         keep_recent: int = 30,
         session_id: str = "",
         event_type: str = "",
-        payload: dict | None = None,
+        payload: str = "",
         outcome: str = "",
         verified_by: List[str] | None = None,
         target_model: str = "codex",
@@ -390,7 +402,7 @@ def create_server(workspace_file: str):
             "task_status": lambda: update_task_status(wf, task_id, status),
             "task_activity_touch": lambda: touch_task_activity(wf, task_id, source),
             "session_start": lambda: workspace_start_session(wf, intent, session_id=session_id or None),
-            "session_log": lambda: workspace_log_session_event(wf, session_id, event_type, payload),
+            "session_log": lambda: workspace_log_session_event(wf, session_id, event_type, _parse_payload(payload)),
             "session_end": lambda: workspace_end_session(wf, session_id, outcome, verified_by),
             "session_recent": lambda: workspace_recent_sessions(wf, limit),
             "session_summary": lambda: workspace_session_summary(wf, session_id),

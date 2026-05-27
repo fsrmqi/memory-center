@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List
@@ -155,7 +156,7 @@ def _load_resume_rules(store: WorkspaceStore, text: str) -> Dict[str, Any]:
     normalized = (text or "").lower()
     for profile_name, profile in (data.get("profiles", {}) or {}).items():
         triggers = [str(item).lower() for item in profile.get("trigger_keywords", [])]
-        if triggers and any(token in normalized for token in triggers):
+        if triggers and any(re.search(rf'\b{re.escape(token)}\b', normalized) for token in triggers):
             merged = dict(default)
             merged.update(profile)
             merged["profile_name"] = profile_name
@@ -532,7 +533,16 @@ def _filter_call_edges(edges: List[Dict[str, Any]], direction: str) -> List[Dict
         "CALLS_METHOD", "CALLS_SERVICE", "IMPLEMENTS_FEIGN", "HANDLES_ENDPOINT",
         "CONSUMES_TOPIC", "READS_FIELD", "READS_CONFIG", "INJECTS_BEAN", "IMPORTS",
     }
-    filtered = [item for item in edges if item.get("type") in preferred]
+    # Direction-aware filtering: separate inbound/outbound edge preferences
+    inbound_preferred = {"CALLS_METHOD", "CALLS_SERVICE", "IMPLEMENTS_FEIGN", "CONSUMES_TOPIC", "READS_FIELD", "READS_CONFIG", "INJECTS_BEAN", "IMPORTS"}
+    outbound_preferred = {"HANDLES_ENDPOINT", "PRODUCES_TOPIC", "CALLS_METHOD", "CALLS_SERVICE"}
+    if direction in {"upstream", "incoming"}:
+        edge_types = inbound_preferred
+    elif direction in {"downstream", "outgoing"}:
+        edge_types = outbound_preferred
+    else:
+        edge_types = preferred
+    filtered = [item for item in edges if item.get("type") in edge_types]
     filtered.sort(
         key=lambda item: (
             -float(item.get("confidence", 0.0)),
@@ -563,9 +573,10 @@ def _unknown_static_analysis_risks() -> List[str]:
 
 def _impact_checklist(node: Dict[str, Any], risk_level: str) -> List[str]:
     base = ["确认上游调用方", "确认下游实现方", "确认是否需要联调或回放历史消息"]
-    if node["type"] in {"FeignClient", "FeignMethod", "DTO"}:
+    node_type = node.get("type", "")
+    if node_type in {"FeignClient", "FeignMethod", "DTO"}:
         base += ["公共契约变更必须检查所有消费者", "字段删除/改义必须保留兼容周期"]
-    if node["type"] in {"MQTopic", "MQConsumer"}:
+    if node_type in {"MQTopic", "MQConsumer"}:
         base += ["检查重复消费幂等", "检查失败重试/死信/补偿", "检查历史消息反序列化兼容"]
     if risk_level == "high":
         base += ["建议生成变更影响报告并在 PR 中附上"]
@@ -586,23 +597,15 @@ def _resolve_memory_ref(store: WorkspaceStore, ref_id: str) -> Dict[str, Any] | 
                 ordinal = int(ordinal_text)
             except ValueError:
                 ordinal = 0
-            # The ordinal in ref_id is a global position across ALL session events.
-            # Resolve it directly from the full event list rather than the
-            # filtered subset, since global ordinal doesn't match local index.
-            all_rows = store.read_jsonl(SESSION_EVENTS_FILE, limit=5000)
-            if ordinal > 0 and ordinal <= len(all_rows):
-                event = all_rows[ordinal - 1]
-            else:
-                # Fallback: try as local position within session+type subset
-                filtered = [
-                    ev for ev in all_rows
-                    if str(ev.get("session_id", "") or "") == session_id
-                    and str(ev.get("event_type", "") or "") == event_type
-                ]
-                if ordinal > 0 and ordinal <= len(filtered):
-                    event = filtered[ordinal - 1]
-                else:
-                    return None
+            # The ordinal in ref_id is a position within the session+type subset,
+            # not a global position. Resolve by filtering to the matching session+type.
+            filtered = [
+                ev for ev in rows
+                if str(ev.get("session_id", "") or "") == session_id
+                and str(ev.get("event_type", "") or "") == event_type
+            ]
+            if ordinal > 0 and ordinal <= len(filtered):
+                event = filtered[ordinal - 1]
                 payload = _event_payload(event)
                 raw = {"event": event, "payload": payload}
                 return {"kind": "session_event", "summary": _summarize_ref({**payload, "event_type": event.get("event_type", ""), "payload_ref": event.get("payload_ref", "")}), "raw": raw}

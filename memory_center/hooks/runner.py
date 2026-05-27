@@ -166,6 +166,18 @@ def run_hook(
     filter_spec = hook_spec.get("filter", {})
     cleanup_actions = hook_spec.get("cleanup", [])
 
+    # Tool matcher filter: if hook specifies tool_matcher, check stdin tool_name
+    tool_matcher = hook_spec.get("tool_matcher")
+    if tool_matcher and stdin_json:
+        tool_name = stdin_json.get("tool_name", "") or (stdin_json.get("tool_input", {}) or {}).get("tool_name", "")
+        if tool_name and tool_name != tool_matcher:
+            return {
+                "exit_code": 0,
+                "system_message": f"[Hook] {hook_name}: tool_name '{tool_name}' does not match tool_matcher '{tool_matcher}', skipping",
+                "hook_result": None,
+                "mode": mode,
+            }
+
     # Mode: off — skip entirely
     if mode == "off":
         return {
@@ -209,7 +221,12 @@ def run_hook(
     view = params_spec.get("view", "compact")
     depth = params_spec.get("depth", "quick")
     change_type = params_spec.get("change_type", "general")
-    outcome = params_spec.get("outcome", "session ended")
+    # Resolve outcome if outcome_from is specified
+    outcome_from = params_spec.get("outcome_from", "static")
+    if outcome_from != "static":
+        outcome = _resolve_param(outcome_from, stdin_json, "outcome", params_spec.get("outcome", "session ended"))
+    else:
+        outcome = params_spec.get("outcome", "session ended")
 
     # File pattern filter for pre_edit
     file_patterns = filter_spec.get("file_patterns", [])
@@ -277,6 +294,25 @@ def run_hook(
                     f"[Memory Center] Rules check for {target}: "
                     f"{len(matched)} rules matched"
                 )
+                # Depth-based dispatch: standard/full include additional analysis
+                if depth in ("standard", "full"):
+                    plan_result = memory_plan_change(
+                        wf,
+                        target=target,
+                        change_type=change_type,
+                        files=[target],
+                    )
+                    hook_result["plan"] = plan_result
+                    system_message += f" | Change plan generated"
+                if depth == "full":
+                    verify_result = memory_verify_checklist(
+                        wf,
+                        target=target,
+                        change_type=change_type,
+                        files=[target],
+                    )
+                    hook_result["verify"] = verify_result
+                    system_message += f" | Verify checklist generated"
                 # Guard mode: block if must-severity rules match
                 if mode == "guard":
                     has_must = any(
@@ -291,6 +327,7 @@ def run_hook(
                         system_message += (
                             f" | BLOCKED: must-severity rules: {must_rules}"
                         )
+                        _run_cleanup(cleanup_actions)
                         return {
                             "exit_code": 2,
                             "system_message": system_message,

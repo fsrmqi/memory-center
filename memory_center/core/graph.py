@@ -9,6 +9,10 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
 
+# Pre-compiled regex for _sanitize_fts_term (P1 performance)
+_RE_SANITIZE_FTS = re.compile(r"[^\w㐀-䶿一-鿿豈-﫿]")
+
+
 @dataclass(frozen=True)
 class GraphNode:
     id: str
@@ -146,9 +150,15 @@ class GraphStore:
 
     def bulk_write(self, nodes: Iterable[GraphNode], edges: Iterable[GraphEdge]) -> None:
         with self.connect() as conn:
-            for node in nodes:
-                metadata_json = json.dumps(node.metadata or {}, ensure_ascii=False)
-                conn.execute(
+            node_list = list(nodes)
+            edge_list = list(edges)
+            if node_list:
+                node_rows = [
+                    (node.id, node.type, node.name, node.project, node.file_path, node.line,
+                     json.dumps(node.metadata or {}, ensure_ascii=False))
+                    for node in node_list
+                ]
+                conn.executemany(
                     """
                     INSERT INTO nodes(id, type, name, project, file_path, line, metadata_json)
                     VALUES(?, ?, ?, ?, ?, ?, ?)
@@ -160,10 +170,15 @@ class GraphStore:
                       line=excluded.line,
                       metadata_json=excluded.metadata_json
                     """,
-                    (node.id, node.type, node.name, node.project, node.file_path, node.line, metadata_json),
+                    node_rows,
                 )
-            for edge in edges:
-                conn.execute(
+            if edge_list:
+                edge_rows = [
+                    (edge.id, edge.source_id, edge.target_id, edge.type, edge.confidence,
+                     json.dumps(edge.metadata or {}, ensure_ascii=False))
+                    for edge in edge_list
+                ]
+                conn.executemany(
                     """
                     INSERT INTO edges(id, source_id, target_id, type, confidence, metadata_json)
                     VALUES(?, ?, ?, ?, ?, ?)
@@ -174,7 +189,7 @@ class GraphStore:
                       confidence=excluded.confidence,
                       metadata_json=excluded.metadata_json
                     """,
-                    (edge.id, edge.source_id, edge.target_id, edge.type, edge.confidence, json.dumps(edge.metadata or {}, ensure_ascii=False)),
+                    edge_rows,
                 )
 
     def rebuild_search_index(self) -> None:
@@ -375,7 +390,7 @@ def edge_id(edge_type: str, source_id: str, target_id: str) -> str:
 
 
 def _sanitize_fts_term(term: str) -> str:
-    return re.sub(r"[^\w㐀-䶿一-鿿豈-﫿]", "", term)
+    return _RE_SANITIZE_FTS.sub("", term)
 
 
 def _loads_json(value: str) -> Dict[str, Any]:
@@ -407,6 +422,6 @@ def _row_edge(row: sqlite3.Row) -> Dict[str, Any]:
         "confidence": row["confidence"],
         "metadata": metadata,
         "evidence": metadata.get("evidence", metadata),
-        "source": {"type": row["source_type"], "name": row["source_name"], "project": row["source_project"], "file_path": row["source_file"]},
-        "target": {"type": row["target_type"], "name": row["target_name"], "project": row["target_project"], "file_path": row["target_file"]},
+        "source": {"type": row["source_type"] or "", "name": row["source_name"] or "", "project": row["source_project"] or "", "file_path": row["source_file"] or ""},
+        "target": {"type": row["target_type"] or "", "name": row["target_name"] or "", "project": row["target_project"] or "", "file_path": row["target_file"] or ""},
     }

@@ -145,7 +145,7 @@ def group_impact(
             "possible_impacts": [],
             "impacts": [],
             "related_bridges": [],
-            "lookup": _build_lookup_payload(memory_query("", target, limit=5)),
+            "lookup": {"query": target, "retrieval_summary": {"exact_matches": 0, "semantic_matches": 0, "total_matches": 0}, "entrypoints": []},
             "progressive": _build_group_impact_progressive_view(group, target, [], [], []),
             "unknown_risks": _unknown_static_analysis_risks(),
         }
