@@ -50,8 +50,18 @@ class WorkspaceStore:
         if not path.exists():
             return default
         try:
-            return json.loads(path.read_text(encoding="utf-8"))
+            data = json.loads(path.read_text(encoding="utf-8"))
+            if data == default and default is not None:
+                # Treat empty/corrupt file as missing — don't silently drop old data
+                backend_val = self.memory_backend().read_index(name)
+                if backend_val is not None:
+                    return backend_val
+            return data
         except (json.JSONDecodeError, UnicodeDecodeError):
+            # Corrupt JSON file — try backend before falling back to default
+            backend_val = self.memory_backend().read_index(name)
+            if backend_val is not None:
+                return backend_val
             return default
 
     def append_jsonl(self, name: str, item: Dict[str, Any]) -> None:
@@ -160,8 +170,8 @@ class WorkspaceStore:
     def memory_backend_stats(self) -> Dict[str, Any]:
         return self.memory_backend().stats()
 
-    def memory_backend_query_records(self, *, collection: str = "", record_id: str = "", created_after: str = "", project: str = "", payload_type: str = "", limit: int = 50) -> Dict[str, Any]:
-        return self.memory_backend().query_records(collection=collection, record_id=record_id, created_after=created_after, project=project, payload_type=payload_type, limit=limit)
+    def memory_backend_query_records(self, *, collection: str = "", record_id: str = "", created_after: str = "", project: str = "", payload_type: str = "", session_id: str = "", limit: int = 50) -> Dict[str, Any]:
+        return self.memory_backend().query_records(collection=collection, record_id=record_id, created_after=created_after, project=project, payload_type=payload_type, session_id=session_id, limit=limit)
 
     def read_json_prefer_backend(self, name: str, default: Any) -> Any:
         """Read deterministic index preferring SQLite backend, fall back to file."""
@@ -173,12 +183,12 @@ class WorkspaceStore:
     def memory_backend_query_refs(self, *, ref_path: str = "", limit: int = 50) -> Dict[str, Any]:
         return self.memory_backend().query_refs(ref_path=ref_path, limit=limit)
 
-    def read_jsonl_via_backend(self, name: str, limit: int = 50) -> List[Dict[str, Any]]:
-        rows = self.memory_backend_query_records(collection=name, limit=limit).get("records", [])
+    def read_jsonl_via_backend(self, name: str, limit: int = 50, session_id: str = "") -> List[Dict[str, Any]]:
+        rows = self.memory_backend_query_records(collection=name, session_id=session_id, limit=limit).get("records", [])
         return [item.get("payload", {}) for item in rows if isinstance(item.get("payload", {}), dict)]
 
-    def find_jsonl_via_backend(self, name: str, predicate, limit: int = 200) -> List[Dict[str, Any]]:
-        rows = self.read_jsonl_via_backend(name, limit=5000)
+    def find_jsonl_via_backend(self, name: str, predicate, limit: int = 200, session_id: str = "") -> List[Dict[str, Any]]:
+        rows = self.read_jsonl_via_backend(name, limit=5000, session_id=session_id)
         matched = [row for row in rows if predicate(row)]
         return matched[-limit:]
 
@@ -193,4 +203,13 @@ class WorkspaceStore:
             return str(item.get("session_id", "") or "") + ":" + str(item.get("normalized_model", "") or "")
         if collection == "cross-service-task-memory.jsonl":
             return str(item.get("task", "") or "")
+        if collection == "artifact-write-audit.jsonl":
+            return str(item.get("created_at", "") or "") + ":" + str(item.get("artifact_name", "") or "")
+        if collection == "token-gain-log.jsonl":
+            return str(item.get("tool_name", "") or "") + ":" + str(item.get("created_at", "") or "")
+        # Generic fallback: use first available identifier field
+        for key in ("id", "task", "session_id", "receipt_id", "name"):
+            val = item.get(key)
+            if val:
+                return str(val)
         return ""

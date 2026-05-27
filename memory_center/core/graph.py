@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 import sqlite3
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
@@ -40,13 +41,15 @@ class GraphStore:
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._conn: Optional[sqlite3.Connection] = None
+        self._lock = threading.Lock()
         self._init_schema()
 
     def connect(self) -> sqlite3.Connection:
-        if self._conn is None:
-            self._conn = sqlite3.connect(self.db_path)
-            self._conn.row_factory = sqlite3.Row
-        return self._conn
+        with self._lock:
+            if self._conn is None:
+                self._conn = sqlite3.connect(self.db_path)
+                self._conn.row_factory = sqlite3.Row
+            return self._conn
 
     def close(self) -> None:
         if self._conn is not None:
@@ -279,10 +282,17 @@ class GraphStore:
                 rec = _row_edge(row)
                 rec["depth"] = depth + 1
                 results.append(rec)
-                next_id = row["target_id"] if row["source_id"] in frontier_set else row["source_id"]
-                if next_id not in seen:
-                    seen.add(next_id)
-                    next_frontier.append(next_id)
+                # Determine next_id: pick the endpoint not yet seen
+                sid = row["source_id"]
+                tid = row["target_id"]
+                if tid not in seen and tid != node_id:
+                    next_id = tid
+                elif sid not in seen and sid != node_id:
+                    next_id = sid
+                else:
+                    continue
+                seen.add(next_id)
+                next_frontier.append(next_id)
             frontier = next_frontier
         return results[:limit]
 
@@ -364,7 +374,7 @@ def edge_id(edge_type: str, source_id: str, target_id: str) -> str:
 
 
 def _sanitize_fts_term(term: str) -> str:
-    return re.sub(r"[^\w一-鿿]", "", term)
+    return re.sub(r"[^\w㐀-䶿一-鿿豈-﫿]", "", term)
 
 
 def _loads_json(value: str) -> Dict[str, Any]:

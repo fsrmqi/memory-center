@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
 from pathlib import Path
 from typing import Any, Dict
 
@@ -18,13 +19,15 @@ class MemoryBackendStore:
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._conn: sqlite3.Connection | None = None
+        self._lock = threading.Lock()
         self._init_schema()
 
     def connect(self) -> sqlite3.Connection:
-        if self._conn is None:
-            self._conn = sqlite3.connect(self.db_path)
-            self._conn.row_factory = sqlite3.Row
-        return self._conn
+        with self._lock:
+            if self._conn is None:
+                self._conn = sqlite3.connect(self.db_path)
+                self._conn.row_factory = sqlite3.Row
+            return self._conn
 
     def close(self) -> None:
         if self._conn is not None:
@@ -131,6 +134,7 @@ class MemoryBackendStore:
         created_after: str = "",
         project: str = "",
         payload_type: str = "",
+        session_id: str = "",
         limit: int = 50,
     ) -> Dict[str, Any]:
         sql = "SELECT collection, record_id, type, created_at, payload_json FROM json_records WHERE 1=1"
@@ -147,9 +151,16 @@ class MemoryBackendStore:
         if payload_type:
             sql += " AND type = ?"
             args.append(payload_type)
-        if project:
+        if session_id:
             sql += " AND payload_json LIKE ?"
-            args.append(f"%{project}%")
+            args.append(f'"session_id": "{session_id}"')
+        if project:
+            # Match project field in JSON payload more precisely than bare substring
+            # Use JSON key-value pattern to reduce false positives (e.g. searching "api"
+            # won't match "api-version" in other fields)
+            sql += " AND (payload_json LIKE ? OR payload_json LIKE ?)"
+            args.append(f'%"project": "{project}"%')
+            args.append(f'%"project":"{project}"%')
         sql += " ORDER BY id DESC LIMIT ?"
         args.append(limit)
         with self.connect() as conn:
@@ -164,7 +175,7 @@ class MemoryBackendStore:
             }
             for row in rows
         ]
-        return {"records": list(reversed(records)), "count": len(records)}
+        return {"records": records, "count": len(records)}
 
     def upsert_index(self, name: str, payload: Any) -> None:
         from datetime import datetime, timezone

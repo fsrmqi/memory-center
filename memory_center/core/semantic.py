@@ -134,13 +134,22 @@ def build_workspace_semantic_index_partial(workspace_file: str | Path, changed_n
         )
         for token in counts:
             df_new[token] = df_new.get(token, 0) + 1
-    merged_docs = kept_docs + new_docs
+    # Compute removed docs to include their tokens in df for accurate IDF
+    removed_docs = [doc for doc in existing.get("docs", []) if doc.get("node_id") in changed_node_ids]
+    # Build df including tokens from removed docs so IDF accounts for them
     df: Dict[str, int] = {}
     for doc in kept_docs:
         for token in doc.get("sparse_vector", {}):
             df[token] = df.get(token, 0) + 1
+    for doc in removed_docs:
+        for token in doc.get("sparse_vector", {}):
+            df[token] = df.get(token, 0) + 1
+    for doc in removed_docs:
+        for token in doc.get("sparse_vector", {}):
+            df[token] = df.get(token, 0) + 1
     for token, count in df_new.items():
         df[token] = df.get(token, 0) + count
+    merged_docs = kept_docs + new_docs
     doc_count = max(len(merged_docs), 1)
     for doc in new_docs:
         total = sum(doc["token_counts"].values()) or 1
@@ -216,7 +225,7 @@ def semantic_index_stats(workspace_file: str | Path) -> Dict[str, Any]:
 
 def semantic_tokens(text: str) -> List[str]:
     text = _split_camel(text or "")
-    raw = re.findall(r"[\u4e00-\u9fff]+|[a-zA-Z0-9_]+", text.lower())
+    raw = re.findall(r"[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]+|[a-zA-Z0-9_]+", text.lower())
     tokens = [token for token in raw if len(token) >= 2]
     return tokens
 

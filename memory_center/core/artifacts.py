@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from datetime import datetime
 import json
+import shutil
+from datetime import datetime
 from pathlib import Path
 import re
 from typing import Dict, List
@@ -583,7 +584,7 @@ def archive_task_space(workspace_file: str | Path, task_id: str, reason: str = "
             for child in target.iterdir():
                 if child.is_file():
                     child.unlink()
-        task_dir.rename(target)
+        shutil.move(str(task_dir), str(target))
         meta["status"] = "archived"
         meta["archived"] = True
         meta["archived_at"] = datetime.now().isoformat()
@@ -875,7 +876,7 @@ def _task_match_analysis(
         str(task.get("intent", "")),
         str(task.get("status", "")),
         str(task.get("owner", "")),
-        " ".join(task.get("tags", []) if isinstance(task.get("tags", []), list) else []),
+        " ".join(task.get("tags", []) if isinstance(task.get("tags"), list) else []),
         str(task.get("priority", "")),
     ]
     artifact_hits: List[str] = []

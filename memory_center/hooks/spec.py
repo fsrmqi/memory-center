@@ -18,7 +18,7 @@ _VALID_FACADES = (
 )
 _VALID_PARAM_FROM = ("event", "tool_input_file", "file", "static")
 _HOOK_EVENT_NAMES = ("session_start", "pre_edit", "session_stop", "user_prompt_submit")
-_SESSION_ID_FILE = Path("/tmp/memory-center-session-id")
+_SESSION_ID_FILE = Path.home() / ".cache" / "memory-center" / "session-id"
 
 DEFAULT_HOOKS = {
     "version": "1.0",

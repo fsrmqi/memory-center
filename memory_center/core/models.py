@@ -43,7 +43,10 @@ class WorkspaceConfig:
 
     def service_logical_file_path(self, service: ServiceConfig, file_path: Path) -> str:
         service_root = self.resolve_service_path(service)
-        relative = file_path.resolve().relative_to(service_root).as_posix()
+        try:
+            relative = file_path.resolve().relative_to(service_root).as_posix()
+        except ValueError:
+            relative = file_path.name
         prefix = self.service_logical_prefix(service)
         return f"{prefix}/{relative}".strip("/")
 

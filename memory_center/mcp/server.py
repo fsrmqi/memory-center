@@ -99,8 +99,10 @@ from memory_center.core.artifacts import (
 )
 from memory_center.core.wiki import generate_skills, generate_wiki
 
-_WORKSPACE_FILE: Optional[str] = None
-
+class _WorkspaceContext:
+    """Holds workspace file path per server instance, avoiding module-level global."""
+    def __init__(self, workspace_file: str):
+        self.workspace_file = workspace_file
 
 def create_server(workspace_file: str):
     try:
@@ -108,8 +110,7 @@ def create_server(workspace_file: str):
     except Exception as exc:  # pragma: no cover
         raise RuntimeError("Please install MCP dependency: pip install -e .[mcp]") from exc
 
-    global _WORKSPACE_FILE
-    _WORKSPACE_FILE = workspace_file
+    ctx = _WorkspaceContext(workspace_file)
     mcp = FastMCP("Memory Center")
 
     # ===================== FACADE 1: mc_start =====================
@@ -122,7 +123,7 @@ def create_server(workspace_file: str):
         budget: str = "medium",
     ):
         """Start a new task workflow. Sniffs workspace context, optionally syncs to task space, and starts a session. Returns consolidated context with services, files, rules, risk level, session_id, and task_id."""
-        wf = _WORKSPACE_FILE
+        wf = ctx.workspace_file
         sniff_result = workspace_sniff(wf, intent, limit=limit, auto_sync_mode=auto_sync_mode, view="compact", budget=budget)
         synced = None
         resolved_task = sniff_result.get("resolved_task", {}) or {}
@@ -154,7 +155,7 @@ def create_server(workspace_file: str):
         limit: int = 20,
     ):
         """Unified knowledge lookup. Mode selects strategy: auto (system decides via lookup_hint), symbol (resolve name), code (keyword search), query (graph-aware multi-source), trace (cross-service by class/Feign/endpoint/MQ), chain (caller/callee analysis, use chain_direction), context (360-degree context for a service/symbol), contracts (list all Feign/API/MQ contracts), ref (resolve short memory reference IDs)."""
-        wf = _WORKSPACE_FILE
+        wf = ctx.workspace_file
         if mode == "auto":
             hint = workspace_lookup_hint(wf, query=query, intent=intent, limit=limit)
             preferred = hint.get("preferred_tools", [])
@@ -212,7 +213,7 @@ def create_server(workspace_file: str):
         scope: str = "staged",
     ):
         """Analyze change impact and generate action plans. Depth quick: impact only. Depth standard: impact + change plan + rules check. Depth full: standard + contract check + verification checklist. If target is empty, runs detect-changes instead of impact."""
-        wf = _WORKSPACE_FILE
+        wf = ctx.workspace_file
         if target:
             impact_result = memory_impact(wf, target, direction, max_depth)
         else:
@@ -238,7 +239,7 @@ def create_server(workspace_file: str):
         auto_sync_mode: str = "balanced",
     ):
         """Sync task context to workspace artifacts. Provide intent for sniff-sync, or session_id for case-sync. session_id takes precedence if both provided."""
-        wf = _WORKSPACE_FILE
+        wf = ctx.workspace_file
         if session_id.strip():
             return {"workflow": "mc-sync", "mode": "case", "result": workspace_sync_case_to_artifacts(wf, session_id, task_id=task_id, title=title, auto_sync_mode=auto_sync_mode)}
         if intent.strip():
@@ -255,7 +256,7 @@ def create_server(workspace_file: str):
         budget: str = "medium",
     ):
         """Resume a task with consolidated context. Returns resume packet, next actions, unresolved items, and recent evidence. Provide intent, task_id, or session_id to focus the resume."""
-        wf = _WORKSPACE_FILE
+        wf = ctx.workspace_file
         return {
             "workflow": "mc-resume",
             "resume_packet": workspace_resume_packet(wf, task_id=task_id, session_id=session_id, intent=intent, limit=limit, view="compact", budget=budget),
@@ -275,7 +276,7 @@ def create_server(workspace_file: str):
         budget: str = "medium",
     ):
         """Build a handoff package for another model or session. Returns handoff packet, recent evidence, and tool usage report. Essential for multi-model workflows and context transfer."""
-        wf = _WORKSPACE_FILE
+        wf = ctx.workspace_file
         return {
             "workflow": "mc-handoff",
             "handoff_packet": workspace_handoff_packet(wf, target_model=target_model, task_id=task_id, session_id=session_id, intent=intent, limit=limit, view="compact", budget=budget),
@@ -295,7 +296,7 @@ def create_server(workspace_file: str):
         verified_by: List[str] | None = None,
     ):
         """Close a task workflow. Ends session, syncs case to artifacts, suggests case record, and optionally records it to cross-service memory."""
-        wf = _WORKSPACE_FILE
+        wf = ctx.workspace_file
         ended = workspace_end_session(wf, session_id, outcome, verified_by)
         synced = workspace_sync_case_to_artifacts(wf, session_id, task_id=task_id, title=title, auto_sync_mode=auto_sync_mode)
         draft = workspace_suggest_case(wf, session_id)
@@ -360,7 +361,7 @@ def create_server(workspace_file: str):
         action_filter: str = "",
     ):
         """Admin and utility operations. Action selects sub-operation: status, dashboard, continuity, health, artifact_list, artifact_get, artifact_outline, artifact_context, artifact_update, change_log_append, change_log_compact, task_create, task_list, task_resolve, task_get, task_update, task_change_log_append, task_archive, task_auto_archive, task_status, task_activity_touch, session_start, session_log, session_end, session_recent, session_summary, model_profile, handoff_history, write_judge, write_plan, write_execute, receipts, replay, backend_query, eval_write_quality, eval_resume, eval_handoff, eval_regression_suite, eval_index_freshness, eval_tool_adoption, eval_context_weight, eval_workflow_orchestration, eval_token_gain, tool_usage_report, generate_wiki, generate_skills, group_status, group_query, group_impact."""
-        wf = _WORKSPACE_FILE
+        wf = ctx.workspace_file
         _DISPATCH = {
             "status": lambda: workspace_status(wf, view=view, budget=budget),
             "dashboard": lambda: workspace_dashboard(wf, intent=intent, limit=limit, view=view, budget=budget),
@@ -426,15 +427,15 @@ def create_server(workspace_file: str):
     # ===================== Resources (unchanged) =====================
     @mcp.resource("memory-center://status")
     def status_resource():
-        return workspace_status(_WORKSPACE_FILE)
+        return workspace_status(ctx.workspace_file)
 
     @mcp.resource("memory-center://contracts")
     def contracts_resource():
-        return memory_contracts(_WORKSPACE_FILE)
+        return memory_contracts(ctx.workspace_file)
 
     @mcp.resource("memory-center://topology")
     def topology_resource():
-        return workspace_status(_WORKSPACE_FILE).get("topology", {})
+        return workspace_status(ctx.workspace_file).get("topology", {})
 
     # ===================== Prompts (updated tool names) =====================
     @mcp.prompt()
