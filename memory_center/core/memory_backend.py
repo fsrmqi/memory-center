@@ -154,9 +154,14 @@ class MemoryBackendStore:
             args.append(payload_type)
         if session_id:
             # Match session_id field precisely, avoiding source_session_id false positives
-            sql += " AND (payload_json LIKE ? OR payload_json LIKE ?)"
-            args.append(f'"session_id": "{session_id}"%')
-            args.append(f'"session_id":"{session_id}"%')
+            # and prefix-match false positives (session-abc should not match session-abc4)
+            sql += " AND (payload_json LIKE ? OR payload_json LIKE ? OR payload_json LIKE ? OR payload_json LIKE ?)"
+            # Match "session_id": "value" followed by comma or closing brace
+            close_brace = '}'
+            args.append(f'"session_id": "{session_id}",')
+            args.append(f'"session_id": "{session_id}"{close_brace}')
+            args.append(f'"session_id":"{session_id}",')
+            args.append(f'"session_id":"{session_id}"{close_brace}')
         if project:
             # Match project field in JSON payload more precisely than bare substring
             # Use JSON key-value pattern to reduce false positives (e.g. searching "api"

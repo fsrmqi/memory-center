@@ -179,10 +179,7 @@ class WorkspaceStore:
 
     def read_jsonl_via_backend(self, name: str, limit: int = 50, session_id: str = "") -> List[Dict[str, Any]]:
         rows = self.memory_backend_query_records(collection=name, session_id=session_id, limit=limit).get("records", [])
-        return [
-            item.get("payload", {}) for item in rows
-            if isinstance(item.get("payload"), dict) and item.get("payload") is not None and item.get("payload") != {}
-        ]
+        return [item.get("payload", {}) for item in rows if isinstance(item.get("payload"), dict)]
 
     def find_jsonl_via_backend(self, name: str, predicate, limit: int = 200, session_id: str = "") -> List[Dict[str, Any]]:
         rows = self.read_jsonl_via_backend(name, limit=5000, session_id=session_id)

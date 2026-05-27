@@ -190,13 +190,12 @@ def _merge_index_rows(
 
 
 def walk_project(root: Path) -> Iterable[Path]:
-    for path in root.rglob("*"):
-        if path.is_dir() and path.name in IGNORED_DIRS:
-            # Skip descending into ignored directories entirely
-            continue
-        if any(part in IGNORED_DIRS for part in path.parts):
-            continue
-        if path.is_file():
+    import os
+    for dirpath, dirnames, filenames in os.walk(root):
+        # Prune ignored directories so os.walk doesn't descend into them
+        dirnames[:] = [d for d in dirnames if d not in IGNORED_DIRS]
+        for filename in filenames:
+            path = Path(dirpath) / filename
             yield path
 
 

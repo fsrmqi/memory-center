@@ -81,7 +81,8 @@ def group_query(
             node = item.get("node", {})
             if node.get("type"):
                 target_types.add(node.get("type"))
-            key = f"{workspace_ref}:{node.get('id', rank)}"
+            node_id = node.get("id") or f"{node.get('type', 'unknown')}:{node.get('name', 'unknown')}:{workspace_ref}"
+            key = f"{workspace_ref}:{node_id}"
             current = merged.setdefault(key, {
                 "workspace_ref": workspace_ref,
                 "workspace": workspace_name,
