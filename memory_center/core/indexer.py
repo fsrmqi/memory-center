@@ -146,21 +146,32 @@ def _row_matches_scope(
     path_key: str = "path",
 ) -> bool:
     project = str(row.get("project", "") or "")
-    if project_filter and project in project_filter:
-        return True
-    if not path_filters:
-        return False
-    path_value = str(row.get(path_key, "") or row.get("path", "") or "")
-    abs_path = str(row.get("abs_path", "") or "")
-    for raw_filter in path_filters:
-        normalized = raw_filter.replace("\\", "/").strip("/")
-        normalized_abs = raw_filter.replace("\\", "/")
-        probe = path_value.replace("\\", "/").strip("/")
-        if probe == normalized or probe.startswith(normalized + "/"):
-            return True
-        if abs_path and (abs_path == normalized_abs or abs_path.startswith(normalized_abs.rstrip("/") + "/")):
-            return True
-    return False
+    # A row is in scope if it matches BOTH project AND path filters.
+    # If only project_filter is given (no path_filters), project match suffices.
+    # If only path_filters is given (no project_filter), path match suffices.
+    # If both are given, the row must match at least one of them.
+    project_match = project_filter and project in project_filter
+    path_match = False
+    if path_filters:
+        path_value = str(row.get(path_key, "") or row.get("path", "") or "")
+        abs_path = str(row.get("abs_path", "") or "")
+        for raw_filter in path_filters:
+            normalized = raw_filter.replace("\\", "/").strip("/")
+            normalized_abs = raw_filter.replace("\\", "/")
+            probe = path_value.replace("\\", "/").strip("/")
+            if probe == normalized or probe.startswith(normalized + "/"):
+                path_match = True
+                break
+            if abs_path and (abs_path == normalized_abs or abs_path.startswith(normalized_abs.rstrip("/") + "/")):
+                path_match = True
+                break
+    if project_filter and path_filters:
+        # Both filters present: row must match project AND/OR path.
+        # For _merge_index_rows (removal), we want to remove rows that
+        # match the project filter, but only those that also match path
+        # if path filters are specified — otherwise over-deletion occurs.
+        return project_match and (not path_filters or path_match)
+    return project_match or path_match
 
 
 def _merge_index_rows(
@@ -180,6 +191,9 @@ def _merge_index_rows(
 
 def walk_project(root: Path) -> Iterable[Path]:
     for path in root.rglob("*"):
+        if path.is_dir() and path.name in IGNORED_DIRS:
+            # Skip descending into ignored directories entirely
+            continue
         if any(part in IGNORED_DIRS for part in path.parts):
             continue
         if path.is_file():
@@ -546,12 +560,17 @@ def build_graph_store(config: WorkspaceConfig, store: WorkspaceStore, *, project
 
 
 def _endpoint_matches(feign: Dict[str, Any], method: Dict[str, Any], api: Dict[str, Any]) -> bool:
-    feign_path = method.get("path") or ""
-    api_path = api.get("path") or ""
+    feign_path = (method.get("path") or "").strip("/")
+    api_path = (api.get("path") or "").strip("/")
+    base = (feign.get("base_path") or "").strip("/")
     if feign_path == api_path:
         return True
-    base = feign.get("base_path") or ""
-    return bool(base and feign_path.startswith(base) and feign_path[len(base):] == api_path)
+    # Feign path = base + method-specific part; compare method part to api path
+    if base and feign_path.startswith(base):
+        remainder = feign_path[len(base):].strip("/")
+        if remainder == api_path:
+            return True
+    return False
 
 
 def _source_method_id(sym: Dict[str, Any], owner_class: str, fact: Dict[str, Any]) -> str | None:

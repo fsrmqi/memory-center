@@ -142,7 +142,10 @@ def memory_search_code(workspace_file: str | Path, query: str, scope: str = "", 
     keywords = tokenize(query)
     files = store.read_json_prefer_backend("file-index.json", [])
     symbols = store.read_json_prefer_backend("java-symbol-index.json", [])
-    symbol_map = {item.get("file", ""): item for item in symbols}
+    symbol_entries = {}
+    for item in symbols:
+        key = item.get("file", "")
+        symbol_entries.setdefault(key, []).append(item)
     scope_l = scope.lower().strip()
     hits: List[Dict[str, Any]] = []
     for item in files:
@@ -150,8 +153,8 @@ def memory_search_code(workspace_file: str | Path, query: str, scope: str = "", 
         if scope_l and scope_l not in path.lower():
             continue
         text = f"{path} {item.get('project', '')} {item.get('service_name', '')}".lower()
-        symbol_item = symbol_map.get(path, {})
-        symbol_text = json.dumps(symbol_item, ensure_ascii=False).lower()
+        file_symbols = symbol_entries.get(path, [])
+        symbol_text = json.dumps(file_symbols, ensure_ascii=False).lower()
         score = sum(1 for token in keywords if token in text or token in symbol_text)
         if score <= 0:
             continue
@@ -161,7 +164,10 @@ def memory_search_code(workspace_file: str | Path, query: str, scope: str = "", 
                 "service_name": item.get("service_name", ""),
                 "path": path,
                 "score": score,
-                "symbol_count": int(symbol_item.get("class_count", 0)) + int(symbol_item.get("method_count", 0)) + int(symbol_item.get("field_count", 0)),
+                "symbol_count": sum(
+                    int(sym.get("class_count", 0)) + int(sym.get("method_count", 0)) + int(sym.get("field_count", 0))
+                    for sym in file_symbols
+                ),
                 "suffix": item.get("suffix", ""),
             }
         )
@@ -415,7 +421,7 @@ def _query_node_priority(node_type: str, target_types: List[str]) -> int:
 def _resolve_query_target_types(target: str, target_types: List[str]) -> List[str]:
     resolved = set(t for t in target_types if t)
     target_lower = target.lower()
-    topic_like = any(token in target_lower for token in ["topic", "kafka", "rocketmq"]) or "-" in target_lower
+    topic_like = any(token in target_lower for token in ["topic", "kafka", "rocketmq", "consumer", "producer", "listener"])
     if "feign" in target_lower:
         resolved.update({"FeignClient", "FeignMethod"})
     if target_lower.startswith("/") or any(token in target_lower for token in ["controller", "endpoint"]):

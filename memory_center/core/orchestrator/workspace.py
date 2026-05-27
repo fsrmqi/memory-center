@@ -731,7 +731,7 @@ def workspace_check_contract(workspace_file: str | Path, contract_file: str, cha
     affected = []
     for item in files:
         text = item.get("path", "").lower()
-        if basename in text or "common-api" in text or "message" in text or "dto" in text:
+        if basename in text:
             affected.append(item)
     return {
         "contract_file": contract_file,

@@ -28,7 +28,7 @@ def generate_skills(workspace_file: str | Path, output_dir: str | Path | None = 
     _, store = load_context(workspace_file)
     out = Path(output_dir) if output_dir else store.base_dir / "skills" / "generated"
     out.mkdir(parents=True, exist_ok=True)
-    cases = store.read_jsonl("cross-service-task-memory.jsonl", limit=1000)
+    cases = store.read_jsonl_prefer_backend("cross-service-task-memory.jsonl", limit=1000)
     if not cases:
         cases = [{"task": "Spring Cloud safe change", "projects": [], "files": [], "flow": "Controller/Consumer → Service → Feign/MQ/Data", "risk_points": ["contract compatibility", "idempotency", "observability"]}]
     files = []

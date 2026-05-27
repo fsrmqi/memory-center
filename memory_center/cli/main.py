@@ -152,7 +152,9 @@ def reindex(
     store = WorkspaceStore(workspace)
     selected_paths = list(path or [])
     if changed_only:
-        change_scope = "unstaged" if scope == "all" else scope
+        # "all" scope means both staged and unstaged changes; use "all" directly
+        # since memory_detect_changes handles "all" to combine both
+        change_scope = scope
         changed = memory_detect_changes(workspace, change_scope)
         selected_paths.extend(changed.get("changed_files", []))
         selected_paths.extend(changed.get("deleted_files", []))

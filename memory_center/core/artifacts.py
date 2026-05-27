@@ -581,9 +581,8 @@ def archive_task_space(workspace_file: str | Path, task_id: str, reason: str = "
     target = archive_root / task_dir.name
     with FileLock(str(store.lock_file)):
         if target.exists():
-            for child in target.iterdir():
-                if child.is_file():
-                    child.unlink()
+            # Remove existing archive directory completely so shutil.move replaces it
+            shutil.rmtree(target)
         shutil.move(str(task_dir), str(target))
         meta["status"] = "archived"
         meta["archived"] = True

@@ -18,12 +18,34 @@ from .spec import (
     validate_hooks_config,
 )
 from ..core.orchestrator import (
+    group_impact,
+    group_query,
+    group_status,
+    memory_callers,
+    memory_callees,
+    memory_contracts,
+    memory_context,
+    memory_detect_changes,
+    memory_impact,
+    memory_plan_change,
+    memory_query,
+    memory_search_code,
+    memory_symbol,
+    memory_verify_checklist,
     workspace_check_rules,
     workspace_end_session,
+    workspace_handoff_packet,
+    workspace_lookup_hint,
+    workspace_next_actions,
+    workspace_recent_evidence,
+    workspace_resume_packet,
     workspace_sniff,
     workspace_start_session,
+    workspace_status,
     workspace_sync_case_to_artifacts,
     workspace_sync_sniff_to_artifacts,
+    workspace_trace,
+    workspace_unresolved_items,
 )
 
 
@@ -199,8 +221,9 @@ def run_hook(
     system_message = ""
     try:
         if facade == "mc_start":
+            wf = _get_workspace_file(workspace)
             sniff_result = workspace_sniff(
-                workspace, intent,
+                wf, intent,
                 limit=12, auto_sync_mode=auto_sync_mode,
                 view=view, budget=budget,
             )
@@ -209,12 +232,12 @@ def run_hook(
             synced = None
             if auto_sync.get("recommended") or resolved_task.get("task_id"):
                 synced = workspace_sync_sniff_to_artifacts(
-                    workspace, intent, limit=12,
+                    wf, intent, limit=12,
                     task_id=str(resolved_task.get("task_id", "") or ""),
                     title=str(resolved_task.get("title", "") or ""),
                     auto_sync_mode=auto_sync_mode,
                 )
-            session = workspace_start_session(workspace, intent)
+            session = workspace_start_session(wf, intent)
             # Write session_id to file for later hooks
             sid = session.get("session_id", "")
             if sid:
@@ -233,10 +256,11 @@ def run_hook(
             )
 
         elif facade == "mc_analyze":
+            wf = _get_workspace_file(workspace)
             # For pre_edit guard mode, call check_rules directly
             if target:
                 rules_result = workspace_check_rules(
-                    workspace,
+                    wf,
                     projects=None,
                     change_type=change_type,
                     files=[target],
@@ -272,117 +296,142 @@ def run_hook(
                 system_message = "[Memory Center] No target file for pre_edit check"
 
         elif facade == "mc_lookup":
-            from ..mcp.server import mc_lookup as _mc_lookup
             wf = _get_workspace_file(workspace)
-            hook_result = _mc_lookup(
-                query=intent,
-                mode=params_spec.get("mode", "auto"),
-                name=params_spec.get("name", ""),
-                scope=params_spec.get("scope", ""),
-                symbol=params_spec.get("symbol", ""),
-                chain_direction=params_spec.get("chain_direction", "callers"),
-                depth=int(params_spec.get("depth", 2)),
-                entry=params_spec.get("entry", ""),
-                ref_id=params_spec.get("ref_id", ""),
-                limit=int(params_spec.get("limit", 20)),
-            )
+            lookup_mode = params_spec.get("mode", "auto")
+            if lookup_mode == "auto":
+                hint = workspace_lookup_hint(wf, query=intent, intent=intent, limit=int(params_spec.get("limit", 20)))
+                preferred = [t.replace("_tool", "") for t in hint.get("preferred_tools", [])]
+                if "memory_symbol" in preferred and (params_spec.get("name", "") or intent):
+                    hook_result = {"mode_used": "symbol", "result": memory_symbol(wf, params_spec.get("name", "") or intent, int(params_spec.get("limit", 20)))}
+                elif "memory_search_code" in preferred:
+                    hook_result = {"mode_used": "code", "result": memory_search_code(wf, intent, params_spec.get("scope", ""), int(params_spec.get("limit", 20)))}
+                elif "memory_context" in preferred and (params_spec.get("name", "") or intent):
+                    hook_result = {"mode_used": "context", "result": memory_context(wf, params_spec.get("name", "") or intent, int(params_spec.get("depth", 2)))}
+                elif "workspace_trace" in preferred and (params_spec.get("entry", "") or intent):
+                    hook_result = {"mode_used": "trace", "result": workspace_trace(wf, params_spec.get("entry", "") or intent)}
+                elif "memory_callers" in preferred and (params_spec.get("symbol", "") or intent):
+                    hook_result = {"mode_used": "chain-callers", "result": memory_callers(wf, params_spec.get("symbol", "") or intent, int(params_spec.get("depth", 2)), int(params_spec.get("limit", 20)))}
+                elif "memory_callees" in preferred and (params_spec.get("symbol", "") or intent):
+                    hook_result = {"mode_used": "chain-callees", "result": memory_callees(wf, params_spec.get("symbol", "") or intent, int(params_spec.get("depth", 2)), int(params_spec.get("limit", 20)))}
+                else:
+                    hook_result = {"mode_used": "query", "result": memory_query(wf, intent, int(params_spec.get("limit", 20))), "lookup_hint": hint}
+            elif lookup_mode == "symbol":
+                hook_result = {"mode": "symbol", "result": memory_symbol(wf, params_spec.get("name", "") or intent, int(params_spec.get("limit", 20)))}
+            elif lookup_mode == "code":
+                hook_result = {"mode": "code", "result": memory_search_code(wf, intent, params_spec.get("scope", ""), int(params_spec.get("limit", 20)))}
+            elif lookup_mode == "query":
+                hook_result = {"mode": "query", "result": memory_query(wf, intent, int(params_spec.get("limit", 20)))}
+            elif lookup_mode == "trace":
+                hook_result = {"mode": "trace", "result": workspace_trace(wf, params_spec.get("entry", "") or intent)}
+            elif lookup_mode == "chain":
+                if params_spec.get("chain_direction", "callers") == "callees":
+                    hook_result = {"mode": "chain-callees", "result": memory_callees(wf, params_spec.get("symbol", "") or intent, int(params_spec.get("depth", 2)), int(params_spec.get("limit", 20)))}
+                else:
+                    hook_result = {"mode": "chain-callers", "result": memory_callers(wf, params_spec.get("symbol", "") or intent, int(params_spec.get("depth", 2)), int(params_spec.get("limit", 20)))}
+            elif lookup_mode == "context":
+                hook_result = {"mode": "context", "result": memory_context(wf, params_spec.get("name", "") or intent, int(params_spec.get("depth", 2)))}
+            elif lookup_mode == "contracts":
+                hook_result = {"mode": "contracts", "result": memory_contracts(wf)}
+            else:
+                hook_result = {"mode": "query", "result": memory_query(wf, intent, int(params_spec.get("limit", 20)))}
             system_message = f"[Memory Center] Lookup completed: mode={hook_result.get('mode_used', hook_result.get('mode', 'auto'))}"
 
         elif facade == "mc_sync":
-            from ..mcp.server import mc_sync as _mc_sync
             wf = _get_workspace_file(workspace)
-            hook_result = _mc_sync(
-                intent=intent,
-                session_id=session_id,
-                task_id=params_spec.get("task_id", ""),
-                title=params_spec.get("title", ""),
-                limit=int(params_spec.get("limit", 12)),
-                auto_sync_mode=auto_sync_mode,
-            )
+            if session_id.strip():
+                hook_result = {"workflow": "mc-sync", "mode": "case", "result": workspace_sync_case_to_artifacts(wf, session_id, task_id=params_spec.get("task_id", ""), title=params_spec.get("title", ""), auto_sync_mode=auto_sync_mode)}
+            elif intent.strip():
+                hook_result = {"workflow": "mc-sync", "mode": "sniff", "result": workspace_sync_sniff_to_artifacts(wf, intent, limit=int(params_spec.get("limit", 12)), task_id=params_spec.get("task_id", ""), title=params_spec.get("title", ""), auto_sync_mode=auto_sync_mode)}
+            else:
+                hook_result = {"workflow": "mc-sync", "error": "requires intent or session_id"}
             system_message = f"[Memory Center] Sync completed: workflow={hook_result.get('workflow', 'unknown')}"
 
         elif facade == "mc_resume":
-            from ..mcp.server import mc_resume as _mc_resume
             wf = _get_workspace_file(workspace)
-            hook_result = _mc_resume(
-                intent=intent,
-                task_id=params_spec.get("task_id", ""),
-                session_id=session_id,
-                limit=int(params_spec.get("limit", 8)),
-                budget=budget,
-            )
-            system_message = f"[Memory Center] Resume completed"
+            hook_result = {
+                "workflow": "mc-resume",
+                "resume_packet": workspace_resume_packet(wf, task_id=params_spec.get("task_id", ""), session_id=session_id, intent=intent, limit=int(params_spec.get("limit", 8)), view=view, budget=budget),
+                "next_actions": workspace_next_actions(wf, task_id=params_spec.get("task_id", ""), session_id=session_id, intent=intent, limit=int(params_spec.get("limit", 8))),
+                "unresolved_items": workspace_unresolved_items(wf, task_id=params_spec.get("task_id", ""), session_id=session_id, intent=intent, limit=int(params_spec.get("limit", 8))),
+                "recent_evidence": workspace_recent_evidence(wf, task_id=params_spec.get("task_id", ""), session_id=session_id, limit=min(int(params_spec.get("limit", 8)), 5), budget=budget),
+            }
+            system_message = "[Memory Center] Resume completed"
 
         elif facade == "mc_handoff":
-            from ..mcp.server import mc_handoff as _mc_handoff
             wf = _get_workspace_file(workspace)
-            hook_result = _mc_handoff(
-                target_model=params_spec.get("target_model", "codex"),
-                task_id=params_spec.get("task_id", ""),
-                session_id=session_id,
-                intent=intent,
-                limit=int(params_spec.get("limit", 8)),
-                budget=budget,
-            )
-            system_message = f"[Memory Center] Handoff completed"
+            from ..core.orchestrator import memory_tool_usage_report
+            hook_result = {
+                "workflow": "mc-handoff",
+                "handoff_packet": workspace_handoff_packet(wf, target_model=params_spec.get("target_model", "codex"), task_id=params_spec.get("task_id", ""), session_id=session_id, intent=intent, limit=int(params_spec.get("limit", 8)), view=view, budget=budget),
+                "recent_evidence": workspace_recent_evidence(wf, task_id=params_spec.get("task_id", ""), session_id=session_id, limit=min(int(params_spec.get("limit", 8)), 5), budget=budget),
+                "tool_usage_report": memory_tool_usage_report(wf, limit=50),
+            }
+            system_message = "[Memory Center] Handoff completed"
 
         elif facade == "mc_admin":
-            from ..mcp.server import mc_admin as _mc_admin
+            from ..core.artifacts import (
+                append_change_log, archive_task_space, artifact_context,
+                artifact_outline, auto_archive_task_spaces, compact_change_log,
+                create_task_space, get_artifact, list_artifacts, list_task_spaces,
+                resolve_task_space, touch_task_activity, update_artifact,
+                update_task_artifact, update_task_status,
+            )
+            from ..core.artifacts import get_task_artifact
+            from ..core.orchestrator import (
+                workspace_dashboard, workspace_continuity_dashboard,
+                workspace_model_profile, workspace_handoff_history,
+                memory_write_judge, memory_plan_write, memory_execute_write,
+                memory_backend_query,
+                memory_eval_write_quality, memory_eval_resume, memory_eval_handoff,
+                memory_eval_regression_suite, memory_eval_index_freshness,
+                memory_eval_tool_adoption, memory_eval_context_weight,
+                memory_eval_workflow_orchestration, memory_eval_token_gain,
+                memory_tool_usage_report,
+            )
+            from ..core.wiki import generate_skills, generate_wiki
             wf = _get_workspace_file(workspace)
             action = params_spec.get("action", "status")
-            hook_result = _mc_admin(
-                action=action,
-                view=view,
-                budget=budget,
-                limit=int(params_spec.get("limit", 10)),
-                name=params_spec.get("name", ""),
-                content=params_spec.get("content", ""),
-                task_id=params_spec.get("task_id", ""),
-                title=params_spec.get("title", ""),
-                intent=intent,
-                owner=params_spec.get("owner", ""),
-                tags=params_spec.get("tags"),
-                priority=params_spec.get("priority", "medium"),
-                status=params_spec.get("status", ""),
-                source=params_spec.get("source", ""),
-                reason=params_spec.get("reason", ""),
-                include_archived=params_spec.get("include_archived", False),
-                create_if_missing=params_spec.get("create_if_missing", True),
-                score_threshold=int(params_spec.get("score_threshold", 3)),
-                entry=params_spec.get("entry", ""),
-                keep_recent=int(params_spec.get("keep_recent", 30)),
-                session_id=session_id,
-                event_type=params_spec.get("event_type", ""),
-                payload=params_spec.get("payload"),
-                outcome=outcome,
-                verified_by=params_spec.get("verified_by"),
-                target_model=params_spec.get("target_model", "codex"),
-                scope=params_spec.get("scope", "all"),
-                tool_name=params_spec.get("tool_name", ""),
-                model=params_spec.get("model", ""),
-                text=params_spec.get("text", ""),
-                prefer_layer=params_spec.get("prefer_layer", ""),
-                projects=params_spec.get("projects"),
-                files=params_spec.get("files"),
-                group=params_spec.get("group", ""),
-                direction=params_spec.get("direction", "upstream"),
-                max_depth=int(params_spec.get("max_depth", 3)),
-                output_dir=params_spec.get("output_dir", ""),
-                collection=params_spec.get("collection", ""),
-                record_id=params_spec.get("record_id", ""),
-                created_after=params_spec.get("created_after", ""),
-                ref_path=params_spec.get("ref_path", ""),
-                payload_type=params_spec.get("payload_type", ""),
-                layer=params_spec.get("layer", ""),
-                action_filter=params_spec.get("action_filter", ""),
-            )
+            _ADMIN_DISPATCH = {
+                "status": lambda: workspace_status(wf, view=view, budget=budget),
+                "dashboard": lambda: workspace_dashboard(wf, intent=intent, limit=int(params_spec.get("limit", 10)), view=view, budget=budget),
+                "health": lambda: {
+                    "workflow": "mc-admin-health",
+                    "status": workspace_status(wf, view="compact", budget="medium"),
+                    "tool_usage_report": memory_tool_usage_report(wf, limit=50),
+                },
+                "artifact_list": lambda: list_artifacts(wf),
+                "artifact_get": lambda: get_artifact(wf, params_spec.get("name", "")),
+                "artifact_outline": lambda: artifact_outline(wf, params_spec.get("name", "")),
+                "artifact_context": lambda: artifact_context(wf, intent, limit=int(params_spec.get("limit", 10))),
+                "artifact_update": lambda: update_artifact(wf, params_spec.get("name", ""), params_spec.get("content", "")),
+                "task_create": lambda: create_task_space(wf, title=params_spec.get("title", ""), intent=intent, owner=params_spec.get("owner", ""), tags=params_spec.get("tags"), priority=params_spec.get("priority", "medium")),
+                "task_list": lambda: list_task_spaces(wf, include_archived=params_spec.get("include_archived", False)),
+                "task_resolve": lambda: resolve_task_space(wf, intent=intent, title=params_spec.get("title", ""), create_if_missing=params_spec.get("create_if_missing", True), include_archived=params_spec.get("include_archived", False), limit_candidates=int(params_spec.get("limit", 10)), score_threshold=int(params_spec.get("score_threshold", 3))),
+                "session_start": lambda: workspace_start_session(wf, intent, session_id=session_id or None),
+                "session_recent": lambda: {"action": "session_recent", "result": workspace_status(wf, view=view, budget=budget)},
+                "model_profile": lambda: workspace_model_profile(params_spec.get("target_model", "codex")),
+                "write_judge": lambda: memory_write_judge(wf, text=params_spec.get("text", ""), source=params_spec.get("source", ""), intent=intent, prefer_layer=params_spec.get("prefer_layer", ""), projects=params_spec.get("projects"), files=params_spec.get("files")),
+                "tool_usage_report": lambda: memory_tool_usage_report(wf, limit=int(params_spec.get("limit", 50))),
+                "generate_wiki": lambda: generate_wiki(wf, params_spec.get("output_dir", "") or None),
+                "generate_skills": lambda: generate_skills(wf, params_spec.get("output_dir", "") or None),
+                "group_status": lambda: group_status(params_spec.get("group", "")),
+                "group_query": lambda: group_query(params_spec.get("group", ""), query=params_spec.get("text", ""), limit=int(params_spec.get("limit", 10))),
+                "group_impact": lambda: group_impact(params_spec.get("group", ""), target=intent or params_spec.get("text", ""), direction=params_spec.get("direction", "upstream"), max_depth=int(params_spec.get("max_depth", 3))),
+            }
+            handler = _ADMIN_DISPATCH.get(action)
+            if handler is None:
+                valid = ", ".join(sorted(_ADMIN_DISPATCH.keys()))
+                hook_result = {"action": action, "error": f"Unknown action: {action}. Valid: {valid}"}
+            else:
+                hook_result = {"action": action, "result": handler()}
             system_message = f"[Memory Center] Admin action: {action}"
 
         elif facade == "mc_close":
+            wf = _get_workspace_file(workspace)
             if session_id:
-                ended = workspace_end_session(workspace, session_id, outcome=outcome)
+                ended = workspace_end_session(wf, session_id, outcome=outcome)
                 synced = workspace_sync_case_to_artifacts(
-                    workspace, session_id,
+                    wf, session_id,
                     auto_sync_mode=auto_sync_mode,
                 )
                 hook_result = {

@@ -112,6 +112,7 @@ def build_workspace_semantic_index_partial(workspace_file: str | Path, changed_n
     kept_docs = [doc for doc in existing.get("docs", []) if doc.get("node_id") not in changed_node_ids]
     with GraphStore(store.graph_db_path) as graph:
         changed_nodes = [n for n in graph.all_nodes() if n.get("id") in changed_node_ids]
+        total_node_count = graph.counts().get("nodes", 0)
     new_docs: List[Dict[str, Any]] = []
     df_existing: Dict[str, int] = existing.get("df") or {}
     existing_doc_count = max(int(existing.get("doc_count", 0)), 1)
@@ -139,9 +140,6 @@ def build_workspace_semantic_index_partial(workspace_file: str | Path, changed_n
     # Build df including tokens from removed docs so IDF accounts for them
     df: Dict[str, int] = {}
     for doc in kept_docs:
-        for token in doc.get("sparse_vector", {}):
-            df[token] = df.get(token, 0) + 1
-    for doc in removed_docs:
         for token in doc.get("sparse_vector", {}):
             df[token] = df.get(token, 0) + 1
     for doc in removed_docs:
@@ -186,7 +184,7 @@ def build_workspace_semantic_index_partial(workspace_file: str | Path, changed_n
                 doc["dense_vector"] = [float(value) for value in vector]
     payload = {
         "version": SEMANTIC_INDEX_VERSION,
-        "node_count": len(merged_docs),
+        "node_count": total_node_count,
         "doc_count": len(merged_docs),
         "requested_backend": backend,
         "requested_model": existing.get("requested_model"),

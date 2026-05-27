@@ -30,9 +30,10 @@ class MemoryBackendStore:
             return self._conn
 
     def close(self) -> None:
-        if self._conn is not None:
-            self._conn.close()
-            self._conn = None
+        with self._lock:
+            if self._conn is not None:
+                self._conn.close()
+                self._conn = None
 
     def __enter__(self) -> "MemoryBackendStore":
         return self
@@ -152,8 +153,10 @@ class MemoryBackendStore:
             sql += " AND type = ?"
             args.append(payload_type)
         if session_id:
-            sql += " AND payload_json LIKE ?"
-            args.append(f'"session_id": "{session_id}"')
+            # Match session_id field precisely, avoiding source_session_id false positives
+            sql += " AND (payload_json LIKE ? OR payload_json LIKE ?)"
+            args.append(f'"session_id": "{session_id}"%')
+            args.append(f'"session_id":"{session_id}"%')
         if project:
             # Match project field in JSON payload more precisely than bare substring
             # Use JSON key-value pattern to reduce false positives (e.g. searching "api"

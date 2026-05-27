@@ -50,13 +50,7 @@ class WorkspaceStore:
         if not path.exists():
             return default
         try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-            if data == default and default is not None:
-                # Treat empty/corrupt file as missing — don't silently drop old data
-                backend_val = self.memory_backend().read_index(name)
-                if backend_val is not None:
-                    return backend_val
-            return data
+            return json.loads(path.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, UnicodeDecodeError):
             # Corrupt JSON file — try backend before falling back to default
             backend_val = self.memory_backend().read_index(name)
@@ -185,7 +179,10 @@ class WorkspaceStore:
 
     def read_jsonl_via_backend(self, name: str, limit: int = 50, session_id: str = "") -> List[Dict[str, Any]]:
         rows = self.memory_backend_query_records(collection=name, session_id=session_id, limit=limit).get("records", [])
-        return [item.get("payload", {}) for item in rows if isinstance(item.get("payload", {}), dict)]
+        return [
+            item.get("payload", {}) for item in rows
+            if isinstance(item.get("payload"), dict) and item.get("payload") is not None and item.get("payload") != {}
+        ]
 
     def find_jsonl_via_backend(self, name: str, predicate, limit: int = 200, session_id: str = "") -> List[Dict[str, Any]]:
         rows = self.read_jsonl_via_backend(name, limit=5000, session_id=session_id)

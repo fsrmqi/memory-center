@@ -5,6 +5,7 @@ import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
+import json as _json
 
 from memory_center.core.exporters import (
     export_continuity_dashboard_html,
@@ -172,6 +173,37 @@ def create_handler(default_workspace: str | Path | None = None) -> type[BaseHTTP
                     self._write_html(200, html_text)
                     return
                 payload = _route_request(parsed.path, params, workspace_file)
+                self._write_json(200, payload)
+            except FileNotFoundError as exc:
+                self._write_json(404, {"ok": False, "error": str(exc)})
+            except ValueError as exc:
+                self._write_json(400, {"ok": False, "error": str(exc)})
+            except Exception as exc:  # pragma: no cover
+                self._write_json(500, {"ok": False, "error": str(exc)})
+
+        def do_POST(self) -> None:  # noqa: N802
+            parsed = urlparse(self.path)
+            params = parse_qs(parsed.query)
+            # Read JSON body for POST requests (used for mutation routes with large content)
+            body_data = {}
+            try:
+                content_length = int(self.headers.get("Content-Length", 0))
+                if content_length > 0:
+                    raw_body = self.rfile.read(content_length)
+                    body_data = _json.loads(raw_body) if raw_body else {}
+            except Exception:
+                body_data = {}
+            try:
+                # Merge body data into params (body values take precedence)
+                merged_params = {**params}
+                for key, value in body_data.items():
+                    if isinstance(value, list):
+                        merged_params[key] = value
+                    elif isinstance(value, str):
+                        merged_params[key] = [value]
+                    else:
+                        merged_params[key] = [_json.dumps(value, ensure_ascii=False)]
+                payload = _route_request(parsed.path, merged_params, workspace_file)
                 self._write_json(200, payload)
             except FileNotFoundError as exc:
                 self._write_json(404, {"ok": False, "error": str(exc)})
