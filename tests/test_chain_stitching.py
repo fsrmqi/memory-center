@@ -31,6 +31,29 @@ except ImportError:
     HAS_MCP = False
 
 
+def _setup_demo_workspace(tmp_path: Path):
+    """Copy spring-cloud-demo to tmp_path, reindex, return workspace path."""
+    import shutil
+    source = Path("examples/spring-cloud-demo")
+    target = tmp_path / "demo"
+    shutil.copytree(source, target)
+    workspace = target / ".memory-center" / "workspace.yaml"
+    lines = workspace.read_text(encoding="utf-8").splitlines()
+    lines = [f"root: {target.as_posix()}" if line.startswith("root:") else line for line in lines]
+    workspace.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    config = load_workspace_config(workspace)
+    store = WorkspaceStore(workspace)
+    reindex_workspace(config, store)
+    return workspace
+
+
+def _setup_isolated_registry(tmp_path: Path):
+    """Create an isolated registry home under tmp_path to avoid global contamination."""
+    test_home = tmp_path / "registry-home"
+    test_home.mkdir()
+    return str(test_home)
+
+
 # ---- P1: Phantom Annotation ----
 
 
@@ -45,18 +68,7 @@ def test_annotate_phantom_on_external_service(tmp_path: Path):
             "confidence": 0.9,
         }],
     }
-    # Use the demo workspace whose local services are article-service, common-api, task-service
-    import shutil
-    source = Path("examples/spring-cloud-demo")
-    target = tmp_path / "demo"
-    shutil.copytree(source, target)
-    workspace = target / ".memory-center" / "workspace.yaml"
-    lines = workspace.read_text(encoding="utf-8").splitlines()
-    lines = [f"root: {target.as_posix()}" if line.startswith("root:") else line for line in lines]
-    workspace.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    config = load_workspace_config(workspace)
-    store = WorkspaceStore(workspace)
-    reindex_workspace(config, store)
+    workspace = _setup_demo_workspace(tmp_path)
 
     _annotate_phantom_nodes(chain_result, str(workspace))
     edge = chain_result["callees"][0]
@@ -78,17 +90,7 @@ def test_annotate_no_phantom_on_local_service(tmp_path: Path):
             "confidence": 0.9,
         }],
     }
-    import shutil
-    source = Path("examples/spring-cloud-demo")
-    target = tmp_path / "demo"
-    shutil.copytree(source, target)
-    workspace = target / ".memory-center" / "workspace.yaml"
-    lines = workspace.read_text(encoding="utf-8").splitlines()
-    lines = [f"root: {target.as_posix()}" if line.startswith("root:") else line for line in lines]
-    workspace.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    config = load_workspace_config(workspace)
-    store = WorkspaceStore(workspace)
-    reindex_workspace(config, store)
+    workspace = _setup_demo_workspace(tmp_path)
 
     _annotate_phantom_nodes(chain_result, str(workspace))
     edge = chain_result["callees"][0]
@@ -170,24 +172,14 @@ def test_normalize_path_params():
 
 def test_group_chain_callees_direction(tmp_path: Path):
     """Test group_chain with callees direction using the spring-cloud-demo workspace."""
-    import shutil
-    source = Path("examples/spring-cloud-demo")
-    target = tmp_path / "demo"
-    shutil.copytree(source, target)
-    workspace = target / ".memory-center" / "workspace.yaml"
-    lines = workspace.read_text(encoding="utf-8").splitlines()
-    lines = [f"root: {target.as_posix()}" if line.startswith("root:") else line for line in lines]
-    workspace.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    config = load_workspace_config(workspace)
-    store = WorkspaceStore(workspace)
-    reindex_workspace(config, store)
+    workspace = _setup_demo_workspace(tmp_path)
+    home = _setup_isolated_registry(tmp_path)
 
-    # Register and group
-    register_workspace("spring-cloud-demo", str(workspace))
-    create_group("test-group")
-    add_to_group("test-group", "spring-cloud-demo")
+    register_workspace("spring-cloud-demo", str(workspace), home=home)
+    create_group("test-group", home=home)
+    add_to_group("test-group", "spring-cloud-demo", home=home)
 
-    result = group_chain("test-group", "ArticleFeignClient", direction="callees", depth=2)
+    result = group_chain("test-group", "ArticleFeignClient", direction="callees", depth=2, home=home)
     assert result["found"] is True
     assert len(result["local_chain"]) > 0
     assert "stitch_summary" in result
@@ -200,46 +192,28 @@ def test_group_chain_callees_direction(tmp_path: Path):
 
 def test_group_chain_callers_direction(tmp_path: Path):
     """Test group_chain with callers direction using the spring-cloud-demo workspace."""
-    import shutil
-    source = Path("examples/spring-cloud-demo")
-    target = tmp_path / "demo"
-    shutil.copytree(source, target)
-    workspace = target / ".memory-center" / "workspace.yaml"
-    lines = workspace.read_text(encoding="utf-8").splitlines()
-    lines = [f"root: {target.as_posix()}" if line.startswith("root:") else line for line in lines]
-    workspace.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    config = load_workspace_config(workspace)
-    store = WorkspaceStore(workspace)
-    reindex_workspace(config, store)
+    workspace = _setup_demo_workspace(tmp_path)
+    home = _setup_isolated_registry(tmp_path)
 
-    register_workspace("spring-cloud-demo", str(workspace))
-    create_group("test-group-callers")
-    add_to_group("test-group-callers", "spring-cloud-demo")
+    register_workspace("spring-cloud-demo", str(workspace), home=home)
+    create_group("test-group-callers", home=home)
+    add_to_group("test-group-callers", "spring-cloud-demo", home=home)
 
-    result = group_chain("test-group-callers", "moveArticle", direction="callers", depth=2)
+    result = group_chain("test-group-callers", "moveArticle", direction="callers", depth=2, home=home)
     assert result["found"] is True
     assert "stitch_summary" in result
 
 
 def test_group_chain_stitch_summary(tmp_path: Path):
     """Verify stitch_summary fields are present and accurate."""
-    import shutil
-    source = Path("examples/spring-cloud-demo")
-    target = tmp_path / "demo"
-    shutil.copytree(source, target)
-    workspace = target / ".memory-center" / "workspace.yaml"
-    lines = workspace.read_text(encoding="utf-8").splitlines()
-    lines = [f"root: {target.as_posix()}" if line.startswith("root:") else line for line in lines]
-    workspace.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    config = load_workspace_config(workspace)
-    store = WorkspaceStore(workspace)
-    reindex_workspace(config, store)
+    workspace = _setup_demo_workspace(tmp_path)
+    home = _setup_isolated_registry(tmp_path)
 
-    register_workspace("spring-cloud-demo", str(workspace))
-    create_group("test-group-summary")
-    add_to_group("test-group-summary", "spring-cloud-demo")
+    register_workspace("spring-cloud-demo", str(workspace), home=home)
+    create_group("test-group-summary", home=home)
+    add_to_group("test-group-summary", "spring-cloud-demo", home=home)
 
-    result = group_chain("test-group-summary", "ArticleFeignClient", direction="callees", depth=2)
+    result = group_chain("test-group-summary", "ArticleFeignClient", direction="callees", depth=2, home=home)
     summary = result["stitch_summary"]
     assert summary["local_edge_count"] >= 0
     assert summary["boundary_count"] >= 0
@@ -251,37 +225,17 @@ def test_group_chain_stitch_summary(tmp_path: Path):
 
 
 def test_multi_group_ambiguity(tmp_path: Path):
-    """When workspace belongs to multiple groups, _find_groups_for_workspace returns all."""
-    import shutil
-    from memory_center.core.registry import save_registry
-    source = Path("examples/spring-cloud-demo")
-    target = tmp_path / "demo"
-    shutil.copytree(source, target)
-    workspace = target / ".memory-center" / "workspace.yaml"
-    lines = workspace.read_text(encoding="utf-8").splitlines()
-    lines = [f"root: {target.as_posix()}" if line.startswith("root:") else line for line in lines]
-    workspace.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    config = load_workspace_config(workspace)
-    store = WorkspaceStore(workspace)
-    reindex_workspace(config, store)
+    """When workspace belongs to multiple groups, registry lookup returns all."""
+    workspace = _setup_demo_workspace(tmp_path)
+    home = _setup_isolated_registry(tmp_path)
 
-    from memory_center.mcp.server import _find_groups_for_workspace
+    register_workspace("spring-cloud-demo", str(workspace), home=home)
+    create_group("group-a", home=home)
+    add_to_group("group-a", "spring-cloud-demo", home=home)
+    create_group("group-b", home=home)
+    add_to_group("group-b", "spring-cloud-demo", home=home)
 
-    # Use a fresh registry in tmp_path to avoid contamination from other tests
-    test_home = tmp_path / "registry-home"
-    test_home.mkdir()
-
-    from memory_center.core.registry import register_workspace, create_group, add_to_group
-    register_workspace("spring-cloud-demo", str(workspace), home=str(test_home))
-    create_group("group-a", home=str(test_home))
-    add_to_group("group-a", "spring-cloud-demo", home=str(test_home))
-    create_group("group-b", home=str(test_home))
-    add_to_group("group-b", "spring-cloud-demo", home=str(test_home))
-
-    # _find_groups_for_workspace uses default home, so we need to test with the test_home
-    # Directly load registry and check
-    from memory_center.core.registry import load_registry
-    registry = load_registry(str(test_home))
+    registry = load_registry(home)
     from memory_center.mcp.server import _find_workspace_name_in_registry
     ws_name = _find_workspace_name_in_registry(str(workspace), registry)
     groups = []
@@ -293,50 +247,9 @@ def test_multi_group_ambiguity(tmp_path: Path):
     assert "group-b" in groups
 
 
-@pytest.mark.skipif(not HAS_MCP, reason="mcp package not installed")
 def test_mc_lookup_multi_group_ambiguity_returns_hint(tmp_path: Path):
-    """Integration test: mc_lookup(mode='chain') with multi-group workspace returns matching_groups + hint, not auto-stitch."""
-    import shutil
-    from memory_center.mcp.server import create_server
-
-    # Use a fresh registry home to avoid cross-test contamination
-    test_home = tmp_path / "registry-home"
-    test_home.mkdir()
-
-    source = Path("examples/spring-cloud-demo")
-    target = tmp_path / "demo"
-    shutil.copytree(source, target)
-    workspace = target / ".memory-center" / "workspace.yaml"
-    lines = workspace.read_text(encoding="utf-8").splitlines()
-    lines = [f"root: {target.as_posix()}" if line.startswith("root:") else line for line in lines]
-    workspace.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    config = load_workspace_config(workspace)
-    store = WorkspaceStore(workspace)
-    reindex_workspace(config, store)
-
-    # Register workspace with a separate registry home
-    from memory_center.core.registry import register_workspace, create_group, add_to_group
-    register_workspace("spring-cloud-demo", str(workspace), home=str(test_home))
-    create_group("group-alpha", home=str(test_home))
-    add_to_group("group-alpha", "spring-cloud-demo", home=str(test_home))
-    create_group("group-beta", home=str(test_home))
-    add_to_group("group-beta", "spring-cloud-demo", home=str(test_home))
-
-    # We can't easily swap the registry home in the MCP server instance,
-    # so instead we directly call the routing logic that mc_lookup would use.
-    # This tests the actual branch behavior (multi-group → no auto-stitch).
-    from memory_center.mcp.server import _find_groups_for_workspace
-
-    # Since _find_groups_for_workspace uses the default registry,
-    # we need to verify the logic by testing the code path directly
-    # with a mock-like approach: set up groups in default registry
-    # and then check the branch behavior.
-
-    # Instead, directly test the routing decision logic:
-    # 1. Simulate what mc_lookup(mode="chain") does:
-    #    - Find groups for workspace
-    #    - If len > 1, don't auto-stitch, annotate phantom, return matching_groups + hint
-    from memory_center.core.orchestrator import memory_callers, _annotate_phantom_nodes
+    """Integration test: mc_lookup(mode='chain') multi-group branch returns matching_groups + hint."""
+    workspace = _setup_demo_workspace(tmp_path)
 
     # Simulate the "len > 1" branch of mc_lookup chain handler
     result = memory_callers(str(workspace), "ArticleFeignClient", depth=2, limit=10)
