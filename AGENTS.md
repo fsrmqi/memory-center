@@ -6,7 +6,7 @@
 
 修改代码前必须遵守：
 
-1. 优先阅读 `README.md`、`docs/ARCHITECTURE.md`、`docs/MCP_TOOLS.md`。
+1. 优先阅读 `README.md`、`docs/ARCHITECTURE.md`、`docs/MCP_GUIDE.md`。
 2. 变更 MCP tool schema 时必须保持兼容，若不兼容必须在 README、CHANGELOG、docs 中明确说明。
 3. 修改 Spring Cloud 索引器、规则匹配、CLI、MCP Server 时必须补充或更新测试。
 4. 所有面向用户的说明尽量保持中英文双语。
@@ -19,7 +19,7 @@ This repository implements **Memory Center**, an MCP-native project memory servi
 
 Before making broad changes:
 
-1. Read `README.md`, `docs/ARCHITECTURE.md`, and `docs/MCP_TOOLS.md`.
+1. Read `README.md`, `docs/ARCHITECTURE.md`, and `docs/MCP_GUIDE.md`.
 2. Keep MCP tool schemas backward-compatible unless a breaking change is explicitly documented.
 3. Add or update tests when changing the Spring Cloud indexer, rule matching, CLI, or MCP server.
 4. Keep public-facing documentation bilingual when possible.

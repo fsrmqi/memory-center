@@ -35,8 +35,12 @@ Memory Center precomputes these relationships before the agent starts editing.
 
 实施路线图请见：
 
-- [docs/IMPLEMENTATION_ROADMAP.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/IMPLEMENTATION_ROADMAP.md)
-- [docs/NEXT_PHASE_MASTER_PLAN.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/NEXT_PHASE_MASTER_PLAN.md)
+- [docs/ARCHITECTURE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/ARCHITECTURE.md)
+- [docs/USER_GUIDE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/USER_GUIDE.md)
+- [docs/MCP_GUIDE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/MCP_GUIDE.md)
+- [docs/REFERENCE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/REFERENCE.md)
+- [docs/SPECS.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/SPECS.md)
+- [docs/ROADMAP.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/ROADMAP.md)
 
 ---
 
@@ -130,9 +134,10 @@ Each protected write also records `write_mode` and an `audit_ref` into `memory/a
 
 Detailed local setup and multi-project workflow / 详细本地初始化与多项目使用流程：
 
-- [docs/LOCAL_USAGE_GUIDE.md](./docs/LOCAL_USAGE_GUIDE.md)
-- [docs/UCAP_ALL_SETUP.md](./docs/UCAP_ALL_SETUP.md)
-- [docs/UCAP_WORKSPACE_MAINTENANCE.md](./docs/UCAP_WORKSPACE_MAINTENANCE.md)
+- [docs/USER_GUIDE.md](./docs/USER_GUIDE.md)
+- [docs/MCP_GUIDE.md](./docs/MCP_GUIDE.md)
+- [docs/SPECS.md](./docs/SPECS.md)
+- [docs/ROADMAP.md](./docs/ROADMAP.md)
 
 ---
 
@@ -627,9 +632,9 @@ Available MCP tools (8 facade tools) / MCP 工具（8 个任务级 facade）：
 | `mc_close` | Close task workflow: end session → sync case → record experience / 关闭任务工作流 |
 | `mc_admin` | Admin router (status/dashboard/eval/artifact/session/group etc.) / 管理路由，action 选择子操作 |
 
-> **Note**: CLI and HTTP still expose all fine-grained atomic commands. Only the MCP surface uses facade tools. See [docs/MCP_TOOLS.md](./docs/MCP_TOOLS.md) for full facade routing details.
+> **Note**: CLI and HTTP still expose all fine-grained atomic commands. Only the MCP surface uses facade tools. See [docs/MCP_GUIDE.md](./docs/MCP_GUIDE.md) and [docs/REFERENCE.md](./docs/REFERENCE.md) for facade routing and command reference.
 >
-> **注意**：CLI 和 HTTP 仍保留所有细粒度原子命令。只有 MCP 工具面使用 facade 工具。完整路由细节见 [docs/MCP_TOOLS.md](./docs/MCP_TOOLS.md)。
+> **注意**：CLI 和 HTTP 仍保留所有细粒度原子命令。只有 MCP 工具面使用 facade 工具。路由与命令参考见 [docs/MCP_GUIDE.md](./docs/MCP_GUIDE.md) 和 [docs/REFERENCE.md](./docs/REFERENCE.md)。
 
 **Hook host integration** / **宿主集成层**（`memory_center/hooks/`）：
 
@@ -652,7 +657,7 @@ memory-center run-hook --workspace <workspace.yaml> --hook session_start  # 执�
 memory-center generate-hooks --workspace <workspace.yaml> --host claude-code  # 生成宿主配置
 ```
 
-详见 [docs/HOOK_SPEC.md](./docs/HOOK_SPEC.md) 和 [docs/HOOK_ADAPTERS.md](./docs/HOOK_ADAPTERS.md)。
+详见 [docs/MCP_GUIDE.md](./docs/MCP_GUIDE.md)。
 
 Supported model targets for handoff now include `codex`, `claude-code`, `cursor-agent`, `gemini`, `deepseek`, `glm`, `qwen`, `minimax`, `mimo`, and generic MCP agents.
 
@@ -988,9 +993,9 @@ Example routes:
 
 ## Security model / 安全模型
 
-Memory Center is local-first and read-only by default. Query/context/impact/contract tools do not modify business source code. Write tools are limited to Memory Center artifacts such as task memory, wiki, and generated skills. See `docs/MCP_SECURITY.md`.
+Memory Center is local-first and read-only by default. Query/context/impact/contract tools do not modify business source code. Write tools are limited to Memory Center artifacts such as task memory, wiki, and generated skills. See `docs/MCP_GUIDE.md`.
 
-记忆中心默认本地优先、只读优先。查询、上下文、影响分析、契约查看不会修改业务源码；写入类工具只写记忆、Wiki、Skill 等 Memory Center 产物。详见 `docs/MCP_SECURITY.md`。
+记忆中心默认本地优先、只读优先。查询、上下文、影响分析、契约查看不会修改业务源码；写入类工具只写记忆、Wiki、Skill 等 Memory Center 产物。详见 `docs/MCP_GUIDE.md`。
 
 ## License / 许可证
 
