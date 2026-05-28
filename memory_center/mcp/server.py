@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from memory_center.core.orchestrator import (
+    group_chain,
     group_impact,
     group_query,
     group_status,
@@ -78,7 +79,9 @@ from memory_center.core.orchestrator import (
     workspace_write_receipts,
     workspace_replay_write_chain,
     workspace_next_actions,
+    _annotate_phantom_nodes,
 )
+from memory_center.core.registry import load_registry
 from memory_center.core.artifacts import (
     append_change_log,
     append_task_change_log,
@@ -99,6 +102,24 @@ from memory_center.core.artifacts import (
     update_task_artifact,
 )
 from memory_center.core.wiki import generate_skills, generate_wiki
+
+def _find_workspace_name_in_registry(workspace_file: str, registry: Dict[str, Any]) -> str | None:
+    wf_resolved = str(Path(workspace_file).expanduser().resolve())
+    for repo in registry.get("repos", []):
+        if str(Path(repo.get("workspace_file", "")).expanduser().resolve()) == wf_resolved:
+            return repo.get("name")
+    return None
+
+def _find_groups_for_workspace(workspace_file: str) -> List[str]:
+    registry = load_registry()
+    ws_name = _find_workspace_name_in_registry(workspace_file, registry)
+    if not ws_name:
+        return []
+    groups: List[str] = []
+    for group in registry.get("groups", []):
+        if ws_name in group.get("members", []):
+            groups.append(group.get("name", ""))
+    return groups
 
 class _WorkspaceContext:
     """Holds workspace file path per server instance, avoiding module-level global."""
@@ -188,9 +209,25 @@ def create_server(workspace_file: str):
             if "workspace_trace" in preferred_bare and (entry or query):
                 return {"mode_used": "trace", "result": workspace_trace(wf, entry or query)}
             if "memory_callers" in preferred_bare and (symbol or query):
-                return {"mode_used": "chain-callers", "result": memory_callers(wf, symbol or query, depth, limit)}
+                matching_groups = _find_groups_for_workspace(wf)
+                if len(matching_groups) == 1:
+                    result = group_chain(matching_groups[0], symbol or query, direction="callers", depth=depth, limit=limit)
+                    return {"mode_used": "chain-group", "result": result}
+                result = memory_callers(wf, symbol or query, depth, limit)
+                _annotate_phantom_nodes(result, wf)
+                if len(matching_groups) > 1:
+                    return {"mode_used": "chain-callers", "result": result, "matching_groups": matching_groups, "_hint": f"Workspace 属于多个 group ({', '.join(matching_groups)})，请用 mc_admin(action='group_chain', group=...) 显式指定。"}
+                return {"mode_used": "chain-callers", "result": result}
             if "memory_callees" in preferred_bare and (symbol or query):
-                return {"mode_used": "chain-callees", "result": memory_callees(wf, symbol or query, depth, limit)}
+                matching_groups = _find_groups_for_workspace(wf)
+                if len(matching_groups) == 1:
+                    result = group_chain(matching_groups[0], symbol or query, direction="callees", depth=depth, limit=limit)
+                    return {"mode_used": "chain-group", "result": result}
+                result = memory_callees(wf, symbol or query, depth, limit)
+                _annotate_phantom_nodes(result, wf)
+                if len(matching_groups) > 1:
+                    return {"mode_used": "chain-callees", "result": result, "matching_groups": matching_groups, "_hint": f"Workspace 属于多个 group ({', '.join(matching_groups)})，请用 mc_admin(action='group_chain', group=...) 显式指定。"}
+                return {"mode_used": "chain-callees", "result": result}
             return {"mode_used": "query", "result": memory_query(wf, query, limit), "lookup_hint": hint}
         if mode == "symbol":
             return {"mode": "symbol", "result": memory_symbol(wf, name or query, limit)}
@@ -201,9 +238,29 @@ def create_server(workspace_file: str):
         if mode == "trace":
             return {"mode": "trace", "result": workspace_trace(wf, entry or query)}
         if mode == "chain":
+            matching_groups = _find_groups_for_workspace(wf)
+            if len(matching_groups) == 1:
+                result = group_chain(matching_groups[0], symbol or query,
+                                      direction=chain_direction, depth=depth, limit=limit)
+                return {"mode": "chain-group", "result": result}
+            if len(matching_groups) > 1:
+                if chain_direction == "callees":
+                    result = memory_callees(wf, symbol or query, depth, limit)
+                else:
+                    result = memory_callers(wf, symbol or query, depth, limit)
+                _annotate_phantom_nodes(result, wf)
+                return {
+                    "mode": f"chain-{chain_direction}",
+                    "result": result,
+                    "matching_groups": matching_groups,
+                    "_hint": f"Workspace 属于多个 group ({', '.join(matching_groups)})，请用 mc_admin(action='group_chain', group=...) 显式指定。",
+                }
             if chain_direction == "callees":
-                return {"mode": "chain-callees", "result": memory_callees(wf, symbol or query, depth, limit)}
-            return {"mode": "chain-callers", "result": memory_callers(wf, symbol or query, depth, limit)}
+                result = memory_callees(wf, symbol or query, depth, limit)
+            else:
+                result = memory_callers(wf, symbol or query, depth, limit)
+            _annotate_phantom_nodes(result, wf)
+            return {"mode": f"chain-{chain_direction}", "result": result}
         if mode == "context":
             return {"mode": "context", "result": memory_context(wf, name or query, depth)}
         if mode == "contracts":
@@ -379,7 +436,7 @@ def create_server(workspace_file: str):
         layer: str = "",
         action_filter: str = "",
     ):
-        """Admin and utility operations. Action selects sub-operation: status, dashboard, continuity, health, artifact_list, artifact_get, artifact_outline, artifact_context, artifact_update, change_log_append, change_log_compact, task_create, task_list, task_resolve, task_get, task_update, task_change_log_append, task_archive, task_auto_archive, task_status, task_activity_touch, session_start, session_log, session_end, session_recent, session_summary, model_profile, handoff_history, write_judge, write_plan, write_execute, receipts, replay, backend_query, eval_write_quality, eval_resume, eval_handoff, eval_regression_suite, eval_index_freshness, eval_tool_adoption, eval_context_weight, eval_workflow_orchestration, eval_token_gain, eval_token_benchmark, tool_usage_report, generate_wiki, generate_skills, group_status, group_query, group_impact."""
+        """Admin and utility operations. Action selects sub-operation: status, dashboard, continuity, health, artifact_list, artifact_get, artifact_outline, artifact_context, artifact_update, change_log_append, change_log_compact, task_create, task_list, task_resolve, task_get, task_update, task_change_log_append, task_archive, task_auto_archive, task_status, task_activity_touch, session_start, session_log, session_end, session_recent, session_summary, model_profile, handoff_history, write_judge, write_plan, write_execute, receipts, replay, backend_query, eval_write_quality, eval_resume, eval_handoff, eval_regression_suite, eval_index_freshness, eval_tool_adoption, eval_context_weight, eval_workflow_orchestration, eval_token_gain, eval_token_benchmark, tool_usage_report, generate_wiki, generate_skills, group_status, group_query, group_impact, group_chain."""
         wf = ctx.workspace_file
         _DISPATCH = {
             "status": lambda: workspace_status(wf, view=view, budget=budget),
@@ -437,6 +494,7 @@ def create_server(workspace_file: str):
             "group_status": lambda: group_status(group),
             "group_query": lambda: group_query(group, query=text, limit=limit),
             "group_impact": lambda: group_impact(group, target=intent or text, direction=direction, max_depth=max_depth),
+            "group_chain": lambda: group_chain(group, symbol=name or text, direction=direction, depth=max_depth, limit=limit),
         }
         handler = _DISPATCH.get(action)
         if handler is None:

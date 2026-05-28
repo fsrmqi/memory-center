@@ -558,17 +558,36 @@ def build_graph_store(config: WorkspaceConfig, store: WorkspaceStore, *, project
         return graph_counts
 
 
+_STANDARD_HTTP_METHODS = {"GET", "POST", "PUT", "DELETE", "PATCH"}
+
+def _normalize_path_params(path: str) -> str:
+    return re.sub(r"\{[^}]+\}", "{param}", path)
+
+
 def _endpoint_matches(feign: Dict[str, Any], method: Dict[str, Any], api: Dict[str, Any]) -> bool:
-    feign_path = (method.get("path") or "").strip("/")
     api_path = (api.get("path") or "").strip("/")
-    base = (feign.get("base_path") or "").strip("/")
-    if feign_path == api_path:
+    feign_http = (method.get("http_method") or "").upper()
+    api_http = (api.get("http_method") or "").upper()
+
+    if feign_http in _STANDARD_HTTP_METHODS and api_http in _STANDARD_HTTP_METHODS and feign_http != api_http:
+        return False
+
+    feign_norm = _normalize_path_params((method.get("path") or "").strip("/"))
+    api_norm = _normalize_path_params(api_path)
+
+    # Direct match (method path already includes base_path prefix in most real data)
+    if feign_norm == api_norm:
         return True
-    # Feign path = base + method-specific part; compare method part to api path
-    if base and feign_path.startswith(base):
-        remainder = feign_path[len(base):].strip("/")
-        if remainder == api_path:
+
+    # Fallback: compose base + method-specific remainder for cases where
+    # method.path does NOT include base_path (e.g. base=/api, path=/items)
+    base = (feign.get("base_path") or "").strip("/")
+    base_norm = _normalize_path_params(base)
+    if base_norm and feign_norm.startswith(base_norm):
+        remainder = feign_norm[len(base_norm):].strip("/")
+        if remainder and remainder == api_norm:
             return True
+
     return False
 
 

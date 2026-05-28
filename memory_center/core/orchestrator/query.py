@@ -347,6 +347,24 @@ def memory_tool_usage_report(
 
 # ---- internal helpers -------------------------------------------------------
 
+def _annotate_phantom_nodes(chain_result: Dict[str, Any], workspace_file: str | Path) -> None:
+    config, store = load_context(workspace_file)
+    topology = store.read_json_prefer_backend("service-topology.json", {})
+    local_services = {svc.get("service_name") or svc.get("name") for svc in topology.get("services", [])}
+    edges_key = "callers" if "callers" in chain_result else "callees"
+    for edge in chain_result.get(edges_key, []):
+        if edge.get("type") != "CALLS_SERVICE":
+            continue
+        target = edge.get("target", {})
+        if target.get("type") == "Service" and target.get("name", "") not in local_services:
+            hint = edge.get("metadata", {}).get("target_service") or target.get("name", "")
+            target["_is_external_service"] = True
+            target["_external_service_hint"] = hint
+            edge["_is_external_service"] = True
+            edge["_external_service_hint"] = hint
+            edge["_boundary_type"] = "feign-service-phantom"
+
+
 def _merge_workspace_query_hits(
     graph: GraphStore,
     query: str,

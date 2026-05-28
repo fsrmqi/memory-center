@@ -55,6 +55,7 @@ from .query import (
     memory_ref_batch,
     memory_backend_query,
     memory_tool_usage_report,
+    _annotate_phantom_nodes,
 )
 
 # --- impact analysis ---
@@ -133,6 +134,7 @@ from .group import (
     group_status,
     group_query,
     group_impact,
+    group_chain,
 )
 
 __all__ = [
@@ -152,7 +154,7 @@ __all__ = [
     # query
     "memory_query", "memory_context", "memory_symbol", "memory_callers", "memory_callees",
     "memory_search_code", "memory_contracts", "memory_ref_get", "memory_ref_batch",
-    "memory_backend_query", "memory_tool_usage_report",
+    "memory_backend_query", "memory_tool_usage_report", "_annotate_phantom_nodes",
     # impact
     "memory_impact", "memory_plan_change", "memory_verify_checklist", "memory_detect_changes",
     # write
@@ -173,5 +175,5 @@ __all__ = [
     # sync
     "workspace_sync_sniff_to_artifacts", "workspace_sync_case_to_artifacts",
     # group
-    "group_status", "group_query", "group_impact",
+    "group_status", "group_query", "group_impact", "group_chain",
 ]

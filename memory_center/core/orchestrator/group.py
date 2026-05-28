@@ -13,10 +13,14 @@ from .common import (
     tokenize,
 )
 from .query import (
+    _annotate_phantom_nodes,
     _build_lookup_payload,
     _query_node_priority,
     _sort_target_types,
+    memory_callers,
+    memory_callees,
     memory_query,
+    memory_symbol,
 )
 
 
@@ -885,3 +889,242 @@ def _type_distribution_from_impacts(items: List[Dict[str, Any]]) -> Dict[str, in
         if target_type:
             counts[target_type] = counts.get(target_type, 0) + 1
     return dict(sorted(counts.items(), key=lambda kv: (-kv[1], kv[0])))
+
+
+# ---- Cross-workspace chain stitching (P0) ----------------------------------
+
+
+def group_chain(
+    group: str,
+    symbol: str,
+    direction: str = "callers",
+    depth: int = 2,
+    limit: int = 80,
+    home: str | Path | None = None,
+) -> Dict[str, Any]:
+    resolved = resolve_group(group, home)
+    group_data = _load_group_data(resolved["members"])
+    if not group_data:
+        return {
+            "group": group, "symbol": symbol, "direction": direction,
+            "found": False, "local_chain": [], "boundary_points": [],
+            "cross_workspace_continuations": [], "stitched_chain": [],
+            "stitch_summary": _empty_stitch_summary(), "bridges_used": [],
+            "workspace_count": 0, "missing_members": resolved["missing"],
+        }
+
+    bridges = _build_group_bridges(group_data)
+
+    # Step 4: locate source workspace containing the symbol
+    source_workspace = None
+    source_node = None
+    for member in group_data:
+        wf = member.get("workspace_file", "")
+        info = memory_symbol(wf, symbol, limit=5)
+        if info.get("found"):
+            source_workspace = member
+            source_node = info.get("best_match")
+            break
+
+    if not source_workspace:
+        return {
+            "group": group, "symbol": symbol, "direction": direction,
+            "found": False, "local_chain": [], "boundary_points": [],
+            "cross_workspace_continuations": [], "stitched_chain": [],
+            "stitch_summary": _empty_stitch_summary(), "bridges_used": [],
+            "workspace_count": len(group_data), "missing_members": resolved["missing"],
+        }
+
+    # Step 5: run chain on source workspace
+    wf = source_workspace["workspace_file"]
+    chain_func = memory_callees if direction == "callees" else memory_callers
+    local_result = chain_func(wf, symbol, depth=depth, limit=limit)
+    local_edges = local_result.get(direction if direction == "callees" else "callers", [])
+
+    # Build local service name set for boundary detection
+    topology = _load_workspace_topology(wf)
+    local_services = {svc.get("service_name") or svc.get("name") for svc in topology.get("services", [])}
+
+    # Step 6: detect boundary points
+    boundary_points = _detect_boundary_points(local_edges, local_services)
+
+    # Step 7-8: find continuations via bridges and run target chains
+    continuations: List[Dict[str, Any]] = []
+    bridges_used: List[Dict[str, Any]] = []
+    for bp in boundary_points:
+        entry_points = _find_continuation_entry_points(bp, bridges, group_data)
+        for ep in entry_points:
+            target_wf = ep.get("workspace_file", "")
+            if not target_wf:
+                continue
+            target_result = chain_func(
+                target_wf, ep["continuation_symbol"],
+                depth=max(depth - 1, 1), limit=limit,
+            )
+            target_edges = target_result.get(
+                "callees" if direction == "callees" else "callers", [],
+            )
+            continuations.append({
+                "boundary": bp,
+                "bridge": ep["bridge"],
+                "target_workspace": ep.get("workspace_name", ""),
+                "continuation": target_edges,
+            })
+            bridges_used.append(ep["bridge"])
+
+    # Step 9: stitch chains
+    stitched = _stitch_chain(local_edges, continuations, source_workspace.get("workspace", ""), direction)
+    stitch_summary = _build_stitch_summary(local_edges, boundary_points, bridges_used, continuations, stitched)
+
+    return {
+        "group": group, "symbol": symbol, "direction": direction,
+        "found": True, "target": source_node,
+        "local_chain": local_edges, "boundary_points": boundary_points,
+        "cross_workspace_continuations": continuations,
+        "stitched_chain": stitched, "stitch_summary": stitch_summary,
+        "bridges_used": bridges_used,
+        "workspace_count": len(group_data), "missing_members": resolved["missing"],
+    }
+
+
+def _empty_stitch_summary() -> Dict[str, int]:
+    return {
+        "local_edge_count": 0, "boundary_count": 0,
+        "bridges_used_count": 0, "stitched_workspace_count": 0,
+        "total_stitched_edge_count": 0,
+    }
+
+
+def _load_workspace_topology(workspace_file: str) -> Dict[str, Any]:
+    _, store = load_context(workspace_file)
+    return store.read_json_prefer_backend("service-topology.json", {})
+
+
+def _detect_boundary_points(
+    chain_edges: List[Dict[str, Any]],
+    local_services: set[str],
+) -> List[Dict[str, Any]]:
+    boundaries: List[Dict[str, Any]] = []
+    for edge in chain_edges:
+        if edge.get("type") != "CALLS_SERVICE":
+            continue
+        target = edge.get("target", {})
+        target_name = target.get("name", "")
+        if target.get("type") == "Service" and target_name not in local_services:
+            hint = edge.get("metadata", {}).get("target_service") or target_name
+            boundaries.append({
+                "edge": edge,
+                "target_service_name": hint,
+                "boundary_node_id": target.get("id", ""),
+                "feign_source_id": edge.get("source", {}).get("id", ""),
+                "feign_interface": edge.get("source", {}).get("name", ""),
+                "is_external_service": True,
+                "external_service_hint": hint,
+                "boundary_type": "feign-service-phantom",
+            })
+    return boundaries
+
+
+def _find_continuation_entry_points(
+    boundary: Dict[str, Any],
+    bridges: List[Dict[str, Any]],
+    group_data: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    target_service = boundary.get("target_service_name", "")
+    feign_interface = boundary.get("feign_interface", "")
+    entry_points: List[Dict[str, Any]] = []
+
+    # Prefer FEIGN_ENDPOINT bridges (more precise)
+    for bridge in bridges:
+        if bridge.get("type") != "FEIGN_ENDPOINT":
+            continue
+        summary = bridge.get("summary", "")
+        if feign_interface and feign_interface not in summary:
+            continue
+        target_ws_ref = bridge.get("target_workspace", "")
+        target_member = _find_member_by_ref(group_data, target_ws_ref)
+        if not target_member:
+            continue
+        target_project = bridge.get("target_project", "")
+        entry_points.append({
+            "bridge": bridge,
+            "workspace_file": target_member.get("workspace_file", ""),
+            "workspace_name": target_member.get("workspace", ""),
+            "continuation_symbol": target_project or target_service,
+        })
+
+    # Fallback to FEIGN_SERVICE bridges (less precise)
+    if not entry_points:
+        for bridge in bridges:
+            if bridge.get("type") != "FEIGN_SERVICE":
+                continue
+            if bridge.get("evidence", {}).get("target_service") != target_service:
+                continue
+            target_ws_ref = bridge.get("target_workspace", "")
+            target_member = _find_member_by_ref(group_data, target_ws_ref)
+            if not target_member:
+                continue
+            entry_points.append({
+                "bridge": bridge,
+                "workspace_file": target_member.get("workspace_file", ""),
+                "workspace_name": target_member.get("workspace", ""),
+                "continuation_symbol": bridge.get("target_project") or target_service,
+            })
+
+    return entry_points
+
+
+def _find_member_by_ref(
+    group_data: List[Dict[str, Any]],
+    workspace_ref: str,
+) -> Dict[str, Any] | None:
+    for member in group_data:
+        if member.get("workspace_ref") == workspace_ref or member.get("workspace") == workspace_ref:
+            return member
+    return None
+
+
+def _stitch_chain(
+    local_edges: List[Dict[str, Any]],
+    continuations: List[Dict[str, Any]],
+    source_workspace_name: str,
+    direction: str,
+) -> List[Dict[str, Any]]:
+    stitched: List[Dict[str, Any]] = []
+    for edge in local_edges:
+        stitched.append({**edge, "_workspace": source_workspace_name})
+    for cont in continuations:
+        target_ws = cont.get("target_workspace", "")
+        bridge = cont.get("bridge", {})
+        for edge in cont.get("continuation", []):
+            stitched.append({
+                **edge,
+                "_workspace": target_ws,
+                "_cross_workspace_bridge": {
+                    "type": bridge.get("type", ""),
+                    "summary": bridge.get("summary", ""),
+                    "confidence": bridge.get("confidence", 0.0),
+                },
+            })
+    return stitched
+
+
+def _build_stitch_summary(
+    local_edges: List[Dict[str, Any]],
+    boundary_points: List[Dict[str, Any]],
+    bridges_used: List[Dict[str, Any]],
+    continuations: List[Dict[str, Any]],
+    stitched: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    workspace_names: set[str] = set()
+    for cont in continuations:
+        ws = cont.get("target_workspace", "")
+        if ws:
+            workspace_names.add(ws)
+    return {
+        "local_edge_count": len(local_edges),
+        "boundary_count": len(boundary_points),
+        "bridges_used_count": len(bridges_used),
+        "stitched_workspace_count": len(workspace_names),
+        "total_stitched_edge_count": len(stitched),
+    }
