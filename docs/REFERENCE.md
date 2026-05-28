@@ -142,11 +142,7 @@
 - token benchmark：7 个高频函数
 - evidence top-K：`small=3` / `medium=5` / `large=10`
 
-## 6. Need More Detail? / 还要更细节？
-
-细节型旧文档已归档到：
-
-- `docs/archive/`
+## 6. Main Reading Order / 主阅读顺序
 
 主线使用请优先看：
 

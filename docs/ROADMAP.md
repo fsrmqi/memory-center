@@ -2,6 +2,11 @@
 
 ## 1. Current State / 当前状态
 
+如果你需要维护者视角的详细方案，而不是简版路线图，请看：
+
+- [../NEXT_PHASE_MASTER_PLAN.md](/Users/cuijiaqi/Ai-common-skills/memory-center/NEXT_PHASE_MASTER_PLAN.md)
+- [../TECHNICAL_GUIDE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/TECHNICAL_GUIDE.md)
+
 当前已完成的主线包括：
 
 - 增量索引第一阶段
