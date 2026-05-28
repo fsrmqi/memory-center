@@ -179,7 +179,7 @@ def run_hook(
     tool_matcher = filter_spec.get("tool_matcher", "")
     if tool_matcher and stdin_json:
         tool_name = stdin_json.get("tool_name", "") or (stdin_json.get("tool_input", {}) or {}).get("tool_name", "")
-        if tool_name and tool_name != tool_matcher:
+        if tool_name and tool_name not in tool_matcher.split("|"):
             return {
                 "exit_code": 0,
                 "system_message": f"[Hook] {hook_name}: tool_name '{tool_name}' does not match tool_matcher '{tool_matcher}', skipping",
