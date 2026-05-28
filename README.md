@@ -971,8 +971,9 @@ Example routes:
 - v2.0.9: 增量索引系统、SQLite 镜像后端、评测体系（7 eval + token_gain）
 - v2.0.10: WP2/WP3 收口（recent_evidence view/gain、ref→timeline 反向导航）
 - v2.0.10: WP5 交互增强（budget/compact UI 切换、refs `<details>` 内联展开）
-- v2.0.11+: WP5 深化（guided tour/onboarding、更多页面联动）
-- v2.0.11+: WP3 深化（高频接口严格默认短引用、timeline↔ref 页面联动）
+- v2.0.11: WP5 深化（guided tour overlay、Next Action hero、跨页 drill-down）
+- v2.0.11: WP3 深化（全部高频函数默认 compact、compact 收紧为严格短引用）
+- v2.0.11: Hooks 收口（Codex chmod +x、Cursor MCP 命令指令）
 - v2.1.0: 外部参考吸收（agentmemory benchmark/top-K/hybrid、skills 强约束模板）
 - v2.1.0: SQLite 后端更多真实读路径、长期趋势仪表盘
 - v2.2.0: 稳定 public component for Spring Cloud AI coding workflows

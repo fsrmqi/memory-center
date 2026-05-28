@@ -2,6 +2,18 @@
 
 ## 2.0.11
 
+- **WP3: 默认 compact 模式**
+  - 全部 7 个高频函数（sniff/status/resume/handoff/recent_evidence/continuity/dashboard）默认 `view` 从 `"full"` 改为 `"compact"`
+  - 测试中需要完整字段的断言改为显式 `view="full"`
+- **WP3: compact 模式收紧为严格短引用**
+  - dashboard/continuity/handoff 的 compact 函数中 `recent_evidence`、`recent_receipts`、`recent_handoffs`、`focus_task` 全部提取为仅 `ref_id + summary` 或 `task_id + title + status`
+  - 不再在 compact 模式下混入完整原始字段
+- **Hooks: Codex adapter 生产化**
+  - 脚本生成后自动 `chmod +x`（可执行）
+  - docstring 更新，移除 placeholder 标记
+- **Hooks: Cursor adapter 增强**
+  - `.cursorrules` 现在包含每个 hook 的具体 MCP 命令指令（mc_start/mc_lookup/mc_analyze/mc_sync/mc_resume/mc_handoff/mc_close）
+  - 新增 Quick Reference 部分，列出 8 个 facade 工具的用途
 - **Guided tour overlay / 引导叠加层**
   - `/ui` 索引页首次打开时自动弹出 5 步引导叠加层（Dashboard/Continuity/Timeline/Refs/Tools）
   - `localStorage` 记住已看过一次，侧栏提供 "Replay Tour / 重播引导" 按钮
