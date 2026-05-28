@@ -1,12 +1,13 @@
-"""Codex adapter placeholder — generates shell wrapper scripts.
+"""Codex adapter — generates executable shell wrapper scripts.
 
-Codex's hook API is still evolving. This adapter generates minimal
-shell wrapper scripts that call `memory-center run-hook`.
+Codex's hook API uses lifecycle scripts. This adapter generates
+executable shell wrapper scripts that call `memory-center run-hook`,
+reading stdin JSON context from the host.
 """
 from __future__ import annotations
 
-import json
 import shlex
+import stat
 from pathlib import Path
 from typing import Any, Dict
 
@@ -70,6 +71,7 @@ memory-center run-hook --workspace {shlex.quote(workspace)} --hook {event_name}
 """
 
         script_path.write_text(content, encoding="utf-8")
+        script_path.chmod(script_path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
         generated.append(script_path)
 
     return generated

@@ -42,7 +42,7 @@ def workspace_resume_packet(
     session_id: str = "",
     intent: str = "",
     limit: int = 10,
-    view: str = "full",
+    view: str = "compact",
     budget: str = "medium",
 ) -> Dict[str, Any]:
     from .workspace import workspace_status  # lazy import to avoid circular dep
@@ -233,7 +233,7 @@ def workspace_handoff_packet(
     session_id: str = "",
     intent: str = "",
     limit: int = 10,
-    view: str = "full",
+    view: str = "compact",
     budget: str = "medium",
 ) -> Dict[str, Any]:
     from .eval import memory_eval_write_quality

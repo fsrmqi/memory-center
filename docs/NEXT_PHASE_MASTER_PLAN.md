@@ -89,13 +89,15 @@
 5. ~~**WP3 ref→timeline 反向导航**~~：**已完成** — `memory_ref_get` 返回 `timeline_ref` 字段，`/ui/ref` 页面新增”在时间线中查看”链接
 6. ~~**WP5 refs 内联展开**~~：**已完成** — 所有列表渲染函数添加 `<details><summary>` 展开
 7. ~~**WP5 budget/compact UI 切换**~~：**已完成** — Dashboard 和 Continuity 页面新增 view/budget `<select>` 控件
+8. ~~**WP3 默认 compact**~~：**已完成** — 全部 7 高频函数默认 view 从 full 改为 compact
+9. ~~**WP3 compact 收紧**~~：**已完成** — compact 模式下 recent_evidence/receipts/handoffs/focus_task 全部提取为严格短引用
+10. ~~**Hooks 收口**~~：**已完成** — Codex adapter chmod +x、Cursor adapter 增强 MCP 命令指令
 
 **下一阶段待推进：**
 
 - **外部参考思想吸收**：agentmemory benchmark/top-K/hybrid、skills 强约束模板
-- **Hooks 自动触发映射**：基础已实现，宿主自动接入未完全收口
 - **SQLite 后端**：从镜像推进到更多真实读路径
-- **工作台交互**：guided tour / onboarding、更多页面联动
+- **timeline↔ref 页面联动**：timeline 中点击 ref 直接展开而非跳转
 
 ### 版本技术路线
 
@@ -107,7 +109,8 @@
 | v2.0.10 | WP2/WP3 收口 | `recent_evidence` view/gain、`memory_ref_get` timeline_ref、短引用体系 | ✅ 已交付 |
 | v2.0.10 | WP5 交互增强 | budget/compact UI 下拉切换、`<details>` 内联展开、ref→timeline 交叉链接 | ✅ 已交付 |
 | v2.0.11 | WP5 深化 | guided tour overlay（首次打开 /ui 引导）、Next Action hero 卡片（dashboard 显示下一步）、continuity→task / task→receipts 跨页 drill-down | ✅ 已交付 |
-| v2.0.11+ | WP3 深化 | 高频接口严格默认短引用、timeline↔ref 页面联动 | 待推进 |
+| v2.0.11 | WP3 深化 | 全部 7 高频函数默认 view=compact、compact 模式收紧为严格短引用（ref_id+summary only） | ✅ 已交付 |
+| v2.0.11 | Hooks 收口 | Codex adapter 生产化（chmod +x）、Cursor adapter 增强（MCP 命令指令 + Quick Reference） | ✅ 已交付 |
 | v2.1.0 | 外部吸收 | agentmemory benchmark/top-K/hybrid、skills 强约束模板 | 待推进 |
 | v2.1.0 | WP6 深化 | 更多主读路径切 SQLite、长期趋势仪表盘 | 待推进 |
 

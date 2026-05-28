@@ -134,7 +134,11 @@ def _compact_continuity_dashboard(result: Dict[str, Any], budget: str = "medium"
         "workspace_continuity_dashboard",
         {
             "workspace": result.get("workspace", ""),
-            "focus_task": result.get("focus_task", {}),
+            "focus_task": {
+                "task_id": (result.get("focus_task", {}) or {}).get("task_id", ""),
+                "title": (result.get("focus_task", {}) or {}).get("title", ""),
+                "status": (result.get("focus_task", {}) or {}).get("status", ""),
+            },
             "continuity_overview": result.get("continuity_overview", {}),
             "resume_packet": {
                 "task_id": resume_packet.get("task_id", ""),
@@ -146,9 +150,18 @@ def _compact_continuity_dashboard(result: Dict[str, Any], budget: str = "medium"
             },
             "next_actions": result.get("next_actions", [])[: limits["steps"]],
             "unresolved_items": result.get("unresolved_items", [])[: limits["findings"]],
-            "recent_receipts": result.get("recent_receipts", [])[: limits["events"]],
-            "recent_handoffs": result.get("recent_handoffs", [])[: limits["events"]],
-            "recent_evidence": result.get("recent_evidence", [])[: limits["events"]],
+            "recent_receipts": [
+                {"receipt_id": item.get("receipt_id", ""), "layer": item.get("layer", ""), "action": item.get("action", ""), "summary": item.get("summary", "")}
+                for item in result.get("recent_receipts", [])[: limits["events"]]
+            ],
+            "recent_handoffs": [
+                {"normalized_model": item.get("normalized_model", ""), "current_phase": item.get("current_phase", ""), "quality": item.get("quality", "")}
+                for item in result.get("recent_handoffs", [])[: limits["events"]]
+            ],
+            "recent_evidence": [
+                {"ref_id": item.get("ref_id", ""), "summary": item.get("summary", ""), "created_at": item.get("created_at", "")}
+                for item in result.get("recent_evidence", [])[: limits["events"]]
+            ],
         },
     )
 
@@ -163,7 +176,11 @@ def _compact_workspace_dashboard(result: Dict[str, Any], budget: str = "medium")
         "workspace_dashboard",
         {
             "workspace": result.get("workspace", ""),
-            "focus_task": result.get("focus_task", {}),
+            "focus_task": {
+                "task_id": (result.get("focus_task", {}) or {}).get("task_id", ""),
+                "title": (result.get("focus_task", {}) or {}).get("title", ""),
+                "status": (result.get("focus_task", {}) or {}).get("status", ""),
+            },
             "continuity_overview": result.get("continuity_overview", {}),
             "write_receipts_overview": {
                 "total": write_receipts_overview.get("total", 0),
@@ -174,8 +191,14 @@ def _compact_workspace_dashboard(result: Dict[str, Any], budget: str = "medium")
             "resumable_tasks": _compact_task_rows(result.get("resumable_tasks", []), limit=limits["tasks"]),
             "blocked_tasks": _compact_task_rows(result.get("blocked_tasks", []), limit=limits["tasks"]),
             "low_quality_tasks": _compact_task_rows(result.get("low_quality_tasks", []), limit=limits["tasks"]),
-            "recent_receipts": result.get("recent_receipts", [])[: limits["events"]],
-            "recent_handoffs": result.get("recent_handoffs", [])[: limits["events"]],
+            "recent_receipts": [
+                {"receipt_id": item.get("receipt_id", ""), "layer": item.get("layer", ""), "action": item.get("action", ""), "summary": item.get("summary", "")}
+                for item in result.get("recent_receipts", [])[: limits["events"]]
+            ],
+            "recent_handoffs": [
+                {"normalized_model": item.get("normalized_model", ""), "current_phase": item.get("current_phase", ""), "quality": item.get("quality", "")}
+                for item in result.get("recent_handoffs", [])[: limits["events"]]
+            ],
             "focus_dashboard": {
                 "focus_task": focus_dashboard.get("focus_task", {}),
                 "next_actions": focus_dashboard.get("next_actions", [])[: limits["steps"]],
@@ -219,7 +242,10 @@ def _compact_handoff_packet(result: Dict[str, Any], budget: str = "medium") -> D
                 "what_is_risky": packet.get("what_is_risky", [])[: limits["findings"]],
                 "what_to_check_next": packet.get("what_to_check_next", [])[: limits["steps"]],
                 "minimal_required_context": packet.get("minimal_required_context", {}),
-                "recent_evidence": packet.get("recent_evidence", [])[: limits["events"]],
+                "recent_evidence": [
+                    {"ref_id": item.get("ref_id", ""), "summary": item.get("summary", ""), "created_at": item.get("created_at", "")}
+                    for item in packet.get("recent_evidence", [])[: limits["events"]]
+                ],
                 "notes": packet.get("notes", [])[:2],
             },
             "handoff_ref": result.get("handoff_ref", ""),

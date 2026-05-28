@@ -70,7 +70,7 @@ def test_demo_workspace_indexes_spring_cloud_patterns(tmp_path: Path):
     assert counts["mq"] >= 1
     assert counts["semantic_docs"] > 0
 
-    sniffed = workspace_sniff(workspace, "oldPubTime newPubTime Kafka ArticleFeignClient move")
+    sniffed = workspace_sniff(workspace, "oldPubTime newPubTime Kafka ArticleFeignClient move", view="full")
     assert sniffed["candidate_files"]
     assert sniffed["related_rules"]
     assert sniffed["risk_level"] == "high"
@@ -705,7 +705,7 @@ def test_memory_backend_sqlite_mirror(tmp_path: Path):
     ref = store.write_memory_ref_json("refs/sessions/test-backend.json", {"created_at": "2026-01-01T00:00:00+00:00", "note": "backend"})
 
     stats = store.memory_backend_stats()
-    status = workspace_status(workspace)
+    status = workspace_status(workspace, view="full")
     query = memory_backend_query(workspace, collection="session-events.jsonl", limit=5)
     assert stats["collections"]["session-events.jsonl"] >= 1
     assert stats["collections"]["cross-service-task-memory.jsonl"] >= 1

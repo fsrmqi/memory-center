@@ -195,7 +195,7 @@ def workspace_recent_evidence(
     session_id: str = "",
     limit: int = 10,
     budget: str = "medium",
-    view: str = "full",
+    view: str = "compact",
 ) -> Dict[str, Any]:
     from ..timeline import timeline_query
 

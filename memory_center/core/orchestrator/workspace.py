@@ -55,7 +55,7 @@ from ..tracking import log_token_gain
 # ---------------------------------------------------------------------------
 
 
-def workspace_status(workspace_file: str | Path, view: str = "full", budget: str = "medium") -> Dict[str, Any]:
+def workspace_status(workspace_file: str | Path, view: str = "compact", budget: str = "medium") -> Dict[str, Any]:
     config, store = load_context(workspace_file)
     active_tasks = _active_task_summaries(workspace_file, limit=5)
     current_focus_task = dict(active_tasks[0]) if active_tasks else None
@@ -103,7 +103,7 @@ def workspace_sniff(
     limit: int = 12,
     auto_sync_mode: str = "balanced",
     include_lookup_hint: bool = True,
-    view: str = "full",
+    view: str = "compact",
     budget: str = "medium",
 ) -> Dict[str, Any]:
     config, store = load_context(workspace_file)
@@ -298,7 +298,7 @@ def workspace_dashboard(
     workspace_file: str | Path,
     intent: str = "",
     limit: int = 10,
-    view: str = "full",
+    view: str = "compact",
     budget: str = "medium",
 ) -> Dict[str, Any]:
     # Lazy import to avoid circular dependency with .resume and .eval
@@ -395,13 +395,13 @@ def workspace_continuity_dashboard(
     task_id: str = "",
     session_id: str = "",
     limit: int = 10,
-    view: str = "full",
+    view: str = "compact",
     budget: str = "medium",
 ) -> Dict[str, Any]:
     # Lazy import to avoid circular dependency with .resume
     from .resume import workspace_resume_packet, workspace_next_actions, workspace_unresolved_items, workspace_handoff_history
 
-    status = workspace_status(workspace_file, view="full", budget=budget)
+    status = workspace_status(workspace_file, view="compact", budget=budget)
     focus_task_id = task_id or (status.get("current_focus_task") or {}).get("task_id", "")
     resume_packet = workspace_resume_packet(workspace_file, task_id=focus_task_id, session_id=session_id, intent=intent, limit=limit, view=view, budget=budget)
     next_actions = workspace_next_actions(workspace_file, task_id=focus_task_id, session_id=session_id, intent=intent, limit=limit)
