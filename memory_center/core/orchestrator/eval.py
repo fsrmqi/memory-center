@@ -370,3 +370,60 @@ def memory_eval_token_gain(
         top_5_savings=gain_report.get("top_5_savings", []),
         bottom_5_savings=gain_report.get("bottom_5_savings", []),
     )
+
+
+def memory_eval_token_benchmark(
+    workspace_file: str | Path,
+    intent: str = "",
+    limit: int = 8,
+) -> Dict[str, Any]:
+    """Run all 7 high-frequency returns at small/medium/large budgets and report token counts.
+
+    Follows agentmemory's benchmark pattern: measure actual token impact per function per budget.
+    Returns a comparison table suitable for regression testing.
+    """
+    from .resume import workspace_resume_packet
+    from .workspace import workspace_dashboard, workspace_sniff, workspace_status, workspace_continuity_dashboard
+    from .session import workspace_recent_evidence
+
+    config, _ = load_context(workspace_file)
+    budget_tiers = ["small", "medium", "large"]
+    functions = {
+        "sniff": lambda b: workspace_sniff(workspace_file, intent or "benchmark", limit=limit, view="compact", budget=b),
+        "status": lambda b: workspace_status(workspace_file, view="compact", budget=b),
+        "resume": lambda b: workspace_resume_packet(workspace_file, intent=intent, limit=limit, view="compact", budget=b),
+        "recent_evidence": lambda b: workspace_recent_evidence(workspace_file, limit=limit, budget=b, view="compact"),
+        "continuity": lambda b: workspace_continuity_dashboard(workspace_file, intent=intent, limit=limit, view="compact", budget=b),
+        "dashboard": lambda b: workspace_dashboard(workspace_file, intent=intent, limit=limit, view="compact", budget=b),
+    }
+    results = {}
+    for name, fn in functions.items():
+        row = {}
+        for budget in budget_tiers:
+            payload = fn(budget)
+            text = json.dumps(payload, ensure_ascii=False)
+            tokens = estimate_tokens(text)
+            row[budget] = {"tokens": tokens, "chars": len(text)}
+        small_t = row["small"]["tokens"]
+        large_t = row["large"]["tokens"]
+        savings_pct = round((1 - small_t / (large_t or 1)) * 100, 1)
+        row["savings_pct"] = savings_pct
+        results[name] = row
+
+    total_small = sum(results[n]["small"]["tokens"] for n in results)
+    total_medium = sum(results[n]["medium"]["tokens"] for n in results)
+    total_large = sum(results[n]["large"]["tokens"] for n in results)
+
+    builder = EvalResultBuilder()
+    if total_small > 8000:
+        builder.add("medium", "total_small_heavy", f"small budget 总计 {total_small} tokens，建议进一步压缩。", 20)
+    for name, row in results.items():
+        if row["savings_pct"] < 30:
+            builder.add("low", f"{name}_low_savings", f"{name} compact 只省了 {row['savings_pct']}%。", 5)
+
+    return builder.finalize(
+        workspace=config.workspace,
+        intent=intent,
+        benchmark=results,
+        totals={"small": total_small, "medium": total_medium, "large": total_large},
+    )

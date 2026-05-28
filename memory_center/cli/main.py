@@ -557,6 +557,17 @@ def eval_token_gain_cmd(
     print(memory_eval_token_gain(workspace, tool_name=tool_name, budget=budget, model=model, limit=limit))
 
 
+@app.command("eval-token-benchmark")
+def eval_token_benchmark_cmd(
+    workspace: str = typer.Option(...),
+    intent: str = typer.Option("token benchmark"),
+    limit: int = typer.Option(8),
+):
+    """Run token benchmark: measure all 7 high-freq returns at small/medium/large budgets."""
+    from memory_center.core.orchestrator import memory_eval_token_benchmark
+    print(memory_eval_token_benchmark(workspace, intent=intent, limit=limit))
+
+
 @app.command("regression-smoke")
 def regression_smoke_cmd(
     workspace: str = typer.Option(...),

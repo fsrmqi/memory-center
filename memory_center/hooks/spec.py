@@ -29,38 +29,63 @@ DEFAULT_HOOKS = {
             "mode": "soft",
             "params": {
                 "intent_from": "event",
-                "intent": "",
-                "budget": "medium",
+                "auto_sync_mode": "balanced",
+                "budget": "small",
+                "view": "compact",
             },
+            "timeout": 30,
+            "async": True,
         },
         "pre_edit": {
             "enabled": True,
             "facade": "mc_analyze",
-            "mode": "suggest",
+            "mode": "guard",
             "params": {
-                "target_from": "file",
-                "depth": "standard",
-                "direction": "upstream",
+                "target_from": "tool_input_file",
+                "depth": "quick",
+                "change_type": "general",
             },
+            "filter": {
+                "tool_matcher": "Edit|Write",
+                "file_patterns": [
+                    "**/common-api/**/*.java",
+                    "**/*Feign*.java",
+                    "**/*Message.java",
+                    "**/*DTO.java",
+                ],
+            },
+            "timeout": 15,
+            "async": True,
         },
         "session_stop": {
             "enabled": True,
             "facade": "mc_close",
             "mode": "soft",
             "params": {
-                "session_id_from": "tool_input_file",
-                "outcome_from": "event",
-                "record_case": True,
+                "session_id_from": "file",
+                "outcome": "session ended",
             },
+            "cleanup": ["delete_session_id_file"],
+            "timeout": 15,
+            "async": True,
         },
         "user_prompt_submit": {
             "enabled": True,
             "facade": "mc_start",
             "mode": "suggest",
-            "params": {
-                "intent_from": "event",
-                "budget": "medium",
-            },
+            "prompt_template": (
+                "The user submitted a prompt. Always treat this hook as advisory only: "
+                "do not block, stop, or deny the operation solely because the prompt is short, "
+                "ambiguous, or open-ended.\n\n"
+                "If the prompt is a continuation phrase such as: 下一步, 继续, 接着, 继续这个, 往下做, 继续处理, continue, next step, keep going — "
+                "respond with: {\"decision\":\"allow\",\"reason\":\"Continuation request detected — prefer mc_resume to continue the current task/session context; if no active context exists, then mc_start may be used.\"}.\n\n"
+                "If the prompt clearly involves modifying code, understanding architecture, tracing call chains, analyzing impact, debugging, or Spring Cloud/backend engineering work — "
+                "respond with: {\"decision\":\"allow\",\"reason\":\"Coding task detected — recommend calling mc_start first to load workspace context.\"}.\n\n"
+                "For simple questions or non-code topics — respond with: "
+                "{\"decision\":\"allow\",\"reason\":\"Not a coding task, no Memory Center context needed.\"}.\n\n"
+                "The prompt content: $ARGUMENTS"
+            ),
+            "timeout": 10,
         },
     },
 }

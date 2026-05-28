@@ -360,6 +360,20 @@ def _compact_evidence_entries(entries: List[Dict[str, Any]], budget: str = "medi
     from .common import _budget_limits
 
     limits = _budget_limits(budget)
+    k = limits["events"]
+    # Top-K strategy (agentmemory pattern): rank by signal richness + recency.
+    # Entries with ref_id + summary + payload_ref/receipt_ref are ranked higher.
+    def _signal_score(item: Dict[str, Any]) -> int:
+        score = 0
+        if item.get("ref_id"):
+            score += 2
+        if item.get("summary"):
+            score += 1
+        if item.get("payload_ref") or item.get("receipt_ref"):
+            score += 1
+        return score
+
+    ranked = sorted(entries, key=lambda e: (_signal_score(e), str(e.get("created_at", ""))), reverse=True)
     return [
         {
             "ref_id": item.get("ref_id", ""),
@@ -369,5 +383,5 @@ def _compact_evidence_entries(entries: List[Dict[str, Any]], budget: str = "medi
             "payload_ref": item.get("payload_ref", ""),
             "receipt_ref": item.get("receipt_ref", ""),
         }
-        for item in entries[: limits["events"]]
+        for item in ranked[:k]
     ]

@@ -49,6 +49,7 @@ from memory_center.core.orchestrator import (
     memory_eval_resume,
     memory_eval_handoff,
     memory_eval_token_gain,
+    memory_eval_token_benchmark,
     memory_write_judge,
     workspace_end_session,
     workspace_log_session_event,
@@ -373,7 +374,7 @@ def create_server(workspace_file: str):
         layer: str = "",
         action_filter: str = "",
     ):
-        """Admin and utility operations. Action selects sub-operation: status, dashboard, continuity, health, artifact_list, artifact_get, artifact_outline, artifact_context, artifact_update, change_log_append, change_log_compact, task_create, task_list, task_resolve, task_get, task_update, task_change_log_append, task_archive, task_auto_archive, task_status, task_activity_touch, session_start, session_log, session_end, session_recent, session_summary, model_profile, handoff_history, write_judge, write_plan, write_execute, receipts, replay, backend_query, eval_write_quality, eval_resume, eval_handoff, eval_regression_suite, eval_index_freshness, eval_tool_adoption, eval_context_weight, eval_workflow_orchestration, eval_token_gain, tool_usage_report, generate_wiki, generate_skills, group_status, group_query, group_impact."""
+        """Admin and utility operations. Action selects sub-operation: status, dashboard, continuity, health, artifact_list, artifact_get, artifact_outline, artifact_context, artifact_update, change_log_append, change_log_compact, task_create, task_list, task_resolve, task_get, task_update, task_change_log_append, task_archive, task_auto_archive, task_status, task_activity_touch, session_start, session_log, session_end, session_recent, session_summary, model_profile, handoff_history, write_judge, write_plan, write_execute, receipts, replay, backend_query, eval_write_quality, eval_resume, eval_handoff, eval_regression_suite, eval_index_freshness, eval_tool_adoption, eval_context_weight, eval_workflow_orchestration, eval_token_gain, eval_token_benchmark, tool_usage_report, generate_wiki, generate_skills, group_status, group_query, group_impact."""
         wf = ctx.workspace_file
         _DISPATCH = {
             "status": lambda: workspace_status(wf, view=view, budget=budget),
@@ -424,6 +425,7 @@ def create_server(workspace_file: str):
             "eval_context_weight": lambda: memory_eval_context_weight(wf, intent=intent, limit=limit),
             "eval_workflow_orchestration": lambda: memory_eval_workflow_orchestration(wf, task_id=task_id, session_id=session_id, intent=intent, limit=limit),
             "eval_token_gain": lambda: memory_eval_token_gain(wf, tool_name=tool_name, budget=budget, model=model, limit=limit),
+            "eval_token_benchmark": lambda: memory_eval_token_benchmark(wf, intent=intent, limit=limit),
             "tool_usage_report": lambda: memory_tool_usage_report(wf, limit=limit),
             "generate_wiki": lambda: generate_wiki(wf, output_dir or None),
             "generate_skills": lambda: generate_skills(wf, output_dir or None),

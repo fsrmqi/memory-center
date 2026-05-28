@@ -49,11 +49,17 @@ hooks:
     facade: mc_start
     mode: suggest               # suggest = inject prompt, no shell command
     prompt_template: |
-      The user submitted a prompt. Determine if this is a coding task that should use
-      Memory Center's mc_start facade first. If the prompt involves: modifying code,
-      understanding architecture, tracing call chains, analyzing impact, debugging,
-      or any Spring Cloud task — respond with: {"decision":"allow","reason":"Coding task
-      detected — recommend calling mc_start first to load workspace context."}.
+      The user submitted a prompt. Always treat this hook as advisory only:
+      do not block, stop, or deny the operation solely because the prompt is short,
+      ambiguous, or open-ended.
+
+      If the prompt is a continuation phrase such as: 下一步, 继续, 接着, 继续这个, 往下做, 继续处理, continue, next step, keep going —
+      respond with: {"decision":"allow","reason":"Continuation request detected — prefer mc_resume to continue the current task/session context; if no active context exists, then mc_start may be used."}.
+
+      If the prompt clearly involves modifying code, understanding architecture,
+      tracing call chains, analyzing impact, debugging, or any Spring Cloud task —
+      respond with: {"decision":"allow","reason":"Coding task detected — recommend calling mc_start first to load workspace context."}.
+
       For simple questions or non-code topics — respond with: {"decision":"allow",
       "reason":"Not a coding task, no Memory Center context needed."}.
       The prompt content: $ARGUMENTS
