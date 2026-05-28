@@ -575,17 +575,16 @@ def _endpoint_matches(feign: Dict[str, Any], method: Dict[str, Any], api: Dict[s
     feign_norm = _normalize_path_params((method.get("path") or "").strip("/"))
     api_norm = _normalize_path_params(api_path)
 
-    # Direct match (method path already includes base_path prefix in most real data)
+    # Direct match: method path already includes base_path prefix
     if feign_norm == api_norm:
         return True
 
-    # Fallback: compose base + method-specific remainder for cases where
-    # method.path does NOT include base_path (e.g. base=/api, path=/items)
-    base = (feign.get("base_path") or "").strip("/")
-    base_norm = _normalize_path_params(base)
-    if base_norm and feign_norm.startswith(base_norm):
-        remainder = feign_norm[len(base_norm):].strip("/")
-        if remainder and remainder == api_norm:
+    # Compose full path: base_path + method_path for cases where method.path
+    # does NOT include the base (e.g. base=/article, method path=/move)
+    base_norm = _normalize_path_params((feign.get("base_path") or "").strip("/"))
+    if base_norm:
+        composed_norm = _normalize_path_params(join_path(feign.get("base_path") or "", method.get("path") or "").strip("/"))
+        if composed_norm == api_norm:
             return True
 
     return False

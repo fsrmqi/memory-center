@@ -25,18 +25,19 @@ from .common import (
 
 def memory_query(workspace_file: str | Path, query: str, limit: int = 20, node_types: List[str] | None = None, alpha: float | None = None) -> Dict[str, Any]:
     config, store = load_context(workspace_file)
-    graph = GraphStore(store.graph_db_path)
-    exact_nodes = graph.find_nodes(query, types=node_types, limit=limit)
-    if not exact_nodes:
-        seen_nodes = {}
-        for token in tokenize(query):
-            for item in graph.find_nodes(token, types=node_types, limit=limit):
-                seen_nodes[item["id"]] = item
-        exact_nodes = list(seen_nodes.values())[:limit]
+    with GraphStore(store.graph_db_path) as graph:
+        exact_nodes = graph.find_nodes(query, types=node_types, limit=limit)
+        if not exact_nodes:
+            seen_nodes = {}
+            for token in tokenize(query):
+                for item in graph.find_nodes(token, types=node_types, limit=limit):
+                    seen_nodes[item["id"]] = item
+            exact_nodes = list(seen_nodes.values())[:limit]
     semantic_hits = semantic_query(workspace_file, query, limit=max(limit * 3, 20))
     enriched_semantic_hits = []
     for hit in semantic_hits:
-        node = graph.node_by_id(hit.get("node_id", ""))
+        with GraphStore(store.graph_db_path) as graph:
+            node = graph.node_by_id(hit.get("node_id", ""))
         if not node:
             node = {
                 "id": hit.get("node_id", ""),
@@ -49,7 +50,8 @@ def memory_query(workspace_file: str | Path, query: str, limit: int = 20, node_t
     semantic_hits = enriched_semantic_hits
     if node_types:
         semantic_hits = [item for item in semantic_hits if item.get("node", {}).get("type") in node_types]
-    merged = _merge_workspace_query_hits(graph, query, exact_nodes, semantic_hits, limit, alpha=alpha)
+    with GraphStore(store.graph_db_path) as graph:
+        merged = _merge_workspace_query_hits(graph, query, exact_nodes, semantic_hits, limit, alpha=alpha)
     related_rules = match_rules(store, intent=query, files=[item["node"].get("file_path", "") for item in merged])[:10]
     cases = store.read_jsonl_prefer_backend("cross-service-task-memory.jsonl", limit=200)
     related_cases = [c for c in cases if any(k in json.dumps(c, ensure_ascii=False).lower() for k in tokenize(query))][-5:]
@@ -66,14 +68,14 @@ def memory_query(workspace_file: str | Path, query: str, limit: int = 20, node_t
 
 
 def memory_context(workspace_file: str | Path, name: str, max_depth: int = 2) -> Dict[str, Any]:
-    graph = GraphStore(load_context(workspace_file)[1].graph_db_path)
     lookup = memory_query(workspace_file, name, limit=8)
     matches = [item.get("node", {}) for item in lookup.get("matches", []) if item.get("node")]
     if not matches:
         return {"name": name, "found": False, "matches": [], "lookup": _build_lookup_payload(lookup)}
     node = _best_match(matches, name)
-    incoming = graph.neighbors(node["id"], direction="upstream", max_depth=max_depth, limit=100)
-    outgoing = graph.neighbors(node["id"], direction="downstream", max_depth=max_depth, limit=100)
+    with GraphStore(load_context(workspace_file)[1].graph_db_path) as graph:
+        incoming = graph.neighbors(node["id"], direction="upstream", max_depth=max_depth, limit=100)
+        outgoing = graph.neighbors(node["id"], direction="downstream", max_depth=max_depth, limit=100)
     return {
         "name": name,
         "found": True,
@@ -102,12 +104,12 @@ def memory_symbol(workspace_file: str | Path, name: str, limit: int = 10) -> Dic
 
 
 def memory_callers(workspace_file: str | Path, symbol: str, depth: int = 2, limit: int = 80) -> Dict[str, Any]:
-    graph = GraphStore(load_context(workspace_file)[1].graph_db_path)
     info = memory_symbol(workspace_file, symbol, limit=8)
     if not info.get("found"):
         return {"symbol": symbol, "found": False, "callers": [], "lookup": info.get("lookup", {})}
     node = info["best_match"]
-    edges = graph.neighbors(node["id"], direction="upstream", max_depth=depth, limit=max(limit, 20))
+    with GraphStore(load_context(workspace_file)[1].graph_db_path) as graph:
+        edges = graph.neighbors(node["id"], direction="upstream", max_depth=depth, limit=max(limit, 20))
     callers = _filter_call_edges(edges, direction="upstream")[:limit]
     return {
         "symbol": symbol,
@@ -120,12 +122,12 @@ def memory_callers(workspace_file: str | Path, symbol: str, depth: int = 2, limi
 
 
 def memory_callees(workspace_file: str | Path, symbol: str, depth: int = 2, limit: int = 80) -> Dict[str, Any]:
-    graph = GraphStore(load_context(workspace_file)[1].graph_db_path)
     info = memory_symbol(workspace_file, symbol, limit=8)
     if not info.get("found"):
         return {"symbol": symbol, "found": False, "callees": [], "lookup": info.get("lookup", {})}
     node = info["best_match"]
-    edges = graph.neighbors(node["id"], direction="downstream", max_depth=depth, limit=max(limit, 20))
+    with GraphStore(load_context(workspace_file)[1].graph_db_path) as graph:
+        edges = graph.neighbors(node["id"], direction="downstream", max_depth=depth, limit=max(limit, 20))
     callees = _filter_call_edges(edges, direction="downstream")[:limit]
     return {
         "symbol": symbol,
