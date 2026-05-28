@@ -91,6 +91,43 @@ hooks:
 | `session_stop` | `mc_close` | soft | 会话结束时自动关闭 + 同步 + 记录 |
 | `user_prompt_submit` | `mc_start` | suggest | 默认禁用。仅适用于“建议型 prompt 不会打断普通自然语言请求”的宿主。 |
 
+### Recommended Auto-Invocation Matrix / 推荐自动调用矩阵
+
+The key decision rule is: **auto-run only on lifecycle events with stable semantics and clear parameters**. Do not treat ordinary natural-language user prompts as strong hook points.
+
+核心判断原则是：**只在语义稳定、参数明确的生命周期事件上做自动执行**。不要把普通自然语言用户输入当成强 Hook 点。
+
+| Event / 场景 | Recommended level / 推荐级别 | Suggested facade / 建议 facade | Why / 原因 |
+|---|---|---|---|
+| `SessionStart` | Auto-execute / 自动执行 | `mc_start` | New task/session begin is stable, and loading context does not interrupt normal conversation. / 新任务开始语义稳定，先取上下文不会误伤对话。 |
+| `PreToolUse(Edit\|Write)` | Auto-execute / 自动执行 | `mc_analyze` | Target file is known, so rule-check and impact analysis are precise. / 已知目标文件，规则检查与影响分析最精确。 |
+| `Stop` / `SessionEnd` | Auto-execute / 自动执行 | `mc_close` | Session-end sync and case recording are deterministic cleanup actions. / 会话结束的同步与经验沉淀属于确定性收尾动作。 |
+| `UserPromptSubmit` | Disabled by default / 默认禁用 | None by default / 默认不挂 | Ordinary NL requests like `继续` / `下一步` / `同步下文档` are too context-dependent and are easily turned into host-side interruptions. / `继续`、`下一步`、`同步下文档` 这类输入上下文依赖太强，容易被宿主误处理成拦截。 |
+
+### When to auto-execute vs. when to let the model decide / 什么时候自动执行，什么时候交给模型决定
+
+Recommended split:
+
+推荐拆分方式：
+
+1. **Lifecycle events → auto-execute**
+   - `SessionStart -> mc_start`
+   - `PreToolUse(Edit|Write) -> mc_analyze`
+   - `Stop -> mc_close`
+
+2. **Short follow-up prompts → model decides**
+   - `继续`
+   - `下一步`
+   - `接着`
+   - `同步下文档`
+
+   These should be handled by agent protocol / system prompt / workflow rules.
+   If current task/session context already exists, the model should prefer `mc_resume`;
+   only fall back to `mc_start` when no active context exists.
+
+   这类输入应由 agent protocol / system prompt / workflow 规则处理。
+   若当前已有 task/session，上层模型应优先走 `mc_resume`；只有没有活跃上下文时才回退到 `mc_start`。
+
 ### Session ID Lifecycle / session_id 生命周期
 
 - `session_start`: Runner writes session_id to `/tmp/memory-center-session-id`

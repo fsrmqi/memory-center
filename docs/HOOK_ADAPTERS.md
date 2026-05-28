@@ -111,6 +111,29 @@ Claude Code 和 Codex 这类宿主会把 prompt 型 hook 当成用户输入链�
 - `user_prompt_submit` 在 Claude Code / Codex 适配器中默认不生成
 - 如确有需要，应在特定宿主上手工启用，而不是作为默认行为
 
+### Recommended host policy / 推荐宿主策略
+
+For Claude Code / Codex / similar hosts, the recommended default is:
+
+对于 Claude Code / Codex / 同类宿主，推荐默认策略是：
+
+- Generate:
+  - `SessionStart -> mc_start`
+  - `PreToolUse(Edit|Write) -> mc_analyze`
+  - `Stop -> mc_close`
+- Do **not** generate:
+  - `UserPromptSubmit`
+
+Reason:
+
+原因：
+
+- Lifecycle hooks have stable meaning and clear parameters.
+- User prompt hooks sit directly on the natural-language input path, so even “advisory only” prompt injection can degrade UX or become an accidental blocker.
+
+- 生命周期 Hook 语义稳定、参数明确。
+- 用户输入 Hook 直接挂在自然语言入口上，即使只是“建议型 prompt”，也很容易破坏体验，甚至演变成误拦截。
+
 ### Guard Mode Blocking / guard 模式阻塞
 
 When `pre_edit` runs in `guard` mode and finds must-severity rules matching the target file, `run-hook` returns exit code 2. Claude Code interprets exit code 2 from PreToolUse hooks as "block the tool call" — the Edit/Write is prevented.
