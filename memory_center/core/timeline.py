@@ -105,7 +105,7 @@ def _load_collection_rows(store: WorkspaceStore, collection: str, *, use_backend
     if use_backend:
         rows = store.memory_backend_query_records(collection=collection, limit=5000).get("records", [])
         return [item.get("payload", {}) if isinstance(item.get("payload"), dict) else item for item in rows]
-    return store.read_jsonl(collection, limit=5000)
+    return store.read_jsonl_prefer_backend(collection, limit=5000)
 
 
 def _match_timeline_item(

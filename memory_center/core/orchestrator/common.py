@@ -588,7 +588,7 @@ def _resolve_memory_ref(store: WorkspaceStore, ref_id: str) -> Dict[str, Any] | 
 
     if not ref_id:
         return None
-    rows = store.read_jsonl(SESSION_EVENTS_FILE, limit=5000)
+    rows = store.read_jsonl_prefer_backend(SESSION_EVENTS_FILE, limit=5000)
     if ref_id.startswith("ev:") or ref_id.startswith("src:"):
         parts = ref_id.split(":")
         if len(parts) >= 4:
@@ -614,7 +614,7 @@ def _resolve_memory_ref(store: WorkspaceStore, ref_id: str) -> Dict[str, Any] | 
         raw = {"event": event, "payload": payload}
         if ref_id == str(event.get("payload_ref", "") or ""):
             return {"kind": "payload_ref", "summary": str(event.get("payload_ref", "")), "raw": raw}
-    receipt_rows = store.read_jsonl(WRITE_RECEIPTS_FILE, limit=5000)
+    receipt_rows = store.read_jsonl_prefer_backend(WRITE_RECEIPTS_FILE, limit=5000)
     for row in receipt_rows:
         if ref_id in {row.get("receipt_id", ""), row.get("receipt_ref", "")}:
             return {"kind": "write_receipt", "summary": row.get("summary", ""), "raw": row}

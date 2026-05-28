@@ -1,5 +1,19 @@
 # Changelog / 更新日志
 
+## 2.1.0
+
+- **Token benchmark eval (agentmemory 模式)**
+  - 新增 `memory_eval_token_benchmark` — 对 7 个高频函数在 small/medium/large 三个预算下测量 token 数量
+  - CLI: `eval-token-benchmark`，MCP: `mc_admin(action="eval_token_benchmark")`
+  - 返回 per-function per-budget 对比表 + 总计 token，可用于回归测试
+- **Top-K only evidence 策略 (agentmemory 模式)**
+  - `_compact_evidence_entries` 改为按信号丰富度（ref_id + summary + payload_ref）+ 时间排序，取 top-K
+  - budget-aware K 值：small=3, medium=5, large=10
+- **SQLite 后端读路径扩展**
+  - `_resolve_memory_ref` (common.py): session events + write receipts → `read_jsonl_prefer_backend`
+  - `_collect_timeline_items` (timeline.py): timeline 收集 → `read_jsonl_prefer_backend`
+  - 核心读路径已全面切换到 SQLite 优先
+
 ## 2.0.11
 
 - **WP3: 默认 compact 模式**
