@@ -733,11 +733,12 @@ adoption_hints                  = 使用建议
 
 ```text
 schema.name = memory_ref
-ref_id      = 原始短引用 ID
-kind        = session_event | write_receipt | payload_ref | unknown
-summary     = 摘要文本
-raw         = 原始内容
-found       = 是否解析成功
+ref_id        = 原始短引用 ID
+kind          = session_event | write_receipt | payload_ref | unknown
+summary       = 摘要文本
+raw           = 原始内容
+timeline_ref  = 反向导航链接（如 /ui/timeline?task_id=...&session_id=...），可跳转到时间线查看上下文
+found         = 是否解析成功
 ```
 
 #### `memory_ref_batch_tool`

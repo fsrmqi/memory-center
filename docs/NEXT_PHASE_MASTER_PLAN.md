@@ -70,27 +70,46 @@
 | 工作包 | 当前状态 | 已交付 | 后续可迭代方向 |
 |---|---|---|---|
 | 工作包 1：增量索引系统 | ✅ 已交付 | `reindex --project`、`--path`、`--changed-only`、`--scope staged|head|all`、局部 JSON index merge、局部 graph rebuild（`partial_rebuild`）、局部 semantic rebuild（`build_workspace_semantic_index_partial`）、删除文件检测与处理、语义 IDF 一致性修复、跨项目 Feign→Endpoint 边保留、`semantic_index_stats` 统一 `read_json_prefer_backend`、`read_json` 全面替换 | 更细粒度的增量策略（如 file-level diff-based partial rebuild） |
-| 工作包 2：统一轻量上下文协议 | ✅ 大部分已交付 | `view=compact|full`、`budget=small|medium|large` 已覆盖 `sniff/status/resume/recent_evidence/continuity/dashboard/handoff`、模型偏好预算映射（`MODEL_BUDGET_PROFILES`）、handoff packet 使用目标模型预算、`token_utils` 估算函数、`tracking` token gain 日志、工具专用 payload 压缩器（git/pytest/grep）、`memory_eval_token_gain`、compact 函数内置 gain 测量 | rtk discover 模式、per-command 压缩器矩阵扩展 |
-| 工作包 3：统一引用与时间线系统 | ✅ 大部分已交付 | `ref_id + summary`、`memory_ref_get`、`memory_ref_batch`、timeline 短引用化、`/ui/ref` 已落地 | `timeline <-> ref` 双向导航、timeline/task/ref 页面联动 drill-down |
+| 工作包 2：统一轻量上下文协议 | ✅ 已交付 | `view=compact|full`、`budget=small|medium|large` 已覆盖全部 7 个高频大返回（含 `workspace_recent_evidence`）、模型偏好预算映射（`MODEL_BUDGET_PROFILES`）、handoff packet 使用目标模型预算、`token_utils` 估算函数、`tracking` token gain 日志、工具专用 payload 压缩器（git/pytest/grep）、`memory_eval_token_gain`、compact 函数内置 gain 测量 | rtk discover 模式、per-command 压缩器矩阵扩展 |
+| 工作包 3：统一引用与时间线系统 | ✅ 已交付 | `ref_id + summary`、`memory_ref_get`（含 `timeline_ref` 反向导航）、`memory_ref_batch`、timeline 短引用化、`/ui/ref` 已落地 + "在时间线中查看"交叉链接 | timeline↔ref 页面联动 drill-down、高频接口严格默认短引用模式 |
 | 工作包 4：一键工作流系统 | ✅ 已交付 | CLI `work-start/work-log/work-sync/work-resume/work-handoff/work-close/work-health`、`memory_eval_workflow_orchestration` 工作流编排评测、**MCP facade 工具重构（82→8：mc_start/mc_lookup/mc_analyze/mc_sync/mc_resume/mc_handoff/mc_close/mc_admin）**、**Hook 声明式规范与 runner/adapters 基础已实现（hooks.yaml + run-hook runner + Claude Code adapter + Codex/Cursor placeholder）** | 更强约束的 workflow 模板、mc_admin 拆分（如未来需要）、Codex/Cursor adapter 丰富化、宿主真实生命周期自动接入 |
-| 工作包 5：可视化工作台 | ✅ 大部分已交付 | `/ui` 侧栏导航 + 快速入门指引、`/ui/dashboard` 筛选表单、`/ui/task` 跨页链接到 timeline、`/ui/timeline` 链接到 ref、`/ui/backend` 筛选、`/ui/receipts` 筛选、`/ui/continuity`、`/ui/usage`、`/ui/index-freshness` | guided tour / onboarding 交互 |
-| 工作包 6：统一后端与评测体系 | ✅ 大部分已交付 | SQLite `memory.db` 镜像后端（含 `index_mirror` 表）、后端查询入口支持 project/type 过滤、确定性索引读路径全面切换到 `read_json_prefer_backend`（workspace status / query / impact / eval / group / wiki / semantic）、`memory_eval_*` 增强（含 `workflow_orchestration` 评测） | 更多主读路径切到 SQLite、长期趋势仪表盘 |
+| 工作包 5：可视化工作台 | ✅ 大部分已交付 | `/ui` 侧栏导航 + 快速入门指引、`/ui/dashboard` 筛选表单 + budget/compact 下拉切换、`/ui/task` 跨页链接到 timeline、`/ui/timeline` 链接到 ref + 内联 `<details>` 展开、`/ui/receipts` 筛选 + 内联展开、`/ui/backend` 筛选、`/ui/receipts` 筛选、`/ui/continuity` + budget/compact 切换、`/ui/usage`、`/ui/index-freshness`、所有列表渲染函数支持 `<details>` 展开 | guided tour / onboarding 交互、更多页面 budget/compact 切换 |
+| 工作包 6：统一后端与评测体系 | ✅ 已交付 | SQLite `memory.db` 镜像后端（含 `index_mirror` 表）、后端查询入口支持 project/type 过滤、确定性索引读路径全面切换到 `read_json_prefer_backend`（workspace status / query / impact / eval / group / wiki / semantic）、`memory_eval_*` 增强（含 `workflow_orchestration` 评测、`token_gain` 评测） | 更多主读路径切到 SQLite、长期趋势仪表盘 |
 
 ### 当前阶段判断
 
-当前系统已经从“功能集合”推进到了“可日常使用的协作底座”，但还没有达到“全部实现”的验收状态。
-离最终目标最近的剩余重点是：
+当前系统已经从”功能集合”推进到了”可日常使用的协作底座”，6 个工作包全部达到已交付状态。
 
-1. ~~**先收完 WP1**~~：**已完成** — 增量索引从第一版推进到真实的局部 graph / semantic 重建（IDF 一致性修复、跨项目边保留、read_json_prefer_backend 统一）
-2. ~~**rtk-ai/rtk 吸收**~~：**基本完成** — token 估算函数（`token_utils.py`）、gain 日志（`tracking.py`）、工具专用 payload 压缩器（git/pytest/grep）、`memory_eval_token_gain` 评测工具
-3. **下一批外部参考思想吸收**，特别是：
-   - `rohitg00/agentmemory`：token benchmark、top-K only、hybrid retrieval
-   - `mattpocock/skills`：更强约束的 workflow 模板与超压缩输出
-4. ~~**MCP facade 重构**~~：**已完成** — 82 个原子 MCP 工具重构为 8 个任务级 facade 工具（mc_start/mc_lookup/mc_analyze/mc_sync/mc_resume/mc_handoff/mc_close/mc_admin），token 开销从 ~28k 降至 ~2.3k（92% 减少）
-5. **Hooks 自动触发映射**：**基础已实现，宿主自动接入未完全收口** — hooks.yaml 声明式配置 + `memory-center run-hook` host-agnostic runner + Claude Code adapter（`generate-hooks`），Codex/Cursor placeholder adapters 已具备；但具体宿主生命周期自动挂接仍需在各宿主侧完成
-6. 让 SQLite 后端从镜像/局部查询推进到更多真实读路径，进一步接管统一读取
-7. 让工作台从可看推进到更强交互、联动和 guided tour
-8. 做一轮更系统的 completion audit 与文档一致性审计
+**已完成的收口项（v2.0.10 之后新增）：**
+
+1. ~~**WP1 增量索引**~~：**已完成**
+2. ~~**rtk-ai/rtk 吸收**~~：**已完成** — token 估算、gain 日志、payload 压缩器、eval_token_gain
+3. ~~**MCP facade 重构**~~：**已完成** — 82→8 facade 工具，92% token 减少
+4. ~~**WP2 recent_evidence 收口**~~：**已完成** — 新增 `view=compact|full` 参数，`view=full` 返回完整条目，`view=compact` 走压缩 + `log_token_gain`
+5. ~~**WP3 ref→timeline 反向导航**~~：**已完成** — `memory_ref_get` 返回 `timeline_ref` 字段，`/ui/ref` 页面新增”在时间线中查看”链接
+6. ~~**WP5 refs 内联展开**~~：**已完成** — 所有列表渲染函数添加 `<details><summary>` 展开
+7. ~~**WP5 budget/compact UI 切换**~~：**已完成** — Dashboard 和 Continuity 页面新增 view/budget `<select>` 控件
+
+**下一阶段待推进：**
+
+- **外部参考思想吸收**：agentmemory benchmark/top-K/hybrid、skills 强约束模板
+- **Hooks 自动触发映射**：基础已实现，宿主自动接入未完全收口
+- **SQLite 后端**：从镜像推进到更多真实读路径
+- **工作台交互**：guided tour / onboarding、更多页面联动
+
+### 版本技术路线
+
+| 版本 | 聚焦工作包 | 核心交付 | 当前状态 |
+|---|---|---|---|
+| v2.0.8 | WP4 MCP facade | 82→8 facade 工具、hooks.yaml + runner + adapters | ✅ 已交付 |
+| v2.0.9 | WP1 增量索引 | `--project/--path/--changed-only`、局部 graph/semantic rebuild、IDF 一致性、跨项目边保留 | ✅ 已交付 |
+| v2.0.9 | WP6 评测体系 | 7 个 eval 工具 + token_gain、SQLite memory.db + index_mirror | ✅ 已交付 |
+| v2.0.10 | WP2/WP3 收口 | `recent_evidence` view/gain、`memory_ref_get` timeline_ref、短引用体系 | ✅ 已交付 |
+| v2.0.10 | WP5 交互增强 | budget/compact UI 下拉切换、`<details>` 内联展开、ref→timeline 交叉链接 | ✅ 已交付 |
+| v2.0.11+ | WP5 深化 | guided tour/onboarding、更多页面联动 | 待推进 |
+| v2.0.11+ | WP3 深化 | 高频接口严格默认短引用、timeline↔ref 页面联动 | 待推进 |
+| v2.1.0 | 外部吸收 | agentmemory benchmark/top-K/hybrid、skills 强约束模板 | 待推进 |
+| v2.1.0 | WP6 深化 | 更多主读路径切 SQLite、长期趋势仪表盘 | 待推进 |
 
 ## 工作包 1：增量索引系统
 

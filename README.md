@@ -718,9 +718,9 @@ These help answer whether indexes are stale, whether models are actually using M
 
 它们分别用于判断索引是否过期、模型是否真的在使用 Memory Center、以及 compact payload 是否仍然偏重。
 
-To reduce model-side token usage, `workspace_sniff`, `workspace_status`, `workspace_resume_packet`, `workspace_recent_evidence`, `workspace_continuity_dashboard`, and `workspace_dashboard` now support `view=compact|full` plus `budget=small|medium|large`. MCP defaults to `compact + medium`; use `full` for local debugging or manual inspection.
+To reduce model-side token usage, `workspace_sniff`, `workspace_status`, `workspace_resume_packet`, `workspace_recent_evidence` (now with `view=compact|full`), `workspace_continuity_dashboard`, `workspace_dashboard`, and `workspace_handoff_packet` all support `view=compact|full` plus `budget=small|medium|large`. MCP defaults to `compact + medium`; use `full` for local debugging or manual inspection.
 
-为了降低模型侧 token 消耗，`workspace_sniff`、`workspace_status`、`workspace_resume_packet`、`workspace_recent_evidence`、`workspace_continuity_dashboard`、`workspace_dashboard` 现在都支持 `view=compact|full`，并新增 `budget=small|medium|large`。MCP 默认使用 `compact + medium`；本地调试或人工排查时再切 `full`。
+为了降低模型侧 token 消耗，`workspace_sniff`、`workspace_status`、`workspace_resume_packet`、`workspace_recent_evidence`（现已补齐 `view=compact|full`）、`workspace_continuity_dashboard`、`workspace_dashboard`、`workspace_handoff_packet` 现在都支持 `view=compact|full`，并新增 `budget=small|medium|large`。MCP 默认使用 `compact + medium`；本地调试或人工排查时再切 `full`。
 
 `workspace_handoff_packet` now follows the same `view=compact|full` and `budget=small|medium|large` contract, so the context-light protocol is aligned across sniff/resume/handoff/dashboard.
 
@@ -776,7 +776,7 @@ The following response families now carry explicit schema metadata through `sche
 | `timeline_item` | One chronological event / 单个时间线事件 | `kind`, `created_at`, `task_id`, `session_id`, `layer`, `action`, `scope`, `target`, `receipt_ref` |
 | `timeline_result` | Timeline query result / 时间线查询结果 | `timeline`, `limit`, `filters` |
 | `eval_result` | Unified eval output / 统一评估结果 | `score`, `quality`, `findings` |
-| `memory_ref` | One expanded short reference / 单个短引用展开结果 | `ref_id`, `kind`, `summary`, `raw` |
+| `memory_ref` | One expanded short reference / 单个短引用展开结果 | `ref_id`, `kind`, `summary`, `raw`, `timeline_ref`, `found` |
 | `memory_ref_batch` | Batch expanded short references / 批量短引用展开结果 | `requested`, `found_count`, `refs` |
 | `resume_packet` | Cross-session resume contract / 跨会话恢复协议 | `task_id`, `current_summary`, `next_recommended_actions`, `unresolved_items`, `resume_rule_profile` |
 | `handoff_packet` | Cross-model handoff contract / 跨模型交接协议 | `target_model`, `model_profile`, `handoff_rule_profile`, `minimal_required_context`, `what_to_check_next` |
@@ -967,13 +967,15 @@ Example routes:
 
 ## Roadmap / 路线图
 
-- v1.2: trusted graph release, parser plug-in architecture, evidence-based impact, FTS5 fallback search, MCP security docs
-- v1.3: Maven multi-module dependency graph and group-level aggregated graph
-- v1.4: optional tree-sitter-java AST parser and JavaParser sidecar
-- v1.5: Nacos config snapshot indexing and configuration-key lineage
-- v1.6: optional embeddings + RRF ranking + process-flow extraction
-- v1.7: web graph API and Mermaid architecture maps
-- v2.0: stable public component for Spring Cloud AI coding workflows
+- v2.0.8: MCP facade 重构（82→8），hooks.yaml + runner + adapters
+- v2.0.9: 增量索引系统、SQLite 镜像后端、评测体系（7 eval + token_gain）
+- v2.0.10: WP2/WP3 收口（recent_evidence view/gain、ref→timeline 反向导航）
+- v2.0.10: WP5 交互增强（budget/compact UI 切换、refs `<details>` 内联展开）
+- v2.0.11+: WP5 深化（guided tour/onboarding、更多页面联动）
+- v2.0.11+: WP3 深化（高频接口严格默认短引用、timeline↔ref 页面联动）
+- v2.1.0: 外部参考吸收（agentmemory benchmark/top-K/hybrid、skills 强约束模板）
+- v2.1.0: SQLite 后端更多真实读路径、长期趋势仪表盘
+- v2.2.0: 稳定 public component for Spring Cloud AI coding workflows
 
 ---
 

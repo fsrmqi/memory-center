@@ -1,5 +1,25 @@
 # Changelog / 更新日志
 
+## 2.0.11
+
+- **WP2 收口：`workspace_recent_evidence` 补齐 `view=compact|full`**
+  - 新增 `view` 参数，默认 `"full"`；`view="compact"` 走 `_compact_evidence_entries` + `log_token_gain`
+  - `view="full"` 返回完整条目（不再强制压缩），与其他 6 个高频接口对齐
+  - 所有 MCP/HTTP/CLI/hook 调用点统一传 `view="compact"`
+- **WP3 收口：ref→timeline 反向导航**
+  - `memory_ref_get` 返回新增 `timeline_ref` 字段，从 raw 中的 session_id/task_id 构造 `/ui/timeline?...` 链接
+  - `/ui/ref` HTML 页面新增 "View in Timeline → / 在时间线中查看 →" 交叉链接
+- **WP5 交互增强：budget/compact UI 切换控件**
+  - `/ui/dashboard` 和 `/ui/continuity` 筛选表单新增 `<select name="view">` 和 `<select name="budget">` 下拉控件
+  - HTML 生成函数和 HTTP 路由接受 `view`/`budget` 参数，动态标记 `selected`
+- **WP5 交互增强：refs 内联展开**
+  - `_render_ref_list_html`、`_render_receipt_list_html`、`_render_task_list_html`、`_render_handoff_list_html`、timeline items 全部添加 `<details><summary>Expand / 展开</summary>` 内联展开
+  - 各页面 CSS 添加 `details/summary/pre` 样式规则
+- Completion audit: 6 个工作包全部达到已交付状态
+- 文档更新：NEXT_PHASE_MASTER_PLAN.md 补充版本技术路线表、README.md 更新 schema 字段、DETAILED_REFERENCE.md 更新 memory_ref 返回结构
+
+## 2.0.10
+
 ## 1.0.0
 
 - Renamed the project to **Memory Center / 记忆中心**.
