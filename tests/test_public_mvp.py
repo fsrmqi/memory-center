@@ -558,12 +558,24 @@ def test_memory_write_judge_and_plan_write(tmp_path: Path):
     resume_eval = memory_eval_resume(workspace, intent="更新团队规则", limit=10)
     assert resume_eval["quality"] in {"high", "medium", "low"}
     assert resume_eval["schema"]["name"] == "eval_result"
-    recent_evidence = workspace_recent_evidence(workspace, limit=5)
+    recent_evidence = workspace_recent_evidence(workspace, limit=5, view="full")
     assert "evidence" in recent_evidence
     assert recent_evidence["evidence"][0]["ref_id"]
     assert recent_evidence["evidence"][0]["summary"]
+    # view=full should return full evidence entries (not compacted)
+    full_entry = recent_evidence["evidence"][0]
+    assert "event_type" in full_entry or "layer" in full_entry or "source" in full_entry
+    # view=compact should return compact entries
+    compact_evidence = workspace_recent_evidence(workspace, limit=5, view="compact", budget="medium")
+    compact_entry = compact_evidence["evidence"][0]
+    assert compact_entry["ref_id"]
+    assert compact_entry["summary"]
+    # compact entries should be stripped of detail fields
+    assert "event_type" not in compact_entry or "session_id" not in compact_entry
     ref_detail = memory_ref_get(workspace, recent_evidence["evidence"][0]["ref_id"])
     assert ref_detail["found"] is True
+    # ref→timeline reverse navigation: timeline_ref should be present
+    assert "timeline_ref" in ref_detail
     ref_batch = memory_ref_batch(workspace, [recent_evidence["evidence"][0]["ref_id"]])
     assert ref_batch["found_count"] == 1
     model_profile = workspace_model_profile("deepseek-r1")
@@ -1549,10 +1561,12 @@ def test_export_dashboard_contains_filters(tmp_path: Path):
     ensure_default_rules(store)
     reindex_workspace(config, store)
 
-    html_output = export_workspace_dashboard_html(workspace, intent="filter test", limit=5)
+    html_output = export_workspace_dashboard_html(workspace, intent="filter test", limit=5, view="compact", budget="medium")
     assert "<form" in html_output
     assert "intent" in html_output
     assert "limit" in html_output
+    assert "view" in html_output
+    assert "budget" in html_output
 
 
 def _copy_demo_workspace(tmp_path: Path, name: str) -> Path:

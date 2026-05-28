@@ -208,9 +208,23 @@ def memory_ref_get(workspace_file: str | Path, ref_id: str) -> Dict[str, Any]:
                 "kind": "unknown",
                 "summary": "",
                 "raw": None,
+                "timeline_ref": None,
                 "found": False,
             },
         )
+    raw = resolved.get("raw")
+    # Build reverse timeline link from session_id/task_id in raw data
+    timeline_ref = None
+    if isinstance(raw, dict):
+        sid = raw.get("session_id") or (raw.get("event", {}) or {}).get("session_id", "")
+        tid = raw.get("task_id") or (raw.get("event", {}) or {}).get("task_id", "")
+        if sid or tid:
+            params = []
+            if tid:
+                params.append(f"task_id={tid}")
+            if sid:
+                params.append(f"session_id={sid}")
+            timeline_ref = "/ui/timeline?" + "&".join(params)
     return with_schema(
         "memory_ref",
         {
@@ -219,6 +233,7 @@ def memory_ref_get(workspace_file: str | Path, ref_id: str) -> Dict[str, Any]:
             "kind": resolved.get("kind", "unknown"),
             "summary": resolved.get("summary", ""),
             "raw": resolved.get("raw"),
+            "timeline_ref": timeline_ref,
             "found": True,
         },
     )

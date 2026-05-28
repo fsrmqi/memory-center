@@ -764,9 +764,10 @@ def recent_evidence_cmd(
     session_id: str = typer.Option(""),
     limit: int = typer.Option(10),
     budget: str = typer.Option("medium", help="small|medium|large"),
+    view: str = typer.Option("full", help="compact|full"),
 ):
     """Show recent evidence from task receipts and session events."""
-    print(workspace_recent_evidence(workspace, task_id=task_id, session_id=session_id, limit=limit, budget=budget))
+    print(workspace_recent_evidence(workspace, task_id=task_id, session_id=session_id, limit=limit, budget=budget, view=view))
 
 
 @app.command("unresolved-items")
@@ -976,7 +977,7 @@ def work_resume_cmd(
             "resume_packet": workspace_resume_packet(workspace, task_id=task_id, session_id=session_id, intent=intent, limit=limit, view="compact", budget=budget),
             "next_actions": workspace_next_actions(workspace, task_id=task_id, session_id=session_id, intent=intent, limit=limit),
             "unresolved_items": workspace_unresolved_items(workspace, task_id=task_id, session_id=session_id, intent=intent, limit=limit),
-            "recent_evidence": workspace_recent_evidence(workspace, task_id=task_id, session_id=session_id, limit=min(limit, 5), budget=budget),
+            "recent_evidence": workspace_recent_evidence(workspace, task_id=task_id, session_id=session_id, limit=min(limit, 5), budget=budget, view="compact"),
         }
     )
 
@@ -996,7 +997,7 @@ def work_handoff_cmd(
         {
             "workflow": "work-handoff",
             "handoff_packet": workspace_handoff_packet(workspace, target_model=target_model, task_id=task_id, session_id=session_id, intent=intent, limit=limit, view="compact", budget=budget),
-            "recent_evidence": workspace_recent_evidence(workspace, task_id=task_id, session_id=session_id, limit=min(limit, 5), budget=budget),
+            "recent_evidence": workspace_recent_evidence(workspace, task_id=task_id, session_id=session_id, limit=min(limit, 5), budget=budget, view="compact"),
             "tool_usage_report": memory_tool_usage_report(workspace, limit=50),
         }
     )

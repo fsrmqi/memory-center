@@ -118,10 +118,10 @@ def export_workspace_dashboard_markdown(workspace_file: str | Path, intent: str 
     return "\n".join(lines).rstrip() + "\n"
 
 
-def export_workspace_dashboard_html(workspace_file: str | Path, intent: str = "", limit: int = 10) -> str:
+def export_workspace_dashboard_html(workspace_file: str | Path, intent: str = "", limit: int = 10, view: str = "compact", budget: str = "medium") -> str:
     from .orchestrator import workspace_dashboard
 
-    dashboard = workspace_dashboard(workspace_file, intent=intent, limit=limit)
+    dashboard = workspace_dashboard(workspace_file, intent=intent, limit=limit, view=view, budget=budget)
     focus_task = dashboard.get("focus_task") or {}
     focus_eval = dashboard.get("focus_resume_eval") or {}
     workspace_param = str(Path(workspace_file).resolve())
@@ -155,7 +155,8 @@ def export_workspace_dashboard_html(workspace_file: str | Path, intent: str = ""
     .score {{ color: var(--accent-2); font-weight: 700; }}
     .muted {{ color: var(--muted); }}
     .filter-form {{ display:flex; gap:10px; align-items:center; margin-bottom:18px; padding:14px; background:var(--panel); border:1px solid var(--line); border-radius:12px; }}
-    .filter-form input, .filter-form button {{ font-family:inherit; font-size:14px; padding:6px 12px; border:1px solid var(--line); border-radius:8px; background:var(--bg); color:var(--ink); }}
+    .filter-form input, .filter-form select, .filter-form button {{ font-family:inherit; font-size:14px; padding:6px 12px; border:1px solid var(--line); border-radius:8px; background:var(--bg); color:var(--ink); }}
+    .filter-form select {{ cursor:pointer; }}
     .filter-form button {{ background:var(--accent); color:#fff; border:none; cursor:pointer; }}
     .filter-form button:hover {{ background:#a05838; }}
   </style>
@@ -167,6 +168,15 @@ def export_workspace_dashboard_html(workspace_file: str | Path, intent: str = ""
       <input name="workspace" value="{html.escape(workspace_param)}" type="hidden">
       <input name="intent" placeholder="Intent / 查询意图">
       <input name="limit" type="number" value="{limit}" min="1" max="100">
+      <select name="view">
+        <option value="compact" {"selected" if view == "compact" else ""}>Compact</option>
+        <option value="full" {"selected" if view == "full" else ""}>Full</option>
+      </select>
+      <select name="budget">
+        <option value="small" {"selected" if budget == "small" else ""}>Small</option>
+        <option value="medium" {"selected" if budget == "medium" else ""}>Medium</option>
+        <option value="large" {"selected" if budget == "large" else ""}>Large</option>
+      </select>
       <button type="submit">Refresh / 刷新</button>
     </form>
     <section class="hero">
@@ -213,10 +223,12 @@ def export_continuity_dashboard_html(
     task_id: str = "",
     session_id: str = "",
     limit: int = 10,
+    view: str = "compact",
+    budget: str = "medium",
 ) -> str:
     from .orchestrator import workspace_continuity_dashboard
 
-    dashboard = workspace_continuity_dashboard(workspace_file, intent=intent, task_id=task_id, session_id=session_id, limit=limit, view="compact", budget="medium")
+    dashboard = workspace_continuity_dashboard(workspace_file, intent=intent, task_id=task_id, session_id=session_id, limit=limit, view=view, budget=budget)
     focus_task = dashboard.get("focus_task") or {}
     resume_packet = dashboard.get("resume_packet") or {}
     workspace_param = str(Path(workspace_file).resolve())
@@ -249,11 +261,33 @@ def export_continuity_dashboard_html(
     li {{ margin: 6px 0; }}
     .chip {{ display:inline-block; padding:4px 10px; border-radius:999px; background:var(--accent-soft); color:var(--accent); font-size:12px; margin-right:8px; }}
     .muted {{ color: var(--muted); }}
+    .filter-form {{ display:flex; gap:10px; align-items:center; margin-bottom:18px; padding:14px; background:var(--panel); border:1px solid var(--line); border-radius:12px; }}
+    .filter-form input, .filter-form select, .filter-form button {{ font-family:inherit; font-size:14px; padding:6px 12px; border:1px solid var(--line); border-radius:8px; background:var(--bg); color:var(--ink); }}
+    .filter-form select {{ cursor:pointer; }}
+    .filter-form button {{ background:var(--accent); color:#fff; border:none; cursor:pointer; }}
+    .filter-form button:hover {{ background:#2e7578; }}
   </style>
 </head>
 <body>
   {sidebar}
   <div class="wrap">
+    <form class="filter-form" method="get" action="/ui/continuity">
+      <input name="workspace" value="{html.escape(workspace_param)}" type="hidden">
+      <input name="intent" placeholder="Intent / 查询意图">
+      <input name="task_id" placeholder="Task ID" value="{html.escape(task_id)}">
+      <input name="session_id" placeholder="Session ID" value="{html.escape(session_id)}">
+      <input name="limit" type="number" value="{limit}" min="1" max="100">
+      <select name="view">
+        <option value="compact" {"selected" if view == "compact" else ""}>Compact</option>
+        <option value="full" {"selected" if view == "full" else ""}>Full</option>
+      </select>
+      <select name="budget">
+        <option value="small" {"selected" if budget == "small" else ""}>Small</option>
+        <option value="medium" {"selected" if budget == "medium" else ""}>Medium</option>
+        <option value="large" {"selected" if budget == "large" else ""}>Large</option>
+      </select>
+      <button type="submit">Refresh / 刷新</button>
+    </form>
     <section class="hero">
       <h1>Continuity Dashboard</h1>
       <div class="meta">
@@ -423,7 +457,8 @@ def export_timeline_html(workspace_file: str | Path, intent: str = "", limit: in
         f"<li><strong>{html.escape(str(item.get('kind', '')))}</strong> "
         f"<span class='chip'>{html.escape(str(item.get('action', '')))}</span> "
         f"<a href='/ui/ref?workspace={html.escape(workspace_param)}&ref_id={html.escape(str(item.get('ref_id', '')))}' style='color:var(--accent);text-decoration:none;'>"
-        f"<span class='muted'>{html.escape(str(item.get('target', '')))}</span></a></li>"
+        f"<span class='muted'>{html.escape(str(item.get('target', '')))}</span></a>"
+        f"<details><summary>Expand / 展开</summary><pre>{html.escape(json.dumps(item, ensure_ascii=False, indent=2))}</pre></details></li>"
         for item in timeline
     ) or "<div class='muted'>None</div>"
     return f"""<!doctype html>
@@ -448,6 +483,9 @@ def export_timeline_html(workspace_file: str | Path, intent: str = "", limit: in
     .muted {{ color:var(--muted); }}
     ul {{ margin:8px 0 0; padding-left:18px; }}
     li {{ margin:6px 0; }}
+    details {{ margin:4px 0; }}
+    details summary {{ cursor:pointer; color:var(--accent); font-size:13px; }}
+    details pre {{ background:#f2ece3; padding:10px; border-radius:10px; font-size:12px; }}
   </style>
 </head>
 <body>
@@ -495,6 +533,9 @@ def export_usage_report_html(workspace_file: str | Path, limit: int = 50) -> str
     .muted {{ color:var(--muted); }}
     ul {{ margin:8px 0 0; padding-left:18px; }}
     li {{ margin:6px 0; }}
+    details {{ margin:4px 0; }}
+    details summary {{ cursor:pointer; color:var(--accent); font-size:13px; }}
+    details pre {{ background:#f2ece3; padding:10px; border-radius:10px; font-size:12px; }}
   </style>
 </head>
 <body>
@@ -521,7 +562,8 @@ def export_receipts_html(workspace_file: str | Path, limit: int = 20) -> str:
     rows = payload.get("receipts", [])
     items = "".join(
         f"<li><strong>{html.escape(str(item.get('receipt_id', '')))}</strong> "
-        f"<span class='muted'>{html.escape(str(item.get('summary', '')))}</span></li>"
+        f"<span class='muted'>{html.escape(str(item.get('summary', '')))}</span>"
+        f"<details><summary>Expand / 展开</summary><pre>{html.escape(json.dumps(item, ensure_ascii=False, indent=2))}</pre></details></li>"
         for item in rows
     ) or "<div class='muted'>None</div>"
     return f"""<!doctype html>
@@ -545,6 +587,9 @@ def export_receipts_html(workspace_file: str | Path, limit: int = 20) -> str:
     .muted {{ color:var(--muted); }}
     ul {{ margin:8px 0 0; padding-left:18px; }}
     li {{ margin:6px 0; }}
+    details {{ margin:4px 0; }}
+    details summary {{ cursor:pointer; color:var(--accent); font-size:13px; }}
+    details pre {{ background:#f2ece3; padding:10px; border-radius:10px; font-size:12px; }}
     .filter-form {{ display:flex; gap:10px; align-items:center; margin-bottom:18px; padding:14px; background:var(--panel); border:1px solid var(--line); border-radius:12px; }}
     .filter-form input, .filter-form select, .filter-form button {{ font-family:inherit; font-size:14px; padding:6px 12px; border:1px solid var(--line); border-radius:8px; background:var(--bg); color:var(--ink); }}
     .filter-form select {{ cursor:pointer; }}
@@ -607,6 +652,9 @@ def export_index_freshness_html(workspace_file: str | Path) -> str:
     .muted {{ color:var(--muted); }}
     ul {{ margin:8px 0 0; padding-left:18px; }}
     li {{ margin:6px 0; }}
+    details {{ margin:4px 0; }}
+    details summary {{ cursor:pointer; color:var(--accent); font-size:13px; }}
+    details pre {{ background:#f2ece3; padding:10px; border-radius:10px; font-size:12px; }}
   </style>
 </head>
 <body>
@@ -666,6 +714,9 @@ def export_memory_backend_html(workspace_file: str | Path, limit: int = 20) -> s
     .muted {{ color:var(--muted); }}
     ul {{ margin:8px 0 0; padding-left:18px; }}
     li {{ margin:6px 0; }}
+    details {{ margin:4px 0; }}
+    details summary {{ cursor:pointer; color:var(--accent); font-size:13px; }}
+    details pre {{ background:#f2ece3; padding:10px; border-radius:10px; font-size:12px; }}
     .filter-form {{ display:flex; gap:10px; align-items:center; margin-bottom:18px; padding:14px; background:var(--panel); border:1px solid var(--line); border-radius:12px; }}
     .filter-form input, .filter-form select, .filter-form button {{ font-family:inherit; font-size:14px; padding:6px 12px; border:1px solid var(--line); border-radius:8px; background:var(--bg); color:var(--ink); }}
     .filter-form select {{ cursor:pointer; }}
@@ -710,6 +761,10 @@ def export_ref_html(workspace_file: str | Path, ref_id: str) -> str:
     payload = memory_ref_get(workspace_file, ref_id)
     raw = payload.get("raw")
     raw_text = html.escape(json.dumps(raw, ensure_ascii=False, indent=2) if raw is not None else "null")
+    timeline_link = ""
+    timeline_ref = payload.get("timeline_ref")
+    if timeline_ref:
+        timeline_link = f'<a class="cross-link" href="{timeline_ref}&workspace={html.escape(workspace_param)}">View in Timeline → / 在时间线中查看 →</a>'
     return f"""<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -729,6 +784,7 @@ def export_ref_html(workspace_file: str | Path, ref_id: str) -> str:
     .wrap {{ max-width: 1080px; margin-left: 240px; padding: 28px; }}
     .card {{ background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:18px; }}
     .muted {{ color:var(--muted); }}
+    .cross-link {{ display:inline-block; margin:8px 0; color:var(--accent); text-decoration:none; font-weight:600; }}
     pre {{ white-space: pre-wrap; word-break: break-word; background:#f2ece3; padding:14px; border-radius:12px; }}
   </style>
 </head>
@@ -738,6 +794,7 @@ def export_ref_html(workspace_file: str | Path, ref_id: str) -> str:
     <section class="card">
       <h1>{html.escape(str(payload.get('ref_id', 'Reference')))}</h1>
       <div class="muted">{html.escape(str(payload.get('summary', '')))}</div>
+      {timeline_link}
       <pre>{raw_text}</pre>
     </section>
   </div>
@@ -778,7 +835,8 @@ def _render_task_list_html(tasks: List[Dict[str, Any]]) -> str:
         f"<li><strong><a href=\"/ui/task?task_id={html.escape(str(item.get('task_id', '')))}\">{html.escape(str(item.get('title', item.get('task_id', ''))))}</a></strong> "
         f"<span class='chip'>{html.escape(str(item.get('status', '')))}</span> "
         f"<span class='chip'>quality={html.escape(str(item.get('quality', '')))}</span> "
-        f"<span class='chip'>score={html.escape(str(item.get('score', '')))}</span></li>"
+        f"<span class='chip'>score={html.escape(str(item.get('score', '')))}</span>"
+        f"<details><summary>Expand / 展开</summary><pre>{html.escape(json.dumps(item, ensure_ascii=False, indent=2))}</pre></details></li>"
         for item in tasks
     )
     return f"<ul>{items}</ul>"
@@ -790,7 +848,8 @@ def _render_handoff_list_html(rows: List[Dict[str, Any]]) -> str:
     items = "".join(
         f"<li><strong>{html.escape(str(item.get('normalized_model', '')))}</strong> "
         f"<span class='chip'>phase={html.escape(str(item.get('current_phase', '')))}</span> "
-        f"<span class='chip'>quality={html.escape(str(item.get('quality', '')))}</span></li>"
+        f"<span class='chip'>quality={html.escape(str(item.get('quality', '')))}</span>"
+        f"<details><summary>Expand / 展开</summary><pre>{html.escape(json.dumps(item, ensure_ascii=False, indent=2))}</pre></details></li>"
         for item in rows
     )
     return f"<ul>{items}</ul>"
@@ -802,7 +861,8 @@ def _render_receipt_list_html(rows: List[Dict[str, Any]]) -> str:
     items = "".join(
         f"<li><strong>{html.escape(str(item.get('layer', '')))}</strong> "
         f"<span class='chip'>{html.escape(str(item.get('action', '')))}</span> "
-        f"<span class='muted'>{html.escape(str(item.get('target', '')))}</span></li>"
+        f"<span class='muted'>{html.escape(str(item.get('target', '')))}</span>"
+        f"<details><summary>Expand / 展开</summary><pre>{html.escape(json.dumps(item, ensure_ascii=False, indent=2))}</pre></details></li>"
         for item in rows
     )
     return f"<ul>{items}</ul>"
@@ -819,7 +879,8 @@ def _render_ref_list_html(rows: List[Dict[str, Any]]) -> str:
         return "<div class='muted'>None</div>"
     items = "".join(
         f"<li><strong><a href=\"/ui/ref?ref_id={html.escape(str(item.get('ref_id', '')))}\">{html.escape(str(item.get('ref_id', '')))}</a></strong> "
-        f"<span class='muted'>{html.escape(str(item.get('summary', '')))}</span></li>"
+        f"<span class='muted'>{html.escape(str(item.get('summary', '')))}</span>"
+        f"<details><summary>Expand / 展开</summary><pre>{html.escape(json.dumps(item, ensure_ascii=False, indent=2))}</pre></details></li>"
         for item in rows
     )
     return f"<ul>{items}</ul>"

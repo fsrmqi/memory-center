@@ -195,6 +195,7 @@ def workspace_recent_evidence(
     session_id: str = "",
     limit: int = 10,
     budget: str = "medium",
+    view: str = "full",
 ) -> Dict[str, Any]:
     from ..timeline import timeline_query
 
@@ -233,12 +234,23 @@ def workspace_recent_evidence(
             }
             entry["summary"] = _summarize_ref(entry)
             evidence.append(entry)
-    return {
+    result = {
         "workspace": config.workspace,
         "task_id": task_id,
         "session_id": session_id,
-        "evidence": _compact_evidence_entries(evidence[-limit:], budget=budget),
+        "evidence": evidence[-limit:],
     }
+    from .common import _is_compact_view
+    from .compact import _measure_compact_gain
+    from ..tracking import log_token_gain
+
+    if _is_compact_view(view):
+        compact_evidence = _compact_evidence_entries(result["evidence"], budget=budget)
+        compact_result = {**result, "evidence": compact_evidence}
+        gain = _measure_compact_gain(result, compact_result)
+        log_token_gain(workspace_file, "workspace_recent_evidence", budget=budget, model="", raw_tokens=gain["raw_tokens"], compact_tokens=gain["compact_tokens"], view=view)
+        return compact_result
+    return result
 
 
 def _session_events(store: WorkspaceStore, session_id: str) -> List[Dict[str, Any]]:

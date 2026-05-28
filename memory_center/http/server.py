@@ -102,7 +102,7 @@ def create_handler(default_workspace: str | Path | None = None) -> type[BaseHTTP
                     return
                 if parsed.path == "/ui/dashboard":
                     workspace = _require_workspace(params, workspace_file)
-                    html_text = export_workspace_dashboard_html(workspace, intent=params.get("intent", [""])[0], limit=_parse_int(params, "limit", 10))
+                    html_text = export_workspace_dashboard_html(workspace, intent=params.get("intent", [""])[0], limit=_parse_int(params, "limit", 10), view=params.get("view", ["compact"])[0], budget=params.get("budget", ["medium"])[0])
                     self._write_html(200, html_text)
                     return
                 if parsed.path == "/ui/continuity":
@@ -113,6 +113,8 @@ def create_handler(default_workspace: str | Path | None = None) -> type[BaseHTTP
                         task_id=params.get("task_id", [""])[0],
                         session_id=params.get("session_id", [""])[0],
                         limit=_parse_int(params, "limit", 10),
+                        view=params.get("view", ["compact"])[0],
+                        budget=params.get("budget", ["medium"])[0],
                     )
                     self._write_html(200, html_text)
                     return
@@ -546,6 +548,7 @@ def _route_request(path: str, params: dict, default_workspace: str | None) -> di
             session_id=params.get("session_id", [""])[0],
             limit=_parse_int(params, "limit", 10),
             budget=params.get("budget", ["medium"])[0],
+            view=params.get("view", ["compact"])[0],
         )
     if path == "/workspace/work-start":
         workspace = _require_workspace(params, default_workspace)
@@ -619,7 +622,7 @@ def _route_request(path: str, params: dict, default_workspace: str | None) -> di
             "resume_packet": workspace_resume_packet(workspace, task_id=task_id, session_id=session_id, intent=intent, limit=limit, view="compact", budget=budget),
             "next_actions": workspace_next_actions(workspace, task_id=task_id, session_id=session_id, intent=intent, limit=limit),
             "unresolved_items": workspace_unresolved_items(workspace, task_id=task_id, session_id=session_id, intent=intent, limit=limit),
-            "recent_evidence": workspace_recent_evidence(workspace, task_id=task_id, session_id=session_id, limit=min(limit, 5), budget=budget),
+            "recent_evidence": workspace_recent_evidence(workspace, task_id=task_id, session_id=session_id, limit=min(limit, 5), budget=budget, view="compact"),
         }
     if path == "/workspace/model-profile":
         return workspace_model_profile(_require_one(params, "model_name"))
@@ -646,7 +649,7 @@ def _route_request(path: str, params: dict, default_workspace: str | None) -> di
         return {
             "workflow": "work-handoff",
             "handoff_packet": workspace_handoff_packet(workspace, target_model=target_model, task_id=task_id, session_id=session_id, intent=intent, limit=limit, view="compact", budget=budget),
-            "recent_evidence": workspace_recent_evidence(workspace, task_id=task_id, session_id=session_id, limit=min(limit, 5), budget=budget),
+            "recent_evidence": workspace_recent_evidence(workspace, task_id=task_id, session_id=session_id, limit=min(limit, 5), budget=budget, view="compact"),
             "tool_usage_report": memory_tool_usage_report(workspace, limit=50),
         }
     if path == "/workspace/handoff-history":

@@ -72,6 +72,7 @@ def workspace_resume_packet(
         session_id=session_id,
         limit=int(resume_rules.get("evidence_limit", limit)),
         budget=budget,
+        view=view,
     ).get("evidence", [])
     next_actions = workspace_next_actions(
         workspace_file,

@@ -396,7 +396,7 @@ def run_hook(
                 "resume_packet": workspace_resume_packet(wf, task_id=params_spec.get("task_id", ""), session_id=session_id, intent=intent, limit=int(params_spec.get("limit", 8)), view=view, budget=budget),
                 "next_actions": workspace_next_actions(wf, task_id=params_spec.get("task_id", ""), session_id=session_id, intent=intent, limit=int(params_spec.get("limit", 8))),
                 "unresolved_items": workspace_unresolved_items(wf, task_id=params_spec.get("task_id", ""), session_id=session_id, intent=intent, limit=int(params_spec.get("limit", 8))),
-                "recent_evidence": workspace_recent_evidence(wf, task_id=params_spec.get("task_id", ""), session_id=session_id, limit=min(int(params_spec.get("limit", 8)), 5), budget=budget),
+                "recent_evidence": workspace_recent_evidence(wf, task_id=params_spec.get("task_id", ""), session_id=session_id, limit=min(int(params_spec.get("limit", 8)), 5), budget=budget, view=view),
             }
             system_message = "[Memory Center] Resume completed"
 
@@ -406,7 +406,7 @@ def run_hook(
             hook_result = {
                 "workflow": "mc-handoff",
                 "handoff_packet": workspace_handoff_packet(wf, target_model=params_spec.get("target_model", "codex"), task_id=params_spec.get("task_id", ""), session_id=session_id, intent=intent, limit=int(params_spec.get("limit", 8)), view=view, budget=budget),
-                "recent_evidence": workspace_recent_evidence(wf, task_id=params_spec.get("task_id", ""), session_id=session_id, limit=min(int(params_spec.get("limit", 8)), 5), budget=budget),
+                "recent_evidence": workspace_recent_evidence(wf, task_id=params_spec.get("task_id", ""), session_id=session_id, limit=min(int(params_spec.get("limit", 8)), 5), budget=budget, view=view),
                 "tool_usage_report": memory_tool_usage_report(wf, limit=50),
             }
             system_message = "[Memory Center] Handoff completed"
