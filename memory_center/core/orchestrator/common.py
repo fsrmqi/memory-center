@@ -144,6 +144,8 @@ def _choose_l3_artifact_name(text: str) -> str:
 
 def _score_threshold_for_sync_mode(auto_sync_mode: str) -> int:
     mode = (auto_sync_mode or "balanced").strip().lower()
+    if mode == "safe":
+        mode = "strict"
     if mode == "strict":
         return 4
     if mode == "aggressive":
@@ -700,21 +702,44 @@ def _classify_case_evidence_ref(ref: Dict[str, Any]) -> str:
 
 def _merge_artifact_section(existing: str, section_title: str, body: str) -> str:
     marker = f"## {section_title}"
-    if marker in existing:
-        before, after = existing.split(marker, 1)
-        # Find the next section header in `after` to preserve subsequent sections
-        next_section_idx = after.find("\n## ")
-        if next_section_idx != -1:
-            suffix = after[next_section_idx:]
-        else:
-            suffix = ""
-        prefix = before.rstrip()
-        result = f"{prefix}\n\n{marker}\n\n{body.strip()}\n"
-        if suffix:
-            result += suffix
-        return result
-    suffix = f"\n\n{marker}\n\n{body.strip()}\n"
-    return existing.rstrip() + suffix if existing.strip() else f"{marker}\n\n{body.strip()}\n"
+    replacement = f"{marker}\n\n{body.strip()}\n"
+    if not existing.strip():
+        return replacement
+
+    lines = existing.splitlines()
+    target_start = None
+    target_end = None
+
+    for idx, line in enumerate(lines):
+        match = re.match(r"^(#{1,6})\s+(.*)$", line)
+        if not match:
+            continue
+        level = len(match.group(1))
+        title = match.group(2).strip()
+        if target_start is None:
+            if level == 2 and title == section_title:
+                target_start = idx
+            continue
+        if level <= 2:
+            target_end = idx
+            break
+
+    if target_start is None:
+        return existing.rstrip() + f"\n\n{replacement}"
+
+    if target_end is None:
+        target_end = len(lines)
+
+    prefix = "\n".join(lines[:target_start]).rstrip()
+    suffix = "\n".join(lines[target_end:]).lstrip()
+
+    parts = []
+    if prefix:
+        parts.append(prefix)
+    parts.append(replacement.rstrip())
+    if suffix:
+        parts.append(suffix)
+    return "\n\n".join(parts).rstrip() + "\n"
 
 
 def _sniff_risk_level(
