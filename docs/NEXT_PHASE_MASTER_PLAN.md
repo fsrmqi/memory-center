@@ -93,11 +93,12 @@
 9. ~~**WP3 compact 收紧**~~：**已完成** — compact 模式下 recent_evidence/receipts/handoffs/focus_task 全部提取为严格短引用
 10. ~~**Hooks 收口**~~：**已完成** — Codex adapter chmod +x、Cursor adapter 增强 MCP 命令指令
 
-**下一阶段待推进：**
+**下一阶段待推进（按优先级）：**
 
-- **外部参考思想吸收**：agentmemory benchmark/top-K/hybrid、skills 强约束模板
-- **SQLite 后端**：从镜像推进到更多真实读路径
-- **timeline↔ref 页面联动**：timeline 中点击 ref 直接展开而非跳转
+1. **外部参考思想吸收**：agentmemory benchmark/top-K/hybrid、skills 强约束模板
+2. **timeline↔ref 页面联动**：timeline 中点击 ref 直接展开而非跳转
+3. **长期趋势仪表盘**：token benchmark 趋势化、index freshness 长期对比
+4. **SQLite 后端**：从镜像推进到更多真实读路径（优先级最低，最后推进）
 
 ### 版本技术路线
 
@@ -112,7 +113,8 @@
 | v2.0.11 | WP3 深化 | 全部 7 高频函数默认 view=compact、compact 模式收紧为严格短引用（ref_id+summary only） | ✅ 已交付 |
 | v2.0.11 | Hooks 收口 | Codex adapter 生产化（chmod +x）、Cursor adapter 增强（MCP 命令指令 + Quick Reference） | ✅ 已交付 |
 | v2.1.0 | 外部吸收 | agentmemory token benchmark（7 高频函数）+ top-K evidence（3/5/10），skills 强约束模板、hybrid retrieval | 进行中 |
-| v2.1.0 | WP6 深化 | 更多主读路径切 SQLite、长期趋势仪表盘 | 待推进 |
+| v2.1.0 | WP3/WP5 联动 | timeline↔ref 页面联动、长期趋势仪表盘 | 待推进 |
+| v2.2.0 | WP6 深化 | 更多主读路径切 SQLite、长期趋势仪表盘深化 | 最后推进 |
 
 ## 工作包 1：增量索引系统
 
@@ -357,8 +359,8 @@ WP1（增量索引）和 rtk-ai/rtk 吸收都已完成，下一阶段优先顺�
    - guided tour
    - onboarding
    - 页面联动
-4. SQLite 后端进一步接管统一读取
-5. 更系统的 completion audit 与文档一致性审计
+4. 更系统的 completion audit 与文档一致性审计
+5. SQLite 后端进一步接管统一读取（优先级最低，最后推进）
 
 ---
 
@@ -395,8 +397,8 @@ WP1（增量索引）和 rtk-ai/rtk 吸收都已完成，下一阶段优先顺�
 3. ~~MCP facade 重构~~ **已完成**（82→8 facade 工具，92% token 减少）；Hook 事件映射 **基础已实现** — hooks.yaml + run-hook runner + Claude Code adapter，但宿主自动挂接仍待各宿主侧落地
 4. token benchmark + top-K only + hybrid retrieval（agentmemory）
 5. 更强约束的 workflow 模板（mattpocock/skills）
-6. 常驻工作台 guided tour
-7. 统一后端
+6. 常驻工作台 guided tour + timeline↔ref 页面联动
+7. 统一后端（SQLite 优先级最低，最后推进）
 8. 更完整评测
 
 ---

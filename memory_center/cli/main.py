@@ -568,6 +568,33 @@ def eval_token_benchmark_cmd(
     print(memory_eval_token_benchmark(workspace, intent=intent, limit=limit))
 
 
+@app.command("eval-token-benchmark-save")
+def eval_token_benchmark_save_cmd(
+    workspace: str = typer.Option(...),
+    intent: str = typer.Option("token benchmark"),
+    limit: int = typer.Option(8),
+):
+    """Save current token benchmark as regression baseline."""
+    from memory_center.core.orchestrator import memory_eval_token_benchmark_save
+    print(memory_eval_token_benchmark_save(workspace, intent=intent, limit=limit))
+
+
+@app.command("eval-token-benchmark-compare")
+def eval_token_benchmark_compare_cmd(
+    workspace: str = typer.Option(...),
+    intent: str = typer.Option("token benchmark"),
+    limit: int = typer.Option(8),
+    regression_threshold: int = typer.Option(15),
+):
+    """Compare token benchmark against stored baseline. Exit 1 on high-severity regression."""
+    from memory_center.core.orchestrator import memory_eval_token_benchmark_compare
+    result = memory_eval_token_benchmark_compare(workspace, intent=intent, limit=limit, regression_threshold=regression_threshold)
+    print(result)
+    regressions = result.get("regressions", [])
+    if regressions:
+        raise typer.Exit(code=1)
+
+
 @app.command("regression-smoke")
 def regression_smoke_cmd(
     workspace: str = typer.Option(...),

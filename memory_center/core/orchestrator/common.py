@@ -54,7 +54,7 @@ def _is_compact_view(view: str) -> bool:
 
 def _normalize_budget(budget: str) -> str:
     value = (budget or "medium").strip().lower()
-    return value if value in {"small", "medium", "large"} else "medium"
+    return value if value in {"tiny", "small", "medium", "large"} else "medium"
 
 
 MODEL_BUDGET_PROFILES: Dict[str, Dict[str, int]] = {
@@ -72,6 +72,8 @@ MODEL_BUDGET_PROFILES: Dict[str, Dict[str, int]] = {
 def _budget_limits(budget: str, model: str = "") -> Dict[str, int]:
     normalized = _normalize_budget(budget)
     model_profile = MODEL_BUDGET_PROFILES.get(_normalize_model_name(model or ""), MODEL_BUDGET_PROFILES["generic-mcp-agent"])
+    if normalized == "tiny":
+        return {k: 1 for k in model_profile}
     if normalized == "small":
         return {k: max(1, v // 2) for k, v in model_profile.items()}
     if normalized == "large":

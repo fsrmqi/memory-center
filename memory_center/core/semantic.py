@@ -11,9 +11,11 @@ from .graph import GraphStore
 from .store import WorkspaceStore
 
 SEMANTIC_INDEX_FILE = "semantic-node-index.json"
-SEMANTIC_INDEX_VERSION = 2
+SEMANTIC_INDEX_VERSION = 3
 DEFAULT_SEMANTIC_BACKEND = "sparse"
 DEFAULT_SENTENCE_TRANSFORMER_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+BM25_K1 = 1.5
+BM25_B = 0.75
 
 
 def ensure_workspace_semantic_index(workspace_file: str | Path) -> Dict[str, Any]:
@@ -66,6 +68,7 @@ def build_workspace_semantic_index(workspace_file: str | Path) -> Dict[str, Any]
     for doc in docs:
         vector = {}
         total = sum(doc["token_counts"].values()) or 1
+        doc["doc_len"] = total
         for token, count in doc["token_counts"].items():
             idf = math.log((1 + doc_count) / (1 + df.get(token, 0))) + 1.0
             vector[token] = (count / total) * idf
@@ -73,6 +76,8 @@ def build_workspace_semantic_index(workspace_file: str | Path) -> Dict[str, Any]
         doc["sparse_vector"] = vector
         doc["sparse_norm"] = norm
         del doc["token_counts"]
+
+    avgdl = sum(d["doc_len"] for d in docs) / doc_count
 
     actual_backend = DEFAULT_SEMANTIC_BACKEND
     model_name = None
@@ -92,6 +97,7 @@ def build_workspace_semantic_index(workspace_file: str | Path) -> Dict[str, Any]
         "version": SEMANTIC_INDEX_VERSION,
         "node_count": len(nodes),
         "doc_count": len(docs),
+        "avgdl": avgdl,
         "requested_backend": backend,
         "requested_model": requested_model,
         "backend": actual_backend,
@@ -151,6 +157,7 @@ def build_workspace_semantic_index_partial(workspace_file: str | Path, changed_n
     doc_count = max(len(merged_docs), 1)
     for doc in new_docs:
         total = sum(doc["token_counts"].values()) or 1
+        doc["doc_len"] = total
         vector = {}
         for token, count in doc["token_counts"].items():
             idf = math.log((1 + doc_count) / (1 + df.get(token, 0))) + 1.0
@@ -186,6 +193,7 @@ def build_workspace_semantic_index_partial(workspace_file: str | Path, changed_n
         "version": SEMANTIC_INDEX_VERSION,
         "node_count": total_node_count,
         "doc_count": len(merged_docs),
+        "avgdl": sum(d.get("doc_len", 0) for d in merged_docs) / doc_count,
         "requested_backend": backend,
         "requested_model": existing.get("requested_model"),
         "backend": actual_backend,
@@ -309,22 +317,52 @@ def _sparse_semantic_query(index: Dict[str, Any], query: str, limit: int) -> Lis
     query_counts = _count_tokens(tokens)
     doc_count = max(index.get("doc_count", 1), 1)
     df = index.get("df") or _estimate_df(index)
-    query_vector = {}
-    total = sum(query_counts.values()) or 1
-    for token, count in query_counts.items():
-        idf = math.log((1 + doc_count) / (1 + df.get(token, 0))) + 1.0
-        query_vector[token] = (count / total) * idf
-    query_norm = math.sqrt(sum(value * value for value in query_vector.values())) or 1.0
+    avgdl = index.get("avgdl", 0)
 
-    scored = []
-    for doc in index.get("docs", []):
-        dot = 0.0
-        vector = doc.get("sparse_vector", {})
-        for token, qv in query_vector.items():
-            dot += qv * float(vector.get(token, 0.0))
-        if dot <= 0:
-            continue
-        score = dot / (query_norm * float(doc.get("sparse_norm", 1.0)))
-        scored.append({**doc, "score": score, "backend": "sparse"})
-    scored.sort(key=lambda item: (-float(item.get("score", 0)), item.get("name", "")))
-    return scored[:limit]
+    # Check if any doc has doc_len (BM25 mode) or fall back to TF-IDF cosine
+    docs = index.get("docs", [])
+    has_bm25 = avgdl > 0 and any(d.get("doc_len", 0) > 0 for d in docs[:5])
+
+    if has_bm25:
+        # Okapi BM25 scoring
+        if avgdl <= 0:
+            avgdl = sum(d.get("doc_len", 0) for d in docs) / max(len(docs), 1) or 1.0
+        scored = []
+        for doc in docs:
+            doc_len = doc.get("doc_len", 0)
+            if doc_len <= 0:
+                continue
+            vector = doc.get("sparse_vector", {})
+            score = 0.0
+            for token, query_count in query_counts.items():
+                tf = vector.get(token, 0.0)
+                if tf <= 0:
+                    continue
+                idf = math.log((doc_count - df.get(token, 0) + 0.5) / (df.get(token, 0) + 0.5) + 1)
+                score += idf * (tf * (BM25_K1 + 1)) / (tf + BM25_K1 * (1 - BM25_B + BM25_B * doc_len / avgdl))
+            if score <= 0:
+                continue
+            scored.append({**doc, "score": score, "backend": "bm25"})
+        scored.sort(key=lambda item: (-float(item.get("score", 0)), item.get("name", "")))
+        return scored[:limit]
+    else:
+        # Fallback: TF-IDF cosine similarity (backward compatibility with version 2 indexes)
+        query_vector = {}
+        total = sum(query_counts.values()) or 1
+        for token, count in query_counts.items():
+            idf = math.log((1 + doc_count) / (1 + df.get(token, 0))) + 1.0
+            query_vector[token] = (count / total) * idf
+        query_norm = math.sqrt(sum(value * value for value in query_vector.values())) or 1.0
+
+        scored = []
+        for doc in docs:
+            dot = 0.0
+            vector = doc.get("sparse_vector", {})
+            for token, qv in query_vector.items():
+                dot += qv * float(vector.get(token, 0.0))
+            if dot <= 0:
+                continue
+            score = dot / (query_norm * float(doc.get("sparse_norm", 1.0)))
+            scored.append({**doc, "score": score, "backend": "sparse"})
+        scored.sort(key=lambda item: (-float(item.get("score", 0)), item.get("name", "")))
+        return scored[:limit]

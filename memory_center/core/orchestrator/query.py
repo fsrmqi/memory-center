@@ -23,7 +23,7 @@ from .common import (
 )
 
 
-def memory_query(workspace_file: str | Path, query: str, limit: int = 20, node_types: List[str] | None = None) -> Dict[str, Any]:
+def memory_query(workspace_file: str | Path, query: str, limit: int = 20, node_types: List[str] | None = None, alpha: float | None = None) -> Dict[str, Any]:
     config, store = load_context(workspace_file)
     graph = GraphStore(store.graph_db_path)
     exact_nodes = graph.find_nodes(query, types=node_types, limit=limit)
@@ -49,7 +49,7 @@ def memory_query(workspace_file: str | Path, query: str, limit: int = 20, node_t
     semantic_hits = enriched_semantic_hits
     if node_types:
         semantic_hits = [item for item in semantic_hits if item.get("node", {}).get("type") in node_types]
-    merged = _merge_workspace_query_hits(graph, query, exact_nodes, semantic_hits, limit)
+    merged = _merge_workspace_query_hits(graph, query, exact_nodes, semantic_hits, limit, alpha=alpha)
     related_rules = match_rules(store, intent=query, files=[item["node"].get("file_path", "") for item in merged])[:10]
     cases = store.read_jsonl_prefer_backend("cross-service-task-memory.jsonl", limit=200)
     related_cases = [c for c in cases if any(k in json.dumps(c, ensure_ascii=False).lower() for k in tokenize(query))][-5:]
@@ -353,6 +353,7 @@ def _merge_workspace_query_hits(
     exact_nodes: List[Dict[str, Any]],
     semantic_hits: List[Dict[str, Any]],
     limit: int,
+    alpha: float | None = None,
 ) -> List[Dict[str, Any]]:
     merged: Dict[str, Dict[str, Any]] = {}
     target_types = set()
@@ -400,20 +401,27 @@ def _merge_workspace_query_hits(
             item["retrieval_sources"].append("semantic")
     resolved_target_types = _resolve_query_target_types(query, sorted(t for t in target_types if t))
     matches = list(merged.values())
-    matches.sort(key=lambda item: _workspace_query_match_key(item, resolved_target_types))
+    matches.sort(key=lambda item: _workspace_query_match_key(item, resolved_target_types, alpha=alpha))
     return matches[:limit]
 
 
-def _workspace_query_match_key(item: Dict[str, Any], target_types: List[str]) -> tuple:
+def _workspace_query_match_key(item: Dict[str, Any], target_types: List[str], alpha: float | None = None) -> tuple:
     node = item.get("node", {})
     priority = _query_node_priority(node.get("type", ""), target_types)
     sources = set(item.get("retrieval_sources", []))
     hybrid_rank = 0 if {"exact", "semantic"} <= sources else 1 if "exact" in sources else 2 if "semantic" in sources else 3
+    exact_score = float(item.get("exact_score", 0.0))
+    semantic_score = float(item.get("semantic_score", 0.0))
+    if alpha is not None:
+        # Blended scoring: alpha * exact + (1-alpha) * semantic + dual_bonus
+        dual_bonus = 0.1 if {"exact", "semantic"} <= sources else 0.0
+        blended = alpha * exact_score + (1 - alpha) * semantic_score + dual_bonus
+        return (priority, -blended, -exact_score, -semantic_score, int(item.get("best_rank", 9999)), node.get("name", ""))
     return (
         priority,
         hybrid_rank,
-        -float(item.get("exact_score", 0.0)),
-        -float(item.get("semantic_score", 0.0)),
+        -exact_score,
+        -semantic_score,
         int(item.get("best_rank", 9999)),
         node.get("name", ""),
     )

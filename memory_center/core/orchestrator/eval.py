@@ -388,7 +388,7 @@ def memory_eval_token_benchmark(
     from .resume import workspace_handoff_packet
 
     config, _ = load_context(workspace_file)
-    budget_tiers = ["small", "medium", "large"]
+    budget_tiers = ["tiny", "small", "medium", "large"]
     functions = {
         "sniff": lambda b: workspace_sniff(workspace_file, intent or "benchmark", limit=limit, view="compact", budget=b),
         "status": lambda b: workspace_status(workspace_file, view="compact", budget=b),
@@ -406,12 +406,14 @@ def memory_eval_token_benchmark(
             text = json.dumps(payload, ensure_ascii=False)
             tokens = estimate_tokens(text)
             row[budget] = {"tokens": tokens, "chars": len(text)}
+        tiny_t = row.get("tiny", {}).get("tokens", 0)
         small_t = row["small"]["tokens"]
         large_t = row["large"]["tokens"]
         savings_pct = round((1 - small_t / (large_t or 1)) * 100, 1)
         row["savings_pct"] = savings_pct
         results[name] = row
 
+    total_tiny = sum(results[n].get("tiny", {}).get("tokens", 0) for n in results)
     total_small = sum(results[n]["small"]["tokens"] for n in results)
     total_medium = sum(results[n]["medium"]["tokens"] for n in results)
     total_large = sum(results[n]["large"]["tokens"] for n in results)
@@ -427,5 +429,121 @@ def memory_eval_token_benchmark(
         workspace=config.workspace,
         intent=intent,
         benchmark=results,
-        totals={"small": total_small, "medium": total_medium, "large": total_large},
+        totals={"tiny": total_tiny, "small": total_small, "medium": total_medium, "large": total_large},
     )
+
+
+def _benchmark_baseline_path(workspace_file: str | Path) -> Path:
+    _, store = load_context(workspace_file)
+    return store.base_dir / "benchmark-baseline.json"
+
+
+def _extract_benchmark_baseline(benchmark_result: Dict[str, Any]) -> Dict[str, Any]:
+    """Extract a storable baseline snapshot from a benchmark result."""
+    from datetime import datetime, timezone
+    functions = {}
+    for name, row in benchmark_result.get("benchmark", {}).items():
+        functions[name] = {
+            budget: {"tokens": row[budget]["tokens"], "chars": row[budget]["chars"]}
+            for budget in ("small", "medium", "large")
+        }
+        functions[name]["savings_pct"] = row.get("savings_pct", 0.0)
+    return {
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "totals": benchmark_result.get("totals", {}),
+        "functions": functions,
+    }
+
+
+def memory_eval_token_benchmark_save(
+    workspace_file: str | Path,
+    intent: str = "",
+    limit: int = 8,
+) -> Dict[str, Any]:
+    """Run token benchmark and save the result as a regression baseline."""
+    result = memory_eval_token_benchmark(workspace_file, intent=intent, limit=limit)
+    baseline = _extract_benchmark_baseline(result)
+    path = _benchmark_baseline_path(workspace_file)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(baseline, ensure_ascii=False, indent=2), encoding="utf-8")
+    return {"saved": True, "path": str(path), "baseline": baseline}
+
+
+def memory_eval_token_benchmark_compare(
+    workspace_file: str | Path,
+    intent: str = "",
+    limit: int = 8,
+    regression_threshold: int = 15,
+) -> Dict[str, Any]:
+    """Run token benchmark and compare against the stored baseline.
+
+    Returns the benchmark result augmented with regression analysis.
+    If any function regresses by more than regression_threshold%, a high-severity finding is added.
+    """
+    path = _benchmark_baseline_path(workspace_file)
+    if not path.exists():
+        result = memory_eval_token_benchmark(workspace_file, intent=intent, limit=limit)
+        result["regression"] = []
+        result["baseline_path"] = str(path)
+        result["baseline_status"] = "no_baseline"
+        return result
+
+    baseline = json.loads(path.read_text(encoding="utf-8"))
+    result = memory_eval_token_benchmark(workspace_file, intent=intent, limit=limit)
+    current_functions = result.get("benchmark", {})
+    baseline_functions = baseline.get("functions", {})
+    baseline_totals = baseline.get("totals", {})
+
+    regressions = []
+    builder = EvalResultBuilder()
+
+    for name, current_row in current_functions.items():
+        base_row = baseline_functions.get(name)
+        if not base_row:
+            continue
+        for budget in ("small", "medium", "large"):
+            current_tokens = current_row.get(budget, {}).get("tokens", 0)
+            base_tokens = base_row.get(budget, {}).get("tokens", 0)
+            if base_tokens <= 0:
+                continue
+            delta_pct = round((current_tokens - base_tokens) / base_tokens * 100, 1)
+            if delta_pct > regression_threshold:
+                regressions.append({
+                    "function": name,
+                    "budget": budget,
+                    "baseline_tokens": base_tokens,
+                    "current_tokens": current_tokens,
+                    "delta_pct": delta_pct,
+                })
+
+    for reg in regressions:
+        builder.add(
+            "high",
+            f"regression_{reg['function']}_{reg['budget']}",
+            f"{reg['function']}({reg['budget']}) 回归 {reg['delta_pct']}%：{reg['baseline_tokens']}→{reg['current_tokens']} tokens",
+            40,
+        )
+
+    current_totals = result.get("totals", {})
+    base_small = baseline_totals.get("small", 0)
+    if base_small > 0:
+        total_delta_pct = round((current_totals.get("small", 0) - base_small) / base_small * 100, 1)
+        if total_delta_pct > 20:
+            builder.add(
+                "medium",
+                "total_small_regression",
+                f"small budget 总量回归 {total_delta_pct}%：{base_small}→{current_totals.get('small', 0)} tokens",
+                25,
+            )
+
+    eval_result = builder.finalize(
+        workspace=result.get("workspace", ""),
+        intent=intent,
+        benchmark=result.get("benchmark", {}),
+        totals=current_totals,
+        regressions=regressions,
+        baseline_path=str(path),
+        baseline_totals=baseline_totals,
+        baseline_created_at=baseline.get("created_at", ""),
+    )
+    return eval_result

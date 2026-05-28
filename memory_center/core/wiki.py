@@ -32,13 +32,18 @@ def generate_skills(workspace_file: str | Path, output_dir: str | Path | None = 
     if not cases:
         cases = [{"task": "Spring Cloud safe change", "projects": [], "files": [], "flow": "Controller/Consumer → Service → Feign/MQ/Data", "risk_points": ["contract compatibility", "idempotency", "observability"]}]
     files = []
+    manifest = {}
     for i, case in enumerate(cases[-20:], start=1):
         slug = _slug(case.get("task", f"case-{i}"))[:60] or f"case-{i}"
         path = out / slug / "SKILL.md"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(_skill_page(case), encoding="utf-8")
         files.append(str(path.relative_to(out)))
-    return {"generated": True, "output_dir": str(out), "files": files}
+        manifest[slug] = {"case_index": len(cases) - 20 + i - 1, "task": case.get("task", ""), "path": str(path.relative_to(out))}
+    manifest_path = out / "MANIFEST.json"
+    import json
+    manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+    return {"generated": True, "output_dir": str(out), "files": files, "manifest": str(manifest_path.relative_to(out))}
 
 
 def _overview(name: str, status: Dict[str, Any], topology: Dict[str, Any]) -> str:
@@ -81,21 +86,48 @@ def _memory_page(cases: List[Dict[str, Any]]) -> str:
 
 
 def _skill_page(case: Dict[str, Any]) -> str:
-    return f"""# Skill: {case.get('task', 'Spring Cloud task')}
+    task = case.get('task', 'Spring Cloud task')
+    flow = case.get('flow', '')
+    files = case.get('files', [])
+    risk_points = case.get('risk_points', [])
+    projects = case.get('projects', [])
 
-## When to use / 适用场景
+    prompt_template = f"""You are working on a task similar to: {task}
 
-Use this skill when the task resembles this historical case.
+Before making changes:
+1. Read these files: {', '.join(f'`{f}`' for f in files) if files else '(none specified)'}
+2. Follow this flow: {flow}
+3. Watch for these risks: {', '.join(risk_points) if risk_points else '(none specified)'}
 
-当新任务与该历史案例类似时，优先读取本 Skill。
+After changes:
+- Run: memory-center eval-write-quality --workspace <ws> --task-id <tid>
+- Verify: memory-center eval-regression-suite --workspace <ws>"""
 
-## Flow / 流程
+    trigger = f"Task involves: {', '.join(projects) if projects else '(any project)'}"
+    if flow:
+        trigger += f" | Flow: {flow}"
 
-{case.get('flow', '')}
+    files_section = "\n".join(f"- `{f}`" for f in files)
+    risks_section = "\n".join(f"- {r}" for r in risk_points)
 
-## Important files / 关键文件
-
-""" + "\n".join(f"- `{f}`" for f in case.get("files", [])) + "\n\n## Risk checklist / 风险检查\n\n" + "\n".join(f"- {r}" for r in case.get("risk_points", [])) + "\n"
+    return (
+        f"# Skill: {task}\n\n"
+        f"## When to use / 适用场景\n\n"
+        f"Use this skill when the task resembles this historical case.\n\n"
+        f"当新任务与该历史案例类似时，优先读取本 Skill。\n\n"
+        f"## Trigger / 触发条件\n\n"
+        f"{trigger}\n\n"
+        f"## Flow / 流程\n\n"
+        f"{flow}\n\n"
+        f"## Important files / 关键文件\n\n"
+        f"{files_section}\n\n"
+        f"## Risk checklist / 风险检查\n\n"
+        f"{risks_section}\n\n"
+        f"## Prompt Template / 提示模板\n\n"
+        f"```markdown\n"
+        f"{prompt_template}\n"
+        f"```\n"
+    )
 
 
 def _slug(text: str) -> str:

@@ -1563,6 +1563,50 @@ def test_export_html_contains_sidebar(tmp_path: Path):
     assert "工作台" in html_output
 
 
+def test_token_benchmark_save_and_compare(tmp_path: Path):
+    workspace = _copy_demo_workspace(tmp_path, "benchmark-baseline")
+    config = load_workspace_config(workspace)
+    store = WorkspaceStore(workspace)
+    reindex_workspace(config, store)
+
+    # Save baseline
+    from memory_center.core.orchestrator import memory_eval_token_benchmark_save, memory_eval_token_benchmark_compare
+    save_result = memory_eval_token_benchmark_save(str(workspace), intent="benchmark test", limit=5)
+    assert save_result["saved"] is True
+    baseline_path = Path(save_result["path"])
+    assert baseline_path.exists()
+
+    # Compare against clean baseline — use generous threshold for run-to-run variation
+    compare_result = memory_eval_token_benchmark_compare(str(workspace), intent="benchmark test", limit=5, regression_threshold=50)
+    assert compare_result.get("baseline_status") != "no_baseline"
+    assert len(compare_result.get("regressions", [])) == 0
+
+    # Corrupt baseline: artificially inflate a token count
+    import json as json_mod
+    baseline = json_mod.loads(baseline_path.read_text(encoding="utf-8"))
+    first_func = list(baseline["functions"].keys())[0]
+    baseline["functions"][first_func]["small"]["tokens"] *= 5
+    baseline_path.write_text(json_mod.dumps(baseline, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    # Compare again — should detect regression
+    compare_result = memory_eval_token_benchmark_compare(str(workspace), intent="benchmark test", limit=5, regression_threshold=10)
+    assert len(compare_result.get("regressions", [])) > 0
+
+
+def test_bm25_scoring_returns_results(tmp_path: Path):
+    workspace = _copy_demo_workspace(tmp_path, "bm25-test")
+    config = load_workspace_config(workspace)
+    store = WorkspaceStore(workspace)
+    reindex_workspace(config, store)
+
+    from memory_center.core.semantic import semantic_query
+    results = semantic_query(str(workspace), "ArticleFeignClient", limit=5)
+    assert len(results) > 0
+    # BM25 results should have score and backend field
+    assert "score" in results[0]
+    assert results[0].get("backend") in ("bm25", "sparse")
+
+
 def test_export_dashboard_contains_filters(tmp_path: Path):
     """Dashboard HTML contains interactive filter form."""
     workspace = _copy_demo_workspace(tmp_path, "ui-filter")

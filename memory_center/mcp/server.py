@@ -126,6 +126,9 @@ def create_server(workspace_file: str):
     ctx = _WorkspaceContext(workspace_file)
     mcp = FastMCP("Memory Center")
 
+    # Import workflow templates for guidance
+    from memory_center.core.templates import get_workflow_guidance
+
     # ===================== FACADE 1: mc_start =====================
     @mcp.tool()
     def mc_start(
@@ -149,7 +152,8 @@ def create_server(workspace_file: str):
                 auto_sync_mode=auto_sync_mode,
             )
         session = workspace_start_session(wf, intent)
-        return {"workflow": "mc-start", "sniff": sniff_result, "sync_sniff": synced, "session": session}
+        guidance = get_workflow_guidance("work-start", {"risk_level": sniff_result.get("risk_level", ""), "task_id": resolved_task.get("task_id", "")})
+        return {"workflow": "mc-start", "sniff": sniff_result, "sync_sniff": synced, "session": session, "_workflow_guidance": guidance}
 
     # ===================== FACADE 2: mc_lookup =====================
     @mcp.tool()

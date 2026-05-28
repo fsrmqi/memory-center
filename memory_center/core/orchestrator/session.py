@@ -358,25 +358,47 @@ def _build_session_overview(events: List[Dict[str, Any]]) -> Dict[str, Any]:
 
 def _compact_evidence_entries(entries: List[Dict[str, Any]], budget: str = "medium") -> List[Dict[str, Any]]:
     normalized_budget = (budget or "medium").strip().lower()
-    if normalized_budget == "small":
+    if normalized_budget == "tiny":
+        k = 1
+    elif normalized_budget == "small":
         k = 3
     elif normalized_budget == "large":
         k = 10
     else:
         k = 5
-    # Top-K strategy (agentmemory pattern): rank by signal richness + recency.
-    # Entries with ref_id + summary + payload_ref/receipt_ref are ranked higher.
-    def _signal_score(item: Dict[str, Any]) -> int:
-        score = 0
-        if item.get("ref_id"):
-            score += 2
-        if item.get("summary"):
-            score += 1
-        if item.get("payload_ref") or item.get("receipt_ref"):
-            score += 1
-        return score
+    # Top-K strategy (agentmemory pattern): rank by importance + recency.
+    # Error events and rule matches rank higher than regular events.
+    _IMPORTANCE_WEIGHTS = {
+        "error_event": 10,
+        "rule_match": 8,
+        "task_sync": 6,
+        "case_record": 5,
+        "tool_call_with_result": 4,
+        "session_start_end": 3,
+        "regular_event": 1,
+    }
+    _ERROR_KEYWORDS = ("error", "exception", "fail", "traceback", "bug", "crash")
 
-    ranked = sorted(entries, key=lambda e: (_signal_score(e), str(e.get("created_at", ""))), reverse=True)
+    def _importance_score(item: Dict[str, Any]) -> int:
+        source = (item.get("source") or "").lower()
+        event_type = (item.get("event_type") or item.get("action") or "").lower()
+        payload_text = " ".join(str(v) for v in item.values() if isinstance(v, str)).lower()
+
+        if any(kw in payload_text for kw in _ERROR_KEYWORDS):
+            return _IMPORTANCE_WEIGHTS["error_event"]
+        if source == "l3" or "rule" in event_type:
+            return _IMPORTANCE_WEIGHTS["rule_match"]
+        if source == "l2" or "sync" in event_type:
+            return _IMPORTANCE_WEIGHTS["task_sync"]
+        if source == "l1" or "case" in event_type:
+            return _IMPORTANCE_WEIGHTS["case_record"]
+        if "tool_call" in event_type and item.get("payload_ref"):
+            return _IMPORTANCE_WEIGHTS["tool_call_with_result"]
+        if event_type in ("session_start", "session_end", "start", "end"):
+            return _IMPORTANCE_WEIGHTS["session_start_end"]
+        return _IMPORTANCE_WEIGHTS["regular_event"]
+
+    ranked = sorted(entries, key=lambda e: (_importance_score(e), str(e.get("created_at", ""))), reverse=True)
     return [
         {
             "ref_id": item.get("ref_id", ""),
