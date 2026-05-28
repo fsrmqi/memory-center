@@ -2,6 +2,22 @@
 
 ## 2.0.11
 
+- **Guided tour overlay / 引导叠加层**
+  - `/ui` 索引页首次打开时自动弹出 5 步引导叠加层（Dashboard/Continuity/Timeline/Refs/Tools）
+  - `localStorage` 记住已看过一次，侧栏提供 "Replay Tour / 重播引导" 按钮
+- **Next Action hero card / 下一步行动卡片**
+  - `/ui/dashboard` 页面顶部新增高亮的 "Next Action / 下一步" 卡片
+  - 自动从 `focus_resume_eval` / `continuity_overview` 提取最紧急的未完成项或下一步动作
+  - 包含 quality/score 标签和 "Go → / 前往 →" 快捷链接
+- **Cross-page drill-down links / 跨页钻取链接**
+  - `/ui/continuity` → `/ui/task`（焦点任务）
+  - `/ui/task` → `/ui/timeline` + `/ui/receipts`（新增 receipts 链接）
+  - `/ui/ref` → `/ui/timeline`（反向导航，v2.0.10 已有）
+- **Version roadmap updated / 版本路线图更新**
+  - `NEXT_PHASE_MASTER_PLAN.md` 新增 v2.0.11 里程碑
+
+## 2.0.11
+
 - **WP2 收口：`workspace_recent_evidence` 补齐 `view=compact|full`**
   - 新增 `view` 参数，默认 `"full"`；`view="compact"` 走 `_compact_evidence_entries` + `log_token_gain`
   - `view="full"` 返回完整条目（不再强制压缩），与其他 6 个高频接口对齐

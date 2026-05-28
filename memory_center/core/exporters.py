@@ -36,6 +36,54 @@ def _nav_sidebar_html(workspace_param: str) -> str:
     )
 
 
+def _next_action_hero_html(dashboard: Dict[str, Any], focus_task: Dict[str, Any]) -> str:
+    """Render a prominent Next Action hero card on the dashboard."""
+    workspace_param = html.escape(str(dashboard.get("workspace", "")))
+    focus_eval = dashboard.get("focus_resume_eval") or {}
+    continuity = dashboard.get("continuity_overview") or {}
+    resume_packet = continuity.get("resume_packet") or {}
+    next_actions = continuity.get("next_actions") or resume_packet.get("next_recommended_actions") or []
+    unresolved = continuity.get("unresolved_items") or resume_packet.get("unresolved_items") or []
+    quality = focus_eval.get("quality", "")
+    score = focus_eval.get("score", 0)
+
+    if unresolved:
+        action_text = html.escape(str(unresolved[0].get("description", "") or str(unresolved[0])))
+        action_label = "Resolve unresolved item / 解决未完成项"
+    elif next_actions:
+        action_text = html.escape(str(next_actions[0].get("description", "") or str(next_actions[0])))
+        action_label = "Continue next action / 继续下一步"
+    elif focus_task:
+        task_title = html.escape(str(focus_task.get("title", "") or focus_task.get("task_id", "None")))
+        action_text = f"Resume focus task: {task_title}"
+        action_label = "Resume focus task / 恢复焦点任务"
+    else:
+        action_text = "No active focus task. Start a new task with mc_start."
+        action_label = "No focus task / 无焦点任务"
+
+    if focus_task:
+        task_id = html.escape(str(focus_task.get("task_id", "")))
+        link = f"/ui/task?task_id={task_id}&workspace={workspace_param}"
+    else:
+        link = f"/ui/continuity?workspace={workspace_param}"
+
+    quality_chip = ""
+    if quality:
+        quality_chip = f'<span class="chip">quality={html.escape(quality)}</span>'
+    if score:
+        quality_chip += f'<span class="chip">score={html.escape(str(score))}</span>'
+
+    return f"""
+    <section style="margin-bottom:22px;padding:22px;background:var(--panel);border:2px solid var(--accent);border-radius:18px;">
+      <h2 style="margin:0 0 8px;color:var(--accent);">Next Action / 下一步</h2>
+      <div style="font-size:16px;font-weight:600;margin-bottom:6px;">{html.escape(action_label)}</div>
+      <div class="muted" style="font-size:14px;">{action_text}</div>
+      {quality_chip}
+      <a href="{link}" class="cross-link" style="display:inline-block;margin-top:10px;">Go → / 前往 →</a>
+    </section>
+    """
+
+
 def export_mermaid(workspace_file: str | Path) -> str:
     """Export a coarse service topology diagram in Mermaid format."""
     store = WorkspaceStore(workspace_file)
@@ -154,6 +202,7 @@ def export_workspace_dashboard_html(workspace_file: str | Path, intent: str = ""
     li {{ margin: 6px 0; }}
     .score {{ color: var(--accent-2); font-weight: 700; }}
     .muted {{ color: var(--muted); }}
+    .cross-link {{ display:inline-block; color:var(--accent); text-decoration:none; font-weight:600; }}
     .filter-form {{ display:flex; gap:10px; align-items:center; margin-bottom:18px; padding:14px; background:var(--panel); border:1px solid var(--line); border-radius:12px; }}
     .filter-form input, .filter-form select, .filter-form button {{ font-family:inherit; font-size:14px; padding:6px 12px; border:1px solid var(--line); border-radius:8px; background:var(--bg); color:var(--ink); }}
     .filter-form select {{ cursor:pointer; }}
@@ -188,6 +237,7 @@ def export_workspace_dashboard_html(workspace_file: str | Path, intent: str = ""
         <span>Blocked: {len(dashboard.get('blocked_tasks', []))}</span>
       </div>
     </section>
+    {_next_action_hero_html(dashboard, focus_task)}
     <div class="grid">
       <section class="card">
         <h2>Focus Resume Eval</h2>
@@ -294,6 +344,7 @@ def export_continuity_dashboard_html(
         <span>Workspace: {html.escape(str(dashboard.get('workspace', '')))}</span>
         <span>Focus: {html.escape(str(focus_task.get('title', '') or focus_task.get('task_id', 'None')))}</span>
         <span>Phase: {html.escape(str(resume_packet.get('current_phase', '')))}</span>
+        {f'<span><a class="cross-link" href="/ui/task?task_id={html.escape(str(focus_task.get("task_id", "")))}&workspace={html.escape(workspace_param)}">View Focus Task →</a></span>' if focus_task.get('task_id') else ''}
       </div>
     </section>
     <div class="grid">
@@ -349,14 +400,65 @@ def export_workbench_index_html(workspace_file: str | Path) -> str:
     .card {{ display:block; text-decoration:none; color:inherit; padding:20px; background:var(--panel); border:1px solid var(--line); border-radius:16px; }}
     h1,h2 {{ margin:0 0 10px; }}
     p {{ margin:0; color:var(--muted); }}
+    /* Tour overlay */
+    .tour-overlay {{ display:none; position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:900; }}
+    .tour-overlay.active {{ display:flex; align-items:center; justify-content:center; }}
+    .tour-box {{ background:var(--panel); border:2px solid var(--accent); border-radius:20px; padding:28px 32px; max-width:540px; box-shadow:0 20px 60px rgba(0,0,0,.2); }}
+    .tour-box h2 {{ color:var(--accent); }}
+    .tour-box .step {{ font-size:13px; color:var(--muted); margin-bottom:6px; }}
+    .tour-box p {{ font-size:15px; line-height:1.6; }}
+    .tour-box .nav {{ display:flex; gap:10px; margin-top:18px; }}
+    .tour-box button {{ font-family:inherit; font-size:14px; padding:8px 18px; border:1px solid var(--line); border-radius:10px; cursor:pointer; }}
+    .tour-box .next {{ background:var(--accent); color:#fff; border-color:var(--accent); }}
+    .tour-box .skip {{ background:var(--bg); color:var(--muted); }}
   </style>
 </head>
 <body>
   {sidebar}
+  <!-- Guided tour overlay -->
+  <div class="tour-overlay" id="tourOverlay">
+    <div class="tour-box">
+      <div class="step" id="tourStep"></div>
+      <h2 id="tourTitle"></h2>
+      <p id="tourDesc"></p>
+      <div class="nav">
+        <button class="skip" onclick="tourEnd()">Skip / 跳过</button>
+        <button class="next" id="tourNext" onclick="tourNext()">Next →</button>
+      </div>
+    </div>
+  </div>
+  <script>
+    const tourSteps = [
+      {{ title: "Welcome / 欢迎", desc: "This workbench gives you a daily overview of your project memory. Let's walk through it in 5 steps.\\n\\n这个工作台每天给你项目记忆的全局概览。让我们用 5 步走一遍。" }},
+      {{ title: "Dashboard / 总面板", desc: "The Dashboard shows your focus task, active tasks, recent handoffs, and write receipts. It's your starting point every day.\\n\\n总面板展示焦点任务、活跃任务、最近交接和写入回执。这是你每天的起点。" }},
+      {{ title: "Continuity / 连续性", desc: "The Continuity page shows what to resume: your current summary, next actions, and unresolved items. Open this when you come back the next day.\\n\\n连续性页面展示要恢复什么：当前摘要、下一步动作、未解决事项。第二天回来时打开这个。" }},
+      {{ title: "Timeline & Refs / 时间线与引用", desc: "Timeline shows all events and receipts in order. Any short ref can be expanded inline via the ▶ Expand button, or click through to /ui/ref for full detail — including a 'View in Timeline' reverse link.\\n\\n时间线按顺序展示所有事件和回执。任何短引用都可以通过 ▶ 展开按钮内联展开，或点击进入 /ui/ref 查看完整细节——包括反向'在时间线中查看'链接。" }},
+      {{ title: "Lookup & Tools / 查询与工具", desc: "Use the sidebar to navigate to Usage Report (tool adoption), Index Freshness (stale checks), Backend (mirrored data), or the JSON status endpoint. You can also adjust view (compact/full) and budget (small/medium/large) on Dashboard and Continuity pages.\\n\\n用侧栏导航到使用率报告、索引新鲜度、后端数据或 JSON 状态端点。Dashboard 和 Continuity 页面还可以调整 view/budget。" }},
+    ];
+    let tourIdx = 0;
+    function tourShow(i) {{
+      document.getElementById('tourStep').textContent = 'Step ' + (i+1) + '/5';
+      document.getElementById('tourTitle').textContent = tourSteps[i].title;
+      document.getElementById('tourDesc').textContent = tourSteps[i].desc;
+      document.getElementById('tourNext').textContent = i < tourSteps.length - 1 ? 'Next →' : 'Done ✓';
+    }}
+    function tourNext() {{
+      if (tourIdx < tourSteps.length - 1) {{ tourIdx++; tourShow(tourIdx); }}
+      else {{ tourEnd(); }}
+    }}
+    function tourEnd() {{
+      document.getElementById('tourOverlay').classList.remove('active');
+      localStorage.setItem('mc_tour_done', '1');
+    }}
+    if (!localStorage.getItem('mc_tour_done')) {{
+      document.getElementById('tourOverlay').classList.add('active');
+      tourShow(0);
+    }}
+  </script>
   <div class="wrap">
     <section class="hero">
       <h1>Memory Center Workbench</h1>
-      <p>Services indexed: {service_count}</p>
+      <p>Services indexed: {service_count} · <button onclick="localStorage.removeItem('mc_tour_done');location.reload();" style="font-family:inherit;font-size:12px;padding:4px 12px;border:1px solid var(--line);border-radius:8px;background:var(--bg);cursor:pointer;">Replay Tour / 重播引导</button></p>
     </section>
     <section class="card" style="margin-bottom:22px;">
       <h2>Quick Start / 快速入门</h2>
@@ -431,6 +533,7 @@ def export_focus_task_html(workspace_file: str | Path, intent: str = "", task_id
       <h1>{html.escape(str(focus.get('title', '') or focus.get('task_id', 'Focus Task')))}</h1>
       <div class="muted">{html.escape(str(focus.get('focus_reason', '')))}</div>
       <a class="cross-link" href="/ui/timeline?workspace={html.escape(workspace_param)}&task_id={html.escape(resolved_task_id)}">View Timeline → / 查看时间线</a>
+      <a class="cross-link" href="/ui/receipts?workspace={html.escape(workspace_param)}" style="margin-left:8px;">View Receipts → / 查看回执</a>
     </section>
     <div class="grid">
       <section class="card"><h2>Next Actions</h2>{_render_simple_list_html(dashboard.get('next_actions', []))}</section>

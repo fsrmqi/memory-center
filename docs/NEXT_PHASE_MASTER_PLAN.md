@@ -106,7 +106,7 @@
 | v2.0.9 | WP6 评测体系 | 7 个 eval 工具 + token_gain、SQLite memory.db + index_mirror | ✅ 已交付 |
 | v2.0.10 | WP2/WP3 收口 | `recent_evidence` view/gain、`memory_ref_get` timeline_ref、短引用体系 | ✅ 已交付 |
 | v2.0.10 | WP5 交互增强 | budget/compact UI 下拉切换、`<details>` 内联展开、ref→timeline 交叉链接 | ✅ 已交付 |
-| v2.0.11+ | WP5 深化 | guided tour/onboarding、更多页面联动 | 待推进 |
+| v2.0.11 | WP5 深化 | guided tour overlay（首次打开 /ui 引导）、Next Action hero 卡片（dashboard 显示下一步）、continuity→task / task→receipts 跨页 drill-down | ✅ 已交付 |
 | v2.0.11+ | WP3 深化 | 高频接口严格默认短引用、timeline↔ref 页面联动 | 待推进 |
 | v2.1.0 | 外部吸收 | agentmemory benchmark/top-K/hybrid、skills 强约束模板 | 待推进 |
 | v2.1.0 | WP6 深化 | 更多主读路径切 SQLite、长期趋势仪表盘 | 待推进 |
