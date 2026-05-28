@@ -39,6 +39,11 @@ def generate_claude_code_hooks(
         if not claude_hook_name:
             continue  # unknown event, skip
 
+        # Claude Code prompt hooks can interrupt ordinary natural-language requests,
+        # so advisory user-prompt nudges are disabled at the host adapter layer.
+        if event_name == "user_prompt_submit":
+            continue
+
         enabled = spec.get("enabled", True)
         mode = spec.get("mode", "soft")
         if not enabled or mode == "off":

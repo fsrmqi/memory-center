@@ -31,14 +31,14 @@ def _setup_workspace(tmp_path: Path) -> str:
     return str(workspace)
 
 
-def test_claude_code_adapter_generates_4_hook_types(tmp_path: Path):
+def test_claude_code_adapter_generates_3_hook_types(tmp_path: Path):
     ws = _setup_workspace(tmp_path)
     config = load_hooks_config(ws)
     hooks = generate_claude_code_hooks(ws, config)
     assert "SessionStart" in hooks
     assert "PreToolUse" in hooks
     assert "Stop" in hooks
-    assert "UserPromptSubmit" in hooks
+    assert "UserPromptSubmit" not in hooks
 
 
 def test_claude_code_adapter_session_start_is_command(tmp_path: Path):
@@ -64,15 +64,11 @@ def test_claude_code_adapter_pre_edit_has_matcher(tmp_path: Path):
     assert "run-hook" in hook["command"]
 
 
-def test_claude_code_adapter_user_prompt_is_prompt_type(tmp_path: Path):
+def test_claude_code_adapter_skips_user_prompt_submit(tmp_path: Path):
     ws = _setup_workspace(tmp_path)
     config = load_hooks_config(ws)
     hooks = generate_claude_code_hooks(ws, config)
-    entry = hooks["UserPromptSubmit"][0]
-    assert entry["matcher"] == ""
-    hook = entry["hooks"][0]
-    assert hook["type"] == "prompt"
-    assert "$ARGUMENTS" in hook["prompt"] or "Determine" in hook["prompt"]
+    assert "UserPromptSubmit" not in hooks
 
 
 def test_claude_code_adapter_skips_off_mode(tmp_path: Path):
@@ -126,6 +122,8 @@ def test_codex_adapter_generates_scripts(tmp_path: Path):
     for script in scripts:
         content = script.read_text(encoding="utf-8")
         assert "memory-center" in content or "suggest" in content
+    names = {script.name for script in scripts}
+    assert "mc_prompt_submit.sh" not in names
 
 
 def test_codex_adapter_skips_enabled_false(tmp_path: Path):

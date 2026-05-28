@@ -46,6 +46,11 @@ def generate_codex_scripts(
     generated: list[Path] = []
 
     for event_name, spec in hooks_spec.items():
+        # Codex shell wrappers should not inject suggest-style user prompt hooks by
+        # default, otherwise ordinary NL follow-ups can be turned into host-side stops.
+        if event_name == "user_prompt_submit":
+            continue
+
         enabled = spec.get("enabled", True)
         mode = spec.get("mode", "soft")
         if not enabled or mode == "off":

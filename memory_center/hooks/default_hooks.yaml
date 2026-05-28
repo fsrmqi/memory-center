@@ -46,6 +46,7 @@ hooks:
     async: true
 
   user_prompt_submit:
+    enabled: false
     facade: mc_start
     mode: suggest               # suggest = inject prompt, no shell command
     prompt_template: |

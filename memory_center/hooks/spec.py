@@ -70,7 +70,7 @@ DEFAULT_HOOKS = {
             "async": True,
         },
         "user_prompt_submit": {
-            "enabled": True,
+            "enabled": False,
             "facade": "mc_start",
             "mode": "suggest",
             "prompt_template": (

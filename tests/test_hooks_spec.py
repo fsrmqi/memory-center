@@ -50,6 +50,11 @@ def test_default_hooks_modes():
     assert config["hooks"]["user_prompt_submit"]["mode"] == "suggest"
 
 
+def test_default_user_prompt_submit_disabled():
+    config = load_default_hooks()
+    assert config["hooks"]["user_prompt_submit"]["enabled"] is False
+
+
 def test_default_hooks_facades():
     config = load_default_hooks()
     assert config["hooks"]["session_start"]["facade"] == "mc_start"

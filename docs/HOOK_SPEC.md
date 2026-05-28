@@ -23,6 +23,7 @@ version: "1.0"
 
 hooks:
   <event_name>:                  # session_start, pre_edit, session_stop, user_prompt_submit
+    enabled: true|false          # Optional. false disables the hook entirely.
     facade: <facade_name>         # mc_start, mc_lookup, mc_analyze, mc_sync, mc_resume, mc_handoff, mc_close, mc_admin
     mode: <mode>                  # soft, guard, suggest, off
     params:
@@ -44,14 +45,14 @@ hooks:
 |------|----------|----------|
 | `soft` | Execute hook, always return exit 0 (never block host action) | Context injection (sniff, close) |
 | `guard` | Execute hook, return exit 2 if high-risk rules match (blocks host action) | Rule-checking before edits |
-| `suggest` | Inject prompt text into LLM, no shell command executed | UserPromptSubmit nudges |
+| `suggest` | Inject prompt text into LLM, no shell command executed | Optional UserPromptSubmit nudges |
 | `off` | Skip entirely, return disabled message | Per-workspace override |
 
 | 模式 | 行为 | 用途 |
 |------|------|------|
 | `soft` | 执行 hook，始终返回 exit 0（不阻塞主流程） | 上下文注入（sniff, close） |
 | `guard` | 执行 hook，高风险规则匹配时返回 exit 2（阻塞主流程） | 编辑前规则检查 |
-| `suggest` | 注入提示文本到 LLM，不执行 shell 命令 | UserPromptSubmit 提醒 |
+| `suggest` | 注入提示文本到 LLM，不执行 shell 命令 | 可选的 UserPromptSubmit 提醒 |
 | `off` | 跳过，返回禁用消息 | 按 workspace 覆盖 |
 
 ### Parameter Resolution / 参数解析
@@ -81,14 +82,14 @@ hooks:
 | `session_start` | `mc_start` | soft | Auto-sniff + start session on session begin |
 | `pre_edit` | `mc_analyze` | guard | Auto-check rules before Edit/Write; block if must-severity matches |
 | `session_stop` | `mc_close` | soft | Auto-close session + sync + record on session end |
-| `user_prompt_submit` | `mc_start` | suggest | Inject prompt to suggest mc_start for coding tasks |
+| `user_prompt_submit` | `mc_start` | suggest | Disabled by default. Only for hosts where advisory prompt injection will not interrupt ordinary natural-language requests. |
 
 | 事件 | Facade | 模式 | 说明 |
 |------|--------|------|------|
 | `session_start` | `mc_start` | soft | 会话开始时自动 sniff + 启动 session |
 | `pre_edit` | `mc_analyze` | guard | 编辑前自动检查规则；must-severity 匹配时阻塞 |
 | `session_stop` | `mc_close` | soft | 会话结束时自动关闭 + 同步 + 记录 |
-| `user_prompt_submit` | `mc_start` | suggest | 注入提示建议对编码任务调 mc_start |
+| `user_prompt_submit` | `mc_start` | suggest | 默认禁用。仅适用于“建议型 prompt 不会打断普通自然语言请求”的宿主。 |
 
 ### Session ID Lifecycle / session_id 生命周期
 
@@ -145,12 +146,12 @@ Each workspace can have its own `hooks.yaml` in `.memory-center/hooks.yaml` alon
 每个 workspace 可以有自己的 `hooks.yaml`，放在 `.memory-center/hooks.yaml` 与 `workspace.yaml` 同级目录。这允许：
 
 - Different hook strategies per workspace (e.g. guard mode in one, soft in another)
-- Setting `mode: off` on specific hooks
+- Setting `mode: off` or `enabled: false` on specific hooks
 - Narrowing `pre_edit` filter to only high-risk file patterns
 - Changing `budget`, `auto_sync_mode`, etc. per hook
 
 - 不同 workspace 不同 hook 策略（如一个用 guard，一个用 soft）
-- 对特定 hook 设置 `mode: off`
+- 对特定 hook 设置 `mode: off` 或 `enabled: false`
 - 缩窄 `pre_edit` 过滤到只高风险文件模式
 - 按 hook 修改 `budget`、`auto_sync_mode` 等
 
