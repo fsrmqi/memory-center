@@ -43,8 +43,9 @@ def generate_cursor_rules(
     active_hooks = []
     active_instructions = []
     for event_name, spec in hooks_spec.items():
+        enabled = spec.get("enabled", True)
         mode = spec.get("mode", "soft")
-        if mode == "off":
+        if not enabled or mode == "off":
             continue
         facade = spec.get("facade", "")
         active_hooks.append(f"- {event_name} → {facade} (mode={mode})")

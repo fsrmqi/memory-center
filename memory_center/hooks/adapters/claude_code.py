@@ -39,8 +39,9 @@ def generate_claude_code_hooks(
         if not claude_hook_name:
             continue  # unknown event, skip
 
+        enabled = spec.get("enabled", True)
         mode = spec.get("mode", "soft")
-        if mode == "off":
+        if not enabled or mode == "off":
             continue  # disabled hooks are not generated
 
         timeout = spec.get("timeout", 15)

@@ -46,8 +46,9 @@ def generate_codex_scripts(
     generated: list[Path] = []
 
     for event_name, spec in hooks_spec.items():
+        enabled = spec.get("enabled", True)
         mode = spec.get("mode", "soft")
-        if mode == "off":
+        if not enabled or mode == "off":
             continue
 
         script_name = _EVENT_TO_SCRIPT_NAME.get(event_name, f"mc_{event_name}.sh")

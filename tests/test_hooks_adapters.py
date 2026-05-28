@@ -84,6 +84,14 @@ def test_claude_code_adapter_skips_off_mode(tmp_path: Path):
     assert "SessionStart" not in hooks
 
 
+def test_claude_code_adapter_skips_enabled_false(tmp_path: Path):
+    ws = _setup_workspace(tmp_path)
+    config = load_hooks_config(ws)
+    config["hooks"]["session_start"]["enabled"] = False
+    hooks = generate_claude_code_hooks(ws, config)
+    assert "SessionStart" not in hooks
+
+
 def test_claude_code_write_settings(tmp_path: Path):
     ws = _setup_workspace(tmp_path)
     output_path = tmp_path / "settings.local.json"
@@ -120,6 +128,16 @@ def test_codex_adapter_generates_scripts(tmp_path: Path):
         assert "memory-center" in content or "suggest" in content
 
 
+def test_codex_adapter_skips_enabled_false(tmp_path: Path):
+    ws = _setup_workspace(tmp_path)
+    output_dir = tmp_path / "codex-hooks"
+    config = load_hooks_config(ws)
+    config["hooks"]["session_start"]["enabled"] = False
+    scripts = generate_codex_scripts(ws, output_dir=output_dir, hooks_config=config)
+    names = {script.name for script in scripts}
+    assert "mc_session_start.sh" not in names
+
+
 def test_cursor_adapter_generates_rules(tmp_path: Path):
     ws = _setup_workspace(tmp_path)
     output_path = tmp_path / ".cursorrules"
@@ -127,3 +145,13 @@ def test_cursor_adapter_generates_rules(tmp_path: Path):
     assert rules_path.exists()
     content = rules_path.read_text(encoding="utf-8")
     assert "Memory Center" in content
+
+
+def test_cursor_adapter_skips_enabled_false(tmp_path: Path):
+    ws = _setup_workspace(tmp_path)
+    output_path = tmp_path / ".cursorrules"
+    config = load_hooks_config(ws)
+    config["hooks"]["session_start"]["enabled"] = False
+    rules_path = generate_cursor_rules(ws, output_path=output_path, hooks_config=config)
+    content = rules_path.read_text(encoding="utf-8")
+    assert "session_start → mc_start" not in content

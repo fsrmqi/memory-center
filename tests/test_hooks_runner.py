@@ -143,6 +143,30 @@ def test_run_hook_off_mode(tmp_path: Path):
     assert "disabled" in result["system_message"]
 
 
+def test_run_hook_enabled_false_disables_hook(tmp_path: Path):
+    ws = _setup_workspace(tmp_path)
+    import yaml
+    from memory_center.hooks.spec import load_default_hooks
+    config = load_default_hooks()
+    config["hooks"]["session_start"]["enabled"] = False
+    ws_hooks = Path(ws).expanduser().resolve().parent / "hooks.yaml"
+    ws_hooks.write_text(yaml.safe_dump(config, allow_unicode=True, sort_keys=False), encoding="utf-8")
+    result = run_hook(ws, "session_start", {"prompt": "fix bug"})
+    assert result["mode"] == "off"
+    assert result["exit_code"] == 0
+    assert "enabled=false" in result["system_message"]
+
+
+def test_run_hook_pre_edit_tool_matcher_from_filter_skips_non_matching_tool(tmp_path: Path):
+    ws = _setup_workspace(tmp_path)
+    result = run_hook(ws, "pre_edit", {
+        "tool_name": "Read",
+        "tool_input": {"file_path": "common-api/src/main/java/com/example/common/api/dto/ArticleDTO.java"},
+    })
+    assert result["exit_code"] == 0
+    assert "does not match tool_matcher" in result["system_message"]
+
+
 def test_param_resolution_event():
     from memory_center.hooks.runner import _resolve_param
     result = _resolve_param("event", {"prompt": "fix bug"}, "intent")

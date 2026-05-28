@@ -160,14 +160,23 @@ def run_hook(
             "mode": "error",
         }
 
+    enabled = hook_spec.get("enabled", True)
     mode = hook_spec.get("mode", "soft")
     facade = hook_spec.get("facade", "")
     params_spec = hook_spec.get("params", {})
     filter_spec = hook_spec.get("filter", {})
     cleanup_actions = hook_spec.get("cleanup", [])
 
+    if not enabled:
+        return {
+            "exit_code": 0,
+            "system_message": f"[Hook] {hook_name} is disabled (enabled=false)",
+            "hook_result": None,
+            "mode": "off",
+        }
+
     # Tool matcher filter: if hook specifies tool_matcher, check stdin tool_name
-    tool_matcher = hook_spec.get("tool_matcher")
+    tool_matcher = filter_spec.get("tool_matcher", "")
     if tool_matcher and stdin_json:
         tool_name = stdin_json.get("tool_name", "") or (stdin_json.get("tool_input", {}) or {}).get("tool_name", "")
         if tool_name and tool_name != tool_matcher:
