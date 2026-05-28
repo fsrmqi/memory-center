@@ -114,7 +114,7 @@ def _parse_payload(payload_str: str) -> Dict[str, Any] | None:
         import json
         result = json.loads(payload_str)
         return result if isinstance(result, dict) else None
-    except (json.JSONDecodeError, ValueError):
+    except (json.JSONDecodeError, ValueError, TypeError):
         return None
 
 def create_server(workspace_file: str):
@@ -399,7 +399,7 @@ def create_server(workspace_file: str):
             "change_log_compact": lambda: compact_change_log(wf, keep_recent),
             "task_create": lambda: create_task_space(wf, title=title, intent=intent, owner=owner, tags=tags, priority=priority),
             "task_list": lambda: list_task_spaces(wf, include_archived=include_archived),
-            "task_resolve": lambda: resolve_task_space(wf, intent=intent, title=title, create_if_missing=create_if_missing, include_archived=include_archived, limit_candidates=limit, score_threshold=score_threshold),
+            "task_resolve": lambda: resolve_task_space(wf, intent=intent, title=title, create_if_missing=create_if_missing, include_archived=include_archived, limit_candidates=int(params.get("limit_candidates", ["3"])[0]), score_threshold=score_threshold),
             "task_get": lambda: get_task_artifact(wf, task_id, name),
             "task_update": lambda: update_task_artifact(wf, task_id, name, content),
             "task_change_log_append": lambda: append_task_change_log(wf, task_id, entry, keep_recent=keep_recent),

@@ -42,7 +42,9 @@ def workspace_sync_sniff_to_artifacts(
     config, store = load_context(workspace_file)
     sniff = workspace_sniff(workspace_file, intent, limit=limit)
     auto_sync_rules = _load_auto_sync_rules(store)
-    threshold = _score_threshold_for_sync_mode(auto_sync_mode)
+    aliases = (auto_sync_rules or {}).get("mode_aliases", {}) or {}
+    resolved_mode = aliases.get(auto_sync_mode, auto_sync_mode)
+    threshold = _score_threshold_for_sync_mode(resolved_mode)
 
     resolved = resolve_task_space(
         workspace_file,

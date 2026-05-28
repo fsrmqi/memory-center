@@ -64,9 +64,10 @@ def _resolve_param(
         return tool_input.get("file_path", "") or tool_input.get("path", "")
     if from_spec == "file":
         _SESSION_ID_FILE.parent.mkdir(parents=True, exist_ok=True)
-        if _SESSION_ID_FILE.exists():
+        try:
             return _SESSION_ID_FILE.read_text(encoding="utf-8").strip()
-        return ""
+        except FileNotFoundError:
+            return ""
     if from_spec == "static":
         return static_value
     return ""
@@ -129,11 +130,12 @@ def _run_cleanup(cleanup_actions: list[str]) -> None:
 
 def _write_session_id(session_id: str) -> None:
     """Write session_id to the session-id file."""
+    import logging
     try:
         _SESSION_ID_FILE.parent.mkdir(parents=True, exist_ok=True)
         _SESSION_ID_FILE.write_text(session_id, encoding="utf-8")
-    except Exception:
-        pass
+    except Exception as exc:
+        logging.getLogger("memory_center.hooks").warning("Failed to write session_id file: %s", exc)
 
 
 def run_hook(
@@ -211,8 +213,7 @@ def run_hook(
         prompt_template = hook_spec.get("prompt_template", "")
         arguments = ""
         local_stdin = stdin_json or {}
-        if local_stdin.get("prompt"):
-            arguments = local_stdin["prompt"]
+        arguments = local_stdin.get("prompt") or local_stdin.get("text") or local_stdin.get("content") or ""
         rendered = prompt_template.replace("$ARGUMENTS", arguments)
         return {
             "exit_code": 0,

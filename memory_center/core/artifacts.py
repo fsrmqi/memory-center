@@ -11,7 +11,7 @@ from uuid import uuid4
 from filelock import FileLock
 
 from .config import load_workspace_config
-from .store import WorkspaceStore
+from .store import WorkspaceStore, _safe_path
 from .text_utils import base_tokenize
 from .write_receipts import WRITE_RECEIPTS_FILE, build_write_receipt, persist_write_receipt
 
@@ -171,10 +171,31 @@ def append_change_log(workspace_file: str | Path, entry: str) -> Dict[str, objec
     store = WorkspaceStore(workspace_file)
     ensure_default_artifacts(workspace_file)
     filename = DEFAULT_ARTIFACTS["change_log"]
+    archive_name = "change-log.archive.md"
     stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
     content = f"\n## {stamp}\n\n{entry.strip()}\n"
-    path = store.append_artifact(filename, content)
-    compact = compact_change_log(workspace_file, keep_recent=30)
+    path = _safe_path(store.artifacts_dir, filename)
+    archive_path = _safe_path(store.artifacts_dir, archive_name)
+    with FileLock(str(store.lock_file)):
+        with path.open("a", encoding="utf-8") as f:
+            f.write(content)
+        raw = path.read_text(encoding="utf-8")
+        prefix, entries = _split_change_log_entries(raw)
+        compacted = False
+        archived_count = 0
+        if len(entries) > 30:
+            archived_entries = entries[:-30]
+            kept_entries = entries[-30:]
+            archive_content = archive_path.read_text(encoding="utf-8") if archive_path.exists() else ""
+            archive_prefix, archive_existing = _split_change_log_entries(archive_content)
+            if not archive_prefix.strip():
+                archive_prefix = "# Change Log Archive / 历史归档\n"
+            merged_archive = archive_prefix.rstrip() + "\n\n" + "\n\n".join(archive_existing + archived_entries).strip() + "\n"
+            archive_path.write_text(merged_archive, encoding="utf-8")
+            note = "\n> Older entries were archived to `change-log.archive.md` / 较早记录已归档到 `change-log.archive.md`\n"
+            path.write_text(prefix.rstrip() + note + "\n" + "\n\n".join(kept_entries).strip() + "\n", encoding="utf-8")
+            compacted = True
+            archived_count = len(archived_entries)
     return {
         "workspace": config.workspace,
         "appended": True,
@@ -182,7 +203,7 @@ def append_change_log(workspace_file: str | Path, entry: str) -> Dict[str, objec
         "file": filename,
         "path": str(path),
         "entry": entry.strip(),
-        "compaction": compact,
+        "compaction": {"compacted": compacted, "archived": archived_count},
     }
 
 
@@ -602,7 +623,7 @@ def archive_task_space(workspace_file: str | Path, task_id: str, reason: str = "
 def auto_archive_task_spaces(workspace_file: str | Path, retention_days: int = 30) -> Dict[str, object]:
     config = load_workspace_config(workspace_file)
     store = WorkspaceStore(workspace_file)
-    now = datetime.now()
+    now = datetime.now(timezone.utc)
     archived_items = []
     for item in _list_task_dir_entries(store.artifacts_dir / TASKS_DIR, archived=False):
         updated_at = _parse_dt(item.get("updated_at", "")) or _parse_dt(item.get("created_at", ""))
@@ -675,6 +696,7 @@ def _record_artifact_write_audit(
         "write_mode": write_mode,
         "before_bytes": before_bytes,
         "after_bytes": after_bytes,
+        "created_at": datetime.now(timezone.utc).isoformat(),
     }
     store.append_jsonl(ARTIFACT_WRITE_AUDIT_FILE, item)
     created_at = item.get("created_at", "")
@@ -919,7 +941,10 @@ def _parse_dt(value: str):
     if not value:
         return None
     try:
-        return datetime.fromisoformat(value)
+        dt = datetime.fromisoformat(value)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
     except Exception:
         return None
 

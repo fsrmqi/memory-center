@@ -155,4 +155,33 @@ Hook 配置里：
 3. 如果是有意取舍，把原因补进这份文档
 4. 如果不是有意取舍，再认定为 bug
 
-也就是说，这份文档本身就是为了减少“把设计选择误判成 bug”的情况。
+也就是说，这份文档本身就是为了减少”把设计选择误判成 bug”的情况。
+
+## 7. `async` 标记是宿主/Adapter 配置，不在 Runner 内消费
+
+### 现象
+
+`hooks.yaml` 中每条 hook 都可以声明 `async: true`，且 Claude Code adapter 会将其写入 `settings.json`：
+
+```jsonc
+// settings.json 生成结果
+“async”: true
+```
+
+但 `run_hook` 函数本身始终同步执行：解析参数 → 调 facade → 返回结果 dict。runner 内部没有任何异步逻辑。
+
+### 为什么不是 bug
+
+`async` 标记的消费方是**宿主**（Claude Code / Codex），不是 runner。
+
+宿主看到 `async: true` 后，决定是否在后台运行该 hook、是否设置超时、是否等待结果。runner 只是一个一次性执行器，由宿主在合适的时机调用，它不需要知道自己是被同步还是异步调用的。
+
+### 正确理解
+
+- `async: true` = “告诉宿主，这条 hook 适合异步执行”
+- runner 内部 = “同步执行一次，返回结果”
+- 两者不冲突，因为 `async` 是给宿主的建议，不是给 runner 的指令
+
+### 什么时候需要改
+
+只有当 runner 本身需要支持并发执行（如内部线程池、asyncio）时，才需要在 runner 内消费 `async`。当前架构下不需要。
