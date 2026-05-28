@@ -357,10 +357,13 @@ def _build_session_overview(events: List[Dict[str, Any]]) -> Dict[str, Any]:
 
 
 def _compact_evidence_entries(entries: List[Dict[str, Any]], budget: str = "medium") -> List[Dict[str, Any]]:
-    from .common import _budget_limits
-
-    limits = _budget_limits(budget)
-    k = limits["events"]
+    normalized_budget = (budget or "medium").strip().lower()
+    if normalized_budget == "small":
+        k = 3
+    elif normalized_budget == "large":
+        k = 10
+    else:
+        k = 5
     # Top-K strategy (agentmemory pattern): rank by signal richness + recency.
     # Entries with ref_id + summary + payload_ref/receipt_ref are ranked higher.
     def _signal_score(item: Dict[str, Any]) -> int:

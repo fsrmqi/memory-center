@@ -764,6 +764,12 @@ Under the hood, session events, write receipts and handoff history are now conve
 
 在底层，session events、write receipts 和 handoff history 现在开始收敛到同一套 timeline substrate，这样 replay、dashboard、evidence lookup 和 eval 可以复用同一个时间线模型。
 
+For agentmemory-style regression checks, `memory_eval_token_benchmark` now compares 7 high-frequency compact responses (`sniff / status / resume / recent_evidence / continuity / dashboard / handoff`) across `small / medium / large` budgets and returns both per-function tables and total token counts.
+
+为了做 agentmemory 风格的回归检查，`memory_eval_token_benchmark` 现在会对 7 个高频 compact 返回（`sniff / status / resume / recent_evidence / continuity / dashboard / handoff`）在 `small / medium / large` 三档预算下做 token 对比，并同时返回按函数分组的表格和总 token 统计。
+
+`workspace_recent_evidence` also now uses an explicit top-K evidence strategy in compact mode: `small=3`、`medium=5`、`large=10`。排序优先级为 `ref_id + summary + payload_ref/receipt_ref` 的信号丰富度，再按时间倒序，避免 evidence 数量跟通用 event 限额一起漂移。
+
 ## Stable Schemas / 稳定协议
 
 The following response families now carry explicit schema metadata through `schema.name` and `schema.version`, so external CLI wrappers, MCP clients, HTTP consumers, exporters and future UI layers can bind to stable contracts instead of loose dictionaries.

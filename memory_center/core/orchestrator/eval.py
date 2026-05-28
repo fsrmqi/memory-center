@@ -385,6 +385,7 @@ def memory_eval_token_benchmark(
     from .resume import workspace_resume_packet
     from .workspace import workspace_dashboard, workspace_sniff, workspace_status, workspace_continuity_dashboard
     from .session import workspace_recent_evidence
+    from .resume import workspace_handoff_packet
 
     config, _ = load_context(workspace_file)
     budget_tiers = ["small", "medium", "large"]
@@ -395,6 +396,7 @@ def memory_eval_token_benchmark(
         "recent_evidence": lambda b: workspace_recent_evidence(workspace_file, limit=limit, budget=b, view="compact"),
         "continuity": lambda b: workspace_continuity_dashboard(workspace_file, intent=intent, limit=limit, view="compact", budget=b),
         "dashboard": lambda b: workspace_dashboard(workspace_file, intent=intent, limit=limit, view="compact", budget=b),
+        "handoff": lambda b: workspace_handoff_packet(workspace_file, target_model="codex", intent=intent or "benchmark", limit=limit, view="compact", budget=b),
     }
     results = {}
     for name, fn in functions.items():

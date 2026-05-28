@@ -33,7 +33,7 @@ from memory_center.core.config import load_workspace_config
 from memory_center.core.exporters import export_mermaid, export_workspace_dashboard_html, export_workspace_dashboard_markdown
 from memory_center.core.indexer import reindex_workspace
 from memory_center.core.instructions import write_agent_instructions
-from memory_center.core.orchestrator import memory_backend_query, memory_eval_context_weight, memory_eval_handoff, memory_eval_index_freshness, memory_eval_regression_suite, memory_eval_resume, memory_eval_tool_adoption, memory_eval_write_quality, memory_execute_write, memory_plan_write, memory_ref_batch, memory_ref_get, memory_tool_usage_report, memory_write_judge, workspace_continuity_dashboard, workspace_dashboard, workspace_end_session, workspace_handoff_history, workspace_handoff_packet, workspace_log_session_event, workspace_lookup_hint, workspace_model_profile, workspace_next_actions, workspace_recent_evidence, workspace_replay_write_chain, workspace_record_case, workspace_resume_packet, workspace_sniff, workspace_start_session, workspace_status, workspace_trace, workspace_unresolved_items, workspace_write_receipts
+from memory_center.core.orchestrator import memory_backend_query, memory_eval_context_weight, memory_eval_handoff, memory_eval_index_freshness, memory_eval_regression_suite, memory_eval_resume, memory_eval_token_benchmark, memory_eval_tool_adoption, memory_eval_write_quality, memory_execute_write, memory_plan_write, memory_ref_batch, memory_ref_get, memory_tool_usage_report, memory_write_judge, workspace_continuity_dashboard, workspace_dashboard, workspace_end_session, workspace_handoff_history, workspace_handoff_packet, workspace_log_session_event, workspace_lookup_hint, workspace_model_profile, workspace_next_actions, workspace_recent_evidence, workspace_replay_write_chain, workspace_record_case, workspace_resume_packet, workspace_sniff, workspace_start_session, workspace_status, workspace_trace, workspace_unresolved_items, workspace_write_receipts
 from memory_center.core.registry import add_to_group, create_group, register_workspace
 from memory_center.core.rules import ensure_default_rules
 from memory_center.core.schemas import validate_schema_payload
@@ -572,6 +572,12 @@ def test_memory_write_judge_and_plan_write(tmp_path: Path):
     assert compact_entry["summary"]
     # compact entries should be stripped of detail fields
     assert "event_type" not in compact_entry or "session_id" not in compact_entry
+    compact_small = workspace_recent_evidence(workspace, limit=20, view="compact", budget="small")
+    compact_medium = workspace_recent_evidence(workspace, limit=20, view="compact", budget="medium")
+    compact_large = workspace_recent_evidence(workspace, limit=20, view="compact", budget="large")
+    assert len(compact_small["evidence"]) <= 3
+    assert len(compact_medium["evidence"]) <= 5
+    assert len(compact_large["evidence"]) <= 10
     ref_detail = memory_ref_get(workspace, recent_evidence["evidence"][0]["ref_id"])
     assert ref_detail["found"] is True
     # ref→timeline reverse navigation: timeline_ref should be present
@@ -587,6 +593,10 @@ def test_memory_write_judge_and_plan_write(tmp_path: Path):
     handoff_eval = memory_eval_handoff(workspace, target_model="glm-4", intent="更新团队规则", limit=10)
     assert handoff_eval["quality"] in {"high", "medium", "low"}
     assert handoff_eval["schema"]["name"] == "eval_result"
+    token_benchmark = memory_eval_token_benchmark(workspace, intent="更新团队规则", limit=5)
+    assert "benchmark" in token_benchmark
+    assert "handoff" in token_benchmark["benchmark"]
+    assert set(token_benchmark["benchmark"]["handoff"].keys()) >= {"small", "medium", "large", "savings_pct"}
     freshness_eval = memory_eval_index_freshness(workspace, scope="all")
     assert freshness_eval["schema"]["name"] == "eval_result"
     adoption_eval = memory_eval_tool_adoption(workspace, limit=20)

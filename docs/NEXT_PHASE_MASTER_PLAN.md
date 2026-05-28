@@ -74,7 +74,7 @@
 | 工作包 3：统一引用与时间线系统 | ✅ 已交付 | `ref_id + summary`、`memory_ref_get`（含 `timeline_ref` 反向导航）、`memory_ref_batch`、timeline 短引用化、`/ui/ref` 已落地 + "在时间线中查看"交叉链接 | timeline↔ref 页面联动 drill-down、高频接口严格默认短引用模式 |
 | 工作包 4：一键工作流系统 | ✅ 已交付 | CLI `work-start/work-log/work-sync/work-resume/work-handoff/work-close/work-health`、`memory_eval_workflow_orchestration` 工作流编排评测、**MCP facade 工具重构（82→8：mc_start/mc_lookup/mc_analyze/mc_sync/mc_resume/mc_handoff/mc_close/mc_admin）**、**Hook 声明式规范与 runner/adapters 基础已实现（hooks.yaml + run-hook runner + Claude Code adapter + Codex/Cursor placeholder）** | 更强约束的 workflow 模板、mc_admin 拆分（如未来需要）、Codex/Cursor adapter 丰富化、宿主真实生命周期自动接入 |
 | 工作包 5：可视化工作台 | ✅ 大部分已交付 | `/ui` 侧栏导航 + 快速入门指引、`/ui/dashboard` 筛选表单 + budget/compact 下拉切换、`/ui/task` 跨页链接到 timeline、`/ui/timeline` 链接到 ref + 内联 `<details>` 展开、`/ui/receipts` 筛选 + 内联展开、`/ui/backend` 筛选、`/ui/receipts` 筛选、`/ui/continuity` + budget/compact 切换、`/ui/usage`、`/ui/index-freshness`、所有列表渲染函数支持 `<details>` 展开 | guided tour / onboarding 交互、更多页面 budget/compact 切换 |
-| 工作包 6：统一后端与评测体系 | ✅ 已交付 | SQLite `memory.db` 镜像后端（含 `index_mirror` 表）、后端查询入口支持 project/type 过滤、确定性索引读路径全面切换到 `read_json_prefer_backend`（workspace status / query / impact / eval / group / wiki / semantic）、`memory_eval_*` 增强（含 `workflow_orchestration` 评测、`token_gain` 评测） | 更多主读路径切到 SQLite、长期趋势仪表盘 |
+| 工作包 6：统一后端与评测体系 | ✅ 已交付 | SQLite `memory.db` 镜像后端（含 `index_mirror` 表）、后端查询入口支持 project/type 过滤、确定性索引读路径切换到 `read_json_prefer_backend`（workspace status / query / impact / eval / group / wiki / semantic）、`memory_eval_*` 增强（含 `workflow_orchestration`、`token_gain`、`token_benchmark` 评测） | 更多主读路径切到 SQLite、长期趋势仪表盘 |
 
 ### 当前阶段判断
 
@@ -111,7 +111,7 @@
 | v2.0.11 | WP5 深化 | guided tour overlay（首次打开 /ui 引导）、Next Action hero 卡片（dashboard 显示下一步）、continuity→task / task→receipts 跨页 drill-down | ✅ 已交付 |
 | v2.0.11 | WP3 深化 | 全部 7 高频函数默认 view=compact、compact 模式收紧为严格短引用（ref_id+summary only） | ✅ 已交付 |
 | v2.0.11 | Hooks 收口 | Codex adapter 生产化（chmod +x）、Cursor adapter 增强（MCP 命令指令 + Quick Reference） | ✅ 已交付 |
-| v2.1.0 | 外部吸收 | agentmemory benchmark/top-K/hybrid、skills 强约束模板 | 待推进 |
+| v2.1.0 | 外部吸收 | agentmemory token benchmark（7 高频函数）+ top-K evidence（3/5/10），skills 强约束模板、hybrid retrieval | 进行中 |
 | v2.1.0 | WP6 深化 | 更多主读路径切 SQLite、长期趋势仪表盘 | 待推进 |
 
 ## 工作包 1：增量索引系统
@@ -436,7 +436,7 @@ WP1（增量索引）和 rtk-ai/rtk 吸收都已完成，下一阶段优先顺�
 | 参考来源 | 当前阶段立即做 | 下一阶段继续做 | 后续产品化阶段再做 |
 |---|---|---|---|
 | `mattpocock/skills` | `work-*` 一键工作流、低 token 输出风格、**MCP facade 工具重构（82→8）**、**推荐 Hook 映射设计** | 更强约束的 workflow 模板、面向模型的超压缩输出 | 更完整的 skill 体系与自动生成 |
-| `rohitg00/agentmemory` | `compact/full + budget`、short refs、`memory_ref_get / batch`、`memory_eval_context_weight`、**facade mc_lookup 统一检索路由** | 正式 token benchmark、top-K only 策略加强、hybrid retrieval 优化 | 更深层数据库化与长期成本对比 |
+| `rohitg00/agentmemory` | `compact/full + budget`、short refs、`memory_ref_get / batch`、`memory_eval_context_weight`、**facade mc_lookup 统一检索路由**、**`memory_eval_token_benchmark`（7 高频函数）**、**recent_evidence top-K only（3/5/10）** | hybrid retrieval 优化、更正式的长期 benchmark 趋势化 | 更深层数据库化与长期成本对比 |
 | `Understand-Anything` | `/ui/dashboard`、`/ui/continuity`、`/ui/task`、`/ui/timeline`、`/ui/usage`、`/ui/backend`、`/ui/index-freshness` | guided tour、任务学习路径、页面联动 | 更强交互式图形体验与 persona-adaptive UI |
 | `rtk-ai/rtk` | `compact/full + budget`、short refs、工作流压缩思路、**`token_utils`**、**`tracking` gain 日志**、**工具专用 payload 压缩器（git/pytest/grep）**、**`memory_eval_token_gain`** | rtk discover 模式、更完整命令压缩器矩阵、per-model 趋势仪表盘 | 更强的代理层、自动命令重写与长期压缩策略 |
 
@@ -486,14 +486,14 @@ WP1（增量索引）和 rtk-ai/rtk 吸收都已完成，下一阶段优先顺�
 
 还可继续吸收：
 
-- 更正式的 token benchmark
 - 更系统的向量 / hybrid 检索权重策略
+- benchmark 趋势化与长期回归基线
 - 更强的 top-K only 与预算量化体系
 
 建议落地时机：
 
-- 当前阶段：继续沿 `compact + budget + short refs` 这条线收口
-- 下一阶段：补 benchmark、top-K only 和 hybrid retrieval 的量化验证
+- 当前阶段：继续沿 `compact + budget + short refs` 这条线收口，并保持 benchmark / top-K 结果可回归
+- 下一阶段：补 hybrid retrieval 的量化验证与 benchmark 趋势化
 - 后续阶段：再考虑更深的数据库化与长期成本仪表盘
 
 ### 3. `Lum1104/Understand-Anything`
