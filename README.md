@@ -823,21 +823,21 @@ Available MCP prompts / MCP 提示词：
 
 Before a coding agent changes code:
 
-AI 编程助手改代码前必须执行：
+AI 编程助手改代码前推荐按 facade 协议执行：
 
 ```text
-1. Call workspace_sniff_tool(intent)
-2. For class/method/Feign/Topic/config/call-chain lookup, call memory_symbol_tool / memory_search_code_tool / workspace_trace_tool / memory_callers_tool / memory_callees_tool before raw repo-wide text search
-3. Call memory_write_judge_tool(text=intent, source="sniff_intent", intent=intent)
-4. Call memory_plan_write_tool(...) if you need executable write steps
-5. For long-running or collaborative tasks, call workspace_sync_sniff_artifacts_tool to write context/plan into task space
-6. For important contract/topic/service symbols, call memory_context_tool or memory_impact_tool
-7. Before editing files, call workspace_check_rules_tool
-8. If changing DTO/Feign/MQ Message, call workspace_check_contract_tool
-9. For long tasks, record key steps with workspace_start_session_tool / workspace_log_session_event_tool
-10. After validation, call workspace_end_session_tool, then workspace_sync_case_artifacts_tool
-11. Finally call workspace_record_case_tool
+1. Call mc_start(intent)
+2. For any class/method/Feign/topic/config/call-chain lookup, call mc_lookup(mode="auto", query=...)
+3. Before implementation, call mc_analyze(target, depth="standard"|"full")
+4. If the task is long-running or collaborative, call mc_sync(...)
+5. During long tasks, use mc_resume(...) or session workflow commands to keep continuity
+6. After validation, call mc_close(...)
+7. If another model will continue, call mc_handoff(...)
 ```
+
+Atomic tools are still available through CLI / HTTP / internal orchestrator paths when finer control is needed, but MCP users should treat the 8 facade tools as the default public surface.
+
+当需要更细粒度控制时，CLI / HTTP / 内部 orchestrator 仍可使用原子能力；但对 MCP 调用方来说，默认公开接口应视为这 8 个 facade 工具。
 
 ---
 

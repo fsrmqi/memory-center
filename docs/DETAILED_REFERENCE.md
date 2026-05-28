@@ -1792,28 +1792,26 @@ memory-center serve-http \
 
 ```
 1. [开始任务]
-   → workspace_sniff_tool(intent)          # 获取上下文 + 风险评估
+   → mc_start(intent)                      # 获取上下文 + 风险评估 + 可选同步 + 启动会话
 
 2. [深入分析]
-   → workspace_lookup_hint_tool(query, intent) # 先判断检索路由（Memory Center vs 本地搜索）
-   → memory_search_code_tool(query)        # 缩小范围
-   → memory_symbol_tool(name)              # 定位符号
-   → memory_callers_tool(symbol)           # 上游调用链
-   → memory_callees_tool(symbol)           # 下游调用链
+   → mc_lookup(query, mode="auto")         # 自动路由到 symbol/code/query/trace/chain/context/ref/backend
 
 3. [安全检查]
-   → workspace_check_rules_tool(...)       # 架构规则
-   → workspace_check_contract_tool(...)    # 契约安全（如涉及 DTO/Feign/MQ）
-   → memory_plan_change_tool(target)       # 变更计划
-   → memory_verify_checklist_tool(target)  # 验证清单
+   → mc_analyze(target, depth="full")      # 影响面 + 改动计划 + 规则 + 契约 + 验证清单
 
 4. [编码实施]
    → （Agent 编码）
 
-5. [经验沉淀]
-   → workspace_end_session_tool(...)       # 结束 Session
-   → workspace_sync_case_artifacts_tool(...) # 同步 design/change-log/current-summary
-   → workspace_record_case_tool(...)       # 记录长期经验
+5. [过程同步]
+   → mc_sync(intent=..., session_id=...)   # 同步 sniff 或 case
+
+6. [恢复 / 交接]
+   → mc_resume(...)                        # 恢复任务上下文
+   → mc_handoff(target_model=...)          # 多模型交接
+
+7. [经验沉淀]
+   → mc_close(session_id, ...)             # 结束 Session + 同步 case + 可选记录长期经验
 ```
 
 ### 11.3 Agent 指令文件

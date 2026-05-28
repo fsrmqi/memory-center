@@ -72,7 +72,7 @@
 | 工作包 1：增量索引系统 | ✅ 已交付 | `reindex --project`、`--path`、`--changed-only`、`--scope staged|head|all`、局部 JSON index merge、局部 graph rebuild（`partial_rebuild`）、局部 semantic rebuild（`build_workspace_semantic_index_partial`）、删除文件检测与处理、语义 IDF 一致性修复、跨项目 Feign→Endpoint 边保留、`semantic_index_stats` 统一 `read_json_prefer_backend`、`read_json` 全面替换 | 更细粒度的增量策略（如 file-level diff-based partial rebuild） |
 | 工作包 2：统一轻量上下文协议 | ✅ 大部分已交付 | `view=compact|full`、`budget=small|medium|large` 已覆盖 `sniff/status/resume/recent_evidence/continuity/dashboard/handoff`、模型偏好预算映射（`MODEL_BUDGET_PROFILES`）、handoff packet 使用目标模型预算、`token_utils` 估算函数、`tracking` token gain 日志、工具专用 payload 压缩器（git/pytest/grep）、`memory_eval_token_gain`、compact 函数内置 gain 测量 | rtk discover 模式、per-command 压缩器矩阵扩展 |
 | 工作包 3：统一引用与时间线系统 | ✅ 大部分已交付 | `ref_id + summary`、`memory_ref_get`、`memory_ref_batch`、timeline 短引用化、`/ui/ref` 已落地 | `timeline <-> ref` 双向导航、timeline/task/ref 页面联动 drill-down |
-| 工作包 4：一键工作流系统 | ✅ 已交付 | CLI `work-start/work-log/work-sync/work-resume/work-handoff/work-close/work-health`、`memory_eval_workflow_orchestration` 工作流编排评测、**MCP facade 工具重构（82→8：mc_start/mc_lookup/mc_analyze/mc_sync/mc_resume/mc_handoff/mc_close/mc_admin）**、**Hook 宿主集成已实现（hooks.yaml + run-hook runner + Claude Code adapter + Codex/Cursor placeholder）** | 更强约束的 workflow 模板、mc_admin 拆分（如未来需要）、Codex/Cursor adapter 丰富化 |
+| 工作包 4：一键工作流系统 | ✅ 已交付 | CLI `work-start/work-log/work-sync/work-resume/work-handoff/work-close/work-health`、`memory_eval_workflow_orchestration` 工作流编排评测、**MCP facade 工具重构（82→8：mc_start/mc_lookup/mc_analyze/mc_sync/mc_resume/mc_handoff/mc_close/mc_admin）**、**Hook 声明式规范与 runner/adapters 基础已实现（hooks.yaml + run-hook runner + Claude Code adapter + Codex/Cursor placeholder）** | 更强约束的 workflow 模板、mc_admin 拆分（如未来需要）、Codex/Cursor adapter 丰富化、宿主真实生命周期自动接入 |
 | 工作包 5：可视化工作台 | ✅ 大部分已交付 | `/ui` 侧栏导航 + 快速入门指引、`/ui/dashboard` 筛选表单、`/ui/task` 跨页链接到 timeline、`/ui/timeline` 链接到 ref、`/ui/backend` 筛选、`/ui/receipts` 筛选、`/ui/continuity`、`/ui/usage`、`/ui/index-freshness` | guided tour / onboarding 交互 |
 | 工作包 6：统一后端与评测体系 | ✅ 大部分已交付 | SQLite `memory.db` 镜像后端（含 `index_mirror` 表）、后端查询入口支持 project/type 过滤、确定性索引读路径全面切换到 `read_json_prefer_backend`（workspace status / query / impact / eval / group / wiki / semantic）、`memory_eval_*` 增强（含 `workflow_orchestration` 评测） | 更多主读路径切到 SQLite、长期趋势仪表盘 |
 
@@ -87,10 +87,10 @@
    - `rohitg00/agentmemory`：token benchmark、top-K only、hybrid retrieval
    - `mattpocock/skills`：更强约束的 workflow 模板与超压缩输出
 4. ~~**MCP facade 重构**~~：**已完成** — 82 个原子 MCP 工具重构为 8 个任务级 facade 工具（mc_start/mc_lookup/mc_analyze/mc_sync/mc_resume/mc_handoff/mc_close/mc_admin），token 开销从 ~28k 降至 ~2.3k（92% 减少）
-5. **Hooks 自动触发映射**：**已实现** — hooks.yaml 声明式配置 + `memory-center run-hook` host-agnostic runner + Claude Code adapter（`generate-hooks`），Codex/Cursor placeholder adapters。从"模型自己记流程"推进到"关键节点自动触发"
+5. **Hooks 自动触发映射**：**基础已实现，宿主自动接入未完全收口** — hooks.yaml 声明式配置 + `memory-center run-hook` host-agnostic runner + Claude Code adapter（`generate-hooks`），Codex/Cursor placeholder adapters 已具备；但具体宿主生命周期自动挂接仍需在各宿主侧完成
 6. 让 SQLite 后端从镜像/局部查询推进到更多真实读路径，进一步接管统一读取
-5. 让工作台从可看推进到更强交互、联动和 guided tour
-6. 做一轮更系统的 completion audit 与文档一致性审计
+7. 让工作台从可看推进到更强交互、联动和 guided tour
+8. 做一轮更系统的 completion audit 与文档一致性审计
 
 ## 工作包 1：增量索引系统
 
@@ -370,7 +370,7 @@ WP1（增量索引）和 rtk-ai/rtk 吸收都已完成，下一阶段优先顺�
 
 1. ~~增量索引~~ **已完成**
 2. ~~命令输出前置压缩层 / token gain 观测（rtk）~~ **已完成**
-3. ~~MCP facade 重构~~ **已完成**（82→8 facade 工具，92% token 减少）；~~Hook 事件映射~~ **已实现** — hooks.yaml + run-hook runner + Claude Code adapter
+3. ~~MCP facade 重构~~ **已完成**（82→8 facade 工具，92% token 减少）；Hook 事件映射 **基础已实现** — hooks.yaml + run-hook runner + Claude Code adapter，但宿主自动挂接仍待各宿主侧落地
 4. token benchmark + top-K only + hybrid retrieval（agentmemory）
 5. 更强约束的 workflow 模板（mattpocock/skills）
 6. 常驻工作台 guided tour
@@ -624,10 +624,11 @@ WP1（增量索引）和 rtk-ai/rtk 吸收都已完成，下一阶段优先顺�
 
 这意味着系统已经从”功能集合”进入”收口与产品化”阶段。
 
-**最新完成的工作（facade + hook mapping design）**：
+**最新完成的工作（facade + hook / host integration groundwork）**：
 
 - MCP tool surface 从 82 个原子工具重构为 8 个任务级 facade（mc_start/mc_lookup/mc_analyze/mc_sync/mc_resume/mc_handoff/mc_close/mc_admin），token 开销从 ~28k 降至 ~2.3k（92% 减少）
 - 4 个 hook 映射建议：SessionStart→sniff、PreToolUse→check-rules、Stop→close、UserPromptSubmit→任务类型判断
+- hooks.yaml 声明式规范、`memory-center run-hook` runner 与 Claude Code adapter 已落地，为宿主自动挂接提供基础
 - CLAUDE.md 增加 facade 路由规则，明确每个 facade 的触发场景和自动行为
 - CLI/HTTP 保持不变（82+ 原子命令仍供人类使用）
 - 新增 `tests/test_mcp_facades.py` 覆盖 facade 路由
