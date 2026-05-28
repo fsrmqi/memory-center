@@ -132,4 +132,4 @@ Hook 层属于宿主集成，不是核心业务层。推荐自动执行的只有
 - [SPECS.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/SPECS.md)
 - [REFERENCE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/REFERENCE.md)
 - [ROADMAP.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/ROADMAP.md)
-- [../TECHNICAL_GUIDE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/TECHNICAL_GUIDE.md)
+- [TECHNICAL_GUIDE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/TECHNICAL_GUIDE.md)

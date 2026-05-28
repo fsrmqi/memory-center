@@ -167,6 +167,6 @@
 ## 7. 关联文档
 
 - [README.md](/Users/cuijiaqi/Ai-common-skills/memory-center/README.md)
-- [TECHNICAL_GUIDE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/TECHNICAL_GUIDE.md)
+- [TECHNICAL_GUIDE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/TECHNICAL_GUIDE.md)
 - [docs/ROADMAP.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/ROADMAP.md)
 - [docs/ARCHITECTURE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/ARCHITECTURE.md)

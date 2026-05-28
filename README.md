@@ -40,9 +40,10 @@ Memory Center precomputes these relationships before the agent starts editing.
 - [docs/MCP_GUIDE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/MCP_GUIDE.md)
 - [docs/REFERENCE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/REFERENCE.md)
 - [docs/SPECS.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/SPECS.md)
+- [docs/SPECIAL_NOTES.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/SPECIAL_NOTES.md)
 - [docs/ROADMAP.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/ROADMAP.md)
-- [TECHNICAL_GUIDE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/TECHNICAL_GUIDE.md)
-- [NEXT_PHASE_MASTER_PLAN.md](/Users/cuijiaqi/Ai-common-skills/memory-center/NEXT_PHASE_MASTER_PLAN.md)
+- [docs/TECHNICAL_GUIDE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/TECHNICAL_GUIDE.md)
+- [docs/NEXT_PHASE_MASTER_PLAN.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/NEXT_PHASE_MASTER_PLAN.md)
 
 ---
 
@@ -140,6 +141,8 @@ Detailed local setup and multi-project workflow / 详细本地初始化与多项
 - [docs/MCP_GUIDE.md](./docs/MCP_GUIDE.md)
 - [docs/SPECS.md](./docs/SPECS.md)
 - [docs/ROADMAP.md](./docs/ROADMAP.md)
+- [docs/TECHNICAL_GUIDE.md](./docs/TECHNICAL_GUIDE.md)
+- [docs/NEXT_PHASE_MASTER_PLAN.md](./docs/NEXT_PHASE_MASTER_PLAN.md)
 
 ---
 

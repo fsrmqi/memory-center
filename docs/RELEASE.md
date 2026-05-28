@@ -36,4 +36,4 @@
 
 如果要看当前阶段的详细实现计划与状态，请看：
 
-- [../NEXT_PHASE_MASTER_PLAN.md](/Users/cuijiaqi/Ai-common-skills/memory-center/NEXT_PHASE_MASTER_PLAN.md)
+- [NEXT_PHASE_MASTER_PLAN.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/NEXT_PHASE_MASTER_PLAN.md)
