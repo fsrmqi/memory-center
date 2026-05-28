@@ -115,6 +115,13 @@ def test_run_hook_pre_edit_guard_mode_non_must_passes(tmp_path: Path):
 
 def test_run_hook_user_prompt_submit_suggest_mode(tmp_path: Path):
     ws = _setup_workspace(tmp_path)
+    # Default has user_prompt_submit disabled — enable it for this test
+    import yaml
+    from memory_center.hooks.spec import load_default_hooks
+    config = load_default_hooks()
+    config["hooks"]["user_prompt_submit"]["enabled"] = True
+    ws_hooks = Path(ws).expanduser().resolve().parent / "hooks.yaml"
+    ws_hooks.write_text(yaml.safe_dump(config, allow_unicode=True, sort_keys=False), encoding="utf-8")
     result = run_hook(ws, "user_prompt_submit", {"prompt": "how does Kafka consumer work?"})
     assert result["mode"] == "suggest"
     assert result["exit_code"] == 0

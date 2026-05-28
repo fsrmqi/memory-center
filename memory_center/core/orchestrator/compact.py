@@ -242,10 +242,7 @@ def _compact_handoff_packet(result: Dict[str, Any], budget: str = "medium") -> D
                 "what_is_risky": packet.get("what_is_risky", [])[: limits["findings"]],
                 "what_to_check_next": packet.get("what_to_check_next", [])[: limits["steps"]],
                 "minimal_required_context": packet.get("minimal_required_context", {}),
-                "recent_evidence": [
-                    {"ref_id": item.get("ref_id", ""), "summary": item.get("summary", ""), "created_at": item.get("created_at", "")}
-                    for item in packet.get("recent_evidence", [])[: limits["events"]]
-                ],
+                "recent_evidence": packet.get("recent_evidence", [])[: limits["events"]],
                 "notes": packet.get("notes", [])[:2],
             },
             "handoff_ref": result.get("handoff_ref", ""),

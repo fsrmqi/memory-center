@@ -701,8 +701,18 @@ def _classify_case_evidence_ref(ref: Dict[str, Any]) -> str:
 def _merge_artifact_section(existing: str, section_title: str, body: str) -> str:
     marker = f"## {section_title}"
     if marker in existing:
-        prefix = existing.split(marker, 1)[0].rstrip()
-        return f"{prefix}\n\n{marker}\n\n{body.strip()}\n"
+        before, after = existing.split(marker, 1)
+        # Find the next section header in `after` to preserve subsequent sections
+        next_section_idx = after.find("\n## ")
+        if next_section_idx != -1:
+            suffix = after[next_section_idx:]
+        else:
+            suffix = ""
+        prefix = before.rstrip()
+        result = f"{prefix}\n\n{marker}\n\n{body.strip()}\n"
+        if suffix:
+            result += suffix
+        return result
     suffix = f"\n\n{marker}\n\n{body.strip()}\n"
     return existing.rstrip() + suffix if existing.strip() else f"{marker}\n\n{body.strip()}\n"
 

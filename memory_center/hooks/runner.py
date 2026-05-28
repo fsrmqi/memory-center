@@ -85,26 +85,36 @@ def _matches_file_patterns(file_path: str, patterns: list[str]) -> bool:
     """Check if a file path matches any of the given glob patterns, supporting **."""
     if not patterns:
         return True
-    from fnmatch import fnmatch
+    import re as _re
     norm_path = file_path.replace("\\", "/")
-    name = norm_path.rsplit("/", 1)[-1]
     for pattern in patterns:
-        norm_pattern = pattern.replace("\\", "/")
-        if "**" not in norm_pattern:
-            if fnmatch(norm_path, norm_pattern) or fnmatch(name, norm_pattern) or fnmatch(name, norm_pattern.lstrip("/")):
-                return True
-        else:
-            # Support ** recursive glob patterns
-            parts = norm_pattern.split("**")
-            if len(parts) == 2:
-                prefix = parts[0].rstrip("/")
-                suffix = parts[1].lstrip("/")
-                if prefix and not norm_path.startswith(prefix):
-                    continue
-                remaining = norm_path[len(prefix):].lstrip("/") if prefix else norm_path
-                if fnmatch(remaining, suffix) or fnmatch(Path(remaining).name if "/" in remaining else remaining, suffix):
-                    return True
+        norm_pattern = pattern.replace("\\", "/").lstrip("/")
+        regex = _glob_to_regex(norm_pattern)
+        if _re.match(regex, norm_path):
+            return True
     return False
+
+
+def _glob_to_regex(pattern: str) -> str:
+    """Convert a glob pattern with ** support to a regex string."""
+    import re as _re
+    parts = pattern.split("**")
+    regex_parts: list[str] = []
+    for i, part in enumerate(parts):
+        segment = ""
+        for ch in part.strip("/"):
+            if ch == "*":
+                segment += "[^/]*"
+            elif ch == "?":
+                segment += "[^/]"
+            elif ch in r".+^${}|()[]\\":
+                segment += _re.escape(ch)
+            else:
+                segment += ch
+        if i > 0 and segment:
+            regex_parts.append("(?:.*/)?")
+        regex_parts.append(segment)
+    return "^" + "".join(regex_parts) + "$"
 
 
 def _run_cleanup(cleanup_actions: list[str]) -> None:

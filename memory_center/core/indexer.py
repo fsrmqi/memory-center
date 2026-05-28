@@ -366,196 +366,196 @@ def flatten_dict(data: Dict[str, Any], prefix: str = "") -> Dict[str, str]:
 
 
 def build_graph_store(config: WorkspaceConfig, store: WorkspaceStore, *, project_filter: set[str] | None = None, path_filters: Sequence[str] | None = None) -> Dict[str, Any]:
-    graph = GraphStore(store.graph_db_path)
-    nodes: List[GraphNode] = []
-    edges: List[GraphEdge] = []
-    partial = bool(project_filter or path_filters)
-    pf = project_filter or set()
-    pfs = list(path_filters or [])
+    with GraphStore(store.graph_db_path) as graph:
+        nodes: List[GraphNode] = []
+        edges: List[GraphEdge] = []
+        partial = bool(project_filter or path_filters)
+        pf = project_filter or set()
+        pfs = list(path_filters or [])
 
-    ws_id = node_id("Workspace", config.workspace)
-    nodes.append(GraphNode(ws_id, "Workspace", config.workspace))
+        ws_id = node_id("Workspace", config.workspace)
+        nodes.append(GraphNode(ws_id, "Workspace", config.workspace))
 
-    file_index = store.read_json_prefer_backend("file-index.json", [])
-    symbols = store.read_json_prefer_backend("java-symbol-index.json", [])
-    apis_full = store.read_json_prefer_backend("api-index.json", [])
-    feigns = store.read_json_prefer_backend("feign-index.json", [])
-    mq = store.read_json_prefer_backend("mq-index.json", [])
-    configs = store.read_json_prefer_backend("config-index.json", [])
-    topology = store.read_json_prefer_backend("service-topology.json", {})
+        file_index = store.read_json_prefer_backend("file-index.json", [])
+        symbols = store.read_json_prefer_backend("java-symbol-index.json", [])
+        apis_full = store.read_json_prefer_backend("api-index.json", [])
+        feigns = store.read_json_prefer_backend("feign-index.json", [])
+        mq = store.read_json_prefer_backend("mq-index.json", [])
+        configs = store.read_json_prefer_backend("config-index.json", [])
+        topology = store.read_json_prefer_backend("service-topology.json", {})
 
-    if partial:
-        file_index = [r for r in file_index if _row_matches_scope(r, pf, pfs)]
-        symbols = [r for r in symbols if _row_matches_scope(r, pf, pfs, path_key="file")]
-        apis = [r for r in apis_full if _row_matches_scope(r, pf, pfs, path_key="file")]
-        feigns = [r for r in feigns if _row_matches_scope(r, pf, pfs, path_key="file")]
-        mq = [r for r in mq if _row_matches_scope(r, pf, pfs, path_key="file")]
-        configs = [r for r in configs if _row_matches_scope(r, pf, pfs)]
-    else:
-        apis = apis_full
+        if partial:
+            file_index = [r for r in file_index if _row_matches_scope(r, pf, pfs)]
+            symbols = [r for r in symbols if _row_matches_scope(r, pf, pfs, path_key="file")]
+            apis = [r for r in apis_full if _row_matches_scope(r, pf, pfs, path_key="file")]
+            feigns = [r for r in feigns if _row_matches_scope(r, pf, pfs, path_key="file")]
+            mq = [r for r in mq if _row_matches_scope(r, pf, pfs, path_key="file")]
+            configs = [r for r in configs if _row_matches_scope(r, pf, pfs)]
+        else:
+            apis = apis_full
 
-    class_locations: Dict[str, List[Dict[str, Any]]] = {}
-    method_locations: Dict[str, List[str]] = {}
-    declared_method_ids: set[str] = set()
-    field_locations: Dict[str, List[str]] = {}
-    field_type_by_file: Dict[str, Dict[str, str]] = {}
-    method_variable_types_by_file: Dict[str, Dict[str, Dict[str, str]]] = {}
+        class_locations: Dict[str, List[Dict[str, Any]]] = {}
+        method_locations: Dict[str, List[str]] = {}
+        declared_method_ids: set[str] = set()
+        field_locations: Dict[str, List[str]] = {}
+        field_type_by_file: Dict[str, Dict[str, str]] = {}
+        method_variable_types_by_file: Dict[str, Dict[str, Dict[str, str]]] = {}
 
-    for svc in config.services:
-        if pf and svc.name not in pf:
-            continue
-        sid = node_id("Service", svc.name)
-        nodes.append(GraphNode(sid, "Service", svc.name, svc.name, metadata={"service_name": svc.service_name or svc.name, "path": svc.path, "type": svc.type, "tags": svc.tags}))
-        edges.append(GraphEdge(edge_id("CONTAINS", ws_id, sid), ws_id, sid, "CONTAINS", 1.0, {"evidence": "workspace.yaml service"}))
+        for svc in config.services:
+            if pf and svc.name not in pf:
+                continue
+            sid = node_id("Service", svc.name)
+            nodes.append(GraphNode(sid, "Service", svc.name, svc.name, metadata={"service_name": svc.service_name or svc.name, "path": svc.path, "type": svc.type, "tags": svc.tags}))
+            edges.append(GraphEdge(edge_id("CONTAINS", ws_id, sid), ws_id, sid, "CONTAINS", 1.0, {"evidence": "workspace.yaml service"}))
 
-    for item in file_index:
-        fid = node_id("File", item["path"])
-        sid = node_id("Service", item["project"])
-        nodes.append(GraphNode(fid, "File", Path(item["path"]).name, item["project"], item["path"], metadata=item))
-        edges.append(GraphEdge(edge_id("CONTAINS", sid, fid), sid, fid, "CONTAINS", 1.0, {"evidence": "file path under service root"}))
+        for item in file_index:
+            fid = node_id("File", item["path"])
+            sid = node_id("Service", item["project"])
+            nodes.append(GraphNode(fid, "File", Path(item["path"]).name, item["project"], item["path"], metadata=item))
+            edges.append(GraphEdge(edge_id("CONTAINS", sid, fid), sid, fid, "CONTAINS", 1.0, {"evidence": "file path under service root"}))
 
-    for cfg in configs:
-        fid = node_id("File", cfg["path"])
-        for key, value in cfg.get("values", {}).items():
-            kid = node_id("ConfigKey", cfg["project"], key)
-            nodes.append(GraphNode(kid, "ConfigKey", key, cfg["project"], cfg["path"], metadata={"value": value}))
-            edges.append(GraphEdge(edge_id("DECLARES_CONFIG", fid, kid), fid, kid, "DECLARES_CONFIG", 1.0, {"evidence": "YAML config key"}))
+        for cfg in configs:
+            fid = node_id("File", cfg["path"])
+            for key, value in cfg.get("values", {}).items():
+                kid = node_id("ConfigKey", cfg["project"], key)
+                nodes.append(GraphNode(kid, "ConfigKey", key, cfg["project"], cfg["path"], metadata={"value": value}))
+                edges.append(GraphEdge(edge_id("DECLARES_CONFIG", fid, kid), fid, kid, "DECLARES_CONFIG", 1.0, {"evidence": "YAML config key"}))
 
-    for sym in symbols:
-        fid = node_id("File", sym["file"])
-        field_type_by_file[sym["file"]] = sym.get("field_types", {})
-        method_variable_types_by_file[sym["file"]] = sym.get("method_variable_types", {})
-        for cls in sym.get("classes", []) + sym.get("interfaces", []):
-            cid = node_id("Class", sym["project"], cls)
-            class_locations.setdefault(cls, []).append({"id": cid, "project": sym["project"], "file": sym["file"]})
-            nodes.append(GraphNode(cid, "Class", cls, sym["project"], sym["file"], metadata={"package": sym.get("package"), "annotations": sym.get("annotations", []), "parser": "regex"}))
-            edges.append(GraphEdge(edge_id("DECLARES", fid, cid), fid, cid, "DECLARES", 1.0, {"evidence": "class/interface declaration"}))
-            for m in sym.get("methods", []):
-                mid = node_id("Method", sym["project"], cls, m)
-                declared_method_ids.add(mid)
-                method_locations.setdefault(m, []).append(mid)
-                nodes.append(GraphNode(mid, "Method", f"{cls}.{m}", sym["project"], sym["file"], metadata={"method": m}))
-                edges.append(GraphEdge(edge_id("DECLARES", cid, mid), cid, mid, "DECLARES", 1.0, {"evidence": "method declaration"}))
-            for fld in sym.get("fields", []):
-                field_id = node_id("Field", sym["project"], cls, fld)
-                field_locations.setdefault(fld, []).append(field_id)
-                nodes.append(GraphNode(field_id, "Field", f"{cls}.{fld}", sym["project"], sym["file"], metadata={"type": sym.get("field_types", {}).get(fld)}))
-                edges.append(GraphEdge(edge_id("DECLARES", cid, field_id), cid, field_id, "DECLARES", 1.0, {"evidence": "field declaration"}))
+        for sym in symbols:
+            fid = node_id("File", sym["file"])
+            field_type_by_file[sym["file"]] = sym.get("field_types", {})
+            method_variable_types_by_file[sym["file"]] = sym.get("method_variable_types", {})
+            for cls in sym.get("classes", []) + sym.get("interfaces", []):
+                cid = node_id("Class", sym["project"], cls)
+                class_locations.setdefault(cls, []).append({"id": cid, "project": sym["project"], "file": sym["file"]})
+                nodes.append(GraphNode(cid, "Class", cls, sym["project"], sym["file"], metadata={"package": sym.get("package"), "annotations": sym.get("annotations", []), "parser": "regex"}))
+                edges.append(GraphEdge(edge_id("DECLARES", fid, cid), fid, cid, "DECLARES", 1.0, {"evidence": "class/interface declaration"}))
+                for m in sym.get("methods", []):
+                    mid = node_id("Method", sym["project"], cls, m)
+                    declared_method_ids.add(mid)
+                    method_locations.setdefault(m, []).append(mid)
+                    nodes.append(GraphNode(mid, "Method", f"{cls}.{m}", sym["project"], sym["file"], metadata={"method": m}))
+                    edges.append(GraphEdge(edge_id("DECLARES", cid, mid), cid, mid, "DECLARES", 1.0, {"evidence": "method declaration"}))
+                for fld in sym.get("fields", []):
+                    field_id = node_id("Field", sym["project"], cls, fld)
+                    field_locations.setdefault(fld, []).append(field_id)
+                    nodes.append(GraphNode(field_id, "Field", f"{cls}.{fld}", sym["project"], sym["file"], metadata={"type": sym.get("field_types", {}).get(fld)}))
+                    edges.append(GraphEdge(edge_id("DECLARES", cid, field_id), cid, field_id, "DECLARES", 1.0, {"evidence": "field declaration"}))
 
-    # Import edges are file-level probable dependencies.
-    for sym in symbols:
-        for imp in sym.get("imports", []):
-            imported_name = imp.split(".")[-1]
-            for target in class_locations.get(imported_name, []):
-                edges.append(GraphEdge(edge_id("IMPORTS", node_id("File", sym["file"]), node_id("File", target["file"])), node_id("File", sym["file"]), node_id("File", target["file"]), "IMPORTS", 0.55, {"evidence": f"import {imp}", "import": imp}))
+        # Import edges are file-level probable dependencies.
+        for sym in symbols:
+            for imp in sym.get("imports", []):
+                imported_name = imp.split(".")[-1]
+                for target in class_locations.get(imported_name, []):
+                    edges.append(GraphEdge(edge_id("IMPORTS", node_id("File", sym["file"]), node_id("File", target["file"])), node_id("File", sym["file"]), node_id("File", target["file"]), "IMPORTS", 0.55, {"evidence": f"import {imp}", "import": imp}))
 
-    for api in apis:
-        eid = node_id("Endpoint", api["project"], api["http_method"], api["path"])
-        cid = node_id("Class", api["project"], api["controller"])
-        mid = node_id("Method", api["project"], api["controller"], api.get("method_name") or "unknown")
-        nodes.append(GraphNode(eid, "Endpoint", f"{api['http_method']} {api['path']}", api["project"], api["file"], metadata=api))
-        edges.append(GraphEdge(edge_id("EXPOSES_ENDPOINT", cid, eid), cid, eid, "EXPOSES_ENDPOINT", 1.0, {"evidence": "Spring MVC mapping annotation"}))
-        edges.append(GraphEdge(edge_id("HANDLES_ENDPOINT", mid, eid), mid, eid, "HANDLES_ENDPOINT", 0.9, {"evidence": "mapping method"}))
+        for api in apis:
+            eid = node_id("Endpoint", api["project"], api["http_method"], api["path"])
+            cid = node_id("Class", api["project"], api["controller"])
+            mid = node_id("Method", api["project"], api["controller"], api.get("method_name") or "unknown")
+            nodes.append(GraphNode(eid, "Endpoint", f"{api['http_method']} {api['path']}", api["project"], api["file"], metadata=api))
+            edges.append(GraphEdge(edge_id("EXPOSES_ENDPOINT", cid, eid), cid, eid, "EXPOSES_ENDPOINT", 1.0, {"evidence": "Spring MVC mapping annotation"}))
+            edges.append(GraphEdge(edge_id("HANDLES_ENDPOINT", mid, eid), mid, eid, "HANDLES_ENDPOINT", 0.9, {"evidence": "mapping method"}))
 
-    for f in feigns:
-        fc_id = node_id("FeignClient", f["project"], f["interface"])
-        cid = node_id("Class", f["project"], f["interface"])
-        nodes.append(GraphNode(fc_id, "FeignClient", f["interface"], f["project"], f["file"], metadata=f))
-        edges.append(GraphEdge(edge_id("DECLARES", cid, fc_id), cid, fc_id, "DECLARES", 1.0, {"evidence": "@FeignClient"}))
-        target_project = topology_service_project(topology, f.get("target_service")) or f.get("target_service", "unknown")
-        target_service_id = node_id("Service", target_project)
-        edges.append(GraphEdge(edge_id("CALLS_SERVICE", fc_id, target_service_id), fc_id, target_service_id, "CALLS_SERVICE", 0.9, {"evidence": "@FeignClient target service", "target_service": f.get("target_service")}))
-        for method in f.get("methods", []):
-            fm_id = node_id("FeignMethod", f["project"], f["interface"], method.get("method_name", "unknown"))
-            nodes.append(GraphNode(fm_id, "FeignMethod", f"{f['interface']}.{method.get('method_name')}", f["project"], f["file"], metadata=method))
-            edges.append(GraphEdge(edge_id("DECLARES", fc_id, fm_id), fc_id, fm_id, "DECLARES", 1.0, {"evidence": "Feign interface method"}))
-            for api in apis_full if partial else apis:
-                if _endpoint_matches(f, method, api):
-                    ep_id = node_id("Endpoint", api["project"], api["http_method"], api["path"])
-                    edges.append(GraphEdge(edge_id("IMPLEMENTS_FEIGN", fm_id, ep_id), fm_id, ep_id, "IMPLEMENTS_FEIGN", 0.78, {"evidence": "HTTP method/path matched Feign method to Controller endpoint"}))
+        for f in feigns:
+            fc_id = node_id("FeignClient", f["project"], f["interface"])
+            cid = node_id("Class", f["project"], f["interface"])
+            nodes.append(GraphNode(fc_id, "FeignClient", f["interface"], f["project"], f["file"], metadata=f))
+            edges.append(GraphEdge(edge_id("DECLARES", cid, fc_id), cid, fc_id, "DECLARES", 1.0, {"evidence": "@FeignClient"}))
+            target_project = topology_service_project(topology, f.get("target_service")) or f.get("target_service", "unknown")
+            target_service_id = node_id("Service", target_project)
+            edges.append(GraphEdge(edge_id("CALLS_SERVICE", fc_id, target_service_id), fc_id, target_service_id, "CALLS_SERVICE", 0.9, {"evidence": "@FeignClient target service", "target_service": f.get("target_service")}))
+            for method in f.get("methods", []):
+                fm_id = node_id("FeignMethod", f["project"], f["interface"], method.get("method_name", "unknown"))
+                nodes.append(GraphNode(fm_id, "FeignMethod", f"{f['interface']}.{method.get('method_name')}", f["project"], f["file"], metadata=method))
+                edges.append(GraphEdge(edge_id("DECLARES", fc_id, fm_id), fc_id, fm_id, "DECLARES", 1.0, {"evidence": "Feign interface method"}))
+                for api in apis_full if partial else apis:
+                    if _endpoint_matches(f, method, api):
+                        ep_id = node_id("Endpoint", api["project"], api["http_method"], api["path"])
+                        edges.append(GraphEdge(edge_id("IMPLEMENTS_FEIGN", fm_id, ep_id), fm_id, ep_id, "IMPLEMENTS_FEIGN", 0.78, {"evidence": "HTTP method/path matched Feign method to Controller endpoint"}))
 
-    for m in mq:
-        topic_id = node_id("MQTopic", m["topic"])
-        consumer_id = node_id("MQConsumer", m["project"], m.get("class_name") or Path(m["file"]).stem, m["topic"])
-        nodes.append(GraphNode(topic_id, "MQTopic", m["topic"], metadata={"kind": m.get("kind")}))
-        nodes.append(GraphNode(consumer_id, "MQConsumer", m.get("class_name") or Path(m["file"]).stem, m["project"], m["file"], metadata=m))
-        edges.append(GraphEdge(edge_id("CONSUMES_TOPIC", consumer_id, topic_id), consumer_id, topic_id, "CONSUMES_TOPIC", 1.0, {"evidence": "Kafka/RocketMQ listener annotation"}))
-        edges.append(GraphEdge(edge_id("CONTAINS", node_id("Service", m["project"]), consumer_id), node_id("Service", m["project"]), consumer_id, "CONTAINS"))
+        for m in mq:
+            topic_id = node_id("MQTopic", m["topic"])
+            consumer_id = node_id("MQConsumer", m["project"], m.get("class_name") or Path(m["file"]).stem, m["topic"])
+            nodes.append(GraphNode(topic_id, "MQTopic", m["topic"], metadata={"kind": m.get("kind")}))
+            nodes.append(GraphNode(consumer_id, "MQConsumer", m.get("class_name") or Path(m["file"]).stem, m["project"], m["file"], metadata=m))
+            edges.append(GraphEdge(edge_id("CONSUMES_TOPIC", consumer_id, topic_id), consumer_id, topic_id, "CONSUMES_TOPIC", 1.0, {"evidence": "Kafka/RocketMQ listener annotation"}))
+            edges.append(GraphEdge(edge_id("CONTAINS", node_id("Service", m["project"]), consumer_id), node_id("Service", m["project"]), consumer_id, "CONTAINS"))
 
-    # Relationship facts extracted from Java bodies/fields.
-    for sym in symbols:
-        owner_classes = sym.get("classes", []) + sym.get("interfaces", [])
-        owner_class = owner_classes[0] if owner_classes else Path(sym["file"]).stem
-        owner_class_id = node_id("Class", sym["project"], owner_class)
-        file_field_types = field_type_by_file.get(sym["file"], {})
-        file_method_variable_types = method_variable_types_by_file.get(sym["file"], {})
+        # Relationship facts extracted from Java bodies/fields.
+        for sym in symbols:
+            owner_classes = sym.get("classes", []) + sym.get("interfaces", [])
+            owner_class = owner_classes[0] if owner_classes else Path(sym["file"]).stem
+            owner_class_id = node_id("Class", sym["project"], owner_class)
+            file_field_types = field_type_by_file.get(sym["file"], {})
+            file_method_variable_types = method_variable_types_by_file.get(sym["file"], {})
 
-        for inj in sym.get("bean_injections", []):
-            target_type = inj.get("type")
-            target_candidates = class_locations.get(target_type, [])
-            target_id = target_candidates[0]["id"] if target_candidates else node_id("Bean", sym["project"], target_type or inj.get("field_name", "unknown"))
-            nodes.append(GraphNode(target_id, "Bean" if not target_candidates else "Class", target_type or inj.get("field_name", "unknown"), target_candidates[0]["project"] if target_candidates else sym["project"], target_candidates[0]["file"] if target_candidates else sym["file"], metadata=inj))
-            edges.append(GraphEdge(edge_id("INJECTS_BEAN", owner_class_id, target_id), owner_class_id, target_id, "INJECTS_BEAN", 0.82, {"evidence": inj}))
+            for inj in sym.get("bean_injections", []):
+                target_type = inj.get("type")
+                target_candidates = class_locations.get(target_type, [])
+                target_id = target_candidates[0]["id"] if target_candidates else node_id("Bean", sym["project"], target_type or inj.get("field_name", "unknown"))
+                nodes.append(GraphNode(target_id, "Bean" if not target_candidates else "Class", target_type or inj.get("field_name", "unknown"), target_candidates[0]["project"] if target_candidates else sym["project"], target_candidates[0]["file"] if target_candidates else sym["file"], metadata=inj))
+                edges.append(GraphEdge(edge_id("INJECTS_BEAN", owner_class_id, target_id), owner_class_id, target_id, "INJECTS_BEAN", 0.82, {"evidence": inj}))
 
-        for call in sym.get("method_calls", []):
-            target_method = call.get("method_name")
-            receiver = call.get("receiver")
-            owner_method = call.get("owner_method") or ""
-            receiver_type = call.get("receiver_type") or file_method_variable_types.get(owner_method, {}).get(receiver) or file_field_types.get(receiver)
-            source_id = _source_method_id(sym, owner_class, call) or owner_class_id
-            target_ids = []
-            if receiver_type and class_locations.get(receiver_type):
-                for loc in class_locations[receiver_type]:
-                    target_ids.append(node_id("Method", loc["project"], receiver_type, target_method))
-            target_ids.extend(method_locations.get(target_method, [])[:3])
-            for tid in sorted(set(target_ids)):
-                if tid not in declared_method_ids:
-                    nodes.append(GraphNode(tid, "Method", tid.split(":")[-1], metadata={"inferred": True}))
-                edges.append(GraphEdge(edge_id("CALLS_METHOD", source_id, tid), source_id, tid, "CALLS_METHOD", 0.58 if not receiver_type else 0.68, {"evidence": call, "receiver_type": receiver_type}))
+            for call in sym.get("method_calls", []):
+                target_method = call.get("method_name")
+                receiver = call.get("receiver")
+                owner_method = call.get("owner_method") or ""
+                receiver_type = call.get("receiver_type") or file_method_variable_types.get(owner_method, {}).get(receiver) or file_field_types.get(receiver)
+                source_id = _source_method_id(sym, owner_class, call) or owner_class_id
+                target_ids = []
+                if receiver_type and class_locations.get(receiver_type):
+                    for loc in class_locations[receiver_type]:
+                        target_ids.append(node_id("Method", loc["project"], receiver_type, target_method))
+                target_ids.extend(method_locations.get(target_method, [])[:3])
+                for tid in sorted(set(target_ids)):
+                    if tid not in declared_method_ids:
+                        nodes.append(GraphNode(tid, "Method", tid.split(":")[-1], metadata={"inferred": True}))
+                    edges.append(GraphEdge(edge_id("CALLS_METHOD", source_id, tid), source_id, tid, "CALLS_METHOD", 0.58 if not receiver_type else 0.68, {"evidence": call, "receiver_type": receiver_type}))
 
-        for usage in sym.get("dto_field_usages", []):
-            source_id = _source_method_id(sym, owner_class, usage) or owner_class_id
-            receiver_type = usage.get("receiver_type")
-            matching_fields = []
-            if receiver_type:
-                matching_fields.extend(
-                    field_id
-                    for field_id in field_locations.get(usage.get("field"), [])
-                    if f":{receiver_type}:" in field_id
-                )
-            if not matching_fields:
-                matching_fields = field_locations.get(usage.get("field"), [])[:5]
-            for fid in matching_fields[:5]:
-                edges.append(
-                    GraphEdge(
-                        edge_id("READS_FIELD", source_id, fid),
-                        source_id,
-                        fid,
-                        "READS_FIELD",
-                        0.74 if receiver_type else 0.62,
-                        {"evidence": usage, "receiver_type": receiver_type},
+            for usage in sym.get("dto_field_usages", []):
+                source_id = _source_method_id(sym, owner_class, usage) or owner_class_id
+                receiver_type = usage.get("receiver_type")
+                matching_fields = []
+                if receiver_type:
+                    matching_fields.extend(
+                        field_id
+                        for field_id in field_locations.get(usage.get("field"), [])
+                        if f":{receiver_type}:" in field_id
                     )
-                )
+                if not matching_fields:
+                    matching_fields = field_locations.get(usage.get("field"), [])[:5]
+                for fid in matching_fields[:5]:
+                    edges.append(
+                        GraphEdge(
+                            edge_id("READS_FIELD", source_id, fid),
+                            source_id,
+                            fid,
+                            "READS_FIELD",
+                            0.74 if receiver_type else 0.62,
+                            {"evidence": usage, "receiver_type": receiver_type},
+                        )
+                    )
 
-        for usage in sym.get("config_usages", []):
-            key = usage.get("key")
-            kid = node_id("ConfigKey", sym["project"], key)
-            nodes.append(GraphNode(kid, "ConfigKey", key, sym["project"], sym["file"], metadata=usage))
-            edges.append(GraphEdge(edge_id("READS_CONFIG", owner_class_id, kid), owner_class_id, kid, "READS_CONFIG", 0.84, {"evidence": usage}))
+            for usage in sym.get("config_usages", []):
+                key = usage.get("key")
+                kid = node_id("ConfigKey", sym["project"], key)
+                nodes.append(GraphNode(kid, "ConfigKey", key, sym["project"], sym["file"], metadata=usage))
+                edges.append(GraphEdge(edge_id("READS_CONFIG", owner_class_id, kid), owner_class_id, kid, "READS_CONFIG", 0.84, {"evidence": usage}))
 
-        for resource in sym.get("data_resources", []):
-            rid = node_id(resource.get("kind", "DataResource"), resource.get("name", "unknown"))
-            nodes.append(GraphNode(rid, resource.get("kind", "DataResource"), resource.get("name", "unknown"), sym["project"], sym["file"], metadata=resource))
-            edges.append(GraphEdge(edge_id("USES_DATA_RESOURCE", owner_class_id, rid), owner_class_id, rid, "USES_DATA_RESOURCE", 0.72, {"evidence": resource}))
+            for resource in sym.get("data_resources", []):
+                rid = node_id(resource.get("kind", "DataResource"), resource.get("name", "unknown"))
+                nodes.append(GraphNode(rid, resource.get("kind", "DataResource"), resource.get("name", "unknown"), sym["project"], sym["file"], metadata=resource))
+                edges.append(GraphEdge(edge_id("USES_DATA_RESOURCE", owner_class_id, rid), owner_class_id, rid, "USES_DATA_RESOURCE", 0.72, {"evidence": resource}))
 
-    if partial:
-        graph_counts = graph.partial_rebuild(nodes, edges, pf, pfs)
-    else:
-        graph.rebuild(nodes, edges)
-        graph.rebuild_search_index()
-        graph_counts = graph.counts()
-    store.write_json("graph-summary.json", graph_counts)
-    return graph_counts
+        if partial:
+            graph_counts = graph.partial_rebuild(nodes, edges, pf, pfs)
+        else:
+            graph.rebuild(nodes, edges)
+            graph.rebuild_search_index()
+            graph_counts = graph.counts()
+        store.write_json("graph-summary.json", graph_counts)
+        return graph_counts
 
 
 def _endpoint_matches(feign: Dict[str, Any], method: Dict[str, Any], api: Dict[str, Any]) -> bool:
