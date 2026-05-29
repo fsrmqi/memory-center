@@ -76,8 +76,9 @@ def reindex_workspace(
                 if "FeignClient" in symbol.annotations:
                     pending_feigns.append((svc.name, rel, text, symbol))
                 mq_index.extend(to_dict(x) for x in parse_mq_endpoints(svc.name, rel, text, symbol))
+                mq_index.extend(to_dict(x) for x in parse_mq_producers(svc.name, rel, text))
             elif path.name in CONFIG_NAMES:
-                config_index.append({"project": svc.name, "path": rel, "values": parse_yaml_config(path)})
+                config_index.append({"project": svc.name, "path": rel, **parse_yaml_config(path)})
 
     # Build constant map from completed symbol scan, then resolve feign target_service
     if partial:
@@ -284,21 +285,65 @@ def parse_mq_endpoints(project: str, rel: str, text: str, symbol: JavaSymbol) ->
     endpoints: List[MqEndpoint] = []
     class_name = (symbol.classes or [Path(rel).stem])[0]
     for args, method_name in _listener_annotations(text, "KafkaListener"):
-        topic = extract_named_value(args, "topics") or extract_named_value(args, "topic") or extract_first_string(args) or "unknown-topic"
+        raw_topic = extract_named_value(args, "topics") or extract_named_value(args, "topic") or extract_first_string(args) or ""
+        topic, placeholder = _topic_value(raw_topic)
+        if not topic and not placeholder:
+            topic = "unknown-topic"
         group = extract_named_value(args, "groupId") or extract_named_value(args, "group")
-        endpoints.append(MqEndpoint(project, rel, "kafka", clean_topic(topic), group, class_name, method_name))
+        endpoints.append(MqEndpoint(project, rel, "kafka", topic, group, class_name, method_name, topic_placeholder=placeholder))
     for args, method_name in _listener_annotations(text, "RocketMQMessageListener"):
-        topic = extract_named_value(args, "topic") or "unknown-topic"
+        raw_topic = extract_named_value(args, "topic") or ""
+        topic, placeholder = _topic_value(raw_topic)
+        if not topic and not placeholder:
+            topic = "unknown-topic"
         group = extract_named_value(args, "consumerGroup") or extract_named_value(args, "selectorExpression")
-        endpoints.append(MqEndpoint(project, rel, "rocketmq", clean_topic(topic), group, class_name, method_name))
+        endpoints.append(MqEndpoint(project, rel, "rocketmq", topic, group, class_name, method_name, topic_placeholder=placeholder))
+    if _is_function_consumer(text):
+        binding_name = _camel_to_binding_name(class_name)
+        endpoints.append(MqEndpoint(
+            project=project, file=rel, kind="kafka-stream",
+            topic="", group="", class_name=class_name, method_name="apply",
+            topic_placeholder=f"spring.cloud.stream.bindings.{binding_name}-in-0.destination",
+        ))
     return endpoints
 
 
-def parse_yaml_config(path: Path) -> Dict[str, str]:
+def parse_yaml_config(path: Path) -> Dict[str, Any]:
     try:
-        return flatten_dict(yaml.safe_load(path.read_text(encoding="utf-8", errors="ignore")) or {})
+        data = yaml.safe_load(path.read_text(encoding="utf-8", errors="ignore")) or {}
+        values = flatten_dict(data)
+        stream_bindings = _extract_stream_bindings(data)
+        custom_kafka = _extract_custom_kafka_consumers(data)
+        return {"values": values, "stream_bindings": stream_bindings, "custom_kafka_consumers": custom_kafka}
     except Exception:
-        return {}
+        return {"values": {}, "stream_bindings": {}, "custom_kafka_consumers": {}}
+
+
+def _extract_stream_bindings(data: Dict[str, Any]) -> Dict[str, str]:
+    """Extract spring.cloud.stream.bindings.<name>.destination → topic mapping."""
+    result: Dict[str, str] = {}
+    spring = data.get("spring", {})
+    cloud = spring.get("cloud", {}) if isinstance(spring, dict) else {}
+    stream = cloud.get("stream", {}) if isinstance(cloud, dict) else {}
+    bindings = stream.get("bindings", {}) if isinstance(stream, dict) else {}
+    if isinstance(bindings, dict):
+        for binding_name, config in bindings.items():
+            if isinstance(config, dict) and "destination" in config:
+                result[binding_name] = str(config["destination"])
+    return result
+
+
+def _extract_custom_kafka_consumers(data: Dict[str, Any]) -> Dict[str, str]:
+    """Extract ucap.kafka.consumers.<name>.topic → topic mapping."""
+    result: Dict[str, str] = {}
+    ucap = data.get("ucap", {})
+    kafka = ucap.get("kafka", {}) if isinstance(ucap, dict) else {}
+    consumers = kafka.get("consumers", {}) if isinstance(kafka, dict) else {}
+    if isinstance(consumers, dict):
+        for consumer_name, config in consumers.items():
+            if isinstance(config, dict) and "topic" in config:
+                result[consumer_name] = str(config["topic"])
+    return result
 
 
 def build_topology(config: WorkspaceConfig, feigns: List[Dict], apis: List[Dict], mq: List[Dict], config_index: List[Dict]) -> Dict[str, Any]:
@@ -318,8 +363,17 @@ def build_topology(config: WorkspaceConfig, feigns: List[Dict], apis: List[Dict]
     feign_edges = [{"from_project": f["project"], "to_service": f["target_service"], "to_project": service_names.get(f["target_service"]), "client": f["interface"], "file": f["file"]} for f in feigns]
     mq_topics: Dict[str, Dict[str, Any]] = {}
     for m in mq:
-        item = mq_topics.setdefault(m["topic"], {"topic": m["topic"], "consumers": [], "producers": []})
-        item["consumers"].append({"project": m["project"], "file": m["file"], "class": m.get("class_name"), "kind": m["kind"]})
+        kind = m.get("kind", "")
+        is_producer = kind in ("kafka-producer", "rocketmq-producer")
+        key = m["topic"] or m.get("topic_placeholder", "unknown")
+        if not key:
+            key = "unknown-topic"
+        item = mq_topics.setdefault(key, {"topic": key, "consumers": [], "producers": []})
+        entry = {"project": m["project"], "file": m["file"], "class": m.get("class_name"), "kind": kind}
+        if is_producer:
+            item["producers"].append(entry)
+        else:
+            item["consumers"].append(entry)
     return {"services": services, "feign_edges": feign_edges, "api_count": len(apis), "mq_topics": list(mq_topics.values()), "configs": config_index}
 
 
@@ -365,7 +419,26 @@ def _build_constant_map(symbol_index: List[Dict[str, Any]]) -> Dict[str, str]:
                 for cls in sym.get("classes", []) + sym.get("interfaces", []):
                     constant_map[f"{cls}.{fname}"] = fval
     return constant_map
-    return m.group(1) if m else None
+
+
+def _extract_topic_placeholder(raw: str | None) -> str:
+    m = re.search(r"\$\{([^}:]+)(?::[^}]*)?\}", raw or "")
+    return m.group(1) if m else ""
+
+
+def _topic_value(raw: str | None) -> tuple[str, str]:
+    if not raw:
+        return "", ""
+    placeholder = _extract_topic_placeholder(raw)
+    if placeholder:
+        return "", placeholder
+    return clean_topic(raw), ""
+
+
+def _camel_to_binding_name(value: str) -> str:
+    if not value:
+        return ""
+    return value[:1].lower() + value[1:]
 
 
 def extract_method_from_args(args: str) -> str | None:
@@ -391,6 +464,28 @@ def _listener_annotations(text: str, annotation: str) -> List[tuple[str, str | N
         re.MULTILINE,
     )
     return [(args, method_name) for args, method_name in pattern.findall(text)]
+
+
+def _is_function_consumer(text: str) -> bool:
+    """Detect Spring Cloud Stream function-style consumers: implements Function<ConsumerRecord<...>> or similar patterns."""
+    if re.search(r'\b(?:implements|extends)\s+[\w\s,<>.]*Function\s*<', text):
+        if 'ConsumerRecord' in text:
+            return True
+        # Also detect spring.messaging Message<?> pattern
+        if 'Message<' in text or 'org.springframework.messaging' in text:
+            return True
+    return False
+
+
+def parse_mq_producers(project: str, rel: str, text: str) -> List[MqEndpoint]:
+    producers: List[MqEndpoint] = []
+    # KafkaTemplate.send(topic, ...) - literal topic
+    for m in re.finditer(r'kafkaTemplate\s*\.\s*(?:send|sendDefault)\s*\(\s*"([^"]+)"', text):
+        producers.append(MqEndpoint(project=project, file=rel, kind="kafka-producer", topic=m.group(1)))
+    # RocketMQTemplate.syncSend / asyncSend / send(topic, ...) - literal topic
+    for m in re.finditer(r'rocketMQTemplate\s*\.\s*(?:syncSend|asyncSend|send)\s*\(\s*"([^"]+)"', text):
+        producers.append(MqEndpoint(project=project, file=rel, kind="rocketmq-producer", topic=m.group(1)))
+    return producers
 
 
 def flatten_dict(data: Dict[str, Any], prefix: str = "") -> Dict[str, str]:
@@ -514,12 +609,21 @@ def build_graph_store(config: WorkspaceConfig, store: WorkspaceStore, *, project
                         edges.append(GraphEdge(edge_id("IMPLEMENTS_FEIGN", fm_id, ep_id), fm_id, ep_id, "IMPLEMENTS_FEIGN", 0.78, {"evidence": "HTTP method/path matched Feign method to Controller endpoint"}))
 
         for m in mq:
-            topic_id = node_id("MQTopic", m["topic"])
-            consumer_id = node_id("MQConsumer", m["project"], m.get("class_name") or Path(m["file"]).stem, m["topic"])
-            nodes.append(GraphNode(topic_id, "MQTopic", m["topic"], metadata={"kind": m.get("kind")}))
-            nodes.append(GraphNode(consumer_id, "MQConsumer", m.get("class_name") or Path(m["file"]).stem, m["project"], m["file"], metadata=m))
-            edges.append(GraphEdge(edge_id("CONSUMES_TOPIC", consumer_id, topic_id), consumer_id, topic_id, "CONSUMES_TOPIC", 1.0, {"evidence": "Kafka/RocketMQ listener annotation"}))
-            edges.append(GraphEdge(edge_id("CONTAINS", node_id("Service", m["project"]), consumer_id), node_id("Service", m["project"]), consumer_id, "CONTAINS"))
+            kind = m.get("kind", "")
+            topic = m["topic"] or m.get("topic_placeholder", "unknown")
+            if not topic:
+                topic = "unknown-topic"
+            topic_id = node_id("MQTopic", topic)
+            is_producer = kind in ("kafka-producer", "rocketmq-producer")
+            node_kind = "MQProducer" if is_producer else "MQConsumer"
+            node_name = m.get("class_name") or Path(m["file"]).stem
+            node_id_val = node_id(node_kind, m["project"], node_name, topic)
+            edge_type = "PRODUCES_TOPIC" if is_producer else "CONSUMES_TOPIC"
+            evidence = f"{kind} {'producer' if is_producer else 'listener'}"
+            nodes.append(GraphNode(topic_id, "MQTopic", topic, metadata={"kind": kind}))
+            nodes.append(GraphNode(node_id_val, node_kind, node_name, m["project"], m["file"], metadata=m))
+            edges.append(GraphEdge(edge_id(edge_type, node_id_val, topic_id), node_id_val, topic_id, edge_type, 1.0, {"evidence": evidence}))
+            edges.append(GraphEdge(edge_id("CONTAINS", node_id("Service", m["project"]), node_id_val), node_id("Service", m["project"]), node_id_val, "CONTAINS"))
 
         # Relationship facts extracted from Java bodies/fields.
         for sym in symbols:

@@ -103,6 +103,7 @@ class MqEndpoint:
     group: Optional[str] = None
     class_name: Optional[str] = None
     method_name: Optional[str] = None
+    topic_placeholder: str = ""
 
 
 @dataclass
