@@ -539,7 +539,7 @@ def _filter_call_edges(edges: List[Dict[str, Any]], direction: str) -> List[Dict
     }
     # Direction-aware filtering: separate inbound/outbound edge preferences
     inbound_preferred = {"CALLS_METHOD", "CALLS_SERVICE", "IMPLEMENTS_FEIGN", "CONSUMES_TOPIC", "READS_FIELD", "READS_CONFIG", "INJECTS_BEAN", "IMPORTS"}
-    outbound_preferred = {"HANDLES_ENDPOINT", "PRODUCES_TOPIC", "CALLS_METHOD", "CALLS_SERVICE"}
+    outbound_preferred = {"HANDLES_ENDPOINT", "PRODUCES_TOPIC", "CALLS_METHOD", "CALLS_SERVICE", "IMPLEMENTS_FEIGN"}
     if direction in {"upstream", "incoming"}:
         edge_types = inbound_preferred
     elif direction in {"downstream", "outgoing"}:

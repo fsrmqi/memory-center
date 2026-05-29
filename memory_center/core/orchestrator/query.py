@@ -108,8 +108,13 @@ def memory_callers(workspace_file: str | Path, symbol: str, depth: int = 2, limi
     if not info.get("found"):
         return {"symbol": symbol, "found": False, "callers": [], "lookup": info.get("lookup", {})}
     node = info["best_match"]
+    # BFS limit must be much larger than the caller-requested limit because
+    # _filter_call_edges strips structural edges (CONTAINS, DECLARES, IMPORTS)
+    # that dominate large graphs. Without amplification, the BFS frontier gets
+    # consumed by structural edges before reaching deeper call-type edges.
+    internal_limit = max(limit * 20, 500)
     with GraphStore(load_context(workspace_file)[1].graph_db_path) as graph:
-        edges = graph.neighbors(node["id"], direction="upstream", max_depth=depth, limit=max(limit, 20))
+        edges = graph.neighbors(node["id"], direction="upstream", max_depth=depth, limit=internal_limit)
     callers = _filter_call_edges(edges, direction="upstream")[:limit]
     return {
         "symbol": symbol,
@@ -126,8 +131,9 @@ def memory_callees(workspace_file: str | Path, symbol: str, depth: int = 2, limi
     if not info.get("found"):
         return {"symbol": symbol, "found": False, "callees": [], "lookup": info.get("lookup", {})}
     node = info["best_match"]
+    internal_limit = max(limit * 20, 500)
     with GraphStore(load_context(workspace_file)[1].graph_db_path) as graph:
-        edges = graph.neighbors(node["id"], direction="downstream", max_depth=depth, limit=max(limit, 20))
+        edges = graph.neighbors(node["id"], direction="downstream", max_depth=depth, limit=internal_limit)
     callees = _filter_call_edges(edges, direction="downstream")[:limit]
     return {
         "symbol": symbol,
