@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -948,29 +949,32 @@ def group_chain(
     # Step 6: detect boundary points
     boundary_points = _detect_boundary_points(local_edges, local_services)
 
-    # Step 7-8: find continuations via bridges and run target chains
+    # Step 7-8: find continuations via bridges and run target chains (parallelized)
     continuations: List[Dict[str, Any]] = []
     bridges_used: List[Dict[str, Any]] = []
+    tasks = []
     for bp in boundary_points:
-        entry_points = _find_continuation_entry_points(bp, bridges, group_data)
-        for ep in entry_points:
-            target_wf = ep.get("workspace_file", "")
-            if not target_wf:
-                continue
-            target_result = chain_func(
-                target_wf, ep["continuation_symbol"],
-                depth=max(depth - 1, 1), limit=limit,
-            )
-            target_edges = target_result.get(
-                "callees" if direction == "callees" else "callers", [],
-            )
-            continuations.append({
-                "boundary": bp,
-                "bridge": ep["bridge"],
-                "target_workspace": ep.get("workspace_name", ""),
-                "continuation": target_edges,
-            })
-            bridges_used.append(ep["bridge"])
+        for ep in _find_continuation_entry_points(bp, bridges, group_data):
+            if ep.get("workspace_file"):
+                tasks.append((bp, ep))
+
+    if tasks:
+        edge_key = "callees" if direction == "callees" else "callers"
+        with ThreadPoolExecutor(max_workers=min(len(tasks), 4)) as pool:
+            futures = {}
+            for bp, ep in tasks:
+                fut = pool.submit(chain_func, ep["workspace_file"],
+                                  ep["continuation_symbol"], max(depth - 1, 1), limit)
+                futures[fut] = (bp, ep)
+            for fut in as_completed(futures):
+                bp, ep = futures[fut]
+                target_result = fut.result()
+                continuations.append({
+                    "boundary": bp, "bridge": ep["bridge"],
+                    "target_workspace": ep.get("workspace_name", ""),
+                    "continuation": target_result.get(edge_key, []),
+                })
+                bridges_used.append(ep["bridge"])
 
     # Step 9: stitch chains
     stitched = _stitch_chain(local_edges, continuations, source_workspace.get("workspace", ""), direction)

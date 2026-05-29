@@ -238,6 +238,7 @@ def create_server(workspace_file: str):
         if mode == "trace":
             return {"mode": "trace", "result": workspace_trace(wf, entry or query)}
         if mode == "chain":
+            cross_types = ["CALLS_SERVICE", "IMPLEMENTS_FEIGN"] if scope == "cross-service" else None
             matching_groups = _find_groups_for_workspace(wf)
             if len(matching_groups) == 1:
                 result = group_chain(matching_groups[0], symbol or query,
@@ -245,9 +246,9 @@ def create_server(workspace_file: str):
                 return {"mode": "chain-group", "result": result}
             if len(matching_groups) > 1:
                 if chain_direction == "callees":
-                    result = memory_callees(wf, symbol or query, depth, limit)
+                    result = memory_callees(wf, symbol or query, depth, limit, edge_type_filter=cross_types)
                 else:
-                    result = memory_callers(wf, symbol or query, depth, limit)
+                    result = memory_callers(wf, symbol or query, depth, limit, edge_type_filter=cross_types)
                 _annotate_phantom_nodes(result, wf)
                 return {
                     "mode": f"chain-{chain_direction}",
@@ -256,9 +257,9 @@ def create_server(workspace_file: str):
                     "_hint": f"Workspace 属于多个 group ({', '.join(matching_groups)})，请用 mc_admin(action='group_chain', group=...) 显式指定。",
                 }
             if chain_direction == "callees":
-                result = memory_callees(wf, symbol or query, depth, limit)
+                result = memory_callees(wf, symbol or query, depth, limit, edge_type_filter=cross_types)
             else:
-                result = memory_callers(wf, symbol or query, depth, limit)
+                result = memory_callers(wf, symbol or query, depth, limit, edge_type_filter=cross_types)
             _annotate_phantom_nodes(result, wf)
             return {"mode": f"chain-{chain_direction}", "result": result}
         if mode == "context":

@@ -532,21 +532,44 @@ def _rrf(rank: int, k: int = 60) -> float:
     return 1.0 / (k + rank)
 
 
-def _filter_call_edges(edges: List[Dict[str, Any]], direction: str) -> List[Dict[str, Any]]:
-    preferred = {
-        "CALLS_METHOD", "CALLS_SERVICE", "IMPLEMENTS_FEIGN", "HANDLES_ENDPOINT",
-        "CONSUMES_TOPIC", "READS_FIELD", "READS_CONFIG", "INJECTS_BEAN", "IMPORTS",
-    }
-    # Direction-aware filtering: separate inbound/outbound edge preferences
-    inbound_preferred = {"CALLS_METHOD", "CALLS_SERVICE", "IMPLEMENTS_FEIGN", "CONSUMES_TOPIC", "READS_FIELD", "READS_CONFIG", "INJECTS_BEAN", "IMPORTS"}
-    outbound_preferred = {"HANDLES_ENDPOINT", "PRODUCES_TOPIC", "CALLS_METHOD", "CALLS_SERVICE", "IMPLEMENTS_FEIGN"}
+_INBOUND_PREFERRED = {"CALLS_METHOD", "CALLS_SERVICE", "IMPLEMENTS_FEIGN", "CONSUMES_TOPIC", "READS_FIELD", "READS_CONFIG", "INJECTS_BEAN", "IMPORTS"}
+_OUTBOUND_PREFERRED = {"HANDLES_ENDPOINT", "PRODUCES_TOPIC", "CALLS_METHOD", "CALLS_SERVICE", "IMPLEMENTS_FEIGN"}
+_ALL_PREFERRED = _INBOUND_PREFERRED | _OUTBOUND_PREFERRED
+
+_NOISE_METHODS = {
+    "getId", "setId", "getName", "setName", "getType", "setType",
+    "getCode", "setCode", "getData", "setData", "getUrl", "setUrl",
+    "getStatus", "setStatus", "getValue", "setValue", "getKey", "setKey",
+    "getTitle", "setTitle", "getContent", "setContent", "getMsg", "setMsg",
+    "getParentUrl", "setParentUrl", "getRemark", "setRemark",
+    "ok", "of", "empty", "stream", "map", "filter", "collect",
+}
+
+
+def preferred_edge_types(direction: str) -> List[str] | None:
     if direction in {"upstream", "incoming"}:
-        edge_types = inbound_preferred
+        return list(_INBOUND_PREFERRED)
+    if direction in {"downstream", "outgoing"}:
+        return list(_OUTBOUND_PREFERRED)
+    return None
+
+
+def _is_noise_call(edge: Dict[str, Any]) -> bool:
+    if edge.get("type") != "CALLS_METHOD":
+        return False
+    name = edge.get("target", {}).get("name", "")
+    short = name.split(".")[-1] if "." in name else name
+    return short in _NOISE_METHODS
+
+
+def _filter_call_edges(edges: List[Dict[str, Any]], direction: str) -> List[Dict[str, Any]]:
+    if direction in {"upstream", "incoming"}:
+        edge_types = _INBOUND_PREFERRED
     elif direction in {"downstream", "outgoing"}:
-        edge_types = outbound_preferred
+        edge_types = _OUTBOUND_PREFERRED
     else:
-        edge_types = preferred
-    filtered = [item for item in edges if item.get("type") in edge_types]
+        edge_types = _ALL_PREFERRED
+    filtered = [item for item in edges if item.get("type") in edge_types and not _is_noise_call(item)]
     filtered.sort(
         key=lambda item: (
             -float(item.get("confidence", 0.0)),

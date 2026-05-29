@@ -19,6 +19,7 @@ from .common import (
     _resolve_memory_ref,
     _rrf,
     load_context,
+    preferred_edge_types,
     tokenize,
 )
 
@@ -103,18 +104,14 @@ def memory_symbol(workspace_file: str | Path, name: str, limit: int = 10) -> Dic
     }
 
 
-def memory_callers(workspace_file: str | Path, symbol: str, depth: int = 2, limit: int = 80) -> Dict[str, Any]:
+def memory_callers(workspace_file: str | Path, symbol: str, depth: int = 2, limit: int = 80, edge_type_filter: List[str] | None = None) -> Dict[str, Any]:
     info = memory_symbol(workspace_file, symbol, limit=8)
     if not info.get("found"):
         return {"symbol": symbol, "found": False, "callers": [], "lookup": info.get("lookup", {})}
     node = info["best_match"]
-    # BFS limit must be much larger than the caller-requested limit because
-    # _filter_call_edges strips structural edges (CONTAINS, DECLARES, IMPORTS)
-    # that dominate large graphs. Without amplification, the BFS frontier gets
-    # consumed by structural edges before reaching deeper call-type edges.
-    internal_limit = max(limit * 20, 500)
+    et = edge_type_filter or preferred_edge_types("upstream")
     with GraphStore(load_context(workspace_file)[1].graph_db_path) as graph:
-        edges = graph.neighbors(node["id"], direction="upstream", max_depth=depth, limit=internal_limit)
+        edges = graph.neighbors(node["id"], direction="upstream", max_depth=depth, limit=limit, edge_types=et)
     callers = _filter_call_edges(edges, direction="upstream")[:limit]
     return {
         "symbol": symbol,
@@ -122,18 +119,19 @@ def memory_callers(workspace_file: str | Path, symbol: str, depth: int = 2, limi
         "target": node,
         "depth": depth,
         "callers": callers,
+        "chain_tree": _compress_chain_tree(callers),
         "lookup": info.get("lookup", {}),
     }
 
 
-def memory_callees(workspace_file: str | Path, symbol: str, depth: int = 2, limit: int = 80) -> Dict[str, Any]:
+def memory_callees(workspace_file: str | Path, symbol: str, depth: int = 2, limit: int = 80, edge_type_filter: List[str] | None = None) -> Dict[str, Any]:
     info = memory_symbol(workspace_file, symbol, limit=8)
     if not info.get("found"):
         return {"symbol": symbol, "found": False, "callees": [], "lookup": info.get("lookup", {})}
     node = info["best_match"]
-    internal_limit = max(limit * 20, 500)
+    et = edge_type_filter or preferred_edge_types("downstream")
     with GraphStore(load_context(workspace_file)[1].graph_db_path) as graph:
-        edges = graph.neighbors(node["id"], direction="downstream", max_depth=depth, limit=internal_limit)
+        edges = graph.neighbors(node["id"], direction="downstream", max_depth=depth, limit=limit, edge_types=et)
     callees = _filter_call_edges(edges, direction="downstream")[:limit]
     return {
         "symbol": symbol,
@@ -141,6 +139,7 @@ def memory_callees(workspace_file: str | Path, symbol: str, depth: int = 2, limi
         "target": node,
         "depth": depth,
         "callees": callees,
+        "chain_tree": _compress_chain_tree(callees),
         "lookup": info.get("lookup", {}),
     }
 
@@ -354,6 +353,26 @@ def memory_tool_usage_report(
 
 
 # ---- internal helpers -------------------------------------------------------
+
+def _compress_chain_tree(edges: List[Dict[str, Any]]) -> Dict[str, Any]:
+    tree: Dict[str, List[Dict[str, Any]]] = {}
+    for e in edges:
+        src = e.get("source", {}).get("name", "?")
+        tgt = e.get("target", {}).get("name", "?")
+        tgt_proj = e.get("target", {}).get("project", "")
+        edge_type = e.get("type", "")
+        depth = e.get("depth", 0)
+        tree.setdefault(src, []).append({
+            "target": tgt, "type": edge_type,
+            "project": tgt_proj, "depth": depth,
+        })
+    return {
+        "tree": tree,
+        "depth_reached": max((e.get("depth", 0) for e in edges), default=0),
+        "total_edges": len(edges),
+        "unique_sources": len(tree),
+    }
+
 
 def _annotate_phantom_nodes(chain_result: Dict[str, Any], workspace_file: str | Path) -> None:
     config, store = load_context(workspace_file)

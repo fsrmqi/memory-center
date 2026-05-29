@@ -29,6 +29,7 @@ from .common import (
     load_context,
     tokenize,
     rank_files,
+    preferred_edge_types,
 )
 
 # --- session lifecycle ---
@@ -146,7 +147,7 @@ __all__ = [
     "TOOL_WORKSPACE_SYNC_SNIFF_ARTIFACTS", "TOOL_WORKSPACE_SYNC_CASE_ARTIFACTS",
     "TOOL_WORKSPACE_ARTIFACT_UPDATE",
     # utilities
-    "load_context", "tokenize", "rank_files",
+    "load_context", "tokenize", "rank_files", "preferred_edge_types",
     # session
     "workspace_start_session", "workspace_log_session_event", "workspace_end_session",
     "workspace_recent_sessions", "workspace_session_summary", "workspace_suggest_case",
