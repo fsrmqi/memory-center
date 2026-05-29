@@ -150,18 +150,18 @@ Detailed local setup and multi-project workflow / 详细本地初始化与多项
 
 ### One-command install / 一条命令安装
 
-If you have the repository locally:
+If you have the repository locally, the installer now installs the current checkout by default:
 
-如果仓库已经在本地：
+如果仓库已经在本地，安装脚本现在默认安装当前 checkout：
 
 ```bash
 cd memory-center
 bash install.sh
 ```
 
-After you publish the repository URL, you can also install like GitNexus:
+If you want to install directly from GitHub, you can still use the hosted script:
 
-仓库地址发布后，也可以像 GitNexus 一样直接安装：
+如果你想直接从 GitHub 安装，仍然可以使用托管脚本：
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/fsrmqi/memory-center/main/install.sh | bash
