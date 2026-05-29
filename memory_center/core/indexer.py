@@ -268,6 +268,11 @@ def parse_feign_clients(project: str, rel: str, text: str, symbol: JavaSymbol, c
             target = constant_map.get(ref) or constant_map.get(ref.split(".")[-1])
     if not target:
         target = "unknown-service"
+    # 优化 4: 当 target 是类名格式（驼峰、小写开头）而非服务名时，尝试从 url 获取外部地址
+    if target and target[0].islower() and not target.startswith("ucap-") and "-" not in target:
+        url = extract_named_value(ann_args, "url") or ""
+        if url:
+            target = f"external:{url}"
     base_path = extract_named_value(ann_args, "path") or extract_named_value(ann_args, "url") or ""
     methods: List[Dict[str, Any]] = []
     pattern = re.compile(
