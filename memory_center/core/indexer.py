@@ -45,6 +45,8 @@ def reindex_workspace(
     feign_index: List[Dict[str, Any]] = []
     mq_index: List[Dict[str, Any]] = []
     config_index: List[Dict[str, Any]] = []
+    # Collect feign files for deferred parsing (need complete constant_map first)
+    pending_feigns: List[tuple] = []
 
     for svc in config.services:
         if project_filter and svc.name not in project_filter:
@@ -71,21 +73,29 @@ def reindex_workspace(
                 symbol = parse_java_symbols(svc.name, rel, text)
                 symbol_index.append(to_dict(symbol))
                 api_index.extend(to_dict(x) for x in parse_controllers(svc.name, rel, text, symbol))
-                feign_index.extend(to_dict(x) for x in parse_feign_clients(svc.name, rel, text, symbol))
+                if "FeignClient" in symbol.annotations:
+                    pending_feigns.append((svc.name, rel, text, symbol))
                 mq_index.extend(to_dict(x) for x in parse_mq_endpoints(svc.name, rel, text, symbol))
             elif path.name in CONFIG_NAMES:
                 config_index.append({"project": svc.name, "path": rel, "values": parse_yaml_config(path)})
 
+    # Build constant map from completed symbol scan, then resolve feign target_service
+    if partial:
+        merged_symbol_index = _merge_index_rows(old_symbol_index, symbol_index, project_filter, path_filters, path_key="file")
+    else:
+        merged_symbol_index = symbol_index
+    constant_map = _build_constant_map(merged_symbol_index)
+    for project, rel, text, symbol in pending_feigns:
+        feign_index.extend(to_dict(x) for x in parse_feign_clients(project, rel, text, symbol, constant_map))
+
     if partial:
         merged_file_index = _merge_index_rows(old_file_index, file_index, project_filter, path_filters)
-        merged_symbol_index = _merge_index_rows(old_symbol_index, symbol_index, project_filter, path_filters, path_key="file")
         merged_api_index = _merge_index_rows(old_api_index, api_index, project_filter, path_filters, path_key="file")
         merged_feign_index = _merge_index_rows(old_feign_index, feign_index, project_filter, path_filters, path_key="file")
         merged_mq_index = _merge_index_rows(old_mq_index, mq_index, project_filter, path_filters, path_key="file")
         merged_config_index = _merge_index_rows(old_config_index, config_index, project_filter, path_filters)
     else:
         merged_file_index = file_index
-        merged_symbol_index = symbol_index
         merged_api_index = api_index
         merged_feign_index = feign_index
         merged_mq_index = mq_index
@@ -245,12 +255,18 @@ def parse_controllers(project: str, rel: str, text: str, symbol: JavaSymbol) -> 
     return endpoints
 
 
-def parse_feign_clients(project: str, rel: str, text: str, symbol: JavaSymbol) -> List[FeignClient]:
+def parse_feign_clients(project: str, rel: str, text: str, symbol: JavaSymbol, constant_map: Dict[str, str] | None = None) -> List[FeignClient]:
     if "FeignClient" not in symbol.annotations:
         return []
     interface = (symbol.interfaces or symbol.classes or [Path(rel).stem])[0]
     ann_args = extract_annotation_args(text, "FeignClient") or ""
-    target = extract_named_value(ann_args, "name") or extract_named_value(ann_args, "value") or extract_named_value(ann_args, "serviceId") or "unknown-service"
+    target = extract_named_value(ann_args, "name") or extract_named_value(ann_args, "value") or extract_named_value(ann_args, "serviceId")
+    if not target and constant_map:
+        ref = extract_named_ref(ann_args, "name") or extract_named_ref(ann_args, "value") or extract_named_ref(ann_args, "serviceId")
+        if ref:
+            target = constant_map.get(ref) or constant_map.get(ref.split(".")[-1])
+    if not target:
+        target = "unknown-service"
     base_path = extract_named_value(ann_args, "path") or extract_named_value(ann_args, "url") or ""
     methods: List[Dict[str, Any]] = []
     pattern = re.compile(
@@ -326,6 +342,29 @@ def extract_first_string(args: str) -> str | None:
 
 def extract_named_value(args: str, name: str) -> str | None:
     m = re.search(rf"\b{name}\s*=\s*(?:\{{\s*)?\"([^\"]+)\"", args or "")
+    return m.group(1) if m else None
+
+
+def extract_named_ref(args: str, name: str) -> str | None:
+    """Extract a non-string named value (constant reference like ClassName.CONSTANT_NAME)."""
+    m = re.search(rf'\b{name}\s*=\s*([\w.]+)', args or "")
+    # Filter out string literals that were already handled by extract_named_value
+    if m and m.group(1).startswith('"'):
+        return None
+    return m.group(1) if m else None
+
+
+def _build_constant_map(symbol_index: List[Dict[str, Any]]) -> Dict[str, str]:
+    """Build a map from CONSTANT_NAME and ClassName.CONSTANT_NAME to string values,
+    using field_types data from interface constant declarations."""
+    constant_map: Dict[str, str] = {}
+    for sym in symbol_index:
+        for fname, fval in sym.get("field_types", {}).items():
+            if fval and isinstance(fval, str) and not fval.startswith(("com.", "java.", "org.", "List", "Map", "Set", "Integer", "Long", "Boolean")):
+                constant_map[fname] = fval
+                for cls in sym.get("classes", []) + sym.get("interfaces", []):
+                    constant_map[f"{cls}.{fname}"] = fval
+    return constant_map
     return m.group(1) if m else None
 
 
@@ -598,7 +637,20 @@ def _source_method_id(sym: Dict[str, Any], owner_class: str, fact: Dict[str, Any
 
 
 def topology_service_project(topology: Dict[str, Any], service_name: str | None) -> str | None:
+    if not service_name:
+        return None
     for svc in topology.get("services", []):
         if svc.get("service_name") == service_name or svc.get("name") == service_name:
+            return svc.get("name")
+    # Fuzzy: strip -app suffix from either side (Spring app name vs workspace project name)
+    service_no_app = service_name[:-4] if service_name.endswith("-app") else service_name
+    for svc in topology.get("services", []):
+        svc_name = svc.get("service_name") or ""
+        svc_proj = svc.get("name") or ""
+        if svc_name == service_no_app or svc_proj == service_no_app:
+            return svc.get("name")
+        svc_name_no_app = svc_name[:-4] if svc_name.endswith("-app") else svc_name
+        svc_proj_no_app = svc_proj[:-4] if svc_proj.endswith("-app") else svc_proj
+        if service_no_app == svc_name_no_app or service_no_app == svc_proj_no_app:
             return svc.get("name")
     return None

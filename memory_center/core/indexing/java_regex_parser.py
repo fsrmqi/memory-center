@@ -26,6 +26,7 @@ class RegexJavaParser:
         annotations = sorted(set(re.findall(r"@(\w+)(?:\(|\s|\n)", cleaned)))
 
         fields, field_types = _parse_fields(cleaned)
+        field_types.update(_parse_interface_constants(cleaned))
         method_spans = _parse_method_spans(cleaned)
         methods = sorted({item["name"] for item in method_spans})
         method_variable_types = _parse_method_variable_types(cleaned, method_spans)
@@ -102,6 +103,18 @@ def _strip_comments(text: str) -> str:
 def _first_group(pattern: str, text: str) -> str | None:
     m = re.search(pattern, text, flags=re.S)
     return m.group(1) if m else None
+
+
+def _parse_interface_constants(text: str) -> Dict[str, str]:
+    """Extract String CONSTANT_NAME = "value" from Java interface bodies.
+    Interface fields lack explicit access modifiers (implicitly public static final),
+    so _parse_fields() misses them. This function captures those declarations
+    and stores them in field_types for constant reference resolution."""
+    constants: Dict[str, str] = {}
+    pattern = re.compile(r'String\s+(\w+)\s*=\s*"([^"]+)"\s*;', re.M)
+    for name, value in pattern.findall(text):
+        constants[name] = value
+    return constants
 
 
 def _parse_fields(text: str) -> Tuple[List[str], Dict[str, str]]:
