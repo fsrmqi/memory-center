@@ -51,6 +51,8 @@ MCP 默认公开的是 8 个 facade tools：
 - `continuity` — 连续性面板
 - `health` — 健康检查（状态 + 工具使用 + 回归套件）
 - `audit` — 完成审计（文档/测试/实现/设计一致性）
+- `discover` — 热点命令发现与下一步推荐
+- `constraint` — 约束模板与自动策略选择
 - `backend_consistency` — JSONL 与 SQLite 后端一致性检查
 
 ### 钻取导航
