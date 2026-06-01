@@ -18,6 +18,18 @@ AUDIT_LOG_FILE = "completion-audit.jsonl"
 DESIGN_DECISIONS_FILE = "design-decisions.jsonl"
 
 
+def _get_project_root(workspace_file: str | Path) -> Path:
+    """Get project root directory from workspace file path.
+
+    workspace.yaml 通常在 .memory-center/ 目录下，需要向上遍历到项目根目录。
+    例如: /path/to/project/.memory-center/workspace.yaml -> /path/to/project
+    """
+    workspace_path = Path(workspace_file).parent
+    if workspace_path.name == ".memory-center":
+        return workspace_path.parent
+    return workspace_path
+
+
 def run_completion_audit(
     workspace_file: str | Path,
     work_package: str = "",
@@ -89,14 +101,7 @@ def _check_documentation_alignment(
 ) -> List[Dict[str, Any]]:
     """Check if documentation aligns with implementation."""
     findings = []
-    workspace_path = Path(workspace_file).parent
-
-    # workspace.yaml 在 .memory-center/ 目录下，需要再往上一层到项目根目录
-    # 例如: /path/to/project/.memory-center/workspace.yaml -> /path/to/project
-    if workspace_path.name == ".memory-center":
-        project_root = workspace_path.parent
-    else:
-        project_root = workspace_path
+    project_root = _get_project_root(workspace_file)
 
     # Check for key documentation files
     key_docs = [
@@ -145,17 +150,19 @@ def _check_test_coverage(
 ) -> List[Dict[str, Any]]:
     """Check test coverage for the work package."""
     findings = []
-    workspace_path = Path(workspace_file).parent
+    project_root = _get_project_root(workspace_file)
 
     # Check for test files
     test_dirs = [
         "tests",
         "test",
+        "src/test",
+        "src/tests",
     ]
 
     has_tests = False
     for test_dir in test_dirs:
-        test_path = workspace_path / test_dir
+        test_path = project_root / test_dir
         if test_path.exists() and any(test_path.glob("**/*.py")):
             has_tests = True
             break
@@ -173,11 +180,12 @@ def _check_test_coverage(
         "pytest.ini",
         "pyproject.toml",
         "setup.cfg",
+        "tox.ini",
     ]
 
     has_pytest_config = False
     for pytest_file in pytest_files:
-        pytest_path = workspace_path / pytest_file
+        pytest_path = project_root / pytest_file
         if pytest_path.exists():
             content = pytest_path.read_text()
             if "[tool.pytest" in content or "[pytest]" in content:
@@ -199,29 +207,71 @@ def _check_implementation_completeness(
     workspace_file: str | Path,
     work_package: str,
 ) -> List[Dict[str, Any]]:
-    """Check if implementation matches the work package requirements."""
+    """Check if implementation matches the work package requirements.
+
+    通用实现检查：
+    - 检查是否有源代码目录
+    - 检查是否有配置文件
+    - 检查项目结构是否完整
+    """
     findings = []
+    project_root = _get_project_root(workspace_file)
 
-    # Check for the new modules we created
-    workspace_path = Path(workspace_file).parent.parent  # Go up to memory-center root
-
-    required_modules = [
-        "memory_center/core/retrieval/__init__.py",
-        "memory_center/core/benchmark/__init__.py",
-        "memory_center/core/backend/__init__.py",
-        "memory_center/core/navigation/__init__.py",
+    # 检查是否有源代码目录（通用检查，不硬编码特定模块）
+    source_dirs = [
+        "src",
+        "lib",
+        "app",
+        "main",
     ]
 
-    for module in required_modules:
-        module_path = workspace_path / module
-        if not module_path.exists():
+    has_source = False
+    for src_dir in source_dirs:
+        src_path = project_root / src_dir
+        if src_path.exists() and src_path.is_dir():
+            has_source = True
+            break
+
+    # 如果没有标准源代码目录，检查是否有 Python/Java/JS 文件
+    if not has_source:
+        has_code_files = any(project_root.glob("**/*.py")) or \
+                        any(project_root.glob("**/*.java")) or \
+                        any(project_root.glob("**/*.js")) or \
+                        any(project_root.glob("**/*.ts"))
+        if not has_code_files:
             findings.append({
                 "category": "implementation",
-                "severity": "high",
-                "code": "missing_module",
-                "message": f"缺少模块: {module}",
-                "file": module,
+                "severity": "medium",
+                "code": "no_source_found",
+                "message": "未找到源代码文件或目录",
             })
+
+    # 检查是否有配置文件
+    config_files = [
+        "pom.xml",
+        "build.gradle",
+        "build.gradle.kts",
+        "package.json",
+        "pyproject.toml",
+        "setup.py",
+        "requirements.txt",
+        "Cargo.toml",
+        "go.mod",
+    ]
+
+    has_config = False
+    for config_file in config_files:
+        if (project_root / config_file).exists():
+            has_config = True
+            break
+
+    if not has_config:
+        findings.append({
+            "category": "implementation",
+            "severity": "low",
+            "code": "no_build_config",
+            "message": "未找到构建配置文件（如 pom.xml, package.json, pyproject.toml）",
+        })
 
     return findings
 
