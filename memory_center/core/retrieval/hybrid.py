@@ -58,7 +58,7 @@ class HybridRetrievalConfig:
 
 # Query pattern detection
 _QUERY_PATTERNS = {
-    "feign": re.compile(r"feign|fegin|client|远程调用|rpc", re.IGNORECASE),
+    "feign": re.compile(r"feign|fegin|远程调用|rpc", re.IGNORECASE),
     "mq": re.compile(r"kafka|rocketmq|topic|consumer|producer|消息队列|mq", re.IGNORECASE),
     "endpoint": re.compile(r"/[a-z]|controller|api|接口|endpoint", re.IGNORECASE),
     "config": re.compile(r"config|配置|properties|yaml|yml", re.IGNORECASE),
@@ -72,8 +72,7 @@ _JAVA_PATTERNS = {
     "feign": re.compile(
         r"(^Fegin[A-Z][a-zA-Z]*Service$)|"
         r"(^Feign[A-Z][a-zA-Z]*Service$)|"
-        r"(^[A-Z][a-zA-Z]*Feign(Client|Service)?$)|"
-        r"(^[A-Z][a-zA-Z]*Client$)",
+        r"(^[A-Z][a-zA-Z]*Feign(Client|Service)?$)",
         re.IGNORECASE,
     ),
     "endpoint": re.compile(r"Controller$|Resource$|Api$", re.IGNORECASE),

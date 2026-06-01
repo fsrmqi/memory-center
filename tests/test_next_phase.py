@@ -56,6 +56,36 @@ class TestHybridRetrieval:
         result = detect_query_intent("FeginAutomaticReviewTaskService")
         assert result["primary_intent"] == "feign"
 
+    def test_detect_query_intent_http_client_not_feign(self):
+        from memory_center.core.retrieval.hybrid import detect_query_intent
+        result = detect_query_intent("RestClient")
+        assert result["primary_intent"] != "feign"
+        assert "feign" not in result["all_intents"]
+
+    def test_detect_query_intent_test_client_not_feign(self):
+        from memory_center.core.retrieval.hybrid import detect_query_intent
+        result = detect_query_intent("TestClient")
+        assert result["primary_intent"] != "feign"
+        assert "feign" not in result["all_intents"]
+
+    def test_detect_query_intent_feign_client_matches_feign(self):
+        from memory_center.core.retrieval.hybrid import detect_query_intent
+        result = detect_query_intent("ArticleFeignClient")
+        assert result["primary_intent"] == "feign"
+
+    def test_detect_query_intent_client_keyword_not_feign(self):
+        from memory_center.core.retrieval.hybrid import detect_query_intent
+        result = detect_query_intent("client library dependency")
+        assert result["primary_intent"] != "feign"
+        assert "feign" not in result["all_intents"]
+
+    def test_detect_query_intent_plain_class_not_feign(self):
+        from memory_center.core.retrieval.hybrid import detect_query_intent
+        for name in ("UserService", "OrderServiceImpl", "UserDao", "OrderMapper"):
+            result = detect_query_intent(name)
+            assert result["primary_intent"] == "class", f"{name} should be class, got {result['primary_intent']}"
+            assert "feign" not in result["all_intents"], f"{name} should not trigger feign"
+
     def test_hybrid_retrieval_config_defaults(self):
         from memory_center.core.retrieval.hybrid import HybridRetrievalConfig
         config = HybridRetrievalConfig()
@@ -94,6 +124,57 @@ class TestHybridRetrieval:
         assert "graph_exact" in result.sources
         assert "semantic" in result.sources
         assert result.evidence["graph_rank"] == 1
+
+
+# ---- Contract Filtering Tests ----
+
+class TestContracts:
+    """Test contract filtering and association logic."""
+
+    def test_filter_contracts_by_query_feign_exact_match(self):
+        from memory_center.core.orchestrator.query import _filter_contracts_by_query
+        contracts = [
+            {"interface": "ArticleFeignClient", "project": "svc-a", "methods": []},
+            {"interface": "OrderFeignClient", "project": "svc-b", "methods": []},
+        ]
+        result = _filter_contracts_by_query(contracts, "ArticleFeignClient", "feign")
+        assert len(result) >= 1
+        assert any(c["interface"] == "ArticleFeignClient" for c in result)
+
+    def test_filter_contracts_by_query_feign_method_match(self):
+        from memory_center.core.orchestrator.query import _filter_contracts_by_query
+        contracts = [
+            {
+                "interface": "ArticleFeignClient", "project": "svc-a",
+                "methods": [{"method_name": "getArticle", "path": "/api/articles"}],
+            },
+        ]
+        result = _filter_contracts_by_query(contracts, "getArticle", "feign")
+        assert len(result) >= 1
+
+    def test_filter_contracts_by_query_endpoint(self):
+        from memory_center.core.orchestrator.query import _filter_contracts_by_query
+        contracts = [
+            {"path": "/api/users", "controller": "UserController"},
+            {"path": "/api/orders", "controller": "OrderController"},
+        ]
+        result = _filter_contracts_by_query(contracts, "/api/users", "endpoint")
+        assert len(result) >= 1
+        assert any(c["path"] == "/api/users" for c in result)
+
+    def test_filter_contracts_by_query_no_match(self):
+        from memory_center.core.orchestrator.query import _filter_contracts_by_query
+        contracts = [
+            {"interface": "OrderFeignClient", "project": "svc-b", "methods": []},
+        ]
+        result = _filter_contracts_by_query(contracts, "xyz_nonexistent", "feign")
+        # Should fall back to returning some results (up to 10)
+        assert isinstance(result, list)
+
+    def test_filter_contracts_by_query_empty(self):
+        from memory_center.core.orchestrator.query import _filter_contracts_by_query
+        result = _filter_contracts_by_query([], "anything", "feign")
+        assert result == []
 
 
 # ---- Benchmark Trending Tests ----
@@ -196,6 +277,34 @@ class TestBenchmarkTrending:
         recs = _generate_recommendations(baselines, trends)
         assert len(recs) > 0
         assert "基准测试健康" in recs[0]
+
+    def test_record_benchmark_trend_persists(self):
+        from memory_center.core.benchmark.trending import record_benchmark_trend
+        with tempfile.TemporaryDirectory() as tmpdir:
+            mc_dir = Path(tmpdir) / ".memory-center"
+            mc_dir.mkdir()
+            ws = mc_dir / "workspace.yaml"
+            ws.write_text("workspace: test\n")
+            result = record_benchmark_trend(
+                str(ws), "sniff", raw_tokens=1000, compact_tokens=300,
+                budget="medium", view="compact",
+            )
+            assert result["recorded"] is True
+            assert result["function_name"] == "sniff"
+
+    def test_generate_benchmark_report_structure(self):
+        from memory_center.core.benchmark.trending import generate_benchmark_report
+        with tempfile.TemporaryDirectory() as tmpdir:
+            mc_dir = Path(tmpdir) / ".memory-center"
+            mc_dir.mkdir()
+            ws = mc_dir / "workspace.yaml"
+            ws.write_text("workspace: test\n")
+            report = generate_benchmark_report(str(ws))
+            assert "baselines" in report
+            assert "trends" in report
+            assert "health_score" in report
+            assert "recommendations" in report
+            assert isinstance(report["recommendations"], list)
 
 
 # ---- Completion Audit Tests ----
@@ -344,34 +453,268 @@ class TestCompletionAudit:
         assert summary["by_severity"]["medium"] == 1
         assert summary["by_severity"]["low"] == 1
 
+    def test_check_test_coverage_java_project(self):
+        from memory_center.core.audit.completion import _check_test_coverage
+        with tempfile.TemporaryDirectory() as tmpdir:
+            mc_dir = Path(tmpdir) / ".memory-center"
+            mc_dir.mkdir()
+            ws = mc_dir / "workspace.yaml"
+            ws.write_text("workspace: test\n")
+            # Create Java test directory with *Test.java files
+            test_dir = Path(tmpdir) / "src" / "test" / "java" / "com" / "example"
+            test_dir.mkdir(parents=True)
+            (test_dir / "UserServiceTest.java").write_text("class UserServiceTest {}")
+            findings = _check_test_coverage(str(ws), "")
+            no_tests = [f for f in findings if f["code"] == "no_tests"]
+            assert len(no_tests) == 0
+
+    def test_check_test_coverage_js_project(self):
+        from memory_center.core.audit.completion import _check_test_coverage
+        with tempfile.TemporaryDirectory() as tmpdir:
+            mc_dir = Path(tmpdir) / ".memory-center"
+            mc_dir.mkdir()
+            ws = mc_dir / "workspace.yaml"
+            ws.write_text("workspace: test\n")
+            # Create JS test directory with *.spec.ts files
+            test_dir = Path(tmpdir) / "tests"
+            test_dir.mkdir()
+            (test_dir / "user.spec.ts").write_text("describe('user', () => {})")
+            findings = _check_test_coverage(str(ws), "")
+            no_tests = [f for f in findings if f["code"] == "no_tests"]
+            assert len(no_tests) == 0
+
+    def test_check_test_config_package_json(self):
+        from memory_center.core.audit.completion import _check_test_coverage
+        with tempfile.TemporaryDirectory() as tmpdir:
+            mc_dir = Path(tmpdir) / ".memory-center"
+            mc_dir.mkdir()
+            ws = mc_dir / "workspace.yaml"
+            ws.write_text("workspace: test\n")
+            # Create package.json with test script
+            (Path(tmpdir) / "package.json").write_text(
+                '{"scripts": {"test": "jest"}}'
+            )
+            # Create test files so no_tests doesn't trigger
+            test_dir = Path(tmpdir) / "tests"
+            test_dir.mkdir()
+            (test_dir / "user.spec.js").write_text("test('user', () => {})")
+            findings = _check_test_coverage(str(ws), "")
+            no_test_config = [f for f in findings if f["code"] == "no_test_config"]
+            assert len(no_test_config) == 0
+
+    def test_check_documentation_adaptive(self):
+        from memory_center.core.audit.completion import _check_documentation_alignment
+        with tempfile.TemporaryDirectory() as tmpdir:
+            mc_dir = Path(tmpdir) / ".memory-center"
+            mc_dir.mkdir()
+            ws = mc_dir / "workspace.yaml"
+            ws.write_text("workspace: test\n")
+            # Only README.md + docs/CONTRIBUTING.md
+            (Path(tmpdir) / "README.md").write_text("# Test")
+            docs_dir = Path(tmpdir) / "docs"
+            docs_dir.mkdir()
+            (docs_dir / "CONTRIBUTING.md").write_text("# Contributing")
+            findings = _check_documentation_alignment(str(ws), "")
+            # Should not have missing_doc for docs/ content
+            missing_docs = [f for f in findings if f["code"] == "missing_doc" and "docs" in f.get("file", "")]
+            assert len(missing_docs) == 0
+
+    def test_overall_health_scoring_consistency(self):
+        from memory_center.core.audit.completion import (
+            _calculate_overall_health, run_completion_audit,
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            mc_dir = Path(tmpdir) / ".memory-center"
+            mc_dir.mkdir()
+            ws = mc_dir / "workspace.yaml"
+            ws.write_text("workspace: test\n")
+            # Minimal project: README + src + pyproject
+            (Path(tmpdir) / "README.md").write_text("# Test")
+            src_dir = Path(tmpdir) / "src"
+            src_dir.mkdir()
+            (src_dir / "main.py").write_text("print('hello')")
+            (Path(tmpdir) / "pyproject.toml").write_text("[tool.pytest]\ntestpaths = ['tests']")
+            test_dir = Path(tmpdir) / "tests"
+            test_dir.mkdir()
+            (test_dir / "test_main.py").write_text("def test_pass(): pass")
+            audit = run_completion_audit(str(ws))
+            decisions = {"total_decisions": 1, "decisions": []}
+            health = _calculate_overall_health(audit, decisions)
+            # Health score should be reasonable (not wildly different from audit score)
+            assert health["overall_score"] >= audit["score"] - 10
+
 
 # ---- Backend Query Tests ----
 
 class TestBackendQuery:
-    """Test unified backend query module."""
+    """Test unified backend query module with real data."""
 
-    def test_unified_backend_query_class_exists(self):
+    def test_check_health_empty_backend(self):
         from memory_center.core.backend.query import UnifiedBackendQuery
-        assert hasattr(UnifiedBackendQuery, 'read_index')
-        assert hasattr(UnifiedBackendQuery, 'query_records')
-        assert hasattr(UnifiedBackendQuery, 'query_session_events')
-        assert hasattr(UnifiedBackendQuery, 'query_write_receipts')
-        assert hasattr(UnifiedBackendQuery, 'aggregate_by_session')
-        assert hasattr(UnifiedBackendQuery, 'aggregate_by_project')
-        assert hasattr(UnifiedBackendQuery, 'check_health')
-        assert hasattr(UnifiedBackendQuery, 'query_timeline')
-        assert hasattr(UnifiedBackendQuery, 'get_session_summary')
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "test.db"
+            with UnifiedBackendQuery(db_path) as backend:
+                health = backend.check_health()
+                assert "healthy" in health
+                assert "db_path" in health
+                assert isinstance(health["issues"], list)
+
+    def test_append_and_query_records(self):
+        from memory_center.core.memory_backend import MemoryBackendStore
+        from memory_center.core.backend.query import UnifiedBackendQuery
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "test.db"
+            with MemoryBackendStore(db_path) as store:
+                store.append_record(
+                    "session-events.jsonl",
+                    {"type": "tool_call", "tool": "mc_lookup", "created_at": "2026-01-01T00:00:00Z"},
+                    record_id="evt-1",
+                )
+                store.append_record(
+                    "session-events.jsonl",
+                    {"type": "read", "file": "main.py", "created_at": "2026-01-01T00:01:00Z"},
+                    record_id="evt-2",
+                )
+            with UnifiedBackendQuery(db_path) as backend:
+                result = backend.query_records("session-events.jsonl", limit=10)
+                records = result.get("records", [])
+                assert len(records) == 2
+                assert records[0]["record_id"] == "evt-2"  # DESC order
+
+    def test_aggregate_by_session(self):
+        from memory_center.core.memory_backend import MemoryBackendStore
+        from memory_center.core.backend.query import UnifiedBackendQuery
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "test.db"
+            with MemoryBackendStore(db_path) as store:
+                for i in range(3):
+                    store.append_record(
+                        "session-events.jsonl",
+                        {"type": "tool_call", "session_id": "sess-1", "created_at": f"2026-01-01T00:0{i}:00Z"},
+                        record_id=f"evt-s1-{i}",
+                    )
+                store.append_record(
+                    "session-events.jsonl",
+                    {"type": "read", "session_id": "sess-2", "created_at": "2026-01-01T00:10:00Z"},
+                    record_id="evt-s2-0",
+                )
+            with UnifiedBackendQuery(db_path) as backend:
+                agg = backend.aggregate_by_session()
+                assert isinstance(agg, dict)
+                sessions = agg.get("sessions", {})
+                assert "sess-1" in sessions
+                assert sessions["sess-1"]["event_count"] == 3
+
+    def test_get_session_summary(self):
+        from memory_center.core.memory_backend import MemoryBackendStore
+        from memory_center.core.backend.query import UnifiedBackendQuery
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "test.db"
+            with MemoryBackendStore(db_path) as store:
+                store.append_record(
+                    "session-events.jsonl",
+                    {"type": "tool_call", "session_id": "sess-x", "created_at": "2026-01-01T00:00:00Z"},
+                    record_id="evt-x",
+                )
+            with UnifiedBackendQuery(db_path) as backend:
+                summary = backend.get_session_summary("sess-x")
+                assert summary["found"] is True
+                assert summary["event_count"] == 1
+                assert summary["event_types"]["tool_call"] == 1
+
+    def test_get_session_summary_not_found(self):
+        from memory_center.core.backend.query import UnifiedBackendQuery
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "test.db"
+            with UnifiedBackendQuery(db_path) as backend:
+                summary = backend.get_session_summary("nonexistent")
+                assert summary["found"] is False
+
+    def test_check_consistency_empty_backend(self):
+        from memory_center.core.backend.query import UnifiedBackendQuery
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "test.db"
+            with UnifiedBackendQuery(db_path) as backend:
+                result = backend.check_consistency(Path(tmpdir))
+                assert "consistent" in result
+                assert isinstance(result["comparisons"], list)
+                assert isinstance(result["divergences"], list)
+
+    def test_check_consistency_with_data(self):
+        from memory_center.core.memory_backend import MemoryBackendStore
+        from memory_center.core.backend.query import UnifiedBackendQuery
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "test.db"
+            with MemoryBackendStore(db_path) as store:
+                store.append_record("test.jsonl", {"a": 1}, record_id="r1")
+            with UnifiedBackendQuery(db_path) as backend:
+                result = backend.check_consistency(Path(tmpdir))
+                assert isinstance(result["consistent"], bool)
+                assert len(result["comparisons"]) >= 1
 
 
 # ---- Navigation Tests ----
 
 class TestNavigation:
-    """Test drill-down navigation module."""
+    """Test drill-down navigation module with real data."""
 
-    def test_drilldown_navigator_class_exists(self):
+    def test_expand_ref_not_found(self):
         from memory_center.core.navigation.drilldown import DrillDownNavigator
-        assert hasattr(DrillDownNavigator, 'expand_ref')
-        assert hasattr(DrillDownNavigator, 'drill_timeline')
-        assert hasattr(DrillDownNavigator, 'drill_task')
-        assert hasattr(DrillDownNavigator, 'build_handoff_context')
-        assert hasattr(DrillDownNavigator, 'build_facade_summary')
+        with tempfile.TemporaryDirectory() as tmpdir:
+            mc_dir = Path(tmpdir) / ".memory-center"
+            mc_dir.mkdir()
+            ws = mc_dir / "workspace.yaml"
+            ws.write_text("workspace: test\n")
+            with DrillDownNavigator(str(ws)) as nav:
+                result = nav.expand_ref("ev:nonexistent:tool_call:0")
+                assert result["found"] is False
+                assert "not found" in result["summary"].lower()
+
+    def test_drill_timeline_empty(self):
+        from memory_center.core.navigation.drilldown import DrillDownNavigator
+        with tempfile.TemporaryDirectory() as tmpdir:
+            mc_dir = Path(tmpdir) / ".memory-center"
+            mc_dir.mkdir()
+            ws = mc_dir / "workspace.yaml"
+            ws.write_text("workspace: test\n")
+            with DrillDownNavigator(str(ws)) as nav:
+                result = nav.drill_timeline(session_id="nonexistent")
+                assert "events" in result
+                assert isinstance(result["events"], list)
+
+    def test_drill_task_empty(self):
+        from memory_center.core.navigation.drilldown import DrillDownNavigator
+        with tempfile.TemporaryDirectory() as tmpdir:
+            mc_dir = Path(tmpdir) / ".memory-center"
+            mc_dir.mkdir()
+            ws = mc_dir / "workspace.yaml"
+            ws.write_text("workspace: test\n")
+            with DrillDownNavigator(str(ws)) as nav:
+                result = nav.drill_task("nonexistent-task")
+                assert "task_id" in result
+                assert result["found"] is False
+
+    def test_build_handoff_context_empty(self):
+        from memory_center.core.navigation.drilldown import DrillDownNavigator
+        with tempfile.TemporaryDirectory() as tmpdir:
+            mc_dir = Path(tmpdir) / ".memory-center"
+            mc_dir.mkdir()
+            ws = mc_dir / "workspace.yaml"
+            ws.write_text("workspace: test\n")
+            with DrillDownNavigator(str(ws)) as nav:
+                result = nav.build_handoff_context("nonexistent-session")
+                assert "session_id" in result
+                assert isinstance(result.get("key_points", []), list)
+
+    def test_build_facade_summary(self):
+        from memory_center.core.navigation.drilldown import DrillDownNavigator
+        with tempfile.TemporaryDirectory() as tmpdir:
+            mc_dir = Path(tmpdir) / ".memory-center"
+            mc_dir.mkdir()
+            ws = mc_dir / "workspace.yaml"
+            ws.write_text("workspace: test\n")
+            with DrillDownNavigator(str(ws)) as nav:
+                result = nav.build_facade_summary("test intent", {"results": []}, max_refs=3)
+                assert "intent" in result
+                assert "level_1_summary" in result
+                assert result["level_1_summary"]["result_count"] == 0

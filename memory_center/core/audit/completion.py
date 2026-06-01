@@ -103,27 +103,46 @@ def _check_documentation_alignment(
     findings = []
     project_root = _get_project_root(workspace_file)
 
-    # Check for key documentation files
-    key_docs = [
-        "README.md",
-        "docs/MCP_GUIDE.md",
-        "docs/USER_GUIDE.md",
-        "docs/ARCHITECTURE.md",
-        "docs/SPECIAL_NOTES.md",
-    ]
+    # Universal: README.md always expected
+    readme_path = project_root / "README.md"
+    if not readme_path.exists():
+        findings.append({
+            "category": "documentation",
+            "severity": "medium",
+            "code": "missing_doc",
+            "message": "缺少文档: README.md",
+            "file": "README.md",
+        })
 
-    for doc in key_docs:
-        doc_path = project_root / doc
-        if not doc_path.exists():
+    # Adaptive: check for docs/ directory and at least one doc file
+    docs_dir = project_root / "docs"
+    known_docs = [
+        "ARCHITECTURE.md", "USER_GUIDE.md", "MCP_GUIDE.md",
+        "CONTRIBUTING.md", "CHANGELOG.md", "GUIDE.md", "SPECIAL_NOTES.md",
+    ]
+    if docs_dir.exists():
+        has_any_doc = any((docs_dir / d).exists() for d in known_docs)
+        if not has_any_doc:
+            # Also check for any .md file in docs/
+            has_any_doc = any(docs_dir.glob("*.md"))
+        if not has_any_doc:
             findings.append({
                 "category": "documentation",
                 "severity": "medium",
                 "code": "missing_doc",
-                "message": f"缺少文档: {doc}",
-                "file": doc,
+                "message": "docs/ 目录下缺少文档文件",
+                "file": "docs/",
             })
+    else:
+        findings.append({
+            "category": "documentation",
+            "severity": "low",
+            "code": "missing_doc",
+            "message": "缺少 docs/ 目录",
+            "file": "docs/",
+        })
 
-    # Check if SPECIAL_NOTES covers known design decisions
+    # Check if SPECIAL_NOTES covers known design decisions (if it exists)
     special_notes_path = project_root / "docs" / "SPECIAL_NOTES.md"
     if special_notes_path.exists():
         content = special_notes_path.read_text()
@@ -152,7 +171,7 @@ def _check_test_coverage(
     findings = []
     project_root = _get_project_root(workspace_file)
 
-    # Check for test files
+    # Check for test files — multi-language support
     test_dirs = [
         "tests",
         "test",
@@ -160,12 +179,28 @@ def _check_test_coverage(
         "src/tests",
     ]
 
+    test_patterns = [
+        "**/*.py",
+        "**/*Test.java",
+        "**/*Tests.java",
+        "**/*.test.js",
+        "**/*.test.ts",
+        "**/*.spec.js",
+        "**/*.spec.ts",
+        "**/*_test.go",
+        "**/*_test.rs",
+    ]
+
     has_tests = False
     for test_dir in test_dirs:
         test_path = project_root / test_dir
-        if test_path.exists() and any(test_path.glob("**/*.py")):
-            has_tests = True
-            break
+        if test_path.exists():
+            for pattern in test_patterns:
+                if any(test_path.glob(pattern)):
+                    has_tests = True
+                    break
+            if has_tests:
+                break
 
     if not has_tests:
         findings.append({
@@ -175,29 +210,62 @@ def _check_test_coverage(
             "message": "未找到测试文件",
         })
 
-    # Check for pytest configuration
-    pytest_files = [
-        "pytest.ini",
-        "pyproject.toml",
-        "setup.cfg",
-        "tox.ini",
-    ]
+    # Check for test framework configuration — multi-framework support
+    has_test_config = False
 
-    has_pytest_config = False
-    for pytest_file in pytest_files:
+    # Python: pytest config
+    for pytest_file in ("pytest.ini", "pyproject.toml", "setup.cfg", "tox.ini"):
         pytest_path = project_root / pytest_file
         if pytest_path.exists():
             content = pytest_path.read_text()
             if "[tool.pytest" in content or "[pytest]" in content:
-                has_pytest_config = True
+                has_test_config = True
                 break
 
-    if not has_pytest_config:
+    # Java: Maven Surefire or Gradle test
+    if not has_test_config:
+        pom_path = project_root / "pom.xml"
+        if pom_path.exists() and "maven-surefire-plugin" in pom_path.read_text():
+            has_test_config = True
+    if not has_test_config:
+        for gradle_file in ("build.gradle", "build.gradle.kts"):
+            gradle_path = project_root / gradle_file
+            if gradle_path.exists() and "useJUnitPlatform" in gradle_path.read_text():
+                has_test_config = True
+                break
+
+    # JS/TS: package.json "test" script
+    if not has_test_config:
+        pkg_path = project_root / "package.json"
+        if pkg_path.exists():
+            try:
+                import json as _json
+                pkg = _json.loads(pkg_path.read_text())
+                if "test" in pkg.get("scripts", {}):
+                    has_test_config = True
+            except Exception:
+                pass
+
+    # Rust: [dev-dependencies] in Cargo.toml
+    if not has_test_config:
+        cargo_path = project_root / "Cargo.toml"
+        if cargo_path.exists() and "[dev-dependencies]" in cargo_path.read_text():
+            has_test_config = True
+
+    # Go: no config needed if test files exist
+    if not has_test_config:
+        for test_dir in test_dirs:
+            test_path = project_root / test_dir
+            if test_path.exists() and any(test_path.glob("**/*_test.go")):
+                has_test_config = True
+                break
+
+    if not has_test_config:
         findings.append({
             "category": "testing",
             "severity": "low",
-            "code": "no_pytest_config",
-            "message": "未找到 pytest 配置",
+            "code": "no_test_config",
+            "message": "未找到测试框架配置",
         })
 
     return findings
@@ -451,11 +519,14 @@ def _calculate_overall_health(
     audit_score = audit.get("score", 0)
     decision_count = decisions.get("total_decisions", 0)
 
-    # Health factors
+    # Health factors — unified weights matching audit scoring (5/8/10)
+    doc_count = len([f for f in audit.get("findings", []) if f.get("category") == "documentation"])
+    test_count = len([f for f in audit.get("findings", []) if f.get("category") == "testing"])
+    impl_count = len([f for f in audit.get("findings", []) if f.get("category") == "implementation"])
     factors = {
-        "documentation": 100 - len([f for f in audit.get("findings", []) if f.get("category") == "documentation"]) * 10,
-        "testing": 100 - len([f for f in audit.get("findings", []) if f.get("category") == "testing"]) * 15,
-        "implementation": 100 - len([f for f in audit.get("findings", []) if f.get("category") == "implementation"]) * 20,
+        "documentation": 100 - doc_count * 5,
+        "testing": 100 - test_count * 8,
+        "implementation": 100 - impl_count * 10,
         "design_consistency": 100 if decision_count > 0 else 80,
     }
 

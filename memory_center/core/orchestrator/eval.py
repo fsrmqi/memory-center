@@ -466,6 +466,19 @@ def memory_eval_token_benchmark_save(
     path = _benchmark_baseline_path(workspace_file)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(baseline, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    # Record trend points for time-series analysis
+    from ..benchmark.trending import record_benchmark_trend
+    for fn_name, fn_data in result.get("benchmark", {}).items():
+        for budget in ("small", "medium", "large"):
+            budget_data = fn_data.get(budget, {})
+            raw = budget_data.get("tokens", 0)
+            compact = budget_data.get("tokens", 0)  # baseline = raw for save
+            record_benchmark_trend(
+                workspace_file, fn_name, raw, compact,
+                budget=budget, view="compact",
+            )
+
     return {"saved": True, "path": str(path), "baseline": baseline}
 
 
@@ -546,4 +559,16 @@ def memory_eval_token_benchmark_compare(
         baseline_totals=baseline_totals,
         baseline_created_at=baseline.get("created_at", ""),
     )
+
+    # Record trend points for time-series analysis
+    from ..benchmark.trending import record_benchmark_trend
+    for fn_name, fn_data in result.get("benchmark", {}).items():
+        for budget in ("small", "medium", "large"):
+            budget_data = fn_data.get(budget, {})
+            raw = budget_data.get("tokens", 0)
+            record_benchmark_trend(
+                workspace_file, fn_name, raw, raw,
+                budget=budget, view="compact",
+            )
+
     return eval_result

@@ -315,3 +315,50 @@ class UnifiedBackendQuery:
             "stats": stats,
             "issues": issues,
         }
+
+    def check_consistency(
+        self,
+        workspace_dir: Optional[Union[str, Path]] = None,
+    ) -> Dict[str, Any]:
+        """Compare JSONL file counts vs SQLite record counts per collection.
+
+        Reports divergences between the file system and the backend mirror.
+        """
+        stats = self.get_backend_stats()
+        backend_collections = stats.get("collections", {})
+        comparisons: List[Dict[str, Any]] = []
+        divergences: List[str] = []
+
+        if workspace_dir is None:
+            # Infer from db_path: db is at <workspace>/memory/memory.db
+            workspace_dir = self.db_path.parent.parent
+        workspace_dir = Path(workspace_dir)
+        memory_dir = workspace_dir / "memory"
+
+        for collection, backend_count in backend_collections.items():
+            file_path = memory_dir / collection
+            file_count = 0
+            if file_path.exists():
+                try:
+                    with open(file_path, encoding="utf-8") as f:
+                        file_count = sum(1 for line in f if line.strip())
+                except Exception:
+                    file_count = -1  # unreadable
+
+            entry = {
+                "collection": collection,
+                "backend_count": backend_count,
+                "file_count": file_count,
+            }
+            comparisons.append(entry)
+
+            if file_count >= 0 and backend_count != file_count:
+                divergences.append(
+                    f"{collection}: backend={backend_count}, file={file_count}"
+                )
+
+        return {
+            "consistent": len(divergences) == 0,
+            "comparisons": comparisons,
+            "divergences": divergences,
+        }

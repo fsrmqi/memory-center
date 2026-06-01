@@ -121,10 +121,15 @@ def memory_query_hybrid(workspace_file: str | Path, query: str, limit: int = 20,
                     deduped_feign.append(fc)
             filtered_feign = deduped_feign
 
-        # Feign → API 自动关联：只关联查询直接匹配的方法
+        # Feign → API 自动关联：只关联查询直接匹配的方法，且路径足够具体（至少2段）
         linked_api = []
         if primary_intent == "feign" and filtered_feign:
-            api_by_path = {c.get("path", ""): c for c in contracts.get("api_contracts", [])}
+            api_by_path = {}
+            for c in contracts.get("api_contracts", []):
+                p = c.get("path", "")
+                # 路径至少2段（如 /api/users）才参与自动关联
+                if p and len([s for s in p.split("/") if s]) >= 2:
+                    api_by_path[p] = c
             query_lower_local = query.lower()
             for fc in filtered_feign:
                 for m in fc.get("methods", []):

@@ -595,6 +595,16 @@ def eval_token_benchmark_compare_cmd(
         raise typer.Exit(code=1)
 
 
+@app.command("eval-token-benchmark-trend")
+def eval_token_benchmark_trend_cmd(
+    workspace: str = typer.Option(...),
+    function_name: str = typer.Option("", help="Filter by function name."),
+):
+    """Show benchmark trend data, regressions, and health score."""
+    from memory_center.core.benchmark.trending import generate_benchmark_report
+    print(generate_benchmark_report(workspace, function_name=function_name))
+
+
 @app.command("regression-smoke")
 def regression_smoke_cmd(
     workspace: str = typer.Option(...),
@@ -1081,6 +1091,63 @@ def work_close_cmd(
     )
 
 
+@app.command("audit")
+def audit_cmd(
+    workspace: str = typer.Option(...),
+    work_package: str = typer.Option("", help="Work package to audit."),
+):
+    """Run completion audit for documentation, tests, and implementation."""
+    from memory_center.core.audit.completion import run_completion_audit
+    print(run_completion_audit(workspace, work_package=work_package))
+
+
+@app.command("drill-ref")
+def drill_ref_cmd(
+    workspace: str = typer.Option(...),
+    ref_id: str = typer.Option(..., help="Ref ID to expand (e.g. ev:session:type:0)."),
+):
+    """Expand a ref with progressive disclosure."""
+    from memory_center.core.navigation.drilldown import DrillDownNavigator
+    with DrillDownNavigator(workspace) as nav:
+        print(nav.expand_ref(ref_id))
+
+
+@app.command("drill-timeline")
+def drill_timeline_cmd(
+    workspace: str = typer.Option(...),
+    session_id: str = typer.Option("", help="Filter by session ID."),
+    task_id: str = typer.Option("", help="Filter by task ID."),
+    limit: int = typer.Option(50),
+):
+    """Drill into timeline with context preservation."""
+    from memory_center.core.navigation.drilldown import DrillDownNavigator
+    with DrillDownNavigator(workspace) as nav:
+        print(nav.drill_timeline(session_id=session_id, task_id=task_id, limit=limit))
+
+
+@app.command("drill-task")
+def drill_task_cmd(
+    workspace: str = typer.Option(...),
+    task_id: str = typer.Option(..., help="Task ID to drill into."),
+):
+    """Drill into a task's full context."""
+    from memory_center.core.navigation.drilldown import DrillDownNavigator
+    with DrillDownNavigator(workspace) as nav:
+        print(nav.drill_task(task_id))
+
+
+@app.command("backend-consistency")
+def backend_consistency_cmd(
+    workspace: str = typer.Option(...),
+):
+    """Check consistency between JSONL files and SQLite backend."""
+    from memory_center.core.store import WorkspaceStore
+    from memory_center.core.backend.query import UnifiedBackendQuery
+    store = WorkspaceStore(workspace)
+    with UnifiedBackendQuery(store.memory_db_path) as backend:
+        print(backend.check_consistency(store.base_dir))
+
+
 @app.command("work-health")
 def work_health_cmd(
     workspace: str = typer.Option(...),
@@ -1089,12 +1156,14 @@ def work_health_cmd(
     limit: int = typer.Option(5),
 ):
     """Run one compact health check for workflow readiness."""
+    from memory_center.core.benchmark.trending import generate_benchmark_report
     print(
         {
             "workflow": "work-health",
             "status": workspace_status(workspace, view="compact", budget="medium"),
             "tool_usage_report": memory_tool_usage_report(workspace, limit=50),
             "regression_suite": memory_eval_regression_suite(workspace, intent=intent, target_model=target_model, limit=limit),
+            "benchmark_trend": generate_benchmark_report(workspace),
         }
     )
 

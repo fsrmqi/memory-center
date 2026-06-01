@@ -139,6 +139,48 @@ def _parse_payload(payload_str: str) -> Dict[str, Any] | None:
     except (json.JSONDecodeError, ValueError, TypeError):
         return None
 
+
+def _benchmark_trend_report(workspace_file: str, function_name: str = "") -> Dict[str, Any]:
+    """Generate benchmark trend report for mc_admin."""
+    from ..core.benchmark.trending import generate_benchmark_report
+    return generate_benchmark_report(workspace_file, function_name=function_name)
+
+
+def _run_audit(workspace_file: str, work_package: str = "") -> Dict[str, Any]:
+    """Run completion audit for mc_admin."""
+    from ..core.audit.completion import run_completion_audit
+    return run_completion_audit(workspace_file, work_package=work_package)
+
+
+def _drill_ref(workspace_file: str, ref_id: str = "") -> Dict[str, Any]:
+    """Expand a ref with progressive disclosure for mc_admin."""
+    from ..core.navigation.drilldown import DrillDownNavigator
+    with DrillDownNavigator(workspace_file) as nav:
+        return nav.expand_ref(ref_id)
+
+
+def _drill_timeline(workspace_file: str, session_id: str = "", task_id: str = "", limit: int = 50) -> Dict[str, Any]:
+    """Drill into timeline for mc_admin."""
+    from ..core.navigation.drilldown import DrillDownNavigator
+    with DrillDownNavigator(workspace_file) as nav:
+        return nav.drill_timeline(session_id=session_id, task_id=task_id, limit=limit)
+
+
+def _drill_task(workspace_file: str, task_id: str = "") -> Dict[str, Any]:
+    """Drill into task context for mc_admin."""
+    from ..core.navigation.drilldown import DrillDownNavigator
+    with DrillDownNavigator(workspace_file) as nav:
+        return nav.drill_task(task_id)
+
+
+def _backend_consistency(workspace_file: str) -> Dict[str, Any]:
+    """Check backend consistency for mc_admin."""
+    from ..core.store import WorkspaceStore
+    from ..core.backend.query import UnifiedBackendQuery
+    store = WorkspaceStore(workspace_file)
+    with UnifiedBackendQuery(store.memory_db_path) as backend:
+        return backend.check_consistency(store.base_dir)
+
 def create_server(workspace_file: str):
     try:
         from mcp.server.fastmcp import FastMCP
@@ -438,7 +480,7 @@ def create_server(workspace_file: str):
         layer: str = "",
         action_filter: str = "",
     ):
-        """Admin and utility operations. Action selects sub-operation: status, dashboard, continuity, health, artifact_list, artifact_get, artifact_outline, artifact_context, artifact_update, change_log_append, change_log_compact, task_create, task_list, task_resolve, task_get, task_update, task_change_log_append, task_archive, task_auto_archive, task_status, task_activity_touch, session_start, session_log, session_end, session_recent, session_summary, model_profile, handoff_history, write_judge, write_plan, write_execute, receipts, replay, backend_query, eval_write_quality, eval_resume, eval_handoff, eval_regression_suite, eval_index_freshness, eval_tool_adoption, eval_context_weight, eval_workflow_orchestration, eval_token_gain, eval_token_benchmark, tool_usage_report, generate_wiki, generate_skills, group_status, group_query, group_impact, group_chain."""
+        """Admin and utility operations. Action selects sub-operation: status, dashboard, continuity, health, audit, drill_ref, drill_timeline, drill_task, backend_consistency, artifact_list, artifact_get, artifact_outline, artifact_context, artifact_update, change_log_append, change_log_compact, task_create, task_list, task_resolve, task_get, task_update, task_change_log_append, task_archive, task_auto_archive, task_status, task_activity_touch, session_start, session_log, session_end, session_recent, session_summary, model_profile, handoff_history, write_judge, write_plan, write_execute, receipts, replay, backend_query, eval_write_quality, eval_resume, eval_handoff, eval_regression_suite, eval_index_freshness, eval_tool_adoption, eval_context_weight, eval_workflow_orchestration, eval_token_gain, eval_token_benchmark, eval_token_benchmark_trend, tool_usage_report, generate_wiki, generate_skills, group_status, group_query, group_impact, group_chain."""
         wf = ctx.workspace_file
         _DISPATCH = {
             "status": lambda: workspace_status(wf, view=view, budget=budget),
@@ -490,6 +532,12 @@ def create_server(workspace_file: str):
             "eval_workflow_orchestration": lambda: memory_eval_workflow_orchestration(wf, task_id=task_id, session_id=session_id, intent=intent, limit=limit),
             "eval_token_gain": lambda: memory_eval_token_gain(wf, tool_name=tool_name, budget=budget, model=model, limit=limit),
             "eval_token_benchmark": lambda: memory_eval_token_benchmark(wf, intent=intent, limit=limit),
+            "eval_token_benchmark_trend": lambda: _benchmark_trend_report(wf, name),
+            "audit": lambda: _run_audit(wf, intent),
+            "drill_ref": lambda: _drill_ref(wf, ref_path),
+            "drill_timeline": lambda: _drill_timeline(wf, session_id, task_id, limit),
+            "drill_task": lambda: _drill_task(wf, task_id),
+            "backend_consistency": lambda: _backend_consistency(wf),
             "tool_usage_report": lambda: memory_tool_usage_report(wf, limit=limit),
             "generate_wiki": lambda: generate_wiki(wf, output_dir or None),
             "generate_skills": lambda: generate_skills(wf, output_dir or None),
