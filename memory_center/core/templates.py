@@ -135,3 +135,140 @@ def get_workflow_guidance(workflow_name: str, context: Optional[Dict[str, Any]] 
         parts.append(f"Avoid: {anti_patterns[0]}")
 
     return " | ".join(parts)
+
+
+# ---- Constraint Templates (mattpocock/skills inspired) ----
+
+CONSTRAINT_TEMPLATES: Dict[str, Dict[str, Any]] = {
+    "coding_agent": {
+        "description": "Standard coding agent protocol",
+        "work_protocol": {
+            "start": {
+                "required": ["mc_start"],
+                "optional": ["mc_lookup(mode=auto)"],
+                "when": "Beginning any coding task",
+            },
+            "during": {
+                "required": ["mc_analyze(before edits)"],
+                "optional": ["mc_sync(periodic)"],
+                "when": "Active coding phase",
+            },
+            "end": {
+                "required": ["mc_close"],
+                "optional": ["mc_admin(action=health)"],
+                "when": "Task complete or session ending",
+            },
+        },
+        "auto_select_strategy": {
+            "new_intent": "mc_start",
+            "code_lookup": "mc_lookup(mode=auto)",
+            "before_edit": "mc_analyze",
+            "resume_work": "mc_resume",
+            "switch_model": "mc_handoff",
+            "check_health": "mc_admin(action=health)",
+        },
+        "constraints": [
+            "Always sniff before coding to understand context",
+            "Always analyze before editing to check impact",
+            "Always close session to preserve memory",
+        ],
+    },
+    "review_agent": {
+        "description": "Code review agent protocol",
+        "work_protocol": {
+            "start": {
+                "required": ["mc_start"],
+                "optional": ["mc_lookup(mode=chain, scope=cross-service)"],
+                "when": "Beginning code review",
+            },
+            "during": {
+                "required": ["mc_analyze(depth=full)"],
+                "optional": ["mc_lookup(mode=context)"],
+                "when": "Reviewing code changes",
+            },
+            "end": {
+                "required": ["mc_close"],
+                "optional": ["mc_admin(action=audit)"],
+                "when": "Review complete",
+            },
+        },
+        "auto_select_strategy": {
+            "new_review": "mc_start",
+            "check_impact": "mc_analyze(depth=full)",
+            "trace_chain": "mc_lookup(mode=chain)",
+            "check_contracts": "mc_lookup(mode=contracts)",
+        },
+        "constraints": [
+            "Use full-depth analysis for review",
+            "Check cross-service impact for any API changes",
+            "Verify contract compatibility",
+        ],
+    },
+    "quick_lookup": {
+        "description": "Quick lookup protocol for fast queries",
+        "work_protocol": {
+            "lookup": {
+                "required": ["mc_lookup(mode=auto)"],
+                "optional": [],
+                "when": "Need to find code, symbols, or relationships",
+            },
+        },
+        "auto_select_strategy": {
+            "find_class": "mc_lookup(mode=symbol)",
+            "find_code": "mc_lookup(mode=code)",
+            "find_caller": "mc_lookup(mode=chain)",
+            "find_contract": "mc_lookup(mode=contracts)",
+        },
+        "constraints": [
+            "Use auto mode for best routing",
+            "Use compact view for faster responses",
+        ],
+    },
+}
+
+
+def get_constraint_template(template_name: str) -> Optional[Dict[str, Any]]:
+    """Get a constraint template by name."""
+    return CONSTRAINT_TEMPLATES.get(template_name)
+
+
+def auto_select_action(context: str, template_name: str = "coding_agent") -> Optional[str]:
+    """Auto-select the best action based on context and template strategy.
+
+    Args:
+        context: Description of what the user wants to do
+        template_name: Which constraint template to use
+
+    Returns:
+        Recommended action string, or None if no match
+    """
+    template = CONSTRAINT_TEMPLATES.get(template_name)
+    if not template:
+        return None
+
+    strategy = template.get("auto_select_strategy", {})
+    context_lower = context.lower()
+
+    # Match context to strategy keywords
+    keyword_map = {
+        "new_intent": ["start", "begin", "new task", "开始"],
+        "code_lookup": ["find", "search", "look", "查", "找"],
+        "before_edit": ["edit", "change", "modify", "改", "修改"],
+        "resume_work": ["resume", "continue", "继续", "恢复"],
+        "switch_model": ["handoff", "switch", "切换"],
+        "check_health": ["health", "status", "健康"],
+        "check_impact": ["impact", "affect", "影响"],
+        "trace_chain": ["chain", "caller", "callee", "调用链"],
+        "check_contracts": ["contract", "feign", "api", "契约"],
+    }
+
+    for key, keywords in keyword_map.items():
+        if any(kw in context_lower for kw in keywords):
+            action = strategy.get(key)
+            if action:
+                return action
+
+    # Default: return the first strategy entry
+    if strategy:
+        return next(iter(strategy.values()))
+    return None

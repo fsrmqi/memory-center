@@ -271,6 +271,25 @@ def workspace_handoff_packet(
         "recent_evidence": resume_packet.get("recent_evidence", [])[: int(handoff_rules.get("evidence_limit", 5))],
         "notes": notes,
     }
+
+    # Enrich with DrillDownNavigator context if session_id is available
+    if session_id:
+        try:
+            from ..navigation.drilldown import DrillDownNavigator
+            with DrillDownNavigator(workspace_file) as nav:
+                drill_ctx = nav.build_handoff_context(session_id, include_refs=False)
+                if drill_ctx.get("key_points"):
+                    packet_body["key_points"] = drill_ctx["key_points"]
+                if drill_ctx.get("open_questions"):
+                    packet_body["open_questions"] = drill_ctx["open_questions"]
+                if drill_ctx.get("next_steps"):
+                    existing = packet_body.get("what_to_check_next", [])
+                    for step in drill_ctx["next_steps"]:
+                        if step not in existing:
+                            existing.append(step)
+                    packet_body["what_to_check_next"] = existing[: int(handoff_rules.get("next_limit", 5))]
+        except Exception:
+            pass  # DrillDown is optional enrichment, don't fail handoff
     packet = {
         "workspace": config.workspace,
         "target_model": target_model,

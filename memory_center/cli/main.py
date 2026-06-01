@@ -605,6 +605,34 @@ def eval_token_benchmark_trend_cmd(
     print(generate_benchmark_report(workspace, function_name=function_name))
 
 
+@app.command("discover")
+def discover_cmd(
+    workspace: str = typer.Option(...),
+    limit: int = typer.Option(50, help="Number of recent events to analyze."),
+):
+    """Discover hot commands and recommend next actions."""
+    from memory_center.core.orchestrator import memory_discover
+    print(memory_discover(workspace, limit=limit))
+
+
+@app.command("constraint")
+def constraint_cmd(
+    template: str = typer.Option("coding_agent", help="Template: coding_agent, review_agent, quick_lookup."),
+    context: str = typer.Option("", help="Context for auto-select."),
+):
+    """Show constraint template or auto-select action."""
+    from memory_center.core.templates import get_constraint_template, auto_select_action
+    if context:
+        action = auto_select_action(context, template)
+        print({"context": context, "template": template, "recommended_action": action})
+    else:
+        tmpl = get_constraint_template(template)
+        if tmpl:
+            print(tmpl)
+        else:
+            print(f"Unknown template: {template}. Available: coding_agent, review_agent, quick_lookup")
+
+
 @app.command("regression-smoke")
 def regression_smoke_cmd(
     workspace: str = typer.Option(...),

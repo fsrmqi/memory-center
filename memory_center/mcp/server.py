@@ -42,6 +42,7 @@ from memory_center.core.orchestrator import (
     memory_plan_write,
     memory_execute_write,
     memory_tool_usage_report,
+    memory_discover,
     memory_eval_write_quality,
     memory_eval_regression_suite,
     memory_eval_index_freshness,
@@ -180,6 +181,16 @@ def _backend_consistency(workspace_file: str) -> Dict[str, Any]:
     store = WorkspaceStore(workspace_file)
     with UnifiedBackendQuery(store.memory_db_path) as backend:
         return backend.check_consistency(store.base_dir)
+
+
+def _constraint_action(context: str = "", template: str = "coding_agent") -> Dict[str, Any]:
+    """Show constraint template or auto-select action for mc_admin."""
+    from ..core.templates import get_constraint_template, auto_select_action
+    if context:
+        action = auto_select_action(context, template)
+        return {"context": context, "template": template, "recommended_action": action}
+    tmpl = get_constraint_template(template)
+    return tmpl or {"error": f"Unknown template: {template}"}
 
 def create_server(workspace_file: str):
     try:
@@ -480,7 +491,7 @@ def create_server(workspace_file: str):
         layer: str = "",
         action_filter: str = "",
     ):
-        """Admin and utility operations. Action selects sub-operation: status, dashboard, continuity, health, audit, drill_ref, drill_timeline, drill_task, backend_consistency, artifact_list, artifact_get, artifact_outline, artifact_context, artifact_update, change_log_append, change_log_compact, task_create, task_list, task_resolve, task_get, task_update, task_change_log_append, task_archive, task_auto_archive, task_status, task_activity_touch, session_start, session_log, session_end, session_recent, session_summary, model_profile, handoff_history, write_judge, write_plan, write_execute, receipts, replay, backend_query, eval_write_quality, eval_resume, eval_handoff, eval_regression_suite, eval_index_freshness, eval_tool_adoption, eval_context_weight, eval_workflow_orchestration, eval_token_gain, eval_token_benchmark, eval_token_benchmark_trend, tool_usage_report, generate_wiki, generate_skills, group_status, group_query, group_impact, group_chain."""
+        """Admin and utility operations. Action selects sub-operation: status, dashboard, continuity, health, audit, discover, constraint, drill_ref, drill_timeline, drill_task, backend_consistency, artifact_list, artifact_get, artifact_outline, artifact_context, artifact_update, change_log_append, change_log_compact, task_create, task_list, task_resolve, task_get, task_update, task_change_log_append, task_archive, task_auto_archive, task_status, task_activity_touch, session_start, session_log, session_end, session_recent, session_summary, model_profile, handoff_history, write_judge, write_plan, write_execute, receipts, replay, backend_query, eval_write_quality, eval_resume, eval_handoff, eval_regression_suite, eval_index_freshness, eval_tool_adoption, eval_context_weight, eval_workflow_orchestration, eval_token_gain, eval_token_benchmark, eval_token_benchmark_trend, tool_usage_report, generate_wiki, generate_skills, group_status, group_query, group_impact, group_chain."""
         wf = ctx.workspace_file
         _DISPATCH = {
             "status": lambda: workspace_status(wf, view=view, budget=budget),
@@ -538,6 +549,8 @@ def create_server(workspace_file: str):
             "drill_timeline": lambda: _drill_timeline(wf, session_id, task_id, limit),
             "drill_task": lambda: _drill_task(wf, task_id),
             "backend_consistency": lambda: _backend_consistency(wf),
+            "discover": lambda: memory_discover(wf, limit=limit),
+            "constraint": lambda: _constraint_action(text, name),
             "tool_usage_report": lambda: memory_tool_usage_report(wf, limit=limit),
             "generate_wiki": lambda: generate_wiki(wf, output_dir or None),
             "generate_skills": lambda: generate_skills(wf, output_dir or None),

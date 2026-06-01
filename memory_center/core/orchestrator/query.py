@@ -526,6 +526,72 @@ def memory_tool_usage_report(
     )
 
 
+def memory_discover(
+    workspace_file: str | Path,
+    limit: int = 50,
+) -> Dict[str, Any]:
+    """Discover hot commands and recommend next actions based on workspace state.
+
+    Inspired by rtk's discover pattern:
+    - Hot commands: most frequently used tools/commands
+    - Recommended next actions: based on current workspace state
+    - Command compression matrix: compact output patterns for common queries
+    """
+    config, store = load_context(workspace_file)
+    events = store.read_jsonl_prefer_backend(SESSION_EVENTS_FILE, limit=max(limit, 200))
+
+    # Analyze hot commands
+    tool_counts: Dict[str, int] = {}
+    recent_queries: list = []
+    for event in events:
+        if event.get("event_type") != "tool_call":
+            continue
+        payload = _event_payload(event)
+        tool_name = str(payload.get("tool_name") or payload.get("name") or "")
+        if tool_name:
+            tool_counts[tool_name] = tool_counts.get(tool_name, 0) + 1
+        query = payload.get("query", "") or payload.get("target", "") or payload.get("text", "")
+        if query:
+            recent_queries.append(query)
+
+    hot_commands = sorted(tool_counts.items(), key=lambda x: -x[1])[:10]
+
+    # Recommended next actions based on workspace state
+    recommendations: list = []
+    try:
+        from .workspace import workspace_status
+        status = workspace_status(workspace_file, view="compact", budget="medium")
+        layers = status.get("memory_layers", {})
+        if layers.get("L0", {}).get("count", 0) == 0:
+            recommendations.append("还没有会话事件，建议先运行 `work-start` 启动工作流")
+        if layers.get("L1", {}).get("count", 0) == 0:
+            recommendations.append("还没有案例记忆，建议在完成关键操作后运行 `work-sync`")
+        if layers.get("L2", {}).get("count", 0) == 0:
+            recommendations.append("还没有任务空间，建议运行 `artifact create-task` 创建任务")
+    except Exception:
+        pass
+
+    # Command compression matrix — compact aliases for common queries
+    compression_matrix = {
+        "quick_context": {"command": "mc_lookup", "mode": "auto", "view": "compact", "budget": "small"},
+        "full_chain": {"command": "mc_lookup", "mode": "chain", "scope": "cross-service"},
+        "impact_check": {"command": "mc_analyze", "depth": "quick"},
+        "sync_progress": {"command": "mc_sync", "mode": "sniff-sync"},
+        "resume_work": {"command": "mc_resume"},
+        "handoff_model": {"command": "mc_handoff"},
+        "health_check": {"command": "mc_admin", "action": "health"},
+        "audit_check": {"command": "mc_admin", "action": "audit"},
+    }
+
+    return {
+        "workspace": config.workspace,
+        "hot_commands": [{"tool": t, "count": c} for t, c in hot_commands],
+        "recent_queries": recent_queries[:10],
+        "recommendations": recommendations if recommendations else ["工作区状态正常，继续当前工作"],
+        "compression_matrix": compression_matrix,
+    }
+
+
 # ---- internal helpers -------------------------------------------------------
 
 def _compress_chain_tree(edges: List[Dict[str, Any]]) -> Dict[str, Any]:

@@ -58,6 +58,8 @@
 - `eval-token-benchmark-save`
 - `eval-token-benchmark-compare`
 - `eval-token-benchmark-trend`
+- `discover`
+- `constraint`
 - `audit`
 - `drill-ref`
 - `drill-timeline`
@@ -98,6 +100,8 @@
 - `continuity`
 - `health`
 - `audit`
+- `discover`
+- `constraint`
 - `drill_ref`
 - `drill_timeline`
 - `drill_task`

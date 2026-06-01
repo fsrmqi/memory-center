@@ -57,6 +57,7 @@ from .query import (
     memory_ref_batch,
     memory_backend_query,
     memory_tool_usage_report,
+    memory_discover,
     _annotate_phantom_nodes,
 )
 
@@ -156,7 +157,7 @@ __all__ = [
     # query
     "memory_query", "memory_query_hybrid", "memory_context", "memory_symbol", "memory_callers", "memory_callees",
     "memory_search_code", "memory_contracts", "memory_ref_get", "memory_ref_batch",
-    "memory_backend_query", "memory_tool_usage_report", "_annotate_phantom_nodes",
+    "memory_backend_query", "memory_tool_usage_report", "memory_discover", "_annotate_phantom_nodes",
     # impact
     "memory_impact", "memory_plan_change", "memory_verify_checklist", "memory_detect_changes",
     # write
