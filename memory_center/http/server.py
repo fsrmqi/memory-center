@@ -68,6 +68,7 @@ from memory_center.core.orchestrator import (
     workspace_unresolved_items,
     workspace_replay_write_chain,
     workspace_write_receipts,
+    memory_discover,
 )
 from memory_center.core.artifacts import (
     append_change_log,
@@ -737,6 +738,54 @@ def _route_request(path: str, params: dict, default_workspace: str | None) -> di
         direction = params.get("direction", ["upstream"])[0]
         max_depth = _parse_int(params, "max_depth", 3)
         return group_impact(group, target, direction=direction, max_depth=max_depth)
+    # ---- discover / constraint / audit / drill / backend-consistency / benchmark-trend ----
+    if path == "/workspace/discover":
+        workspace = _require_workspace(params, default_workspace)
+        return memory_discover(workspace, limit=_parse_int(params, "limit", 50))
+    if path == "/workspace/constraint":
+        template = params.get("template", ["coding_agent"])[0]
+        context = params.get("context", [""])[0]
+        from memory_center.core.templates import get_constraint_template, auto_select_action
+        if context:
+            return {"context": context, "template": template, "recommended_action": auto_select_action(context, template)}
+        tmpl = get_constraint_template(template)
+        return tmpl or {"error": f"Unknown template: {template}"}
+    if path == "/workspace/audit":
+        workspace = _require_workspace(params, default_workspace)
+        from memory_center.core.audit.completion import run_completion_audit
+        return run_completion_audit(workspace, work_package=params.get("work_package", [""])[0])
+    if path == "/workspace/drill-ref":
+        workspace = _require_workspace(params, default_workspace)
+        ref_id = _require_one(params, "ref_id")
+        from memory_center.core.navigation.drilldown import DrillDownNavigator
+        with DrillDownNavigator(workspace) as nav:
+            return nav.expand_ref(ref_id)
+    if path == "/workspace/drill-timeline":
+        workspace = _require_workspace(params, default_workspace)
+        from memory_center.core.navigation.drilldown import DrillDownNavigator
+        with DrillDownNavigator(workspace) as nav:
+            return nav.drill_timeline(
+                session_id=params.get("session_id", [""])[0],
+                task_id=params.get("task_id", [""])[0],
+                limit=_parse_int(params, "limit", 50),
+            )
+    if path == "/workspace/drill-task":
+        workspace = _require_workspace(params, default_workspace)
+        task_id = _require_one(params, "task_id")
+        from memory_center.core.navigation.drilldown import DrillDownNavigator
+        with DrillDownNavigator(workspace) as nav:
+            return nav.drill_task(task_id)
+    if path == "/workspace/backend-consistency":
+        workspace = _require_workspace(params, default_workspace)
+        from memory_center.core.store import WorkspaceStore
+        from memory_center.core.backend.query import UnifiedBackendQuery
+        store = WorkspaceStore(workspace)
+        with UnifiedBackendQuery(store.memory_db_path) as backend:
+            return backend.check_consistency(store.base_dir)
+    if path == "/workspace/eval-token-benchmark-trend":
+        workspace = _require_workspace(params, default_workspace)
+        from memory_center.core.benchmark.trending import generate_benchmark_report
+        return generate_benchmark_report(workspace, function_name=params.get("function_name", [""])[0])
     raise FileNotFoundError(f"Unknown route: {path}")
 
 

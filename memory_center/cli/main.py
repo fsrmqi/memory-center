@@ -43,6 +43,7 @@ from memory_center.core.orchestrator import (
     memory_impact,
     memory_plan_change,
     memory_query,
+    memory_query_hybrid,
     memory_backend_query,
     memory_ref_batch,
     memory_ref_get,
@@ -232,7 +233,7 @@ def doctor(workspace: str = typer.Option(...), self_test: bool = typer.Option(Fa
 @app.command("query")
 def query_cmd(workspace: str = typer.Option(...), text: str = typer.Option(...), limit: int = typer.Option(20)):
     """Graph-aware query across services, files, symbols, contracts and memory."""
-    print(memory_query(workspace, text, limit))
+    print(memory_query_hybrid(workspace, text, limit))
 
 
 @app.command("search-code")

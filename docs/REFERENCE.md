@@ -135,6 +135,14 @@
 - `/workspace/work-handoff`
 - `/workspace/work-close`
 - `/workspace/work-health`
+- `/workspace/discover`
+- `/workspace/constraint`
+- `/workspace/audit`
+- `/workspace/drill-ref`
+- `/workspace/drill-timeline`
+- `/workspace/drill-task`
+- `/workspace/backend-consistency`
+- `/workspace/eval-token-benchmark-trend`
 
 ## 4. Stable Schemas / 稳定协议
 
