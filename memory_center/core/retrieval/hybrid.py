@@ -58,7 +58,7 @@ class HybridRetrievalConfig:
 
 # Query pattern detection
 _QUERY_PATTERNS = {
-    "feign": re.compile(r"feign|client|远程调用|rpc", re.IGNORECASE),
+    "feign": re.compile(r"feign|fegin|client|远程调用|rpc", re.IGNORECASE),
     "mq": re.compile(r"kafka|rocketmq|topic|consumer|producer|消息队列|mq", re.IGNORECASE),
     "endpoint": re.compile(r"/[a-z]|controller|api|接口|endpoint", re.IGNORECASE),
     "config": re.compile(r"config|配置|properties|yaml|yml", re.IGNORECASE),
@@ -90,13 +90,22 @@ def detect_query_intent(query: str) -> Dict[str, Any]:
     if "::" in query or "." in query:
         intents.setdefault("class", 0.7)
 
+    # 优先级调整：如果检测到 feign/mq/endpoint，提高其优先级
+    # 因为这些是更具体的意图
+    if "feign" in intents:
+        intents["feign"] = 2.0  # 提高 feign 优先级
+    if "mq" in intents:
+        intents["mq"] = 2.0
+    if "endpoint" in intents and query_lower.startswith("/"):
+        intents["endpoint"] = 2.0
+
     primary = max(intents.items(), key=lambda x: x[1])[0] if intents else "general"
 
     return {
         "primary_intent": primary,
         "all_intents": intents,
         "matched_patterns": matched_patterns,
-        "is_cross_service": any(k in query_lower for k in ["feign", "远程", "rpc", "服务间"]),
+        "is_cross_service": any(k in query_lower for k in ["feign", "fegin", "远程", "rpc", "服务间"]),
         "is_chain_query": "chain" in intents or "调用链" in query_lower,
     }
 

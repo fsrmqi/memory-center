@@ -85,6 +85,9 @@ def memory_query_hybrid(workspace_file: str | Path, query: str, limit: int = 20,
     if config is None:
         config = HybridRetrievalConfig()
 
+    # Detect query intent first
+    intent = detect_query_intent(query)
+
     with GraphStore(store.graph_db_path) as graph:
         result = hybrid_retrieve(
             graph=graph,
@@ -97,7 +100,36 @@ def memory_query_hybrid(workspace_file: str | Path, query: str, limit: int = 20,
 
     # Enrich with workspace context
     result["workspace"] = config_obj[0].workspace
-    result["intent_analysis"] = detect_query_intent(query)
+    result["intent_analysis"] = intent
+
+    # 根据意图补充 contracts 索引数据
+    primary_intent = intent.get("primary_intent", "general")
+    if primary_intent in ("feign", "mq", "endpoint", "config"):
+        contracts = memory_contracts(workspace_file)
+        filtered_feign = _filter_contracts_by_query(contracts.get("feign_contracts", []), query, primary_intent)
+        filtered_api = _filter_contracts_by_query(contracts.get("api_contracts", []), query, primary_intent)
+        filtered_mq = _filter_contracts_by_query(contracts.get("mq_contracts", []), query, primary_intent)
+
+        # Feign → API 自动关联：当 Feign 匹配到时，把其 target_service + path 也加入 API 结果
+        if primary_intent == "feign" and filtered_feign:
+            api_by_path = {c.get("path", ""): c for c in contracts.get("api_contracts", [])}
+            for fc in filtered_feign:
+                for m in fc.get("methods", []):
+                    m_path = m.get("path", "")
+                    if m_path and m_path in api_by_path:
+                        matched_api = api_by_path[m_path]
+                        if matched_api not in filtered_api:
+                            filtered_api.append(matched_api)
+
+        result["contracts"] = {
+            "feign_contracts": filtered_feign,
+            "mq_contracts": filtered_mq,
+            "api_contracts": filtered_api,
+        }
+        # 标记 contracts 数据来源
+        if "retrieval_sources" not in result:
+            result["retrieval_sources"] = []
+        result["retrieval_sources"].append("contracts_index")
 
     # 向后兼容：添加 matches 字段（旧接口返回 matches，新接口返回 results）
     if "results" in result and "matches" not in result:
@@ -112,6 +144,35 @@ def memory_query_hybrid(workspace_file: str | Path, query: str, limit: int = 20,
             summary["semantic_matches"] = summary.get("source_distribution", {}).get("semantic", 0)
 
     return result
+
+
+def _filter_contracts_by_query(contracts: list, query: str, intent: str) -> list:
+    """Filter contracts by query relevance."""
+    if not contracts:
+        return []
+
+    query_lower = query.lower()
+    tokens = tokenize(query_lower)
+    filtered = []
+
+    for contract in contracts:
+        contract_str = json.dumps(contract, ensure_ascii=False).lower()
+        # Check if any token matches
+        if any(token in contract_str for token in tokens):
+            filtered.append(contract)
+        # Check interface/method name matches for feign
+        elif intent == "feign" and "interface" in contract:
+            interface_name = contract.get("interface", "").lower()
+            if any(token in interface_name for token in tokens):
+                filtered.append(contract)
+        # Check path matches for api
+        elif intent == "endpoint" and "path" in contract:
+            path = contract.get("path", "").lower()
+            if query_lower in path or any(token in path for token in tokens):
+                filtered.append(contract)
+
+    # Return filtered results (up to limit) or top results if no filter match
+    return filtered[:20] if filtered else contracts[:10]
 
 
 def memory_context(workspace_file: str | Path, name: str, max_depth: int = 2) -> Dict[str, Any]:
