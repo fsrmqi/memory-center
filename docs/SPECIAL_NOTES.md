@@ -30,6 +30,8 @@
 
 - 从“类型”上说，它属于建议型 Hook
 - 但从“默认行为”上说，它是关闭的
+- runner 会先检查 `enabled`
+- 所以 `enabled: false` 时，会直接表现为“不参与执行”，不会继续进入 `suggest` 分支
 
 ### 为什么不是 bug
 
@@ -52,6 +54,15 @@
 - 保留 `suggest` 这种 hook 类型定义
 - 但默认 `enabled: false`
 - Claude Code / Codex adapter 默认也不生成这条 Hook
+
+换句话说，这不是：
+
+- “本来想默认启用 suggest，结果代码写错了”
+
+而是：
+
+- “这个 Hook 的类别仍然是 suggest”
+- “但默认策略明确要求它不要参与执行”
 
 ### 正确理解
 
@@ -78,6 +89,21 @@
 - `Stop -> mc_close`
 
 而不是把 `UserPromptSubmit` 挂成默认自动行为。
+
+### 更推荐的自动化方式
+
+当前默认推荐把自动调用放在**生命周期明确的节点**，而不是自然语言输入本身：
+
+1. `SessionStart -> mc_start`
+2. `PreToolUse(Edit|Write) -> mc_analyze`
+3. `Stop -> mc_close`
+
+原因是：
+
+- 生命周期 Hook 的语义稳定
+- 参数边界更清楚
+- 不容易误伤普通自然语言输入
+- 更适合 Claude Code / Codex 这类宿主
 
 ## 3. `mode` 与 `enabled` 的关系
 
