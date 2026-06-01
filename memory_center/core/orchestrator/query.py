@@ -35,19 +35,20 @@ def memory_query(workspace_file: str | Path, query: str, limit: int = 20, node_t
                     seen_nodes[item["id"]] = item
             exact_nodes = list(seen_nodes.values())[:limit]
     semantic_hits = semantic_query(workspace_file, query, limit=max(limit * 3, 20))
+    # 复用同一个 GraphStore 连接来 enrich 所有 semantic hits，避免每个 hit 单独打开连接
     enriched_semantic_hits = []
-    for hit in semantic_hits:
-        with GraphStore(store.graph_db_path) as graph:
+    with GraphStore(store.graph_db_path) as graph:
+        for hit in semantic_hits:
             node = graph.node_by_id(hit.get("node_id", ""))
-        if not node:
-            node = {
-                "id": hit.get("node_id", ""),
-                "type": hit.get("type", ""),
-                "name": hit.get("name", ""),
-                "project": hit.get("project", ""),
-                "file_path": hit.get("file_path", ""),
-            }
-        enriched_semantic_hits.append({**hit, "node": node})
+            if not node:
+                node = {
+                    "id": hit.get("node_id", ""),
+                    "type": hit.get("type", ""),
+                    "name": hit.get("name", ""),
+                    "project": hit.get("project", ""),
+                    "file_path": hit.get("file_path", ""),
+                }
+            enriched_semantic_hits.append({**hit, "node": node})
     semantic_hits = enriched_semantic_hits
     if node_types:
         semantic_hits = [item for item in semantic_hits if item.get("node", {}).get("type") in node_types]
@@ -97,6 +98,18 @@ def memory_query_hybrid(workspace_file: str | Path, query: str, limit: int = 20,
     # Enrich with workspace context
     result["workspace"] = config_obj[0].workspace
     result["intent_analysis"] = detect_query_intent(query)
+
+    # 向后兼容：添加 matches 字段（旧接口返回 matches，新接口返回 results）
+    if "results" in result and "matches" not in result:
+        result["matches"] = result["results"]
+
+    # 确保 retrieval_summary 包含旧接口期望的字段
+    if "retrieval_summary" in result:
+        summary = result["retrieval_summary"]
+        if "exact_matches" not in summary:
+            summary["exact_matches"] = summary.get("source_distribution", {}).get("graph", 0)
+        if "semantic_matches" not in summary:
+            summary["semantic_matches"] = summary.get("source_distribution", {}).get("semantic", 0)
 
     return result
 

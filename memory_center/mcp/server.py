@@ -32,6 +32,7 @@ from memory_center.core.orchestrator import (
     memory_impact,
     memory_plan_change,
     memory_query,
+    memory_query_hybrid,
     memory_backend_query,
     memory_ref_batch,
     memory_ref_get,
@@ -228,13 +229,13 @@ def create_server(workspace_file: str):
                 if len(matching_groups) > 1:
                     return {"mode_used": "chain-callees", "result": result, "matching_groups": matching_groups, "_hint": f"Workspace 属于多个 group ({', '.join(matching_groups)})，请用 mc_admin(action='group_chain', group=...) 显式指定。"}
                 return {"mode_used": "chain-callees", "result": result}
-            return {"mode_used": "query", "result": memory_query(wf, query, limit), "lookup_hint": hint}
+            return {"mode_used": "query", "result": memory_query_hybrid(wf, query, limit), "lookup_hint": hint}
         if mode == "symbol":
             return {"mode": "symbol", "result": memory_symbol(wf, name or query, limit)}
         if mode == "code":
             return {"mode": "code", "result": memory_search_code(wf, query, scope, limit)}
         if mode == "query":
-            return {"mode": "query", "result": memory_query(wf, query, limit)}
+            return {"mode": "query", "result": memory_query_hybrid(wf, query, limit)}
         if mode == "trace":
             return {"mode": "trace", "result": workspace_trace(wf, entry or query)}
         if mode == "chain":

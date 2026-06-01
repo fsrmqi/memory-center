@@ -46,6 +46,7 @@ from .session import (
 # --- graph-native query tools ---
 from .query import (
     memory_query,
+    memory_query_hybrid,
     memory_context,
     memory_symbol,
     memory_callers,
@@ -153,7 +154,7 @@ __all__ = [
     "workspace_recent_sessions", "workspace_session_summary", "workspace_suggest_case",
     "workspace_recent_evidence",
     # query
-    "memory_query", "memory_context", "memory_symbol", "memory_callers", "memory_callees",
+    "memory_query", "memory_query_hybrid", "memory_context", "memory_symbol", "memory_callers", "memory_callees",
     "memory_search_code", "memory_contracts", "memory_ref_get", "memory_ref_batch",
     "memory_backend_query", "memory_tool_usage_report", "_annotate_phantom_nodes",
     # impact

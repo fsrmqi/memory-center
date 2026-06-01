@@ -40,6 +40,7 @@ from memory_center.core.orchestrator import (
     memory_plan_change,
     memory_plan_write,
     memory_query,
+    memory_query_hybrid,
     memory_search_code,
     memory_symbol,
     memory_verify_checklist,
@@ -370,7 +371,7 @@ def _route_request(path: str, params: dict, default_workspace: str | None) -> di
         workspace = _require_workspace(params, default_workspace)
         query = _require_one(params, "text")
         limit = _parse_int(params, "limit", 20)
-        return memory_query(workspace, query, limit=limit)
+        return memory_query_hybrid(workspace, query, limit=limit)
     if path == "/workspace/search-code":
         workspace = _require_workspace(params, default_workspace)
         query = _require_one(params, "text")

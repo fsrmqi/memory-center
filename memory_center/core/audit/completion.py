@@ -91,6 +91,13 @@ def _check_documentation_alignment(
     findings = []
     workspace_path = Path(workspace_file).parent
 
+    # workspace.yaml 在 .memory-center/ 目录下，需要再往上一层到项目根目录
+    # 例如: /path/to/project/.memory-center/workspace.yaml -> /path/to/project
+    if workspace_path.name == ".memory-center":
+        project_root = workspace_path.parent
+    else:
+        project_root = workspace_path
+
     # Check for key documentation files
     key_docs = [
         "README.md",
@@ -101,7 +108,7 @@ def _check_documentation_alignment(
     ]
 
     for doc in key_docs:
-        doc_path = workspace_path / doc
+        doc_path = project_root / doc
         if not doc_path.exists():
             findings.append({
                 "category": "documentation",
@@ -112,7 +119,7 @@ def _check_documentation_alignment(
             })
 
     # Check if SPECIAL_NOTES covers known design decisions
-    special_notes_path = workspace_path / "docs" / "SPECIAL_NOTES.md"
+    special_notes_path = project_root / "docs" / "SPECIAL_NOTES.md"
     if special_notes_path.exists():
         content = special_notes_path.read_text()
         required_topics = [
