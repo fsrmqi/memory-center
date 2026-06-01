@@ -45,6 +45,17 @@ class TestHybridRetrieval:
         result = detect_query_intent("hello world")
         assert result["primary_intent"] == "general"
 
+    def test_detect_query_intent_plain_service_is_not_feign(self):
+        from memory_center.core.retrieval.hybrid import detect_query_intent
+        result = detect_query_intent("ArticleService")
+        assert result["primary_intent"] == "class"
+        assert "feign" not in result["all_intents"]
+
+    def test_detect_query_intent_feign_service_still_matches_feign(self):
+        from memory_center.core.retrieval.hybrid import detect_query_intent
+        result = detect_query_intent("FeginAutomaticReviewTaskService")
+        assert result["primary_intent"] == "feign"
+
     def test_hybrid_retrieval_config_defaults(self):
         from memory_center.core.retrieval.hybrid import HybridRetrievalConfig
         config = HybridRetrievalConfig()

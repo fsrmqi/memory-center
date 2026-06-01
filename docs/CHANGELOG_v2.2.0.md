@@ -238,6 +238,6 @@ record_design_decision(workspace_file, topic="hybrid_retrieval", decision="ä½¿ç”
 ---
 
 **Release Date**: 2026-06-01  
-**Version**: 2.2.0  
+**Version**: 2.1.10  
 **Status**: Stable  
 **Compatibility**: Backward compatible with v2.1.x

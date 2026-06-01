@@ -69,9 +69,15 @@ _QUERY_PATTERNS = {
 
 # Java 命名模式推断
 _JAVA_PATTERNS = {
-    "feign": re.compile(r"^[A-Z][a-zA-Z]*Service$|^Fegin|^Feign", re.IGNORECASE),
+    "feign": re.compile(
+        r"(^Fegin[A-Z][a-zA-Z]*Service$)|"
+        r"(^Feign[A-Z][a-zA-Z]*Service$)|"
+        r"(^[A-Z][a-zA-Z]*Feign(Client|Service)?$)|"
+        r"(^[A-Z][a-zA-Z]*Client$)",
+        re.IGNORECASE,
+    ),
     "endpoint": re.compile(r"Controller$|Resource$|Api$", re.IGNORECASE),
-    "class": re.compile(r"ServiceImpl$|Impl$|Dao$|Mapper$|Repository$", re.IGNORECASE),
+    "class": re.compile(r"Service$|ServiceImpl$|Impl$|Dao$|Mapper$|Repository$", re.IGNORECASE),
 }
 
 

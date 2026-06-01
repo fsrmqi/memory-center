@@ -79,26 +79,6 @@ def test_demo_workspace_indexes_spring_cloud_patterns(tmp_path: Path):
     assert "mermaid" in sniffed["symbolic_context"]
     assert "entities_mermaid" in sniffed["symbolic_context"]
     assert "flow_mermaid" in sniffed["symbolic_context"]
-
-
-def test_merge_artifact_section_preserves_following_sections():
-    existing = (
-        "# Doc\n\n"
-        "intro text\n\n"
-        "## Sniff Context\n\n"
-        "old body\n\n"
-        "### Details\n\n"
-        "old details\n\n"
-        "## Sniff Plan\n\n"
-        "keep me\n\n"
-        "## Another Section\n\n"
-        "keep me too\n"
-    )
-    merged = _merge_artifact_section(existing, "Sniff Context", "new body")
-    assert "## Sniff Context\n\nnew body" in merged
-    assert "## Sniff Plan\n\nkeep me" in merged
-    assert "## Another Section\n\nkeep me too" in merged
-    assert "old details" not in merged
     assert "memory_search_code" in sniffed["symbolic_context"]["flow_mermaid"]
     assert "memory_impact" in sniffed["symbolic_context"]["flow_mermaid"]
     assert sniffed["symbolic_context"]["flow_flags"]["has_contract"] is True
@@ -132,6 +112,26 @@ def test_merge_artifact_section_preserves_following_sections():
 
     report = doctor(workspace)
     assert report["ok"] is True
+
+
+def test_merge_artifact_section_preserves_following_sections():
+    existing = (
+        "# Doc\n\n"
+        "intro text\n\n"
+        "## Sniff Context\n\n"
+        "old body\n\n"
+        "### Details\n\n"
+        "old details\n\n"
+        "## Sniff Plan\n\n"
+        "keep me\n\n"
+        "## Another Section\n\n"
+        "keep me too\n"
+    )
+    merged = _merge_artifact_section(existing, "Sniff Context", "new body")
+    assert "## Sniff Context\n\nnew body" in merged
+    assert "## Sniff Plan\n\nkeep me" in merged
+    assert "## Another Section\n\nkeep me too" in merged
+    assert "old details" not in merged
 
 
 def test_workspace_supports_absolute_service_paths_across_multiple_roots(tmp_path: Path):
