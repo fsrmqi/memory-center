@@ -13,6 +13,10 @@
 - [README.md](/Users/cuijiaqi/Ai-common-skills/memory-center/README.md)
 - [docs/USER_GUIDE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/USER_GUIDE.md)
 
+如果你想理解当前系统的统一实体、关系和语义边界，补充看：
+
+- [docs/ONTOLOGY.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/ONTOLOGY.md)
+
 ## 2. 代码总览
 
 核心包在：

@@ -22,11 +22,12 @@
 
 最值得继续推进的方向：
 
-1. hybrid retrieval
-2. 更系统的 token benchmark 趋势化
-3. SQLite 进一步接管更多高频读路径
-4. 更强的 timeline / ref / task drill-down
-5. completion audit 与文档一致性持续收口
+1. 轻量 ontology 约束层
+2. hybrid retrieval
+3. 更系统的 token benchmark 趋势化
+4. SQLite 进一步接管更多高频读路径
+5. 更强的 timeline / ref / task drill-down
+6. completion audit 与文档一致性持续收口
 
 ## 3. External Ideas Already Absorbed / 已吸收的外部思想
 
@@ -50,6 +51,12 @@
 
 - workbench / drill-down / onboarding 方向
 
+### `UModel / STAROps / 本体论`
+
+- 对象优先、关系显式
+- 事实 / 推断 / 派生 三层语义
+- 用统一领域语言约束 retrieval / chain / timeline / audit
+
 ## 4. Near-Term Versions / 近阶段版本主线
 
 - `2.1.x`
@@ -58,6 +65,7 @@
   - facade 与高频链路继续稳住
 
 - `2.2.x`
+  - ontology 约束层第一版
   - hybrid retrieval
   - 更深的 SQLite 主读路径统一
   - timeline/ref/task 联动增强

@@ -1,92 +1,94 @@
 # Next Phase Master Plan / 下一阶段总方案
 
-> **Status: All phases completed (2026-06-01)**
->
-> All 5 phases and 3 code issues have been implemented. This document is archived.
-> Active documentation lives in [README.md](/Users/cuijiaqi/Ai-common-skills/memory-center/README.md), [ARCHITECTURE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/ARCHITECTURE.md), [MCP_GUIDE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/MCP_GUIDE.md), [REFERENCE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/REFERENCE.md).
-
-## Completion Summary
-
-| Phase | Status | Key Changes |
-|-------|--------|-------------|
-| A: 检索质量收口 | ✅ Done | Tightened Feign regex, removed `client` keyword, added path specificity for Feign→API linking |
-| B: Benchmark 趋势化 | ✅ Done | Wired `record_benchmark_trend` into save/compare flows, added `eval-token-benchmark-trend` CLI/MCP |
-| C: Audit 产品化 | ✅ Done | Multi-language test detection, multi-framework config, adaptive doc check, unified scoring, added `audit` CLI/MCP |
-| D: Timeline/Ref/Task | ✅ Done | Added `drill-ref`/`drill-timeline`/`drill-task` CLI/MCP, fixed drilldown import bug |
-| E: SQLite 主读路径 | ✅ Done | Added `check_consistency()`, `backend-consistency` CLI/MCP, orchestrator already uses prefer_backend |
-
-Code Fixes: Replaced module existence tests with behavioral tests, added contract tests, added 25+ new tests.
-
-**Final: 160 tests passed, 5 skipped, 0 failures.**
-
----
-
 ## 1. 文档定位
 
 这份文档只保留**还没收口的方向**。
 
-已经做完、已经稳定的能力，不再在这里重复罗列；它们应该体现在：
+已经稳定、已经完成并且已经进入主文档体系的能力，不再在这里重复列清单。  
+这份文档只回答三件事：
+
+1. 现在还剩什么最值得继续做
+2. 下一步先做哪个
+3. 哪些外部思想还没有真正吸收到实现里
+
+如果你只是想看当前系统怎么用，优先看：
 
 - [README.md](/Users/cuijiaqi/Ai-common-skills/memory-center/README.md)
 - [docs/ARCHITECTURE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/ARCHITECTURE.md)
 - [docs/MCP_GUIDE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/MCP_GUIDE.md)
 - [docs/REFERENCE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/REFERENCE.md)
 
-这份文档回答的是：
-
-- 现在还剩什么最值得做
-- 下一步先做哪个
-- 外部思想还剩哪些没有真正落地
-
 ## 2. 当前剩余重点
 
-| 优先级 | 方向 | 目标 | 状态 |
-| --- | --- | --- | --- |
-| 1 | 检索质量继续收口 | 让 `mc_lookup`、`query`、`resume` 不再因为意图误判或 contracts 关联过宽而偏航 | ✅ |
-| 2 | Benchmark 真正趋势化 | 不只是能跑 benchmark，而是能长期看哪条链路又变胖了 | ✅ |
-| 3 | Completion audit 产品化 | 让 audit 从”仓库自检工具”继续走向”真实 workspace 可用的治理能力” | ✅ |
-| 4 | Timeline/ref/task 体验增强 | 让 drill-down 不只是底层类存在，而是真正融入日常入口 | ✅ |
-| 5 | SQLite 主读路径继续推进 | 让 backend 更像稳定主读底座，而不是高频优先补充层 | ✅ |
+| 优先级 | 方向 | 目标 |
+| --- | --- | --- |
+| 1 | 轻量本体论 / Ontology | 用统一实体、关系、语义强度收紧 `query / contracts / chain / timeline` 的边界 |
+| 2 | 检索质量继续收口 | 让 `mc_lookup`、`query`、`resume` 不再因意图误判或 contracts 关联过宽而偏航 |
+| 3 | Benchmark 趋势化真正落地 | 不只是能跑 benchmark，而是能长期看哪条链路又变胖了 |
+| 4 | Completion audit 产品化 | 让 audit 从“仓库自检工具”继续走向“真实 workspace 可用的治理能力” |
+| 5 | Timeline / ref / task 体验增强 | 让 drill-down 真正融入日常入口 |
+| 6 | SQLite 主读路径继续推进 | 让 backend 更像稳定主读底座，而不是高频优先补充层 |
 
 ## 3. 下一步先做什么
 
 如果只选一个，我建议先做：
 
-### `检索质量继续收口`
+### `轻量本体论 / Ontology`
 
 原因：
 
-- 这是日常体验最直接的部分
-- 当前 `hybrid retrieval` 已经接入主入口，但意图判断和 contracts 关联仍有偏航空间
-- 一旦查错方向，后面的 benchmark、timeline、backend 都是在优化错误结果
+- 当前系统已经有 graph、timeline、ref、receipt、task、handoff、contracts、group chain
+- 但这些能力之间还缺少一层统一的“领域语言”
+- 没有 ontology 约束时，后面继续做 retrieval、chain、audit，很容易再次出现语义漂移
 
-建议先收这 3 件事：
+这一步不是去做一个很重的知识图谱工程，而是先补一层**约束文档 + 关键实现边界**。
 
-1. 收紧 Feign 意图识别，避免把普通 `*Service` 误判成 Feign
-2. 继续收紧 Feign → API 的关联条件，降低误关联
-3. 为 `memory_query_hybrid` 补更强的行为测试，而不是只测模块存在性
+## 4. 推荐执行顺序
 
-## 4. 分阶段流程
-
-### 阶段 A：检索质量
+### 阶段 A：定义 ontology 约束层
 
 目标：
 
-- `mc_lookup` / `query` / `resume` 结果更准
-- contracts / graph / semantic 的融合更稳
+- 统一 `memory-center` 里的核心实体、关系和推断边界
 
 建议动作：
 
-1. 收紧意图识别规则
-2. 优化 contracts 补充层的精确匹配逻辑
-3. 为 callers / callees / chain / contracts 查询补更强行为测试
+1. 新建 `docs/ONTOLOGY.md`
+2. 第一版只定义：
+   - 代码实体：`Service / Class / Method / Endpoint / FeignClient / FeignMethod / MQTopic / MQConsumer / ConfigKey`
+   - 记忆实体：`SessionEvent / WriteReceipt / Ref / Task / Handoff / ResumePacket`
+   - 关系类型：`CALLS / CALLS_SERVICE / IMPLEMENTS_FEIGN / PUBLISHES / CONSUMES / REFERENCES / BELONGS_TO_TASK / DERIVED_FROM`
+   - 语义强度：`fact / inferred / derived`
+3. 把 ontology 先作用到：
+   - `detect_query_intent`
+   - `memory_query_hybrid`
+   - `contracts / chain / group_chain`
+   - `timeline / ref / receipt / task`
+
+完成标志：
+
+- 查询意图更稳
+- 关系语义更清楚
+- 文档里能明确区分“事实关系”和“推断关系”
+
+### 阶段 B：检索质量继续收口
+
+目标：
+
+- `mc_lookup / query / resume / handoff` 的结果更准
+
+建议动作：
+
+1. 继续收紧 Feign / API / Service 的区分逻辑
+2. 为 contracts 补充层增加更强的精确匹配和置信度表达
+3. 为 callers / callees / chain / context 增加更强行为测试
 
 完成标志：
 
 - 本地 service 查询不再被误导到 Feign contracts
-- Feign / API 结果更少“看起来像命中，实际不准”
+- Feign / API / chain 结果更少“像命中、实际不准”
 
-### 阶段 B：Benchmark 趋势化
+### 阶段 C：Benchmark 趋势化
 
 目标：
 
@@ -100,10 +102,10 @@ Code Fixes: Replaced module existence tests with behavioral tests, added contrac
 
 完成标志：
 
-- 每次优化后都能量化收益
-- 能快速定位回归链路
+- 每次优化都能量化收益
+- 能快速定位 token 回归链路
 
-### 阶段 C：Completion audit 产品化
+### 阶段 D：Completion audit 产品化
 
 目标：
 
@@ -112,7 +114,7 @@ Code Fixes: Replaced module existence tests with behavioral tests, added contrac
 建议动作：
 
 1. 继续减少对仓库结构的隐式假设
-2. 增加 Java / Maven / Gradle / frontend 项目的规则覆盖
+2. 增加 Java / Maven / Gradle / frontend 项目规则覆盖
 3. 将设计选择与真实 bug 的判断继续沉淀到 `SPECIAL_NOTES`
 
 完成标志：
@@ -120,7 +122,7 @@ Code Fixes: Replaced module existence tests with behavioral tests, added contrac
 - 不同类型 workspace 跑 audit 时假阳性更少
 - audit 输出更像治理建议，而不是简单报缺文件
 
-### 阶段 D：Timeline / ref / task 体验增强
+### 阶段 E：Timeline / ref / task 体验增强
 
 目标：
 
@@ -128,16 +130,16 @@ Code Fixes: Replaced module existence tests with behavioral tests, added contrac
 
 建议动作：
 
-1. 给 `DrillDownNavigator` 补真实行为测试
-2. 评估是否接入 CLI / MCP / HTTP 的正式入口
+1. 给 `DrillDownNavigator` 补更多真实行为测试
+2. 继续评估并扩展 CLI / MCP / HTTP 正式入口
 3. 为 handoff / resume 增加更强摘要层
 
 完成标志：
 
-- 不是只有 Python API 能用
+- 不只是 Python API 能用
 - 人和模型都能顺着 ref 快速追到证据
 
-### 阶段 E：SQLite 主读路径继续推进
+### 阶段 F：SQLite 主读路径继续推进
 
 目标：
 
@@ -154,17 +156,7 @@ Code Fixes: Replaced module existence tests with behavioral tests, added contrac
 - 高频查询口径更一致
 - JSONL fallback 继续减少
 
-## 5. 当前明确还要补的代码问题
-
-截至目前，我认为最值得尽快收的有：
-
-1. ~~`tests/test_public_mvp.py` 里存在断言串位~~ ✅ Verified clean — test is focused and correct
-
-2. ~~`detect_query_intent()` 的 Feign 规则偏宽~~ ✅ Fixed — removed overly broad `*Client$` pattern, removed `”client”` keyword
-
-3. ~~`tests/test_next_phase.py` 里不少是”模块存在性测试”~~ ✅ Fixed — replaced with behavioral tests, added contract tests
-
-## 6. 外部思想剩余吸收点
+## 5. 外部思想剩余吸收点
 
 ### `agentmemory`
 
@@ -189,20 +181,27 @@ Code Fixes: Replaced module existence tests with behavioral tests, added contrac
 - 更标准的模型内工作协议
 - 自动选择 `resume / start / analyze` 的更强策略
 
-### `Understand-Anything`
+### 本体论 / UModel / STAROps 方向
 
 剩余重点：
 
-- 更强 onboarding
-- 更强图形化导航
-- 更直观的 task / timeline / ref 导航链
+- 将“对象优先、关系显式、推断边界明确”的思想收成轻量 ontology
+- 先约束 `memory-center` 自己的领域语言，再继续叠加 retrieval / audit / chain 能力
+
+## 6. 当前最值得继续补的检查点
+
+当前后续开发时，最值得继续盯住的是：
+
+1. 新能力是否真正接到了 CLI / MCP / HTTP 主入口
+2. 行为测试是否真的覆盖了真实输入输出，而不是只测“模块存在”
+3. 文档是否继续收敛，避免重新出现“完成”和“未完成”混写
 
 ## 7. Done 定义
 
-下一阶段不只看“功能有没有”，而要看：
+下一阶段不只看“功能有没有”，还要看：
 
 1. 结果是不是更准
 2. token 是否更稳
 3. audit 是否更可信
-4. 文档是否继续收敛
-5. 新增能力是否真正接到了用户入口
+4. ontology 是否开始真正约束代码语义
+5. 文档是否继续保持收敛
