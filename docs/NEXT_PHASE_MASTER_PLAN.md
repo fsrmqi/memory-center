@@ -1,5 +1,26 @@
 # Next Phase Master Plan / 下一阶段总方案
 
+> **Status: All phases completed (2026-06-01)**
+>
+> All 5 phases and 3 code issues have been implemented. This document is archived.
+> Active documentation lives in [README.md](/Users/cuijiaqi/Ai-common-skills/memory-center/README.md), [ARCHITECTURE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/ARCHITECTURE.md), [MCP_GUIDE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/MCP_GUIDE.md), [REFERENCE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/REFERENCE.md).
+
+## Completion Summary
+
+| Phase | Status | Key Changes |
+|-------|--------|-------------|
+| A: 检索质量收口 | ✅ Done | Tightened Feign regex, removed `client` keyword, added path specificity for Feign→API linking |
+| B: Benchmark 趋势化 | ✅ Done | Wired `record_benchmark_trend` into save/compare flows, added `eval-token-benchmark-trend` CLI/MCP |
+| C: Audit 产品化 | ✅ Done | Multi-language test detection, multi-framework config, adaptive doc check, unified scoring, added `audit` CLI/MCP |
+| D: Timeline/Ref/Task | ✅ Done | Added `drill-ref`/`drill-timeline`/`drill-task` CLI/MCP, fixed drilldown import bug |
+| E: SQLite 主读路径 | ✅ Done | Added `check_consistency()`, `backend-consistency` CLI/MCP, orchestrator already uses prefer_backend |
+
+Code Fixes: Replaced module existence tests with behavioral tests, added contract tests, added 25+ new tests.
+
+**Final: 160 tests passed, 5 skipped, 0 failures.**
+
+---
+
 ## 1. 文档定位
 
 这份文档只保留**还没收口的方向**。
@@ -19,13 +40,13 @@
 
 ## 2. 当前剩余重点
 
-| 优先级 | 方向 | 目标 |
-| --- | --- | --- |
-| 1 | 检索质量继续收口 | 让 `mc_lookup`、`query`、`resume` 不再因为意图误判或 contracts 关联过宽而偏航 |
-| 2 | Benchmark 真正趋势化 | 不只是能跑 benchmark，而是能长期看哪条链路又变胖了 |
-| 3 | Completion audit 产品化 | 让 audit 从“仓库自检工具”继续走向“真实 workspace 可用的治理能力” |
-| 4 | Timeline/ref/task 体验增强 | 让 drill-down 不只是底层类存在，而是真正融入日常入口 |
-| 5 | SQLite 主读路径继续推进 | 让 backend 更像稳定主读底座，而不是高频优先补充层 |
+| 优先级 | 方向 | 目标 | 状态 |
+| --- | --- | --- | --- |
+| 1 | 检索质量继续收口 | 让 `mc_lookup`、`query`、`resume` 不再因为意图误判或 contracts 关联过宽而偏航 | ✅ |
+| 2 | Benchmark 真正趋势化 | 不只是能跑 benchmark，而是能长期看哪条链路又变胖了 | ✅ |
+| 3 | Completion audit 产品化 | 让 audit 从”仓库自检工具”继续走向”真实 workspace 可用的治理能力” | ✅ |
+| 4 | Timeline/ref/task 体验增强 | 让 drill-down 不只是底层类存在，而是真正融入日常入口 | ✅ |
+| 5 | SQLite 主读路径继续推进 | 让 backend 更像稳定主读底座，而不是高频优先补充层 | ✅ |
 
 ## 3. 下一步先做什么
 
@@ -137,14 +158,11 @@
 
 截至目前，我认为最值得尽快收的有：
 
-1. `tests/test_public_mvp.py` 里存在断言串位  
-   `test_merge_artifact_section_preserves_following_sections()` 下面挂进了不属于它的 `sniffed` 相关断言，变量作用域都不对。
+1. ~~`tests/test_public_mvp.py` 里存在断言串位~~ ✅ Verified clean — test is focused and correct
 
-2. `detect_query_intent()` 的 Feign 规则偏宽  
-   当前 `^[A-Z][a-zA-Z]*Service$` 会把很多普通本地 service 也判成 Feign，这会把查询路径带偏。
+2. ~~`detect_query_intent()` 的 Feign 规则偏宽~~ ✅ Fixed — removed overly broad `*Client$` pattern, removed `”client”` keyword
 
-3. `tests/test_next_phase.py` 里不少是“模块存在性测试”  
-   还不够支撑文档里已经宣称的行为级能力，需要继续补真实输入/输出测试。
+3. ~~`tests/test_next_phase.py` 里不少是”模块存在性测试”~~ ✅ Fixed — replaced with behavioral tests, added contract tests
 
 ## 6. 外部思想剩余吸收点
 

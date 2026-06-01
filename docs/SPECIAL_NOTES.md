@@ -211,3 +211,22 @@ Hook 配置里：
 ### 什么时候需要改
 
 只有当 runner 本身需要支持并发执行（如内部线程池、asyncio）时，才需要在 runner 内消费 `async`。当前架构下不需要。
+
+## 8. Audit 是语言自适应的，不是只检查 Python 项目
+
+### 现象
+
+`run_completion_audit()` 会检查测试文件和测试框架配置。早期版本只检测 Python（`**/*.py` + pytest 配置），非 Python 项目会收到误报的 `no_tests` 和 `no_pytest_config`。
+
+### 当前行为
+
+审计系统现在是多语言自适应的：
+
+- 测试文件检测：Python (`*.py`)、Java (`*Test.java`)、JS/TS (`*.test.js`, `*.spec.ts`)、Go (`*_test.go`)、Rust (`*_test.rs`)
+- 测试框架配置：pytest、Maven Surefire、Gradle JUnit、package.json `test` script、Cargo.toml `[dev-dependencies]`
+- 文档检查：自适应检测 `docs/` 目录和任意 `.md` 文件，不硬编码特定文件名
+- 评分权重：审计分数与健康分数使用统一权重（文档 -5、测试 -8、实现 -10）
+
+### 正确理解
+
+审计不会因为项目不是 Python 就扣分。它会根据项目实际使用的语言和框架进行检测。如果某个语言/框架组合未被覆盖，那是因为还没有添加对应的检测规则，而不是设计限制。

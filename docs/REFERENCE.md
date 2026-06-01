@@ -55,6 +55,14 @@
 - `eval-context-weight`
 - `eval-token-gain`
 - `eval-token-benchmark`
+- `eval-token-benchmark-save`
+- `eval-token-benchmark-compare`
+- `eval-token-benchmark-trend`
+- `audit`
+- `drill-ref`
+- `drill-timeline`
+- `drill-task`
+- `backend-consistency`
 
 ## 2. MCP Facade Parameters / MCP Facade 参数
 
@@ -89,6 +97,11 @@
 - `dashboard`
 - `continuity`
 - `health`
+- `audit`
+- `drill_ref`
+- `drill_timeline`
+- `drill_task`
+- `backend_consistency`
 - `backend_query`
 - `tool_usage_report`
 - `eval_*`

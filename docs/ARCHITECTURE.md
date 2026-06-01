@@ -217,10 +217,11 @@ Hook 层属于宿主集成，不是核心业务层。推荐自动执行的只有
 - `generate_audit_report()`: 生成综合报告
 
 **审计维度**:
-- 文档检查: 关键文档存在性、SPECIAL_NOTES 完整性
-- 测试检查: 测试文件存在性、pytest 配置
+- 文档检查: 关键文档存在性（自适应，不硬编码特定文件名）、SPECIAL_NOTES 完整性
+- 测试检查: 多语言测试文件检测（Python/Java/JS/TS/Go/Rust）、多框架配置（pytest/Maven Surefire/Gradle JUnit/package.json/Cargo.toml）
 - 实现检查: 模块完整性
 - 设计一致性: 冲突决策检测
+- 评分一致性: 审计分数与健康分数使用统一权重
 
 ## Module Architecture / 模块架构
 
