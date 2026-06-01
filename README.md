@@ -992,6 +992,12 @@ Example routes:
 - v2.0.11: Hooks 收口（Codex chmod +x、Cursor MCP 命令指令）
 - v2.1.0: 外部参考吸收（agentmemory benchmark/top-K/hybrid、skills 强约束模板）
 - v2.1.0: SQLite 后端更多真实读路径、长期趋势仪表盘
+- **v2.2.0: NEXT_PHASE_MASTER_PLAN 全部实现（2026-06-01）**
+  - ✅ **Hybrid Retrieval**: 智能混合检索引擎（graph/sparse/semantic）
+  - ✅ **Benchmark Trending**: 基准趋势监控和回归检测
+  - ✅ **SQLite Main Read Path**: 统一后端查询层
+  - ✅ **Timeline/Ref/Task Drill-down**: 渐进式钻取导航
+  - ✅ **Completion Audit**: 自动化完成审计和设计决策记录
 - v2.2.0: 稳定 public component for Spring Cloud AI coding workflows
 
 ---

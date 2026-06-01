@@ -274,3 +274,261 @@ Hook 的价值在于自动触发关键生命周期动作，但不应该过度侵
 4. [docs/MCP_GUIDE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/MCP_GUIDE.md)
 5. [docs/REFERENCE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/REFERENCE.md)
 6. [docs/NEXT_PHASE_MASTER_PLAN.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/NEXT_PHASE_MASTER_PLAN.md)
+
+## 8. NEXT_PHASE 实现细节 (v2.2.0)
+
+### 8.1 Hybrid Retrieval 实现细节
+
+**问题**: 之前 `memory_query()` 只使用 graph + semantic 两种检索源，对于某些查询（如 Feign、MQ、endpoint）召回不稳定。
+
+**解决方案**: 实现三路混合检索 + 智能路由。
+
+**核心算法**:
+
+```python
+# 1. 并行检索三种源
+graph_hits = _graph_retrieval(graph, query, tokens, node_types, limit * 2)
+sparse_hits = _sparse_retrieval(graph, query, tokens, node_types, limit * 2)
+semantic_hits = _semantic_retrieval(workspace_file, query, limit * 2)
+
+# 2. RRF 合并
+merged = _merge_retrieval_results(graph_hits, sparse_hits, semantic_hits, config)
+
+# 3. 类型加权
+merged = _apply_type_boosting(merged, intent)
+
+# 4. 邻居丰富
+for item in merged[:limit]:
+    item.neighbors = graph.neighbors(item.node_id, ...)
+
+# 5. 跨 workspace 解析
+_resolve_cross_workspace_refs(merged[:limit], graph, workspace_file)
+```
+
+**意图检测**:
+- 正则匹配: `feign|client|远程调用|rpc` → feign 意图
+- 结构推断: `/` 开头 → endpoint 意图
+- 关键词: `kafka|topic|consumer` → mq 意图
+
+**权重配置**:
+- Graph: 0.4（结构关系优先）
+- Sparse: 0.35（精确匹配）
+- Semantic: 0.25（模糊匹配）
+
+### 8.2 Benchmark Trending 实现细节
+
+**问题**: 无法知道哪条链路的 token 使用又变胖了。
+
+**解决方案**: 时间序列记录 + 回归检测。
+
+**回归检测算法**:
+```python
+# 将趋势点分为 recent（最近 5 个）和 historical（之前）
+recent = points[-5:]
+historical = points[:-5]
+
+# 计算平均值
+recent_avg_raw = sum(p.raw_tokens for p in recent) / len(recent)
+historical_avg_raw = sum(p.raw_tokens for p in historical) / len(historical)
+
+# 检测增长
+change_pct = ((recent_avg - historical_avg) / historical_avg) * 100
+
+# 超过阈值（默认 10%）则标记为回归
+if change_pct > threshold:
+    regressions.append(...)
+```
+
+**健康评分**:
+- 基础分: 100
+- 高严重度回归: -15 分/个
+- 中严重度回归: -8 分/个
+- 低节省率函数: -5 分/个
+
+### 8.3 Unified Backend Query 实现细节
+
+**问题**: 高频读取分散在多处，使用 `read_json*_prefer_backend` 不一致。
+
+**解决方案**: 统一查询层 `UnifiedBackendQuery`。
+
+**设计原则**:
+- 所有高频读取通过统一 API
+- 自动选择最优路径（SQLite 优先，JSONL fallback）
+- 提供聚合能力（按 session/project/collection）
+
+**典型用法**:
+```python
+# 之前（分散）
+events = store.read_jsonl_prefer_backend("session-events.jsonl")
+receipts = store.read_jsonl_prefer_backend("write-receipts.jsonl")
+
+# 现在（统一）
+with UnifiedBackendQuery(db_path) as backend:
+    events = backend.query_session_events(session_id="xyz")
+    receipts = backend.query_write_receipts(project="test")
+    stats = backend.aggregate_by_session()
+```
+
+### 8.4 Drill-Down Navigation 实现细节
+
+**问题**: ref/timeline/task 的导航需要大量手动切换。
+
+**解决方案**: 渐进式钻取 + 上下文保留。
+
+**渐进式披露**:
+- Level 1: 摘要（始终显示，token 最少）
+- Level 2: 详情（按需展开）
+- Level 3: 相关项（进一步探索）
+
+**钻取流程**:
+```
+expand_ref(ref_id)
+  → Level 1 摘要
+  → Level 2 详情
+  → Level 3 相关项
+  → reverse_links（反向导航）
+
+drill_timeline(session_id, start_event_id)
+  → 上下文窗口
+  → 导航提示（has_more_before/after）
+
+drill_task(task_id)
+  → 任务摘要
+  → timeline
+  → write_receipts
+
+build_handoff_context(session_id)
+  → session_summary
+  → key_points
+  → open_questions
+  → next_steps
+```
+
+### 8.5 Completion Audit 实现细节
+
+**问题**: 文档容易与实现漂移。
+
+**解决方案**: 自动化审计 + 设计决策记录。
+
+**审计维度**:
+1. **文档检查**: 关键文档存在性、SPECIAL_NOTES 完整性
+2. **测试检查**: 测试文件存在性、pytest 配置
+3. **实现检查**: 模块完整性
+4. **设计一致性**: 冲突决策检测
+
+**设计决策记录**:
+```python
+record_design_decision(
+    workspace_file,
+    topic="hybrid_retrieval",
+    decision="使用 RRF 合并三种检索源",
+    rationale="平衡精确性和召回率",
+    alternatives=["简单加权", "学习排序"],
+    impact="high"
+)
+```
+
+**冲突检测**:
+- 同一主题的多个决策会触发警告
+- 最新决策优先，但保留历史
+
+### 8.6 避免循环依赖
+
+**问题**: `retrieval.hybrid` 需要导入 `orchestrator.common`，而 `orchestrator.query` 需要导入 `retrieval.hybrid`。
+
+**解决方案**: 懒导入（lazy import）。
+
+```python
+# retrieval/hybrid.py
+def _get_common_functions():
+    """Lazy import to avoid circular dependency."""
+    from ..orchestrator.common import tokenize, _rrf, _best_match
+    return tokenize, _rrf, _best_match
+
+# orchestrator/query.py
+def memory_query_hybrid(...):
+    # Lazy import
+    from ..retrieval.hybrid import HybridRetrievalConfig, hybrid_retrieve, detect_query_intent
+    ...
+```
+
+### 8.7 测试策略
+
+**单元测试**: 每个模块的核心算法
+- 意图检测
+- 回归检测
+- 评分计算
+- 分类逻辑
+
+**集成测试**: 所有模块可同时导入
+- 无循环依赖
+- 与现有模块兼容
+
+**语法检查**: AST 解析 + 编译检查
+
+## 9. 性能考虑
+
+### 9.1 Hybrid Retrieval 性能
+
+- Graph 检索: O(log n) 索引查找
+- Sparse 检索: FTS5 全文索引
+- Semantic 检索: 向量相似度（较慢，但可选）
+- 合并排序: O(n log n)
+
+**优化**: 
+- 限制结果数量（limit 参数）
+- 类型过滤减少候选集
+- 懒加载 semantic 检索
+
+### 9.2 Benchmark Trending 性能
+
+- 写入: O(1) 追加
+- 读取: O(n) 扫描 + 过滤
+- 回归检测: O(n) 遍历
+
+**优化**:
+- 限制时间窗口（days 参数）
+- 限制结果数量（limit 参数）
+
+### 9.3 Unified Backend 性能
+
+- SQLite 索引查询: O(log n)
+- 聚合查询: O(n) 扫描
+- JSONL fallback: O(n) 读取 + 解析
+
+**优化**:
+- 使用 SQLite 索引
+- 限制扫描范围
+- 缓存常用查询
+
+## 10. 未来优化方向
+
+### 10.1 Hybrid Retrieval
+
+- 学习排序（Learning to Rank）
+- 查询扩展（Query Expansion）
+- 反馈循环（用户点击 → 权重调整）
+
+### 10.2 Benchmark Trending
+
+- 更细粒度的回归归因
+- 自动修复建议
+- 与 CI/CD 集成
+
+### 10.3 Unified Backend
+
+- 更多聚合维度
+- 查询缓存
+- 增量更新
+
+### 10.4 Drill-Down Navigation
+
+- 图形化导航
+- 智能推荐下一步
+- 跨 workspace 钻取
+
+### 10.5 Completion Audit
+
+- 实时审计（文件变更触发）
+- 自动修复建议
+- 与 PR 流程集成

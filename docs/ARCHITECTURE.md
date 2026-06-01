@@ -133,3 +133,190 @@ Hook 层属于宿主集成，不是核心业务层。推荐自动执行的只有
 - [REFERENCE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/REFERENCE.md)
 - [ROADMAP.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/ROADMAP.md)
 - [TECHNICAL_GUIDE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/TECHNICAL_GUIDE.md)
+
+## NEXT_PHASE Implementation (v2.2.0) / 下一阶段实现
+
+以下模块在 v2.2.0 中实现完成，对应 NEXT_PHASE_MASTER_PLAN 的 5 个阶段：
+
+### Hybrid Retrieval Engine / 混合检索引擎
+
+**位置**: `memory_center/core/retrieval/hybrid.py`
+
+**职责**: 智能路由 graph、sparse、semantic 三种检索源，提供更稳定的召回效果。
+
+**核心组件**:
+- `HybridRetrievalConfig`: 检索配置（权重、阈值、特性开关）
+- `RetrievalResult`: 统一检索结果（带来源追踪）
+- `detect_query_intent()`: 查询意图自动检测
+- `hybrid_retrieve()`: 主检索入口
+
+**检索策略**:
+- Graph 检索: 结构化关系（callers, callees, chains）
+- Sparse/FTS 检索: 精确匹配和关键词查找
+- Semantic 检索: 模糊/概念匹配
+- 基于意图的类型加权（feign/mq/endpoint/config/chain/class/method）
+
+### Benchmark Trending / 基准趋势
+
+**位置**: `memory_center/core/benchmark/trending.py`
+
+**职责**: 长期监控 token 使用，检测回归问题。
+
+**核心组件**:
+- `record_benchmark_baseline()`: 记录基准线
+- `record_benchmark_trend()`: 记录趋势点
+- `get_benchmark_trends()`: 获取趋势分析
+- `generate_benchmark_report()`: 生成综合报告
+
+**特性**:
+- 自动回归检测（近期 vs 历史对比）
+- 健康评分和建议
+- 按函数/budget 维度分析
+
+### Unified Backend Query / 统一后端查询
+
+**位置**: `memory_center/core/backend/query.py`
+
+**职责**: 统一 SQLite 读取路径，减少分叉读取。
+
+**核心组件**:
+- `UnifiedBackendQuery`: 统一查询类
+
+**查询能力**:
+- 索引查询: `read_index()`, `read_index_list()`, `read_index_dict()`
+- 记录查询: `query_records()`, `query_session_events()`, `query_write_receipts()`
+- 聚合查询: `aggregate_by_session()`, `aggregate_by_project()`
+- 健康检查: `check_health()`
+
+### Drill-Down Navigation / 钻取导航
+
+**位置**: `memory_center/core/navigation/drilldown.py`
+
+**职责**: 增强 timeline/ref/task 的导航和钻取体验。
+
+**核心组件**:
+- `DrillDownNavigator`: 钻取导航器
+
+**功能**:
+- 渐进式 ref 展开（Level 1 摘要 → Level 2 详情 → Level 3 相关项）
+- 时间线钻取: `drill_timeline()`
+- 任务钻取: `drill_task()`
+- 切换上下文: `build_handoff_context()`
+- Facade 摘要: `build_facade_summary()`
+
+### Completion Audit / 完成审计
+
+**位置**: `memory_center/core/audit/completion.py`
+
+**职责**: 文档对齐检查、设计决策记录、健康评估。
+
+**核心组件**:
+- `run_completion_audit()`: 运行完成审计
+- `record_design_decision()`: 记录设计决策
+- `get_design_decisions()`: 查询设计决策
+- `generate_audit_report()`: 生成综合报告
+
+**审计维度**:
+- 文档检查: 关键文档存在性、SPECIAL_NOTES 完整性
+- 测试检查: 测试文件存在性、pytest 配置
+- 实现检查: 模块完整性
+- 设计一致性: 冲突决策检测
+
+## Module Architecture / 模块架构
+
+```
+memory_center/core/
+├── retrieval/           # 混合检索（Phase A）
+│   ├── __init__.py
+│   └── hybrid.py
+├── benchmark/           # 基准趋势（Phase B）
+│   ├── __init__.py
+│   └── trending.py
+├── backend/             # 统一后端（Phase C）
+│   ├── __init__.py
+│   └── query.py
+├── navigation/          # 钻取导航（Phase D）
+│   ├── __init__.py
+│   └── drilldown.py
+├── audit/               # 完成审计（Phase E）
+│   ├── __init__.py
+│   └── completion.py
+├── graph.py             # 图存储
+├── semantic.py          # 语义索引
+├── store.py             # 工作区存储
+├── memory_backend.py    # SQLite 后端
+└── orchestrator/        # 编排层
+    ├── query.py         # 查询编排（已集成 hybrid retrieval）
+    └── ...
+```
+
+## Integration Guide / 集成指南
+
+### 使用 Hybrid Retrieval
+
+```python
+from memory_center.core.retrieval import hybrid_retrieve, HybridRetrievalConfig
+
+# 默认配置
+result = hybrid_retrieve(graph, workspace_file, "asyncBusinessOperationExport")
+
+# 自定义配置
+config = HybridRetrievalConfig(
+    graph_weight=0.5,
+    sparse_weight=0.3,
+    semantic_weight=0.2,
+)
+result = hybrid_retrieve(graph, workspace_file, query, config=config)
+```
+
+### 使用 Benchmark Trending
+
+```python
+from memory_center.core.benchmark import record_benchmark_trend, get_benchmark_trends
+
+# 记录趋势
+record_benchmark_trend(workspace_file, "mc_lookup", raw_tokens=1000, compact_tokens=300)
+
+# 获取趋势分析
+trends = get_benchmark_trends(workspace_file, function_name="mc_lookup", days=30)
+```
+
+### 使用 Unified Backend
+
+```python
+from memory_center.core.backend import UnifiedBackendQuery
+
+with UnifiedBackendQuery(db_path) as backend:
+    records = backend.query_records(collection="session-events.jsonl")
+    stats = backend.aggregate_by_session()
+    health = backend.check_health()
+```
+
+### 使用 Drill-Down Navigation
+
+```python
+from memory_center.core.navigation import DrillDownNavigator
+
+with DrillDownNavigator(workspace_file) as nav:
+    ref = nav.expand_ref("session-event:abc123")
+    timeline = nav.drill_timeline(session_id="xyz")
+    task = nav.drill_task(task_id="task-001")
+    handoff = nav.build_handoff_context(session_id="xyz")
+```
+
+### 使用 Completion Audit
+
+```python
+from memory_center.core.audit import run_completion_audit, record_design_decision
+
+# 运行审计
+audit = run_completion_audit(workspace_file, work_package="Phase A")
+
+# 记录设计决策
+record_design_decision(
+    workspace_file,
+    topic="hybrid_retrieval",
+    decision="使用 RRF 合并三种检索源",
+    rationale="平衡精确性和召回率",
+)
+```
