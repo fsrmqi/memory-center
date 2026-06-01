@@ -243,7 +243,7 @@ def _filter_contracts_by_query(contracts: list, query: str, intent: str) -> list
 
 
 def memory_context(workspace_file: str | Path, name: str, max_depth: int = 2) -> Dict[str, Any]:
-    lookup = memory_query(workspace_file, name, limit=8)
+    lookup = memory_query_hybrid(workspace_file, name, limit=8)
     matches = [item.get("node", {}) for item in lookup.get("matches", []) if item.get("node")]
     if not matches:
         return {"name": name, "found": False, "matches": [], "lookup": _build_lookup_payload(lookup)}
@@ -264,7 +264,12 @@ def memory_context(workspace_file: str | Path, name: str, max_depth: int = 2) ->
 
 
 def memory_symbol(workspace_file: str | Path, name: str, limit: int = 10) -> Dict[str, Any]:
-    lookup = memory_query(workspace_file, name, limit=limit, node_types=["Class", "Method", "Field", "FeignClient", "FeignMethod", "Endpoint", "MQTopic", "MQConsumer", "ConfigKey", "File"])
+    lookup = memory_query_hybrid(
+        workspace_file,
+        name,
+        limit=limit,
+        node_types=["Class", "Method", "Field", "FeignClient", "FeignMethod", "Endpoint", "MQTopic", "MQConsumer", "ConfigKey", "File"],
+    )
     matches = [item.get("node", {}) for item in lookup.get("matches", []) if item.get("node")]
     if not matches:
         return {"name": name, "found": False, "matches": [], "lookup": _build_lookup_payload(lookup)}
@@ -576,7 +581,11 @@ def memory_discover(
         "quick_context": {"command": "mc_lookup", "mode": "auto", "view": "compact", "budget": "small"},
         "full_chain": {"command": "mc_lookup", "mode": "chain", "scope": "cross-service"},
         "impact_check": {"command": "mc_analyze", "depth": "quick"},
-        "sync_progress": {"command": "mc_sync", "mode": "sniff-sync"},
+        "sync_progress": {
+            "command": "mc_sync",
+            "usage": "Provide `intent` for sniff sync, or `session_id` for case sync.",
+            "required_one_of": ["intent", "session_id"],
+        },
         "resume_work": {"command": "mc_resume"},
         "handoff_model": {"command": "mc_handoff"},
         "health_check": {"command": "mc_admin", "action": "health"},

@@ -835,6 +835,25 @@ class TestRetrievalBehavior:
                     assert fc["_confidence"] >= 0.10
                     assert fc["_confidence"] <= 1.0
 
+    def test_memory_symbol_uses_hybrid_query_contracts(self):
+        from memory_center.core.orchestrator import memory_symbol
+        result = memory_symbol(self.workspace, "ArticleFeignClient", limit=5)
+        assert result["found"] is True
+        lookup = result.get("lookup", {})
+        retrieval_summary = lookup.get("retrieval_summary", {})
+        assert isinstance(retrieval_summary, dict)
+        entrypoints = lookup.get("entrypoints", [])
+        assert isinstance(entrypoints, list)
+
+    def test_memory_discover_sync_progress_is_executable_shape(self):
+        from memory_center.core.orchestrator.query import memory_discover
+        result = memory_discover(self.workspace, limit=20)
+        matrix = result.get("compression_matrix", {})
+        sync_progress = matrix.get("sync_progress", {})
+        assert sync_progress.get("command") == "mc_sync"
+        assert "mode" not in sync_progress
+        assert sync_progress.get("required_one_of") == ["intent", "session_id"]
+
     def test_type_boosting_keys_match_graph_types(self):
         from memory_center.core.retrieval.hybrid import _apply_type_boosting, RetrievalResult
         # Verify boost map keys are valid node type names
