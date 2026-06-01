@@ -21,94 +21,133 @@
 
 ### 2.1 代码实体
 
-- `Service`
-- `Class`
-- `Method`
-- `Field`
-- `Endpoint`
-- `FeignClient`
-- `FeignMethod`
-- `MQTopic`
-- `MQConsumer`
-- `ConfigKey`
-- `File`
+从代码仓库中静态提取，由 indexer 构建，落到 graph store。
+
+| 实体 | ID 模式 | 来源 | 分类 |
+|------|---------|------|------|
+| **Service** | `Service:{name}` | workspace.yaml | 结构性 |
+| **File** | `File:{path}` | 文件系统 | 结构性 |
+| **Class** | `Class:{project}:{fqcn}` | Java AST | 声明性 |
+| **Method** | `Method:{project}:{class}:{method}` | Java AST | 声明性 |
+| **Field** | `Field:{project}:{class}:{field}` | Java AST | 声明性 |
+| **ConfigKey** | `ConfigKey:{project}:{key}` | YAML/properties | 声明性 |
+| **Endpoint** | `Endpoint:{project}:{http_method}:{path}` | @RequestMapping 等 | 契约性 |
+| **FeignClient** | `FeignClient:{project}:{interface}` | @FeignClient | 契约性 |
+| **FeignMethod** | `FeignMethod:{project}:{interface}:{method}` | Feign 接口 | 契约性 |
+| **MQTopic** | `MQTopic:{topic}` | @KafkaListener 等 | 契约性 |
+| **MQConsumer** | `MQConsumer:{project}:{class}:{topic}` | @KafkaListener 等 | 契约性 |
+| **MQProducer** | `MQProducer:{project}:{class}:{topic}` | KafkaTemplate 等 | 契约性 |
+| **Bean** | `Bean:{project}:{type}` | @Autowired 等 | 推断性 |
+| **DataResource** | `{kind}:{name}` | Java symbol 解析 | 推断性 |
+
+**实体分类说明：**
+- **结构性**：由文件系统和配置直接决定，不含推断
+- **声明性**：由源码 AST 直接提取，不含推断
+- **契约性**：由注解和框架约定提取，依赖框架语义
+- **推断性**：由类型推断和上下文分析得出
 
 ### 2.2 记忆实体
 
-- `SessionEvent`
-- `WriteReceipt`
-- `Ref`
-- `Task`
-- `Handoff`
-- `ResumePacket`
+由工作流运行时产生，落到 memory 层（JSONL / SQLite）。
+
+| 实体 | 来源 | 层级 | 说明 |
+|------|------|------|------|
+| **SessionEvent** | session-events.jsonl | L0 | 会话事件（工具调用、读写、错误） |
+| **WriteReceipt** | write-receipts.jsonl | L0 | 写入回执（记忆层写入审计） |
+| **Ref** | refs/ 目录 | L0 | 大 payload 外置引用 |
+| **Task** | tasks/ 目录 | L2 | 任务空间（含工件） |
+| **Handoff** | handoff-history.jsonl | L1 | 模型交接记录 |
+| **ResumePacket** | 运行时生成 | L1 | 恢复上下文包 |
+| **TokenGain** | token-gain-log.jsonl | L0 | Token 节省记录 |
+| **BenchmarkTrend** | benchmark-trends.jsonl | L0 | 基准趋势数据点 |
 
 ### 2.3 运行/治理实体
 
-- `Lookup`
-- `Analyze`
-- `Sync`
-- `Resume`
-- `Close`
-- `Audit`
+- `Lookup` — 知识查询
+- `Analyze` — 变更分析
+- `Sync` — 上下文同步
+- `Resume` — 任务恢复
+- `Close` — 会话收尾
+- `Audit` — 完成审计
 
 ## 3. 关系类型
 
-### 3.1 代码关系
+### 3.1 代码关系（intra-workspace graph edges）
 
-- `CALLS`
-- `CALLS_SERVICE`
-- `IMPLEMENTS_FEIGN`
-- `EXPOSES_ENDPOINT`
-- `HANDLES_ENDPOINT`
-- `PUBLISHES`
-- `CONSUMES`
-- `USES_CONFIG`
-- `IMPORTS`
-- `INJECTS_BEAN`
+| 关系 | 源 → 目标 | 置信度 | 语义强度 | 说明 |
+|------|-----------|--------|----------|------|
+| CONTAINS | Workspace → Service | 1.0 | fact | 工作区包含服务 |
+| CONTAINS | Service → File | 1.0 | fact | 服务包含文件 |
+| DECLARES | File → Class | 1.0 | fact | 文件声明类 |
+| DECLARES | Class → Method | 1.0 | fact | 类声明方法 |
+| DECLARES | Class → Field | 1.0 | fact | 类声明字段 |
+| DECLARES | Class → FeignClient | 1.0 | fact | 类声明 Feign 客户端 |
+| DECLARES | FeignClient → FeignMethod | 1.0 | fact | Feign 接口声明方法 |
+| DECLARES_CONFIG | File → ConfigKey | 1.0 | fact | 文件声明配置项 |
+| EXPOSES_ENDPOINT | Class → Endpoint | 1.0 | fact | Controller 暴露端点 |
+| HANDLES_ENDPOINT | Method → Endpoint | 0.9 | inferred | 方法处理端点 |
+| CALLS_SERVICE | FeignClient → Service | 0.9 | inferred | Feign 调用目标服务 |
+| IMPLEMENTS_FEIGN | FeignMethod → Endpoint | 0.78 | inferred | Feign 方法映射到端点 |
+| PRODUCES_TOPIC | MQProducer → MQTopic | 1.0 | fact | 生产者发布主题 |
+| CONSUMES_TOPIC | MQConsumer → MQTopic | 1.0 | fact | 消费者订阅主题 |
+| INJECTS_BEAN | Class → Bean/Class | 0.82 | inferred | Bean 注入 |
+| CALLS_METHOD | Method → Method | 0.58-0.68 | inferred | 方法调用（有/无 receiver_type） |
+| READS_FIELD | Method → Field | 0.62-0.74 | inferred | 字段读取 |
+| READS_CONFIG | Class → ConfigKey | 0.84 | inferred | 配置使用 |
+| IMPORTS | File → File | 0.55 | derived | 文件导入 |
+| USES_DATA_RESOURCE | Class → DataResource | 0.72 | derived | 数据资源使用 |
 
-### 3.2 记忆关系
+### 3.2 跨工作区桥接关系（cross-workspace bridges）
 
-- `REFERENCES`
-- `BELONGS_TO_TASK`
-- `DERIVED_FROM`
-- `SUMMARIZES`
-- `HANDOFF_OF`
-- `RESUME_OF`
+| 桥接类型 | 置信度 | 语义强度 | 说明 |
+|----------|--------|----------|------|
+| FEIGN_SERVICE | 0.95 | inferred | Feign 客户端指向另一工作区的 Service |
+| FEIGN_ENDPOINT | 0.88 | inferred | Feign 方法路径匹配另一工作区的 Endpoint |
+| MQ_TOPIC_CONFIG | 0.84 | inferred | 配置项映射到另一工作区消费的 Topic |
+| MQ_TOPIC_SHARED | 0.72 | derived | 两个工作区共享同一 Topic |
+| CONFIG_KEY_SHARED | 0.66 | derived | 两个工作区声明同一配置键 |
+
+### 3.3 记忆关系
+
+- `REFERENCES` — Ref 引用 SessionEvent / WriteReceipt
+- `BELONGS_TO_TASK` — SessionEvent / WriteReceipt 属于 Task
+- `DERIVED_FROM` — ResumePacket / HandoffPacket 从 SessionEvent 派生
+- `SUMMARIZES` — SessionSummary 总结 Session
+- `HANDOFF_OF` — Handoff 是某次 Session 的交接
+- `RESUME_OF` — ResumePacket 是某次 Session 的恢复
 
 ## 4. 语义强度
 
 所有关系和结果，原则上分成三类：
 
-### `fact`
+### `fact`（事实）
 
-由索引器、显式结构或确定记录直接得到。
+- 来源：源码 AST、注解解析、配置文件直接声明
+- 置信度范围：1.0
+- 例子：`Class` 声明 `Method`、`FeignClient` 声明 `FeignMethod`、`MQConsumer` 订阅 `MQTopic`
+- 特点：**不会因为上下文变化而改变**，除非源码本身修改
 
-例子：
+### `inferred`（推断）
 
-- `FeignMethod` 明确实现某个 `Endpoint`
-- `WriteReceipt` 属于某个 `Task`
-- `SessionEvent` 属于某个 `Session`
+- 来源：注解语义推断、路径匹配、类型分析、命名约定
+- 置信度范围：0.78 - 0.95
+- 例子：`FeignMethod` 映射到 `Endpoint`（路径匹配）、`CALLS_SERVICE`（@FeignClient target 解析）、`INJECTS_BEAN`（@Autowired 推断）
+- 特点：**高度可信但依赖推断规则**，规则变化可能影响结果
 
-### `inferred`
+### `derived`（衍生）
 
-由规则、命名、邻接、上下文推断得到，但不是直接事实。
+- 来源：间接关联、统计推断、跨工作区共享检测、多源聚合
+- 置信度范围：0.55 - 0.74
+- 例子：`CALLS_METHOD`（无 receiver_type）、`IMPORTS`（import 语句）、`ResumePacket`、`HandoffPacket`、`CompletionAudit`、`RetrievalSummary`
+- 特点：**参考价值为主**，不适合作为强断言
 
-例子：
+### 强度使用规则
 
-- 某个查询更像 Feign 还是本地 Service
-- 某个对象可能属于跨服务边界
-- 某条链路更可能关联哪个 task
-
-### `derived`
-
-由多个事实或推断组合加工后的产物。
-
-例子：
-
-- `ResumePacket`
-- `HandoffPacket`
-- `CompletionAudit`
-- `RetrievalSummary`
+1. **查询结果展示**：fact 关系不需要额外标注，inferred/derived 关系应标注 `confidence` 字段
+2. **链路分析**：纯 fact 链路可以高置信展示，inferred 链路应标注推断来源
+3. **影响分析**：只对 fact + inferred 关系做变更影响传播，derived 关系仅作参考
+4. **审计检查**：fact 关系的变化才算"变更"，derived 关系的变化算"漂移"
+5. **推断链路衰减**：多跳链路置信度逐跳衰减 — 2跳 ×0.9，3跳 ×0.8，4+跳 ×0.7
 
 ## 5. 当前最重要的约束
 
@@ -118,6 +157,11 @@
 - `ArticleFeignClient` / `FeginAutomaticReviewTaskService` 更偏远程调用实体
 
 不能因为名字里有 `Service` 就默认走 Feign 路线。
+
+只有满足以下条件之一的才应被识别为 Feign：
+- 类名匹配 `Feign*Service` 或 `*FeignClient`（不含独立 `*Client`）
+- 存在 `@FeignClient` 注解
+- 在 `feign-index.json` 中注册
 
 ### 5.2 `Endpoint` 不等于 `Controller`
 
@@ -135,13 +179,58 @@
 
 ### 5.4 `Task`、`Session`、`Receipt` 是不同层对象
 
-- `Task`：工作目标和上下文
-- `Session`：一次工作过程
-- `WriteReceipt`：一次具体写入记录
+- `Task`：工作目标和上下文（L2）
+- `Session`：一次工作过程（L0）
+- `WriteReceipt`：一次具体写入记录（L0）
 
 它们之间要通过关系关联，而不是混成一个大对象。
 
-## 6. 本体论先作用到哪里
+### 5.5 Endpoint 路径需要足够具体
+
+只有路径至少包含 2 段（如 `/api/users`）的 Endpoint 才参与 Feign→API 自动关联。
+单段路径（如 `/`）关联置信度太低。
+
+### 5.6 Contract 过滤需要分层置信度
+
+`_filter_contracts_by_query` 的结果应标注置信度：
+
+| 匹配方式 | confidence | 说明 |
+|----------|-----------|------|
+| 接口名精确匹配 | 0.95 | query 是接口名的子串或完全匹配 |
+| 方法名精确匹配 | 0.85 | query 是方法名的子串 |
+| Token 匹配 | 0.60 | query 的 token 出现在接口名中 |
+| JSON 全文扫描 | 0.30 | query 的 token 出现在 contract JSON 任意位置 |
+| 无匹配回退 | 0.10 | 标记 `is_fallback: true`，返回 top-N |
+
+### 5.7 跨工作区桥接不等于事实
+
+跨工作区桥接（bridges）的最高置信度是 0.95（FEIGN_SERVICE），仍然是 inferred 强度。
+不应将桥接关系当作 fact 处理。
+
+### 5.8 推断链路衰减
+
+多跳推断链路的置信度应逐跳衰减：
+
+- 2 跳：取各跳最小置信度 × 0.9
+- 3 跳：取各跳最小置信度 × 0.8
+- 4+ 跳：取各跳最小置信度 × 0.7
+
+## 6. 意图到实体的映射
+
+查询意图（`detect_query_intent`）决定优先检索哪些实体和关系：
+
+| 意图 | 优先实体 | 优先关系 |
+|------|----------|----------|
+| feign | FeignClient, FeignMethod | CALLS_SERVICE, IMPLEMENTS_FEIGN |
+| mq | MQTopic, MQConsumer, MQProducer | PRODUCES_TOPIC, CONSUMES_TOPIC |
+| endpoint | Endpoint, Class, Method | EXPOSES_ENDPOINT, HANDLES_ENDPOINT |
+| config | ConfigKey, Field | READS_CONFIG, DECLARES_CONFIG |
+| chain | Method, Class | CALLS_METHOD, CALLS_SERVICE |
+| class | Class, Service | DECLARES, CONTAINS |
+| method | Method | CALLS_METHOD, HANDLES_ENDPOINT |
+| general | （无优先） | （无优先） |
+
+## 7. 本体论先作用到哪里
 
 第一批最应该被 ontology 约束的是：
 
@@ -150,7 +239,7 @@
 3. `contracts / chain / group_chain`
 4. `timeline / ref / receipt / task`
 
-## 7. 落地原则
+## 8. 落地原则
 
 这份 ontology 的目标不是把系统做重，而是：
 

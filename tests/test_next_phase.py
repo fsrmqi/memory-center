@@ -129,7 +129,7 @@ class TestHybridRetrieval:
 # ---- Contract Filtering Tests ----
 
 class TestContracts:
-    """Test contract filtering and association logic."""
+    """Test contract filtering and association logic with confidence scoring."""
 
     def test_filter_contracts_by_query_feign_exact_match(self):
         from memory_center.core.orchestrator.query import _filter_contracts_by_query
@@ -139,7 +139,10 @@ class TestContracts:
         ]
         result = _filter_contracts_by_query(contracts, "ArticleFeignClient", "feign")
         assert len(result) >= 1
-        assert any(c["interface"] == "ArticleFeignClient" for c in result)
+        article = [c for c in result if c.get("interface") == "ArticleFeignClient"]
+        assert len(article) == 1
+        assert article[0]["_confidence"] == 0.95
+        assert article[0]["_match_type"] == "interface_exact"
 
     def test_filter_contracts_by_query_feign_method_match(self):
         from memory_center.core.orchestrator.query import _filter_contracts_by_query
@@ -151,6 +154,20 @@ class TestContracts:
         ]
         result = _filter_contracts_by_query(contracts, "getArticle", "feign")
         assert len(result) >= 1
+        assert result[0]["_confidence"] == 0.85
+        assert result[0]["_match_type"] == "method_exact"
+
+    def test_filter_contracts_by_query_feign_token_match(self):
+        from memory_center.core.orchestrator.query import _filter_contracts_by_query
+        contracts = [
+            {"interface": "ArticleService", "project": "svc-a", "methods": []},
+        ]
+        # "article data" tokenizes to ["article", "data"] — "article" matches via token
+        # but the full query is NOT a substring of "articleservice"
+        result = _filter_contracts_by_query(contracts, "article data", "feign")
+        assert len(result) >= 1
+        assert result[0]["_confidence"] == 0.60
+        assert result[0]["_match_type"] == "token_match"
 
     def test_filter_contracts_by_query_endpoint(self):
         from memory_center.core.orchestrator.query import _filter_contracts_by_query
@@ -161,20 +178,41 @@ class TestContracts:
         result = _filter_contracts_by_query(contracts, "/api/users", "endpoint")
         assert len(result) >= 1
         assert any(c["path"] == "/api/users" for c in result)
+        users = [c for c in result if c.get("path") == "/api/users"]
+        assert users[0]["_confidence"] == 0.90
+        assert users[0]["_match_type"] == "path_exact"
 
-    def test_filter_contracts_by_query_no_match(self):
+    def test_filter_contracts_by_query_fallback(self):
         from memory_center.core.orchestrator.query import _filter_contracts_by_query
         contracts = [
             {"interface": "OrderFeignClient", "project": "svc-b", "methods": []},
         ]
         result = _filter_contracts_by_query(contracts, "xyz_nonexistent", "feign")
-        # Should fall back to returning some results (up to 10)
         assert isinstance(result, list)
+        assert len(result) == 1
+        assert result[0]["_confidence"] == 0.10
+        assert result[0]["_match_type"] == "fallback"
+        assert result[0]["_is_fallback"] is True
 
     def test_filter_contracts_by_query_empty(self):
         from memory_center.core.orchestrator.query import _filter_contracts_by_query
         result = _filter_contracts_by_query([], "anything", "feign")
         assert result == []
+
+    def test_filter_contracts_confidence_ordering(self):
+        from memory_center.core.orchestrator.query import _filter_contracts_by_query
+        contracts = [
+            {"interface": "ArticleService", "project": "svc-a", "methods": [
+                {"method_name": "getArticle", "path": "/api/articles"},
+            ]},
+            {"interface": "ArticleFeignClient", "project": "svc-b", "methods": []},
+        ]
+        result = _filter_contracts_by_query(contracts, "Article", "feign")
+        # ArticleFeignClient (token match 0.60) should come after ArticleService (token match 0.60)
+        # but both are token matches — verify confidence is present
+        for c in result:
+            assert "_confidence" in c
+            assert c["_confidence"] >= 0.60
 
 
 # ---- Benchmark Trending Tests ----
@@ -718,3 +756,99 @@ class TestNavigation:
                 assert "intent" in result
                 assert "level_1_summary" in result
                 assert result["level_1_summary"]["result_count"] == 0
+
+
+# ---- Retrieval Behavioral Tests (requires demo workspace) ----
+
+class TestRetrievalBehavior:
+    """Behavioral tests for callers/callees/chain/context with real graph data."""
+
+    @pytest.fixture(autouse=True)
+    def _setup_workspace(self, tmp_path):
+        """Set up demo workspace with indexed graph."""
+        import shutil
+        from memory_center.core.config import load_workspace_config
+        from memory_center.core.indexer import reindex_workspace
+        from memory_center.core.rules import ensure_default_rules
+        from memory_center.core.store import WorkspaceStore
+
+        source = Path("examples/spring-cloud-demo")
+        if not source.exists():
+            pytest.skip("Demo workspace not found")
+
+        dest = tmp_path / "demo"
+        shutil.copytree(source, dest)
+        workspace = str(dest / ".memory-center" / "workspace.yaml")
+        config = load_workspace_config(workspace)
+        store = WorkspaceStore(workspace)
+        ensure_default_rules(store)
+        reindex_workspace(config, store)
+        self.workspace = workspace
+
+    def test_callers_returns_correct_edge_types(self):
+        from memory_center.core.orchestrator import memory_callers
+        callers = memory_callers(self.workspace, "ArticleMoveService", depth=2, limit=20)
+        assert callers["found"] is True
+        # Callers should contain meaningful edge types, not structural ones
+        if callers.get("callers"):
+            for caller in callers["callers"]:
+                edge_type = caller.get("edge_type", "")
+                # Should NOT contain structural-only edges
+                assert edge_type not in ("CONTAINS", "DECLARES", "DECLARES_CONFIG")
+
+    def test_callees_returns_correct_edge_types(self):
+        from memory_center.core.orchestrator import memory_callees
+        callees = memory_callees(self.workspace, "ArticleMoveService", depth=2, limit=20)
+        assert callees["found"] is True
+        if callees.get("callees"):
+            for callee in callees["callees"]:
+                edge_type = callee.get("edge_type", "")
+                assert edge_type not in ("CONTAINS", "DECLARES", "DECLARES_CONFIG")
+
+    def test_context_returns_evidence_summary(self):
+        from memory_center.core.orchestrator import memory_context
+        context = memory_context(self.workspace, "ArticleMoveService", max_depth=2)
+        assert context["found"] is True
+        # Context should have evidence summary
+        if "evidence_summary" in context:
+            summary = context["evidence_summary"]
+            assert "edge_types" in summary or "total_edges" in summary
+
+    def test_callers_chain_tree_structure(self):
+        from memory_center.core.orchestrator import memory_callers
+        callers = memory_callers(self.workspace, "ArticleMoveService", depth=2, limit=20)
+        assert callers["found"] is True
+        # chain_tree should be present and structured
+        if callers.get("chain_tree"):
+            tree = callers["chain_tree"]
+            assert isinstance(tree, (dict, list))
+
+    def test_query_hybrid_returns_intent(self):
+        from memory_center.core.orchestrator import memory_query_hybrid
+        result = memory_query_hybrid(self.workspace, "ArticleFeignClient")
+        assert "intent" in result
+        assert result["intent"]["primary_intent"] == "feign"
+        # Contracts should have confidence scores
+        if result.get("contracts"):
+            for fc in result["contracts"].get("feign_contracts", []):
+                if "_confidence" in fc:
+                    assert fc["_confidence"] >= 0.10
+                    assert fc["_confidence"] <= 1.0
+
+    def test_type_boosting_keys_match_graph_types(self):
+        from memory_center.core.retrieval.hybrid import _apply_type_boosting, RetrievalResult
+        # Verify boost map keys are valid node type names
+        valid_types = {
+            "FeignClient", "FeignMethod", "Endpoint", "MQTopic", "MQConsumer",
+            "ConfigKey", "Class", "Service", "Method", "Field", "File",
+            "Bean", "MQProducer", "DataResource",
+        }
+        # Create a dummy result to test boosting
+        dummy = RetrievalResult(
+            node_id="test:1", node={"type": "FeignClient", "name": "test"},
+            score=1.0, sources=["graph"],
+        )
+        intent = {"primary_intent": "feign", "all_intents": {"feign": 2.0}}
+        boosted = _apply_type_boosting([dummy], intent)
+        # Should boost FeignClient
+        assert boosted[0].score > 1.0

@@ -170,49 +170,76 @@ def memory_query_hybrid(workspace_file: str | Path, query: str, limit: int = 20,
 
 
 def _filter_contracts_by_query(contracts: list, query: str, intent: str) -> list:
-    """Filter contracts by query relevance."""
+    """Filter contracts by query relevance with confidence scoring.
+
+    Confidence levels (per ONTOLOGY.md §5.6):
+    - 0.95: interface name exact match
+    - 0.85: method name exact match
+    - 0.60: token match in interface name
+    - 0.30: token match in JSON dump
+    - 0.10: fallback (no match, top-N returned with is_fallback=True)
+    """
     if not contracts:
         return []
 
     query_lower = query.lower()
     tokens = tokenize(query_lower)
-    exact_matches = []
-    partial_matches = []
+    scored_matches: list[tuple[float, str, dict]] = []  # (confidence, match_type, contract)
 
     for contract in contracts:
         contract_str = json.dumps(contract, ensure_ascii=False).lower()
 
-        # 精确匹配：接口名或方法名完全包含查询
         if intent == "feign" and "interface" in contract:
             interface_name = contract.get("interface", "").lower()
-            # 接口名完全匹配或包含查询
+            # 接口名精确匹配
             if query_lower in interface_name or interface_name in query_lower:
-                exact_matches.append(contract)
+                scored_matches.append((0.95, "interface_exact", contract))
                 continue
             # 方法名精确匹配
+            method_matched = False
             for m in contract.get("methods", []):
                 if query_lower in m.get("method_name", "").lower():
-                    exact_matches.append(contract)
+                    scored_matches.append((0.85, "method_exact", contract))
+                    method_matched = True
                     break
-            else:
-                # Token 匹配
-                if any(token in interface_name for token in tokens):
-                    partial_matches.append(contract)
+            if method_matched:
+                continue
+            # Token 匹配
+            if any(token in interface_name for token in tokens):
+                scored_matches.append((0.60, "token_match", contract))
         elif intent == "endpoint" and "path" in contract:
             path = contract.get("path", "").lower()
             controller = contract.get("controller", "").lower()
             if query_lower in path or query_lower in controller:
-                exact_matches.append(contract)
+                scored_matches.append((0.90, "path_exact", contract))
             elif any(token in path or token in controller for token in tokens):
-                partial_matches.append(contract)
+                scored_matches.append((0.60, "token_match", contract))
         else:
-            # 通用匹配
+            # 通用匹配 — JSON 全文扫描
             if any(token in contract_str for token in tokens):
-                partial_matches.append(contract)
+                scored_matches.append((0.30, "json_scan", contract))
 
-    # 精确匹配优先，然后是部分匹配
-    result = exact_matches + partial_matches
-    return result[:20] if result else contracts[:10]
+    # 按置信度降序排列
+    scored_matches.sort(key=lambda x: x[0], reverse=True)
+
+    if scored_matches:
+        result = []
+        for confidence, match_type, contract in scored_matches[:20]:
+            enriched = dict(contract)
+            enriched["_confidence"] = confidence
+            enriched["_match_type"] = match_type
+            result.append(enriched)
+        return result
+
+    # 无匹配回退：返回 top-N，标记为 fallback
+    fallback = []
+    for contract in contracts[:10]:
+        enriched = dict(contract)
+        enriched["_confidence"] = 0.10
+        enriched["_match_type"] = "fallback"
+        enriched["_is_fallback"] = True
+        fallback.append(enriched)
+    return fallback
 
 
 def memory_context(workspace_file: str | Path, name: str, max_depth: int = 2) -> Dict[str, Any]:
