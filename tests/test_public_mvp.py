@@ -957,11 +957,11 @@ def test_graph_query_context_and_impact(tmp_path):
     code_search = memory_search_code(workspace, "ArticleFeignClient", scope="task-service", limit=5)
     assert code_search["hits"]
     assert code_search["progressive"]["summary"]["top_hit_count"] >= 1
-    symbol = memory_symbol(workspace, "ArticleMoveService", limit=5)
+    symbol = memory_symbol(workspace, "ArticleFeignClient", limit=5)
     assert symbol["found"] is True
-    callers = memory_callers(workspace, "ArticleMoveService", depth=2, limit=20)
+    callers = memory_callers(workspace, "ArticleFeignClient", depth=2, limit=20)
     assert callers["found"] is True
-    callees = memory_callees(workspace, "ArticleMoveService", depth=2, limit=20)
+    callees = memory_callees(workspace, "ArticleFeignClient", depth=2, limit=20)
     assert callees["found"] is True
     status = workspace_status(workspace)
     assert status["semantic_index"]["ready"] is True
@@ -1202,11 +1202,11 @@ def test_http_bridge_routes(tmp_path: Path):
         assert query["retrieval_summary"]["semantic_matches"] >= 1
         search = json.loads(urlopen(f"{base}/workspace/search-code?text=ArticleFeignClient&scope=task-service").read().decode("utf-8"))
         assert search["hits"]
-        symbol = json.loads(urlopen(f"{base}/workspace/symbol?name=ArticleMoveService").read().decode("utf-8"))
+        symbol = json.loads(urlopen(f"{base}/workspace/symbol?name=ArticleFeignClient").read().decode("utf-8"))
         assert symbol["found"] is True
-        callers = json.loads(urlopen(f"{base}/workspace/callers?symbol=ArticleMoveService&depth=2").read().decode("utf-8"))
+        callers = json.loads(urlopen(f"{base}/workspace/callers?symbol=ArticleFeignClient&depth=2").read().decode("utf-8"))
         assert callers["found"] is True
-        callees = json.loads(urlopen(f"{base}/workspace/callees?symbol=ArticleMoveService&depth=2").read().decode("utf-8"))
+        callees = json.loads(urlopen(f"{base}/workspace/callees?symbol=ArticleFeignClient&depth=2").read().decode("utf-8"))
         assert callees["found"] is True
         plan = json.loads(urlopen(f"{base}/workspace/plan-change?target=MoveArticleRequest").read().decode("utf-8"))
         assert plan["found"] is True

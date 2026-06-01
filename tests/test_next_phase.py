@@ -787,41 +787,36 @@ class TestRetrievalBehavior:
 
     def test_callers_returns_correct_edge_types(self):
         from memory_center.core.orchestrator import memory_callers
-        callers = memory_callers(self.workspace, "ArticleMoveService", depth=2, limit=20)
+        callers = memory_callers(self.workspace, "ArticleFeignClient", depth=2, limit=20)
         assert callers["found"] is True
-        # Callers should contain meaningful edge types, not structural ones
         if callers.get("callers"):
             for caller in callers["callers"]:
-                edge_type = caller.get("edge_type", "")
-                # Should NOT contain structural-only edges
+                edge_type = caller.get("type", "")
                 assert edge_type not in ("CONTAINS", "DECLARES", "DECLARES_CONFIG")
 
     def test_callees_returns_correct_edge_types(self):
         from memory_center.core.orchestrator import memory_callees
-        callees = memory_callees(self.workspace, "ArticleMoveService", depth=2, limit=20)
+        callees = memory_callees(self.workspace, "ArticleFeignClient", depth=2, limit=20)
         assert callees["found"] is True
         if callees.get("callees"):
             for callee in callees["callees"]:
-                edge_type = callee.get("edge_type", "")
+                edge_type = callee.get("type", "")
                 assert edge_type not in ("CONTAINS", "DECLARES", "DECLARES_CONFIG")
 
     def test_context_returns_evidence_summary(self):
         from memory_center.core.orchestrator import memory_context
-        context = memory_context(self.workspace, "ArticleMoveService", max_depth=2)
+        context = memory_context(self.workspace, "ArticleFeignClient", max_depth=2)
         assert context["found"] is True
-        # Context should have evidence summary
-        if "evidence_summary" in context:
-            summary = context["evidence_summary"]
-            assert "edge_types" in summary or "total_edges" in summary
+        assert "evidence_summary" in context
+        summary = context["evidence_summary"]
+        assert "edge_types" in summary
 
     def test_callers_chain_tree_structure(self):
         from memory_center.core.orchestrator import memory_callers
-        callers = memory_callers(self.workspace, "ArticleMoveService", depth=2, limit=20)
+        callers = memory_callers(self.workspace, "ArticleFeignClient", depth=2, limit=20)
         assert callers["found"] is True
-        # chain_tree should be present and structured
-        if callers.get("chain_tree"):
-            tree = callers["chain_tree"]
-            assert isinstance(tree, (dict, list))
+        assert "chain_tree" in callers
+        assert isinstance(callers["chain_tree"], dict)
 
     def test_query_hybrid_returns_intent(self):
         from memory_center.core.orchestrator import memory_query_hybrid
