@@ -68,6 +68,39 @@ def memory_query(workspace_file: str | Path, query: str, limit: int = 20, node_t
     }
 
 
+def memory_query_hybrid(workspace_file: str | Path, query: str, limit: int = 20, node_types: List[str] | None = None, config: Any = None) -> Dict[str, Any]:
+    """Enhanced query using hybrid retrieval engine.
+
+    Combines graph, sparse, and semantic search with intelligent routing.
+    Provides better recall and more stable results than memory_query.
+    """
+    # Lazy import to avoid circular dependency
+    from ..retrieval.hybrid import HybridRetrievalConfig, hybrid_retrieve, detect_query_intent
+
+    config_obj = load_context(workspace_file)
+    store = config_obj[1]
+
+    # Convert config if needed
+    if config is None:
+        config = HybridRetrievalConfig()
+
+    with GraphStore(store.graph_db_path) as graph:
+        result = hybrid_retrieve(
+            graph=graph,
+            workspace_file=str(workspace_file),
+            query=query,
+            config=config,
+            node_types=node_types,
+            limit=limit,
+        )
+
+    # Enrich with workspace context
+    result["workspace"] = config_obj[0].workspace
+    result["intent_analysis"] = detect_query_intent(query)
+
+    return result
+
+
 def memory_context(workspace_file: str | Path, name: str, max_depth: int = 2) -> Dict[str, Any]:
     lookup = memory_query(workspace_file, name, limit=8)
     matches = [item.get("node", {}) for item in lookup.get("matches", []) if item.get("node")]

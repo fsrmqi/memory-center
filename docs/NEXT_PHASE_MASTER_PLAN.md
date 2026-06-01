@@ -89,6 +89,14 @@
 4. timeline / ref / task 更强 drill-down
 5. completion audit
 
+| 优先级 | 方向 | 目标 |
+| --- | --- | --- |
+| 1 | `Hybrid retrieval` | 让 `mc_lookup`、`query`、`resume` 不再频繁退化为人工补搜 |
+| 2 | `Benchmark 趋势化` | 长期知道哪条链路 token 又变胖了 |
+| 3 | `SQLite 主读路径` | 让 `memory.db` 从“高频优先”走向“稳定主读底座” |
+| 4 | `Timeline/ref/task drill-down` | 让 Memory Center 更像“会协作的工作台” |
+| 5 | `Completion audit` | 防止实现继续走、文档再漂 |
+
 ## 4. 下一阶段完整优化流程
 
 这一阶段不建议再“哪里痛补哪里”，而是按一条稳定主线推进。推荐顺序如下：
@@ -293,3 +301,127 @@
 - [TECHNICAL_GUIDE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/TECHNICAL_GUIDE.md)
 - [docs/ROADMAP.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/ROADMAP.md)
 - [docs/ARCHITECTURE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/ARCHITECTURE.md)
+
+## 10. 下一阶段实现状态（2026-06-01 更新）
+
+所有 5 个阶段已全部实现完成：
+
+### 阶段 A：检索层继续收口 ✅ 已完成
+
+**实现位置：** `memory_center/core/retrieval/hybrid.py`
+
+**核心功能：**
+- 智能混合检索引擎（graph + sparse + semantic）
+- 查询意图自动检测（feign/mq/endpoint/config/chain/class/method）
+- 基于意图的类型加权
+- 跨 workspace 引用解析
+- 渐进式摘要展示
+
+**使用示例：**
+```python
+from memory_center.core.retrieval import hybrid_retrieve, HybridRetrievalConfig
+
+result = hybrid_retrieve(graph, workspace_file, "asyncBusinessOperationExport")
+```
+
+### 阶段 B：token 与 benchmark 体系产品化 ✅ 已完成
+
+**实现位置：** `memory_center/core/benchmark/trending.py`
+
+**核心功能：**
+- 基准线记录（`record_benchmark_baseline`）
+- 趋势追踪（`record_benchmark_trend`）
+- 回归自动检测
+- 综合健康报告生成
+
+**使用示例：**
+```python
+from memory_center.core.benchmark import record_benchmark_trend, get_benchmark_trends
+
+record_benchmark_trend(workspace_file, "mc_lookup", raw_tokens=1000, compact_tokens=300)
+trends = get_benchmark_trends(workspace_file, function_name="mc_lookup", days=30)
+```
+
+### 阶段 C：SQLite 主读路径继续推进 ✅ 已完成
+
+**实现位置：** `memory_center/core/backend/query.py`
+
+**核心功能：**
+- 统一查询层（`UnifiedBackendQuery`）
+- 索引、记录、引用统一查询
+- 按 collection/session/project 聚合
+- 健康检查功能
+
+**使用示例：**
+```python
+from memory_center.core.backend import UnifiedBackendQuery
+
+with UnifiedBackendQuery(db_path) as backend:
+    records = backend.query_records(collection="session-events.jsonl")
+    stats = backend.aggregate_by_session()
+```
+
+### 阶段 D：timeline / ref / task 的使用体验增强 ✅ 已完成
+
+**实现位置：** `memory_center/core/navigation/drilldown.py`
+
+**核心功能：**
+- 渐进式 ref 展开（Level 1/2/3）
+- 时间线钻取（`drill_timeline`）
+- 任务钻取（`drill_task`）
+- 切换上下文构建（`build_handoff_context`）
+
+**使用示例：**
+```python
+from memory_center.core.navigation import DrillDownNavigator
+
+with DrillDownNavigator(workspace_file) as nav:
+    ref = nav.expand_ref("session-event:abc123")
+    timeline = nav.drill_timeline(session_id="xyz")
+```
+
+### 阶段 E：completion audit 与文档持续收口 ✅ 已完成
+
+**实现位置：** `memory_center/core/audit/completion.py`
+
+**核心功能：**
+- 自动化完成审计（`run_completion_audit`）
+- 设计决策记录（`record_design_decision`）
+- 文档/测试/实现完整性检查
+- 健康评分和建议
+
+**使用示例：**
+```python
+from memory_center.core.audit import run_completion_audit, record_design_decision
+
+audit = run_completion_audit(workspace_file, work_package="Phase A")
+record_design_decision(workspace_file, topic="hybrid_retrieval", decision="使用 RRF 合并", rationale="平衡精确性和召回率")
+```
+
+## 11. 新增模块架构图
+
+```
+memory_center/core/
+├── retrieval/           # Phase A: 混合检索
+│   ├── __init__.py
+│   └── hybrid.py
+├── benchmark/           # Phase B: 基准趋势
+│   ├── __init__.py
+│   └── trending.py
+├── backend/             # Phase C: 统一后端
+│   ├── __init__.py
+│   └── query.py
+├── navigation/          # Phase D: 钻取导航
+│   ├── __init__.py
+│   └── drilldown.py
+└── audit/               # Phase E: 完成审计
+    ├── __init__.py
+    └── completion.py
+```
+
+## 12. 后续维护建议
+
+1. **定期运行 completion audit**：确保文档与实现保持同步
+2. **监控 benchmark 趋势**：及时发现 token 使用回归
+3. **记录设计决策**：避免重复讨论已决定的问题
+4. **使用 hybrid retrieval**：替代旧的 memory_query 获得更好的召回效果

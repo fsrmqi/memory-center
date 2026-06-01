@@ -1,0 +1,505 @@
+"""Hybrid retrieval engine — combines graph, sparse (FTS), and semantic search with intelligent routing.
+
+This module implements the hybrid retrieval strategy from NEXT_PHASE_MASTER_PLAN Phase A:
+- Graph traversal for structural relationships (callers, callees, chains)
+- Sparse/FTS search for exact matches and keyword lookup
+- Semantic search for fuzzy/conceptual matches
+- Intelligent routing based on query characteristics
+- Summary layer for cross-workspace links
+"""
+from __future__ import annotations
+
+import json
+import re
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional, Set, Tuple
+
+from ..graph import GraphStore
+from ..semantic import semantic_query
+
+
+def _get_common_functions():
+    """Lazy import to avoid circular dependency."""
+    from ..orchestrator.common import tokenize, _rrf, _best_match
+    return tokenize, _rrf, _best_match
+
+
+@dataclass
+class RetrievalResult:
+    """Unified retrieval result with provenance tracking."""
+    node_id: str
+    node: Dict[str, Any]
+    score: float = 0.0
+    sources: List[str] = field(default_factory=list)  # graph, sparse, semantic
+    evidence: Dict[str, Any] = field(default_factory=dict)
+    neighbors: List[Dict[str, Any]] = field(default_factory=list)
+    cross_workspace_refs: List[Dict[str, Any]] = field(default_factory=list)
+
+
+@dataclass
+class HybridRetrievalConfig:
+    """Configuration for hybrid retrieval routing."""
+    # Weight for each retrieval source
+    graph_weight: float = 0.4
+    sparse_weight: float = 0.35
+    semantic_weight: float = 0.25
+
+    # Thresholds
+    min_confidence: float = 0.3
+    max_results: int = 20
+    neighbor_depth: int = 2
+    neighbor_limit: int = 50
+
+    # Feature flags
+    enable_cross_workspace: bool = True
+    enable_summary_layer: bool = True
+    enable_type_boosting: bool = True
+
+
+# Query pattern detection
+_QUERY_PATTERNS = {
+    "feign": re.compile(r"feign|client|远程调用|rpc", re.IGNORECASE),
+    "mq": re.compile(r"kafka|rocketmq|topic|consumer|producer|消息队列|mq", re.IGNORECASE),
+    "endpoint": re.compile(r"/[a-z]|controller|api|接口|endpoint", re.IGNORECASE),
+    "config": re.compile(r"config|配置|properties|yaml|yml", re.IGNORECASE),
+    "chain": re.compile(r"调用链|call.?chain|trace|跟踪", re.IGNORECASE),
+    "class": re.compile(r"class|类|service|impl|dao|mapper|repository", re.IGNORECASE),
+    "method": re.compile(r"方法|method|function|函数", re.IGNORECASE),
+}
+
+
+def detect_query_intent(query: str) -> Dict[str, Any]:
+    """Detect query intent from natural language input.
+
+    Returns intent classification with confidence scores.
+    """
+    query_lower = query.lower()
+    intents: Dict[str, float] = {}
+    matched_patterns: List[str] = []
+
+    for intent, pattern in _QUERY_PATTERNS.items():
+        if pattern.search(query_lower):
+            intents[intent] = 1.0
+            matched_patterns.append(intent)
+
+    # Infer from structure
+    if "/" in query and not query.startswith("/"):
+        intents.setdefault("endpoint", 0.8)
+    if "." in query and "::" not in query:
+        intents.setdefault("config", 0.6)
+    if "::" in query or "." in query:
+        intents.setdefault("class", 0.7)
+
+    primary = max(intents.items(), key=lambda x: x[1])[0] if intents else "general"
+
+    return {
+        "primary_intent": primary,
+        "all_intents": intents,
+        "matched_patterns": matched_patterns,
+        "is_cross_service": any(k in query_lower for k in ["feign", "远程", "rpc", "服务间"]),
+        "is_chain_query": "chain" in intents or "调用链" in query_lower,
+    }
+
+
+def hybrid_retrieve(
+    graph: GraphStore,
+    workspace_file: str,
+    query: str,
+    config: Optional[HybridRetrievalConfig] = None,
+    node_types: Optional[List[str]] = None,
+    limit: int = 20,
+) -> Dict[str, Any]:
+    """Execute hybrid retrieval combining graph, sparse, and semantic search.
+
+    This is the main entry point for intelligent code retrieval.
+    """
+    if config is None:
+        config = HybridRetrievalConfig()
+
+    intent = detect_query_intent(query)
+    tokenize, _rrf, _best_match = _get_common_functions()
+    tokens = tokenize(query)
+
+    # Phase 1: Parallel retrieval from all sources
+    graph_hits = _graph_retrieval(graph, query, tokens, node_types, limit * 2, _rrf)
+    sparse_hits = _sparse_retrieval(graph, query, tokens, node_types, limit * 2, _rrf)
+    semantic_hits = _semantic_retrieval(workspace_file, query, limit * 2)
+
+    # Phase 2: Merge and rank results
+    merged = _merge_retrieval_results(
+        graph_hits, sparse_hits, semantic_hits,
+        config=config,
+        intent=intent,
+    )
+
+    # Phase 3: Type-based boosting
+    if config.enable_type_boosting:
+        merged = _apply_type_boosting(merged, intent)
+
+    # Phase 4: Neighbor enrichment
+    for item in merged[:limit]:
+        node_id = item.node_id
+        item.neighbors = graph.neighbors(
+            node_id,
+            direction="both",
+            max_depth=config.neighbor_depth,
+            limit=config.neighbor_limit,
+        )
+
+    # Phase 5: Cross-workspace resolution
+    if config.enable_cross_workspace:
+        _resolve_cross_workspace_refs(merged[:limit], graph, workspace_file)
+
+    # Phase 6: Build summary
+    results = [item for item in merged if item.score >= config.min_confidence][:limit]
+
+    return {
+        "query": query,
+        "intent": intent,
+        "results": [_result_to_dict(r) for r in results],
+        "total_found": len(merged),
+        "returned": len(results),
+        "retrieval_summary": _build_retrieval_summary(results, intent),
+        "progressive": _build_progressive_summary(results, intent),
+        "config": {
+            "graph_weight": config.graph_weight,
+            "sparse_weight": config.sparse_weight,
+            "semantic_weight": config.semantic_weight,
+        },
+    }
+
+
+def _graph_retrieval(
+    graph: GraphStore,
+    query: str,
+    tokens: List[str],
+    node_types: Optional[List[str]],
+    limit: int,
+    _rrf: Any,
+) -> List[RetrievalResult]:
+    """Retrieve nodes via graph structure (neighbors of exact matches)."""
+    results: Dict[str, RetrievalResult] = {}
+
+    # Find exact matches first
+    exact_nodes = graph.find_nodes(query, types=node_types, limit=limit)
+    for rank, node in enumerate(exact_nodes, start=1):
+        node_id = node["id"]
+        results[node_id] = RetrievalResult(
+            node_id=node_id,
+            node=node,
+            score=_rrf(rank) * 1.5,  # Boost exact matches
+            sources=["graph_exact"],
+        )
+
+    # Token-based fallback
+    if len(results) < limit // 2:
+        for token in tokens:
+            token_nodes = graph.find_nodes(token, types=node_types, limit=limit)
+            for rank, node in enumerate(token_nodes, start=1):
+                node_id = node["id"]
+                if node_id not in results:
+                    results[node_id] = RetrievalResult(
+                        node_id=node_id,
+                        node=node,
+                        score=_rrf(rank + 100),
+                        sources=["graph_token"],
+                    )
+
+    return list(results.values())
+
+
+def _sparse_retrieval(
+    graph: GraphStore,
+    query: str,
+    tokens: List[str],
+    node_types: Optional[List[str]],
+    limit: int,
+    _rrf: Any,
+) -> List[RetrievalResult]:
+    """Retrieve nodes via FTS/sparse search."""
+    results: Dict[str, RetrievalResult] = {}
+
+    # Use FTS if available
+    fts_nodes = graph.find_nodes(query, types=node_types, limit=limit)
+    for rank, node in enumerate(fts_nodes, start=1):
+        node_id = node["id"]
+        results[node_id] = RetrievalResult(
+            node_id=node_id,
+            node=node,
+            score=_rrf(rank + 50),  # Lower priority than graph exact
+            sources=["sparse_fts"],
+        )
+
+    return list(results.values())
+
+
+def _semantic_retrieval(
+    workspace_file: str,
+    query: str,
+    limit: int,
+) -> List[RetrievalResult]:
+    """Retrieve nodes via semantic/embedding search."""
+    results: List[RetrievalResult] = []
+
+    try:
+        semantic_hits = semantic_query(workspace_file, query, limit=limit)
+        for rank, hit in enumerate(semantic_hits, start=1):
+            node_id = hit.get("node_id", "")
+            if not node_id:
+                continue
+            results.append(RetrievalResult(
+                node_id=node_id,
+                node={
+                    "id": node_id,
+                    "type": hit.get("type", ""),
+                    "name": hit.get("name", ""),
+                    "project": hit.get("project", ""),
+                    "file_path": hit.get("file_path", ""),
+                },
+                score=float(hit.get("score", 0.0)) * 0.8,  # Scale semantic scores
+                sources=["semantic"],
+                evidence={"semantic_rank": rank, "raw_score": hit.get("score", 0.0)},
+            ))
+    except Exception:
+        # Semantic search is optional; degrade gracefully
+        pass
+
+    return results
+
+
+def _merge_retrieval_results(
+    graph_hits: List[RetrievalResult],
+    sparse_hits: List[RetrievalResult],
+    semantic_hits: List[RetrievalResult],
+    config: HybridRetrievalConfig,
+    intent: Dict[str, Any],
+) -> List[RetrievalResult]:
+    """Merge results from all retrieval sources using RRF-inspired scoring."""
+    merged: Dict[str, RetrievalResult] = {}
+
+    # Process graph hits
+    for rank, item in enumerate(graph_hits, start=1):
+        if item.node_id in merged:
+            existing = merged[item.node_id]
+            existing.score += item.score * config.graph_weight
+            existing.sources.extend(item.sources)
+        else:
+            merged[item.node_id] = RetrievalResult(
+                node_id=item.node_id,
+                node=item.node,
+                score=item.score * config.graph_weight,
+                sources=item.sources.copy(),
+                evidence={"graph_rank": rank},
+            )
+
+    # Process sparse hits
+    for rank, item in enumerate(sparse_hits, start=1):
+        if item.node_id in merged:
+            existing = merged[item.node_id]
+            existing.score += item.score * config.sparse_weight
+            if "sparse" not in str(existing.sources):
+                existing.sources.extend(item.sources)
+        else:
+            merged[item.node_id] = RetrievalResult(
+                node_id=item.node_id,
+                node=item.node,
+                score=item.score * config.sparse_weight,
+                sources=item.sources.copy(),
+                evidence={"sparse_rank": rank},
+            )
+
+    # Process semantic hits
+    for rank, item in enumerate(semantic_hits, start=1):
+        if item.node_id in merged:
+            existing = merged[item.node_id]
+            existing.score += item.score * config.semantic_weight
+            if "semantic" not in str(existing.sources):
+                existing.sources.extend(item.sources)
+        else:
+            merged[item.node_id] = RetrievalResult(
+                node_id=item.node_id,
+                node=item.node,
+                score=item.score * config.semantic_weight,
+                sources=item.sources.copy(),
+                evidence={"semantic_rank": rank},
+            )
+
+    # Multi-source bonus
+    for item in merged.values():
+        source_set = set(item.sources)
+        if len(source_set) >= 3:
+            item.score *= 1.3  # Triple-source bonus
+        elif len(source_set) >= 2:
+            item.score *= 1.15  # Dual-source bonus
+
+    return sorted(merged.values(), key=lambda x: x.score, reverse=True)
+
+
+def _apply_type_boosting(
+    results: List[RetrievalResult],
+    intent: Dict[str, Any],
+) -> List[RetrievalResult]:
+    """Boost node types that match the detected query intent."""
+    primary_intent = intent.get("primary_intent", "general")
+
+    type_boost_map = {
+        "feign": {"FeignClient": 1.5, "FeignMethod": 1.4, "Endpoint": 1.2},
+        "mq": {"MQTopic": 1.5, "MQConsumer": 1.4, "ConfigKey": 1.1},
+        "endpoint": {"Endpoint": 1.5, "Controller": 1.3, "Method": 1.2},
+        "config": {"ConfigKey": 1.5, "Field": 1.2},
+        "class": {"Class": 1.4, "Service": 1.3, "Impl": 1.2},
+        "method": {"Method": 1.4, "Function": 1.3},
+    }
+
+    boosts = type_boost_map.get(primary_intent, {})
+
+    for item in results:
+        node_type = item.node.get("type", "")
+        boost = boosts.get(node_type, 1.0)
+        if boost > 1.0:
+            item.score *= boost
+            item.evidence["type_boost"] = boost
+
+    # Re-sort after boosting
+    results.sort(key=lambda x: x.score, reverse=True)
+    return results
+
+
+def _resolve_cross_workspace_refs(
+    results: List[RetrievalResult],
+    graph: GraphStore,
+    workspace_file: str,
+) -> None:
+    """Resolve cross-workspace references and add summary layer."""
+    # Load service topology for cross-workspace detection
+    try:
+        from ..store import WorkspaceStore
+        store = WorkspaceStore(workspace_file)
+        topology = store.read_json_prefer_backend("service-topology.json", {})
+        local_services = {svc.get("service_name") or svc.get("name") for svc in topology.get("services", [])}
+    except Exception:
+        local_services = set()
+
+    for item in results:
+        node = item.node
+        project = node.get("project", "")
+
+        # Check if this is a cross-workspace reference
+        if project and project not in local_services:
+            item.cross_workspace_refs.append({
+                "type": "external_service",
+                "project": project,
+                "node_name": node.get("name", ""),
+            })
+
+
+def _result_to_dict(result: RetrievalResult) -> Dict[str, Any]:
+    """Convert RetrievalResult to dictionary."""
+    return {
+        "node_id": result.node_id,
+        "node": result.node,
+        "score": round(result.score, 4),
+        "sources": result.sources,
+        "evidence": result.evidence,
+        "neighbor_count": len(result.neighbors),
+        "cross_workspace_refs": result.cross_workspace_refs,
+    }
+
+
+def _build_retrieval_summary(
+    results: List[RetrievalResult],
+    intent: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Build summary of retrieval results."""
+    source_counts = {"graph": 0, "sparse": 0, "semantic": 0}
+    type_counts: Dict[str, int] = {}
+
+    for item in results:
+        for source in item.sources:
+            if "graph" in source:
+                source_counts["graph"] += 1
+            elif "sparse" in source or "fts" in source:
+                source_counts["sparse"] += 1
+            elif "semantic" in source:
+                source_counts["semantic"] += 1
+
+        node_type = item.node.get("type", "unknown")
+        type_counts[node_type] = type_counts.get(node_type, 0) + 1
+
+    return {
+        "total_results": len(results),
+        "source_distribution": source_counts,
+        "type_distribution": type_counts,
+        "primary_intent": intent.get("primary_intent", "general"),
+        "is_cross_service": intent.get("is_cross_service", False),
+        "avg_score": round(sum(r.score for r in results) / max(len(results), 1), 4),
+    }
+
+
+def _build_progressive_summary(
+    results: List[RetrievalResult],
+    intent: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Build progressive disclosure summary for quick understanding."""
+    top_nodes = results[:3]
+
+    return {
+        "level_1_quick": {
+            "count": len(results),
+            "top_matches": [
+                {
+                    "type": r.node.get("type", ""),
+                    "name": r.node.get("name", ""),
+                    "project": r.node.get("project", ""),
+                    "score": round(r.score, 2),
+                }
+                for r in top_nodes
+            ],
+            "intent": intent.get("primary_intent", "general"),
+        },
+        "level_2_details": {
+            "sources_breakdown": {
+                "graph_exact": sum(1 for r in results if "graph_exact" in r.sources),
+                "graph_token": sum(1 for r in results if "graph_token" in r.sources),
+                "sparse_fts": sum(1 for r in results if "sparse_fts" in r.sources),
+                "semantic": sum(1 for r in results if "semantic" in r.sources),
+            },
+            "cross_workspace_count": sum(1 for r in results if r.cross_workspace_refs),
+            "has_chain_results": intent.get("is_chain_query", False),
+        },
+        "level_3_next_actions": _suggest_next_actions(results, intent),
+    }
+
+
+def _suggest_next_actions(
+    results: List[RetrievalResult],
+    intent: Dict[str, Any],
+) -> List[str]:
+    """Suggest next actions based on retrieval results."""
+    actions = []
+
+    if not results:
+        actions.append("尝试更具体的查询词")
+        return actions
+
+    primary_intent = intent.get("primary_intent", "general")
+
+    if primary_intent == "feign":
+        actions.append("调用 memory_context 查看 Feign 客户端详情")
+        actions.append("调用 memory_callers 查找谁在调用这个 Feign")
+    elif primary_intent == "mq":
+        actions.append("调用 memory_context 查看 Topic/Consumer 详情")
+        actions.append("检查 mq-index.json 获取完整消息链路")
+    elif primary_intent == "endpoint":
+        actions.append("调用 memory_context 查看 API 端点详情")
+        actions.append("调用 memory_callers 查找前端调用方")
+    elif primary_intent == "chain":
+        actions.append("调用 memory_callers 或 memory_callees 追踪完整调用链")
+    else:
+        actions.append("对 top 结果调用 memory_context 深挖")
+        actions.append("修改代码前调用 mc_analyze 检查影响面")
+
+    if intent.get("is_cross_service"):
+        actions.append("注意跨服务边界，可能需要查看多个项目的索引")
+
+    return actions
