@@ -67,6 +67,13 @@ _QUERY_PATTERNS = {
     "method": re.compile(r"方法|method|function|函数", re.IGNORECASE),
 }
 
+# Java 命名模式推断
+_JAVA_PATTERNS = {
+    "feign": re.compile(r"^[A-Z][a-zA-Z]*Service$|^Fegin|^Feign", re.IGNORECASE),
+    "endpoint": re.compile(r"Controller$|Resource$|Api$", re.IGNORECASE),
+    "class": re.compile(r"ServiceImpl$|Impl$|Dao$|Mapper$|Repository$", re.IGNORECASE),
+}
+
 
 def detect_query_intent(query: str) -> Dict[str, Any]:
     """Detect query intent from natural language input.
@@ -77,12 +84,22 @@ def detect_query_intent(query: str) -> Dict[str, Any]:
     intents: Dict[str, float] = {}
     matched_patterns: List[str] = []
 
+    # Phase 1: Keyword pattern matching
     for intent, pattern in _QUERY_PATTERNS.items():
         if pattern.search(query_lower):
             intents[intent] = 1.0
             matched_patterns.append(intent)
 
-    # Infer from structure
+    # Phase 2: Java naming convention inference
+    # 提取类名（取最后一段，例如 com.Foo.bar -> bar）
+    parts = query.replace(".", " ").replace("/", " ").split()
+    for part in parts:
+        for intent, pattern in _JAVA_PATTERNS.items():
+            if pattern.match(part):
+                intents.setdefault(intent, 0)
+                intents[intent] = max(intents[intent], 0.8)
+
+    # Phase 3: Structure inference
     if "/" in query and not query.startswith("/"):
         intents.setdefault("endpoint", 0.8)
     if "." in query and "::" not in query:
@@ -90,14 +107,13 @@ def detect_query_intent(query: str) -> Dict[str, Any]:
     if "::" in query or "." in query:
         intents.setdefault("class", 0.7)
 
-    # 优先级调整：如果检测到 feign/mq/endpoint，提高其优先级
-    # 因为这些是更具体的意图
+    # Phase 4: 优先级调整 - feign/mq/endpoint 是更具体的意图
     if "feign" in intents:
-        intents["feign"] = 2.0  # 提高 feign 优先级
+        intents["feign"] = max(intents["feign"], 2.0)
     if "mq" in intents:
-        intents["mq"] = 2.0
+        intents["mq"] = max(intents["mq"], 2.0)
     if "endpoint" in intents and query_lower.startswith("/"):
-        intents["endpoint"] = 2.0
+        intents["endpoint"] = max(intents["endpoint"], 2.0)
 
     primary = max(intents.items(), key=lambda x: x[1])[0] if intents else "general"
 

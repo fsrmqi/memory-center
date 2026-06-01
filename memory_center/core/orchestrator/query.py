@@ -107,19 +107,37 @@ def memory_query_hybrid(workspace_file: str | Path, query: str, limit: int = 20,
     if primary_intent in ("feign", "mq", "endpoint", "config"):
         contracts = memory_contracts(workspace_file)
         filtered_feign = _filter_contracts_by_query(contracts.get("feign_contracts", []), query, primary_intent)
-        filtered_api = _filter_contracts_by_query(contracts.get("api_contracts", []), query, primary_intent)
         filtered_mq = _filter_contracts_by_query(contracts.get("mq_contracts", []), query, primary_intent)
+        filtered_api = _filter_contracts_by_query(contracts.get("api_contracts", []), query, primary_intent)
 
-        # Feign → API 自动关联：当 Feign 匹配到时，把其 target_service + path 也加入 API 结果
+        # Feign 去重（worktree 可能产生重复）
+        if filtered_feign:
+            seen_interfaces = set()
+            deduped_feign = []
+            for fc in filtered_feign:
+                key = (fc.get("interface", ""), fc.get("project", ""))
+                if key not in seen_interfaces:
+                    seen_interfaces.add(key)
+                    deduped_feign.append(fc)
+            filtered_feign = deduped_feign
+
+        # Feign → API 自动关联：只关联查询直接匹配的方法
+        linked_api = []
         if primary_intent == "feign" and filtered_feign:
             api_by_path = {c.get("path", ""): c for c in contracts.get("api_contracts", [])}
+            query_lower_local = query.lower()
             for fc in filtered_feign:
                 for m in fc.get("methods", []):
+                    method_name = m.get("method_name", "").lower()
                     m_path = m.get("path", "")
-                    if m_path and m_path in api_by_path:
-                        matched_api = api_by_path[m_path]
-                        if matched_api not in filtered_api:
-                            filtered_api.append(matched_api)
+                    # 只关联查询直接匹配的方法
+                    if query_lower_local in method_name or method_name in query_lower_local:
+                        if m_path and m_path in api_by_path:
+                            matched_api = api_by_path[m_path]
+                            if matched_api not in linked_api:
+                                linked_api.append(matched_api)
+            # feign 意图：只返回关联的 API
+            filtered_api = linked_api
 
         result["contracts"] = {
             "feign_contracts": filtered_feign,
@@ -153,26 +171,43 @@ def _filter_contracts_by_query(contracts: list, query: str, intent: str) -> list
 
     query_lower = query.lower()
     tokens = tokenize(query_lower)
-    filtered = []
+    exact_matches = []
+    partial_matches = []
 
     for contract in contracts:
         contract_str = json.dumps(contract, ensure_ascii=False).lower()
-        # Check if any token matches
-        if any(token in contract_str for token in tokens):
-            filtered.append(contract)
-        # Check interface/method name matches for feign
-        elif intent == "feign" and "interface" in contract:
+
+        # 精确匹配：接口名或方法名完全包含查询
+        if intent == "feign" and "interface" in contract:
             interface_name = contract.get("interface", "").lower()
-            if any(token in interface_name for token in tokens):
-                filtered.append(contract)
-        # Check path matches for api
+            # 接口名完全匹配或包含查询
+            if query_lower in interface_name or interface_name in query_lower:
+                exact_matches.append(contract)
+                continue
+            # 方法名精确匹配
+            for m in contract.get("methods", []):
+                if query_lower in m.get("method_name", "").lower():
+                    exact_matches.append(contract)
+                    break
+            else:
+                # Token 匹配
+                if any(token in interface_name for token in tokens):
+                    partial_matches.append(contract)
         elif intent == "endpoint" and "path" in contract:
             path = contract.get("path", "").lower()
-            if query_lower in path or any(token in path for token in tokens):
-                filtered.append(contract)
+            controller = contract.get("controller", "").lower()
+            if query_lower in path or query_lower in controller:
+                exact_matches.append(contract)
+            elif any(token in path or token in controller for token in tokens):
+                partial_matches.append(contract)
+        else:
+            # 通用匹配
+            if any(token in contract_str for token in tokens):
+                partial_matches.append(contract)
 
-    # Return filtered results (up to limit) or top results if no filter match
-    return filtered[:20] if filtered else contracts[:10]
+    # 精确匹配优先，然后是部分匹配
+    result = exact_matches + partial_matches
+    return result[:20] if result else contracts[:10]
 
 
 def memory_context(workspace_file: str | Path, name: str, max_depth: int = 2) -> Dict[str, Any]:
