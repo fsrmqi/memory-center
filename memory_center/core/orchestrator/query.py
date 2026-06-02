@@ -316,11 +316,16 @@ def memory_symbol(workspace_file: str | Path, name: str, limit: int = 10, projec
     if not matches:
         return {"name": name, "found": False, "matches": [], "lookup": _build_lookup_payload(lookup)}
 
-    # If project is known, filter matches to that project first
+    # If project is known, filter ALL results to that project
     if inferred_project:
         project_matches = [m for m in matches if inferred_project in (m.get("project") or "")]
         if project_matches:
             matches = project_matches
+        # Also filter the lookup matches list to stay consistent
+        lookup_matches = lookup.get("matches", [])
+        project_lookup = [m for m in lookup_matches if inferred_project in ((m.get("node") or {}).get("project") or "")]
+        if project_lookup:
+            lookup["matches"] = project_lookup
 
     best = _best_match(matches, name)
 
@@ -330,11 +335,12 @@ def memory_symbol(workspace_file: str | Path, name: str, limit: int = 10, projec
         p = m.get("project") or ""
         projects_seen[p] = projects_seen.get(p, 0) + 1
 
+    filtered_lookup = lookup.get("matches", [])[:limit]
     result: Dict[str, Any] = {
         "name": name,
         "found": True,
         "best_match": best,
-        "matches": lookup.get("matches", [])[:limit],
+        "matches": filtered_lookup,
         "lookup": _build_lookup_payload(lookup),
     }
     if len(projects_seen) > 1:
@@ -465,7 +471,7 @@ def memory_callees(workspace_file: str | Path, symbol: str, depth: int = 2, limi
     }
 
 
-def memory_search_code(workspace_file: str | Path, query: str, scope: str = "", limit: int = 20) -> Dict[str, Any]:
+def memory_search_code(workspace_file: str | Path, query: str, scope: str = "", limit: int = 20, project: str = "") -> Dict[str, Any]:
     config, store = load_context(workspace_file)
     keywords = tokenize(query)
     files = store.read_json_prefer_backend("file-index.json", [])
@@ -475,10 +481,14 @@ def memory_search_code(workspace_file: str | Path, query: str, scope: str = "", 
         key = item.get("file", "")
         symbol_entries.setdefault(key, []).append(item)
     scope_l = scope.lower().strip()
+    project_l = project.lower().strip()
     hits: List[Dict[str, Any]] = []
     for item in files:
         path = item.get("path", "")
         if scope_l and scope_l not in path.lower():
+            continue
+        item_project = item.get("project", "")
+        if project_l and project_l not in item_project.lower():
             continue
         text = f"{path} {item.get('project', '')} {item.get('service_name', '')}".lower()
         file_symbols = symbol_entries.get(path, [])

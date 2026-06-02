@@ -379,7 +379,8 @@ def _route_request(path: str, params: dict, default_workspace: str | None) -> di
         query = _require_one(params, "text")
         scope = params.get("scope", [""])[0]
         limit = _parse_int(params, "limit", 20)
-        return memory_search_code(workspace, query, scope=scope, limit=limit)
+        project = params.get("project", [""])[0]
+        return memory_search_code(workspace, query, scope=scope, limit=limit, project=project)
     if path == "/workspace/lookup-hint":
         workspace = _require_workspace(params, default_workspace)
         query = _require_one(params, "query")

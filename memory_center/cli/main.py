@@ -242,9 +242,10 @@ def search_code_cmd(
     text: str = typer.Option(...),
     scope: str = typer.Option(""),
     limit: int = typer.Option(20),
+    project: str = typer.Option("", help="Filter by project name."),
 ):
     """Keyword search over indexed files/symbol hints."""
-    print(memory_search_code(workspace, text, scope=scope, limit=limit))
+    print(memory_search_code(workspace, text, scope=scope, limit=limit, project=project))
 
 
 @app.command("symbol")
