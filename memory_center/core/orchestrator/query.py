@@ -69,7 +69,7 @@ def memory_query(workspace_file: str | Path, query: str, limit: int = 20, node_t
     }
 
 
-def memory_query_hybrid(workspace_file: str | Path, query: str, limit: int = 20, node_types: List[str] | None = None, config: Any = None) -> Dict[str, Any]:
+def memory_query_hybrid(workspace_file: str | Path, query: str, limit: int = 20, node_types: List[str] | None = None, config: Any = None, project: str = "") -> Dict[str, Any]:
     """Enhanced query using hybrid retrieval engine.
 
     Combines graph, sparse, and semantic search with intelligent routing.
@@ -97,6 +97,18 @@ def memory_query_hybrid(workspace_file: str | Path, query: str, limit: int = 20,
             node_types=node_types,
             limit=limit,
         )
+
+    # Project filtering: boost results from the specified project
+    if project:
+        results = result.get("results", [])
+        project_results = [r for r in results if project in (r.get("node", {}).get("project") or "")]
+        if project_results:
+            # Boost project-matched results to the top
+            for r in project_results:
+                r["score"] = r.get("score", 0) * 2.0
+                r["_project_boost"] = True
+            results.sort(key=lambda x: x.get("score", 0), reverse=True)
+            result["results"] = results
 
     # Enrich with workspace context
     result["workspace"] = config_obj[0].workspace
@@ -263,28 +275,158 @@ def memory_context(workspace_file: str | Path, name: str, max_depth: int = 2) ->
     }
 
 
-def memory_symbol(workspace_file: str | Path, name: str, limit: int = 10) -> Dict[str, Any]:
+def memory_symbol(workspace_file: str | Path, name: str, limit: int = 10, project: str = "") -> Dict[str, Any]:
+    """Resolve a symbol name to graph nodes.
+
+    When multiple nodes match (e.g. same class name in different modules),
+    use ``project`` to disambiguate.  If ``project`` is empty but the query
+    looks like a FQN (contains dots and a capitalised tail), the package
+    segments are used to guess the project.
+    """
+    # FQN inference: cn.kaipuyun.cloud.openapi...ServiceImpl → try "openapi"
+    inferred_project = project
+    if not inferred_project and "." in name and not name.startswith("."):
+        inferred_project = _infer_project_from_fqn(name, workspace_file)
+
     lookup = memory_query_hybrid(
         workspace_file,
         name,
         limit=limit,
         node_types=["Class", "Method", "Field", "FeignClient", "FeignMethod", "Endpoint", "MQTopic", "MQConsumer", "ConfigKey", "File"],
+        project=inferred_project,
     )
     matches = [item.get("node", {}) for item in lookup.get("matches", []) if item.get("node")]
+
+    # If inferred_project is known but no match found in that project,
+    # try a direct graph lookup by class name + project
+    if inferred_project and not any(inferred_project in (m.get("project") or "") for m in matches):
+        from ..graph import GraphStore
+        store = load_context(workspace_file)[1]
+        with GraphStore(store.graph_db_path) as g:
+            # Extract class name from FQN (last segment)
+            class_name = name.replace("#", ".").split(".")[-1]
+            direct = g.find_nodes(class_name, types=["Class"], limit=50)
+            project_nodes = [n for n in direct if inferred_project in (n.get("project") or "")]
+            if project_nodes:
+                # Prepend project-matched nodes
+                lookup.setdefault("matches", [])
+                for node in project_nodes:
+                    lookup["matches"].insert(0, {"node": node, "score": 999.0, "sources": ["direct_lookup"]})
+                matches = [item.get("node", {}) for item in lookup.get("matches", []) if item.get("node")]
     if not matches:
         return {"name": name, "found": False, "matches": [], "lookup": _build_lookup_payload(lookup)}
+
+    # If project is known, filter matches to that project first
+    if inferred_project:
+        project_matches = [m for m in matches if inferred_project in (m.get("project") or "")]
+        if project_matches:
+            matches = project_matches
+
     best = _best_match(matches, name)
-    return {
+
+    # Group remaining matches by project for disambiguation
+    projects_seen: Dict[str, int] = {}
+    for m in matches:
+        p = m.get("project") or ""
+        projects_seen[p] = projects_seen.get(p, 0) + 1
+
+    result: Dict[str, Any] = {
         "name": name,
         "found": True,
         "best_match": best,
         "matches": lookup.get("matches", [])[:limit],
         "lookup": _build_lookup_payload(lookup),
     }
+    if len(projects_seen) > 1:
+        result["disambiguation"] = {
+            "projects": projects_seen,
+            "hint": "多个模块包含同名符号，用 project 参数或 FQN 消歧",
+        }
+    return result
 
 
-def memory_callers(workspace_file: str | Path, symbol: str, depth: int = 2, limit: int = 80, edge_type_filter: List[str] | None = None) -> Dict[str, Any]:
-    info = memory_symbol(workspace_file, symbol, limit=8)
+def _infer_project_from_fqn(fqn: str, workspace_file: str | Path) -> str:
+    """Try to infer the project name from a fully-qualified class name.
+
+    E.g.  cn.kaipuyun.cloud.openapi.biz.service.impl.website.safe.FooServiceImpl
+    → segments = [cn, kaipuyun, cloud, openapi, biz, service, impl, ...]
+    → try matching 'openapi' against known project names in the workspace.
+
+    Scoring: prefer segments that appear as a distinct word-boundary in the
+    project name (e.g. 'openapi' in 'ucap-cloud-open-api' splits on '-'
+    and 'openapi' matches the concatenation of adjacent parts 'open'+'api').
+    """
+    parts = fqn.replace("#", ".").split(".")
+    segments = [p for p in parts[:-1] if p and p[0].islower()]
+
+    # Common Java package segments that are useless for project disambiguation
+    _PACKAGE_STOPWORDS = {
+        "cn", "com", "org", "net", "io", "app", "api", "biz", "service",
+        "impl", "common", "core", "dto", "vo", "entity", "config", "util",
+        "utils", "controller", "mapper", "dao", "repository", "model",
+        "bean", "factory", "handler", "listener", "filter", "interceptor",
+        "aspect", "annotation", "web", "rest", "rpc", "client", "server",
+        "base", "lib", "sdk", "starter", "autoconfigure", "properties",
+        "website", "safe", "back", "front", "admin", "manager", "task",
+        "job", "schedule", "message", "mq", "cache", "data", "storage",
+    }
+
+    config, _store = load_context(workspace_file)
+    projects = [s.name for s in config.services] if hasattr(config, "services") else []
+
+    best_proj = ""
+    best_score = 0
+    for seg in reversed(segments):
+        if len(seg) < 3 or seg in _PACKAGE_STOPWORDS:
+            continue
+        candidates: list[tuple[str, int]] = []
+        for proj in projects:
+            proj_lower = proj.lower()
+            proj_parts = proj_lower.replace("-", "_").split("_")
+
+            if seg == proj_lower:
+                score = 100
+            elif seg in proj_parts:
+                score = 80
+            else:
+                matched = False
+                for i in range(len(proj_parts)):
+                    for j in range(i + 2, min(i + 5, len(proj_parts) + 1)):
+                        if "".join(proj_parts[i:j]) == seg:
+                            matched = True
+                            break
+                    if matched:
+                        break
+                if matched:
+                    score = 70
+                elif seg in proj_lower:
+                    score = 50
+                else:
+                    continue
+            candidates.append((proj, score))
+
+        # Prefer unique matches: if only one project matches this segment, bonus +20
+        if len(candidates) == 1:
+            proj, score = candidates[0]
+            score += 20
+            if score > best_score:
+                best_score = score
+                best_proj = proj
+        elif len(candidates) > 1:
+            # Multiple projects match — pick highest score, but no uniqueness bonus
+            for proj, score in candidates:
+                if score > best_score:
+                    best_score = score
+                    best_proj = proj
+
+        if best_score >= 90:
+            break
+
+    return best_proj
+
+
+def memory_callers(workspace_file: str | Path, symbol: str, depth: int = 2, limit: int = 80, edge_type_filter: List[str] | None = None, project: str = "") -> Dict[str, Any]:
+    info = memory_symbol(workspace_file, symbol, limit=8, project=project)
     if not info.get("found"):
         return {"symbol": symbol, "found": False, "callers": [], "lookup": info.get("lookup", {})}
     node = info["best_match"]
@@ -303,8 +445,8 @@ def memory_callers(workspace_file: str | Path, symbol: str, depth: int = 2, limi
     }
 
 
-def memory_callees(workspace_file: str | Path, symbol: str, depth: int = 2, limit: int = 80, edge_type_filter: List[str] | None = None) -> Dict[str, Any]:
-    info = memory_symbol(workspace_file, symbol, limit=8)
+def memory_callees(workspace_file: str | Path, symbol: str, depth: int = 2, limit: int = 80, edge_type_filter: List[str] | None = None, project: str = "") -> Dict[str, Any]:
+    info = memory_symbol(workspace_file, symbol, limit=8, project=project)
     if not info.get("found"):
         return {"symbol": symbol, "found": False, "callees": [], "lookup": info.get("lookup", {})}
     node = info["best_match"]
