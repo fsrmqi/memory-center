@@ -231,9 +231,9 @@ def doctor(workspace: str = typer.Option(...), self_test: bool = typer.Option(Fa
 
 
 @app.command("query")
-def query_cmd(workspace: str = typer.Option(...), text: str = typer.Option(...), limit: int = typer.Option(20)):
+def query_cmd(workspace: str = typer.Option(...), text: str = typer.Option(...), limit: int = typer.Option(20), project: str = typer.Option("", help="Filter by project name for disambiguation.")):
     """Graph-aware query across services, files, symbols, contracts and memory."""
-    print(memory_query_hybrid(workspace, text, limit))
+    print(memory_query_hybrid(workspace, text, limit, project=project))
 
 
 @app.command("search-code")
@@ -252,9 +252,10 @@ def symbol_cmd(
     workspace: str = typer.Option(...),
     name: str = typer.Option(...),
     limit: int = typer.Option(10),
+    project: str = typer.Option("", help="Filter by project name for disambiguation."),
 ):
     """Resolve one symbol and return best match candidates."""
-    print(memory_symbol(workspace, name, limit=limit))
+    print(memory_symbol(workspace, name, limit=limit, project=project))
 
 
 @app.command("callers")
@@ -263,9 +264,10 @@ def callers_cmd(
     symbol: str = typer.Option(...),
     depth: int = typer.Option(2),
     limit: int = typer.Option(80),
+    project: str = typer.Option("", help="Filter by project name for disambiguation."),
 ):
     """Find upstream callers for one symbol."""
-    print(memory_callers(workspace, symbol, depth=depth, limit=limit))
+    print(memory_callers(workspace, symbol, depth=depth, limit=limit, project=project))
 
 
 @app.command("callees")
@@ -274,15 +276,16 @@ def callees_cmd(
     symbol: str = typer.Option(...),
     depth: int = typer.Option(2),
     limit: int = typer.Option(80),
+    project: str = typer.Option("", help="Filter by project name for disambiguation."),
 ):
     """Find downstream callees for one symbol."""
-    print(memory_callees(workspace, symbol, depth=depth, limit=limit))
+    print(memory_callees(workspace, symbol, depth=depth, limit=limit, project=project))
 
 
 @app.command("context")
-def context_cmd(workspace: str = typer.Option(...), name: str = typer.Option(...), max_depth: int = typer.Option(2)):
+def context_cmd(workspace: str = typer.Option(...), name: str = typer.Option(...), max_depth: int = typer.Option(2), project: str = typer.Option("", help="Filter by project name for disambiguation.")):
     """Return 360-degree context for a symbol, endpoint, topic, service or file."""
-    print(memory_context(workspace, name, max_depth))
+    print(memory_context(workspace, name, max_depth, project=project))
 
 
 @app.command("impact")

@@ -245,8 +245,9 @@ def create_server(workspace_file: str):
         ref_id: str = "",
         ref_ids: List[str] | None = None,
         limit: int = 20,
+        project: str = "",
     ):
-        """Unified knowledge lookup. Mode selects strategy: auto (system decides via lookup_hint), symbol (resolve name), code (keyword search), query (graph-aware multi-source), trace (cross-service by class/Feign/endpoint/MQ), chain (caller/callee analysis, use chain_direction), context (360-degree context for a service/symbol), contracts (list all Feign/API/MQ contracts), ref (resolve short memory reference IDs)."""
+        """Unified knowledge lookup. Mode selects strategy: auto (system decides via lookup_hint), symbol (resolve name), code (keyword search), query (graph-aware multi-source), trace (cross-service by class/Feign/endpoint/MQ), chain (caller/callee analysis, use chain_direction), context (360-degree context for a service/symbol), contracts (list all Feign/API/MQ contracts), ref (resolve short memory reference IDs). Use project to disambiguate when multiple modules contain the same symbol name."""
         wf = ctx.workspace_file
         if mode == "auto":
             hint = workspace_lookup_hint(wf, query=query, intent=intent, limit=limit)
@@ -255,11 +256,11 @@ def create_server(workspace_file: str):
             # Strip suffix for cleaner matching
             preferred_bare = [t.replace("_tool", "") for t in preferred]
             if "memory_symbol" in preferred_bare and (name or query):
-                return {"mode_used": "symbol", "result": memory_symbol(wf, name or query, limit)}
+                return {"mode_used": "symbol", "result": memory_symbol(wf, name or query, limit, project=project)}
             if "memory_search_code" in preferred_bare:
                 return {"mode_used": "code", "result": memory_search_code(wf, query, scope, limit)}
             if "memory_context" in preferred_bare and (name or query):
-                return {"mode_used": "context", "result": memory_context(wf, name or query, depth)}
+                return {"mode_used": "context", "result": memory_context(wf, name or query, depth, project=project)}
             if "workspace_trace" in preferred_bare and (entry or query):
                 return {"mode_used": "trace", "result": workspace_trace(wf, entry or query)}
             if "memory_callers" in preferred_bare and (symbol or query):
@@ -267,7 +268,7 @@ def create_server(workspace_file: str):
                 if len(matching_groups) == 1:
                     result = group_chain(matching_groups[0], symbol or query, direction="callers", depth=depth, limit=limit)
                     return {"mode_used": "chain-group", "result": result}
-                result = memory_callers(wf, symbol or query, depth, limit)
+                result = memory_callers(wf, symbol or query, depth, limit, project=project)
                 _annotate_phantom_nodes(result, wf)
                 if len(matching_groups) > 1:
                     return {"mode_used": "chain-callers", "result": result, "matching_groups": matching_groups, "_hint": f"Workspace 属于多个 group ({', '.join(matching_groups)})，请用 mc_admin(action='group_chain', group=...) 显式指定。"}
@@ -277,18 +278,18 @@ def create_server(workspace_file: str):
                 if len(matching_groups) == 1:
                     result = group_chain(matching_groups[0], symbol or query, direction="callees", depth=depth, limit=limit)
                     return {"mode_used": "chain-group", "result": result}
-                result = memory_callees(wf, symbol or query, depth, limit)
+                result = memory_callees(wf, symbol or query, depth, limit, project=project)
                 _annotate_phantom_nodes(result, wf)
                 if len(matching_groups) > 1:
                     return {"mode_used": "chain-callees", "result": result, "matching_groups": matching_groups, "_hint": f"Workspace 属于多个 group ({', '.join(matching_groups)})，请用 mc_admin(action='group_chain', group=...) 显式指定。"}
                 return {"mode_used": "chain-callees", "result": result}
-            return {"mode_used": "query", "result": memory_query_hybrid(wf, query, limit), "lookup_hint": hint}
+            return {"mode_used": "query", "result": memory_query_hybrid(wf, query, limit, project=project), "lookup_hint": hint}
         if mode == "symbol":
-            return {"mode": "symbol", "result": memory_symbol(wf, name or query, limit)}
+            return {"mode": "symbol", "result": memory_symbol(wf, name or query, limit, project=project)}
         if mode == "code":
             return {"mode": "code", "result": memory_search_code(wf, query, scope, limit)}
         if mode == "query":
-            return {"mode": "query", "result": memory_query_hybrid(wf, query, limit)}
+            return {"mode": "query", "result": memory_query_hybrid(wf, query, limit, project=project)}
         if mode == "trace":
             return {"mode": "trace", "result": workspace_trace(wf, entry or query)}
         if mode == "chain":
@@ -300,9 +301,9 @@ def create_server(workspace_file: str):
                 return {"mode": "chain-group", "result": result}
             if len(matching_groups) > 1:
                 if chain_direction == "callees":
-                    result = memory_callees(wf, symbol or query, depth, limit, edge_type_filter=cross_types)
+                    result = memory_callees(wf, symbol or query, depth, limit, edge_type_filter=cross_types, project=project)
                 else:
-                    result = memory_callers(wf, symbol or query, depth, limit, edge_type_filter=cross_types)
+                    result = memory_callers(wf, symbol or query, depth, limit, edge_type_filter=cross_types, project=project)
                 _annotate_phantom_nodes(result, wf)
                 return {
                     "mode": f"chain-{chain_direction}",
@@ -311,13 +312,13 @@ def create_server(workspace_file: str):
                     "_hint": f"Workspace 属于多个 group ({', '.join(matching_groups)})，请用 mc_admin(action='group_chain', group=...) 显式指定。",
                 }
             if chain_direction == "callees":
-                result = memory_callees(wf, symbol or query, depth, limit, edge_type_filter=cross_types)
+                result = memory_callees(wf, symbol or query, depth, limit, edge_type_filter=cross_types, project=project)
             else:
-                result = memory_callers(wf, symbol or query, depth, limit, edge_type_filter=cross_types)
+                result = memory_callers(wf, symbol or query, depth, limit, edge_type_filter=cross_types, project=project)
             _annotate_phantom_nodes(result, wf)
             return {"mode": f"chain-{chain_direction}", "result": result}
         if mode == "context":
-            return {"mode": "context", "result": memory_context(wf, name or query, depth)}
+            return {"mode": "context", "result": memory_context(wf, name or query, depth, project=project)}
         if mode == "contracts":
             return {"mode": "contracts", "result": memory_contracts(wf)}
         if mode == "ref":

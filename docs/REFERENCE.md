@@ -83,6 +83,8 @@
 - `ref`
 - `backend`
 
+`project` 参数：当同名符号存在于多个模块时，用 `project` 消歧。支持 FQN 自动推断（如 `cn.kaipuyun.cloud.openapi...ServiceImpl` → `ucap-cloud-open-api`）。
+
 ### `mc_analyze`
 
 常见 `depth`：

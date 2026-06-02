@@ -372,7 +372,8 @@ def _route_request(path: str, params: dict, default_workspace: str | None) -> di
         workspace = _require_workspace(params, default_workspace)
         query = _require_one(params, "text")
         limit = _parse_int(params, "limit", 20)
-        return memory_query_hybrid(workspace, query, limit=limit)
+        project = params.get("project", [""])[0]
+        return memory_query_hybrid(workspace, query, limit=limit, project=project)
     if path == "/workspace/search-code":
         workspace = _require_workspace(params, default_workspace)
         query = _require_one(params, "text")
@@ -389,19 +390,22 @@ def _route_request(path: str, params: dict, default_workspace: str | None) -> di
         workspace = _require_workspace(params, default_workspace)
         name = _require_one(params, "name")
         limit = _parse_int(params, "limit", 10)
-        return memory_symbol(workspace, name, limit=limit)
+        project = params.get("project", [""])[0]
+        return memory_symbol(workspace, name, limit=limit, project=project)
     if path == "/workspace/callers":
         workspace = _require_workspace(params, default_workspace)
         symbol = _require_one(params, "symbol")
         depth = _parse_int(params, "depth", 2)
         limit = _parse_int(params, "limit", 80, max_val=500)
-        return memory_callers(workspace, symbol, depth=depth, limit=limit)
+        project = params.get("project", [""])[0]
+        return memory_callers(workspace, symbol, depth=depth, limit=limit, project=project)
     if path == "/workspace/callees":
         workspace = _require_workspace(params, default_workspace)
         symbol = _require_one(params, "symbol")
         depth = _parse_int(params, "depth", 2)
         limit = _parse_int(params, "limit", 80, max_val=500)
-        return memory_callees(workspace, symbol, depth=depth, limit=limit)
+        project = params.get("project", [""])[0]
+        return memory_callees(workspace, symbol, depth=depth, limit=limit, project=project)
     if path == "/workspace/plan-change":
         workspace = _require_workspace(params, default_workspace)
         target = _require_one(params, "target")

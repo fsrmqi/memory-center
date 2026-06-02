@@ -254,8 +254,8 @@ def _filter_contracts_by_query(contracts: list, query: str, intent: str) -> list
     return fallback
 
 
-def memory_context(workspace_file: str | Path, name: str, max_depth: int = 2) -> Dict[str, Any]:
-    lookup = memory_query_hybrid(workspace_file, name, limit=8)
+def memory_context(workspace_file: str | Path, name: str, max_depth: int = 2, project: str = "") -> Dict[str, Any]:
+    lookup = memory_query_hybrid(workspace_file, name, limit=8, project=project)
     matches = [item.get("node", {}) for item in lookup.get("matches", []) if item.get("node")]
     if not matches:
         return {"name": name, "found": False, "matches": [], "lookup": _build_lookup_payload(lookup)}
