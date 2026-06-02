@@ -304,7 +304,23 @@ def _merge_retrieval_results(
     config: HybridRetrievalConfig,
     intent: Dict[str, Any],
 ) -> List[RetrievalResult]:
-    """Merge results from all retrieval sources using RRF-inspired scoring."""
+    """Merge results from all retrieval sources using RRF-inspired scoring.
+
+    Each source's scores are normalized to [0, 1] before weighting,
+    so no single source can dominate purely by scale.
+    """
+    def _normalize(hits: List[RetrievalResult]) -> List[RetrievalResult]:
+        if not hits:
+            return hits
+        max_score = max(h.score for h in hits) or 1.0
+        for h in hits:
+            h.score = h.score / max_score
+        return hits
+
+    graph_hits = _normalize(graph_hits)
+    sparse_hits = _normalize(sparse_hits)
+    semantic_hits = _normalize(semantic_hits)
+
     merged: Dict[str, RetrievalResult] = {}
 
     # Process graph hits
