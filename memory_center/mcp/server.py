@@ -258,7 +258,7 @@ def create_server(workspace_file: str):
             if "memory_symbol" in preferred_bare and (name or query):
                 return {"mode_used": "symbol", "result": memory_symbol(wf, name or query, limit, project=project)}
             if "memory_search_code" in preferred_bare:
-                return {"mode_used": "code", "result": memory_search_code(wf, query, scope, limit)}
+                return {"mode_used": "code", "result": memory_search_code(wf, query, scope, limit, project=project)}
             if "memory_context" in preferred_bare and (name or query):
                 return {"mode_used": "context", "result": memory_context(wf, name or query, depth, project=project)}
             if "workspace_trace" in preferred_bare and (entry or query):
@@ -287,7 +287,7 @@ def create_server(workspace_file: str):
         if mode == "symbol":
             return {"mode": "symbol", "result": memory_symbol(wf, name or query, limit, project=project)}
         if mode == "code":
-            return {"mode": "code", "result": memory_search_code(wf, query, scope, limit)}
+            return {"mode": "code", "result": memory_search_code(wf, query, scope, limit, project=project)}
         if mode == "query":
             return {"mode": "query", "result": memory_query_hybrid(wf, query, limit, project=project)}
         if mode == "trace":

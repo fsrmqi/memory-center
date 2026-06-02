@@ -24,6 +24,45 @@ from .common import (
 )
 
 
+def _project_matches(query_project: str, item_project: str) -> bool:
+    """Check if a project query matches an item's project name.
+
+    Uses normalized matching: splits on '-' and '_', then checks if the
+    query matches the full name, any component (≥4 chars), or a concatenation
+    of adjacent components.  Short components like 'api', 'back', 'web' are
+    too generic to match alone — they must match the full name or a
+    concatenated segment.
+    """
+    if not query_project or not item_project:
+        return False
+    q = query_project.lower().strip()
+    p = item_project.lower().strip()
+    if q == p:
+        return True
+    # Common infra/platform components that are too generic to match alone
+    _GENERIC_COMPONENTS = {
+        "api", "app", "web", "back", "front", "open", "cloud", "core",
+        "base", "common", "service", "biz", "lib", "sdk", "data",
+        "test", "main", "src", "res", "config", "util", "utils",
+    }
+    p_parts = p.replace("-", "_").split("_")
+    # Full component match — only if component is specific enough
+    if q in p_parts and q not in _GENERIC_COMPONENTS:
+        return True
+    # Concatenated adjacent component match (e.g. 'openapi' matches 'open_api')
+    for i in range(len(p_parts)):
+        for j in range(i + 2, min(i + 5, len(p_parts) + 1)):
+            if "".join(p_parts[i:j]) == q:
+                return True
+    # Hyphenated query match (e.g. 'open-api' matches 'open_api')
+    if "-" in q:
+        q_parts = q.replace("-", "_").split("_")
+        for i in range(len(p_parts)):
+            if p_parts[i:i + len(q_parts)] == q_parts:
+                return True
+    return False
+
+
 def memory_query(workspace_file: str | Path, query: str, limit: int = 20, node_types: List[str] | None = None, alpha: float | None = None) -> Dict[str, Any]:
     config, store = load_context(workspace_file)
     with GraphStore(store.graph_db_path) as graph:
@@ -101,7 +140,7 @@ def memory_query_hybrid(workspace_file: str | Path, query: str, limit: int = 20,
     # Project filtering: boost results from the specified project
     if project:
         results = result.get("results", [])
-        project_results = [r for r in results if project in (r.get("node", {}).get("project") or "")]
+        project_results = [r for r in results if _project_matches(project, r.get("node", {}).get("project", ""))]
         if project_results:
             # Boost project-matched results to the top
             for r in project_results:
@@ -299,14 +338,14 @@ def memory_symbol(workspace_file: str | Path, name: str, limit: int = 10, projec
 
     # If inferred_project is known but no match found in that project,
     # try a direct graph lookup by class name + project
-    if inferred_project and not any(inferred_project in (m.get("project") or "") for m in matches):
+    if inferred_project and not any(_project_matches(inferred_project, m.get("project", "")) for m in matches):
         from ..graph import GraphStore
         store = load_context(workspace_file)[1]
         with GraphStore(store.graph_db_path) as g:
             # Extract class name from FQN (last segment)
             class_name = name.replace("#", ".").split(".")[-1]
             direct = g.find_nodes(class_name, types=["Class"], limit=50)
-            project_nodes = [n for n in direct if inferred_project in (n.get("project") or "")]
+            project_nodes = [n for n in direct if _project_matches(inferred_project, n.get("project", ""))]
             if project_nodes:
                 # Prepend project-matched nodes
                 lookup.setdefault("matches", [])
@@ -318,12 +357,12 @@ def memory_symbol(workspace_file: str | Path, name: str, limit: int = 10, projec
 
     # If project is known, filter ALL results to that project
     if inferred_project:
-        project_matches = [m for m in matches if inferred_project in (m.get("project") or "")]
+        project_matches = [m for m in matches if _project_matches(inferred_project, m.get("project", ""))]
         if project_matches:
             matches = project_matches
         # Also filter the lookup matches list to stay consistent
         lookup_matches = lookup.get("matches", [])
-        project_lookup = [m for m in lookup_matches if inferred_project in ((m.get("node") or {}).get("project") or "")]
+        project_lookup = [m for m in lookup_matches if _project_matches(inferred_project, (m.get("node") or {}).get("project", ""))]
         if project_lookup:
             lookup["matches"] = project_lookup
 
@@ -481,14 +520,13 @@ def memory_search_code(workspace_file: str | Path, query: str, scope: str = "", 
         key = item.get("file", "")
         symbol_entries.setdefault(key, []).append(item)
     scope_l = scope.lower().strip()
-    project_l = project.lower().strip()
     hits: List[Dict[str, Any]] = []
     for item in files:
         path = item.get("path", "")
         if scope_l and scope_l not in path.lower():
             continue
         item_project = item.get("project", "")
-        if project_l and project_l not in item_project.lower():
+        if project and not _project_matches(project, item_project):
             continue
         text = f"{path} {item.get('project', '')} {item.get('service_name', '')}".lower()
         file_symbols = symbol_entries.get(path, [])
