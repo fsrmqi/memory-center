@@ -533,7 +533,7 @@ def _rrf(rank: int, k: int = 60) -> float:
 
 
 _INBOUND_PREFERRED = {"CALLS_METHOD", "CALLS_SERVICE", "IMPLEMENTS_FEIGN", "CONSUMES_TOPIC", "READS_FIELD", "READS_CONFIG", "INJECTS_BEAN", "IMPORTS"}
-_OUTBOUND_PREFERRED = {"HANDLES_ENDPOINT", "PRODUCES_TOPIC", "CALLS_METHOD", "CALLS_SERVICE", "IMPLEMENTS_FEIGN"}
+_OUTBOUND_PREFERRED = {"HANDLES_ENDPOINT", "PRODUCES_TOPIC", "CALLS_METHOD", "CALLS_SERVICE", "IMPLEMENTS_FEIGN", "INJECTS_BEAN"}
 _ALL_PREFERRED = _INBOUND_PREFERRED | _OUTBOUND_PREFERRED
 
 _NOISE_METHODS = {
@@ -559,7 +559,16 @@ def _is_noise_call(edge: Dict[str, Any]) -> bool:
         return False
     name = edge.get("target", {}).get("name", "")
     short = name.split(".")[-1] if "." in name else name
-    return short in _NOISE_METHODS
+    if short in _NOISE_METHODS:
+        return True
+    # JavaBean getter/setter/boolean pattern: getFoo, setFoo, isFoo, hasFoo
+    # Only match short names (no class prefix) — prefixed names are real calls
+    if "." not in name and len(short) > 3:
+        if short.startswith(("get", "set")) and len(short) > 3 and short[3:4].isupper():
+            return True
+        if short.startswith(("is", "has")) and len(short) > 2 and short[2:3].isupper():
+            return True
+    return False
 
 
 def _filter_call_edges(edges: List[Dict[str, Any]], direction: str) -> List[Dict[str, Any]]:
@@ -577,7 +586,26 @@ def _filter_call_edges(edges: List[Dict[str, Any]], direction: str) -> List[Dict
             item.get("type", ""),
         )
     )
-    return filtered
+    # Deduplicate: keep one entry per method name, prefer class-prefixed and higher confidence
+    seen_names: Dict[str, bool] = {}
+    deduped: List[Dict[str, Any]] = []
+    for item in filtered:
+        tgt = item.get("target", {})
+        name = tgt.get("name", "")
+        short = name.split(".")[-1] if "." in name else name
+        has_class = "." in name
+        if short in seen_names:
+            # Keep the one with class prefix if the existing one doesn't have it
+            if has_class and not seen_names[short]:
+                # Replace: find and remove the old one
+                deduped = [d for d in deduped if (d.get("target", {}).get("name", "").split(".")[-1] if "." in d.get("target", {}).get("name", "") else d.get("target", {}).get("name", "")) != short]
+                deduped.append(item)
+                seen_names[short] = True
+            # Otherwise skip (already have a better or equal entry)
+        else:
+            seen_names[short] = has_class
+            deduped.append(item)
+    return deduped
 
 
 def _build_progressive_levels(summary: Dict[str, Any], evidence: Dict[str, Any], detail: Dict[str, Any]) -> Dict[str, Any]:
