@@ -8,7 +8,8 @@ from memory_center.core.indexer import reindex_workspace
 from memory_center.core.orchestrator import (
     memory_callers, memory_callees, memory_context, memory_contracts,
     memory_detect_changes, memory_impact, memory_plan_change, memory_query,
-    memory_ref_get, memory_search_code, memory_symbol, memory_verify_checklist,
+    memory_query_hybrid, memory_ref_get, memory_search_code, memory_symbol,
+    memory_verify_checklist,
     workspace_check_contract, workspace_check_rules, workspace_end_session,
     workspace_handoff_packet, workspace_log_session_event, workspace_next_actions,
     workspace_recent_evidence, workspace_resume_packet, workspace_sniff,
@@ -114,6 +115,35 @@ def test_mc_lookup_code_mode_passes_project_filter(tmp_path: Path):
     r = memory_search_code(wf, "ArticleFeignClient", "", limit=20, project="task-service")
     assert r["hits"]
     assert all("task-service" in (item.get("project") or "") for item in r["hits"])
+
+
+def test_mc_lookup_auto_mode_project_filter(tmp_path: Path):
+    """mc_lookup(mode='auto') with project should return only matching project results."""
+    wf = _setup_workspace(tmp_path)
+    r = memory_query_hybrid(wf, "ArticleFeignClient", limit=10, project="task-service")
+    assert r["results"]
+    assert all("task-service" in (item.get("node", {}).get("project") or "") for item in r["results"])
+    # P1: summary must be consistent with filtered results
+    assert r["total_found"] == len(r["results"])
+    assert r["retrieval_summary"]["total_results"] == len(r["results"])
+    assert r["progressive"]["level_1_quick"]["count"] == len(r["results"])
+
+
+def test_mc_lookup_symbol_mode_project_filter(tmp_path: Path):
+    """mc_lookup(mode='symbol') with project should return only matching project results."""
+    wf = _setup_workspace(tmp_path)
+    r = memory_symbol(wf, "ArticleFeignClient", limit=10, project="task-service")
+    assert r["found"] is True
+    assert "task-service" in (r["best_match"].get("project") or "")
+    for m in r.get("matches", []):
+        assert "task-service" in ((m.get("node") or {}).get("project") or "")
+
+
+def test_mc_lookup_chain_mode_project_filter(tmp_path: Path):
+    """mc_lookup(mode='chain') with project should return results for that project."""
+    wf = _setup_workspace(tmp_path)
+    r = memory_callers(wf, "ArticleFeignClient", depth=2, limit=10, project="task-service")
+    assert r["found"] is True
 
 
 def test_mc_analyze_depth_levels(tmp_path: Path):

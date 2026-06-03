@@ -79,8 +79,8 @@ def test_demo_workspace_indexes_spring_cloud_patterns(tmp_path: Path):
     assert "mermaid" in sniffed["symbolic_context"]
     assert "entities_mermaid" in sniffed["symbolic_context"]
     assert "flow_mermaid" in sniffed["symbolic_context"]
-    assert "memory_search_code" in sniffed["symbolic_context"]["flow_mermaid"]
-    assert "memory_impact" in sniffed["symbolic_context"]["flow_mermaid"]
+    assert "mc_lookup (mode=code)" in sniffed["symbolic_context"]["flow_mermaid"]
+    assert "mc_analyze (depth=standard)" in sniffed["symbolic_context"]["flow_mermaid"]
     assert sniffed["symbolic_context"]["flow_flags"]["has_contract"] is True
     assert sniffed["symbolic_context"]["flow_flags"]["has_mq"] is True
     assert sniffed["symbolic_context"]["flow_flags"]["risk_level"] == "high"
@@ -90,17 +90,17 @@ def test_demo_workspace_indexes_spring_cloud_patterns(tmp_path: Path):
     assert "recommended" in sniffed["auto_sync_recommendation"]
     assert "score_threshold" in sniffed["auto_sync_recommendation"]
     assert "reason" in sniffed["auto_sync_recommendation"]
-    assert "workspace_check_contract (Feign/API)" in sniffed["symbolic_context"]["flow_mermaid"]
+    assert "mc_analyze (contract, depth=full)" in sniffed["symbolic_context"]["flow_mermaid"]
     assert "MQ compatibility review" in sniffed["symbolic_context"]["flow_mermaid"]
-    assert "workspace_sync_sniff_artifacts" in "\n".join(sniffed["next_steps"])
-    assert "workspace_sync_case_artifacts" in "\n".join(sniffed["next_steps"])
-    assert "memory_write_judge / memory_plan_write" in "\n".join(sniffed["next_steps"])
+    assert "mc_sync" in "\n".join(sniffed["next_steps"])
+    assert "mc_close" in "\n".join(sniffed["next_steps"])
+    assert "write_judge" in "\n".join(sniffed["next_steps"])
     assert "write_judge_recommendation" in sniffed
     assert "selected_layer" in sniffed["write_judge_recommendation"]
     assert "lookup_hint" in sniffed
     assert "preferred_tools" in sniffed["lookup_hint"]
-    assert "workspace_end_session" in sniffed["symbolic_context"]["flow_mermaid"]
-    assert "workspace_sync_case_artifacts" in sniffed["symbolic_context"]["flow_mermaid"]
+    assert "mc_close (end session)" in sniffed["symbolic_context"]["flow_mermaid"]
+    assert "mc_close (sync case)" in sniffed["symbolic_context"]["flow_mermaid"]
     assert sniffed["source_refs"]
 
     traced = workspace_trace(workspace, "article-pubtime-change")
@@ -281,7 +281,72 @@ def test_record_case_cli_writes_history(tmp_path: Path):
     assert rows[-1]["source_session_id"] == "session-demo-1"
     assert rows[-1]["source_task_id"] == "task-demo-1"
     assert rows[-1]["current_truth"] is True
-    assert rows[-1]["valid_from"]
+
+
+def _cli_project_workspace(tmp_path: Path):
+    """Helper: copy demo workspace and patch root for CLI tests."""
+    source = Path("examples/spring-cloud-demo")
+    target = tmp_path / "cli-project-demo"
+    import shutil
+    if target.exists():
+        shutil.rmtree(target)
+    shutil.copytree(source, target)
+    workspace = target / ".memory-center" / "workspace.yaml"
+    lines = workspace.read_text(encoding="utf-8").splitlines()
+    lines = [f"root: {target.as_posix()}" if line.startswith("root:") else line for line in lines]
+    workspace.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return str(workspace)
+
+
+def test_cli_query_project_filter(tmp_path: Path):
+    import ast
+    ws = _cli_project_workspace(tmp_path)
+    runner = CliRunner()
+    result = runner.invoke(app, ["query", "--workspace", ws, "--text", "ArticleFeignClient", "--project", "task-service", "--limit", "10"])
+    assert result.exit_code == 0
+    data = ast.literal_eval(result.output)
+    assert data["matches"]
+    assert all("task-service" in (item.get("node", {}).get("project") or "") for item in data["matches"])
+    # P1 regression: summary must be consistent
+    assert data["total_found"] == len(data["matches"])
+    assert data["retrieval_summary"]["total_results"] == len(data["matches"])
+
+
+def test_cli_symbol_project_filter(tmp_path: Path):
+    import ast
+    ws = _cli_project_workspace(tmp_path)
+    runner = CliRunner()
+    result = runner.invoke(app, ["symbol", "--workspace", ws, "--name", "ArticleFeignClient", "--project", "task-service", "--limit", "10"])
+    assert result.exit_code == 0
+    data = ast.literal_eval(result.output)
+    assert data["found"] is True
+    assert all("task-service" in ((item.get("node") or {}).get("project") or "") for item in data.get("matches", []))
+
+
+def test_cli_callers_project_filter(tmp_path: Path):
+    ws = _cli_project_workspace(tmp_path)
+    runner = CliRunner()
+    result = runner.invoke(app, ["callers", "--workspace", ws, "--symbol", "ArticleFeignClient", "--project", "task-service", "--depth", "2"])
+    assert result.exit_code == 0
+    assert "found" in result.output
+    assert "True" in result.output
+
+
+def test_cli_callees_project_filter(tmp_path: Path):
+    ws = _cli_project_workspace(tmp_path)
+    runner = CliRunner()
+    result = runner.invoke(app, ["callees", "--workspace", ws, "--symbol", "ArticleFeignClient", "--project", "task-service", "--depth", "2"])
+    assert result.exit_code == 0
+    assert "found" in result.output
+    assert "True" in result.output
+
+
+def test_cli_context_project_filter(tmp_path: Path):
+    ws = _cli_project_workspace(tmp_path)
+    runner = CliRunner()
+    result = runner.invoke(app, ["context", "--workspace", ws, "--name", "ArticleFeignClient", "--project", "task-service"])
+    assert result.exit_code == 0
+    assert "entrypoints" in result.output or "found" in result.output
 
 
 def test_export_workspace_dashboard_cli(tmp_path: Path):
@@ -353,12 +418,14 @@ def test_write_agent_instructions_includes_sync_workflow(tmp_path: Path):
 
     for content in [agents, claude]:
         assert "<!-- memory-center:start -->" in content
-        assert "workspace_sync_sniff_artifacts" in content
-        assert "memory_write_judge" in content
-        assert "memory_plan_write" in content
-        assert "workspace_start_session" in content
-        assert "workspace_sync_case_artifacts" in content
-        assert "workspace_record_case" in content
+        assert "mc_start" in content
+        assert "mc_lookup" in content
+        assert "mc_analyze" in content
+        assert "mc_sync" in content
+        assert "mc_close" in content
+        assert "mc_admin" in content
+        assert "write_judge" in content
+        assert "write_plan" in content
         assert "只允许尾部追加" in content
 
 

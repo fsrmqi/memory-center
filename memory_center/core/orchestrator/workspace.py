@@ -196,13 +196,13 @@ def workspace_sniff(
         },
         "symbolic_context": _build_sniff_symbolic_context(intent, sniff_risk_level, matched_services, matched_files, related_feigns, related_apis, related_mq, related_cases),
         "next_steps": [
-            "先调用 memory_search_code 缩小入口范围，再用 memory_symbol 定位关键符号",
-            "对关键符号调用 memory_callers / memory_callees 理清上下游调用链",
-            "先调用 memory_write_judge / memory_plan_write 判断信息应写入 L0/L1/L2/L3，再执行对应写入工具",
-            "如果这是持续任务或多人协作任务，优先调用 workspace_sync_sniff_artifacts 把 context/plan 写入任务空间",
-            "改动前调用 memory_plan_change 与 memory_verify_checklist，明确风险与验证项",
-            "如果涉及 DTO/Feign/MQ Message，再调用 workspace_check_contract",
-            "长任务建议同时开启 workspace_start_session / workspace_log_session_event，结束后再调用 workspace_sync_case_artifacts 与 workspace_record_case",
+            '先用 mc_lookup(query="...", mode="code") 缩小入口范围，再用 mc_lookup(query="...", mode="symbol") 定位关键符号',
+            '对关键符号用 mc_lookup(query="...", mode="chain", chain_direction="callers/callees") 理清上下游调用链',
+            '先用 mc_admin(action="write_judge") / mc_admin(action="write_plan") 判断信息应写入 L0/L1/L2/L3，再执行对应写入',
+            '如果这是持续任务或多人协作任务，用 mc_sync(intent="...", auto_sync_mode="balanced") 把 context/plan 写入任务空间',
+            '改动前用 mc_analyze(target="...", depth="standard/full") 明确风险与验证项',
+            '如果涉及 DTO/Feign/MQ Message，用 mc_analyze(target="...", depth="full", contract_file="...")',
+            '长任务建议用 mc_admin(action="session_log", ...) 记录关键步骤，结束后用 mc_close(session_id="...", record_case=True) 沉淀案例',
         ],
     }
     if _is_compact_view(view):
@@ -655,38 +655,38 @@ def _build_sniff_symbolic_context(
     has_config = any(token in intent.lower() for token in ["config", "nacos", "bootstrap", "application.yml", "application.yaml"])
     flow_lines = [
         "flowchart TD",
-        '  T["Task Intent"] --> S["memory_search_code"]',
-        '  S --> Y["memory_symbol"]',
-        '  Y --> C["memory_callers / memory_callees"]',
+        '  T["Task Intent"] --> S["mc_lookup (mode=code)"]',
+        '  S --> Y["mc_lookup (mode=symbol)"]',
+        '  Y --> C["mc_lookup (mode=chain)"]',
     ]
     if risk_level == "high":
         flow_lines.extend(
             [
-                '  C --> I["memory_impact"]',
-                '  I --> P["memory_plan_change"]',
-                '  P --> V["memory_verify_checklist"]',
+                '  C --> I["mc_analyze (depth=standard)"]',
+                '  I --> P["mc_analyze (depth=full)"]',
+                '  P --> V["mc_analyze (checklist)"]',
             ]
         )
     elif risk_level == "medium":
         flow_lines.extend(
             [
-                '  C --> P["memory_plan_change"]',
-                '  P --> V["memory_verify_checklist"]',
+                '  C --> P["mc_analyze (depth=standard)"]',
+                '  P --> V["mc_analyze (checklist)"]',
             ]
         )
     else:
-        flow_lines.append('  C --> V["memory_verify_checklist"]')
+        flow_lines.append('  C --> V["mc_analyze (quick)"]')
     if has_contract:
-        flow_lines.append(f'  {"P" if risk_level != "low" else "V"} --> K["workspace_check_contract (Feign/API)"]')
-        flow_lines.append('  K --> R["workspace_check_rules"]')
+        flow_lines.append(f'  {"P" if risk_level != "low" else "V"} --> K["mc_analyze (contract, depth=full)"]')
+        flow_lines.append('  K --> R["mc_analyze (rules)"]')
     if has_mq:
         flow_lines.append(f'  {"P" if risk_level != "low" else "V"} --> M["MQ compatibility review"]')
-        flow_lines.append('  M --> R["workspace_check_rules"]')
+        flow_lines.append('  M --> R["mc_analyze (rules)"]')
     if has_config:
         flow_lines.append(f'  {"P" if risk_level != "low" else "V"} --> G["Config diff review"]')
-        flow_lines.append('  G --> R["workspace_check_rules"]')
+        flow_lines.append('  G --> R["mc_analyze (rules)"]')
     if not (has_contract or has_mq or has_config):
-        flow_lines.append(f'  {"P" if risk_level != "low" else "V"} --> R["workspace_check_rules"]')
+        flow_lines.append(f'  {"P" if risk_level != "low" else "V"} --> R["mc_analyze (rules)"]')
     if has_cases:
         flow_lines.append('  R --> H["Review historical cases"]')
         flow_lines.append('  H --> E["Edit & Test"]')
@@ -694,9 +694,9 @@ def _build_sniff_symbolic_context(
         flow_lines.append('  R --> E["Edit & Test"]')
     flow_lines.extend(
         [
-            '  E --> S["workspace_end_session"]',
-            '  S --> Y["workspace_sync_case_artifacts"]',
-            '  Y --> W["workspace_record_case"]',
+            '  E --> S2["mc_close (end session)"]',
+            '  S2 --> Y2["mc_close (sync case)"]',
+            '  Y2 --> W["mc_close (record case)"]',
         ]
     )
     return {

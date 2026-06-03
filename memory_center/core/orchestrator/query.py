@@ -24,6 +24,86 @@ from .common import (
 )
 
 
+def _rebuild_summary_after_filter(filtered: list, intent: dict) -> dict:
+    """Rebuild total_found / returned / retrieval_summary / progressive from filtered dicts.
+
+    After project filtering narrows ``result["results"]``, the summary fields
+    produced by ``hybrid_retrieve`` are stale (they reflect the pre-filter set).
+    This rebuilds them so callers see consistent numbers.
+    """
+    source_counts = {"graph": 0, "sparse": 0, "semantic": 0}
+    type_counts: Dict[str, int] = {}
+    for item in filtered:
+        for src in item.get("sources", []):
+            if "graph" in src:
+                source_counts["graph"] += 1
+            elif "sparse" in src or "fts" in src:
+                source_counts["sparse"] += 1
+            elif "semantic" in src:
+                source_counts["semantic"] += 1
+        node_type = item.get("node", {}).get("type", "unknown")
+        type_counts[node_type] = type_counts.get(node_type, 0) + 1
+
+    retrieval_summary = {
+        "total_results": len(filtered),
+        "source_distribution": source_counts,
+        "type_distribution": type_counts,
+        "primary_intent": intent.get("primary_intent", "general"),
+        "is_cross_service": intent.get("is_cross_service", False),
+        "avg_score": round(sum(r.get("score", 0) for r in filtered) / max(len(filtered), 1), 4),
+        "exact_matches": source_counts.get("graph", 0),
+        "semantic_matches": source_counts.get("semantic", 0),
+    }
+
+    top_nodes = filtered[:3]
+    primary_intent = intent.get("primary_intent", "general")
+    next_actions: list = []
+    if not filtered:
+        next_actions.append("尝试更具体的查询词")
+    elif primary_intent == "feign":
+        next_actions.extend(["调用 mc_lookup(mode='context') 查看 Feign 客户端详情", "调用 mc_lookup(mode='chain') 查找调用方"])
+    elif primary_intent == "mq":
+        next_actions.extend(["调用 mc_lookup(mode='context') 查看 Topic/Consumer 详情"])
+    elif primary_intent == "endpoint":
+        next_actions.extend(["调用 mc_lookup(mode='context') 查看 API 端点详情"])
+    else:
+        next_actions.extend(["对 top 结果调用 mc_lookup(mode='context') 深挖", "修改代码前调用 mc_analyze 检查影响面"])
+
+    progressive = {
+        "level_1_quick": {
+            "count": len(filtered),
+            "top_matches": [
+                {
+                    "type": r.get("node", {}).get("type", ""),
+                    "name": r.get("node", {}).get("name", ""),
+                    "project": r.get("node", {}).get("project", ""),
+                    "score": round(r.get("score", 0), 2),
+                }
+                for r in top_nodes
+            ],
+            "intent": primary_intent,
+        },
+        "level_2_details": {
+            "sources_breakdown": {
+                "graph_exact": sum(1 for r in filtered if "graph_exact" in r.get("sources", [])),
+                "graph_token": sum(1 for r in filtered if "graph_token" in r.get("sources", [])),
+                "sparse_fts": sum(1 for r in filtered if "sparse_fts" in r.get("sources", [])),
+                "semantic": sum(1 for r in filtered if "semantic" in r.get("sources", [])),
+            },
+            "cross_workspace_count": sum(1 for r in filtered if r.get("cross_workspace_refs")),
+            "has_chain_results": intent.get("is_chain_query", False),
+        },
+        "level_3_next_actions": next_actions,
+    }
+
+    return {
+        "total_found": len(filtered),
+        "returned": len(filtered),
+        "retrieval_summary": retrieval_summary,
+        "progressive": progressive,
+    }
+
+
 def _project_matches(query_project: str, item_project: str) -> bool:
     """Check if a project query matches an item's project name.
 
@@ -148,14 +228,12 @@ def memory_query_hybrid(workspace_file: str | Path, query: str, limit: int = 20,
                 r["_project_boost"] = True
             project_results.sort(key=lambda x: x.get("score", 0), reverse=True)
             result["results"] = project_results
-
-            semantic_hits = result.get("semantic_hits", [])
-            if semantic_hits:
-                result["semantic_hits"] = [
-                    hit for hit in semantic_hits
-                    if _project_matches(project, (hit.get("node", {}) or {}).get("project", ""))
-                    or _project_matches(project, hit.get("project", ""))
-                ]
+            # Rebuild summary fields so they match the filtered result set
+            rebuild = _rebuild_summary_after_filter(project_results, intent)
+            result["total_found"] = rebuild["total_found"]
+            result["returned"] = rebuild["returned"]
+            result["retrieval_summary"] = rebuild["retrieval_summary"]
+            result["progressive"] = rebuild["progressive"]
 
     # Enrich with workspace context
     result["workspace"] = config_obj[0].workspace

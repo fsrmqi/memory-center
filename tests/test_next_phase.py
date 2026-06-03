@@ -848,6 +848,28 @@ class TestRetrievalBehavior:
         assert result["matches"]
         assert all("task-service" in (item.get("node", {}).get("project") or "") for item in result["matches"])
 
+    def test_memory_query_hybrid_project_filter_rebuilds_summary(self):
+        """P1 regression: summary fields must be consistent with filtered results."""
+        from memory_center.core.orchestrator import memory_query_hybrid
+        result = memory_query_hybrid(self.workspace, "ArticleFeignClient", limit=10, project="task-service")
+        filtered_count = len(result["results"])
+        assert filtered_count > 0, "project filter should return results"
+        # total_found / returned must match filtered count
+        assert result["total_found"] == filtered_count, f"total_found={result['total_found']} != len(results)={filtered_count}"
+        assert result["returned"] == filtered_count, f"returned={result['returned']} != len(results)={filtered_count}"
+        # retrieval_summary must reflect filtered set
+        summary = result["retrieval_summary"]
+        assert summary["total_results"] == filtered_count
+        assert summary["type_distribution"]
+        assert summary["avg_score"] > 0
+        # progressive must reflect filtered set
+        prog = result["progressive"]
+        assert prog["level_1_quick"]["count"] == filtered_count
+        assert len(prog["level_1_quick"]["top_matches"]) <= min(filtered_count, 3)
+        # top_matches must all be task-service
+        for m in prog["level_1_quick"]["top_matches"]:
+            assert "task-service" in (m.get("project") or ""), f"top_match project={m.get('project')} is not task-service"
+
     def test_memory_symbol_project_filters_lookup_candidates(self):
         from memory_center.core.orchestrator import memory_symbol
         result = memory_symbol(self.workspace, "ArticleFeignClient", limit=10, project="task-service")
