@@ -109,6 +109,13 @@ def test_mc_lookup_modes_direct(tmp_path: Path):
     assert r
 
 
+def test_mc_lookup_code_mode_passes_project_filter(tmp_path: Path):
+    wf = _setup_workspace(tmp_path)
+    r = memory_search_code(wf, "ArticleFeignClient", "", limit=20, project="task-service")
+    assert r["hits"]
+    assert all("task-service" in (item.get("project") or "") for item in r["hits"])
+
+
 def test_mc_analyze_depth_levels(tmp_path: Path):
     wf = _setup_workspace(tmp_path)
     # quick: impact only

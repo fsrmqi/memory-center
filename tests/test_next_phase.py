@@ -840,6 +840,21 @@ class TestRetrievalBehavior:
         entrypoints = lookup.get("entrypoints", [])
         assert isinstance(entrypoints, list)
 
+    def test_memory_query_hybrid_project_filters_results(self):
+        from memory_center.core.orchestrator import memory_query_hybrid
+        result = memory_query_hybrid(self.workspace, "ArticleFeignClient", limit=10, project="task-service")
+        assert result["results"]
+        assert all("task-service" in (item.get("node", {}).get("project") or "") for item in result["results"])
+        assert result["matches"]
+        assert all("task-service" in (item.get("node", {}).get("project") or "") for item in result["matches"])
+
+    def test_memory_symbol_project_filters_lookup_candidates(self):
+        from memory_center.core.orchestrator import memory_symbol
+        result = memory_symbol(self.workspace, "ArticleFeignClient", limit=10, project="task-service")
+        assert result["found"] is True
+        assert "task-service" in (result["best_match"].get("project") or "")
+        assert all("task-service" in ((item.get("node") or {}).get("project") or "") for item in result.get("matches", []))
+
     def test_memory_discover_sync_progress_is_executable_shape(self):
         from memory_center.core.orchestrator.query import memory_discover
         result = memory_discover(self.workspace, limit=20)

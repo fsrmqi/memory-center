@@ -1196,17 +1196,20 @@ def test_http_bridge_routes(tmp_path: Path):
         assert sniff_sync["synced"] is True
         assert sniff_sync["auto_sync_mode"] == "aggressive"
 
-        query = json.loads(urlopen(f"{base}/workspace/query?text=ArticleFeignClient").read().decode("utf-8"))
+        query = json.loads(urlopen(f"{base}/workspace/query?text=ArticleFeignClient&project=task-service").read().decode("utf-8"))
         assert query["matches"]
         assert query["retrieval_summary"]["exact_matches"] >= 1
         assert query["retrieval_summary"]["semantic_matches"] >= 1
-        search = json.loads(urlopen(f"{base}/workspace/search-code?text=ArticleFeignClient&scope=task-service").read().decode("utf-8"))
+        assert all("task-service" in (item.get("node", {}).get("project") or "") for item in query["matches"])
+        search = json.loads(urlopen(f"{base}/workspace/search-code?text=ArticleFeignClient&scope=task-service&project=task-service").read().decode("utf-8"))
         assert search["hits"]
-        symbol = json.loads(urlopen(f"{base}/workspace/symbol?name=ArticleFeignClient").read().decode("utf-8"))
+        assert all("task-service" in (item.get("project") or "") for item in search["hits"])
+        symbol = json.loads(urlopen(f"{base}/workspace/symbol?name=ArticleFeignClient&project=task-service").read().decode("utf-8"))
         assert symbol["found"] is True
-        callers = json.loads(urlopen(f"{base}/workspace/callers?symbol=ArticleFeignClient&depth=2").read().decode("utf-8"))
+        assert all("task-service" in ((item.get("node") or {}).get("project") or "") for item in symbol.get("matches", []))
+        callers = json.loads(urlopen(f"{base}/workspace/callers?symbol=ArticleFeignClient&depth=2&project=task-service").read().decode("utf-8"))
         assert callers["found"] is True
-        callees = json.loads(urlopen(f"{base}/workspace/callees?symbol=ArticleFeignClient&depth=2").read().decode("utf-8"))
+        callees = json.loads(urlopen(f"{base}/workspace/callees?symbol=ArticleFeignClient&depth=2&project=task-service").read().decode("utf-8"))
         assert callees["found"] is True
         plan = json.loads(urlopen(f"{base}/workspace/plan-change?target=MoveArticleRequest").read().decode("utf-8"))
         assert plan["found"] is True

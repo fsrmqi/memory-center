@@ -137,17 +137,25 @@ def memory_query_hybrid(workspace_file: str | Path, query: str, limit: int = 20,
             limit=limit,
         )
 
-    # Project filtering: boost results from the specified project
+    # Project filtering: when project is specified and matching results exist,
+    # narrow the primary result set to that project instead of only boosting.
     if project:
         results = result.get("results", [])
         project_results = [r for r in results if _project_matches(project, r.get("node", {}).get("project", ""))]
         if project_results:
-            # Boost project-matched results to the top
             for r in project_results:
                 r["score"] = r.get("score", 0) * 2.0
                 r["_project_boost"] = True
-            results.sort(key=lambda x: x.get("score", 0), reverse=True)
-            result["results"] = results
+            project_results.sort(key=lambda x: x.get("score", 0), reverse=True)
+            result["results"] = project_results
+
+            semantic_hits = result.get("semantic_hits", [])
+            if semantic_hits:
+                result["semantic_hits"] = [
+                    hit for hit in semantic_hits
+                    if _project_matches(project, (hit.get("node", {}) or {}).get("project", ""))
+                    or _project_matches(project, hit.get("project", ""))
+                ]
 
     # Enrich with workspace context
     result["workspace"] = config_obj[0].workspace
@@ -195,6 +203,11 @@ def memory_query_hybrid(workspace_file: str | Path, query: str, limit: int = 20,
             # feign 意图：只返回关联的 API
             filtered_api = linked_api
 
+        if project:
+            filtered_feign = [c for c in filtered_feign if _project_matches(project, c.get("project", ""))]
+            filtered_mq = [c for c in filtered_mq if _project_matches(project, c.get("project", ""))]
+            filtered_api = [c for c in filtered_api if _project_matches(project, c.get("project", ""))]
+
         result["contracts"] = {
             "feign_contracts": filtered_feign,
             "mq_contracts": filtered_mq,
@@ -207,6 +220,8 @@ def memory_query_hybrid(workspace_file: str | Path, query: str, limit: int = 20,
 
     # 向后兼容：添加 matches 字段（旧接口返回 matches，新接口返回 results）
     if "results" in result and "matches" not in result:
+        result["matches"] = result["results"]
+    elif "results" in result:
         result["matches"] = result["results"]
 
     # 确保 retrieval_summary 包含旧接口期望的字段
