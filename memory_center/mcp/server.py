@@ -597,6 +597,175 @@ def create_server(workspace_file: str):
             f"Task: {task}"
         )
 
+    @mcp.prompt()
+    def onboard_new_dev(scope: str = "workspace") -> str:
+        return (
+            "You are onboarding a new developer to this project. "
+            "Call mc_onboard with persona='developer' to get a guided "
+            "architecture tour. Then call mc_domain to understand business "
+            "domains and flows. Finally call mc_freshness to check if "
+            "the index is up to date."
+        )
+
+    @mcp.prompt()
+    def check_mq_safety(topic: str = "") -> str:
+        return (
+            "Check MQ consumer safety for this project. "
+            "Call mc_lookup to find MQ consumers and topics. "
+            "Verify each consumer has idempotent handling. "
+            "Check message format compatibility. "
+            f"Focus topic: {topic}" if topic else
+            "Check all MQ consumers in the workspace."
+        )
+
+    @mcp.prompt()
+    def analyze_dto_impact(dto_class: str = "") -> str:
+        return (
+            "Analyze the impact of changing a DTO class. "
+            "Call mc_analyze to get the full impact analysis. "
+            "Check serialization compatibility, MQ message bodies, "
+            "and Feign client contracts. "
+            f"Target DTO: {dto_class}" if dto_class else
+            "Analyze all DTOs in the workspace."
+        )
+
+    @mcp.prompt()
+    def cross_service_trace(service: str = "") -> str:
+        return (
+            "Trace cross-service call chains. "
+            "Call mc_lookup with mode='chain' to find Feign clients, "
+            "MQ producers/consumers, and shared configs. "
+            "Map the complete call graph across services. "
+            f"Starting from: {service}" if service else
+            "Trace all cross-service interactions."
+        )
+
+    @mcp.prompt()
+    def config_propagation_check(key: str = "") -> str:
+        return (
+            "Check configuration key propagation across services. "
+            "Call mc_lookup to find ConfigKey nodes. "
+            "Identify which services read the same config keys. "
+            "Flag potential configuration drift. "
+            f"Focus key: {key}" if key else
+            "Check all shared configuration keys."
+        )
+
+    @mcp.prompt()
+    def freshness_check() -> str:
+        return (
+            "Check index freshness before making code changes. "
+            "Call mc_freshness to see if the graph index is up to date. "
+            "If status is 'pending' or 'stale', read live files before editing. "
+            "Never edit based on stale index data."
+        )
+
+    @mcp.prompt()
+    def domain_overview() -> str:
+        return (
+            "Get a business domain overview of this project. "
+            "Call mc_domain to extract business domains and flows. "
+            "Understand how code maps to business concepts. "
+            "Use this for product/business stakeholder discussions."
+        )
+
+    @mcp.prompt()
+    def diff_impact_analysis(diff_summary: str = "") -> str:
+        return (
+            "Analyze the impact of a git diff. "
+            "Call mc_context_pack to get a compact context package. "
+            "Then call mc_analyze for detailed impact analysis. "
+            "Generate a change checklist with risk assessment. "
+            f"Diff summary: {diff_summary}" if diff_summary else
+            "Analyze the current working tree changes."
+        )
+
+    # ===================== FACADE 9-12: V3 MCP Tools (§20.6) =====================
+
+    @mcp.tool()
+    def mc_context_pack(
+        query: str,
+        intent: str = "auto",
+        budget_tokens: int = 8000,
+        limit: int = 10,
+    ):
+        """Return a compact, evidence-backed context package for coding agents. Assembles entrypoints, relationships, risk patterns, and checklist into a single response to reduce agent grep/read cycles. Use this before mc_lookup for architecture or change-impact questions."""
+        from memory_center.core.context.pack import ContextPackBuilder
+        wf = ctx.workspace_file
+        builder = ContextPackBuilder(wf)
+        pack = builder.build(query=query, intent=intent, budget_tokens=budget_tokens, limit=limit)
+        return {
+            "workflow": "mc-context-pack",
+            "query": pack.query,
+            "intent": pack.intent,
+            "entrypoints": pack.entrypoints,
+            "relationships": pack.relationships[:20],
+            "risks": pack.risks,
+            "checklist": pack.checklist,
+            "freshness": pack.freshness,
+            "token_estimate": pack.token_estimate,
+            "progressive": pack.progressive,
+        }
+
+    @mcp.tool()
+    def mc_onboard(
+        scope: str = "workspace",
+        persona: str = "developer",
+        target: str = "",
+    ):
+        """Generate a guided architecture tour for onboarding. persona: developer | architect | product | tester. Returns step-by-step walkthrough of the project structure."""
+        from memory_center.core.onboarding.tour import ArchitectureTourGenerator
+        from memory_center.core.storage.unified import UnifiedStore
+        wf = ctx.workspace_file
+        store = WorkspaceStore(wf)
+        db_path = store.graph_db_path
+        unified = UnifiedStore(db_path)
+        try:
+            gen = ArchitectureTourGenerator(unified)
+            tour = gen.generate_tour(persona=persona, scope=scope, target=target or None)
+            return {"workflow": "mc-onboard", "tour": tour.to_dict()}
+        finally:
+            unified.close()
+
+    @mcp.tool()
+    def mc_domain(
+        scope: str = "workspace",
+        include_flows: bool = True,
+    ):
+        """Extract business domains and business flows from the code knowledge graph. Shows how code entities map to business concepts like user management, order processing, payment, etc."""
+        from memory_center.core.domain.extractor import BusinessDomainExtractor
+        from memory_center.core.storage.unified import UnifiedStore
+        wf = ctx.workspace_file
+        store = WorkspaceStore(wf)
+        db_path = store.graph_db_path
+        unified = UnifiedStore(db_path)
+        try:
+            extractor = BusinessDomainExtractor(unified)
+            domains = extractor.extract_domains()
+            result = {
+                "workflow": "mc-domain",
+                "domains": [d.to_dict() for d in domains],
+                "domain_count": len(domains),
+            }
+            if include_flows:
+                flows = extractor.extract_flows()
+                result["flows"] = [f.to_dict() for f in flows]
+                result["flow_count"] = len(flows)
+            return result
+        finally:
+            unified.close()
+
+    @mcp.tool()
+    def mc_freshness(
+        scope: str = "workspace",
+    ):
+        """Return index freshness status. If pending files affect the query target, instruct the agent to read the live file before editing."""
+        from memory_center.core.freshness.status import IndexFreshnessService
+        wf = ctx.workspace_file
+        svc = IndexFreshnessService(wf)
+        banner = svc.banner()
+        return {"workflow": "mc-freshness", **banner}
+
     return mcp
 
 
