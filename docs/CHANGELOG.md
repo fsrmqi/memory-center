@@ -6,6 +6,35 @@
 - 重要行为变化
 - 明确修复的真实 bug
 
+## 2.2.0
+
+- **NEXT_PHASE 已实现能力完成收口**
+  - 完成并接入主链路：hybrid retrieval、benchmark trending、unified backend query、drill-down navigation、completion audit
+  - CLI / MCP / HTTP 入口同步可用
+- **混合检索**
+  - 新增 `memory_center/core/retrieval/hybrid.py`
+  - 支持 graph + sparse + semantic 三路混合检索
+  - 增加查询意图自动检测与渐进式摘要输出
+- **基准趋势**
+  - 新增 `memory_center/core/benchmark/trending.py`
+  - 支持 benchmark baseline、trend、回归检测和健康报告
+- **统一后端查询**
+  - 新增 `memory_center/core/backend/query.py`
+  - 提供 `UnifiedBackendQuery`，统一索引、记录、引用和聚合查询
+- **钻取导航**
+  - 新增 `memory_center/core/navigation/drilldown.py`
+  - 支持 `drill_timeline`、`drill_task`、`expand_ref`、handoff context 构建
+- **完成审计**
+  - 新增 `memory_center/core/audit/completion.py`
+  - 支持文档、测试、实现、设计一致性检查与建议生成
+- **文档结构继续收敛**
+  - 删除阶段性文档 `docs/V3_PLAN.md`
+  - 删除阶段性文档 `docs/NEXT_PHASE_IMPLEMENTATION_REPORT.md`
+  - 删除单版本文档 `docs/CHANGELOG_v2.2.0.md`
+  - 剩余计划统一并入 `docs/NEXT_PHASE_MASTER_PLAN.md`
+- **本体与治理方向转入下一阶段**
+  - 近期重点转为 ontology、检索质量继续收口、SQLite 主读路径推进、audit 产品化与 drill-down 体验增强
+
 ## 2.1.8
 
 - **发布版本更新**

@@ -18,6 +18,19 @@
 - [docs/MCP_GUIDE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/MCP_GUIDE.md)
 - [docs/REFERENCE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/REFERENCE.md)
 
+### 已完成并迁出 / Completed and Moved Out
+
+以下能力已经实现完成，不再作为本文件的“待做事项”重复跟踪：
+
+- Hybrid retrieval / 混合检索
+- Benchmark trending / 基准趋势
+- Unified backend query / 统一后端查询
+- Drill-down navigation / 钻取导航
+- Completion audit / 完成审计
+
+实现明细见：
+- 当前状态已经并入本文件，不再单独维护实现完成报告。
+
 ## 2. 当前剩余重点
 
 | 优先级 | 方向 | 目标 |
@@ -188,7 +201,64 @@
 - 将“对象优先、关系显式、推断边界明确”的思想收成轻量 ontology
 - 先约束 `memory-center` 自己的领域语言，再继续叠加 retrieval / audit / chain 能力
 
-## 6. 当前最值得继续补的检查点
+## 6. 3.0 中长期剩余版图
+
+除了上面的近期收口项，3.0 还有几块中长期能力需要继续推进。既然 `V3_PLAN.md` 已移除，这部分统一收敛到这里。
+
+### 方向 1：Native Vector + Inverted Retrieval
+
+目标：
+
+- 原生向量检索进入 SQLite 主存储路线
+- 倒排索引替换高成本的全量扫描路径
+- `graph + sparse + vector` 的融合策略继续收口
+
+完成标志：
+
+- 至少一种原生向量后端可用于真实 workspace
+- 稀疏检索只打命中候选，不再扫全量
+- `mc_lookup` 在 query 类场景下有可验证的召回与延迟收益
+
+### 方向 2：Code Knowledge Graph Reasoning
+
+目标：
+
+- 从“邻居展开”升级到“可解释推理”
+- 引入图模式匹配、传递推理、风险模式识别
+
+完成标志：
+
+- 至少有一组内建 graph patterns 能稳定回答高价值问题
+- 推理结果能区分 `fact / inferred / derived`
+- 输出里能解释“为什么判定有风险 / 为什么推导出这条链路”
+
+### 方向 3：Indexer Upgrade
+
+目标：
+
+- 提升 Java 解析精度
+- 加快 reindex 速度
+- 让增量索引真正按 changed files 精确更新
+
+完成标志：
+
+- `tree-sitter` 成为可选稳定解析器
+- 并行索引在中型 workspace 上有明确收益
+- 删除、移动、修改文件的索引更新都能稳定收口
+
+### 方向 4：Type Safety and Observability
+
+目标：
+
+- facade 层的关键返回值逐步类型化
+- 增加结构化日志、延迟指标、质量指标
+
+完成标志：
+
+- 关键 facade 的 schema 不只“存在”，还具备稳定类型边界
+- 能观测查询延迟、索引耗时、召回质量、token 回归
+
+## 7. 当前最值得继续补的检查点
 
 当前后续开发时，最值得继续盯住的是：
 
@@ -196,7 +266,7 @@
 2. 行为测试是否真的覆盖了真实输入输出，而不是只测“模块存在”
 3. 文档是否继续收敛，避免重新出现“完成”和“未完成”混写
 
-## 7. Done 定义
+## 8. Done 定义
 
 下一阶段不只看“功能有没有”，还要看：
 

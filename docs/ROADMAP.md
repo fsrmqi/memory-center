@@ -17,17 +17,22 @@
 - SQLite `memory.db` 镜像与部分高频读路径
 - token gain / token benchmark / continuity eval
 - Hook runner + adapters 基础能力
+- hybrid retrieval
+- benchmark trending
+- unified backend query
+- drill-down navigation
+- completion audit
 
 ## 2. Current Priorities / 当前优先级
 
 最值得继续推进的方向：
 
 1. 轻量 ontology 约束层
-2. hybrid retrieval
-3. 更系统的 token benchmark 趋势化
+2. 检索质量继续收口
+3. Benchmark 趋势化真正落地
 4. SQLite 进一步接管更多高频读路径
-5. 更强的 timeline / ref / task drill-down
-6. completion audit 与文档一致性持续收口
+5. 更强的 timeline / ref / task drill-down 体验收口
+6. completion audit 产品化与文档一致性持续收口
 
 ## 3. External Ideas Already Absorbed / 已吸收的外部思想
 
@@ -65,10 +70,16 @@
   - facade 与高频链路继续稳住
 
 - `2.2.x`
-  - ontology 约束层第一版
-  - hybrid retrieval
-  - 更深的 SQLite 主读路径统一
-  - timeline/ref/task 联动增强
+  - 已完成：hybrid retrieval / benchmark trending / unified backend query / drill-down navigation / completion audit
+  - 持续收口：ontology 约束层第一版
+  - 持续收口：更深的 SQLite 主读路径统一
+  - 持续收口：timeline/ref/task 联动增强
+
+- `2.3.x`
+  - native vector + inverted retrieval 基础推进
+  - Code Knowledge Graph reasoning 起步
+  - indexer 精度与增量更新增强
+  - facade 类型边界与可观测性继续补强
 
 ## 5. Definition of Done / 阶段收口标准
 

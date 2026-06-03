@@ -1,7 +1,7 @@
 """Code Knowledge Graph Ontology — typed models for V3 node and edge types.
 
-Defines the full set of node types and edge types specified in V3_PLAN.md §3.3-3.4
-and §20.5.  These are dataclass models used for type-safe construction and validation
+Defines the core node types and edge types used by the ontology and graph layers.
+These are dataclass models used for type-safe construction and validation
 of code knowledge graph entities.
 """
 from __future__ import annotations
