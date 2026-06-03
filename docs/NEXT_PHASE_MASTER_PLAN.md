@@ -35,14 +35,48 @@
 
 | 优先级 | 方向 | 目标 |
 | --- | --- | --- |
-| 1 | 轻量本体论 / Ontology | 用统一实体、关系、语义强度收紧 `query / contracts / chain / timeline` 的边界 |
-| 2 | 检索质量继续收口 | 让 `mc_lookup`、`query`、`resume` 不再因意图误判或 contracts 关联过宽而偏航 |
-| 3 | Benchmark 趋势化真正落地 | 不只是能跑 benchmark，而是能长期看哪条链路又变胖了 |
-| 4 | Completion audit 产品化 | 让 audit 从“仓库自检工具”继续走向“真实 workspace 可用的治理能力” |
-| 5 | Timeline / ref / task 体验增强 | 让 drill-down 真正融入日常入口 |
-| 6 | SQLite 主读路径继续推进 | 让 backend 更像稳定主读底座，而不是高频优先补充层 |
+| 1 | 轻量本体论 / Ontology | 已有第一版文档与部分实现，继续用统一实体、关系、语义强度收紧 `query / contracts / chain / timeline` 的边界 |
+| 2 | 检索质量继续收口 | `mc_lookup`、`query` 已有混合检索与 contracts 过滤，但仍需继续减少意图误判和误关联 |
+| 3 | Benchmark 趋势化真正落地 | 基础能力和入口已接好，继续强化长期趋势观察、回归阈值与治理闭环 |
+| 4 | Completion audit 产品化 | audit 已可用，继续从“仓库自检工具”走向“真实 workspace 可用的治理能力” |
+| 5 | Timeline / ref / task 体验增强 | drill-down 已有 CLI / MCP / HTTP 入口，继续增强真实工作流体验和摘要质量 |
+| 6 | SQLite 主读路径继续推进 | unified backend query 已落地，继续让 backend 更像稳定主读底座，而不是高频优先补充层 |
 
-## 3. 下一步先做什么
+## 3. 当前状态判断
+
+这一阶段最容易产生误解的地方，不是“有没有代码”，而是“做到什么程度”。
+
+所以这里明确分成三类：
+
+### 3.1 已完成基础版
+
+- `docs/ONTOLOGY.md` 已存在，ontology 第一版已经落地
+- `detect_query_intent`、`memory_query_hybrid`、contracts 过滤与置信度表达已经实现
+- benchmark trending 已实现，并且接入 CLI / MCP / HTTP
+- drill-down navigation 已实现，并且接入 CLI / MCP / HTTP
+- unified backend query / backend consistency 已实现，并且接入 CLI / MCP / HTTP
+- completion audit 已实现，并且接入主入口
+
+这些项不应再被描述成“还没开始做”。
+
+### 3.2 部分已完成，继续收口
+
+- ontology 已有第一版，但对更多链路的约束还不够彻底
+- retrieval 已有 hybrid 主链路，但结果质量仍需继续收口
+- benchmark trend 已能跑，但长期归因、回归门槛和治理闭环还不够强
+- audit 已能跑，但对不同类型 workspace 的适配还要继续加强
+- drill-down 已可用，但摘要层、日常入口体验和更真实行为测试还可继续补
+- backend 已承担部分高频读取，但还不是统一主读事实源
+
+### 3.3 仍然真正未完成
+
+- 原生向量后端 / ANN 检索正式接入
+- `tree-sitter` 解析器
+- facade 关键返回值全面类型化
+- 更完整的结构化日志与指标体系
+- 把 reasoning / context pack / freshness 更完整地并入默认主工作流
+
+## 4. 下一步先做什么
 
 如果只选一个，我建议先做：
 
@@ -56,23 +90,23 @@
 
 这一步不是去做一个很重的知识图谱工程，而是先补一层**约束文档 + 关键实现边界**。
 
-## 4. 推荐执行顺序
+## 5. 推荐执行顺序
 
 ### 阶段 A：定义 ontology 约束层
 
 目标：
 
-- 统一 `memory-center` 里的核心实体、关系和推断边界
+- 在已落地的第一版 ontology 基础上，继续统一 `memory-center` 里的核心实体、关系和推断边界
 
 建议动作：
 
-1. 新建 `docs/ONTOLOGY.md`
-2. 第一版只定义：
+1. 继续维护 `docs/ONTOLOGY.md`
+2. 第一版已定义：
    - 代码实体：`Service / Class / Method / Endpoint / FeignClient / FeignMethod / MQTopic / MQConsumer / ConfigKey`
    - 记忆实体：`SessionEvent / WriteReceipt / Ref / Task / Handoff / ResumePacket`
    - 关系类型：`CALLS / CALLS_SERVICE / IMPLEMENTS_FEIGN / PUBLISHES / CONSUMES / REFERENCES / BELONGS_TO_TASK / DERIVED_FROM`
    - 语义强度：`fact / inferred / derived`
-3. 把 ontology 先作用到：
+3. 继续把 ontology 收紧到这些链路：
    - `detect_query_intent`
    - `memory_query_hybrid`
    - `contracts / chain / group_chain`
@@ -88,7 +122,7 @@
 
 目标：
 
-- `mc_lookup / query / resume / handoff` 的结果更准
+- 在已有 hybrid retrieval 基础上，让 `mc_lookup / query / resume / handoff` 的结果更准
 
 建议动作：
 
@@ -105,7 +139,7 @@
 
 目标：
 
-- 长期知道哪条链路 token 又变胖了
+- 在已有趋势记录能力基础上，长期知道哪条链路 token 又变胖了
 
 建议动作：
 
@@ -122,7 +156,7 @@
 
 目标：
 
-- 让 audit 真正适配普通 workspace，而不是只适配当前仓库
+- 让已存在的 audit 真正适配普通 workspace，而不是只适配当前仓库
 
 建议动作：
 
@@ -139,12 +173,12 @@
 
 目标：
 
-- 让 drill-down 真正参与日常工作流
+- 让已存在的 drill-down 真正参与日常工作流
 
 建议动作：
 
 1. 给 `DrillDownNavigator` 补更多真实行为测试
-2. 继续评估并扩展 CLI / MCP / HTTP 正式入口
+2. 继续优化 CLI / MCP / HTTP 正式入口的日常使用体验
 3. 为 handoff / resume 增加更强摘要层
 
 完成标志：
@@ -156,7 +190,7 @@
 
 目标：
 
-- 让 `memory.db` 更稳定地承担聚合与主读职责
+- 让已存在的 unified backend query / `memory.db` 更稳定地承担聚合与主读职责
 
 建议动作：
 
@@ -169,7 +203,157 @@
 - 高频查询口径更一致
 - JSONL fallback 继续减少
 
-## 5. 外部思想剩余吸收点
+## 6. 外部思想剩余吸收点
+
+这一节只记录**建议吸收**、并且可以进一步转化为开发计划的外部思路。
+
+统一写法：
+
+- `判断`：是否值得吸收
+- `吸收点`：只写建议进入本项目的能力
+- `开发包`：后续开发分组
+- `推荐 issue`：可以直接拆分推进的工作项
+- `验收标准`：完成后怎么判断真的吸收到了系统里
+
+### `colbymchenry/codegraph`
+
+判断：
+
+- **建议吸收**
+- 适合作为 Memory Center 的“代码理解底座”参考
+
+吸收点：
+
+1. `tree-sitter + SQLite + FTS5`
+   - 让 AST、symbol、edge、全文检索收敛到更稳定的本地底座
+2. `watcher + freshness + staleness banner`
+   - 让图谱状态跟真实文件变化保持一致
+3. `context pack / fewer tool calls / fewer token`
+   - 强化“先给足结构化上下文，再少读文件”的工作流
+4. `shared warm state / daemon feasibility`
+   - 为多 Agent / 多窗口协作预留后台共享能力
+
+开发包：
+
+- **CG-1 / Tree-sitter Java Parser Spike**
+- **CG-2 / FTS & Inverted Retrieval Consolidation**
+- **CG-3 / Freshness Banner Integration**
+- **CG-4 / Watcher-to-Incremental-Reindex Bridge**
+- **CG-5 / Context Pack First-Class Workflow**
+- **CG-6 / Context Pack Benchmark**
+- **CG-7 / Workspace Daemon Feasibility Study**
+
+推荐 issue：
+
+1. Freshness Banner 接入主查询链路
+2. Context Pack 进入默认推荐工作流
+3. Context Pack 完成 freshness / snippet 闭环
+4. Watcher 事件驱动增量索引桥接
+5. Connect-time Catch-up 与 stale 恢复策略
+6. Tree-sitter Java Parser Spike
+7. FTS / 倒排检索统一收口
+8. Context Pack Benchmark 与采用率观测
+9. Workspace Daemon 可行性研究
+
+验收标准：
+
+1. stale/pending 文件能在主查询链路里被清楚提示
+2. context pack 真正减少 grep/read/tool call
+3. Java/Spring Cloud 解析精度真实提升
+4. incremental reindex 能稳定跟上高频编辑
+5. 这些能力接到了 CLI / MCP / HTTP 主入口，而不是只停在 Python API
+
+### `Lum1104/Understand-Anything`
+
+判断：
+
+- **建议吸收**
+- 适合作为 Memory Center 的“教学型理解层 / 解释层”参考
+
+吸收点：
+
+1. `Guided Tour / Onboarding 导览`
+   - 把已有 graph、ref、task、handoff 组织成可阅读的架构导览
+2. `Business Domain / Flow / Step`
+   - 让业务流成为正式输出形态，而不是只停留在底层结构关系
+3. `Flow-Aware Impact Explanation`
+   - 让影响分析不只说“影响谁”，还说“影响哪段业务流”
+4. `Persona-Adaptive Explanation`
+   - 为 developer / architect 等角色提供不同粒度的解释模板
+5. `Incremental refresh for understanding assets`
+   - 让 flow / tour / domain 等理解资产随代码增量更新
+
+开发包：
+
+- **UA-1 / Guided Tour Layer**
+- **UA-2 / Layered Explanation View**
+- **UA-3 / Business Flow First-Class Output**
+- **UA-4 / Flow-Aware Impact Explanation**
+- **UA-5 / Persona Profiles for Explanations**
+- **UA-6 / Default Incremental Knowledge Refresh**
+
+推荐 issue：
+
+10. Guided Tour 生成器主链路化
+11. 统一 Explanation Schema
+12. Business Flow 正式输出
+13. Flow-Aware Impact
+14. Persona 视角输出
+15. 理解资产增量刷新
+
+验收标准：
+
+1. 新人能按导览顺序理解系统入口、核心服务、关键依赖
+2. 核心 Spring Cloud 示例仓库能稳定输出业务流
+3. impact / handoff / onboarding 能复用 flow 与 explanation 资产
+4. 至少 developer / architect 两种 persona 有稳定输出差异
+5. flow / tour / domain 资产支持增量刷新，而不是每次都全量重建
+
+### `affaan-m/ECC`
+
+判断：
+
+- **建议吸收**
+- 适合作为 Memory Center 的“agent 工作流协议、验证闭环、持续学习、运行治理”参考
+
+吸收点：
+
+1. `Workflow Protocol`
+   - 将任务类型映射为推荐工具顺序和执行协议
+2. `Verification Loop`
+   - 强化 `analyze -> checklist -> verify -> close` 闭环
+3. `Continuous Learning / Pattern Promotion`
+   - 从 case / rule / decision 中晋升可复用模式
+4. `Agent Runtime Governance`
+   - 将 hooks / MCP / agent config 纳入治理与审计
+5. `Bundle / Skill / Command Packaging`
+   - 把最佳实践导出为可安装的 agent 使用包
+
+开发包：
+
+- **ECC-1 / Workflow Protocol Profiles**
+- **ECC-2 / Verification Loop Strengthening**
+- **ECC-3 / Pattern Promotion Pipeline**
+- **ECC-4 / Learned Heuristics Register**
+- **ECC-5 / Agent Runtime Audit**
+- **ECC-6 / Agent Usage Bundle Export**
+
+推荐 issue：
+
+16. Workflow Protocol Profiles
+17. Verification Loop 强化
+18. Pattern Promotion Pipeline
+19. Learned Heuristics Register
+20. Agent Runtime Audit
+21. Agent Usage Bundle Export
+
+验收标准：
+
+1. 至少覆盖 quick-fix / contract-change / long-task / architecture 四类 workflow profile
+2. verify / close 闭环输出口径统一
+3. case / rule / skill 候选晋升逻辑可解释、可审计
+4. audit 能输出 hooks / MCP / agent config 的治理问题
+5. 至少能导出一组适用于 Codex / Claude Code / Cursor 的最小使用 bundle
 
 ### `agentmemory`
 
@@ -201,7 +385,7 @@
 - 将“对象优先、关系显式、推断边界明确”的思想收成轻量 ontology
 - 先约束 `memory-center` 自己的领域语言，再继续叠加 retrieval / audit / chain 能力
 
-## 6. 3.0 中长期剩余版图
+## 7. 3.0 中长期剩余版图
 
 除了上面的近期收口项，3.0 还有几块中长期能力需要继续推进。既然 `V3_PLAN.md` 已移除，这部分统一收敛到这里。
 
@@ -219,6 +403,12 @@
 - 稀疏检索只打命中候选，不再扫全量
 - `mc_lookup` 在 query 类场景下有可验证的召回与延迟收益
 
+当前判断：
+
+- `InvertedIndex` 与相关测试已存在
+- 但“原生向量后端正式接入主链路”仍未完成
+- 所以这块属于“部分已做，但关键终态未完成”
+
 ### 方向 2：Code Knowledge Graph Reasoning
 
 目标：
@@ -231,6 +421,12 @@
 - 至少有一组内建 graph patterns 能稳定回答高价值问题
 - 推理结果能区分 `fact / inferred / derived`
 - 输出里能解释“为什么判定有风险 / 为什么推导出这条链路”
+
+当前判断：
+
+- `reasoning/patterns.py`、`reasoning/transitive.py`、`reasoning/risk.py` 已存在并有测试
+- 但还没有完全并成默认主工作流能力
+- 所以这块不应写成“完全未做”，更准确是“已有底层能力，未完全主链路化”
 
 ### 方向 3：Indexer Upgrade
 
@@ -246,6 +442,12 @@
 - 并行索引在中型 workspace 上有明确收益
 - 删除、移动、修改文件的索引更新都能稳定收口
 
+当前判断：
+
+- freshness watcher / status 基础能力已存在
+- 但 `tree-sitter`、并行索引、真正精确增量更新仍未完成
+- 这块仍然属于真正未完成
+
 ### 方向 4：Type Safety and Observability
 
 目标：
@@ -258,7 +460,13 @@
 - 关键 facade 的 schema 不只“存在”，还具备稳定类型边界
 - 能观测查询延迟、索引耗时、召回质量、token 回归
 
-## 7. 当前最值得继续补的检查点
+当前判断：
+
+- 有一部分 dataclass / schema / eval 输出基础
+- 但 facade 返回值全面类型化、结构化日志、统一指标体系仍未完成
+- 这块仍然属于真正未完成
+
+## 8. 当前最值得继续补的检查点
 
 当前后续开发时，最值得继续盯住的是：
 
@@ -266,7 +474,7 @@
 2. 行为测试是否真的覆盖了真实输入输出，而不是只测“模块存在”
 3. 文档是否继续收敛，避免重新出现“完成”和“未完成”混写
 
-## 8. Done 定义
+## 9. Done 定义
 
 下一阶段不只看“功能有没有”，还要看：
 

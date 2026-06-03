@@ -279,7 +279,9 @@ Hook 的价值在于自动触发关键生命周期动作，但不应该过度侵
 5. [docs/REFERENCE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/REFERENCE.md)
 6. [docs/NEXT_PHASE_MASTER_PLAN.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/NEXT_PHASE_MASTER_PLAN.md)
 
-## 8. NEXT_PHASE 实现细节 (v2.2.0)
+## 8. 已实现能力细节 (v2.2.0)
+
+这一节记录的是 v2.2.0 阶段已经落地的实现细节，便于维护者理解当前代码；它不是新的待办计划列表。
 
 ### 8.1 Hybrid Retrieval 实现细节
 

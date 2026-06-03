@@ -34,6 +34,15 @@
 5. 更强的 timeline / ref / task drill-down 体验收口
 6. completion audit 产品化与文档一致性持续收口
 
+这些优先项的含义不是“从零开始做”，而是：
+
+- ontology：第一版已落地，继续收紧到更多链路
+- retrieval：hybrid 主链路已完成，继续收口结果质量
+- benchmark trend：能力与入口已在，继续补长期治理闭环
+- drill-down：CLI / MCP / HTTP 已可用，继续增强日常体验
+- backend：统一查询层已存在，继续向主读底座推进
+- audit：基础审计已存在，继续向通用 workspace 产品化推进
+
 ## 3. External Ideas Already Absorbed / 已吸收的外部思想
 
 ### `agentmemory`
@@ -81,7 +90,21 @@
   - indexer 精度与增量更新增强
   - facade 类型边界与可观测性继续补强
 
-## 5. Definition of Done / 阶段收口标准
+## 5. Status Reading / 状态阅读方式
+
+看这份路线图时，建议按下面三层理解：
+
+- **已完成基础版**：功能已经存在，也通常已经接入主入口
+- **持续收口**：不是没有，而是质量、边界、体验还没完全稳住
+- **下一阶段推进**：确实还没达到目标终态，或还没有正式主链路化
+
+例如：
+
+- `hybrid retrieval` 属于已完成基础版
+- ontology / audit / drill-down / backend 统一更偏持续收口
+- native vector / tree-sitter / 全面类型化 更偏下一阶段推进
+
+## 6. Definition of Done / 阶段收口标准
 
 某项工作不只看“功能写了”，还要看：
 

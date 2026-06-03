@@ -155,7 +155,9 @@ memory-center eval-token-benchmark --workspace /abs/path/.memory-center/workspac
 - [REFERENCE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/REFERENCE.md)
 - [SPECS.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/SPECS.md)
 
-## 11. New Features (v2.2.0) / 新功能
+## 11. Implemented Features (v2.2.0) / 已实现功能（v2.2.0）
+
+这一节是当前可用功能说明，主要帮助使用者理解系统里已经能用什么，不代表这些功能仍处于待实现状态。
 
 ### 11.1 Hybrid Retrieval / 混合检索
 
