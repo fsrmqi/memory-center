@@ -28,6 +28,8 @@ class RegexJavaParser:
         fields, field_types = _parse_fields(cleaned)
         field_types.update(_parse_interface_constants(cleaned))
         method_spans = _parse_method_spans(cleaned)
+        iface_methods = _parse_interface_methods(cleaned)
+        method_spans.extend(iface_methods)
         methods = sorted({item["name"] for item in method_spans})
         method_variable_types = _parse_method_variable_types(cleaned, method_spans)
         bean_injections = _parse_bean_injections(cleaned, classes, field_types)
