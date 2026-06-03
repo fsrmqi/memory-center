@@ -152,6 +152,70 @@ def _parse_method_spans(text: str) -> List[Dict[str, Any]]:
     return spans
 
 
+def _parse_interface_methods(text: str) -> List[Dict[str, Any]]:
+    """Parse method declarations from Java interface bodies.
+
+    Interface methods differ from class methods:
+    - No explicit access modifier required (implicitly public)
+    - End with ``;`` instead of ``{`` (no method body)
+    - ``default`` and ``static`` methods have bodies (end with ``{``)
+    """
+    spans: List[Dict[str, Any]] = []
+    iface_pattern = re.compile(r"\binterface\s+\w+[^{]*\{", re.M)
+    for m in iface_pattern.finditer(text):
+        body_start = m.end()
+        body_end = _matching_brace_end(text, body_start - 1)
+        body = text[body_start:body_end]
+
+        # 1) Abstract methods ending with ;
+        abstract_pattern = re.compile(
+            r"(?:@\w+(?:\([^)]*\))?\s*)*"
+            r"(?:public\s+|private\s+|protected\s+)?"
+            r"(?:default\s+)?"
+            r"(?:static\s+)?"
+            r"([\w<>, ?\.\[\]]+)\s+"
+            r"(\w+)\s*\(([^;]*)\)\s*"
+            r"(?:throws\s+[\w, ]+\s*)?;",
+            re.M,
+        )
+        for method_m in abstract_pattern.finditer(body):
+            method_name = method_m.group(2)
+            params = method_m.group(3)
+            abs_start = body_start + method_m.start()
+            abs_end = body_start + method_m.end()
+            spans.append({
+                "name": method_name,
+                "params": params,
+                "start": abs_start,
+                "end": abs_end,
+                "line": _line_of(text, abs_start),
+            })
+
+        # 2) default / static methods with a body (ending with {)
+        body_method_pattern = re.compile(
+            r"(?:@\w+(?:\([^)]*\))?\s*)*"
+            r"(?:default|static)\s+"
+            r"[\w<>, ?\.\[\]]+\s+"
+            r"(\w+)\s*\(([^)]*)\)\s*"
+            r"(?:throws\s+[\w, ]+\s*)?\{",
+            re.M,
+        )
+        for method_m in body_method_pattern.finditer(body):
+            method_name = method_m.group(1)
+            params = method_m.group(2)
+            abs_start = body_start + method_m.start()
+            brace_end = _matching_brace_end(body, method_m.end() - 1)
+            abs_end = body_start + brace_end
+            spans.append({
+                "name": method_name,
+                "params": params,
+                "start": abs_start,
+                "end": abs_end,
+                "line": _line_of(text, abs_start),
+            })
+
+    return spans
+
 def _matching_brace_end(text: str, open_pos: int) -> int:
     depth = 0
     n = len(text)
