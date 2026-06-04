@@ -8,6 +8,7 @@ from ..graph import GraphStore
 from ..rules import match_rules
 from ..schemas import with_schema
 from ..semantic import semantic_index_stats, semantic_query
+from ..ontology import EntityValidator
 from .common import (
     SESSION_EVENTS_FILE,
     _best_match,
@@ -314,7 +315,7 @@ def memory_query_hybrid(workspace_file: str | Path, query: str, limit: int = 20,
     try:
         from ..freshness.status import IndexFreshnessService
         svc = IndexFreshnessService(workspace_file)
-        banner = svc.get_freshness_banner()
+        banner = svc.banner()
         result["freshness"] = banner
     except Exception:
         result["freshness"] = {"status": "unknown"}
@@ -344,9 +345,11 @@ def _filter_contracts_by_query(contracts: list, query: str, intent: str) -> list
 
         if intent == "feign" and "interface" in contract:
             interface_name = contract.get("interface", "").lower()
+            # EntityValidator boost: 确认是 Feign 实体时提升置信度 (§5.1)
+            is_feign = EntityValidator.is_feign_entity(interface_name)
             # 接口名精确匹配
             if query_lower in interface_name or interface_name in query_lower:
-                scored_matches.append((0.95, "interface_exact", contract))
+                scored_matches.append((0.97 if is_feign else 0.95, "interface_exact", contract))
                 continue
             # 方法名精确匹配
             method_matched = False
@@ -419,7 +422,7 @@ def memory_context(workspace_file: str | Path, name: str, max_depth: int = 2, pr
     try:
         from ..freshness.status import IndexFreshnessService
         svc = IndexFreshnessService(workspace_file)
-        freshness = svc.get_freshness_banner()
+        freshness = svc.banner()
     except Exception:
         pass
 

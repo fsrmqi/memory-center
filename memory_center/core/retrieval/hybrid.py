@@ -16,6 +16,12 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 
 from ..graph import GraphStore
 from ..semantic import semantic_query
+from ..ontology import (
+    EntityValidator,
+    annotate_semantic_strength,
+    multi_hop_confidence,
+    EDGE_SEMANTIC_STRENGTH,
+)
 
 
 def _get_common_functions():
@@ -27,19 +33,10 @@ def _get_common_functions():
 
 # Ontology semantic strength mapping (from docs/ONTOLOGY.md §3.1)
 _EDGE_SEMANTIC_STRENGTH = {
-    # fact — declaration edges
-    "DECLARES": "fact", "CONTAINS": "fact", "DECLARES_CONFIG": "fact",
-    "EXPOSES_ENDPOINT": "fact", "PRODUCES_TOPIC": "fact", "CONSUMES_TOPIC": "fact",
-    # inferred — annotation-derived edges
-    "HANDLES_ENDPOINT": "inferred", "CALLS_SERVICE": "inferred",
-    "IMPLEMENTS_FEIGN": "inferred", "INJECTS_BEAN": "inferred",
-    "READS_CONFIG": "inferred", "CALLS_METHOD": "inferred",
-    "READS_FIELD": "inferred",
-    # derived — weak/transitive edges
-    "IMPORTS": "derived", "USES_DATA_RESOURCE": "derived",
-    "TRANSITIVELY_CALLS": "derived", "SEMANTIC_SIMILAR": "derived",
-    "HISTORICALLY_RELATED": "derived", "RISK_CORRELATED": "derived",
+    # Ontology semantic strength — now sourced from ontology module (§3.1)
 }
+# Merge ontology module's edge strength into local lookup
+_EDGE_SEMANTIC_STRENGTH.update(EDGE_SEMANTIC_STRENGTH)
 
 
 @dataclass
@@ -122,6 +119,13 @@ def detect_query_intent(query: str) -> Dict[str, Any]:
                 intents.setdefault(intent, 0)
                 intents[intent] = max(intents[intent], 0.8)
 
+    # Phase 2b: Ontology-aware entity classification (§5.1)
+    # Use EntityValidator to distinguish Service ≠ FeignClient
+    for part in parts:
+        if EntityValidator.is_feign_entity(part):
+            intents["feign"] = max(intents.get("feign", 0), 1.5)
+        elif EntityValidator.is_local_service(part):
+            intents["class"] = max(intents.get("class", 0), 1.0)
     # Phase 3: Structure inference
     if "/" in query and not query.startswith("/"):
         intents.setdefault("endpoint", 0.8)

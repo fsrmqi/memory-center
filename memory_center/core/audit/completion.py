@@ -20,9 +20,11 @@ DESIGN_DECISIONS_FILE = "design-decisions.jsonl"
 
 
 def detect_workspace_type(project_root: Path) -> str:
-    """Auto-detect workspace type from project structure.
+    """Auto-detect workspace type from project structure (Phase E enhanced).
 
-    Returns: 'java-maven', 'java-gradle', 'node', 'python', 'rust', 'go', 'mixed', 'unknown'
+    Returns: 'java-maven', 'java-gradle', 'java-spring-maven', 'java-spring-gradle',
+             'node', 'python', 'rust', 'go', 'scala', 'kotlin-gradle',
+             'monorepo', 'mixed', 'unknown'
     """
     has_pom = (project_root / "pom.xml").exists()
     has_gradle = (project_root / "build.gradle").exists() or (project_root / "build.gradle.kts").exists()
@@ -30,6 +32,10 @@ def detect_workspace_type(project_root: Path) -> str:
     has_pyproject = (project_root / "pyproject.toml").exists() or (project_root / "setup.py").exists()
     has_cargo = (project_root / "Cargo.toml").exists()
     has_go_mod = (project_root / "go.mod").exists()
+    has_build_sbt = (project_root / "build.sbt").exists()
+    has_dockerfile = (project_root / "Dockerfile").exists()
+    has_compose = (project_root / "docker-compose.yml").exists() or (project_root / "docker-compose.yaml").exists()
+    has_workspaces = (project_root / "pnpm-workspace.yaml").exists() or (project_root / "lerna.json").exists()
 
     # Check for Spring Cloud indicators
     is_spring = False
@@ -59,6 +65,10 @@ def detect_workspace_type(project_root: Path) -> str:
         return "rust"
     if has_go_mod:
         return "go"
+    if has_build_sbt:
+        return "scala"
+    if has_workspaces:
+        return "monorepo"
     types = sum([has_pom, has_gradle, has_package, has_pyproject, has_cargo, has_go_mod])
     return "mixed" if types > 1 else "unknown"
 

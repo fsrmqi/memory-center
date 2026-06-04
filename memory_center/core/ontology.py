@@ -7,6 +7,7 @@ of code knowledge graph entities.
 from __future__ import annotations
 
 import json
+import re as _re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
@@ -223,3 +224,178 @@ def edge_strength(edge_type: str) -> str:
 def edge_confidence_range(edge_type: str) -> tuple[float, float]:
     """Return (min, max) confidence range for an edge type."""
     return EDGE_CONFIDENCE_RANGES.get(edge_type, (0.0, 1.0))
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Entity Validator — enforce ontology constraints from ONTOLOGY.md §5
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Java naming patterns that indicate Feign clients (§5.1)
+_FEIGN_NAME_PATTERNS = (
+    "feignclient", "feign_client",  # *FeignClient naming
+    "fegin",  # common typo in Chinese projects
+)
+
+# Regex patterns per ONTOLOGY.md §5.1: Feign*Service or *FeignClient
+_FEIGN_NAME_REGEXES = (
+    _re.compile(r"^feign", _re.IGNORECASE),       # Feign*Service
+    _re.compile(r"feign(client|service)", _re.IGNORECASE),  # *FeignClient, *FeignService
+    _re.compile(r"fegin", _re.IGNORECASE),         # typo variant
+)
+
+# Structural classification of node types
+_STRUCTURAL_TYPES = frozenset({"Service", "File"})
+_DECLARATIVE_TYPES = frozenset({"Class", "Method", "Field", "Interface"})
+_CONTRACT_TYPES = frozenset({"Endpoint", "FeignClient", "FeignMethod", "MQTopic", "MQConsumer", "MQProducer"})
+_INFERRED_TYPES = frozenset({"Bean", "DataResource"})
+_MEMORY_TYPES = frozenset({"SessionEvent", "WriteReceipt", "Ref", "Task", "Handoff", "ResumePacket"})
+_V3_TYPES = frozenset({
+    "CodeSummary", "BusinessIntent", "RiskPattern", "ArchitecturalLayer",
+    "DataFlowNode", "RouteNode", "BusinessFlow", "FlowStep",
+    "ArchitectureTour", "IndexFreshness",
+})
+
+
+class EntityValidator:
+    """Validate entity classification against ontology constraints.
+
+    Enforces the rules from ONTOLOGY.md §5:
+    - Service ≠ FeignClient (§5.1)
+    - Endpoint ≠ Controller (§5.2)
+    - Ref ≠ raw data (§5.3)
+    - Task / Session / Receipt are different layers (§5.4)
+    - Endpoint paths must be specific enough (§5.5)
+    """
+
+    @staticmethod
+    def is_feign_entity(name: str, node_type: str = "", metadata: Optional[Dict[str, Any]] = None) -> bool:
+        """Check if an entity should be classified as a Feign client.
+
+        Per §5.1: only classify as Feign if:
+        - Name matches Feign*Service or *FeignClient patterns
+        - Has @FeignClient annotation (in metadata)
+        - Registered in feign-index
+        """
+        name_lower = name.lower()
+        # Check naming patterns
+        if any(pat in name_lower for pat in _FEIGN_NAME_PATTERNS):
+            return True
+        # Check regex patterns per §5.1: Feign*Service or *FeignClient
+        if any(rx.search(name) for rx in _FEIGN_NAME_REGEXES):
+            return True
+        # Check metadata for annotation
+        meta = metadata or {}
+        if meta.get("has_feign_annotation") or meta.get("feign_client"):
+            return True
+        # Check node type
+        if node_type in ("FeignClient", "FeignMethod"):
+            return True
+        return False
+
+    @staticmethod
+    def is_local_service(name: str, node_type: str = "", metadata: Optional[Dict[str, Any]] = None) -> bool:
+        """Check if an entity is a local service (not a Feign client).
+
+        Per §5.1: *ServiceImpl, *Service (without Feign prefix) are local.
+        """
+        if EntityValidator.is_feign_entity(name, node_type, metadata):
+            return False
+        name_lower = name.lower()
+        return (
+            node_type == "Class" and
+            ("service" in name_lower or "impl" in name_lower or "dao" in name_lower)
+        )
+
+    @staticmethod
+    def validate_endpoint_path(path: str) -> Dict[str, Any]:
+        """Validate endpoint path specificity per §5.5.
+
+        Only paths with ≥2 segments (e.g. /api/users) should participate
+        in Feign→API auto-association.
+        """
+        segments = [s for s in path.split("/") if s]
+        is_specific = len(segments) >= 2
+        return {
+            "path": path,
+            "segments": len(segments),
+            "is_specific": is_specific,
+            "confidence": 0.9 if is_specific else 0.1,
+        }
+
+    @staticmethod
+    def classify_entity_category(node_type: str) -> str:
+        """Classify an entity into its ontology category."""
+        if node_type in _STRUCTURAL_TYPES:
+            return "structural"
+        if node_type in _DECLARATIVE_TYPES:
+            return "declarative"
+        if node_type in _CONTRACT_TYPES:
+            return "contractual"
+        if node_type in _INFERRED_TYPES:
+            return "inferential"
+        if node_type in _MEMORY_TYPES:
+            return "memory"
+        if node_type in _V3_TYPES:
+            return "v3_extended"
+        return "unknown"
+
+    @staticmethod
+    def validate_memory_layer(node_type: str) -> Dict[str, Any]:
+        """Validate memory entity layer assignment per §5.4."""
+        layer_map = {
+            "SessionEvent": "L0",
+            "WriteReceipt": "L0",
+            "Ref": "L0",
+            "TokenGain": "L0",
+            "Handoff": "L1",
+            "ResumePacket": "L1",
+            "Task": "L2",
+        }
+        layer = layer_map.get(node_type, "unknown")
+        return {
+            "node_type": node_type,
+            "layer": layer,
+            "is_memory_entity": node_type in layer_map,
+        }
+
+
+def annotate_semantic_strength(
+    results: List[Dict[str, Any]],
+    edge_type_field: str = "edge_type",
+) -> List[Dict[str, Any]]:
+    """Annotate a list of results with ontology semantic strength.
+
+    For each result, looks up edge_type in EDGE_SEMANTIC_STRENGTH
+    and adds `semantic_strength` and `confidence_range` fields.
+    """
+    for result in results:
+        edge_type = result.get(edge_type_field, "")
+        if not edge_type:
+            # Try to infer from node type
+            node_type = result.get("node", {}).get("type", result.get("type", ""))
+            category = EntityValidator.classify_entity_category(node_type)
+            strength_map = {
+                "structural": "fact",
+                "declarative": "fact",
+                "contractual": "inferred",
+                "inferential": "derived",
+                "memory": "derived",
+            }
+            result["semantic_strength"] = strength_map.get(category, "unknown")
+        else:
+            result["semantic_strength"] = edge_strength(edge_type) if edge_type in ALL_EDGE_TYPES else "unknown"
+        # Add confidence range if edge type is known
+        if edge_type in EDGE_CONFIDENCE_RANGES:
+            result["confidence_range"] = list(EDGE_CONFIDENCE_RANGES[edge_type])
+    return results
+
+
+def multi_hop_confidence(base_confidence: float, hops: int) -> float:
+    """Apply multi-hop confidence decay per §4.
+
+    2-hop: ×0.9, 3-hop: ×0.8, 4+ hop: ×0.7
+    """
+    if hops <= 1:
+        return base_confidence
+    decay = {2: 0.9, 3: 0.8}.get(hops, 0.7)
+    return round(base_confidence * decay, 4)

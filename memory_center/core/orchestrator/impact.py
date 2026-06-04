@@ -230,6 +230,6 @@ def _get_freshness_for_impact(workspace_file: str | Path) -> dict:
     try:
         from ..freshness.status import IndexFreshnessService
         svc = IndexFreshnessService(workspace_file)
-        return svc.get_freshness_banner()
+        return svc.banner()
     except Exception:
         return {"status": "unknown"}

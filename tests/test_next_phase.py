@@ -141,7 +141,7 @@ class TestContracts:
         assert len(result) >= 1
         article = [c for c in result if c.get("interface") == "ArticleFeignClient"]
         assert len(article) == 1
-        assert article[0]["_confidence"] == 0.95
+        assert article[0]["_confidence"] == 0.97  # EntityValidator Feign boost
         assert article[0]["_match_type"] == "interface_exact"
 
     def test_filter_contracts_by_query_feign_method_match(self):

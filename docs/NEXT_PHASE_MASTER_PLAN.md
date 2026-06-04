@@ -579,3 +579,82 @@ V3 不是“未来方向”，而是当前代码里已经存在的一批能力�
 3. audit 是否更可信
 4. ontology 是否开始真正约束代码语义
 5. 文档是否继续保持收敛
+
+
+---
+
+## 10. 本轮实施记录 / Implementation Log (2026-06-04)
+
+### Phase A: Ontology 约束层 ✅
+
+**改动文件**：`memory_center/core/ontology.py`, `memory_center/core/retrieval/hybrid.py`, `memory_center/core/orchestrator/query.py`
+
+新增 `EntityValidator` 类，实现 ONTOLOGY.md §5 约束：
+- `is_feign_entity()` — 基于命名模式（Feign\*Service / \*FeignClient）+ 正则 + 注解三重判定
+- `is_local_service()` — 排除 Feign 后的本地 Service 判定
+- `validate_endpoint_path()` — §5.5 路径具体性验证（至少2段）
+- `classify_entity_category()` — structural / declarative / contractual / inferential / memory / v3_extended
+- `validate_memory_layer()` — §5.4 记忆实体层级（L0/L1/L2）
+
+新增工具函数：
+- `annotate_semantic_strength()` — 批量标注查询结果语义强度
+- `multi_hop_confidence()` — 多跳链路置信度衰减（2跳×0.9, 3跳×0.8, 4+×0.7）
+
+**接入点**：
+- `hybrid.py`: detect_query_intent 新增 Phase 2b（EntityValidator 实体分类）
+- `hybrid.py`: _EDGE_SEMANTIC_STRENGTH 统一从 ontology 模块获取
+- `query.py`: _filter_contracts_by_query 中 EntityValidator 验证通过时置信度提升（0.95→0.97）
+
+### Phase B: 检索质量收口 ✅
+
+**改动文件**：`memory_center/core/orchestrator/query.py`, `memory_center/core/retrieval/hybrid.py`
+
+- contracts 过滤中增加 EntityValidator 置信度增强
+- 检索结果 `_result_to_dict` 已包含 ontology 语义强度标注
+
+### Phase C: Freshness banner 修复 ✅
+
+**改动文件**：`memory_center/core/orchestrator/query.py`, `memory_center/core/orchestrator/impact.py`
+
+- 所有 `svc.get_freshness_banner()` 调用修正为 `svc.banner()`（IndexFreshnessService 的正确方法名）
+- 消除了因方法名不匹配导致的静默失败
+
+### Phase D: Benchmark 可配置回归阈值 ✅
+
+**改动文件**：`memory_center/core/benchmark/trending.py`
+
+- 新增 `RegressionThresholdConfig` dataclass：支持默认阈值、临界阈值、最少数据点、逐函数阈值覆盖
+- 新增 `check_regression_alerts_configurable()` 函数：支持逐函数阈值的回归检测
+
+### Phase E: Completion Audit 工作区类型检测增强 ✅
+
+**改动文件**：`memory_center/core/audit/completion.py`
+
+- `detect_workspace_type()` 新增：
+  - Scala（build.sbt）
+  - Monorepo（pnpm-workspace.yaml / lerna.json）
+  - Docker 检测变量（Dockerfile / docker-compose.yml）
+
+### Phase F+G: 行为测试 ✅
+
+**测试文件**：`tests/test_next_phase_comprehensive.py`
+
+新增约 60+ 测试覆盖：
+- Phase A: EntityValidator（is_feign_entity, is_local_service, classify, validate_endpoint_path, validate_memory_layer）
+- Phase A: 语义强度标注、多跳置信度衰减
+- Phase B: 检索意图检测（feign/mq/endpoint/config/general）
+- Phase C: Freshness 状态、FileWatcher
+- Phase D: RegressionThresholdConfig（默认/逐函数阈值）
+- Phase E: 工作区类型检测（unknown/python/node/scala/monorepo/java-maven/java-gradle）
+- Phase F: DrillDownNavigator 行为测试（facade summary, quick action）
+- Phase G: UnifiedBackendQuery 结构测试
+- 外部 UA-5: Explanation persona 适配（architect/manager/developer）
+- 外部 CG-4: Watcher 桥接结构测试
+
+### 测试结果
+
+```
+466 passed, 5 skipped in ~9s
+```
+
+新增测试与原有 403 个测试完全兼容，无回归。

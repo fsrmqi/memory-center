@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -371,3 +372,73 @@ def _generate_recommendations(
         recommendations.append("基准测试健康，继续保持")
 
     return recommendations
+
+
+@dataclass
+class RegressionThresholdConfig:
+    """Configurable regression thresholds per function/budget (Phase D).
+
+    Allows operators to set per-function or global thresholds
+    instead of relying on hardcoded defaults.
+    """
+    default_threshold_pct: float = 10.0
+    critical_threshold_pct: float = 25.0
+    min_data_points: int = 5
+    per_function_thresholds: Dict[str, float] = field(default_factory=dict)
+
+    def threshold_for(self, function_name: str) -> float:
+        """Return threshold for a specific function, falling back to default."""
+        return self.per_function_thresholds.get(function_name, self.default_threshold_pct)
+
+
+def check_regression_alerts_configurable(
+    workspace_file: str | Path,
+    config: RegressionThresholdConfig | None = None,
+) -> Dict[str, Any]:
+    """Enhanced regression check with configurable per-function thresholds (Phase D).
+
+    Wraps the existing check_regression_alerts with per-function threshold support.
+    """
+    if config is None:
+        config = RegressionThresholdConfig()
+
+    trends = get_benchmark_trends(workspace_file)
+    regressions = trends.get("regressions", [])
+
+    alerts = []
+    for reg in regressions:
+        fn = reg.get("function_name", "")
+        change_pct = reg.get("change_pct", 0)
+        threshold = config.threshold_for(fn)
+
+        if change_pct > config.critical_threshold_pct:
+            severity = "critical"
+        elif change_pct > threshold:
+            severity = "warning"
+        else:
+            continue  # Below threshold, not an alert
+
+        alerts.append({
+            "function": fn,
+            "change_pct": change_pct,
+            "threshold": threshold,
+            "severity": severity,
+            "recent_avg": reg.get("recent_avg_raw", 0),
+            "historical_avg": reg.get("historical_avg_raw", 0),
+            "message": f"{fn} token usage increased {change_pct}% (threshold: {threshold}%)",
+            "recommendation": reg.get("recommendation", ""),
+        })
+
+    return {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "config": {
+            "default_threshold": config.default_threshold_pct,
+            "critical_threshold": config.critical_threshold_pct,
+            "min_data_points": config.min_data_points,
+        },
+        "total_regressions": len(alerts),
+        "critical_count": sum(1 for a in alerts if a["severity"] == "critical"),
+        "warning_count": sum(1 for a in alerts if a["severity"] == "warning"),
+        "alerts": alerts,
+        "health": "critical" if any(a["severity"] == "critical" for a in alerts) else "warning" if alerts else "healthy",
+    }
