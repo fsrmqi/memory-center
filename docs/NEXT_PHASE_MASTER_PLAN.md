@@ -31,6 +31,61 @@
 实现明细见：
 - 当前状态已经并入本文件，不再单独维护实现完成报告。
 
+### V3 已完成基础版 / V3 Foundation Already Implemented
+
+V3 不是“未来方向”，而是当前代码里已经存在的一批能力。当前至少已经有：
+
+#### 1. V3 Core 模块
+
+- `core/context/*`
+  - `ContextPackBuilder`
+  - `budget / evidence / pack`
+- `core/domain/*`
+  - `BusinessDomainExtractor`
+  - `BusinessFlowExtractor`
+  - `BusinessFlowGraph`
+- `core/freshness/*`
+  - `status / reconcile / watcher`
+- `core/matching/*`
+  - project matching
+- `core/ontology.py`
+  - Code Knowledge Graph ontology node / edge typing
+- `core/reasoning/*`
+  - patterns / transitive / risk
+- `core/storage/*`
+  - unified store / SQLite pool / vector index
+- `core/onboarding/*`
+  - glossary / guide / tour
+- `core/presentation/*`
+  - progressive explanation helpers
+
+#### 2. V3 MCP / HTTP 入口
+
+- MCP 新增：
+  - `mc_context_pack`
+  - `mc_onboard`
+  - `mc_domain`
+  - `mc_freshness`
+- HTTP 新增：
+  - `/workspace/context-pack`
+  - `/workspace/onboard`
+  - `/workspace/freshness`
+  - `/workspace/business-flow`
+  - `/workspace/business-flow-impact`
+
+#### 3. 对 V3 的正确理解
+
+这些能力当前的准确状态是：
+
+- **基础版已实现**
+- **部分主入口已接入**
+- **仍需要继续产品化收口**
+
+所以：
+
+- 不应再把它们写成“还没做”
+- 也不应误写成“已经完全收口”
+
 ### v2.2.0 新增实现 / v2.2.0 New Implementations
 
 以下能力在 v2.2.0 中实现完成：
@@ -56,10 +111,11 @@
 | --- | --- | --- |
 | 1 | 轻量本体论 / Ontology | 已有第一版文档与部分实现，继续用统一实体、关系、语义强度收紧 `query / contracts / chain / timeline` 的边界 |
 | 2 | 检索质量继续收口 | `mc_lookup`、`query` 已有混合检索与 contracts 过滤，但仍需继续减少意图误判和误关联 |
-| 3 | Benchmark 趋势化真正落地 | 基础能力和入口已接好，继续强化长期趋势观察、回归阈值与治理闭环 |
-| 4 | Completion audit 产品化 | audit 已可用，继续从“仓库自检工具”走向“真实 workspace 可用的治理能力” |
-| 5 | Timeline / ref / task 体验增强 | drill-down 已有 CLI / MCP / HTTP 入口，继续增强真实工作流体验和摘要质量 |
-| 6 | SQLite 主读路径继续推进 | unified backend query 已落地，继续让 backend 更像稳定主读底座，而不是高频优先补充层 |
+| 3 | Context Pack / Freshness / Domain 工作流化 | V3 模块已在代码中，但还没完全成为默认工作流第一入口 |
+| 4 | Benchmark 趋势化真正落地 | 基础能力和入口已接好，继续强化长期趋势观察、回归阈值与治理闭环 |
+| 5 | Completion audit 产品化 | audit 已可用，继续从“仓库自检工具”走向“真实 workspace 可用的治理能力” |
+| 6 | Timeline / ref / task 体验增强 | drill-down 已有 CLI / MCP / HTTP 入口，继续增强真实工作流体验和摘要质量 |
+| 7 | SQLite 主读路径继续推进 | unified backend query 已落地，继续让 backend 更像稳定主读底座，而不是高频优先补充层 |
 
 ## 3. 当前状态判断
 
@@ -75,6 +131,7 @@
 - drill-down navigation 已实现，并且接入 CLI / MCP / HTTP
 - unified backend query / backend consistency 已实现，并且接入 CLI / MCP / HTTP
 - completion audit 已实现，并且接入主入口
+- V3 `context pack / onboarding / domain / freshness` 已实现，并且已有 MCP / HTTP 入口
 
 这些项不应再被描述成“还没开始做”。
 
@@ -82,6 +139,7 @@
 
 - ontology 已有第一版，但对更多链路的约束还不够彻底
 - retrieval 已有 hybrid 主链路，但结果质量仍需继续收口
+- context pack / freshness / domain 已存在，但还没彻底进入默认推荐工作流
 - benchmark trend 已能跑，但长期归因、回归门槛和治理闭环还不够强
 - audit 已能跑，但对不同类型 workspace 的适配还要继续加强
 - drill-down 已可用，但摘要层、日常入口体验和更真实行为测试还可继续补
@@ -94,6 +152,7 @@
 - facade 关键返回值全面类型化
 - 更完整的结构化日志与指标体系
 - 把 reasoning / context pack / freshness 更完整地并入默认主工作流
+- V3 模块之间的解释资产复用与统一展示协议
 
 ## 4. 下一步先做什么
 
@@ -154,7 +213,25 @@
 - 本地 service 查询不再被误导到 Feign contracts
 - Feign / API / chain 结果更少“像命中、实际不准”
 
-### 阶段 C：Benchmark 趋势化
+### 阶段 C：Context Pack / Freshness / Domain 工作流化
+
+目标：
+
+- 让 V3 模块从“存在能力”变成“默认工作流入口”
+
+建议动作：
+
+1. 让 `mc_context_pack` 成为架构理解 / 变更预热的首选入口
+2. 让 `mc_freshness` 在主查询链路里给出 stale / pending 提示
+3. 让 `mc_domain` / `mc_onboard` 复用同一套解释与 flow 资产
+
+完成标志：
+
+- 架构理解不再默认先 grep / read
+- freshness 提示能跟主查询链路结合
+- onboarding / domain / impact 说的是同一种领域语言
+
+### 阶段 D：Benchmark 趋势化
 
 目标：
 
@@ -171,7 +248,7 @@
 - 每次优化都能量化收益
 - 能快速定位 token 回归链路
 
-### 阶段 D：Completion audit 产品化
+### 阶段 E：Completion audit 产品化
 
 目标：
 
@@ -188,7 +265,7 @@
 - 不同类型 workspace 跑 audit 时假阳性更少
 - audit 输出更像治理建议，而不是简单报缺文件
 
-### 阶段 E：Timeline / ref / task 体验增强
+### 阶段 F：Timeline / ref / task 体验增强
 
 目标：
 
@@ -205,7 +282,7 @@
 - 不只是 Python API 能用
 - 人和模型都能顺着 ref 快速追到证据
 
-### 阶段 F：SQLite 主读路径继续推进
+### 阶段 G：SQLite 主读路径继续推进
 
 目标：
 

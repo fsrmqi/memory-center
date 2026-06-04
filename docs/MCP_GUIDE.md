@@ -2,7 +2,7 @@
 
 ## 1. Public Surface / 对外公开面
 
-MCP 默认公开的是 8 个 facade tools：
+MCP 当前公开的是 12 个 task-level tools：
 
 - `mc_start`
 - `mc_lookup`
@@ -12,6 +12,10 @@ MCP 默认公开的是 8 个 facade tools：
 - `mc_handoff`
 - `mc_close`
 - `mc_admin`
+- `mc_context_pack`
+- `mc_onboard`
+- `mc_domain`
+- `mc_freshness`
 
 设计目标是让模型看到的是“任务级接口”，而不是几十个实现层原子工具。
 
@@ -27,6 +31,10 @@ MCP 默认公开的是 8 个 facade tools：
 | `mc_handoff` | 为其他模型构建交接包 |
 | `mc_close` | 会话收尾、同步 case、记录经验 |
 | `mc_admin` | 状态、面板、评测、工件、group 等管理入口 |
+| `mc_context_pack` | 生成紧凑、证据驱动的上下文包 |
+| `mc_onboard` | 生成面向不同 persona 的架构导览 |
+| `mc_domain` | 提取业务域和业务流 |
+| `mc_freshness` | 检查索引新鲜度与 stale/pending 风险 |
 
 ## 3. Recommended Agent Behavior / 推荐 Agent 行为
 
@@ -38,7 +46,10 @@ MCP 默认公开的是 8 个 facade tools：
 4. 长任务同步：`mc_sync`
 5. 中断后恢复：`mc_resume`
 6. 切换模型：`mc_handoff`
-7. 收尾：`mc_close`
+7. 架构/变更问题先看：`mc_context_pack`
+8. 新人或跨角色理解：`mc_onboard` / `mc_domain`
+9. 改动前确认索引状态：`mc_freshness`
+10. 收尾：`mc_close`
 
 ## 4. mc_admin Actions / mc_admin 操作列表
 
@@ -76,7 +87,40 @@ MCP 默认公开的是 8 个 facade tools：
 - `session_*` — 会话操作
 - `group_*` — 跨工作区组操作
 
-## 5. Hooks / Hook 接入
+## 5. V3 Tools / V3 工具
+
+### `mc_context_pack`
+
+- 用途：给模型一个紧凑的、证据驱动的上下文包
+- 适合场景：
+  - 架构理解
+  - 变更影响预热
+  - 希望减少多次 grep / read / lookup
+
+### `mc_onboard`
+
+- 用途：按 persona 生成架构导览
+- 支持的 persona：
+  - `developer`
+  - `architect`
+  - `product`
+  - `tester`
+
+### `mc_domain`
+
+- 用途：从代码图谱中提取业务域与业务流
+- 适合场景：
+  - 业务边界梳理
+  - 跨模块业务链路说明
+
+### `mc_freshness`
+
+- 用途：检查索引是否 stale / pending
+- 适合场景：
+  - 改动前确认图谱是否可信
+  - 提醒是否应先读 live file 或触发增量索引
+
+## 6. Hooks / Hook 接入
 
 ### 推荐自动执行
 
@@ -90,7 +134,7 @@ MCP 默认公开的是 8 个 facade tools：
 
 原因：普通自然语言请求过于依赖上下文，容易被宿主误处理成拦截步骤。
 
-## 6. Host Strategy / 宿主策略
+## 7. Host Strategy / 宿主策略
 
 ### Claude Code / Codex
 
@@ -103,7 +147,7 @@ MCP 默认公开的是 8 个 facade tools：
 
 更适合作为规则与工作流提示层，而不是强阻断执行层。
 
-## 7. Security Model / 安全模型
+## 8. Security Model / 安全模型
 
 Memory Center 默认是：
 
@@ -117,7 +161,7 @@ Memory Center 默认是：
 - `.memory-center/artifacts`
 - 生成的 wiki / skills / dashboard
 
-## 8. HTTP Bridge / HTTP 桥接
+## 9. HTTP Bridge / HTTP 桥接
 
 MCP 之外，还可通过 HTTP bridge 复用同一套能力：
 
@@ -125,7 +169,7 @@ MCP 之外，还可通过 HTTP bridge 复用同一套能力：
 memory-center serve-http --workspace /abs/path/.memory-center/workspace.yaml --host 127.0.0.1 --port 8765
 ```
 
-## 9. Related Docs / 相关文档
+## 10. Related Docs / 相关文档
 
 - [REFERENCE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/REFERENCE.md)
 - [SPECS.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/SPECS.md)

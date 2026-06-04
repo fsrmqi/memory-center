@@ -65,6 +65,10 @@
 - `drill-timeline`
 - `drill-task`
 - `backend-consistency`
+- `onboard`
+- `domain`
+- `freshness`
+- `context-pack`
 
 ## 2. MCP Facade Parameters / MCP Facade 参数
 
@@ -113,6 +117,36 @@
 - `eval_*`
 - `group_*`
 
+### `mc_context_pack`
+
+常见参数：
+
+- `query`
+- `intent`
+- `budget_tokens`
+- `limit`
+
+### `mc_onboard`
+
+常见参数：
+
+- `scope`
+- `persona`
+- `target`
+
+### `mc_domain`
+
+常见参数：
+
+- `scope`
+- `include_flows`
+
+### `mc_freshness`
+
+常见参数：
+
+- `scope`
+
 ## 3. HTTP Endpoints / HTTP 端点
 
 高频端点：
@@ -145,6 +179,11 @@
 - `/workspace/drill-task`
 - `/workspace/backend-consistency`
 - `/workspace/eval-token-benchmark-trend`
+- `/workspace/onboard`
+- `/workspace/context-pack`
+- `/workspace/freshness`
+- `/workspace/business-flow`
+- `/workspace/business-flow-impact`
 
 ## 4. Stable Schemas / 稳定协议
 

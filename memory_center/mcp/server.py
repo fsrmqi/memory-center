@@ -721,47 +721,43 @@ def create_server(workspace_file: str):
 
     @mcp.prompt()
     def check_mq_safety(topic: str = "") -> str:
-        return (
+        base = (
             "Check MQ consumer safety for this project. "
             "Call mc_lookup to find MQ consumers and topics. "
             "Verify each consumer has idempotent handling. "
             "Check message format compatibility. "
-            f"Focus topic: {topic}" if topic else
-            "Check all MQ consumers in the workspace."
         )
+        return base + (f"Focus topic: {topic}" if topic else "Check all MQ consumers in the workspace.")
 
     @mcp.prompt()
     def analyze_dto_impact(dto_class: str = "") -> str:
-        return (
+        base = (
             "Analyze the impact of changing a DTO class. "
             "Call mc_analyze to get the full impact analysis. "
             "Check serialization compatibility, MQ message bodies, "
             "and Feign client contracts. "
-            f"Target DTO: {dto_class}" if dto_class else
-            "Analyze all DTOs in the workspace."
         )
+        return base + (f"Target DTO: {dto_class}" if dto_class else "Analyze all DTOs in the workspace.")
 
     @mcp.prompt()
     def cross_service_trace(service: str = "") -> str:
-        return (
+        base = (
             "Trace cross-service call chains. "
             "Call mc_lookup with mode='chain' to find Feign clients, "
             "MQ producers/consumers, and shared configs. "
             "Map the complete call graph across services. "
-            f"Starting from: {service}" if service else
-            "Trace all cross-service interactions."
         )
+        return base + (f"Starting from: {service}" if service else "Trace all cross-service interactions.")
 
     @mcp.prompt()
     def config_propagation_check(key: str = "") -> str:
-        return (
+        base = (
             "Check configuration key propagation across services. "
             "Call mc_lookup to find ConfigKey nodes. "
             "Identify which services read the same config keys. "
             "Flag potential configuration drift. "
-            f"Focus key: {key}" if key else
-            "Check all shared configuration keys."
         )
+        return base + (f"Focus key: {key}" if key else "Check all shared configuration keys.")
 
     @mcp.prompt()
     def freshness_check() -> str:
@@ -783,14 +779,13 @@ def create_server(workspace_file: str):
 
     @mcp.prompt()
     def diff_impact_analysis(diff_summary: str = "") -> str:
-        return (
+        base = (
             "Analyze the impact of a git diff. "
             "Call mc_context_pack to get a compact context package. "
             "Then call mc_analyze for detailed impact analysis. "
             "Generate a change checklist with risk assessment. "
-            f"Diff summary: {diff_summary}" if diff_summary else
-            "Analyze the current working tree changes."
         )
+        return base + (f"Diff summary: {diff_summary}" if diff_summary else "Analyze the current working tree changes.")
 
     # ===================== FACADE 9-12: V3 MCP Tools (§20.6) =====================
 
