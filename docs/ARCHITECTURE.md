@@ -134,9 +134,9 @@ Hook 层属于宿主集成，不是核心业务层。推荐自动执行的只有
 - [ROADMAP.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/ROADMAP.md)
 - [TECHNICAL_GUIDE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/TECHNICAL_GUIDE.md)
 
-## Implemented Capabilities (v2.2.0) / 已实现能力（v2.2.0）
+## Implemented Capabilities (3.x / V3 Foundation) / 已实现能力（3.x / V3 基础版）
 
-以下模块是在 v2.2.0 阶段落地的已实现能力，用于说明当前系统里已经存在什么，而不是表示这些仍然是待做事项：
+以下模块是当前系统里已经存在的能力，用于说明“已经落地了什么”，而不是表示这些仍然是待做事项：
 
 ### Hybrid Retrieval Engine / 混合检索引擎
 

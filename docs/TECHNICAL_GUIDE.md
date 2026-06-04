@@ -44,9 +44,10 @@
 - 文件：`memory_center/mcp/server.py`
 - 对外命令：`memory-center-mcp`
 - 负责：
-  - 8 个 facade tools
+  - 12 个 task-level tools
   - resources / prompts
   - `mc_admin` 路由管理
+  - V3 `context_pack / onboard / domain / freshness`
 
 #### HTTP
 
@@ -162,6 +163,25 @@
 - `core/instructions.py`
   - AGENT / CLAUDE / GEMINI 指令文件生成
 
+### 3.6 V3 层
+
+- `core/context/*`
+  - context pack、budget、evidence
+- `core/domain/*`
+  - business domain / business flow 抽取与查询
+- `core/freshness/*`
+  - 索引新鲜度检测、watcher、reconcile
+- `core/ontology.py`
+  - Code KG ontology node / edge typing
+- `core/reasoning/*`
+  - pattern / transitive / risk reasoning
+- `core/storage/*`
+  - unified store / SQLite pool / vector index
+- `core/onboarding/*`
+  - guided tour / glossary / onboarding
+- `core/presentation/*`
+  - progressive explanation helpers
+
 ## 4. 当前系统的几条主链路
 
 ### 4.1 索引链路
@@ -209,7 +229,12 @@
 
 ### 5.1 MCP 面收敛为 facade
 
-现在默认不把实现层几十个工具直接暴露给模型，而是暴露 8 个任务级 facade。
+现在默认不把实现层几十个工具直接暴露给模型，而是暴露 12 个任务级工具：
+
+- 基础 8 个 facade：
+  - `mc_start / mc_lookup / mc_analyze / mc_sync / mc_resume / mc_handoff / mc_close / mc_admin`
+- V3 4 个理解与治理工具：
+  - `mc_context_pack / mc_onboard / mc_domain / mc_freshness`
 
 原因：
 

@@ -925,21 +925,28 @@ def _route_request(path: str, params: dict, default_workspace: str | None) -> di
         workspace = _require_workspace(params, default_workspace)
         from memory_center.core.graph import GraphStore
         from memory_center.core.domain.flow import BusinessFlowExtractor
+        from memory_center.core.store import WorkspaceStore
         seed = _require_one(params, "seed")
         max_depth = _parse_int(params, "max_depth", 4)
-        graph = GraphStore(workspace)
-        extractor = BusinessFlowExtractor(graph)
-        flows = extractor.extract_flows(seed, max_depth=max_depth)
+        store = WorkspaceStore(workspace)
+        with GraphStore(store.graph_db_path) as graph:
+            extractor = BusinessFlowExtractor(graph)
+            flows = extractor.extract_flows(seed, max_depth=max_depth)
         return {"flows": [f.__dict__ for f in flows]}
     if path == "/workspace/business-flow-impact":
         workspace = _require_workspace(params, default_workspace)
         from memory_center.core.storage.unified import UnifiedStore
         from memory_center.core.domain.flow import BusinessFlowGraph
+        from memory_center.core.store import WorkspaceStore
         node_id = _require_one(params, "node_id")
         max_depth = _parse_int(params, "max_depth", 3)
-        store = UnifiedStore(workspace)
-        fg = BusinessFlowGraph(store)
-        return {"impacted": fg.find_impact_along_flows(node_id, max_depth=max_depth)}
+        workspace_store = WorkspaceStore(workspace)
+        store = UnifiedStore(workspace_store.graph_db_path)
+        try:
+            fg = BusinessFlowGraph(store)
+            return {"impacted": fg.find_impact_along_flows(node_id, max_depth=max_depth)}
+        finally:
+            store.close()
     if path == "/workspace/metrics-summary":
         from memory_center.core.metrics import MetricsCollector
         mc = MetricsCollector()
@@ -952,18 +959,37 @@ def _route_request(path: str, params: dict, default_workspace: str | None) -> di
         workspace = _require_workspace(params, default_workspace)
         from memory_center.core.onboarding.tour import ArchitectureTourGenerator
         from memory_center.core.storage.unified import UnifiedStore
+        from memory_center.core.store import WorkspaceStore
         persona = params.get("persona", ["developer"])[0]
-        unified = UnifiedStore(workspace)
-        gen = ArchitectureTourGenerator(unified)
-        tour = gen.generate_tour(persona=persona)
-        return {"tour": tour.to_dict()}
+        workspace_store = WorkspaceStore(workspace)
+        unified = UnifiedStore(workspace_store.graph_db_path)
+        try:
+            gen = ArchitectureTourGenerator(unified)
+            tour = gen.generate_tour(persona=persona)
+            return {"tour": tour.to_dict()}
+        finally:
+            unified.close()
     if path == "/workspace/context-pack":
         workspace = _require_workspace(params, default_workspace)
         from memory_center.core.context.pack import ContextPackBuilder
         builder = ContextPackBuilder(workspace)
+        query = _require_one(params, "query")
         intent = params.get("intent", [""])[0]
-        pack = builder.build(intent=intent)
-        return {"nodes": pack.nodes, "edges": pack.edges, "freshness": pack.freshness, "snippets": pack.snippets}
+        budget_tokens = _parse_int(params, "budget_tokens", 8000)
+        limit = _parse_int(params, "limit", 10)
+        pack = builder.build(query=query, intent=intent or "auto", budget_tokens=budget_tokens, limit=limit)
+        return {
+            "query": pack.query,
+            "intent": pack.intent,
+            "entrypoints": pack.entrypoints,
+            "relationships": pack.relationships,
+            "snippets": pack.snippets,
+            "risks": pack.risks,
+            "checklist": pack.checklist,
+            "freshness": pack.freshness,
+            "token_estimate": pack.token_estimate,
+            "progressive": pack.progressive,
+        }
     if path == "/workspace/freshness":
         workspace = _require_workspace(params, default_workspace)
         from memory_center.core.freshness.status import IndexFreshnessService
