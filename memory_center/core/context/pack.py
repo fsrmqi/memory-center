@@ -20,6 +20,16 @@ from ..storage.unified import UnifiedStore
 from ..graph import GraphStore
 from ..retrieval.hybrid import hybrid_retrieve, HybridRetrievalConfig, detect_query_intent
 from ..rules import match_rules
+from ..freshness.status import IndexFreshnessService
+
+# Extensions that are treated as non-code (skipped for snippet extraction)
+_NON_CODE_EXTENSIONS = frozenset({".md", ".txt", ".yaml", ".yml", ".json", ".xml",
+                                   ".properties", ".cfg", ".ini", ".toml", ".rst"})
+# Lines above/below the target line to include in a snippet
+_SNIPPET_CONTEXT_ABOVE = 15
+_SNIPPET_CONTEXT_BELOW = 5
+# Max snippets per build to keep token usage predictable
+_MAX_SNIPPETS = 8
 
 
 @dataclass
@@ -94,11 +104,25 @@ class ContextPackBuilder:
                 if item not in checklist:
                     checklist.append(item)
 
-        # 6. Estimate token usage
-        total_text = json.dumps(results[:5], ensure_ascii=False) + json.dumps(relationships, ensure_ascii=False)
+        # 6. Extract code snippets from top entrypoints
+        snippets = _extract_snippets(self._store, results, budget_tokens)
+
+        # 7. Check index freshness
+        try:
+            freshness_info = IndexFreshnessService(self._workspace_file).banner()
+        except Exception:
+            freshness_info = {}
+
+        # 8. Estimate token usage (include snippets)
+        snippet_text = "".join(s.get("content", "") for s in snippets)
+        total_text = (
+            json.dumps(results[:5], ensure_ascii=False)
+            + json.dumps(relationships, ensure_ascii=False)
+            + snippet_text
+        )
         token_estimate = len(total_text) // 4  # rough estimate
 
-        # 7. Build progressive disclosure
+        # 9. Build progressive disclosure
         progressive = {
             "level_1_quick": {
                 "entrypoint_count": len(results),
@@ -112,6 +136,7 @@ class ContextPackBuilder:
                 "relationship_count": len(relationships),
                 "risk_count": len(risks),
                 "checklist_items": len(checklist),
+                "snippet_count": len(snippets),
             },
             "level_3_next_actions": _suggest_next_actions(primary_intent, results, risks),
         }
@@ -121,10 +146,10 @@ class ContextPackBuilder:
             intent=primary_intent,
             entrypoints=[{"node": item.get("node", {}), "score": item.get("score", 0), "sources": item.get("sources", [])} for item in results],
             relationships=relationships,
-            snippets=[],  # TODO: extract code snippets from files
+            snippets=snippets,
             risks=risks,
             checklist=checklist,
-            freshness={},  # TODO: integrate freshness service
+            freshness=freshness_info,
             token_estimate=token_estimate,
             progressive=progressive,
         )
@@ -149,6 +174,113 @@ def _suggest_next_actions(intent: str, results: list, risks: list) -> list[str]:
     if risks:
         actions.append(f"注意 {len(risks)} 条风险规则已触发")
     return actions
+
+
+# ---------------------------------------------------------------------------
+# Snippet extraction helpers
+# ---------------------------------------------------------------------------
+
+def _extract_snippets(store: Any, results: list, budget_tokens: int) -> List[Dict[str, Any]]:
+    """Extract code snippets from the top entrypoints' source files.
+
+    Each snippet covers a window around the node's declared line number.
+    Duplicate files are de-duped; at most ``_MAX_SNIPPETS`` are returned.
+    Total content is capped to the snippet budget (25 % of ``budget_tokens``).
+    """
+    from ..store import WorkspaceStore
+
+    # Build lookup: file_path → abs_path from file-index.json
+    try:
+        index_entries = store.read_json_prefer_backend("file-index.json", [])
+    except Exception:
+        index_entries = []
+    abs_map = _build_file_index(index_entries)
+
+    snippets: List[Dict[str, Any]] = []
+    seen_files: set = set()
+    snippet_budget = int(budget_tokens * 0.25)  # 25 % allocated per TokenBudget
+    used_tokens = 0
+
+    for item in results:
+        if len(snippets) >= _MAX_SNIPPETS:
+            break
+        node = item.get("node", {})
+        file_path = node.get("file_path", "")
+        line = node.get("line", 0)
+        if not file_path or line <= 0:
+            continue
+
+        abs_path = abs_map.get(file_path)
+        if not abs_path or not abs_path.exists():
+            continue
+        if abs_path.suffix.lower() in _NON_CODE_EXTENSIONS:
+            continue
+        if str(abs_path) in seen_files:
+            continue
+        seen_files.add(str(abs_path))
+
+        try:
+            all_lines = abs_path.read_text(encoding="utf-8", errors="ignore").splitlines()
+        except Exception:
+            continue
+
+        start = max(0, line - 1 - _SNIPPET_CONTEXT_ABOVE)
+        end = min(len(all_lines), line - 1 + _SNIPPET_CONTEXT_BELOW + 1)
+        content = "\n".join(all_lines[start:end])
+        content_tokens = len(content) // 4
+        if used_tokens + content_tokens > snippet_budget:
+            break
+
+        snippets.append({
+            "node_id": node.get("id", ""),
+            "name": node.get("name", ""),
+            "file": file_path,
+            "line_start": start + 1,
+            "line_end": end,
+            "content": content,
+            "language": _guess_language(abs_path.suffix),
+        })
+        used_tokens += content_tokens
+
+    return snippets
+
+
+def _build_file_index(entries: list) -> Dict[str, Path]:
+    """Build a mapping from logical file_path to absolute Path.
+
+    The file-index.json stores ``path`` (relative to service root) and
+    ``abs_path``.  We build two mappings:
+      - ``project:path`` → abs_path   (exact match)
+      - ``path`` alone   → abs_path   (fallback when project matches)
+
+    For compatibility with older indexers that used ``abs_path`` directly
+    in node metadata, we also register the abs_path as a key.
+    """
+    result: Dict[str, Path] = {}
+    for entry in entries:
+        ap = entry.get("abs_path", "")
+        if not ap:
+            continue
+        p = Path(ap)
+        project = entry.get("project", "")
+        logical = entry.get("path", "")
+        if project and logical:
+            result[f"{project}:{logical}"] = p
+        if logical:
+            result[logical] = p
+        # Some old indexes store abs_path in node.file_path directly
+        result[ap] = p
+    return result
+
+
+def _guess_language(suffix: str) -> str:
+    """Map a file extension to a language identifier."""
+    return {
+        ".java": "java", ".kt": "kotlin", ".py": "python", ".js": "javascript",
+        ".ts": "typescript", ".go": "go", ".rs": "rust", ".c": "c", ".cpp": "cpp",
+        ".h": "c", ".hpp": "cpp", ".cs": "csharp", ".rb": "ruby", ".php": "php",
+        ".scala": "scala", ".sh": "bash", ".sql": "sql", ".swift": "swift",
+    }.get(suffix.lower(), "")
 
 
 def benchmark_context_pack(workspace_file: str | Path, queries: List[str]) -> Dict[str, Any]:

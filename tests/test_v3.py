@@ -627,6 +627,240 @@ class TestContextPackIntegration:
         builder = ContextPackBuilder(str(ws_dir / "workspace.yaml"))
         assert builder is not None
 
+    # ------------------------------------------------------------------ #
+    # Snippet & freshness integration tests
+    # ------------------------------------------------------------------ #
+
+    @staticmethod
+    def _setup_workspace(tmp_path):
+        """Create a minimal workspace with file-index and a source file.
+
+        Returns (workspace_yaml_path, source_file_path).
+        """
+        ws_dir = tmp_path / ".memory-center"
+        (ws_dir / "index").mkdir(parents=True)
+        (ws_dir / "graph").mkdir()
+
+        # workspace.yaml
+        (ws_dir / "workspace.yaml").write_text(
+            "workspace: test\nroot: .\nservices: []\n"
+        )
+
+        # A real Java source file that the snippet extractor will read
+        src = tmp_path / "UserService.java"
+        lines = [f"// line {i}" for i in range(1, 51)]
+        lines[17] = "public class UserService {"  # line 18 (0-indexed 17)
+        lines[18] = "    public void saveUser() {"
+        src.write_text("\n".join(lines))
+
+        # file-index.json maps logical path → abs_path
+        import json
+        index_file = ws_dir / "index" / "file-index.json"
+        index_file.write_text(json.dumps([{
+            "project": "test-svc",
+            "path": "src/UserService.java",
+            "abs_path": str(src.resolve()),
+            "service_root": str(tmp_path),
+            "suffix": ".java",
+        }]))
+
+        return ws_dir / "workspace.yaml", src
+
+    def test_snippets_extracted(self, tmp_path):
+        """build() returns code snippets from entrypoints' source files."""
+        from unittest.mock import patch, MagicMock
+        from memory_center.core.context.pack import ContextPackBuilder
+
+        ws_yaml, src = self._setup_workspace(tmp_path)
+
+        fake_results = [{
+            "node": {
+                "id": "Class:test-svc:UserService",
+                "type": "Class",
+                "name": "UserService",
+                "project": "test-svc",
+                "file_path": "src/UserService.java",
+                "line": 18,
+                "metadata": {},
+            },
+            "score": 1.0,
+            "sources": ["graph"],
+        }]
+
+        with patch("memory_center.core.context.pack.hybrid_retrieve", return_value={"results": fake_results}):
+            builder = ContextPackBuilder(str(ws_yaml))
+            pack = builder.build("UserService", budget_tokens=8000)
+
+        assert len(pack.snippets) == 1
+        snippet = pack.snippets[0]
+        assert snippet["file"] == "src/UserService.java"
+        assert "public class UserService" in snippet["content"]
+        assert snippet["language"] == "java"
+        assert snippet["line_start"] >= 1
+        assert snippet["line_end"] <= 50
+
+    def test_freshness_populated(self, tmp_path):
+        """build() returns non-empty freshness (not a stub dict)."""
+        from unittest.mock import patch
+        from memory_center.core.context.pack import ContextPackBuilder
+
+        ws_yaml, _ = self._setup_workspace(tmp_path)
+
+        with patch("memory_center.core.context.pack.hybrid_retrieve", return_value={"results": []}):
+            builder = ContextPackBuilder(str(ws_yaml))
+            pack = builder.build("anything", budget_tokens=8000)
+
+        assert isinstance(pack.freshness, dict)
+        assert "freshness" in pack.freshness
+        assert "banner" in pack.freshness
+        assert pack.freshness["freshness"]["status"] in ("fresh", "pending", "stale", "unknown")
+
+    def test_snippets_respect_token_budget(self, tmp_path):
+        """Total snippet content stays within 25 % of budget_tokens."""
+        from unittest.mock import patch
+        from memory_center.core.context.pack import ContextPackBuilder
+
+        ws_yaml, src = self._setup_workspace(tmp_path)
+
+        # Write a large file so the window would be big
+        big_lines = [f"public class Big {{ /* {'x' * 200} */ }}" for _ in range(500)]
+        src.write_text("\n".join(big_lines))
+
+        fake_results = [{
+            "node": {
+                "id": "Class:test-svc:UserService",
+                "type": "Class",
+                "name": "UserService",
+                "project": "test-svc",
+                "file_path": "src/UserService.java",
+                "line": 250,
+                "metadata": {},
+            },
+            "score": 1.0,
+            "sources": ["graph"],
+        }]
+
+        budget = 2000  # snippet budget = 25 % = 500 tokens
+        with patch("memory_center.core.context.pack.hybrid_retrieve", return_value={"results": fake_results}):
+            builder = ContextPackBuilder(str(ws_yaml))
+            pack = builder.build("UserService", budget_tokens=budget)
+
+        # Total snippet chars / 4 must be ≤ 500 tokens
+        total_tokens = sum(len(s["content"]) // 4 for s in pack.snippets)
+        assert total_tokens <= int(budget * 0.25) + 1  # +1 for rounding
+
+    def test_non_code_files_skipped(self, tmp_path):
+        """Snippets are not extracted from .yaml / .md / .json files."""
+        from unittest.mock import patch
+        from memory_center.core.context.pack import ContextPackBuilder
+        import json
+
+        ws_dir = tmp_path / ".memory-center"
+        (ws_dir / "index").mkdir(parents=True)
+        (ws_dir / "graph").mkdir()
+        (ws_dir / "workspace.yaml").write_text("workspace: test\nroot: .\nservices: []\n")
+
+        yaml_src = tmp_path / "application.yml"
+        yaml_src.write_text("server:\n  port: 8080\n")
+
+        index_file = ws_dir / "index" / "file-index.json"
+        index_file.write_text(json.dumps([{
+            "project": "test-svc",
+            "path": "application.yml",
+            "abs_path": str(yaml_src.resolve()),
+            "service_root": str(tmp_path),
+            "suffix": ".yml",
+        }]))
+
+        fake_results = [{
+            "node": {
+                "id": "ConfigKey:test-svc:server.port",
+                "type": "ConfigKey",
+                "name": "server.port",
+                "project": "test-svc",
+                "file_path": "application.yml",
+                "line": 2,
+                "metadata": {},
+            },
+            "score": 0.8,
+            "sources": ["graph"],
+        }]
+
+        with patch("memory_center.core.context.pack.hybrid_retrieve", return_value={"results": fake_results}):
+            builder = ContextPackBuilder(str(ws_dir / "workspace.yaml"))
+            pack = builder.build("server.port", budget_tokens=8000)
+
+        assert pack.snippets == []
+
+    def test_snippet_dedup_same_file(self, tmp_path):
+        """Multiple nodes in the same file produce only one snippet."""
+        from unittest.mock import patch
+        from memory_center.core.context.pack import ContextPackBuilder
+        import json
+
+        ws_dir = tmp_path / ".memory-center"
+        (ws_dir / "index").mkdir(parents=True)
+        (ws_dir / "graph").mkdir()
+        (ws_dir / "workspace.yaml").write_text("workspace: test\nroot: .\nservices: []\n")
+
+        src = tmp_path / "Foo.java"
+        src.write_text("\n".join([f"// line {i}" for i in range(1, 101)]))
+
+        index_file = ws_dir / "index" / "file-index.json"
+        index_file.write_text(json.dumps([{
+            "project": "p",
+            "path": "Foo.java",
+            "abs_path": str(src.resolve()),
+            "service_root": str(tmp_path),
+            "suffix": ".java",
+        }]))
+
+        fake_results = [
+            {"node": {"id": "A", "type": "Class", "name": "Foo", "project": "p",
+                       "file_path": "Foo.java", "line": 10, "metadata": {}},
+             "score": 1.0, "sources": ["graph"]},
+            {"node": {"id": "B", "type": "Method", "name": "bar", "project": "p",
+                       "file_path": "Foo.java", "line": 50, "metadata": {}},
+             "score": 0.9, "sources": ["graph"]},
+        ]
+
+        with patch("memory_center.core.context.pack.hybrid_retrieve", return_value={"results": fake_results}):
+            builder = ContextPackBuilder(str(ws_dir / "workspace.yaml"))
+            pack = builder.build("Foo bar", budget_tokens=8000)
+
+        assert len(pack.snippets) == 1  # deduped
+        assert pack.snippets[0]["node_id"] == "A"  # first occurrence wins
+
+    def test_freshness_and_snippets_together(self, tmp_path):
+        """A single build() returns both non-empty snippets and freshness."""
+        from unittest.mock import patch
+        from memory_center.core.context.pack import ContextPackBuilder
+
+        ws_yaml, _ = self._setup_workspace(tmp_path)
+
+        fake_results = [{
+            "node": {
+                "id": "Class:test-svc:UserService",
+                "type": "Class",
+                "name": "UserService",
+                "project": "test-svc",
+                "file_path": "src/UserService.java",
+                "line": 18,
+                "metadata": {},
+            },
+            "score": 1.0,
+            "sources": ["graph"],
+        }]
+
+        with patch("memory_center.core.context.pack.hybrid_retrieve", return_value={"results": fake_results}):
+            builder = ContextPackBuilder(str(ws_yaml))
+            pack = builder.build("UserService", budget_tokens=8000)
+
+        # Both must be populated
+        assert len(pack.snippets) >= 1
+        assert "freshness" in pack.freshness
+        assert pack.freshness["freshness"]["status"] in ("fresh", "pending", "stale", "unknown")
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Edge case tests

@@ -807,6 +807,7 @@ def create_server(workspace_file: str):
             "intent": pack.intent,
             "entrypoints": pack.entrypoints,
             "relationships": pack.relationships[:20],
+            "snippets": pack.snippets,
             "risks": pack.risks,
             "checklist": pack.checklist,
             "freshness": pack.freshness,

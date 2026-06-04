@@ -86,9 +86,9 @@ V3 不是“未来方向”，而是当前代码里已经存在的一批能力�
 - 不应再把它们写成“还没做”
 - 也不应误写成“已经完全收口”
 
-### v2.2.0 新增实现 / v2.2.0 New Implementations
+### v3.1.0 新增实现 / v3.1.0 New Implementations
 
-以下能力在 v2.2.0 中实现完成：
+以下能力在 v3.1.0 中实现完成：
 
 #### 1. Vue 前端工作台 / Vue Frontend Workbench
 - **位置**: `web/` 目录，Vue 3 + Vite + vue-router + axios
