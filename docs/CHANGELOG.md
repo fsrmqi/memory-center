@@ -6,6 +6,15 @@
 - 重要行为变化
 - 明确修复的真实 bug
 
+## 3.1.1
+
+### 主链路收口 / Main Workflow Stabilization
+
+- 升级版本号到 `3.1.1`
+- 延续 v3.1 系列对 V3 / Next Phase 能力的产品化收口
+- 重点面向 freshness、context、impact、business flow、retrieval、CLI / MCP / HTTP 一致性等主链路稳定性优化
+- 保持 MCP facade schema 向后兼容
+
 ## 3.0.0
 
 ### NEXT_PHASE_MASTER_PLAN.md 全量实现 / Full Implementation
