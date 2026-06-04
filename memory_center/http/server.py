@@ -91,6 +91,42 @@ from memory_center.core.artifacts import (
 )
 
 
+
+_VUE_DIST_DIR: Path | None = None
+
+
+def _find_vue_dist() -> Path | None:
+    """Find the Vue frontend dist directory."""
+    global _VUE_DIST_DIR
+    if _VUE_DIST_DIR is not None:
+        return _VUE_DIST_DIR
+    import memory_center
+    pkg_dir = Path(memory_center.__file__).parent.parent
+    vue_dist = pkg_dir / "web" / "dist"
+    if vue_dist.exists() and (vue_dist / "index.html").exists():
+        _VUE_DIST_DIR = vue_dist
+        return _VUE_DIST_DIR
+    vue_dist = Path.cwd() / "web" / "dist"
+    if vue_dist.exists() and (vue_dist / "index.html").exists():
+        _VUE_DIST_DIR = vue_dist
+        return _VUE_DIST_DIR
+    return None
+
+
+_MIME_TYPES: dict[str, str] = {
+    ".html": "text/html; charset=utf-8",
+    ".js": "application/javascript; charset=utf-8",
+    ".css": "text/css; charset=utf-8",
+    ".svg": "image/svg+xml",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".ico": "image/x-icon",
+    ".woff": "font/woff",
+    ".woff2": "font/woff2",
+    ".ttf": "font/ttf",
+    ".json": "application/json; charset=utf-8",
+}
+
 def create_handler(default_workspace: str | Path | None = None) -> type[BaseHTTPRequestHandler]:
     workspace_file = str(Path(default_workspace).expanduser().resolve()) if default_workspace else None
 
@@ -99,6 +135,37 @@ def create_handler(default_workspace: str | Path | None = None) -> type[BaseHTTP
             parsed = urlparse(self.path)
             params = parse_qs(parsed.query)
             try:
+                # Serve Vue frontend SPA for /app routes
+                vue_dist = _find_vue_dist()
+                if vue_dist and (parsed.path == "/app" or parsed.path.startswith("/app/")):
+                    rel_path = parsed.path[4:]  # strip "/app"
+                    if not rel_path or rel_path == "/":
+                        rel_path = "/index.html"
+                    file_path = (vue_dist / rel_path.lstrip("/")).resolve()
+                    # Security: ensure file is within vue_dist
+                    if not str(file_path).startswith(str(vue_dist.resolve())):
+                        self.send_error(403)
+                        return
+                    if file_path.is_file():
+                        suffix = file_path.suffix.lower()
+                        mime = _MIME_TYPES.get(suffix, "application/octet-stream")
+                        body = file_path.read_bytes()
+                        self.send_response(200)
+                        self.send_header("Content-Type", mime)
+                        self.send_header("Content-Length", str(len(body)))
+                        self.end_headers()
+                        self.wfile.write(body)
+                        return
+                    # SPA fallback: serve index.html for client-side routing
+                    index_html = vue_dist / "index.html"
+                    if index_html.exists():
+                        body = index_html.read_bytes()
+                        self.send_response(200)
+                        self.send_header("Content-Type", "text/html; charset=utf-8")
+                        self.send_header("Content-Length", str(len(body)))
+                        self.end_headers()
+                        self.wfile.write(body)
+                        return
                 if parsed.path == "/ui":
                     self._write_html(200, export_workbench_index_html(_require_workspace(params, workspace_file)))
                     return
@@ -791,6 +858,138 @@ def _route_request(path: str, params: dict, default_workspace: str | None) -> di
         workspace = _require_workspace(params, default_workspace)
         from memory_center.core.benchmark.trending import generate_benchmark_report
         return generate_benchmark_report(workspace, function_name=params.get("function_name", [""])[0])
+
+    # ===================== Next-Phase HTTP Routes (ECC/UA/CG) =====================
+    if path == "/workspace/verification-loop":
+        workspace = _require_workspace(params, default_workspace)
+        from memory_center.core.verification.loop import VerificationLoop
+        vl = VerificationLoop(workspace)
+        task_type = params.get("task_type", ["general"])[0]
+        task_id = params.get("task_id", ["default"])[0]
+        analysis = {"task_type": task_type, "workspace": workspace}
+        checklist = vl.generate_checklist(analysis)
+        status = vl.get_status(task_id)
+        return {"checklist": checklist, "status": status}
+    if path == "/workspace/pattern-promotion":
+        workspace = _require_workspace(params, default_workspace)
+        from memory_center.core.verification.pattern_promotion import PatternPromotion
+        pp = PatternPromotion(workspace)
+        action_type = params.get("action", ["list"])[0]
+        if action_type == "list":
+            return {"proposals": pp.list_proposals()}
+        elif action_type == "propose":
+            return pp.propose({"rule_text": _require_one(params, "text"), "source": "http"})
+        elif action_type == "promote":
+            return pp.promote(_require_one(params, "text"))
+        return {"error": f"Unknown action: {action_type}"}
+    if path == "/workspace/heuristics":
+        workspace = _require_workspace(params, default_workspace)
+        from memory_center.core.verification.heuristics import HeuristicsRegister
+        hr = HeuristicsRegister(workspace)
+        action_type = params.get("action", ["query"])[0]
+        if action_type == "query":
+            return {"heuristics": hr.query(params.get("text", [""])[0])}
+        elif action_type == "record":
+            import json as _json
+            try:
+                data = _json.loads(_require_one(params, "text"))
+            except Exception:
+                data = {"pattern": _require_one(params, "text")}
+            hr.record(data)
+            return {"status": "recorded"}
+        return {"error": f"Unknown action: {action_type}"}
+    if path == "/workspace/workflow-profile":
+        from memory_center.core.verification.workflow_profiles import get_workflow_profile
+        profile = params.get("profile", ["quick-fix"])[0]
+        return get_workflow_profile(profile)
+    if path == "/workspace/workflow-recommend":
+        from memory_center.core.verification.workflow_profiles import recommend_workflow
+        desc = _require_one(params, "description")
+        return recommend_workflow(desc)
+    if path == "/workspace/bundle-export":
+        workspace = _require_workspace(params, default_workspace)
+        from memory_center.core.verification.bundle_export import generate_agent_bundle
+        agent = params.get("agent", ["codex"])[0]
+        return generate_agent_bundle(workspace, agent=agent)
+    if path == "/workspace/runtime-audit":
+        workspace = _require_workspace(params, default_workspace)
+        from memory_center.core.audit.runtime import audit_agent_runtime
+        return audit_agent_runtime(workspace)
+    if path == "/workspace/explanation":
+        from memory_center.core.explanation.schema import Explanation
+        text = _require_one(params, "text")
+        persona = params.get("persona", ["developer"])[0]
+        exp = Explanation(title="Explanation", summary=text, details=[], persona=persona)
+        return exp.adapt_for_persona(persona)
+    if path == "/workspace/business-flow":
+        workspace = _require_workspace(params, default_workspace)
+        from memory_center.core.graph import GraphStore
+        from memory_center.core.domain.flow import BusinessFlowExtractor
+        seed = _require_one(params, "seed")
+        max_depth = _parse_int(params, "max_depth", 4)
+        graph = GraphStore(workspace)
+        extractor = BusinessFlowExtractor(graph)
+        flows = extractor.extract_flows(seed, max_depth=max_depth)
+        return {"flows": [f.__dict__ for f in flows]}
+    if path == "/workspace/business-flow-impact":
+        workspace = _require_workspace(params, default_workspace)
+        from memory_center.core.storage.unified import UnifiedStore
+        from memory_center.core.domain.flow import BusinessFlowGraph
+        node_id = _require_one(params, "node_id")
+        max_depth = _parse_int(params, "max_depth", 3)
+        store = UnifiedStore(workspace)
+        fg = BusinessFlowGraph(store)
+        return {"impacted": fg.find_impact_along_flows(node_id, max_depth=max_depth)}
+    if path == "/workspace/metrics-summary":
+        from memory_center.core.metrics import MetricsCollector
+        mc = MetricsCollector()
+        return mc.summary()
+    if path == "/workspace/regression-alerts":
+        workspace = _require_workspace(params, default_workspace)
+        from memory_center.core.benchmark.trending import check_regression_alerts
+        return check_regression_alerts(workspace, benchmark_name=params.get("benchmark_name", [""])[0] or None)
+    if path == "/workspace/onboard":
+        workspace = _require_workspace(params, default_workspace)
+        from memory_center.core.onboarding.tour import ArchitectureTourGenerator
+        from memory_center.core.storage.unified import UnifiedStore
+        persona = params.get("persona", ["developer"])[0]
+        unified = UnifiedStore(workspace)
+        gen = ArchitectureTourGenerator(unified)
+        tour = gen.generate_tour(persona=persona)
+        return {"tour": tour.to_dict()}
+    if path == "/workspace/context-pack":
+        workspace = _require_workspace(params, default_workspace)
+        from memory_center.core.context.pack import ContextPackBuilder
+        builder = ContextPackBuilder(workspace)
+        intent = params.get("intent", [""])[0]
+        pack = builder.build(intent=intent)
+        return {"nodes": pack.nodes, "edges": pack.edges, "freshness": pack.freshness, "snippets": pack.snippets}
+    if path == "/workspace/freshness":
+        workspace = _require_workspace(params, default_workspace)
+        from memory_center.core.freshness.status import IndexFreshnessService
+        svc = IndexFreshnessService(workspace)
+        return svc.banner()
+    if path == "/workspace/group-status":
+        workspace = _require_workspace(params, default_workspace)
+        from memory_center.core.registry import load_registry
+        grp = load_registry(workspace)
+        return group_status(grp)
+    if path == "/workspace/group-query":
+        workspace = _require_workspace(params, default_workspace)
+        from memory_center.core.registry import load_registry
+        grp = load_registry(workspace)
+        return group_query(grp, query=_require_one(params, "query"), limit=_parse_int(params, "limit", 20))
+    if path == "/workspace/group-impact":
+        workspace = _require_workspace(params, default_workspace)
+        from memory_center.core.registry import load_registry
+        grp = load_registry(workspace)
+        return group_impact(grp, target=_require_one(params, "target"))
+    if path == "/workspace/group-chain":
+        workspace = _require_workspace(params, default_workspace)
+        from memory_center.core.registry import load_registry
+        grp = load_registry(workspace)
+        return group_chain(grp, symbol=_require_one(params, "symbol"))
+
     raise FileNotFoundError(f"Unknown route: {path}")
 
 

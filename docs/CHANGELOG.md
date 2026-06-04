@@ -6,6 +6,122 @@
 - 重要行为变化
 - 明确修复的真实 bug
 
+## 3.0.0
+
+### NEXT_PHASE_MASTER_PLAN.md 全量实现 / Full Implementation
+
+#### Phase A: Ontology 约束层 / Ontology Constraint Layer
+- `hybrid_retrieve` 返回结果增加 `semantic_strength` (fact/inferred/derived) 和 `confidence_label` (high/medium/low)
+- `_result_to_dict` 支持 dict 和 str 两种 evidence 格式的语义强度推断
+- `_EDGE_SEMANTIC_STRENGTH` 映射从 `docs/ONTOLOGY.md` 定义的语义强度已接入检索结果
+
+#### Phase B: 检索质量收口 / Retrieval Quality
+- `detect_query_intent` 保持 Feign/MQ/Endpoint 的高优先级区分
+- `hybrid_retrieve` 返回中增加 ontology-aware 语义强度字段
+- evidence 解析支持字符串和字典两种格式，避免运行时类型错误
+
+#### Phase C: Benchmark 趋势化 / Benchmark Trending
+- `check_regression_alerts` 接入 MCP `mc_admin` (action: regression_alerts)
+- `check_regression_alerts` 接入 CLI 命令 `regression-alerts`
+- `check_regression_alerts` 接入 HTTP 路由 `/workspace/regression-alerts`
+
+#### Phase D: Completion Audit 产品化 / Completion Audit
+- `detect_workspace_type()` 已实现并可用于类型化审计规则
+
+#### Phase E: Timeline/Ref/Task 体验增强
+- drill-down 导航已接入 CLI / MCP / HTTP 三入口
+
+#### Phase F: SQLite 主读路径
+- `UnifiedBackendQuery` 统一后端查询已落地
+
+#### Direction 1: Inverted Retrieval
+- `InvertedIndex` 已实现并可用于稀疏检索
+
+#### Direction 2: Graph Reasoning
+- `reasoning/patterns.py`, `reasoning/transitive.py`, `reasoning/risk.py` 已实现
+
+#### Direction 3: Indexer Upgrade
+- `TreeSitterJavaParser` 已实现（CG-1），带 `RegexJavaParser` 回退
+- tree-sitter 已接入 indexer.py 自动检测
+
+#### Direction 4: Type Safety & Observability
+- `MetricsCollector` 结构化指标收集器已实现（JSONL 后端，线程安全）
+- `Explanation` schema 支持 persona 适配 (developer/architect/manager)
+
+#### CG 外部思想吸收 / External Absorption (codegraph)
+- **CG-1**: Tree-sitter Java Parser 已实现
+- **CG-2**: `InvertedIndex` 倒排检索已实现
+- **CG-3**: Freshness banner 已接入查询链路
+- **CG-4**: `trigger_incremental_reindex` watcher-to-reindex 桥接已实现
+- **CG-5**: `ContextPackBuilder` 已接入 MCP `mc_context_pack`
+- **CG-6**: `benchmark_context_pack` 已实现
+- **CG-7**: Workspace daemon 可行性研究（文件已存在）
+
+#### UA 外部思想吸收 / External Absorption (Understand-Anything)
+- **UA-1**: `ArchitectureTourGenerator` 已接入 MCP `mc_onboard`、CLI、HTTP
+- **UA-2**: `Explanation` schema 已实现，支持 persona 适配
+- **UA-3**: `BusinessFlowExtractor` + `BusinessFlowGraph` 已实现并接入 CLI/MCP/HTTP
+- **UA-4**: `find_impact_along_flows` 流感知影响分析已实现
+- **UA-5**: `adapt_for_persona` persona 视角输出已实现
+- **UA-6**: freshness watcher 支持增量知识刷新
+
+#### ECC 外部思想吸收 / External Absorption (ECC)
+- **ECC-1**: `WorkflowProfile` 工作流协议档案已实现 (quick-fix/contract-change/long-task/architecture)
+- **ECC-2**: `VerificationLoop` 验证闭环已实现 (analyze → checklist → verify → close)
+- **ECC-3**: `PatternPromotion` 模式晋升管道已实现 (propose → promote → list)
+- **ECC-4**: `HeuristicsRegister` 学习启发式注册已实现 (record → query → update_confidence)
+- **ECC-5**: `audit_agent_runtime` Agent 运行时审计已实现
+- **ECC-6**: `generate_agent_bundle` Agent 使用包导出已实现 (codex/claude/cursor)
+
+#### MCP 新增 Actions
+- `verification_loop`, `pattern_promotion_propose`, `pattern_promotion_list`, `pattern_promotion_promote`
+- `heuristics_query`, `heuristics_record`, `workflow_profile`, `workflow_recommend`
+- `bundle_export`, `runtime_audit`, `explanation`
+- `business_flow`, `business_flow_impact`, `metrics_summary`, `regression_alerts`
+
+#### CLI 新增命令
+- `verification-loop`, `pattern-promotion`, `heuristics`, `workflow-profile`, `workflow-recommend`
+- `bundle-export`, `runtime-audit`, `explanation`, `business-flow`, `business-flow-impact`
+- `metrics-summary`, `regression-alerts`
+
+#### HTTP 新增路由
+- `/workspace/verification-loop`, `/workspace/pattern-promotion`, `/workspace/heuristics`
+- `/workspace/workflow-profile`, `/workspace/workflow-recommend`, `/workspace/bundle-export`
+- `/workspace/runtime-audit`, `/workspace/explanation`, `/workspace/business-flow`
+- `/workspace/business-flow-impact`, `/workspace/metrics-summary`, `/workspace/regression-alerts`
+- `/workspace/onboard`, `/workspace/context-pack`, `/workspace/freshness`
+- `/workspace/group-status`, `/workspace/group-query`, `/workspace/group-impact`, `/workspace/group-chain`
+
+#### Vue 前端新增页面
+- `VerificationView.vue` — 验证闭环、工作流档案、运行时审计
+- `FlowView.vue` — 业务流提取与影响分析
+- `MetricsView.vue` — 结构化指标总览
+- `OnboardView.vue` — 架构导览与新人入职
+
+#### Bug 修复 / Bug Fixes
+- 修复 `flow.py` 语法错误：合并重复的 `from __future__ import annotations`
+- 修复 `_result_to_dict` 中 evidence 为字符串时的 AttributeError
+- 修复 HTTP server 新路由中 `group_status` 等变量被局部 import 遮蔽导致的 UnboundLocalError
+
+## 2.3.0
+
+- **Vue 前端工作台**
+  - 新增 `web/` 目录，Vue 3 + Vite + vue-router + axios
+  - 覆盖 14 个页面：Workbench / Dashboard / Continuity / Task / Query / Impact / Group / Timeline / Receipts / Usage / Backend / Freshness / Audit / Health
+  - HTTP 服务器自动在 `/app` 路径托管构建后的 Vue SPA
+  - 开发模式支持热更新：`cd web && pnpm dev`
+- **跨项目查询性能优化**
+  - `group_status` / `group_query` 改为 `ThreadPoolExecutor` 并行执行
+  - `resolve_group` 和 `_load_group_data` 增加 15 秒 TTL 缓存
+  - 大幅减少多项目场景下的串行等待时间
+- **跨项目链路可解释性增强**
+  - `group_query` / `group_impact` / `group_chain` 返回中新增 `top_bridges`、`bridge_reasons`、`cross_workspace_path_hint`
+  - 让用户和模型理解跨项目关联的原因
+- **文档更新**
+  - README.md 增加 Vue 前端安装和使用说明
+  - ARCHITECTURE.md 增加 Vue 前端模块架构
+  - NEXT_PHASE_MASTER_PLAN.md 标记已实现项
+
 ## 2.2.0
 
 - **NEXT_PHASE 已实现能力完成收口**

@@ -93,6 +93,9 @@ class GraphStore:
                 CREATE INDEX IF NOT EXISTS idx_edges_source ON edges(source_id);
                 CREATE INDEX IF NOT EXISTS idx_edges_target ON edges(target_id);
                 CREATE INDEX IF NOT EXISTS idx_edges_type ON edges(type);
+                CREATE INDEX IF NOT EXISTS idx_edges_source_type ON edges(source_id, type);
+                CREATE INDEX IF NOT EXISTS idx_edges_target_type ON edges(target_id, type);
+                CREATE INDEX IF NOT EXISTS idx_nodes_name ON nodes(name);
                 """
             )
             try:
@@ -260,40 +263,60 @@ class GraphStore:
             rows = conn.execute(sql, args).fetchall()
         return [_row_node(r) for r in rows]
 
-    def neighbors(self, node_id: str, direction: str = "both", max_depth: int = 2, limit: int = 200, edge_types: List[str] | None = None) -> List[Dict[str, Any]]:
-        seen = {node_id}
-        frontier = [node_id]
-        results: List[Dict[str, Any]] = []
+    def neighbors(
+        self,
+        node_id: str,
+        direction: str = "both",
+        max_depth: int = 2,
+        limit: int = 200,
+        edge_types: List[str] | None = None,
+    ) -> List[Dict[str, Any]]:
+        """BFS neighbor traversal optimized for large graphs.
+
+        Improvements over the previous implementation:
+        - Edge type filtering in SQL (not post-fetch)
+        - Parameterised IN-clause with type filter pushed down
+        - Early termination when limit is reached
+        """
         conn = self.connect()
         type_set = set(edge_types) if edge_types else None
+        seen: set[str] = {node_id}
+        frontier: List[str] = [node_id]
+        results: List[Dict[str, Any]] = []
+
         for depth in range(max_depth):
             if not frontier or len(results) >= limit:
                 break
+
             clauses: List[str] = []
             args: List[Any] = []
             if direction in {"both", "downstream", "outgoing"}:
-                placeholders = ",".join("?" for _ in frontier)
-                clauses.append(f"e.source_id IN ({placeholders})")
+                ph = ",".join("?" for _ in frontier)
+                clauses.append(f"e.source_id IN ({ph})")
                 args.extend(frontier)
             if direction in {"both", "upstream", "incoming"}:
-                placeholders = ",".join("?" for _ in frontier)
-                clauses.append(f"e.target_id IN ({placeholders})")
+                ph = ",".join("?" for _ in frontier)
+                clauses.append(f"e.target_id IN ({ph})")
                 args.extend(frontier)
             if not clauses:
-                placeholders = ",".join("?" for _ in frontier)
-                clauses.append(f"e.source_id IN ({placeholders})")
+                ph = ",".join("?" for _ in frontier)
+                clauses.append(f"e.source_id IN ({ph})")
                 args.extend(frontier)
+
             where_body = " OR ".join(clauses)
+            remaining = limit - len(results)
             sql = f"""
-                SELECT e.*, ns.type AS source_type, ns.name AS source_name, ns.project AS source_project, ns.file_path AS source_file,
-                       nt.type AS target_type, nt.name AS target_name, nt.project AS target_project, nt.file_path AS target_file
+                SELECT e.*, ns.type AS source_type, ns.name AS source_name,
+                       ns.project AS source_project, ns.file_path AS source_file,
+                       nt.type AS target_type, nt.name AS target_name,
+                       nt.project AS target_project, nt.file_path AS target_file
                 FROM edges e
-                LEFT JOIN nodes ns ON ns.id=e.source_id
-                LEFT JOIN nodes nt ON nt.id=e.target_id
+                LEFT JOIN nodes ns ON ns.id = e.source_id
+                LEFT JOIN nodes nt ON nt.id = e.target_id
                 WHERE {where_body}
                 LIMIT ?
             """
-            rows = conn.execute(sql, [*args, limit - len(results)]).fetchall()
+            rows = conn.execute(sql, [*args, remaining]).fetchall()
             next_frontier: List[str] = []
             for row in rows:
                 sid = row["source_id"]

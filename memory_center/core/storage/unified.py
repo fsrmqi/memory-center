@@ -47,6 +47,9 @@ CREATE INDEX IF NOT EXISTS idx_nodes_project   ON nodes(project);
 CREATE INDEX IF NOT EXISTS idx_edges_source    ON edges(source_id);
 CREATE INDEX IF NOT EXISTS idx_edges_target    ON edges(target_id);
 CREATE INDEX IF NOT EXISTS idx_edges_type      ON edges(type);
+CREATE INDEX IF NOT EXISTS idx_edges_source_type ON edges(source_id, type);
+CREATE INDEX IF NOT EXISTS idx_edges_target_type ON edges(target_id, type);
+CREATE INDEX IF NOT EXISTS idx_nodes_name       ON nodes(name);
 """
 
 _FTS_DDL = """

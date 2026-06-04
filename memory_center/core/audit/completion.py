@@ -18,6 +18,51 @@ AUDIT_LOG_FILE = "completion-audit.jsonl"
 DESIGN_DECISIONS_FILE = "design-decisions.jsonl"
 
 
+
+def detect_workspace_type(project_root: Path) -> str:
+    """Auto-detect workspace type from project structure.
+
+    Returns: 'java-maven', 'java-gradle', 'node', 'python', 'rust', 'go', 'mixed', 'unknown'
+    """
+    has_pom = (project_root / "pom.xml").exists()
+    has_gradle = (project_root / "build.gradle").exists() or (project_root / "build.gradle.kts").exists()
+    has_package = (project_root / "package.json").exists()
+    has_pyproject = (project_root / "pyproject.toml").exists() or (project_root / "setup.py").exists()
+    has_cargo = (project_root / "Cargo.toml").exists()
+    has_go_mod = (project_root / "go.mod").exists()
+
+    # Check for Spring Cloud indicators
+    is_spring = False
+    if has_pom or has_gradle:
+        for pom_path in project_root.rglob("pom.xml"):
+            try:
+                text = pom_path.read_text(errors="ignore")
+                if "spring" in text.lower() or "feign" in text.lower():
+                    is_spring = True
+                    break
+            except Exception:
+                pass
+
+    if has_pom and is_spring:
+        return "java-spring-maven"
+    if has_gradle and is_spring:
+        return "java-spring-gradle"
+    if has_pom:
+        return "java-maven"
+    if has_gradle:
+        return "java-gradle"
+    if has_package:
+        return "node"
+    if has_pyproject:
+        return "python"
+    if has_cargo:
+        return "rust"
+    if has_go_mod:
+        return "go"
+    types = sum([has_pom, has_gradle, has_package, has_pyproject, has_cargo, has_go_mod])
+    return "mixed" if types > 1 else "unknown"
+
+
 def _get_project_root(workspace_file: str | Path) -> Path:
     """Get project root directory from workspace file path.
 

@@ -149,3 +149,45 @@ def _suggest_next_actions(intent: str, results: list, risks: list) -> list[str]:
     if risks:
         actions.append(f"注意 {len(risks)} 条风险规则已触发")
     return actions
+
+
+def benchmark_context_pack(workspace_file: str | Path, queries: List[str]) -> Dict[str, Any]:
+    """Benchmark context pack effectiveness.
+
+    Measures: token savings, tool call reduction, response quality.
+    """
+    from ..store import WorkspaceStore
+    store = WorkspaceStore(workspace_file)
+
+    results = []
+    total_raw_tokens = 0
+    total_pack_tokens = 0
+
+    builder = ContextPackBuilder(workspace_file)
+    for q in queries:
+        try:
+            pack = builder.build(q, budget_tokens=4000)
+            pack_tokens = pack.token_estimate
+            # Estimate raw tokens from source files
+            raw_estimate = sum(len(s.get("content", "")) // 4 for s in pack.snippets) * 3  # rough estimate
+            total_raw_tokens += raw_estimate
+            total_pack_tokens += pack_tokens
+            results.append({
+                "query": q,
+                "pack_tokens": pack_tokens,
+                "raw_estimate": raw_estimate,
+                "savings_pct": round((1 - pack_tokens / max(raw_estimate, 1)) * 100, 1),
+                "entrypoints_count": len(pack.entrypoints),
+                "snippets_count": len(pack.snippets),
+                "risks_count": len(pack.risks),
+            })
+        except Exception as exc:
+            results.append({"query": q, "error": str(exc)})
+
+    return {
+        "total_queries": len(queries),
+        "total_raw_tokens": total_raw_tokens,
+        "total_pack_tokens": total_pack_tokens,
+        "overall_savings_pct": round((1 - total_pack_tokens / max(total_raw_tokens, 1)) * 100, 1),
+        "results": results,
+    }

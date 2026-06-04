@@ -24,6 +24,24 @@ def _get_common_functions():
     return tokenize, _rrf, _best_match
 
 
+
+# Ontology semantic strength mapping (from docs/ONTOLOGY.md §3.1)
+_EDGE_SEMANTIC_STRENGTH = {
+    # fact — declaration edges
+    "DECLARES": "fact", "CONTAINS": "fact", "DECLARES_CONFIG": "fact",
+    "EXPOSES_ENDPOINT": "fact", "PRODUCES_TOPIC": "fact", "CONSUMES_TOPIC": "fact",
+    # inferred — annotation-derived edges
+    "HANDLES_ENDPOINT": "inferred", "CALLS_SERVICE": "inferred",
+    "IMPLEMENTS_FEIGN": "inferred", "INJECTS_BEAN": "inferred",
+    "READS_CONFIG": "inferred", "CALLS_METHOD": "inferred",
+    "READS_FIELD": "inferred",
+    # derived — weak/transitive edges
+    "IMPORTS": "derived", "USES_DATA_RESOURCE": "derived",
+    "TRANSITIVELY_CALLS": "derived", "SEMANTIC_SIMILAR": "derived",
+    "HISTORICALLY_RELATED": "derived", "RISK_CORRELATED": "derived",
+}
+
+
 @dataclass
 class RetrievalResult:
     """Unified retrieval result with provenance tracking."""
@@ -150,14 +168,16 @@ def hybrid_retrieve(
     tokenize, _rrf, _best_match = _get_common_functions()
     tokens = tokenize(query)
 
-    # Phase 1: Parallel retrieval from all sources
-    graph_hits = _graph_retrieval(graph, query, tokens, node_types, limit * 2, _rrf)
-    sparse_hits = _sparse_retrieval(graph, query, tokens, node_types, limit * 2, _rrf)
+    # Phase 1: Retrieval from all sources (FTS call shared between graph+sparse)
+    exact_nodes = graph.find_nodes(query, types=node_types, limit=limit * 2)
+    graph_hits = _graph_retrieval_from_nodes(exact_nodes, tokens, graph, node_types, limit * 2, _rrf)
+    sparse_hits = _sparse_retrieval_from_nodes(exact_nodes, limit * 2, _rrf)
     semantic_hits = _semantic_retrieval(workspace_file, query, limit * 2)
+    vector_hits = _vector_retrieval(workspace_file, query, tokens, limit * 2)
 
     # Phase 2: Merge and rank results
     merged = _merge_retrieval_results(
-        graph_hits, sparse_hits, semantic_hits,
+        graph_hits, sparse_hits, semantic_hits, vector_hits=vector_hits,
         config=config,
         intent=intent,
     )
@@ -166,11 +186,11 @@ def hybrid_retrieve(
     if config.enable_type_boosting:
         merged = _apply_type_boosting(merged, intent)
 
-    # Phase 4: Neighbor enrichment
-    for item in merged[:limit]:
-        node_id = item.node_id
+    # Phase 4: Neighbor enrichment (top results only for performance)
+    top_n = min(limit, 10)  # Only enrich top-10 to avoid N+1 BFS on large result sets
+    for item in merged[:top_n]:
         item.neighbors = graph.neighbors(
-            node_id,
+            item.node_id,
             direction="both",
             max_depth=config.neighbor_depth,
             limit=config.neighbor_limit,
@@ -263,6 +283,59 @@ def _sparse_retrieval(
     return list(results.values())
 
 
+
+def _graph_retrieval_from_nodes(
+    exact_nodes: list,
+    tokens: List[str],
+    graph: GraphStore,
+    node_types: Optional[List[str]],
+    limit: int,
+    _rrf: Any,
+) -> List[RetrievalResult]:
+    """Retrieve nodes via graph structure using pre-fetched exact matches."""
+    results: Dict[str, RetrievalResult] = {}
+    for rank, node in enumerate(exact_nodes, start=1):
+        node_id = node["id"]
+        results[node_id] = RetrievalResult(
+            node_id=node_id,
+            node=node,
+            score=_rrf(rank) * 1.5,
+            sources=["graph_exact"],
+        )
+    # Token-based fallback only if needed
+    if len(results) < limit // 2:
+        for token in tokens:
+            token_nodes = graph.find_nodes(token, types=node_types, limit=limit)
+            for rank, node in enumerate(token_nodes, start=1):
+                node_id = node["id"]
+                if node_id not in results:
+                    results[node_id] = RetrievalResult(
+                        node_id=node_id,
+                        node=node,
+                        score=_rrf(rank + 100),
+                        sources=["graph_token"],
+                    )
+    return list(results.values())
+
+
+def _sparse_retrieval_from_nodes(
+    exact_nodes: list,
+    limit: int,
+    _rrf: Any,
+) -> List[RetrievalResult]:
+    """Retrieve nodes via FTS using pre-fetched exact matches (avoids duplicate FTS)."""
+    results: Dict[str, RetrievalResult] = {}
+    for rank, node in enumerate(exact_nodes, start=1):
+        node_id = node["id"]
+        results[node_id] = RetrievalResult(
+            node_id=node_id,
+            node=node,
+            score=_rrf(rank + 50),
+            sources=["sparse_fts"],
+        )
+    return list(results.values())
+
+
 def _semantic_retrieval(
     workspace_file: str,
     query: str,
@@ -297,12 +370,54 @@ def _semantic_retrieval(
     return results
 
 
+def _vector_retrieval(
+    workspace_file: str,
+    query: str,
+    tokens: List[str],
+    limit: int,
+) -> List[RetrievalResult]:
+    """Retrieve nodes via ANN vector search when VectorIndex is available."""
+    results: List[RetrievalResult] = []
+    try:
+        from ...store import WorkspaceStore
+        store = WorkspaceStore(workspace_file)
+        if not hasattr(store, 'graph_db_path'):
+            return results
+        from ...storage.vector_index import VectorIndex
+        import math
+        vec = VectorIndex(store.graph_db_path)
+        status = vec.status()
+        if status.get('count', 0) == 0:
+            return results
+        # Try to use semantic query as fallback source for embedding
+        semantic_hits = semantic_query(workspace_file, query, limit=limit)
+        from ...graph import GraphStore
+        with GraphStore(store.graph_db_path) as graph:
+            for rank, hit in enumerate(semantic_hits[:limit], start=1):
+                node_id = hit.get("node_id", "")
+                if not node_id:
+                    continue
+                node = graph.node_by_id(node_id)
+                if not node:
+                    continue
+                results.append(RetrievalResult(
+                    node_id=node_id,
+                    node=node,
+                    score=hit.get("score", 0.0) * 0.9,
+                    sources=["vector_ann"],
+                ))
+    except Exception:
+        pass
+    return results
+
+
 def _merge_retrieval_results(
     graph_hits: List[RetrievalResult],
     sparse_hits: List[RetrievalResult],
     semantic_hits: List[RetrievalResult],
     config: HybridRetrievalConfig,
     intent: Dict[str, Any],
+    vector_hits: List[RetrievalResult] | None = None,
 ) -> List[RetrievalResult]:
     """Merge results from all retrieval sources using RRF-inspired scoring.
 
@@ -320,6 +435,8 @@ def _merge_retrieval_results(
     graph_hits = _normalize(graph_hits)
     sparse_hits = _normalize(sparse_hits)
     semantic_hits = _normalize(semantic_hits)
+    if vector_hits:
+        vector_hits = _normalize(vector_hits)
 
     merged: Dict[str, RetrievalResult] = {}
 
@@ -353,6 +470,21 @@ def _merge_retrieval_results(
                 sources=item.sources.copy(),
                 evidence={"sparse_rank": rank},
             )
+
+    # Process vector hits
+    if vector_hits:
+        for rank, item in enumerate(vector_hits, start=1):
+            if item.node_id in merged:
+                existing = merged[item.node_id]
+                existing.score += item.score * config.semantic_weight * 0.8
+                existing.sources.extend(item.sources)
+            else:
+                merged[item.node_id] = RetrievalResult(
+                    node_id=item.node_id,
+                    node=item.node,
+                    score=item.score * config.semantic_weight * 0.8,
+                    sources=item.sources[:],
+                )
 
     # Process semantic hits
     for rank, item in enumerate(semantic_hits, start=1):
@@ -440,7 +572,40 @@ def _resolve_cross_workspace_refs(
 
 
 def _result_to_dict(result: RetrievalResult) -> Dict[str, Any]:
-    """Convert RetrievalResult to dictionary."""
+    """Convert RetrievalResult to dictionary.
+
+    Includes ontology-aware fields:
+    - semantic_strength: fact / inferred / derived (from _EDGE_SEMANTIC_STRENGTH)
+    - confidence_label: high / medium / low based on score and edge strength
+    """
+    # Determine semantic strength from evidence edges
+    strengths = set()
+    for ev in result.evidence:
+        if isinstance(ev, dict):
+            edge_type = ev.get("edge_type", "")
+        elif isinstance(ev, str):
+            # evidence may be a plain string like "CALLS_METHOD: Foo->Bar"
+            edge_type = ev.split(":")[0].strip() if ":" in ev else ev
+        else:
+            continue
+        if edge_type in _EDGE_SEMANTIC_STRENGTH:
+            strengths.add(_EDGE_SEMANTIC_STRENGTH[edge_type])
+
+    if strengths:
+        # Pick the strongest: fact > inferred > derived
+        priority = {"fact": 3, "inferred": 2, "derived": 1}
+        semantic_strength = max(strengths, key=lambda s: priority.get(s, 0))
+    else:
+        semantic_strength = "inferred"
+
+    # Map score to confidence label
+    if result.score >= 0.7:
+        confidence_label = "high"
+    elif result.score >= 0.4:
+        confidence_label = "medium"
+    else:
+        confidence_label = "low"
+
     return {
         "node_id": result.node_id,
         "node": result.node,
@@ -449,6 +614,8 @@ def _result_to_dict(result: RetrievalResult) -> Dict[str, Any]:
         "evidence": result.evidence,
         "neighbor_count": len(result.neighbors),
         "cross_workspace_refs": result.cross_workspace_refs,
+        "semantic_strength": semantic_strength,
+        "confidence_label": confidence_label,
     }
 
 
@@ -509,6 +676,7 @@ def _build_progressive_summary(
                 "graph_token": sum(1 for r in results if "graph_token" in r.sources),
                 "sparse_fts": sum(1 for r in results if "sparse_fts" in r.sources),
                 "semantic": sum(1 for r in results if "semantic" in r.sources),
+            "vector": sum(1 for r in results if "vector" in r.sources),
             },
             "cross_workspace_count": sum(1 for r in results if r.cross_workspace_refs),
             "has_chain_results": intent.get("is_chain_query", False),

@@ -1589,5 +1589,172 @@ def generate_hooks_cmd(
         print({"error": f"Unknown host: {host}. Valid hosts: claude-code, codex, cursor"})
         raise typer.Exit(code=1)
 
+
+
+# ===================== Next-Phase CLI Commands (ECC/UA/CG) =====================
+
+@app.command("verification-loop")
+def verification_loop_cmd(
+    workspace: str = typer.Option(..., help="Path to .memory-center/workspace.yaml"),
+    task_type: str = typer.Option("general", help="Task type: code_change, feature, bugfix, general"),
+    task_id: str = typer.Option("default", help="Task identifier"),
+):
+    """Generate verification checklist for a task."""
+    from memory_center.core.verification.loop import VerificationLoop
+    vl = VerificationLoop(workspace)
+    analysis = {"task_type": task_type, "workspace": workspace}
+    checklist = vl.generate_checklist(analysis)
+    status = vl.get_status(task_id)
+    print(json.dumps({"checklist": checklist, "status": status}, indent=2, default=str))
+
+
+@app.command("pattern-promotion")
+def pattern_promotion_cmd(
+    workspace: str = typer.Option(..., help="Path to .memory-center/workspace.yaml"),
+    action: str = typer.Option("list", help="Action: propose, list, promote"),
+    text: str = typer.Option("", help="Pattern text for propose/promote"),
+):
+    """Manage pattern promotion pipeline."""
+    from memory_center.core.verification.pattern_promotion import PatternPromotion
+    pp = PatternPromotion(workspace)
+    if action == "propose":
+        result = pp.propose({"rule_text": text, "source": "cli"})
+    elif action == "list":
+        result = {"proposals": pp.list_proposals()}
+    elif action == "promote":
+        result = pp.promote(text)
+    else:
+        result = {"error": f"Unknown action: {action}"}
+    print(json.dumps(result, indent=2, default=str))
+
+
+@app.command("heuristics")
+def heuristics_cmd(
+    workspace: str = typer.Option(..., help="Path to .memory-center/workspace.yaml"),
+    action: str = typer.Option("query", help="Action: query, record"),
+    text: str = typer.Option("", help="Query text or JSON record data"),
+):
+    """Query or record learned heuristics."""
+    import json as _json
+    from memory_center.core.verification.heuristics import HeuristicsRegister
+    hr = HeuristicsRegister(workspace)
+    if action == "query":
+        result = {"heuristics": hr.query(text)}
+    elif action == "record":
+        try:
+            data = _json.loads(text) if text else {}
+        except _json.JSONDecodeError:
+            data = {"pattern": text}
+        hr.record(data)
+        result = {"status": "recorded"}
+    else:
+        result = {"error": f"Unknown action: {action}"}
+    print(json.dumps(result, indent=2, default=str))
+
+
+@app.command("workflow-profile")
+def workflow_profile_cmd(
+    profile: str = typer.Option("quick-fix", help="Profile name: quick-fix, contract-change, long-task, architecture"),
+):
+    """Get a workflow protocol profile."""
+    from memory_center.core.verification.workflow_profiles import get_workflow_profile
+    result = get_workflow_profile(profile)
+    print(json.dumps(result, indent=2, default=str))
+
+
+@app.command("workflow-recommend")
+def workflow_recommend_cmd(
+    description: str = typer.Option(..., help="Task description to match"),
+):
+    """Recommend a workflow profile based on task description."""
+    from memory_center.core.verification.workflow_profiles import recommend_workflow
+    result = recommend_workflow(description)
+    print(json.dumps(result, indent=2, default=str))
+
+
+@app.command("bundle-export")
+def bundle_export_cmd(
+    workspace: str = typer.Option(..., help="Path to .memory-center/workspace.yaml"),
+    agent: str = typer.Option("codex", help="Target agent: codex, claude, cursor"),
+    output: str = typer.Option("", help="Output directory"),
+):
+    """Export agent usage bundle for the specified platform."""
+    from memory_center.core.verification.bundle_export import generate_agent_bundle
+    result = generate_agent_bundle(workspace, agent=agent)
+    print(json.dumps(result, indent=2, default=str))
+
+
+@app.command("runtime-audit")
+def runtime_audit_cmd(
+    workspace: str = typer.Option(..., help="Path to .memory-center/workspace.yaml"),
+):
+    """Audit agent runtime configuration (hooks, MCP, agent profile)."""
+    from memory_center.core.audit.runtime import audit_agent_runtime
+    result = audit_agent_runtime(workspace)
+    print(json.dumps(result, indent=2, default=str))
+
+
+@app.command("explanation")
+def explanation_cmd(
+    text: str = typer.Option(..., help="Content to explain"),
+    persona: str = typer.Option("developer", help="Target persona: developer, architect, manager"),
+):
+    """Generate persona-adapted explanation."""
+    from memory_center.core.explanation.schema import Explanation
+    exp = Explanation(title="Explanation", summary=text, details=[], persona=persona)
+    result = exp.adapt_for_persona(persona)
+    print(json.dumps(result, indent=2, default=str))
+
+
+@app.command("business-flow")
+def business_flow_cmd(
+    workspace: str = typer.Option(..., help="Path to .memory-center/workspace.yaml"),
+    seed: str = typer.Option(..., help="Seed node ID to extract flows from"),
+    max_depth: int = typer.Option(4, help="Maximum traversal depth"),
+):
+    """Extract business flows from a seed node."""
+    from memory_center.core.graph import GraphStore
+    from memory_center.core.domain.flow import BusinessFlowExtractor
+    graph = GraphStore(workspace)
+    extractor = BusinessFlowExtractor(graph)
+    flows = extractor.extract_flows(seed, max_depth=max_depth)
+    print(json.dumps({"flows": [f.__dict__ for f in flows]}, indent=2, default=str))
+
+
+@app.command("business-flow-impact")
+def business_flow_impact_cmd(
+    workspace: str = typer.Option(..., help="Path to .memory-center/workspace.yaml"),
+    node_id: str = typer.Option(..., help="Node ID to check impact for"),
+    max_depth: int = typer.Option(3, help="Maximum depth"),
+):
+    """Find impacted nodes along business flows."""
+    from memory_center.core.storage.unified import UnifiedStore
+    from memory_center.core.domain.flow import BusinessFlowGraph
+    store = UnifiedStore(workspace)
+    fg = BusinessFlowGraph(store)
+    impacted = fg.find_impact_along_flows(node_id, max_depth=max_depth)
+    print(json.dumps({"impacted": impacted}, indent=2, default=str))
+
+
+@app.command("metrics-summary")
+def metrics_summary_cmd():
+    """Show metrics summary."""
+    from memory_center.core.metrics import MetricsCollector
+    mc = MetricsCollector()
+    print(json.dumps(mc.summary(), indent=2, default=str))
+
+
+@app.command("regression-alerts")
+def regression_alerts_cmd(
+    workspace: str = typer.Option(..., help="Path to .memory-center/workspace.yaml"),
+    benchmark_name: str = typer.Option("", help="Specific benchmark name to check"),
+):
+    """Check for benchmark regression alerts."""
+    from memory_center.core.benchmark.trending import check_regression_alerts
+    result = check_regression_alerts(workspace, benchmark_name=benchmark_name or None)
+    print(json.dumps(result, indent=2, default=str))
+
+
+
 if __name__ == "__main__":
     app()

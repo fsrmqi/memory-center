@@ -168,3 +168,30 @@ class FileWatcher:
             "poll_interval": self._poll_interval,
             "debounce_seconds": self._debounce_seconds,
         }
+
+
+def trigger_incremental_reindex(workspace_file: str | Path, changed_files: List[str]) -> Dict[str, Any]:
+    """Bridge watcher events to incremental reindex.
+
+    Takes changed file paths from FileWatcher and triggers
+    a targeted reindex for only those files.
+    """
+    from ..store import WorkspaceStore
+    from ..config import load_workspace_config
+    from ..indexer import reindex_workspace
+
+    try:
+        config = load_workspace_config(workspace_file)
+        store = WorkspaceStore(workspace_file)
+        result = reindex_workspace(config, store, paths=changed_files)
+        return {
+            "status": "ok",
+            "changed_files": len(changed_files),
+            "reindexed": result,
+        }
+    except Exception as exc:
+        return {
+            "status": "error",
+            "error": str(exc),
+            "changed_files": len(changed_files),
+        }

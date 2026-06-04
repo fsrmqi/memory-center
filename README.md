@@ -243,6 +243,36 @@ pip install -e .[dev,mcp]
 pytest -q
 ```
 
+### Vue Frontend / Vue 前端
+
+The project includes a modern Vue 3 + Node.js frontend workbench. To set up:
+
+项目包含 Vue 3 + Node.js 前端工作台。安装步骤：
+
+```bash
+cd web
+pnpm install
+pnpm build    # Build production assets to web/dist/
+```
+
+The built frontend is automatically served by the HTTP server at `/app`:
+
+构建后的前端由 HTTP 服务器在 `/app` 路径自动托管：
+
+```bash
+memory-center serve-http --workspace /path/to/workspace.yaml
+# Then open http://127.0.0.1:8765/app in your browser
+```
+
+For frontend development with hot reload:
+
+前端开发模式（热更新）：
+
+```bash
+cd web
+pnpm dev      # Starts Vite dev server on port 5173 with API proxy
+```
+
 ---
 
 ## Quick start / 快速开始

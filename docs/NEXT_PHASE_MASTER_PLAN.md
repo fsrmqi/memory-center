@@ -31,6 +31,25 @@
 实现明细见：
 - 当前状态已经并入本文件，不再单独维护实现完成报告。
 
+### v2.2.0 新增实现 / v2.2.0 New Implementations
+
+以下能力在 v2.2.0 中实现完成：
+
+#### 1. Vue 前端工作台 / Vue Frontend Workbench
+- **位置**: `web/` 目录，Vue 3 + Vite + vue-router + axios
+- **页面覆盖**: Workbench / Dashboard / Continuity / Focus Task / Query / Impact / Group / Timeline / Receipts / Usage / Backend / Freshness / Audit / Health
+- **集成方式**: HTTP 服务器在 `/app` 路径自动托管构建后的 Vue SPA，支持客户端路由
+- **开发模式**: `cd web && pnpm dev` 启动 Vite 开发服务器（端口 5173），API 代理到 Python 后端（端口 8765）
+
+#### 2. 跨项目查询性能优化 / Cross-Project Query Performance
+- **并行化**: `group_status` / `group_query` 改为 `ThreadPoolExecutor` 并行执行各 workspace 查询
+- **缓存**: `resolve_group` 和 `_load_group_data` 增加 TTL 缓存（15秒），避免重复加载 registry 和 workspace 数据
+- **影响**: 大幅减少多项目场景下的串行等待时间
+
+#### 3. 跨项目链路可解释性增强 / Cross-Project Chain Explainability
+- **新增字段**: `group_query` / `group_impact` / `group_chain` 返回中增加 `top_bridges`、`bridge_reasons`、`cross_workspace_path_hint`
+- **目的**: 让用户和模型理解跨项目关联的原因
+
 ## 2. 当前剩余重点
 
 | 优先级 | 方向 | 目标 |

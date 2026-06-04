@@ -185,3 +185,68 @@ class ArchitectureTourGenerator:
 
     def _get_config_nodes(self) -> List[Dict[str, Any]]:
         return [n for n in self._store.all_nodes() if n.get("type") == "ConfigKey"]
+
+
+def generate_architecture_tour(workspace_file: str | Path, persona: str = "developer") -> Dict[str, Any]:
+    """Generate an architecture tour for onboarding new developers.
+
+    Walks through the graph to build a guided tour:
+    1. Top-level services overview
+    2. Key entry points and APIs
+    3. Core dependencies and Feign connections
+    4. MQ topics and data flows
+    5. Configuration patterns
+    """
+    from ..store import WorkspaceStore
+    from ..graph import GraphStore
+
+    store = WorkspaceStore(workspace_file)
+    config = store._config if hasattr(store, '_config') else None
+    workspace_name = getattr(config, 'workspace', 'unknown') if config else 'unknown'
+
+    tour_stops: List[Dict[str, Any]] = []
+
+    # Stop 1: Workspace overview
+    services = [s.name for s in (config.services if config else [])]
+    tour_stops.append({
+        "stop": 1,
+        "title": "工作区概览 / Workspace Overview",
+        "description": f"工作区 {workspace_name} 包含 {len(services)} 个服务",
+        "content": {"services": services, "workspace": workspace_name},
+        "persona_adapted": {
+            "developer": "这是你将要工作的项目。了解服务列表是第一步。",
+            "architect": "关注服务间的边界划分和依赖方向。",
+        }.get(persona, ""),
+    })
+
+    # Stop 2: Graph overview
+    with GraphStore(store.graph_db_path) as graph:
+        counts = graph.counts()
+        tour_stops.append({
+            "stop": 2,
+            "title": "图谱概览 / Knowledge Graph",
+            "description": f"已索引 {counts.get('nodes', 0)} 个节点、{counts.get('edges', 0)} 条边",
+            "content": counts,
+        })
+
+    # Stop 3: Key patterns
+    tour_stops.append({
+        "stop": 3,
+        "title": "核心查询模式 / Key Query Patterns",
+        "description": "了解常用的查询方式",
+        "content": {
+            "patterns": [
+                {"tool": "mc_lookup", "usage": "查找代码实体、Feign 客户端、API 端点"},
+                {"tool": "mc_analyze", "usage": "变更影响分析"},
+                {"tool": "group_chain", "usage": "跨项目调用链追踪"},
+                {"tool": "mc_resume", "usage": "任务恢复"},
+            ],
+        },
+    })
+
+    return {
+        "workspace": workspace_name,
+        "persona": persona,
+        "total_stops": len(tour_stops),
+        "stops": tour_stops,
+    }

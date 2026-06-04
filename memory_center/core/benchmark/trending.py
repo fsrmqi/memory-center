@@ -264,6 +264,38 @@ def _build_trend_summary(
     }
 
 
+def check_regression_alerts(workspace_file: str | Path, threshold_pct: float = 10.0) -> Dict[str, Any]:
+    """Check for benchmark regressions and generate alerts.
+
+    Returns alert summary suitable for mc_admin / workbench display.
+    """
+    trends = get_benchmark_trends(workspace_file)
+    regressions = trends.get("regressions", [])
+
+    alerts = []
+    for reg in regressions:
+        change_pct = reg.get("change_pct", 0)
+        severity = "critical" if change_pct > 25 else "warning" if change_pct > threshold_pct else "ok"
+        if severity != "ok":
+            alerts.append({
+                "function": reg.get("function_name", ""),
+                "change_pct": change_pct,
+                "severity": severity,
+                "recent_avg": reg.get("recent_avg_raw", 0),
+                "historical_avg": reg.get("historical_avg_raw", 0),
+                "message": f"{reg.get('function_name', '')} token usage increased {change_pct}%",
+                "recommendation": reg.get("recommendation", ""),
+            })
+
+    return {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "total_regressions": len(alerts),
+        "critical_count": sum(1 for a in alerts if a["severity"] == "critical"),
+        "warning_count": sum(1 for a in alerts if a["severity"] == "warning"),
+        "alerts": alerts,
+        "health": "critical" if any(a["severity"] == "critical" for a in alerts) else "warning" if alerts else "healthy",
+    }
+
 def generate_benchmark_report(
     workspace_file: str | Path,
     function_name: str = "",

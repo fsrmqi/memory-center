@@ -225,6 +225,8 @@ Hook 层属于宿主集成，不是核心业务层。推荐自动执行的只有
 
 ## Module Architecture / 模块架构
 
+### Python 后端 / Python Backend
+
 ```
 memory_center/core/
 ├── retrieval/           # 混合检索（Phase A）
@@ -250,6 +252,39 @@ memory_center/core/
     ├── query.py         # 查询编排（已集成 hybrid retrieval）
     └── ...
 ```
+
+### Vue 前端 / Vue Frontend
+
+```
+web/
+├── src/
+│   ├── api/client.js      # API 客户端（axios，代理到 Python 后端）
+│   ├── router/index.js    # Vue Router 配置
+│   ├── layouts/AppLayout.vue  # 主布局（侧边栏 + 工作区输入）
+│   ├── components/        # 共享组件
+│   │   ├── DataCard.vue   # 数据卡片（loading/error/content）
+│   │   ├── JsonTree.vue   # JSON 树形查看器
+│   │   └── KeyValueTable.vue  # 键值对表格
+│   └── views/             # 页面视图
+│       ├── WorkbenchView.vue   # 工作台首页
+│       ├── DashboardView.vue   # 工作区总面板
+│       ├── ContinuityView.vue  # 连续性面板
+│       ├── TaskView.vue        # 焦点任务
+│       ├── QueryView.vue       # 查询/检索
+│       ├── ImpactView.vue      # 影响分析
+│       ├── GroupView.vue       # 跨项目查询/影响/链路
+│       ├── TimelineView.vue    # 时间线
+│       ├── ReceiptsView.vue    # 写入回执
+│       ├── UsageView.vue       # 使用报告
+│       ├── BackendView.vue     # 后端数据
+│       ├── FreshnessView.vue   # 索引新鲜度
+│       ├── AuditView.vue       # 审计
+│       └── HealthView.vue      # 健康检查
+├── vite.config.js         # Vite 配置（含 API 代理）
+└── package.json           # 依赖：vue@3, vue-router@4, axios
+```
+
+前端通过 HTTP 服务器的 `/app` 路径托管，支持 SPA 客户端路由。
 
 ## Integration Guide / 集成指南
 

@@ -63,6 +63,7 @@ def memory_impact(workspace_file: str | Path, target: str, direction: str = "ups
                 "probable": "0.55 <= confidence < 0.80, usually import, Feign endpoint match, inferred method/field usage",
                 "possible": "confidence < 0.55, weak hints only; verify manually",
             },
+            "freshness": _get_freshness_for_impact(workspace_file),
         }
 
 
@@ -222,3 +223,13 @@ def _build_impact_progressive_view(
             ],
         },
     )
+
+
+def _get_freshness_for_impact(workspace_file: str | Path) -> dict:
+    """Get freshness banner for impact analysis results."""
+    try:
+        from ..freshness.status import IndexFreshnessService
+        svc = IndexFreshnessService(workspace_file)
+        return svc.get_freshness_banner()
+    except Exception:
+        return {"status": "unknown"}

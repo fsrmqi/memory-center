@@ -84,6 +84,16 @@ from memory_center.core.orchestrator import (
     _annotate_phantom_nodes,
 )
 from memory_center.core.registry import load_registry
+from memory_center.core.verification.loop import VerificationLoop
+from memory_center.core.verification.pattern_promotion import PatternPromotion
+from memory_center.core.verification.heuristics import HeuristicsRegister
+from memory_center.core.verification.workflow_profiles import get_workflow_profile, recommend_workflow
+from memory_center.core.verification.bundle_export import generate_agent_bundle
+from memory_center.core.audit.runtime import audit_agent_runtime
+from memory_center.core.explanation.schema import Explanation
+from memory_center.core.domain.flow import BusinessFlowGraph, BusinessFlowExtractor
+from memory_center.core.metrics import MetricsCollector
+from memory_center.core.benchmark.trending import check_regression_alerts
 from memory_center.core.artifacts import (
     append_change_log,
     append_task_change_log,
@@ -559,12 +569,114 @@ def create_server(workspace_file: str):
             "group_query": lambda: group_query(group, query=text, limit=limit),
             "group_impact": lambda: group_impact(group, target=intent or text, direction=direction, max_depth=max_depth),
             "group_chain": lambda: group_chain(group, symbol=name or text, direction=direction, depth=max_depth, limit=limit),
+            # ECC — verification loop
+            "verification_loop": lambda: _verification_loop_action(wf, intent, task_id),
+            # ECC — pattern promotion
+            "pattern_promotion_propose": lambda: _pattern_promote_action(wf, "propose", text),
+            "pattern_promotion_list": lambda: _pattern_promote_action(wf, "list", ""),
+            "pattern_promotion_promote": lambda: _pattern_promote_action(wf, "promote", text),
+            # ECC — heuristics
+            "heuristics_query": lambda: _heuristics_action(wf, "query", text),
+            "heuristics_record": lambda: _heuristics_action(wf, "record", text),
+            # ECC — workflow profiles
+            "workflow_profile": lambda: get_workflow_profile(intent or "quick-fix"),
+            "workflow_recommend": lambda: recommend_workflow(text or intent or ""),
+            # ECC — bundle export
+            "bundle_export": lambda: generate_agent_bundle(wf, agent=name or "codex"),
+            # ECC — runtime audit
+            "runtime_audit": lambda: audit_agent_runtime(wf),
+            # UA — explanation schema
+            "explanation": lambda: _explanation_action(text, persona=intent or "developer"),
+            # UA — business flow
+            "business_flow": lambda: _business_flow_action(wf, name, max_depth),
+            "business_flow_impact": lambda: _business_flow_impact_action(wf, intent or text, max_depth),
+            # Metrics
+            "metrics_summary": lambda: _metrics_summary_action(),
+            # Benchmark regression alerts
+            "regression_alerts": lambda: _regression_alerts_action(wf, name),
         }
         handler = _DISPATCH.get(action)
         if handler is None:
             valid = ", ".join(sorted(_DISPATCH.keys()))
             raise ValueError(f"Unknown mc_admin action: {action}. Valid actions: {valid}")
         return {"action": action, "result": handler()}
+
+
+    # ===================== Next-phase helper actions =====================
+    @staticmethod
+    def _verification_loop_action(wf: str, intent: str, task_id: str) -> dict:
+        vl = VerificationLoop(wf)
+        if not task_id:
+            task_id = "default"
+        analysis = {"task_type": intent or "general", "workspace": wf}
+        checklist = vl.generate_checklist(analysis)
+        status = vl.get_status(task_id)
+        return {"checklist": checklist, "status": status, "workflow": "mc-verification-loop"}
+
+    @staticmethod
+    def _pattern_promote_action(wf: str, action_type: str, text: str) -> dict:
+        pp = PatternPromotion(wf)
+        if action_type == "propose":
+            proposal = {"rule_text": text, "source": "manual"}
+            return pp.propose(proposal)
+        elif action_type == "list":
+            return {"proposals": pp.list_proposals()}
+        elif action_type == "promote":
+            return pp.promote(text)
+        return {"error": "unknown action"}
+
+    @staticmethod
+    def _heuristics_action(wf: str, action_type: str, text: str) -> dict:
+        hr = HeuristicsRegister(wf)
+        if action_type == "query":
+            return {"heuristics": hr.query(text)}
+        elif action_type == "record":
+            import json
+            try:
+                data = json.loads(text) if text else {}
+            except json.JSONDecodeError:
+                data = {"pattern": text}
+            hr.record(data)
+            return {"status": "recorded"}
+        return {"error": "unknown action"}
+
+    @staticmethod
+    def _explanation_action(text: str, persona: str = "developer") -> dict:
+        exp = Explanation(
+            title="Explanation",
+            summary=text or "",
+            details=[],
+            persona=persona,
+        )
+        return {"explanation": exp.adapt_for_persona(persona)}
+
+    @staticmethod
+    def _business_flow_action(wf: str, name: str, max_depth: int) -> dict:
+        from memory_center.core.graph import GraphStore
+        graph = GraphStore(wf)
+        extractor = BusinessFlowExtractor(graph)
+        if not name:
+            return {"error": "name (seed node) required"}
+        flows = extractor.extract_flows(name, max_depth=max_depth or 4)
+        return {"flows": [f.__dict__ for f in flows], "workflow": "mc-business-flow"}
+
+    @staticmethod
+    def _business_flow_impact_action(wf: str, node_id: str, max_depth: int) -> dict:
+        from memory_center.core.storage.unified import UnifiedStore
+        store = UnifiedStore(wf)
+        fg = BusinessFlowGraph(store)
+        impacted = fg.find_impact_along_flows(node_id or "", max_depth=max_depth or 3)
+        return {"impacted": impacted, "workflow": "mc-business-flow-impact"}
+
+    @staticmethod
+    def _metrics_summary_action() -> dict:
+        mc = MetricsCollector()
+        return {"summary": mc.summary(), "workflow": "mc-metrics"}
+
+    @staticmethod
+    def _regression_alerts_action(wf: str, name: str) -> dict:
+        alerts = check_regression_alerts(wf, benchmark_name=name)
+        return {"alerts": alerts, "workflow": "mc-regression-alerts"}
 
     # ===================== Resources (unchanged) =====================
     @mcp.resource("memory-center://status")

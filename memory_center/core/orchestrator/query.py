@@ -310,6 +310,15 @@ def memory_query_hybrid(workspace_file: str | Path, query: str, limit: int = 20,
         if "semantic_matches" not in summary:
             summary["semantic_matches"] = summary.get("source_distribution", {}).get("semantic", 0)
 
+    # NEXT_PHASE: integrate freshness warnings into query results
+    try:
+        from ..freshness.status import IndexFreshnessService
+        svc = IndexFreshnessService(workspace_file)
+        banner = svc.get_freshness_banner()
+        result["freshness"] = banner
+    except Exception:
+        result["freshness"] = {"status": "unknown"}
+
     return result
 
 
@@ -395,6 +404,25 @@ def memory_context(workspace_file: str | Path, name: str, max_depth: int = 2, pr
     with GraphStore(load_context(workspace_file)[1].graph_db_path) as graph:
         incoming = graph.neighbors(node["id"], direction="upstream", max_depth=max_depth, limit=100)
         outgoing = graph.neighbors(node["id"], direction="downstream", max_depth=max_depth, limit=100)
+    # NEXT_PHASE: integrate reasoning risk patterns into context
+    risk_patterns = []
+    try:
+        from ..reasoning.risk import RiskAnalyzer
+        analyzer = RiskAnalyzer(store)
+        risks = analyzer.analyze_node_risks(node.get("id", ""))
+        risk_patterns = [r.to_dict() if hasattr(r, "to_dict") else r for r in risks[:5]]
+    except Exception:
+        pass
+
+    # NEXT_PHASE: integrate freshness into context
+    freshness = {}
+    try:
+        from ..freshness.status import IndexFreshnessService
+        svc = IndexFreshnessService(workspace_file)
+        freshness = svc.get_freshness_banner()
+    except Exception:
+        pass
+
     return {
         "name": name,
         "found": True,
@@ -404,6 +432,8 @@ def memory_context(workspace_file: str | Path, name: str, max_depth: int = 2, pr
         "lookup": _build_lookup_payload(lookup),
         "evidence_summary": _build_context_evidence_summary(incoming, outgoing),
         "progressive": _build_context_progressive_view(node, incoming, outgoing),
+        "risk_patterns": risk_patterns,
+        "freshness": freshness,
     }
 
 

@@ -7,7 +7,19 @@ from typing import Any, Dict, Iterable, List, Sequence
 import yaml
 
 from .graph import GraphEdge, GraphNode, GraphStore, edge_id, node_id
-from .indexing import RegexJavaParser
+# Try tree-sitter parser first, fall back to regex
+try:
+    from .indexing.tree_sitter_parser import TreeSitterJavaParser
+    _ts_parser = TreeSitterJavaParser()
+    if _ts_parser.available:
+        _JAVA_PARSER = _ts_parser
+        from .indexing import RegexJavaParser  # keep import for fallback path
+    else:
+        from .indexing import RegexJavaParser
+        _JAVA_PARSER = RegexJavaParser()
+except Exception:
+    from .indexing import RegexJavaParser
+    _JAVA_PARSER = RegexJavaParser()
 from .models import ApiEndpoint, FeignClient, JavaSymbol, MqEndpoint, WorkspaceConfig, to_dict
 from .semantic import build_workspace_semantic_index, build_workspace_semantic_index_partial
 from .store import WorkspaceStore
@@ -218,7 +230,7 @@ def safe_read(path: Path, limit: int = 600_000) -> str:
 
 
 def parse_java_symbols(project: str, rel: str, text: str) -> JavaSymbol:
-    parsed = RegexJavaParser().parse(text, rel)
+    parsed = _JAVA_PARSER.parse(text, rel)
     return JavaSymbol(
         project=project,
         file=rel,
