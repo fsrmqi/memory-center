@@ -923,30 +923,16 @@ def _route_request(path: str, params: dict, default_workspace: str | None) -> di
         return exp.adapt_for_persona(persona)
     if path == "/workspace/business-flow":
         workspace = _require_workspace(params, default_workspace)
-        from memory_center.core.graph import GraphStore
-        from memory_center.core.domain.flow import BusinessFlowExtractor
-        from memory_center.core.store import WorkspaceStore
+        from memory_center.core.domain.flow import extract_business_flows_for_workspace
         seed = _require_one(params, "seed")
         max_depth = _parse_int(params, "max_depth", 4)
-        store = WorkspaceStore(workspace)
-        with GraphStore(store.graph_db_path) as graph:
-            extractor = BusinessFlowExtractor(graph)
-            flows = extractor.extract_flows(seed, max_depth=max_depth)
-        return {"flows": [f.__dict__ for f in flows]}
+        return extract_business_flows_for_workspace(workspace, seed, max_depth=max_depth)
     if path == "/workspace/business-flow-impact":
         workspace = _require_workspace(params, default_workspace)
-        from memory_center.core.storage.unified import UnifiedStore
-        from memory_center.core.domain.flow import BusinessFlowGraph
-        from memory_center.core.store import WorkspaceStore
+        from memory_center.core.domain.flow import business_flow_impact_for_workspace
         node_id = _require_one(params, "node_id")
         max_depth = _parse_int(params, "max_depth", 3)
-        workspace_store = WorkspaceStore(workspace)
-        store = UnifiedStore(workspace_store.graph_db_path)
-        try:
-            fg = BusinessFlowGraph(store)
-            return {"impacted": fg.find_impact_along_flows(node_id, max_depth=max_depth)}
-        finally:
-            store.close()
+        return business_flow_impact_for_workspace(workspace, node_id, max_depth=max_depth)
     if path == "/workspace/metrics-summary":
         from memory_center.core.metrics import MetricsCollector
         mc = MetricsCollector()

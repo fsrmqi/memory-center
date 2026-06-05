@@ -177,7 +177,8 @@ def hybrid_retrieve(
     graph_hits = _graph_retrieval_from_nodes(exact_nodes, tokens, graph, node_types, limit * 2, _rrf)
     sparse_hits = _sparse_retrieval_from_nodes(exact_nodes, limit * 2, _rrf)
     semantic_hits = _semantic_retrieval(workspace_file, query, limit * 2)
-    vector_hits = _vector_retrieval(workspace_file, query, tokens, limit * 2)
+    retrieval_diagnostics: Dict[str, Any] = {}
+    vector_hits = _vector_retrieval(workspace_file, query, tokens, limit * 2, diagnostics=retrieval_diagnostics)
 
     # Phase 2: Merge and rank results
     merged = _merge_retrieval_results(
@@ -215,6 +216,7 @@ def hybrid_retrieve(
         "returned": len(results),
         "retrieval_summary": _build_retrieval_summary(results, intent),
         "progressive": _build_progressive_summary(results, intent),
+        "retrieval_diagnostics": retrieval_diagnostics,
         "config": {
             "graph_weight": config.graph_weight,
             "sparse_weight": config.sparse_weight,
@@ -379,39 +381,67 @@ def _vector_retrieval(
     query: str,
     tokens: List[str],
     limit: int,
+    diagnostics: Dict[str, Any] | None = None,
 ) -> List[RetrievalResult]:
     """Retrieve nodes via ANN vector search when VectorIndex is available."""
     results: List[RetrievalResult] = []
+    vector_diag: Dict[str, Any] = {"status": "disabled", "reason": "not_checked"}
     try:
-        from ...store import WorkspaceStore
-        store = WorkspaceStore(workspace_file)
-        if not hasattr(store, 'graph_db_path'):
-            return results
-        from ...storage.vector_index import VectorIndex
-        import math
-        vec = VectorIndex(store.graph_db_path)
-        status = vec.status()
-        if status.get('count', 0) == 0:
-            return results
-        # Try to use semantic query as fallback source for embedding
-        semantic_hits = semantic_query(workspace_file, query, limit=limit)
-        from ...graph import GraphStore
-        with GraphStore(store.graph_db_path) as graph:
-            for rank, hit in enumerate(semantic_hits[:limit], start=1):
-                node_id = hit.get("node_id", "")
-                if not node_id:
-                    continue
-                node = graph.node_by_id(node_id)
-                if not node:
-                    continue
-                results.append(RetrievalResult(
-                    node_id=node_id,
-                    node=node,
-                    score=hit.get("score", 0.0) * 0.9,
-                    sources=["vector_ann"],
-                ))
-    except Exception:
-        pass
+        from ..store import WorkspaceStore
+        from ..storage.unified import UnifiedStore
+        from ..storage.vector_index import VectorIndex
+        from ..semantic import _load_sentence_transformer_model, semantic_index_stats
+
+        workspace_store = WorkspaceStore(workspace_file)
+        unified = UnifiedStore(workspace_store.graph_db_path)
+        try:
+            vec = VectorIndex(unified)
+            status = vec.stats()
+            vector_diag = {"status": "empty", **status}
+            if status.get("embedding_count", 0) == 0:
+                return results
+
+            semantic_stats = semantic_index_stats(workspace_file)
+            model = _load_sentence_transformer_model(semantic_stats.get("model"))
+            if model is None:
+                vector_diag = {
+                    "status": "unavailable",
+                    "reason": "sentence-transformers model unavailable for query embedding",
+                    **status,
+                }
+                return results
+
+            query_vector = [float(value) for value in model.encode([query], normalize_embeddings=True)[0]]
+            vector_results = vec.query(query_vector, limit=limit)
+            if not vector_results:
+                vector_diag = {"status": "active", "returned": 0, **status}
+                return results
+
+            from ..graph import GraphStore
+            with GraphStore(workspace_store.graph_db_path) as graph:
+                for rank, hit in enumerate(vector_results[:limit], start=1):
+                    node_id = hit.get("node_id", "")
+                    if not node_id:
+                        continue
+                    node = graph.node_by_id(node_id)
+                    if not node:
+                        continue
+                    score = float(hit.get("score", 0.0) or max(0.0, 1.0 - float(hit.get("distance", 1.0))))
+                    results.append(RetrievalResult(
+                        node_id=node_id,
+                        node=node,
+                        score=score,
+                        sources=["vector_ann"],
+                        evidence={"vector_rank": rank, "backend": hit.get("backend", "")},
+                    ))
+            vector_diag = {"status": "active", "returned": len(results), **status}
+        finally:
+            unified.close()
+    except Exception as exc:
+        vector_diag = {"status": "unavailable", "reason": str(exc)}
+    finally:
+        if diagnostics is not None:
+            diagnostics["vector"] = vector_diag
     return results
 
 
@@ -628,7 +658,7 @@ def _build_retrieval_summary(
     intent: Dict[str, Any],
 ) -> Dict[str, Any]:
     """Build summary of retrieval results."""
-    source_counts = {"graph": 0, "sparse": 0, "semantic": 0}
+    source_counts = {"graph": 0, "sparse": 0, "semantic": 0, "vector": 0}
     type_counts: Dict[str, int] = {}
 
     for item in results:
@@ -639,6 +669,8 @@ def _build_retrieval_summary(
                 source_counts["sparse"] += 1
             elif "semantic" in source:
                 source_counts["semantic"] += 1
+            elif "vector" in source:
+                source_counts["vector"] += 1
 
         node_type = item.node.get("type", "unknown")
         type_counts[node_type] = type_counts.get(node_type, 0) + 1
@@ -680,7 +712,7 @@ def _build_progressive_summary(
                 "graph_token": sum(1 for r in results if "graph_token" in r.sources),
                 "sparse_fts": sum(1 for r in results if "sparse_fts" in r.sources),
                 "semantic": sum(1 for r in results if "semantic" in r.sources),
-            "vector": sum(1 for r in results if "vector" in r.sources),
+                "vector": sum(1 for r in results if any("vector" in source for source in r.sources)),
             },
             "cross_workspace_count": sum(1 for r in results if r.cross_workspace_refs),
             "has_chain_results": intent.get("is_chain_query", False),

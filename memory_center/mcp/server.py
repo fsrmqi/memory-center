@@ -91,7 +91,7 @@ from memory_center.core.verification.workflow_profiles import get_workflow_profi
 from memory_center.core.verification.bundle_export import generate_agent_bundle
 from memory_center.core.audit.runtime import audit_agent_runtime
 from memory_center.core.explanation.schema import Explanation
-from memory_center.core.domain.flow import BusinessFlowGraph, BusinessFlowExtractor
+from memory_center.core.domain.flow import business_flow_impact_for_workspace, extract_business_flows_for_workspace
 from memory_center.core.metrics import MetricsCollector
 from memory_center.core.benchmark.trending import check_regression_alerts
 from memory_center.core.artifacts import (
@@ -652,21 +652,17 @@ def create_server(workspace_file: str):
 
     @staticmethod
     def _business_flow_action(wf: str, name: str, max_depth: int) -> dict:
-        from memory_center.core.graph import GraphStore
-        graph = GraphStore(wf)
-        extractor = BusinessFlowExtractor(graph)
         if not name:
             return {"error": "name (seed node) required"}
-        flows = extractor.extract_flows(name, max_depth=max_depth or 4)
-        return {"flows": [f.__dict__ for f in flows], "workflow": "mc-business-flow"}
+        result = extract_business_flows_for_workspace(wf, name, max_depth=max_depth or 4)
+        result["workflow"] = "mc-business-flow"
+        return result
 
     @staticmethod
     def _business_flow_impact_action(wf: str, node_id: str, max_depth: int) -> dict:
-        from memory_center.core.storage.unified import UnifiedStore
-        store = UnifiedStore(wf)
-        fg = BusinessFlowGraph(store)
-        impacted = fg.find_impact_along_flows(node_id or "", max_depth=max_depth or 3)
-        return {"impacted": impacted, "workflow": "mc-business-flow-impact"}
+        result = business_flow_impact_for_workspace(wf, node_id or "", max_depth=max_depth or 3)
+        result["workflow"] = "mc-business-flow-impact"
+        return result
 
     @staticmethod
     def _metrics_summary_action() -> dict:

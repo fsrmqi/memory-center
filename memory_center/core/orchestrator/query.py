@@ -399,23 +399,27 @@ def _filter_contracts_by_query(contracts: list, query: str, intent: str) -> list
 
 
 def memory_context(workspace_file: str | Path, name: str, max_depth: int = 2, project: str = "") -> Dict[str, Any]:
+    _, store = load_context(workspace_file)
     lookup = memory_query_hybrid(workspace_file, name, limit=8, project=project)
     matches = [item.get("node", {}) for item in lookup.get("matches", []) if item.get("node")]
     if not matches:
         return {"name": name, "found": False, "matches": [], "lookup": _build_lookup_payload(lookup)}
     node = _best_match(matches, name)
-    with GraphStore(load_context(workspace_file)[1].graph_db_path) as graph:
+    with GraphStore(store.graph_db_path) as graph:
         incoming = graph.neighbors(node["id"], direction="upstream", max_depth=max_depth, limit=100)
         outgoing = graph.neighbors(node["id"], direction="downstream", max_depth=max_depth, limit=100)
     # NEXT_PHASE: integrate reasoning risk patterns into context
     risk_patterns = []
+    diagnostics: Dict[str, Any] = {}
     try:
-        from ..reasoning.risk import RiskAnalyzer
-        analyzer = RiskAnalyzer(store)
-        risks = analyzer.analyze_node_risks(node.get("id", ""))
-        risk_patterns = [r.to_dict() if hasattr(r, "to_dict") else r for r in risks[:5]]
-    except Exception:
-        pass
+        from ..reasoning.risk import RiskPatternEngine
+        from ..storage.unified import UnifiedStore
+        with UnifiedStore(store.graph_db_path) as unified:
+            analyzer = RiskPatternEngine(unified, workspace_store=store)
+            risks = analyzer.analyze_change_risk(node.get("id", ""))
+            risk_patterns = [r.__dict__ if hasattr(r, "__dict__") else r for r in risks[:5]]
+    except Exception as exc:
+        diagnostics["risk_patterns"] = {"status": "unavailable", "reason": str(exc)}
 
     # NEXT_PHASE: integrate freshness into context
     freshness = {}
@@ -424,9 +428,9 @@ def memory_context(workspace_file: str | Path, name: str, max_depth: int = 2, pr
         svc = IndexFreshnessService(workspace_file)
         freshness = svc.banner()
     except Exception:
-        pass
+        diagnostics["freshness"] = {"status": "unavailable"}
 
-    return {
+    result = {
         "name": name,
         "found": True,
         "node": node,
@@ -438,6 +442,9 @@ def memory_context(workspace_file: str | Path, name: str, max_depth: int = 2, pr
         "risk_patterns": risk_patterns,
         "freshness": freshness,
     }
+    if diagnostics:
+        result["_diagnostics"] = diagnostics
+    return result
 
 
 def memory_symbol(workspace_file: str | Path, name: str, limit: int = 10, project: str = "") -> Dict[str, Any]:

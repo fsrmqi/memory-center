@@ -2,6 +2,7 @@
 from pathlib import Path
 import shutil
 import pytest
+from typer.testing import CliRunner
 
 from memory_center.core.config import load_workspace_config
 from memory_center.core.indexer import reindex_workspace
@@ -20,6 +21,7 @@ from memory_center.core.orchestrator import (
 from memory_center.core.artifacts import (
     list_artifacts, create_task_space, list_task_spaces,
 )
+from memory_center.cli.main import app
 
 try:
     from mcp.server.fastmcp import FastMCP
@@ -108,6 +110,35 @@ def test_mc_lookup_modes_direct(tmp_path: Path):
     # contracts
     r = memory_contracts(wf)
     assert r
+
+
+def test_memory_context_risk_patterns_do_not_fail_silently(tmp_path: Path):
+    wf = _setup_workspace(tmp_path)
+    r = memory_context(wf, "ArticleFeignClient", max_depth=2)
+    assert r["found"] is True
+    assert isinstance(r.get("risk_patterns"), list)
+    diagnostics = r.get("_diagnostics", {})
+    assert "risk_patterns" not in diagnostics
+
+
+def test_memory_query_hybrid_exposes_vector_diagnostics(tmp_path: Path):
+    wf = _setup_workspace(tmp_path)
+    r = memory_query_hybrid(wf, "ArticleFeignClient", limit=5)
+    assert "retrieval_diagnostics" in r
+    assert "vector" in r["retrieval_diagnostics"]
+    assert r["retrieval_diagnostics"]["vector"]["status"] in {"empty", "active", "unavailable", "disabled"}
+
+
+def test_business_flow_cli_uses_workspace_yaml_not_sqlite_path(tmp_path: Path):
+    wf = _setup_workspace(tmp_path)
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        ["business-flow", "--workspace", wf, "--seed", "FeignClient:task-service:ArticleFeignClient", "--max-depth", "2"],
+    )
+    assert result.exit_code == 0, result.output
+    assert "file is not a database" not in result.output
+    assert "flows" in result.output
 
 
 def test_mc_lookup_code_mode_passes_project_filter(tmp_path: Path):

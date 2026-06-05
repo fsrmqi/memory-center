@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import List, Optional
 
@@ -1713,12 +1714,9 @@ def business_flow_cmd(
     max_depth: int = typer.Option(4, help="Maximum traversal depth"),
 ):
     """Extract business flows from a seed node."""
-    from memory_center.core.graph import GraphStore
-    from memory_center.core.domain.flow import BusinessFlowExtractor
-    graph = GraphStore(workspace)
-    extractor = BusinessFlowExtractor(graph)
-    flows = extractor.extract_flows(seed, max_depth=max_depth)
-    print(json.dumps({"flows": [f.__dict__ for f in flows]}, indent=2, default=str))
+    from memory_center.core.domain.flow import extract_business_flows_for_workspace
+    result = extract_business_flows_for_workspace(workspace, seed, max_depth=max_depth)
+    print(json.dumps(result, indent=2, default=str))
 
 
 @app.command("business-flow-impact")
@@ -1728,12 +1726,9 @@ def business_flow_impact_cmd(
     max_depth: int = typer.Option(3, help="Maximum depth"),
 ):
     """Find impacted nodes along business flows."""
-    from memory_center.core.storage.unified import UnifiedStore
-    from memory_center.core.domain.flow import BusinessFlowGraph
-    store = UnifiedStore(workspace)
-    fg = BusinessFlowGraph(store)
-    impacted = fg.find_impact_along_flows(node_id, max_depth=max_depth)
-    print(json.dumps({"impacted": impacted}, indent=2, default=str))
+    from memory_center.core.domain.flow import business_flow_impact_for_workspace
+    result = business_flow_impact_for_workspace(workspace, node_id, max_depth=max_depth)
+    print(json.dumps(result, indent=2, default=str))
 
 
 @app.command("metrics-summary")

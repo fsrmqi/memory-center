@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional, Set
 
 from ..graph import GraphStore
 from ..storage.unified import UnifiedStore
+from ..store import WorkspaceStore
 
 
 @dataclass
@@ -91,6 +92,42 @@ class BusinessFlow:
     exit_points: List[str] = field(default_factory=list)
     entities_involved: List[str] = field(default_factory=list)
     risk_level: str = "low"
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "flow_id": self.flow_id,
+            "name": self.name,
+            "description": self.description,
+            "steps": [step.__dict__ for step in self.steps],
+            "entry_points": self.entry_points,
+            "exit_points": self.exit_points,
+            "entities_involved": self.entities_involved,
+            "risk_level": self.risk_level,
+        }
+
+
+def extract_business_flows_for_workspace(workspace_file: str, seed_node_id: str, max_depth: int = 4) -> Dict[str, Any]:
+    """Extract business flows from a workspace.yaml path.
+
+    Public entrypoints accept workspace.yaml, not the graph SQLite path. Keep
+    this resolution in one place so CLI / MCP / HTTP stay consistent.
+    """
+    if not seed_node_id:
+        return {"error": "seed node required", "flows": [], "workflow": "business-flow"}
+    workspace_store = WorkspaceStore(workspace_file)
+    with GraphStore(workspace_store.graph_db_path) as graph:
+        extractor = BusinessFlowExtractor(graph)
+        flows = extractor.extract_flows(seed_node_id, max_depth=max_depth or 4)
+    return {"flows": [flow.to_dict() for flow in flows], "workflow": "business-flow"}
+
+
+def business_flow_impact_for_workspace(workspace_file: str, node_id: str, max_depth: int = 3) -> Dict[str, Any]:
+    """Find business-flow impact from a workspace.yaml path."""
+    workspace_store = WorkspaceStore(workspace_file)
+    with UnifiedStore(workspace_store.graph_db_path) as store:
+        graph = BusinessFlowGraph(store)
+        impacted = graph.find_impact_along_flows(node_id or "", max_depth=max_depth or 3)
+    return {"impacted": impacted, "workflow": "business-flow-impact"}
 
 
 class BusinessFlowGraph:
