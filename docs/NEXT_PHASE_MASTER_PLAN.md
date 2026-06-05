@@ -311,6 +311,96 @@ V3 不是“未来方向”，而是当前代码里已经存在的一批能力�
 - `推荐 issue`：可以直接拆分推进的工作项
 - `验收标准`：完成后怎么判断真的吸收到了系统里
 
+### `alibaba/open-code-review`
+
+判断：
+
+- **建议吸收架构思想，不作为必选运行时依赖**
+- 适合补强 change review、verification 和 rule governance
+- 官方来源：https://github.com/alibaba/open-code-review
+- 本次研究快照：`0ac1193040a1b5d9f946ba72e8d889b356de41a6`
+
+吸收点：
+
+1. `Deterministic Engineering × Agent`
+   - 确定性逻辑保证 diff 范围、文件覆盖、规则匹配、定位与结果验证
+   - Agent 只负责动态上下文检索和风险判断
+2. `Diff Preview + Exclusion Reasons`
+   - 执行 Agent 前预览覆盖文件、排除文件和排除原因
+3. `Graph-Aware Change Bundles`
+   - 使用 graph / contracts / flows，把关联变更组成隔离 bundle
+4. `Finding Relocation + Reflection`
+   - Finding 必须定位回真实 diff，并经过证据充分性与重复检查
+5. `Agent-Friendly Structured Output`
+   - 结构化结果与进度输出分离，便于 verification 和 memory 消费
+
+不吸收：
+
+- 不把 Memory Center 改造成依赖某个 LLM endpoint 的专用审查器
+- 不复制 OpenCodeReview 的 Go CLI、配置目录或命令体系
+- 不让外部 review 工具成为必选依赖
+
+开发包：
+
+- **OCR-1 / Deterministic Diff Scope and Preview**
+- **OCR-2 / Graph-Aware Change Bundles**
+- **OCR-3 / Layered Rule Preview**
+- **OCR-4 / Context-Aware Change Review**
+- **OCR-5 / Finding Location, Validation and Deduplication**
+- **OCR-6 / Review-to-Verification Memory Loop**
+
+验收标准：
+
+1. Agent 执行前能确定预览覆盖范围
+2. 所有变更文件得到确定性处理，不依赖 Agent 自主挑选
+3. Finding 必须定位到真实变更并可追溯证据
+4. Review、修复、验证和经验沉淀形成闭环
+
+### `github/spec-kit`
+
+判断：
+
+- **建议吸收规格驱动流程和可恢复 workflow 思想**
+- 适合补强 task-space、artifacts、verification 和长期协作
+- 官方来源：https://github.com/github/spec-kit
+- 本次研究快照：`34ce66139e5a2d9b28cbb9e21f5a0fc27c2c5d03`
+
+吸收点：
+
+1. `Constitution`
+   - 将稳定原则、架构约束和治理规则提升为不可静默覆盖的项目治理工件
+2. `Spec → Plan → Tasks → Implement`
+   - 为需求、计划、任务、变更和验证建立稳定追踪关系
+3. `Clarify + Analyze`
+   - 实现前澄清高风险歧义，并检查 spec / plan / tasks 的覆盖与一致性
+4. `Resumable Workflow + Human Gates`
+   - 每一步持久化状态，支持暂停、恢复、条件分支和人工批准
+5. `Preset / Extension Boundary`
+   - Preset 调整模板和术语；Extension 增加新能力；核心保持精简
+
+不吸收：
+
+- 不复制 `.specify` 目录和 slash command 命名
+- 不把自然语言规格视为高于真实代码和运行证据的唯一事实源
+- 不允许 Agent 自动绕过 Constitution 冲突或人工 gate
+
+开发包：
+
+- **SK-1 / Project Constitution**
+- **SK-2 / Artifact Traceability Graph**
+- **SK-3 / Spec Clarification and Coverage Analysis**
+- **SK-4 / Resumable Workflow State Machine**
+- **SK-5 / Human Review Gates**
+- **SK-6 / Trusted Preset and Extension Boundary**
+
+验收标准：
+
+1. 任意需求可追到任务、变更和验证证据
+2. 实现前能发现歧义、未覆盖需求和无来源任务
+3. 长任务中断后可从确定步骤恢复
+4. Constitution 冲突和人工 gate 无法被静默绕过
+5. 扩展能力可选、可审计、可移除
+
 ### `colbymchenry/codegraph`
 
 判断：

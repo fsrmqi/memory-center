@@ -17,6 +17,12 @@
 - [USER_GUIDE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/USER_GUIDE.md)
 - [MCP_GUIDE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/MCP_GUIDE.md)
 
+如果工作需要交给其他开发者执行，必须同时阅读：
+
+- [DELEGATED_EXECUTION_PLAN.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/DELEGATED_EXECUTION_PLAN.md)
+
+交接计划中的执行顺序、范围边界、验收标准和禁止变更规则用于避免外部协作时误改公开 schema、污染 workspace 或扩大重构范围。遇到禁止变更时应记录并跳过，继续执行其他任务，最后统一评审。
+
 ## 2. 测试必须隔离 workspace，不能直接写仓库内 demo `.memory-center`
 
 ### 现象
