@@ -22,6 +22,7 @@ from memory_center.core.artifacts import (
     list_artifacts, create_task_space, list_task_spaces,
 )
 from memory_center.cli.main import app
+from memory_center.http.server import _route_request
 
 try:
     from mcp.server.fastmcp import FastMCP
@@ -139,6 +140,58 @@ def test_business_flow_cli_uses_workspace_yaml_not_sqlite_path(tmp_path: Path):
     assert result.exit_code == 0, result.output
     assert "file is not a database" not in result.output
     assert "flows" in result.output
+
+
+def test_http_next_phase_entrypoint_matrix_uses_workspace_yaml(tmp_path: Path):
+    wf = _setup_workspace(tmp_path)
+    cases = [
+        ("/workspace/context-pack", {"workspace": [wf], "query": ["ArticleFeignClient"]}, ["query", "freshness", "progressive"]),
+        ("/workspace/freshness", {"workspace": [wf]}, ["freshness", "banner"]),
+        ("/workspace/onboard", {"workspace": [wf], "persona": ["developer"]}, ["tour"]),
+        ("/workspace/business-flow", {"workspace": [wf], "seed": ["FeignClient:task-service:ArticleFeignClient"]}, ["flows", "workflow"]),
+        ("/workspace/business-flow-impact", {"workspace": [wf], "node_id": ["FeignClient:task-service:ArticleFeignClient"]}, ["impacted", "workflow"]),
+        ("/workspace/runtime-audit", {"workspace": [wf]}, ["score", "quality", "findings"]),
+        ("/workspace/regression-alerts", {"workspace": [wf]}, ["alerts"]),
+    ]
+    for path, params, required_keys in cases:
+        payload = _route_request(path, params, None)
+        assert isinstance(payload, dict), path
+        for key in required_keys:
+            assert key in payload, f"{path} missing {key}: {payload}"
+        assert "file is not a database" not in str(payload)
+
+
+@pytest.mark.skipif(not HAS_MCP, reason="mcp package not installed")
+def test_mcp_next_phase_entrypoint_matrix_uses_workspace_yaml(tmp_path: Path):
+    import asyncio
+
+    wf = _setup_workspace(tmp_path)
+    server = create_server(wf)
+    tools = server._tool_manager._tools
+    loop = asyncio.get_event_loop()
+
+    direct_cases = [
+        ("mc_context_pack", {"query": "ArticleFeignClient"}, ["workflow", "freshness", "progressive"]),
+        ("mc_freshness", {}, ["workflow", "freshness", "banner"]),
+        ("mc_onboard", {"persona": "developer"}, ["workflow", "tour"]),
+        ("mc_domain", {}, ["workflow", "domains", "domain_count"]),
+    ]
+    for tool_name, kwargs, required_keys in direct_cases:
+        payload = loop.run_until_complete(tools[tool_name].fn(**kwargs))
+        for key in required_keys:
+            assert key in payload, f"{tool_name} missing {key}: {payload}"
+
+    admin_cases = [
+        ({"action": "business_flow", "name": "FeignClient:task-service:ArticleFeignClient"}, ["action", "result"]),
+        ({"action": "business_flow_impact", "text": "FeignClient:task-service:ArticleFeignClient"}, ["action", "result"]),
+        ({"action": "runtime_audit"}, ["action", "result"]),
+        ({"action": "regression_alerts"}, ["action", "result"]),
+    ]
+    for kwargs, required_keys in admin_cases:
+        payload = loop.run_until_complete(tools["mc_admin"].fn(**kwargs))
+        for key in required_keys:
+            assert key in payload, f"mc_admin {kwargs['action']} missing {key}: {payload}"
+        assert "file is not a database" not in str(payload)
 
 
 def test_mc_lookup_code_mode_passes_project_filter(tmp_path: Path):

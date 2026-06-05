@@ -45,17 +45,20 @@ from memory_center.http.server import create_handler
 from memory_center.core.orchestrator.common import _merge_artifact_section
 
 
-def test_demo_workspace_indexes_spring_cloud_patterns(tmp_path: Path):
+def _copy_root_demo_workspace(tmp_path: Path) -> Path:
     source = Path("examples/spring-cloud-demo")
     target = tmp_path / "demo"
     import shutil
     shutil.copytree(source, target)
     workspace = target / ".memory-center" / "workspace.yaml"
-
-    # Force an absolute fixture root after copying.
     lines = workspace.read_text(encoding="utf-8").splitlines()
     lines = [f"root: {target.as_posix()}" if line.startswith("root:") else line for line in lines]
     workspace.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return workspace
+
+
+def test_demo_workspace_indexes_spring_cloud_patterns(tmp_path: Path):
+    workspace = _copy_root_demo_workspace(tmp_path)
 
     config = load_workspace_config(workspace)
     store = WorkspaceStore(workspace)
@@ -1004,7 +1007,7 @@ def test_graph_query_context_and_impact(tmp_path):
     from memory_center.core.rules import ensure_default_rules
     from memory_center.core.store import WorkspaceStore
 
-    workspace = "examples/spring-cloud-demo/.memory-center/workspace.yaml"
+    workspace = str(_copy_root_demo_workspace(tmp_path))
     config = load_workspace_config(workspace)
     store = WorkspaceStore(workspace)
     ensure_default_rules(store)

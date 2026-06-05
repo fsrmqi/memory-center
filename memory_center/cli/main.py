@@ -1742,11 +1742,11 @@ def metrics_summary_cmd():
 @app.command("regression-alerts")
 def regression_alerts_cmd(
     workspace: str = typer.Option(..., help="Path to .memory-center/workspace.yaml"),
-    benchmark_name: str = typer.Option("", help="Specific benchmark name to check"),
+    threshold_pct: float = typer.Option(10.0, help="Token regression warning threshold percentage"),
 ):
     """Check for benchmark regression alerts."""
     from memory_center.core.benchmark.trending import check_regression_alerts
-    result = check_regression_alerts(workspace, benchmark_name=benchmark_name or None)
+    result = check_regression_alerts(workspace, threshold_pct=threshold_pct)
     print(json.dumps(result, indent=2, default=str))
 
 

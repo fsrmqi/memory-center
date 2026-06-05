@@ -17,7 +17,180 @@
 - [USER_GUIDE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/USER_GUIDE.md)
 - [MCP_GUIDE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/MCP_GUIDE.md)
 
-## 2. `user_prompt_submit` 默认禁用
+## 2. 测试必须隔离 workspace，不能直接写仓库内 demo `.memory-center`
+
+### 现象
+
+`examples/spring-cloud-demo/.memory-center` 里存在示例 workspace、索引、graph、memory 和规则文件。它适合作为 demo 和 fixture 来源，但不适合作为测试运行时的写入目标。
+
+很多操作会修改 `.memory-center` 下的生成物，例如：
+
+- `reindex_workspace`
+- `memory_query_hybrid`
+- `ContextPackBuilder`
+- `workspace_start_session`
+- `memory_eval_token_gain`
+- `business-flow` / `business-flow-impact` smoke
+- HTTP / MCP / CLI 入口测试
+
+这些操作可能改动：
+
+- `.memory-center/graph/graph.db`
+- `.memory-center/graph/graph.db-wal`
+- `.memory-center/graph/graph.db-shm`
+- `.memory-center/memory/memory.db`
+- `.memory-center/memory/*.jsonl`
+- `.memory-center/index/*.json`
+
+### 为什么要特别说明
+
+仓库规则要求不要提交真实私有项目生成的 `.memory-center/index` 或 `.memory-center/memory` 内容。即使这里是 demo workspace，直接写仓库内示例数据也会带来两个问题：
+
+1. 测试后 `git status` 变脏，容易误提交生成物。
+2. 测试之间共享同一个 graph / memory 状态，结果可能互相污染。
+
+### 正确做法
+
+新增测试时，不要这样写：
+
+```python
+workspace = "examples/spring-cloud-demo/.memory-center/workspace.yaml"
+store = WorkspaceStore(workspace)
+reindex_workspace(config, store)
+```
+
+应该这样做：
+
+```python
+source = Path("examples/spring-cloud-demo")
+target = tmp_path / "demo"
+shutil.copytree(source, target)
+workspace = target / ".memory-center" / "workspace.yaml"
+
+lines = workspace.read_text(encoding="utf-8").splitlines()
+lines = [f"root: {target.as_posix()}" if line.startswith("root:") else line for line in lines]
+workspace.write_text("\n".join(lines) + "\n", encoding="utf-8")
+```
+
+也就是：
+
+1. 复制 demo 到 `tmp_path`
+2. 改写 `workspace.yaml` 里的 `root`
+3. 在临时副本中 reindex / query / run CLI / run HTTP route
+4. 测试结束后让 pytest 清理临时目录
+
+### 后续维护要求
+
+任何新增测试只要会触发 reindex、session、memory write、graph write、benchmark write，都必须使用临时 workspace。
+
+如果确实需要检查仓库内示例文件是否存在，只能做只读断言，不要调用会写入 `.memory-center` 的函数。
+
+## 3. CLI / MCP / HTTP 入口必须统一解析 `workspace.yaml`
+
+### 现象
+
+Memory Center 的公开入口通常接收的是：
+
+```text
+/path/to/.memory-center/workspace.yaml
+```
+
+但底层图谱存储打开的是 SQLite graph db，例如：
+
+```text
+/path/to/.memory-center/graph/graph.db
+```
+
+如果入口直接把 `workspace.yaml` 传给 `GraphStore` 或 `UnifiedStore`，运行时会出现：
+
+```text
+DatabaseError: file is not a database
+```
+
+### 正确做法
+
+入口层不要直接写：
+
+```python
+graph = GraphStore(workspace)
+store = UnifiedStore(workspace)
+```
+
+应先解析 workspace：
+
+```python
+workspace_store = WorkspaceStore(workspace)
+graph = GraphStore(workspace_store.graph_db_path)
+store = UnifiedStore(workspace_store.graph_db_path)
+```
+
+更推荐复用 core helper，例如：
+
+```python
+extract_business_flows_for_workspace(workspace, seed, max_depth=4)
+business_flow_impact_for_workspace(workspace, node_id, max_depth=3)
+```
+
+这样 CLI / MCP / HTTP 三入口可以共用同一套 workspace 解析逻辑。
+
+### 后续维护要求
+
+新增或修改以下能力时，必须确认 CLI / MCP / HTTP 语义一致：
+
+- `context-pack`
+- `freshness`
+- `onboard`
+- `domain`
+- `business-flow`
+- `business-flow-impact`
+- `verification-loop`
+- `runtime-audit`
+- `regression-alerts`
+
+至少应补一类入口矩阵测试：
+
+- HTTP route matrix：直接调用 `_route_request`
+- MCP matrix：调用 `create_server(...)._tool_manager._tools[...]`
+- CLI smoke：用 `CliRunner` 调用关键命令
+
+测试里要断言：
+
+1. 返回是 dict
+2. 包含核心字段
+3. 输出中不包含 `file is not a database`
+4. 使用的是临时 workspace，不污染仓库 demo
+
+## 4. regression-alerts 使用 `threshold_pct`，不是 `benchmark_name`
+
+### 现象
+
+`check_regression_alerts(workspace_file, threshold_pct=10.0)` 的语义是根据 token 回归百分比阈值生成告警。
+
+它不接受 `benchmark_name` 参数。
+
+### 正确入口语义
+
+CLI：
+
+```bash
+memory-center regression-alerts --workspace /path/to/.memory-center/workspace.yaml --threshold-pct 10
+```
+
+HTTP：
+
+```text
+/workspace/regression-alerts?workspace=/path/to/.memory-center/workspace.yaml&threshold_pct=10
+```
+
+MCP：
+
+```text
+mc_admin(action="regression_alerts")
+```
+
+当前 MCP admin 使用默认阈值。后续如果要让 MCP 也支持阈值，应先扩展 `mc_admin` 参数 schema，并保持向后兼容。
+
+## 5. `user_prompt_submit` 默认禁用
 
 ### 现象
 
@@ -105,7 +278,7 @@
 - 不容易误伤普通自然语言输入
 - 更适合 Claude Code / Codex 这类宿主
 
-## 3. `mode` 与 `enabled` 的关系
+## 6. `mode` 与 `enabled` 的关系
 
 Hook 配置里：
 
@@ -124,7 +297,7 @@ Hook 配置里：
 - 它的执行类型定义仍然是 suggest
 - 但当前配置明确要求不启用它
 
-## 4. facade 与原子能力并存，不是重复设计
+## 7. facade 与原子能力并存，不是重复设计
 
 当前系统里：
 
@@ -138,7 +311,7 @@ Hook 配置里：
 
 所以看到“原子工具还在”不代表 facade 重构失败。
 
-## 5. SQLite `memory.db` 不是唯一真相源
+## 8. SQLite `memory.db` 不是唯一真相源
 
 当前 `memory.db` 的定位是：
 
@@ -167,7 +340,7 @@ Hook 配置里：
 
 并不表示设计不统一，而是渐进切换中的有意状态。
 
-## 6. 文档与实现冲突时怎么判断
+## 9. 文档与实现冲突时怎么判断
 
 如果出现：
 
@@ -183,7 +356,7 @@ Hook 配置里：
 
 也就是说，这份文档本身就是为了减少”把设计选择误判成 bug”的情况。
 
-## 7. `async` 标记是宿主/Adapter 配置，不在 Runner 内消费
+## 10. `async` 标记是宿主/Adapter 配置，不在 Runner 内消费
 
 ### 现象
 
@@ -212,7 +385,7 @@ Hook 配置里：
 
 只有当 runner 本身需要支持并发执行（如内部线程池、asyncio）时，才需要在 runner 内消费 `async`。当前架构下不需要。
 
-## 8. Audit 是语言自适应的，不是只检查 Python 项目
+## 11. Audit 是语言自适应的，不是只检查 Python 项目
 
 ### 现象
 

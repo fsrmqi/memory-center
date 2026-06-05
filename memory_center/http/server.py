@@ -940,7 +940,7 @@ def _route_request(path: str, params: dict, default_workspace: str | None) -> di
     if path == "/workspace/regression-alerts":
         workspace = _require_workspace(params, default_workspace)
         from memory_center.core.benchmark.trending import check_regression_alerts
-        return check_regression_alerts(workspace, benchmark_name=params.get("benchmark_name", [""])[0] or None)
+        return check_regression_alerts(workspace, threshold_pct=float(params.get("threshold_pct", ["10.0"])[0]))
     if path == "/workspace/onboard":
         workspace = _require_workspace(params, default_workspace)
         from memory_center.core.onboarding.tour import ArchitectureTourGenerator

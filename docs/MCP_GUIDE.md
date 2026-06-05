@@ -79,6 +79,7 @@ MCP 当前公开的是 12 个 task-level tools：
 - `eval_token_gain` — Token 节省评估
 - `eval_regression_suite` — 回归套件
 - `eval_write_quality` / `eval_resume` / `eval_handoff` — 各维度评测
+- `regression_alerts` — Token 回归告警，使用默认阈值；HTTP / CLI 对应入口使用 `threshold_pct`
 
 ### 工件与任务
 
@@ -119,6 +120,23 @@ MCP 当前公开的是 12 个 task-level tools：
 - 适合场景：
   - 改动前确认图谱是否可信
   - 提醒是否应先读 live file 或触发增量索引
+
+### Next Phase 入口一致性 / Entry Consistency
+
+以下能力必须保持 CLI / MCP / HTTP 对 `workspace.yaml` 的解析语义一致：
+
+- `context-pack`
+- `freshness`
+- `onboard`
+- `domain`
+- `business-flow`
+- `business-flow-impact`
+- `runtime-audit`
+- `regression-alerts`
+
+维护时不要把 `workspace.yaml` 直接传给 `GraphStore` 或 `UnifiedStore`。入口应先通过 `WorkspaceStore(workspace).graph_db_path` 解析实际 SQLite 路径，或复用 core 层提供的 workspace helper。
+
+For maintenance, public entrypoints accept `workspace.yaml`; resolve the graph database path through `WorkspaceStore` or shared core helpers before opening SQLite stores.
 
 ## 6. Hooks / Hook 接入
 

@@ -671,7 +671,7 @@ def create_server(workspace_file: str):
 
     @staticmethod
     def _regression_alerts_action(wf: str, name: str) -> dict:
-        alerts = check_regression_alerts(wf, benchmark_name=name)
+        alerts = check_regression_alerts(wf)
         return {"alerts": alerts, "workflow": "mc-regression-alerts"}
 
     # ===================== Resources (unchanged) =====================

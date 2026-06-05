@@ -24,6 +24,12 @@
 
 ### P0：主链路静默失败
 
+当前状态：
+
+- freshness 方法名不一致问题已修复。
+- context risk、vector retrieval、business-flow 三入口一致性已进入 3.1.1 主链路收口。
+- 后续重点从“已知 P0 修复”转为“三入口矩阵持续覆盖、静默降级 diagnostics、测试 workspace 隔离”。
+
 #### 2.1 Freshness 主查询链路失效
 
 现象：
@@ -111,6 +117,12 @@
 - 增加异常降级可见性测试。
 - 增加真实 demo workspace smoke 测试。
 
+当前进展：
+
+- 已增加 Next Phase HTTP 入口矩阵测试。
+- 已增加 MCP 入口矩阵测试骨架；当 MCP 依赖不可用时按现有策略跳过。
+- 已覆盖 business-flow CLI 不再把 workspace.yaml 当 SQLite 的回归测试。
+
 #### 2.6 生成内容污染工作树
 
 现象：
@@ -123,6 +135,11 @@
 - 明确 demo fixture 的可跟踪范围。
 - 测试写入临时 workspace，而不是修改已跟踪 demo 数据。
 - `.gitignore` 和文档说明保持一致。
+
+当前进展：
+
+- `test_public_mvp.py` 中直接使用仓库内 demo workspace 的污染点已改为复制到 `tmp_path`。
+- 后续新增测试必须继续遵守 `docs/SPECIAL_NOTES.md` 中的 workspace 隔离规则。
 
 ### P2：文档状态漂移
 
@@ -330,6 +347,7 @@
 
 - 任意新增入口必须有矩阵测试。
 - 三入口字段命名不再明显分叉。
+- 测试不得直接写入仓库内 `examples/*/.memory-center` 的 graph / memory 生成物。
 
 ## 7. Phase 3：测试体系补强
 
@@ -632,4 +650,3 @@
 5. 前端大改版。
 
 这些方向可以保留，但必须排在主链路收口之后。
-
