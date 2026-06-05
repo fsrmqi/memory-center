@@ -6,6 +6,19 @@
 - 重要行为变化
 - 明确修复的真实 bug
 
+## 3.1.2
+
+### 主链路一致性与 workspace 隔离 / Workflow Consistency and Workspace Isolation
+
+- 升级版本号到 `3.1.2`
+- 修复 `business-flow` / `business-flow-impact` 的 CLI、MCP、HTTP workspace 解析一致性，避免把 `workspace.yaml` 当 SQLite graph db 打开
+- 修复 `memory_context` 风险分析调用不存在的 `RiskAnalyzer` 导致 `risk_patterns` 静默为空的问题，改为 `RiskPatternEngine` 并返回可见 diagnostics
+- 修复 hybrid vector retrieval 的导入 / store 构造问题，并在返回中增加 `retrieval_diagnostics.vector`
+- 修复 `regression-alerts` 三入口错误传入 `benchmark_name` 的问题，统一为 `threshold_pct`
+- 增加 Next Phase 入口矩阵测试，覆盖 context-pack、freshness、onboard、business-flow、business-flow-impact、runtime-audit、regression-alerts
+- 调整测试用例，避免直接写入仓库内 `examples/spring-cloud-demo/.memory-center` 生成物
+- 补充 workspace 隔离、三入口解析和后续维护要求的特殊说明
+
 ## 3.1.1
 
 ### 主链路收口 / Main Workflow Stabilization
@@ -14,12 +27,6 @@
 - 延续 v3.1 系列对 V3 / Next Phase 能力的产品化收口
 - 重点面向 freshness、context、impact、business flow、retrieval、CLI / MCP / HTTP 一致性等主链路稳定性优化
 - 保持 MCP facade schema 向后兼容
-- 修复 `business-flow` / `business-flow-impact` 的 CLI、MCP、HTTP workspace 解析一致性，避免把 `workspace.yaml` 当 SQLite graph db 打开
-- 修复 `memory_context` 风险分析调用不存在的 `RiskAnalyzer` 导致 `risk_patterns` 静默为空的问题，改为 `RiskPatternEngine` 并返回可见 diagnostics
-- 修复 hybrid vector retrieval 的导入 / store 构造问题，并在返回中增加 `retrieval_diagnostics.vector`
-- 修复 `regression-alerts` 三入口错误传入 `benchmark_name` 的问题，统一为 `threshold_pct`
-- 增加 Next Phase 入口矩阵测试，覆盖 context-pack、freshness、onboard、business-flow、business-flow-impact、runtime-audit、regression-alerts
-- 调整测试用例，避免直接写入仓库内 `examples/spring-cloud-demo/.memory-center` 生成物
 
 ## 3.0.0
 

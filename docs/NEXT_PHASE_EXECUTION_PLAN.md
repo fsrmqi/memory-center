@@ -27,7 +27,7 @@
 当前状态：
 
 - freshness 方法名不一致问题已修复。
-- context risk、vector retrieval、business-flow 三入口一致性已进入 3.1.1 主链路收口。
+- context risk、vector retrieval、business-flow 三入口一致性已进入 3.1.2 主链路收口。
 - 后续重点从“已知 P0 修复”转为“三入口矩阵持续覆盖、静默降级 diagnostics、测试 workspace 隔离”。
 
 #### 2.1 Freshness 主查询链路失效
