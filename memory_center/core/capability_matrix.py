@@ -54,7 +54,7 @@ CAPABILITIES: list[Capability] = [
     ),
     Capability(
         name="freshness",
-        core_fields=["workflow", "banner", "pending_files", "stale_files"],
+        core_fields=["workflow", "banner", "freshness"],
         error_semantics="missing workspace -> error dict with status=not_found",
         entries=[_http("/workspace/freshness"), _mcp_tool("mc_freshness")],
     ),
@@ -92,7 +92,7 @@ CAPABILITIES: list[Capability] = [
     ),
     Capability(
         name="verification-loop",
-        core_fields=["checklist", "status", "workflow"],
+        core_fields=["checklist", "status"],
         error_semantics="missing intent -> uses default; loop failure -> diagnostics",
         entries=[
             _cli("verification-loop"),
@@ -102,7 +102,7 @@ CAPABILITIES: list[Capability] = [
     ),
     Capability(
         name="workflow-profile",
-        core_fields=["profile", "recommended_tools", "verification_requirements"],
+        core_fields=["name", "description", "steps", "applicable_when", "tools_sequence"],
         error_semantics="unknown profile name -> error with valid options",
         entries=[
             _cli("workflow-profile"),
@@ -112,7 +112,7 @@ CAPABILITIES: list[Capability] = [
     ),
     Capability(
         name="runtime-audit",
-        core_fields=["audit", "issues", "score"],
+        core_fields=["audit_record", "findings", "quality", "score"],
         error_semantics="missing hooks.yaml -> empty audit with diagnostics",
         entries=[
             _cli("runtime-audit"),
@@ -122,7 +122,7 @@ CAPABILITIES: list[Capability] = [
     ),
     Capability(
         name="regression-alerts",
-        core_fields=["alerts", "alert_count", "threshold_pct"],
+        core_fields=["alerts", "total_regressions", "critical_count", "warning_count", "health"],
         error_semantics="missing benchmark data -> empty alerts",
         entries=[
             _cli("regression-alerts"),
@@ -132,7 +132,7 @@ CAPABILITIES: list[Capability] = [
     ),
     Capability(
         name="backend-consistency",
-        core_fields=["consistency", "mismatches"],
+        core_fields=["consistent", "comparisons", "divergences"],
         error_semantics="missing memory.db or JSONL -> diagnostics",
         entries=[
             _cli("backend-consistency"),

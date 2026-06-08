@@ -1660,7 +1660,10 @@ def workflow_profile_cmd(
 ):
     """Get a workflow protocol profile."""
     from memory_center.core.verification.workflow_profiles import get_workflow_profile
+    import dataclasses as _dc
     result = get_workflow_profile(profile)
+    if _dc.is_dataclass(result) and not isinstance(result, type):
+        result = _dc.asdict(result)
     print(json.dumps(result, indent=2, default=str))
 
 
@@ -1693,7 +1696,7 @@ def runtime_audit_cmd(
     """Audit agent runtime configuration (hooks, MCP, agent profile)."""
     from memory_center.core.audit.runtime import audit_agent_runtime
     result = audit_agent_runtime(workspace)
-    print(json.dumps(result, indent=2, default=str))
+    print(json.dumps(result, indent=2, default=str, ensure_ascii=False))
 
 
 @app.command("explanation")

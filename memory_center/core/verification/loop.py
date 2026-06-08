@@ -89,3 +89,33 @@ class VerificationLoop:
             "status": "completed",
             "completed_at": datetime.now(timezone.utc).isoformat(),
         }
+
+    def generate_checklist(self, analysis: Dict[str, Any]) -> Dict[str, Any]:
+        """Generate a verification checklist from task analysis.
+
+        Called by CLI / HTTP / MCP entry points.
+        Returns a dict with ``task_type`` and ``items`` keys.
+        """
+        task_type = (analysis or {}).get("task_type", "general")
+        items = self.get_checklist(task_type)
+        return {"task_type": task_type, "items": items}
+
+    def get_status(self, task_id: str) -> Dict[str, Any]:
+        """Return the latest status for *task_id* from the verification log.
+
+        Called by CLI / HTTP / MCP entry points.
+        If no log entries exist for *task_id*, returns a default "pending" status.
+        """
+        try:
+            entries = self._store.read_jsonl(VERIFICATION_LOG_FILE)
+        except Exception:
+            entries = []
+        task_entries = [e for e in entries if e.get("task_id") == task_id]
+        if task_entries:
+            latest = task_entries[-1]
+            return {
+                "task_id": task_id,
+                "status": latest.get("status", "unknown"),
+                "loop_id": latest.get("loop_id", ""),
+            }
+        return {"task_id": task_id, "status": "pending", "loop_id": ""}
