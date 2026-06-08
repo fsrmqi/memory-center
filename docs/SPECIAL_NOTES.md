@@ -17,11 +17,11 @@
 - [USER_GUIDE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/USER_GUIDE.md)
 - [MCP_GUIDE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/MCP_GUIDE.md)
 
-如果工作需要交给其他开发者执行，必须同时阅读：
+如果工作需要交给其他开发者执行，建议同时阅读：
 
 - [DELEGATED_EXECUTION_PLAN.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/DELEGATED_EXECUTION_PLAN.md)
 
-交接计划中的执行顺序、范围边界、验收标准和禁止变更规则用于避免外部协作时误改公开 schema、污染 workspace 或扩大重构范围。遇到禁止变更时应记录并跳过，继续执行其他任务，最后统一评审。
+交接计划是可调整的产品方向和工作清单。执行者可以重排任务、合并工作包、重构核心模块、调整公开 schema 和引入新依赖，不需要因旧计划边界等待审批。开发决策优先看功能是否真正可用、使用是否顺畅、实现是否可维护，同时对数据安全、迁移方式和验证结果负责。
 
 ## 2. 测试必须隔离 workspace，不能直接写仓库内 demo `.memory-center`
 
@@ -194,7 +194,7 @@ MCP：
 mc_admin(action="regression_alerts")
 ```
 
-当前 MCP admin 使用默认阈值。后续如果要让 MCP 也支持阈值，应先扩展 `mc_admin` 参数 schema，并保持向后兼容。
+当前 MCP admin 使用默认阈值。后续可以扩展 `mc_admin` 参数 schema；优先保持向后兼容，如需调整旧行为，应同步迁移说明、文档和测试。
 
 ## 5. `user_prompt_submit` 默认禁用
 
@@ -439,31 +439,42 @@ Hook 配置里：
 - 不要通过扩大 `.gitignore` 来掩盖污染。
 - CI 流程中 `pytest -q` 已包含污染检测，无需额外步骤。
 
-## 13. Stop Conditions 只阻止对应高风险改造，不阻止其他工作
+## 13. 不再使用 Stop Conditions 阻塞开发
 
-### 正确解释
+### 当前开发策略
 
-`DELEGATED_EXECUTION_PLAN.md` 中的 Stop Conditions 是高风险变更审核边界，不是“只要涉及某个模块就停止”的模块禁改清单。
+旧交接记录中的 Stop Conditions、`deferred-review` 和 `blocked-by-deferred-review` 仅用于保留历史决策背景，不再作为当前开发阻塞规则。
 
-例如：
+执行者可以直接推进：
 
-- “大规模重写 indexer、store、orchestrator”不等于禁止任何小范围修改。
-- “引入新的运行时必选依赖”不等于禁止经过 fallback 设计的可选依赖。
-- 文档盘点、只读分析、测试补充、兼容性验证通常可以继续执行。
+1. 重构或重写 indexer、store、orchestrator。
+2. 调整 MCP、CLI、HTTP schema 和交互方式。
+3. 升级 workspace、graph、memory 数据格式。
+4. 引入能够明显改善功能、体验、性能或维护成本的新依赖和外部服务。
+5. 删除重复、低价值或妨碍使用的旧能力。
+6. 调整工作包顺序、范围和模块边界。
 
-执行者遇到 Stop Condition 时必须：
+做决定时优先判断：
 
-1. 只将实际触发禁止条件的具体方案标记为 `deferred-review`。
-2. 记录触发证据、影响范围、替代方案和验证方法。
-3. 继续执行其他不依赖该方案的工作包。
-4. 不得仅因为工作包涉及 `store`、`indexer` 或 `orchestrator` 就直接延后。
-5. 最终统一提交延后事项给负责人评审。
+1. 是否解决真实用户问题。
+2. 是否让安装、配置、调用和排障更简单。
+3. 是否能够通过自动测试或可重复 smoke 验证。
+4. 是否提供必要的数据迁移、兼容窗口或回滚方式。
+5. 是否让后续代码更容易理解和维护。
+
+只有以下底线不能放开：
+
+- 不提交真实密钥、私有路径、内部服务名或私有 workspace 数据。
+- 不通过删除断言、无理由跳过、吞异常或伪造成功隐藏问题。
+- 写入型测试不直接修改仓库 demo workspace。
+- 破坏性数据迁移必须可重复、可验证，并提供迁移或回滚说明。
 
 ### 完成状态要求
 
-- 新增 helper、schema 或测试，但尚未接入计划要求的主链路时，状态必须是 `partial`。
-- 只有实际入口、主链路、验收测试和文档均满足计划验收标准时，才能标记 `completed`。
-- `pytest` 通过不代表 lint 通过；只有执行 `ruff check .` 成功后，才能记录“全量测试和 lint 通过”。
+- 使用 `planned`、`in-progress`、`completed`、`needs-follow-up` 描述当前状态，不再用旧的 deferred / blocked 状态阻塞开发。
+- 新增 helper、schema 或测试但尚未接入主链路时，应明确标记 `in-progress` 或 `needs-follow-up`。
+- 实际入口、主链路、关键测试和相关文档满足目标后，可以标记 `completed`。
+- `pytest` 通过不代表 lint 通过；应如实分别记录验证结果，并区分本次问题与存量债务。
 - 跳过的测试必须记录原因，不能作为对应能力已完整验证的证据。
 
 ## 14. 统一错误模型位于公开入口边界
@@ -481,5 +492,5 @@ Hook 配置里：
 
 - 新增公开入口必须复用 `normalize_exception()` 或现有入口边界。
 - 不要在入口直接返回未经清洗的 `str(exc)`。
-- 不要为了统一错误格式改变成功返回 schema。
+- 如需改变成功返回 schema，应同步迁移说明、文档和测试。
 - MCP tool 必须通过安全注册装饰器注册，避免绕过统一错误边界。
