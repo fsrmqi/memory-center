@@ -51,7 +51,7 @@
 
 这些是**基线存量问题**，不是执行者引入的。后续工作包中若触及相关文件，会顺带修复对应 lint 问题，但不会做与当前工作包无关的大规模 lint 修复。
 
-### 当前行为
+### 初始行为（2026-06-05）
 
 - 项目版本 3.1.2
 - 全量测试 466 pass / 5 skip
@@ -348,7 +348,7 @@ git diff --stat examples/: 无变化
 
 ## 阶段 A 审核闸门
 
-**状态**: completed
+**状态**: partial
 **日期**: 2026-06-05
 
 | 闸门条件 | 状态 | 证据 |
@@ -357,14 +357,14 @@ git diff --stat examples/: 无变化
 | 测试 workspace 已隔离 | ✅ | A-02: 7 个测试文件迁移到共享 fixture; 468 passed |
 | CI 能发现 workspace 污染 | ✅ | A-03: SHA-256 校验 + 模拟污染测试; 490 passed |
 | diagnostics 合同有测试和文档 | ✅ | A-04: 18 tests; DIAG 状态词; safe_reason |
-| 全量测试和 lint 通过 | ✅ | 490 passed, 6 skipped; 新增文件 0 ruff errors |
+| 全量测试和 lint 通过 | ⚠️ | pytest 通过；仅验证新增文件 0 ruff errors，未证明 `ruff check .` 全量通过 |
 
 ---
 
 ## B-01：建立 CLI / MCP / HTTP 能力矩阵
 
 **工作包**: B-01
-**状态**: completed
+**状态**: partial
 **日期**: 2026-06-05
 
 ### 完成范围
@@ -669,15 +669,16 @@ git status --short examples/: （空，干净）
 
 ### 行为变化
 
-- 新增错误模型模块，不修改现有公开入口的错误处理
+- 2026-06-05 首轮仅新增错误模型模块，未修改公开入口错误处理。
+- 2026-06-08 已通过集中入口边界接入 CLI / MCP / HTTP。
 - 现有 `ValueError`/`FileNotFoundError` 仍可正常使用（向后兼容）
-- 新代码可逐步采用 `MCError` 体系
+- core 层可继续使用现有异常，公开入口统一转换为 `MCError` 语义。
 
 ### 兼容性影响
 
 - 无破坏性变更
 - `MCError` 继承 `Exception`，现有 `except Exception` 块可正常捕获
-- 现有错误处理行为不变
+- HTTP 保留 `ok=false` 和 `error` 字段；CLI/MCP 的异常输出变为结构化、安全格式。
 
 ### 修改文件
 
@@ -733,7 +734,7 @@ git diff --stat examples/: 无变化
 
 ## 阶段 B 审核闸门
 
-**状态**: completed
+**状态**: partial
 **日期**: 2026-06-05
 
 | 闸门条件 | 状态 | 证据 |
@@ -741,9 +742,9 @@ git diff --stat examples/: 无变化
 | 入口矩阵完整 | ✅ | B-01: 14 项能力、22 tests |
 | facade 核心返回值类型化 | ✅ | B-02: 12 facade schemas、21 tests |
 | schema 兼容性有 CI 保护 | ✅ | B-03: 12 tests、snapshot 回归 |
-| 错误模型一致 | ✅ | B-04: 62 tests、5 种错误类型、三入口矩阵 |
-| 文档与实现一致 | ✅ | 能力矩阵、schema 定义、错误类型均有文档和测试 |
-| 全量测试和 lint 通过 | ✅ | 607 passed, 6 skipped; 新增文件 0 ruff errors |
+| 错误模型一致 | ✅ | B-04 已建立统一模型，并于 2026-06-08 接入 CLI / MCP / HTTP 真实入口 |
+| 文档与实现一致 | ⚠️ | 基础模块有记录；公开文档和真实入口接入状态仍需同步 |
+| 全量测试和 lint 通过 | ⚠️ | pytest 通过；未证明 `ruff check .` 全量通过 |
 
 ---
 
@@ -1437,7 +1438,7 @@ memory_impact(target)
 
 ## 阶段 C 审核闸门（C-01 ~ C-07 完成项）
 
-**状态**: completed
+**状态**: partial
 **日期**: 2026-06-06
 
 | 闸门条件 | 状态 | 证据 |
@@ -1447,7 +1448,7 @@ memory_impact(target)
 | Contracts、chain、group chain 有正反例 | ✅ | C-04: 18 tests; C-05: 26 tests; C-06: 34 tests |
 | Reasoning 已主链路化且可解释 | ✅ | C-07: 25 tests, _reasoning in memory_impact, _evidence on every entry |
 | 所有质量调整有量化证据 | ✅ | C-03: 100% accuracy, 0% misclassification |
-| 全量测试和 lint 通过 | ✅ | 802 passed, 8 skipped; 新增文件 0 ruff errors |
+| 全量测试和 lint 通过 | ⚠️ | pytest 通过；仅验证新增文件 0 ruff errors，未证明 `ruff check .` 全量通过 |
 
 ---
 
@@ -1648,7 +1649,7 @@ git diff --stat examples/: 无变化
 ## D-03：统一 Explanation Schema
 
 **工作包**: D-03
-**状态**: completed
+**状态**: partial
 **日期**: 2026-06-06
 
 ### 完成范围
@@ -1887,11 +1888,11 @@ git diff --stat examples/: 无变化
 | 闸门条件 | 状态 | 证据 |
 |---|---|---|
 | Freshness 和 Context Pack 已进入默认工作流 | ✅ | D-01: freshness in mc_start; D-02: context_pack_recommendation in mc_start |
-| Explanation Schema 被多入口复用 | ✅ | D-03: explanation_entry/merge_explanations/backward_compat_wrapper |
+| Explanation Schema 被多入口复用 | ⚠️ | D-03 已提供 helper，但尚未接入 domain / onboarding / impact / reasoning 多入口 |
 | Domain、Flow、Onboarding 输出稳定 | ✅ | D-04: 6 flow/domain tests; D-05: 7 persona tests |
 | Resume/Handoff/Drill-down 可追溯 | ⏳ | D-06 未开始 |
 | Payload 和 token 没有明显退化 | ✅ | 858 passed, no payload increase beyond additive fields |
-| 全量测试和 lint 通过 | ✅ | 858 passed, 9 skipped |
+| 全量测试和 lint 通过 | ⚠️ | pytest 通过；`ruff check .` 尚未全量通过 |
 
 ---
 
@@ -1973,17 +1974,17 @@ git diff --stat examples/: 无变化
 
 ## 阶段 D 审核闸门（D-01 ~ D-06）
 
-**状态**: completed
+**状态**: partial
 **日期**: 2026-06-06
 
 | 闸门条件 | 状态 | 证据 |
 |---|---|---|
 | Freshness 和 Context Pack 已进入默认工作流 | ✅ | D-01: freshness in mc_start; D-02: context_pack_recommendation in mc_start |
-| Explanation Schema 被多入口复用 | ✅ | D-03: explanation_entry/merge_explanations/backward_compat_wrapper |
+| Explanation Schema 被多入口复用 | ⚠️ | D-03 已提供 helper，但尚未接入 domain / onboarding / impact / reasoning 多入口 |
 | Domain、Flow、Onboarding 输出稳定 | ✅ | D-04: 6 flow/domain tests; D-05: 7 persona tests |
 | Resume/Handoff/Drill-down 可追溯 | ✅ | D-06: 6 resume/handoff/drilldown tests |
 | Payload 和 token 没有明显退化 | ✅ | 864 passed, no payload increase beyond additive fields |
-| 全量测试和 lint 通过 | ✅ | 864 passed, 9 skipped |
+| 全量测试和 lint 通过 | ⚠️ | pytest 通过；`ruff check .` 尚未全量通过 |
 
 ---
 
@@ -1991,24 +1992,24 @@ git diff --stat examples/: 无变化
 
 **评估日期**: 2026-06-06
 
-### 需要 deferred-review 的工作包
+### 候选 deferred-review 工作包（2026-06-08 复核后需逐方案判断）
 
-以下工作包涉及修改核心 indexer/store/orchestrator 或引入新运行时依赖：
+以下工作包可能涉及高风险方案，但不能仅按模块名直接延后。只有具体方案实际触发 Stop Conditions 时才标记 `deferred-review`：
 
 | 工作包 | 原因 | 禁止直接实施的变更 |
 |---|---|---|
-| E-02 | 引入 tree-sitter 可选依赖 | 新运行时依赖 |
-| E-03 | 修改并行索引逻辑 | 大规模修改 indexer |
-| E-04 | 引入倒排索引 | 修改 store |
-| E-05 | 引入向量检索 | 修改 store |
-| E-06 | 增量索引 | 修改 indexer |
-| E-07 | Sparse retrieval | 修改 retrieval |
-| F-01 | Unified backend 主读 | 修改 store |
-| F-02 | Backend migration | 修改 store |
-| G-01 | Workflow profiles | 修改 orchestrator |
-| G-02 | Verification loop | 修改 orchestrator |
-| G-03 | Pattern promotion | 修改 memory/经验沉淀 |
-| H-04 | 可恢复工作流状态机 | 修改 orchestrator |
+| E-02 | Tree-sitter 可选接入 | 仅当变成必选依赖或无 fallback 时延后 |
+| E-03 | 并行索引与容错 | 仅当需要大规模重写 indexer 时延后 |
+| E-04 | Watcher 到增量索引桥接 | 仅当需要大规模重写 indexer 时延后 |
+| E-05 | Connect-time Catch-up | 仅当需要不兼容数据迁移时延后 |
+| E-06 | 倒排 / FTS 检索 | 仅当需要不兼容 store 变更时延后 |
+| E-07 | Native Vector 检索 | 仅当引入必选外部服务或不兼容 store 变更时延后 |
+| E-08 | Hybrid Retrieval 融合 | 仅当需要不兼容公开行为变更时延后 |
+| F-02 | Backend migration | 仅当需要不兼容数据迁移或大规模重写 store 时延后 |
+| G-01 | Workflow profiles | 仅当需要大规模重写 orchestrator 时延后 |
+| G-02 | Verification loop | 仅当需要大规模重写 orchestrator 时延后 |
+| G-03 | Pattern promotion | 仅当可能污染长期规则且无法审计时延后 |
+| H-04 | 可恢复工作流状态机 | 仅当需要不兼容 session/task 迁移或大规模重写时延后 |
 
 ### 可安全实施的工作包
 
@@ -2112,9 +2113,12 @@ git diff --stat examples/: 无变化
 **状态**: blocked-by-deferred-review
 **日期**: 2026-06-06
 
+> **2026-06-08 复核说明：本节阻塞结论已被文末“复核修正”取代。**
+> 原结论把“涉及模块”误判为“触发 Stop Condition”，并使用了错误的阶段 E 工作包编号。
+
 ### 阻塞原因
 
-所有剩余工作包的依赖链最终追溯到以下 deferred-review 事项：
+原评估曾认为所有剩余工作包的依赖链最终追溯到以下 deferred-review 事项。该判断已被 2026-06-08 复核推翻，下表仅保留为历史记录：
 
 | 被阻塞工作包 | 直接阻塞依赖 | 根因 |
 |---|---|---|
@@ -2170,10 +2174,10 @@ git diff --stat examples/: 无变化
 | A | A-02 测试隔离 | ✅ | — | 468 passed |
 | A | A-03 污染检查 | ✅ | 2 | 490 passed |
 | A | A-04 diagnostics | ✅ | 18 | 490 passed |
-| B | B-01 能力矩阵 | ✅ | 22 | 512 passed |
+| B | B-01 能力矩阵 | ⚠️ partial | 22 | 512 passed |
 | B | B-02 facade schemas | ✅ | 21 | 533 passed |
 | B | B-03 schema compat | ✅ | 12 | 545 passed |
-| B | B-04 错误模型 | ✅ | 62 | 607 passed |
+| B | B-04 错误模型 | ✅ | 62 + 入口边界测试 | 目标测试通过 |
 | C | C-01 ontology registry | ✅ | 54 | 661 passed |
 | C | C-02 query quality | ✅ | 38 | 699 passed |
 | C | C-03 意图识别 | ✅ | — | 699 passed |
@@ -2183,30 +2187,30 @@ git diff --stat examples/: 无变化
 | C | C-07 reasoning | ✅ | 25 | 802 passed |
 | D | D-01 freshness | ✅ | 24 | 826 passed |
 | D | D-02 context pack | ✅ | 6 | 832 passed |
-| D | D-03 explanation | ✅ | 13 | 845 passed |
+| D | D-03 explanation | ⚠️ partial | 13 | 845 passed |
 | D | D-04 domain/flow | ✅ | 6 | 851 passed |
 | D | D-05 persona | ✅ | 7 | 858 passed |
 | D | D-06 resume/handoff | ✅ | 6 | 864 passed |
 | E | E-01 indexer contract | ✅ | 7 | 871 passed |
 
-**总计：22 个已完成工作包，355 个新增测试，871 全量测试通过**
+**复核口径：22 个已评估工作包，其中 B-01、D-03 为 partial；B-04 已于 2026-06-08 完成真实入口接入；全量 lint 未通过。**
 
-### 二、延后评审事项（12 项）
+### 二、候选延后评审事项（需逐方案判断）
 
 | 事项 | 来源 | 禁止实施的变更 |
 |---|---|---|
-| F-01 Unified Backend | 阶段 F | 修改 store |
-| F-02 Backend migration | 阶段 F | 修改 store |
-| E-02 Tree-sitter | 阶段 E | 新运行时依赖 |
-| E-03 Parallel index | 阶段 E | 大规模修改 indexer |
-| E-04 Inverted index | 阶段 E | 修改 store |
-| E-05 Vector retrieval | 阶段 E | 修改 store |
-| E-06 Incremental index | 阶段 E | 修改 indexer |
-| E-07 Sparse retrieval | 阶段 E | 修改 retrieval |
-| G-01 Workflow profiles | 阶段 G | 修改 orchestrator |
-| G-02 Verification loop | 阶段 G | 修改 orchestrator |
-| G-03 Pattern promotion | 阶段 G | 修改 memory |
-| H-04 可恢复状态机 | 阶段 H | 修改 orchestrator |
+| F-02 Backend migration | 阶段 F | 仅在不兼容迁移或大规模重写时延后 |
+| E-02 Tree-sitter 可选接入 | 阶段 E | 仅在变成必选依赖或无 fallback 时延后 |
+| E-03 并行索引与容错 | 阶段 E | 仅在大规模重写 indexer 时延后 |
+| E-04 Watcher 到增量索引桥接 | 阶段 E | 仅在大规模重写 indexer 时延后 |
+| E-05 Connect-time Catch-up | 阶段 E | 仅在不兼容数据迁移时延后 |
+| E-06 倒排 / FTS 检索 | 阶段 E | 仅在不兼容 store 变更时延后 |
+| E-07 Native Vector 检索 | 阶段 E | 仅在必选外部服务或不兼容 store 变更时延后 |
+| E-08 Hybrid Retrieval 融合 | 阶段 E | 仅在不兼容公开行为变更时延后 |
+| G-01 Workflow profiles | 阶段 G | 仅在大规模重写 orchestrator 时延后 |
+| G-02 Verification loop | 阶段 G | 仅在大规模重写 orchestrator 时延后 |
+| G-03 Pattern promotion | 阶段 G | 仅在无法审计长期规则污染风险时延后 |
+| H-04 可恢复状态机 | 阶段 H | 仅在不兼容迁移或大规模重写时延后 |
 
 ### 三、被阻塞工作包（24 项）
 
@@ -2227,3 +2231,154 @@ F-03~F-07, G-04~G-07, H-01~H-03, H-05~H-11, I-01~I-05
 4. **H-04 实施范围**：可恢复工作流状态机是否需要改变现有 session/task 模型？
 5. **版本号**：当前版本 3.1.2，是否需要升级？
 6. **发布策略**：已完成工作包是否先发布，还是等全部解锁后一起发布？
+
+---
+
+## 2026-06-08 复核修正（当前权威状态）
+
+本节用于修正此前执行日志中的编号错位、完成状态高估和 Stop Conditions 误判。后续执行和评审以本节为准；前文保留为历史证据。
+
+### 1. 当前验证状态
+
+- `pytest -q`：871 passed，9 skipped。
+- `ruff check .`：未通过，当前报告 2212 项历史 lint 债务；不得记录“全量测试和 lint 通过”。
+- `tests/test_v3_ontology_mcp.py` 中新增的未定义变量问题已修复，并通过该文件的目标测试和 lint。
+- 9 个 skipped 测试仍需逐项确认环境依赖或 fixture 条件，不能作为完整主链路验证证据。
+
+### 2. 完成状态修正
+
+| 工作包 / 闸门 | 当前状态 | 未完成项 |
+|---|---|---|
+| B-01 能力矩阵 | partial | 现有测试主要验证入口存在和部分 workspace 行为，尚未证明全部能力三入口核心语义一致 |
+| B-04 统一错误模型 | completed | 错误模型已接入 CLI / MCP / HTTP 真实入口；真实 FastMCP 集成受可选依赖环境限制 |
+| 阶段 B 闸门 | partial | B-01 三入口核心语义验证和全量 lint 未完成 |
+| D-03 Explanation Schema | partial | helper 已完成，尚未接入 domain / onboarding / impact / reasoning 多入口 |
+| 阶段 D 闸门 | partial | Explanation 多入口复用和全量 lint 未完成 |
+
+### 3. 阶段 E 正确工作包映射
+
+| 工作包 | 正确名称 |
+|---|---|
+| E-02 | Tree-sitter 可选接入 |
+| E-03 | 并行索引与容错 |
+| E-04 | Watcher 到增量索引桥接 |
+| E-05 | Connect-time Catch-up 与 stale 恢复 |
+| E-06 | 倒排 / FTS 检索收口 |
+| E-07 | Native Vector 检索正式接入 |
+| E-08 | Hybrid Retrieval 融合策略收口 |
+
+此前将 E-04 记为倒排索引、E-05 记为 Vector、E-06 记为增量索引、E-07 记为 Sparse retrieval 的记录无效。
+
+### 4. Stop Conditions 重新判定
+
+Stop Conditions 只阻止具体高风险方案，不按模块名整体阻止工作包：
+
+- 可选依赖不等于“新的运行时必选依赖”；E-02 只有在变成必选依赖或缺少 fallback 时才需要延后评审。
+- 小范围、兼容性的 indexer / store / orchestrator 修改不等于“大规模重写”。
+- F-01 是读路径盘点和架构文档任务，可以立即执行。
+- G-01、G-02 可以先以增量、建议型、向后兼容方案实施；只有需要大规模重写 orchestrator 时才延后具体方案。
+- 文档、测试、审计、构建、兼容性、安全检查不应因无关高风险方案而整体阻塞。
+
+### 5. 重新开放的下一步顺序
+
+1. 修复本次新增的 lint 错误，并建立“新增代码零 lint 回归”检查；历史 lint 债务单独治理。
+2. 执行 F-01，形成 Unified Backend 主读和 fallback 盘点文档。
+3. 完成 D-03，将 Explanation Schema 接入计划要求的实际入口。
+4. 补强 B-01 三入口行为矩阵，不再只验证源码字符串或函数存在。
+5. 逐项处理 skipped 测试，记录环境依赖与可执行 fixture。
+6. 继续执行不触发 Stop Conditions 的文档、兼容性、安全、安装构建和治理任务。
+7. 对确实触发 Stop Conditions 的具体实现方案单独记录 `deferred-review`，不扩大阻塞范围。
+
+---
+
+## F-01：Unified Backend 主读路径盘点
+
+**工作包**: F-01
+**状态**: completed
+**日期**: 2026-06-08
+
+### 完成范围
+
+- 盘点 JSON、JSONL、Markdown、YAML、业务源码、`memory.db` 和 `graph.db` 的读取路径。
+- 标记数据类别的读取频率、当前主读、fallback 和事实源。
+- 区分 `memory.db` 镜像查询与 `graph.db` 派生图查询职责。
+- 识别 query、resume、dashboard、eval、refs 和 graph 的主要口径分叉。
+- 定义 F-02 迁移保护条件和推荐顺序。
+
+### 关键结论
+
+1. `memory.db` 不是唯一事实源；JSON、JSONL、Markdown、YAML 和源码仍承担可读、可追踪或配置事实源职责。
+2. `graph.db` 是派生知识图谱主读后端，与 `memory.db` 职责不同。
+3. `WorkspaceStore.write_json()` / `append_jsonl()` 先写文件，再 best-effort 镜像；镜像失败会被忽略。
+4. backend-first 读取当前没有 `source`、`fallback_reason` 或 consistency 状态，旧镜像可能覆盖文件中的更新数据。
+5. F-02 必须先增加双读一致性、部分镜像、合法空集合和 backend 不可用测试，再迁移高频路径。
+
+### 修改文件
+
+- `docs/UNIFIED_BACKEND_READ_PATHS.md`（新增）— 完整读取路径盘点和迁移策略。
+- `docs/ARCHITECTURE.md` — 补充 backend 职责区分和已知风险。
+- `docs/SPECIAL_NOTES.md` — 补充 best-effort 镜像与 backend-first 读取注意事项。
+- `docs/DELEGATED_EXECUTION_LOG.md` — 记录 F-01 完成证据。
+
+### 验收结果
+
+- 每类数据的主读和 fallback 已明确。
+- 未将 `memory.db` 描述为唯一事实源。
+- F-01 为只读盘点和文档任务，不涉及 store 修改或数据迁移，未触发 Stop Conditions。
+
+### 下一步
+
+进入 F-02 前，先为 backend-first 读取增加可观测来源和一致性保护；不得直接删除 JSON/JSONL fallback。
+
+---
+
+## B-04：统一错误模型真实入口接入
+
+**工作包**: B-04
+**状态**: completed
+**日期**: 2026-06-08
+
+### 完成范围
+
+- 新增 `normalize_exception()`，将现有异常兼容映射到统一错误模型。
+- HTTP GET / POST 集中异常边界统一返回结构化错误。
+- MCP 所有 tool 通过安全注册装饰器接入统一错误边界，同时保留原函数签名和 tool schema。
+- 安装后的 CLI 入口改为带统一错误边界的 `main()`，输出安全错误信息并使用退出码 1。
+- 保持 core 层现有异常合同、成功返回和 MCP tool schema 不变。
+
+### 错误映射
+
+| Existing Exception | Unified Error |
+|---|---|
+| `MCError` | 保持原类型 |
+| `FileNotFoundError` | `not_found` |
+| `ValueError` / `TypeError` | `invalid_input` |
+| SQLite operational / timeout / connection error | `unavailable` |
+| 其他异常 | `internal_error` |
+
+### 修改文件
+
+- `memory_center/core/errors.py`
+- `memory_center/http/server.py`
+- `memory_center/mcp/server.py`
+- `memory_center/cli/main.py`
+- `pyproject.toml`
+- `tests/test_entrypoint_errors.py`（新增）
+- `docs/MCP_GUIDE.md`
+- `docs/SPECIAL_NOTES.md`
+
+### 验证结果
+
+- B-04、入口错误、能力矩阵和 MCP facade 目标测试通过。
+- 全量回归：891 collected，882 passed，9 skipped。
+- CLI 实际运行验证：错误输出包含 `[not_found]` 和建议动作，退出码 1，无 traceback。
+- 新增错误模型和入口边界测试 lint 通过。
+- 全量 `ruff check .` 仍为 2212 项历史 lint 债务，与接入前一致。
+- 当前环境未安装可选 `mcp` 包，真实 FastMCP 集成测试继续按现有策略跳过；同步/异步 MCP wrapper 已通过独立行为测试。
+
+### 兼容性
+
+- HTTP 保留原有 `ok=false` 和 `error` 字段，增量增加 `error_type`、`suggested_action` 和可选 diagnostics。
+- CLI 命令名和参数不变；console script 从直接 Typer app 调整为统一错误边界 `main()`。
+- MCP tool 名称、参数和成功返回不变；异常从协议异常改为结构化错误 dict。
+- 不涉及数据迁移，不触发 Stop Conditions。

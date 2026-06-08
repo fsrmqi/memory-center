@@ -179,7 +179,26 @@ Memory Center 默认是：
 - `.memory-center/artifacts`
 - 生成的 wiki / skills / dashboard
 
-## 9. HTTP Bridge / HTTP 桥接
+## 9. Unified Error Model / 统一错误模型
+
+CLI、MCP、HTTP 的真实入口统一使用以下错误类型：
+
+| Error Type | HTTP | Meaning |
+|---|---:|---|
+| `invalid_input` | 400 | 参数缺失、格式错误或不支持的操作 |
+| `not_found` | 404 | workspace、route 或资源不存在 |
+| `unavailable` | 503 | backend、连接或能力暂时不可用 |
+| `conflict` | 409 | 与当前状态冲突 |
+| `internal_error` | 500 | 未预期内部错误 |
+
+入口行为：
+
+- HTTP 保留 `ok=false` 和 `error`，并增加 `error_type`、可选 `suggested_action` 与 `diagnostics`。
+- MCP tool 捕获入口异常并返回结构化错误 dict，便于 Agent 决定下一步。
+- 安装后的 CLI 输出 `[error_type] message` 和可选建议，退出码为 1，不输出 traceback。
+- 成功返回和现有 MCP tool schema 不变。
+
+## 10. HTTP Bridge / HTTP 桥接
 
 MCP 之外，还可通过 HTTP bridge 复用同一套能力：
 
@@ -187,7 +206,7 @@ MCP 之外，还可通过 HTTP bridge 复用同一套能力：
 memory-center serve-http --workspace /abs/path/.memory-center/workspace.yaml --host 127.0.0.1 --port 8765
 ```
 
-## 10. Related Docs / 相关文档
+## 11. Related Docs / 相关文档
 
 - [REFERENCE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/REFERENCE.md)
 - [SPECS.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/SPECS.md)

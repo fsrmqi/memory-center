@@ -16,6 +16,8 @@ CLI and HTTP server keep their fine-grained interfaces unchanged.
 from __future__ import annotations
 
 import argparse
+import inspect
+from functools import wraps
 from pathlib import Path
 from typing import List, Optional
 
@@ -91,6 +93,7 @@ from memory_center.core.verification.workflow_profiles import get_workflow_profi
 from memory_center.core.verification.bundle_export import generate_agent_bundle
 from memory_center.core.audit.runtime import audit_agent_runtime
 from memory_center.core.explanation.schema import Explanation
+from memory_center.core.errors import normalize_exception
 from memory_center.core.domain.flow import business_flow_impact_for_workspace, extract_business_flows_for_workspace
 from memory_center.core.metrics import MetricsCollector
 from memory_center.core.benchmark.trending import check_regression_alerts
@@ -223,6 +226,36 @@ def _build_context_pack_recommendation(wf: str, intent: str, sniff_result: dict)
     }
 
 
+def _mcp_error_boundary(fn):
+    """Wrap an MCP tool without changing its registered schema."""
+    if inspect.iscoroutinefunction(fn):
+        @wraps(fn)
+        async def async_wrapped(*args, **kwargs):
+            try:
+                return await fn(*args, **kwargs)
+            except Exception as exc:
+                return normalize_exception(exc).to_mcp_dict()
+
+        return async_wrapped
+
+    @wraps(fn)
+    def wrapped(*args, **kwargs):
+        try:
+            return fn(*args, **kwargs)
+        except Exception as exc:
+            return normalize_exception(exc).to_mcp_dict()
+
+    return wrapped
+
+
+def _safe_mcp_tool(mcp):
+    """Register an MCP tool with the unified error boundary."""
+    def decorator(fn):
+        return mcp.tool()(_mcp_error_boundary(fn))
+
+    return decorator
+
+
 def create_server(workspace_file: str):
     try:
         from mcp.server.fastmcp import FastMCP
@@ -236,7 +269,7 @@ def create_server(workspace_file: str):
     from memory_center.core.templates import get_workflow_guidance
 
     # ===================== FACADE 1: mc_start =====================
-    @mcp.tool()
+    @_safe_mcp_tool(mcp)
     def mc_start(
         intent: str,
         limit: int = 12,
@@ -270,7 +303,7 @@ def create_server(workspace_file: str):
         return {"workflow": "mc-start", "sniff": sniff_result, "sync_sniff": synced, "session": session, "_workflow_guidance": guidance, "freshness": _freshness, "context_pack_recommendation": _cp_rec}
 
     # ===================== FACADE 2: mc_lookup =====================
-    @mcp.tool()
+    @_safe_mcp_tool(mcp)
     def mc_lookup(
         query: str,
         mode: str = "auto",
@@ -369,7 +402,7 @@ def create_server(workspace_file: str):
         raise ValueError(f"Unknown mc_lookup mode: {mode}. Valid: auto, symbol, code, query, trace, chain, context, contracts, ref, backend")
 
     # ===================== FACADE 3: mc_analyze =====================
-    @mcp.tool()
+    @_safe_mcp_tool(mcp)
     def mc_analyze(
         target: str,
         depth: str = "standard",
@@ -398,7 +431,7 @@ def create_server(workspace_file: str):
         return result
 
     # ===================== FACADE 4: mc_sync =====================
-    @mcp.tool()
+    @_safe_mcp_tool(mcp)
     def mc_sync(
         intent: str = "",
         session_id: str = "",
@@ -416,7 +449,7 @@ def create_server(workspace_file: str):
         raise ValueError("mc_sync requires intent or session_id")
 
     # ===================== FACADE 5: mc_resume =====================
-    @mcp.tool()
+    @_safe_mcp_tool(mcp)
     def mc_resume(
         intent: str = "",
         task_id: str = "",
@@ -435,7 +468,7 @@ def create_server(workspace_file: str):
         }
 
     # ===================== FACADE 6: mc_handoff =====================
-    @mcp.tool()
+    @_safe_mcp_tool(mcp)
     def mc_handoff(
         target_model: str,
         task_id: str = "",
@@ -454,7 +487,7 @@ def create_server(workspace_file: str):
         }
 
     # ===================== FACADE 7: mc_close =====================
-    @mcp.tool()
+    @_safe_mcp_tool(mcp)
     def mc_close(
         session_id: str,
         outcome: str = "",
@@ -482,7 +515,7 @@ def create_server(workspace_file: str):
         return {"workflow": "mc-close", "ended": ended, "sync_case": synced, "suggested_case": draft, "record_case": recorded}
 
     # ===================== FACADE 8: mc_admin =====================
-    @mcp.tool()
+    @_safe_mcp_tool(mcp)
     def mc_admin(
         action: str,
         view: str = "compact",
@@ -814,7 +847,7 @@ def create_server(workspace_file: str):
 
     # ===================== FACADE 9-12: V3 MCP Tools (§20.6) =====================
 
-    @mcp.tool()
+    @_safe_mcp_tool(mcp)
     def mc_context_pack(
         query: str,
         intent: str = "auto",
@@ -840,7 +873,7 @@ def create_server(workspace_file: str):
             "progressive": pack.progressive,
         }
 
-    @mcp.tool()
+    @_safe_mcp_tool(mcp)
     def mc_onboard(
         scope: str = "workspace",
         persona: str = "developer",
@@ -860,7 +893,7 @@ def create_server(workspace_file: str):
         finally:
             unified.close()
 
-    @mcp.tool()
+    @_safe_mcp_tool(mcp)
     def mc_domain(
         scope: str = "workspace",
         include_flows: bool = True,
@@ -888,7 +921,7 @@ def create_server(workspace_file: str):
         finally:
             unified.close()
 
-    @mcp.tool()
+    @_safe_mcp_tool(mcp)
     def mc_freshness(
         scope: str = "workspace",
     ):

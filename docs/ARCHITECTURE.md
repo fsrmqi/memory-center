@@ -115,6 +115,17 @@ CLI / HTTP 仍保留细粒度原子操作，但 MCP 默认以 facade 为公开�
 
 其余路径仍允许 fallback 到 JSONL / Markdown，这样可以兼顾稳定性和渐进演进。
 
+完整读取路径、事实源、已知分叉和迁移顺序见：
+
+- [UNIFIED_BACKEND_READ_PATHS.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/UNIFIED_BACKEND_READ_PATHS.md)
+
+需要特别区分：
+
+- `memory.db`：memory、index、ref 镜像与聚合查询。
+- `graph.db`：派生知识图谱和 graph-oriented retrieval/reasoning 主读后端。
+
+当前 `read_json*_prefer_backend` 仍缺少来源和 fallback reason，并可能在镜像部分失败后优先读到旧 backend 数据。后续迁移必须先建立双读一致性保护。
+
 ## Hooks / 宿主 Hook
 
 Hook 层属于宿主集成，不是核心业务层。推荐自动执行的只有三类生命周期事件：

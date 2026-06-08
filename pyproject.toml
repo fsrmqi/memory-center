@@ -53,7 +53,7 @@ Issues = "https://github.com/fsrmqi/memory-center/issues"
 Source = "https://github.com/fsrmqi/memory-center"
 
 [project.scripts]
-memory-center = "memory_center.cli.main:app"
+memory-center = "memory_center.cli.main:main"
 memory-center-mcp = "memory_center.mcp.server:main"
 memory-center-http = "memory_center.http.server:main"
 

@@ -16,6 +16,9 @@
 - 修复 hybrid vector retrieval 的导入 / store 构造问题，并在返回中增加 `retrieval_diagnostics.vector`
 - 修复 `regression-alerts` 三入口错误传入 `benchmark_name` 的问题，统一为 `threshold_pct`
 - 增加 Next Phase 入口矩阵测试，覆盖 context-pack、freshness、onboard、business-flow、business-flow-impact、runtime-audit、regression-alerts
+- 将统一错误模型接入真实 CLI、MCP、HTTP 入口，保持成功返回和 MCP tool schema 不变
+- CLI 运行时错误现在输出安全的 `[error_type] message` 和建议动作，不再暴露 traceback
+- 完成 Unified Backend 主读路径盘点，明确 `memory.db`、`graph.db`、文件事实源和 fallback 边界
 - 调整测试用例，避免直接写入仓库内 `examples/spring-cloud-demo/.memory-center` 生成物
 - 补充 workspace 隔离、三入口解析和后续维护要求的特殊说明
 

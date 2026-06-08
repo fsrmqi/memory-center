@@ -89,6 +89,7 @@ from memory_center.core.artifacts import (
     update_artifact,
     update_task_artifact,
 )
+from memory_center.core.errors import normalize_exception
 
 
 
@@ -245,12 +246,9 @@ def create_handler(default_workspace: str | Path | None = None) -> type[BaseHTTP
                     return
                 payload = _route_request(parsed.path, params, workspace_file)
                 self._write_json(200, payload)
-            except FileNotFoundError as exc:
-                self._write_json(404, {"ok": False, "error": str(exc)})
-            except ValueError as exc:
-                self._write_json(400, {"ok": False, "error": str(exc)})
-            except Exception as exc:  # pragma: no cover
-                self._write_json(500, {"ok": False, "error": str(exc)})
+            except Exception as exc:  # pragma: no cover - exercised through adapter tests
+                status, payload = _http_error_response(exc)
+                self._write_json(status, payload)
 
         def do_POST(self) -> None:  # noqa: N802
             parsed = urlparse(self.path)
@@ -274,12 +272,9 @@ def create_handler(default_workspace: str | Path | None = None) -> type[BaseHTTP
                         merged_params[key] = [str(value)]
                 payload = _route_request(parsed.path, merged_params, workspace_file)
                 self._write_json(200, payload)
-            except FileNotFoundError as exc:
-                self._write_json(404, {"ok": False, "error": str(exc)})
-            except ValueError as exc:
-                self._write_json(400, {"ok": False, "error": str(exc)})
-            except Exception as exc:  # pragma: no cover
-                self._write_json(500, {"ok": False, "error": str(exc)})
+            except Exception as exc:  # pragma: no cover - exercised through adapter tests
+                status, payload = _http_error_response(exc)
+                self._write_json(status, payload)
 
         def log_message(self, format: str, *args) -> None:  # noqa: A003
             return
@@ -1003,6 +998,11 @@ def _route_request(path: str, params: dict, default_workspace: str | None) -> di
         return group_chain(grp, symbol=_require_one(params, "symbol"))
 
     raise FileNotFoundError(f"Unknown route: {path}")
+
+
+def _http_error_response(exc: Exception) -> tuple[int, dict]:
+    """Return the backward-compatible HTTP error body with unified metadata."""
+    return normalize_exception(exc).to_http_response()
 
 
 def _require_workspace(params: dict, default_workspace: str | None) -> str:

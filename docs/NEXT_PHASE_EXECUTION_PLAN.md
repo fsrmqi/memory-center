@@ -23,7 +23,9 @@
 4. 任何被 `except Exception` 吞掉的主链路失败，都要转成可见诊断或明确降级说明。
 5. 不提交私有 workspace 生成的 `.memory-center/index`、`.memory-center/memory` 内容。
 
-## 2. 当前问题清单 / Current Findings
+## 2. 已识别问题与当前状态 / Findings and Current Status
+
+> 本节保留早期问题的完整背景，便于回归验证。以下 P0 项已完成首轮修复，不应继续按“当前仍存在”理解；最新执行状态和后续顺序以 `DELEGATED_EXECUTION_LOG.md` 文末的 2026-06-08 复核修正为准。
 
 ### P0：主链路静默失败
 
@@ -33,7 +35,7 @@
 - context risk、vector retrieval、business-flow 三入口一致性已进入 3.1.2 主链路收口。
 - 后续重点从“已知 P0 修复”转为“三入口矩阵持续覆盖、静默降级 diagnostics、测试 workspace 隔离”。
 
-#### 2.1 Freshness 主查询链路失效
+#### 2.1 Freshness 主查询链路失效（已修复，保留回归验证）
 
 现象：
 
@@ -52,7 +54,7 @@
 - 主查询、上下文、影响分析都返回真实 freshness banner。
 - 测试覆盖 fresh / pending / stale / empty-index 场景。
 
-#### 2.2 Context risk patterns 不生效
+#### 2.2 Context risk patterns 不生效（已修复，保留回归验证）
 
 现象：
 
@@ -68,7 +70,7 @@
 - `memory_context` 能稳定返回 risk patterns。
 - 若风险分析不可用，返回 `_diagnostics`，不要静默丢失。
 
-#### 2.3 Vector retrieval 分支不可用
+#### 2.3 Vector retrieval 分支不可用（已完成首轮收口，仍需真实数据质量验证）
 
 现象：
 
@@ -86,7 +88,7 @@
 - 如果 vector 还没准备好，应明确标为 disabled / unavailable。
 - 如果要启用，必须能真实读取 vector index 并参与融合排序。
 
-#### 2.4 Business flow CLI / MCP 路径错误
+#### 2.4 Business flow CLI / MCP 路径错误（已修复，保留三入口回归验证）
 
 现象：
 

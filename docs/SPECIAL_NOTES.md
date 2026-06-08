@@ -346,6 +346,10 @@ Hook 配置里：
 
 并不表示设计不统一，而是渐进切换中的有意状态。
 
+完整读取路径与后续迁移边界见 [UNIFIED_BACKEND_READ_PATHS.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/UNIFIED_BACKEND_READ_PATHS.md)。
+
+需要注意：当前镜像写入是 best-effort，而 backend-first 读取尚未返回 `source` 或 `fallback_reason`。如果文件写入成功但镜像失败，旧 backend 数据可能暂时覆盖文件中的新数据。新增迁移必须先补双读一致性测试，不允许直接删除文件 fallback。
+
 ## 9. 文档与实现冲突时怎么判断
 
 如果出现：
@@ -434,3 +438,48 @@ Hook 配置里：
 - demo 目录新增文件后，污染检测会自动适应（基于文件列表 + SHA-256）。
 - 不要通过扩大 `.gitignore` 来掩盖污染。
 - CI 流程中 `pytest -q` 已包含污染检测，无需额外步骤。
+
+## 13. Stop Conditions 只阻止对应高风险改造，不阻止其他工作
+
+### 正确解释
+
+`DELEGATED_EXECUTION_PLAN.md` 中的 Stop Conditions 是高风险变更审核边界，不是“只要涉及某个模块就停止”的模块禁改清单。
+
+例如：
+
+- “大规模重写 indexer、store、orchestrator”不等于禁止任何小范围修改。
+- “引入新的运行时必选依赖”不等于禁止经过 fallback 设计的可选依赖。
+- 文档盘点、只读分析、测试补充、兼容性验证通常可以继续执行。
+
+执行者遇到 Stop Condition 时必须：
+
+1. 只将实际触发禁止条件的具体方案标记为 `deferred-review`。
+2. 记录触发证据、影响范围、替代方案和验证方法。
+3. 继续执行其他不依赖该方案的工作包。
+4. 不得仅因为工作包涉及 `store`、`indexer` 或 `orchestrator` 就直接延后。
+5. 最终统一提交延后事项给负责人评审。
+
+### 完成状态要求
+
+- 新增 helper、schema 或测试，但尚未接入计划要求的主链路时，状态必须是 `partial`。
+- 只有实际入口、主链路、验收测试和文档均满足计划验收标准时，才能标记 `completed`。
+- `pytest` 通过不代表 lint 通过；只有执行 `ruff check .` 成功后，才能记录“全量测试和 lint 通过”。
+- 跳过的测试必须记录原因，不能作为对应能力已完整验证的证据。
+
+## 14. 统一错误模型位于公开入口边界
+
+统一错误模型通过 CLI、MCP、HTTP 的集中入口边界接入，不要求每个 core 函数都改为抛出 `MCError`。
+
+这样做的原因：
+
+- core 层现有 `ValueError`、`FileNotFoundError` 等调用合同保持兼容。
+- HTTP 会映射到状态码和结构化 body。
+- MCP 会返回 Agent 可判断的结构化错误。
+- 安装后的 CLI 会输出安全错误信息和退出码，不暴露 traceback。
+
+维护要求：
+
+- 新增公开入口必须复用 `normalize_exception()` 或现有入口边界。
+- 不要在入口直接返回未经清洗的 `str(exc)`。
+- 不要为了统一错误格式改变成功返回 schema。
+- MCP tool 必须通过安全注册装饰器注册，避免绕过统一错误边界。

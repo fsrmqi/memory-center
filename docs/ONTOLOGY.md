@@ -267,4 +267,12 @@
 | EXPLAINS | CodeSummary → Entity | derived | 代码摘要解释 |
 | STALE_FOR | IndexFreshness → Entity | runtime | 索引新鲜度标记 |
 
+这里的 `confirmed` 和 `runtime` 是当前代码 registry 已使用的语义强度扩展值：
+
+- `confirmed`：由明确代码结构或声明直接确认的事实关系。
+- `runtime`：运行期状态关系，不应与静态代码事实混合推断。
+- `fact`、`inferred`、`derived` 仍用于其余静态事实、推断和派生关系。
+
+新增或修改语义强度时，必须同步更新 ontology registry、本文档和覆盖全部 edge type 的测试。
+
 **注意：** §3.1 表中部分关系（HANDLES_ENDPOINT、IMPLEMENTS_FEIGN、INJECTS_BEAN、READS_FIELD、USES_DATA_RESOURCE、DECLARES_CONFIG）在当前代码 `ALL_EDGE_TYPES` 中不存在，待负责人确认是否为遗留设计或待实现项。

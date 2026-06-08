@@ -19,7 +19,10 @@ Usage:
 """
 from __future__ import annotations
 
+import sqlite3
 from typing import Any
+
+from click import UsageError
 
 from memory_center.core.diagnostics import safe_reason
 
@@ -154,3 +157,16 @@ class InternalError(MCError):
 
     def __init__(self, message: str, **kwargs: Any) -> None:
         super().__init__("internal_error", message, **kwargs)
+
+
+def normalize_exception(exc: Exception) -> MCError:
+    """Convert existing exceptions to the public Memory Center error model."""
+    if isinstance(exc, MCError):
+        return exc
+    if isinstance(exc, FileNotFoundError):
+        return NotFoundError(str(exc), suggested_action="Check the workspace or resource path and retry.")
+    if isinstance(exc, (ValueError, TypeError, UsageError)):
+        return InvalidInputError(str(exc), suggested_action="Check the input parameters and retry.")
+    if isinstance(exc, (sqlite3.OperationalError, TimeoutError, ConnectionError)):
+        return UnavailableError(str(exc), suggested_action="Retry after checking backend availability.")
+    return InternalError(str(exc), suggested_action="Check diagnostics or logs, then retry.")

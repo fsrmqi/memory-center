@@ -30,6 +30,7 @@ from memory_center.core.artifacts import (
 )
 from memory_center.core.config import add_workspace_service, load_workspace_config, remove_workspace_service, write_default_workspace
 from memory_center.core.exporters import export_mermaid, export_workspace_dashboard_html, export_workspace_dashboard_markdown
+from memory_center.core.errors import normalize_exception
 from memory_center.core.indexer import reindex_workspace
 from memory_center.core.instructions import write_agent_instructions
 from memory_center.core.orchestrator import (
@@ -1750,6 +1751,17 @@ def regression_alerts_cmd(
     print(json.dumps(result, indent=2, default=str))
 
 
+def main() -> None:
+    """Installed CLI entrypoint with a unified runtime error boundary."""
+    try:
+        app(standalone_mode=False)
+    except typer.Exit:
+        raise
+    except Exception as exc:
+        error = normalize_exception(exc)
+        typer.echo(error.to_cli_message(), err=True)
+        raise SystemExit(error.cli_exit_code) from None
+
 
 if __name__ == "__main__":
-    app()
+    main()

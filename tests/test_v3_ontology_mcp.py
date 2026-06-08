@@ -9,29 +9,43 @@ from __future__ import annotations
 
 import pytest
 
-from memory_center.core.ontology import (
-    ALL_NODE_TYPES, ALL_EDGE_TYPES,
-    EDGE_SEMANTIC_STRENGTH, EDGE_CONFIDENCE_RANGES,
-    validate_node_type, validate_edge_type,
-    edge_strength, edge_confidence_range,
-    RouteNode, ArchLayer, CodeSummaryNode, DataFlowNode,
-    NODE_TYPE_SERVICE, NODE_TYPE_CLASS, NODE_TYPE_ROUTE,
-    NODE_TYPE_BUSINESS_FLOW, NODE_TYPE_FLOW_STEP,
-    NODE_TYPE_ARCHITECTURAL_LAYER, NODE_TYPE_DATA_FLOW_NODE,
-    NODE_TYPE_CODE_SUMMARY, NODE_TYPE_INDEX_FRESHNESS,
-    EDGE_TYPE_TRANSITIVELY_CALLS, EDGE_TYPE_DATA_FLOWS_TO,
-    EDGE_TYPE_ROUTES_TO, EDGE_TYPE_STALE_FOR,
-)
 from memory_center.core.context.budget import (
-    TokenBudget, estimate_tokens, estimate_dict_tokens,
-    trim_to_budget, allocate_budget,
+    allocate_budget,
+    estimate_dict_tokens,
+    estimate_tokens,
+    trim_to_budget,
+)
+from memory_center.core.domain.extractor import BusinessDomainExtractor
+from memory_center.core.freshness.status import IndexFreshnessService
+from memory_center.core.onboarding.tour import ArchitectureTourGenerator
+from memory_center.core.ontology import (
+    ALL_EDGE_TYPES,
+    ALL_NODE_TYPES,
+    EDGE_SEMANTIC_STRENGTH,
+    EDGE_TYPE_DATA_FLOWS_TO,
+    EDGE_TYPE_ROUTES_TO,
+    EDGE_TYPE_STALE_FOR,
+    EDGE_TYPE_TRANSITIVELY_CALLS,
+    NODE_TYPE_ARCHITECTURAL_LAYER,
+    NODE_TYPE_BUSINESS_FLOW,
+    NODE_TYPE_CLASS,
+    NODE_TYPE_CODE_SUMMARY,
+    NODE_TYPE_DATA_FLOW_NODE,
+    NODE_TYPE_FLOW_STEP,
+    NODE_TYPE_INDEX_FRESHNESS,
+    NODE_TYPE_ROUTE,
+    NODE_TYPE_SERVICE,
+    ArchLayer,
+    CodeSummaryNode,
+    DataFlowNode,
+    RouteNode,
+    edge_confidence_range,
+    edge_strength,
+    validate_edge_type,
+    validate_node_type,
 )
 from memory_center.core.storage.unified import UnifiedStore
-from memory_center.core.domain.extractor import BusinessDomainExtractor
-from memory_center.core.onboarding.tour import ArchitectureTourGenerator
 from memory_center.core.views.builder import GraphViewBuilder
-from memory_center.core.freshness.status import IndexFreshnessService
-
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Ontology tests
@@ -67,7 +81,7 @@ class TestOntology:
     def test_validate_edge_type(self):
         assert validate_edge_type("CALLS_METHOD") is True
         assert validate_edge_type("TRANSITIVELY_CALLS") is True
-        assert edge_type("UNKNOWN_EDGE") is False if 'edge_type' in dir() else True
+        assert validate_edge_type("UNKNOWN_EDGE") is False
 
     def test_edge_strength(self):
         assert edge_strength("CALLS_METHOD") == "confirmed"
