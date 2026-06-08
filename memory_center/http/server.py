@@ -914,8 +914,8 @@ def _route_request(path: str, params: dict, default_workspace: str | None) -> di
         from memory_center.core.explanation.schema import Explanation
         text = _require_one(params, "text")
         persona = params.get("persona", ["developer"])[0]
-        exp = Explanation(title="Explanation", summary=text, details=[], persona=persona)
-        return exp.adapt_for_persona(persona)
+        exp = Explanation(subject="explanation", summary=text, persona=persona)
+        return exp.adapt_for_persona(persona).to_full()
     if path == "/workspace/business-flow":
         workspace = _require_workspace(params, default_workspace)
         from memory_center.core.domain.flow import extract_business_flows_for_workspace

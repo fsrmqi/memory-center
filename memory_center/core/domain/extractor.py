@@ -5,11 +5,10 @@ based on naming conventions, package structure, and annotation metadata.
 """
 from __future__ import annotations
 
-import json
-import re
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
+from ..explanation import explanation_entry
 from ..storage.unified import UnifiedStore
 
 
@@ -40,7 +39,7 @@ class BusinessDomain:
     keywords: List[str] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        d: Dict[str, Any] = {
             "domain_id": self.domain_id,
             "name": self.name,
             "description": self.description,
@@ -49,6 +48,15 @@ class BusinessDomain:
             "confidence": self.confidence,
             "keywords": self.keywords,
         }
+        d["_explanation"] = explanation_entry(
+            subject=f"domain:{self.name}",
+            summary=self.description or f"业务域 {self.name}",
+            evidence=[{"keywords": self.keywords[:10], "services": self.services[:10], "entity_count": len(self.entities)}],
+            semantic_strength="inferred",
+            confidence=self.confidence,
+            next_refs=[{"id": eid, "name": ""} for eid in self.entities[:10]],
+        )
+        return d
 
 
 @dataclass
@@ -61,13 +69,25 @@ class BusinessFlow:
     confidence: float = 0.5
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        d: Dict[str, Any] = {
             "flow_id": self.flow_id,
             "name": self.name,
             "domain": self.domain,
             "steps": self.steps,
             "confidence": self.confidence,
         }
+        d["_explanation"] = explanation_entry(
+            subject=f"flow:{self.name}",
+            summary=f"业务流 {self.name} (域: {self.domain})",
+            evidence=(
+                [{"step": s.get("name", ""), "type": s.get("type", "")} for s in self.steps[:10]]
+                or [{"domain": self.domain, "step_count": 0}]
+            ),
+            semantic_strength="inferred",
+            confidence=self.confidence,
+            next_refs=[{"id": s.get("node_id", ""), "name": s.get("name", "")} for s in self.steps[:10]],
+        )
+        return d
 
 
 class BusinessDomainExtractor:

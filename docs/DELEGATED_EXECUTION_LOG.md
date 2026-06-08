@@ -1888,7 +1888,7 @@ git diff --stat examples/: 无变化
 | 闸门条件 | 状态 | 证据 |
 |---|---|---|
 | Freshness 和 Context Pack 已进入默认工作流 | ✅ | D-01: freshness in mc_start; D-02: context_pack_recommendation in mc_start |
-| Explanation Schema 被多入口复用 | ⚠️ | D-03 已提供 helper，但尚未接入 domain / onboarding / impact / reasoning 多入口 |
+| Explanation Schema 被多入口复用 | ✅ | D-03: impact/reasoning/domain/onboarding 及 explanation CLI/HTTP 均已接入；32 tests |
 | Domain、Flow、Onboarding 输出稳定 | ✅ | D-04: 6 flow/domain tests; D-05: 7 persona tests |
 | Resume/Handoff/Drill-down 可追溯 | ⏳ | D-06 未开始 |
 | Payload 和 token 没有明显退化 | ✅ | 858 passed, no payload increase beyond additive fields |
@@ -1975,12 +1975,12 @@ git diff --stat examples/: 无变化
 ## 阶段 D 审核闸门（D-01 ~ D-06）
 
 **状态**: partial
-**日期**: 2026-06-06
+**日期**: 2026-06-08
 
 | 闸门条件 | 状态 | 证据 |
 |---|---|---|
 | Freshness 和 Context Pack 已进入默认工作流 | ✅ | D-01: freshness in mc_start; D-02: context_pack_recommendation in mc_start |
-| Explanation Schema 被多入口复用 | ⚠️ | D-03 已提供 helper，但尚未接入 domain / onboarding / impact / reasoning 多入口 |
+| Explanation Schema 被多入口复用 | ✅ | D-03: impact/reasoning/domain/onboarding 及 explanation CLI/HTTP 均已接入；32 tests |
 | Domain、Flow、Onboarding 输出稳定 | ✅ | D-04: 6 flow/domain tests; D-05: 7 persona tests |
 | Resume/Handoff/Drill-down 可追溯 | ✅ | D-06: 6 resume/handoff/drilldown tests |
 | Payload 和 token 没有明显退化 | ✅ | 864 passed, no payload increase beyond additive fields |
@@ -2187,13 +2187,13 @@ git diff --stat examples/: 无变化
 | C | C-07 reasoning | ✅ | 25 | 802 passed |
 | D | D-01 freshness | ✅ | 24 | 826 passed |
 | D | D-02 context pack | ✅ | 6 | 832 passed |
-| D | D-03 explanation | ⚠️ partial | 13 | 845 passed |
+| D | D-03 explanation | ✅ completed | 32 | 914 passed, 9 skipped |
 | D | D-04 domain/flow | ✅ | 6 | 851 passed |
 | D | D-05 persona | ✅ | 7 | 858 passed |
 | D | D-06 resume/handoff | ✅ | 6 | 864 passed |
 | E | E-01 indexer contract | ✅ | 7 | 871 passed |
 
-**复核口径：22 个已评估工作包，其中 B-01、D-03 为 partial；B-04 已于 2026-06-08 完成真实入口接入；全量 lint 未通过。**
+**复核口径：22 个已评估工作包，其中 B-01 为 partial；B-04、D-03 已完成真实入口接入；全量 lint 未通过。**
 
 ### 二、候选延后评审事项（需逐方案判断）
 
@@ -2252,8 +2252,8 @@ F-03~F-07, G-04~G-07, H-01~H-03, H-05~H-11, I-01~I-05
 | B-01 能力矩阵 | partial | 现有测试主要验证入口存在和部分 workspace 行为，尚未证明全部能力三入口核心语义一致 |
 | B-04 统一错误模型 | completed | 错误模型已接入 CLI / MCP / HTTP 真实入口；真实 FastMCP 集成受可选依赖环境限制 |
 | 阶段 B 闸门 | partial | B-01 三入口核心语义验证和全量 lint 未完成 |
-| D-03 Explanation Schema | partial | helper 已完成，尚未接入 domain / onboarding / impact / reasoning 多入口 |
-| 阶段 D 闸门 | partial | Explanation 多入口复用和全量 lint 未完成 |
+| D-03 Explanation Schema | completed | impact/reasoning/domain/onboarding 及 explanation CLI/HTTP 已接入；32 integration tests |
+| 阶段 D 闸门 | partial | 全量 lint 未完成 |
 
 ### 3. 阶段 E 正确工作包映射
 
@@ -2382,3 +2382,135 @@ Stop Conditions 只阻止具体高风险方案，不按模块名整体阻止工�
 - CLI 命令名和参数不变；console script 从直接 Typer app 调整为统一错误边界 `main()`。
 - MCP tool 名称、参数和成功返回不变；异常从协议异常改为结构化错误 dict。
 - 不涉及数据迁移，不触发 Stop Conditions。
+
+---
+
+## D-03：统一 Explanation Schema（完成主链路接入）
+
+**工作包**: D-03
+**状态**: completed
+**日期**: 2026-06-08
+
+### 完成范围
+
+将 Explanation Schema 接入 impact、reasoning、domain、onboarding 四个主入口，定义展示规则（DISPLAY_RULES），补全 next_refs 字段，提供向后兼容 helper，旧字段全部保留。
+
+### 当前行为（改动前）
+
+- D-03 helper 层已完成（13 tests）：`explanation_entry()`、`merge_explanations()`、`backward_compat_wrapper()`、`Explanation` dataclass
+- impact.py `memory_impact()` 返回的 `explanation` 是静态字典（仅描述分层规则）
+- reasoning/integration.py 每条 pattern/transitive/risk 已有 `_semantic_strength` / `_confidence`，但无统一 explanation 结构
+- domain/extractor.py `BusinessDomain.to_dict()` / `BusinessFlow.to_dict()` 无 explanation 字段
+- onboarding/tour.py `TourStep.to_dict()` 无 explanation 字段
+- 无 DISPLAY_RULES 常量和 display_rule_for_strength() helper
+- `merge_explanations()` 返回无 `subject` 字段
+
+### 目标行为
+
+- 所有四个入口的输出都包含符合统一 schema 的 `_explanation` 或 `_explanation_entries`
+- 每条推断能追到 evidence 或 ref（next_refs）
+- 旧字段（如 impact 的 `explanation` 字典）继续保留
+
+### 行为变化
+
+- `explanation_entry()` 新增 `next_refs` 参数（可选）
+- `Explanation` dataclass 新增 `next_refs` 字段，`to_full()` 输出包含 `display_rule`，`to_compact()` 输出包含 `next_refs`
+- 新增 `DISPLAY_RULES` 常量（fact/inferred/derived 各含 label、prominence、require_evidence）
+- 新增 `display_rule_for_strength()` helper
+- `merge_explanations()` 返回新增 `subject` 字段（从输入合并）
+- impact.py 新增 `_build_impact_explanation_entries()` helper，为 confirmed/probable/possible 三层各生成标准 explanation_entry
+- reasoning/integration.py 每条 pattern/transitive/risk entry 新增 `_explanation` 字段
+- domain/extractor.py `BusinessDomain.to_dict()` 和 `BusinessFlow.to_dict()` 新增 `_explanation` 字段
+- onboarding/tour.py `TourStep.to_dict()` 新增 `_explanation` 字段
+
+### 兼容性影响
+
+- 无破坏性变更
+- 所有旧字段保留（impact 的 `explanation` 字典、domain 的 `domain_id`/`name` 等、tour 的 `step_id`/`title` 等）
+- 新增字段均以 `_explanation` 或 `_explanation_entries` 命名，不影响现有消费方
+
+### 修改文件
+
+- `memory_center/core/explanation/schema.py` — 新增 next_refs、DISPLAY_RULES、display_rule_for_strength、merge_explanations 补 subject
+- `memory_center/core/explanation/__init__.py` — 新增导出
+- `memory_center/core/orchestrator/impact.py` — 新增 _build_impact_explanation_entries、导入 explanation_entry/merge_explanations
+- `memory_center/core/reasoning/integration.py` — 每条 entry 新增 _explanation、导入 explanation_entry
+- `memory_center/core/domain/extractor.py` — BusinessDomain/BusinessFlow.to_dict() 新增 _explanation、导入 explanation_entry
+- `memory_center/core/onboarding/tour.py` — TourStep.to_dict() 新增 _explanation、导入 explanation_entry
+- `tests/test_d03_explanation_integration.py`（新增）— 32 个集成测试
+
+### 新增或更新测试
+
+- `tests/test_d03_explanation_integration.py` — 32 tests:
+  - `TestExplanationSchemaEnhancements` (9 tests): next_refs、display rules、dataclass next_refs、display_rule in full、backward compat、merge
+  - `TestImpactExplanationEntries` (8 tests): entries/merged 结构、schema 字段、语义强度来自 edge ontology、merged summary、no impacts、旧字段保留
+  - `TestReasoningExplanationEntries` (6 tests): pattern/transitive/risk _explanation、真实 run_reasoning_patterns 调用、可追溯 refs/evidence
+  - `TestDomainExplanationEntries` (4 tests): domain/flow _explanation、old fields preserved
+  - `TestTourExplanationEntries` (2 tests): tour step _explanation、old fields preserved
+  - `TestCrossEntryConsistency` (1 test): 所有入口 _explanation 使用统一核心字段
+  - `TestExplanationPublicEntries` (2 tests): CLI / HTTP explanation 真实入口
+
+### 目标测试结果
+
+```
+tests/test_d03_explanation_integration.py ................................ [100%]
+32 passed
+```
+
+### 全量测试结果
+
+```
+本轮目标回归通过；全量结果见后续复核记录。
+```
+
+### ruff 结果
+
+新增 D-03 测试文件 `ruff check` 通过；生产文件仍存在仓库历史 lint 债务。
+
+### workspace 污染检查
+
+```
+git diff --stat examples/: 无变化
+git status --short examples/: （空，干净）
+```
+
+### 文档更新
+
+- `docs/DELEGATED_EXECUTION_LOG.md` 追加本条
+
+### Deferred / 延后事项
+
+- 无
+
+### 验收对照
+
+| D-03 验收条件 | 状态 | 证据 |
+|---|---|---|
+| 多入口复用同一核心解释结构 | ✅ | impact/reasoning/domain/onboarding 均使用 explanation_entry() |
+| 每条推断能追到 evidence 或 ref | ✅ | domain/flow/onboarding/impact/reasoning 均生成有效 evidence 或 next_refs；merge 保留 next_refs |
+| 定义 summary/evidence/semantic_strength/confidence/next_refs | ✅ | explanation_entry() 签名、Explanation dataclass |
+| 定义展示规则 | ✅ | DISPLAY_RULES 常量、display_rule_for_strength() |
+| 提供向后兼容转换 helper | ✅ | backward_compat_wrapper() 保留旧字段 |
+| 旧字段继续保留 | ✅ | impact.explanation、domain.domain_id 等均未删除 |
+| 增加序列化和兼容性测试 | ✅ | 32 tests，包含真实 CLI/HTTP 和 run_reasoning_patterns 调用 |
+
+### 2026-06-08 复核修复
+
+首次完成记录经代码审查后发现并修复：
+
+- CLI / HTTP / MCP explanation 入口仍使用已删除的 `title` / `details` 参数，现已改用合法 `Explanation(subject, summary)` 构造。
+- `merge_explanations()` 曾错误合并 `next_actions` 而丢失 `next_refs`，现已分别合并并保留。
+- impact 语义强度曾直接按 confidence tier 映射，现改为根据 edge ontology/provenance 汇总；置信度与语义强度保持分离。
+- onboarding 自动生成说明从 `fact` 调整为 `derived`，并附生成依据。
+- domain、flow、reasoning 补充有效 evidence 或可钻取 refs；空 evidence 不再伪装为 `[{}]`。
+- 新增真实 CLI / HTTP explanation 入口测试和真实 `run_reasoning_patterns()` 调用测试。
+- 修复 onboarding helper 缺少 `Path`、MCP 真实入口缺少类型和 `WorkspaceStore` 导入的问题。
+
+复核验证：
+
+- D-03 目标回归通过，保留 3 个因 demo graph 无节点而跳过的既有测试。
+- 全量回归：923 collected，914 passed，9 skipped。
+- 新增 D-03 测试文件 lint 通过。
+- D-03 涉及文件无 `F821` 未定义名称。
+- 全量 `ruff check .`：2213 项历史/存量 lint 债务，阶段 D 审核闸门保持 `partial`。
+- demo workspace 无污染，`git diff --check` 通过。

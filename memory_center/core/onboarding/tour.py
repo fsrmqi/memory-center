@@ -5,12 +5,12 @@ so newcomers can understand the project structure progressively.
 """
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from pathlib import Path
+from typing import Any, Dict, List
 
+from ..explanation import explanation_entry
 from ..storage.unified import UnifiedStore
-from ..reasoning.transitive import TransitiveInferenceEngine
 
 
 @dataclass
@@ -24,7 +24,7 @@ class TourStep:
     depth: int = 0
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        d: Dict[str, Any] = {
             "step_id": self.step_id,
             "title": self.title,
             "description": self.description,
@@ -32,6 +32,15 @@ class TourStep:
             "node_type": self.node_type,
             "depth": self.depth,
         }
+        d["_explanation"] = explanation_entry(
+            subject=f"tour:step:{self.step_id}",
+            summary=self.description,
+            evidence=[{"node_type": self.node_type, "node_ids": self.node_ids[:10], "depth": self.depth}],
+            semantic_strength="derived",
+            confidence=0.8,
+            next_refs=[{"id": nid, "name": ""} for nid in self.node_ids[:10]],
+        )
+        return d
 
 
 @dataclass

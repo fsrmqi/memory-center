@@ -19,7 +19,7 @@ import argparse
 import inspect
 from functools import wraps
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from memory_center.core.orchestrator import (
     group_chain,
@@ -96,6 +96,7 @@ from memory_center.core.explanation.schema import Explanation
 from memory_center.core.errors import normalize_exception
 from memory_center.core.domain.flow import business_flow_impact_for_workspace, extract_business_flows_for_workspace
 from memory_center.core.metrics import MetricsCollector
+from memory_center.core.store import WorkspaceStore
 from memory_center.core.benchmark.trending import check_regression_alerts
 from memory_center.core.artifacts import (
     append_change_log,
@@ -705,12 +706,11 @@ def create_server(workspace_file: str):
     @staticmethod
     def _explanation_action(text: str, persona: str = "developer") -> dict:
         exp = Explanation(
-            title="Explanation",
+            subject="explanation",
             summary=text or "",
-            details=[],
             persona=persona,
         )
-        return {"explanation": exp.adapt_for_persona(persona)}
+        return {"explanation": exp.adapt_for_persona(persona).to_full()}
 
     @staticmethod
     def _business_flow_action(wf: str, name: str, max_depth: int) -> dict:

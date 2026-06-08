@@ -1627,7 +1627,7 @@ def pattern_promotion_cmd(
         result = pp.promote(text)
     else:
         result = {"error": f"Unknown action: {action}"}
-    print(json.dumps(result, indent=2, default=str))
+    print(json.dumps(result, indent=2, default=str, ensure_ascii=False))
 
 
 @app.command("heuristics")
@@ -1651,7 +1651,7 @@ def heuristics_cmd(
         result = {"status": "recorded"}
     else:
         result = {"error": f"Unknown action: {action}"}
-    print(json.dumps(result, indent=2, default=str))
+    print(json.dumps(result, indent=2, default=str, ensure_ascii=False))
 
 
 @app.command("workflow-profile")
@@ -1703,9 +1703,9 @@ def explanation_cmd(
 ):
     """Generate persona-adapted explanation."""
     from memory_center.core.explanation.schema import Explanation
-    exp = Explanation(title="Explanation", summary=text, details=[], persona=persona)
-    result = exp.adapt_for_persona(persona)
-    print(json.dumps(result, indent=2, default=str))
+    exp = Explanation(subject="explanation", summary=text, persona=persona)
+    result = exp.adapt_for_persona(persona).to_full()
+    print(json.dumps(result, indent=2, default=str, ensure_ascii=False))
 
 
 @app.command("business-flow")

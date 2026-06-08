@@ -8,7 +8,9 @@ from ..graph import GraphStore
 from ..rules import match_rules
 from .common import _best_match, _build_progressive_levels, _impact_checklist, _unknown_static_analysis_risks, load_context
 from .query import _build_lookup_payload, _build_impact_evidence_summary, memory_query
-from ..diagnostics import DIAG, diag_entry, safe_reason
+from ..diagnostics import DIAG, diag_entry
+from ..explanation import explanation_entry, merge_explanations
+from ..ontology import edge_strength
 
 
 def memory_impact(workspace_file: str | Path, target: str, direction: str = "upstream", max_depth: int = 3) -> Dict[str, Any]:
@@ -64,6 +66,7 @@ def memory_impact(workspace_file: str | Path, target: str, direction: str = "ups
                 "probable": "0.55 <= confidence < 0.80, usually import, Feign endpoint match, inferred method/field usage",
                 "possible": "confidence < 0.55, weak hints only; verify manually",
             },
+            "_explanation_entries": _build_impact_explanation_entries(confirmed, probable, possible, node),
             "freshness": _get_freshness_for_impact(workspace_file),
             "_reasoning": _get_reasoning_for_impact(workspace_file, node.get("id", "")),
         }
@@ -248,3 +251,57 @@ def _get_reasoning_for_impact(workspace_file: str | Path, target_id: str) -> dic
         return run_reasoning_patterns(str(workspace_file), target_id=target_id)
     except Exception as exc:
         return {"patterns": [], "transitive": [], "risk": [], "_diagnostics": diag_entry(DIAG.UNAVAILABLE, exc=exc)}
+
+
+def _build_impact_explanation_entries(
+    confirmed: List[Dict[str, Any]],
+    probable: List[Dict[str, Any]],
+    possible: List[Dict[str, Any]],
+    node: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Build D-03 standard explanation entries for each impact tier."""
+    target_label = f"{node.get('type', '')}:{node.get('name', '')}"
+
+    def _tier_entry(items: List[Dict[str, Any]], label: str, desc: str) -> dict:
+        evidence = [
+            {
+                "edge_type": item.get("type", ""),
+                "source": item.get("source", {}).get("name", ""),
+                "target": item.get("target", {}).get("name", ""),
+                "confidence": item.get("confidence", 0.5),
+            }
+            for item in items[:10]
+        ]
+        refs = [
+            {"id": item.get("target", {}).get("id", ""), "name": item.get("target", {}).get("name", "")}
+            for item in items[:10]
+            if item.get("target", {}).get("id")
+        ]
+        avg_conf = sum(float(i.get("confidence", 0.5)) for i in items) / max(len(items), 1)
+        strengths = [edge_strength(str(item.get("type", "") or "")) for item in items]
+        normalized_strengths = [strength if strength in {"fact", "inferred", "derived"} else "inferred" for strength in strengths]
+        strength = min(normalized_strengths, key={"derived": 0, "inferred": 1, "fact": 2}.get, default="inferred")
+        return explanation_entry(
+            subject=f"impact:{target_label}:{label}",
+            summary=f"{desc} (共 {len(items)} 项)",
+            evidence=evidence,
+            semantic_strength=strength,
+            confidence=round(avg_conf, 3),
+            next_refs=refs,
+        )
+
+    entries = []
+    if confirmed:
+        entries.append(_tier_entry(confirmed, "confirmed", "高置信度影响"))
+    if probable:
+        entries.append(_tier_entry(probable, "probable", "中置信度影响"))
+    if possible:
+        entries.append(_tier_entry(possible, "possible", "低置信度可能影响"))
+
+    merged = merge_explanations(entries) if entries else explanation_entry(
+        subject=f"impact:{target_label}",
+        summary="未发现影响",
+        semantic_strength="fact",
+        confidence=1.0,
+    )
+    return {"entries": entries, "merged": merged}

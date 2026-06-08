@@ -14,9 +14,10 @@ Key constraints (per C-07 acceptance criteria):
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict
 
 from ..diagnostics import DIAG, diag_entry
+from ..explanation import explanation_entry
 
 # Semantic strength constants aligned with ONTOLOGY.md
 SEMANTIC_STRENGTH_FACT = "fact"
@@ -32,19 +33,20 @@ PATTERN_GROUP_RISK = "risk_patterns"
 def _serialize_pattern_match(match: Any) -> Dict[str, Any]:
     if isinstance(match, dict):
         return match
-    return {
+    entry: Dict[str, Any] = {
         "pattern_name": getattr(match, "pattern_name", "unknown"),
         "matched_nodes": getattr(match, "matched_nodes", []),
         "risk_level": getattr(match, "risk_level", "medium"),
         "description": getattr(match, "description", ""),
         "evidence": getattr(match, "evidence", {}),
     }
+    return entry
 
 
 def _serialize_risk_finding(finding: Any) -> Dict[str, Any]:
     if isinstance(finding, dict):
         return finding
-    return {
+    entry: Dict[str, Any] = {
         "pattern": getattr(finding, "pattern", "unknown"),
         "severity": getattr(finding, "severity", "medium"),
         "description": getattr(finding, "description", ""),
@@ -52,18 +54,20 @@ def _serialize_risk_finding(finding: Any) -> Dict[str, Any]:
         "checklist": getattr(finding, "checklist", []),
         "evidence": getattr(finding, "evidence", {}),
     }
+    return entry
 
 
 def _serialize_transitive(rel: Any) -> Dict[str, Any]:
     if isinstance(rel, dict):
         return rel
-    return {
+    entry: Dict[str, Any] = {
         "source_id": getattr(rel, "source_id", ""),
         "target_id": getattr(rel, "target_id", ""),
         "path": getattr(rel, "path", []),
         "edge_types": getattr(rel, "edge_types", []),
         "confidence": getattr(rel, "confidence", 0.5),
     }
+    return entry
 
 
 def run_reasoning_patterns(
@@ -119,6 +123,14 @@ def run_reasoning_patterns(
                     entry["_confidence"] = _risk_level_to_confidence(entry.get("risk_level", "medium"))
                     entry["_pattern_group"] = PATTERN_GROUP_GRAPH
                     entry["_evidence"] = "graph pattern: " + entry.get("pattern_name", pattern_name)
+                    entry["_explanation"] = explanation_entry(
+                        subject=f"reasoning:{PATTERN_GROUP_GRAPH}:{entry.get('pattern_name', pattern_name)}",
+                        summary=entry.get("description", entry.get("pattern_name", "")),
+                        evidence=_non_empty_evidence(entry.get("evidence")),
+                        semantic_strength=SEMANTIC_STRENGTH_INFERRED,
+                        confidence=entry["_confidence"],
+                        next_refs=_node_refs(entry.get("matched_nodes", [])),
+                    )
                     result["patterns"].append(entry)
     except Exception as exc:
         diagnostics[PATTERN_GROUP_GRAPH] = diag_entry(DIAG.UNAVAILABLE, exc=exc)
@@ -136,6 +148,14 @@ def run_reasoning_patterns(
                     entry["_confidence"] = entry.get("confidence", 0.5)
                     entry["_pattern_group"] = PATTERN_GROUP_TRANSITIVE
                     entry["_evidence"] = "transitive chain depth=" + str(len(entry.get("path", [])))
+                    entry["_explanation"] = explanation_entry(
+                        subject=f"reasoning:{PATTERN_GROUP_TRANSITIVE}:{entry.get('source_id', '')}",
+                        summary=f"传递链路 depth={len(entry.get('path', []))}",
+                        evidence=_non_empty_evidence({"path": entry.get("path", []), "edge_types": entry.get("edge_types", [])}),
+                        semantic_strength=SEMANTIC_STRENGTH_DERIVED,
+                        confidence=entry["_confidence"],
+                        next_refs=_id_refs(entry.get("path", [])),
+                    )
                     result["transitive"].append(entry)
         except Exception as exc:
             diagnostics[PATTERN_GROUP_TRANSITIVE] = diag_entry(DIAG.UNAVAILABLE, exc=exc)
@@ -153,6 +173,14 @@ def run_reasoning_patterns(
                     entry["_confidence"] = _severity_to_confidence(entry.get("severity", "medium"))
                     entry["_pattern_group"] = PATTERN_GROUP_RISK
                     entry["_evidence"] = "risk pattern: " + entry.get("pattern", "unknown")
+                    entry["_explanation"] = explanation_entry(
+                        subject=f"reasoning:{PATTERN_GROUP_RISK}:{entry.get('pattern', 'unknown')}",
+                        summary=entry.get("description", entry.get("pattern", "")),
+                        evidence=_non_empty_evidence(entry.get("evidence")),
+                        semantic_strength=SEMANTIC_STRENGTH_INFERRED,
+                        confidence=entry["_confidence"],
+                        next_refs=_node_refs(entry.get("affected_nodes", [])) or _id_refs([target_id]),
+                    )
                     result["risk"].append(entry)
         except Exception as exc:
             diagnostics[PATTERN_GROUP_RISK] = diag_entry(DIAG.UNAVAILABLE, exc=exc)
@@ -189,3 +217,21 @@ def _risk_level_to_confidence(risk_level: str) -> float:
 
 def _severity_to_confidence(severity: str) -> float:
     return {"high": 0.9, "medium": 0.6, "low": 0.3}.get(severity, 0.5)
+
+
+def _non_empty_evidence(evidence: Any) -> list[dict[str, Any]]:
+    return [evidence] if isinstance(evidence, dict) and evidence else []
+
+
+def _node_refs(nodes: Any) -> list[dict[str, str]]:
+    refs = []
+    for node in nodes if isinstance(nodes, list) else []:
+        if isinstance(node, dict):
+            node_id = str(node.get("id", "") or "")
+            if node_id:
+                refs.append({"id": node_id, "name": str(node.get("name", "") or "")})
+    return refs[:10]
+
+
+def _id_refs(node_ids: Any) -> list[dict[str, str]]:
+    return [{"id": str(node_id), "name": str(node_id)} for node_id in node_ids if node_id][:10] if isinstance(node_ids, list) else []
