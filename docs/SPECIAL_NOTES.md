@@ -409,3 +409,28 @@ Hook 配置里：
 ### 正确理解
 
 审计不会因为项目不是 Python 就扣分。它会根据项目实际使用的语言和框架进行检测。如果某个语言/框架组合未被覆盖，那是因为还没有添加对应的检测规则，而不是设计限制。
+
+## 12. workspace 污染自动检测 / Workspace Pollution Auto-Detection
+
+### 现象
+
+仓库 demo workspace `examples/spring-cloud-demo/.memory-center/` 包含 30 个文件，用于示例和测试 fixture 来源。如果测试意外写入该目录，会导致 `git status` 变脏、测试间互相污染。
+
+### 自动保护
+
+`tests/test_workspace_pollution.py` 包含两个测试：
+
+1. `test_demo_workspace_not_polluted` — 在测试 session 结束时校验 demo 文件 SHA-256，若有任何文件被修改则失败。
+2. `test_pollution_detection_catches_modification` — 临时写入 marker 文件，验证检测机制本身工作正常，然后自动清理。
+
+### 正确做法
+
+任何新增测试只要会触发 reindex、session、memory write、graph write、benchmark write，都**必须**使用 `tests/fixtures.py` 中的 `copy_demo_workspace()` 或 `setup_demo_workspace()` helper，将 demo 复制到 `tmp_path` 后操作。
+
+不要直接引用仓库内 demo workspace 路径做写入操作。
+
+### 维护要求
+
+- demo 目录新增文件后，污染检测会自动适应（基于文件列表 + SHA-256）。
+- 不要通过扩大 `.gitignore` 来掩盖污染。
+- CI 流程中 `pytest -q` 已包含污染检测，无需额外步骤。

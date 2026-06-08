@@ -46,16 +46,8 @@ from memory_center.core.orchestrator.common import _merge_artifact_section
 
 
 def _copy_root_demo_workspace(tmp_path: Path) -> Path:
-    source = Path("examples/spring-cloud-demo")
-    target = tmp_path / "demo"
-    import shutil
-    shutil.copytree(source, target)
-    workspace = target / ".memory-center" / "workspace.yaml"
-    lines = workspace.read_text(encoding="utf-8").splitlines()
-    lines = [f"root: {target.as_posix()}" if line.startswith("root:") else line for line in lines]
-    workspace.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    return workspace
-
+    from tests.fixtures import copy_demo_workspace
+    return copy_demo_workspace(tmp_path)
 
 def test_demo_workspace_indexes_spring_cloud_patterns(tmp_path: Path):
     workspace = _copy_root_demo_workspace(tmp_path)

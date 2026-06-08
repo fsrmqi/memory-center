@@ -1,0 +1,179 @@
+"""C-04: Contracts matching behavior tests.
+
+Verifies _filter_contracts_by_query confidence scoring, fallback marking,
+match type recording, and Feign boost behavior per ONTOLOGY.md §5.6.
+"""
+from __future__ import annotations
+
+from memory_center.core.orchestrator.query import _filter_contracts_by_query
+
+# Sample contracts for testing
+FEIGN_CONTRACTS = [
+    {"interface": "com.example.OrderFeignClient", "methods": [
+        {"method_name": "getOrder", "path": "/api/orders/{id}"},
+        {"method_name": "createOrder", "path": "/api/orders"},
+    ]},
+    {"interface": "com.example.UserFeignClient", "methods": [
+        {"method_name": "getUser", "path": "/api/users/{id}"},
+    ]},
+    {"interface": "com.example.InventoryFeignClient", "methods": [
+        {"method_name": "checkStock", "path": "/api/inventory/check"},
+    ]},
+]
+
+ENDPOINT_CONTRACTS = [
+    {"controller": "OrderController", "path": "/api/orders/{id}", "method": "GET"},
+    {"controller": "OrderController", "path": "/api/orders", "method": "POST"},
+    {"controller": "UserController", "path": "/api/users/{id}", "method": "GET"},
+    {"controller": "InventoryController", "path": "/api/inventory/check", "method": "GET"},
+]
+
+MQ_CONTRACTS = [
+    {"topic": "order-events", "consumer_group": "order-service"},
+    {"topic": "user-events", "consumer_group": "user-service"},
+]
+
+
+# ============================================================
+# TestInterfaceExactMatch: 0.95/0.97 confidence
+# ============================================================
+
+class TestInterfaceExactMatch:
+    def test_feign_interface_exact_match(self):
+        result = _filter_contracts_by_query(FEIGN_CONTRACTS, "OrderFeignClient", "feign")
+        assert len(result) > 0
+        assert result[0]["_confidence"] >= 0.95
+        assert result[0]["_match_type"] == "interface_exact"
+
+    def test_feign_interface_partial_match(self):
+        result = _filter_contracts_by_query(FEIGN_CONTRACTS, "Order", "feign")
+        assert len(result) > 0
+        assert result[0]["_confidence"] >= 0.95
+        assert result[0]["_match_type"] == "interface_exact"
+
+    def test_feign_interface_case_insensitive(self):
+        result = _filter_contracts_by_query(FEIGN_CONTRACTS, "orderfeignclient", "feign")
+        assert len(result) > 0
+        assert result[0]["_confidence"] >= 0.95
+
+
+# ============================================================
+# TestMethodExactMatch: 0.85 confidence
+# ============================================================
+
+class TestMethodExactMatch:
+    def test_method_name_match(self):
+        result = _filter_contracts_by_query(FEIGN_CONTRACTS, "getOrder", "feign")
+        assert len(result) > 0
+        assert result[0]["_confidence"] == 0.85
+        assert result[0]["_match_type"] == "method_exact"
+
+    def test_method_name_partial_match(self):
+        result = _filter_contracts_by_query(FEIGN_CONTRACTS, "getUser", "feign")
+        assert len(result) > 0
+        assert result[0]["_confidence"] == 0.85
+
+
+# ============================================================
+# TestTokenMatch: 0.60 confidence
+# ============================================================
+
+class TestTokenMatch:
+    def test_token_match_in_interface(self):
+        # "inventory" appears in InventoryFeignClient
+        result = _filter_contracts_by_query(FEIGN_CONTRACTS, "inventory check", "feign")
+        assert len(result) > 0
+        assert result[0]["_confidence"] == 0.60
+        assert result[0]["_match_type"] == "token_match"
+
+    def test_endpoint_token_match(self):
+        result = _filter_contracts_by_query(ENDPOINT_CONTRACTS, "order list", "endpoint")
+        assert len(result) > 0
+        assert result[0]["_confidence"] == 0.60
+        assert result[0]["_match_type"] == "token_match"
+
+
+# ============================================================
+# TestEndpointPathMatch: 0.90 confidence
+# ============================================================
+
+class TestEndpointPathMatch:
+    def test_endpoint_path_exact_match(self):
+        result = _filter_contracts_by_query(ENDPOINT_CONTRACTS, "/api/orders/{id}", "endpoint")
+        assert len(result) > 0
+        assert result[0]["_confidence"] == 0.90
+        assert result[0]["_match_type"] == "path_exact"
+
+    def test_endpoint_controller_match(self):
+        result = _filter_contracts_by_query(ENDPOINT_CONTRACTS, "OrderController", "endpoint")
+        assert len(result) > 0
+        assert result[0]["_confidence"] == 0.90
+
+
+# ============================================================
+# TestFallback: 0.10 confidence with _is_fallback
+# ============================================================
+
+class TestFallback:
+    def test_no_match_returns_fallback(self):
+        result = _filter_contracts_by_query(FEIGN_CONTRACTS, "xyzzy_nonexistent_query", "feign")
+        assert len(result) > 0
+        assert all(c["_confidence"] == 0.10 for c in result)
+        assert all(c["_match_type"] == "fallback" for c in result)
+        assert all(c["_is_fallback"] is True for c in result)
+
+    def test_fallback_returns_top_n(self):
+        result = _filter_contracts_by_query(FEIGN_CONTRACTS, "nonexistent", "feign")
+        assert len(result) <= 10  # fallback returns top-N
+
+    def test_empty_contracts_returns_empty(self):
+        result = _filter_contracts_by_query([], "anything", "feign")
+        assert result == []
+
+
+# ============================================================
+# TestJsonScan: 0.30 confidence
+# ============================================================
+
+class TestJsonScan:
+    def test_json_scan_match(self):
+        # Use MQ contracts with feign intent — falls through to JSON scan
+        result = _filter_contracts_by_query(MQ_CONTRACTS, "order-events", "feign")
+        assert len(result) > 0
+        assert result[0]["_confidence"] == 0.30
+        assert result[0]["_match_type"] == "json_scan"
+
+
+# ============================================================
+# TestConfidenceOrdering: results sorted by confidence desc
+# ============================================================
+
+class TestConfidenceOrdering:
+    def test_results_sorted_by_confidence(self):
+        result = _filter_contracts_by_query(FEIGN_CONTRACTS, "Order", "feign")
+        confidences = [c["_confidence"] for c in result]
+        assert confidences == sorted(confidences, reverse=True)
+
+    def test_multiple_match_types_preserved(self):
+        result = _filter_contracts_by_query(FEIGN_CONTRACTS, "Order", "feign")
+        match_types = {c["_match_type"] for c in result}
+        # Should have interface_exact for the matching contract
+        assert "interface_exact" in match_types
+
+
+# ============================================================
+# TestEnrichment: _confidence, _match_type added to results
+# ============================================================
+
+class TestEnrichment:
+    def test_confidence_added(self):
+        result = _filter_contracts_by_query(FEIGN_CONTRACTS, "OrderFeignClient", "feign")
+        assert all("_confidence" in c for c in result)
+
+    def test_match_type_added(self):
+        result = _filter_contracts_by_query(FEIGN_CONTRACTS, "OrderFeignClient", "feign")
+        assert all("_match_type" in c for c in result)
+
+    def test_original_contract_fields_preserved(self):
+        result = _filter_contracts_by_query(FEIGN_CONTRACTS, "OrderFeignClient", "feign")
+        assert any("interface" in c for c in result)

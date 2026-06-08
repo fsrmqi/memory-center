@@ -248,3 +248,23 @@
 - 再统一事实/推断边界
 
 后续如果某个行为“看起来像 bug，但其实是语义边界不清”，优先回来看这份文档，而不是先继续堆特殊规则。
+
+### 3.1b V3 扩展关系（V3 Extended Graph Edges — §3.4 + §20.5.2）
+
+以下关系类型在 V3 中新增，用于支持代码理解、推理和治理能力。
+
+| 关系 | 源 → 目标 | 语义强度 | 说明 |
+|------|-----------|----------|------|
+| TRANSITIVELY_CALLS | Method → Method (多跳) | derived | 调用链传递闭包 |
+| DATA_FLOWS_TO | DataFlowNode → DataFlowNode | inferred | 数据流传递 |
+| CONFIG_PROPAGATES | ConfigKey → ConfigKey | inferred | 配置传播 |
+| HISTORICALLY_RELATED | Entity → Entity | derived | 历史共变更关联 |
+| SEMANTIC_SIMILAR | Entity → Entity | derived | 语义相似度 |
+| RISK_CORRELATED | Entity → Entity | derived | 风险相关性 |
+| ROUTES_TO | RouteNode → Endpoint | confirmed | HTTP/RPC/MQ 路由映射 |
+| IMPLEMENTS_FLOW_STEP | Method → FlowStep | inferred | 方法实现流程步骤 |
+| NEXT_STEP | FlowStep → FlowStep | inferred | 顺序流程步骤 |
+| EXPLAINS | CodeSummary → Entity | derived | 代码摘要解释 |
+| STALE_FOR | IndexFreshness → Entity | runtime | 索引新鲜度标记 |
+
+**注意：** §3.1 表中部分关系（HANDLES_ENDPOINT、IMPLEMENTS_FEIGN、INJECTS_BEAN、READS_FIELD、USES_DATA_RESOURCE、DECLARES_CONFIG）在当前代码 `ALL_EDGE_TYPES` 中不存在，待负责人确认是否为遗留设计或待实现项。

@@ -1,22 +1,19 @@
 """Tests for MCP facade tools (8 task-level tools replacing 82 atomic tools)."""
 from pathlib import Path
-import shutil
 import pytest
 from typer.testing import CliRunner
 
-from memory_center.core.config import load_workspace_config
-from memory_center.core.indexer import reindex_workspace
 from memory_center.core.orchestrator import (
     memory_callers, memory_callees, memory_context, memory_contracts,
     memory_detect_changes, memory_impact, memory_plan_change, memory_query,
-    memory_query_hybrid, memory_ref_get, memory_search_code, memory_symbol,
+    memory_query_hybrid, memory_search_code, memory_symbol,
     memory_verify_checklist,
-    workspace_check_contract, workspace_check_rules, workspace_end_session,
-    workspace_handoff_packet, workspace_log_session_event, workspace_next_actions,
+    workspace_check_rules, workspace_end_session,
+    workspace_handoff_packet, workspace_next_actions,
     workspace_recent_evidence, workspace_resume_packet, workspace_sniff,
     workspace_start_session, workspace_status, workspace_sync_case_to_artifacts,
     workspace_sync_sniff_to_artifacts, workspace_suggest_case, workspace_trace,
-    workspace_unresolved_items, workspace_record_case, workspace_lookup_hint,
+    workspace_unresolved_items, workspace_lookup_hint,
 )
 from memory_center.core.artifacts import (
     list_artifacts, create_task_space, list_task_spaces,
@@ -35,19 +32,8 @@ if HAS_MCP:
 
 
 def _setup_workspace(tmp_path: Path) -> str:
-    source = Path("examples/spring-cloud-demo")
-    target = tmp_path / "demo"
-    shutil.copytree(source, target)
-    workspace = target / ".memory-center" / "workspace.yaml"
-    lines = workspace.read_text(encoding="utf-8").splitlines()
-    lines = [f"root: {target.as_posix()}" if line.startswith("root:") else line for line in lines]
-    workspace.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    config = load_workspace_config(workspace)
-    from memory_center.core.store import WorkspaceStore
-    store = WorkspaceStore(workspace)
-    reindex_workspace(config, store)
-    return str(workspace)
-
+    from tests.fixtures import setup_demo_workspace
+    return str(setup_demo_workspace(tmp_path))
 
 @pytest.mark.skipif(not HAS_MCP, reason="mcp package not installed")
 def test_mcp_server_has_exactly_8_facade_tools(tmp_path: Path):

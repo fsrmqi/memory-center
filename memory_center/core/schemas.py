@@ -16,6 +16,19 @@ SCHEMA_VERSIONS = {
     "tool_usage_report": 1,
     "memory_ref": 1,
     "memory_ref_batch": 1,
+    # --- Facade return type schemas (B-02) ---
+    "mc_start": 1,
+    "mc_lookup": 1,
+    "mc_analyze": 1,
+    "mc_sync": 1,
+    "mc_resume": 1,
+    "mc_handoff": 1,
+    "mc_close": 1,
+    "mc_admin": 1,
+    "mc_context_pack": 1,
+    "mc_onboard": 1,
+    "mc_domain": 1,
+    "mc_freshness": 1,
 }
 
 SCHEMA_REQUIRED_FIELDS = {
@@ -31,6 +44,19 @@ SCHEMA_REQUIRED_FIELDS = {
     "tool_usage_report": {"workspace", "summary", "tool_counts", "lookup_tool_counts", "adoption_hints"},
     "memory_ref": {"ref_id", "kind", "summary", "raw"},
     "memory_ref_batch": {"refs", "requested", "found_count"},
+    # --- Facade return type required fields (B-02) ---
+    "mc_start": {"workflow", "sniff", "session"},
+    "mc_lookup": {"result"},
+    "mc_analyze": {"workflow", "depth", "impact"},
+    "mc_sync": {"workflow", "mode", "result"},
+    "mc_resume": {"workflow", "resume_packet", "next_actions", "unresolved_items", "recent_evidence"},
+    "mc_handoff": {"workflow", "handoff_packet", "recent_evidence", "tool_usage_report"},
+    "mc_close": {"workflow", "ended", "sync_case", "suggested_case"},
+    "mc_admin": set(),  # mc_admin dispatches to sub-actions; no fixed required fields
+    "mc_context_pack": {"workflow", "query", "intent", "entrypoints", "relationships", "checklist"},
+    "mc_onboard": {"workflow", "tour"},
+    "mc_domain": {"workflow", "domains", "domain_count"},
+    "mc_freshness": {"workflow"},
 }
 
 

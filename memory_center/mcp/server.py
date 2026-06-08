@@ -202,6 +202,27 @@ def _constraint_action(context: str = "", template: str = "coding_agent") -> Dic
     tmpl = get_constraint_template(template)
     return tmpl or {"error": f"Unknown template: {template}"}
 
+def _build_context_pack_recommendation(wf: str, intent: str, sniff_result: dict) -> dict:
+    """D-02: Recommend context pack based on intent and risk level."""
+    risk = sniff_result.get("risk_level", "low")
+    intent_lower = intent.lower()
+    arch_keywords = {"architecture", "design", "refactor", "migrate", "module", "service", "struct", "设计", "架构", "重构", "迁移"}
+    change_keywords = {"change", "modify", "fix", "update", "impact", "affect", "break", "修改", "变更", "影响"}
+    is_arch = any(k in intent_lower for k in arch_keywords)
+    is_change = any(k in intent_lower for k in change_keywords) or risk in ("medium", "high")
+    recommended = is_arch or is_change
+    if not recommended:
+        return {"recommended": False, "reason": "Intent does not suggest architecture or change-impact questions."}
+    reason = "Architecture understanding intent" if is_arch else "Change-impact or elevated risk detected"
+    return {
+        "recommended": True,
+        "reason": reason,
+        "tool": "mc_context_pack",
+        "suggested_query": intent,
+        "suggested_budget": "medium" if risk == "low" else "large",
+    }
+
+
 def create_server(workspace_file: str):
     try:
         from mcp.server.fastmcp import FastMCP
@@ -238,7 +259,15 @@ def create_server(workspace_file: str):
             )
         session = workspace_start_session(wf, intent)
         guidance = get_workflow_guidance("work-start", {"risk_level": sniff_result.get("risk_level", ""), "task_id": resolved_task.get("task_id", "")})
-        return {"workflow": "mc-start", "sniff": sniff_result, "sync_sniff": synced, "session": session, "_workflow_guidance": guidance}
+        # D-01: Freshness enters mc_start main chain
+        try:
+            from memory_center.core.freshness.integration import get_freshness_with_actions
+            _freshness = get_freshness_with_actions(wf)
+        except Exception:
+            _freshness = {"status": "unknown", "recommended_actions": [], "semantics": ""}
+        # D-02: Context Pack recommendation for architecture/change intents
+        _cp_rec = _build_context_pack_recommendation(wf, intent, sniff_result)
+        return {"workflow": "mc-start", "sniff": sniff_result, "sync_sniff": synced, "session": session, "_workflow_guidance": guidance, "freshness": _freshness, "context_pack_recommendation": _cp_rec}
 
     # ===================== FACADE 2: mc_lookup =====================
     @mcp.tool()

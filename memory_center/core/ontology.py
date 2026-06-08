@@ -399,3 +399,18 @@ def multi_hop_confidence(base_confidence: float, hops: int) -> float:
         return base_confidence
     decay = {2: 0.9, 3: 0.8}.get(hops, 0.7)
     return round(base_confidence * decay, 4)
+
+
+def confidence_label(confidence: float) -> str:
+    """Map numeric confidence to human-readable label.
+
+    Thresholds (aligned with ontology §4):
+    - >= 0.8: "high"
+    - >= 0.5: "medium"
+    - < 0.5: "low"
+    """
+    if confidence >= 0.8:
+        return "high"
+    if confidence >= 0.5:
+        return "medium"
+    return "low"

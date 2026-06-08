@@ -766,24 +766,9 @@ class TestRetrievalBehavior:
     @pytest.fixture(autouse=True)
     def _setup_workspace(self, tmp_path):
         """Set up demo workspace with indexed graph."""
-        import shutil
-        from memory_center.core.config import load_workspace_config
-        from memory_center.core.indexer import reindex_workspace
-        from memory_center.core.rules import ensure_default_rules
-        from memory_center.core.store import WorkspaceStore
-
-        source = Path("examples/spring-cloud-demo")
-        if not source.exists():
-            pytest.skip("Demo workspace not found")
-
-        dest = tmp_path / "demo"
-        shutil.copytree(source, dest)
-        workspace = str(dest / ".memory-center" / "workspace.yaml")
-        config = load_workspace_config(workspace)
-        store = WorkspaceStore(workspace)
-        ensure_default_rules(store)
-        reindex_workspace(config, store)
-        self.workspace = workspace
+        from tests.fixtures import setup_demo_workspace
+        ws = setup_demo_workspace(tmp_path, ensure_rules=True)
+        self.workspace = str(ws)
 
     def test_callers_returns_correct_edge_types(self):
         from memory_center.core.orchestrator import memory_callers

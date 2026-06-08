@@ -1,13 +1,8 @@
 """Tests for host adapters — Claude Code, Codex, Cursor."""
 from pathlib import Path
-import shutil
 import json
-import pytest
 
-from memory_center.core.config import load_workspace_config
-from memory_center.core.indexer import reindex_workspace
-from memory_center.core.store import WorkspaceStore
-from memory_center.hooks.spec import load_hooks_config, ensure_default_hooks
+from memory_center.hooks.spec import load_hooks_config
 from memory_center.hooks.adapters.claude_code import (
     generate_claude_code_hooks,
     write_claude_code_settings,
@@ -17,19 +12,8 @@ from memory_center.hooks.adapters.cursor import generate_cursor_rules
 
 
 def _setup_workspace(tmp_path: Path) -> str:
-    source = Path("examples/spring-cloud-demo")
-    target = tmp_path / "demo"
-    shutil.copytree(source, target)
-    workspace = target / ".memory-center" / "workspace.yaml"
-    lines = workspace.read_text(encoding="utf-8").splitlines()
-    lines = [f"root: {target.as_posix()}" if line.startswith("root:") else line for line in lines]
-    workspace.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    config = load_workspace_config(workspace)
-    store = WorkspaceStore(workspace)
-    reindex_workspace(config, store)
-    ensure_default_hooks(store)
-    return str(workspace)
-
+    from tests.fixtures import setup_demo_workspace
+    return str(setup_demo_workspace(tmp_path, ensure_hooks=True))
 
 def test_claude_code_adapter_generates_3_hook_types(tmp_path: Path):
     ws = _setup_workspace(tmp_path)

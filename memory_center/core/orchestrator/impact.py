@@ -8,6 +8,7 @@ from ..graph import GraphStore
 from ..rules import match_rules
 from .common import _best_match, _build_progressive_levels, _impact_checklist, _unknown_static_analysis_risks, load_context
 from .query import _build_lookup_payload, _build_impact_evidence_summary, memory_query
+from ..diagnostics import DIAG, diag_entry, safe_reason
 
 
 def memory_impact(workspace_file: str | Path, target: str, direction: str = "upstream", max_depth: int = 3) -> Dict[str, Any]:
@@ -64,6 +65,7 @@ def memory_impact(workspace_file: str | Path, target: str, direction: str = "ups
                 "possible": "confidence < 0.55, weak hints only; verify manually",
             },
             "freshness": _get_freshness_for_impact(workspace_file),
+            "_reasoning": _get_reasoning_for_impact(workspace_file, node.get("id", "")),
         }
 
 
@@ -231,5 +233,18 @@ def _get_freshness_for_impact(workspace_file: str | Path) -> dict:
         from ..freshness.status import IndexFreshnessService
         svc = IndexFreshnessService(workspace_file)
         return svc.banner()
-    except Exception:
-        return {"status": "unknown"}
+    except Exception as exc:
+        return diag_entry(DIAG.UNKNOWN, exc=exc)
+
+
+def _get_reasoning_for_impact(workspace_file: str | Path, target_id: str) -> dict:
+    """Run reasoning patterns and return results for impact analysis.
+
+    Returns reasoning dict with patterns, transitive, risk, and optional _diagnostics.
+    Never raises — returns diagnostics on failure.
+    """
+    try:
+        from ..reasoning.integration import run_reasoning_patterns
+        return run_reasoning_patterns(str(workspace_file), target_id=target_id)
+    except Exception as exc:
+        return {"patterns": [], "transitive": [], "risk": [], "_diagnostics": diag_entry(DIAG.UNAVAILABLE, exc=exc)}

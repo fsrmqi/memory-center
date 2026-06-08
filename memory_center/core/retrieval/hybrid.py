@@ -16,6 +16,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 
 from ..graph import GraphStore
 from ..semantic import semantic_query
+from ..diagnostics import DIAG, diag_entry, safe_reason
 from ..ontology import (
     EntityValidator,
     annotate_semantic_strength,
@@ -438,7 +439,7 @@ def _vector_retrieval(
         finally:
             unified.close()
     except Exception as exc:
-        vector_diag = {"status": "unavailable", "reason": str(exc)}
+        vector_diag = diag_entry(DIAG.UNAVAILABLE, exc=exc)
     finally:
         if diagnostics is not None:
             diagnostics["vector"] = vector_diag

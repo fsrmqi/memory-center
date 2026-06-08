@@ -1,21 +1,14 @@
 """Tests for chain stitching: phantom annotation, endpoint matching, cross-workspace chain."""
-import json
 from pathlib import Path
-import pytest
 
-from memory_center.core.config import load_workspace_config
 from memory_center.core.indexer import (
     _endpoint_matches,
     _normalize_path_params,
-    join_path,
-    reindex_workspace,
 )
-from memory_center.core.store import WorkspaceStore
 from memory_center.core.orchestrator import (
     _annotate_phantom_nodes,
     group_chain,
     memory_callers,
-    memory_callees,
 )
 from memory_center.core.registry import (
     register_workspace,
@@ -32,20 +25,8 @@ except ImportError:
 
 
 def _setup_demo_workspace(tmp_path: Path):
-    """Copy spring-cloud-demo to tmp_path, reindex, return workspace path."""
-    import shutil
-    source = Path("examples/spring-cloud-demo")
-    target = tmp_path / "demo"
-    shutil.copytree(source, target)
-    workspace = target / ".memory-center" / "workspace.yaml"
-    lines = workspace.read_text(encoding="utf-8").splitlines()
-    lines = [f"root: {target.as_posix()}" if line.startswith("root:") else line for line in lines]
-    workspace.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    config = load_workspace_config(workspace)
-    store = WorkspaceStore(workspace)
-    reindex_workspace(config, store)
-    return workspace
-
+    from tests.fixtures import setup_demo_workspace
+    return setup_demo_workspace(tmp_path)
 
 def _setup_isolated_registry(tmp_path: Path):
     """Create an isolated registry home under tmp_path to avoid global contamination."""

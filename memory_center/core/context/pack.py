@@ -21,6 +21,7 @@ from ..graph import GraphStore
 from ..retrieval.hybrid import hybrid_retrieve, HybridRetrievalConfig, detect_query_intent
 from ..rules import match_rules
 from ..freshness.status import IndexFreshnessService
+from ..diagnostics import DIAG, diag_entry, safe_reason
 
 # Extensions that are treated as non-code (skipped for snippet extraction)
 _NON_CODE_EXTENSIONS = frozenset({".md", ".txt", ".yaml", ".yml", ".json", ".xml",
@@ -110,8 +111,8 @@ class ContextPackBuilder:
         # 7. Check index freshness
         try:
             freshness_info = IndexFreshnessService(self._workspace_file).banner()
-        except Exception:
-            freshness_info = {}
+        except Exception as exc:
+            freshness_info = diag_entry(DIAG.UNAVAILABLE, exc=exc)
 
         # 8. Estimate token usage (include snippets)
         snippet_text = "".join(s.get("content", "") for s in snippets)
@@ -192,7 +193,7 @@ def _extract_snippets(store: Any, results: list, budget_tokens: int) -> List[Dic
     # Build lookup: file_path → abs_path from file-index.json
     try:
         index_entries = store.read_json_prefer_backend("file-index.json", [])
-    except Exception:
+    except Exception as _exc:
         index_entries = []
     abs_map = _build_file_index(index_entries)
 

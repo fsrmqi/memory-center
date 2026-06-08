@@ -9,6 +9,7 @@ from ..rules import match_rules
 from ..schemas import with_schema
 from ..semantic import semantic_index_stats, semantic_query
 from ..ontology import EntityValidator
+from ..diagnostics import DIAG, diag_entry, safe_reason
 from .common import (
     SESSION_EVENTS_FILE,
     _best_match,
@@ -317,8 +318,8 @@ def memory_query_hybrid(workspace_file: str | Path, query: str, limit: int = 20,
         svc = IndexFreshnessService(workspace_file)
         banner = svc.banner()
         result["freshness"] = banner
-    except Exception:
-        result["freshness"] = {"status": "unknown"}
+    except Exception as exc:
+        result["freshness"] = diag_entry(DIAG.UNKNOWN, exc=exc)
 
     return result
 
@@ -419,7 +420,7 @@ def memory_context(workspace_file: str | Path, name: str, max_depth: int = 2, pr
             risks = analyzer.analyze_change_risk(node.get("id", ""))
             risk_patterns = [r.__dict__ if hasattr(r, "__dict__") else r for r in risks[:5]]
     except Exception as exc:
-        diagnostics["risk_patterns"] = {"status": "unavailable", "reason": str(exc)}
+        diagnostics["risk_patterns"] = diag_entry(DIAG.UNAVAILABLE, exc=exc)
 
     # NEXT_PHASE: integrate freshness into context
     freshness = {}
@@ -427,8 +428,8 @@ def memory_context(workspace_file: str | Path, name: str, max_depth: int = 2, pr
         from ..freshness.status import IndexFreshnessService
         svc = IndexFreshnessService(workspace_file)
         freshness = svc.banner()
-    except Exception:
-        diagnostics["freshness"] = {"status": "unavailable"}
+    except Exception as exc:
+        diagnostics["freshness"] = diag_entry(DIAG.UNAVAILABLE, exc=exc)
 
     result = {
         "name": name,

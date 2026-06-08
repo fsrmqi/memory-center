@@ -60,3 +60,60 @@ class Explanation:
         # developer: default, no changes
 
         return adapted
+
+
+def explanation_entry(
+    subject: str = "",
+    summary: str = "",
+    evidence: "list[dict]" | None = None,
+    semantic_strength: str = "inferred",
+    confidence: float = 0.5,
+    next_actions: "list[str]" | None = None,
+) -> dict:
+    """Build a standard explanation dict (D-03 helper)."""
+    valid = {"fact", "inferred", "derived"}
+    return {
+        "subject": subject,
+        "summary": summary,
+        "evidence": evidence or [],
+        "semantic_strength": semantic_strength if semantic_strength in valid else "inferred",
+        "confidence": max(0.0, min(1.0, confidence)),
+        "next_actions": next_actions or [],
+    }
+
+
+def merge_explanations(explanations: "list[dict]") -> dict:
+    """Merge multiple explanation entries into a combined view."""
+    if not explanations:
+        return explanation_entry(summary="No explanations available", confidence=0.0)
+    summaries = [e.get("summary", "") for e in explanations if e.get("summary")]
+    all_evidence = []
+    all_refs = []
+    for e in explanations:
+        all_evidence.extend(e.get("evidence", []))
+        all_refs.extend(e.get("next_actions", []))
+    strength_order = {"fact": 2, "inferred": 1, "derived": 0}
+    weakest = min((strength_order.get(e.get("semantic_strength", "inferred"), 1) for e in explanations), default=0)
+    strength_map = {2: "fact", 1: "inferred", 0: "derived"}
+    min_conf = min((e.get("confidence", 0.5) for e in explanations), default=0.5)
+    return {
+        "summary": " | ".join(summaries[:5]),
+        "evidence": all_evidence[:20],
+        "semantic_strength": strength_map.get(weakest, "inferred"),
+        "confidence": round(min_conf, 3),
+        "next_actions": all_refs[:10],
+    }
+
+
+def backward_compat_wrapper(old_explanation: dict) -> dict:
+    """Convert legacy explanation dict to new schema while preserving old fields."""
+    if "summary" in old_explanation and "semantic_strength" in old_explanation:
+        return old_explanation
+    return {
+        **old_explanation,
+        "summary": old_explanation.get("summary", str(old_explanation)),
+        "evidence": [],
+        "semantic_strength": "inferred",
+        "confidence": 0.5,
+        "next_actions": [],
+    }

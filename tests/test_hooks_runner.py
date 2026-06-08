@@ -1,28 +1,13 @@
 """Tests for hook runner — parameter resolution, mode enforcement, facade dispatch."""
 from pathlib import Path
-import shutil
-import pytest
 
-from memory_center.core.config import load_workspace_config
-from memory_center.core.indexer import reindex_workspace
-from memory_center.core.store import WorkspaceStore
-from memory_center.hooks.spec import _SESSION_ID_FILE, load_hooks_config
+from memory_center.hooks.spec import _SESSION_ID_FILE
 from memory_center.hooks.runner import run_hook
 
 
 def _setup_workspace(tmp_path: Path) -> str:
-    source = Path("examples/spring-cloud-demo")
-    target = tmp_path / "demo"
-    shutil.copytree(source, target)
-    workspace = target / ".memory-center" / "workspace.yaml"
-    lines = workspace.read_text(encoding="utf-8").splitlines()
-    lines = [f"root: {target.as_posix()}" if line.startswith("root:") else line for line in lines]
-    workspace.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    config = load_workspace_config(workspace)
-    store = WorkspaceStore(workspace)
-    reindex_workspace(config, store)
-    return str(workspace)
-
+    from tests.fixtures import setup_demo_workspace
+    return str(setup_demo_workspace(tmp_path))
 
 def test_run_hook_session_start_soft_mode(tmp_path: Path):
     ws = _setup_workspace(tmp_path)
