@@ -13,14 +13,9 @@ Covers:
 """
 from __future__ import annotations
 
-import json
-import math
-import os
-import struct
-import tempfile
 import time
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 import pytest
 
@@ -37,7 +32,7 @@ from memory_center.core.indexing.parallel import (
     walk_project_files, parse_files_parallel, estimate_optimal_workers,
 )
 from memory_center.core.indexing.incremental import (
-    ChangedFile, IncrementalIndexer, git_changed_files,
+    ChangedFile, IncrementalIndexer,
 )
 from memory_center.core.freshness.watcher import FileWatcher, WatchEvent, FileSnapshot
 
@@ -529,6 +524,35 @@ class TestIncrementalIndexer:
         result = indexer.incremental_reindex(parse_fn=None)
         assert result["mode"] == "incremental"
         assert result["deleted_count"] == 0
+        store.close()
+
+    def test_incremental_reindex_uses_explicit_workspace(self, tmp_path):
+        from tests.fixtures import copy_demo_workspace
+
+        workspace = copy_demo_workspace(tmp_path)
+        store = UnifiedStore(workspace.parent / "graph" / "graph.db")
+        indexer = IncrementalIndexer(
+            store,
+            repo_root=workspace.parent.parent,
+            workspace_file=workspace,
+        )
+        indexer.detect_changes = lambda since="HEAD": {
+            "added": [ChangedFile(path="article-service/src/New.java", status="A")],
+            "modified": [],
+            "deleted": [],
+            "renamed": [],
+        }
+
+        with patch(
+            "memory_center.core.indexer.reindex_workspace",
+            return_value={"mode": "partial", "scanned_files": 1},
+        ) as reindex:
+            result = indexer.incremental_reindex(parse_fn=None)
+
+        assert result["reindexed"] is True
+        assert result["reindex_result"]["mode"] == "partial"
+        reindex.assert_called_once()
+        assert reindex.call_args.kwargs["paths"] == ["article-service/src/New.java"]
         store.close()
 
     def test_remove_cascades_edges(self, store):

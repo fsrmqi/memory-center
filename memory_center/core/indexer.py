@@ -148,6 +148,7 @@ def reindex_workspace(
         semantic_counts = build_workspace_semantic_index_partial(store.workspace_file, changed_ids) if changed_ids else build_workspace_semantic_index(store.workspace_file)
     else:
         semantic_counts = build_workspace_semantic_index(store.workspace_file)
+    retrieval_counts = _sync_retrieval_indexes(store, semantic_counts)
     return {
         "mode": "partial" if partial else "full",
         "filtered_projects": sorted(project_filter),
@@ -162,6 +163,7 @@ def reindex_workspace(
         "graph_nodes": graph_counts.get("nodes", 0),
         "graph_edges": graph_counts.get("edges", 0),
         "semantic_docs": semantic_counts.get("doc_count", 0),
+        **retrieval_counts,
     }
 
 
@@ -263,6 +265,35 @@ def _parse_java_file(project: str, rel: str, path: Path) -> Dict[str, Any]:
         return {"symbol": to_dict(symbol), "apis": apis, "pending_feign": pending_feign, "mq": mq}
     except Exception:
         return {"symbol": None, "apis": [], "pending_feign": None, "mq": []}
+
+
+def _sync_retrieval_indexes(store: WorkspaceStore, semantic_index: Dict[str, Any]) -> Dict[str, int]:
+    """Synchronize BM25 and dense vector indexes from the rebuilt graph."""
+    from .retrieval.inverted import InvertedIndex
+    from .storage.unified import UnifiedStore
+    from .storage.vector_index import VectorIndex
+
+    with GraphStore(store.graph_db_path) as graph:
+        nodes = graph.all_nodes()
+
+    dense_items = [
+        (str(doc.get("node_id", "")), [float(value) for value in doc.get("dense_vector", [])])
+        for doc in semantic_index.get("docs", [])
+        if doc.get("node_id") and doc.get("dense_vector")
+    ]
+
+    with UnifiedStore(store.graph_db_path) as unified:
+        bm25_stats = InvertedIndex(unified).rebuild(nodes)
+
+        vector_dimension = len(dense_items[0][1]) if dense_items else 384
+        vector_index = VectorIndex(unified, dimension=vector_dimension)
+        vector_index.clear()
+        vector_count = vector_index.upsert_embeddings_batch(dense_items) if dense_items else 0
+
+    return {
+        "bm25_docs": int(bm25_stats.get("doc_count", 0)),
+        "vector_embeddings": vector_count,
+    }
 
 
 def parse_java_symbols(project: str, rel: str, text: str) -> JavaSymbol:

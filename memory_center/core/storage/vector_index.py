@@ -5,27 +5,19 @@ Uses sqlite-vec when available, falls back to brute-force numpy cosine similarit
 """
 from __future__ import annotations
 
+import importlib.util
 import json
 import math
 import struct
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Tuple
 
 from .unified import UnifiedStore
 
 # Try to import sqlite_vec
-try:
-    import sqlite_vec
-    _HAS_SQLITE_VEC = True
-except ImportError:
-    _HAS_SQLITE_VEC = False
+_HAS_SQLITE_VEC = importlib.util.find_spec("sqlite_vec") is not None
 
 # Try to import numpy for fallback
-try:
-    import numpy as np
-    _HAS_NUMPY = True
-except ImportError:
-    _HAS_NUMPY = False
+_HAS_NUMPY = importlib.util.find_spec("numpy") is not None
 
 
 class VectorIndex:
@@ -89,7 +81,7 @@ class VectorIndex:
             if _HAS_SQLITE_VEC:
                 try:
                     conn.execute(
-                        f"INSERT OR REPLACE INTO node_vec(node_id, embedding) VALUES(?, vec_f32(?))",
+                        "INSERT OR REPLACE INTO node_vec(node_id, embedding) VALUES(?, vec_f32(?))",
                         (node_id, json.dumps(embedding)),
                     )
                 except Exception:
@@ -123,7 +115,7 @@ class VectorIndex:
                 if _HAS_SQLITE_VEC:
                     try:
                         conn.execute(
-                            f"INSERT OR REPLACE INTO node_vec(node_id, embedding) VALUES(?, vec_f32(?))",
+                            "INSERT OR REPLACE INTO node_vec(node_id, embedding) VALUES(?, vec_f32(?))",
                             (node_id, json.dumps(embedding)),
                         )
                     except Exception:
@@ -149,7 +141,7 @@ class VectorIndex:
         try:
             with self._store.pool.connection() as conn:
                 rows = conn.execute(
-                    f"""SELECT node_id, distance
+                    """SELECT node_id, distance
                         FROM node_vec
                         WHERE embedding MATCH vec_f32(?)
                         ORDER BY distance
@@ -214,5 +206,16 @@ class VectorIndex:
             if _HAS_SQLITE_VEC:
                 try:
                     conn.execute("DELETE FROM node_vec WHERE node_id=?", (node_id,))
+                except Exception:
+                    pass
+
+    def clear(self) -> None:
+        """Remove all stored embeddings before a full synchronization."""
+        with self._store.pool.transaction() as conn:
+            conn.execute("DELETE FROM vec_metadata")
+            conn.execute("DELETE FROM vec_fallback")
+            if _HAS_SQLITE_VEC:
+                try:
+                    conn.execute("DELETE FROM node_vec")
                 except Exception:
                     pass

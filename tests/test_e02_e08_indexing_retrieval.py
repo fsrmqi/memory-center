@@ -301,6 +301,19 @@ class TestE06InvertedRetrieval:
         assert "doc_count" in stats
         assert stats["doc_count"] == 1
 
+    def test_reindex_builds_bm25_index(self, demo_workspace: Path):
+        from memory_center.core.config import load_workspace_config
+        from memory_center.core.indexer import reindex_workspace
+        from memory_center.core.retrieval.inverted import InvertedIndex
+        from memory_center.core.storage.unified import UnifiedStore
+        from memory_center.core.store import WorkspaceStore
+
+        workspace_store = WorkspaceStore(demo_workspace)
+        reindex_workspace(load_workspace_config(demo_workspace), workspace_store)
+
+        with UnifiedStore(workspace_store.graph_db_path) as unified:
+            assert InvertedIndex(unified).stats()["doc_count"] > 0
+
 
 # ═════════════════════════════════════════════════════════════════════════════
 # E-07: Native Vector Retrieval
@@ -361,6 +374,27 @@ class TestE07VectorRetrieval:
         source = open(hybrid_mod.__file__).read()
         assert "vector_index" in source or "VectorIndex" in source or "_vector_retrieval" in source
 
+    def test_retrieval_index_sync_writes_dense_embeddings(self, demo_workspace: Path):
+        from memory_center.core.indexer import _sync_retrieval_indexes
+        from memory_center.core.storage.unified import UnifiedStore
+        from memory_center.core.storage.vector_index import VectorIndex
+        from memory_center.core.store import WorkspaceStore
+
+        workspace_store = WorkspaceStore(demo_workspace)
+        stats = _sync_retrieval_indexes(
+            workspace_store,
+            {
+                "docs": [
+                    {"node_id": "node-1", "dense_vector": [1.0, 0.0, 0.0]},
+                    {"node_id": "node-2", "dense_vector": [0.0, 1.0, 0.0]},
+                ],
+            },
+        )
+
+        assert stats["vector_embeddings"] == 2
+        with UnifiedStore(workspace_store.graph_db_path) as unified:
+            assert VectorIndex(unified, dimension=3).stats()["embedding_count"] == 2
+
 
 # ═════════════════════════════════════════════════════════════════════════════
 # E-08: Hybrid Retrieval Fusion
@@ -417,11 +451,80 @@ class TestE08HybridRetrievalFusion:
         # Should have results or diagnostics
         assert "results" in result or "diagnostics" in result or "query" in result
 
+    def test_bm25_hits_are_merged(self):
+        """BM25-only hits must survive hybrid fusion."""
+        from memory_center.core.retrieval.hybrid import (
+            HybridRetrievalConfig,
+            RetrievalResult,
+            _merge_retrieval_results,
+        )
+
+        hit = RetrievalResult(
+            node_id="bm25-node",
+            node={"id": "bm25-node"},
+            score=2.0,
+            sources=["sparse_bm25"],
+        )
+        results = _merge_retrieval_results(
+            [], [], [], HybridRetrievalConfig(), {}, bm25_hits=[hit],
+        )
+        assert [item.node_id for item in results] == ["bm25-node"]
+
+    def test_vector_retrieval_respects_disabled_flag(self):
+        """Disabled vector retrieval must not execute the vector backend."""
+        from unittest.mock import patch
+
+        from memory_center.core.retrieval.hybrid import HybridRetrievalConfig, hybrid_retrieve
+
+        class EmptyGraph:
+            def find_nodes(self, *args, **kwargs):
+                return []
+
+            def neighbors(self, *args, **kwargs):
+                return []
+
+        with (
+            patch("memory_center.core.retrieval.hybrid._vector_retrieval", return_value=[]) as vector,
+            patch("memory_center.core.retrieval.hybrid._semantic_retrieval", return_value=[]),
+            patch("memory_center.core.retrieval.hybrid._bm25_sparse_retrieval", return_value=[]),
+        ):
+            hybrid_retrieve(
+                EmptyGraph(),
+                "/missing/workspace.yaml",
+                "query",
+                config=HybridRetrievalConfig(enable_vector=False, enable_cross_workspace=False),
+            )
+        vector.assert_not_called()
+
+    def test_vector_hits_use_vector_weight(self):
+        """Vector contribution must use vector_weight rather than semantic_weight."""
+        from memory_center.core.retrieval.hybrid import (
+            HybridRetrievalConfig,
+            RetrievalResult,
+            _merge_retrieval_results,
+        )
+
+        hit = RetrievalResult(
+            node_id="vector-node",
+            node={"id": "vector-node"},
+            score=1.0,
+            sources=["vector_ann"],
+        )
+        results = _merge_retrieval_results(
+            [],
+            [],
+            [],
+            HybridRetrievalConfig(vector_weight=0.7, semantic_weight=0.1),
+            {},
+            vector_hits=[hit],
+        )
+        assert results[0].score == pytest.approx(0.7)
+
 
 
 # ── E-07: Native Vector Retrieval Integration ───────────────────────
 
-class TestE07VectorRetrieval:
+class TestE07VectorRetrievalIntegration:
     """Test VectorIndex integration into hybrid retrieval (E-07)."""
 
     def test_vector_index_class_exists(self):

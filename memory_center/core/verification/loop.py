@@ -145,16 +145,16 @@ class VerificationLoop:
             for name in ("analyze", "checklist", "verify", "close"):
                 phases[name] = {"status": "completed" if name in completed_phase_names else "pending"}
 
-        latest = start_entry or task_entries[-1]
         completed_phases = [p for p, v in phases.items() if v.get("status") == "completed"]
         pending_phases = [p for p, v in phases.items() if v.get("status") != "completed"]
         total = len(phases) if phases else 4
         completion_pct = round(len(completed_phases) / max(total, 1) * 100, 1)
+        status = "completed" if not pending_phases and phases else (start_entry or task_entries[-1]).get("status", "unknown")
 
         return {
             "task_id": task_id,
-            "loop_id": latest.get("loop_id", ""),
-            "status": latest.get("status", "unknown"),
+            "loop_id": loop_id,
+            "status": status,
             "completion_pct": completion_pct,
             "completed_phases": completed_phases,
             "pending_phases": pending_phases,
@@ -184,12 +184,7 @@ class VerificationLoop:
             entries = []
         task_entries = [e for e in entries if e.get("task_id") == task_id]
         if task_entries:
-            latest = task_entries[-1]
-            return {
-                "task_id": task_id,
-                "status": latest.get("status", "unknown"),
-                "loop_id": latest.get("loop_id", ""),
-            }
+            return self.check_completion(task_id)
         return {"task_id": task_id, "status": "pending", "loop_id": ""}
 
     def persist_step_state(

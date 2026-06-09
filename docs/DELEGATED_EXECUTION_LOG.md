@@ -2557,6 +2557,32 @@ git status --short examples/: （空，干净）
 
 ---
 
+## 2026-06-09 检索、增量索引与验证状态修复
+
+**状态**: completed
+
+### 修复内容
+
+- BM25 命中现在真正进入 hybrid fusion，不再在融合阶段被丢弃。
+- `enable_vector=False` 时不再执行向量检索；向量结果使用 `vector_weight` 评分。
+- reindex 完成后自动重建 BM25，并在语义索引存在 dense vectors 时同步 VectorIndex。
+- 增量索引器支持显式 workspace，并可从 repo root 或 graph db 路径自动推导 workspace。
+- 增量重建失败返回 `reindex_error`，不再静默伪装成功。
+- Verification Loop 全阶段完成后返回 `completed`，公开状态查询与完成度保持一致。
+- 合并重复的 E-07 测试类，恢复此前因类名覆盖而未收集的测试。
+- 修复 traceability graph 的 `Any` 未导入问题，并保留 hybrid ontology 公共导出兼容性。
+
+### 验证
+
+- 新增回归测试覆盖 BM25 融合、向量开关、向量权重、检索索引同步、增量重建和验证完成状态。
+- 主链路 smoke：reindex 后 BM25 diagnostics 为 `active`，向量默认关闭时为 `configured_off`。
+- 全量测试：1292 collected，1277 passed，15 skipped。
+- 涉及文件 `ruff --select F,E9` 通过；完整 ruff 仍有 316 项存量现代化和导入排序债务。
+- `python3 -m compileall -q memory_center`、`git diff --check` 通过。
+- demo workspace 无变化。
+
+---
+
 ## E-02 ~ G-07 + H-01 ~ I-05：综合实施
 
 **状态**: completed

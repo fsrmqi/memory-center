@@ -124,8 +124,9 @@ class TestH04StepPersistence:
             vl.complete_phase(lid, phase, {"done": True})
         result = vl.check_completion("task-cc-1")
         assert result["completion_pct"] == 100.0
-        assert result["status"] == "started"
+        assert result["status"] == "completed"
         assert result["total_phases"] == 4
+        assert vl.get_status("task-cc-1")["status"] == "completed"
 
     def test_check_completion_partial(self, tmp_path):
         """check_completion reports partial completion."""

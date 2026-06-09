@@ -9,7 +9,7 @@ import fnmatch
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Set
 
 from ..storage.unified import UnifiedStore
 
@@ -84,9 +84,25 @@ def git_changed_files_unstaged(repo_root: str | Path) -> List[ChangedFile]:
 class IncrementalIndexer:
     """Perform incremental reindex based on git diff."""
 
-    def __init__(self, store: UnifiedStore, repo_root: str | Path):
+    def __init__(
+        self,
+        store: UnifiedStore,
+        repo_root: str | Path,
+        workspace_file: str | Path | None = None,
+    ):
         self._store = store
         self._repo_root = Path(repo_root)
+        self._workspace_file = self._resolve_workspace_file(workspace_file)
+
+    def _resolve_workspace_file(self, workspace_file: str | Path | None) -> Path | None:
+        if workspace_file:
+            return Path(workspace_file).expanduser().resolve()
+
+        candidates = [
+            self._repo_root / ".memory-center" / "workspace.yaml",
+            self._store.db_path.parent.parent / "workspace.yaml",
+        ]
+        return next((candidate.resolve() for candidate in candidates if candidate.exists()), None)
 
     def detect_changes(self, since: str = "HEAD") -> Dict[str, List[ChangedFile]]:
         """Detect changed files and categorize them."""
@@ -163,18 +179,21 @@ class IncrementalIndexer:
 
         # Actually re-parse added/modified files using reindex_workspace
         reindex_result: Dict[str, Any] = {}
+        reindex_error = ""
         if affected_paths:
             try:
                 from ..store import WorkspaceStore
                 from ..config import load_workspace_config
                 from ..indexer import reindex_workspace
-                ws_path = getattr(self._store, '_workspace_file', None) or getattr(self._store, 'workspace_file', None)
-                if ws_path:
-                    config = load_workspace_config(ws_path)
-                    store = WorkspaceStore(ws_path)
+
+                if self._workspace_file:
+                    config = load_workspace_config(self._workspace_file)
+                    store = WorkspaceStore(self._workspace_file)
                     reindex_result = reindex_workspace(config, store, paths=affected_paths)
-            except Exception:
-                pass
+                else:
+                    reindex_error = "workspace_file_not_found"
+            except Exception as exc:
+                reindex_error = str(exc)[:200]
 
         return {
             "mode": "incremental",
@@ -186,6 +205,7 @@ class IncrementalIndexer:
             "needs_reparse": len(added_modified) > 0,
             "reindexed": bool(reindex_result),
             "reindex_result": reindex_result,
+            "reindex_error": reindex_error,
         }
 
 

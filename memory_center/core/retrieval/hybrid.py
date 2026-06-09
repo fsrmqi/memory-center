@@ -9,20 +9,29 @@ This module implements the hybrid retrieval strategy from NEXT_PHASE_MASTER_PLAN
 """
 from __future__ import annotations
 
-import json
 import re
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional
 
 from ..graph import GraphStore
 from ..semantic import semantic_query
-from ..diagnostics import DIAG, diag_entry, safe_reason
+from ..diagnostics import DIAG, diag_entry
 from ..ontology import (
     EntityValidator,
     annotate_semantic_strength,
-    multi_hop_confidence,
     EDGE_SEMANTIC_STRENGTH,
+    multi_hop_confidence,
 )
+
+__all__ = [
+    "EntityValidator",
+    "HybridRetrievalConfig",
+    "RetrievalResult",
+    "annotate_semantic_strength",
+    "detect_query_intent",
+    "hybrid_retrieve",
+    "multi_hop_confidence",
+]
 
 
 def _get_common_functions():
@@ -159,54 +168,6 @@ def detect_query_intent(query: str) -> Dict[str, Any]:
     }
 
 
-def _vector_retrieval(workspace_file: str, query: str, limit: int = 20) -> List[Dict[str, Any]]:
-    """Retrieve results using VectorIndex (E-07).
-
-    Uses semantic_query embeddings to find similar nodes via VectorIndex.
-    Returns empty list if VectorIndex is not available or has no data.
-    """
-    from ..storage.unified import UnifiedStore
-    from ..storage.vector_index import VectorIndex
-    from ..store import WorkspaceStore
-    from ..semantic import semantic_query
-
-    try:
-        store = WorkspaceStore(workspace_file)
-        with UnifiedStore(store.graph_db_path) as unified:
-            vec = VectorIndex(unified)
-            stats = vec.stats()
-            if stats.get("embedding_count", 0) == 0:
-                return []
-
-            # Use semantic_query to get a query embedding
-            semantic_hits = semantic_query(workspace_file, query, limit=1)
-            if not semantic_hits:
-                return []
-
-            # For now, use brute-force search over stored embeddings
-            # The query embedding is derived from the semantic index
-            results = []
-            for hit in semantic_hits:
-                node_id = hit.get("node_id", "")
-                if not node_id:
-                    continue
-                # Query vector index for similar nodes
-                similar = vec.query(
-                    [0.0] * vec._dimension,  # placeholder - actual embedding from semantic
-                    limit=limit,
-                )
-                for item in similar:
-                    results.append({
-                        "node_id": item["node_id"],
-                        "score": item.get("score", 0.0),
-                        "source": "vector",
-                        "backend": item.get("backend", "unknown"),
-                    })
-            return results[:limit]
-    except Exception:
-        return []
-
-
 def hybrid_retrieve(
     graph: GraphStore,
     workspace_file: str,
@@ -232,10 +193,22 @@ def hybrid_retrieve(
     sparse_hits = _sparse_retrieval_from_nodes(exact_nodes, limit * 2, _rrf)
     semantic_hits = _semantic_retrieval(workspace_file, query, limit * 2)
     retrieval_diagnostics: Dict[str, Any] = {}
-    vector_hits = _vector_retrieval(workspace_file, query, tokens, limit * 2, diagnostics=retrieval_diagnostics)
+    vector_hits: List[RetrievalResult] = []
+    if config.enable_vector:
+        vector_hits = _vector_retrieval(
+            workspace_file,
+            query,
+            tokens,
+            limit * 2,
+            diagnostics=retrieval_diagnostics,
+        )
+    else:
+        retrieval_diagnostics["vector"] = {"status": "disabled", "reason": "configured_off"}
     bm25_hits: List[RetrievalResult] = []
     if config.enable_sparse_bm25:
         bm25_hits = _bm25_sparse_retrieval(workspace_file, query, limit * 2, diagnostics=retrieval_diagnostics)
+    else:
+        retrieval_diagnostics["bm25"] = {"status": "disabled", "reason": "configured_off"}
 
     # Phase 2: Merge and rank results
     merged = _merge_retrieval_results(
@@ -279,6 +252,9 @@ def hybrid_retrieve(
             "graph_weight": config.graph_weight,
             "sparse_weight": config.sparse_weight,
             "semantic_weight": config.semantic_weight,
+            "vector_weight": config.vector_weight,
+            "enable_sparse_bm25": config.enable_sparse_bm25,
+            "enable_vector": config.enable_vector,
         },
     }
 
@@ -586,6 +562,8 @@ def _merge_retrieval_results(
     semantic_hits = _normalize(semantic_hits)
     if vector_hits:
         vector_hits = _normalize(vector_hits)
+    if bm25_hits:
+        bm25_hits = _normalize(bm25_hits)
 
     merged: Dict[str, RetrievalResult] = {}
 
@@ -625,14 +603,33 @@ def _merge_retrieval_results(
         for rank, item in enumerate(vector_hits, start=1):
             if item.node_id in merged:
                 existing = merged[item.node_id]
-                existing.score += item.score * config.semantic_weight * 0.8
+                existing.score += item.score * config.vector_weight
                 existing.sources.extend(item.sources)
+                existing.evidence["vector_rank"] = rank
             else:
                 merged[item.node_id] = RetrievalResult(
                     node_id=item.node_id,
                     node=item.node,
-                    score=item.score * config.semantic_weight * 0.8,
+                    score=item.score * config.vector_weight,
                     sources=item.sources[:],
+                    evidence={"vector_rank": rank},
+                )
+
+    # Process BM25 hits as a sparse retrieval source.
+    if bm25_hits:
+        for rank, item in enumerate(bm25_hits, start=1):
+            if item.node_id in merged:
+                existing = merged[item.node_id]
+                existing.score += item.score * config.sparse_weight
+                existing.sources.extend(item.sources)
+                existing.evidence["bm25_rank"] = rank
+            else:
+                merged[item.node_id] = RetrievalResult(
+                    node_id=item.node_id,
+                    node=item.node,
+                    score=item.score * config.sparse_weight,
+                    sources=item.sources.copy(),
+                    evidence={"bm25_rank": rank},
                 )
 
     # Process semantic hits
