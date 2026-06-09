@@ -153,7 +153,7 @@ Hook 层属于宿主集成，不是核心业务层。推荐自动执行的只有
 
 **位置**: `memory_center/core/retrieval/hybrid.py`
 
-**职责**: 智能路由 graph、sparse、semantic 三种检索源，提供更稳定的召回效果。
+**职责**: 智能路由 graph、FTS、SQLite BM25、semantic 和可选 vector 检索源，提供更稳定的召回效果。
 
 **核心组件**:
 - `HybridRetrievalConfig`: 检索配置（权重、阈值、特性开关）
@@ -164,8 +164,12 @@ Hook 层属于宿主集成，不是核心业务层。推荐自动执行的只有
 **检索策略**:
 - Graph 检索: 结构化关系（callers, callees, chains）
 - Sparse/FTS 检索: 精确匹配和关键词查找
+- SQLite BM25: reindex 后自动重建的倒排候选检索
 - Semantic 检索: 模糊/概念匹配
+- Vector ANN: 当 semantic index 存在 dense vectors 时同步到 `VectorIndex`，默认关闭、按需启用
 - 基于意图的类型加权（feign/mq/endpoint/config/chain/class/method）
+
+`HybridRetrievalConfig.enable_sparse_bm25` 默认开启；`enable_vector` 默认关闭。禁用或不可用的检索源会在 `retrieval_diagnostics` 中返回明确状态，不静默伪装成功。
 
 ### Benchmark Trending / 基准趋势
 
@@ -312,6 +316,9 @@ config = HybridRetrievalConfig(
     graph_weight=0.5,
     sparse_weight=0.3,
     semantic_weight=0.2,
+    vector_weight=0.15,
+    enable_sparse_bm25=True,
+    enable_vector=False,
 )
 result = hybrid_retrieve(graph, workspace_file, query, config=config)
 ```

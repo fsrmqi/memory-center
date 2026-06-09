@@ -3004,8 +3004,8 @@ git status --short examples/: （空，干净）
 ### 仍需后续工作
 
 以下项目已有完整骨架、行为测试和深度集成，进一步产品化仍有空间：
-- tree-sitter 解析器正式接入主链路
-- 原生向量后端正式接入 hybrid retrieval
+- tree-sitter 解析精度与真实 workspace 验证
+- 原生向量检索质量、性能基准与默认启用策略
 - facade 返回值全面类型化（当前部分 dataclass/schema 已存在）
 - 更完整的结构化日志与指标体系
 - Vue 前端工作台持续优化
@@ -3061,8 +3061,8 @@ git status --short examples/: （空，干净）
 ### 仍需后续推进的中长期方向
 
 以下方向已有基础实现，但进一步产品化仍需更多工作：
-- tree-sitter 解析器正式替换 regex parser
+- tree-sitter 解析精度和真实 workspace 验证
 - facade 返回值全面 dataclass 类型化
 - Vue 前端工作台持续优化
 - 更完整的结构化日志与指标体系
-- 向量检索需要实际 embedding 写入后才能参与排序（当前默认 disabled）
+- Vector ANN 主链路已接入并默认 disabled；后续重点是实际 embedding、真实 workspace benchmark 和默认启用策略

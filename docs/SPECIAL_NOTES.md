@@ -494,3 +494,44 @@ Hook 配置里：
 - 不要在入口直接返回未经清洗的 `str(exc)`。
 - 如需改变成功返回 schema，应同步迁移说明、文档和测试。
 - MCP tool 必须通过安全注册装饰器注册，避免绕过统一错误边界。
+
+## 15. BM25 与 Vector 是两条不同的检索路径
+
+### 当前行为
+
+- 每次 `reindex_workspace()` 完成后，系统会从最新 graph nodes 自动重建 SQLite BM25 倒排索引。
+- BM25 默认开启，并通过 `sparse_weight` 参与 hybrid fusion。
+- 只有 semantic index 中存在真实 `dense_vector` 时，reindex 才会同步写入 `VectorIndex`。
+- Vector ANN 默认关闭，需通过 `HybridRetrievalConfig(enable_vector=True)` 显式启用，并通过 `vector_weight` 独立参与评分。
+- Vector 关闭、索引为空、模型不可用或查询成功时，`retrieval_diagnostics.vector` 会分别返回 `disabled`、`empty`、`unavailable` 或 `active`。
+
+### 为什么默认关闭 Vector
+
+VectorIndex 存在不代表当前 workspace 已经生成了可用 embedding。默认关闭可以避免在模型、维度和数据质量尚未确认时增加查询成本或产生误导性排序。
+
+启用 Vector 前应确认：
+
+1. semantic backend 实际生成了 dense vectors。
+2. VectorIndex embedding 数量和维度符合预期。
+3. 真实查询 benchmark 能证明召回或排序收益。
+4. 模型或维度变化时有重新索引策略。
+
+### 增量索引说明
+
+`IncrementalIndexer` 需要能够定位 `workspace.yaml`。推荐显式传入 `workspace_file`；未传入时会尝试从 repo root 和 graph db 路径推导。
+
+检测到新增或修改文件后，增量索引会调用：
+
+```python
+reindex_workspace(config, store, paths=affected_paths)
+```
+
+若 workspace 无法定位或重建失败，返回结果中的 `reindex_error` 必须可见，不能只返回 `needs_reparse=true`。
+
+### Verification Loop 完成状态
+
+Verification Loop 的状态以阶段完成情况为准：
+
+- 存在未完成阶段：保留当前状态。
+- `analyze / checklist / verify / close` 全部完成：返回 `completed`。
+- `get_status(task_id)` 与 `check_completion(task_id)` 必须保持一致。

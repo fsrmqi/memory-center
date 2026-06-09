@@ -191,7 +191,9 @@
 3. index JSON 产物
 4. `graph.db`
 5. semantic index
-6. instructions / hooks / default rules
+6. SQLite BM25 inverted index
+7. optional dense vectors → `VectorIndex`
+8. instructions / hooks / default rules
 
 ### 4.2 任务上下文链路
 
@@ -312,18 +314,27 @@ Hook 的价值在于自动触发关键生命周期动作，但不应该过度侵
 
 **问题**: 之前 `memory_query()` 只使用 graph + semantic 两种检索源，对于某些查询（如 Feign、MQ、endpoint）召回不稳定。
 
-**解决方案**: 实现三路混合检索 + 智能路由。
+**解决方案**: 实现 graph / FTS / BM25 / semantic / optional vector 多源混合检索 + 智能路由。
 
 **核心算法**:
 
 ```python
-# 1. 并行检索三种源
+# 1. 检索多种来源
 graph_hits = _graph_retrieval(graph, query, tokens, node_types, limit * 2)
 sparse_hits = _sparse_retrieval(graph, query, tokens, node_types, limit * 2)
 semantic_hits = _semantic_retrieval(workspace_file, query, limit * 2)
+bm25_hits = _bm25_sparse_retrieval(workspace_file, query, limit * 2)
+vector_hits = _vector_retrieval(...) if config.enable_vector else []
 
 # 2. RRF 合并
-merged = _merge_retrieval_results(graph_hits, sparse_hits, semantic_hits, config)
+merged = _merge_retrieval_results(
+    graph_hits,
+    sparse_hits,
+    semantic_hits,
+    config,
+    vector_hits=vector_hits,
+    bm25_hits=bm25_hits,
+)
 
 # 3. 类型加权
 merged = _apply_type_boosting(merged, intent)
@@ -345,6 +356,9 @@ _resolve_cross_workspace_refs(merged[:limit], graph, workspace_file)
 - Graph: 0.4（结构关系优先）
 - Sparse: 0.35（精确匹配）
 - Semantic: 0.25（模糊匹配）
+- Vector: 0.15（可选 ANN；默认关闭）
+
+reindex 会自动重建 SQLite BM25。只有 semantic index 中存在 `dense_vector` 时才会同步 VectorIndex；旧向量会在同步时清理，避免陈旧命中。
 
 ### 8.2 Benchmark Trending 实现细节
 
@@ -503,7 +517,9 @@ def memory_query_hybrid(...):
 
 - Graph 检索: O(log n) 索引查找
 - Sparse 检索: FTS5 全文索引
-- Semantic 检索: 向量相似度（较慢，但可选）
+- BM25 检索: 倒排 posting-list 候选查询
+- Semantic 检索: 离线稀疏语义或本地 dense semantic
+- Vector 检索: sqlite-vec 或 brute-force fallback（可选，默认关闭）
 - 合并排序: O(n log n)
 
 **优化**: 

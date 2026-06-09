@@ -176,6 +176,9 @@ config = HybridRetrievalConfig(
     graph_weight=0.5,      # 增加 graph 权重
     sparse_weight=0.3,
     semantic_weight=0.2,
+    vector_weight=0.15,
+    enable_sparse_bm25=True,
+    enable_vector=False,   # 真实 dense embeddings 就绪后再启用
 )
 result = hybrid_retrieve(graph, workspace_file, query, config=config)
 ```
@@ -185,6 +188,9 @@ result = hybrid_retrieve(graph, workspace_file, query, config=config)
 - `intent`: 检测到的意图（feign/mq/endpoint 等）
 - `retrieval_summary`: 检索统计
 - `progressive`: 渐进式摘要
+- `retrieval_diagnostics`: BM25 / Vector 的 disabled、empty、unavailable 或 active 状态
+
+默认情况下，reindex 会自动构建 SQLite BM25；Vector ANN 默认关闭。启用本地 embedding backend 并重新 reindex 后，dense vectors 会同步到 VectorIndex，再根据真实查询 benchmark 决定是否开启 vector。
 
 **意图检测示例**:
 - `"feign client"` → feign 意图

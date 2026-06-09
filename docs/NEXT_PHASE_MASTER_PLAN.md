@@ -149,8 +149,8 @@ V3 不是“未来方向”，而是当前代码里已经存在的一批能力�
 
 ### 3.3 仍然真正未完成
 
-- 原生向量后端 / ANN 检索正式接入
-- `tree-sitter` 解析器
+- 原生向量 ANN 在真实 workspace 上的质量与性能基准，以及默认启用策略
+- `tree-sitter` 解析精度继续深化
 - facade 关键返回值全面类型化
 - 更完整的结构化日志与指标体系
 - 把 reasoning / context pack / freshness 更完整地并入默认主工作流
@@ -595,9 +595,11 @@ V3 不是“未来方向”，而是当前代码里已经存在的一批能力�
 
 当前判断：
 
-- `InvertedIndex` 与相关测试已存在
-- 但“原生向量后端正式接入主链路”仍未完成
-- 所以这块属于“部分已做，但关键终态未完成”
+- reindex 已自动重建 SQLite BM25，查询只访问匹配 posting candidates
+- BM25 已进入 hybrid fusion
+- semantic index 存在 dense vectors 时会同步 VectorIndex
+- vector ANN 已接入主链路，但默认关闭，真实 workspace 质量和性能基准仍需深化
+- 所以这块属于“主链路已接入，继续做真实数据质量收口”
 
 ### 方向 2：Code Knowledge Graph Reasoning
 
@@ -634,9 +636,10 @@ V3 不是“未来方向”，而是当前代码里已经存在的一批能力�
 
 当前判断：
 
-- freshness watcher / status 基础能力已存在
-- 但 `tree-sitter`、并行索引、真正精确增量更新仍未完成
-- 这块仍然属于真正未完成
+- freshness watcher / status、changed-file reindex、显式 workspace 解析已经存在
+- 增量索引会真实调用 `reindex_workspace(paths=...)`，失败原因通过 `reindex_error` 可见
+- 并行索引与 tree-sitter 自动选择已存在，但仍需在中大型真实 workspace 验证收益和精度
+- 删除、移动文件及理解资产增量刷新仍需继续强化
 
 ### 方向 4：Type Safety and Observability
 

@@ -381,9 +381,9 @@ This generates:
     default-rules.yaml
 ```
 
-Reindex also builds the local semantic node index used by hybrid retrieval.
+Reindex also rebuilds the local semantic node index and SQLite BM25 inverted index used by hybrid retrieval. When the semantic backend produces dense vectors, they are synchronized into `VectorIndex`.
 
-重建索引时也会同步构建本地语义节点索引，供混合检索使用。
+重建索引时也会同步构建本地语义节点索引和 SQLite BM25 倒排索引，供混合检索使用；当语义 backend 生成 dense vectors 时，还会同步写入 `VectorIndex`。
 
 By default the semantic index uses the built-in sparse backend. If `sentence-transformers` is installed, you can switch to a local embedding backend with:
 
@@ -415,13 +415,13 @@ memory-center query \
   --text "oldPubTime ArticleFeignClient"
 ```
 
-Local query now uses hybrid retrieval: graph/FTS exact hits plus an offline sparse semantic index built from graph nodes.
+Local query now uses hybrid retrieval across graph, FTS, SQLite BM25, semantic, and optional vector sources.
 
-当前查询已支持本地混合召回：图谱/FTS 精确命中 + 基于图节点构建的离线稀疏语义索引。
+当前查询已支持本地混合召回：图谱、FTS、SQLite BM25、语义检索，以及可选的原生向量检索。
 
-When a local embedding backend is enabled, the same query path upgrades to dense semantic retrieval automatically, while keeping the sparse backend as a safe fallback.
+When a local embedding backend is enabled, reindex synchronizes dense embeddings into `VectorIndex`. Vector ANN remains disabled by default and can be enabled through `HybridRetrievalConfig(enable_vector=True)`; sparse and BM25 retrieval remain safe fallbacks.
 
-启用本地 embedding backend 后，同一套查询路径会自动升级为 dense semantic retrieval，同时保留稀疏后端作为安全 fallback。
+启用本地 embedding backend 后，reindex 会把 dense embeddings 同步到 `VectorIndex`。原生向量 ANN 默认关闭，可通过 `HybridRetrievalConfig(enable_vector=True)` 启用；稀疏语义和 BM25 继续作为安全 fallback。
 
 Workspace query now also exposes `retrieval_summary` and per-match `retrieval_sources`, so agents can tell whether a hit came from exact graph lookup, semantic recall, or both.
 
@@ -1026,7 +1026,7 @@ Example routes:
 - v2.1.0: 外部参考吸收（agentmemory benchmark/top-K/hybrid、skills 强约束模板）
 - v2.1.0: SQLite 后端更多真实读路径、长期趋势仪表盘
 - **v2.2.0: NEXT_PHASE_MASTER_PLAN 全部实现（2026-06-01）**
-  - ✅ **Hybrid Retrieval**: 智能混合检索引擎（graph/sparse/semantic）
+  - ✅ **Hybrid Retrieval**: 智能混合检索引擎（graph/FTS/BM25/semantic/optional vector）
   - ✅ **Benchmark Trending**: 基准趋势监控和回归检测
   - ✅ **SQLite Main Read Path**: 统一后端查询层
   - ✅ **Timeline/Ref/Task Drill-down**: 渐进式钻取导航

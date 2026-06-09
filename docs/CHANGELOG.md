@@ -6,6 +6,20 @@
 - 重要行为变化
 - 明确修复的真实 bug
 
+## Unreleased
+
+### Retrieval、Incremental Indexing 与 Verification 修复
+
+- reindex 自动重建 SQLite BM25，并在语义索引存在 dense vectors 时同步 VectorIndex
+- 修复 BM25 命中未进入 hybrid fusion 的问题
+- 修复 `enable_vector=False` 仍执行向量检索、`vector_weight` 未参与评分的问题
+- vector 默认关闭，disabled / empty / unavailable / active 状态通过 diagnostics 明确可见
+- 增量索引支持显式 workspace，并可从 repo root 或 graph db 路径推导 workspace
+- 增量重建失败返回 `reindex_error`，不再静默伪装成功
+- Verification Loop 全阶段完成后返回 `completed`，公开状态与完成度保持一致
+- 修复重复测试类导致部分 E-07 测试未被收集的问题
+- 全量验证：1292 collected，1277 passed，15 skipped
+
 ## 3.1.2
 
 ### 主链路一致性与 workspace 隔离 / Workflow Consistency and Workspace Isolation
@@ -154,7 +168,7 @@
   - CLI / MCP / HTTP 入口同步可用
 - **混合检索**
   - 新增 `memory_center/core/retrieval/hybrid.py`
-  - 支持 graph + sparse + semantic 三路混合检索
+  - 初始版本支持 graph + sparse + semantic 三路混合检索；当前版本已扩展为 graph / FTS / BM25 / semantic / optional vector
   - 增加查询意图自动检测与渐进式摘要输出
 - **基准趋势**
   - 新增 `memory_center/core/benchmark/trending.py`

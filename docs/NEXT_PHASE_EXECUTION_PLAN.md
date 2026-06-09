@@ -73,23 +73,34 @@
 - `memory_context` 能稳定返回 risk patterns。
 - 若风险分析不可用，返回 `_diagnostics`，不要静默丢失。
 
-#### 2.3 Vector retrieval 分支不可用（已完成首轮收口，仍需真实数据质量验证）
+#### 2.3 Vector / BM25 retrieval 主链路（已修复，仍需真实数据质量验证）
 
-现象：
+历史问题：
 
 - `hybrid.py` 内 `_vector_retrieval` 使用错误相对导入。
 - `VectorIndex` 构造需要 `UnifiedStore`，当前逻辑传入 db path。
 - 异常被吞掉后 vector 分支实际不参与结果。
+- BM25 命中虽然生成，但曾未进入融合排序。
+- `enable_vector=False` 曾无法阻止向量检索执行，`vector_weight` 曾未参与评分。
+
+当前状态：
+
+- reindex 自动重建 SQLite BM25。
+- BM25 命中正式进入 hybrid fusion。
+- semantic index 存在 dense vectors 时自动同步 VectorIndex。
+- vector 默认关闭；启用、空索引、不可用和 active 状态均通过 diagnostics 可见。
+- vector 使用独立 `vector_weight`，不会再复用 semantic 权重。
 
 涉及位置：
 
 - `memory_center/core/retrieval/hybrid.py`
 - `memory_center/core/storage/vector_index.py`
 
-期望：
+后续深化：
 
-- 如果 vector 还没准备好，应明确标为 disabled / unavailable。
-- 如果要启用，必须能真实读取 vector index 并参与融合排序。
+- 在真实 workspace 上量化 BM25 / vector 的召回、延迟和排序收益。
+- 增加 vector backend、模型和维度变更后的迁移测试。
+- 根据 benchmark 调整默认权重和是否开放默认启用。
 
 #### 2.4 Business flow CLI / MCP 路径错误（已修复，保留三入口回归验证）
 
@@ -266,26 +277,18 @@
 - 有风险模式时能返回 `risk_patterns`。
 - 无风险或模块不可用时不静默失败。
 
-### 5.3 修复 vector retrieval
+### 5.3 Vector / BM25 retrieval 深化
 
-步骤：
+当前实现已完成：
 
-1. 修正导入：
-   - `from ..store import WorkspaceStore`
-   - `from ..storage.unified import UnifiedStore`
-   - `from ..storage.vector_index import VectorIndex`
-
-2. 正确构造：
-   - `workspace_store = WorkspaceStore(workspace_file)`
-   - `unified = UnifiedStore(workspace_store.graph_db_path)`
-   - `vector = VectorIndex(unified)`
-
-3. 明确启用条件：
+1. 正确解析 workspace 并使用 `UnifiedStore` 构造 VectorIndex。
+2. 明确启用条件：
    - 有 vector metadata。
    - 有 query embedding 来源。
    - 维度匹配。
-
-4. 如果不能启用，返回 diagnostics：
+3. 如果不能启用，返回 diagnostics。
+4. reindex 自动重建 BM25 并同步 dense vectors。
+5. BM25 / vector 均进入融合排序并使用独立配置。
 
 ```json
 {
@@ -294,11 +297,11 @@
 }
 ```
 
-验收：
+后续验收：
 
-- vector index 为空时不会假装启用。
-- vector index 有数据时能参与结果来源。
-- `hybrid_retrieve` 的 summary 能显示 vector source。
+- 在至少一个真实 workspace 上验证 vector active 路径。
+- 为模型或维度变化建立稳定迁移策略。
+- benchmark 能证明排序质量或延迟收益。
 
 ### 5.4 修复 business-flow CLI / MCP
 
@@ -586,13 +589,13 @@
 6. 修 business-flow workspace 解析。
 7. 跑 `pytest -q`。
 
-### Sprint 2：修 vector 与 diagnostics
+### Sprint 2：深化 vector、BM25 与 diagnostics
 
-1. 新增 vector disabled / active 测试。
-2. 修 `_vector_retrieval` 导入与 `UnifiedStore` 构造。
-3. 给 hybrid result 增加 vector diagnostics。
+1. 在真实 workspace 构建 dense embeddings 并验证 active 路径。
+2. 比较 graph / FTS / BM25 / semantic / vector 的召回贡献。
+3. 调整融合权重和阈值。
 4. 梳理主链路 `except Exception`。
-5. 跑 `pytest -q`。
+5. 跑 benchmark 与全量测试。
 
 ### Sprint 3：入口矩阵测试
 

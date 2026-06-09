@@ -85,9 +85,11 @@
   - 持续收口：timeline/ref/task 联动增强
 
 - `2.3.x`
-  - native vector + inverted retrieval 基础推进
+  - 已完成：SQLite BM25 自动重建并进入 hybrid fusion
+  - 已完成：dense embeddings 同步 VectorIndex，vector ANN 可选接入
   - Code Knowledge Graph reasoning 起步
-  - indexer 精度与增量更新增强
+  - 已完成：changed-file 增量重建真实调用与错误可见性
+  - 持续收口：真实 workspace 检索质量、indexer 精度和增量更新
   - facade 类型边界与可观测性继续补强
 
 ## 5. Status Reading / 状态阅读方式
@@ -102,7 +104,7 @@
 
 - `hybrid retrieval` 属于已完成基础版
 - ontology / audit / drill-down / backend 统一更偏持续收口
-- native vector / tree-sitter / 全面类型化 更偏下一阶段推进
+- native vector 真实数据 benchmark / tree-sitter 精度 / 全面类型化 更偏下一阶段推进
 
 ## 6. Definition of Done / 阶段收口标准
 
