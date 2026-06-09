@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import fnmatch
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -434,3 +433,97 @@ def _deep_merge(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any
         else:
             merged[key] = value
     return merged
+
+
+# --- Constitution Governance (H-01) ---
+# Project-level invariants that cannot be silently overridden by regular tasks.
+# These rules represent the project's "constitution" — the bottom-line principles
+# that must be respected regardless of task intent.
+
+CONSTITUTION_RULES = [
+    {
+        "id": "CONSTITUTION-001",
+        "principle": "数据安全",
+        "constraint_level": "absolute",
+        "scope": ["all"],
+        "rule": "不得提交真实密钥、私有路径、内部服务名或私有 workspace 数据。",
+        "version": "1.0.0",
+        "status": "active",
+    },
+    {
+        "id": "CONSTITUTION-002",
+        "principle": "测试隔离",
+        "constraint_level": "absolute",
+        "scope": ["test"],
+        "rule": "写入型测试必须使用临时 workspace，不得直接修改仓库 demo。",
+        "version": "1.0.0",
+        "status": "active",
+    },
+    {
+        "id": "CONSTITUTION-003",
+        "principle": "诊断可见性",
+        "constraint_level": "required",
+        "scope": ["main_chain"],
+        "rule": "主链路可选能力失败时必须返回 diagnostics，不得静默失败。",
+        "version": "1.0.0",
+        "status": "active",
+    },
+    {
+        "id": "CONSTITUTION-004",
+        "principle": "破坏性迁移可恢复",
+        "constraint_level": "required",
+        "scope": ["migration"],
+        "rule": "破坏性数据迁移必须可重复、可验证，并提供迁移或回滚说明。",
+        "version": "1.0.0",
+        "status": "active",
+    },
+    {
+        "id": "CONSTITUTION-005",
+        "principle": "Workspace 隔离",
+        "constraint_level": "absolute",
+        "scope": ["workspace"],
+        "rule": "公开入口接收 workspace.yaml，底层 store 需要先解析实际 db 路径。",
+        "version": "1.0.0",
+        "status": "active",
+    },
+]
+
+
+def load_constitution(store: WorkspaceStore) -> List[Dict[str, Any]]:
+    """Load constitution rules. Returns the default constitution."""
+    return CONSTITUTION_RULES
+
+
+def check_constitution_conflicts(
+    intent: str = "",
+    files: List[str] | None = None,
+) -> List[Dict[str, Any]]:
+    """Check if an intent or file set conflicts with constitution rules."""
+    conflicts = []
+    files = files or []
+    intent_lower = intent.lower()
+
+    for rule in CONSTITUTION_RULES:
+        if rule["status"] != "active":
+            continue
+
+        if rule["id"] == "CONSTITUTION-001":
+            import re
+            if re.search(r'(password|secret|token|api.?key)\s*[:=]', intent_lower):
+                conflicts.append({
+                    "constitution_id": rule["id"],
+                    "principle": rule["principle"],
+                    "conflict_type": "potential_secret_in_intent",
+                    "severity": "critical",
+                })
+            for f in files:
+                if any(p in f.lower() for p in ['/users/', '/home/', '/root/']):
+                    conflicts.append({
+                        "constitution_id": rule["id"],
+                        "principle": rule["principle"],
+                        "conflict_type": "private_path_in_files",
+                        "severity": "critical",
+                    })
+                    break
+
+    return conflicts

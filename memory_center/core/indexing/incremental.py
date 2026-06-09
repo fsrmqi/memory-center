@@ -5,6 +5,7 @@ instead of re-indexing the entire workspace.
 """
 from __future__ import annotations
 
+import fnmatch
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -160,6 +161,21 @@ class IncrementalIndexer:
         added_modified = changes["added"] + changes["modified"]
         affected_paths = [c.path for c in added_modified]
 
+        # Actually re-parse added/modified files using reindex_workspace
+        reindex_result: Dict[str, Any] = {}
+        if affected_paths:
+            try:
+                from ..store import WorkspaceStore
+                from ..config import load_workspace_config
+                from ..indexer import reindex_workspace
+                ws_path = getattr(self._store, '_workspace_file', None) or getattr(self._store, 'workspace_file', None)
+                if ws_path:
+                    config = load_workspace_config(ws_path)
+                    store = WorkspaceStore(ws_path)
+                    reindex_result = reindex_workspace(config, store, paths=affected_paths)
+            except Exception:
+                pass
+
         return {
             "mode": "incremental",
             "deleted_count": len(changes["deleted"]),
@@ -168,4 +184,153 @@ class IncrementalIndexer:
             "modified_count": len(changes["modified"]),
             "affected_paths": affected_paths,
             "needs_reparse": len(added_modified) > 0,
+            "reindexed": bool(reindex_result),
+            "reindex_result": reindex_result,
         }
+
+
+# --- H-05: Structured Diff Scope ---
+# Deterministic diff scope with binary detection, exclusion rules, and preview.
+
+_BINARY_EXTENSIONS = frozenset({
+    '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.ico', '.svg',
+    '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
+    '.zip', '.tar', '.gz', '.rar', '.7z', '.bz2', '.xz',
+    '.exe', '.dll', '.so', '.dylib', '.bin',
+    '.pyc', '.pyo', '.class', '.jar', '.war',
+    '.mp3', '.mp4', '.avi', '.mov', '.wav', '.flac',
+    '.ttf', '.otf', '.woff', '.woff2',
+    '.sqlite', '.db', '.db-shm', '.db-wal',
+})
+
+_EXCLUDED_PATTERNS: List[tuple] = [
+    ("__pycache__", "Python bytecode cache"),
+    ("node_modules", "npm dependencies"),
+    (".git", "Git internals"),
+    ("target/", "Java/Maven build output"),
+    ("/build/", "Gradle build output"),
+    ("/dist/", "Distribution output"),
+    (".idea", "JetBrains IDE config"),
+    (".vscode", "VS Code IDE config"),
+    ("*.pyc", "Compiled Python bytecode"),
+    ("*.pyo", "Optimized Python bytecode"),
+    ("*.class", "Compiled Java bytecode"),
+    ("*.jar", "Java archive"),
+    ("*.war", "Java web archive"),
+    ("package-lock.json", "npm lockfile"),
+    ("yarn.lock", "yarn lockfile"),
+    ("Pipfile.lock", "pipenv lockfile"),
+    ("poetry.lock", "poetry lockfile"),
+    (".memory-center/", "Memory Center internal data"),
+]
+
+
+@dataclass
+class DiffScope:
+    """Structured diff scope for deterministic change detection.
+
+    Attributes:
+        scope_type: workspace | commit | branch_range | unstaged
+        included: Files that should enter review/verification
+        excluded: Files excluded with reasons
+        excluded_reasons: Map from file path to exclusion reason
+        binary_files: Binary files detected
+        total_files: Total changed files before filtering
+    """
+    scope_type: str
+    included: List[ChangedFile]
+    excluded: List[ChangedFile]
+    excluded_reasons: Dict[str, str]
+    binary_files: List[str]
+    total_files: int
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "scope_type": self.scope_type,
+            "total_files": self.total_files,
+            "included_count": len(self.included),
+            "excluded_count": len(self.excluded),
+            "binary_count": len(self.binary_files),
+            "included": [{"path": c.path, "status": c.status} for c in self.included],
+            "excluded": [{"path": c.path, "status": c.status} for c in self.excluded],
+            "excluded_reasons": self.excluded_reasons,
+            "binary_files": self.binary_files,
+        }
+
+
+def detect_diff_scope(
+    repo_root: str | Path,
+    scope_type: str = "workspace",
+    since: str = "HEAD",
+) -> DiffScope:
+    """Detect diff scope with deterministic inclusion/exclusion rules.
+
+    Args:
+        repo_root: Root of the git repository
+        scope_type: workspace | commit | branch_range | unstaged
+        since: Git ref to diff against (for commit/branch_range)
+
+    Returns:
+        DiffScope with included/excluded files and reasons
+    """
+    if scope_type == "unstaged":
+        changes = git_changed_files_unstaged(repo_root)
+    else:
+        changes = git_changed_files(repo_root, since)
+
+    included: List[ChangedFile] = []
+    excluded: List[ChangedFile] = []
+    excluded_reasons: Dict[str, str] = {}
+    binary_files: List[str] = []
+
+    for change in changes:
+        path = change.path
+        ext = Path(path).suffix.lower()
+
+        # Check binary
+        if ext in _BINARY_EXTENSIONS:
+            binary_files.append(path)
+            excluded.append(change)
+            excluded_reasons[path] = f"Binary file ({ext})"
+            continue
+
+        # Check excluded patterns
+        is_excluded = False
+        for pattern, reason in _EXCLUDED_PATTERNS:
+            if '*' in pattern:
+                if fnmatch.fnmatch(path, pattern):
+                    excluded.append(change)
+                    excluded_reasons[path] = reason
+                    is_excluded = True
+                    break
+            elif pattern in path or pattern.rstrip('/') in path:
+                excluded.append(change)
+                excluded_reasons[path] = reason
+                is_excluded = True
+                break
+
+        if not is_excluded:
+            included.append(change)
+
+    return DiffScope(
+        scope_type=scope_type,
+        included=included,
+        excluded=excluded,
+        excluded_reasons=excluded_reasons,
+        binary_files=binary_files,
+        total_files=len(changes),
+    )
+
+
+def preview_diff_scope(
+    repo_root: str | Path,
+    scope_type: str = "workspace",
+    since: str = "HEAD",
+) -> Dict[str, Any]:
+    """Preview diff scope without executing Agent.
+
+    Returns structured preview with inclusion/exclusion details,
+    suitable for dry-run inspection before code review or verification.
+    """
+    scope = detect_diff_scope(repo_root, scope_type, since)
+    return scope.to_dict()

@@ -318,8 +318,28 @@ def memory_query_hybrid(workspace_file: str | Path, query: str, limit: int = 20,
         svc = IndexFreshnessService(workspace_file)
         banner = svc.banner()
         result["freshness"] = banner
+        # D-01: Stale risk escalation - if freshness is stale/pending, add warning
+        freshness_status = (banner.get("freshness", {}) or {}).get("status", "unknown")
+        if freshness_status in ("stale", "pending"):
+            from ..freshness.integration import freshness_action_hint, freshness_risk_escalation
+            result["_freshness_warning"] = {
+                "status": freshness_status,
+                "hint": freshness_action_hint(freshness_status),
+                "risk_escalation": freshness_risk_escalation(
+                    result.get("intent_analysis", {}).get("risk_level", "low"),
+                    freshness_status,
+                ),
+            }
     except Exception as exc:
         result["freshness"] = diag_entry(DIAG.UNKNOWN, exc=exc)
+
+    # F-03: Record query metrics (best-effort)
+    try:
+        from ..metrics import MetricsCollector
+        mc = MetricsCollector(workspace_file)
+        mc.record("memory_query_hybrid", len(json.dumps(result, ensure_ascii=False)), unit="chars")
+    except Exception:
+        pass
 
     return result
 

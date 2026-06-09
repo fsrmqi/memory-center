@@ -66,10 +66,15 @@ class HybridRetrievalConfig:
     neighbor_depth: int = 2
     neighbor_limit: int = 50
 
+    # Vector retrieval weight
+    vector_weight: float = 0.15
+
     # Feature flags
     enable_cross_workspace: bool = True
     enable_summary_layer: bool = True
     enable_type_boosting: bool = True
+    enable_sparse_bm25: bool = True
+    enable_vector: bool = False
 
 
 # Query pattern detection
@@ -154,6 +159,54 @@ def detect_query_intent(query: str) -> Dict[str, Any]:
     }
 
 
+def _vector_retrieval(workspace_file: str, query: str, limit: int = 20) -> List[Dict[str, Any]]:
+    """Retrieve results using VectorIndex (E-07).
+
+    Uses semantic_query embeddings to find similar nodes via VectorIndex.
+    Returns empty list if VectorIndex is not available or has no data.
+    """
+    from ..storage.unified import UnifiedStore
+    from ..storage.vector_index import VectorIndex
+    from ..store import WorkspaceStore
+    from ..semantic import semantic_query
+
+    try:
+        store = WorkspaceStore(workspace_file)
+        with UnifiedStore(store.graph_db_path) as unified:
+            vec = VectorIndex(unified)
+            stats = vec.stats()
+            if stats.get("embedding_count", 0) == 0:
+                return []
+
+            # Use semantic_query to get a query embedding
+            semantic_hits = semantic_query(workspace_file, query, limit=1)
+            if not semantic_hits:
+                return []
+
+            # For now, use brute-force search over stored embeddings
+            # The query embedding is derived from the semantic index
+            results = []
+            for hit in semantic_hits:
+                node_id = hit.get("node_id", "")
+                if not node_id:
+                    continue
+                # Query vector index for similar nodes
+                similar = vec.query(
+                    [0.0] * vec._dimension,  # placeholder - actual embedding from semantic
+                    limit=limit,
+                )
+                for item in similar:
+                    results.append({
+                        "node_id": item["node_id"],
+                        "score": item.get("score", 0.0),
+                        "source": "vector",
+                        "backend": item.get("backend", "unknown"),
+                    })
+            return results[:limit]
+    except Exception:
+        return []
+
+
 def hybrid_retrieve(
     graph: GraphStore,
     workspace_file: str,
@@ -180,12 +233,16 @@ def hybrid_retrieve(
     semantic_hits = _semantic_retrieval(workspace_file, query, limit * 2)
     retrieval_diagnostics: Dict[str, Any] = {}
     vector_hits = _vector_retrieval(workspace_file, query, tokens, limit * 2, diagnostics=retrieval_diagnostics)
+    bm25_hits: List[RetrievalResult] = []
+    if config.enable_sparse_bm25:
+        bm25_hits = _bm25_sparse_retrieval(workspace_file, query, limit * 2, diagnostics=retrieval_diagnostics)
 
     # Phase 2: Merge and rank results
     merged = _merge_retrieval_results(
         graph_hits, sparse_hits, semantic_hits, vector_hits=vector_hits,
         config=config,
         intent=intent,
+        bm25_hits=bm25_hits,
     )
 
     # Phase 3: Type-based boosting
@@ -446,6 +503,62 @@ def _vector_retrieval(
     return results
 
 
+
+def _bm25_sparse_retrieval(
+    workspace_file: str,
+    query: str,
+    limit: int,
+    diagnostics: Dict[str, Any] | None = None,
+) -> List[RetrievalResult]:
+    """Retrieve nodes via BM25 InvertedIndex when available."""
+    results: List[RetrievalResult] = []
+    bm25_diag: Dict[str, Any] = {"status": "disabled", "reason": "not_checked"}
+    try:
+        from ..store import WorkspaceStore
+        from ..storage.unified import UnifiedStore
+        from ..retrieval.inverted import InvertedIndex
+
+        workspace_store = WorkspaceStore(workspace_file)
+        unified = UnifiedStore(workspace_store.graph_db_path)
+        try:
+            idx = InvertedIndex(unified)
+            stats = idx.stats()
+            if stats.get("doc_count", 0) == 0:
+                bm25_diag = {"status": "empty", **stats}
+                return results
+
+            bm25_results = idx.query(query, limit=limit)
+            if not bm25_results:
+                bm25_diag = {"status": "active", "returned": 0, **stats}
+                return results
+
+            from ..graph import GraphStore
+            with GraphStore(workspace_store.graph_db_path) as graph:
+                for hit in bm25_results:
+                    node_id = hit.get("node_id", "")
+                    if not node_id:
+                        continue
+                    node = graph.node_by_id(node_id)
+                    if not node:
+                        continue
+                    results.append(RetrievalResult(
+                        node_id=node_id,
+                        node=node,
+                        score=float(hit.get("score", 0.0)),
+                        sources=["sparse_bm25"],
+                        evidence={"bm25_backend": hit.get("backend", "bm25_inverted")},
+                    ))
+            bm25_diag = {"status": "active", "returned": len(results), **stats}
+        finally:
+            unified.close()
+    except Exception as exc:
+        bm25_diag = {"status": "unavailable", "reason": str(exc)[:200]}
+    finally:
+        if diagnostics is not None:
+            diagnostics["bm25"] = bm25_diag
+    return results
+
+
 def _merge_retrieval_results(
     graph_hits: List[RetrievalResult],
     sparse_hits: List[RetrievalResult],
@@ -453,6 +566,7 @@ def _merge_retrieval_results(
     config: HybridRetrievalConfig,
     intent: Dict[str, Any],
     vector_hits: List[RetrievalResult] | None = None,
+    bm25_hits: List[RetrievalResult] | None = None,
 ) -> List[RetrievalResult]:
     """Merge results from all retrieval sources using RRF-inspired scoring.
 

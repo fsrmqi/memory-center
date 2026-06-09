@@ -38,6 +38,7 @@ def reindex_workspace(
     *,
     projects: Sequence[str] | None = None,
     paths: Sequence[str] | None = None,
+    parallel: bool = False,
 ) -> Dict[str, int]:
     """Rebuild deterministic indexes and the local evidence graph."""
     project_filter = {item.strip() for item in (projects or []) if item and item.strip()}
@@ -59,6 +60,7 @@ def reindex_workspace(
     config_index: List[Dict[str, Any]] = []
     # Collect feign files for deferred parsing (need complete constant_map first)
     pending_feigns: List[tuple] = []
+    java_tasks: List[tuple] = []
 
     for svc in config.services:
         if project_filter and svc.name not in project_filter:
@@ -81,16 +83,34 @@ def reindex_workspace(
                 }
             )
             if path.suffix in JAVA_EXTENSIONS:
-                text = safe_read(path)
-                symbol = parse_java_symbols(svc.name, rel, text)
-                symbol_index.append(to_dict(symbol))
-                api_index.extend(to_dict(x) for x in parse_controllers(svc.name, rel, text, symbol))
-                if "FeignClient" in symbol.annotations:
-                    pending_feigns.append((svc.name, rel, text, symbol))
-                mq_index.extend(to_dict(x) for x in parse_mq_endpoints(svc.name, rel, text, symbol))
-                mq_index.extend(to_dict(x) for x in parse_mq_producers(svc.name, rel, text))
+                java_tasks.append((svc.name, rel, path))
             elif path.name in CONFIG_NAMES:
                 config_index.append({"project": svc.name, "path": rel, **parse_yaml_config(path)})
+
+    # Parse Java files (sequential or parallel)
+    if parallel and len(java_tasks) > 10:
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        from .indexing.parallel import estimate_optimal_workers
+        workers = estimate_optimal_workers(len(java_tasks))
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = {pool.submit(_parse_java_file, s, r, p): (s, r) for s, r, p in java_tasks}
+            for future in as_completed(futures):
+                result = future.result()
+                if result["symbol"]:
+                    symbol_index.append(result["symbol"])
+                api_index.extend(result["apis"])
+                if result["pending_feign"]:
+                    pending_feigns.append(result["pending_feign"])
+                mq_index.extend(result["mq"])
+    else:
+        for svc_name, rel, path in java_tasks:
+            result = _parse_java_file(svc_name, rel, path)
+            if result["symbol"]:
+                symbol_index.append(result["symbol"])
+            api_index.extend(result["apis"])
+            if result["pending_feign"]:
+                pending_feigns.append(result["pending_feign"])
+            mq_index.extend(result["mq"])
 
     # Build constant map from completed symbol scan, then resolve feign target_service
     if partial:
@@ -227,6 +247,22 @@ def safe_read(path: Path, limit: int = 600_000) -> str:
         return path.read_text(encoding="utf-8", errors="ignore")[:limit]
     except Exception:
         return ""
+
+
+def _parse_java_file(project: str, rel: str, path: Path) -> Dict[str, Any]:
+    """Parse a single Java file for deferred assembly into indexes."""
+    try:
+        text = safe_read(path)
+        symbol = parse_java_symbols(project, rel, text)
+        apis = [to_dict(x) for x in parse_controllers(project, rel, text, symbol)]
+        pending_feign = None
+        if "FeignClient" in symbol.annotations:
+            pending_feign = (project, rel, text, symbol)
+        mq = [to_dict(x) for x in parse_mq_endpoints(project, rel, text, symbol)]
+        mq.extend(to_dict(x) for x in parse_mq_producers(project, rel, text))
+        return {"symbol": to_dict(symbol), "apis": apis, "pending_feign": pending_feign, "mq": mq}
+    except Exception:
+        return {"symbol": None, "apis": [], "pending_feign": None, "mq": []}
 
 
 def parse_java_symbols(project: str, rel: str, text: str) -> JavaSymbol:

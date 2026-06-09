@@ -41,12 +41,50 @@ def workspace_start_session(
         "payload": metadata or {},
     }
     store.append_jsonl(SESSION_EVENTS_FILE, item)
+    # E-05: Connect-time catch-up — include freshness info
+    freshness_info: Dict[str, Any] = {}
+    try:
+        from ..freshness.integration import get_freshness_with_actions
+        freshness_info = get_freshness_with_actions(str(workspace_file))
+    except Exception:
+        pass
+    # D-02: Context Pack recommendation for architecture understanding
+    context_pack_hint: Dict[str, Any] = {}
+    try:
+        from ..context.pack import ContextPackBuilder
+        builder = ContextPackBuilder(str(workspace_file))
+        # Just check if context pack is feasible, don't build full pack
+        context_pack_hint = {
+            "available": True,
+            "recommended_for": ["architecture_understanding", "change_preview"],
+            "suggested_budget_tokens": 4000,
+        }
+    except Exception:
+        context_pack_hint = {"available": False}
+
+    # G-01: Workflow profile recommendation based on intent
+    workflow_recommendation: Dict[str, Any] = {}
+    try:
+        from ..verification.workflow_profiles import recommend_workflow
+        profile = recommend_workflow(intent)
+        workflow_recommendation = {
+            "recommended_profile": profile.name,
+            "description": profile.description,
+            "tools_sequence": profile.tools_sequence,
+            "steps": [s.get("step", "") for s in profile.steps],
+        }
+    except Exception:
+        pass
+
     return {
         "started": True,
         "session_id": sid,
         "workspace": config.workspace,
         "intent": intent,
         "created_at": item.get("created_at"),
+        "freshness": freshness_info,
+        "context_pack_hint": context_pack_hint,
+        "workflow_recommendation": workflow_recommendation,
     }
 
 

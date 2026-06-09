@@ -13,7 +13,7 @@ from filelock import FileLock
 from .config import load_workspace_config
 from .store import WorkspaceStore, _safe_path
 from .text_utils import base_tokenize
-from .write_receipts import WRITE_RECEIPTS_FILE, build_write_receipt, persist_write_receipt
+from .write_receipts import build_write_receipt, persist_write_receipt
 
 DEFAULT_ARTIFACTS = {
     "context": "context.md",
@@ -1001,3 +1001,95 @@ def _trim_text(text: str, limit: int) -> str:
     if len(normalized) <= limit:
         return normalized
     return normalized[: limit - 3] + "..."
+
+
+# --- H-02: Traceability Graph ---
+# Links requirements → tasks → changes → verification for full traceability.
+
+TRACEABILITY_FILE = "traceability-graph.json"
+
+
+def build_traceability_graph(workspace_file: str | Path) -> Dict[str, Any]:
+    """Build a traceability graph linking requirements, tasks, changes, and verification.
+
+    Returns a graph with nodes (requirements, tasks, changes, verification)
+    and edges (requires, implements, verifies).
+    """
+    config = load_workspace_config(workspace_file)
+    store = WorkspaceStore(workspace_file)
+    tasks = list_task_spaces(workspace_file, include_archived=True)
+
+    nodes: List[Dict[str, Any]] = []
+    edges: List[Dict[str, Any]] = []
+
+    # Add requirement nodes from artifacts
+    for key, filename in DEFAULT_ARTIFACTS.items():
+        content = store.read_artifact(filename, "")
+        if content.strip():
+            node_id = f"req:{key}"
+            nodes.append({"id": node_id, "type": "requirement", "name": key, "file": filename})
+
+    # Add task nodes and link to requirements
+    all_tasks = (tasks.get("active_tasks") or []) + (tasks.get("archived_tasks") or [])
+    for task in all_tasks:
+        task_id = task.get("task_id", "")
+        if not task_id:
+            continue
+        nodes.append({"id": f"task:{task_id}", "type": "task", "name": task.get("title", ""), "status": task.get("status", "")})
+
+        # Link task to requirement artifacts
+        for artifact_key in ["requirement", "design", "plan", "test_plan"]:
+            content = get_task_artifact(workspace_file, task_id, artifact_key).get("content", "")
+            if content.strip():
+                edges.append({
+                    "source": f"task:{task_id}",
+                    "target": f"req:{artifact_key}",
+                    "type": "references",
+                })
+
+    # Add change log entries as change nodes
+    change_log = store.read_artifact("change_log", "")
+    if change_log.strip():
+        nodes.append({"id": "change:change_log", "type": "change", "name": "change_log"})
+
+    # Add verification nodes from verification loop data
+    try:
+        from .verification.loop import VERIFICATION_LOG_FILE
+        loop_entries = store.read_jsonl(VERIFICATION_LOG_FILE, limit=100) if hasattr(store, 'read_jsonl') else []
+        for entry in loop_entries:
+            loop_id = entry.get("loop_id", "")
+            if loop_id:
+                nodes.append({"id": f"verify:{loop_id}", "type": "verification", "status": entry.get("status", "")})
+                task_id = entry.get("task_id", "")
+                if task_id:
+                    edges.append({"source": f"verify:{loop_id}", "target": f"task:{task_id}", "type": "verifies"})
+    except Exception:
+        pass
+
+    # Find unlinked tasks (no requirement reference)
+    linked_tasks = {e["source"] for e in edges if e["type"] == "references"}
+    unlinked_tasks = [n["id"] for n in nodes if n["type"] == "task" and n["id"] not in linked_tasks]
+
+    # Find uncovered requirements (no task references them)
+    linked_reqs = {e["target"] for e in edges if e["type"] == "references"}
+    uncovered_reqs = [n["id"] for n in nodes if n["type"] == "requirement" and n["id"] not in linked_reqs]
+
+    graph = {
+        "workspace": config.workspace,
+        "nodes": nodes,
+        "edges": edges,
+        "diagnostics": {
+            "total_nodes": len(nodes),
+            "total_edges": len(edges),
+            "unlinked_tasks": unlinked_tasks,
+            "uncovered_requirements": uncovered_reqs,
+        },
+    }
+
+    # Persist for future reference
+    try:
+        store.write_json(TRACEABILITY_FILE, graph)
+    except Exception:
+        pass
+
+    return graph

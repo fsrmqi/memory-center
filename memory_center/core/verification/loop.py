@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from ..store import WorkspaceStore
 
@@ -90,6 +90,78 @@ class VerificationLoop:
             "completed_at": datetime.now(timezone.utc).isoformat(),
         }
 
+    def check_completion(self, task_id: str) -> Dict[str, Any]:
+        """Check if all verification items are completed for a task.
+
+        Returns completion status with pending items and recommendations.
+        Never raises.
+        """
+        try:
+            entries = self._store.read_jsonl(VERIFICATION_LOG_FILE)
+        except Exception:
+            entries = []
+
+        task_entries = [e for e in entries if e.get("task_id") == task_id]
+        if not task_entries:
+            return {
+                "task_id": task_id,
+                "status": "no_loop",
+                "completion_pct": 0,
+                "pending_phases": ["analyze", "checklist", "verify", "close"],
+                "message": "No verification loop found for this task",
+            }
+
+        # Find the start entry (which has the phases dict) and collect
+        # completed phase names from complete_phase entries.
+        # complete_phase entries use loop_id (not task_id), so we also
+        # search by loop_id once we find the start entry.
+        start_entry = None
+        loop_id = ""
+        for entry in task_entries:
+            if "phases" in entry:
+                start_entry = entry
+                loop_id = entry.get("loop_id", "")
+
+        # Collect all entries for this loop (including complete_phase entries)
+        if loop_id:
+            loop_entries = [e for e in entries if e.get("loop_id") == loop_id]
+        else:
+            loop_entries = task_entries
+
+        completed_phase_names: set = set()
+        for entry in loop_entries:
+            if entry.get("phase") and entry.get("status") == "completed":
+                completed_phase_names.add(entry["phase"])
+
+        if start_entry:
+            phases = dict(start_entry.get("phases", {}))
+            # Update phase statuses from completed_phase entries
+            for phase_name in completed_phase_names:
+                if phase_name in phases:
+                    phases[phase_name] = {"status": "completed"}
+        else:
+            # Build phases from completed entries if no start entry found
+            phases = {}
+            for name in ("analyze", "checklist", "verify", "close"):
+                phases[name] = {"status": "completed" if name in completed_phase_names else "pending"}
+
+        latest = start_entry or task_entries[-1]
+        completed_phases = [p for p, v in phases.items() if v.get("status") == "completed"]
+        pending_phases = [p for p, v in phases.items() if v.get("status") != "completed"]
+        total = len(phases) if phases else 4
+        completion_pct = round(len(completed_phases) / max(total, 1) * 100, 1)
+
+        return {
+            "task_id": task_id,
+            "loop_id": latest.get("loop_id", ""),
+            "status": latest.get("status", "unknown"),
+            "completion_pct": completion_pct,
+            "completed_phases": completed_phases,
+            "pending_phases": pending_phases,
+            "total_phases": total,
+            "message": f"{len(completed_phases)}/{total} phases completed" if phases else "No phase data",
+        }
+
     def generate_checklist(self, analysis: Dict[str, Any]) -> Dict[str, Any]:
         """Generate a verification checklist from task analysis.
 
@@ -119,3 +191,74 @@ class VerificationLoop:
                 "loop_id": latest.get("loop_id", ""),
             }
         return {"task_id": task_id, "status": "pending", "loop_id": ""}
+
+    def persist_step_state(
+        self,
+        loop_id: str,
+        phase: str,
+        step_name: str,
+        state: str,
+        output_refs: List[Dict[str, Any]] | None = None,
+        diagnostics: Dict[str, Any] | None = None,
+    ) -> Dict[str, Any]:
+        """Persist step-level state for resumable workflow (H-04).
+
+        Each step records: phase, step_name, state (created|running|paused|failed|completed|aborted),
+        input summary, output refs, diagnostics, and timestamps.
+        Supports resume from failed/paused steps without re-executing completed ones.
+        """
+        entry = {
+            "loop_id": loop_id,
+            "phase": phase,
+            "step_name": step_name,
+            "state": state,
+            "output_refs": output_refs or [],
+            "diagnostics": diagnostics or {},
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+        self._store.append_jsonl(VERIFICATION_LOG_FILE, entry)
+        return entry
+
+    def get_step_states(self, loop_id: str) -> List[Dict[str, Any]]:
+        """Get all step states for a loop, enabling resume from last completed step."""
+        try:
+            entries = self._store.read_jsonl(VERIFICATION_LOG_FILE)
+        except Exception:
+            entries = []
+        return [e for e in entries if e.get("loop_id") == loop_id and "step_name" in e]
+
+    def resume_from_last_step(self, loop_id: str) -> Dict[str, Any]:
+        """Determine which step to resume from based on persisted state."""
+        steps = self.get_step_states(loop_id)
+        if not steps:
+            return {"loop_id": loop_id, "resume_from": "beginning", "completed_steps": []}
+
+        completed = [s for s in steps if s.get("state") == "completed"]
+        failed = [s for s in steps if s.get("state") == "failed"]
+        paused = [s for s in steps if s.get("state") == "paused"]
+
+        if paused:
+            last = paused[-1]
+            return {
+                "loop_id": loop_id,
+                "resume_from": last.get("step_name", ""),
+                "resume_phase": last.get("phase", ""),
+                "completed_steps": [s.get("step_name") for s in completed],
+                "reason": "paused",
+            }
+        if failed:
+            last = failed[-1]
+            return {
+                "loop_id": loop_id,
+                "resume_from": last.get("step_name", ""),
+                "resume_phase": last.get("phase", ""),
+                "completed_steps": [s.get("step_name") for s in completed],
+                "reason": "failed",
+            }
+        # All steps completed
+        return {
+            "loop_id": loop_id,
+            "resume_from": "none",
+            "completed_steps": [s.get("step_name") for s in completed],
+            "reason": "all_completed",
+        }
