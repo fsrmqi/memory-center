@@ -375,6 +375,8 @@ def _field_type_covers(candidate: str, baseline: str, *, field_name: str = "") -
         return True
     if candidate_sig.endswith(baseline_sig):
         return True
+    if _type_family(candidate_sig) == "string" and not _looks_like_java_type_name(baseline):
+        return True
     if _looks_like_constant_name(field_name) and _type_family(candidate_sig) == "string":
         return True
 
