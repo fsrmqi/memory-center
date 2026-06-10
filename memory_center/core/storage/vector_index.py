@@ -191,10 +191,15 @@ class VectorIndex:
         """Return index statistics."""
         with self._store.pool.connection() as conn:
             count = conn.execute("SELECT COUNT(*) FROM vec_metadata").fetchone()[0]
+            has_vec_table = bool(
+                conn.execute(
+                    "SELECT 1 FROM sqlite_master WHERE name='node_vec' LIMIT 1",
+                ).fetchone(),
+            )
         return {
             "embedding_count": count,
             "dimension": self._dimension,
-            "backend": "sqlite-vec" if _HAS_SQLITE_VEC else "brute_force",
+            "backend": "sqlite-vec" if _HAS_SQLITE_VEC and has_vec_table else "brute_force",
             "has_numpy": _HAS_NUMPY,
         }
 

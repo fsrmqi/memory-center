@@ -620,3 +620,57 @@ class TestE07VectorRetrievalIntegration:
         from memory_center.core.retrieval.hybrid import _vector_retrieval
         results = _vector_retrieval(str(demo_workspace), "test query", tokens=["test", "query"], limit=10)
         assert isinstance(results, list)
+
+    def test_vector_retrieval_uses_default_model_when_semantic_index_has_no_model(self, demo_workspace):
+        """Vector retrieval should not depend on semantic index backend storing a dense model name."""
+        from unittest.mock import patch
+
+        from memory_center.core.retrieval.hybrid import _vector_retrieval
+
+        class FakeModel:
+            def encode(self, texts, normalize_embeddings=True):
+                assert texts == ["test query"]
+                return [[1.0] * 384]
+
+        class FakeVectorIndex:
+            def __init__(self, store):
+                self.store = store
+
+            def stats(self):
+                return {"embedding_count": 1, "dimension": 384, "backend": "brute_force"}
+
+            def query(self, query_embedding, limit=20):
+                assert len(query_embedding) == 384
+                return [{"node_id": "demo-node", "score": 0.91, "backend": "brute_force"}]
+
+        class FakeGraph:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def node_by_id(self, node_id):
+                return {"id": node_id, "type": "Class", "name": "DemoNode", "project": "demo"}
+
+        diagnostics = {}
+        with (
+            patch("memory_center.core.storage.vector_index.VectorIndex", FakeVectorIndex),
+            patch("memory_center.core.graph.GraphStore", FakeGraph),
+            patch("memory_center.core.semantic.semantic_index_stats", return_value={"model": None, "requested_model": None}),
+            patch("memory_center.core.semantic._load_sentence_transformer_model", return_value=FakeModel()),
+        ):
+            results = _vector_retrieval(
+                str(demo_workspace),
+                "test query",
+                tokens=["test", "query"],
+                limit=5,
+                diagnostics=diagnostics,
+            )
+
+        assert len(results) == 1
+        assert results[0].node_id == "demo-node"
+        assert diagnostics["vector"]["status"] == "active"

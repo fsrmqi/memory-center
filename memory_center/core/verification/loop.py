@@ -40,8 +40,18 @@ class VerificationLoop:
 
     def complete_phase(self, loop_id: str, phase: str, data: Dict[str, Any]) -> Dict[str, Any]:
         """Complete a phase of the verification loop."""
+        task_id = ""
+        try:
+            entries = self._store.read_jsonl(VERIFICATION_LOG_FILE)
+        except Exception:
+            entries = []
+        for existing in entries:
+            if existing.get("loop_id") == loop_id and existing.get("task_id"):
+                task_id = str(existing.get("task_id") or "")
+                break
         entry = {
             "loop_id": loop_id,
+            "task_id": task_id,
             "phase": phase,
             "status": "completed",
             "data": data,

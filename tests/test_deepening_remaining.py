@@ -725,6 +725,27 @@ class TestH10ReviewVerification:
         assert summary["status"] == "completed"
         assert summary["task_id"] == "close-task-1"
 
+    def test_complete_phase_persists_task_id_for_traceability(self, tmp_path):
+        """complete_phase should preserve task_id so traceability can link verification to task."""
+        ws = copy_demo_workspace(tmp_path)
+        from memory_center.core.verification.loop import VerificationLoop
+        vl = VerificationLoop(str(ws))
+        loop = vl.start("trace-task-1", "Traceability test")
+        vl.complete_phase(loop["loop_id"], "analyze", {"findings": ["f1"]})
+
+        step_status = vl.get_status("trace-task-1")
+        assert step_status["task_id"] == "trace-task-1"
+
+        from memory_center.core.artifacts import build_traceability_graph
+        graph = build_traceability_graph(str(ws))
+        verify_nodes = [n for n in graph["nodes"] if n.get("id") == f"verify:{loop['loop_id']}"]
+        verify_edges = [
+            e for e in graph["edges"]
+            if e.get("source") == f"verify:{loop['loop_id']}" and e.get("target") == "task:trace-task-1"
+        ]
+        assert verify_nodes
+        assert verify_edges
+
 
 # ── F-07: Health and Governance ─────────────────────────────────────
 
@@ -801,6 +822,22 @@ class TestExplanationSchemaDeep:
         result = merge_explanations(entries)
         assert result["semantic_strength"] == "derived"  # weakest
         assert result["confidence"] == 0.5  # min
+
+    def test_retrieval_result_to_dict_reads_dict_evidence_edge_type(self):
+        """_result_to_dict should support dict evidence instead of silently iterating dict keys."""
+        from memory_center.core.retrieval.hybrid import RetrievalResult, _result_to_dict
+
+        result = RetrievalResult(
+            node_id="node-1",
+            node={"id": "node-1", "type": "Class", "name": "Foo"},
+            score=0.8,
+            sources=["graph_exact"],
+            evidence={"edge_type": "CALLS_METHOD"},
+        )
+
+        payload = _result_to_dict(result)
+        assert payload["semantic_strength"] == "fact"
+        assert payload["confidence_label"] == "high"
 
 
 # ── Metrics Deepening ───────────────────────────────────────────────

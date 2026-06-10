@@ -424,7 +424,11 @@ def _vector_retrieval(
         from ..store import WorkspaceStore
         from ..storage.unified import UnifiedStore
         from ..storage.vector_index import VectorIndex
-        from ..semantic import _load_sentence_transformer_model, semantic_index_stats
+        from ..semantic import (
+            DEFAULT_SENTENCE_TRANSFORMER_MODEL,
+            _load_sentence_transformer_model,
+            semantic_index_stats,
+        )
 
         workspace_store = WorkspaceStore(workspace_file)
         unified = UnifiedStore(workspace_store.graph_db_path)
@@ -436,11 +440,17 @@ def _vector_retrieval(
                 return results
 
             semantic_stats = semantic_index_stats(workspace_file)
-            model = _load_sentence_transformer_model(semantic_stats.get("model"))
+            model_name = (
+                semantic_stats.get("model")
+                or semantic_stats.get("requested_model")
+                or DEFAULT_SENTENCE_TRANSFORMER_MODEL
+            )
+            model = _load_sentence_transformer_model(model_name)
             if model is None:
                 vector_diag = {
                     "status": "unavailable",
                     "reason": "sentence-transformers model unavailable for query embedding",
+                    "model": model_name,
                     **status,
                 }
                 return results
@@ -726,7 +736,15 @@ def _result_to_dict(result: RetrievalResult) -> Dict[str, Any]:
     """
     # Determine semantic strength from evidence edges
     strengths = set()
-    for ev in result.evidence:
+    evidence_items: List[Any]
+    if isinstance(result.evidence, dict):
+        evidence_items = [result.evidence]
+    elif isinstance(result.evidence, list):
+        evidence_items = list(result.evidence)
+    else:
+        evidence_items = []
+
+    for ev in evidence_items:
         if isinstance(ev, dict):
             edge_type = ev.get("edge_type", "")
         elif isinstance(ev, str):
@@ -738,9 +756,19 @@ def _result_to_dict(result: RetrievalResult) -> Dict[str, Any]:
             strengths.add(_EDGE_SEMANTIC_STRENGTH[edge_type])
 
     if strengths:
-        # Pick the strongest: fact > inferred > derived
+        # Normalize extended ontology strengths to the public output contract.
+        normalized_strengths = []
+        for strength in strengths:
+            if strength == "confirmed":
+                normalized_strengths.append("fact")
+            elif strength == "runtime":
+                normalized_strengths.append("inferred")
+            elif strength in {"fact", "inferred", "derived"}:
+                normalized_strengths.append(strength)
+            else:
+                normalized_strengths.append("inferred")
         priority = {"fact": 3, "inferred": 2, "derived": 1}
-        semantic_strength = max(strengths, key=lambda s: priority.get(s, 0))
+        semantic_strength = max(normalized_strengths, key=lambda s: priority.get(s, 0))
     else:
         semantic_strength = "inferred"
 
