@@ -114,6 +114,13 @@ def _regression_alerts_keys(demo_workspace: Path) -> set:
 
 
 @pytest.fixture()
+def _parser_benchmark_keys(demo_workspace: Path) -> set:
+    from memory_center.core.orchestrator import memory_eval_parser_benchmark
+
+    return set(memory_eval_parser_benchmark(str(demo_workspace)).keys())
+
+
+@pytest.fixture()
 def _backend_consistency_keys(demo_workspace: Path) -> set:
     from memory_center.core.backend.query import UnifiedBackendQuery
     from memory_center.core.store import WorkspaceStore
@@ -214,6 +221,27 @@ class TestThreeEntryPointExecution:
         assert isinstance(result, dict)
         _assert_no_database_error(result)
         assert set(result.keys()) == _regression_alerts_keys
+
+    def test_parser_benchmark_cli(self, demo_workspace: Path, _parser_benchmark_keys):
+        ws = str(demo_workspace)
+        result = _cli_json(["eval-parser-benchmark", "--workspace", ws])
+        _assert_no_database_error(result)
+        assert set(result.keys()) == _parser_benchmark_keys
+
+    def test_parser_benchmark_http(self, demo_workspace: Path, _parser_benchmark_keys):
+        ws = str(demo_workspace)
+        result = _http("/workspace/eval-parser-benchmark", ws=ws)
+        assert isinstance(result, dict)
+        _assert_no_database_error(result)
+        assert set(result.keys()) == _parser_benchmark_keys
+
+    def test_parser_benchmark_mcp(self, demo_workspace: Path, _parser_benchmark_keys):
+        from memory_center.core.orchestrator import memory_eval_parser_benchmark
+
+        result = memory_eval_parser_benchmark(str(demo_workspace))
+        assert isinstance(result, dict)
+        _assert_no_database_error(result)
+        assert set(result.keys()) == _parser_benchmark_keys
 
     # ---- backend-consistency (needs workspace with db) ----
 
@@ -559,6 +587,16 @@ class TestCoreFieldAlignment:
                 f"core_field '{field}' not in actual keys: {sorted(actual_keys)}"
             )
 
+    def test_parser_benchmark_core_fields(self, demo_workspace: Path):
+        from memory_center.core.orchestrator import memory_eval_parser_benchmark
+
+        cap = CAPABILITY_MAP["parser-benchmark"]
+        actual_keys = set(memory_eval_parser_benchmark(str(demo_workspace)).keys())
+        for field in cap.core_fields:
+            assert field in actual_keys, (
+                f"core_field '{field}' not in actual keys: {sorted(actual_keys)}"
+            )
+
     def test_backend_consistency_core_fields(self, demo_workspace: Path):
         from memory_center.core.backend.query import UnifiedBackendQuery
         from memory_center.core.store import WorkspaceStore
@@ -670,6 +708,26 @@ class TestErrorSemanticConsistency:
         except Exception as exc:
             assert "file is not a database" not in str(exc)
 
+    def test_cli_parser_benchmark_invalid_workspace(self):
+        from memory_center.cli.main import app
+
+        result = _RUNNER.invoke(
+            app,
+            ["eval-parser-benchmark", "--workspace", "/nonexistent/path/workspace.yaml"],
+        )
+        assert result.exit_code != 0
+        assert "file is not a database" not in (result.output or "")
+
+    def test_mcp_parser_benchmark_invalid_workspace(self):
+        from memory_center.core.orchestrator import memory_eval_parser_benchmark
+
+        with pytest.raises((FileNotFoundError, OSError)):
+            memory_eval_parser_benchmark("/nonexistent/path/workspace.yaml")
+        try:
+            memory_eval_parser_benchmark("/nonexistent/path/workspace.yaml")
+        except Exception as exc:
+            assert "file is not a database" not in str(exc)
+
 
 # ---------------------------------------------------------------------------
 # 6. Backend function sharing — same core function across entry points
@@ -684,6 +742,7 @@ class TestBackendFunctionSharing:
         "workflow-profile": "get_workflow_profile",
         "runtime-audit": "audit_agent_runtime",
         "regression-alerts": "check_regression_alerts",
+        "parser-benchmark": "memory_eval_parser_benchmark",
         "verification-loop": "VerificationLoop",
         "business-flow": "extract_business_flows_for_workspace",
         "business-flow-impact": "business_flow_impact_for_workspace",

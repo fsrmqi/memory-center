@@ -54,6 +54,7 @@
 - `eval-tool-adoption`
 - `eval-context-weight`
 - `eval-token-gain`
+- `eval-parser-benchmark`
 - `eval-token-benchmark`
 - `eval-token-benchmark-save`
 - `eval-token-benchmark-compare`
@@ -179,6 +180,7 @@
 - `/workspace/drill-task`
 - `/workspace/backend-consistency`
 - `/workspace/eval-token-benchmark-trend`
+- `/workspace/eval-parser-benchmark`
 - `/workspace/onboard`
 - `/workspace/context-pack`
 - `/workspace/freshness`

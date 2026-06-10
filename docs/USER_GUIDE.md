@@ -202,6 +202,12 @@ result = hybrid_retrieve(graph, workspace_file, query, config=config)
 
 **何时使用**: 需要监控 token 使用变化，检测回归问题。
 
+如果你想验证真实 Spring Cloud workspace 中 `regex` 与 `tree-sitter` 解析结果是否收敛，可以运行：
+
+```bash
+memory-center eval-parser-benchmark --workspace /abs/path/.memory-center/workspace.yaml
+```
+
 **使用方式**:
 
 ```python

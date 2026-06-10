@@ -131,6 +131,16 @@ CAPABILITIES: list[Capability] = [
         ],
     ),
     Capability(
+        name="parser-benchmark",
+        core_fields=["workspace", "files_scanned", "projects", "tree_sitter", "summary", "regressions", "improvements", "score", "quality"],
+        error_semantics="tree-sitter unavailable -> diagnostics in tree_sitter; no Java files -> empty status",
+        entries=[
+            _cli("eval-parser-benchmark"),
+            _http("/workspace/eval-parser-benchmark"),
+            _mcp_admin("eval_parser_benchmark"),
+        ],
+    ),
+    Capability(
         name="backend-consistency",
         core_fields=["consistent", "comparisons", "divergences"],
         error_semantics="missing memory.db or JSONL -> diagnostics",

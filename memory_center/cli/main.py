@@ -575,6 +575,18 @@ def eval_token_benchmark_cmd(
     print(memory_eval_token_benchmark(workspace, intent=intent, limit=limit))
 
 
+@app.command("eval-parser-benchmark")
+def eval_parser_benchmark_cmd(
+    workspace: str = typer.Option(...),
+    limit: int = typer.Option(200, help="Maximum number of Java files to compare."),
+    max_findings: int = typer.Option(20, help="Maximum number of regression/improvement findings to return."),
+):
+    """Compare regex and tree-sitter parser outputs on a real workspace."""
+    from memory_center.core.orchestrator import memory_eval_parser_benchmark
+
+    print(json.dumps(memory_eval_parser_benchmark(workspace, limit=limit, max_findings=max_findings), ensure_ascii=False, indent=2, default=str))
+
+
 @app.command("eval-token-benchmark-save")
 def eval_token_benchmark_save_cmd(
     workspace: str = typer.Option(...),

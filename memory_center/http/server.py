@@ -31,6 +31,7 @@ from memory_center.core.orchestrator import (
     memory_eval_index_freshness,
     memory_eval_tool_adoption,
     memory_eval_context_weight,
+    memory_eval_parser_benchmark,
     memory_eval_resume,
     memory_eval_handoff,
     memory_backend_query,
@@ -853,6 +854,13 @@ def _route_request(path: str, params: dict, default_workspace: str | None) -> di
         workspace = _require_workspace(params, default_workspace)
         from memory_center.core.benchmark.trending import generate_benchmark_report
         return generate_benchmark_report(workspace, function_name=params.get("function_name", [""])[0])
+    if path == "/workspace/eval-parser-benchmark":
+        workspace = _require_workspace(params, default_workspace)
+        return memory_eval_parser_benchmark(
+            workspace,
+            limit=_parse_int(params, "limit", 200),
+            max_findings=_parse_int(params, "max_findings", 20),
+        )
 
     # ===================== Next-Phase HTTP Routes (ECC/UA/CG) =====================
     if path == "/workspace/verification-loop":

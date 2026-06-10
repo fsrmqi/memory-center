@@ -433,6 +433,22 @@ def memory_eval_token_benchmark(
     )
 
 
+def memory_eval_parser_benchmark(
+    workspace_file: str | Path,
+    *,
+    limit: int = 200,
+    max_findings: int = 20,
+) -> Dict[str, Any]:
+    """Run a real-workspace comparison between regex and tree-sitter Java parsers."""
+    from ..indexing.benchmark import benchmark_java_parsers
+
+    return benchmark_java_parsers(
+        workspace_file,
+        limit=limit,
+        max_findings=max_findings,
+    )
+
+
 def _benchmark_baseline_path(workspace_file: str | Path) -> Path:
     _, store = load_context(workspace_file)
     return store.base_dir / "benchmark-baseline.json"

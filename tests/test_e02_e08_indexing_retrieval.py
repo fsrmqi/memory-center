@@ -196,6 +196,59 @@ public class UserService {
         assert symbol.parser == "tree-sitter"
         assert symbol.classes == ["Demo"]
 
+    def test_parser_benchmark_returns_diagnostics_when_tree_sitter_unavailable(self, demo_workspace, monkeypatch):
+        from memory_center.core.indexing import benchmark as benchmark_mod
+
+        class FakeUnavailableParser:
+            name = "tree-sitter"
+            available = False
+
+            def parse(self, text, file_path):
+                raise AssertionError("should not parse when unavailable")
+
+        monkeypatch.setattr(benchmark_mod, "TreeSitterJavaParser", FakeUnavailableParser)
+        result = benchmark_mod.benchmark_java_parsers(str(demo_workspace), limit=20)
+        assert result["files_scanned"] >= 1
+        assert result["tree_sitter"]["status"] == "unavailable"
+        assert result["quality"] == "unknown"
+
+    def test_parser_benchmark_detects_lagging_fields(self, demo_workspace, monkeypatch):
+        from memory_center.core.indexing import benchmark as benchmark_mod
+        from memory_center.core.indexing.base import JavaParseResult
+
+        class FakeRegexParser:
+            name = "regex"
+
+            def parse(self, text, file_path):
+                return JavaParseResult(
+                    package="com.example",
+                    classes=["Demo"],
+                    methods=["run"],
+                    annotations=["Service"],
+                    bean_injections=[{"field_name": "client", "type": "Client"}],
+                )
+
+        class FakeTreeParser:
+            name = "tree-sitter"
+            available = True
+
+            def parse(self, text, file_path):
+                return JavaParseResult(
+                    package="com.example",
+                    classes=["Demo"],
+                    methods=[],
+                    annotations=["Service"],
+                    bean_injections=[],
+                )
+
+        monkeypatch.setattr(benchmark_mod, "RegexJavaParser", FakeRegexParser)
+        monkeypatch.setattr(benchmark_mod, "TreeSitterJavaParser", FakeTreeParser)
+        result = benchmark_mod.benchmark_java_parsers(str(demo_workspace), limit=5, max_findings=10)
+        assert result["tree_sitter"]["status"] == "active"
+        assert result["regressions"]
+        assert any(item["field"] == "methods" for item in result["regressions"])
+        assert result["score"] < 100
+
 
 # ═════════════════════════════════════════════════════════════════════════════
 # E-03: Parallel Indexing with Fault Tolerance

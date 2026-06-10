@@ -3149,3 +3149,50 @@ python3 -m pytest -q
 git diff --check
 通过
 ```
+
+## tree-sitter 真实 workspace parser benchmark 接入
+
+**状态**: completed
+**日期**: 2026-06-10
+
+### 完成范围
+
+新增真实 workspace 下的 parser 对比评测能力，支持在 Java workspace 中对 regex parser 与 tree-sitter parser 做文件级比较，并通过 CLI / HTTP / MCP `mc_admin` 统一访问。
+
+### 生产代码改动
+
+| 文件 | 改动摘要 |
+|---|---|
+| `memory_center/core/indexing/benchmark.py` | 新增 `benchmark_java_parsers()`：扫描 workspace Java 文件，对比 regex / tree-sitter 解析结果，输出 summary、regressions、improvements、score、quality 和 diagnostics |
+| `memory_center/core/orchestrator/eval.py` | 新增 `memory_eval_parser_benchmark()` 作为公开评测入口 |
+| `memory_center/core/orchestrator/__init__.py` | 导出 `memory_eval_parser_benchmark` |
+| `memory_center/cli/main.py` | 新增 `eval-parser-benchmark` CLI 命令 |
+| `memory_center/http/server.py` | 新增 `/workspace/eval-parser-benchmark` HTTP 路由 |
+| `memory_center/mcp/server.py` | `mc_admin` 新增 `eval_parser_benchmark` action |
+| `memory_center/core/capability_matrix.py` | capability matrix 新增 `parser-benchmark` 能力定义 |
+
+### 测试与文档
+
+| 文件 | 改动摘要 |
+|---|---|
+| `tests/test_e02_e08_indexing_retrieval.py` | 新增 benchmark unavailable / lagging field 两类回归测试 |
+| `tests/test_b01_behavior_matrix.py` | 新增 parser-benchmark 三入口执行、一致性、core fields、错误语义、共享 backend 测试 |
+| `docs/REFERENCE.md` | 增加 CLI / HTTP 入口说明 |
+| `docs/MCP_GUIDE.md` | 增加 `mc_admin(action=\"eval_parser_benchmark\")` 说明 |
+| `docs/USER_GUIDE.md` | 增加 parser benchmark 使用示例 |
+
+### 验证结果
+
+```
+python3 -m pytest tests/test_e02_e08_indexing_retrieval.py -q
+通过
+
+python3 -m pytest tests/test_b01_behavior_matrix.py -q
+通过
+
+python3 -m pytest -q
+全量测试跑完至 100%，无失败
+
+git diff --check
+通过
+```
