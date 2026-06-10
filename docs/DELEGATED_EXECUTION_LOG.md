@@ -3150,6 +3150,74 @@ git diff --check
 通过
 ```
 
+## runtime audit 接入 workspace 治理建议
+
+**状态**: completed
+**日期**: 2026-06-10
+
+### 完成范围
+
+把 `doctor()` 中的 workspace 结构风险与修复建议接入 `runtime-audit` 主入口：
+
+- `/workspace/runtime-audit`
+- `memory-center runtime-audit`
+- `mc_admin(action="runtime_audit")`
+
+现在 runtime audit 不只返回 hooks / MCP / agent profile 基础检查，也会直接暴露：
+
+- `workspace_shape`
+- `suggested_fixes`
+- `doctor_hint`
+
+### 生产代码改动
+
+| 文件 | 改动摘要 |
+|---|---|
+| `memory_center/core/audit/runtime.py` | 接入 `doctor()`，把 workspace shape 风险、修复建议、doctor hint 纳入 runtime audit，并对高风险 workspace 降分 |
+
+### 测试
+
+| 文件 | 改动摘要 |
+|---|---|
+| `tests/test_workspace_shape_status.py` | 新增 runtime audit 对 workspace 风险和修复建议的断言 |
+
+### 真实 workspace 验证
+
+使用：
+
+```bash
+/opt/homebrew/bin/python3.11 -m memory_center.cli.main runtime-audit \
+  --workspace /Users/cuijiaqi/javaworkspace/ucap/.memory-center/workspace.yaml
+```
+
+验证结果：
+
+- `score = 85`
+- `quality = high`
+- `workspace_shape.risk_level = high`
+- `duplicate_root_group_count = 2`
+- `nested_service_pair_count = 8`
+- `suggested_fix_count = 4`
+
+### 验证结果
+
+```
+python3 -m pytest tests/test_workspace_shape_status.py -q
+通过
+
+python3 -m pytest tests/test_f_g_series.py -q -k 'audit'
+通过
+
+python3 -m pytest tests/test_b01_behavior_matrix.py -q -k 'runtime_audit'
+通过
+
+python3 -m pytest -q
+全量测试跑完至 100%，无失败
+
+git diff --check
+通过
+```
+
 ## workspace 结构风险正式接入状态链路
 
 **状态**: completed
@@ -3205,6 +3273,48 @@ git diff --check
   - `regressions = []`
   - `score = 100`
   - `quality = high`
+
+## workspace 风险治理建议接入 doctor
+
+**状态**: completed
+**日期**: 2026-06-10
+
+### 完成范围
+
+把 workspace 结构风险从“能看见”继续推进到“能治理”：
+
+- `doctor()` 现在会把 duplicate/nested service root 视为正式健康检查项
+- 返回 `advisories` 与 `suggested_fixes`
+- 建议内容直接包含保留/收窄 service 的方向和候选子模块路径
+
+### 生产代码改动
+
+| 文件 | 改动摘要 |
+|---|---|
+| `memory_center/core/workspace_shape.py` | 新增 workspace shape remediation 建议：重复 root 去重、父 service 收窄、候选子模块路径发现 |
+| `memory_center/core/validators.py` | `doctor()` 增加 `workspace_shape:service_roots` 检查、`advisories`、`suggested_fixes`、更具体的 hint |
+
+### 测试
+
+| 文件 | 改动摘要 |
+|---|---|
+| `tests/test_workspace_shape_status.py` | 新增 doctor 对 workspace 结构风险与修复建议的断言 |
+
+### 验证结果
+
+```
+python3 -m pytest tests/test_workspace_shape_status.py -q
+通过
+
+python3 -m pytest tests/test_public_mvp.py -q -k 'test_demo_workspace_indexes_spring_cloud_patterns or test_workspace_supports_absolute_service_paths_across_multiple_roots or test_article_change_graph_and_doctor_self_test'
+通过
+
+python3 -m pytest -q
+全量测试跑完至 100%，无失败
+
+git diff --check
+通过
+```
 
 ## 面向 ucap 真实 workspace 的 parser benchmark 优化
 

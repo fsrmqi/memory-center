@@ -112,6 +112,13 @@ def analyze_workspace_shape(config: WorkspaceConfig) -> Dict[str, Any]:
     else:
         risk_level = "medium"
 
+    recommendations = build_workspace_shape_recommendations(
+        config,
+        service_entries=service_entries,
+        duplicate_root_groups=duplicate_root_groups,
+        nested_pairs=nested_pairs,
+    )
+
     return {
         "service_count": len(service_entries),
         "unique_root_count": unique_root_count,
@@ -122,4 +129,98 @@ def analyze_workspace_shape(config: WorkspaceConfig) -> Dict[str, Any]:
         "warning_count": warning_count,
         "risk_level": risk_level,
         "warnings": warnings,
+        "recommendations": recommendations,
     }
+
+
+def build_workspace_shape_recommendations(
+    config: WorkspaceConfig,
+    *,
+    service_entries: List[WorkspaceServiceEntry] | None = None,
+    duplicate_root_groups: List[Dict[str, Any]] | None = None,
+    nested_pairs: List[Dict[str, str]] | None = None,
+) -> List[Dict[str, Any]]:
+    entries = service_entries or collect_workspace_service_entries(config)
+    root_to_entry = {entry.root_text: entry for entry in entries}
+    recommendations: List[Dict[str, Any]] = []
+
+    for group in duplicate_root_groups or []:
+        services = list(group.get("services", []) or [])
+        if len(services) < 2:
+            continue
+        keep_service = services[0]
+        root_text = str(group.get("root", ""))
+        submodules = _discover_submodule_candidates(root_to_entry.get(root_text).root if root_text in root_to_entry else Path(root_text), config)
+        recommendations.append(
+            {
+                "code": "deduplicate_service_root_group",
+                "priority": "high" if len(services) > 2 else "medium",
+                "root": root_text,
+                "keep_service": keep_service,
+                "duplicate_services": services[1:],
+                "suggested_actions": [
+                    f"优先确认 `{keep_service}` 是否应作为该 root 的唯一 service 定义。",
+                    "如果重复 service 代表不同子模块，请把它们的 path 收窄到真实子模块目录，而不是共享同一个根目录。",
+                ],
+                "candidate_narrower_paths": submodules[:8],
+            }
+        )
+
+    nested_by_parent: Dict[str, List[Dict[str, str]]] = {}
+    for pair in nested_pairs or []:
+        nested_by_parent.setdefault(pair["parent_service"], []).append(pair)
+
+    for parent_service, pairs in sorted(nested_by_parent.items()):
+        parent_root = pairs[0]["parent_root"]
+        submodules = _discover_submodule_candidates(Path(parent_root), config)
+        child_services = sorted({pair["child_service"] for pair in pairs})
+        recommendations.append(
+            {
+                "code": "narrow_parent_service_root",
+                "priority": "high",
+                "parent_service": parent_service,
+                "parent_root": parent_root,
+                "child_services": child_services,
+                "suggested_actions": [
+                    f"如果 `{parent_service}` 只是聚合目录，建议移除它的 service 定义，改由子模块 service 负责索引。",
+                    f"如果 `{parent_service}` 仍需保留，请把 path 收窄到真正业务入口，避免覆盖 {len(child_services)} 个子 service。",
+                ],
+                "candidate_narrower_paths": submodules[:8],
+            }
+        )
+
+    return recommendations
+
+
+def _discover_submodule_candidates(root: Path, config: WorkspaceConfig) -> List[str]:
+    if not root.exists() or not root.is_dir():
+        return []
+    candidates: List[str] = []
+    for child in sorted(root.iterdir(), key=lambda item: item.name):
+        if not child.is_dir():
+            continue
+        if child.name.startswith("."):
+            continue
+        if _looks_like_module_root(child):
+            candidates.append(_to_workspace_relative_path(child, config))
+    return candidates
+
+
+def _looks_like_module_root(path: Path) -> bool:
+    markers = [
+        path / "src",
+        path / "pom.xml",
+        path / "build.gradle",
+        path / "build.gradle.kts",
+        path / "settings.gradle",
+        path / "settings.gradle.kts",
+    ]
+    return any(marker.exists() for marker in markers)
+
+
+def _to_workspace_relative_path(path: Path, config: WorkspaceConfig) -> str:
+    resolved = path.expanduser().resolve()
+    try:
+        return resolved.relative_to(config.root_path).as_posix()
+    except ValueError:
+        return resolved.as_posix()

@@ -8,6 +8,7 @@ from .graph import GraphStore
 from .orchestrator import memory_query, workspace_status
 from .semantic import semantic_index_stats, SEMANTIC_INDEX_FILE
 from .store import WorkspaceStore
+from .workspace_shape import analyze_workspace_shape
 
 
 def doctor(workspace_file: str | Path, self_test: bool = False) -> Dict[str, Any]:
@@ -15,6 +16,7 @@ def doctor(workspace_file: str | Path, self_test: bool = False) -> Dict[str, Any
     config = load_workspace_config(workspace_file)
     store = WorkspaceStore(workspace_file)
     checks: List[Dict[str, Any]] = []
+    advisories: List[Dict[str, Any]] = []
 
     checks.append(_check("workspace_file_exists", Path(workspace_file).expanduser().exists(), str(workspace_file)))
     checks.append(_check("root_exists", config.root_path.exists(), str(config.root_path)))
@@ -42,6 +44,24 @@ def doctor(workspace_file: str | Path, self_test: bool = False) -> Dict[str, Any
     checks.append(_check("graph:edges", counts.get("edges", 0) > 0, str(counts)))
     semantic = semantic_index_stats(workspace_file)
     checks.append(_check("semantic:docs", semantic.get("doc_count", 0) > 0, str(semantic)))
+    workspace_shape = analyze_workspace_shape(config)
+    checks.append(
+        _check(
+            "workspace_shape:service_roots",
+            workspace_shape.get("warning_count", 0) == 0,
+            f"risk={workspace_shape.get('risk_level', 'unknown')}, warnings={workspace_shape.get('warning_count', 0)}",
+        )
+    )
+    if workspace_shape.get("warnings"):
+        advisories.extend(
+            {
+                "category": "workspace_shape",
+                "severity": item.get("severity", "medium"),
+                "code": item.get("code", ""),
+                "message": item.get("message", ""),
+            }
+            for item in workspace_shape.get("warnings", [])
+        )
 
     smoke: Dict[str, Any] | None = None
     if self_test:
@@ -53,12 +73,22 @@ def doctor(workspace_file: str | Path, self_test: bool = False) -> Dict[str, Any
         checks.append(_check("self_test:query", smoke["query_matches"] > 0, f"memory_query matched {query_text!r}"))
 
     failed = [item for item in checks if not item["ok"]]
+    suggested_fixes = workspace_shape.get("recommendations", [])
+    if failed:
+        hint = "Run `memory-center reindex --workspace <workspace.yaml>` after fixing failed checks."
+        if suggested_fixes:
+            hint += " 先处理 workspace service root 冲突，再重建索引会更稳。"
+    else:
+        hint = "Workspace looks ready."
     return {
         "workspace": config.workspace,
         "ok": not failed,
         "checks": checks,
+        "workspace_shape": workspace_shape,
+        "advisories": advisories,
+        "suggested_fixes": suggested_fixes,
         "self_test": smoke,
-        "hint": "Run `memory-center reindex --workspace <workspace.yaml>` after fixing failed checks." if failed else "Workspace looks ready.",
+        "hint": hint,
     }
 
 

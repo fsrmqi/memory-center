@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 from ..store import WorkspaceStore
+from ..validators import doctor
 
 AUDIT_LOG_FILE = "agent-runtime-audit.jsonl"
 
@@ -64,12 +65,46 @@ def audit_agent_runtime(workspace_file: str | Path) -> Dict[str, Any]:
         })
         score -= 10
 
+    workspace_doctor = doctor(workspace_file, self_test=False)
+    workspace_shape = workspace_doctor.get("workspace_shape", {}) or {}
+    suggested_fixes = workspace_doctor.get("suggested_fixes", []) or []
+    advisories = workspace_doctor.get("advisories", []) or []
+    failed_checks = [item for item in workspace_doctor.get("checks", []) if not item.get("ok")]
+
+    for advisory in advisories:
+        findings.append(
+            {
+                "category": advisory.get("category", "workspace"),
+                "severity": advisory.get("severity", "medium"),
+                "code": advisory.get("code", ""),
+                "message": advisory.get("message", ""),
+            }
+        )
+
+    risk_level = workspace_shape.get("risk_level", "low")
+    if risk_level == "high":
+        score -= 15
+    elif risk_level == "medium":
+        score -= 8
+
+    if failed_checks and not workspace_doctor.get("ok", True):
+        findings.append(
+            {
+                "category": "workspace",
+                "severity": "medium" if risk_level != "high" else "high",
+                "code": "workspace_doctor_failed",
+                "message": f"workspace 健康检查存在 {len(failed_checks)} 个未通过项，建议优先处理 service root 与索引健康问题。",
+            }
+        )
+
     # Record audit
     audit_record = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "score": max(0, score),
         "findings_count": len(findings),
         "findings": findings,
+        "workspace_shape_risk_level": workspace_shape.get("risk_level", "low"),
+        "suggested_fix_count": len(suggested_fixes),
     }
     store.append_jsonl(AUDIT_LOG_FILE, audit_record)
 
@@ -77,5 +112,8 @@ def audit_agent_runtime(workspace_file: str | Path) -> Dict[str, Any]:
         "score": max(0, score),
         "quality": "high" if score >= 85 else "medium" if score >= 60 else "low",
         "findings": findings,
+        "workspace_shape": workspace_shape,
+        "suggested_fixes": suggested_fixes,
+        "doctor_hint": workspace_doctor.get("hint", ""),
         "audit_record": audit_record,
     }
