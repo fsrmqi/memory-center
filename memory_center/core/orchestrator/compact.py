@@ -89,6 +89,21 @@ def _compact_workspace_status(result: Dict[str, Any], budget: str = "medium") ->
     return {
         "workspace": result.get("workspace", ""),
         "root": result.get("root", ""),
+        "workspace_shape": {
+            "service_count": (result.get("workspace_shape", {}) or {}).get("service_count", 0),
+            "unique_root_count": (result.get("workspace_shape", {}) or {}).get("unique_root_count", 0),
+            "duplicate_root_group_count": (result.get("workspace_shape", {}) or {}).get("duplicate_root_group_count", 0),
+            "nested_service_pair_count": (result.get("workspace_shape", {}) or {}).get("nested_service_pair_count", 0),
+            "risk_level": (result.get("workspace_shape", {}) or {}).get("risk_level", "low"),
+        },
+        "workspace_warnings": [
+            {
+                "code": item.get("code", ""),
+                "severity": item.get("severity", ""),
+                "message": item.get("message", ""),
+            }
+            for item in (result.get("workspace_warnings", []) or [])[:2]
+        ],
         "index_counts": result.get("index_counts", {}),
         "semantic_index": result.get("semantic_index", {}),
         "memory_layers": result.get("memory_layers", {}),

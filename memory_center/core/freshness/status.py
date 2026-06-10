@@ -12,7 +12,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from ..config import load_workspace_config
 from ..store import WorkspaceStore
+from ..workspace_shape import analyze_workspace_shape
 
 
 @dataclass
@@ -107,7 +109,28 @@ class IndexFreshnessService:
     def banner(self) -> Dict[str, Any]:
         """Generate a freshness banner for MCP responses."""
         status = self.check()
-        return {
+        result = {
             "freshness": status.to_dict(),
             "banner": f"[{status.status.upper()}] {status.message}" if status.message else None,
         }
+        try:
+            workspace_shape = analyze_workspace_shape(load_workspace_config(self._workspace_file))
+        except Exception:
+            workspace_shape = {}
+
+        warnings = workspace_shape.get("warnings", []) if isinstance(workspace_shape, dict) else []
+        if warnings:
+            result["workspace_shape"] = {
+                "service_count": workspace_shape.get("service_count", 0),
+                "unique_root_count": workspace_shape.get("unique_root_count", 0),
+                "duplicate_root_group_count": workspace_shape.get("duplicate_root_group_count", 0),
+                "nested_service_pair_count": workspace_shape.get("nested_service_pair_count", 0),
+                "risk_level": workspace_shape.get("risk_level", "low"),
+            }
+            result["workspace_warnings"] = warnings
+            shape_notice = f"workspace 配置存在 {len(warnings)} 个结构风险"
+            if result["banner"]:
+                result["banner"] = f'{result["banner"]}；{shape_notice}'
+            else:
+                result["banner"] = shape_notice
+        return result

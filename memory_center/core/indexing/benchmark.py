@@ -9,6 +9,7 @@ from typing import Any, Dict, Iterable, List, Tuple
 from ..config import load_workspace_config
 from ..diagnostics import DIAG, diag_entry
 from ..indexer import JAVA_EXTENSIONS, safe_read, walk_project
+from ..workspace_shape import analyze_workspace_shape, collect_workspace_service_entries, select_primary_service_entry
 from .base import JavaParseResult
 from .java_regex_parser import RegexJavaParser
 from .tree_sitter_parser import TreeSitterJavaParser
@@ -151,42 +152,11 @@ def benchmark_java_parsers(
 
 
 def _collect_workspace_java_files(config: Any) -> Tuple[List[Tuple[str, str, Path]], Dict[str, Any]]:
-    service_entries: List[Dict[str, Any]] = []
-    duplicate_roots: Dict[str, List[str]] = defaultdict(list)
-    for index, svc in enumerate(config.services):
-        service_root = config.resolve_service_path(svc)
-        if not service_root.exists():
-            continue
-        entry = {
-            "index": index,
-            "service": svc,
-            "name": svc.name,
-            "root": service_root,
-            "root_text": str(service_root),
-        }
-        service_entries.append(entry)
-        duplicate_roots[str(service_root)].append(svc.name)
-
-    nested_pairs: List[Dict[str, str]] = []
-    for left in service_entries:
-        for right in service_entries:
-            if left["name"] == right["name"]:
-                continue
-            left_root = left["root_text"].rstrip("/")
-            right_root = right["root_text"].rstrip("/")
-            if right_root.startswith(left_root + "/"):
-                nested_pairs.append(
-                    {
-                        "parent_service": left["name"],
-                        "parent_root": left["root_text"],
-                        "child_service": right["name"],
-                        "child_root": right["root_text"],
-                    }
-                )
-
+    service_entries = collect_workspace_service_entries(config)
+    workspace_shape = analyze_workspace_shape(config)
     unique_roots: Dict[str, Path] = {}
     for entry in service_entries:
-        unique_roots.setdefault(entry["root_text"], entry["root"])
+        unique_roots.setdefault(entry.root_text, entry.root)
 
     file_records: List[Tuple[str, str, Path]] = []
     seen_files: set[str] = set()
@@ -198,32 +168,12 @@ def _collect_workspace_java_files(config: Any) -> Tuple[List[Tuple[str, str, Pat
             if abs_path in seen_files:
                 continue
             seen_files.add(abs_path)
-            candidates = [entry for entry in service_entries if _is_within(path, entry["root"])]
-            if not candidates:
+            primary = select_primary_service_entry(path, service_entries)
+            if primary is None:
                 continue
-            primary = sorted(candidates, key=lambda item: (-len(item["root_text"]), item["index"]))[0]
-            logical_path = config.service_logical_file_path(primary["service"], path)
-            file_records.append((primary["name"], logical_path, path))
-
-    workspace_shape = {
-        "service_count": len(service_entries),
-        "unique_root_count": len(unique_roots),
-        "duplicate_root_groups": [
-            {"root": root, "services": names}
-            for root, names in sorted(duplicate_roots.items())
-            if len(names) > 1
-        ],
-        "nested_service_pairs": nested_pairs,
-    }
+            logical_path = config.service_logical_file_path(primary.service, path)
+            file_records.append((primary.name, logical_path, path))
     return file_records, workspace_shape
-
-
-def _is_within(path: Path, root: Path) -> bool:
-    try:
-        path.resolve().relative_to(root.resolve())
-        return True
-    except ValueError:
-        return False
 
 
 def _sample_java_files(

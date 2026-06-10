@@ -16,6 +16,7 @@ from ..rules import match_rules
 from ..schemas import with_schema
 from ..semantic import semantic_index_stats
 from ..store import WorkspaceStore
+from ..workspace_shape import analyze_workspace_shape
 from ..write_receipts import WRITE_RECEIPTS_FILE
 from .common import (
     LAYER_L0,
@@ -57,6 +58,7 @@ from ..tracking import log_token_gain
 
 def workspace_status(workspace_file: str | Path, view: str = "compact", budget: str = "medium") -> Dict[str, Any]:
     config, store = load_context(workspace_file)
+    workspace_shape = analyze_workspace_shape(config)
     active_tasks = _active_task_summaries(workspace_file, limit=5)
     current_focus_task = dict(active_tasks[0]) if active_tasks else None
     memory_layers = _build_memory_layers(config, store, active_tasks)
@@ -67,6 +69,8 @@ def workspace_status(workspace_file: str | Path, view: str = "compact", budget: 
         "workspace": config.workspace,
         "root": str(config.root_path),
         "services": [s.__dict__ for s in config.services],
+        "workspace_shape": workspace_shape,
+        "workspace_warnings": workspace_shape.get("warnings", []),
         "index_counts": {
             "files": len(store.read_json_prefer_backend("file-index.json", [])),
             "symbols": len(store.read_json_prefer_backend("java-symbol-index.json", [])),

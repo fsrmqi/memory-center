@@ -3150,6 +3150,62 @@ git diff --check
 通过
 ```
 
+## workspace 结构风险正式接入状态链路
+
+**状态**: completed
+**日期**: 2026-06-10
+
+### 完成范围
+
+把真实 workspace 中的 service root 结构风险从 parser benchmark 的旁路信息，提升为主链路可见状态：
+
+- `workspace_status()` 现在直接返回 `workspace_shape` / `workspace_warnings`
+- `IndexFreshnessService.banner()` 会附带 workspace 配置结构风险提醒
+- parser benchmark / status / freshness 共用同一套 workspace shape 分析逻辑
+
+### 生产代码改动
+
+| 文件 | 改动摘要 |
+|---|---|
+| `memory_center/core/workspace_shape.py` | 新增通用 workspace shape 分析：重复 root、嵌套 root、primary service 归属选择 |
+| `memory_center/core/indexing/benchmark.py` | benchmark 改为复用统一 workspace shape helper，避免和主状态链路分叉 |
+| `memory_center/core/orchestrator/workspace.py` | `workspace_status()` 增加 `workspace_shape` 与 `workspace_warnings` |
+| `memory_center/core/orchestrator/compact.py` | compact status 视图增加 workspace 结构风险摘要 |
+| `memory_center/core/freshness/status.py` | freshness banner 增加 workspace 结构风险提醒 |
+
+### 测试
+
+| 文件 | 改动摘要 |
+|---|---|
+| `tests/test_workspace_shape_status.py` | 新增 duplicate root / nested root 场景，验证 status 与 freshness 均能暴露风险 |
+
+### 真实 workspace 验证
+
+使用：
+
+```bash
+/opt/homebrew/bin/python3.11 -m memory_center.cli.main status \
+  --workspace /Users/cuijiaqi/javaworkspace/ucap/.memory-center/workspace.yaml
+
+/opt/homebrew/bin/python3.11 -m memory_center.cli.main eval-parser-benchmark \
+  --workspace /Users/cuijiaqi/javaworkspace/ucap/.memory-center/workspace.yaml \
+  --limit 500 --max-findings 20
+```
+
+验证结果：
+
+- `workspace_shape.service_count = 33`
+- `workspace_shape.unique_root_count = 30`
+- `workspace_shape.duplicate_root_group_count = 2`
+- `workspace_shape.nested_service_pair_count = 8`
+- `workspace_shape.risk_level = high`
+- parser benchmark 仍保持：
+  - `tree_sitter.status = active`
+  - `files_scanned = 500`
+  - `regressions = []`
+  - `score = 100`
+  - `quality = high`
+
 ## 面向 ucap 真实 workspace 的 parser benchmark 优化
 
 **状态**: completed
