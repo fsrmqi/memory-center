@@ -3150,6 +3150,121 @@ git diff --check
 通过
 ```
 
+## 面向 ucap 真实 workspace 的 parser benchmark 优化
+
+**状态**: completed
+**日期**: 2026-06-10
+
+### 完成范围
+
+基于 `/Users/cuijiaqi/javaworkspace/ucap/.memory-center/workspace.yaml` 的真实大仓样本，继续优化 parser benchmark，使其更适合多 service、重复 root、嵌套模块和 agent worktree 干扰并存的 workspace。
+
+### 生产代码改动
+
+| 文件 | 改动摘要 |
+|---|---|
+| `memory_center/core/indexing/benchmark.py` | benchmark 现在对 unique physical files 去重、按最具体 service root 归属、按 service 轮询采样；结果新增 `workspace_shape` 和 `service_coverage`，可直接看 duplicate roots、nested services 与 sampled services 覆盖度 |
+| `memory_center/core/indexer.py` | `IGNORED_DIRS` 新增 `.claude`、`.codex`、`.codex-hooks`，避免 agent worktree / hook 目录污染真实索引与 benchmark |
+
+### 新增测试
+
+| 文件 | 测试数 | 覆盖范围 |
+|---|---|---|
+| `tests/test_e02_e08_indexing_retrieval.py` | +3 | benchmark 跨 service 轮询采样；duplicate/nested service root 报告；walk_project 忽略 `.claude/.codex` agent 目录 |
+
+### 真实 workspace 验证
+
+使用：
+
+```bash
+/opt/homebrew/bin/python3.11 -m memory_center.cli.main eval-parser-benchmark \
+  --workspace /Users/cuijiaqi/javaworkspace/ucap/.memory-center/workspace.yaml \
+  --limit 500 --max-findings 20
+```
+
+关键结果：
+
+- `workspace_shape.service_count = 33`
+- `workspace_shape.unique_root_count = 30`
+- 明确识别到 duplicate roots：
+  - `ucap-cloud-back` / `ucap-cloud-word-app`
+  - `ucap-rap-common` / `ucap-rap-objectstorage-app` / `ucap-rap-id-app`
+- 明确识别到 nested service pairs：`ucap-cloud-back` 包含 `ucap-cloud-common-*` / `ucap-cloud-user-app`
+- `service_coverage.sampled_service_count = 30`，500 文件采样已覆盖全部有 Java 的 unique roots/service
+- 过滤 `.claude/worktrees` 后，不再把 agent worktree Java 文件混入 benchmark 结果
+- 当前采样结果：
+  - `tree_sitter.status = active`
+  - `score = 96`
+  - `quality = high`
+  - `regressions = 1`（剩余单个 test-source 常量字面量边角样本）
+
+### 验证结果
+
+```
+python3 -m pytest tests/test_e02_e08_indexing_retrieval.py -q
+通过
+
+python3 -m pytest -q
+全量测试跑完至 100%，无失败
+
+git diff --check
+通过
+```
+
+## parser benchmark field_types 误判修正
+
+**状态**: completed
+**日期**: 2026-06-10
+
+### 完成范围
+
+修正真实 workspace parser benchmark 中 `field_types` 的误判逻辑，避免 tree-sitter 返回更完整类型、常量字面量值或 primitive/wrapper 等价类型时被错误计为 regression。
+
+### 生产代码改动
+
+| 文件 | 改动摘要 |
+|---|---|
+| `memory_center/core/indexing/benchmark.py` | `field_types` 改为逐字段比较；增加类型归一化、primitive/wrapper family 等价、常量名上下文判断、字面量值到 `String`/数值类型的兼容识别；统计 totals 改为按字段项计数而非整包 dict 粗比较 |
+
+### 新增测试
+
+| 文件 | 测试数 | 覆盖范围 |
+|---|---|---|
+| `tests/test_e02_e08_indexing_retrieval.py` | +3 | 更精确 tree-sitter 类型不算回归；字符串/数字字面量兼容；常量字段名上下文下 `String` 不误判 |
+
+### 真实 workspace 验证
+
+使用：
+
+```bash
+/opt/homebrew/bin/python3.11 -m memory_center.cli.main eval-parser-benchmark \
+  --workspace /Users/cuijiaqi/javaworkspace/ucap/.memory-center/workspace.yaml \
+  --limit 500 --max-findings 20
+```
+
+修正前：
+- `field_types.lagging_files = 73`（后续逐步压到 12 / 6）
+- `score = 0`
+
+修正后：
+- `field_types.lagging_files = 0`
+- `regressions = []`
+- `score = 100`
+- `quality = high`
+
+### 验证结果
+
+```
+python3 -m pytest tests/test_e02_e08_indexing_retrieval.py -q
+通过
+
+python3 -m pytest -q
+全量测试跑完至 100%，无失败
+
+git diff --check
+通过
+```
+
 ## tree-sitter 真实 workspace parser benchmark 接入
 
 **状态**: completed

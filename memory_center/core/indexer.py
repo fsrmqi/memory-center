@@ -28,7 +28,7 @@ JAVA_EXTENSIONS = {".java"}
 CONFIG_NAMES = {"application.yml", "application.yaml", "bootstrap.yml", "bootstrap.yaml"}
 IGNORED_DIRS = {
     ".git", ".idea", ".vscode", "target", "build", "dist", "node_modules",
-    ".memory-center", ".project-ai", ".symbio", "__pycache__",
+    ".memory-center", ".project-ai", ".symbio", ".claude", ".codex", ".codex-hooks", "__pycache__",
 }
 
 

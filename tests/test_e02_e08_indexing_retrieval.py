@@ -15,6 +15,7 @@ import shutil
 from pathlib import Path
 
 import pytest
+import yaml
 
 
 # ── Fixtures ────────────────────────────────────────────────────────────────
@@ -307,6 +308,123 @@ public class UserService {
         assert result["summary"]["field_stats"]["field_types"]["lagging_files"] == 0
         assert not result["regressions"]
 
+    def test_parser_benchmark_field_types_uses_constant_name_context_for_string_values(self, demo_workspace, monkeypatch):
+        from memory_center.core.indexing import benchmark as benchmark_mod
+        from memory_center.core.indexing.base import JavaParseResult
+
+        class FakeRegexParser:
+            name = "regex"
+
+            def parse(self, text, file_path):
+                return JavaParseResult(field_types={"BASIC_": "Basic", "NO_METRICS": "No metrics"})
+
+        class FakeTreeParser:
+            name = "tree-sitter"
+            available = True
+
+            def parse(self, text, file_path):
+                return JavaParseResult(field_types={"BASIC_": "String", "NO_METRICS": "String"})
+
+        monkeypatch.setattr(benchmark_mod, "RegexJavaParser", FakeRegexParser)
+        monkeypatch.setattr(benchmark_mod, "TreeSitterJavaParser", FakeTreeParser)
+        result = benchmark_mod.benchmark_java_parsers(str(demo_workspace), limit=5, max_findings=10)
+        assert result["summary"]["field_stats"]["field_types"]["lagging_files"] == 0
+        assert not result["regressions"]
+
+    def test_parser_benchmark_samples_across_services_in_round_robin_order(self, tmp_path, monkeypatch):
+        from memory_center.core.indexing import benchmark as benchmark_mod
+        from memory_center.core.indexing.base import JavaParseResult
+
+        root = tmp_path / "repo"
+        (root / "svc-a").mkdir(parents=True)
+        (root / "svc-b").mkdir(parents=True)
+        (root / "svc-a" / "A1.java").write_text("class A1 {}", encoding="utf-8")
+        (root / "svc-a" / "A2.java").write_text("class A2 {}", encoding="utf-8")
+        (root / "svc-b" / "B1.java").write_text("class B1 {}", encoding="utf-8")
+        (root / "svc-b" / "B2.java").write_text("class B2 {}", encoding="utf-8")
+
+        workspace = root / ".memory-center" / "workspace.yaml"
+        workspace.parent.mkdir(parents=True)
+        workspace.write_text(
+            yaml.safe_dump(
+                {
+                    "workspace": "sample",
+                    "root": str(root),
+                    "services": [
+                        {"name": "svc-a", "path": "svc-a"},
+                        {"name": "svc-b", "path": "svc-b"},
+                    ],
+                },
+                sort_keys=False,
+                allow_unicode=True,
+            ),
+            encoding="utf-8",
+        )
+
+        class FakeRegexParser:
+            name = "regex"
+
+            def parse(self, text, file_path):
+                return JavaParseResult(classes=[Path(file_path).stem])
+
+        class FakeTreeParser(FakeRegexParser):
+            name = "tree-sitter"
+            available = True
+
+        monkeypatch.setattr(benchmark_mod, "RegexJavaParser", FakeRegexParser)
+        monkeypatch.setattr(benchmark_mod, "TreeSitterJavaParser", FakeTreeParser)
+        result = benchmark_mod.benchmark_java_parsers(str(workspace), limit=2, max_findings=10)
+        assert result["files_scanned"] == 2
+        assert sorted(result["service_coverage"]["sampled_services"]) == ["svc-a", "svc-b"]
+        assert result["service_coverage"]["sampled_file_counts"] == {"svc-a": 1, "svc-b": 1}
+
+    def test_parser_benchmark_reports_duplicate_and_nested_service_roots(self, tmp_path, monkeypatch):
+        from memory_center.core.indexing import benchmark as benchmark_mod
+        from memory_center.core.indexing.base import JavaParseResult
+
+        root = tmp_path / "repo"
+        (root / "parent" / "child").mkdir(parents=True)
+        (root / "parent" / "Parent.java").write_text("class Parent {}", encoding="utf-8")
+        (root / "parent" / "child" / "Child.java").write_text("class Child {}", encoding="utf-8")
+
+        workspace = root / ".memory-center" / "workspace.yaml"
+        workspace.parent.mkdir(parents=True)
+        workspace.write_text(
+            yaml.safe_dump(
+                {
+                    "workspace": "shape",
+                    "root": str(root),
+                    "services": [
+                        {"name": "parent", "path": "parent"},
+                        {"name": "parent-alias", "path": "parent"},
+                        {"name": "child", "path": "parent/child"},
+                    ],
+                },
+                sort_keys=False,
+                allow_unicode=True,
+            ),
+            encoding="utf-8",
+        )
+
+        class FakeRegexParser:
+            name = "regex"
+
+            def parse(self, text, file_path):
+                return JavaParseResult(classes=[Path(file_path).stem])
+
+        class FakeTreeParser(FakeRegexParser):
+            name = "tree-sitter"
+            available = True
+
+        monkeypatch.setattr(benchmark_mod, "RegexJavaParser", FakeRegexParser)
+        monkeypatch.setattr(benchmark_mod, "TreeSitterJavaParser", FakeTreeParser)
+        result = benchmark_mod.benchmark_java_parsers(str(workspace), limit=10, max_findings=10)
+        duplicate_groups = result["workspace_shape"]["duplicate_root_groups"]
+        nested_pairs = result["workspace_shape"]["nested_service_pairs"]
+        assert any(sorted(group["services"]) == ["parent", "parent-alias"] for group in duplicate_groups)
+        assert any(pair["parent_service"] == "parent" and pair["child_service"] == "child" for pair in nested_pairs)
+        assert result["service_coverage"]["total_file_counts"]["child"] == 1
+
 
 # ═════════════════════════════════════════════════════════════════════════════
 # E-03: Parallel Indexing with Fault Tolerance
@@ -355,6 +473,22 @@ class TestE03ParallelIndexing:
         java_files, config_files = walk_project_files(project_root)
         assert isinstance(java_files, list)
         assert isinstance(config_files, list)
+
+    def test_walk_project_ignores_agent_worktree_directories(self, tmp_path: Path):
+        from memory_center.core.indexer import walk_project
+
+        root = tmp_path / "repo"
+        (root / "src").mkdir(parents=True)
+        (root / ".claude" / "worktrees" / "agent").mkdir(parents=True)
+        (root / ".codex" / "cache").mkdir(parents=True)
+        (root / "src" / "Real.java").write_text("class Real {}", encoding="utf-8")
+        (root / ".claude" / "worktrees" / "agent" / "Shadow.java").write_text("class Shadow {}", encoding="utf-8")
+        (root / ".codex" / "cache" / "Ghost.java").write_text("class Ghost {}", encoding="utf-8")
+
+        files = [p.relative_to(root).as_posix() for p in walk_project(root)]
+        assert "src/Real.java" in files
+        assert ".claude/worktrees/agent/Shadow.java" not in files
+        assert ".codex/cache/Ghost.java" not in files
 
 
 # ═════════════════════════════════════════════════════════════════════════════

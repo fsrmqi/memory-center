@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections import defaultdict, deque
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Tuple
 
@@ -41,13 +42,17 @@ def benchmark_java_parsers(
     config = load_workspace_config(workspace_file)
     regex_parser = RegexJavaParser()
     tree_parser = TreeSitterJavaParser()
-    java_files = list(_collect_java_files(config, limit=limit))
+    all_java_files, workspace_shape = _collect_workspace_java_files(config)
+    java_files = _sample_java_files(all_java_files, limit=limit)
+    service_coverage = _build_service_coverage(all_java_files, java_files)
 
     result: Dict[str, Any] = {
         "workspace": config.workspace,
         "files_scanned": len(java_files),
         "projects": sorted({project for project, _, _ in java_files}),
         "limit": limit,
+        "workspace_shape": workspace_shape,
+        "service_coverage": service_coverage,
         "parser_selection": {
             "regex": regex_parser.name,
             "tree_sitter": tree_parser.name,
@@ -145,20 +150,133 @@ def benchmark_java_parsers(
     return result
 
 
-def _collect_java_files(config: Any, *, limit: int) -> Iterable[Tuple[str, str, Path]]:
-    seen = 0
-    for svc in config.services:
+def _collect_workspace_java_files(config: Any) -> Tuple[List[Tuple[str, str, Path]], Dict[str, Any]]:
+    service_entries: List[Dict[str, Any]] = []
+    duplicate_roots: Dict[str, List[str]] = defaultdict(list)
+    for index, svc in enumerate(config.services):
         service_root = config.resolve_service_path(svc)
         if not service_root.exists():
             continue
-        for path in walk_project(service_root):
+        entry = {
+            "index": index,
+            "service": svc,
+            "name": svc.name,
+            "root": service_root,
+            "root_text": str(service_root),
+        }
+        service_entries.append(entry)
+        duplicate_roots[str(service_root)].append(svc.name)
+
+    nested_pairs: List[Dict[str, str]] = []
+    for left in service_entries:
+        for right in service_entries:
+            if left["name"] == right["name"]:
+                continue
+            left_root = left["root_text"].rstrip("/")
+            right_root = right["root_text"].rstrip("/")
+            if right_root.startswith(left_root + "/"):
+                nested_pairs.append(
+                    {
+                        "parent_service": left["name"],
+                        "parent_root": left["root_text"],
+                        "child_service": right["name"],
+                        "child_root": right["root_text"],
+                    }
+                )
+
+    unique_roots: Dict[str, Path] = {}
+    for entry in service_entries:
+        unique_roots.setdefault(entry["root_text"], entry["root"])
+
+    file_records: List[Tuple[str, str, Path]] = []
+    seen_files: set[str] = set()
+    for root_text, root_path in unique_roots.items():
+        for path in walk_project(root_path):
             if path.suffix not in JAVA_EXTENSIONS:
                 continue
-            logical_path = config.service_logical_file_path(svc, path)
-            yield svc.name, logical_path, path
-            seen += 1
-            if limit > 0 and seen >= limit:
-                return
+            abs_path = str(path.resolve())
+            if abs_path in seen_files:
+                continue
+            seen_files.add(abs_path)
+            candidates = [entry for entry in service_entries if _is_within(path, entry["root"])]
+            if not candidates:
+                continue
+            primary = sorted(candidates, key=lambda item: (-len(item["root_text"]), item["index"]))[0]
+            logical_path = config.service_logical_file_path(primary["service"], path)
+            file_records.append((primary["name"], logical_path, path))
+
+    workspace_shape = {
+        "service_count": len(service_entries),
+        "unique_root_count": len(unique_roots),
+        "duplicate_root_groups": [
+            {"root": root, "services": names}
+            for root, names in sorted(duplicate_roots.items())
+            if len(names) > 1
+        ],
+        "nested_service_pairs": nested_pairs,
+    }
+    return file_records, workspace_shape
+
+
+def _is_within(path: Path, root: Path) -> bool:
+    try:
+        path.resolve().relative_to(root.resolve())
+        return True
+    except ValueError:
+        return False
+
+
+def _sample_java_files(
+    records: List[Tuple[str, str, Path]],
+    *,
+    limit: int,
+) -> List[Tuple[str, str, Path]]:
+    if limit <= 0 or limit >= len(records):
+        return records
+
+    buckets: Dict[str, deque[Tuple[str, str, Path]]] = defaultdict(deque)
+    order: List[str] = []
+    seen_projects: set[str] = set()
+    for record in records:
+        project = record[0]
+        buckets[project].append(record)
+        if project not in seen_projects:
+            seen_projects.add(project)
+            order.append(project)
+
+    sampled: List[Tuple[str, str, Path]] = []
+    while len(sampled) < limit:
+        progressed = False
+        for project in order:
+            bucket = buckets[project]
+            if not bucket:
+                continue
+            sampled.append(bucket.popleft())
+            progressed = True
+            if len(sampled) >= limit:
+                break
+        if not progressed:
+            break
+    return sampled
+
+
+def _build_service_coverage(
+    all_records: List[Tuple[str, str, Path]],
+    sampled_records: List[Tuple[str, str, Path]],
+) -> Dict[str, Any]:
+    total_counts: Dict[str, int] = defaultdict(int)
+    sampled_counts: Dict[str, int] = defaultdict(int)
+    for project, _, _ in all_records:
+        total_counts[project] += 1
+    for project, _, _ in sampled_records:
+        sampled_counts[project] += 1
+    return {
+        "total_services_with_java": len(total_counts),
+        "sampled_services": sorted(sampled_counts),
+        "sampled_service_count": len(sampled_counts),
+        "total_file_counts": dict(sorted(total_counts.items())),
+        "sampled_file_counts": dict(sorted(sampled_counts.items())),
+    }
 
 
 def _normalize_value(value: Any) -> set[str]:
@@ -211,9 +329,9 @@ def _compare_field_types(regex_value: Any, tree_value: Any) -> Dict[str, Any]:
     for key in sorted(regex_keys & tree_keys):
         regex_type = regex_types[key]
         tree_type = tree_types[key]
-        if _field_type_covers(tree_type, regex_type):
+        if _field_type_covers(tree_type, regex_type, field_name=key):
             continue
-        if _field_type_covers(regex_type, tree_type):
+        if _field_type_covers(regex_type, tree_type, field_name=key):
             missing.append(f"{key}:{regex_type}")
             continue
         missing.append(f"{key}:{regex_type}")
@@ -239,7 +357,7 @@ def _coerce_str_dict(value: Any) -> Dict[str, str]:
     return result
 
 
-def _field_type_covers(candidate: str, baseline: str) -> bool:
+def _field_type_covers(candidate: str, baseline: str, *, field_name: str = "") -> bool:
     candidate_norm = _normalize_type_text(candidate)
     baseline_norm = _normalize_type_text(baseline)
     if not baseline_norm:
@@ -256,6 +374,8 @@ def _field_type_covers(candidate: str, baseline: str) -> bool:
     if _type_family(candidate_sig) == _type_family(baseline_sig) and _type_family(candidate_sig):
         return True
     if candidate_sig.endswith(baseline_sig):
+        return True
+    if _looks_like_constant_name(field_name) and _type_family(candidate_sig) == "string":
         return True
 
     baseline_literal_type = _literal_type_name(baseline)
@@ -333,6 +453,11 @@ def _looks_like_java_type_name(raw: str) -> bool:
     if re.fullmatch(r"(?:[A-Za-z_]\w*\.)*[A-Z][A-Za-z0-9_]*(?:<.*>)?", normalized):
         return True
     return False
+
+
+def _looks_like_constant_name(raw: str) -> bool:
+    text = str(raw or "").strip()
+    return bool(text) and text.upper() == text and any(ch.isalpha() for ch in text)
 
 
 def _score_parser_quality(field_stats: Dict[str, Dict[str, int]]) -> int:
