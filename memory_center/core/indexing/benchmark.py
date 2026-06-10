@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Tuple
 
@@ -81,8 +82,7 @@ def benchmark_java_parsers(
         regex_result = regex_parser.parse(text, logical_path)
         baseline_rows.append((project, logical_path, regex_result, text))
         for field in _COMPARE_FIELDS:
-            regex_norm = _normalize_value(getattr(regex_result, field))
-            result["summary"]["regex_totals"][field] += len(regex_norm)
+            result["summary"]["regex_totals"][field] += _value_size(field, getattr(regex_result, field))
 
     if not tree_parser.available:
         result["recommendations"] = [
@@ -96,13 +96,13 @@ def benchmark_java_parsers(
     for project, logical_path, regex_result, text in baseline_rows:
         tree_result = tree_parser.parse(text, logical_path)
         for field in _COMPARE_FIELDS:
-            regex_norm = _normalize_value(getattr(regex_result, field))
-            tree_norm = _normalize_value(getattr(tree_result, field))
+            regex_value = getattr(regex_result, field)
+            tree_value = getattr(tree_result, field)
+            result["summary"]["tree_sitter_totals"][field] += _value_size(field, tree_value)
 
-            result["summary"]["tree_sitter_totals"][field] += len(tree_norm)
-
-            missing = sorted(regex_norm - tree_norm)
-            extra = sorted(tree_norm - regex_norm)
+            comparison = _compare_field_values(field, regex_value, tree_value)
+            missing = comparison["missing"]
+            extra = comparison["extra"]
             stat = result["summary"]["field_stats"][field]
             if missing:
                 stat["lagging_files"] += 1
@@ -112,8 +112,8 @@ def benchmark_java_parsers(
                             "project": project,
                             "file": logical_path,
                             "field": field,
-                            "regex_count": len(regex_norm),
-                            "tree_sitter_count": len(tree_norm),
+                            "regex_count": comparison["regex_count"],
+                            "tree_sitter_count": comparison["tree_sitter_count"],
                             "missing_examples": missing[:5],
                         }
                     )
@@ -125,8 +125,8 @@ def benchmark_java_parsers(
                             "project": project,
                             "file": logical_path,
                             "field": field,
-                            "regex_count": len(regex_norm),
-                            "tree_sitter_count": len(tree_norm),
+                            "regex_count": comparison["regex_count"],
+                            "tree_sitter_count": comparison["tree_sitter_count"],
                             "extra_examples": extra[:5],
                         }
                     )
@@ -177,6 +177,162 @@ def _normalize_value(value: Any) -> set[str]:
                 normalized.add(str(item))
         return normalized
     return {str(value)}
+
+
+def _value_size(field: str, value: Any) -> int:
+    if field == "field_types" and isinstance(value, dict):
+        return len(value)
+    return len(_normalize_value(value))
+
+
+def _compare_field_values(field: str, regex_value: Any, tree_value: Any) -> Dict[str, Any]:
+    if field == "field_types":
+        return _compare_field_types(regex_value, tree_value)
+
+    regex_norm = _normalize_value(regex_value)
+    tree_norm = _normalize_value(tree_value)
+    return {
+        "regex_count": len(regex_norm),
+        "tree_sitter_count": len(tree_norm),
+        "missing": sorted(regex_norm - tree_norm),
+        "extra": sorted(tree_norm - regex_norm),
+    }
+
+
+def _compare_field_types(regex_value: Any, tree_value: Any) -> Dict[str, Any]:
+    regex_types = _coerce_str_dict(regex_value)
+    tree_types = _coerce_str_dict(tree_value)
+    regex_keys = set(regex_types)
+    tree_keys = set(tree_types)
+
+    missing = [f"{key}:{regex_types[key]}" for key in sorted(regex_keys - tree_keys)]
+    extra = [f"{key}:{tree_types[key]}" for key in sorted(tree_keys - regex_keys)]
+
+    for key in sorted(regex_keys & tree_keys):
+        regex_type = regex_types[key]
+        tree_type = tree_types[key]
+        if _field_type_covers(tree_type, regex_type):
+            continue
+        if _field_type_covers(regex_type, tree_type):
+            missing.append(f"{key}:{regex_type}")
+            continue
+        missing.append(f"{key}:{regex_type}")
+        extra.append(f"{key}:{tree_type}")
+
+    return {
+        "regex_count": len(regex_types),
+        "tree_sitter_count": len(tree_types),
+        "missing": missing,
+        "extra": extra,
+    }
+
+
+def _coerce_str_dict(value: Any) -> Dict[str, str]:
+    if not isinstance(value, dict):
+        return {}
+    result: Dict[str, str] = {}
+    for key, raw in value.items():
+        key_text = str(key or "").strip()
+        if not key_text:
+            continue
+        result[key_text] = str(raw or "").strip()
+    return result
+
+
+def _field_type_covers(candidate: str, baseline: str) -> bool:
+    candidate_norm = _normalize_type_text(candidate)
+    baseline_norm = _normalize_type_text(baseline)
+    if not baseline_norm:
+        return True
+    if not candidate_norm:
+        return False
+    if candidate_norm == baseline_norm:
+        return True
+
+    candidate_sig = _type_signature(candidate_norm)
+    baseline_sig = _type_signature(baseline_norm)
+    if candidate_sig == baseline_sig:
+        return True
+    if _type_family(candidate_sig) == _type_family(baseline_sig) and _type_family(candidate_sig):
+        return True
+    if candidate_sig.endswith(baseline_sig):
+        return True
+
+    baseline_literal_type = _literal_type_name(baseline)
+    if baseline_literal_type:
+        baseline_literal_sig = _type_signature(baseline_literal_type)
+        if candidate_sig == baseline_literal_sig:
+            return True
+        if _type_family(candidate_sig) == _type_family(baseline_literal_sig) and _type_family(candidate_sig):
+            return True
+
+    return False
+
+
+def _normalize_type_text(value: str) -> str:
+    return re.sub(r"\s+", "", str(value or ""))
+
+
+def _type_signature(value: str) -> str:
+    compact = _normalize_type_text(value)
+    compact = re.sub(r"\b(?:[A-Za-z_]\w*\.)+([A-Za-z_]\w*)", r"\1", compact)
+    return compact
+
+
+def _type_family(value: str) -> str:
+    families = {
+        "byte": "integer",
+        "Byte": "integer",
+        "short": "integer",
+        "Short": "integer",
+        "int": "integer",
+        "Integer": "integer",
+        "long": "integer",
+        "Long": "integer",
+        "float": "decimal",
+        "Float": "decimal",
+        "double": "decimal",
+        "Double": "decimal",
+        "boolean": "boolean",
+        "Boolean": "boolean",
+        "char": "char",
+        "Character": "char",
+        "String": "string",
+    }
+    return families.get(value, value)
+
+
+def _literal_type_name(value: str) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    if raw.lower() in {"true", "false"}:
+        return "Boolean"
+    if re.fullmatch(r"[+-]?\d+[lL]?", raw):
+        return "Long" if raw.endswith(("L", "l")) else "Integer"
+    if re.fullmatch(r"[+-]?\d+\.\d+[fFdD]?", raw):
+        return "Double"
+    if raw.startswith('"') and raw.endswith('"'):
+        return "String"
+    if _looks_like_java_type_name(raw):
+        return ""
+    return "String"
+
+
+def _looks_like_java_type_name(raw: str) -> bool:
+    if raw.upper() == raw and any(ch.isalpha() for ch in raw):
+        return False
+    primitives = {
+        "byte", "short", "int", "long", "float", "double", "boolean", "char", "void",
+        "Byte", "Short", "Integer", "Long", "Float", "Double", "Boolean", "Character",
+        "String", "Object", "List", "Set", "Map",
+    }
+    if raw in primitives:
+        return True
+    normalized = _normalize_type_text(raw)
+    if re.fullmatch(r"(?:[A-Za-z_]\w*\.)*[A-Z][A-Za-z0-9_]*(?:<.*>)?", normalized):
+        return True
+    return False
 
 
 def _score_parser_quality(field_stats: Dict[str, Dict[str, int]]) -> int:

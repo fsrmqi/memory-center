@@ -249,6 +249,64 @@ public class UserService {
         assert any(item["field"] == "methods" for item in result["regressions"])
         assert result["score"] < 100
 
+    def test_parser_benchmark_field_types_treats_more_precise_tree_types_as_non_regression(self, demo_workspace, monkeypatch):
+        from memory_center.core.indexing import benchmark as benchmark_mod
+        from memory_center.core.indexing.base import JavaParseResult
+
+        class FakeRegexParser:
+            name = "regex"
+
+            def parse(self, text, file_path):
+                return JavaParseResult(
+                    field_types={
+                        "jobLRUMap": "String>>",
+                        "LOGIN_IDENTITY_KEY": "XXL_JOB_LOGIN_IDENTITY",
+                    },
+                )
+
+        class FakeTreeParser:
+            name = "tree-sitter"
+            available = True
+
+            def parse(self, text, file_path):
+                return JavaParseResult(
+                    field_types={
+                        "jobLRUMap": "ConcurrentMap<Integer, LinkedHashMap<String, String>>",
+                        "LOGIN_IDENTITY_KEY": "String",
+                    },
+                )
+
+        monkeypatch.setattr(benchmark_mod, "RegexJavaParser", FakeRegexParser)
+        monkeypatch.setattr(benchmark_mod, "TreeSitterJavaParser", FakeTreeParser)
+        result = benchmark_mod.benchmark_java_parsers(str(demo_workspace), limit=5, max_findings=10)
+        field_stats = result["summary"]["field_stats"]["field_types"]
+        assert field_stats["lagging_files"] == 0
+        assert not any(item["field"] == "field_types" for item in result["regressions"])
+        assert result["score"] == 100
+
+    def test_parser_benchmark_field_types_treats_string_literals_as_string_type(self, demo_workspace, monkeypatch):
+        from memory_center.core.indexing import benchmark as benchmark_mod
+        from memory_center.core.indexing.base import JavaParseResult
+
+        class FakeRegexParser:
+            name = "regex"
+
+            def parse(self, text, file_path):
+                return JavaParseResult(field_types={"COOKIE_PATH": "/", "COMMA": ",", "FALLBACK_USER_ID": "0"})
+
+        class FakeTreeParser:
+            name = "tree-sitter"
+            available = True
+
+            def parse(self, text, file_path):
+                return JavaParseResult(field_types={"COOKIE_PATH": "String", "COMMA": "String", "FALLBACK_USER_ID": "int"})
+
+        monkeypatch.setattr(benchmark_mod, "RegexJavaParser", FakeRegexParser)
+        monkeypatch.setattr(benchmark_mod, "TreeSitterJavaParser", FakeTreeParser)
+        result = benchmark_mod.benchmark_java_parsers(str(demo_workspace), limit=5, max_findings=10)
+        assert result["summary"]["field_stats"]["field_types"]["lagging_files"] == 0
+        assert not result["regressions"]
+
 
 # ═════════════════════════════════════════════════════════════════════════════
 # E-03: Parallel Indexing with Fault Tolerance
