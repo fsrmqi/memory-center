@@ -55,6 +55,7 @@ class WorkspaceConfig:
 class JavaSymbol:
     project: str
     file: str
+    parser: str = ""
     package: Optional[str] = None
     classes: List[str] = field(default_factory=list)
     interfaces: List[str] = field(default_factory=list)

@@ -3066,3 +3066,86 @@ git status --short examples/: （空，干净）
 - Vue 前端工作台持续优化
 - 更完整的结构化日志与指标体系
 - Vector ANN 主链路已接入并默认 disabled；后续重点是实际 embedding、真实 workspace benchmark 和默认启用策略
+
+## 验证链路与向量检索回归修复
+
+**状态**: completed
+**日期**: 2026-06-10
+
+### 完成范围
+
+修复 verification traceability、hybrid vector retrieval、semantic strength 输出以及 vector backend 统计中的回归问题，并补齐回归测试。
+
+### 生产代码改动
+
+| 文件 | 改动摘要 |
+|---|---|
+| `memory_center/core/verification/loop.py` | `complete_phase()` 补写 `task_id`，保证 verification log 可被 traceability graph 正确关联到 task |
+| `memory_center/core/retrieval/hybrid.py` | `_vector_retrieval()` 在 semantic backend 未提供 `model` 时回退到 `requested_model` 或默认模型；`_result_to_dict()` 正确处理 `dict` 形式 evidence，并将扩展 semantic strength 归一到公开契约 |
+| `memory_center/core/storage/vector_index.py` | `VectorIndex.stats()` 仅在 `node_vec` 实际存在时报告 `sqlite-vec` backend，避免误报 |
+
+### 新增测试
+
+| 文件 | 测试数 | 覆盖范围 |
+|---|---|---|
+| `tests/test_deepening_remaining.py` | +2 | verification phase 完成后 traceability 保留 `task_id`；retrieval payload 支持 `dict` evidence 并正确映射 semantic strength |
+| `tests/test_e02_e08_indexing_retrieval.py` | +1 | semantic index 未保存 dense model 名称时，vector retrieval 仍可使用默认模型完成查询 |
+
+### 验证结果
+
+```
+python3 -m pytest tests/test_deepening_remaining.py tests/test_e02_e08_indexing_retrieval.py
+118 passed in 1.86s
+
+python3 -m pytest -q
+全量测试跑完至 100%，无失败
+```
+
+### 当前权威策略
+
+以下策略为当前唯一权威口径；本日志中的旧约束、旧 stop conditions、旧阶段阻塞定义仅作为历史参考，不再构成开发门槛：
+
+1. 功能可用、实际好用、稳定可维护优先。
+2. 开发者可自由重排任务、合并工作包、重构核心模块、调整公开入口和数据模型。
+3. 旧 `Stop Conditions`、`deferred-review`、`blocked-by-deferred-review` 不再阻塞开发。
+4. indexer 重写、外部存储、daemon、前端改版等属于开放演进方向，可按实现收益推进。
+5. 仅保留必要底线：数据安全、不伪造验证、workspace 隔离、破坏性迁移可恢复。
+
+## tree-sitter 真实 workspace 精度增强
+
+**状态**: completed
+**日期**: 2026-06-10
+
+### 完成范围
+
+增强 tree-sitter Java parser 在真实 Spring Cloud workspace 中的可用精度：当 tree-sitter 可用时保留 AST 提取的结构化符号，同时合并 regex parser 已有的 Spring 关系事实，避免 indexer 因自动切换 parser 而丢失 bean 注入、方法调用、DTO 字段、配置读取和数据资源线索。
+
+### 生产代码改动
+
+| 文件 | 改动摘要 |
+|---|---|
+| `memory_center/core/indexing/tree_sitter_parser.py` | tree-sitter 初始化增加容错；`available` 改为基于实际 parser 实例；AST 结果与 regex 结果合并，保留深层 Spring 线索 |
+| `memory_center/core/models.py` | `JavaSymbol` 新增 `parser` 字段，记录实际使用的 parser 名称 |
+| `memory_center/core/indexer.py` | `parse_java_symbols()` 写入 parser 名称；graph class 节点 metadata 改为使用实际 parser，便于真实 workspace 诊断 |
+
+### 新增测试
+
+| 文件 | 测试数 | 覆盖范围 |
+|---|---|---|
+| `tests/test_e02_e08_indexing_retrieval.py` | +2 | tree-sitter 可用路径合并 regex 深层事实；`parse_java_symbols()` 记录实际 parser 名称 |
+
+### 验证结果
+
+```
+python3 -m pytest tests/test_e02_e08_indexing_retrieval.py -q
+通过
+
+python3 -m pytest tests/test_indexer_contract.py -q
+通过
+
+python3 -m pytest -q
+全量测试跑完至 100%，无失败
+
+git diff --check
+通过
+```

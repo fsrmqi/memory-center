@@ -301,6 +301,7 @@ def parse_java_symbols(project: str, rel: str, text: str) -> JavaSymbol:
     return JavaSymbol(
         project=project,
         file=rel,
+        parser=getattr(_JAVA_PARSER, "name", ""),
         package=parsed.package,
         classes=parsed.classes,
         interfaces=parsed.interfaces,
@@ -646,7 +647,20 @@ def build_graph_store(config: WorkspaceConfig, store: WorkspaceStore, *, project
             for cls in sym.get("classes", []) + sym.get("interfaces", []):
                 cid = node_id("Class", sym["project"], cls)
                 class_locations.setdefault(cls, []).append({"id": cid, "project": sym["project"], "file": sym["file"]})
-                nodes.append(GraphNode(cid, "Class", cls, sym["project"], sym["file"], metadata={"package": sym.get("package"), "annotations": sym.get("annotations", []), "parser": "regex"}))
+                nodes.append(
+                    GraphNode(
+                        cid,
+                        "Class",
+                        cls,
+                        sym["project"],
+                        sym["file"],
+                        metadata={
+                            "package": sym.get("package"),
+                            "annotations": sym.get("annotations", []),
+                            "parser": sym.get("parser") or "regex",
+                        },
+                    )
+                )
                 edges.append(GraphEdge(edge_id("DECLARES", fid, cid), fid, cid, "DECLARES", 1.0, {"evidence": "class/interface declaration"}))
                 for m in sym.get("methods", []):
                     mid = node_id("Method", sym["project"], cls, m)

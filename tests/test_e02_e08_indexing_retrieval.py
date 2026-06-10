@@ -114,6 +114,88 @@ public class MyService {
         assert "doWork" in r1.methods
         assert "doWork" in r2.methods
 
+    def test_tree_sitter_available_path_merges_regex_enriched_facts(self):
+        from memory_center.core.indexing.tree_sitter_parser import TreeSitterJavaParser
+
+        class FakeNode:
+            def __init__(self, node_type, text="", children=None, fields=None):
+                self.type = node_type
+                self.text = text.encode("utf-8")
+                self.children = children or []
+                self._fields = fields or {}
+
+            def child_by_field_name(self, name):
+                return self._fields.get(name)
+
+        class FakeTree:
+            def __init__(self, root_node):
+                self.root_node = root_node
+
+        class FakeTsParser:
+            def parse(self, _text):
+                package_name = FakeNode("scoped_identifier", "com.example.service")
+                package_decl = FakeNode("package_declaration", children=[package_name])
+                service_name = FakeNode("identifier", "UserService")
+                class_decl = FakeNode("class_declaration", fields={"name": service_name})
+                method_name = FakeNode("identifier", "sync")
+                method_decl = FakeNode("method_declaration", fields={"name": method_name})
+                annotation_name = FakeNode("identifier", "Service")
+                annotation = FakeNode("annotation", fields={"name": annotation_name})
+                root = FakeNode("program", children=[package_decl, annotation, class_decl, method_decl])
+                return FakeTree(root)
+
+        parser = TreeSitterJavaParser()
+        parser._parser = FakeTsParser()
+        src = """package com.example.service;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Service;
+import org.springframework.data.mongodb.core.MongoTemplate;
+
+@Service
+public class UserService {
+    private final OrderClient orderClient;
+    private final MongoTemplate mongoTemplate;
+
+    @Value("${demo.topic}")
+    private String topic;
+
+    public UserService(OrderClient orderClient, MongoTemplate mongoTemplate) {
+        this.orderClient = orderClient;
+        this.mongoTemplate = mongoTemplate;
+    }
+
+    public void sync(UserDto dto) {
+        orderClient.fetch();
+        dto.getName();
+    }
+}
+"""
+        result = parser.parse(src, "UserService.java")
+        assert result.package == "com.example.service"
+        assert "UserService" in result.classes
+        assert "sync" in result.methods
+        assert "Service" in result.annotations
+        assert result.bean_injections
+        assert any(item["receiver"] == "orderClient" for item in result.method_calls)
+        assert any(item["field"] == "name" for item in result.dto_field_usages)
+        assert any(item["key"] == "demo.topic" for item in result.config_usages)
+        assert any(item["kind"] == "MongoCollection" for item in result.data_resources)
+
+    def test_parse_java_symbols_records_selected_parser(self, monkeypatch):
+        import memory_center.core.indexer as indexer_mod
+        from memory_center.core.indexing.base import JavaParseResult
+
+        class FakeParser:
+            name = "tree-sitter"
+
+            def parse(self, text, file_path):
+                return JavaParseResult(classes=["Demo"], methods=["run"])
+
+        monkeypatch.setattr(indexer_mod, "_JAVA_PARSER", FakeParser())
+        symbol = indexer_mod.parse_java_symbols("demo", "src/Demo.java", "public class Demo { void run() {} }")
+        assert symbol.parser == "tree-sitter"
+        assert symbol.classes == ["Demo"]
+
 
 # ═════════════════════════════════════════════════════════════════════════════
 # E-03: Parallel Indexing with Fault Tolerance
