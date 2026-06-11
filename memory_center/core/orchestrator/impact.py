@@ -8,11 +8,15 @@ from ..graph import GraphStore
 from ..rules import match_rules
 from .common import _best_match, _build_progressive_levels, _impact_checklist, _unknown_static_analysis_risks, load_context
 from .query import (
+    _build_augmented_lookup_payload,
     _build_lookup_payload,
     _build_impact_evidence_summary,
     _build_edge_summary_lines,
     _compact_focus_edges,
     _format_compact_node_summary,
+    _build_project_scope,
+    _build_project_evidence,
+    memory_symbol,
     memory_query_hybrid,
 )
 from ..diagnostics import DIAG, diag_entry
@@ -30,14 +34,15 @@ def memory_impact(
     target: str,
     direction: str = "upstream",
     max_depth: int = 3,
+    project: str = "",
     view: str = "full",
     budget: str = "medium",
 ) -> Dict[str, Any]:
     _, store = load_context(workspace_file)
     with GraphStore(store.graph_db_path) as graph:
-        lookup = memory_query_hybrid(workspace_file, target, limit=8)
-        matches = [item.get("node", {}) for item in lookup.get("matches", []) if item.get("node")]
-        if not matches:
+        symbol_info = memory_symbol(workspace_file, target, limit=8, project=project)
+        lookup = symbol_info.get("lookup", {})
+        if not symbol_info.get("found"):
             candidate_paths = _build_impact_candidate_paths(
                 found=False,
                 target={"name": target, "type": ""},
@@ -58,7 +63,7 @@ def memory_impact(
                 "possible_impacts": [],
                 "candidate_paths": candidate_paths,
                 "recommended_path": dict(candidate_paths[0]) if candidate_paths else {},
-                "lookup": _build_lookup_payload(lookup),
+                "lookup": lookup if lookup else _build_lookup_payload({"query": target, "matches": []}),
                 "progressive": _build_impact_progressive_view(target, None, [], [], []),
                 "unknown_risks": _unknown_static_analysis_risks(),
             }
@@ -68,7 +73,7 @@ def memory_impact(
                 log_token_gain(workspace_file, "memory_impact", budget=budget, model="", raw_tokens=gain["raw_tokens"], compact_tokens=gain["compact_tokens"], view=view)
                 return compact
             return result
-        node = _best_match(matches, target)
+        node = symbol_info.get("best_match", {}) or {}
         impacts = graph.neighbors(node["id"], direction=direction, max_depth=max_depth, limit=300)
         confirmed = [x for x in impacts if float(x.get("confidence", 0)) >= 0.80]
         probable = [x for x in impacts if 0.55 <= float(x.get("confidence", 0)) < 0.80]
@@ -100,6 +105,8 @@ def memory_impact(
             "found": True,
             "direction": direction,
             "max_depth": max_depth,
+            "project_scope": _build_project_scope(project, node),
+            "project_evidence": _build_project_evidence(symbol_info.get("matches", []), node, project),
             "risk_level": risk_level,
             "impacted_projects": impacted_projects,
             "confirmed_impacts": confirmed,
@@ -107,7 +114,11 @@ def memory_impact(
             "possible_impacts": possible,
             "candidate_paths": candidate_paths,
             "recommended_path": dict(candidate_paths[0]) if candidate_paths else {},
-            "lookup": _build_lookup_payload(lookup),
+            "lookup": _build_augmented_lookup_payload(
+                {"query": target, "retrieval_summary": lookup.get("retrieval_summary", {}), "matches": []},
+                anchor_node=node,
+                project_evidence=_build_project_evidence(symbol_info.get("matches", []), node, project),
+            ),
             "evidence_summary": _build_impact_evidence_summary(confirmed, probable, possible),
             "progressive": _build_impact_progressive_view(target, node, confirmed, probable, possible),
             "required_rules": rules,
@@ -144,6 +155,14 @@ def _compact_impact_result(result: Dict[str, Any], budget: str = "medium") -> Di
     probable_summary = _summarize_chain_edges(_compact_focus_edges(probable))
     possible_summary = _summarize_chain_edges(_compact_focus_edges(possible))
     summary_lines = [f"Target {_format_compact_node_summary(target)}"]
+    project_scope = result.get("project_scope", {}) or {}
+    project_evidence = result.get("project_evidence", []) or []
+    if project_scope.get("uses_cross_project_anchor"):
+        summary_lines.append(
+            f"Project scope {project_scope.get('requested_project', '')} uses anchor {target.get('project', '')}"
+        )
+    for evidence in project_evidence[: limits["events"]]:
+        summary_lines.append(f"Project evidence: {_format_compact_node_summary(evidence)}")
     summary_lines.append(
         f"Risk {result.get('risk_level', 'unknown')}, confirmed={len(confirmed)} probable={len(probable)} possible={len(possible)}"
     )
@@ -171,6 +190,8 @@ def _compact_impact_result(result: Dict[str, Any], budget: str = "medium") -> Di
         "found": result.get("found", False),
         "direction": result.get("direction", ""),
         "max_depth": result.get("max_depth", 0),
+        "project_scope": project_scope,
+        "project_evidence": project_evidence[: limits["events"]],
         "risk_level": result.get("risk_level", "unknown"),
         "impacted_projects": result.get("impacted_projects", [])[: limits["services"]],
         "evidence_summary": result.get("evidence_summary", {}),
@@ -203,6 +224,7 @@ def _compact_impact_result(result: Dict[str, Any], budget: str = "medium") -> Di
             "retrieval_summary": lookup.get("retrieval_summary", {}),
             "entrypoints": [
                 {
+                    "role": item.get("role", ""),
                     "type": (item.get("node", {}) or {}).get("type", ""),
                     "name": (item.get("node", {}) or {}).get("name", ""),
                     "project": (item.get("node", {}) or {}).get("project", ""),

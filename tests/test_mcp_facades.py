@@ -155,6 +155,12 @@ def test_mcp_lookup_and_analyze_default_to_compact_views(tmp_path: Path):
     assert "confirmed_summary" in analyze_payload["impact"]
     assert analyze_payload["impact"]["summary_lines"]
     assert "confirmed_impacts" not in analyze_payload["impact"]
+    analyze_project_payload = loop.run_until_complete(
+        mc_analyze.fn(target="ArticleFeignClient", depth="quick", direction="upstream", max_depth=2, project="task-service")
+    )
+    assert analyze_project_payload["impact"]["project_scope"]["uses_cross_project_anchor"] is True
+    assert analyze_project_payload["impact"]["project_evidence"]
+    assert analyze_project_payload["impact"]["lookup"]["entrypoints"][0]["role"] == "anchor"
 
 
 def test_memory_context_risk_patterns_do_not_fail_silently(tmp_path: Path):
@@ -267,6 +273,7 @@ def test_mc_lookup_symbol_mode_project_filter(tmp_path: Path):
     assert r["best_match"]["type"] == "Class"
     assert r["best_match"]["name"] == "ArticleFeignClient"
     assert "common-api" in (r["best_match"].get("project") or "")
+    assert r["lookup"]["entrypoints"][0]["role"] == "anchor"
     for m in r.get("matches", []):
         assert "task-service" in ((m.get("node") or {}).get("project") or "")
 
@@ -276,6 +283,9 @@ def test_mc_lookup_chain_mode_project_filter(tmp_path: Path):
     wf = _setup_workspace(tmp_path)
     r = memory_callers(wf, "ArticleFeignClient", depth=2, limit=10, project="task-service")
     assert r["found"] is True
+    assert r["project_scope"]["uses_cross_project_anchor"] is True
+    assert r["project_evidence"]
+    assert all("task-service" in (item.get("project") or "") for item in r["project_evidence"])
 
 
 def test_mc_analyze_depth_levels(tmp_path: Path):
@@ -301,6 +311,16 @@ def test_mc_analyze_depth_levels(tmp_path: Path):
     checklist = memory_verify_checklist(wf, "ArticleFeignClient")
     result_full = {"workflow": "mc-analyze", "depth": "full", "impact": impact, "plan": plan, "rules": rules, "checklist": checklist}
     assert "checklist" in result_full
+
+
+def test_memory_impact_project_filter_uses_anchor_and_project_evidence(tmp_path: Path):
+    wf = _setup_workspace(tmp_path)
+    impact = memory_impact(wf, "ArticleFeignClient", direction="upstream", max_depth=2, project="task-service", view="compact", budget="small")
+    assert impact["found"] is True
+    assert impact["project_scope"]["uses_cross_project_anchor"] is True
+    assert impact["project_evidence"]
+    assert impact["lookup"]["entrypoints"][0]["role"] == "anchor"
+    assert any(item.get("role") == "project_evidence" for item in impact["lookup"]["entrypoints"])
 
 
 def test_mc_analyze_detect_changes_when_target_empty(tmp_path: Path):

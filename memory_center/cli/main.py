@@ -311,11 +311,12 @@ def impact_cmd(
     target: str = typer.Option(...),
     direction: str = typer.Option("upstream"),
     max_depth: int = typer.Option(3),
+    project: str = typer.Option("", help="Filter by project name for local evidence while keeping declaration anchor."),
     view: str = typer.Option("full", help="full|compact"),
     budget: str = typer.Option("medium", help="small|medium|large"),
 ):
     """Analyze upstream/downstream impact for a changed symbol or contract."""
-    print(memory_impact(workspace, target, direction, max_depth, view=view, budget=budget))
+    print(memory_impact(workspace, target, direction, max_depth, project=project, view=view, budget=budget))
 
 
 @app.command("detect-changes")

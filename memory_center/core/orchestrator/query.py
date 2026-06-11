@@ -625,11 +625,10 @@ def memory_context(
     budget: str = "medium",
 ) -> Dict[str, Any]:
     _, store = load_context(workspace_file)
-    lookup = memory_query_hybrid(workspace_file, name, limit=8, project=project)
-    matches = [item.get("node", {}) for item in lookup.get("matches", []) if item.get("node")]
-    if not matches:
-        return {"name": name, "found": False, "matches": [], "lookup": _build_lookup_payload(lookup)}
-    node = _best_match(matches, name)
+    symbol_info = memory_symbol(workspace_file, name, limit=8, project=project)
+    if not symbol_info.get("found"):
+        return {"name": name, "found": False, "matches": [], "lookup": symbol_info.get("lookup", {})}
+    node = symbol_info.get("best_match", {}) or {}
     with GraphStore(store.graph_db_path) as graph:
         incoming = graph.neighbors(node["id"], direction="upstream", max_depth=max_depth, limit=100)
         outgoing = graph.neighbors(node["id"], direction="downstream", max_depth=max_depth, limit=100)
@@ -661,7 +660,9 @@ def memory_context(
         "node": node,
         "incoming": incoming,
         "outgoing": outgoing,
-        "lookup": _build_lookup_payload(lookup),
+        "lookup": symbol_info.get("lookup", {}),
+        "project_scope": _build_project_scope(project, node),
+        "project_evidence": _build_project_evidence(symbol_info.get("matches", []), node, project),
         "evidence_summary": _build_context_evidence_summary(incoming, outgoing),
         "progressive": _build_context_progressive_view(node, incoming, outgoing),
         "risk_patterns": risk_patterns,
@@ -762,12 +763,13 @@ def memory_symbol(
         projects_seen[p] = projects_seen.get(p, 0) + 1
 
     filtered_lookup = lookup.get("matches", [])[:limit]
+    project_evidence = _build_project_evidence(filtered_lookup, best, inferred_project, limit=5)
     result: Dict[str, Any] = {
         "name": name,
         "found": True,
         "best_match": best,
         "matches": filtered_lookup,
-        "lookup": _build_lookup_payload(lookup),
+        "lookup": _build_augmented_lookup_payload(lookup, anchor_node=best, project_evidence=project_evidence),
     }
     if len(projects_seen) > 1:
         result["disambiguation"] = {
@@ -888,6 +890,8 @@ def memory_callers(
         "callers": callers,
         "chain_tree": _compress_chain_tree(callers),
         "chain_summary": _summarize_chain_edges(callers),
+        "project_scope": _build_project_scope(project, node),
+        "project_evidence": _build_project_evidence(info.get("matches", []), node, project),
         "lookup": info.get("lookup", {}),
     }
     if _is_compact_view(view):
@@ -924,6 +928,8 @@ def memory_callees(
         "callees": callees,
         "chain_tree": _compress_chain_tree(callees),
         "chain_summary": _summarize_chain_edges(callees),
+        "project_scope": _build_project_scope(project, node),
+        "project_evidence": _build_project_evidence(info.get("matches", []), node, project),
         "lookup": info.get("lookup", {}),
     }
     if _is_compact_view(view):
@@ -1321,6 +1327,122 @@ def _build_edge_summary_lines(prefix: str, items: List[Dict[str, Any]], limit: i
     return lines
 
 
+def _compact_node_evidence(item: Dict[str, Any]) -> Dict[str, Any]:
+    node = item.get("node", item) or {}
+    return {
+        "type": node.get("type", ""),
+        "name": node.get("name", ""),
+        "project": node.get("project", ""),
+        "file_path": node.get("file_path", ""),
+        "line": node.get("line", 0),
+        "score": round(float(item.get("score", item.get("exact_score", 0.0)) or 0.0), 4),
+    }
+
+
+def _build_project_scope(requested_project: str, anchor: Dict[str, Any]) -> Dict[str, Any]:
+    anchor_project = str(anchor.get("project", "") or "")
+    requested = str(requested_project or "").strip()
+    return {
+        "requested_project": requested,
+        "anchor_project": anchor_project,
+        "uses_cross_project_anchor": bool(requested and anchor_project and not _project_matches(requested, anchor_project)),
+    }
+
+
+def _build_project_evidence(items: List[Dict[str, Any]], anchor: Dict[str, Any], requested_project: str, limit: int = 5) -> List[Dict[str, Any]]:
+    requested = str(requested_project or "").strip()
+    if not requested:
+        return []
+    anchor_id = str(anchor.get("id", "") or "")
+    evidence: List[Dict[str, Any]] = []
+    for item in items:
+        node = item.get("node", item) or {}
+        if not _project_matches(requested, str(node.get("project", "") or "")):
+            continue
+        if anchor_id and str(node.get("id", "") or "") == anchor_id:
+            continue
+        evidence.append(_compact_node_evidence(item))
+    return evidence[:limit]
+
+
+def _build_lookup_entrypoint(item: Dict[str, Any], *, role: str = "") -> Dict[str, Any]:
+    node = item.get("node", {}) or {}
+    payload = {
+        "node": node,
+        "retrieval_sources": item.get("retrieval_sources", item.get("sources", [])),
+        "exact_score": item.get("exact_score", item.get("rrf_score", item.get("score", 0.0))),
+        "semantic_score": item.get("semantic_score", item.get("score", 0.0) if "semantic" in item.get("sources", []) else 0.0),
+        "workspace_ref": item.get("workspace_ref", ""),
+        "workspace": item.get("workspace", ""),
+    }
+    if role:
+        payload["role"] = role
+    return payload
+
+
+def _node_to_lookup_item(node: Dict[str, Any], *, role: str, score: float = 0.0, sources: List[str] | None = None) -> Dict[str, Any]:
+    return {
+        "node": node,
+        "score": score,
+        "exact_score": score,
+        "sources": sources or [],
+        "retrieval_sources": sources or [],
+        "role": role,
+    }
+
+
+def _build_augmented_lookup_payload(
+    result: Dict[str, Any],
+    *,
+    anchor_node: Dict[str, Any] | None = None,
+    project_evidence: List[Dict[str, Any]] | None = None,
+    match_key: str = "matches",
+    limit: int = 5,
+) -> Dict[str, Any]:
+    matches = _dedupe_symbol_display_matches(result.get(match_key, []))[:limit]
+    entrypoints: List[Dict[str, Any]] = []
+    seen_ids: set[str] = set()
+    seen_signatures: set[tuple[str, str, str, int]] = set()
+
+    def add_entry(item: Dict[str, Any], role: str = "") -> None:
+        node = item.get("node", {}) or {}
+        node_id = str(node.get("id", "") or f"{node.get('type','')}::{node.get('project','')}::{node.get('name','')}")
+        signature = (
+            str(node.get("type", "") or ""),
+            str(node.get("project", "") or ""),
+            str(node.get("name", "") or ""),
+            int(node.get("line", 0) or 0),
+        )
+        if node_id in seen_ids:
+            return
+        if signature in seen_signatures:
+            return
+        seen_ids.add(node_id)
+        seen_signatures.add(signature)
+        entrypoints.append(_build_lookup_entrypoint(item, role=role or item.get("role", "")))
+
+    if anchor_node:
+        add_entry(_node_to_lookup_item(anchor_node, role="anchor", score=999.0, sources=["symbol_anchor"]), role="anchor")
+    for evidence in (project_evidence or [])[:limit]:
+        add_entry(
+            _node_to_lookup_item(
+                evidence,
+                role="project_evidence",
+                score=float(evidence.get("score", 0.0) or 0.0),
+                sources=["project_scope"],
+            ),
+            role="project_evidence",
+        )
+    for item in matches:
+        add_entry(item)
+
+    return {
+        "query": result.get("query", result.get("target", result.get("name", ""))),
+        "retrieval_summary": result.get("retrieval_summary", {}),
+        "entrypoints": entrypoints[:limit],
+    }
+
+
 def _summarize_chain_edges(edges: List[Dict[str, Any]]) -> Dict[str, Any]:
     items: List[Dict[str, Any]] = []
     type_counts: Dict[str, int] = {}
@@ -1384,6 +1506,13 @@ def _compact_chain_result(result: Dict[str, Any], direction: str, budget: str = 
     summary = result.get("chain_summary", {}) or {}
     items = summary.get("items", []) or []
     summary_lines = [f"Target {_format_compact_node_summary(target)}"]
+    project_evidence = result.get("project_evidence", []) or []
+    if result.get("project_scope", {}).get("uses_cross_project_anchor"):
+        summary_lines.append(
+            f"Project scope {result.get('project_scope', {}).get('requested_project', '')} uses anchor {target.get('project', '')}"
+        )
+    for evidence in project_evidence[: limits["events"]]:
+        summary_lines.append(f"Project evidence: {_format_compact_node_summary(evidence)}")
     summary_lines.extend(
         _build_edge_summary_lines("Caller" if direction == "callers" else "Callee", items, limits["steps"] + limits["events"])
     )
@@ -1405,6 +1534,8 @@ def _compact_chain_result(result: Dict[str, Any], direction: str, budget: str = 
             "depth_reached": summary.get("depth_reached", 0),
             "type_counts": summary.get("type_counts", {}),
         },
+        "project_scope": result.get("project_scope", {}),
+        "project_evidence": project_evidence[: limits["events"]],
         "summary_lines": summary_lines,
         "lookup": {
             "query": lookup.get("query", ""),
@@ -1479,6 +1610,13 @@ def _compact_context_result(result: Dict[str, Any], budget: str = "medium") -> D
     outgoing_summary = _summarize_chain_edges(_compact_focus_edges(outgoing))
     lookup = result.get("lookup", {}) or {}
     summary_lines = [f"Node {_format_compact_node_summary(node)}"]
+    project_evidence = result.get("project_evidence", []) or []
+    if result.get("project_scope", {}).get("uses_cross_project_anchor"):
+        summary_lines.append(
+            f"Project scope {result.get('project_scope', {}).get('requested_project', '')} uses anchor {node.get('project', '')}"
+        )
+    for evidence in project_evidence[: limits["events"]]:
+        summary_lines.append(f"Project evidence: {_format_compact_node_summary(evidence)}")
     summary_lines.extend(
         _build_edge_summary_lines("Incoming", incoming_summary.get("items", []), limits["steps"] + limits["events"])
     )
@@ -1508,6 +1646,8 @@ def _compact_context_result(result: Dict[str, Any], budget: str = "medium") -> D
             "depth_reached": outgoing_summary.get("depth_reached", 0),
             "type_counts": outgoing_summary.get("type_counts", {}),
         },
+        "project_scope": result.get("project_scope", {}),
+        "project_evidence": project_evidence[: limits["events"]],
         "summary_lines": summary_lines,
         "lookup": {
             "query": lookup.get("query", ""),
@@ -1747,22 +1887,7 @@ def _build_context_progressive_view(node: Dict[str, Any], incoming: List[Dict[st
 
 
 def _build_lookup_payload(result: Dict[str, Any], match_key: str = "matches", limit: int = 5) -> Dict[str, Any]:
-    matches = _dedupe_symbol_display_matches(result.get(match_key, []))[:limit]
-    return {
-        "query": result.get("query", result.get("target", result.get("name", ""))),
-        "retrieval_summary": result.get("retrieval_summary", {}),
-        "entrypoints": [
-            {
-                "node": item.get("node", {}),
-                "retrieval_sources": item.get("retrieval_sources", item.get("sources", [])),
-                "exact_score": item.get("exact_score", item.get("rrf_score", item.get("score", 0.0))),
-                "semantic_score": item.get("semantic_score", item.get("score", 0.0) if "semantic" in item.get("sources", []) else 0.0),
-                "workspace_ref": item.get("workspace_ref", ""),
-                "workspace": item.get("workspace", ""),
-            }
-            for item in matches
-        ],
-    }
+    return _build_augmented_lookup_payload(result, match_key=match_key, limit=limit)
 
 
 def _build_context_evidence_summary(incoming: List[Dict[str, Any]], outgoing: List[Dict[str, Any]]) -> Dict[str, Any]:

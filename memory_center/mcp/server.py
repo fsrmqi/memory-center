@@ -416,6 +416,7 @@ def create_server(workspace_file: str):
         depth: str = "standard",
         direction: str = "upstream",
         max_depth: int = 3,
+        project: str = "",
         contract_file: str = "",
         change_type: str = "modify",
         projects: List[str] | None = None,
@@ -424,8 +425,9 @@ def create_server(workspace_file: str):
     ):
         """Analyze change impact and generate action plans. Depth quick: impact only. Depth standard: impact + change plan + rules check. Depth full: standard + contract check + verification checklist. If target is empty, runs detect-changes instead of impact."""
         wf = ctx.workspace_file
+        project_filter = project or ((projects or [None])[0] or "")
         if target:
-            impact_result = memory_impact(wf, target, direction, max_depth, view="compact", budget="small")
+            impact_result = memory_impact(wf, target, direction, max_depth, project=project_filter, view="compact", budget="small")
         else:
             impact_result = memory_detect_changes(wf, scope)
         result = {"workflow": "mc-analyze", "depth": depth, "impact": impact_result}

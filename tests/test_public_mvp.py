@@ -323,6 +323,7 @@ def test_cli_symbol_project_filter(tmp_path: Path):
     assert data["found"] is True
     assert data["best_match"]["type"] == "Class"
     assert data["best_match"]["name"] == "ArticleFeignClient"
+    assert data["lookup"]["entrypoints"][0]["role"] == "anchor"
     assert all("task-service" in ((item.get("node") or {}).get("project") or "") for item in data.get("matches", []))
 
 
@@ -333,6 +334,7 @@ def test_cli_callers_project_filter(tmp_path: Path):
     assert result.exit_code == 0
     assert "found" in result.output
     assert "True" in result.output
+    assert "project_scope" in result.output
 
 
 def test_cli_callees_project_filter(tmp_path: Path):
@@ -349,7 +351,21 @@ def test_cli_context_project_filter(tmp_path: Path):
     runner = CliRunner()
     result = runner.invoke(app, ["context", "--workspace", ws, "--name", "ArticleFeignClient", "--project", "task-service"])
     assert result.exit_code == 0
-    assert "entrypoints" in result.output or "found" in result.output
+    assert "project_scope" in result.output
+
+
+def test_cli_impact_project_filter(tmp_path: Path):
+    ws = _cli_project_workspace(tmp_path)
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        ["impact", "--workspace", ws, "--target", "ArticleFeignClient", "--project", "task-service", "--direction", "upstream", "--max-depth", "2", "--view", "compact", "--budget", "small"],
+    )
+    assert result.exit_code == 0
+    assert "project_scope" in result.output
+    assert "uses_cross_project_anchor" in result.output
+    assert "project_evidence" in result.output
+    assert "'role': 'anchor'" in result.output
 
 
 def test_export_workspace_dashboard_cli(tmp_path: Path):
@@ -1091,6 +1107,19 @@ def test_graph_query_context_and_impact(tmp_path):
     assert "outgoing" not in context_compact
     assert context_compact["summary_lines"]
     assert context_compact["summary_lines"][0].startswith("Node Class ArticleFeignClient")
+
+    callers_project_compact = memory_callers(workspace, "ArticleFeignClient", depth=2, limit=20, project="task-service", view="compact", budget="small")
+    assert callers_project_compact["project_scope"]["uses_cross_project_anchor"] is True
+    assert callers_project_compact["project_evidence"]
+    assert any(line.startswith("Project evidence: ") for line in callers_project_compact["summary_lines"])
+
+    context_project_compact = memory_context(workspace, "ArticleFeignClient", project="task-service", view="compact", budget="small")
+    assert context_project_compact["project_scope"]["uses_cross_project_anchor"] is True
+    assert context_project_compact["project_evidence"]
+    assert any(line.startswith("Project evidence: ") for line in context_project_compact["summary_lines"])
+    context_project_full = memory_context(workspace, "ArticleFeignClient", project="task-service")
+    assert context_project_full["lookup"]["entrypoints"][0]["role"] == "anchor"
+    assert any(item.get("role") == "project_evidence" for item in context_project_full["lookup"]["entrypoints"])
     impact = memory_impact(workspace, "MoveArticleRequest")
     assert impact["found"] is True
     assert impact["lookup"]["retrieval_summary"]["semantic_matches"] >= 1
@@ -1105,6 +1134,11 @@ def test_graph_query_context_and_impact(tmp_path):
     assert "candidate_paths" in impact_compact
     assert impact_compact["summary_lines"]
     assert impact_compact["summary_lines"][0].startswith("Target")
+    impact_project_compact = memory_impact(workspace, "ArticleFeignClient", direction="upstream", max_depth=2, project="task-service", view="compact", budget="small")
+    assert impact_project_compact["project_scope"]["uses_cross_project_anchor"] is True
+    assert impact_project_compact["project_evidence"]
+    assert any(line.startswith("Project evidence: ") for line in impact_project_compact["summary_lines"])
+    assert impact_project_compact["lookup"]["entrypoints"][0]["role"] == "anchor"
     plan = memory_plan_change(workspace, "MoveArticleRequest")
     assert plan["found"] is True
     assert plan["plan"]
