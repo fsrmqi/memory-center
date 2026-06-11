@@ -10,6 +10,7 @@ from ..schemas import with_schema
 from ..semantic import semantic_index_stats, semantic_query
 from ..ontology import EntityValidator
 from ..diagnostics import DIAG, diag_entry, safe_reason
+from ..verification.heuristics import apply_candidate_path_learning
 from .common import (
     SESSION_EVENTS_FILE,
     _best_match,
@@ -907,18 +908,69 @@ def memory_discover(
 
     # Recommended next actions based on workspace state
     recommendations: list = []
+    candidate_paths: list[dict[str, Any]] = []
     try:
         from .workspace import workspace_status
         status = workspace_status(workspace_file, view="compact", budget="medium")
         layers = status.get("memory_layers", {})
         if layers.get("L0", {}).get("count", 0) == 0:
             recommendations.append("还没有会话事件，建议先运行 `work-start` 启动工作流")
+            candidate_paths.append(
+                {
+                    "candidate_type": "session_bootstrap",
+                    "target": "work-start",
+                    "status": "probable",
+                    "weight": 0.76,
+                    "why": "当前还没有会话事件，先启动工作流能尽快建立上下文轨迹。",
+                    "next_action": "先运行 `work-start` 或 `mc_start` 启动任务",
+                    "verification_cost": "low",
+                }
+            )
         if layers.get("L1", {}).get("count", 0) == 0:
             recommendations.append("还没有案例记忆，建议在完成关键操作后运行 `work-sync`")
+            candidate_paths.append(
+                {
+                    "candidate_type": "memory_write",
+                    "target": "L1_case_atom",
+                    "status": "possible",
+                    "weight": 0.7,
+                    "why": "当前缺少案例记忆，补齐 case 沉淀可以提升后续复用价值。",
+                    "next_action": "在关键阶段后运行 `work-sync` 或 `mc_sync`",
+                    "verification_cost": "low",
+                }
+            )
         if layers.get("L2", {}).get("count", 0) == 0:
             recommendations.append("还没有任务空间，建议运行 `artifact create-task` 创建任务")
+            candidate_paths.append(
+                {
+                    "candidate_type": "task_sync",
+                    "target": "new-task-space",
+                    "status": "probable",
+                    "weight": 0.78,
+                    "why": "当前缺少任务空间，先创建 task 能让长任务协作更稳定。",
+                    "next_action": "运行 `artifact create-task` 或 `mc_sync(intent=...)`",
+                    "verification_cost": "low",
+                    "_learning_aliases": [
+                        {"candidate_type": "task_sync", "target": "new-task-space"},
+                    ],
+                }
+            )
     except Exception:
         pass
+
+    if not candidate_paths:
+        candidate_paths.append(
+            {
+                "candidate_type": "runtime_governance",
+                "target": "continue-current-workflow",
+                "status": "possible",
+                "weight": 0.62,
+                "why": "当前工作区状态整体正常，可继续沿现有工作流推进。",
+                "next_action": "继续当前任务；必要时用 `mc_lookup` / `mc_analyze` 深挖",
+                "verification_cost": "low",
+            }
+        )
+    candidate_paths = apply_candidate_path_learning(workspace_file, candidate_paths)
 
     # Command compression matrix — compact aliases for common queries
     compression_matrix = {
@@ -941,6 +993,8 @@ def memory_discover(
         "hot_commands": [{"tool": t, "count": c} for t, c in hot_commands],
         "recent_queries": recent_queries[:10],
         "recommendations": recommendations if recommendations else ["工作区状态正常，继续当前工作"],
+        "candidate_paths": candidate_paths,
+        "recommended_path": dict(candidate_paths[0]) if candidate_paths else {},
         "compression_matrix": compression_matrix,
     }
 

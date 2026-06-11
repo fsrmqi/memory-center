@@ -37,6 +37,7 @@ from .session import (
     workspace_start_session,
     workspace_log_session_event,
     workspace_end_session,
+    workspace_record_close_feedback,
     workspace_recent_sessions,
     workspace_session_summary,
     workspace_suggest_case,
@@ -153,6 +154,7 @@ __all__ = [
     "load_context", "tokenize", "rank_files", "preferred_edge_types",
     # session
     "workspace_start_session", "workspace_log_session_event", "workspace_end_session",
+    "workspace_record_close_feedback",
     "workspace_recent_sessions", "workspace_session_summary", "workspace_suggest_case",
     "workspace_recent_evidence",
     # query

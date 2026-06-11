@@ -94,6 +94,12 @@ def test_demo_workspace_indexes_spring_cloud_patterns(tmp_path: Path):
     assert "selected_layer" in sniffed["write_judge_recommendation"]
     assert "lookup_hint" in sniffed
     assert "preferred_tools" in sniffed["lookup_hint"]
+    assert "candidate_paths" in sniffed
+    assert sniffed["candidate_paths"]
+    assert "recommended_path" in sniffed
+    assert sniffed["recommended_path"]["candidate_type"]
+    assert sniffed["recommended_path"]["target"]
+    assert sniffed["candidate_paths"][0]["target"] == sniffed["recommended_path"]["target"]
     assert "mc_close (end session)" in sniffed["symbolic_context"]["flow_mermaid"]
     assert "mc_close (sync case)" in sniffed["symbolic_context"]["flow_mermaid"]
     assert sniffed["source_refs"]
@@ -1049,9 +1055,12 @@ def test_graph_query_context_and_impact(tmp_path):
     assert impact["lookup"]["retrieval_summary"]["semantic_matches"] >= 1
     assert impact["evidence_summary"]["confirmed_count"] >= 0
     assert impact["progressive"]["summary"]["target"]
+    assert impact["candidate_paths"]
+    assert impact["recommended_path"]["candidate_type"]
     plan = memory_plan_change(workspace, "MoveArticleRequest")
     assert plan["found"] is True
     assert plan["plan"]
+    assert plan["candidate_paths"]
     checklist = memory_verify_checklist(workspace, "MoveArticleRequest")
     assert checklist["checklist"]
 
@@ -1104,6 +1113,8 @@ def test_trusted_graph_edges_and_evidence_based_impact(tmp_path: Path):
     assert "confirmed_impacts" in impact
     assert "probable_impacts" in impact
     assert "possible_impacts" in impact
+    assert impact["candidate_paths"]
+    assert impact["candidate_paths"][0]["target"]
     assert "unknown_risks" in impact
 
     report = doctor(workspace, self_test=True)

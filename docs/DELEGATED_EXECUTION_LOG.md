@@ -3150,6 +3150,556 @@ git diff --check
 通过
 ```
 
+## learning 策略迁移/兼容层（轻量版）
+
+**状态**: completed
+**日期**: 2026-06-11
+
+### 完成范围
+
+为 heuristics learning 增加最小可用的版本与兼容层，确保在 workspace `learning_policy` 调整、老 `learned-heuristics.jsonl` 记录继续保留、以及索引/规则重建后的学习回流过程中，不会因为缺字段或旧格式而“重新学一遍”。
+
+### 生产代码改动
+
+| 文件 | 改动摘要 |
+|---|---|
+| `memory_center/core/verification/heuristics.py` | 新增 `HEURISTICS_SCHEMA_VERSION` / `LEARNING_POLICY_VERSION`；新增 `learning_policy.version` 兼容归一化；新增 legacy heuristic row normalize；新写入记录自动带 `schema_version` / `policy_version`；旧 `confidence_delta` / 缺 `category` / 缺 `event_type` 的记录在 `query()` 聚合前统一兼容处理 |
+| `README.md` | `learning_policy` 示例增加 `version`，说明其作为轻量兼容标记的用途 |
+
+### 测试改动
+
+| 文件 | 改动摘要 |
+|---|---|
+| `tests/test_deepening_remaining.py` | 新增 legacy candidate feedback 聚合、legacy `confidence_delta` 回放、缺失 `learning_policy.version` 默认化、以及新记录写入 schema/policy version 的回归测试 |
+
+### 验证命令
+
+```
+python3 -m pytest tests/test_deepening_remaining.py -q -k 'legacy or learning_policy_defaults_version or schema_and_policy_version'
+```
+
+## learning explain / 诊断入口
+
+**状态**: completed
+**日期**: 2026-06-11
+
+### 完成范围
+
+新增候选路径 / workflow profile 学习结果的 explain 入口，让“为什么推荐这条路径、为什么被保护、为什么被衰减”可以直接查看，而不是只能从 `learned-heuristics.jsonl` 反推。
+
+### 生产代码改动
+
+| 文件 | 改动摘要 |
+|---|---|
+| `memory_center/core/verification/heuristics.py` | 新增 `HeuristicsRegister.explain()`；输出当前聚合状态、保护/衰减原因、policy snapshot、最近事件时间线 |
+| `memory_center/cli/main.py` | `heuristics --action explain` |
+| `memory_center/http/server.py` | `/workspace/heuristics?action=explain` |
+| `memory_center/mcp/server.py` | `mc_admin(action="heuristics_explain")` |
+| `README.md` | 增加 learning explain 能力说明 |
+| `docs/MCP_GUIDE.md` | 增加 `heuristics_explain` action 说明 |
+
+### 测试改动
+
+| 文件 | 改动摘要 |
+|---|---|
+| `tests/test_deepening_remaining.py` | 新增 explain 返回 guard / recent events / policy snapshot 的回归测试 |
+| `tests/test_f_g_series.py` | 新增 CLI / HTTP explain 回归测试 |
+| `tests/test_mcp_facades.py` | 新增 `mc_admin(action="heuristics_explain")` 覆盖 |
+
+### 验证命令
+
+```
+python3 -m pytest tests/test_deepening_remaining.py -q -k 'heuristics_explain or legacy or candidate_feedback or provisional or rollback'
+python3 -m pytest tests/test_f_g_series.py -q -k 'heuristics or workflow_recommend'
+python3 -m pytest tests/test_mcp_facades.py -q -k 'heuristics or mc_close_auto_records_candidate_feedback or runtime_audit or mc_start_returns_consolidated_context'
+```
+
+## learning_policy 配置化
+
+**状态**: completed
+**日期**: 2026-06-11
+
+### 完成范围
+
+把候选路径学习与 workflow profile 学习中的关键保护/融合参数从硬编码提取到 `workspace.yaml -> learning_policy`，并保持默认行为与之前一致。
+
+### 生产代码改动
+
+| 文件 | 改动摘要 |
+|---|---|
+| `memory_center/core/verification/heuristics.py` | 新增 `DEFAULT_LEARNING_POLICY`、`load_learning_policy()`；将 outcome delta、provisional cap、rollback cap、stale decay、merge weights 配置化 |
+| `memory_center/core/verification/workflow_profiles.py` | workflow profile learning blend 改为读取 `learning_policy` |
+
+### 测试与文档
+
+| 文件 | 改动摘要 |
+|---|---|
+| `tests/test_deepening_remaining.py` | 新增 `learning_policy` 覆盖 provisional cap、candidate merge、workflow merge 的测试 |
+| `README.md` | workspace.yaml 示例增加 `learning_policy` 可选配置 |
+| `examples/spring-cloud-demo/.memory-center/workspace.yaml` | 增加可选 `learning_policy` 注释示例 |
+
+### 当前权威策略
+
+- 默认参数仍与当前行为保持一致，老 workspace 不需要修改即可继续使用。
+- 只有在 `workspace.yaml` 中显式配置 `learning_policy` 时，学习保护/融合策略才会改变。
+- 这一步优先解决“调参需要改代码”的问题，为后续策略迁移打基础。
+
+### 验证结果
+
+```
+python3 -m pytest tests/test_deepening_remaining.py -q -k 'learning_policy or workflow_recommendation or candidate_feedback or provisional or rollback or stale_candidate'
+通过
+
+python3 -m pytest tests/test_f_g_series.py -q -k 'recommend_workflow'
+通过
+
+python3 -m pytest tests/test_deepening_c_to_i.py -q -k 'recommend_workflow'
+通过
+
+python3 -m pytest tests/test_b01_behavior_matrix.py -q -k 'workflow_profile_cli or workflow_profile_http or workflow_profile_mcp or runtime_audit_core_fields'
+通过
+
+python3 -m pytest -q
+全量测试跑完至 100%，无失败
+
+git diff --check
+通过
+```
+
+## 后续补充项备注：learning 可视化面板
+
+**状态**: noted
+**日期**: 2026-06-11
+
+### 备注
+
+已将以下方向记为后续补充项，但当前阶段先忽略，不作为主线阻塞项：
+
+- 增加决策学习可视化汇总面板
+- 直接展示哪些候选路径正在升权
+- 展示哪些 workflow profile 被 rollback
+- 展示哪些 recommendation 因 stale decay 正在退场
+
+当前权威策略不变：优先继续推进功能可用、实际好用、稳定可维护的主线能力，上述面板能力后续再补。
+
+## workflow_recommendation 学习驱动化
+
+**状态**: completed
+**日期**: 2026-06-11
+
+### 完成范围
+
+把 workflow profile 推荐从“纯静态规则匹配”升级为“静态规则初选 + 学习结果修正优先级”：
+
+- `workspace_start_session` 返回的 `workflow_recommendation` 现在会吸收历史 workflow profile 学习结果
+- MCP `workflow_recommend`、HTTP `/workspace/workflow-recommend`、CLI `workflow-recommend` 也接入相同能力
+
+### 生产代码改动
+
+| 文件 | 改动摘要 |
+|---|---|
+| `memory_center/core/verification/workflow_profiles.py` | 保留原 `recommend_workflow()` 不变，新增 `recommend_workflow_with_learning()`；返回 `candidate_profiles` 与 learning metadata |
+| `memory_center/core/orchestrator/session.py` | `session_start` 改为使用 learning-aware workflow recommendation |
+| `memory_center/mcp/server.py` | `workflow_recommend` action 接入 learning-aware 推荐 |
+| `memory_center/http/server.py` | `/workspace/workflow-recommend` 接入 learning-aware 推荐 |
+| `memory_center/cli/main.py` | `workflow-recommend` 新增可选 `--workspace`，提供 learning-aware 推荐 |
+
+### 测试与文档
+
+| 文件 | 改动摘要 |
+|---|---|
+| `tests/test_deepening_remaining.py` | 新增 session_start workflow recommendation 吸收学习结果测试 |
+| `tests/test_f_g_series.py` | 新增 `recommend_workflow_with_learning` 测试 |
+| `docs/MCP_GUIDE.md` | 更新说明，标记 workflow profile 推荐也进入 learning 驱动 |
+
+### 当前权威策略
+
+- workflow profile 推荐仍由静态规则提供基础判断，不会被完全替换成黑盒学习。
+- 学习层可以在真实验证积累后修正默认 profile 优先级。
+- 被 rollback 的 workflow profile 会降级，稳定成功的 profile 会逐步更容易被推荐。
+
+### 验证结果
+
+```
+python3 -m pytest tests/test_deepening_remaining.py -q -k 'workflow_recommendation or session_start'
+通过
+
+python3 -m pytest tests/test_f_g_series.py -q -k 'recommend_workflow'
+通过
+
+python3 -m pytest tests/test_deepening_c_to_i.py -q -k 'recommend_workflow'
+通过
+
+python3 -m pytest tests/test_b01_behavior_matrix.py -q -k 'workflow_profile_cli or workflow_profile_http or workflow_profile_mcp'
+通过
+
+python3 -m pytest -q
+全量测试跑完至 100%，无失败
+
+git diff --check
+通过
+```
+
+## 建议型入口学习回流扩展到 runtime_audit / discover
+
+**状态**: completed
+**日期**: 2026-06-11
+
+### 完成范围
+
+继续把候选路径学习结果从核心查询链路扩展到建议型入口：
+
+- `runtime_audit` 的治理候选路径现在会吸收历史学习结果
+- `memory_discover` 新增结构化 `candidate_paths` / `recommended_path`，并接入学习回流
+
+这样不只是 lookup / impact，会连“下一步建议”和“治理建议”一起变得越来越一致。
+
+### 生产代码改动
+
+| 文件 | 改动摘要 |
+|---|---|
+| `memory_center/core/audit/runtime.py` | `runtime_audit` 候选路径接入 `apply_candidate_path_learning()` |
+| `memory_center/core/orchestrator/query.py` | `memory_discover` 新增结构化候选路径与推荐路径，并接入 learning merge |
+
+### 测试与文档
+
+| 文件 | 改动摘要 |
+|---|---|
+| `tests/test_deepening_remaining.py` | 新增 `runtime_audit` / `memory_discover` 吸收学习结果测试 |
+| `docs/MCP_GUIDE.md` | 更新说明，标记 `runtime_audit` / discover 也会吸收学习结果 |
+
+### 当前权威策略
+
+- lookup、impact、runtime governance、discover 这几类主建议入口已统一进入“规则生成 + 学习修正优先级”的模式。
+- 学习层会影响排序，但不会抹掉原始解释与下一步动作。
+- 被 rollback 的路径会在这些入口中同步降级，减少重复误导。
+
+### 验证结果
+
+```
+python3 -m pytest tests/test_deepening_remaining.py -q -k 'runtime_audit_candidate_paths_apply_learned_weights or memory_discover_candidate_paths_apply_learned_weights or lookup_hint_candidate_paths_apply_learned_weights or memory_impact_candidate_paths_apply_learned_weights'
+通过
+
+python3 -m pytest tests/test_b01_behavior_matrix.py -q -k 'runtime_audit_cli or runtime_audit_http or runtime_audit_mcp or runtime_audit_core_fields'
+通过
+
+python3 -m pytest tests/test_next_phase.py -q -k 'memory_discover_sync_progress_is_executable_shape'
+通过
+
+python3 -m pytest tests/test_mcp_facades.py -q -k 'runtime_audit or mc_lookup_mode_auto_routes_correctly'
+通过
+
+python3 -m pytest -q
+全量测试跑完至 100%，无失败
+
+git diff --check
+通过
+```
+
+## 候选路径学习结果回流主链路排序
+
+**状态**: completed
+**日期**: 2026-06-11
+
+### 完成范围
+
+把学习后的候选路径权重真正接回主入口排序链路，不再只停留在 heuristics 查询层。现在 `workspace_lookup_hint`、`workspace_sniff`、`memory_impact` 返回的 `candidate_paths` 会吸收历史学习结果，并在必要时调整权重和推荐状态。
+
+### 生产代码改动
+
+| 文件 | 改动摘要 |
+|---|---|
+| `memory_center/core/verification/heuristics.py` | 新增 `candidate_path_learning_index()`、`apply_candidate_path_learning()`，负责把学习结果合并到主链路候选路径，并输出 `learning_applied`、`learned_recommended_weight`、`learning_state` 等元数据 |
+| `memory_center/core/orchestrator/workspace.py` | `workspace_lookup_hint`、`workspace_sniff` 候选路径接入学习回流；lookup / impact / task_sync 类候选增加 learning alias |
+| `memory_center/core/orchestrator/impact.py` | `memory_impact` 候选路径接入学习回流；impact review 类候选映射到 `impact_analysis` 学习结果 |
+
+### 测试与文档
+
+| 文件 | 改动摘要 |
+|---|---|
+| `tests/test_deepening_remaining.py` | 新增 `lookup_hint` / `memory_impact` 主链路吸收学习结果测试 |
+| `docs/MCP_GUIDE.md` | 增加“候选路径学习结果已回流主链路排序”说明 |
+
+### 当前权威策略
+
+- 候选路径学习结果已经不只是后台统计，而是会直接影响主链路默认推荐顺序。
+- 规则推导仍保留原始 `why` / `next_action`，学习层只轻量修正优先级和状态。
+- 被 rollback 的路径会在主入口里明显降级，不再继续停留在默认前列。
+
+### 验证结果
+
+```
+python3 -m pytest tests/test_deepening_remaining.py -q -k 'lookup_hint_candidate_paths_apply_learned_weights or memory_impact_candidate_paths_apply_learned_weights or rollback or stale_candidate or candidate_feedback'
+通过
+
+python3 -m pytest tests/test_public_mvp.py -q -k 'tool_usage_report_and_lookup_hint or trusted_graph_edges_and_evidence_based_impact'
+通过
+
+python3 -m pytest tests/test_mcp_facades.py -q -k 'mc_lookup_mode_auto_routes_correctly or mc_analyze_depth_levels or mc_lookup_auto_returns_decision_fields'
+通过（MCP 未安装场景下相关用例保持 skip）
+
+python3 -m pytest -q
+全量测试跑完至 100%，无失败
+
+git diff --check
+通过
+```
+
+## 候选路径 rollback 与 stale decay 保护
+
+**状态**: completed
+**日期**: 2026-06-11
+
+### 完成范围
+
+在 provisional protection 基础上继续补齐两类长期治理保护：
+
+- `rollback` 现在作为强负向反馈接入候选路径学习，能快速把路径打回 guarded recommendation 状态
+- 长期未再验证的候选路径会对 `recommended_weight` 施加时间衰减，但保留 `confidence` 作为原始学习值
+
+### 生产代码改动
+
+| 文件 | 改动摘要 |
+|---|---|
+| `memory_center/core/verification/heuristics.py` | 新增 `rollback` outcome、rolled-back recommendation guard、基于 `last_updated_at` 的 stale decay、稳定排序键与 `recorded_at/updated_at` 回放支持 |
+
+### 测试与文档
+
+| 文件 | 改动摘要 |
+|---|---|
+| `tests/test_deepening_remaining.py` | 新增 rollback suppress、stale decay、推荐排序保护测试 |
+| `docs/DELEGATED_EXECUTION_PLAN.md` | 更新 H-10A 状态，标记 rollback / stale decay 已落地 |
+
+### 当前权威策略
+
+- `confidence` 继续表示原始学习值，不因推荐保护被覆盖。
+- `recommended_weight` 才是当前真正用于排序和默认推荐的权重。
+- `rollback` 会优先触发强保护，避免被推翻路径继续停留在默认高位。
+- 老旧但长期未验证的路径会衰减推荐权重，避免历史经验长期霸榜。
+
+### 验证结果
+
+```
+python3 -m pytest tests/test_deepening_remaining.py -q -k 'rollback or stale_candidate or candidate_feedback or provisional or recommended_weight'
+通过
+
+python3 -m pytest tests/test_f_g_series.py -q -k 'heuristics or verification_loop'
+通过
+
+python3 -m pytest -q
+全量测试跑完至 100%，无失败
+
+git diff --check
+通过
+```
+
+## 候选路径推荐层防误学保护
+
+**状态**: completed
+**日期**: 2026-06-11
+
+### 完成范围
+
+为候选路径聚合结果增加“推荐层保护”，避免单次偶然成功直接变成长期默认高优先级推荐。当前策略保留原始学习权重 `confidence`，同时新增受保护的 `recommended_weight` 用于排序和推荐。
+
+### 生产代码改动
+
+| 文件 | 改动摘要 |
+|---|---|
+| `memory_center/core/verification/heuristics.py` | 新增推荐保护规则：单样本正向结果默认标记为 `provisional`，`recommended_weight` 受上限保护；累计到多次独立支持后才提升为稳定推荐；排序切换为优先使用 `recommended_weight` |
+
+### 测试与文档
+
+| 文件 | 改动摘要 |
+|---|---|
+| `tests/test_deepening_remaining.py` | 新增 provisional protection、重复确认后转正、按 `recommended_weight` 排序测试 |
+| `docs/DELEGATED_EXECUTION_PLAN.md` | 更新 H-10A 状态，标记“短期成功污染全局策略”保护已落地 |
+
+### 当前权威策略
+
+- `confidence` 代表原始学习结果，保留真实观察值。
+- `recommended_weight` 代表当前真正用于推荐和排序的受保护权重。
+- 单次成功默认只进入 provisional 状态，不会直接成为长期稳定推荐。
+- 多次独立支持后才解除保护，恢复为稳定高优先级推荐。
+
+### 验证结果
+
+```
+python3 -m pytest tests/test_deepening_remaining.py -q -k 'candidate_feedback or provisional or recommended_weight'
+通过
+
+python3 -m pytest tests/test_f_g_series.py -q -k 'heuristics or verification_loop'
+通过
+
+python3 -m pytest -q
+全量测试跑完至 100%，无失败
+
+git diff --check
+通过
+```
+
+## mc_close / verification loop 自动回写候选路径反馈
+
+**状态**: completed
+**日期**: 2026-06-11
+
+### 完成范围
+
+在前一轮手工 `heuristics_feedback` 基础上，继续把候选路径权重学习接入主收尾链路：
+
+- `mc_close` / `work-close` 现在会根据 session 中的真实工具调用、会话结果和验证证据，自动推断并写回候选路径反馈
+- `VerificationLoop.complete_phase(phase="verify")` 在显式提供候选路径反馈字段时，也会直接回写 heuristics
+
+### 生产代码改动
+
+| 文件 | 改动摘要 |
+|---|---|
+| `memory_center/core/orchestrator/session.py` | 新增 `workspace_record_close_feedback()`，从 session summary / events / draft case 中推断并写回 `lookup_path`、`impact_analysis`、`task_sync` 候选反馈 |
+| `memory_center/core/orchestrator/__init__.py` | 导出 `workspace_record_close_feedback` |
+| `memory_center/core/verification/loop.py` | `verify` phase 支持显式候选路径反馈回写 |
+| `memory_center/mcp/server.py` | `mc_close` 返回 `candidate_feedback` |
+| `memory_center/http/server.py` | `work-close` 返回 `candidate_feedback` |
+| `memory_center/cli/main.py` | `work-close` 返回 `candidate_feedback` |
+| `memory_center/hooks/runner.py` | `session_stop -> mc_close` hook 结果增加 `candidate_feedback` |
+
+### 测试与文档
+
+| 文件 | 改动摘要 |
+|---|---|
+| `tests/test_deepening_remaining.py` | 新增 `workspace_record_close_feedback` 自动推断回写测试 |
+| `tests/test_f_g_series.py` | 新增 verification loop verify phase 回写测试 |
+| `tests/test_mcp_facades.py` | 新增 `mc_close` 自动反馈测试 |
+| `docs/MCP_GUIDE.md` | 增加 `mc_close` 自动回写说明 |
+
+### 当前权威策略
+
+- 关闭会话时，系统会尽量自动学习“这条路径是否值得下次先试”。
+- 正向升权仍要求真实验证证据；没有证据不会因为一句 outcome 就直接升权。
+- 当前策略仍以功能可用、实际好用、稳定可维护优先。
+
+### 验证结果
+
+```
+python3 -m pytest tests/test_deepening_remaining.py -q -k 'workspace_record_close_feedback or candidate_feedback'
+通过
+
+python3 -m pytest tests/test_f_g_series.py -q -k 'verification_loop or heuristics'
+通过
+
+python3 -m pytest tests/test_mcp_facades.py -q -k 'mc_close_auto_records_candidate_feedback or mc_close_full_workflow'
+通过（MCP 未安装场景下相关用例保持 skip）
+
+python3 -m pytest -q
+全量测试跑完至 100%，无失败
+
+git diff --check
+通过
+```
+
+## 候选路径权重回写闭环首版落地
+
+**状态**: completed
+**日期**: 2026-06-11
+
+### 完成范围
+
+把“验证结果回写候选路径权重”的最小闭环正式接入 `heuristics` 体系，并通过 MCP / CLI / HTTP 暴露统一反馈入口，让 `memory-center` 不只是返回候选路径，还能基于验证结果逐步修正推荐权重。
+
+### 生产代码改动
+
+| 文件 | 改动摘要 |
+|---|---|
+| `memory_center/core/verification/heuristics.py` | 扩展 `HeuristicsRegister.record()` 兼容 dict payload；新增候选路径反馈记录、聚合查询、基于证据的升降权、按时间顺序滚动权重与 `record_candidate_path_feedback()` helper |
+| `memory_center/mcp/server.py` | `mc_admin` 新增 `heuristics_feedback` action；`heuristics_record` 返回结构化 entry，支持直接写回候选路径验证结果 |
+| `memory_center/cli/main.py` | `heuristics` 命令新增 `--action feedback` |
+| `memory_center/http/server.py` | `/workspace/heuristics` 新增 `action=feedback` 分支 |
+
+### 测试与文档
+
+| 文件 | 改动摘要 |
+|---|---|
+| `tests/test_deepening_remaining.py` | 新增证据门槛、聚合排序、连续反馈滚动权重测试 |
+| `tests/test_f_g_series.py` | 新增 dict payload 兼容测试 |
+| `tests/test_mcp_facades.py` | 新增 `mc_admin(action=\"heuristics_feedback\")` 入口覆盖 |
+| `docs/MCP_GUIDE.md` | 增加 heuristics query / record / feedback 说明 |
+| `docs/DELEGATED_EXECUTION_PLAN.md` | 更新 H-10A 完成状态与当前闭环说明 |
+
+### 当前权威策略
+
+- 候选路径权重可以学习，但必须可追溯到真实验证证据。
+- `confirmed` 在无证据时不会直接升权；失败路径会降权。
+- 当前优先级仍是：功能可用、实际好用、稳定可维护优先。历史记录仅作为参考，不覆盖当前策略。
+
+### 验证结果
+
+```
+python3 -m pytest tests/test_deepening_remaining.py -q -k 'candidate_feedback or heuristics'
+通过
+
+python3 -m pytest tests/test_f_g_series.py -q -k 'heuristics'
+通过
+
+python3 -m pytest tests/test_mcp_facades.py -q -k 'mcp_next_phase_entrypoint_matrix_uses_workspace_yaml'
+通过（本环境下 MCP 相关用例为 skip 时也保持绿色）
+
+python3 -m pytest -q
+全量测试跑完至 100%，无失败
+
+git diff --check
+通过
+```
+
+## 候选路径决策层首批落地
+
+**状态**: completed
+**日期**: 2026-06-11
+
+### 完成范围
+
+把“候选路径 + 权重 + 推荐下一步”的第一版结构正式接入现有主入口：
+
+- `workspace_sniff()` 增加 `candidate_paths` 与 `recommended_path`
+- `runtime-audit` 增加治理型 `candidate_paths` 与 `recommended_path`
+- compact sniff 视图同步暴露精简后的候选路径
+
+### 生产代码改动
+
+| 文件 | 改动摘要 |
+|---|---|
+| `memory_center/core/orchestrator/workspace.py` | 为 sniff 构建候选路径列表，统一输出候选类型、目标、权重、理由、下一步动作、验证成本 |
+| `memory_center/core/orchestrator/compact.py` | compact sniff 视图增加 `candidate_paths` 与 `recommended_path` |
+| `memory_center/core/audit/runtime.py` | runtime audit 增加治理型候选路径与推荐路径 |
+
+### 测试
+
+| 文件 | 改动摘要 |
+|---|---|
+| `tests/test_public_mvp.py` | 校验 sniff 返回 candidate paths 与 recommended path |
+| `tests/test_mcp_facades.py` | 校验 mc_start 核心 sniff 结构包含候选路径 |
+| `tests/test_workspace_shape_status.py` | 校验 runtime audit 返回治理型 candidate paths |
+
+### 验证结果
+
+```
+python3 -m pytest tests/test_public_mvp.py -q -k 'test_demo_workspace_indexes_spring_cloud_patterns'
+通过
+
+python3 -m pytest tests/test_workspace_shape_status.py -q
+通过
+
+python3 -m pytest tests/test_mcp_facades.py -q -k 'mc_start_returns_consolidated_context'
+通过
+
+python3 -m pytest tests/test_b01_behavior_matrix.py -q -k 'runtime_audit'
+通过
+
+python3 -m pytest -q
+全量测试跑完至 100%，无失败
+
+git diff --check
+通过
+```
+
 ## runtime audit 接入 workspace 治理建议
 
 **状态**: completed

@@ -24,6 +24,23 @@ from .common import (
     load_context,
 )
 
+_NEGATIVE_OUTCOME_HINTS = (
+    "fail",
+    "failed",
+    "failure",
+    "reject",
+    "rejected",
+    "rollback",
+    "rolled back",
+    "blocked",
+    "失败",
+    "未通过",
+    "不通过",
+    "拒绝",
+    "回滚",
+    "阻塞",
+)
+
 
 def workspace_start_session(
     workspace_file: str | Path,
@@ -65,14 +82,8 @@ def workspace_start_session(
     # G-01: Workflow profile recommendation based on intent
     workflow_recommendation: Dict[str, Any] = {}
     try:
-        from ..verification.workflow_profiles import recommend_workflow
-        profile = recommend_workflow(intent)
-        workflow_recommendation = {
-            "recommended_profile": profile.name,
-            "description": profile.description,
-            "tools_sequence": profile.tools_sequence,
-            "steps": [s.get("step", "") for s in profile.steps],
-        }
+        from ..verification.workflow_profiles import recommend_workflow_with_learning
+        workflow_recommendation = recommend_workflow_with_learning(workspace_file, intent)
     except Exception:
         pass
 
@@ -227,6 +238,70 @@ def workspace_suggest_case(workspace_file: str | Path, session_id: str) -> Dict[
     }
 
 
+def workspace_record_close_feedback(
+    workspace_file: str | Path,
+    session_id: str,
+    task_id: str = "",
+    source: str = "mc_close_auto",
+) -> Dict[str, Any]:
+    """Infer candidate-path feedback from a closed session and persist it."""
+    config, _store = load_context(workspace_file)
+    session = workspace_session_summary(workspace_file, session_id)
+    if not session.get("found"):
+        return {
+            "workspace": config.workspace,
+            "session_id": session_id,
+            "recorded": False,
+            "feedback_items": [],
+            "reason": "session_not_found",
+        }
+
+    summary = session.get("summary") or {}
+    events = session.get("events", []) or []
+    case_result = workspace_suggest_case(workspace_file, session_id)
+    case = case_result.get("draft_case", {}) if case_result.get("found") else {}
+    outcome = _derive_feedback_outcome(summary)
+    candidates = _infer_close_feedback_candidates(summary, events, case, outcome)
+    if not candidates:
+        return {
+            "workspace": config.workspace,
+            "session_id": session_id,
+            "recorded": False,
+            "feedback_items": [],
+            "reason": "no_candidate_paths_inferred",
+        }
+
+    from ..verification.heuristics import HeuristicsRegister
+
+    register = HeuristicsRegister(workspace_file)
+    feedback_items = []
+    for candidate in candidates:
+        feedback_items.append(
+            register.record_candidate_path_feedback(
+                candidate_type=str(candidate.get("candidate_type", "") or ""),
+                target=str(candidate.get("target", "") or ""),
+                outcome=outcome,
+                evidence=candidate.get("evidence") or [],
+                source=source,
+                task_id=task_id,
+                session_id=session_id,
+                why=str(candidate.get("why", "") or ""),
+                next_action=str(candidate.get("next_action", "") or ""),
+                verification_cost=str(candidate.get("verification_cost", "") or "medium"),
+                trigger=str(candidate.get("trigger", "") or ""),
+            )
+        )
+
+    return {
+        "workspace": config.workspace,
+        "session_id": session_id,
+        "recorded": bool(feedback_items),
+        "feedback_items": feedback_items,
+        "reason": "recorded" if feedback_items else "no_feedback_written",
+        "inferred_outcome": outcome,
+    }
+
+
 def workspace_recent_evidence(
     workspace_file: str | Path,
     task_id: str = "",
@@ -346,6 +421,146 @@ def _build_session_summary(
         "notable_terms": notable_terms[-10:],
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
+
+
+def _derive_feedback_outcome(summary: Dict[str, Any]) -> str:
+    verified_by = summary.get("verified_by", []) or []
+    if verified_by:
+        return "confirmed"
+    outcome_text = str(summary.get("outcome", "") or "").lower()
+    if any(term in outcome_text for term in _NEGATIVE_OUTCOME_HINTS):
+        return "rejected"
+    return "needs-more-context"
+
+
+def _infer_close_feedback_candidates(
+    summary: Dict[str, Any],
+    events: List[Dict[str, Any]],
+    case: Dict[str, Any],
+    outcome: str,
+) -> List[Dict[str, Any]]:
+    evidence = list(case.get("evidence_refs", []) or case.get("source_refs", []) or [])
+    default_target = _default_feedback_target(summary, case)
+    seen: set[tuple[str, str]] = set()
+    candidates: List[Dict[str, Any]] = []
+
+    for event in reversed(events):
+        if event.get("event_type") != "tool_call":
+            continue
+        payload = _event_payload(event)
+        candidate = _candidate_from_tool_payload(payload, default_target, outcome, evidence)
+        if not candidate:
+            continue
+        key = (candidate.get("candidate_type", ""), candidate.get("target", ""))
+        if not key[0] or not key[1] or key in seen:
+            continue
+        seen.add(key)
+        candidates.append(candidate)
+        if len(candidates) >= 3:
+            break
+
+    return candidates
+
+
+def _default_feedback_target(summary: Dict[str, Any], case: Dict[str, Any]) -> str:
+    for item in reversed(summary.get("notable_terms", []) or []):
+        if isinstance(item, str) and item.strip():
+            return item.strip()
+    if case.get("task"):
+        return str(case.get("task", "")).strip()
+    return str(summary.get("intent", "") or "").strip()
+
+
+def _candidate_from_tool_payload(
+    payload: Dict[str, Any],
+    default_target: str,
+    outcome: str,
+    evidence: List[Dict[str, Any]],
+) -> Dict[str, Any] | None:
+    tool_name = str(payload.get("tool_name") or payload.get("name") or "").lower()
+    if not tool_name:
+        return None
+
+    if any(token in tool_name for token in ("mc_analyze", "memory_impact", "memory_plan_change", "impact")):
+        target = str(payload.get("target") or payload.get("query") or default_target or "").strip()
+        if not target:
+            return None
+        return {
+            "candidate_type": "impact_analysis",
+            "target": target,
+            "why": "会话在关闭时基于已验证结果回写影响分析路径。",
+            "next_action": _feedback_next_action(outcome, success_action="优先沿影响分析路径继续扩展上下游验证。"),
+            "verification_cost": "medium",
+            "evidence": evidence[:5],
+            "trigger": tool_name,
+        }
+
+    lookup_target = _lookup_feedback_target(tool_name, payload)
+    if lookup_target:
+        return {
+            "candidate_type": "lookup_path",
+            "target": lookup_target,
+            "why": "会话在关闭时基于检索链路的实际验证结果回写查询路径。",
+            "next_action": _feedback_next_action(outcome, success_action="后续相似问题优先尝试这条检索路径。"),
+            "verification_cost": "low",
+            "evidence": evidence[:5],
+            "trigger": tool_name,
+        }
+
+    if any(token in tool_name for token in ("mc_sync", "sync_case", "sync_sniff")):
+        target = str(payload.get("task_id") or default_target or "task_space").strip()
+        return {
+            "candidate_type": "task_sync",
+            "target": target,
+            "why": "会话关闭时回写任务同步路径的有效性。",
+            "next_action": _feedback_next_action(outcome, success_action="类似长任务可继续优先走任务同步。"),
+            "verification_cost": "low",
+            "evidence": evidence[:5],
+            "trigger": tool_name,
+        }
+
+    return None
+
+
+def _lookup_feedback_target(tool_name: str, payload: Dict[str, Any]) -> str:
+    mode = str(payload.get("mode", "") or "").lower()
+    mode_map = {
+        "auto": "lookup_auto",
+        "symbol": "symbol_lookup",
+        "code": "code_lookup",
+        "query": "keyword_lookup",
+        "chain": "call_chain",
+        "trace": "trace_lookup",
+        "context": "context_lookup",
+        "contracts": "contract_lookup",
+    }
+    if mode in mode_map:
+        return mode_map[mode]
+
+    name_map = {
+        "workspace_lookup_hint": "lookup_auto",
+        "mc_lookup": "lookup_auto",
+        "memory_symbol": "symbol_lookup",
+        "memory_search_code": "code_lookup",
+        "memory_query": "keyword_lookup",
+        "memory_callers": "call_chain",
+        "memory_callees": "call_chain",
+        "workspace_trace": "trace_lookup",
+        "memory_context": "context_lookup",
+        "memory_contracts": "contract_lookup",
+    }
+    for key, value in name_map.items():
+        if key in tool_name:
+            return value
+    return ""
+
+
+def _feedback_next_action(outcome: str, success_action: str) -> str:
+    if outcome == "confirmed":
+        return success_action
+    if outcome == "rejected":
+        return "降低该路径优先级，并切换到其他候选路径验证。"
+    return "补充更多证据后再决定是否继续优先采用该路径。"
 
 
 def _summary_text(intent: str, tool_calls: List[str], files: set[str], projects: set[str], event_types: List[str]) -> str:

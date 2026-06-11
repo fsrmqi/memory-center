@@ -6,7 +6,10 @@ Provides structured workflow protocols for common coding tasks.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+from .heuristics import candidate_path_learning_index, load_learning_policy, _merge_weight
 
 
 @dataclass
@@ -79,20 +82,132 @@ BUILTIN_PROFILES: Dict[str, WorkflowProfile] = {
     ),
 }
 
+_BUGFIX_KEYWORDS = ("bug", "fix", "修复", "hotfix", "配置")
+_CONTRACT_KEYWORDS = ("feign", "dto", "契约", "api", "contract")
+_ARCHITECTURE_KEYWORDS = ("架构", "重构", "migration", "新模块", "architecture")
+_WORKFLOW_PRIORITY = {
+    "contract-change": 0,
+    "architecture": 1,
+    "long-task": 2,
+    "quick-fix": 3,
+}
+
 
 def get_workflow_profile(task_type: str) -> Optional[WorkflowProfile]:
     """Get a workflow profile by task type."""
     return BUILTIN_PROFILES.get(task_type)
 
 
+def _has_any_keyword(text: str, keywords: tuple[str, ...]) -> bool:
+    return any(keyword in text for keyword in keywords)
+
+
 def recommend_workflow(task_description: str, available_tools: List[str] | None = None) -> WorkflowProfile:
     """Recommend a workflow profile based on task description."""
     desc_lower = task_description.lower()
-    # Simple heuristic matching
-    if any(k in desc_lower for k in ["bug", "fix", "修复", "hotfix", "配置"]):
-        return BUILTIN_PROFILES["quick-fix"]
-    if any(k in desc_lower for k in ["feign", "dto", "契约", "api", "contract"]):
+    has_contract = _has_any_keyword(desc_lower, _CONTRACT_KEYWORDS)
+    has_architecture = _has_any_keyword(desc_lower, _ARCHITECTURE_KEYWORDS)
+    has_bugfix = _has_any_keyword(desc_lower, _BUGFIX_KEYWORDS)
+
+    # 契约变更优先于泛化 bugfix；架构类问题优先于普通长期任务。
+    if has_contract:
         return BUILTIN_PROFILES["contract-change"]
-    if any(k in desc_lower for k in ["架构", "重构", "migration", "新模块", "architecture"]):
+    if has_architecture:
         return BUILTIN_PROFILES["architecture"]
+    if has_bugfix:
+        return BUILTIN_PROFILES["quick-fix"]
     return BUILTIN_PROFILES["long-task"]
+
+
+def recommend_workflow_with_learning(
+    workspace_file: str | Path,
+    task_description: str,
+    available_tools: List[str] | None = None,
+) -> Dict[str, Any]:
+    """Recommend a workflow profile using static heuristics plus learned profile preference."""
+    base_profile = recommend_workflow(task_description, available_tools=available_tools)
+    candidates = _build_workflow_profile_candidates(task_description, base_profile.name)
+    learning_index = candidate_path_learning_index(workspace_file)
+    policy = load_learning_policy(workspace_file)
+
+    adjusted_candidates: List[Dict[str, Any]] = []
+    for candidate in candidates:
+        item = dict(candidate)
+        learning = learning_index.get(("workflow_profile", item["name"]))
+        item["learning_applied"] = learning is not None
+        if learning is not None:
+            learned_weight = float(learning.get("recommended_weight", learning.get("confidence", item["weight"])) or item["weight"])
+            item["learned_recommended_weight"] = learned_weight
+            item["learning_state"] = str(learning.get("recommendation_state", "") or "")
+            item["learning_guard_reason"] = str(learning.get("guard_reason", "") or "")
+            item["weight"] = round(
+                _merge_weight(policy, kind="workflow_profile", base_weight=float(item["weight"]), learned_weight=learned_weight),
+                2,
+            )
+            if item["learning_state"] == "rolled-back":
+                item["status"] = "possible"
+        adjusted_candidates.append(item)
+
+    adjusted_candidates.sort(
+        key=lambda item: (
+            -float(item.get("weight", 0.0)),
+            _WORKFLOW_PRIORITY.get(str(item.get("name", "") or ""), 99),
+            item.get("name", ""),
+        )
+    )
+    top = adjusted_candidates[0]
+    for item in adjusted_candidates:
+        item["status"] = "probable" if item["name"] == top["name"] else "possible"
+        if item.get("learning_state") == "rolled-back":
+            item["status"] = "possible"
+    profile = BUILTIN_PROFILES[top["name"]]
+    return {
+        "recommended_profile": profile.name,
+        "description": profile.description,
+        "tools_sequence": profile.tools_sequence,
+        "steps": [s.get("step", "") for s in profile.steps],
+        "learning_applied": top.get("learning_applied", False),
+        "learning_state": top.get("learning_state", ""),
+        "learning_guard_reason": top.get("learning_guard_reason", ""),
+        "learned_recommended_weight": top.get("learned_recommended_weight"),
+        "candidate_profiles": adjusted_candidates,
+    }
+
+
+def _build_workflow_profile_candidates(task_description: str, recommended_name: str) -> List[Dict[str, Any]]:
+    desc_lower = task_description.lower()
+    scores = {
+        "quick-fix": 0.58,
+        "contract-change": 0.58,
+        "long-task": 0.62,
+        "architecture": 0.56,
+    }
+
+    has_bugfix = _has_any_keyword(desc_lower, _BUGFIX_KEYWORDS)
+    has_contract = _has_any_keyword(desc_lower, _CONTRACT_KEYWORDS)
+    has_architecture = _has_any_keyword(desc_lower, _ARCHITECTURE_KEYWORDS)
+
+    if has_bugfix:
+        scores["quick-fix"] = 0.92
+        scores["long-task"] = max(scores["long-task"], 0.54)
+    if has_contract:
+        scores["contract-change"] = 0.96 if has_bugfix else 0.92
+        scores["quick-fix"] = max(scores["quick-fix"], 0.6)
+    if has_architecture:
+        scores["architecture"] = 0.92
+        scores["long-task"] = max(scores["long-task"], 0.7)
+    if recommended_name == "long-task":
+        scores["long-task"] = max(scores["long-task"], 0.86)
+
+    candidates: List[Dict[str, Any]] = []
+    for name, profile in BUILTIN_PROFILES.items():
+        candidates.append(
+            {
+                "name": name,
+                "description": profile.description,
+                "status": "probable" if name == recommended_name else "possible",
+                "weight": round(scores.get(name, 0.58), 2),
+                "why": "静态规则认为该 workflow 与当前任务描述最匹配。" if name == recommended_name else "作为备选 workflow 保留，用于学习修正优先级。",
+            }
+        )
+    return candidates

@@ -73,6 +73,7 @@ from memory_center.core.orchestrator import (
     workspace_check_contract,
     workspace_check_rules,
     workspace_record_case,
+    workspace_record_close_feedback,
     workspace_session_summary,
     workspace_sniff,
     workspace_start_session,
@@ -90,7 +91,7 @@ from memory_center.core.registry import load_registry
 from memory_center.core.verification.loop import VerificationLoop
 from memory_center.core.verification.pattern_promotion import PatternPromotion
 from memory_center.core.verification.heuristics import HeuristicsRegister
-from memory_center.core.verification.workflow_profiles import get_workflow_profile, recommend_workflow
+from memory_center.core.verification.workflow_profiles import get_workflow_profile, recommend_workflow, recommend_workflow_with_learning
 from memory_center.core.verification.bundle_export import generate_agent_bundle
 from memory_center.core.audit.runtime import audit_agent_runtime
 from memory_center.core.explanation.schema import Explanation
@@ -326,38 +327,43 @@ def create_server(workspace_file: str):
         if mode == "auto":
             hint = workspace_lookup_hint(wf, query=query, intent=intent, limit=limit)
             preferred = hint.get("preferred_tools", [])
+            decision_fields = {
+                "lookup_hint": hint,
+                "candidate_paths": hint.get("candidate_paths", []),
+                "recommended_path": hint.get("recommended_candidate_path", {}),
+            }
             # preferred_tools returns names with "_tool" suffix (e.g. "memory_symbol_tool")
             # Strip suffix for cleaner matching
             preferred_bare = [t.replace("_tool", "") for t in preferred]
             if "memory_symbol" in preferred_bare and (name or query):
-                return {"mode_used": "symbol", "result": memory_symbol(wf, name or query, limit, project=project)}
+                return {"mode_used": "symbol", "result": memory_symbol(wf, name or query, limit, project=project), **decision_fields}
             if "memory_search_code" in preferred_bare:
-                return {"mode_used": "code", "result": memory_search_code(wf, query, scope, limit, project=project)}
+                return {"mode_used": "code", "result": memory_search_code(wf, query, scope, limit, project=project), **decision_fields}
             if "memory_context" in preferred_bare and (name or query):
-                return {"mode_used": "context", "result": memory_context(wf, name or query, depth, project=project)}
+                return {"mode_used": "context", "result": memory_context(wf, name or query, depth, project=project), **decision_fields}
             if "workspace_trace" in preferred_bare and (entry or query):
-                return {"mode_used": "trace", "result": workspace_trace(wf, entry or query)}
+                return {"mode_used": "trace", "result": workspace_trace(wf, entry or query), **decision_fields}
             if "memory_callers" in preferred_bare and (symbol or query):
                 matching_groups = _find_groups_for_workspace(wf)
                 if len(matching_groups) == 1:
                     result = group_chain(matching_groups[0], symbol or query, direction="callers", depth=depth, limit=limit)
-                    return {"mode_used": "chain-group", "result": result}
+                    return {"mode_used": "chain-group", "result": result, **decision_fields}
                 result = memory_callers(wf, symbol or query, depth, limit, project=project)
                 _annotate_phantom_nodes(result, wf)
                 if len(matching_groups) > 1:
-                    return {"mode_used": "chain-callers", "result": result, "matching_groups": matching_groups, "_hint": f"Workspace 属于多个 group ({', '.join(matching_groups)})，请用 mc_admin(action='group_chain', group=...) 显式指定。"}
-                return {"mode_used": "chain-callers", "result": result}
+                    return {"mode_used": "chain-callers", "result": result, "matching_groups": matching_groups, "_hint": f"Workspace 属于多个 group ({', '.join(matching_groups)})，请用 mc_admin(action='group_chain', group=...) 显式指定。", **decision_fields}
+                return {"mode_used": "chain-callers", "result": result, **decision_fields}
             if "memory_callees" in preferred_bare and (symbol or query):
                 matching_groups = _find_groups_for_workspace(wf)
                 if len(matching_groups) == 1:
                     result = group_chain(matching_groups[0], symbol or query, direction="callees", depth=depth, limit=limit)
-                    return {"mode_used": "chain-group", "result": result}
+                    return {"mode_used": "chain-group", "result": result, **decision_fields}
                 result = memory_callees(wf, symbol or query, depth, limit, project=project)
                 _annotate_phantom_nodes(result, wf)
                 if len(matching_groups) > 1:
-                    return {"mode_used": "chain-callees", "result": result, "matching_groups": matching_groups, "_hint": f"Workspace 属于多个 group ({', '.join(matching_groups)})，请用 mc_admin(action='group_chain', group=...) 显式指定。"}
-                return {"mode_used": "chain-callees", "result": result}
-            return {"mode_used": "query", "result": memory_query_hybrid(wf, query, limit, project=project), "lookup_hint": hint}
+                    return {"mode_used": "chain-callees", "result": result, "matching_groups": matching_groups, "_hint": f"Workspace 属于多个 group ({', '.join(matching_groups)})，请用 mc_admin(action='group_chain', group=...) 显式指定。", **decision_fields}
+                return {"mode_used": "chain-callees", "result": result, **decision_fields}
+            return {"mode_used": "query", "result": memory_query_hybrid(wf, query, limit, project=project), **decision_fields}
         if mode == "symbol":
             return {"mode": "symbol", "result": memory_symbol(wf, name or query, limit, project=project)}
         if mode == "code":
@@ -423,6 +429,9 @@ def create_server(workspace_file: str):
         else:
             impact_result = memory_detect_changes(wf, scope)
         result = {"workflow": "mc-analyze", "depth": depth, "impact": impact_result}
+        if target:
+            result["candidate_paths"] = impact_result.get("candidate_paths", [])
+            result["recommended_path"] = impact_result.get("recommended_path", {})
         if depth in ("standard", "full") and target:
             result["plan"] = memory_plan_change(wf, target, direction, max_depth)
             result["rules"] = workspace_check_rules(wf, projects, change_type, files)
@@ -505,6 +514,7 @@ def create_server(workspace_file: str):
         synced = workspace_sync_case_to_artifacts(wf, session_id, task_id=task_id, title=title, auto_sync_mode=auto_sync_mode)
         draft = workspace_suggest_case(wf, session_id)
         recorded = None
+        candidate_feedback = None
         case = draft.get("draft_case", {}) if draft.get("found") else {}
         if record_case and case.get("projects") and case.get("files"):
             recorded = workspace_record_case(
@@ -514,7 +524,20 @@ def create_server(workspace_file: str):
                 verified_by=case.get("verified_by", []) or verified_by,
                 source_session_id=session_id, source_task_id=task_id,
             )
-        return {"workflow": "mc-close", "ended": ended, "sync_case": synced, "suggested_case": draft, "record_case": recorded}
+        candidate_feedback = workspace_record_close_feedback(
+            wf,
+            session_id,
+            task_id=task_id,
+            source="mc_close_auto",
+        )
+        return {
+            "workflow": "mc-close",
+            "ended": ended,
+            "sync_case": synced,
+            "suggested_case": draft,
+            "record_case": recorded,
+            "candidate_feedback": candidate_feedback,
+        }
 
     # ===================== FACADE 8: mc_admin =====================
     @_safe_mcp_tool(mcp)
@@ -643,9 +666,11 @@ def create_server(workspace_file: str):
             # ECC — heuristics
             "heuristics_query": lambda: _heuristics_action(wf, "query", text),
             "heuristics_record": lambda: _heuristics_action(wf, "record", text),
+            "heuristics_feedback": lambda: _heuristics_action(wf, "feedback", text),
+            "heuristics_explain": lambda: _heuristics_action(wf, "explain", text),
             # ECC — workflow profiles
             "workflow_profile": lambda: get_workflow_profile(intent or "quick-fix"),
-            "workflow_recommend": lambda: recommend_workflow(text or intent or ""),
+            "workflow_recommend": lambda: recommend_workflow_with_learning(wf, text or intent or ""),
             # ECC — bundle export
             "bundle_export": lambda: generate_agent_bundle(wf, agent=name or "codex"),
             # ECC — runtime audit
@@ -693,16 +718,44 @@ def create_server(workspace_file: str):
     @staticmethod
     def _heuristics_action(wf: str, action_type: str, text: str) -> dict:
         hr = HeuristicsRegister(wf)
+        import json
+        try:
+            data = json.loads(text) if text else {}
+        except json.JSONDecodeError:
+            data = {"pattern": text}
         if action_type == "query":
             return {"heuristics": hr.query(text)}
         elif action_type == "record":
-            import json
-            try:
-                data = json.loads(text) if text else {}
-            except json.JSONDecodeError:
-                data = {"pattern": text}
-            hr.record(data)
-            return {"status": "recorded"}
+            entry = hr.record(data)
+            return {"status": "recorded", "entry": entry}
+        elif action_type == "feedback":
+            feedback = hr.record_candidate_path_feedback(
+                candidate_type=str(data.get("candidate_type", "") or ""),
+                target=str(data.get("target", "") or ""),
+                outcome=str(data.get("outcome", "") or ""),
+                evidence=data.get("evidence") or [],
+                source=str(data.get("source", "") or "mc_admin"),
+                task_id=str(data.get("task_id", "") or ""),
+                session_id=str(data.get("session_id", "") or ""),
+                weight_before=data.get("weight_before"),
+                weight_delta=data.get("weight_delta"),
+                why=str(data.get("why", "") or ""),
+                next_action=str(data.get("next_action", "") or ""),
+                verification_cost=str(data.get("verification_cost", "") or ""),
+                category=str(data.get("category", "") or "candidate-path"),
+                pattern=str(data.get("pattern", "") or ""),
+                trigger=str(data.get("trigger", "") or ""),
+            )
+            return {"status": "recorded", "feedback": feedback}
+        elif action_type == "explain":
+            return hr.explain(
+                candidate_type=str(data.get("candidate_type", "") or ""),
+                target=str(data.get("target", "") or ""),
+                category=str(data.get("category", "") or "candidate-path"),
+                heuristic_id=str(data.get("heuristic_id", "") or ""),
+                pattern=str(data.get("pattern", "") or ""),
+                limit=int(data.get("limit", 10) or 10),
+            )
         return {"error": "unknown action"}
 
     @staticmethod

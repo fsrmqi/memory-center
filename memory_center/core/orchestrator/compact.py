@@ -70,6 +70,19 @@ def _compact_sniff_result(result: Dict[str, Any], budget: str = "medium") -> Dic
         "auto_sync_recommendation": result.get("auto_sync_recommendation", {}),
         "write_judge_recommendation": result.get("write_judge_recommendation", {}),
         "lookup_hint": result.get("lookup_hint", {}),
+        "recommended_path": result.get("recommended_path", {}),
+        "candidate_paths": [
+            {
+                "candidate_type": item.get("candidate_type", ""),
+                "target": item.get("target", ""),
+                "status": item.get("status", ""),
+                "weight": item.get("weight", 0),
+                "why": item.get("why", ""),
+                "next_action": item.get("next_action", ""),
+                "verification_cost": item.get("verification_cost", ""),
+            }
+            for item in result.get("candidate_paths", [])[:3]
+        ],
         "symbolic_context": {
             "flow_flags": symbolic.get("flow_flags", {}),
             "flow_mermaid": symbolic.get("flow_mermaid", ""),

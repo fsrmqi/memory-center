@@ -37,6 +37,7 @@ from ..core.orchestrator import (
     workspace_handoff_packet,
     workspace_lookup_hint,
     workspace_next_actions,
+    workspace_record_close_feedback,
     workspace_recent_evidence,
     workspace_resume_packet,
     workspace_sniff,
@@ -497,10 +498,17 @@ def run_hook(
                     wf, session_id,
                     auto_sync_mode=auto_sync_mode,
                 )
+                candidate_feedback = workspace_record_close_feedback(
+                    wf,
+                    session_id,
+                    task_id=params_spec.get("task_id", ""),
+                    source="hook_session_stop_auto",
+                )
                 hook_result = {
                     "workflow": "mc-close",
                     "ended": ended,
                     "sync_case": synced,
+                    "candidate_feedback": candidate_feedback,
                 }
                 system_message = "[Memory Center] Session closed and synced."
             else:

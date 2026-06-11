@@ -194,6 +194,47 @@ class TestD01SessionWorkflowHint:
         rec = result["workflow_recommendation"]
         assert rec["recommended_profile"] == "architecture"
 
+    def test_session_start_workflow_recommendation_applies_learning(self, tmp_path):
+        """workflow recommendation should allow learned profile preference to correct static default."""
+        ws = copy_demo_workspace(tmp_path)
+        from memory_center.core.orchestrator.session import workspace_start_session
+        from memory_center.core.verification.heuristics import HeuristicsRegister
+
+        hr = HeuristicsRegister(str(ws))
+        hr.record_candidate_path_feedback(
+            candidate_type="workflow_profile",
+            target="quick-fix",
+            outcome="rollback",
+            evidence=[{"type": "review", "id": "ev-8"}],
+            source="unit-test",
+            session_id="wf-1",
+            weight_before=0.70,
+        )
+        hr.record_candidate_path_feedback(
+            candidate_type="workflow_profile",
+            target="long-task",
+            outcome="confirmed",
+            evidence=[{"type": "test", "id": "ev-9"}],
+            source="unit-test",
+            session_id="wf-2",
+            weight_before=0.62,
+        )
+        hr.record_candidate_path_feedback(
+            candidate_type="workflow_profile",
+            target="long-task",
+            outcome="confirmed",
+            evidence=[{"type": "test", "id": "ev-10"}],
+            source="unit-test",
+            session_id="wf-3",
+        )
+
+        result = workspace_start_session(str(ws), intent="修复登录bug")
+        rec = result["workflow_recommendation"]
+        assert rec["recommended_profile"] == "long-task"
+        assert rec["learning_applied"] is True
+        assert rec["learning_state"] == "stable"
+        assert rec["candidate_profiles"][0]["name"] == "long-task"
+
     def test_session_start_context_pack_hint(self, tmp_path):
         """workspace_start_session returns context_pack_hint."""
         ws = copy_demo_workspace(tmp_path)
@@ -521,6 +562,641 @@ class TestG03PatternPromotionDeep:
             assert r.get("category") == "retrieval"
         for r in indexing_results:
             assert r.get("category") == "indexing"
+
+    def test_candidate_feedback_confirmed_requires_evidence_for_uplift(self, tmp_path):
+        """confirmed without evidence should not increase candidate weight."""
+        ws = copy_demo_workspace(tmp_path)
+        from memory_center.core.verification.heuristics import HeuristicsRegister
+
+        hr = HeuristicsRegister(str(ws))
+        hr.record_candidate_path_feedback(
+            candidate_type="impact_analysis",
+            target="ArticleFeignClient",
+            outcome="confirmed",
+            evidence=[],
+            source="unit-test",
+            weight_before=0.62,
+        )
+
+        results = hr.query(category="candidate-path")
+        assert results
+        assert results[0]["target"] == "ArticleFeignClient"
+        assert results[0]["confidence"] == 0.62
+
+    def test_candidate_feedback_aggregates_and_reorders_by_weight(self, tmp_path):
+        """confirmed and rejected feedback should aggregate into current weight ordering."""
+        ws = copy_demo_workspace(tmp_path)
+        from memory_center.core.verification.heuristics import HeuristicsRegister
+
+        hr = HeuristicsRegister(str(ws))
+        hr.record_candidate_path_feedback(
+            candidate_type="impact_analysis",
+            target="ArticleFeignClient",
+            outcome="confirmed",
+            evidence=[{"type": "test", "id": "case-1"}],
+            source="unit-test",
+            weight_before=0.60,
+        )
+        hr.record_candidate_path_feedback(
+            candidate_type="impact_analysis",
+            target="TaskController",
+            outcome="rejected",
+            evidence=[{"type": "trace", "id": "case-2"}],
+            source="unit-test",
+            weight_before=0.70,
+        )
+
+        results = hr.query(category="candidate-path")
+        assert len(results) >= 2
+        assert results[0]["target"] == "ArticleFeignClient"
+        assert results[0]["confidence"] == 0.72
+        assert results[0]["recommended_weight"] == 0.54
+        assert results[0]["promotion_ready"] is False
+        assert results[1]["target"] == "TaskController"
+        assert results[1]["confidence"] == 0.5
+
+    def test_candidate_feedback_rolls_forward_existing_weight(self, tmp_path):
+        """subsequent feedback should continue from aggregated weight instead of resetting."""
+        ws = copy_demo_workspace(tmp_path)
+        from memory_center.core.verification.heuristics import HeuristicsRegister
+
+        hr = HeuristicsRegister(str(ws))
+        hr.record_candidate_path_feedback(
+            candidate_type="impact_analysis",
+            target="ArticleFeignClient",
+            outcome="confirmed",
+            evidence=[{"type": "test", "id": "ev-1"}],
+            source="unit-test",
+            weight_before=0.60,
+        )
+        hr.record_candidate_path_feedback(
+            candidate_type="impact_analysis",
+            target="ArticleFeignClient",
+            outcome="demoted",
+            evidence=[{"type": "review", "id": "ev-2"}],
+            source="unit-test",
+        )
+
+        results = hr.query(category="candidate-path")
+        assert results[0]["target"] == "ArticleFeignClient"
+        assert results[0]["confidence"] == 0.64
+        assert results[0]["recommended_weight"] == 0.64
+        assert results[0]["promotion_ready"] is True
+
+    def test_workspace_record_close_feedback_infers_lookup_path(self, tmp_path):
+        """closing a verified session should auto-write candidate feedback from tool calls."""
+        ws = copy_demo_workspace(tmp_path)
+        from memory_center.core.orchestrator import (
+            workspace_end_session,
+            workspace_log_session_event,
+            workspace_record_close_feedback,
+            workspace_start_session,
+        )
+        from memory_center.core.verification.heuristics import HeuristicsRegister
+
+        started = workspace_start_session(str(ws), "定位 ArticleFeignClient 调用链")
+        sid = started["session_id"]
+        workspace_log_session_event(str(ws), sid, "tool_call", {"tool_name": "memory_symbol_tool", "query": "ArticleFeignClient"})
+        workspace_end_session(str(ws), sid, outcome="完成定位", verified_by=["manual-check"])
+
+        feedback = workspace_record_close_feedback(str(ws), sid, source="unit-test")
+        assert feedback["recorded"] is True
+        assert feedback["inferred_outcome"] == "confirmed"
+        assert feedback["feedback_items"][0]["candidate_type"] == "lookup_path"
+        assert feedback["feedback_items"][0]["target"] == "symbol_lookup"
+
+        hr = HeuristicsRegister(str(ws))
+        results = hr.query(category="candidate-path")
+        assert any(item.get("target") == "symbol_lookup" for item in results)
+
+    def test_single_confirmed_candidate_stays_provisional_until_repeated(self, tmp_path):
+        """one successful sample should not immediately become a stable high-priority default."""
+        ws = copy_demo_workspace(tmp_path)
+        from memory_center.core.verification.heuristics import HeuristicsRegister
+
+        hr = HeuristicsRegister(str(ws))
+        hr.record_candidate_path_feedback(
+            candidate_type="lookup_path",
+            target="symbol_lookup",
+            outcome="confirmed",
+            evidence=[{"type": "test", "id": "ev-1"}],
+            source="unit-test",
+            session_id="s1",
+            weight_before=0.60,
+        )
+        provisional = hr.query(category="candidate-path")[0]
+        assert provisional["confidence"] == 0.72
+        assert provisional["recommended_weight"] == 0.54
+        assert provisional["promotion_ready"] is False
+        assert provisional["guard_reason"] == "single-sample-positive"
+
+        hr.record_candidate_path_feedback(
+            candidate_type="lookup_path",
+            target="symbol_lookup",
+            outcome="confirmed",
+            evidence=[{"type": "test", "id": "ev-2"}],
+            source="unit-test",
+            session_id="s2",
+        )
+        stabilized = hr.query(category="candidate-path")[0]
+        assert stabilized["confidence"] == 0.84
+        assert stabilized["recommended_weight"] == 0.84
+        assert stabilized["promotion_ready"] is True
+        assert stabilized["recommendation_state"] == "stable"
+
+    def test_recommended_weight_sorting_prefers_stable_path(self, tmp_path):
+        """sorting should prefer stable supported paths over raw one-off spikes."""
+        ws = copy_demo_workspace(tmp_path)
+        from memory_center.core.verification.heuristics import HeuristicsRegister
+
+        hr = HeuristicsRegister(str(ws))
+        hr.record_candidate_path_feedback(
+            candidate_type="lookup_path",
+            target="symbol_lookup",
+            outcome="confirmed",
+            evidence=[{"type": "test", "id": "ev-1"}],
+            source="unit-test",
+            session_id="s1",
+            weight_before=0.60,
+        )
+        hr.record_candidate_path_feedback(
+            candidate_type="impact_analysis",
+            target="ArticleFeignClient",
+            outcome="confirmed",
+            evidence=[{"type": "test", "id": "ev-2"}],
+            source="unit-test",
+            session_id="s2",
+            weight_before=0.55,
+        )
+        hr.record_candidate_path_feedback(
+            candidate_type="impact_analysis",
+            target="ArticleFeignClient",
+            outcome="confirmed",
+            evidence=[{"type": "test", "id": "ev-3"}],
+            source="unit-test",
+            session_id="s3",
+        )
+
+        results = hr.query(category="candidate-path")
+        assert results[0]["target"] == "ArticleFeignClient"
+        assert results[0]["recommended_weight"] > results[1]["recommended_weight"]
+
+    def test_rollback_feedback_forces_guarded_recommendation(self, tmp_path):
+        """rollback should quickly suppress default recommendation priority."""
+        ws = copy_demo_workspace(tmp_path)
+        from memory_center.core.verification.heuristics import HeuristicsRegister
+
+        hr = HeuristicsRegister(str(ws))
+        hr.record_candidate_path_feedback(
+            candidate_type="lookup_path",
+            target="symbol_lookup",
+            outcome="confirmed",
+            evidence=[{"type": "test", "id": "ev-1"}],
+            source="unit-test",
+            session_id="s1",
+            weight_before=0.60,
+        )
+        hr.record_candidate_path_feedback(
+            candidate_type="lookup_path",
+            target="symbol_lookup",
+            outcome="confirmed",
+            evidence=[{"type": "test", "id": "ev-2"}],
+            source="unit-test",
+            session_id="s2",
+        )
+        hr.record_candidate_path_feedback(
+            candidate_type="lookup_path",
+            target="symbol_lookup",
+            outcome="rollback",
+            evidence=[{"type": "review", "id": "ev-3"}],
+            source="unit-test",
+            session_id="s3",
+        )
+
+        result = hr.query(category="candidate-path")[0]
+        assert result["confidence"] == 0.56
+        assert result["recommended_weight"] == 0.35
+        assert result["promotion_ready"] is False
+        assert result["recommendation_state"] == "rolled-back"
+        assert result["guard_reason"] == "rollback-observed"
+
+    def test_stale_candidate_decays_recommended_weight_only(self, tmp_path):
+        """old untouched paths should decay in recommendation priority without losing raw confidence."""
+        ws = copy_demo_workspace(tmp_path)
+        from memory_center.core.verification.heuristics import HeuristicsRegister
+
+        hr = HeuristicsRegister(str(ws))
+        stale_ts = "2025-01-01T00:00:00+00:00"
+        hr.record_candidate_path_feedback(
+            candidate_type="impact_analysis",
+            target="ArticleFeignClient",
+            outcome="confirmed",
+            evidence=[{"type": "test", "id": "ev-1"}],
+            source="unit-test",
+            session_id="s1",
+            weight_before=0.60,
+            recorded_at=stale_ts,
+            updated_at=stale_ts,
+        )
+        hr.record_candidate_path_feedback(
+            candidate_type="impact_analysis",
+            target="ArticleFeignClient",
+            outcome="confirmed",
+            evidence=[{"type": "test", "id": "ev-2"}],
+            source="unit-test",
+            session_id="s2",
+            recorded_at=stale_ts,
+            updated_at=stale_ts,
+        )
+
+        result = hr.query(category="candidate-path")[0]
+        assert result["confidence"] == 0.84
+        assert result["recommended_weight"] == 0.6048
+        assert result["decay_applied"] is True
+        assert result["recommendation_state"] == "stale"
+        assert result["stale_days"] >= 30
+
+    def test_lookup_hint_candidate_paths_apply_learned_weights(self, tmp_path):
+        """workspace_lookup_hint should merge learned recommendation weights into candidate sorting."""
+        ws = copy_demo_workspace(tmp_path)
+        from memory_center.core.orchestrator import workspace_lookup_hint
+        from memory_center.core.verification.heuristics import HeuristicsRegister
+
+        hr = HeuristicsRegister(str(ws))
+        hr.record_candidate_path_feedback(
+            candidate_type="lookup_path",
+            target="symbol_lookup",
+            outcome="confirmed",
+            evidence=[{"type": "test", "id": "ev-1"}],
+            source="unit-test",
+            session_id="s1",
+            weight_before=0.60,
+        )
+        hr.record_candidate_path_feedback(
+            candidate_type="lookup_path",
+            target="symbol_lookup",
+            outcome="confirmed",
+            evidence=[{"type": "test", "id": "ev-2"}],
+            source="unit-test",
+            session_id="s2",
+        )
+        hr.record_candidate_path_feedback(
+            candidate_type="lookup_path",
+            target="symbol_lookup",
+            outcome="rollback",
+            evidence=[{"type": "review", "id": "ev-3"}],
+            source="unit-test",
+            session_id="s3",
+        )
+
+        hint = workspace_lookup_hint(str(ws), query="ArticleController 类", intent="", limit=5)
+        learned = next(item for item in hint["candidate_paths"] if item.get("candidate_type") == "lookup_path")
+        assert learned["candidate_type"] == "lookup_path"
+        assert learned["learning_applied"] is True
+        assert learned["learning_state"] == "rolled-back"
+        assert learned["weight"] == 0.56
+        assert learned["status"] == "possible"
+        assert hint["candidate_paths"][0]["candidate_type"] != "lookup_path"
+
+    def test_memory_impact_candidate_paths_apply_learned_weights(self, tmp_path):
+        """memory_impact should surface learned impact recommendation state on candidate paths."""
+        ws = copy_demo_workspace(tmp_path)
+        from memory_center.core.orchestrator import memory_impact
+        from memory_center.core.verification.heuristics import HeuristicsRegister
+
+        hr = HeuristicsRegister(str(ws))
+        hr.record_candidate_path_feedback(
+            candidate_type="impact_analysis",
+            target="MoveArticleRequest",
+            outcome="rollback",
+            evidence=[{"type": "review", "id": "ev-4"}],
+            source="unit-test",
+            session_id="impact-1",
+            weight_before=0.70,
+        )
+
+        impact = memory_impact(str(ws), "MoveArticleRequest")
+        learned_candidates = [item for item in impact["candidate_paths"] if item.get("learning_applied")]
+        assert learned_candidates
+        assert learned_candidates[0]["learning_state"] == "rolled-back"
+        assert learned_candidates[0]["status"] == "possible"
+
+    def test_runtime_audit_candidate_paths_apply_learned_weights(self, tmp_path):
+        """runtime_audit should merge learned workspace governance feedback into candidate ordering."""
+        ws = copy_demo_workspace(tmp_path)
+        from memory_center.core.audit.runtime import audit_agent_runtime
+        from memory_center.core.verification.heuristics import HeuristicsRegister
+
+        hr = HeuristicsRegister(str(ws))
+        hr.record_candidate_path_feedback(
+            candidate_type="runtime_governance",
+            target="hooks-mcp-agent-profile",
+            outcome="confirmed",
+            evidence=[{"type": "test", "id": "ev-5"}],
+            source="unit-test",
+            session_id="runtime-1",
+            weight_before=0.60,
+        )
+        hr.record_candidate_path_feedback(
+            candidate_type="runtime_governance",
+            target="hooks-mcp-agent-profile",
+            outcome="confirmed",
+            evidence=[{"type": "test", "id": "ev-6"}],
+            source="unit-test",
+            session_id="runtime-2",
+        )
+
+        audit = audit_agent_runtime(str(ws))
+        learned = next(item for item in audit["candidate_paths"] if item.get("candidate_type") == "runtime_governance")
+        assert learned["learning_applied"] is True
+        assert learned["learned_recommended_weight"] == 0.84
+        assert learned["weight"] == 0.77
+
+    def test_memory_discover_candidate_paths_apply_learned_weights(self, tmp_path):
+        """memory_discover should expose learned task-sync priority in its executable recommendations."""
+        ws = copy_demo_workspace(tmp_path)
+        from memory_center.core.orchestrator.query import memory_discover
+        from memory_center.core.verification.heuristics import HeuristicsRegister
+
+        hr = HeuristicsRegister(str(ws))
+        hr.record_candidate_path_feedback(
+            candidate_type="task_sync",
+            target="new-task-space",
+            outcome="rollback",
+            evidence=[{"type": "review", "id": "ev-7"}],
+            source="unit-test",
+            session_id="discover-1",
+            weight_before=0.70,
+        )
+
+        result = memory_discover(str(ws), limit=20)
+        learned = next(item for item in result["candidate_paths"] if item.get("candidate_type") == "task_sync")
+        assert learned["learning_applied"] is True
+        assert learned["learning_state"] == "rolled-back"
+        assert learned["status"] == "possible"
+
+    def test_heuristics_explain_shows_guard_and_recent_events(self, tmp_path):
+        """explain should expose current recommendation state and recent feedback timeline."""
+        ws = copy_demo_workspace(tmp_path)
+        from memory_center.core.verification.heuristics import HeuristicsRegister
+
+        hr = HeuristicsRegister(str(ws))
+        hr.record_candidate_path_feedback(
+            candidate_type="lookup_path",
+            target="symbol_lookup",
+            outcome="confirmed",
+            evidence=[{"type": "test", "id": "ev-explain-1"}],
+            source="unit-test",
+            session_id="explain-s1",
+            weight_before=0.60,
+        )
+        hr.record_candidate_path_feedback(
+            candidate_type="lookup_path",
+            target="symbol_lookup",
+            outcome="rollback",
+            evidence=[{"type": "review", "id": "ev-explain-2"}],
+            source="unit-test",
+            session_id="explain-s2",
+        )
+
+        result = hr.explain(candidate_type="lookup_path", target="symbol_lookup")
+        assert result["found"] is True
+        assert result["current"]["recommendation_state"] == "rolled-back"
+        assert result["current"]["guard_reason"] == "rollback-observed"
+        assert result["event_count"] == 2
+        assert len(result["recent_events"]) == 2
+        assert result["recent_events"][0]["outcome"] == "rollback"
+        assert any(reason["type"] == "recommendation_state" for reason in result["reasons"])
+        assert result["policy_snapshot"]["kind"] == "candidate_path_learning"
+
+    def test_legacy_candidate_feedback_without_schema_version_is_aggregated(self, tmp_path):
+        """legacy candidate rows should still aggregate even without explicit schema metadata."""
+        ws = copy_demo_workspace(tmp_path)
+        from memory_center.core.store import WorkspaceStore
+        from memory_center.core.verification.heuristics import HEURISTICS_FILE, HeuristicsRegister
+
+        store = WorkspaceStore(str(ws))
+        store.append_jsonl(
+            HEURISTICS_FILE,
+            {
+                "heuristic_id": "legacy-candidate-1",
+                "candidate_type": "lookup_path",
+                "target": "symbol_lookup",
+                "outcome": "confirmed",
+                "evidence": [{"type": "test", "id": "legacy-1"}],
+                "source": "legacy-import",
+                "session_id": "legacy-session-1",
+                "weight_before": 0.60,
+                "confidence_delta": 0.12,
+                "recorded_at": "2026-06-01T00:00:00+00:00",
+            },
+        )
+
+        result = HeuristicsRegister(str(ws)).query(category="candidate-path")[0]
+        assert result["category"] == "candidate-path"
+        assert result["target"] == "symbol_lookup"
+        assert result["schema_version"] == 1
+        assert result["policy_version"] == 1
+        assert result["confidence"] == 0.72
+        assert result["recommended_weight"] == 0.54
+
+    def test_legacy_confidence_delta_row_still_influences_query(self, tmp_path):
+        """old confidence_delta-only rows should still adjust the latest aggregated confidence."""
+        ws = copy_demo_workspace(tmp_path)
+        from memory_center.core.store import WorkspaceStore
+        from memory_center.core.verification.heuristics import HEURISTICS_FILE, HeuristicsRegister
+
+        hr = HeuristicsRegister(str(ws))
+        hr.record(
+            "retrieval",
+            "exact-match-first",
+            "feign query",
+            "use exact match",
+            confidence=0.62,
+            heuristic_id="legacy-heur-1",
+            recorded_at="2026-06-01T00:00:00+00:00",
+        )
+
+        WorkspaceStore(str(ws)).append_jsonl(
+            HEURISTICS_FILE,
+            {
+                "heuristic_id": "legacy-heur-1",
+                "confidence_delta": 0.08,
+                "updated_at": "2026-06-02T00:00:00+00:00",
+            },
+        )
+
+        result = next(item for item in hr.query(category="retrieval") if item["heuristic_id"] == "legacy-heur-1")
+        assert result["confidence"] == 0.7
+        assert result["schema_version"] == 2
+        assert result["policy_version"] == 1
+
+    def test_learning_policy_defaults_version_when_missing(self, tmp_path):
+        """workspace learning_policy without version should inherit the default policy version."""
+        ws = copy_demo_workspace(tmp_path)
+        from memory_center.core.config import load_workspace_data, write_workspace_data
+        from memory_center.core.verification.heuristics import load_learning_policy
+
+        data = load_workspace_data(ws)
+        data["learning_policy"] = {
+            "candidate_path_learning": {
+                "provisional_promotion_cap": 0.5,
+            }
+        }
+        write_workspace_data(ws, data)
+
+        policy = load_learning_policy(ws)
+        assert policy["version"] == 1
+        assert policy["candidate_path_learning"]["provisional_promotion_cap"] == 0.5
+
+    def test_new_records_include_schema_and_policy_version(self, tmp_path):
+        """new heuristic records should persist explicit schema_version and policy_version."""
+        ws = copy_demo_workspace(tmp_path)
+        from memory_center.core.config import load_workspace_data, write_workspace_data
+        from memory_center.core.verification.heuristics import (
+            HEURISTICS_SCHEMA_VERSION,
+            HeuristicsRegister,
+        )
+
+        data = load_workspace_data(ws)
+        data["learning_policy"] = {
+            "version": 3,
+            "candidate_path_learning": {
+                "provisional_promotion_cap": 0.5,
+            },
+        }
+        write_workspace_data(ws, data)
+
+        hr = HeuristicsRegister(str(ws))
+        entry = hr.record_candidate_path_feedback(
+            candidate_type="lookup_path",
+            target="symbol_lookup",
+            outcome="confirmed",
+            evidence=[{"type": "test", "id": "ev-legacy-meta"}],
+            source="unit-test",
+            session_id="meta-1",
+            weight_before=0.60,
+        )
+
+        assert entry["schema_version"] == HEURISTICS_SCHEMA_VERSION
+        assert entry["policy_version"] == 3
+
+    def test_learning_policy_can_override_provisional_cap(self, tmp_path):
+        """workspace learning_policy should override provisional recommendation cap."""
+        ws = copy_demo_workspace(tmp_path)
+        from memory_center.core.config import load_workspace_data, write_workspace_data
+        from memory_center.core.verification.heuristics import HeuristicsRegister
+
+        data = load_workspace_data(ws)
+        data["learning_policy"] = {
+            "candidate_path_learning": {
+                "provisional_promotion_cap": 0.5,
+            }
+        }
+        write_workspace_data(ws, data)
+
+        hr = HeuristicsRegister(str(ws))
+        hr.record_candidate_path_feedback(
+            candidate_type="lookup_path",
+            target="symbol_lookup",
+            outcome="confirmed",
+            evidence=[{"type": "test", "id": "ev-13"}],
+            source="unit-test",
+            session_id="cfg-1",
+            weight_before=0.60,
+        )
+        result = hr.query(category="candidate-path")[0]
+        assert result["recommended_weight"] == 0.5
+
+    def test_learning_policy_can_override_candidate_merge_weights(self, tmp_path):
+        """workspace learning_policy should override rule/learned weight blending."""
+        ws = copy_demo_workspace(tmp_path)
+        from memory_center.core.config import load_workspace_data, write_workspace_data
+        from memory_center.core.verification.heuristics import HeuristicsRegister, apply_candidate_path_learning
+
+        data = load_workspace_data(ws)
+        data["learning_policy"] = {
+            "candidate_path_learning": {
+                "merge_weights": {
+                    "rule_weight": 0.2,
+                    "learned_weight": 0.8,
+                }
+            }
+        }
+        write_workspace_data(ws, data)
+
+        hr = HeuristicsRegister(str(ws))
+        hr.record_candidate_path_feedback(
+            candidate_type="lookup_path",
+            target="symbol_lookup",
+            outcome="confirmed",
+            evidence=[{"type": "test", "id": "ev-14"}],
+            source="unit-test",
+            session_id="cfg-2",
+            weight_before=0.60,
+        )
+        hr.record_candidate_path_feedback(
+            candidate_type="lookup_path",
+            target="symbol_lookup",
+            outcome="confirmed",
+            evidence=[{"type": "test", "id": "ev-15"}],
+            source="unit-test",
+            session_id="cfg-3",
+        )
+
+        candidates = apply_candidate_path_learning(
+            str(ws),
+            [
+                {
+                    "candidate_type": "lookup_path",
+                    "target": "symbol_lookup",
+                    "status": "probable",
+                    "weight": 0.88,
+                }
+            ],
+        )
+        assert candidates[0]["weight"] == 0.85
+
+    def test_learning_policy_can_override_workflow_merge_weights(self, tmp_path):
+        """workspace learning_policy should override workflow profile blend weights."""
+        ws = copy_demo_workspace(tmp_path)
+        from memory_center.core.config import load_workspace_data, write_workspace_data
+        from memory_center.core.verification.heuristics import HeuristicsRegister
+        from memory_center.core.verification.workflow_profiles import recommend_workflow_with_learning
+
+        data = load_workspace_data(ws)
+        data["learning_policy"] = {
+            "workflow_profile_learning": {
+                "merge_weights": {
+                    "base_weight": 0.1,
+                    "learned_weight": 0.9,
+                }
+            }
+        }
+        write_workspace_data(ws, data)
+
+        hr = HeuristicsRegister(str(ws))
+        hr.record_candidate_path_feedback(
+            candidate_type="workflow_profile",
+            target="quick-fix",
+            outcome="confirmed",
+            evidence=[{"type": "test", "id": "ev-16"}],
+            source="unit-test",
+            session_id="wf-cfg-1",
+            weight_before=0.62,
+        )
+        hr.record_candidate_path_feedback(
+            candidate_type="workflow_profile",
+            target="quick-fix",
+            outcome="confirmed",
+            evidence=[{"type": "test", "id": "ev-17"}],
+            source="unit-test",
+            session_id="wf-cfg-2",
+        )
+
+        result = recommend_workflow_with_learning(str(ws), "修复登录bug")
+        assert result["recommended_profile"] == "quick-fix"
+        assert result["candidate_profiles"][0]["weight"] == 0.87
 
 
 # ── G-05: Bundle Export Safety ──────────────────────────────────────

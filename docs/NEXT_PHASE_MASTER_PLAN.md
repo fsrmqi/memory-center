@@ -112,12 +112,13 @@ V3 不是“未来方向”，而是当前代码里已经存在的一批能力�
 | 优先级 | 方向 | 目标 |
 | --- | --- | --- |
 | 1 | 轻量本体论 / Ontology | 已有第一版文档与部分实现，继续用统一实体、关系、语义强度收紧 `query / contracts / chain / timeline` 的边界 |
-| 2 | 检索质量继续收口 | `mc_lookup`、`query` 已有混合检索与 contracts 过滤，但仍需继续减少意图误判和误关联 |
-| 3 | Context Pack / Freshness / Domain 工作流化 | V3 模块已在代码中，但还没完全成为默认工作流第一入口 |
-| 4 | Benchmark 趋势化真正落地 | 基础能力和入口已接好，继续强化长期趋势观察、回归阈值与治理闭环 |
-| 5 | Completion audit 产品化 | audit 已可用，继续从“仓库自检工具”走向“真实 workspace 可用的治理能力” |
-| 6 | Timeline / ref / task 体验增强 | drill-down 已有 CLI / MCP / HTTP 入口，继续增强真实工作流体验和摘要质量 |
-| 7 | SQLite 主读路径继续推进 | unified backend query 已落地，继续让 backend 更像稳定主读底座，而不是高频优先补充层 |
+| 2 | 候选路径与权重决策层 | 不只返回命中结果，而是返回“候选路径 + 权重 + 推荐下一步”，帮助 Agent 在不确定场景中收敛决策 |
+| 3 | 检索质量继续收口 | `mc_lookup`、`query` 已有混合检索与 contracts 过滤，但仍需继续减少意图误判和误关联 |
+| 4 | Context Pack / Freshness / Domain 工作流化 | V3 模块已在代码中，但还没完全成为默认工作流第一入口 |
+| 5 | Benchmark 趋势化真正落地 | 基础能力和入口已接好，继续强化长期趋势观察、回归阈值与治理闭环 |
+| 6 | Completion audit 产品化 | audit 已可用，继续从“仓库自检工具”走向“真实 workspace 可用的治理能力” |
+| 7 | Timeline / ref / task 体验增强 | drill-down 已有 CLI / MCP / HTTP 入口，继续增强真实工作流体验和摘要质量 |
+| 8 | SQLite 主读路径继续推进 | unified backend query 已落地，继续让 backend 更像稳定主读底座，而不是高频优先补充层 |
 
 ## 3. 当前状态判断
 
@@ -140,6 +141,7 @@ V3 不是“未来方向”，而是当前代码里已经存在的一批能力�
 ### 3.2 部分已完成，继续收口
 
 - ontology 已有第一版，但对更多链路的约束还不够彻底
+- 候选路径、权重、推荐下一步这些“决策层输出”已有零散字段，但还没有成为统一产品能力
 - retrieval 已有 hybrid 主链路，但结果质量仍需继续收口
 - context pack / freshness / domain 已存在，但还没彻底进入默认推荐工作流
 - benchmark trend 已能跑，但长期归因、回归门槛和治理闭环还不够强
@@ -169,6 +171,16 @@ V3 不是“未来方向”，而是当前代码里已经存在的一批能力�
 - 没有 ontology 约束时，后面继续做 retrieval、chain、audit，很容易再次出现语义漂移
 
 这一步不是去做一个很重的知识图谱工程，而是先补一层**约束文档 + 关键实现边界**。
+
+紧接着最值得并行推进的是：
+
+### `候选路径与权重决策层`
+
+原因：
+
+- 当前系统已经能产出很多“片段化判断”：confidence、risk、suggested_fixes、confirmed/probable/possible
+- 但这些判断还没有收敛成一套统一的“先做什么、为什么先做”的决策表达
+- `memory-center` 的更高价值不是只记住过去事实，而是帮助 Agent 在多条可能路径里更快选到更优下一步
 
 ## 5. 可调整的推荐路线
 
@@ -216,6 +228,25 @@ V3 不是“未来方向”，而是当前代码里已经存在的一批能力�
 
 - 本地 service 查询不再被误导到 Feign contracts
 - Feign / API / chain 结果更少“像命中、实际不准”
+
+### 阶段 B2：候选路径与权重决策层
+
+目标：
+
+- 让 `memory-center` 从“命中结果聚合器”继续升级为“项目级决策中枢”
+
+建议动作：
+
+1. 为 query / lookup / sniff / impact / doctor / runtime-audit 定义统一 `candidate_paths` 结构
+2. 把 `confirmed / probable / possible / rejected` 与 `confidence / risk / verification_cost` 统一起来
+3. 在默认解释中补 `recommended_path` 与 `why_this_first`
+4. 让验证结果能反向更新路径权重，而不是只写一条 case 就结束
+
+完成标志：
+
+- 至少一条主链路不只返回“查到什么”，还能返回“下一步先做什么”
+- 推荐路径能解释为什么排第一
+- 失败路径会被降权，成功路径能在有证据前提下逐步提升默认优先级
 
 ### 阶段 C：Context Pack / Freshness / Domain 工作流化
 
@@ -544,6 +575,47 @@ V3 不是“未来方向”，而是当前代码里已经存在的一批能力�
 3. case / rule / skill 候选晋升逻辑可解释、可审计
 4. audit 能输出 hooks / MCP / agent config 的治理问题
 5. 至少能导出一组适用于 Codex / Claude Code / Cursor 的最小使用 bundle
+
+### `概率树 / 候选路径权重视角`
+
+判断：
+
+- **建议吸收，但只吸收工程决策层，不吸收“四维理论”叙事**
+- 适合作为 `memory-center` 从“记忆仓库”升级为“决策辅助层”的产品视角
+
+吸收点：
+
+1. `Candidate Paths Instead of Single Answer`
+   - 不强行把复杂问题压成唯一答案，而是给候选路径列表与排序理由
+2. `Weight / Confidence / Risk as First-Class Fields`
+   - 将权重、置信度、风险和验证成本变成统一输出的一等字段
+3. `Recommended Next Step`
+   - 默认回答里不仅说“是什么”，还说“下一步先做什么”
+4. `Verification Feedback Loop`
+   - 验证结果反向更新路径权重，形成“成功路径升权、失败路径降权”的学习闭环
+5. `Low-Cost Validation First`
+   - 高不确定场景优先推荐低成本验证动作，而不是直接建议大改
+
+不吸收：
+
+- 不把“四维生命”“高维干预者”之类叙事引入产品文档或实现
+- 不把权重伪装成客观真值；所有权重都必须可追溯到证据、规则或历史验证
+- 不让单次偶然成功直接固化为长期默认策略
+
+开发包：
+
+- **PT-1 / Candidate Path Schema**
+- **PT-2 / Recommended Next Step**
+- **PT-3 / Verification Cost and Low-Cost Validation First**
+- **PT-4 / Path Weight Feedback Loop**
+- **PT-5 / Decision Benchmark**
+
+验收标准：
+
+1. 至少一条主链路返回结构化候选路径和排序理由
+2. 推荐下一步不是拍脑袋，而是能追溯到 confidence、risk、freshness、contracts 或验证成本
+3. 成功与失败验证都能影响后续推荐权重
+4. 高不确定场景下，系统默认更偏向低成本验证而不是武断改动
 
 ### `agentmemory`
 

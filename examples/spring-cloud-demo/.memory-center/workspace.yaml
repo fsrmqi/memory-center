@@ -1,5 +1,17 @@
 workspace: spring-cloud-demo
 root: ..
+# Optional learning-policy tuning for candidate-path / workflow recommendations.
+# learning_policy:
+#   candidate_path_learning:
+#     provisional_promotion_cap: 0.54
+#     rollback_recommendation_cap: 0.35
+#     merge_weights:
+#       rule_weight: 0.4
+#       learned_weight: 0.6
+#   workflow_profile_learning:
+#     merge_weights:
+#       base_weight: 0.5
+#       learned_weight: 0.5
 services:
   - name: common-api
     path: common-api

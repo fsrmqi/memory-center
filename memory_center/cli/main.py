@@ -60,6 +60,7 @@ from memory_center.core.orchestrator import (
     workspace_check_rules,
     workspace_lookup_hint,
     workspace_record_case,
+    workspace_record_close_feedback,
     workspace_recent_sessions,
     workspace_sniff,
     workspace_start_session,
@@ -1114,6 +1115,7 @@ def work_close_cmd(
     synced = workspace_sync_case_to_artifacts(workspace, session_id, task_id=task_id, title=title, auto_sync_mode=auto_sync_mode)
     draft = workspace_suggest_case(workspace, session_id)
     recorded = None
+    candidate_feedback = None
     case = draft.get("draft_case", {}) if draft.get("found") else {}
     if record_case and case.get("projects") and case.get("files"):
         recorded = workspace_record_case(
@@ -1127,6 +1129,12 @@ def work_close_cmd(
             source_session_id=session_id,
             source_task_id=task_id,
         )
+    candidate_feedback = workspace_record_close_feedback(
+        workspace,
+        session_id,
+        task_id=task_id,
+        source="work_close_auto",
+    )
     print(
         {
             "workflow": "work-close",
@@ -1134,6 +1142,7 @@ def work_close_cmd(
             "sync_case": synced,
             "suggested_case": draft,
             "record_case": recorded,
+            "candidate_feedback": candidate_feedback,
         }
     )
 
@@ -1645,7 +1654,7 @@ def pattern_promotion_cmd(
 @app.command("heuristics")
 def heuristics_cmd(
     workspace: str = typer.Option(..., help="Path to .memory-center/workspace.yaml"),
-    action: str = typer.Option("query", help="Action: query, record"),
+    action: str = typer.Option("query", help="Action: query, record, feedback, explain"),
     text: str = typer.Option("", help="Query text or JSON record data"),
 ):
     """Query or record learned heuristics."""
@@ -1654,13 +1663,42 @@ def heuristics_cmd(
     hr = HeuristicsRegister(workspace)
     if action == "query":
         result = {"heuristics": hr.query(text)}
-    elif action == "record":
+    elif action in {"record", "feedback", "explain"}:
         try:
             data = _json.loads(text) if text else {}
         except _json.JSONDecodeError:
             data = {"pattern": text}
-        hr.record(data)
-        result = {"status": "recorded"}
+        if action == "record":
+            entry = hr.record(data)
+            result = {"status": "recorded", "entry": entry}
+        elif action == "explain":
+            result = hr.explain(
+                candidate_type=str(data.get("candidate_type", "") or ""),
+                target=str(data.get("target", "") or ""),
+                category=str(data.get("category", "") or "candidate-path"),
+                heuristic_id=str(data.get("heuristic_id", "") or ""),
+                pattern=str(data.get("pattern", "") or ""),
+                limit=int(data.get("limit", 10) or 10),
+            )
+        else:
+            feedback = hr.record_candidate_path_feedback(
+                candidate_type=str(data.get("candidate_type", "") or ""),
+                target=str(data.get("target", "") or ""),
+                outcome=str(data.get("outcome", "") or ""),
+                evidence=data.get("evidence") or [],
+                source=str(data.get("source", "") or "cli"),
+                task_id=str(data.get("task_id", "") or ""),
+                session_id=str(data.get("session_id", "") or ""),
+                weight_before=data.get("weight_before"),
+                weight_delta=data.get("weight_delta"),
+                why=str(data.get("why", "") or ""),
+                next_action=str(data.get("next_action", "") or ""),
+                verification_cost=str(data.get("verification_cost", "") or ""),
+                category=str(data.get("category", "") or "candidate-path"),
+                pattern=str(data.get("pattern", "") or ""),
+                trigger=str(data.get("trigger", "") or ""),
+            )
+            result = {"status": "recorded", "feedback": feedback}
     else:
         result = {"error": f"Unknown action: {action}"}
     print(json.dumps(result, indent=2, default=str, ensure_ascii=False))
@@ -1681,11 +1719,12 @@ def workflow_profile_cmd(
 
 @app.command("workflow-recommend")
 def workflow_recommend_cmd(
+    workspace: str = typer.Option("", help="Optional path to .memory-center/workspace.yaml for learned recommendation"),
     description: str = typer.Option(..., help="Task description to match"),
 ):
     """Recommend a workflow profile based on task description."""
-    from memory_center.core.verification.workflow_profiles import recommend_workflow
-    result = recommend_workflow(description)
+    from memory_center.core.verification.workflow_profiles import recommend_workflow, recommend_workflow_with_learning
+    result = recommend_workflow_with_learning(workspace, description) if workspace else recommend_workflow(description)
     print(json.dumps(result, indent=2, default=str))
 
 

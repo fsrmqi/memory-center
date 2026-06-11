@@ -93,4 +93,7 @@ def test_runtime_audit_surfaces_workspace_shape_fixes(tmp_path: Path):
     assert any(item["code"] == "duplicate_service_roots" for item in result["findings"])
     assert any(item["code"] == "workspace_doctor_failed" for item in result["findings"])
     assert any(item["code"] == "deduplicate_service_root_group" for item in result["suggested_fixes"])
+    assert result["candidate_paths"]
+    assert result["recommended_path"]["candidate_type"] == "workspace_fix"
+    assert result["candidate_paths"][0]["target"] == result["recommended_path"]["target"]
     assert "service root" in result["doctor_hint"]

@@ -17,6 +17,7 @@ from ..schemas import with_schema
 from ..semantic import semantic_index_stats
 from ..store import WorkspaceStore
 from ..workspace_shape import analyze_workspace_shape
+from ..verification.heuristics import apply_candidate_path_learning
 from ..write_receipts import WRITE_RECEIPTS_FILE
 from .common import (
     LAYER_L0,
@@ -161,6 +162,20 @@ def workspace_sniff(
         if include_lookup_hint
         else None
     )
+    candidate_paths = _build_sniff_candidate_paths(
+        intent=intent,
+        risk_level=sniff_risk_level,
+        lookup_hint=lookup_hint or {},
+        task_resolution=task_resolution,
+        auto_sync=auto_sync,
+        write_judge_decision=write_judge_recommendation.get("decision", {}),
+        matched_files=matched_files,
+        related_apis=related_apis,
+        related_feigns=related_feigns,
+        related_mq=related_mq,
+    )
+    candidate_paths = apply_candidate_path_learning(workspace_file, candidate_paths)
+    recommended_path = dict(candidate_paths[0]) if candidate_paths else {}
 
     result = {
         "workspace": config.workspace,
@@ -198,6 +213,8 @@ def workspace_sniff(
             "should_use_memory_center": lookup_hint.get("should_use_memory_center", False) if lookup_hint else False,
             "reasons": lookup_hint.get("reasons", []) if lookup_hint else [],
         },
+        "candidate_paths": candidate_paths,
+        "recommended_path": recommended_path,
         "symbolic_context": _build_sniff_symbolic_context(intent, sniff_risk_level, matched_services, matched_files, related_feigns, related_apis, related_mq, related_cases),
         "next_steps": [
             '先用 mc_lookup(query="...", mode="code") 缩小入口范围，再用 mc_lookup(query="...", mode="symbol") 定位关键符号',
@@ -280,6 +297,13 @@ def workspace_lookup_hint(
         sniff = workspace_sniff(workspace_file, query or intent, limit=min(limit, 6), include_lookup_hint=False)
     else:
         sniff = sniff_context
+    candidate_paths = _build_lookup_hint_candidate_paths(
+        recommended_path=recommended_path,
+        preferred_tools=preferred_tools,
+        reasons=reasons,
+        sniff=sniff,
+    )
+    candidate_paths = apply_candidate_path_learning(workspace_file, candidate_paths)
     return with_schema(
         "lookup_hint",
         {
@@ -287,6 +311,8 @@ def workspace_lookup_hint(
             "query": query,
             "intent": intent,
             "recommended_path": recommended_path,
+            "recommended_candidate_path": dict(candidate_paths[0]) if candidate_paths else {},
+            "candidate_paths": candidate_paths,
             "preferred_tools": preferred_tools,
             "reasons": reasons,
             "should_use_memory_center": should_use_memory_center,
@@ -724,6 +750,202 @@ def _build_sniff_symbolic_context(
             "has_cases": has_cases,
         },
     }
+
+
+def _build_sniff_candidate_paths(
+    *,
+    intent: str,
+    risk_level: str,
+    lookup_hint: Dict[str, Any],
+    task_resolution: Dict[str, Any],
+    auto_sync: Dict[str, Any],
+    write_judge_decision: Dict[str, Any],
+    matched_files: List[Dict[str, Any]],
+    related_apis: List[Dict[str, Any]],
+    related_feigns: List[Dict[str, Any]],
+    related_mq: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    candidates: List[Dict[str, Any]] = []
+    recommended_key = str(lookup_hint.get("recommended_path", "") or "local_search")
+    preferred_tools = list(lookup_hint.get("preferred_tools", []) or [])
+    reasons = list(lookup_hint.get("reasons", []) or [])
+    base_weight = {
+        "call_chain": 0.92,
+        "cross_service_analysis": 0.9,
+        "symbol_lookup": 0.88,
+        "keyword_lookup": 0.8,
+        "local_search": 0.7,
+    }.get(recommended_key, 0.72)
+    candidates.append(
+        {
+            "candidate_type": "lookup_path",
+            "target": recommended_key,
+            "status": "probable",
+            "weight": round(base_weight, 2),
+            "why": reasons[0] if reasons else "这是当前最可能快速缩小范围的入口。",
+            "next_action": _lookup_next_action(recommended_key),
+            "verification_cost": "low",
+            "preferred_tools": preferred_tools[:3],
+            "_learning_aliases": [
+                {"candidate_type": "lookup_path", "target": recommended_key},
+            ],
+        }
+    )
+
+    if risk_level in {"medium", "high"}:
+        related_signals = sum(bool(items) for items in [related_apis, related_feigns, related_mq])
+        candidates.append(
+            {
+                "candidate_type": "impact_analysis",
+                "target": intent,
+                "status": "probable" if risk_level == "medium" else "confirmed",
+                "weight": 0.86 if risk_level == "medium" else 0.94,
+                "why": f"当前风险等级为 {risk_level}，且已发现 {related_signals} 类跨边界信号，先做影响分析更稳。",
+                "next_action": 'mc_analyze(target="...", depth="standard/full")',
+                "verification_cost": "medium",
+                "preferred_tools": ["mc_analyze", "workspace_trace_tool"],
+                "_learning_aliases": [
+                    {"candidate_type": "impact_analysis", "target": intent},
+                ],
+            }
+        )
+
+    if task_resolution.get("resolved"):
+        candidates.append(
+            {
+                "candidate_type": "resume_task",
+                "target": task_resolution.get("task_id", ""),
+                "status": "confirmed",
+                "weight": round(max(0.6, float(task_resolution.get("score", 0.0) or 0.0)), 2),
+                "why": f"当前 intent 与现有任务 `{task_resolution.get('title', '')}` 已形成稳定匹配。",
+                "next_action": f'mc_resume(task_id="{task_resolution.get("task_id", "")}")',
+                "verification_cost": "low",
+                "preferred_tools": ["mc_resume", "mc_sync"],
+            }
+        )
+
+    if auto_sync.get("recommended"):
+        candidates.append(
+            {
+                "candidate_type": "task_sync",
+                "target": task_resolution.get("task_id", "") or "new-task-space",
+                "status": "possible",
+                "weight": 0.74,
+                "why": str(auto_sync.get("reason", "") or "当前上下文适合沉淀到任务空间，避免后续重复理解。"),
+                "next_action": 'mc_sync(intent="...", auto_sync_mode="balanced")',
+                "verification_cost": "low",
+                "preferred_tools": ["mc_sync"],
+                "_learning_aliases": [
+                    {"candidate_type": "task_sync", "target": task_resolution.get("task_id", "") or "new-task-space"},
+                ],
+            }
+        )
+
+    selected_layer = str(write_judge_decision.get("selected_layer", "") or "")
+    if selected_layer:
+        candidates.append(
+            {
+                "candidate_type": "memory_write",
+                "target": selected_layer,
+                "status": "possible",
+                "weight": 0.68,
+                "why": f"当前 intent 更适合沉淀到 {selected_layer}，便于后续复用同类决策。",
+                "next_action": 'mc_admin(action="write_plan")',
+                "verification_cost": "low",
+                "preferred_tools": ["mc_admin", "mc_sync"],
+            }
+        )
+
+    if matched_files:
+        candidates.append(
+            {
+                "candidate_type": "live_file_check",
+                "target": matched_files[0].get("path", ""),
+                "status": "possible",
+                "weight": 0.64,
+                "why": "已有候选文件，必要时可直接读取实时文件验证，不必先展开更多链路。",
+                "next_action": f'优先读取 `{matched_files[0].get("path", "")}` 实时内容',
+                "verification_cost": "low",
+                "preferred_tools": ["memory_search_code_tool", "local_search"],
+            }
+        )
+
+    return sorted(
+        candidates,
+        key=lambda item: (
+            0 if item.get("status") == "confirmed" else 1 if item.get("status") == "probable" else 2,
+            -float(item.get("weight", 0.0)),
+            item.get("candidate_type", ""),
+        ),
+    )
+
+
+def _lookup_next_action(recommended_path: str) -> str:
+    actions = {
+        "symbol_lookup": 'mc_lookup(query="...", mode="symbol")',
+        "call_chain": 'mc_lookup(query="...", mode="chain", chain_direction="callers/callees")',
+        "cross_service_analysis": 'mc_analyze(target="...", depth="standard/full")',
+        "keyword_lookup": 'mc_lookup(query="...", mode="code")',
+        "local_search": "先用 rg / 本地搜索缩小范围，再回到 Memory Center 做结构化分析",
+    }
+    return actions.get(recommended_path, actions["local_search"])
+
+
+def _build_lookup_hint_candidate_paths(
+    *,
+    recommended_path: str,
+    preferred_tools: List[str],
+    reasons: List[str],
+    sniff: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+    candidates: List[Dict[str, Any]] = [
+        {
+            "candidate_type": "lookup_path",
+            "target": recommended_path or "local_search",
+            "status": "probable",
+            "weight": {
+                "call_chain": 0.92,
+                "cross_service_analysis": 0.9,
+                "symbol_lookup": 0.88,
+                "keyword_lookup": 0.8,
+                "local_search": 0.7,
+            }.get(recommended_path or "local_search", 0.72),
+            "why": reasons[0] if reasons else "这是当前 lookup 阶段最合适的入口。",
+            "next_action": _lookup_next_action(recommended_path or "local_search"),
+            "verification_cost": "low",
+            "preferred_tools": preferred_tools[:3],
+            "_learning_aliases": [
+                {"candidate_type": "lookup_path", "target": recommended_path or "local_search"},
+            ],
+        }
+    ]
+    if sniff.get("risk_level") in {"medium", "high"}:
+        candidates.append(
+            {
+                "candidate_type": "risk_validation",
+                "target": sniff.get("risk_level", ""),
+                "status": "possible",
+                "weight": 0.78 if sniff.get("risk_level") == "medium" else 0.88,
+                "why": f"当前 sniff 风险等级为 {sniff.get('risk_level', '')}，建议尽早转入结构化验证。",
+                "next_action": 'mc_analyze(target="...", depth="standard/full")',
+                "verification_cost": "medium",
+                "preferred_tools": ["mc_analyze"],
+            }
+        )
+    if sniff.get("candidate_files"):
+        candidates.append(
+            {
+                "candidate_type": "live_file_check",
+                "target": (sniff.get("candidate_files", [{}])[0] or {}).get("path", ""),
+                "status": "possible",
+                "weight": 0.64,
+                "why": "已有候选文件，可直接读取 live file 做低成本确认。",
+                "next_action": f'优先读取 `{(sniff.get("candidate_files", [{}])[0] or {}).get("path", "")}` 实时内容',
+                "verification_cost": "low",
+                "preferred_tools": ["memory_search_code_tool", "local_search"],
+            }
+        )
+    return candidates
 
 
 def workspace_check_contract(workspace_file: str | Path, contract_file: str, change_type: str) -> Dict[str, Any]:

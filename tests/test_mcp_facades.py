@@ -55,6 +55,8 @@ def test_mc_start_returns_consolidated_context(tmp_path: Path):
     assert result["workflow"] == "mc-start"
     assert "sniff" in result
     assert "session" in result
+    assert sniff_result["candidate_paths"]
+    assert sniff_result["recommended_path"]["target"]
     assert result["session"]["session_id"]
 
 
@@ -63,6 +65,8 @@ def test_mc_lookup_mode_auto_routes_correctly(tmp_path: Path):
     # Test auto mode: lookup_hint should dispatch
     hint = workspace_lookup_hint(wf, query="ArticleFeignClient", intent="", limit=8)
     assert "preferred_tools" in hint
+    assert hint["candidate_paths"]
+    assert hint["recommended_candidate_path"]["target"]
     # Test that symbol mode works
     sym = memory_symbol(wf, "ArticleFeignClient", limit=5)
     assert sym
@@ -88,6 +92,20 @@ def test_mc_lookup_modes_direct(tmp_path: Path):
     # chain (callers)
     r = memory_callers(wf, "ArticleFeignClient", depth=2, limit=10)
     assert r
+
+
+@pytest.mark.skipif(not HAS_MCP, reason="mcp package not installed")
+def test_mc_lookup_auto_returns_decision_fields(tmp_path: Path):
+    import asyncio
+    from memory_center.mcp.server import create_server
+
+    wf = _setup_workspace(tmp_path)
+    server = create_server(wf)
+    mc_lookup = server._tool_manager._tools["mc_lookup"]
+    result = asyncio.get_event_loop().run_until_complete(mc_lookup.fn(query="ArticleFeignClient", mode="auto"))
+    assert result["candidate_paths"]
+    assert result["recommended_path"]["target"]
+    assert "lookup_hint" in result
     # chain (callees)
     r = memory_callees(wf, "ArticleFeignClient", depth=2, limit=10)
     assert r
@@ -171,6 +189,8 @@ def test_mcp_next_phase_entrypoint_matrix_uses_workspace_yaml(tmp_path: Path):
         ({"action": "business_flow", "name": "FeignClient:task-service:ArticleFeignClient"}, ["action", "result"]),
         ({"action": "business_flow_impact", "text": "FeignClient:task-service:ArticleFeignClient"}, ["action", "result"]),
         ({"action": "runtime_audit"}, ["action", "result"]),
+        ({"action": "heuristics_feedback", "text": '{"candidate_type":"impact_analysis","target":"ArticleFeignClient","outcome":"confirmed","evidence":[{"type":"test","id":"ev-1"}]}'}, ["action", "result"]),
+        ({"action": "heuristics_explain", "text": '{"candidate_type":"impact_analysis","target":"ArticleFeignClient"}'}, ["action", "result"]),
         ({"action": "regression_alerts"}, ["action", "result"]),
     ]
     for kwargs, required_keys in admin_cases:
@@ -221,6 +241,8 @@ def test_mc_analyze_depth_levels(tmp_path: Path):
     # quick: impact only
     impact = memory_impact(wf, "ArticleFeignClient", direction="upstream", max_depth=2)
     assert impact
+    assert impact["candidate_paths"]
+    assert impact["recommended_path"]["target"]
     result_quick = {"workflow": "mc-analyze", "depth": "quick", "impact": impact}
     assert "impact" in result_quick
     assert "plan" not in result_quick
@@ -291,6 +313,8 @@ def test_mc_close_full_workflow(tmp_path: Path):
     wf = _setup_workspace(tmp_path)
     session = workspace_start_session(wf, "test close")
     sid = session["session_id"]
+    from memory_center.core.orchestrator import workspace_log_session_event
+    workspace_log_session_event(wf, sid, "tool_call", {"tool_name": "memory_symbol_tool", "query": "ArticleFeignClient"})
 
     ended = workspace_end_session(wf, sid, outcome="done")
     synced = workspace_sync_case_to_artifacts(wf, sid, task_id="", title="", auto_sync_mode="balanced")
@@ -298,6 +322,25 @@ def test_mc_close_full_workflow(tmp_path: Path):
 
     result = {"workflow": "mc-close", "ended": ended, "sync_case": synced, "suggested_case": draft}
     assert result["workflow"] == "mc-close"
+
+
+@pytest.mark.skipif(not HAS_MCP, reason="mcp package not installed")
+def test_mc_close_auto_records_candidate_feedback(tmp_path: Path):
+    import asyncio
+
+    wf = _setup_workspace(tmp_path)
+    server = create_server(wf)
+    tools = server._tool_manager._tools
+    session = workspace_start_session(wf, "定位 ArticleFeignClient")
+    sid = session["session_id"]
+    from memory_center.core.orchestrator import workspace_log_session_event
+    workspace_log_session_event(wf, sid, "tool_call", {"tool_name": "memory_symbol_tool", "query": "ArticleFeignClient"})
+
+    payload = asyncio.get_event_loop().run_until_complete(
+        tools["mc_close"].fn(session_id=sid, outcome="完成定位", verified_by=["manual-check"])
+    )
+    assert payload["candidate_feedback"]["recorded"] is True
+    assert payload["candidate_feedback"]["feedback_items"][0]["target"] == "symbol_lookup"
     assert "ended" in result
     assert "sync_case" in result
     assert "suggested_case" in result

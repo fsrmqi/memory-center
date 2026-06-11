@@ -22,6 +22,7 @@
 8. SQLite backend 承担稳定主读职责，同时保留透明 fallback。
 9. Benchmark、Metrics、Audit 和 Runtime Governance 能发现质量退化。
 10. Facade 返回值、文档、安装、发布和兼容性具备稳定治理流程。
+11. 系统不只返回“命中结果”，还能返回“候选路径 + 权重 + 推荐下一步”，帮助 Agent 在不确定场景中做更优决策。
 
 ## 3. 开发参考资料 / Developer References
 
@@ -374,6 +375,26 @@ workspace 污染检查:
 - [ ] 不通过 demo 专有硬编码提高分数。
 - [ ] 无明显召回退化。
 
+### C-03A：建立候选路径与权重表达
+
+**依赖**：C-02、C-03
+
+#### 步骤
+
+- [ ] 盘点 query、lookup、sniff、impact、doctor、runtime-audit 中已经存在的候选结果、风险和 confidence 字段。
+- [ ] 定义统一的候选路径结构，至少包含 `candidate_type`、`target`、`weight/confidence`、`why`、`next_action`。
+- [ ] 明确哪些路径属于 `confirmed`、`probable`、`possible`、`rejected`。
+- [ ] 统一排序规则，避免不同入口对同一候选路径给出冲突优先级。
+- [ ] 为“多个候选都合理”的场景增加正例，而不是强行压成唯一答案。
+- [ ] 为错误高权重、弱证据高排序和解释缺失增加反例。
+- [ ] 更新相关 schema 与文档示例。
+
+#### 验收
+
+- [ ] query、lookup、impact、doctor 至少一类主链路返回候选路径及权重。
+- [ ] 同一候选在不同入口的权重和解释口径基本一致。
+- [ ] 系统不会把低证据猜测伪装成唯一确定答案。
+
 ### C-04：Contracts 行为收口
 
 **依赖**：C-01、C-03
@@ -515,6 +536,25 @@ workspace 污染检查:
 
 - [ ] 多入口复用同一核心解释结构。
 - [ ] 每条推断能追到 evidence 或 ref。
+
+### D-03A：把“下一步选择”纳入默认解释结构
+
+**依赖**：D-03、C-03A
+
+#### 步骤
+
+- [ ] 在 explanation schema 中补充 `candidate_paths`、`recommended_path`、`why_this_first`、`verification_cost`。
+- [ ] 让 `mc_start`、`mc_lookup`、`mc_analyze` 至少输出一种“先做什么”的推荐。
+- [ ] 将 freshness、risk、contracts、workspace_shape 风险并入路径推荐权重。
+- [ ] 高风险或高不确定场景下，优先推荐“低成本验证动作”，而不是直接建议改代码。
+- [ ] 为推荐路径错误、验证成本缺失、推荐与风险矛盾增加测试。
+- [ ] 更新面向用户的说明文档。
+
+#### 验收
+
+- [ ] 默认解释不只说“是什么”，还能说“下一步先做什么”。
+- [ ] 推荐路径能解释为什么排第一。
+- [ ] 高不确定场景下的推荐更偏向验证而不是武断修改。
 
 ### D-04：Domain / Business Flow 正式输出收口
 
@@ -1217,6 +1257,34 @@ workspace 污染检查:
 - [ ] Review、修复、验证和经验沉淀形成闭环。
 - [ ] 单次误报不会晋升为长期规则。
 - [ ] 质量指标可用于 benchmark。
+
+### H-10A：验证结果回写候选路径权重
+
+**依赖**：H-10、C-03A、D-03A
+
+#### 步骤
+
+- [x] 为候选路径定义验证后状态：`confirmed`、`demoted`、`rejected`、`needs-more-context`。
+- [x] query / analyze / review 的验证结果可回写到 task、receipt、heuristics 或 case。
+- [x] 高价值成功路径可以提升默认推荐权重；明确失败路径要降低权重或增加排除理由。
+- [x] 只允许基于真实验证证据调整权重，不允许凭主观总结直接提升长期权重。
+- [x] 为“短期成功但长期误导”的场景增加保护，避免单次偶然命中污染全局策略。
+- [x] 增加权重提升、降级、拒绝和回滚测试。
+
+#### 验收
+
+- [x] 系统能从验证结果中学习“哪条路径更值得先试”。
+- [x] 权重变化可追溯到具体验证证据。
+- [x] 错误经验不会轻易固化成默认推荐。
+
+当前落地说明：
+
+- 已通过 `heuristics_feedback` / CLI `heuristics --action feedback` / HTTP `/workspace/heuristics?action=feedback` 接入候选路径验证结果回写。
+- 当前最小闭环已具备：聚合当前权重、证据门槛升权、失败降权、按聚合后权重排序。
+- 当前已增加推荐层保护：单次正向样本默认只作为 provisional recommendation，不会直接固化成长期高优先级推荐。
+- 当前已增加显式回滚保护与时间衰减：被回滚的路径会快速退出默认推荐，长期未验证路径会衰减推荐权重但保留原始学习值。
+- 下一步重点是补跨版本策略迁移与更细粒度的衰减参数治理。
+- 后续补充项（当前先忽略）：增加 learning 可视化汇总面板，直接展示哪些候选路径在升权、哪些 workflow profile 被 rollback、哪些 recommendation 正在 stale decay 退场，便于观察决策层如何学习。
 
 ### H-11：受信 Preset、Extension 与 Review Adapter 边界
 

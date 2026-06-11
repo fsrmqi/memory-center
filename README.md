@@ -317,7 +317,27 @@ services:
     path: task-service
     type: spring-boot-task
     service_name: task-service
+learning_policy:
+  version: 1
+  candidate_path_learning:
+    provisional_promotion_cap: 0.54
+    rollback_recommendation_cap: 0.35
+    merge_weights:
+      rule_weight: 0.4
+      learned_weight: 0.6
+  workflow_profile_learning:
+    merge_weights:
+      base_weight: 0.5
+      learned_weight: 0.5
 ```
+
+`learning_policy` is optional. You only need it when tuning how candidate-path and workflow recommendations learn from real verification outcomes.
+
+`learning_policy` 是可选项。只有当你要调优“候选路径/工作流推荐如何根据真实验证结果学习”时，才需要显式配置。
+
+`learning_policy.version` can be used as a lightweight compatibility marker when the team tunes or migrates learning behavior across versions.
+
+`learning_policy.version` 可作为轻量兼容标记，在团队调整学习策略或做版本迁移时帮助区分不同策略代次。
 
 ### 2. Reindex / 重建索引
 
@@ -738,6 +758,10 @@ Resume and handoff packets can now be evaluated through `mc_admin(action=”eval
 现在还可以通过 `mc_admin(action=”eval_resume”)` 和 `mc_admin(action=”eval_handoff”)` 评估恢复包与交接包的质量，让连续性能力从”有接口”变成”可量化”。
 
 `mc_lookup(mode=”auto”)` can now route lookup-style questions toward the best search strategy, or suggest local search when the query is too small and local.
+
+Learning-backed candidate-path and workflow recommendations can now be inspected directly through `memory-center heuristics --action explain ...` or `mc_admin(action="heuristics_explain")`, so recommendation changes are explainable instead of opaque.
+
+现在候选路径与 workflow 推荐背后的学习结果，也可以直接通过 `memory-center heuristics --action explain ...` 或 `mc_admin(action="heuristics_explain")` 查看，不再只是黑盒升降权。
 
 现在还可以通过 `mc_lookup(mode=”auto”)` 给”找类 / 找方法 / 找调用链”这类问题做检索路由建议，告诉 Agent 该优先走哪个检索策略，还是先本地搜索更划算。
 

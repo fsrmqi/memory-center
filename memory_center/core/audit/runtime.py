@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 from ..store import WorkspaceStore
+from ..verification.heuristics import apply_candidate_path_learning
 from ..validators import doctor
 
 AUDIT_LOG_FILE = "agent-runtime-audit.jsonl"
@@ -96,6 +97,14 @@ def audit_agent_runtime(workspace_file: str | Path) -> Dict[str, Any]:
                 "message": f"workspace 健康检查存在 {len(failed_checks)} 个未通过项，建议优先处理 service root 与索引健康问题。",
             }
         )
+    candidate_paths = _build_runtime_audit_candidate_paths(
+        findings=findings,
+        workspace_shape=workspace_shape,
+        suggested_fixes=suggested_fixes,
+        doctor_hint=workspace_doctor.get("hint", ""),
+    )
+    candidate_paths = apply_candidate_path_learning(workspace_file, candidate_paths)
+    recommended_path = dict(candidate_paths[0]) if candidate_paths else {}
 
     # Record audit
     audit_record = {
@@ -114,6 +123,93 @@ def audit_agent_runtime(workspace_file: str | Path) -> Dict[str, Any]:
         "findings": findings,
         "workspace_shape": workspace_shape,
         "suggested_fixes": suggested_fixes,
+        "candidate_paths": candidate_paths,
+        "recommended_path": recommended_path,
         "doctor_hint": workspace_doctor.get("hint", ""),
         "audit_record": audit_record,
     }
+
+
+def _build_runtime_audit_candidate_paths(
+    *,
+    findings: List[Dict[str, Any]],
+    workspace_shape: Dict[str, Any],
+    suggested_fixes: List[Dict[str, Any]],
+    doctor_hint: str,
+) -> List[Dict[str, Any]]:
+    candidates: List[Dict[str, Any]] = []
+    risk_level = str(workspace_shape.get("risk_level", "low") or "low")
+    if suggested_fixes:
+        first_fix = suggested_fixes[0]
+        candidates.append(
+            {
+                "candidate_type": "workspace_fix",
+                "target": first_fix.get("parent_service") or first_fix.get("root") or first_fix.get("keep_service") or "",
+                "status": "confirmed" if risk_level in {"high", "medium"} else "probable",
+                "weight": 0.95 if risk_level == "high" else 0.88 if risk_level == "medium" else 0.76,
+                "why": doctor_hint or "当前最应该先处理的是 workspace 配置冲突或结构风险。",
+                "next_action": "先按 suggested_fixes 收敛 workspace 配置，再运行 reindex",
+                "verification_cost": "medium",
+                "fix_code": first_fix.get("code", ""),
+                "_learning_aliases": [
+                    {
+                        "candidate_type": "workspace_fix",
+                        "target": first_fix.get("parent_service") or first_fix.get("root") or first_fix.get("keep_service") or "",
+                    }
+                ],
+            }
+        )
+
+    if risk_level != "low":
+        candidates.append(
+            {
+                "candidate_type": "doctor_followup",
+                "target": risk_level,
+                "status": "probable",
+                "weight": 0.8 if risk_level == "medium" else 0.9,
+                "why": f"workspace_shape 风险等级为 {risk_level}，在修复结构问题前其余治理动作收益较低。",
+                "next_action": "优先处理 runtime-audit / doctor 返回的结构化治理建议",
+                "verification_cost": "low",
+                "_learning_aliases": [
+                    {"candidate_type": "workspace_fix", "target": risk_level},
+                ],
+            }
+        )
+
+    if not suggested_fixes:
+        candidates.append(
+            {
+                "candidate_type": "runtime_governance",
+                "target": "hooks-mcp-agent-profile",
+                "status": "possible",
+                "weight": 0.66,
+                "why": "workspace 结构已基本健康，后续治理重点转向 hooks、MCP 和 agent profile 配置。",
+                "next_action": "按 findings 补 hooks / MCP / agent profile",
+                "verification_cost": "low",
+                "_learning_aliases": [
+                    {"candidate_type": "runtime_governance", "target": "hooks-mcp-agent-profile"},
+                ],
+            }
+        )
+
+    if any(item.get("code") == "low_health_score" for item in findings):
+        candidates.append(
+            {
+                "candidate_type": "reindex_or_health_repair",
+                "target": "workspace-health",
+                "status": "possible",
+                "weight": 0.72,
+                "why": "当前已有 workspace health 低分信号，先恢复索引和健康状态可以减少后续噪声。",
+                "next_action": "运行 reindex 或补齐 workspace-health 所需数据",
+                "verification_cost": "medium",
+            }
+        )
+
+    return sorted(
+        candidates,
+        key=lambda item: (
+            0 if item.get("status") == "confirmed" else 1 if item.get("status") == "probable" else 2,
+            -float(item.get("weight", 0.0)),
+            item.get("candidate_type", ""),
+        ),
+    )

@@ -57,6 +57,7 @@ from memory_center.core.orchestrator import (
     workspace_recent_evidence,
     workspace_recent_sessions,
     workspace_record_case,
+    workspace_record_close_feedback,
     workspace_resume_packet,
     workspace_resume_context,
     workspace_session_summary,
@@ -759,6 +760,7 @@ def _route_request(path: str, params: dict, default_workspace: str | None) -> di
         synced = workspace_sync_case_to_artifacts(workspace, session_id, task_id=task_id, title=title, auto_sync_mode=auto_sync_mode)
         draft = workspace_suggest_case(workspace, session_id)
         recorded = None
+        candidate_feedback = None
         case = draft.get("draft_case", {}) if draft.get("found") else {}
         if record_case and case.get("projects") and case.get("files"):
             recorded = workspace_record_case(
@@ -772,7 +774,20 @@ def _route_request(path: str, params: dict, default_workspace: str | None) -> di
                 source_session_id=session_id,
                 source_task_id=task_id,
             )
-        return {"workflow": "work-close", "ended": ended, "sync_case": synced, "suggested_case": draft, "record_case": recorded}
+        candidate_feedback = workspace_record_close_feedback(
+            workspace,
+            session_id,
+            task_id=task_id,
+            source="work_close_auto",
+        )
+        return {
+            "workflow": "work-close",
+            "ended": ended,
+            "sync_case": synced,
+            "suggested_case": draft,
+            "record_case": recorded,
+            "candidate_feedback": candidate_feedback,
+        }
     if path == "/workspace/work-health":
         workspace = _require_workspace(params, default_workspace)
         intent = params.get("intent", ["Memory Center work health"])[0]
@@ -892,23 +907,52 @@ def _route_request(path: str, params: dict, default_workspace: str | None) -> di
         action_type = params.get("action", ["query"])[0]
         if action_type == "query":
             return {"heuristics": hr.query(params.get("text", [""])[0])}
-        elif action_type == "record":
+        elif action_type in {"record", "feedback", "explain"}:
             import json as _json
             try:
                 data = _json.loads(_require_one(params, "text"))
             except Exception:
                 data = {"pattern": _require_one(params, "text")}
-            hr.record(data)
-            return {"status": "recorded"}
+            if action_type == "record":
+                entry = hr.record(data)
+                return {"status": "recorded", "entry": entry}
+            if action_type == "explain":
+                return hr.explain(
+                    candidate_type=str(data.get("candidate_type", "") or ""),
+                    target=str(data.get("target", "") or ""),
+                    category=str(data.get("category", "") or "candidate-path"),
+                    heuristic_id=str(data.get("heuristic_id", "") or ""),
+                    pattern=str(data.get("pattern", "") or ""),
+                    limit=int(data.get("limit", 10) or 10),
+                )
+            feedback = hr.record_candidate_path_feedback(
+                candidate_type=str(data.get("candidate_type", "") or ""),
+                target=str(data.get("target", "") or ""),
+                outcome=str(data.get("outcome", "") or ""),
+                evidence=data.get("evidence") or [],
+                source=str(data.get("source", "") or "http"),
+                task_id=str(data.get("task_id", "") or ""),
+                session_id=str(data.get("session_id", "") or ""),
+                weight_before=data.get("weight_before"),
+                weight_delta=data.get("weight_delta"),
+                why=str(data.get("why", "") or ""),
+                next_action=str(data.get("next_action", "") or ""),
+                verification_cost=str(data.get("verification_cost", "") or ""),
+                category=str(data.get("category", "") or "candidate-path"),
+                pattern=str(data.get("pattern", "") or ""),
+                trigger=str(data.get("trigger", "") or ""),
+            )
+            return {"status": "recorded", "feedback": feedback}
         return {"error": f"Unknown action: {action_type}"}
     if path == "/workspace/workflow-profile":
         from memory_center.core.verification.workflow_profiles import get_workflow_profile
         profile = params.get("profile", ["quick-fix"])[0]
         return get_workflow_profile(profile)
     if path == "/workspace/workflow-recommend":
-        from memory_center.core.verification.workflow_profiles import recommend_workflow
+        from memory_center.core.verification.workflow_profiles import recommend_workflow_with_learning
+        workspace = _require_workspace(params, default_workspace)
         desc = _require_one(params, "description")
-        return recommend_workflow(desc)
+        return recommend_workflow_with_learning(workspace, desc)
     if path == "/workspace/bundle-export":
         workspace = _require_workspace(params, default_workspace)
         from memory_center.core.verification.bundle_export import generate_agent_bundle

@@ -29,7 +29,7 @@ MCP 当前公开的是 12 个 task-level tools：
 | `mc_sync` | 将 sniff / case / task 过程同步到工件与记忆 |
 | `mc_resume` | 恢复任务上下文 |
 | `mc_handoff` | 为其他模型构建交接包 |
-| `mc_close` | 会话收尾、同步 case、记录经验 |
+| `mc_close` | 会话收尾、同步 case、记录经验，并自动回写可推断的候选路径反馈 |
 | `mc_admin` | 状态、面板、评测、工件、group 等管理入口 |
 | `mc_context_pack` | 生成紧凑、证据驱动的上下文包 |
 | `mc_onboard` | 生成面向不同 persona 的架构导览 |
@@ -51,6 +51,10 @@ MCP 当前公开的是 12 个 task-level tools：
 9. 改动前确认索引状态：`mc_freshness`
 10. 收尾：`mc_close`
 
+`mc_close` 在 session 内存在可推断的 lookup / impact / sync 路径且有验证结果时，会自动写回一轮 `candidate_feedback`，让后续推荐权重逐步学习。
+
+`mc_lookup(mode="auto")`、`workspace_lookup_hint`、`workspace_sniff`、`mc_analyze`、`runtime_audit`、discover 类推荐，以及 `session_start` / `workflow_recommend` 的 workflow profile 推荐，现在都会吸收这些学习结果：主链路保留规则生成的解释与下一步动作，同时用学习后的 `recommended_weight` 轻量修正默认优先级。
+
 ## 4. mc_admin Actions / mc_admin 操作列表
 
 `mc_admin` 通过 `action` 参数路由到不同子操作：
@@ -65,6 +69,13 @@ MCP 当前公开的是 12 个 task-level tools：
 - `discover` — 热点命令发现与下一步推荐
 - `constraint` — 约束模板与自动策略选择
 - `backend_consistency` — JSONL 与 SQLite 后端一致性检查
+
+### 经验与权重回写
+
+- `heuristics_query` — 查询已学习启发式与当前聚合权重
+- `heuristics_record` — 记录启发式模式
+- `heuristics_feedback` — 对候选路径写回验证结果，更新推荐权重
+- `heuristics_explain` — 解释某条候选路径 / workflow profile 当前为何被提升、保护、回滚或衰减，并返回最近事件时间线
 
 ### 钻取导航
 

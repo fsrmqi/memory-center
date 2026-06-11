@@ -58,6 +58,9 @@ class VerificationLoop:
             "completed_at": datetime.now(timezone.utc).isoformat(),
         }
         self._store.append_jsonl(VERIFICATION_LOG_FILE, entry)
+        feedback = self._record_phase_feedback(task_id=task_id, phase=phase, data=data)
+        if feedback:
+            entry["feedback"] = feedback
         return entry
 
     def get_checklist(self, task_type: str = "general") -> List[str]:
@@ -196,6 +199,37 @@ class VerificationLoop:
         if task_entries:
             return self.check_completion(task_id)
         return {"task_id": task_id, "status": "pending", "loop_id": ""}
+
+    def _record_phase_feedback(self, task_id: str, phase: str, data: Dict[str, Any]) -> Dict[str, Any] | None:
+        if phase != "verify" or not isinstance(data, dict):
+            return None
+        candidate_type = str(data.get("candidate_type", "") or "")
+        target = str(data.get("target", "") or "")
+        outcome = str(data.get("outcome", "") or "")
+        if not candidate_type or not target or not outcome:
+            return None
+
+        from .heuristics import HeuristicsRegister
+
+        register = HeuristicsRegister(self._store.workspace_file)
+        feedback = register.record_candidate_path_feedback(
+            candidate_type=candidate_type,
+            target=target,
+            outcome=outcome,
+            evidence=data.get("evidence") or [],
+            source=str(data.get("source", "") or "verification_loop"),
+            task_id=task_id,
+            session_id=str(data.get("session_id", "") or ""),
+            weight_before=data.get("weight_before"),
+            weight_delta=data.get("weight_delta"),
+            why=str(data.get("why", "") or "verification loop verify phase completed"),
+            next_action=str(data.get("next_action", "") or ""),
+            verification_cost=str(data.get("verification_cost", "") or "medium"),
+            category=str(data.get("category", "") or "candidate-path"),
+            pattern=str(data.get("pattern", "") or ""),
+            trigger=str(data.get("trigger", "") or ""),
+        )
+        return {"recorded": True, "item": feedback}
 
     def persist_step_state(
         self,

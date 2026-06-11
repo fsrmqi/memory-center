@@ -245,6 +245,48 @@ class TestG01WorkflowProfiles:
         profile2 = recommend_workflow("refactor the feign client contract")
         assert profile2.name == "contract-change"
 
+    def test_recommend_workflow_contract_change_overrides_generic_bugfix(self):
+        from memory_center.core.verification.workflow_profiles import recommend_workflow
+
+        profile = recommend_workflow("修复 Feign 接口返回字段兼容问题")
+        assert profile.name == "contract-change"
+
+    def test_recommend_workflow_with_learning(self, demo_workspace: Path):
+        from memory_center.core.verification.heuristics import HeuristicsRegister
+        from memory_center.core.verification.workflow_profiles import recommend_workflow_with_learning
+
+        hr = HeuristicsRegister(str(demo_workspace))
+        hr.record_candidate_path_feedback(
+            candidate_type="workflow_profile",
+            target="contract-change",
+            outcome="confirmed",
+            evidence=[{"type": "test", "id": "ev-11"}],
+            source="unit-test",
+            session_id="wf-a",
+            weight_before=0.60,
+        )
+        hr.record_candidate_path_feedback(
+            candidate_type="workflow_profile",
+            target="contract-change",
+            outcome="confirmed",
+            evidence=[{"type": "test", "id": "ev-12"}],
+            source="unit-test",
+            session_id="wf-b",
+        )
+
+        result = recommend_workflow_with_learning(str(demo_workspace), "refactor the feign client contract")
+        assert result["recommended_profile"] == "contract-change"
+        assert result["candidate_profiles"][0]["name"] == "contract-change"
+
+    def test_recommend_workflow_with_learning_keeps_candidate_status_consistent(self, demo_workspace: Path):
+        from memory_center.core.verification.workflow_profiles import recommend_workflow_with_learning
+
+        result = recommend_workflow_with_learning(str(demo_workspace), "修复 Feign 接口返回字段兼容问题")
+        assert result["recommended_profile"] == "contract-change"
+        assert result["candidate_profiles"][0]["name"] == "contract-change"
+        assert result["candidate_profiles"][0]["status"] == "probable"
+        assert all(item["status"] == "possible" for item in result["candidate_profiles"][1:])
+
     def test_profile_cli(self):
         from typer.testing import CliRunner
         from memory_center.cli.main import app
@@ -298,6 +340,28 @@ class TestG02VerificationLoop:
         entry = vl.complete_phase("task-2", "analyze", {"findings": ["ok"]})
         assert entry["status"] == "completed"
 
+    def test_verification_loop_verify_phase_records_feedback(self, demo_workspace: Path):
+        from memory_center.core.verification.loop import VerificationLoop
+        from memory_center.core.verification.heuristics import HeuristicsRegister
+
+        vl = VerificationLoop(str(demo_workspace))
+        started = vl.start("task-verify-feedback", "Phase verify feedback")
+        entry = vl.complete_phase(
+            started["loop_id"],
+            "verify",
+            {
+                "candidate_type": "impact_analysis",
+                "target": "ArticleFeignClient",
+                "outcome": "confirmed",
+                "evidence": [{"type": "test", "id": "ev-1"}],
+            },
+        )
+        assert entry["feedback"]["recorded"] is True
+
+        hr = HeuristicsRegister(str(demo_workspace))
+        rows = hr.query(category="candidate-path")
+        assert any(item.get("target") == "ArticleFeignClient" for item in rows)
+
     def test_verification_loop_cli(self, demo_workspace: Path):
         from typer.testing import CliRunner
         from memory_center.cli.main import app
@@ -342,6 +406,24 @@ class TestG03PatternPromotion:
         results = hr.query("test")
         assert isinstance(results, list)
 
+    def test_heuristics_record_accepts_dict_payload(self, demo_workspace: Path):
+        from memory_center.core.verification.heuristics import HeuristicsRegister
+        hr = HeuristicsRegister(str(demo_workspace))
+        entry = hr.record(
+            {
+                "category": "candidate-path",
+                "candidate_type": "lookup_path",
+                "target": "ArticleFeignClient",
+                "outcome": "confirmed",
+                "evidence": [{"type": "unit", "id": "ev-1"}],
+                "weight_before": 0.55,
+                "source": "test",
+            }
+        )
+        assert entry["event_type"] == "candidate_feedback"
+        results = hr.query("candidate-path")
+        assert results[0]["target"] == "ArticleFeignClient"
+
     def test_pattern_promotion_cli(self, demo_workspace: Path):
         from typer.testing import CliRunner
         from memory_center.cli.main import app
@@ -355,6 +437,66 @@ class TestG03PatternPromotion:
         runner = CliRunner()
         result = runner.invoke(app, ["heuristics", "--workspace", str(demo_workspace)])
         assert result.exit_code == 0
+
+    def test_heuristics_explain_cli(self, demo_workspace: Path):
+        from typer.testing import CliRunner
+        from memory_center.cli.main import app
+        from memory_center.core.verification.heuristics import HeuristicsRegister
+
+        hr = HeuristicsRegister(str(demo_workspace))
+        hr.record_candidate_path_feedback(
+            candidate_type="lookup_path",
+            target="symbol_lookup",
+            outcome="confirmed",
+            evidence=[{"type": "test", "id": "cli-explain-1"}],
+            source="unit-test",
+            session_id="cli-explain-s1",
+            weight_before=0.60,
+        )
+
+        runner = CliRunner()
+        result = runner.invoke(
+            app,
+            [
+                "heuristics",
+                "--workspace",
+                str(demo_workspace),
+                "--action",
+                "explain",
+                "--text",
+                '{"candidate_type":"lookup_path","target":"symbol_lookup"}',
+            ],
+        )
+        assert result.exit_code == 0
+        assert '"found": true' in result.output.lower()
+        assert '"current"' in result.output.lower()
+
+    def test_heuristics_explain_http(self, demo_workspace: Path):
+        from memory_center.http.server import _route_request
+        from memory_center.core.verification.heuristics import HeuristicsRegister
+
+        hr = HeuristicsRegister(str(demo_workspace))
+        hr.record_candidate_path_feedback(
+            candidate_type="lookup_path",
+            target="symbol_lookup",
+            outcome="rollback",
+            evidence=[{"type": "review", "id": "http-explain-1"}],
+            source="unit-test",
+            session_id="http-explain-s1",
+            weight_before=0.70,
+        )
+
+        resp = _route_request(
+            "/workspace/heuristics",
+            {
+                "workspace": [str(demo_workspace)],
+                "action": ["explain"],
+                "text": ['{"candidate_type":"lookup_path","target":"symbol_lookup"}'],
+            },
+            None,
+        )
+        assert resp["found"] is True
+        assert resp["current"]["recommendation_state"] == "rolled-back"
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -480,4 +622,3 @@ class TestG07InstallBuild:
         assert cli_app is not None
         assert callable(create_server)
         assert callable(serve_http)
-

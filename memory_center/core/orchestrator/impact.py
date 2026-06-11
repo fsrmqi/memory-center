@@ -11,6 +11,7 @@ from .query import _build_lookup_payload, _build_impact_evidence_summary, memory
 from ..diagnostics import DIAG, diag_entry
 from ..explanation import explanation_entry, merge_explanations
 from ..ontology import edge_strength
+from ..verification.heuristics import apply_candidate_path_learning
 
 
 def memory_impact(workspace_file: str | Path, target: str, direction: str = "upstream", max_depth: int = 3) -> Dict[str, Any]:
@@ -19,6 +20,17 @@ def memory_impact(workspace_file: str | Path, target: str, direction: str = "ups
         lookup = memory_query(workspace_file, target, limit=8)
         matches = [item.get("node", {}) for item in lookup.get("matches", []) if item.get("node")]
         if not matches:
+            candidate_paths = _build_impact_candidate_paths(
+                found=False,
+                target={"name": target, "type": ""},
+                risk_level="unknown",
+                confirmed=[],
+                probable=[],
+                possible=[],
+                rules=[],
+                freshness={},
+            )
+            candidate_paths = apply_candidate_path_learning(workspace_file, candidate_paths)
             return {
                 "target": target,
                 "found": False,
@@ -26,6 +38,8 @@ def memory_impact(workspace_file: str | Path, target: str, direction: str = "ups
                 "confirmed_impacts": [],
                 "probable_impacts": [],
                 "possible_impacts": [],
+                "candidate_paths": candidate_paths,
+                "recommended_path": dict(candidate_paths[0]) if candidate_paths else {},
                 "lookup": _build_lookup_payload(lookup),
                 "progressive": _build_impact_progressive_view(target, None, [], [], []),
                 "unknown_risks": _unknown_static_analysis_risks(),
@@ -45,6 +59,18 @@ def memory_impact(workspace_file: str | Path, target: str, direction: str = "ups
         else:
             risk_level = "low" if impacts else "unknown"
         rules = match_rules(store, intent=f"impact {target} {node['type']}", files=[node.get("file_path", "")])[:12]
+        freshness = _get_freshness_for_impact(workspace_file)
+        candidate_paths = _build_impact_candidate_paths(
+            found=True,
+            target=node,
+            risk_level=risk_level,
+            confirmed=confirmed,
+            probable=probable,
+            possible=possible,
+            rules=rules,
+            freshness=freshness,
+        )
+        candidate_paths = apply_candidate_path_learning(workspace_file, candidate_paths)
         return {
             "target": node,
             "found": True,
@@ -55,6 +81,8 @@ def memory_impact(workspace_file: str | Path, target: str, direction: str = "ups
             "confirmed_impacts": confirmed,
             "probable_impacts": probable,
             "possible_impacts": possible,
+            "candidate_paths": candidate_paths,
+            "recommended_path": dict(candidate_paths[0]) if candidate_paths else {},
             "lookup": _build_lookup_payload(lookup),
             "evidence_summary": _build_impact_evidence_summary(confirmed, probable, possible),
             "progressive": _build_impact_progressive_view(target, node, confirmed, probable, possible),
@@ -67,7 +95,7 @@ def memory_impact(workspace_file: str | Path, target: str, direction: str = "ups
                 "possible": "confidence < 0.55, weak hints only; verify manually",
             },
             "_explanation_entries": _build_impact_explanation_entries(confirmed, probable, possible, node),
-            "freshness": _get_freshness_for_impact(workspace_file),
+            "freshness": freshness,
             "_reasoning": _get_reasoning_for_impact(workspace_file, node.get("id", "")),
         }
 
@@ -94,6 +122,8 @@ def memory_plan_change(workspace_file: str | Path, target: str, direction: str =
         "found": True,
         "risk_level": impact.get("risk_level", "unknown"),
         "plan": plan,
+        "candidate_paths": impact.get("candidate_paths", []),
+        "recommended_path": impact.get("recommended_path", {}),
         "required_rules": impact.get("required_rules", []),
         "review_checklist": impact.get("review_checklist", []),
         "impact": {
@@ -227,6 +257,120 @@ def _build_impact_progressive_view(
                 for item in possible[:5]
             ],
         },
+    )
+
+
+def _build_impact_candidate_paths(
+    *,
+    found: bool,
+    target: Dict[str, Any],
+    risk_level: str,
+    confirmed: List[Dict[str, Any]],
+    probable: List[Dict[str, Any]],
+    possible: List[Dict[str, Any]],
+    rules: List[Dict[str, Any]],
+    freshness: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+    if not found:
+        return [
+            {
+                "candidate_type": "re-locate-target",
+                "target": target.get("name", ""),
+                "status": "probable",
+                "weight": 0.82,
+                "why": "当前没有定位到图谱节点，先重新定位符号或代码入口比直接做影响分析更有效。",
+                "next_action": '先用 mc_lookup(query="...", mode="symbol/code") 重新定位目标',
+                "verification_cost": "low",
+            }
+        ]
+
+    candidates: List[Dict[str, Any]] = []
+    target_name = target.get("name", "")
+    target_type = target.get("type", "")
+    confirmed_count = len(confirmed)
+    probable_count = len(probable)
+    possible_count = len(possible)
+
+    if confirmed_count > 0:
+        candidates.append(
+            {
+                "candidate_type": "verify_confirmed_impacts",
+                "target": target_name,
+                "status": "confirmed",
+                "weight": 0.95,
+                "why": f"当前已有 {confirmed_count} 个高置信影响点，先验证这批路径最划算。",
+                "next_action": "优先检查 confirmed_impacts 中的直接调用、注入、契约或配置边",
+                "verification_cost": "medium",
+                "_learning_aliases": [
+                    {"candidate_type": "impact_analysis", "target": target_name},
+                ],
+            }
+        )
+
+    if risk_level in {"high", "medium"}:
+        depth = "full" if target_type in {"FeignClient", "FeignMethod", "MQTopic", "MQConsumer", "Endpoint", "ConfigKey", "DTO", "Field"} else "standard"
+        candidates.append(
+            {
+                "candidate_type": "structured_impact_review",
+                "target": target_name,
+                "status": "probable" if risk_level == "medium" else "confirmed",
+                "weight": 0.84 if risk_level == "medium" else 0.91,
+                "why": f"目标类型 {target_type or 'unknown'} 的风险等级为 {risk_level}，建议进入结构化影响审查。",
+                "next_action": f'mc_analyze(target="{target_name}", depth="{depth}")',
+                "verification_cost": "medium",
+                "_learning_aliases": [
+                    {"candidate_type": "impact_analysis", "target": target_name},
+                ],
+            }
+        )
+
+    if rules:
+        candidates.append(
+            {
+                "candidate_type": "rule_validation",
+                "target": target_name,
+                "status": "possible",
+                "weight": 0.73,
+                "why": f"当前命中了 {len(rules)} 条相关规则，先核对规则与契约边界可降低误改概率。",
+                "next_action": "先查看 required_rules 与 review_checklist，再决定改动方式",
+                "verification_cost": "low",
+            }
+        )
+
+    freshness_status = ((freshness.get("freshness", {}) or {}).get("status", "") if isinstance(freshness, dict) else "")
+    if freshness_status in {"pending", "stale"}:
+        candidates.append(
+            {
+                "candidate_type": "freshness_validation",
+                "target": freshness_status,
+                "status": "possible",
+                "weight": 0.78 if freshness_status == "pending" else 0.88,
+                "why": f"当前索引状态为 {freshness_status}，关键影响路径最好先读 live file 或 reindex。",
+                "next_action": "先读取关键文件实时内容；必要时先 reindex 再确认影响面",
+                "verification_cost": "low",
+            }
+        )
+
+    if probable_count or possible_count:
+        candidates.append(
+            {
+                "candidate_type": "expand_low_confidence_paths",
+                "target": target_name,
+                "status": "possible",
+                "weight": 0.62,
+                "why": f"还有 {probable_count} 个 probable 和 {possible_count} 个 possible 路径，适合在确认高置信影响后再扩展验证。",
+                "next_action": "确认 confirmed 后，再按 probable -> possible 的顺序补做抽样验证",
+                "verification_cost": "high" if possible_count > probable_count else "medium",
+            }
+        )
+
+    return sorted(
+        candidates,
+        key=lambda item: (
+            0 if item.get("status") == "confirmed" else 1 if item.get("status") == "probable" else 2,
+            -float(item.get("weight", 0.0)),
+            item.get("candidate_type", ""),
+        ),
     )
 
 
