@@ -197,6 +197,393 @@ public class UserService {
         assert symbol.parser == "tree-sitter"
         assert symbol.classes == ["Demo"]
 
+    def test_regex_parser_emits_declaration_lines(self):
+        from memory_center.core.indexing.java_regex_parser import RegexJavaParser
+
+        src = """package com.example;
+
+public class DemoService {
+    private String value;
+
+    public void run() {
+    }
+}
+"""
+        result = RegexJavaParser().parse(src, "DemoService.java")
+        assert result.class_lines["DemoService"] == 3
+        assert result.field_lines["value"] == 4
+        assert result.method_lines["run"] == 6
+
+    def test_detect_query_intent_prefers_class_for_single_symbol_queries(self):
+        from memory_center.core.retrieval.hybrid import detect_query_intent
+
+        intent = detect_query_intent("InstructTaskController")
+        assert intent["primary_intent"] == "class"
+        assert intent["prefer_class_symbol"] is True
+
+    def test_symbol_rerank_prefers_same_file_contract_and_methods_before_remote_fields(self):
+        from memory_center.core.orchestrator.query import _rerank_symbol_like_matches
+
+        items = [
+            {
+                "node": {
+                    "id": "Field:other:FooService:remoteBizIdService",
+                    "type": "Field",
+                    "name": "FooService.remoteBizIdService",
+                    "project": "other-service",
+                    "file_path": "other/FooService.java",
+                    "line": 12,
+                },
+                "score": 1.4,
+                "sources": ["graph_exact", "sparse_fts", "sparse_bm25"],
+            },
+            {
+                "node": {
+                    "id": "Class:rap:RemoteBizIdService",
+                    "type": "Class",
+                    "name": "RemoteBizIdService",
+                    "project": "rap",
+                    "file_path": "rap/RemoteBizIdService.java",
+                    "line": 24,
+                },
+                "score": 2.5,
+                "sources": ["graph_exact", "sparse_fts"],
+            },
+            {
+                "node": {
+                    "id": "FeignClient:rap:RemoteBizIdService",
+                    "type": "FeignClient",
+                    "name": "RemoteBizIdService",
+                    "project": "rap",
+                    "file_path": "rap/RemoteBizIdService.java",
+                    "line": 24,
+                },
+                "score": 1.3,
+                "sources": ["graph_exact", "sparse_fts", "sparse_bm25"],
+            },
+            {
+                "node": {
+                    "id": "Method:rap:RemoteBizIdService:getId",
+                    "type": "Method",
+                    "name": "RemoteBizIdService.getId",
+                    "project": "rap",
+                    "file_path": "rap/RemoteBizIdService.java",
+                    "line": 32,
+                },
+                "score": 1.1,
+                "sources": ["graph_exact", "sparse_fts", "sparse_bm25"],
+            },
+        ]
+
+        reranked = _rerank_symbol_like_matches(items, "RemoteBizIdService")
+        ordered_types = [item["node"]["type"] for item in reranked]
+        assert ordered_types[:4] == ["Class", "FeignClient", "Method", "Field"]
+
+    def test_memory_symbol_uses_wider_internal_recall_before_final_limit(self, monkeypatch, tmp_path):
+        from memory_center.core.orchestrator import query as query_mod
+
+        ws = tmp_path / ".memory-center" / "workspace.yaml"
+        ws.parent.mkdir(parents=True, exist_ok=True)
+        ws.write_text("workspace: test\nroot: /tmp/test\nservices: []\n", encoding="utf-8")
+
+        called = {}
+
+        def fake_hybrid(workspace_file, name, limit, node_types=None, project=""):
+            called["limit"] = limit
+            return {
+                "query": name,
+                "matches": [
+                    {"node": {"id": "Class:rap:RemoteBizIdService", "type": "Class", "name": "RemoteBizIdService", "project": "rap", "file_path": "rap/RemoteBizIdService.java", "line": 24}, "score": 9.0, "sources": ["graph_exact"]},
+                    {"node": {"id": "Field:other:A:remoteBizIdService", "type": "Field", "name": "A.remoteBizIdService", "project": "other", "file_path": "other/A.java", "line": 10}, "score": 8.0, "sources": ["graph_exact"]},
+                    {"node": {"id": "Field:other:B:remoteBizIdService", "type": "Field", "name": "B.remoteBizIdService", "project": "other", "file_path": "other/B.java", "line": 11}, "score": 7.0, "sources": ["graph_exact"]},
+                    {"node": {"id": "Field:other:C:remoteBizIdService", "type": "Field", "name": "C.remoteBizIdService", "project": "other", "file_path": "other/C.java", "line": 12}, "score": 6.0, "sources": ["graph_exact"]},
+                    {"node": {"id": "Field:other:D:remoteBizIdService", "type": "Field", "name": "D.remoteBizIdService", "project": "other", "file_path": "other/D.java", "line": 13}, "score": 5.0, "sources": ["graph_exact"]},
+                    {"node": {"id": "FeignClient:rap:RemoteBizIdService", "type": "FeignClient", "name": "RemoteBizIdService", "project": "rap", "file_path": "rap/RemoteBizIdService.java", "line": 24}, "score": 4.0, "sources": ["graph_exact"]},
+                ],
+                "retrieval_summary": {},
+            }
+
+        monkeypatch.setattr(query_mod, "memory_query_hybrid", fake_hybrid)
+        result = query_mod.memory_symbol(str(ws), "RemoteBizIdService", limit=5)
+
+        assert called["limit"] > 5
+        assert len(result["matches"]) == 5
+        assert [item["node"]["type"] for item in result["matches"][:2]] == ["Class", "FeignClient"]
+
+    def test_symbol_display_dedupes_feign_method_and_method_by_same_name(self):
+        from memory_center.core.orchestrator.query import _dedupe_symbol_display_matches
+
+        items = [
+            {
+                "node": {
+                    "id": "FeignMethod:rap:RemoteBizIdService:getId",
+                    "type": "FeignMethod",
+                    "name": "RemoteBizIdService.getId",
+                    "project": "rap",
+                    "file_path": "rap/RemoteBizIdService.java",
+                    "line": 32,
+                },
+                "score": 1.3,
+                "sources": ["graph_exact"],
+            },
+            {
+                "node": {
+                    "id": "Method:rap:RemoteBizIdService:getId",
+                    "type": "Method",
+                    "name": "RemoteBizIdService.getId",
+                    "project": "rap",
+                    "file_path": "rap/RemoteBizIdService.java",
+                    "line": 32,
+                },
+                "score": 1.2,
+                "sources": ["graph_exact"],
+            },
+            {
+                "node": {
+                    "id": "Method:rap:RemoteBizIdService:getIdByName",
+                    "type": "Method",
+                    "name": "RemoteBizIdService.getIdByName",
+                    "project": "rap",
+                    "file_path": "rap/RemoteBizIdService.java",
+                    "line": 43,
+                },
+                "score": 1.1,
+                "sources": ["graph_exact"],
+            },
+        ]
+
+        deduped = _dedupe_symbol_display_matches(items)
+        assert len(deduped) == 2
+        assert deduped[0]["node"]["type"] == "FeignMethod"
+        assert deduped[0]["node"]["name"] == "RemoteBizIdService.getId"
+        assert deduped[1]["node"]["name"] == "RemoteBizIdService.getIdByName"
+
+    def test_lookup_payload_dedupes_feign_method_and_method_entrypoints(self):
+        from memory_center.core.orchestrator.query import _build_lookup_payload
+
+        payload = _build_lookup_payload(
+            {
+                "query": "RemoteBizIdService",
+                "matches": [
+                    {
+                        "node": {
+                            "id": "FeignMethod:rap:RemoteBizIdService:getId",
+                            "type": "FeignMethod",
+                            "name": "RemoteBizIdService.getId",
+                            "project": "rap",
+                            "file_path": "rap/RemoteBizIdService.java",
+                            "line": 32,
+                        },
+                        "sources": ["graph_exact"],
+                        "score": 1.3,
+                    },
+                    {
+                        "node": {
+                            "id": "Method:rap:RemoteBizIdService:getId",
+                            "type": "Method",
+                            "name": "RemoteBizIdService.getId",
+                            "project": "rap",
+                            "file_path": "rap/RemoteBizIdService.java",
+                            "line": 32,
+                        },
+                        "sources": ["graph_exact"],
+                        "score": 1.2,
+                    },
+                    {
+                        "node": {
+                            "id": "Class:rap:RemoteBizIdService",
+                            "type": "Class",
+                            "name": "RemoteBizIdService",
+                            "project": "rap",
+                            "file_path": "rap/RemoteBizIdService.java",
+                            "line": 24,
+                        },
+                        "sources": ["graph_exact"],
+                        "score": 2.0,
+                    },
+                ],
+            },
+            limit=5,
+        )
+
+        entrypoints = payload["entrypoints"]
+        assert len(entrypoints) == 2
+        assert [item["node"]["type"] for item in entrypoints] == ["FeignMethod", "Class"]
+
+    def test_filter_call_edges_drops_redundant_import_when_stronger_edge_exists(self):
+        from memory_center.core.orchestrator.common import _filter_call_edges
+
+        edges = [
+            {
+                "type": "INJECTS_BEAN",
+                "confidence": 0.82,
+                "depth": 1,
+                "source": {
+                    "name": "MediaReportQuestionServiceImpl",
+                    "project": "ucap-newmedia-back",
+                    "file_path": "a/MediaReportQuestionServiceImpl.java",
+                },
+                "target": {
+                    "name": "RemoteBizIdService",
+                    "project": "ucap-rap-id-app",
+                    "file_path": "b/RemoteBizIdService.java",
+                },
+            },
+            {
+                "type": "IMPORTS",
+                "confidence": 0.55,
+                "depth": 2,
+                "source": {
+                    "name": "MediaReportQuestionServiceImpl.java",
+                    "project": "ucap-newmedia-back",
+                    "file_path": "a/MediaReportQuestionServiceImpl.java",
+                },
+                "target": {
+                    "name": "RemoteBizIdService.java",
+                    "project": "ucap-rap-id-app",
+                    "file_path": "b/RemoteBizIdService.java",
+                },
+            },
+        ]
+
+        filtered = _filter_call_edges(edges, direction="upstream")
+        assert len(filtered) == 1
+        assert filtered[0]["type"] == "INJECTS_BEAN"
+
+    def test_filter_call_edges_prefers_stronger_edge_type_before_weaker_import(self):
+        from memory_center.core.orchestrator.common import _filter_call_edges
+
+        edges = [
+            {
+                "type": "IMPORTS",
+                "confidence": 0.99,
+                "depth": 1,
+                "source": {"name": "A.java", "project": "p1", "file_path": "a/A.java", "line": 0},
+                "target": {"name": "B.java", "project": "p2", "file_path": "b/B.java", "line": 0},
+            },
+            {
+                "type": "INJECTS_BEAN",
+                "confidence": 0.82,
+                "depth": 1,
+                "source": {"name": "AService", "project": "p1", "file_path": "a/A.java", "line": 18},
+                "target": {"name": "BService", "project": "p2", "file_path": "b/B.java", "line": 24},
+            },
+        ]
+
+        filtered = _filter_call_edges(edges, direction="upstream")
+        assert filtered[0]["type"] == "INJECTS_BEAN"
+        assert all(item["type"] != "IMPORTS" for item in filtered)
+
+    def test_filter_call_edges_keeps_imports_only_as_fallback(self):
+        from memory_center.core.orchestrator.common import _filter_call_edges
+
+        edges = [
+            {
+                "type": "IMPORTS",
+                "confidence": 0.55,
+                "depth": 1,
+                "source": {"name": "A.java", "project": "p1", "file_path": "a/A.java", "line": 0},
+                "target": {"name": "B.java", "project": "p2", "file_path": "b/B.java", "line": 0},
+            },
+            {
+                "type": "IMPORTS",
+                "confidence": 0.52,
+                "depth": 2,
+                "source": {"name": "C.java", "project": "p3", "file_path": "c/C.java", "line": 0},
+                "target": {"name": "B.java", "project": "p2", "file_path": "b/B.java", "line": 0},
+            },
+        ]
+
+        filtered = _filter_call_edges(edges, direction="upstream")
+        assert len(filtered) == 1
+        assert all(item["type"] == "IMPORTS" for item in filtered)
+
+    def test_row_edge_exposes_source_and_target_line(self):
+        from memory_center.core.graph import _row_edge
+
+        class FakeRow(dict):
+            def __getitem__(self, key):
+                return dict.__getitem__(self, key)
+
+        row = FakeRow(
+            id="e1",
+            type="CALLS_METHOD",
+            source_id="s1",
+            target_id="t1",
+            confidence=0.9,
+            metadata_json="{}",
+            source_type="Class",
+            source_name="FooService",
+            source_project="demo",
+            source_file="demo/FooService.java",
+            source_line=18,
+            target_type="Method",
+            target_name="BarService.run",
+            target_project="demo",
+            target_file="demo/BarService.java",
+            target_line=42,
+        )
+
+        edge = _row_edge(row)
+        assert edge["source"]["line"] == 18
+        assert edge["target"]["line"] == 42
+
+    def test_row_edge_falls_back_to_source_evidence_line_when_node_line_missing(self):
+        from memory_center.core.graph import _row_edge
+
+        class FakeRow(dict):
+            def __getitem__(self, key):
+                return dict.__getitem__(self, key)
+
+        row = FakeRow(
+            id="e2",
+            type="INJECTS_BEAN",
+            source_id="s2",
+            target_id="t2",
+            confidence=0.82,
+            metadata_json='{"evidence": {"field_name": "remoteBizIdService", "line": 55}}',
+            source_type="Class",
+            source_name="MediaReportQuestionServiceImpl",
+            source_project="demo",
+            source_file="demo/MediaReportQuestionServiceImpl.java",
+            source_line=0,
+            target_type="Class",
+            target_name="RemoteBizIdService",
+            target_project="demo",
+            target_file="demo/RemoteBizIdService.java",
+            target_line=24,
+        )
+
+        edge = _row_edge(row)
+        assert edge["source"]["line"] == 55
+        assert edge["target"]["line"] == 24
+
+    def test_summarize_chain_edges_builds_compact_debug_lines(self):
+        from memory_center.core.orchestrator.query import _summarize_chain_edges
+
+        summary = _summarize_chain_edges(
+            [
+                {
+                    "type": "INJECTS_BEAN",
+                    "depth": 1,
+                    "source": {"name": "MediaReportQuestionServiceImpl", "line": 58, "project": "a"},
+                    "target": {"name": "RemoteBizIdService", "line": 24, "project": "b"},
+                },
+                {
+                    "type": "CALLS_SERVICE",
+                    "depth": 2,
+                    "source": {"name": "RemoteBizIdService", "line": 24, "project": "b"},
+                    "target": {"name": "ucap-rap-id-app", "line": 0, "project": "b"},
+                },
+            ]
+        )
+
+        assert summary["total_edges"] == 2
+        assert summary["depth_reached"] == 2
+        assert summary["type_counts"]["INJECTS_BEAN"] == 1
+        assert summary["items"][0]["text"] == "MediaReportQuestionServiceImpl:58 --INJECTS_BEAN--> RemoteBizIdService:24"
+        assert summary["items"][1]["text"] == "RemoteBizIdService:24 --CALLS_SERVICE--> ucap-rap-id-app"
+
     def test_parser_benchmark_returns_diagnostics_when_tree_sitter_unavailable(self, demo_workspace, monkeypatch):
         from memory_center.core.indexing import benchmark as benchmark_mod
 

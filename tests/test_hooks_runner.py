@@ -159,6 +159,66 @@ def test_run_hook_pre_edit_tool_matcher_from_filter_skips_non_matching_tool(tmp_
     assert "does not match tool_matcher" in result["system_message"]
 
 
+def test_run_hook_mc_lookup_symbol_uses_compact_view(tmp_path: Path):
+    ws = _setup_workspace(tmp_path)
+    import yaml
+    from memory_center.hooks.spec import load_default_hooks
+
+    config = load_default_hooks()
+    config["hooks"]["lookup_symbol"] = {
+        "enabled": True,
+        "facade": "mc_lookup",
+        "mode": "soft",
+        "params": {
+            "intent": "ArticleFeignClient",
+            "mode": "symbol",
+            "view": "compact",
+            "budget": "small",
+            "limit": 5,
+        },
+    }
+    ws_hooks = Path(ws).expanduser().resolve().parent / "hooks.yaml"
+    ws_hooks.write_text(yaml.safe_dump(config, allow_unicode=True, sort_keys=False), encoding="utf-8")
+
+    result = run_hook(ws, "lookup_symbol", None)
+    payload = result["hook_result"]["result"]
+    assert result["exit_code"] == 0
+    assert payload["found"] is True
+    assert payload["summary_lines"]
+    assert "progressive" not in payload
+
+
+def test_run_hook_mc_lookup_chain_uses_compact_view(tmp_path: Path):
+    ws = _setup_workspace(tmp_path)
+    import yaml
+    from memory_center.hooks.spec import load_default_hooks
+
+    config = load_default_hooks()
+    config["hooks"]["lookup_chain"] = {
+        "enabled": True,
+        "facade": "mc_lookup",
+        "mode": "soft",
+        "params": {
+            "intent": "ArticleFeignClient",
+            "mode": "chain",
+            "chain_direction": "callers",
+            "view": "compact",
+            "budget": "small",
+            "limit": 5,
+            "depth": 2,
+        },
+    }
+    ws_hooks = Path(ws).expanduser().resolve().parent / "hooks.yaml"
+    ws_hooks.write_text(yaml.safe_dump(config, allow_unicode=True, sort_keys=False), encoding="utf-8")
+
+    result = run_hook(ws, "lookup_chain", None)
+    payload = result["hook_result"]["result"]
+    assert result["exit_code"] == 0
+    assert payload["found"] is True
+    assert payload["summary_lines"]
+    assert "callers" not in payload
+
+
 def test_param_resolution_event():
     from memory_center.hooks.runner import _resolve_param
     result = _resolve_param("event", {"prompt": "fix bug"}, "intent")

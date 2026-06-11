@@ -8,6 +8,11 @@
 
 ## Unreleased
 
+### Packaging / 打包版本
+
+- 升级版本号到 `3.1.3`
+- 本地安装默认对齐当前仓库最新代码
+
 ### Retrieval、Incremental Indexing 与 Verification 修复
 
 - reindex 自动重建 SQLite BM25，并在语义索引存在 dense vectors 时同步 VectorIndex

@@ -21,16 +21,21 @@ class RegexJavaParser:
         cleaned = _strip_comments(text)
         package = _first_group(r"package\s+([\w\.]+)\s*;", cleaned)
         imports = re.findall(r"import\s+([\w\.\*]+)\s*;", cleaned)
-        classes = re.findall(r"\bclass\s+(\w+)", cleaned)
-        interfaces = re.findall(r"\binterface\s+(\w+)", cleaned)
+        classes, class_lines = _parse_type_declarations(cleaned, ("class", "enum", "record"))
+        interfaces, interface_lines = _parse_type_declarations(cleaned, ("interface",))
         annotations = sorted(set(re.findall(r"@(\w+)(?:\(|\s|\n)", cleaned)))
 
-        fields, field_types = _parse_fields(cleaned)
+        fields, field_types, field_lines = _parse_fields(cleaned)
         field_types.update(_parse_interface_constants(cleaned))
         method_spans = _parse_method_spans(cleaned)
         iface_methods = _parse_interface_methods(cleaned)
         method_spans.extend(iface_methods)
         methods = sorted({item["name"] for item in method_spans})
+        method_lines = {
+            item["name"]: int(item.get("line", 0) or 0)
+            for item in sorted(method_spans, key=lambda span: int(span.get("line", 0) or 0))
+            if item.get("name") and int(item.get("line", 0) or 0) > 0
+        }
         method_variable_types = _parse_method_variable_types(cleaned, method_spans)
         bean_injections = _parse_bean_injections(cleaned, classes, field_types)
         method_calls = _parse_method_calls(cleaned, method_spans, method_variable_types, field_types)
@@ -45,6 +50,10 @@ class RegexJavaParser:
             interfaces=interfaces,
             methods=methods,
             fields=fields,
+            class_lines=class_lines,
+            interface_lines=interface_lines,
+            method_lines=method_lines,
+            field_lines=field_lines,
             annotations=annotations,
             field_types=field_types,
             method_variable_types=method_variable_types,
@@ -119,8 +128,20 @@ def _parse_interface_constants(text: str) -> Dict[str, str]:
     return constants
 
 
-def _parse_fields(text: str) -> Tuple[List[str], Dict[str, str]]:
+def _parse_type_declarations(text: str, keywords: Tuple[str, ...]) -> Tuple[List[str], Dict[str, int]]:
+    pattern = re.compile(r"\b(" + "|".join(re.escape(keyword) for keyword in keywords) + r")\s+(\w+)", re.M)
+    names: List[str] = []
+    lines: Dict[str, int] = {}
+    for match in pattern.finditer(text):
+        name = match.group(2)
+        names.append(name)
+        lines.setdefault(name, _line_of(text, match.start(2)))
+    return sorted(set(names)), lines
+
+
+def _parse_fields(text: str) -> Tuple[List[str], Dict[str, str], Dict[str, int]]:
     field_types: Dict[str, str] = {}
+    field_lines: Dict[str, int] = {}
     fields: List[str] = []
     pattern = re.compile(
         r"(?:@\w+(?:\([^)]*\))?\s*)*"
@@ -130,11 +151,14 @@ def _parse_fields(text: str) -> Tuple[List[str], Dict[str, str]]:
         r"(\w+)\s*(?:=|;)",
         re.M,
     )
-    for typ, name in pattern.findall(text):
+    for match in pattern.finditer(text):
+        typ = match.group(1)
+        name = match.group(2)
         clean_type = typ.strip().split()[-1]
         fields.append(name)
         field_types[name] = clean_type
-    return sorted(set(fields)), field_types
+        field_lines.setdefault(name, _line_of(text, match.start(2)))
+    return sorted(set(fields)), field_types, field_lines
 
 
 def _parse_method_spans(text: str) -> List[Dict[str, Any]]:

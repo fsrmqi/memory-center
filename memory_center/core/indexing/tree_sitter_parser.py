@@ -59,6 +59,10 @@ class TreeSitterJavaParser:
         annotations: list[str] = []
         methods: list[str] = []
         fields: list[str] = []
+        class_lines: dict[str, int] = {}
+        interface_lines: dict[str, int] = {}
+        method_lines: dict[str, int] = {}
+        field_lines: dict[str, int] = {}
         field_types: dict[str, str] = {}
 
         def _walk(node, depth=0):
@@ -75,11 +79,15 @@ class TreeSitterJavaParser:
             elif node.type in ("class_declaration", "enum_declaration", "record_declaration"):
                 name_node = node.child_by_field_name("name")
                 if name_node:
-                    classes.append(_node_text(name_node))
+                    class_name = _node_text(name_node)
+                    classes.append(class_name)
+                    class_lines.setdefault(class_name, _node_line(name_node))
             elif node.type == "interface_declaration":
                 name_node = node.child_by_field_name("name")
                 if name_node:
-                    interfaces.append(_node_text(name_node))
+                    interface_name = _node_text(name_node)
+                    interfaces.append(interface_name)
+                    interface_lines.setdefault(interface_name, _node_line(name_node))
             elif node.type == "annotation" or node.type.endswith("_annotation"):
                 name_node = node.child_by_field_name("name")
                 if name_node:
@@ -87,7 +95,9 @@ class TreeSitterJavaParser:
             elif node.type == "method_declaration":
                 name_node = node.child_by_field_name("name")
                 if name_node:
-                    methods.append(_node_text(name_node))
+                    method_name = _node_text(name_node)
+                    methods.append(method_name)
+                    method_lines.setdefault(method_name, _node_line(name_node))
             elif node.type == "field_declaration":
                 type_node = node.child_by_field_name("type")
                 type_text = _node_text(type_node) if type_node else ""
@@ -97,6 +107,7 @@ class TreeSitterJavaParser:
                         if name_node:
                             fname = _node_text(name_node)
                             fields.append(fname)
+                            field_lines.setdefault(fname, _node_line(name_node))
                             if type_text:
                                 field_types[fname] = type_text
 
@@ -112,6 +123,10 @@ class TreeSitterJavaParser:
             interfaces=interfaces,
             methods=methods,
             fields=fields,
+            class_lines=class_lines,
+            interface_lines=interface_lines,
+            method_lines=method_lines,
+            field_lines=field_lines,
             annotations=sorted(set(annotations)),
             field_types=field_types,
             method_variable_types={},
@@ -131,6 +146,18 @@ def _node_text(node: Any) -> str:
     if isinstance(value, bytes):
         return value.decode("utf-8")
     return str(value)
+
+
+def _node_line(node: Any) -> int:
+    if node is None:
+        return 0
+    start_point = getattr(node, "start_point", None)
+    if isinstance(start_point, tuple) and start_point:
+        try:
+            return int(start_point[0]) + 1
+        except Exception:
+            return 0
+    return 0
 
 
 def _simple_name(value: str) -> str:
@@ -161,6 +188,14 @@ def _merge_unique_dicts(primary: list[dict[str, Any]], secondary: list[dict[str,
     return merged
 
 
+def _merge_line_maps(primary: dict[str, int], secondary: dict[str, int]) -> dict[str, int]:
+    merged = dict(secondary)
+    for name, line in primary.items():
+        if int(line or 0) > 0:
+            merged[name] = int(line)
+    return merged
+
+
 def _merge_parse_results(tree_result: JavaParseResult, regex_result: JavaParseResult) -> JavaParseResult:
     field_types = dict(regex_result.field_types)
     field_types.update(tree_result.field_types)
@@ -173,6 +208,10 @@ def _merge_parse_results(tree_result: JavaParseResult, regex_result: JavaParseRe
         interfaces=_merge_unique_strings(tree_result.interfaces, regex_result.interfaces),
         methods=_merge_unique_strings(tree_result.methods, regex_result.methods),
         fields=_merge_unique_strings(tree_result.fields, regex_result.fields),
+        class_lines=_merge_line_maps(tree_result.class_lines, regex_result.class_lines),
+        interface_lines=_merge_line_maps(tree_result.interface_lines, regex_result.interface_lines),
+        method_lines=_merge_line_maps(tree_result.method_lines, regex_result.method_lines),
+        field_lines=_merge_line_maps(tree_result.field_lines, regex_result.field_lines),
         annotations=_merge_unique_strings(tree_result.annotations, regex_result.annotations),
         field_types=field_types,
         method_variable_types=method_variable_types,

@@ -207,6 +207,9 @@ def _row_matches_scope(
             if probe == normalized or probe.startswith(normalized + "/"):
                 path_match = True
                 break
+            if probe and (normalized.endswith(probe) or normalized_abs.endswith(probe)):
+                path_match = True
+                break
             if abs_path and (abs_path == normalized_abs or abs_path.startswith(normalized_abs.rstrip("/") + "/")):
                 path_match = True
                 break
@@ -307,6 +310,10 @@ def parse_java_symbols(project: str, rel: str, text: str) -> JavaSymbol:
         interfaces=parsed.interfaces,
         methods=parsed.methods,
         fields=parsed.fields,
+        class_lines=parsed.class_lines,
+        interface_lines=parsed.interface_lines,
+        method_lines=parsed.method_lines,
+        field_lines=parsed.field_lines,
         annotations=parsed.annotations,
         imports=parsed.imports,
         field_types=parsed.field_types,
@@ -644,9 +651,14 @@ def build_graph_store(config: WorkspaceConfig, store: WorkspaceStore, *, project
             fid = node_id("File", sym["file"])
             field_type_by_file[sym["file"]] = sym.get("field_types", {})
             method_variable_types_by_file[sym["file"]] = sym.get("method_variable_types", {})
+            class_lines = sym.get("class_lines", {})
+            interface_lines = sym.get("interface_lines", {})
+            method_lines = sym.get("method_lines", {})
+            field_lines = sym.get("field_lines", {})
             for cls in sym.get("classes", []) + sym.get("interfaces", []):
                 cid = node_id("Class", sym["project"], cls)
                 class_locations.setdefault(cls, []).append({"id": cid, "project": sym["project"], "file": sym["file"]})
+                class_line = int(class_lines.get(cls) or interface_lines.get(cls) or 0)
                 nodes.append(
                     GraphNode(
                         cid,
@@ -654,6 +666,7 @@ def build_graph_store(config: WorkspaceConfig, store: WorkspaceStore, *, project
                         cls,
                         sym["project"],
                         sym["file"],
+                        class_line,
                         metadata={
                             "package": sym.get("package"),
                             "annotations": sym.get("annotations", []),
@@ -666,12 +679,14 @@ def build_graph_store(config: WorkspaceConfig, store: WorkspaceStore, *, project
                     mid = node_id("Method", sym["project"], cls, m)
                     declared_method_ids.add(mid)
                     method_locations.setdefault(m, []).append(mid)
-                    nodes.append(GraphNode(mid, "Method", f"{cls}.{m}", sym["project"], sym["file"], metadata={"method": m}))
+                    method_line = int(method_lines.get(m) or 0)
+                    nodes.append(GraphNode(mid, "Method", f"{cls}.{m}", sym["project"], sym["file"], method_line, metadata={"method": m}))
                     edges.append(GraphEdge(edge_id("DECLARES", cid, mid), cid, mid, "DECLARES", 1.0, {"evidence": "method declaration"}))
                 for fld in sym.get("fields", []):
                     field_id = node_id("Field", sym["project"], cls, fld)
                     field_locations.setdefault(fld, []).append(field_id)
-                    nodes.append(GraphNode(field_id, "Field", f"{cls}.{fld}", sym["project"], sym["file"], metadata={"type": sym.get("field_types", {}).get(fld)}))
+                    field_line = int(field_lines.get(fld) or 0)
+                    nodes.append(GraphNode(field_id, "Field", f"{cls}.{fld}", sym["project"], sym["file"], field_line, metadata={"type": sym.get("field_types", {}).get(fld)}))
                     edges.append(GraphEdge(edge_id("DECLARES", cid, field_id), cid, field_id, "DECLARES", 1.0, {"evidence": "field declaration"}))
 
         # Import edges are file-level probable dependencies.
@@ -685,21 +700,36 @@ def build_graph_store(config: WorkspaceConfig, store: WorkspaceStore, *, project
             eid = node_id("Endpoint", api["project"], api["http_method"], api["path"])
             cid = node_id("Class", api["project"], api["controller"])
             mid = node_id("Method", api["project"], api["controller"], api.get("method_name") or "unknown")
-            nodes.append(GraphNode(eid, "Endpoint", f"{api['http_method']} {api['path']}", api["project"], api["file"], metadata=api))
+            endpoint_line = 0
+            for sym in symbols:
+                if sym.get("project") == api["project"] and sym.get("file") == api["file"]:
+                    endpoint_line = int((sym.get("method_lines") or {}).get(api.get("method_name") or "", 0) or 0)
+                    break
+            nodes.append(GraphNode(eid, "Endpoint", f"{api['http_method']} {api['path']}", api["project"], api["file"], endpoint_line, metadata=api))
             edges.append(GraphEdge(edge_id("EXPOSES_ENDPOINT", cid, eid), cid, eid, "EXPOSES_ENDPOINT", 1.0, {"evidence": "Spring MVC mapping annotation"}))
             edges.append(GraphEdge(edge_id("HANDLES_ENDPOINT", mid, eid), mid, eid, "HANDLES_ENDPOINT", 0.9, {"evidence": "mapping method"}))
 
         for f in feigns:
             fc_id = node_id("FeignClient", f["project"], f["interface"])
             cid = node_id("Class", f["project"], f["interface"])
-            nodes.append(GraphNode(fc_id, "FeignClient", f["interface"], f["project"], f["file"], metadata=f))
+            feign_line = 0
+            for sym in symbols:
+                if sym.get("project") == f["project"] and sym.get("file") == f["file"]:
+                    feign_line = int((sym.get("class_lines") or {}).get(f["interface"], 0) or (sym.get("interface_lines") or {}).get(f["interface"], 0) or 0)
+                    break
+            nodes.append(GraphNode(fc_id, "FeignClient", f["interface"], f["project"], f["file"], feign_line, metadata=f))
             edges.append(GraphEdge(edge_id("DECLARES", cid, fc_id), cid, fc_id, "DECLARES", 1.0, {"evidence": "@FeignClient"}))
             target_project = topology_service_project(topology, f.get("target_service")) or f.get("target_service", "unknown")
             target_service_id = node_id("Service", target_project)
             edges.append(GraphEdge(edge_id("CALLS_SERVICE", fc_id, target_service_id), fc_id, target_service_id, "CALLS_SERVICE", 0.9, {"evidence": "@FeignClient target service", "target_service": f.get("target_service")}))
             for method in f.get("methods", []):
                 fm_id = node_id("FeignMethod", f["project"], f["interface"], method.get("method_name", "unknown"))
-                nodes.append(GraphNode(fm_id, "FeignMethod", f"{f['interface']}.{method.get('method_name')}", f["project"], f["file"], metadata=method))
+                feign_method_line = 0
+                for sym in symbols:
+                    if sym.get("project") == f["project"] and sym.get("file") == f["file"]:
+                        feign_method_line = int((sym.get("method_lines") or {}).get(method.get("method_name", "unknown"), 0) or 0)
+                        break
+                nodes.append(GraphNode(fm_id, "FeignMethod", f"{f['interface']}.{method.get('method_name')}", f["project"], f["file"], feign_method_line, metadata=method))
                 edges.append(GraphEdge(edge_id("DECLARES", fc_id, fm_id), fc_id, fm_id, "DECLARES", 1.0, {"evidence": "Feign interface method"}))
                 for api in apis_full if partial else apis:
                     if _endpoint_matches(f, method, api):
@@ -735,7 +765,17 @@ def build_graph_store(config: WorkspaceConfig, store: WorkspaceStore, *, project
                 target_type = inj.get("type")
                 target_candidates = class_locations.get(target_type, [])
                 target_id = target_candidates[0]["id"] if target_candidates else node_id("Bean", sym["project"], target_type or inj.get("field_name", "unknown"))
-                nodes.append(GraphNode(target_id, "Bean" if not target_candidates else "Class", target_type or inj.get("field_name", "unknown"), target_candidates[0]["project"] if target_candidates else sym["project"], target_candidates[0]["file"] if target_candidates else sym["file"], metadata=inj))
+                if not target_candidates:
+                    nodes.append(
+                        GraphNode(
+                            target_id,
+                            "Bean",
+                            target_type or inj.get("field_name", "unknown"),
+                            sym["project"],
+                            sym["file"],
+                            metadata=inj,
+                        )
+                    )
                 edges.append(GraphEdge(edge_id("INJECTS_BEAN", owner_class_id, target_id), owner_class_id, target_id, "INJECTS_BEAN", 0.82, {"evidence": inj}))
 
             for call in sym.get("method_calls", []):

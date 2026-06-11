@@ -257,9 +257,11 @@ def symbol_cmd(
     name: str = typer.Option(...),
     limit: int = typer.Option(10),
     project: str = typer.Option("", help="Filter by project name for disambiguation."),
+    view: str = typer.Option("full", help="full|compact"),
+    budget: str = typer.Option("medium", help="small|medium|large"),
 ):
     """Resolve one symbol and return best match candidates."""
-    print(memory_symbol(workspace, name, limit=limit, project=project))
+    print(memory_symbol(workspace, name, limit=limit, project=project, view=view, budget=budget))
 
 
 @app.command("callers")
@@ -269,9 +271,11 @@ def callers_cmd(
     depth: int = typer.Option(2),
     limit: int = typer.Option(80),
     project: str = typer.Option("", help="Filter by project name for disambiguation."),
+    view: str = typer.Option("full", help="full|compact"),
+    budget: str = typer.Option("medium", help="small|medium|large"),
 ):
     """Find upstream callers for one symbol."""
-    print(memory_callers(workspace, symbol, depth=depth, limit=limit, project=project))
+    print(memory_callers(workspace, symbol, depth=depth, limit=limit, project=project, view=view, budget=budget))
 
 
 @app.command("callees")
@@ -281,15 +285,24 @@ def callees_cmd(
     depth: int = typer.Option(2),
     limit: int = typer.Option(80),
     project: str = typer.Option("", help="Filter by project name for disambiguation."),
+    view: str = typer.Option("full", help="full|compact"),
+    budget: str = typer.Option("medium", help="small|medium|large"),
 ):
     """Find downstream callees for one symbol."""
-    print(memory_callees(workspace, symbol, depth=depth, limit=limit, project=project))
+    print(memory_callees(workspace, symbol, depth=depth, limit=limit, project=project, view=view, budget=budget))
 
 
 @app.command("context")
-def context_cmd(workspace: str = typer.Option(...), name: str = typer.Option(...), max_depth: int = typer.Option(2), project: str = typer.Option("", help="Filter by project name for disambiguation.")):
+def context_cmd(
+    workspace: str = typer.Option(...),
+    name: str = typer.Option(...),
+    max_depth: int = typer.Option(2),
+    project: str = typer.Option("", help="Filter by project name for disambiguation."),
+    view: str = typer.Option("full", help="full|compact"),
+    budget: str = typer.Option("medium", help="small|medium|large"),
+):
     """Return 360-degree context for a symbol, endpoint, topic, service or file."""
-    print(memory_context(workspace, name, max_depth, project=project))
+    print(memory_context(workspace, name, max_depth, project=project, view=view, budget=budget))
 
 
 @app.command("impact")
@@ -298,9 +311,11 @@ def impact_cmd(
     target: str = typer.Option(...),
     direction: str = typer.Option("upstream"),
     max_depth: int = typer.Option(3),
+    view: str = typer.Option("full", help="full|compact"),
+    budget: str = typer.Option("medium", help="small|medium|large"),
 ):
     """Analyze upstream/downstream impact for a changed symbol or contract."""
-    print(memory_impact(workspace, target, direction, max_depth))
+    print(memory_impact(workspace, target, direction, max_depth, view=view, budget=budget))
 
 
 @app.command("detect-changes")

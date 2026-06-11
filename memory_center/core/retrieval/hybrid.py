@@ -110,6 +110,37 @@ _JAVA_PATTERNS = {
 }
 
 
+def _normalize_java_symbol_query(query: str) -> str:
+    normalized = (query or "").strip().replace("#", ".")
+    if not normalized:
+        return ""
+    return normalized.split(".")[-1]
+
+
+def _looks_like_java_symbol_query(query: str) -> bool:
+    token = _normalize_java_symbol_query(query)
+    if not token:
+        return False
+    if any(ch.isspace() for ch in query):
+        return False
+    return bool(re.match(r"^[A-Z][A-Za-z0-9_]*$", token))
+
+
+def _node_matches_query_name(node: Dict[str, Any], query: str) -> bool:
+    target = _normalize_java_symbol_query(query).lower()
+    if not target:
+        return False
+    name = str(node.get("name", "") or "").strip()
+    if not name:
+        return False
+    short = name.split(".")[-1].lower()
+    return short == target or name.lower() == target
+
+
+def _has_exact_like_source(item: RetrievalResult) -> bool:
+    return any(source in {"graph_exact", "graph_token", "sparse_fts", "sparse_bm25"} for source in item.sources)
+
+
 def detect_query_intent(query: str) -> Dict[str, Any]:
     """Detect query intent from natural language input.
 
@@ -156,6 +187,8 @@ def detect_query_intent(query: str) -> Dict[str, Any]:
         intents["mq"] = max(intents["mq"], 2.0)
     if "endpoint" in intents and query_lower.startswith("/"):
         intents["endpoint"] = max(intents["endpoint"], 2.0)
+    if _looks_like_java_symbol_query(query):
+        intents["class"] = max(intents.get("class", 0), 2.2)
 
     primary = max(intents.items(), key=lambda x: x[1])[0] if intents else "general"
 
@@ -165,6 +198,8 @@ def detect_query_intent(query: str) -> Dict[str, Any]:
         "matched_patterns": matched_patterns,
         "is_cross_service": any(k in query_lower for k in ["feign", "fegin", "远程", "rpc", "服务间"]),
         "is_chain_query": "chain" in intents or "调用链" in query_lower,
+        "query_shape": "java_symbol" if _looks_like_java_symbol_query(query) else "general",
+        "prefer_class_symbol": _looks_like_java_symbol_query(query),
     }
 
 
@@ -216,6 +251,7 @@ def hybrid_retrieve(
         config=config,
         intent=intent,
         bm25_hits=bm25_hits,
+        query=query,
     )
 
     # Phase 3: Type-based boosting
@@ -551,6 +587,7 @@ def _merge_retrieval_results(
     semantic_hits: List[RetrievalResult],
     config: HybridRetrievalConfig,
     intent: Dict[str, Any],
+    query: str = "",
     vector_hits: List[RetrievalResult] | None = None,
     bm25_hits: List[RetrievalResult] | None = None,
 ) -> List[RetrievalResult]:
@@ -666,6 +703,24 @@ def _merge_retrieval_results(
         elif len(source_set) >= 2:
             item.score *= 1.15  # Dual-source bonus
 
+    strong_exact_hit = any(
+        _has_exact_like_source(item) and _node_matches_query_name(item.node, query)
+        for item in merged.values()
+    )
+    prefer_class_symbol = bool(intent.get("prefer_class_symbol"))
+    for item in merged.values():
+        source_set = set(item.sources)
+        semantic_only = source_set == {"semantic"}
+        if strong_exact_hit and semantic_only:
+            item.score *= 0.35 if not item.node.get("file_path") else 0.55
+            item.evidence["semantic_penalty"] = "strong_exact_present"
+        if semantic_only and (not item.node.get("project") or not item.node.get("file_path")):
+            item.score *= 0.7
+            item.evidence["semantic_penalty"] = "weak_locator"
+        if prefer_class_symbol and item.node.get("type") == "Class" and _node_matches_query_name(item.node, query):
+            item.score *= 1.8
+            item.evidence["symbol_exact_class_boost"] = 1.8
+
     return sorted(merged.values(), key=lambda x: x.score, reverse=True)
 
 
@@ -690,6 +745,12 @@ def _apply_type_boosting(
     for item in results:
         node_type = item.node.get("type", "")
         boost = boosts.get(node_type, 1.0)
+        if intent.get("prefer_class_symbol"):
+            if node_type == "Class":
+                boost = max(boost, 1.8)
+            elif node_type == "Method":
+                item.score *= 0.82
+                item.evidence["symbol_method_penalty"] = 0.82
         if boost > 1.0:
             item.score *= boost
             item.evidence["type_boost"] = boost

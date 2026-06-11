@@ -535,6 +535,25 @@ def _rrf(rank: int, k: int = 60) -> float:
 _INBOUND_PREFERRED = {"CALLS_METHOD", "CALLS_SERVICE", "IMPLEMENTS_FEIGN", "CONSUMES_TOPIC", "READS_FIELD", "READS_CONFIG", "INJECTS_BEAN", "IMPORTS"}
 _OUTBOUND_PREFERRED = {"HANDLES_ENDPOINT", "PRODUCES_TOPIC", "CALLS_METHOD", "CALLS_SERVICE", "IMPLEMENTS_FEIGN", "INJECTS_BEAN"}
 _ALL_PREFERRED = _INBOUND_PREFERRED | _OUTBOUND_PREFERRED
+_UPSTREAM_EDGE_PRIORITY = {
+    "INJECTS_BEAN": 0,
+    "CALLS_METHOD": 1,
+    "CALLS_SERVICE": 2,
+    "IMPLEMENTS_FEIGN": 3,
+    "READS_FIELD": 4,
+    "READS_CONFIG": 5,
+    "CONSUMES_TOPIC": 6,
+    "IMPORTS": 9,
+}
+_DOWNSTREAM_EDGE_PRIORITY = {
+    "HANDLES_ENDPOINT": 0,
+    "CALLS_METHOD": 1,
+    "CALLS_SERVICE": 2,
+    "IMPLEMENTS_FEIGN": 3,
+    "PRODUCES_TOPIC": 4,
+    "INJECTS_BEAN": 5,
+    "IMPORTS": 9,
+}
 
 _NOISE_METHODS = {
     "getId", "setId", "getName", "setName", "getType", "setType",
@@ -571,19 +590,63 @@ def _is_noise_call(edge: Dict[str, Any]) -> bool:
     return False
 
 
+def _is_redundant_import_edge(edge: Dict[str, Any], edges: List[Dict[str, Any]]) -> bool:
+    if edge.get("type") != "IMPORTS":
+        return False
+    source = edge.get("source", {}) or {}
+    target = edge.get("target", {}) or {}
+    source_file = source.get("file_path", "") or source.get("name", "")
+    target_file = target.get("file_path", "") or target.get("name", "")
+    if not source_file:
+        return False
+    for other in edges:
+        if other is edge or other.get("type") == "IMPORTS":
+            continue
+        other_source = other.get("source", {}) or {}
+        other_target = other.get("target", {}) or {}
+        other_source_file = other_source.get("file_path", "") or other_source.get("name", "")
+        other_target_file = other_target.get("file_path", "") or other_target.get("name", "")
+        same_source = other_source_file == source_file
+        same_target = (
+            (target_file and other_target_file == target_file)
+            or (
+                target.get("project", "")
+                and target.get("project", "") == other_target.get("project", "")
+                and target.get("name", "")
+                and target.get("name", "") in {other_target.get("name", ""), other_target_file}
+            )
+        )
+        if same_source and same_target:
+            return True
+    return False
+
+
 def _filter_call_edges(edges: List[Dict[str, Any]], direction: str) -> List[Dict[str, Any]]:
     if direction in {"upstream", "incoming"}:
         edge_types = _INBOUND_PREFERRED
+        edge_priority = _UPSTREAM_EDGE_PRIORITY
     elif direction in {"downstream", "outgoing"}:
         edge_types = _OUTBOUND_PREFERRED
+        edge_priority = _DOWNSTREAM_EDGE_PRIORITY
     else:
         edge_types = _ALL_PREFERRED
-    filtered = [item for item in edges if item.get("type") in edge_types and not _is_noise_call(item)]
+        edge_priority = {}
+    filtered = [
+        item for item in edges
+        if item.get("type") in edge_types
+        and not _is_noise_call(item)
+        and not _is_redundant_import_edge(item, edges)
+    ]
+    if any(item.get("type") != "IMPORTS" for item in filtered):
+        filtered = [item for item in filtered if item.get("type") != "IMPORTS"]
     filtered.sort(
         key=lambda item: (
+            edge_priority.get(item.get("type", ""), 20),
             -float(item.get("confidence", 0.0)),
             int(item.get("depth", 99)),
             item.get("type", ""),
+            -(int((item.get("source", {}) or {}).get("line", 0) or 0) > 0),
+            -(int((item.get("target", {}) or {}).get("line", 0) or 0) > 0),
         )
     )
     # Deduplicate: keep one entry per method name, prefer class-prefixed and higher confidence

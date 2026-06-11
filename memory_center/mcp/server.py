@@ -336,11 +336,11 @@ def create_server(workspace_file: str):
             # Strip suffix for cleaner matching
             preferred_bare = [t.replace("_tool", "") for t in preferred]
             if "memory_symbol" in preferred_bare and (name or query):
-                return {"mode_used": "symbol", "result": memory_symbol(wf, name or query, limit, project=project), **decision_fields}
+                return {"mode_used": "symbol", "result": memory_symbol(wf, name or query, limit, project=project, view="compact", budget="small"), **decision_fields}
             if "memory_search_code" in preferred_bare:
                 return {"mode_used": "code", "result": memory_search_code(wf, query, scope, limit, project=project), **decision_fields}
             if "memory_context" in preferred_bare and (name or query):
-                return {"mode_used": "context", "result": memory_context(wf, name or query, depth, project=project), **decision_fields}
+                return {"mode_used": "context", "result": memory_context(wf, name or query, depth, project=project, view="compact", budget="small"), **decision_fields}
             if "workspace_trace" in preferred_bare and (entry or query):
                 return {"mode_used": "trace", "result": workspace_trace(wf, entry or query), **decision_fields}
             if "memory_callers" in preferred_bare and (symbol or query):
@@ -348,7 +348,7 @@ def create_server(workspace_file: str):
                 if len(matching_groups) == 1:
                     result = group_chain(matching_groups[0], symbol or query, direction="callers", depth=depth, limit=limit)
                     return {"mode_used": "chain-group", "result": result, **decision_fields}
-                result = memory_callers(wf, symbol or query, depth, limit, project=project)
+                result = memory_callers(wf, symbol or query, depth, limit, project=project, view="compact", budget="small")
                 _annotate_phantom_nodes(result, wf)
                 if len(matching_groups) > 1:
                     return {"mode_used": "chain-callers", "result": result, "matching_groups": matching_groups, "_hint": f"Workspace 属于多个 group ({', '.join(matching_groups)})，请用 mc_admin(action='group_chain', group=...) 显式指定。", **decision_fields}
@@ -358,14 +358,14 @@ def create_server(workspace_file: str):
                 if len(matching_groups) == 1:
                     result = group_chain(matching_groups[0], symbol or query, direction="callees", depth=depth, limit=limit)
                     return {"mode_used": "chain-group", "result": result, **decision_fields}
-                result = memory_callees(wf, symbol or query, depth, limit, project=project)
+                result = memory_callees(wf, symbol or query, depth, limit, project=project, view="compact", budget="small")
                 _annotate_phantom_nodes(result, wf)
                 if len(matching_groups) > 1:
                     return {"mode_used": "chain-callees", "result": result, "matching_groups": matching_groups, "_hint": f"Workspace 属于多个 group ({', '.join(matching_groups)})，请用 mc_admin(action='group_chain', group=...) 显式指定。", **decision_fields}
                 return {"mode_used": "chain-callees", "result": result, **decision_fields}
             return {"mode_used": "query", "result": memory_query_hybrid(wf, query, limit, project=project), **decision_fields}
         if mode == "symbol":
-            return {"mode": "symbol", "result": memory_symbol(wf, name or query, limit, project=project)}
+            return {"mode": "symbol", "result": memory_symbol(wf, name or query, limit, project=project, view="compact", budget="small")}
         if mode == "code":
             return {"mode": "code", "result": memory_search_code(wf, query, scope, limit, project=project)}
         if mode == "query":
@@ -381,9 +381,9 @@ def create_server(workspace_file: str):
                 return {"mode": "chain-group", "result": result}
             if len(matching_groups) > 1:
                 if chain_direction == "callees":
-                    result = memory_callees(wf, symbol or query, depth, limit, edge_type_filter=cross_types, project=project)
+                    result = memory_callees(wf, symbol or query, depth, limit, edge_type_filter=cross_types, project=project, view="compact", budget="small")
                 else:
-                    result = memory_callers(wf, symbol or query, depth, limit, edge_type_filter=cross_types, project=project)
+                    result = memory_callers(wf, symbol or query, depth, limit, edge_type_filter=cross_types, project=project, view="compact", budget="small")
                 _annotate_phantom_nodes(result, wf)
                 return {
                     "mode": f"chain-{chain_direction}",
@@ -392,13 +392,13 @@ def create_server(workspace_file: str):
                     "_hint": f"Workspace 属于多个 group ({', '.join(matching_groups)})，请用 mc_admin(action='group_chain', group=...) 显式指定。",
                 }
             if chain_direction == "callees":
-                result = memory_callees(wf, symbol or query, depth, limit, edge_type_filter=cross_types, project=project)
+                result = memory_callees(wf, symbol or query, depth, limit, edge_type_filter=cross_types, project=project, view="compact", budget="small")
             else:
-                result = memory_callers(wf, symbol or query, depth, limit, edge_type_filter=cross_types, project=project)
+                result = memory_callers(wf, symbol or query, depth, limit, edge_type_filter=cross_types, project=project, view="compact", budget="small")
             _annotate_phantom_nodes(result, wf)
             return {"mode": f"chain-{chain_direction}", "result": result}
         if mode == "context":
-            return {"mode": "context", "result": memory_context(wf, name or query, depth, project=project)}
+            return {"mode": "context", "result": memory_context(wf, name or query, depth, project=project, view="compact", budget="small")}
         if mode == "contracts":
             return {"mode": "contracts", "result": memory_contracts(wf)}
         if mode == "ref":
@@ -425,7 +425,7 @@ def create_server(workspace_file: str):
         """Analyze change impact and generate action plans. Depth quick: impact only. Depth standard: impact + change plan + rules check. Depth full: standard + contract check + verification checklist. If target is empty, runs detect-changes instead of impact."""
         wf = ctx.workspace_file
         if target:
-            impact_result = memory_impact(wf, target, direction, max_depth)
+            impact_result = memory_impact(wf, target, direction, max_depth, view="compact", budget="small")
         else:
             impact_result = memory_detect_changes(wf, scope)
         result = {"workflow": "mc-analyze", "depth": depth, "impact": impact_result}

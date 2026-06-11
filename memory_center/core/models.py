@@ -61,6 +61,10 @@ class JavaSymbol:
     interfaces: List[str] = field(default_factory=list)
     methods: List[str] = field(default_factory=list)
     fields: List[str] = field(default_factory=list)
+    class_lines: Dict[str, int] = field(default_factory=dict)
+    interface_lines: Dict[str, int] = field(default_factory=dict)
+    method_lines: Dict[str, int] = field(default_factory=dict)
+    field_lines: Dict[str, int] = field(default_factory=dict)
     annotations: List[str] = field(default_factory=list)
     imports: List[str] = field(default_factory=list)
 

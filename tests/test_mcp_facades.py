@@ -117,6 +117,46 @@ def test_mc_lookup_auto_returns_decision_fields(tmp_path: Path):
     assert r
 
 
+@pytest.mark.skipif(not HAS_MCP, reason="mcp package not installed")
+def test_mcp_lookup_and_analyze_default_to_compact_views(tmp_path: Path):
+    import asyncio
+    from memory_center.mcp.server import create_server
+
+    wf = _setup_workspace(tmp_path)
+    server = create_server(wf)
+    loop = asyncio.get_event_loop()
+
+    mc_lookup = server._tool_manager._tools["mc_lookup"]
+    symbol_payload = loop.run_until_complete(mc_lookup.fn(query="ArticleFeignClient", mode="symbol"))
+    assert symbol_payload["result"]["found"] is True
+    assert "best_match" in symbol_payload["result"]
+    assert "lookup" in symbol_payload["result"]
+    assert "matches" in symbol_payload["result"]
+    assert symbol_payload["result"]["summary_lines"]
+    assert "progressive" not in symbol_payload["result"]
+
+    chain_payload = loop.run_until_complete(mc_lookup.fn(query="ArticleFeignClient", mode="chain", chain_direction="callers"))
+    assert chain_payload["result"]["found"] is True
+    assert chain_payload["result"]["direction"] == "callers"
+    assert "chain_summary" in chain_payload["result"]
+    assert chain_payload["result"]["summary_lines"]
+    assert "callers" not in chain_payload["result"]
+
+    context_payload = loop.run_until_complete(mc_lookup.fn(query="ArticleFeignClient", mode="context"))
+    assert context_payload["result"]["found"] is True
+    assert "incoming_summary" in context_payload["result"]
+    assert "outgoing_summary" in context_payload["result"]
+    assert context_payload["result"]["summary_lines"]
+    assert "incoming" not in context_payload["result"]
+
+    mc_analyze = server._tool_manager._tools["mc_analyze"]
+    analyze_payload = loop.run_until_complete(mc_analyze.fn(target="ArticleFeignClient", depth="quick", direction="upstream", max_depth=2))
+    assert analyze_payload["impact"]["found"] is True
+    assert "confirmed_summary" in analyze_payload["impact"]
+    assert analyze_payload["impact"]["summary_lines"]
+    assert "confirmed_impacts" not in analyze_payload["impact"]
+
+
 def test_memory_context_risk_patterns_do_not_fail_silently(tmp_path: Path):
     wf = _setup_workspace(tmp_path)
     r = memory_context(wf, "ArticleFeignClient", max_depth=2)
@@ -224,7 +264,9 @@ def test_mc_lookup_symbol_mode_project_filter(tmp_path: Path):
     wf = _setup_workspace(tmp_path)
     r = memory_symbol(wf, "ArticleFeignClient", limit=10, project="task-service")
     assert r["found"] is True
-    assert "task-service" in (r["best_match"].get("project") or "")
+    assert r["best_match"]["type"] == "Class"
+    assert r["best_match"]["name"] == "ArticleFeignClient"
+    assert "common-api" in (r["best_match"].get("project") or "")
     for m in r.get("matches", []):
         assert "task-service" in ((m.get("node") or {}).get("project") or "")
 

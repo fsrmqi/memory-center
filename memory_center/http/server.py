@@ -456,21 +456,44 @@ def _route_request(path: str, params: dict, default_workspace: str | None) -> di
         name = _require_one(params, "name")
         limit = _parse_int(params, "limit", 10)
         project = params.get("project", [""])[0]
-        return memory_symbol(workspace, name, limit=limit, project=project)
+        return memory_symbol(
+            workspace,
+            name,
+            limit=limit,
+            project=project,
+            view=params.get("view", ["compact"])[0],
+            budget=params.get("budget", ["medium"])[0],
+        )
     if path == "/workspace/callers":
         workspace = _require_workspace(params, default_workspace)
         symbol = _require_one(params, "symbol")
         depth = _parse_int(params, "depth", 2)
         limit = _parse_int(params, "limit", 80, max_val=500)
         project = params.get("project", [""])[0]
-        return memory_callers(workspace, symbol, depth=depth, limit=limit, project=project)
+        return memory_callers(
+            workspace,
+            symbol,
+            depth=depth,
+            limit=limit,
+            project=project,
+            view=params.get("view", ["compact"])[0],
+            budget=params.get("budget", ["medium"])[0],
+        )
     if path == "/workspace/callees":
         workspace = _require_workspace(params, default_workspace)
         symbol = _require_one(params, "symbol")
         depth = _parse_int(params, "depth", 2)
         limit = _parse_int(params, "limit", 80, max_val=500)
         project = params.get("project", [""])[0]
-        return memory_callees(workspace, symbol, depth=depth, limit=limit, project=project)
+        return memory_callees(
+            workspace,
+            symbol,
+            depth=depth,
+            limit=limit,
+            project=project,
+            view=params.get("view", ["compact"])[0],
+            budget=params.get("budget", ["medium"])[0],
+        )
     if path == "/workspace/plan-change":
         workspace = _require_workspace(params, default_workspace)
         target = _require_one(params, "target")

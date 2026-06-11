@@ -362,42 +362,66 @@ def run_hook(
         elif facade == "mc_lookup":
             wf = _get_workspace_file(workspace)
             lookup_mode = params_spec.get("mode", "auto")
+            limit = int(params_spec.get("limit", 20))
+            depth_value = int(params_spec.get("depth", 2))
+            scope = params_spec.get("scope", "")
+            name = params_spec.get("name", "") or intent
+            symbol = params_spec.get("symbol", "") or intent
+            entry = params_spec.get("entry", "") or intent
             if lookup_mode == "auto":
-                hint = workspace_lookup_hint(wf, query=intent, intent=intent, limit=int(params_spec.get("limit", 20)))
+                hint = workspace_lookup_hint(wf, query=intent, intent=intent, limit=limit)
                 preferred = [t.replace("_tool", "") for t in hint.get("preferred_tools", [])]
-                if "memory_symbol" in preferred and (params_spec.get("name", "") or intent):
-                    hook_result = {"mode_used": "symbol", "result": memory_symbol(wf, params_spec.get("name", "") or intent, int(params_spec.get("limit", 20)))}
+                if "memory_symbol" in preferred and name:
+                    hook_result = {
+                        "mode_used": "symbol",
+                        "result": memory_symbol(wf, name, limit, view=view, budget=budget),
+                    }
                 elif "memory_search_code" in preferred:
-                    hook_result = {"mode_used": "code", "result": memory_search_code(wf, intent, params_spec.get("scope", ""), int(params_spec.get("limit", 20)))}
-                elif "memory_context" in preferred and (params_spec.get("name", "") or intent):
-                    hook_result = {"mode_used": "context", "result": memory_context(wf, params_spec.get("name", "") or intent, int(params_spec.get("depth", 2)))}
-                elif "workspace_trace" in preferred and (params_spec.get("entry", "") or intent):
-                    hook_result = {"mode_used": "trace", "result": workspace_trace(wf, params_spec.get("entry", "") or intent)}
-                elif "memory_callers" in preferred and (params_spec.get("symbol", "") or intent):
-                    hook_result = {"mode_used": "chain-callers", "result": memory_callers(wf, params_spec.get("symbol", "") or intent, int(params_spec.get("depth", 2)), int(params_spec.get("limit", 20)))}
-                elif "memory_callees" in preferred and (params_spec.get("symbol", "") or intent):
-                    hook_result = {"mode_used": "chain-callees", "result": memory_callees(wf, params_spec.get("symbol", "") or intent, int(params_spec.get("depth", 2)), int(params_spec.get("limit", 20)))}
+                    hook_result = {"mode_used": "code", "result": memory_search_code(wf, intent, scope, limit)}
+                elif "memory_context" in preferred and name:
+                    hook_result = {
+                        "mode_used": "context",
+                        "result": memory_context(wf, name, depth_value, view=view, budget=budget),
+                    }
+                elif "workspace_trace" in preferred and entry:
+                    hook_result = {"mode_used": "trace", "result": workspace_trace(wf, entry)}
+                elif "memory_callers" in preferred and symbol:
+                    hook_result = {
+                        "mode_used": "chain-callers",
+                        "result": memory_callers(wf, symbol, depth_value, limit, view=view, budget=budget),
+                    }
+                elif "memory_callees" in preferred and symbol:
+                    hook_result = {
+                        "mode_used": "chain-callees",
+                        "result": memory_callees(wf, symbol, depth_value, limit, view=view, budget=budget),
+                    }
                 else:
-                    hook_result = {"mode_used": "query", "result": memory_query(wf, intent, int(params_spec.get("limit", 20))), "lookup_hint": hint}
+                    hook_result = {"mode_used": "query", "result": memory_query(wf, intent, limit), "lookup_hint": hint}
             elif lookup_mode == "symbol":
-                hook_result = {"mode": "symbol", "result": memory_symbol(wf, params_spec.get("name", "") or intent, int(params_spec.get("limit", 20)))}
+                hook_result = {"mode": "symbol", "result": memory_symbol(wf, name, limit, view=view, budget=budget)}
             elif lookup_mode == "code":
-                hook_result = {"mode": "code", "result": memory_search_code(wf, intent, params_spec.get("scope", ""), int(params_spec.get("limit", 20)))}
+                hook_result = {"mode": "code", "result": memory_search_code(wf, intent, scope, limit)}
             elif lookup_mode == "query":
-                hook_result = {"mode": "query", "result": memory_query(wf, intent, int(params_spec.get("limit", 20)))}
+                hook_result = {"mode": "query", "result": memory_query(wf, intent, limit)}
             elif lookup_mode == "trace":
-                hook_result = {"mode": "trace", "result": workspace_trace(wf, params_spec.get("entry", "") or intent)}
+                hook_result = {"mode": "trace", "result": workspace_trace(wf, entry)}
             elif lookup_mode == "chain":
                 if params_spec.get("chain_direction", "callers") == "callees":
-                    hook_result = {"mode": "chain-callees", "result": memory_callees(wf, params_spec.get("symbol", "") or intent, int(params_spec.get("depth", 2)), int(params_spec.get("limit", 20)))}
+                    hook_result = {
+                        "mode": "chain-callees",
+                        "result": memory_callees(wf, symbol, depth_value, limit, view=view, budget=budget),
+                    }
                 else:
-                    hook_result = {"mode": "chain-callers", "result": memory_callers(wf, params_spec.get("symbol", "") or intent, int(params_spec.get("depth", 2)), int(params_spec.get("limit", 20)))}
+                    hook_result = {
+                        "mode": "chain-callers",
+                        "result": memory_callers(wf, symbol, depth_value, limit, view=view, budget=budget),
+                    }
             elif lookup_mode == "context":
-                hook_result = {"mode": "context", "result": memory_context(wf, params_spec.get("name", "") or intent, int(params_spec.get("depth", 2)))}
+                hook_result = {"mode": "context", "result": memory_context(wf, name, depth_value, view=view, budget=budget)}
             elif lookup_mode == "contracts":
                 hook_result = {"mode": "contracts", "result": memory_contracts(wf)}
             else:
-                hook_result = {"mode": "query", "result": memory_query(wf, intent, int(params_spec.get("limit", 20)))}
+                hook_result = {"mode": "query", "result": memory_query(wf, intent, limit)}
             system_message = f"[Memory Center] Lookup completed: mode={hook_result.get('mode_used', hook_result.get('mode', 'auto'))}"
 
         elif facade == "mc_sync":

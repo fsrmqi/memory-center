@@ -11,12 +11,14 @@ from ..semantic import semantic_index_stats, semantic_query
 from ..ontology import EntityValidator
 from ..diagnostics import DIAG, diag_entry, safe_reason
 from ..verification.heuristics import apply_candidate_path_learning
+from ..tracking import log_token_gain
 from .common import (
     SESSION_EVENTS_FILE,
     _best_match,
     _build_progressive_levels,
     _event_payload,
     _filter_call_edges,
+    _is_compact_view,
     _node_type_priority,
     _render_ref_label,
     _resolve_memory_ref,
@@ -25,6 +27,196 @@ from .common import (
     preferred_edge_types,
     tokenize,
 )
+from .compact import _measure_compact_gain
+
+
+def _normalize_symbol_name(name: str) -> str:
+    normalized = (name or "").strip().replace("#", ".")
+    if not normalized:
+        return ""
+    return normalized.split(".")[-1]
+
+
+def _looks_like_class_symbol_query(query: str) -> bool:
+    token = _normalize_symbol_name(query)
+    if not token or any(ch.isspace() for ch in query):
+        return False
+    return bool(Path(token).name == token and token[:1].isupper())
+
+
+def _node_matches_symbol_query(node: Dict[str, Any], query: str) -> bool:
+    target = _normalize_symbol_name(query).lower()
+    if not target:
+        return False
+    name = str(node.get("name", "") or "").strip()
+    if not name:
+        return False
+    short = name.split(".")[-1].lower()
+    return short == target or name.lower() == target
+
+
+def _has_exact_lookup_source(item: Dict[str, Any]) -> bool:
+    sources = set(item.get("sources", []) or item.get("retrieval_sources", []) or [])
+    return bool({"exact", "graph_exact", "graph_token", "sparse_fts", "sparse_bm25", "direct_lookup"} & sources)
+
+
+def _pick_symbol_anchor(items: List[Dict[str, Any]], query: str) -> Dict[str, Any]:
+    exact_classes = [
+        item for item in items
+        if item.get("node", item).get("type") == "Class"
+        and _node_matches_symbol_query(item.get("node", item), query)
+    ]
+    if not exact_classes:
+        return {}
+    exact_classes.sort(
+        key=lambda item: (
+            0 if _has_exact_lookup_source(item) else 1,
+            -float(item.get("score", item.get("exact_score", 0.0)) or 0.0),
+            item.get("node", item).get("project", ""),
+            item.get("node", item).get("file_path", ""),
+        )
+    )
+    return exact_classes[0].get("node", exact_classes[0])
+
+
+def _pick_symbol_declaration_fallback(items: List[Dict[str, Any]], query: str) -> Dict[str, Any]:
+    declaration_types = {"Class", "FeignClient", "Endpoint", "MQTopic", "MQConsumer", "ConfigKey"}
+    exact_declarations = [
+        item for item in items
+        if item.get("node", item).get("type") in declaration_types
+        and _node_matches_symbol_query(item.get("node", item), query)
+    ]
+    if not exact_declarations:
+        return {}
+    exact_declarations.sort(
+        key=lambda item: (
+            0 if item.get("node", item).get("type") == "Class" else 1,
+            0 if _has_exact_lookup_source(item) else 1,
+            -float(item.get("score", item.get("exact_score", 0.0)) or 0.0),
+            item.get("node", item).get("project", ""),
+            item.get("node", item).get("file_path", ""),
+        )
+    )
+    return exact_declarations[0].get("node", exact_declarations[0])
+
+
+def _symbol_rank_bucket(node: Dict[str, Any], query: str, anchor: Dict[str, Any]) -> int:
+    node_type = node.get("type", "")
+    same_name = _node_matches_symbol_query(node, query)
+    same_file = bool(anchor) and node.get("file_path", "") == anchor.get("file_path", "")
+    same_project = bool(anchor) and node.get("project", "") == anchor.get("project", "")
+
+    if node_type == "Class" and same_name:
+        return 0
+    if same_file and node_type == "FeignClient":
+        return 1
+    if same_file and node_type in {"Method", "FeignMethod", "Endpoint"}:
+        return 2
+    if same_file and node_type == "File":
+        return 3
+    if same_project and same_name and node_type in {"FeignClient", "Endpoint"}:
+        return 4
+    if same_project and node_type in {"Method", "FeignMethod"}:
+        return 5
+    if same_project and node_type == "File":
+        return 6
+    if node_type == "Class":
+        return 7
+    if node_type in {"FeignClient", "Endpoint"} and same_name:
+        return 8
+    if node_type in {"Method", "FeignMethod"}:
+        return 9
+    if node_type == "File":
+        return 10
+    if node_type == "Field":
+        return 11
+    return 20
+
+
+def _rerank_symbol_like_matches(items: List[Dict[str, Any]], query: str) -> List[Dict[str, Any]]:
+    if not _looks_like_class_symbol_query(query):
+        return items
+    if not any(
+        (item.get("node", item).get("type") == "Class") and _node_matches_symbol_query(item.get("node", item), query)
+        for item in items
+    ):
+        return items
+    anchor = _pick_symbol_anchor(items, query)
+
+    def key(item: Dict[str, Any]) -> tuple:
+        node = item.get("node", item)
+        sources = set(item.get("sources", []) or item.get("retrieval_sources", []) or [])
+        semantic_only = sources == {"semantic"}
+        return (
+            _symbol_rank_bucket(node, query, anchor),
+            0 if _node_matches_symbol_query(node, query) else 1,
+            0 if anchor and node.get("file_path", "") == anchor.get("file_path", "") else 1,
+            0 if anchor and node.get("project", "") == anchor.get("project", "") else 1,
+            0 if _has_exact_lookup_source(item) else 1,
+            1 if semantic_only else 0,
+            _node_type_priority(node.get("type", "")),
+            -float(item.get("score", item.get("exact_score", 0.0)) or 0.0),
+            int(node.get("line", 0) or 0) == 0,
+            node.get("name", ""),
+        )
+
+    return sorted(items, key=key)
+
+
+def _dedupe_symbol_display_matches(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    if not items:
+        return items
+
+    def dedupe_key(item: Dict[str, Any]) -> tuple[str, str, str] | None:
+        node = item.get("node", item)
+        node_type = node.get("type", "")
+        if node_type not in {"Method", "FeignMethod"}:
+            return None
+        return (
+            str(node.get("project", "") or ""),
+            str(node.get("file_path", "") or ""),
+            str(node.get("name", "") or ""),
+        )
+
+    def type_priority(item: Dict[str, Any]) -> tuple[int, float]:
+        node = item.get("node", item)
+        node_type = node.get("type", "")
+        priority = {"FeignMethod": 0, "Method": 1}
+        return (
+            priority.get(node_type, 10),
+            -float(item.get("score", item.get("exact_score", 0.0)) or 0.0),
+        )
+
+    deduped: List[Dict[str, Any]] = []
+    seen: Dict[tuple[str, str, str], int] = {}
+    for item in items:
+        key = dedupe_key(item)
+        if key is None:
+            deduped.append(item)
+            continue
+        existing_index = seen.get(key)
+        if existing_index is None:
+            seen[key] = len(deduped)
+            deduped.append(item)
+            continue
+        if type_priority(item) < type_priority(deduped[existing_index]):
+            deduped[existing_index] = item
+    return deduped
+
+
+def _suppress_semantic_only_noise(items: List[Dict[str, Any]], query: str) -> List[Dict[str, Any]]:
+    strong_exact_hit = any(_has_exact_lookup_source(item) and _node_matches_symbol_query(item.get("node", item), query) for item in items)
+    if not strong_exact_hit:
+        return items
+    adjusted: List[Dict[str, Any]] = []
+    for item in items:
+        copied = dict(item)
+        sources = set(copied.get("sources", []) or copied.get("retrieval_sources", []) or [])
+        if sources == {"semantic"}:
+            copied["semantic_score"] = float(copied.get("semantic_score", copied.get("score", 0.0)) or 0.0) * 0.4
+            copied["_semantic_penalty"] = "strong_exact_present"
+        adjusted.append(copied)
+    return adjusted
 
 
 def _rebuild_summary_after_filter(filtered: list, intent: dict) -> dict:
@@ -176,6 +368,7 @@ def memory_query(workspace_file: str | Path, query: str, limit: int = 20, node_t
         semantic_hits = [item for item in semantic_hits if item.get("node", {}).get("type") in node_types]
     with GraphStore(store.graph_db_path) as graph:
         merged = _merge_workspace_query_hits(graph, query, exact_nodes, semantic_hits, limit, alpha=alpha)
+    merged = _rerank_symbol_like_matches(_suppress_semantic_only_noise(merged, query), query)
     related_rules = match_rules(store, intent=query, files=[item["node"].get("file_path", "") for item in merged])[:10]
     cases = store.read_jsonl_prefer_backend("cross-service-task-memory.jsonl", limit=200)
     related_cases = [c for c in cases if any(k in json.dumps(c, ensure_ascii=False).lower() for k in tokenize(query))][-5:]
@@ -305,6 +498,9 @@ def memory_query_hybrid(workspace_file: str | Path, query: str, limit: int = 20,
     elif "results" in result:
         result["matches"] = result["results"]
 
+    result["results"] = _rerank_symbol_like_matches(result.get("results", []), query)
+    result["matches"] = result["results"]
+
     # 确保 retrieval_summary 包含旧接口期望的字段
     if "retrieval_summary" in result:
         summary = result["retrieval_summary"]
@@ -420,7 +616,14 @@ def _filter_contracts_by_query(contracts: list, query: str, intent: str) -> list
     return fallback
 
 
-def memory_context(workspace_file: str | Path, name: str, max_depth: int = 2, project: str = "") -> Dict[str, Any]:
+def memory_context(
+    workspace_file: str | Path,
+    name: str,
+    max_depth: int = 2,
+    project: str = "",
+    view: str = "full",
+    budget: str = "medium",
+) -> Dict[str, Any]:
     _, store = load_context(workspace_file)
     lookup = memory_query_hybrid(workspace_file, name, limit=8, project=project)
     matches = [item.get("node", {}) for item in lookup.get("matches", []) if item.get("node")]
@@ -466,10 +669,22 @@ def memory_context(workspace_file: str | Path, name: str, max_depth: int = 2, pr
     }
     if diagnostics:
         result["_diagnostics"] = diagnostics
+    if _is_compact_view(view):
+        compact = _compact_context_result(result, budget=budget)
+        gain = _measure_compact_gain(result, compact)
+        log_token_gain(workspace_file, "memory_context", budget=budget, model="", raw_tokens=gain["raw_tokens"], compact_tokens=gain["compact_tokens"], view=view)
+        return compact
     return result
 
 
-def memory_symbol(workspace_file: str | Path, name: str, limit: int = 10, project: str = "") -> Dict[str, Any]:
+def memory_symbol(
+    workspace_file: str | Path,
+    name: str,
+    limit: int = 10,
+    project: str = "",
+    view: str = "full",
+    budget: str = "medium",
+) -> Dict[str, Any]:
     """Resolve a symbol name to graph nodes.
 
     When multiple nodes match (e.g. same class name in different modules),
@@ -481,14 +696,25 @@ def memory_symbol(workspace_file: str | Path, name: str, limit: int = 10, projec
     inferred_project = project
     if not inferred_project and "." in name and not name.startswith("."):
         inferred_project = _infer_project_from_fqn(name, workspace_file)
+    internal_limit = max(limit, min(max(limit * 3, 12), 50))
 
     lookup = memory_query_hybrid(
         workspace_file,
         name,
-        limit=limit,
+        limit=internal_limit,
         node_types=["Class", "Method", "Field", "FeignClient", "FeignMethod", "Endpoint", "MQTopic", "MQConsumer", "ConfigKey", "File"],
         project=inferred_project,
     )
+    all_lookup_matches = list(lookup.get("matches", []) or [])
+    if inferred_project:
+        global_lookup = memory_query_hybrid(
+            workspace_file,
+            name,
+            limit=internal_limit,
+            node_types=["Class", "Method", "Field", "FeignClient", "FeignMethod", "Endpoint", "MQTopic", "MQConsumer", "ConfigKey", "File"],
+            project="",
+        )
+        all_lookup_matches = list(global_lookup.get("matches", []) or all_lookup_matches)
     matches = [item.get("node", {}) for item in lookup.get("matches", []) if item.get("node")]
 
     # If inferred_project is known but no match found in that project,
@@ -521,7 +747,13 @@ def memory_symbol(workspace_file: str | Path, name: str, limit: int = 10, projec
         if project_lookup:
             lookup["matches"] = project_lookup
 
+    lookup["matches"] = _dedupe_symbol_display_matches(_rerank_symbol_like_matches(lookup.get("matches", []), name))
+    matches = [item.get("node", {}) for item in lookup.get("matches", []) if item.get("node")]
+
     best = _best_match(matches, name)
+    fallback_best = _pick_symbol_declaration_fallback(all_lookup_matches, name)
+    if fallback_best and best.get("type") == "Field":
+        best = fallback_best
 
     # Group remaining matches by project for disambiguation
     projects_seen: Dict[str, int] = {}
@@ -542,6 +774,11 @@ def memory_symbol(workspace_file: str | Path, name: str, limit: int = 10, projec
             "projects": projects_seen,
             "hint": "多个模块包含同名符号，用 project 参数或 FQN 消歧",
         }
+    if _is_compact_view(view):
+        compact = _compact_symbol_result(result, budget=budget)
+        gain = _measure_compact_gain(result, compact)
+        log_token_gain(workspace_file, "memory_symbol", budget=budget, model="", raw_tokens=gain["raw_tokens"], compact_tokens=gain["compact_tokens"], view=view)
+        return compact
     return result
 
 
@@ -625,7 +862,16 @@ def _infer_project_from_fqn(fqn: str, workspace_file: str | Path) -> str:
     return best_proj
 
 
-def memory_callers(workspace_file: str | Path, symbol: str, depth: int = 2, limit: int = 80, edge_type_filter: List[str] | None = None, project: str = "") -> Dict[str, Any]:
+def memory_callers(
+    workspace_file: str | Path,
+    symbol: str,
+    depth: int = 2,
+    limit: int = 80,
+    edge_type_filter: List[str] | None = None,
+    project: str = "",
+    view: str = "full",
+    budget: str = "medium",
+) -> Dict[str, Any]:
     info = memory_symbol(workspace_file, symbol, limit=8, project=project)
     if not info.get("found"):
         return {"symbol": symbol, "found": False, "callers": [], "lookup": info.get("lookup", {})}
@@ -634,18 +880,34 @@ def memory_callers(workspace_file: str | Path, symbol: str, depth: int = 2, limi
     with GraphStore(load_context(workspace_file)[1].graph_db_path) as graph:
         edges = graph.neighbors(node["id"], direction="upstream", max_depth=depth, limit=limit, edge_types=et)
     callers = _filter_call_edges(edges, direction="upstream")[:limit]
-    return {
+    result = {
         "symbol": symbol,
         "found": True,
         "target": node,
         "depth": depth,
         "callers": callers,
         "chain_tree": _compress_chain_tree(callers),
+        "chain_summary": _summarize_chain_edges(callers),
         "lookup": info.get("lookup", {}),
     }
+    if _is_compact_view(view):
+        compact = _compact_chain_result(result, direction="callers", budget=budget)
+        gain = _measure_compact_gain(result, compact)
+        log_token_gain(workspace_file, "memory_callers", budget=budget, model="", raw_tokens=gain["raw_tokens"], compact_tokens=gain["compact_tokens"], view=view)
+        return compact
+    return result
 
 
-def memory_callees(workspace_file: str | Path, symbol: str, depth: int = 2, limit: int = 80, edge_type_filter: List[str] | None = None, project: str = "") -> Dict[str, Any]:
+def memory_callees(
+    workspace_file: str | Path,
+    symbol: str,
+    depth: int = 2,
+    limit: int = 80,
+    edge_type_filter: List[str] | None = None,
+    project: str = "",
+    view: str = "full",
+    budget: str = "medium",
+) -> Dict[str, Any]:
     info = memory_symbol(workspace_file, symbol, limit=8, project=project)
     if not info.get("found"):
         return {"symbol": symbol, "found": False, "callees": [], "lookup": info.get("lookup", {})}
@@ -654,15 +916,22 @@ def memory_callees(workspace_file: str | Path, symbol: str, depth: int = 2, limi
     with GraphStore(load_context(workspace_file)[1].graph_db_path) as graph:
         edges = graph.neighbors(node["id"], direction="downstream", max_depth=depth, limit=limit, edge_types=et)
     callees = _filter_call_edges(edges, direction="downstream")[:limit]
-    return {
+    result = {
         "symbol": symbol,
         "found": True,
         "target": node,
         "depth": depth,
         "callees": callees,
         "chain_tree": _compress_chain_tree(callees),
+        "chain_summary": _summarize_chain_edges(callees),
         "lookup": info.get("lookup", {}),
     }
+    if _is_compact_view(view):
+        compact = _compact_chain_result(result, direction="callees", budget=budget)
+        gain = _measure_compact_gain(result, compact)
+        log_token_gain(workspace_file, "memory_callees", budget=budget, model="", raw_tokens=gain["raw_tokens"], compact_tokens=gain["compact_tokens"], view=view)
+        return compact
+    return result
 
 
 def memory_search_code(workspace_file: str | Path, query: str, scope: str = "", limit: int = 20, project: str = "") -> Dict[str, Any]:
@@ -1021,6 +1290,242 @@ def _compress_chain_tree(edges: List[Dict[str, Any]]) -> Dict[str, Any]:
     }
 
 
+def _format_chain_endpoint(node: Dict[str, Any]) -> str:
+    name = str(node.get("name", "") or "?")
+    line = int(node.get("line", 0) or 0)
+    return f"{name}:{line}" if line > 0 else name
+
+
+def _format_compact_node_summary(node: Dict[str, Any]) -> str:
+    node_type = str(node.get("type", "") or "").strip()
+    name = str(node.get("name", "") or "?").strip()
+    project = str(node.get("project", "") or "").strip()
+    line = int(node.get("line", 0) or 0)
+    parts = [part for part in (node_type, name) if part]
+    text = " ".join(parts) if parts else name
+    if project and line > 0:
+        return f"{text} @ {project}:{line}"
+    if project:
+        return f"{text} @ {project}"
+    if line > 0:
+        return f"{text} @ line {line}"
+    return text
+
+
+def _build_edge_summary_lines(prefix: str, items: List[Dict[str, Any]], limit: int) -> List[str]:
+    lines: List[str] = []
+    for item in items[:limit]:
+        text = str(item.get("text", "") or "").strip()
+        if text:
+            lines.append(f"{prefix}: {text}")
+    return lines
+
+
+def _summarize_chain_edges(edges: List[Dict[str, Any]]) -> Dict[str, Any]:
+    items: List[Dict[str, Any]] = []
+    type_counts: Dict[str, int] = {}
+    for edge in edges:
+        edge_type = str(edge.get("type", "") or "")
+        type_counts[edge_type] = type_counts.get(edge_type, 0) + 1
+        source = edge.get("source", {}) or {}
+        target = edge.get("target", {}) or {}
+        items.append(
+            {
+                "text": f"{_format_chain_endpoint(source)} --{edge_type}--> {_format_chain_endpoint(target)}",
+                "type": edge_type,
+                "depth": int(edge.get("depth", 0) or 0),
+                "source": {
+                    "name": source.get("name", ""),
+                    "line": int(source.get("line", 0) or 0),
+                    "project": source.get("project", ""),
+                },
+                "target": {
+                    "name": target.get("name", ""),
+                    "line": int(target.get("line", 0) or 0),
+                    "project": target.get("project", ""),
+                },
+            }
+        )
+    return {
+        "items": items,
+        "total_edges": len(edges),
+        "depth_reached": max((int(edge.get("depth", 0) or 0) for edge in edges), default=0),
+        "type_counts": type_counts,
+    }
+
+
+def _compact_focus_edges(edges: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    if not edges:
+        return []
+    filtered = [
+        edge for edge in edges
+        if not (
+            (edge.get("source", {}) or {}).get("name", "") == (edge.get("target", {}) or {}).get("name", "")
+            and (edge.get("source", {}) or {}).get("project", "") == (edge.get("target", {}) or {}).get("project", "")
+        )
+    ]
+    if not filtered:
+        filtered = list(edges)
+    structural_types = {"DECLARES", "CONTAINS", "IMPORTS"}
+    if any(edge.get("type") not in structural_types for edge in filtered):
+        focused = [edge for edge in filtered if edge.get("type") not in structural_types]
+        if focused:
+            return focused
+    return filtered
+
+
+def _compact_chain_result(result: Dict[str, Any], direction: str, budget: str = "medium") -> Dict[str, Any]:
+    from .common import _budget_limits
+
+    limits = _budget_limits(budget)
+    target = result.get("target", {}) or {}
+    lookup = result.get("lookup", {}) or {}
+    entrypoints = lookup.get("entrypoints", []) or []
+    summary = result.get("chain_summary", {}) or {}
+    items = summary.get("items", []) or []
+    summary_lines = [f"Target {_format_compact_node_summary(target)}"]
+    summary_lines.extend(
+        _build_edge_summary_lines("Caller" if direction == "callers" else "Callee", items, limits["steps"] + limits["events"])
+    )
+    return {
+        "symbol": result.get("symbol", ""),
+        "found": result.get("found", False),
+        "direction": direction,
+        "depth": result.get("depth", 0),
+        "target": {
+            "type": target.get("type", ""),
+            "name": target.get("name", ""),
+            "project": target.get("project", ""),
+            "file_path": target.get("file_path", ""),
+            "line": target.get("line", 0),
+        },
+        "chain_summary": {
+            "items": items[: limits["steps"] + limits["events"]],
+            "total_edges": summary.get("total_edges", 0),
+            "depth_reached": summary.get("depth_reached", 0),
+            "type_counts": summary.get("type_counts", {}),
+        },
+        "summary_lines": summary_lines,
+        "lookup": {
+            "query": lookup.get("query", ""),
+            "retrieval_summary": lookup.get("retrieval_summary", {}),
+            "entrypoints": [
+                {
+                    "type": (item.get("node", {}) or {}).get("type", ""),
+                    "name": (item.get("node", {}) or {}).get("name", ""),
+                    "project": (item.get("node", {}) or {}).get("project", ""),
+                    "line": (item.get("node", {}) or {}).get("line", 0),
+                    "exact_score": item.get("exact_score", 0),
+                }
+                for item in entrypoints[: limits["events"]]
+            ],
+        },
+    }
+
+
+def _compact_symbol_result(result: Dict[str, Any], budget: str = "medium") -> Dict[str, Any]:
+    from .common import _budget_limits
+
+    limits = _budget_limits(budget)
+    best = result.get("best_match", {}) or {}
+    matches = result.get("matches", []) or []
+    compact_matches = []
+    for item in matches[: limits["events"]]:
+        node = item.get("node", {}) or {}
+        compact_matches.append(
+            {
+                "type": node.get("type", ""),
+                "name": node.get("name", ""),
+                "project": node.get("project", ""),
+                "line": node.get("line", 0),
+                "score": round(float(item.get("score", item.get("exact_score", 0.0)) or 0.0), 4),
+            }
+        )
+    summary_lines: List[str] = []
+    if best:
+        summary_lines.append(f"Best {_format_compact_node_summary(best)}")
+    for item in compact_matches:
+        summary_lines.append(f"Match {_format_compact_node_summary(item)} (score={item['score']})")
+    payload = {
+        "name": result.get("name", ""),
+        "found": result.get("found", False),
+        "best_match": {
+            "type": best.get("type", ""),
+            "name": best.get("name", ""),
+            "project": best.get("project", ""),
+            "file_path": best.get("file_path", ""),
+            "line": best.get("line", 0),
+        },
+        "matches": compact_matches,
+        "lookup": {
+            "query": (result.get("lookup", {}) or {}).get("query", ""),
+            "retrieval_summary": (result.get("lookup", {}) or {}).get("retrieval_summary", {}),
+        },
+        "summary_lines": summary_lines,
+    }
+    if result.get("disambiguation"):
+        payload["disambiguation"] = result.get("disambiguation", {})
+    return payload
+
+
+def _compact_context_result(result: Dict[str, Any], budget: str = "medium") -> Dict[str, Any]:
+    from .common import _budget_limits
+
+    limits = _budget_limits(budget)
+    node = result.get("node", {}) or {}
+    incoming = result.get("incoming", []) or []
+    outgoing = result.get("outgoing", []) or []
+    incoming_summary = _summarize_chain_edges(_compact_focus_edges(incoming))
+    outgoing_summary = _summarize_chain_edges(_compact_focus_edges(outgoing))
+    lookup = result.get("lookup", {}) or {}
+    summary_lines = [f"Node {_format_compact_node_summary(node)}"]
+    summary_lines.extend(
+        _build_edge_summary_lines("Incoming", incoming_summary.get("items", []), limits["steps"] + limits["events"])
+    )
+    summary_lines.extend(
+        _build_edge_summary_lines("Outgoing", outgoing_summary.get("items", []), limits["steps"] + limits["events"])
+    )
+    return {
+        "name": result.get("name", ""),
+        "found": result.get("found", False),
+        "node": {
+            "type": node.get("type", ""),
+            "name": node.get("name", ""),
+            "project": node.get("project", ""),
+            "file_path": node.get("file_path", ""),
+            "line": node.get("line", 0),
+        },
+        "evidence_summary": result.get("evidence_summary", {}),
+        "incoming_summary": {
+            "items": incoming_summary.get("items", [])[: limits["steps"] + limits["events"]],
+            "total_edges": incoming_summary.get("total_edges", 0),
+            "depth_reached": incoming_summary.get("depth_reached", 0),
+            "type_counts": incoming_summary.get("type_counts", {}),
+        },
+        "outgoing_summary": {
+            "items": outgoing_summary.get("items", [])[: limits["steps"] + limits["events"]],
+            "total_edges": outgoing_summary.get("total_edges", 0),
+            "depth_reached": outgoing_summary.get("depth_reached", 0),
+            "type_counts": outgoing_summary.get("type_counts", {}),
+        },
+        "summary_lines": summary_lines,
+        "lookup": {
+            "query": lookup.get("query", ""),
+            "retrieval_summary": lookup.get("retrieval_summary", {}),
+            "entrypoints": [
+                {
+                    "type": (item.get("node", {}) or {}).get("type", ""),
+                    "name": (item.get("node", {}) or {}).get("name", ""),
+                    "project": (item.get("node", {}) or {}).get("project", ""),
+                    "line": (item.get("node", {}) or {}).get("line", 0),
+                    "exact_score": item.get("exact_score", 0),
+                }
+                for item in (lookup.get("entrypoints", []) or [])[: limits["events"]]
+            ],
+        },
+    }
+
+
 def _annotate_phantom_nodes(chain_result: Dict[str, Any], workspace_file: str | Path) -> None:
     config, store = load_context(workspace_file)
     topology = store.read_json_prefer_backend("service-topology.json", {})
@@ -1242,16 +1747,16 @@ def _build_context_progressive_view(node: Dict[str, Any], incoming: List[Dict[st
 
 
 def _build_lookup_payload(result: Dict[str, Any], match_key: str = "matches", limit: int = 5) -> Dict[str, Any]:
-    matches = result.get(match_key, [])[:limit]
+    matches = _dedupe_symbol_display_matches(result.get(match_key, []))[:limit]
     return {
         "query": result.get("query", result.get("target", result.get("name", ""))),
         "retrieval_summary": result.get("retrieval_summary", {}),
         "entrypoints": [
             {
                 "node": item.get("node", {}),
-                "retrieval_sources": item.get("retrieval_sources", []),
-                "exact_score": item.get("exact_score", item.get("rrf_score", 0.0)),
-                "semantic_score": item.get("semantic_score", 0.0),
+                "retrieval_sources": item.get("retrieval_sources", item.get("sources", [])),
+                "exact_score": item.get("exact_score", item.get("rrf_score", item.get("score", 0.0))),
+                "semantic_score": item.get("semantic_score", item.get("score", 0.0) if "semantic" in item.get("sources", []) else 0.0),
                 "workspace_ref": item.get("workspace_ref", ""),
                 "workspace": item.get("workspace", ""),
             }

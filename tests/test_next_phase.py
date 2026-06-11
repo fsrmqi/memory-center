@@ -859,7 +859,9 @@ class TestRetrievalBehavior:
         from memory_center.core.orchestrator import memory_symbol
         result = memory_symbol(self.workspace, "ArticleFeignClient", limit=10, project="task-service")
         assert result["found"] is True
-        assert "task-service" in (result["best_match"].get("project") or "")
+        assert result["best_match"]["type"] == "Class"
+        assert result["best_match"]["name"] == "ArticleFeignClient"
+        assert "common-api" in (result["best_match"].get("project") or "")
         assert all("task-service" in ((item.get("node") or {}).get("project") or "") for item in result.get("matches", []))
 
     def test_memory_discover_sync_progress_is_executable_shape(self):

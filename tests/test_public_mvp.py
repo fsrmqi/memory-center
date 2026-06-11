@@ -321,6 +321,8 @@ def test_cli_symbol_project_filter(tmp_path: Path):
     assert result.exit_code == 0
     data = ast.literal_eval(result.output)
     assert data["found"] is True
+    assert data["best_match"]["type"] == "Class"
+    assert data["best_match"]["name"] == "ArticleFeignClient"
     assert all("task-service" in ((item.get("node") or {}).get("project") or "") for item in data.get("matches", []))
 
 
@@ -1025,12 +1027,44 @@ def test_graph_query_context_and_impact(tmp_path):
     code_search = memory_search_code(workspace, "ArticleFeignClient", scope="task-service", limit=5)
     assert code_search["hits"]
     assert code_search["progressive"]["summary"]["top_hit_count"] >= 1
+    exact_query = memory_query(workspace, "ArticleFeignClient", 5)
+    assert exact_query["matches"][0]["node"]["type"] == "Class"
+    assert exact_query["matches"][0]["node"]["name"] == "ArticleFeignClient"
     symbol = memory_symbol(workspace, "ArticleFeignClient", limit=5)
     assert symbol["found"] is True
+    assert symbol["best_match"]["type"] == "Class"
+    assert symbol["best_match"]["name"] == "ArticleFeignClient"
+    assert symbol["best_match"]["line"] > 0
+    assert symbol["matches"][0]["node"]["type"] == "Class"
+    symbol_compact = memory_symbol(workspace, "ArticleFeignClient", limit=5, view="compact", budget="small")
+    assert symbol_compact["found"] is True
+    assert symbol_compact["best_match"]["type"] == "Class"
+    assert symbol_compact["matches"]
+    assert symbol_compact["summary_lines"]
+    assert symbol_compact["summary_lines"][0].startswith("Best Class ArticleFeignClient")
+    assert "lookup" in symbol_compact
     callers = memory_callers(workspace, "ArticleFeignClient", depth=2, limit=20)
     assert callers["found"] is True
+    assert callers["chain_summary"]["items"]
+    assert "--" in callers["chain_summary"]["items"][0]["text"]
+    callers_compact = memory_callers(workspace, "ArticleFeignClient", depth=2, limit=20, view="compact", budget="small")
+    assert callers_compact["found"] is True
+    assert callers_compact["direction"] == "callers"
+    assert "callers" not in callers_compact
+    assert callers_compact["chain_summary"]["items"]
+    assert callers_compact["summary_lines"]
+    assert callers_compact["summary_lines"][0].startswith("Target Class ArticleFeignClient")
     callees = memory_callees(workspace, "ArticleFeignClient", depth=2, limit=20)
     assert callees["found"] is True
+    assert callees["chain_summary"]["items"]
+    assert "--" in callees["chain_summary"]["items"][0]["text"]
+    callees_compact = memory_callees(workspace, "ArticleFeignClient", depth=2, limit=20, view="compact", budget="small")
+    assert callees_compact["found"] is True
+    assert callees_compact["direction"] == "callees"
+    assert "callees" not in callees_compact
+    assert callees_compact["chain_summary"]["items"]
+    assert callees_compact["summary_lines"]
+    assert callees_compact["summary_lines"][0].startswith("Target Class ArticleFeignClient")
     status = workspace_status(workspace)
     assert status["semantic_index"]["ready"] is True
     assert status["semantic_index"]["backend"] == "sparse"
@@ -1050,6 +1084,13 @@ def test_graph_query_context_and_impact(tmp_path):
     assert context["lookup"]["entrypoints"]
     assert "INJECTS_BEAN" in context["evidence_summary"]["edge_types"]
     assert context["progressive"]["summary"]["node"]
+    context_compact = memory_context(workspace, "ArticleFeignClient", view="compact", budget="small")
+    assert context_compact["found"] is True
+    assert context_compact["incoming_summary"]["items"] or context_compact["outgoing_summary"]["items"]
+    assert "incoming" not in context_compact
+    assert "outgoing" not in context_compact
+    assert context_compact["summary_lines"]
+    assert context_compact["summary_lines"][0].startswith("Node Class ArticleFeignClient")
     impact = memory_impact(workspace, "MoveArticleRequest")
     assert impact["found"] is True
     assert impact["lookup"]["retrieval_summary"]["semantic_matches"] >= 1
@@ -1057,6 +1098,13 @@ def test_graph_query_context_and_impact(tmp_path):
     assert impact["progressive"]["summary"]["target"]
     assert impact["candidate_paths"]
     assert impact["recommended_path"]["candidate_type"]
+    impact_compact = memory_impact(workspace, "MoveArticleRequest", view="compact", budget="small")
+    assert impact_compact["found"] is True
+    assert "confirmed_impacts" not in impact_compact
+    assert "confirmed_summary" in impact_compact
+    assert "candidate_paths" in impact_compact
+    assert impact_compact["summary_lines"]
+    assert impact_compact["summary_lines"][0].startswith("Target")
     plan = memory_plan_change(workspace, "MoveArticleRequest")
     assert plan["found"] is True
     assert plan["plan"]
@@ -1100,6 +1148,8 @@ def test_trusted_graph_edges_and_evidence_based_impact(tmp_path: Path):
     consumer = graph.find_nodes("ArticleMoveConsumer", types=["Class"], limit=5)[0]
     consumer_outgoing = graph.neighbors(consumer["id"], direction="downstream", max_depth=1, limit=50)
     assert any(edge["type"] == "INJECTS_BEAN" and edge["target"]["name"] == "ArticleMoveService" for edge in consumer_outgoing)
+    assert consumer["metadata"].get("package") == "com.example.task"
+    assert consumer["line"] > 0
 
     mq_index = store.read_json("mq-index.json", [])
     assert any(item["class_name"] == "ArticleMoveConsumer" and item["method_name"] == "consume" for item in mq_index)
@@ -1107,6 +1157,9 @@ def test_trusted_graph_edges_and_evidence_based_impact(tmp_path: Path):
     move_service = graph.find_nodes("ArticleMoveService", types=["Class"], limit=5)[0]
     service_outgoing = graph.neighbors(move_service["id"], direction="downstream", max_depth=1, limit=50)
     assert any(edge["type"] == "INJECTS_BEAN" and edge["target"]["name"] == "ArticleFeignClient" for edge in service_outgoing)
+    assert move_service["metadata"].get("package")
+    assert "field_name" not in move_service["metadata"]
+    assert move_service["line"] > 0
 
     impact = memory_impact(workspace, "newPubTime", direction="upstream")
     assert impact["found"] is True
@@ -1279,11 +1332,15 @@ def test_http_bridge_routes(tmp_path: Path):
         assert all("task-service" in (item.get("project") or "") for item in search["hits"])
         symbol = json.loads(urlopen(f"{base}/workspace/symbol?name=ArticleFeignClient&project=task-service").read().decode("utf-8"))
         assert symbol["found"] is True
-        assert all("task-service" in ((item.get("node") or {}).get("project") or "") for item in symbol.get("matches", []))
+        assert symbol["summary_lines"]
+        assert symbol["summary_lines"][0].startswith("Best Class ArticleFeignClient")
+        assert all("task-service" in (item.get("project") or "") for item in symbol.get("matches", []))
         callers = json.loads(urlopen(f"{base}/workspace/callers?symbol=ArticleFeignClient&depth=2&project=task-service").read().decode("utf-8"))
         assert callers["found"] is True
+        assert callers["summary_lines"]
         callees = json.loads(urlopen(f"{base}/workspace/callees?symbol=ArticleFeignClient&depth=2&project=task-service").read().decode("utf-8"))
         assert callees["found"] is True
+        assert callees["summary_lines"]
         plan = json.loads(urlopen(f"{base}/workspace/plan-change?target=MoveArticleRequest").read().decode("utf-8"))
         assert plan["found"] is True
         checklist = json.loads(urlopen(f"{base}/workspace/verify-checklist?target=MoveArticleRequest").read().decode("utf-8"))

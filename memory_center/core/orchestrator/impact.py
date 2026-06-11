@@ -7,17 +7,35 @@ from typing import Any, Dict, List
 from ..graph import GraphStore
 from ..rules import match_rules
 from .common import _best_match, _build_progressive_levels, _impact_checklist, _unknown_static_analysis_risks, load_context
-from .query import _build_lookup_payload, _build_impact_evidence_summary, memory_query
+from .query import (
+    _build_lookup_payload,
+    _build_impact_evidence_summary,
+    _build_edge_summary_lines,
+    _compact_focus_edges,
+    _format_compact_node_summary,
+    memory_query_hybrid,
+)
 from ..diagnostics import DIAG, diag_entry
 from ..explanation import explanation_entry, merge_explanations
 from ..ontology import edge_strength
+from ..tracking import log_token_gain
 from ..verification.heuristics import apply_candidate_path_learning
+from .common import _is_compact_view
+from .compact import _measure_compact_gain
+from .query import _summarize_chain_edges
 
 
-def memory_impact(workspace_file: str | Path, target: str, direction: str = "upstream", max_depth: int = 3) -> Dict[str, Any]:
+def memory_impact(
+    workspace_file: str | Path,
+    target: str,
+    direction: str = "upstream",
+    max_depth: int = 3,
+    view: str = "full",
+    budget: str = "medium",
+) -> Dict[str, Any]:
     _, store = load_context(workspace_file)
     with GraphStore(store.graph_db_path) as graph:
-        lookup = memory_query(workspace_file, target, limit=8)
+        lookup = memory_query_hybrid(workspace_file, target, limit=8)
         matches = [item.get("node", {}) for item in lookup.get("matches", []) if item.get("node")]
         if not matches:
             candidate_paths = _build_impact_candidate_paths(
@@ -31,7 +49,7 @@ def memory_impact(workspace_file: str | Path, target: str, direction: str = "ups
                 freshness={},
             )
             candidate_paths = apply_candidate_path_learning(workspace_file, candidate_paths)
-            return {
+            result = {
                 "target": target,
                 "found": False,
                 "risk_level": "unknown",
@@ -44,6 +62,12 @@ def memory_impact(workspace_file: str | Path, target: str, direction: str = "ups
                 "progressive": _build_impact_progressive_view(target, None, [], [], []),
                 "unknown_risks": _unknown_static_analysis_risks(),
             }
+            if _is_compact_view(view):
+                compact = _compact_impact_result(result, budget=budget)
+                gain = _measure_compact_gain(result, compact)
+                log_token_gain(workspace_file, "memory_impact", budget=budget, model="", raw_tokens=gain["raw_tokens"], compact_tokens=gain["compact_tokens"], view=view)
+                return compact
+            return result
         node = _best_match(matches, target)
         impacts = graph.neighbors(node["id"], direction=direction, max_depth=max_depth, limit=300)
         confirmed = [x for x in impacts if float(x.get("confidence", 0)) >= 0.80]
@@ -71,7 +95,7 @@ def memory_impact(workspace_file: str | Path, target: str, direction: str = "ups
             freshness=freshness,
         )
         candidate_paths = apply_candidate_path_learning(workspace_file, candidate_paths)
-        return {
+        result = {
             "target": node,
             "found": True,
             "direction": direction,
@@ -98,6 +122,97 @@ def memory_impact(workspace_file: str | Path, target: str, direction: str = "ups
             "freshness": freshness,
             "_reasoning": _get_reasoning_for_impact(workspace_file, node.get("id", "")),
         }
+        if _is_compact_view(view):
+            compact = _compact_impact_result(result, budget=budget)
+            gain = _measure_compact_gain(result, compact)
+            log_token_gain(workspace_file, "memory_impact", budget=budget, model="", raw_tokens=gain["raw_tokens"], compact_tokens=gain["compact_tokens"], view=view)
+            return compact
+        return result
+
+
+def _compact_impact_result(result: Dict[str, Any], budget: str = "medium") -> Dict[str, Any]:
+    from .common import _budget_limits
+
+    limits = _budget_limits(budget)
+    target = result.get("target", {}) or {}
+    lookup = result.get("lookup", {}) or {}
+    confirmed = result.get("confirmed_impacts", []) or []
+    probable = result.get("probable_impacts", []) or []
+    possible = result.get("possible_impacts", []) or []
+    candidate_paths = result.get("candidate_paths", []) or []
+    confirmed_summary = _summarize_chain_edges(_compact_focus_edges(confirmed))
+    probable_summary = _summarize_chain_edges(_compact_focus_edges(probable))
+    possible_summary = _summarize_chain_edges(_compact_focus_edges(possible))
+    summary_lines = [f"Target {_format_compact_node_summary(target)}"]
+    summary_lines.append(
+        f"Risk {result.get('risk_level', 'unknown')}, confirmed={len(confirmed)} probable={len(probable)} possible={len(possible)}"
+    )
+    summary_lines.extend(
+        _build_edge_summary_lines("Confirmed", confirmed_summary.get("items", []), limits["steps"] + limits["events"])
+    )
+    summary_lines.extend(
+        _build_edge_summary_lines("Probable", probable_summary.get("items", []), limits["events"])
+    )
+    summary_lines.extend(
+        _build_edge_summary_lines("Possible", possible_summary.get("items", []), max(1, limits["events"] // 2))
+    )
+    recommended_path = result.get("recommended_path", {}) or {}
+    next_action = str(recommended_path.get("next_action", "") or "").strip()
+    if next_action:
+        summary_lines.append(f"Next: {next_action}")
+    return {
+        "target": {
+            "type": target.get("type", ""),
+            "name": target.get("name", "") if isinstance(target, dict) else str(target),
+            "project": target.get("project", "") if isinstance(target, dict) else "",
+            "file_path": target.get("file_path", "") if isinstance(target, dict) else "",
+            "line": target.get("line", 0) if isinstance(target, dict) else 0,
+        },
+        "found": result.get("found", False),
+        "direction": result.get("direction", ""),
+        "max_depth": result.get("max_depth", 0),
+        "risk_level": result.get("risk_level", "unknown"),
+        "impacted_projects": result.get("impacted_projects", [])[: limits["services"]],
+        "evidence_summary": result.get("evidence_summary", {}),
+        "confirmed_summary": {
+            "items": confirmed_summary.get("items", [])[: limits["steps"] + limits["events"]],
+            "count": len(confirmed),
+        },
+        "probable_summary": {
+            "items": probable_summary.get("items", [])[: limits["events"]],
+            "count": len(probable),
+        },
+        "possible_summary": {
+            "items": possible_summary.get("items", [])[: max(1, limits["events"] // 2)],
+            "count": len(possible),
+        },
+        "summary_lines": summary_lines,
+        "candidate_paths": [
+            {
+                "candidate_type": item.get("candidate_type", ""),
+                "target": item.get("target", ""),
+                "status": item.get("status", ""),
+                "weight": item.get("weight", 0),
+                "next_action": item.get("next_action", ""),
+            }
+            for item in candidate_paths[: limits["steps"]]
+        ],
+        "recommended_path": recommended_path,
+        "lookup": {
+            "query": lookup.get("query", ""),
+            "retrieval_summary": lookup.get("retrieval_summary", {}),
+            "entrypoints": [
+                {
+                    "type": (item.get("node", {}) or {}).get("type", ""),
+                    "name": (item.get("node", {}) or {}).get("name", ""),
+                    "project": (item.get("node", {}) or {}).get("project", ""),
+                    "line": (item.get("node", {}) or {}).get("line", 0),
+                    "exact_score": item.get("exact_score", 0),
+                }
+                for item in (lookup.get("entrypoints", []) or [])[: limits["events"]]
+            ],
+        },
+    }
 
 
 def memory_plan_change(workspace_file: str | Path, target: str, direction: str = "upstream", max_depth: int = 3) -> Dict[str, Any]:

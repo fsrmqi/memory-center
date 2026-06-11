@@ -308,8 +308,10 @@ class GraphStore:
             sql = f"""
                 SELECT e.*, ns.type AS source_type, ns.name AS source_name,
                        ns.project AS source_project, ns.file_path AS source_file,
+                       ns.line AS source_line,
                        nt.type AS target_type, nt.name AS target_name,
-                       nt.project AS target_project, nt.file_path AS target_file
+                       nt.project AS target_project, nt.file_path AS target_file,
+                       nt.line AS target_line
                 FROM edges e
                 LEFT JOIN nodes ns ON ns.id = e.source_id
                 LEFT JOIN nodes nt ON nt.id = e.target_id
@@ -437,6 +439,25 @@ def _row_node(row: sqlite3.Row) -> Dict[str, Any]:
     }
 
 
+def _coerce_line(value: Any) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _edge_endpoint_line(row: sqlite3.Row, endpoint: str, metadata: Dict[str, Any]) -> int:
+    direct_line = _coerce_line(row[f"{endpoint}_line"])
+    if direct_line > 0:
+        return direct_line
+    evidence = metadata.get("evidence")
+    if endpoint == "source" and isinstance(evidence, dict):
+        evidence_line = _coerce_line(evidence.get("line"))
+        if evidence_line > 0:
+            return evidence_line
+    return 0
+
+
 def _row_edge(row: sqlite3.Row) -> Dict[str, Any]:
     metadata = _loads_json(row["metadata_json"])
     return {
@@ -447,6 +468,18 @@ def _row_edge(row: sqlite3.Row) -> Dict[str, Any]:
         "confidence": row["confidence"],
         "metadata": metadata,
         "evidence": metadata.get("evidence", metadata),
-        "source": {"type": row["source_type"] or "", "name": row["source_name"] or "", "project": row["source_project"] or "", "file_path": row["source_file"] or ""},
-        "target": {"type": row["target_type"] or "", "name": row["target_name"] or "", "project": row["target_project"] or "", "file_path": row["target_file"] or ""},
+        "source": {
+            "type": row["source_type"] or "",
+            "name": row["source_name"] or "",
+            "project": row["source_project"] or "",
+            "file_path": row["source_file"] or "",
+            "line": _edge_endpoint_line(row, "source", metadata),
+        },
+        "target": {
+            "type": row["target_type"] or "",
+            "name": row["target_name"] or "",
+            "project": row["target_project"] or "",
+            "file_path": row["target_file"] or "",
+            "line": _edge_endpoint_line(row, "target", metadata),
+        },
     }
