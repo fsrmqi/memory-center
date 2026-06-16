@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List
@@ -48,8 +49,12 @@ from .compact import (
 )
 from .session import workspace_recent_evidence
 from .write import memory_write_judge, workspace_write_receipts
-from .query import memory_tool_usage_report
+from .query import memory_callers, memory_callees, memory_tool_usage_report
 from ..tracking import log_token_gain
+
+_JAVA_CHAIN_SYMBOL_RE = re.compile(
+    r"((?:[a-z_][\w$]*\.)+[A-Z][\w$]*(?:#[a-zA-Z_][\w$]*)?|[A-Z][\w$]*(?:#[a-zA-Z_][\w$]*)?)"
+)
 
 
 # ---------------------------------------------------------------------------
@@ -241,14 +246,44 @@ def workspace_trace(workspace_file: str | Path, entry: str) -> Dict[str, Any]:
     feigns = store.read_json_prefer_backend("feign-index.json", [])
     mq = store.read_json_prefer_backend("mq-index.json", [])
     entry_lower = entry.lower()
-    return {
+    symbol_hint = _extract_symbol_like_token(entry)
+    deep_trace = _wants_deep_chain(entry)
+    result = {
         "entry": entry,
+        "trace_mode": "index_overview",
+        "trace_scope": "cross_service_hints",
+        "trace_note": "workspace_trace 返回索引级概览，不保证完整调用链；完整链路请优先使用 mc_lookup(mode='chain')。",
+        "suggested_symbol": symbol_hint,
+        "suggested_followup": "mc_lookup(mode='chain')" if symbol_hint or deep_trace else "mc_lookup(mode='context')",
         "matched_feign_edges": [x for x in topology.get("feign_edges", []) if entry_lower in json.dumps(x, ensure_ascii=False).lower()],
         "matched_apis": [x for x in apis if entry_lower in json.dumps(x, ensure_ascii=False).lower()],
         "matched_feigns": [x for x in feigns if entry_lower in json.dumps(x, ensure_ascii=False).lower()],
         "matched_mq": [x for x in mq if entry_lower in json.dumps(x, ensure_ascii=False).lower()],
         "topology_hint": topology,
     }
+    if deep_trace and symbol_hint:
+        depth = 4
+        result["chain_preview"] = {
+            "symbol": symbol_hint,
+            "depth": depth,
+            "callers": memory_callers(workspace_file, symbol_hint, depth=depth, limit=40, view="compact", budget="small"),
+            "callees": memory_callees(workspace_file, symbol_hint, depth=depth, limit=40, view="compact", budget="small"),
+        }
+        result["suggested_followup"] = "mc_lookup(mode='chain', chain_direction='callers|callees')"
+    return result
+
+
+def _extract_symbol_like_token(text: str) -> str:
+    matches = _JAVA_CHAIN_SYMBOL_RE.findall((text or "").strip())
+    if not matches:
+        return ""
+    matches.sort(key=len, reverse=True)
+    return matches[0]
+
+
+def _wants_deep_chain(text: str) -> bool:
+    normalized = (text or "").lower()
+    return any(token in normalized for token in ["全链路", "到底层", "最底层", "一路到底", "full chain", "trace to sink"])
 
 
 def workspace_lookup_hint(

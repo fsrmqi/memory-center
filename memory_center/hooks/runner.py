@@ -7,6 +7,7 @@ resolves *_from params from stdin JSON, calls orchestrator functions directly
 from __future__ import annotations
 
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any, Dict
@@ -16,6 +17,10 @@ from .spec import (
     _VALID_MODES,
     load_hooks_config,
     validate_hooks_config,
+)
+
+_JAVA_CHAIN_SYMBOL_RE = re.compile(
+    r"((?:[a-z_][\w$]*\.)+[A-Z][\w$]*(?:#[a-zA-Z_][\w$]*)?|[A-Z][\w$]*(?:#[a-zA-Z_][\w$]*)?)"
 )
 from ..core.orchestrator import (
     group_impact,
@@ -27,6 +32,7 @@ from ..core.orchestrator import (
     memory_context,
     memory_detect_changes,
     memory_impact,
+    memory_method_walkthrough,
     memory_plan_change,
     memory_query,
     memory_search_code,
@@ -81,6 +87,23 @@ def _get_workspace_file(workspace: str) -> str:
     if p.is_dir():
         return str(p / ".memory-center" / "workspace.yaml")
     return str(p)
+
+
+def _extract_symbol_like_token(*values: str) -> str:
+    for raw in values:
+        text = (raw or "").strip()
+        if not text:
+            continue
+        matches = _JAVA_CHAIN_SYMBOL_RE.findall(text)
+        if matches:
+            matches.sort(key=len, reverse=True)
+            return matches[0]
+    return ""
+
+
+def _wants_deep_chain(*values: str) -> bool:
+    text = " ".join((value or "") for value in values).lower()
+    return any(token in text for token in ["全链路", "到底层", "最底层", "一路到底", "full chain", "trace to sink"])
 
 
 def _matches_file_patterns(file_path: str, patterns: list[str]) -> bool:
@@ -368,33 +391,40 @@ def run_hook(
             name = params_spec.get("name", "") or intent
             symbol = params_spec.get("symbol", "") or intent
             entry = params_spec.get("entry", "") or intent
+            resolved_symbol = _extract_symbol_like_token(symbol, name, entry, intent)
+            resolved_depth = max(depth_value, 4) if _wants_deep_chain(intent, symbol, name, entry) else depth_value
             if lookup_mode == "auto":
                 hint = workspace_lookup_hint(wf, query=intent, intent=intent, limit=limit)
                 preferred = [t.replace("_tool", "") for t in hint.get("preferred_tools", [])]
-                if "memory_symbol" in preferred and name:
+                if _wants_deep_chain(intent, symbol, name, entry) and "#" in resolved_symbol:
+                    hook_result = {
+                        "mode_used": "walkthrough",
+                        "result": memory_method_walkthrough(wf, resolved_symbol, resolved_depth, limit, view=view, budget=budget),
+                    }
+                elif "memory_callers" in preferred and resolved_symbol:
+                    hook_result = {
+                        "mode_used": "chain-callers",
+                        "result": memory_callers(wf, resolved_symbol, resolved_depth, limit, view=view, budget=budget),
+                    }
+                elif "memory_callees" in preferred and resolved_symbol:
+                    hook_result = {
+                        "mode_used": "chain-callees",
+                        "result": memory_callees(wf, resolved_symbol, resolved_depth, limit, view=view, budget=budget),
+                    }
+                elif "memory_symbol" in preferred and (name or resolved_symbol):
                     hook_result = {
                         "mode_used": "symbol",
-                        "result": memory_symbol(wf, name, limit, view=view, budget=budget),
+                        "result": memory_symbol(wf, name or resolved_symbol, limit, view=view, budget=budget),
                     }
                 elif "memory_search_code" in preferred:
                     hook_result = {"mode_used": "code", "result": memory_search_code(wf, intent, scope, limit)}
-                elif "memory_context" in preferred and name:
+                elif "memory_context" in preferred and (name or resolved_symbol):
                     hook_result = {
                         "mode_used": "context",
-                        "result": memory_context(wf, name, depth_value, view=view, budget=budget),
+                        "result": memory_context(wf, name or resolved_symbol, resolved_depth, view=view, budget=budget),
                     }
-                elif "workspace_trace" in preferred and entry:
-                    hook_result = {"mode_used": "trace", "result": workspace_trace(wf, entry)}
-                elif "memory_callers" in preferred and symbol:
-                    hook_result = {
-                        "mode_used": "chain-callers",
-                        "result": memory_callers(wf, symbol, depth_value, limit, view=view, budget=budget),
-                    }
-                elif "memory_callees" in preferred and symbol:
-                    hook_result = {
-                        "mode_used": "chain-callees",
-                        "result": memory_callees(wf, symbol, depth_value, limit, view=view, budget=budget),
-                    }
+                elif "workspace_trace" in preferred and (entry or resolved_symbol):
+                    hook_result = {"mode_used": "trace", "result": workspace_trace(wf, entry or resolved_symbol)}
                 else:
                     hook_result = {"mode_used": "query", "result": memory_query(wf, intent, limit), "lookup_hint": hint}
             elif lookup_mode == "symbol":
@@ -416,6 +446,8 @@ def run_hook(
                         "mode": "chain-callers",
                         "result": memory_callers(wf, symbol, depth_value, limit, view=view, budget=budget),
                     }
+            elif lookup_mode == "walkthrough":
+                hook_result = {"mode": "walkthrough", "result": memory_method_walkthrough(wf, symbol or resolved_symbol, depth_value, limit, view=view, budget=budget)}
             elif lookup_mode == "context":
                 hook_result = {"mode": "context", "result": memory_context(wf, name, depth_value, view=view, budget=budget)}
             elif lookup_mode == "contracts":

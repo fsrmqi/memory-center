@@ -106,6 +106,7 @@ def test_demo_workspace_indexes_spring_cloud_patterns(tmp_path: Path):
 
     traced = workspace_trace(workspace, "article-pubtime-change")
     assert traced["matched_mq"]
+    assert traced["trace_mode"] == "index_overview"
 
     diagram = export_mermaid(workspace)
     assert "flowchart LR" in diagram

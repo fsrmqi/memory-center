@@ -5,7 +5,7 @@ from typer.testing import CliRunner
 
 from memory_center.core.orchestrator import (
     memory_callers, memory_callees, memory_context, memory_contracts,
-    memory_detect_changes, memory_impact, memory_plan_change, memory_query,
+    memory_detect_changes, memory_impact, memory_method_walkthrough, memory_plan_change, memory_query,
     memory_query_hybrid, memory_search_code, memory_symbol,
     memory_verify_checklist,
     workspace_check_rules, workspace_end_session,
@@ -75,6 +75,14 @@ def test_mc_lookup_mode_auto_routes_correctly(tmp_path: Path):
     assert q
 
 
+def test_mcp_lookup_extracts_symbol_from_natural_language_query():
+    from memory_center.mcp.server import _extract_symbol_like_token, _wants_deep_chain
+
+    query = "梳理下 com.example.api.ArticleFeignClient#moveArticle 全链路，一直到最底层逻辑处理"
+    assert _extract_symbol_like_token(query) == "com.example.api.ArticleFeignClient#moveArticle"
+    assert _wants_deep_chain(query) is True
+
+
 def test_mc_lookup_modes_direct(tmp_path: Path):
     wf = _setup_workspace(tmp_path)
     # symbol
@@ -89,9 +97,42 @@ def test_mc_lookup_modes_direct(tmp_path: Path):
     # trace
     r = workspace_trace(wf, "ArticleFeignClient")
     assert r
+    assert r["trace_mode"] == "index_overview"
+    assert "mc_lookup(mode='chain')" in r["trace_note"]
     # chain (callers)
     r = memory_callers(wf, "ArticleFeignClient", depth=2, limit=10)
     assert r
+
+
+def test_workspace_trace_attaches_chain_preview_for_deep_method_queries(tmp_path: Path):
+    wf = _setup_workspace(tmp_path)
+    r = workspace_trace(wf, "梳理下 com.example.api.ArticleFeignClient#moveArticle 全链路，一直到最底层逻辑处理")
+    assert r["trace_mode"] == "index_overview"
+    assert r["suggested_symbol"] == "com.example.api.ArticleFeignClient#moveArticle"
+    assert r["chain_preview"]["depth"] >= 4
+    assert r["chain_preview"]["callers"]["found"] is True
+    assert r["chain_preview"]["callees"]["found"] is True
+
+
+def test_memory_method_walkthrough_returns_feign_continuations(tmp_path: Path):
+    wf = _setup_workspace(tmp_path)
+    result = memory_method_walkthrough(wf, "com.example.task.ArticleMoveService#move", depth=4, limit=20)
+    assert result["found"] is True
+    assert result["target"]["class"] == "ArticleMoveService"
+    assert any(step["kind"] == "feign_call" for step in result["local_steps"])
+    assert result["feign_continuations"]
+    continuation = result["feign_continuations"][0]
+    assert continuation["interface"] == "ArticleFeignClient"
+    assert continuation["path"] == "/article/move"
+    assert continuation["matched_endpoints"]
+    assert continuation["matched_endpoints"][0]["controller"] == "ArticleController"
+    assert continuation["server_walkthroughs"]
+    server_walkthrough = continuation["server_walkthroughs"][0]
+    assert server_walkthrough["controller"] == "ArticleController"
+    assert any(step["receiver_type"] == "ArticleWorkflowService" for step in server_walkthrough["local_steps"])
+    impl = server_walkthrough["service_impl_continuations"][0]
+    assert impl["target"]["class"] == "ArticleWorkflowServiceImpl"
+    assert impl["target"]["method"] == "moveArticle"
 
 
 @pytest.mark.skipif(not HAS_MCP, reason="mcp package not installed")
@@ -115,6 +156,25 @@ def test_mc_lookup_auto_returns_decision_fields(tmp_path: Path):
     # contracts
     r = memory_contracts(wf)
     assert r
+
+
+@pytest.mark.skipif(not HAS_MCP, reason="mcp package not installed")
+def test_mc_lookup_auto_prefers_chain_for_deep_method_trace_queries(tmp_path: Path):
+    import asyncio
+    from memory_center.mcp.server import create_server
+
+    wf = _setup_workspace(tmp_path)
+    server = create_server(wf)
+    mc_lookup = server._tool_manager._tools["mc_lookup"]
+    result = asyncio.get_event_loop().run_until_complete(
+        mc_lookup.fn(
+            query="梳理下 com.example.api.ArticleFeignClient#moveArticle 全链路，一直到最底层逻辑处理",
+            mode="auto",
+        )
+    )
+    assert result["mode_used"] == "walkthrough"
+    assert result["result"]["found"] is True
+    assert result["result"]["target"]["method"] == "moveArticle"
 
 
 @pytest.mark.skipif(not HAS_MCP, reason="mcp package not installed")

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import inspect
+import re
 from functools import wraps
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -32,6 +33,7 @@ from memory_center.core.orchestrator import (
     memory_contracts,
     memory_detect_changes,
     memory_impact,
+    memory_method_walkthrough,
     memory_plan_change,
     memory_query,
     memory_query_hybrid,
@@ -121,6 +123,10 @@ from memory_center.core.artifacts import (
 )
 from memory_center.core.wiki import generate_skills, generate_wiki
 
+_JAVA_CHAIN_SYMBOL_RE = re.compile(
+    r"((?:[a-z_][\w$]*\.)+[A-Z][\w$]*(?:#[a-zA-Z_][\w$]*)?|[A-Z][\w$]*(?:#[a-zA-Z_][\w$]*)?)"
+)
+
 def _find_workspace_name_in_registry(workspace_file: str, registry: Dict[str, Any]) -> str | None:
     wf_resolved = str(Path(workspace_file).expanduser().resolve())
     for repo in registry.get("repos", []):
@@ -143,6 +149,23 @@ class _WorkspaceContext:
     """Holds workspace file path per server instance, avoiding module-level global."""
     def __init__(self, workspace_file: str):
         self.workspace_file = workspace_file
+
+
+def _extract_symbol_like_token(*values: str) -> str:
+    for raw in values:
+        text = (raw or "").strip()
+        if not text:
+            continue
+        matches = _JAVA_CHAIN_SYMBOL_RE.findall(text)
+        if matches:
+            matches.sort(key=len, reverse=True)
+            return matches[0]
+    return ""
+
+
+def _wants_deep_chain(*values: str) -> bool:
+    text = " ".join((value or "") for value in values).lower()
+    return any(token in text for token in ["全链路", "到底层", "最底层", "一路到底", "full chain", "trace to sink"])
 
 
 def _parse_payload(payload_str: str) -> Dict[str, Any] | None:
@@ -322,8 +345,10 @@ def create_server(workspace_file: str):
         limit: int = 20,
         project: str = "",
     ):
-        """Unified knowledge lookup. Mode selects strategy: auto (system decides via lookup_hint), symbol (resolve name), code (keyword search), query (graph-aware multi-source), trace (cross-service by class/Feign/endpoint/MQ), chain (caller/callee analysis, use chain_direction), context (360-degree context for a service/symbol), contracts (list all Feign/API/MQ contracts), ref (resolve short memory reference IDs). Use project to disambiguate when multiple modules contain the same symbol name."""
+        """Unified knowledge lookup. Mode selects strategy: auto (system decides via lookup_hint), symbol (resolve name), code (keyword search), query (graph-aware multi-source), trace (cross-service by class/Feign/endpoint/MQ), chain (caller/callee analysis, use chain_direction), walkthrough (method-level indexed walkthrough), context (360-degree context for a service/symbol), contracts (list all Feign/API/MQ contracts), ref (resolve short memory reference IDs). Use project to disambiguate when multiple modules contain the same symbol name."""
         wf = ctx.workspace_file
+        resolved_symbol = _extract_symbol_like_token(symbol, name, entry, query)
+        resolved_depth = max(depth, 4) if _wants_deep_chain(query, intent, symbol, name, entry) else depth
         if mode == "auto":
             hint = workspace_lookup_hint(wf, query=query, intent=intent, limit=limit)
             preferred = hint.get("preferred_tools", [])
@@ -335,34 +360,36 @@ def create_server(workspace_file: str):
             # preferred_tools returns names with "_tool" suffix (e.g. "memory_symbol_tool")
             # Strip suffix for cleaner matching
             preferred_bare = [t.replace("_tool", "") for t in preferred]
-            if "memory_symbol" in preferred_bare and (name or query):
-                return {"mode_used": "symbol", "result": memory_symbol(wf, name or query, limit, project=project, view="compact", budget="small"), **decision_fields}
-            if "memory_search_code" in preferred_bare:
-                return {"mode_used": "code", "result": memory_search_code(wf, query, scope, limit, project=project), **decision_fields}
-            if "memory_context" in preferred_bare and (name or query):
-                return {"mode_used": "context", "result": memory_context(wf, name or query, depth, project=project, view="compact", budget="small"), **decision_fields}
-            if "workspace_trace" in preferred_bare and (entry or query):
-                return {"mode_used": "trace", "result": workspace_trace(wf, entry or query), **decision_fields}
-            if "memory_callers" in preferred_bare and (symbol or query):
+            if _wants_deep_chain(query, intent, symbol, name, entry) and "#" in resolved_symbol:
+                return {"mode_used": "walkthrough", "result": memory_method_walkthrough(wf, resolved_symbol, depth=resolved_depth, limit=limit, project=project, view="compact", budget="small"), **decision_fields}
+            if "memory_callers" in preferred_bare and resolved_symbol:
                 matching_groups = _find_groups_for_workspace(wf)
                 if len(matching_groups) == 1:
-                    result = group_chain(matching_groups[0], symbol or query, direction="callers", depth=depth, limit=limit)
+                    result = group_chain(matching_groups[0], resolved_symbol, direction="callers", depth=resolved_depth, limit=limit)
                     return {"mode_used": "chain-group", "result": result, **decision_fields}
-                result = memory_callers(wf, symbol or query, depth, limit, project=project, view="compact", budget="small")
+                result = memory_callers(wf, resolved_symbol, resolved_depth, limit, project=project, view="compact", budget="small")
                 _annotate_phantom_nodes(result, wf)
                 if len(matching_groups) > 1:
                     return {"mode_used": "chain-callers", "result": result, "matching_groups": matching_groups, "_hint": f"Workspace 属于多个 group ({', '.join(matching_groups)})，请用 mc_admin(action='group_chain', group=...) 显式指定。", **decision_fields}
                 return {"mode_used": "chain-callers", "result": result, **decision_fields}
-            if "memory_callees" in preferred_bare and (symbol or query):
+            if "memory_callees" in preferred_bare and resolved_symbol:
                 matching_groups = _find_groups_for_workspace(wf)
                 if len(matching_groups) == 1:
-                    result = group_chain(matching_groups[0], symbol or query, direction="callees", depth=depth, limit=limit)
+                    result = group_chain(matching_groups[0], resolved_symbol, direction="callees", depth=resolved_depth, limit=limit)
                     return {"mode_used": "chain-group", "result": result, **decision_fields}
-                result = memory_callees(wf, symbol or query, depth, limit, project=project, view="compact", budget="small")
+                result = memory_callees(wf, resolved_symbol, resolved_depth, limit, project=project, view="compact", budget="small")
                 _annotate_phantom_nodes(result, wf)
                 if len(matching_groups) > 1:
                     return {"mode_used": "chain-callees", "result": result, "matching_groups": matching_groups, "_hint": f"Workspace 属于多个 group ({', '.join(matching_groups)})，请用 mc_admin(action='group_chain', group=...) 显式指定。", **decision_fields}
                 return {"mode_used": "chain-callees", "result": result, **decision_fields}
+            if "memory_symbol" in preferred_bare and (name or resolved_symbol or query):
+                return {"mode_used": "symbol", "result": memory_symbol(wf, name or resolved_symbol or query, limit, project=project, view="compact", budget="small"), **decision_fields}
+            if "memory_search_code" in preferred_bare:
+                return {"mode_used": "code", "result": memory_search_code(wf, query, scope, limit, project=project), **decision_fields}
+            if "memory_context" in preferred_bare and (name or resolved_symbol or query):
+                return {"mode_used": "context", "result": memory_context(wf, name or resolved_symbol or query, resolved_depth, project=project, view="compact", budget="small"), **decision_fields}
+            if "workspace_trace" in preferred_bare and (entry or resolved_symbol or query):
+                return {"mode_used": "trace", "result": workspace_trace(wf, entry or resolved_symbol or query), **decision_fields}
             return {"mode_used": "query", "result": memory_query_hybrid(wf, query, limit, project=project), **decision_fields}
         if mode == "symbol":
             return {"mode": "symbol", "result": memory_symbol(wf, name or query, limit, project=project, view="compact", budget="small")}
@@ -397,6 +424,8 @@ def create_server(workspace_file: str):
                 result = memory_callers(wf, symbol or query, depth, limit, edge_type_filter=cross_types, project=project, view="compact", budget="small")
             _annotate_phantom_nodes(result, wf)
             return {"mode": f"chain-{chain_direction}", "result": result}
+        if mode == "walkthrough":
+            return {"mode": "walkthrough", "result": memory_method_walkthrough(wf, symbol or resolved_symbol or query, depth=depth, limit=limit, project=project, view="compact", budget="small")}
         if mode == "context":
             return {"mode": "context", "result": memory_context(wf, name or query, depth, project=project, view="compact", budget="small")}
         if mode == "contracts":
@@ -407,7 +436,7 @@ def create_server(workspace_file: str):
             return {"mode": "ref-get", "result": memory_ref_get(wf, ref_id=ref_id)}
         if mode == "backend":
             return {"mode": "backend", "result": memory_backend_query(wf, collection="", record_id="", created_after="", ref_path="", project=scope, payload_type="", limit=limit)}
-        raise ValueError(f"Unknown mc_lookup mode: {mode}. Valid: auto, symbol, code, query, trace, chain, context, contracts, ref, backend")
+        raise ValueError(f"Unknown mc_lookup mode: {mode}. Valid: auto, symbol, code, query, trace, chain, walkthrough, context, contracts, ref, backend")
 
     # ===================== FACADE 3: mc_analyze =====================
     @_safe_mcp_tool(mcp)
@@ -591,7 +620,7 @@ def create_server(workspace_file: str):
         layer: str = "",
         action_filter: str = "",
     ):
-        """Admin and utility operations. Action selects sub-operation: status, dashboard, continuity, health, audit, discover, constraint, drill_ref, drill_timeline, drill_task, backend_consistency, artifact_list, artifact_get, artifact_outline, artifact_context, artifact_update, change_log_append, change_log_compact, task_create, task_list, task_resolve, task_get, task_update, task_change_log_append, task_archive, task_auto_archive, task_status, task_activity_touch, session_start, session_log, session_end, session_recent, session_summary, model_profile, handoff_history, write_judge, write_plan, write_execute, receipts, replay, backend_query, eval_write_quality, eval_resume, eval_handoff, eval_regression_suite, eval_index_freshness, eval_tool_adoption, eval_context_weight, eval_workflow_orchestration, eval_token_gain, eval_parser_benchmark, eval_token_benchmark, eval_token_benchmark_trend, tool_usage_report, generate_wiki, generate_skills, group_status, group_query, group_impact, group_chain."""
+        """Admin and utility operations. Action selects sub-operation: status, dashboard, continuity, health, audit, discover, constraint, drill_ref, drill_timeline, drill_task, backend_consistency, artifact_list, artifact_get, artifact_outline, artifact_context, artifact_update, change_log_append, change_log_compact, task_create, task_list, task_resolve, task_get, task_update, task_change_log_append, task_archive, task_auto_archive, task_status, task_activity_touch, session_start, session_log, session_end, session_recent, session_summary, model_profile, handoff_history, write_judge, write_plan, write_execute, receipts, replay, backend_query, eval_write_quality, eval_resume, eval_handoff, eval_regression_suite, eval_index_freshness, eval_tool_adoption, eval_context_weight, eval_workflow_orchestration, eval_token_gain, eval_parser_benchmark, eval_token_benchmark, eval_token_benchmark_trend, tool_usage_report, generate_wiki, generate_skills, group_status, group_query, group_impact, group_chain, method_walkthrough."""
         wf = ctx.workspace_file
         _DISPATCH = {
             "status": lambda: workspace_status(wf, view=view, budget=budget),
@@ -659,6 +688,7 @@ def create_server(workspace_file: str):
             "group_query": lambda: group_query(group, query=text, limit=limit),
             "group_impact": lambda: group_impact(group, target=intent or text, direction=direction, max_depth=max_depth),
             "group_chain": lambda: group_chain(group, symbol=name or text, direction=direction, depth=max_depth, limit=limit),
+            "method_walkthrough": lambda: memory_method_walkthrough(wf, name or text or intent, depth=max_depth, limit=limit, project=project, view=view, budget=budget),
             # ECC — verification loop
             "verification_loop": lambda: _verification_loop_action(wf, intent, task_id),
             # ECC — pattern promotion

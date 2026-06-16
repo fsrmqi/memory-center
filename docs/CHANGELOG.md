@@ -8,6 +8,15 @@
 
 ## Unreleased
 
+### 3.1.8: Method Walkthrough / 方法级链路梳理
+
+- 升级版本号到 `3.1.8`
+- 新增 `memory_method_walkthrough()`，面向 `Class#method` 返回方法内已索引步骤、DTO 字段读取、Feign 续链、下游图谱摘要和后续动作。
+- `mc_lookup(mode="walkthrough")` 与 `memory-center method-walkthrough` 可直接调用方法级 walkthrough。
+- `mc_lookup(mode="auto")` 遇到 `Class#method` 且包含“全链路/到底层”语义时优先进入 walkthrough，减少 agent 退回手工 grep 的概率。
+- `mc_admin(action="method_walkthrough")` 支持从管理路由触发同一能力。
+- Feign 续链新增兼容字段 `server_walkthroughs`，会优先展开目标服务 endpoint 的 Controller 方法，并通过 `service_impl_continuations` 继续解析同项目 Service interface → Impl 的落点。
+
 ### Packaging / 打包版本
 
 - 升级版本号到 `3.1.5`

@@ -682,13 +682,17 @@ Available MCP tools (8 facade tools) / MCP 工具（8 个任务级 facade）：
 | Tool | Purpose / 用途 |
 |---|---|
 | `mc_start` | Start task workflow: sniff → sync → start session / 开始任务：上下文召回 → 同步 → 启动会话 |
-| `mc_lookup` | Unified knowledge lookup (auto/symbol/code/query/trace/chain/context/contracts/ref/backend) / 统一知识检索，mode 自动路由到最佳策略 |
+| `mc_lookup` | Unified knowledge lookup (auto/symbol/code/query/trace/chain/walkthrough/context/contracts/ref/backend) / 统一知识检索，mode 自动路由到最佳策略 |
 | `mc_analyze` | Change impact analysis (quick/standard/full depth) / 变更影响面分析，按 depth 逐层深入 |
 | `mc_sync` | Sync context to workspace artifacts (sniff or case) / 同步上下文到工件 |
 | `mc_resume` | Resume task with consolidated context / 恢复任务上下文 |
 | `mc_handoff` | Build handoff package for another model / 为目标模型生成交接包 |
 | `mc_close` | Close task workflow: end session → sync case → record experience / 关闭任务工作流 |
 | `mc_admin` | Admin router (status/dashboard/eval/artifact/session/group etc.) / 管理路由，action 选择子操作 |
+
+`mc_lookup(mode="walkthrough")` targets `Class#method` traces. For Feign calls, `feign_continuations[].server_walkthroughs` expands matching server-side Controller methods, and `service_impl_continuations` resolves same-project Service interface calls to Impl methods when indexed.
+
+`mc_lookup(mode="walkthrough")` 面向 `Class#method` 链路梳理。遇到 Feign 调用时，`feign_continuations[].server_walkthroughs` 会展开匹配到的服务端 Controller 方法；如果 Controller 调用同项目 Service interface，`service_impl_continuations` 会继续解析到 Impl 方法。
 
 > **Note**: CLI and HTTP still expose all fine-grained atomic commands. Only the MCP surface uses facade tools. See [docs/MCP_GUIDE.md](./docs/MCP_GUIDE.md) and [docs/REFERENCE.md](./docs/REFERENCE.md) for facade routing and command reference.
 >

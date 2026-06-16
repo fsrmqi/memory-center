@@ -43,6 +43,7 @@ from memory_center.core.orchestrator import (
     memory_contracts,
     memory_detect_changes,
     memory_impact,
+    memory_method_walkthrough,
     memory_plan_change,
     memory_query,
     memory_query_hybrid,
@@ -290,6 +291,20 @@ def callees_cmd(
 ):
     """Find downstream callees for one symbol."""
     print(memory_callees(workspace, symbol, depth=depth, limit=limit, project=project, view=view, budget=budget))
+
+
+@app.command("method-walkthrough")
+def method_walkthrough_cmd(
+    workspace: str = typer.Option(...),
+    symbol: str = typer.Option(..., help="Method symbol, e.g. com.example.ArticleService#listByDto"),
+    depth: int = typer.Option(4),
+    limit: int = typer.Option(80),
+    project: str = typer.Option("", help="Filter by project name for disambiguation."),
+    view: str = typer.Option("full", help="full|compact"),
+    budget: str = typer.Option("medium", help="small|medium|large"),
+):
+    """Explain indexed method steps, downstream calls, and Feign continuations."""
+    print(memory_method_walkthrough(workspace, symbol, depth=depth, limit=limit, project=project, view=view, budget=budget))
 
 
 @app.command("context")
