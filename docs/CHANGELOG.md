@@ -10,8 +10,26 @@
 
 ### Packaging / 打包版本
 
-- 升级版本号到 `3.1.4`
+- 升级版本号到 `3.1.5`
 - 本地安装默认对齐当前仓库最新代码
+
+### C-03: 查询意图识别与排序收敛
+
+- `detect_query_intent()` 修复 Service/Feign 混淆：ontology 确认是 Feign 时降低 class 权重，endpoint 命名约定（Controller/Resource/Api）正确提升优先级
+- `_JAVA_PATTERNS` 新增 method 模式（camelCase），`pattern.match` 改为 `pattern.search` 修复 endpoint 匹配
+- `_apply_type_boosting()` 新增 contract 意图惩罚：feign/mq/endpoint 意图时对无关结构类型降权
+- project filter 为空时返回一致的空结果
+
+### C-04: Contracts 行为收口
+
+- `_filter_contracts_by_query()` 输出新增 `_semantic_strength` 和 `_match_reason` 字段
+- Feign → API 关联改用 `EntityValidator.validate_endpoint_path()` 验证路径特异性
+- 关联结果标记 `_association` 和 `_association_confidence`
+
+### C-07: Reasoning patterns 主链路化
+
+- `memory_context()` 升级为统一 `run_reasoning_patterns()`，返回完整 `_reasoning` 字段
+- `memory_impact()` not-found 分支也返回 `freshness` 和 `_reasoning`
 
 ### Retrieval、Incremental Indexing 与 Verification 修复
 

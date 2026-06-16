@@ -4027,3 +4027,47 @@ python3 -m pytest -q
 git diff --check
 通过
 ```
+
+## C-03/C-04/C-07: 查询质量收敛 + Contracts 收口 + Reasoning 主链路化
+
+**状态**: completed
+**日期**: 2026-06-16
+
+### 完成范围
+
+一次性完成三个关联工作包，提升 MCP 工具输出质量：
+
+- **C-03**: 修复 Service/Feign 混淆，收紧实体优先级，修复 project filter 后 summary 一致性
+- **C-04**: Contracts 输出新增 semantic_strength 和 match_reason，Feign→API 关联使用 EntityValidator 验证路径特异性
+- **C-07**: memory_context 升级为统一 run_reasoning_patterns()，memory_impact not-found 分支也返回 freshness 和 _reasoning
+
+### 生产代码改动
+
+| 文件 | 改动摘要 |
+|---|---|
+| `memory_center/core/retrieval/hybrid.py` | detect_query_intent Phase 4 重写：ontology 确认 Feign 时降低 class 权重；endpoint 命名约定正确提升；_JAVA_PATTERNS 新增 method 模式；pattern.search 替代 match；_apply_type_boosting 新增 contract 意图惩罚 |
+| `memory_center/core/orchestrator/query.py` | _filter_contracts_by_query 输出新增 _semantic_strength/_match_reason；新增 _contract_semantic_strength/_contract_match_reason；Feign→API 关联使用 EntityValidator.validate_endpoint_path；project filter 为空时返回一致空结果；memory_context 升级为统一 run_reasoning_patterns |
+| `memory_center/core/orchestrator/impact.py` | not-found 分支也返回 freshness 和 _reasoning |
+
+### 测试
+
+| 文件 | 改动摘要 |
+|---|---|
+| `tests/test_e02_e08_indexing_retrieval.py` | Controller 查询正确识别为 endpoint；新增 ServiceImpl 类意图测试 |
+| `tests/test_contracts_matching.py` | +9 测试：semantic_strength、match_reason、弱匹配反例、Feign 路径特异性 |
+
+### 验证结果
+
+```
+python3 -m pytest tests/test_public_mvp.py tests/test_e02_e08_indexing_retrieval.py tests/test_contracts_matching.py tests/test_reasoning_integration.py tests/test_f_g_series.py tests/test_deepening_remaining.py tests/test_deepening_c_to_i.py tests/test_next_phase.py tests/test_mcp_facades.py -q
+全部通过，无失败
+
+git diff --check
+通过
+```
+
+### 当前权威策略
+
+- 查询意图检测现在优先信任 ontology 实体分类，Feign/Endpoint/MQ 等契约类型不会被通用 class 意图覆盖
+- Contracts 输出包含可解释的 semantic_strength 和 match_reason，fallback 明确标记
+- Reasoning patterns 已统一接入 memory_context 和 memory_impact 主链路
