@@ -430,6 +430,14 @@ def memory_query_hybrid(workspace_file: str | Path, query: str, limit: int = 20,
             result["returned"] = rebuild["returned"]
             result["retrieval_summary"] = rebuild["retrieval_summary"]
             result["progressive"] = rebuild["progressive"]
+        else:
+            # No results match the project filter — return empty but consistent
+            empty_rebuild = _rebuild_summary_after_filter([], intent)
+            result["results"] = []
+            result["total_found"] = 0
+            result["returned"] = 0
+            result["retrieval_summary"] = empty_rebuild["retrieval_summary"]
+            result["progressive"] = empty_rebuild["progressive"]
 
     # Enrich with workspace context
     result["workspace"] = config_obj[0].workspace
@@ -454,14 +462,15 @@ def memory_query_hybrid(workspace_file: str | Path, query: str, limit: int = 20,
                     deduped_feign.append(fc)
             filtered_feign = deduped_feign
 
-        # Feign → API 自动关联：只关联查询直接匹配的方法，且路径足够具体（至少2段）
+        # Feign → API 自动关联：只关联查询直接匹配的方法，且路径足够具体
         linked_api = []
         if primary_intent == "feign" and filtered_feign:
             api_by_path = {}
             for c in contracts.get("api_contracts", []):
                 p = c.get("path", "")
-                # 路径至少2段（如 /api/users）才参与自动关联
-                if p and len([s for s in p.split("/") if s]) >= 2:
+                # 使用 EntityValidator 验证路径特异性（≥2段）
+                validation = EntityValidator.validate_endpoint_path(p)
+                if validation["is_specific"]:
                     api_by_path[p] = c
             query_lower_local = query.lower()
             for fc in filtered_feign:
@@ -471,7 +480,9 @@ def memory_query_hybrid(workspace_file: str | Path, query: str, limit: int = 20,
                     # 只关联查询直接匹配的方法
                     if query_lower_local in method_name or method_name in query_lower_local:
                         if m_path and m_path in api_by_path:
-                            matched_api = api_by_path[m_path]
+                            matched_api = dict(api_by_path[m_path])
+                            matched_api["_association"] = "feign_method_path"
+                            matched_api["_association_confidence"] = 0.85
                             if matched_api not in linked_api:
                                 linked_api.append(matched_api)
             # feign 意图：只返回关联的 API
@@ -602,6 +613,8 @@ def _filter_contracts_by_query(contracts: list, query: str, intent: str) -> list
             enriched = dict(contract)
             enriched["_confidence"] = confidence
             enriched["_match_type"] = match_type
+            enriched["_semantic_strength"] = _contract_semantic_strength(confidence)
+            enriched["_match_reason"] = _contract_match_reason(match_type, contract, query)
             result.append(enriched)
         return result
 
@@ -612,8 +625,40 @@ def _filter_contracts_by_query(contracts: list, query: str, intent: str) -> list
         enriched["_confidence"] = 0.10
         enriched["_match_type"] = "fallback"
         enriched["_is_fallback"] = True
+        enriched["_semantic_strength"] = "derived"
+        enriched["_match_reason"] = "无精确匹配，返回候选契约作为参考"
         fallback.append(enriched)
     return fallback
+
+
+def _contract_semantic_strength(confidence: float) -> str:
+    """Map contract confidence to semantic strength."""
+    if confidence >= 0.90:
+        return "fact"
+    if confidence >= 0.60:
+        return "inferred"
+    return "derived"
+
+
+def _contract_match_reason(match_type: str, contract: dict, query: str) -> str:
+    """Generate human-readable match reason for a contract."""
+    if match_type == "interface_exact":
+        iface = contract.get("interface", "")
+        return '接口名 [' + str(iface) + '] 与查询 [' + str(query) + '] 精确匹配'
+    if match_type == "method_exact":
+        methods = [m.get("method_name", "") for m in contract.get("methods", [])]
+        matched = [m for m in methods if query.lower() in m.lower()]
+        return '方法名 [' + str(matched[0] if matched else '?') + '] 与查询 [' + str(query) + '] 匹配'
+    if match_type == "path_exact":
+        path = contract.get("path", "")
+        return '路径 [' + str(path) + '] 与查询 [' + str(query) + '] 匹配'
+    if match_type == "token_match":
+        return '查询词与契约字段部分匹配'
+    if match_type == "json_scan":
+        return '查询词在契约全文扫描中匹配'
+    if match_type == "fallback":
+        return '无精确匹配，返回候选契约作为参考'
+    return '匹配类型: ' + match_type
 
 
 def memory_context(
@@ -632,18 +677,19 @@ def memory_context(
     with GraphStore(store.graph_db_path) as graph:
         incoming = graph.neighbors(node["id"], direction="upstream", max_depth=max_depth, limit=100)
         outgoing = graph.neighbors(node["id"], direction="downstream", max_depth=max_depth, limit=100)
-    # NEXT_PHASE: integrate reasoning risk patterns into context
-    risk_patterns = []
+    # Integrate unified reasoning patterns into context (C-07)
+    reasoning: Dict[str, Any] = {"patterns": [], "transitive": [], "risk": []}
     diagnostics: Dict[str, Any] = {}
     try:
-        from ..reasoning.risk import RiskPatternEngine
-        from ..storage.unified import UnifiedStore
-        with UnifiedStore(store.graph_db_path) as unified:
-            analyzer = RiskPatternEngine(unified, workspace_store=store)
-            risks = analyzer.analyze_change_risk(node.get("id", ""))
-            risk_patterns = [r.__dict__ if hasattr(r, "__dict__") else r for r in risks[:5]]
+        from ..reasoning.integration import run_reasoning_patterns, summarize_reasoning
+        reasoning = run_reasoning_patterns(
+            str(workspace_file),
+            target_id=node.get("id", ""),
+            target_name=name,
+        )
     except Exception as exc:
-        diagnostics["risk_patterns"] = diag_entry(DIAG.UNAVAILABLE, exc=exc)
+        diagnostics["reasoning"] = diag_entry(DIAG.UNAVAILABLE, exc=exc)
+    risk_patterns = reasoning.get("risk", [])
 
     # NEXT_PHASE: integrate freshness into context
     freshness = {}
@@ -667,6 +713,7 @@ def memory_context(
         "progressive": _build_context_progressive_view(node, incoming, outgoing),
         "risk_patterns": risk_patterns,
         "freshness": freshness,
+        "_reasoning": reasoning,
     }
     if diagnostics:
         result["_diagnostics"] = diagnostics

@@ -54,6 +54,7 @@ def memory_impact(
                 freshness={},
             )
             candidate_paths = apply_candidate_path_learning(workspace_file, candidate_paths)
+            freshness = _get_freshness_for_impact(workspace_file)
             result = {
                 "target": target,
                 "found": False,
@@ -66,6 +67,8 @@ def memory_impact(
                 "lookup": lookup if lookup else _build_lookup_payload({"query": target, "matches": []}),
                 "progressive": _build_impact_progressive_view(target, None, [], [], []),
                 "unknown_risks": _unknown_static_analysis_risks(),
+                "freshness": freshness,
+                "_reasoning": {"patterns": [], "transitive": [], "risk": []},
             }
             if _is_compact_view(view):
                 compact = _compact_impact_result(result, budget=budget)

@@ -217,7 +217,16 @@ public class DemoService {
     def test_detect_query_intent_prefers_class_for_single_symbol_queries(self):
         from memory_center.core.retrieval.hybrid import detect_query_intent
 
+        # "InstructTaskController" ends with "Controller" → endpoint intent
         intent = detect_query_intent("InstructTaskController")
+        assert intent["primary_intent"] == "endpoint"
+        assert intent["prefer_class_symbol"] is True
+
+    def test_detect_query_intent_prefers_class_for_service_impl_queries(self):
+        from memory_center.core.retrieval.hybrid import detect_query_intent
+
+        # "OrderServiceImpl" ends with "ServiceImpl" → class intent
+        intent = detect_query_intent("OrderServiceImpl")
         assert intent["primary_intent"] == "class"
         assert intent["prefer_class_symbol"] is True
 

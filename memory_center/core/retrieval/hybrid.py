@@ -107,6 +107,7 @@ _JAVA_PATTERNS = {
     ),
     "endpoint": re.compile(r"Controller$|Resource$|Api$", re.IGNORECASE),
     "class": re.compile(r"Service$|ServiceImpl$|Impl$|Dao$|Mapper$|Repository$", re.IGNORECASE),
+    "method": re.compile(r"^[a-z][a-zA-Z0-9_]*([A-Z][a-z0-9_]*)+$"),
 }
 
 
@@ -161,7 +162,7 @@ def detect_query_intent(query: str) -> Dict[str, Any]:
     parts = query.replace(".", " ").replace("/", " ").split()
     for part in parts:
         for intent, pattern in _JAVA_PATTERNS.items():
-            if pattern.match(part):
+            if pattern.search(part):
                 intents.setdefault(intent, 0)
                 intents[intent] = max(intents[intent], 0.8)
 
@@ -180,15 +181,38 @@ def detect_query_intent(query: str) -> Dict[str, Any]:
     if "::" in query or "." in query:
         intents.setdefault("class", 0.7)
 
-    # Phase 4: 优先级调整 - feign/mq/endpoint 是更具体的意图
+    # Phase 4: 优先级调整 — 更具体的实体类型优先
+    # feign/mq/endpoint 是契约级实体，优先级高于通用 class
+    is_feign_confirmed = any(EntityValidator.is_feign_entity(p) for p in parts)
+    is_service_confirmed = any(EntityValidator.is_local_service(p) for p in parts)
+
     if "feign" in intents:
         intents["feign"] = max(intents["feign"], 2.0)
     if "mq" in intents:
         intents["mq"] = max(intents["mq"], 2.0)
-    if "endpoint" in intents and query_lower.startswith("/"):
-        intents["endpoint"] = max(intents["endpoint"], 2.0)
+    if "endpoint" in intents:
+        # endpoint 意图从命名约定或路径模式中检测到时也应提升
+        if query_lower.startswith("/") or any(
+            p.endswith("Controller") or p.endswith("Resource") or p.endswith("Api")
+            for p in parts
+        ):
+            intents["endpoint"] = max(intents["endpoint"], 2.0)
+
+    # class 意图只在以下情况提升到高位：
+    # - 看起来像 Java 符号名，且没有被 ontology 确认为 feign 或 endpoint
     if _looks_like_java_symbol_query(query):
-        intents["class"] = max(intents.get("class", 0), 2.2)
+        if is_feign_confirmed:
+            # ontology 确认是 Feign，降低 class 权重避免混淆
+            intents["class"] = max(intents.get("class", 0), 1.0)
+        elif any(p.endswith("Controller") or p.endswith("Resource") or p.endswith("Api") for p in parts):
+            # 命名约定表明是 endpoint，降低 class 权重
+            intents["class"] = max(intents.get("class", 0), 1.0)
+        else:
+            intents["class"] = max(intents.get("class", 0), 2.2)
+
+    # 当 ontology 确认是 feign 但 class 分数也高时，确保 feign 优先
+    if is_feign_confirmed and intents.get("feign", 0) > 0:
+        intents["feign"] = max(intents["feign"], intents.get("class", 0) + 0.5)
 
     primary = max(intents.items(), key=lambda x: x[1])[0] if intents else "general"
 
@@ -728,7 +752,13 @@ def _apply_type_boosting(
     results: List[RetrievalResult],
     intent: Dict[str, Any],
 ) -> List[RetrievalResult]:
-    """Boost node types that match the detected query intent."""
+    """Boost node types that match the detected query intent.
+
+    Uses ontology-aware type boosting: when intent is a specific contract type
+    (feign/mq/endpoint), unrelated structural types (Class/Service/Impl) are
+    not boosted, preventing confusion between e.g. a FeignClient and a local
+    Service with a similar name.
+    """
     primary_intent = intent.get("primary_intent", "general")
 
     type_boost_map = {
@@ -736,15 +766,25 @@ def _apply_type_boosting(
         "mq": {"MQTopic": 1.5, "MQConsumer": 1.4, "ConfigKey": 1.1},
         "endpoint": {"Endpoint": 1.5, "Controller": 1.3, "Method": 1.2},
         "config": {"ConfigKey": 1.5, "Field": 1.2},
-        "class": {"Class": 1.4, "Service": 1.3, "Impl": 1.2},
+        "class": {"Class": 1.4, "Interface": 1.3, "Method": 1.2},
         "method": {"Method": 1.4, "Function": 1.3},
     }
+
+    # Contract-specific intents should penalize unrelated structural types
+    _contract_intents = {"feign", "mq", "endpoint"}
+    _contract_penalty_types = {"Class", "Service", "Impl", "Interface"}
 
     boosts = type_boost_map.get(primary_intent, {})
 
     for item in results:
         node_type = item.node.get("type", "")
         boost = boosts.get(node_type, 1.0)
+
+        # Contract intent: penalize unrelated structural types to avoid confusion
+        if primary_intent in _contract_intents and node_type in _contract_penalty_types:
+            item.score *= 0.75
+            item.evidence["contract_penalty"] = 0.75
+
         if intent.get("prefer_class_symbol"):
             if node_type == "Class":
                 boost = max(boost, 1.8)
