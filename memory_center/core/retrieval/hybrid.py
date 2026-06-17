@@ -9,6 +9,7 @@ This module implements the hybrid retrieval strategy from NEXT_PHASE_MASTER_PLAN
 """
 from __future__ import annotations
 
+import copy
 import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
@@ -626,10 +627,11 @@ def _merge_retrieval_results(
     def _normalize(hits: List[RetrievalResult]) -> List[RetrievalResult]:
         if not hits:
             return hits
-        max_score = max(h.score for h in hits) or 1.0
-        for h in hits:
+        normalized = [copy.deepcopy(h) for h in hits]
+        max_score = max(h.score for h in normalized) or 1.0
+        for h in normalized:
             h.score = h.score / max_score
-        return hits
+        return normalized
 
     graph_hits = _normalize(graph_hits)
     sparse_hits = _normalize(sparse_hits)

@@ -21,7 +21,7 @@ except Exception:
     from .indexing import RegexJavaParser
     _JAVA_PARSER = RegexJavaParser()
 from .models import ApiEndpoint, FeignClient, JavaSymbol, MqEndpoint, WorkspaceConfig, to_dict
-from .semantic import build_workspace_semantic_index, build_workspace_semantic_index_partial
+from .semantic import build_workspace_semantic_index, build_workspace_semantic_index_partial, semantic_index_stats
 from .store import WorkspaceStore
 
 JAVA_EXTENSIONS = {".java"}
@@ -145,7 +145,11 @@ def reindex_workspace(
     graph_counts = build_graph_store(config, store, project_filter=project_filter, path_filters=path_filters)
     if partial:
         changed_ids = set(graph_counts.get("changed_node_ids", []))
-        semantic_counts = build_workspace_semantic_index_partial(store.workspace_file, changed_ids) if changed_ids else build_workspace_semantic_index(store.workspace_file)
+        semantic_counts = build_workspace_semantic_index_partial(store.workspace_file, changed_ids) if changed_ids else {
+            **semantic_index_stats(store.workspace_file),
+            "mode": "partial-noop",
+            "changed_node_count": 0,
+        }
     else:
         semantic_counts = build_workspace_semantic_index(store.workspace_file)
     retrieval_counts = _sync_retrieval_indexes(store, semantic_counts)
@@ -297,6 +301,16 @@ def _sync_retrieval_indexes(store: WorkspaceStore, semantic_index: Dict[str, Any
         "bm25_docs": int(bm25_stats.get("doc_count", 0)),
         "vector_embeddings": vector_count,
     }
+
+
+def _method_line(symbol_by_project_file: Dict[tuple[str, str], Dict[str, Any]], project: str, file_path: str, method: str) -> int:
+    sym = symbol_by_project_file.get((project, file_path), {})
+    return int((sym.get("method_lines") or {}).get(method, 0) or 0)
+
+
+def _class_or_interface_line(symbol_by_project_file: Dict[tuple[str, str], Dict[str, Any]], project: str, file_path: str, name: str) -> int:
+    sym = symbol_by_project_file.get((project, file_path), {})
+    return int((sym.get("class_lines") or {}).get(name, 0) or (sym.get("interface_lines") or {}).get(name, 0) or 0)
 
 
 def parse_java_symbols(project: str, rel: str, text: str) -> JavaSymbol:
@@ -609,7 +623,10 @@ def build_graph_store(config: WorkspaceConfig, store: WorkspaceStore, *, project
         mq = store.read_json_prefer_backend("mq-index.json", [])
         configs = store.read_json_prefer_backend("config-index.json", [])
         topology = store.read_json_prefer_backend("service-topology.json", {})
-
+        symbol_by_project_file = {
+            (sym.get("project", ""), sym.get("file", "")): sym
+            for sym in symbols
+        }
         if partial:
             file_index = [r for r in file_index if _row_matches_scope(r, pf, pfs)]
             symbols = [r for r in symbols if _row_matches_scope(r, pf, pfs, path_key="file")]
@@ -700,11 +717,7 @@ def build_graph_store(config: WorkspaceConfig, store: WorkspaceStore, *, project
             eid = node_id("Endpoint", api["project"], api["http_method"], api["path"])
             cid = node_id("Class", api["project"], api["controller"])
             mid = node_id("Method", api["project"], api["controller"], api.get("method_name") or "unknown")
-            endpoint_line = 0
-            for sym in symbols:
-                if sym.get("project") == api["project"] and sym.get("file") == api["file"]:
-                    endpoint_line = int((sym.get("method_lines") or {}).get(api.get("method_name") or "", 0) or 0)
-                    break
+            endpoint_line = _method_line(symbol_by_project_file, api["project"], api["file"], api.get("method_name") or "")
             nodes.append(GraphNode(eid, "Endpoint", f"{api['http_method']} {api['path']}", api["project"], api["file"], endpoint_line, metadata=api))
             edges.append(GraphEdge(edge_id("EXPOSES_ENDPOINT", cid, eid), cid, eid, "EXPOSES_ENDPOINT", 1.0, {"evidence": "Spring MVC mapping annotation"}))
             edges.append(GraphEdge(edge_id("HANDLES_ENDPOINT", mid, eid), mid, eid, "HANDLES_ENDPOINT", 0.9, {"evidence": "mapping method"}))
@@ -712,11 +725,7 @@ def build_graph_store(config: WorkspaceConfig, store: WorkspaceStore, *, project
         for f in feigns:
             fc_id = node_id("FeignClient", f["project"], f["interface"])
             cid = node_id("Class", f["project"], f["interface"])
-            feign_line = 0
-            for sym in symbols:
-                if sym.get("project") == f["project"] and sym.get("file") == f["file"]:
-                    feign_line = int((sym.get("class_lines") or {}).get(f["interface"], 0) or (sym.get("interface_lines") or {}).get(f["interface"], 0) or 0)
-                    break
+            feign_line = _class_or_interface_line(symbol_by_project_file, f["project"], f["file"], f["interface"])
             nodes.append(GraphNode(fc_id, "FeignClient", f["interface"], f["project"], f["file"], feign_line, metadata=f))
             edges.append(GraphEdge(edge_id("DECLARES", cid, fc_id), cid, fc_id, "DECLARES", 1.0, {"evidence": "@FeignClient"}))
             target_project = topology_service_project(topology, f.get("target_service")) or f.get("target_service", "unknown")
@@ -724,11 +733,7 @@ def build_graph_store(config: WorkspaceConfig, store: WorkspaceStore, *, project
             edges.append(GraphEdge(edge_id("CALLS_SERVICE", fc_id, target_service_id), fc_id, target_service_id, "CALLS_SERVICE", 0.9, {"evidence": "@FeignClient target service", "target_service": f.get("target_service")}))
             for method in f.get("methods", []):
                 fm_id = node_id("FeignMethod", f["project"], f["interface"], method.get("method_name", "unknown"))
-                feign_method_line = 0
-                for sym in symbols:
-                    if sym.get("project") == f["project"] and sym.get("file") == f["file"]:
-                        feign_method_line = int((sym.get("method_lines") or {}).get(method.get("method_name", "unknown"), 0) or 0)
-                        break
+                feign_method_line = _method_line(symbol_by_project_file, f["project"], f["file"], method.get("method_name", "unknown"))
                 nodes.append(GraphNode(fm_id, "FeignMethod", f"{f['interface']}.{method.get('method_name')}", f["project"], f["file"], feign_method_line, metadata=method))
                 edges.append(GraphEdge(edge_id("DECLARES", fc_id, fm_id), fc_id, fm_id, "DECLARES", 1.0, {"evidence": "Feign interface method"}))
                 for api in apis_full if partial else apis:

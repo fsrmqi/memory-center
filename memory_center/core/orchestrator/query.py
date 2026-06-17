@@ -4,8 +4,6 @@ import json
 import copy
 import re
 import subprocess
-import time
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -20,6 +18,12 @@ from ..diagnostics import DIAG, diag_entry, safe_reason
 from ..verification.heuristics import apply_candidate_path_learning
 from ..tracking import log_token_gain
 from ..store import WorkspaceStore, _safe_path
+from ..walkthrough import (
+    WalkthroughCache,
+    evaluate_walkthrough_result,
+    render_walkthrough_markdown,
+    slugify_walkthrough_symbol,
+)
 from .common import (
     SESSION_EVENTS_FILE,
     _best_match,
@@ -41,7 +45,10 @@ from .compact import _measure_compact_gain
 METHOD_WALKTHROUGH_SCHEMA_VERSION = 2
 _METHOD_WALKTHROUGH_CACHE_TTL_SECONDS = 15
 _METHOD_WALKTHROUGH_CACHE_MAX_ITEMS = 64
-_METHOD_WALKTHROUGH_CACHE: Dict[str, tuple[float, Dict[str, Any]]] = {}
+_METHOD_WALKTHROUGH_CACHE = WalkthroughCache(
+    ttl_seconds=_METHOD_WALKTHROUGH_CACHE_TTL_SECONDS,
+    max_items=_METHOD_WALKTHROUGH_CACHE_MAX_ITEMS,
+)
 
 
 def _normalize_symbol_name(name: str) -> str:
@@ -1026,9 +1033,8 @@ def memory_method_walkthrough(
     apis = store.read_json_prefer_backend("api-index.json", [])
     file_abs_map = _build_file_abs_path_map(config, store)
     cache_key = _method_walkthrough_cache_key(workspace_file, symbol, depth, limit, project, view, budget, report_level, store)
-    cached = _method_walkthrough_cache_get(cache_key)
+    cached = _METHOD_WALKTHROUGH_CACHE.get(cache_key)
     if cached:
-        cached["cache"] = {"hit": True, "ttl_seconds": _METHOD_WALKTHROUGH_CACHE_TTL_SECONDS}
         return cached
     parsed = _parse_method_walkthrough_symbol(symbol)
     if not parsed.get("method"):
@@ -1152,7 +1158,7 @@ def memory_method_walkthrough(
     result["mermaid_flow"] = _build_method_walkthrough_mermaid(result)
     escalated = _try_escalated_method_walkthrough(workspace_file, symbol, depth, limit, project, view, budget, report_level, current_result=result, allow=_allow_workspace_escalation)
     if escalated:
-        _method_walkthrough_cache_put(cache_key, escalated)
+        _METHOD_WALKTHROUGH_CACHE.put(cache_key, escalated)
         return copy.deepcopy(escalated)
     result["workspace_escalation"] = _build_workspace_escalation_status(workspace_file, status="not_needed_or_not_found")
     result["answer_markdown"] = _render_method_walkthrough_answer(result, workspace_file, report_level=report_level)
@@ -1161,9 +1167,9 @@ def memory_method_walkthrough(
         compact = _compact_method_walkthrough_result(result, budget=budget)
         gain = _measure_compact_gain(result, compact)
         log_token_gain(workspace_file, "memory_method_walkthrough", budget=budget, model="", raw_tokens=gain["raw_tokens"], compact_tokens=gain["compact_tokens"], view=view)
-        _method_walkthrough_cache_put(cache_key, compact)
+        _METHOD_WALKTHROUGH_CACHE.put(cache_key, compact)
         return copy.deepcopy(compact)
-    _method_walkthrough_cache_put(cache_key, result)
+    _METHOD_WALKTHROUGH_CACHE.put(cache_key, result)
     return copy.deepcopy(result)
 
 
@@ -1196,7 +1202,7 @@ def memory_walkthrough_health(
     check("required_indexes", "pass" if not missing_indexes else "warn", "缺失索引文件会降低 walkthrough 完整度。", {"missing": missing_indexes})
     check("template", "pass" if template_info.get("status") == "configured" else "warn", template_info.get("path", "") or "未配置模板，将使用内置报告。")
     check("glossary", "pass" if glossary else "warn", "已配置业务词汇。" if glossary else "未配置 glossary，glossary_hits 会为空。")
-    check("cache", "pass", f"进程内短期缓存 TTL={_METHOD_WALKTHROUGH_CACHE_TTL_SECONDS}s。", {"size": len(_METHOD_WALKTHROUGH_CACHE)})
+    check("cache", "pass", f"进程内短期缓存 TTL={_METHOD_WALKTHROUGH_CACHE_TTL_SECONDS}s。", _METHOD_WALKTHROUGH_CACHE.stats())
     bypass_feedback = _walkthrough_recent_bypass_feedback(store)
     check(
         "agent_bypass_feedback",
@@ -1259,33 +1265,11 @@ def memory_eval_walkthrough_quality(
         budget="small",
         report_level=report_level,
     )
-    checks: List[Dict[str, Any]] = []
-
-    def add(name: str, passed: bool, weight: int, detail: str = "") -> None:
-        checks.append({"name": name, "passed": passed, "weight": weight, "detail": detail})
-
-    text = "\n".join(result.get("summary_lines", []) or []) + "\n" + str(result.get("answer_markdown", ""))
-    add("found", bool(result.get("found")), 20)
-    add("has_target_absolute_path", bool((result.get("target", {}) or {}).get("absolute_file_path")), 10)
-    add("has_summary_lines", bool(result.get("summary_lines")), 10)
-    add("has_feign_or_impl_continuation", bool(result.get("feign_continuations") or result.get("local_service_continuations")), 15)
-    add("has_agent_usage_policy", bool(result.get("agent_usage_policy")), 10)
-    add("has_schema_contract", result.get("schema_version", 0) >= 2 and bool(result.get("fields_contract")), 10)
-    add("has_mermaid", str(result.get("mermaid_flow", "")).startswith("flowchart"), 5)
-    add("has_branch_outline", bool(result.get("branch_outline")), 5)
-    add("has_risk_or_scope_context", bool(result.get("performance_risks") or result.get("data_scope_guards")), 5)
-    forbidden = ["tool-results", "grep -l", "find /", "sed -n"]
-    add("does_not_recommend_low_signal_tools", not any(token in text for token in forbidden), 10, ", ".join(forbidden))
-
-    max_score = sum(item["weight"] for item in checks)
-    score = sum(item["weight"] for item in checks if item["passed"])
+    quality = evaluate_walkthrough_result(result)
     return {
         "workspace_file": str(_resolve_walkthrough_workspace_input(workspace_file)),
         "symbol": symbol,
-        "score": score,
-        "max_score": max_score,
-        "grade": "pass" if score >= 80 else "warn" if score >= 60 else "fail",
-        "checks": checks,
+        **quality,
         "result": result,
     }
 
@@ -1311,11 +1295,17 @@ def memory_export_walkthrough_artifact(
         budget="medium",
         report_level=report_level,
     )
-    slug = _slugify_walkthrough_symbol(symbol)
+    slug = slugify_walkthrough_symbol(symbol)
     filename = f"walkthroughs/{slug}.md"
     path = _safe_path(store.artifacts_dir, filename)
     path.parent.mkdir(parents=True, exist_ok=True)
-    markdown = _render_walkthrough_artifact_markdown(config.workspace, symbol, result, title=title)
+    markdown = render_walkthrough_markdown(
+        config.workspace,
+        symbol,
+        result,
+        read_targets=_method_walkthrough_read_targets_text(result),
+        title=title,
+    )
     path.write_text(markdown, encoding="utf-8")
     return {
         "workspace": config.workspace,
@@ -1331,41 +1321,6 @@ def memory_export_walkthrough_artifact(
             "branch_outline": len(result.get("branch_outline", []) or []),
         },
     }
-
-
-def _slugify_walkthrough_symbol(symbol: str) -> str:
-    slug = re.sub(r"[^A-Za-z0-9_.#-]+", "-", symbol or "walkthrough").strip("-")
-    slug = slug.replace("#", "__")
-    return slug[:180] or "walkthrough"
-
-
-def _render_walkthrough_artifact_markdown(workspace: str, symbol: str, result: Dict[str, Any], title: str = "") -> str:
-    stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%SZ")
-    heading = title.strip() or f"Walkthrough: {symbol}"
-    body = result.get("answer_markdown", "") or "\n".join(result.get("summary_lines", []) or [])
-    mermaid = result.get("mermaid_flow", "")
-    read_targets = _method_walkthrough_read_targets_text(result)
-    quality = {
-        "schema_version": result.get("schema_version", 0),
-        "index_stale": (result.get("index_freshness", {}) or {}).get("index_stale", False),
-        "cache": result.get("cache", {}),
-    }
-    parts = [
-        f"# {heading}",
-        "",
-        f"- Workspace: `{workspace}`",
-        f"- Symbol: `{symbol}`",
-        f"- Generated: `{stamp}`",
-        f"- Schema: `{quality['schema_version']}`",
-        f"- Index stale: `{quality['index_stale']}`",
-        "",
-        body.strip(),
-    ]
-    if mermaid:
-        parts.extend(["", "## Mermaid", "", "```mermaid", mermaid, "```"])
-    parts.extend(["", "## Read Targets", "", read_targets or "- 无"])
-    parts.extend(["", "## Quality Metadata", "", "```json", json.dumps(quality, ensure_ascii=False, indent=2), "```", ""])
-    return "\n".join(parts)
 
 
 def _walkthrough_recent_bypass_feedback(store: Any, limit: int = 200) -> Dict[str, Any]:
@@ -1444,26 +1399,6 @@ def _walkthrough_index_signature(store: Any) -> Dict[str, float]:
         except OSError:
             signature[name] = 0.0
     return signature
-
-
-def _method_walkthrough_cache_get(key: str) -> Dict[str, Any] | None:
-    row = _METHOD_WALKTHROUGH_CACHE.get(key)
-    if not row:
-        return None
-    created_at, payload = row
-    if time.time() - created_at > _METHOD_WALKTHROUGH_CACHE_TTL_SECONDS:
-        _METHOD_WALKTHROUGH_CACHE.pop(key, None)
-        return None
-    return copy.deepcopy(payload)
-
-
-def _method_walkthrough_cache_put(key: str, payload: Dict[str, Any]) -> None:
-    saved = copy.deepcopy(payload)
-    saved["cache"] = {"hit": False, "ttl_seconds": _METHOD_WALKTHROUGH_CACHE_TTL_SECONDS}
-    if len(_METHOD_WALKTHROUGH_CACHE) >= _METHOD_WALKTHROUGH_CACHE_MAX_ITEMS:
-        oldest = min(_METHOD_WALKTHROUGH_CACHE.items(), key=lambda item: item[1][0])[0]
-        _METHOD_WALKTHROUGH_CACHE.pop(oldest, None)
-    _METHOD_WALKTHROUGH_CACHE[key] = (time.time(), saved)
 
 
 def _method_walkthrough_fields_contract() -> Dict[str, Any]:
