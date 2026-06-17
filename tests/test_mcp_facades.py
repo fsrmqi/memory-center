@@ -395,6 +395,34 @@ def test_walkthrough_support_modules_keep_query_contracts():
     assert "flowchart TD" in markdown
 
 
+def test_command_registry_shared_seam_and_mcp_compat_import():
+    from memory_center.core.dispatch import CommandRegistry
+    from memory_center.mcp.action_registry import ActionRegistry
+
+    registry = CommandRegistry(label="demo action").register_many({
+        "ping": lambda: {"ok": True},
+    })
+    assert registry.dispatch("ping") == {"ok": True}
+    assert registry.names() == ["ping"]
+    assert ActionRegistry(label="compat").register("x", lambda: 1).dispatch("x") == 1
+    with pytest.raises(ValueError, match="Unknown demo action"):
+        registry.dispatch("missing")
+
+
+def test_http_walkthrough_routes_use_registered_dispatch(tmp_path: Path):
+    wf = _setup_workspace(tmp_path)
+    symbol = "com.example.task.ArticleMoveService#move"
+
+    result = _route_request(
+        "/workspace/walkthrough-eval",
+        {"workspace": [wf], "symbol": [symbol]},
+        None,
+    )
+
+    assert result["grade"] == "pass"
+    assert result["result"]["schema_version"] >= 2
+
+
 def test_walkthrough_cli_commands(tmp_path: Path):
     wf = _setup_workspace(tmp_path)
     symbol = "com.example.task.ArticleMoveService#move"

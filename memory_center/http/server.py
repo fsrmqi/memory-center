@@ -19,6 +19,7 @@ from memory_center.core.exporters import (
     export_workbench_index_html,
     export_workspace_dashboard_html,
 )
+from memory_center.core.dispatch import CommandRegistry
 from memory_center.core.orchestrator import (
     group_impact,
     group_query,
@@ -32,12 +33,16 @@ from memory_center.core.orchestrator import (
     memory_eval_tool_adoption,
     memory_eval_context_weight,
     memory_eval_parser_benchmark,
+    memory_eval_walkthrough_quality,
     memory_eval_resume,
     memory_eval_handoff,
+    memory_export_walkthrough_artifact,
+    memory_method_walkthrough,
     memory_backend_query,
     memory_ref_batch,
     memory_ref_get,
     memory_tool_usage_report,
+    memory_walkthrough_health,
     memory_plan_change,
     memory_plan_write,
     memory_query,
@@ -308,6 +313,9 @@ def serve_http(default_workspace: str | Path | None = None, host: str = "127.0.0
 def _route_request(path: str, params: dict, default_workspace: str | None) -> dict:
     if path == "/health":
         return {"ok": True, "default_workspace": default_workspace}
+    registered = _dispatch_registered_http_route(path, params, default_workspace)
+    if registered is not None:
+        return registered
     if path == "/workspace/status":
         workspace = _require_workspace(params, default_workspace)
         return workspace_status(workspace, view=params.get("view", ["compact"])[0], budget=params.get("budget", ["medium"])[0])
@@ -1073,6 +1081,127 @@ def _route_request(path: str, params: dict, default_workspace: str | None) -> di
         return group_chain(grp, symbol=_require_one(params, "symbol"))
 
     raise FileNotFoundError(f"Unknown route: {path}")
+
+
+def _dispatch_registered_http_route(path: str, params: dict, default_workspace: str | None) -> dict | None:
+    registry = CommandRegistry(label="HTTP route").register_many({
+        "/workspace/method-walkthrough": lambda: memory_method_walkthrough(
+            _require_workspace(params, default_workspace),
+            _require_one(params, "symbol"),
+            depth=_parse_int(params, "depth", 4),
+            limit=_parse_int(params, "limit", 80),
+            project=params.get("project", [""])[0],
+            view=params.get("view", ["compact"])[0],
+            budget=params.get("budget", ["medium"])[0],
+            report_level=params.get("report_level", ["standard"])[0],
+        ),
+        "/workspace/walkthrough-health": lambda: memory_walkthrough_health(
+            _require_workspace(params, default_workspace),
+            symbol=params.get("symbol", [""])[0],
+            project=params.get("project", [""])[0],
+            report_level=params.get("report_level", ["standard"])[0],
+        ),
+        "/workspace/walkthrough-export": lambda: memory_export_walkthrough_artifact(
+            _require_workspace(params, default_workspace),
+            symbol=_require_one(params, "symbol"),
+            project=params.get("project", [""])[0],
+            report_level=params.get("report_level", ["deep"])[0],
+            title=params.get("title", [""])[0],
+        ),
+        "/workspace/walkthrough-eval": lambda: memory_eval_walkthrough_quality(
+            _require_workspace(params, default_workspace),
+            symbol=_require_one(params, "symbol"),
+            project=params.get("project", [""])[0],
+            report_level=params.get("report_level", ["standard"])[0],
+        ),
+        "/workspace/eval-parser-benchmark": lambda: memory_eval_parser_benchmark(
+            _require_workspace(params, default_workspace),
+            limit=_parse_int(params, "limit", 200),
+            max_findings=_parse_int(params, "max_findings", 20),
+        ),
+        "/workspace/regression-alerts": lambda: _http_regression_alerts(params, default_workspace),
+        "/workspace/workflow-profile": lambda: _http_workflow_profile(params),
+        "/workspace/workflow-recommend": lambda: _http_workflow_recommend(params, default_workspace),
+        "/workspace/bundle-export": lambda: _http_bundle_export(params, default_workspace),
+        "/workspace/runtime-audit": lambda: _http_runtime_audit(params, default_workspace),
+        "/workspace/explanation": lambda: _http_explanation(params),
+        "/workspace/business-flow": lambda: _http_business_flow(params, default_workspace),
+        "/workspace/business-flow-impact": lambda: _http_business_flow_impact(params, default_workspace),
+        "/workspace/metrics-summary": lambda: _http_metrics_summary(),
+        "/workspace/freshness": lambda: _http_freshness(params, default_workspace),
+    })
+    if not registry.has(path):
+        return None
+    return registry.dispatch(path)
+
+
+def _http_regression_alerts(params: dict, default_workspace: str | None) -> dict:
+    workspace = _require_workspace(params, default_workspace)
+    from memory_center.core.benchmark.trending import check_regression_alerts
+    return check_regression_alerts(workspace, threshold_pct=float(params.get("threshold_pct", ["10.0"])[0]))
+
+
+def _http_workflow_profile(params: dict) -> dict:
+    from memory_center.core.verification.workflow_profiles import get_workflow_profile
+    profile = params.get("profile", ["quick-fix"])[0]
+    return get_workflow_profile(profile)
+
+
+def _http_workflow_recommend(params: dict, default_workspace: str | None) -> dict:
+    from memory_center.core.verification.workflow_profiles import recommend_workflow_with_learning
+    workspace = _require_workspace(params, default_workspace)
+    desc = _require_one(params, "description")
+    return recommend_workflow_with_learning(workspace, desc)
+
+
+def _http_bundle_export(params: dict, default_workspace: str | None) -> dict:
+    workspace = _require_workspace(params, default_workspace)
+    from memory_center.core.verification.bundle_export import generate_agent_bundle
+    agent = params.get("agent", ["codex"])[0]
+    return generate_agent_bundle(workspace, agent=agent)
+
+
+def _http_runtime_audit(params: dict, default_workspace: str | None) -> dict:
+    workspace = _require_workspace(params, default_workspace)
+    from memory_center.core.audit.runtime import audit_agent_runtime
+    return audit_agent_runtime(workspace)
+
+
+def _http_explanation(params: dict) -> dict:
+    from memory_center.core.explanation.schema import Explanation
+    text = _require_one(params, "text")
+    persona = params.get("persona", ["developer"])[0]
+    exp = Explanation(subject="explanation", summary=text, persona=persona)
+    return exp.adapt_for_persona(persona).to_full()
+
+
+def _http_business_flow(params: dict, default_workspace: str | None) -> dict:
+    workspace = _require_workspace(params, default_workspace)
+    from memory_center.core.domain.flow import extract_business_flows_for_workspace
+    seed = _require_one(params, "seed")
+    max_depth = _parse_int(params, "max_depth", 4)
+    return extract_business_flows_for_workspace(workspace, seed, max_depth=max_depth)
+
+
+def _http_business_flow_impact(params: dict, default_workspace: str | None) -> dict:
+    workspace = _require_workspace(params, default_workspace)
+    from memory_center.core.domain.flow import business_flow_impact_for_workspace
+    node_id = _require_one(params, "node_id")
+    max_depth = _parse_int(params, "max_depth", 3)
+    return business_flow_impact_for_workspace(workspace, node_id, max_depth=max_depth)
+
+
+def _http_metrics_summary() -> dict:
+    from memory_center.core.metrics import MetricsCollector
+    mc = MetricsCollector()
+    return mc.summary()
+
+
+def _http_freshness(params: dict, default_workspace: str | None) -> dict:
+    workspace = _require_workspace(params, default_workspace)
+    from memory_center.core.freshness.status import IndexFreshnessService
+    svc = IndexFreshnessService(workspace)
+    return svc.banner()
 
 
 def _http_error_response(exc: Exception) -> tuple[int, dict]:

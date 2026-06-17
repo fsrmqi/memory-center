@@ -265,6 +265,7 @@ memory_center/core/
 │   ├── __init__.py
 │   └── completion.py
 ├── graph.py             # 图存储
+├── dispatch.py          # MCP / HTTP / CLI 共享命令分发 seam
 ├── semantic.py          # 语义索引
 ├── store.py             # 工作区存储
 ├── memory_backend.py    # SQLite 后端
@@ -291,12 +292,33 @@ This split keeps external schemas stable while reducing the size and responsibil
 
 该拆分保持外部 schema 稳定，同时降低 orchestrator 的体积和职责。后续 walkthrough 的纯格式化、评分、缓存策略优先放入 `core/walkthrough/`；只有遍历链路和 facade 组装逻辑留在 `orchestrator/query.py`。
 
+### Command Dispatch Seam / 命令分发 Seam
+
+`memory_center.core.dispatch.CommandRegistry` is the shared dispatch module for MCP actions, HTTP routes, and CLI command groups that would otherwise repeat large dictionaries or if-chains. Its interface is intentionally small: register handlers, check available names, and dispatch one name. The adapter still owns parameter binding, so public MCP action names, HTTP paths, and CLI command names remain backward-compatible.
+
+`memory_center.core.dispatch.CommandRegistry` 是 MCP action、HTTP route 与 CLI command group 共享的分发 Module，用于减少大字典和 if-chain 的重复。它的 interface 保持很小：注册 handler、检查可用名称、按名称分发。参数绑定仍由各 adapter 自己负责，因此公开的 MCP action 名称、HTTP 路径和 CLI 命令名保持兼容。
+
+Current adapters using this seam:
+
+- MCP: `mc_admin` dispatches through `CommandRegistry(label="mc_admin action")`; `memory_center.mcp.action_registry` remains as a compatibility import.
+- CLI: method walkthrough commands dispatch through a walkthrough command registry.
+- HTTP: growth-prone workspace routes such as walkthrough helpers, workflow helpers, regression alerts, runtime audit, business flow, metrics, and freshness dispatch through the same registry before falling back to the legacy route chain.
+
+当前已接入的 adapter：
+
+- MCP：`mc_admin` 通过 `CommandRegistry(label="mc_admin action")` 分发；`memory_center.mcp.action_registry` 保留为兼容导入路径。
+- CLI：method walkthrough 相关命令通过 walkthrough command registry 分发。
+- HTTP：walkthrough helper、workflow helper、regression alerts、runtime audit、business flow、metrics、freshness 等增长较快的 workspace route 先走同一 registry，再 fallback 到旧 route 链。
+
+The seam is intentionally not a framework. It is a small deep Module: deleting it would push unknown-action errors, valid-name listing, and handler maps back into every adapter.
+
+该 seam 刻意不做成框架，而是一个小而深的 Module：如果删除它，unknown-action 错误、有效名称列表、handler map 会重新散落回每个 adapter。
+
 ### Architecture Backlog / 后续架构优化队列
 
 The following work is intentionally documented as follow-up scope so it can be implemented in smaller, verifiable changes:
 
 - Split method walkthrough traversal from facade assembly: extract target resolution, local continuation expansion, Feign server matching, freshness/diff analysis, and answer assembly into separate modules.
-- Introduce shared command/action registries for MCP, HTTP, and CLI to reduce dispatch duplication while keeping current public action names backward-compatible.
 - Replace repeated graph assembly scans with indexed lookups where safe; retain tests around line-number accuracy for Endpoint, FeignClient, and FeignMethod nodes.
 - Make retrieval fusion pure by default and add regression tests for caller-owned result objects.
 - Add bounded performance benchmarks for large Spring Cloud workspaces, covering reindex, graph build, walkthrough, and hybrid retrieval.
@@ -304,7 +326,6 @@ The following work is intentionally documented as follow-up scope so it can be i
 以下工作作为后续范围记录，便于小步实现和验证：
 
 - 继续拆分 method walkthrough 遍历逻辑与 facade 组装：目标解析、本地续链、Feign 服务端匹配、freshness/diff 分析、答案组装分别成模块。
-- 为 MCP、HTTP、CLI 引入共享 command/action registry，减少分发重复，同时保持当前公开 action 名称兼容。
 - 在安全位置用索引化 lookup 替代重复 graph assembly 扫描，并保留 Endpoint、FeignClient、FeignMethod 行号准确性的测试。
 - 默认让 retrieval fusion 成为纯函数，并补充调用方自有 result 对象不被污染的回归测试。
 - 为大型 Spring Cloud 工作区增加有边界的性能基准，覆盖 reindex、graph build、walkthrough、hybrid retrieval。

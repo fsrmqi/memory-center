@@ -8,6 +8,7 @@ import typer
 from rich import print
 
 from memory_center import __version__
+from memory_center.core.dispatch import CommandRegistry
 from memory_center.core.artifacts import (
     append_task_change_log,
     archive_task_space,
@@ -203,6 +204,41 @@ def trace(workspace: str = typer.Option(...), entry: str = typer.Option(...)):
     print(workspace_trace(workspace, entry))
 
 
+def _dispatch_walkthrough_cli(action: str, **kwargs):
+    registry = CommandRegistry(label="walkthrough CLI command").register_many({
+        "method_walkthrough": lambda: memory_method_walkthrough(
+            kwargs["workspace"],
+            kwargs["symbol"],
+            depth=kwargs.get("depth", 4),
+            limit=kwargs.get("limit", 80),
+            project=kwargs.get("project", ""),
+            view=kwargs.get("view", "full"),
+            budget=kwargs.get("budget", "medium"),
+            report_level=kwargs.get("report_level", "standard"),
+        ),
+        "walkthrough_health": lambda: memory_walkthrough_health(
+            kwargs["workspace"],
+            symbol=kwargs.get("symbol", ""),
+            project=kwargs.get("project", ""),
+            report_level=kwargs.get("report_level", "standard"),
+        ),
+        "walkthrough_export": lambda: memory_export_walkthrough_artifact(
+            kwargs["workspace"],
+            symbol=kwargs["symbol"],
+            project=kwargs.get("project", ""),
+            report_level=kwargs.get("report_level", "deep"),
+            title=kwargs.get("title", ""),
+        ),
+        "eval_walkthrough_quality": lambda: memory_eval_walkthrough_quality(
+            kwargs["workspace"],
+            symbol=kwargs["symbol"],
+            project=kwargs.get("project", ""),
+            report_level=kwargs.get("report_level", "standard"),
+        ),
+    })
+    return registry.dispatch(action)
+
+
 @app.command("check-contract")
 def check_contract(workspace: str = typer.Option(...), contract_file: str = typer.Option(...), change_type: str = typer.Option("modify")):
     """Check impact before modifying shared DTO, Feign or MQ message contracts."""
@@ -308,7 +344,17 @@ def method_walkthrough_cmd(
     report_level: str = typer.Option("standard", help="brief|standard|deep|risk-focused"),
 ):
     """Explain indexed method steps, downstream calls, and Feign continuations."""
-    print(memory_method_walkthrough(workspace, symbol, depth=depth, limit=limit, project=project, view=view, budget=budget, report_level=report_level))
+    print(_dispatch_walkthrough_cli(
+        "method_walkthrough",
+        workspace=workspace,
+        symbol=symbol,
+        depth=depth,
+        limit=limit,
+        project=project,
+        view=view,
+        budget=budget,
+        report_level=report_level,
+    ))
 
 
 @app.command("walkthrough-health")
@@ -319,7 +365,13 @@ def walkthrough_health_cmd(
     report_level: str = typer.Option("standard", help="brief|standard|deep|risk-focused"),
 ):
     """Check method walkthrough readiness and output contract."""
-    print(memory_walkthrough_health(workspace, symbol=symbol, project=project, report_level=report_level))
+    print(_dispatch_walkthrough_cli(
+        "walkthrough_health",
+        workspace=workspace,
+        symbol=symbol,
+        project=project,
+        report_level=report_level,
+    ))
 
 
 @app.command("walkthrough-export")
@@ -331,7 +383,14 @@ def walkthrough_export_cmd(
     title: str = typer.Option("", help="Optional artifact title."),
 ):
     """Export a method walkthrough Markdown artifact under artifacts/walkthroughs."""
-    print(memory_export_walkthrough_artifact(workspace, symbol=symbol, project=project, report_level=report_level, title=title))
+    print(_dispatch_walkthrough_cli(
+        "walkthrough_export",
+        workspace=workspace,
+        symbol=symbol,
+        project=project,
+        report_level=report_level,
+        title=title,
+    ))
 
 
 @app.command("walkthrough-eval")
@@ -342,7 +401,13 @@ def walkthrough_eval_cmd(
     report_level: str = typer.Option("standard", help="brief|standard|deep|risk-focused"),
 ):
     """Evaluate whether a method walkthrough result is agent-ready."""
-    print(memory_eval_walkthrough_quality(workspace, symbol=symbol, project=project, report_level=report_level))
+    print(_dispatch_walkthrough_cli(
+        "eval_walkthrough_quality",
+        workspace=workspace,
+        symbol=symbol,
+        project=project,
+        report_level=report_level,
+    ))
 
 
 @app.command("context")
