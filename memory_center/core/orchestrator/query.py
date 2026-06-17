@@ -5,6 +5,7 @@ import copy
 import re
 import subprocess
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -18,6 +19,7 @@ from ..ontology import EntityValidator
 from ..diagnostics import DIAG, diag_entry, safe_reason
 from ..verification.heuristics import apply_candidate_path_learning
 from ..tracking import log_token_gain
+from ..store import WorkspaceStore, _safe_path
 from .common import (
     SESSION_EVENTS_FILE,
     _best_match,
@@ -1165,6 +1167,229 @@ def memory_method_walkthrough(
     return copy.deepcopy(result)
 
 
+def memory_walkthrough_health(
+    workspace_file: str | Path,
+    symbol: str = "",
+    project: str = "",
+    report_level: str = "standard",
+) -> Dict[str, Any]:
+    """Check method walkthrough readiness and output contract for a workspace."""
+    workspace_file = _resolve_walkthrough_workspace_input(workspace_file)
+    config, store = load_context(workspace_file)
+    template_info = _load_method_walkthrough_template(workspace_file)
+    glossary = _load_walkthrough_glossary(workspace_file)
+    index_signature = _walkthrough_index_signature(store)
+    index_files = {
+        name: {
+            "exists": bool(mtime),
+            "mtime": mtime,
+        }
+        for name, mtime in index_signature.items()
+    }
+    checks: List[Dict[str, Any]] = []
+
+    def check(name: str, status: str, detail: str = "", evidence: Dict[str, Any] | None = None) -> None:
+        checks.append({"name": name, "status": status, "detail": detail, "evidence": evidence or {}})
+
+    check("workspace_file", "pass" if Path(workspace_file).exists() else "fail", str(workspace_file))
+    missing_indexes = [name for name, row in index_files.items() if not row["exists"]]
+    check("required_indexes", "pass" if not missing_indexes else "warn", "缺失索引文件会降低 walkthrough 完整度。", {"missing": missing_indexes})
+    check("template", "pass" if template_info.get("status") == "configured" else "warn", template_info.get("path", "") or "未配置模板，将使用内置报告。")
+    check("glossary", "pass" if glossary else "warn", "已配置业务词汇。" if glossary else "未配置 glossary，glossary_hits 会为空。")
+    check("cache", "pass", f"进程内短期缓存 TTL={_METHOD_WALKTHROUGH_CACHE_TTL_SECONDS}s。", {"size": len(_METHOD_WALKTHROUGH_CACHE)})
+    bypass_feedback = _walkthrough_recent_bypass_feedback(store)
+    check(
+        "agent_bypass_feedback",
+        "warn" if bypass_feedback["suspected_bypasses"] else "pass",
+        "近期日志发现绕过 walkthrough 的低效定位动作。" if bypass_feedback["suspected_bypasses"] else "近期日志未发现明显绕过动作。",
+        bypass_feedback,
+    )
+
+    sample: Dict[str, Any] = {}
+    if symbol:
+        sample = memory_method_walkthrough(
+            workspace_file,
+            symbol,
+            depth=4,
+            limit=40,
+            project=project,
+            view="compact",
+            budget="small",
+            report_level=report_level,
+        )
+        check("sample_found", "pass" if sample.get("found") else "fail", symbol)
+        required_fields = ["schema_version", "fields_contract", "summary_lines", "answer_markdown", "agent_usage_policy"]
+        missing = [field for field in required_fields if not sample.get(field)]
+        check("sample_contract", "pass" if not missing else "fail", "核心 walkthrough 字段契约检查。", {"missing": missing})
+        freshness = sample.get("index_freshness", {}) or {}
+        check("sample_freshness", "warn" if freshness.get("index_stale") else "pass", freshness.get("recommended_action", "索引未发现 stale 主链路文件。"), freshness)
+
+    status = "pass"
+    if any(item["status"] == "fail" for item in checks):
+        status = "fail"
+    elif any(item["status"] == "warn" for item in checks):
+        status = "warn"
+    return {
+        "workspace": config.workspace,
+        "workspace_file": str(workspace_file),
+        "status": status,
+        "checks": checks,
+        "index_files": index_files,
+        "template": {k: v for k, v in template_info.items() if k != "template"},
+        "glossary_terms": len(glossary),
+        "recent_agent_bypass_feedback": bypass_feedback,
+        "sample": sample,
+    }
+
+
+def memory_eval_walkthrough_quality(
+    workspace_file: str | Path,
+    symbol: str,
+    project: str = "",
+    report_level: str = "standard",
+) -> Dict[str, Any]:
+    """Evaluate whether a method walkthrough result is agent-ready."""
+    result = memory_method_walkthrough(
+        workspace_file,
+        symbol,
+        depth=4,
+        limit=40,
+        project=project,
+        view="compact",
+        budget="small",
+        report_level=report_level,
+    )
+    checks: List[Dict[str, Any]] = []
+
+    def add(name: str, passed: bool, weight: int, detail: str = "") -> None:
+        checks.append({"name": name, "passed": passed, "weight": weight, "detail": detail})
+
+    text = "\n".join(result.get("summary_lines", []) or []) + "\n" + str(result.get("answer_markdown", ""))
+    add("found", bool(result.get("found")), 20)
+    add("has_target_absolute_path", bool((result.get("target", {}) or {}).get("absolute_file_path")), 10)
+    add("has_summary_lines", bool(result.get("summary_lines")), 10)
+    add("has_feign_or_impl_continuation", bool(result.get("feign_continuations") or result.get("local_service_continuations")), 15)
+    add("has_agent_usage_policy", bool(result.get("agent_usage_policy")), 10)
+    add("has_schema_contract", result.get("schema_version", 0) >= 2 and bool(result.get("fields_contract")), 10)
+    add("has_mermaid", str(result.get("mermaid_flow", "")).startswith("flowchart"), 5)
+    add("has_branch_outline", bool(result.get("branch_outline")), 5)
+    add("has_risk_or_scope_context", bool(result.get("performance_risks") or result.get("data_scope_guards")), 5)
+    forbidden = ["tool-results", "grep -l", "find /", "sed -n"]
+    add("does_not_recommend_low_signal_tools", not any(token in text for token in forbidden), 10, ", ".join(forbidden))
+
+    max_score = sum(item["weight"] for item in checks)
+    score = sum(item["weight"] for item in checks if item["passed"])
+    return {
+        "workspace_file": str(_resolve_walkthrough_workspace_input(workspace_file)),
+        "symbol": symbol,
+        "score": score,
+        "max_score": max_score,
+        "grade": "pass" if score >= 80 else "warn" if score >= 60 else "fail",
+        "checks": checks,
+        "result": result,
+    }
+
+
+def memory_export_walkthrough_artifact(
+    workspace_file: str | Path,
+    symbol: str,
+    project: str = "",
+    report_level: str = "deep",
+    title: str = "",
+) -> Dict[str, Any]:
+    """Export a method walkthrough Markdown artifact under artifacts/walkthroughs."""
+    workspace_file = _resolve_walkthrough_workspace_input(workspace_file)
+    config, _ = load_context(workspace_file)
+    store = WorkspaceStore(workspace_file)
+    result = memory_method_walkthrough(
+        workspace_file,
+        symbol,
+        depth=4,
+        limit=80,
+        project=project,
+        view="compact",
+        budget="medium",
+        report_level=report_level,
+    )
+    slug = _slugify_walkthrough_symbol(symbol)
+    filename = f"walkthroughs/{slug}.md"
+    path = _safe_path(store.artifacts_dir, filename)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    markdown = _render_walkthrough_artifact_markdown(config.workspace, symbol, result, title=title)
+    path.write_text(markdown, encoding="utf-8")
+    return {
+        "workspace": config.workspace,
+        "symbol": symbol,
+        "exported": True,
+        "artifact": filename,
+        "path": str(path),
+        "bytes": len(markdown.encode("utf-8")),
+        "result_summary": {
+            "found": result.get("found", False),
+            "schema_version": result.get("schema_version", 0),
+            "summary_lines": len(result.get("summary_lines", []) or []),
+            "branch_outline": len(result.get("branch_outline", []) or []),
+        },
+    }
+
+
+def _slugify_walkthrough_symbol(symbol: str) -> str:
+    slug = re.sub(r"[^A-Za-z0-9_.#-]+", "-", symbol or "walkthrough").strip("-")
+    slug = slug.replace("#", "__")
+    return slug[:180] or "walkthrough"
+
+
+def _render_walkthrough_artifact_markdown(workspace: str, symbol: str, result: Dict[str, Any], title: str = "") -> str:
+    stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%SZ")
+    heading = title.strip() or f"Walkthrough: {symbol}"
+    body = result.get("answer_markdown", "") or "\n".join(result.get("summary_lines", []) or [])
+    mermaid = result.get("mermaid_flow", "")
+    read_targets = _method_walkthrough_read_targets_text(result)
+    quality = {
+        "schema_version": result.get("schema_version", 0),
+        "index_stale": (result.get("index_freshness", {}) or {}).get("index_stale", False),
+        "cache": result.get("cache", {}),
+    }
+    parts = [
+        f"# {heading}",
+        "",
+        f"- Workspace: `{workspace}`",
+        f"- Symbol: `{symbol}`",
+        f"- Generated: `{stamp}`",
+        f"- Schema: `{quality['schema_version']}`",
+        f"- Index stale: `{quality['index_stale']}`",
+        "",
+        body.strip(),
+    ]
+    if mermaid:
+        parts.extend(["", "## Mermaid", "", "```mermaid", mermaid, "```"])
+    parts.extend(["", "## Read Targets", "", read_targets or "- 无"])
+    parts.extend(["", "## Quality Metadata", "", "```json", json.dumps(quality, ensure_ascii=False, indent=2), "```", ""])
+    return "\n".join(parts)
+
+
+def _walkthrough_recent_bypass_feedback(store: Any, limit: int = 200) -> Dict[str, Any]:
+    rows = store.read_jsonl_prefer_backend(SESSION_EVENTS_FILE, limit=limit)
+    patterns = ["find", "grep -l", "sed -n", "tool-results"]
+    hits: List[Dict[str, Any]] = []
+    for row in rows:
+        payload = row.get("payload", {}) if isinstance(row.get("payload"), dict) else row
+        text = json.dumps(payload, ensure_ascii=False)
+        tool_name = str(payload.get("tool_name") or row.get("tool_name") or "")
+        if any(pattern in text or pattern in tool_name for pattern in patterns):
+            hits.append({
+                "event_type": row.get("event_type", ""),
+                "tool_name": tool_name,
+                "created_at": row.get("created_at", ""),
+            })
+    return {
+        "checked_events": len(rows),
+        "suspected_bypasses": len(hits),
+        "patterns": patterns,
+        "recent_hits": hits[-10:],
+    }
+
+
 def _resolve_walkthrough_workspace_input(workspace_file: str | Path) -> Path:
     path = Path(workspace_file).expanduser()
     if path.is_file():
@@ -1344,6 +1569,7 @@ def _find_parent_or_covering_workspace(workspace_file: str | Path) -> Path | Non
         if candidate.exists() and candidate.resolve() != current_ws:
             candidates.append(candidate.resolve())
     candidates.extend(_registry_covering_workspaces(current_ws, current_root))
+    candidates.extend(_registry_group_sibling_workspaces(current_ws))
 
     unique: List[Path] = []
     seen = set()
@@ -1392,6 +1618,41 @@ def _registry_covering_workspaces(current_ws: Path, current_root: Path) -> List[
         except Exception:
             continue
         if _path_is_within(current_root, cfg.root_path):
+            out.append(candidate)
+    return out
+
+
+def _registry_group_sibling_workspaces(current_ws: Path) -> List[Path]:
+    try:
+        from ..registry import load_registry
+    except Exception:
+        return []
+    try:
+        registry = load_registry()
+    except Exception:
+        return []
+    repos = registry.get("repos", []) or []
+    current_names = {
+        repo.get("name", "")
+        for repo in repos
+        if str(Path(repo.get("workspace_file", "")).expanduser().resolve()) == str(current_ws)
+    }
+    if not current_names:
+        return []
+    sibling_names = set()
+    for group in registry.get("groups", []) or []:
+        members = set(group.get("members", []) or [])
+        if members & current_names:
+            sibling_names.update(members - current_names)
+    out: List[Path] = []
+    for repo in repos:
+        if repo.get("name", "") not in sibling_names:
+            continue
+        raw = repo.get("workspace_file", "")
+        if not raw:
+            continue
+        candidate = Path(raw).expanduser().resolve()
+        if candidate != current_ws and candidate.exists():
             out.append(candidate)
     return out
 

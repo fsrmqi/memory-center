@@ -42,6 +42,8 @@ from memory_center.core.orchestrator import (
     memory_context,
     memory_contracts,
     memory_detect_changes,
+    memory_eval_walkthrough_quality,
+    memory_export_walkthrough_artifact,
     memory_impact,
     memory_method_walkthrough,
     memory_plan_change,
@@ -53,6 +55,7 @@ from memory_center.core.orchestrator import (
     memory_search_code,
     memory_symbol,
     memory_verify_checklist,
+    memory_walkthrough_health,
     memory_plan_write,
     memory_tool_usage_report,
     memory_execute_write,
@@ -306,6 +309,40 @@ def method_walkthrough_cmd(
 ):
     """Explain indexed method steps, downstream calls, and Feign continuations."""
     print(memory_method_walkthrough(workspace, symbol, depth=depth, limit=limit, project=project, view=view, budget=budget, report_level=report_level))
+
+
+@app.command("walkthrough-health")
+def walkthrough_health_cmd(
+    workspace: str = typer.Option(...),
+    symbol: str = typer.Option("", help="Optional Method symbol for sample walkthrough validation."),
+    project: str = typer.Option("", help="Filter by project name for disambiguation."),
+    report_level: str = typer.Option("standard", help="brief|standard|deep|risk-focused"),
+):
+    """Check method walkthrough readiness and output contract."""
+    print(memory_walkthrough_health(workspace, symbol=symbol, project=project, report_level=report_level))
+
+
+@app.command("walkthrough-export")
+def walkthrough_export_cmd(
+    workspace: str = typer.Option(...),
+    symbol: str = typer.Option(..., help="Method symbol, e.g. com.example.ArticleService#listByDto"),
+    project: str = typer.Option("", help="Filter by project name for disambiguation."),
+    report_level: str = typer.Option("deep", help="brief|standard|deep|risk-focused"),
+    title: str = typer.Option("", help="Optional artifact title."),
+):
+    """Export a method walkthrough Markdown artifact under artifacts/walkthroughs."""
+    print(memory_export_walkthrough_artifact(workspace, symbol=symbol, project=project, report_level=report_level, title=title))
+
+
+@app.command("walkthrough-eval")
+def walkthrough_eval_cmd(
+    workspace: str = typer.Option(...),
+    symbol: str = typer.Option(..., help="Method symbol, e.g. com.example.ArticleService#listByDto"),
+    project: str = typer.Option("", help="Filter by project name for disambiguation."),
+    report_level: str = typer.Option("standard", help="brief|standard|deep|risk-focused"),
+):
+    """Evaluate whether a method walkthrough result is agent-ready."""
+    print(memory_eval_walkthrough_quality(workspace, symbol=symbol, project=project, report_level=report_level))
 
 
 @app.command("context")

@@ -32,6 +32,8 @@ from memory_center.core.orchestrator import (
     memory_context,
     memory_contracts,
     memory_detect_changes,
+    memory_eval_walkthrough_quality,
+    memory_export_walkthrough_artifact,
     memory_impact,
     memory_method_walkthrough,
     memory_plan_change,
@@ -43,6 +45,7 @@ from memory_center.core.orchestrator import (
     memory_search_code,
     memory_symbol,
     memory_verify_checklist,
+    memory_walkthrough_health,
     memory_plan_write,
     memory_execute_write,
     memory_tool_usage_report,
@@ -715,7 +718,7 @@ def create_server(workspace_file: str):
         layer: str = "",
         action_filter: str = "",
     ):
-        """Admin and utility operations. Action selects sub-operation: status, dashboard, continuity, health, audit, discover, constraint, drill_ref, drill_timeline, drill_task, backend_consistency, artifact_list, artifact_get, artifact_outline, artifact_context, artifact_update, change_log_append, change_log_compact, task_create, task_list, task_resolve, task_get, task_update, task_change_log_append, task_archive, task_auto_archive, task_status, task_activity_touch, session_start, session_log, session_end, session_recent, session_summary, model_profile, handoff_history, write_judge, write_plan, write_execute, receipts, replay, backend_query, eval_write_quality, eval_resume, eval_handoff, eval_regression_suite, eval_index_freshness, eval_tool_adoption, eval_context_weight, eval_workflow_orchestration, eval_token_gain, eval_parser_benchmark, eval_token_benchmark, eval_token_benchmark_trend, tool_usage_report, generate_wiki, generate_skills, group_status, group_query, group_impact, group_chain, method_walkthrough."""
+        """Admin and utility operations. Action selects sub-operation: status, dashboard, continuity, health, audit, discover, constraint, drill_ref, drill_timeline, drill_task, backend_consistency, artifact_list, artifact_get, artifact_outline, artifact_context, artifact_update, change_log_append, change_log_compact, task_create, task_list, task_resolve, task_get, task_update, task_change_log_append, task_archive, task_auto_archive, task_status, task_activity_touch, session_start, session_log, session_end, session_recent, session_summary, model_profile, handoff_history, write_judge, write_plan, write_execute, receipts, replay, backend_query, eval_write_quality, eval_resume, eval_handoff, eval_regression_suite, eval_index_freshness, eval_tool_adoption, eval_context_weight, eval_workflow_orchestration, eval_token_gain, eval_parser_benchmark, eval_token_benchmark, eval_token_benchmark_trend, tool_usage_report, generate_wiki, generate_skills, group_status, group_query, group_impact, group_chain, method_walkthrough, walkthrough_health, walkthrough_export, eval_walkthrough_quality."""
         wf = ctx.workspace_file
         _DISPATCH = {
             "status": lambda: workspace_status(wf, view=view, budget=budget),
@@ -784,6 +787,9 @@ def create_server(workspace_file: str):
             "group_impact": lambda: group_impact(group, target=intent or text, direction=direction, max_depth=max_depth),
             "group_chain": lambda: group_chain(group, symbol=name or text, direction=direction, depth=max_depth, limit=limit),
             "method_walkthrough": lambda: memory_method_walkthrough(wf, name or text or intent, depth=max_depth, limit=limit, project=project, view=view, budget=budget, report_level=model or "standard"),
+            "walkthrough_health": lambda: memory_walkthrough_health(wf, symbol=name or text or intent, project=project, report_level=model or "standard"),
+            "walkthrough_export": lambda: memory_export_walkthrough_artifact(wf, symbol=name or text or intent, project=project, report_level=model or "deep", title=title),
+            "eval_walkthrough_quality": lambda: memory_eval_walkthrough_quality(wf, symbol=name or text or intent, project=project, report_level=model or "standard"),
             # ECC — verification loop
             "verification_loop": lambda: _verification_loop_action(wf, intent, task_id),
             # ECC — pattern promotion

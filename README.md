@@ -726,6 +726,20 @@ Walkthrough endpoint candidates include `confidence` and `confidence_reasons`. `
 
 walkthrough 的 endpoint 候选会包含 `confidence` 和 `confidence_reasons`。当 `index_freshness.index_stale=true` 时，说明至少一个主链路文件比当前索引更新，应先读实时文件或重新 reindex。重复 walkthrough 会使用短期进程内缓存，缓存键包含 workspace、symbol、报告形态和索引签名。
 
+Operational walkthrough helpers are available for upgrade checks and team handoff:
+
+链路梳理还提供面向验收与协作的辅助能力：
+
+```bash
+memory-center walkthrough-health --workspace /path/to/project --symbol com.example.Service#method
+memory-center walkthrough-eval --workspace /path/to/project --symbol com.example.Service#method
+memory-center walkthrough-export --workspace /path/to/project --symbol com.example.Service#method
+```
+
+The equivalent MCP admin actions are `mc_admin(action="walkthrough_health")`, `mc_admin(action="eval_walkthrough_quality")`, and `mc_admin(action="walkthrough_export")`. Exported Markdown is written under `.memory-center/artifacts/walkthroughs/*.md`.
+
+对应的 MCP admin action 是 `mc_admin(action="walkthrough_health")`、`mc_admin(action="eval_walkthrough_quality")` 和 `mc_admin(action="walkthrough_export")`。导出的 Markdown 会写入 `.memory-center/artifacts/walkthroughs/*.md`。
+
 > **Note**: CLI and HTTP still expose all fine-grained atomic commands. Only the MCP surface uses facade tools. See [docs/MCP_GUIDE.md](./docs/MCP_GUIDE.md) and [docs/REFERENCE.md](./docs/REFERENCE.md) for facade routing and command reference.
 >
 > **注意**：CLI 和 HTTP 仍保留所有细粒度原子命令。只有 MCP 工具面使用 facade 工具。路由与命令参考见 [docs/MCP_GUIDE.md](./docs/MCP_GUIDE.md) 和 [docs/REFERENCE.md](./docs/REFERENCE.md)。

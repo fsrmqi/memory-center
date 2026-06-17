@@ -68,6 +68,7 @@ MCP 当前公开的是 12 个 task-level tools：
 - endpoint 候选会包含 `confidence` / `confidence_reasons`，多候选时优先使用置信度最高的 Controller。
 - `index_freshness.index_stale=true` 表示主链路文件比索引更新，应先 live read 或 reindex；`cache.hit=true` 表示命中短期进程内缓存。
 - `branch_outline` 会把大方法规则分组、DTO 字段或方法调用整理成可读轮廓；`anti_patterns` 明确列出宿主模型应避免的低效动作。
+- `mc_admin(action="walkthrough_health")` 会检查模板、glossary、索引文件、缓存、字段契约与近期绕过行为；`mc_admin(action="eval_walkthrough_quality")` 会对 walkthrough 输出做 agent-ready 评分；`mc_admin(action="walkthrough_export")` 会导出 `.memory-center/artifacts/walkthroughs/*.md`。
 
 `mc_close` 在 session 内存在可推断的 lookup / impact / sync 路径且有验证结果时，会自动写回一轮 `candidate_feedback`，让后续推荐权重逐步学习。
 
@@ -117,6 +118,7 @@ MCP 当前公开的是 12 个 task-level tools：
 - `task_*` — 任务空间操作
 - `session_*` — 会话操作
 - `group_*` — 跨工作区组操作
+- `walkthrough_health` / `eval_walkthrough_quality` / `walkthrough_export` — method walkthrough 自检、质量评测与 Markdown artifact 导出
 
 ## 5. V3 Tools / V3 工具
 

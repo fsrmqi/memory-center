@@ -5,9 +5,10 @@ from typer.testing import CliRunner
 
 from memory_center.core.orchestrator import (
     memory_callers, memory_callees, memory_context, memory_contracts,
-    memory_detect_changes, memory_impact, memory_method_walkthrough, memory_plan_change, memory_query,
+    memory_detect_changes, memory_eval_walkthrough_quality, memory_export_walkthrough_artifact, memory_impact,
+    memory_method_walkthrough, memory_plan_change, memory_query,
     memory_query_hybrid, memory_search_code, memory_symbol,
-    memory_verify_checklist,
+    memory_verify_checklist, memory_walkthrough_health,
     workspace_check_rules, workspace_end_session,
     workspace_handoff_packet, workspace_next_actions,
     workspace_recent_evidence, workspace_resume_packet, workspace_sniff,
@@ -332,6 +333,49 @@ def test_method_walkthrough_uses_configured_template(tmp_path: Path):
     assert result["answer_markdown"].startswith("CUSTOM task-service:ArticleMoveService#move")
 
 
+def test_walkthrough_health_eval_and_export(tmp_path: Path):
+    wf = _setup_workspace(tmp_path)
+    symbol = "com.example.task.ArticleMoveService#move"
+
+    health = memory_walkthrough_health(wf, symbol=symbol)
+    assert health["status"] in {"pass", "warn"}
+    assert any(item["name"] == "sample_contract" and item["status"] == "pass" for item in health["checks"])
+    assert "recent_agent_bypass_feedback" in health
+
+    quality = memory_eval_walkthrough_quality(wf, symbol=symbol)
+    assert quality["grade"] == "pass"
+    assert quality["score"] >= 80
+    assert any(item["name"] == "does_not_recommend_low_signal_tools" and item["passed"] for item in quality["checks"])
+
+    exported = memory_export_walkthrough_artifact(wf, symbol=symbol, title="Article move walkthrough")
+    artifact_path = Path(exported["path"])
+    assert exported["exported"] is True
+    assert exported["artifact"].startswith("walkthroughs/")
+    assert artifact_path.exists()
+    content = artifact_path.read_text(encoding="utf-8")
+    assert "# Article move walkthrough" in content
+    assert "```mermaid" in content
+    assert "## Read Targets" in content
+
+
+def test_walkthrough_cli_commands(tmp_path: Path):
+    wf = _setup_workspace(tmp_path)
+    symbol = "com.example.task.ArticleMoveService#move"
+    runner = CliRunner()
+
+    health = runner.invoke(app, ["walkthrough-health", "--workspace", wf, "--symbol", symbol])
+    assert health.exit_code == 0
+    assert "sample_contract" in health.stdout
+
+    eval_result = runner.invoke(app, ["walkthrough-eval", "--workspace", wf, "--symbol", symbol])
+    assert eval_result.exit_code == 0
+    assert "grade" in eval_result.stdout
+
+    export = runner.invoke(app, ["walkthrough-export", "--workspace", wf, "--symbol", symbol])
+    assert export.exit_code == 0
+    assert "walkthroughs/" in export.stdout
+
+
 @pytest.mark.skipif(not HAS_MCP, reason="mcp package not installed")
 def test_mc_lookup_auto_returns_decision_fields(tmp_path: Path):
     import asyncio
@@ -387,6 +431,25 @@ def test_mc_lookup_auto_prefers_chain_for_deep_method_trace_queries(tmp_path: Pa
     assert result["agent_usage_policy"]["read_files_by"] == "absolute_file_path"
     assert result["result"]["found"] is True
     assert result["result"]["target"]["method"] == "moveArticle"
+
+
+@pytest.mark.skipif(not HAS_MCP, reason="mcp package not installed")
+def test_mc_admin_walkthrough_actions(tmp_path: Path):
+    import asyncio
+    from memory_center.mcp.server import create_server
+
+    wf = _setup_workspace(tmp_path)
+    symbol = "com.example.task.ArticleMoveService#move"
+    server = create_server(wf)
+    mc_admin = server._tool_manager._tools["mc_admin"]
+    loop = asyncio.get_event_loop()
+
+    health = loop.run_until_complete(mc_admin.fn(action="walkthrough_health", text=symbol))
+    assert health["result"]["status"] in {"pass", "warn"}
+    quality = loop.run_until_complete(mc_admin.fn(action="eval_walkthrough_quality", text=symbol))
+    assert quality["result"]["grade"] == "pass"
+    exported = loop.run_until_complete(mc_admin.fn(action="walkthrough_export", text=symbol))
+    assert exported["result"]["exported"] is True
 
 
 @pytest.mark.skipif(not HAS_MCP, reason="mcp package not installed")
