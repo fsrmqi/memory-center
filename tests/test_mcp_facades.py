@@ -150,6 +150,83 @@ def test_memory_method_walkthrough_returns_feign_continuations(tmp_path: Path):
     assert any(line.startswith("Server article-service:ArticleController#moveArticle") for line in result["summary_lines"])
     assert result["answer_markdown"]
     assert result["answer_template"]["status"] == "fallback_builtin"
+    assert result["mermaid_flow"].startswith("flowchart TD")
+    assert "performance_risks" in result
+    assert "data_scope_guards" in result
+    assert "diff_context" in result
+    assert "glossary_hits" in result
+
+
+def test_method_walkthrough_report_level_and_glossary(tmp_path: Path):
+    wf = Path(_setup_workspace(tmp_path))
+    glossary = wf.parent / "glossary.yaml"
+    glossary.write_text(
+        "terms:\n"
+        "  urlmd5: URL 指纹，用于文章移动校验。\n"
+        "  ArticleFeignClient:\n"
+        "    description: 文章服务 Feign 客户端。\n"
+        "    category: contract\n",
+        encoding="utf-8",
+    )
+
+    result = memory_method_walkthrough(
+        wf,
+        "com.example.task.ArticleMoveService#move",
+        view="compact",
+        budget="small",
+        report_level="risk-focused",
+    )
+    assert "### 性能风险" in result["answer_markdown"]
+    assert result["glossary_hits"]
+    assert any(item["term"] == "urlmd5" for item in result["glossary_hits"])
+
+
+def test_walkthrough_risk_helpers_detect_performance_and_scope(tmp_path: Path):
+    from memory_center.core.orchestrator.query import _build_data_scope_guards, _build_walkthrough_performance_risks
+
+    source = tmp_path / "Demo.java"
+    source.write_text(
+        """
+        class Demo {
+          public void listByDto(QueryDto queryDto) {
+            commonService.getCustomInfo(queryDto.getCustCode());
+            queryDto.setCustCode(null);
+            feign.listByDto(queryDto, SecurityConstants.FROM_IN);
+          }
+        }
+        """,
+        encoding="utf-8",
+    )
+    result = {
+        "target": {"absolute_file_path": str(source), "method": "listByDto"},
+        "method_calls": [
+            {"method_name": "scriptQuery", "receiver": "QueryBuilders", "line": 10},
+            {"method_name": "wildcardQuery", "receiver": "QueryBuilders", "line": 11},
+            {"method_name": "setTrackTotalHits", "receiver": "sourceBuilder", "line": 12},
+        ],
+        "feign_continuations": [
+            {
+                "server_walkthroughs": [
+                    {
+                        "service_impl_continuations": [
+                            {
+                                "same_class_method_continuations": [
+                                    {"rule_groups": [{"group": "data_protection", "fields": ["protectCode", "unitLevel"]}]}
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            }
+        ],
+    }
+    risks = _build_walkthrough_performance_risks(result)
+    guards = _build_data_scope_guards(result)
+    assert {item["code"] for item in risks} >= {"es_script_query", "es_wildcard_query", "track_total_hits"}
+    assert {item["code"]: item["status"] for item in guards}["custom_info_enrichment"] == "present"
+    assert {item["code"]: item["status"] for item in guards}["cust_code_cleared"] == "present"
+    assert {item["code"]: item["status"] for item in guards}["internal_feign_header"] == "present"
+    assert {item["code"]: item["status"] for item in guards}["downstream_data_protection_filters"] == "present"
 
 
 def test_method_walkthrough_escalates_from_subproject_workspace(tmp_path: Path):
@@ -184,6 +261,20 @@ def test_method_walkthrough_escalates_from_subproject_workspace(tmp_path: Path):
     assert result["workspace_escalation"]["original_workspace_file"] == str(child_wf.resolve())
     assert result["workspace_escalation"]["workspace_used"] == str(parent_wf.resolve())
     assert any(line.startswith("Server article-service:ArticleController#moveArticle") for line in result["summary_lines"])
+
+
+def test_method_walkthrough_accepts_project_directory(tmp_path: Path):
+    wf = Path(_setup_workspace(tmp_path))
+    repo_root = wf.parent.parent
+    result = memory_method_walkthrough(
+        repo_root / "task-service",
+        "com.example.task.ArticleMoveService#move",
+        view="compact",
+        budget="small",
+    )
+    assert result["found"] is True
+    assert result["workspace"] == "spring-cloud-demo"
+    assert result["target"]["class"] == "ArticleMoveService"
 
 
 def test_method_walkthrough_uses_configured_template(tmp_path: Path):
@@ -249,9 +340,23 @@ def test_mc_lookup_auto_prefers_chain_for_deep_method_trace_queries(tmp_path: Pa
     assert result["summary_lines"]
     assert result["answer"]
     assert result["read_targets"]
+    assert result["mermaid_flow"].startswith("flowchart TD")
+    assert "performance_risks" in result
+    assert "data_scope_guards" in result
+    assert "diff_context" in result
+    assert "glossary_hits" in result
     assert result["agent_usage_policy"]["read_files_by"] == "absolute_file_path"
     assert result["result"]["found"] is True
     assert result["result"]["target"]["method"] == "moveArticle"
+
+
+@pytest.mark.skipif(not HAS_MCP, reason="mcp package not installed")
+def test_mcp_create_server_resolves_directory_workspace(tmp_path: Path):
+    from memory_center.mcp.server import _resolve_workspace_input
+
+    wf = Path(_setup_workspace(tmp_path))
+    repo_root = wf.parent.parent
+    assert _resolve_workspace_input(str(repo_root)) == str(wf.resolve())
 
 
 @pytest.mark.skipif(not HAS_MCP, reason="mcp package not installed")

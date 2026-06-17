@@ -162,6 +162,8 @@ def detect_query_intent(query: str) -> Dict[str, Any]:
     parts = query.replace(".", " ").replace("/", " ").split()
     for part in parts:
         for intent, pattern in _JAVA_PATTERNS.items():
+            if intent == "method" and len(parts) == 1 and "." not in query and "#" not in query:
+                continue
             if pattern.search(part):
                 intents.setdefault(intent, 0)
                 intents[intent] = max(intents[intent], 0.8)
@@ -185,6 +187,7 @@ def detect_query_intent(query: str) -> Dict[str, Any]:
     # feign/mq/endpoint 是契约级实体，优先级高于通用 class
     is_feign_confirmed = any(EntityValidator.is_feign_entity(p) for p in parts)
     is_service_confirmed = any(EntityValidator.is_local_service(p) for p in parts)
+    has_java_class_hint = any(_JAVA_PATTERNS["class"].search(p) for p in parts)
 
     if "feign" in intents:
         intents["feign"] = max(intents["feign"], 2.0)
@@ -207,7 +210,7 @@ def detect_query_intent(query: str) -> Dict[str, Any]:
         elif any(p.endswith("Controller") or p.endswith("Resource") or p.endswith("Api") for p in parts):
             # 命名约定表明是 endpoint，降低 class 权重
             intents["class"] = max(intents.get("class", 0), 1.0)
-        else:
+        elif is_service_confirmed or has_java_class_hint:
             intents["class"] = max(intents.get("class", 0), 2.2)
 
     # 当 ontology 确认是 feign 但 class 分数也高时，确保 feign 优先

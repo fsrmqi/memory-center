@@ -148,7 +148,25 @@ def _find_groups_for_workspace(workspace_file: str) -> List[str]:
 class _WorkspaceContext:
     """Holds workspace file path per server instance, avoiding module-level global."""
     def __init__(self, workspace_file: str):
-        self.workspace_file = workspace_file
+        self.workspace_file = _resolve_workspace_input(workspace_file)
+
+
+def _resolve_workspace_input(workspace_input: str) -> str:
+    """Resolve a file/dir input to workspace.yaml when possible, without hard failure."""
+    raw = (workspace_input or ".").strip() or "."
+    path = Path(raw).expanduser()
+    if path.is_file():
+        return str(path.resolve())
+    start = path.resolve() if path.exists() else Path.cwd().resolve()
+    if start.name == ".memory-center":
+        candidate = start / "workspace.yaml"
+        if candidate.exists():
+            return str(candidate.resolve())
+    for parent in [start, *start.parents]:
+        candidate = parent / ".memory-center" / "workspace.yaml"
+        if candidate.exists():
+            return str(candidate.resolve())
+    return str(path.resolve())
 
 
 def _extract_symbol_like_token(*values: str) -> str:
@@ -198,6 +216,11 @@ def _flatten_walkthrough_payload(result: Dict[str, Any], mode_key: str = "mode_u
         "summary_lines": summary_lines,
         "primary_flow": summary_lines,
         "read_targets": _collect_walkthrough_read_targets(result),
+        "mermaid_flow": result.get("mermaid_flow", ""),
+        "performance_risks": result.get("performance_risks", []),
+        "data_scope_guards": result.get("data_scope_guards", []),
+        "diff_context": result.get("diff_context", {}),
+        "glossary_hits": result.get("glossary_hits", []),
         "agent_usage_policy": result.get("agent_usage_policy", {}),
         "next_actions": result.get("next_actions", []),
         "result": result,
@@ -405,6 +428,7 @@ def create_server(workspace_file: str):
         ref_ids: List[str] | None = None,
         limit: int = 20,
         project: str = "",
+        report_level: str = "standard",
     ):
         """Unified knowledge lookup. Mode selects strategy: auto (system decides via lookup_hint), symbol (resolve name), code (keyword search), query (graph-aware multi-source), trace (cross-service by class/Feign/endpoint/MQ), chain (caller/callee analysis, use chain_direction), walkthrough (method-level indexed walkthrough), context (360-degree context for a service/symbol), contracts (list all Feign/API/MQ contracts), ref (resolve short memory reference IDs). For Class#method requests that say full chain/全链路/到底层, prefer mode='walkthrough' or auto; walkthrough returns summary_lines, local_service_continuations, feign_continuations.server_walkthroughs, service_impl_continuations, and absolute_file_path. If absolute_file_path is present, read that path directly and do not run find/grep/IDEA search to locate the same controller or impl. Use project to disambiguate when multiple modules contain the same symbol name."""
         wf = ctx.workspace_file
@@ -422,7 +446,7 @@ def create_server(workspace_file: str):
             # Strip suffix for cleaner matching
             preferred_bare = [t.replace("_tool", "") for t in preferred]
             if _wants_deep_chain(query, intent, symbol, name, entry) and "#" in resolved_symbol:
-                result = memory_method_walkthrough(wf, resolved_symbol, depth=resolved_depth, limit=limit, project=project, view="compact", budget="small")
+                result = memory_method_walkthrough(wf, resolved_symbol, depth=resolved_depth, limit=limit, project=project, view="compact", budget="small", report_level=report_level)
                 payload = _flatten_walkthrough_payload(result, mode_key="mode_used")
                 payload["routing_note"] = "auto selected walkthrough for Class#method full-chain query; use top-level answer/summary_lines/read_targets directly."
                 return payload
@@ -489,7 +513,7 @@ def create_server(workspace_file: str):
             _annotate_phantom_nodes(result, wf)
             return {"mode": f"chain-{chain_direction}", "result": result}
         if mode == "walkthrough":
-            result = memory_method_walkthrough(wf, symbol or resolved_symbol or query, depth=depth, limit=limit, project=project, view="compact", budget="small")
+            result = memory_method_walkthrough(wf, symbol or resolved_symbol or query, depth=depth, limit=limit, project=project, view="compact", budget="small", report_level=report_level)
             return _flatten_walkthrough_payload(result, mode_key="mode")
         if mode == "context":
             return {"mode": "context", "result": memory_context(wf, name or query, depth, project=project, view="compact", budget="small")}
@@ -753,7 +777,7 @@ def create_server(workspace_file: str):
             "group_query": lambda: group_query(group, query=text, limit=limit),
             "group_impact": lambda: group_impact(group, target=intent or text, direction=direction, max_depth=max_depth),
             "group_chain": lambda: group_chain(group, symbol=name or text, direction=direction, depth=max_depth, limit=limit),
-            "method_walkthrough": lambda: memory_method_walkthrough(wf, name or text or intent, depth=max_depth, limit=limit, project=project, view=view, budget=budget),
+            "method_walkthrough": lambda: memory_method_walkthrough(wf, name or text or intent, depth=max_depth, limit=limit, project=project, view=view, budget=budget, report_level=model or "standard"),
             # ECC — verification loop
             "verification_loop": lambda: _verification_loop_action(wf, intent, task_id),
             # ECC — pattern promotion
@@ -1091,9 +1115,9 @@ def create_server(workspace_file: str):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--workspace", required=True, help="Path to .memory-center/workspace.yaml")
+    parser.add_argument("--workspace", default=".", help="Path to workspace.yaml or a project directory")
     args = parser.parse_args()
-    server = create_server(str(Path(args.workspace).expanduser().resolve()))
+    server = create_server(args.workspace)
     server.run()
 
 

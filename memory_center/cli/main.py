@@ -302,9 +302,10 @@ def method_walkthrough_cmd(
     project: str = typer.Option("", help="Filter by project name for disambiguation."),
     view: str = typer.Option("full", help="full|compact"),
     budget: str = typer.Option("medium", help="small|medium|large"),
+    report_level: str = typer.Option("standard", help="brief|standard|deep|risk-focused"),
 ):
     """Explain indexed method steps, downstream calls, and Feign continuations."""
-    print(memory_method_walkthrough(workspace, symbol, depth=depth, limit=limit, project=project, view=view, budget=budget))
+    print(memory_method_walkthrough(workspace, symbol, depth=depth, limit=limit, project=project, view=view, budget=budget, report_level=report_level))
 
 
 @app.command("context")

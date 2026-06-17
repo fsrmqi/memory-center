@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import json
 import re
+import subprocess
 from pathlib import Path
 from typing import Any, Dict, List
+
+import yaml
 
 from ..graph import GraphStore, node_id
 from ..rules import match_rules
@@ -997,6 +1000,7 @@ def memory_method_walkthrough(
     project: str = "",
     view: str = "full",
     budget: str = "medium",
+    report_level: str = "standard",
     _allow_workspace_escalation: bool = True,
 ) -> Dict[str, Any]:
     """Build a method-level walkthrough from indexed Java evidence.
@@ -1005,6 +1009,7 @@ def memory_method_walkthrough(
     DTO field reads, config/data-resource hints, and graph downstream edges.
     It does not pretend to execute Java control flow.
     """
+    workspace_file = _resolve_walkthrough_workspace_input(workspace_file)
     config, store = load_context(workspace_file)
     active_workspace_file = str(Path(workspace_file).expanduser().resolve())
     symbols = store.read_json_prefer_backend("java-symbol-index.json", [])
@@ -1024,7 +1029,7 @@ def memory_method_walkthrough(
 
     entry = _find_method_symbol_entry(symbols, parsed, project=project)
     if not entry:
-        escalated = _try_escalated_method_walkthrough(workspace_file, symbol, depth, limit, project, view, budget, current_result=None, allow=_allow_workspace_escalation)
+        escalated = _try_escalated_method_walkthrough(workspace_file, symbol, depth, limit, project, view, budget, report_level, current_result=None, allow=_allow_workspace_escalation)
         if escalated:
             return escalated
         return {
@@ -1117,17 +1122,38 @@ def memory_method_walkthrough(
         downstream_summary,
         _budget_limits(budget),
     )
-    escalated = _try_escalated_method_walkthrough(workspace_file, symbol, depth, limit, project, view, budget, current_result=result, allow=_allow_workspace_escalation)
+    result["glossary_hits"] = _build_glossary_hits(workspace_file, result)
+    result["performance_risks"] = _build_walkthrough_performance_risks(result)
+    result["data_scope_guards"] = _build_data_scope_guards(result)
+    result["mermaid_flow"] = _build_method_walkthrough_mermaid(result)
+    result["diff_context"] = _build_walkthrough_diff_context(config, result)
+    escalated = _try_escalated_method_walkthrough(workspace_file, symbol, depth, limit, project, view, budget, report_level, current_result=result, allow=_allow_workspace_escalation)
     if escalated:
         return escalated
     result["workspace_escalation"] = _build_workspace_escalation_status(workspace_file, status="not_needed_or_not_found")
-    result["answer_markdown"] = _render_method_walkthrough_answer(result, workspace_file)
+    result["answer_markdown"] = _render_method_walkthrough_answer(result, workspace_file, report_level=report_level)
     if _is_compact_view(view):
         compact = _compact_method_walkthrough_result(result, budget=budget)
         gain = _measure_compact_gain(result, compact)
         log_token_gain(workspace_file, "memory_method_walkthrough", budget=budget, model="", raw_tokens=gain["raw_tokens"], compact_tokens=gain["compact_tokens"], view=view)
         return compact
     return result
+
+
+def _resolve_walkthrough_workspace_input(workspace_file: str | Path) -> Path:
+    path = Path(workspace_file).expanduser()
+    if path.is_file():
+        return path.resolve()
+    start = path.resolve() if path.exists() else Path.cwd().resolve()
+    if start.name == ".memory-center":
+        candidate = start / "workspace.yaml"
+        if candidate.exists():
+            return candidate.resolve()
+    for parent in [start, *start.parents]:
+        candidate = parent / ".memory-center" / "workspace.yaml"
+        if candidate.exists():
+            return candidate.resolve()
+    return path.resolve()
 
 
 def _try_escalated_method_walkthrough(
@@ -1138,6 +1164,7 @@ def _try_escalated_method_walkthrough(
     project: str,
     view: str,
     budget: str,
+    report_level: str,
     current_result: Dict[str, Any] | None,
     allow: bool,
 ) -> Dict[str, Any]:
@@ -1159,6 +1186,7 @@ def _try_escalated_method_walkthrough(
             project=project,
             view="full",
             budget=budget,
+            report_level=report_level,
             _allow_workspace_escalation=False,
         )
     except Exception as exc:
@@ -1180,7 +1208,7 @@ def _try_escalated_method_walkthrough(
         candidate_workspace=candidate_path,
         reason="父级或覆盖当前项目的聚合 workspace 返回了更完整的跨服务 walkthrough。",
     )
-    escalated["answer_markdown"] = _render_method_walkthrough_answer(escalated, candidate_path)
+    escalated["answer_markdown"] = _render_method_walkthrough_answer(escalated, candidate_path, report_level=report_level)
     if _is_compact_view(view):
         compact = _compact_method_walkthrough_result(escalated, budget=budget)
         compact["workspace_escalation"] = escalated["workspace_escalation"]
@@ -1938,6 +1966,11 @@ def _compact_method_walkthrough_result(result: Dict[str, Any], budget: str = "me
         "summary_lines": _build_method_walkthrough_summary_lines(target, result.get("local_steps", []), local_service_continuations, same_class_continuations, feigns, downstream, limits),
         "answer_markdown": result.get("answer_markdown", ""),
         "answer_template": result.get("answer_template", {}),
+        "mermaid_flow": result.get("mermaid_flow", ""),
+        "performance_risks": result.get("performance_risks", [])[: limits["events"]],
+        "data_scope_guards": result.get("data_scope_guards", []),
+        "diff_context": result.get("diff_context", {}),
+        "glossary_hits": result.get("glossary_hits", [])[: limits["events"]],
         "workspace_escalation": result.get("workspace_escalation", {}),
         "agent_usage_policy": result.get("agent_usage_policy", _build_method_walkthrough_agent_policy()),
         "next_actions": (result.get("next_actions", []) or [])[:3],
@@ -1945,14 +1978,14 @@ def _compact_method_walkthrough_result(result: Dict[str, Any], budget: str = "me
     }
 
 
-def _render_method_walkthrough_answer(result: Dict[str, Any], workspace_file: str | Path) -> str:
+def _render_method_walkthrough_answer(result: Dict[str, Any], workspace_file: str | Path, report_level: str = "standard") -> str:
     template_info = _load_method_walkthrough_template(workspace_file)
-    context = _method_walkthrough_template_context(result)
-    template = template_info.get("template", "") or _default_method_walkthrough_template()
+    context = _method_walkthrough_template_context(result, report_level=report_level)
+    template = template_info.get("template", "") or _default_method_walkthrough_template(report_level)
     try:
         rendered = template.format(**context)
     except Exception:
-        rendered = _default_method_walkthrough_template().format(**context)
+        rendered = _default_method_walkthrough_template(report_level).format(**context)
         template_info = {"status": "fallback_builtin", "path": "", "reason": "template_render_failed"}
     result["answer_template"] = template_info
     return rendered.strip()
@@ -1977,7 +2010,7 @@ def _load_method_walkthrough_template(workspace_file: str | Path) -> Dict[str, s
     return {"status": "fallback_builtin", "path": "", "template": ""}
 
 
-def _method_walkthrough_template_context(result: Dict[str, Any]) -> Dict[str, str]:
+def _method_walkthrough_template_context(result: Dict[str, Any], report_level: str = "standard") -> Dict[str, str]:
     target = result.get("target", {}) or {}
     summary_lines = result.get("summary_lines") or _build_method_walkthrough_summary_lines(
         target,
@@ -1991,6 +2024,7 @@ def _method_walkthrough_template_context(result: Dict[str, Any]) -> Dict[str, st
     read_targets = _method_walkthrough_read_targets_text(result)
     rule_groups = _method_walkthrough_rule_groups_text(result)
     return {
+        "report_level": _normalize_report_level(report_level),
         "workspace": str(result.get("workspace", "")),
         "workspace_file": str(result.get("workspace_file", "")),
         "symbol": str(result.get("symbol", "")),
@@ -2000,6 +2034,11 @@ def _method_walkthrough_template_context(result: Dict[str, Any]) -> Dict[str, st
         "summary_lines": "\n".join(f"- {line}" for line in summary_lines),
         "read_targets": read_targets,
         "rule_groups": rule_groups,
+        "glossary": _format_glossary_hits(result.get("glossary_hits", []) or []),
+        "performance_risks": _format_risk_items(result.get("performance_risks", []) or []),
+        "data_scope_guards": _format_risk_items(result.get("data_scope_guards", []) or []),
+        "diff_context": _format_diff_context(result.get("diff_context", {}) or {}),
+        "mermaid_flow": result.get("mermaid_flow", ""),
         "next_actions": "\n".join(f"- {line}" for line in result.get("next_actions", []) or []),
     }
 
@@ -2050,18 +2089,337 @@ def _format_rule_group_lines(continuation: Dict[str, Any]) -> List[str]:
     return out
 
 
-def _default_method_walkthrough_template() -> str:
+def _build_glossary_hits(workspace_file: str | Path, result: Dict[str, Any]) -> List[Dict[str, Any]]:
+    glossary = _load_walkthrough_glossary(workspace_file)
+    if not glossary:
+        return []
+    terms = _collect_walkthrough_terms(result)
+    hits = []
+    for term in sorted(terms):
+        entry = glossary.get(term) or glossary.get(term.lower())
+        if not entry:
+            continue
+        if isinstance(entry, dict):
+            description = str(entry.get("description") or entry.get("desc") or entry.get("meaning") or "")
+            category = str(entry.get("category") or "")
+        else:
+            description = str(entry)
+            category = ""
+        hits.append({"term": term, "description": description, "category": category})
+    return hits
+
+
+def _load_walkthrough_glossary(workspace_file: str | Path) -> Dict[str, Any]:
+    ws_dir = Path(workspace_file).expanduser().resolve().parent
+    for path in [ws_dir / "glossary.yaml", ws_dir / "glossary.yml", ws_dir / "business-glossary.yaml"]:
+        if not path.exists():
+            continue
+        try:
+            data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        except Exception:
+            return {}
+        if isinstance(data, dict) and "terms" in data and isinstance(data["terms"], dict):
+            return data["terms"]
+        if isinstance(data, dict):
+            return data
+    return {}
+
+
+def _collect_walkthrough_terms(result: Dict[str, Any]) -> set[str]:
+    terms: set[str] = set()
+    for step in result.get("local_steps", []) or []:
+        for key in ["receiver", "receiver_type", "method", "field"]:
+            if step.get(key):
+                terms.add(str(step[key]))
+    for usage in result.get("dto_field_usages", []) or []:
+        if usage.get("field"):
+            terms.add(str(usage["field"]))
+    for same in result.get("same_class_method_continuations", []) or []:
+        terms.update((same.get("field_filter_summary", {}) or {}).get("unique_dto_fields", []) or [])
+    for feign in result.get("feign_continuations", []) or []:
+        for server in feign.get("server_walkthroughs", []) or []:
+            for impl in server.get("service_impl_continuations", []) or []:
+                for same in impl.get("same_class_method_continuations", []) or []:
+                    terms.update((same.get("field_filter_summary", {}) or {}).get("unique_dto_fields", []) or [])
+    return terms
+
+
+def _build_walkthrough_performance_risks(result: Dict[str, Any]) -> List[Dict[str, Any]]:
+    risks: List[Dict[str, Any]] = []
+
+    def add(severity: str, code: str, message: str, evidence: Dict[str, Any]) -> None:
+        risks.append({"severity": severity, "code": code, "message": message, "evidence": evidence})
+
+    all_calls = list(result.get("method_calls", []) or [])
+    for same in result.get("same_class_method_continuations", []) or []:
+        all_calls.extend(_steps_to_calls(same.get("local_steps", []) or []))
+    for feign in result.get("feign_continuations", []) or []:
+        for server in feign.get("server_walkthroughs", []) or []:
+            for impl in server.get("service_impl_continuations", []) or []:
+                all_calls.extend(_steps_to_calls(impl.get("local_steps", []) or []))
+                for same in impl.get("same_class_method_continuations", []) or []:
+                    all_calls.extend(_steps_to_calls(same.get("local_steps", []) or []))
+                    field_count = (same.get("field_filter_summary", {}) or {}).get("unique_dto_field_count", 0)
+                    if field_count and field_count >= 30:
+                        add("medium", "many_optional_filters", f"辅助方法 {same.get('method', '')} 涉及 {field_count} 个 DTO 过滤字段，ES 查询组合复杂。", same.get("target", {}))
+
+    for call in all_calls:
+        method = str(call.get("method_name") or call.get("method") or "")
+        receiver = " ".join(str(call.get(key) or "") for key in ["receiver", "receiver_type"])
+        line = int(call.get("line", 0) or 0)
+        if method == "scriptQuery":
+            add("high", "es_script_query", "检测到 Elasticsearch scriptQuery，通常是分页查询热点风险。", {"receiver": receiver, "line": line})
+        elif method == "wildcardQuery":
+            add("medium", "es_wildcard_query", "检测到 wildcardQuery，前缀通配或包含查询可能影响索引命中。", {"receiver": receiver, "line": line})
+        elif method == "queryStringQuery":
+            add("medium", "es_query_string_wildcard", "检测到 queryStringQuery，若拼接 *xxx* 会扩大扫描范围。", {"receiver": receiver, "line": line})
+        elif method == "setTrackTotalHits":
+            add("low", "track_total_hits", "检测到 trackTotalHits(true)，总数精确统计会增加查询成本。", {"receiver": receiver, "line": line})
+        elif method == "search" and "Elasticsearch" in receiver:
+            add("info", "es_search", "核心落点是 Elasticsearch 查询，需关注分页、排序和过滤条件组合。", {"receiver": receiver, "line": line})
+    return _dedupe_risk_items(risks)
+
+
+def _steps_to_calls(steps: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    calls = []
+    for step in steps:
+        if step.get("kind") == "method_call":
+            calls.append({
+                "receiver": step.get("receiver", ""),
+                "receiver_type": step.get("receiver_type", ""),
+                "method": step.get("method", ""),
+                "line": step.get("line", 0),
+            })
+    return calls
+
+
+def _build_data_scope_guards(result: Dict[str, Any]) -> List[Dict[str, Any]]:
+    guards: List[Dict[str, Any]] = []
+    target_path = (result.get("target", {}) or {}).get("absolute_file_path", "")
+    target_method = (result.get("target", {}) or {}).get("method", "")
+    body = _extract_java_method_body_from_path(target_path, target_method)
+    text = body or ""
+
+    def guard(status: str, code: str, message: str, evidence: Dict[str, Any]) -> None:
+        guards.append({"status": status, "code": code, "message": message, "evidence": evidence})
+
+    guard(
+        "present" if "getCustomInfo" in text else "unknown",
+        "custom_info_enrichment",
+        "入口是否先通过 CommonService 获取保护单位信息。",
+        {"method": target_method, "file": target_path},
+    )
+    guard(
+        "present" if "setCustCode(null)" in text.replace(" ", "") else "unknown",
+        "cust_code_cleared",
+        "入口是否清空外部传入 custCode，避免调用方指定越权客户。",
+        {"method": target_method, "file": target_path},
+    )
+    guard(
+        "present" if "SecurityConstants.FROM_IN" in text else "unknown",
+        "internal_feign_header",
+        "Feign 调用是否携带内部来源标记。",
+        {"method": target_method, "file": target_path},
+    )
+    protected_fields = set()
+    for feign in result.get("feign_continuations", []) or []:
+        for server in feign.get("server_walkthroughs", []) or []:
+            for impl in server.get("service_impl_continuations", []) or []:
+                for same in impl.get("same_class_method_continuations", []) or []:
+                    for group in same.get("rule_groups", []) or []:
+                        if group.get("group") == "data_protection":
+                            protected_fields.update(group.get("fields", []) or [])
+    guard(
+        "present" if protected_fields else "unknown",
+        "downstream_data_protection_filters",
+        "下游查询是否包含 protectCode/categoryTag/unitLevel/isPublic/isSubmited 等数据范围过滤。",
+        {"fields": sorted(protected_fields)},
+    )
+    return guards
+
+
+def _extract_java_method_body_from_path(abs_path: str, method_name: str) -> str:
+    if not abs_path or not method_name:
+        return ""
+    try:
+        text = Path(abs_path).read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        return ""
+    return _extract_java_method_body(text, method_name)
+
+
+def _build_walkthrough_diff_context(config: Any, result: Dict[str, Any]) -> Dict[str, Any]:
+    root = getattr(config, "root_path", Path.cwd())
+    changed_abs = _git_changed_abs_paths(root)
+    read_paths = _collect_result_abs_paths(result)
+    touched = [path for path in read_paths if path in changed_abs]
+    return {
+        "enabled": bool(changed_abs),
+        "changed_file_count": len(changed_abs),
+        "touched_read_targets": touched,
+        "has_touched_read_targets": bool(touched),
+    }
+
+
+def _git_changed_abs_paths(root: Path) -> set[str]:
+    try:
+        proc = subprocess.run(
+            ["git", "-C", str(root), "status", "--porcelain"],
+            text=True,
+            capture_output=True,
+            timeout=3,
+            check=False,
+        )
+    except Exception:
+        return set()
+    out: set[str] = set()
+    if proc.returncode != 0:
+        return out
+    for line in proc.stdout.splitlines():
+        if not line.strip():
+            continue
+        raw = line[3:] if len(line) > 3 else line.strip()
+        if " -> " in raw:
+            raw = raw.split(" -> ", 1)[1]
+        out.add(str((root / raw).resolve()))
+    return out
+
+
+def _collect_result_abs_paths(result: Dict[str, Any]) -> List[str]:
+    paths: List[str] = []
+
+    def add(item: Dict[str, Any]) -> None:
+        path = item.get("absolute_file_path")
+        if path and path not in paths:
+            paths.append(path)
+
+    add(result.get("target", {}) or {})
+    for impl in result.get("local_service_continuations", []) or []:
+        add(impl.get("target", {}) or {})
+    for same in result.get("same_class_method_continuations", []) or []:
+        add(same.get("target", {}) or {})
+    for feign in result.get("feign_continuations", []) or []:
+        for server in feign.get("server_walkthroughs", []) or []:
+            add(server)
+            for impl in server.get("service_impl_continuations", []) or []:
+                add(impl.get("target", {}) or {})
+                for same in impl.get("same_class_method_continuations", []) or []:
+                    add(same.get("target", {}) or {})
+    return paths
+
+
+def _build_method_walkthrough_mermaid(result: Dict[str, Any]) -> str:
+    lines = ["flowchart TD"]
+    counter = 0
+
+    def node(label: str) -> str:
+        nonlocal counter
+        counter += 1
+        ident = f"N{counter}"
+        safe = label.replace('"', "'")
+        lines.append(f'  {ident}["{safe}"]')
+        return ident
+
+    target = result.get("target", {}) or {}
+    root = node(f"{target.get('project', '')}:{target.get('class', '')}#{target.get('method', '')}")
+    last = root
+    for impl in result.get("local_service_continuations", []) or []:
+        impl_target = impl.get("target", {}) or {}
+        n = node(f"{impl_target.get('project', '')}:{impl_target.get('class', '')}#{impl_target.get('method', '')}")
+        lines.append(f"  {last} --> {n}")
+    for feign in result.get("feign_continuations", []) or []:
+        fnode = node(f"Feign {feign.get('interface', '')}.{feign.get('method', '')}")
+        lines.append(f"  {root} --> {fnode}")
+        for server in (feign.get("server_walkthroughs", []) or [])[:1]:
+            snode = node(f"{server.get('project', '')}:{server.get('controller', '')}#{server.get('method', '')}")
+            lines.append(f"  {fnode} --> {snode}")
+            for impl in (server.get("service_impl_continuations", []) or [])[:1]:
+                impl_target = impl.get("target", {}) or {}
+                inode = node(f"{impl_target.get('project', '')}:{impl_target.get('class', '')}#{impl_target.get('method', '')}")
+                lines.append(f"  {snode} --> {inode}")
+                for same in (impl.get("same_class_method_continuations", []) or [])[:2]:
+                    same_target = same.get("target", {}) or {}
+                    qnode = node(f"{same_target.get('class', '')}#{same_target.get('method', '')}")
+                    lines.append(f"  {inode} --> {qnode}")
+    return "\n".join(lines)
+
+
+def _format_glossary_hits(items: List[Dict[str, Any]]) -> str:
+    if not items:
+        return "- 未配置或未命中 glossary。"
+    return "\n".join(f"- {item.get('term', '')}: {item.get('description', '')}" for item in items[:30])
+
+
+def _format_risk_items(items: List[Dict[str, Any]]) -> str:
+    if not items:
+        return "- 未识别到明确风险。"
+    return "\n".join(f"- [{item.get('severity', item.get('status', 'info'))}] {item.get('code', '')}: {item.get('message', '')}" for item in items)
+
+
+def _format_diff_context(diff: Dict[str, Any]) -> str:
+    if not diff.get("enabled"):
+        return "- 当前 git workspace 没有检测到改动，或不在 git 仓库内。"
+    if not diff.get("has_touched_read_targets"):
+        return f"- 当前有 {diff.get('changed_file_count', 0)} 个改动文件，但未命中本 walkthrough 主线。"
+    return "\n".join(f"- 命中改动: {path}" for path in diff.get("touched_read_targets", []) or [])
+
+
+def _dedupe_risk_items(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    seen = set()
+    for item in items:
+        key = (item.get("code"), json.dumps(item.get("evidence", {}), sort_keys=True, ensure_ascii=False))
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(item)
+    return out
+
+
+def _default_method_walkthrough_template(report_level: str = "standard") -> str:
+    level = _normalize_report_level(report_level)
+    if level == "brief":
+        return (
+            "## {target_label} 全链路梳理\n\n"
+            "### 主线\n{summary_lines}\n\n"
+            "### 风险\n{performance_risks}\n"
+        )
+    if level == "risk-focused":
+        return (
+            "## {target_label} 风险导向链路梳理\n\n"
+            "### 主线\n{summary_lines}\n\n"
+            "### 性能风险\n{performance_risks}\n\n"
+            "### 数据范围保护\n{data_scope_guards}\n\n"
+            "### Diff 命中\n{diff_context}\n"
+        )
+    if level == "deep":
+        return (
+            "## {target_label} 全链路深度梳理\n\n"
+            "### 调用链主线\n{summary_lines}\n\n"
+            "### Mermaid\n```mermaid\n{mermaid_flow}\n```\n\n"
+            "### 建议直接阅读的文件\n{read_targets}\n\n"
+            "### 大方法规则分组\n{rule_groups}\n\n"
+            "### 业务词汇\n{glossary}\n\n"
+            "### 性能风险\n{performance_risks}\n\n"
+            "### 数据范围保护\n{data_scope_guards}\n\n"
+            "### Diff 命中\n{diff_context}\n\n"
+            "### 下一步\n{next_actions}\n"
+        )
     return (
         "## {target_label} 全链路梳理\n\n"
-        "### 调用链主线\n"
-        "{summary_lines}\n\n"
-        "### 建议直接阅读的文件\n"
-        "{read_targets}\n\n"
-        "### 大方法规则分组\n"
-        "{rule_groups}\n\n"
-        "### 下一步\n"
-        "{next_actions}\n"
+        "### 调用链主线\n{summary_lines}\n\n"
+        "### Mermaid\n```mermaid\n{mermaid_flow}\n```\n\n"
+        "### 建议直接阅读的文件\n{read_targets}\n\n"
+        "### 大方法规则分组\n{rule_groups}\n\n"
+        "### 性能风险\n{performance_risks}\n\n"
+        "### 数据范围保护\n{data_scope_guards}\n\n"
+        "### 下一步\n{next_actions}\n"
     )
+
+
+def _normalize_report_level(report_level: str) -> str:
+    value = (report_level or "standard").strip().lower()
+    return value if value in {"brief", "standard", "deep", "risk-focused", "code-review"} else "standard"
 
 
 def _build_method_walkthrough_agent_policy() -> Dict[str, Any]:
