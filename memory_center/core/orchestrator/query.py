@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+import copy
 import re
 import subprocess
+import time
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -33,6 +35,11 @@ from .common import (
     tokenize,
 )
 from .compact import _measure_compact_gain
+
+METHOD_WALKTHROUGH_SCHEMA_VERSION = 2
+_METHOD_WALKTHROUGH_CACHE_TTL_SECONDS = 15
+_METHOD_WALKTHROUGH_CACHE_MAX_ITEMS = 64
+_METHOD_WALKTHROUGH_CACHE: Dict[str, tuple[float, Dict[str, Any]]] = {}
 
 
 def _normalize_symbol_name(name: str) -> str:
@@ -1016,9 +1023,16 @@ def memory_method_walkthrough(
     feigns = store.read_json_prefer_backend("feign-index.json", [])
     apis = store.read_json_prefer_backend("api-index.json", [])
     file_abs_map = _build_file_abs_path_map(config, store)
+    cache_key = _method_walkthrough_cache_key(workspace_file, symbol, depth, limit, project, view, budget, report_level, store)
+    cached = _method_walkthrough_cache_get(cache_key)
+    if cached:
+        cached["cache"] = {"hit": True, "ttl_seconds": _METHOD_WALKTHROUGH_CACHE_TTL_SECONDS}
+        return cached
     parsed = _parse_method_walkthrough_symbol(symbol)
     if not parsed.get("method"):
         return {
+            "schema_version": METHOD_WALKTHROUGH_SCHEMA_VERSION,
+            "fields_contract": _method_walkthrough_fields_contract(),
             "workspace": config.workspace,
             "workspace_file": active_workspace_file,
             "symbol": symbol,
@@ -1033,6 +1047,8 @@ def memory_method_walkthrough(
         if escalated:
             return escalated
         return {
+            "schema_version": METHOD_WALKTHROUGH_SCHEMA_VERSION,
+            "fields_contract": _method_walkthrough_fields_contract(),
             "workspace": config.workspace,
             "workspace_file": active_workspace_file,
             "symbol": symbol,
@@ -1081,6 +1097,8 @@ def memory_method_walkthrough(
     downstream_edges = _filter_call_edges(downstream_edges, direction="downstream")[:limit]
     downstream_summary = _summarize_chain_edges(downstream_edges)
     result = {
+        "schema_version": METHOD_WALKTHROUGH_SCHEMA_VERSION,
+        "fields_contract": _method_walkthrough_fields_contract(),
         "workspace": config.workspace,
         "workspace_file": active_workspace_file,
         "symbol": symbol,
@@ -1106,6 +1124,7 @@ def memory_method_walkthrough(
         "feign_continuations": feign_continuations,
         "downstream_summary": downstream_summary,
         "downstream_edges": downstream_edges,
+        "anti_patterns": _build_method_walkthrough_anti_patterns(),
         "agent_usage_policy": _build_method_walkthrough_agent_policy(),
         "next_actions": _build_method_walkthrough_next_actions(feign_continuations, downstream_summary, local_service_continuations, same_class_continuations),
         "limitations": [
@@ -1125,19 +1144,25 @@ def memory_method_walkthrough(
     result["glossary_hits"] = _build_glossary_hits(workspace_file, result)
     result["performance_risks"] = _build_walkthrough_performance_risks(result)
     result["data_scope_guards"] = _build_data_scope_guards(result)
-    result["mermaid_flow"] = _build_method_walkthrough_mermaid(result)
     result["diff_context"] = _build_walkthrough_diff_context(config, result)
+    result["index_freshness"] = _build_walkthrough_index_freshness(store, result)
+    result["branch_outline"] = _build_walkthrough_branch_outline(result)
+    result["mermaid_flow"] = _build_method_walkthrough_mermaid(result)
     escalated = _try_escalated_method_walkthrough(workspace_file, symbol, depth, limit, project, view, budget, report_level, current_result=result, allow=_allow_workspace_escalation)
     if escalated:
-        return escalated
+        _method_walkthrough_cache_put(cache_key, escalated)
+        return copy.deepcopy(escalated)
     result["workspace_escalation"] = _build_workspace_escalation_status(workspace_file, status="not_needed_or_not_found")
     result["answer_markdown"] = _render_method_walkthrough_answer(result, workspace_file, report_level=report_level)
+    result["cache"] = {"hit": False, "ttl_seconds": _METHOD_WALKTHROUGH_CACHE_TTL_SECONDS}
     if _is_compact_view(view):
         compact = _compact_method_walkthrough_result(result, budget=budget)
         gain = _measure_compact_gain(result, compact)
         log_token_gain(workspace_file, "memory_method_walkthrough", budget=budget, model="", raw_tokens=gain["raw_tokens"], compact_tokens=gain["compact_tokens"], view=view)
-        return compact
-    return result
+        _method_walkthrough_cache_put(cache_key, compact)
+        return copy.deepcopy(compact)
+    _method_walkthrough_cache_put(cache_key, result)
+    return copy.deepcopy(result)
 
 
 def _resolve_walkthrough_workspace_input(workspace_file: str | Path) -> Path:
@@ -1154,6 +1179,94 @@ def _resolve_walkthrough_workspace_input(workspace_file: str | Path) -> Path:
         if candidate.exists():
             return candidate.resolve()
     return path.resolve()
+
+
+def _method_walkthrough_cache_key(
+    workspace_file: str | Path,
+    symbol: str,
+    depth: int,
+    limit: int,
+    project: str,
+    view: str,
+    budget: str,
+    report_level: str,
+    store: Any,
+) -> str:
+    return json.dumps(
+        {
+            "workspace_file": str(Path(workspace_file).expanduser().resolve()),
+            "symbol": symbol,
+            "depth": depth,
+            "limit": limit,
+            "project": project,
+            "view": view,
+            "budget": budget,
+            "report_level": report_level,
+            "index_signature": _walkthrough_index_signature(store),
+        },
+        sort_keys=True,
+        ensure_ascii=False,
+    )
+
+
+def _walkthrough_index_signature(store: Any) -> Dict[str, float]:
+    names = ["file-index.json", "java-symbol-index.json", "feign-index.json", "api-index.json", "graph-summary.json"]
+    signature: Dict[str, float] = {}
+    for name in names:
+        path = getattr(store, "index_dir", Path()) / name
+        try:
+            signature[name] = path.stat().st_mtime
+        except OSError:
+            signature[name] = 0.0
+    return signature
+
+
+def _method_walkthrough_cache_get(key: str) -> Dict[str, Any] | None:
+    row = _METHOD_WALKTHROUGH_CACHE.get(key)
+    if not row:
+        return None
+    created_at, payload = row
+    if time.time() - created_at > _METHOD_WALKTHROUGH_CACHE_TTL_SECONDS:
+        _METHOD_WALKTHROUGH_CACHE.pop(key, None)
+        return None
+    return copy.deepcopy(payload)
+
+
+def _method_walkthrough_cache_put(key: str, payload: Dict[str, Any]) -> None:
+    saved = copy.deepcopy(payload)
+    saved["cache"] = {"hit": False, "ttl_seconds": _METHOD_WALKTHROUGH_CACHE_TTL_SECONDS}
+    if len(_METHOD_WALKTHROUGH_CACHE) >= _METHOD_WALKTHROUGH_CACHE_MAX_ITEMS:
+        oldest = min(_METHOD_WALKTHROUGH_CACHE.items(), key=lambda item: item[1][0])[0]
+        _METHOD_WALKTHROUGH_CACHE.pop(oldest, None)
+    _METHOD_WALKTHROUGH_CACHE[key] = (time.time(), saved)
+
+
+def _method_walkthrough_fields_contract() -> Dict[str, Any]:
+    return {
+        "stable_top_level": [
+            "schema_version",
+            "fields_contract",
+            "found",
+            "target",
+            "summary_lines",
+            "answer_markdown",
+            "read_targets",
+            "agent_usage_policy",
+            "next_actions",
+        ],
+        "enhancement_fields": [
+            "mermaid_flow",
+            "performance_risks",
+            "data_scope_guards",
+            "diff_context",
+            "glossary_hits",
+            "index_freshness",
+            "branch_outline",
+            "anti_patterns",
+            "cache",
+        ],
+        "compatibility": "additive_fields_only",
+    }
 
 
 def _try_escalated_method_walkthrough(
@@ -1505,6 +1618,8 @@ def _continuations_for_feign_method(
                         "absolute_file_path": _resolve_indexed_abs_path(file_abs_map, api.get("project", ""), api.get("file", "")),
                         "http_method": api.get("http_method", ""),
                         "path": api.get("path", ""),
+                        "confidence": api.get("confidence", 0.0),
+                        "confidence_reasons": api.get("confidence_reasons", []),
                     }
                     for api in endpoints
                 ],
@@ -1515,15 +1630,39 @@ def _continuations_for_feign_method(
 
 
 def _rank_feign_matched_endpoints(endpoints: List[Dict[str, Any]], target_service: str) -> List[Dict[str, Any]]:
-    def key(api: Dict[str, Any]) -> tuple[int, str, str]:
-        project = str(api.get("project", "") or "")
-        return (
-            0 if _project_matches(target_service, project) or _project_matches(project, target_service) else 1,
-            project,
+    enriched = [_with_endpoint_confidence(api, target_service) for api in endpoints]
+    return sorted(
+        enriched,
+        key=lambda api: (
+            -float(api.get("confidence", 0.0) or 0.0),
+            str(api.get("project", "") or ""),
             str(api.get("file", "") or ""),
-        )
+        ),
+    )
 
-    return sorted(endpoints, key=key)
+
+def _with_endpoint_confidence(api: Dict[str, Any], target_service: str) -> Dict[str, Any]:
+    item = dict(api)
+    project = str(api.get("project", "") or "")
+    file_path = str(api.get("file", "") or "")
+    controller = str(api.get("controller", "") or "")
+    reasons: List[str] = []
+    score = 0.35
+    if target_service and (_project_matches(target_service, project) or _project_matches(project, target_service)):
+        score += 0.35
+        reasons.append("project_matches_target_service")
+    if target_service and target_service.replace("-", "").lower() in file_path.replace("-", "").lower():
+        score += 0.15
+        reasons.append("file_path_mentions_target_service")
+    if controller and controller in file_path:
+        score += 0.08
+        reasons.append("controller_matches_file")
+    if project:
+        score += 0.05
+        reasons.append("project_present")
+    item["confidence"] = round(min(score, 1.0), 2)
+    item["confidence_reasons"] = reasons or ["http_method_and_path_match"]
+    return item
 
 
 def _summarize_endpoint_walkthrough(
@@ -1541,6 +1680,8 @@ def _summarize_endpoint_walkthrough(
             "method": method,
             "found": False,
             "reason": "controller method not found in java-symbol-index",
+            "endpoint_confidence": api.get("confidence", 0.0),
+            "endpoint_confidence_reasons": api.get("confidence_reasons", []),
         }
 
     calls = [
@@ -1565,6 +1706,8 @@ def _summarize_endpoint_walkthrough(
         "file_path": entry["file"],
         "absolute_file_path": _resolve_indexed_abs_path(file_abs_map, entry["project"], entry["file"]),
         "line": int((entry["symbol"].get("method_lines") or {}).get(method, 0) or 0),
+        "endpoint_confidence": api.get("confidence", 0.0),
+        "endpoint_confidence_reasons": api.get("confidence_reasons", []),
         "local_steps": local_steps,
         "service_impl_continuations": service_impls,
     }
@@ -1951,6 +2094,8 @@ def _compact_method_walkthrough_result(result: Dict[str, Any], budget: str = "me
         "workspace": result.get("workspace", ""),
         "symbol": result.get("symbol", ""),
         "found": result.get("found", False),
+        "schema_version": result.get("schema_version", METHOD_WALKTHROUGH_SCHEMA_VERSION),
+        "fields_contract": result.get("fields_contract", _method_walkthrough_fields_contract()),
         "target": target,
         "evidence_level": result.get("evidence_level", ""),
         "local_steps": _select_compact_method_steps(result.get("local_steps", []) or [], limits),
@@ -1971,6 +2116,10 @@ def _compact_method_walkthrough_result(result: Dict[str, Any], budget: str = "me
         "data_scope_guards": result.get("data_scope_guards", []),
         "diff_context": result.get("diff_context", {}),
         "glossary_hits": result.get("glossary_hits", [])[: limits["events"]],
+        "index_freshness": result.get("index_freshness", {}),
+        "branch_outline": result.get("branch_outline", [])[: limits["steps"]],
+        "anti_patterns": result.get("anti_patterns", []),
+        "cache": result.get("cache", {"hit": False, "ttl_seconds": _METHOD_WALKTHROUGH_CACHE_TTL_SECONDS}),
         "workspace_escalation": result.get("workspace_escalation", {}),
         "agent_usage_policy": result.get("agent_usage_policy", _build_method_walkthrough_agent_policy()),
         "next_actions": (result.get("next_actions", []) or [])[:3],
@@ -2038,6 +2187,9 @@ def _method_walkthrough_template_context(result: Dict[str, Any], report_level: s
         "performance_risks": _format_risk_items(result.get("performance_risks", []) or []),
         "data_scope_guards": _format_risk_items(result.get("data_scope_guards", []) or []),
         "diff_context": _format_diff_context(result.get("diff_context", {}) or {}),
+        "index_freshness": _format_index_freshness(result.get("index_freshness", {}) or {}),
+        "branch_outline": _format_branch_outline(result.get("branch_outline", []) or []),
+        "anti_patterns": _format_anti_patterns(result.get("anti_patterns", []) or []),
         "mermaid_flow": result.get("mermaid_flow", ""),
         "next_actions": "\n".join(f"- {line}" for line in result.get("next_actions", []) or []),
     }
@@ -2261,6 +2413,29 @@ def _build_walkthrough_diff_context(config: Any, result: Dict[str, Any]) -> Dict
     }
 
 
+def _build_walkthrough_index_freshness(store: Any, result: Dict[str, Any]) -> Dict[str, Any]:
+    index_signature = _walkthrough_index_signature(store)
+    latest_index_mtime = max(index_signature.values(), default=0.0)
+    stale_targets: List[Dict[str, Any]] = []
+    for path in _collect_result_abs_paths(result):
+        try:
+            file_mtime = Path(path).stat().st_mtime
+        except OSError:
+            continue
+        if latest_index_mtime and file_mtime > latest_index_mtime:
+            stale_targets.append({
+                "absolute_file_path": path,
+                "file_mtime": file_mtime,
+                "index_mtime": latest_index_mtime,
+            })
+    return {
+        "index_stale": bool(stale_targets),
+        "latest_index_mtime": latest_index_mtime,
+        "stale_read_targets": stale_targets,
+        "recommended_action": "先读取 stale_read_targets 的实时文件；必要时运行 reindex" if stale_targets else "",
+    }
+
+
 def _git_changed_abs_paths(root: Path) -> set[str]:
     try:
         proc = subprocess.run(
@@ -2308,6 +2483,91 @@ def _collect_result_abs_paths(result: Dict[str, Any]) -> List[str]:
     return paths
 
 
+def _build_walkthrough_branch_outline(result: Dict[str, Any]) -> List[Dict[str, Any]]:
+    outlines: List[Dict[str, Any]] = []
+
+    def add_from_continuation(source: str, continuation: Dict[str, Any]) -> None:
+        target = continuation.get("target", {}) or {}
+        groups = []
+        for group in continuation.get("rule_groups", []) or []:
+            fields = group.get("fields", []) or []
+            groups.append({
+                "group": group.get("group", ""),
+                "field_count": len(fields),
+                "fields": fields[:20],
+            })
+        if not groups:
+            summary = continuation.get("field_filter_summary", {}) or {}
+            fields = summary.get("unique_dto_fields", []) or []
+            if fields:
+                groups.append({
+                    "group": "dto_fields",
+                    "field_count": len(fields),
+                    "fields": fields[:20],
+                })
+        if not groups:
+            calls = [
+                step.get("method", "")
+                for step in continuation.get("local_steps", []) or []
+                if step.get("kind") == "method_call" and step.get("method")
+            ]
+            if calls:
+                groups.append({
+                    "group": "method_calls",
+                    "field_count": len(calls),
+                    "fields": calls[:20],
+                })
+        span = (target.get("evidence_span") or continuation.get("evidence_span") or {})
+        if groups:
+            outlines.append({
+                "source": source,
+                "target": {
+                    "class": target.get("class", ""),
+                    "method": target.get("method", ""),
+                    "absolute_file_path": target.get("absolute_file_path", ""),
+                    "line": target.get("line", 0),
+                },
+                "kind": "rule_group_outline",
+                "groups": groups,
+                "evidence_span": span,
+            })
+
+    for same in result.get("same_class_method_continuations", []) or []:
+        add_from_continuation("same_class", same)
+    for feign in result.get("feign_continuations", []) or []:
+        for server in feign.get("server_walkthroughs", []) or []:
+            for impl in server.get("service_impl_continuations", []) or []:
+                for same in impl.get("same_class_method_continuations", []) or []:
+                    add_from_continuation("server_impl_same_class", same)
+
+    if not outlines:
+        target = result.get("target", {}) or {}
+        case_labels = _extract_java_case_labels(target.get("absolute_file_path", ""), target.get("method", ""))
+        if case_labels:
+            outlines.append({
+                "source": "target",
+                "target": {
+                    "class": target.get("class", ""),
+                    "method": target.get("method", ""),
+                    "absolute_file_path": target.get("absolute_file_path", ""),
+                    "line": target.get("line", 0),
+                },
+                "kind": "switch_case_outline",
+                "cases": case_labels[:40],
+            })
+    return outlines
+
+
+def _extract_java_case_labels(abs_path: str, method_name: str) -> List[str]:
+    body = _extract_java_method_body_from_path(abs_path, method_name)
+    labels: List[str] = []
+    for match in re.finditer(r"\bcase\s+([^:]+)\s*:", body):
+        label = match.group(1).strip().strip('"')
+        if label and label not in labels:
+            labels.append(label)
+    return labels
+
+
 def _build_method_walkthrough_mermaid(result: Dict[str, Any]) -> str:
     lines = ["flowchart TD"]
     counter = 0
@@ -2341,6 +2601,17 @@ def _build_method_walkthrough_mermaid(result: Dict[str, Any]) -> str:
                     same_target = same.get("target", {}) or {}
                     qnode = node(f"{same_target.get('class', '')}#{same_target.get('method', '')}")
                     lines.append(f"  {inode} --> {qnode}")
+    if result.get("performance_risks"):
+        risk = node(f"风险 {len(result.get('performance_risks', []) or [])}")
+        lines.append(f"  {root} -.-> {risk}")
+    guards = [item for item in result.get("data_scope_guards", []) or [] if item.get("status") == "present"]
+    if guards:
+        guard = node(f"数据范围保护 {len(guards)}")
+        lines.append(f"  {root} -.-> {guard}")
+    diff = result.get("diff_context", {}) or {}
+    if diff.get("has_touched_read_targets"):
+        changed = node(f"Diff 命中 {len(diff.get('touched_read_targets', []) or [])}")
+        lines.append(f"  {root} -.-> {changed}")
     return "\n".join(lines)
 
 
@@ -2362,6 +2633,35 @@ def _format_diff_context(diff: Dict[str, Any]) -> str:
     if not diff.get("has_touched_read_targets"):
         return f"- 当前有 {diff.get('changed_file_count', 0)} 个改动文件，但未命中本 walkthrough 主线。"
     return "\n".join(f"- 命中改动: {path}" for path in diff.get("touched_read_targets", []) or [])
+
+
+def _format_index_freshness(freshness: Dict[str, Any]) -> str:
+    if not freshness:
+        return "- 未检测索引新鲜度。"
+    if not freshness.get("index_stale"):
+        return "- 索引未发现比主链路文件更旧的情况。"
+    return "\n".join(f"- 索引可能过期: {item.get('absolute_file_path', '')}" for item in freshness.get("stale_read_targets", []) or [])
+
+
+def _format_branch_outline(outlines: List[Dict[str, Any]]) -> str:
+    if not outlines:
+        return "- 未识别到可结构化的分支轮廓。"
+    lines: List[str] = []
+    for outline in outlines[:12]:
+        target = outline.get("target", {}) or {}
+        lines.append(f"- {outline.get('source', '')}: {target.get('class', '')}#{target.get('method', '')}")
+        for group in outline.get("groups", []) or []:
+            fields = ", ".join(group.get("fields", [])[:12])
+            lines.append(f"  - {group.get('group', '')} ({group.get('field_count', 0)}): {fields}")
+        if outline.get("cases"):
+            lines.append(f"  - cases: {', '.join(outline.get('cases', [])[:20])}")
+    return "\n".join(lines)
+
+
+def _format_anti_patterns(items: List[Dict[str, Any]]) -> str:
+    if not items:
+        return "- 无额外反模式提示。"
+    return "\n".join(f"- {item.get('avoid', '')}: {item.get('reason', '')}" for item in items)
 
 
 def _dedupe_risk_items(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -2391,6 +2691,7 @@ def _default_method_walkthrough_template(report_level: str = "standard") -> str:
             "### 性能风险\n{performance_risks}\n\n"
             "### 数据范围保护\n{data_scope_guards}\n\n"
             "### Diff 命中\n{diff_context}\n"
+            "### 索引新鲜度\n{index_freshness}\n"
         )
     if level == "deep":
         return (
@@ -2403,6 +2704,9 @@ def _default_method_walkthrough_template(report_level: str = "standard") -> str:
             "### 性能风险\n{performance_risks}\n\n"
             "### 数据范围保护\n{data_scope_guards}\n\n"
             "### Diff 命中\n{diff_context}\n\n"
+            "### 索引新鲜度\n{index_freshness}\n\n"
+            "### 分支轮廓\n{branch_outline}\n\n"
+            "### Agent 反模式\n{anti_patterns}\n\n"
             "### 下一步\n{next_actions}\n"
         )
     return (
@@ -2413,6 +2717,8 @@ def _default_method_walkthrough_template(report_level: str = "standard") -> str:
         "### 大方法规则分组\n{rule_groups}\n\n"
         "### 性能风险\n{performance_risks}\n\n"
         "### 数据范围保护\n{data_scope_guards}\n\n"
+        "### 索引新鲜度\n{index_freshness}\n\n"
+        "### 分支轮廓\n{branch_outline}\n\n"
         "### 下一步\n{next_actions}\n"
     )
 
@@ -2431,6 +2737,27 @@ def _build_method_walkthrough_agent_policy() -> Dict[str, Any]:
         "avoid_tools": ["find", "grep -l", "rg --files", "IDEA search", "sed -n"],
         "reason": "walkthrough 已给出 controller/service impl/同类辅助方法的已索引落点、absolute_file_path 和字段摘要；重复搜索或 sed 切片会增加延迟并可能被同名类误导。",
     }
+
+
+def _build_method_walkthrough_anti_patterns() -> List[Dict[str, str]]:
+    return [
+        {
+            "avoid": "parse_tool_results_json",
+            "reason": "walkthrough 已把 answer_markdown、summary_lines、read_targets 等提升到顶层，解析本地 tool-results 会变慢且容易卡住。",
+        },
+        {
+            "avoid": "repo_wide_find_before_read_targets",
+            "reason": "存在 absolute_file_path 时应直接读文件；全仓库 find/grep 会被同名类和多模块干扰。",
+        },
+        {
+            "avoid": "large_sed_ranges_for_known_continuations",
+            "reason": "same_class_method_continuations 和 branch_outline 已给出方法级摘要，只有核对具体分支时才需要 live read。",
+        },
+        {
+            "avoid": "ignore_index_freshness",
+            "reason": "index_freshness.index_stale=true 时必须优先读实时文件或 reindex，否则链路可能落后于代码。",
+        },
+    ]
 
 
 def _select_compact_method_steps(local_steps: List[Dict[str, Any]], limits: Dict[str, int]) -> List[Dict[str, Any]]:

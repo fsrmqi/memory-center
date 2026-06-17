@@ -702,9 +702,9 @@ Walkthrough also returns `same_class_method_continuations` for unqualified helpe
 
 walkthrough 还会为同类未限定辅助/私有方法调用返回 `same_class_method_continuations`，并展开 Service Impl 内部的嵌套 Feign 调用。存在这些续链时，Agent 应先使用返回摘要，不要直接退回 `sed -n`。
 
-For MCP `mc_lookup(auto|walkthrough)`, walkthrough responses expose `answer`, `answer_markdown`, `summary_lines`, `primary_flow`, `read_targets`, `mermaid_flow`, `performance_risks`, `data_scope_guards`, `diff_context`, `glossary_hits`, and `agent_usage_policy` at the top level. Agents should use these top-level fields directly instead of parsing local `tool-results/*.json` files.
+For MCP `mc_lookup(auto|walkthrough)`, walkthrough responses expose `answer`, `answer_markdown`, `summary_lines`, `primary_flow`, `read_targets`, `mermaid_flow`, `performance_risks`, `data_scope_guards`, `diff_context`, `glossary_hits`, `index_freshness`, `branch_outline`, `anti_patterns`, `cache`, `schema_version`, `fields_contract`, and `agent_usage_policy` at the top level. Agents should use these top-level fields directly instead of parsing local `tool-results/*.json` files.
 
-MCP `mc_lookup(auto|walkthrough)` 的 walkthrough 响应会把 `answer`、`answer_markdown`、`summary_lines`、`primary_flow`、`read_targets`、`mermaid_flow`、`performance_risks`、`data_scope_guards`、`diff_context`、`glossary_hits` 和 `agent_usage_policy` 提升到顶层。Agent 应直接使用这些顶层字段，不需要解析本地 `tool-results/*.json`。
+MCP `mc_lookup(auto|walkthrough)` 的 walkthrough 响应会把 `answer`、`answer_markdown`、`summary_lines`、`primary_flow`、`read_targets`、`mermaid_flow`、`performance_risks`、`data_scope_guards`、`diff_context`、`glossary_hits`、`index_freshness`、`branch_outline`、`anti_patterns`、`cache`、`schema_version`、`fields_contract` 和 `agent_usage_policy` 提升到顶层。Agent 应直接使用这些顶层字段，不需要解析本地 `tool-results/*.json`。
 
 When a method walkthrough starts from a sub-project workspace, Memory Center can automatically escalate to a parent or registry-covered aggregate workspace if that workspace produces a more complete cross-service flow. The `workspace_escalation` field records whether this happened; missing parents are safe fallbacks, not errors.
 
@@ -721,6 +721,10 @@ Report formatting is configurable via `.memory-center/templates/method_walkthrou
 Optional business glossary files `.memory-center/glossary.yaml`, `.memory-center/glossary.yml`, or `.memory-center/business-glossary.yaml` can enrich walkthrough output through `glossary_hits`.
 
 可选的业务词汇文件 `.memory-center/glossary.yaml`、`.memory-center/glossary.yml` 或 `.memory-center/business-glossary.yaml` 会通过 `glossary_hits` 补充链路解释。
+
+Walkthrough endpoint candidates include `confidence` and `confidence_reasons`. `index_freshness.index_stale=true` means at least one returned read target is newer than the current index and should be live-read or reindexed. Repeated walkthrough calls use a short in-process cache keyed by workspace, symbol, report shape, and index signature.
+
+walkthrough 的 endpoint 候选会包含 `confidence` 和 `confidence_reasons`。当 `index_freshness.index_stale=true` 时，说明至少一个主链路文件比当前索引更新，应先读实时文件或重新 reindex。重复 walkthrough 会使用短期进程内缓存，缓存键包含 workspace、symbol、报告形态和索引签名。
 
 > **Note**: CLI and HTTP still expose all fine-grained atomic commands. Only the MCP surface uses facade tools. See [docs/MCP_GUIDE.md](./docs/MCP_GUIDE.md) and [docs/REFERENCE.md](./docs/REFERENCE.md) for facade routing and command reference.
 >

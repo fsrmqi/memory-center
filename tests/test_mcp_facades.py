@@ -155,6 +155,40 @@ def test_memory_method_walkthrough_returns_feign_continuations(tmp_path: Path):
     assert "data_scope_guards" in result
     assert "diff_context" in result
     assert "glossary_hits" in result
+    assert result["schema_version"] >= 2
+    assert "stable_top_level" in result["fields_contract"]
+    assert result["index_freshness"]["index_stale"] is False
+    assert result["branch_outline"]
+    assert result["anti_patterns"]
+    assert result["cache"]["hit"] is False
+    assert continuation["matched_endpoints"][0]["confidence"] > 0
+    assert continuation["matched_endpoints"][0]["confidence_reasons"]
+    assert server_walkthrough["endpoint_confidence"] == continuation["matched_endpoints"][0]["confidence"]
+
+
+def test_method_walkthrough_cache_hits_repeated_query(tmp_path: Path):
+    wf = _setup_workspace(tmp_path)
+    first = memory_method_walkthrough(wf, "com.example.task.ArticleMoveService#move", depth=4, limit=20, view="compact", budget="small")
+    second = memory_method_walkthrough(wf, "com.example.task.ArticleMoveService#move", depth=4, limit=20, view="compact", budget="small")
+    assert first["found"] is True
+    assert second["found"] is True
+    assert first["cache"]["hit"] is False
+    assert second["cache"]["hit"] is True
+
+
+def test_method_walkthrough_detects_stale_index_target(tmp_path: Path):
+    import os
+    import time
+
+    wf = _setup_workspace(tmp_path)
+    result = memory_method_walkthrough(wf, "com.example.task.ArticleMoveService#move", depth=4, limit=20, view="compact", budget="small")
+    target_path = Path(result["target"]["absolute_file_path"])
+    future = time.time() + 120
+    os.utime(target_path, (future, future))
+
+    fresh = memory_method_walkthrough(wf, "com.example.task.ArticleMoveService#move", depth=4, limit=20, view="compact", budget="medium")
+    assert fresh["index_freshness"]["index_stale"] is True
+    assert any(item["absolute_file_path"] == str(target_path) for item in fresh["index_freshness"]["stale_read_targets"])
 
 
 def test_method_walkthrough_report_level_and_glossary(tmp_path: Path):
@@ -345,6 +379,11 @@ def test_mc_lookup_auto_prefers_chain_for_deep_method_trace_queries(tmp_path: Pa
     assert "data_scope_guards" in result
     assert "diff_context" in result
     assert "glossary_hits" in result
+    assert result["schema_version"] >= 2
+    assert "index_freshness" in result
+    assert "branch_outline" in result
+    assert "anti_patterns" in result
+    assert "cache" in result
     assert result["agent_usage_policy"]["read_files_by"] == "absolute_file_path"
     assert result["result"]["found"] is True
     assert result["result"]["target"]["method"] == "moveArticle"
