@@ -690,9 +690,21 @@ Available MCP tools (8 facade tools) / MCP 工具（8 个任务级 facade）：
 | `mc_close` | Close task workflow: end session → sync case → record experience / 关闭任务工作流 |
 | `mc_admin` | Admin router (status/dashboard/eval/artifact/session/group etc.) / 管理路由，action 选择子操作 |
 
-`mc_lookup(mode="walkthrough")` targets `Class#method` traces. For Feign calls, `feign_continuations[].server_walkthroughs` expands matching server-side Controller methods, and `service_impl_continuations` resolves same-project Service interface calls to Impl methods when indexed.
+`mc_lookup(mode="walkthrough")` targets `Class#method` traces. For local service calls, `local_service_continuations` resolves Service interface calls to Impl methods. For Feign calls, `feign_continuations[].server_walkthroughs` expands matching server-side Controller methods, and `service_impl_continuations` resolves same-project Service interface calls to Impl methods when indexed.
 
-`mc_lookup(mode="walkthrough")` 面向 `Class#method` 链路梳理。遇到 Feign 调用时，`feign_continuations[].server_walkthroughs` 会展开匹配到的服务端 Controller 方法；如果 Controller 调用同项目 Service interface，`service_impl_continuations` 会继续解析到 Impl 方法。
+`mc_lookup(mode="walkthrough")` 面向 `Class#method` 链路梳理。遇到本地 Service 调用时，`local_service_continuations` 会解析 Service interface 到 Impl 方法。遇到 Feign 调用时，`feign_continuations[].server_walkthroughs` 会展开匹配到的服务端 Controller 方法；如果 Controller 调用同项目 Service interface，`service_impl_continuations` 会继续解析到 Impl 方法。
+
+Walkthrough key locations include `absolute_file_path`; agents should read that path directly instead of running `find` first.
+
+walkthrough 的关键落点包含 `absolute_file_path`；Agent 应直接读取该路径，不需要先执行 `find` 定位文件。
+
+Walkthrough also returns `same_class_method_continuations` for unqualified helper/private method calls and nested Feign continuations inside Service Impl nodes. When these continuations are present, agents should use the returned summaries before falling back to `sed -n`.
+
+walkthrough 还会为同类未限定辅助/私有方法调用返回 `same_class_method_continuations`，并展开 Service Impl 内部的嵌套 Feign 调用。存在这些续链时，Agent 应先使用返回摘要，不要直接退回 `sed -n`。
+
+For MCP `mc_lookup(auto|walkthrough)`, walkthrough responses expose `answer`, `summary_lines`, `primary_flow`, `read_targets`, and `agent_usage_policy` at the top level. Agents should use these top-level fields directly instead of parsing local `tool-results/*.json` files.
+
+MCP `mc_lookup(auto|walkthrough)` 的 walkthrough 响应会把 `answer`、`summary_lines`、`primary_flow`、`read_targets` 和 `agent_usage_policy` 提升到顶层。Agent 应直接使用这些顶层字段，不需要解析本地 `tool-results/*.json`。
 
 > **Note**: CLI and HTTP still expose all fine-grained atomic commands. Only the MCP surface uses facade tools. See [docs/MCP_GUIDE.md](./docs/MCP_GUIDE.md) and [docs/REFERENCE.md](./docs/REFERENCE.md) for facade routing and command reference.
 >
@@ -905,6 +917,8 @@ AI 编程助手改代码前推荐按 facade 协议执行：
 ```text
 1. Call mc_start(intent)
 2. For any class/method/Feign/topic/config/call-chain lookup, call mc_lookup(mode="auto", query=...)
+   - If the user asks for Class#method 全链路 / 到底层 / full chain, prefer mc_lookup(mode="walkthrough") or auto-routed walkthrough.
+   - If walkthrough returns absolute_file_path, read that path directly; do not run find / grep -l / rg --files / IDE search to locate the same Controller or ServiceImpl.
 3. Before implementation, call mc_analyze(target, depth="standard"|"full")
 4. If the task is long-running or collaborative, call mc_sync(...)
 5. During long tasks, use mc_resume(...) or session workflow commands to keep continuity

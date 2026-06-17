@@ -61,6 +61,10 @@ hooks:
       tracing call chains, analyzing impact, debugging, or any Spring Cloud task —
       respond with: {"decision":"allow","reason":"Coding task detected — recommend calling mc_start first to load workspace context."}.
 
+      If the prompt contains Class#method and asks for 全链路, 到底层, 最底层, full chain, or trace to sink —
+      recommend mc_lookup(mode="walkthrough") or mc_lookup(mode="auto") and follow the returned summary_lines / continuations.
+      When walkthrough returns absolute_file_path, read that path directly; do not use find, grep -l, rg --files, or IDE search to locate the same Controller/ServiceImpl.
+
       For simple questions or non-code topics — respond with: {"decision":"allow",
       "reason":"Not a coding task, no Memory Center context needed."}.
       The prompt content: $ARGUMENTS

@@ -56,6 +56,11 @@ MCP 当前公开的是 12 个 task-level tools：
 - 如果需求是“某个方法一路追到最底层”，优先用 `mode="walkthrough"`；当查询里已经包含 `Class#method` 且明确提到“全链路/到底层”时，`mode="auto"` 现在也会优先转到 walkthrough。
 - `mode="chain"` 适合看图谱 callers / callees；`mode="walkthrough"` 适合看一个方法体内的已索引步骤、下游调用和 Feign 服务端候选。
 - `mode="walkthrough"` 的 Feign 续链会在 `feign_continuations[].server_walkthroughs` 中优先展开目标服务的 Controller 方法；如果 Controller 调用同项目 Service interface，会在 `service_impl_continuations` 中继续给出 Impl 方法落点和已索引本地步骤。
+- `mode="walkthrough"` 还会在 `local_service_continuations` 中展开当前方法内的普通 Service interface → Impl 调用；compact 输出会优先保留关键方法调用和 Feign 调用，`downstream_summary` 只作为补充图谱线索。
+- walkthrough 的关键落点均返回 `absolute_file_path`；agent 应直接读取该路径，不需要再用 `find` / `grep -l` 定位文件。
+- walkthrough 返回 `agent_usage_policy.do_not_search_when_absolute_path_present=true` 时，宿主模型应把 `find`、`grep -l`、`rg --files`、IDE 全局搜索视为不必要的重复定位；只有怀疑索引过期或文件不存在时才做 live search。
+- walkthrough 返回 `same_class_method_continuations` 时，宿主模型应优先阅读该续链的 `field_filter_summary` 和 `local_steps`，不要先用 `sed -n` 切同一文件片段；只有需要逐行核对业务分支时才读取 `absolute_file_path`。
+- `mc_lookup(auto|walkthrough)` 的 walkthrough 响应会把 `answer`、`summary_lines`、`read_targets` 提升到顶层；宿主模型应直接使用这些顶层字段，不需要读取或解析本地 `tool-results/*.json`。
 
 `mc_close` 在 session 内存在可推断的 lookup / impact / sync 路径且有验证结果时，会自动写回一轮 `candidate_feedback`，让后续推荐权重逐步学习。
 

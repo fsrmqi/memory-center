@@ -15,7 +15,7 @@ _HOOK_INSTRUCTIONS = {
     "session_start": "At the start of each coding session, call mc_start with the task intent to load workspace context, candidate files, and rules.",
     "pre_edit": "Before writing or editing any code, call mc_analyze with the target file/symbol to check impact and rules. If mc_analyze returns must-severity rules, do not proceed until the user confirms.",
     "session_stop": "When ending a session or closing the conversation, call mc_close with the session_id to sync artifacts and record experience.",
-    "user_prompt_submit": "When the user describes a coding task, determine if it needs Memory Center context. If so, call mc_start first. For code lookups, use mc_lookup(mode='auto').",
+    "user_prompt_submit": "When the user describes a coding task, determine if it needs Memory Center context. If so, call mc_start first. For Class#method full-chain requests, use mc_lookup(mode='walkthrough' or mode='auto') and follow returned absolute_file_path directly instead of find/grep/IDE search. For other code lookups, use mc_lookup(mode='auto').",
 }
 
 
@@ -69,6 +69,7 @@ This workspace uses Memory Center as the MCP project memory service.
 ## Quick Reference
 - **mc_start(intent)** — Begin task with workspace context
 - **mc_lookup(mode="auto", query=...)** — Find symbols, code, call chains
+- **mc_lookup(mode="walkthrough", query="Class#method")** — Trace method-level flow; if absolute_file_path is returned, read it directly and do not use find/grep/IDE search for the same file
 - **mc_analyze(target, depth="standard")** — Impact + rules check before editing
 - **mc_sync(intent)** — Save progress to task space
 - **mc_resume(intent)** — Resume a previous task

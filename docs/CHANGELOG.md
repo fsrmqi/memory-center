@@ -8,14 +8,25 @@
 
 ## Unreleased
 
-### 3.1.8: Method Walkthrough / 方法级链路梳理
+### 3.1.14: Method Walkthrough / 方法级链路梳理
 
-- 升级版本号到 `3.1.8`
+- 升级版本号到 `3.1.14`
 - 新增 `memory_method_walkthrough()`，面向 `Class#method` 返回方法内已索引步骤、DTO 字段读取、Feign 续链、下游图谱摘要和后续动作。
 - `mc_lookup(mode="walkthrough")` 与 `memory-center method-walkthrough` 可直接调用方法级 walkthrough。
 - `mc_lookup(mode="auto")` 遇到 `Class#method` 且包含“全链路/到底层”语义时优先进入 walkthrough，减少 agent 退回手工 grep 的概率。
 - `mc_admin(action="method_walkthrough")` 支持从管理路由触发同一能力。
 - Feign 续链新增兼容字段 `server_walkthroughs`，会优先展开目标服务 endpoint 的 Controller 方法，并通过 `service_impl_continuations` 继续解析同项目 Service interface → Impl 的落点。
+- compact walkthrough 改为优先保留关键方法调用和 Feign 调用，而不是按行号截断到 DTO 字段读取。
+- 新增 `local_service_continuations`，用于展开当前方法内普通 Service interface → Impl 调用，减少 agent 退回手工读源码。
+- walkthrough 的 target、matched endpoint、server walkthrough、local/server Impl 续链均新增 `absolute_file_path`，摘要行优先展示绝对路径，并提示无需再用 `find` 定位文件。
+- walkthrough 新增 `agent_usage_policy`，明确 `absolute_file_path` 存在时不要再用 `find` / `grep -l` / `rg --files` / IDE 搜索定位同一 Controller 或 Impl。
+- MCP `mc_lookup` 工具说明、cross-service prompt、默认 hooks 和 Cursor adapter 均同步 full-chain walkthrough 使用规则，减少宿主模型绕回搜索工具。
+- 新增 `same_class_method_continuations`，运行时识别同类未限定方法调用（例如 `query2query(queryDto)`），并返回目标方法、绝对路径、局部步骤和 DTO 字段过滤摘要，减少 `sed -n` 切片追私有方法。
+- `local_service_continuations` / 服务端 Impl 续链现在会继续展开内部 Feign 调用，便于直接看到 Impl 内的远程下游。
+- `agent_usage_policy` 新增 `do_not_sed_when_continuation_present`，提示续链已存在时不要再用 `sed -n` 切源码片段。
+- MCP `mc_lookup(auto|walkthrough)` 的 walkthrough 响应新增顶层 `answer`、`summary_lines`、`primary_flow`、`read_targets` 和 `agent_usage_policy`，避免宿主模型为了读取 `result.summary_lines` 再解析 tool-result JSON 文件。
+- full-chain auto walkthrough 响应不再附带 `lookup_hint` / `candidate_paths` 大对象，减少输出体积和解析噪声；详细结构仍保留在 `result` 字段。
+- 顶层 `read_targets` 只保留 walkthrough 摘要主线的 target / local impl / 首选 server controller / server impl / server impl same-class 方法；其他候选 endpoint 仅保留在 `result` 详情中。
 
 ### Packaging / 打包版本
 

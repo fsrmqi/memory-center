@@ -116,10 +116,21 @@ def test_workspace_trace_attaches_chain_preview_for_deep_method_queries(tmp_path
 
 def test_memory_method_walkthrough_returns_feign_continuations(tmp_path: Path):
     wf = _setup_workspace(tmp_path)
-    result = memory_method_walkthrough(wf, "com.example.task.ArticleMoveService#move", depth=4, limit=20)
+    result = memory_method_walkthrough(wf, "com.example.task.ArticleMoveService#move", depth=4, limit=20, view="compact", budget="small")
     assert result["found"] is True
     assert result["target"]["class"] == "ArticleMoveService"
+    assert result["target"]["absolute_file_path"].endswith("task-service/src/main/java/com/example/task/ArticleMoveService.java")
+    assert result["agent_usage_policy"]["do_not_search_when_absolute_path_present"] is True
+    assert result["agent_usage_policy"]["do_not_sed_when_continuation_present"] is True
+    assert "absolute_file_path" in result["agent_usage_policy"]["read_files_by"]
     assert any(step["kind"] == "feign_call" for step in result["local_steps"])
+    assert any(step["receiver_type"] == "ArticleAuditService" for step in result["local_steps"])
+    assert result["same_class_method_continuations"]
+    assert result["same_class_method_continuations"][0]["target"]["class"] == "ArticleMoveService"
+    assert result["same_class_method_continuations"][0]["target"]["method"] == "validateMove"
+    assert result["local_service_continuations"]
+    assert result["local_service_continuations"][0]["target"]["class"] == "ArticleAuditServiceImpl"
+    assert result["local_service_continuations"][0]["target"]["absolute_file_path"].endswith("task-service/src/main/java/com/example/task/ArticleAuditServiceImpl.java")
     assert result["feign_continuations"]
     continuation = result["feign_continuations"][0]
     assert continuation["interface"] == "ArticleFeignClient"
@@ -129,10 +140,14 @@ def test_memory_method_walkthrough_returns_feign_continuations(tmp_path: Path):
     assert continuation["server_walkthroughs"]
     server_walkthrough = continuation["server_walkthroughs"][0]
     assert server_walkthrough["controller"] == "ArticleController"
+    assert server_walkthrough["absolute_file_path"].endswith("article-service/src/main/java/com/example/article/ArticleController.java")
     assert any(step["receiver_type"] == "ArticleWorkflowService" for step in server_walkthrough["local_steps"])
     impl = server_walkthrough["service_impl_continuations"][0]
     assert impl["target"]["class"] == "ArticleWorkflowServiceImpl"
     assert impl["target"]["method"] == "moveArticle"
+    assert impl["target"]["absolute_file_path"].endswith("article-service/src/main/java/com/example/article/ArticleWorkflowServiceImpl.java")
+    assert any(line.startswith("LocalImpl task-service:ArticleAuditServiceImpl#recordMove") for line in result["summary_lines"])
+    assert any(line.startswith("Server article-service:ArticleController#moveArticle") for line in result["summary_lines"])
 
 
 @pytest.mark.skipif(not HAS_MCP, reason="mcp package not installed")
@@ -173,6 +188,11 @@ def test_mc_lookup_auto_prefers_chain_for_deep_method_trace_queries(tmp_path: Pa
         )
     )
     assert result["mode_used"] == "walkthrough"
+    assert result["found"] is True
+    assert result["summary_lines"]
+    assert result["answer"]
+    assert result["read_targets"]
+    assert result["agent_usage_policy"]["read_files_by"] == "absolute_file_path"
     assert result["result"]["found"] is True
     assert result["result"]["target"]["method"] == "moveArticle"
 

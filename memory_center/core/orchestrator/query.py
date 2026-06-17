@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -1006,6 +1007,7 @@ def memory_method_walkthrough(
     symbols = store.read_json_prefer_backend("java-symbol-index.json", [])
     feigns = store.read_json_prefer_backend("feign-index.json", [])
     apis = store.read_json_prefer_backend("api-index.json", [])
+    file_abs_map = _build_file_abs_path_map(config, store)
     parsed = _parse_method_walkthrough_symbol(symbol)
     if not parsed.get("method"):
         return {
@@ -1036,6 +1038,7 @@ def memory_method_walkthrough(
         "file_path": entry["file"],
         "line": int((entry["symbol"].get("method_lines") or {}).get(method_name, 0) or 0),
     }
+    method_abs_path = _resolve_indexed_abs_path(file_abs_map, entry["project"], entry["file"])
     method_calls = [
         dict(call)
         for call in entry["symbol"].get("method_calls", [])
@@ -1049,7 +1052,9 @@ def memory_method_walkthrough(
     ]
     dto_field_usages.sort(key=lambda row: int(row.get("line", 0) or 0))
     local_steps = _build_method_local_steps(method_calls, dto_field_usages, feigns)
-    feign_continuations = _build_method_feign_continuations(entry, method_name, method_calls, feigns, apis, symbols)
+    feign_continuations = _build_method_feign_continuations(entry, method_name, method_calls, feigns, apis, symbols, file_abs_map)
+    local_service_continuations = _build_service_impl_continuations(symbols, entry, method_calls, file_abs_map, feigns, apis)
+    same_class_continuations = _build_same_class_method_continuations(symbols, entry, method_name, file_abs_map, feigns, apis)
     downstream_edges: List[Dict[str, Any]] = []
     with GraphStore(store.graph_db_path) as graph:
         downstream_edges = graph.neighbors(
@@ -1071,11 +1076,14 @@ def memory_method_walkthrough(
             "method": method_name,
             "project": entry["project"],
             "file_path": entry["file"],
+            "absolute_file_path": method_abs_path,
             "line": method_node["line"],
             "node_id": method_node["id"],
         },
         "evidence_level": "indexed_static_analysis",
         "local_steps": local_steps,
+        "local_service_continuations": local_service_continuations,
+        "same_class_method_continuations": same_class_continuations,
         "method_calls": method_calls,
         "dto_field_usages": dto_field_usages,
         "config_usages": entry["symbol"].get("config_usages", []),
@@ -1083,7 +1091,8 @@ def memory_method_walkthrough(
         "feign_continuations": feign_continuations,
         "downstream_summary": downstream_summary,
         "downstream_edges": downstream_edges,
-        "next_actions": _build_method_walkthrough_next_actions(feign_continuations, downstream_summary),
+        "agent_usage_policy": _build_method_walkthrough_agent_policy(),
+        "next_actions": _build_method_walkthrough_next_actions(feign_continuations, downstream_summary, local_service_continuations, same_class_continuations),
         "limitations": [
             "基于 reindex 后的静态索引，不展开运行时分支、动态代理和反射。",
             "如果 Feign 服务端不在同一 workspace/group 索引中，只返回 Feign 契约和 endpoint 候选。",
@@ -1142,6 +1151,41 @@ def _find_method_symbol_entry(symbols: List[Dict[str, Any]], parsed: Dict[str, s
     return {"symbol": item, "class_name": owner, "project": item.get("project", ""), "file": item.get("file", "")}
 
 
+def _build_file_abs_path_map(config: Any, store: Any) -> Dict[tuple[str, str], str]:
+    file_index = store.read_json_prefer_backend("file-index.json", [])
+    mapping: Dict[tuple[str, str], str] = {}
+    for row in file_index:
+        project = str(row.get("project", "") or "")
+        path = str(row.get("path", "") or "")
+        abs_path = str(row.get("abs_path", "") or "")
+        if project and path and abs_path:
+            mapping[(project, path)] = abs_path
+            mapping[("", path)] = abs_path
+    for service in getattr(config, "services", []) or []:
+        try:
+            service_root = config.resolve_service_path(service)
+            prefix = config.service_logical_prefix(service)
+        except Exception:
+            continue
+        if not prefix:
+            continue
+        mapping.setdefault((service.name, prefix), str(service_root))
+    mapping.setdefault(("", ""), str(config.root_path))
+    return mapping
+
+
+def _resolve_indexed_abs_path(file_abs_map: Dict[tuple[str, str], str], project: str, file_path: str) -> str:
+    if not file_path:
+        return ""
+    direct = file_abs_map.get((project, file_path)) or file_abs_map.get(("", file_path))
+    if direct:
+        return direct
+    root = file_abs_map.get(("", ""), "")
+    if root:
+        return str((Path(root) / file_path).resolve())
+    return file_path
+
+
 def _build_method_local_steps(
     method_calls: List[Dict[str, Any]],
     dto_field_usages: List[Dict[str, Any]],
@@ -1193,17 +1237,18 @@ def _build_method_feign_continuations(
     feigns: List[Dict[str, Any]],
     apis: List[Dict[str, Any]],
     symbols: List[Dict[str, Any]],
+    file_abs_map: Dict[tuple[str, str], str],
 ) -> List[Dict[str, Any]]:
     continuations: List[Dict[str, Any]] = []
     feign_by_interface = {item.get("interface", ""): item for item in feigns}
     owner_feign = feign_by_interface.get(entry.get("class_name", ""))
     if owner_feign:
-        continuations.extend(_continuations_for_feign_method(owner_feign, method_name, apis, symbols, source_call={}))
+        continuations.extend(_continuations_for_feign_method(owner_feign, method_name, apis, symbols, file_abs_map, source_call={}))
     for call in method_calls:
         feign = feign_by_interface.get(call.get("receiver_type", ""))
         if not feign:
             continue
-        continuations.extend(_continuations_for_feign_method(feign, call.get("method_name", ""), apis, symbols, source_call=call))
+        continuations.extend(_continuations_for_feign_method(feign, call.get("method_name", ""), apis, symbols, file_abs_map, source_call=call))
     return _dedupe_feign_continuations(continuations)
 
 
@@ -1212,6 +1257,7 @@ def _continuations_for_feign_method(
     method_name: str,
     apis: List[Dict[str, Any]],
     symbols: List[Dict[str, Any]],
+    file_abs_map: Dict[tuple[str, str], str],
     source_call: Dict[str, Any],
 ) -> List[Dict[str, Any]]:
     out: List[Dict[str, Any]] = []
@@ -1223,7 +1269,7 @@ def _continuations_for_feign_method(
             if api.get("http_method") == method.get("http_method") and api.get("path") == method.get("path")
         ]
         endpoints = _rank_feign_matched_endpoints(endpoints, feign.get("target_service", ""))
-        endpoint_summaries = [_summarize_endpoint_walkthrough(api, symbols) for api in endpoints[:3]]
+        endpoint_summaries = [_summarize_endpoint_walkthrough(api, symbols, file_abs_map) for api in endpoints[:3]]
         out.append(
             {
                 "interface": feign.get("interface", ""),
@@ -1238,6 +1284,7 @@ def _continuations_for_feign_method(
                         "controller": api.get("controller", ""),
                         "method": api.get("method_name", ""),
                         "file_path": api.get("file", ""),
+                        "absolute_file_path": _resolve_indexed_abs_path(file_abs_map, api.get("project", ""), api.get("file", "")),
                         "http_method": api.get("http_method", ""),
                         "path": api.get("path", ""),
                     }
@@ -1261,7 +1308,11 @@ def _rank_feign_matched_endpoints(endpoints: List[Dict[str, Any]], target_servic
     return sorted(endpoints, key=key)
 
 
-def _summarize_endpoint_walkthrough(api: Dict[str, Any], symbols: List[Dict[str, Any]]) -> Dict[str, Any]:
+def _summarize_endpoint_walkthrough(
+    api: Dict[str, Any],
+    symbols: List[Dict[str, Any]],
+    file_abs_map: Dict[tuple[str, str], str],
+) -> Dict[str, Any]:
     controller = api.get("controller", "")
     method = api.get("method_name", "")
     entry = _find_method_symbol_entry(symbols, {"class": controller, "method": method, "package": ""}, project=api.get("project", ""))
@@ -1287,13 +1338,14 @@ def _summarize_endpoint_walkthrough(api: Dict[str, Any], symbols: List[Dict[str,
     ]
     dto_usages.sort(key=lambda row: int(row.get("line", 0) or 0))
     local_steps = _build_method_local_steps(calls, dto_usages, feigns=[])
-    service_impls = _build_service_impl_continuations(symbols, entry, calls)
+    service_impls = _build_service_impl_continuations(symbols, entry, calls, file_abs_map)
     return {
         "project": entry["project"],
         "controller": controller,
         "method": method,
         "found": True,
         "file_path": entry["file"],
+        "absolute_file_path": _resolve_indexed_abs_path(file_abs_map, entry["project"], entry["file"]),
         "line": int((entry["symbol"].get("method_lines") or {}).get(method, 0) or 0),
         "local_steps": local_steps,
         "service_impl_continuations": service_impls,
@@ -1304,6 +1356,9 @@ def _build_service_impl_continuations(
     symbols: List[Dict[str, Any]],
     entry: Dict[str, Any],
     method_calls: List[Dict[str, Any]],
+    file_abs_map: Dict[tuple[str, str], str] | None = None,
+    feigns: List[Dict[str, Any]] | None = None,
+    apis: List[Dict[str, Any]] | None = None,
 ) -> List[Dict[str, Any]]:
     continuations: List[Dict[str, Any]] = []
     seen = set()
@@ -1331,6 +1386,23 @@ def _build_service_impl_continuations(
             if row.get("owner_method") == method_name
         ]
         impl_dto.sort(key=lambda row: int(row.get("line", 0) or 0))
+        nested_feigns = _build_method_feign_continuations(
+            impl_entry,
+            method_name,
+            impl_calls,
+            feigns or [],
+            apis or [],
+            symbols,
+            file_abs_map or {},
+        )
+        nested_same_class = _build_same_class_method_continuations(
+            symbols,
+            impl_entry,
+            method_name,
+            file_abs_map or {},
+            feigns or [],
+            apis or [],
+        )
         continuations.append(
             {
                 "receiver": call.get("receiver", ""),
@@ -1343,14 +1415,165 @@ def _build_service_impl_continuations(
                     "method": method_name,
                     "project": impl_entry.get("project", ""),
                     "file_path": impl_entry.get("file", ""),
+                    "absolute_file_path": _resolve_indexed_abs_path(file_abs_map or {}, impl_entry.get("project", ""), impl_entry.get("file", "")),
                     "line": int((impl_entry["symbol"].get("method_lines") or {}).get(method_name, 0) or 0),
                 },
                 "local_steps": _build_method_local_steps(impl_calls, impl_dto, feigns=[]),
+                "same_class_method_continuations": nested_same_class,
+                "feign_continuations": nested_feigns,
                 "data_resources": impl_entry["symbol"].get("data_resources", []),
                 "config_usages": impl_entry["symbol"].get("config_usages", []),
             }
         )
     return continuations
+
+
+def _build_same_class_method_continuations(
+    symbols: List[Dict[str, Any]],
+    entry: Dict[str, Any],
+    method_name: str,
+    file_abs_map: Dict[tuple[str, str], str],
+    feigns: List[Dict[str, Any]],
+    apis: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    symbol = entry.get("symbol", {}) or {}
+    class_methods = set(symbol.get("methods", []) or [])
+    if not class_methods:
+        return []
+    abs_path = _resolve_indexed_abs_path(file_abs_map, entry.get("project", ""), entry.get("file", ""))
+    called_methods = _detect_unqualified_same_class_calls(abs_path, method_name, class_methods)
+    continuations: List[Dict[str, Any]] = []
+    for called in called_methods:
+        if called == method_name:
+            continue
+        target_entry = _find_method_symbol_entry(
+            symbols,
+            {"class": entry.get("class_name", ""), "method": called, "package": symbol.get("package", "") or ""},
+            project=entry.get("project", ""),
+        )
+        if not target_entry:
+            continue
+        calls = [
+            dict(row)
+            for row in target_entry["symbol"].get("method_calls", [])
+            if row.get("owner_method") == called
+        ]
+        calls.sort(key=lambda row: int(row.get("line", 0) or 0))
+        dto = [
+            dict(row)
+            for row in target_entry["symbol"].get("dto_field_usages", [])
+            if row.get("owner_method") == called
+        ]
+        dto.sort(key=lambda row: int(row.get("line", 0) or 0))
+        continuations.append(
+            {
+                "method": called,
+                "target": {
+                    "package": target_entry["symbol"].get("package", ""),
+                    "class": target_entry.get("class_name", ""),
+                    "method": called,
+                    "project": target_entry.get("project", ""),
+                    "file_path": target_entry.get("file", ""),
+                    "absolute_file_path": _resolve_indexed_abs_path(file_abs_map, target_entry.get("project", ""), target_entry.get("file", "")),
+                    "line": int((target_entry["symbol"].get("method_lines") or {}).get(called, 0) or 0),
+                },
+                "local_steps": _build_method_local_steps(calls, dto, feigns),
+                "field_filter_summary": _summarize_dto_field_filters(dto),
+                "feign_continuations": _build_method_feign_continuations(target_entry, called, calls, feigns, apis, symbols, file_abs_map),
+                "data_resources": target_entry["symbol"].get("data_resources", []),
+                "config_usages": target_entry["symbol"].get("config_usages", []),
+            }
+        )
+    return continuations
+
+
+def _detect_unqualified_same_class_calls(abs_path: str, owner_method: str, class_methods: set[str]) -> List[str]:
+    if not abs_path:
+        return []
+    try:
+        text = Path(abs_path).read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        return []
+    body = _extract_java_method_body(text, owner_method)
+    if not body:
+        return []
+    ignored = {
+        "if", "for", "while", "switch", "catch", "return", "new", "throw", "super", "this",
+        "try", "else", "do", "synchronized",
+    }
+    calls: List[str] = []
+    seen = set()
+    for match in re.finditer(r"(?<![.\w])([A-Za-z_]\w*)\s*\(", body):
+        name = match.group(1)
+        if name in ignored or name not in class_methods or name in seen:
+            continue
+        seen.add(name)
+        calls.append(name)
+    return calls
+
+
+def _extract_java_method_body(text: str, method_name: str) -> str:
+    pattern = re.compile(
+        r"(?:@\w+(?:\([^)]*\))?\s*)*"
+        r"(?:public|private|protected)\s+"
+        r"(?:static\s+)?[\w<>, ?\.\[\]]+\s+"
+        + re.escape(method_name)
+        + r"\s*\([^;{}]*\)\s*(?:throws\s+[\w, ]+\s*)?\{",
+        re.M,
+    )
+    match = pattern.search(text)
+    if not match:
+        return ""
+    open_pos = match.end() - 1
+    close_pos = _matching_brace_end_runtime(text, open_pos)
+    if close_pos <= open_pos:
+        return ""
+    return text[open_pos + 1:close_pos]
+
+
+def _matching_brace_end_runtime(text: str, open_pos: int) -> int:
+    depth = 0
+    pos = open_pos
+    while pos < len(text):
+        ch = text[pos]
+        if ch == '"':
+            pos += 1
+            while pos < len(text):
+                if text[pos] == "\\":
+                    pos += 2
+                elif text[pos] == '"':
+                    pos += 1
+                    break
+                else:
+                    pos += 1
+            continue
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return pos
+        pos += 1
+    return len(text)
+
+
+def _summarize_dto_field_filters(dto_usages: List[Dict[str, Any]]) -> Dict[str, Any]:
+    fields: List[str] = []
+    seen = set()
+    for row in dto_usages:
+        receiver_type = row.get("receiver_type", "") or row.get("receiver", "")
+        if "Dto" not in receiver_type and "DTO" not in receiver_type:
+            continue
+        field = str(row.get("field", "") or "")
+        if not field or field in seen:
+            continue
+        seen.add(field)
+        fields.append(field)
+    return {
+        "unique_dto_fields": fields[:80],
+        "unique_dto_field_count": len(fields),
+        "truncated": len(fields) > 80,
+    }
 
 
 def _find_receiver_impl_method(
@@ -1401,12 +1624,32 @@ def _dedupe_feign_continuations(items: List[Dict[str, Any]]) -> List[Dict[str, A
     return deduped
 
 
-def _build_method_walkthrough_next_actions(feign_continuations: List[Dict[str, Any]], downstream_summary: Dict[str, Any]) -> List[str]:
+def _build_method_walkthrough_next_actions(
+    feign_continuations: List[Dict[str, Any]],
+    downstream_summary: Dict[str, Any],
+    local_service_continuations: List[Dict[str, Any]] | None = None,
+    same_class_continuations: List[Dict[str, Any]] | None = None,
+) -> List[str]:
     actions = []
-    if feign_continuations:
+    has_server_walkthroughs = any(item.get("server_walkthroughs") for item in feign_continuations or [])
+    has_server_impls = any(
+        server.get("service_impl_continuations")
+        for item in feign_continuations or []
+        for server in item.get("server_walkthroughs", []) or []
+    )
+    if local_service_continuations:
+        actions.append("优先阅读 local_service_continuations 中的本地 Service Impl 续链；直接使用 absolute_file_path，不需要 find")
+    if same_class_continuations:
+        actions.append("优先阅读 same_class_method_continuations 中的同类私有/辅助方法续链；直接使用 absolute_file_path 和 field_filter_summary，不需要 sed 切片")
+    if feign_continuations and has_server_walkthroughs:
+        if has_server_impls:
+            actions.append("优先阅读 feign_continuations.server_walkthroughs[].service_impl_continuations 中的服务端 Impl 续链；直接使用 absolute_file_path，不需要 find")
+        else:
+            actions.append("优先阅读 feign_continuations.server_walkthroughs 中的服务端 Controller 续链；直接使用 absolute_file_path，不需要 find")
+    elif feign_continuations:
         actions.append("对 feign_continuations.matched_endpoints 中的 Controller#method 继续调用 mc_lookup(mode='walkthrough')")
     if downstream_summary.get("total_edges", 0):
-        actions.append("查看 downstream_summary.items，确认本地下游调用和数据访问")
+        actions.append("downstream_summary 仅作补充图谱线索；若与 walkthrough 冲突，以 local/service/feign continuations 为准")
     if not actions:
         actions.append("当前方法没有索引到下游调用；必要时先 reindex 或用代码搜索确认动态调用")
     return actions
@@ -1418,6 +1661,8 @@ def _compact_method_walkthrough_result(result: Dict[str, Any], budget: str = "me
     limits = _budget_limits(budget)
     target = result.get("target", {}) or {}
     feigns = result.get("feign_continuations", []) or []
+    local_service_continuations = result.get("local_service_continuations", []) or []
+    same_class_continuations = result.get("same_class_method_continuations", []) or []
     downstream = result.get("downstream_summary", {}) or {}
     return {
         "workspace": result.get("workspace", ""),
@@ -1425,7 +1670,9 @@ def _compact_method_walkthrough_result(result: Dict[str, Any], budget: str = "me
         "found": result.get("found", False),
         "target": target,
         "evidence_level": result.get("evidence_level", ""),
-        "local_steps": (result.get("local_steps", []) or [])[: limits["steps"] + limits["events"]],
+        "local_steps": _select_compact_method_steps(result.get("local_steps", []) or [], limits),
+        "local_service_continuations": local_service_continuations[: limits["steps"]],
+        "same_class_method_continuations": same_class_continuations[: limits["steps"]],
         "feign_continuations": feigns[: limits["steps"]],
         "downstream_summary": {
             "items": (downstream.get("items", []) or [])[: limits["steps"] + limits["events"]],
@@ -1433,24 +1680,70 @@ def _compact_method_walkthrough_result(result: Dict[str, Any], budget: str = "me
             "depth_reached": downstream.get("depth_reached", 0),
             "type_counts": downstream.get("type_counts", {}),
         },
-        "summary_lines": _build_method_walkthrough_summary_lines(target, result.get("local_steps", []), feigns, downstream, limits),
+        "summary_lines": _build_method_walkthrough_summary_lines(target, result.get("local_steps", []), local_service_continuations, same_class_continuations, feigns, downstream, limits),
+        "agent_usage_policy": result.get("agent_usage_policy", _build_method_walkthrough_agent_policy()),
         "next_actions": (result.get("next_actions", []) or [])[:3],
         "limitations": result.get("limitations", [])[:2],
     }
 
 
+def _build_method_walkthrough_agent_policy() -> Dict[str, Any]:
+    return {
+        "primary_path": "summary_lines -> local_service_continuations -> same_class_method_continuations -> feign_continuations.server_walkthroughs -> service_impl_continuations",
+        "read_files_by": "absolute_file_path",
+        "do_not_search_when_absolute_path_present": True,
+        "do_not_sed_when_continuation_present": True,
+        "avoid_tools": ["find", "grep -l", "rg --files", "IDEA search", "sed -n"],
+        "reason": "walkthrough 已给出 controller/service impl/同类辅助方法的已索引落点、absolute_file_path 和字段摘要；重复搜索或 sed 切片会增加延迟并可能被同名类误导。",
+    }
+
+
+def _select_compact_method_steps(local_steps: List[Dict[str, Any]], limits: Dict[str, int]) -> List[Dict[str, Any]]:
+    max_items = max(4, limits["steps"] + limits["events"])
+    priority = {"feign_call": 0, "method_call": 1, "dto_field_read": 2}
+    selected: List[Dict[str, Any]] = []
+    seen = set()
+    for step in sorted(local_steps or [], key=lambda row: (priority.get(row.get("kind", ""), 9), int(row.get("line", 0) or 0))):
+        key = (step.get("kind"), step.get("line"), step.get("receiver"), step.get("method"), step.get("field"))
+        if key in seen:
+            continue
+        seen.add(key)
+        selected.append(step)
+        if len(selected) >= max_items:
+            break
+    selected.sort(key=lambda row: (int(row.get("line", 0) or 0), priority.get(row.get("kind", ""), 9)))
+    return selected
+
+
 def _build_method_walkthrough_summary_lines(
     target: Dict[str, Any],
     local_steps: List[Dict[str, Any]],
+    local_service_continuations: List[Dict[str, Any]],
+    same_class_continuations: List[Dict[str, Any]],
     feigns: List[Dict[str, Any]],
     downstream: Dict[str, Any],
     limits: Dict[str, int],
 ) -> List[str]:
     lines = [
-        f"Target {target.get('project', '')}:{target.get('class', '')}#{target.get('method', '')} ({target.get('file_path', '')}:{target.get('line', 0)})"
+        f"Target {target.get('project', '')}:{target.get('class', '')}#{target.get('method', '')} ({_display_method_path(target)}:{target.get('line', 0)})"
     ]
-    for step in (local_steps or [])[: limits["steps"]]:
+    for step in _select_compact_method_steps(local_steps or [], limits)[: limits["steps"] + limits["events"]]:
         lines.append(f"Step line {step.get('line', 0)}: {step.get('summary', '')}")
+    for impl in (local_service_continuations or [])[: limits["events"]]:
+        target_impl = impl.get("target", {}) or {}
+        lines.append(
+            f"LocalImpl {target_impl.get('project', '')}:{target_impl.get('class', '')}#{target_impl.get('method', '')} ({_display_method_path(target_impl)}:{target_impl.get('line', 0)})"
+        )
+        for nested in (impl.get("feign_continuations", []) or [])[:1]:
+            lines.append(
+                f"LocalImplFeign {nested.get('interface', '')}.{nested.get('method', '')} -> {nested.get('http_method', '')} {nested.get('path', '')} endpoints={len(nested.get('matched_endpoints', []) or [])}"
+            )
+    for same in (same_class_continuations or [])[: limits["events"]]:
+        same_target = same.get("target", {}) or {}
+        field_summary = same.get("field_filter_summary", {}) or {}
+        lines.append(
+            f"SameClass {same_target.get('project', '')}:{same_target.get('class', '')}#{same_target.get('method', '')} ({_display_method_path(same_target)}:{same_target.get('line', 0)}) fields={field_summary.get('unique_dto_field_count', 0)}"
+        )
     for item in feigns[: limits["events"]]:
         endpoint_count = len(item.get("matched_endpoints", []) or [])
         lines.append(
@@ -1458,16 +1751,26 @@ def _build_method_walkthrough_summary_lines(
         )
         for server in (item.get("server_walkthroughs", []) or [])[:1]:
             lines.append(
-                f"Server {server.get('project', '')}:{server.get('controller', '')}#{server.get('method', '')} ({server.get('file_path', '')}:{server.get('line', 0)})"
+                f"Server {server.get('project', '')}:{server.get('controller', '')}#{server.get('method', '')} ({_display_method_path(server)}:{server.get('line', 0)})"
             )
             for impl in (server.get("service_impl_continuations", []) or [])[:1]:
                 target = impl.get("target", {}) or {}
                 lines.append(
-                    f"Impl {target.get('project', '')}:{target.get('class', '')}#{target.get('method', '')} ({target.get('file_path', '')}:{target.get('line', 0)})"
+                    f"Impl {target.get('project', '')}:{target.get('class', '')}#{target.get('method', '')} ({_display_method_path(target)}:{target.get('line', 0)})"
                 )
+                for same in (impl.get("same_class_method_continuations", []) or [])[:1]:
+                    same_target = same.get("target", {}) or {}
+                    field_summary = same.get("field_filter_summary", {}) or {}
+                    lines.append(
+                        f"ImplSameClass {same_target.get('project', '')}:{same_target.get('class', '')}#{same_target.get('method', '')} ({_display_method_path(same_target)}:{same_target.get('line', 0)}) fields={field_summary.get('unique_dto_field_count', 0)}"
+                    )
     if downstream.get("total_edges", 0):
         lines.append(f"Downstream edges={downstream.get('total_edges', 0)} depth={downstream.get('depth_reached', 0)}")
     return lines
+
+
+def _display_method_path(item: Dict[str, Any]) -> str:
+    return str(item.get("absolute_file_path") or item.get("file_path") or "")
 
 
 def memory_search_code(workspace_file: str | Path, query: str, scope: str = "", limit: int = 20, project: str = "") -> Dict[str, Any]:

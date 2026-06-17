@@ -2,7 +2,7 @@
 
 Previously exposed 82 atomic tools; now consolidated into 8 task-level facades:
   mc_start   — begin a task workflow (sniff + sync + session)
-  mc_lookup  — unified knowledge lookup (auto/symbol/code/query/trace/chain/context/contracts/ref)
+  mc_lookup  — unified knowledge lookup (auto/symbol/code/query/trace/chain/walkthrough/context/contracts/ref)
   mc_analyze — change impact analysis (quick/standard/full depth)
   mc_sync    — sync context to workspace artifacts (sniff or case)
   mc_resume  — resume a task with consolidated context
@@ -186,6 +186,65 @@ def _benchmark_trend_report(workspace_file: str, function_name: str = "") -> Dic
     return generate_benchmark_report(workspace_file, function_name=function_name)
 
 
+def _flatten_walkthrough_payload(result: Dict[str, Any], mode_key: str = "mode_used") -> Dict[str, Any]:
+    summary_lines = result.get("summary_lines", []) or []
+    return {
+        mode_key: "walkthrough",
+        "found": result.get("found", False),
+        "target": result.get("target", {}),
+        "answer": "\n".join(summary_lines),
+        "summary_lines": summary_lines,
+        "primary_flow": summary_lines,
+        "read_targets": _collect_walkthrough_read_targets(result),
+        "agent_usage_policy": result.get("agent_usage_policy", {}),
+        "next_actions": result.get("next_actions", []),
+        "result": result,
+    }
+
+
+def _collect_walkthrough_read_targets(result: Dict[str, Any]) -> List[Dict[str, Any]]:
+    targets: List[Dict[str, Any]] = []
+    seen = set()
+
+    def add(role: str, item: Dict[str, Any], label: str = "") -> None:
+        abs_path = item.get("absolute_file_path") or item.get("file_path")
+        if not abs_path:
+            return
+        key = (role, abs_path, item.get("line", 0), label)
+        if key in seen:
+            return
+        seen.add(key)
+        targets.append({
+            "role": role,
+            "label": label or item.get("class") or item.get("controller") or item.get("method") or "",
+            "absolute_file_path": abs_path,
+            "line": item.get("line", 0),
+            "project": item.get("project", ""),
+        })
+
+    target = result.get("target", {}) or {}
+    add("target", target, f"{target.get('class', '')}#{target.get('method', '')}")
+    for impl in result.get("local_service_continuations", []) or []:
+        impl_target = impl.get("target", {}) or {}
+        add("local_impl", impl_target, f"{impl_target.get('class', '')}#{impl_target.get('method', '')}")
+        for same in impl.get("same_class_method_continuations", []) or []:
+            same_target = same.get("target", {}) or {}
+            add("local_impl_same_class", same_target, f"{same_target.get('class', '')}#{same_target.get('method', '')}")
+    for same in result.get("same_class_method_continuations", []) or []:
+        same_target = same.get("target", {}) or {}
+        add("same_class", same_target, f"{same_target.get('class', '')}#{same_target.get('method', '')}")
+    for feign in result.get("feign_continuations", []) or []:
+        for server in (feign.get("server_walkthroughs", []) or [])[:1]:
+            add("server_controller", server, f"{server.get('controller', '')}#{server.get('method', '')}")
+            for impl in (server.get("service_impl_continuations", []) or [])[:1]:
+                impl_target = impl.get("target", {}) or {}
+                add("server_impl", impl_target, f"{impl_target.get('class', '')}#{impl_target.get('method', '')}")
+                for same in impl.get("same_class_method_continuations", []) or []:
+                    same_target = same.get("target", {}) or {}
+                    add("server_impl_same_class", same_target, f"{same_target.get('class', '')}#{same_target.get('method', '')}")
+    return targets
+
+
 def _run_audit(workspace_file: str, work_package: str = "") -> Dict[str, Any]:
     """Run completion audit for mc_admin."""
     from ..core.audit.completion import run_completion_audit
@@ -345,7 +404,7 @@ def create_server(workspace_file: str):
         limit: int = 20,
         project: str = "",
     ):
-        """Unified knowledge lookup. Mode selects strategy: auto (system decides via lookup_hint), symbol (resolve name), code (keyword search), query (graph-aware multi-source), trace (cross-service by class/Feign/endpoint/MQ), chain (caller/callee analysis, use chain_direction), walkthrough (method-level indexed walkthrough), context (360-degree context for a service/symbol), contracts (list all Feign/API/MQ contracts), ref (resolve short memory reference IDs). Use project to disambiguate when multiple modules contain the same symbol name."""
+        """Unified knowledge lookup. Mode selects strategy: auto (system decides via lookup_hint), symbol (resolve name), code (keyword search), query (graph-aware multi-source), trace (cross-service by class/Feign/endpoint/MQ), chain (caller/callee analysis, use chain_direction), walkthrough (method-level indexed walkthrough), context (360-degree context for a service/symbol), contracts (list all Feign/API/MQ contracts), ref (resolve short memory reference IDs). For Class#method requests that say full chain/全链路/到底层, prefer mode='walkthrough' or auto; walkthrough returns summary_lines, local_service_continuations, feign_continuations.server_walkthroughs, service_impl_continuations, and absolute_file_path. If absolute_file_path is present, read that path directly and do not run find/grep/IDEA search to locate the same controller or impl. Use project to disambiguate when multiple modules contain the same symbol name."""
         wf = ctx.workspace_file
         resolved_symbol = _extract_symbol_like_token(symbol, name, entry, query)
         resolved_depth = max(depth, 4) if _wants_deep_chain(query, intent, symbol, name, entry) else depth
@@ -361,7 +420,10 @@ def create_server(workspace_file: str):
             # Strip suffix for cleaner matching
             preferred_bare = [t.replace("_tool", "") for t in preferred]
             if _wants_deep_chain(query, intent, symbol, name, entry) and "#" in resolved_symbol:
-                return {"mode_used": "walkthrough", "result": memory_method_walkthrough(wf, resolved_symbol, depth=resolved_depth, limit=limit, project=project, view="compact", budget="small"), **decision_fields}
+                result = memory_method_walkthrough(wf, resolved_symbol, depth=resolved_depth, limit=limit, project=project, view="compact", budget="small")
+                payload = _flatten_walkthrough_payload(result, mode_key="mode_used")
+                payload["routing_note"] = "auto selected walkthrough for Class#method full-chain query; use top-level answer/summary_lines/read_targets directly."
+                return payload
             if "memory_callers" in preferred_bare and resolved_symbol:
                 matching_groups = _find_groups_for_workspace(wf)
                 if len(matching_groups) == 1:
@@ -425,7 +487,8 @@ def create_server(workspace_file: str):
             _annotate_phantom_nodes(result, wf)
             return {"mode": f"chain-{chain_direction}", "result": result}
         if mode == "walkthrough":
-            return {"mode": "walkthrough", "result": memory_method_walkthrough(wf, symbol or resolved_symbol or query, depth=depth, limit=limit, project=project, view="compact", budget="small")}
+            result = memory_method_walkthrough(wf, symbol or resolved_symbol or query, depth=depth, limit=limit, project=project, view="compact", budget="small")
+            return _flatten_walkthrough_payload(result, mode_key="mode")
         if mode == "context":
             return {"mode": "context", "result": memory_context(wf, name or query, depth, project=project, view="compact", budget="small")}
         if mode == "contracts":
@@ -888,9 +951,11 @@ def create_server(workspace_file: str):
     def cross_service_trace(service: str = "") -> str:
         base = (
             "Trace cross-service call chains. "
-            "Call mc_lookup with mode='chain' to find Feign clients, "
-            "MQ producers/consumers, and shared configs. "
-            "Map the complete call graph across services. "
+            "If the input contains Class#method or asks for full chain/全链路/到底层, call mc_lookup with mode='walkthrough' first. "
+            "Use mode='chain' only for generic caller/callee graph exploration. "
+            "For walkthrough results, follow summary_lines, local_service_continuations, feign_continuations.server_walkthroughs, and service_impl_continuations. "
+            "When absolute_file_path is present, read that path directly; do not run find/grep/IDEA search to locate the same controller or impl. "
+            "Then map Feign clients, MQ producers/consumers, and shared configs as needed. "
         )
         return base + (f"Starting from: {service}" if service else "Trace all cross-service interactions.")
 
