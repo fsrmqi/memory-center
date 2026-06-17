@@ -193,6 +193,8 @@ def _flatten_walkthrough_payload(result: Dict[str, Any], mode_key: str = "mode_u
         "found": result.get("found", False),
         "target": result.get("target", {}),
         "answer": "\n".join(summary_lines),
+        "answer_markdown": result.get("answer_markdown", ""),
+        "answer_template": result.get("answer_template", {}),
         "summary_lines": summary_lines,
         "primary_flow": summary_lines,
         "read_targets": _collect_walkthrough_read_targets(result),

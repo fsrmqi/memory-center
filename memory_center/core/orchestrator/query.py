@@ -17,6 +17,7 @@ from .common import (
     SESSION_EVENTS_FILE,
     _best_match,
     _build_progressive_levels,
+    _budget_limits,
     _event_payload,
     _filter_call_edges,
     _is_compact_view,
@@ -996,6 +997,7 @@ def memory_method_walkthrough(
     project: str = "",
     view: str = "full",
     budget: str = "medium",
+    _allow_workspace_escalation: bool = True,
 ) -> Dict[str, Any]:
     """Build a method-level walkthrough from indexed Java evidence.
 
@@ -1004,6 +1006,7 @@ def memory_method_walkthrough(
     It does not pretend to execute Java control flow.
     """
     config, store = load_context(workspace_file)
+    active_workspace_file = str(Path(workspace_file).expanduser().resolve())
     symbols = store.read_json_prefer_backend("java-symbol-index.json", [])
     feigns = store.read_json_prefer_backend("feign-index.json", [])
     apis = store.read_json_prefer_backend("api-index.json", [])
@@ -1012,6 +1015,7 @@ def memory_method_walkthrough(
     if not parsed.get("method"):
         return {
             "workspace": config.workspace,
+            "workspace_file": active_workspace_file,
             "symbol": symbol,
             "found": False,
             "reason": "method_walkthrough requires Class#method",
@@ -1020,12 +1024,17 @@ def memory_method_walkthrough(
 
     entry = _find_method_symbol_entry(symbols, parsed, project=project)
     if not entry:
+        escalated = _try_escalated_method_walkthrough(workspace_file, symbol, depth, limit, project, view, budget, current_result=None, allow=_allow_workspace_escalation)
+        if escalated:
+            return escalated
         return {
             "workspace": config.workspace,
+            "workspace_file": active_workspace_file,
             "symbol": symbol,
             "found": False,
             "reason": "method not found in java-symbol-index",
             "lookup": memory_symbol(workspace_file, symbol, limit=5, project=project).get("lookup", {}),
+            "workspace_escalation": _build_workspace_escalation_status(workspace_file, status="not_found_no_better_workspace"),
         }
 
     class_name = entry["class_name"]
@@ -1068,6 +1077,7 @@ def memory_method_walkthrough(
     downstream_summary = _summarize_chain_edges(downstream_edges)
     result = {
         "workspace": config.workspace,
+        "workspace_file": active_workspace_file,
         "symbol": symbol,
         "found": True,
         "target": {
@@ -1098,12 +1108,192 @@ def memory_method_walkthrough(
             "如果 Feign 服务端不在同一 workspace/group 索引中，只返回 Feign 契约和 endpoint 候选。",
         ],
     }
+    result["summary_lines"] = _build_method_walkthrough_summary_lines(
+        result["target"],
+        local_steps,
+        local_service_continuations,
+        same_class_continuations,
+        feign_continuations,
+        downstream_summary,
+        _budget_limits(budget),
+    )
+    escalated = _try_escalated_method_walkthrough(workspace_file, symbol, depth, limit, project, view, budget, current_result=result, allow=_allow_workspace_escalation)
+    if escalated:
+        return escalated
+    result["workspace_escalation"] = _build_workspace_escalation_status(workspace_file, status="not_needed_or_not_found")
+    result["answer_markdown"] = _render_method_walkthrough_answer(result, workspace_file)
     if _is_compact_view(view):
         compact = _compact_method_walkthrough_result(result, budget=budget)
         gain = _measure_compact_gain(result, compact)
         log_token_gain(workspace_file, "memory_method_walkthrough", budget=budget, model="", raw_tokens=gain["raw_tokens"], compact_tokens=gain["compact_tokens"], view=view)
         return compact
     return result
+
+
+def _try_escalated_method_walkthrough(
+    workspace_file: str | Path,
+    symbol: str,
+    depth: int,
+    limit: int,
+    project: str,
+    view: str,
+    budget: str,
+    current_result: Dict[str, Any] | None,
+    allow: bool,
+) -> Dict[str, Any]:
+    if not allow:
+        return {}
+    candidate = _find_parent_or_covering_workspace(workspace_file)
+    if not candidate:
+        return {}
+    candidate_path = str(candidate)
+    current_path = str(Path(workspace_file).expanduser().resolve())
+    if candidate_path == current_path:
+        return {}
+    try:
+        escalated = memory_method_walkthrough(
+            candidate_path,
+            symbol,
+            depth=depth,
+            limit=limit,
+            project=project,
+            view="full",
+            budget=budget,
+            _allow_workspace_escalation=False,
+        )
+    except Exception as exc:
+        if current_result is not None:
+            current_result["workspace_escalation"] = _build_workspace_escalation_status(
+                workspace_file,
+                status="candidate_failed",
+                candidate_workspace=candidate_path,
+                reason=str(exc),
+            )
+        return {}
+    if not escalated.get("found"):
+        return {}
+    if current_result is not None and _walkthrough_quality_score(escalated) <= _walkthrough_quality_score(current_result):
+        return {}
+    escalated["workspace_escalation"] = _build_workspace_escalation_status(
+        workspace_file,
+        status="escalated",
+        candidate_workspace=candidate_path,
+        reason="父级或覆盖当前项目的聚合 workspace 返回了更完整的跨服务 walkthrough。",
+    )
+    escalated["answer_markdown"] = _render_method_walkthrough_answer(escalated, candidate_path)
+    if _is_compact_view(view):
+        compact = _compact_method_walkthrough_result(escalated, budget=budget)
+        compact["workspace_escalation"] = escalated["workspace_escalation"]
+        compact["answer_markdown"] = escalated["answer_markdown"]
+        return compact
+    return escalated
+
+
+def _find_parent_or_covering_workspace(workspace_file: str | Path) -> Path | None:
+    current_ws = Path(workspace_file).expanduser().resolve()
+    try:
+        current_config, _ = load_context(current_ws)
+        current_root = current_config.root_path
+    except Exception:
+        current_root = current_ws.parent.parent.resolve()
+
+    candidates: List[Path] = []
+    for parent in [current_root, *current_root.parents]:
+        candidate = parent / ".memory-center" / "workspace.yaml"
+        if candidate.exists() and candidate.resolve() != current_ws:
+            candidates.append(candidate.resolve())
+    candidates.extend(_registry_covering_workspaces(current_ws, current_root))
+
+    unique: List[Path] = []
+    seen = set()
+    for candidate in candidates:
+        key = str(candidate)
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(candidate)
+    if not unique:
+        return None
+
+    def score(candidate: Path) -> tuple[int, int, int]:
+        try:
+            cfg = load_context(candidate)[0]
+            covers = 1 if _path_is_within(current_root, cfg.root_path) else 0
+            service_count = len(getattr(cfg, "services", []) or [])
+            root_len = len(str(cfg.root_path))
+            return (covers, service_count, -root_len)
+        except Exception:
+            return (0, 0, 0)
+
+    unique.sort(key=score, reverse=True)
+    return unique[0]
+
+
+def _registry_covering_workspaces(current_ws: Path, current_root: Path) -> List[Path]:
+    try:
+        from ..registry import load_registry
+    except Exception:
+        return []
+    out: List[Path] = []
+    try:
+        registry = load_registry()
+    except Exception:
+        return out
+    for repo in registry.get("repos", []) or []:
+        raw = repo.get("workspace_file", "")
+        if not raw:
+            continue
+        candidate = Path(raw).expanduser().resolve()
+        if candidate == current_ws or not candidate.exists():
+            continue
+        try:
+            cfg = load_context(candidate)[0]
+        except Exception:
+            continue
+        if _path_is_within(current_root, cfg.root_path):
+            out.append(candidate)
+    return out
+
+
+def _path_is_within(path: Path, maybe_parent: Path) -> bool:
+    try:
+        path.resolve().relative_to(maybe_parent.resolve())
+        return True
+    except ValueError:
+        return False
+
+
+def _walkthrough_quality_score(result: Dict[str, Any]) -> int:
+    if not result or not result.get("found"):
+        return 0
+    score = 10
+    score += len(result.get("local_service_continuations", []) or []) * 5
+    score += len(result.get("same_class_method_continuations", []) or []) * 3
+    for feign in result.get("feign_continuations", []) or []:
+        servers = feign.get("server_walkthroughs", []) or []
+        score += len(servers) * 8
+        for server in servers:
+            impls = server.get("service_impl_continuations", []) or []
+            score += len(impls) * 10
+            for impl in impls:
+                score += len(impl.get("same_class_method_continuations", []) or []) * 4
+                score += len(impl.get("feign_continuations", []) or []) * 4
+    return score
+
+
+def _build_workspace_escalation_status(
+    workspace_file: str | Path,
+    status: str,
+    candidate_workspace: str = "",
+    reason: str = "",
+) -> Dict[str, Any]:
+    return {
+        "status": status,
+        "original_workspace_file": str(Path(workspace_file).expanduser().resolve()),
+        "workspace_used": candidate_workspace or str(Path(workspace_file).expanduser().resolve()),
+        "reason": reason,
+        "fallback_safe": True,
+    }
 
 
 def _parse_method_walkthrough_symbol(symbol: str) -> Dict[str, str]:
@@ -1479,10 +1669,15 @@ def _build_same_class_method_continuations(
                 },
                 "local_steps": _build_method_local_steps(calls, dto, feigns),
                 "field_filter_summary": _summarize_dto_field_filters(dto),
+                "rule_groups": _classify_dto_field_rule_groups(dto),
                 "feign_continuations": _build_method_feign_continuations(target_entry, called, calls, feigns, apis, symbols, file_abs_map),
                 "data_resources": target_entry["symbol"].get("data_resources", []),
                 "config_usages": target_entry["symbol"].get("config_usages", []),
             }
+        )
+        continuations[-1]["target"]["evidence_span"] = _find_method_span_lines(
+            continuations[-1]["target"]["absolute_file_path"],
+            called,
         )
     return continuations
 
@@ -1574,6 +1769,66 @@ def _summarize_dto_field_filters(dto_usages: List[Dict[str, Any]]) -> Dict[str, 
         "unique_dto_field_count": len(fields),
         "truncated": len(fields) > 80,
     }
+
+
+def _classify_dto_field_rule_groups(dto_usages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    summary = _summarize_dto_field_filters(dto_usages)
+    fields = summary.get("unique_dto_fields", []) or []
+    groups = [
+        ("identity", {"id", "idList", "notVersionId", "urlMd5"}),
+        ("audit", {"reviewType", "reviewTypeList", "reviewState", "reviewStateList", "resultType", "resultTypeList"}),
+        ("site_url_content", {"siteInfo", "siteCode", "article", "url", "searchUrlType", "pageType", "pageTypeList", "parentUrl"}),
+        ("question_type_script", {"questionTypeCountGt0", "questionTypeCountGt0List"}),
+        ("time", {"dateType", "startDate", "endDate", "dateType2", "startDate2", "endDate2"}),
+        ("code", {"codeType", "codeTypeVal"}),
+        ("region", {"distIdList", "distSign", "provDistId", "cityDistId", "countyDistId"}),
+        ("organization", {"tradePid", "tradeSid", "tradeGid", "organPid", "organSid", "organGid", "payType", "isParentBill", "unitPayType", "deliveryTeam"}),
+        ("data_protection", {"protectCode", "categoryTag", "unitLevel", "isPublic", "isSubmited"}),
+        ("release_label", {"releaseFlag", "dataBizType", "labelIds"}),
+        ("inventory", {"invResult", "invResultList", "invBatchNo", "invProcessResult", "invProcessMethod", "pubOffice", "invProcessBy"}),
+        ("sort", {"sortField", "sortFlag", "check"}),
+    ]
+    remaining = set(fields)
+    out: List[Dict[str, Any]] = []
+    for name, known in groups:
+        matched = [field for field in fields if field in known]
+        if matched:
+            remaining.difference_update(matched)
+            out.append({"group": name, "fields": matched, "count": len(matched)})
+    if remaining:
+        ordered = [field for field in fields if field in remaining]
+        out.append({"group": "other", "fields": ordered, "count": len(ordered)})
+    return out
+
+
+def _find_method_span_lines(abs_path: str, method_name: str) -> Dict[str, int]:
+    if not abs_path:
+        return {}
+    try:
+        text = Path(abs_path).read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        return {}
+    pattern = re.compile(
+        r"(?:@\w+(?:\([^)]*\))?\s*)*"
+        r"(?:public|private|protected)\s+"
+        r"(?:static\s+)?[\w<>, ?\.\[\]]+\s+"
+        + re.escape(method_name)
+        + r"\s*\([^;{}]*\)\s*(?:throws\s+[\w, ]+\s*)?\{",
+        re.M,
+    )
+    match = pattern.search(text)
+    if not match:
+        return {}
+    open_pos = match.end() - 1
+    close_pos = _matching_brace_end_runtime(text, open_pos)
+    return {
+        "start_line": _line_number_at_offset(text, match.start()),
+        "end_line": _line_number_at_offset(text, close_pos),
+    }
+
+
+def _line_number_at_offset(text: str, offset: int) -> int:
+    return text.count("\n", 0, max(offset, 0)) + 1
 
 
 def _find_receiver_impl_method(
@@ -1681,10 +1936,132 @@ def _compact_method_walkthrough_result(result: Dict[str, Any], budget: str = "me
             "type_counts": downstream.get("type_counts", {}),
         },
         "summary_lines": _build_method_walkthrough_summary_lines(target, result.get("local_steps", []), local_service_continuations, same_class_continuations, feigns, downstream, limits),
+        "answer_markdown": result.get("answer_markdown", ""),
+        "answer_template": result.get("answer_template", {}),
+        "workspace_escalation": result.get("workspace_escalation", {}),
         "agent_usage_policy": result.get("agent_usage_policy", _build_method_walkthrough_agent_policy()),
         "next_actions": (result.get("next_actions", []) or [])[:3],
         "limitations": result.get("limitations", [])[:2],
     }
+
+
+def _render_method_walkthrough_answer(result: Dict[str, Any], workspace_file: str | Path) -> str:
+    template_info = _load_method_walkthrough_template(workspace_file)
+    context = _method_walkthrough_template_context(result)
+    template = template_info.get("template", "") or _default_method_walkthrough_template()
+    try:
+        rendered = template.format(**context)
+    except Exception:
+        rendered = _default_method_walkthrough_template().format(**context)
+        template_info = {"status": "fallback_builtin", "path": "", "reason": "template_render_failed"}
+    result["answer_template"] = template_info
+    return rendered.strip()
+
+
+def _load_method_walkthrough_template(workspace_file: str | Path) -> Dict[str, str]:
+    ws_dir = Path(workspace_file).expanduser().resolve().parent
+    candidates = [
+        ws_dir / "templates" / "method_walkthrough.md",
+        ws_dir / "method_walkthrough_template.md",
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            try:
+                return {
+                    "status": "configured",
+                    "path": str(candidate),
+                    "template": candidate.read_text(encoding="utf-8"),
+                }
+            except OSError as exc:
+                return {"status": "fallback_builtin", "path": str(candidate), "reason": str(exc), "template": ""}
+    return {"status": "fallback_builtin", "path": "", "template": ""}
+
+
+def _method_walkthrough_template_context(result: Dict[str, Any]) -> Dict[str, str]:
+    target = result.get("target", {}) or {}
+    summary_lines = result.get("summary_lines") or _build_method_walkthrough_summary_lines(
+        target,
+        result.get("local_steps", []) or [],
+        result.get("local_service_continuations", []) or [],
+        result.get("same_class_method_continuations", []) or [],
+        result.get("feign_continuations", []) or [],
+        result.get("downstream_summary", {}) or {},
+        {"steps": 4, "events": 4},
+    )
+    read_targets = _method_walkthrough_read_targets_text(result)
+    rule_groups = _method_walkthrough_rule_groups_text(result)
+    return {
+        "workspace": str(result.get("workspace", "")),
+        "workspace_file": str(result.get("workspace_file", "")),
+        "symbol": str(result.get("symbol", "")),
+        "target_label": f"{target.get('project', '')}:{target.get('class', '')}#{target.get('method', '')}",
+        "target_file": _display_method_path(target),
+        "target_line": str(target.get("line", 0)),
+        "summary_lines": "\n".join(f"- {line}" for line in summary_lines),
+        "read_targets": read_targets,
+        "rule_groups": rule_groups,
+        "next_actions": "\n".join(f"- {line}" for line in result.get("next_actions", []) or []),
+    }
+
+
+def _method_walkthrough_read_targets_text(result: Dict[str, Any]) -> str:
+    targets: List[str] = []
+
+    def add(role: str, item: Dict[str, Any], label: str) -> None:
+        path = _display_method_path(item)
+        if path:
+            targets.append(f"- {role}: {label} ({path}:{item.get('line', 0)})")
+
+    target = result.get("target", {}) or {}
+    add("target", target, f"{target.get('class', '')}#{target.get('method', '')}")
+    for impl in result.get("local_service_continuations", []) or []:
+        impl_target = impl.get("target", {}) or {}
+        add("local_impl", impl_target, f"{impl_target.get('class', '')}#{impl_target.get('method', '')}")
+    for feign in result.get("feign_continuations", []) or []:
+        for server in (feign.get("server_walkthroughs", []) or [])[:1]:
+            add("server_controller", server, f"{server.get('controller', '')}#{server.get('method', '')}")
+            for impl in (server.get("service_impl_continuations", []) or [])[:1]:
+                impl_target = impl.get("target", {}) or {}
+                add("server_impl", impl_target, f"{impl_target.get('class', '')}#{impl_target.get('method', '')}")
+                for same in impl.get("same_class_method_continuations", []) or []:
+                    same_target = same.get("target", {}) or {}
+                    add("server_impl_same_class", same_target, f"{same_target.get('class', '')}#{same_target.get('method', '')}")
+    return "\n".join(targets)
+
+
+def _method_walkthrough_rule_groups_text(result: Dict[str, Any]) -> str:
+    lines: List[str] = []
+    for same in result.get("same_class_method_continuations", []) or []:
+        lines.extend(_format_rule_group_lines(same))
+    for feign in result.get("feign_continuations", []) or []:
+        for server in feign.get("server_walkthroughs", []) or []:
+            for impl in server.get("service_impl_continuations", []) or []:
+                for same in impl.get("same_class_method_continuations", []) or []:
+                    lines.extend(_format_rule_group_lines(same))
+    return "\n".join(lines) if lines else "- 未识别到大方法规则分组。"
+
+
+def _format_rule_group_lines(continuation: Dict[str, Any]) -> List[str]:
+    target = continuation.get("target", {}) or {}
+    out = [f"- {target.get('class', '')}#{target.get('method', '')}:"]
+    for group in continuation.get("rule_groups", []) or []:
+        fields = ", ".join(group.get("fields", [])[:12])
+        out.append(f"  - {group.get('group', '')}: {fields}")
+    return out
+
+
+def _default_method_walkthrough_template() -> str:
+    return (
+        "## {target_label} 全链路梳理\n\n"
+        "### 调用链主线\n"
+        "{summary_lines}\n\n"
+        "### 建议直接阅读的文件\n"
+        "{read_targets}\n\n"
+        "### 大方法规则分组\n"
+        "{rule_groups}\n\n"
+        "### 下一步\n"
+        "{next_actions}\n"
+    )
 
 
 def _build_method_walkthrough_agent_policy() -> Dict[str, Any]:

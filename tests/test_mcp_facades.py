@@ -148,6 +148,63 @@ def test_memory_method_walkthrough_returns_feign_continuations(tmp_path: Path):
     assert impl["target"]["absolute_file_path"].endswith("article-service/src/main/java/com/example/article/ArticleWorkflowServiceImpl.java")
     assert any(line.startswith("LocalImpl task-service:ArticleAuditServiceImpl#recordMove") for line in result["summary_lines"])
     assert any(line.startswith("Server article-service:ArticleController#moveArticle") for line in result["summary_lines"])
+    assert result["answer_markdown"]
+    assert result["answer_template"]["status"] == "fallback_builtin"
+
+
+def test_method_walkthrough_escalates_from_subproject_workspace(tmp_path: Path):
+    parent_wf = Path(_setup_workspace(tmp_path))
+    repo_root = parent_wf.parent.parent
+    child_dir = repo_root / "task-service" / ".memory-center"
+    child_dir.mkdir(parents=True)
+    child_wf = child_dir / "workspace.yaml"
+    child_wf.write_text(
+        "\n".join([
+            "workspace: task-only",
+            f"root: {(repo_root / 'task-service').as_posix()}",
+            "services:",
+            "  - name: task-service",
+            "    path: .",
+            "    type: spring-boot-service",
+            "    service_name: task-service",
+            "",
+        ]),
+        encoding="utf-8",
+    )
+
+    result = memory_method_walkthrough(
+        child_wf,
+        "com.example.task.ArticleMoveService#move",
+        view="compact",
+        budget="small",
+    )
+    assert result["found"] is True
+    assert result["workspace"] == "spring-cloud-demo"
+    assert result["workspace_escalation"]["status"] == "escalated"
+    assert result["workspace_escalation"]["original_workspace_file"] == str(child_wf.resolve())
+    assert result["workspace_escalation"]["workspace_used"] == str(parent_wf.resolve())
+    assert any(line.startswith("Server article-service:ArticleController#moveArticle") for line in result["summary_lines"])
+
+
+def test_method_walkthrough_uses_configured_template(tmp_path: Path):
+    wf = Path(_setup_workspace(tmp_path))
+    template_dir = wf.parent / "templates"
+    template_dir.mkdir(parents=True, exist_ok=True)
+    template = template_dir / "method_walkthrough.md"
+    template.write_text(
+        "CUSTOM {target_label}\n{summary_lines}\nFILES\n{read_targets}\n",
+        encoding="utf-8",
+    )
+
+    result = memory_method_walkthrough(
+        wf,
+        "com.example.task.ArticleMoveService#move",
+        view="compact",
+        budget="small",
+    )
+    assert result["answer_template"]["status"] == "configured"
+    assert result["answer_template"]["path"] == str(template)
+    assert result["answer_markdown"].startswith("CUSTOM task-service:ArticleMoveService#move")
 
 
 @pytest.mark.skipif(not HAS_MCP, reason="mcp package not installed")

@@ -8,9 +8,9 @@
 
 ## Unreleased
 
-### 3.1.14: Method Walkthrough / 方法级链路梳理
+### 3.1.15: Method Walkthrough / 方法级链路梳理
 
-- 升级版本号到 `3.1.14`
+- 升级版本号到 `3.1.15`
 - 新增 `memory_method_walkthrough()`，面向 `Class#method` 返回方法内已索引步骤、DTO 字段读取、Feign 续链、下游图谱摘要和后续动作。
 - `mc_lookup(mode="walkthrough")` 与 `memory-center method-walkthrough` 可直接调用方法级 walkthrough。
 - `mc_lookup(mode="auto")` 遇到 `Class#method` 且包含“全链路/到底层”语义时优先进入 walkthrough，减少 agent 退回手工 grep 的概率。
@@ -27,6 +27,9 @@
 - MCP `mc_lookup(auto|walkthrough)` 的 walkthrough 响应新增顶层 `answer`、`summary_lines`、`primary_flow`、`read_targets` 和 `agent_usage_policy`，避免宿主模型为了读取 `result.summary_lines` 再解析 tool-result JSON 文件。
 - full-chain auto walkthrough 响应不再附带 `lookup_hint` / `candidate_paths` 大对象，减少输出体积和解析噪声；详细结构仍保留在 `result` 字段。
 - 顶层 `read_targets` 只保留 walkthrough 摘要主线的 target / local impl / 首选 server controller / server impl / server impl same-class 方法；其他候选 endpoint 仅保留在 `result` 详情中。
+- 新增 `workspace_escalation`：从子项目 workspace 调用 method walkthrough 时，会自动查找父级或 registry 中覆盖当前项目的聚合 workspace；若聚合 workspace 返回更完整跨服务链路，则自动切换。找不到父级或候选失败不会报错，保留当前 workspace 结果。
+- 新增可配置报告模板：`.memory-center/templates/method_walkthrough.md` 或 `.memory-center/method_walkthrough_template.md` 存在时渲染 `answer_markdown`；未配置时使用内置兜底模板，agent 仍可基于顶层 `summary_lines` 自行组织。
+- `same_class_method_continuations` 新增 `rule_groups` 与 `target.evidence_span`，用于把 `query2query` 这类大方法按业务规则分组并标出方法行范围。
 
 ### Packaging / 打包版本
 

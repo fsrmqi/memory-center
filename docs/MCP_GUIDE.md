@@ -61,6 +61,8 @@ MCP 当前公开的是 12 个 task-level tools：
 - walkthrough 返回 `agent_usage_policy.do_not_search_when_absolute_path_present=true` 时，宿主模型应把 `find`、`grep -l`、`rg --files`、IDE 全局搜索视为不必要的重复定位；只有怀疑索引过期或文件不存在时才做 live search。
 - walkthrough 返回 `same_class_method_continuations` 时，宿主模型应优先阅读该续链的 `field_filter_summary` 和 `local_steps`，不要先用 `sed -n` 切同一文件片段；只有需要逐行核对业务分支时才读取 `absolute_file_path`。
 - `mc_lookup(auto|walkthrough)` 的 walkthrough 响应会把 `answer`、`summary_lines`、`read_targets` 提升到顶层；宿主模型应直接使用这些顶层字段，不需要读取或解析本地 `tool-results/*.json`。
+- 如果当前 MCP workspace 是子项目，method walkthrough 会尝试自动升级到父级或 registry 中覆盖当前项目的聚合 workspace。查看 `workspace_escalation.status` 判断是否已切换；`not_needed_or_not_found` 不是错误。
+- 可在 `.memory-center/templates/method_walkthrough.md` 配置报告模板，支持占位符 `{target_label}`、`{summary_lines}`、`{read_targets}`、`{rule_groups}`、`{next_actions}`。未配置时返回内置 `answer_markdown`。
 
 `mc_close` 在 session 内存在可推断的 lookup / impact / sync 路径且有验证结果时，会自动写回一轮 `candidate_feedback`，让后续推荐权重逐步学习。
 

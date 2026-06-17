@@ -706,6 +706,14 @@ For MCP `mc_lookup(auto|walkthrough)`, walkthrough responses expose `answer`, `s
 
 MCP `mc_lookup(auto|walkthrough)` 的 walkthrough 响应会把 `answer`、`summary_lines`、`primary_flow`、`read_targets` 和 `agent_usage_policy` 提升到顶层。Agent 应直接使用这些顶层字段，不需要解析本地 `tool-results/*.json`。
 
+When a method walkthrough starts from a sub-project workspace, Memory Center can automatically escalate to a parent or registry-covered aggregate workspace if that workspace produces a more complete cross-service flow. The `workspace_escalation` field records whether this happened; missing parents are safe fallbacks, not errors.
+
+当 method walkthrough 从子项目 workspace 启动时，Memory Center 会尝试自动升级到父级或 registry 中覆盖当前项目的聚合 workspace，只在聚合结果更完整时切换。`workspace_escalation` 会记录是否切换；找不到父级不是错误。
+
+Report formatting is configurable via `.memory-center/templates/method_walkthrough.md` or `.memory-center/method_walkthrough_template.md`. If no template exists, Memory Center returns a built-in `answer_markdown` plus top-level `summary_lines`, so agents can still organize the final response themselves.
+
+报告格式可通过 `.memory-center/templates/method_walkthrough.md` 或 `.memory-center/method_walkthrough_template.md` 配置。未配置时会返回内置 `answer_markdown` 和顶层 `summary_lines`，保证 agent 仍可自行组织最终回答。
+
 > **Note**: CLI and HTTP still expose all fine-grained atomic commands. Only the MCP surface uses facade tools. See [docs/MCP_GUIDE.md](./docs/MCP_GUIDE.md) and [docs/REFERENCE.md](./docs/REFERENCE.md) for facade routing and command reference.
 >
 > **注意**：CLI 和 HTTP 仍保留所有细粒度原子命令。只有 MCP 工具面使用 facade 工具。路由与命令参考见 [docs/MCP_GUIDE.md](./docs/MCP_GUIDE.md) 和 [docs/REFERENCE.md](./docs/REFERENCE.md)。
