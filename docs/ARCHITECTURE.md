@@ -247,6 +247,11 @@ memory_center/core/
 ├── retrieval/           # 混合检索（Phase A）
 │   ├── __init__.py
 │   └── hybrid.py
+├── walkthrough/         # 方法全链路报告支持模块
+│   ├── __init__.py
+│   ├── artifact.py      # Markdown artifact 渲染
+│   ├── cache.py         # 短期进程内缓存适配器
+│   └── quality.py       # agent-ready 质量评分
 ├── benchmark/           # 基准趋势（Phase B）
 │   ├── __init__.py
 │   └── trending.py
@@ -264,9 +269,45 @@ memory_center/core/
 ├── store.py             # 工作区存储
 ├── memory_backend.py    # SQLite 后端
 └── orchestrator/        # 编排层
-    ├── query.py         # 查询编排（已集成 hybrid retrieval）
+    ├── query.py         # 查询编排（已集成 hybrid retrieval；walkthrough 通过子模块承载渲染/缓存/评分）
     └── ...
 ```
+
+### Walkthrough Refactoring / Walkthrough 拆分
+
+`memory_center.core.orchestrator.query` remains the compatibility facade for MCP, CLI, and HTTP callers. Method walkthrough support code that does not need graph traversal state is split into `memory_center.core.walkthrough`:
+
+- `cache.py`: owns short-lived process cache behavior and returns defensive copies to avoid accidental caller mutation.
+- `artifact.py`: renders exported Markdown artifacts and centralizes filename slug generation.
+- `quality.py`: evaluates whether a walkthrough response is ready for an agent to answer without falling back to low-signal shell searches.
+
+`memory_center.core.orchestrator.query` 仍然是 MCP、CLI 和 HTTP 调用方的兼容 facade。与图遍历状态无关的 method walkthrough 支撑逻辑已拆到 `memory_center.core.walkthrough`：
+
+- `cache.py`：负责短期进程内缓存，并通过防御性拷贝避免调用方误改缓存内容。
+- `artifact.py`：负责 Markdown artifact 渲染和文件名 slug 生成。
+- `quality.py`：负责评估 walkthrough 输出是否足够让 agent 直接回答，避免退回低信号 shell 搜索。
+
+This split keeps external schemas stable while reducing the size and responsibility of the orchestrator. Future walkthrough work should add pure formatting, scoring, and cache policies under `core/walkthrough/` first; only traversal and facade assembly should stay in `orchestrator/query.py`.
+
+该拆分保持外部 schema 稳定，同时降低 orchestrator 的体积和职责。后续 walkthrough 的纯格式化、评分、缓存策略优先放入 `core/walkthrough/`；只有遍历链路和 facade 组装逻辑留在 `orchestrator/query.py`。
+
+### Architecture Backlog / 后续架构优化队列
+
+The following work is intentionally documented as follow-up scope so it can be implemented in smaller, verifiable changes:
+
+- Split method walkthrough traversal from facade assembly: extract target resolution, local continuation expansion, Feign server matching, freshness/diff analysis, and answer assembly into separate modules.
+- Introduce shared command/action registries for MCP, HTTP, and CLI to reduce dispatch duplication while keeping current public action names backward-compatible.
+- Replace repeated graph assembly scans with indexed lookups where safe; retain tests around line-number accuracy for Endpoint, FeignClient, and FeignMethod nodes.
+- Make retrieval fusion pure by default and add regression tests for caller-owned result objects.
+- Add bounded performance benchmarks for large Spring Cloud workspaces, covering reindex, graph build, walkthrough, and hybrid retrieval.
+
+以下工作作为后续范围记录，便于小步实现和验证：
+
+- 继续拆分 method walkthrough 遍历逻辑与 facade 组装：目标解析、本地续链、Feign 服务端匹配、freshness/diff 分析、答案组装分别成模块。
+- 为 MCP、HTTP、CLI 引入共享 command/action registry，减少分发重复，同时保持当前公开 action 名称兼容。
+- 在安全位置用索引化 lookup 替代重复 graph assembly 扫描，并保留 Endpoint、FeignClient、FeignMethod 行号准确性的测试。
+- 默认让 retrieval fusion 成为纯函数，并补充调用方自有 result 对象不被污染的回归测试。
+- 为大型 Spring Cloud 工作区增加有边界的性能基准，覆盖 reindex、graph build、walkthrough、hybrid retrieval。
 
 ### Vue 前端 / Vue Frontend
 

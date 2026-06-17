@@ -358,6 +358,43 @@ def test_walkthrough_health_eval_and_export(tmp_path: Path):
     assert "## Read Targets" in content
 
 
+def test_walkthrough_support_modules_keep_query_contracts():
+    from memory_center.core.walkthrough import (
+        WalkthroughCache,
+        evaluate_walkthrough_result,
+        render_walkthrough_markdown,
+        slugify_walkthrough_symbol,
+    )
+
+    result = {
+        "found": True,
+        "schema_version": 2,
+        "fields_contract": {"stable_top_level": ["answer_markdown"]},
+        "target": {"absolute_file_path": "/tmp/Demo.java"},
+        "summary_lines": ["入口方法已命中"],
+        "answer_markdown": "### 调用链",
+        "feign_continuations": [{"server_walkthroughs": []}],
+        "agent_usage_policy": {"do_not_search_when_absolute_path_present": True},
+        "mermaid_flow": "flowchart TD\nA-->B",
+        "branch_outline": [{"label": "main"}],
+        "performance_risks": [{"risk": "N+1"}],
+        "cache": {"hit": False},
+    }
+
+    cache = WalkthroughCache(ttl_seconds=60, max_items=2)
+    cache.put("k", result)
+    cached = cache.get("k")
+    assert cached is not result
+    assert cached["cache"]["hit"] is True
+
+    quality = evaluate_walkthrough_result(result)
+    assert quality["grade"] == "pass"
+    assert slugify_walkthrough_symbol("com.example.Service#run") == "com.example.Service__run"
+    markdown = render_walkthrough_markdown("demo", "com.example.Service#run", result, read_targets="- target: /tmp/Demo.java:1")
+    assert "## Read Targets" in markdown
+    assert "flowchart TD" in markdown
+
+
 def test_walkthrough_cli_commands(tmp_path: Path):
     wf = _setup_workspace(tmp_path)
     symbol = "com.example.task.ArticleMoveService#move"

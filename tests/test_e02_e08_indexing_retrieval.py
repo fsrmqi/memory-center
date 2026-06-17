@@ -1193,6 +1193,30 @@ class TestE08HybridRetrievalFusion:
         )
         assert [item.node_id for item in results] == ["bm25-node"]
 
+    def test_merge_retrieval_results_does_not_mutate_input_scores(self):
+        """Hybrid fusion normalizes copied hits so callers can reuse raw scores."""
+        from memory_center.core.retrieval.hybrid import (
+            HybridRetrievalConfig,
+            RetrievalResult,
+            _merge_retrieval_results,
+        )
+
+        hit = RetrievalResult(
+            node_id="graph-node",
+            node={"id": "graph-node"},
+            score=5.0,
+            sources=["graph_exact"],
+        )
+        results = _merge_retrieval_results(
+            [hit],
+            [],
+            [],
+            HybridRetrievalConfig(),
+            {},
+        )
+        assert hit.score == 5.0
+        assert results[0].score != hit.score
+
     def test_vector_retrieval_respects_disabled_flag(self):
         """Disabled vector retrieval must not execute the vector backend."""
         from unittest.mock import patch
