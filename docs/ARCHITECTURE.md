@@ -276,21 +276,38 @@ memory_center/core/
 
 ### Walkthrough Refactoring / Walkthrough 拆分
 
-`memory_center.core.orchestrator.query` remains the compatibility facade for MCP, CLI, and HTTP callers. Method walkthrough support code that does not need graph traversal state is split into `memory_center.core.walkthrough`:
+`memory_center.core.orchestrator.query` remains the compatibility facade for MCP, CLI, and HTTP callers. Method walkthrough support code is split across `memory_center.core.walkthrough`:
 
-- `cache.py`: owns short-lived process cache behavior and returns defensive copies to avoid accidental caller mutation.
-- `artifact.py`: renders exported Markdown artifacts and centralizes filename slug generation.
-- `quality.py`: evaluates whether a walkthrough response is ready for an agent to answer without falling back to low-signal shell searches.
+- `cache.py`: short-lived process cache with defensive copies.
+- `artifact.py`: Markdown artifact rendering and slug generation.
+- `quality.py`: agent-ready quality scoring.
+- `symbols.py`: symbol parsing, owner/Impl resolution, file-abs path map, and Java method/body/case extraction.
+- `continuations.py`: local steps, Feign continuations, server impl continuations, same-class continuations, DTO field summary/rule groups, and next-action assembly.
+- `risks.py`: performance risk detection, data-scope guards, diff context, index freshness, branch outline, and Mermaid flow rendering.
+- `answer.py`: schema/contract, agent policy, anti-patterns, summary lines, compact view, template loading, and answer Markdown rendering.
+- `escalation.py`: workspace input resolution, parent/covering/sibling discovery, quality-score comparison, and bypass feedback.
 
-`memory_center.core.orchestrator.query` 仍然是 MCP、CLI 和 HTTP 调用方的兼容 facade。与图遍历状态无关的 method walkthrough 支撑逻辑已拆到 `memory_center.core.walkthrough`：
+`orchestrator/query.py` keeps the public ``memory_method_walkthrough`` /
+``memory_walkthrough_health`` / ``memory_eval_walkthrough_quality`` /
+``memory_export_walkthrough_artifact`` entry points and a thin layer of
+underscore-prefixed delegators that re-export the new helpers; this keeps
+existing MCP / HTTP / CLI imports and tests stable.
 
-- `cache.py`：负责短期进程内缓存，并通过防御性拷贝避免调用方误改缓存内容。
-- `artifact.py`：负责 Markdown artifact 渲染和文件名 slug 生成。
-- `quality.py`：负责评估 walkthrough 输出是否足够让 agent 直接回答，避免退回低信号 shell 搜索。
+`memory_center.core.orchestrator.query` 仍然是 MCP、CLI 和 HTTP 调用方的兼容 facade。method walkthrough 的支撑逻辑已经按下面的子模块拆分到 `memory_center.core.walkthrough`：
 
-This split keeps external schemas stable while reducing the size and responsibility of the orchestrator. Future walkthrough work should add pure formatting, scoring, and cache policies under `core/walkthrough/` first; only traversal and facade assembly should stay in `orchestrator/query.py`.
+- `cache.py`：短期进程内缓存，防御性拷贝。
+- `artifact.py`：Markdown artifact 渲染和 slug 生成。
+- `quality.py`：agent-ready 评分。
+- `symbols.py`：符号解析、owner/Impl 查找、file-abs path map、Java 方法体与 case 提取。
+- `continuations.py`：本地 step、Feign 续链、服务端 Impl 续链、同类方法续链、DTO 字段摘要/规则分组、next actions。
+- `risks.py`：性能风险、数据范围保护、diff 上下文、索引新鲜度、分支轮廓、Mermaid。
+- `answer.py`：schema/contract、agent policy、反模式、summary lines、compact view、模板加载与 answer Markdown 渲染。
+- `escalation.py`：workspace 输入解析、父级/覆盖/兄弟 workspace 查找、质量分对比、绕过反馈。
 
-该拆分保持外部 schema 稳定，同时降低 orchestrator 的体积和职责。后续 walkthrough 的纯格式化、评分、缓存策略优先放入 `core/walkthrough/`；只有遍历链路和 facade 组装逻辑留在 `orchestrator/query.py`。
+`orchestrator/query.py` 只保留公共入口（``memory_method_walkthrough`` /
+``memory_walkthrough_health`` / ``memory_eval_walkthrough_quality`` /
+``memory_export_walkthrough_artifact``）以及一层下划线前缀的轻量委托
+helper，把调用转给新模块；这样 MCP / HTTP / CLI 调用方和测试都不需要改动。
 
 ### Command Dispatch Seam / 命令分发 Seam
 
@@ -302,13 +319,13 @@ Current adapters using this seam:
 
 - MCP: `mc_admin` dispatches through `CommandRegistry(label="mc_admin action")`; `memory_center.mcp.action_registry` remains as a compatibility import.
 - CLI: method walkthrough commands dispatch through a walkthrough command registry.
-- HTTP: growth-prone workspace routes such as walkthrough helpers, workflow helpers, regression alerts, runtime audit, business flow, metrics, and freshness dispatch through the same registry before falling back to the legacy route chain.
+- HTTP: every JSON route lives in ``memory_center.http.route_dispatch.build_http_route_registry``. ``server._route_request`` only handles ``/health`` and unknown-route errors, then dispatches through ``CommandRegistry``.
 
 当前已接入的 adapter：
 
 - MCP：`mc_admin` 通过 `CommandRegistry(label="mc_admin action")` 分发；`memory_center.mcp.action_registry` 保留为兼容导入路径。
 - CLI：method walkthrough 相关命令通过 walkthrough command registry 分发。
-- HTTP：walkthrough helper、workflow helper、regression alerts、runtime audit、business flow、metrics、freshness 等增长较快的 workspace route 先走同一 registry，再 fallback 到旧 route 链。
+- HTTP：所有 JSON route 都注册在 ``memory_center.http.route_dispatch.build_http_route_registry``。``server._route_request`` 只处理 ``/health`` 与未知路径错误，其它请求统一走 ``CommandRegistry`` 分发。
 
 The seam is intentionally not a framework. It is a small deep Module: deleting it would push unknown-action errors, valid-name listing, and handler maps back into every adapter.
 
@@ -318,8 +335,8 @@ The seam is intentionally not a framework. It is a small deep Module: deleting i
 
 The following work is intentionally documented as follow-up scope so it can be implemented in smaller, verifiable changes:
 
-- `P0` Split `memory_method_walkthrough` traversal from facade assembly. Extract target resolution, same-class continuations, local Service interface-to-Impl continuations, Feign server matching, freshness/diff analysis, and answer assembly into separate `core/walkthrough/` modules. Keep `orchestrator/query.py` as the compatibility facade.
-- `P0` Continue collapsing the HTTP route if-chain into `CommandRegistry`. Migrate routes by domain slice: artifact/task/session/eval/group/workflow. The target shape is `_route_request` handling health, registered dispatch, and fallback errors only.
+- `P1` Continue tightening the walkthrough split: traversal in ``orchestrator/query.py`` is now thin, but the orchestrator still owns store loading, cache key construction, and final compose; future cleanups can move the cache key helper into ``walkthrough/escalation.py`` and surface a single ``build_walkthrough_result`` entry under ``core/walkthrough/``.
+- `P1` Continue trimming ``memory_center/http/route_dispatch.py``. The registry is one-handler-per-route today; if multiple routes diverge mainly in optional flags, fold them through small param objects so the file does not grow back into a long if-chain.
 - `P1` Extract MCP `mc_admin` action binding into `memory_center/mcp/admin_actions.py`. Keep `server.py` focused on tool schema and request adapters; test admin actions directly through the registry seam.
 - `P1` Continue making retrieval fusion pure by default. Audit hybrid retrieval for in-place mutation of result, node, metadata, and score objects; add regression tests for caller-owned objects.
 - `P1` Continue indexer graph-build performance work. Replace repeated scans with indexed lookups where safe, especially class lookup, method lookup, Feign/API association, and field/method call association. Keep line-number accuracy tests for Endpoint, FeignClient, and FeignMethod nodes.
@@ -329,8 +346,8 @@ The following work is intentionally documented as follow-up scope so it can be i
 
 以下工作作为后续范围记录，便于小步实现和验证：
 
-- `P0` 继续拆分 `memory_method_walkthrough` 的遍历逻辑与 facade 组装。把目标解析、同类方法续链、本地 Service interface 到 Impl 续链、Feign 服务端匹配、freshness/diff 分析、答案组装拆到独立的 `core/walkthrough/` Module。`orchestrator/query.py` 只保留兼容 facade。
-- `P0` 继续把 HTTP route if-chain 收敛到 `CommandRegistry`。按领域分批迁移：artifact/task/session/eval/group/workflow。目标形态是 `_route_request` 只负责 health、registry dispatch 和 fallback error。
+- `P1` 继续收紧 walkthrough 拆分：``orchestrator/query.py`` 现在已经很薄，但 store 加载、cache key、最后组装仍在 orchestrator 中；后续可把 cache key 助手挪到 ``walkthrough/escalation.py``，并在 ``core/walkthrough/`` 暴露统一的 ``build_walkthrough_result`` 入口。
+- `P1` 继续优化 ``memory_center/http/route_dispatch.py``。当前是 one-handler-per-route 的注册表；如果多个路由仅在可选参数上分叉，引入轻量参数对象做归并，避免文件再次膨胀回长 if-chain。
 - `P1` 抽出 MCP `mc_admin` action 绑定到 `memory_center/mcp/admin_actions.py`。`server.py` 只聚焦 tool schema 和请求 adapter；admin action 通过 registry seam 直接测试。
 - `P1` 继续让 retrieval fusion 默认保持纯函数。检查 hybrid retrieval 里是否还有原地修改 result、node、metadata、score 对象的逻辑，并补充调用方自有对象不被污染的回归测试。
 - `P1` 继续推进 indexer graph-build 性能优化。在安全位置用索引 lookup 替代重复扫描，重点是 class lookup、method lookup、Feign/API 关联、field/method call 关联。保留 Endpoint、FeignClient、FeignMethod 行号准确性的测试。

@@ -102,16 +102,18 @@ class TestHTTPCoverage:
     """Verify every HTTP entry in the matrix is handled in _route_request."""
 
     def test_http_routes_are_handled(self) -> None:
-        from memory_center.http.server import _route_request
-        # Read the source code of _route_request to find all path checks
-        src = inspect.getsource(_route_request)
+        # ``_route_request`` is a thin dispatcher that delegates to the
+        # ``build_http_route_registry`` registry.  The actual route paths are
+        # registered there.
+        from memory_center.http.route_dispatch import build_http_route_registry
+        src = inspect.getsource(build_http_route_registry)
         for cap in CAPABILITIES:
             for entry in cap.entries:
                 if entry.kind == "http":
                     # Check that the route path appears in the source
                     assert f'"{entry.identifier}"' in src, (
                         f"HTTP route '{entry.identifier}' for capability "
-                        f"'{cap.name}' not found in _route_request source"
+                        f"'{cap.name}' not found in HTTP route registry source"
                     )
 
 

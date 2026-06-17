@@ -519,6 +519,41 @@ def _best_match(matches: List[Dict[str, Any]], query: str = "") -> Dict[str, Any
     return sorted(matches, key=key)[0]
 
 
+def _project_matches(query_project: str, item_project: str) -> bool:
+    """Check if a project query matches an item's project name.
+
+    Uses normalized matching: splits on '-' and '_', then checks if the
+    query matches the full name, any component (>=4 chars), or a concatenation
+    of adjacent components.  Short components like ``api``/``back``/``web`` are
+    too generic to match alone — they must match the full name or a
+    concatenated segment.
+    """
+    if not query_project or not item_project:
+        return False
+    q = query_project.lower().strip()
+    p = item_project.lower().strip()
+    if q == p:
+        return True
+    generic = {
+        "api", "app", "web", "back", "front", "open", "cloud", "core",
+        "base", "common", "service", "biz", "lib", "sdk", "data",
+        "test", "main", "src", "res", "config", "util", "utils",
+    }
+    p_parts = p.replace("-", "_").split("_")
+    if q in p_parts and q not in generic:
+        return True
+    for i in range(len(p_parts)):
+        for j in range(i + 2, min(i + 5, len(p_parts) + 1)):
+            if "".join(p_parts[i:j]) == q:
+                return True
+    if "-" in q:
+        q_parts = q.replace("-", "_").split("_")
+        for i in range(len(p_parts)):
+            if p_parts[i:i + len(q_parts)] == q_parts:
+                return True
+    return False
+
+
 def _node_type_priority(node_type: str = "") -> int:
     priority = {
         "Class": 0, "FeignClient": 1, "FeignMethod": 2, "Method": 3,

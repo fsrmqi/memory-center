@@ -759,12 +759,14 @@ class TestBackendFunctionSharing:
             )
 
     def test_http_uses_shared_backend(self):
-        from memory_center.http.server import _route_request
+        # The HTTP route table now lives in ``route_dispatch.build_http_route_registry``;
+        # ``_route_request`` is a thin dispatch shim that delegates to it.
+        from memory_center.http.route_dispatch import build_http_route_registry
 
-        http_src = inspect.getsource(_route_request)
+        http_src = inspect.getsource(build_http_route_registry)
         for cap_name, func_name in self.BACKEND_FUNCTIONS.items():
             assert func_name in http_src, (
-                f"HTTP _route_request does not reference backend function "
+                f"HTTP route registry does not reference backend function "
                 f"'{func_name}' for capability '{cap_name}'"
             )
 
