@@ -318,17 +318,25 @@ The seam is intentionally not a framework. It is a small deep Module: deleting i
 
 The following work is intentionally documented as follow-up scope so it can be implemented in smaller, verifiable changes:
 
-- Split method walkthrough traversal from facade assembly: extract target resolution, local continuation expansion, Feign server matching, freshness/diff analysis, and answer assembly into separate modules.
-- Replace repeated graph assembly scans with indexed lookups where safe; retain tests around line-number accuracy for Endpoint, FeignClient, and FeignMethod nodes.
-- Make retrieval fusion pure by default and add regression tests for caller-owned result objects.
-- Add bounded performance benchmarks for large Spring Cloud workspaces, covering reindex, graph build, walkthrough, and hybrid retrieval.
+- `P0` Split `memory_method_walkthrough` traversal from facade assembly. Extract target resolution, same-class continuations, local Service interface-to-Impl continuations, Feign server matching, freshness/diff analysis, and answer assembly into separate `core/walkthrough/` modules. Keep `orchestrator/query.py` as the compatibility facade.
+- `P0` Continue collapsing the HTTP route if-chain into `CommandRegistry`. Migrate routes by domain slice: artifact/task/session/eval/group/workflow. The target shape is `_route_request` handling health, registered dispatch, and fallback errors only.
+- `P1` Extract MCP `mc_admin` action binding into `memory_center/mcp/admin_actions.py`. Keep `server.py` focused on tool schema and request adapters; test admin actions directly through the registry seam.
+- `P1` Continue making retrieval fusion pure by default. Audit hybrid retrieval for in-place mutation of result, node, metadata, and score objects; add regression tests for caller-owned objects.
+- `P1` Continue indexer graph-build performance work. Replace repeated scans with indexed lookups where safe, especially class lookup, method lookup, Feign/API association, and field/method call association. Keep line-number accuracy tests for Endpoint, FeignClient, and FeignMethod nodes.
+- `P1` Add bounded performance benchmarks for large Spring Cloud-like workspaces. Cover reindex, graph build, method walkthrough, and hybrid retrieval with fixtures or synthetic workspaces rather than private paths.
+- `P2` Unify CLI / HTTP / MCP parameter models where the same operation exists in multiple adapters. Introduce light argument objects only when they reduce duplicated defaults and validation rules.
+- `P2` Keep architecture documentation and migration notes current. When public entrypoints remain compatible, document internal seams in `ARCHITECTURE.md`; only document breaking changes in README / CHANGELOG when legacy fallbacks are removed.
 
 以下工作作为后续范围记录，便于小步实现和验证：
 
-- 继续拆分 method walkthrough 遍历逻辑与 facade 组装：目标解析、本地续链、Feign 服务端匹配、freshness/diff 分析、答案组装分别成模块。
-- 在安全位置用索引化 lookup 替代重复 graph assembly 扫描，并保留 Endpoint、FeignClient、FeignMethod 行号准确性的测试。
-- 默认让 retrieval fusion 成为纯函数，并补充调用方自有 result 对象不被污染的回归测试。
-- 为大型 Spring Cloud 工作区增加有边界的性能基准，覆盖 reindex、graph build、walkthrough、hybrid retrieval。
+- `P0` 继续拆分 `memory_method_walkthrough` 的遍历逻辑与 facade 组装。把目标解析、同类方法续链、本地 Service interface 到 Impl 续链、Feign 服务端匹配、freshness/diff 分析、答案组装拆到独立的 `core/walkthrough/` Module。`orchestrator/query.py` 只保留兼容 facade。
+- `P0` 继续把 HTTP route if-chain 收敛到 `CommandRegistry`。按领域分批迁移：artifact/task/session/eval/group/workflow。目标形态是 `_route_request` 只负责 health、registry dispatch 和 fallback error。
+- `P1` 抽出 MCP `mc_admin` action 绑定到 `memory_center/mcp/admin_actions.py`。`server.py` 只聚焦 tool schema 和请求 adapter；admin action 通过 registry seam 直接测试。
+- `P1` 继续让 retrieval fusion 默认保持纯函数。检查 hybrid retrieval 里是否还有原地修改 result、node、metadata、score 对象的逻辑，并补充调用方自有对象不被污染的回归测试。
+- `P1` 继续推进 indexer graph-build 性能优化。在安全位置用索引 lookup 替代重复扫描，重点是 class lookup、method lookup、Feign/API 关联、field/method call 关联。保留 Endpoint、FeignClient、FeignMethod 行号准确性的测试。
+- `P1` 增加有边界的性能基准，模拟大型 Spring Cloud 工作区。覆盖 reindex、graph build、method walkthrough、hybrid retrieval，使用 fixtures 或 synthetic workspace，不使用私有路径。
+- `P2` 统一 CLI / HTTP / MCP 的参数模型。只有当同一个操作跨多个 adapter 重复默认值和校验规则时，才引入轻量参数对象。
+- `P2` 持续维护架构文档和迁移说明。公开入口保持兼容时，只在 `ARCHITECTURE.md` 记录内部 seam；只有移除 legacy fallback 或产生不兼容变化时，才写入 README / CHANGELOG。
 
 ### Vue 前端 / Vue Frontend
 
