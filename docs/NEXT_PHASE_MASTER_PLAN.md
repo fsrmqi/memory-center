@@ -711,7 +711,7 @@ V3 不是“未来方向”，而是当前代码里已经存在的一批能力�
 - freshness watcher / status、changed-file reindex、显式 workspace 解析已经存在
 - 增量索引会真实调用 `reindex_workspace(paths=...)`，失败原因通过 `reindex_error` 可见
 - 并行索引与 tree-sitter 自动选择已存在，但仍需在中大型真实 workspace 验证收益和精度
-- 删除、移动文件及理解资产增量刷新仍需继续强化
+- 删除和移动路径已进入统一 scoped reconciliation，会同步清理确定性索引与 graph；后续只需在更多真实仓库验证边缘语法和规模收益
 
 ### 方向 4：Type Safety and Observability
 
@@ -727,9 +727,10 @@ V3 不是“未来方向”，而是当前代码里已经存在的一批能力�
 
 当前判断：
 
-- 有一部分 dataclass / schema / eval 输出基础
-- 但 facade 返回值全面类型化、结构化日志、统一指标体系仍未完成
-- 这块仍然属于真正未完成
+- 已新增 additive `FacadeMetadata`、统一 `_quality` 摘要和 `OperationObserver`，公开 MCP schema 保持兼容
+- reindex / hybrid lookup 已记录结构化 outcome、duration、result count，路径类标签自动脱敏
+- portable benchmark baseline 已支持 median/p95 延迟与质量回归比较
+- 后续重点转为真实脱敏 workspace 的长期采样，不再新增平行观测实现
 
 ## 8. 当前最值得继续补的检查点
 

@@ -82,13 +82,13 @@ graph 查询通过 `GraphStore` 或 `UnifiedStore(graph.db)` 完成。`graph.db`
 
 `WorkspaceStore.write_json()` 和 `append_jsonl()` 先写文件，再 best-effort 写入 `memory.db`，镜像异常会被捕获并忽略。
 
-但 `read_json_prefer_backend()` 和 `read_jsonl_prefer_backend()` 只要 backend 返回非空结果就优先使用 backend。结果是：
+历史上的 `read_json_prefer_backend()` 和 `read_jsonl_prefer_backend()` 只要 backend 返回非空结果就优先使用 backend。结果是：
 
 - 文件写入成功、镜像失败时，旧 backend 数据可能继续被读取。
 - JSONL backend 只有部分记录时，文件中的较新记录可能被隐藏。
 - 当前返回值没有 `source`、`fallback_reason` 或 consistency 状态，调用方无法判断数据来自哪里。
 
-这是 F-02 迁移前必须优先解决的问题。
+该风险现由 `read_json_observed()` / `read_jsonl_observed()` 处理：文件与镜像分叉、部分同步或 backend 不可用时回退文件事实源，并返回来源、fallback 原因和一致性状态。兼容方法继续只返回 value。
 
 ### 5.2 空集合与缺失镜像无法区分
 
@@ -120,8 +120,8 @@ F-02 及后续迁移必须遵循：
 
 ## 7. Recommended F-02 Order / 建议 F-02 顺序
 
-1. 为 `read_json_prefer_backend()` 和 `read_jsonl_prefer_backend()` 增加可观测读取结果或 diagnostics。
-2. 增加“文件更新、backend 旧数据”“backend 部分 JSONL”“backend 不可用”“合法空集合”测试。
+1. 已完成：增加 `read_json_observed()` / `read_jsonl_observed()` 可观测读取结果。
+2. 已完成：覆盖文件更新、旧 backend、部分 JSONL、backend 不可用和合法空索引。
 3. 收口 recent sessions、session summary、write receipts、timeline 的重复 fallback 逻辑。
 4. 收口 workspace status/sniff/dashboard 的高频 index 读取，并验证镜像新鲜度。
 5. 统一 refs 的主读与 fallback 语义。
@@ -134,4 +134,3 @@ F-02 及后续迁移必须遵循：
 - 已识别 query、resume、dashboard、eval、refs 和 graph 的主要口径分叉。
 - 已定义主读与 fallback 策略。
 - 明确 `memory.db` 不是唯一事实源。
-

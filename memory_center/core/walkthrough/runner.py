@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from ..graph import GraphStore, node_id
+from ..result_types import attach_facade_metadata
 from ..tracking import log_token_gain
 from .cache import WalkthroughCache
 from . import answer as _wt_answer
@@ -138,7 +139,7 @@ def _collect_owner_calls_and_dto(entry: Dict[str, Any], method_name: str) -> tup
 
 
 def _build_method_not_found(workspace_file: Path, config: Any, symbol: str, lookup: Dict[str, Any]) -> Dict[str, Any]:
-    return {
+    return attach_facade_metadata({
         "schema_version": METHOD_WALKTHROUGH_SCHEMA_VERSION,
         "fields_contract": _wt_answer.method_walkthrough_fields_contract(),
         "workspace": getattr(config, "workspace", ""),
@@ -148,11 +149,11 @@ def _build_method_not_found(workspace_file: Path, config: Any, symbol: str, look
         "reason": "method not found in java-symbol-index",
         "lookup": lookup,
         "workspace_escalation": _wt_escalation.build_workspace_escalation_status(workspace_file, status="not_found_no_better_workspace"),
-    }
+    }, operation="memory_method_walkthrough", result_kind="walkthrough", evidence_level="indexed_static_analysis")
 
 
 def _build_invalid_symbol(workspace_file: Path, config: Any, symbol: str) -> Dict[str, Any]:
-    return {
+    return attach_facade_metadata({
         "schema_version": METHOD_WALKTHROUGH_SCHEMA_VERSION,
         "fields_contract": _wt_answer.method_walkthrough_fields_contract(),
         "workspace": getattr(config, "workspace", ""),
@@ -161,7 +162,7 @@ def _build_invalid_symbol(workspace_file: Path, config: Any, symbol: str) -> Dic
         "found": False,
         "reason": "method_walkthrough requires Class#method",
         "example": "com.example.ArticleService#listByDto",
-    }
+    }, operation="memory_method_walkthrough", result_kind="walkthrough", evidence_level="input_validation")
 
 
 def build_walkthrough_result(
@@ -298,6 +299,13 @@ def build_walkthrough_result(
             "如果 Feign 服务端不在同一 workspace/group 索引中，只返回 Feign 契约和 endpoint 候选。",
         ],
     }
+    result = attach_facade_metadata(
+        result,
+        operation="memory_method_walkthrough",
+        result_kind="walkthrough",
+        evidence_level="indexed_static_analysis",
+        schema_version=METHOD_WALKTHROUGH_SCHEMA_VERSION,
+    )
     result["summary_lines"] = _wt_answer.build_method_walkthrough_summary_lines(
         result["target"],
         local_steps,
@@ -346,6 +354,13 @@ def build_walkthrough_result(
 
         compact = _wt_answer.compact_method_walkthrough_result(
             result, budget=budget, cache_ttl_seconds=walkthrough_cache.ttl_seconds,
+        )
+        compact = attach_facade_metadata(
+            compact,
+            operation="memory_method_walkthrough",
+            result_kind="walkthrough",
+            evidence_level="indexed_static_analysis",
+            schema_version=METHOD_WALKTHROUGH_SCHEMA_VERSION,
         )
         gain = _measure_compact_gain(result, compact)
         log_token_gain(

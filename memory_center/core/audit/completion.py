@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 
 from ..store import WorkspaceStore
+from ..quality import build_quality_summary
 
 AUDIT_LOG_FILE = "completion-audit.jsonl"
 DESIGN_DECISIONS_FILE = "design-decisions.jsonl"
@@ -140,7 +141,7 @@ def run_completion_audit(
     }
     store.append_jsonl(AUDIT_LOG_FILE, audit_record)
 
-    return {
+    result = {
         "score": score,
         "quality": _score_to_quality(score),
         "findings": findings,
@@ -148,6 +149,11 @@ def run_completion_audit(
         "recommendations": _generate_audit_recommendations(findings),
         "recorded": True,
     }
+    result["_quality"] = build_quality_summary(
+        [{"evidence_type": "fact", "confidence": score / 100.0}],
+        freshness_status="unknown",
+    )
+    return result
 
 
 def _check_documentation_alignment(

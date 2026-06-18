@@ -8,6 +8,15 @@
 
 ## Unreleased
 
+### 3.2.0: Consistency, Incremental Indexing, and Observability
+
+- Unified Backend 新增 observable dual-read，旧镜像、部分 JSONL 和 backend 不可用时回退文件事实源，并返回来源与一致性 diagnostics。
+- 增量索引统一处理新增、修改、删除和 rename；删除或旧 rename 路径会同步清理确定性索引与 graph。
+- hybrid lookup 与 walkthrough 新增兼容型 `_meta`，query、audit、drill-down 新增统一 `_quality`，明确 fact / inferred / derived、置信度和验证动作。
+- 新增 `OperationObserver`，reindex 与 hybrid lookup 自动记录脱敏的 outcome、duration 和 result count。
+- 新增 portable benchmark baseline，只保存拓扑规模、耗时、结果数、质量分和 parser，不记录路径或任意 payload。
+- HTTP route family、walkthrough operations、Feign `REQUEST` 兼容和 metrics summary 修复一并纳入本版本。
+
 ### 内部架构收敛：walkthrough / HTTP / MCP / 检索 / indexer
 
 这一批改动只涉及内部模块重组与回归保护，不改变任何 MCP tool schema、HTTP 路径、CLI 命令名或返回结构；既有 agent / hook / 前端调用方无需调整。

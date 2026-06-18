@@ -14,6 +14,9 @@ from ..rules import match_rules
 from ..schemas import with_schema
 from ..semantic import semantic_index_stats, semantic_query
 from ..ontology import EntityValidator
+from ..observability import observe_operation
+from ..result_types import attach_facade_metadata
+from ..quality import build_quality_summary
 from ..diagnostics import DIAG, diag_entry, safe_reason
 from ..verification.heuristics import apply_candidate_path_learning
 from ..tracking import log_token_gain
@@ -398,6 +401,11 @@ def memory_query(workspace_file: str | Path, query: str, limit: int = 20, node_t
     }
 
 
+@observe_operation(
+    "memory_query_hybrid",
+    workspace_resolver=lambda args, kwargs: args[0] if args else kwargs["workspace_file"],
+    tags_resolver=lambda args, kwargs: {"limit": kwargs.get("limit", args[2] if len(args) > 2 else 20)},
+)
 def memory_query_hybrid(workspace_file: str | Path, query: str, limit: int = 20, node_types: List[str] | None = None, config: Any = None, project: str = "") -> Dict[str, Any]:
     """Enhanced query using hybrid retrieval engine.
 
@@ -563,7 +571,21 @@ def memory_query_hybrid(workspace_file: str | Path, query: str, limit: int = 20,
     except Exception:
         pass
 
-    return result
+    freshness_status = str(((result.get("freshness", {}) or {}).get("freshness", {}) or {}).get("status", "unknown"))
+    quality_evidence = []
+    for item in result.get("results", []) or []:
+        sources = set(item.get("sources", []) or item.get("retrieval_sources", []) or [])
+        quality_evidence.append({
+            "confidence": item.get("score", 0.0),
+            "evidence_type": "fact" if sources & {"exact", "graph_exact", "direct_lookup"} else "inferred",
+        })
+    result["_quality"] = build_quality_summary(quality_evidence, freshness_status=freshness_status)
+    return attach_facade_metadata(
+        result,
+        operation="memory_query_hybrid",
+        result_kind="lookup",
+        evidence_level="hybrid_indexed",
+    )
 
 
 def _filter_contracts_by_query(contracts: list, query: str, intent: str) -> list:

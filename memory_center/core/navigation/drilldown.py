@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 
 from ..store import WorkspaceStore
 from ..backend.query import UnifiedBackendQuery
+from ..quality import build_quality_summary
 
 
 class DrillDownNavigator:
@@ -314,7 +315,7 @@ class DrillDownNavigator:
         # Build task summary
         summary = self._build_task_summary(task_id, task_events, task_receipts)
 
-        return {
+        result = {
             "task_id": task_id,
             "found": len(task_events) > 0 or len(task_receipts) > 0,
             "summary": summary,
@@ -325,6 +326,12 @@ class DrillDownNavigator:
                 "refs": "对 timeline 中的 record_id 调用 expand_ref 查看详情",
             },
         }
+        evidence = [
+            {"evidence_type": "fact", "confidence": 1.0}
+            for _ in task_events + task_receipts
+        ]
+        result["_quality"] = build_quality_summary(evidence, freshness_status="unknown")
+        return result
 
     def _build_task_summary(
         self,

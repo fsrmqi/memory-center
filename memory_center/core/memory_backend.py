@@ -154,29 +154,39 @@ class MemoryBackendStore:
         session_id: str = "",
         limit: int = 50,
     ) -> Dict[str, Any]:
-        sql = "SELECT collection, record_id, type, session_id, project, created_at, payload_json FROM json_records WHERE 1=1"
+        where = " FROM json_records WHERE 1=1"
+        sql = "SELECT collection, record_id, type, session_id, project, created_at, payload_json" + where
+        count_sql = "SELECT COUNT(*)" + where
         args: list[Any] = []
         if collection:
             sql += " AND collection = ?"
+            count_sql += " AND collection = ?"
             args.append(collection)
         if record_id:
             sql += " AND record_id = ?"
+            count_sql += " AND record_id = ?"
             args.append(record_id)
         if created_after:
             sql += " AND created_at >= ?"
+            count_sql += " AND created_at >= ?"
             args.append(created_after)
         if payload_type:
             sql += " AND type = ?"
+            count_sql += " AND type = ?"
             args.append(payload_type)
         if session_id:
             sql += " AND session_id = ?"
+            count_sql += " AND session_id = ?"
             args.append(session_id)
         if project:
             sql += " AND project = ?"
+            count_sql += " AND project = ?"
             args.append(project)
+        count_args = list(args)
         sql += " ORDER BY id DESC LIMIT ?"
         args.append(limit)
         with self.connect() as conn:
+            total_count = int(conn.execute(count_sql, count_args).fetchone()[0])
             rows = conn.execute(sql, args).fetchall()
         records = [
             {
@@ -190,7 +200,7 @@ class MemoryBackendStore:
             }
             for row in rows
         ]
-        return {"records": records, "count": len(records)}
+        return {"records": records, "count": len(records), "total_count": total_count}
 
     def upsert_index(self, name: str, payload: Any) -> None:
         from datetime import datetime, timezone
@@ -206,14 +216,18 @@ class MemoryBackendStore:
             )
 
     def read_index(self, name: str, default: Any = None) -> Any:
+        entry = self.read_index_entry(name)
+        return entry["value"] if entry["found"] else default
+
+    def read_index_entry(self, name: str) -> Dict[str, Any]:
         with self.connect() as conn:
-            row = conn.execute("SELECT payload_json FROM index_mirror WHERE name=?", (name,)).fetchone()
+            row = conn.execute("SELECT payload_json, updated_at FROM index_mirror WHERE name=?", (name,)).fetchone()
         if row is None:
-            return default
+            return {"found": False, "value": None, "updated_at": ""}
         try:
-            return json.loads(row["payload_json"])
+            return {"found": True, "value": json.loads(row["payload_json"]), "updated_at": str(row["updated_at"] or "")}
         except (json.JSONDecodeError, UnicodeDecodeError):
-            return default
+            return {"found": False, "value": None, "updated_at": str(row["updated_at"] or ""), "error": "invalid_json"}
 
     def query_refs(
         self,

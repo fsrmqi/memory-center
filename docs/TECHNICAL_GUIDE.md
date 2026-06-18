@@ -561,6 +561,8 @@ def memory_query_hybrid(...):
 - 更细粒度的回归归因
 - 自动修复建议
 - 与 CI/CD 集成
+- 使用 `record_baseline_sample()` 记录脱敏 portable sample；只允许 operation、topology size、duration、result count、quality score、parser 和 timestamp
+- 使用 `compare_baseline_samples()` 比较 median / p95 延迟与质量下降，样本中禁止写入路径或任意 payload
 
 ### 10.3 Unified Backend
 

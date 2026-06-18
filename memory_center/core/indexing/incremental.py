@@ -19,6 +19,7 @@ class ChangedFile:
     """A file that changed according to git."""
     path: str
     status: str  # A=added, M=modified, D=deleted, R=renamed
+    previous_path: str = ""
 
 
 def git_changed_files(repo_root: str | Path, since: str = "HEAD") -> List[ChangedFile]:
@@ -46,7 +47,8 @@ def git_changed_files(repo_root: str | Path, since: str = "HEAD") -> List[Change
         if len(parts) >= 2:
             status = parts[0][0]  # First char: A, M, D, R
             path = parts[-1]
-            changed.append(ChangedFile(path=path, status=status))
+            previous_path = parts[-2] if status == "R" and len(parts) >= 3 else ""
+            changed.append(ChangedFile(path=path, status=status, previous_path=previous_path))
 
     return changed
 
@@ -76,7 +78,8 @@ def git_changed_files_unstaged(repo_root: str | Path) -> List[ChangedFile]:
         if len(parts) >= 2:
             status = parts[0][0]
             path = parts[-1]
-            changed.append(ChangedFile(path=path, status=status))
+            previous_path = parts[-2] if status == "R" and len(parts) >= 3 else ""
+            changed.append(ChangedFile(path=path, status=status, previous_path=previous_path))
 
     return changed
 
@@ -172,10 +175,17 @@ class IncrementalIndexer:
         deleted_node_ids: Set[str] = set()
         for change in changes["deleted"]:
             deleted_node_ids.update(self.remove_by_file_path(change.path))
+        for change in changes["renamed"]:
+            if change.previous_path:
+                deleted_node_ids.update(self.remove_by_file_path(change.previous_path))
 
-        # Handle additions and modifications (would need to re-parse)
-        added_modified = changes["added"] + changes["modified"]
-        affected_paths = [c.path for c in added_modified]
+        # Reconcile every changed scope. Deleted/old rename paths produce no
+        # refreshed rows, which intentionally removes stale deterministic data.
+        reparse_changes = changes["added"] + changes["modified"] + changes["renamed"]
+        affected_paths = [c.path for c in reparse_changes]
+        affected_paths.extend(c.path for c in changes["deleted"])
+        affected_paths.extend(c.previous_path for c in changes["renamed"] if c.previous_path)
+        affected_paths = list(dict.fromkeys(path for path in affected_paths if path))
 
         # Actually re-parse added/modified files using reindex_workspace
         reindex_result: Dict[str, Any] = {}
@@ -202,7 +212,8 @@ class IncrementalIndexer:
             "added_count": len(changes["added"]),
             "modified_count": len(changes["modified"]),
             "affected_paths": affected_paths,
-            "needs_reparse": len(added_modified) > 0,
+            "renamed_count": len(changes["renamed"]),
+            "needs_reparse": len(reparse_changes) > 0,
             "reindexed": bool(reindex_result),
             "reindex_result": reindex_result,
             "reindex_error": reindex_error,

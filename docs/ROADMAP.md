@@ -89,8 +89,10 @@
   - 已完成：dense embeddings 同步 VectorIndex，vector ANN 可选接入
   - Code Knowledge Graph reasoning 起步
   - 已完成：changed-file 增量重建真实调用与错误可见性
-  - 持续收口：真实 workspace 检索质量、indexer 精度和增量更新
-  - facade 类型边界与可观测性继续补强
+  - 已完成：删除/移动感知的 scoped index reconciliation
+  - 已完成：additive facade 类型元数据、统一 quality summary 和结构化 operation observability
+  - 已完成：不含路径或 payload 的 portable benchmark baseline 与回归比较
+  - 持续收口：在真实脱敏 workspace 上积累检索、parser 和延迟趋势
 
 ## 5. Status Reading / 状态阅读方式
 
@@ -104,7 +106,7 @@
 
 - `hybrid retrieval` 属于已完成基础版
 - ontology / audit / drill-down / backend 统一更偏持续收口
-- native vector 真实数据 benchmark / tree-sitter 精度 / 全面类型化 更偏下一阶段推进
+- native vector 真实数据 benchmark / tree-sitter 精度仍偏下一阶段运营验证；兼容型 facade 类型元数据已完成
 
 ## 6. Definition of Done / 阶段收口标准
 

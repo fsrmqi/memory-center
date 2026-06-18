@@ -124,7 +124,7 @@ CLI / HTTP 仍保留细粒度原子操作，但 MCP 默认以 facade 为公开�
 - `memory.db`：memory、index、ref 镜像与聚合查询。
 - `graph.db`：派生知识图谱和 graph-oriented retrieval/reasoning 主读后端。
 
-当前 `read_json*_prefer_backend` 仍缺少来源和 fallback reason，并可能在镜像部分失败后优先读到旧 backend 数据。后续迁移必须先建立双读一致性保护。
+统一后端已提供 observable dual-read：`read_json_observed()` / `read_jsonl_observed()` 返回来源、fallback reason 和一致性状态；兼容入口仍只返回原始 value。
 
 ## Hooks / 宿主 Hook
 
@@ -352,6 +352,7 @@ The following work is intentionally documented as follow-up scope so it can be i
 - `P2` Grow the synthetic Spring Cloud benchmark in ``tests/test_benchmark_workspace_perf.py`` rather than introducing private fixtures. Adjust ``SERVICES`` / ``CONTROLLERS_PER_SERVICE`` / ``ENDPOINTS_PER_CONTROLLER`` knobs when the topology under test changes; keep the wall-clock budgets generous so CI variance does not cause flakes.
 - `P2` Unify CLI / HTTP / MCP parameter models where the same operation exists in multiple adapters. Introduce light argument objects only when they reduce duplicated defaults and validation rules.
 - `P2` Keep architecture documentation and migration notes current. When public entrypoints remain compatible, document internal seams in `ARCHITECTURE.md`; only document breaking changes in README / CHANGELOG when legacy fallbacks are removed.
+- `P2` Run portable baselines on representative sanitized workspaces. Samples deliberately exclude paths and arbitrary payloads; operational datasets must not be committed.
 
 以下工作作为后续范围记录，便于小步实现和验证：
 
@@ -363,6 +364,7 @@ The following work is intentionally documented as follow-up scope so it can be i
 - `P2` 在 ``tests/test_benchmark_workspace_perf.py`` 中扩展合成 Spring Cloud benchmark，不要引入私有 fixture。需要调拓扑时调整 ``SERVICES`` / ``CONTROLLERS_PER_SERVICE`` / ``ENDPOINTS_PER_CONTROLLER`` 等旋钮；wall-clock 上限保持宽松，避免 CI 抖动 flake。
 - `P2` 统一 CLI / HTTP / MCP 的参数模型。只有当同一个操作跨多个 adapter 重复默认值和校验规则时，才引入轻量参数对象。
 - `P2` 持续维护架构文档和迁移说明。公开入口保持兼容时，只在 `ARCHITECTURE.md` 记录内部 seam；只有移除 legacy fallback 或产生不兼容变化时，才写入 README / CHANGELOG。
+- `P2` 在代表性的脱敏 workspace 上持续运行 portable baseline。样本不记录路径或任意 payload，运营数据不得提交。
 
 ### Vue 前端 / Vue Frontend
 

@@ -1,4 +1,9 @@
 """Benchmark — token usage monitoring and regression detection."""
+from .baseline import (
+    PORTABLE_BASELINE_FILE,
+    compare_baseline_samples,
+    record_baseline_sample,
+)
 from .trending import (
     BENCHMARK_BASELINE_FILE,
     BENCHMARK_TREND_FILE,
@@ -10,6 +15,9 @@ from .trending import (
 )
 
 __all__ = [
+    "PORTABLE_BASELINE_FILE",
+    "compare_baseline_samples",
+    "record_baseline_sample",
     "BENCHMARK_BASELINE_FILE",
     "BENCHMARK_TREND_FILE",
     "generate_benchmark_report",

@@ -1,15 +1,34 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Iterable, List
+from typing import Any, Dict, Generic, Iterable, List, TypeVar
 
 from filelock import FileLock
 
 from .memory_backend import MemoryBackendStore
 
 _MISSING = object()
+T = TypeVar("T")
+
+
+@dataclass(frozen=True)
+class ReadResult(Generic[T]):
+    value: T
+    source: str
+    fallback_used: bool = False
+    fallback_reason: str = ""
+    consistency_status: str = "unknown"
+
+    def diagnostics(self) -> Dict[str, Any]:
+        return {
+            "source": self.source,
+            "fallback_used": self.fallback_used,
+            "fallback_reason": self.fallback_reason,
+            "consistency_status": self.consistency_status,
+        }
 
 
 def _safe_path(base: Path, name: str) -> Path:
@@ -90,8 +109,7 @@ class WorkspaceStore:
         return matched[-limit:]
 
     def read_jsonl_prefer_backend(self, name: str, limit: int = 50) -> List[Dict[str, Any]]:
-        rows = self.read_jsonl_via_backend(name, limit=limit)
-        return rows or self.read_jsonl(name, limit=limit)
+        return self.read_jsonl_observed(name, limit=limit).value
 
     def find_jsonl_prefer_backend(self, name: str, predicate, limit: int = 200) -> List[Dict[str, Any]]:
         rows = self.find_jsonl_via_backend(name, predicate, limit=limit)
@@ -169,17 +187,83 @@ class WorkspaceStore:
 
     def read_json_prefer_backend(self, name: str, default: Any) -> Any:
         """Read deterministic index preferring SQLite backend, fall back to file."""
-        result = self.memory_backend().read_index(name)
-        if result is not None:
-            return result
-        return self.read_json(name, default)
+        return self.read_json_observed(name, default).value
+
+    def read_json_observed(self, name: str, default: Any) -> ReadResult[Any]:
+        path = self.index_dir / name
+        file_exists = path.exists()
+        file_value = self.read_json(name, default) if file_exists else default
+        try:
+            backend_entry = self.memory_backend().read_index_entry(name)
+        except Exception as exc:
+            return ReadResult(
+                file_value,
+                "file" if file_exists else "default",
+                fallback_used=True,
+                fallback_reason=f"backend_unavailable:{type(exc).__name__}",
+                consistency_status="backend_unavailable",
+            )
+        if not backend_entry.get("found"):
+            return ReadResult(
+                file_value,
+                "file" if file_exists else "default",
+                fallback_used=file_exists,
+                fallback_reason="backend_missing",
+                consistency_status="file_only" if file_exists else "missing",
+            )
+        backend_value = backend_entry.get("value")
+        if not file_exists:
+            return ReadResult(backend_value, "backend", consistency_status="backend_only")
+        if backend_value == file_value:
+            return ReadResult(backend_value, "backend", consistency_status="consistent")
+        return ReadResult(
+            file_value,
+            "file",
+            fallback_used=True,
+            fallback_reason="backend_stale",
+            consistency_status="diverged",
+        )
+
+    def read_jsonl_observed(self, name: str, limit: int = 50) -> ReadResult[List[Dict[str, Any]]]:
+        file_path = self.memory_dir / name
+        file_exists = file_path.exists()
+        file_rows = self.read_jsonl(name, limit=limit)
+        try:
+            query = self.memory_backend_query_records(collection=name, limit=limit)
+            records = list(reversed(query.get("records", [])))
+            backend_rows = [item.get("payload", {}) for item in records if isinstance(item.get("payload"), dict)]
+            total_count = int(query.get("total_count", len(backend_rows)) or 0)
+        except Exception as exc:
+            return ReadResult(
+                file_rows,
+                "file" if file_exists else "default",
+                fallback_used=True,
+                fallback_reason=f"backend_unavailable:{type(exc).__name__}",
+                consistency_status="backend_unavailable",
+            )
+        if total_count == 0:
+            return ReadResult(
+                file_rows,
+                "file" if file_exists else "default",
+                fallback_used=file_exists,
+                fallback_reason="backend_missing",
+                consistency_status="file_only" if file_exists else "missing",
+            )
+        if not file_exists:
+            return ReadResult(backend_rows, "backend", consistency_status="backend_only")
+        expected_count = len(self.read_jsonl(name, limit=500000))
+        if total_count < expected_count:
+            return ReadResult(file_rows, "file", True, "backend_partial", "diverged")
+        if backend_rows == file_rows:
+            return ReadResult(backend_rows, "backend", consistency_status="consistent")
+        return ReadResult(file_rows, "file", True, "backend_stale", "diverged")
 
     def memory_backend_query_refs(self, *, ref_path: str = "", limit: int = 50) -> Dict[str, Any]:
         return self.memory_backend().query_refs(ref_path=ref_path, limit=limit)
 
     def read_jsonl_via_backend(self, name: str, limit: int = 50, session_id: str = "") -> List[Dict[str, Any]]:
         rows = self.memory_backend_query_records(collection=name, session_id=session_id, limit=limit).get("records", [])
-        return [item.get("payload", {}) for item in rows if isinstance(item.get("payload"), dict)]
+        return [item.get("payload", {}) for item in reversed(rows) if isinstance(item.get("payload"), dict)]
 
     def find_jsonl_via_backend(self, name: str, predicate, limit: int = 200, session_id: str = "") -> List[Dict[str, Any]]:
         rows = self.read_jsonl_via_backend(name, limit=5000, session_id=session_id)
