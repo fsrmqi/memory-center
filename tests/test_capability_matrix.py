@@ -138,16 +138,19 @@ class TestMCPCoverage:
                     )
 
     def test_mcp_admin_actions_in_dispatch(self):
-        """Check that mc_admin _DISPATCH dict contains the action key."""
-        import memory_center.mcp.server as mcp_mod
-        src = inspect.getsource(mcp_mod)
+        """Check that mc_admin's action registry contains every action key."""
+        # ``mc_admin`` now delegates to ``admin_actions.build_admin_registry``,
+        # so the action table lives there.  The MCP server still references the
+        # registry indirectly, so we inspect the canonical source of truth.
+        from memory_center.mcp import admin_actions as admin_mod
+        src = inspect.getsource(admin_mod)
         for cap in CAPABILITIES:
             for entry in cap.entries:
                 if entry.kind == "mcp_admin_action":
                     # Actions are keys in the _DISPATCH dict
                     assert f'"{entry.identifier}"' in src, (
                         f"MCP admin action '{entry.identifier}' for capability "
-                        f"'{cap.name}' not found in _DISPATCH"
+                        f"'{cap.name}' not found in admin_actions registry"
                     )
 
 

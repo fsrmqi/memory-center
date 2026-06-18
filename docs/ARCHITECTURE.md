@@ -251,7 +251,13 @@ memory_center/core/
 │   ├── __init__.py
 │   ├── artifact.py      # Markdown artifact 渲染
 │   ├── cache.py         # 短期进程内缓存适配器
-│   └── quality.py       # agent-ready 质量评分
+│   ├── quality.py       # agent-ready 质量评分
+│   ├── symbols.py       # 符号 / Impl / abs path / Java 方法体提取
+│   ├── continuations.py # local steps、Feign / 服务端 Impl / 同类续链
+│   ├── risks.py         # 性能风险、scope guard、freshness、diff、Mermaid
+│   ├── answer.py        # 模板、summary lines、compact view、agent policy
+│   ├── escalation.py    # workspace 输入解析 / 父级覆盖 / quality score
+│   └── runner.py        # build_walkthrough_result 端到端组装入口
 ├── benchmark/           # 基准趋势（Phase B）
 │   ├── __init__.py
 │   └── trending.py
@@ -335,23 +341,23 @@ The seam is intentionally not a framework. It is a small deep Module: deleting i
 
 The following work is intentionally documented as follow-up scope so it can be implemented in smaller, verifiable changes:
 
-- `P1` Continue tightening the walkthrough split: traversal in ``orchestrator/query.py`` is now thin, but the orchestrator still owns store loading, cache key construction, and final compose; future cleanups can move the cache key helper into ``walkthrough/escalation.py`` and surface a single ``build_walkthrough_result`` entry under ``core/walkthrough/``.
-- `P1` Continue trimming ``memory_center/http/route_dispatch.py``. The registry is one-handler-per-route today; if multiple routes diverge mainly in optional flags, fold them through small param objects so the file does not grow back into a long if-chain.
-- `P1` Extract MCP `mc_admin` action binding into `memory_center/mcp/admin_actions.py`. Keep `server.py` focused on tool schema and request adapters; test admin actions directly through the registry seam.
-- `P1` Continue making retrieval fusion pure by default. Audit hybrid retrieval for in-place mutation of result, node, metadata, and score objects; add regression tests for caller-owned objects.
-- `P1` Continue indexer graph-build performance work. Replace repeated scans with indexed lookups where safe, especially class lookup, method lookup, Feign/API association, and field/method call association. Keep line-number accuracy tests for Endpoint, FeignClient, and FeignMethod nodes.
-- `P1` Add bounded performance benchmarks for large Spring Cloud-like workspaces. Cover reindex, graph build, method walkthrough, and hybrid retrieval with fixtures or synthetic workspaces rather than private paths.
+- `P2` Migrate the remaining handful of low-frequency walkthrough helpers to ``core/walkthrough/`` if they grow new responsibilities; today the orchestrator only keeps the public facade and a thin ``lookup_provider`` / ``escalation_runner`` plumbing.
+- `P2` Watch ``memory_center/http/route_dispatch.py`` for repeated optional flags. ``RouteParams`` already collapses ``view`` / ``budget`` / ``task_id`` / ``session_id`` / ``intent`` / ``project`` / ``auto_sync_mode`` / ``report_level`` etc.; if a new family of routes starts copying the same multi-line param block, extend ``RouteParams`` instead of bringing back ``params.get`` literals.
+- `P2` Keep ``mc_admin`` action coverage in lockstep with the registry: ``tests/test_mcp_admin_actions.py`` is the canonical seam test; new actions should be added there rather than relying on the FastMCP shape test.
+- `P2` Keep retrieval fusion regression coverage in ``tests/test_hybrid_fusion_purity.py``. ``_merge_retrieval_results`` and ``_apply_type_boosting`` default to deep copies; if a future optimisation reintroduces in-place mutation, gate it behind an explicit flag and add a parallel purity test.
+- `P2` Maintain the indexed Feign↔API and field-by-class lookups in ``indexer.py``. ``tests/test_indexer_perf.py`` asserts indexed lookup remains at least 5x faster than a linear scan; if a refactor regresses that ratio, restore the index before merging.
+- `P2` Grow the synthetic Spring Cloud benchmark in ``tests/test_benchmark_workspace_perf.py`` rather than introducing private fixtures. Adjust ``SERVICES`` / ``CONTROLLERS_PER_SERVICE`` / ``ENDPOINTS_PER_CONTROLLER`` knobs when the topology under test changes; keep the wall-clock budgets generous so CI variance does not cause flakes.
 - `P2` Unify CLI / HTTP / MCP parameter models where the same operation exists in multiple adapters. Introduce light argument objects only when they reduce duplicated defaults and validation rules.
 - `P2` Keep architecture documentation and migration notes current. When public entrypoints remain compatible, document internal seams in `ARCHITECTURE.md`; only document breaking changes in README / CHANGELOG when legacy fallbacks are removed.
 
 以下工作作为后续范围记录，便于小步实现和验证：
 
-- `P1` 继续收紧 walkthrough 拆分：``orchestrator/query.py`` 现在已经很薄，但 store 加载、cache key、最后组装仍在 orchestrator 中；后续可把 cache key 助手挪到 ``walkthrough/escalation.py``，并在 ``core/walkthrough/`` 暴露统一的 ``build_walkthrough_result`` 入口。
-- `P1` 继续优化 ``memory_center/http/route_dispatch.py``。当前是 one-handler-per-route 的注册表；如果多个路由仅在可选参数上分叉，引入轻量参数对象做归并，避免文件再次膨胀回长 if-chain。
-- `P1` 抽出 MCP `mc_admin` action 绑定到 `memory_center/mcp/admin_actions.py`。`server.py` 只聚焦 tool schema 和请求 adapter；admin action 通过 registry seam 直接测试。
-- `P1` 继续让 retrieval fusion 默认保持纯函数。检查 hybrid retrieval 里是否还有原地修改 result、node、metadata、score 对象的逻辑，并补充调用方自有对象不被污染的回归测试。
-- `P1` 继续推进 indexer graph-build 性能优化。在安全位置用索引 lookup 替代重复扫描，重点是 class lookup、method lookup、Feign/API 关联、field/method call 关联。保留 Endpoint、FeignClient、FeignMethod 行号准确性的测试。
-- `P1` 增加有边界的性能基准，模拟大型 Spring Cloud 工作区。覆盖 reindex、graph build、method walkthrough、hybrid retrieval，使用 fixtures 或 synthetic workspace，不使用私有路径。
+- `P2` 当 walkthrough 子模块再出现新的轻量 helper 时，优先放到 ``core/walkthrough/``；目前 orchestrator 只保留公共 facade 与 ``lookup_provider`` / ``escalation_runner`` 的粘合。
+- `P2` 关注 ``memory_center/http/route_dispatch.py`` 的可选参数重复。``RouteParams`` 已经把 ``view`` / ``budget`` / ``task_id`` / ``session_id`` / ``intent`` / ``project`` / ``auto_sync_mode`` / ``report_level`` 等收口；如果新增的一批 route 又开始照抄多行 ``params.get`` 块，应该扩 ``RouteParams`` 而不是把字面量写回来。
+- `P2` ``mc_admin`` action 覆盖度与 registry 同步：``tests/test_mcp_admin_actions.py`` 是规范化的 seam 测试，新 action 应在这里加测试，而不是依赖 FastMCP 形状检测。
+- `P2` 保留 ``tests/test_hybrid_fusion_purity.py``：``_merge_retrieval_results`` 与 ``_apply_type_boosting`` 默认是纯函数（deep copy）。如果未来出于性能重新引入原地修改，必须挂在显式开关后并补一组对应的纯函数测试。
+- `P2` 维护 ``indexer.py`` 中的 Feign↔API 与 field-by-class 索引 lookup。``tests/test_indexer_perf.py`` 要求索引 lookup 至少比线性扫描快 5 倍；任何回归这个比例的改动都应在合入前恢复索引。
+- `P2` 在 ``tests/test_benchmark_workspace_perf.py`` 中扩展合成 Spring Cloud benchmark，不要引入私有 fixture。需要调拓扑时调整 ``SERVICES`` / ``CONTROLLERS_PER_SERVICE`` / ``ENDPOINTS_PER_CONTROLLER`` 等旋钮；wall-clock 上限保持宽松，避免 CI 抖动 flake。
 - `P2` 统一 CLI / HTTP / MCP 的参数模型。只有当同一个操作跨多个 adapter 重复默认值和校验规则时，才引入轻量参数对象。
 - `P2` 持续维护架构文档和迁移说明。公开入口保持兼容时，只在 `ARCHITECTURE.md` 记录内部 seam；只有移除 legacy fallback 或产生不兼容变化时，才写入 README / CHANGELOG。
 

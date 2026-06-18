@@ -721,205 +721,57 @@ def create_server(workspace_file: str):
     ):
         """Admin and utility operations. Action selects sub-operation: status, dashboard, continuity, health, audit, discover, constraint, drill_ref, drill_timeline, drill_task, backend_consistency, artifact_list, artifact_get, artifact_outline, artifact_context, artifact_update, change_log_append, change_log_compact, task_create, task_list, task_resolve, task_get, task_update, task_change_log_append, task_archive, task_auto_archive, task_status, task_activity_touch, session_start, session_log, session_end, session_recent, session_summary, model_profile, handoff_history, write_judge, write_plan, write_execute, receipts, replay, backend_query, eval_write_quality, eval_resume, eval_handoff, eval_regression_suite, eval_index_freshness, eval_tool_adoption, eval_context_weight, eval_workflow_orchestration, eval_token_gain, eval_parser_benchmark, eval_token_benchmark, eval_token_benchmark_trend, tool_usage_report, generate_wiki, generate_skills, group_status, group_query, group_impact, group_chain, method_walkthrough, walkthrough_health, walkthrough_export, eval_walkthrough_quality."""
         wf = ctx.workspace_file
-        registry = CommandRegistry(label="mc_admin action").register_many({
-            "status": lambda: workspace_status(wf, view=view, budget=budget),
-            "dashboard": lambda: workspace_dashboard(wf, intent=intent, limit=limit, view=view, budget=budget),
-            "continuity": lambda: workspace_continuity_dashboard(wf, intent=intent, task_id=task_id, session_id=session_id, limit=limit, view=view, budget=budget),
-            "health": lambda: {
-                "workflow": "mc-admin-health",
-                "status": workspace_status(wf, view="compact", budget="medium"),
-                "tool_usage_report": memory_tool_usage_report(wf, limit=50),
-                "regression_suite": memory_eval_regression_suite(wf, intent=intent, target_model=target_model, limit=limit),
-            },
-            "artifact_list": lambda: list_artifacts(wf),
-            "artifact_get": lambda: get_artifact(wf, name),
-            "artifact_outline": lambda: artifact_outline(wf, name),
-            "artifact_context": lambda: artifact_context(wf, intent, limit=limit),
-            "artifact_update": lambda: update_artifact(wf, name, content),
-            "change_log_append": lambda: append_change_log(wf, entry),
-            "change_log_compact": lambda: compact_change_log(wf, keep_recent),
-            "task_create": lambda: create_task_space(wf, title=title, intent=intent, owner=owner, tags=tags, priority=priority),
-            "task_list": lambda: list_task_spaces(wf, include_archived=include_archived),
-            "task_resolve": lambda: resolve_task_space(wf, intent=intent, title=title, create_if_missing=create_if_missing, include_archived=include_archived, limit_candidates=limit_candidates, score_threshold=score_threshold),
-            "task_get": lambda: get_task_artifact(wf, task_id, name),
-            "task_update": lambda: update_task_artifact(wf, task_id, name, content),
-            "task_change_log_append": lambda: append_task_change_log(wf, task_id, entry, keep_recent=keep_recent),
-            "task_archive": lambda: archive_task_space(wf, task_id, reason=reason),
-            "task_auto_archive": lambda: auto_archive_task_spaces(wf, retention_days=keep_recent),
-            "task_status": lambda: update_task_status(wf, task_id, status),
-            "task_activity_touch": lambda: touch_task_activity(wf, task_id, source),
-            "session_start": lambda: workspace_start_session(wf, intent, session_id=session_id or None),
-            "session_log": lambda: workspace_log_session_event(wf, session_id, event_type, _parse_payload(payload)),
-            "session_end": lambda: workspace_end_session(wf, session_id, outcome, verified_by),
-            "session_recent": lambda: workspace_recent_sessions(wf, limit),
-            "session_summary": lambda: workspace_session_summary(wf, session_id),
-            "model_profile": lambda: workspace_model_profile(target_model),
-            "handoff_history": lambda: workspace_handoff_history(wf, target_model=target_model, task_id=task_id, session_id=session_id, limit=limit),
-            "write_judge": lambda: memory_write_judge(wf, text=text, source=source, intent=intent, prefer_layer=prefer_layer, projects=projects, files=files),
-            "write_plan": lambda: memory_plan_write(wf, text=text, source=source, intent=intent, session_id=session_id, task_id=task_id, title=title, prefer_layer=prefer_layer, projects=projects, files=files),
-            "write_execute": lambda: memory_execute_write(wf, text=text, source=source, intent=intent, session_id=session_id, task_id=task_id, title=title, prefer_layer=prefer_layer, projects=projects, files=files),
-            "receipts": lambda: workspace_write_receipts(wf, layer=layer, action=action_filter, scope=scope, task_id=task_id, session_id=session_id, limit=limit),
-            "replay": lambda: workspace_replay_write_chain(wf, task_id=task_id, session_id=session_id, limit=limit),
-            "backend_query": lambda: memory_backend_query(wf, collection=collection, record_id=record_id, created_after=created_after, ref_path=ref_path, project=project, payload_type=payload_type, limit=limit),
-            "eval_write_quality": lambda: memory_eval_write_quality(wf, task_id=task_id, session_id=session_id, intent=intent, limit=limit),
-            "eval_resume": lambda: memory_eval_resume(wf, task_id=task_id, session_id=session_id, intent=intent, limit=limit),
-            "eval_handoff": lambda: memory_eval_handoff(wf, target_model=target_model, task_id=task_id, session_id=session_id, intent=intent, limit=limit),
-            "eval_regression_suite": lambda: memory_eval_regression_suite(wf, target_model=target_model, task_id=task_id, session_id=session_id, intent=intent, limit=limit),
-            "eval_index_freshness": lambda: memory_eval_index_freshness(wf, scope=scope),
-            "eval_tool_adoption": lambda: memory_eval_tool_adoption(wf, limit=limit),
-            "eval_context_weight": lambda: memory_eval_context_weight(wf, intent=intent, limit=limit),
-            "eval_workflow_orchestration": lambda: memory_eval_workflow_orchestration(wf, task_id=task_id, session_id=session_id, intent=intent, limit=limit),
-            "eval_token_gain": lambda: memory_eval_token_gain(wf, tool_name=tool_name, budget=budget, model=model, limit=limit),
-            "eval_parser_benchmark": lambda: memory_eval_parser_benchmark(wf, limit=limit),
-            "eval_token_benchmark": lambda: memory_eval_token_benchmark(wf, intent=intent, limit=limit),
-            "eval_token_benchmark_trend": lambda: _benchmark_trend_report(wf, name),
-            "audit": lambda: _run_audit(wf, intent),
-            "drill_ref": lambda: _drill_ref(wf, ref_path),
-            "drill_timeline": lambda: _drill_timeline(wf, session_id, task_id, limit),
-            "drill_task": lambda: _drill_task(wf, task_id),
-            "backend_consistency": lambda: _backend_consistency(wf),
-            "discover": lambda: memory_discover(wf, limit=limit),
-            "constraint": lambda: _constraint_action(text, name),
-            "tool_usage_report": lambda: memory_tool_usage_report(wf, limit=limit),
-            "generate_wiki": lambda: generate_wiki(wf, output_dir or None),
-            "generate_skills": lambda: generate_skills(wf, output_dir or None),
-            "group_status": lambda: group_status(group),
-            "group_query": lambda: group_query(group, query=text, limit=limit),
-            "group_impact": lambda: group_impact(group, target=intent or text, direction=direction, max_depth=max_depth),
-            "group_chain": lambda: group_chain(group, symbol=name or text, direction=direction, depth=max_depth, limit=limit),
-            "method_walkthrough": lambda: memory_method_walkthrough(wf, name or text or intent, depth=max_depth, limit=limit, project=project, view=view, budget=budget, report_level=model or "standard"),
-            "walkthrough_health": lambda: memory_walkthrough_health(wf, symbol=name or text or intent, project=project, report_level=model or "standard"),
-            "walkthrough_export": lambda: memory_export_walkthrough_artifact(wf, symbol=name or text or intent, project=project, report_level=model or "deep", title=title),
-            "eval_walkthrough_quality": lambda: memory_eval_walkthrough_quality(wf, symbol=name or text or intent, project=project, report_level=model or "standard"),
-            # ECC — verification loop
-            "verification_loop": lambda: _verification_loop_action(wf, intent, task_id),
-            # ECC — pattern promotion
-            "pattern_promotion_propose": lambda: _pattern_promote_action(wf, "propose", text),
-            "pattern_promotion_list": lambda: _pattern_promote_action(wf, "list", ""),
-            "pattern_promotion_promote": lambda: _pattern_promote_action(wf, "promote", text),
-            # ECC — heuristics
-            "heuristics_query": lambda: _heuristics_action(wf, "query", text),
-            "heuristics_record": lambda: _heuristics_action(wf, "record", text),
-            "heuristics_feedback": lambda: _heuristics_action(wf, "feedback", text),
-            "heuristics_explain": lambda: _heuristics_action(wf, "explain", text),
-            # ECC — workflow profiles
-            "workflow_profile": lambda: get_workflow_profile(intent or "quick-fix"),
-            "workflow_recommend": lambda: recommend_workflow_with_learning(wf, text or intent or ""),
-            # ECC — bundle export
-            "bundle_export": lambda: generate_agent_bundle(wf, agent=name or "codex"),
-            # ECC — runtime audit
-            "runtime_audit": lambda: audit_agent_runtime(wf),
-            # UA — explanation schema
-            "explanation": lambda: _explanation_action(text, persona=intent or "developer"),
-            # UA — business flow
-            "business_flow": lambda: _business_flow_action(wf, name, max_depth),
-            "business_flow_impact": lambda: _business_flow_impact_action(wf, intent or text, max_depth),
-            # Metrics
-            "metrics_summary": lambda: _metrics_summary_action(),
-            # Benchmark regression alerts
-            "regression_alerts": lambda: _regression_alerts_action(wf, name),
-        })
-        return {"action": action, "result": registry.dispatch(action)}
-
-
-    # ===================== Next-phase helper actions =====================
-    @staticmethod
-    def _verification_loop_action(wf: str, intent: str, task_id: str) -> dict:
-        vl = VerificationLoop(wf)
-        if not task_id:
-            task_id = "default"
-        analysis = {"task_type": intent or "general", "workspace": wf}
-        checklist = vl.generate_checklist(analysis)
-        status = vl.get_status(task_id)
-        return {"checklist": checklist, "status": status, "workflow": "mc-verification-loop"}
-
-    @staticmethod
-    def _pattern_promote_action(wf: str, action_type: str, text: str) -> dict:
-        pp = PatternPromotion(wf)
-        if action_type == "propose":
-            proposal = {"rule_text": text, "source": "manual"}
-            return pp.propose(proposal)
-        elif action_type == "list":
-            return {"proposals": pp.list_proposals()}
-        elif action_type == "promote":
-            return pp.promote(text)
-        return {"error": "unknown action"}
-
-    @staticmethod
-    def _heuristics_action(wf: str, action_type: str, text: str) -> dict:
-        hr = HeuristicsRegister(wf)
-        import json
-        try:
-            data = json.loads(text) if text else {}
-        except json.JSONDecodeError:
-            data = {"pattern": text}
-        if action_type == "query":
-            return {"heuristics": hr.query(text)}
-        elif action_type == "record":
-            entry = hr.record(data)
-            return {"status": "recorded", "entry": entry}
-        elif action_type == "feedback":
-            feedback = hr.record_candidate_path_feedback(
-                candidate_type=str(data.get("candidate_type", "") or ""),
-                target=str(data.get("target", "") or ""),
-                outcome=str(data.get("outcome", "") or ""),
-                evidence=data.get("evidence") or [],
-                source=str(data.get("source", "") or "mc_admin"),
-                task_id=str(data.get("task_id", "") or ""),
-                session_id=str(data.get("session_id", "") or ""),
-                weight_before=data.get("weight_before"),
-                weight_delta=data.get("weight_delta"),
-                why=str(data.get("why", "") or ""),
-                next_action=str(data.get("next_action", "") or ""),
-                verification_cost=str(data.get("verification_cost", "") or ""),
-                category=str(data.get("category", "") or "candidate-path"),
-                pattern=str(data.get("pattern", "") or ""),
-                trigger=str(data.get("trigger", "") or ""),
-            )
-            return {"status": "recorded", "feedback": feedback}
-        elif action_type == "explain":
-            return hr.explain(
-                candidate_type=str(data.get("candidate_type", "") or ""),
-                target=str(data.get("target", "") or ""),
-                category=str(data.get("category", "") or "candidate-path"),
-                heuristic_id=str(data.get("heuristic_id", "") or ""),
-                pattern=str(data.get("pattern", "") or ""),
-                limit=int(data.get("limit", 10) or 10),
-            )
-        return {"error": "unknown action"}
-
-    @staticmethod
-    def _explanation_action(text: str, persona: str = "developer") -> dict:
-        exp = Explanation(
-            subject="explanation",
-            summary=text or "",
-            persona=persona,
+        from memory_center.mcp.admin_actions import build_admin_registry
+        registry = build_admin_registry(
+            workspace_file=wf,
+            action=action,
+            view=view,
+            budget=budget,
+            limit=limit,
+            name=name,
+            content=content,
+            task_id=task_id,
+            title=title,
+            intent=intent,
+            owner=owner,
+            tags=tags,
+            priority=priority,
+            status=status,
+            source=source,
+            reason=reason,
+            include_archived=include_archived,
+            create_if_missing=create_if_missing,
+            score_threshold=score_threshold,
+            limit_candidates=limit_candidates,
+            entry=entry,
+            keep_recent=keep_recent,
+            session_id=session_id,
+            event_type=event_type,
+            payload=payload,
+            outcome=outcome,
+            verified_by=verified_by,
+            target_model=target_model,
+            scope=scope,
+            tool_name=tool_name,
+            model=model,
+            text=text,
+            prefer_layer=prefer_layer,
+            projects=projects,
+            files=files,
+            group=group,
+            direction=direction,
+            max_depth=max_depth,
+            output_dir=output_dir,
+            collection=collection,
+            record_id=record_id,
+            created_after=created_after,
+            ref_path=ref_path,
+            project=project,
+            payload_type=payload_type,
+            layer=layer,
+            action_filter=action_filter,
         )
-        return {"explanation": exp.adapt_for_persona(persona).to_full()}
-
-    @staticmethod
-    def _business_flow_action(wf: str, name: str, max_depth: int) -> dict:
-        if not name:
-            return {"error": "name (seed node) required"}
-        result = extract_business_flows_for_workspace(wf, name, max_depth=max_depth or 4)
-        result["workflow"] = "mc-business-flow"
-        return result
-
-    @staticmethod
-    def _business_flow_impact_action(wf: str, node_id: str, max_depth: int) -> dict:
-        result = business_flow_impact_for_workspace(wf, node_id or "", max_depth=max_depth or 3)
-        result["workflow"] = "mc-business-flow-impact"
-        return result
-
-    @staticmethod
-    def _metrics_summary_action() -> dict:
-        mc = MetricsCollector()
-        return {"summary": mc.summary(), "workflow": "mc-metrics"}
-
-    @staticmethod
-    def _regression_alerts_action(wf: str, name: str) -> dict:
-        alerts = check_regression_alerts(wf)
-        return {"alerts": alerts, "workflow": "mc-regression-alerts"}
+        return {"action": action, "result": registry.dispatch(action)}
 
     # ===================== Resources (unchanged) =====================
     @mcp.resource("memory-center://status")

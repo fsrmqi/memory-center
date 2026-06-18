@@ -8,6 +8,19 @@
 
 ## Unreleased
 
+### 内部架构收敛：walkthrough / HTTP / MCP / 检索 / indexer
+
+这一批改动只涉及内部模块重组与回归保护，不改变任何 MCP tool schema、HTTP 路径、CLI 命令名或返回结构；既有 agent / hook / 前端调用方无需调整。
+
+- Walkthrough 端到端组装收敛到 ``memory_center.core.walkthrough.runner.build_walkthrough_result``。``orchestrator.query.memory_method_walkthrough`` 现在只是一个 facade，提供 ``lookup_provider`` 与 ``escalation_runner`` 注入点；``cache key`` 也通过 ``runner.method_walkthrough_cache_key`` 暴露，便于直接测试。
+- ``core/walkthrough/`` 拆分为 ``symbols.py`` / ``continuations.py`` / ``risks.py`` / ``answer.py`` / ``escalation.py`` / ``runner.py`` 六个模块，各自负责符号解析、续链组装、风险与新鲜度、答案模板、workspace 升级、整体编排。原有 ``cache.py`` / ``artifact.py`` / ``quality.py`` 保持不变。
+- HTTP JSON 路由全部注册到 ``memory_center.http.route_dispatch.build_http_route_registry``，``server._route_request`` 仅保留 ``/health`` 与未知路由错误。新增 ``RouteParams`` 收口 ``view`` / ``budget`` / ``task_id`` / ``session_id`` / ``intent`` / ``project`` / ``auto_sync_mode`` / ``report_level`` 等高频参数解析。
+- MCP ``mc_admin`` 的 81 项 action 抽到 ``memory_center.mcp.admin_actions.build_admin_registry``。``mcp/server.py`` 仅保留 FastMCP signature 与请求 adapter；``tests/test_mcp_admin_actions.py`` 直接通过 registry seam 验证 action 表。
+- Hybrid retrieval fusion 默认纯函数化：``_merge_retrieval_results`` / ``_apply_type_boosting`` 不再修改 caller-owned ``RetrievalResult``（score / sources / evidence / node），新增 ``tests/test_hybrid_fusion_purity.py`` 5 项回归测试。
+- Indexer Feign↔API 关联从 ``O(|feign_methods| × |apis|)`` 改为 ``O(|feign_methods|)``：``_build_api_lookup`` 按 ``(http_method, normalized_path)`` 桶索引，``_candidate_apis_for_feign_method`` 直接查表。Field 节点同时按 ``(class, field_name)`` 建立 ``field_locations_by_class`` 桶，避免 ``substring`` 过滤。``tests/test_indexer_perf.py`` 守住 ≥5× 速度比；``tests/test_benchmark_workspace_perf.py`` 用合成 8 服务 × 6 controller × 4 endpoint 的 Spring Cloud 形态 workspace 给 reindex / graph build / walkthrough / hybrid retrieval 加 wall-clock budget。
+- 修复 ``mc_admin(action="metrics_summary")`` 与 HTTP ``/workspace/metrics-summary`` 历史上调用 ``MetricsCollector()`` 时缺少 ``workspace_file`` 与 ``metric_name`` 的 latent ``TypeError``：现在缺参时返回结构化 ``{"summary": {}, "note": "..."}``。
+- 文档：``docs/ARCHITECTURE.md`` 同步 walkthrough / route_dispatch / admin_actions / hybrid purity / indexer lookup / benchmark 的拆分结构与 P2 守护条款；不再在 README / CHANGELOG 中记录这些公开 API 不变的内部 seam（变更仅作为内部参考保留在本节）。
+
 ### 3.1.15: Method Walkthrough / 方法级链路梳理
 
 - 升级版本号到 `3.1.15`

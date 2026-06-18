@@ -24,6 +24,7 @@ from ..walkthrough import (
     render_walkthrough_markdown,
     slugify_walkthrough_symbol,
 )
+from ..walkthrough import runner as _walkthrough_runner
 from .common import (
     SESSION_EVENTS_FILE,
     _best_match,
@@ -42,13 +43,10 @@ from .common import (
 )
 from .compact import _measure_compact_gain
 
-METHOD_WALKTHROUGH_SCHEMA_VERSION = 2
-_METHOD_WALKTHROUGH_CACHE_TTL_SECONDS = 15
-_METHOD_WALKTHROUGH_CACHE_MAX_ITEMS = 64
-_METHOD_WALKTHROUGH_CACHE = WalkthroughCache(
-    ttl_seconds=_METHOD_WALKTHROUGH_CACHE_TTL_SECONDS,
-    max_items=_METHOD_WALKTHROUGH_CACHE_MAX_ITEMS,
-)
+METHOD_WALKTHROUGH_SCHEMA_VERSION = _walkthrough_runner.METHOD_WALKTHROUGH_SCHEMA_VERSION
+_METHOD_WALKTHROUGH_CACHE_TTL_SECONDS = _walkthrough_runner.DEFAULT_CACHE_TTL_SECONDS
+_METHOD_WALKTHROUGH_CACHE_MAX_ITEMS = _walkthrough_runner.DEFAULT_CACHE_MAX_ITEMS
+_METHOD_WALKTHROUGH_CACHE = _walkthrough_runner.default_walkthrough_cache()
 
 
 def _normalize_symbol_name(name: str) -> str:
@@ -1025,152 +1023,37 @@ def memory_method_walkthrough(
     DTO field reads, config/data-resource hints, and graph downstream edges.
     It does not pretend to execute Java control flow.
     """
-    workspace_file = _resolve_walkthrough_workspace_input(workspace_file)
-    config, store = load_context(workspace_file)
-    active_workspace_file = str(Path(workspace_file).expanduser().resolve())
-    symbols = store.read_json_prefer_backend("java-symbol-index.json", [])
-    feigns = store.read_json_prefer_backend("feign-index.json", [])
-    apis = store.read_json_prefer_backend("api-index.json", [])
-    file_abs_map = _build_file_abs_path_map(config, store)
-    cache_key = _method_walkthrough_cache_key(workspace_file, symbol, depth, limit, project, view, budget, report_level, store)
-    cached = _METHOD_WALKTHROUGH_CACHE.get(cache_key)
-    if cached:
-        return cached
-    parsed = _parse_method_walkthrough_symbol(symbol)
-    if not parsed.get("method"):
-        return {
-            "schema_version": METHOD_WALKTHROUGH_SCHEMA_VERSION,
-            "fields_contract": _method_walkthrough_fields_contract(),
-            "workspace": config.workspace,
-            "workspace_file": active_workspace_file,
-            "symbol": symbol,
-            "found": False,
-            "reason": "method_walkthrough requires Class#method",
-            "example": "com.example.ArticleService#listByDto",
-        }
+    def _lookup_provider(ws: Path, sym: str, proj: str) -> Dict[str, Any]:
+        return memory_symbol(ws, sym, limit=5, project=proj).get("lookup", {}) or {}
 
-    entry = _find_method_symbol_entry(symbols, parsed, project=project)
-    if not entry:
-        escalated = _try_escalated_method_walkthrough(workspace_file, symbol, depth, limit, project, view, budget, report_level, current_result=None, allow=_allow_workspace_escalation)
-        if escalated:
-            return escalated
-        return {
-            "schema_version": METHOD_WALKTHROUGH_SCHEMA_VERSION,
-            "fields_contract": _method_walkthrough_fields_contract(),
-            "workspace": config.workspace,
-            "workspace_file": active_workspace_file,
-            "symbol": symbol,
-            "found": False,
-            "reason": "method not found in java-symbol-index",
-            "lookup": memory_symbol(workspace_file, symbol, limit=5, project=project).get("lookup", {}),
-            "workspace_escalation": _build_workspace_escalation_status(workspace_file, status="not_found_no_better_workspace"),
-        }
-
-    class_name = entry["class_name"]
-    method_name = parsed["method"]
-    method_node = {
-        "id": node_id("Method", entry["project"], class_name, method_name),
-        "type": "Method",
-        "name": f"{class_name}.{method_name}",
-        "project": entry["project"],
-        "file_path": entry["file"],
-        "line": int((entry["symbol"].get("method_lines") or {}).get(method_name, 0) or 0),
-    }
-    method_abs_path = _resolve_indexed_abs_path(file_abs_map, entry["project"], entry["file"])
-    method_calls = [
-        dict(call)
-        for call in entry["symbol"].get("method_calls", [])
-        if call.get("owner_method") == method_name
-    ]
-    method_calls.sort(key=lambda row: int(row.get("line", 0) or 0))
-    dto_field_usages = [
-        dict(usage)
-        for usage in entry["symbol"].get("dto_field_usages", [])
-        if usage.get("owner_method") == method_name
-    ]
-    dto_field_usages.sort(key=lambda row: int(row.get("line", 0) or 0))
-    local_steps = _build_method_local_steps(method_calls, dto_field_usages, feigns)
-    feign_continuations = _build_method_feign_continuations(entry, method_name, method_calls, feigns, apis, symbols, file_abs_map)
-    local_service_continuations = _build_service_impl_continuations(symbols, entry, method_calls, file_abs_map, feigns, apis)
-    same_class_continuations = _build_same_class_method_continuations(symbols, entry, method_name, file_abs_map, feigns, apis)
-    downstream_edges: List[Dict[str, Any]] = []
-    with GraphStore(store.graph_db_path) as graph:
-        downstream_edges = graph.neighbors(
-            method_node["id"],
-            direction="downstream",
-            max_depth=depth,
-            limit=limit,
-            edge_types=preferred_edge_types("downstream"),
+    def _escalation_runner(**call_kwargs: Any) -> Dict[str, Any]:
+        return _try_escalated_method_walkthrough(
+            call_kwargs["workspace_file"],
+            call_kwargs["symbol"],
+            call_kwargs["depth"],
+            call_kwargs["limit"],
+            call_kwargs["project"],
+            call_kwargs["view"],
+            call_kwargs["budget"],
+            call_kwargs["report_level"],
+            current_result=call_kwargs.get("current_result"),
+            allow=True,
         )
-    downstream_edges = _filter_call_edges(downstream_edges, direction="downstream")[:limit]
-    downstream_summary = _summarize_chain_edges(downstream_edges)
-    result = {
-        "schema_version": METHOD_WALKTHROUGH_SCHEMA_VERSION,
-        "fields_contract": _method_walkthrough_fields_contract(),
-        "workspace": config.workspace,
-        "workspace_file": active_workspace_file,
-        "symbol": symbol,
-        "found": True,
-        "target": {
-            "package": entry["symbol"].get("package", ""),
-            "class": class_name,
-            "method": method_name,
-            "project": entry["project"],
-            "file_path": entry["file"],
-            "absolute_file_path": method_abs_path,
-            "line": method_node["line"],
-            "node_id": method_node["id"],
-        },
-        "evidence_level": "indexed_static_analysis",
-        "local_steps": local_steps,
-        "local_service_continuations": local_service_continuations,
-        "same_class_method_continuations": same_class_continuations,
-        "method_calls": method_calls,
-        "dto_field_usages": dto_field_usages,
-        "config_usages": entry["symbol"].get("config_usages", []),
-        "data_resources": entry["symbol"].get("data_resources", []),
-        "feign_continuations": feign_continuations,
-        "downstream_summary": downstream_summary,
-        "downstream_edges": downstream_edges,
-        "anti_patterns": _build_method_walkthrough_anti_patterns(),
-        "agent_usage_policy": _build_method_walkthrough_agent_policy(),
-        "next_actions": _build_method_walkthrough_next_actions(feign_continuations, downstream_summary, local_service_continuations, same_class_continuations),
-        "limitations": [
-            "基于 reindex 后的静态索引，不展开运行时分支、动态代理和反射。",
-            "如果 Feign 服务端不在同一 workspace/group 索引中，只返回 Feign 契约和 endpoint 候选。",
-        ],
-    }
-    result["summary_lines"] = _build_method_walkthrough_summary_lines(
-        result["target"],
-        local_steps,
-        local_service_continuations,
-        same_class_continuations,
-        feign_continuations,
-        downstream_summary,
-        _budget_limits(budget),
+
+    return _walkthrough_runner.build_walkthrough_result(
+        workspace_file,
+        symbol,
+        depth=depth,
+        limit=limit,
+        project=project,
+        view=view,
+        budget=budget,
+        report_level=report_level,
+        allow_workspace_escalation=_allow_workspace_escalation,
+        cache=_METHOD_WALKTHROUGH_CACHE,
+        lookup_provider=_lookup_provider,
+        escalation_runner=_escalation_runner,
     )
-    result["glossary_hits"] = _build_glossary_hits(workspace_file, result)
-    result["performance_risks"] = _build_walkthrough_performance_risks(result)
-    result["data_scope_guards"] = _build_data_scope_guards(result)
-    result["diff_context"] = _build_walkthrough_diff_context(config, result)
-    result["index_freshness"] = _build_walkthrough_index_freshness(store, result)
-    result["branch_outline"] = _build_walkthrough_branch_outline(result)
-    result["mermaid_flow"] = _build_method_walkthrough_mermaid(result)
-    escalated = _try_escalated_method_walkthrough(workspace_file, symbol, depth, limit, project, view, budget, report_level, current_result=result, allow=_allow_workspace_escalation)
-    if escalated:
-        _METHOD_WALKTHROUGH_CACHE.put(cache_key, escalated)
-        return copy.deepcopy(escalated)
-    result["workspace_escalation"] = _build_workspace_escalation_status(workspace_file, status="not_needed_or_not_found")
-    result["answer_markdown"] = _render_method_walkthrough_answer(result, workspace_file, report_level=report_level)
-    result["cache"] = {"hit": False, "ttl_seconds": _METHOD_WALKTHROUGH_CACHE_TTL_SECONDS}
-    if _is_compact_view(view):
-        compact = _compact_method_walkthrough_result(result, budget=budget)
-        gain = _measure_compact_gain(result, compact)
-        log_token_gain(workspace_file, "memory_method_walkthrough", budget=budget, model="", raw_tokens=gain["raw_tokens"], compact_tokens=gain["compact_tokens"], view=view)
-        _METHOD_WALKTHROUGH_CACHE.put(cache_key, compact)
-        return copy.deepcopy(compact)
-    _METHOD_WALKTHROUGH_CACHE.put(cache_key, result)
-    return copy.deepcopy(result)
 
 
 def memory_walkthrough_health(

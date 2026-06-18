@@ -637,10 +637,18 @@ def build_graph_store(config: WorkspaceConfig, store: WorkspaceStore, *, project
         else:
             apis = apis_full
 
+        # Index APIs by (http_method, normalized_path) so the Feign->Endpoint
+        # association becomes O(|feign_methods|) instead of |feign_methods| *
+        # |apis|.  Partial reindex still wires Feign methods against the full
+        # API set so cross-project links survive a scoped rebuild.
+        feign_match_pool = apis_full if partial else apis
+        api_lookup = _build_api_lookup(feign_match_pool)
+
         class_locations: Dict[str, List[Dict[str, Any]]] = {}
         method_locations: Dict[str, List[str]] = {}
         declared_method_ids: set[str] = set()
         field_locations: Dict[str, List[str]] = {}
+        field_locations_by_class: Dict[tuple[str, str], List[str]] = {}
         field_type_by_file: Dict[str, Dict[str, str]] = {}
         method_variable_types_by_file: Dict[str, Dict[str, Dict[str, str]]] = {}
 
@@ -702,6 +710,7 @@ def build_graph_store(config: WorkspaceConfig, store: WorkspaceStore, *, project
                 for fld in sym.get("fields", []):
                     field_id = node_id("Field", sym["project"], cls, fld)
                     field_locations.setdefault(fld, []).append(field_id)
+                    field_locations_by_class.setdefault((cls, fld), []).append(field_id)
                     field_line = int(field_lines.get(fld) or 0)
                     nodes.append(GraphNode(field_id, "Field", f"{cls}.{fld}", sym["project"], sym["file"], field_line, metadata={"type": sym.get("field_types", {}).get(fld)}))
                     edges.append(GraphEdge(edge_id("DECLARES", cid, field_id), cid, field_id, "DECLARES", 1.0, {"evidence": "field declaration"}))
@@ -736,7 +745,7 @@ def build_graph_store(config: WorkspaceConfig, store: WorkspaceStore, *, project
                 feign_method_line = _method_line(symbol_by_project_file, f["project"], f["file"], method.get("method_name", "unknown"))
                 nodes.append(GraphNode(fm_id, "FeignMethod", f"{f['interface']}.{method.get('method_name')}", f["project"], f["file"], feign_method_line, metadata=method))
                 edges.append(GraphEdge(edge_id("DECLARES", fc_id, fm_id), fc_id, fm_id, "DECLARES", 1.0, {"evidence": "Feign interface method"}))
-                for api in apis_full if partial else apis:
+                for api in _candidate_apis_for_feign_method(api_lookup, f, method):
                     if _endpoint_matches(f, method, api):
                         ep_id = node_id("Endpoint", api["project"], api["http_method"], api["path"])
                         edges.append(GraphEdge(edge_id("IMPLEMENTS_FEIGN", fm_id, ep_id), fm_id, ep_id, "IMPLEMENTS_FEIGN", 0.78, {"evidence": "HTTP method/path matched Feign method to Controller endpoint"}))
@@ -805,9 +814,7 @@ def build_graph_store(config: WorkspaceConfig, store: WorkspaceStore, *, project
                 matching_fields = []
                 if receiver_type:
                     matching_fields.extend(
-                        field_id
-                        for field_id in field_locations.get(usage.get("field"), [])
-                        if f":{receiver_type}:" in field_id
+                        field_locations_by_class.get((receiver_type, usage.get("field")), [])
                     )
                 if not matching_fields:
                     matching_fields = field_locations.get(usage.get("field"), [])[:5]
@@ -848,6 +855,72 @@ _STANDARD_HTTP_METHODS = {"GET", "POST", "PUT", "DELETE", "PATCH"}
 
 def _normalize_path_params(path: str) -> str:
     return re.sub(r"\{[^}]+\}", "{param}", path)
+
+
+_API_LOOKUP_WILDCARD = ""
+
+
+def _build_api_lookup(apis: List[Dict[str, Any]]) -> Dict[tuple[str, str], List[Dict[str, Any]]]:
+    """Index APIs by ``(http_method, normalized_path)``.
+
+    Two keys are stored per API: the http method, and the "wildcard" key
+    ``""`` for methods whose http method is non-standard (rare).  The
+    wildcard bucket is consulted as a fallback so legacy non-standard methods
+    keep matching exactly like the legacy linear scan.
+    """
+    lookup: Dict[tuple[str, str], List[Dict[str, Any]]] = {}
+    for api in apis:
+        method = (api.get("http_method") or "").upper()
+        norm = _normalize_path_params((api.get("path") or "").strip("/"))
+        lookup.setdefault((method, norm), []).append(api)
+        if method not in _STANDARD_HTTP_METHODS:
+            lookup.setdefault((_API_LOOKUP_WILDCARD, norm), []).append(api)
+    return lookup
+
+
+def _candidate_apis_for_feign_method(
+    api_lookup: Dict[tuple[str, str], List[Dict[str, Any]]],
+    feign: Dict[str, Any],
+    method: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+    """Return APIs that could match a Feign method without scanning the full list.
+
+    We consult two normalized keys: the path declared on the Feign method and
+    the composed ``base_path + method_path``.  The standard http method is
+    used as the primary key; the wildcard bucket is consulted if the method's
+    http method is non-standard so legacy behaviour is preserved.
+    """
+    feign_http = (method.get("http_method") or "").upper()
+    method_norm = _normalize_path_params((method.get("path") or "").strip("/"))
+    base_path = feign.get("base_path") or ""
+    composed_norm = (
+        _normalize_path_params(join_path(base_path, method.get("path") or "").strip("/"))
+        if base_path
+        else ""
+    )
+    out: List[Dict[str, Any]] = []
+    seen: set[int] = set()
+
+    def _extend(key: tuple[str, str]) -> None:
+        for api in api_lookup.get(key, []):
+            ident = id(api)
+            if ident in seen:
+                continue
+            seen.add(ident)
+            out.append(api)
+
+    keys: List[tuple[str, str]] = [
+        (feign_http, method_norm),
+    ]
+    if composed_norm and composed_norm != method_norm:
+        keys.append((feign_http, composed_norm))
+    if feign_http not in _STANDARD_HTTP_METHODS:
+        keys.append((_API_LOOKUP_WILDCARD, method_norm))
+        if composed_norm and composed_norm != method_norm:
+            keys.append((_API_LOOKUP_WILDCARD, composed_norm))
+    for key in keys:
+        _extend(key)
+    return out
 
 
 def _endpoint_matches(feign: Dict[str, Any], method: Dict[str, Any], api: Dict[str, Any]) -> bool:

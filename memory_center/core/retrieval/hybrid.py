@@ -621,8 +621,13 @@ def _merge_retrieval_results(
 ) -> List[RetrievalResult]:
     """Merge results from all retrieval sources using RRF-inspired scoring.
 
-    Each source's scores are normalized to [0, 1] before weighting,
-    so no single source can dominate purely by scale.
+    Each source's scores are normalized to [0, 1] before weighting, so no
+    single source can dominate purely by scale.
+
+    The function is pure: caller-owned ``RetrievalResult`` instances are not
+    mutated, and the returned list contains freshly constructed objects.  This
+    matters when the same hit list is reused across multiple fusion calls
+    (e.g. in tests, ablations, or staged retrieval pipelines).
     """
     def _normalize(hits: List[RetrievalResult]) -> List[RetrievalResult]:
         if not hits:
@@ -763,6 +768,10 @@ def _apply_type_boosting(
     (feign/mq/endpoint), unrelated structural types (Class/Service/Impl) are
     not boosted, preventing confusion between e.g. a FeignClient and a local
     Service with a similar name.
+
+    The function is pure: caller-owned ``RetrievalResult`` objects are not
+    mutated.  The returned list is a freshly sorted list of deep copies so
+    repeated calls produce stable input/output objects.
     """
     primary_intent = intent.get("primary_intent", "general")
 
@@ -781,7 +790,8 @@ def _apply_type_boosting(
 
     boosts = type_boost_map.get(primary_intent, {})
 
-    for item in results:
+    cloned: List[RetrievalResult] = [copy.deepcopy(item) for item in results]
+    for item in cloned:
         node_type = item.node.get("type", "")
         boost = boosts.get(node_type, 1.0)
 
@@ -801,8 +811,8 @@ def _apply_type_boosting(
             item.evidence["type_boost"] = boost
 
     # Re-sort after boosting
-    results.sort(key=lambda x: x.score, reverse=True)
-    return results
+    cloned.sort(key=lambda x: x.score, reverse=True)
+    return cloned
 
 
 def _resolve_cross_workspace_refs(

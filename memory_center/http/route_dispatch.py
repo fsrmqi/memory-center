@@ -52,7 +52,93 @@ __all__ = [
     "_require_workspace",
     "_require_one",
     "_parse_int",
+    "RouteParams",
 ]
+
+
+class RouteParams:
+    """Thin adapter around the parsed query string ``params`` dict.
+
+    Routes share many optional fields (``view``, ``budget``, ``task_id``,
+    ``session_id``, ``intent``, ``project``, ``auto_sync_mode``,
+    ``report_level``, ``limit``).  ``RouteParams`` keeps the public path/param
+    contract identical while letting handlers say ``rp.view()`` instead of
+    ``rp.view()``.  This collapses the most common
+    duplication without inventing a heavyweight schema layer.
+    """
+
+    __slots__ = ("params", "default_workspace")
+
+    def __init__(self, params: dict, default_workspace: str | None) -> None:
+        self.params = params
+        self.default_workspace = default_workspace
+
+    # --- required -----------------------------------------------------------
+    def workspace(self) -> str:
+        return _require_workspace(self.params, self.default_workspace)
+
+    def require(self, key: str) -> str:
+        return _require_one(self.params, key)
+
+    # --- optional strings ---------------------------------------------------
+    def get(self, key: str, default: str = "") -> str:
+        return self.params.get(key, [default])[0]
+
+    def task_id(self) -> str:
+        return self.get("task_id", "")
+
+    def session_id(self) -> str:
+        return self.get("session_id", "")
+
+    def intent(self) -> str:
+        return self.get("intent", "")
+
+    def project(self) -> str:
+        return self.get("project", "")
+
+    def title(self) -> str:
+        return self.get("title", "")
+
+    def view(self, default: str = "compact") -> str:
+        return self.get("view", default)
+
+    def budget(self, default: str = "medium") -> str:
+        return self.get("budget", default)
+
+    def auto_sync_mode(self, default: str = "balanced") -> str:
+        return self.get("auto_sync_mode", default)
+
+    def report_level(self, default: str = "standard") -> str:
+        return self.get("report_level", default)
+
+    def target_model(self, default: str = "codex") -> str:
+        return self.get("target_model", default)
+
+    # --- optional ints / lists ---------------------------------------------
+    def limit(self, default: int = 20, *, max_val: int = 10000) -> int:
+        return _parse_int(self.params, "limit", default, max_val=max_val)
+
+    def int_param(self, key: str, default: int, *, min_val: int = 1, max_val: int = 10000) -> int:
+        return _parse_int(self.params, key, default, min_val=min_val, max_val=max_val)
+
+    def list_param(self, key: str) -> list[str]:
+        return [item for item in self.params.get(key, []) if item]
+
+    def bool_param(self, key: str, default: bool = False) -> bool:
+        raw = self.params.get(key, [str(default).lower()])[0]
+        return str(raw).strip().lower() == "true"
+
+    # --- composites ---------------------------------------------------------
+    def view_budget(self) -> dict:
+        return {"view": self.view(), "budget": self.budget()}
+
+    def task_session(self) -> dict:
+        return {"task_id": self.task_id(), "session_id": self.session_id()}
+
+    def task_session_intent(self) -> dict:
+        out = self.task_session()
+        out["intent"] = self.intent()
+        return out
 
 
 def build_http_route_registry(params: dict, default_workspace: str | None) -> CommandRegistry:
@@ -154,367 +240,368 @@ def build_http_route_registry(params: dict, default_workspace: str | None) -> Co
     )
 
     registry = CommandRegistry(label="HTTP route")
+    rp = RouteParams(params, default_workspace)
 
     # --- workspace status / sniff / artifacts ---------------------------------
     registry.register("/workspace/status", lambda: workspace_status(
-        _require_workspace(params, default_workspace),
-        view=params.get("view", ["compact"])[0],
-        budget=params.get("budget", ["medium"])[0],
+        rp.workspace(),
+        view=rp.view(),
+        budget=rp.budget(),
     ))
     registry.register("/workspace/sniff", lambda: workspace_sniff(
-        _require_workspace(params, default_workspace),
-        _require_one(params, "intent"),
+        rp.workspace(),
+        rp.require('intent'),
         limit=_parse_int(params, "limit", 12),
-        auto_sync_mode=params.get("auto_sync_mode", ["balanced"])[0],
-        view=params.get("view", ["compact"])[0],
-        budget=params.get("budget", ["medium"])[0],
+        auto_sync_mode=rp.auto_sync_mode(),
+        view=rp.view(),
+        budget=rp.budget(),
     ))
     registry.register("/workspace/artifacts", lambda: list_artifacts(
-        _require_workspace(params, default_workspace),
+        rp.workspace(),
     ))
     registry.register("/workspace/artifact", lambda: get_artifact(
-        _require_workspace(params, default_workspace),
-        _require_one(params, "name"),
+        rp.workspace(),
+        rp.require('name'),
     ))
     registry.register("/workspace/artifact/outline", lambda: artifact_outline(
-        _require_workspace(params, default_workspace),
-        _require_one(params, "name"),
+        rp.workspace(),
+        rp.require('name'),
     ))
     registry.register("/workspace/artifact/context", lambda: artifact_context(
-        _require_workspace(params, default_workspace),
-        _require_one(params, "intent"),
+        rp.workspace(),
+        rp.require('intent'),
         limit=_parse_int(params, "limit", 6),
     ))
     registry.register("/workspace/artifact/update", lambda: update_artifact(
-        _require_workspace(params, default_workspace),
-        _require_one(params, "name"),
-        _require_one(params, "content"),
+        rp.workspace(),
+        rp.require('name'),
+        rp.require('content'),
     ))
     registry.register("/workspace/change-log/append", lambda: append_change_log(
-        _require_workspace(params, default_workspace),
-        _require_one(params, "entry"),
+        rp.workspace(),
+        rp.require('entry'),
     ))
     registry.register("/workspace/change-log/compact", lambda: compact_change_log(
-        _require_workspace(params, default_workspace),
+        rp.workspace(),
         keep_recent=_parse_int(params, "keep_recent", 30),
     ))
 
     # --- task spaces ----------------------------------------------------------
     registry.register("/workspace/task-spaces", lambda: list_task_spaces(
-        _require_workspace(params, default_workspace),
-        include_archived=params.get("include_archived", ["false"])[0].lower() == "true",
+        rp.workspace(),
+        include_archived=rp.bool_param("include_archived"),
     ))
     registry.register("/workspace/task-space/resolve", lambda: resolve_task_space(
-        _require_workspace(params, default_workspace),
-        intent=_require_one(params, "intent"),
-        title=params.get("title", [""])[0],
-        create_if_missing=params.get("create_if_missing", ["true"])[0].lower() == "true",
-        include_archived=params.get("include_archived", ["false"])[0].lower() == "true",
+        rp.workspace(),
+        intent=rp.require('intent'),
+        title=rp.title(),
+        create_if_missing=rp.bool_param("create_if_missing", True),
+        include_archived=rp.bool_param("include_archived"),
         limit_candidates=_parse_int(params, "limit_candidates", 3),
         score_threshold=_parse_int(params, "score_threshold", 3),
     ))
     registry.register("/workspace/task-space/create", lambda: create_task_space(
-        _require_workspace(params, default_workspace),
-        title=params.get("title", [""])[0],
-        intent=params.get("intent", [""])[0],
-        owner=params.get("owner", [""])[0],
-        tags=[item for item in params.get("tag", []) if item],
-        priority=params.get("priority", ["medium"])[0],
+        rp.workspace(),
+        title=rp.title(),
+        intent=rp.intent(),
+        owner=rp.get("owner", ""),
+        tags=rp.list_param("tag"),
+        priority=rp.get("priority", "medium"),
     ))
     registry.register("/workspace/task-artifact", lambda: get_task_artifact(
-        _require_workspace(params, default_workspace),
-        _require_one(params, "task_id"),
-        _require_one(params, "name"),
+        rp.workspace(),
+        rp.require('task_id'),
+        rp.require('name'),
     ))
     registry.register("/workspace/task-artifact/update", lambda: update_task_artifact(
-        _require_workspace(params, default_workspace),
-        _require_one(params, "task_id"),
-        _require_one(params, "name"),
-        _require_one(params, "content"),
+        rp.workspace(),
+        rp.require('task_id'),
+        rp.require('name'),
+        rp.require('content'),
     ))
     registry.register("/workspace/task-change-log/append", lambda: append_task_change_log(
-        _require_workspace(params, default_workspace),
-        _require_one(params, "task_id"),
-        _require_one(params, "entry"),
+        rp.workspace(),
+        rp.require('task_id'),
+        rp.require('entry'),
         keep_recent=_parse_int(params, "keep_recent", 30),
     ))
     registry.register("/workspace/task-space/archive", lambda: archive_task_space(
-        _require_workspace(params, default_workspace),
-        _require_one(params, "task_id"),
-        reason=params.get("reason", [""])[0],
+        rp.workspace(),
+        rp.require('task_id'),
+        reason=rp.get("reason", ""),
     ))
     registry.register("/workspace/task-space/status", lambda: update_task_status(
-        _require_workspace(params, default_workspace),
-        _require_one(params, "task_id"),
-        _require_one(params, "status"),
+        rp.workspace(),
+        rp.require('task_id'),
+        rp.require('status'),
     ))
     registry.register("/workspace/task-space/touch-activity", lambda: touch_task_activity(
-        _require_workspace(params, default_workspace),
-        _require_one(params, "task_id"),
-        _require_one(params, "source"),
+        rp.workspace(),
+        rp.require('task_id'),
+        rp.require('source'),
     ))
     registry.register("/workspace/task-spaces/auto-archive", lambda: auto_archive_task_spaces(
-        _require_workspace(params, default_workspace),
+        rp.workspace(),
         retention_days=_parse_int(params, "retention_days", 30),
     ))
     registry.register("/workspace/artifacts/sync-sniff", lambda: workspace_sync_sniff_to_artifacts(
-        _require_workspace(params, default_workspace),
-        _require_one(params, "intent"),
+        rp.workspace(),
+        rp.require('intent'),
         limit=_parse_int(params, "limit", 12),
-        task_id=params.get("task_id", [""])[0],
-        title=params.get("title", [""])[0],
-        auto_sync_mode=params.get("auto_sync_mode", ["balanced"])[0],
+        task_id=rp.task_id(),
+        title=rp.title(),
+        auto_sync_mode=rp.auto_sync_mode(),
     ))
     registry.register("/workspace/artifacts/sync-case", lambda: workspace_sync_case_to_artifacts(
-        _require_workspace(params, default_workspace),
-        _require_one(params, "session_id"),
-        task_id=params.get("task_id", [""])[0],
-        title=params.get("title", [""])[0],
-        auto_sync_mode=params.get("auto_sync_mode", ["balanced"])[0],
+        rp.workspace(),
+        rp.require('session_id'),
+        task_id=rp.task_id(),
+        title=rp.title(),
+        auto_sync_mode=rp.auto_sync_mode(),
     ))
 
     # --- query / search / symbols / call graph --------------------------------
     registry.register("/workspace/query", lambda: memory_query_hybrid(
-        _require_workspace(params, default_workspace),
-        _require_one(params, "text"),
+        rp.workspace(),
+        rp.require('text'),
         limit=_parse_int(params, "limit", 20),
-        project=params.get("project", [""])[0],
+        project=rp.project(),
     ))
     registry.register("/workspace/search-code", lambda: memory_search_code(
-        _require_workspace(params, default_workspace),
-        _require_one(params, "text"),
-        scope=params.get("scope", [""])[0],
+        rp.workspace(),
+        rp.require('text'),
+        scope=rp.get("scope", ""),
         limit=_parse_int(params, "limit", 20),
-        project=params.get("project", [""])[0],
+        project=rp.project(),
     ))
     registry.register("/workspace/lookup-hint", lambda: workspace_lookup_hint(
-        _require_workspace(params, default_workspace),
-        query=_require_one(params, "query"),
-        intent=params.get("intent", [""])[0],
+        rp.workspace(),
+        query=rp.require('query'),
+        intent=rp.intent(),
         limit=_parse_int(params, "limit", 8),
     ))
     registry.register("/workspace/symbol", lambda: memory_symbol(
-        _require_workspace(params, default_workspace),
-        _require_one(params, "name"),
+        rp.workspace(),
+        rp.require('name'),
         limit=_parse_int(params, "limit", 10),
-        project=params.get("project", [""])[0],
-        view=params.get("view", ["compact"])[0],
-        budget=params.get("budget", ["medium"])[0],
+        project=rp.project(),
+        view=rp.view(),
+        budget=rp.budget(),
     ))
     registry.register("/workspace/callers", lambda: memory_callers(
-        _require_workspace(params, default_workspace),
-        _require_one(params, "symbol"),
+        rp.workspace(),
+        rp.require('symbol'),
         depth=_parse_int(params, "depth", 2),
         limit=_parse_int(params, "limit", 80, max_val=500),
-        project=params.get("project", [""])[0],
-        view=params.get("view", ["compact"])[0],
-        budget=params.get("budget", ["medium"])[0],
+        project=rp.project(),
+        view=rp.view(),
+        budget=rp.budget(),
     ))
     registry.register("/workspace/callees", lambda: memory_callees(
-        _require_workspace(params, default_workspace),
-        _require_one(params, "symbol"),
+        rp.workspace(),
+        rp.require('symbol'),
         depth=_parse_int(params, "depth", 2),
         limit=_parse_int(params, "limit", 80, max_val=500),
-        project=params.get("project", [""])[0],
-        view=params.get("view", ["compact"])[0],
-        budget=params.get("budget", ["medium"])[0],
+        project=rp.project(),
+        view=rp.view(),
+        budget=rp.budget(),
     ))
     registry.register("/workspace/plan-change", lambda: memory_plan_change(
-        _require_workspace(params, default_workspace),
-        _require_one(params, "target"),
-        direction=params.get("direction", ["upstream"])[0],
+        rp.workspace(),
+        rp.require('target'),
+        direction=rp.get("direction", "upstream"),
         max_depth=_parse_int(params, "max_depth", 3),
     ))
 
     # --- method walkthrough ---------------------------------------------------
     registry.register("/workspace/method-walkthrough", lambda: memory_method_walkthrough(
-        _require_workspace(params, default_workspace),
-        _require_one(params, "symbol"),
+        rp.workspace(),
+        rp.require('symbol'),
         depth=_parse_int(params, "depth", 4),
         limit=_parse_int(params, "limit", 80),
-        project=params.get("project", [""])[0],
-        view=params.get("view", ["compact"])[0],
-        budget=params.get("budget", ["medium"])[0],
-        report_level=params.get("report_level", ["standard"])[0],
+        project=rp.project(),
+        view=rp.view(),
+        budget=rp.budget(),
+        report_level=rp.report_level(),
     ))
     registry.register("/workspace/walkthrough-health", lambda: memory_walkthrough_health(
-        _require_workspace(params, default_workspace),
-        symbol=params.get("symbol", [""])[0],
-        project=params.get("project", [""])[0],
-        report_level=params.get("report_level", ["standard"])[0],
+        rp.workspace(),
+        symbol=rp.get("symbol", ""),
+        project=rp.project(),
+        report_level=rp.report_level(),
     ))
     registry.register("/workspace/walkthrough-export", lambda: memory_export_walkthrough_artifact(
-        _require_workspace(params, default_workspace),
-        symbol=_require_one(params, "symbol"),
-        project=params.get("project", [""])[0],
-        report_level=params.get("report_level", ["deep"])[0],
-        title=params.get("title", [""])[0],
+        rp.workspace(),
+        symbol=rp.require('symbol'),
+        project=rp.project(),
+        report_level=rp.report_level("deep"),
+        title=rp.title(),
     ))
     registry.register("/workspace/walkthrough-eval", lambda: memory_eval_walkthrough_quality(
-        _require_workspace(params, default_workspace),
-        symbol=_require_one(params, "symbol"),
-        project=params.get("project", [""])[0],
-        report_level=params.get("report_level", ["standard"])[0],
+        rp.workspace(),
+        symbol=rp.require('symbol'),
+        project=rp.project(),
+        report_level=rp.report_level(),
     ))
 
     # --- write pipeline / receipts / replay -----------------------------------
     registry.register("/workspace/memory-write-judge", lambda: memory_write_judge(
-        _require_workspace(params, default_workspace),
-        text=_require_one(params, "text"),
-        source=params.get("source", ["note"])[0],
-        intent=params.get("intent", [""])[0],
-        prefer_layer=params.get("prefer_layer", [""])[0],
-        projects=params.get("project", []) or None,
-        files=params.get("file", []) or None,
+        rp.workspace(),
+        text=rp.require('text'),
+        source=rp.get("source", "note"),
+        intent=rp.intent(),
+        prefer_layer=rp.get("prefer_layer", ""),
+        projects=rp.list_param("project") or None,
+        files=rp.list_param("file") or None,
     ))
     registry.register("/workspace/memory-plan-write", lambda: memory_plan_write(
-        _require_workspace(params, default_workspace),
-        text=_require_one(params, "text"),
-        source=params.get("source", ["note"])[0],
-        intent=params.get("intent", [""])[0],
-        session_id=params.get("session_id", [""])[0],
-        task_id=params.get("task_id", [""])[0],
-        title=params.get("title", [""])[0],
-        prefer_layer=params.get("prefer_layer", [""])[0],
-        projects=params.get("project", []) or None,
-        files=params.get("file", []) or None,
+        rp.workspace(),
+        text=rp.require('text'),
+        source=rp.get("source", "note"),
+        intent=rp.intent(),
+        session_id=rp.session_id(),
+        task_id=rp.task_id(),
+        title=rp.title(),
+        prefer_layer=rp.get("prefer_layer", ""),
+        projects=rp.list_param("project") or None,
+        files=rp.list_param("file") or None,
     ))
     registry.register("/workspace/memory-execute-write", lambda: memory_execute_write(
-        _require_workspace(params, default_workspace),
-        text=_require_one(params, "text"),
-        source=params.get("source", ["note"])[0],
-        intent=params.get("intent", [""])[0],
-        session_id=params.get("session_id", [""])[0],
-        task_id=params.get("task_id", [""])[0],
-        title=params.get("title", [""])[0],
-        prefer_layer=params.get("prefer_layer", [""])[0],
-        projects=params.get("project", []) or None,
-        files=params.get("file", []) or None,
+        rp.workspace(),
+        text=rp.require('text'),
+        source=rp.get("source", "note"),
+        intent=rp.intent(),
+        session_id=rp.session_id(),
+        task_id=rp.task_id(),
+        title=rp.title(),
+        prefer_layer=rp.get("prefer_layer", ""),
+        projects=rp.list_param("project") or None,
+        files=rp.list_param("file") or None,
     ))
     registry.register("/workspace/write-receipts", lambda: workspace_write_receipts(
-        _require_workspace(params, default_workspace),
-        layer=params.get("layer", [""])[0],
-        action=params.get("action", [""])[0],
-        scope=params.get("scope", [""])[0],
-        task_id=params.get("task_id", [""])[0],
-        session_id=params.get("session_id", [""])[0],
+        rp.workspace(),
+        layer=rp.get("layer", ""),
+        action=rp.get("action", ""),
+        scope=rp.get("scope", ""),
+        task_id=rp.task_id(),
+        session_id=rp.session_id(),
         limit=_parse_int(params, "limit", 50),
     ))
     registry.register("/workspace/replay-write-chain", lambda: workspace_replay_write_chain(
-        _require_workspace(params, default_workspace),
-        task_id=params.get("task_id", [""])[0],
-        session_id=params.get("session_id", [""])[0],
+        rp.workspace(),
+        task_id=rp.task_id(),
+        session_id=rp.session_id(),
         limit=_parse_int(params, "limit", 100),
     ))
 
     # --- evaluations ----------------------------------------------------------
     registry.register("/workspace/eval-write-quality", lambda: memory_eval_write_quality(
-        _require_workspace(params, default_workspace),
-        task_id=params.get("task_id", [""])[0],
-        session_id=params.get("session_id", [""])[0],
-        intent=params.get("intent", [""])[0],
+        rp.workspace(),
+        task_id=rp.task_id(),
+        session_id=rp.session_id(),
+        intent=rp.intent(),
         limit=_parse_int(params, "limit", 100),
     ))
     registry.register("/workspace/eval-resume", lambda: memory_eval_resume(
-        _require_workspace(params, default_workspace),
-        task_id=params.get("task_id", [""])[0],
-        session_id=params.get("session_id", [""])[0],
-        intent=params.get("intent", [""])[0],
+        rp.workspace(),
+        task_id=rp.task_id(),
+        session_id=rp.session_id(),
+        intent=rp.intent(),
         limit=_parse_int(params, "limit", 20),
     ))
     registry.register("/workspace/eval-handoff", lambda: memory_eval_handoff(
-        _require_workspace(params, default_workspace),
-        target_model=_require_one(params, "target_model"),
-        task_id=params.get("task_id", [""])[0],
-        session_id=params.get("session_id", [""])[0],
-        intent=params.get("intent", [""])[0],
+        rp.workspace(),
+        target_model=rp.require('target_model'),
+        task_id=rp.task_id(),
+        session_id=rp.session_id(),
+        intent=rp.intent(),
         limit=_parse_int(params, "limit", 20),
     ))
     registry.register("/workspace/eval-regression-suite", lambda: memory_eval_regression_suite(
-        _require_workspace(params, default_workspace),
-        target_model=params.get("target_model", ["codex"])[0],
-        task_id=params.get("task_id", [""])[0],
-        session_id=params.get("session_id", [""])[0],
-        intent=params.get("intent", [""])[0],
+        rp.workspace(),
+        target_model=rp.target_model(),
+        task_id=rp.task_id(),
+        session_id=rp.session_id(),
+        intent=rp.intent(),
         limit=_parse_int(params, "limit", 20),
     ))
     registry.register("/workspace/eval-index-freshness", lambda: memory_eval_index_freshness(
-        _require_workspace(params, default_workspace),
-        scope=params.get("scope", ["all"])[0],
+        rp.workspace(),
+        scope=rp.get("scope", "all"),
     ))
     registry.register("/workspace/eval-tool-adoption", lambda: memory_eval_tool_adoption(
-        _require_workspace(params, default_workspace),
+        rp.workspace(),
         limit=_parse_int(params, "limit", 200),
     ))
     registry.register("/workspace/eval-context-weight", lambda: memory_eval_context_weight(
-        _require_workspace(params, default_workspace),
-        intent=params.get("intent", [""])[0],
+        rp.workspace(),
+        intent=rp.intent(),
         limit=_parse_int(params, "limit", 8),
     ))
     registry.register("/workspace/eval-parser-benchmark", lambda: memory_eval_parser_benchmark(
-        _require_workspace(params, default_workspace),
+        rp.workspace(),
         limit=_parse_int(params, "limit", 200),
         max_findings=_parse_int(params, "max_findings", 20),
     ))
 
     # --- tooling / refs / backend / verify ------------------------------------
     registry.register("/workspace/tool-usage-report", lambda: memory_tool_usage_report(
-        _require_workspace(params, default_workspace),
+        rp.workspace(),
         limit=_parse_int(params, "limit", 200),
     ))
     registry.register("/workspace/ref-get", lambda: memory_ref_get(
-        _require_workspace(params, default_workspace),
-        ref_id=_require_one(params, "ref_id"),
+        rp.workspace(),
+        ref_id=rp.require('ref_id'),
     ))
     registry.register("/workspace/ref-batch", lambda: memory_ref_batch(
-        _require_workspace(params, default_workspace),
-        ref_ids=[item for item in params.get("ref_id", []) if item],
+        rp.workspace(),
+        ref_ids=rp.list_param("ref_id"),
     ))
     registry.register("/workspace/memory-backend-query", lambda: memory_backend_query(
-        _require_workspace(params, default_workspace),
-        collection=params.get("collection", [""])[0],
-        record_id=params.get("record_id", [""])[0],
-        created_after=params.get("created_after", [""])[0],
-        ref_path=params.get("ref_path", [""])[0],
-        project=params.get("project", [""])[0],
-        payload_type=params.get("payload_type", [""])[0],
+        rp.workspace(),
+        collection=rp.get("collection", ""),
+        record_id=rp.get("record_id", ""),
+        created_after=rp.get("created_after", ""),
+        ref_path=rp.get("ref_path", ""),
+        project=rp.project(),
+        payload_type=rp.get("payload_type", ""),
         limit=_parse_int(params, "limit", 50),
     ))
     registry.register("/workspace/verify-checklist", lambda: memory_verify_checklist(
-        _require_workspace(params, default_workspace),
-        _require_one(params, "target"),
+        rp.workspace(),
+        rp.require('target'),
     ))
 
     # --- sessions / recent / evidence -----------------------------------------
     registry.register("/workspace/sessions/recent", lambda: workspace_recent_sessions(
-        _require_workspace(params, default_workspace),
+        rp.workspace(),
         limit=_parse_int(params, "limit", 10),
     ))
     registry.register("/workspace/session/summary", lambda: workspace_session_summary(
-        _require_workspace(params, default_workspace),
-        _require_one(params, "session_id"),
+        rp.workspace(),
+        rp.require('session_id'),
     ))
     registry.register("/workspace/recent-evidence", lambda: workspace_recent_evidence(
-        _require_workspace(params, default_workspace),
-        task_id=params.get("task_id", [""])[0],
-        session_id=params.get("session_id", [""])[0],
+        rp.workspace(),
+        task_id=rp.task_id(),
+        session_id=rp.session_id(),
         limit=_parse_int(params, "limit", 10),
-        budget=params.get("budget", ["medium"])[0],
-        view=params.get("view", ["compact"])[0],
+        budget=rp.budget(),
+        view=rp.view(),
     ))
 
     # --- workflow facades (compound work-* routes) ----------------------------
     def _work_start() -> Dict[str, Any]:
-        ws = _require_workspace(params, default_workspace)
-        intent = _require_one(params, "intent")
-        limit = _parse_int(params, "limit", 8)
-        auto_sync_mode = params.get("auto_sync_mode", ["balanced"])[0]
-        budget = params.get("budget", ["medium"])[0]
+        ws = rp.workspace()
+        intent = rp.require('intent')
+        limit = rp.limit(8)
+        auto_sync_mode = rp.auto_sync_mode()
+        budget = rp.budget()
         sniff_result = workspace_sniff(ws, intent, limit=limit, auto_sync_mode=auto_sync_mode, view="compact", budget=budget)
         synced = None
         resolved_task = sniff_result.get("resolved_task", {}) or {}
         auto_sync = sniff_result.get("auto_sync_recommendation", {}) or {}
-        if params.get("sync_task_space", ["true"])[0].lower() == "true" and (auto_sync.get("recommended") or resolved_task.get("task_id")):
+        if rp.bool_param("sync_task_space", True) and (auto_sync.get("recommended") or resolved_task.get("task_id")):
             synced = workspace_sync_sniff_to_artifacts(
                 ws,
                 intent,
@@ -527,18 +614,18 @@ def build_http_route_registry(params: dict, default_workspace: str | None) -> Co
         return {"workflow": "work-start", "sniff": sniff_result, "sync_sniff": synced, "session": session}
 
     def _work_sync() -> Dict[str, Any]:
-        ws = _require_workspace(params, default_workspace)
-        session_id = params.get("session_id", [""])[0]
-        task_id = params.get("task_id", [""])[0]
-        title = params.get("title", [""])[0]
-        auto_sync_mode = params.get("auto_sync_mode", ["balanced"])[0]
+        ws = rp.workspace()
+        session_id = rp.session_id()
+        task_id = rp.task_id()
+        title = rp.title()
+        auto_sync_mode = rp.auto_sync_mode()
         if session_id:
             return {
                 "workflow": "work-sync",
                 "mode": "case",
                 "result": workspace_sync_case_to_artifacts(ws, session_id, task_id=task_id, title=title, auto_sync_mode=auto_sync_mode),
             }
-        intent = _require_one(params, "intent")
+        intent = rp.require('intent')
         return {
             "workflow": "work-sync",
             "mode": "sniff",
@@ -546,12 +633,12 @@ def build_http_route_registry(params: dict, default_workspace: str | None) -> Co
         }
 
     def _work_resume() -> Dict[str, Any]:
-        ws = _require_workspace(params, default_workspace)
-        task_id = params.get("task_id", [""])[0]
-        session_id = params.get("session_id", [""])[0]
-        intent = params.get("intent", [""])[0]
-        limit = _parse_int(params, "limit", 8)
-        budget = params.get("budget", ["medium"])[0]
+        ws = rp.workspace()
+        task_id = rp.task_id()
+        session_id = rp.session_id()
+        intent = rp.intent()
+        limit = rp.limit(8)
+        budget = rp.budget()
         return {
             "workflow": "work-resume",
             "resume_packet": workspace_resume_packet(ws, task_id=task_id, session_id=session_id, intent=intent, limit=limit, view="compact", budget=budget),
@@ -561,13 +648,13 @@ def build_http_route_registry(params: dict, default_workspace: str | None) -> Co
         }
 
     def _work_handoff() -> Dict[str, Any]:
-        ws = _require_workspace(params, default_workspace)
-        target_model = _require_one(params, "target_model")
-        task_id = params.get("task_id", [""])[0]
-        session_id = params.get("session_id", [""])[0]
-        intent = params.get("intent", [""])[0]
-        limit = _parse_int(params, "limit", 8)
-        budget = params.get("budget", ["medium"])[0]
+        ws = rp.workspace()
+        target_model = rp.require('target_model')
+        task_id = rp.task_id()
+        session_id = rp.session_id()
+        intent = rp.intent()
+        limit = rp.limit(8)
+        budget = rp.budget()
         return {
             "workflow": "work-handoff",
             "handoff_packet": workspace_handoff_packet(ws, target_model=target_model, task_id=task_id, session_id=session_id, intent=intent, limit=limit, view="compact", budget=budget),
@@ -576,14 +663,14 @@ def build_http_route_registry(params: dict, default_workspace: str | None) -> Co
         }
 
     def _work_close() -> Dict[str, Any]:
-        ws = _require_workspace(params, default_workspace)
-        session_id = _require_one(params, "session_id")
-        outcome = params.get("outcome", [""])[0]
-        task_id = params.get("task_id", [""])[0]
-        title = params.get("title", [""])[0]
-        auto_sync_mode = params.get("auto_sync_mode", ["balanced"])[0]
-        record_case = params.get("record_case", ["true"])[0].lower() == "true"
-        ended = workspace_end_session(ws, session_id, outcome=outcome, verified_by=params.get("verified_by", []) or None)
+        ws = rp.workspace()
+        session_id = rp.require('session_id')
+        outcome = rp.get("outcome", "")
+        task_id = rp.task_id()
+        title = rp.title()
+        auto_sync_mode = rp.auto_sync_mode()
+        record_case = rp.bool_param("record_case", True)
+        ended = workspace_end_session(ws, session_id, outcome=outcome, verified_by=rp.list_param("verified_by") or None)
         synced = workspace_sync_case_to_artifacts(ws, session_id, task_id=task_id, title=title, auto_sync_mode=auto_sync_mode)
         draft = workspace_suggest_case(ws, session_id)
         recorded = None
@@ -596,7 +683,7 @@ def build_http_route_registry(params: dict, default_workspace: str | None) -> Co
                 case.get("files", []),
                 case.get("flow", ""),
                 case.get("risk_points", []),
-                verified_by=case.get("verified_by", []) or params.get("verified_by", []) or None,
+                verified_by=case.get("verified_by", []) or rp.list_param("verified_by") or None,
                 source_session_id=session_id,
                 source_task_id=task_id,
             )
@@ -616,10 +703,10 @@ def build_http_route_registry(params: dict, default_workspace: str | None) -> Co
         }
 
     def _work_health() -> Dict[str, Any]:
-        ws = _require_workspace(params, default_workspace)
-        intent = params.get("intent", ["Memory Center work health"])[0]
-        target_model = params.get("target_model", ["codex"])[0]
-        limit = _parse_int(params, "limit", 5)
+        ws = rp.workspace()
+        intent = rp.get("intent", "Memory Center work health")
+        target_model = rp.target_model()
+        limit = rp.limit(5)
         return {
             "workflow": "work-health",
             "status": workspace_status(ws, view="compact", budget="medium"),
@@ -635,98 +722,98 @@ def build_http_route_registry(params: dict, default_workspace: str | None) -> Co
     registry.register("/workspace/work-health", _work_health)
 
     registry.register("/workspace/unresolved-items", lambda: workspace_unresolved_items(
-        _require_workspace(params, default_workspace),
-        task_id=params.get("task_id", [""])[0],
-        session_id=params.get("session_id", [""])[0],
-        intent=params.get("intent", [""])[0],
+        rp.workspace(),
+        task_id=rp.task_id(),
+        session_id=rp.session_id(),
+        intent=rp.intent(),
         limit=_parse_int(params, "limit", 10),
     ))
     registry.register("/workspace/next-actions", lambda: workspace_next_actions(
-        _require_workspace(params, default_workspace),
-        task_id=params.get("task_id", [""])[0],
-        session_id=params.get("session_id", [""])[0],
-        intent=params.get("intent", [""])[0],
+        rp.workspace(),
+        task_id=rp.task_id(),
+        session_id=rp.session_id(),
+        intent=rp.intent(),
         limit=_parse_int(params, "limit", 8),
     ))
     registry.register("/workspace/resume-packet", lambda: workspace_resume_packet(
-        _require_workspace(params, default_workspace),
-        task_id=params.get("task_id", [""])[0],
-        session_id=params.get("session_id", [""])[0],
-        intent=params.get("intent", [""])[0],
+        rp.workspace(),
+        task_id=rp.task_id(),
+        session_id=rp.session_id(),
+        intent=rp.intent(),
         limit=_parse_int(params, "limit", 10),
-        view=params.get("view", ["compact"])[0],
-        budget=params.get("budget", ["medium"])[0],
+        view=rp.view(),
+        budget=rp.budget(),
     ))
     registry.register("/workspace/model-profile", lambda: workspace_model_profile(
-        _require_one(params, "model_name"),
+        rp.require('model_name'),
     ))
     registry.register("/workspace/handoff-packet", lambda: workspace_handoff_packet(
-        _require_workspace(params, default_workspace),
-        target_model=_require_one(params, "target_model"),
-        task_id=params.get("task_id", [""])[0],
-        session_id=params.get("session_id", [""])[0],
-        intent=params.get("intent", [""])[0],
+        rp.workspace(),
+        target_model=rp.require('target_model'),
+        task_id=rp.task_id(),
+        session_id=rp.session_id(),
+        intent=rp.intent(),
         limit=_parse_int(params, "limit", 10),
-        view=params.get("view", ["compact"])[0],
-        budget=params.get("budget", ["medium"])[0],
+        view=rp.view(),
+        budget=rp.budget(),
     ))
     registry.register("/workspace/handoff-history", lambda: workspace_handoff_history(
-        _require_workspace(params, default_workspace),
-        target_model=params.get("target_model", [""])[0],
-        task_id=params.get("task_id", [""])[0],
-        session_id=params.get("session_id", [""])[0],
+        rp.workspace(),
+        target_model=rp.get("target_model", ""),
+        task_id=rp.task_id(),
+        session_id=rp.session_id(),
         limit=_parse_int(params, "limit", 50),
     ))
     registry.register("/workspace/continuity-dashboard", lambda: workspace_continuity_dashboard(
-        _require_workspace(params, default_workspace),
-        intent=params.get("intent", [""])[0],
-        task_id=params.get("task_id", [""])[0],
-        session_id=params.get("session_id", [""])[0],
+        rp.workspace(),
+        intent=rp.intent(),
+        task_id=rp.task_id(),
+        session_id=rp.session_id(),
         limit=_parse_int(params, "limit", 10),
-        view=params.get("view", ["compact"])[0],
-        budget=params.get("budget", ["medium"])[0],
+        view=rp.view(),
+        budget=rp.budget(),
     ))
     registry.register("/workspace/dashboard", lambda: workspace_dashboard(
-        _require_workspace(params, default_workspace),
-        intent=params.get("intent", [""])[0],
+        rp.workspace(),
+        intent=rp.intent(),
         limit=_parse_int(params, "limit", 10),
-        view=params.get("view", ["compact"])[0],
-        budget=params.get("budget", ["medium"])[0],
+        view=rp.view(),
+        budget=rp.budget(),
     ))
     registry.register("/workspace/resume-context", lambda: workspace_resume_context(
-        _require_workspace(params, default_workspace),
-        _require_one(params, "text"),
+        rp.workspace(),
+        rp.require('text'),
         limit=_parse_int(params, "limit", 5),
     ))
     registry.register("/workspace/suggest-case", lambda: workspace_suggest_case(
-        _require_workspace(params, default_workspace),
-        _require_one(params, "session_id"),
+        rp.workspace(),
+        rp.require('session_id'),
     ))
 
     # --- group-level (registry-name based) ------------------------------------
-    registry.register("/group/status", lambda: group_status(_require_one(params, "group")))
+    registry.register("/group/status", lambda: group_status(rp.require('group')))
     registry.register("/group/query", lambda: group_query(
-        _require_one(params, "group"),
-        _require_one(params, "text"),
+        rp.require('group'),
+        rp.require('text'),
         limit=_parse_int(params, "limit", 20),
     ))
     registry.register("/group/impact", lambda: group_impact(
-        _require_one(params, "group"),
-        _require_one(params, "target"),
-        direction=params.get("direction", ["upstream"])[0],
+        rp.require('group'),
+        rp.require('target'),
+        direction=rp.get("direction", "upstream"),
         max_depth=_parse_int(params, "max_depth", 3),
     ))
 
     # --- discover / constraint / audit / drill / consistency / benchmark ------
     registry.register("/workspace/discover", lambda: memory_discover(
-        _require_workspace(params, default_workspace),
+        rp.workspace(),
         limit=_parse_int(params, "limit", 50),
     ))
 
     def _constraint() -> Dict[str, Any]:
         from memory_center.core.templates import get_constraint_template, auto_select_action
-        template = params.get("template", ["coding_agent"])[0]
-        context = params.get("context", [""])[0]
+        template = rp.get("template", "coding_agent")
+        context = rp.get("context", "")
         if context:
             return {"context": context, "template": template, "recommended_action": auto_select_action(context, template)}
         tmpl = get_constraint_template(template)
@@ -737,16 +824,16 @@ def build_http_route_registry(params: dict, default_workspace: str | None) -> Co
     def _audit() -> Dict[str, Any]:
         from memory_center.core.audit.completion import run_completion_audit
         return run_completion_audit(
-            _require_workspace(params, default_workspace),
-            work_package=params.get("work_package", [""])[0],
+            rp.workspace(),
+            work_package=rp.get("work_package", ""),
         )
 
     registry.register("/workspace/audit", _audit)
 
     def _drill_ref() -> Dict[str, Any]:
         from memory_center.core.navigation.drilldown import DrillDownNavigator
-        ws = _require_workspace(params, default_workspace)
-        ref_id = _require_one(params, "ref_id")
+        ws = rp.workspace()
+        ref_id = rp.require('ref_id')
         with DrillDownNavigator(ws) as nav:
             return nav.expand_ref(ref_id)
 
@@ -754,11 +841,11 @@ def build_http_route_registry(params: dict, default_workspace: str | None) -> Co
 
     def _drill_timeline() -> Dict[str, Any]:
         from memory_center.core.navigation.drilldown import DrillDownNavigator
-        ws = _require_workspace(params, default_workspace)
+        ws = rp.workspace()
         with DrillDownNavigator(ws) as nav:
             return nav.drill_timeline(
-                session_id=params.get("session_id", [""])[0],
-                task_id=params.get("task_id", [""])[0],
+                session_id=rp.session_id(),
+                task_id=rp.task_id(),
                 limit=_parse_int(params, "limit", 50),
             )
 
@@ -766,8 +853,8 @@ def build_http_route_registry(params: dict, default_workspace: str | None) -> Co
 
     def _drill_task() -> Dict[str, Any]:
         from memory_center.core.navigation.drilldown import DrillDownNavigator
-        ws = _require_workspace(params, default_workspace)
-        task_id = _require_one(params, "task_id")
+        ws = rp.workspace()
+        task_id = rp.require('task_id')
         with DrillDownNavigator(ws) as nav:
             return nav.drill_task(task_id)
 
@@ -776,7 +863,7 @@ def build_http_route_registry(params: dict, default_workspace: str | None) -> Co
     def _backend_consistency() -> Dict[str, Any]:
         from memory_center.core.store import WorkspaceStore
         from memory_center.core.backend.query import UnifiedBackendQuery
-        ws = _require_workspace(params, default_workspace)
+        ws = rp.workspace()
         store = WorkspaceStore(ws)
         with UnifiedBackendQuery(store.memory_db_path) as backend:
             return backend.check_consistency(store.base_dir)
@@ -786,8 +873,8 @@ def build_http_route_registry(params: dict, default_workspace: str | None) -> Co
     def _benchmark_trend() -> Dict[str, Any]:
         from memory_center.core.benchmark.trending import generate_benchmark_report
         return generate_benchmark_report(
-            _require_workspace(params, default_workspace),
-            function_name=params.get("function_name", [""])[0],
+            rp.workspace(),
+            function_name=rp.get("function_name", ""),
         )
 
     registry.register("/workspace/eval-token-benchmark-trend", _benchmark_trend)
@@ -795,8 +882,8 @@ def build_http_route_registry(params: dict, default_workspace: str | None) -> Co
     def _regression_alerts() -> Dict[str, Any]:
         from memory_center.core.benchmark.trending import check_regression_alerts
         return check_regression_alerts(
-            _require_workspace(params, default_workspace),
-            threshold_pct=float(params.get("threshold_pct", ["10.0"])[0]),
+            rp.workspace(),
+            threshold_pct=float(rp.get("threshold_pct", "10.0")),
         )
 
     registry.register("/workspace/regression-alerts", _regression_alerts)
@@ -804,10 +891,10 @@ def build_http_route_registry(params: dict, default_workspace: str | None) -> Co
     # --- next-phase verification / explanation / business flow ----------------
     def _verification_loop() -> Dict[str, Any]:
         from memory_center.core.verification.loop import VerificationLoop
-        ws = _require_workspace(params, default_workspace)
+        ws = rp.workspace()
         vl = VerificationLoop(ws)
-        task_type = params.get("task_type", ["general"])[0]
-        task_id = params.get("task_id", ["default"])[0]
+        task_type = rp.get("task_type", "general")
+        task_id = rp.get("task_id", "default")
         analysis = {"task_type": task_type, "workspace": ws}
         return {
             "checklist": vl.generate_checklist(analysis),
@@ -818,31 +905,31 @@ def build_http_route_registry(params: dict, default_workspace: str | None) -> Co
 
     def _pattern_promotion() -> Dict[str, Any]:
         from memory_center.core.verification.pattern_promotion import PatternPromotion
-        ws = _require_workspace(params, default_workspace)
+        ws = rp.workspace()
         pp = PatternPromotion(ws)
-        action_type = params.get("action", ["list"])[0]
+        action_type = rp.get("action", "list")
         if action_type == "list":
             return {"proposals": pp.list_proposals()}
         if action_type == "propose":
-            return pp.propose({"rule_text": _require_one(params, "text"), "source": "http"})
+            return pp.propose({"rule_text": rp.require('text'), "source": "http"})
         if action_type == "promote":
-            return pp.promote(_require_one(params, "text"))
+            return pp.promote(rp.require('text'))
         return {"error": f"Unknown action: {action_type}"}
 
     registry.register("/workspace/pattern-promotion", _pattern_promotion)
 
     def _heuristics() -> Dict[str, Any]:
         from memory_center.core.verification.heuristics import HeuristicsRegister
-        ws = _require_workspace(params, default_workspace)
+        ws = rp.workspace()
         hr = HeuristicsRegister(ws)
-        action_type = params.get("action", ["query"])[0]
+        action_type = rp.get("action", "query")
         if action_type == "query":
-            return {"heuristics": hr.query(params.get("text", [""])[0])}
+            return {"heuristics": hr.query(rp.get("text", ""))}
         if action_type in {"record", "feedback", "explain"}:
             try:
-                data = _json.loads(_require_one(params, "text"))
+                data = _json.loads(rp.require('text'))
             except Exception:
-                data = {"pattern": _require_one(params, "text")}
+                data = {"pattern": rp.require('text')}
             if action_type == "record":
                 entry = hr.record(data)
                 return {"status": "recorded", "entry": entry}
@@ -879,34 +966,34 @@ def build_http_route_registry(params: dict, default_workspace: str | None) -> Co
 
     def _workflow_profile() -> Dict[str, Any]:
         from memory_center.core.verification.workflow_profiles import get_workflow_profile
-        return get_workflow_profile(params.get("profile", ["quick-fix"])[0])
+        return get_workflow_profile(rp.get("profile", "quick-fix"))
 
     registry.register("/workspace/workflow-profile", _workflow_profile)
 
     def _workflow_recommend() -> Dict[str, Any]:
         from memory_center.core.verification.workflow_profiles import recommend_workflow_with_learning
-        ws = _require_workspace(params, default_workspace)
-        return recommend_workflow_with_learning(ws, _require_one(params, "description"))
+        ws = rp.workspace()
+        return recommend_workflow_with_learning(ws, rp.require('description'))
 
     registry.register("/workspace/workflow-recommend", _workflow_recommend)
 
     def _bundle_export() -> Dict[str, Any]:
         from memory_center.core.verification.bundle_export import generate_agent_bundle
-        ws = _require_workspace(params, default_workspace)
-        return generate_agent_bundle(ws, agent=params.get("agent", ["codex"])[0])
+        ws = rp.workspace()
+        return generate_agent_bundle(ws, agent=rp.get("agent", "codex"))
 
     registry.register("/workspace/bundle-export", _bundle_export)
 
     def _runtime_audit() -> Dict[str, Any]:
         from memory_center.core.audit.runtime import audit_agent_runtime
-        return audit_agent_runtime(_require_workspace(params, default_workspace))
+        return audit_agent_runtime(rp.workspace())
 
     registry.register("/workspace/runtime-audit", _runtime_audit)
 
     def _explanation() -> Dict[str, Any]:
         from memory_center.core.explanation.schema import Explanation
-        text = _require_one(params, "text")
-        persona = params.get("persona", ["developer"])[0]
+        text = rp.require('text')
+        persona = rp.get("persona", "developer")
         exp = Explanation(subject="explanation", summary=text, persona=persona)
         return exp.adapt_for_persona(persona).to_full()
 
@@ -914,10 +1001,10 @@ def build_http_route_registry(params: dict, default_workspace: str | None) -> Co
 
     def _business_flow() -> Dict[str, Any]:
         from memory_center.core.domain.flow import extract_business_flows_for_workspace
-        ws = _require_workspace(params, default_workspace)
+        ws = rp.workspace()
         return extract_business_flows_for_workspace(
             ws,
-            _require_one(params, "seed"),
+            rp.require('seed'),
             max_depth=_parse_int(params, "max_depth", 4),
         )
 
@@ -925,10 +1012,10 @@ def build_http_route_registry(params: dict, default_workspace: str | None) -> Co
 
     def _business_flow_impact() -> Dict[str, Any]:
         from memory_center.core.domain.flow import business_flow_impact_for_workspace
-        ws = _require_workspace(params, default_workspace)
+        ws = rp.workspace()
         return business_flow_impact_for_workspace(
             ws,
-            _require_one(params, "node_id"),
+            rp.require('node_id'),
             max_depth=_parse_int(params, "max_depth", 3),
         )
 
@@ -936,7 +1023,13 @@ def build_http_route_registry(params: dict, default_workspace: str | None) -> Co
 
     def _metrics_summary() -> Dict[str, Any]:
         from memory_center.core.metrics import MetricsCollector
-        return MetricsCollector().summary()
+        ws = params.get("workspace", [default_workspace])[0]
+        if not ws:
+            return {"summary": {}, "note": "no_workspace_in_context"}
+        metric_name = rp.get("metric_name", "")
+        if not metric_name:
+            return {"summary": {}, "note": "metric_name_required"}
+        return {"summary": MetricsCollector(ws).summary(metric_name)}
 
     registry.register("/workspace/metrics-summary", _metrics_summary)
 
@@ -944,8 +1037,8 @@ def build_http_route_registry(params: dict, default_workspace: str | None) -> Co
         from memory_center.core.onboarding.tour import ArchitectureTourGenerator
         from memory_center.core.storage.unified import UnifiedStore
         from memory_center.core.store import WorkspaceStore
-        ws = _require_workspace(params, default_workspace)
-        persona = params.get("persona", ["developer"])[0]
+        ws = rp.workspace()
+        persona = rp.get("persona", "developer")
         workspace_store = WorkspaceStore(ws)
         unified = UnifiedStore(workspace_store.graph_db_path)
         try:
@@ -959,12 +1052,12 @@ def build_http_route_registry(params: dict, default_workspace: str | None) -> Co
 
     def _context_pack() -> Dict[str, Any]:
         from memory_center.core.context.pack import ContextPackBuilder
-        ws = _require_workspace(params, default_workspace)
+        ws = rp.workspace()
         builder = ContextPackBuilder(ws)
-        query = _require_one(params, "query")
-        intent = params.get("intent", [""])[0]
+        query = rp.require('query')
+        intent = rp.intent()
         budget_tokens = _parse_int(params, "budget_tokens", 8000)
-        limit = _parse_int(params, "limit", 10)
+        limit = rp.limit(10)
         pack = builder.build(query=query, intent=intent or "auto", budget_tokens=budget_tokens, limit=limit)
         return {
             "query": pack.query,
@@ -983,7 +1076,7 @@ def build_http_route_registry(params: dict, default_workspace: str | None) -> Co
 
     def _freshness() -> Dict[str, Any]:
         from memory_center.core.freshness.status import IndexFreshnessService
-        ws = _require_workspace(params, default_workspace)
+        ws = rp.workspace()
         return IndexFreshnessService(ws).banner()
 
     registry.register("/workspace/freshness", _freshness)
@@ -991,17 +1084,17 @@ def build_http_route_registry(params: dict, default_workspace: str | None) -> Co
     # --- workspace-anchored group helpers (load_registry from workspace) ------
     def _workspace_group_status() -> Dict[str, Any]:
         from memory_center.core.registry import load_registry
-        ws = _require_workspace(params, default_workspace)
+        ws = rp.workspace()
         return group_status(load_registry(ws))
 
     registry.register("/workspace/group-status", _workspace_group_status)
 
     def _workspace_group_query() -> Dict[str, Any]:
         from memory_center.core.registry import load_registry
-        ws = _require_workspace(params, default_workspace)
+        ws = rp.workspace()
         return group_query(
             load_registry(ws),
-            query=_require_one(params, "query"),
+            query=rp.require('query'),
             limit=_parse_int(params, "limit", 20),
         )
 
@@ -1009,15 +1102,15 @@ def build_http_route_registry(params: dict, default_workspace: str | None) -> Co
 
     def _workspace_group_impact() -> Dict[str, Any]:
         from memory_center.core.registry import load_registry
-        ws = _require_workspace(params, default_workspace)
-        return group_impact(load_registry(ws), target=_require_one(params, "target"))
+        ws = rp.workspace()
+        return group_impact(load_registry(ws), target=rp.require('target'))
 
     registry.register("/workspace/group-impact", _workspace_group_impact)
 
     def _workspace_group_chain() -> Dict[str, Any]:
         from memory_center.core.registry import load_registry
-        ws = _require_workspace(params, default_workspace)
-        return group_chain(load_registry(ws), symbol=_require_one(params, "symbol"))
+        ws = rp.workspace()
+        return group_chain(load_registry(ws), symbol=rp.require('symbol'))
 
     registry.register("/workspace/group-chain", _workspace_group_chain)
 
