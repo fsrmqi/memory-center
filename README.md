@@ -718,6 +718,44 @@ Report formatting is configurable via `.memory-center/templates/method_walkthrou
 
 `mc_lookup(mode="walkthrough", report_level="brief|standard|deep|risk-focused")` 可控制未配置模板时的内置报告形态。workspace 入参既可以是 `workspace.yaml` 文件，也可以是项目目录；目录会尽量向上解析到 `.memory-center/workspace.yaml`。
 
+Golden Benchmark can also run directly against an existing real workspace:
+
+```bash
+memory-center reindex --workspace examples/golden-benchmark/workspace.yaml
+memory-center eval-golden \
+  --workspace examples/golden-benchmark/workspace.yaml \
+  --cases examples/golden-benchmark/cases.yaml
+```
+
+It also supports an existing real workspace:
+
+```bash
+memory-center eval-golden \
+  --workspace /path/to/.memory-center/workspace.yaml \
+  --cases /path/to/private-cases.yaml
+```
+
+Golden Benchmark 也可以直接对已有真实 workspace 运行：
+
+```bash
+memory-center reindex --workspace examples/golden-benchmark/workspace.yaml
+memory-center eval-golden \
+  --workspace examples/golden-benchmark/workspace.yaml \
+  --cases examples/golden-benchmark/cases.yaml
+```
+
+也支持直接对已有真实 workspace 运行：
+
+```bash
+memory-center eval-golden \
+  --workspace /path/to/.memory-center/workspace.yaml \
+  --cases /path/to/private-cases.yaml
+```
+
+Use [examples/golden-benchmark/cases.template.yaml](/Users/cuijiaqi/Ai-common-skills/memory-center/examples/golden-benchmark/cases.template.yaml) as the public template, then keep real cases in a private local file.
+
+可先用 [examples/golden-benchmark/cases.template.yaml](/Users/cuijiaqi/Ai-common-skills/memory-center/examples/golden-benchmark/cases.template.yaml) 作为公开模板，再把真实 case 维护在你本地私有文件里。
+
 Optional business glossary files `.memory-center/glossary.yaml`, `.memory-center/glossary.yml`, or `.memory-center/business-glossary.yaml` can enrich walkthrough output through `glossary_hits`.
 
 可选的业务词汇文件 `.memory-center/glossary.yaml`、`.memory-center/glossary.yml` 或 `.memory-center/business-glossary.yaml` 会通过 `glossary_hits` 补充链路解释。

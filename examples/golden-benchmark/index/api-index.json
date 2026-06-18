@@ -1,0 +1,1 @@
+[{"project": "article-service", "file": "article-service/src/main/java/com/example/article/ArticleController.java", "controller": "ArticleController", "http_method": "POST", "path": "/article/move", "method_name": "moveArticle"}]

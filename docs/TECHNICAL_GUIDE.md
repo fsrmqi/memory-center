@@ -150,6 +150,13 @@
 
 ### 3.5 辅助层
 
+- `core/benchmark/golden.py`
+  - Golden Benchmark case loading
+  - logical anchor / edge extraction
+  - suite scoring and latency summary
+- `core/benchmark/models.py`
+  - portable `GoldenCase` schema
+  - private-path / unsupported-field guardrails
 - `core/timeline.py`
   - session_event / write_receipt / handoff 统一时间线
 - `core/tracking.py`
@@ -218,6 +225,26 @@
 2. `memory_plan_write`
 3. `memory_execute_write`
 4. write receipt
+
+### 4.5 Golden Benchmark 链路
+
+1. 私有或公开 `cases.yaml`
+2. `run_golden_suite(workspace.yaml, cases.yaml)`
+3. `memory_method_walkthrough` / `memory_query_hybrid`
+4. logical anchor / edge extraction
+5. recall / forbidden-hit / latency 聚合
+6. CLI / MCP / HTTP 统一适配输出
+
+当前适配入口：
+
+- CLI: `memory-center eval-golden --workspace <workspace.yaml> --cases <cases.yaml>`
+- MCP: `mc_admin(action="eval_golden", workspace_file=..., name=<cases.yaml>)`
+- HTTP: `/workspace/eval-golden?workspace=...&cases=...`
+
+说明：
+
+- `cases.yaml` 只保存逻辑 symbol、edge type 和阈值，不保存绝对路径、源码片段或私有业务数据。
+- 如果没有配置 repo 内模板，可以直接传入你本地维护的私有 cases 文件；workspace 可以直接指向真实项目的 `.memory-center/workspace.yaml`。
 5. artifact write audit
 
 ### 4.5 统一后端链路

@@ -111,6 +111,13 @@ def register_analysis_routes(registry: CommandRegistry) -> None:
 
     registry.register("/workspace/runtime-audit", _runtime_audit)
 
+    def _eval_golden(rp: RouteParams) -> Dict[str, Any]:
+        from memory_center.core import benchmark as benchmark_module
+
+        return benchmark_module.run_golden_suite(rp.workspace(), rp.require('cases'))
+
+    registry.register("/workspace/eval-golden", _eval_golden)
+
     def _explanation(rp: RouteParams) -> Dict[str, Any]:
         from memory_center.core.explanation.schema import Explanation
         text = rp.require('text')
@@ -234,4 +241,3 @@ def register_analysis_routes(registry: CommandRegistry) -> None:
         return group_chain(load_registry(ws), symbol=rp.require('symbol'))
 
     registry.register("/workspace/group-chain", _workspace_group_chain)
-

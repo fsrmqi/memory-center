@@ -8,6 +8,14 @@
 
 ## Unreleased
 
+### 3.2.1: Golden Benchmark on Real Workspaces
+
+- 新增 `GoldenCase` / `run_golden_suite()`，支持对真实 `workspace.yaml + cases.yaml` 运行 portable Golden Benchmark。
+- 新增 CLI `memory-center eval-golden`、MCP `mc_admin(action="eval_golden")`、HTTP `/workspace/eval-golden` 三入口适配。
+- Golden evidence extraction 现在能从 walkthrough 的 `same_class_method_continuations`、`local_service_continuations`、`feign_continuations.server_walkthroughs`、`service_impl_continuations` 提取逻辑锚点与边类型。
+- 新增公开示例 `examples/golden-benchmark/`：包含 demo `workspace.yaml`、公开 `cases.yaml` 和私有 benchmark 模板 `cases.template.yaml`。
+- 新增 Golden Benchmark 测试，覆盖 scoring、隐私字段防护、CLI/MCP/HTTP dispatch，以及 public demo suite 真实回归。
+
 ### 3.2.0: Consistency, Incremental Indexing, and Observability
 
 - Unified Backend 新增 observable dual-read，旧镜像、部分 JSONL 和 backend 不可用时回退文件事实源，并返回来源与一致性 diagnostics。

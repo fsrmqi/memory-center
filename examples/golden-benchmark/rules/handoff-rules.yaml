@@ -1,0 +1,41 @@
+default:
+  done_limit: 5
+  next_limit: 5
+  evidence_limit: 5
+  risk_limit: 5
+  include_sections:
+  - what_has_been_done
+  - what_not_to_repeat
+  - what_is_risky
+  - what_to_check_next
+  - minimal_required_context
+  - recent_evidence
+  - notes
+profiles:
+  evidence_first:
+    trigger_models:
+    - deepseek
+    done_limit: 4
+    next_limit: 4
+    evidence_limit: 8
+    risk_limit: 6
+  task_first:
+    trigger_models:
+    - codex
+    - cursor-agent
+    - mimo
+    done_limit: 6
+    next_limit: 6
+    evidence_limit: 4
+    risk_limit: 4
+  summary_first:
+    trigger_models:
+    - glm
+    - qwen
+    - minimax
+    - gemini
+    - claude-code
+    done_limit: 4
+    next_limit: 5
+    evidence_limit: 5
+    risk_limit: 5

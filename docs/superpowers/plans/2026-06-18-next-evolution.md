@@ -53,7 +53,7 @@ def run_golden_suite(workspace_file: str | Path, cases_file: str | Path) -> dict
     ...
 ```
 
-- [ ] **Step 1: Write failing schema and scoring tests**
+- [x] **Step 1: Write failing schema and scoring tests**
 
 ```python
 def test_golden_case_scores_anchor_recall_and_forbidden_hits():
@@ -67,21 +67,21 @@ def test_golden_case_scores_anchor_recall_and_forbidden_hits():
     assert result["passed"] is False
 ```
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 Run: `pytest -q tests/test_golden_benchmark.py`
 
 Expected: FAIL because `golden.py` and the scoring Interface do not exist.
 
-- [ ] **Step 3: Implement portable case loading and scoring**
+- [x] **Step 3: Implement portable case loading and scoring**
 
 只允许保存逻辑 symbol、edge type、耗时和 token，不保存绝对路径、源码片段、公司服务名或业务数据。
 
-- [ ] **Step 4: Add a synthetic multi-service fixture**
+- [x] **Step 4: Add a portable public demo suite and private-case template**
 
-fixture 至少覆盖：入口方法、同类私有方法、Service interface → Impl、Feign → Controller、Controller → Service Impl、最终 repository/data-resource 六层。
+使用仓库公开 `spring-cloud-demo` 作为可复现 demo suite，并提供私有 `cases.template.yaml` 用于真实 workspace。覆盖入口方法、同类私有方法、Service interface → Impl、Feign → Controller、Controller → Service Impl。
 
-- [ ] **Step 5: Expose one shared operation through adapters**
+- [x] **Step 5: Expose one shared operation through adapters**
 
 ```text
 CLI: memory-center eval-golden
@@ -89,7 +89,7 @@ MCP: mc_admin(action="eval_golden")
 HTTP: /workspace/eval-golden
 ```
 
-- [ ] **Step 6: Verify GREEN and set quality gates**
+- [x] **Step 6: Verify GREEN and set quality gates**
 
 Run: `pytest -q tests/test_golden_benchmark.py tests/test_capability_matrix.py`
 

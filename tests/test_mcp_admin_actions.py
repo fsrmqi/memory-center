@@ -34,6 +34,7 @@ def test_build_admin_registry_lists_known_actions() -> None:
         "session_recent",
         "write_judge",
         "eval_regression_suite",
+        "eval_golden",
         "method_walkthrough",
         "metrics_summary",
         "regression_alerts",

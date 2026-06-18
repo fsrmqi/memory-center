@@ -1,0 +1,16 @@
+schema_version: 1
+cases:
+  - case_id: replace-with-stable-id
+    query: com.example.service.DemoService#run
+    mode: walkthrough
+    expected_anchors:
+      - DemoService#run
+      - DemoController#list
+      - DemoServiceImpl#list
+    expected_edges:
+      - CALLS_METHOD
+      - IMPLEMENTS_FEIGN
+      - HANDLES_ENDPOINT
+    forbidden_anchors:
+      - WrongController#list
+    max_latency_ms: 5000

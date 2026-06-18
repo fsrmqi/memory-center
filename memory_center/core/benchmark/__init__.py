@@ -4,6 +4,8 @@ from .baseline import (
     compare_baseline_samples,
     record_baseline_sample,
 )
+from .golden import load_golden_cases, run_golden_suite, score_golden_case
+from .models import GoldenCase
 from .trending import (
     BENCHMARK_BASELINE_FILE,
     BENCHMARK_TREND_FILE,
@@ -15,6 +17,10 @@ from .trending import (
 )
 
 __all__ = [
+    "GoldenCase",
+    "load_golden_cases",
+    "run_golden_suite",
+    "score_golden_case",
     "PORTABLE_BASELINE_FILE",
     "compare_baseline_samples",
     "record_baseline_sample",

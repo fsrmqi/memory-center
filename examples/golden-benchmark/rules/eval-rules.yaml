@@ -1,0 +1,25 @@
+write_quality:
+  penalties:
+    missing_l0: 20
+    missing_l1: 15
+    missing_l2: 30
+    missing_l3: 20
+    no_receipts: 100
+  rule_intent_keywords:
+  - 规则
+  - 规范
+  - invariant
+resume:
+  penalties:
+    missing_current_summary: 30
+    missing_next_actions: 20
+    missing_unresolved_items: 15
+    verification_flag_without_items: 10
+    missing_resume_rule_profile: 10
+handoff:
+  penalties:
+    missing_minimal_context: 30
+    missing_next_checks: 20
+    missing_do_not_repeat: 15
+    missing_handoff_rule_profile: 10
+    missing_model_profile: 10

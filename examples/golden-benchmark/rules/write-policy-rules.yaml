@@ -1,0 +1,71 @@
+default:
+  source_layer_boosts:
+    tool_call:
+      L0_session_events: 3
+    tool_result:
+      L0_session_events: 3
+    user_prompt:
+      L0_session_events: 3
+    note:
+      L0_session_events: 3
+    session_event:
+      L0_session_events: 3
+  keyword_layer_boosts:
+  - keywords:
+    - 经验
+    - 复盘
+    - 教训
+    - 风险
+    - 兼容
+    - 验证
+    - best practice
+    - lessons learned
+    layer: L1_case_atoms
+    score: 4
+    reason: 文本包含经验/风险/验证特征，适合沉淀 L1 case。
+  - keywords:
+    - 任务
+    - 计划
+    - 方案
+    - context
+    - plan
+    - design
+    - change log
+    - 当前
+    - next step
+    - todo
+    layer: L2_task_spaces
+    score: 4
+    reason: 文本包含任务执行上下文特征，适合写入 L2 task space。
+  - keywords:
+    - 团队
+    - 规范
+    - 规则
+    - 约束
+    - invariant
+    - workspace
+    - profile
+    - 迁移策略
+    - migration
+    - governance
+    - guardrail
+    layer: L3_workspace_profile
+    score: 5
+    reason: 文本包含团队规则/架构约束特征，适合写入 L3 workspace profile。
+  intent_layer_boosts:
+  - keywords:
+    - 修复
+    - 改造
+    - 实现
+    - 任务
+    - 需求
+    layer: L2_task_spaces
+    score: 2
+    reason: 当前 intent 偏执行任务，增强 L2 权重。
+  projects_present_boosts:
+    L1_case_atoms: 1
+    L2_task_spaces: 1
+  files_present_boosts:
+    L1_case_atoms: 1
+    L2_task_spaces: 2
+  prefer_layer_boost: 3

@@ -1,0 +1,1 @@
+[{"project": "task-service", "file": "task-service/src/main/java/com/example/task/ArticleMoveConsumer.java", "kind": "kafka", "topic": "article-pubtime-change", "group": "article-move", "class_name": "ArticleMoveConsumer", "method_name": "consume", "topic_placeholder": ""}]

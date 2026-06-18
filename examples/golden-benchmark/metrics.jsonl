@@ -1,0 +1,2 @@
+{"timestamp": "2026-06-18T02:51:14.026108+00:00", "metric": "reindex_workspace.duration", "value": 43.474, "unit": "ms", "tags": {"outcome": "success"}}
+{"timestamp": "2026-06-18T02:51:14.026193+00:00", "metric": "reindex_workspace.result_count", "value": 15, "unit": "count", "tags": {"outcome": "success"}}

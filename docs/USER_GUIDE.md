@@ -138,6 +138,7 @@ memory-center add-to-group ...
 memory-center status --workspace /abs/path/.memory-center/workspace.yaml
 memory-center regression-smoke --workspace /abs/path/.memory-center/workspace.yaml
 memory-center eval-token-benchmark --workspace /abs/path/.memory-center/workspace.yaml
+memory-center eval-golden --workspace /abs/path/.memory-center/workspace.yaml --cases /abs/path/private-cases.yaml
 ```
 
 ## 9. Keep It Small / 如何避免用法膨胀
@@ -206,6 +207,21 @@ result = hybrid_retrieve(graph, workspace_file, query, config=config)
 
 ```bash
 memory-center eval-parser-benchmark --workspace /abs/path/.memory-center/workspace.yaml
+
+### Golden Benchmark / 金标基准
+
+```bash
+memory-center reindex --workspace examples/golden-benchmark/workspace.yaml
+memory-center eval-golden --workspace examples/golden-benchmark/workspace.yaml --cases examples/golden-benchmark/cases.yaml
+
+memory-center eval-golden \
+  --workspace /abs/path/.memory-center/workspace.yaml \
+  --cases /abs/path/private-cases.yaml
+```
+
+- `--workspace` 可以直接指向真实项目的 `.memory-center/workspace.yaml`
+- `--cases` 建议使用本地私有文件，不要把真实业务链路直接提交进仓库
+- 公开模板见 [examples/golden-benchmark/cases.template.yaml](/Users/cuijiaqi/Ai-common-skills/memory-center/examples/golden-benchmark/cases.template.yaml)
 ```
 
 **使用方式**:
