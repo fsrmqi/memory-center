@@ -103,3 +103,17 @@ def test_candidate_apis_does_not_return_method_mismatch() -> None:
     lookup = _build_api_lookup(apis)
     candidates = _candidate_apis_for_feign_method(lookup, feign, method)
     assert [c["http_method"] for c in candidates] == ["POST"]
+
+
+def test_candidate_apis_preserves_generic_request_mapping_semantics() -> None:
+    apis = [
+        {"project": "svc", "http_method": "GET", "path": "/x", "file": ""},
+        {"project": "svc", "http_method": "POST", "path": "/x", "file": ""},
+    ]
+    feign = {"base_path": ""}
+    method = {"http_method": "REQUEST", "path": "/x"}
+
+    candidates = _candidate_apis_for_feign_method(_build_api_lookup(apis), feign, method)
+
+    assert {item["http_method"] for item in candidates} == {"GET", "POST"}
+    assert all(_endpoint_matches(feign, method, item) for item in candidates)

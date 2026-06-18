@@ -21,6 +21,7 @@ from memory_center.core.exporters import (
 )
 from memory_center.core.dispatch import CommandRegistry  # re-exported for compatibility
 from memory_center.http.route_dispatch import (
+    RouteParams,
     build_http_route_registry,
     _parse_int,
     _require_one,
@@ -333,7 +334,7 @@ def _route_request(path: str, params: dict, default_workspace: str | None) -> di
     registry = build_http_route_registry(params, default_workspace)
     if not registry.has(path):
         raise FileNotFoundError(f"Unknown route: {path}")
-    return registry.dispatch(path)
+    return registry.dispatch(path, RouteParams(params, default_workspace))
 
 
 def main() -> None:

@@ -873,8 +873,7 @@ def _build_api_lookup(apis: List[Dict[str, Any]]) -> Dict[tuple[str, str], List[
         method = (api.get("http_method") or "").upper()
         norm = _normalize_path_params((api.get("path") or "").strip("/"))
         lookup.setdefault((method, norm), []).append(api)
-        if method not in _STANDARD_HTTP_METHODS:
-            lookup.setdefault((_API_LOOKUP_WILDCARD, norm), []).append(api)
+        lookup.setdefault((_API_LOOKUP_WILDCARD, norm), []).append(api)
     return lookup
 
 

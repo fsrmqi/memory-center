@@ -74,6 +74,8 @@ def test_parse_payload_handles_json_and_plain_text() -> None:
 
 
 def test_metrics_action_dispatch_through_registry() -> None:
-    reg = build_admin_registry(workspace_file="/tmp/mc-admin-registry-test")
+    reg = build_admin_registry(workspace_file="/tmp/mc-admin-registry-test", name="query_latency")
     payload = reg.dispatch("metrics_summary")
     assert payload.get("workflow") == "mc-metrics"
+    assert payload["summary"]["metric"] == "query_latency"
+    assert payload["summary"]["count"] == 0

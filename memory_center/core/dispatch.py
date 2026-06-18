@@ -16,13 +16,13 @@ class CommandRegistry(Generic[T]):
 
     def __init__(self, *, label: str = "command") -> None:
         self.label = label
-        self._handlers: Dict[str, Callable[[], T]] = {}
+        self._handlers: Dict[str, Callable[..., T]] = {}
 
-    def register(self, name: str, handler: Callable[[], T]) -> "CommandRegistry[T]":
+    def register(self, name: str, handler: Callable[..., T]) -> "CommandRegistry[T]":
         self._handlers[name] = handler
         return self
 
-    def register_many(self, handlers: Dict[str, Callable[[], T]]) -> "CommandRegistry[T]":
+    def register_many(self, handlers: Dict[str, Callable[..., T]]) -> "CommandRegistry[T]":
         self._handlers.update(handlers)
         return self
 
@@ -32,12 +32,12 @@ class CommandRegistry(Generic[T]):
     def names(self) -> list[str]:
         return sorted(self._handlers.keys())
 
-    def dispatch(self, name: str) -> T:
+    def dispatch(self, name: str, *args: Any, **kwargs: Any) -> T:
         handler = self._handlers.get(name)
         if handler is None:
             valid = ", ".join(self.names())
             raise ValueError(f"Unknown {self.label}: {name}. Valid {self.label}s: {valid}")
-        return handler()
+        return handler(*args, **kwargs)
 
 
 ActionRegistry = CommandRegistry[Any]

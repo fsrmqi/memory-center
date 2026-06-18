@@ -161,8 +161,8 @@ def test_method_walkthrough_completes_within_budget(synthetic_workspace_indexed:
     elapsed = time.perf_counter() - start
     # Very generous; in practice should be sub-second on a warm cache.
     assert elapsed < 5.0, f"walkthrough too slow: {elapsed:.2f}s"
-    # Either we found the entry or we returned a structured not_found payload.
-    assert "schema_version" in result
+    assert result.get("found") is True
+    assert result.get("local_steps") or result.get("local_service_continuations")
 
 
 def test_hybrid_retrieve_completes_within_budget(synthetic_workspace_indexed: Path) -> None:

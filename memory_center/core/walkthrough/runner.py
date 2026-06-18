@@ -194,8 +194,8 @@ def build_walkthrough_result(
         _budget_limits,
         _filter_call_edges,
         load_context,
+        summarize_chain_edges,
     )
-    from ..orchestrator.query import _summarize_chain_edges  # behavioural parity
 
     walkthrough_cache = cache or default_walkthrough_cache()
     workspace_file = _wt_escalation.resolve_walkthrough_workspace_input(workspace_file)
@@ -267,7 +267,7 @@ def build_walkthrough_result(
             edge_types={"HANDLES_ENDPOINT", "PRODUCES_TOPIC", "CALLS_METHOD", "CALLS_SERVICE", "IMPLEMENTS_FEIGN", "INJECTS_BEAN"},
         )
     downstream_edges = _filter_call_edges(downstream_edges, direction="downstream")[:limit]
-    downstream_summary = _summarize_chain_edges(downstream_edges)
+    downstream_summary = summarize_chain_edges(downstream_edges)
 
     result: Dict[str, Any] = {
         "schema_version": METHOD_WALKTHROUGH_SCHEMA_VERSION,

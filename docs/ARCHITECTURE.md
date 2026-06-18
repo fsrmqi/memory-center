@@ -257,6 +257,7 @@ memory_center/core/
 │   ├── risks.py         # 性能风险、scope guard、freshness、diff、Mermaid
 │   ├── answer.py        # 模板、summary lines、compact view、agent policy
 │   ├── escalation.py    # workspace 输入解析 / 父级覆盖 / quality score
+│   ├── operations.py    # health / quality / export 编排
 │   └── runner.py        # build_walkthrough_result 端到端组装入口
 ├── benchmark/           # 基准趋势（Phase B）
 │   ├── __init__.py
@@ -292,6 +293,7 @@ memory_center/core/
 - `risks.py`: performance risk detection, data-scope guards, diff context, index freshness, branch outline, and Mermaid flow rendering.
 - `answer.py`: schema/contract, agent policy, anti-patterns, summary lines, compact view, template loading, and answer Markdown rendering.
 - `escalation.py`: workspace input resolution, parent/covering/sibling discovery, quality-score comparison, and bypass feedback.
+- `operations.py`: walkthrough health, quality evaluation, and artifact export orchestration.
 
 `orchestrator/query.py` keeps the public ``memory_method_walkthrough`` /
 ``memory_walkthrough_health`` / ``memory_eval_walkthrough_quality`` /
@@ -309,6 +311,7 @@ existing MCP / HTTP / CLI imports and tests stable.
 - `risks.py`：性能风险、数据范围保护、diff 上下文、索引新鲜度、分支轮廓、Mermaid。
 - `answer.py`：schema/contract、agent policy、反模式、summary lines、compact view、模板加载与 answer Markdown 渲染。
 - `escalation.py`：workspace 输入解析、父级/覆盖/兄弟 workspace 查找、质量分对比、绕过反馈。
+- `operations.py`：walkthrough 健康检查、质量评估和 artifact 导出编排。
 
 `orchestrator/query.py` 只保留公共入口（``memory_method_walkthrough`` /
 ``memory_walkthrough_health`` / ``memory_eval_walkthrough_quality`` /
@@ -325,13 +328,13 @@ Current adapters using this seam:
 
 - MCP: `mc_admin` dispatches through `CommandRegistry(label="mc_admin action")`; `memory_center.mcp.action_registry` remains as a compatibility import.
 - CLI: method walkthrough commands dispatch through a walkthrough command registry.
-- HTTP: every JSON route lives in ``memory_center.http.route_dispatch.build_http_route_registry``. ``server._route_request`` only handles ``/health`` and unknown-route errors, then dispatches through ``CommandRegistry``.
+- HTTP: ``build_http_route_registry`` returns one process-wide registry composed from the ``workspace``, ``workflow``, and ``analysis`` route-family Modules under ``memory_center.http.routes``. Request-specific ``RouteParams`` are supplied at dispatch time, so the adapter does not rebuild every handler per request. ``server._route_request`` only handles ``/health`` and unknown-route errors.
 
 当前已接入的 adapter：
 
 - MCP：`mc_admin` 通过 `CommandRegistry(label="mc_admin action")` 分发；`memory_center.mcp.action_registry` 保留为兼容导入路径。
 - CLI：method walkthrough 相关命令通过 walkthrough command registry 分发。
-- HTTP：所有 JSON route 都注册在 ``memory_center.http.route_dispatch.build_http_route_registry``。``server._route_request`` 只处理 ``/health`` 与未知路径错误，其它请求统一走 ``CommandRegistry`` 分发。
+- HTTP：``build_http_route_registry`` 返回进程级单例 registry，由 ``memory_center.http.routes`` 下的 ``workspace``、``workflow``、``analysis`` 三个 route-family Module 组合。请求级 ``RouteParams`` 在 dispatch 时传入，不再为每个请求重建全部 handler。``server._route_request`` 只处理 ``/health`` 与未知路径错误。
 
 The seam is intentionally not a framework. It is a small deep Module: deleting it would push unknown-action errors, valid-name listing, and handler maps back into every adapter.
 
@@ -342,7 +345,7 @@ The seam is intentionally not a framework. It is a small deep Module: deleting i
 The following work is intentionally documented as follow-up scope so it can be implemented in smaller, verifiable changes:
 
 - `P2` Migrate the remaining handful of low-frequency walkthrough helpers to ``core/walkthrough/`` if they grow new responsibilities; today the orchestrator only keeps the public facade and a thin ``lookup_provider`` / ``escalation_runner`` plumbing.
-- `P2` Watch ``memory_center/http/route_dispatch.py`` for repeated optional flags. ``RouteParams`` already collapses ``view`` / ``budget`` / ``task_id`` / ``session_id`` / ``intent`` / ``project`` / ``auto_sync_mode`` / ``report_level`` etc.; if a new family of routes starts copying the same multi-line param block, extend ``RouteParams`` instead of bringing back ``params.get`` literals.
+- `P2` Watch ``memory_center/http/routes/`` for repeated optional flags. ``RouteParams`` already collapses ``view`` / ``budget`` / ``task_id`` / ``session_id`` / ``intent`` / ``project`` / ``auto_sync_mode`` / ``report_level`` etc.; extend it instead of bringing back repeated ``params.get`` literals.
 - `P2` Keep ``mc_admin`` action coverage in lockstep with the registry: ``tests/test_mcp_admin_actions.py`` is the canonical seam test; new actions should be added there rather than relying on the FastMCP shape test.
 - `P2` Keep retrieval fusion regression coverage in ``tests/test_hybrid_fusion_purity.py``. ``_merge_retrieval_results`` and ``_apply_type_boosting`` default to deep copies; if a future optimisation reintroduces in-place mutation, gate it behind an explicit flag and add a parallel purity test.
 - `P2` Maintain the indexed Feign↔API and field-by-class lookups in ``indexer.py``. ``tests/test_indexer_perf.py`` asserts indexed lookup remains at least 5x faster than a linear scan; if a refactor regresses that ratio, restore the index before merging.
@@ -353,7 +356,7 @@ The following work is intentionally documented as follow-up scope so it can be i
 以下工作作为后续范围记录，便于小步实现和验证：
 
 - `P2` 当 walkthrough 子模块再出现新的轻量 helper 时，优先放到 ``core/walkthrough/``；目前 orchestrator 只保留公共 facade 与 ``lookup_provider`` / ``escalation_runner`` 的粘合。
-- `P2` 关注 ``memory_center/http/route_dispatch.py`` 的可选参数重复。``RouteParams`` 已经把 ``view`` / ``budget`` / ``task_id`` / ``session_id`` / ``intent`` / ``project`` / ``auto_sync_mode`` / ``report_level`` 等收口；如果新增的一批 route 又开始照抄多行 ``params.get`` 块，应该扩 ``RouteParams`` 而不是把字面量写回来。
+- `P2` 关注 ``memory_center/http/routes/`` 的可选参数重复。``RouteParams`` 已经把 ``view`` / ``budget`` / ``task_id`` / ``session_id`` / ``intent`` / ``project`` / ``auto_sync_mode`` / ``report_level`` 等收口；应扩 ``RouteParams``，不要重新复制 ``params.get`` 字面量。
 - `P2` ``mc_admin`` action 覆盖度与 registry 同步：``tests/test_mcp_admin_actions.py`` 是规范化的 seam 测试，新 action 应在这里加测试，而不是依赖 FastMCP 形状检测。
 - `P2` 保留 ``tests/test_hybrid_fusion_purity.py``：``_merge_retrieval_results`` 与 ``_apply_type_boosting`` 默认是纯函数（deep copy）。如果未来出于性能重新引入原地修改，必须挂在显式开关后并补一组对应的纯函数测试。
 - `P2` 维护 ``indexer.py`` 中的 Feign↔API 与 field-by-class 索引 lookup。``tests/test_indexer_perf.py`` 要求索引 lookup 至少比线性扫描快 5 倍；任何回归这个比例的改动都应在合入前恢复索引。

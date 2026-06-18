@@ -430,7 +430,7 @@ def build_admin_registry(
         "explanation": lambda: explanation_action(text, persona=intent or "developer"),
         "business_flow": lambda: business_flow_action(wf, name, max_depth),
         "business_flow_impact": lambda: business_flow_impact_action(wf, intent or text, max_depth),
-        "metrics_summary": lambda: metrics_summary_action(wf),
+        "metrics_summary": lambda: metrics_summary_action(wf, name),
         "regression_alerts": lambda: regression_alerts_action(wf, name),
     })
     return registry

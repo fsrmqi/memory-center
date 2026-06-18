@@ -52,6 +52,46 @@ def _is_compact_view(view: str) -> bool:
     return (view or "").strip().lower() == "compact"
 
 
+def summarize_chain_edges(edges: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Build the shared compact representation of graph edges."""
+    items: List[Dict[str, Any]] = []
+    type_counts: Dict[str, int] = {}
+    for edge in edges:
+        edge_type = str(edge.get("type", "") or "")
+        type_counts[edge_type] = type_counts.get(edge_type, 0) + 1
+        source = edge.get("source", {}) or {}
+        target = edge.get("target", {}) or {}
+
+        def endpoint(node: Dict[str, Any]) -> str:
+            name = str(node.get("name", "") or "?")
+            line = int(node.get("line", 0) or 0)
+            return f"{name}:{line}" if line > 0 else name
+
+        items.append(
+            {
+                "text": f"{endpoint(source)} --{edge_type}--> {endpoint(target)}",
+                "type": edge_type,
+                "depth": int(edge.get("depth", 0) or 0),
+                "source": {
+                    "name": source.get("name", ""),
+                    "line": int(source.get("line", 0) or 0),
+                    "project": source.get("project", ""),
+                },
+                "target": {
+                    "name": target.get("name", ""),
+                    "line": int(target.get("line", 0) or 0),
+                    "project": target.get("project", ""),
+                },
+            }
+        )
+    return {
+        "items": items,
+        "total_edges": len(edges),
+        "depth_reached": max((int(edge.get("depth", 0) or 0) for edge in edges), default=0),
+        "type_counts": type_counts,
+    }
+
+
 def _normalize_budget(budget: str) -> str:
     value = (budget or "medium").strip().lower()
     return value if value in {"tiny", "small", "medium", "large"} else "medium"

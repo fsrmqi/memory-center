@@ -1,0 +1,307 @@
+from __future__ import annotations
+
+from memory_center.core.dispatch import CommandRegistry
+
+from .dependencies import *  # noqa: F403
+from .params import RouteParams, _parse_int
+
+
+def register_workflow_routes(registry: CommandRegistry) -> None:
+    # --- workflow facades (compound work-* routes) ----------------------------
+    def _work_start(rp: RouteParams) -> Dict[str, Any]:
+        ws = rp.workspace()
+        intent = rp.require('intent')
+        limit = rp.limit(8)
+        auto_sync_mode = rp.auto_sync_mode()
+        budget = rp.budget()
+        sniff_result = workspace_sniff(ws, intent, limit=limit, auto_sync_mode=auto_sync_mode, view="compact", budget=budget)
+        synced = None
+        resolved_task = sniff_result.get("resolved_task", {}) or {}
+        auto_sync = sniff_result.get("auto_sync_recommendation", {}) or {}
+        if rp.bool_param("sync_task_space", True) and (auto_sync.get("recommended") or resolved_task.get("task_id")):
+            synced = workspace_sync_sniff_to_artifacts(
+                ws,
+                intent,
+                limit=limit,
+                task_id=str(resolved_task.get("task_id", "") or ""),
+                title=str(resolved_task.get("title", "") or ""),
+                auto_sync_mode=auto_sync_mode,
+            )
+        session = workspace_start_session(ws, intent)
+        return {"workflow": "work-start", "sniff": sniff_result, "sync_sniff": synced, "session": session}
+
+    def _work_sync(rp: RouteParams) -> Dict[str, Any]:
+        ws = rp.workspace()
+        session_id = rp.session_id()
+        task_id = rp.task_id()
+        title = rp.title()
+        auto_sync_mode = rp.auto_sync_mode()
+        if session_id:
+            return {
+                "workflow": "work-sync",
+                "mode": "case",
+                "result": workspace_sync_case_to_artifacts(ws, session_id, task_id=task_id, title=title, auto_sync_mode=auto_sync_mode),
+            }
+        intent = rp.require('intent')
+        return {
+            "workflow": "work-sync",
+            "mode": "sniff",
+            "result": workspace_sync_sniff_to_artifacts(ws, intent, limit=_parse_int(rp.params, "limit", 8), task_id=task_id, title=title, auto_sync_mode=auto_sync_mode),
+        }
+
+    def _work_resume(rp: RouteParams) -> Dict[str, Any]:
+        ws = rp.workspace()
+        task_id = rp.task_id()
+        session_id = rp.session_id()
+        intent = rp.intent()
+        limit = rp.limit(8)
+        budget = rp.budget()
+        return {
+            "workflow": "work-resume",
+            "resume_packet": workspace_resume_packet(ws, task_id=task_id, session_id=session_id, intent=intent, limit=limit, view="compact", budget=budget),
+            "next_actions": workspace_next_actions(ws, task_id=task_id, session_id=session_id, intent=intent, limit=limit),
+            "unresolved_items": workspace_unresolved_items(ws, task_id=task_id, session_id=session_id, intent=intent, limit=limit),
+            "recent_evidence": workspace_recent_evidence(ws, task_id=task_id, session_id=session_id, limit=min(limit, 5), budget=budget, view="compact"),
+        }
+
+    def _work_handoff(rp: RouteParams) -> Dict[str, Any]:
+        ws = rp.workspace()
+        target_model = rp.require('target_model')
+        task_id = rp.task_id()
+        session_id = rp.session_id()
+        intent = rp.intent()
+        limit = rp.limit(8)
+        budget = rp.budget()
+        return {
+            "workflow": "work-handoff",
+            "handoff_packet": workspace_handoff_packet(ws, target_model=target_model, task_id=task_id, session_id=session_id, intent=intent, limit=limit, view="compact", budget=budget),
+            "recent_evidence": workspace_recent_evidence(ws, task_id=task_id, session_id=session_id, limit=min(limit, 5), budget=budget, view="compact"),
+            "tool_usage_report": memory_tool_usage_report(ws, limit=50),
+        }
+
+    def _work_close(rp: RouteParams) -> Dict[str, Any]:
+        ws = rp.workspace()
+        session_id = rp.require('session_id')
+        outcome = rp.get("outcome", "")
+        task_id = rp.task_id()
+        title = rp.title()
+        auto_sync_mode = rp.auto_sync_mode()
+        record_case = rp.bool_param("record_case", True)
+        ended = workspace_end_session(ws, session_id, outcome=outcome, verified_by=rp.list_param("verified_by") or None)
+        synced = workspace_sync_case_to_artifacts(ws, session_id, task_id=task_id, title=title, auto_sync_mode=auto_sync_mode)
+        draft = workspace_suggest_case(ws, session_id)
+        recorded = None
+        case = draft.get("draft_case", {}) if draft.get("found") else {}
+        if record_case and case.get("projects") and case.get("files"):
+            recorded = workspace_record_case(
+                ws,
+                case.get("task", outcome or "work-close"),
+                case.get("projects", []),
+                case.get("files", []),
+                case.get("flow", ""),
+                case.get("risk_points", []),
+                verified_by=case.get("verified_by", []) or rp.list_param("verified_by") or None,
+                source_session_id=session_id,
+                source_task_id=task_id,
+            )
+        candidate_feedback = workspace_record_close_feedback(
+            ws,
+            session_id,
+            task_id=task_id,
+            source="work_close_auto",
+        )
+        return {
+            "workflow": "work-close",
+            "ended": ended,
+            "sync_case": synced,
+            "suggested_case": draft,
+            "record_case": recorded,
+            "candidate_feedback": candidate_feedback,
+        }
+
+    def _work_health(rp: RouteParams) -> Dict[str, Any]:
+        ws = rp.workspace()
+        intent = rp.get("intent", "Memory Center work health")
+        target_model = rp.target_model()
+        limit = rp.limit(5)
+        return {
+            "workflow": "work-health",
+            "status": workspace_status(ws, view="compact", budget="medium"),
+            "tool_usage_report": memory_tool_usage_report(ws, limit=50),
+            "regression_suite": memory_eval_regression_suite(ws, intent=intent, target_model=target_model, limit=limit),
+        }
+
+    registry.register("/workspace/work-start", _work_start)
+    registry.register("/workspace/work-sync", _work_sync)
+    registry.register("/workspace/work-resume", _work_resume)
+    registry.register("/workspace/work-handoff", _work_handoff)
+    registry.register("/workspace/work-close", _work_close)
+    registry.register("/workspace/work-health", _work_health)
+
+    registry.register("/workspace/unresolved-items", lambda rp: workspace_unresolved_items(
+        rp.workspace(),
+        task_id=rp.task_id(),
+        session_id=rp.session_id(),
+        intent=rp.intent(),
+        limit=_parse_int(rp.params, "limit", 10),
+    ))
+    registry.register("/workspace/next-actions", lambda rp: workspace_next_actions(
+        rp.workspace(),
+        task_id=rp.task_id(),
+        session_id=rp.session_id(),
+        intent=rp.intent(),
+        limit=_parse_int(rp.params, "limit", 8),
+    ))
+    registry.register("/workspace/resume-packet", lambda rp: workspace_resume_packet(
+        rp.workspace(),
+        task_id=rp.task_id(),
+        session_id=rp.session_id(),
+        intent=rp.intent(),
+        limit=_parse_int(rp.params, "limit", 10),
+        view=rp.view(),
+        budget=rp.budget(),
+    ))
+    registry.register("/workspace/model-profile", lambda rp: workspace_model_profile(
+        rp.require('model_name'),
+    ))
+    registry.register("/workspace/handoff-packet", lambda rp: workspace_handoff_packet(
+        rp.workspace(),
+        target_model=rp.require('target_model'),
+        task_id=rp.task_id(),
+        session_id=rp.session_id(),
+        intent=rp.intent(),
+        limit=_parse_int(rp.params, "limit", 10),
+        view=rp.view(),
+        budget=rp.budget(),
+    ))
+    registry.register("/workspace/handoff-history", lambda rp: workspace_handoff_history(
+        rp.workspace(),
+        target_model=rp.get("target_model", ""),
+        task_id=rp.task_id(),
+        session_id=rp.session_id(),
+        limit=_parse_int(rp.params, "limit", 50),
+    ))
+    registry.register("/workspace/continuity-dashboard", lambda rp: workspace_continuity_dashboard(
+        rp.workspace(),
+        intent=rp.intent(),
+        task_id=rp.task_id(),
+        session_id=rp.session_id(),
+        limit=_parse_int(rp.params, "limit", 10),
+        view=rp.view(),
+        budget=rp.budget(),
+    ))
+    registry.register("/workspace/dashboard", lambda rp: workspace_dashboard(
+        rp.workspace(),
+        intent=rp.intent(),
+        limit=_parse_int(rp.params, "limit", 10),
+        view=rp.view(),
+        budget=rp.budget(),
+    ))
+    registry.register("/workspace/resume-context", lambda rp: workspace_resume_context(
+        rp.workspace(),
+        rp.require('text'),
+        limit=_parse_int(rp.params, "limit", 5),
+    ))
+    registry.register("/workspace/suggest-case", lambda rp: workspace_suggest_case(
+        rp.workspace(),
+        rp.require('session_id'),
+    ))
+
+    # --- group-level (registry-name based) ------------------------------------
+    registry.register("/group/status", lambda rp: group_status(rp.require('group')))
+    registry.register("/group/query", lambda rp: group_query(
+        rp.require('group'),
+        rp.require('text'),
+        limit=_parse_int(rp.params, "limit", 20),
+    ))
+    registry.register("/group/impact", lambda rp: group_impact(
+        rp.require('group'),
+        rp.require('target'),
+        direction=rp.get("direction", "upstream"),
+        max_depth=_parse_int(rp.params, "max_depth", 3),
+    ))
+
+    # --- discover / constraint / audit / drill / consistency / benchmark ------
+    registry.register("/workspace/discover", lambda rp: memory_discover(
+        rp.workspace(),
+        limit=_parse_int(rp.params, "limit", 50),
+    ))
+
+    def _constraint(rp: RouteParams) -> Dict[str, Any]:
+        from memory_center.core.templates import get_constraint_template, auto_select_action
+        template = rp.get("template", "coding_agent")
+        context = rp.get("context", "")
+        if context:
+            return {"context": context, "template": template, "recommended_action": auto_select_action(context, template)}
+        tmpl = get_constraint_template(template)
+        return tmpl or {"error": f"Unknown template: {template}"}
+
+    registry.register("/workspace/constraint", _constraint)
+
+    def _audit(rp: RouteParams) -> Dict[str, Any]:
+        from memory_center.core.audit.completion import run_completion_audit
+        return run_completion_audit(
+            rp.workspace(),
+            work_package=rp.get("work_package", ""),
+        )
+
+    registry.register("/workspace/audit", _audit)
+
+    def _drill_ref(rp: RouteParams) -> Dict[str, Any]:
+        from memory_center.core.navigation.drilldown import DrillDownNavigator
+        ws = rp.workspace()
+        ref_id = rp.require('ref_id')
+        with DrillDownNavigator(ws) as nav:
+            return nav.expand_ref(ref_id)
+
+    registry.register("/workspace/drill-ref", _drill_ref)
+
+    def _drill_timeline(rp: RouteParams) -> Dict[str, Any]:
+        from memory_center.core.navigation.drilldown import DrillDownNavigator
+        ws = rp.workspace()
+        with DrillDownNavigator(ws) as nav:
+            return nav.drill_timeline(
+                session_id=rp.session_id(),
+                task_id=rp.task_id(),
+                limit=_parse_int(rp.params, "limit", 50),
+            )
+
+    registry.register("/workspace/drill-timeline", _drill_timeline)
+
+    def _drill_task(rp: RouteParams) -> Dict[str, Any]:
+        from memory_center.core.navigation.drilldown import DrillDownNavigator
+        ws = rp.workspace()
+        task_id = rp.require('task_id')
+        with DrillDownNavigator(ws) as nav:
+            return nav.drill_task(task_id)
+
+    registry.register("/workspace/drill-task", _drill_task)
+
+    def _backend_consistency(rp: RouteParams) -> Dict[str, Any]:
+        from memory_center.core.store import WorkspaceStore
+        from memory_center.core.backend.query import UnifiedBackendQuery
+        ws = rp.workspace()
+        store = WorkspaceStore(ws)
+        with UnifiedBackendQuery(store.memory_db_path) as backend:
+            return backend.check_consistency(store.base_dir)
+
+    registry.register("/workspace/backend-consistency", _backend_consistency)
+
+    def _benchmark_trend(rp: RouteParams) -> Dict[str, Any]:
+        from memory_center.core.benchmark.trending import generate_benchmark_report
+        return generate_benchmark_report(
+            rp.workspace(),
+            function_name=rp.get("function_name", ""),
+        )
+
+    registry.register("/workspace/eval-token-benchmark-trend", _benchmark_trend)
+
+    def _regression_alerts(rp: RouteParams) -> Dict[str, Any]:
+        from memory_center.core.benchmark.trending import check_regression_alerts
+        return check_regression_alerts(
+            rp.workspace(),
+            threshold_pct=float(rp.get("threshold_pct", "10.0")),
+        )
+
+    registry.register("/workspace/regression-alerts", _regression_alerts)
+
