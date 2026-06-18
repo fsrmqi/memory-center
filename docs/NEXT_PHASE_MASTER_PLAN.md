@@ -755,6 +755,12 @@ V3 不是“未来方向”，而是当前代码里已经存在的一批能力�
 
 ## 10. 本轮实施记录 / Implementation Log (2026-06-04)
 
+下一阶段的可执行计划已拆分到：
+
+- [Memory Center Next Evolution Implementation Plan](./superpowers/plans/2026-06-18-next-evolution.md)
+
+执行顺序为 Golden Benchmark、Reasoning Pipeline、Parser 差异评测、自适应检索、Agent 使用体验闭环。后续优化必须先通过 Golden Benchmark 证明准确率、延迟或 token 收益。
+
 ### Phase A: Ontology 约束层 ✅
 
 **改动文件**：`memory_center/core/ontology.py`, `memory_center/core/retrieval/hybrid.py`, `memory_center/core/orchestrator/query.py`
