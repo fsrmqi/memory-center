@@ -181,7 +181,12 @@
 - `core/ontology.py`
   - Code KG ontology node / edge typing
 - `core/reasoning/*`
-  - pattern / transitive / risk reasoning
+  - `models.py`: immutable `ReasoningRequest`
+  - `pipeline.py`: fact / inferred / derived orchestration, global evidence budget, deduplication and partial degradation
+  - `patterns.py`: workspace-level structural scans
+  - `transitive.py`: bounded breadth traversal for target call chains
+  - `risk.py`: target-level change risk
+  - `integration.py`: canonical/legacy compatibility views
 - `core/storage/*`
   - unified store / SQLite pool / vector index
 - `core/onboarding/*`

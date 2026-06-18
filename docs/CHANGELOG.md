@@ -8,6 +8,16 @@
 
 ## Unreleased
 
+### 3.3.0: Evidence-Bounded Reasoning Pipeline / 证据预算化推理管线
+
+- 新增 `ReasoningRequest` 与 `ReasoningPipeline`，统一事实、推断和派生结论，并为每条非事实结论返回来源、关系、置信度和 `why`。
+- `memory_context`、`memory_impact` 和 method walkthrough 现在复用同一 Pipeline；原 `patterns` / `transitive` / `risk` 字段继续保留，MCP tool schema、CLI 和 HTTP 路径不变。
+- compact 输出保留最多两条 facts / inferences / derived 及质量摘要，避免 reasoning 结果挤占主链路上下文。
+- 目标级 context / impact / walkthrough 跳过全工作区 pattern scan；workspace audit 仍可运行全局模式。
+- 传递推理从路径爆炸型递归 CTE 改为有界分层批量遍历。私有真实 workspace Golden Benchmark 保持 anchor/edge recall `100%`、forbidden hit `0`，延迟 `2.82s`，额外 token 约 `1.7%`。
+
+English summary: reasoning now has one evidence-bounded pipeline, additive facade integration, compact canonical output, and bounded transitive traversal for large graphs.
+
 ### 3.2.1: Golden Benchmark on Real Workspaces
 
 - 新增 `GoldenCase` / `run_golden_suite()`，支持对真实 `workspace.yaml + cases.yaml` 运行 portable Golden Benchmark。

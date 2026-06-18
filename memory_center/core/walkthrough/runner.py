@@ -324,6 +324,29 @@ def build_walkthrough_result(
     )
     result["branch_outline"] = _wt_risks.build_walkthrough_branch_outline(result)
     result["mermaid_flow"] = _wt_risks.build_method_walkthrough_mermaid(result)
+    try:
+        from ..reasoning.integration import canonical_reasoning_view, run_reasoning_patterns
+
+        result["_reasoning"] = canonical_reasoning_view(
+            run_reasoning_patterns(
+                str(workspace_file),
+                target_id=target["node_id"],
+                target_name=symbol,
+                max_transitive_depth=depth,
+                max_pattern_limit=min(8, max(1, limit)),
+                intent="walkthrough",
+            )
+        )
+    except Exception as exc:
+        from ..diagnostics import DIAG, diag_entry
+
+        result["_reasoning"] = {
+            "facts": [],
+            "inferences": [],
+            "derived": [],
+            "quality": {"status": "unavailable", "verification_required": False},
+            "_diagnostics": {"pipeline": diag_entry(DIAG.UNAVAILABLE, exc=exc)},
+        }
 
     if allow_workspace_escalation and escalation_runner is not None:
         escalated = escalation_runner(

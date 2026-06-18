@@ -722,6 +722,7 @@ def memory_context(
             str(workspace_file),
             target_id=node.get("id", ""),
             target_name=name,
+            intent="context",
         )
     except Exception as exc:
         diagnostics["reasoning"] = diag_entry(DIAG.UNAVAILABLE, exc=exc)
@@ -2091,6 +2092,7 @@ def _compact_symbol_result(result: Dict[str, Any], budget: str = "medium") -> Di
 
 def _compact_context_result(result: Dict[str, Any], budget: str = "medium") -> Dict[str, Any]:
     from .common import _budget_limits
+    from ..reasoning.integration import compact_reasoning_view
 
     limits = _budget_limits(budget)
     node = result.get("node", {}) or {}
@@ -2153,6 +2155,7 @@ def _compact_context_result(result: Dict[str, Any], budget: str = "medium") -> D
                 for item in (lookup.get("entrypoints", []) or [])[: limits["events"]]
             ],
         },
+        "_reasoning": compact_reasoning_view(result.get("_reasoning", {}), limit=2),
     }
 
 

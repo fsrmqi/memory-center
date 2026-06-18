@@ -61,6 +61,7 @@ def method_walkthrough_fields_contract() -> Dict[str, Any]:
             "branch_outline",
             "anti_patterns",
             "cache",
+            "_reasoning",
         ],
         "compatibility": "additive_fields_only",
     }
@@ -180,6 +181,7 @@ def build_method_walkthrough_summary_lines(
 
 def compact_method_walkthrough_result(result: Dict[str, Any], budget: str = "medium", *, cache_ttl_seconds: int = 15) -> Dict[str, Any]:
     from ..orchestrator.common import _budget_limits
+    from ..reasoning.integration import compact_reasoning_view
 
     limits = _budget_limits(budget)
     target = result.get("target", {}) or {}
@@ -221,6 +223,7 @@ def compact_method_walkthrough_result(result: Dict[str, Any], budget: str = "med
         "agent_usage_policy": result.get("agent_usage_policy", build_method_walkthrough_agent_policy()),
         "next_actions": (result.get("next_actions", []) or [])[:3],
         "limitations": result.get("limitations", [])[:2],
+        "_reasoning": compact_reasoning_view(result.get("_reasoning", {}), limit=2),
     }
 
 

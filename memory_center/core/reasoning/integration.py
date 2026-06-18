@@ -76,6 +76,8 @@ def run_reasoning_patterns(
     target_name: str = "",
     max_transitive_depth: int = 3,
     max_pattern_limit: int = 20,
+    enabled: bool = True,
+    intent: str = "",
 ) -> Dict[str, Any]:
     """Run all reasoning engines safely.
 
@@ -84,11 +86,24 @@ def run_reasoning_patterns(
     """
     from ..storage.unified import UnifiedStore
     from ..store import WorkspaceStore
+    from .models import ReasoningRequest
+    from .pipeline import ReasoningPipeline
 
     result: Dict[str, Any] = {
+        "facts": [],
+        "inferences": [],
+        "derived": [],
         "patterns": [],
         "transitive": [],
         "risk": [],
+        "quality": {
+            "status": "unavailable",
+            "evidence_budget": max_pattern_limit,
+            "evidence_count": 0,
+            "candidate_count": 0,
+            "truncated": False,
+            "verification_required": False,
+        },
     }
     diagnostics: Dict[str, Any] = {}
 
@@ -108,87 +123,48 @@ def run_reasoning_patterns(
         result["_diagnostics"] = diagnostics
         return result
 
-    graph_db_path = ws.graph_db_path
-
-    # GraphPatternEngine
+    # Pipeline owns engine orchestration. Legacy groups and each item's
+    # ``_explanation`` remain in the result for backward compatibility.
     try:
-        from .patterns import GraphPatternEngine
-        with UnifiedStore(graph_db_path) as store:
-            engine = GraphPatternEngine(store)
-            all_matches = engine.run_all_patterns()
-            for pattern_name, matches in all_matches.items():
-                for m in matches[:max_pattern_limit]:
-                    entry = _serialize_pattern_match(m)
-                    entry["_semantic_strength"] = SEMANTIC_STRENGTH_INFERRED
-                    entry["_confidence"] = _risk_level_to_confidence(entry.get("risk_level", "medium"))
-                    entry["_pattern_group"] = PATTERN_GROUP_GRAPH
-                    entry["_evidence"] = "graph pattern: " + entry.get("pattern_name", pattern_name)
-                    entry["_explanation"] = explanation_entry(
-                        subject=f"reasoning:{PATTERN_GROUP_GRAPH}:{entry.get('pattern_name', pattern_name)}",
-                        summary=entry.get("description", entry.get("pattern_name", "")),
-                        evidence=_non_empty_evidence(entry.get("evidence")),
-                        semantic_strength=SEMANTIC_STRENGTH_INFERRED,
-                        confidence=entry["_confidence"],
-                        next_refs=_node_refs(entry.get("matched_nodes", [])),
-                    )
-                    result["patterns"].append(entry)
+        with UnifiedStore(ws.graph_db_path) as store:
+            result = ReasoningPipeline(store, workspace_store=ws, enabled=enabled).analyze(
+                ReasoningRequest(
+                    target_id=target_id,
+                    intent=intent or ("legacy" if target_id else "workspace"),
+                    max_depth=max_transitive_depth,
+                    evidence_budget=max_pattern_limit,
+                )
+            )
     except Exception as exc:
-        diagnostics[PATTERN_GROUP_GRAPH] = diag_entry(DIAG.UNAVAILABLE, exc=exc)
-
-    # TransitiveInferenceEngine
-    if target_id:
-        try:
-            from .transitive import TransitiveInferenceEngine
-            with UnifiedStore(graph_db_path) as store:
-                engine = TransitiveInferenceEngine(store)
-                rels = engine.find_transitive_calls(source_id=target_id, max_depth=max_transitive_depth, limit=max_pattern_limit)
-                for rel in rels:
-                    entry = _serialize_transitive(rel)
-                    entry["_semantic_strength"] = SEMANTIC_STRENGTH_DERIVED
-                    entry["_confidence"] = entry.get("confidence", 0.5)
-                    entry["_pattern_group"] = PATTERN_GROUP_TRANSITIVE
-                    entry["_evidence"] = "transitive chain depth=" + str(len(entry.get("path", [])))
-                    entry["_explanation"] = explanation_entry(
-                        subject=f"reasoning:{PATTERN_GROUP_TRANSITIVE}:{entry.get('source_id', '')}",
-                        summary=f"传递链路 depth={len(entry.get('path', []))}",
-                        evidence=_non_empty_evidence({"path": entry.get("path", []), "edge_types": entry.get("edge_types", [])}),
-                        semantic_strength=SEMANTIC_STRENGTH_DERIVED,
-                        confidence=entry["_confidence"],
-                        next_refs=_id_refs(entry.get("path", [])),
-                    )
-                    result["transitive"].append(entry)
-        except Exception as exc:
-            diagnostics[PATTERN_GROUP_TRANSITIVE] = diag_entry(DIAG.UNAVAILABLE, exc=exc)
-
-    # RiskPatternEngine
-    if target_id:
-        try:
-            from .risk import RiskPatternEngine
-            with UnifiedStore(graph_db_path) as store:
-                engine = RiskPatternEngine(store, workspace_store=ws)
-                risks = engine.analyze_change_risk(target_id)
-                for r in risks[:max_pattern_limit]:
-                    entry = _serialize_risk_finding(r)
-                    entry["_semantic_strength"] = SEMANTIC_STRENGTH_INFERRED
-                    entry["_confidence"] = _severity_to_confidence(entry.get("severity", "medium"))
-                    entry["_pattern_group"] = PATTERN_GROUP_RISK
-                    entry["_evidence"] = "risk pattern: " + entry.get("pattern", "unknown")
-                    entry["_explanation"] = explanation_entry(
-                        subject=f"reasoning:{PATTERN_GROUP_RISK}:{entry.get('pattern', 'unknown')}",
-                        summary=entry.get("description", entry.get("pattern", "")),
-                        evidence=_non_empty_evidence(entry.get("evidence")),
-                        semantic_strength=SEMANTIC_STRENGTH_INFERRED,
-                        confidence=entry["_confidence"],
-                        next_refs=_node_refs(entry.get("affected_nodes", [])) or _id_refs([target_id]),
-                    )
-                    result["risk"].append(entry)
-        except Exception as exc:
-            diagnostics[PATTERN_GROUP_RISK] = diag_entry(DIAG.UNAVAILABLE, exc=exc)
+        diagnostics["pipeline"] = diag_entry(DIAG.UNAVAILABLE, exc=exc)
 
     if diagnostics:
         result["_diagnostics"] = diagnostics
 
     return result
+
+
+def canonical_reasoning_view(reasoning: Dict[str, Any]) -> Dict[str, Any]:
+    """Drop legacy engine groups when an endpoint had no legacy contract."""
+    return {
+        "facts": list(reasoning.get("facts", []) or []),
+        "inferences": list(reasoning.get("inferences", []) or []),
+        "derived": list(reasoning.get("derived", []) or []),
+        "quality": dict(reasoning.get("quality", {}) or {}),
+        **({"_diagnostics": reasoning["_diagnostics"]} if reasoning.get("_diagnostics") else {}),
+    }
+
+
+def compact_reasoning_view(reasoning: Dict[str, Any], limit: int = 2) -> Dict[str, Any]:
+    compact = canonical_reasoning_view(reasoning)
+    bounded_limit = max(1, int(limit or 1))
+    for key in ("facts", "inferences", "derived"):
+        compact[key] = compact[key][:bounded_limit]
+    compact["quality"] = dict(compact.get("quality", {}) or {})
+    compact["quality"]["returned_evidence_count"] = sum(
+        len(compact[key]) for key in ("facts", "inferences", "derived")
+    )
+    return compact
 
 
 def summarize_reasoning(reasoning: Dict[str, Any]) -> Dict[str, Any]:

@@ -262,6 +262,13 @@ memory_center/core/
 ├── benchmark/           # 基准趋势（Phase B）
 │   ├── __init__.py
 │   └── trending.py
+├── reasoning/           # 证据预算化推理主链路
+│   ├── models.py        # ReasoningRequest
+│   ├── pipeline.py      # fact / inferred / derived 编排、预算、去重与降级
+│   ├── patterns.py      # workspace 级结构模式
+│   ├── transitive.py    # 有界分层传递推理
+│   ├── risk.py          # 目标级风险模式
+│   └── integration.py   # legacy groups 与 facade 兼容适配
 ├── backend/             # 统一后端（Phase C）
 │   ├── __init__.py
 │   └── query.py
@@ -280,6 +287,19 @@ memory_center/core/
     ├── query.py         # 查询编排（已集成 hybrid retrieval；walkthrough 通过子模块承载渲染/缓存/评分）
     └── ...
 ```
+
+### Reasoning Pipeline / 推理主链路
+
+`ReasoningPipeline` 是 lookup context、impact 和 walkthrough 的唯一 reasoning 编排入口。它不重写 `patterns.py`、`transitive.py`、`risk.py` 的领域算法，只负责 intent 路由、证据预算、去重、语义分层、解释契约和单引擎失败降级。
+
+- Canonical fields: `facts`, `inferences`, `derived`, `quality`。
+- Compatibility fields: `patterns`, `transitive`, `risk` 继续保留给旧调用方。
+- Target intents (`context`, `impact`, `walkthrough`) 不执行 workspace-wide pattern scan。
+- Workspace intents (`workspace`, `audit`, `scan`) 才执行全局模式扫描。
+- Compact facade 每层最多保留两条证据；walkthrough 完整结果使用 8 条 evidence budget。
+- Transitive inference 使用有界 frontier 和每层批量 SQL，避免 recursive CTE 在大图上先枚举全部路径。
+
+The pipeline is additive and schema-compatible. Non-factual items always include source, relations, confidence, and `why`; a failed engine yields partial diagnostics without discarding facts from healthy engines.
 
 ### Walkthrough Refactoring / Walkthrough 拆分
 

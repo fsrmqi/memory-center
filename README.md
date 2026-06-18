@@ -764,6 +764,10 @@ Walkthrough endpoint candidates include `confidence` and `confidence_reasons`. `
 
 walkthrough 的 endpoint 候选会包含 `confidence` 和 `confidence_reasons`。当 `index_freshness.index_stale=true` 时，说明至少一个主链路文件比当前索引更新，应先读实时文件或重新 reindex。重复 walkthrough 会使用短期进程内缓存，缓存键包含 workspace、symbol、报告形态和索引签名。
 
+Context lookup, impact analysis, and method walkthrough now share one evidence-bounded reasoning pipeline. `_reasoning` separates indexed `facts`, explainable `inferences`, and transitive `derived` results; every non-factual item includes its source, relations, confidence, and `why`. Existing `patterns`, `transitive`, and `risk` groups remain compatible.
+
+Context lookup、影响分析和 method walkthrough 现在共用一条证据预算化 reasoning pipeline。`_reasoning` 会区分索引事实 `facts`、可解释推断 `inferences` 和传递派生 `derived`；每条非事实结果都包含来源、关系、置信度与 `why`。原有 `patterns`、`transitive`、`risk` 分组继续兼容。
+
 Operational walkthrough helpers are available for upgrade checks and team handoff:
 
 链路梳理还提供面向验收与协作的辅助能力：

@@ -146,6 +146,7 @@ def memory_impact(
 
 def _compact_impact_result(result: Dict[str, Any], budget: str = "medium") -> Dict[str, Any]:
     from .common import _budget_limits
+    from ..reasoning.integration import compact_reasoning_view
 
     limits = _budget_limits(budget)
     target = result.get("target", {}) or {}
@@ -237,6 +238,7 @@ def _compact_impact_result(result: Dict[str, Any], budget: str = "medium") -> Di
                 for item in (lookup.get("entrypoints", []) or [])[: limits["events"]]
             ],
         },
+        "_reasoning": compact_reasoning_view(result.get("_reasoning", {}), limit=2),
     }
 
 
@@ -532,7 +534,7 @@ def _get_reasoning_for_impact(workspace_file: str | Path, target_id: str) -> dic
     """
     try:
         from ..reasoning.integration import run_reasoning_patterns
-        return run_reasoning_patterns(str(workspace_file), target_id=target_id)
+        return run_reasoning_patterns(str(workspace_file), target_id=target_id, intent="impact")
     except Exception as exc:
         return {"patterns": [], "transitive": [], "risk": [], "_diagnostics": diag_entry(DIAG.UNAVAILABLE, exc=exc)}
 

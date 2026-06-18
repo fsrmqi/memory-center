@@ -4,8 +4,8 @@ E.g., if A calls B and B calls C, infer A transitively calls C.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any, Dict, List
+from dataclasses import dataclass
+from typing import Any
 
 from ..storage.unified import UnifiedStore
 
@@ -14,8 +14,8 @@ from ..storage.unified import UnifiedStore
 class TransitiveRelation:
     source_id: str
     target_id: str
-    path: List[str]  # intermediate node IDs
-    edge_types: List[str]
+    path: list[str]  # intermediate node IDs
+    edge_types: list[str]
     confidence: float
 
 
@@ -30,49 +30,74 @@ class TransitiveInferenceEngine:
         source_id: str,
         max_depth: int = 3,
         limit: int = 50,
-    ) -> List[TransitiveRelation]:
-        """Find all nodes transitively reachable from source via CALLS_METHOD / CALLS_SERVICE edges."""
-        with self._store.pool.connection() as conn:
-            rows = conn.execute("""
-                WITH RECURSIVE chain(src, tgt, path, edge_types, depth) AS (
-                    SELECT e.source_id, e.target_id,
-                           e.source_id || ',' || e.target_id,
-                           e.type, 1
-                    FROM edges e
-                    WHERE e.source_id = ?
-                      AND e.type IN ('CALLS_METHOD', 'CALLS_SERVICE')
-                    UNION ALL
-                    SELECT c.src, e.target_id,
-                           c.path || ',' || e.target_id,
-                           c.edge_types || ',' || e.type,
-                           c.depth + 1
-                    FROM chain c
-                    JOIN edges e ON e.source_id = c.tgt
-                    WHERE e.type IN ('CALLS_METHOD', 'CALLS_SERVICE')
-                      AND c.depth < ?
-                      AND c.path NOT LIKE '%' || e.target_id || '%'
-                )
-                SELECT src, tgt, path, edge_types, depth
-                FROM chain
-                WHERE depth >= 2
-                ORDER BY depth
-                LIMIT ?
-            """, (source_id, max_depth, limit)).fetchall()
+    ) -> list[TransitiveRelation]:
+        """Find bounded shortest transitive call paths.
 
-        results = []
-        for row in rows:
-            path = str(row["path"]).split(",")
-            confidence = max(0.3, 1.0 - 0.2 * int(row["depth"]))
-            results.append(TransitiveRelation(
-                source_id=str(row["src"]),
-                target_id=str(row["tgt"]),
-                path=path,
-                edge_types=str(row["edge_types"]).split(","),
-                confidence=round(confidence, 2),
-            ))
+        A recursive CTE with ``LIMIT`` on the final SELECT still materializes
+        every path first, which explodes on large call graphs. This traversal
+        batches one SQL read per depth and bounds the frontier before the next
+        layer.
+        """
+        depth_limit = max(1, int(max_depth or 1))
+        result_limit = max(1, int(limit or 1))
+        frontier_limit = max(32, result_limit * 4)
+        frontier = [(source_id, [source_id], [])]
+        visited_depth = {source_id: 0}
+        results: list[TransitiveRelation] = []
+
+        for depth in range(1, depth_limit + 1):
+            if not frontier:
+                break
+            source_ids = sorted({state[0] for state in frontier})
+            placeholders = ",".join("?" for _ in source_ids)
+            sql = f"""
+                SELECT source_id, target_id, type
+                FROM edges
+                WHERE source_id IN ({placeholders})
+                  AND type IN ('CALLS_METHOD', 'CALLS_SERVICE')
+                ORDER BY source_id, type, target_id
+                LIMIT ?
+            """
+            with self._store.pool.connection() as conn:
+                rows = conn.execute(
+                    sql,
+                    [*source_ids, max(1024, frontier_limit * 32)],
+                ).fetchall()
+
+            edges_by_source: dict[str, list[Any]] = {}
+            for row in rows:
+                edges_by_source.setdefault(str(row["source_id"]), []).append(row)
+
+            next_frontier = []
+            for current_id, path, edge_types in frontier:
+                for row in edges_by_source.get(current_id, []):
+                    target_id = str(row["target_id"])
+                    if target_id in path:
+                        continue
+                    next_path = [*path, target_id]
+                    next_edge_types = [*edge_types, str(row["type"])]
+                    if depth >= 2:
+                        confidence = max(0.3, 1.0 - 0.2 * depth)
+                        results.append(
+                            TransitiveRelation(
+                                source_id=source_id,
+                                target_id=target_id,
+                                path=next_path,
+                                edge_types=next_edge_types,
+                                confidence=round(confidence, 2),
+                            )
+                        )
+                        if len(results) >= result_limit:
+                            return results
+                    previous_depth = visited_depth.get(target_id)
+                    if previous_depth is None or depth < previous_depth:
+                        visited_depth[target_id] = depth
+                        next_frontier.append((target_id, next_path, next_edge_types))
+            frontier = next_frontier[:frontier_limit]
+
         return results
 
-    def find_config_propagation(self, limit: int = 50) -> List[Dict[str, Any]]:
+    def find_config_propagation(self, limit: int = 50) -> list[dict[str, Any]]:
         """Find config keys read by multiple classes across services."""
         with self._store.pool.connection() as conn:
             rows = conn.execute("""

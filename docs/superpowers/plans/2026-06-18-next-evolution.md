@@ -129,7 +129,7 @@ class ReasoningPipeline:
         ...
 ```
 
-- [ ] **Step 1: Write a failing fact/inferred/derived test**
+- [x] **Step 1: Write a failing fact/inferred/derived test**
 
 ```python
 def test_reasoning_pipeline_explains_transitive_risk(graph_store):
@@ -142,25 +142,27 @@ def test_reasoning_pipeline_explains_transitive_risk(graph_store):
     assert result["quality"]["verification_required"] is True
 ```
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 Run: `pytest -q tests/test_reasoning_pipeline.py`
 
-- [ ] **Step 3: Move orchestration behind the pipeline seam**
+- [x] **Step 3: Move orchestration behind the pipeline seam**
 
 复用现有 `patterns.py`、`transitive.py`、`risk.py`，不要复制 graph traversal。Pipeline 负责预算、去重、语义层级和 explanation；各 facade 只提交 request。
 
-- [ ] **Step 4: Integrate lookup, impact, and walkthrough additively**
+- [x] **Step 4: Integrate lookup, impact, and walkthrough additively**
 
 返回新增 `_reasoning`，保留现有字段；任何推断必须包含来源节点、关系、confidence 和 `why`。
 
-- [ ] **Step 5: Verify against Golden Benchmark**
+- [x] **Step 5: Verify against Golden Benchmark**
 
 Acceptance:
 - 不降低 Task 1 anchor/edge recall
 - 每条 inferred/derived 结果都有 explanation
 - reasoning 关闭时保持原行为
 - standard 模式额外 token 不超过基线 `20%`
+
+验证记录（2026-06-18）：私有真实 workspace case anchor recall `1.0`、edge recall `1.0`、forbidden hit rate `0`、latency `2818.687ms`、token estimate `60828`；相对 Task 1 基线 latency 增加约 `11.3%`、token 增加约 `1.7%`。
 
 ---
 
