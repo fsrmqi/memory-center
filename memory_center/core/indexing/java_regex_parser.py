@@ -26,11 +26,13 @@ class RegexJavaParser:
         annotations = sorted(set(re.findall(r"@(\w+)(?:\(|\s|\n)", cleaned)))
 
         fields, field_types, field_lines = _parse_fields(cleaned)
-        field_types.update(_parse_interface_constants(cleaned))
+        constants = _parse_interface_constants(cleaned)
+        field_types.update(constants)
         method_spans = _parse_method_spans(cleaned)
         iface_methods = _parse_interface_methods(cleaned)
         method_spans.extend(iface_methods)
         methods = sorted({item["name"] for item in method_spans})
+        method_signatures = _build_method_signatures(method_spans)
         method_lines = {
             item["name"]: int(item.get("line", 0) or 0)
             for item in sorted(method_spans, key=lambda span: int(span.get("line", 0) or 0))
@@ -49,6 +51,7 @@ class RegexJavaParser:
             classes=classes,
             interfaces=interfaces,
             methods=methods,
+            method_signatures=method_signatures,
             fields=fields,
             class_lines=class_lines,
             interface_lines=interface_lines,
@@ -56,6 +59,7 @@ class RegexJavaParser:
             field_lines=field_lines,
             annotations=annotations,
             field_types=field_types,
+            constants=constants,
             method_variable_types=method_variable_types,
             bean_injections=bean_injections,
             method_calls=method_calls,
@@ -198,7 +202,7 @@ def _parse_interface_methods(text: str) -> List[Dict[str, Any]]:
             r"(?:default\s+)?"
             r"(?:static\s+)?"
             r"([\w<>, ?\.\[\]]+)\s+"
-            r"(\w+)\s*\(([^;]*)\)\s*"
+            r"(\w+)\s*\(([^;{}]*)\)\s*"
             r"(?:throws\s+[\w, ]+\s*)?;",
             re.M,
         )
@@ -239,6 +243,66 @@ def _parse_interface_methods(text: str) -> List[Dict[str, Any]]:
             })
 
     return spans
+
+
+def _build_method_signatures(method_spans: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    signatures: List[Dict[str, Any]] = []
+    seen: set[str] = set()
+    for span in method_spans:
+        name = str(span.get("name", "") or "")
+        parameter_types = _parameter_types(str(span.get("params", "") or ""))
+        identity = f"{name}({','.join(parameter_types)})"
+        if not name or identity in seen:
+            continue
+        seen.add(identity)
+        signatures.append(
+            {
+                "identity": identity,
+                "name": name,
+                "parameter_types": parameter_types,
+                "line": int(span.get("line", 0) or 0),
+            }
+        )
+    return sorted(signatures, key=lambda item: (int(item.get("line", 0)), item["identity"]))
+
+
+def _parameter_types(params: str) -> List[str]:
+    types: List[str] = []
+    for part in _split_top_level(params):
+        cleaned = re.sub(r"@\w+(?:\([^)]*\))?\s*", "", part).strip()
+        cleaned = re.sub(r"\b(?:final|volatile|transient)\s+", "", cleaned).strip()
+        match = re.match(r"(.+?)\s+[A-Za-z_$][\w$]*(?:\s*\[\])?$", cleaned)
+        if not match:
+            continue
+        types.append(_normalize_type_identity(match.group(1)))
+    return types
+
+
+def _split_top_level(value: str) -> List[str]:
+    parts: List[str] = []
+    start = 0
+    depth = 0
+    for index, char in enumerate(value):
+        if char in "<([{":
+            depth += 1
+        elif char in ">)]}":
+            depth = max(0, depth - 1)
+        elif char == "," and depth == 0:
+            parts.append(value[start:index].strip())
+            start = index + 1
+    tail = value[start:].strip()
+    if tail:
+        parts.append(tail)
+    return parts
+
+
+def _normalize_type_identity(value: str) -> str:
+    normalized = re.sub(r"\s+", " ", value.strip())
+    normalized = re.sub(r"\s*,\s*", ",", normalized)
+    normalized = re.sub(r"\s*<\s*", "<", normalized)
+    normalized = re.sub(r"\s*>\s*", ">", normalized)
+    normalized = normalized.replace("...", "[]")
+    return normalized
 
 def _matching_brace_end(text: str, open_pos: int) -> int:
     depth = 0
@@ -341,11 +405,12 @@ def _parse_constructor_injections(
 
 def _parse_params(params: str) -> Dict[str, str]:
     out: Dict[str, str] = {}
-    for part in [p.strip() for p in params.split(",") if p.strip()]:
+    for part in _split_top_level(params):
         cleaned = re.sub(r"@\w+(?:\([^)]*\))?\s*", "", part).strip()
-        pieces = cleaned.split()
-        if len(pieces) >= 2:
-            out[pieces[-1]] = _simple_type(pieces[-2])
+        cleaned = re.sub(r"\b(?:final|volatile|transient)\s+", "", cleaned).strip()
+        match = re.match(r"(.+?)\s+([A-Za-z_$][\w$]*)(?:\s*\[\])?$", cleaned)
+        if match:
+            out[match.group(2)] = _simple_type(match.group(1))
     return out
 
 

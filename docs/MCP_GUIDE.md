@@ -104,7 +104,7 @@ MCP 当前公开的是 12 个 task-level tools：
 
 ### 评测
 
-- `eval_parser_benchmark` — 真实 workspace 下的 regex / tree-sitter parser 对比评测
+- `eval_parser_benchmark` — 真实 workspace 下的 regex / tree-sitter parser 对比评测；reindex 同时返回 parser、fallback 原因与 disagreement diagnostics
 - `eval_golden` — 对指定 workspace + cases 文件运行 Golden Benchmark
 - `eval_token_benchmark` — Token 基准测试
 - `eval_token_benchmark_trend` — Token 基准趋势报告（回归检测、健康评分）

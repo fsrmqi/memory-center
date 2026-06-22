@@ -6,6 +6,7 @@ Same JavaParser protocol as RegexJavaParser.
 from __future__ import annotations
 
 import json
+import threading
 from typing import Any
 
 from .base import JavaParseResult
@@ -31,6 +32,9 @@ class TreeSitterJavaParser:
 
     def __init__(self):
         self._parser = None
+        self._diagnostics_lock = threading.Lock()
+        self._local = threading.local()
+        self.reset_diagnostics()
         if _HAS_TREE_SITTER:
             try:
                 self._parser = Parser(Language(tsjava.language()))
@@ -44,13 +48,76 @@ class TreeSitterJavaParser:
     def parse(self, text: str, file_path: str) -> JavaParseResult:
         regex_result = RegexJavaParser().parse(text, file_path)
         if not self._parser:
+            self._local.selected_parser = "regex"
+            self._record_parse(fallback_reason="tree_sitter_unavailable")
             return regex_result
+        tree_result = self.parse_native(text, file_path)
+        if tree_result is None:
+            self._local.selected_parser = "regex"
+            self._record_parse(fallback_reason="tree_sitter_parse_error")
+            return regex_result
+
+        merged = _merge_parse_results(tree_result, regex_result)
+        self._local.selected_parser = self.name
+        self._record_parse(
+            native_disagreements=_structural_missing_count(regex_result, tree_result),
+            critical_disagreements=_structural_missing_count(regex_result, merged),
+        )
+        return merged
+
+    @property
+    def selected_parser(self) -> str:
+        return str(getattr(self._local, "selected_parser", self.name if self.available else "regex"))
+
+    def reset_diagnostics(self) -> None:
+        self._parse_count = 0
+        self._native_success_count = 0
+        self._fallback_count = 0
+        self._fallback_reasons: dict[str, int] = {}
+        self._native_disagreement_count = 0
+        self._critical_disagreement_count = 0
+
+    @property
+    def diagnostics(self) -> dict[str, Any]:
+        with self._diagnostics_lock:
+            return {
+                "selected_parser": self.name if self.available else "regex",
+                "tree_sitter_available": self.available,
+                "parse_count": self._parse_count,
+                "native_success_count": self._native_success_count,
+                "fallback_count": self._fallback_count,
+                "fallback_reasons": dict(sorted(self._fallback_reasons.items())),
+                "native_disagreement_count": self._native_disagreement_count,
+                "critical_disagreement_count": self._critical_disagreement_count,
+            }
+
+    def _record_parse(
+        self,
+        *,
+        fallback_reason: str = "",
+        native_disagreements: int = 0,
+        critical_disagreements: int = 0,
+    ) -> None:
+        with self._diagnostics_lock:
+            self._parse_count += 1
+            if fallback_reason:
+                self._fallback_count += 1
+                self._fallback_reasons[fallback_reason] = self._fallback_reasons.get(fallback_reason, 0) + 1
+            else:
+                self._native_success_count += 1
+            self._native_disagreement_count += max(0, native_disagreements)
+            self._critical_disagreement_count += max(0, critical_disagreements)
+
+    def parse_native(self, text: str, file_path: str) -> JavaParseResult | None:
+        """Return AST-only facts, or ``None`` when tree-sitter cannot parse."""
+        if not self._parser:
+            return None
 
         try:
             tree = self._parser.parse(text.encode("utf-8"))
             root = tree.root_node
         except Exception:
-            return regex_result
+            return None
 
         package = ""
         imports: list[str] = []
@@ -58,6 +125,7 @@ class TreeSitterJavaParser:
         interfaces: list[str] = []
         annotations: list[str] = []
         methods: list[str] = []
+        method_signatures: list[dict[str, Any]] = []
         fields: list[str] = []
         class_lines: dict[str, int] = {}
         interface_lines: dict[str, int] = {}
@@ -98,6 +166,15 @@ class TreeSitterJavaParser:
                     method_name = _node_text(name_node)
                     methods.append(method_name)
                     method_lines.setdefault(method_name, _node_line(name_node))
+                    parameter_types = _tree_parameter_types(node.child_by_field_name("parameters"))
+                    method_signatures.append(
+                        {
+                            "identity": f"{method_name}({','.join(parameter_types)})",
+                            "name": method_name,
+                            "parameter_types": parameter_types,
+                            "line": _node_line(name_node),
+                        }
+                    )
             elif node.type == "field_declaration":
                 type_node = node.child_by_field_name("type")
                 type_text = _node_text(type_node) if type_node else ""
@@ -122,6 +199,7 @@ class TreeSitterJavaParser:
             classes=classes,
             interfaces=interfaces,
             methods=methods,
+            method_signatures=_merge_unique_dicts(method_signatures, []),
             fields=fields,
             class_lines=class_lines,
             interface_lines=interface_lines,
@@ -129,6 +207,7 @@ class TreeSitterJavaParser:
             field_lines=field_lines,
             annotations=sorted(set(annotations)),
             field_types=field_types,
+            constants={},
             method_variable_types={},
             bean_injections=[],
             method_calls=[],
@@ -136,7 +215,7 @@ class TreeSitterJavaParser:
             config_usages=[],
             data_resources=[],
         )
-        return _merge_parse_results(tree_result, regex_result)
+        return tree_result
 
 
 def _node_text(node: Any) -> str:
@@ -162,6 +241,36 @@ def _node_line(node: Any) -> int:
 
 def _simple_name(value: str) -> str:
     return value.split(".")[-1].strip()
+
+
+def _tree_parameter_types(parameters_node: Any) -> list[str]:
+    if parameters_node is None:
+        return []
+    result: list[str] = []
+    for child in getattr(parameters_node, "named_children", []):
+        if child.type not in {"formal_parameter", "spread_parameter", "receiver_parameter"}:
+            continue
+        type_node = child.child_by_field_name("type")
+        type_text = _node_text(type_node)
+        if child.type == "spread_parameter" and type_text:
+            type_text += "[]"
+        if type_text:
+            result.append(_normalize_type_identity(type_text))
+    return result
+
+
+def _normalize_type_identity(value: str) -> str:
+    return "".join(str(value or "").split()).replace("...", "[]")
+
+
+def _structural_missing_count(expected: JavaParseResult, actual: JavaParseResult) -> int:
+    count = 0
+    for field in ("classes", "interfaces", "fields"):
+        count += len(set(getattr(expected, field)) - set(getattr(actual, field)))
+    expected_methods = {item.get("identity") for item in expected.method_signatures if item.get("identity")}
+    actual_methods = {item.get("identity") for item in actual.method_signatures if item.get("identity")}
+    count += len(expected_methods - actual_methods)
+    return count
 
 
 def _merge_unique_strings(primary: list[str], secondary: list[str]) -> list[str]:
@@ -207,6 +316,7 @@ def _merge_parse_results(tree_result: JavaParseResult, regex_result: JavaParseRe
         classes=_merge_unique_strings(tree_result.classes, regex_result.classes),
         interfaces=_merge_unique_strings(tree_result.interfaces, regex_result.interfaces),
         methods=_merge_unique_strings(tree_result.methods, regex_result.methods),
+        method_signatures=_merge_unique_dicts(tree_result.method_signatures, regex_result.method_signatures),
         fields=_merge_unique_strings(tree_result.fields, regex_result.fields),
         class_lines=_merge_line_maps(tree_result.class_lines, regex_result.class_lines),
         interface_lines=_merge_line_maps(tree_result.interface_lines, regex_result.interface_lines),
@@ -214,6 +324,7 @@ def _merge_parse_results(tree_result: JavaParseResult, regex_result: JavaParseRe
         field_lines=_merge_line_maps(tree_result.field_lines, regex_result.field_lines),
         annotations=_merge_unique_strings(tree_result.annotations, regex_result.annotations),
         field_types=field_types,
+        constants={**regex_result.constants, **tree_result.constants},
         method_variable_types=method_variable_types,
         bean_injections=_merge_unique_dicts(tree_result.bean_injections, regex_result.bean_injections),
         method_calls=_merge_unique_dicts(tree_result.method_calls, regex_result.method_calls),

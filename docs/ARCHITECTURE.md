@@ -301,6 +301,18 @@ memory_center/core/
 
 The pipeline is additive and schema-compatible. Non-factual items always include source, relations, confidence, and `why`; a failed engine yields partial diagnostics without discarding facts from healthy engines.
 
+### Java Parser Differential / Java Parser 差异评测
+
+`memory_center.core.indexing.differential` compares parser outputs by logical entities instead of aggregate counts. The public corpus under `examples/parser-corpus/` is the reproducible gate; private workspaces are validation targets and are never committed.
+
+`memory_center.core.indexing.differential` 按逻辑实体比较 parser，而不是只比较总数量。`examples/parser-corpus/` 是可复现公开门禁；私有 workspace 只用于本地验证，不提交其源码或索引。
+
+- `methods` remains the compatibility name list; `method_signatures` preserves overload identity and declaration line.
+- `constants` separates annotation values from `field_types` while retaining the legacy field output.
+- Tree-sitter exposes AST-only facts through `parse_native()` and merged production facts through `parse()`.
+- Target mappings are scoped to the annotated Controller/Feign type body, preventing mappings from sibling types in the same file from leaking across boundaries.
+- Reindex resets and returns thread-safe parser diagnostics, including fallback reasons and critical disagreement count.
+
 ### Walkthrough Refactoring / Walkthrough 拆分
 
 `memory_center.core.orchestrator.query` remains the compatibility facade for MCP, CLI, and HTTP callers. Method walkthrough support code is split across `memory_center.core.walkthrough`:

@@ -187,6 +187,14 @@
   - `transitive.py`: bounded breadth traversal for target call chains
   - `risk.py`: target-level change risk
   - `integration.py`: canonical/legacy compatibility views
+- `core/indexing/differential.py`
+  - entity-level regex/tree-sitter comparison
+  - method overload identity and line-delta checks
+  - Controller/Feign mapping parity
+  - corpus-level recall and critical-disagreement summary
+- `examples/parser-corpus/`
+  - sanitized Java syntax and Spring mapping fixtures
+  - public parser regression gate; never replace with private source files
 - `core/storage/*`
   - unified store / SQLite pool / vector index
 - `core/onboarding/*`

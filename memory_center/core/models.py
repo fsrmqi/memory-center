@@ -60,6 +60,7 @@ class JavaSymbol:
     classes: List[str] = field(default_factory=list)
     interfaces: List[str] = field(default_factory=list)
     methods: List[str] = field(default_factory=list)
+    method_signatures: List[Dict[str, Any]] = field(default_factory=list)
     fields: List[str] = field(default_factory=list)
     class_lines: Dict[str, int] = field(default_factory=dict)
     interface_lines: Dict[str, int] = field(default_factory=dict)
@@ -71,6 +72,7 @@ class JavaSymbol:
     # Evidence-oriented relationship facts. These are intentionally plain dicts so
     # future parsers can add richer payloads without changing public schemas.
     field_types: Dict[str, str] = field(default_factory=dict)
+    constants: Dict[str, str] = field(default_factory=dict)
     method_variable_types: Dict[str, Dict[str, str]] = field(default_factory=dict)
     bean_injections: List[Dict[str, Any]] = field(default_factory=list)
     method_calls: List[Dict[str, Any]] = field(default_factory=list)

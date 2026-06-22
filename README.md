@@ -405,6 +405,10 @@ Reindex also rebuilds the local semantic node index and SQLite BM25 inverted ind
 
 重建索引时也会同步构建本地语义节点索引和 SQLite BM25 倒排索引，供混合检索使用；当语义 backend 生成 dense vectors 时，还会同步写入 `VectorIndex`。
 
+Reindex output also includes parser diagnostics: selected parser, parse count, fallback count/reasons, native disagreement count, and final critical disagreement count. Public parser parity is gated by `examples/parser-corpus/` and `tests/test_parser_differential.py`.
+
+reindex 输出还会包含 parser diagnostics：实际 parser、解析次数、fallback 次数/原因、原生差异数和最终 critical disagreement 数。公开 parser 一致性由 `examples/parser-corpus/` 与 `tests/test_parser_differential.py` 守护。
+
 By default the semantic index uses the built-in sparse backend. If `sentence-transformers` is installed, you can switch to a local embedding backend with:
 
 默认情况下语义索引使用内置稀疏后端。如果安装了 `sentence-transformers`，可以通过下面的环境变量切换到本地 embedding backend：

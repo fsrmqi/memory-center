@@ -188,7 +188,7 @@ Acceptance:
 - Feign interface 与 fallback
 - switch expression、lambda、method reference
 
-- [ ] **Step 1: Write failing parser parity tests**
+- [x] **Step 1: Write failing parser parity tests**
 
 ```python
 def test_parsers_agree_on_public_method_identity(parser_corpus):
@@ -197,19 +197,19 @@ def test_parsers_agree_on_public_method_identity(parser_corpus):
     assert report["critical_disagreements"] == []
 ```
 
-- [ ] **Step 2: Run RED and capture disagreements**
+- [x] **Step 2: Run RED and capture disagreements**
 
 Run: `pytest -q tests/test_parser_differential.py`
 
-- [ ] **Step 3: Implement differential report**
+- [x] **Step 3: Implement differential report**
 
 比较 classes、methods、method lines、fields、injections、calls、Feign mappings、Controller mappings；禁止只比较总数量。
 
-- [ ] **Step 4: Fix critical parser gaps one category at a time**
+- [x] **Step 4: Fix critical parser gaps one category at a time**
 
 每个修复必须先增加最小 corpus 文件，不允许用真实私有项目源码做 fixture。
 
-- [ ] **Step 5: Add parser selection diagnostics**
+- [x] **Step 5: Add parser selection diagnostics**
 
 reindex 返回 parser、fallback count、critical disagreement count；tree-sitter 失败时明确回退原因。
 
@@ -218,6 +218,8 @@ Acceptance:
 - method/class/endpoint recall `>= 0.98`
 - 行号误差不超过 1 行
 - parser fallback 可观测
+
+验证记录（2026-06-22）：公开 6-file corpus critical disagreement `0`、entity recall `1.0`、max line delta `0`；AST-enabled 与 fallback 两套完整测试均通过。私有真实 workspace Golden case anchor recall `1.0`、edge recall `1.0`、forbidden hit rate `0`、latency `2807.67ms`。
 
 ---
 

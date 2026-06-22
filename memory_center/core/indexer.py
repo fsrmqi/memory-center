@@ -7,16 +7,12 @@ from typing import Any, Dict, Iterable, List, Sequence
 import yaml
 
 from .graph import GraphEdge, GraphNode, GraphStore, edge_id, node_id
-# Try tree-sitter parser first, fall back to regex
+# Keep the tree-sitter wrapper active so fallback reasons remain observable.
 try:
     from .indexing.tree_sitter_parser import TreeSitterJavaParser
     _ts_parser = TreeSitterJavaParser()
-    if _ts_parser.available:
-        _JAVA_PARSER = _ts_parser
-        from .indexing import RegexJavaParser  # keep import for fallback path
-    else:
-        from .indexing import RegexJavaParser
-        _JAVA_PARSER = RegexJavaParser()
+    _JAVA_PARSER = _ts_parser
+    from .indexing import RegexJavaParser  # keep import for emergency fallback path
 except Exception:
     from .indexing import RegexJavaParser
     _JAVA_PARSER = RegexJavaParser()
@@ -45,7 +41,7 @@ def reindex_workspace(
     projects: Sequence[str] | None = None,
     paths: Sequence[str] | None = None,
     parallel: bool = False,
-) -> Dict[str, int]:
+) -> Dict[str, Any]:
     """Rebuild deterministic indexes and the local evidence graph."""
     project_filter = {item.strip() for item in (projects or []) if item and item.strip()}
     path_filters = [item.strip() for item in (paths or []) if item and item.strip()]
@@ -67,6 +63,10 @@ def reindex_workspace(
     # Collect feign files for deferred parsing (need complete constant_map first)
     pending_feigns: List[tuple] = []
     java_tasks: List[tuple] = []
+
+    reset_parser_diagnostics = getattr(_JAVA_PARSER, "reset_diagnostics", None)
+    if callable(reset_parser_diagnostics):
+        reset_parser_diagnostics()
 
     for svc in config.services:
         if project_filter and svc.name not in project_filter:
@@ -159,6 +159,7 @@ def reindex_workspace(
     else:
         semantic_counts = build_workspace_semantic_index(store.workspace_file)
     retrieval_counts = _sync_retrieval_indexes(store, semantic_counts)
+    parser_diagnostics = _parser_diagnostics(len(java_tasks))
     return {
         "mode": "partial" if partial else "full",
         "filtered_projects": sorted(project_filter),
@@ -173,7 +174,27 @@ def reindex_workspace(
         "graph_nodes": graph_counts.get("nodes", 0),
         "graph_edges": graph_counts.get("edges", 0),
         "semantic_docs": semantic_counts.get("doc_count", 0),
+        "parser": parser_diagnostics["selected_parser"],
+        "parser_fallback_count": parser_diagnostics["fallback_count"],
+        "parser_critical_disagreement_count": parser_diagnostics["critical_disagreement_count"],
+        "parser_diagnostics": parser_diagnostics,
         **retrieval_counts,
+    }
+
+
+def _parser_diagnostics(parse_count: int) -> Dict[str, Any]:
+    diagnostics = getattr(_JAVA_PARSER, "diagnostics", None)
+    if isinstance(diagnostics, dict):
+        return dict(diagnostics)
+    return {
+        "selected_parser": getattr(_JAVA_PARSER, "name", "regex") or "regex",
+        "tree_sitter_available": False,
+        "parse_count": parse_count,
+        "native_success_count": 0,
+        "fallback_count": 0,
+        "fallback_reasons": {},
+        "native_disagreement_count": 0,
+        "critical_disagreement_count": 0,
     }
 
 
@@ -324,11 +345,12 @@ def parse_java_symbols(project: str, rel: str, text: str) -> JavaSymbol:
     return JavaSymbol(
         project=project,
         file=rel,
-        parser=getattr(_JAVA_PARSER, "name", ""),
+        parser=getattr(_JAVA_PARSER, "selected_parser", getattr(_JAVA_PARSER, "name", "")),
         package=parsed.package,
         classes=parsed.classes,
         interfaces=parsed.interfaces,
         methods=parsed.methods,
+        method_signatures=parsed.method_signatures,
         fields=parsed.fields,
         class_lines=parsed.class_lines,
         interface_lines=parsed.interface_lines,
@@ -337,6 +359,7 @@ def parse_java_symbols(project: str, rel: str, text: str) -> JavaSymbol:
         annotations=parsed.annotations,
         imports=parsed.imports,
         field_types=parsed.field_types,
+        constants=parsed.constants,
         method_variable_types=parsed.method_variable_types,
         bean_injections=parsed.bean_injections,
         method_calls=parsed.method_calls,
@@ -349,30 +372,43 @@ def parse_java_symbols(project: str, rel: str, text: str) -> JavaSymbol:
 def parse_controllers(project: str, rel: str, text: str, symbol: JavaSymbol) -> List[ApiEndpoint]:
     if "RestController" not in symbol.annotations and "Controller" not in symbol.annotations:
         return []
-    controller = (symbol.classes or [Path(rel).stem])[0]
-    class_prefix = extract_annotation_value(text, "RequestMapping") or ""
+    context = (
+        _annotated_type_context(text, "RestController", ("class",))
+        or _annotated_type_context(text, "Controller", ("class",))
+    )
+    controller = context[0] if context else (symbol.classes or [Path(rel).stem])[0]
+    declaration = context[1] if context else text
+    body = context[2] if context else text
+    constant_map = dict(symbol.constants)
+    class_prefix = _mapping_path(extract_annotation_args(declaration, "RequestMapping") or "", constant_map)
     endpoints: List[ApiEndpoint] = []
     pattern = re.compile(
         r"@(GetMapping|PostMapping|PutMapping|DeleteMapping|PatchMapping|RequestMapping)\s*(?:\(([^)]*)\))?"
         r"\s*(?:\n|\r|\s)*(?:@[\w()\"=,{}./\s]+\s*)*[^;{=]+?\s+(\w+)\s*\(",
         re.MULTILINE,
     )
-    for mapping, args, method_name in pattern.findall(text):
+    for mapping, args, method_name in pattern.findall(body):
         http = extract_method_from_args(args) if mapping == "RequestMapping" else mapping.replace("Mapping", "").upper()
-        endpoints.append(ApiEndpoint(project, rel, controller, http or "REQUEST", join_path(class_prefix, extract_first_string(args) or ""), method_name))
+        endpoints.append(ApiEndpoint(project, rel, controller, http or "REQUEST", join_path(class_prefix, _mapping_path(args, constant_map)), method_name))
     return endpoints
 
 
 def parse_feign_clients(project: str, rel: str, text: str, symbol: JavaSymbol, constant_map: Dict[str, str] | None = None) -> List[FeignClient]:
     if "FeignClient" not in symbol.annotations:
         return []
-    interface = (symbol.interfaces or symbol.classes or [Path(rel).stem])[0]
+    interface = (
+        _annotated_type_name(text, "FeignClient", ("interface", "class"))
+        or (symbol.interfaces or symbol.classes or [Path(rel).stem])[0]
+    )
+    context = _annotated_type_context(text, "FeignClient", ("interface", "class"))
+    body = context[2] if context else text
     ann_args = extract_annotation_args(text, "FeignClient") or ""
+    resolved_constants = {**dict(symbol.constants), **dict(constant_map or {})}
     target = extract_named_value(ann_args, "name") or extract_named_value(ann_args, "value") or extract_named_value(ann_args, "serviceId")
-    if not target and constant_map:
+    if not target and resolved_constants:
         ref = extract_named_ref(ann_args, "name") or extract_named_ref(ann_args, "value") or extract_named_ref(ann_args, "serviceId")
         if ref:
-            target = constant_map.get(ref) or constant_map.get(ref.split(".")[-1])
+            target = resolved_constants.get(ref) or resolved_constants.get(ref.split(".")[-1])
     if not target:
         target = "unknown-service"
     # 优化 4: 当 target 是类名格式（驼峰、小写开头）而非服务名时，尝试从 url 获取外部地址
@@ -380,16 +416,20 @@ def parse_feign_clients(project: str, rel: str, text: str, symbol: JavaSymbol, c
         url = extract_named_value(ann_args, "url") or ""
         if url:
             target = f"external:{url}"
-    base_path = extract_named_value(ann_args, "path") or extract_named_value(ann_args, "url") or ""
+    base_path = (
+        _named_constant_or_value(ann_args, "path", resolved_constants)
+        or extract_named_value(ann_args, "url")
+        or ""
+    )
     methods: List[Dict[str, Any]] = []
     pattern = re.compile(
         r"@(GetMapping|PostMapping|PutMapping|DeleteMapping|PatchMapping|RequestMapping)\s*(?:\(([^)]*)\))?"
         r"\s*(?:\n|\r|\s)*(?:@[\w()\"=,{}./\s]+\s*)*[^;{=]+?\s+(\w+)\s*\(",
         re.MULTILINE,
     )
-    for mapping, args, method_name in pattern.findall(text):
+    for mapping, args, method_name in pattern.findall(body):
         http = extract_method_from_args(args) if mapping == "RequestMapping" else mapping.replace("Mapping", "").upper()
-        methods.append({"method_name": method_name, "http_method": http or "REQUEST", "path": join_path(base_path, extract_first_string(args) or "")})
+        methods.append({"method_name": method_name, "http_method": http or "REQUEST", "path": join_path(base_path, _mapping_path(args, resolved_constants))})
     return [FeignClient(project, rel, interface, target, base_path, methods)]
 
 
@@ -494,6 +534,66 @@ def extract_annotation_args(text: str, annotation: str) -> str | None:
     return m.group(1) if m else None
 
 
+def _annotated_type_name(text: str, annotation: str, type_keywords: tuple[str, ...]) -> str:
+    context = _annotated_type_context(text, annotation, type_keywords)
+    return context[0] if context else ""
+
+
+def _annotated_type_context(
+    text: str,
+    annotation: str,
+    type_keywords: tuple[str, ...],
+) -> tuple[str, str, str] | None:
+    pattern = re.compile(
+        rf"@{re.escape(annotation)}\s*(?:\([^)]*\))?"
+        rf"(?:\s*@\w+(?:\([^)]*\))?)*"
+        rf"\s*(?:public\s+|protected\s+|private\s+|abstract\s+|final\s+)*"
+        rf"(?:{'|'.join(re.escape(keyword) for keyword in type_keywords)})\s+(\w+)[^{{]*{{",
+        re.S,
+    )
+    match = pattern.search(text)
+    if not match:
+        return None
+    open_brace = text.find("{", match.start(), match.end())
+    if open_brace < 0:
+        return None
+    close_brace = _matching_brace(text, open_brace)
+    return match.group(1), text[match.start():open_brace], text[open_brace + 1:close_brace]
+
+
+def _matching_brace(text: str, open_brace: int) -> int:
+    depth = 0
+    for index in range(open_brace, len(text)):
+        if text[index] == "{":
+            depth += 1
+        elif text[index] == "}":
+            depth -= 1
+            if depth == 0:
+                return index
+    return len(text)
+
+
+def _named_constant_or_value(args: str, name: str, constant_map: Dict[str, str]) -> str:
+    value = extract_named_value(args, name)
+    if value is not None:
+        return value
+    ref = extract_named_ref(args, name)
+    if not ref:
+        return ""
+    return constant_map.get(ref) or constant_map.get(ref.split(".")[-1], "")
+
+
+def _mapping_path(args: str, constant_map: Dict[str, str]) -> str:
+    value = extract_named_value(args, "value") or extract_named_value(args, "path") or extract_first_string(args)
+    if value is not None:
+        return value
+    ref = extract_named_ref(args, "value") or extract_named_ref(args, "path")
+    if not ref:
+        match = re.search(r"^\s*([\w.]+)\s*$", args or "")
+        ref = match.group(1) if match else ""
+    return constant_map.get(ref) or constant_map.get(ref.split(".")[-1], "") if ref else ""
+
+
 def extract_annotation_value(text: str, annotation: str) -> str | None:
     args = extract_annotation_args(text, annotation)
     if args is None:
@@ -522,10 +622,11 @@ def extract_named_ref(args: str, name: str) -> str | None:
 
 def _build_constant_map(symbol_index: List[Dict[str, Any]]) -> Dict[str, str]:
     """Build a map from CONSTANT_NAME and ClassName.CONSTANT_NAME to string values,
-    using field_types data from interface constant declarations."""
+    using dedicated constants with field_types as a legacy fallback."""
     constant_map: Dict[str, str] = {}
     for sym in symbol_index:
-        for fname, fval in sym.get("field_types", {}).items():
+        values = sym.get("constants") or sym.get("field_types", {})
+        for fname, fval in values.items():
             if fval and isinstance(fval, str) and not fval.startswith(("com.", "java.", "org.", "List", "Map", "Set", "Integer", "Long", "Boolean")):
                 constant_map[fname] = fval
                 for cls in sym.get("classes", []) + sym.get("interfaces", []):
