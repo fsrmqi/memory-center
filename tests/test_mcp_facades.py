@@ -359,6 +359,26 @@ def test_walkthrough_answer_v2_is_detailed_but_readable(tmp_path: Path):
     assert "数据范围保护" not in result["mermaid_flow"]
 
 
+def test_method_walkthrough_report_levels_preserve_chain_with_different_detail(tmp_path: Path):
+    wf = Path(_setup_workspace(tmp_path))
+    symbol = "com.example.task.ArticleMoveService#move"
+
+    summary = memory_method_walkthrough(wf, symbol, view="compact", budget="small", report_level="summary")
+    standard = memory_method_walkthrough(wf, symbol, view="compact", budget="small", report_level="standard")
+    deep = memory_method_walkthrough(wf, symbol, view="compact", budget="small", report_level="deep")
+
+    assert summary["summary_lines"] == standard["summary_lines"] == deep["summary_lines"]
+    assert "### 快速结论" in summary["answer_markdown"]
+    assert "### 主链路" in summary["answer_markdown"]
+    assert "### 证据文件" in summary["answer_markdown"]
+    assert "### 2. 分层详情" not in summary["answer_markdown"]
+    assert "### 2. 分层详情" in standard["answer_markdown"]
+    assert "### 业务词汇" in deep["answer_markdown"]
+    assert len(summary["answer_markdown"]) < len(standard["answer_markdown"]) < len(deep["answer_markdown"])
+    assert summary["answer_markdown"].count("ArticleController#moveArticle") >= 1
+    assert deep["answer_markdown"].count("ArticleController#moveArticle") >= 1
+
+
 def test_method_walkthrough_escalates_from_subproject_workspace(tmp_path: Path):
     parent_wf = Path(_setup_workspace(tmp_path))
     repo_root = parent_wf.parent.parent

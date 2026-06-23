@@ -359,11 +359,11 @@ Result / 结果（2026-06-23）:
 
 ---
 
-### Final Polish: 输出视图分级（最后阶段优化点，暂不执行）
+### Final Polish: 输出视图分级（已实现）
 
 目标不是减少信息量，而是在所有核心能力稳定后增加更明确的人类阅读视图分级。
 
-- `summary`: 只保留快速结论、主链路、证据文件编号和关键风险，适合聊天窗口快速浏览。
+- `summary`: 只保留快速结论、主链路、证据文件编号、关键风险和下一步，适合聊天窗口快速浏览。
 - `standard`: 当前默认形态，保留主链路、分层详情、证据文件、风险归并和下一步。
 - `deep`: 展开所有候选 endpoint、完整分支轮廓、更多 local steps 和原始结构索引，适合深度排查。
 
@@ -372,6 +372,11 @@ Result / 结果（2026-06-23）:
 - 不删除结构化字段；`summary / standard / deep` 只改变 Markdown 展示形态。
 - MCP / CLI / HTTP 参数需要保持兼容，优先复用已有 `report_level` 或增加兼容型别名。
 - 必须有真实全链路 Golden case 验证三种视图的主链路一致性。
+
+Result / 结果（2026-06-23）:
+- `report_level=summary` 已作为真实三档输出之一实现；旧 `brief` 保留为兼容别名并归一到 `summary`。
+- `summary / standard / deep` 共享同一结构化字段和 `summary_lines`，只改变 Markdown 展示详略。
+- `standard` 保持当前默认形态；`deep` 保留 glossary、rule groups、branch outline、anti-patterns 等深度诊断区块。
 
 ---
 
@@ -395,12 +400,13 @@ Result / 结果（2026-06-23）:
 - [x] Golden agent invalid search reduction rate `>= 0.50`
 - [ ] walkthrough median latency 相比 3.2.0 基线改善 `>= 15%`（已实现 gate；缺可信 3.2.0 Golden baseline，暂不伪造通过）
 - [ ] compact token 相比 3.2.0 基线改善 `>= 10%`（已实现 gate；缺可信 3.2.0 Golden baseline，暂不伪造通过）
-- [ ] 不提交真实 workspace 的 `.memory-center/index`、memory、源码或绝对路径
+- [x] 不提交真实 workspace 的 `.memory-center/index`、memory、源码或绝对路径
 
 验证记录（2026-06-23）:
 - 公开 Golden：case_count `2`，anchor recall `1.0`，edge recall `1.0`，forbidden hit rate `0.0`，agent invalid search suggestion count `0`，agent invalid search reduction rate `1.0`，median latency `101.523ms`，p95 latency `117.05ms`，token estimate `10693`，performance gate `baseline_missing`。
 - 真实 UCAP Golden：case_count `1`，anchor recall `1.0`，edge recall `1.0`，forbidden hit rate `0.0`，agent invalid search suggestion count `0`，agent invalid search reduction rate `1.0`，median latency `2980.213ms`，p95 latency `2980.213ms`，token estimate `60850`，performance gate `baseline_missing`。
 - 已新增 Golden `performance_gate`：传入 3.2.0-compatible baseline JSON 时自动计算 latency/token 改善率；未传 baseline 时输出 `current_baseline` 快照供后续保存，不把历史对比项标记为完成。
+- 真实 UCAP 三档视图验证：`summary / standard / deep` 的 `summary_lines` 完全一致，`completion_status=complete`；`summary` 不包含分层详情，`standard` 包含分层详情，`deep` 包含业务词汇等深度诊断区块。
 
 ## 非目标
 

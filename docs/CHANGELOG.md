@@ -8,6 +8,15 @@
 
 ## Unreleased
 
+### 3.5.7: Walkthrough Report Levels / 全链路输出视图分级
+
+- Method walkthrough `report_level` 新增正式三档视图：`summary`、`standard`、`deep`。
+- `summary` 只保留快速结论、主链路、证据文件编号、关键风险和下一步；`standard` 保持默认详细可读视图；`deep` 展开 glossary、rule groups、branch outline、anti-patterns 等深度诊断区块。
+- 旧 `brief` 保留为兼容别名并归一到 `summary`；结构化字段不删减，三档只改变 `answer_markdown` 展示详略。
+- 真实 UCAP 场景验证三档共享同一 `summary_lines` 主链路，`completion_status=complete`。
+
+English summary: method walkthrough now supports summary, standard, and deep report levels without changing structured fields.
+
 ### 3.5.6: Real UCAP Verification Script / 真实 UCAP 验证脚本
 
 - 新增 `scripts/verify_real_ucap.sh`，作为后续本地验收默认入口，固定验证用户提供的真实 UCAP workspace、私有 Golden cases 和关键全链路查询。

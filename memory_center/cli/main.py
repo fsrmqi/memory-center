@@ -341,7 +341,7 @@ def method_walkthrough_cmd(
     project: str = typer.Option("", help="Filter by project name for disambiguation."),
     view: str = typer.Option("full", help="full|compact"),
     budget: str = typer.Option("medium", help="small|medium|large"),
-    report_level: str = typer.Option("standard", help="brief|standard|deep|risk-focused"),
+    report_level: str = typer.Option("standard", help="summary|standard|deep|risk-focused"),
 ):
     """Explain indexed method steps, downstream calls, and Feign continuations."""
     print(_dispatch_walkthrough_cli(
@@ -362,7 +362,7 @@ def walkthrough_health_cmd(
     workspace: str = typer.Option(...),
     symbol: str = typer.Option("", help="Optional Method symbol for sample walkthrough validation."),
     project: str = typer.Option("", help="Filter by project name for disambiguation."),
-    report_level: str = typer.Option("standard", help="brief|standard|deep|risk-focused"),
+    report_level: str = typer.Option("standard", help="summary|standard|deep|risk-focused"),
 ):
     """Check method walkthrough readiness and output contract."""
     print(_dispatch_walkthrough_cli(
@@ -379,7 +379,7 @@ def walkthrough_export_cmd(
     workspace: str = typer.Option(...),
     symbol: str = typer.Option(..., help="Method symbol, e.g. com.example.ArticleService#listByDto"),
     project: str = typer.Option("", help="Filter by project name for disambiguation."),
-    report_level: str = typer.Option("deep", help="brief|standard|deep|risk-focused"),
+    report_level: str = typer.Option("deep", help="summary|standard|deep|risk-focused"),
     title: str = typer.Option("", help="Optional artifact title."),
 ):
     """Export a method walkthrough Markdown artifact under artifacts/walkthroughs."""
@@ -398,7 +398,7 @@ def walkthrough_eval_cmd(
     workspace: str = typer.Option(...),
     symbol: str = typer.Option(..., help="Method symbol, e.g. com.example.ArticleService#listByDto"),
     project: str = typer.Option("", help="Filter by project name for disambiguation."),
-    report_level: str = typer.Option("standard", help="brief|standard|deep|risk-focused"),
+    report_level: str = typer.Option("standard", help="summary|standard|deep|risk-focused"),
 ):
     """Evaluate whether a method walkthrough result is agent-ready."""
     print(_dispatch_walkthrough_cli(

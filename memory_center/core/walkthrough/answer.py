@@ -70,7 +70,9 @@ def method_walkthrough_fields_contract() -> Dict[str, Any]:
 
 def normalize_report_level(report_level: str) -> str:
     value = (report_level or "standard").strip().lower()
-    return value if value in {"brief", "standard", "deep", "risk-focused", "code-review"} else "standard"
+    if value == "brief":
+        return "summary"
+    return value if value in {"summary", "standard", "deep", "risk-focused", "code-review"} else "standard"
 
 
 def build_method_walkthrough_agent_policy() -> Dict[str, Any]:
@@ -250,11 +252,17 @@ def load_method_walkthrough_template(workspace_file: str | Path) -> Dict[str, st
 
 def default_method_walkthrough_template(report_level: str = "standard") -> str:
     level = normalize_report_level(report_level)
-    if level == "brief":
+    if level == "summary":
         return (
             "## {target_label} 全链路梳理\n\n"
-            "### 主线\n{summary_lines}\n\n"
-            "### 风险\n{performance_risks}\n"
+            "### 快速结论\n"
+            "- 入口: {target_label} [{target_file_ref}]:{target_line}\n"
+            "- 完成状态: {completion_status}\n"
+            "- 使用当前结构化字段继续分析；不要重新全局 find/grep 定位同一链路。\n\n"
+            "### 主链路\n{readable_summary_lines}\n\n"
+            "### 证据文件\n{numbered_read_targets}\n\n"
+            "### 关键风险\n{performance_risks}\n\n"
+            "### 下一步\n{next_actions}\n"
         )
     if level == "risk-focused":
         return (
