@@ -742,9 +742,11 @@ def _build_group_impact_progressive_view(
     target: str,
     impact_records: List[Dict[str, Any]],
     workspace_refs: List[Dict[str, Any]],
-    bridges: List[Dict[str, Any]] = [],
-    impacted_workspaces: List[str] = [],
+    bridges: List[Dict[str, Any]] | None = None,
+    impacted_workspaces: List[str] | None = None,
 ) -> Dict[str, Any]:
+    bridges = bridges or []
+    impacted_workspaces = impacted_workspaces or []
     confirmed_count = sum(1 for item in impact_records if item.get("_confidence_band") == "confirmed")
     probable_count = sum(1 for item in impact_records if item.get("_confidence_band") == "probable")
     possible_count = sum(1 for item in impact_records if item.get("_confidence_band") == "possible")

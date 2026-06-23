@@ -130,6 +130,17 @@ app.add_typer(group_app, name="group")
 app.add_typer(workspace_app, name="workspace")
 app.add_typer(artifact_app, name="artifact")
 
+OPTIONAL_PROJECT_FILTER = typer.Option(None, help="Only rebuild indexes for these projects.")
+OPTIONAL_PATH_FILTER = typer.Option(None, help="Only rebuild indexes for these logical or absolute paths.")
+OPTIONAL_PROJECTS = typer.Option(None)
+OPTIONAL_FILES = typer.Option(None)
+REQUIRED_REF_IDS = typer.Option(...)
+REQUIRED_PROJECTS = typer.Option(...)
+REQUIRED_FILES = typer.Option(...)
+OPTIONAL_RISK_POINTS = typer.Option(None)
+OPTIONAL_VERIFIED_BY = typer.Option(None)
+OPTIONAL_TAGS = typer.Option(None)
+
 
 def _version_callback(value: bool):
     if value:
@@ -160,8 +171,8 @@ def init(workspace_root: str = typer.Option(...), name: str = typer.Option("dev-
 @app.command()
 def reindex(
     workspace: str = typer.Option(...),
-    project: Optional[List[str]] = typer.Option(None, help="Only rebuild indexes for these projects."),
-    path: Optional[List[str]] = typer.Option(None, help="Only rebuild indexes for these logical or absolute paths."),
+    project: Optional[List[str]] = OPTIONAL_PROJECT_FILTER,
+    path: Optional[List[str]] = OPTIONAL_PATH_FILTER,
     changed_only: bool = typer.Option(False, help="Use changed files from memory-detect-changes as reindex scope."),
     scope: str = typer.Option("staged", help="When --changed-only is set: staged|head|all"),
 ):
@@ -258,8 +269,8 @@ def check_contract(workspace: str = typer.Option(...), contract_file: str = type
 def check_rules(
     workspace: str = typer.Option(...),
     change_type: str = typer.Option("general"),
-    project: Optional[List[str]] = typer.Option(None),
-    file: Optional[List[str]] = typer.Option(None),
+    project: Optional[List[str]] = OPTIONAL_PROJECTS,
+    file: Optional[List[str]] = OPTIONAL_FILES,
 ):
     """Match architecture rules for a proposed change."""
     print(workspace_check_rules(workspace, project, change_type, file))
@@ -485,8 +496,8 @@ def memory_write_judge_cmd(
     source: str = typer.Option("note"),
     intent: str = typer.Option(""),
     prefer_layer: str = typer.Option(""),
-    project: Optional[List[str]] = typer.Option(None),
-    file: Optional[List[str]] = typer.Option(None),
+    project: Optional[List[str]] = OPTIONAL_PROJECTS,
+    file: Optional[List[str]] = OPTIONAL_FILES,
 ):
     """Judge which memory layer (L0/L1/L2/L3) the input should be written to."""
     print(
@@ -512,8 +523,8 @@ def memory_plan_write_cmd(
     task_id: str = typer.Option(""),
     title: str = typer.Option(""),
     prefer_layer: str = typer.Option(""),
-    project: Optional[List[str]] = typer.Option(None),
-    file: Optional[List[str]] = typer.Option(None),
+    project: Optional[List[str]] = OPTIONAL_PROJECTS,
+    file: Optional[List[str]] = OPTIONAL_FILES,
 ):
     """Build an executable write plan after memory layer judgment."""
     print(
@@ -542,8 +553,8 @@ def memory_execute_write_cmd(
     task_id: str = typer.Option(""),
     title: str = typer.Option(""),
     prefer_layer: str = typer.Option(""),
-    project: Optional[List[str]] = typer.Option(None),
-    file: Optional[List[str]] = typer.Option(None),
+    project: Optional[List[str]] = OPTIONAL_PROJECTS,
+    file: Optional[List[str]] = OPTIONAL_FILES,
 ):
     """Execute the ready steps from memory_plan_write."""
     print(
@@ -878,7 +889,7 @@ def ref_get_cmd(
 @app.command("ref-batch")
 def ref_batch_cmd(
     workspace: str = typer.Option(...),
-    ref_id: List[str] = typer.Option(...),
+    ref_id: List[str] = REQUIRED_REF_IDS,
 ):
     """Resolve multiple short memory reference ids."""
     print(memory_ref_batch(workspace, ref_ids=ref_id))
@@ -915,11 +926,11 @@ def generate_skills_cmd(workspace: str = typer.Option(...), output: Optional[str
 def record_case_cmd(
     workspace: str = typer.Option(...),
     task: str = typer.Option(...),
-    project: List[str] = typer.Option(...),
-    file: List[str] = typer.Option(...),
+    project: List[str] = REQUIRED_PROJECTS,
+    file: List[str] = REQUIRED_FILES,
     flow: str = typer.Option(""),
-    risk_point: Optional[List[str]] = typer.Option(None),
-    verified_by: Optional[List[str]] = typer.Option(None),
+    risk_point: Optional[List[str]] = OPTIONAL_RISK_POINTS,
+    verified_by: Optional[List[str]] = OPTIONAL_VERIFIED_BY,
     source_session_id: str = typer.Option(""),
     source_task_id: str = typer.Option(""),
     valid_from: str = typer.Option(""),
@@ -974,7 +985,7 @@ def end_session_cmd(
     workspace: str = typer.Option(...),
     session_id: str = typer.Option(...),
     outcome: str = typer.Option(""),
-    verified_by: Optional[List[str]] = typer.Option(None),
+    verified_by: Optional[List[str]] = OPTIONAL_VERIFIED_BY,
 ):
     """Finalize one session and generate a summary record."""
     print(workspace_end_session(workspace, session_id, outcome=outcome, verified_by=verified_by))
@@ -1263,7 +1274,7 @@ def work_close_cmd(
     title: str = typer.Option(""),
     auto_sync_mode: str = typer.Option("balanced"),
     record_case: bool = typer.Option(True, help="Auto record the suggested case after syncing."),
-    verified_by: Optional[List[str]] = typer.Option(None),
+    verified_by: Optional[List[str]] = OPTIONAL_VERIFIED_BY,
 ):
     """Close one task workflow: end session, sync case, optionally record case."""
     ended = workspace_end_session(workspace, session_id, outcome=outcome, verified_by=verified_by)
@@ -1511,7 +1522,7 @@ def workspace_add_service(
     path: str = typer.Option(...),
     service_type: str = typer.Option("spring-boot-service", "--type"),
     service_name: Optional[str] = typer.Option(None),
-    tag: Optional[List[str]] = typer.Option(None),
+    tag: Optional[List[str]] = OPTIONAL_TAGS,
 ):
     """Add or replace one service entry in workspace.yaml."""
     result = add_workspace_service(workspace, name, path, service_type, service_name, tag)
@@ -1604,7 +1615,7 @@ def artifact_create_task_cmd(
     title: str = typer.Option(""),
     intent: str = typer.Option(""),
     owner: str = typer.Option(""),
-    tag: Optional[List[str]] = typer.Option(None),
+    tag: Optional[List[str]] = OPTIONAL_TAGS,
     priority: str = typer.Option("medium"),
 ):
     """Create one task-specific artifact space from a custom title or intent."""

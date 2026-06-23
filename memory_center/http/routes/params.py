@@ -19,8 +19,8 @@ def _parse_int(params: dict, key: str, default: int, min_val: int = 1, max_val: 
     raw = params.get(key, [str(default)])[0]
     try:
         value = int(raw)
-    except (ValueError, TypeError):
-        raise ValueError(f"{key} must be an integer, got: {raw!r}")
+    except (ValueError, TypeError) as exc:
+        raise ValueError(f"{key} must be an integer, got: {raw!r}") from exc
     return max(min_val, min(value, max_val))
 
 
