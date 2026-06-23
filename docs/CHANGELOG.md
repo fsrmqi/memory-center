@@ -8,6 +8,15 @@
 
 ## Unreleased
 
+### 3.5.4: Golden Agent Guidance Gate / Golden Agent 建议门禁
+
+- Golden Benchmark 新增 `agent_guidance` 指标，统计完整链路结果中是否仍存在鼓励全局 `find/grep/rg --files/sed/IDEA search` 的无效搜索建议。
+- 新增 `agent_invalid_search_suggestion_count` 与 `agent_invalid_search_reduction_rate` 汇总门禁；Golden suite 通过条件现在要求无效搜索建议为 `0` 且下降率 `>= 50%`。
+- 反模式提示里的“不要 find/grep”“直接读 absolute_file_path”等否定式建议不会被误判为坏建议。
+- CLI、HTTP、MCP `eval_golden` 复用同一 `run_golden_suite` 输出，无需新增参数或破坏现有 schema。
+
+English summary: Golden Benchmark now gates agent-facing guidance, ensuring complete walkthroughs tell agents to use current evidence instead of restarting broad repository searches.
+
 ### 3.5.3: Walkthrough Completion Status / 全链路完成状态
 
 - 新增 additive 顶层字段 `completion_status`，用于标记 method walkthrough / full-chain query 当前证据是否 `complete`、`partial`、`blocked` 或 `stale`。

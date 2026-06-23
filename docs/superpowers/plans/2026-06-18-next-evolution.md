@@ -347,10 +347,15 @@ Run: `pytest -q tests/test_completion_status.py`
 页面展示：链路完成状态、anchor recall、freshness、median/p95 latency、缺失层和推荐动作；移动端保持可读。
 
 Acceptance:
-- 完整链路不再建议全局搜索
-- 不完整链路明确缺失位置和停止原因
-- MCP、HTTP、Workbench 对同一结果显示一致状态
-- Golden suite 中 Agent 无效搜索建议数量下降 `>= 50%`
+- [x] 完整链路不再建议全局搜索
+- [x] 不完整链路明确缺失位置和停止原因
+- [x] MCP、HTTP、Workbench 对同一结果显示一致状态
+- [x] Golden suite 中 Agent 无效搜索建议数量下降 `>= 50%`
+
+Result / 结果（2026-06-23）:
+- 新增 Golden `agent_guidance` case 指标：`completion_stop_signal`、`policy_stop_signal`、`invalid_search_suggestion_count`、`invalid_search_suggestions`、`invalid_search_reduction_rate`。
+- Golden summary 新增 `agent_invalid_search_suggestion_count` 和 `agent_invalid_search_reduction_rate`；suite passed 现在包含无效搜索建议门禁。
+- 否定式反模式提示（例如“不需要 find”“avoid grep”）不会被统计为坏建议；真正鼓励继续全局搜索的 next action 会被统计并导致门禁失败。
 
 ---
 
@@ -372,15 +377,21 @@ Acceptance:
 
 ## 全阶段验收
 
-- [ ] `python3 -m compileall -q memory_center tests`
-- [ ] `git diff --check`
-- [ ] `pytest -q`
-- [ ] Golden anchor recall `>= 0.90`
-- [ ] Golden edge recall `>= 0.85`
-- [ ] forbidden hit rate `= 0`
+- [x] `python3 -m compileall -q memory_center tests`
+- [x] `git diff --check`
+- [x] `pytest -q`
+- [x] Golden anchor recall `>= 0.90`
+- [x] Golden edge recall `>= 0.85`
+- [x] forbidden hit rate `= 0`
+- [x] Golden agent invalid search suggestion count `= 0`
+- [x] Golden agent invalid search reduction rate `>= 0.50`
 - [ ] walkthrough median latency 相比 3.2.0 基线改善 `>= 15%`
 - [ ] compact token 相比 3.2.0 基线改善 `>= 10%`
 - [ ] 不提交真实 workspace 的 `.memory-center/index`、memory、源码或绝对路径
+
+验证记录（2026-06-23）:
+- 公开 Golden：case_count `2`，anchor recall `1.0`，edge recall `1.0`，forbidden hit rate `0.0`，agent invalid search suggestion count `0`，agent invalid search reduction rate `1.0`，median latency `107.227ms`，token estimate `10694`。
+- 真实 UCAP Golden：case_count `1`，anchor recall `1.0`，edge recall `1.0`，forbidden hit rate `0.0`，agent invalid search suggestion count `0`，agent invalid search reduction rate `1.0`，median latency `2866.888ms`，token estimate `60850`。
 
 ## 非目标
 

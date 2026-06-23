@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import statistics
 import time
 from pathlib import Path
@@ -12,6 +13,24 @@ from .models import GoldenCase
 
 
 CaseRunner = Callable[[GoldenCase], Dict[str, Any]]
+
+
+_INVALID_SEARCH_TOOL_RE = re.compile(r"\b(find|grep(?:\s+-l)?|rg\s+--files|sed\s+-n|idea\s+search)\b", re.I)
+_NEGATED_SEARCH_HINTS = (
+    "do_not",
+    "avoid",
+    "anti-pattern",
+    "anti_patterns",
+    "不需要",
+    "不要",
+    "避免",
+    "无需",
+    "禁止",
+    "直接读",
+    "directly",
+    "instead of",
+    "rather than",
+)
 
 
 def load_golden_cases(cases_file: str | Path) -> list[GoldenCase]:
@@ -64,6 +83,76 @@ def score_golden_case(
         "forbidden_hit_count": len(forbidden_hits),
         "latency_passed": latency_passed,
         "passed": passed,
+    }
+
+
+def _agent_guidance_strings(payload: Any) -> list[tuple[str, str]]:
+    items: list[tuple[str, str]] = []
+
+    def visit(value: Any, path: str) -> None:
+        if isinstance(value, dict):
+            for key, nested in value.items():
+                visit(nested, f"{path}.{key}" if path else str(key))
+        elif isinstance(value, (list, tuple)):
+            for index, nested in enumerate(value):
+                visit(nested, f"{path}[{index}]")
+        elif isinstance(value, str):
+            items.append((path, value.strip()))
+
+    guidance_roots = {
+        "next_actions",
+        "agent_usage_policy",
+        "anti_patterns",
+        "completion_status",
+        "limitations",
+        "summary_lines",
+        "answer_markdown",
+    }
+    if isinstance(payload, dict):
+        for key in guidance_roots:
+            if key in payload:
+                visit(payload[key], key)
+    else:
+        visit(payload, "")
+    return [(path, text) for path, text in items if text]
+
+
+def _is_negated_search_guidance(path: str, text: str) -> bool:
+    haystack = f"{path} {text}".lower()
+    return any(token in haystack for token in _NEGATED_SEARCH_HINTS)
+
+
+def evaluate_agent_guidance(payload: Any) -> Dict[str, Any]:
+    """Score whether agent-facing output still encourages unnecessary repo search."""
+
+    invalid: list[str] = []
+    search_reference_count = 0
+    for path, text in _agent_guidance_strings(payload):
+        if not _INVALID_SEARCH_TOOL_RE.search(text):
+            continue
+        search_reference_count += 1
+        if _is_negated_search_guidance(path, text):
+            continue
+        invalid.append(f"{path}: {text}")
+
+    completion = payload.get("completion_status", {}) if isinstance(payload, dict) else {}
+    policy = payload.get("agent_usage_policy", {}) if isinstance(payload, dict) else {}
+    completion_stop_signal = (
+        isinstance(completion, dict)
+        and completion.get("state") == "complete"
+        and completion.get("recommended_action") == "use_current_evidence"
+    )
+    policy_stop_signal = isinstance(policy, dict) and bool(policy.get("do_not_search_when_absolute_path_present"))
+    valid_stop_signal = completion_stop_signal or policy_stop_signal
+    reduction_rate = 1.0 if valid_stop_signal and not invalid else 0.0
+    return {
+        "completion_stop_signal": completion_stop_signal,
+        "policy_stop_signal": policy_stop_signal,
+        "search_reference_count": search_reference_count,
+        "invalid_search_suggestion_count": len(invalid),
+        "invalid_search_suggestions": invalid,
+        "invalid_search_reduction_rate": reduction_rate,
+        "passed": len(invalid) == 0 and reduction_rate >= 0.5,
     }
 
 
@@ -179,6 +268,7 @@ def run_golden_suite(
         anchors = list(execution.get("anchors", []) or [])
         edges = list(execution.get("edges", []) or [])
         token_estimate += max(1, len(json.dumps(execution.get("payload", {}), ensure_ascii=False, default=str)) // 4)
+        agent_guidance = evaluate_agent_guidance(execution.get("payload", {}))
         score = score_golden_case(
             expected_anchors=case.expected_anchors,
             actual_anchors=anchors,
@@ -194,6 +284,7 @@ def run_golden_suite(
             "actual_anchors": anchors,
             "actual_edges": edges,
             "latency_ms": latency_ms,
+            "agent_guidance": agent_guidance,
             **score,
         })
     anchor_recall = sum(row["anchor_recall"] for row in case_results) / len(case_results)
@@ -201,13 +292,24 @@ def run_golden_suite(
     forbidden_count = sum(row["forbidden_hit_count"] for row in case_results)
     forbidden_total = sum(len(case.forbidden_anchors) for case in cases)
     forbidden_rate = forbidden_count / forbidden_total if forbidden_total else 0.0
+    invalid_search_count = sum(row["agent_guidance"]["invalid_search_suggestion_count"] for row in case_results)
+    reduction_rates = [row["agent_guidance"]["invalid_search_reduction_rate"] for row in case_results]
+    invalid_search_reduction_rate = sum(reduction_rates) / len(reduction_rates) if reduction_rates else 1.0
     summary = {
         "case_count": len(cases),
         "passed_cases": sum(1 for row in case_results if row["passed"]),
         "anchor_recall": round(anchor_recall, 4),
         "edge_recall": round(edge_recall, 4),
         "forbidden_hit_rate": round(forbidden_rate, 4),
-        "passed": anchor_recall >= 0.90 and edge_recall >= 0.85 and forbidden_rate == 0.0,
+        "agent_invalid_search_suggestion_count": invalid_search_count,
+        "agent_invalid_search_reduction_rate": round(invalid_search_reduction_rate, 4),
+        "passed": (
+            anchor_recall >= 0.90
+            and edge_recall >= 0.85
+            and forbidden_rate == 0.0
+            and invalid_search_count == 0
+            and invalid_search_reduction_rate >= 0.5
+        ),
     }
     return {
         "schema_version": 1,

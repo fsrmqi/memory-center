@@ -7,6 +7,7 @@ import pytest
 from typer.testing import CliRunner
 
 from memory_center.core.benchmark.golden import (
+    evaluate_agent_guidance,
     extract_logical_evidence,
     load_golden_cases,
     run_golden_suite,
@@ -67,7 +68,16 @@ def test_run_golden_suite_reports_stable_quality_and_latency(tmp_path: Path) -> 
         return {
             "anchors": ["Entry#run", "RemoteController#list"],
             "edges": ["CALLS_METHOD", "IMPLEMENTS_FEIGN"],
-            "payload": {"summary_lines": ["one", "two"]},
+            "payload": {
+                "completion_status": {
+                    "state": "complete",
+                    "recommended_action": "use_current_evidence",
+                    "missing_layers": [],
+                },
+                "agent_usage_policy": {"do_not_search_when_absolute_path_present": True},
+                "next_actions": ["使用当前 read_targets 证据继续总结，不需要 find"],
+                "summary_lines": ["one", "two"],
+            },
         }
 
     first = run_golden_suite(workspace, cases, case_runner=runner)
@@ -80,7 +90,38 @@ def test_run_golden_suite_reports_stable_quality_and_latency(tmp_path: Path) -> 
     assert first["performance"]["median_latency_ms"] >= 0
     assert first["performance"]["p95_latency_ms"] >= first["performance"]["median_latency_ms"]
     assert first["performance"]["token_estimate"] > 0
+    assert first["summary"]["agent_invalid_search_suggestion_count"] == 0
+    assert first["summary"]["agent_invalid_search_reduction_rate"] >= 0.5
+    assert first["cases"][0]["agent_guidance"]["completion_stop_signal"] is True
     assert first["summary"] == second["summary"]
+
+
+def test_agent_guidance_counts_only_positive_invalid_search_advice() -> None:
+    payload = {
+        "completion_status": {"state": "complete", "recommended_action": "use_current_evidence"},
+        "agent_usage_policy": {
+            "do_not_search_when_absolute_path_present": True,
+            "avoid_tools": ["find", "grep -l", "rg --files"],
+        },
+        "anti_patterns": [
+            {"avoid": "repo_wide_find_before_read_targets", "reason": "不要 find，直接读 absolute_file_path"}
+        ],
+        "next_actions": [
+            "优先读 read_targets，不需要 find",
+            "继续用 grep -l 全仓库搜索 Controller",
+            "run sed -n 1,200p on guessed files",
+        ],
+    }
+
+    guidance = evaluate_agent_guidance(payload)
+
+    assert guidance["completion_stop_signal"] is True
+    assert guidance["invalid_search_suggestion_count"] == 2
+    assert guidance["invalid_search_suggestions"] == [
+        "next_actions[1]: 继续用 grep -l 全仓库搜索 Controller",
+        "next_actions[2]: run sed -n 1,200p on guessed files",
+    ]
+    assert guidance["invalid_search_reduction_rate"] == 0.0
 
 
 def test_extract_logical_evidence_infers_walkthrough_edges_and_method_anchors() -> None:
