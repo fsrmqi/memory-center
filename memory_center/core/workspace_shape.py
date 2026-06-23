@@ -207,15 +207,26 @@ def _discover_submodule_candidates(root: Path, config: WorkspaceConfig) -> list[
 
 
 def _looks_like_module_root(path: Path) -> bool:
-    markers = [
-        path / "src",
-        path / "pom.xml",
-        path / "build.gradle",
-        path / "build.gradle.kts",
-        path / "settings.gradle",
-        path / "settings.gradle.kts",
-    ]
-    return any(marker.exists() for marker in markers)
+    """True iff ``path`` looks like the root of a buildable module.
+
+    Backward-compatible behaviour: matches against the union of build
+    markers from every registered service kind. This keeps the historical
+    pom/gradle signal working while transparently picking up new kinds
+    (Python, Go, Rust, …) registered in ``service_kinds``.
+    """
+    # Import locally to avoid surfacing service_kinds in the public import
+    # graph of workspace_shape — this helper is called in tight loops.
+    from .service_kinds import SERVICE_KIND_REGISTRY
+
+    markers: set[str] = set()
+    for spec in SERVICE_KIND_REGISTRY.values():
+        markers.update(spec.build_markers)
+    # ``src`` directory historically counted as a module signal even when
+    # no manifest was present; preserve that so existing fixtures keep
+    # discovering submodules under aggregator pom projects.
+    if (path / "src").exists():
+        return True
+    return any((path / marker).exists() for marker in markers)
 
 
 def _to_workspace_relative_path(path: Path, config: WorkspaceConfig) -> str:
