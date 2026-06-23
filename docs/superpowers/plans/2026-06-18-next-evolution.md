@@ -383,6 +383,7 @@ Result / 结果（2026-06-23）:
 - `examples/`、公开 demo workspace、synthetic benchmark 只作为单元测试、CI smoke test、公开可复现模板使用；不得再作为本地验收通过的主要证据。
 - 若真实场景缺少可用 cases 或 baseline，必须明确记录为 `real_case_missing` / `baseline_missing`，并说明需要补充的文件或指标；不要用 examples 指标替代真实验收。
 - 提交前可以继续运行公开测试保证兼容性，但最终说明中的“验证通过”必须包含真实场景结果，或明确说明真实场景未运行的原因。
+- 默认真实场景验收命令：`scripts/verify_real_ucap.sh`。该脚本只输出摘要，不展开完整 payload；如需切换真实场景，用 `MEMORY_CENTER_REAL_WORKSPACE`、`MEMORY_CENTER_REAL_CASES`、`MEMORY_CENTER_REAL_QUERY` 覆盖。
 
 - [x] `python3 -m compileall -q memory_center tests`
 - [x] `git diff --check`
