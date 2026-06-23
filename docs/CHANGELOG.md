@@ -8,6 +8,29 @@
 
 ## Unreleased
 
+### CBM-Inspired Evolution P0-1: Service Kind Registry / 服务类型注册表
+
+- 新增 `memory_center/core/service_kinds.py`,统一管理服务类型(11 种):
+  `spring-cloud-gateway` / `spring-boot-service` / `spring-boot-task` /
+  `shared-library` / `generic-jvm` / `kotlin-module` / `python-package` /
+  `node-app` / `go-module` / `rust-crate` / `generic`。
+- `ServiceConfig` 增加可选 `language` 字段及 `resolved_language()` 助手;
+  默认 `type="spring-boot-service"` 保留,旧 workspace.yaml 零变更。
+- `memory-center init` 默认开启自动探测(`--detect`,可用 `--no-detect`
+  回退到旧 Spring 模板;`--dry-run` 仅预览不写文件),按子目录构建标记
+  匹配 kind,并对 `*-api` / `*-common` / `*-core` 命名自动加 contract /
+  common 标签。
+- 真实验证:对 C 项目 `codebase-memory-mcp` 跑 `init --dry-run` 不再写入
+  3 个虚假 Spring service,只识别 `graph-ui` (`node-app`)。
+- 新增长期演进计划 `docs/CBM_INSPIRED_EVOLUTION_PLAN.md`,记录 P0/P1/
+  P2/P3 各阶段从 codebase-memory-mcp 学到的设计借鉴(多语言 parser、
+  RAM-first 索引、跨服务边抽象、团队共享 graph artifact 等)。
+- English summary: introduced a service kind registry that decouples
+  memory-center from the Spring-only assumption (11 kinds across JVM /
+  Kotlin / Python / Node / Go / Rust / generic). `init` now auto-detects
+  service types per submodule, falls back gracefully on unrecognized
+  repos, and exposes `--dry-run` / `--no-detect` for explicit control.
+
 ### Next: Ruff Modernization and Real Precision Gates / Ruff 现代化与真实精度门禁
 
 - Ruff 现代化分层收口继续推进：批量清理 `UP006/UP035/UP037/UP045/UP031/UP007`，并手工判断修复剩余 `B007/B905` 语义项。

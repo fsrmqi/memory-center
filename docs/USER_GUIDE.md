@@ -27,10 +27,51 @@ memory-center --version
 ## 2. Initialize Workspace / 初始化工作区
 
 ```bash
-memory-center init --workspace /abs/path/.memory-center/workspace.yaml
+memory-center init --workspace-root /abs/path/to/repo
 ```
 
-初始化后重点关注：
+`init` automatically scans the workspace root and registers one service per
+recognized child directory. Hidden directories and conventional build
+outputs (`target`, `build`, `dist`, `node_modules`, `.venv`, …) are skipped.
+
+`init` 默认会自动扫描工作区根目录,为每个被识别的子模块生成一条 service 记录,
+忽略隐藏目录和常见的构建产物目录。
+
+```bash
+# Preview what would be detected without writing anything.
+# 预览将生成的内容,但不写入文件。
+memory-center init --workspace-root /abs/path/to/repo --dry-run
+
+# Use the legacy Spring-Cloud placeholder template
+# (gateway / common-api / common-core).
+# 使用旧版 Spring Cloud 占位模板。
+memory-center init --workspace-root /abs/path/to/repo --no-detect
+```
+
+### Supported service types / 支持的服务类型
+
+| `type` | Language | Build markers | 用途 / Purpose |
+|--------|----------|---------------|----------------|
+| `spring-cloud-gateway` | java | `pom.xml` / `build.gradle` + `spring-cloud-starter-gateway` | Spring Cloud Gateway 网关 |
+| `spring-boot-service` | java | `pom.xml` / `build.gradle` + `spring-boot` | Spring Boot 业务服务 |
+| `spring-boot-task` | java | `pom.xml` + `spring-boot` | Spring Boot 定时/批处理任务 |
+| `shared-library` | java | `pom.xml` / `build.gradle` + `spring-boot` | 共享库 / 契约模块 |
+| `generic-jvm` | java | `pom.xml` / `build.gradle(.kts)` (无 Spring 信号) | 通用 JVM 项目 |
+| `kotlin-module` | kotlin | `build.gradle.kts` / `settings.gradle.kts` | Kotlin 模块 |
+| `python-package` | python | `pyproject.toml` / `setup.py` / `setup.cfg` | Python 包 |
+| `node-app` | typescript | `package.json` | Node.js / TypeScript 应用 |
+| `go-module` | go | `go.mod` | Go 模块 |
+| `rust-crate` | rust | `Cargo.toml` | Rust crate |
+| `generic` | (none) | fallback | 未识别类型 / 通用目录 |
+
+Unknown types fall back to `generic` with a runtime warning.
+Set `language: <lang>` explicitly in `workspace.yaml` to override the
+language inferred from `type` (e.g. `type: generic` + `language: scala`).
+
+未识别的 `type` 会回退到 `generic` 并发出运行时警告。
+可在 `workspace.yaml` 中显式设置 `language: <lang>` 来覆盖从 `type` 推断的语言。
+
+### Files created / 初始化后重点关注
 
 - `workspace.yaml`
 - `.memory-center/rules/`
