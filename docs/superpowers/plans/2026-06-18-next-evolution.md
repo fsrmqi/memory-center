@@ -352,6 +352,22 @@ Acceptance:
 
 ---
 
+### Final Polish: 输出视图分级（最后阶段优化点，暂不执行）
+
+目标不是减少信息量，而是在所有核心能力稳定后增加更明确的人类阅读视图分级。
+
+- `summary`: 只保留快速结论、主链路、证据文件编号和关键风险，适合聊天窗口快速浏览。
+- `standard`: 当前默认形态，保留主链路、分层详情、证据文件、风险归并和下一步。
+- `deep`: 展开所有候选 endpoint、完整分支轮廓、更多 local steps 和原始结构索引，适合深度排查。
+
+约束：
+- 作为最后阶段优化，不影响当前 `standard` 默认输出。
+- 不删除结构化字段；`summary / standard / deep` 只改变 Markdown 展示形态。
+- MCP / CLI / HTTP 参数需要保持兼容，优先复用已有 `report_level` 或增加兼容型别名。
+- 必须有真实全链路 Golden case 验证三种视图的主链路一致性。
+
+---
+
 ## 全阶段验收
 
 - [ ] `python3 -m compileall -q memory_center tests`
