@@ -313,13 +313,18 @@ def test_memory_query_passes_freshness_and_learned_weights_once(
 
 
 def test_full_chain_budget_keeps_entry_method_anchor(demo_workspace_indexed: Path) -> None:
-    from memory_center.core.orchestrator.query import memory_query_hybrid
+    from memory_center.core.graph import GraphStore
+    from memory_center.core.orchestrator.common import load_context
+    from memory_center.core.retrieval.hybrid import hybrid_retrieve
 
-    result = memory_query_hybrid(
-        demo_workspace_indexed,
-        "ArticleMoveService#move 全链路",
-        limit=80,
-    )
+    _config, store = load_context(demo_workspace_indexed)
+    with GraphStore(store.graph_db_path) as graph:
+        result = hybrid_retrieve(
+            graph,
+            str(demo_workspace_indexed),
+            "ArticleMoveService#move 全链路",
+            limit=80,
+        )
     rows = [
         (
             item.get("node", {}).get("name"),
@@ -330,3 +335,23 @@ def test_full_chain_budget_keeps_entry_method_anchor(demo_workspace_indexed: Pat
     ]
 
     assert any(name == "ArticleMoveService.move" for name, _score, _sources in rows), rows
+
+
+def test_full_chain_symbol_query_routes_to_walkthrough(demo_workspace_indexed: Path) -> None:
+    from memory_center.core.orchestrator.query import memory_query_hybrid
+
+    result = memory_query_hybrid(
+        demo_workspace_indexed,
+        "梳理下 com.example.task.ArticleMoveService#move 全链路 一直到最底层的逻辑处理",
+        limit=20,
+        project="task-service",
+    )
+
+    assert result["mode_used"] == "query_walkthrough"
+    assert result["query_symbol"] == "com.example.task.ArticleMoveService#move"
+    assert result["found"] is True
+    assert result["target"]["class"] == "ArticleMoveService"
+    assert result["target"]["method"] == "move"
+    assert result["summary_lines"]
+    assert any("ArticleController#moveArticle" in line for line in result["summary_lines"])
+    assert result["agent_usage_policy"]["read_files_by"] == "absolute_file_path"

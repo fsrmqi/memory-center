@@ -8,6 +8,14 @@
 
 ## Unreleased
 
+### 3.5.1: Full-Chain Query Walkthrough Routing / 全链路 Query 路由修复
+
+- 修复 CLI/core `memory_query_hybrid` 在 `Class#method + 全链路/到底层` 自然语言查询下仍走泛化 graph token 排序的问题。
+- 这类查询现在会优先复用 method walkthrough，返回 `mode_used=query_walkthrough`、`summary_lines`、`answer_markdown`、`read_targets` 和 `agent_usage_policy` 等顶层字段。
+- 真实 workspace 回归中，典型跨服务 `ServiceImpl#method` 全链路查询不再误返回低信号构建文件，可直接追到入口 Service、辅助 Service、Feign、下游 Controller/Impl 与同类辅助查询方法。
+
+English summary: natural-language `Class#method` full-chain queries now route to method walkthrough from the core query entrypoint, avoiding low-signal token-ranked results.
+
 ### 3.5.0: Adaptive Retrieval Policy / 自适应检索策略
 
 - 新增纯函数 `RetrievalPolicy`，基于查询意图、索引 freshness 和有界学习权重，在执行检索源之前确定 sources、图深度、候选数和证据预算。
