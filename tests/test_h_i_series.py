@@ -23,6 +23,7 @@ import shutil
 from pathlib import Path
 
 import pytest
+
 from memory_center import __version__
 
 
@@ -97,7 +98,7 @@ class TestH02Traceability:
         assert isinstance(receipt, dict)
 
     def test_artifacts_module(self):
-        from memory_center.core.artifacts import list_task_spaces, get_task_artifact
+        from memory_center.core.artifacts import get_task_artifact, list_task_spaces
         assert callable(list_task_spaces)
         assert callable(get_task_artifact)
 
@@ -370,8 +371,9 @@ class TestH11PresetExtensionBoundary:
         assert "long-task" in profiles
 
     def test_bundle_no_secrets(self, demo_workspace: Path):
-        from memory_center.core.verification.bundle_export import generate_agent_bundle
         import json
+
+        from memory_center.core.verification.bundle_export import generate_agent_bundle
         bundle = generate_agent_bundle(str(demo_workspace), agent="codex")
         content = json.dumps(bundle)
         # Should not contain obvious secret patterns
@@ -514,8 +516,8 @@ class TestI04FinalVerification:
 
     def test_compile_all(self):
         """All Python files should compile without syntax errors."""
-        import py_compile
         import os
+        import py_compile
         errors = []
         for root, dirs, files in os.walk("memory_center"):
             dirs[:] = [d for d in dirs if d != "__pycache__"]
@@ -546,8 +548,8 @@ class TestI04FinalVerification:
 
     def test_three_entry_points(self):
         from memory_center.cli.main import app
-        from memory_center.mcp.server import create_server
         from memory_center.http.server import serve_http
+        from memory_center.mcp.server import create_server
         assert app is not None
         assert callable(create_server)
         assert callable(serve_http)

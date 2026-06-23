@@ -17,8 +17,9 @@ from ..rules import match_rules
 from ..schemas import with_schema
 from ..semantic import semantic_index_stats
 from ..store import WorkspaceStore
-from ..workspace_shape import analyze_workspace_shape
+from ..tracking import log_token_gain
 from ..verification.heuristics import apply_candidate_path_learning
+from ..workspace_shape import analyze_workspace_shape
 from ..write_receipts import WRITE_RECEIPTS_FILE
 from .common import (
     LAYER_L0,
@@ -34,8 +35,8 @@ from .common import (
     _sniff_risk_level,
     _trim_summary,
     load_context,
-    tokenize,
     rank_files,
+    tokenize,
 )
 from .compact import (
     _compact_continuity_dashboard,
@@ -44,10 +45,9 @@ from .compact import (
     _compact_workspace_status,
     _measure_compact_gain,
 )
+from .query import memory_callees, memory_callers, memory_tool_usage_report
 from .session import workspace_recent_evidence
 from .write import memory_write_judge, workspace_write_receipts
-from .query import memory_callers, memory_callees, memory_tool_usage_report
-from ..tracking import log_token_gain
 
 _JAVA_CHAIN_SYMBOL_RE = re.compile(
     r"((?:[a-z_][\w$]*\.)+[A-Z][\w$]*(?:#[a-zA-Z_][\w$]*)?|[A-Z][\w$]*(?:#[a-zA-Z_][\w$]*)?)"
@@ -364,9 +364,8 @@ def workspace_dashboard(
     budget: str = "medium",
 ) -> Dict[str, Any]:
     # Lazy import to avoid circular dependency with .resume and .eval
-    from .eval import memory_eval_write_quality, memory_eval_resume
-
     from ..timeline import timeline_query
+    from .eval import memory_eval_resume, memory_eval_write_quality
 
     status = workspace_status(workspace_file, view="full", budget=budget)
     active_tasks = status.get("active_task_spaces", [])[: max(limit, 1)]
@@ -460,7 +459,12 @@ def workspace_continuity_dashboard(
     budget: str = "medium",
 ) -> Dict[str, Any]:
     # Lazy import to avoid circular dependency with .resume
-    from .resume import workspace_resume_packet, workspace_next_actions, workspace_unresolved_items, workspace_handoff_history
+    from .resume import (
+        workspace_handoff_history,
+        workspace_next_actions,
+        workspace_resume_packet,
+        workspace_unresolved_items,
+    )
 
     status = workspace_status(workspace_file, view="compact", budget=budget)
     focus_task_id = task_id or (status.get("current_focus_task") or {}).get("task_id", "")

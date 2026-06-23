@@ -7,6 +7,7 @@ from typing import Any, Dict, Iterable, List, Sequence
 import yaml
 
 from .graph import GraphEdge, GraphNode, GraphStore, edge_id, node_id
+
 # Keep the tree-sitter wrapper active so fallback reasons remain observable.
 try:
     from .indexing.tree_sitter_parser import TreeSitterJavaParser
@@ -96,6 +97,7 @@ def reindex_workspace(
     # Parse Java files (sequential or parallel)
     if parallel and len(java_tasks) > 10:
         from concurrent.futures import ThreadPoolExecutor, as_completed
+
         from .indexing.parallel import estimate_optimal_workers
         workers = estimate_optimal_workers(len(java_tasks))
         with ThreadPoolExecutor(max_workers=workers) as pool:

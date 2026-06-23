@@ -9,9 +9,12 @@ Verifies:
 - Context Pack already contains freshness/evidence/rules/flows/refs
 """
 from __future__ import annotations
+
 import shutil
 from pathlib import Path
+
 import pytest
+
 
 @pytest.fixture()
 def demo_workspace(tmp_path: Path) -> Path:

@@ -17,15 +17,14 @@ import json
 
 import pytest
 
+from memory_center.core.freshness.status import FreshnessStatus, IndexFreshnessService
+from memory_center.core.presentation.progressive import build_progressive_levels
+from memory_center.core.reasoning.patterns import GraphPatternEngine
+from memory_center.core.reasoning.risk import RiskPatternEngine
+from memory_center.core.reasoning.transitive import TransitiveInferenceEngine
+from memory_center.core.retrieval.inverted import InvertedIndex
 from memory_center.core.storage.pool import SQLitePool
 from memory_center.core.storage.unified import UnifiedStore
-from memory_center.core.retrieval.inverted import InvertedIndex
-from memory_center.core.freshness.status import IndexFreshnessService, FreshnessStatus
-from memory_center.core.reasoning.patterns import GraphPatternEngine
-from memory_center.core.reasoning.transitive import TransitiveInferenceEngine
-from memory_center.core.reasoning.risk import RiskPatternEngine
-from memory_center.core.presentation.progressive import build_progressive_levels
-
 
 # ── Fixtures ─────────────────────────────────────────────────────────────────
 
@@ -666,6 +665,7 @@ class TestContextPackIntegration:
     def test_snippets_extracted(self, tmp_path):
         """build() returns code snippets from entrypoints' source files."""
         from unittest.mock import patch
+
         from memory_center.core.context.pack import ContextPackBuilder
 
         ws_yaml, src = self._setup_workspace(tmp_path)
@@ -699,6 +699,7 @@ class TestContextPackIntegration:
     def test_freshness_populated(self, tmp_path):
         """build() returns non-empty freshness (not a stub dict)."""
         from unittest.mock import patch
+
         from memory_center.core.context.pack import ContextPackBuilder
 
         ws_yaml, _ = self._setup_workspace(tmp_path)
@@ -715,6 +716,7 @@ class TestContextPackIntegration:
     def test_snippets_respect_token_budget(self, tmp_path):
         """Total snippet content stays within 25 % of budget_tokens."""
         from unittest.mock import patch
+
         from memory_center.core.context.pack import ContextPackBuilder
 
         ws_yaml, src = self._setup_workspace(tmp_path)
@@ -749,6 +751,7 @@ class TestContextPackIntegration:
     def test_non_code_files_skipped(self, tmp_path):
         """Snippets are not extracted from .yaml / .md / .json files."""
         from unittest.mock import patch
+
         from memory_center.core.context.pack import ContextPackBuilder
 
         ws_dir = tmp_path / ".memory-center"
@@ -791,6 +794,7 @@ class TestContextPackIntegration:
     def test_snippet_dedup_same_file(self, tmp_path):
         """Multiple nodes in the same file produce only one snippet."""
         from unittest.mock import patch
+
         from memory_center.core.context.pack import ContextPackBuilder
 
         ws_dir = tmp_path / ".memory-center"
@@ -829,6 +833,7 @@ class TestContextPackIntegration:
     def test_freshness_and_snippets_together(self, tmp_path):
         """A single build() returns both non-empty snippets and freshness."""
         from unittest.mock import patch
+
         from memory_center.core.context.pack import ContextPackBuilder
 
         ws_yaml, _ = self._setup_workspace(tmp_path)

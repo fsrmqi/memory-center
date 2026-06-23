@@ -11,9 +11,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Dict, List, Set
 
-from ..store import WorkspaceStore
 from ..backend.query import UnifiedBackendQuery
 from ..quality import build_quality_summary
+from ..store import WorkspaceStore
 
 
 class DrillDownNavigator:

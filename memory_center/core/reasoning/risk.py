@@ -8,8 +8,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, List
 
-from ..storage.unified import UnifiedStore
 from ..rules import match_rules
+from ..storage.unified import UnifiedStore
 
 
 @dataclass

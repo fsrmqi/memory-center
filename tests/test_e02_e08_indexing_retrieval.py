@@ -17,7 +17,6 @@ from pathlib import Path
 import pytest
 import yaml
 
-
 # ── Fixtures ────────────────────────────────────────────────────────────────
 
 @pytest.fixture()
@@ -63,8 +62,8 @@ class TestE02TreeSitterOptional:
             assert "Foo" in result.classes
 
     def test_parser_result_has_required_fields(self):
-        from memory_center.core.indexing.tree_sitter_parser import TreeSitterJavaParser
         from memory_center.core.indexing.base import JavaParseResult
+        from memory_center.core.indexing.tree_sitter_parser import TreeSitterJavaParser
         parser = TreeSitterJavaParser()
         result = parser.parse("", "Empty.java")
         assert isinstance(result, JavaParseResult)
@@ -97,8 +96,8 @@ class TestE02TreeSitterOptional:
 
     def test_parser_comparison_identical_output(self):
         """Both parsers should produce same core fields for simple input."""
-        from memory_center.core.indexing.tree_sitter_parser import TreeSitterJavaParser
         from memory_center.core.indexing.java_regex_parser import RegexJavaParser
+        from memory_center.core.indexing.tree_sitter_parser import TreeSitterJavaParser
         src = """package com.example;
 import java.util.List;
 @Service
@@ -830,8 +829,8 @@ class TestE03ParallelIndexing:
     """E-03: Parallel file parsing with fault tolerance."""
 
     def test_parse_files_parallel_basic(self):
-        from memory_center.core.indexing.parallel import parse_files_parallel
         from memory_center.core.indexing.java_regex_parser import RegexJavaParser
+        from memory_center.core.indexing.parallel import parse_files_parallel
         parser = RegexJavaParser()
         # Empty file list should return empty results
         results = parse_files_parallel([], parser.parse)
@@ -839,9 +838,10 @@ class TestE03ParallelIndexing:
 
     def test_parse_files_parallel_fault_tolerance(self):
         """Malformed files should not crash parallel parsing."""
-        from memory_center.core.indexing.parallel import parse_files_parallel
-        from memory_center.core.indexing.java_regex_parser import RegexJavaParser
         import tempfile
+
+        from memory_center.core.indexing.java_regex_parser import RegexJavaParser
+        from memory_center.core.indexing.parallel import parse_files_parallel
         parser = RegexJavaParser()
         # Create a temp file with valid Java
         with tempfile.NamedTemporaryFile(suffix=".java", mode="w", delete=False) as f:
@@ -1163,10 +1163,11 @@ class TestE08HybridRetrievalFusion:
 
     def test_hybrid_retrieval_on_demo(self, demo_workspace: Path):
         """Full hybrid retrieval should return results on demo workspace."""
+        from memory_center.core.graph import GraphStore
         from memory_center.core.retrieval.hybrid import hybrid_retrieve
+
         # hybrid_retrieve needs GraphStore + workspace_file + query
         from memory_center.core.store import WorkspaceStore
-        from memory_center.core.graph import GraphStore
         ws = WorkspaceStore(str(demo_workspace))
         with GraphStore(ws.graph_db_path) as graph:
             result = hybrid_retrieve(graph, str(demo_workspace), "UserService")
@@ -1281,9 +1282,9 @@ class TestE07VectorRetrievalIntegration:
 
     def test_vector_index_stats(self, demo_workspace):
         """VectorIndex.stats returns expected fields."""
-        from memory_center.core.store import WorkspaceStore
         from memory_center.core.storage.unified import UnifiedStore
         from memory_center.core.storage.vector_index import VectorIndex
+        from memory_center.core.store import WorkspaceStore
         ws = WorkspaceStore(str(demo_workspace))
         with UnifiedStore(ws.graph_db_path) as unified:
             vec = VectorIndex(unified)
@@ -1295,9 +1296,9 @@ class TestE07VectorRetrievalIntegration:
 
     def test_vector_index_upsert_and_query(self, demo_workspace):
         """VectorIndex can upsert and query embeddings."""
-        from memory_center.core.store import WorkspaceStore
         from memory_center.core.storage.unified import UnifiedStore
         from memory_center.core.storage.vector_index import VectorIndex
+        from memory_center.core.store import WorkspaceStore
         ws = WorkspaceStore(str(demo_workspace))
         with UnifiedStore(ws.graph_db_path) as unified:
             vec = VectorIndex(unified, dimension=4)
@@ -1315,9 +1316,9 @@ class TestE07VectorRetrievalIntegration:
 
     def test_vector_index_dimension_mismatch(self, demo_workspace):
         """VectorIndex raises ValueError on dimension mismatch."""
-        from memory_center.core.store import WorkspaceStore
         from memory_center.core.storage.unified import UnifiedStore
         from memory_center.core.storage.vector_index import VectorIndex
+        from memory_center.core.store import WorkspaceStore
         ws = WorkspaceStore(str(demo_workspace))
         with UnifiedStore(ws.graph_db_path) as unified:
             vec = VectorIndex(unified, dimension=4)
@@ -1328,9 +1329,9 @@ class TestE07VectorRetrievalIntegration:
 
     def test_vector_index_delete(self, demo_workspace):
         """VectorIndex.delete_embedding removes embeddings."""
-        from memory_center.core.store import WorkspaceStore
         from memory_center.core.storage.unified import UnifiedStore
         from memory_center.core.storage.vector_index import VectorIndex
+        from memory_center.core.store import WorkspaceStore
         ws = WorkspaceStore(str(demo_workspace))
         with UnifiedStore(ws.graph_db_path) as unified:
             vec = VectorIndex(unified, dimension=3)

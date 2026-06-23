@@ -8,7 +8,6 @@ demo workspace.
 
 from __future__ import annotations
 
-
 import pytest
 
 from memory_center.mcp.admin_actions import (

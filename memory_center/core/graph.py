@@ -8,7 +8,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
-
 # Pre-compiled regex for _sanitize_fts_term (P1 performance)
 _RE_SANITIZE_FTS = re.compile(r"[^\w㐀-䶿一-鿿豈-﫿]")
 

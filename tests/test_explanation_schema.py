@@ -3,10 +3,11 @@ from __future__ import annotations
 
 from memory_center.core.explanation import (
     Explanation,
+    backward_compat_wrapper,
     explanation_entry,
     merge_explanations,
-    backward_compat_wrapper,
 )
+
 
 class TestExplanationEntry:
     def test_basic_entry(self):

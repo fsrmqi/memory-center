@@ -8,7 +8,6 @@ from typing import Any, Dict, Iterable
 
 from ..store import WorkspaceStore
 
-
 PORTABLE_BASELINE_FILE = "portable-benchmark-baselines.jsonl"
 _SAFE_NAME = re.compile(r"^[A-Za-z0-9_.-]{1,80}$")
 

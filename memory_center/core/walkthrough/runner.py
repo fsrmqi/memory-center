@@ -26,16 +26,16 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from ..graph import GraphStore, node_id
 from ..completion import evaluate_walkthrough_completion
+from ..graph import GraphStore, node_id
 from ..result_types import attach_facade_metadata
 from ..tracking import log_token_gain
-from .cache import WalkthroughCache
 from . import answer as _wt_answer
 from . import continuations as _wt_continuations
 from . import escalation as _wt_escalation
 from . import risks as _wt_risks
 from . import symbols as _wt_symbols
+from .cache import WalkthroughCache
 
 __all__ = [
     "METHOD_WALKTHROUGH_SCHEMA_VERSION",

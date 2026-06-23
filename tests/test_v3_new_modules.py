@@ -10,15 +10,13 @@ Covers:
 """
 from __future__ import annotations
 
-
 import pytest
 
-from memory_center.core.storage.unified import UnifiedStore
-from memory_center.core.context.evidence import EvidenceSelector, Evidence
-from memory_center.core.onboarding.glossary import GlossaryExtractor, GlossaryEntry, _split_camel
-from memory_center.core.domain.flow import BusinessFlowGraph, FlowNode, FlowEdge, FlowPath
+from memory_center.core.context.evidence import Evidence, EvidenceSelector
+from memory_center.core.domain.flow import BusinessFlowGraph, FlowEdge, FlowNode, FlowPath
 from memory_center.core.domain.mapper import CodeEntityDomainMapper, DomainMapping
-
+from memory_center.core.onboarding.glossary import GlossaryEntry, GlossaryExtractor, _split_camel
+from memory_center.core.storage.unified import UnifiedStore
 
 # ── Fixtures ─────────────────────────────────────────────────────────────────
 

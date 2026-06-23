@@ -11,7 +11,6 @@ from typing import Any, Dict, List
 from ..explanation import explanation_entry
 from ..storage.unified import UnifiedStore
 
-
 # Domain keywords derived from common Spring Cloud patterns
 _DOMAIN_KEYWORDS: Dict[str, List[str]] = {
     "user": ["user", "account", "auth", "login", "register", "member", "profile", "person"],

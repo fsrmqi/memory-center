@@ -12,10 +12,10 @@ from memory_center.core.orchestrator import (
     memory_callers,
 )
 from memory_center.core.registry import (
-    register_workspace,
-    create_group,
     add_to_group,
+    create_group,
     load_registry,
+    register_workspace,
 )
 
 HAS_MCP = importlib.util.find_spec("mcp") is not None and importlib.util.find_spec("mcp.server.fastmcp") is not None

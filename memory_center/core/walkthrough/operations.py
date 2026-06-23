@@ -11,7 +11,6 @@ from .artifact import render_walkthrough_markdown, slugify_walkthrough_symbol
 from .cache import WalkthroughCache
 from .quality import evaluate_walkthrough_result
 
-
 WalkthroughProvider = Callable[..., Dict[str, Any]]
 
 

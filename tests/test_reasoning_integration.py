@@ -17,18 +17,18 @@ from pathlib import Path
 import pytest
 
 from memory_center.core.reasoning.integration import (
-    SEMANTIC_STRENGTH_DERIVED,
-    SEMANTIC_STRENGTH_INFERRED,
     PATTERN_GROUP_GRAPH,
     PATTERN_GROUP_RISK,
     PATTERN_GROUP_TRANSITIVE,
-    run_reasoning_patterns,
-    summarize_reasoning,
+    SEMANTIC_STRENGTH_DERIVED,
+    SEMANTIC_STRENGTH_INFERRED,
     _risk_level_to_confidence,
-    _severity_to_confidence,
     _serialize_pattern_match,
     _serialize_risk_finding,
     _serialize_transitive,
+    _severity_to_confidence,
+    run_reasoning_patterns,
+    summarize_reasoning,
 )
 
 
@@ -230,10 +230,11 @@ class TestRunReasoningPatterns:
 
     def test_reasoning_does_not_override_factual_results(self, demo_workspace: Path):
         """Reasoning is additive — it never replaces factual impact results."""
+        from memory_center.core.graph import GraphStore
         from memory_center.core.orchestrator.impact import memory_impact
+
         # Get a real target from the graph
         from memory_center.core.store import WorkspaceStore
-        from memory_center.core.graph import GraphStore
         ws_store = WorkspaceStore(str(demo_workspace))
         with GraphStore(ws_store.graph_db_path) as graph:
             nodes = graph.find_nodes("Order", limit=1)

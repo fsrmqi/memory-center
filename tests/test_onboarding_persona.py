@@ -8,9 +8,12 @@ Verifies:
 - Explanation adapt_for_persona works correctly
 """
 from __future__ import annotations
+
 import shutil
 from pathlib import Path
+
 import pytest
+
 
 @pytest.fixture()
 def demo_workspace(tmp_path: Path) -> Path:

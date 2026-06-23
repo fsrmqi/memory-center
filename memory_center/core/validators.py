@@ -6,7 +6,7 @@ from typing import Any, Dict, List
 from .config import load_workspace_config
 from .graph import GraphStore
 from .orchestrator import memory_query, workspace_status
-from .semantic import semantic_index_stats, SEMANTIC_INDEX_FILE
+from .semantic import SEMANTIC_INDEX_FILE, semantic_index_stats
 from .store import WorkspaceStore
 from .workspace_shape import analyze_workspace_shape
 

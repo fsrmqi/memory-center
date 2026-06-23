@@ -9,14 +9,13 @@ import typer
 from rich import print
 
 from memory_center import __version__
-from memory_center.core.dispatch import CommandRegistry
 from memory_center.core.artifacts import (
+    append_change_log,
     append_task_change_log,
     archive_task_space,
-    append_change_log,
-    auto_archive_task_spaces,
     artifact_context,
     artifact_outline,
+    auto_archive_task_spaces,
     compact_change_log,
     create_task_space,
     ensure_default_artifacts,
@@ -26,90 +25,100 @@ from memory_center.core.artifacts import (
     list_task_spaces,
     resolve_task_space,
     touch_task_activity,
-    update_task_status,
-    update_task_artifact,
     update_artifact,
+    update_task_artifact,
+    update_task_status,
 )
-from memory_center.core.config import add_workspace_service, load_workspace_config, remove_workspace_service, write_default_workspace
-from memory_center.core.exporters import export_mermaid, export_workspace_dashboard_html, export_workspace_dashboard_markdown
+from memory_center.core.config import (
+    add_workspace_service,
+    load_workspace_config,
+    remove_workspace_service,
+    write_default_workspace,
+)
+from memory_center.core.dispatch import CommandRegistry
 from memory_center.core.errors import normalize_exception
+from memory_center.core.exporters import (
+    export_mermaid,
+    export_workspace_dashboard_html,
+    export_workspace_dashboard_markdown,
+)
 from memory_center.core.indexer import reindex_workspace
 from memory_center.core.instructions import write_agent_instructions
 from memory_center.core.orchestrator import (
     group_impact,
     group_query,
     group_status,
-    memory_callers,
+    memory_backend_query,
     memory_callees,
+    memory_callers,
     memory_context,
     memory_contracts,
     memory_detect_changes,
+    memory_eval_context_weight,
+    memory_eval_handoff,
+    memory_eval_index_freshness,
+    memory_eval_regression_suite,
+    memory_eval_resume,
+    memory_eval_token_gain,
+    memory_eval_tool_adoption,
     memory_eval_walkthrough_quality,
+    memory_eval_workflow_orchestration,
+    memory_eval_write_quality,
+    memory_execute_write,
     memory_export_walkthrough_artifact,
     memory_impact,
     memory_method_walkthrough,
     memory_plan_change,
+    memory_plan_write,
     memory_query_hybrid,
-    memory_backend_query,
     memory_ref_batch,
     memory_ref_get,
     memory_search_code,
     memory_symbol,
+    memory_tool_usage_report,
     memory_verify_checklist,
     memory_walkthrough_health,
-    memory_plan_write,
-    memory_tool_usage_report,
-    memory_execute_write,
     memory_write_judge,
     workspace_check_contract,
     workspace_check_rules,
+    workspace_continuity_dashboard,
+    workspace_dashboard,
+    workspace_end_session,
+    workspace_handoff_history,
+    workspace_handoff_packet,
+    workspace_log_session_event,
     workspace_lookup_hint,
+    workspace_model_profile,
+    workspace_next_actions,
+    workspace_recent_evidence,
+    workspace_recent_sessions,
     workspace_record_case,
     workspace_record_close_feedback,
-    workspace_recent_sessions,
+    workspace_replay_write_chain,
+    workspace_resume_context,
+    workspace_resume_packet,
+    workspace_session_summary,
     workspace_sniff,
     workspace_start_session,
     workspace_status,
-    workspace_session_summary,
+    workspace_suggest_case,
     workspace_sync_case_to_artifacts,
     workspace_sync_sniff_to_artifacts,
     workspace_trace,
-    workspace_log_session_event,
-    workspace_end_session,
-    workspace_continuity_dashboard,
-    workspace_dashboard,
-    workspace_next_actions,
-    workspace_recent_evidence,
-    workspace_handoff_packet,
-    workspace_handoff_history,
-    workspace_model_profile,
-    workspace_resume_packet,
-    workspace_resume_context,
-    workspace_suggest_case,
     workspace_unresolved_items,
     workspace_write_receipts,
-    workspace_replay_write_chain,
-    memory_eval_write_quality,
-    memory_eval_regression_suite,
-    memory_eval_index_freshness,
-    memory_eval_tool_adoption,
-    memory_eval_context_weight,
-    memory_eval_workflow_orchestration,
-    memory_eval_resume,
-    memory_eval_handoff,
-    memory_eval_token_gain,
 )
+from memory_center.core.registry import add_to_group, create_group, list_workspaces, register_workspace
 from memory_center.core.rules import ensure_default_rules
 from memory_center.core.store import WorkspaceStore
 from memory_center.core.validators import doctor as run_doctor
-from memory_center.core.registry import add_to_group, create_group, list_workspaces, register_workspace
 from memory_center.core.wiki import generate_skills, generate_wiki
-from memory_center.http.server import serve_http
-from memory_center.hooks.spec import ensure_default_hooks, load_hooks_config
-from memory_center.hooks.runner import run_hook_cli
-from memory_center.hooks.adapters.claude_code import write_claude_code_settings, generate_claude_code_hooks
+from memory_center.hooks.adapters.claude_code import generate_claude_code_hooks, write_claude_code_settings
 from memory_center.hooks.adapters.codex import generate_codex_scripts
 from memory_center.hooks.adapters.cursor import generate_cursor_rules
+from memory_center.hooks.runner import run_hook_cli
+from memory_center.hooks.spec import ensure_default_hooks, load_hooks_config
+from memory_center.http.server import serve_http
 
 app = typer.Typer(help="Memory Center CLI")
 registry_app = typer.Typer(help="Global registry commands")
@@ -787,7 +796,7 @@ def constraint_cmd(
     context: str = typer.Option("", help="Context for auto-select."),
 ):
     """Show constraint template or auto-select action."""
-    from memory_center.core.templates import get_constraint_template, auto_select_action
+    from memory_center.core.templates import auto_select_action, get_constraint_template
     if context:
         action = auto_select_action(context, template)
         print({"context": context, "template": template, "recommended_action": action})
@@ -1343,8 +1352,8 @@ def backend_consistency_cmd(
     workspace: str = typer.Option(...),
 ):
     """Check consistency between JSONL files and SQLite backend."""
-    from memory_center.core.store import WorkspaceStore
     from memory_center.core.backend.query import UnifiedBackendQuery
+    from memory_center.core.store import WorkspaceStore
     store = WorkspaceStore(workspace)
     with UnifiedBackendQuery(store.memory_db_path) as backend:
         print(backend.check_consistency(store.base_dir))
@@ -1805,6 +1814,7 @@ def heuristics_cmd(
 ):
     """Query or record learned heuristics."""
     import json as _json
+
     from memory_center.core.verification.heuristics import HeuristicsRegister
     hr = HeuristicsRegister(workspace)
     if action == "query":
@@ -1855,8 +1865,9 @@ def workflow_profile_cmd(
     profile: str = typer.Option("quick-fix", help="Profile name: quick-fix, contract-change, long-task, architecture"),
 ):
     """Get a workflow protocol profile."""
-    from memory_center.core.verification.workflow_profiles import get_workflow_profile
     import dataclasses as _dc
+
+    from memory_center.core.verification.workflow_profiles import get_workflow_profile
     result = get_workflow_profile(profile)
     if _dc.is_dataclass(result) and not isinstance(result, type):
         result = _dc.asdict(result)

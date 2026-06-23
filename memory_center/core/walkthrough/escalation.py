@@ -5,7 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Dict, List
 
-
 __all__ = [
     "resolve_walkthrough_workspace_input",
     "find_parent_or_covering_workspace",
@@ -45,8 +44,8 @@ def path_is_within(path: Path, maybe_parent: Path) -> bool:
 
 def registry_covering_workspaces(current_ws: Path, current_root: Path) -> List[Path]:
     try:
-        from ..registry import load_registry
         from ..orchestrator.common import load_context
+        from ..registry import load_registry
     except Exception:
         return []
     out: List[Path] = []

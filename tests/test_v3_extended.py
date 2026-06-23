@@ -19,23 +19,29 @@ from unittest.mock import patch
 
 import pytest
 
-from memory_center.core.storage.unified import UnifiedStore
-from memory_center.core.storage.vector_index import VectorIndex
 from memory_center.core.domain.extractor import (
-    BusinessDomainExtractor, BusinessDomain, BusinessFlow,
+    BusinessDomain,
+    BusinessDomainExtractor,
+    BusinessFlow,
+)
+from memory_center.core.freshness.watcher import FileSnapshot, FileWatcher, WatchEvent
+from memory_center.core.indexing.incremental import (
+    ChangedFile,
+    IncrementalIndexer,
+)
+from memory_center.core.indexing.parallel import (
+    estimate_optimal_workers,
+    parse_files_parallel,
+    walk_project_files,
 )
 from memory_center.core.onboarding.tour import (
-    ArchitectureTourGenerator, ArchitectureTour, TourStep,
+    ArchitectureTour,
+    ArchitectureTourGenerator,
+    TourStep,
 )
-from memory_center.core.views.builder import GraphViewBuilder, GraphView
-from memory_center.core.indexing.parallel import (
-    walk_project_files, parse_files_parallel, estimate_optimal_workers,
-)
-from memory_center.core.indexing.incremental import (
-    ChangedFile, IncrementalIndexer,
-)
-from memory_center.core.freshness.watcher import FileWatcher, WatchEvent, FileSnapshot
-
+from memory_center.core.storage.unified import UnifiedStore
+from memory_center.core.storage.vector_index import VectorIndex
+from memory_center.core.views.builder import GraphView, GraphViewBuilder
 
 # ── Fixtures ─────────────────────────────────────────────────────────────────
 

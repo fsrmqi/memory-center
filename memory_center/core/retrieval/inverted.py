@@ -9,8 +9,8 @@ import json
 import math
 from typing import Any
 
+from ..semantic import _count_tokens, semantic_tokens
 from ..storage.unified import UnifiedStore
-from ..semantic import semantic_tokens, _count_tokens
 
 BM25_K1 = 1.5
 BM25_B = 0.75

@@ -9,7 +9,6 @@ from typing import Any, Dict
 from .metrics import MetricsCollector
 from .store import WorkspaceStore
 
-
 OPERATION_EVENTS_FILE = "operation-events.jsonl"
 
 

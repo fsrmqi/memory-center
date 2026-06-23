@@ -14,15 +14,15 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
-from ..graph import GraphStore
-from ..semantic import semantic_query
 from ..diagnostics import DIAG, diag_entry
+from ..graph import GraphStore
 from ..ontology import (
+    EDGE_SEMANTIC_STRENGTH,
     EntityValidator,
     annotate_semantic_strength,
-    EDGE_SEMANTIC_STRENGTH,
     multi_hop_confidence,
 )
+from ..semantic import semantic_query
 from .policy import select_retrieval_policy
 
 __all__ = [
@@ -38,7 +38,7 @@ __all__ = [
 
 def _get_common_functions():
     """Lazy import to avoid circular dependency."""
-    from ..orchestrator.common import tokenize, _rrf, _best_match
+    from ..orchestrator.common import _best_match, _rrf, tokenize
     return tokenize, _rrf, _best_match
 
 
@@ -598,14 +598,14 @@ def _vector_retrieval(
     results: List[RetrievalResult] = []
     vector_diag: Dict[str, Any] = {"status": "disabled", "reason": "not_checked"}
     try:
-        from ..store import WorkspaceStore
-        from ..storage.unified import UnifiedStore
-        from ..storage.vector_index import VectorIndex
         from ..semantic import (
             DEFAULT_SENTENCE_TRANSFORMER_MODEL,
             _load_sentence_transformer_model,
             semantic_index_stats,
         )
+        from ..storage.unified import UnifiedStore
+        from ..storage.vector_index import VectorIndex
+        from ..store import WorkspaceStore
 
         workspace_store = WorkspaceStore(workspace_file)
         unified = UnifiedStore(workspace_store.graph_db_path)
@@ -677,9 +677,9 @@ def _bm25_sparse_retrieval(
     results: List[RetrievalResult] = []
     bm25_diag: Dict[str, Any] = {"status": "disabled", "reason": "not_checked"}
     try:
-        from ..store import WorkspaceStore
-        from ..storage.unified import UnifiedStore
         from ..retrieval.inverted import InvertedIndex
+        from ..storage.unified import UnifiedStore
+        from ..store import WorkspaceStore
 
         workspace_store = WorkspaceStore(workspace_file)
         unified = UnifiedStore(workspace_store.graph_db_path)

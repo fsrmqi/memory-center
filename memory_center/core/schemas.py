@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
-
 SCHEMA_VERSIONS = {
     "write_receipt": 1,
     "timeline_item": 1,

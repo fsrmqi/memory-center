@@ -9,8 +9,8 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List
 
 from ..storage.unified import UnifiedStore
-from .tour import ArchitectureTourGenerator
 from .glossary import GlossaryExtractor
+from .tour import ArchitectureTourGenerator
 
 
 @dataclass

@@ -3,10 +3,10 @@ from pathlib import Path
 
 from memory_center.core.store import WorkspaceStore
 from memory_center.hooks.spec import (
+    ensure_default_hooks,
     load_default_hooks,
     load_hooks_config,
     validate_hooks_config,
-    ensure_default_hooks,
 )
 
 

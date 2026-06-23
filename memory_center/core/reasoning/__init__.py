@@ -1,10 +1,10 @@
 """V3 reasoning engine — graph pattern matching, transitive inference, risk detection."""
 
-from .patterns import GraphPatternEngine
 from .models import ReasoningRequest
+from .patterns import GraphPatternEngine
 from .pipeline import ReasoningPipeline
-from .transitive import TransitiveInferenceEngine
 from .risk import RiskPatternEngine
+from .transitive import TransitiveInferenceEngine
 
 __all__ = [
     "GraphPatternEngine",

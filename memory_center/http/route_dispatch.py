@@ -9,8 +9,8 @@ from __future__ import annotations
 from memory_center.core.dispatch import CommandRegistry
 from memory_center.http.routes import (
     register_analysis_routes,
-    register_workspace_routes,
     register_workflow_routes,
+    register_workspace_routes,
 )
 from memory_center.http.routes.params import (
     RouteParams,

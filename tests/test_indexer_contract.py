@@ -7,9 +7,12 @@ Verifies:
 - Unsupported patterns return empty rather than crash
 """
 from __future__ import annotations
+
 import shutil
 from pathlib import Path
+
 import pytest
+
 
 @pytest.fixture()
 def demo_workspace(tmp_path: Path) -> Path:
@@ -54,8 +57,8 @@ class TestIndexerContract:
         assert isinstance(mi, list)
 
     def test_graph_has_nodes_and_edges(self, demo_workspace: Path):
-        from memory_center.core.store import WorkspaceStore
         from memory_center.core.graph import GraphStore
+        from memory_center.core.store import WorkspaceStore
         ws = WorkspaceStore(str(demo_workspace))
         with GraphStore(ws.graph_db_path) as graph:
             nodes = graph.all_nodes()

@@ -16,11 +16,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List
 
-from ..graph import GraphStore
-from ..retrieval.hybrid import hybrid_retrieve, HybridRetrievalConfig, detect_query_intent
-from ..rules import match_rules
-from ..freshness.status import IndexFreshnessService
 from ..diagnostics import DIAG, diag_entry
+from ..freshness.status import IndexFreshnessService
+from ..graph import GraphStore
+from ..retrieval.hybrid import HybridRetrievalConfig, detect_query_intent, hybrid_retrieve
+from ..rules import match_rules
 
 # Extensions that are treated as non-code (skipped for snippet extraction)
 _NON_CODE_EXTENSIONS = frozenset({".md", ".txt", ".yaml", ".yml", ".json", ".xml",

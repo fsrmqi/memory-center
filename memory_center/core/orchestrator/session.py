@@ -350,9 +350,9 @@ def workspace_recent_evidence(
         "session_id": session_id,
         "evidence": evidence[-limit:],
     }
+    from ..tracking import log_token_gain
     from .common import _is_compact_view
     from .compact import _measure_compact_gain
-    from ..tracking import log_token_gain
 
     if _is_compact_view(view):
         compact_evidence = _compact_evidence_entries(result["evidence"], budget=budget)

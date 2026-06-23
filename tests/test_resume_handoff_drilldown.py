@@ -7,9 +7,12 @@ Verifies:
 - Output fields are stable
 """
 from __future__ import annotations
+
 import shutil
 from pathlib import Path
+
 import pytest
+
 
 @pytest.fixture()
 def demo_workspace(tmp_path: Path) -> Path:
@@ -29,8 +32,8 @@ class TestResumeOutput:
         assert isinstance(result, dict)
 
     def test_resume_with_session(self, demo_workspace: Path):
-        from memory_center.core.orchestrator.session import workspace_start_session
         from memory_center.core.orchestrator.resume import workspace_resume_packet
+        from memory_center.core.orchestrator.session import workspace_start_session
         session = workspace_start_session(str(demo_workspace), "test intent")
         sid = session.get("session_id", "")
         result = workspace_resume_packet(str(demo_workspace), session_id=sid)

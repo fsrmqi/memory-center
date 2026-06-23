@@ -12,7 +12,6 @@ import yaml
 
 from .models import GoldenCase
 
-
 CaseRunner = Callable[[GoldenCase], Dict[str, Any]]
 
 

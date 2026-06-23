@@ -6,7 +6,6 @@ from pathlib import Path
 
 import pytest
 
-
 # ---- Hybrid Retrieval Tests ----
 
 class TestHybridRetrieval:
@@ -557,7 +556,8 @@ class TestCompletionAudit:
 
     def test_overall_health_scoring_consistency(self):
         from memory_center.core.audit.completion import (
-            _calculate_overall_health, run_completion_audit,
+            _calculate_overall_health,
+            run_completion_audit,
         )
         with tempfile.TemporaryDirectory() as tmpdir:
             mc_dir = Path(tmpdir) / ".memory-center"
@@ -596,8 +596,8 @@ class TestBackendQuery:
                 assert isinstance(health["issues"], list)
 
     def test_append_and_query_records(self):
-        from memory_center.core.memory_backend import MemoryBackendStore
         from memory_center.core.backend.query import UnifiedBackendQuery
+        from memory_center.core.memory_backend import MemoryBackendStore
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = Path(tmpdir) / "test.db"
             with MemoryBackendStore(db_path) as store:
@@ -618,8 +618,8 @@ class TestBackendQuery:
                 assert records[0]["record_id"] == "evt-2"  # DESC order
 
     def test_aggregate_by_session(self):
-        from memory_center.core.memory_backend import MemoryBackendStore
         from memory_center.core.backend.query import UnifiedBackendQuery
+        from memory_center.core.memory_backend import MemoryBackendStore
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = Path(tmpdir) / "test.db"
             with MemoryBackendStore(db_path) as store:
@@ -642,8 +642,8 @@ class TestBackendQuery:
                 assert sessions["sess-1"]["event_count"] == 3
 
     def test_get_session_summary(self):
-        from memory_center.core.memory_backend import MemoryBackendStore
         from memory_center.core.backend.query import UnifiedBackendQuery
+        from memory_center.core.memory_backend import MemoryBackendStore
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = Path(tmpdir) / "test.db"
             with MemoryBackendStore(db_path) as store:
@@ -677,8 +677,8 @@ class TestBackendQuery:
                 assert isinstance(result["divergences"], list)
 
     def test_check_consistency_with_data(self):
-        from memory_center.core.memory_backend import MemoryBackendStore
         from memory_center.core.backend.query import UnifiedBackendQuery
+        from memory_center.core.memory_backend import MemoryBackendStore
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = Path(tmpdir) / "test.db"
             with MemoryBackendStore(db_path) as store:
@@ -872,7 +872,7 @@ class TestRetrievalBehavior:
         assert sync_progress.get("required_one_of") == ["intent", "session_id"]
 
     def test_type_boosting_keys_match_graph_types(self):
-        from memory_center.core.retrieval.hybrid import _apply_type_boosting, RetrievalResult
+        from memory_center.core.retrieval.hybrid import RetrievalResult, _apply_type_boosting
         # Verify boost map keys are valid node type names
         valid_types = {
             "FeignClient", "FeignMethod", "Endpoint", "MQTopic", "MQConsumer",

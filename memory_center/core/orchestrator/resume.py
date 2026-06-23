@@ -12,6 +12,7 @@ from ..rules import (
 from ..schemas import with_schema
 from ..store import WorkspaceStore
 from ..timeline import timeline_query
+from ..tracking import log_token_gain
 from .common import (
     LAYER_L0,
     LAYER_L1,
@@ -32,7 +33,6 @@ from .common import (
 from .compact import _compact_handoff_packet, _compact_resume_packet, _measure_compact_gain
 from .query import memory_query
 from .session import workspace_recent_evidence
-from ..tracking import log_token_gain
 
 
 def workspace_resume_packet(

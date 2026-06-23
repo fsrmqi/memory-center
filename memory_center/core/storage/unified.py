@@ -18,7 +18,6 @@ from typing import Any
 
 from .pool import SQLitePool
 
-
 # ── Schema ───────────────────────────────────────────────────────────────────
 
 _GRAPH_DDL = """

@@ -24,10 +24,10 @@ from ..core.orchestrator import (
     group_impact,
     group_query,
     group_status,
-    memory_callers,
     memory_callees,
-    memory_contracts,
+    memory_callers,
     memory_context,
+    memory_contracts,
     memory_method_walkthrough,
     memory_plan_change,
     memory_query,
@@ -39,8 +39,8 @@ from ..core.orchestrator import (
     workspace_handoff_packet,
     workspace_lookup_hint,
     workspace_next_actions,
-    workspace_record_close_feedback,
     workspace_recent_evidence,
+    workspace_record_close_feedback,
     workspace_resume_packet,
     workspace_sniff,
     workspace_start_session,
@@ -487,11 +487,19 @@ def run_hook(
         elif facade == "mc_admin":
             from ..core.artifacts import (
                 artifact_context,
-                artifact_outline, create_task_space, get_artifact, list_artifacts, list_task_spaces,
-                resolve_task_space, update_artifact,
+                artifact_outline,
+                create_task_space,
+                get_artifact,
+                list_artifacts,
+                list_task_spaces,
+                resolve_task_space,
+                update_artifact,
             )
             from ..core.orchestrator import (
-                workspace_dashboard, workspace_model_profile, memory_write_judge, memory_tool_usage_report,
+                memory_tool_usage_report,
+                memory_write_judge,
+                workspace_dashboard,
+                workspace_model_profile,
             )
             from ..core.wiki import generate_skills, generate_wiki
             wf = _get_workspace_file(workspace)

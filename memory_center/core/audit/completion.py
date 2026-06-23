@@ -11,8 +11,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from ..store import WorkspaceStore
 from ..quality import build_quality_summary
+from ..store import WorkspaceStore
 
 AUDIT_LOG_FILE = "completion-audit.jsonl"
 DESIGN_DECISIONS_FILE = "design-decisions.jsonl"

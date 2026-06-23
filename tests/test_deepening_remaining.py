@@ -17,9 +17,7 @@ Covers the gaps identified in execution log "未覆盖项" and "仍需深化的�
 """
 from __future__ import annotations
 
-
 from tests.fixtures import copy_demo_workspace
-
 
 # ── H-04: VerificationLoop Step Persistence ─────────────────────────
 
@@ -262,8 +260,8 @@ class TestD04DomainFlowIntegration:
     def test_domain_extractor_returns_domains(self, tmp_path):
         """BusinessDomainExtractor extracts domains from demo workspace."""
         ws = copy_demo_workspace(tmp_path)
-        from memory_center.core.storage.unified import UnifiedStore
         from memory_center.core.domain.extractor import BusinessDomainExtractor
+        from memory_center.core.storage.unified import UnifiedStore
         from memory_center.core.store import WorkspaceStore
         store = WorkspaceStore(str(ws))
         with UnifiedStore(store.graph_db_path) as unified:
@@ -281,8 +279,8 @@ class TestD04DomainFlowIntegration:
     def test_domain_to_dict_has_explanation(self, tmp_path):
         """BusinessDomain.to_dict() includes _explanation."""
         ws = copy_demo_workspace(tmp_path)
-        from memory_center.core.storage.unified import UnifiedStore
         from memory_center.core.domain.extractor import BusinessDomainExtractor
+        from memory_center.core.storage.unified import UnifiedStore
         from memory_center.core.store import WorkspaceStore
         store = WorkspaceStore(str(ws))
         with UnifiedStore(store.graph_db_path) as unified:
@@ -299,8 +297,8 @@ class TestD04DomainFlowIntegration:
     def test_business_flow_extractor_returns_flows(self, tmp_path):
         """BusinessFlowExtractor returns flows from demo workspace."""
         ws = copy_demo_workspace(tmp_path)
-        from memory_center.core.graph import GraphStore
         from memory_center.core.domain.flow import BusinessFlowExtractor
+        from memory_center.core.graph import GraphStore
         from memory_center.core.store import WorkspaceStore
         store = WorkspaceStore(str(ws))
         with GraphStore(store.graph_db_path) as graph:
@@ -317,8 +315,8 @@ class TestD04DomainFlowIntegration:
     def test_flow_graph_build_returns_structure(self, tmp_path):
         """BusinessFlowGraph.build_flow_graph returns nodes and edges."""
         ws = copy_demo_workspace(tmp_path)
-        from memory_center.core.storage.unified import UnifiedStore
         from memory_center.core.domain.flow import BusinessFlowGraph
+        from memory_center.core.storage.unified import UnifiedStore
         from memory_center.core.store import WorkspaceStore
         store = WorkspaceStore(str(ws))
         with UnifiedStore(store.graph_db_path) as unified:
@@ -332,8 +330,8 @@ class TestD04DomainFlowIntegration:
     def test_flow_impact_returns_list(self, tmp_path):
         """BusinessFlowGraph.find_impact_along_flows returns impact list."""
         ws = copy_demo_workspace(tmp_path)
-        from memory_center.core.storage.unified import UnifiedStore
         from memory_center.core.domain.flow import BusinessFlowGraph
+        from memory_center.core.storage.unified import UnifiedStore
         from memory_center.core.store import WorkspaceStore
         store = WorkspaceStore(str(ws))
         with UnifiedStore(store.graph_db_path) as unified:
@@ -346,8 +344,8 @@ class TestD04DomainFlowIntegration:
     def test_flow_trace_from_endpoint(self, tmp_path):
         """BusinessFlowGraph.trace_flow_from_endpoint returns a FlowPath."""
         ws = copy_demo_workspace(tmp_path)
-        from memory_center.core.storage.unified import UnifiedStore
         from memory_center.core.domain.flow import BusinessFlowGraph
+        from memory_center.core.storage.unified import UnifiedStore
         from memory_center.core.store import WorkspaceStore
         store = WorkspaceStore(str(ws))
         with UnifiedStore(store.graph_db_path) as unified:
@@ -367,7 +365,7 @@ class TestD05OnboardingPersona:
 
     def test_onboarding_modules_importable(self):
         """All onboarding submodules are importable."""
-        from memory_center.core.onboarding import guide, glossary, tour
+        from memory_center.core.onboarding import glossary, guide, tour
         assert guide is not None
         assert glossary is not None
         assert tour is not None
@@ -414,7 +412,8 @@ class TestD06ResumeHandoffSummary:
         """workspace_recent_sessions returns a dict with recent_sessions list."""
         ws = copy_demo_workspace(tmp_path)
         from memory_center.core.orchestrator.session import (
-            workspace_start_session, workspace_recent_sessions,
+            workspace_recent_sessions,
+            workspace_start_session,
         )
         workspace_start_session(str(ws), intent="test_d06_resume")
         result = workspace_recent_sessions(str(ws), limit=5)
@@ -425,8 +424,10 @@ class TestD06ResumeHandoffSummary:
         """workspace_suggest_case returns a draft case from a completed session."""
         ws = copy_demo_workspace(tmp_path)
         from memory_center.core.orchestrator.session import (
-            workspace_start_session, workspace_log_session_event,
-            workspace_end_session, workspace_suggest_case,
+            workspace_end_session,
+            workspace_log_session_event,
+            workspace_start_session,
+            workspace_suggest_case,
         )
         start = workspace_start_session(str(ws), intent="test_resume_case")
         sid = start["session_id"]
@@ -1207,8 +1208,9 @@ class TestG05BundleExportSafety:
     def test_bundle_no_secrets(self, tmp_path):
         """Generated bundles contain no secrets or private paths."""
         ws = copy_demo_workspace(tmp_path)
-        from memory_center.core.verification.bundle_export import generate_agent_bundle
         import json
+
+        from memory_center.core.verification.bundle_export import generate_agent_bundle
         bundle = generate_agent_bundle(str(ws), agent="codex")
         content = json.dumps(bundle)
         # No real secrets
@@ -1344,8 +1346,8 @@ class TestH09FindingLocation:
     def test_write_receipts_persisted(self, tmp_path):
         """persist_write_receipt stores the receipt in workspace."""
         ws = copy_demo_workspace(tmp_path)
-        from memory_center.core.write_receipts import build_write_receipt, persist_write_receipt
         from memory_center.core.store import WorkspaceStore
+        from memory_center.core.write_receipts import build_write_receipt, persist_write_receipt
         store = WorkspaceStore(str(ws))
         receipt = build_write_receipt(layer="L1", action="persist_test", scope="memory", target="test", target_file="memory/test.jsonl")
         result = persist_write_receipt(store, receipt)
@@ -1524,6 +1526,7 @@ class TestMetricsDeepening:
     def test_metrics_collector_timer_context(self, tmp_path):
         """MetricsCollector.timer() measures elapsed time."""
         import time
+
         from memory_center.core.metrics import MetricsCollector
         mc = MetricsCollector(tmp_path / "workspace.yaml")
         with mc.timer("test_op"):

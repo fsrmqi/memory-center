@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from .heuristics import candidate_path_learning_index, load_learning_policy, _merge_weight
+from .heuristics import _merge_weight, candidate_path_learning_index, load_learning_policy
 
 
 @dataclass

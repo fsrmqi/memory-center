@@ -1,14 +1,14 @@
 """Tests for host adapters — Claude Code, Codex, Cursor."""
-from pathlib import Path
 import json
+from pathlib import Path
 
-from memory_center.hooks.spec import load_hooks_config
 from memory_center.hooks.adapters.claude_code import (
     generate_claude_code_hooks,
     write_claude_code_settings,
 )
 from memory_center.hooks.adapters.codex import generate_codex_scripts
 from memory_center.hooks.adapters.cursor import generate_cursor_rules
+from memory_center.hooks.spec import load_hooks_config
 
 
 def _setup_workspace(tmp_path: Path) -> str:

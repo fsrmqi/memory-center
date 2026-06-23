@@ -256,7 +256,7 @@ def register_workflow_routes(registry: CommandRegistry) -> None:
     ))
 
     def _constraint(rp: RouteParams) -> Dict[str, Any]:
-        from memory_center.core.templates import get_constraint_template, auto_select_action
+        from memory_center.core.templates import auto_select_action, get_constraint_template
         template = rp.get("template", "coding_agent")
         context = rp.get("context", "")
         if context:
@@ -306,8 +306,8 @@ def register_workflow_routes(registry: CommandRegistry) -> None:
     registry.register("/workspace/drill-task", _drill_task)
 
     def _backend_consistency(rp: RouteParams) -> Dict[str, Any]:
-        from memory_center.core.store import WorkspaceStore
         from memory_center.core.backend.query import UnifiedBackendQuery
+        from memory_center.core.store import WorkspaceStore
         ws = rp.workspace()
         store = WorkspaceStore(ws)
         with UnifiedBackendQuery(store.memory_db_path) as backend:

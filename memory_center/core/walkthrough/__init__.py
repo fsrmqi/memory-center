@@ -6,10 +6,10 @@ facade; this package is intentionally split so each helper can be unit-tested
 without going through the orchestrator.
 """
 
+from . import answer, continuations, escalation, risks, symbols
 from .artifact import render_walkthrough_markdown, slugify_walkthrough_symbol
 from .cache import WalkthroughCache
 from .quality import evaluate_walkthrough_result
-from . import answer, continuations, escalation, risks, symbols
 
 __all__ = [
     "WalkthroughCache",

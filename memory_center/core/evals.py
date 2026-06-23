@@ -5,6 +5,7 @@ from typing import Any, Dict, List
 
 from .schemas import with_schema
 
+
 def build_finding(severity: str, code: str, message: str) -> Dict[str, Any]:
     return {
         "severity": severity,

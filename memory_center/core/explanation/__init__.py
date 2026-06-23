@@ -1,11 +1,11 @@
 """Explanation schema module (D-03)."""
 from .schema import (
+    DISPLAY_RULES,
     Explanation,
-    explanation_entry,
-    merge_explanations,
     backward_compat_wrapper,
     display_rule_for_strength,
-    DISPLAY_RULES,
+    explanation_entry,
+    merge_explanations,
 )
 
 __all__ = [

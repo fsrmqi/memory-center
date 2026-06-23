@@ -11,8 +11,8 @@ from memory_center.core.benchmark.golden import (
     compare_golden_performance,
     evaluate_agent_guidance,
     extract_logical_evidence,
-    load_golden_performance_baseline,
     load_golden_cases,
+    load_golden_performance_baseline,
     run_golden_suite,
     score_golden_case,
 )

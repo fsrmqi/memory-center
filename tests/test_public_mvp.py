@@ -1,13 +1,14 @@
-from pathlib import Path
 import json
+import os
 import socket
 import threading
-import os
+from pathlib import Path
 from urllib.parse import quote
 from urllib.request import urlopen
 
 from typer.testing import CliRunner
 
+from memory_center import __version__
 from memory_center.cli.main import app
 from memory_center.core.artifacts import (
     ARTIFACT_WRITE_AUDIT_FILE,
@@ -25,24 +26,62 @@ from memory_center.core.artifacts import (
     list_task_spaces,
     resolve_task_space,
     touch_task_activity,
-    update_task_status,
     update_artifact,
     update_task_artifact,
+    update_task_status,
 )
 from memory_center.core.config import load_workspace_config
-from memory_center.core.exporters import export_mermaid, export_workspace_dashboard_html, export_workspace_dashboard_markdown
+from memory_center.core.exporters import (
+    export_mermaid,
+    export_workspace_dashboard_html,
+    export_workspace_dashboard_markdown,
+)
 from memory_center.core.indexer import reindex_workspace
 from memory_center.core.instructions import write_agent_instructions
-from memory_center.core.orchestrator import memory_backend_query, memory_eval_context_weight, memory_eval_handoff, memory_eval_index_freshness, memory_eval_regression_suite, memory_eval_resume, memory_eval_token_benchmark, memory_eval_tool_adoption, memory_eval_write_quality, memory_execute_write, memory_plan_write, memory_ref_batch, memory_ref_get, memory_tool_usage_report, memory_write_judge, workspace_continuity_dashboard, workspace_dashboard, workspace_end_session, workspace_handoff_history, workspace_handoff_packet, workspace_log_session_event, workspace_lookup_hint, workspace_model_profile, workspace_next_actions, workspace_recent_evidence, workspace_replay_write_chain, workspace_record_case, workspace_resume_packet, workspace_sniff, workspace_start_session, workspace_status, workspace_trace, workspace_unresolved_items, workspace_write_receipts
+from memory_center.core.orchestrator import (
+    memory_backend_query,
+    memory_eval_context_weight,
+    memory_eval_handoff,
+    memory_eval_index_freshness,
+    memory_eval_regression_suite,
+    memory_eval_resume,
+    memory_eval_token_benchmark,
+    memory_eval_tool_adoption,
+    memory_eval_write_quality,
+    memory_execute_write,
+    memory_plan_write,
+    memory_ref_batch,
+    memory_ref_get,
+    memory_tool_usage_report,
+    memory_write_judge,
+    workspace_continuity_dashboard,
+    workspace_dashboard,
+    workspace_end_session,
+    workspace_handoff_history,
+    workspace_handoff_packet,
+    workspace_log_session_event,
+    workspace_lookup_hint,
+    workspace_model_profile,
+    workspace_next_actions,
+    workspace_recent_evidence,
+    workspace_record_case,
+    workspace_replay_write_chain,
+    workspace_resume_packet,
+    workspace_sniff,
+    workspace_start_session,
+    workspace_status,
+    workspace_trace,
+    workspace_unresolved_items,
+    workspace_write_receipts,
+)
+from memory_center.core.orchestrator.common import _merge_artifact_section
 from memory_center.core.registry import add_to_group, create_group, register_workspace
 from memory_center.core.rules import ensure_default_rules
 from memory_center.core.schemas import validate_schema_payload
 from memory_center.core.store import WorkspaceStore
 from memory_center.core.timeline import timeline_query
-from memory_center import __version__
 from memory_center.core.validators import doctor
 from memory_center.http.server import create_handler
-from memory_center.core.orchestrator.common import _merge_artifact_section
 
 
 def _copy_root_demo_workspace(tmp_path: Path) -> Path:
@@ -138,6 +177,7 @@ def test_merge_artifact_section_preserves_following_sections():
 
 def test_workspace_supports_absolute_service_paths_across_multiple_roots(tmp_path: Path):
     import shutil
+
     import yaml
 
     source = Path("examples/spring-cloud-demo")
@@ -947,13 +987,13 @@ def test_artifact_sync_from_sniff_and_case(tmp_path: Path):
 
 def test_session_memory_flow(tmp_path: Path):
     from memory_center.core.orchestrator import (
-        workspace_suggest_case,
         workspace_end_session,
         workspace_log_session_event,
         workspace_recent_sessions,
         workspace_resume_context,
         workspace_session_summary,
         workspace_start_session,
+        workspace_suggest_case,
     )
 
     source = Path("examples/spring-cloud-demo")
@@ -1012,8 +1052,8 @@ def test_graph_query_context_and_impact(tmp_path):
     from memory_center.core.config import load_workspace_config
     from memory_center.core.indexer import reindex_workspace
     from memory_center.core.orchestrator import (
-        memory_callers,
         memory_callees,
+        memory_callers,
         memory_context,
         memory_impact,
         memory_plan_change,
@@ -1152,6 +1192,7 @@ def test_graph_query_context_and_impact(tmp_path):
 
 def test_trusted_graph_edges_and_evidence_based_impact(tmp_path: Path):
     import shutil
+
     from memory_center.core.config import load_workspace_config
     from memory_center.core.graph import GraphStore
     from memory_center.core.indexer import reindex_workspace
@@ -1293,7 +1334,12 @@ def test_group_query_and_status(tmp_path: Path):
 
 def test_http_bridge_routes(tmp_path: Path):
     from http.server import ThreadingHTTPServer
-    from memory_center.core.orchestrator import workspace_end_session, workspace_log_session_event, workspace_start_session
+
+    from memory_center.core.orchestrator import (
+        workspace_end_session,
+        workspace_log_session_event,
+        workspace_start_session,
+    )
 
     workspace = _copy_demo_workspace(tmp_path, "http-demo")
     config = load_workspace_config(workspace)
@@ -1485,6 +1531,7 @@ def test_http_bridge_routes(tmp_path: Path):
 
 def test_local_embedding_backend_is_optional_and_selectable(tmp_path: Path):
     import shutil
+
     import memory_center.core.semantic as semantic
 
     source = Path("examples/spring-cloud-demo")
@@ -1725,7 +1772,7 @@ def test_backend_query_with_project_and_type(tmp_path: Path):
     ensure_default_rules(store)
     reindex_workspace(config, store)
 
-    from memory_center.core.orchestrator import workspace_start_session, workspace_log_session_event
+    from memory_center.core.orchestrator import workspace_log_session_event, workspace_start_session
 
     session = workspace_start_session(workspace, "backend query test")
     workspace_log_session_event(workspace, session["session_id"], "tool_call", {"tool_name": "memory_query_tool", "project": "task-service", "query": "ArticleFeignClient"})
@@ -1761,7 +1808,7 @@ def test_token_benchmark_save_and_compare(tmp_path: Path):
     reindex_workspace(config, store)
 
     # Save baseline
-    from memory_center.core.orchestrator import memory_eval_token_benchmark_save, memory_eval_token_benchmark_compare
+    from memory_center.core.orchestrator import memory_eval_token_benchmark_compare, memory_eval_token_benchmark_save
     save_result = memory_eval_token_benchmark_save(str(workspace), intent="benchmark test", limit=5)
     assert save_result["saved"] is True
     baseline_path = Path(save_result["path"])

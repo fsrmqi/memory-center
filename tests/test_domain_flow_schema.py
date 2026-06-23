@@ -9,9 +9,12 @@ Verifies:
 - Flow steps have required fields
 """
 from __future__ import annotations
+
 import shutil
 from pathlib import Path
+
 import pytest
+
 
 @pytest.fixture()
 def demo_workspace(tmp_path: Path) -> Path:
@@ -27,8 +30,8 @@ def demo_workspace(tmp_path: Path) -> Path:
 class TestFlowSchema:
     def test_extract_returns_required_keys(self, demo_workspace: Path):
         from memory_center.core.domain.flow import extract_business_flows_for_workspace
-        from memory_center.core.store import WorkspaceStore
         from memory_center.core.graph import GraphStore
+        from memory_center.core.store import WorkspaceStore
         ws = WorkspaceStore(str(demo_workspace))
         with GraphStore(ws.graph_db_path) as graph:
             nodes = graph.find_nodes("Order", limit=1)

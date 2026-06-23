@@ -1,26 +1,49 @@
 """Tests for MCP facade tools (8 task-level tools replacing 82 atomic tools)."""
 import importlib.util
 from pathlib import Path
+
 import pytest
 from typer.testing import CliRunner
 
-from memory_center.core.orchestrator import (
-    memory_callers, memory_callees, memory_context, memory_contracts,
-    memory_detect_changes, memory_eval_walkthrough_quality, memory_export_walkthrough_artifact, memory_impact,
-    memory_method_walkthrough, memory_plan_change, memory_query,
-    memory_query_hybrid, memory_search_code, memory_symbol,
-    memory_verify_checklist, memory_walkthrough_health,
-    workspace_check_rules, workspace_end_session,
-    workspace_handoff_packet, workspace_next_actions,
-    workspace_recent_evidence, workspace_resume_packet, workspace_sniff,
-    workspace_start_session, workspace_status, workspace_sync_case_to_artifacts,
-    workspace_sync_sniff_to_artifacts, workspace_suggest_case, workspace_trace,
-    workspace_unresolved_items, workspace_lookup_hint,
-)
-from memory_center.core.artifacts import (
-    list_artifacts, create_task_space, list_task_spaces,
-)
 from memory_center.cli.main import app
+from memory_center.core.artifacts import (
+    create_task_space,
+    list_artifacts,
+    list_task_spaces,
+)
+from memory_center.core.orchestrator import (
+    memory_callees,
+    memory_callers,
+    memory_context,
+    memory_contracts,
+    memory_detect_changes,
+    memory_eval_walkthrough_quality,
+    memory_export_walkthrough_artifact,
+    memory_impact,
+    memory_method_walkthrough,
+    memory_plan_change,
+    memory_query,
+    memory_query_hybrid,
+    memory_search_code,
+    memory_symbol,
+    memory_verify_checklist,
+    memory_walkthrough_health,
+    workspace_check_rules,
+    workspace_end_session,
+    workspace_handoff_packet,
+    workspace_lookup_hint,
+    workspace_next_actions,
+    workspace_recent_evidence,
+    workspace_resume_packet,
+    workspace_sniff,
+    workspace_start_session,
+    workspace_status,
+    workspace_suggest_case,
+    workspace_sync_case_to_artifacts,
+    workspace_sync_sniff_to_artifacts,
+    workspace_trace,
+    workspace_unresolved_items,
+)
 from memory_center.http.server import _route_request
 
 HAS_MCP = importlib.util.find_spec("mcp") is not None and importlib.util.find_spec("mcp.server.fastmcp") is not None
@@ -571,6 +594,7 @@ def test_walkthrough_cli_commands(tmp_path: Path):
 @pytest.mark.skipif(not HAS_MCP, reason="mcp package not installed")
 def test_mc_lookup_auto_returns_decision_fields(tmp_path: Path):
     import asyncio
+
     from memory_center.mcp.server import create_server
 
     wf = _setup_workspace(tmp_path)
@@ -594,6 +618,7 @@ def test_mc_lookup_auto_returns_decision_fields(tmp_path: Path):
 @pytest.mark.skipif(not HAS_MCP, reason="mcp package not installed")
 def test_mc_lookup_auto_prefers_chain_for_deep_method_trace_queries(tmp_path: Path):
     import asyncio
+
     from memory_center.mcp.server import create_server
 
     wf = _setup_workspace(tmp_path)
@@ -631,6 +656,7 @@ def test_mc_lookup_auto_prefers_chain_for_deep_method_trace_queries(tmp_path: Pa
 @pytest.mark.skipif(not HAS_MCP, reason="mcp package not installed")
 def test_mc_admin_walkthrough_actions(tmp_path: Path):
     import asyncio
+
     from memory_center.mcp.server import create_server
 
     wf = _setup_workspace(tmp_path)
@@ -659,6 +685,7 @@ def test_mcp_create_server_resolves_directory_workspace(tmp_path: Path):
 @pytest.mark.skipif(not HAS_MCP, reason="mcp package not installed")
 def test_mcp_lookup_and_analyze_default_to_compact_views(tmp_path: Path):
     import asyncio
+
     from memory_center.mcp.server import create_server
 
     wf = _setup_workspace(tmp_path)

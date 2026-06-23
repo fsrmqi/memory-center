@@ -13,9 +13,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-
 from tests.fixtures import copy_demo_workspace
-
 
 # ===========================================================================
 # D-01: Freshness in main chain
@@ -28,7 +26,11 @@ class TestD01_FreshnessMainChain:
         """Fresh status returns correct semantics and no recommended actions."""
         ws = copy_demo_workspace(tmp_path)
         from memory_center.core.freshness.integration import (
-            get_freshness_with_actions, FRESH, PENDING, STALE, UNKNOWN,
+            FRESH,
+            PENDING,
+            STALE,
+            UNKNOWN,
+            get_freshness_with_actions,
         )
         result = get_freshness_with_actions(str(ws))
         assert "status" in result
@@ -40,7 +42,11 @@ class TestD01_FreshnessMainChain:
     def test_freshness_action_hint(self):
         """Action hints are defined for all freshness statuses."""
         from memory_center.core.freshness.integration import (
-            freshness_action_hint, FRESH, PENDING, STALE, UNKNOWN,
+            FRESH,
+            PENDING,
+            STALE,
+            UNKNOWN,
+            freshness_action_hint,
         )
         for status in (FRESH, PENDING, STALE, UNKNOWN):
             hint = freshness_action_hint(status)
@@ -50,7 +56,10 @@ class TestD01_FreshnessMainChain:
     def test_freshness_risk_escalation(self):
         """Stale freshness escalates risk level."""
         from memory_center.core.freshness.integration import (
-            freshness_risk_escalation, FRESH, PENDING, STALE,
+            FRESH,
+            PENDING,
+            STALE,
+            freshness_risk_escalation,
         )
         assert freshness_risk_escalation("low", STALE) == "high"
         assert freshness_risk_escalation("low", FRESH) == "low"
@@ -61,7 +70,10 @@ class TestD01_FreshnessMainChain:
     def test_stale_file_alert(self):
         """Stale file alert generates alerts for stale/pending files."""
         from memory_center.core.freshness.integration import (
-            stale_file_alert, STALE, PENDING, FRESH,
+            FRESH,
+            PENDING,
+            STALE,
+            stale_file_alert,
         )
         file_freshness = {
             "src/Main.java": STALE,
@@ -202,7 +214,7 @@ class TestD03_ExplanationSchema:
 
     def test_merge_explanations(self):
         """merge_explanations combines multiple entries."""
-        from memory_center.core.explanation.schema import merge_explanations, explanation_entry
+        from memory_center.core.explanation.schema import explanation_entry, merge_explanations
         entries = [
             explanation_entry(subject="a", summary="A", confidence=0.9),
             explanation_entry(subject="b", summary="B", confidence=0.7),
@@ -232,8 +244,8 @@ class TestD04_DomainFlow:
     def test_business_domain_extractor(self, tmp_path):
         """BusinessDomainExtractor extracts domains from graph."""
         ws = copy_demo_workspace(tmp_path)
-        from memory_center.core.storage.unified import UnifiedStore
         from memory_center.core.domain.extractor import BusinessDomainExtractor
+        from memory_center.core.storage.unified import UnifiedStore
         from memory_center.core.store import WorkspaceStore
         store = WorkspaceStore(str(ws))
         with UnifiedStore(store.graph_db_path) as unified:
@@ -250,8 +262,8 @@ class TestD04_DomainFlow:
     def test_business_flow_graph_build(self, tmp_path):
         """BusinessFlowGraph.build_flow_graph() returns nodes and edges."""
         ws = copy_demo_workspace(tmp_path)
-        from memory_center.core.storage.unified import UnifiedStore
         from memory_center.core.domain.flow import BusinessFlowGraph
+        from memory_center.core.storage.unified import UnifiedStore
         from memory_center.core.store import WorkspaceStore
         store = WorkspaceStore(str(ws))
         with UnifiedStore(store.graph_db_path) as unified:
@@ -284,7 +296,7 @@ class TestD05_OnboardingPersona:
 
     def test_onboarding_guide_exists(self):
         """Onboarding guide module is importable."""
-        from memory_center.core.onboarding import guide, glossary, tour
+        from memory_center.core.onboarding import glossary, guide, tour
         assert guide is not None
         assert glossary is not None
         assert tour is not None
@@ -308,7 +320,9 @@ class TestD06_ResumeHandoff:
         """workspace_recent_sessions returns session list."""
         ws = copy_demo_workspace(tmp_path)
         from memory_center.core.orchestrator.session import (
-            workspace_start_session, workspace_end_session, workspace_recent_sessions,
+            workspace_end_session,
+            workspace_recent_sessions,
+            workspace_start_session,
         )
         wp = str(ws)
         start = workspace_start_session(wp, intent="test_d06")
@@ -322,8 +336,10 @@ class TestD06_ResumeHandoff:
         """workspace_suggest_case returns draft case from session."""
         ws = copy_demo_workspace(tmp_path)
         from memory_center.core.orchestrator.session import (
-            workspace_start_session, workspace_log_session_event,
-            workspace_end_session, workspace_suggest_case,
+            workspace_end_session,
+            workspace_log_session_event,
+            workspace_start_session,
+            workspace_suggest_case,
         )
         wp = str(ws)
         start = workspace_start_session(wp, intent="test_case")
@@ -533,6 +549,7 @@ class TestF03_Metrics:
     def test_metrics_timer(self, tmp_path):
         """MetricsCollector.timer() records elapsed time."""
         import time
+
         from memory_center.core.metrics import MetricsCollector
         mc = MetricsCollector(tmp_path / "workspace.yaml")
         with mc.timer("operation"):

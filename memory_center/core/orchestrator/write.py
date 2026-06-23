@@ -276,6 +276,7 @@ def memory_execute_write(
     files: List[str] | None = None,
 ) -> Dict[str, Any]:
     from .session import workspace_start_session
+
     # lazy import to avoid circular deps
     from .sync import workspace_sync_case_to_artifacts, workspace_sync_sniff_to_artifacts
 

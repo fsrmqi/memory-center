@@ -19,13 +19,12 @@ import pytest
 
 from memory_center.core.config import load_workspace_config
 from memory_center.core.indexer import build_graph_store, reindex_workspace
-from memory_center.core.store import WorkspaceStore
 from memory_center.core.orchestrator.common import load_context
 from memory_center.core.orchestrator.query import (
     memory_method_walkthrough,
     memory_query_hybrid,
 )
-
+from memory_center.core.store import WorkspaceStore
 
 SERVICES = 8
 CONTROLLERS_PER_SERVICE = 6

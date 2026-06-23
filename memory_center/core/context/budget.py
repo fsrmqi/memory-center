@@ -8,7 +8,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Dict, List
 
-
 # Approximate tokens per character for mixed CJK/English text
 _TOKENS_PER_CHAR = 0.5
 

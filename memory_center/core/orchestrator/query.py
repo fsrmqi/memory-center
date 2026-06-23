@@ -5,25 +5,24 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List
 
-
+from ..diagnostics import DIAG, diag_entry
 from ..graph import GraphStore
+from ..observability import observe_operation
+from ..ontology import EntityValidator
+from ..quality import build_quality_summary
+from ..result_types import attach_facade_metadata
 from ..rules import match_rules
 from ..schemas import with_schema
 from ..semantic import semantic_query
-from ..ontology import EntityValidator
-from ..observability import observe_operation
-from ..result_types import attach_facade_metadata
-from ..quality import build_quality_summary
-from ..diagnostics import DIAG, diag_entry
-from ..verification.heuristics import apply_candidate_path_learning
 from ..tracking import log_token_gain
-from ..walkthrough import runner as _walkthrough_runner
+from ..verification.heuristics import apply_candidate_path_learning
 from ..walkthrough import operations as _walkthrough_operations
+from ..walkthrough import runner as _walkthrough_runner
 from .common import (
     SESSION_EVENTS_FILE,
     _best_match,
-    _build_progressive_levels,
     _budget_limits,
+    _build_progressive_levels,
     _event_payload,
     _filter_call_edges,
     _is_compact_view,
@@ -433,7 +432,7 @@ def memory_query_hybrid(workspace_file: str | Path, query: str, limit: int = 20,
     Provides better recall and more stable results than memory_query.
     """
     # Lazy import to avoid circular dependency
-    from ..retrieval.hybrid import HybridRetrievalConfig, hybrid_retrieve, detect_query_intent
+    from ..retrieval.hybrid import HybridRetrievalConfig, detect_query_intent, hybrid_retrieve
 
     config_obj = load_context(workspace_file)
     store = config_obj[1]

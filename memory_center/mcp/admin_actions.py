@@ -20,23 +20,6 @@ from __future__ import annotations
 import json
 from typing import Any, Dict, List, Optional
 
-from memory_center.core.audit.runtime import audit_agent_runtime
-from memory_center.core.benchmark.trending import check_regression_alerts
-from memory_center.core.dispatch import CommandRegistry
-from memory_center.core.domain.flow import (
-    business_flow_impact_for_workspace,
-    extract_business_flows_for_workspace,
-)
-from memory_center.core.explanation.schema import Explanation
-from memory_center.core.metrics import MetricsCollector
-from memory_center.core.verification.heuristics import HeuristicsRegister
-from memory_center.core.verification.loop import VerificationLoop
-from memory_center.core.verification.pattern_promotion import PatternPromotion
-from memory_center.core.verification.workflow_profiles import (
-    get_workflow_profile,
-    recommend_workflow_with_learning,
-)
-from memory_center.core.verification.bundle_export import generate_agent_bundle
 from memory_center.core.artifacts import (
     append_change_log,
     append_task_change_log,
@@ -56,7 +39,15 @@ from memory_center.core.artifacts import (
     update_task_artifact,
     update_task_status,
 )
-from memory_center.core.wiki import generate_skills, generate_wiki
+from memory_center.core.audit.runtime import audit_agent_runtime
+from memory_center.core.benchmark.trending import check_regression_alerts
+from memory_center.core.dispatch import CommandRegistry
+from memory_center.core.domain.flow import (
+    business_flow_impact_for_workspace,
+    extract_business_flows_for_workspace,
+)
+from memory_center.core.explanation.schema import Explanation
+from memory_center.core.metrics import MetricsCollector
 from memory_center.core.orchestrator import (
     group_chain,
     group_impact,
@@ -96,7 +87,15 @@ from memory_center.core.orchestrator import (
     workspace_status,
     workspace_write_receipts,
 )
-
+from memory_center.core.verification.bundle_export import generate_agent_bundle
+from memory_center.core.verification.heuristics import HeuristicsRegister
+from memory_center.core.verification.loop import VerificationLoop
+from memory_center.core.verification.pattern_promotion import PatternPromotion
+from memory_center.core.verification.workflow_profiles import (
+    get_workflow_profile,
+    recommend_workflow_with_learning,
+)
+from memory_center.core.wiki import generate_skills, generate_wiki
 
 __all__ = [
     "build_admin_registry",
@@ -162,8 +161,8 @@ def drill_task(workspace_file: str, task_id: str = "") -> Dict[str, Any]:
 
 
 def backend_consistency(workspace_file: str) -> Dict[str, Any]:
-    from memory_center.core.store import WorkspaceStore
     from memory_center.core.backend.query import UnifiedBackendQuery
+    from memory_center.core.store import WorkspaceStore
     store = WorkspaceStore(workspace_file)
     with UnifiedBackendQuery(store.memory_db_path) as backend:
         return backend.check_consistency(store.base_dir)

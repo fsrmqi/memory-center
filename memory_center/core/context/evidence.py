@@ -10,7 +10,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
-
 # Source reliability weights (higher = more trustworthy)
 _SOURCE_WEIGHTS: Dict[str, float] = {
     "graph_exact": 1.0,

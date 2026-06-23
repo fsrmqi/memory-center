@@ -9,8 +9,8 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 from ..store import WorkspaceStore
-from ..verification.heuristics import apply_candidate_path_learning
 from ..validators import doctor
+from ..verification.heuristics import apply_candidate_path_learning
 
 AUDIT_LOG_FILE = "agent-runtime-audit.jsonl"
 

@@ -1,8 +1,8 @@
 """Tests for hook runner — parameter resolution, mode enforcement, facade dispatch."""
 from pathlib import Path
 
-from memory_center.hooks.spec import _SESSION_ID_FILE
 from memory_center.hooks.runner import run_hook
+from memory_center.hooks.spec import _SESSION_ID_FILE
 
 
 def _setup_workspace(tmp_path: Path) -> str:
@@ -85,6 +85,7 @@ def test_run_hook_pre_edit_guard_mode_non_must_passes(tmp_path: Path):
     # Override hooks.yaml: remove file filter so ALL files get checked,
     # but use soft mode so it doesn't block
     import yaml
+
     from memory_center.hooks.spec import load_default_hooks
     config = load_default_hooks()
     config["hooks"]["pre_edit"]["mode"] = "soft"
@@ -104,6 +105,7 @@ def test_run_hook_user_prompt_submit_suggest_mode(tmp_path: Path):
     ws = _setup_workspace(tmp_path)
     # Default has user_prompt_submit disabled — enable it for this test
     import yaml
+
     from memory_center.hooks.spec import load_default_hooks
     config = load_default_hooks()
     config["hooks"]["user_prompt_submit"]["enabled"] = True
@@ -126,6 +128,7 @@ def test_run_hook_unknown_hook(tmp_path: Path):
 def test_run_hook_off_mode(tmp_path: Path):
     ws = _setup_workspace(tmp_path)
     import yaml
+
     from memory_center.hooks.spec import load_default_hooks
     config = load_default_hooks()
     config["hooks"]["session_start"]["mode"] = "off"
@@ -140,6 +143,7 @@ def test_run_hook_off_mode(tmp_path: Path):
 def test_run_hook_enabled_false_disables_hook(tmp_path: Path):
     ws = _setup_workspace(tmp_path)
     import yaml
+
     from memory_center.hooks.spec import load_default_hooks
     config = load_default_hooks()
     config["hooks"]["session_start"]["enabled"] = False
@@ -164,6 +168,7 @@ def test_run_hook_pre_edit_tool_matcher_from_filter_skips_non_matching_tool(tmp_
 def test_run_hook_mc_lookup_symbol_uses_compact_view(tmp_path: Path):
     ws = _setup_workspace(tmp_path)
     import yaml
+
     from memory_center.hooks.spec import load_default_hooks
 
     config = load_default_hooks()
@@ -193,6 +198,7 @@ def test_run_hook_mc_lookup_symbol_uses_compact_view(tmp_path: Path):
 def test_run_hook_mc_lookup_chain_uses_compact_view(tmp_path: Path):
     ws = _setup_workspace(tmp_path)
     import yaml
+
     from memory_center.hooks.spec import load_default_hooks
 
     config = load_default_hooks()

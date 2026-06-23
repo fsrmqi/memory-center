@@ -382,10 +382,9 @@ def memory_eval_token_benchmark(
     Follows agentmemory's benchmark pattern: measure actual token impact per function per budget.
     Returns a comparison table suitable for regression testing.
     """
-    from .resume import workspace_resume_packet
-    from .workspace import workspace_dashboard, workspace_sniff, workspace_status, workspace_continuity_dashboard
+    from .resume import workspace_handoff_packet, workspace_resume_packet
     from .session import workspace_recent_evidence
-    from .resume import workspace_handoff_packet
+    from .workspace import workspace_continuity_dashboard, workspace_dashboard, workspace_sniff, workspace_status
 
     config, _ = load_context(workspace_file)
     budget_tiers = ["tiny", "small", "medium", "large"]

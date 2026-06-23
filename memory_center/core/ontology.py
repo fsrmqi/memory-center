@@ -11,7 +11,6 @@ import re as _re
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # Node Types — §3.3 + §20.5.1
 # ═══════════════════════════════════════════════════════════════════════════════

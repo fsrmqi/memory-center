@@ -22,10 +22,13 @@ from functools import wraps
 from pathlib import Path
 from typing import Any, Dict, List
 
+from memory_center.core.errors import normalize_exception
 from memory_center.core.orchestrator import (
+    _annotate_phantom_nodes,
     group_chain,
-    memory_callers,
+    memory_backend_query,
     memory_callees,
+    memory_callers,
     memory_context,
     memory_contracts,
     memory_detect_changes,
@@ -33,35 +36,32 @@ from memory_center.core.orchestrator import (
     memory_method_walkthrough,
     memory_plan_change,
     memory_query_hybrid,
-    memory_backend_query,
     memory_ref_batch,
     memory_ref_get,
     memory_search_code,
     memory_symbol,
-    memory_verify_checklist,
     memory_tool_usage_report,
-    workspace_end_session,
-    workspace_recent_evidence,
-    workspace_handoff_packet,
-    workspace_lookup_hint,
-    workspace_resume_packet,
-    workspace_suggest_case,
+    memory_verify_checklist,
     workspace_check_contract,
     workspace_check_rules,
+    workspace_end_session,
+    workspace_handoff_packet,
+    workspace_lookup_hint,
+    workspace_next_actions,
+    workspace_recent_evidence,
     workspace_record_case,
     workspace_record_close_feedback,
+    workspace_resume_packet,
     workspace_sniff,
     workspace_start_session,
     workspace_status,
-    workspace_trace,
+    workspace_suggest_case,
     workspace_sync_case_to_artifacts,
     workspace_sync_sniff_to_artifacts,
+    workspace_trace,
     workspace_unresolved_items,
-    workspace_next_actions,
-    _annotate_phantom_nodes,
 )
 from memory_center.core.registry import load_registry
-from memory_center.core.errors import normalize_exception
 from memory_center.core.store import WorkspaceStore
 
 _JAVA_CHAIN_SYMBOL_RE = re.compile(
@@ -259,8 +259,8 @@ def _drill_task(workspace_file: str, task_id: str = "") -> Dict[str, Any]:
 
 def _backend_consistency(workspace_file: str) -> Dict[str, Any]:
     """Check backend consistency for mc_admin."""
-    from ..core.store import WorkspaceStore
     from ..core.backend.query import UnifiedBackendQuery
+    from ..core.store import WorkspaceStore
     store = WorkspaceStore(workspace_file)
     with UnifiedBackendQuery(store.memory_db_path) as backend:
         return backend.check_consistency(store.base_dir)
@@ -268,7 +268,7 @@ def _backend_consistency(workspace_file: str) -> Dict[str, Any]:
 
 def _constraint_action(context: str = "", template: str = "coding_agent") -> Dict[str, Any]:
     """Show constraint template or auto-select action for mc_admin."""
-    from ..core.templates import get_constraint_template, auto_select_action
+    from ..core.templates import auto_select_action, get_constraint_template
     if context:
         action = auto_select_action(context, template)
         return {"context": context, "template": template, "recommended_action": action}

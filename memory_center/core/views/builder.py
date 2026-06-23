@@ -10,9 +10,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, List
 
-from ..storage.unified import UnifiedStore
-from ..reasoning.risk import RiskPatternEngine, RiskFinding
 from ..domain.extractor import BusinessDomainExtractor
+from ..reasoning.risk import RiskFinding, RiskPatternEngine
+from ..storage.unified import UnifiedStore
 
 
 @dataclass

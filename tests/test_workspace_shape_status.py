@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from memory_center.core.audit.runtime import audit_agent_runtime
 from memory_center.core.freshness.status import IndexFreshnessService
 from memory_center.core.orchestrator import workspace_status
-from memory_center.core.audit.runtime import audit_agent_runtime
 from memory_center.core.validators import doctor
 
 

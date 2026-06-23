@@ -14,8 +14,6 @@ Covers:
 """
 from __future__ import annotations
 
-
-
 # ═══════════════════════════════════════════════════════════════════════
 # Phase A: Ontology Constraint Layer
 # ═══════════════════════════════════════════════════════════════════════
@@ -96,8 +94,10 @@ class TestSemanticStrengthAnnotation:
 
     def test_ontology_exports(self):
         from memory_center.core.ontology import (
-            validate_node_type, validate_edge_type, edge_strength,
             edge_confidence_range,
+            edge_strength,
+            validate_edge_type,
+            validate_node_type,
         )
         assert validate_node_type("Class") is True
         assert validate_node_type("FakeType") is False
@@ -162,8 +162,9 @@ class TestFreshnessService:
         assert "changed_files" in d
 
     def test_watcher_status(self):
-        from memory_center.core.freshness.watcher import FileWatcher
         import tempfile
+
+        from memory_center.core.freshness.watcher import FileWatcher
         with tempfile.TemporaryDirectory() as td:
             w = FileWatcher(td)
             st = w.status()
@@ -225,9 +226,10 @@ class TestCompletionAudit:
     """Test workspace type detection."""
 
     def test_detect_workspace_type_unknown(self):
-        from memory_center.core.audit.completion import detect_workspace_type
-        from pathlib import Path
         import tempfile
+        from pathlib import Path
+
+        from memory_center.core.audit.completion import detect_workspace_type
         with tempfile.TemporaryDirectory() as td:
             assert detect_workspace_type(Path(td)) == "unknown"
 
@@ -441,56 +443,63 @@ class TestEnhancedWorkspaceDetection:
     """Test Phase E improved workspace type detection."""
 
     def test_detect_unknown_for_empty(self):
-        from memory_center.core.audit.completion import detect_workspace_type
-        from pathlib import Path
         import tempfile
+        from pathlib import Path
+
+        from memory_center.core.audit.completion import detect_workspace_type
         with tempfile.TemporaryDirectory() as td:
             assert detect_workspace_type(Path(td)) == "unknown"
 
     def test_detect_python_with_pyproject(self):
-        from memory_center.core.audit.completion import detect_workspace_type
-        from pathlib import Path
         import tempfile
+        from pathlib import Path
+
+        from memory_center.core.audit.completion import detect_workspace_type
         with tempfile.TemporaryDirectory() as td:
             (Path(td) / "pyproject.toml").write_text("[project]\nname='test'")
             assert detect_workspace_type(Path(td)) == "python"
 
     def test_detect_node_with_package_json(self):
-        from memory_center.core.audit.completion import detect_workspace_type
-        from pathlib import Path
         import tempfile
+        from pathlib import Path
+
+        from memory_center.core.audit.completion import detect_workspace_type
         with tempfile.TemporaryDirectory() as td:
             (Path(td) / "package.json").write_text('{"name":"test"}')
             assert detect_workspace_type(Path(td)) == "node"
 
     def test_detect_scala_with_build_sbt(self):
-        from memory_center.core.audit.completion import detect_workspace_type
-        from pathlib import Path
         import tempfile
+        from pathlib import Path
+
+        from memory_center.core.audit.completion import detect_workspace_type
         with tempfile.TemporaryDirectory() as td:
             (Path(td) / "build.sbt").write_text('name := "test"')
             assert detect_workspace_type(Path(td)) == "scala"
 
     def test_detect_monorepo_with_pnpm_workspace(self):
-        from memory_center.core.audit.completion import detect_workspace_type
-        from pathlib import Path
         import tempfile
+        from pathlib import Path
+
+        from memory_center.core.audit.completion import detect_workspace_type
         with tempfile.TemporaryDirectory() as td:
             (Path(td) / "pnpm-workspace.yaml").write_text("packages:\n  - apps/*")
             assert detect_workspace_type(Path(td)) == "monorepo"
 
     def test_detect_java_maven(self):
-        from memory_center.core.audit.completion import detect_workspace_type
-        from pathlib import Path
         import tempfile
+        from pathlib import Path
+
+        from memory_center.core.audit.completion import detect_workspace_type
         with tempfile.TemporaryDirectory() as td:
             (Path(td) / "pom.xml").write_text('<project><artifactId>test</artifactId></project>')
             assert detect_workspace_type(Path(td)) == "java-maven"
 
     def test_detect_java_gradle(self):
-        from memory_center.core.audit.completion import detect_workspace_type
-        from pathlib import Path
         import tempfile
+        from pathlib import Path
+
+        from memory_center.core.audit.completion import detect_workspace_type
         with tempfile.TemporaryDirectory() as td:
             (Path(td) / "build.gradle").write_text('apply plugin: "java"')
             assert detect_workspace_type(Path(td)) == "java-gradle"
@@ -598,8 +607,9 @@ class TestWatcherBridge:
     """CG-4 watcher-to-incremental-reindex bridge."""
 
     def test_watcher_status_structure(self):
-        from memory_center.core.freshness.watcher import FileWatcher
         import tempfile
+
+        from memory_center.core.freshness.watcher import FileWatcher
         with tempfile.TemporaryDirectory() as td:
             w = FileWatcher(td, extensions=(".py",))
             st = w.status()
@@ -608,8 +618,9 @@ class TestWatcherBridge:
             assert "poll_interval" in st
 
     def test_watcher_detect_changes_empty(self):
-        from memory_center.core.freshness.watcher import FileWatcher
         import tempfile
+
+        from memory_center.core.freshness.watcher import FileWatcher
         with tempfile.TemporaryDirectory() as td:
             w = FileWatcher(td, extensions=(".py",))
             events = w.detect_changes()

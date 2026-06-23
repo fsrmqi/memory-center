@@ -44,8 +44,8 @@ class TestF02BackendConsistency:
         assert UnifiedBackendQuery is not None
 
     def test_unified_backend_query_reads_indexes(self, demo_workspace: Path):
-        from memory_center.core.store import WorkspaceStore
         from memory_center.core.backend.query import UnifiedBackendQuery
+        from memory_center.core.store import WorkspaceStore
         ws = WorkspaceStore(str(demo_workspace))
         db_path = ws.memory_db_path
         with UnifiedBackendQuery(db_path) as ubq:
@@ -53,8 +53,8 @@ class TestF02BackendConsistency:
             assert isinstance(idx, list)
 
     def test_backend_query_records(self, demo_workspace: Path):
-        from memory_center.core.store import WorkspaceStore
         from memory_center.core.backend.query import UnifiedBackendQuery
+        from memory_center.core.store import WorkspaceStore
         ws = WorkspaceStore(str(demo_workspace))
         db_path = ws.memory_db_path
         with UnifiedBackendQuery(db_path) as ubq:
@@ -63,6 +63,7 @@ class TestF02BackendConsistency:
 
     def test_backend_consistency_cli_entry(self, demo_workspace: Path):
         from typer.testing import CliRunner
+
         from memory_center.cli.main import app
         runner = CliRunner()
         result = runner.invoke(app, ["backend-consistency", "--workspace", str(demo_workspace)])
@@ -145,8 +146,10 @@ class TestF04BenchmarkTrending:
         assert config.default_threshold_pct > 0
 
     def test_check_regression_alerts_configurable(self, demo_workspace: Path):
-        from memory_center.core.benchmark.trending import check_regression_alerts_configurable
-        from memory_center.core.benchmark.trending import RegressionThresholdConfig
+        from memory_center.core.benchmark.trending import (
+            RegressionThresholdConfig,
+            check_regression_alerts_configurable,
+        )
         config = RegressionThresholdConfig(default_threshold_pct=5.0)
         
         result2 = check_regression_alerts_configurable(str(demo_workspace), config)
@@ -162,6 +165,7 @@ class TestF04BenchmarkTrending:
 class TestF05RegressionAlerts:
     def test_regression_alerts_cli(self, demo_workspace: Path):
         from typer.testing import CliRunner
+
         from memory_center.cli.main import app
         runner = CliRunner()
         result = runner.invoke(app, ["regression-alerts", "--workspace", str(demo_workspace), "--threshold-pct", "10"])
@@ -194,6 +198,7 @@ class TestF06RuntimeAudit:
 
     def test_audit_cli_entry(self, demo_workspace: Path):
         from typer.testing import CliRunner
+
         from memory_center.cli.main import app
         runner = CliRunner()
         result = runner.invoke(app, ["runtime-audit", "--workspace", str(demo_workspace)])
@@ -207,6 +212,7 @@ class TestF06RuntimeAudit:
 class TestF07HealthGovernance:
     def test_work_health_cli(self, demo_workspace: Path):
         from typer.testing import CliRunner
+
         from memory_center.cli.main import app
         runner = CliRunner()
         result = runner.invoke(app, ["work-health", "--workspace", str(demo_workspace)])
@@ -289,6 +295,7 @@ class TestG01WorkflowProfiles:
 
     def test_profile_cli(self):
         from typer.testing import CliRunner
+
         from memory_center.cli.main import app
         runner = CliRunner()
         result = runner.invoke(app, ["workflow-profile", "--profile", "quick-fix"])
@@ -341,8 +348,8 @@ class TestG02VerificationLoop:
         assert entry["status"] == "completed"
 
     def test_verification_loop_verify_phase_records_feedback(self, demo_workspace: Path):
-        from memory_center.core.verification.loop import VerificationLoop
         from memory_center.core.verification.heuristics import HeuristicsRegister
+        from memory_center.core.verification.loop import VerificationLoop
 
         vl = VerificationLoop(str(demo_workspace))
         started = vl.start("task-verify-feedback", "Phase verify feedback")
@@ -364,6 +371,7 @@ class TestG02VerificationLoop:
 
     def test_verification_loop_cli(self, demo_workspace: Path):
         from typer.testing import CliRunner
+
         from memory_center.cli.main import app
         runner = CliRunner()
         result = runner.invoke(app, ["verification-loop", "--workspace", str(demo_workspace)])
@@ -426,6 +434,7 @@ class TestG03PatternPromotion:
 
     def test_pattern_promotion_cli(self, demo_workspace: Path):
         from typer.testing import CliRunner
+
         from memory_center.cli.main import app
         runner = CliRunner()
         result = runner.invoke(app, ["pattern-promotion", "--workspace", str(demo_workspace)])
@@ -433,6 +442,7 @@ class TestG03PatternPromotion:
 
     def test_heuristics_cli(self, demo_workspace: Path):
         from typer.testing import CliRunner
+
         from memory_center.cli.main import app
         runner = CliRunner()
         result = runner.invoke(app, ["heuristics", "--workspace", str(demo_workspace)])
@@ -440,6 +450,7 @@ class TestG03PatternPromotion:
 
     def test_heuristics_explain_cli(self, demo_workspace: Path):
         from typer.testing import CliRunner
+
         from memory_center.cli.main import app
         from memory_center.core.verification.heuristics import HeuristicsRegister
 
@@ -472,8 +483,8 @@ class TestG03PatternPromotion:
         assert '"current"' in result.output.lower()
 
     def test_heuristics_explain_http(self, demo_workspace: Path):
-        from memory_center.http.server import _route_request
         from memory_center.core.verification.heuristics import HeuristicsRegister
+        from memory_center.http.server import _route_request
 
         hr = HeuristicsRegister(str(demo_workspace))
         hr.record_candidate_path_feedback(
@@ -548,6 +559,7 @@ class TestG05BundleExport:
 
     def test_bundle_export_cli(self, demo_workspace: Path):
         from typer.testing import CliRunner
+
         from memory_center.cli.main import app
         runner = CliRunner()
         result = runner.invoke(app, ["bundle-export", "--workspace", str(demo_workspace), "--agent", "codex"])
@@ -617,8 +629,8 @@ class TestG07InstallBuild:
 
     def test_three_entry_points_exist(self):
         from memory_center.cli.main import app as cli_app
-        from memory_center.mcp.server import create_server
         from memory_center.http.server import serve_http
+        from memory_center.mcp.server import create_server
         assert cli_app is not None
         assert callable(create_server)
         assert callable(serve_http)

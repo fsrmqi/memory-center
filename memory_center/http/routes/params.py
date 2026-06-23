@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+
 def _require_workspace(params: dict, default_workspace: str | None) -> str:
     value = params.get("workspace", [default_workspace])[0]
     if not value:

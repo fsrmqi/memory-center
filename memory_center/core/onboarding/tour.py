@@ -206,8 +206,8 @@ def generate_architecture_tour(workspace_file: str | Path, persona: str = "devel
     4. MQ topics and data flows
     5. Configuration patterns
     """
-    from ..store import WorkspaceStore
     from ..graph import GraphStore
+    from ..store import WorkspaceStore
 
     store = WorkspaceStore(workspace_file)
     config = store._config if hasattr(store, '_config') else None

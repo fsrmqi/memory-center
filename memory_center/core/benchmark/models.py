@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Dict, Mapping
 
-
 _CASE_FIELDS = {
     "case_id",
     "query",

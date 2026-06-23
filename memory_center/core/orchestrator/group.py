@@ -18,8 +18,8 @@ from .common import (
 from .query import (
     _query_node_priority,
     _sort_target_types,
-    memory_callers,
     memory_callees,
+    memory_callers,
     memory_query,
     memory_symbol,
 )

@@ -2,34 +2,32 @@ from __future__ import annotations
 
 import argparse
 import json
+import json as _json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
-import json as _json
 
+from memory_center.core.dispatch import CommandRegistry as CommandRegistry  # re-exported for compatibility
+from memory_center.core.errors import normalize_exception
 from memory_center.core.exporters import (
     export_continuity_dashboard_html,
     export_focus_task_html,
     export_index_freshness_html,
+    export_memory_backend_html,
     export_receipts_html,
     export_ref_html,
-    export_memory_backend_html,
     export_timeline_html,
     export_usage_report_html,
     export_workbench_index_html,
     export_workspace_dashboard_html,
 )
-from memory_center.core.dispatch import CommandRegistry as CommandRegistry  # re-exported for compatibility
 from memory_center.http.route_dispatch import (
     RouteParams,
-    build_http_route_registry,
     _parse_int,
     _require_one,
     _require_workspace,
+    build_http_route_registry,
 )
-from memory_center.core.errors import normalize_exception
-
-
 
 _VUE_DIST_DIR: Path | None = None
 

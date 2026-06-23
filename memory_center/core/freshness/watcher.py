@@ -7,8 +7,8 @@ dependency) with configurable debounce.
 from __future__ import annotations
 
 import os
-import time
 import threading
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
@@ -175,9 +175,9 @@ def trigger_incremental_reindex(workspace_file: str | Path, changed_files: List[
     Takes changed file paths from FileWatcher and triggers
     a targeted reindex for only those files.
     """
-    from ..store import WorkspaceStore
     from ..config import load_workspace_config
     from ..indexer import reindex_workspace
+    from ..store import WorkspaceStore
 
     try:
         config = load_workspace_config(workspace_file)

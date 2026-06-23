@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List
 
+
 def registry_path(home: str | Path | None = None) -> Path:
     base = Path(home).expanduser() if home else (Path.home() / ".memory-center")
     base.mkdir(parents=True, exist_ok=True)

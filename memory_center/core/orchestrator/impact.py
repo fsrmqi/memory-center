@@ -4,28 +4,33 @@ import subprocess
 from pathlib import Path
 from typing import Any, Dict, List
 
-from ..graph import GraphStore
-from ..rules import match_rules
-from .common import _build_progressive_levels, _impact_checklist, _unknown_static_analysis_risks, load_context
-from .query import (
-    _build_augmented_lookup_payload,
-    _build_lookup_payload,
-    _build_impact_evidence_summary,
-    _build_edge_summary_lines,
-    _compact_focus_edges,
-    _format_compact_node_summary,
-    _build_project_scope,
-    _build_project_evidence,
-    memory_symbol,
-)
 from ..diagnostics import DIAG, diag_entry
 from ..explanation import explanation_entry, merge_explanations
+from ..graph import GraphStore
 from ..ontology import edge_strength
+from ..rules import match_rules
 from ..tracking import log_token_gain
 from ..verification.heuristics import apply_candidate_path_learning
-from .common import _is_compact_view
+from .common import (
+    _build_progressive_levels,
+    _impact_checklist,
+    _is_compact_view,
+    _unknown_static_analysis_risks,
+    load_context,
+)
 from .compact import _measure_compact_gain
-from .query import _summarize_chain_edges
+from .query import (
+    _build_augmented_lookup_payload,
+    _build_edge_summary_lines,
+    _build_impact_evidence_summary,
+    _build_lookup_payload,
+    _build_project_evidence,
+    _build_project_scope,
+    _compact_focus_edges,
+    _format_compact_node_summary,
+    _summarize_chain_edges,
+    memory_symbol,
+)
 
 
 def memory_impact(
@@ -144,8 +149,8 @@ def memory_impact(
 
 
 def _compact_impact_result(result: Dict[str, Any], budget: str = "medium") -> Dict[str, Any]:
-    from .common import _budget_limits
     from ..reasoning.integration import compact_reasoning_view
+    from .common import _budget_limits
 
     limits = _budget_limits(budget)
     target = result.get("target", {}) or {}
