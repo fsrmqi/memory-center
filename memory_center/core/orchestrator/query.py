@@ -45,6 +45,30 @@ METHOD_WALKTHROUGH_SCHEMA_VERSION = _walkthrough_runner.METHOD_WALKTHROUGH_SCHEM
 _METHOD_WALKTHROUGH_CACHE_TTL_SECONDS = _walkthrough_runner.DEFAULT_CACHE_TTL_SECONDS
 _METHOD_WALKTHROUGH_CACHE_MAX_ITEMS = _walkthrough_runner.DEFAULT_CACHE_MAX_ITEMS
 _METHOD_WALKTHROUGH_CACHE = _walkthrough_runner.default_walkthrough_cache()
+_JAVA_CHAIN_SYMBOL_RE = re.compile(
+    r"((?:[a-z_][\w$]*\.)+[A-Z][\w$]*(?:#[a-zA-Z_][\w$]*)?|[A-Z][\w$]*(?:#[a-zA-Z_][\w$]*)?)"
+)
+
+
+def _extract_symbol_like_token(*values: str) -> str:
+    for raw in values:
+        text = (raw or "").strip()
+        if not text:
+            continue
+        matches = _JAVA_CHAIN_SYMBOL_RE.findall(text)
+        if matches:
+            matches.sort(key=len, reverse=True)
+            return matches[0]
+    return ""
+
+
+def _walkthrough_symbol_from_query(query: str, intent: dict[str, Any]) -> str:
+    if not intent.get("is_full_chain"):
+        return ""
+    symbol = _extract_symbol_like_token(query)
+    if "#" not in symbol:
+        return ""
+    return symbol
 
 
 def _normalize_symbol_name(name: str) -> str:
@@ -424,6 +448,25 @@ def memory_query_hybrid(workspace_file: str | Path, query: str, limit: int = 20,
 
     # Detect query intent first
     intent = detect_query_intent(query)
+    walkthrough_symbol = _walkthrough_symbol_from_query(query, intent)
+    if walkthrough_symbol:
+        result = memory_method_walkthrough(
+            workspace_file,
+            walkthrough_symbol,
+            depth=4,
+            limit=max(limit, 20),
+            project=project,
+            view="compact",
+            budget="small",
+            report_level="standard",
+        )
+        result["mode_used"] = "query_walkthrough"
+        result["query"] = query
+        result["query_symbol"] = walkthrough_symbol
+        result["intent_analysis"] = intent
+        result["workspace"] = result.get("workspace") or config_obj[0].workspace
+        return result
+
     freshness_banner: Dict[str, Any]
     try:
         from ..freshness.status import IndexFreshnessService

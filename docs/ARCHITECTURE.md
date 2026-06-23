@@ -163,6 +163,10 @@ Hook 层属于宿主集成，不是核心业务层。推荐自动执行的只有
 - `select_retrieval_policy()`: 根据 intent、freshness 和有界学习权重生成确定性策略
 - `hybrid_retrieve()`: 主检索入口
 
+`memory_query_hybrid()` 在进入 hybrid source 执行前还会处理一个高优先级路由：当自然语言中包含 `Class#method` 且意图明确为“全链路/到底层”时，core query 入口直接复用 method walkthrough，避免低信号 token 排序把入口方法挤出结果。
+
+Before running hybrid sources, `memory_query_hybrid()` has one high-priority route: natural-language `Class#method` full-chain requests are delegated to method walkthrough, preventing low-signal token ranking from hiding the entry method.
+
 **检索策略**:
 - Graph 检索: 结构化关系（callers, callees, chains）
 - Sparse/FTS 检索: 精确匹配和关键词查找
