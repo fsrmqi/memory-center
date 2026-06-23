@@ -8,6 +8,16 @@
 
 ## Unreleased
 
+### 3.5.9: Ruff Governance Baseline / Ruff 治理基线
+
+- 清理 legacy Ruff 运行级问题：`F/E9` 已通过，避免未使用导入、未定义名、重复导入等基础错误继续混入开发噪音。
+- 统一 import 排序：`I001` 已通过，后续 diff 更容易聚焦真实逻辑变化。
+- 修复 bugbear 风险项：`B006/B008/B904` 已通过，包含可变默认参数、Typer list 参数默认值和异常链处理。
+- 本地安装版本提升至 `3.5.9`，并继续通过真实场景验收脚本与 performance gate。
+- 下一步计划已更新到 `docs/NEXT_PHASE_EXECUTION_PLAN.md`：优先做 Ruff 现代化分层收口，其次处理剩余 bugbear 语义项，再继续输出体验、parser/retrieval/reasoning 精度深化。
+
+English summary: 3.5.9 establishes a practical Ruff governance baseline (`F/E9/I001/B006/B008/B904`) and documents the next staged cleanup and product-quality work.
+
 ### 3.5.8: Real Baseline No-Regression Gate / 真实基线不回归门禁
 
 - Golden `performance_gate` 默认语义调整为“不低于当前真实基线”：token 默认不允许增加，latency 默认允许 `10%` 运行抖动；可通过参数继续设置更严格改善要求。

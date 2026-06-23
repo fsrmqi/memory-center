@@ -14,6 +14,8 @@
 - V3 / Next Phase 基础能力已经大量存在。
 - 主要风险不是缺少模块，而是主链路接入、三入口一致性、静默失败、文档与实现状态漂移。
 - 下一阶段应先做收口，再做扩展。
+- 截至 `3.5.9`，基础 Ruff 门禁已经从“历史债务”收敛到可执行分层门禁：`F/E9/I001/B006/B008/B904` 已清零；剩余主要是 Python 语法现代化、少量 bugbear 建议和旧式语句整理。
+- 后续开发验收必须继续优先使用真实场景验证脚本；公开 examples 只作为兼容性 smoke 和文档模板，不作为真实体验完成证明。
 
 执行原则：
 
@@ -176,6 +178,12 @@
   - 已接入入口
   - 已完成真实主链路验收
   - 仍需产品化收口
+
+当前进展：
+
+- `3.5.6` 起新增真实场景验收脚本，后续完成说明必须明确真实场景结果或说明未运行原因。
+- `3.5.8` 起 Golden performance gate 支持真实 baseline 不回归语义。
+- `3.5.9` 起 Ruff 基础治理已形成可复用门禁：`F/E9/I001/B006/B008/B904` 通过，剩余 lint 债务不再与运行级错误混在一起描述。
 
 ## 3. 总体执行路线 / Execution Roadmap
 
@@ -580,6 +588,131 @@
 ## 12. 可调整执行清单 / Flexible Task Order
 
 以下 Sprint 是建议组合，不是固定顺序。执行者可以拆分、合并、跳转或重写工作包，优先完成最能改善真实使用体验的事项。
+
+### 12.1 当前推荐顺序（3.5.9 之后）/ Recommended Order After 3.5.9
+
+本节覆盖当前最值得继续开发的顺序。旧 Sprint 仍保留在下方作为能力域索引，但实际执行优先看本节。
+
+#### P0：Ruff 现代化分层收口
+
+目标：
+
+- 把剩余 lint 债务继续拆成低风险、可验证的小批次，避免一次性大 churn。
+- 每一批都必须保持 `F/E9/I001/B006/B008/B904` 继续通过。
+
+执行顺序：
+
+1. `UP035` deprecated typing imports。
+   - 把 `typing.Dict/List/Optional/Union/...` 的旧导入逐步迁到现代写法所需的最小导入。
+   - 先做 `memory_center/core/retrieval`、`memory_center/core/walkthrough`、`memory_center/core/benchmark` 等相对独立目录。
+   - 不建议一口气覆盖 `orchestrator` 和全部 tests。
+
+2. `UP006 / UP045 / UP007` 类型语法现代化。
+   - `Dict[str, Any]` 改为 `dict[str, Any]`。
+   - `Optional[str]` 改为 `str | None`。
+   - 每次按目录提交，避免大范围 diff 难以 review。
+
+3. `UP037 / UP031` 小型语法清理。
+   - 清理 quoted annotation 和 printf-style formatting。
+   - 仅在相关文件已有测试覆盖或改动很小的时候处理。
+
+完成标准：
+
+- 对应 Ruff selector 清零或在明确范围内清零。
+- `ruff check --select F,E9,I001,B006,B008,B904 memory_center tests` 继续通过。
+- `pytest -q` 和真实场景验收脚本通过。
+
+#### P1：剩余 bugbear 语义项手工治理
+
+目标：
+
+- 优先修真正可能导致行为歧义或长期维护问题的告警。
+
+执行顺序：
+
+1. `B007` unused loop control variable。
+   - 判断是确实不需要变量，还是循环逻辑遗漏了变量使用。
+   - 不能机械改 `_`，除非确认语义不需要。
+
+2. `B905` zip without explicit strict。
+   - 对长度必须一致的业务逻辑使用 `strict=True`。
+   - 对允许截断的逻辑显式加注释或局部 noqa，避免误改行为。
+
+完成标准：
+
+- 每处修复有语义判断。
+- 相关单测覆盖或至少有 targeted smoke。
+
+#### P2：入口输出体验继续优化
+
+目标：
+
+- 保持“输出详细，但更可读”的方向，不减少结构化信息。
+
+优先事项：
+
+1. Walkthrough report 的章节稳定性。
+   - 继续优化 `summary / standard / deep` 的阅读层级。
+   - 保证三档共享同一主链路事实，不出现链路解释分叉。
+
+2. Recommended next step 统一化。
+   - `mc_start`、`mc_lookup`、`mc_analyze`、`mc_resume` 的下一步建议要可追溯到 freshness、confidence、risk、contracts 或验证成本。
+   - 避免泛泛建议，例如“继续查看代码”，应给出具体下一步动作和证据入口。
+
+3. MCP flatten 字段契约稳定。
+   - 继续把 agent 最常用字段提升到顶层。
+   - 新字段只能 additive，不能破坏现有 MCP schema。
+
+完成标准：
+
+- 真实场景 walkthrough `completion_status=complete`。
+- 输出可读性提升但 token 不低于真实 baseline 门禁。
+- 不引导 agent 回到无效全局搜索。
+
+#### P3：Parser / Retrieval / Reasoning 真实精度深化
+
+目标：
+
+- 把 parser、retrieval、reasoning 的优化继续放到真实主链路里验证，不只做模块级存在性测试。
+
+优先事项：
+
+1. Java Parser 差异评测继续扩展真实 case 类型。
+   - Controller、Feign、Service interface、Impl、DTO field、config、MQ consumer 都要有稳定对比。
+   - tree-sitter 与 regex 的差异要区分“真实回归”和“更完整抽取”。
+
+2. Adaptive retrieval policy 的真实查询 A/B。
+   - 对全链路、定位类、影响面类、配置类查询分别记录 source 选择、延迟和 token。
+   - 学习权重只能基于真实验证证据更新。
+
+3. Reasoning 输出证据化。
+   - 风险、下一步、反模式建议必须能回溯到 evidence/ref。
+   - 不增加不可验证的解释性噪音。
+
+完成标准：
+
+- 真实 Golden case 不回归。
+- parser benchmark critical disagreement 为 0 或有明确可接受解释。
+- retrieval policy diagnostics 可解释 source 选择。
+
+#### P4：发布与文档治理
+
+目标：
+
+- 文档继续作为“当前事实 + 下一步计划”，避免回到旧的完成/未完成混写。
+
+执行事项：
+
+1. 每个版本至少更新 `CHANGELOG.md`。
+2. 改动主架构或入口语义时，同步 `ARCHITECTURE.md` / `MCP_GUIDE.md`。
+3. 每次调整计划时，同步本文件当前推荐顺序。
+4. 不提交真实 workspace 的生成物、私有 cases、私有 baseline 或完整 payload。
+
+完成标准：
+
+- 文档中的验收命令和实际验证一致。
+- 文档明确区分公开 examples smoke 与真实场景验收。
+- `git status --short` 不包含生成物污染。
 
 ### Sprint 1：修 P0 主链路
 
