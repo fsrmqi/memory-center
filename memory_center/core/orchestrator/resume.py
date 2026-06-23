@@ -197,31 +197,79 @@ def workspace_next_actions(
     from .eval import memory_eval_write_quality
 
     config, _ = load_context(workspace_file)
-    actions: list[str] = []
+    action_items: list[dict[str, Any]] = []
     quality = memory_eval_write_quality(
         workspace_file, task_id=task_id, session_id=session_id, intent=intent, limit=max(limit, 20)
     )
     layer_set = set(quality.get("layers_present", []))
     if session_id.strip() and LAYER_L0 not in layer_set:
-        actions.append("先补 `workspace_log_session_event`，把关键过程写入 L0 session memory。")
+        action_items.append(_next_action_item(
+            "先补 `workspace_log_session_event`，把关键过程写入 L0 session memory。",
+            reason="当前 session 有输入但 L0 会话事件缺失，后续恢复和审计会缺少过程证据。",
+            evidence="memory_eval_write_quality.layers_present",
+            command="memory-center log-session-event",
+            priority="high",
+        ))
     if task_id.strip() and LAYER_L2 not in layer_set:
-        actions.append("先补 `workspace_sync_sniff_artifacts` 或 `workspace_sync_case_artifacts`，把任务上下文写入 L2 task space。")
+        action_items.append(_next_action_item(
+            "先补 `workspace_sync_sniff_artifacts` 或 `workspace_sync_case_artifacts`，把任务上下文写入 L2 task space。",
+            reason="当前 task_id 有效但 L2 task space 缺失，任务交接时无法稳定复用上下文。",
+            evidence="memory_eval_write_quality.layers_present",
+            command="memory-center work-sync",
+            priority="high",
+        ))
     if session_id.strip() and LAYER_L1 not in layer_set:
-        actions.append("补 `workspace_record_case`，把当前会话沉淀为 L1 case memory。")
+        action_items.append(_next_action_item(
+            "补 `workspace_record_case`，把当前会话沉淀为 L1 case memory。",
+            reason="当前 session 尚未沉淀为可复用 case，类似任务不会被后续检索召回。",
+            evidence="memory_eval_write_quality.layers_present",
+            command="memory-center record-case",
+            priority="medium",
+        ))
     if any(k in intent.lower() for k in ["规则", "规范", "migration", "invariant"]) and LAYER_L3 not in layer_set:
-        actions.append("补 `memory_execute_write` 或 `workspace_artifact_update`，把规则类信息写入 L3 核心记忆块。")
+        action_items.append(_next_action_item(
+            "补 `memory_execute_write` 或 `workspace_artifact_update`，把规则类信息写入 L3 核心记忆块。",
+            reason="当前 intent 像长期规则/迁移约束，但 L3 workspace profile 尚未覆盖。",
+            evidence="intent + memory_eval_write_quality.layers_present",
+            command="memory-center memory-execute-write",
+            priority="medium",
+        ))
     unresolved = workspace_unresolved_items(
         workspace_file, task_id=task_id, session_id=session_id, intent=intent, limit=limit
     ).get("items", [])
     if unresolved:
-        actions.append(f"优先处理未解决项：{unresolved[0]}")
-    if not actions:
-        actions.append("继续沿当前任务推进，优先核对验证项与风险点是否已覆盖。")
+        action_items.append(_next_action_item(
+            f"优先处理未解决项：{unresolved[0]}",
+            reason="存在未解决项，继续开发前应先关闭最靠前的阻塞/待验证问题。",
+            evidence="workspace_unresolved_items.items[0]",
+            command="memory-center unresolved-items",
+            priority="high",
+        ))
+    if not action_items:
+        action_items.append(_next_action_item(
+            "继续沿当前任务推进，优先核对验证项与风险点是否已覆盖。",
+            reason="当前没有发现记忆层缺口或未解决项，下一步应聚焦验证闭环。",
+            evidence="memory_eval_write_quality + workspace_unresolved_items",
+            command="memory-center verify-checklist",
+            priority="medium",
+        ))
+    action_items = action_items[:limit]
     return {
         "workspace": config.workspace,
         "task_id": task_id,
         "session_id": session_id,
-        "actions": actions[:limit],
+        "actions": [item["action"] for item in action_items],
+        "action_items": action_items,
+    }
+
+
+def _next_action_item(action: str, *, reason: str, evidence: str, command: str, priority: str) -> dict[str, Any]:
+    return {
+        "action": action,
+        "reason": reason,
+        "evidence": evidence,
+        "command": command,
+        "priority": priority,
     }
 
 

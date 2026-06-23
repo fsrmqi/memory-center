@@ -4,6 +4,7 @@ from typing import Any
 
 TREE_SITTER_INSTALL_HINT = 'pipx inject memory-center "tree-sitter>=0.22.0" "tree-sitter-java>=0.21.0"'
 TREE_SITTER_VALIDATE_HINT = "memory-center eval-parser-benchmark --workspace <workspace.yaml>"
+TREE_SITTER_LOCAL_INSTALL_HINT = 'python -m pip install "tree-sitter>=0.22.0" "tree-sitter-java>=0.21.0"'
 
 
 def parser_precision_from_diagnostics(diagnostics: dict[str, Any] | None) -> dict[str, Any]:
@@ -76,3 +77,42 @@ def parser_precision_from_workspace(workspace_file: str) -> dict[str, Any]:
             "diagnostic_error": str(exc),
         }
     return parser_precision_from_graph_summary(summary)
+
+
+def tree_sitter_activation_status() -> dict[str, Any]:
+    """Return actionable tree-sitter Java activation status for CLI/MCP/docs."""
+    try:
+        from .indexing.tree_sitter_parser import TreeSitterJavaParser
+
+        parser = TreeSitterJavaParser()
+        available = parser.available
+        diagnostics = parser.diagnostics
+        if available:
+            recommended_action = "use_tree_sitter_parser"
+            status = "active"
+            reason = "tree-sitter Java parser initialized successfully."
+        else:
+            recommended_action = "install_tree_sitter_java_and_reindex"
+            status = "unavailable"
+            reason = "tree-sitter or tree-sitter-java is not available in the current Python environment."
+    except Exception as exc:
+        available = False
+        diagnostics = {"error": type(exc).__name__, "message": str(exc)}
+        recommended_action = "fix_tree_sitter_initialization"
+        status = "error"
+        reason = str(exc)
+
+    return {
+        "status": status,
+        "available": available,
+        "extra": "ast",
+        "recommended_action": recommended_action,
+        "reason": reason,
+        "install_commands": {
+            "pipx": TREE_SITTER_INSTALL_HINT,
+            "local": TREE_SITTER_LOCAL_INSTALL_HINT,
+            "editable": 'python -m pip install -e ".[ast]"',
+        },
+        "validation_command": TREE_SITTER_VALIDATE_HINT,
+        "diagnostics": diagnostics,
+    }

@@ -745,6 +745,14 @@ def eval_parser_benchmark_cmd(
     print(json.dumps(memory_eval_parser_benchmark(workspace, limit=limit, max_findings=max_findings), ensure_ascii=False, indent=2, default=str))
 
 
+@app.command("parser-status")
+def parser_status_cmd():
+    """Show tree-sitter Java activation status and install hints."""
+    from memory_center.core.parser_precision import tree_sitter_activation_status
+
+    print(json.dumps(tree_sitter_activation_status(), ensure_ascii=False, indent=2, default=str))
+
+
 @app.command("eval-golden")
 def eval_golden_cmd(
     workspace: str = typer.Option(..., help="Workspace yaml file."),

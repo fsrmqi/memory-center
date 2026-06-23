@@ -15,6 +15,7 @@ from memory_center.core.benchmark.golden import (
     load_golden_performance_baseline,
     run_golden_suite,
     score_golden_case,
+    summarize_golden_case_coverage,
 )
 from memory_center.mcp.admin_actions import build_admin_registry
 
@@ -101,6 +102,33 @@ def test_run_golden_suite_reports_stable_quality_and_latency(tmp_path: Path) -> 
     assert first["summary"] == second["summary"]
 
 
+def test_golden_case_coverage_summary_is_portable(tmp_path: Path) -> None:
+    cases = tmp_path / "cases.yaml"
+    cases.write_text(
+        "cases:\n"
+        "  - case_id: full-chain\n"
+        "    query: Entry#run\n"
+        "    mode: walkthrough\n"
+        "    expected_anchors: [Entry#run, RemoteController#list]\n"
+        "    expected_edges: [CALLS_METHOD, HANDLES_ENDPOINT]\n"
+        "  - case_id: hybrid-query\n"
+        "    query: UserService\n"
+        "    mode: hybrid\n"
+        "    expected_anchors: [UserService#list]\n"
+        "    expected_edges: []\n",
+        encoding="utf-8",
+    )
+
+    coverage = summarize_golden_case_coverage(cases)
+
+    assert coverage["case_count"] == 2
+    assert coverage["modes"] == {"hybrid": 1, "walkthrough": 1}
+    assert coverage["expected_anchor_count"] == 3
+    assert coverage["expected_edge_count"] == 2
+    assert coverage["portable"] is True
+    assert "mq" in coverage["recommended_additions"]
+
+
 def test_agent_guidance_counts_only_positive_invalid_search_advice() -> None:
     payload = {
         "completion_status": {"state": "complete", "recommended_action": "use_current_evidence"},
@@ -127,6 +155,14 @@ def test_agent_guidance_counts_only_positive_invalid_search_advice() -> None:
         "next_actions[2]: run sed -n 1,200p on guessed files",
     ]
     assert guidance["invalid_search_reduction_rate"] == 0.0
+
+
+def test_agent_guidance_accepts_payload_without_search_advice() -> None:
+    guidance = evaluate_agent_guidance({"matches": [{"name": "ConfigKey"}]})
+
+    assert guidance["invalid_search_suggestion_count"] == 0
+    assert guidance["invalid_search_reduction_rate"] == 1.0
+    assert guidance["passed"] is True
 
 
 def test_golden_performance_gate_reports_missing_baseline_without_failing() -> None:
@@ -200,6 +236,27 @@ def test_golden_performance_gate_allows_latency_jitter_but_not_token_growth() ->
     assert gate["passed"] is True
     assert gate["latency"]["improvement_pct"] == -8.0
     assert gate["token"]["improvement_pct"] == 0.0
+
+
+def test_golden_performance_gate_normalizes_tokens_when_case_coverage_expands() -> None:
+    baseline = {
+        "schema_version": 1,
+        "label": "v3.5.7-real-ucap",
+        "summary": {"case_count": 1},
+        "performance": {"median_latency_ms": 100.0, "token_estimate": 1000},
+    }
+    current = {
+        "summary": {"case_count": 4},
+        "performance": {"median_latency_ms": 95.0, "token_estimate": 3600},
+    }
+
+    gate = compare_golden_performance(current, baseline=baseline)
+
+    assert gate["status"] == "pass"
+    assert gate["passed"] is True
+    assert gate["token"]["comparison_scope"] == "per_case"
+    assert gate["token"]["baseline_token_estimate"] == 1000
+    assert gate["token"]["current_token_estimate"] == 900
 
 
 def test_golden_performance_gate_rejects_regression_against_current_baseline() -> None:

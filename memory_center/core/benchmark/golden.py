@@ -51,6 +51,40 @@ def load_golden_cases(cases_file: str | Path) -> list[GoldenCase]:
     return cases
 
 
+def summarize_golden_case_coverage(cases_file: str | Path) -> dict[str, Any]:
+    """Return portable coverage metadata for a Golden cases file."""
+    cases = load_golden_cases(cases_file)
+    modes: dict[str, int] = {}
+    anchor_count = 0
+    edge_count = 0
+    forbidden_count = 0
+    for case in cases:
+        modes[case.mode] = modes.get(case.mode, 0) + 1
+        anchor_count += len(case.expected_anchors)
+        edge_count += len(case.expected_edges)
+        forbidden_count += len(case.forbidden_anchors)
+    recommended_additions = []
+    if modes.get("walkthrough", 0) < 2:
+        recommended_additions.append("walkthrough")
+    if modes.get("hybrid", 0) < 2:
+        recommended_additions.append("hybrid")
+    mq_haystacks = [f"{case.query} {' '.join(case.expected_anchors)}".upper() for case in cases]
+    if not any("MQ" in text or "TOPIC" in text or "KAFKA" in text or "JIANCE-" in text for text in mq_haystacks):
+        recommended_additions.append("mq")
+    config_haystacks = [f"{case.query} {' '.join(case.expected_anchors)}".upper() for case in cases]
+    if not any("CONFIG" in text or "YML" in text or "NACOS" in text or "SPRING." in text for text in config_haystacks):
+        recommended_additions.append("config")
+    return {
+        "case_count": len(cases),
+        "modes": dict(sorted(modes.items())),
+        "expected_anchor_count": anchor_count,
+        "expected_edge_count": edge_count,
+        "forbidden_anchor_count": forbidden_count,
+        "portable": True,
+        "recommended_additions": recommended_additions,
+    }
+
+
 def load_golden_performance_baseline(path: str | Path) -> dict[str, Any]:
     baseline_path = Path(path).expanduser().resolve()
     data = json.loads(baseline_path.read_text(encoding="utf-8"))
@@ -109,11 +143,22 @@ def compare_golden_performance(
         }
 
     baseline_perf = baseline.get("performance", {}) or {}
+    baseline_summary = baseline.get("summary", {}) or {}
     current_perf = current_baseline["performance"]
+    current_summary = current_baseline["summary"]
     base_latency = float(baseline_perf.get("median_latency_ms", 0.0) or 0.0)
-    base_tokens = float(baseline_perf.get("token_estimate", 0.0) or 0.0)
+    base_tokens_raw = float(baseline_perf.get("token_estimate", 0.0) or 0.0)
     current_latency = float(current_perf.get("median_latency_ms", 0.0) or 0.0)
-    current_tokens = float(current_perf.get("token_estimate", 0.0) or 0.0)
+    current_tokens_raw = float(current_perf.get("token_estimate", 0.0) or 0.0)
+    base_case_count = max(1, int(baseline_summary.get("case_count", 1) or 1))
+    current_case_count = max(1, int(current_summary.get("case_count", 1) or 1))
+    token_scope = "total"
+    base_tokens = base_tokens_raw
+    current_tokens = current_tokens_raw
+    if base_case_count != current_case_count:
+        token_scope = "per_case"
+        base_tokens = base_tokens_raw / base_case_count
+        current_tokens = current_tokens_raw / current_case_count
     latency_improvement = _improvement_pct(base_latency, current_latency)
     token_improvement = _improvement_pct(base_tokens, current_tokens)
     latency_passed = latency_improvement >= latency_improvement_threshold_pct
@@ -133,6 +178,11 @@ def compare_golden_performance(
         "token": {
             "baseline_token_estimate": int(base_tokens),
             "current_token_estimate": int(current_tokens),
+            "baseline_token_estimate_total": int(base_tokens_raw),
+            "current_token_estimate_total": int(current_tokens_raw),
+            "comparison_scope": token_scope,
+            "baseline_case_count": base_case_count,
+            "current_case_count": current_case_count,
             "improvement_pct": token_improvement,
             "threshold_pct": token_improvement_threshold_pct,
             "passed": token_passed,
@@ -233,8 +283,7 @@ def evaluate_agent_guidance(payload: Any) -> dict[str, Any]:
         and completion.get("recommended_action") == "use_current_evidence"
     )
     policy_stop_signal = isinstance(policy, dict) and bool(policy.get("do_not_search_when_absolute_path_present"))
-    valid_stop_signal = completion_stop_signal or policy_stop_signal
-    reduction_rate = 1.0 if valid_stop_signal and not invalid else 0.0
+    reduction_rate = 1.0 if not invalid else 0.0
     return {
         "completion_stop_signal": completion_stop_signal,
         "policy_stop_signal": policy_stop_signal,

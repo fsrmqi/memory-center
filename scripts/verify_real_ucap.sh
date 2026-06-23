@@ -20,7 +20,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from memory_center.core.benchmark.golden import build_golden_performance_baseline, run_golden_suite
+from memory_center.core.benchmark.golden import build_golden_performance_baseline, run_golden_suite, summarize_golden_case_coverage
 from memory_center.core.orchestrator import memory_query_hybrid
 from memory_center.core.validators import doctor
 
@@ -57,6 +57,7 @@ if missing:
 
 try:
     doctor_result = doctor(workspace, self_test=True)
+    golden_coverage = summarize_golden_case_coverage(cases)
     golden = run_golden_suite(workspace, cases, performance_baseline=baseline_path if baseline_path.exists() else None)
     if save_baseline:
         baseline_path.parent.mkdir(parents=True, exist_ok=True)
@@ -106,6 +107,7 @@ payload = {
     },
     "golden": {
         "case_count": golden_summary.get("case_count"),
+        "coverage": golden_coverage,
         "passed": golden_summary.get("passed"),
         "anchor_recall": golden_summary.get("anchor_recall"),
         "edge_recall": golden_summary.get("edge_recall"),
