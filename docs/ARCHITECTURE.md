@@ -334,6 +334,16 @@ The pipeline is additive and schema-compatible. Non-factual items always include
 - Target mappings are scoped to the annotated Controller/Feign type body, preventing mappings from sibling types in the same file from leaking across boundaries.
 - Reindex resets and returns thread-safe parser diagnostics, including fallback reasons and critical disagreement count.
 
+### Real-Scenario Validation / 真实场景验证
+
+Public examples remain useful for CI, smoke tests, and documentation templates, but local acceptance for user-facing walkthrough, retrieval, parser, reasoning, and performance work must use the real workspace/cases provided by the user. In this environment, prefer `/Users/cuijiaqi/javaworkspace/ucap/.memory-center/workspace.yaml` and its private Golden cases for final regression evidence.
+
+公开 `examples/` 仍用于 CI、smoke test 和文档模板；但面向用户体验的 walkthrough、retrieval、parser、reasoning、performance 改动，本地验收必须使用用户提供的真实 workspace/cases。当前环境优先使用 `/Users/cuijiaqi/javaworkspace/ucap/.memory-center/workspace.yaml` 及其私有 Golden cases 作为最终回归证据。
+
+If the real workspace/cases/baseline are unavailable, record the status explicitly (`real_case_missing` or `baseline_missing`) and do not substitute public examples as proof of acceptance. Public examples can still prove compatibility, not product readiness for the user's scenario.
+
+如果真实 workspace、cases 或 baseline 不可用，必须显式记录 `real_case_missing` 或 `baseline_missing`，不要用公开 examples 指标替代真实验收。公开 examples 只能证明兼容性，不能证明用户真实场景已验收通过。
+
 ### Walkthrough Refactoring / Walkthrough 拆分
 
 `memory_center.core.orchestrator.query` remains the compatibility facade for MCP, CLI, and HTTP callers. Method walkthrough support code is split across `memory_center.core.walkthrough`:

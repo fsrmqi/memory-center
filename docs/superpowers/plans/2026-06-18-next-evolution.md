@@ -377,6 +377,13 @@ Result / 结果（2026-06-23）:
 
 ## 全阶段验收
 
+### 后续验证要求 / Future Validation Requirement
+
+- 后续功能验收、回归验证、性能结论和“是否完成”的判断，必须优先使用用户提供的真实场景；当前默认真实场景是 `/Users/cuijiaqi/javaworkspace/ucap/.memory-center/workspace.yaml` 与对应私有 Golden cases。
+- `examples/`、公开 demo workspace、synthetic benchmark 只作为单元测试、CI smoke test、公开可复现模板使用；不得再作为本地验收通过的主要证据。
+- 若真实场景缺少可用 cases 或 baseline，必须明确记录为 `real_case_missing` / `baseline_missing`，并说明需要补充的文件或指标；不要用 examples 指标替代真实验收。
+- 提交前可以继续运行公开测试保证兼容性，但最终说明中的“验证通过”必须包含真实场景结果，或明确说明真实场景未运行的原因。
+
 - [x] `python3 -m compileall -q memory_center tests`
 - [x] `git diff --check`
 - [x] `pytest -q`
