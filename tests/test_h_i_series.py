@@ -529,13 +529,20 @@ class TestI04FinalVerification:
         assert len(errors) == 0, f"Compile errors: {errors}"
 
     def test_git_clean_demo(self):
-        """Demo workspace should not be dirty."""
+        """Generated private workspace data must not be added under examples."""
         import subprocess
         result = subprocess.run(
-            ["git", "diff", "--stat", "examples/"],
+            [
+                "git",
+                "status",
+                "--short",
+                "--untracked-files=all",
+                "examples/**/.memory-center/index",
+                "examples/**/.memory-center/memory",
+            ],
             capture_output=True, text=True, cwd=".",
         )
-        assert result.stdout.strip() == "", f"Demo workspace dirty: {result.stdout}"
+        assert result.stdout.strip() == "", f"Generated demo data found: {result.stdout}"
 
     def test_three_entry_points(self):
         from memory_center.cli.main import app

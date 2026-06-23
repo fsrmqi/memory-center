@@ -359,14 +359,17 @@ Hook 的价值在于自动触发关键生命周期动作，但不应该过度侵
 **核心算法**:
 
 ```python
-# 1. 检索多种来源
-graph_hits = _graph_retrieval(graph, query, tokens, node_types, limit * 2)
-sparse_hits = _sparse_retrieval(graph, query, tokens, node_types, limit * 2)
-semantic_hits = _semantic_retrieval(workspace_file, query, limit * 2)
-bm25_hits = _bm25_sparse_retrieval(workspace_file, query, limit * 2)
-vector_hits = _vector_retrieval(...) if config.enable_vector else []
+# 1. 在执行前生成确定性策略
+policy = select_retrieval_policy(intent, freshness, learned_weights)
 
-# 2. RRF 合并
+# 2. 只执行策略选中的来源
+graph_hits = _graph_retrieval(...) if "graph" in policy.sources else []
+sparse_hits = _sparse_retrieval(...) if "sparse" in policy.sources else []
+semantic_hits = _semantic_retrieval(...) if policy.semantic_enabled else []
+bm25_hits = _bm25_sparse_retrieval(...) if "bm25" in policy.sources else []
+vector_hits = _vector_retrieval(...) if config.enable_vector and policy.vector_enabled else []
+
+# 3. RRF 合并
 merged = _merge_retrieval_results(
     graph_hits,
     sparse_hits,
@@ -376,10 +379,10 @@ merged = _merge_retrieval_results(
     bm25_hits=bm25_hits,
 )
 
-# 3. 类型加权
+# 4. 类型加权
 merged = _apply_type_boosting(merged, intent)
 
-# 4. 邻居丰富
+# 5. 按 policy.graph_depth 和 policy.evidence_budget 有界丰富邻居
 for item in merged[:limit]:
     item.neighbors = graph.neighbors(item.node_id, ...)
 

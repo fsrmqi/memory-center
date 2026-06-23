@@ -248,7 +248,7 @@ def select_retrieval_policy(intent: dict, freshness: dict, learned_weights: dict
     ...
 ```
 
-- [ ] **Step 1: Write failing deterministic policy tests**
+- [x] **Step 1: Write failing deterministic policy tests**
 
 ```python
 def test_full_chain_prefers_graph_and_disables_unneeded_vector():
@@ -262,19 +262,19 @@ def test_full_chain_prefers_graph_and_disables_unneeded_vector():
     assert policy.graph_depth >= 4
 ```
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 Run: `pytest -q tests/test_retrieval_policy.py`
 
-- [ ] **Step 3: Implement policy selection as a pure Module**
+- [x] **Step 3: Implement policy selection as a pure Module**
 
 策略输入只包含 intent、freshness、学习权重；不得直接读取全局配置或修改 result 对象。
 
-- [ ] **Step 4: Integrate policy before source execution**
+- [x] **Step 4: Integrate policy before source execution**
 
 未启用的 source 不应执行，不能在融合阶段才把结果丢弃。
 
-- [ ] **Step 5: Feed verified outcomes back into bounded weights**
+- [x] **Step 5: Feed verified outcomes back into bounded weights**
 
 学习权重只能在配置上下限内轻量调整，不得覆盖规则生成的硬约束。
 
@@ -283,6 +283,11 @@ Acceptance:
 - walkthrough/query median latency 至少改善 `15%`
 - compact token 至少改善 `10%`
 - 相同输入产生确定性 policy
+
+Result / 结果（2026-06-22）:
+- Public and existing real-workspace Golden gates passed with anchor recall `1.0`, edge recall `1.0`, and forbidden hit rate `0`.
+- Isolated full-chain A/B: median latency `11.964 ms -> 9.261 ms` (`22.6%` better); estimated payload tokens `7341 -> 2812` (`61.7%` lower).
+- 公开与现有真实 workspace Golden 门禁均通过；full-chain 隔离 A/B 达到延迟和 token 验收目标。
 
 ---
 

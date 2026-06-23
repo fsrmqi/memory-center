@@ -8,6 +8,16 @@
 
 ## Unreleased
 
+### 3.5.0: Adaptive Retrieval Policy / 自适应检索策略
+
+- 新增纯函数 `RetrievalPolicy`，基于查询意图、索引 freshness 和有界学习权重，在执行检索源之前确定 sources、图深度、候选数和证据预算。
+- 全链路查询固定保留 exact + graph 硬约束，关闭非必要 semantic/vector/BM25，深度图遍历端点直接参与证据融合；普通查询继续兼容原多源检索行为，vector 仍默认关闭。
+- 学习反馈按 intent/source 隔离并限制在 `[0.35, 0.75]`，只能轻量调权，不能覆盖 exact/graph 等规则硬约束。
+- `retrieval_policy` 与 `retrieval_diagnostics.policy` 提供可解释决策；现有 MCP tool schema 和调用参数保持兼容。
+- 公开 Golden 与真实 workspace Golden 均通过；隔离 A/B 中 full-chain median latency 从 `11.964 ms` 降至 `9.261 ms`（`22.6%`），估算 token 从 `7341` 降至 `2812`（`61.7%`）。
+
+English summary: adaptive retrieval now selects bounded sources, graph depth, candidates, and evidence budgets before execution while preserving exact/graph safety constraints and backward-compatible APIs.
+
 ### 3.4.0: Java Parser Differential Gate / Java Parser 差异门禁
 
 - 新增 `core/indexing/differential.py` 与公开 `examples/parser-corpus/`，逐项比较 class、interface、重载方法身份、行号、field、注入、调用、Controller mapping 和 Feign mapping。

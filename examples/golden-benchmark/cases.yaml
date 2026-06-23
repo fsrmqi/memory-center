@@ -16,3 +16,14 @@ cases:
     forbidden_anchors:
       - WrongController#list
     max_latency_ms: 5000
+
+  - case_id: article-move-hybrid-policy
+    query: ArticleMoveService#move 全链路
+    mode: hybrid
+    expected_anchors:
+      - ArticleMoveService#move
+      - ArticleController#moveArticle
+    expected_edges: []
+    forbidden_anchors:
+      - WrongController#list
+    max_latency_ms: 5000
