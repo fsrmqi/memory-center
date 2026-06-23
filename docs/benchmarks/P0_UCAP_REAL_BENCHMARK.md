@@ -1,0 +1,201 @@
+# P0 真实场景 Benchmark / Real-world P0 Benchmark
+
+> 这是对 P0 阶段(service kind registry / 多语言 parser registry /
+> SQLite PRAGMA + executemany + 并发)在**真实 Java 微服务仓库**上的
+> 端到端 reindex 性能测量。
+>
+> Honest report — 不是"P0 一切完美"的庆功稿,而是一份用真数据校准设计假设的
+> 复盘。该 benchmark 推翻了演进计划文档里此前关于"reindex 总耗时下降 5~10×"
+> 的预测,详见结论部分。
+
+---
+
+## 测量环境
+
+| 维度 | 值 |
+|---|---|
+| 工作区 | `/Users/cuijiaqi/javaworkspace/ucap` (UCAP 内部微服务平台) |
+| 规模 | 36 个 service,**20,516 个 Java 文件**,27 GB |
+| 机器 | Apple M3 Pro / macOS Darwin 25.5.0 |
+| Python | 3.11 in `.venv` |
+| baseline commit | `79865c1` (P0 前最后一个 commit,P0-1 之前) |
+| after commit | `e26cd38` (P0 全部完成之后) |
+| 命令 | `reindex_workspace(config, store)` 直接调用 |
+| 测量脚本 | `scripts/bench_p0_ucap.py` |
+| 每次 reindex 都先清掉 `index/` `graph/` `semantic/` `evaluation/` 确保冷启动 |
+
+---
+
+## 原始数据
+
+每个 label 下报 3 次:1 次 cold + 2 次 warm。
+
+### Baseline (`79865c1`,P0 前)
+
+| run | elapsed |
+|---|---|
+| cold | 124.4 s |
+| warm 1 | 133.5 s |
+| warm 2 | 133.6 s |
+| **median** | **133.5 s** |
+
+### After-P0 (`e26cd38`,P0 完成后)
+
+| run | elapsed |
+|---|---|
+| cold | 133.3 s |
+| warm 1 | 133.8 s |
+| warm 2 | 129.0 s |
+| **median** | **133.3 s** |
+
+### 分阶段 profile(各跑一次,无 warmup)
+
+| 阶段 | baseline | after-P0 | 备注 |
+|---|---|---|---|
+| **total** | 130.6 s | 134.8 s | 总耗时几乎相同 |
+| `graph.rebuild` | 24.3 s | 24.0 s | P0-3 优化目标 |
+| `graph.rebuild_search` | 2.8 s | 2.9 s | P0-3 优化目标 |
+| `semantic.build` | 11.3 s | 11.4 s | 与 P0 无关,共参考 |
+| 其他(Java 解析 + IO) | ~92.2 s | ~96.5 s | **真实 dominant cost** |
+| graph.db 大小 | 2.0 GB | 2.0 GB | 持平 |
+| 节点总数 | 328,502 | 333,747 | +5,245(multilang 新增) |
+| 边总数 | 1,420,744 | 1,432,158 | +11,414(multilang 新增) |
+
+### PRAGMA(P0-3 是否真生效)
+
+| 项 | baseline (裸 sqlite3 默认值) | after-P0 (实际生效) |
+|---|---|---|
+| `journal_mode` | (会变 WAL 因为 DB header 持久化) | `WAL` |
+| `synchronous` | `FULL` (2) | `NORMAL` |
+| `cache_size` | -2,000 KB ≈ 2 MB | **-200,000 KB = 200 MB** |
+| `temp_store` | `DEFAULT` (0) → 落盘 | `MEMORY` |
+| `mmap_size` | 0 | **268,435,456 = 256 MB** |
+| `foreign_keys` | OFF | ON |
+
+P0-3 PRAGMA 改造**配置层面 100% 生效**。
+
+---
+
+## 关键发现
+
+### 1. P0-3 在 Java-dominant 大仓上没有显著提速
+
+**`graph.rebuild` 这一段在总耗时里只占 18.7%**(24.3 s / 130.6 s)。
+P0-3 的 executemany / fast_write_mode / cache_size 提升只能影响这 18.7%,
+而且实测前后差异在噪声范围内(24.3 s vs 24.0 s)。
+
+剩余 ~71% 的耗时是 **Java 解析 + 文件 IO + Python 数据拼装**,P0 完全
+没动这一层 —— 所以总耗时没变是符合算术的,不是 bug。
+
+### 2. P0-2 multilang pass 略增了 ~4 s 的开销
+
+P0-2 给非 Java 文件加了一遍结构扫描。UCAP 几乎都是 Java(20,516 / ~21,000),
+所以 multilang pass 实际处理的文件极少,但**单次 reindex 仍要起 parser
+caches、收集任务、emit graph elements 这一套**,产生了几秒钟的固定开销。
+
+后果:**P0-2 在纯 Java 仓库上是净负担**。
+不严重(<5 s / 总 134 s),但**应在多语言仓库上才能回本**。
+
+### 3. P0-3 修了一个真实的隐藏 bug,只是收益在别处
+
+P0 前 `GraphStore.connect()` 和 `MemoryBackendStore.connect()` **完全没
+调用过 PRAGMA**(裸 `sqlite3.connect`)。
+
+- Baseline 跑出来 PRAGMA 仍显示 WAL,是因为 `_init_schema` 走过一次
+  `executescript` 触发了 SQLite 内部 WAL header 写入;但 cache / mmap /
+  temp_store / foreign_keys 全部是默认值。
+- After-P0 现在 cache=200MB / mmap=256MB / temp_store=MEMORY 真生效。
+
+收益**没出现在 reindex 总耗时上**,但 query / sniff / 大量小读会有改善
+(本次未单独测,留作 future work)。
+
+### 4. P0-1 / P0-2 的能力收益是结构性的,不在 wall-clock 里
+
+| 项 | 真实收益 |
+|---|---|
+| P0-1 | ✅ 11 种 service kind 注册表,对 C 项目 `init --dry-run` 不再硬塞 3 个 Spring 占位 service |
+| P0-2 | ✅ 7 语言可识别,5 语言深 walker,Python 微服务 reindex 实际产出 Module/Class/Function 节点 |
+| P0-3 | ⚠️ PRAGMA 修了 + 代码统一了,但**在 Java-only 大仓 reindex 上没有 wall-clock 收益** |
+
+---
+
+## 推翻的预测
+
+`docs/CBM_INSPIRED_EVOLUTION_PLAN.md` 之前 P0-3 段落里写过:
+
+> 对中等(10w 文件)及大型(75K 文件)Java/多语言仓,reindex 总耗时下降
+> 5~10×。
+
+**这个预测在 UCAP(20,516 Java 文件)上不成立 —— 实测变化 0%。**
+
+之所以预测错,是因为我假设 SQLite 是瓶颈,但**对 Java tree-sitter
+解析这种 CPU + 字节流密集型工作负载,SQLite 写库占比只有 18.7%**。
+要把"5~10×"翻出来,必须先优化解析与 IO 阶段(P1-0 候选)。
+
+演进计划文档已同步修正,见下个 commit。
+
+---
+
+## 后续行动建议
+
+### 留作 P1-0 候选
+
+在 P1-1 (Java 调用解析器) 之前,先做一次 **Java 解析阶段的真实热点
+profile**(用 cProfile 跑 UCAP 一次,看 tree-sitter parse vs JavaParseResult
+组装 vs 单线程串行 哪个最大)。这是真正能动到那 96 s 的事。
+
+### 不该回滚 P0-3 的理由
+
+虽然 reindex wall-clock 没改善:
+- WAL/cache/mmap 这套配置**对未来 query 性能有用**(没测,但默认假设成立)
+- 代码层面把 3 处分散 PRAGMA 收口到 `pragmas.py` 一处,长期维护性提升
+- `fast_write_mode` context 为后续 batch 写操作留好了开关
+
+### 重新评估 P0-2 在 Java-only 仓上的开销
+
+multilang pass 给纯 Java 仓库加了几秒固定成本。可以加一个 fast-path:
+当 workspace 里所有 service 的 `resolved_language()` 都是 `java` 时,
+完全跳过 multilang collection。这是后续小优化,不紧迫。
+
+---
+
+## 复现方式
+
+```bash
+# baseline
+git checkout 79865c1
+cp /tmp/bench_p0_ucap.py scripts/bench_p0_ucap.py
+.venv/bin/python scripts/bench_p0_ucap.py \
+    --workspace /Users/cuijiaqi/javaworkspace/ucap/.memory-center/workspace.yaml \
+    --runs 2 \
+    --label baseline \
+    --out /tmp/baseline.json
+
+# after-p0
+git checkout dev
+.venv/bin/python scripts/bench_p0_ucap.py \
+    --workspace /Users/cuijiaqi/javaworkspace/ucap/.memory-center/workspace.yaml \
+    --runs 2 \
+    --label after-p0 \
+    --out /tmp/after.json
+```
+
+---
+
+## English Summary
+
+P0 was benchmarked on a real internal Java microservice workspace
+(36 services, 20,516 Java files, 27 GB). reindex wall-clock did **not**
+improve meaningfully — median total time before P0 was 133.5 s vs 133.3 s
+after. Profiling shows `graph.rebuild` (the part P0-3 targeted) only
+accounts for 18.7% of total time; Java parsing and IO dominate at ~71%.
+P0-3 did fix a real hidden bug (GraphStore/MemoryBackendStore opened
+SQLite without applying any PRAGMA), but the win does not surface in
+end-to-end reindex on this workload. The "5–10× reduction" prediction
+in the original evolution plan is now corrected. Recommended next step:
+profile the Java parsing stage before P1-1 (call resolver).
+
+---
+
+**记录日期**:2026-06-23
+**owner**:cuijq

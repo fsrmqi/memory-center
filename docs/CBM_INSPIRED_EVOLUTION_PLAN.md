@@ -29,7 +29,8 @@
 |------|------|------|------------|------|
 | P0-1 | service.type 解耦 + workspace schema 扩展 | 摆脱 Spring 假设 | 1 天 | 低 |
 | P0-2 | 多语言 tree-sitter parser registry | Java 之外能用 | 3~5 天 | 中 |
-| P0-3 | SQLite 索引性能优化(PRAGMA + 批写) | 大仓索引 5~10× 加速 | 1~2 天 | 低 |
+| P0-3 | SQLite 索引性能优化(PRAGMA + 批写) | 统一 PRAGMA 配置 + 修隐藏 bug;reindex wall-clock 收益在 Java-heavy 大仓**未观测到**(见 [P0_UCAP_REAL_BENCHMARK.md](./benchmarks/P0_UCAP_REAL_BENCHMARK.md)) | 1~2 天 | 低 |
+| **P1-0** | **Java 解析阶段瓶颈定位**(cProfile + 真实仓 → 找出 tree-sitter parse / 数据拼装 / 串行 谁是真热点) | 真正能动到 reindex wall-clock 的前置 | 2~3 天 | 低 |
 | P1-1 | Java 深度类型解析(import + 同包 + 同类 3 级 resolver) | 调用边准确率从 ~60% 到 ~85% | 1 周 | 中 |
 | P1-2 | 跨服务边抽象化(RemoteCallEdge / ChannelEdge / ProtocolContract) | 通用化 Feign/MQ,可扩 gRPC | 1~2 周 | 中 |
 | P1-3 | gRPC + 通用 HTTP + 通用 MQ detector | 跨进程边覆盖非 Spring 项目 | 1 周 | 中 |
@@ -192,8 +193,32 @@
 
 ## P0-3:SQLite 索引性能优化
 
-### 目标
+### 目标(初稿)
 对中等(10w 文件)及大型(75K 文件)Java/多语言仓,reindex 总耗时下降 5~10×。不引入新依赖。
+
+### ⚠️ 实测结果(2026-06-23 校准)
+**上面这个目标预测在 Java-heavy 大仓上被推翻了。**
+
+在真实 UCAP 工作区(20,516 个 Java 文件,27 GB)上 benchmark 显示:
+- reindex 总耗时:baseline 中位数 **133.5 s** → after-P0 中位数 **133.3 s**(变化 ~0%)
+- 原因:`graph.rebuild`(P0-3 优化目标)只占总耗时 18.7%(24 s);
+  剩余 ~71% 是 Java tree-sitter 解析 + 文件 IO + Python 数据拼装,
+  P0 完全没动这一层
+- 完整数据:[`docs/benchmarks/P0_UCAP_REAL_BENCHMARK.md`](./benchmarks/P0_UCAP_REAL_BENCHMARK.md)
+
+### 实际收益
+P0-3 的真实价值不在 wall-clock,而在:
+1. **修了真实隐藏 bug**:`GraphStore.connect` 和 `MemoryBackendStore.connect`
+   之前**完全没应用过 PRAGMA**(裸 `sqlite3.connect`),cache 仍是默认 2 MB
+2. **PRAGMA 配置收口**:3 处分散的 PRAGMA 配置合并到 `storage/pragmas.py`
+   单一来源,长期维护性提升
+3. **`fast_write_mode` 抽象沉淀**:为后续 batch 写操作留好开关
+4. **doctor 报告 PRAGMA 实际状态**:用户可一眼看出 SQLite 是否被调优
+
+### 后续行动
+要让 reindex wall-clock 真的下降,必须先 profile Java 解析阶段
+(留作 P1-0 候选)。下面的"变更内容"清单仍然有效,只是不应再期待
+"5~10×"这个量级的收益。不引入新依赖。
 
 ### 代码定位
 - `memory_center/core/storage/pool.py:39-42` — 现有 PRAGMA(已开 WAL + synchronous=NORMAL + cache=64MB + foreign_keys=ON)
@@ -254,10 +279,14 @@
 - 单测:`tests/test_bulk_upsert.py` 覆盖 batch 写、失败回滚、空批次
 
 ### 验收标准
-- [ ] `examples/spring-cloud-demo` reindex 耗时下降至少 3×(本地基准)
-- [ ] 中等 Python 仓(从 P0-2 引入)reindex < 10s
-- [ ] `memory-center doctor` 报告 PRAGMA 状态
-- [ ] 增量索引行为不变(单文件改动只触发该文件 reparse)
+- [x] `memory-center doctor` 报告 PRAGMA 状态(已加 `sqlite_pragmas` 字段)
+- [x] 增量索引行为不变(单文件改动只触发该文件 reparse)
+- [x] 三处 store(GraphStore / MemoryBackendStore / UnifiedStore)PRAGMA 配置归一
+- [x] 修复 GraphStore / MemoryBackendStore 此前 0 PRAGMA 应用的隐藏 bug
+- [ ] ~~`examples/spring-cloud-demo` reindex 耗时下降至少 3×~~ —— 校准后取消;
+      真实 Java 大仓上 reindex wall-clock 无显著变化(见 benchmark),
+      该指标在 P0-3 范围内无法达成,留待 P1-0 (Java 解析阶段优化)
+- [ ] ~~中等 Python 仓 reindex < 10s~~ —— 同上,P0 不承诺这个时延
 
 ### 提交粒度
 - PR 1:`perf: tune sqlite pragmas and add fast_write_mode`

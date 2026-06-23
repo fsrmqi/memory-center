@@ -58,8 +58,10 @@
   现在三处全部走 `apply_pragmas`,确保 reindex 主写库路径也走 WAL +
   大缓存 + 内存 temp store + mmap。
 - `GraphStore.rebuild` / `rebuild_search_index` 从"逐条 INSERT 循环"
-  改为 `executemany` + `fast_write_mode` 包裹,大仓 reindex 预期可
-  提速数倍(具体收益取决于文件数)。
+  改为 `executemany` + `fast_write_mode` 包裹。⚠️ **实测校准**:在真实
+  UCAP Java 大仓(20,516 文件)上 reindex wall-clock **无显著变化**
+  (`graph.rebuild` 仅占总耗时 18.7%,Java 解析占 ~71%);完整数据见
+  [`docs/benchmarks/P0_UCAP_REAL_BENCHMARK.md`](./benchmarks/P0_UCAP_REAL_BENCHMARK.md)。
 - `estimate_optimal_workers` 重新调参以适配 IO-bound 文件读取:上限
   从 8 → 32,小批量(≤4 文件)走 serial,中等批量按 `min(cpu*2, max, n)`
   并保底 2 worker。修正了"<10 文件返回 0 workers 导致悄悄退化为单线程"
