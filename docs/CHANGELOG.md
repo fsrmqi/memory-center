@@ -8,6 +8,35 @@
 
 ## Unreleased
 
+### CBM-Inspired Evolution P1-0: Java Parsing Hot-Path Profile / Java 解析瓶颈定位
+
+- 新增 `memory_center/core/perf/` 模块:`profile_reindex` 用 cProfile
+  包裹完整 reindex,产出 `.prof` 文件 + 人类可读 top-N 表;
+  `aggregate_by_module` 把函数级数据滚动到模块级,便于诊断"哪个子系统
+  最热"。
+- 新增 CLI `memory-center bench-profile --workspace <yaml>`,默认 top 50
+  按 cumulative 排序,支持 `--by-module` 滚动 / `--label` 给 `.prof`
+  文件起名 / `--sort-by` 切换排序键。
+- 在真实 UCAP 工作区(20,516 Java 文件)上跑出第一份诊断报告:
+  [`docs/benchmarks/P1_0_JAVA_PARSING_PROFILE.md`](./benchmarks/P1_0_JAVA_PARSING_PROFILE.md)
+  + 原始 pstats `docs/benchmarks/ucap-p1-0-baseline.prof`。识别出三个
+  真实瓶颈:
+  - **Java parser 双轨开销 ~58s**:`TreeSitterJavaParser.parse` 即使
+    tree-sitter 成功也仍然全量跑一遍 `RegexJavaParser`(~44% 总耗时)
+  - **`dataclasses.asdict` 调用爆炸 ~20.8s**:22,809 个 JavaSymbol →
+    13.5M 次 `_asdict_inner` 递归
+  - **`json.dumps` 4.59M 次 ~14.2s**:graph metadata 序列化次数过多
+- 3 个新测试覆盖 profile 输出契约(pstats 文件被写、top_n 影响 summary
+  长度、模块 rollup 按 cumulative 降序)。全量套件零回归。
+- English summary: P1-0 introduces a cProfile-based reindex profiler
+  (CLI: `bench-profile`) and produces the first hot-path report on a
+  real Java monorepo. The 71% non-SQLite bucket flagged by P0's
+  benchmark turns out to be dominated by three concrete Python-level
+  issues (dual-track parsing, asdict recursion, json metadata
+  serialization), not by tree-sitter itself. Together these account
+  for ~50-90s of saveable time, leading to a new P1-0.5 stage for
+  targeted optimization before the planned P1-1 call resolver work.
+
 ### CBM-Inspired Evolution P0-2: Multi-Language Structural Indexing / 多语言结构索引
 
 - 新增 `memory_center/core/indexing/parse_result.py` 定义跨语言通用结构:

@@ -30,7 +30,8 @@
 | P0-1 | service.type 解耦 + workspace schema 扩展 | 摆脱 Spring 假设 | 1 天 | 低 |
 | P0-2 | 多语言 tree-sitter parser registry | Java 之外能用 | 3~5 天 | 中 |
 | P0-3 | SQLite 索引性能优化(PRAGMA + 批写) | 统一 PRAGMA 配置 + 修隐藏 bug;reindex wall-clock 收益在 Java-heavy 大仓**未观测到**(见 [P0_UCAP_REAL_BENCHMARK.md](./benchmarks/P0_UCAP_REAL_BENCHMARK.md)) | 1~2 天 | 低 |
-| **P1-0** | **Java 解析阶段瓶颈定位**(cProfile + 真实仓 → 找出 tree-sitter parse / 数据拼装 / 串行 谁是真热点) | 真正能动到 reindex wall-clock 的前置 | 2~3 天 | 低 |
+| **P1-0** | **Java 解析阶段瓶颈定位**(cProfile + 真实仓 → 找出 tree-sitter parse / 数据拼装 / 串行 谁是真热点) | 真正能动到 reindex wall-clock 的前置;已完成,见 [P1_0_JAVA_PARSING_PROFILE.md](./benchmarks/P1_0_JAVA_PARSING_PROFILE.md) | 2~3 天 | 低 |
+| **P1-0.5** | **基于 P1-0 报告的针对性优化**(关闭 Java parser 双轨 + 替换 dataclasses.asdict) | 预计 reindex 130s → 60-90s | 2~3 天 | 中 |
 | P1-1 | Java 深度类型解析(import + 同包 + 同类 3 级 resolver) | 调用边准确率从 ~60% 到 ~85% | 1 周 | 中 |
 | P1-2 | 跨服务边抽象化(RemoteCallEdge / ChannelEdge / ProtocolContract) | 通用化 Feign/MQ,可扩 gRPC | 1~2 周 | 中 |
 | P1-3 | gRPC + 通用 HTTP + 通用 MQ detector | 跨进程边覆盖非 Spring 项目 | 1 周 | 中 |
