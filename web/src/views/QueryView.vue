@@ -1,5 +1,5 @@
 <script setup>
-import { ref, inject } from 'vue'
+import { computed, ref, inject } from 'vue'
 import { queryWorkspace, getSymbol, getCallers, getCallees } from '../api/client.js'
 import DataCard from '../components/DataCard.vue'
 import JsonTree from '../components/JsonTree.vue'
@@ -10,6 +10,7 @@ const mode = ref('auto')
 const data = ref(null)
 const loading = ref(false)
 const error = ref('')
+const completionStatus = computed(() => data.value?.completion_status || data.value?.result?.completion_status || null)
 
 async function search() {
   if (!workspace.value || !query.value) return
@@ -43,6 +44,17 @@ async function search() {
     </div>
     <DataCard :loading="loading" :error="error">
       <div v-if="data">
+        <div v-if="completionStatus" class="completion-card" :class="`state-${completionStatus.state || 'unknown'}`">
+          <div>
+            <span class="completion-label">Completion</span>
+            <strong>{{ completionStatus.state || 'unknown' }}</strong>
+          </div>
+          <div class="completion-meta">
+            <span v-if="completionStatus.terminal_anchor">terminal: {{ completionStatus.terminal_anchor }}</span>
+            <span>action: {{ completionStatus.recommended_action || 'n/a' }}</span>
+            <span v-if="completionStatus.missing_layers?.length">missing: {{ completionStatus.missing_layers.join(', ') }}</span>
+          </div>
+        </div>
         <div v-if="data.matches?.length || data.results?.length" class="result-list">
           <div v-for="(item, i) in (data.matches || data.results)" :key="i" class="result-item">
             <span class="r-type">{{ item.node?.type || item.type || '' }}</span>
@@ -69,4 +81,11 @@ h1 { margin: 0 0 16px; }
 .r-score { color: #28a745; font-weight: 600; font-size: 12px; }
 .section { margin: 12px 0; }
 .section summary { cursor: pointer; font-weight: 600; color: #4a6fa5; }
+.completion-card { border: 1px solid #d9e2ef; border-radius: 8px; padding: 10px 12px; margin-bottom: 12px; background: #f8fbff; display: flex; flex-direction: column; gap: 6px; }
+.completion-card strong { margin-left: 8px; color: #1a1a2e; }
+.completion-label { color: #4a6fa5; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+.completion-meta { display: flex; gap: 12px; flex-wrap: wrap; color: #666; font-size: 12px; }
+.completion-card.state-complete { border-color: #b7dfc3; background: #f4fbf6; }
+.completion-card.state-partial { border-color: #f0d58a; background: #fffaf0; }
+.completion-card.state-blocked, .completion-card.state-stale { border-color: #efb7b7; background: #fff6f6; }
 </style>

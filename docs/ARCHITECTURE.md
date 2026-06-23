@@ -232,6 +232,14 @@ Method walkthrough 的结构化字段仍完整保留在顶层返回中；默认 
 
 Method walkthrough keeps complete structured fields at the top level. The default Markdown is a human-readable view: quick conclusion, main chain, layered details, evidence files, and risks/scope guards. Long paths are referenced by numbered file IDs in the main chain, full paths remain in evidence files, performance risks are grouped by code, and Mermaid focuses on the main call chain.
 
+### Walkthrough Completion Status / 全链路完成状态
+
+**位置**: `memory_center/core/completion.py`
+
+Method walkthrough 生成后会附加 `completion_status`，这是 additive 字段，不改变 MCP 参数或旧字段语义。状态包含 `state`、`terminal_anchor`、`missing_layers`、`stop_reason` 和 `recommended_action`：完整链路返回 `complete/use_current_evidence`，索引过期返回 `stale/live_read_or_reindex`，证据缺层返回 `partial/fill_missing_layers`，无有效层返回 `blocked/targeted_lookup_or_reindex`。
+
+After a method walkthrough is assembled, Memory Center attaches `completion_status` as an additive field. The field gives agents a stable stop/continue signal without changing existing MCP schemas: use current evidence when complete, live-read or reindex when stale, and fill listed missing layers when partial.
+
 ### Completion Audit / 完成审计
 
 **位置**: `memory_center/core/audit/completion.py`

@@ -58,6 +58,7 @@ def method_walkthrough_fields_contract() -> Dict[str, Any]:
             "diff_context",
             "glossary_hits",
             "index_freshness",
+            "completion_status",
             "branch_outline",
             "anti_patterns",
             "cache",
@@ -216,6 +217,7 @@ def compact_method_walkthrough_result(result: Dict[str, Any], budget: str = "med
         "diff_context": result.get("diff_context", {}),
         "glossary_hits": result.get("glossary_hits", [])[: limits["events"]],
         "index_freshness": result.get("index_freshness", {}),
+        "completion_status": result.get("completion_status", {}),
         "branch_outline": result.get("branch_outline", [])[: limits["steps"]],
         "anti_patterns": result.get("anti_patterns", []),
         "cache": result.get("cache", {"hit": False, "ttl_seconds": cache_ttl_seconds}),
@@ -283,6 +285,7 @@ def default_method_walkthrough_template(report_level: str = "standard") -> str:
         "## {target_label} 全链路梳理\n\n"
         "### 0. 快速结论\n"
         "- 入口: {target_label} [{target_file_ref}]:{target_line}\n"
+        "- 完成状态: {completion_status}\n"
         "- 主线已按入口、本地辅助、远程 Feign、下游服务端、底层查询构造分层展开。\n"
         "- 详细原始结构仍保留在返回字段中；默认 Markdown 只负责人类阅读排序。\n\n"
         "### 1. 主链路\n{readable_summary_lines}\n\n"
@@ -577,6 +580,18 @@ def format_index_freshness(freshness: Dict[str, Any]) -> str:
     return "\n".join(f"- 索引可能过期: {item.get('absolute_file_path', '')}" for item in freshness.get("stale_read_targets", []) or [])
 
 
+def format_completion_status(status: Dict[str, Any]) -> str:
+    if not status:
+        return "unknown"
+    state = status.get("state", "unknown")
+    action = status.get("recommended_action", "")
+    terminal = status.get("terminal_anchor", "")
+    missing = status.get("missing_layers", []) or []
+    if missing:
+        return f"{state}，缺失 {', '.join(missing)}，终点 {terminal or 'unknown'}，建议 {action}"
+    return f"{state}，终点 {terminal or 'unknown'}，建议 {action}"
+
+
 def format_branch_outline(outlines: List[Dict[str, Any]]) -> str:
     if not outlines:
         return "- 未识别到可结构化的分支轮廓。"
@@ -633,6 +648,7 @@ def method_walkthrough_template_context(result: Dict[str, Any], report_level: st
         "data_scope_guards": format_risk_items(result.get("data_scope_guards", []) or []),
         "diff_context": format_diff_context(result.get("diff_context", {}) or {}),
         "index_freshness": format_index_freshness(result.get("index_freshness", {}) or {}),
+        "completion_status": format_completion_status(result.get("completion_status", {}) or {}),
         "branch_outline": format_branch_outline(result.get("branch_outline", []) or []),
         "anti_patterns": format_anti_patterns(result.get("anti_patterns", []) or []),
         "mermaid_flow": result.get("mermaid_flow", ""),

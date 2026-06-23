@@ -156,6 +156,8 @@ def test_memory_method_walkthrough_returns_feign_continuations(tmp_path: Path):
     assert "data_scope_guards" in result
     assert "diff_context" in result
     assert "glossary_hits" in result
+    assert result["completion_status"]["state"] == "complete"
+    assert result["completion_status"]["recommended_action"] == "use_current_evidence"
     assert result["schema_version"] >= 2
     assert "stable_top_level" in result["fields_contract"]
     assert result["index_freshness"]["index_stale"] is False
@@ -516,6 +518,21 @@ def test_http_walkthrough_routes_use_registered_dispatch(tmp_path: Path):
     assert result["result"]["schema_version"] >= 2
 
 
+def test_http_method_walkthrough_surfaces_completion_status(tmp_path: Path):
+    wf = _setup_workspace(tmp_path)
+    symbol = "com.example.task.ArticleMoveService#move"
+
+    result = _route_request(
+        "/workspace/method-walkthrough",
+        {"workspace": [wf], "symbol": [symbol], "view": ["compact"], "budget": ["small"]},
+        None,
+    )
+
+    assert result["found"] is True
+    assert result["completion_status"]["state"] == "complete"
+    assert result["completion_status"]["recommended_action"] == "use_current_evidence"
+
+
 def test_walkthrough_cli_commands(tmp_path: Path):
     wf = _setup_workspace(tmp_path)
     symbol = "com.example.task.ArticleMoveService#move"
@@ -587,6 +604,9 @@ def test_mc_lookup_auto_prefers_chain_for_deep_method_trace_queries(tmp_path: Pa
     assert "anti_patterns" in result
     assert "cache" in result
     assert result["agent_usage_policy"]["read_files_by"] == "absolute_file_path"
+    assert result["completion_status"]["state"] == "complete"
+    assert result["completion_status"]["recommended_action"] == "use_current_evidence"
+    assert result["result"]["completion_status"]["state"] == "complete"
     assert result["result"]["found"] is True
     assert result["result"]["target"]["method"] == "moveArticle"
 

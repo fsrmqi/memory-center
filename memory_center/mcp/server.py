@@ -228,6 +228,7 @@ def _flatten_walkthrough_payload(result: Dict[str, Any], mode_key: str = "mode_u
         "schema_version": result.get("schema_version", 1),
         "fields_contract": result.get("fields_contract", {}),
         "index_freshness": result.get("index_freshness", {}),
+        "completion_status": result.get("completion_status", {}),
         "branch_outline": result.get("branch_outline", []),
         "anti_patterns": result.get("anti_patterns", []),
         "cache": result.get("cache", {}),

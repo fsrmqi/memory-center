@@ -355,3 +355,5 @@ def test_full_chain_symbol_query_routes_to_walkthrough(demo_workspace_indexed: P
     assert result["summary_lines"]
     assert any("ArticleController#moveArticle" in line for line in result["summary_lines"])
     assert result["agent_usage_policy"]["read_files_by"] == "absolute_file_path"
+    assert result["completion_status"]["state"] == "complete"
+    assert result["completion_status"]["recommended_action"] == "use_current_evidence"

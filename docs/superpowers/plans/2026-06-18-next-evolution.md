@@ -298,8 +298,8 @@ Result / 结果（2026-06-22）:
 - Modify: `memory_center/core/walkthrough/answer.py`
 - Modify: `memory_center/core/orchestrator/query.py`
 - Modify: `memory_center/mcp/server.py`
-- Modify: `memory_center/http/routes/analysis.py`
-- Modify: `web/src/views/WorkbenchView.vue`
+- Modify: `memory_center/http/routes/analysis.py`（实际通过 core additive 字段由现有 HTTP route 透出，无需新增 schema）
+- Modify: `web/src/views/QueryView.vue`
 - Create: `tests/test_completion_status.py`
 - Modify: `tests/test_mcp_facades.py`
 
@@ -315,7 +315,7 @@ class CompletionStatus:
     recommended_action: str
 ```
 
-- [ ] **Step 1: Write failing completion-state tests**
+- [x] **Step 1: Write failing completion-state tests**
 
 ```python
 def test_complete_chain_tells_agent_to_stop_searching():
@@ -328,19 +328,21 @@ def test_complete_chain_tells_agent_to_stop_searching():
     assert status.recommended_action == "use_current_evidence"
 ```
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 Run: `pytest -q tests/test_completion_status.py`
 
-- [ ] **Step 3: Add completion status to lookup/walkthrough**
+- [x] **Step 3: Add completion status to lookup/walkthrough**
 
 `complete` 必须明确告诉 Agent 停止重复 find/grep；`partial` 必须列出缺失层；`stale` 必须优先建议 reindex 或 live read。
 
-- [ ] **Step 4: Surface quality in MCP and HTTP without schema breakage**
+- [x] **Step 4: Surface quality in MCP and HTTP without schema breakage**
 
 复用 `_quality`、`_reasoning`、`completion_status`，不新增平行评分结构。
 
-- [ ] **Step 5: Add Workbench visualization**
+- [x] **Step 5: Add Workbench visualization**
+
+实现备注：当前 Web 入口实际由 `QueryView.vue` 承载 `queryWorkspace` 结果，因此 completion 状态卡片落在 Query 页面；HTTP 通过现有 method walkthrough/query 返回 core additive 字段，不新增不兼容 schema。
 
 页面展示：链路完成状态、anchor recall、freshness、median/p95 latency、缺失层和推荐动作；移动端保持可读。
 

@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from ..graph import GraphStore, node_id
+from ..completion import evaluate_walkthrough_completion
 from ..result_types import attach_facade_metadata
 from ..tracking import log_token_gain
 from .cache import WalkthroughCache
@@ -322,6 +323,7 @@ def build_walkthrough_result(
     result["index_freshness"] = _wt_risks.build_walkthrough_index_freshness(
         _wt_escalation.walkthrough_index_signature(store), result,
     )
+    result["completion_status"] = evaluate_walkthrough_completion(result)
     result["branch_outline"] = _wt_risks.build_walkthrough_branch_outline(result)
     result["mermaid_flow"] = _wt_risks.build_method_walkthrough_mermaid(result)
     try:

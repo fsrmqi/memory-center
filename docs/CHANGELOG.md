@@ -8,6 +8,15 @@
 
 ## Unreleased
 
+### 3.5.3: Walkthrough Completion Status / 全链路完成状态
+
+- 新增 additive 顶层字段 `completion_status`，用于标记 method walkthrough / full-chain query 当前证据是否 `complete`、`partial`、`blocked` 或 `stale`。
+- 完整链路会返回 `recommended_action=use_current_evidence`，明确提示 Agent 使用当前证据而不是继续全局 find/grep；不完整链路会列出 `missing_layers` 和 `stop_reason`。
+- MCP `mc_lookup` walkthrough flatten、core query walkthrough、compact walkthrough 和 Web 查询页统一透出同一状态字段。
+- 默认 Markdown 快速结论中显示完成状态、终点 anchor 和建议动作，保持详细输出同时减少后续无效搜索。
+
+English summary: walkthroughs now expose a structured completion status across core, MCP, and Web query views so agents know when to stop searching, fill missing layers, or refresh stale evidence.
+
 ### 3.5.2: Walkthrough Readability Report v2 / 全链路报告可读性优化
 
 - 默认 method walkthrough Markdown 保留完整细节，但改为“快速结论 → 主链路 → 分层详情 → 证据文件 → 风险与数据范围”的阅读顺序。
