@@ -20,3 +20,17 @@ build/
 
 # Generated index data (rebuild with `memory-center reindex`)
 .memory-center/graph/
+
+# Example workspace runtime outputs. Keep examples reproducible via source,
+# workspace.yaml, cases, indexes and graph snapshots; do not track mutable
+# runtime memory/metrics written during tests or local verification.
+examples/*/.memory-center/memory/*.db
+examples/*/.memory-center/memory/*-log.jsonl
+examples/*/.memory-center/memory/operation-events.jsonl
+examples/*/.memory-center/metrics.jsonl
+examples/*/.memory-center/graph/*.db-shm
+examples/*/.memory-center/graph/*.db-wal
+examples/golden-benchmark/memory/*.db
+examples/golden-benchmark/memory/*-log.jsonl
+examples/golden-benchmark/memory/operation-events.jsonl
+examples/golden-benchmark/metrics.jsonl

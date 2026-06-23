@@ -158,6 +158,8 @@
 当前进展：
 
 - `test_public_mvp.py` 中直接使用仓库内 demo workspace 的污染点已改为复制到 `tmp_path`。
+- 示例 workspace 的运行态 memory DB、operation/token gain log、metrics 已改为生成物策略：不再跟踪这些会被测试/验证写入的文件，并通过 `.gitignore` 固化忽略规则。
+- 示例中仍保留可复现的 workspace 配置、源码、index、graph 快照和 Golden cases；运行态 memory/metrics 由测试或本地验证按需重新生成。
 - 后续新增测试必须继续遵守 `docs/SPECIAL_NOTES.md` 中的 workspace 隔离规则。
 
 ### P2：文档状态漂移
