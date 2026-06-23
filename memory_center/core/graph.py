@@ -52,6 +52,13 @@ class GraphStore:
         with self._lock:
             if self._conn is None:
                 self._conn = sqlite3.connect(self.db_path)
+                # Apply the shared PRAGMA profile here — GraphStore is the
+                # hot path for reindex writes and previously opened bare
+                # connections without WAL / cache tuning, which dominated
+                # large-repo indexing latency.
+                from .storage.pragmas import apply_pragmas
+
+                apply_pragmas(self._conn)
                 self._conn.row_factory = sqlite3.Row
             return self._conn
 

@@ -26,6 +26,13 @@ class MemoryBackendStore:
         with self._lock:
             if self._conn is None:
                 self._conn = sqlite3.connect(self.db_path)
+                # Apply the same PRAGMA profile as GraphStore so memory
+                # writes also benefit from WAL + large cache + temp_store
+                # in memory. Without this, status/sniff queries hit cold
+                # pages on cold start.
+                from .storage.pragmas import apply_pragmas
+
+                apply_pragmas(self._conn)
                 self._conn.row_factory = sqlite3.Row
             return self._conn
 

@@ -40,8 +40,21 @@ def doctor(workspace_file: str | Path, self_test: bool = False) -> dict[str, Any
 
     with GraphStore(store.graph_db_path) as graph:
         counts = graph.counts()
+        # Surface the actual PRAGMA state so doctor users can tell at a
+        # glance whether their SQLite connection is tuned for reindex
+        # throughput (WAL, large cache, MEMORY temp store, mmap).
+        from .storage.pragmas import read_pragma_state
+
+        pragma_state = read_pragma_state(graph.connect())
     checks.append(_check("graph:nodes", counts.get("nodes", 0) > 0, str(counts)))
     checks.append(_check("graph:edges", counts.get("edges", 0) > 0, str(counts)))
+    checks.append(
+        _check(
+            "graph:pragma_wal",
+            str(pragma_state.get("journal_mode", "")).lower() == "wal",
+            f"journal_mode={pragma_state.get('journal_mode')}",
+        )
+    )
     semantic = semantic_index_stats(workspace_file)
     checks.append(_check("semantic:docs", semantic.get("doc_count", 0) > 0, str(semantic)))
     workspace_shape = analyze_workspace_shape(config)
@@ -89,6 +102,7 @@ def doctor(workspace_file: str | Path, self_test: bool = False) -> dict[str, Any
         "suggested_fixes": suggested_fixes,
         "self_test": smoke,
         "hint": hint,
+        "sqlite_pragmas": pragma_state,
     }
 
 

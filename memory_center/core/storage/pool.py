@@ -13,6 +13,8 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
+from .pragmas import apply_pragmas
+
 
 class SQLitePool:
     """Simple connection pool for a single SQLite database.
@@ -36,10 +38,7 @@ class SQLitePool:
 
     def _new_connection(self) -> sqlite3.Connection:
         conn = sqlite3.connect(str(self._db_path), check_same_thread=False)
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA synchronous=NORMAL")
-        conn.execute("PRAGMA cache_size=-64000")  # 64 MB
-        conn.execute("PRAGMA foreign_keys=ON")
+        apply_pragmas(conn)
         conn.row_factory = sqlite3.Row
         return conn
 
