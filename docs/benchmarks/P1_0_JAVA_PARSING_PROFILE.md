@@ -11,14 +11,14 @@
 
 | 维度 | 值 |
 |---|---|
-| 工作区 | `/Users/cuijiaqi/javaworkspace/ucap` (UCAP 微服务平台) |
+| 工作区 | `<private-ucap-workspace>` (UCAP 内部微服务平台,真实路径已脱敏) |
 | 规模 | 36 service / 20,516 Java 文件 / 27 GB |
 | 机器 | Apple M3 Pro / macOS Darwin 25.5.0 |
 | Python | 3.11 in `.venv` |
 | 测量方式 | `memory-center bench-profile --workspace <yaml> --top 50 --by-module` |
 | commit | `4e5ee34`(P1-0 工具引入后,生产代码与 P0 完成态相同) |
 | reindex elapsed | **130.4 s** (与 P0 benchmark 一致) |
-| 原始 pstats | [`ucap-p1-0-baseline.prof`](./ucap-p1-0-baseline.prof) (122 KB,可用 `snakeviz` 打开) |
+| 原始 pstats | 本地生成到 `<private-ucap-workspace>/.memory-center/perf-profiles/*.prof`,不提交到仓库 |
 
 ---
 
@@ -220,15 +220,18 @@ overhead"。
 ```bash
 # 跑 profile(本机需要 UCAP 工作区)
 .venv/bin/memory-center bench-profile \
-    --workspace /Users/cuijiaqi/javaworkspace/ucap/.memory-center/workspace.yaml \
+    --workspace <private-ucap-workspace>/.memory-center/workspace.yaml \
     --top 50 \
     --by-module \
     --label p1-0-baseline
 
-# 用 snakeviz 打开看火焰图
+# 用 snakeviz 打开看火焰图; 具体文件名以 bench-profile 输出为准
 pip install snakeviz
-snakeviz docs/benchmarks/ucap-p1-0-baseline.prof
+snakeviz <private-ucap-workspace>/.memory-center/perf-profiles/<generated>.prof
 ```
+
+原始 `.prof` 会包含本机绝对路径、虚拟环境路径和函数文件名,因此按生成产物
+处理,由 `.gitignore` 忽略。仓库只保留这份 Markdown 摘要和可复现命令。
 
 ---
 

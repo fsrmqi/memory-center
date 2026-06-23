@@ -19,8 +19,8 @@
   文件起名 / `--sort-by` 切换排序键。
 - 在真实 UCAP 工作区(20,516 Java 文件)上跑出第一份诊断报告:
   [`docs/benchmarks/P1_0_JAVA_PARSING_PROFILE.md`](./benchmarks/P1_0_JAVA_PARSING_PROFILE.md)
-  + 原始 pstats `docs/benchmarks/ucap-p1-0-baseline.prof`。识别出三个
-  真实瓶颈:
+  。原始 pstats 由 `bench-profile` 本地生成到工作区 `.memory-center/perf-profiles/`,
+  不提交到仓库。识别出三个真实瓶颈:
   - **Java parser 双轨开销 ~58s**:`TreeSitterJavaParser.parse` 即使
     tree-sitter 成功也仍然全量跑一遍 `RegexJavaParser`(~44% 总耗时)
   - **`dataclasses.asdict` 调用爆炸 ~20.8s**:22,809 个 JavaSymbol →

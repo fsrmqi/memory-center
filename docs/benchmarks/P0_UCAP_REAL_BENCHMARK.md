@@ -14,7 +14,7 @@
 
 | 维度 | 值 |
 |---|---|
-| 工作区 | `/Users/cuijiaqi/javaworkspace/ucap` (UCAP 内部微服务平台) |
+| 工作区 | `<private-ucap-workspace>` (UCAP 内部微服务平台,真实路径已脱敏) |
 | 规模 | 36 个 service,**20,516 个 Java 文件**,27 GB |
 | 机器 | Apple M3 Pro / macOS Darwin 25.5.0 |
 | Python | 3.11 in `.venv` |
@@ -164,9 +164,8 @@ multilang pass 给纯 Java 仓库加了几秒固定成本。可以加一个 fast
 ```bash
 # baseline
 git checkout 79865c1
-cp /tmp/bench_p0_ucap.py scripts/bench_p0_ucap.py
 .venv/bin/python scripts/bench_p0_ucap.py \
-    --workspace /Users/cuijiaqi/javaworkspace/ucap/.memory-center/workspace.yaml \
+    --workspace <private-ucap-workspace>/.memory-center/workspace.yaml \
     --runs 2 \
     --label baseline \
     --out /tmp/baseline.json
@@ -174,7 +173,7 @@ cp /tmp/bench_p0_ucap.py scripts/bench_p0_ucap.py
 # after-p0
 git checkout dev
 .venv/bin/python scripts/bench_p0_ucap.py \
-    --workspace /Users/cuijiaqi/javaworkspace/ucap/.memory-center/workspace.yaml \
+    --workspace <private-ucap-workspace>/.memory-center/workspace.yaml \
     --runs 2 \
     --label after-p0 \
     --out /tmp/after.json
@@ -215,8 +214,8 @@ git checkout dev
    benchmark 时才发现。这是有意的 trade-off — 给一个一次性脚本配测试
    是过度工程,但需要意识到这个盲区。
 
-6. **UCAP 工作区是内部闭源仓库**:外部读者无法复现这次测量。"复现方式"
-   段写的命令只对**本机环境 + 有 UCAP 访问权限**的人有效。若需要给社区
+6. **UCAP 工作区是内部闭源仓库**:外部读者无法复现这次测量。文档中的
+   `<private-ucap-workspace>` 是脱敏占位符,真实路径不提交。若需要给社区
    一份可复现的 benchmark,需要用 `examples/spring-cloud-demo` 之类的
    公开 fixture 做一份配套 — 但小 fixture 上很难看到 SQLite 写库占比
    差异(因为 graph.rebuild 在小项目里只有几十毫秒,被 Python overhead

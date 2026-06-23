@@ -13,6 +13,11 @@ build/
 *.iml
 .cursor/
 
+# Local benchmark/profile artifacts can contain absolute paths and private
+# source/module names. Keep benchmark summaries in Markdown instead.
+docs/benchmarks/*.prof
+*.prof
+
 # IDE / AI editor configs
 /.idea/
 /.github/
