@@ -42,31 +42,32 @@ def walk_project_files(
 def parse_files_parallel(
     files: list[tuple[str, Path]],
     parse_fn: Callable[[str, str], JavaParseResult],
-    max_workers: int = 8,
+    max_workers: int | None = None,
 ) -> list[tuple[str, Path, JavaParseResult | None]]:
     """Parse multiple files in parallel using a thread pool.
 
     Args:
         files: List of (service_name, file_path) tuples
         parse_fn: Function that takes (text, file_path) and returns JavaParseResult
-        max_workers: Maximum number of threads
+        max_workers: Maximum number of threads. When ``None`` the value is
+            chosen via :func:`estimate_optimal_workers` based on file count
+            and CPU. Pass an integer to override (mostly useful in tests).
 
     Returns:
         List of (service_name, file_path, parse_result) tuples
     """
     results: list[tuple[str, Path, JavaParseResult | None]] = []
+    workers = max_workers if max_workers is not None else estimate_optimal_workers(len(files))
+    if workers <= 1 or len(files) <= 1:
+        # No point spinning up a pool for a single file; the overhead
+        # outweighs any speedup.
+        for svc, path in files:
+            results.append(_parse_one(svc, path, parse_fn))
+        return results
 
-    def _parse_one(service: str, path: Path) -> tuple[str, Path, JavaParseResult | None]:
-        try:
-            text = path.read_text(encoding="utf-8", errors="replace")
-            result = parse_fn(text, str(path))
-            return (service, path, result)
-        except Exception:
-            return (service, path, None)
-
-    with ThreadPoolExecutor(max_workers=max_workers) as pool:
+    with ThreadPoolExecutor(max_workers=workers) as pool:
         futures = {
-            pool.submit(_parse_one, svc, path): (svc, path)
+            pool.submit(_parse_one, svc, path, parse_fn): (svc, path)
             for svc, path in files
         }
         for future in as_completed(futures):
@@ -75,8 +76,35 @@ def parse_files_parallel(
     return results
 
 
-def estimate_optimal_workers(file_count: int, max_workers: int = 8) -> int:
-    """Estimate optimal worker count based on file count and CPU cores."""
+def _parse_one(
+    service: str,
+    path: Path,
+    parse_fn: Callable[[str, str], JavaParseResult],
+) -> tuple[str, Path, JavaParseResult | None]:
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+        result = parse_fn(text, str(path))
+        return (service, path, result)
+    except Exception:
+        return (service, path, None)
+
+
+def estimate_optimal_workers(file_count: int, max_workers: int = 32) -> int:
+    """Pick a thread count for parsing ``file_count`` files.
+
+    Parsing is mostly IO-bound (read source from disk) with a short CPU
+    burst per file (tree-sitter walk). For an IO-bound workload the rule
+    of thumb is ``2 × cpu_count`` capped at a reasonable ceiling — 32 is
+    enough to saturate macOS / Linux file IO on a modern laptop without
+    drowning the disk in head-of-line blocking. The previous default of
+    8 was chosen for 2.x's CPU-bound regex parser and is too conservative
+    for tree-sitter + LZ4 reads.
+
+    Small batches still run sequentially: thread pool overhead dominates
+    when there's fewer than a handful of files.
+    """
+    if file_count <= 4:
+        return 1
     cpu_count = os.cpu_count() or 4
-    optimal = min(cpu_count, max_workers, max(1, file_count // 10))
-    return optimal
+    optimal = min(cpu_count * 2, max_workers, file_count)
+    return max(2, optimal)

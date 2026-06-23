@@ -857,10 +857,15 @@ class TestE03ParallelIndexing:
 
     def test_estimate_optimal_workers(self):
         from memory_center.core.indexing.parallel import estimate_optimal_workers
+        # Default max_workers raised from 8 to 32 in CBM-inspired evolution
+        # plan P0-3 (IO-bound file reads benefit from oversubscription).
+        # The lower bound stays at 1 so explicit cap requests still work.
         w = estimate_optimal_workers(100)
-        assert 1 <= w <= 8
+        assert 1 <= w <= 32
         w2 = estimate_optimal_workers(1)
         assert w2 >= 1
+        # Explicit cap continues to be honoured.
+        assert estimate_optimal_workers(100, max_workers=4) <= 4
 
     def test_walk_project_files_finds_java(self, demo_workspace: Path):
         from memory_center.core.indexing.parallel import walk_project_files
