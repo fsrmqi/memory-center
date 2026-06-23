@@ -8,6 +8,15 @@
 
 ## Unreleased
 
+### 3.5.2: Walkthrough Readability Report v2 / 全链路报告可读性优化
+
+- 默认 method walkthrough Markdown 保留完整细节，但改为“快速结论 → 主链路 → 分层详情 → 证据文件 → 风险与数据范围”的阅读顺序。
+- 新增证据文件编号（如 `[F1]`），主链路中用编号引用路径，完整 `absolute_file_path` 仍集中保留在证据文件区和结构化返回字段中。
+- 性能风险按 `code` 聚合展示，重复风险会合并为出现次数和行号摘要，避免同类风险刷屏。
+- Mermaid 默认只绘制主调用链，不再把风险和数据范围节点混入链路图；风险仍在独立章节保留。
+
+English summary: walkthrough Markdown is now detailed but easier to read, with layered sections, numbered file evidence, aggregated risks, and cleaner main-chain diagrams.
+
 ### 3.5.1: Full-Chain Query Walkthrough Routing / 全链路 Query 路由修复
 
 - 修复 CLI/core `memory_query_hybrid` 在 `Class#method + 全链路/到底层` 自然语言查询下仍走泛化 graph token 排序的问题。

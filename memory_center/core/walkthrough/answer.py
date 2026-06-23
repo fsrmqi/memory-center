@@ -281,12 +281,18 @@ def default_method_walkthrough_template(report_level: str = "standard") -> str:
         )
     return (
         "## {target_label} 全链路梳理\n\n"
-        "### 调用链主线\n{summary_lines}\n\n"
+        "### 0. 快速结论\n"
+        "- 入口: {target_label} [{target_file_ref}]:{target_line}\n"
+        "- 主线已按入口、本地辅助、远程 Feign、下游服务端、底层查询构造分层展开。\n"
+        "- 详细原始结构仍保留在返回字段中；默认 Markdown 只负责人类阅读排序。\n\n"
+        "### 1. 主链路\n{readable_summary_lines}\n\n"
+        "### 2. 分层详情\n{layered_details}\n\n"
         "### Mermaid\n```mermaid\n{mermaid_flow}\n```\n\n"
-        "### 建议直接阅读的文件\n{read_targets}\n\n"
+        "### 3. 证据文件\n{numbered_read_targets}\n\n"
         "### 大方法规则分组\n{rule_groups}\n\n"
-        "### 性能风险\n{performance_risks}\n\n"
-        "### 数据范围保护\n{data_scope_guards}\n\n"
+        "### 4. 风险与数据范围\n"
+        "#### 性能风险\n{performance_risks}\n\n"
+        "#### 数据范围保护\n{data_scope_guards}\n\n"
         "### 索引新鲜度\n{index_freshness}\n\n"
         "### 分支轮廓\n{branch_outline}\n\n"
         "### 下一步\n{next_actions}\n"
@@ -316,6 +322,125 @@ def method_walkthrough_read_targets_text(result: Dict[str, Any]) -> str:
                     same_target = same.get("target", {}) or {}
                     add("server_impl_same_class", same_target, f"{same_target.get('class', '')}#{same_target.get('method', '')}")
     return "\n".join(targets)
+
+
+def _walkthrough_file_refs(result: Dict[str, Any]) -> Dict[str, str]:
+    refs: Dict[str, str] = {}
+
+    def add(item: Dict[str, Any]) -> None:
+        path = display_method_path(item)
+        if path and path not in refs:
+            refs[path] = f"F{len(refs) + 1}"
+
+    add(result.get("target", {}) or {})
+    for impl in result.get("local_service_continuations", []) or []:
+        add(impl.get("target", {}) or {})
+    for same in result.get("same_class_method_continuations", []) or []:
+        add(same.get("target", {}) or {})
+    for feign in result.get("feign_continuations", []) or []:
+        for server in feign.get("server_walkthroughs", []) or []:
+            add(server)
+            for impl in server.get("service_impl_continuations", []) or []:
+                add(impl.get("target", {}) or {})
+                for same in impl.get("same_class_method_continuations", []) or []:
+                    add(same.get("target", {}) or {})
+    return refs
+
+
+def _with_file_refs(text: str, refs: Dict[str, str]) -> str:
+    out = text
+    for path, ref in refs.items():
+        out = out.replace(path, f"[{ref}]")
+    return out
+
+
+def method_walkthrough_read_targets_numbered(result: Dict[str, Any]) -> str:
+    refs = _walkthrough_file_refs(result)
+    if not refs:
+        return "- 未识别到建议阅读文件。"
+    lines = []
+    for path, ref in refs.items():
+        lines.append(f"- [{ref}] {path}")
+    return "\n".join(lines)
+
+
+def format_readable_summary_lines(summary_lines: List[str], result: Dict[str, Any]) -> str:
+    refs = _walkthrough_file_refs(result)
+    if not summary_lines:
+        return "- 未生成主链路摘要。"
+    return "\n".join(f"- {_with_file_refs(line, refs)}" for line in summary_lines)
+
+
+def format_layered_details(result: Dict[str, Any]) -> str:
+    refs = _walkthrough_file_refs(result)
+    target = result.get("target", {}) or {}
+    lines = [
+        "#### 入口层",
+        f"- {target.get('project', '')}:{target.get('class', '')}#{target.get('method', '')} [{refs.get(display_method_path(target), 'F?')}]:{target.get('line', 0)}",
+    ]
+    local_steps = result.get("local_steps", []) or []
+    if local_steps:
+        lines.append("- 入口方法内关键步骤:")
+        for step in local_steps[:12]:
+            lines.append(f"  - line {step.get('line', 0)}: {step.get('summary', '')}")
+
+    lines.append("\n#### 本地辅助服务")
+    local_impls = result.get("local_service_continuations", []) or []
+    if not local_impls:
+        lines.append("- 未识别到本地 Service Impl 续链。")
+    for impl in local_impls[:8]:
+        impl_target = impl.get("target", {}) or {}
+        lines.append(
+            f"- {impl_target.get('project', '')}:{impl_target.get('class', '')}#{impl_target.get('method', '')} "
+            f"[{refs.get(display_method_path(impl_target), 'F?')}]:{impl_target.get('line', 0)}"
+        )
+
+    lines.append("\n#### 远程 Feign")
+    feigns = result.get("feign_continuations", []) or []
+    if not feigns:
+        lines.append("- 未识别到 Feign 续链。")
+    for feign in feigns[:8]:
+        lines.append(
+            f"- {feign.get('interface', '')}.{feign.get('method', '')} -> "
+            f"{feign.get('http_method', '')} {feign.get('path', '')} "
+            f"endpoints={len(feign.get('matched_endpoints', []) or [])}"
+        )
+
+    lines.append("\n#### 下游服务端")
+    found_server = False
+    for feign in feigns:
+        for server in (feign.get("server_walkthroughs", []) or [])[:1]:
+            found_server = True
+            lines.append(
+                f"- {server.get('project', '')}:{server.get('controller', '')}#{server.get('method', '')} "
+                f"[{refs.get(display_method_path(server), 'F?')}]:{server.get('line', 0)}"
+            )
+            for impl in (server.get("service_impl_continuations", []) or [])[:2]:
+                impl_target = impl.get("target", {}) or {}
+                lines.append(
+                    f"  - Impl {impl_target.get('project', '')}:{impl_target.get('class', '')}#{impl_target.get('method', '')} "
+                    f"[{refs.get(display_method_path(impl_target), 'F?')}]:{impl_target.get('line', 0)}"
+                )
+    if not found_server:
+        lines.append("- 未展开到下游 Controller/Impl。")
+
+    lines.append("\n#### 底层查询构造")
+    found_bottom = False
+    for feign in feigns:
+        for server in feign.get("server_walkthroughs", []) or []:
+            for impl in server.get("service_impl_continuations", []) or []:
+                for same in impl.get("same_class_method_continuations", []) or []:
+                    same_target = same.get("target", {}) or {}
+                    field_summary = same.get("field_filter_summary", {}) or {}
+                    found_bottom = True
+                    lines.append(
+                        f"- {same_target.get('class', '')}#{same_target.get('method', '')} "
+                        f"[{refs.get(display_method_path(same_target), 'F?')}]:{same_target.get('line', 0)} "
+                        f"fields={field_summary.get('unique_dto_field_count', 0)}"
+                    )
+    if not found_bottom:
+        lines.append("- 未识别到同类底层辅助方法。")
+    return "\n".join(lines)
 
 
 def format_rule_group_lines(continuation: Dict[str, Any]) -> List[str]:
@@ -400,9 +525,39 @@ def format_glossary_hits(items: List[Dict[str, Any]]) -> str:
     return "\n".join(f"- {item.get('term', '')}: {item.get('description', '')}" for item in items[:30])
 
 
-def format_risk_items(items: List[Dict[str, Any]]) -> str:
+def format_risk_items(items: List[Dict[str, Any]], *, aggregate: bool = True) -> str:
     if not items:
         return "- 未识别到明确风险。"
+    if aggregate:
+        severity_rank = {"high": 0, "medium": 1, "low": 2, "info": 3, "present": 4, "unknown": 5}
+        grouped: Dict[str, Dict[str, Any]] = {}
+        for item in items:
+            code = str(item.get("code", "") or "unknown")
+            bucket = grouped.setdefault(
+                code,
+                {
+                    "severity": item.get("severity", item.get("status", "info")),
+                    "message": item.get("message", ""),
+                    "count": 0,
+                    "lines": [],
+                },
+            )
+            current = str(item.get("severity", item.get("status", "info")) or "info")
+            if severity_rank.get(current, 9) < severity_rank.get(str(bucket["severity"]), 9):
+                bucket["severity"] = current
+            if item.get("message") and not bucket.get("message"):
+                bucket["message"] = item.get("message")
+            bucket["count"] += 1
+            evidence = item.get("evidence", {}) or {}
+            if evidence.get("line"):
+                bucket["lines"].append(str(evidence["line"]))
+        lines = []
+        for code, bucket in sorted(grouped.items(), key=lambda row: (severity_rank.get(str(row[1]["severity"]), 9), row[0])):
+            suffix = f"出现 {bucket['count']} 次" if bucket["count"] > 1 else "出现 1 次"
+            if bucket["lines"]:
+                suffix += f"，行号 {', '.join(bucket['lines'][:12])}"
+            lines.append(f"- [{bucket['severity']}] {code}: {bucket.get('message', '')}（{suffix}）")
+        return "\n".join(lines)
     return "\n".join(f"- [{item.get('severity', item.get('status', 'info'))}] {item.get('code', '')}: {item.get('message', '')}" for item in items)
 
 
@@ -456,6 +611,8 @@ def method_walkthrough_template_context(result: Dict[str, Any], report_level: st
     )
     read_targets = method_walkthrough_read_targets_text(result)
     rule_groups = method_walkthrough_rule_groups_text(result)
+    file_refs = _walkthrough_file_refs(result)
+    target_file = display_method_path(target)
     return {
         "report_level": normalize_report_level(report_level),
         "workspace": str(result.get("workspace", "")),
@@ -463,9 +620,13 @@ def method_walkthrough_template_context(result: Dict[str, Any], report_level: st
         "symbol": str(result.get("symbol", "")),
         "target_label": f"{target.get('project', '')}:{target.get('class', '')}#{target.get('method', '')}",
         "target_file": display_method_path(target),
+        "target_file_ref": file_refs.get(target_file, "F?"),
         "target_line": str(target.get("line", 0)),
         "summary_lines": "\n".join(f"- {line}" for line in summary_lines),
+        "readable_summary_lines": format_readable_summary_lines(summary_lines, result),
         "read_targets": read_targets,
+        "numbered_read_targets": method_walkthrough_read_targets_numbered(result),
+        "layered_details": format_layered_details(result),
         "rule_groups": rule_groups,
         "glossary": format_glossary_hits(result.get("glossary_hits", []) or []),
         "performance_risks": format_risk_items(result.get("performance_risks", []) or []),

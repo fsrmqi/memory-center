@@ -8,7 +8,6 @@ unit-tested by passing in plain dictionaries.
 from __future__ import annotations
 
 import json
-import re
 import subprocess
 from pathlib import Path
 from typing import Any, Dict, List
@@ -330,15 +329,4 @@ def build_method_walkthrough_mermaid(result: Dict[str, Any]) -> str:
                     same_target = same.get("target", {}) or {}
                     qnode = node(f"{same_target.get('class', '')}#{same_target.get('method', '')}")
                     lines.append(f"  {inode} --> {qnode}")
-    if result.get("performance_risks"):
-        risk = node(f"风险 {len(result.get('performance_risks', []) or [])}")
-        lines.append(f"  {root} -.-> {risk}")
-    guards = [item for item in result.get("data_scope_guards", []) or [] if item.get("status") == "present"]
-    if guards:
-        guard = node(f"数据范围保护 {len(guards)}")
-        lines.append(f"  {root} -.-> {guard}")
-    diff = result.get("diff_context", {}) or {}
-    if diff.get("has_touched_read_targets"):
-        changed = node(f"Diff 命中 {len(diff.get('touched_read_targets', []) or [])}")
-        lines.append(f"  {root} -.-> {changed}")
     return "\n".join(lines)

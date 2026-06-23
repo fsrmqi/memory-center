@@ -264,6 +264,99 @@ def test_walkthrough_risk_helpers_detect_performance_and_scope(tmp_path: Path):
     assert {item["code"]: item["status"] for item in guards}["downstream_data_protection_filters"] == "present"
 
 
+def test_walkthrough_answer_v2_is_detailed_but_readable(tmp_path: Path):
+    from memory_center.core.walkthrough.answer import render_method_walkthrough_answer
+    from memory_center.core.walkthrough.risks import build_method_walkthrough_mermaid
+
+    wf = tmp_path / ".memory-center" / "workspace.yaml"
+    wf.parent.mkdir(parents=True)
+    wf.write_text(f"workspace: demo\nroot: {tmp_path.as_posix()}\nservices: []\n", encoding="utf-8")
+
+    result = {
+        "workspace": "demo",
+        "symbol": "com.example.EntryService#listByDto",
+        "target": {
+            "project": "entry-service",
+            "class": "EntryService",
+            "method": "listByDto",
+            "absolute_file_path": "/repo/entry/EntryService.java",
+            "line": 22,
+        },
+        "summary_lines": [
+            "Target entry-service:EntryService#listByDto (/repo/entry/EntryService.java:22)",
+            "Step line 24: 调用 commonService.getCustomInfo",
+            "Feign EntryFeignClient.listByDtoObject -> POST /entry/listByDto endpoints=1",
+            "Server data-service:EntryController#listByDto (/repo/data/EntryController.java:35)",
+            "Impl data-service:EntryServiceImpl#listByDto (/repo/data/EntryServiceImpl.java:110)",
+            "ImplSameClass EntryServiceImpl#query2query (/repo/data/EntryServiceImpl.java:224) fields=58",
+        ],
+        "local_steps": [
+            {"kind": "method_call", "line": 24, "receiver": "commonService", "receiver_type": "CommonService", "method": "getCustomInfo", "summary": "调用 commonService.getCustomInfo"},
+            {"kind": "feign_call", "line": 30, "receiver": "entryFeignClient", "receiver_type": "EntryFeignClient", "method": "listByDtoObject", "summary": "调用 Feign EntryFeignClient.listByDtoObject"},
+        ],
+        "local_service_continuations": [
+            {"target": {"project": "entry-service", "class": "CommonServiceImpl", "method": "getCustomInfo", "absolute_file_path": "/repo/entry/CommonServiceImpl.java", "line": 25}}
+        ],
+        "feign_continuations": [
+            {
+                "interface": "EntryFeignClient",
+                "method": "listByDtoObject",
+                "http_method": "POST",
+                "path": "/entry/listByDto",
+                "server_walkthroughs": [
+                    {
+                        "project": "data-service",
+                        "controller": "EntryController",
+                        "method": "listByDto",
+                        "absolute_file_path": "/repo/data/EntryController.java",
+                        "line": 35,
+                        "service_impl_continuations": [
+                            {
+                                "target": {"project": "data-service", "class": "EntryServiceImpl", "method": "listByDto", "absolute_file_path": "/repo/data/EntryServiceImpl.java", "line": 110},
+                                "same_class_method_continuations": [
+                                    {
+                                        "target": {"class": "EntryServiceImpl", "method": "query2query", "absolute_file_path": "/repo/data/EntryServiceImpl.java", "line": 224},
+                                        "field_filter_summary": {"unique_dto_field_count": 58, "unique_dto_fields": ["protectCode", "unitLevel"]},
+                                    }
+                                ],
+                            }
+                        ],
+                    }
+                ],
+            }
+        ],
+        "performance_risks": [
+            {"severity": "high", "code": "es_script_query", "message": "检测到 Elasticsearch scriptQuery。", "evidence": {"line": 10}},
+            {"severity": "high", "code": "es_script_query", "message": "检测到 Elasticsearch scriptQuery。", "evidence": {"line": 20}},
+            {"severity": "low", "code": "track_total_hits", "message": "检测到 trackTotalHits(true)。", "evidence": {"line": 30}},
+        ],
+        "data_scope_guards": [{"status": "present", "code": "custom_info_enrichment", "message": "入口保护单位信息。"}],
+        "index_freshness": {"index_stale": False},
+        "branch_outline": [],
+        "next_actions": ["优先阅读 read_targets 中的文件。"],
+    }
+    result["mermaid_flow"] = build_method_walkthrough_mermaid(result)
+
+    markdown = render_method_walkthrough_answer(result, wf, report_level="standard")
+
+    assert "### 0. 快速结论" in markdown
+    assert "### 1. 主链路" in markdown
+    assert "### 2. 分层详情" in markdown
+    assert "### 3. 证据文件" in markdown
+    assert "### 4. 风险与数据范围" in markdown
+    assert "入口层" in markdown
+    assert "本地辅助服务" in markdown
+    assert "远程 Feign" in markdown
+    assert "下游服务端" in markdown
+    assert "底层查询构造" in markdown
+    assert "es_script_query" in markdown
+    assert "出现 2 次" in markdown
+    assert "[F1]" in markdown
+    assert "/repo/entry/EntryService.java" in markdown
+    assert "风险 " not in result["mermaid_flow"]
+    assert "数据范围保护" not in result["mermaid_flow"]
+
+
 def test_method_walkthrough_escalates_from_subproject_workspace(tmp_path: Path):
     parent_wf = Path(_setup_workspace(tmp_path))
     repo_root = parent_wf.parent.parent

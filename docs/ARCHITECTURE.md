@@ -226,6 +226,12 @@ Before running hybrid sources, `memory_query_hybrid()` has one high-priority rou
 - 切换上下文: `build_handoff_context()`
 - Facade 摘要: `build_facade_summary()`
 
+### Walkthrough Readable Report / 全链路可读报告
+
+Method walkthrough 的结构化字段仍完整保留在顶层返回中；默认 Markdown 只负责“详细但有阅读顺序”的人类视图。标准报告按快速结论、主链路、分层详情、证据文件、风险与数据范围组织：主链路使用 `[F1]` 这类证据文件编号减少长路径噪音，证据文件区集中保留完整路径；性能风险按 code 聚合，Mermaid 只绘制主调用链。
+
+Method walkthrough keeps complete structured fields at the top level. The default Markdown is a human-readable view: quick conclusion, main chain, layered details, evidence files, and risks/scope guards. Long paths are referenced by numbered file IDs in the main chain, full paths remain in evidence files, performance risks are grouped by code, and Mermaid focuses on the main call chain.
+
 ### Completion Audit / 完成审计
 
 **位置**: `memory_center/core/audit/completion.py`
