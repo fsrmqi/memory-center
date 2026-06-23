@@ -4,7 +4,7 @@ import json
 import re
 from collections import defaultdict, deque
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Tuple
+from typing import Any, Dict, List, Tuple
 
 from ..config import load_workspace_config
 from ..diagnostics import DIAG, diag_entry

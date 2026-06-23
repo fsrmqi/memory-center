@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -11,14 +10,12 @@ from ..artifacts import (
     touch_task_activity,
     update_task_artifact,
 )
-from ..store import WorkspaceStore
 from ..write_receipts import build_write_receipt
 from .common import (
     LAYER_L2,
     TOOL_WORKSPACE_SYNC_CASE_ARTIFACTS,
     TOOL_WORKSPACE_SYNC_SNIFF_ARTIFACTS,
     _build_sniff_auto_sync_recommendation,
-    _build_sniff_source_refs,
     _case_risk_level,
     _case_risk_profile,
     _load_auto_sync_rules,
@@ -150,7 +147,6 @@ def workspace_sync_case_to_artifacts(
             "session_id": session_id,
         }
 
-    auto_sync_rules = _load_auto_sync_rules(store)
     threshold = _score_threshold_for_sync_mode(auto_sync_mode)
 
     case_intent = case.get("task", "") or title or f"case from session {session_id}"

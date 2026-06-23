@@ -6,7 +6,7 @@ key concepts, and first tasks.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from ..storage.unified import UnifiedStore
 from .tour import ArchitectureTourGenerator

@@ -49,7 +49,6 @@ from memory_center.core.orchestrator import (
     memory_impact,
     memory_method_walkthrough,
     memory_plan_change,
-    memory_query,
     memory_query_hybrid,
     memory_backend_query,
     memory_ref_batch,
@@ -103,7 +102,7 @@ from memory_center.core.orchestrator import (
 from memory_center.core.rules import ensure_default_rules
 from memory_center.core.store import WorkspaceStore
 from memory_center.core.validators import doctor as run_doctor
-from memory_center.core.registry import add_to_group, create_group, list_workspaces, register_workspace, resolve_workspace
+from memory_center.core.registry import add_to_group, create_group, list_workspaces, register_workspace
 from memory_center.core.wiki import generate_skills, generate_wiki
 from memory_center.http.server import serve_http
 from memory_center.hooks.spec import ensure_default_hooks, load_hooks_config

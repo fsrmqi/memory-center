@@ -2,8 +2,62 @@ from __future__ import annotations
 
 from memory_center.core.dispatch import CommandRegistry
 
-from .dependencies import *  # noqa: F403
-from .params import RouteParams, _parse_int
+from .dependencies import (
+    append_change_log,
+    append_task_change_log,
+    archive_task_space,
+    artifact_context,
+    artifact_outline,
+    auto_archive_task_spaces,
+    compact_change_log,
+    create_task_space,
+    get_artifact,
+    get_task_artifact,
+    list_artifacts,
+    list_task_spaces,
+    memory_backend_query,
+    memory_callees,
+    memory_callers,
+    memory_eval_context_weight,
+    memory_eval_handoff,
+    memory_eval_index_freshness,
+    memory_eval_parser_benchmark,
+    memory_eval_regression_suite,
+    memory_eval_resume,
+    memory_eval_tool_adoption,
+    memory_eval_walkthrough_quality,
+    memory_eval_write_quality,
+    memory_execute_write,
+    memory_export_walkthrough_artifact,
+    memory_method_walkthrough,
+    memory_plan_change,
+    memory_plan_write,
+    memory_query_hybrid,
+    memory_ref_batch,
+    memory_ref_get,
+    memory_search_code,
+    memory_symbol,
+    memory_tool_usage_report,
+    memory_verify_checklist,
+    memory_walkthrough_health,
+    memory_write_judge,
+    resolve_task_space,
+    touch_task_activity,
+    update_artifact,
+    update_task_artifact,
+    update_task_status,
+    workspace_lookup_hint,
+    workspace_recent_evidence,
+    workspace_recent_sessions,
+    workspace_replay_write_chain,
+    workspace_session_summary,
+    workspace_sniff,
+    workspace_status,
+    workspace_sync_case_to_artifacts,
+    workspace_sync_sniff_to_artifacts,
+    workspace_write_receipts,
+)
+from .params import _parse_int
 
 
 def register_workspace_routes(registry: CommandRegistry) -> None:
@@ -354,4 +408,3 @@ def register_workspace_routes(registry: CommandRegistry) -> None:
         budget=rp.budget(),
         view=rp.view(),
     ))
-

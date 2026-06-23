@@ -5,7 +5,7 @@ import json
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from ..registry import resolve_group
 from .common import (
@@ -16,8 +16,6 @@ from .common import (
     tokenize,
 )
 from .query import (
-    _annotate_phantom_nodes,
-    _build_lookup_payload,
     _query_node_priority,
     _sort_target_types,
     memory_callers,
@@ -870,7 +868,6 @@ def _group_impact_record_key(record: Dict[str, Any], target_types: List[str]) ->
     band = record.get("_confidence_band", "")
     band_priority = 0 if band == "confirmed" else 1 if band == "probable" else 2
     source_type = record.get("source", {}).get("type", "")
-    target_type = record.get("target", {}).get("type", "")
     type_priority = _bridge_priority(source_type, target_types)
     confidence = -float(record.get("confidence", 0.0))
     return (band_priority, type_priority, confidence, record.get("_workspace", ""))

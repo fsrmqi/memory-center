@@ -7,12 +7,10 @@ from __future__ import annotations
 
 import json
 import math
-import re
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from ..storage.unified import UnifiedStore
-from ..semantic import semantic_tokens, _count_tokens, _split_camel
+from ..semantic import semantic_tokens, _count_tokens
 
 BM25_K1 = 1.5
 BM25_B = 0.75
@@ -126,10 +124,6 @@ class InvertedIndex:
 
         # Fetch doc_count and avgdl from inv_docs
         with self._store.pool.connection() as conn:
-            stats = conn.execute("SELECT COUNT(*) AS cnt, COALESCE(AVG(doc_len), 1.0) AS avgdl FROM inv_docs").fetchone()
-            doc_count = max(int(stats["cnt"]), 1)
-            avgdl = float(stats["avgdl"]) or 1.0
-
             # Fetch candidate postings for query tokens
             placeholders = ",".join("?" for _ in query_counts)
             rows = conn.execute(

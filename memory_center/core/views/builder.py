@@ -7,9 +7,8 @@ Supports three modes:
 """
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from ..storage.unified import UnifiedStore
 from ..reasoning.risk import RiskPatternEngine, RiskFinding

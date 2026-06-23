@@ -1,10 +1,8 @@
 """Tests for NEXT_PHASE modules: hybrid retrieval, benchmark, audit, navigation, backend."""
 from __future__ import annotations
 
-import json
 import tempfile
 from pathlib import Path
-from typing import Any, Dict
 
 import pytest
 
@@ -881,6 +879,7 @@ class TestRetrievalBehavior:
             "ConfigKey", "Class", "Service", "Method", "Field", "File",
             "Bean", "MQProducer", "DataResource",
         }
+        assert "FeignClient" in valid_types
         # Create a dummy result to test boosting
         dummy = RetrievalResult(
             node_id="test:1", node={"type": "FeignClient", "name": "test"},

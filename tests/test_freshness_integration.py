@@ -167,6 +167,7 @@ class TestMcStartFreshness:
     def test_mc_start_freshness_has_actions_for_stale(self, demo_workspace: Path):
         """When freshness is stale, recommended actions are non-empty."""
         result = get_freshness_with_actions(str(demo_workspace))
+        assert isinstance(result["recommended_actions"], list)
         # Even if fresh now, stale path should have actions
         # Verify the function structure supports all statuses
         for status in (FRESH, PENDING, STALE, UNKNOWN):

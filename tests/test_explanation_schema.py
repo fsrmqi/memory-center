@@ -1,8 +1,5 @@
 """Tests for D-03: Unified Explanation Schema helpers."""
 from __future__ import annotations
-import shutil
-from pathlib import Path
-import pytest
 
 from memory_center.core.explanation import (
     Explanation,

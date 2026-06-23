@@ -6,7 +6,7 @@ from typing import Any, Dict, List
 
 from ..graph import GraphStore
 from ..rules import match_rules
-from .common import _best_match, _build_progressive_levels, _impact_checklist, _unknown_static_analysis_risks, load_context
+from .common import _build_progressive_levels, _impact_checklist, _unknown_static_analysis_risks, load_context
 from .query import (
     _build_augmented_lookup_payload,
     _build_lookup_payload,
@@ -17,7 +17,6 @@ from .query import (
     _build_project_scope,
     _build_project_evidence,
     memory_symbol,
-    memory_query_hybrid,
 )
 from ..diagnostics import DIAG, diag_entry
 from ..explanation import explanation_entry, merge_explanations

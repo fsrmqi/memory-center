@@ -6,13 +6,12 @@ dependency) with configurable debounce.
 """
 from __future__ import annotations
 
-import hashlib
 import os
 import time
 import threading
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Set, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 
 @dataclass

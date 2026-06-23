@@ -627,6 +627,7 @@ def test_memory_write_judge_and_plan_write(tmp_path: Path):
         source="note",
         intent="记录会话过程",
     )
+    assert l0_plan["memory_layer"] in {"L0_session_events", "L1_case_atoms"}
 
     executed = memory_execute_write(
         workspace,
@@ -845,6 +846,7 @@ def test_auto_archive_task_spaces(tmp_path: Path):
 
     created = create_task_space(workspace, title="历史任务")
     task_id = created["task_id"]
+    assert task_id
     task_dir = Path(created["path"])
     meta_path = task_dir / "meta.json"
     meta = json.loads(meta_path.read_text(encoding="utf-8"))

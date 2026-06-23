@@ -7,12 +7,11 @@ for anything that diverges from the graph.
 from __future__ import annotations
 
 import hashlib
-import json
 import os
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Set
 
 from ..store import WorkspaceStore
 

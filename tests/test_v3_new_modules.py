@@ -10,17 +10,11 @@ Covers:
 """
 from __future__ import annotations
 
-import json
-import time
-from pathlib import Path
-from typing import Any, Dict, List
-from unittest.mock import MagicMock, patch
 
 import pytest
 
-from memory_center.core.storage.pool import SQLitePool
 from memory_center.core.storage.unified import UnifiedStore
-from memory_center.core.context.evidence import EvidenceSelector, Evidence, _SOURCE_WEIGHTS
+from memory_center.core.context.evidence import EvidenceSelector, Evidence
 from memory_center.core.onboarding.glossary import GlossaryExtractor, GlossaryEntry, _split_camel
 from memory_center.core.domain.flow import BusinessFlowGraph, FlowNode, FlowEdge, FlowPath
 from memory_center.core.domain.mapper import CodeEntityDomainMapper, DomainMapping
@@ -690,7 +684,6 @@ class TestV3Integration:
 
     def test_evidence_with_graph_results(self, populated_store):
         """EvidenceSelector works with real graph retrieval results."""
-        from memory_center.core.retrieval.hybrid import hybrid_retrieve, HybridRetrievalConfig
         sel = EvidenceSelector()
 
         # Simulate retrieval results

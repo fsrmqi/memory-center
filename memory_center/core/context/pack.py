@@ -14,14 +14,13 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
-from ..storage.unified import UnifiedStore
 from ..graph import GraphStore
 from ..retrieval.hybrid import hybrid_retrieve, HybridRetrievalConfig, detect_query_intent
 from ..rules import match_rules
 from ..freshness.status import IndexFreshnessService
-from ..diagnostics import DIAG, diag_entry, safe_reason
+from ..diagnostics import DIAG, diag_entry
 
 # Extensions that are treated as non-code (skipped for snippet extraction)
 _NON_CODE_EXTENSIONS = frozenset({".md", ".txt", ".yaml", ".yml", ".json", ".xml",
@@ -188,7 +187,6 @@ def _extract_snippets(store: Any, results: list, budget_tokens: int) -> List[Dic
     Duplicate files are de-duped; at most ``_MAX_SNIPPETS`` are returned.
     Total content is capped to the snippet budget (25 % of ``budget_tokens``).
     """
-    from ..store import WorkspaceStore
 
     # Build lookup: file_path → abs_path from file-index.json
     try:
@@ -289,9 +287,6 @@ def benchmark_context_pack(workspace_file: str | Path, queries: List[str]) -> Di
 
     Measures: token savings, tool call reduction, response quality.
     """
-    from ..store import WorkspaceStore
-    store = WorkspaceStore(workspace_file)
-
     results = []
     total_raw_tokens = 0
     total_pack_tokens = 0

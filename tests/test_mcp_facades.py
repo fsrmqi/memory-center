@@ -1,4 +1,5 @@
 """Tests for MCP facade tools (8 task-level tools replacing 82 atomic tools)."""
+import importlib.util
 from pathlib import Path
 import pytest
 from typer.testing import CliRunner
@@ -22,11 +23,7 @@ from memory_center.core.artifacts import (
 from memory_center.cli.main import app
 from memory_center.http.server import _route_request
 
-try:
-    from mcp.server.fastmcp import FastMCP
-    HAS_MCP = True
-except ImportError:
-    HAS_MCP = False
+HAS_MCP = importlib.util.find_spec("mcp") is not None and importlib.util.find_spec("mcp.server.fastmcp") is not None
 
 if HAS_MCP:
     from memory_center.mcp.server import create_server
@@ -945,9 +942,9 @@ def test_mc_close_auto_records_candidate_feedback(tmp_path: Path):
     )
     assert payload["candidate_feedback"]["recorded"] is True
     assert payload["candidate_feedback"]["feedback_items"][0]["target"] == "symbol_lookup"
-    assert "ended" in result
-    assert "sync_case" in result
-    assert "suggested_case" in result
+    assert "ended" in payload
+    assert "sync_case" in payload
+    assert "suggested_case" in payload
 
 
 @pytest.mark.skipif(not HAS_MCP, reason="mcp package not installed")

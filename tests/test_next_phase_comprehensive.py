@@ -14,7 +14,6 @@ Covers:
 """
 from __future__ import annotations
 
-import pytest
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -98,8 +97,7 @@ class TestSemanticStrengthAnnotation:
     def test_ontology_exports(self):
         from memory_center.core.ontology import (
             validate_node_type, validate_edge_type, edge_strength,
-            edge_confidence_range, ALL_NODE_TYPES, ALL_EDGE_TYPES,
-            EDGE_SEMANTIC_STRENGTH, EDGE_CONFIDENCE_RANGES,
+            edge_confidence_range,
         )
         assert validate_node_type("Class") is True
         assert validate_node_type("FakeType") is False
@@ -165,7 +163,7 @@ class TestFreshnessService:
 
     def test_watcher_status(self):
         from memory_center.core.freshness.watcher import FileWatcher
-        import tempfile, os
+        import tempfile
         with tempfile.TemporaryDirectory() as td:
             w = FileWatcher(td)
             st = w.status()
@@ -382,9 +380,9 @@ class TestReasoningModules:
     """Test graph patterns, risk, and transitive inference (already existing)."""
 
     def test_imports(self):
-        from memory_center.core.reasoning.patterns import GraphPatternEngine, PatternMatch
-        from memory_center.core.reasoning.risk import RiskPatternEngine, RiskFinding
-        from memory_center.core.reasoning.transitive import TransitiveInferenceEngine, TransitiveRelation
+        from memory_center.core.reasoning.patterns import GraphPatternEngine
+        from memory_center.core.reasoning.risk import RiskPatternEngine
+        from memory_center.core.reasoning.transitive import TransitiveInferenceEngine
         assert GraphPatternEngine is not None
         assert RiskPatternEngine is not None
         assert TransitiveInferenceEngine is not None

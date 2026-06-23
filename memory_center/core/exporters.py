@@ -133,7 +133,7 @@ def export_workspace_dashboard_markdown(workspace_file: str | Path, intent: str 
 
     dashboard = workspace_dashboard(workspace_file, intent=intent, limit=limit)
     lines: List[str] = [
-        f"# Workspace Dashboard / 工作区总面板",
+        "# Workspace Dashboard / 工作区总面板",
         "",
         f"- Workspace: {dashboard.get('workspace', '')}",
         f"- Focus task: {(dashboard.get('focus_task') or {}).get('title', '') or (dashboard.get('focus_task') or {}).get('task_id', 'None')}",

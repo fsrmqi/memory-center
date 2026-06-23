@@ -24,7 +24,6 @@ def _parse_int(params: dict, key: str, default: int, min_val: int = 1, max_val: 
 
 
 __all__ = [
-    "build_http_route_registry",
     "_require_workspace",
     "_require_one",
     "_parse_int",

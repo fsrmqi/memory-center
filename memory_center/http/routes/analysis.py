@@ -4,7 +4,7 @@ import json as _json
 
 from memory_center.core.dispatch import CommandRegistry
 
-from .dependencies import *  # noqa: F403
+from .dependencies import Any, Dict, group_chain, group_impact, group_query, group_status
 from .params import RouteParams, _parse_int
 
 

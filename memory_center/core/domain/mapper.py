@@ -7,9 +7,8 @@ graph relationships.
 from __future__ import annotations
 
 import json
-import re
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Set
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional
 
 from ..storage.unified import UnifiedStore
 from .extractor import _DOMAIN_KEYWORDS

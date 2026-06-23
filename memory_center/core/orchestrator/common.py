@@ -11,13 +11,10 @@ from ..config import load_workspace_config
 from ..rules import (
     DEFAULT_AUTO_SYNC_RULES,
     DEFAULT_EVAL_RULES,
-    DEFAULT_HANDOFF_PROFILES,
     DEFAULT_HANDOFF_RULES,
     DEFAULT_RESUME_RULES,
     DEFAULT_WRITE_POLICY_RULES,
-    ensure_default_rules,
     load_yaml_rule_config,
-    match_rules,
 )
 from ..store import WorkspaceStore
 

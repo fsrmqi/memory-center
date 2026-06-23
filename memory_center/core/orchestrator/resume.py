@@ -8,7 +8,6 @@ from ..artifacts import get_task_artifact, list_task_spaces
 from ..rules import (
     DEFAULT_HANDOFF_PROFILES,
     ensure_default_rules,
-    load_yaml_rule_config,
 )
 from ..schemas import with_schema
 from ..store import WorkspaceStore

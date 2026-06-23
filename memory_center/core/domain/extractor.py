@@ -102,7 +102,6 @@ class BusinessDomainExtractor:
         domain_map: Dict[str, BusinessDomain] = {}
 
         for node in nodes:
-            node_type = node.get("type", "")
             node_name = node.get("name", "")
             project = node.get("project", "")
             file_path = node.get("file_path", "")

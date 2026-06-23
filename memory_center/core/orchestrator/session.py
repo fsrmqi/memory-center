@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List
@@ -15,10 +14,8 @@ from .common import (
     _build_case_evidence_refs,
     _build_event_source_refs,
     _event_payload,
-    _load_auto_sync_rules,
     _new_session_id,
     _prepare_session_event_payload,
-    _score_threshold_for_sync_mode,
     _suggest_risk_points,
     _summarize_ref,
     load_context,
@@ -69,7 +66,7 @@ def workspace_start_session(
     context_pack_hint: Dict[str, Any] = {}
     try:
         from ..context.pack import ContextPackBuilder
-        builder = ContextPackBuilder(str(workspace_file))
+        ContextPackBuilder(str(workspace_file))
         # Just check if context pack is feasible, don't build full pack
         context_pack_hint = {
             "available": True,

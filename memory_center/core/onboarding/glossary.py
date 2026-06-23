@@ -10,7 +10,7 @@ import json
 import re
 from collections import Counter
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from ..storage.unified import UnifiedStore
 
@@ -55,7 +55,6 @@ class GlossaryExtractor:
         for node in nodes:
             node_type = node.get("type", "")
             name = node.get("name", "")
-            project = node.get("project", "")
 
             # Service names
             if node_type == "Service" and name:

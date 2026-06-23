@@ -406,7 +406,6 @@ def memory_eval_token_benchmark(
             text = json.dumps(payload, ensure_ascii=False)
             tokens = estimate_tokens(text)
             row[budget] = {"tokens": tokens, "chars": len(text)}
-        tiny_t = row.get("tiny", {}).get("tokens", 0)
         small_t = row["small"]["tokens"]
         large_t = row["large"]["tokens"]
         savings_pct = round((1 - small_t / (large_t or 1)) * 100, 1)

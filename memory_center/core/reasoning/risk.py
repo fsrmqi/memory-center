@@ -42,7 +42,6 @@ class RiskPatternEngine:
 
         node_type = node.get("type", "")
         node_name = node.get("name", "")
-        project = node.get("project", "")
         file_path = node.get("file_path", "")
 
         # 1. Check if it's a public contract (high risk)

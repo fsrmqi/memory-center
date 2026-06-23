@@ -4,7 +4,6 @@ Implements ECC-5 from NEXT_PHASE_MASTER_PLAN.md.
 """
 from __future__ import annotations
 
-import json
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List

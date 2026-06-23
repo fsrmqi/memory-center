@@ -7,7 +7,7 @@ knowledge graph).  Implements UA-3 from NEXT_PHASE_MASTER_PLAN.md.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Set
 
 from ..graph import GraphStore
 from ..storage.unified import UnifiedStore

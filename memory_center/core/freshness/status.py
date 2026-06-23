@@ -5,12 +5,10 @@ index may be stale and they should read live files before editing.
 """
 from __future__ import annotations
 
-import hashlib
-import os
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from ..config import load_workspace_config
 from ..store import WorkspaceStore
@@ -48,7 +46,6 @@ class IndexFreshnessService:
     def check(self, threshold_seconds: int = 3600) -> FreshnessStatus:
         """Check freshness. Returns status: fresh/pending/stale/unknown."""
         try:
-            graph_summary = self._store.read_json_prefer_backend("graph-summary.json", {})
             index_counts = self._store.read_json_prefer_backend("file-index.json", [])
         except Exception:
             return FreshnessStatus(status="unknown", message="无法读取索引元数据")

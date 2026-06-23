@@ -1,4 +1,5 @@
 """Tests for chain stitching: phantom annotation, endpoint matching, cross-workspace chain."""
+import importlib.util
 from pathlib import Path
 
 from memory_center.core.indexer import (
@@ -17,11 +18,7 @@ from memory_center.core.registry import (
     load_registry,
 )
 
-try:
-    from mcp.server.fastmcp import FastMCP
-    HAS_MCP = True
-except ImportError:
-    HAS_MCP = False
+HAS_MCP = importlib.util.find_spec("mcp") is not None and importlib.util.find_spec("mcp.server.fastmcp") is not None
 
 
 def _setup_demo_workspace(tmp_path: Path):

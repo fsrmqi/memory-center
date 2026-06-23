@@ -2,7 +2,35 @@ from __future__ import annotations
 
 from memory_center.core.dispatch import CommandRegistry
 
-from .dependencies import *  # noqa: F403
+from .dependencies import (
+    Any,
+    Dict,
+    group_impact,
+    group_query,
+    group_status,
+    memory_discover,
+    memory_eval_regression_suite,
+    memory_tool_usage_report,
+    workspace_continuity_dashboard,
+    workspace_dashboard,
+    workspace_end_session,
+    workspace_handoff_history,
+    workspace_handoff_packet,
+    workspace_model_profile,
+    workspace_next_actions,
+    workspace_recent_evidence,
+    workspace_record_case,
+    workspace_record_close_feedback,
+    workspace_resume_context,
+    workspace_resume_packet,
+    workspace_sniff,
+    workspace_start_session,
+    workspace_status,
+    workspace_suggest_case,
+    workspace_sync_case_to_artifacts,
+    workspace_sync_sniff_to_artifacts,
+    workspace_unresolved_items,
+)
 from .params import RouteParams, _parse_int
 
 
@@ -304,4 +332,3 @@ def register_workflow_routes(registry: CommandRegistry) -> None:
         )
 
     registry.register("/workspace/regression-alerts", _regression_alerts)
-

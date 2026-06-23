@@ -172,6 +172,7 @@ __all__ = [
     "memory_write_judge", "memory_plan_write", "memory_execute_write",
     "workspace_record_case", "workspace_write_receipts", "workspace_replay_write_chain",
     # workspace
+    "workspace_check_contract", "workspace_check_rules",
     "workspace_status", "workspace_sniff", "workspace_trace", "workspace_lookup_hint",
     "workspace_dashboard", "workspace_continuity_dashboard",
     # resume
@@ -187,4 +188,7 @@ __all__ = [
     "workspace_sync_sniff_to_artifacts", "workspace_sync_case_to_artifacts",
     # group
     "group_status", "group_query", "group_impact", "group_chain",
+    # private helpers used by legacy tests
+    "_build_sniff_auto_sync_recommendation", "_case_risk_level",
+    "_sniff_risk_level", "_score_threshold_for_sync_mode",
 ]

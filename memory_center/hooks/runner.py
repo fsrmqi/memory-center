@@ -9,12 +9,10 @@ from __future__ import annotations
 import json
 import re
 import sys
-from pathlib import Path
 from typing import Any, Dict
 
 from .spec import (
     _SESSION_ID_FILE,
-    _VALID_MODES,
     load_hooks_config,
     validate_hooks_config,
 )
@@ -30,8 +28,6 @@ from ..core.orchestrator import (
     memory_callees,
     memory_contracts,
     memory_context,
-    memory_detect_changes,
-    memory_impact,
     memory_method_walkthrough,
     memory_plan_change,
     memory_query,
@@ -347,7 +343,7 @@ def run_hook(
                         files=[target],
                     )
                     hook_result["plan"] = plan_result
-                    system_message += f" | Change plan generated"
+                    system_message += " | Change plan generated"
                 if depth == "full":
                     verify_result = memory_verify_checklist(
                         wf,
@@ -356,7 +352,7 @@ def run_hook(
                         files=[target],
                     )
                     hook_result["verify"] = verify_result
-                    system_message += f" | Verify checklist generated"
+                    system_message += " | Verify checklist generated"
                 # Guard mode: block if must-severity rules match
                 if mode == "guard":
                     has_must = any(
@@ -490,23 +486,12 @@ def run_hook(
 
         elif facade == "mc_admin":
             from ..core.artifacts import (
-                append_change_log, archive_task_space, artifact_context,
-                artifact_outline, auto_archive_task_spaces, compact_change_log,
-                create_task_space, get_artifact, list_artifacts, list_task_spaces,
-                resolve_task_space, touch_task_activity, update_artifact,
-                update_task_artifact, update_task_status,
+                artifact_context,
+                artifact_outline, create_task_space, get_artifact, list_artifacts, list_task_spaces,
+                resolve_task_space, update_artifact,
             )
-            from ..core.artifacts import get_task_artifact
             from ..core.orchestrator import (
-                workspace_dashboard, workspace_continuity_dashboard,
-                workspace_model_profile, workspace_handoff_history,
-                memory_write_judge, memory_plan_write, memory_execute_write,
-                memory_backend_query,
-                memory_eval_write_quality, memory_eval_resume, memory_eval_handoff,
-                memory_eval_regression_suite, memory_eval_index_freshness,
-                memory_eval_tool_adoption, memory_eval_context_weight,
-                memory_eval_workflow_orchestration, memory_eval_token_gain,
-                memory_tool_usage_report,
+                workspace_dashboard, workspace_model_profile, memory_write_judge, memory_tool_usage_report,
             )
             from ..core.wiki import generate_skills, generate_wiki
             wf = _get_workspace_file(workspace)

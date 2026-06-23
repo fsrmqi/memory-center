@@ -3,8 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Dict, List
 
-from .orchestrator import load_context, memory_query, workspace_status
-from .store import WorkspaceStore
+from .orchestrator import load_context, workspace_status
 
 
 def generate_wiki(workspace_file: str | Path, output_dir: str | Path | None = None) -> Dict[str, Any]:

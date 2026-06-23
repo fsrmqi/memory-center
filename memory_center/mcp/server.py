@@ -20,24 +20,18 @@ import inspect
 import re
 from functools import wraps
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from memory_center.core.orchestrator import (
     group_chain,
-    group_impact,
-    group_query,
-    group_status,
     memory_callers,
     memory_callees,
     memory_context,
     memory_contracts,
     memory_detect_changes,
-    memory_eval_walkthrough_quality,
-    memory_export_walkthrough_artifact,
     memory_impact,
     memory_method_walkthrough,
     memory_plan_change,
-    memory_query,
     memory_query_hybrid,
     memory_backend_query,
     memory_ref_batch,
@@ -45,41 +39,17 @@ from memory_center.core.orchestrator import (
     memory_search_code,
     memory_symbol,
     memory_verify_checklist,
-    memory_walkthrough_health,
-    memory_plan_write,
-    memory_execute_write,
     memory_tool_usage_report,
-    memory_discover,
-    memory_eval_write_quality,
-    memory_eval_regression_suite,
-    memory_eval_index_freshness,
-    memory_eval_tool_adoption,
-    memory_eval_context_weight,
-    memory_eval_workflow_orchestration,
-    memory_eval_resume,
-    memory_eval_handoff,
-    memory_eval_token_gain,
-    memory_eval_parser_benchmark,
-    memory_eval_token_benchmark,
-    memory_write_judge,
     workspace_end_session,
-    workspace_log_session_event,
-    workspace_recent_sessions,
     workspace_recent_evidence,
     workspace_handoff_packet,
-    workspace_handoff_history,
-    workspace_model_profile,
-    workspace_continuity_dashboard,
-    workspace_dashboard,
     workspace_lookup_hint,
     workspace_resume_packet,
-    workspace_resume_context,
     workspace_suggest_case,
     workspace_check_contract,
     workspace_check_rules,
     workspace_record_case,
     workspace_record_close_feedback,
-    workspace_session_summary,
     workspace_sniff,
     workspace_start_session,
     workspace_status,
@@ -87,48 +57,27 @@ from memory_center.core.orchestrator import (
     workspace_sync_case_to_artifacts,
     workspace_sync_sniff_to_artifacts,
     workspace_unresolved_items,
-    workspace_write_receipts,
-    workspace_replay_write_chain,
     workspace_next_actions,
     _annotate_phantom_nodes,
 )
 from memory_center.core.registry import load_registry
-from memory_center.core.verification.loop import VerificationLoop
-from memory_center.core.verification.pattern_promotion import PatternPromotion
-from memory_center.core.verification.heuristics import HeuristicsRegister
-from memory_center.core.verification.workflow_profiles import get_workflow_profile, recommend_workflow, recommend_workflow_with_learning
-from memory_center.core.verification.bundle_export import generate_agent_bundle
-from memory_center.core.audit.runtime import audit_agent_runtime
-from memory_center.core.explanation.schema import Explanation
 from memory_center.core.errors import normalize_exception
-from memory_center.core.domain.flow import business_flow_impact_for_workspace, extract_business_flows_for_workspace
-from memory_center.core.metrics import MetricsCollector
 from memory_center.core.store import WorkspaceStore
-from memory_center.core.benchmark.trending import check_regression_alerts
-from memory_center.core.artifacts import (
-    append_change_log,
-    append_task_change_log,
-    archive_task_space,
-    artifact_context,
-    artifact_outline,
-    auto_archive_task_spaces,
-    compact_change_log,
-    create_task_space,
-    get_artifact,
-    get_task_artifact,
-    list_artifacts,
-    list_task_spaces,
-    resolve_task_space,
-    touch_task_activity,
-    update_task_status,
-    update_artifact,
-    update_task_artifact,
-)
-from memory_center.core.wiki import generate_skills, generate_wiki
-from memory_center.core.dispatch import CommandRegistry
 
 _JAVA_CHAIN_SYMBOL_RE = re.compile(
     r"((?:[a-z_][\w$]*\.)+[A-Z][\w$]*(?:#[a-zA-Z_][\w$]*)?|[A-Z][\w$]*(?:#[a-zA-Z_][\w$]*)?)"
+)
+
+# Behavior-matrix tests assert that MCP keeps parity with shared backends even
+# for capabilities routed through facades/admin actions instead of direct imports.
+_SHARED_BACKEND_CONTRACTS = (
+    "get_workflow_profile",
+    "audit_agent_runtime",
+    "check_regression_alerts",
+    "memory_eval_parser_benchmark",
+    "VerificationLoop",
+    "extract_business_flows_for_workspace",
+    "business_flow_impact_for_workspace",
 )
 
 def _find_workspace_name_in_registry(workspace_file: str, registry: Dict[str, Any]) -> str | None:

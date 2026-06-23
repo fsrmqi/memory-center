@@ -24,6 +24,7 @@ def test_run_hook_session_start_creates_session_id_file(tmp_path: Path):
     _SESSION_ID_FILE.unlink(missing_ok=True)
     try:
         result = run_hook(ws, "session_start", {"prompt": "test task"})
+        assert result["mode"] == "soft"
         assert _SESSION_ID_FILE.exists()
         session_id = _SESSION_ID_FILE.read_text(encoding="utf-8").strip()
         assert session_id  # session_id should not be empty
@@ -35,6 +36,7 @@ def test_run_hook_session_stop_soft_mode(tmp_path: Path):
     ws = _setup_workspace(tmp_path)
     # First start a session to create the session-id file
     start_result = run_hook(ws, "session_start", {"prompt": "test task"})
+    assert start_result["mode"] == "soft"
     session_id = _SESSION_ID_FILE.read_text(encoding="utf-8").strip()
     assert session_id
     # Then stop it

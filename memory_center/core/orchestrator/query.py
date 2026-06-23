@@ -1,23 +1,20 @@
 from __future__ import annotations
 
 import json
-import copy
 import re
-import subprocess
 from pathlib import Path
 from typing import Any, Dict, List
 
-import yaml
 
-from ..graph import GraphStore, node_id
+from ..graph import GraphStore
 from ..rules import match_rules
 from ..schemas import with_schema
-from ..semantic import semantic_index_stats, semantic_query
+from ..semantic import semantic_query
 from ..ontology import EntityValidator
 from ..observability import observe_operation
 from ..result_types import attach_facade_metadata
 from ..quality import build_quality_summary
-from ..diagnostics import DIAG, diag_entry, safe_reason
+from ..diagnostics import DIAG, diag_entry
 from ..verification.heuristics import apply_candidate_path_learning
 from ..tracking import log_token_gain
 from ..walkthrough import runner as _walkthrough_runner
@@ -31,7 +28,6 @@ from .common import (
     _filter_call_edges,
     _is_compact_view,
     _node_type_priority,
-    _render_ref_label,
     _resolve_memory_ref,
     _rrf,
     load_context,
@@ -781,7 +777,7 @@ def memory_context(
     reasoning: Dict[str, Any] = {"patterns": [], "transitive": [], "risk": []}
     diagnostics: Dict[str, Any] = {}
     try:
-        from ..reasoning.integration import run_reasoning_patterns, summarize_reasoning
+        from ..reasoning.integration import run_reasoning_patterns
         reasoning = run_reasoning_patterns(
             str(workspace_file),
             target_id=node.get("id", ""),
@@ -2052,7 +2048,6 @@ def _compact_focus_edges(edges: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
 
 def _compact_chain_result(result: Dict[str, Any], direction: str, budget: str = "medium") -> Dict[str, Any]:
-    from .common import _budget_limits
 
     limits = _budget_limits(budget)
     target = result.get("target", {}) or {}
@@ -2110,7 +2105,6 @@ def _compact_chain_result(result: Dict[str, Any], direction: str, budget: str = 
 
 
 def _compact_symbol_result(result: Dict[str, Any], budget: str = "medium") -> Dict[str, Any]:
-    from .common import _budget_limits
 
     limits = _budget_limits(budget)
     best = result.get("best_match", {}) or {}
@@ -2155,7 +2149,6 @@ def _compact_symbol_result(result: Dict[str, Any], budget: str = "medium") -> Di
 
 
 def _compact_context_result(result: Dict[str, Any], budget: str = "medium") -> Dict[str, Any]:
-    from .common import _budget_limits
     from ..reasoning.integration import compact_reasoning_view
 
     limits = _budget_limits(budget)

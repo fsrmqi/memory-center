@@ -28,9 +28,6 @@ from .common import (
     MEMORY_LAYER_ORDER,
     SESSION_EVENTS_FILE,
     SESSION_SUMMARIES_FILE,
-    TOOL_WORKSPACE_LOG_SESSION_EVENT,
-    TOOL_WORKSPACE_SYNC_CASE_ARTIFACTS,
-    TOOL_WORKSPACE_SYNC_SNIFF_ARTIFACTS,
     _build_sniff_auto_sync_recommendation,
     _build_sniff_source_refs,
     _is_compact_view,
@@ -367,7 +364,6 @@ def workspace_dashboard(
     budget: str = "medium",
 ) -> Dict[str, Any]:
     # Lazy import to avoid circular dependency with .resume and .eval
-    from .resume import workspace_resume_packet, workspace_next_actions, workspace_unresolved_items, workspace_handoff_history
     from .eval import memory_eval_write_quality, memory_eval_resume
 
     from ..timeline import timeline_query

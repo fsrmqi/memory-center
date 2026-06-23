@@ -12,12 +12,9 @@ Key improvements over 2.x:
 from __future__ import annotations
 
 import json
-import queue
 import sqlite3
-import threading
-from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Dict, Generator, List, Optional
+from typing import Any
 
 from .pool import SQLitePool
 

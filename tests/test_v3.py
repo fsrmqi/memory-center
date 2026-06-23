@@ -14,8 +14,6 @@ Covers:
 from __future__ import annotations
 
 import json
-import time
-from pathlib import Path
 
 import pytest
 
@@ -654,7 +652,6 @@ class TestContextPackIntegration:
         src.write_text("\n".join(lines))
 
         # file-index.json maps logical path → abs_path
-        import json
         index_file = ws_dir / "index" / "file-index.json"
         index_file.write_text(json.dumps([{
             "project": "test-svc",
@@ -668,7 +665,7 @@ class TestContextPackIntegration:
 
     def test_snippets_extracted(self, tmp_path):
         """build() returns code snippets from entrypoints' source files."""
-        from unittest.mock import patch, MagicMock
+        from unittest.mock import patch
         from memory_center.core.context.pack import ContextPackBuilder
 
         ws_yaml, src = self._setup_workspace(tmp_path)
@@ -753,7 +750,6 @@ class TestContextPackIntegration:
         """Snippets are not extracted from .yaml / .md / .json files."""
         from unittest.mock import patch
         from memory_center.core.context.pack import ContextPackBuilder
-        import json
 
         ws_dir = tmp_path / ".memory-center"
         (ws_dir / "index").mkdir(parents=True)
@@ -796,7 +792,6 @@ class TestContextPackIntegration:
         """Multiple nodes in the same file produce only one snippet."""
         from unittest.mock import patch
         from memory_center.core.context.pack import ContextPackBuilder
-        import json
 
         ws_dir = tmp_path / ".memory-center"
         (ws_dir / "index").mkdir(parents=True)

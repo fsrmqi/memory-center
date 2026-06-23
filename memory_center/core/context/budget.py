@@ -5,7 +5,7 @@ packs so they fit within the model's context window.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Dict, List
 
 

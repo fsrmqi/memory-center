@@ -7,10 +7,9 @@ This module implements Phase E of NEXT_PHASE_MASTER_PLAN:
 """
 from __future__ import annotations
 
-import json
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional
 
 from ..store import WorkspaceStore
 from ..quality import build_quality_summary
@@ -34,8 +33,6 @@ def detect_workspace_type(project_root: Path) -> str:
     has_cargo = (project_root / "Cargo.toml").exists()
     has_go_mod = (project_root / "go.mod").exists()
     has_build_sbt = (project_root / "build.sbt").exists()
-    has_dockerfile = (project_root / "Dockerfile").exists()
-    has_compose = (project_root / "docker-compose.yml").exists() or (project_root / "docker-compose.yaml").exists()
     has_workspaces = (project_root / "pnpm-workspace.yaml").exists() or (project_root / "lerna.json").exists()
 
     # Check for Spring Cloud indicators
@@ -577,7 +574,6 @@ def _calculate_overall_health(
     decisions: Dict[str, Any],
 ) -> Dict[str, Any]:
     """Calculate overall project health."""
-    audit_score = audit.get("score", 0)
     decision_count = decisions.get("total_decisions", 0)
 
     # Health factors — unified weights matching audit scoring (5/8/10)

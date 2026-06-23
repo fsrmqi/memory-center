@@ -222,10 +222,12 @@ class TestWeakMatchNotHighConfidence:
         """Partial token match should not produce high confidence."""
         # "User" partially matches "UserFeignClient" but only as token match
         result = _filter_contracts_by_query(FEIGN_CONTRACTS, "User", "feign")
+        assert result
         # "User" is in "UserFeignClient" → interface_exact with 0.95+
         # That's correct because the interface name contains "User"
         # But we should verify no false high confidence from unrelated queries
         result2 = _filter_contracts_by_query(FEIGN_CONTRACTS, "get", "feign")
+        assert result2
         # "get" matches method names → method_exact with 0.85
         # That's also correct
         # The key test: a query that only matches via JSON scan

@@ -17,7 +17,6 @@ from pathlib import Path
 from typing import Any, Dict
 
 from ..diagnostics import DIAG, diag_entry
-from ..explanation import explanation_entry
 
 # Semantic strength constants aligned with ONTOLOGY.md
 SEMANTIC_STRENGTH_FACT = "fact"

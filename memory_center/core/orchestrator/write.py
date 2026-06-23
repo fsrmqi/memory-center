@@ -26,7 +26,6 @@ from .common import (
     load_context,
 )
 from .session import (
-    workspace_end_session,
     workspace_log_session_event,
     workspace_suggest_case,
 )

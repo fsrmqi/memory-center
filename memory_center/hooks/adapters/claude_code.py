@@ -66,7 +66,7 @@ def generate_claude_code_hooks(
                 "type": "prompt",
                 "prompt": prompt_template,
                 "timeout": timeout,
-                "statusMessage": f"Analyzing task type",
+                "statusMessage": "Analyzing task type",
             })
         else:
             # Soft/guard mode: run a shell command via run-hook
