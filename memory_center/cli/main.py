@@ -796,6 +796,51 @@ def parser_status_cmd():
     print(json.dumps(tree_sitter_activation_status(), ensure_ascii=False, indent=2, default=str))
 
 
+@app.command("bench-profile")
+def bench_profile_cmd(
+    workspace: str = typer.Option(..., help="Workspace yaml file."),
+    top: int = typer.Option(50, help="How many top functions to print."),
+    sort_by: str = typer.Option(
+        "cumulative",
+        help="pstats sort key: cumulative | tottime | calls | pcalls.",
+    ),
+    by_module: bool = typer.Option(
+        False,
+        "--by-module/--by-function",
+        help="Also print a module-level rollup (helpful for P1-0 diagnostics).",
+    ),
+    label: str = typer.Option("", help="Free-form tag appended to the .prof filename."),
+):
+    """Profile a full reindex with cProfile and print the hot functions.
+
+    The raw ``.prof`` file is saved under
+    ``$workspace/.memory-center/perf-profiles/`` so it can be re-analysed
+    with ``snakeviz`` / ``pyprof2calltree``. Use this command before
+    designing a perf optimisation so the proposed work targets the
+    actual dominant cost (see ``docs/benchmarks/`` for the original P0
+    motivation).
+    """
+    from memory_center.core.perf import aggregate_by_module, profile_reindex
+
+    workspace_path = Path(workspace).expanduser().resolve()
+    result = profile_reindex(workspace_path, top_n=top, sort_by=sort_by, label=label)
+    print(f"[green]reindex elapsed:[/green] {result.elapsed_s:.2f}s")
+    print(f"[green]pstats:[/green] {result.pstats_path}")
+    print(f"  total_calls={result.total_calls} primitive_calls={result.primitive_calls}")
+    print(f"\n=== top {top} by {sort_by} ===")
+    print(result.top_summary)
+    if by_module:
+        print(f"\n=== top {min(20, top)} by module (cumulative time) ===")
+        rows = aggregate_by_module(result.pstats_path, limit=min(20, top))
+        for row in rows:
+            print(
+                f"{row['cumulative_s']:>8.2f}s  "
+                f"tot={row['tottime_s']:>7.2f}s  "
+                f"calls={row['calls']:>8}  "
+                f"{row['module']}"
+            )
+
+
 @app.command("eval-golden")
 def eval_golden_cmd(
     workspace: str = typer.Option(..., help="Workspace yaml file."),
