@@ -182,6 +182,48 @@ git checkout dev
 
 ---
 
+## 已知限制 / Known Limitations
+
+这份 benchmark **不是**严格意义上的科学测量,它只支撑"P0-3 在 Java-heavy
+大仓上没观测到 wall-clock 收益"这一个结论。下面列出本次测量做不到的事,
+作为后续(P1-0 之后)需要补的 future work。
+
+1. **样本量偏小**:每个分支只有 3 次跑(1 cold + 2 warm)。差异在 5 s
+   以内的结论统计意义有限,但**百分之几的差距对 P0-3 的"5-10x"预测
+   而言已经足够证伪**,所以本次没有继续加样本。
+
+2. **未单独 profile P0-2 multilang pass 的固定开销**:`+~4 s` 的判断
+   是从 total 推断出来的,**没有单独跑一次"只有 P0-1+P0-3,没有 P0-2"
+   的对照**。"P0-2 在纯 Java 仓库上是净负担"这个结论需要补一次精确
+   profile 才能严格成立。如果将来想做,checkout 到 `fd45202` (P0-3 完成、
+   P0-2 未做)再跑一次 benchmark 即可。
+
+3. **没测 query 性能**:P0-3 的 PRAGMA 调优(WAL / 200MB cache / mmap)
+   理论上对 query 友好,但 benchmark 只覆盖 reindex 这一条路径。
+   `mc_lookup` / `callers` / `callees` / `search-code` 这些读路径上
+   PRAGMA 的真实收益**未测量**,只是默认假设它们有用。
+   后续 P0-3 query benchmark 计划:跑 100 次 `mc_lookup` / `callers`
+   /`callees` 取中位数,baseline vs after-P0 对比。
+
+4. **baseline 选的是 `79865c1`,不是分阶段 commit**:这意味着本次 benchmark
+   只能说"P0 三步加在一起的净效果",**无法区分 P0-2 单独贡献 / P0-3
+   单独贡献**。如果将来想分阶段归因,需要 checkout 到 `08b3565`(P0-1
+   后)和 `fd45202`(P0-3 后)各跑一次。
+
+5. **`scripts/bench_p0_ucap.py` 不在 pytest 覆盖里**:它是 one-shot
+   benchmark 工具,没有单元测试。如果将来有人改坏了它,只会在下次跑
+   benchmark 时才发现。这是有意的 trade-off — 给一个一次性脚本配测试
+   是过度工程,但需要意识到这个盲区。
+
+6. **UCAP 工作区是内部闭源仓库**:外部读者无法复现这次测量。"复现方式"
+   段写的命令只对**本机环境 + 有 UCAP 访问权限**的人有效。若需要给社区
+   一份可复现的 benchmark,需要用 `examples/spring-cloud-demo` 之类的
+   公开 fixture 做一份配套 — 但小 fixture 上很难看到 SQLite 写库占比
+   差异(因为 graph.rebuild 在小项目里只有几十毫秒,被 Python overhead
+   完全淹没),所以这种公开 benchmark 的诊断价值有限。
+
+---
+
 ## English Summary
 
 P0 was benchmarked on a real internal Java microservice workspace
