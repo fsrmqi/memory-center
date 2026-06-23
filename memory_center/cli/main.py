@@ -159,15 +159,58 @@ def main_callback(
 
 
 @app.command()
-def init(workspace_root: str = typer.Option(...), name: str = typer.Option("dev-workspace")):
+def init(
+    workspace_root: str = typer.Option(...),
+    name: str = typer.Option("dev-workspace"),
+    detect: bool = typer.Option(
+        True,
+        "--detect/--no-detect",
+        help="Auto-detect service types under workspace-root (default). "
+        "Pass --no-detect to write the legacy Spring template "
+        "(gateway/common-api/common-core).",
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Show what would be written without creating any file.",
+    ),
+):
     """Initialize a .memory-center workspace under a multi-project root."""
-    workspace_file = write_default_workspace(workspace_root, name)
+    workspace_file, report = write_default_workspace(
+        workspace_root, name, detect=detect, dry_run=dry_run
+    )
+    services = report.get("services", [])
+
+    if dry_run:
+        print(f"[yellow]Dry run:[/yellow] {workspace_file}")
+        print(f"  detection_mode={report['detection_mode']} "
+              f"service_count={report['service_count']}")
+        for svc in services:
+            tags = svc.get("tags") or []
+            tag_str = f" tags={tags}" if tags else ""
+            print(f"    - {svc['name']:<20} type={svc['type']} path={svc['path']}{tag_str}")
+        print("Nothing written. Re-run without --dry-run to create the file.")
+        return
+
+    if report.get("already_exists") and not report.get("written"):
+        print(f"[yellow]Workspace already exists:[/yellow] {workspace_file}")
+        print("Leaving the existing file untouched. Edit it manually if needed.")
+        return
+
     store = WorkspaceStore(workspace_file)
     ensure_default_rules(store)
     ensure_default_hooks(store)
     ensure_default_artifacts(workspace_file)
     write_agent_instructions(store, workspace_root)
     print(f"[green]Initialized:[/green] {workspace_file}")
+    if detect:
+        if services:
+            print(f"  Detected {len(services)} service(s):")
+            for svc in services:
+                print(f"    - {svc['name']:<20} type={svc['type']} path={svc['path']}")
+        else:
+            print("  [yellow]No recognizable services detected.[/yellow] "
+                  "Edit workspace.yaml and add entries by hand.")
     print("Edit workspace.yaml services, then run: memory-center reindex --workspace <workspace.yaml>")
 
 
