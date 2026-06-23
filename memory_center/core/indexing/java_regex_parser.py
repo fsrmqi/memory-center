@@ -485,7 +485,7 @@ def _parse_method_calls(
             absolute_method_pos = body_start + m.start("method")
             method = m.group("method")
             key = (absolute_method_pos, "", method)
-            if key in seen or method in ignored_methods:
+            if key in seen or method in ignored_methods or _preceded_by_new_keyword(text, absolute_method_pos):
                 continue
             calls.append(
                 {
@@ -498,6 +498,11 @@ def _parse_method_calls(
                 }
             )
     return calls
+
+
+def _preceded_by_new_keyword(text: str, pos: int) -> bool:
+    prefix = text[max(0, pos - 8):pos]
+    return bool(re.search(r"\bnew\s+$", prefix))
 
 
 def _parse_dto_field_usages(

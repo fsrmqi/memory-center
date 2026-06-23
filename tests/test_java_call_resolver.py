@@ -189,6 +189,21 @@ public class OtherService {
     assert result.target_class == "UnknownService"
 
 
+def test_parser_does_not_treat_constructor_call_as_bare_method_call() -> None:
+    src = """package com.example.order;
+public class OrderFacade {
+    public void submit() {
+        Helper helper = new Helper();
+        helper.run();
+    }
+}
+"""
+    parsed = RegexJavaParser().parse(src, "OrderFacade.java")
+    method_names = {item["method_name"] for item in parsed.method_calls}
+    assert "Helper" not in method_names
+    assert "run" in method_names
+
+
 def test_reindex_persists_resolved_call_metadata_and_filters_low_confidence(tmp_path: Path) -> None:
     service = tmp_path / "svc"
     source_dir = service / "src" / "main" / "java" / "com" / "example"

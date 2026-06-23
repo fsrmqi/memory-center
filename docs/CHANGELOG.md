@@ -8,7 +8,7 @@
 
 ## Unreleased
 
-### CBM-Inspired Evolution P1-1: Java Call Resolver / Java 调用解析器
+### 3.5.10: Java Call Resolver / Java 调用解析器
 
 - 新增 `memory_center/core/indexing/java_call_resolver.py`，基于全工程
   `JavaClassIndex` 将 Java `method_calls` 解析为单一最佳目标，支持
@@ -27,6 +27,8 @@
   wildcard 等低置信边。
 - 修正 chain 去重粒度：类名前缀不同的 `InvoiceService.create` 与
   `MissingService.create` 不再被短方法名 `create` 合并。
+- 本地安装版本提升至 `3.5.10`。本次 review 额外修复裸调用抽取噪音：
+  `new Foo(...)` 不再被误记为 `Foo()` 方法调用。
 - English summary: P1-1 adds a Java call resolver that upgrades method-name
   matching into confidence-scored CALLS_METHOD edges using same-class,
   same-package, import, wildcard import, and static import evidence.

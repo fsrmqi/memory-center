@@ -14,7 +14,7 @@
 - V3 / Next Phase 基础能力已经大量存在。
 - 主要风险不是缺少模块，而是主链路接入、三入口一致性、静默失败、文档与实现状态漂移。
 - 下一阶段应先做收口，再做扩展。
-- 截至 `3.5.9`，基础 Ruff 门禁已经从“历史债务”收敛到可执行分层门禁：`F/E9/I001/B006/B008/B904` 已清零；剩余主要是 Python 语法现代化、少量 bugbear 建议和旧式语句整理。
+- 截至 `3.5.10`，基础 Ruff 门禁已经从“历史债务”收敛到可执行分层门禁：`F/E9/I001/B006/B008/B904` 已清零；Java P1-1 调用解析器已落地，下一步优先把真实场景 golden / precision gate 补齐。
 - 后续开发验收必须继续优先使用真实场景验证脚本；公开 examples 只作为兼容性 smoke 和文档模板，不作为真实体验完成证明。
 
 执行原则：
@@ -184,6 +184,7 @@
 - `3.5.6` 起新增真实场景验收脚本，后续完成说明必须明确真实场景结果或说明未运行原因。
 - `3.5.8` 起 Golden performance gate 支持真实 baseline 不回归语义。
 - `3.5.9` 起 Ruff 基础治理已形成可复用门禁：`F/E9/I001/B006/B008/B904` 通过，剩余 lint 债务不再与运行级错误混在一起描述。
+- `3.5.10` 起 Java `CALLS_METHOD` 不再按方法名随机扩散匹配，改为 same-class / same-package / import / static-import 分层解析，并保留 unresolved 低置信证据。
 
 ## 3. 总体执行路线 / Execution Roadmap
 
@@ -589,11 +590,38 @@
 
 以下 Sprint 是建议组合，不是固定顺序。执行者可以拆分、合并、跳转或重写工作包，优先完成最能改善真实使用体验的事项。
 
-### 12.1 当前推荐顺序（3.5.9 之后）/ Recommended Order After 3.5.9
+### 12.1 当前推荐顺序（3.5.10 之后）/ Recommended Order After 3.5.10
 
 本节覆盖当前最值得继续开发的顺序。旧 Sprint 仍保留在下方作为能力域索引，但实际执行优先看本节。
 
-#### P0：Ruff 现代化分层收口
+#### P0：Java 调用解析真实精度门禁
+
+目标：
+
+- 用用户提供的真实 UCAP 场景沉淀 Java call resolver golden case，不补伪造公开基准。
+- 建立 precision / recall / unresolved-rate 门禁，保证后续 resolver 优化不能比 `3.5.10` 基线更差。
+
+执行顺序：
+
+1. 从真实 walkthrough / chain 查询中抽 10~20 条可人工确认的 Java 调用边。
+   - 覆盖 ServiceImpl、Controller、Feign client wrapper、static helper、same-package service 等高频模式。
+   - 只记录脱敏 anchor、期望边类型、期望 resolution_level 和必要证据，不提交私有路径。
+
+2. 新增真实场景评测入口。
+   - 复用现有 golden benchmark schema，或新增专门的 `java-call-resolution` case loader。
+   - 指标至少包含 high-confidence precision、expected-edge recall、unresolved-rate。
+
+3. 把真实 workspace 验证脚本接入该门禁。
+   - 默认读取用户本地真实 workspace。
+   - 公开 CI 仍只跑 sanitized fixture，真实指标只在本机生成和保存。
+
+完成标准：
+
+- 真实场景 golden 通过，并记录 `3.5.10` 后的 Java resolver 基线。
+- 文档明确哪些 resolution_level 可作为 agent 直接依据，哪些必须 live read 复核。
+- 失败时输出具体 miss/false-positive 边，便于快速修 resolver。
+
+#### P1：Ruff 现代化分层收口
 
 目标：
 
@@ -622,7 +650,7 @@
 - `ruff check --select F,E9,I001,B006,B008,B904 memory_center tests` 继续通过。
 - `pytest -q` 和真实场景验收脚本通过。
 
-#### P1：剩余 bugbear 语义项手工治理
+#### P2：剩余 bugbear 语义项手工治理
 
 目标：
 
@@ -643,7 +671,7 @@
 - 每处修复有语义判断。
 - 相关单测覆盖或至少有 targeted smoke。
 
-#### P2：入口输出体验继续优化
+#### P3：入口输出体验继续优化
 
 目标：
 

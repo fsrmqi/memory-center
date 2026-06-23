@@ -693,9 +693,10 @@ TS:用 `tsserver`(子进程)做同等能力
   - `pyproject.toml` 加 `multilang` extra(5 个 binding + tree-sitter 0.25)
   - 端到端验证 Python 项目 reindex 产出图谱节点/边
   - 47 个新测试通过(30 + 7 + 10),全量套件零回归
-- **P0 三步已全部完成**。下一阶段:P1-1 Java 深度类型解析(import + 同包 +
-  同类 3 级 resolver),将同步把多语言 CALLS 边的 `resolution_level` 从
-  `unresolved` 升级到 `import` / `same-class` 级别。
+- **P1-1 Java 深度类型解析已落地**。当前覆盖 Java `CALLS_METHOD`
+  的 same-class / same-package / import / static-import 分层解析。跨语言
+  `CALLS` 边仍保持 `resolution_level=unresolved`，后续放到 P1-2/P1-3
+  的通用 remote/call edge 抽象中继续演进。
 
 **owner**:cuijq
 **reviewers**:待补
