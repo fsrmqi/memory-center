@@ -4,6 +4,7 @@ import json
 import re
 import statistics
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable
 
@@ -48,6 +49,95 @@ def load_golden_cases(cases_file: str | Path) -> list[GoldenCase]:
     if len(ids) != len(set(ids)):
         raise ValueError("golden case_id values must be unique")
     return cases
+
+
+def load_golden_performance_baseline(path: str | Path) -> Dict[str, Any]:
+    baseline_path = Path(path).expanduser().resolve()
+    data = json.loads(baseline_path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise ValueError("golden performance baseline must be a JSON object")
+    return data
+
+
+def build_golden_performance_baseline(result: Dict[str, Any], *, label: str = "current") -> Dict[str, Any]:
+    summary = result.get("summary", {}) or {}
+    performance = result.get("performance", {}) or {}
+    return {
+        "schema_version": 1,
+        "label": str(label or "current"),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "summary": {
+            "case_count": int(summary.get("case_count", 0) or 0),
+            "anchor_recall": float(summary.get("anchor_recall", 0.0) or 0.0),
+            "edge_recall": float(summary.get("edge_recall", 0.0) or 0.0),
+            "forbidden_hit_rate": float(summary.get("forbidden_hit_rate", 0.0) or 0.0),
+            "agent_invalid_search_suggestion_count": int(summary.get("agent_invalid_search_suggestion_count", 0) or 0),
+            "agent_invalid_search_reduction_rate": float(summary.get("agent_invalid_search_reduction_rate", 0.0) or 0.0),
+        },
+        "performance": {
+            "median_latency_ms": float(performance.get("median_latency_ms", 0.0) or 0.0),
+            "p95_latency_ms": float(performance.get("p95_latency_ms", 0.0) or 0.0),
+            "token_estimate": int(performance.get("token_estimate", 0) or 0),
+        },
+    }
+
+
+def _improvement_pct(baseline_value: float, current_value: float) -> float:
+    if baseline_value <= 0:
+        return 0.0
+    return round((baseline_value - current_value) / baseline_value * 100.0, 2)
+
+
+def compare_golden_performance(
+    current_result: Dict[str, Any],
+    *,
+    baseline: Dict[str, Any] | None,
+    latency_improvement_threshold_pct: float = 15.0,
+    token_improvement_threshold_pct: float = 10.0,
+) -> Dict[str, Any]:
+    current_baseline = build_golden_performance_baseline(current_result, label="current")
+    if not baseline:
+        return {
+            "status": "baseline_missing",
+            "passed": None,
+            "reason": "No 3.2.0-compatible Golden performance baseline was provided.",
+            "current_baseline": current_baseline,
+            "required": {
+                "latency_improvement_pct": latency_improvement_threshold_pct,
+                "token_improvement_pct": token_improvement_threshold_pct,
+            },
+        }
+
+    baseline_perf = baseline.get("performance", {}) or {}
+    current_perf = current_baseline["performance"]
+    base_latency = float(baseline_perf.get("median_latency_ms", 0.0) or 0.0)
+    base_tokens = float(baseline_perf.get("token_estimate", 0.0) or 0.0)
+    current_latency = float(current_perf.get("median_latency_ms", 0.0) or 0.0)
+    current_tokens = float(current_perf.get("token_estimate", 0.0) or 0.0)
+    latency_improvement = _improvement_pct(base_latency, current_latency)
+    token_improvement = _improvement_pct(base_tokens, current_tokens)
+    latency_passed = latency_improvement >= latency_improvement_threshold_pct
+    token_passed = token_improvement >= token_improvement_threshold_pct
+    return {
+        "status": "pass" if latency_passed and token_passed else "fail",
+        "passed": latency_passed and token_passed,
+        "baseline_label": baseline.get("label", ""),
+        "current_baseline": current_baseline,
+        "latency": {
+            "baseline_median_ms": base_latency,
+            "current_median_ms": current_latency,
+            "improvement_pct": latency_improvement,
+            "threshold_pct": latency_improvement_threshold_pct,
+            "passed": latency_passed,
+        },
+        "token": {
+            "baseline_token_estimate": int(base_tokens),
+            "current_token_estimate": int(current_tokens),
+            "improvement_pct": token_improvement,
+            "threshold_pct": token_improvement_threshold_pct,
+            "passed": token_passed,
+        },
+    }
 
 
 def score_golden_case(
@@ -254,6 +344,7 @@ def run_golden_suite(
     cases_file: str | Path,
     *,
     case_runner: CaseRunner | None = None,
+    performance_baseline: Dict[str, Any] | str | Path | None = None,
 ) -> Dict[str, Any]:
     cases = load_golden_cases(cases_file)
     runner = case_runner or _default_case_runner(workspace_file)
@@ -311,7 +402,7 @@ def run_golden_suite(
             and invalid_search_reduction_rate >= 0.5
         ),
     }
-    return {
+    result = {
         "schema_version": 1,
         "summary": summary,
         "performance": {
@@ -321,3 +412,9 @@ def run_golden_suite(
         },
         "cases": case_results,
     }
+    if isinstance(performance_baseline, (str, Path)):
+        baseline = load_golden_performance_baseline(performance_baseline)
+    else:
+        baseline = performance_baseline
+    result["performance_gate"] = compare_golden_performance(result, baseline=baseline)
+    return result

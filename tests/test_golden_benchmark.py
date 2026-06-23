@@ -7,8 +7,11 @@ import pytest
 from typer.testing import CliRunner
 
 from memory_center.core.benchmark.golden import (
+    build_golden_performance_baseline,
+    compare_golden_performance,
     evaluate_agent_guidance,
     extract_logical_evidence,
+    load_golden_performance_baseline,
     load_golden_cases,
     run_golden_suite,
     score_golden_case,
@@ -93,6 +96,8 @@ def test_run_golden_suite_reports_stable_quality_and_latency(tmp_path: Path) -> 
     assert first["summary"]["agent_invalid_search_suggestion_count"] == 0
     assert first["summary"]["agent_invalid_search_reduction_rate"] >= 0.5
     assert first["cases"][0]["agent_guidance"]["completion_stop_signal"] is True
+    assert first["performance_gate"]["status"] == "baseline_missing"
+    assert first["performance_gate"]["current_baseline"]["performance"]["token_estimate"] > 0
     assert first["summary"] == second["summary"]
 
 
@@ -122,6 +127,55 @@ def test_agent_guidance_counts_only_positive_invalid_search_advice() -> None:
         "next_actions[2]: run sed -n 1,200p on guessed files",
     ]
     assert guidance["invalid_search_reduction_rate"] == 0.0
+
+
+def test_golden_performance_gate_reports_missing_baseline_without_failing() -> None:
+    current = {
+        "summary": {"anchor_recall": 1.0, "edge_recall": 1.0},
+        "performance": {"median_latency_ms": 120.0, "token_estimate": 900},
+    }
+
+    gate = compare_golden_performance(current, baseline=None)
+
+    assert gate["status"] == "baseline_missing"
+    assert gate["passed"] is None
+    assert gate["current_baseline"]["performance"]["median_latency_ms"] == 120.0
+    assert gate["current_baseline"]["performance"]["token_estimate"] == 900
+
+
+def test_golden_performance_gate_scores_latency_and_token_improvement(tmp_path: Path) -> None:
+    current = {
+        "summary": {"anchor_recall": 1.0, "edge_recall": 1.0},
+        "performance": {"median_latency_ms": 80.0, "token_estimate": 700},
+    }
+    baseline = {
+        "schema_version": 1,
+        "label": "v3.2.0",
+        "performance": {"median_latency_ms": 100.0, "token_estimate": 1000},
+    }
+    baseline_path = tmp_path / "baseline.json"
+    baseline_path.write_text(json.dumps(baseline), encoding="utf-8")
+
+    gate = compare_golden_performance(current, baseline=load_golden_performance_baseline(baseline_path))
+
+    assert gate["status"] == "pass"
+    assert gate["passed"] is True
+    assert gate["latency"]["improvement_pct"] == 20.0
+    assert gate["token"]["improvement_pct"] == 30.0
+
+
+def test_golden_performance_baseline_is_portable() -> None:
+    result = {
+        "summary": {"case_count": 1, "anchor_recall": 1.0, "edge_recall": 1.0},
+        "performance": {"median_latency_ms": 80.0, "p95_latency_ms": 90.0, "token_estimate": 700},
+        "cases": [{"payload": {"absolute_file_path": "/private/path/Demo.java"}}],
+    }
+
+    baseline = build_golden_performance_baseline(result, label="current")
+
+    assert set(baseline) == {"schema_version", "label", "created_at", "summary", "performance"}
+    assert "cases" not in baseline
+    assert "path" not in json.dumps(baseline, ensure_ascii=False).lower()
 
 
 def test_extract_logical_evidence_infers_walkthrough_edges_and_method_anchors() -> None:
@@ -176,9 +230,10 @@ def test_eval_golden_cli_command_dispatches_suite(monkeypatch: pytest.MonkeyPatc
     cases = tmp_path / "cases.yaml"
     cases.write_text("cases:\n  - case_id: c1\n    query: Entry#run\n    mode: walkthrough\n    expected_anchors: []\n    expected_edges: []\n", encoding="utf-8")
 
-    def fake_run(workspace_file: str | Path, cases_file: str | Path) -> dict:
+    def fake_run(workspace_file: str | Path, cases_file: str | Path, performance_baseline=None) -> dict:
         assert Path(workspace_file) == workspace
         assert Path(cases_file) == cases
+        assert performance_baseline is None
         return {"summary": {"passed": True}, "cases": []}
 
     monkeypatch.setattr(benchmark_module, "run_golden_suite", fake_run)
@@ -195,9 +250,10 @@ def test_eval_golden_admin_action_dispatches_suite(monkeypatch: pytest.MonkeyPat
     cases = tmp_path / "cases.yaml"
     cases.write_text("cases:\n  - case_id: c1\n    query: Entry#run\n    mode: walkthrough\n    expected_anchors: []\n    expected_edges: []\n", encoding="utf-8")
 
-    def fake_run(workspace_file: str | Path, cases_file: str | Path) -> dict:
+    def fake_run(workspace_file: str | Path, cases_file: str | Path, performance_baseline=None) -> dict:
         assert Path(workspace_file) == workspace
         assert Path(cases_file) == cases
+        assert performance_baseline is None
         return {"summary": {"passed": True}, "cases": []}
 
     monkeypatch.setattr(benchmark_module, "run_golden_suite", fake_run)
@@ -216,9 +272,10 @@ def test_eval_golden_http_route_dispatches_suite(monkeypatch: pytest.MonkeyPatch
     cases = tmp_path / "cases.yaml"
     cases.write_text("cases:\n  - case_id: c1\n    query: Entry#run\n    mode: walkthrough\n    expected_anchors: []\n    expected_edges: []\n", encoding="utf-8")
 
-    def fake_run(workspace_file: str | Path, cases_file: str | Path) -> dict:
+    def fake_run(workspace_file: str | Path, cases_file: str | Path, performance_baseline=None) -> dict:
         assert Path(workspace_file) == workspace
         assert Path(cases_file) == cases
+        assert performance_baseline is None
         return {"summary": {"passed": True}, "cases": []}
 
     monkeypatch.setattr(benchmark_module, "run_golden_suite", fake_run)

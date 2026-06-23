@@ -114,7 +114,8 @@ def register_analysis_routes(registry: CommandRegistry) -> None:
     def _eval_golden(rp: RouteParams) -> Dict[str, Any]:
         from memory_center.core import benchmark as benchmark_module
 
-        return benchmark_module.run_golden_suite(rp.workspace(), rp.require('cases'))
+        baseline = rp.get("baseline", "")
+        return benchmark_module.run_golden_suite(rp.workspace(), rp.require('cases'), performance_baseline=baseline or None)
 
     registry.register("/workspace/eval-golden", _eval_golden)
 

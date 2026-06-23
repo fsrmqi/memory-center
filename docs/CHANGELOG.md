@@ -8,6 +8,14 @@
 
 ## Unreleased
 
+### 3.5.5: Golden Performance Gate / Golden 性能门禁
+
+- Golden Benchmark 新增 `performance_gate`，支持传入可选性能 baseline，对 `median_latency_ms` 和 `token_estimate` 计算改善率。
+- CLI `eval-golden` 和 HTTP `/workspace/eval-golden` 新增兼容型可选 `baseline` 参数；不传 baseline 时返回 `baseline_missing` 和可保存的当前 baseline 快照，不伪造历史对比通过。
+- 新增 portable baseline 生成函数，只保留 summary/performance 指标，不包含 cases、payload、文件路径或源码内容。
+
+English summary: Golden Benchmark now has an optional performance gate for latency and token improvements. Missing historical baselines are reported explicitly with a portable current snapshot.
+
 ### 3.5.4: Golden Agent Guidance Gate / Golden Agent 建议门禁
 
 - Golden Benchmark 新增 `agent_guidance` 指标，统计完整链路结果中是否仍存在鼓励全局 `find/grep/rg --files/sed/IDEA search` 的无效搜索建议。

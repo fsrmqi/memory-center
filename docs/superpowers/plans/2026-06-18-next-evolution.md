@@ -385,13 +385,14 @@ Result / 结果（2026-06-23）:
 - [x] forbidden hit rate `= 0`
 - [x] Golden agent invalid search suggestion count `= 0`
 - [x] Golden agent invalid search reduction rate `>= 0.50`
-- [ ] walkthrough median latency 相比 3.2.0 基线改善 `>= 15%`
-- [ ] compact token 相比 3.2.0 基线改善 `>= 10%`
+- [ ] walkthrough median latency 相比 3.2.0 基线改善 `>= 15%`（已实现 gate；缺可信 3.2.0 Golden baseline，暂不伪造通过）
+- [ ] compact token 相比 3.2.0 基线改善 `>= 10%`（已实现 gate；缺可信 3.2.0 Golden baseline，暂不伪造通过）
 - [ ] 不提交真实 workspace 的 `.memory-center/index`、memory、源码或绝对路径
 
 验证记录（2026-06-23）:
-- 公开 Golden：case_count `2`，anchor recall `1.0`，edge recall `1.0`，forbidden hit rate `0.0`，agent invalid search suggestion count `0`，agent invalid search reduction rate `1.0`，median latency `107.227ms`，token estimate `10694`。
-- 真实 UCAP Golden：case_count `1`，anchor recall `1.0`，edge recall `1.0`，forbidden hit rate `0.0`，agent invalid search suggestion count `0`，agent invalid search reduction rate `1.0`，median latency `2866.888ms`，token estimate `60850`。
+- 公开 Golden：case_count `2`，anchor recall `1.0`，edge recall `1.0`，forbidden hit rate `0.0`，agent invalid search suggestion count `0`，agent invalid search reduction rate `1.0`，median latency `101.523ms`，p95 latency `117.05ms`，token estimate `10693`，performance gate `baseline_missing`。
+- 真实 UCAP Golden：case_count `1`，anchor recall `1.0`，edge recall `1.0`，forbidden hit rate `0.0`，agent invalid search suggestion count `0`，agent invalid search reduction rate `1.0`，median latency `2980.213ms`，p95 latency `2980.213ms`，token estimate `60850`，performance gate `baseline_missing`。
+- 已新增 Golden `performance_gate`：传入 3.2.0-compatible baseline JSON 时自动计算 latency/token 改善率；未传 baseline 时输出 `current_baseline` 快照供后续保存，不把历史对比项标记为完成。
 
 ## 非目标
 

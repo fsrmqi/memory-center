@@ -726,11 +726,12 @@ def eval_parser_benchmark_cmd(
 def eval_golden_cmd(
     workspace: str = typer.Option(..., help="Workspace yaml file."),
     cases: str = typer.Option(..., help="Golden cases yaml file."),
+    baseline: str = typer.Option("", help="Optional Golden performance baseline JSON file."),
 ):
     """Run Golden Benchmark against a workspace and a portable cases file."""
     from memory_center.core import benchmark as benchmark_module
 
-    print(json.dumps(benchmark_module.run_golden_suite(workspace, cases), ensure_ascii=False, indent=2, default=str))
+    print(json.dumps(benchmark_module.run_golden_suite(workspace, cases, performance_baseline=baseline or None), ensure_ascii=False, indent=2, default=str))
 
 
 @app.command("eval-token-benchmark-save")
