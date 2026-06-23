@@ -379,9 +379,10 @@ def callers_cmd(
     project: str = typer.Option("", help="Filter by project name for disambiguation."),
     view: str = typer.Option("full", help="full|compact"),
     budget: str = typer.Option("medium", help="small|medium|large"),
+    min_confidence: float = typer.Option(0.85, help="Minimum edge confidence; use 0 to include unresolved calls."),
 ):
     """Find upstream callers for one symbol."""
-    print(memory_callers(workspace, symbol, depth=depth, limit=limit, project=project, view=view, budget=budget))
+    print(memory_callers(workspace, symbol, depth=depth, limit=limit, project=project, view=view, budget=budget, min_confidence=min_confidence))
 
 
 @app.command("callees")
@@ -393,9 +394,10 @@ def callees_cmd(
     project: str = typer.Option("", help="Filter by project name for disambiguation."),
     view: str = typer.Option("full", help="full|compact"),
     budget: str = typer.Option("medium", help="small|medium|large"),
+    min_confidence: float = typer.Option(0.85, help="Minimum edge confidence; use 0 to include unresolved calls."),
 ):
     """Find downstream callees for one symbol."""
-    print(memory_callees(workspace, symbol, depth=depth, limit=limit, project=project, view=view, budget=budget))
+    print(memory_callees(workspace, symbol, depth=depth, limit=limit, project=project, view=view, budget=budget, min_confidence=min_confidence))
 
 
 @app.command("method-walkthrough")

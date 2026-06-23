@@ -20,7 +20,10 @@ class RegexJavaParser:
     def parse(self, text: str, file_path: str) -> JavaParseResult:
         cleaned = _strip_comments(text)
         package = _first_group(r"package\s+([\w\.]+)\s*;", cleaned)
-        imports = re.findall(r"import\s+([\w\.\*]+)\s*;", cleaned)
+        imports = [
+            f"{'static ' if static else ''}{target}"
+            for static, target in re.findall(r"import\s+(static\s+)?([\w\.\*]+)\s*;", cleaned)
+        ]
         classes, class_lines = _parse_type_declarations(cleaned, ("class", "enum", "record"))
         interfaces, interface_lines = _parse_type_declarations(cleaned, ("interface",))
         annotations = sorted(set(re.findall(r"@(\w+)(?:\(|\s|\n)", cleaned)))
@@ -175,8 +178,18 @@ def _parse_method_spans(text: str) -> list[dict[str, Any]]:
     )
     spans: list[dict[str, Any]] = []
     for match in pattern.finditer(text):
+        body_start = match.end()
         end = _matching_brace_end(text, match.end() - 1)
-        spans.append({"name": match.group(1), "params": match.group(2), "start": match.start(), "end": end, "line": _line_of(text, match.start())})
+        spans.append(
+            {
+                "name": match.group(1),
+                "params": match.group(2),
+                "start": match.start(),
+                "body_start": body_start,
+                "end": end,
+                "line": _line_of(text, match.start()),
+            }
+        )
     return spans
 
 
@@ -441,15 +454,19 @@ def _parse_method_calls(
     field_types: dict[str, str],
 ) -> list[dict[str, Any]]:
     calls: list[dict[str, Any]] = []
-    pattern = re.compile(r"(?P<receiver>\b[a-zA-Z_]\w*)\s*\.\s*(?P<method>[a-zA-Z_]\w*)\s*\(", re.M)
+    qualified_pattern = re.compile(r"(?P<receiver>\b[a-zA-Z_]\w*)\s*\.\s*(?P<method>[a-zA-Z_]\w*)\s*\((?P<args>[^)]*)\)", re.M)
+    bare_pattern = re.compile(r"(?<![\.\w])(?P<method>[a-zA-Z_]\w*)\s*\((?P<args>[^)]*)\)", re.M)
     ignored = {"log", "logger", "System", "Objects", "String", "Collections", "Arrays", "Optional", "Map", "List", "Set"}
-    for m in pattern.finditer(text):
+    ignored_methods = {"stream", "map", "filter", "collect", "of", "empty", "println", "if", "for", "while", "switch", "catch", "return"}
+    seen: set[tuple[int, str, str]] = set()
+    for m in qualified_pattern.finditer(text):
         receiver = m.group("receiver")
         method = m.group("method")
-        if receiver in ignored or method in {"stream", "map", "filter", "collect", "of", "empty", "println"}:
+        if receiver in ignored or method in ignored_methods:
             continue
         owner_method = _owner_method(method_spans, m.start())
         receiver_type = (method_variable_types.get(owner_method or "", {}).get(receiver) or field_types.get(receiver))
+        seen.add((m.start("method"), receiver, method))
         calls.append(
             {
                 "receiver": receiver,
@@ -457,8 +474,29 @@ def _parse_method_calls(
                 "method_name": method,
                 "owner_method": owner_method,
                 "line": _line_of(text, m.start()),
+                "arg_count": len(_split_top_level(m.group("args") or "")),
             }
         )
+    for span in method_spans:
+        body_start = int(span.get("body_start") or span.get("start") or 0)
+        body_end = max(body_start, int(span.get("end") or body_start))
+        body = text[body_start:body_end]
+        for m in bare_pattern.finditer(body):
+            absolute_method_pos = body_start + m.start("method")
+            method = m.group("method")
+            key = (absolute_method_pos, "", method)
+            if key in seen or method in ignored_methods:
+                continue
+            calls.append(
+                {
+                    "receiver": "",
+                    "receiver_type": "",
+                    "method_name": method,
+                    "owner_method": span.get("name"),
+                    "line": _line_of(text, body_start + m.start()),
+                    "arg_count": len(_split_top_level(m.group("args") or "")),
+                }
+            )
     return calls
 
 

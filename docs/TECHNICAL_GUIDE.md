@@ -66,6 +66,9 @@
   - 文件、symbol、API、Feign、MQ、config、semantic 入口
 - `core/indexing/java_regex_parser.py`
   - Java / Spring Cloud 规则解析
+- `core/indexing/java_call_resolver.py`
+  - Java 方法调用解析
+  - 将 `method_calls` 从文本证据提升为带置信度的 `CALLS_METHOD` 边
 - `core/graph.py`
   - graph.db 节点边写入与查询
 
@@ -214,6 +217,43 @@
 6. SQLite BM25 inverted index
 7. optional dense vectors → `VectorIndex`
 8. instructions / hooks / default rules
+
+### 4.1.1 Java call resolution levels / Java 调用解析层级
+
+`reindex_workspace` 在 Java symbol 扫描完成后会构建一次全工程
+`JavaClassIndex`，再由 `JavaCallResolver` 解析每条 `method_calls` 证据。
+解析结果写入 `CALLS_METHOD` 边的 `confidence` 与 `metadata_json`，不会改变
+MCP tool schema。
+
+解析层级：
+
+| resolution_level | confidence | 规则 |
+|---|---:|---|
+| `same_class` | `1.0` | `this.foo()`、`super.foo()`、裸 `foo()` 或 owner class 内方法 |
+| `same_package` | `0.9` | receiver type 在当前 package 内能唯一匹配 class |
+| `import` | `0.85` | receiver type 通过显式 `import com.foo.Bar` 匹配 |
+| `static_import` | `0.85` | 裸调用通过 `import static com.foo.Bar.baz` 匹配 |
+| `wildcard_import` | `0.6` | receiver type 通过 `import com.foo.*` 匹配 |
+| `static_wildcard_import` | `0.6` | 裸调用通过 `import static com.foo.Bar.*` 匹配 |
+| `unresolved` | `0.3` | 保留调用证据,但不绑定到随机同名真实方法 |
+
+边元数据包含：
+
+- `resolution_level`
+- `receiver` / `receiver_type`
+- `target_fqcn` / `target_file`
+- `arg_count` / `matched_signature`
+- `inferred_target`
+- 原始 `evidence`
+
+`memory_callers` / `memory_callees` 默认优先返回 `confidence >= 0.85`
+的边；如果高置信结果为空但存在低置信边，会自动降级返回并在
+`confidence_filter.fallback_to_low_confidence=true` 中标注。CLI 和 HTTP 可通过
+`min_confidence=0` 主动查看 unresolved / wildcard 等低置信边。
+
+Known limitation: 目前 resolver 仍是轻量静态解析，不处理继承分派、泛型实参
+推断、Spring conditional bean、AOP/反射和 MyBatis XML 间接调用。这些应进入
+后续真实场景 golden case，而不是在公开 fixture 里伪造。
 
 ### 4.2 任务上下文链路
 

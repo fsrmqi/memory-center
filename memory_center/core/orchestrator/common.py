@@ -721,24 +721,32 @@ def _filter_call_edges(edges: list[dict[str, Any]], direction: str) -> list[dict
             -(int((item.get("target", {}) or {}).get("line", 0) or 0) > 0),
         )
     )
-    # Deduplicate: keep one entry per method name, prefer class-prefixed and higher confidence
-    seen_names: dict[str, bool] = {}
+    # Deduplicate carefully: resolved Java calls are class-prefixed, so
+    # ``InvoiceService.create`` and ``MissingService.create`` are distinct
+    # targets. Only bare method names are collapsed against a class-prefixed
+    # target with the same short name.
+    seen_full_names: set[str] = set()
+    seen_prefixed_shorts: set[str] = set()
+    bare_by_short: dict[str, dict[str, Any]] = {}
     deduped: list[dict[str, Any]] = []
     for item in filtered:
         tgt = item.get("target", {})
         name = tgt.get("name", "")
         short = name.split(".")[-1] if "." in name else name
         has_class = "." in name
-        if short in seen_names:
-            # Keep the one with class prefix if the existing one doesn't have it
-            if has_class and not seen_names[short]:
-                # Replace: find and remove the old one
-                deduped = [d for d in deduped if (d.get("target", {}).get("name", "").split(".")[-1] if "." in d.get("target", {}).get("name", "") else d.get("target", {}).get("name", "")) != short]
-                deduped.append(item)
-                seen_names[short] = True
-            # Otherwise skip (already have a better or equal entry)
+        if has_class:
+            if name in seen_full_names:
+                continue
+            seen_full_names.add(name)
+            seen_prefixed_shorts.add(short)
+            if short in bare_by_short:
+                deduped = [d for d in deduped if d is not bare_by_short[short]]
+                bare_by_short.pop(short, None)
+            deduped.append(item)
+        elif short in seen_prefixed_shorts or short in bare_by_short:
+            continue
         else:
-            seen_names[short] = has_class
+            bare_by_short[short] = item
             deduped.append(item)
     return deduped
 

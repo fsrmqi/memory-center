@@ -1021,6 +1021,7 @@ def memory_callers(
     project: str = "",
     view: str = "full",
     budget: str = "medium",
+    min_confidence: float = 0.85,
 ) -> dict[str, Any]:
     info = memory_symbol(workspace_file, symbol, limit=8, project=project)
     if not info.get("found"):
@@ -1029,7 +1030,8 @@ def memory_callers(
     et = edge_type_filter or preferred_edge_types("upstream")
     with GraphStore(load_context(workspace_file)[1].graph_db_path) as graph:
         edges = graph.neighbors(node["id"], direction="upstream", max_depth=depth, limit=limit, edge_types=et)
-    callers = _filter_call_edges(edges, direction="upstream")[:limit]
+    filtered_edges = _filter_call_edges(edges, direction="upstream")
+    callers, confidence_filter = _apply_confidence_filter_with_fallback(filtered_edges, min_confidence, limit)
     result = {
         "symbol": symbol,
         "found": True,
@@ -1040,6 +1042,7 @@ def memory_callers(
         "chain_summary": _summarize_chain_edges(callers),
         "project_scope": _build_project_scope(project, node),
         "project_evidence": _build_project_evidence(info.get("matches", []), node, project),
+        "confidence_filter": confidence_filter,
         "lookup": info.get("lookup", {}),
     }
     if _is_compact_view(view):
@@ -1059,6 +1062,7 @@ def memory_callees(
     project: str = "",
     view: str = "full",
     budget: str = "medium",
+    min_confidence: float = 0.85,
 ) -> dict[str, Any]:
     info = memory_symbol(workspace_file, symbol, limit=8, project=project)
     if not info.get("found"):
@@ -1067,7 +1071,8 @@ def memory_callees(
     et = edge_type_filter or preferred_edge_types("downstream")
     with GraphStore(load_context(workspace_file)[1].graph_db_path) as graph:
         edges = graph.neighbors(node["id"], direction="downstream", max_depth=depth, limit=limit, edge_types=et)
-    callees = _filter_call_edges(edges, direction="downstream")[:limit]
+    filtered_edges = _filter_call_edges(edges, direction="downstream")
+    callees, confidence_filter = _apply_confidence_filter_with_fallback(filtered_edges, min_confidence, limit)
     result = {
         "symbol": symbol,
         "found": True,
@@ -1078,6 +1083,7 @@ def memory_callees(
         "chain_summary": _summarize_chain_edges(callees),
         "project_scope": _build_project_scope(project, node),
         "project_evidence": _build_project_evidence(info.get("matches", []), node, project),
+        "confidence_filter": confidence_filter,
         "lookup": info.get("lookup", {}),
     }
     if _is_compact_view(view):
@@ -1086,6 +1092,27 @@ def memory_callees(
         log_token_gain(workspace_file, "memory_callees", budget=budget, model="", raw_tokens=gain["raw_tokens"], compact_tokens=gain["compact_tokens"], view=view)
         return compact
     return result
+
+
+def _apply_confidence_filter_with_fallback(
+    edges: list[dict[str, Any]],
+    min_confidence: float,
+    limit: int,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    threshold = max(0.0, min(1.0, float(min_confidence or 0.0)))
+    status = {
+        "requested_min_confidence": threshold,
+        "applied_min_confidence": threshold,
+        "fallback_to_low_confidence": False,
+    }
+    if threshold <= 0:
+        return edges[:limit], status
+    filtered = [item for item in edges if float(item.get("confidence", 0.0) or 0.0) >= threshold]
+    if filtered or not edges:
+        return filtered[:limit], status
+    status["applied_min_confidence"] = 0.0
+    status["fallback_to_low_confidence"] = True
+    return edges[:limit], status
 
 
 def memory_method_walkthrough(

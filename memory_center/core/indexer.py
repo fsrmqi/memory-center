@@ -8,6 +8,7 @@ from typing import Any
 import yaml
 
 from .graph import GraphEdge, GraphNode, GraphStore, edge_id, node_id
+from .indexing.java_call_resolver import JavaCallResolver, build_java_class_index
 
 # Keep the tree-sitter wrapper active so fallback reasons remain observable.
 try:
@@ -765,12 +766,11 @@ def build_graph_store(config: WorkspaceConfig, store: WorkspaceStore, *, project
         api_lookup = _build_api_lookup(feign_match_pool)
 
         class_locations: dict[str, list[dict[str, Any]]] = {}
-        method_locations: dict[str, list[str]] = {}
         declared_method_ids: set[str] = set()
         field_locations: dict[str, list[str]] = {}
         field_locations_by_class: dict[tuple[str, str], list[str]] = {}
         field_type_by_file: dict[str, dict[str, str]] = {}
-        method_variable_types_by_file: dict[str, dict[str, dict[str, str]]] = {}
+        call_resolver = JavaCallResolver(build_java_class_index(symbols))
 
         for svc in config.services:
             if pf and svc.name not in pf:
@@ -795,7 +795,6 @@ def build_graph_store(config: WorkspaceConfig, store: WorkspaceStore, *, project
         for sym in symbols:
             fid = node_id("File", sym["file"])
             field_type_by_file[sym["file"]] = sym.get("field_types", {})
-            method_variable_types_by_file[sym["file"]] = sym.get("method_variable_types", {})
             class_lines = sym.get("class_lines", {})
             interface_lines = sym.get("interface_lines", {})
             method_lines = sym.get("method_lines", {})
@@ -823,7 +822,6 @@ def build_graph_store(config: WorkspaceConfig, store: WorkspaceStore, *, project
                 for m in sym.get("methods", []):
                     mid = node_id("Method", sym["project"], cls, m)
                     declared_method_ids.add(mid)
-                    method_locations.setdefault(m, []).append(mid)
                     method_line = int(method_lines.get(m) or 0)
                     nodes.append(GraphNode(mid, "Method", f"{cls}.{m}", sym["project"], sym["file"], method_line, metadata={"method": m}))
                     edges.append(GraphEdge(edge_id("DECLARES", cid, mid), cid, mid, "DECLARES", 1.0, {"evidence": "method declaration"}))
@@ -893,7 +891,6 @@ def build_graph_store(config: WorkspaceConfig, store: WorkspaceStore, *, project
             owner_class = owner_classes[0] if owner_classes else Path(sym["file"]).stem
             owner_class_id = node_id("Class", sym["project"], owner_class)
             file_field_types = field_type_by_file.get(sym["file"], {})
-            file_method_variable_types = method_variable_types_by_file.get(sym["file"], {})
 
             for inj in sym.get("bean_injections", []):
                 target_type = inj.get("type")
@@ -913,20 +910,44 @@ def build_graph_store(config: WorkspaceConfig, store: WorkspaceStore, *, project
                 edges.append(GraphEdge(edge_id("INJECTS_BEAN", owner_class_id, target_id), owner_class_id, target_id, "INJECTS_BEAN", 0.82, {"evidence": inj}))
 
             for call in sym.get("method_calls", []):
-                target_method = call.get("method_name")
-                receiver = call.get("receiver")
-                owner_method = call.get("owner_method") or ""
-                receiver_type = call.get("receiver_type") or file_method_variable_types.get(owner_method, {}).get(receiver) or file_field_types.get(receiver)
-                source_id = _source_method_id(sym, owner_class, call) or owner_class_id
-                target_ids = []
-                if receiver_type and class_locations.get(receiver_type):
-                    for loc in class_locations[receiver_type]:
-                        target_ids.append(node_id("Method", loc["project"], receiver_type, target_method))
-                target_ids.extend(method_locations.get(target_method, [])[:3])
-                for tid in sorted(set(target_ids)):
-                    if tid not in declared_method_ids:
-                        nodes.append(GraphNode(tid, "Method", tid.split(":")[-1], metadata={"inferred": True}))
-                    edges.append(GraphEdge(edge_id("CALLS_METHOD", source_id, tid), source_id, tid, "CALLS_METHOD", 0.58 if not receiver_type else 0.68, {"evidence": call, "receiver_type": receiver_type}))
+                resolved = call_resolver.resolve_call(sym, call)
+                source_id = _source_method_id(sym, resolved.source_class or owner_class, call) or owner_class_id
+                target_id = node_id("Method", resolved.target_project, resolved.target_class, resolved.target_method)
+                if target_id not in declared_method_ids:
+                    nodes.append(
+                        GraphNode(
+                            target_id,
+                            "Method",
+                            f"{resolved.target_class}.{resolved.target_method}",
+                            resolved.target_project,
+                            resolved.target_file,
+                            metadata={
+                                "inferred": True,
+                                "resolution_level": resolved.resolution_level,
+                                "target_fqcn": resolved.target_fqcn,
+                            },
+                        )
+                    )
+                edges.append(
+                    GraphEdge(
+                        edge_id("CALLS_METHOD", source_id, target_id),
+                        source_id,
+                        target_id,
+                        "CALLS_METHOD",
+                        resolved.confidence,
+                        {
+                            "evidence": resolved.evidence,
+                            "receiver": resolved.receiver,
+                            "receiver_type": resolved.receiver_type,
+                            "resolution_level": resolved.resolution_level,
+                            "target_fqcn": resolved.target_fqcn,
+                            "target_file": resolved.target_file,
+                            "arg_count": resolved.arg_count,
+                            "matched_signature": resolved.matched_signature,
+                            "inferred_target": resolved.inferred_target,
+                        },
+                    )
+                )
 
             for usage in sym.get("dto_field_usages", []):
                 source_id = _source_method_id(sym, owner_class, usage) or owner_class_id

@@ -1,0 +1,331 @@
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+
+@dataclass(frozen=True)
+class ClassInfo:
+    project: str
+    file: str
+    package: str
+    name: str
+    fqcn: str
+    methods: set[str] = field(default_factory=set)
+    method_signatures: list[dict[str, Any]] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class JavaClassIndex:
+    by_fqcn: dict[str, ClassInfo]
+    by_package_simple: dict[tuple[str, str], ClassInfo]
+    by_simple: dict[str, list[ClassInfo]]
+    by_project_file: dict[tuple[str, str], list[ClassInfo]]
+
+
+@dataclass(frozen=True)
+class ResolvedCall:
+    source_project: str
+    source_file: str
+    source_class: str
+    source_method: str
+    target_project: str
+    target_file: str
+    target_class: str
+    target_method: str
+    target_fqcn: str
+    confidence: float
+    resolution_level: str
+    receiver: str = ""
+    receiver_type: str = ""
+    line: int = 0
+    arg_count: int | None = None
+    matched_signature: str = ""
+    inferred_target: bool = False
+    evidence: dict[str, Any] = field(default_factory=dict)
+
+
+def build_java_class_index(symbols: list[dict[str, Any]]) -> JavaClassIndex:
+    by_fqcn: dict[str, ClassInfo] = {}
+    by_package_simple: dict[tuple[str, str], ClassInfo] = {}
+    by_simple: dict[str, list[ClassInfo]] = {}
+    by_project_file: dict[tuple[str, str], list[ClassInfo]] = {}
+
+    for sym in symbols:
+        package = str(sym.get("package") or "")
+        project = str(sym.get("project") or "")
+        file = str(sym.get("file") or "")
+        methods = {str(item) for item in sym.get("methods", []) if item}
+        signatures = list(sym.get("method_signatures", []) or [])
+        for name in list(sym.get("classes", []) or []) + list(sym.get("interfaces", []) or []):
+            class_name = str(name or "").strip()
+            if not class_name:
+                continue
+            fqcn = f"{package}.{class_name}" if package else class_name
+            info = ClassInfo(
+                project=project,
+                file=file,
+                package=package,
+                name=class_name,
+                fqcn=fqcn,
+                methods=methods,
+                method_signatures=signatures,
+            )
+            by_fqcn[fqcn] = info
+            by_package_simple[(package, class_name)] = info
+            by_simple.setdefault(class_name, []).append(info)
+            by_project_file.setdefault((project, file), []).append(info)
+
+    return JavaClassIndex(
+        by_fqcn=by_fqcn,
+        by_package_simple=by_package_simple,
+        by_simple=by_simple,
+        by_project_file=by_project_file,
+    )
+
+
+class JavaCallResolver:
+    """Resolve Java method-call evidence to a single best target.
+
+    The resolver is intentionally compiler-light: it uses facts already
+    extracted during indexing and applies deterministic fallbacks from
+    highest to lowest precision.
+    """
+
+    def __init__(self, class_index: JavaClassIndex):
+        self.class_index = class_index
+
+    def resolve_call(self, owner_symbol: dict[str, Any], call: dict[str, Any]) -> ResolvedCall:
+        owner = self._owner_class(owner_symbol)
+        target_method = str(call.get("method_name") or "")
+        receiver = str(call.get("receiver") or "")
+        owner_method = str(call.get("owner_method") or "")
+        receiver_type = self._receiver_type(owner_symbol, call)
+        arg_count = _safe_int_or_none(call.get("arg_count"))
+
+        candidates: list[tuple[ClassInfo, str, float]] = []
+        candidates.extend(self._same_class_candidates(owner, receiver, receiver_type, target_method))
+        candidates.extend(self._static_import_candidates(owner_symbol, receiver, target_method))
+        candidates.extend(self._explicit_import_candidates(owner_symbol, receiver_type, receiver, target_method))
+        candidates.extend(self._same_package_candidates(owner_symbol, receiver_type, receiver, target_method))
+        candidates.extend(self._wildcard_import_candidates(owner_symbol, receiver_type, receiver, target_method))
+
+        for info, level, confidence in candidates:
+            if target_method in info.methods:
+                return self._resolved(owner_symbol, owner, call, info, level, confidence, arg_count)
+
+        fallback_class = receiver_type or _class_like_receiver(receiver) or "unknown"
+        return ResolvedCall(
+            source_project=str(owner_symbol.get("project") or ""),
+            source_file=str(owner_symbol.get("file") or ""),
+            source_class=owner.name,
+            source_method=owner_method,
+            target_project=str(owner_symbol.get("project") or ""),
+            target_file="",
+            target_class=fallback_class,
+            target_method=target_method,
+            target_fqcn=fallback_class,
+            confidence=0.3,
+            resolution_level="unresolved",
+            receiver=receiver,
+            receiver_type=receiver_type,
+            line=int(call.get("line") or 0),
+            arg_count=arg_count,
+            inferred_target=True,
+            evidence=dict(call),
+        )
+
+    def _resolved(
+        self,
+        owner_symbol: dict[str, Any],
+        owner: ClassInfo,
+        call: dict[str, Any],
+        info: ClassInfo,
+        level: str,
+        confidence: float,
+        arg_count: int | None,
+    ) -> ResolvedCall:
+        target_method = str(call.get("method_name") or "")
+        return ResolvedCall(
+            source_project=str(owner_symbol.get("project") or ""),
+            source_file=str(owner_symbol.get("file") or ""),
+            source_class=owner.name,
+            source_method=str(call.get("owner_method") or ""),
+            target_project=info.project,
+            target_file=info.file,
+            target_class=info.name,
+            target_method=target_method,
+            target_fqcn=info.fqcn,
+            confidence=confidence,
+            resolution_level=level,
+            receiver=str(call.get("receiver") or ""),
+            receiver_type=self._receiver_type(owner_symbol, call),
+            line=int(call.get("line") or 0),
+            arg_count=arg_count,
+            matched_signature=_match_signature(info.method_signatures, target_method, arg_count),
+            inferred_target=False,
+            evidence=dict(call),
+        )
+
+    def _owner_class(self, owner_symbol: dict[str, Any]) -> ClassInfo:
+        project = str(owner_symbol.get("project") or "")
+        file = str(owner_symbol.get("file") or "")
+        classes = self.class_index.by_project_file.get((project, file), [])
+        if classes:
+            return classes[0]
+        class_name = (owner_symbol.get("classes") or owner_symbol.get("interfaces") or [Path(file).stem or "unknown"])[0]
+        package = str(owner_symbol.get("package") or "")
+        fqcn = f"{package}.{class_name}" if package else str(class_name)
+        return ClassInfo(project=project, file=file, package=package, name=str(class_name), fqcn=fqcn)
+
+    def _receiver_type(self, owner_symbol: dict[str, Any], call: dict[str, Any]) -> str:
+        receiver = str(call.get("receiver") or "")
+        owner_method = str(call.get("owner_method") or "")
+        direct = str(call.get("receiver_type") or "")
+        if direct:
+            return _normalize_type_name(direct)
+        method_types = owner_symbol.get("method_variable_types", {}) or {}
+        field_types = owner_symbol.get("field_types", {}) or {}
+        return _normalize_type_name(
+            str((method_types.get(owner_method, {}) or {}).get(receiver) or field_types.get(receiver) or "")
+        )
+
+    def _same_class_candidates(
+        self,
+        owner: ClassInfo,
+        receiver: str,
+        receiver_type: str,
+        target_method: str,
+    ) -> list[tuple[ClassInfo, str, float]]:
+        if receiver in {"", "this", "super"} or receiver_type == owner.name or receiver == owner.name:
+            return [(owner, "same_class", 1.0)]
+        if not receiver and target_method in owner.methods:
+            return [(owner, "same_class", 1.0)]
+        return []
+
+    def _same_package_candidates(
+        self,
+        owner_symbol: dict[str, Any],
+        receiver_type: str,
+        receiver: str,
+        _target_method: str,
+    ) -> list[tuple[ClassInfo, str, float]]:
+        class_name = receiver_type or _class_like_receiver(receiver)
+        package = str(owner_symbol.get("package") or "")
+        info = self.class_index.by_package_simple.get((package, class_name))
+        return [(info, "same_package", 0.9)] if info else []
+
+    def _explicit_import_candidates(
+        self,
+        owner_symbol: dict[str, Any],
+        receiver_type: str,
+        receiver: str,
+        _target_method: str,
+    ) -> list[tuple[ClassInfo, str, float]]:
+        class_name = receiver_type or _class_like_receiver(receiver)
+        if not class_name:
+            return []
+        for imp in _normal_imports(owner_symbol.get("imports", []) or []):
+            if imp.endswith(f".{class_name}"):
+                info = self.class_index.by_fqcn.get(imp)
+                if info:
+                    return [(info, "import", 0.85)]
+        return []
+
+    def _wildcard_import_candidates(
+        self,
+        owner_symbol: dict[str, Any],
+        receiver_type: str,
+        receiver: str,
+        _target_method: str,
+    ) -> list[tuple[ClassInfo, str, float]]:
+        class_name = receiver_type or _class_like_receiver(receiver)
+        if not class_name:
+            return []
+        for package in _wildcard_import_packages(owner_symbol.get("imports", []) or []):
+            info = self.class_index.by_package_simple.get((package, class_name))
+            if info:
+                return [(info, "wildcard_import", 0.6)]
+        return []
+
+    def _static_import_candidates(
+        self,
+        owner_symbol: dict[str, Any],
+        receiver: str,
+        target_method: str,
+    ) -> list[tuple[ClassInfo, str, float]]:
+        if receiver:
+            return []
+        candidates: list[tuple[ClassInfo, str, float]] = []
+        for imp in _static_imports(owner_symbol.get("imports", []) or []):
+            if imp.endswith(".*"):
+                class_fqcn = imp[:-2]
+                info = self.class_index.by_fqcn.get(class_fqcn)
+                if info:
+                    candidates.append((info, "static_wildcard_import", 0.6))
+                continue
+            class_fqcn, _, method = imp.rpartition(".")
+            if method != target_method:
+                continue
+            info = self.class_index.by_fqcn.get(class_fqcn)
+            if info:
+                candidates.append((info, "static_import", 0.85))
+        return candidates
+
+
+def _normal_imports(imports: list[str]) -> list[str]:
+    return [item.strip() for item in imports if item and not item.strip().startswith("static ") and not item.strip().endswith(".*")]
+
+
+def _static_imports(imports: list[str]) -> list[str]:
+    result: list[str] = []
+    for item in imports:
+        value = str(item or "").strip()
+        if value.startswith("static "):
+            result.append(value.removeprefix("static ").strip())
+    return result
+
+
+def _wildcard_import_packages(imports: list[str]) -> list[str]:
+    result: list[str] = []
+    for item in imports:
+        value = str(item or "").strip()
+        if value.startswith("static "):
+            continue
+        if value.endswith(".*"):
+            result.append(value[:-2])
+    return result
+
+
+def _class_like_receiver(receiver: str) -> str:
+    if receiver and receiver[0:1].isupper():
+        return receiver
+    return ""
+
+
+def _normalize_type_name(value: str) -> str:
+    clean = str(value or "").strip()
+    if not clean:
+        return ""
+    clean = clean.split("<", 1)[0].rstrip("[]")
+    return clean.split(".")[-1]
+
+
+def _safe_int_or_none(value: Any) -> int | None:
+    try:
+        if value is None:
+            return None
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _match_signature(signatures: list[dict[str, Any]], method_name: str, arg_count: int | None) -> str:
+    for item in signatures:
+        if item.get("name") != method_name:
+            continue
+        parameter_types = item.get("parameter_types", []) or []
+        if arg_count is None or len(parameter_types) == arg_count:
+            return str(item.get("identity") or "")
+    return ""

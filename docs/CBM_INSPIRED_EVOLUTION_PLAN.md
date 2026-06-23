@@ -32,7 +32,7 @@
 | P0-3 | SQLite 索引性能优化(PRAGMA + 批写) | 统一 PRAGMA 配置 + 修隐藏 bug;reindex wall-clock 收益在 Java-heavy 大仓**未观测到**(见 [P0_UCAP_REAL_BENCHMARK.md](./benchmarks/P0_UCAP_REAL_BENCHMARK.md)) | 1~2 天 | 低 |
 | **P1-0** | **Java 解析阶段瓶颈定位**(cProfile + 真实仓 → 找出 tree-sitter parse / 数据拼装 / 串行 谁是真热点) | 真正能动到 reindex wall-clock 的前置;已完成,见 [P1_0_JAVA_PARSING_PROFILE.md](./benchmarks/P1_0_JAVA_PARSING_PROFILE.md) | 2~3 天 | 低 |
 | **P1-0.5** | **基于 P1-0 报告的针对性优化**(关闭 Java parser 双轨 + 替换 dataclasses.asdict) | 预计 reindex 130s → 60-90s | 2~3 天 | 中 |
-| P1-1 | Java 深度类型解析(import + 同包 + 同类 3 级 resolver) | 调用边准确率从 ~60% 到 ~85% | 1 周 | 中 |
+| **P1-1** | **Java 深度类型解析(import + 同包 + 同类 resolver)** | **已实现 resolver + CALLS_METHOD 置信度元数据;真实 golden 精度集待补** | 1 周 | 中 |
 | P1-2 | 跨服务边抽象化(RemoteCallEdge / ChannelEdge / ProtocolContract) | 通用化 Feign/MQ,可扩 gRPC | 1~2 周 | 中 |
 | P1-3 | gRPC + 通用 HTTP + 通用 MQ detector | 跨进程边覆盖非 Spring 项目 | 1 周 | 中 |
 | P2-1 | `.memory-center/graph.db.zst` 团队共享产物 | 团队 onboarding 跳过全量索引 | 3 天 | 低 |
@@ -300,6 +300,10 @@ P0-3 的真实价值不在 wall-clock,而在:
 
 ## P1-1:Java 深度类型解析(3 级 call resolver)
 
+**状态**:已实现核心 resolver、graph 写库和 callers/callees 默认置信度过滤。
+未伪造 `tests/golden` 100 条调用边；真实精度集应基于后续用户提供的真实场景
+沉淀。
+
 ### 目标
 Java 调用边从"按方法名匹配"(假阳性多)升级为"按 `import + 同包 + 同类` 三级解析"。
 准确率目标:中型 Spring 项目调用边正确率 ≥ 85%(由 `tests/golden/` 配套金标对照)。
@@ -329,14 +333,14 @@ Java 调用边从"按方法名匹配"(假阳性多)升级为"按 `import + 同�
 5. **`mc_lookup mode=callers/callees`** 默认过滤 `confidence ≥ 0.85`(可参数覆盖)
 
 ### 测试
-- `tests/test_java_call_resolver.py`:6 种 case(same-class / same-package / import / wildcard / static / overload)
-- `tests/golden/spring-cloud-demo/calls.json`:金标 100 条调用边,断言 precision ≥ 85%
-- 性能:单文件 resolve < 5ms
+- `tests/test_java_call_resolver.py`:覆盖 same-class / same-package / import / wildcard / static / overload / unresolved 以及 graph 写库过滤
+- `tests/golden/spring-cloud-demo/calls.json`:待真实场景沉淀,不补伪造基准
+- 性能:resolver 为 in-memory dict 查询,单调用 O(1)~O(imports)
 
 ### 验收标准
-- [ ] `spring-cloud-demo` golden 通过
-- [ ] `mc_lookup callers --symbol OrderService.process` 返回结果按 confidence 排序
-- [ ] 文档:`docs/TECHNICAL_GUIDE.md` 新章节"Java call resolution levels"
+- [ ] 真实场景 golden 通过(待补真实数据集)
+- [x] `memory_callers` / `memory_callees` 默认高置信优先,空结果自动降级;可通过 `min_confidence=0` 查看低置信边
+- [x] 文档:`docs/TECHNICAL_GUIDE.md` 新章节"Java call resolution levels"
 
 ### 提交粒度
 - PR 1:`feat: java call resolver with 3-level fallback`

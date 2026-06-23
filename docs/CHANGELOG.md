@@ -8,6 +8,31 @@
 
 ## Unreleased
 
+### CBM-Inspired Evolution P1-1: Java Call Resolver / Java 调用解析器
+
+- 新增 `memory_center/core/indexing/java_call_resolver.py`，基于全工程
+  `JavaClassIndex` 将 Java `method_calls` 解析为单一最佳目标，支持
+  same-class / same-package / explicit import / wildcard import /
+  static import / overload evidence。
+- `RegexJavaParser` 现在保留 `import static`，并为方法调用记录裸调用与
+  `arg_count`，让 resolver 能处理 `normalize(...)` 这类静态导入调用和
+  重载签名匹配。
+- `build_graph_store` 写入 `CALLS_METHOD` 时使用 resolver 结果，边上记录
+  `resolution_level`、`target_fqcn`、`matched_signature`、`inferred_target`
+  等元数据；无法解析的调用保留为 `confidence=0.3` 的 inferred target，
+  不再误连到随机同名真实方法。
+- `memory_callers` / `memory_callees` 默认优先过滤 `confidence >= 0.85`；
+  若高置信结果为空会自动降级返回低置信边并标注 `confidence_filter`。
+  CLI / HTTP 增加 `min_confidence` 参数，传 `0` 可主动查看 unresolved /
+  wildcard 等低置信边。
+- 修正 chain 去重粒度：类名前缀不同的 `InvoiceService.create` 与
+  `MissingService.create` 不再被短方法名 `create` 合并。
+- English summary: P1-1 adds a Java call resolver that upgrades method-name
+  matching into confidence-scored CALLS_METHOD edges using same-class,
+  same-package, import, wildcard import, and static import evidence.
+  Unresolved calls remain visible as low-confidence inferred targets instead
+  of being bound to unrelated same-name methods.
+
 ### CBM-Inspired Evolution P1-0: Java Parsing Hot-Path Profile / Java 解析瓶颈定位
 
 - 新增 `memory_center/core/perf/` 模块:`profile_reindex` 用 cProfile

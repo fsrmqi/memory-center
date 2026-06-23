@@ -24,10 +24,20 @@ def _parse_int(params: dict, key: str, default: int, min_val: int = 1, max_val: 
     return max(min_val, min(value, max_val))
 
 
+def _parse_float(params: dict, key: str, default: float, min_val: float = 0.0, max_val: float = 1.0) -> float:
+    raw = params.get(key, [str(default)])[0]
+    try:
+        value = float(raw)
+    except (ValueError, TypeError) as exc:
+        raise ValueError(f"{key} must be a number, got: {raw!r}") from exc
+    return max(min_val, min(value, max_val))
+
+
 __all__ = [
     "_require_workspace",
     "_require_one",
     "_parse_int",
+    "_parse_float",
     "RouteParams",
 ]
 

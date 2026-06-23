@@ -57,7 +57,7 @@ from .dependencies import (
     workspace_sync_sniff_to_artifacts,
     workspace_write_receipts,
 )
-from .params import _parse_int
+from .params import _parse_float, _parse_int
 
 
 def register_workspace_routes(registry: CommandRegistry) -> None:
@@ -215,6 +215,7 @@ def register_workspace_routes(registry: CommandRegistry) -> None:
         project=rp.project(),
         view=rp.view(),
         budget=rp.budget(),
+        min_confidence=_parse_float(rp.params, "min_confidence", 0.85),
     ))
     registry.register("/workspace/callees", lambda rp: memory_callees(
         rp.workspace(),
@@ -224,6 +225,7 @@ def register_workspace_routes(registry: CommandRegistry) -> None:
         project=rp.project(),
         view=rp.view(),
         budget=rp.budget(),
+        min_confidence=_parse_float(rp.params, "min_confidence", 0.85),
     ))
     registry.register("/workspace/plan-change", lambda rp: memory_plan_change(
         rp.workspace(),
