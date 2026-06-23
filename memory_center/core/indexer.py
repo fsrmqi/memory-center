@@ -961,6 +961,38 @@ def build_graph_store(config: WorkspaceConfig, store: WorkspaceStore, *, project
                 nodes.append(GraphNode(rid, resource.get("kind", "DataResource"), resource.get("name", "unknown"), sym["project"], sym["file"], metadata=resource))
                 edges.append(GraphEdge(edge_id("USES_DATA_RESOURCE", owner_class_id, rid), owner_class_id, rid, "USES_DATA_RESOURCE", 0.72, {"evidence": resource}))
 
+        # ── Multi-language structural pass ────────────────────────────────
+        #
+        # Non-Java files registered in language_registry get walked by
+        # the cross-language structural parser and contribute generic
+        # graph nodes/edges (Module / Class / Function + DEFINES /
+        # IMPORTS / CALLS). This is the entry point added in P0-2.
+        #
+        # The path filter mirrors the Java collection above so partial
+        # reindex still respects --project / --path scopes.
+        from .indexing import multilang_indexer
+
+        def _multilang_filter(svc, path):
+            if path_filters and not _path_matches_filters(config, svc, path, path_filters):
+                return False
+            return True
+
+        multilang_tasks = multilang_indexer.collect_multilang_files(
+            (s for s in config.services if not project_filter or s.name in project_filter),
+            config,
+            walk_project,
+            _multilang_filter,
+        )
+        for ml_project, ml_rel, ml_path in multilang_tasks:
+            ml_result = multilang_indexer.parse_structural(ml_path)
+            if ml_result is None or ml_result.is_empty():
+                continue
+            ml_nodes, ml_edges = multilang_indexer.emit_graph_elements(
+                ml_project, ml_rel, ml_result
+            )
+            nodes.extend(ml_nodes)
+            edges.extend(ml_edges)
+
         if partial:
             graph_counts = graph.partial_rebuild(nodes, edges, pf, pfs)
         else:

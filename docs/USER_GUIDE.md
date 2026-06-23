@@ -78,6 +78,51 @@ language inferred from `type` (e.g. `type: generic` + `language: scala`).
 - `.memory-center/hooks.yaml`
 - `.memory-center/artifacts/`
 
+### Multi-language structural index / 多语言结构索引
+
+Beyond Java's Spring-aware extractors (Feign / MQ / DTO contracts),
+memory-center can index a generic structural graph for several other
+languages. After the language bindings are installed, ``reindex``
+emits ``Module`` / ``Class`` / ``Function`` nodes plus ``DEFINES`` /
+``IMPORTS`` / ``CALLS`` edges for every supported source file alongside
+the Java pipeline.
+
+除 Java 的 Spring 专属抽取(Feign/MQ/DTO 契约)外,memory-center 还能为多种
+语言构建通用结构图谱。安装对应 binding 后,`reindex` 会和 Java 流水线并行,
+为每个被识别的源文件产出 Module/Class/Function 节点和 DEFINES/IMPORTS/CALLS 边。
+
+| Language | Extensions | Binding |
+|----------|------------|---------|
+| Java | `.java` | `tree-sitter-java` (already required by `[ast]`) |
+| Kotlin | `.kt`, `.kts` | `tree-sitter-kotlin` |
+| Python | `.py`, `.pyi` | `tree-sitter-python` |
+| TypeScript | `.ts` | `tree-sitter-typescript` (`language_typescript`) |
+| TSX | `.tsx` | `tree-sitter-typescript` (`language_tsx`) |
+| JavaScript | `.js`, `.mjs`, `.cjs`, `.jsx` | `tree-sitter-typescript` (`language_tsx`) |
+| Go | `.go` | `tree-sitter-go` |
+
+Install all bindings at once with the `multilang` extra:
+
+```bash
+pip install -e ".[multilang]"
+```
+
+Without these packages reindex still works — non-Java files are
+silently skipped from the structural pass. Run `memory-center doctor`
+to see which bindings are missing.
+
+未安装 `[multilang]` 时,reindex 仍能正常工作,只是非 Java 文件不会进入结构
+索引。运行 `memory-center doctor` 可查看哪些 binding 缺失。
+
+Call edges from the structural pass start at low confidence
+(``confidence=0.3``, ``metadata.resolution_level=unresolved``) because
+the cross-language walker only has textual evidence. P1-1's Java call
+resolver will rewrite these in place with higher-confidence targets
+once it ships.
+
+结构 pass 的调用边初始 `confidence=0.3` 且标记 `resolution_level=unresolved`,
+P1-1 的 Java 调用解析器上线后会就地改写为更高置信度的目标。
+
 ## 3. Reindex / 重建索引
 
 全量：

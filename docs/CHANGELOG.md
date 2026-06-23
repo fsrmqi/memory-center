@@ -8,6 +8,45 @@
 
 ## Unreleased
 
+### CBM-Inspired Evolution P0-2: Multi-Language Structural Indexing / 多语言结构索引
+
+- 新增 `memory_center/core/indexing/parse_result.py` 定义跨语言通用结构:
+  `SymbolSpan` / `CallSite` / `StructuralParseResult`(轻量,4 个核心字段)。
+  Java 现有 `JavaParseResult` (23 字段,含 Spring 专属注解/Bean 注入等)保留,
+  两条路径并行不冲突。
+- 新增 `memory_center/core/indexing/language_registry.py`,注册 7 种语言:
+  java / kotlin / python / typescript / tsx / javascript / go。每个 spec 记录
+  tree-sitter binding 包名 + Language attribute + pip extra 名,`load_language`
+  按需懒加载。
+- 新增 `memory_center/core/indexing/structural_parser.py` 实现
+  `TreeSitterStructuralParser`,每种语言独立 walker:Java/Python/Go/TS/Kotlin
+  各自处理 class / function / import / call。Qualified name 由声明栈累积,
+  receiver 文本单独抽出供 P1-1 解析器使用。
+- 新增 `memory_center/core/indexing/multilang_indexer.py` 作为 indexer 主流程
+  的薄粘合层:`is_structurally_indexable` 决定文件是否走 multilang 通路(Java
+  排除以避免与 Spring 专属抽取双写),`parse_structural` 缓存 parser 实例,
+  `emit_graph_elements` 把结构化结果翻译成 Module / Class / Function 节点
+  + DEFINES / IMPORTS / CALLS 边,沿用 Java 路径的 `node_id` / `edge_id` 约定。
+  CALLS 边初始 confidence=0.3 + `resolution_level=unresolved`,待 P1-1 解析器
+  改写。
+- `indexer.reindex_workspace` 在 Java 收尾后追加多语言结构 pass,partial
+  reindex 的 `--project` / `--path` 过滤继续生效。
+- `pyproject.toml` 引入 `multilang` extra(tree-sitter 0.25 + java/python/
+  typescript/go/kotlin 五个 binding,版本 pin 到下一 minor 防漂)。`all` extra
+  同步扩展。`ast` extra 升级到 0.25 系列。
+- 端到端验证:对一个含 `pyproject.toml` 的 Python 微服务跑 `init --detect`
+  +`reindex`,图谱产出 Module/Class/Function 节点 + DEFINES/IMPORTS/CALLS 边,
+  与 Spring 索引并存。
+- 47 个新测试通过(30 registry + 7 structural + 10 multilang glue),全量
+  套件零回归。
+- English summary: P0-2 lifts the indexer from "Java only" to a 7-language
+  structural index (Java/Kotlin/Python/TypeScript/TSX/JavaScript/Go). The
+  Spring-aware Java pipeline is untouched; non-Java files now flow through
+  a generic tree-sitter walker that emits Module/Class/Function nodes and
+  DEFINES/IMPORTS/CALLS edges. Call edges are intentionally left at low
+  confidence with ``resolution_level=unresolved`` so P1-1's resolver can
+  rewrite them in place without breaking any downstream consumer.
+
 ### CBM-Inspired Evolution P0-3: SQLite Indexing Performance / SQLite 索引性能
 
 - 新增 `memory_center/core/storage/pragmas.py` 作为 SQLite PRAGMA 单一

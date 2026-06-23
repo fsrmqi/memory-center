@@ -646,7 +646,22 @@ TS:用 `tsserver`(子进程)做同等能力
     worker 的旧 bug
   - `doctor` 输出 SQLite PRAGMA 状态,新增 `graph:pragma_wal` 检查
   - 21 个新测试通过(8 + 6 + 7),全量套件零回归
-- 2026-06-23:**下一步 P0-2(多语言 parser registry)**,工程量 3~5 天
+- 2026-06-23:**P0-2 完成**(commits `283cbc0` + `72b05c3` + 本提交)
+  - `parse_result.py` 定义 `SymbolSpan`/`CallSite`/`StructuralParseResult`
+    通用跨语言结构(Java 23 字段仍保留)
+  - `language_registry.py` 注册 7 种语言(java/kotlin/python/typescript/
+    tsx/javascript/go),lazy `load_language()`
+  - `structural_parser.py` 实现五语言 walker(Java/Python/Go/TS/Kotlin),
+    qualified name 由声明栈累积
+  - `multilang_indexer.py` 粘合 reindex 主流程,emit Module/Class/Function
+    节点 + DEFINES/IMPORTS/CALLS 边,CALLS 标记 `resolution_level=unresolved`
+    供 P1-1 重写
+  - `pyproject.toml` 加 `multilang` extra(5 个 binding + tree-sitter 0.25)
+  - 端到端验证 Python 项目 reindex 产出图谱节点/边
+  - 47 个新测试通过(30 + 7 + 10),全量套件零回归
+- **P0 三步已全部完成**。下一阶段:P1-1 Java 深度类型解析(import + 同包 +
+  同类 3 级 resolver),将同步把多语言 CALLS 边的 `resolution_level` 从
+  `unresolved` 升级到 `import` / `same-class` 级别。
 
 **owner**:cuijq
 **reviewers**:待补

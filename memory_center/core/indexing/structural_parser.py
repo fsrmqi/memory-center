@@ -303,11 +303,23 @@ def _walk_python(root: Any, source: str) -> StructuralParseResult:
         elif kind == "import_from_statement":
             module_node = _named_child(node, "module_name")
             module_name = _node_text(module_node, source) if module_node else ""
+            # ``import_from_statement`` children include the module_name
+            # itself (as a dotted_name) and the imported symbols (also
+            # dotted_name children). Tree-sitter Python bindings return a
+            # fresh ``Node`` object per access, so identity (``is``) does
+            # not detect the duplicate — compare byte ranges instead.
+            module_range = (module_node.start_byte, module_node.end_byte) if module_node else None
             for child in node.children:
-                if child.type == "dotted_name" and child is not module_node:
-                    result.imports.append(
-                        f"{module_name}.{_node_text(child, source)}" if module_name else _node_text(child, source)
-                    )
+                if child.type != "dotted_name":
+                    continue
+                if module_range and (child.start_byte, child.end_byte) == module_range:
+                    continue
+                sym = _node_text(child, source)
+                if not sym:
+                    continue
+                result.imports.append(
+                    f"{module_name}.{sym}" if module_name else sym
+                )
         elif kind == "class_definition":
             name_node = _named_child(node, "name")
             if name_node is not None:
