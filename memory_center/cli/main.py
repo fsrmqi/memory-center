@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import pprint
 from pathlib import Path
 from typing import List, Optional
 
@@ -276,7 +277,7 @@ def doctor(workspace: str = typer.Option(...), self_test: bool = typer.Option(Fa
 @app.command("query")
 def query_cmd(workspace: str = typer.Option(...), text: str = typer.Option(...), limit: int = typer.Option(20), project: str = typer.Option("", help="Filter by project name for disambiguation.")):
     """Graph-aware query across services, files, symbols, contracts and memory."""
-    print(memory_query_hybrid(workspace, text, limit, project=project))
+    typer.echo(pprint.pformat(memory_query_hybrid(workspace, text, limit, project=project), width=240, sort_dicts=False))
 
 
 @app.command("search-code")

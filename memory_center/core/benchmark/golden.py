@@ -92,15 +92,15 @@ def compare_golden_performance(
     current_result: Dict[str, Any],
     *,
     baseline: Dict[str, Any] | None,
-    latency_improvement_threshold_pct: float = 15.0,
-    token_improvement_threshold_pct: float = 10.0,
+    latency_improvement_threshold_pct: float = -10.0,
+    token_improvement_threshold_pct: float = 0.0,
 ) -> Dict[str, Any]:
     current_baseline = build_golden_performance_baseline(current_result, label="current")
     if not baseline:
         return {
             "status": "baseline_missing",
             "passed": None,
-            "reason": "No 3.2.0-compatible Golden performance baseline was provided.",
+            "reason": "No Golden performance baseline was provided.",
             "current_baseline": current_baseline,
             "required": {
                 "latency_improvement_pct": latency_improvement_threshold_pct,

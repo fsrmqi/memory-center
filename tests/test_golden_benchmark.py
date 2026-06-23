@@ -164,6 +164,63 @@ def test_golden_performance_gate_scores_latency_and_token_improvement(tmp_path: 
     assert gate["token"]["improvement_pct"] == 30.0
 
 
+def test_golden_performance_gate_accepts_no_regression_against_current_baseline() -> None:
+    current = {
+        "summary": {"anchor_recall": 1.0, "edge_recall": 1.0},
+        "performance": {"median_latency_ms": 100.0, "token_estimate": 1000},
+    }
+    baseline = {
+        "schema_version": 1,
+        "label": "v3.5.7-real-ucap",
+        "performance": {"median_latency_ms": 100.0, "token_estimate": 1000},
+    }
+
+    gate = compare_golden_performance(current, baseline=baseline)
+
+    assert gate["status"] == "pass"
+    assert gate["passed"] is True
+    assert gate["latency"]["improvement_pct"] == 0.0
+    assert gate["token"]["improvement_pct"] == 0.0
+
+
+def test_golden_performance_gate_allows_latency_jitter_but_not_token_growth() -> None:
+    baseline = {
+        "schema_version": 1,
+        "label": "v3.5.7-real-ucap",
+        "performance": {"median_latency_ms": 100.0, "token_estimate": 1000},
+    }
+    current = {
+        "summary": {"anchor_recall": 1.0, "edge_recall": 1.0},
+        "performance": {"median_latency_ms": 108.0, "token_estimate": 1000},
+    }
+
+    gate = compare_golden_performance(current, baseline=baseline)
+
+    assert gate["status"] == "pass"
+    assert gate["passed"] is True
+    assert gate["latency"]["improvement_pct"] == -8.0
+    assert gate["token"]["improvement_pct"] == 0.0
+
+
+def test_golden_performance_gate_rejects_regression_against_current_baseline() -> None:
+    current = {
+        "summary": {"anchor_recall": 1.0, "edge_recall": 1.0},
+        "performance": {"median_latency_ms": 121.0, "token_estimate": 1101},
+    }
+    baseline = {
+        "schema_version": 1,
+        "label": "v3.5.7-real-ucap",
+        "performance": {"median_latency_ms": 100.0, "token_estimate": 1000},
+    }
+
+    gate = compare_golden_performance(current, baseline=baseline)
+
+    assert gate["status"] == "fail"
+    assert gate["passed"] is False
+    assert gate["latency"]["passed"] is False
+    assert gate["token"]["passed"] is False
+
+
 def test_golden_performance_baseline_is_portable() -> None:
     result = {
         "summary": {"case_count": 1, "anchor_recall": 1.0, "edge_recall": 1.0},

@@ -8,6 +8,14 @@
 
 ## Unreleased
 
+### 3.5.8: Real Baseline No-Regression Gate / 真实基线不回归门禁
+
+- Golden `performance_gate` 默认语义调整为“不低于当前真实基线”：token 默认不允许增加，latency 默认允许 `10%` 运行抖动；可通过参数继续设置更严格改善要求。
+- `scripts/verify_real_ucap.sh` 支持 `MEMORY_CENTER_REAL_BASELINE` 和 `MEMORY_CENTER_SAVE_REAL_BASELINE=1`，可把当前已验收真实 UCAP 指标保存为后续性能基线。
+- 文档明确当前 `3.5.7` 真实 UCAP Golden 可作为后续 baseline，后续版本不得低于该基线；基线保存在真实 workspace 本地，不提交私有指标文件。
+
+English summary: real UCAP Golden performance now uses a no-regression baseline by default, with an opt-in path to save the current validated run as the private baseline.
+
 ### 3.5.7: Walkthrough Report Levels / 全链路输出视图分级
 
 - Method walkthrough `report_level` 新增正式三档视图：`summary`、`standard`、`deep`。

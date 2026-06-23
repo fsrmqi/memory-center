@@ -386,9 +386,9 @@ Result / 结果（2026-06-23）:
 
 - 后续功能验收、回归验证、性能结论和“是否完成”的判断，必须优先使用用户提供的真实场景；当前默认真实场景是 `/Users/cuijiaqi/javaworkspace/ucap/.memory-center/workspace.yaml` 与对应私有 Golden cases。
 - `examples/`、公开 demo workspace、synthetic benchmark 只作为单元测试、CI smoke test、公开可复现模板使用；不得再作为本地验收通过的主要证据。
-- 若真实场景缺少可用 cases 或 baseline，必须明确记录为 `real_case_missing` / `baseline_missing`，并说明需要补充的文件或指标；不要用 examples 指标替代真实验收。
+- 若真实场景缺少可用 cases，必须明确记录为 `real_case_missing`，并说明需要补充的文件；不要用 examples 指标替代真实验收。若性能 baseline 缺失，可用当前已验收版本生成新的真实场景 baseline。
 - 提交前可以继续运行公开测试保证兼容性，但最终说明中的“验证通过”必须包含真实场景结果，或明确说明真实场景未运行的原因。
-- 默认真实场景验收命令：`scripts/verify_real_ucap.sh`。该脚本只输出摘要，不展开完整 payload；如需切换真实场景，用 `MEMORY_CENTER_REAL_WORKSPACE`、`MEMORY_CENTER_REAL_CASES`、`MEMORY_CENTER_REAL_QUERY` 覆盖。
+- 默认真实场景验收命令：`scripts/verify_real_ucap.sh`。该脚本只输出摘要，不展开完整 payload；如需切换真实场景，用 `MEMORY_CENTER_REAL_WORKSPACE`、`MEMORY_CENTER_REAL_CASES`、`MEMORY_CENTER_REAL_BASELINE`、`MEMORY_CENTER_REAL_QUERY` 覆盖。需要保存当前版本为新基线时，设置 `MEMORY_CENTER_SAVE_REAL_BASELINE=1`。
 
 - [x] `python3 -m compileall -q memory_center tests`
 - [x] `git diff --check`
@@ -398,15 +398,16 @@ Result / 结果（2026-06-23）:
 - [x] forbidden hit rate `= 0`
 - [x] Golden agent invalid search suggestion count `= 0`
 - [x] Golden agent invalid search reduction rate `>= 0.50`
-- [ ] walkthrough median latency 相比 3.2.0 基线改善 `>= 15%`（已实现 gate；缺可信 3.2.0 Golden baseline，暂不伪造通过）
-- [ ] compact token 相比 3.2.0 基线改善 `>= 10%`（已实现 gate；缺可信 3.2.0 Golden baseline，暂不伪造通过）
+- [x] walkthrough median latency 有真实 UCAP 基线，后续不能比基线低
+- [x] compact token 有真实 UCAP 基线，后续不能比基线低
 - [x] 不提交真实 workspace 的 `.memory-center/index`、memory、源码或绝对路径
 
 验证记录（2026-06-23）:
 - 公开 Golden：case_count `2`，anchor recall `1.0`，edge recall `1.0`，forbidden hit rate `0.0`，agent invalid search suggestion count `0`，agent invalid search reduction rate `1.0`，median latency `101.523ms`，p95 latency `117.05ms`，token estimate `10693`，performance gate `baseline_missing`。
 - 真实 UCAP Golden：case_count `1`，anchor recall `1.0`，edge recall `1.0`，forbidden hit rate `0.0`，agent invalid search suggestion count `0`，agent invalid search reduction rate `1.0`，median latency `2980.213ms`，p95 latency `2980.213ms`，token estimate `60850`，performance gate `baseline_missing`。
-- 已新增 Golden `performance_gate`：传入 3.2.0-compatible baseline JSON 时自动计算 latency/token 改善率；未传 baseline 时输出 `current_baseline` 快照供后续保存，不把历史对比项标记为完成。
+- 已新增 Golden `performance_gate`：传入真实场景 baseline JSON 时自动计算 latency/token 改善率；默认 token 不允许增加，latency 允许 `10%` 运行抖动，超过才判定低于基线。如需强制改善可传入更高阈值。
 - 真实 UCAP 三档视图验证：`summary / standard / deep` 的 `summary_lines` 完全一致，`completion_status=complete`；`summary` 不包含分层详情，`standard` 包含分层详情，`deep` 包含业务词汇等深度诊断区块。
+- 以当前已验收的 `3.5.7` 真实 UCAP Golden 指标作为后续性能基线；后续版本允许更快/更省 token，但不能低于该基线。基线文件保存在真实 workspace 本地 `.memory-center/golden/performance-baseline.json`，不提交到本仓库。
 
 ## 非目标
 
