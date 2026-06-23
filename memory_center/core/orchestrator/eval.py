@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 from ..evals import EvalResultBuilder
 from ..schemas import with_schema
@@ -25,7 +25,7 @@ def memory_eval_write_quality(
     session_id: str = "",
     intent: str = "",
     limit: int = 100,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     config, store = load_context(workspace_file)
     replay = workspace_replay_write_chain(workspace_file, task_id=task_id, session_id=session_id, limit=limit)
     receipts = replay.get("timeline", [])
@@ -68,7 +68,7 @@ def memory_eval_resume(
     session_id: str = "",
     intent: str = "",
     limit: int = 20,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     from .resume import workspace_resume_packet  # lazy import
 
     config, store = load_context(workspace_file)
@@ -103,7 +103,7 @@ def memory_eval_handoff(
     session_id: str = "",
     intent: str = "",
     limit: int = 20,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     from .resume import workspace_handoff_packet  # lazy import
 
     config, store = load_context(workspace_file)
@@ -148,7 +148,7 @@ def memory_eval_regression_suite(
     intent: str = "",
     target_model: str = "codex",
     limit: int = 20,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     config, _ = load_context(workspace_file)
     write_eval = memory_eval_write_quality(workspace_file, task_id=task_id, session_id=session_id, intent=intent, limit=limit)
     resume_eval = memory_eval_resume(workspace_file, task_id=task_id, session_id=session_id, intent=intent, limit=limit)
@@ -185,7 +185,7 @@ def memory_eval_regression_suite(
 def memory_eval_index_freshness(
     workspace_file: str | Path,
     scope: str = "all",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     from .impact import memory_detect_changes  # lazy import
 
     config, store = load_context(workspace_file)
@@ -231,7 +231,7 @@ def memory_eval_index_freshness(
 def memory_eval_tool_adoption(
     workspace_file: str | Path,
     limit: int = 200,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     from .query import memory_tool_usage_report  # lazy import
 
     config, _ = load_context(workspace_file)
@@ -258,7 +258,7 @@ def memory_eval_workflow_orchestration(
     session_id: str = "",
     intent: str = "",
     limit: int = 20,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     from ..evals import eval_workflow_orchestration
     from .session import workspace_recent_evidence
 
@@ -272,7 +272,7 @@ def memory_eval_context_weight(
     workspace_file: str | Path,
     intent: str = "",
     limit: int = 8,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     from .resume import workspace_resume_packet  # lazy import
     from .workspace import workspace_dashboard, workspace_sniff  # lazy import
 
@@ -339,7 +339,7 @@ def memory_eval_token_gain(
     budget: str = "",
     model: str = "",
     limit: int = 200,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Evaluate token savings from compact operations, similar to rtk's gain command."""
     from ..tracking import query_token_gain
 
@@ -376,7 +376,7 @@ def memory_eval_token_benchmark(
     workspace_file: str | Path,
     intent: str = "",
     limit: int = 8,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Run all 7 high-frequency returns at small/medium/large budgets and report token counts.
 
     Follows agentmemory's benchmark pattern: measure actual token impact per function per budget.
@@ -436,7 +436,7 @@ def memory_eval_parser_benchmark(
     *,
     limit: int = 200,
     max_findings: int = 20,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Run a real-workspace comparison between regex and tree-sitter Java parsers."""
     from ..indexing.benchmark import benchmark_java_parsers
 
@@ -452,7 +452,7 @@ def _benchmark_baseline_path(workspace_file: str | Path) -> Path:
     return store.base_dir / "benchmark-baseline.json"
 
 
-def _extract_benchmark_baseline(benchmark_result: Dict[str, Any]) -> Dict[str, Any]:
+def _extract_benchmark_baseline(benchmark_result: dict[str, Any]) -> dict[str, Any]:
     """Extract a storable baseline snapshot from a benchmark result."""
     from datetime import datetime, timezone
     functions = {}
@@ -473,7 +473,7 @@ def memory_eval_token_benchmark_save(
     workspace_file: str | Path,
     intent: str = "",
     limit: int = 8,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Run token benchmark and save the result as a regression baseline."""
     result = memory_eval_token_benchmark(workspace_file, intent=intent, limit=limit)
     baseline = _extract_benchmark_baseline(result)
@@ -501,7 +501,7 @@ def memory_eval_token_benchmark_compare(
     intent: str = "",
     limit: int = 8,
     regression_threshold: int = 15,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Run token benchmark and compare against the stored baseline.
 
     Returns the benchmark result augmented with regression analysis.

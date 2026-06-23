@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 import yaml
 
@@ -31,12 +31,12 @@ def load_workspace_config(path: str | Path) -> WorkspaceConfig:
     )
 
 
-def load_workspace_data(path: str | Path) -> Dict[str, Any]:
+def load_workspace_data(path: str | Path) -> dict[str, Any]:
     config_path = Path(path).expanduser().resolve()
     return yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
 
 
-def write_workspace_data(path: str | Path, data: Dict[str, Any]) -> Path:
+def write_workspace_data(path: str | Path, data: dict[str, Any]) -> Path:
     config_path = Path(path).expanduser().resolve()
     config_path.write_text(yaml.safe_dump(data, allow_unicode=True, sort_keys=False), encoding="utf-8")
     return config_path
@@ -49,7 +49,7 @@ def write_default_workspace(root: str | Path, name: str) -> Path:
     ctx_dir.mkdir(parents=True, exist_ok=True)
     workspace_file = ctx_dir / "workspace.yaml"
     if not workspace_file.exists():
-        data: Dict[str, Any] = {
+        data: dict[str, Any] = {
             "workspace": name,
             "root": str(root_path),
             "language": ["zh-CN", "en-US"],
@@ -70,10 +70,10 @@ def add_workspace_service(
     service_type: str,
     service_name: str | None = None,
     tags: list[str] | None = None,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     data = load_workspace_data(workspace_file)
     services = [item for item in data.get("services", []) if item.get("name") != name]
-    item: Dict[str, Any] = {
+    item: dict[str, Any] = {
         "name": name,
         "path": path,
         "type": service_type,
@@ -87,7 +87,7 @@ def add_workspace_service(
     return {"updated": True, "service": item, "service_count": len(services), "workspace_file": str(Path(workspace_file).expanduser().resolve())}
 
 
-def remove_workspace_service(workspace_file: str | Path, name_or_path: str) -> Dict[str, Any]:
+def remove_workspace_service(workspace_file: str | Path, name_or_path: str) -> dict[str, Any]:
     data = load_workspace_data(workspace_file)
     services = data.get("services", [])
     kept = [item for item in services if item.get("name") != name_or_path and item.get("path") != name_or_path]

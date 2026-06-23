@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 from ..diagnostics import DIAG, diag_entry
 from ..graph import GraphStore
@@ -16,8 +16,13 @@ from ..schemas import with_schema
 from ..semantic import semantic_query
 from ..tracking import log_token_gain
 from ..verification.heuristics import apply_candidate_path_learning
+from ..walkthrough import answer as _wt_answer
+from ..walkthrough import continuations as _wt_continuations
+from ..walkthrough import escalation as _wt_escalation
 from ..walkthrough import operations as _walkthrough_operations
+from ..walkthrough import risks as _wt_risks
 from ..walkthrough import runner as _walkthrough_runner
+from ..walkthrough import symbols as _wt_symbols
 from .common import (
     SESSION_EVENTS_FILE,
     _best_match,
@@ -80,7 +85,7 @@ def _looks_like_class_symbol_query(query: str) -> bool:
     return bool(Path(token).name == token and token[:1].isupper())
 
 
-def _node_matches_symbol_query(node: Dict[str, Any], query: str) -> bool:
+def _node_matches_symbol_query(node: dict[str, Any], query: str) -> bool:
     target = _normalize_symbol_name(query).lower()
     if not target:
         return False
@@ -91,12 +96,12 @@ def _node_matches_symbol_query(node: Dict[str, Any], query: str) -> bool:
     return short == target or name.lower() == target
 
 
-def _has_exact_lookup_source(item: Dict[str, Any]) -> bool:
+def _has_exact_lookup_source(item: dict[str, Any]) -> bool:
     sources = set(item.get("sources", []) or item.get("retrieval_sources", []) or [])
     return bool({"exact", "graph_exact", "graph_token", "sparse_fts", "sparse_bm25", "direct_lookup"} & sources)
 
 
-def _pick_symbol_anchor(items: List[Dict[str, Any]], query: str) -> Dict[str, Any]:
+def _pick_symbol_anchor(items: list[dict[str, Any]], query: str) -> dict[str, Any]:
     exact_classes = [
         item for item in items
         if item.get("node", item).get("type") == "Class"
@@ -115,7 +120,7 @@ def _pick_symbol_anchor(items: List[Dict[str, Any]], query: str) -> Dict[str, An
     return exact_classes[0].get("node", exact_classes[0])
 
 
-def _pick_symbol_declaration_fallback(items: List[Dict[str, Any]], query: str) -> Dict[str, Any]:
+def _pick_symbol_declaration_fallback(items: list[dict[str, Any]], query: str) -> dict[str, Any]:
     declaration_types = {"Class", "FeignClient", "Endpoint", "MQTopic", "MQConsumer", "ConfigKey"}
     exact_declarations = [
         item for item in items
@@ -136,7 +141,7 @@ def _pick_symbol_declaration_fallback(items: List[Dict[str, Any]], query: str) -
     return exact_declarations[0].get("node", exact_declarations[0])
 
 
-def _symbol_rank_bucket(node: Dict[str, Any], query: str, anchor: Dict[str, Any]) -> int:
+def _symbol_rank_bucket(node: dict[str, Any], query: str, anchor: dict[str, Any]) -> int:
     node_type = node.get("type", "")
     same_name = _node_matches_symbol_query(node, query)
     same_file = bool(anchor) and node.get("file_path", "") == anchor.get("file_path", "")
@@ -169,7 +174,7 @@ def _symbol_rank_bucket(node: Dict[str, Any], query: str, anchor: Dict[str, Any]
     return 20
 
 
-def _rerank_symbol_like_matches(items: List[Dict[str, Any]], query: str) -> List[Dict[str, Any]]:
+def _rerank_symbol_like_matches(items: list[dict[str, Any]], query: str) -> list[dict[str, Any]]:
     if not _looks_like_class_symbol_query(query):
         return items
     if not any(
@@ -179,7 +184,7 @@ def _rerank_symbol_like_matches(items: List[Dict[str, Any]], query: str) -> List
         return items
     anchor = _pick_symbol_anchor(items, query)
 
-    def key(item: Dict[str, Any]) -> tuple:
+    def key(item: dict[str, Any]) -> tuple:
         node = item.get("node", item)
         sources = set(item.get("sources", []) or item.get("retrieval_sources", []) or [])
         semantic_only = sources == {"semantic"}
@@ -199,11 +204,11 @@ def _rerank_symbol_like_matches(items: List[Dict[str, Any]], query: str) -> List
     return sorted(items, key=key)
 
 
-def _dedupe_symbol_display_matches(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def _dedupe_symbol_display_matches(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
     if not items:
         return items
 
-    def dedupe_key(item: Dict[str, Any]) -> tuple[str, str, str] | None:
+    def dedupe_key(item: dict[str, Any]) -> tuple[str, str, str] | None:
         node = item.get("node", item)
         node_type = node.get("type", "")
         if node_type not in {"Method", "FeignMethod"}:
@@ -214,7 +219,7 @@ def _dedupe_symbol_display_matches(items: List[Dict[str, Any]]) -> List[Dict[str
             str(node.get("name", "") or ""),
         )
 
-    def type_priority(item: Dict[str, Any]) -> tuple[int, float]:
+    def type_priority(item: dict[str, Any]) -> tuple[int, float]:
         node = item.get("node", item)
         node_type = node.get("type", "")
         priority = {"FeignMethod": 0, "Method": 1}
@@ -223,8 +228,8 @@ def _dedupe_symbol_display_matches(items: List[Dict[str, Any]]) -> List[Dict[str
             -float(item.get("score", item.get("exact_score", 0.0)) or 0.0),
         )
 
-    deduped: List[Dict[str, Any]] = []
-    seen: Dict[tuple[str, str, str], int] = {}
+    deduped: list[dict[str, Any]] = []
+    seen: dict[tuple[str, str, str], int] = {}
     for item in items:
         key = dedupe_key(item)
         if key is None:
@@ -240,11 +245,11 @@ def _dedupe_symbol_display_matches(items: List[Dict[str, Any]]) -> List[Dict[str
     return deduped
 
 
-def _suppress_semantic_only_noise(items: List[Dict[str, Any]], query: str) -> List[Dict[str, Any]]:
+def _suppress_semantic_only_noise(items: list[dict[str, Any]], query: str) -> list[dict[str, Any]]:
     strong_exact_hit = any(_has_exact_lookup_source(item) and _node_matches_symbol_query(item.get("node", item), query) for item in items)
     if not strong_exact_hit:
         return items
-    adjusted: List[Dict[str, Any]] = []
+    adjusted: list[dict[str, Any]] = []
     for item in items:
         copied = dict(item)
         sources = set(copied.get("sources", []) or copied.get("retrieval_sources", []) or [])
@@ -263,7 +268,7 @@ def _rebuild_summary_after_filter(filtered: list, intent: dict) -> dict:
     This rebuilds them so callers see consistent numbers.
     """
     source_counts = {"graph": 0, "sparse": 0, "semantic": 0}
-    type_counts: Dict[str, int] = {}
+    type_counts: dict[str, int] = {}
     for item in filtered:
         for src in item.get("sources", []):
             if "graph" in src:
@@ -374,7 +379,7 @@ def _project_matches(query_project: str, item_project: str) -> bool:
     return False
 
 
-def memory_query(workspace_file: str | Path, query: str, limit: int = 20, node_types: List[str] | None = None, alpha: float | None = None) -> Dict[str, Any]:
+def memory_query(workspace_file: str | Path, query: str, limit: int = 20, node_types: list[str] | None = None, alpha: float | None = None) -> dict[str, Any]:
     config, store = load_context(workspace_file)
     with GraphStore(store.graph_db_path) as graph:
         exact_nodes = graph.find_nodes(query, types=node_types, limit=limit)
@@ -425,7 +430,7 @@ def memory_query(workspace_file: str | Path, query: str, limit: int = 20, node_t
     workspace_resolver=lambda args, kwargs: args[0] if args else kwargs["workspace_file"],
     tags_resolver=lambda args, kwargs: {"limit": kwargs.get("limit", args[2] if len(args) > 2 else 20)},
 )
-def memory_query_hybrid(workspace_file: str | Path, query: str, limit: int = 20, node_types: List[str] | None = None, config: Any = None, project: str = "") -> Dict[str, Any]:
+def memory_query_hybrid(workspace_file: str | Path, query: str, limit: int = 20, node_types: list[str] | None = None, config: Any = None, project: str = "") -> dict[str, Any]:
     """Enhanced query using hybrid retrieval engine.
 
     Combines graph, sparse, and semantic search with intelligent routing.
@@ -462,7 +467,7 @@ def memory_query_hybrid(workspace_file: str | Path, query: str, limit: int = 20,
         result["workspace"] = result.get("workspace") or config_obj[0].workspace
         return result
 
-    freshness_banner: Dict[str, Any]
+    freshness_banner: dict[str, Any]
     try:
         from ..freshness.status import IndexFreshnessService
 
@@ -763,7 +768,7 @@ def memory_context(
     project: str = "",
     view: str = "full",
     budget: str = "medium",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     _, store = load_context(workspace_file)
     symbol_info = memory_symbol(workspace_file, name, limit=8, project=project)
     if not symbol_info.get("found"):
@@ -773,8 +778,8 @@ def memory_context(
         incoming = graph.neighbors(node["id"], direction="upstream", max_depth=max_depth, limit=100)
         outgoing = graph.neighbors(node["id"], direction="downstream", max_depth=max_depth, limit=100)
     # Integrate unified reasoning patterns into context (C-07)
-    reasoning: Dict[str, Any] = {"patterns": [], "transitive": [], "risk": []}
-    diagnostics: Dict[str, Any] = {}
+    reasoning: dict[str, Any] = {"patterns": [], "transitive": [], "risk": []}
+    diagnostics: dict[str, Any] = {}
     try:
         from ..reasoning.integration import run_reasoning_patterns
         reasoning = run_reasoning_patterns(
@@ -828,7 +833,7 @@ def memory_symbol(
     project: str = "",
     view: str = "full",
     budget: str = "medium",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Resolve a symbol name to graph nodes.
 
     When multiple nodes match (e.g. same class name in different modules),
@@ -900,14 +905,14 @@ def memory_symbol(
         best = fallback_best
 
     # Group remaining matches by project for disambiguation
-    projects_seen: Dict[str, int] = {}
+    projects_seen: dict[str, int] = {}
     for m in matches:
         p = m.get("project") or ""
         projects_seen[p] = projects_seen.get(p, 0) + 1
 
     filtered_lookup = lookup.get("matches", [])[:limit]
     project_evidence = _build_project_evidence(filtered_lookup, best, inferred_project, limit=5)
-    result: Dict[str, Any] = {
+    result: dict[str, Any] = {
         "name": name,
         "found": True,
         "best_match": best,
@@ -1012,11 +1017,11 @@ def memory_callers(
     symbol: str,
     depth: int = 2,
     limit: int = 80,
-    edge_type_filter: List[str] | None = None,
+    edge_type_filter: list[str] | None = None,
     project: str = "",
     view: str = "full",
     budget: str = "medium",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     info = memory_symbol(workspace_file, symbol, limit=8, project=project)
     if not info.get("found"):
         return {"symbol": symbol, "found": False, "callers": [], "lookup": info.get("lookup", {})}
@@ -1050,11 +1055,11 @@ def memory_callees(
     symbol: str,
     depth: int = 2,
     limit: int = 80,
-    edge_type_filter: List[str] | None = None,
+    edge_type_filter: list[str] | None = None,
     project: str = "",
     view: str = "full",
     budget: str = "medium",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     info = memory_symbol(workspace_file, symbol, limit=8, project=project)
     if not info.get("found"):
         return {"symbol": symbol, "found": False, "callees": [], "lookup": info.get("lookup", {})}
@@ -1093,17 +1098,17 @@ def memory_method_walkthrough(
     budget: str = "medium",
     report_level: str = "standard",
     _allow_workspace_escalation: bool = True,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Build a method-level walkthrough from indexed Java evidence.
 
     This is intentionally evidence-bounded: it explains indexed method calls,
     DTO field reads, config/data-resource hints, and graph downstream edges.
     It does not pretend to execute Java control flow.
     """
-    def _lookup_provider(ws: Path, sym: str, proj: str) -> Dict[str, Any]:
+    def _lookup_provider(ws: Path, sym: str, proj: str) -> dict[str, Any]:
         return memory_symbol(ws, sym, limit=5, project=proj).get("lookup", {}) or {}
 
-    def _escalation_runner(**call_kwargs: Any) -> Dict[str, Any]:
+    def _escalation_runner(**call_kwargs: Any) -> dict[str, Any]:
         return _try_escalated_method_walkthrough(
             call_kwargs["workspace_file"],
             call_kwargs["symbol"],
@@ -1138,7 +1143,7 @@ def memory_walkthrough_health(
     symbol: str = "",
     project: str = "",
     report_level: str = "standard",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Check method walkthrough readiness and output contract for a workspace."""
     return _walkthrough_operations.build_walkthrough_health(
         workspace_file, symbol=symbol, project=project, report_level=report_level,
@@ -1151,7 +1156,7 @@ def memory_eval_walkthrough_quality(
     symbol: str,
     project: str = "",
     report_level: str = "standard",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Evaluate whether a method walkthrough result is agent-ready."""
     return _walkthrough_operations.evaluate_walkthrough(
         workspace_file, symbol, project=project, report_level=report_level,
@@ -1165,7 +1170,7 @@ def memory_export_walkthrough_artifact(
     project: str = "",
     report_level: str = "deep",
     title: str = "",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Export a method walkthrough Markdown artifact under artifacts/walkthroughs."""
     return _walkthrough_operations.export_walkthrough(
         workspace_file, symbol, project=project, report_level=report_level,
@@ -1174,27 +1179,15 @@ def memory_export_walkthrough_artifact(
 
 
 
-# === Walkthrough helper shims =============================================
-# These thin delegators preserve backward-compatible underscore names that
-# tests and other modules import from `orchestrator.query`, while the real
-# implementation lives in `memory_center.core.walkthrough`.
-from ..walkthrough import answer as _wt_answer
-from ..walkthrough import continuations as _wt_continuations
-from ..walkthrough import escalation as _wt_escalation
-from ..walkthrough import risks as _wt_risks
-from ..walkthrough import symbols as _wt_symbols
-from .common import SESSION_EVENTS_FILE as _WT_SESSION_EVENTS_FILE
-
-
-def _walkthrough_recent_bypass_feedback(store: Any, limit: int = 200) -> Dict[str, Any]:
-    return _wt_escalation.walkthrough_recent_bypass_feedback(store, _WT_SESSION_EVENTS_FILE, limit=limit)
+def _walkthrough_recent_bypass_feedback(store: Any, limit: int = 200) -> dict[str, Any]:
+    return _wt_escalation.walkthrough_recent_bypass_feedback(store, SESSION_EVENTS_FILE, limit=limit)
 
 
 def _resolve_walkthrough_workspace_input(workspace_file: str | Path) -> Path:
     return _wt_escalation.resolve_walkthrough_workspace_input(workspace_file)
 
 
-def _walkthrough_index_signature(store: Any) -> Dict[str, float]:
+def _walkthrough_index_signature(store: Any) -> dict[str, float]:
     return _wt_escalation.walkthrough_index_signature(store)
 
 
@@ -1226,7 +1219,7 @@ def _method_walkthrough_cache_key(
     )
 
 
-def _method_walkthrough_fields_contract() -> Dict[str, Any]:
+def _method_walkthrough_fields_contract() -> dict[str, Any]:
     return _wt_answer.method_walkthrough_fields_contract()
 
 
@@ -1239,9 +1232,9 @@ def _try_escalated_method_walkthrough(
     view: str,
     budget: str,
     report_level: str,
-    current_result: Dict[str, Any] | None,
+    current_result: dict[str, Any] | None,
     allow: bool,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     if not allow:
         return {}
     candidate = _wt_escalation.find_parent_or_covering_workspace(workspace_file)
@@ -1295,11 +1288,11 @@ def _find_parent_or_covering_workspace(workspace_file: str | Path) -> Path | Non
     return _wt_escalation.find_parent_or_covering_workspace(workspace_file)
 
 
-def _registry_covering_workspaces(current_ws: Path, current_root: Path) -> List[Path]:
+def _registry_covering_workspaces(current_ws: Path, current_root: Path) -> list[Path]:
     return _wt_escalation.registry_covering_workspaces(current_ws, current_root)
 
 
-def _registry_group_sibling_workspaces(current_ws: Path) -> List[Path]:
+def _registry_group_sibling_workspaces(current_ws: Path) -> list[Path]:
     return _wt_escalation.registry_group_sibling_workspaces(current_ws)
 
 
@@ -1307,7 +1300,7 @@ def _path_is_within(path: Path, maybe_parent: Path) -> bool:
     return _wt_escalation.path_is_within(path, maybe_parent)
 
 
-def _walkthrough_quality_score(result: Dict[str, Any]) -> int:
+def _walkthrough_quality_score(result: dict[str, Any]) -> int:
     return _wt_escalation.walkthrough_quality_score(result)
 
 
@@ -1316,23 +1309,23 @@ def _build_workspace_escalation_status(
     status: str,
     candidate_workspace: str = "",
     reason: str = "",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     return _wt_escalation.build_workspace_escalation_status(workspace_file, status, candidate_workspace=candidate_workspace, reason=reason)
 
 
-def _parse_method_walkthrough_symbol(symbol: str) -> Dict[str, str]:
+def _parse_method_walkthrough_symbol(symbol: str) -> dict[str, str]:
     return _wt_symbols.parse_method_walkthrough_symbol(symbol)
 
 
-def _find_method_symbol_entry(symbols: List[Dict[str, Any]], parsed: Dict[str, str], project: str = "") -> Dict[str, Any]:
+def _find_method_symbol_entry(symbols: list[dict[str, Any]], parsed: dict[str, str], project: str = "") -> dict[str, Any]:
     return _wt_symbols.find_method_symbol_entry(symbols, parsed, project=project)
 
 
-def _build_file_abs_path_map(config: Any, store: Any) -> Dict[tuple[str, str], str]:
+def _build_file_abs_path_map(config: Any, store: Any) -> dict[tuple[str, str], str]:
     return _wt_symbols.build_file_abs_path_map(config, store)
 
 
-def _resolve_indexed_abs_path(file_abs_map: Dict[tuple[str, str], str], project: str, file_path: str) -> str:
+def _resolve_indexed_abs_path(file_abs_map: dict[tuple[str, str], str], project: str, file_path: str) -> str:
     return _wt_symbols.resolve_indexed_abs_path(file_abs_map, project, file_path)
 
 
@@ -1352,7 +1345,7 @@ def _build_same_class_method_continuations(symbols, entry, method_name, file_abs
     return _wt_continuations.build_same_class_method_continuations(symbols, entry, method_name, file_abs_map, feigns, apis)
 
 
-def _detect_unqualified_same_class_calls(abs_path: str, owner_method: str, class_methods: set[str]) -> List[str]:
+def _detect_unqualified_same_class_calls(abs_path: str, owner_method: str, class_methods: set[str]) -> list[str]:
     return _wt_symbols.detect_unqualified_same_class_calls(abs_path, owner_method, class_methods)
 
 
@@ -1364,15 +1357,15 @@ def _matching_brace_end_runtime(text: str, open_pos: int) -> int:
     return _wt_symbols.matching_brace_end_runtime(text, open_pos)
 
 
-def _summarize_dto_field_filters(dto_usages: List[Dict[str, Any]]) -> Dict[str, Any]:
+def _summarize_dto_field_filters(dto_usages: list[dict[str, Any]]) -> dict[str, Any]:
     return _wt_continuations.summarize_dto_field_filters(dto_usages)
 
 
-def _classify_dto_field_rule_groups(dto_usages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def _classify_dto_field_rule_groups(dto_usages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return _wt_continuations.classify_dto_field_rule_groups(dto_usages)
 
 
-def _find_method_span_lines(abs_path: str, method_name: str) -> Dict[str, int]:
+def _find_method_span_lines(abs_path: str, method_name: str) -> dict[str, int]:
     return _wt_symbols.find_method_span_lines(abs_path, method_name)
 
 
@@ -1384,7 +1377,7 @@ def _find_receiver_impl_method(symbols, receiver_type, method_name, project):
     return _wt_symbols.find_receiver_impl_method(symbols, receiver_type, method_name, project)
 
 
-def _dedupe_feign_continuations(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def _dedupe_feign_continuations(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return _wt_continuations.dedupe_feign_continuations(items)
 
 
@@ -1392,7 +1385,7 @@ def _build_method_walkthrough_next_actions(feign_continuations, downstream_summa
     return _wt_continuations.build_method_walkthrough_next_actions(feign_continuations, downstream_summary, local_service_continuations=local_service_continuations, same_class_continuations=same_class_continuations)
 
 
-def _compact_method_walkthrough_result(result: Dict[str, Any], budget: str = "medium") -> Dict[str, Any]:
+def _compact_method_walkthrough_result(result: dict[str, Any], budget: str = "medium") -> dict[str, Any]:
     return _wt_answer.compact_method_walkthrough_result(result, budget=budget, cache_ttl_seconds=_METHOD_WALKTHROUGH_CACHE_TTL_SECONDS)
 
 
@@ -1404,43 +1397,43 @@ def _load_method_walkthrough_template(workspace_file):
     return _wt_answer.load_method_walkthrough_template(workspace_file)
 
 
-def _method_walkthrough_template_context(result: Dict[str, Any], report_level: str = "standard") -> Dict[str, str]:
+def _method_walkthrough_template_context(result: dict[str, Any], report_level: str = "standard") -> dict[str, str]:
     return _wt_answer.method_walkthrough_template_context(result, report_level=report_level)
 
 
-def _method_walkthrough_read_targets_text(result: Dict[str, Any]) -> str:
+def _method_walkthrough_read_targets_text(result: dict[str, Any]) -> str:
     return _wt_answer.method_walkthrough_read_targets_text(result)
 
 
-def _method_walkthrough_rule_groups_text(result: Dict[str, Any]) -> str:
+def _method_walkthrough_rule_groups_text(result: dict[str, Any]) -> str:
     return _wt_answer.method_walkthrough_rule_groups_text(result)
 
 
-def _format_rule_group_lines(continuation: Dict[str, Any]) -> List[str]:
+def _format_rule_group_lines(continuation: dict[str, Any]) -> list[str]:
     return _wt_answer.format_rule_group_lines(continuation)
 
 
-def _build_glossary_hits(workspace_file, result: Dict[str, Any]) -> List[Dict[str, Any]]:
+def _build_glossary_hits(workspace_file, result: dict[str, Any]) -> list[dict[str, Any]]:
     return _wt_answer.build_glossary_hits(workspace_file, result)
 
 
-def _load_walkthrough_glossary(workspace_file) -> Dict[str, Any]:
+def _load_walkthrough_glossary(workspace_file) -> dict[str, Any]:
     return _wt_answer.load_walkthrough_glossary(workspace_file)
 
 
-def _collect_walkthrough_terms(result: Dict[str, Any]) -> set[str]:
+def _collect_walkthrough_terms(result: dict[str, Any]) -> set[str]:
     return _wt_answer.collect_walkthrough_terms(result)
 
 
-def _build_walkthrough_performance_risks(result: Dict[str, Any]) -> List[Dict[str, Any]]:
+def _build_walkthrough_performance_risks(result: dict[str, Any]) -> list[dict[str, Any]]:
     return _wt_risks.build_walkthrough_performance_risks(result)
 
 
-def _steps_to_calls(steps: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def _steps_to_calls(steps: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [step for step in steps if step.get("kind") == "method_call"]
 
 
-def _build_data_scope_guards(result: Dict[str, Any]) -> List[Dict[str, Any]]:
+def _build_data_scope_guards(result: dict[str, Any]) -> list[dict[str, Any]]:
     return _wt_risks.build_data_scope_guards(result)
 
 
@@ -1448,11 +1441,11 @@ def _extract_java_method_body_from_path(abs_path: str, method_name: str) -> str:
     return _wt_symbols.extract_java_method_body_from_path(abs_path, method_name)
 
 
-def _build_walkthrough_diff_context(config: Any, result: Dict[str, Any]) -> Dict[str, Any]:
+def _build_walkthrough_diff_context(config: Any, result: dict[str, Any]) -> dict[str, Any]:
     return _wt_risks.build_walkthrough_diff_context(config, result)
 
 
-def _build_walkthrough_index_freshness(store: Any, result: Dict[str, Any]) -> Dict[str, Any]:
+def _build_walkthrough_index_freshness(store: Any, result: dict[str, Any]) -> dict[str, Any]:
     return _wt_risks.build_walkthrough_index_freshness(_wt_escalation.walkthrough_index_signature(store), result)
 
 
@@ -1460,19 +1453,19 @@ def _git_changed_abs_paths(root: Path) -> set[str]:
     return _wt_risks.git_changed_abs_paths(root)
 
 
-def _collect_result_abs_paths(result: Dict[str, Any]) -> List[str]:
+def _collect_result_abs_paths(result: dict[str, Any]) -> list[str]:
     return _wt_risks.collect_result_abs_paths(result)
 
 
-def _build_walkthrough_branch_outline(result: Dict[str, Any]) -> List[Dict[str, Any]]:
+def _build_walkthrough_branch_outline(result: dict[str, Any]) -> list[dict[str, Any]]:
     return _wt_risks.build_walkthrough_branch_outline(result)
 
 
-def _extract_java_case_labels(abs_path: str, method_name: str) -> List[str]:
+def _extract_java_case_labels(abs_path: str, method_name: str) -> list[str]:
     return _wt_symbols.extract_java_case_labels(abs_path, method_name)
 
 
-def _build_method_walkthrough_mermaid(result: Dict[str, Any]) -> str:
+def _build_method_walkthrough_mermaid(result: dict[str, Any]) -> str:
     return _wt_risks.build_method_walkthrough_mermaid(result)
 
 
@@ -1484,7 +1477,7 @@ def _format_branch_outline(outlines): return _wt_answer.format_branch_outline(ou
 def _format_anti_patterns(items): return _wt_answer.format_anti_patterns(items)
 
 
-def _dedupe_risk_items(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def _dedupe_risk_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return _wt_risks.dedupe_risk_items(items)
 
 
@@ -1496,11 +1489,11 @@ def _normalize_report_level(report_level: str) -> str:
     return _wt_answer.normalize_report_level(report_level)
 
 
-def _build_method_walkthrough_agent_policy() -> Dict[str, Any]:
+def _build_method_walkthrough_agent_policy() -> dict[str, Any]:
     return _wt_answer.build_method_walkthrough_agent_policy()
 
 
-def _build_method_walkthrough_anti_patterns() -> List[Dict[str, str]]:
+def _build_method_walkthrough_anti_patterns() -> list[dict[str, str]]:
     return _wt_answer.build_method_walkthrough_anti_patterns()
 
 
@@ -1512,14 +1505,14 @@ def _build_method_walkthrough_summary_lines(target, local_steps, local_service_c
     return _wt_answer.build_method_walkthrough_summary_lines(target, local_steps, local_service_continuations, same_class_continuations, feigns, downstream, limits)
 
 
-def _display_method_path(item: Dict[str, Any]) -> str:
+def _display_method_path(item: dict[str, Any]) -> str:
     return _wt_answer.display_method_path(item)
 
 
 # === End walkthrough helper shims =========================================
 
 
-def memory_search_code(workspace_file: str | Path, query: str, scope: str = "", limit: int = 20, project: str = "") -> Dict[str, Any]:
+def memory_search_code(workspace_file: str | Path, query: str, scope: str = "", limit: int = 20, project: str = "") -> dict[str, Any]:
     config, store = load_context(workspace_file)
     keywords = tokenize(query)
     files = store.read_json_prefer_backend("file-index.json", [])
@@ -1529,7 +1522,7 @@ def memory_search_code(workspace_file: str | Path, query: str, scope: str = "", 
         key = item.get("file", "")
         symbol_entries.setdefault(key, []).append(item)
     scope_l = scope.lower().strip()
-    hits: List[Dict[str, Any]] = []
+    hits: list[dict[str, Any]] = []
     for item in files:
         path = item.get("path", "")
         if scope_l and scope_l not in path.lower():
@@ -1571,7 +1564,7 @@ def memory_search_code(workspace_file: str | Path, query: str, scope: str = "", 
     }
 
 
-def memory_contracts(workspace_file: str | Path) -> Dict[str, Any]:
+def memory_contracts(workspace_file: str | Path) -> dict[str, Any]:
     _, store = load_context(workspace_file)
     return {
         "feign_contracts": store.read_json_prefer_backend("feign-index.json", []),
@@ -1581,7 +1574,7 @@ def memory_contracts(workspace_file: str | Path) -> Dict[str, Any]:
     }
 
 
-def memory_ref_get(workspace_file: str | Path, ref_id: str) -> Dict[str, Any]:
+def memory_ref_get(workspace_file: str | Path, ref_id: str) -> dict[str, Any]:
     config, store = load_context(workspace_file)
     resolved = _resolve_memory_ref(store, ref_id)
     if not resolved:
@@ -1624,7 +1617,7 @@ def memory_ref_get(workspace_file: str | Path, ref_id: str) -> Dict[str, Any]:
     )
 
 
-def memory_ref_batch(workspace_file: str | Path, ref_ids: List[str]) -> Dict[str, Any]:
+def memory_ref_batch(workspace_file: str | Path, ref_ids: list[str]) -> dict[str, Any]:
     from ..config import load_workspace_config
 
     refs = [memory_ref_get(workspace_file, ref_id) for ref_id in ref_ids]
@@ -1649,7 +1642,7 @@ def memory_backend_query(
     project: str = "",
     payload_type: str = "",
     limit: int = 50,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     config, store = load_context(workspace_file)
     return {
         "workspace": config.workspace,
@@ -1661,14 +1654,14 @@ def memory_backend_query(
 def memory_tool_usage_report(
     workspace_file: str | Path,
     limit: int = 200,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     config, store = load_context(workspace_file)
     events = store.read_jsonl_prefer_backend(SESSION_EVENTS_FILE, limit=max(limit, 1))
-    tool_counts: Dict[str, int] = {}
-    lookup_tool_counts: Dict[str, int] = {}
+    tool_counts: dict[str, int] = {}
+    lookup_tool_counts: dict[str, int] = {}
     memory_center_calls = 0
     external_calls = 0
-    suspected_bypass: List[Dict[str, Any]] = []
+    suspected_bypass: list[dict[str, Any]] = []
     lookup_tools = {
         "memory_symbol_tool", "memory_search_code_tool", "workspace_trace_tool",
         "memory_callers_tool", "memory_callees_tool", "memory_context_tool",
@@ -1708,7 +1701,7 @@ def memory_tool_usage_report(
         "lookup_tool_total": sum(lookup_tool_counts.values()),
         "suspected_bypass_count": len(suspected_bypass),
     }
-    adoption_hints: List[str] = []
+    adoption_hints: list[str] = []
     if sum(lookup_tool_counts.values()) == 0:
         adoption_hints.append("最近会话里几乎没有使用 Memory Center 的 lookup 工具，找类/符号很可能仍主要依赖本地搜索。")
     if suspected_bypass:
@@ -1733,7 +1726,7 @@ def memory_tool_usage_report(
 def memory_discover(
     workspace_file: str | Path,
     limit: int = 50,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Discover hot commands and recommend next actions based on workspace state.
 
     Inspired by rtk's discover pattern:
@@ -1745,7 +1738,7 @@ def memory_discover(
     events = store.read_jsonl_prefer_backend(SESSION_EVENTS_FILE, limit=max(limit, 200))
 
     # Analyze hot commands
-    tool_counts: Dict[str, int] = {}
+    tool_counts: dict[str, int] = {}
     recent_queries: list = []
     for event in events:
         if event.get("event_type") != "tool_call":
@@ -1855,8 +1848,8 @@ def memory_discover(
 
 # ---- internal helpers -------------------------------------------------------
 
-def _compress_chain_tree(edges: List[Dict[str, Any]]) -> Dict[str, Any]:
-    tree: Dict[str, List[Dict[str, Any]]] = {}
+def _compress_chain_tree(edges: list[dict[str, Any]]) -> dict[str, Any]:
+    tree: dict[str, list[dict[str, Any]]] = {}
     for e in edges:
         src = e.get("source", {}).get("name", "?")
         tgt = e.get("target", {}).get("name", "?")
@@ -1875,13 +1868,13 @@ def _compress_chain_tree(edges: List[Dict[str, Any]]) -> Dict[str, Any]:
     }
 
 
-def _format_chain_endpoint(node: Dict[str, Any]) -> str:
+def _format_chain_endpoint(node: dict[str, Any]) -> str:
     name = str(node.get("name", "") or "?")
     line = int(node.get("line", 0) or 0)
     return f"{name}:{line}" if line > 0 else name
 
 
-def _format_compact_node_summary(node: Dict[str, Any]) -> str:
+def _format_compact_node_summary(node: dict[str, Any]) -> str:
     node_type = str(node.get("type", "") or "").strip()
     name = str(node.get("name", "") or "?").strip()
     project = str(node.get("project", "") or "").strip()
@@ -1897,8 +1890,8 @@ def _format_compact_node_summary(node: Dict[str, Any]) -> str:
     return text
 
 
-def _build_edge_summary_lines(prefix: str, items: List[Dict[str, Any]], limit: int) -> List[str]:
-    lines: List[str] = []
+def _build_edge_summary_lines(prefix: str, items: list[dict[str, Any]], limit: int) -> list[str]:
+    lines: list[str] = []
     for item in items[:limit]:
         text = str(item.get("text", "") or "").strip()
         if text:
@@ -1906,7 +1899,7 @@ def _build_edge_summary_lines(prefix: str, items: List[Dict[str, Any]], limit: i
     return lines
 
 
-def _compact_node_evidence(item: Dict[str, Any]) -> Dict[str, Any]:
+def _compact_node_evidence(item: dict[str, Any]) -> dict[str, Any]:
     node = item.get("node", item) or {}
     return {
         "type": node.get("type", ""),
@@ -1918,7 +1911,7 @@ def _compact_node_evidence(item: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _build_project_scope(requested_project: str, anchor: Dict[str, Any]) -> Dict[str, Any]:
+def _build_project_scope(requested_project: str, anchor: dict[str, Any]) -> dict[str, Any]:
     anchor_project = str(anchor.get("project", "") or "")
     requested = str(requested_project or "").strip()
     return {
@@ -1928,12 +1921,12 @@ def _build_project_scope(requested_project: str, anchor: Dict[str, Any]) -> Dict
     }
 
 
-def _build_project_evidence(items: List[Dict[str, Any]], anchor: Dict[str, Any], requested_project: str, limit: int = 5) -> List[Dict[str, Any]]:
+def _build_project_evidence(items: list[dict[str, Any]], anchor: dict[str, Any], requested_project: str, limit: int = 5) -> list[dict[str, Any]]:
     requested = str(requested_project or "").strip()
     if not requested:
         return []
     anchor_id = str(anchor.get("id", "") or "")
-    evidence: List[Dict[str, Any]] = []
+    evidence: list[dict[str, Any]] = []
     for item in items:
         node = item.get("node", item) or {}
         if not _project_matches(requested, str(node.get("project", "") or "")):
@@ -1944,7 +1937,7 @@ def _build_project_evidence(items: List[Dict[str, Any]], anchor: Dict[str, Any],
     return evidence[:limit]
 
 
-def _build_lookup_entrypoint(item: Dict[str, Any], *, role: str = "") -> Dict[str, Any]:
+def _build_lookup_entrypoint(item: dict[str, Any], *, role: str = "") -> dict[str, Any]:
     node = item.get("node", {}) or {}
     payload = {
         "node": node,
@@ -1959,7 +1952,7 @@ def _build_lookup_entrypoint(item: Dict[str, Any], *, role: str = "") -> Dict[st
     return payload
 
 
-def _node_to_lookup_item(node: Dict[str, Any], *, role: str, score: float = 0.0, sources: List[str] | None = None) -> Dict[str, Any]:
+def _node_to_lookup_item(node: dict[str, Any], *, role: str, score: float = 0.0, sources: list[str] | None = None) -> dict[str, Any]:
     return {
         "node": node,
         "score": score,
@@ -1971,19 +1964,19 @@ def _node_to_lookup_item(node: Dict[str, Any], *, role: str, score: float = 0.0,
 
 
 def _build_augmented_lookup_payload(
-    result: Dict[str, Any],
+    result: dict[str, Any],
     *,
-    anchor_node: Dict[str, Any] | None = None,
-    project_evidence: List[Dict[str, Any]] | None = None,
+    anchor_node: dict[str, Any] | None = None,
+    project_evidence: list[dict[str, Any]] | None = None,
     match_key: str = "matches",
     limit: int = 5,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     matches = _dedupe_symbol_display_matches(result.get(match_key, []))[:limit]
-    entrypoints: List[Dict[str, Any]] = []
+    entrypoints: list[dict[str, Any]] = []
     seen_ids: set[str] = set()
     seen_signatures: set[tuple[str, str, str, int]] = set()
 
-    def add_entry(item: Dict[str, Any], role: str = "") -> None:
+    def add_entry(item: dict[str, Any], role: str = "") -> None:
         node = item.get("node", {}) or {}
         node_id = str(node.get("id", "") or f"{node.get('type','')}::{node.get('project','')}::{node.get('name','')}")
         signature = (
@@ -2022,11 +2015,11 @@ def _build_augmented_lookup_payload(
     }
 
 
-def _summarize_chain_edges(edges: List[Dict[str, Any]]) -> Dict[str, Any]:
+def _summarize_chain_edges(edges: list[dict[str, Any]]) -> dict[str, Any]:
     return summarize_chain_edges(edges)
 
 
-def _compact_focus_edges(edges: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def _compact_focus_edges(edges: list[dict[str, Any]]) -> list[dict[str, Any]]:
     if not edges:
         return []
     filtered = [
@@ -2046,7 +2039,7 @@ def _compact_focus_edges(edges: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return filtered
 
 
-def _compact_chain_result(result: Dict[str, Any], direction: str, budget: str = "medium") -> Dict[str, Any]:
+def _compact_chain_result(result: dict[str, Any], direction: str, budget: str = "medium") -> dict[str, Any]:
 
     limits = _budget_limits(budget)
     target = result.get("target", {}) or {}
@@ -2103,7 +2096,7 @@ def _compact_chain_result(result: Dict[str, Any], direction: str, budget: str = 
     }
 
 
-def _compact_symbol_result(result: Dict[str, Any], budget: str = "medium") -> Dict[str, Any]:
+def _compact_symbol_result(result: dict[str, Any], budget: str = "medium") -> dict[str, Any]:
 
     limits = _budget_limits(budget)
     best = result.get("best_match", {}) or {}
@@ -2120,7 +2113,7 @@ def _compact_symbol_result(result: Dict[str, Any], budget: str = "medium") -> Di
                 "score": round(float(item.get("score", item.get("exact_score", 0.0)) or 0.0), 4),
             }
         )
-    summary_lines: List[str] = []
+    summary_lines: list[str] = []
     if best:
         summary_lines.append(f"Best {_format_compact_node_summary(best)}")
     for item in compact_matches:
@@ -2147,7 +2140,7 @@ def _compact_symbol_result(result: Dict[str, Any], budget: str = "medium") -> Di
     return payload
 
 
-def _compact_context_result(result: Dict[str, Any], budget: str = "medium") -> Dict[str, Any]:
+def _compact_context_result(result: dict[str, Any], budget: str = "medium") -> dict[str, Any]:
     from ..reasoning.integration import compact_reasoning_view
 
     limits = _budget_limits(budget)
@@ -2215,7 +2208,7 @@ def _compact_context_result(result: Dict[str, Any], budget: str = "medium") -> D
     }
 
 
-def _annotate_phantom_nodes(chain_result: Dict[str, Any], workspace_file: str | Path) -> None:
+def _annotate_phantom_nodes(chain_result: dict[str, Any], workspace_file: str | Path) -> None:
     config, store = load_context(workspace_file)
     topology = store.read_json_prefer_backend("service-topology.json", {})
     local_services = {svc.get("service_name") or svc.get("name") for svc in topology.get("services", [])}
@@ -2236,12 +2229,12 @@ def _annotate_phantom_nodes(chain_result: Dict[str, Any], workspace_file: str | 
 def _merge_workspace_query_hits(
     graph: GraphStore,
     query: str,
-    exact_nodes: List[Dict[str, Any]],
-    semantic_hits: List[Dict[str, Any]],
+    exact_nodes: list[dict[str, Any]],
+    semantic_hits: list[dict[str, Any]],
     limit: int,
     alpha: float | None = None,
-) -> List[Dict[str, Any]]:
-    merged: Dict[str, Dict[str, Any]] = {}
+) -> list[dict[str, Any]]:
+    merged: dict[str, dict[str, Any]] = {}
     target_types = set()
     for rank, node in enumerate(exact_nodes, start=1):
         node_id = node.get("id")
@@ -2291,7 +2284,7 @@ def _merge_workspace_query_hits(
     return matches[:limit]
 
 
-def _workspace_query_match_key(item: Dict[str, Any], target_types: List[str], alpha: float | None = None) -> tuple:
+def _workspace_query_match_key(item: dict[str, Any], target_types: list[str], alpha: float | None = None) -> tuple:
     node = item.get("node", {})
     priority = _query_node_priority(node.get("type", ""), target_types)
     sources = set(item.get("retrieval_sources", []))
@@ -2313,8 +2306,8 @@ def _workspace_query_match_key(item: Dict[str, Any], target_types: List[str], al
     )
 
 
-def _query_node_priority(node_type: str, target_types: List[str]) -> int:
-    priorities: Dict[str, int] = {}
+def _query_node_priority(node_type: str, target_types: list[str]) -> int:
+    priorities: dict[str, int] = {}
     types = set(target_types)
     if {"FeignClient", "FeignMethod", "Endpoint"} & types:
         priorities.update({"FeignClient": 0, "FeignMethod": 1, "Endpoint": 2, "Class": 3, "Method": 4, "File": 5})
@@ -2327,7 +2320,7 @@ def _query_node_priority(node_type: str, target_types: List[str]) -> int:
     return priorities.get(node_type, 20)
 
 
-def _resolve_query_target_types(target: str, target_types: List[str]) -> List[str]:
+def _resolve_query_target_types(target: str, target_types: list[str]) -> list[str]:
     resolved = set(t for t in target_types if t)
     target_lower = target.lower()
     service_indicators = {"service", "api", "common", "gateway", "server", "app", "web", "ui", "frontend", "backend", "admin", "portal"}
@@ -2346,7 +2339,7 @@ def _resolve_query_target_types(target: str, target_types: List[str]) -> List[st
     return _sort_target_types(list(resolved))
 
 
-def _sort_target_types(target_types: List[str]) -> List[str]:
+def _sort_target_types(target_types: list[str]) -> list[str]:
     priority = {
         "FeignClient": 0, "FeignMethod": 1, "Endpoint": 2, "MQTopic": 3, "MQConsumer": 4,
         "ConfigKey": 5, "Field": 6, "Method": 7, "Class": 8, "File": 20,
@@ -2354,7 +2347,7 @@ def _sort_target_types(target_types: List[str]) -> List[str]:
     return sorted({item for item in target_types if item}, key=lambda item: (priority.get(item, 10), item))
 
 
-def _summarize_query_matches(matches: List[Dict[str, Any]], limit: int) -> Dict[str, int]:
+def _summarize_query_matches(matches: list[dict[str, Any]], limit: int) -> dict[str, int]:
     summary = {"exact_matches": 0, "semantic_matches": 0, "hybrid_matches": 0, "total_matches": len(matches), "returned_matches": min(len(matches), limit)}
     for item in matches:
         sources = set(item.get("retrieval_sources", []))
@@ -2367,7 +2360,7 @@ def _summarize_query_matches(matches: List[Dict[str, Any]], limit: int) -> Dict[
     return summary
 
 
-def _build_search_progressive_view(query: str, scope: str, hits: List[Dict[str, Any]]) -> Dict[str, Any]:
+def _build_search_progressive_view(query: str, scope: str, hits: list[dict[str, Any]]) -> dict[str, Any]:
     return _build_progressive_levels(
         {"query": query, "scope": scope, "top_hit_count": len(hits), "top_paths": [item.get("path", "") for item in hits[:3]]},
         {
@@ -2378,7 +2371,7 @@ def _build_search_progressive_view(query: str, scope: str, hits: List[Dict[str, 
     )
 
 
-def _build_query_progressive_view(query: str, matches: List[Dict[str, Any]], semantic_hits: List[Dict[str, Any]], related_cases: List[Dict[str, Any]]) -> Dict[str, Any]:
+def _build_query_progressive_view(query: str, matches: list[dict[str, Any]], semantic_hits: list[dict[str, Any]], related_cases: list[dict[str, Any]]) -> dict[str, Any]:
     top_nodes = [item.get("node", {}) for item in matches[:3]]
     return _build_progressive_levels(
         {
@@ -2412,7 +2405,7 @@ def _build_query_progressive_view(query: str, matches: List[Dict[str, Any]], sem
     )
 
 
-def _build_context_progressive_view(node: Dict[str, Any], incoming: List[Dict[str, Any]], outgoing: List[Dict[str, Any]]) -> Dict[str, Any]:
+def _build_context_progressive_view(node: dict[str, Any], incoming: list[dict[str, Any]], outgoing: list[dict[str, Any]]) -> dict[str, Any]:
     return _build_progressive_levels(
         {
             "node": f"{node.get('type', '')}:{node.get('name', '')}",
@@ -2435,11 +2428,11 @@ def _build_context_progressive_view(node: Dict[str, Any], incoming: List[Dict[st
     )
 
 
-def _build_lookup_payload(result: Dict[str, Any], match_key: str = "matches", limit: int = 5) -> Dict[str, Any]:
+def _build_lookup_payload(result: dict[str, Any], match_key: str = "matches", limit: int = 5) -> dict[str, Any]:
     return _build_augmented_lookup_payload(result, match_key=match_key, limit=limit)
 
 
-def _build_context_evidence_summary(incoming: List[Dict[str, Any]], outgoing: List[Dict[str, Any]]) -> Dict[str, Any]:
+def _build_context_evidence_summary(incoming: list[dict[str, Any]], outgoing: list[dict[str, Any]]) -> dict[str, Any]:
     all_edges = incoming + outgoing
     return {
         "incoming_edges": len(incoming),
@@ -2449,7 +2442,7 @@ def _build_context_evidence_summary(incoming: List[Dict[str, Any]], outgoing: Li
     }
 
 
-def _build_impact_evidence_summary(confirmed: List[Dict[str, Any]], probable: List[Dict[str, Any]], possible: List[Dict[str, Any]]) -> Dict[str, Any]:
+def _build_impact_evidence_summary(confirmed: list[dict[str, Any]], probable: list[dict[str, Any]], possible: list[dict[str, Any]]) -> dict[str, Any]:
     impacts = confirmed + probable + possible
     return {
         "confirmed_count": len(confirmed),

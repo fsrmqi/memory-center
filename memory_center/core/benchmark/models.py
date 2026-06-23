@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Dict, Mapping
+from typing import Any
 
 _CASE_FIELDS = {
     "case_id",
@@ -25,7 +26,7 @@ class GoldenCase:
     max_latency_ms: float = 5000.0
 
     @classmethod
-    def from_mapping(cls, data: Mapping[str, Any]) -> "GoldenCase":
+    def from_mapping(cls, data: Mapping[str, Any]) -> GoldenCase:
         unsupported = sorted(set(data) - _CASE_FIELDS)
         if unsupported:
             raise ValueError(f"unsupported fields: {', '.join(unsupported)}")
@@ -46,7 +47,7 @@ class GoldenCase:
             max_latency_ms=max(1.0, float(data.get("max_latency_ms", 5000.0) or 5000.0)),
         )
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "case_id": self.case_id,
             "query": self.query,

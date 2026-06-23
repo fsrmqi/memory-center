@@ -6,7 +6,7 @@ key concepts, and first tasks.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List
+from typing import Any
 
 from ..storage.unified import UnifiedStore
 from .glossary import GlossaryExtractor
@@ -19,10 +19,10 @@ class GuideSection:
     section_id: int
     title: str
     content: str
-    action_items: List[str] = field(default_factory=list)
-    related_nodes: List[str] = field(default_factory=list)
+    action_items: list[str] = field(default_factory=list)
+    related_nodes: list[str] = field(default_factory=list)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "section_id": self.section_id,
             "title": self.title,
@@ -37,10 +37,10 @@ class OnboardingGuide:
     """Complete onboarding guide for a workspace."""
     guide_id: str
     persona: str
-    sections: List[GuideSection] = field(default_factory=list)
-    glossary_terms: List[Dict[str, Any]] = field(default_factory=list)
+    sections: list[GuideSection] = field(default_factory=list)
+    glossary_terms: list[dict[str, Any]] = field(default_factory=list)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "guide_id": self.guide_id,
             "persona": self.persona,
@@ -64,7 +64,7 @@ class OnboardingGuideGenerator:
         scope: str = "workspace",
     ) -> OnboardingGuide:
         """Generate a complete onboarding guide."""
-        sections: List[GuideSection] = []
+        sections: list[GuideSection] = []
         section_id = 0
 
         # 1. Welcome & overview
@@ -125,7 +125,7 @@ class OnboardingGuideGenerator:
             glossary_terms=[t.to_dict() for t in glossary],
         )
 
-    def _suggest_first_tasks(self, persona: str) -> List[str]:
+    def _suggest_first_tasks(self, persona: str) -> list[str]:
         """Suggest first tasks based on persona."""
         if persona == "developer":
             return [

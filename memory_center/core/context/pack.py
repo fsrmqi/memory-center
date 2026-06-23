@@ -14,7 +14,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 from ..diagnostics import DIAG, diag_entry
 from ..freshness.status import IndexFreshnessService
@@ -37,14 +37,14 @@ class ContextPack:
     """Self-contained context package for a coding agent."""
     query: str
     intent: str
-    entrypoints: List[Dict[str, Any]] = field(default_factory=list)
-    relationships: List[Dict[str, Any]] = field(default_factory=list)
-    snippets: List[Dict[str, Any]] = field(default_factory=list)
-    risks: List[Dict[str, Any]] = field(default_factory=list)
-    checklist: List[str] = field(default_factory=list)
-    freshness: Dict[str, Any] = field(default_factory=dict)
+    entrypoints: list[dict[str, Any]] = field(default_factory=list)
+    relationships: list[dict[str, Any]] = field(default_factory=list)
+    snippets: list[dict[str, Any]] = field(default_factory=list)
+    risks: list[dict[str, Any]] = field(default_factory=list)
+    checklist: list[str] = field(default_factory=list)
+    freshness: dict[str, Any] = field(default_factory=dict)
     token_estimate: int = 0
-    progressive: Dict[str, Any] = field(default_factory=dict)
+    progressive: dict[str, Any] = field(default_factory=dict)
 
 
 class ContextPackBuilder:
@@ -180,7 +180,7 @@ def _suggest_next_actions(intent: str, results: list, risks: list) -> list[str]:
 # Snippet extraction helpers
 # ---------------------------------------------------------------------------
 
-def _extract_snippets(store: Any, results: list, budget_tokens: int) -> List[Dict[str, Any]]:
+def _extract_snippets(store: Any, results: list, budget_tokens: int) -> list[dict[str, Any]]:
     """Extract code snippets from the top entrypoints' source files.
 
     Each snippet covers a window around the node's declared line number.
@@ -195,7 +195,7 @@ def _extract_snippets(store: Any, results: list, budget_tokens: int) -> List[Dic
         index_entries = []
     abs_map = _build_file_index(index_entries)
 
-    snippets: List[Dict[str, Any]] = []
+    snippets: list[dict[str, Any]] = []
     seen_files: set = set()
     snippet_budget = int(budget_tokens * 0.25)  # 25 % allocated per TokenBudget
     used_tokens = 0
@@ -244,7 +244,7 @@ def _extract_snippets(store: Any, results: list, budget_tokens: int) -> List[Dic
     return snippets
 
 
-def _build_file_index(entries: list) -> Dict[str, Path]:
+def _build_file_index(entries: list) -> dict[str, Path]:
     """Build a mapping from logical file_path to absolute Path.
 
     The file-index.json stores ``path`` (relative to service root) and
@@ -255,7 +255,7 @@ def _build_file_index(entries: list) -> Dict[str, Path]:
     For compatibility with older indexers that used ``abs_path`` directly
     in node metadata, we also register the abs_path as a key.
     """
-    result: Dict[str, Path] = {}
+    result: dict[str, Path] = {}
     for entry in entries:
         ap = entry.get("abs_path", "")
         if not ap:
@@ -282,7 +282,7 @@ def _guess_language(suffix: str) -> str:
     }.get(suffix.lower(), "")
 
 
-def benchmark_context_pack(workspace_file: str | Path, queries: List[str]) -> Dict[str, Any]:
+def benchmark_context_pack(workspace_file: str | Path, queries: list[str]) -> dict[str, Any]:
     """Benchmark context pack effectiveness.
 
     Measures: token savings, tool call reduction, response quality.

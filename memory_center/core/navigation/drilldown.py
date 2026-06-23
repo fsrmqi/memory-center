@@ -9,7 +9,7 @@ This module implements Phase D of NEXT_PHASE_MASTER_PLAN:
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, List, Set
+from typing import Any
 
 from ..backend.query import UnifiedBackendQuery
 from ..quality import build_quality_summary
@@ -27,7 +27,7 @@ class DrillDownNavigator:
     def close(self) -> None:
         self.backend.close()
 
-    def __enter__(self) -> "DrillDownNavigator":
+    def __enter__(self) -> DrillDownNavigator:
         return self
 
     def __exit__(self, *exc: Any) -> None:
@@ -35,7 +35,7 @@ class DrillDownNavigator:
 
     # ---- Ref expansion -------------------------------------------------------
 
-    def expand_ref(self, ref_id: str, include_related: bool = True) -> Dict[str, Any]:
+    def expand_ref(self, ref_id: str, include_related: bool = True) -> dict[str, Any]:
         """Expand a ref with full details and related items.
 
         Provides progressive disclosure:
@@ -73,7 +73,7 @@ class DrillDownNavigator:
 
         return result
 
-    def _build_ref_summary(self, raw: Any, kind: str) -> Dict[str, Any]:
+    def _build_ref_summary(self, raw: Any, kind: str) -> dict[str, Any]:
         """Build Level 1 summary for a ref."""
         if not isinstance(raw, dict):
             return {"type": kind, "value": str(raw)[:200] if raw else ""}
@@ -106,7 +106,7 @@ class DrillDownNavigator:
                 "preview": str(raw)[:200],
             }
 
-    def _build_ref_details(self, raw: Any, kind: str) -> Dict[str, Any]:
+    def _build_ref_details(self, raw: Any, kind: str) -> dict[str, Any]:
         """Build Level 2 details for a ref."""
         if not isinstance(raw, dict):
             return {}
@@ -135,7 +135,7 @@ class DrillDownNavigator:
         else:
             return raw
 
-    def _find_related_refs(self, ref_id: str, raw: Any, kind: str) -> List[Dict[str, Any]]:
+    def _find_related_refs(self, ref_id: str, raw: Any, kind: str) -> list[dict[str, Any]]:
         """Find related refs based on context."""
         related = []
 
@@ -172,7 +172,7 @@ class DrillDownNavigator:
 
         return related[:10]
 
-    def _build_reverse_links(self, raw: Any, kind: str) -> List[Dict[str, Any]]:
+    def _build_reverse_links(self, raw: Any, kind: str) -> list[dict[str, Any]]:
         """Build reverse links (what points TO this ref)."""
         links = []
 
@@ -207,7 +207,7 @@ class DrillDownNavigator:
         task_id: str = "",
         start_event_id: str = "",
         limit: int = 50,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Drill into timeline with context preservation.
 
         Supports:
@@ -261,10 +261,10 @@ class DrillDownNavigator:
             },
         }
 
-    def _build_timeline_summary(self, events: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def _build_timeline_summary(self, events: list[dict[str, Any]]) -> dict[str, Any]:
         """Build summary of timeline events."""
-        event_types: Dict[str, int] = {}
-        tool_calls: List[str] = []
+        event_types: dict[str, int] = {}
+        tool_calls: list[str] = []
 
         for event in events:
             etype = event.get("type", "unknown")
@@ -287,7 +287,7 @@ class DrillDownNavigator:
 
     # ---- Task drill-down -----------------------------------------------------
 
-    def drill_task(self, task_id: str) -> Dict[str, Any]:
+    def drill_task(self, task_id: str) -> dict[str, Any]:
         """Drill into a task with full context.
 
         Returns:
@@ -334,16 +334,16 @@ class DrillDownNavigator:
     def _build_task_summary(
         self,
         task_id: str,
-        events: List[Dict[str, Any]],
-        receipts: List[Dict[str, Any]],
-    ) -> Dict[str, Any]:
+        events: list[dict[str, Any]],
+        receipts: list[dict[str, Any]],
+    ) -> dict[str, Any]:
         """Build comprehensive task summary."""
-        event_types: Dict[str, int] = {}
+        event_types: dict[str, int] = {}
         for event in events:
             etype = event.get("type", "unknown")
             event_types[etype] = event_types.get(etype, 0) + 1
 
-        files_changed: Set[str] = set()
+        files_changed: set[str] = set()
         for receipt in receipts:
             file_path = receipt.get("payload", {}).get("file_path", "")
             if file_path:
@@ -365,7 +365,7 @@ class DrillDownNavigator:
         self,
         session_id: str,
         include_refs: bool = True,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Build comprehensive handoff context for model switching.
 
         Returns summary suitable for passing to a new model session.
@@ -392,7 +392,7 @@ class DrillDownNavigator:
 
         return context
 
-    def _extract_key_points(self, events: List[Dict[str, Any]]) -> List[str]:
+    def _extract_key_points(self, events: list[dict[str, Any]]) -> list[str]:
         """Extract key points from session events."""
         points = []
 
@@ -414,7 +414,7 @@ class DrillDownNavigator:
 
         return points[:10]
 
-    def _extract_open_questions(self, events: List[Dict[str, Any]]) -> List[str]:
+    def _extract_open_questions(self, events: list[dict[str, Any]]) -> list[str]:
         """Extract open questions from session events."""
         questions = []
 
@@ -429,7 +429,7 @@ class DrillDownNavigator:
 
         return questions[-5:]
 
-    def _extract_next_steps(self, events: List[Dict[str, Any]]) -> List[str]:
+    def _extract_next_steps(self, events: list[dict[str, Any]]) -> list[str]:
         """Extract suggested next steps from session context."""
         steps = []
 
@@ -448,7 +448,7 @@ class DrillDownNavigator:
 
         return steps[:5]
 
-    def _find_session_refs(self, session_id: str) -> List[Dict[str, Any]]:
+    def _find_session_refs(self, session_id: str) -> list[dict[str, Any]]:
         """Find all refs associated with a session."""
         refs = []
 
@@ -470,9 +470,9 @@ class DrillDownNavigator:
     def build_facade_summary(
         self,
         intent: str,
-        results: Dict[str, Any],
+        results: dict[str, Any],
         max_refs: int = 5,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Build facade-friendly summary with progressive disclosure.
 
         Prioritizes:
@@ -492,7 +492,7 @@ class DrillDownNavigator:
             "expand_hint": "调用 expand_ref(ref_id) 查看详情，或 drill_timeline/drill_task 深入",
         }
 
-    def _extract_top_match(self, results: Dict[str, Any]) -> Dict[str, Any]:
+    def _extract_top_match(self, results: dict[str, Any]) -> dict[str, Any]:
         """Extract top match from results."""
         matches = results.get("results", results.get("matches", []))
         if not matches:
@@ -509,7 +509,7 @@ class DrillDownNavigator:
             }
         return {}
 
-    def _suggest_quick_action(self, intent: str, results: Dict[str, Any]) -> str:
+    def _suggest_quick_action(self, intent: str, results: dict[str, Any]) -> str:
         """Suggest quick action based on intent and results."""
         matches = results.get("results", results.get("matches", []))
 
@@ -525,7 +525,7 @@ class DrillDownNavigator:
         else:
             return "对 top 结果调用 memory_context 深挖"
 
-    def _extract_key_results(self, results: Dict[str, Any], max_refs: int) -> List[Dict[str, Any]]:
+    def _extract_key_results(self, results: dict[str, Any], max_refs: int) -> list[dict[str, Any]]:
         """Extract key results for Level 2 display."""
         matches = results.get("results", results.get("matches", []))
         key_results = []
@@ -543,7 +543,7 @@ class DrillDownNavigator:
 
         return key_results
 
-    def _extract_ref_links(self, results: Dict[str, Any], max_refs: int) -> List[Dict[str, Any]]:
+    def _extract_ref_links(self, results: dict[str, Any], max_refs: int) -> list[dict[str, Any]]:
         """Extract ref links for Level 3 expansion."""
         refs = []
 

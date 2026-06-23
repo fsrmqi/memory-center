@@ -8,9 +8,10 @@ from __future__ import annotations
 import queue
 import sqlite3
 import threading
+from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Generator
+from typing import Any
 
 
 class SQLitePool:
@@ -73,7 +74,7 @@ class SQLitePool:
             except Exception:
                 pass
 
-    def __enter__(self) -> "SQLitePool":
+    def __enter__(self) -> SQLitePool:
         return self
 
     def __exit__(self, *exc: Any) -> None:

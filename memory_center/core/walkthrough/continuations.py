@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any
 
 from ..orchestrator.common import _project_matches
 from .symbols import (
@@ -25,7 +25,7 @@ __all__ = [
 ]
 
 
-def _format_method_step_summary(kind: str, call: Dict[str, Any]) -> str:
+def _format_method_step_summary(kind: str, call: dict[str, Any]) -> str:
     receiver_type = call.get("receiver_type", "") or "unknown"
     receiver = call.get("receiver", "")
     method = call.get("method_name", "")
@@ -35,12 +35,12 @@ def _format_method_step_summary(kind: str, call: Dict[str, Any]) -> str:
 
 
 def build_method_local_steps(
-    method_calls: List[Dict[str, Any]],
-    dto_field_usages: List[Dict[str, Any]],
-    feigns: List[Dict[str, Any]],
-) -> List[Dict[str, Any]]:
+    method_calls: list[dict[str, Any]],
+    dto_field_usages: list[dict[str, Any]],
+    feigns: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
     feign_interfaces = {item.get("interface", "") for item in feigns}
-    steps: List[Dict[str, Any]] = []
+    steps: list[dict[str, Any]] = []
     for call in method_calls:
         receiver_type = call.get("receiver_type", "")
         kind = "feign_call" if receiver_type in feign_interfaces else "method_call"
@@ -69,12 +69,12 @@ def build_method_local_steps(
     return steps
 
 
-def _with_endpoint_confidence(api: Dict[str, Any], target_service: str) -> Dict[str, Any]:
+def _with_endpoint_confidence(api: dict[str, Any], target_service: str) -> dict[str, Any]:
     item = dict(api)
     project = str(api.get("project", "") or "")
     file_path = str(api.get("file", "") or "")
     controller = str(api.get("controller", "") or "")
-    reasons: List[str] = []
+    reasons: list[str] = []
     score = 0.35
     if target_service and (_project_matches(target_service, project) or _project_matches(project, target_service)):
         score += 0.35
@@ -94,8 +94,8 @@ def _with_endpoint_confidence(api: Dict[str, Any], target_service: str) -> Dict[
 
 
 def _rank_feign_matched_endpoints(
-    endpoints: List[Dict[str, Any]], target_service: str
-) -> List[Dict[str, Any]]:
+    endpoints: list[dict[str, Any]], target_service: str
+) -> list[dict[str, Any]]:
     enriched = [_with_endpoint_confidence(api, target_service) for api in endpoints]
     return sorted(
         enriched,
@@ -108,10 +108,10 @@ def _rank_feign_matched_endpoints(
 
 
 def _summarize_endpoint_walkthrough(
-    api: Dict[str, Any],
-    symbols: List[Dict[str, Any]],
-    file_abs_map: Dict[tuple, str],
-) -> Dict[str, Any]:
+    api: dict[str, Any],
+    symbols: list[dict[str, Any]],
+    file_abs_map: dict[tuple, str],
+) -> dict[str, Any]:
     controller = api.get("controller", "")
     method = api.get("method_name", "")
     entry = find_method_symbol_entry(
@@ -159,14 +159,14 @@ def _summarize_endpoint_walkthrough(
 
 
 def _continuations_for_feign_method(
-    feign: Dict[str, Any],
+    feign: dict[str, Any],
     method_name: str,
-    apis: List[Dict[str, Any]],
-    symbols: List[Dict[str, Any]],
-    file_abs_map: Dict[tuple, str],
-    source_call: Dict[str, Any],
-) -> List[Dict[str, Any]]:
-    out: List[Dict[str, Any]] = []
+    apis: list[dict[str, Any]],
+    symbols: list[dict[str, Any]],
+    file_abs_map: dict[tuple, str],
+    source_call: dict[str, Any],
+) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
     for method in feign.get("methods", []) or []:
         if method.get("method_name") != method_name:
             continue
@@ -204,8 +204,8 @@ def _continuations_for_feign_method(
     return out
 
 
-def dedupe_feign_continuations(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    deduped: List[Dict[str, Any]] = []
+def dedupe_feign_continuations(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    deduped: list[dict[str, Any]] = []
     seen = set()
     for item in items:
         key = (item.get("interface"), item.get("method"), item.get("http_method"), item.get("path"))
@@ -217,15 +217,15 @@ def dedupe_feign_continuations(items: List[Dict[str, Any]]) -> List[Dict[str, An
 
 
 def build_method_feign_continuations(
-    entry: Dict[str, Any],
+    entry: dict[str, Any],
     method_name: str,
-    method_calls: List[Dict[str, Any]],
-    feigns: List[Dict[str, Any]],
-    apis: List[Dict[str, Any]],
-    symbols: List[Dict[str, Any]],
-    file_abs_map: Dict[tuple, str],
-) -> List[Dict[str, Any]]:
-    continuations: List[Dict[str, Any]] = []
+    method_calls: list[dict[str, Any]],
+    feigns: list[dict[str, Any]],
+    apis: list[dict[str, Any]],
+    symbols: list[dict[str, Any]],
+    file_abs_map: dict[tuple, str],
+) -> list[dict[str, Any]]:
+    continuations: list[dict[str, Any]] = []
     feign_by_interface = {item.get("interface", ""): item for item in feigns}
     owner_feign = feign_by_interface.get(entry.get("class_name", ""))
     if owner_feign:
@@ -239,14 +239,14 @@ def build_method_feign_continuations(
 
 
 def build_service_impl_continuations(
-    symbols: List[Dict[str, Any]],
-    entry: Dict[str, Any],
-    method_calls: List[Dict[str, Any]],
-    file_abs_map: Dict[tuple, str] | None = None,
-    feigns: List[Dict[str, Any]] | None = None,
-    apis: List[Dict[str, Any]] | None = None,
-) -> List[Dict[str, Any]]:
-    continuations: List[Dict[str, Any]] = []
+    symbols: list[dict[str, Any]],
+    entry: dict[str, Any],
+    method_calls: list[dict[str, Any]],
+    file_abs_map: dict[tuple, str] | None = None,
+    feigns: list[dict[str, Any]] | None = None,
+    apis: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    continuations: list[dict[str, Any]] = []
     seen = set()
     for call in method_calls:
         receiver_type = str(call.get("receiver_type", "") or "")
@@ -315,20 +315,20 @@ def build_service_impl_continuations(
 
 
 def build_same_class_method_continuations(
-    symbols: List[Dict[str, Any]],
-    entry: Dict[str, Any],
+    symbols: list[dict[str, Any]],
+    entry: dict[str, Any],
     method_name: str,
-    file_abs_map: Dict[tuple, str],
-    feigns: List[Dict[str, Any]],
-    apis: List[Dict[str, Any]],
-) -> List[Dict[str, Any]]:
+    file_abs_map: dict[tuple, str],
+    feigns: list[dict[str, Any]],
+    apis: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
     symbol = entry.get("symbol", {}) or {}
     class_methods = set(symbol.get("methods", []) or [])
     if not class_methods:
         return []
     abs_path = resolve_indexed_abs_path(file_abs_map, entry.get("project", ""), entry.get("file", ""))
     called_methods = detect_unqualified_same_class_calls(abs_path, method_name, class_methods)
-    continuations: List[Dict[str, Any]] = []
+    continuations: list[dict[str, Any]] = []
     for called in called_methods:
         if called == method_name:
             continue
@@ -378,8 +378,8 @@ def build_same_class_method_continuations(
     return continuations
 
 
-def summarize_dto_field_filters(dto_usages: List[Dict[str, Any]]) -> Dict[str, Any]:
-    fields: List[str] = []
+def summarize_dto_field_filters(dto_usages: list[dict[str, Any]]) -> dict[str, Any]:
+    fields: list[str] = []
     seen = set()
     for row in dto_usages:
         receiver_type = row.get("receiver_type", "") or row.get("receiver", "")
@@ -397,7 +397,7 @@ def summarize_dto_field_filters(dto_usages: List[Dict[str, Any]]) -> Dict[str, A
     }
 
 
-def classify_dto_field_rule_groups(dto_usages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def classify_dto_field_rule_groups(dto_usages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     summary = summarize_dto_field_filters(dto_usages)
     fields = summary.get("unique_dto_fields", []) or []
     groups = [
@@ -415,7 +415,7 @@ def classify_dto_field_rule_groups(dto_usages: List[Dict[str, Any]]) -> List[Dic
         ("sort", {"sortField", "sortFlag", "check"}),
     ]
     remaining = set(fields)
-    out: List[Dict[str, Any]] = []
+    out: list[dict[str, Any]] = []
     for name, known in groups:
         matched = [field for field in fields if field in known]
         if matched:
@@ -428,12 +428,12 @@ def classify_dto_field_rule_groups(dto_usages: List[Dict[str, Any]]) -> List[Dic
 
 
 def build_method_walkthrough_next_actions(
-    feign_continuations: List[Dict[str, Any]],
-    downstream_summary: Dict[str, Any],
-    local_service_continuations: List[Dict[str, Any]] | None = None,
-    same_class_continuations: List[Dict[str, Any]] | None = None,
-) -> List[str]:
-    actions: List[str] = []
+    feign_continuations: list[dict[str, Any]],
+    downstream_summary: dict[str, Any],
+    local_service_continuations: list[dict[str, Any]] | None = None,
+    same_class_continuations: list[dict[str, Any]] | None = None,
+) -> list[str]:
+    actions: list[str] = []
     has_server_walkthroughs = any(item.get("server_walkthroughs") for item in feign_continuations or [])
     has_server_impls = any(
         server.get("service_impl_continuations")

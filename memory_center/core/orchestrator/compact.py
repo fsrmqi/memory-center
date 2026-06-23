@@ -1,21 +1,21 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, List
+from typing import Any
 
 from ..schemas import with_schema
 from ..token_utils import compute_savings, estimate_tokens
 from .common import _budget_limits, _trim_summary
 
 
-def _measure_compact_gain(raw_result: Dict[str, Any], compact_result: Dict[str, Any]) -> Dict[str, Any]:
+def _measure_compact_gain(raw_result: dict[str, Any], compact_result: dict[str, Any]) -> dict[str, Any]:
     """Measure token savings from raw to compact. Returns savings dict for gain logging."""
     raw_tokens = estimate_tokens(json.dumps(raw_result, ensure_ascii=False))
     compact_tokens = estimate_tokens(json.dumps(compact_result, ensure_ascii=False))
     return compute_savings(raw_tokens, compact_tokens)
 
 
-def _compact_task_rows(rows: List[Dict[str, Any]], limit: int = 5) -> List[Dict[str, Any]]:
+def _compact_task_rows(rows: list[dict[str, Any]], limit: int = 5) -> list[dict[str, Any]]:
     return [
         {
             "task_id": row.get("task_id", ""),
@@ -29,7 +29,7 @@ def _compact_task_rows(rows: List[Dict[str, Any]], limit: int = 5) -> List[Dict[
     ]
 
 
-def _compact_sniff_result(result: Dict[str, Any], budget: str = "medium") -> Dict[str, Any]:
+def _compact_sniff_result(result: dict[str, Any], budget: str = "medium") -> dict[str, Any]:
     limits = _budget_limits(budget)
     symbolic = result.get("symbolic_context", {}) or {}
     focus_entities = symbolic.get("focus_entities", {}) or {}
@@ -97,7 +97,7 @@ def _compact_sniff_result(result: Dict[str, Any], budget: str = "medium") -> Dic
     }
 
 
-def _compact_workspace_status(result: Dict[str, Any], budget: str = "medium") -> Dict[str, Any]:
+def _compact_workspace_status(result: dict[str, Any], budget: str = "medium") -> dict[str, Any]:
     limits = _budget_limits(budget)
     return {
         "workspace": result.get("workspace", ""),
@@ -136,7 +136,7 @@ def _compact_workspace_status(result: Dict[str, Any], budget: str = "medium") ->
     }
 
 
-def _compact_resume_packet(result: Dict[str, Any], budget: str = "medium") -> Dict[str, Any]:
+def _compact_resume_packet(result: dict[str, Any], budget: str = "medium") -> dict[str, Any]:
     limits = _budget_limits(budget)
     return with_schema(
         "resume_packet",
@@ -155,7 +155,7 @@ def _compact_resume_packet(result: Dict[str, Any], budget: str = "medium") -> Di
     )
 
 
-def _compact_continuity_dashboard(result: Dict[str, Any], budget: str = "medium") -> Dict[str, Any]:
+def _compact_continuity_dashboard(result: dict[str, Any], budget: str = "medium") -> dict[str, Any]:
     limits = _budget_limits(budget)
     resume_packet = result.get("resume_packet", {}) or {}
     return with_schema(
@@ -194,7 +194,7 @@ def _compact_continuity_dashboard(result: Dict[str, Any], budget: str = "medium"
     )
 
 
-def _compact_workspace_dashboard(result: Dict[str, Any], budget: str = "medium") -> Dict[str, Any]:
+def _compact_workspace_dashboard(result: dict[str, Any], budget: str = "medium") -> dict[str, Any]:
     limits = _budget_limits(budget)
     focus_dashboard = result.get("focus_dashboard", {}) or {}
     focus_resume_eval = result.get("focus_resume_eval", {}) or {}
@@ -247,7 +247,7 @@ def _compact_workspace_dashboard(result: Dict[str, Any], budget: str = "medium")
     )
 
 
-def _compact_handoff_packet(result: Dict[str, Any], budget: str = "medium") -> Dict[str, Any]:
+def _compact_handoff_packet(result: dict[str, Any], budget: str = "medium") -> dict[str, Any]:
     model_name = (result.get("model_profile", {}) or {}).get("normalized_model", "")
     limits = _budget_limits(budget, model=model_name)
     packet = result.get("handoff_packet", {}) or {}

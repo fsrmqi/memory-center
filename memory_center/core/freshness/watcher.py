@@ -9,9 +9,10 @@ from __future__ import annotations
 import os
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any
 
 
 @dataclass
@@ -44,10 +45,10 @@ class FileWatcher:
     def __init__(
         self,
         root: str | Path,
-        extensions: Tuple[str, ...] = (".java", ".yml", ".yaml", ".properties"),
+        extensions: tuple[str, ...] = (".java", ".yml", ".yaml", ".properties"),
         debounce_seconds: float = 2.0,
         poll_interval: float = 5.0,
-        ignore_dirs: Tuple[str, ...] = (".git", "target", "build", "node_modules", "__pycache__"),
+        ignore_dirs: tuple[str, ...] = (".git", "target", "build", "node_modules", "__pycache__"),
     ):
         self._root = Path(root)
         self._extensions = extensions
@@ -55,16 +56,16 @@ class FileWatcher:
         self._poll_interval = poll_interval
         self._ignore_dirs = set(ignore_dirs)
 
-        self._snapshots: Dict[str, FileSnapshot] = {}
-        self._pending_events: List[WatchEvent] = []
-        self._callbacks: List[Callable[[List[WatchEvent]], None]] = []
+        self._snapshots: dict[str, FileSnapshot] = {}
+        self._pending_events: list[WatchEvent] = []
+        self._callbacks: list[Callable[[list[WatchEvent]], None]] = []
         self._running = False
-        self._thread: Optional[threading.Thread] = None
+        self._thread: threading.Thread | None = None
         self._lock = threading.Lock()
 
-    def take_snapshot(self) -> Dict[str, FileSnapshot]:
+    def take_snapshot(self) -> dict[str, FileSnapshot]:
         """Take a snapshot of all watched files."""
-        snapshots: Dict[str, FileSnapshot] = {}
+        snapshots: dict[str, FileSnapshot] = {}
 
         for dirpath, dirnames, filenames in os.walk(self._root):
             dirnames[:] = [d for d in dirnames if d not in self._ignore_dirs]
@@ -87,10 +88,10 @@ class FileWatcher:
 
         return snapshots
 
-    def detect_changes(self) -> List[WatchEvent]:
+    def detect_changes(self) -> list[WatchEvent]:
         """Detect changes by comparing current state to last snapshot."""
         current = self.take_snapshot()
-        events: List[WatchEvent] = []
+        events: list[WatchEvent] = []
 
         # Check for modified and deleted files
         for path, old_snap in self._snapshots.items():
@@ -109,7 +110,7 @@ class FileWatcher:
 
         return events
 
-    def on_change(self, callback: Callable[[List[WatchEvent]], None]) -> None:
+    def on_change(self, callback: Callable[[list[WatchEvent]], None]) -> None:
         """Register a callback for file changes."""
         self._callbacks.append(callback)
 
@@ -157,7 +158,7 @@ class FileWatcher:
             self._thread.join(timeout=self._poll_interval + self._debounce_seconds + 1)
             self._thread = None
 
-    def status(self) -> Dict[str, Any]:
+    def status(self) -> dict[str, Any]:
         """Return watcher status."""
         return {
             "running": self._running,
@@ -169,7 +170,7 @@ class FileWatcher:
         }
 
 
-def trigger_incremental_reindex(workspace_file: str | Path, changed_files: List[str]) -> Dict[str, Any]:
+def trigger_incremental_reindex(workspace_file: str | Path, changed_files: list[str]) -> dict[str, Any]:
     """Bridge watcher events to incremental reindex.
 
     Takes changed file paths from FileWatcher and triggers

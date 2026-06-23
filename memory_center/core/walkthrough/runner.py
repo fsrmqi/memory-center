@@ -24,7 +24,7 @@ import copy
 import json
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from ..completion import evaluate_walkthrough_completion
 from ..graph import GraphStore, node_id
@@ -105,7 +105,7 @@ def _is_compact_view(view: str) -> bool:
     return (view or "").lower() in {"compact", "lite", "small"}
 
 
-def _build_initial_target(entry: Dict[str, Any], parsed: Dict[str, str], file_abs_map: Dict[tuple, str]) -> Dict[str, Any]:
+def _build_initial_target(entry: dict[str, Any], parsed: dict[str, str], file_abs_map: dict[tuple, str]) -> dict[str, Any]:
     class_name = entry["class_name"]
     method_name = parsed["method"]
     method_node_id = node_id("Method", entry["project"], class_name, method_name)
@@ -123,7 +123,7 @@ def _build_initial_target(entry: Dict[str, Any], parsed: Dict[str, str], file_ab
     }
 
 
-def _collect_owner_calls_and_dto(entry: Dict[str, Any], method_name: str) -> tuple:
+def _collect_owner_calls_and_dto(entry: dict[str, Any], method_name: str) -> tuple:
     method_calls = [
         dict(call)
         for call in entry["symbol"].get("method_calls", [])
@@ -139,7 +139,7 @@ def _collect_owner_calls_and_dto(entry: Dict[str, Any], method_name: str) -> tup
     return method_calls, dto_field_usages
 
 
-def _build_method_not_found(workspace_file: Path, config: Any, symbol: str, lookup: Dict[str, Any]) -> Dict[str, Any]:
+def _build_method_not_found(workspace_file: Path, config: Any, symbol: str, lookup: dict[str, Any]) -> dict[str, Any]:
     return attach_facade_metadata({
         "schema_version": METHOD_WALKTHROUGH_SCHEMA_VERSION,
         "fields_contract": _wt_answer.method_walkthrough_fields_contract(),
@@ -153,7 +153,7 @@ def _build_method_not_found(workspace_file: Path, config: Any, symbol: str, look
     }, operation="memory_method_walkthrough", result_kind="walkthrough", evidence_level="indexed_static_analysis")
 
 
-def _build_invalid_symbol(workspace_file: Path, config: Any, symbol: str) -> Dict[str, Any]:
+def _build_invalid_symbol(workspace_file: Path, config: Any, symbol: str) -> dict[str, Any]:
     return attach_facade_metadata({
         "schema_version": METHOD_WALKTHROUGH_SCHEMA_VERSION,
         "fields_contract": _wt_answer.method_walkthrough_fields_contract(),
@@ -177,10 +177,10 @@ def build_walkthrough_result(
     budget: str = "medium",
     report_level: str = "standard",
     allow_workspace_escalation: bool = True,
-    cache: Optional[WalkthroughCache] = None,
-    lookup_provider: Optional[Callable[[Path, str, str], Dict[str, Any]]] = None,
-    escalation_runner: Optional[Callable[..., Dict[str, Any]]] = None,
-) -> Dict[str, Any]:
+    cache: WalkthroughCache | None = None,
+    lookup_provider: Callable[[Path, str, str], dict[str, Any]] | None = None,
+    escalation_runner: Callable[..., dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     """Build one method walkthrough result end-to-end.
 
     Parameters mirror ``memory_method_walkthrough``.  ``cache`` defaults to the
@@ -259,7 +259,7 @@ def build_walkthrough_result(
         symbols, entry, method_name, file_abs_map, feigns, apis,
     )
 
-    downstream_edges: List[Dict[str, Any]] = []
+    downstream_edges: list[dict[str, Any]] = []
     with GraphStore(store.graph_db_path) as graph:
         downstream_edges = graph.neighbors(
             target["node_id"],
@@ -271,7 +271,7 @@ def build_walkthrough_result(
     downstream_edges = _filter_call_edges(downstream_edges, direction="downstream")[:limit]
     downstream_summary = summarize_chain_edges(downstream_edges)
 
-    result: Dict[str, Any] = {
+    result: dict[str, Any] = {
         "schema_version": METHOD_WALKTHROUGH_SCHEMA_VERSION,
         "fields_contract": _wt_answer.method_walkthrough_fields_contract(),
         "workspace": getattr(config, "workspace", ""),
@@ -335,7 +335,7 @@ def build_walkthrough_result(
                 target_id=target["node_id"],
                 target_name=symbol,
                 max_transitive_depth=depth,
-                max_pattern_limit=min(8, max(1, limit)),
+                max_pattern_limit=min(6, max(1, limit)),
                 intent="walkthrough",
             )
         )

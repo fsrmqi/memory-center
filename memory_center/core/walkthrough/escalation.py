@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 __all__ = [
     "resolve_walkthrough_workspace_input",
@@ -42,13 +42,13 @@ def path_is_within(path: Path, maybe_parent: Path) -> bool:
         return False
 
 
-def registry_covering_workspaces(current_ws: Path, current_root: Path) -> List[Path]:
+def registry_covering_workspaces(current_ws: Path, current_root: Path) -> list[Path]:
     try:
         from ..orchestrator.common import load_context
         from ..registry import load_registry
     except Exception:
         return []
-    out: List[Path] = []
+    out: list[Path] = []
     try:
         registry = load_registry()
     except Exception:
@@ -69,7 +69,7 @@ def registry_covering_workspaces(current_ws: Path, current_root: Path) -> List[P
     return out
 
 
-def registry_group_sibling_workspaces(current_ws: Path) -> List[Path]:
+def registry_group_sibling_workspaces(current_ws: Path) -> list[Path]:
     try:
         from ..registry import load_registry
     except Exception:
@@ -91,7 +91,7 @@ def registry_group_sibling_workspaces(current_ws: Path) -> List[Path]:
         members = set(group.get("members", []) or [])
         if members & current_names:
             sibling_names.update(members - current_names)
-    out: List[Path] = []
+    out: list[Path] = []
     for repo in repos:
         if repo.get("name", "") not in sibling_names:
             continue
@@ -114,7 +114,7 @@ def find_parent_or_covering_workspace(workspace_file: str | Path) -> Path | None
     except Exception:
         current_root = current_ws.parent.parent.resolve()
 
-    candidates: List[Path] = []
+    candidates: list[Path] = []
     for parent in [current_root, *current_root.parents]:
         candidate = parent / ".memory-center" / "workspace.yaml"
         if candidate.exists() and candidate.resolve() != current_ws:
@@ -122,7 +122,7 @@ def find_parent_or_covering_workspace(workspace_file: str | Path) -> Path | None
     candidates.extend(registry_covering_workspaces(current_ws, current_root))
     candidates.extend(registry_group_sibling_workspaces(current_ws))
 
-    unique: List[Path] = []
+    unique: list[Path] = []
     seen = set()
     for candidate in candidates:
         key = str(candidate)
@@ -147,7 +147,7 @@ def find_parent_or_covering_workspace(workspace_file: str | Path) -> Path | None
     return unique[0]
 
 
-def walkthrough_quality_score(result: Dict[str, Any]) -> int:
+def walkthrough_quality_score(result: dict[str, Any]) -> int:
     if not result or not result.get("found"):
         return 0
     score = 10
@@ -170,7 +170,7 @@ def build_workspace_escalation_status(
     status: str,
     candidate_workspace: str = "",
     reason: str = "",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     return {
         "status": status,
         "original_workspace_file": str(Path(workspace_file).expanduser().resolve()),
@@ -180,9 +180,9 @@ def build_workspace_escalation_status(
     }
 
 
-def walkthrough_index_signature(store: Any) -> Dict[str, float]:
+def walkthrough_index_signature(store: Any) -> dict[str, float]:
     names = ["file-index.json", "java-symbol-index.json", "feign-index.json", "api-index.json", "graph-summary.json"]
-    signature: Dict[str, float] = {}
+    signature: dict[str, float] = {}
     for name in names:
         path = getattr(store, "index_dir", Path()) / name
         try:
@@ -192,12 +192,12 @@ def walkthrough_index_signature(store: Any) -> Dict[str, float]:
     return signature
 
 
-def walkthrough_recent_bypass_feedback(store: Any, session_events_file: str, limit: int = 200) -> Dict[str, Any]:
+def walkthrough_recent_bypass_feedback(store: Any, session_events_file: str, limit: int = 200) -> dict[str, Any]:
     import json as _json
 
     rows = store.read_jsonl_prefer_backend(session_events_file, limit=limit)
     patterns = ["find", "grep -l", "sed -n", "tool-results"]
-    hits: List[Dict[str, Any]] = []
+    hits: list[dict[str, Any]] = []
     for row in rows:
         payload = row.get("payload", {}) if isinstance(row.get("payload"), dict) else row
         text = _json.dumps(payload, ensure_ascii=False)

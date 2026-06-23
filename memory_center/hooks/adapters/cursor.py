@@ -7,7 +7,7 @@ MCP facade tools at the right lifecycle points.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 from ..spec import load_hooks_config
 
@@ -22,7 +22,7 @@ _HOOK_INSTRUCTIONS = {
 def generate_cursor_rules(
     workspace: str,
     output_path: str | Path | None = None,
-    hooks_config: Dict[str, Any] | None = None,
+    hooks_config: dict[str, Any] | None = None,
 ) -> Path:
     """Generate .cursorrules with Memory Center lifecycle instructions.
 

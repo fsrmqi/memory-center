@@ -4,15 +4,16 @@ import json
 import re
 import statistics
 import time
+from collections.abc import Callable, Iterable
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterable
+from typing import Any
 
 import yaml
 
 from .models import GoldenCase
 
-CaseRunner = Callable[[GoldenCase], Dict[str, Any]]
+CaseRunner = Callable[[GoldenCase], dict[str, Any]]
 
 
 _INVALID_SEARCH_TOOL_RE = re.compile(r"\b(find|grep(?:\s+-l)?|rg\s+--files|sed\s+-n|idea\s+search)\b", re.I)
@@ -50,7 +51,7 @@ def load_golden_cases(cases_file: str | Path) -> list[GoldenCase]:
     return cases
 
 
-def load_golden_performance_baseline(path: str | Path) -> Dict[str, Any]:
+def load_golden_performance_baseline(path: str | Path) -> dict[str, Any]:
     baseline_path = Path(path).expanduser().resolve()
     data = json.loads(baseline_path.read_text(encoding="utf-8"))
     if not isinstance(data, dict):
@@ -58,7 +59,7 @@ def load_golden_performance_baseline(path: str | Path) -> Dict[str, Any]:
     return data
 
 
-def build_golden_performance_baseline(result: Dict[str, Any], *, label: str = "current") -> Dict[str, Any]:
+def build_golden_performance_baseline(result: dict[str, Any], *, label: str = "current") -> dict[str, Any]:
     summary = result.get("summary", {}) or {}
     performance = result.get("performance", {}) or {}
     return {
@@ -88,12 +89,12 @@ def _improvement_pct(baseline_value: float, current_value: float) -> float:
 
 
 def compare_golden_performance(
-    current_result: Dict[str, Any],
+    current_result: dict[str, Any],
     *,
-    baseline: Dict[str, Any] | None,
+    baseline: dict[str, Any] | None,
     latency_improvement_threshold_pct: float = -10.0,
     token_improvement_threshold_pct: float = 0.0,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     current_baseline = build_golden_performance_baseline(current_result, label="current")
     if not baseline:
         return {
@@ -148,7 +149,7 @@ def score_golden_case(
     actual_edges: Iterable[str] = (),
     latency_ms: float = 0.0,
     max_latency_ms: float = 5000.0,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     expected_anchor_set = set(expected_anchors)
     actual_anchor_set = set(actual_anchors)
     expected_edge_set = set(expected_edges)
@@ -211,7 +212,7 @@ def _is_negated_search_guidance(path: str, text: str) -> bool:
     return any(token in haystack for token in _NEGATED_SEARCH_HINTS)
 
 
-def evaluate_agent_guidance(payload: Any) -> Dict[str, Any]:
+def evaluate_agent_guidance(payload: Any) -> dict[str, Any]:
     """Score whether agent-facing output still encourages unnecessary repo search."""
 
     invalid: list[str] = []
@@ -264,7 +265,7 @@ def _anchor_from_name(name: Any, node_type: Any = "") -> str:
     return ""
 
 
-def extract_logical_evidence(payload: Any) -> Dict[str, list[str]]:
+def extract_logical_evidence(payload: Any) -> dict[str, list[str]]:
     anchors: set[str] = set()
     edges: set[str] = set()
     continuation_edges = {
@@ -307,7 +308,7 @@ def extract_logical_evidence(payload: Any) -> Dict[str, list[str]]:
 
 
 def _default_case_runner(workspace_file: str | Path) -> CaseRunner:
-    def run(case: GoldenCase) -> Dict[str, Any]:
+    def run(case: GoldenCase) -> dict[str, Any]:
         if case.mode == "walkthrough":
             from ..orchestrator import memory_method_walkthrough
 
@@ -343,11 +344,11 @@ def run_golden_suite(
     cases_file: str | Path,
     *,
     case_runner: CaseRunner | None = None,
-    performance_baseline: Dict[str, Any] | str | Path | None = None,
-) -> Dict[str, Any]:
+    performance_baseline: dict[str, Any] | str | Path | None = None,
+) -> dict[str, Any]:
     cases = load_golden_cases(cases_file)
     runner = case_runner or _default_case_runner(workspace_file)
-    case_results: list[Dict[str, Any]] = []
+    case_results: list[dict[str, Any]] = []
     latencies: list[float] = []
     token_estimate = 0
     for case in cases:

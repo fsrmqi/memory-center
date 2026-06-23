@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import re
 from datetime import datetime, timezone
-from typing import Any, Dict
+from typing import Any
 
 
 def slugify_walkthrough_symbol(symbol: str) -> str:
@@ -15,7 +15,7 @@ def slugify_walkthrough_symbol(symbol: str) -> str:
 def render_walkthrough_markdown(
     workspace: str,
     symbol: str,
-    result: Dict[str, Any],
+    result: dict[str, Any],
     *,
     read_targets: str,
     title: str = "",

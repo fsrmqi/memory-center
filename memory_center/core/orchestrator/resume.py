@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 from ..artifacts import get_task_artifact, list_task_spaces
 from ..rules import (
@@ -43,7 +43,7 @@ def workspace_resume_packet(
     limit: int = 10,
     view: str = "compact",
     budget: str = "medium",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     from .workspace import workspace_status  # lazy import to avoid circular dep
 
     config, store = load_context(workspace_file)
@@ -120,7 +120,7 @@ def workspace_resume_packet(
     return result
 
 
-def workspace_resume_context(workspace_file: str | Path, intent: str, limit: int = 5) -> Dict[str, Any]:
+def workspace_resume_context(workspace_file: str | Path, intent: str, limit: int = 5) -> dict[str, Any]:
     config, store = load_context(workspace_file)
     query_result = memory_query(workspace_file, intent, limit=limit)
     summaries = store.read_jsonl_prefer_backend(SESSION_SUMMARIES_FILE, limit=500)
@@ -159,11 +159,11 @@ def workspace_unresolved_items(
     session_id: str = "",
     intent: str = "",
     limit: int = 10,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     from .eval import memory_eval_write_quality
 
     config, _ = load_context(workspace_file)
-    unresolved: List[str] = []
+    unresolved: list[str] = []
     quality = memory_eval_write_quality(
         workspace_file, task_id=task_id, session_id=session_id, intent=intent, limit=max(limit, 20)
     )
@@ -193,11 +193,11 @@ def workspace_next_actions(
     session_id: str = "",
     intent: str = "",
     limit: int = 8,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     from .eval import memory_eval_write_quality
 
     config, _ = load_context(workspace_file)
-    actions: List[str] = []
+    actions: list[str] = []
     quality = memory_eval_write_quality(
         workspace_file, task_id=task_id, session_id=session_id, intent=intent, limit=max(limit, 20)
     )
@@ -234,7 +234,7 @@ def workspace_handoff_packet(
     limit: int = 10,
     view: str = "compact",
     budget: str = "medium",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     from .eval import memory_eval_write_quality
 
     config, store = load_context(workspace_file)
@@ -329,7 +329,7 @@ def workspace_handoff_history(
     task_id: str = "",
     session_id: str = "",
     limit: int = 50,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     config, _ = load_context(workspace_file)
     normalized_target = _normalize_model_name(target_model) if target_model else ""
     timeline = timeline_query(
@@ -353,7 +353,7 @@ def workspace_handoff_history(
     }
 
 
-def workspace_model_profile(model_name: str, workspace_file: str | Path | None = None) -> Dict[str, Any]:
+def workspace_model_profile(model_name: str, workspace_file: str | Path | None = None) -> dict[str, Any]:
     normalized = _normalize_model_name(model_name)
     profiles = dict(DEFAULT_HANDOFF_PROFILES.get("profiles", {}))
     if workspace_file:
@@ -370,7 +370,7 @@ def workspace_model_profile(model_name: str, workspace_file: str | Path | None =
 
 # ---- internal helpers -------------------------------------------------------
 
-def _infer_task_phase(current_summary: str, timeline: List[Dict[str, Any]]) -> str:
+def _infer_task_phase(current_summary: str, timeline: list[dict[str, Any]]) -> str:
     summary_lower = (current_summary or "").lower()
     actions = {item.get("action", "") for item in timeline}
     if TOOL_WORKSPACE_SYNC_CASE_ARTIFACTS in actions or "session:" in summary_lower:

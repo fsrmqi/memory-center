@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable, Sequence
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Sequence
+from typing import Any
 
 import yaml
 
@@ -19,6 +20,7 @@ except Exception:
     _JAVA_PARSER = RegexJavaParser()
 from .models import ApiEndpoint, FeignClient, JavaSymbol, MqEndpoint, WorkspaceConfig, to_dict
 from .observability import observe_operation
+from .parser_precision import parser_precision_from_diagnostics
 from .semantic import build_workspace_semantic_index, build_workspace_semantic_index_partial, semantic_index_stats
 from .store import WorkspaceStore
 
@@ -42,28 +44,28 @@ def reindex_workspace(
     projects: Sequence[str] | None = None,
     paths: Sequence[str] | None = None,
     parallel: bool = False,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Rebuild deterministic indexes and the local evidence graph."""
     project_filter = {item.strip() for item in (projects or []) if item and item.strip()}
     path_filters = [item.strip() for item in (paths or []) if item and item.strip()]
     partial = bool(project_filter or path_filters)
 
-    old_file_index: List[Dict[str, Any]] = store.read_json_prefer_backend("file-index.json", [])
-    old_symbol_index: List[Dict[str, Any]] = store.read_json_prefer_backend("java-symbol-index.json", [])
-    old_api_index: List[Dict[str, Any]] = store.read_json_prefer_backend("api-index.json", [])
-    old_feign_index: List[Dict[str, Any]] = store.read_json_prefer_backend("feign-index.json", [])
-    old_mq_index: List[Dict[str, Any]] = store.read_json_prefer_backend("mq-index.json", [])
-    old_config_index: List[Dict[str, Any]] = store.read_json_prefer_backend("config-index.json", [])
+    old_file_index: list[dict[str, Any]] = store.read_json_prefer_backend("file-index.json", [])
+    old_symbol_index: list[dict[str, Any]] = store.read_json_prefer_backend("java-symbol-index.json", [])
+    old_api_index: list[dict[str, Any]] = store.read_json_prefer_backend("api-index.json", [])
+    old_feign_index: list[dict[str, Any]] = store.read_json_prefer_backend("feign-index.json", [])
+    old_mq_index: list[dict[str, Any]] = store.read_json_prefer_backend("mq-index.json", [])
+    old_config_index: list[dict[str, Any]] = store.read_json_prefer_backend("config-index.json", [])
 
-    file_index: List[Dict[str, Any]] = []
-    symbol_index: List[Dict[str, Any]] = []
-    api_index: List[Dict[str, Any]] = []
-    feign_index: List[Dict[str, Any]] = []
-    mq_index: List[Dict[str, Any]] = []
-    config_index: List[Dict[str, Any]] = []
+    file_index: list[dict[str, Any]] = []
+    symbol_index: list[dict[str, Any]] = []
+    api_index: list[dict[str, Any]] = []
+    feign_index: list[dict[str, Any]] = []
+    mq_index: list[dict[str, Any]] = []
+    config_index: list[dict[str, Any]] = []
     # Collect feign files for deferred parsing (need complete constant_map first)
-    pending_feigns: List[tuple] = []
-    java_tasks: List[tuple] = []
+    pending_feigns: list[tuple] = []
+    java_tasks: list[tuple] = []
 
     reset_parser_diagnostics = getattr(_JAVA_PARSER, "reset_diagnostics", None)
     if callable(reset_parser_diagnostics):
@@ -162,6 +164,14 @@ def reindex_workspace(
         semantic_counts = build_workspace_semantic_index(store.workspace_file)
     retrieval_counts = _sync_retrieval_indexes(store, semantic_counts)
     parser_diagnostics = _parser_diagnostics(len(java_tasks))
+    parser_precision = parser_precision_from_diagnostics(parser_diagnostics)
+    graph_summary = {
+        **graph_counts,
+        "parser": parser_diagnostics["selected_parser"],
+        "parser_diagnostics": parser_diagnostics,
+        "parser_precision": parser_precision,
+    }
+    store.write_json("graph-summary.json", graph_summary)
     return {
         "mode": "partial" if partial else "full",
         "filtered_projects": sorted(project_filter),
@@ -180,11 +190,12 @@ def reindex_workspace(
         "parser_fallback_count": parser_diagnostics["fallback_count"],
         "parser_critical_disagreement_count": parser_diagnostics["critical_disagreement_count"],
         "parser_diagnostics": parser_diagnostics,
+        "parser_precision": parser_precision,
         **retrieval_counts,
     }
 
 
-def _parser_diagnostics(parse_count: int) -> Dict[str, Any]:
+def _parser_diagnostics(parse_count: int) -> dict[str, Any]:
     diagnostics = getattr(_JAVA_PARSER, "diagnostics", None)
     if isinstance(diagnostics, dict):
         return dict(diagnostics)
@@ -217,7 +228,7 @@ def _path_matches_filters(config: WorkspaceConfig, svc, path: Path, path_filters
 
 
 def _row_matches_scope(
-    row: Dict[str, Any],
+    row: dict[str, Any],
     project_filter: set[str],
     path_filters: Sequence[str],
     *,
@@ -256,13 +267,13 @@ def _row_matches_scope(
 
 
 def _merge_index_rows(
-    existing: List[Dict[str, Any]],
-    refreshed: List[Dict[str, Any]],
+    existing: list[dict[str, Any]],
+    refreshed: list[dict[str, Any]],
     project_filter: set[str],
     path_filters: Sequence[str],
     *,
     path_key: str = "path",
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     kept = [
         row for row in existing
         if not _row_matches_scope(row, project_filter, path_filters, path_key=path_key)
@@ -287,7 +298,7 @@ def safe_read(path: Path, limit: int = 600_000) -> str:
         return ""
 
 
-def _parse_java_file(project: str, rel: str, path: Path) -> Dict[str, Any]:
+def _parse_java_file(project: str, rel: str, path: Path) -> dict[str, Any]:
     """Parse a single Java file for deferred assembly into indexes."""
     try:
         text = safe_read(path)
@@ -303,7 +314,7 @@ def _parse_java_file(project: str, rel: str, path: Path) -> Dict[str, Any]:
         return {"symbol": None, "apis": [], "pending_feign": None, "mq": []}
 
 
-def _sync_retrieval_indexes(store: WorkspaceStore, semantic_index: Dict[str, Any]) -> Dict[str, int]:
+def _sync_retrieval_indexes(store: WorkspaceStore, semantic_index: dict[str, Any]) -> dict[str, int]:
     """Synchronize BM25 and dense vector indexes from the rebuilt graph."""
     from .retrieval.inverted import InvertedIndex
     from .storage.unified import UnifiedStore
@@ -332,12 +343,12 @@ def _sync_retrieval_indexes(store: WorkspaceStore, semantic_index: Dict[str, Any
     }
 
 
-def _method_line(symbol_by_project_file: Dict[tuple[str, str], Dict[str, Any]], project: str, file_path: str, method: str) -> int:
+def _method_line(symbol_by_project_file: dict[tuple[str, str], dict[str, Any]], project: str, file_path: str, method: str) -> int:
     sym = symbol_by_project_file.get((project, file_path), {})
     return int((sym.get("method_lines") or {}).get(method, 0) or 0)
 
 
-def _class_or_interface_line(symbol_by_project_file: Dict[tuple[str, str], Dict[str, Any]], project: str, file_path: str, name: str) -> int:
+def _class_or_interface_line(symbol_by_project_file: dict[tuple[str, str], dict[str, Any]], project: str, file_path: str, name: str) -> int:
     sym = symbol_by_project_file.get((project, file_path), {})
     return int((sym.get("class_lines") or {}).get(name, 0) or (sym.get("interface_lines") or {}).get(name, 0) or 0)
 
@@ -371,7 +382,7 @@ def parse_java_symbols(project: str, rel: str, text: str) -> JavaSymbol:
     )
 
 
-def parse_controllers(project: str, rel: str, text: str, symbol: JavaSymbol) -> List[ApiEndpoint]:
+def parse_controllers(project: str, rel: str, text: str, symbol: JavaSymbol) -> list[ApiEndpoint]:
     if "RestController" not in symbol.annotations and "Controller" not in symbol.annotations:
         return []
     context = (
@@ -383,7 +394,7 @@ def parse_controllers(project: str, rel: str, text: str, symbol: JavaSymbol) -> 
     body = context[2] if context else text
     constant_map = dict(symbol.constants)
     class_prefix = _mapping_path(extract_annotation_args(declaration, "RequestMapping") or "", constant_map)
-    endpoints: List[ApiEndpoint] = []
+    endpoints: list[ApiEndpoint] = []
     pattern = re.compile(
         r"@(GetMapping|PostMapping|PutMapping|DeleteMapping|PatchMapping|RequestMapping)\s*(?:\(([^)]*)\))?"
         r"\s*(?:\n|\r|\s)*(?:@[\w()\"=,{}./\s]+\s*)*[^;{=]+?\s+(\w+)\s*\(",
@@ -395,7 +406,7 @@ def parse_controllers(project: str, rel: str, text: str, symbol: JavaSymbol) -> 
     return endpoints
 
 
-def parse_feign_clients(project: str, rel: str, text: str, symbol: JavaSymbol, constant_map: Dict[str, str] | None = None) -> List[FeignClient]:
+def parse_feign_clients(project: str, rel: str, text: str, symbol: JavaSymbol, constant_map: dict[str, str] | None = None) -> list[FeignClient]:
     if "FeignClient" not in symbol.annotations:
         return []
     interface = (
@@ -423,7 +434,7 @@ def parse_feign_clients(project: str, rel: str, text: str, symbol: JavaSymbol, c
         or extract_named_value(ann_args, "url")
         or ""
     )
-    methods: List[Dict[str, Any]] = []
+    methods: list[dict[str, Any]] = []
     pattern = re.compile(
         r"@(GetMapping|PostMapping|PutMapping|DeleteMapping|PatchMapping|RequestMapping)\s*(?:\(([^)]*)\))?"
         r"\s*(?:\n|\r|\s)*(?:@[\w()\"=,{}./\s]+\s*)*[^;{=]+?\s+(\w+)\s*\(",
@@ -435,8 +446,8 @@ def parse_feign_clients(project: str, rel: str, text: str, symbol: JavaSymbol, c
     return [FeignClient(project, rel, interface, target, base_path, methods)]
 
 
-def parse_mq_endpoints(project: str, rel: str, text: str, symbol: JavaSymbol) -> List[MqEndpoint]:
-    endpoints: List[MqEndpoint] = []
+def parse_mq_endpoints(project: str, rel: str, text: str, symbol: JavaSymbol) -> list[MqEndpoint]:
+    endpoints: list[MqEndpoint] = []
     class_name = (symbol.classes or [Path(rel).stem])[0]
     for args, method_name in _listener_annotations(text, "KafkaListener"):
         raw_topic = extract_named_value(args, "topics") or extract_named_value(args, "topic") or extract_first_string(args) or ""
@@ -462,7 +473,7 @@ def parse_mq_endpoints(project: str, rel: str, text: str, symbol: JavaSymbol) ->
     return endpoints
 
 
-def parse_yaml_config(path: Path) -> Dict[str, Any]:
+def parse_yaml_config(path: Path) -> dict[str, Any]:
     try:
         data = yaml.safe_load(path.read_text(encoding="utf-8", errors="ignore")) or {}
         values = flatten_dict(data)
@@ -473,9 +484,9 @@ def parse_yaml_config(path: Path) -> Dict[str, Any]:
         return {"values": {}, "stream_bindings": {}, "custom_kafka_consumers": {}}
 
 
-def _extract_stream_bindings(data: Dict[str, Any]) -> Dict[str, str]:
+def _extract_stream_bindings(data: dict[str, Any]) -> dict[str, str]:
     """Extract spring.cloud.stream.bindings.<name>.destination → topic mapping."""
-    result: Dict[str, str] = {}
+    result: dict[str, str] = {}
     spring = data.get("spring", {})
     cloud = spring.get("cloud", {}) if isinstance(spring, dict) else {}
     stream = cloud.get("stream", {}) if isinstance(cloud, dict) else {}
@@ -487,9 +498,9 @@ def _extract_stream_bindings(data: Dict[str, Any]) -> Dict[str, str]:
     return result
 
 
-def _extract_custom_kafka_consumers(data: Dict[str, Any]) -> Dict[str, str]:
+def _extract_custom_kafka_consumers(data: dict[str, Any]) -> dict[str, str]:
     """Extract ucap.kafka.consumers.<name>.topic → topic mapping."""
-    result: Dict[str, str] = {}
+    result: dict[str, str] = {}
     ucap = data.get("ucap", {})
     kafka = ucap.get("kafka", {}) if isinstance(ucap, dict) else {}
     consumers = kafka.get("consumers", {}) if isinstance(kafka, dict) else {}
@@ -500,7 +511,7 @@ def _extract_custom_kafka_consumers(data: Dict[str, Any]) -> Dict[str, str]:
     return result
 
 
-def build_topology(config: WorkspaceConfig, feigns: List[Dict], apis: List[Dict], mq: List[Dict], config_index: List[Dict]) -> Dict[str, Any]:
+def build_topology(config: WorkspaceConfig, feigns: list[dict], apis: list[dict], mq: list[dict], config_index: list[dict]) -> dict[str, Any]:
     services = [
         {
             "name": s.name,
@@ -515,7 +526,7 @@ def build_topology(config: WorkspaceConfig, feigns: List[Dict], apis: List[Dict]
     ]
     service_names = {s["service_name"]: s["name"] for s in services}
     feign_edges = [{"from_project": f["project"], "to_service": f["target_service"], "to_project": service_names.get(f["target_service"]), "client": f["interface"], "file": f["file"]} for f in feigns]
-    mq_topics: Dict[str, Dict[str, Any]] = {}
+    mq_topics: dict[str, dict[str, Any]] = {}
     for m in mq:
         kind = m.get("kind", "")
         is_producer = kind in ("kafka-producer", "rocketmq-producer")
@@ -575,7 +586,7 @@ def _matching_brace(text: str, open_brace: int) -> int:
     return len(text)
 
 
-def _named_constant_or_value(args: str, name: str, constant_map: Dict[str, str]) -> str:
+def _named_constant_or_value(args: str, name: str, constant_map: dict[str, str]) -> str:
     value = extract_named_value(args, name)
     if value is not None:
         return value
@@ -585,7 +596,7 @@ def _named_constant_or_value(args: str, name: str, constant_map: Dict[str, str])
     return constant_map.get(ref) or constant_map.get(ref.split(".")[-1], "")
 
 
-def _mapping_path(args: str, constant_map: Dict[str, str]) -> str:
+def _mapping_path(args: str, constant_map: dict[str, str]) -> str:
     value = extract_named_value(args, "value") or extract_named_value(args, "path") or extract_first_string(args)
     if value is not None:
         return value
@@ -622,10 +633,10 @@ def extract_named_ref(args: str, name: str) -> str | None:
     return m.group(1) if m else None
 
 
-def _build_constant_map(symbol_index: List[Dict[str, Any]]) -> Dict[str, str]:
+def _build_constant_map(symbol_index: list[dict[str, Any]]) -> dict[str, str]:
     """Build a map from CONSTANT_NAME and ClassName.CONSTANT_NAME to string values,
     using dedicated constants with field_types as a legacy fallback."""
-    constant_map: Dict[str, str] = {}
+    constant_map: dict[str, str] = {}
     for sym in symbol_index:
         values = sym.get("constants") or sym.get("field_types", {})
         for fname, fval in values.items():
@@ -672,7 +683,7 @@ def clean_topic(topic: str) -> str:
     return topic.strip().strip("{}").strip().strip('"')
 
 
-def _listener_annotations(text: str, annotation: str) -> List[tuple[str, str | None]]:
+def _listener_annotations(text: str, annotation: str) -> list[tuple[str, str | None]]:
     pattern = re.compile(
         rf"@{annotation}\s*\(([^)]*)\)\s*(?:\n|\r|\s)*(?:@[\w()\"=,{{}}./\s]+\s*)*"
         r"(?:public|private|protected)\s+(?:static\s+)?[\w<>, ?\.\[\]]+\s+(\w+)\s*\(",
@@ -692,8 +703,8 @@ def _is_function_consumer(text: str) -> bool:
     return False
 
 
-def parse_mq_producers(project: str, rel: str, text: str) -> List[MqEndpoint]:
-    producers: List[MqEndpoint] = []
+def parse_mq_producers(project: str, rel: str, text: str) -> list[MqEndpoint]:
+    producers: list[MqEndpoint] = []
     # KafkaTemplate.send(topic, ...) - literal topic
     for m in re.finditer(r'kafkaTemplate\s*\.\s*(?:send|sendDefault)\s*\(\s*"([^"]+)"', text):
         producers.append(MqEndpoint(project=project, file=rel, kind="kafka-producer", topic=m.group(1)))
@@ -703,8 +714,8 @@ def parse_mq_producers(project: str, rel: str, text: str) -> List[MqEndpoint]:
     return producers
 
 
-def flatten_dict(data: Dict[str, Any], prefix: str = "") -> Dict[str, str]:
-    out: Dict[str, str] = {}
+def flatten_dict(data: dict[str, Any], prefix: str = "") -> dict[str, str]:
+    out: dict[str, str] = {}
     for k, v in data.items():
         key = f"{prefix}.{k}" if prefix else str(k)
         if isinstance(v, dict):
@@ -714,10 +725,10 @@ def flatten_dict(data: Dict[str, Any], prefix: str = "") -> Dict[str, str]:
     return out
 
 
-def build_graph_store(config: WorkspaceConfig, store: WorkspaceStore, *, project_filter: set[str] | None = None, path_filters: Sequence[str] | None = None) -> Dict[str, Any]:
+def build_graph_store(config: WorkspaceConfig, store: WorkspaceStore, *, project_filter: set[str] | None = None, path_filters: Sequence[str] | None = None) -> dict[str, Any]:
     with GraphStore(store.graph_db_path) as graph:
-        nodes: List[GraphNode] = []
-        edges: List[GraphEdge] = []
+        nodes: list[GraphNode] = []
+        edges: list[GraphEdge] = []
         partial = bool(project_filter or path_filters)
         pf = project_filter or set()
         pfs = list(path_filters or [])
@@ -753,13 +764,13 @@ def build_graph_store(config: WorkspaceConfig, store: WorkspaceStore, *, project
         feign_match_pool = apis_full if partial else apis
         api_lookup = _build_api_lookup(feign_match_pool)
 
-        class_locations: Dict[str, List[Dict[str, Any]]] = {}
-        method_locations: Dict[str, List[str]] = {}
+        class_locations: dict[str, list[dict[str, Any]]] = {}
+        method_locations: dict[str, list[str]] = {}
         declared_method_ids: set[str] = set()
-        field_locations: Dict[str, List[str]] = {}
-        field_locations_by_class: Dict[tuple[str, str], List[str]] = {}
-        field_type_by_file: Dict[str, Dict[str, str]] = {}
-        method_variable_types_by_file: Dict[str, Dict[str, Dict[str, str]]] = {}
+        field_locations: dict[str, list[str]] = {}
+        field_locations_by_class: dict[tuple[str, str], list[str]] = {}
+        field_type_by_file: dict[str, dict[str, str]] = {}
+        method_variable_types_by_file: dict[str, dict[str, dict[str, str]]] = {}
 
         for svc in config.services:
             if pf and svc.name not in pf:
@@ -969,7 +980,7 @@ def _normalize_path_params(path: str) -> str:
 _API_LOOKUP_WILDCARD = ""
 
 
-def _build_api_lookup(apis: List[Dict[str, Any]]) -> Dict[tuple[str, str], List[Dict[str, Any]]]:
+def _build_api_lookup(apis: list[dict[str, Any]]) -> dict[tuple[str, str], list[dict[str, Any]]]:
     """Index APIs by ``(http_method, normalized_path)``.
 
     Two keys are stored per API: the http method, and the "wildcard" key
@@ -977,7 +988,7 @@ def _build_api_lookup(apis: List[Dict[str, Any]]) -> Dict[tuple[str, str], List[
     wildcard bucket is consulted as a fallback so legacy non-standard methods
     keep matching exactly like the legacy linear scan.
     """
-    lookup: Dict[tuple[str, str], List[Dict[str, Any]]] = {}
+    lookup: dict[tuple[str, str], list[dict[str, Any]]] = {}
     for api in apis:
         method = (api.get("http_method") or "").upper()
         norm = _normalize_path_params((api.get("path") or "").strip("/"))
@@ -987,10 +998,10 @@ def _build_api_lookup(apis: List[Dict[str, Any]]) -> Dict[tuple[str, str], List[
 
 
 def _candidate_apis_for_feign_method(
-    api_lookup: Dict[tuple[str, str], List[Dict[str, Any]]],
-    feign: Dict[str, Any],
-    method: Dict[str, Any],
-) -> List[Dict[str, Any]]:
+    api_lookup: dict[tuple[str, str], list[dict[str, Any]]],
+    feign: dict[str, Any],
+    method: dict[str, Any],
+) -> list[dict[str, Any]]:
     """Return APIs that could match a Feign method without scanning the full list.
 
     We consult two normalized keys: the path declared on the Feign method and
@@ -1006,7 +1017,7 @@ def _candidate_apis_for_feign_method(
         if base_path
         else ""
     )
-    out: List[Dict[str, Any]] = []
+    out: list[dict[str, Any]] = []
     seen: set[int] = set()
 
     def _extend(key: tuple[str, str]) -> None:
@@ -1017,7 +1028,7 @@ def _candidate_apis_for_feign_method(
             seen.add(ident)
             out.append(api)
 
-    keys: List[tuple[str, str]] = [
+    keys: list[tuple[str, str]] = [
         (feign_http, method_norm),
     ]
     if composed_norm and composed_norm != method_norm:
@@ -1031,7 +1042,7 @@ def _candidate_apis_for_feign_method(
     return out
 
 
-def _endpoint_matches(feign: Dict[str, Any], method: Dict[str, Any], api: Dict[str, Any]) -> bool:
+def _endpoint_matches(feign: dict[str, Any], method: dict[str, Any], api: dict[str, Any]) -> bool:
     api_path = (api.get("path") or "").strip("/")
     feign_http = (method.get("http_method") or "").upper()
     api_http = (api.get("http_method") or "").upper()
@@ -1057,14 +1068,14 @@ def _endpoint_matches(feign: Dict[str, Any], method: Dict[str, Any], api: Dict[s
     return False
 
 
-def _source_method_id(sym: Dict[str, Any], owner_class: str, fact: Dict[str, Any]) -> str | None:
+def _source_method_id(sym: dict[str, Any], owner_class: str, fact: dict[str, Any]) -> str | None:
     owner_method = fact.get("owner_method")
     if not owner_method:
         return None
     return node_id("Method", sym["project"], owner_class, owner_method)
 
 
-def topology_service_project(topology: Dict[str, Any], service_name: str | None) -> str | None:
+def topology_service_project(topology: dict[str, Any], service_name: str | None) -> str | None:
     if not service_name:
         return None
     for svc in topology.get("services", []):

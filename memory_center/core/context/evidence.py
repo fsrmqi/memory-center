@@ -8,10 +8,10 @@ confidence scores.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 # Source reliability weights (higher = more trustworthy)
-_SOURCE_WEIGHTS: Dict[str, float] = {
+_SOURCE_WEIGHTS: dict[str, float] = {
     "graph_exact": 1.0,
     "graph_neighbor": 0.85,
     "fts5": 0.8,
@@ -30,9 +30,9 @@ class Evidence:
     score: float = 0.0
     confidence: float = 0.0
     description: str = ""
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "node_id": self.node_id,
             "source": self.source,
@@ -51,15 +51,15 @@ class EvidenceSelector:
     entry per node.
     """
 
-    def __init__(self, source_weights: Optional[Dict[str, float]] = None):
+    def __init__(self, source_weights: dict[str, float] | None = None):
         self._weights = source_weights or _SOURCE_WEIGHTS.copy()
 
     def select(
         self,
-        candidates: List[Dict[str, Any]],
+        candidates: list[dict[str, Any]],
         limit: int = 10,
         min_score: float = 0.0,
-    ) -> List[Evidence]:
+    ) -> list[Evidence]:
         """Select top evidence from a mixed list of candidates.
 
         Each candidate dict should have at minimum:
@@ -68,7 +68,7 @@ class EvidenceSelector:
           - score: float (raw score from that source)
         Optional: confidence, description, metadata, recency_hours
         """
-        seen: Dict[str, Evidence] = {}
+        seen: dict[str, Evidence] = {}
 
         for cand in candidates:
             node_id = cand.get("node_id", "")
@@ -102,11 +102,11 @@ class EvidenceSelector:
 
     def merge_sources(
         self,
-        graph_hits: List[Dict[str, Any]],
-        sparse_hits: List[Dict[str, Any]],
-        vector_hits: List[Dict[str, Any]],
+        graph_hits: list[dict[str, Any]],
+        sparse_hits: list[dict[str, Any]],
+        vector_hits: list[dict[str, Any]],
         limit: int = 10,
-    ) -> List[Evidence]:
+    ) -> list[Evidence]:
         """Convenience: merge three source lists and return top evidence."""
         all_candidates = []
         for h in graph_hits:

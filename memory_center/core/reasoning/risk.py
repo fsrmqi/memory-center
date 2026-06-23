@@ -6,7 +6,7 @@ potential risks before code changes.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List
+from typing import Any
 
 from ..rules import match_rules
 from ..storage.unified import UnifiedStore
@@ -17,9 +17,9 @@ class RiskFinding:
     pattern: str
     severity: str  # high | medium | low
     description: str
-    affected_nodes: List[Dict[str, Any]] = field(default_factory=list)
-    checklist: List[str] = field(default_factory=list)
-    evidence: Dict[str, Any] = field(default_factory=dict)
+    affected_nodes: list[dict[str, Any]] = field(default_factory=list)
+    checklist: list[str] = field(default_factory=list)
+    evidence: dict[str, Any] = field(default_factory=dict)
 
 
 class RiskPatternEngine:
@@ -33,7 +33,7 @@ class RiskPatternEngine:
         self,
         target_id: str,
         change_type: str = "modify",
-    ) -> List[RiskFinding]:
+    ) -> list[RiskFinding]:
         """Analyze risks for changing a specific node."""
         findings = []
         node = self._store.node_by_id(target_id)
@@ -103,7 +103,7 @@ class RiskPatternEngine:
 
         return findings
 
-    def scan_workspace_risks(self, limit: int = 20) -> List[RiskFinding]:
+    def scan_workspace_risks(self, limit: int = 20) -> list[RiskFinding]:
         """Scan the entire workspace for risk patterns."""
         findings = []
 

@@ -6,7 +6,7 @@ per token for GPT-style BPE tokenization.
 from __future__ import annotations
 
 import json
-from typing import Any, Dict
+from typing import Any
 
 
 def estimate_tokens(text: str) -> int:
@@ -17,7 +17,7 @@ def estimate_tokens(text: str) -> int:
     return (len(text) + 3) // 4
 
 
-def measure_payload_size(payload: Dict[str, Any]) -> Dict[str, int]:
+def measure_payload_size(payload: dict[str, Any]) -> dict[str, int]:
     """Measure char and estimated token count of a JSON payload."""
     text = json.dumps(payload, ensure_ascii=False)
     chars = len(text)
@@ -25,7 +25,7 @@ def measure_payload_size(payload: Dict[str, Any]) -> Dict[str, int]:
     return {"chars": chars, "tokens": tokens}
 
 
-def compute_savings(raw_tokens: int, compact_tokens: int) -> Dict[str, Any]:
+def compute_savings(raw_tokens: int, compact_tokens: int) -> dict[str, Any]:
     """Compute token savings between raw and compact payloads."""
     saved = raw_tokens - compact_tokens
     pct = (saved / raw_tokens * 100) if raw_tokens > 0 else 0.0

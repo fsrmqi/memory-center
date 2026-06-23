@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 from ..explanation import explanation_entry
 from ..storage.unified import UnifiedStore
@@ -19,12 +19,12 @@ class TourStep:
     step_id: int
     title: str
     description: str
-    node_ids: List[str] = field(default_factory=list)
+    node_ids: list[str] = field(default_factory=list)
     node_type: str = ""
     depth: int = 0
 
-    def to_dict(self) -> Dict[str, Any]:
-        d: Dict[str, Any] = {
+    def to_dict(self) -> dict[str, Any]:
+        d: dict[str, Any] = {
             "step_id": self.step_id,
             "title": self.title,
             "description": self.description,
@@ -49,10 +49,10 @@ class ArchitectureTour:
     tour_id: str
     persona: str  # developer | architect | product | tester
     scope: str
-    steps: List[TourStep] = field(default_factory=list)
+    steps: list[TourStep] = field(default_factory=list)
     summary: str = ""
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "tour_id": self.tour_id,
             "persona": self.persona,
@@ -76,7 +76,7 @@ class ArchitectureTourGenerator:
         target: str | None = None,
     ) -> ArchitectureTour:
         """Generate an architecture tour based on persona and scope."""
-        steps: List[TourStep] = []
+        steps: list[TourStep] = []
         step_id = 0
 
         # Step 1: Service overview
@@ -171,32 +171,32 @@ class ArchitectureTourGenerator:
             summary=summary,
         )
 
-    def _get_services(self) -> List[Dict[str, Any]]:
+    def _get_services(self) -> list[dict[str, Any]]:
         return [n for n in self._store.all_nodes() if n.get("type") == "Service"]
 
-    def _get_endpoints(self) -> List[Dict[str, Any]]:
+    def _get_endpoints(self) -> list[dict[str, Any]]:
         return [n for n in self._store.all_nodes() if n.get("type") == "Endpoint"]
 
-    def _get_service_classes(self) -> List[Dict[str, Any]]:
+    def _get_service_classes(self) -> list[dict[str, Any]]:
         return [
             n for n in self._store.all_nodes()
             if n.get("type") == "Class" and "Service" in n.get("name", "")
         ]
 
-    def _get_feign_clients(self) -> List[Dict[str, Any]]:
+    def _get_feign_clients(self) -> list[dict[str, Any]]:
         return [n for n in self._store.all_nodes() if n.get("type") == "FeignClient"]
 
-    def _get_mq_nodes(self) -> List[Dict[str, Any]]:
+    def _get_mq_nodes(self) -> list[dict[str, Any]]:
         return [
             n for n in self._store.all_nodes()
             if n.get("type") in ("MQConsumer", "MQProducer", "MQTopic")
         ]
 
-    def _get_config_nodes(self) -> List[Dict[str, Any]]:
+    def _get_config_nodes(self) -> list[dict[str, Any]]:
         return [n for n in self._store.all_nodes() if n.get("type") == "ConfigKey"]
 
 
-def generate_architecture_tour(workspace_file: str | Path, persona: str = "developer") -> Dict[str, Any]:
+def generate_architecture_tour(workspace_file: str | Path, persona: str = "developer") -> dict[str, Any]:
     """Generate an architecture tour for onboarding new developers.
 
     Walks through the graph to build a guided tour:
@@ -213,7 +213,7 @@ def generate_architecture_tour(workspace_file: str | Path, persona: str = "devel
     config = store._config if hasattr(store, '_config') else None
     workspace_name = getattr(config, 'workspace', 'unknown') if config else 'unknown'
 
-    tour_stops: List[Dict[str, Any]] = []
+    tour_stops: list[dict[str, Any]] = []
 
     # Stop 1: Workspace overview
     services = [s.name for s in (config.services if config else [])]

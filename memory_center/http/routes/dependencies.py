@@ -1,6 +1,6 @@
 """Shared route dependencies kept behind the HTTP adapter seam."""
 
-from typing import Any, Dict
+from typing import Any
 
 from memory_center.core.artifacts import (
     append_change_log,
@@ -93,7 +93,6 @@ from memory_center.core.orchestrator import (
 
 __all__ = [
     "Any",
-    "Dict",
     "export_continuity_dashboard_html",
     "export_focus_task_html",
     "export_index_freshness_html",

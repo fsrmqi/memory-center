@@ -7,13 +7,13 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 from ..store import WorkspaceStore
 from .workflow_profiles import BUILTIN_PROFILES
 
 
-def generate_agent_bundle(workspace_file: str | Path, agent: str = "codex") -> Dict[str, Any]:
+def generate_agent_bundle(workspace_file: str | Path, agent: str = "codex") -> dict[str, Any]:
     """Generate an agent usage bundle for the specified agent platform.
 
     Args:
@@ -44,7 +44,7 @@ def generate_agent_bundle(workspace_file: str | Path, agent: str = "codex") -> D
     return bundle
 
 
-def _get_agent_specific_config(agent: str) -> Dict[str, Any]:
+def _get_agent_specific_config(agent: str) -> dict[str, Any]:
     """Get agent-specific configuration recommendations."""
     configs = {
         "codex": {

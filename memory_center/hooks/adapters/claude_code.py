@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 from ..spec import load_hooks_config
 
@@ -22,8 +22,8 @@ _EVENT_TO_CLAUDE_HOOK = {
 
 def generate_claude_code_hooks(
     workspace: str,
-    hooks_config: Dict[str, Any] | None = None,
-) -> Dict[str, Any]:
+    hooks_config: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """Generate Claude Code settings.json hooks section from hooks.yaml.
 
     Returns the 'hooks' dict ready to merge into settings.local.json.
@@ -32,7 +32,7 @@ def generate_claude_code_hooks(
         hooks_config = load_hooks_config(workspace)
 
     hooks_spec = hooks_config.get("hooks", {})
-    result: Dict[str, Any] = {}
+    result: dict[str, Any] = {}
 
     for event_name, spec in hooks_spec.items():
         claude_hook_name = _EVENT_TO_CLAUDE_HOOK.get(event_name)
@@ -54,7 +54,7 @@ def generate_claude_code_hooks(
         filter_spec = spec.get("filter", {})
         matcher = filter_spec.get("tool_matcher", "")
 
-        hook_entry: Dict[str, Any] = {
+        hook_entry: dict[str, Any] = {
             "matcher": matcher,
             "hooks": [],
         }
@@ -88,7 +88,7 @@ def generate_claude_code_hooks(
 def write_claude_code_settings(
     workspace: str,
     output_path: str | Path | None = None,
-    hooks_config: Dict[str, Any] | None = None,
+    hooks_config: dict[str, Any] | None = None,
 ) -> Path:
     """Generate and write Claude Code settings.local.json with hooks.
 
@@ -106,7 +106,7 @@ def write_claude_code_settings(
     output_path = Path(output_path).expanduser().resolve()
 
     # Load existing settings if present
-    existing: Dict[str, Any] = {}
+    existing: dict[str, Any] = {}
     if output_path.exists():
         try:
             existing = json.loads(output_path.read_text(encoding="utf-8"))

@@ -4,7 +4,7 @@ import json
 import re
 from collections import defaultdict, deque
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any
 
 from ..config import load_workspace_config
 from ..diagnostics import DIAG, diag_entry
@@ -14,7 +14,7 @@ from .base import JavaParseResult
 from .java_regex_parser import RegexJavaParser
 from .tree_sitter_parser import TreeSitterJavaParser
 
-_COMPARE_FIELDS: Tuple[str, ...] = (
+_COMPARE_FIELDS: tuple[str, ...] = (
     "package",
     "imports",
     "classes",
@@ -38,7 +38,7 @@ def benchmark_java_parsers(
     *,
     limit: int = 200,
     max_findings: int = 20,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Compare regex and tree-sitter Java parsers on a real workspace."""
     config = load_workspace_config(workspace_file)
     regex_parser = RegexJavaParser()
@@ -47,7 +47,7 @@ def benchmark_java_parsers(
     java_files = _sample_java_files(all_java_files, limit=limit)
     service_coverage = _build_service_coverage(all_java_files, java_files)
 
-    result: Dict[str, Any] = {
+    result: dict[str, Any] = {
         "workspace": config.workspace,
         "files_scanned": len(java_files),
         "projects": sorted({project for project, _, _ in java_files}),
@@ -82,7 +82,7 @@ def benchmark_java_parsers(
         result["recommendations"] = ["当前 workspace 没有可比较的 Java 文件。"]
         return result
 
-    baseline_rows: List[Tuple[str, str, JavaParseResult, str]] = []
+    baseline_rows: list[tuple[str, str, JavaParseResult, str]] = []
     for project, logical_path, path in java_files:
         text = safe_read(path)
         regex_result = regex_parser.parse(text, logical_path)
@@ -96,8 +96,8 @@ def benchmark_java_parsers(
         ]
         return result
 
-    regressions: List[Dict[str, Any]] = []
-    improvements: List[Dict[str, Any]] = []
+    regressions: list[dict[str, Any]] = []
+    improvements: list[dict[str, Any]] = []
 
     for project, logical_path, regex_result, text in baseline_rows:
         tree_result = tree_parser.parse(text, logical_path)
@@ -151,16 +151,16 @@ def benchmark_java_parsers(
     return result
 
 
-def _collect_workspace_java_files(config: Any) -> Tuple[List[Tuple[str, str, Path]], Dict[str, Any]]:
+def _collect_workspace_java_files(config: Any) -> tuple[list[tuple[str, str, Path]], dict[str, Any]]:
     service_entries = collect_workspace_service_entries(config)
     workspace_shape = analyze_workspace_shape(config)
-    unique_roots: Dict[str, Path] = {}
+    unique_roots: dict[str, Path] = {}
     for entry in service_entries:
         unique_roots.setdefault(entry.root_text, entry.root)
 
-    file_records: List[Tuple[str, str, Path]] = []
+    file_records: list[tuple[str, str, Path]] = []
     seen_files: set[str] = set()
-    for root_text, root_path in unique_roots.items():
+    for root_path in unique_roots.values():
         for path in walk_project(root_path):
             if path.suffix not in JAVA_EXTENSIONS:
                 continue
@@ -177,15 +177,15 @@ def _collect_workspace_java_files(config: Any) -> Tuple[List[Tuple[str, str, Pat
 
 
 def _sample_java_files(
-    records: List[Tuple[str, str, Path]],
+    records: list[tuple[str, str, Path]],
     *,
     limit: int,
-) -> List[Tuple[str, str, Path]]:
+) -> list[tuple[str, str, Path]]:
     if limit <= 0 or limit >= len(records):
         return records
 
-    buckets: Dict[str, deque[Tuple[str, str, Path]]] = defaultdict(deque)
-    order: List[str] = []
+    buckets: dict[str, deque[tuple[str, str, Path]]] = defaultdict(deque)
+    order: list[str] = []
     seen_projects: set[str] = set()
     for record in records:
         project = record[0]
@@ -194,7 +194,7 @@ def _sample_java_files(
             seen_projects.add(project)
             order.append(project)
 
-    sampled: List[Tuple[str, str, Path]] = []
+    sampled: list[tuple[str, str, Path]] = []
     while len(sampled) < limit:
         progressed = False
         for project in order:
@@ -211,11 +211,11 @@ def _sample_java_files(
 
 
 def _build_service_coverage(
-    all_records: List[Tuple[str, str, Path]],
-    sampled_records: List[Tuple[str, str, Path]],
-) -> Dict[str, Any]:
-    total_counts: Dict[str, int] = defaultdict(int)
-    sampled_counts: Dict[str, int] = defaultdict(int)
+    all_records: list[tuple[str, str, Path]],
+    sampled_records: list[tuple[str, str, Path]],
+) -> dict[str, Any]:
+    total_counts: dict[str, int] = defaultdict(int)
+    sampled_counts: dict[str, int] = defaultdict(int)
     for project, _, _ in all_records:
         total_counts[project] += 1
     for project, _, _ in sampled_records:
@@ -253,7 +253,7 @@ def _value_size(field: str, value: Any) -> int:
     return len(_normalize_value(value))
 
 
-def _compare_field_values(field: str, regex_value: Any, tree_value: Any) -> Dict[str, Any]:
+def _compare_field_values(field: str, regex_value: Any, tree_value: Any) -> dict[str, Any]:
     if field == "field_types":
         return _compare_field_types(regex_value, tree_value)
 
@@ -267,7 +267,7 @@ def _compare_field_values(field: str, regex_value: Any, tree_value: Any) -> Dict
     }
 
 
-def _compare_field_types(regex_value: Any, tree_value: Any) -> Dict[str, Any]:
+def _compare_field_types(regex_value: Any, tree_value: Any) -> dict[str, Any]:
     regex_types = _coerce_str_dict(regex_value)
     tree_types = _coerce_str_dict(tree_value)
     regex_keys = set(regex_types)
@@ -295,10 +295,10 @@ def _compare_field_types(regex_value: Any, tree_value: Any) -> Dict[str, Any]:
     }
 
 
-def _coerce_str_dict(value: Any) -> Dict[str, str]:
+def _coerce_str_dict(value: Any) -> dict[str, str]:
     if not isinstance(value, dict):
         return {}
-    result: Dict[str, str] = {}
+    result: dict[str, str] = {}
     for key, raw in value.items():
         key_text = str(key or "").strip()
         if not key_text:
@@ -412,7 +412,7 @@ def _looks_like_constant_name(raw: str) -> bool:
     return bool(text) and text.upper() == text and any(ch.isalpha() for ch in text)
 
 
-def _score_parser_quality(field_stats: Dict[str, Dict[str, int]]) -> int:
+def _score_parser_quality(field_stats: dict[str, dict[str, int]]) -> int:
     penalty = 0
     for field, stats in field_stats.items():
         lagging = int(stats.get("lagging_files", 0))
@@ -432,11 +432,11 @@ def _score_to_quality(score: int) -> str:
 
 
 def _build_recommendations(
-    field_stats: Dict[str, Dict[str, int]],
+    field_stats: dict[str, dict[str, int]],
     score: int,
     has_regression: bool,
-) -> List[str]:
-    recommendations: List[str] = []
+) -> list[str]:
+    recommendations: list[str] = []
     if not has_regression:
         recommendations.append("tree-sitter 与 regex 基线没有发现丢失项，可以继续扩大真实 workspace 验证范围。")
     else:

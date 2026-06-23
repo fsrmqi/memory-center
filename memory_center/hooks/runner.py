@@ -9,17 +9,8 @@ from __future__ import annotations
 import json
 import re
 import sys
-from typing import Any, Dict
+from typing import Any
 
-from .spec import (
-    _SESSION_ID_FILE,
-    load_hooks_config,
-    validate_hooks_config,
-)
-
-_JAVA_CHAIN_SYMBOL_RE = re.compile(
-    r"((?:[a-z_][\w$]*\.)+[A-Z][\w$]*(?:#[a-zA-Z_][\w$]*)?|[A-Z][\w$]*(?:#[a-zA-Z_][\w$]*)?)"
-)
 from ..core.orchestrator import (
     group_impact,
     group_query,
@@ -49,6 +40,15 @@ from ..core.orchestrator import (
     workspace_sync_sniff_to_artifacts,
     workspace_trace,
     workspace_unresolved_items,
+)
+from .spec import (
+    _SESSION_ID_FILE,
+    load_hooks_config,
+    validate_hooks_config,
+)
+
+_JAVA_CHAIN_SYMBOL_RE = re.compile(
+    r"((?:[a-z_][\w$]*\.)+[A-Z][\w$]*(?:#[a-zA-Z_][\w$]*)?|[A-Z][\w$]*(?:#[a-zA-Z_][\w$]*)?)"
 )
 
 
@@ -162,7 +162,7 @@ def run_hook(
     workspace: str,
     hook_name: str,
     stdin_json: dict | None = None,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Execute a hook according to hooks.yaml specification.
 
     Returns a dict with:

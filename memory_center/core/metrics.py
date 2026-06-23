@@ -8,10 +8,11 @@ from __future__ import annotations
 
 import json
 import time
+from collections.abc import Generator
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Generator, List, Optional
+from typing import Any
 
 METRICS_FILE = "metrics.jsonl"
 
@@ -22,7 +23,7 @@ class MetricsCollector:
     def __init__(self, workspace_file: str | Path):
         self._path = Path(workspace_file).parent / METRICS_FILE
 
-    def record(self, metric_name: str, value: float, unit: str = "ms", tags: Optional[Dict[str, str]] = None) -> None:
+    def record(self, metric_name: str, value: float, unit: str = "ms", tags: dict[str, str] | None = None) -> None:
         entry = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "metric": metric_name,
@@ -37,17 +38,17 @@ class MetricsCollector:
             pass  # metrics are best-effort
 
     @contextmanager
-    def timer(self, metric_name: str, tags: Optional[Dict[str, str]] = None) -> Generator[Dict[str, Any], None, None]:
+    def timer(self, metric_name: str, tags: dict[str, str] | None = None) -> Generator[dict[str, Any], None, None]:
         """Context manager to time an operation and record the metric."""
         start = time.monotonic()
-        info: Dict[str, Any] = {}
+        info: dict[str, Any] = {}
         try:
             yield info
         finally:
             elapsed_ms = (time.monotonic() - start) * 1000
             self.record(metric_name, elapsed_ms, unit="ms", tags=tags)
 
-    def query(self, metric_name: str = "", limit: int = 100) -> List[Dict[str, Any]]:
+    def query(self, metric_name: str = "", limit: int = 100) -> list[dict[str, Any]]:
         """Read recent metrics."""
         if not self._path.exists():
             return []
@@ -68,7 +69,7 @@ class MetricsCollector:
             pass
         return rows[-limit:]
 
-    def summary(self, metric_name: str, limit: int = 100) -> Dict[str, Any]:
+    def summary(self, metric_name: str, limit: int = 100) -> dict[str, Any]:
         """Summarize a metric (avg, p50, p95, p99)."""
         rows = [r for r in self.query(metric_name, limit=limit) if r.get("unit") == "ms"]
         if not rows:

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 from .config import load_workspace_config
 from .graph import GraphStore
@@ -11,12 +11,12 @@ from .store import WorkspaceStore
 from .workspace_shape import analyze_workspace_shape
 
 
-def doctor(workspace_file: str | Path, self_test: bool = False) -> Dict[str, Any]:
+def doctor(workspace_file: str | Path, self_test: bool = False) -> dict[str, Any]:
     """Validate workspace configuration, generated indexes, graph health and optional query smoke test."""
     config = load_workspace_config(workspace_file)
     store = WorkspaceStore(workspace_file)
-    checks: List[Dict[str, Any]] = []
-    advisories: List[Dict[str, Any]] = []
+    checks: list[dict[str, Any]] = []
+    advisories: list[dict[str, Any]] = []
 
     checks.append(_check("workspace_file_exists", Path(workspace_file).expanduser().exists(), str(workspace_file)))
     checks.append(_check("root_exists", config.root_path.exists(), str(config.root_path)))
@@ -63,7 +63,7 @@ def doctor(workspace_file: str | Path, self_test: bool = False) -> Dict[str, Any
             for item in workspace_shape.get("warnings", [])
         )
 
-    smoke: Dict[str, Any] | None = None
+    smoke: dict[str, Any] | None = None
     if self_test:
         status = workspace_status(workspace_file)
         query_text = config.services[0].name if config.services else config.workspace
@@ -92,5 +92,5 @@ def doctor(workspace_file: str | Path, self_test: bool = False) -> Dict[str, Any
     }
 
 
-def _check(name: str, ok: bool, detail: str) -> Dict[str, Any]:
+def _check(name: str, ok: bool, detail: str) -> dict[str, Any]:
     return {"name": name, "ok": bool(ok), "detail": detail}

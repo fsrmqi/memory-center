@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from .heuristics import _merge_weight, candidate_path_learning_index, load_learning_policy
 
@@ -17,13 +17,13 @@ class WorkflowProfile:
     """A workflow protocol profile for a specific task type."""
     name: str
     description: str
-    steps: List[Dict[str, str]] = field(default_factory=list)
-    applicable_when: List[str] = field(default_factory=list)
-    tools_sequence: List[str] = field(default_factory=list)
+    steps: list[dict[str, str]] = field(default_factory=list)
+    applicable_when: list[str] = field(default_factory=list)
+    tools_sequence: list[str] = field(default_factory=list)
 
 
 # Built-in workflow profiles
-BUILTIN_PROFILES: Dict[str, WorkflowProfile] = {
+BUILTIN_PROFILES: dict[str, WorkflowProfile] = {
     "quick-fix": WorkflowProfile(
         name="quick-fix",
         description="小范围 bug 修复或配置变更",
@@ -93,7 +93,7 @@ _WORKFLOW_PRIORITY = {
 }
 
 
-def get_workflow_profile(task_type: str) -> Optional[WorkflowProfile]:
+def get_workflow_profile(task_type: str) -> WorkflowProfile | None:
     """Get a workflow profile by task type."""
     return BUILTIN_PROFILES.get(task_type)
 
@@ -102,7 +102,7 @@ def _has_any_keyword(text: str, keywords: tuple[str, ...]) -> bool:
     return any(keyword in text for keyword in keywords)
 
 
-def recommend_workflow(task_description: str, available_tools: List[str] | None = None) -> WorkflowProfile:
+def recommend_workflow(task_description: str, available_tools: list[str] | None = None) -> WorkflowProfile:
     """Recommend a workflow profile based on task description."""
     desc_lower = task_description.lower()
     has_contract = _has_any_keyword(desc_lower, _CONTRACT_KEYWORDS)
@@ -122,15 +122,15 @@ def recommend_workflow(task_description: str, available_tools: List[str] | None 
 def recommend_workflow_with_learning(
     workspace_file: str | Path,
     task_description: str,
-    available_tools: List[str] | None = None,
-) -> Dict[str, Any]:
+    available_tools: list[str] | None = None,
+) -> dict[str, Any]:
     """Recommend a workflow profile using static heuristics plus learned profile preference."""
     base_profile = recommend_workflow(task_description, available_tools=available_tools)
     candidates = _build_workflow_profile_candidates(task_description, base_profile.name)
     learning_index = candidate_path_learning_index(workspace_file)
     policy = load_learning_policy(workspace_file)
 
-    adjusted_candidates: List[Dict[str, Any]] = []
+    adjusted_candidates: list[dict[str, Any]] = []
     for candidate in candidates:
         item = dict(candidate)
         learning = learning_index.get(("workflow_profile", item["name"]))
@@ -174,7 +174,7 @@ def recommend_workflow_with_learning(
     }
 
 
-def _build_workflow_profile_candidates(task_description: str, recommended_name: str) -> List[Dict[str, Any]]:
+def _build_workflow_profile_candidates(task_description: str, recommended_name: str) -> list[dict[str, Any]]:
     desc_lower = task_description.lower()
     scores = {
         "quick-fix": 0.58,
@@ -199,7 +199,7 @@ def _build_workflow_profile_candidates(task_description: str, recommended_name: 
     if recommended_name == "long-task":
         scores["long-task"] = max(scores["long-task"], 0.86)
 
-    candidates: List[Dict[str, Any]] = []
+    candidates: list[dict[str, Any]] = []
     for name, profile in BUILTIN_PROFILES.items():
         candidates.append(
             {

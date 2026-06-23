@@ -11,7 +11,7 @@ import os
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Set
+from typing import Any
 
 from ..store import WorkspaceStore
 
@@ -20,13 +20,13 @@ from ..store import WorkspaceStore
 class ReconcileResult:
     """Outcome of a reconcile pass."""
     checked_files: int = 0
-    stale_files: List[str] = field(default_factory=list)
-    added_files: List[str] = field(default_factory=list)
-    deleted_files: List[str] = field(default_factory=list)
+    stale_files: list[str] = field(default_factory=list)
+    added_files: list[str] = field(default_factory=list)
+    deleted_files: list[str] = field(default_factory=list)
     duration_ms: float = 0.0
     needs_reindex: bool = False
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "checked_files": self.checked_files,
             "stale_count": len(self.stale_files),
@@ -56,9 +56,9 @@ def _scan_source_files(
     root: Path,
     extensions: tuple = (".java", ".yml", ".yaml", ".properties"),
     ignore_dirs: tuple = (".git", "target", "build", "node_modules", "__pycache__"),
-) -> Dict[str, Path]:
+) -> dict[str, Path]:
     """Walk root and return {relative_path: absolute_path} for watched files."""
-    result: Dict[str, Path] = {}
+    result: dict[str, Path] = {}
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = [d for d in dirnames if d not in ignore_dirs]
         for fn in filenames:
@@ -99,7 +99,7 @@ class ReconcileService:
         disk_files = _scan_source_files(self._root, self._extensions)
 
         # 2. Load indexed file list from graph DB
-        indexed_files: Set[str] = set()
+        indexed_files: set[str] = set()
         try:
             raw = self._store.read_json_prefer_backend("file-index.json", [])
             if isinstance(raw, list):

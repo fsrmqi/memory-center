@@ -7,7 +7,7 @@ knowledge graph).  Implements UA-3 from NEXT_PHASE_MASTER_PLAN.md.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Set
+from typing import Any
 
 from ..graph import GraphStore
 from ..storage.unified import UnifiedStore
@@ -23,7 +23,7 @@ class FlowNode:
     step_order: int = 0
     service: str = ""
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "node_id": self.node_id,
             "name": self.name,
@@ -41,7 +41,7 @@ class FlowEdge:
     edge_type: str
     confidence: float = 1.0
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "source_id": self.source_id,
             "target_id": self.target_id,
@@ -54,12 +54,12 @@ class FlowEdge:
 class FlowPath:
     """A path through a business flow."""
     path_id: str
-    nodes: List[str] = field(default_factory=list)
-    edge_types: List[str] = field(default_factory=list)
+    nodes: list[str] = field(default_factory=list)
+    edge_types: list[str] = field(default_factory=list)
     total_confidence: float = 0.0
     description: str = ""
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "path_id": self.path_id,
             "nodes": self.nodes,
@@ -87,13 +87,13 @@ class BusinessFlow:
     flow_id: str
     name: str
     description: str = ""
-    steps: List[FlowStep] = field(default_factory=list)
-    entry_points: List[str] = field(default_factory=list)
-    exit_points: List[str] = field(default_factory=list)
-    entities_involved: List[str] = field(default_factory=list)
+    steps: list[FlowStep] = field(default_factory=list)
+    entry_points: list[str] = field(default_factory=list)
+    exit_points: list[str] = field(default_factory=list)
+    entities_involved: list[str] = field(default_factory=list)
     risk_level: str = "low"
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "flow_id": self.flow_id,
             "name": self.name,
@@ -106,7 +106,7 @@ class BusinessFlow:
         }
 
 
-def extract_business_flows_for_workspace(workspace_file: str, seed_node_id: str, max_depth: int = 4) -> Dict[str, Any]:
+def extract_business_flows_for_workspace(workspace_file: str, seed_node_id: str, max_depth: int = 4) -> dict[str, Any]:
     """Extract business flows from a workspace.yaml path.
 
     Public entrypoints accept workspace.yaml, not the graph SQLite path. Keep
@@ -121,7 +121,7 @@ def extract_business_flows_for_workspace(workspace_file: str, seed_node_id: str,
     return {"flows": [flow.to_dict() for flow in flows], "workflow": "business-flow"}
 
 
-def business_flow_impact_for_workspace(workspace_file: str, node_id: str, max_depth: int = 3) -> Dict[str, Any]:
+def business_flow_impact_for_workspace(workspace_file: str, node_id: str, max_depth: int = 3) -> dict[str, Any]:
     """Find business-flow impact from a workspace.yaml path."""
     workspace_store = WorkspaceStore(workspace_file)
     with UnifiedStore(workspace_store.graph_db_path) as store:
@@ -139,10 +139,10 @@ class BusinessFlowGraph:
     def __init__(self, store: UnifiedStore):
         self._store = store
 
-    def build_flow_graph(self) -> Dict[str, Any]:
+    def build_flow_graph(self) -> dict[str, Any]:
         """Build the complete business flow graph."""
-        nodes: List[FlowNode] = []
-        edges: List[FlowEdge] = []
+        nodes: list[FlowNode] = []
+        edges: list[FlowEdge] = []
         all_store_nodes = self._store.all_nodes()
 
         for node in all_store_nodes:
@@ -181,9 +181,9 @@ class BusinessFlowGraph:
 
     def trace_flow_from_endpoint(self, endpoint_id: str, max_depth: int = 5) -> FlowPath:
         """Trace the business flow starting from an endpoint."""
-        path_nodes: List[str] = [endpoint_id]
-        path_edges: List[str] = []
-        visited: Set[str] = {endpoint_id}
+        path_nodes: list[str] = [endpoint_id]
+        path_edges: list[str] = []
+        visited: set[str] = {endpoint_id}
         current = endpoint_id
         confidence = 1.0
 
@@ -232,10 +232,10 @@ class BusinessFlowGraph:
             description=f"从 {endpoint_id} 出发的业务流程路径",
         )
 
-    def find_impact_along_flows(self, node_id: str, max_depth: int = 3) -> List[Dict[str, Any]]:
+    def find_impact_along_flows(self, node_id: str, max_depth: int = 3) -> list[dict[str, Any]]:
         """Find all nodes impacted by a change to node_id along business flows."""
-        impacted: List[Dict[str, Any]] = []
-        visited: Set[str] = set()
+        impacted: list[dict[str, Any]] = []
+        visited: set[str] = set()
         queue = [(node_id, 0)]
 
         while queue:
@@ -297,19 +297,19 @@ class BusinessFlowExtractor:
     def __init__(self, graph: GraphStore):
         self._graph = graph
 
-    def extract_flows(self, seed_node_id: str, max_depth: int = 4, limit: int = 10) -> List[BusinessFlow]:
+    def extract_flows(self, seed_node_id: str, max_depth: int = 4, limit: int = 10) -> list[BusinessFlow]:
         """Extract business flows starting from a seed node."""
-        flows: List[BusinessFlow] = []
+        flows: list[BusinessFlow] = []
 
         seed = self._graph.node_by_id(seed_node_id)
         if not seed:
             return flows
 
-        steps: List[FlowStep] = []
+        steps: list[FlowStep] = []
         visited = {seed_node_id}
         frontier = [seed_node_id]
 
-        for depth in range(max_depth):
+        for _ in range(max_depth):
             if not frontier:
                 break
             next_frontier = []

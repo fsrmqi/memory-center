@@ -4,7 +4,7 @@ import json
 import sqlite3
 import threading
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 
 class MemoryBackendStore:
@@ -35,7 +35,7 @@ class MemoryBackendStore:
                 self._conn.close()
                 self._conn = None
 
-    def __enter__(self) -> "MemoryBackendStore":
+    def __enter__(self) -> MemoryBackendStore:
         return self
 
     def __exit__(self, *exc: Any) -> None:
@@ -92,7 +92,7 @@ class MemoryBackendStore:
         )
         conn.commit()
 
-    def append_record(self, collection: str, payload: Dict[str, Any], record_id: str = "") -> None:
+    def append_record(self, collection: str, payload: dict[str, Any], record_id: str = "") -> None:
         payload_type = str(payload.get("type", "") or "")
         # Extract session_id/project: may be at top level or nested inside a "payload" sub-dict
         nested_payload = payload.get("payload", {}) if isinstance(payload.get("payload"), dict) else {}
@@ -131,7 +131,7 @@ class MemoryBackendStore:
                 (ref_path, created_at, json.dumps(payload, ensure_ascii=False)),
             )
 
-    def stats(self) -> Dict[str, Any]:
+    def stats(self) -> dict[str, Any]:
         with self.connect() as conn:
             rows = conn.execute(
                 "SELECT collection, COUNT(*) AS count FROM json_records GROUP BY collection ORDER BY collection"
@@ -153,7 +153,7 @@ class MemoryBackendStore:
         payload_type: str = "",
         session_id: str = "",
         limit: int = 50,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         where = " FROM json_records WHERE 1=1"
         sql = "SELECT collection, record_id, type, session_id, project, created_at, payload_json" + where
         count_sql = "SELECT COUNT(*)" + where
@@ -219,7 +219,7 @@ class MemoryBackendStore:
         entry = self.read_index_entry(name)
         return entry["value"] if entry["found"] else default
 
-    def read_index_entry(self, name: str) -> Dict[str, Any]:
+    def read_index_entry(self, name: str) -> dict[str, Any]:
         with self.connect() as conn:
             row = conn.execute("SELECT payload_json, updated_at FROM index_mirror WHERE name=?", (name,)).fetchone()
         if row is None:
@@ -234,7 +234,7 @@ class MemoryBackendStore:
         *,
         ref_path: str = "",
         limit: int = 50,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         sql = "SELECT ref_path, created_at, payload_json FROM refs WHERE 1=1"
         args: list[Any] = []
         if ref_path:

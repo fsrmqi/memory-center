@@ -5,7 +5,7 @@ import re
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 from uuid import uuid4
 
 from filelock import FileLock
@@ -49,10 +49,10 @@ DEFAULT_RESOLVE_SCORE_THRESHOLD = 3
 ARTIFACT_WRITE_AUDIT_FILE = "artifact-write-audit.jsonl"
 
 
-def ensure_default_artifacts(workspace_file: str | Path) -> List[Dict[str, str]]:
+def ensure_default_artifacts(workspace_file: str | Path) -> list[dict[str, str]]:
     config = load_workspace_config(workspace_file)
     store = WorkspaceStore(workspace_file)
-    created: List[Dict[str, str]] = []
+    created: list[dict[str, str]] = []
     for key, filename in DEFAULT_ARTIFACTS.items():
         if store.artifact_exists(filename):
             continue
@@ -68,7 +68,7 @@ def ensure_default_artifacts(workspace_file: str | Path) -> List[Dict[str, str]]
     return created
 
 
-def list_artifacts(workspace_file: str | Path) -> Dict[str, object]:
+def list_artifacts(workspace_file: str | Path) -> dict[str, object]:
     config = load_workspace_config(workspace_file)
     store = WorkspaceStore(workspace_file)
     ensure_default_artifacts(workspace_file)
@@ -103,7 +103,7 @@ def list_artifacts(workspace_file: str | Path) -> Dict[str, object]:
     return {"workspace": config.workspace, "artifacts": items, "core_memory_blocks": blocks}
 
 
-def get_artifact(workspace_file: str | Path, name: str) -> Dict[str, object]:
+def get_artifact(workspace_file: str | Path, name: str) -> dict[str, object]:
     config = load_workspace_config(workspace_file)
     store = WorkspaceStore(workspace_file)
     ensure_default_artifacts(workspace_file)
@@ -123,7 +123,7 @@ def get_artifact(workspace_file: str | Path, name: str) -> Dict[str, object]:
     }
 
 
-def update_artifact(workspace_file: str | Path, name: str, content: str) -> Dict[str, object]:
+def update_artifact(workspace_file: str | Path, name: str, content: str) -> dict[str, object]:
     config = load_workspace_config(workspace_file)
     store = WorkspaceStore(workspace_file)
     ensure_default_artifacts(workspace_file)
@@ -166,7 +166,7 @@ def update_artifact(workspace_file: str | Path, name: str, content: str) -> Dict
     }
 
 
-def append_change_log(workspace_file: str | Path, entry: str) -> Dict[str, object]:
+def append_change_log(workspace_file: str | Path, entry: str) -> dict[str, object]:
     config = load_workspace_config(workspace_file)
     store = WorkspaceStore(workspace_file)
     ensure_default_artifacts(workspace_file)
@@ -207,7 +207,7 @@ def append_change_log(workspace_file: str | Path, entry: str) -> Dict[str, objec
     }
 
 
-def artifact_outline(workspace_file: str | Path, name: str) -> Dict[str, object]:
+def artifact_outline(workspace_file: str | Path, name: str) -> dict[str, object]:
     config = load_workspace_config(workspace_file)
     content = get_artifact(workspace_file, name).get("content", "")
     sections = _split_markdown_sections(content)
@@ -226,7 +226,7 @@ def artifact_outline(workspace_file: str | Path, name: str) -> Dict[str, object]
     }
 
 
-def artifact_context(workspace_file: str | Path, intent: str, limit: int = 6) -> Dict[str, object]:
+def artifact_context(workspace_file: str | Path, intent: str, limit: int = 6) -> dict[str, object]:
     config = load_workspace_config(workspace_file)
     store = WorkspaceStore(workspace_file)
     ensure_default_artifacts(workspace_file)
@@ -261,7 +261,7 @@ def artifact_context(workspace_file: str | Path, intent: str, limit: int = 6) ->
     }
 
 
-def compact_change_log(workspace_file: str | Path, keep_recent: int = 30) -> Dict[str, object]:
+def compact_change_log(workspace_file: str | Path, keep_recent: int = 30) -> dict[str, object]:
     config = load_workspace_config(workspace_file)
     store = WorkspaceStore(workspace_file)
     ensure_default_artifacts(workspace_file)
@@ -301,9 +301,9 @@ def create_task_space(
     title: str = "",
     intent: str = "",
     owner: str = "",
-    tags: List[str] | None = None,
+    tags: list[str] | None = None,
     priority: str = "medium",
-) -> Dict[str, object]:
+) -> dict[str, object]:
     config = load_workspace_config(workspace_file)
     store = WorkspaceStore(workspace_file)
     task_title = (title or intent or f"task-{uuid4().hex[:8]}").strip()
@@ -346,14 +346,14 @@ def resolve_task_space(
     create_if_missing: bool = True,
     include_archived: bool = False,
     limit_candidates: int = 3,
-    related_texts: List[str] | None = None,
+    related_texts: list[str] | None = None,
     score_threshold: int = DEFAULT_RESOLVE_SCORE_THRESHOLD,
-) -> Dict[str, object]:
+) -> dict[str, object]:
     config = load_workspace_config(workspace_file)
     candidates = list_task_spaces(workspace_file, include_archived=include_archived)
     keyword_text = title.strip() or intent.strip()
     keywords = _tokenize_text(keyword_text)
-    hint_keywords: List[str] = []
+    hint_keywords: list[str] = []
     for text in related_texts or []:
         hint_keywords.extend(_tokenize_text(text))
     scored = []
@@ -420,7 +420,7 @@ def resolve_task_space(
     return {**created, "resolved": True, "score": 0, "candidates": candidate_rows, "score_threshold": score_threshold}
 
 
-def list_task_spaces(workspace_file: str | Path, include_archived: bool = False) -> Dict[str, object]:
+def list_task_spaces(workspace_file: str | Path, include_archived: bool = False) -> dict[str, object]:
     config = load_workspace_config(workspace_file)
     store = WorkspaceStore(workspace_file)
     active = _list_task_dir_entries(store.artifacts_dir / TASKS_DIR, archived=False)
@@ -432,7 +432,7 @@ def list_task_spaces(workspace_file: str | Path, include_archived: bool = False)
     }
 
 
-def update_task_status(workspace_file: str | Path, task_id: str, status: str, source: str = "update_task_status") -> Dict[str, object]:
+def update_task_status(workspace_file: str | Path, task_id: str, status: str, source: str = "update_task_status") -> dict[str, object]:
     config = load_workspace_config(workspace_file)
     store = WorkspaceStore(workspace_file)
     normalized = status.strip().lower()
@@ -481,7 +481,7 @@ def update_task_status(workspace_file: str | Path, task_id: str, status: str, so
     }
 
 
-def get_task_artifact(workspace_file: str | Path, task_id: str, name: str) -> Dict[str, object]:
+def get_task_artifact(workspace_file: str | Path, task_id: str, name: str) -> dict[str, object]:
     config = load_workspace_config(workspace_file)
     store = WorkspaceStore(workspace_file)
     task_dir, meta = _resolve_task_dir(store, task_id)
@@ -498,7 +498,7 @@ def get_task_artifact(workspace_file: str | Path, task_id: str, name: str) -> Di
     }
 
 
-def update_task_artifact(workspace_file: str | Path, task_id: str, name: str, content: str, source: str = "update_task_artifact") -> Dict[str, object]:
+def update_task_artifact(workspace_file: str | Path, task_id: str, name: str, content: str, source: str = "update_task_artifact") -> dict[str, object]:
     config = load_workspace_config(workspace_file)
     store = WorkspaceStore(workspace_file)
     task_dir, meta = _resolve_task_dir(store, task_id)
@@ -548,7 +548,7 @@ def update_task_artifact(workspace_file: str | Path, task_id: str, name: str, co
     }
 
 
-def append_task_change_log(workspace_file: str | Path, task_id: str, entry: str, keep_recent: int = 30, source: str = "append_task_change_log") -> Dict[str, object]:
+def append_task_change_log(workspace_file: str | Path, task_id: str, entry: str, keep_recent: int = 30, source: str = "append_task_change_log") -> dict[str, object]:
     config = load_workspace_config(workspace_file)
     store = WorkspaceStore(workspace_file)
     task_dir, meta = _resolve_task_dir(store, task_id)
@@ -570,7 +570,7 @@ def append_task_change_log(workspace_file: str | Path, task_id: str, entry: str,
     }
 
 
-def compact_task_change_log(workspace_file: str | Path, task_id: str, keep_recent: int = 30) -> Dict[str, object]:
+def compact_task_change_log(workspace_file: str | Path, task_id: str, keep_recent: int = 30) -> dict[str, object]:
     config = load_workspace_config(workspace_file)
     store = WorkspaceStore(workspace_file)
     task_dir, meta = _resolve_task_dir(store, task_id)
@@ -593,7 +593,7 @@ def compact_task_change_log(workspace_file: str | Path, task_id: str, keep_recen
     return {"workspace": config.workspace, "task_id": meta["task_id"], "compacted": True, "kept_recent": len(kept_entries), "archived": len(archived_entries)}
 
 
-def archive_task_space(workspace_file: str | Path, task_id: str, reason: str = "") -> Dict[str, object]:
+def archive_task_space(workspace_file: str | Path, task_id: str, reason: str = "") -> dict[str, object]:
     config = load_workspace_config(workspace_file)
     store = WorkspaceStore(workspace_file)
     task_dir, meta = _resolve_task_dir(store, task_id)
@@ -620,7 +620,7 @@ def archive_task_space(workspace_file: str | Path, task_id: str, reason: str = "
     }
 
 
-def auto_archive_task_spaces(workspace_file: str | Path, retention_days: int = 30) -> Dict[str, object]:
+def auto_archive_task_spaces(workspace_file: str | Path, retention_days: int = 30) -> dict[str, object]:
     config = load_workspace_config(workspace_file)
     store = WorkspaceStore(workspace_file)
     now = datetime.now(timezone.utc)
@@ -654,7 +654,7 @@ def _resolve_artifact_name(name: str, include_task_only: bool = False) -> tuple[
     raise ValueError(f"unknown artifact: {name}")
 
 
-def _artifact_mapping(include_task_only: bool = False) -> Dict[str, str]:
+def _artifact_mapping(include_task_only: bool = False) -> dict[str, str]:
     if include_task_only:
         return {**DEFAULT_ARTIFACTS, **TASK_ONLY_ARTIFACTS}
     return {**DEFAULT_ARTIFACTS, **CORE_MEMORY_BLOCKS}
@@ -779,27 +779,27 @@ def _task_meta_path(task_dir: Path) -> Path:
     return task_dir / "meta.json"
 
 
-def _write_task_meta(store: WorkspaceStore, task_dir: Path, meta: Dict[str, object]) -> None:
+def _write_task_meta(store: WorkspaceStore, task_dir: Path, meta: dict[str, object]) -> None:
     meta = dict(meta)
     meta.setdefault("updated_at", datetime.now().isoformat())
     with FileLock(str(store.lock_file)):
         _write_task_meta_unlocked(task_dir, meta)
 
 
-def _write_task_meta_unlocked(task_dir: Path, meta: Dict[str, object]) -> None:
+def _write_task_meta_unlocked(task_dir: Path, meta: dict[str, object]) -> None:
     meta = dict(meta)
     meta.setdefault("updated_at", datetime.now().isoformat())
     _task_meta_path(task_dir).write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-def _read_task_meta(task_dir: Path) -> Dict[str, object]:
+def _read_task_meta(task_dir: Path) -> dict[str, object]:
     path = _task_meta_path(task_dir)
     if not path.exists():
         return {}
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def _touch_task_meta(store: WorkspaceStore, task_dir: Path, meta: Dict[str, object], source: str = "") -> None:
+def _touch_task_meta(store: WorkspaceStore, task_dir: Path, meta: dict[str, object], source: str = "") -> None:
     meta = dict(meta)
     meta["updated_at"] = datetime.now().isoformat()
     if source:
@@ -807,7 +807,7 @@ def _touch_task_meta(store: WorkspaceStore, task_dir: Path, meta: Dict[str, obje
     _write_task_meta(store, task_dir, meta)
 
 
-def touch_task_activity(workspace_file: str | Path, task_id: str, source: str) -> Dict[str, object]:
+def touch_task_activity(workspace_file: str | Path, task_id: str, source: str) -> dict[str, object]:
     config = load_workspace_config(workspace_file)
     store = WorkspaceStore(workspace_file)
     task_dir, meta = _resolve_task_dir(store, task_id)
@@ -821,7 +821,7 @@ def touch_task_activity(workspace_file: str | Path, task_id: str, source: str) -
     }
 
 
-def _list_task_dir_entries(root: Path, archived: bool) -> List[Dict[str, object]]:
+def _list_task_dir_entries(root: Path, archived: bool) -> list[dict[str, object]]:
     if not root.exists():
         return []
     rows = []
@@ -868,7 +868,7 @@ def _sortable_dt_value(value: str) -> float:
     return -dt.timestamp()
 
 
-def _resolve_task_dir(store: WorkspaceStore, task_id: str) -> tuple[Path, Dict[str, object]]:
+def _resolve_task_dir(store: WorkspaceStore, task_id: str) -> tuple[Path, dict[str, object]]:
     from .store import _safe_path
 
     slug = task_id.strip()
@@ -886,10 +886,10 @@ def _resolve_task_dir(store: WorkspaceStore, task_id: str) -> tuple[Path, Dict[s
 
 def _task_match_analysis(
     workspace_file: str | Path,
-    task: Dict[str, object],
-    keywords: List[str],
-    hint_keywords: List[str] | None = None,
-) -> Dict[str, object]:
+    task: dict[str, object],
+    keywords: list[str],
+    hint_keywords: list[str] | None = None,
+) -> dict[str, object]:
     keywords = keywords or []
     hint_keywords = hint_keywords or []
     haystack_parts = [
@@ -900,7 +900,7 @@ def _task_match_analysis(
         " ".join(task.get("tags", []) if isinstance(task.get("tags"), list) else []),
         str(task.get("priority", "")),
     ]
-    artifact_hits: List[str] = []
+    artifact_hits: list[str] = []
     try:
         for artifact_name in ["current-summary.md", "context.md", "requirement.md", "design.md", "plan.md", "test-plan.md"]:
             artifact = get_task_artifact(workspace_file, str(task.get("task_id", "")), artifact_name)
@@ -949,14 +949,14 @@ def _parse_dt(value: str):
         return None
 
 
-def _split_markdown_sections(content: str) -> List[Dict[str, object]]:
+def _split_markdown_sections(content: str) -> list[dict[str, object]]:
     if not content.strip():
         return []
     lines = content.splitlines()
-    sections: List[Dict[str, object]] = []
+    sections: list[dict[str, object]] = []
     current_title = "Document"
     current_level = 1
-    current_body: List[str] = []
+    current_body: list[str] = []
     for line in lines:
         m = re.match(r"^(#{1,6})\s+(.*)$", line)
         if m:
@@ -971,7 +971,7 @@ def _split_markdown_sections(content: str) -> List[Dict[str, object]]:
     return [item for item in sections if item["title"] or item["body"]]
 
 
-def _split_change_log_entries(content: str) -> tuple[str, List[str]]:
+def _split_change_log_entries(content: str) -> tuple[str, list[str]]:
     sections = _split_markdown_sections(content)
     if not sections:
         return "# Change Log / 变更记录\n", []
@@ -987,11 +987,11 @@ def _split_change_log_entries(content: str) -> tuple[str, List[str]]:
     return "\n".join(prefix_lines).strip() + "\n", entries
 
 
-def _tokenize_text(text: str) -> List[str]:
+def _tokenize_text(text: str) -> list[str]:
     return base_tokenize(text)
 
 
-def _section_score(section: Dict[str, object], keywords: List[str]) -> int:
+def _section_score(section: dict[str, object], keywords: list[str]) -> int:
     haystack = f"{section['title']} {section['body']}".lower()
     return sum(1 for token in keywords if token in haystack)
 
@@ -1009,7 +1009,7 @@ def _trim_text(text: str, limit: int) -> str:
 TRACEABILITY_FILE = "traceability-graph.json"
 
 
-def build_traceability_graph(workspace_file: str | Path) -> Dict[str, Any]:
+def build_traceability_graph(workspace_file: str | Path) -> dict[str, Any]:
     """Build a traceability graph linking requirements, tasks, changes, and verification.
 
     Returns a graph with nodes (requirements, tasks, changes, verification)
@@ -1019,8 +1019,8 @@ def build_traceability_graph(workspace_file: str | Path) -> Dict[str, Any]:
     store = WorkspaceStore(workspace_file)
     tasks = list_task_spaces(workspace_file, include_archived=True)
 
-    nodes: List[Dict[str, Any]] = []
-    edges: List[Dict[str, Any]] = []
+    nodes: list[dict[str, Any]] = []
+    edges: list[dict[str, Any]] = []
 
     # Add requirement nodes from artifacts
     for key, filename in DEFAULT_ARTIFACTS.items():

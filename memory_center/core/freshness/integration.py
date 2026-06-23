@@ -12,7 +12,7 @@ Key constraints (D-01):
 """
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any
 
 from ..diagnostics import DIAG, diag_entry
 
@@ -46,7 +46,7 @@ _RECOMMENDED_ACTIONS = {
 }
 
 
-def get_freshness_with_actions(workspace_file: str) -> Dict[str, Any]:
+def get_freshness_with_actions(workspace_file: str) -> dict[str, Any]:
     """Get freshness status with recommended actions. Never raises."""
     from pathlib import Path as _Path
     ws_path = _Path(workspace_file)
@@ -122,7 +122,7 @@ def freshness_risk_escalation(current_risk: str, freshness_status: str) -> str:
     return current_risk
 
 
-def stale_file_alert(file_freshness: Dict[str, str]) -> List[Dict[str, str]]:
+def stale_file_alert(file_freshness: dict[str, str]) -> list[dict[str, str]]:
     """Generate alerts for stale files in query results."""
     alerts = []
     for path, status in file_freshness.items():

@@ -4,14 +4,14 @@ Extracted from orchestrator/common.py to reduce file size and enable reuse.
 """
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any
 
 
 def build_progressive_levels(
-    level_1: Dict[str, Any],
-    level_2: Dict[str, Any],
-    level_3: Dict[str, Any],
-) -> Dict[str, Any]:
+    level_1: dict[str, Any],
+    level_2: dict[str, Any],
+    level_3: dict[str, Any],
+) -> dict[str, Any]:
     """Build a 3-level progressive disclosure structure.
 
     Level 1: Quick summary (always shown in compact mode)
@@ -27,10 +27,10 @@ def build_progressive_levels(
 
 def build_query_progressive_view(
     query: str,
-    matches: List[Dict[str, Any]],
-    semantic_hits: List[Dict[str, Any]],
-    related_cases: List[Dict[str, Any]],
-) -> Dict[str, Any]:
+    matches: list[dict[str, Any]],
+    semantic_hits: list[dict[str, Any]],
+    related_cases: list[dict[str, Any]],
+) -> dict[str, Any]:
     """Build progressive view for query results."""
     top_nodes = [item.get("node", {}) for item in matches[:3]]
     return build_progressive_levels(
@@ -65,10 +65,10 @@ def build_query_progressive_view(
 
 
 def build_context_progressive_view(
-    node: Dict[str, Any],
-    incoming: List[Dict[str, Any]],
-    outgoing: List[Dict[str, Any]],
-) -> Dict[str, Any]:
+    node: dict[str, Any],
+    incoming: list[dict[str, Any]],
+    outgoing: list[dict[str, Any]],
+) -> dict[str, Any]:
     """Build progressive view for context (node + neighbors)."""
     return build_progressive_levels(
         {

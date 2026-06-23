@@ -8,7 +8,7 @@ Supports three modes:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List
+from typing import Any
 
 from ..domain.extractor import BusinessDomainExtractor
 from ..reasoning.risk import RiskFinding, RiskPatternEngine
@@ -21,13 +21,13 @@ class GraphView:
     mode: str  # architecture | business | change
     title: str
     description: str = ""
-    nodes: List[Dict[str, Any]] = field(default_factory=list)
-    edges: List[Dict[str, Any]] = field(default_factory=list)
-    groups: List[Dict[str, Any]] = field(default_factory=list)
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    nodes: list[dict[str, Any]] = field(default_factory=list)
+    edges: list[dict[str, Any]] = field(default_factory=list)
+    groups: list[dict[str, Any]] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)
     persona: str = "developer"
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "mode": self.mode,
             "title": self.title,
@@ -75,7 +75,7 @@ class GraphViewBuilder:
 
         # Group by type
         groups = []
-        type_nodes: Dict[str, List[Dict[str, Any]]] = {}
+        type_nodes: dict[str, list[dict[str, Any]]] = {}
         for node in nodes:
             node_type = node.get("type", "unknown")
             type_nodes.setdefault(node_type, []).append(node)
@@ -166,7 +166,7 @@ class GraphViewBuilder:
 
         # Build risk groups
         groups = []
-        severity_groups: Dict[str, List[RiskFinding]] = {}
+        severity_groups: dict[str, list[RiskFinding]] = {}
         for finding in findings:
             severity_groups.setdefault(finding.severity, []).append(finding)
 

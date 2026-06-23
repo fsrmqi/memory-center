@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from ..store import WorkspaceStore
 
@@ -27,8 +27,8 @@ def record_benchmark_baseline(
     *,
     budget: str = "medium",
     view: str = "compact",
-    metadata: Optional[Dict[str, Any]] = None,
-) -> Dict[str, Any]:
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """Record a benchmark baseline for a specific function.
 
     This captures the "expected" token usage for high-frequency functions.
@@ -69,7 +69,7 @@ def record_benchmark_trend(
     view: str = "compact",
     session_id: str = "",
     model: str = "",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Record a benchmark trend point for time-series analysis.
 
     Each invocation appends to the trend log for regression detection.
@@ -105,7 +105,7 @@ def get_benchmark_baselines(
     function_name: str = "",
     budget: str = "",
     limit: int = 100,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Retrieve benchmark baselines with optional filtering."""
     store = WorkspaceStore(workspace_file)
     rows = store.read_jsonl_prefer_backend(BENCHMARK_BASELINE_FILE, limit=max(limit, 1000))
@@ -116,7 +116,7 @@ def get_benchmark_baselines(
         rows = [r for r in rows if r.get("budget") == budget]
 
     # Aggregate by function
-    function_stats: Dict[str, Dict[str, Any]] = {}
+    function_stats: dict[str, dict[str, Any]] = {}
     for row in rows:
         fn = row.get("function_name", "")
         stats = function_stats.setdefault(fn, {
@@ -133,7 +133,7 @@ def get_benchmark_baselines(
         stats["savings_pcts"].append(row.get("savings_pct", 0.0))
 
     # Calculate averages
-    for fn, stats in function_stats.items():
+    for stats in function_stats.values():
         if stats["count"] > 0:
             stats["avg_raw_tokens"] = stats["raw_tokens_total"] // stats["count"]
             stats["avg_compact_tokens"] = stats["compact_tokens_total"] // stats["count"]
@@ -153,7 +153,7 @@ def get_benchmark_trends(
     budget: str = "",
     days: int = 30,
     limit: int = 500,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Retrieve benchmark trends with time-series analysis.
 
     Returns trend data for regression detection.
@@ -175,7 +175,7 @@ def get_benchmark_trends(
         rows = [r for r in rows if r.get("budget") == budget]
 
     # Build time series per function
-    function_trends: Dict[str, List[Dict[str, Any]]] = {}
+    function_trends: dict[str, list[dict[str, Any]]] = {}
     for row in rows:
         fn = row.get("function_name", "")
         function_trends.setdefault(fn, []).append({
@@ -203,9 +203,9 @@ def get_benchmark_trends(
 
 
 def _detect_regressions(
-    function_trends: Dict[str, List[Dict[str, Any]]],
+    function_trends: dict[str, list[dict[str, Any]]],
     threshold_pct: float = 10.0,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Detect regressions where token usage increased significantly."""
     regressions = []
 
@@ -241,8 +241,8 @@ def _detect_regressions(
 
 
 def _build_trend_summary(
-    function_trends: Dict[str, List[Dict[str, Any]]],
-) -> Dict[str, Any]:
+    function_trends: dict[str, list[dict[str, Any]]],
+) -> dict[str, Any]:
     """Build summary of all trends."""
     total_points = sum(len(points) for points in function_trends.values())
     function_count = len(function_trends)
@@ -264,7 +264,7 @@ def _build_trend_summary(
     }
 
 
-def check_regression_alerts(workspace_file: str | Path, threshold_pct: float = 10.0) -> Dict[str, Any]:
+def check_regression_alerts(workspace_file: str | Path, threshold_pct: float = 10.0) -> dict[str, Any]:
     """Check for benchmark regressions and generate alerts.
 
     Returns alert summary suitable for mc_admin / workbench display.
@@ -299,7 +299,7 @@ def check_regression_alerts(workspace_file: str | Path, threshold_pct: float = 1
 def generate_benchmark_report(
     workspace_file: str | Path,
     function_name: str = "",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Generate comprehensive benchmark report for workbench/admin views."""
     baselines = get_benchmark_baselines(workspace_file, function_name=function_name)
     trends = get_benchmark_trends(workspace_file, function_name=function_name)
@@ -313,9 +313,9 @@ def generate_benchmark_report(
 
 
 def _calculate_health_score(
-    baselines: Dict[str, Any],
-    trends: Dict[str, Any],
-) -> Dict[str, Any]:
+    baselines: dict[str, Any],
+    trends: dict[str, Any],
+) -> dict[str, Any]:
     """Calculate overall benchmark health score."""
     score = 100
     issues = []
@@ -346,9 +346,9 @@ def _calculate_health_score(
 
 
 def _generate_recommendations(
-    baselines: Dict[str, Any],
-    trends: Dict[str, Any],
-) -> List[str]:
+    baselines: dict[str, Any],
+    trends: dict[str, Any],
+) -> list[str]:
     """Generate actionable recommendations."""
     recommendations = []
 
@@ -383,7 +383,7 @@ class RegressionThresholdConfig:
     default_threshold_pct: float = 10.0
     critical_threshold_pct: float = 25.0
     min_data_points: int = 5
-    per_function_thresholds: Dict[str, float] = field(default_factory=dict)
+    per_function_thresholds: dict[str, float] = field(default_factory=dict)
 
     def threshold_for(self, function_name: str) -> float:
         """Return threshold for a specific function, falling back to default."""
@@ -393,7 +393,7 @@ class RegressionThresholdConfig:
 def check_regression_alerts_configurable(
     workspace_file: str | Path,
     config: RegressionThresholdConfig | None = None,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Enhanced regression check with configurable per-function thresholds (Phase D).
 
     Wraps the existing check_regression_alerts with per-function threshold support.

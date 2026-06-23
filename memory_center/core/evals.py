@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List
+from typing import Any
 
 from .schemas import with_schema
 
 
-def build_finding(severity: str, code: str, message: str) -> Dict[str, Any]:
+def build_finding(severity: str, code: str, message: str) -> dict[str, Any]:
     return {
         "severity": severity,
         "code": code,
@@ -25,7 +25,7 @@ def score_to_quality(score: int) -> str:
 @dataclass
 class EvalResultBuilder:
     initial_score: int = 100
-    findings: List[Dict[str, Any]] = field(default_factory=list)
+    findings: list[dict[str, Any]] = field(default_factory=list)
     score: int = field(init=False)
 
     def __post_init__(self) -> None:
@@ -35,7 +35,7 @@ class EvalResultBuilder:
         self.findings.append(build_finding(severity, code, message))
         self.score -= penalty
 
-    def finalize(self, **payload: Any) -> Dict[str, Any]:
+    def finalize(self, **payload: Any) -> dict[str, Any]:
         final_score = max(0, self.score)
         return with_schema(
             "eval_result",
@@ -48,7 +48,7 @@ class EvalResultBuilder:
         )
 
 
-def eval_workflow_orchestration(tool_events: List[Dict[str, Any]], intent: str = "") -> Dict[str, Any]:
+def eval_workflow_orchestration(tool_events: list[dict[str, Any]], intent: str = "") -> dict[str, Any]:
     """Evaluate whether a workflow follows the recommended start→log→sync→close pattern."""
     builder = EvalResultBuilder()
     event_types = [str(e.get("event_type", "") or e.get("type", "")) for e in tool_events]

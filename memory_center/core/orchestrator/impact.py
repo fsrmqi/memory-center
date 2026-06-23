@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import subprocess
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 from ..diagnostics import DIAG, diag_entry
 from ..explanation import explanation_entry, merge_explanations
@@ -41,7 +41,7 @@ def memory_impact(
     project: str = "",
     view: str = "full",
     budget: str = "medium",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     _, store = load_context(workspace_file)
     with GraphStore(store.graph_db_path) as graph:
         symbol_info = memory_symbol(workspace_file, target, limit=8, project=project)
@@ -148,7 +148,7 @@ def memory_impact(
         return result
 
 
-def _compact_impact_result(result: Dict[str, Any], budget: str = "medium") -> Dict[str, Any]:
+def _compact_impact_result(result: dict[str, Any], budget: str = "medium") -> dict[str, Any]:
     from ..reasoning.integration import compact_reasoning_view
     from .common import _budget_limits
 
@@ -246,7 +246,7 @@ def _compact_impact_result(result: Dict[str, Any], budget: str = "medium") -> Di
     }
 
 
-def memory_plan_change(workspace_file: str | Path, target: str, direction: str = "upstream", max_depth: int = 3) -> Dict[str, Any]:
+def memory_plan_change(workspace_file: str | Path, target: str, direction: str = "upstream", max_depth: int = 3) -> dict[str, Any]:
     impact = memory_impact(workspace_file, target, direction=direction, max_depth=max_depth)
     if not impact.get("found"):
         return {
@@ -281,7 +281,7 @@ def memory_plan_change(workspace_file: str | Path, target: str, direction: str =
     }
 
 
-def memory_verify_checklist(workspace_file: str | Path, target: str) -> Dict[str, Any]:
+def memory_verify_checklist(workspace_file: str | Path, target: str) -> dict[str, Any]:
     impact = memory_impact(workspace_file, target, direction="upstream", max_depth=3)
     checklist = list(impact.get("review_checklist", []))
     target_type = (impact.get("target", {}) or {}).get("type", "")
@@ -302,11 +302,11 @@ def memory_verify_checklist(workspace_file: str | Path, target: str) -> Dict[str
     }
 
 
-def memory_detect_changes(workspace_file: str | Path, scope: str = "staged") -> Dict[str, Any]:
+def memory_detect_changes(workspace_file: str | Path, scope: str = "staged") -> dict[str, Any]:
     config, store = load_context(workspace_file)
     with GraphStore(store.graph_db_path) as graph:
-        changed: List[str] = []
-        deleted: List[str] = []
+        changed: list[str] = []
+        deleted: list[str] = []
         for svc in config.services:
             repo = config.resolve_service_path(svc)
             if not (repo / ".git").exists():
@@ -372,11 +372,11 @@ def memory_detect_changes(workspace_file: str | Path, scope: str = "staged") -> 
 
 def _build_impact_progressive_view(
     target: str,
-    node: Dict[str, Any] | None,
-    confirmed: List[Dict[str, Any]],
-    probable: List[Dict[str, Any]],
-    possible: List[Dict[str, Any]],
-) -> Dict[str, Any]:
+    node: dict[str, Any] | None,
+    confirmed: list[dict[str, Any]],
+    probable: list[dict[str, Any]],
+    possible: list[dict[str, Any]],
+) -> dict[str, Any]:
     node_label = target if not node else f"{node.get('type', '')}:{node.get('name', '')}"
     return _build_progressive_levels(
         {
@@ -409,14 +409,14 @@ def _build_impact_progressive_view(
 def _build_impact_candidate_paths(
     *,
     found: bool,
-    target: Dict[str, Any],
+    target: dict[str, Any],
     risk_level: str,
-    confirmed: List[Dict[str, Any]],
-    probable: List[Dict[str, Any]],
-    possible: List[Dict[str, Any]],
-    rules: List[Dict[str, Any]],
-    freshness: Dict[str, Any],
-) -> List[Dict[str, Any]]:
+    confirmed: list[dict[str, Any]],
+    probable: list[dict[str, Any]],
+    possible: list[dict[str, Any]],
+    rules: list[dict[str, Any]],
+    freshness: dict[str, Any],
+) -> list[dict[str, Any]]:
     if not found:
         return [
             {
@@ -430,7 +430,7 @@ def _build_impact_candidate_paths(
             }
         ]
 
-    candidates: List[Dict[str, Any]] = []
+    candidates: list[dict[str, Any]] = []
     target_name = target.get("name", "")
     target_type = target.get("type", "")
     confirmed_count = len(confirmed)
@@ -544,15 +544,15 @@ def _get_reasoning_for_impact(workspace_file: str | Path, target_id: str) -> dic
 
 
 def _build_impact_explanation_entries(
-    confirmed: List[Dict[str, Any]],
-    probable: List[Dict[str, Any]],
-    possible: List[Dict[str, Any]],
-    node: Dict[str, Any],
-) -> Dict[str, Any]:
+    confirmed: list[dict[str, Any]],
+    probable: list[dict[str, Any]],
+    possible: list[dict[str, Any]],
+    node: dict[str, Any],
+) -> dict[str, Any]:
     """Build D-03 standard explanation entries for each impact tier."""
     target_label = f"{node.get('type', '')}:{node.get('name', '')}"
 
-    def _tier_entry(items: List[Dict[str, Any]], label: str, desc: str) -> dict:
+    def _tier_entry(items: list[dict[str, Any]], label: str, desc: str) -> dict:
         evidence = [
             {
                 "edge_type": item.get("type", ""),

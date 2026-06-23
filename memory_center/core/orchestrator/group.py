@@ -5,8 +5,9 @@ import json
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
+from ..compat import zip_strict
 from ..registry import resolve_group
 from .common import (
     _build_progressive_levels,
@@ -25,17 +26,17 @@ from .query import (
 )
 
 
-def group_status(group: str, home: str | Path | None = None) -> Dict[str, Any]:
+def group_status(group: str, home: str | Path | None = None) -> dict[str, Any]:
     from .workspace import workspace_status
 
     resolved = _cached_resolve_group(group, home)
-    workspaces: List[Dict[str, Any]] = []
-    totals: Dict[str, int] = {"files": 0, "symbols": 0, "apis": 0, "feigns": 0, "mq": 0, "cases": 0}
+    workspaces: list[dict[str, Any]] = []
+    totals: dict[str, int] = {"files": 0, "symbols": 0, "apis": 0, "feigns": 0, "mq": 0, "cases": 0}
     semantic_ready = 0
-    semantic_backends: Dict[str, int] = {}
+    semantic_backends: dict[str, int] = {}
     group_data = _load_group_data(resolved["members"])
 
-    def _load_status(member: Dict[str, Any]) -> Dict[str, Any]:
+    def _load_status(member: dict[str, Any]) -> dict[str, Any]:
         return workspace_status(member["workspace_file"])
 
     with ThreadPoolExecutor(max_workers=min(max(len(resolved["members"]), 1), 4)) as pool:
@@ -73,23 +74,23 @@ def group_query(
     group: str,
     query: str,
     limit: int = 20,
-    node_types: List[str] | None = None,
+    node_types: list[str] | None = None,
     home: str | Path | None = None,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     resolved = _cached_resolve_group(group, home)
     group_data = _load_group_data(resolved["members"])
     bridges = _build_group_bridges(group_data)
-    workspace_results: List[Dict[str, Any]] = []
-    merged: Dict[str, Dict[str, Any]] = {}
+    workspace_results: list[dict[str, Any]] = []
+    merged: dict[str, dict[str, Any]] = {}
     target_types = set()
 
-    def _query_member(member: Dict[str, Any]) -> Dict[str, Any]:
+    def _query_member(member: dict[str, Any]) -> dict[str, Any]:
         return memory_query(member["workspace_file"], query, limit=limit, node_types=node_types)
 
     with ThreadPoolExecutor(max_workers=min(max(len(resolved["members"]), 1), 4)) as pool:
         query_results = list(pool.map(_query_member, resolved["members"]))
 
-    for member, result in zip(resolved["members"], query_results):
+    for member, result in zip_strict(resolved["members"], query_results):
         workspace_ref = member["name"]
         workspace_name = result.get("workspace", workspace_ref)
         workspace_results.append({
@@ -152,7 +153,7 @@ def group_impact(
     direction: str = "upstream",
     max_depth: int = 3,
     home: str | Path | None = None,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     from .impact import memory_impact
 
     group_data = _load_group_data(_cached_resolve_group(group, home).get("members", []))
@@ -175,9 +176,9 @@ def group_impact(
         }
 
     target_types = _resolve_group_target_types(target)
-    all_impacts: List[Dict[str, Any]] = []
-    workspace_refs: List[Dict[str, Any]] = []
-    errors: List[Dict[str, Any]] = []
+    all_impacts: list[dict[str, Any]] = []
+    workspace_refs: list[dict[str, Any]] = []
+    errors: list[dict[str, Any]] = []
 
     for member in group_data:
         workspace_file = member.get("workspace_file", "")
@@ -242,7 +243,7 @@ def group_impact(
     })
 
     # Build lookup payload from merged per-workspace queries
-    lookup_entries: List[Dict[str, Any]] = []
+    lookup_entries: list[dict[str, Any]] = []
     for member in group_data:
         try:
             member_lookup = memory_query(member.get("workspace_file", ""), target, limit=5)
@@ -296,7 +297,7 @@ def group_impact(
 # ---- private helpers: data loading -----------------------------------------
 
 
-def _wrap_graph_impact(record: Dict[str, Any], band: str) -> Dict[str, Any]:
+def _wrap_graph_impact(record: dict[str, Any], band: str) -> dict[str, Any]:
     return {
         "kind": "graph",
         "impact": {
@@ -310,7 +311,7 @@ def _wrap_graph_impact(record: Dict[str, Any], band: str) -> Dict[str, Any]:
     }
 
 
-def _load_group_data(members: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def _load_group_data(members: list[dict[str, Any]]) -> list[dict[str, Any]]:
     if not members:
         return []
 
@@ -321,7 +322,7 @@ def _load_group_data(members: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     if cached and (now - cached[0]) < _LOAD_GROUP_DATA_TTL_SECONDS:
         return copy.deepcopy(cached[1])
 
-    loaded: List[Dict[str, Any]] = []
+    loaded: list[dict[str, Any]] = []
     for member in members:
         workspace_file = member.get("workspace_file", "")
         name = member.get("name", "")
@@ -347,13 +348,13 @@ def _load_group_data(members: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return loaded
 
 
-def _build_group_bridges(group_data: List[Dict[str, Any]], **_kwargs: Any) -> List[Dict[str, Any]]:
-    bridges: List[Dict[str, Any]] = []
-    service_targets: Dict[str, List[Dict[str, Any]]] = {}
-    apis: List[Dict[str, Any]] = []
-    mq_topics: Dict[str, List[Dict[str, Any]]] = {}
-    config_keys: Dict[str, List[Dict[str, Any]]] = {}
-    config_values: Dict[str, List[Dict[str, Any]]] = {}
+def _build_group_bridges(group_data: list[dict[str, Any]], **_kwargs: Any) -> list[dict[str, Any]]:
+    bridges: list[dict[str, Any]] = []
+    service_targets: dict[str, list[dict[str, Any]]] = {}
+    apis: list[dict[str, Any]] = []
+    mq_topics: dict[str, list[dict[str, Any]]] = {}
+    config_keys: dict[str, list[dict[str, Any]]] = {}
+    config_values: dict[str, list[dict[str, Any]]] = {}
 
     for item in group_data:
         for svc in item["services"]:
@@ -463,7 +464,7 @@ def _build_group_bridges(group_data: List[Dict[str, Any]], **_kwargs: Any) -> Li
                 "evidence": {"config_key": key, "values": [primary.get('value'), other.get('value')]},
             })
 
-    deduped: Dict[str, Dict[str, Any]] = {}
+    deduped: dict[str, dict[str, Any]] = {}
     for bridge in bridges:
         key = "|".join([
             bridge.get("type", ""),
@@ -477,15 +478,15 @@ def _build_group_bridges(group_data: List[Dict[str, Any]], **_kwargs: Any) -> Li
     return list(deduped.values())
 
 
-def _count_bridges(bridges: List[Dict[str, Any]]) -> Dict[str, int]:
-    counts: Dict[str, int] = {}
+def _count_bridges(bridges: list[dict[str, Any]]) -> dict[str, int]:
+    counts: dict[str, int] = {}
     for bridge in bridges:
         bridge_type = bridge.get("type", "unknown")
         counts[bridge_type] = counts.get(bridge_type, 0) + 1
     return counts
 
 
-def _filter_bridges(bridges: List[Dict[str, Any]], query: str, limit: int) -> List[Dict[str, Any]]:
+def _filter_bridges(bridges: list[dict[str, Any]], query: str, limit: int) -> list[dict[str, Any]]:
     if not bridges:
         return []
     query_tokens = set(tokenize(query))
@@ -499,16 +500,16 @@ def _filter_bridges(bridges: List[Dict[str, Any]], query: str, limit: int) -> Li
 
 
 def _filter_impact_bridges(
-    bridges: List[Dict[str, Any]],
+    bridges: list[dict[str, Any]],
     target: str,
-    target_types: List[str],
+    target_types: list[str],
     limit: int,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     if not bridges:
         return []
     target_lower = target.lower()
     target_tokens = set(tokenize(target))
-    matched: List[Dict[str, Any]] = []
+    matched: list[dict[str, Any]] = []
     for bridge in bridges:
         bridge_type = bridge.get("type", "")
         summary_lower = (bridge.get("summary", "") or "").lower()
@@ -538,7 +539,7 @@ def _bridge_type_category(bridge_type: str) -> str:
     return category_map.get(bridge_type, "")
 
 
-def _bridge_types_for_target(bridge: Dict[str, Any], target_types: List[str]) -> str:
+def _bridge_types_for_target(bridge: dict[str, Any], target_types: list[str]) -> str:
     bridge_type = bridge.get("type", "")
     category = _bridge_type_category(bridge_type)
     if category in target_types:
@@ -546,11 +547,11 @@ def _bridge_types_for_target(bridge: Dict[str, Any], target_types: List[str]) ->
     return bridge_type if bridge_type in target_types else "other"
 
 
-def _sort_bridges(bridges: List[Dict[str, Any]], target_types: List[str]) -> List[Dict[str, Any]]:
+def _sort_bridges(bridges: list[dict[str, Any]], target_types: list[str]) -> list[dict[str, Any]]:
     return sorted(bridges, key=lambda item: _bridge_sort_key(item, target_types))
 
 
-def _bridge_sort_key(bridge: Dict[str, Any], target_types: List[str]) -> tuple:
+def _bridge_sort_key(bridge: dict[str, Any], target_types: list[str]) -> tuple:
     bridge_type = bridge.get("type", "")
     priority = _bridge_priority(bridge_type, target_types)
     type_order = _bridge_type_order(bridge_type)
@@ -572,8 +573,8 @@ def _bridge_type_order(bridge_type: str) -> int:
     return order.get(bridge_type, 10)
 
 
-def _bridge_priority(bridge_type: str, target_types: List[str]) -> int:
-    priority_map: Dict[str, int] = {}
+def _bridge_priority(bridge_type: str, target_types: list[str]) -> int:
+    priority_map: dict[str, int] = {}
     types = set(target_types)
     if {"FeignClient", "FeignMethod", "Endpoint"} & types:
         priority_map.update({"FEIGN_ENDPOINT": 0, "FEIGN_SERVICE": 1, "FeignClient": 2, "FeignMethod": 3, "Endpoint": 4, "Class": 5, "Method": 6, "File": 7})
@@ -588,7 +589,7 @@ def _bridge_priority(bridge_type: str, target_types: List[str]) -> int:
     return priority_map.get("other", 20)
 
 
-def _resolve_group_target_types(target: str, target_types: List[str] | None = None) -> List[str]:
+def _resolve_group_target_types(target: str, target_types: list[str] | None = None) -> list[str]:
     return _sort_target_types(list(_infer_target_types(target)))
 
 
@@ -612,7 +613,7 @@ def _infer_target_types(target: str) -> set:
     return resolved
 
 
-def _group_query_match_key(item: Dict[str, Any], target_types: List[str]) -> tuple:
+def _group_query_match_key(item: dict[str, Any], target_types: list[str]) -> tuple:
     node = item.get("node", {})
     node_type = node.get("type", "") or item.get("node_type", "")
     priority = _query_node_priority(node_type, target_types)
@@ -628,7 +629,7 @@ def _group_query_match_key(item: Dict[str, Any], target_types: List[str]) -> tup
     )
 
 
-def _find_group_query_neighbors(workspace_matches: List[Dict[str, Any]], node_id: str) -> List[Dict[str, Any]]:
+def _find_group_query_neighbors(workspace_matches: list[dict[str, Any]], node_id: str) -> list[dict[str, Any]]:
     for match in workspace_matches:
         match_node_id = match.get("node_id", "") or match.get("node", {}).get("id", "")
         if match_node_id == node_id:
@@ -637,12 +638,12 @@ def _find_group_query_neighbors(workspace_matches: List[Dict[str, Any]], node_id
 
 
 def _merge_group_semantic_hit(
-    merged: Dict[str, Dict[str, Any]],
+    merged: dict[str, dict[str, Any]],
     workspace_ref: str,
     workspace_name: str,
-    hit: Dict[str, Any],
-    workspace_matches: List[Dict[str, Any]],
-    target_types: List[str],
+    hit: dict[str, Any],
+    workspace_matches: list[dict[str, Any]],
+    target_types: list[str],
 ) -> None:
     node_id = hit.get("node_id", "")
     if not node_id:
@@ -669,7 +670,7 @@ def _merge_group_semantic_hit(
     }
 
 
-def _summarize_group_query_matches(matches: List[Dict[str, Any]], limit: int) -> Dict[str, int]:
+def _summarize_group_query_matches(matches: list[dict[str, Any]], limit: int) -> dict[str, int]:
     summary = {"exact_matches": 0, "semantic_matches": 0, "hybrid_matches": 0, "total_matches": len(matches), "returned_matches": min(len(matches), limit)}
     for item in matches:
         sources = set(item.get("retrieval_sources", []))
@@ -685,11 +686,11 @@ def _summarize_group_query_matches(matches: List[Dict[str, Any]], limit: int) ->
 def _build_group_query_progressive_view(
     group: str,
     query: str,
-    merged_matches: List[Dict[str, Any]],
-    bridges: List[Dict[str, Any]],
-    workspace_results: List[Dict[str, Any]],
+    merged_matches: list[dict[str, Any]],
+    bridges: list[dict[str, Any]],
+    workspace_results: list[dict[str, Any]],
     limit: int,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     top_nodes = [item.get("node", {}) for item in merged_matches[:3]]
     return _build_progressive_levels(
         {
@@ -740,11 +741,11 @@ def _build_group_query_progressive_view(
 def _build_group_impact_progressive_view(
     group: str,
     target: str,
-    impact_records: List[Dict[str, Any]],
-    workspace_refs: List[Dict[str, Any]],
-    bridges: List[Dict[str, Any]] | None = None,
-    impacted_workspaces: List[str] | None = None,
-) -> Dict[str, Any]:
+    impact_records: list[dict[str, Any]],
+    workspace_refs: list[dict[str, Any]],
+    bridges: list[dict[str, Any]] | None = None,
+    impacted_workspaces: list[str] | None = None,
+) -> dict[str, Any]:
     bridges = bridges or []
     impacted_workspaces = impacted_workspaces or []
     confirmed_count = sum(1 for item in impact_records if item.get("_confidence_band") == "confirmed")
@@ -790,7 +791,7 @@ def _build_group_impact_progressive_view(
     )
 
 
-def _group_impact_record_label(item: Dict[str, Any]) -> str:
+def _group_impact_record_label(item: dict[str, Any]) -> str:
     source = item.get("source", {})
     target_node = item.get("target", {})
     edge_type = item.get("type", "")
@@ -808,9 +809,9 @@ def _group_impact_record_label(item: Dict[str, Any]) -> str:
 
 
 def _build_group_impact_evidence_summary(
-    impact_records: List[Dict[str, Any]],
-    bridges: List[Dict[str, Any]],
-) -> Dict[str, Any]:
+    impact_records: list[dict[str, Any]],
+    bridges: list[dict[str, Any]],
+) -> dict[str, Any]:
     confirmed = sum(1 for item in impact_records if item.get("_confidence_band") == "confirmed")
     probable = sum(1 for item in impact_records if item.get("_confidence_band") == "probable")
     possible = sum(1 for item in impact_records if item.get("_confidence_band") == "possible")
@@ -837,13 +838,13 @@ def _build_group_impact_evidence_summary(
 
 
 def _filter_group_impact_records(
-    records: List[Dict[str, Any]],
-    target_types: List[str],
-) -> List[Dict[str, Any]]:
+    records: list[dict[str, Any]],
+    target_types: list[str],
+) -> list[dict[str, Any]]:
     if not target_types:
         return records
     type_set = set(target_types)
-    filtered: List[Dict[str, Any]] = []
+    filtered: list[dict[str, Any]] = []
     for record in records:
         source_type = record.get("source", {}).get("type", "")
         target_type = record.get("target", {}).get("type", "")
@@ -860,13 +861,13 @@ def _filter_group_impact_records(
 
 
 def _sort_group_impact_records(
-    records: List[Dict[str, Any]],
-    target_types: List[str],
-) -> List[Dict[str, Any]]:
+    records: list[dict[str, Any]],
+    target_types: list[str],
+) -> list[dict[str, Any]]:
     return sorted(records, key=lambda item: _group_impact_record_key(item, target_types))
 
 
-def _group_impact_record_key(record: Dict[str, Any], target_types: List[str]) -> tuple:
+def _group_impact_record_key(record: dict[str, Any], target_types: list[str]) -> tuple:
     band = record.get("_confidence_band", "")
     band_priority = 0 if band == "confirmed" else 1 if band == "probable" else 2
     source_type = record.get("source", {}).get("type", "")
@@ -875,8 +876,8 @@ def _group_impact_record_key(record: Dict[str, Any], target_types: List[str]) ->
     return (band_priority, type_priority, confidence, record.get("_workspace", ""))
 
 
-def _graph_edge_types_for_target(target_types: List[str]) -> List[str]:
-    edge_types: List[str] = []
+def _graph_edge_types_for_target(target_types: list[str]) -> list[str]:
+    edge_types: list[str] = []
     types = set(target_types)
     if types & {"FeignClient", "FeignMethod"}:
         edge_types.extend(["IMPLEMENTS_FEIGN", "CALLS_SERVICE"])
@@ -891,8 +892,8 @@ def _graph_edge_types_for_target(target_types: List[str]) -> List[str]:
     return edge_types
 
 
-def _graph_edge_priority(edge_type: str, target_types: List[str]) -> int:
-    edge_priorities: Dict[str, int] = {}
+def _graph_edge_priority(edge_type: str, target_types: list[str]) -> int:
+    edge_priorities: dict[str, int] = {}
     types = set(target_types)
     if types & {"FeignClient", "FeignMethod"}:
         edge_priorities.update({"IMPLEMENTS_FEIGN": 0, "CALLS_SERVICE": 1, "CALLS_METHOD": 2})
@@ -907,16 +908,16 @@ def _graph_edge_priority(edge_type: str, target_types: List[str]) -> int:
     return edge_priorities.get(edge_type, 10)
 
 
-def _type_distribution(items: List[Dict[str, Any]]) -> Dict[str, int]:
-    counts: Dict[str, int] = {}
+def _type_distribution(items: list[dict[str, Any]]) -> dict[str, int]:
+    counts: dict[str, int] = {}
     for item in items:
         node_type = item.get("node_type", "") or item.get("type", "") or "unknown"
         counts[node_type] = counts.get(node_type, 0) + 1
     return dict(sorted(counts.items(), key=lambda kv: (-kv[1], kv[0])))
 
 
-def _type_distribution_from_impacts(items: List[Dict[str, Any]]) -> Dict[str, int]:
-    counts: Dict[str, int] = {}
+def _type_distribution_from_impacts(items: list[dict[str, Any]]) -> dict[str, int]:
+    counts: dict[str, int] = {}
     for item in items:
         source_type = item.get("source", {}).get("type", "")
         if source_type:
@@ -937,7 +938,7 @@ def group_chain(
     depth: int = 2,
     limit: int = 80,
     home: str | Path | None = None,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     resolved = _cached_resolve_group(group, home)
     group_data = _load_group_data(resolved["members"])
     if not group_data:
@@ -985,8 +986,8 @@ def group_chain(
     boundary_points = _detect_boundary_points(local_edges, local_services)
 
     # Step 7-8: find continuations via bridges and run target chains (parallelized)
-    continuations: List[Dict[str, Any]] = []
-    bridges_used: List[Dict[str, Any]] = []
+    continuations: list[dict[str, Any]] = []
+    bridges_used: list[dict[str, Any]] = []
     tasks = []
     for bp in boundary_points:
         for ep in _find_continuation_entry_points(bp, bridges, group_data):
@@ -1029,7 +1030,7 @@ def group_chain(
     }
 
 
-def _empty_stitch_summary() -> Dict[str, int]:
+def _empty_stitch_summary() -> dict[str, int]:
     return {
         "local_edge_count": 0, "boundary_count": 0,
         "bridges_used_count": 0, "stitched_workspace_count": 0,
@@ -1037,15 +1038,15 @@ def _empty_stitch_summary() -> Dict[str, int]:
     }
 
 
-def _load_workspace_topology(workspace_file: str) -> Dict[str, Any]:
+def _load_workspace_topology(workspace_file: str) -> dict[str, Any]:
     _, store = load_context(workspace_file)
     return store.read_json_prefer_backend("service-topology.json", {})
 
 
 def _detect_boundary_points(
-    chain_edges: List[Dict[str, Any]],
+    chain_edges: list[dict[str, Any]],
     local_services: set[str],
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Detect boundary points where chain crosses workspace boundaries.
 
     Supports multiple boundary types:
@@ -1054,7 +1055,7 @@ def _detect_boundary_points(
     - MQ Producer→Topic (PRODUCES_TOPIC consumed by another workspace)
     - Config Key shared across workspaces
     """
-    boundaries: List[Dict[str, Any]] = []
+    boundaries: list[dict[str, Any]] = []
     for edge in chain_edges:
         edge_type = edge.get("type", "")
 
@@ -1109,10 +1110,10 @@ def _detect_boundary_points(
 
 
 def _find_continuation_entry_points(
-    boundary: Dict[str, Any],
-    bridges: List[Dict[str, Any]],
-    group_data: List[Dict[str, Any]],
-) -> List[Dict[str, Any]]:
+    boundary: dict[str, Any],
+    bridges: list[dict[str, Any]],
+    group_data: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
     """Find entry points in other workspaces where a chain can continue.
 
     Supports multiple bridge types:
@@ -1126,7 +1127,7 @@ def _find_continuation_entry_points(
     feign_interface = boundary.get("feign_interface", "")
     boundary_type = boundary.get("boundary_type", "")
     topic = boundary.get("topic", "")
-    entry_points: List[Dict[str, Any]] = []
+    entry_points: list[dict[str, Any]] = []
 
     # For MQ boundaries, find shared topic bridges
     if boundary_type in {"mq-producer", "mq-consumer"} and topic:
@@ -1191,9 +1192,9 @@ def _find_continuation_entry_points(
 
 
 def _find_member_by_ref(
-    group_data: List[Dict[str, Any]],
+    group_data: list[dict[str, Any]],
     workspace_ref: str,
-) -> Dict[str, Any] | None:
+) -> dict[str, Any] | None:
     for member in group_data:
         if member.get("workspace_ref") == workspace_ref or member.get("workspace") == workspace_ref:
             return member
@@ -1201,12 +1202,12 @@ def _find_member_by_ref(
 
 
 def _stitch_chain(
-    local_edges: List[Dict[str, Any]],
-    continuations: List[Dict[str, Any]],
+    local_edges: list[dict[str, Any]],
+    continuations: list[dict[str, Any]],
     source_workspace_name: str,
     direction: str,
-) -> List[Dict[str, Any]]:
-    stitched: List[Dict[str, Any]] = []
+) -> list[dict[str, Any]]:
+    stitched: list[dict[str, Any]] = []
     for edge in local_edges:
         stitched.append({**edge, "_workspace": source_workspace_name})
     for cont in continuations:
@@ -1226,12 +1227,12 @@ def _stitch_chain(
 
 
 def _build_stitch_summary(
-    local_edges: List[Dict[str, Any]],
-    boundary_points: List[Dict[str, Any]],
-    bridges_used: List[Dict[str, Any]],
-    continuations: List[Dict[str, Any]],
-    stitched: List[Dict[str, Any]],
-) -> Dict[str, Any]:
+    local_edges: list[dict[str, Any]],
+    boundary_points: list[dict[str, Any]],
+    bridges_used: list[dict[str, Any]],
+    continuations: list[dict[str, Any]],
+    stitched: list[dict[str, Any]],
+) -> dict[str, Any]:
     workspace_names: set[str] = set()
     for cont in continuations:
         ws = cont.get("target_workspace", "")
@@ -1246,24 +1247,24 @@ def _build_stitch_summary(
     }
 
 
-def _bridge_reason_for(bridge: Dict[str, Any]) -> str:
+def _bridge_reason_for(bridge: dict[str, Any]) -> str:
     return f"{bridge.get('type', 'bridge')}({bridge.get('confidence', 0.0):.2f}): {bridge.get('summary', '')}"
 
 
-def _build_cross_workspace_path_hint(merged_matches: List[Dict[str, Any]]) -> str:
+def _build_cross_workspace_path_hint(merged_matches: list[dict[str, Any]]) -> str:
     workspaces = []
     for item in merged_matches[:5]:
         ws = item.get("workspace", "")
         if ws and ws not in workspaces:
             workspaces.append(ws)
     return " -> ".join(workspaces)
-_RESOLVE_GROUP_CACHE: Dict[tuple, Dict[str, Any]] = {}
+_RESOLVE_GROUP_CACHE: dict[tuple, dict[str, Any]] = {}
 _RESOLVE_GROUP_TTL_SECONDS = 15
-_LOAD_GROUP_DATA_CACHE: Dict[tuple, tuple[float, List[Dict[str, Any]]]] = {}
+_LOAD_GROUP_DATA_CACHE: dict[tuple, tuple[float, list[dict[str, Any]]]] = {}
 _LOAD_GROUP_DATA_TTL_SECONDS = 15
 
 
-def _cached_resolve_group(group: str, home: str | Path | None = None) -> Dict[str, Any]:
+def _cached_resolve_group(group: str, home: str | Path | None = None) -> dict[str, Any]:
     cache_key = (str(group), str(Path(home).expanduser()) if home else "")
     now = time.monotonic()
     cached = _RESOLVE_GROUP_CACHE.get(cache_key)

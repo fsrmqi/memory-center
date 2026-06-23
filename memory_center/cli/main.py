@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+# Typer evaluates command annotations at runtime in environments that may still
+# use Python 3.9, so keep CLI option annotations on typing.List/Optional.
+# ruff: noqa: UP006,UP035,UP045
 import json
 import pprint
 from pathlib import Path

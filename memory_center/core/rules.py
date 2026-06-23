@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 import yaml
 
@@ -384,9 +384,9 @@ def ensure_default_rules(store: WorkspaceStore) -> Path:
     return path
 
 
-def load_rules(store: WorkspaceStore) -> List[Rule]:
+def load_rules(store: WorkspaceStore) -> list[Rule]:
     ensure_default_rules(store)
-    rules: List[Rule] = []
+    rules: list[Rule] = []
     for path in store.rules_dir.glob("*.yaml"):
         data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
         for item in data.get("rules", []):
@@ -394,11 +394,11 @@ def load_rules(store: WorkspaceStore) -> List[Rule]:
     return rules
 
 
-def match_rules(store: WorkspaceStore, intent: str = "", files: List[str] | None = None, scopes: List[str] | None = None) -> List[Dict[str, Any]]:
+def match_rules(store: WorkspaceStore, intent: str = "", files: list[str] | None = None, scopes: list[str] | None = None) -> list[dict[str, Any]]:
     files = files or []
     scopes = scopes or []
     intent_lower = intent.lower()
-    matched: List[Dict[str, Any]] = []
+    matched: list[dict[str, Any]] = []
     for rule in load_rules(store):
         score = 0
         if any(scope in rule.scope for scope in scopes):
@@ -417,14 +417,14 @@ def match_rules(store: WorkspaceStore, intent: str = "", files: List[str] | None
     return matched
 
 
-def load_yaml_rule_config(store: WorkspaceStore, file_name: str, default_data: Dict[str, Any]) -> Dict[str, Any]:
+def load_yaml_rule_config(store: WorkspaceStore, file_name: str, default_data: dict[str, Any]) -> dict[str, Any]:
     ensure_default_rules(store)
     path = store.rules_dir / file_name
     data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     return _deep_merge(default_data, data)
 
 
-def _deep_merge(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
+def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
     """Recursively merge override into base. Dicts are merged recursively; other values are overwritten."""
     merged = dict(base)
     for key, value in override.items():
@@ -489,15 +489,15 @@ CONSTITUTION_RULES = [
 ]
 
 
-def load_constitution(store: WorkspaceStore) -> List[Dict[str, Any]]:
+def load_constitution(store: WorkspaceStore) -> list[dict[str, Any]]:
     """Load constitution rules. Returns the default constitution."""
     return CONSTITUTION_RULES
 
 
 def check_constitution_conflicts(
     intent: str = "",
-    files: List[str] | None = None,
-) -> List[Dict[str, Any]]:
+    files: list[str] | None = None,
+) -> list[dict[str, Any]]:
     """Check if an intent or file set conflicts with constitution rules."""
     conflicts = []
     files = files or []

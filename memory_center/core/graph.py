@@ -4,9 +4,10 @@ import json
 import re
 import sqlite3
 import threading
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any
 
 # Pre-compiled regex for _sanitize_fts_term (P1 performance)
 _RE_SANITIZE_FTS = re.compile(r"[^\w㐀-䶿一-鿿豈-﫿]")
@@ -20,7 +21,7 @@ class GraphNode:
     project: str = ""
     file_path: str = ""
     line: int = 0
-    metadata: Dict[str, Any] | None = None
+    metadata: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -30,7 +31,7 @@ class GraphEdge:
     target_id: str
     type: str
     confidence: float = 1.0
-    metadata: Dict[str, Any] | None = None
+    metadata: dict[str, Any] | None = None
 
 
 class GraphStore:
@@ -43,7 +44,7 @@ class GraphStore:
     def __init__(self, db_path: str | Path):
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._conn: Optional[sqlite3.Connection] = None
+        self._conn: sqlite3.Connection | None = None
         self._lock = threading.Lock()
         self._init_schema()
 
@@ -60,7 +61,7 @@ class GraphStore:
                 self._conn.close()
                 self._conn = None
 
-    def __enter__(self) -> "GraphStore":
+    def __enter__(self) -> GraphStore:
         return self
 
     def __exit__(self, *exc: Any) -> None:
@@ -210,12 +211,12 @@ class GraphStore:
             except sqlite3.OperationalError:
                 pass
 
-    def node_by_id(self, node_id: str) -> Optional[Dict[str, Any]]:
+    def node_by_id(self, node_id: str) -> dict[str, Any] | None:
         with self.connect() as conn:
             row = conn.execute("SELECT * FROM nodes WHERE id=?", (node_id,)).fetchone()
         return _row_node(row) if row else None
 
-    def find_nodes(self, query: str, types: List[str] | None = None, limit: int = 20) -> List[Dict[str, Any]]:
+    def find_nodes(self, query: str, types: list[str] | None = None, limit: int = 20) -> list[dict[str, Any]]:
         query = (query or "").strip()
         if not query:
             return []
@@ -224,7 +225,7 @@ class GraphStore:
             rows = self._find_nodes_like(query, types, limit)
         return rows
 
-    def _find_nodes_fts(self, query: str, types: List[str] | None, limit: int) -> List[Dict[str, Any]]:
+    def _find_nodes_fts(self, query: str, types: list[str] | None, limit: int) -> list[dict[str, Any]]:
         safe_terms = [_sanitize_fts_term(t) for t in query.replace("-", " ").replace("/", " ").split() if t.strip()]
         safe_terms = [t for t in safe_terms if t]
         if not safe_terms:
@@ -236,9 +237,9 @@ class GraphStore:
             JOIN nodes n ON n.id=s.id
             WHERE node_search MATCH ?
         """
-        args: List[Any] = [fts_query]
+        args: list[Any] = [fts_query]
         if types:
-            sql += " AND n.type IN (%s)" % ",".join("?" for _ in types)
+            sql += f" AND n.type IN ({','.join('?' for _ in types)})"
             args.extend(types)
         sql += " LIMIT ?"
         args.append(limit)
@@ -249,12 +250,12 @@ class GraphStore:
         except sqlite3.OperationalError:
             return []
 
-    def _find_nodes_like(self, query: str, types: List[str] | None, limit: int) -> List[Dict[str, Any]]:
+    def _find_nodes_like(self, query: str, types: list[str] | None, limit: int) -> list[dict[str, Any]]:
         q = f"%{query.lower()}%"
         sql = "SELECT * FROM nodes WHERE lower(name) LIKE ? OR lower(id) LIKE ? OR lower(file_path) LIKE ? OR lower(metadata_json) LIKE ?"
-        args: List[Any] = [q, q, q, q]
+        args: list[Any] = [q, q, q, q]
         if types:
-            sql += " AND type IN (%s)" % ",".join("?" for _ in types)
+            sql += f" AND type IN ({','.join('?' for _ in types)})"
             args.extend(types)
         sql += " LIMIT ?"
         args.append(limit)
@@ -268,8 +269,8 @@ class GraphStore:
         direction: str = "both",
         max_depth: int = 2,
         limit: int = 200,
-        edge_types: List[str] | None = None,
-    ) -> List[Dict[str, Any]]:
+        edge_types: list[str] | None = None,
+    ) -> list[dict[str, Any]]:
         """BFS neighbor traversal optimized for large graphs.
 
         Improvements over the previous implementation:
@@ -280,15 +281,15 @@ class GraphStore:
         conn = self.connect()
         type_set = set(edge_types) if edge_types else None
         seen: set[str] = {node_id}
-        frontier: List[str] = [node_id]
-        results: List[Dict[str, Any]] = []
+        frontier: list[str] = [node_id]
+        results: list[dict[str, Any]] = []
 
         for depth in range(max_depth):
             if not frontier or len(results) >= limit:
                 break
 
-            clauses: List[str] = []
-            args: List[Any] = []
+            clauses: list[str] = []
+            args: list[Any] = []
             if direction in {"both", "downstream", "outgoing"}:
                 ph = ",".join("?" for _ in frontier)
                 clauses.append(f"e.source_id IN ({ph})")
@@ -318,7 +319,7 @@ class GraphStore:
                 LIMIT ?
             """
             rows = conn.execute(sql, [*args, remaining]).fetchall()
-            next_frontier: List[str] = []
+            next_frontier: list[str] = []
             for row in rows:
                 sid = row["source_id"]
                 tid = row["target_id"]
@@ -366,7 +367,7 @@ class GraphStore:
                 pass
             return set(removed_ids)
 
-    def partial_rebuild(self, nodes: Iterable[GraphNode], edges: Iterable[GraphEdge], project_filter: set[str], path_filters: list[str]) -> Dict[str, Any]:
+    def partial_rebuild(self, nodes: Iterable[GraphNode], edges: Iterable[GraphEdge], project_filter: set[str], path_filters: list[str]) -> dict[str, Any]:
         """Remove scope-matched nodes/edges, then upsert refreshed ones."""
         removed_ids = self.remove_by_scope(project_filter, path_filters)
         refreshed_nodes = list(nodes)
@@ -394,13 +395,13 @@ class GraphStore:
             except sqlite3.OperationalError:
                 pass
 
-    def counts(self) -> Dict[str, int]:
+    def counts(self) -> dict[str, int]:
         with self.connect() as conn:
             nodes = conn.execute("SELECT COUNT(*) FROM nodes").fetchone()[0]
             edges = conn.execute("SELECT COUNT(*) FROM edges").fetchone()[0]
         return {"nodes": nodes, "edges": edges}
 
-    def all_nodes(self) -> List[Dict[str, Any]]:
+    def all_nodes(self) -> list[dict[str, Any]]:
         with self.connect() as conn:
             rows = conn.execute("SELECT * FROM nodes").fetchall()
         return [_row_node(row) for row in rows]
@@ -419,14 +420,14 @@ def _sanitize_fts_term(term: str) -> str:
     return _RE_SANITIZE_FTS.sub("", term)
 
 
-def _loads_json(value: str) -> Dict[str, Any]:
+def _loads_json(value: str) -> dict[str, Any]:
     try:
         return json.loads(value or "{}")
     except Exception:
         return {}
 
 
-def _row_node(row: sqlite3.Row) -> Dict[str, Any]:
+def _row_node(row: sqlite3.Row) -> dict[str, Any]:
     return {
         "id": row["id"],
         "type": row["type"],
@@ -445,7 +446,7 @@ def _coerce_line(value: Any) -> int:
         return 0
 
 
-def _edge_endpoint_line(row: sqlite3.Row, endpoint: str, metadata: Dict[str, Any]) -> int:
+def _edge_endpoint_line(row: sqlite3.Row, endpoint: str, metadata: dict[str, Any]) -> int:
     direct_line = _coerce_line(row[f"{endpoint}_line"])
     if direct_line > 0:
         return direct_line
@@ -457,7 +458,7 @@ def _edge_endpoint_line(row: sqlite3.Row, endpoint: str, metadata: Dict[str, Any
     return 0
 
 
-def _row_edge(row: sqlite3.Row) -> Dict[str, Any]:
+def _row_edge(row: sqlite3.Row) -> dict[str, Any]:
     metadata = _loads_json(row["metadata_json"])
     return {
         "id": row["id"],

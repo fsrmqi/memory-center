@@ -819,7 +819,7 @@ class TestH04_ResumableWorkflow:
         """Workflow step states are well-defined."""
         from memory_center.core.verification.workflow_profiles import BUILTIN_PROFILES
         # All profiles have defined steps
-        for name, profile in BUILTIN_PROFILES.items():
+        for profile in BUILTIN_PROFILES.values():
             for step in profile.steps:
                 assert "step" in step
                 assert "tool" in step

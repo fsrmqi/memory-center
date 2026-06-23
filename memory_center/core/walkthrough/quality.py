@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any
 
 
-def evaluate_walkthrough_result(result: Dict[str, Any]) -> Dict[str, Any]:
-    checks: List[Dict[str, Any]] = []
+def evaluate_walkthrough_result(result: dict[str, Any]) -> dict[str, Any]:
+    checks: list[dict[str, Any]] = []
 
     def add(name: str, passed: bool, weight: int, detail: str = "") -> None:
         checks.append({"name": name, "passed": passed, "weight": weight, "detail": detail})

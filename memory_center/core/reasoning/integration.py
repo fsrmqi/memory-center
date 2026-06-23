@@ -14,7 +14,7 @@ Key constraints (per C-07 acceptance criteria):
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 from ..diagnostics import DIAG, diag_entry
 
@@ -29,10 +29,10 @@ PATTERN_GROUP_TRANSITIVE = "transitive_inference"
 PATTERN_GROUP_RISK = "risk_patterns"
 
 
-def _serialize_pattern_match(match: Any) -> Dict[str, Any]:
+def _serialize_pattern_match(match: Any) -> dict[str, Any]:
     if isinstance(match, dict):
         return match
-    entry: Dict[str, Any] = {
+    entry: dict[str, Any] = {
         "pattern_name": getattr(match, "pattern_name", "unknown"),
         "matched_nodes": getattr(match, "matched_nodes", []),
         "risk_level": getattr(match, "risk_level", "medium"),
@@ -42,10 +42,10 @@ def _serialize_pattern_match(match: Any) -> Dict[str, Any]:
     return entry
 
 
-def _serialize_risk_finding(finding: Any) -> Dict[str, Any]:
+def _serialize_risk_finding(finding: Any) -> dict[str, Any]:
     if isinstance(finding, dict):
         return finding
-    entry: Dict[str, Any] = {
+    entry: dict[str, Any] = {
         "pattern": getattr(finding, "pattern", "unknown"),
         "severity": getattr(finding, "severity", "medium"),
         "description": getattr(finding, "description", ""),
@@ -56,10 +56,10 @@ def _serialize_risk_finding(finding: Any) -> Dict[str, Any]:
     return entry
 
 
-def _serialize_transitive(rel: Any) -> Dict[str, Any]:
+def _serialize_transitive(rel: Any) -> dict[str, Any]:
     if isinstance(rel, dict):
         return rel
-    entry: Dict[str, Any] = {
+    entry: dict[str, Any] = {
         "source_id": getattr(rel, "source_id", ""),
         "target_id": getattr(rel, "target_id", ""),
         "path": getattr(rel, "path", []),
@@ -77,7 +77,7 @@ def run_reasoning_patterns(
     max_pattern_limit: int = 20,
     enabled: bool = True,
     intent: str = "",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Run all reasoning engines safely.
 
     Returns dict with keys: patterns, transitive, risk, optionally _diagnostics.
@@ -88,7 +88,7 @@ def run_reasoning_patterns(
     from .models import ReasoningRequest
     from .pipeline import ReasoningPipeline
 
-    result: Dict[str, Any] = {
+    result: dict[str, Any] = {
         "facts": [],
         "inferences": [],
         "derived": [],
@@ -104,7 +104,7 @@ def run_reasoning_patterns(
             "verification_required": False,
         },
     }
-    diagnostics: Dict[str, Any] = {}
+    diagnostics: dict[str, Any] = {}
 
     ws_path = Path(workspace_file)
 
@@ -121,6 +121,14 @@ def run_reasoning_patterns(
         diagnostics["workspace"] = diag_entry(DIAG.UNAVAILABLE, exc=exc)
         result["_diagnostics"] = diagnostics
         return result
+    try:
+        from ..parser_precision import parser_precision_from_workspace
+
+        parser_precision = parser_precision_from_workspace(workspace_file)
+        if parser_precision.get("status") in {"regex_only", "mixed_fallback"}:
+            diagnostics["parser_precision"] = parser_precision
+    except Exception as exc:
+        diagnostics["parser_precision"] = diag_entry(DIAG.UNAVAILABLE, exc=exc)
 
     # Pipeline owns engine orchestration. Legacy groups and each item's
     # ``_explanation`` remain in the result for backward compatibility.
@@ -143,7 +151,7 @@ def run_reasoning_patterns(
     return result
 
 
-def canonical_reasoning_view(reasoning: Dict[str, Any]) -> Dict[str, Any]:
+def canonical_reasoning_view(reasoning: dict[str, Any]) -> dict[str, Any]:
     """Drop legacy engine groups when an endpoint had no legacy contract."""
     return {
         "facts": list(reasoning.get("facts", []) or []),
@@ -154,7 +162,7 @@ def canonical_reasoning_view(reasoning: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def compact_reasoning_view(reasoning: Dict[str, Any], limit: int = 2) -> Dict[str, Any]:
+def compact_reasoning_view(reasoning: dict[str, Any], limit: int = 2) -> dict[str, Any]:
     compact = canonical_reasoning_view(reasoning)
     bounded_limit = max(1, int(limit or 1))
     for key in ("facts", "inferences", "derived"):
@@ -166,7 +174,7 @@ def compact_reasoning_view(reasoning: Dict[str, Any], limit: int = 2) -> Dict[st
     return compact
 
 
-def summarize_reasoning(reasoning: Dict[str, Any]) -> Dict[str, Any]:
+def summarize_reasoning(reasoning: dict[str, Any]) -> dict[str, Any]:
     patterns = reasoning.get("patterns", [])
     transitive = reasoning.get("transitive", [])
     risk = reasoning.get("risk", [])

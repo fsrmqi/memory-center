@@ -9,7 +9,7 @@ import fnmatch
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Set
+from typing import Any
 
 from ..storage.unified import UnifiedStore
 
@@ -22,7 +22,7 @@ class ChangedFile:
     previous_path: str = ""
 
 
-def git_changed_files(repo_root: str | Path, since: str = "HEAD") -> List[ChangedFile]:
+def git_changed_files(repo_root: str | Path, since: str = "HEAD") -> list[ChangedFile]:
     """Get files changed since a git ref using git diff --name-status."""
     repo_root = Path(repo_root)
     if not (repo_root / ".git").exists():
@@ -53,7 +53,7 @@ def git_changed_files(repo_root: str | Path, since: str = "HEAD") -> List[Change
     return changed
 
 
-def git_changed_files_unstaged(repo_root: str | Path) -> List[ChangedFile]:
+def git_changed_files_unstaged(repo_root: str | Path) -> list[ChangedFile]:
     """Get unstaged changes (working tree vs index)."""
     repo_root = Path(repo_root)
     if not (repo_root / ".git").exists():
@@ -107,11 +107,11 @@ class IncrementalIndexer:
         ]
         return next((candidate.resolve() for candidate in candidates if candidate.exists()), None)
 
-    def detect_changes(self, since: str = "HEAD") -> Dict[str, List[ChangedFile]]:
+    def detect_changes(self, since: str = "HEAD") -> dict[str, list[ChangedFile]]:
         """Detect changed files and categorize them."""
         changes = git_changed_files(self._repo_root, since)
 
-        result: Dict[str, List[ChangedFile]] = {
+        result: dict[str, list[ChangedFile]] = {
             "added": [],
             "modified": [],
             "deleted": [],
@@ -130,7 +130,7 @@ class IncrementalIndexer:
 
         return result
 
-    def remove_by_file_path(self, file_path: str) -> Set[str]:
+    def remove_by_file_path(self, file_path: str) -> set[str]:
         """Remove all nodes associated with a file path. Returns removed node IDs."""
         with self._store.pool.transaction() as conn:
             rows = conn.execute(
@@ -159,7 +159,7 @@ class IncrementalIndexer:
         self,
         parse_fn: Any,
         since: str = "HEAD",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Perform incremental reindex for changed files only.
 
         Args:
@@ -172,7 +172,7 @@ class IncrementalIndexer:
         changes = self.detect_changes(since)
 
         # Handle deletions
-        deleted_node_ids: Set[str] = set()
+        deleted_node_ids: set[str] = set()
         for change in changes["deleted"]:
             deleted_node_ids.update(self.remove_by_file_path(change.path))
         for change in changes["renamed"]:
@@ -188,7 +188,7 @@ class IncrementalIndexer:
         affected_paths = list(dict.fromkeys(path for path in affected_paths if path))
 
         # Actually re-parse added/modified files using reindex_workspace
-        reindex_result: Dict[str, Any] = {}
+        reindex_result: dict[str, Any] = {}
         reindex_error = ""
         if affected_paths:
             try:
@@ -234,7 +234,7 @@ _BINARY_EXTENSIONS = frozenset({
     '.sqlite', '.db', '.db-shm', '.db-wal',
 })
 
-_EXCLUDED_PATTERNS: List[tuple] = [
+_EXCLUDED_PATTERNS: list[tuple] = [
     ("__pycache__", "Python bytecode cache"),
     ("node_modules", "npm dependencies"),
     (".git", "Git internals"),
@@ -269,13 +269,13 @@ class DiffScope:
         total_files: Total changed files before filtering
     """
     scope_type: str
-    included: List[ChangedFile]
-    excluded: List[ChangedFile]
-    excluded_reasons: Dict[str, str]
-    binary_files: List[str]
+    included: list[ChangedFile]
+    excluded: list[ChangedFile]
+    excluded_reasons: dict[str, str]
+    binary_files: list[str]
     total_files: int
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "scope_type": self.scope_type,
             "total_files": self.total_files,
@@ -309,10 +309,10 @@ def detect_diff_scope(
     else:
         changes = git_changed_files(repo_root, since)
 
-    included: List[ChangedFile] = []
-    excluded: List[ChangedFile] = []
-    excluded_reasons: Dict[str, str] = {}
-    binary_files: List[str] = []
+    included: list[ChangedFile] = []
+    excluded: list[ChangedFile] = []
+    excluded_reasons: dict[str, str] = {}
+    binary_files: list[str] = []
 
     for change in changes:
         path = change.path
@@ -357,7 +357,7 @@ def preview_diff_scope(
     repo_root: str | Path,
     scope_type: str = "workspace",
     since: str = "HEAD",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Preview diff scope without executing Agent.
 
     Returns structured preview with inclusion/exclusion details,

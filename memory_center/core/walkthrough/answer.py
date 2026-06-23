@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 import yaml
 
@@ -38,7 +38,7 @@ __all__ = [
 METHOD_WALKTHROUGH_SCHEMA_VERSION = 2
 
 
-def method_walkthrough_fields_contract() -> Dict[str, Any]:
+def method_walkthrough_fields_contract() -> dict[str, Any]:
     return {
         "stable_top_level": [
             "schema_version",
@@ -75,7 +75,7 @@ def normalize_report_level(report_level: str) -> str:
     return value if value in {"summary", "standard", "deep", "risk-focused", "code-review"} else "standard"
 
 
-def build_method_walkthrough_agent_policy() -> Dict[str, Any]:
+def build_method_walkthrough_agent_policy() -> dict[str, Any]:
     return {
         "primary_path": "summary_lines -> local_service_continuations -> same_class_method_continuations -> feign_continuations.server_walkthroughs -> service_impl_continuations",
         "read_files_by": "absolute_file_path",
@@ -86,7 +86,7 @@ def build_method_walkthrough_agent_policy() -> Dict[str, Any]:
     }
 
 
-def build_method_walkthrough_anti_patterns() -> List[Dict[str, str]]:
+def build_method_walkthrough_anti_patterns() -> list[dict[str, str]]:
     return [
         {
             "avoid": "parse_tool_results_json",
@@ -107,14 +107,14 @@ def build_method_walkthrough_anti_patterns() -> List[Dict[str, str]]:
     ]
 
 
-def display_method_path(item: Dict[str, Any]) -> str:
+def display_method_path(item: dict[str, Any]) -> str:
     return str(item.get("absolute_file_path") or item.get("file_path") or "")
 
 
-def select_compact_method_steps(local_steps: List[Dict[str, Any]], limits: Dict[str, int]) -> List[Dict[str, Any]]:
+def select_compact_method_steps(local_steps: list[dict[str, Any]], limits: dict[str, int]) -> list[dict[str, Any]]:
     max_items = max(4, limits["steps"] + limits["events"])
     priority = {"feign_call": 0, "method_call": 1, "dto_field_read": 2}
-    selected: List[Dict[str, Any]] = []
+    selected: list[dict[str, Any]] = []
     seen = set()
     for step in sorted(local_steps or [], key=lambda row: (priority.get(row.get("kind", ""), 9), int(row.get("line", 0) or 0))):
         key = (step.get("kind"), step.get("line"), step.get("receiver"), step.get("method"), step.get("field"))
@@ -129,14 +129,14 @@ def select_compact_method_steps(local_steps: List[Dict[str, Any]], limits: Dict[
 
 
 def build_method_walkthrough_summary_lines(
-    target: Dict[str, Any],
-    local_steps: List[Dict[str, Any]],
-    local_service_continuations: List[Dict[str, Any]],
-    same_class_continuations: List[Dict[str, Any]],
-    feigns: List[Dict[str, Any]],
-    downstream: Dict[str, Any],
-    limits: Dict[str, int],
-) -> List[str]:
+    target: dict[str, Any],
+    local_steps: list[dict[str, Any]],
+    local_service_continuations: list[dict[str, Any]],
+    same_class_continuations: list[dict[str, Any]],
+    feigns: list[dict[str, Any]],
+    downstream: dict[str, Any],
+    limits: dict[str, int],
+) -> list[str]:
     lines = [
         f"Target {target.get('project', '')}:{target.get('class', '')}#{target.get('method', '')} ({display_method_path(target)}:{target.get('line', 0)})"
     ]
@@ -182,7 +182,7 @@ def build_method_walkthrough_summary_lines(
     return lines
 
 
-def compact_method_walkthrough_result(result: Dict[str, Any], budget: str = "medium", *, cache_ttl_seconds: int = 15) -> Dict[str, Any]:
+def compact_method_walkthrough_result(result: dict[str, Any], budget: str = "medium", *, cache_ttl_seconds: int = 15) -> dict[str, Any]:
     from ..orchestrator.common import _budget_limits
     from ..reasoning.integration import compact_reasoning_view
 
@@ -231,7 +231,7 @@ def compact_method_walkthrough_result(result: Dict[str, Any], budget: str = "med
     }
 
 
-def load_method_walkthrough_template(workspace_file: str | Path) -> Dict[str, str]:
+def load_method_walkthrough_template(workspace_file: str | Path) -> dict[str, str]:
     ws_dir = Path(workspace_file).expanduser().resolve().parent
     candidates = [
         ws_dir / "templates" / "method_walkthrough.md",
@@ -310,10 +310,10 @@ def default_method_walkthrough_template(report_level: str = "standard") -> str:
     )
 
 
-def method_walkthrough_read_targets_text(result: Dict[str, Any]) -> str:
-    targets: List[str] = []
+def method_walkthrough_read_targets_text(result: dict[str, Any]) -> str:
+    targets: list[str] = []
 
-    def add(role: str, item: Dict[str, Any], label: str) -> None:
+    def add(role: str, item: dict[str, Any], label: str) -> None:
         path = display_method_path(item)
         if path:
             targets.append(f"- {role}: {label} ({path}:{item.get('line', 0)})")
@@ -335,10 +335,10 @@ def method_walkthrough_read_targets_text(result: Dict[str, Any]) -> str:
     return "\n".join(targets)
 
 
-def _walkthrough_file_refs(result: Dict[str, Any]) -> Dict[str, str]:
-    refs: Dict[str, str] = {}
+def _walkthrough_file_refs(result: dict[str, Any]) -> dict[str, str]:
+    refs: dict[str, str] = {}
 
-    def add(item: Dict[str, Any]) -> None:
+    def add(item: dict[str, Any]) -> None:
         path = display_method_path(item)
         if path and path not in refs:
             refs[path] = f"F{len(refs) + 1}"
@@ -358,14 +358,14 @@ def _walkthrough_file_refs(result: Dict[str, Any]) -> Dict[str, str]:
     return refs
 
 
-def _with_file_refs(text: str, refs: Dict[str, str]) -> str:
+def _with_file_refs(text: str, refs: dict[str, str]) -> str:
     out = text
     for path, ref in refs.items():
         out = out.replace(path, f"[{ref}]")
     return out
 
 
-def method_walkthrough_read_targets_numbered(result: Dict[str, Any]) -> str:
+def method_walkthrough_read_targets_numbered(result: dict[str, Any]) -> str:
     refs = _walkthrough_file_refs(result)
     if not refs:
         return "- 未识别到建议阅读文件。"
@@ -375,14 +375,14 @@ def method_walkthrough_read_targets_numbered(result: Dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def format_readable_summary_lines(summary_lines: List[str], result: Dict[str, Any]) -> str:
+def format_readable_summary_lines(summary_lines: list[str], result: dict[str, Any]) -> str:
     refs = _walkthrough_file_refs(result)
     if not summary_lines:
         return "- 未生成主链路摘要。"
     return "\n".join(f"- {_with_file_refs(line, refs)}" for line in summary_lines)
 
 
-def format_layered_details(result: Dict[str, Any]) -> str:
+def format_layered_details(result: dict[str, Any]) -> str:
     refs = _walkthrough_file_refs(result)
     target = result.get("target", {}) or {}
     lines = [
@@ -454,7 +454,7 @@ def format_layered_details(result: Dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def format_rule_group_lines(continuation: Dict[str, Any]) -> List[str]:
+def format_rule_group_lines(continuation: dict[str, Any]) -> list[str]:
     target = continuation.get("target", {}) or {}
     out = [f"- {target.get('class', '')}#{target.get('method', '')}:"]
     for group in continuation.get("rule_groups", []) or []:
@@ -463,8 +463,8 @@ def format_rule_group_lines(continuation: Dict[str, Any]) -> List[str]:
     return out
 
 
-def method_walkthrough_rule_groups_text(result: Dict[str, Any]) -> str:
-    lines: List[str] = []
+def method_walkthrough_rule_groups_text(result: dict[str, Any]) -> str:
+    lines: list[str] = []
     for same in result.get("same_class_method_continuations", []) or []:
         lines.extend(format_rule_group_lines(same))
     for feign in result.get("feign_continuations", []) or []:
@@ -475,7 +475,7 @@ def method_walkthrough_rule_groups_text(result: Dict[str, Any]) -> str:
     return "\n".join(lines) if lines else "- 未识别到大方法规则分组。"
 
 
-def load_walkthrough_glossary(workspace_file: str | Path) -> Dict[str, Any]:
+def load_walkthrough_glossary(workspace_file: str | Path) -> dict[str, Any]:
     ws_dir = Path(workspace_file).expanduser().resolve().parent
     for path in [ws_dir / "glossary.yaml", ws_dir / "glossary.yml", ws_dir / "business-glossary.yaml"]:
         if not path.exists():
@@ -491,7 +491,7 @@ def load_walkthrough_glossary(workspace_file: str | Path) -> Dict[str, Any]:
     return {}
 
 
-def collect_walkthrough_terms(result: Dict[str, Any]) -> set[str]:
+def collect_walkthrough_terms(result: dict[str, Any]) -> set[str]:
     terms: set[str] = set()
     for step in result.get("local_steps", []) or []:
         for key in ["receiver", "receiver_type", "method", "field"]:
@@ -510,7 +510,7 @@ def collect_walkthrough_terms(result: Dict[str, Any]) -> set[str]:
     return terms
 
 
-def build_glossary_hits(workspace_file: str | Path, result: Dict[str, Any]) -> List[Dict[str, Any]]:
+def build_glossary_hits(workspace_file: str | Path, result: dict[str, Any]) -> list[dict[str, Any]]:
     glossary = load_walkthrough_glossary(workspace_file)
     if not glossary:
         return []
@@ -530,18 +530,18 @@ def build_glossary_hits(workspace_file: str | Path, result: Dict[str, Any]) -> L
     return hits
 
 
-def format_glossary_hits(items: List[Dict[str, Any]]) -> str:
+def format_glossary_hits(items: list[dict[str, Any]]) -> str:
     if not items:
         return "- 未配置或未命中 glossary。"
     return "\n".join(f"- {item.get('term', '')}: {item.get('description', '')}" for item in items[:30])
 
 
-def format_risk_items(items: List[Dict[str, Any]], *, aggregate: bool = True) -> str:
+def format_risk_items(items: list[dict[str, Any]], *, aggregate: bool = True) -> str:
     if not items:
         return "- 未识别到明确风险。"
     if aggregate:
         severity_rank = {"high": 0, "medium": 1, "low": 2, "info": 3, "present": 4, "unknown": 5}
-        grouped: Dict[str, Dict[str, Any]] = {}
+        grouped: dict[str, dict[str, Any]] = {}
         for item in items:
             code = str(item.get("code", "") or "unknown")
             bucket = grouped.setdefault(
@@ -572,7 +572,7 @@ def format_risk_items(items: List[Dict[str, Any]], *, aggregate: bool = True) ->
     return "\n".join(f"- [{item.get('severity', item.get('status', 'info'))}] {item.get('code', '')}: {item.get('message', '')}" for item in items)
 
 
-def format_diff_context(diff: Dict[str, Any]) -> str:
+def format_diff_context(diff: dict[str, Any]) -> str:
     if not diff.get("enabled"):
         return "- 当前 git workspace 没有检测到改动，或不在 git 仓库内。"
     if not diff.get("has_touched_read_targets"):
@@ -580,7 +580,7 @@ def format_diff_context(diff: Dict[str, Any]) -> str:
     return "\n".join(f"- 命中改动: {path}" for path in diff.get("touched_read_targets", []) or [])
 
 
-def format_index_freshness(freshness: Dict[str, Any]) -> str:
+def format_index_freshness(freshness: dict[str, Any]) -> str:
     if not freshness:
         return "- 未检测索引新鲜度。"
     if not freshness.get("index_stale"):
@@ -588,7 +588,7 @@ def format_index_freshness(freshness: Dict[str, Any]) -> str:
     return "\n".join(f"- 索引可能过期: {item.get('absolute_file_path', '')}" for item in freshness.get("stale_read_targets", []) or [])
 
 
-def format_completion_status(status: Dict[str, Any]) -> str:
+def format_completion_status(status: dict[str, Any]) -> str:
     if not status:
         return "unknown"
     state = status.get("state", "unknown")
@@ -600,10 +600,10 @@ def format_completion_status(status: Dict[str, Any]) -> str:
     return f"{state}，终点 {terminal or 'unknown'}，建议 {action}"
 
 
-def format_branch_outline(outlines: List[Dict[str, Any]]) -> str:
+def format_branch_outline(outlines: list[dict[str, Any]]) -> str:
     if not outlines:
         return "- 未识别到可结构化的分支轮廓。"
-    lines: List[str] = []
+    lines: list[str] = []
     for outline in outlines[:12]:
         target = outline.get("target", {}) or {}
         lines.append(f"- {outline.get('source', '')}: {target.get('class', '')}#{target.get('method', '')}")
@@ -615,13 +615,13 @@ def format_branch_outline(outlines: List[Dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
-def format_anti_patterns(items: List[Dict[str, Any]]) -> str:
+def format_anti_patterns(items: list[dict[str, Any]]) -> str:
     if not items:
         return "- 无额外反模式提示。"
     return "\n".join(f"- {item.get('avoid', '')}: {item.get('reason', '')}" for item in items)
 
 
-def method_walkthrough_template_context(result: Dict[str, Any], report_level: str = "standard") -> Dict[str, str]:
+def method_walkthrough_template_context(result: dict[str, Any], report_level: str = "standard") -> dict[str, str]:
     target = result.get("target", {}) or {}
     summary_lines = result.get("summary_lines") or build_method_walkthrough_summary_lines(
         target,
@@ -664,7 +664,7 @@ def method_walkthrough_template_context(result: Dict[str, Any], report_level: st
     }
 
 
-def render_method_walkthrough_answer(result: Dict[str, Any], workspace_file: str | Path, report_level: str = "standard") -> str:
+def render_method_walkthrough_answer(result: dict[str, Any], workspace_file: str | Path, report_level: str = "standard") -> str:
     template_info = load_method_walkthrough_template(workspace_file)
     context = method_walkthrough_template_context(result, report_level=report_level)
     template = template_info.get("template", "") or default_method_walkthrough_template(report_level)

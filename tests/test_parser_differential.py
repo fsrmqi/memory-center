@@ -137,6 +137,31 @@ def test_reindex_returns_parser_selection_diagnostics(demo_workspace: Path) -> N
     assert result["parser_critical_disagreement_count"] >= 0
     assert result["parser_diagnostics"]["parse_count"] > 0
     assert "fallback_reasons" in result["parser_diagnostics"]
+    assert result["parser_precision"]["status"] in {
+        "regex_only",
+        "mixed_fallback",
+        "tree_sitter_active",
+        "unknown",
+    }
+    assert "recommended_action" in result["parser_precision"]
+
+    graph_summary = WorkspaceStore(demo_workspace).read_json_prefer_backend("graph-summary.json", {})
+    assert graph_summary["parser_precision"]["status"] == result["parser_precision"]["status"]
+
+
+def test_retrieval_exposes_parser_precision_diagnostics(demo_workspace: Path) -> None:
+    from memory_center.core.config import load_workspace_config
+    from memory_center.core.indexer import reindex_workspace
+    from memory_center.core.orchestrator import memory_query_hybrid
+    from memory_center.core.store import WorkspaceStore
+
+    config = load_workspace_config(demo_workspace)
+    reindex_workspace(config, WorkspaceStore(demo_workspace))
+
+    result = memory_query_hybrid(str(demo_workspace), "UserService", limit=5)
+    diagnostics = result.get("retrieval_diagnostics", {})
+    assert "parser_precision" in diagnostics
+    assert diagnostics["parser_precision"]["recommended_action"]
 
 
 def test_java_symbol_preserves_overloaded_method_signatures() -> None:

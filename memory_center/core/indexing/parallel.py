@@ -6,21 +6,21 @@ file parsing for 3-5x speedup on multi-core machines.
 from __future__ import annotations
 
 import os
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import Callable, List, Optional, Tuple
 
 from .base import JavaParseResult
 
 
 def walk_project_files(
     root: Path,
-    extensions: Tuple[str, ...] = (".java",),
-    config_names: Tuple[str, ...] = ("application.yml", "application.yaml", "application.properties", "bootstrap.yml", "bootstrap.yaml"),
-) -> Tuple[List[Path], List[Path]]:
+    extensions: tuple[str, ...] = (".java",),
+    config_names: tuple[str, ...] = ("application.yml", "application.yaml", "application.properties", "bootstrap.yml", "bootstrap.yaml"),
+) -> tuple[list[Path], list[Path]]:
     """Walk a project directory and collect Java and config files."""
-    java_files: List[Path] = []
-    config_files: List[Path] = []
+    java_files: list[Path] = []
+    config_files: list[Path] = []
 
     for dirpath, dirnames, filenames in os.walk(root):
         # Skip common non-source directories
@@ -40,10 +40,10 @@ def walk_project_files(
 
 
 def parse_files_parallel(
-    files: List[Tuple[str, Path]],
+    files: list[tuple[str, Path]],
     parse_fn: Callable[[str, str], JavaParseResult],
     max_workers: int = 8,
-) -> List[Tuple[str, Path, Optional[JavaParseResult]]]:
+) -> list[tuple[str, Path, JavaParseResult | None]]:
     """Parse multiple files in parallel using a thread pool.
 
     Args:
@@ -54,9 +54,9 @@ def parse_files_parallel(
     Returns:
         List of (service_name, file_path, parse_result) tuples
     """
-    results: List[Tuple[str, Path, Optional[JavaParseResult]]] = []
+    results: list[tuple[str, Path, JavaParseResult | None]] = []
 
-    def _parse_one(service: str, path: Path) -> Tuple[str, Path, Optional[JavaParseResult]]:
+    def _parse_one(service: str, path: Path) -> tuple[str, Path, JavaParseResult | None]:
         try:
             text = path.read_text(encoding="utf-8", errors="replace")
             result = parse_fn(text, str(path))

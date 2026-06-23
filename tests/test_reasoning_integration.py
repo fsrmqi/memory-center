@@ -156,6 +156,18 @@ class TestRunReasoningPatterns:
         assert isinstance(result["transitive"], list)
         assert isinstance(result["risk"], list)
 
+    def test_parser_precision_warning_is_visible_after_reindex(self, demo_workspace: Path):
+        from memory_center.core.config import load_workspace_config
+        from memory_center.core.indexer import reindex_workspace
+        from memory_center.core.store import WorkspaceStore
+
+        config = load_workspace_config(demo_workspace)
+        reindex_result = reindex_workspace(config, WorkspaceStore(demo_workspace))
+        result = run_reasoning_patterns(str(demo_workspace))
+        parser_status = reindex_result["parser_precision"]["status"]
+        if parser_status in {"regex_only", "mixed_fallback"}:
+            assert result["_diagnostics"]["parser_precision"]["status"] == parser_status
+
     def test_entries_carry_reasoning_metadata(self, demo_workspace: Path):
         """Every reasoning entry has _semantic_strength, _confidence, _pattern_group, _evidence."""
         result = run_reasoning_patterns(str(demo_workspace))

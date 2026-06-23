@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any
 
 from .schemas import with_schema
 from .store import WorkspaceStore
@@ -26,12 +26,12 @@ def build_write_receipt(
     task_id: str = "",
     session_id: str = "",
     source_session_id: str = "",
-    updated_artifacts: List[str] | None = None,
+    updated_artifacts: list[str] | None = None,
     payload_ref: str = "",
     bytes_written: int = 0,
     write_mode: str = "",
     audit_ref: str = "",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     return with_schema(
         "write_receipt",
         {
@@ -54,7 +54,7 @@ def build_write_receipt(
     )
 
 
-def persist_write_receipt(store: WorkspaceStore, receipt: Dict[str, Any]) -> Dict[str, Any]:
+def persist_write_receipt(store: WorkspaceStore, receipt: dict[str, Any]) -> dict[str, Any]:
     store.append_jsonl(WRITE_RECEIPTS_FILE, receipt)
     rows = store.read_jsonl(WRITE_RECEIPTS_FILE, limit=1)
     created_at = rows[-1].get("created_at", "") if rows else ""
@@ -72,7 +72,7 @@ def query_write_receipts(
     task_id: str = "",
     session_id: str = "",
     limit: int = 50,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     store = WorkspaceStore(workspace_file)
     backend_rows = store.read_jsonl_via_backend(WRITE_RECEIPTS_FILE, limit=5000)
     rows = backend_rows or store.read_jsonl(WRITE_RECEIPTS_FILE, limit=5000)

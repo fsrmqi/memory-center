@@ -9,8 +9,9 @@ import importlib.util
 import json
 import math
 import struct
-from typing import Any, Dict, List, Tuple
+from typing import Any
 
+from ..compat import zip_strict
 from .unified import UnifiedStore
 
 # Try to import sqlite_vec
@@ -65,7 +66,7 @@ class VectorIndex:
                 )
             """)
 
-    def upsert_embedding(self, node_id: str, embedding: List[float]) -> None:
+    def upsert_embedding(self, node_id: str, embedding: list[float]) -> None:
         """Store an embedding vector for a node."""
         if len(embedding) != self._dimension:
             raise ValueError(f"Embedding dimension mismatch: expected {self._dimension}, got {len(embedding)}")
@@ -94,7 +95,7 @@ class VectorIndex:
                 (node_id, blob),
             )
 
-    def upsert_embeddings_batch(self, items: List[Tuple[str, List[float]]]) -> int:
+    def upsert_embeddings_batch(self, items: list[tuple[str, list[float]]]) -> int:
         """Batch upsert embeddings. Returns count of stored embeddings."""
         count = 0
         with self._store.pool.transaction() as conn:
@@ -122,7 +123,7 @@ class VectorIndex:
                         pass
         return count
 
-    def query(self, query_embedding: List[float], limit: int = 20) -> List[Dict[str, Any]]:
+    def query(self, query_embedding: list[float], limit: int = 20) -> list[dict[str, Any]]:
         """Find the most similar nodes to a query embedding."""
         if len(query_embedding) != self._dimension:
             raise ValueError(f"Query embedding dimension mismatch: expected {self._dimension}, got {len(query_embedding)}")
@@ -136,7 +137,7 @@ class VectorIndex:
         # Fallback to brute-force
         return self._query_brute_force(query_embedding, limit)
 
-    def _query_vec(self, query_embedding: List[float], limit: int) -> List[Dict[str, Any]]:
+    def _query_vec(self, query_embedding: list[float], limit: int) -> list[dict[str, Any]]:
         """Query using sqlite-vec ANN index."""
         try:
             with self._store.pool.connection() as conn:
@@ -155,7 +156,7 @@ class VectorIndex:
         except Exception:
             return []
 
-    def _query_brute_force(self, query_embedding: List[float], limit: int) -> List[Dict[str, Any]]:
+    def _query_brute_force(self, query_embedding: list[float], limit: int) -> list[dict[str, Any]]:
         """Query using brute-force cosine similarity."""
         with self._store.pool.connection() as conn:
             rows = conn.execute("SELECT node_id, embedding FROM vec_fallback").fetchall()
@@ -173,7 +174,7 @@ class VectorIndex:
                 continue
             embedding = struct.unpack(f"{self._dimension}f", blob)
             # Cosine similarity
-            dot = sum(q * e for q, e in zip(query_embedding, embedding))
+            dot = sum(q * e for q, e in zip_strict(query_embedding, embedding))
             emb_norm = math.sqrt(sum(e * e for e in embedding)) or 1.0
             similarity = dot / (query_norm * emb_norm)
             if similarity > 0:
@@ -187,7 +188,7 @@ class VectorIndex:
         results.sort(key=lambda x: -x["score"])
         return results[:limit]
 
-    def stats(self) -> Dict[str, Any]:
+    def stats(self) -> dict[str, Any]:
         """Return index statistics."""
         with self._store.pool.connection() as conn:
             count = conn.execute("SELECT COUNT(*) FROM vec_metadata").fetchone()[0]

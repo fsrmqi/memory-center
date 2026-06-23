@@ -9,7 +9,7 @@ This module implements Phase C of NEXT_PHASE_MASTER_PLAN:
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
 
 from ..memory_backend import MemoryBackendStore
 
@@ -22,7 +22,7 @@ class UnifiedBackendQuery:
 
     def __init__(self, db_path: str | Path):
         self.db_path = Path(db_path)
-        self._store: Optional[MemoryBackendStore] = None
+        self._store: MemoryBackendStore | None = None
 
     @property
     def store(self) -> MemoryBackendStore:
@@ -35,7 +35,7 @@ class UnifiedBackendQuery:
             self._store.close()
             self._store = None
 
-    def __enter__(self) -> "UnifiedBackendQuery":
+    def __enter__(self) -> UnifiedBackendQuery:
         return self
 
     def __exit__(self, *exc: Any) -> None:
@@ -47,12 +47,12 @@ class UnifiedBackendQuery:
         """Read an index from the backend mirror."""
         return self.store.read_index(name, default)
 
-    def read_index_list(self, name: str) -> List[Dict[str, Any]]:
+    def read_index_list(self, name: str) -> list[dict[str, Any]]:
         """Read an index that contains a list."""
         data = self.store.read_index(name, [])
         return data if isinstance(data, list) else []
 
-    def read_index_dict(self, name: str) -> Dict[str, Any]:
+    def read_index_dict(self, name: str) -> dict[str, Any]:
         """Read an index that contains a dict."""
         data = self.store.read_index(name, {})
         return data if isinstance(data, dict) else {}
@@ -68,7 +68,7 @@ class UnifiedBackendQuery:
         payload_type: str = "",
         session_id: str = "",
         limit: int = 50,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Query records with flexible filtering."""
         return self.store.query_records(
             collection=collection,
@@ -85,7 +85,7 @@ class UnifiedBackendQuery:
         session_id: str = "",
         event_type: str = "",
         limit: int = 100,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Query session events with filtering."""
         result = self.store.query_records(
             collection="session-events.jsonl",
@@ -100,7 +100,7 @@ class UnifiedBackendQuery:
         session_id: str = "",
         project: str = "",
         limit: int = 50,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Query write receipts."""
         result = self.store.query_records(
             collection="write-receipts.jsonl",
@@ -115,7 +115,7 @@ class UnifiedBackendQuery:
         tool_name: str = "",
         budget: str = "",
         limit: int = 200,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Query token gain records."""
         result = self.store.query_records(
             collection="token-gain-log.jsonl",
@@ -136,11 +136,11 @@ class UnifiedBackendQuery:
         self,
         ref_path: str = "",
         limit: int = 50,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Query refs with optional path filter."""
         return self.store.query_refs(ref_path=ref_path, limit=limit)
 
-    def get_ref(self, ref_path: str) -> Optional[Dict[str, Any]]:
+    def get_ref(self, ref_path: str) -> dict[str, Any] | None:
         """Get a single ref by path."""
         result = self.store.query_refs(ref_path=ref_path, limit=1)
         refs = result.get("refs", [])
@@ -153,12 +153,12 @@ class UnifiedBackendQuery:
         collection: str,
         group_by: str = "type",
         limit: int = 100,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Aggregate records by a field."""
         result = self.store.query_records(collection=collection, limit=limit)
         records = result.get("records", [])
 
-        groups: Dict[str, List[Dict[str, Any]]] = {}
+        groups: dict[str, list[dict[str, Any]]] = {}
         for record in records:
             payload = record.get("payload", {})
             key = str(payload.get(group_by, "unknown"))
@@ -175,12 +175,12 @@ class UnifiedBackendQuery:
         self,
         collection: str = "session-events.jsonl",
         limit: int = 500,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Aggregate records by session."""
         result = self.store.query_records(collection=collection, limit=limit)
         records = result.get("records", [])
 
-        sessions: Dict[str, List[Dict[str, Any]]] = {}
+        sessions: dict[str, list[dict[str, Any]]] = {}
         for record in records:
             session_id = record.get("session_id", "unknown")
             sessions.setdefault(session_id, []).append(record)
@@ -202,12 +202,12 @@ class UnifiedBackendQuery:
         self,
         collection: str = "write-receipts.jsonl",
         limit: int = 500,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Aggregate records by project."""
         result = self.store.query_records(collection=collection, limit=limit)
         records = result.get("records", [])
 
-        projects: Dict[str, List[Dict[str, Any]]] = {}
+        projects: dict[str, list[dict[str, Any]]] = {}
         for record in records:
             project = record.get("project", "unknown")
             projects.setdefault(project, []).append(record)
@@ -226,11 +226,11 @@ class UnifiedBackendQuery:
 
     # ---- Statistics ----------------------------------------------------------
 
-    def get_backend_stats(self) -> Dict[str, Any]:
+    def get_backend_stats(self) -> dict[str, Any]:
         """Get overall backend statistics."""
         return self.store.stats()
 
-    def get_collection_stats(self, collection: str) -> Dict[str, Any]:
+    def get_collection_stats(self, collection: str) -> dict[str, Any]:
         """Get stats for a specific collection."""
         result = self.store.query_records(collection=collection, limit=1)
         records = result.get("records", [])
@@ -249,7 +249,7 @@ class UnifiedBackendQuery:
         task_id: str = "",
         event_type: str = "",
         limit: int = 100,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Query timeline events with filtering."""
         records = self.query_session_events(session_id=session_id, limit=limit * 2)
 
@@ -269,14 +269,14 @@ class UnifiedBackendQuery:
 
         return records[:limit]
 
-    def get_session_summary(self, session_id: str) -> Dict[str, Any]:
+    def get_session_summary(self, session_id: str) -> dict[str, Any]:
         """Get summary of a session's activity."""
         events = self.query_session_events(session_id=session_id, limit=500)
 
         if not events:
             return {"session_id": session_id, "found": False}
 
-        event_types: Dict[str, int] = {}
+        event_types: dict[str, int] = {}
         for event in events:
             etype = event.get("type", "unknown")
             event_types[etype] = event_types.get(etype, 0) + 1
@@ -292,7 +292,7 @@ class UnifiedBackendQuery:
 
     # ---- Health checks -------------------------------------------------------
 
-    def check_health(self) -> Dict[str, Any]:
+    def check_health(self) -> dict[str, Any]:
         """Check backend health and data consistency."""
         stats = self.get_backend_stats()
 
@@ -316,16 +316,16 @@ class UnifiedBackendQuery:
 
     def check_consistency(
         self,
-        workspace_dir: Optional[Union[str, Path]] = None,
-    ) -> Dict[str, Any]:
+        workspace_dir: str | Path | None = None,
+    ) -> dict[str, Any]:
         """Compare JSONL file counts vs SQLite record counts per collection.
 
         Reports divergences between the file system and the backend mirror.
         """
         stats = self.get_backend_stats()
         backend_collections = stats.get("collections", {})
-        comparisons: List[Dict[str, Any]] = []
-        divergences: List[str] = []
+        comparisons: list[dict[str, Any]] = []
+        divergences: list[str] = []
 
         if workspace_dir is None:
             # Infer from db_path: db is at <workspace>/memory/memory.db

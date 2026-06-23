@@ -441,7 +441,7 @@ class TestParallelIndexing:
         files = [("proj", tmp_path / "A.java"), ("proj", tmp_path / "B.java")]
         results = parse_files_parallel(files, mock_parse, max_workers=2)
         assert len(results) == 2
-        for svc, path, result in results:
+        for svc, _path, result in results:
             assert svc == "proj"
             assert result is not None
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 from ..store import WorkspaceStore
 from ..write_receipts import build_write_receipt, persist_write_receipt
@@ -43,8 +43,8 @@ def workspace_start_session(
     workspace_file: str | Path,
     intent: str,
     session_id: str | None = None,
-    metadata: Dict[str, Any] | None = None,
-) -> Dict[str, Any]:
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     config, store = load_context(workspace_file)
     sid = session_id or _new_session_id()
     item = {
@@ -56,14 +56,14 @@ def workspace_start_session(
     }
     store.append_jsonl(SESSION_EVENTS_FILE, item)
     # E-05: Connect-time catch-up — include freshness info
-    freshness_info: Dict[str, Any] = {}
+    freshness_info: dict[str, Any] = {}
     try:
         from ..freshness.integration import get_freshness_with_actions
         freshness_info = get_freshness_with_actions(str(workspace_file))
     except Exception:
         pass
     # D-02: Context Pack recommendation for architecture understanding
-    context_pack_hint: Dict[str, Any] = {}
+    context_pack_hint: dict[str, Any] = {}
     try:
         from ..context.pack import ContextPackBuilder
         ContextPackBuilder(str(workspace_file))
@@ -77,7 +77,7 @@ def workspace_start_session(
         context_pack_hint = {"available": False}
 
     # G-01: Workflow profile recommendation based on intent
-    workflow_recommendation: Dict[str, Any] = {}
+    workflow_recommendation: dict[str, Any] = {}
     try:
         from ..verification.workflow_profiles import recommend_workflow_with_learning
         workflow_recommendation = recommend_workflow_with_learning(workspace_file, intent)
@@ -100,8 +100,8 @@ def workspace_log_session_event(
     workspace_file: str | Path,
     session_id: str,
     event_type: str,
-    payload: Dict[str, Any] | None = None,
-) -> Dict[str, Any]:
+    payload: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     config, store = load_context(workspace_file)
     prepared_payload, payload_ref, payload_bytes = _prepare_session_event_payload(store, session_id, event_type, payload or {})
     item = {
@@ -142,8 +142,8 @@ def workspace_end_session(
     workspace_file: str | Path,
     session_id: str,
     outcome: str = "",
-    verified_by: List[str] | None = None,
-) -> Dict[str, Any]:
+    verified_by: list[str] | None = None,
+) -> dict[str, Any]:
     config, store = load_context(workspace_file)
     workspace_log_session_event(
         workspace_file,
@@ -162,7 +162,7 @@ def workspace_end_session(
     }
 
 
-def workspace_recent_sessions(workspace_file: str | Path, limit: int = 10) -> Dict[str, Any]:
+def workspace_recent_sessions(workspace_file: str | Path, limit: int = 10) -> dict[str, Any]:
     config, store = load_context(workspace_file)
     summaries = store.read_jsonl_via_backend(SESSION_SUMMARIES_FILE, limit=max(limit, 1)) or store.read_jsonl(SESSION_SUMMARIES_FILE, limit=max(limit, 1))
     return {
@@ -171,7 +171,7 @@ def workspace_recent_sessions(workspace_file: str | Path, limit: int = 10) -> Di
     }
 
 
-def workspace_session_summary(workspace_file: str | Path, session_id: str) -> Dict[str, Any]:
+def workspace_session_summary(workspace_file: str | Path, session_id: str) -> dict[str, Any]:
     config, store = load_context(workspace_file)
     summaries = store.find_jsonl_via_backend(SESSION_SUMMARIES_FILE, lambda row: row.get("session_id") == session_id, limit=1) or store.find_jsonl(SESSION_SUMMARIES_FILE, lambda row: row.get("session_id") == session_id, limit=1)
     events = _session_events(store, session_id)
@@ -186,7 +186,7 @@ def workspace_session_summary(workspace_file: str | Path, session_id: str) -> Di
     }
 
 
-def workspace_suggest_case(workspace_file: str | Path, session_id: str) -> Dict[str, Any]:
+def workspace_suggest_case(workspace_file: str | Path, session_id: str) -> dict[str, Any]:
     config, store = load_context(workspace_file)
     session = workspace_session_summary(workspace_file, session_id)
     if not session.get("found"):
@@ -240,7 +240,7 @@ def workspace_record_close_feedback(
     session_id: str,
     task_id: str = "",
     source: str = "mc_close_auto",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Infer candidate-path feedback from a closed session and persist it."""
     config, _store = load_context(workspace_file)
     session = workspace_session_summary(workspace_file, session_id)
@@ -306,12 +306,12 @@ def workspace_recent_evidence(
     limit: int = 10,
     budget: str = "medium",
     view: str = "compact",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     from ..timeline import timeline_query
 
     config, store = load_context(workspace_file)
     result = timeline_query(str(workspace_file), task_id=task_id.strip(), session_id=session_id.strip(), kinds=["session_event", "write_receipt"], limit=limit)
-    evidence: List[Dict[str, Any]] = []
+    evidence: list[dict[str, Any]] = []
     for item in result.get("timeline", []):
         if item.get("kind") == "session_event":
             raw = item.get("raw", {})
@@ -363,17 +363,17 @@ def workspace_recent_evidence(
     return result
 
 
-def _session_events(store: WorkspaceStore, session_id: str) -> List[Dict[str, Any]]:
+def _session_events(store: WorkspaceStore, session_id: str) -> list[dict[str, Any]]:
     return store.find_jsonl_via_backend(SESSION_EVENTS_FILE, lambda row: row.get("session_id") == session_id, limit=1000, session_id=session_id) or store.find_jsonl(SESSION_EVENTS_FILE, lambda row: row.get("session_id") == session_id, limit=1000)
 
 
 def _build_session_summary(
     workspace: str,
     session_id: str,
-    events: List[Dict[str, Any]],
+    events: list[dict[str, Any]],
     outcome: str,
-    verified_by: List[str],
-) -> Dict[str, Any]:
+    verified_by: list[str],
+) -> dict[str, Any]:
     intent = ""
     for item in events:
         if item.get("event_type") == "session_start":
@@ -420,7 +420,7 @@ def _build_session_summary(
     }
 
 
-def _derive_feedback_outcome(summary: Dict[str, Any]) -> str:
+def _derive_feedback_outcome(summary: dict[str, Any]) -> str:
     verified_by = summary.get("verified_by", []) or []
     if verified_by:
         return "confirmed"
@@ -431,15 +431,15 @@ def _derive_feedback_outcome(summary: Dict[str, Any]) -> str:
 
 
 def _infer_close_feedback_candidates(
-    summary: Dict[str, Any],
-    events: List[Dict[str, Any]],
-    case: Dict[str, Any],
+    summary: dict[str, Any],
+    events: list[dict[str, Any]],
+    case: dict[str, Any],
     outcome: str,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     evidence = list(case.get("evidence_refs", []) or case.get("source_refs", []) or [])
     default_target = _default_feedback_target(summary, case)
     seen: set[tuple[str, str]] = set()
-    candidates: List[Dict[str, Any]] = []
+    candidates: list[dict[str, Any]] = []
 
     for event in reversed(events):
         if event.get("event_type") != "tool_call":
@@ -459,7 +459,7 @@ def _infer_close_feedback_candidates(
     return candidates
 
 
-def _default_feedback_target(summary: Dict[str, Any], case: Dict[str, Any]) -> str:
+def _default_feedback_target(summary: dict[str, Any], case: dict[str, Any]) -> str:
     for item in reversed(summary.get("notable_terms", []) or []):
         if isinstance(item, str) and item.strip():
             return item.strip()
@@ -469,11 +469,11 @@ def _default_feedback_target(summary: Dict[str, Any], case: Dict[str, Any]) -> s
 
 
 def _candidate_from_tool_payload(
-    payload: Dict[str, Any],
+    payload: dict[str, Any],
     default_target: str,
     outcome: str,
-    evidence: List[Dict[str, Any]],
-) -> Dict[str, Any] | None:
+    evidence: list[dict[str, Any]],
+) -> dict[str, Any] | None:
     tool_name = str(payload.get("tool_name") or payload.get("name") or "").lower()
     if not tool_name:
         return None
@@ -519,7 +519,7 @@ def _candidate_from_tool_payload(
     return None
 
 
-def _lookup_feedback_target(tool_name: str, payload: Dict[str, Any]) -> str:
+def _lookup_feedback_target(tool_name: str, payload: dict[str, Any]) -> str:
     mode = str(payload.get("mode", "") or "").lower()
     mode_map = {
         "auto": "lookup_auto",
@@ -560,7 +560,7 @@ def _feedback_next_action(outcome: str, success_action: str) -> str:
     return "补充更多证据后再决定是否继续优先采用该路径。"
 
 
-def _summary_text(intent: str, tool_calls: List[str], files: set[str], projects: set[str], event_types: List[str]) -> str:
+def _summary_text(intent: str, tool_calls: list[str], files: set[str], projects: set[str], event_types: list[str]) -> str:
     parts = []
     if intent:
         parts.append(f"任务意图：{intent}")
@@ -575,11 +575,11 @@ def _summary_text(intent: str, tool_calls: List[str], files: set[str], projects:
     return "；".join(parts) if parts else "会话已结束，暂无可提炼摘要。"
 
 
-def _build_session_overview(events: List[Dict[str, Any]]) -> Dict[str, Any]:
+def _build_session_overview(events: list[dict[str, Any]]) -> dict[str, Any]:
     payload_ref_count = 0
     source_ref_like_count = 0
-    event_types: Dict[str, int] = {}
-    payload_refs: List[str] = []
+    event_types: dict[str, int] = {}
+    payload_refs: list[str] = []
     for event in events:
         event_type = str(event.get("event_type", "") or "")
         if event_type:
@@ -606,7 +606,7 @@ def _build_session_overview(events: List[Dict[str, Any]]) -> Dict[str, Any]:
     }
 
 
-def _compact_evidence_entries(entries: List[Dict[str, Any]], budget: str = "medium") -> List[Dict[str, Any]]:
+def _compact_evidence_entries(entries: list[dict[str, Any]], budget: str = "medium") -> list[dict[str, Any]]:
     normalized_budget = (budget or "medium").strip().lower()
     if normalized_budget == "tiny":
         k = 1
@@ -629,7 +629,7 @@ def _compact_evidence_entries(entries: List[Dict[str, Any]], budget: str = "medi
     }
     _ERROR_KEYWORDS = ("error", "exception", "fail", "traceback", "bug", "crash")
 
-    def _importance_score(item: Dict[str, Any]) -> int:
+    def _importance_score(item: dict[str, Any]) -> int:
         source = (item.get("source") or "").lower()
         event_type = (item.get("event_type") or item.get("action") or "").lower()
         payload_text = " ".join(str(v) for v in item.values() if isinstance(v, str)).lower()

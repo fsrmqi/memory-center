@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import re as _re
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Node Types — §3.3 + §20.5.1
@@ -99,7 +99,7 @@ ALL_EDGE_TYPES = frozenset({
 })
 
 # Semantic strength classification per §3.4
-EDGE_SEMANTIC_STRENGTH: Dict[str, str] = {
+EDGE_SEMANTIC_STRENGTH: dict[str, str] = {
     EDGE_TYPE_CALLS_METHOD: "confirmed",
     EDGE_TYPE_CALLS_SERVICE: "confirmed",
     EDGE_TYPE_INJECTS: "confirmed",
@@ -124,7 +124,7 @@ EDGE_SEMANTIC_STRENGTH: Dict[str, str] = {
 }
 
 # Default confidence ranges per §3.4
-EDGE_CONFIDENCE_RANGES: Dict[str, tuple[float, float]] = {
+EDGE_CONFIDENCE_RANGES: dict[str, tuple[float, float]] = {
     EDGE_TYPE_TRANSITIVELY_CALLS: (0.4, 0.6),
     EDGE_TYPE_DATA_FLOWS_TO: (0.5, 0.7),
     EDGE_TYPE_CONFIG_PROPAGATES: (0.7, 0.7),
@@ -267,7 +267,7 @@ class EntityValidator:
     """
 
     @staticmethod
-    def is_feign_entity(name: str, node_type: str = "", metadata: Optional[Dict[str, Any]] = None) -> bool:
+    def is_feign_entity(name: str, node_type: str = "", metadata: dict[str, Any] | None = None) -> bool:
         """Check if an entity should be classified as a Feign client.
 
         Per §5.1: only classify as Feign if:
@@ -292,7 +292,7 @@ class EntityValidator:
         return False
 
     @staticmethod
-    def is_local_service(name: str, node_type: str = "", metadata: Optional[Dict[str, Any]] = None) -> bool:
+    def is_local_service(name: str, node_type: str = "", metadata: dict[str, Any] | None = None) -> bool:
         """Check if an entity is a local service (not a Feign client).
 
         Per §5.1: *ServiceImpl, *Service (without Feign prefix) are local.
@@ -306,7 +306,7 @@ class EntityValidator:
         )
 
     @staticmethod
-    def validate_endpoint_path(path: str) -> Dict[str, Any]:
+    def validate_endpoint_path(path: str) -> dict[str, Any]:
         """Validate endpoint path specificity per §5.5.
 
         Only paths with ≥2 segments (e.g. /api/users) should participate
@@ -339,7 +339,7 @@ class EntityValidator:
         return "unknown"
 
     @staticmethod
-    def validate_memory_layer(node_type: str) -> Dict[str, Any]:
+    def validate_memory_layer(node_type: str) -> dict[str, Any]:
         """Validate memory entity layer assignment per §5.4."""
         layer_map = {
             "SessionEvent": "L0",
@@ -359,9 +359,9 @@ class EntityValidator:
 
 
 def annotate_semantic_strength(
-    results: List[Dict[str, Any]],
+    results: list[dict[str, Any]],
     edge_type_field: str = "edge_type",
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Annotate a list of results with ontology semantic strength.
 
     For each result, looks up edge_type in EDGE_SEMANTIC_STRENGTH

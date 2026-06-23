@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 from ..store import WorkspaceStore
 from ..validators import doctor
@@ -15,13 +15,13 @@ from ..verification.heuristics import apply_candidate_path_learning
 AUDIT_LOG_FILE = "agent-runtime-audit.jsonl"
 
 
-def audit_agent_runtime(workspace_file: str | Path) -> Dict[str, Any]:
+def audit_agent_runtime(workspace_file: str | Path) -> dict[str, Any]:
     """Audit the agent runtime configuration for a workspace.
 
     Checks: hooks config, MCP settings, agent profile, tool access.
     """
     store = WorkspaceStore(workspace_file)
-    findings: List[Dict[str, Any]] = []
+    findings: list[dict[str, Any]] = []
     score = 100
 
     # Check hooks configuration
@@ -131,12 +131,12 @@ def audit_agent_runtime(workspace_file: str | Path) -> Dict[str, Any]:
 
 def _build_runtime_audit_candidate_paths(
     *,
-    findings: List[Dict[str, Any]],
-    workspace_shape: Dict[str, Any],
-    suggested_fixes: List[Dict[str, Any]],
+    findings: list[dict[str, Any]],
+    workspace_shape: dict[str, Any],
+    suggested_fixes: list[dict[str, Any]],
     doctor_hint: str,
-) -> List[Dict[str, Any]]:
-    candidates: List[Dict[str, Any]] = []
+) -> list[dict[str, Any]]:
+    candidates: list[dict[str, Any]] = []
     risk_level = str(workspace_shape.get("risk_level", "low") or "low")
     if suggested_fixes:
         first_fix = suggested_fixes[0]

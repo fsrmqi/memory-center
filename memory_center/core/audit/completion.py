@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from ..quality import build_quality_summary
 from ..store import WorkspaceStore
@@ -89,7 +89,7 @@ def run_completion_audit(
     check_docs: bool = True,
     check_tests: bool = True,
     check_implementation: bool = True,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Run completion audit for a work package or overall project.
 
     Checks:
@@ -99,7 +99,7 @@ def run_completion_audit(
     4. Design decision consistency
     """
     store = WorkspaceStore(workspace_file)
-    findings: List[Dict[str, Any]] = []
+    findings: list[dict[str, Any]] = []
     score = 100
 
     # Check documentation
@@ -156,7 +156,7 @@ def run_completion_audit(
 def _check_documentation_alignment(
     workspace_file: str | Path,
     work_package: str,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Check if documentation aligns with implementation."""
     findings = []
     project_root = _get_project_root(workspace_file)
@@ -224,7 +224,7 @@ def _check_documentation_alignment(
 def _check_test_coverage(
     workspace_file: str | Path,
     work_package: str,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Check test coverage for the work package."""
     findings = []
     project_root = _get_project_root(workspace_file)
@@ -332,7 +332,7 @@ def _check_test_coverage(
 def _check_implementation_completeness(
     workspace_file: str | Path,
     work_package: str,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Check if implementation matches the work package requirements.
 
     通用实现检查：
@@ -405,7 +405,7 @@ def _check_implementation_completeness(
 def _check_design_decisions(
     workspace_file: str | Path,
     work_package: str,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Check consistency of design decisions."""
     findings = []
     store = WorkspaceStore(workspace_file)
@@ -414,7 +414,7 @@ def _check_design_decisions(
     decisions = store.read_jsonl_prefer_backend(DESIGN_DECISIONS_FILE, limit=100)
 
     # Check for conflicting decisions
-    decision_by_topic: Dict[str, List[Dict[str, Any]]] = {}
+    decision_by_topic: dict[str, list[dict[str, Any]]] = {}
     for decision in decisions:
         topic = decision.get("topic", "")
         decision_by_topic.setdefault(topic, []).append(decision)
@@ -451,19 +451,19 @@ def _score_to_quality(score: int) -> str:
         return "low"
 
 
-def _categorize_findings(findings: List[Dict[str, Any]]) -> Dict[str, int]:
+def _categorize_findings(findings: list[dict[str, Any]]) -> dict[str, int]:
     """Categorize findings by category."""
-    categories: Dict[str, int] = {}
+    categories: dict[str, int] = {}
     for finding in findings:
         category = finding.get("category", "unknown")
         categories[category] = categories.get(category, 0) + 1
     return categories
 
 
-def _build_audit_summary(findings: List[Dict[str, Any]]) -> Dict[str, Any]:
+def _build_audit_summary(findings: list[dict[str, Any]]) -> dict[str, Any]:
     """Build summary of audit findings."""
     severity_counts = {"high": 0, "medium": 0, "low": 0}
-    category_counts: Dict[str, int] = {}
+    category_counts: dict[str, int] = {}
 
     for finding in findings:
         severity = finding.get("severity", "low")
@@ -479,7 +479,7 @@ def _build_audit_summary(findings: List[Dict[str, Any]]) -> Dict[str, Any]:
     }
 
 
-def _generate_audit_recommendations(findings: List[Dict[str, Any]]) -> List[str]:
+def _generate_audit_recommendations(findings: list[dict[str, Any]]) -> list[str]:
     """Generate actionable recommendations from findings."""
     recommendations = []
 
@@ -506,9 +506,9 @@ def record_design_decision(
     topic: str,
     decision: str,
     rationale: str,
-    alternatives: Optional[List[str]] = None,
+    alternatives: list[str] | None = None,
     impact: str = "medium",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Record a design decision for future reference.
 
     This helps prevent:
@@ -540,7 +540,7 @@ def get_design_decisions(
     workspace_file: str | Path,
     topic: str = "",
     limit: int = 50,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Retrieve design decisions with optional filtering."""
     store = WorkspaceStore(workspace_file)
     decisions = store.read_jsonl_prefer_backend(DESIGN_DECISIONS_FILE, limit=max(limit, 200))
@@ -557,7 +557,7 @@ def get_design_decisions(
 def generate_audit_report(
     workspace_file: str | Path,
     work_package: str = "",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Generate comprehensive audit report."""
     audit = run_completion_audit(workspace_file, work_package=work_package)
     decisions = get_design_decisions(workspace_file)
@@ -570,9 +570,9 @@ def generate_audit_report(
 
 
 def _calculate_overall_health(
-    audit: Dict[str, Any],
-    decisions: Dict[str, Any],
-) -> Dict[str, Any]:
+    audit: dict[str, Any],
+    decisions: dict[str, Any],
+) -> dict[str, Any]:
     """Calculate overall project health."""
     decision_count = decisions.get("total_decisions", 0)
 

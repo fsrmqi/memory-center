@@ -5,8 +5,6 @@ both orchestrator and MCP layers without circular imports.
 """
 from __future__ import annotations
 
-from typing import List
-
 _GENERIC_COMPONENTS = {
     "api", "app", "web", "back", "front", "open", "cloud", "core",
     "base", "common", "service", "biz", "lib", "sdk", "data",
@@ -61,7 +59,7 @@ def project_matches(query_project: str, item_project: str) -> bool:
     return False
 
 
-def infer_project_from_fqn(fqn: str, known_projects: List[str]) -> str:
+def infer_project_from_fqn(fqn: str, known_projects: list[str]) -> str:
     """Try to infer the project name from a fully-qualified class name.
 
     E.g.  cn.kaipuyun.cloud.openapi.biz.service.impl.website.safe.FooServiceImpl

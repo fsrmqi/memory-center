@@ -9,7 +9,7 @@ from __future__ import annotations
 import shlex
 import stat
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 from ..spec import load_hooks_config
 
@@ -24,7 +24,7 @@ _EVENT_TO_SCRIPT_NAME = {
 def generate_codex_scripts(
     workspace: str,
     output_dir: str | Path | None = None,
-    hooks_config: Dict[str, Any] | None = None,
+    hooks_config: dict[str, Any] | None = None,
 ) -> list[Path]:
     """Generate shell wrapper scripts for Codex lifecycle events.
 

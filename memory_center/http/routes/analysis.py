@@ -4,13 +4,13 @@ import json as _json
 
 from memory_center.core.dispatch import CommandRegistry
 
-from .dependencies import Any, Dict, group_chain, group_impact, group_query, group_status
+from .dependencies import Any, group_chain, group_impact, group_query, group_status
 from .params import RouteParams, _parse_int
 
 
 def register_analysis_routes(registry: CommandRegistry) -> None:
     # --- next-phase verification / explanation / business flow ----------------
-    def _verification_loop(rp: RouteParams) -> Dict[str, Any]:
+    def _verification_loop(rp: RouteParams) -> dict[str, Any]:
         from memory_center.core.verification.loop import VerificationLoop
         ws = rp.workspace()
         vl = VerificationLoop(ws)
@@ -24,7 +24,7 @@ def register_analysis_routes(registry: CommandRegistry) -> None:
 
     registry.register("/workspace/verification-loop", _verification_loop)
 
-    def _pattern_promotion(rp: RouteParams) -> Dict[str, Any]:
+    def _pattern_promotion(rp: RouteParams) -> dict[str, Any]:
         from memory_center.core.verification.pattern_promotion import PatternPromotion
         ws = rp.workspace()
         pp = PatternPromotion(ws)
@@ -39,7 +39,7 @@ def register_analysis_routes(registry: CommandRegistry) -> None:
 
     registry.register("/workspace/pattern-promotion", _pattern_promotion)
 
-    def _heuristics(rp: RouteParams) -> Dict[str, Any]:
+    def _heuristics(rp: RouteParams) -> dict[str, Any]:
         from memory_center.core.verification.heuristics import HeuristicsRegister
         ws = rp.workspace()
         hr = HeuristicsRegister(ws)
@@ -85,33 +85,33 @@ def register_analysis_routes(registry: CommandRegistry) -> None:
 
     registry.register("/workspace/heuristics", _heuristics)
 
-    def _workflow_profile(rp: RouteParams) -> Dict[str, Any]:
+    def _workflow_profile(rp: RouteParams) -> dict[str, Any]:
         from memory_center.core.verification.workflow_profiles import get_workflow_profile
         return get_workflow_profile(rp.get("profile", "quick-fix"))
 
     registry.register("/workspace/workflow-profile", _workflow_profile)
 
-    def _workflow_recommend(rp: RouteParams) -> Dict[str, Any]:
+    def _workflow_recommend(rp: RouteParams) -> dict[str, Any]:
         from memory_center.core.verification.workflow_profiles import recommend_workflow_with_learning
         ws = rp.workspace()
         return recommend_workflow_with_learning(ws, rp.require('description'))
 
     registry.register("/workspace/workflow-recommend", _workflow_recommend)
 
-    def _bundle_export(rp: RouteParams) -> Dict[str, Any]:
+    def _bundle_export(rp: RouteParams) -> dict[str, Any]:
         from memory_center.core.verification.bundle_export import generate_agent_bundle
         ws = rp.workspace()
         return generate_agent_bundle(ws, agent=rp.get("agent", "codex"))
 
     registry.register("/workspace/bundle-export", _bundle_export)
 
-    def _runtime_audit(rp: RouteParams) -> Dict[str, Any]:
+    def _runtime_audit(rp: RouteParams) -> dict[str, Any]:
         from memory_center.core.audit.runtime import audit_agent_runtime
         return audit_agent_runtime(rp.workspace())
 
     registry.register("/workspace/runtime-audit", _runtime_audit)
 
-    def _eval_golden(rp: RouteParams) -> Dict[str, Any]:
+    def _eval_golden(rp: RouteParams) -> dict[str, Any]:
         from memory_center.core import benchmark as benchmark_module
 
         baseline = rp.get("baseline", "")
@@ -119,7 +119,7 @@ def register_analysis_routes(registry: CommandRegistry) -> None:
 
     registry.register("/workspace/eval-golden", _eval_golden)
 
-    def _explanation(rp: RouteParams) -> Dict[str, Any]:
+    def _explanation(rp: RouteParams) -> dict[str, Any]:
         from memory_center.core.explanation.schema import Explanation
         text = rp.require('text')
         persona = rp.get("persona", "developer")
@@ -128,7 +128,7 @@ def register_analysis_routes(registry: CommandRegistry) -> None:
 
     registry.register("/workspace/explanation", _explanation)
 
-    def _business_flow(rp: RouteParams) -> Dict[str, Any]:
+    def _business_flow(rp: RouteParams) -> dict[str, Any]:
         from memory_center.core.domain.flow import extract_business_flows_for_workspace
         ws = rp.workspace()
         return extract_business_flows_for_workspace(
@@ -139,7 +139,7 @@ def register_analysis_routes(registry: CommandRegistry) -> None:
 
     registry.register("/workspace/business-flow", _business_flow)
 
-    def _business_flow_impact(rp: RouteParams) -> Dict[str, Any]:
+    def _business_flow_impact(rp: RouteParams) -> dict[str, Any]:
         from memory_center.core.domain.flow import business_flow_impact_for_workspace
         ws = rp.workspace()
         return business_flow_impact_for_workspace(
@@ -150,7 +150,7 @@ def register_analysis_routes(registry: CommandRegistry) -> None:
 
     registry.register("/workspace/business-flow-impact", _business_flow_impact)
 
-    def _metrics_summary(rp: RouteParams) -> Dict[str, Any]:
+    def _metrics_summary(rp: RouteParams) -> dict[str, Any]:
         from memory_center.core.metrics import MetricsCollector
         ws = rp.params.get("workspace", [rp.default_workspace])[0]
         if not ws:
@@ -162,7 +162,7 @@ def register_analysis_routes(registry: CommandRegistry) -> None:
 
     registry.register("/workspace/metrics-summary", _metrics_summary)
 
-    def _onboard(rp: RouteParams) -> Dict[str, Any]:
+    def _onboard(rp: RouteParams) -> dict[str, Any]:
         from memory_center.core.onboarding.tour import ArchitectureTourGenerator
         from memory_center.core.storage.unified import UnifiedStore
         from memory_center.core.store import WorkspaceStore
@@ -179,7 +179,7 @@ def register_analysis_routes(registry: CommandRegistry) -> None:
 
     registry.register("/workspace/onboard", _onboard)
 
-    def _context_pack(rp: RouteParams) -> Dict[str, Any]:
+    def _context_pack(rp: RouteParams) -> dict[str, Any]:
         from memory_center.core.context.pack import ContextPackBuilder
         ws = rp.workspace()
         builder = ContextPackBuilder(ws)
@@ -203,7 +203,7 @@ def register_analysis_routes(registry: CommandRegistry) -> None:
 
     registry.register("/workspace/context-pack", _context_pack)
 
-    def _freshness(rp: RouteParams) -> Dict[str, Any]:
+    def _freshness(rp: RouteParams) -> dict[str, Any]:
         from memory_center.core.freshness.status import IndexFreshnessService
         ws = rp.workspace()
         return IndexFreshnessService(ws).banner()
@@ -211,14 +211,14 @@ def register_analysis_routes(registry: CommandRegistry) -> None:
     registry.register("/workspace/freshness", _freshness)
 
     # --- workspace-anchored group helpers (load_registry from workspace) ------
-    def _workspace_group_status(rp: RouteParams) -> Dict[str, Any]:
+    def _workspace_group_status(rp: RouteParams) -> dict[str, Any]:
         from memory_center.core.registry import load_registry
         ws = rp.workspace()
         return group_status(load_registry(ws))
 
     registry.register("/workspace/group-status", _workspace_group_status)
 
-    def _workspace_group_query(rp: RouteParams) -> Dict[str, Any]:
+    def _workspace_group_query(rp: RouteParams) -> dict[str, Any]:
         from memory_center.core.registry import load_registry
         ws = rp.workspace()
         return group_query(
@@ -229,14 +229,14 @@ def register_analysis_routes(registry: CommandRegistry) -> None:
 
     registry.register("/workspace/group-query", _workspace_group_query)
 
-    def _workspace_group_impact(rp: RouteParams) -> Dict[str, Any]:
+    def _workspace_group_impact(rp: RouteParams) -> dict[str, Any]:
         from memory_center.core.registry import load_registry
         ws = rp.workspace()
         return group_impact(load_registry(ws), target=rp.require('target'))
 
     registry.register("/workspace/group-impact", _workspace_group_impact)
 
-    def _workspace_group_chain(rp: RouteParams) -> Dict[str, Any]:
+    def _workspace_group_chain(rp: RouteParams) -> dict[str, Any]:
         from memory_center.core.registry import load_registry
         ws = rp.workspace()
         return group_chain(load_registry(ws), symbol=rp.require('symbol'))

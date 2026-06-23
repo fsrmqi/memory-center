@@ -4,7 +4,7 @@ import json
 import re
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 from uuid import uuid4
 
 from ..config import load_workspace_config
@@ -49,17 +49,17 @@ def _is_compact_view(view: str) -> bool:
     return (view or "").strip().lower() == "compact"
 
 
-def summarize_chain_edges(edges: List[Dict[str, Any]]) -> Dict[str, Any]:
+def summarize_chain_edges(edges: list[dict[str, Any]]) -> dict[str, Any]:
     """Build the shared compact representation of graph edges."""
-    items: List[Dict[str, Any]] = []
-    type_counts: Dict[str, int] = {}
+    items: list[dict[str, Any]] = []
+    type_counts: dict[str, int] = {}
     for edge in edges:
         edge_type = str(edge.get("type", "") or "")
         type_counts[edge_type] = type_counts.get(edge_type, 0) + 1
         source = edge.get("source", {}) or {}
         target = edge.get("target", {}) or {}
 
-        def endpoint(node: Dict[str, Any]) -> str:
+        def endpoint(node: dict[str, Any]) -> str:
             name = str(node.get("name", "") or "?")
             line = int(node.get("line", 0) or 0)
             return f"{name}:{line}" if line > 0 else name
@@ -94,7 +94,7 @@ def _normalize_budget(budget: str) -> str:
     return value if value in {"tiny", "small", "medium", "large"} else "medium"
 
 
-MODEL_BUDGET_PROFILES: Dict[str, Dict[str, int]] = {
+MODEL_BUDGET_PROFILES: dict[str, dict[str, int]] = {
     "codex": {"services": 3, "files": 4, "refs": 4, "steps": 3, "tasks": 3, "events": 3, "findings": 3},
     "claude-code": {"services": 5, "files": 5, "refs": 5, "steps": 4, "tasks": 5, "events": 4, "findings": 4},
     "gemini": {"services": 4, "files": 4, "refs": 4, "steps": 3, "tasks": 4, "events": 3, "findings": 3},
@@ -106,7 +106,7 @@ MODEL_BUDGET_PROFILES: Dict[str, Dict[str, int]] = {
 }
 
 
-def _budget_limits(budget: str, model: str = "") -> Dict[str, int]:
+def _budget_limits(budget: str, model: str = "") -> dict[str, int]:
     normalized = _normalize_budget(budget)
     model_profile = MODEL_BUDGET_PROFILES.get(_normalize_model_name(model or ""), MODEL_BUDGET_PROFILES["generic-mcp-agent"])
     if normalized == "tiny":
@@ -141,7 +141,7 @@ def _normalize_model_name(model_name: str) -> str:
     return "generic-mcp-agent"
 
 
-def _summarize_ref(ref: Dict[str, Any]) -> str:
+def _summarize_ref(ref: dict[str, Any]) -> str:
     parts = [
         str(ref.get("tool_name", "") or ""),
         str(ref.get("query", "") or ref.get("target", "") or ref.get("name", "") or ref.get("task", "") or ""),
@@ -161,7 +161,7 @@ def _trim_summary(text: str, limit: int = 220) -> str:
     return normalized[: limit - 3] + "..."
 
 
-def _render_ref_label(ref: Dict[str, Any]) -> str:
+def _render_ref_label(ref: dict[str, Any]) -> str:
     return (
         str(ref.get("summary", "") or "")
         or str(ref.get("name", "") or ref.get("task", "") or ref.get("query", "") or ref.get("target", "") or ref.get("file_path", "") or ref.get("path", "") or ref.get("payload_ref", "") or ref.get("ref_id", "") or "ref")
@@ -190,7 +190,7 @@ def _score_threshold_for_sync_mode(auto_sync_mode: str) -> int:
     return 3
 
 
-def _load_resume_rules(store: WorkspaceStore, text: str) -> Dict[str, Any]:
+def _load_resume_rules(store: WorkspaceStore, text: str) -> dict[str, Any]:
     data = load_yaml_rule_config(store, "resume-rules.yaml", DEFAULT_RESUME_RULES)
     default = dict(DEFAULT_RESUME_RULES.get("default", {}))
     default.update(data.get("default", {}))
@@ -206,7 +206,7 @@ def _load_resume_rules(store: WorkspaceStore, text: str) -> Dict[str, Any]:
     return default
 
 
-def _load_handoff_rules(store: WorkspaceStore, normalized_model: str) -> Dict[str, Any]:
+def _load_handoff_rules(store: WorkspaceStore, normalized_model: str) -> dict[str, Any]:
     data = load_yaml_rule_config(store, "handoff-rules.yaml", DEFAULT_HANDOFF_RULES)
     default = dict(DEFAULT_HANDOFF_RULES.get("default", {}))
     default.update(data.get("default", {}))
@@ -221,19 +221,19 @@ def _load_handoff_rules(store: WorkspaceStore, normalized_model: str) -> Dict[st
     return default
 
 
-def _load_write_policy_rules(store: WorkspaceStore) -> Dict[str, Any]:
+def _load_write_policy_rules(store: WorkspaceStore) -> dict[str, Any]:
     return load_yaml_rule_config(store, "write-policy-rules.yaml", DEFAULT_WRITE_POLICY_RULES).get("default", {})
 
 
-def _load_auto_sync_rules(store: WorkspaceStore) -> Dict[str, Any]:
+def _load_auto_sync_rules(store: WorkspaceStore) -> dict[str, Any]:
     return load_yaml_rule_config(store, "auto-sync-rules.yaml", DEFAULT_AUTO_SYNC_RULES).get("default", {})
 
 
-def _load_eval_rules(store: WorkspaceStore) -> Dict[str, Any]:
+def _load_eval_rules(store: WorkspaceStore) -> dict[str, Any]:
     return load_yaml_rule_config(store, "eval-rules.yaml", DEFAULT_EVAL_RULES)
 
 
-def _event_payload(event: Dict[str, Any]) -> Dict[str, Any]:
+def _event_payload(event: dict[str, Any]) -> dict[str, Any]:
     payload = event.get("payload", {})
     return payload if isinstance(payload, dict) else {}
 
@@ -242,8 +242,8 @@ def _prepare_session_event_payload(
     store: WorkspaceStore,
     session_id: str,
     event_type: str,
-    payload: Dict[str, Any],
-) -> tuple[Dict[str, Any], str, int]:
+    payload: dict[str, Any],
+) -> tuple[dict[str, Any], str, int]:
     safe_payload = payload if isinstance(payload, dict) else {}
     payload_bytes = len(json.dumps(safe_payload, ensure_ascii=False).encode("utf-8"))
     if payload_bytes <= EVENT_PAYLOAD_INLINE_LIMIT:
@@ -259,14 +259,14 @@ def _prepare_session_event_payload(
     return compact, payload_ref, payload_bytes
 
 
-def _compact_session_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+def _compact_session_payload(payload: dict[str, Any]) -> dict[str, Any]:
     # Try tool-specific compressor first; fall back to generic extraction
     tool_name = str(payload.get("tool_name", "") or "").lower()
     compressed = _compact_tool_payload(payload, tool_name)
     if compressed:
         return compressed
     # Generic fallback: extract preferred keys
-    compact: Dict[str, Any] = {}
+    compact: dict[str, Any] = {}
     preferred_keys = [
         "tool_name", "query", "target", "name", "project", "file", "file_path", "path",
         "intent", "outcome", "text", "summary", "note",
@@ -282,7 +282,7 @@ def _compact_session_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     return compact
 
 
-def _compact_tool_payload(payload: Dict[str, Any], tool_name: str) -> Dict[str, Any] | None:
+def _compact_tool_payload(payload: dict[str, Any], tool_name: str) -> dict[str, Any] | None:
     """Tool-specific payload compressor, inspired by rtk's per-command compression strategies.
 
     Returns None if no specialized compressor matches, causing fallback to generic extraction.
@@ -304,7 +304,7 @@ def _compact_tool_payload(payload: Dict[str, Any], tool_name: str) -> Dict[str, 
     return None
 
 
-def _compact_git_stats(payload: Dict[str, Any]) -> Dict[str, Any]:
+def _compact_git_stats(payload: dict[str, Any]) -> dict[str, Any]:
     """Stats Extraction for git commands: keep only summary counts."""
     compact = {"tool_name": payload.get("tool_name", ""), "command": "git"}
     # Try to extract common git fields
@@ -319,7 +319,7 @@ def _compact_git_stats(payload: Dict[str, Any]) -> Dict[str, Any]:
     return compact
 
 
-def _compact_test_result(payload: Dict[str, Any]) -> Dict[str, Any]:
+def _compact_test_result(payload: dict[str, Any]) -> dict[str, Any]:
     """Failure Focus for test commands: keep only failures + totals."""
     compact = {"tool_name": payload.get("tool_name", "")}
     # Extract test result summary fields
@@ -334,7 +334,7 @@ def _compact_test_result(payload: Dict[str, Any]) -> Dict[str, Any]:
     return compact
 
 
-def _compact_search_result(payload: Dict[str, Any]) -> Dict[str, Any]:
+def _compact_search_result(payload: dict[str, Any]) -> dict[str, Any]:
     """Grouping by Pattern for search commands: keep counts + top matches."""
     compact = {"tool_name": payload.get("tool_name", ""), "query": str(payload.get("query", "") or payload.get("pattern", "") or "")[:120]}
     # Extract count fields
@@ -345,7 +345,7 @@ def _compact_search_result(payload: Dict[str, Any]) -> Dict[str, Any]:
     # Keep top matches grouped by file
     matches = payload.get("matches", payload.get("results", []))
     if isinstance(matches, list) and matches:
-        files: Dict[str, int] = {}
+        files: dict[str, int] = {}
         for m in matches[:20]:
             f = str(m.get("file", m.get("path", "")) or "")[:60]
             if f:
@@ -355,8 +355,8 @@ def _compact_search_result(payload: Dict[str, Any]) -> Dict[str, Any]:
     return compact
 
 
-def _build_case_evidence_refs(events: List[Dict[str, Any]], limit: int = 12) -> List[Dict[str, Any]]:
-    refs: List[Dict[str, Any]] = []
+def _build_case_evidence_refs(events: list[dict[str, Any]], limit: int = 12) -> list[dict[str, Any]]:
+    refs: list[dict[str, Any]] = []
     for idx, event in enumerate(events[-limit:], start=max(len(events) - limit, 0) + 1):
         payload = _event_payload(event)
         ref = {
@@ -377,8 +377,8 @@ def _build_case_evidence_refs(events: List[Dict[str, Any]], limit: int = 12) -> 
     return refs
 
 
-def _build_event_source_refs(events: List[Dict[str, Any]], limit: int = 20) -> List[Dict[str, Any]]:
-    refs: List[Dict[str, Any]] = []
+def _build_event_source_refs(events: list[dict[str, Any]], limit: int = 20) -> list[dict[str, Any]]:
+    refs: list[dict[str, Any]] = []
     for idx, event in enumerate(events[-limit:], start=max(len(events) - limit, 0) + 1):
         payload = _event_payload(event)
         event_type = str(event.get("event_type", "") or "")
@@ -402,13 +402,13 @@ def _build_event_source_refs(events: List[Dict[str, Any]], limit: int = 20) -> L
 
 
 def _build_sniff_source_refs(
-    matched_files: List[Dict[str, Any]],
-    related_feigns: List[Dict[str, Any]],
-    related_apis: List[Dict[str, Any]],
-    related_mq: List[Dict[str, Any]],
-    related_cases: List[Dict[str, Any]],
-) -> List[Dict[str, Any]]:
-    refs: List[Dict[str, Any]] = []
+    matched_files: list[dict[str, Any]],
+    related_feigns: list[dict[str, Any]],
+    related_apis: list[dict[str, Any]],
+    related_mq: list[dict[str, Any]],
+    related_cases: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    refs: list[dict[str, Any]] = []
     for idx, item in enumerate(matched_files[:6], start=1):
         path = item.get("path", "")
         if path:
@@ -438,11 +438,11 @@ def _build_sniff_source_refs(
     return refs
 
 
-def _suggest_risk_points(summary: Dict[str, Any], events: List[Dict[str, Any]]) -> List[str]:
+def _suggest_risk_points(summary: dict[str, Any], events: list[dict[str, Any]]) -> list[str]:
     text = json.dumps(summary, ensure_ascii=False).lower()
     for event in events:
         text += " " + json.dumps(_event_payload(event), ensure_ascii=False).lower()
-    points: List[str] = []
+    points: list[str] = []
     if any(token in text for token in ["feign", "endpoint", "controller"]):
         points.append("Feign/API 契约兼容性")
     if any(token in text for token in ["kafka", "rocketmq", "topic", "consumer"]):
@@ -458,10 +458,10 @@ def _suggest_risk_points(summary: Dict[str, Any], events: List[Dict[str, Any]]) 
 
 def _suggest_resume_context(
     intent: str,
-    related_sessions: List[Dict[str, Any]],
-    related_cases: List[Dict[str, Any]],
-    entrypoints: List[Dict[str, Any]],
-) -> List[str]:
+    related_sessions: list[dict[str, Any]],
+    related_cases: list[dict[str, Any]],
+    entrypoints: list[dict[str, Any]],
+) -> list[str]:
     hints = [f"当前意图：{intent}"]
     if related_sessions:
         latest = related_sessions[0]
@@ -478,10 +478,10 @@ def _suggest_resume_context(
 
 def _build_sniff_auto_sync_recommendation(
     store: WorkspaceStore | None,
-    task_resolution: Dict[str, Any] | None = None,
+    task_resolution: dict[str, Any] | None = None,
     risk_level: str = "low",
     auto_sync_mode: str = "balanced",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     # Support calling without store (e.g. from tests with just task_resolution, risk_level)
     if not isinstance(store, WorkspaceStore):
         # Called as (task_resolution, risk_level, auto_sync_mode=...)
@@ -543,12 +543,12 @@ def _build_sniff_auto_sync_recommendation(
     return recommendation
 
 
-def _best_match(matches: List[Dict[str, Any]], query: str = "") -> Dict[str, Any]:
+def _best_match(matches: list[dict[str, Any]], query: str = "") -> dict[str, Any]:
     if not matches:
         return {}
     q = (query or "").lower()
 
-    def key(item: Dict[str, Any]):
+    def key(item: dict[str, Any]):
         name = (item.get("name") or "").lower()
         exact = 0 if name == q or name.endswith("." + q) else 1
         return (exact, _node_type_priority(item.get("type")), len(item.get("id", "")))
@@ -637,7 +637,7 @@ _NOISE_METHODS = {
 }
 
 
-def preferred_edge_types(direction: str) -> List[str] | None:
+def preferred_edge_types(direction: str) -> list[str] | None:
     if direction in {"upstream", "incoming"}:
         return list(_INBOUND_PREFERRED)
     if direction in {"downstream", "outgoing"}:
@@ -645,7 +645,7 @@ def preferred_edge_types(direction: str) -> List[str] | None:
     return None
 
 
-def _is_noise_call(edge: Dict[str, Any]) -> bool:
+def _is_noise_call(edge: dict[str, Any]) -> bool:
     if edge.get("type") != "CALLS_METHOD":
         return False
     name = edge.get("target", {}).get("name", "")
@@ -662,7 +662,7 @@ def _is_noise_call(edge: Dict[str, Any]) -> bool:
     return False
 
 
-def _is_redundant_import_edge(edge: Dict[str, Any], edges: List[Dict[str, Any]]) -> bool:
+def _is_redundant_import_edge(edge: dict[str, Any], edges: list[dict[str, Any]]) -> bool:
     if edge.get("type") != "IMPORTS":
         return False
     source = edge.get("source", {}) or {}
@@ -693,7 +693,7 @@ def _is_redundant_import_edge(edge: Dict[str, Any], edges: List[Dict[str, Any]])
     return False
 
 
-def _filter_call_edges(edges: List[Dict[str, Any]], direction: str) -> List[Dict[str, Any]]:
+def _filter_call_edges(edges: list[dict[str, Any]], direction: str) -> list[dict[str, Any]]:
     if direction in {"upstream", "incoming"}:
         edge_types = _INBOUND_PREFERRED
         edge_priority = _UPSTREAM_EDGE_PRIORITY
@@ -722,8 +722,8 @@ def _filter_call_edges(edges: List[Dict[str, Any]], direction: str) -> List[Dict
         )
     )
     # Deduplicate: keep one entry per method name, prefer class-prefixed and higher confidence
-    seen_names: Dict[str, bool] = {}
-    deduped: List[Dict[str, Any]] = []
+    seen_names: dict[str, bool] = {}
+    deduped: list[dict[str, Any]] = []
     for item in filtered:
         tgt = item.get("target", {})
         name = tgt.get("name", "")
@@ -743,7 +743,7 @@ def _filter_call_edges(edges: List[Dict[str, Any]], direction: str) -> List[Dict
     return deduped
 
 
-def _build_progressive_levels(summary: Dict[str, Any], evidence: Dict[str, Any], detail: Dict[str, Any]) -> Dict[str, Any]:
+def _build_progressive_levels(summary: dict[str, Any], evidence: dict[str, Any], detail: dict[str, Any]) -> dict[str, Any]:
     return {
         "level": "summary-evidence-detail",
         "summary": summary,
@@ -752,7 +752,7 @@ def _build_progressive_levels(summary: Dict[str, Any], evidence: Dict[str, Any],
     }
 
 
-def _unknown_static_analysis_risks() -> List[str]:
+def _unknown_static_analysis_risks() -> list[str]:
     return [
         "反射、动态代理、AOP 切面、运行时生成调用链未做精确解析",
         "MyBatis XML / SQL 字段引用当前只做轻量级索引，未做完整 SQL 语义分析",
@@ -761,7 +761,7 @@ def _unknown_static_analysis_risks() -> List[str]:
     ]
 
 
-def _impact_checklist(node: Dict[str, Any], risk_level: str) -> List[str]:
+def _impact_checklist(node: dict[str, Any], risk_level: str) -> list[str]:
     base = ["确认上游调用方", "确认下游实现方", "确认是否需要联调或回放历史消息"]
     node_type = node.get("type", "")
     if node_type in {"FeignClient", "FeignMethod", "DTO"}:
@@ -773,7 +773,7 @@ def _impact_checklist(node: Dict[str, Any], risk_level: str) -> List[str]:
     return base
 
 
-def _resolve_memory_ref(store: WorkspaceStore, ref_id: str) -> Dict[str, Any] | None:
+def _resolve_memory_ref(store: WorkspaceStore, ref_id: str) -> dict[str, Any] | None:
     from ..write_receipts import WRITE_RECEIPTS_FILE
 
     if not ref_id:
@@ -815,16 +815,16 @@ def _resolve_memory_ref(store: WorkspaceStore, ref_id: str) -> Dict[str, Any] | 
     return None
 
 
-def _case_risk_level(case: Dict[str, Any]) -> str:
+def _case_risk_level(case: dict[str, Any]) -> str:
     return _case_risk_profile(case)["risk_level"]
 
 
-def _case_risk_profile(case: Dict[str, Any]) -> Dict[str, Any]:
+def _case_risk_profile(case: dict[str, Any]) -> dict[str, Any]:
     risk_points = case.get("risk_points", [])
     raw_refs = case.get("evidence_refs", [])
     refs = raw_refs if isinstance(raw_refs, list) else []
     score = 0
-    matched_signals: List[str] = []
+    matched_signals: list[str] = []
     point_text = json.dumps(risk_points, ensure_ascii=False).lower()
     for token, weight, label in [
         ("contract", 3, "risk_points:contract"),
@@ -841,7 +841,7 @@ def _case_risk_profile(case: Dict[str, Any]) -> Dict[str, Any]:
             matched_signals.append(label)
     high_ref_types = {"contract", "mq", "dto", "config"}
     medium_ref_types = {"impact", "cross_service", "symbol"}
-    counted_ref_types: Dict[str, int] = {}
+    counted_ref_types: dict[str, int] = {}
     for ref in refs:
         ref_type = _classify_case_evidence_ref(ref)
         counted_ref_types[ref_type] = counted_ref_types.get(ref_type, 0) + 1
@@ -865,7 +865,7 @@ def _case_risk_profile(case: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _classify_case_evidence_ref(ref: Dict[str, Any]) -> str:
+def _classify_case_evidence_ref(ref: dict[str, Any]) -> str:
     haystack = json.dumps(ref, ensure_ascii=False).lower()
     tool_name = str(ref.get("tool_name", "")).lower()
     event_type = str(ref.get("event_type", "")).lower()
@@ -930,11 +930,11 @@ def _merge_artifact_section(existing: str, section_title: str, body: str) -> str
 
 def _sniff_risk_level(
     intent: str,
-    matched_files: List[Dict[str, Any]],
-    related_feigns: List[Dict[str, Any]],
-    related_apis: List[Dict[str, Any]],
-    related_mq: List[Dict[str, Any]],
-    rules: List[Dict[str, Any]],
+    matched_files: list[dict[str, Any]],
+    related_feigns: list[dict[str, Any]],
+    related_apis: list[dict[str, Any]],
+    related_mq: list[dict[str, Any]],
+    rules: list[dict[str, Any]],
 ) -> str:
     text = intent.lower()
     paths = " ".join(item.get("path", "").lower() for item in matched_files)
@@ -950,7 +950,7 @@ def _sniff_risk_level(
     return "low"
 
 
-def tokenize(text: str) -> List[str]:
+def tokenize(text: str) -> list[str]:
     from ..text_utils import base_tokenize
 
     words = base_tokenize(text)
@@ -960,7 +960,7 @@ def tokenize(text: str) -> List[str]:
     return sorted(set(words))
 
 
-def rank_files(file_index: List[Dict], symbols: List[Dict], keywords: List[str]) -> List[Dict]:
+def rank_files(file_index: list[dict], symbols: list[dict], keywords: list[str]) -> list[dict]:
     symbol_entries = {}
     for s in symbols:
         symbol_entries.setdefault(s["file"], []).append(s)

@@ -12,7 +12,7 @@ from __future__ import annotations
 import copy
 import re
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from ..diagnostics import DIAG, diag_entry
 from ..graph import GraphStore
@@ -22,6 +22,7 @@ from ..ontology import (
     annotate_semantic_strength,
     multi_hop_confidence,
 )
+from ..parser_precision import parser_precision_from_workspace
 from ..semantic import semantic_query
 from .policy import select_retrieval_policy
 
@@ -55,12 +56,12 @@ _EDGE_SEMANTIC_STRENGTH.update(EDGE_SEMANTIC_STRENGTH)
 class RetrievalResult:
     """Unified retrieval result with provenance tracking."""
     node_id: str
-    node: Dict[str, Any]
+    node: dict[str, Any]
     score: float = 0.0
-    sources: List[str] = field(default_factory=list)  # graph, sparse, semantic
-    evidence: Dict[str, Any] = field(default_factory=dict)
-    neighbors: List[Dict[str, Any]] = field(default_factory=list)
-    cross_workspace_refs: List[Dict[str, Any]] = field(default_factory=list)
+    sources: list[str] = field(default_factory=list)  # graph, sparse, semantic
+    evidence: dict[str, Any] = field(default_factory=dict)
+    neighbors: list[dict[str, Any]] = field(default_factory=list)
+    cross_workspace_refs: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass
@@ -138,7 +139,7 @@ def _looks_like_java_symbol_query(query: str) -> bool:
     return bool(re.match(r"^[A-Z][A-Za-z0-9_]*$", token))
 
 
-def _node_matches_query_name(node: Dict[str, Any], query: str) -> bool:
+def _node_matches_query_name(node: dict[str, Any], query: str) -> bool:
     target = _normalize_java_symbol_query(query).lower()
     if not target:
         return False
@@ -153,7 +154,7 @@ def _has_exact_like_source(item: RetrievalResult) -> bool:
     return any(source in {"graph_exact", "graph_token", "sparse_fts", "sparse_bm25"} for source in item.sources)
 
 
-def detect_query_intent(query: str) -> Dict[str, Any]:
+def detect_query_intent(query: str) -> dict[str, Any]:
     """Detect query intent from natural language input.
 
     Returns intent classification with confidence scores.
@@ -163,8 +164,8 @@ def detect_query_intent(query: str) -> Dict[str, Any]:
         marker in query_lower
         for marker in ("全链路", "到底层", "full chain", "full-chain", "walkthrough")
     )
-    intents: Dict[str, float] = {}
-    matched_patterns: List[str] = []
+    intents: dict[str, float] = {}
+    matched_patterns: list[str] = []
 
     # Phase 1: Keyword pattern matching
     for intent, pattern in _QUERY_PATTERNS.items():
@@ -252,12 +253,12 @@ def hybrid_retrieve(
     graph: GraphStore,
     workspace_file: str,
     query: str,
-    config: Optional[HybridRetrievalConfig] = None,
-    node_types: Optional[List[str]] = None,
+    config: HybridRetrievalConfig | None = None,
+    node_types: list[str] | None = None,
     limit: int = 20,
-    freshness: Optional[Dict[str, Any]] = None,
-    learned_weights: Optional[Dict[str, Any]] = None,
-) -> Dict[str, Any]:
+    freshness: dict[str, Any] | None = None,
+    learned_weights: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """Execute hybrid retrieval combining graph, sparse, and semantic search.
 
     This is the main entry point for intelligent code retrieval.
@@ -299,7 +300,7 @@ def hybrid_retrieve(
         if "sparse" in active_sources
         else []
     )
-    retrieval_diagnostics: Dict[str, Any] = {}
+    retrieval_diagnostics: dict[str, Any] = {}
     if policy.semantic_enabled and config.enable_semantic:
         semantic_hits = _semantic_retrieval(workspace_file, query, source_limit)
         retrieval_diagnostics["semantic"] = {"status": "active", "returned": len(semantic_hits)}
@@ -309,7 +310,7 @@ def hybrid_retrieve(
             "status": "disabled",
             "reason": "configured_off" if not config.enable_semantic else "policy_off",
         }
-    vector_hits: List[RetrievalResult] = []
+    vector_hits: list[RetrievalResult] = []
     if config.enable_vector and policy.vector_enabled:
         vector_hits = _vector_retrieval(
             workspace_file,
@@ -323,7 +324,7 @@ def hybrid_retrieve(
             "status": "disabled",
             "reason": "configured_off" if not config.enable_vector else "policy_off",
         }
-    bm25_hits: List[RetrievalResult] = []
+    bm25_hits: list[RetrievalResult] = []
     if config.enable_sparse_bm25 and "bm25" in active_sources:
         bm25_hits = _bm25_sparse_retrieval(workspace_file, query, source_limit, diagnostics=retrieval_diagnostics)
     else:
@@ -335,6 +336,7 @@ def hybrid_retrieve(
         "status": "active",
         **policy.to_dict(),
     }
+    retrieval_diagnostics["parser_precision"] = parser_precision_from_workspace(workspace_file)
 
     # Phase 2: Merge and rank results
     merged = _merge_retrieval_results(
@@ -392,13 +394,13 @@ def hybrid_retrieve(
 def _graph_retrieval(
     graph: GraphStore,
     query: str,
-    tokens: List[str],
-    node_types: Optional[List[str]],
+    tokens: list[str],
+    node_types: list[str] | None,
     limit: int,
     _rrf: Any,
-) -> List[RetrievalResult]:
+) -> list[RetrievalResult]:
     """Retrieve nodes via graph structure (neighbors of exact matches)."""
-    results: Dict[str, RetrievalResult] = {}
+    results: dict[str, RetrievalResult] = {}
 
     # Find exact matches first
     exact_nodes = graph.find_nodes(query, types=node_types, limit=limit)
@@ -431,13 +433,13 @@ def _graph_retrieval(
 def _sparse_retrieval(
     graph: GraphStore,
     query: str,
-    tokens: List[str],
-    node_types: Optional[List[str]],
+    tokens: list[str],
+    node_types: list[str] | None,
     limit: int,
     _rrf: Any,
-) -> List[RetrievalResult]:
+) -> list[RetrievalResult]:
     """Retrieve nodes via FTS/sparse search."""
-    results: Dict[str, RetrievalResult] = {}
+    results: dict[str, RetrievalResult] = {}
 
     # Use FTS if available
     fts_nodes = graph.find_nodes(query, types=node_types, limit=limit)
@@ -456,14 +458,14 @@ def _sparse_retrieval(
 
 def _graph_retrieval_from_nodes(
     exact_nodes: list,
-    tokens: List[str],
+    tokens: list[str],
     graph: GraphStore,
-    node_types: Optional[List[str]],
+    node_types: list[str] | None,
     limit: int,
     _rrf: Any,
-) -> List[RetrievalResult]:
+) -> list[RetrievalResult]:
     """Retrieve nodes via graph structure using pre-fetched exact matches."""
-    results: Dict[str, RetrievalResult] = {}
+    results: dict[str, RetrievalResult] = {}
     for rank, node in enumerate(exact_nodes, start=1):
         node_id = node["id"]
         results[node_id] = RetrievalResult(
@@ -489,15 +491,15 @@ def _graph_retrieval_from_nodes(
 
 
 def _full_chain_neighbor_hits(
-    exact_nodes: List[Dict[str, Any]],
+    exact_nodes: list[dict[str, Any]],
     graph: GraphStore,
     *,
     max_depth: int,
     limit: int,
-) -> List[RetrievalResult]:
+) -> list[RetrievalResult]:
     """Promote graph traversal endpoints into the full-chain evidence pool."""
     exact_ids = {str(node.get("id", "")) for node in exact_nodes}
-    results: Dict[str, RetrievalResult] = {}
+    results: dict[str, RetrievalResult] = {}
     per_anchor_limit = max(1, limit // max(1, len(exact_nodes)))
     for exact in exact_nodes:
         anchor_id = str(exact.get("id", ""))
@@ -539,9 +541,9 @@ def _sparse_retrieval_from_nodes(
     exact_nodes: list,
     limit: int,
     _rrf: Any,
-) -> List[RetrievalResult]:
+) -> list[RetrievalResult]:
     """Retrieve nodes via FTS using pre-fetched exact matches (avoids duplicate FTS)."""
-    results: Dict[str, RetrievalResult] = {}
+    results: dict[str, RetrievalResult] = {}
     for rank, node in enumerate(exact_nodes, start=1):
         node_id = node["id"]
         results[node_id] = RetrievalResult(
@@ -557,9 +559,9 @@ def _semantic_retrieval(
     workspace_file: str,
     query: str,
     limit: int,
-) -> List[RetrievalResult]:
+) -> list[RetrievalResult]:
     """Retrieve nodes via semantic/embedding search."""
-    results: List[RetrievalResult] = []
+    results: list[RetrievalResult] = []
 
     try:
         semantic_hits = semantic_query(workspace_file, query, limit=limit)
@@ -590,13 +592,13 @@ def _semantic_retrieval(
 def _vector_retrieval(
     workspace_file: str,
     query: str,
-    tokens: List[str],
+    tokens: list[str],
     limit: int,
-    diagnostics: Dict[str, Any] | None = None,
-) -> List[RetrievalResult]:
+    diagnostics: dict[str, Any] | None = None,
+) -> list[RetrievalResult]:
     """Retrieve nodes via ANN vector search when VectorIndex is available."""
-    results: List[RetrievalResult] = []
-    vector_diag: Dict[str, Any] = {"status": "disabled", "reason": "not_checked"}
+    results: list[RetrievalResult] = []
+    vector_diag: dict[str, Any] = {"status": "disabled", "reason": "not_checked"}
     try:
         from ..semantic import (
             DEFAULT_SENTENCE_TRANSFORMER_MODEL,
@@ -671,11 +673,11 @@ def _bm25_sparse_retrieval(
     workspace_file: str,
     query: str,
     limit: int,
-    diagnostics: Dict[str, Any] | None = None,
-) -> List[RetrievalResult]:
+    diagnostics: dict[str, Any] | None = None,
+) -> list[RetrievalResult]:
     """Retrieve nodes via BM25 InvertedIndex when available."""
-    results: List[RetrievalResult] = []
-    bm25_diag: Dict[str, Any] = {"status": "disabled", "reason": "not_checked"}
+    results: list[RetrievalResult] = []
+    bm25_diag: dict[str, Any] = {"status": "disabled", "reason": "not_checked"}
     try:
         from ..retrieval.inverted import InvertedIndex
         from ..storage.unified import UnifiedStore
@@ -723,15 +725,15 @@ def _bm25_sparse_retrieval(
 
 
 def _merge_retrieval_results(
-    graph_hits: List[RetrievalResult],
-    sparse_hits: List[RetrievalResult],
-    semantic_hits: List[RetrievalResult],
+    graph_hits: list[RetrievalResult],
+    sparse_hits: list[RetrievalResult],
+    semantic_hits: list[RetrievalResult],
     config: HybridRetrievalConfig,
-    intent: Dict[str, Any],
+    intent: dict[str, Any],
     query: str = "",
-    vector_hits: List[RetrievalResult] | None = None,
-    bm25_hits: List[RetrievalResult] | None = None,
-) -> List[RetrievalResult]:
+    vector_hits: list[RetrievalResult] | None = None,
+    bm25_hits: list[RetrievalResult] | None = None,
+) -> list[RetrievalResult]:
     """Merge results from all retrieval sources using RRF-inspired scoring.
 
     Each source's scores are normalized to [0, 1] before weighting, so no
@@ -742,7 +744,7 @@ def _merge_retrieval_results(
     matters when the same hit list is reused across multiple fusion calls
     (e.g. in tests, ablations, or staged retrieval pipelines).
     """
-    def _normalize(hits: List[RetrievalResult]) -> List[RetrievalResult]:
+    def _normalize(hits: list[RetrievalResult]) -> list[RetrievalResult]:
         if not hits:
             return hits
         normalized = [copy.deepcopy(h) for h in hits]
@@ -759,7 +761,7 @@ def _merge_retrieval_results(
     if bm25_hits:
         bm25_hits = _normalize(bm25_hits)
 
-    merged: Dict[str, RetrievalResult] = {}
+    merged: dict[str, RetrievalResult] = {}
 
     # Process graph hits
     for rank, item in enumerate(graph_hits, start=1):
@@ -872,9 +874,9 @@ def _merge_retrieval_results(
 
 
 def _apply_type_boosting(
-    results: List[RetrievalResult],
-    intent: Dict[str, Any],
-) -> List[RetrievalResult]:
+    results: list[RetrievalResult],
+    intent: dict[str, Any],
+) -> list[RetrievalResult]:
     """Boost node types that match the detected query intent.
 
     Uses ontology-aware type boosting: when intent is a specific contract type
@@ -903,7 +905,7 @@ def _apply_type_boosting(
 
     boosts = type_boost_map.get(primary_intent, {})
 
-    cloned: List[RetrievalResult] = [copy.deepcopy(item) for item in results]
+    cloned: list[RetrievalResult] = [copy.deepcopy(item) for item in results]
     for item in cloned:
         node_type = item.node.get("type", "")
         boost = boosts.get(node_type, 1.0)
@@ -929,7 +931,7 @@ def _apply_type_boosting(
 
 
 def _resolve_cross_workspace_refs(
-    results: List[RetrievalResult],
+    results: list[RetrievalResult],
     graph: GraphStore,
     workspace_file: str,
 ) -> None:
@@ -956,7 +958,7 @@ def _resolve_cross_workspace_refs(
             })
 
 
-def _result_to_dict(result: RetrievalResult) -> Dict[str, Any]:
+def _result_to_dict(result: RetrievalResult) -> dict[str, Any]:
     """Convert RetrievalResult to dictionary.
 
     Includes ontology-aware fields:
@@ -965,7 +967,7 @@ def _result_to_dict(result: RetrievalResult) -> Dict[str, Any]:
     """
     # Determine semantic strength from evidence edges
     strengths = set()
-    evidence_items: List[Any]
+    evidence_items: list[Any]
     if isinstance(result.evidence, dict):
         evidence_items = [result.evidence]
     elif isinstance(result.evidence, list):
@@ -1023,12 +1025,12 @@ def _result_to_dict(result: RetrievalResult) -> Dict[str, Any]:
 
 
 def _build_retrieval_summary(
-    results: List[RetrievalResult],
-    intent: Dict[str, Any],
-) -> Dict[str, Any]:
+    results: list[RetrievalResult],
+    intent: dict[str, Any],
+) -> dict[str, Any]:
     """Build summary of retrieval results."""
     source_counts = {"graph": 0, "sparse": 0, "semantic": 0, "vector": 0}
-    type_counts: Dict[str, int] = {}
+    type_counts: dict[str, int] = {}
 
     for item in results:
         for source in item.sources:
@@ -1055,9 +1057,9 @@ def _build_retrieval_summary(
 
 
 def _build_progressive_summary(
-    results: List[RetrievalResult],
-    intent: Dict[str, Any],
-) -> Dict[str, Any]:
+    results: list[RetrievalResult],
+    intent: dict[str, Any],
+) -> dict[str, Any]:
     """Build progressive disclosure summary for quick understanding."""
     top_nodes = results[:3]
 
@@ -1091,9 +1093,9 @@ def _build_progressive_summary(
 
 
 def _suggest_next_actions(
-    results: List[RetrievalResult],
-    intent: Dict[str, Any],
-) -> List[str]:
+    results: list[RetrievalResult],
+    intent: dict[str, Any],
+) -> list[str]:
     """Suggest next actions based on retrieval results."""
     actions = []
 

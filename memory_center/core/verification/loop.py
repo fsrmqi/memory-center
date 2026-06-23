@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 from ..store import WorkspaceStore
 
@@ -20,7 +20,7 @@ class VerificationLoop:
     def __init__(self, workspace_file: str | Path):
         self._store = WorkspaceStore(workspace_file)
 
-    def start(self, task_id: str, description: str) -> Dict[str, Any]:
+    def start(self, task_id: str, description: str) -> dict[str, Any]:
         """Start a new verification loop."""
         loop = {
             "loop_id": f"verify-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}",
@@ -38,7 +38,7 @@ class VerificationLoop:
         self._store.append_jsonl(VERIFICATION_LOG_FILE, loop)
         return loop
 
-    def complete_phase(self, loop_id: str, phase: str, data: Dict[str, Any]) -> Dict[str, Any]:
+    def complete_phase(self, loop_id: str, phase: str, data: dict[str, Any]) -> dict[str, Any]:
         """Complete a phase of the verification loop."""
         task_id = ""
         try:
@@ -63,7 +63,7 @@ class VerificationLoop:
             entry["feedback"] = feedback
         return entry
 
-    def get_checklist(self, task_type: str = "general") -> List[str]:
+    def get_checklist(self, task_type: str = "general") -> list[str]:
         """Get verification checklist for a task type."""
         checklists = {
             "code_change": [
@@ -94,7 +94,7 @@ class VerificationLoop:
         }
         return checklists.get(task_type, checklists["general"])
 
-    def generate_close_summary(self, task_id: str) -> Dict[str, Any]:
+    def generate_close_summary(self, task_id: str) -> dict[str, Any]:
         """Generate a close summary for a completed verification loop."""
         return {
             "task_id": task_id,
@@ -103,7 +103,7 @@ class VerificationLoop:
             "completed_at": datetime.now(timezone.utc).isoformat(),
         }
 
-    def check_completion(self, task_id: str) -> Dict[str, Any]:
+    def check_completion(self, task_id: str) -> dict[str, Any]:
         """Check if all verification items are completed for a task.
 
         Returns completion status with pending items and recommendations.
@@ -175,7 +175,7 @@ class VerificationLoop:
             "message": f"{len(completed_phases)}/{total} phases completed" if phases else "No phase data",
         }
 
-    def generate_checklist(self, analysis: Dict[str, Any]) -> Dict[str, Any]:
+    def generate_checklist(self, analysis: dict[str, Any]) -> dict[str, Any]:
         """Generate a verification checklist from task analysis.
 
         Called by CLI / HTTP / MCP entry points.
@@ -185,7 +185,7 @@ class VerificationLoop:
         items = self.get_checklist(task_type)
         return {"task_type": task_type, "items": items}
 
-    def get_status(self, task_id: str) -> Dict[str, Any]:
+    def get_status(self, task_id: str) -> dict[str, Any]:
         """Return the latest status for *task_id* from the verification log.
 
         Called by CLI / HTTP / MCP entry points.
@@ -200,7 +200,7 @@ class VerificationLoop:
             return self.check_completion(task_id)
         return {"task_id": task_id, "status": "pending", "loop_id": ""}
 
-    def _record_phase_feedback(self, task_id: str, phase: str, data: Dict[str, Any]) -> Dict[str, Any] | None:
+    def _record_phase_feedback(self, task_id: str, phase: str, data: dict[str, Any]) -> dict[str, Any] | None:
         if phase != "verify" or not isinstance(data, dict):
             return None
         candidate_type = str(data.get("candidate_type", "") or "")
@@ -237,9 +237,9 @@ class VerificationLoop:
         phase: str,
         step_name: str,
         state: str,
-        output_refs: List[Dict[str, Any]] | None = None,
-        diagnostics: Dict[str, Any] | None = None,
-    ) -> Dict[str, Any]:
+        output_refs: list[dict[str, Any]] | None = None,
+        diagnostics: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """Persist step-level state for resumable workflow (H-04).
 
         Each step records: phase, step_name, state (created|running|paused|failed|completed|aborted),
@@ -258,7 +258,7 @@ class VerificationLoop:
         self._store.append_jsonl(VERIFICATION_LOG_FILE, entry)
         return entry
 
-    def get_step_states(self, loop_id: str) -> List[Dict[str, Any]]:
+    def get_step_states(self, loop_id: str) -> list[dict[str, Any]]:
         """Get all step states for a loop, enabling resume from last completed step."""
         try:
             entries = self._store.read_jsonl(VERIFICATION_LOG_FILE)
@@ -266,7 +266,7 @@ class VerificationLoop:
             entries = []
         return [e for e in entries if e.get("loop_id") == loop_id and "step_name" in e]
 
-    def resume_from_last_step(self, loop_id: str) -> Dict[str, Any]:
+    def resume_from_last_step(self, loop_id: str) -> dict[str, Any]:
         """Determine which step to resume from based on persisted state."""
         steps = self.get_step_states(loop_id)
         if not steps:

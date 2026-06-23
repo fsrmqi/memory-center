@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any
 
 SCHEMA_VERSIONS = {
     "write_receipt": 1,
@@ -59,21 +59,21 @@ SCHEMA_REQUIRED_FIELDS = {
 }
 
 
-def schema_meta(name: str) -> Dict[str, Any]:
+def schema_meta(name: str) -> dict[str, Any]:
     return {
         "name": name,
         "version": SCHEMA_VERSIONS.get(name, 1),
     }
 
 
-def validate_schema_payload(name: str, payload: Dict[str, Any]) -> None:
+def validate_schema_payload(name: str, payload: dict[str, Any]) -> None:
     required = SCHEMA_REQUIRED_FIELDS.get(name, set())
     missing = sorted(field for field in required if field not in payload)
     if missing:
         raise ValueError(f"schema '{name}' missing required fields: {', '.join(missing)}")
 
 
-def with_schema(name: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+def with_schema(name: str, payload: dict[str, Any]) -> dict[str, Any]:
     validate_schema_payload(name, payload)
     return {
         "schema": schema_meta(name),

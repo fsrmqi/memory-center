@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Iterable
+from collections.abc import Iterable
+from typing import Any
 
 
-def _evidence_type(item: Dict[str, Any]) -> str:
+def _evidence_type(item: dict[str, Any]) -> str:
     explicit = str(item.get("evidence_type", "") or item.get("semantic_strength", "") or "").lower()
     if explicit in {"fact", "inferred", "derived"}:
         return explicit
@@ -16,10 +17,10 @@ def _evidence_type(item: Dict[str, Any]) -> str:
 
 
 def build_quality_summary(
-    evidence: Iterable[Dict[str, Any]],
+    evidence: Iterable[dict[str, Any]],
     *,
     freshness_status: str = "unknown",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     rows = [row for row in evidence if isinstance(row, dict)]
     counts = {"fact": 0, "inferred": 0, "derived": 0}
     confidences: list[float] = []

@@ -161,7 +161,7 @@ class UnifiedStore:
         sql = "SELECT n.* FROM node_search s JOIN nodes n ON n.id=s.id WHERE node_search MATCH ?"
         args: list[Any] = [fts_query]
         if types:
-            sql += " AND n.type IN (%s)" % ",".join("?" for _ in types)
+            sql += f" AND n.type IN ({','.join('?' for _ in types)})"
             args.extend(types)
         sql += " LIMIT ?"
         args.append(limit)
@@ -178,7 +178,7 @@ class UnifiedStore:
                "OR lower(file_path) LIKE ? OR lower(metadata_json) LIKE ?")
         args: list[Any] = [q, q, q, q]
         if types:
-            sql += " AND type IN (%s)" % ",".join("?" for _ in types)
+            sql += f" AND type IN ({','.join('?' for _ in types)})"
             args.extend(types)
         sql += " LIMIT ?"
         args.append(limit)
@@ -336,17 +336,23 @@ class UnifiedStore:
         sql = "SELECT * FROM json_records WHERE 1=1"
         args: list[Any] = []
         if collection:
-            sql += " AND collection=?"; args.append(collection)
+            sql += " AND collection=?"
+            args.append(collection)
         if record_id:
-            sql += " AND record_id=?"; args.append(record_id)
+            sql += " AND record_id=?"
+            args.append(record_id)
         if created_after:
-            sql += " AND created_at>=?"; args.append(created_after)
+            sql += " AND created_at>=?"
+            args.append(created_after)
         if project:
-            sql += " AND project=?"; args.append(project)
+            sql += " AND project=?"
+            args.append(project)
         if payload_type:
-            sql += " AND type=?"; args.append(payload_type)
+            sql += " AND type=?"
+            args.append(payload_type)
         if session_id:
-            sql += " AND session_id=?"; args.append(session_id)
+            sql += " AND session_id=?"
+            args.append(session_id)
         sql += " ORDER BY id DESC LIMIT ?"
         args.append(limit)
         with self.pool.connection() as conn:
@@ -379,7 +385,8 @@ class UnifiedStore:
         sql = "SELECT * FROM refs WHERE 1=1"
         args: list[Any] = []
         if ref_path:
-            sql += " AND ref_path=?"; args.append(ref_path)
+            sql += " AND ref_path=?"
+            args.append(ref_path)
         sql += " ORDER BY created_at DESC, ref_path DESC LIMIT ?"
         args.append(limit)
         with self.pool.connection() as conn:
@@ -427,7 +434,7 @@ class UnifiedStore:
     def close(self) -> None:
         self.pool.close()
 
-    def __enter__(self) -> "UnifiedStore":
+    def __enter__(self) -> UnifiedStore:
         return self
 
     def __exit__(self, *exc: Any) -> None:

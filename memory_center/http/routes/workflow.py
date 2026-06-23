@@ -4,7 +4,6 @@ from memory_center.core.dispatch import CommandRegistry
 
 from .dependencies import (
     Any,
-    Dict,
     group_impact,
     group_query,
     group_status,
@@ -36,7 +35,7 @@ from .params import RouteParams, _parse_int
 
 def register_workflow_routes(registry: CommandRegistry) -> None:
     # --- workflow facades (compound work-* routes) ----------------------------
-    def _work_start(rp: RouteParams) -> Dict[str, Any]:
+    def _work_start(rp: RouteParams) -> dict[str, Any]:
         ws = rp.workspace()
         intent = rp.require('intent')
         limit = rp.limit(8)
@@ -58,7 +57,7 @@ def register_workflow_routes(registry: CommandRegistry) -> None:
         session = workspace_start_session(ws, intent)
         return {"workflow": "work-start", "sniff": sniff_result, "sync_sniff": synced, "session": session}
 
-    def _work_sync(rp: RouteParams) -> Dict[str, Any]:
+    def _work_sync(rp: RouteParams) -> dict[str, Any]:
         ws = rp.workspace()
         session_id = rp.session_id()
         task_id = rp.task_id()
@@ -77,7 +76,7 @@ def register_workflow_routes(registry: CommandRegistry) -> None:
             "result": workspace_sync_sniff_to_artifacts(ws, intent, limit=_parse_int(rp.params, "limit", 8), task_id=task_id, title=title, auto_sync_mode=auto_sync_mode),
         }
 
-    def _work_resume(rp: RouteParams) -> Dict[str, Any]:
+    def _work_resume(rp: RouteParams) -> dict[str, Any]:
         ws = rp.workspace()
         task_id = rp.task_id()
         session_id = rp.session_id()
@@ -92,7 +91,7 @@ def register_workflow_routes(registry: CommandRegistry) -> None:
             "recent_evidence": workspace_recent_evidence(ws, task_id=task_id, session_id=session_id, limit=min(limit, 5), budget=budget, view="compact"),
         }
 
-    def _work_handoff(rp: RouteParams) -> Dict[str, Any]:
+    def _work_handoff(rp: RouteParams) -> dict[str, Any]:
         ws = rp.workspace()
         target_model = rp.require('target_model')
         task_id = rp.task_id()
@@ -107,7 +106,7 @@ def register_workflow_routes(registry: CommandRegistry) -> None:
             "tool_usage_report": memory_tool_usage_report(ws, limit=50),
         }
 
-    def _work_close(rp: RouteParams) -> Dict[str, Any]:
+    def _work_close(rp: RouteParams) -> dict[str, Any]:
         ws = rp.workspace()
         session_id = rp.require('session_id')
         outcome = rp.get("outcome", "")
@@ -147,7 +146,7 @@ def register_workflow_routes(registry: CommandRegistry) -> None:
             "candidate_feedback": candidate_feedback,
         }
 
-    def _work_health(rp: RouteParams) -> Dict[str, Any]:
+    def _work_health(rp: RouteParams) -> dict[str, Any]:
         ws = rp.workspace()
         intent = rp.get("intent", "Memory Center work health")
         target_model = rp.target_model()
@@ -255,7 +254,7 @@ def register_workflow_routes(registry: CommandRegistry) -> None:
         limit=_parse_int(rp.params, "limit", 50),
     ))
 
-    def _constraint(rp: RouteParams) -> Dict[str, Any]:
+    def _constraint(rp: RouteParams) -> dict[str, Any]:
         from memory_center.core.templates import auto_select_action, get_constraint_template
         template = rp.get("template", "coding_agent")
         context = rp.get("context", "")
@@ -266,7 +265,7 @@ def register_workflow_routes(registry: CommandRegistry) -> None:
 
     registry.register("/workspace/constraint", _constraint)
 
-    def _audit(rp: RouteParams) -> Dict[str, Any]:
+    def _audit(rp: RouteParams) -> dict[str, Any]:
         from memory_center.core.audit.completion import run_completion_audit
         return run_completion_audit(
             rp.workspace(),
@@ -275,7 +274,7 @@ def register_workflow_routes(registry: CommandRegistry) -> None:
 
     registry.register("/workspace/audit", _audit)
 
-    def _drill_ref(rp: RouteParams) -> Dict[str, Any]:
+    def _drill_ref(rp: RouteParams) -> dict[str, Any]:
         from memory_center.core.navigation.drilldown import DrillDownNavigator
         ws = rp.workspace()
         ref_id = rp.require('ref_id')
@@ -284,7 +283,7 @@ def register_workflow_routes(registry: CommandRegistry) -> None:
 
     registry.register("/workspace/drill-ref", _drill_ref)
 
-    def _drill_timeline(rp: RouteParams) -> Dict[str, Any]:
+    def _drill_timeline(rp: RouteParams) -> dict[str, Any]:
         from memory_center.core.navigation.drilldown import DrillDownNavigator
         ws = rp.workspace()
         with DrillDownNavigator(ws) as nav:
@@ -296,7 +295,7 @@ def register_workflow_routes(registry: CommandRegistry) -> None:
 
     registry.register("/workspace/drill-timeline", _drill_timeline)
 
-    def _drill_task(rp: RouteParams) -> Dict[str, Any]:
+    def _drill_task(rp: RouteParams) -> dict[str, Any]:
         from memory_center.core.navigation.drilldown import DrillDownNavigator
         ws = rp.workspace()
         task_id = rp.require('task_id')
@@ -305,7 +304,7 @@ def register_workflow_routes(registry: CommandRegistry) -> None:
 
     registry.register("/workspace/drill-task", _drill_task)
 
-    def _backend_consistency(rp: RouteParams) -> Dict[str, Any]:
+    def _backend_consistency(rp: RouteParams) -> dict[str, Any]:
         from memory_center.core.backend.query import UnifiedBackendQuery
         from memory_center.core.store import WorkspaceStore
         ws = rp.workspace()
@@ -315,7 +314,7 @@ def register_workflow_routes(registry: CommandRegistry) -> None:
 
     registry.register("/workspace/backend-consistency", _backend_consistency)
 
-    def _benchmark_trend(rp: RouteParams) -> Dict[str, Any]:
+    def _benchmark_trend(rp: RouteParams) -> dict[str, Any]:
         from memory_center.core.benchmark.trending import generate_benchmark_report
         return generate_benchmark_report(
             rp.workspace(),
@@ -324,7 +323,7 @@ def register_workflow_routes(registry: CommandRegistry) -> None:
 
     registry.register("/workspace/eval-token-benchmark-trend", _benchmark_trend)
 
-    def _regression_alerts(rp: RouteParams) -> Dict[str, Any]:
+    def _regression_alerts(rp: RouteParams) -> dict[str, Any]:
         from memory_center.core.benchmark.trending import check_regression_alerts
         return check_regression_alerts(
             rp.workspace(),

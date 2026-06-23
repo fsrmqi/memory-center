@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import copy
 import time
-from typing import Any, Dict
+from typing import Any
 
 
 class WalkthroughCache:
@@ -15,9 +15,9 @@ class WalkthroughCache:
     def __init__(self, ttl_seconds: int = 15, max_items: int = 64):
         self.ttl_seconds = ttl_seconds
         self.max_items = max_items
-        self._items: Dict[str, tuple[float, Dict[str, Any]]] = {}
+        self._items: dict[str, tuple[float, dict[str, Any]]] = {}
 
-    def get(self, key: str) -> Dict[str, Any] | None:
+    def get(self, key: str) -> dict[str, Any] | None:
         row = self._items.get(key)
         if not row:
             return None
@@ -29,7 +29,7 @@ class WalkthroughCache:
         result["cache"] = {"hit": True, "ttl_seconds": self.ttl_seconds}
         return result
 
-    def put(self, key: str, payload: Dict[str, Any]) -> None:
+    def put(self, key: str, payload: dict[str, Any]) -> None:
         saved = copy.deepcopy(payload)
         saved["cache"] = {"hit": False, "ttl_seconds": self.ttl_seconds}
         if len(self._items) >= self.max_items:
@@ -37,7 +37,7 @@ class WalkthroughCache:
             self._items.pop(oldest, None)
         self._items[key] = (time.time(), saved)
 
-    def stats(self) -> Dict[str, Any]:
+    def stats(self) -> dict[str, Any]:
         return {
             "size": len(self._items),
             "ttl_seconds": self.ttl_seconds,

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from typing import Any, Dict
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -12,18 +12,18 @@ class FacadeMetadata:
     schema_version: int = 1
     compatibility: str = "additive"
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
 
 def attach_facade_metadata(
-    payload: Dict[str, Any],
+    payload: dict[str, Any],
     *,
     operation: str,
     result_kind: str,
     evidence_level: str = "unknown",
     schema_version: int = 1,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     enriched = dict(payload)
     enriched["_meta"] = FacadeMetadata(
         operation=operation,

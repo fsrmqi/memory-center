@@ -6,7 +6,7 @@ packs so they fit within the model's context window.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, List
+from typing import Any
 
 # Approximate tokens per character for mixed CJK/English text
 _TOKENS_PER_CHAR = 0.5
@@ -26,7 +26,7 @@ class TokenBudget:
     def remaining(self) -> int:
         return max(0, self.total - self.entrypoints - self.relationships - self.snippets - self.risks - self.checklist)
 
-    def to_dict(self) -> Dict[str, int]:
+    def to_dict(self) -> dict[str, int]:
         return {
             "total": self.total,
             "entrypoints": self.entrypoints,
@@ -50,7 +50,7 @@ def estimate_dict_tokens(data: Any) -> int:
     return estimate_tokens(text)
 
 
-def trim_to_budget(items: List[Dict[str, Any]], budget_tokens: int, key: str = "node") -> List[Dict[str, Any]]:
+def trim_to_budget(items: list[dict[str, Any]], budget_tokens: int, key: str = "node") -> list[dict[str, Any]]:
     """Trim a list of items to fit within a token budget."""
     result = []
     used = 0

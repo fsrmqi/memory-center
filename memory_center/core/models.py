@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 
 @dataclass
@@ -10,16 +10,16 @@ class ServiceConfig:
     name: str
     path: str
     type: str = "spring-boot-service"
-    service_name: Optional[str] = None
-    port: Optional[int] = None
-    tags: List[str] = field(default_factory=list)
+    service_name: str | None = None
+    port: int | None = None
+    tags: list[str] = field(default_factory=list)
 
 
 @dataclass
 class WorkspaceConfig:
     workspace: str
     root: str
-    services: List[ServiceConfig]
+    services: list[ServiceConfig]
 
     @property
     def root_path(self) -> Path:
@@ -56,29 +56,29 @@ class JavaSymbol:
     project: str
     file: str
     parser: str = ""
-    package: Optional[str] = None
-    classes: List[str] = field(default_factory=list)
-    interfaces: List[str] = field(default_factory=list)
-    methods: List[str] = field(default_factory=list)
-    method_signatures: List[Dict[str, Any]] = field(default_factory=list)
-    fields: List[str] = field(default_factory=list)
-    class_lines: Dict[str, int] = field(default_factory=dict)
-    interface_lines: Dict[str, int] = field(default_factory=dict)
-    method_lines: Dict[str, int] = field(default_factory=dict)
-    field_lines: Dict[str, int] = field(default_factory=dict)
-    annotations: List[str] = field(default_factory=list)
-    imports: List[str] = field(default_factory=list)
+    package: str | None = None
+    classes: list[str] = field(default_factory=list)
+    interfaces: list[str] = field(default_factory=list)
+    methods: list[str] = field(default_factory=list)
+    method_signatures: list[dict[str, Any]] = field(default_factory=list)
+    fields: list[str] = field(default_factory=list)
+    class_lines: dict[str, int] = field(default_factory=dict)
+    interface_lines: dict[str, int] = field(default_factory=dict)
+    method_lines: dict[str, int] = field(default_factory=dict)
+    field_lines: dict[str, int] = field(default_factory=dict)
+    annotations: list[str] = field(default_factory=list)
+    imports: list[str] = field(default_factory=list)
 
     # Evidence-oriented relationship facts. These are intentionally plain dicts so
     # future parsers can add richer payloads without changing public schemas.
-    field_types: Dict[str, str] = field(default_factory=dict)
-    constants: Dict[str, str] = field(default_factory=dict)
-    method_variable_types: Dict[str, Dict[str, str]] = field(default_factory=dict)
-    bean_injections: List[Dict[str, Any]] = field(default_factory=list)
-    method_calls: List[Dict[str, Any]] = field(default_factory=list)
-    dto_field_usages: List[Dict[str, Any]] = field(default_factory=list)
-    config_usages: List[Dict[str, Any]] = field(default_factory=list)
-    data_resources: List[Dict[str, Any]] = field(default_factory=list)
+    field_types: dict[str, str] = field(default_factory=dict)
+    constants: dict[str, str] = field(default_factory=dict)
+    method_variable_types: dict[str, dict[str, str]] = field(default_factory=dict)
+    bean_injections: list[dict[str, Any]] = field(default_factory=list)
+    method_calls: list[dict[str, Any]] = field(default_factory=list)
+    dto_field_usages: list[dict[str, Any]] = field(default_factory=list)
+    config_usages: list[dict[str, Any]] = field(default_factory=list)
+    data_resources: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass
@@ -88,7 +88,7 @@ class ApiEndpoint:
     controller: str
     http_method: str
     path: str
-    method_name: Optional[str] = None
+    method_name: str | None = None
 
 
 @dataclass
@@ -98,7 +98,7 @@ class FeignClient:
     interface: str
     target_service: str
     base_path: str = ""
-    methods: List[Dict[str, Any]] = field(default_factory=list)
+    methods: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass
@@ -107,9 +107,9 @@ class MqEndpoint:
     file: str
     kind: str
     topic: str
-    group: Optional[str] = None
-    class_name: Optional[str] = None
-    method_name: Optional[str] = None
+    group: str | None = None
+    class_name: str | None = None
+    method_name: str | None = None
     topic_placeholder: str = ""
 
 
@@ -117,25 +117,25 @@ class MqEndpoint:
 class Rule:
     id: str
     title: str
-    scope: List[str]
+    scope: list[str]
     severity: str
     rule: str
     reason: str = ""
-    file_patterns: List[str] = field(default_factory=list)
-    trigger_keywords: List[str] = field(default_factory=list)
-    checklist: List[str] = field(default_factory=list)
+    file_patterns: list[str] = field(default_factory=list)
+    trigger_keywords: list[str] = field(default_factory=list)
+    checklist: list[str] = field(default_factory=list)
 
 
 @dataclass
 class TaskCase:
     task: str
-    projects: List[str]
-    files: List[str]
+    projects: list[str]
+    files: list[str]
     flow: str = ""
-    risk_points: List[str] = field(default_factory=list)
-    verified_by: List[str] = field(default_factory=list)
+    risk_points: list[str] = field(default_factory=list)
+    verified_by: list[str] = field(default_factory=list)
     created_at: str = ""
 
 
-def to_dict(obj: Any) -> Dict[str, Any]:
+def to_dict(obj: Any) -> dict[str, Any]:
     return asdict(obj)

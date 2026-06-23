@@ -4,7 +4,7 @@ import functools
 import time
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 from .metrics import MetricsCollector
 from .store import WorkspaceStore
@@ -12,8 +12,8 @@ from .store import WorkspaceStore
 OPERATION_EVENTS_FILE = "operation-events.jsonl"
 
 
-def _safe_tags(tags: Dict[str, Any] | None) -> Dict[str, Any]:
-    safe: Dict[str, Any] = {}
+def _safe_tags(tags: dict[str, Any] | None) -> dict[str, Any]:
+    safe: dict[str, Any] = {}
     for key, value in (tags or {}).items():
         normalized = str(key).lower()
         if any(token in normalized for token in ("path", "file", "workspace", "secret", "token", "key")):
@@ -25,14 +25,14 @@ def _safe_tags(tags: Dict[str, Any] | None) -> Dict[str, Any]:
 
 
 class OperationObserver:
-    def __init__(self, workspace_file: str | Path, operation: str, *, tags: Dict[str, Any] | None = None):
+    def __init__(self, workspace_file: str | Path, operation: str, *, tags: dict[str, Any] | None = None):
         self.workspace_file = Path(workspace_file)
         self.operation = operation
         self.tags = _safe_tags(tags)
         self.result_count = 0
         self._started = 0.0
 
-    def __enter__(self) -> "OperationObserver":
+    def __enter__(self) -> OperationObserver:
         self._started = time.monotonic()
         return self
 
@@ -77,8 +77,8 @@ def _result_count(result: Any) -> int:
 def observe_operation(
     operation: str,
     *,
-    workspace_resolver: Callable[[tuple[Any, ...], Dict[str, Any]], str | Path],
-    tags_resolver: Callable[[tuple[Any, ...], Dict[str, Any]], Dict[str, Any]] | None = None,
+    workspace_resolver: Callable[[tuple[Any, ...], dict[str, Any]], str | Path],
+    tags_resolver: Callable[[tuple[Any, ...], dict[str, Any]], dict[str, Any]] | None = None,
 ):
     def decorator(function):
         @functools.wraps(function)

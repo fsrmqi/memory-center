@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 
 def registry_path(home: str | Path | None = None) -> Path:
@@ -12,7 +12,7 @@ def registry_path(home: str | Path | None = None) -> Path:
     return base / "registry.json"
 
 
-def load_registry(home: str | Path | None = None) -> Dict[str, Any]:
+def load_registry(home: str | Path | None = None) -> dict[str, Any]:
     path = registry_path(home)
     if not path.exists():
         return {"version": "1.0", "repos": [], "groups": []}
@@ -22,13 +22,13 @@ def load_registry(home: str | Path | None = None) -> Dict[str, Any]:
         return {"version": "1.0", "repos": [], "groups": []}
 
 
-def save_registry(data: Dict[str, Any], home: str | Path | None = None) -> Path:
+def save_registry(data: dict[str, Any], home: str | Path | None = None) -> Path:
     path = registry_path(home)
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
     return path
 
 
-def register_workspace(name: str, workspace_file: str | Path, home: str | Path | None = None) -> Dict[str, Any]:
+def register_workspace(name: str, workspace_file: str | Path, home: str | Path | None = None) -> dict[str, Any]:
     data = load_registry(home)
     ws = Path(workspace_file).expanduser().resolve()
     now = datetime.now(timezone.utc).isoformat()
@@ -39,15 +39,15 @@ def register_workspace(name: str, workspace_file: str | Path, home: str | Path |
     return {"registered": True, "name": name, "workspace_file": str(ws), "registry": str(registry_path(home))}
 
 
-def list_workspaces(home: str | Path | None = None) -> List[Dict[str, Any]]:
+def list_workspaces(home: str | Path | None = None) -> list[dict[str, Any]]:
     return load_registry(home).get("repos", [])
 
 
-def list_groups(home: str | Path | None = None) -> List[Dict[str, Any]]:
+def list_groups(home: str | Path | None = None) -> list[dict[str, Any]]:
     return load_registry(home).get("groups", [])
 
 
-def create_group(name: str, members: List[str] | None = None, home: str | Path | None = None) -> Dict[str, Any]:
+def create_group(name: str, members: list[str] | None = None, home: str | Path | None = None) -> dict[str, Any]:
     data = load_registry(home)
     groups = [g for g in data.get("groups", []) if g.get("name") != name]
     groups.append({"name": name, "members": members or [], "created_at": datetime.now(timezone.utc).isoformat()})
@@ -56,7 +56,7 @@ def create_group(name: str, members: List[str] | None = None, home: str | Path |
     return {"created": True, "name": name, "members": members or []}
 
 
-def add_to_group(group: str, repo_name: str, home: str | Path | None = None) -> Dict[str, Any]:
+def add_to_group(group: str, repo_name: str, home: str | Path | None = None) -> dict[str, Any]:
     data = load_registry(home)
     groups = data.setdefault("groups", [])
     target = None
@@ -73,7 +73,7 @@ def add_to_group(group: str, repo_name: str, home: str | Path | None = None) -> 
     return {"group": group, "members": target["members"]}
 
 
-def resolve_group(group: str, home: str | Path | None = None) -> Dict[str, Any]:
+def resolve_group(group: str, home: str | Path | None = None) -> dict[str, Any]:
     data = load_registry(home)
     groups = {item.get("name"): item for item in data.get("groups", [])}
     repos = {item.get("name"): item for item in data.get("repos", [])}

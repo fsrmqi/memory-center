@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import subprocess
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 from .symbols import (
     extract_java_case_labels,
@@ -30,7 +30,7 @@ __all__ = [
 ]
 
 
-def _steps_to_calls(steps: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def _steps_to_calls(steps: list[dict[str, Any]]) -> list[dict[str, Any]]:
     calls = []
     for step in steps:
         if step.get("kind") == "method_call":
@@ -43,8 +43,8 @@ def _steps_to_calls(steps: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return calls
 
 
-def dedupe_risk_items(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    out: List[Dict[str, Any]] = []
+def dedupe_risk_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
     seen = set()
     for item in items:
         key = (item.get("code"), json.dumps(item.get("evidence", {}), sort_keys=True, ensure_ascii=False))
@@ -55,10 +55,10 @@ def dedupe_risk_items(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return out
 
 
-def build_walkthrough_performance_risks(result: Dict[str, Any]) -> List[Dict[str, Any]]:
-    risks: List[Dict[str, Any]] = []
+def build_walkthrough_performance_risks(result: dict[str, Any]) -> list[dict[str, Any]]:
+    risks: list[dict[str, Any]] = []
 
-    def add(severity: str, code: str, message: str, evidence: Dict[str, Any]) -> None:
+    def add(severity: str, code: str, message: str, evidence: dict[str, Any]) -> None:
         risks.append({"severity": severity, "code": code, "message": message, "evidence": evidence})
 
     all_calls = list(result.get("method_calls", []) or [])
@@ -91,14 +91,14 @@ def build_walkthrough_performance_risks(result: Dict[str, Any]) -> List[Dict[str
     return dedupe_risk_items(risks)
 
 
-def build_data_scope_guards(result: Dict[str, Any]) -> List[Dict[str, Any]]:
-    guards: List[Dict[str, Any]] = []
+def build_data_scope_guards(result: dict[str, Any]) -> list[dict[str, Any]]:
+    guards: list[dict[str, Any]] = []
     target_path = (result.get("target", {}) or {}).get("absolute_file_path", "")
     target_method = (result.get("target", {}) or {}).get("method", "")
     body = extract_java_method_body_from_path(target_path, target_method)
     text = body or ""
 
-    def guard(status: str, code: str, message: str, evidence: Dict[str, Any]) -> None:
+    def guard(status: str, code: str, message: str, evidence: dict[str, Any]) -> None:
         guards.append({"status": status, "code": code, "message": message, "evidence": evidence})
 
     guard(
@@ -136,10 +136,10 @@ def build_data_scope_guards(result: Dict[str, Any]) -> List[Dict[str, Any]]:
     return guards
 
 
-def collect_result_abs_paths(result: Dict[str, Any]) -> List[str]:
-    paths: List[str] = []
+def collect_result_abs_paths(result: dict[str, Any]) -> list[str]:
+    paths: list[str] = []
 
-    def add(item: Dict[str, Any]) -> None:
+    def add(item: dict[str, Any]) -> None:
         path = item.get("absolute_file_path")
         if path and path not in paths:
             paths.append(path)
@@ -183,7 +183,7 @@ def git_changed_abs_paths(root: Path) -> set[str]:
     return out
 
 
-def build_walkthrough_diff_context(config: Any, result: Dict[str, Any]) -> Dict[str, Any]:
+def build_walkthrough_diff_context(config: Any, result: dict[str, Any]) -> dict[str, Any]:
     root = getattr(config, "root_path", Path.cwd())
     changed_abs = git_changed_abs_paths(root)
     read_paths = collect_result_abs_paths(result)
@@ -197,11 +197,11 @@ def build_walkthrough_diff_context(config: Any, result: Dict[str, Any]) -> Dict[
 
 
 def build_walkthrough_index_freshness(
-    walkthrough_index_signature: Dict[str, float],
-    result: Dict[str, Any],
-) -> Dict[str, Any]:
+    walkthrough_index_signature: dict[str, float],
+    result: dict[str, Any],
+) -> dict[str, Any]:
     latest_index_mtime = max(walkthrough_index_signature.values(), default=0.0)
-    stale_targets: List[Dict[str, Any]] = []
+    stale_targets: list[dict[str, Any]] = []
     for path in collect_result_abs_paths(result):
         try:
             file_mtime = Path(path).stat().st_mtime
@@ -221,10 +221,10 @@ def build_walkthrough_index_freshness(
     }
 
 
-def build_walkthrough_branch_outline(result: Dict[str, Any]) -> List[Dict[str, Any]]:
-    outlines: List[Dict[str, Any]] = []
+def build_walkthrough_branch_outline(result: dict[str, Any]) -> list[dict[str, Any]]:
+    outlines: list[dict[str, Any]] = []
 
-    def add_from_continuation(source: str, continuation: Dict[str, Any]) -> None:
+    def add_from_continuation(source: str, continuation: dict[str, Any]) -> None:
         target = continuation.get("target", {}) or {}
         groups = []
         for group in continuation.get("rule_groups", []) or []:
@@ -296,7 +296,7 @@ def build_walkthrough_branch_outline(result: Dict[str, Any]) -> List[Dict[str, A
     return outlines
 
 
-def build_method_walkthrough_mermaid(result: Dict[str, Any]) -> str:
+def build_method_walkthrough_mermaid(result: dict[str, Any]) -> str:
     lines = ["flowchart TD"]
     counter = 0
 

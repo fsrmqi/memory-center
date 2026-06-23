@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 from ..artifacts import update_artifact
 from ..schemas import with_schema
@@ -37,17 +37,17 @@ def memory_write_judge(
     source: str = "note",
     intent: str = "",
     prefer_layer: str = "",
-    projects: List[str] | None = None,
-    files: List[str] | None = None,
-) -> Dict[str, Any]:
+    projects: list[str] | None = None,
+    files: list[str] | None = None,
+) -> dict[str, Any]:
     config, store = load_context(workspace_file)
     normalized_text = (text or "").strip().lower()
     normalized_intent = (intent or "").strip().lower()
     normalized_source = (source or "").strip().lower()
     preferred = (prefer_layer or "").strip().upper()
 
-    layer_scores: Dict[str, int] = {layer: 0 for layer in MEMORY_LAYER_ORDER}
-    reasons: List[str] = []
+    layer_scores: dict[str, int] = {layer: 0 for layer in MEMORY_LAYER_ORDER}
+    reasons: list[str] = []
     policy = _load_write_policy_rules(store)
 
     for layer, boost in (policy.get("source_layer_boosts", {}).get(normalized_source, {}) or {}).items():
@@ -143,9 +143,9 @@ def memory_plan_write(
     task_id: str = "",
     title: str = "",
     prefer_layer: str = "",
-    projects: List[str] | None = None,
-    files: List[str] | None = None,
-) -> Dict[str, Any]:
+    projects: list[str] | None = None,
+    files: list[str] | None = None,
+) -> dict[str, Any]:
     config, _ = load_context(workspace_file)
     judge = memory_write_judge(
         workspace_file,
@@ -157,7 +157,7 @@ def memory_plan_write(
         files=files,
     )
     selected_layer = judge["decision"]["selected_layer"]
-    steps: List[Dict[str, Any]] = []
+    steps: list[dict[str, Any]] = []
 
     if selected_layer == LAYER_L0:
         if session_id.strip():
@@ -272,9 +272,9 @@ def memory_execute_write(
     task_id: str = "",
     title: str = "",
     prefer_layer: str = "",
-    projects: List[str] | None = None,
-    files: List[str] | None = None,
-) -> Dict[str, Any]:
+    projects: list[str] | None = None,
+    files: list[str] | None = None,
+) -> dict[str, Any]:
     from .session import workspace_start_session
 
     # lazy import to avoid circular deps
@@ -292,7 +292,7 @@ def memory_execute_write(
         projects=projects,
         files=files,
     )
-    executed: List[Dict[str, Any]] = []
+    executed: list[dict[str, Any]] = []
     current_session_id = session_id.strip()
     for step in plan_result.get("plan", {}).get("steps", []):
         tool = str(step.get("tool", "") or "")
@@ -371,19 +371,19 @@ def memory_execute_write(
 def workspace_record_case(
     workspace_file: str | Path,
     task: str,
-    projects: List[str],
-    files: List[str],
+    projects: list[str],
+    files: list[str],
     flow: str = "",
-    risk_points: List[str] | None = None,
-    verified_by: List[str] | None = None,
+    risk_points: list[str] | None = None,
+    verified_by: list[str] | None = None,
     source_session_id: str = "",
     source_task_id: str = "",
-    source_refs: List[Dict[str, Any]] | None = None,
+    source_refs: list[dict[str, Any]] | None = None,
     valid_from: str = "",
     valid_to: str = "",
     superseded_by: str = "",
     current_truth: bool = True,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     _, store = load_context(workspace_file)
     item = {
         "task": task,
@@ -429,7 +429,7 @@ def workspace_write_receipts(
     task_id: str = "",
     session_id: str = "",
     limit: int = 50,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     config, _ = load_context(workspace_file)
     return {
         "workspace": config.workspace,
@@ -450,7 +450,7 @@ def workspace_replay_write_chain(
     task_id: str = "",
     session_id: str = "",
     limit: int = 100,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     config, _ = load_context(workspace_file)
     result = timeline_query(str(workspace_file), task_id=task_id, session_id=session_id, kinds=["write_receipt", "handoff"], limit=limit)
     receipts = result.get("timeline", [])

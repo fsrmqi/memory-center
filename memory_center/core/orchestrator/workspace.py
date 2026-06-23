@@ -5,7 +5,7 @@ import json
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 from ..artifacts import (
     CORE_MEMORY_BLOCKS,
@@ -59,7 +59,7 @@ _JAVA_CHAIN_SYMBOL_RE = re.compile(
 # ---------------------------------------------------------------------------
 
 
-def workspace_status(workspace_file: str | Path, view: str = "compact", budget: str = "medium") -> Dict[str, Any]:
+def workspace_status(workspace_file: str | Path, view: str = "compact", budget: str = "medium") -> dict[str, Any]:
     config, store = load_context(workspace_file)
     workspace_shape = analyze_workspace_shape(config)
     active_tasks = _active_task_summaries(workspace_file, limit=5)
@@ -112,7 +112,7 @@ def workspace_sniff(
     include_lookup_hint: bool = True,
     view: str = "compact",
     budget: str = "medium",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     config, store = load_context(workspace_file)
     file_index = store.read_json_prefer_backend("file-index.json", [])
     symbols = store.read_json_prefer_backend("java-symbol-index.json", [])
@@ -236,7 +236,7 @@ def workspace_sniff(
     return result
 
 
-def workspace_trace(workspace_file: str | Path, entry: str) -> Dict[str, Any]:
+def workspace_trace(workspace_file: str | Path, entry: str) -> dict[str, Any]:
     _, store = load_context(workspace_file)
     topology = store.read_json_prefer_backend("service-topology.json", {})
     apis = store.read_json_prefer_backend("api-index.json", [])
@@ -288,12 +288,12 @@ def workspace_lookup_hint(
     query: str,
     intent: str = "",
     limit: int = 8,
-    sniff_context: Dict[str, Any] | None = None,
-) -> Dict[str, Any]:
+    sniff_context: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     config, store = load_context(workspace_file)
     normalized = f"{query} {intent}".strip().lower()
-    reasons: List[str] = []
-    preferred_tools: List[str] = []
+    reasons: list[str] = []
+    preferred_tools: list[str] = []
     recommended_path = "local_search"
     should_use_memory_center = False
 
@@ -362,16 +362,16 @@ def workspace_dashboard(
     limit: int = 10,
     view: str = "compact",
     budget: str = "medium",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     # Lazy import to avoid circular dependency with .resume and .eval
     from ..timeline import timeline_query
     from .eval import memory_eval_resume, memory_eval_write_quality
 
     status = workspace_status(workspace_file, view="full", budget=budget)
     active_tasks = status.get("active_task_spaces", [])[: max(limit, 1)]
-    low_quality_tasks: List[Dict[str, Any]] = []
-    resumable_tasks: List[Dict[str, Any]] = []
-    blocked_tasks: List[Dict[str, Any]] = []
+    low_quality_tasks: list[dict[str, Any]] = []
+    resumable_tasks: list[dict[str, Any]] = []
+    blocked_tasks: list[dict[str, Any]] = []
 
     for task in active_tasks:
         task_id = str(task.get("task_id", "") or "")
@@ -457,7 +457,7 @@ def workspace_continuity_dashboard(
     limit: int = 10,
     view: str = "compact",
     budget: str = "medium",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     # Lazy import to avoid circular dependency with .resume
     from .resume import (
         workspace_handoff_history,
@@ -501,7 +501,7 @@ def workspace_continuity_dashboard(
 # ---------------------------------------------------------------------------
 
 
-def _active_task_summaries(workspace_file: str | Path, limit: int = 5) -> List[Dict[str, Any]]:
+def _active_task_summaries(workspace_file: str | Path, limit: int = 5) -> list[dict[str, Any]]:
     tasks = list_task_spaces(workspace_file, include_archived=False).get("active_tasks", [])
     sorted_tasks = sorted(
         tasks,
@@ -533,7 +533,7 @@ def _active_task_summaries(workspace_file: str | Path, limit: int = 5) -> List[D
     return rows
 
 
-def _build_memory_layers(config, store: WorkspaceStore, active_tasks: List[Dict[str, Any]]) -> Dict[str, Any]:
+def _build_memory_layers(config, store: WorkspaceStore, active_tasks: list[dict[str, Any]]) -> dict[str, Any]:
     refs_count = sum(1 for _ in store.refs_dir.rglob("*") if _.is_file()) if store.refs_dir.exists() else 0
     case_rows = store.read_jsonl_prefer_backend("cross-service-task-memory.jsonl", limit=5000)
     current_truth_cases = sum(1 for item in case_rows if item.get("current_truth", True))
@@ -570,7 +570,7 @@ def _build_memory_layers(config, store: WorkspaceStore, active_tasks: List[Dict[
     }
 
 
-def _build_memory_overview(memory_layers: Dict[str, Any]) -> Dict[str, Any]:
+def _build_memory_overview(memory_layers: dict[str, Any]) -> dict[str, Any]:
     l0 = memory_layers.get(LAYER_L0, {})
     l1 = memory_layers.get(LAYER_L1, {})
     l2 = memory_layers.get(LAYER_L2, {})
@@ -592,11 +592,11 @@ def _build_memory_overview(memory_layers: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _build_write_receipts_overview(store: WorkspaceStore) -> Dict[str, Any]:
+def _build_write_receipts_overview(store: WorkspaceStore) -> dict[str, Any]:
     rows = store.read_jsonl_prefer_backend(WRITE_RECEIPTS_FILE, limit=5000)
-    layers: Dict[str, int] = {}
-    actions: Dict[str, int] = {}
-    scopes: Dict[str, int] = {}
+    layers: dict[str, int] = {}
+    actions: dict[str, int] = {}
+    scopes: dict[str, int] = {}
     for row in rows:
         layer = str(row.get("layer", "") or "")
         action = str(row.get("action", "") or "")
@@ -616,7 +616,7 @@ def _build_write_receipts_overview(store: WorkspaceStore) -> Dict[str, Any]:
     }
 
 
-def _build_continuity_overview(workspace_file: str | Path, active_tasks: List[Dict[str, Any]]) -> Dict[str, Any]:
+def _build_continuity_overview(workspace_file: str | Path, active_tasks: list[dict[str, Any]]) -> dict[str, Any]:
     resumable = 0
     blocked = 0
     for task in active_tasks:
@@ -632,7 +632,7 @@ def _build_continuity_overview(workspace_file: str | Path, active_tasks: List[Di
     }
 
 
-def _build_focus_reason(task: Dict[str, Any]) -> str:
+def _build_focus_reason(task: dict[str, Any]) -> str:
     parts = []
     status = str(task.get("status", "")).strip().lower()
     if status == "active":
@@ -649,7 +649,7 @@ def _build_focus_reason(task: Dict[str, Any]) -> str:
     return "；".join(parts) if parts else "按任务状态与最近活动综合排序。"
 
 
-def _build_core_memory_blocks_status(store: WorkspaceStore) -> Dict[str, Any]:
+def _build_core_memory_blocks_status(store: WorkspaceStore) -> dict[str, Any]:
     blocks = []
     filled_count = 0
     for key, filename in CORE_MEMORY_BLOCKS.items():
@@ -676,13 +676,13 @@ def _build_core_memory_blocks_status(store: WorkspaceStore) -> Dict[str, Any]:
 def _build_sniff_symbolic_context(
     intent: str,
     risk_level: str,
-    matched_services: List[str],
-    matched_files: List[Dict[str, Any]],
-    related_feigns: List[Dict[str, Any]],
-    related_apis: List[Dict[str, Any]],
-    related_mq: List[Dict[str, Any]],
-    related_cases: List[Dict[str, Any]],
-) -> Dict[str, Any]:
+    matched_services: list[str],
+    matched_files: list[dict[str, Any]],
+    related_feigns: list[dict[str, Any]],
+    related_apis: list[dict[str, Any]],
+    related_mq: list[dict[str, Any]],
+    related_cases: list[dict[str, Any]],
+) -> dict[str, Any]:
     service_nodes = [item for item in matched_services[:4] if item]
     file_nodes = [Path(item.get("path", "")).name for item in matched_files[:4] if item.get("path")]
     feign_nodes = [item.get("interface", "") for item in related_feigns[:3] if item.get("interface")]
@@ -791,16 +791,16 @@ def _build_sniff_candidate_paths(
     *,
     intent: str,
     risk_level: str,
-    lookup_hint: Dict[str, Any],
-    task_resolution: Dict[str, Any],
-    auto_sync: Dict[str, Any],
-    write_judge_decision: Dict[str, Any],
-    matched_files: List[Dict[str, Any]],
-    related_apis: List[Dict[str, Any]],
-    related_feigns: List[Dict[str, Any]],
-    related_mq: List[Dict[str, Any]],
-) -> List[Dict[str, Any]]:
-    candidates: List[Dict[str, Any]] = []
+    lookup_hint: dict[str, Any],
+    task_resolution: dict[str, Any],
+    auto_sync: dict[str, Any],
+    write_judge_decision: dict[str, Any],
+    matched_files: list[dict[str, Any]],
+    related_apis: list[dict[str, Any]],
+    related_feigns: list[dict[str, Any]],
+    related_mq: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    candidates: list[dict[str, Any]] = []
     recommended_key = str(lookup_hint.get("recommended_path", "") or "local_search")
     preferred_tools = list(lookup_hint.get("preferred_tools", []) or [])
     reasons = list(lookup_hint.get("reasons", []) or [])
@@ -929,11 +929,11 @@ def _lookup_next_action(recommended_path: str) -> str:
 def _build_lookup_hint_candidate_paths(
     *,
     recommended_path: str,
-    preferred_tools: List[str],
-    reasons: List[str],
-    sniff: Dict[str, Any],
-) -> List[Dict[str, Any]]:
-    candidates: List[Dict[str, Any]] = [
+    preferred_tools: list[str],
+    reasons: list[str],
+    sniff: dict[str, Any],
+) -> list[dict[str, Any]]:
+    candidates: list[dict[str, Any]] = [
         {
             "candidate_type": "lookup_path",
             "target": recommended_path or "local_search",
@@ -983,7 +983,7 @@ def _build_lookup_hint_candidate_paths(
     return candidates
 
 
-def workspace_check_contract(workspace_file: str | Path, contract_file: str, change_type: str) -> Dict[str, Any]:
+def workspace_check_contract(workspace_file: str | Path, contract_file: str, change_type: str) -> dict[str, Any]:
     _, store = load_context(workspace_file)
     files = store.read_json_prefer_backend("file-index.json", [])
     feigns = store.read_json_prefer_backend("feign-index.json", [])
@@ -1010,7 +1010,7 @@ def workspace_check_contract(workspace_file: str | Path, contract_file: str, cha
     }
 
 
-def workspace_check_rules(workspace_file: str | Path, projects: List[str] | None, change_type: str, files: List[str] | None) -> Dict[str, Any]:
+def workspace_check_rules(workspace_file: str | Path, projects: list[str] | None, change_type: str, files: list[str] | None) -> dict[str, Any]:
     _, store = load_context(workspace_file)
     intent = f"{change_type} {' '.join(projects or [])} {' '.join(files or [])}"
     rules = match_rules(store, intent=intent, files=files or [], scopes=[change_type])

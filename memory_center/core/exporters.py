@@ -3,7 +3,7 @@ from __future__ import annotations
 import html
 import json
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 from .store import WorkspaceStore
 
@@ -36,7 +36,7 @@ def _nav_sidebar_html(workspace_param: str) -> str:
     )
 
 
-def _next_action_hero_html(dashboard: Dict[str, Any], focus_task: Dict[str, Any]) -> str:
+def _next_action_hero_html(dashboard: dict[str, Any], focus_task: dict[str, Any]) -> str:
     """Render a prominent Next Action hero card on the dashboard."""
     workspace_param = html.escape(str(dashboard.get("workspace", "")))
     focus_eval = dashboard.get("focus_resume_eval") or {}
@@ -88,7 +88,7 @@ def export_mermaid(workspace_file: str | Path) -> str:
     """Export a coarse service topology diagram in Mermaid format."""
     store = WorkspaceStore(workspace_file)
     topology = store.read_json_prefer_backend("service-topology.json", {})
-    lines: List[str] = ["flowchart LR"]
+    lines: list[str] = ["flowchart LR"]
 
     services = topology.get("services", [])
     for svc in services:
@@ -117,7 +117,7 @@ def export_mermaid(workspace_file: str | Path) -> str:
     return "\n".join(lines) + "\n"
 
 
-def topology_summary(workspace_file: str | Path) -> Dict[str, Any]:
+def topology_summary(workspace_file: str | Path) -> dict[str, Any]:
     store = WorkspaceStore(workspace_file)
     topology = store.read_json_prefer_backend("service-topology.json", {})
     return {
@@ -132,7 +132,7 @@ def export_workspace_dashboard_markdown(workspace_file: str | Path, intent: str 
     from .orchestrator import workspace_dashboard
 
     dashboard = workspace_dashboard(workspace_file, intent=intent, limit=limit)
-    lines: List[str] = [
+    lines: list[str] = [
         "# Workspace Dashboard / 工作区总面板",
         "",
         f"- Workspace: {dashboard.get('workspace', '')}",
@@ -910,28 +910,28 @@ def _node(value: str) -> str:
     return "n_" + "".join(ch if ch.isalnum() else "_" for ch in value)
 
 
-def _render_task_lines(tasks: List[Dict[str, Any]]) -> List[str]:
+def _render_task_lines(tasks: list[dict[str, Any]]) -> list[str]:
     return [
         f"- {item.get('title', item.get('task_id', ''))} | status={item.get('status', '')} | quality={item.get('quality', '')} | score={item.get('score', '')}"
         for item in tasks
     ]
 
 
-def _render_handoff_lines(rows: List[Dict[str, Any]]) -> List[str]:
+def _render_handoff_lines(rows: list[dict[str, Any]]) -> list[str]:
     return [
         f"- {item.get('normalized_model', '')} | phase={item.get('current_phase', '')} | quality={item.get('quality', '')} | score={item.get('score', '')}"
         for item in rows
     ]
 
 
-def _render_receipt_lines(rows: List[Dict[str, Any]]) -> List[str]:
+def _render_receipt_lines(rows: list[dict[str, Any]]) -> list[str]:
     return [
         f"- {item.get('layer', '')} | {item.get('action', '')} | {item.get('target', '')}"
         for item in rows
     ]
 
 
-def _render_task_list_html(tasks: List[Dict[str, Any]]) -> str:
+def _render_task_list_html(tasks: list[dict[str, Any]]) -> str:
     if not tasks:
         return "<div class='muted'>None</div>"
     items = "".join(
@@ -945,7 +945,7 @@ def _render_task_list_html(tasks: List[Dict[str, Any]]) -> str:
     return f"<ul>{items}</ul>"
 
 
-def _render_handoff_list_html(rows: List[Dict[str, Any]]) -> str:
+def _render_handoff_list_html(rows: list[dict[str, Any]]) -> str:
     if not rows:
         return "<div class='muted'>None</div>"
     items = "".join(
@@ -958,7 +958,7 @@ def _render_handoff_list_html(rows: List[Dict[str, Any]]) -> str:
     return f"<ul>{items}</ul>"
 
 
-def _render_receipt_list_html(rows: List[Dict[str, Any]]) -> str:
+def _render_receipt_list_html(rows: list[dict[str, Any]]) -> str:
     if not rows:
         return "<div class='muted'>None</div>"
     items = "".join(
@@ -971,13 +971,13 @@ def _render_receipt_list_html(rows: List[Dict[str, Any]]) -> str:
     return f"<ul>{items}</ul>"
 
 
-def _render_simple_list_html(rows: List[str]) -> str:
+def _render_simple_list_html(rows: list[str]) -> str:
     if not rows:
         return "<div class='muted'>None</div>"
     return "<ul>" + "".join(f"<li>{html.escape(str(item))}</li>" for item in rows) + "</ul>"
 
 
-def _render_ref_list_html(rows: List[Dict[str, Any]]) -> str:
+def _render_ref_list_html(rows: list[dict[str, Any]]) -> str:
     if not rows:
         return "<div class='muted'>None</div>"
     items = "".join(

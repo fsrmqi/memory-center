@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 from ..artifacts import (
     append_task_change_log,
@@ -33,7 +33,7 @@ def workspace_sync_sniff_to_artifacts(
     task_id: str = "",
     title: str = "",
     auto_sync_mode: str = "balanced",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     from .workspace import workspace_sniff
 
     config, store = load_context(workspace_file)
@@ -124,7 +124,7 @@ def workspace_sync_case_to_artifacts(
     task_id: str = "",
     title: str = "",
     auto_sync_mode: str = "balanced",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     from .session import workspace_suggest_case
 
     config, store = load_context(workspace_file)
@@ -220,8 +220,8 @@ def workspace_sync_case_to_artifacts(
     }
 
 
-def _render_sniff_context_markdown(sniff: Dict[str, Any]) -> str:
-    parts: List[str] = []
+def _render_sniff_context_markdown(sniff: dict[str, Any]) -> str:
+    parts: list[str] = []
     intent = sniff.get("intent", "")
     if intent:
         parts.append(f"**Intent / 意图**: {intent}")
@@ -311,8 +311,8 @@ def _render_sniff_context_markdown(sniff: Dict[str, Any]) -> str:
     return "\n".join(parts)
 
 
-def _render_sniff_plan_markdown(sniff: Dict[str, Any]) -> str:
-    parts: List[str] = []
+def _render_sniff_plan_markdown(sniff: dict[str, Any]) -> str:
+    parts: list[str] = []
     intent = sniff.get("intent", "")
     if intent:
         parts.append(f"**Objective / 目标**: {intent}")
@@ -384,8 +384,8 @@ def _render_sniff_plan_markdown(sniff: Dict[str, Any]) -> str:
     return "\n".join(parts)
 
 
-def _render_case_markdown(case: Dict[str, Any]) -> str:
-    parts: List[str] = []
+def _render_case_markdown(case: dict[str, Any]) -> str:
+    parts: list[str] = []
     task = case.get("task", "")
     if task:
         parts.append(f"**Task / 任务**: {task}")
@@ -450,8 +450,8 @@ def _render_case_markdown(case: Dict[str, Any]) -> str:
     return "\n".join(parts)
 
 
-def _render_change_log_entry(case: Dict[str, Any], session_id: str) -> str:
-    parts: List[str] = []
+def _render_change_log_entry(case: dict[str, Any], session_id: str) -> str:
+    parts: list[str] = []
     task = case.get("task", "")
     if task:
         parts.append(f"Case synced: {task}")
@@ -481,8 +481,8 @@ def _render_change_log_entry(case: Dict[str, Any], session_id: str) -> str:
     return "\n".join(parts)
 
 
-def _render_task_current_summary_from_sniff(sniff: Dict[str, Any], resolved_info: Dict[str, Any]) -> str:
-    parts: List[str] = []
+def _render_task_current_summary_from_sniff(sniff: dict[str, Any], resolved_info: dict[str, Any]) -> str:
+    parts: list[str] = []
     parts.append("# Current Summary / 当前最短上下文")
     parts.append("")
 
@@ -550,11 +550,11 @@ def _render_task_current_summary_from_sniff(sniff: Dict[str, Any], resolved_info
 
 
 def _render_task_current_summary_from_case(
-    case: Dict[str, Any],
-    resolved_info: Dict[str, Any],
+    case: dict[str, Any],
+    resolved_info: dict[str, Any],
     session_id: str,
 ) -> str:
-    parts: List[str] = []
+    parts: list[str] = []
     parts.append("# Current Summary / 当前最短上下文")
     parts.append("")
 

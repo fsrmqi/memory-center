@@ -14,7 +14,7 @@ import dataclasses
 import inspect
 import json
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 import pytest
 from typer.testing import CliRunner
@@ -28,7 +28,7 @@ from memory_center.core.capability_matrix import CAPABILITY_MAP
 _RUNNER = CliRunner()
 
 
-def _to_dict(obj: Any) -> Dict[str, Any]:
+def _to_dict(obj: Any) -> dict[str, Any]:
     """Convert dataclass or dict to a plain dict."""
     if dataclasses.is_dataclass(obj) and not isinstance(obj, type):
         return dataclasses.asdict(obj)
@@ -37,7 +37,7 @@ def _to_dict(obj: Any) -> Dict[str, Any]:
     raise TypeError(f"Expected dict or dataclass, got {type(obj)}")
 
 
-def _cli_json(cmd_args: list[str]) -> Dict[str, Any]:
+def _cli_json(cmd_args: list[str]) -> dict[str, Any]:
     """Run a CLI command via CliRunner and parse its stdout as a dict.
 
     Handles two CLI output patterns:

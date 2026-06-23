@@ -5,7 +5,7 @@ Follows the same pattern as core/rules.py (DEFAULT_* constants + ensure_default_
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 import yaml
 
@@ -98,7 +98,7 @@ def _default_hooks_yaml_path() -> Path:
     return Path(__file__).parent / "default_hooks.yaml"
 
 
-def load_default_hooks() -> Dict[str, Any]:
+def load_default_hooks() -> dict[str, Any]:
     """Load the shipped default hooks.yaml."""
     path = _default_hooks_yaml_path()
     if path.exists():
@@ -106,7 +106,7 @@ def load_default_hooks() -> Dict[str, Any]:
     return DEFAULT_HOOKS
 
 
-def load_hooks_config(workspace_file: str | Path) -> Dict[str, Any]:
+def load_hooks_config(workspace_file: str | Path) -> dict[str, Any]:
     """Load hooks.yaml from workspace, falling back to shipped default.
 
     Workspace hooks.yaml lives at .memory-center/hooks.yaml alongside workspace.yaml.
@@ -118,7 +118,7 @@ def load_hooks_config(workspace_file: str | Path) -> Dict[str, Any]:
     return load_default_hooks()
 
 
-def validate_hooks_config(config: Dict[str, Any]) -> list[str]:
+def validate_hooks_config(config: dict[str, Any]) -> list[str]:
     """Validate a hooks.yaml config. Returns list of error strings (empty = valid)."""
     errors: list[str] = []
     version = config.get("version")

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any, Dict, Generic, TypeVar
+from typing import Any, Generic, TypeVar
 
 T = TypeVar("T")
 
@@ -16,13 +16,13 @@ class CommandRegistry(Generic[T]):
 
     def __init__(self, *, label: str = "command") -> None:
         self.label = label
-        self._handlers: Dict[str, Callable[..., T]] = {}
+        self._handlers: dict[str, Callable[..., T]] = {}
 
-    def register(self, name: str, handler: Callable[..., T]) -> "CommandRegistry[T]":
+    def register(self, name: str, handler: Callable[..., T]) -> CommandRegistry[T]:
         self._handlers[name] = handler
         return self
 
-    def register_many(self, handlers: Dict[str, Callable[..., T]]) -> "CommandRegistry[T]":
+    def register_many(self, handlers: dict[str, Callable[..., T]]) -> CommandRegistry[T]:
         self._handlers.update(handlers)
         return self
 

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from ..storage.unified import UnifiedStore
 from .extractor import _DOMAIN_KEYWORDS
@@ -24,7 +24,7 @@ class DomainMapping:
     confidence: float
     evidence: str = ""
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "node_id": self.node_id,
             "node_name": self.node_name,
@@ -46,9 +46,9 @@ class CodeEntityDomainMapper:
 
     def __init__(self, store: UnifiedStore):
         self._store = store
-        self._service_domain_cache: Dict[str, str] = {}
+        self._service_domain_cache: dict[str, str] = {}
 
-    def map_entity(self, node_id: str) -> Optional[DomainMapping]:
+    def map_entity(self, node_id: str) -> DomainMapping | None:
         """Map a single code entity to its business domain."""
         node = self._store.node_by_id(node_id)
         if not node:
@@ -100,10 +100,10 @@ class CodeEntityDomainMapper:
 
     def map_batch(
         self,
-        node_ids: Optional[List[str]] = None,
-        node_type: Optional[str] = None,
+        node_ids: list[str] | None = None,
+        node_type: str | None = None,
         limit: int = 100,
-    ) -> List[DomainMapping]:
+    ) -> list[DomainMapping]:
         """Map multiple entities to domains."""
         if node_ids:
             results = []
@@ -126,11 +126,11 @@ class CodeEntityDomainMapper:
                     results.append(mapping)
         return results
 
-    def domain_summary(self) -> Dict[str, Any]:
+    def domain_summary(self) -> dict[str, Any]:
         """Get a summary of domain distribution across all entities."""
         all_mappings = self.map_batch(limit=1000)
-        domain_counts: Dict[str, int] = {}
-        domain_entities: Dict[str, List[str]] = {}
+        domain_counts: dict[str, int] = {}
+        domain_entities: dict[str, list[str]] = {}
 
         for m in all_mappings:
             domain_counts[m.domain] = domain_counts.get(m.domain, 0) + 1
@@ -145,7 +145,7 @@ class CodeEntityDomainMapper:
             },
         }
 
-    def _match_name(self, name: str, file_path: str, project: str, meta: Dict) -> tuple:
+    def _match_name(self, name: str, file_path: str, project: str, meta: dict) -> tuple:
         """Match entity name against domain keywords."""
         combined = f"{name} {file_path} {project}".lower()
         annotations = meta.get("annotations", [])
@@ -183,7 +183,7 @@ class CodeEntityDomainMapper:
     def _infer_from_neighbors(self, node_id: str, max_depth: int = 1) -> str:
         """Infer domain from graph neighbors."""
         neighbors = self._store.neighbors(node_id, direction="both", max_depth=max_depth, limit=10)
-        domain_votes: Dict[str, int] = {}
+        domain_votes: dict[str, int] = {}
 
         for neighbor in neighbors:
             n_name = neighbor.get("name", "")

@@ -5,9 +5,9 @@ can include to help models follow the expected protocol.
 """
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any
 
-WORKFLOW_TEMPLATES: Dict[str, Dict[str, Any]] = {
+WORKFLOW_TEMPLATES: dict[str, dict[str, Any]] = {
     "work-start": {
         "expected_input": "intent: string describing the coding task",
         "decision_tree": {
@@ -103,12 +103,12 @@ WORKFLOW_TEMPLATES: Dict[str, Dict[str, Any]] = {
 }
 
 
-def get_workflow_template(workflow_name: str) -> Optional[Dict[str, Any]]:
+def get_workflow_template(workflow_name: str) -> dict[str, Any] | None:
     """Get the template for a workflow command."""
     return WORKFLOW_TEMPLATES.get(workflow_name)
 
 
-def get_workflow_guidance(workflow_name: str, context: Optional[Dict[str, Any]] = None) -> str:
+def get_workflow_guidance(workflow_name: str, context: dict[str, Any] | None = None) -> str:
     """Get condensed guidance string for a workflow, suitable for MCP response metadata."""
     template = WORKFLOW_TEMPLATES.get(workflow_name)
     if not template:
@@ -139,7 +139,7 @@ def get_workflow_guidance(workflow_name: str, context: Optional[Dict[str, Any]] 
 
 # ---- Constraint Templates (mattpocock/skills inspired) ----
 
-CONSTRAINT_TEMPLATES: Dict[str, Dict[str, Any]] = {
+CONSTRAINT_TEMPLATES: dict[str, dict[str, Any]] = {
     "coding_agent": {
         "description": "Standard coding agent protocol",
         "work_protocol": {
@@ -227,12 +227,12 @@ CONSTRAINT_TEMPLATES: Dict[str, Dict[str, Any]] = {
 }
 
 
-def get_constraint_template(template_name: str) -> Optional[Dict[str, Any]]:
+def get_constraint_template(template_name: str) -> dict[str, Any] | None:
     """Get a constraint template by name."""
     return CONSTRAINT_TEMPLATES.get(template_name)
 
 
-def auto_select_action(context: str, template_name: str = "coding_agent") -> Optional[str]:
+def auto_select_action(context: str, template_name: str = "coding_agent") -> str | None:
     """Auto-select the best action based on context and template strategy.
 
     Args:

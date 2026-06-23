@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import re
 import statistics
+from collections.abc import Iterable
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Iterable
+from typing import Any
 
 from ..store import WorkspaceStore
 
@@ -21,7 +22,7 @@ def record_baseline_sample(
     result_count: int,
     quality_score: float,
     parser: str = "",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     if not _SAFE_NAME.fullmatch(operation or ""):
         raise ValueError("operation must be a portable identifier")
     if parser and not _SAFE_NAME.fullmatch(parser):
@@ -47,7 +48,7 @@ def _percentile(values: list[float], ratio: float) -> float:
     return float(ordered[index])
 
 
-def _summary(samples: Iterable[Dict[str, Any]]) -> Dict[str, float]:
+def _summary(samples: Iterable[dict[str, Any]]) -> dict[str, float]:
     rows = list(samples)
     durations = [float(row.get("duration_ms", 0.0) or 0.0) for row in rows]
     qualities = [float(row.get("quality_score", 0.0) or 0.0) for row in rows]
@@ -60,12 +61,12 @@ def _summary(samples: Iterable[Dict[str, Any]]) -> Dict[str, float]:
 
 
 def compare_baseline_samples(
-    baseline: Iterable[Dict[str, Any]],
-    current: Iterable[Dict[str, Any]],
+    baseline: Iterable[dict[str, Any]],
+    current: Iterable[dict[str, Any]],
     *,
     latency_threshold_pct: float = 20.0,
     quality_drop_threshold: float = 0.1,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     base = _summary(baseline)
     now = _summary(current)
     base_latency = base["median_ms"]

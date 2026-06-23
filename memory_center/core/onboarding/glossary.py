@@ -10,7 +10,7 @@ import json
 import re
 from collections import Counter
 from dataclasses import dataclass, field
-from typing import Any, Dict, List
+from typing import Any
 
 from ..storage.unified import UnifiedStore
 
@@ -21,10 +21,10 @@ class GlossaryEntry:
     term: str
     category: str  # service | class | annotation | config | domain
     frequency: int = 1
-    examples: List[str] = field(default_factory=list)
+    examples: list[str] = field(default_factory=list)
     description: str = ""
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "term": self.term,
             "category": self.category,
@@ -34,7 +34,7 @@ class GlossaryEntry:
         }
 
 
-def _split_camel(name: str) -> List[str]:
+def _split_camel(name: str) -> list[str]:
     """Split CamelCase into words."""
     return [w.lower() for w in re.findall(r"[A-Z]?[a-z]+|[A-Z]+(?=[A-Z]|$)", name) if len(w) > 1]
 
@@ -45,9 +45,9 @@ class GlossaryExtractor:
     def __init__(self, store: UnifiedStore):
         self._store = store
 
-    def extract(self, limit: int = 50) -> List[GlossaryEntry]:
+    def extract(self, limit: int = 50) -> list[GlossaryEntry]:
         """Extract glossary terms sorted by frequency."""
-        terms: Dict[str, GlossaryEntry] = {}
+        terms: dict[str, GlossaryEntry] = {}
         counter: Counter = Counter()
 
         nodes = self._store.all_nodes()
@@ -112,7 +112,7 @@ class GlossaryExtractor:
         sorted_terms = sorted(terms.values(), key=lambda e: -e.frequency)
         return sorted_terms[:limit]
 
-    def search(self, query: str, limit: int = 10) -> List[GlossaryEntry]:
+    def search(self, query: str, limit: int = 10) -> list[GlossaryEntry]:
         """Search glossary by partial term match."""
         query_lower = query.lower()
         all_terms = self.extract(limit=200)

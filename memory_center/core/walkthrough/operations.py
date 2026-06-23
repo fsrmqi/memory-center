@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 from ..orchestrator.common import SESSION_EVENTS_FILE, load_context
 from ..store import WorkspaceStore, _safe_path
@@ -11,7 +11,7 @@ from .artifact import render_walkthrough_markdown, slugify_walkthrough_symbol
 from .cache import WalkthroughCache
 from .quality import evaluate_walkthrough_result
 
-WalkthroughProvider = Callable[..., Dict[str, Any]]
+WalkthroughProvider = Callable[..., dict[str, Any]]
 
 
 def build_walkthrough_health(
@@ -22,7 +22,7 @@ def build_walkthrough_health(
     report_level: str = "standard",
     walkthrough_provider: WalkthroughProvider,
     cache: WalkthroughCache,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     workspace_file = escalation.resolve_walkthrough_workspace_input(workspace_file)
     config, store = load_context(workspace_file)
     template_info = answer.load_method_walkthrough_template(workspace_file)
@@ -32,9 +32,9 @@ def build_walkthrough_health(
         name: {"exists": bool(mtime), "mtime": mtime}
         for name, mtime in index_signature.items()
     }
-    checks: list[Dict[str, Any]] = []
+    checks: list[dict[str, Any]] = []
 
-    def check(name: str, status: str, detail: str = "", evidence: Dict[str, Any] | None = None) -> None:
+    def check(name: str, status: str, detail: str = "", evidence: dict[str, Any] | None = None) -> None:
         checks.append({"name": name, "status": status, "detail": detail, "evidence": evidence or {}})
 
     check("workspace_file", "pass" if Path(workspace_file).exists() else "fail", str(workspace_file))
@@ -51,7 +51,7 @@ def build_walkthrough_health(
         bypass_feedback,
     )
 
-    sample: Dict[str, Any] = {}
+    sample: dict[str, Any] = {}
     if symbol:
         sample = walkthrough_provider(
             workspace_file, symbol, depth=4, limit=40, project=project,
@@ -89,7 +89,7 @@ def evaluate_walkthrough(
     project: str = "",
     report_level: str = "standard",
     walkthrough_provider: WalkthroughProvider,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     result = walkthrough_provider(
         workspace_file, symbol, depth=4, limit=40, project=project,
         view="compact", budget="small", report_level=report_level,
@@ -110,7 +110,7 @@ def export_walkthrough(
     report_level: str = "deep",
     title: str = "",
     walkthrough_provider: WalkthroughProvider,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     workspace_file = escalation.resolve_walkthrough_workspace_input(workspace_file)
     config, _ = load_context(workspace_file)
     store = WorkspaceStore(workspace_file)

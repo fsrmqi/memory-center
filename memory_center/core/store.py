@@ -4,7 +4,7 @@ import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Generic, List, TypeVar
+from typing import Any, Generic, TypeVar
 
 from filelock import FileLock
 
@@ -12,6 +12,7 @@ from .memory_backend import MemoryBackendStore
 
 _MISSING = object()
 T = TypeVar("T")
+_JSON_FILE_CACHE: dict[tuple[str, int, int], Any] = {}
 
 
 @dataclass(frozen=True)
@@ -22,7 +23,7 @@ class ReadResult(Generic[T]):
     fallback_reason: str = ""
     consistency_status: str = "unknown"
 
-    def diagnostics(self) -> Dict[str, Any]:
+    def diagnostics(self) -> dict[str, Any]:
         return {
             "source": self.source,
             "fallback_used": self.fallback_used,
@@ -37,6 +38,24 @@ def _safe_path(base: Path, name: str) -> Path:
     if not candidate.is_relative_to(resolved_base):
         raise ValueError(f"invalid path: {name}")
     return candidate
+
+
+def _read_json_file_cached(path: Path) -> Any:
+    stat = path.stat()
+    cache_key = (str(path), stat.st_mtime_ns, stat.st_size)
+    cached = _JSON_FILE_CACHE.get(cache_key, _MISSING)
+    if cached is not _MISSING:
+        return cached
+    value = json.loads(path.read_text(encoding="utf-8"))
+    _JSON_FILE_CACHE[cache_key] = value
+    return value
+
+
+def _drop_json_cache(path: Path) -> None:
+    path_text = str(path)
+    stale_keys = [key for key in _JSON_FILE_CACHE if key[0] == path_text]
+    for key in stale_keys:
+        _JSON_FILE_CACHE.pop(key, None)
 
 
 class WorkspaceStore:
@@ -59,6 +78,7 @@ class WorkspaceStore:
         path = self.index_dir / name
         with FileLock(str(self.lock_file)):
             path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+            _drop_json_cache(path)
             try:
                 self.memory_backend().upsert_index(name, data)
             except Exception:
@@ -69,7 +89,7 @@ class WorkspaceStore:
         if not path.exists():
             return default
         try:
-            return json.loads(path.read_text(encoding="utf-8"))
+            return _read_json_file_cached(path)
         except (json.JSONDecodeError, UnicodeDecodeError):
             # Corrupt JSON file — try backend before falling back to default
             backend_val = self.memory_backend().read_index(name)
@@ -77,7 +97,7 @@ class WorkspaceStore:
                 return backend_val
             return default
 
-    def append_jsonl(self, name: str, item: Dict[str, Any]) -> None:
+    def append_jsonl(self, name: str, item: dict[str, Any]) -> None:
         path = self.memory_dir / name
         item = dict(item)
         item.setdefault("created_at", datetime.now(timezone.utc).isoformat())
@@ -89,11 +109,11 @@ class WorkspaceStore:
             except Exception:
                 pass
 
-    def read_jsonl(self, name: str, limit: int = 50) -> List[Dict[str, Any]]:
+    def read_jsonl(self, name: str, limit: int = 50) -> list[dict[str, Any]]:
         path = self.memory_dir / name
         if not path.exists():
             return []
-        rows: List[Dict[str, Any]] = []
+        rows: list[dict[str, Any]] = []
         for line in path.read_text(encoding="utf-8").splitlines()[-limit:]:
             if not line.strip():
                 continue
@@ -103,15 +123,15 @@ class WorkspaceStore:
                 continue
         return rows
 
-    def find_jsonl(self, name: str, predicate, limit: int = 200) -> List[Dict[str, Any]]:
+    def find_jsonl(self, name: str, predicate, limit: int = 200) -> list[dict[str, Any]]:
         rows = self.read_jsonl(name, limit=5000)
         matched = [row for row in rows if predicate(row)]
         return matched[-limit:]
 
-    def read_jsonl_prefer_backend(self, name: str, limit: int = 50) -> List[Dict[str, Any]]:
+    def read_jsonl_prefer_backend(self, name: str, limit: int = 50) -> list[dict[str, Any]]:
         return self.read_jsonl_observed(name, limit=limit).value
 
-    def find_jsonl_prefer_backend(self, name: str, predicate, limit: int = 200) -> List[Dict[str, Any]]:
+    def find_jsonl_prefer_backend(self, name: str, predicate, limit: int = 200) -> list[dict[str, Any]]:
         rows = self.find_jsonl_via_backend(name, predicate, limit=limit)
         return rows or self.find_jsonl(name, predicate, limit=limit)
 
@@ -179,15 +199,30 @@ class WorkspaceStore:
             self._memory_backend = MemoryBackendStore(self.memory_db_path)
         return self._memory_backend
 
-    def memory_backend_stats(self) -> Dict[str, Any]:
+    def memory_backend_stats(self) -> dict[str, Any]:
         return self.memory_backend().stats()
 
-    def memory_backend_query_records(self, *, collection: str = "", record_id: str = "", created_after: str = "", project: str = "", payload_type: str = "", session_id: str = "", limit: int = 50) -> Dict[str, Any]:
+    def memory_backend_query_records(self, *, collection: str = "", record_id: str = "", created_after: str = "", project: str = "", payload_type: str = "", session_id: str = "", limit: int = 50) -> dict[str, Any]:
         return self.memory_backend().query_records(collection=collection, record_id=record_id, created_after=created_after, project=project, payload_type=payload_type, session_id=session_id, limit=limit)
 
     def read_json_prefer_backend(self, name: str, default: Any) -> Any:
-        """Read deterministic index preferring SQLite backend, fall back to file."""
-        return self.read_json_observed(name, default).value
+        """Read deterministic index on the hot path.
+
+        The public diagnostics API still uses read_json_observed() for backend/file
+        consistency checks. Hot query paths avoid that dual-read cost and use the
+        file as the current fact source, with backend fallback when the file is
+        missing or corrupt.
+        """
+        path = self.index_dir / name
+        if path.exists():
+            return self.read_json(name, default)
+        try:
+            backend_entry = self.memory_backend().read_index_entry(name)
+        except Exception:
+            return default
+        if backend_entry.get("found"):
+            return backend_entry.get("value")
+        return default
 
     def read_json_observed(self, name: str, default: Any) -> ReadResult[Any]:
         path = self.index_dir / name
@@ -224,7 +259,7 @@ class WorkspaceStore:
             consistency_status="diverged",
         )
 
-    def read_jsonl_observed(self, name: str, limit: int = 50) -> ReadResult[List[Dict[str, Any]]]:
+    def read_jsonl_observed(self, name: str, limit: int = 50) -> ReadResult[list[dict[str, Any]]]:
         file_path = self.memory_dir / name
         file_exists = file_path.exists()
         file_rows = self.read_jsonl(name, limit=limit)
@@ -258,19 +293,19 @@ class WorkspaceStore:
             return ReadResult(backend_rows, "backend", consistency_status="consistent")
         return ReadResult(file_rows, "file", True, "backend_stale", "diverged")
 
-    def memory_backend_query_refs(self, *, ref_path: str = "", limit: int = 50) -> Dict[str, Any]:
+    def memory_backend_query_refs(self, *, ref_path: str = "", limit: int = 50) -> dict[str, Any]:
         return self.memory_backend().query_refs(ref_path=ref_path, limit=limit)
 
-    def read_jsonl_via_backend(self, name: str, limit: int = 50, session_id: str = "") -> List[Dict[str, Any]]:
+    def read_jsonl_via_backend(self, name: str, limit: int = 50, session_id: str = "") -> list[dict[str, Any]]:
         rows = self.memory_backend_query_records(collection=name, session_id=session_id, limit=limit).get("records", [])
         return [item.get("payload", {}) for item in reversed(rows) if isinstance(item.get("payload"), dict)]
 
-    def find_jsonl_via_backend(self, name: str, predicate, limit: int = 200, session_id: str = "") -> List[Dict[str, Any]]:
+    def find_jsonl_via_backend(self, name: str, predicate, limit: int = 200, session_id: str = "") -> list[dict[str, Any]]:
         rows = self.read_jsonl_via_backend(name, limit=5000, session_id=session_id)
         matched = [row for row in rows if predicate(row)]
         return matched[-limit:]
 
-    def _infer_record_id(self, collection: str, item: Dict[str, Any]) -> str:
+    def _infer_record_id(self, collection: str, item: dict[str, Any]) -> str:
         if collection == "write-receipts.jsonl":
             return str(item.get("receipt_id", "") or item.get("receipt_ref", "") or "")
         if collection == "session-events.jsonl":

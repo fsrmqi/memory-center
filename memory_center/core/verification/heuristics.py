@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 from ..config import load_workspace_data
 from ..store import WorkspaceStore
@@ -19,7 +19,7 @@ _RETRIEVAL_SOURCE_WEIGHT_MAX = 0.75
 _RETRIEVAL_SOURCES = {"exact", "graph", "sparse", "bm25", "semantic", "vector"}
 HEURISTICS_SCHEMA_VERSION = 2
 LEARNING_POLICY_VERSION = 1
-DEFAULT_LEARNING_POLICY: Dict[str, Any] = {
+DEFAULT_LEARNING_POLICY: dict[str, Any] = {
     "version": LEARNING_POLICY_VERSION,
     "candidate_path_learning": {
         "outcome_deltas": {
@@ -82,7 +82,7 @@ def _count_evidence(evidence: Any) -> int:
     return 1 if evidence else 0
 
 
-def _normalize_evidence(evidence: Any) -> List[Any]:
+def _normalize_evidence(evidence: Any) -> list[Any]:
     if evidence is None:
         return []
     if isinstance(evidence, list):
@@ -94,7 +94,7 @@ def _normalize_evidence(evidence: Any) -> List[Any]:
     return [evidence]
 
 
-def _deep_merge_dict(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
+def _deep_merge_dict(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
     merged = dict(base)
     for key, value in override.items():
         if isinstance(value, dict) and isinstance(merged.get(key), dict):
@@ -104,7 +104,7 @@ def _deep_merge_dict(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str
     return merged
 
 
-def _normalize_learning_policy(policy: Dict[str, Any]) -> Dict[str, Any]:
+def _normalize_learning_policy(policy: dict[str, Any]) -> dict[str, Any]:
     normalized = dict(policy or {})
     if "candidate_learning" in normalized and "candidate_path_learning" not in normalized:
         normalized["candidate_path_learning"] = normalized.pop("candidate_learning")
@@ -115,7 +115,7 @@ def _normalize_learning_policy(policy: Dict[str, Any]) -> Dict[str, Any]:
     return merged
 
 
-def load_learning_policy(workspace_file: str | Path) -> Dict[str, Any]:
+def load_learning_policy(workspace_file: str | Path) -> dict[str, Any]:
     """Load optional learning policy from workspace.yaml, preserving defaults."""
     try:
         raw = load_workspace_data(workspace_file)
@@ -127,19 +127,19 @@ def load_learning_policy(workspace_file: str | Path) -> Dict[str, Any]:
     return _normalize_learning_policy(override)
 
 
-def _candidate_policy(policy: Dict[str, Any]) -> Dict[str, Any]:
+def _candidate_policy(policy: dict[str, Any]) -> dict[str, Any]:
     value = policy.get("candidate_path_learning", {}) or {}
     return value if isinstance(value, dict) else {}
 
 
-def _workflow_policy(policy: Dict[str, Any]) -> Dict[str, Any]:
+def _workflow_policy(policy: dict[str, Any]) -> dict[str, Any]:
     value = policy.get("workflow_profile_learning", {}) or {}
     return value if isinstance(value, dict) else {}
 
 
-def _normalized_decay_steps(policy: Dict[str, Any]) -> List[tuple[int, float, str]]:
+def _normalized_decay_steps(policy: dict[str, Any]) -> list[tuple[int, float, str]]:
     steps = (_candidate_policy(policy).get("stale_decay_steps", []) or [])
-    normalized: List[tuple[int, float, str]] = []
+    normalized: list[tuple[int, float, str]] = []
     for item in steps:
         if not isinstance(item, dict):
             continue
@@ -152,7 +152,7 @@ def _normalized_decay_steps(policy: Dict[str, Any]) -> List[tuple[int, float, st
     return normalized
 
 
-def _merge_weight(policy: Dict[str, Any], *, kind: str, base_weight: float, learned_weight: float) -> float:
+def _merge_weight(policy: dict[str, Any], *, kind: str, base_weight: float, learned_weight: float) -> float:
     weights = (_candidate_policy(policy) if kind == "candidate_path" else _workflow_policy(policy)).get("merge_weights", {}) or {}
     if kind == "candidate_path":
         primary = float(weights.get("rule_weight", 0.4) or 0.4)
@@ -166,7 +166,7 @@ def _merge_weight(policy: Dict[str, Any], *, kind: str, base_weight: float, lear
     return _clamp_weight((base_weight * primary + learned_weight * secondary) / total)
 
 
-def _derive_delta(outcome: str, evidence_count: int, policy: Dict[str, Any], explicit_delta: Any = None) -> float:
+def _derive_delta(outcome: str, evidence_count: int, policy: dict[str, Any], explicit_delta: Any = None) -> float:
     if explicit_delta is not None:
         return float(explicit_delta)
     outcome_key = str(outcome or "").strip().lower()
@@ -176,7 +176,7 @@ def _derive_delta(outcome: str, evidence_count: int, policy: Dict[str, Any], exp
     return float(deltas.get(outcome_key, 0.0))
 
 
-def _normalize_feedback_payload(payload: Dict[str, Any], policy: Dict[str, Any]) -> Dict[str, Any]:
+def _normalize_feedback_payload(payload: dict[str, Any], policy: dict[str, Any]) -> dict[str, Any]:
     outcome = str(payload.get("outcome", "") or "").strip()
     evidence = _normalize_evidence(payload.get("evidence"))
     weight_before = payload.get("weight_before", payload.get("confidence", _DEFAULT_CONFIDENCE))
@@ -202,7 +202,7 @@ def _normalize_feedback_payload(payload: Dict[str, Any], policy: Dict[str, Any])
     return payload
 
 
-def _normalize_heuristic_row(row: Dict[str, Any], policy: Dict[str, Any]) -> Dict[str, Any]:
+def _normalize_heuristic_row(row: dict[str, Any], policy: dict[str, Any]) -> dict[str, Any]:
     normalized = dict(row or {})
     if not normalized:
         return {}
@@ -235,7 +235,7 @@ def _normalize_heuristic_row(row: Dict[str, Any], policy: Dict[str, Any]) -> Dic
     return normalized
 
 
-def _group_key(row: Dict[str, Any], heuristic_to_group: Dict[str, str]) -> str:
+def _group_key(row: dict[str, Any], heuristic_to_group: dict[str, str]) -> str:
     heuristic_id = str(row.get("heuristic_id", "") or "")
     candidate_type = str(row.get("candidate_type", "") or "")
     target = str(row.get("target", "") or "")
@@ -258,7 +258,7 @@ def _group_key(row: Dict[str, Any], heuristic_to_group: Dict[str, str]) -> str:
     return key
 
 
-def _row_ts(row: Dict[str, Any]) -> str:
+def _row_ts(row: dict[str, Any]) -> str:
     return str(
         row.get("updated_at")
         or row.get("recorded_at")
@@ -267,7 +267,7 @@ def _row_ts(row: Dict[str, Any]) -> str:
     )
 
 
-def _row_sort_key(row: Dict[str, Any]) -> tuple[str, str, str]:
+def _row_sort_key(row: dict[str, Any]) -> tuple[str, str, str]:
     return (
         _row_ts(row),
         str(row.get("created_at", "") or ""),
@@ -292,7 +292,7 @@ def _parse_iso_datetime(value: str) -> datetime | None:
     return dt.astimezone(timezone.utc)
 
 
-def _apply_time_decay(item: Dict[str, Any], recommended_weight: float, policy: Dict[str, Any]) -> float:
+def _apply_time_decay(item: dict[str, Any], recommended_weight: float, policy: dict[str, Any]) -> float:
     last_updated_at = _parse_iso_datetime(str(item.get("last_updated_at", "") or ""))
     if last_updated_at is None:
         item["stale_days"] = 0
@@ -319,7 +319,7 @@ def _apply_time_decay(item: Dict[str, Any], recommended_weight: float, policy: D
     return recommended_weight
 
 
-def _apply_recommendation_guard(item: Dict[str, Any], policy: Dict[str, Any]) -> Dict[str, Any]:
+def _apply_recommendation_guard(item: dict[str, Any], policy: dict[str, Any]) -> dict[str, Any]:
     """Prevent one-off wins from becoming long-term default recommendations too early."""
     recommended_weight = float(item.get("confidence", _DEFAULT_CONFIDENCE) or _DEFAULT_CONFIDENCE)
     category = str(item.get("category", "") or "")
@@ -368,7 +368,7 @@ def _apply_recommendation_guard(item: Dict[str, Any], policy: Dict[str, Any]) ->
     return item
 
 
-def _candidate_sort_key(item: Dict[str, Any]) -> tuple[int, float, str]:
+def _candidate_sort_key(item: dict[str, Any]) -> tuple[int, float, str]:
     return (
         0 if item.get("status") == "confirmed" else 1 if item.get("status") == "probable" else 2,
         -float(item.get("weight", 0.0)),
@@ -390,7 +390,7 @@ def _merge_candidate_status(status: str, recommendation_state: str) -> str:
     return normalized_status
 
 
-def _matching_policy_snapshot(policy: Dict[str, Any], category: str, candidate_type: str) -> Dict[str, Any]:
+def _matching_policy_snapshot(policy: dict[str, Any], category: str, candidate_type: str) -> dict[str, Any]:
     candidate_type_value = str(candidate_type or "")
     if candidate_type_value == "workflow_profile":
         return {
@@ -407,8 +407,8 @@ def _matching_policy_snapshot(policy: Dict[str, Any], category: str, candidate_t
     return {"version": _safe_int(policy.get("version"), LEARNING_POLICY_VERSION), "kind": "generic"}
 
 
-def _build_learning_reasons(item: Dict[str, Any]) -> List[Dict[str, Any]]:
-    reasons: List[Dict[str, Any]] = []
+def _build_learning_reasons(item: dict[str, Any]) -> list[dict[str, Any]]:
+    reasons: list[dict[str, Any]] = []
     recommendation_state = str(item.get("recommendation_state", "") or "")
     guard_reason = str(item.get("guard_reason", "") or "")
     if recommendation_state:
@@ -467,13 +467,13 @@ class HeuristicsRegister:
 
     def record(
         self,
-        category: str | Dict[str, Any],
+        category: str | dict[str, Any],
         pattern: str = "",
         trigger: str = "",
         outcome: str = "",
         confidence: float = _DEFAULT_CONFIDENCE,
         **extra: Any,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Record a learned heuristic or a structured feedback event.
 
         Supports both the historical positional signature and dict payloads used by
@@ -512,7 +512,7 @@ class HeuristicsRegister:
         self._store.append_jsonl(HEURISTICS_FILE, entry)
         return entry
 
-    def query(self, category: str = "", limit: int = 20) -> List[Dict[str, Any]]:
+    def query(self, category: str = "", limit: int = 20) -> list[dict[str, Any]]:
         """Query learned heuristics by category.
 
         Returns an aggregated view so repeated feedback on the same candidate path
@@ -524,7 +524,7 @@ class HeuristicsRegister:
             if isinstance(row, dict)
         ]
         rows.sort(key=_row_sort_key)
-        heuristic_to_group: Dict[str, str] = {}
+        heuristic_to_group: dict[str, str] = {}
         for row in rows:
             heuristic_id = str(row.get("heuristic_id", "") or "")
             if not heuristic_id:
@@ -537,7 +537,7 @@ class HeuristicsRegister:
                 heuristic_to_group[heuristic_id] = f"candidate::{candidate_type}::{target}"
             elif category_name or pattern_name:
                 heuristic_to_group[heuristic_id] = f"pattern::{category_name}::{pattern_name}"
-        grouped: Dict[str, Dict[str, Any]] = {}
+        grouped: dict[str, dict[str, Any]] = {}
 
         for row in rows:
             key = _group_key(row, heuristic_to_group)
@@ -666,7 +666,7 @@ class HeuristicsRegister:
         heuristic_id: str = "",
         pattern: str = "",
         limit: int = 10,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Explain how one learned heuristic/candidate reached its current recommendation state."""
         rows = [
             _normalize_heuristic_row(row, self._policy)
@@ -675,7 +675,7 @@ class HeuristicsRegister:
         ]
         rows.sort(key=_row_sort_key)
 
-        heuristic_to_group: Dict[str, str] = {}
+        heuristic_to_group: dict[str, str] = {}
         for row in rows:
             row_heuristic_id = str(row.get("heuristic_id", "") or "")
             if not row_heuristic_id:
@@ -697,7 +697,7 @@ class HeuristicsRegister:
         elif heuristic_id:
             requested_key = heuristic_to_group.get(heuristic_id, f"heuristic::{heuristic_id}")
 
-        current: Dict[str, Any] | None = None
+        current: dict[str, Any] | None = None
         for item in self.query(category=category if category else "", limit=_MAX_QUERY_SCAN):
             if requested_key and item.get("group_key") == requested_key:
                 current = item
@@ -707,7 +707,7 @@ class HeuristicsRegister:
                 requested_key = str(item.get("group_key", "") or requested_key)
                 break
 
-        matched_rows: List[Dict[str, Any]] = []
+        matched_rows: list[dict[str, Any]] = []
         for row in rows:
             group_key = _group_key(row, heuristic_to_group)
             if requested_key:
@@ -716,7 +716,7 @@ class HeuristicsRegister:
             elif heuristic_id and str(row.get("heuristic_id", "") or "") == heuristic_id:
                 matched_rows.append(row)
 
-        recent_events: List[Dict[str, Any]] = []
+        recent_events: list[dict[str, Any]] = []
         for row in reversed(matched_rows[-limit:]):
             recent_events.append(
                 {
@@ -740,7 +740,7 @@ class HeuristicsRegister:
             )
 
         policy_snapshot = _matching_policy_snapshot(self._policy, category, candidate_type or (current or {}).get("candidate_type", ""))
-        result: Dict[str, Any] = {
+        result: dict[str, Any] = {
             "query": {
                 "candidate_type": candidate_type,
                 "target": target,
@@ -764,7 +764,7 @@ class HeuristicsRegister:
             }
         return result
 
-    def update_confidence(self, heuristic_id: str, delta: float) -> Dict[str, Any]:
+    def update_confidence(self, heuristic_id: str, delta: float) -> dict[str, Any]:
         """Update confidence based on observed outcomes."""
         entry = {
             "heuristic_id": heuristic_id,
@@ -784,7 +784,7 @@ class HeuristicsRegister:
         candidate_type: str,
         target: str,
         outcome: str,
-        evidence: List[Any] | None = None,
+        evidence: list[Any] | None = None,
         source: str = "",
         task_id: str = "",
         session_id: str = "",
@@ -798,7 +798,7 @@ class HeuristicsRegister:
         category: str = "candidate-path",
         pattern: str = "",
         trigger: str = "",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Record outcome feedback for a candidate path."""
         effective_pattern = pattern or f"{candidate_type}:{target}"
         effective_weight_before = weight_before
@@ -843,7 +843,7 @@ def record_candidate_path_feedback(
     candidate_type: str,
     target: str,
     outcome: str,
-    evidence: List[Any] | None = None,
+    evidence: list[Any] | None = None,
     source: str = "",
     task_id: str = "",
     session_id: str = "",
@@ -857,7 +857,7 @@ def record_candidate_path_feedback(
     category: str = "candidate-path",
     pattern: str = "",
     trigger: str = "",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Convenience helper for recording candidate-path verification feedback."""
     register = HeuristicsRegister(workspace_file)
     return register.record_candidate_path_feedback(
@@ -881,7 +881,7 @@ def record_candidate_path_feedback(
     )
 
 
-def candidate_path_learning_index(workspace_file: str | Path) -> Dict[tuple[str, str], Dict[str, Any]]:
+def candidate_path_learning_index(workspace_file: str | Path) -> dict[tuple[str, str], dict[str, Any]]:
     """Build an index of learned candidate-path recommendations."""
     rows = HeuristicsRegister(workspace_file).query(category="candidate-path", limit=_MAX_QUERY_SCAN)
     return {
@@ -896,8 +896,8 @@ def candidate_path_learning_index(workspace_file: str | Path) -> Dict[tuple[str,
 
 def apply_candidate_path_learning(
     workspace_file: str | Path,
-    candidates: List[Dict[str, Any]],
-) -> List[Dict[str, Any]]:
+    candidates: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
     """Merge learned recommendation weights back into orchestrator candidate paths."""
     try:
         learning_index = candidate_path_learning_index(workspace_file)
@@ -906,7 +906,7 @@ def apply_candidate_path_learning(
         learning_index = {}
         policy = dict(DEFAULT_LEARNING_POLICY)
 
-    adjusted: List[Dict[str, Any]] = []
+    adjusted: list[dict[str, Any]] = []
     for candidate in candidates:
         item = dict(candidate)
         aliases = item.pop("_learning_aliases", []) or []
@@ -942,9 +942,9 @@ def apply_candidate_path_learning(
     return adjusted
 
 
-def bounded_retrieval_source_weights(weights: Dict[str, Any]) -> Dict[str, float]:
+def bounded_retrieval_source_weights(weights: dict[str, Any]) -> dict[str, float]:
     """Clamp learned retrieval preferences without changing rule constraints."""
-    bounded: Dict[str, float] = {}
+    bounded: dict[str, float] = {}
     for source, value in dict(weights or {}).items():
         source_name = str(source or "").strip().lower()
         if source_name not in _RETRIEVAL_SOURCES:
@@ -964,7 +964,7 @@ def load_retrieval_source_weights(
     workspace_file: str | Path,
     *,
     intent: str,
-) -> Dict[str, float]:
+) -> dict[str, float]:
     """Load bounded source preferences for one retrieval intent."""
     try:
         rows = HeuristicsRegister(workspace_file).query(
@@ -975,8 +975,8 @@ def load_retrieval_source_weights(
         return {}
 
     requested_intent = str(intent or "general").strip().lower()
-    wildcard: Dict[str, Any] = {}
-    exact: Dict[str, Any] = {}
+    wildcard: dict[str, Any] = {}
+    exact: dict[str, Any] = {}
     for row in rows:
         if str(row.get("candidate_type", "") or "") != "retrieval-source":
             continue
@@ -998,11 +998,11 @@ def record_retrieval_source_feedback(
     intent: str,
     source: str,
     outcome: str,
-    evidence: List[Any] | None = None,
+    evidence: list[Any] | None = None,
     weight_before: float | None = None,
     task_id: str = "",
     session_id: str = "",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Record verified source usefulness using bounded, lightweight deltas."""
     source_name = str(source or "").strip().lower()
     if source_name not in _RETRIEVAL_SOURCES:

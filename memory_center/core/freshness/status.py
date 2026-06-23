@@ -8,7 +8,7 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 from ..config import load_workspace_config
 from ..store import WorkspaceStore
@@ -20,12 +20,12 @@ class FreshnessStatus:
     """Freshness state for a workspace."""
     status: str = "unknown"  # fresh | pending | stale | unknown
     last_indexed_at: str = ""
-    changed_files: List[str] = field(default_factory=list)
-    pending_files: List[str] = field(default_factory=list)
+    changed_files: list[str] = field(default_factory=list)
+    pending_files: list[str] = field(default_factory=list)
     staleness_level: str = "unknown"  # low | medium | high | unknown
     message: str = ""
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "status": self.status,
             "last_indexed_at": self.last_indexed_at,
@@ -82,7 +82,7 @@ class IndexFreshnessService:
 
         return FreshnessStatus(status="unknown", message="无法检测索引文件")
 
-    def check_files(self, file_paths: List[str]) -> Dict[str, str]:
+    def check_files(self, file_paths: list[str]) -> dict[str, str]:
         """Check freshness of specific files. Returns {path: fresh|stale|unknown}."""
         results = {}
         for fp in file_paths:
@@ -103,7 +103,7 @@ class IndexFreshnessService:
                 results[fp] = "unknown"
         return results
 
-    def banner(self) -> Dict[str, Any]:
+    def banner(self) -> dict[str, Any]:
         """Generate a freshness banner for MCP responses."""
         status = self.check()
         result = {

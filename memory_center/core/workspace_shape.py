@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 from .models import ServiceConfig, WorkspaceConfig
 
@@ -16,8 +16,8 @@ class WorkspaceServiceEntry:
     root_text: str
 
 
-def collect_workspace_service_entries(config: WorkspaceConfig) -> List[WorkspaceServiceEntry]:
-    entries: List[WorkspaceServiceEntry] = []
+def collect_workspace_service_entries(config: WorkspaceConfig) -> list[WorkspaceServiceEntry]:
+    entries: list[WorkspaceServiceEntry] = []
     for index, svc in enumerate(config.services):
         service_root = config.resolve_service_path(svc)
         if not service_root.exists():
@@ -44,7 +44,7 @@ def is_path_within_root(path: Path, root: Path) -> bool:
 
 def select_primary_service_entry(
     path: Path,
-    service_entries: List[WorkspaceServiceEntry],
+    service_entries: list[WorkspaceServiceEntry],
 ) -> WorkspaceServiceEntry | None:
     candidates = [entry for entry in service_entries if is_path_within_root(path, entry.root)]
     if not candidates:
@@ -52,13 +52,13 @@ def select_primary_service_entry(
     return sorted(candidates, key=lambda item: (-len(item.root_text), item.index))[0]
 
 
-def analyze_workspace_shape(config: WorkspaceConfig) -> Dict[str, Any]:
+def analyze_workspace_shape(config: WorkspaceConfig) -> dict[str, Any]:
     service_entries = collect_workspace_service_entries(config)
-    duplicate_roots: Dict[str, List[str]] = {}
+    duplicate_roots: dict[str, list[str]] = {}
     for entry in service_entries:
         duplicate_roots.setdefault(entry.root_text, []).append(entry.name)
 
-    nested_pairs: List[Dict[str, str]] = []
+    nested_pairs: list[dict[str, str]] = []
     for left in service_entries:
         for right in service_entries:
             if left.name == right.name:
@@ -82,7 +82,7 @@ def analyze_workspace_shape(config: WorkspaceConfig) -> Dict[str, Any]:
     ]
     unique_root_count = len({entry.root_text for entry in service_entries})
 
-    warnings: List[Dict[str, Any]] = []
+    warnings: list[dict[str, Any]] = []
     if duplicate_root_groups:
         warnings.append(
             {
@@ -136,13 +136,13 @@ def analyze_workspace_shape(config: WorkspaceConfig) -> Dict[str, Any]:
 def build_workspace_shape_recommendations(
     config: WorkspaceConfig,
     *,
-    service_entries: List[WorkspaceServiceEntry] | None = None,
-    duplicate_root_groups: List[Dict[str, Any]] | None = None,
-    nested_pairs: List[Dict[str, str]] | None = None,
-) -> List[Dict[str, Any]]:
+    service_entries: list[WorkspaceServiceEntry] | None = None,
+    duplicate_root_groups: list[dict[str, Any]] | None = None,
+    nested_pairs: list[dict[str, str]] | None = None,
+) -> list[dict[str, Any]]:
     entries = service_entries or collect_workspace_service_entries(config)
     root_to_entry = {entry.root_text: entry for entry in entries}
-    recommendations: List[Dict[str, Any]] = []
+    recommendations: list[dict[str, Any]] = []
 
     for group in duplicate_root_groups or []:
         services = list(group.get("services", []) or [])
@@ -166,7 +166,7 @@ def build_workspace_shape_recommendations(
             }
         )
 
-    nested_by_parent: Dict[str, List[Dict[str, str]]] = {}
+    nested_by_parent: dict[str, list[dict[str, str]]] = {}
     for pair in nested_pairs or []:
         nested_by_parent.setdefault(pair["parent_service"], []).append(pair)
 
@@ -192,10 +192,10 @@ def build_workspace_shape_recommendations(
     return recommendations
 
 
-def _discover_submodule_candidates(root: Path, config: WorkspaceConfig) -> List[str]:
+def _discover_submodule_candidates(root: Path, config: WorkspaceConfig) -> list[str]:
     if not root.exists() or not root.is_dir():
         return []
-    candidates: List[str] = []
+    candidates: list[str] = []
     for child in sorted(root.iterdir(), key=lambda item: item.name):
         if not child.is_dir():
             continue

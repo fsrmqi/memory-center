@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 from ..orchestrator.common import _project_matches
 
@@ -29,7 +29,7 @@ __all__ = [
 ]
 
 
-def parse_method_walkthrough_symbol(symbol: str) -> Dict[str, str]:
+def parse_method_walkthrough_symbol(symbol: str) -> dict[str, str]:
     raw = (symbol or "").strip()
     if "#" in raw:
         owner, method = raw.rsplit("#", 1)
@@ -43,16 +43,16 @@ def parse_method_walkthrough_symbol(symbol: str) -> Dict[str, str]:
 
 
 def find_method_symbol_entry(
-    symbols: List[Dict[str, Any]],
-    parsed: Dict[str, str],
+    symbols: list[dict[str, Any]],
+    parsed: dict[str, str],
     project: str = "",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     class_name = parsed.get("class", "")
     package = parsed.get("package", "")
     method = parsed.get("method", "")
     if not class_name or not method:
         return {}
-    candidates: List[tuple[int, Dict[str, Any], str]] = []
+    candidates: list[tuple[int, dict[str, Any], str]] = []
     for item in symbols:
         owner_names = list(item.get("classes", []) or []) + list(item.get("interfaces", []) or [])
         if class_name not in owner_names or method not in (item.get("methods", []) or []):
@@ -79,15 +79,15 @@ def find_method_symbol_entry(
 
 
 def find_receiver_impl_method(
-    symbols: List[Dict[str, Any]],
+    symbols: list[dict[str, Any]],
     receiver_type: str,
     method_name: str,
     project: str,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     preferred_names = [f"{receiver_type}Impl"]
     if receiver_type.endswith("Service"):
         preferred_names.append(receiver_type.removesuffix("Service") + "ServiceImpl")
-    candidates: List[tuple[int, Dict[str, Any], str]] = []
+    candidates: list[tuple[int, dict[str, Any], str]] = []
     for item in symbols:
         if method_name not in (item.get("methods", []) or []):
             continue
@@ -114,9 +114,9 @@ def find_receiver_impl_method(
     return {"symbol": item, "class_name": class_name, "project": item.get("project", ""), "file": item.get("file", "")}
 
 
-def build_file_abs_path_map(config: Any, store: Any) -> Dict[tuple[str, str], str]:
+def build_file_abs_path_map(config: Any, store: Any) -> dict[tuple[str, str], str]:
     file_index = store.read_json_prefer_backend("file-index.json", [])
-    mapping: Dict[tuple[str, str], str] = {}
+    mapping: dict[tuple[str, str], str] = {}
     for row in file_index:
         project = str(row.get("project", "") or "")
         path = str(row.get("path", "") or "")
@@ -138,7 +138,7 @@ def build_file_abs_path_map(config: Any, store: Any) -> Dict[tuple[str, str], st
 
 
 def resolve_indexed_abs_path(
-    file_abs_map: Dict[tuple[str, str], str],
+    file_abs_map: dict[tuple[str, str], str],
     project: str,
     file_path: str,
 ) -> str:
@@ -220,7 +220,7 @@ def line_number_at_offset(text: str, offset: int) -> int:
     return text.count("\n", 0, max(offset, 0)) + 1
 
 
-def find_method_span_lines(abs_path: str, method_name: str) -> Dict[str, int]:
+def find_method_span_lines(abs_path: str, method_name: str) -> dict[str, int]:
     if not abs_path:
         return {}
     try:
@@ -248,7 +248,7 @@ def detect_unqualified_same_class_calls(
     abs_path: str,
     owner_method: str,
     class_methods: set[str],
-) -> List[str]:
+) -> list[str]:
     if not abs_path:
         return []
     try:
@@ -258,7 +258,7 @@ def detect_unqualified_same_class_calls(
     body = extract_java_method_body(text, owner_method)
     if not body:
         return []
-    calls: List[str] = []
+    calls: list[str] = []
     seen: set[str] = set()
     for match in re.finditer(r"(?<![.\w])([A-Za-z_]\w*)\s*\(", body):
         name = match.group(1)
@@ -269,9 +269,9 @@ def detect_unqualified_same_class_calls(
     return calls
 
 
-def extract_java_case_labels(abs_path: str, method_name: str) -> List[str]:
+def extract_java_case_labels(abs_path: str, method_name: str) -> list[str]:
     body = extract_java_method_body_from_path(abs_path, method_name)
-    labels: List[str] = []
+    labels: list[str] = []
     for match in re.finditer(r"\bcase\s+([^:]+)\s*:", body):
         label = match.group(1).strip().strip('"')
         if label and label not in labels:

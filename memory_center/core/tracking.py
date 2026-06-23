@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 from .store import WorkspaceStore
 
@@ -45,7 +45,7 @@ def query_token_gain(
     budget: str = "",
     model: str = "",
     limit: int = 200,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Read and aggregate token gain records."""
     store = WorkspaceStore(workspace_file)
     rows = store.read_jsonl_prefer_backend(TOKEN_GAIN_LOG_FILE, limit=max(limit, 5000))
@@ -59,7 +59,7 @@ def query_token_gain(
     recent = rows[-limit:]
 
     # Aggregate per-tool
-    tool_stats: Dict[str, Dict[str, Any]] = {}
+    tool_stats: dict[str, dict[str, Any]] = {}
     for row in recent:
         tn = row.get("tool_name", "")
         stats = tool_stats.setdefault(tn, {"count": 0, "raw_tokens": 0, "compact_tokens": 0, "saved_tokens": 0})
@@ -67,7 +67,7 @@ def query_token_gain(
         stats["raw_tokens"] += row.get("raw_tokens", 0)
         stats["compact_tokens"] += row.get("compact_tokens", 0)
         stats["saved_tokens"] += row.get("saved_tokens", 0)
-    for tn, stats in tool_stats.items():
+    for stats in tool_stats.values():
         raw = stats["raw_tokens"] or 1
         stats["avg_savings_pct"] = round(stats["saved_tokens"] / raw * 100, 1)
 

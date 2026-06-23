@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, List, Tuple
+from typing import Any
 
 from .base import JavaParseResult
 
@@ -120,22 +120,22 @@ def _first_group(pattern: str, text: str) -> str | None:
     return m.group(1) if m else None
 
 
-def _parse_interface_constants(text: str) -> Dict[str, str]:
+def _parse_interface_constants(text: str) -> dict[str, str]:
     """Extract String CONSTANT_NAME = "value" from Java interface bodies.
     Interface fields lack explicit access modifiers (implicitly public static final),
     so _parse_fields() misses them. This function captures those declarations
     and stores them in field_types for constant reference resolution."""
-    constants: Dict[str, str] = {}
+    constants: dict[str, str] = {}
     pattern = re.compile(r'String\s+(\w+)\s*=\s*"([^"]+)"\s*;', re.M)
     for name, value in pattern.findall(text):
         constants[name] = value
     return constants
 
 
-def _parse_type_declarations(text: str, keywords: Tuple[str, ...]) -> Tuple[List[str], Dict[str, int]]:
+def _parse_type_declarations(text: str, keywords: tuple[str, ...]) -> tuple[list[str], dict[str, int]]:
     pattern = re.compile(r"\b(" + "|".join(re.escape(keyword) for keyword in keywords) + r")\s+(\w+)", re.M)
-    names: List[str] = []
-    lines: Dict[str, int] = {}
+    names: list[str] = []
+    lines: dict[str, int] = {}
     for match in pattern.finditer(text):
         name = match.group(2)
         names.append(name)
@@ -143,10 +143,10 @@ def _parse_type_declarations(text: str, keywords: Tuple[str, ...]) -> Tuple[List
     return sorted(set(names)), lines
 
 
-def _parse_fields(text: str) -> Tuple[List[str], Dict[str, str], Dict[str, int]]:
-    field_types: Dict[str, str] = {}
-    field_lines: Dict[str, int] = {}
-    fields: List[str] = []
+def _parse_fields(text: str) -> tuple[list[str], dict[str, str], dict[str, int]]:
+    field_types: dict[str, str] = {}
+    field_lines: dict[str, int] = {}
+    fields: list[str] = []
     pattern = re.compile(
         r"(?:@\w+(?:\([^)]*\))?\s*)*"
         r"(?:private|public|protected)\s+"
@@ -165,7 +165,7 @@ def _parse_fields(text: str) -> Tuple[List[str], Dict[str, str], Dict[str, int]]
     return sorted(set(fields)), field_types, field_lines
 
 
-def _parse_method_spans(text: str) -> List[Dict[str, Any]]:
+def _parse_method_spans(text: str) -> list[dict[str, Any]]:
     pattern = re.compile(
         r"(?:@\w+(?:\([^)]*\))?\s*)*"
         r"(?:public|private|protected)\s+"
@@ -173,14 +173,14 @@ def _parse_method_spans(text: str) -> List[Dict[str, Any]]:
         r"(\w+)\s*\(([^;{}]*)\)\s*(?:throws\s+[\w, ]+\s*)?\{",
         re.M,
     )
-    spans: List[Dict[str, Any]] = []
+    spans: list[dict[str, Any]] = []
     for match in pattern.finditer(text):
         end = _matching_brace_end(text, match.end() - 1)
         spans.append({"name": match.group(1), "params": match.group(2), "start": match.start(), "end": end, "line": _line_of(text, match.start())})
     return spans
 
 
-def _parse_interface_methods(text: str) -> List[Dict[str, Any]]:
+def _parse_interface_methods(text: str) -> list[dict[str, Any]]:
     """Parse method declarations from Java interface bodies.
 
     Interface methods differ from class methods:
@@ -188,7 +188,7 @@ def _parse_interface_methods(text: str) -> List[Dict[str, Any]]:
     - End with ``;`` instead of ``{`` (no method body)
     - ``default`` and ``static`` methods have bodies (end with ``{``)
     """
-    spans: List[Dict[str, Any]] = []
+    spans: list[dict[str, Any]] = []
     iface_pattern = re.compile(r"\binterface\s+\w+[^{]*\{", re.M)
     for m in iface_pattern.finditer(text):
         body_start = m.end()
@@ -245,8 +245,8 @@ def _parse_interface_methods(text: str) -> List[Dict[str, Any]]:
     return spans
 
 
-def _build_method_signatures(method_spans: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    signatures: List[Dict[str, Any]] = []
+def _build_method_signatures(method_spans: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    signatures: list[dict[str, Any]] = []
     seen: set[str] = set()
     for span in method_spans:
         name = str(span.get("name", "") or "")
@@ -266,8 +266,8 @@ def _build_method_signatures(method_spans: List[Dict[str, Any]]) -> List[Dict[st
     return sorted(signatures, key=lambda item: (int(item.get("line", 0)), item["identity"]))
 
 
-def _parameter_types(params: str) -> List[str]:
-    types: List[str] = []
+def _parameter_types(params: str) -> list[str]:
+    types: list[str] = []
     for part in _split_top_level(params):
         cleaned = re.sub(r"@\w+(?:\([^)]*\))?\s*", "", part).strip()
         cleaned = re.sub(r"\b(?:final|volatile|transient)\s+", "", cleaned).strip()
@@ -278,8 +278,8 @@ def _parameter_types(params: str) -> List[str]:
     return types
 
 
-def _split_top_level(value: str) -> List[str]:
-    parts: List[str] = []
+def _split_top_level(value: str) -> list[str]:
+    parts: list[str] = []
     start = 0
     depth = 0
     for index, char in enumerate(value):
@@ -344,7 +344,7 @@ def _matching_brace_end(text: str, open_pos: int) -> int:
     return n
 
 
-def _owner_method(method_spans: List[Dict[str, Any]], pos: int) -> str | None:
+def _owner_method(method_spans: list[dict[str, Any]], pos: int) -> str | None:
     for span in method_spans:
         if span["start"] <= pos < span["end"]:
             return span["name"]
@@ -355,8 +355,8 @@ def _line_of(text: str, pos: int) -> int:
     return text.count("\n", 0, pos) + 1
 
 
-def _parse_bean_injections(text: str, classes: List[str], field_types: Dict[str, str]) -> List[Dict[str, Any]]:
-    facts: List[Dict[str, Any]] = []
+def _parse_bean_injections(text: str, classes: list[str], field_types: dict[str, str]) -> list[dict[str, Any]]:
+    facts: list[dict[str, Any]] = []
     # @Autowired / @Resource field injection
     pattern = re.compile(
         r"(?P<ann>@(?:Autowired|Resource|Inject)(?:\([^)]*\))?\s*)+"
@@ -378,12 +378,12 @@ def _parse_bean_injections(text: str, classes: List[str], field_types: Dict[str,
 
 def _parse_constructor_injections(
     text: str,
-    classes: List[str],
-    field_types: Dict[str, str],
-    existing: List[Dict[str, Any]],
-) -> List[Dict[str, Any]]:
+    classes: list[str],
+    field_types: dict[str, str],
+    existing: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
     seen = {(item.get("field_name"), item.get("type")) for item in existing}
-    facts: List[Dict[str, Any]] = []
+    facts: list[dict[str, Any]] = []
     final_fields = {name: typ for name, typ in field_types.items() if re.search(rf"\bfinal\s+[\w<>\.]+\s+{re.escape(name)}\s*;", text)}
     for class_name in classes:
         pattern = re.compile(rf"\b{re.escape(class_name)}\s*\((?P<params>[^)]*)\)\s*\{{(?P<body>.*?)\n\s*\}}", re.S)
@@ -403,8 +403,8 @@ def _parse_constructor_injections(
     return facts
 
 
-def _parse_params(params: str) -> Dict[str, str]:
-    out: Dict[str, str] = {}
+def _parse_params(params: str) -> dict[str, str]:
+    out: dict[str, str] = {}
     for part in _split_top_level(params):
         cleaned = re.sub(r"@\w+(?:\([^)]*\))?\s*", "", part).strip()
         cleaned = re.sub(r"\b(?:final|volatile|transient)\s+", "", cleaned).strip()
@@ -414,8 +414,8 @@ def _parse_params(params: str) -> Dict[str, str]:
     return out
 
 
-def _parse_method_variable_types(text: str, method_spans: List[Dict[str, Any]]) -> Dict[str, Dict[str, str]]:
-    out: Dict[str, Dict[str, str]] = {}
+def _parse_method_variable_types(text: str, method_spans: list[dict[str, Any]]) -> dict[str, dict[str, str]]:
+    out: dict[str, dict[str, str]] = {}
     local_decl = re.compile(
         r"(?:^|[;{]\s*|\n\s*)"
         r"(?:final\s+)?(?P<type>[\w<>\.\[\]]+)\s+"
@@ -436,11 +436,11 @@ def _parse_method_variable_types(text: str, method_spans: List[Dict[str, Any]]) 
 
 def _parse_method_calls(
     text: str,
-    method_spans: List[Dict[str, Any]],
-    method_variable_types: Dict[str, Dict[str, str]],
-    field_types: Dict[str, str],
-) -> List[Dict[str, Any]]:
-    calls: List[Dict[str, Any]] = []
+    method_spans: list[dict[str, Any]],
+    method_variable_types: dict[str, dict[str, str]],
+    field_types: dict[str, str],
+) -> list[dict[str, Any]]:
+    calls: list[dict[str, Any]] = []
     pattern = re.compile(r"(?P<receiver>\b[a-zA-Z_]\w*)\s*\.\s*(?P<method>[a-zA-Z_]\w*)\s*\(", re.M)
     ignored = {"log", "logger", "System", "Objects", "String", "Collections", "Arrays", "Optional", "Map", "List", "Set"}
     for m in pattern.finditer(text):
@@ -464,11 +464,11 @@ def _parse_method_calls(
 
 def _parse_dto_field_usages(
     text: str,
-    method_spans: List[Dict[str, Any]],
-    method_variable_types: Dict[str, Dict[str, str]],
-    field_types: Dict[str, str],
-) -> List[Dict[str, Any]]:
-    usages: List[Dict[str, Any]] = []
+    method_spans: list[dict[str, Any]],
+    method_variable_types: dict[str, dict[str, str]],
+    field_types: dict[str, str],
+) -> list[dict[str, Any]]:
+    usages: list[dict[str, Any]] = []
     pattern = re.compile(r"(?P<receiver>\b[a-zA-Z_]\w*)\s*\.\s*(?P<accessor>get|set|is)(?P<field>[A-Z]\w*)\s*\(", re.M)
     for m in pattern.finditer(text):
         field = m.group("field")
@@ -485,8 +485,8 @@ def _parse_dto_field_usages(
     return usages
 
 
-def _parse_config_usages(text: str) -> List[Dict[str, Any]]:
-    usages: List[Dict[str, Any]] = []
+def _parse_config_usages(text: str) -> list[dict[str, Any]]:
+    usages: list[dict[str, Any]] = []
     for m in re.finditer(r"@Value\s*\(\s*\"\$\{([^}:\"]+)(?::[^\"]*)?}\"\s*\)", text):
         usages.append({"key": m.group(1), "line": _line_of(text, m.start()), "annotation": "@Value"})
     for m in re.finditer(r"@ConfigurationProperties\s*\(\s*(?:prefix\s*=\s*)?\"([^\"]+)\"\s*\)", text):
@@ -494,8 +494,8 @@ def _parse_config_usages(text: str) -> List[Dict[str, Any]]:
     return usages
 
 
-def _parse_data_resources(text: str) -> List[Dict[str, Any]]:
-    resources: List[Dict[str, Any]] = []
+def _parse_data_resources(text: str) -> list[dict[str, Any]]:
+    resources: list[dict[str, Any]] = []
     for m in re.finditer(r"@Document\s*\(([^)]*)\)", text, flags=re.S):
         args = m.group(1)
         name = _named_or_first_string(args, "collection") or _named_or_first_string(args, "value")

@@ -20,7 +20,7 @@ import inspect
 import re
 from functools import wraps
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 from memory_center.core.errors import normalize_exception
 from memory_center.core.orchestrator import (
@@ -80,19 +80,19 @@ _SHARED_BACKEND_CONTRACTS = (
     "business_flow_impact_for_workspace",
 )
 
-def _find_workspace_name_in_registry(workspace_file: str, registry: Dict[str, Any]) -> str | None:
+def _find_workspace_name_in_registry(workspace_file: str, registry: dict[str, Any]) -> str | None:
     wf_resolved = str(Path(workspace_file).expanduser().resolve())
     for repo in registry.get("repos", []):
         if str(Path(repo.get("workspace_file", "")).expanduser().resolve()) == wf_resolved:
             return repo.get("name")
     return None
 
-def _find_groups_for_workspace(workspace_file: str) -> List[str]:
+def _find_groups_for_workspace(workspace_file: str) -> list[str]:
     registry = load_registry()
     ws_name = _find_workspace_name_in_registry(workspace_file, registry)
     if not ws_name:
         return []
-    groups: List[str] = []
+    groups: list[str] = []
     for group in registry.get("groups", []):
         if ws_name in group.get("members", []):
             groups.append(group.get("name", ""))
@@ -139,7 +139,7 @@ def _wants_deep_chain(*values: str) -> bool:
     return any(token in text for token in ["全链路", "到底层", "最底层", "一路到底", "full chain", "trace to sink"])
 
 
-def _parse_payload(payload_str: str) -> Dict[str, Any] | None:
+def _parse_payload(payload_str: str) -> dict[str, Any] | None:
     """Parse a JSON string payload for MCP tool compatibility."""
     if not payload_str:
         return None
@@ -151,13 +151,13 @@ def _parse_payload(payload_str: str) -> Dict[str, Any] | None:
         return None
 
 
-def _benchmark_trend_report(workspace_file: str, function_name: str = "") -> Dict[str, Any]:
+def _benchmark_trend_report(workspace_file: str, function_name: str = "") -> dict[str, Any]:
     """Generate benchmark trend report for mc_admin."""
     from ..core.benchmark.trending import generate_benchmark_report
     return generate_benchmark_report(workspace_file, function_name=function_name)
 
 
-def _flatten_walkthrough_payload(result: Dict[str, Any], mode_key: str = "mode_used") -> Dict[str, Any]:
+def _flatten_walkthrough_payload(result: dict[str, Any], mode_key: str = "mode_used") -> dict[str, Any]:
     summary_lines = result.get("summary_lines", []) or []
     return {
         mode_key: "walkthrough",
@@ -187,11 +187,11 @@ def _flatten_walkthrough_payload(result: Dict[str, Any], mode_key: str = "mode_u
     }
 
 
-def _collect_walkthrough_read_targets(result: Dict[str, Any]) -> List[Dict[str, Any]]:
-    targets: List[Dict[str, Any]] = []
+def _collect_walkthrough_read_targets(result: dict[str, Any]) -> list[dict[str, Any]]:
+    targets: list[dict[str, Any]] = []
     seen = set()
 
-    def add(role: str, item: Dict[str, Any], label: str = "") -> None:
+    def add(role: str, item: dict[str, Any], label: str = "") -> None:
         abs_path = item.get("absolute_file_path") or item.get("file_path")
         if not abs_path:
             return
@@ -230,34 +230,34 @@ def _collect_walkthrough_read_targets(result: Dict[str, Any]) -> List[Dict[str, 
     return targets
 
 
-def _run_audit(workspace_file: str, work_package: str = "") -> Dict[str, Any]:
+def _run_audit(workspace_file: str, work_package: str = "") -> dict[str, Any]:
     """Run completion audit for mc_admin."""
     from ..core.audit.completion import run_completion_audit
     return run_completion_audit(workspace_file, work_package=work_package)
 
 
-def _drill_ref(workspace_file: str, ref_id: str = "") -> Dict[str, Any]:
+def _drill_ref(workspace_file: str, ref_id: str = "") -> dict[str, Any]:
     """Expand a ref with progressive disclosure for mc_admin."""
     from ..core.navigation.drilldown import DrillDownNavigator
     with DrillDownNavigator(workspace_file) as nav:
         return nav.expand_ref(ref_id)
 
 
-def _drill_timeline(workspace_file: str, session_id: str = "", task_id: str = "", limit: int = 50) -> Dict[str, Any]:
+def _drill_timeline(workspace_file: str, session_id: str = "", task_id: str = "", limit: int = 50) -> dict[str, Any]:
     """Drill into timeline for mc_admin."""
     from ..core.navigation.drilldown import DrillDownNavigator
     with DrillDownNavigator(workspace_file) as nav:
         return nav.drill_timeline(session_id=session_id, task_id=task_id, limit=limit)
 
 
-def _drill_task(workspace_file: str, task_id: str = "") -> Dict[str, Any]:
+def _drill_task(workspace_file: str, task_id: str = "") -> dict[str, Any]:
     """Drill into task context for mc_admin."""
     from ..core.navigation.drilldown import DrillDownNavigator
     with DrillDownNavigator(workspace_file) as nav:
         return nav.drill_task(task_id)
 
 
-def _backend_consistency(workspace_file: str) -> Dict[str, Any]:
+def _backend_consistency(workspace_file: str) -> dict[str, Any]:
     """Check backend consistency for mc_admin."""
     from ..core.backend.query import UnifiedBackendQuery
     from ..core.store import WorkspaceStore
@@ -266,7 +266,7 @@ def _backend_consistency(workspace_file: str) -> Dict[str, Any]:
         return backend.check_consistency(store.base_dir)
 
 
-def _constraint_action(context: str = "", template: str = "coding_agent") -> Dict[str, Any]:
+def _constraint_action(context: str = "", template: str = "coding_agent") -> dict[str, Any]:
     """Show constraint template or auto-select action for mc_admin."""
     from ..core.templates import auto_select_action, get_constraint_template
     if context:
@@ -385,7 +385,7 @@ def create_server(workspace_file: str):
         depth: int = 2,
         entry: str = "",
         ref_id: str = "",
-        ref_ids: List[str] | None = None,
+        ref_ids: list[str] | None = None,
         limit: int = 20,
         project: str = "",
         report_level: str = "standard",
@@ -497,8 +497,8 @@ def create_server(workspace_file: str):
         project: str = "",
         contract_file: str = "",
         change_type: str = "modify",
-        projects: List[str] | None = None,
-        files: List[str] | None = None,
+        projects: list[str] | None = None,
+        files: list[str] | None = None,
         scope: str = "staged",
     ):
         """Analyze change impact and generate action plans. Depth quick: impact only. Depth standard: impact + change plan + rules check. Depth full: standard + contract check + verification checklist. If target is empty, runs detect-changes instead of impact."""
@@ -586,7 +586,7 @@ def create_server(workspace_file: str):
         title: str = "",
         auto_sync_mode: str = "balanced",
         record_case: bool = True,
-        verified_by: List[str] | None = None,
+        verified_by: list[str] | None = None,
     ):
         """Close a task workflow. Ends session, syncs case to artifacts, suggests case record, and optionally records it to cross-service memory."""
         wf = ctx.workspace_file
@@ -632,7 +632,7 @@ def create_server(workspace_file: str):
         title: str = "",
         intent: str = "",
         owner: str = "",
-        tags: List[str] | None = None,
+        tags: list[str] | None = None,
         priority: str = "medium",
         status: str = "",
         source: str = "",
@@ -647,15 +647,15 @@ def create_server(workspace_file: str):
         event_type: str = "",
         payload: str = "",
         outcome: str = "",
-        verified_by: List[str] | None = None,
+        verified_by: list[str] | None = None,
         target_model: str = "codex",
         scope: str = "all",
         tool_name: str = "",
         model: str = "",
         text: str = "",
         prefer_layer: str = "",
-        projects: List[str] | None = None,
-        files: List[str] | None = None,
+        projects: list[str] | None = None,
+        files: list[str] | None = None,
         group: str = "",
         direction: str = "upstream",
         max_depth: int = 3,

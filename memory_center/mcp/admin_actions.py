@@ -18,7 +18,7 @@ Public surface:
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from memory_center.core.artifacts import (
     append_change_log,
@@ -122,7 +122,7 @@ __all__ = [
 # Helper actions (previously inline / static methods inside create_server)
 # ---------------------------------------------------------------------------
 
-def parse_payload(payload_str: str) -> Optional[Dict[str, Any]]:
+def parse_payload(payload_str: str) -> dict[str, Any] | None:
     if not payload_str:
         return None
     try:
@@ -132,35 +132,35 @@ def parse_payload(payload_str: str) -> Optional[Dict[str, Any]]:
     return data if isinstance(data, dict) else {"value": data}
 
 
-def benchmark_trend_report(workspace_file: str, function_name: str = "") -> Dict[str, Any]:
+def benchmark_trend_report(workspace_file: str, function_name: str = "") -> dict[str, Any]:
     from memory_center.core.benchmark.trending import generate_benchmark_report
     return generate_benchmark_report(workspace_file, function_name=function_name)
 
 
-def run_audit(workspace_file: str, work_package: str = "") -> Dict[str, Any]:
+def run_audit(workspace_file: str, work_package: str = "") -> dict[str, Any]:
     from memory_center.core.audit.completion import run_completion_audit
     return run_completion_audit(workspace_file, work_package=work_package)
 
 
-def drill_ref(workspace_file: str, ref_id: str = "") -> Dict[str, Any]:
+def drill_ref(workspace_file: str, ref_id: str = "") -> dict[str, Any]:
     from memory_center.core.navigation.drilldown import DrillDownNavigator
     with DrillDownNavigator(workspace_file) as nav:
         return nav.expand_ref(ref_id)
 
 
-def drill_timeline(workspace_file: str, session_id: str = "", task_id: str = "", limit: int = 50) -> Dict[str, Any]:
+def drill_timeline(workspace_file: str, session_id: str = "", task_id: str = "", limit: int = 50) -> dict[str, Any]:
     from memory_center.core.navigation.drilldown import DrillDownNavigator
     with DrillDownNavigator(workspace_file) as nav:
         return nav.drill_timeline(session_id=session_id, task_id=task_id, limit=limit)
 
 
-def drill_task(workspace_file: str, task_id: str = "") -> Dict[str, Any]:
+def drill_task(workspace_file: str, task_id: str = "") -> dict[str, Any]:
     from memory_center.core.navigation.drilldown import DrillDownNavigator
     with DrillDownNavigator(workspace_file) as nav:
         return nav.drill_task(task_id)
 
 
-def backend_consistency(workspace_file: str) -> Dict[str, Any]:
+def backend_consistency(workspace_file: str) -> dict[str, Any]:
     from memory_center.core.backend.query import UnifiedBackendQuery
     from memory_center.core.store import WorkspaceStore
     store = WorkspaceStore(workspace_file)
@@ -168,7 +168,7 @@ def backend_consistency(workspace_file: str) -> Dict[str, Any]:
         return backend.check_consistency(store.base_dir)
 
 
-def constraint_action(context: str = "", template: str = "coding_agent") -> Dict[str, Any]:
+def constraint_action(context: str = "", template: str = "coding_agent") -> dict[str, Any]:
     from memory_center.core.templates import auto_select_action, get_constraint_template
     if context:
         return {"context": context, "template": template, "recommended_action": auto_select_action(context, template)}
@@ -176,7 +176,7 @@ def constraint_action(context: str = "", template: str = "coding_agent") -> Dict
     return tmpl or {"error": f"Unknown template: {template}"}
 
 
-def verification_loop_action(workspace_file: str, intent: str, task_id: str) -> Dict[str, Any]:
+def verification_loop_action(workspace_file: str, intent: str, task_id: str) -> dict[str, Any]:
     vl = VerificationLoop(workspace_file)
     if not task_id:
         task_id = "default"
@@ -186,7 +186,7 @@ def verification_loop_action(workspace_file: str, intent: str, task_id: str) -> 
     return {"checklist": checklist, "status": status, "workflow": "mc-verification-loop"}
 
 
-def pattern_promote_action(workspace_file: str, action_type: str, text: str) -> Dict[str, Any]:
+def pattern_promote_action(workspace_file: str, action_type: str, text: str) -> dict[str, Any]:
     pp = PatternPromotion(workspace_file)
     if action_type == "propose":
         return pp.propose({"rule_text": text, "source": "manual"})
@@ -197,7 +197,7 @@ def pattern_promote_action(workspace_file: str, action_type: str, text: str) -> 
     return {"error": "unknown action"}
 
 
-def heuristics_action(workspace_file: str, action_type: str, text: str) -> Dict[str, Any]:
+def heuristics_action(workspace_file: str, action_type: str, text: str) -> dict[str, Any]:
     hr = HeuristicsRegister(workspace_file)
     try:
         data = json.loads(text) if text else {}
@@ -239,12 +239,12 @@ def heuristics_action(workspace_file: str, action_type: str, text: str) -> Dict[
     return {"error": "unknown action"}
 
 
-def explanation_action(text: str, persona: str = "developer") -> Dict[str, Any]:
+def explanation_action(text: str, persona: str = "developer") -> dict[str, Any]:
     exp = Explanation(subject="explanation", summary=text or "", persona=persona)
     return {"explanation": exp.adapt_for_persona(persona).to_full()}
 
 
-def business_flow_action(workspace_file: str, name: str, max_depth: int) -> Dict[str, Any]:
+def business_flow_action(workspace_file: str, name: str, max_depth: int) -> dict[str, Any]:
     if not name:
         return {"error": "name (seed node) required"}
     result = extract_business_flows_for_workspace(workspace_file, name, max_depth=max_depth or 4)
@@ -252,13 +252,13 @@ def business_flow_action(workspace_file: str, name: str, max_depth: int) -> Dict
     return result
 
 
-def business_flow_impact_action(workspace_file: str, node_id: str, max_depth: int) -> Dict[str, Any]:
+def business_flow_impact_action(workspace_file: str, node_id: str, max_depth: int) -> dict[str, Any]:
     result = business_flow_impact_for_workspace(workspace_file, node_id or "", max_depth=max_depth or 3)
     result["workflow"] = "mc-business-flow-impact"
     return result
 
 
-def metrics_summary_action(workspace_file: str = "", metric_name: str = "") -> Dict[str, Any]:
+def metrics_summary_action(workspace_file: str = "", metric_name: str = "") -> dict[str, Any]:
     """Return aggregated metrics for the workspace.
 
     ``workspace_file`` is required by ``MetricsCollector``; an empty string is
@@ -278,12 +278,12 @@ def metrics_summary_action(workspace_file: str = "", metric_name: str = "") -> D
     return {"summary": MetricsCollector(workspace_file).summary(metric_name), "workflow": "mc-metrics"}
 
 
-def regression_alerts_action(workspace_file: str, _name_unused: str = "") -> Dict[str, Any]:
+def regression_alerts_action(workspace_file: str, _name_unused: str = "") -> dict[str, Any]:
     alerts = check_regression_alerts(workspace_file)
     return {"alerts": alerts, "workflow": "mc-regression-alerts"}
 
 
-def eval_golden_action(workspace_file: str, cases_file: str) -> Dict[str, Any]:
+def eval_golden_action(workspace_file: str, cases_file: str) -> dict[str, Any]:
     from memory_center.core import benchmark as benchmark_module
 
     return benchmark_module.run_golden_suite(workspace_file, cases_file)
@@ -302,7 +302,7 @@ def build_admin_registry(
     title: str = "",
     intent: str = "",
     owner: str = "",
-    tags: Optional[List[str]] = None,
+    tags: list[str] | None = None,
     priority: str = "medium",
     status: str = "",
     source: str = "",
@@ -317,15 +317,15 @@ def build_admin_registry(
     event_type: str = "",
     payload: str = "",
     outcome: str = "",
-    verified_by: Optional[List[str]] = None,
+    verified_by: list[str] | None = None,
     target_model: str = "codex",
     scope: str = "all",
     tool_name: str = "",
     model: str = "",
     text: str = "",
     prefer_layer: str = "",
-    projects: Optional[List[str]] = None,
-    files: Optional[List[str]] = None,
+    projects: list[str] | None = None,
+    files: list[str] | None = None,
     group: str = "",
     direction: str = "upstream",
     max_depth: int = 3,

@@ -5,8 +5,9 @@ import math
 import os
 import re
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
+from .compat import zip_strict
 from .graph import GraphStore
 from .store import WorkspaceStore
 
@@ -18,7 +19,7 @@ BM25_K1 = 1.5
 BM25_B = 0.75
 
 
-def ensure_workspace_semantic_index(workspace_file: str | Path) -> Dict[str, Any]:
+def ensure_workspace_semantic_index(workspace_file: str | Path) -> dict[str, Any]:
     store = WorkspaceStore(workspace_file)
     with GraphStore(store.graph_db_path) as graph:
         counts = graph.counts()
@@ -35,12 +36,12 @@ def ensure_workspace_semantic_index(workspace_file: str | Path) -> Dict[str, Any
     return build_workspace_semantic_index(workspace_file)
 
 
-def build_workspace_semantic_index(workspace_file: str | Path) -> Dict[str, Any]:
+def build_workspace_semantic_index(workspace_file: str | Path) -> dict[str, Any]:
     store = WorkspaceStore(workspace_file)
     with GraphStore(store.graph_db_path) as graph:
         nodes = graph.all_nodes()
     docs = []
-    df: Dict[str, int] = {}
+    df: dict[str, int] = {}
     backend = _requested_backend()
     requested_model = _requested_model_name(backend)
 
@@ -86,7 +87,7 @@ def build_workspace_semantic_index(workspace_file: str | Path) -> Dict[str, Any]
         if model is not None and docs:
             texts = [doc["text"] for doc in docs]
             dense_vectors = model.encode(texts, normalize_embeddings=True)
-            for doc, vector in zip(docs, dense_vectors):
+            for doc, vector in zip_strict(docs, dense_vectors):
                 doc["dense_vector"] = [float(value) for value in vector]
             actual_backend = "sentence-transformers"
             model_name = requested_model
@@ -109,7 +110,7 @@ def build_workspace_semantic_index(workspace_file: str | Path) -> Dict[str, Any]
     return payload
 
 
-def build_workspace_semantic_index_partial(workspace_file: str | Path, changed_node_ids: set[str]) -> Dict[str, Any]:
+def build_workspace_semantic_index_partial(workspace_file: str | Path, changed_node_ids: set[str]) -> dict[str, Any]:
     """Rebuild semantic docs only for changed nodes, keeping untouched docs."""
     store = WorkspaceStore(workspace_file)
     existing = store.read_json_prefer_backend(SEMANTIC_INDEX_FILE, {})
@@ -119,10 +120,10 @@ def build_workspace_semantic_index_partial(workspace_file: str | Path, changed_n
     with GraphStore(store.graph_db_path) as graph:
         changed_nodes = [n for n in graph.all_nodes() if n.get("id") in changed_node_ids]
         total_node_count = graph.counts().get("nodes", 0)
-    new_docs: List[Dict[str, Any]] = []
-    df_existing: Dict[str, int] = existing.get("df") or {}
+    new_docs: list[dict[str, Any]] = []
+    df_existing: dict[str, int] = existing.get("df") or {}
     existing_doc_count = max(int(existing.get("doc_count", 0)), 1)
-    df_new: Dict[str, int] = {}
+    df_new: dict[str, int] = {}
     for node in changed_nodes:
         text = _node_text(node)
         tokens = semantic_tokens(text)
@@ -144,7 +145,7 @@ def build_workspace_semantic_index_partial(workspace_file: str | Path, changed_n
     # Compute removed docs to include their tokens in df for accurate IDF
     removed_docs = [doc for doc in existing.get("docs", []) if doc.get("node_id") in changed_node_ids]
     # Build df including tokens from removed docs so IDF accounts for them
-    df: Dict[str, int] = {}
+    df: dict[str, int] = {}
     for doc in kept_docs:
         for token in doc.get("sparse_vector", {}):
             df[token] = df.get(token, 0) + 1
@@ -187,7 +188,7 @@ def build_workspace_semantic_index_partial(workspace_file: str | Path, changed_n
         if model is not None and new_docs:
             texts = [f"{d.get('type', '')} {d.get('name', '')} {d.get('project', '')} {d.get('file_path', '')}" for d in new_docs]
             dense_vectors = model.encode(texts, normalize_embeddings=True)
-            for doc, vector in zip(new_docs, dense_vectors):
+            for doc, vector in zip_strict(new_docs, dense_vectors):
                 doc["dense_vector"] = [float(value) for value in vector]
     payload = {
         "version": SEMANTIC_INDEX_VERSION,
@@ -205,7 +206,7 @@ def build_workspace_semantic_index_partial(workspace_file: str | Path, changed_n
     return payload
 
 
-def semantic_query(workspace_file: str | Path, query: str, limit: int = 20) -> List[Dict[str, Any]]:
+def semantic_query(workspace_file: str | Path, query: str, limit: int = 20) -> list[dict[str, Any]]:
     index = ensure_workspace_semantic_index(workspace_file)
     if index.get("backend") == "sentence-transformers":
         dense_hits = _dense_semantic_query(index, query, limit)
@@ -214,7 +215,7 @@ def semantic_query(workspace_file: str | Path, query: str, limit: int = 20) -> L
     return _sparse_semantic_query(index, query, limit)
 
 
-def semantic_index_stats(workspace_file: str | Path) -> Dict[str, Any]:
+def semantic_index_stats(workspace_file: str | Path) -> dict[str, Any]:
     store = WorkspaceStore(workspace_file)
     payload = store.read_json_prefer_backend(SEMANTIC_INDEX_FILE, {})
     return {
@@ -229,7 +230,7 @@ def semantic_index_stats(workspace_file: str | Path) -> Dict[str, Any]:
     }
 
 
-def semantic_tokens(text: str) -> List[str]:
+def semantic_tokens(text: str) -> list[str]:
     text = _split_camel(text or "")
     raw = re.findall(r"[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]+|[a-zA-Z0-9_]+", text.lower())
     tokens = [token for token in raw if len(token) >= 2]
@@ -240,22 +241,22 @@ def _split_camel(text: str) -> str:
     return re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", text)
 
 
-def _count_tokens(tokens: List[str]) -> Dict[str, int]:
-    counts: Dict[str, int] = {}
+def _count_tokens(tokens: list[str]) -> dict[str, int]:
+    counts: dict[str, int] = {}
     for token in tokens:
         counts[token] = counts.get(token, 0) + 1
     return counts
 
 
-def _estimate_df(index: Dict[str, Any]) -> Dict[str, int]:
-    df: Dict[str, int] = {}
+def _estimate_df(index: dict[str, Any]) -> dict[str, int]:
+    df: dict[str, int] = {}
     for doc in index.get("docs", []):
         for token in doc.get("sparse_vector", {}):
             df[token] = df.get(token, 0) + 1
     return df
 
 
-def _node_text(node: Dict[str, Any]) -> str:
+def _node_text(node: dict[str, Any]) -> str:
     parts = [
         node.get("type", ""),
         node.get("name", ""),
@@ -290,7 +291,7 @@ def _load_sentence_transformer_model(model_name: str | None):
         return None
 
 
-def _dense_semantic_query(index: Dict[str, Any], query: str, limit: int) -> List[Dict[str, Any]]:
+def _dense_semantic_query(index: dict[str, Any], query: str, limit: int) -> list[dict[str, Any]]:
     model_name = index.get("model")
     model = _load_sentence_transformer_model(model_name)
     if model is None:
@@ -302,7 +303,7 @@ def _dense_semantic_query(index: Dict[str, Any], query: str, limit: int) -> List
         dense_vector = doc.get("dense_vector")
         if not dense_vector:
             continue
-        score = sum(float(left) * float(right) for left, right in zip(query_vector, dense_vector))
+        score = sum(float(left) * float(right) for left, right in zip_strict(query_vector, dense_vector))
         if score <= 0:
             continue
         scored.append({**doc, "score": score, "backend": "sentence-transformers"})
@@ -310,7 +311,7 @@ def _dense_semantic_query(index: Dict[str, Any], query: str, limit: int) -> List
     return scored[:limit]
 
 
-def _sparse_semantic_query(index: Dict[str, Any], query: str, limit: int) -> List[Dict[str, Any]]:
+def _sparse_semantic_query(index: dict[str, Any], query: str, limit: int) -> list[dict[str, Any]]:
     tokens = semantic_tokens(query)
     if not tokens:
         return []
@@ -334,7 +335,7 @@ def _sparse_semantic_query(index: Dict[str, Any], query: str, limit: int) -> Lis
                 continue
             vector = doc.get("sparse_vector", {})
             score = 0.0
-            for token, query_count in query_counts.items():
+            for token in query_counts:
                 tf = vector.get(token, 0.0)
                 if tf <= 0:
                     continue

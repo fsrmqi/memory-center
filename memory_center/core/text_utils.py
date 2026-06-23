@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import List
-
 CJK_UNIFIED_START = "一"
 CJK_UNIFIED_END = "鿿"
 CJK_EXT_A_START = "㐀"
@@ -21,7 +19,7 @@ def _is_single_cjk(item: str) -> bool:
     )
 
 
-def base_tokenize(text: str) -> List[str]:
+def base_tokenize(text: str) -> list[str]:
     raw = ""
     prev_is_cjk = False
     for ch in text:

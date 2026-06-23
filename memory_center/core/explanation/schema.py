@@ -5,7 +5,7 @@ Implements UA-2 from NEXT_PHASE_MASTER_PLAN.md.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List
+from typing import Any
 
 # ---------------------------------------------------------------------------
 # Display rules per semantic strength (D-03 spec)
@@ -13,7 +13,7 @@ from typing import Any, Dict, List
 # inferred:  from naming/annotation/graph patterns — label clearly
 # derived:   multi-hop or heuristic — always attach evidence
 # ---------------------------------------------------------------------------
-DISPLAY_RULES: Dict[str, Dict[str, Any]] = {
+DISPLAY_RULES: dict[str, dict[str, Any]] = {
     "fact":      {"label": "事实", "prominence": "high", "require_evidence": False},
     "inferred":  {"label": "推断", "prominence": "medium", "require_evidence": True},
     "derived":   {"label": "派生", "prominence": "low", "require_evidence": True},
@@ -25,15 +25,15 @@ class Explanation:
     """Structured explanation for a query result, impact analysis, or chain trace."""
     subject: str
     summary: str
-    evidence: List[Dict[str, Any]] = field(default_factory=list)
+    evidence: list[dict[str, Any]] = field(default_factory=list)
     semantic_strength: str = "inferred"  # fact | inferred | derived
     confidence: float = 0.5
     persona: str = "developer"  # developer | architect | manager
-    next_actions: List[str] = field(default_factory=list)
-    related_entities: List[Dict[str, Any]] = field(default_factory=list)
-    next_refs: List[Dict[str, str]] = field(default_factory=list)
+    next_actions: list[str] = field(default_factory=list)
+    related_entities: list[dict[str, Any]] = field(default_factory=list)
+    next_refs: list[dict[str, str]] = field(default_factory=list)
 
-    def to_compact(self) -> Dict[str, Any]:
+    def to_compact(self) -> dict[str, Any]:
         """Compact view for token-constrained contexts."""
         return {
             "subject": self.subject,
@@ -44,7 +44,7 @@ class Explanation:
             "next_refs": self.next_refs[:3],
         }
 
-    def to_full(self) -> Dict[str, Any]:
+    def to_full(self) -> dict[str, Any]:
         """Full view with all evidence."""
         return {
             "subject": self.subject,
@@ -59,7 +59,7 @@ class Explanation:
             "next_refs": self.next_refs,
         }
 
-    def adapt_for_persona(self, persona: str) -> "Explanation":
+    def adapt_for_persona(self, persona: str) -> Explanation:
         """Return a persona-adapted copy of this explanation."""
         import copy
         adapted = copy.deepcopy(self)
@@ -81,11 +81,11 @@ class Explanation:
 def explanation_entry(
     subject: str = "",
     summary: str = "",
-    next_refs: "list[dict[str, str]]" | None = None,
-    evidence: "list[dict]" | None = None,
+    next_refs: list[dict[str, str]] | None = None,
+    evidence: list[dict] | None = None,
     semantic_strength: str = "inferred",
     confidence: float = 0.5,
-    next_actions: "list[str]" | None = None,
+    next_actions: list[str] | None = None,
 ) -> dict:
     """Build a standard explanation dict (D-03 helper)."""
     valid = {"fact", "inferred", "derived"}
@@ -101,12 +101,12 @@ def explanation_entry(
     return entry
 
 
-def display_rule_for_strength(strength: str) -> Dict[str, Any]:
+def display_rule_for_strength(strength: str) -> dict[str, Any]:
     """Return the display rule for a given semantic strength level."""
     return DISPLAY_RULES.get(strength, DISPLAY_RULES["inferred"])
 
 
-def merge_explanations(explanations: "list[dict]") -> dict:
+def merge_explanations(explanations: list[dict]) -> dict:
     """Merge multiple explanation entries into a combined view."""
     if not explanations:
         return explanation_entry(summary="No explanations available", confidence=0.0)

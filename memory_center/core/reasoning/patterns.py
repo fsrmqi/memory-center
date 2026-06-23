@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from typing import Any, Dict, List
+from typing import Any
 
 from ..storage.unified import UnifiedStore
 
@@ -18,10 +18,10 @@ from ..storage.unified import UnifiedStore
 class PatternMatch:
     """A single pattern match result."""
     pattern_name: str
-    matched_nodes: List[Dict[str, Any]]
+    matched_nodes: list[dict[str, Any]]
     risk_level: str = "medium"
     description: str = ""
-    evidence: Dict[str, Any] = field(default_factory=dict)
+    evidence: dict[str, Any] = field(default_factory=dict)
 
 
 class GraphPatternEngine:
@@ -32,7 +32,7 @@ class GraphPatternEngine:
 
     # ── Built-in patterns ────────────────────────────────────────────────
 
-    def find_unprotected_mq_consumers(self, limit: int = 50) -> List[PatternMatch]:
+    def find_unprotected_mq_consumers(self, limit: int = 50) -> list[PatternMatch]:
         """Find MQ consumers whose handler methods don't contain 'idempotent' or '幂等'."""
         with self._store.pool.connection() as conn:
             rows = conn.execute("""
@@ -59,7 +59,7 @@ class GraphPatternEngine:
                 ))
         return matches
 
-    def find_long_feign_chains(self, min_depth: int = 3, limit: int = 50) -> List[PatternMatch]:
+    def find_long_feign_chains(self, min_depth: int = 3, limit: int = 50) -> list[PatternMatch]:
         """Find Feign call chains crossing multiple services."""
         with self._store.pool.connection() as conn:
             # Find FeignClient nodes that call services, which in turn have FeignClients
@@ -98,7 +98,7 @@ class GraphPatternEngine:
                 ))
         return matches
 
-    def find_shared_configs(self, limit: int = 50) -> List[PatternMatch]:
+    def find_shared_configs(self, limit: int = 50) -> list[PatternMatch]:
         """Find config keys read by multiple services."""
         with self._store.pool.connection() as conn:
             rows = conn.execute("""
@@ -123,7 +123,7 @@ class GraphPatternEngine:
             ))
         return matches
 
-    def run_all_patterns(self) -> Dict[str, List[PatternMatch]]:
+    def run_all_patterns(self) -> dict[str, list[PatternMatch]]:
         """Run all built-in patterns and return results grouped by pattern name."""
         return {
             "unprotected_mq_consumers": self.find_unprotected_mq_consumers(),

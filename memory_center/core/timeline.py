@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Iterable, List
+from collections.abc import Iterable
+from typing import Any
 
 from .schemas import with_schema
 from .store import WorkspaceStore
@@ -15,14 +16,14 @@ def timeline_query(
     *,
     task_id: str = "",
     session_id: str = "",
-    kinds: List[str] | None = None,
+    kinds: list[str] | None = None,
     layer: str = "",
     action: str = "",
     scope: str = "",
     target_contains: str = "",
     limit: int = 100,
     backend: str = "auto",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     store = WorkspaceStore(workspace_file)
     wanted = set(kinds or ["session_event", "write_receipt", "handoff"])
     items = collect_timeline_items(
@@ -73,9 +74,9 @@ def collect_timeline_items(
     scope: str = "",
     target_contains: str = "",
     backend: str = "auto",
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     wanted = set(kinds or ["session_event", "write_receipt", "handoff"])
-    items: List[Dict[str, Any]] = []
+    items: list[dict[str, Any]] = []
     use_backend = backend in {"auto", "sqlite"} and bool(store.memory_backend_stats().get("collections"))
 
     if "session_event" in wanted:
@@ -101,7 +102,7 @@ def collect_timeline_items(
     return items
 
 
-def _load_collection_rows(store: WorkspaceStore, collection: str, *, use_backend: bool) -> List[Dict[str, Any]]:
+def _load_collection_rows(store: WorkspaceStore, collection: str, *, use_backend: bool) -> list[dict[str, Any]]:
     if use_backend:
         rows = store.memory_backend_query_records(collection=collection, limit=5000).get("records", [])
         return [item.get("payload", {}) if isinstance(item.get("payload"), dict) else item for item in rows]
@@ -109,7 +110,7 @@ def _load_collection_rows(store: WorkspaceStore, collection: str, *, use_backend
 
 
 def _match_timeline_item(
-    item: Dict[str, Any],
+    item: dict[str, Any],
     *,
     task_id: str = "",
     session_id: str = "",
@@ -139,7 +140,7 @@ def _match_timeline_item(
     return True
 
 
-def _map_session_event(row: Dict[str, Any]) -> Dict[str, Any]:
+def _map_session_event(row: dict[str, Any]) -> dict[str, Any]:
     # Support both formats: full record (from JSONL) and unwrapped payload (from backend)
     payload = row.get("payload", {}) if isinstance(row.get("payload"), dict) else {}
     session_id = row.get("session_id", "") or payload.get("session_id", "")
@@ -173,7 +174,7 @@ def _map_session_event(row: Dict[str, Any]) -> Dict[str, Any]:
     )
 
 
-def _map_write_receipt(row: Dict[str, Any]) -> Dict[str, Any]:
+def _map_write_receipt(row: dict[str, Any]) -> dict[str, Any]:
     return with_schema(
         "timeline_item",
         {
@@ -193,7 +194,7 @@ def _map_write_receipt(row: Dict[str, Any]) -> Dict[str, Any]:
     )
 
 
-def _map_handoff(row: Dict[str, Any]) -> Dict[str, Any]:
+def _map_handoff(row: dict[str, Any]) -> dict[str, Any]:
     return with_schema(
         "timeline_item",
         {

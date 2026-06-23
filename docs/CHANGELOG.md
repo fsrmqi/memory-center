@@ -8,6 +8,16 @@
 
 ## Unreleased
 
+### Next: Ruff Modernization and Real Precision Gates / Ruff 现代化与真实精度门禁
+
+- Ruff 现代化分层收口继续推进：批量清理 `UP006/UP035/UP037/UP045/UP031/UP007`，并手工判断修复剩余 `B007/B905` 语义项。
+- CLI Typer 命令签名保留 `typing.List/Optional` 兼容写法，避免 Python 3.9 运行时求值 `list[str] | None` 失败；普通 core 模块继续保留现代类型写法。
+- Parser 精度诊断新增 `parser_precision`：reindex、graph summary、retrieval diagnostics、reasoning diagnostics 均可显式返回 `regex_only/mixed_fallback/native_ready` 状态和下一步建议。
+- 热路径索引读取改为文件快读 + backend fallback，并保留 `read_json_observed()` 做显式一致性双读；真实 UCAP walkthrough latency 从 3.5.7 基线 `2433.243ms` 降到本次验收 `313.382ms`。
+- 真实 UCAP 回归通过：Golden anchor recall `1.0`、edge recall `1.0`、forbidden hit rate `0.0`、token estimate `60751`，完整链路 `completion_status=complete`。
+
+English summary: the next release continues Ruff modernization, makes parser precision visible across indexing/retrieval/reasoning, preserves Typer compatibility on Python 3.9, and improves real UCAP walkthrough latency while passing the no-regression Golden gate.
+
 ### 3.5.9: Ruff Governance Baseline / Ruff 治理基线
 
 - 清理 legacy Ruff 运行级问题：`F/E9` 已通过，避免未使用导入、未定义名、重复导入等基础错误继续混入开发噪音。

@@ -6,13 +6,13 @@ based on naming conventions, package structure, and annotation metadata.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List
+from typing import Any
 
 from ..explanation import explanation_entry
 from ..storage.unified import UnifiedStore
 
 # Domain keywords derived from common Spring Cloud patterns
-_DOMAIN_KEYWORDS: Dict[str, List[str]] = {
+_DOMAIN_KEYWORDS: dict[str, list[str]] = {
     "user": ["user", "account", "auth", "login", "register", "member", "profile", "person"],
     "order": ["order", "purchase", "trade", "checkout", "cart", "payment"],
     "payment": ["payment", "pay", "refund", "billing", "charge", "transaction", "wallet"],
@@ -32,13 +32,13 @@ class BusinessDomain:
     domain_id: str
     name: str
     description: str = ""
-    services: List[str] = field(default_factory=list)
-    entities: List[str] = field(default_factory=list)  # node IDs
+    services: list[str] = field(default_factory=list)
+    entities: list[str] = field(default_factory=list)  # node IDs
     confidence: float = 0.7
-    keywords: List[str] = field(default_factory=list)
+    keywords: list[str] = field(default_factory=list)
 
-    def to_dict(self) -> Dict[str, Any]:
-        d: Dict[str, Any] = {
+    def to_dict(self) -> dict[str, Any]:
+        d: dict[str, Any] = {
             "domain_id": self.domain_id,
             "name": self.name,
             "description": self.description,
@@ -64,11 +64,11 @@ class BusinessFlow:
     flow_id: str
     name: str
     domain: str = ""
-    steps: List[Dict[str, Any]] = field(default_factory=list)
+    steps: list[dict[str, Any]] = field(default_factory=list)
     confidence: float = 0.5
 
-    def to_dict(self) -> Dict[str, Any]:
-        d: Dict[str, Any] = {
+    def to_dict(self) -> dict[str, Any]:
+        d: dict[str, Any] = {
             "flow_id": self.flow_id,
             "name": self.name,
             "domain": self.domain,
@@ -95,10 +95,10 @@ class BusinessDomainExtractor:
     def __init__(self, store: UnifiedStore):
         self._store = store
 
-    def extract_domains(self) -> List[BusinessDomain]:
+    def extract_domains(self) -> list[BusinessDomain]:
         """Extract business domains from node names, packages, and annotations."""
         nodes = self._store.all_nodes()
-        domain_map: Dict[str, BusinessDomain] = {}
+        domain_map: dict[str, BusinessDomain] = {}
 
         for node in nodes:
             node_name = node.get("name", "")
@@ -136,9 +136,9 @@ class BusinessDomainExtractor:
 
         return sorted(domain_map.values(), key=lambda d: -d.confidence)
 
-    def extract_flows(self) -> List[BusinessFlow]:
+    def extract_flows(self) -> list[BusinessFlow]:
         """Extract business flows by tracing endpoint → service → MQ chains."""
-        flows: List[BusinessFlow] = []
+        flows: list[BusinessFlow] = []
 
         # Find all endpoints
         endpoints = [
@@ -196,7 +196,7 @@ class BusinessDomainExtractor:
 
         return sorted(flows, key=lambda f: -f.confidence)
 
-    def _infer_domain(self, name: str, file_path: str, project: str, metadata: Dict[str, Any]) -> str:
+    def _infer_domain(self, name: str, file_path: str, project: str, metadata: dict[str, Any]) -> str:
         """Infer the business domain from node attributes."""
         combined = f"{name} {file_path} {project}".lower()
         annotations = metadata.get("annotations", [])
