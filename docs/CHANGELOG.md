@@ -8,6 +8,35 @@
 
 ## Unreleased
 
+### CBM-Inspired Evolution P0-3: SQLite Indexing Performance / SQLite 索引性能
+
+- 新增 `memory_center/core/storage/pragmas.py` 作为 SQLite PRAGMA 单一
+  来源:`DEFAULT_PROFILE`(WAL / NORMAL / 200 MB cache / MEMORY temp_store /
+  256 MB mmap / FK on)+ `FAST_WRITE_PROFILE`(synchronous=OFF)+
+  `apply_pragmas` / `read_pragma_state` / `fast_write_mode` helper。
+- 修复 `GraphStore.connect` / `MemoryBackendStore.connect` 之前完全
+  没有应用 PRAGMA 的隐藏 bug(只有 `SQLitePool` 配过,且 cache 仅 64MB)。
+  现在三处全部走 `apply_pragmas`,确保 reindex 主写库路径也走 WAL +
+  大缓存 + 内存 temp store + mmap。
+- `GraphStore.rebuild` / `rebuild_search_index` 从"逐条 INSERT 循环"
+  改为 `executemany` + `fast_write_mode` 包裹,大仓 reindex 预期可
+  提速数倍(具体收益取决于文件数)。
+- `estimate_optimal_workers` 重新调参以适配 IO-bound 文件读取:上限
+  从 8 → 32,小批量(≤4 文件)走 serial,中等批量按 `min(cpu*2, max, n)`
+  并保底 2 worker。修正了"<10 文件返回 0 workers 导致悄悄退化为单线程"
+  的旧 bug。
+- `doctor` 输出新增 `sqlite_pragmas` 段和 `graph:pragma_wal` 检查项,
+  方便用户一眼看出连接是否被正确调优。
+- 21 个新测试覆盖 PRAGMA 默认值 / 幂等 / fast_write_mode 进出异常恢复 /
+  store inheritance / rebuild 持久化与重置 / FTS / worker 数量边界。
+  全量套件零回归。
+- English summary: a hidden bug — GraphStore and MemoryBackendStore
+  were opening bare SQLite connections without any PRAGMA tuning —
+  dominated reindex latency on real monorepos. P0-3 unifies PRAGMA
+  configuration across every store, switches the bulk reindex rewrite
+  to executemany + synchronous=OFF, and modernizes the parallel
+  parser's worker-count heuristic for today's IO-bound workload.
+
 ### CBM-Inspired Evolution P0-1: Service Kind Registry / 服务类型注册表
 
 - 新增 `memory_center/core/service_kinds.py`,统一管理服务类型(11 种):

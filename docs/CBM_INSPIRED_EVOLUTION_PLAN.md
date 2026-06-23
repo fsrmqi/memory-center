@@ -635,6 +635,18 @@ TS:用 `tsserver`(子进程)做同等能力
   - CLI `init` 增加 `--detect/--no-detect/--dry-run` 选项
   - `USER_GUIDE.md` 新增"Supported service types"双语表
   - 38 个新测试通过(30 + 8),全量套件零回归
+- 2026-06-23:**P0-3 完成**(commits `b1bba40` + `b7f30a9` + `80fc950`)
+  - `storage/pragmas.py` 统一 SQLite PRAGMA 配置(`DEFAULT_PROFILE` +
+    `FAST_WRITE_PROFILE` + `apply_pragmas` + `fast_write_mode`)
+  - 修复 `GraphStore` / `MemoryBackendStore` 之前完全没应用 PRAGMA 的
+    隐藏 bug,主写库路径现在也走 WAL + 200MB cache + MEMORY temp_store
+  - `GraphStore.rebuild` / `rebuild_search_index` 从逐条 INSERT 改为
+    `executemany` + `fast_write_mode`(synchronous=OFF for reindex)
+  - `estimate_optimal_workers` 重调参:上限 8→32,修小批量退化为 0
+    worker 的旧 bug
+  - `doctor` 输出 SQLite PRAGMA 状态,新增 `graph:pragma_wal` 检查
+  - 21 个新测试通过(8 + 6 + 7),全量套件零回归
+- 2026-06-23:**下一步 P0-2(多语言 parser registry)**,工程量 3~5 天
 
 **owner**:cuijq
 **reviewers**:待补
