@@ -14,6 +14,9 @@ from ..store import WorkspaceStore
 HEURISTICS_FILE = "learned-heuristics.jsonl"
 _DEFAULT_CONFIDENCE = 0.5
 _MAX_QUERY_SCAN = 5000
+_RETRIEVAL_SOURCE_WEIGHT_MIN = 0.35
+_RETRIEVAL_SOURCE_WEIGHT_MAX = 0.75
+_RETRIEVAL_SOURCES = {"exact", "graph", "sparse", "bm25", "semantic", "vector"}
 HEURISTICS_SCHEMA_VERSION = 2
 LEARNING_POLICY_VERSION = 1
 DEFAULT_LEARNING_POLICY: Dict[str, Any] = {
@@ -937,3 +940,100 @@ def apply_candidate_path_learning(
 
     adjusted.sort(key=_candidate_sort_key)
     return adjusted
+
+
+def bounded_retrieval_source_weights(weights: Dict[str, Any]) -> Dict[str, float]:
+    """Clamp learned retrieval preferences without changing rule constraints."""
+    bounded: Dict[str, float] = {}
+    for source, value in dict(weights or {}).items():
+        source_name = str(source or "").strip().lower()
+        if source_name not in _RETRIEVAL_SOURCES:
+            continue
+        try:
+            numeric = float(value)
+        except (TypeError, ValueError):
+            continue
+        bounded[source_name] = round(
+            max(_RETRIEVAL_SOURCE_WEIGHT_MIN, min(_RETRIEVAL_SOURCE_WEIGHT_MAX, numeric)),
+            4,
+        )
+    return bounded
+
+
+def load_retrieval_source_weights(
+    workspace_file: str | Path,
+    *,
+    intent: str,
+) -> Dict[str, float]:
+    """Load bounded source preferences for one retrieval intent."""
+    try:
+        rows = HeuristicsRegister(workspace_file).query(
+            category="retrieval-source",
+            limit=_MAX_QUERY_SCAN,
+        )
+    except Exception:
+        return {}
+
+    requested_intent = str(intent or "general").strip().lower()
+    wildcard: Dict[str, Any] = {}
+    exact: Dict[str, Any] = {}
+    for row in rows:
+        if str(row.get("candidate_type", "") or "") != "retrieval-source":
+            continue
+        target = str(row.get("target", "") or "")
+        if ":" not in target:
+            continue
+        row_intent, source = target.split(":", 1)
+        weight = row.get("recommended_weight", row.get("confidence", _DEFAULT_CONFIDENCE))
+        if row_intent == "*":
+            wildcard[source] = weight
+        elif row_intent == requested_intent:
+            exact[source] = weight
+    return bounded_retrieval_source_weights({**wildcard, **exact})
+
+
+def record_retrieval_source_feedback(
+    workspace_file: str | Path,
+    *,
+    intent: str,
+    source: str,
+    outcome: str,
+    evidence: List[Any] | None = None,
+    weight_before: float | None = None,
+    task_id: str = "",
+    session_id: str = "",
+) -> Dict[str, Any]:
+    """Record verified source usefulness using bounded, lightweight deltas."""
+    source_name = str(source or "").strip().lower()
+    if source_name not in _RETRIEVAL_SOURCES:
+        raise ValueError(f"unsupported retrieval source: {source_name}")
+    intent_name = str(intent or "general").strip().lower()
+    current_weights = load_retrieval_source_weights(workspace_file, intent=intent_name)
+    current = float(
+        weight_before
+        if weight_before is not None
+        else current_weights.get(source_name, _DEFAULT_CONFIDENCE)
+    )
+    normalized_outcome = str(outcome or "").strip().lower()
+    deltas = {
+        "confirmed": 0.05 if evidence else 0.0,
+        "demoted": -0.05,
+        "rejected": -0.08,
+        "rollback": -0.15,
+        "needs-more-context": -0.02,
+    }
+    delta = deltas.get(normalized_outcome, 0.0)
+    return HeuristicsRegister(workspace_file).record_candidate_path_feedback(
+        candidate_type="retrieval-source",
+        target=f"{intent_name}:{source_name}",
+        outcome=normalized_outcome,
+        evidence=evidence or [],
+        source="retrieval-policy",
+        task_id=task_id,
+        session_id=session_id,
+        weight_before=current,
+        weight_delta=delta,
+        category="retrieval-source",
+        pattern=f"{intent_name}:{source_name}",
+        trigger="verified-retrieval-outcome",
+    )

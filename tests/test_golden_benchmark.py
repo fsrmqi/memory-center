@@ -195,7 +195,14 @@ def test_public_golden_benchmark_suite_runs_on_demo_workspace(demo_workspace_ind
 
     result = run_golden_suite(demo_workspace_indexed, cases)
 
-    assert result["summary"]["passed"] is True
+    assert result["summary"]["passed"] is True, [
+        (row["case_id"], row["missing_anchors"], row["actual_anchors"])
+        for row in result["cases"]
+    ]
     assert result["summary"]["anchor_recall"] >= 0.90
     assert result["summary"]["edge_recall"] >= 0.85
     assert result["summary"]["forbidden_hit_rate"] == 0.0
+    assert {row["case_id"] for row in result["cases"]} >= {
+        "article-move-full-chain",
+        "article-move-hybrid-policy",
+    }

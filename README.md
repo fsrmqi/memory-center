@@ -443,6 +443,10 @@ Local query now uses hybrid retrieval across graph, FTS, SQLite BM25, semantic, 
 
 当前查询已支持本地混合召回：图谱、FTS、SQLite BM25、语义检索，以及可选的原生向量检索。
 
+Before executing sources, an adaptive policy now selects the source set, graph depth, candidate limit, and evidence budget from query intent, index freshness, and bounded verified feedback. Full-chain queries keep exact + graph as non-removable constraints and use a deep-but-narrow evidence path.
+
+检索源执行前，自适应策略会根据查询意图、索引新鲜度和有界验证反馈选择来源、图深度、候选上限与证据预算。全链路查询始终保留 exact + graph 硬约束，并采用“深但窄”的证据路径。
+
 When a local embedding backend is enabled, reindex synchronizes dense embeddings into `VectorIndex`. Vector ANN remains disabled by default and can be enabled through `HybridRetrievalConfig(enable_vector=True)`; sparse and BM25 retrieval remain safe fallbacks.
 
 启用本地 embedding backend 后，reindex 会把 dense embeddings 同步到 `VectorIndex`。原生向量 ANN 默认关闭，可通过 `HybridRetrievalConfig(enable_vector=True)` 启用；稀疏语义和 BM25 继续作为安全 fallback。

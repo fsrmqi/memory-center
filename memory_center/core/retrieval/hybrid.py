@@ -23,6 +23,7 @@ from ..ontology import (
     EDGE_SEMANTIC_STRENGTH,
     multi_hop_confidence,
 )
+from .policy import select_retrieval_policy
 
 __all__ = [
     "EntityValidator",
@@ -84,6 +85,7 @@ class HybridRetrievalConfig:
     enable_summary_layer: bool = True
     enable_type_boosting: bool = True
     enable_sparse_bm25: bool = True
+    enable_semantic: bool = True
     enable_vector: bool = False
 
 
@@ -113,10 +115,18 @@ _JAVA_PATTERNS = {
 
 
 def _normalize_java_symbol_query(query: str) -> str:
-    normalized = (query or "").strip().replace("#", ".")
+    raw = (query or "").strip()
+    symbol_match = re.search(r"[\w.$]+#[\w$]+", raw)
+    normalized = (symbol_match.group(0) if symbol_match else raw).replace("#", ".")
     if not normalized:
         return ""
     return normalized.split(".")[-1]
+
+
+def _exact_lookup_query(query: str) -> str:
+    raw = (query or "").strip()
+    symbol_match = re.search(r"[\w.$]+#[\w$]+", raw)
+    return symbol_match.group(0).replace("#", ".") if symbol_match else raw
 
 
 def _looks_like_java_symbol_query(query: str) -> bool:
@@ -149,6 +159,10 @@ def detect_query_intent(query: str) -> Dict[str, Any]:
     Returns intent classification with confidence scores.
     """
     query_lower = query.lower()
+    is_full_chain = any(
+        marker in query_lower
+        for marker in ("全链路", "到底层", "full chain", "full-chain", "walkthrough")
+    )
     intents: Dict[str, float] = {}
     matched_patterns: List[str] = []
 
@@ -177,6 +191,8 @@ def detect_query_intent(query: str) -> Dict[str, Any]:
         elif EntityValidator.is_local_service(part):
             intents["class"] = max(intents.get("class", 0), 1.0)
     # Phase 3: Structure inference
+    if is_full_chain:
+        intents["chain"] = max(intents.get("chain", 0), 2.5)
     if "/" in query and not query.startswith("/"):
         intents.setdefault("endpoint", 0.8)
     if "." in query and "::" not in query:
@@ -226,6 +242,7 @@ def detect_query_intent(query: str) -> Dict[str, Any]:
         "matched_patterns": matched_patterns,
         "is_cross_service": any(k in query_lower for k in ["feign", "fegin", "远程", "rpc", "服务间"]),
         "is_chain_query": "chain" in intents or "调用链" in query_lower,
+        "is_full_chain": is_full_chain,
         "query_shape": "java_symbol" if _looks_like_java_symbol_query(query) else "general",
         "prefer_class_symbol": _looks_like_java_symbol_query(query),
     }
@@ -238,6 +255,8 @@ def hybrid_retrieve(
     config: Optional[HybridRetrievalConfig] = None,
     node_types: Optional[List[str]] = None,
     limit: int = 20,
+    freshness: Optional[Dict[str, Any]] = None,
+    learned_weights: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Execute hybrid retrieval combining graph, sparse, and semantic search.
 
@@ -247,31 +266,75 @@ def hybrid_retrieve(
         config = HybridRetrievalConfig()
 
     intent = detect_query_intent(query)
+    policy = select_retrieval_policy(intent, freshness or {}, learned_weights or {})
     tokenize, _rrf, _best_match = _get_common_functions()
     tokens = tokenize(query)
+    source_limit = max(limit, policy.candidate_limit)
+    result_limit = min(limit, policy.evidence_budget) if intent.get("is_full_chain") else limit
+    active_sources = set(policy.sources)
 
-    # Phase 1: Retrieval from all sources (FTS call shared between graph+sparse)
-    exact_nodes = graph.find_nodes(query, types=node_types, limit=limit * 2)
-    graph_hits = _graph_retrieval_from_nodes(exact_nodes, tokens, graph, node_types, limit * 2, _rrf)
-    sparse_hits = _sparse_retrieval_from_nodes(exact_nodes, limit * 2, _rrf)
-    semantic_hits = _semantic_retrieval(workspace_file, query, limit * 2)
+    # Phase 1: execute only policy-selected sources.
+    exact_nodes = (
+        graph.find_nodes(_exact_lookup_query(query), types=node_types, limit=source_limit)
+        if "exact" in active_sources
+        else []
+    )
+    graph_hits = (
+        _graph_retrieval_from_nodes(exact_nodes, tokens, graph, node_types, source_limit, _rrf)
+        if "graph" in active_sources
+        else []
+    )
+    if intent.get("is_full_chain") and exact_nodes:
+        chain_anchors = [node for node in exact_nodes if _node_matches_query_name(node, query)]
+        graph_hits.extend(
+            _full_chain_neighbor_hits(
+                chain_anchors or exact_nodes[:1],
+                graph,
+                max_depth=policy.graph_depth,
+                limit=policy.candidate_limit,
+            )
+        )
+    sparse_hits = (
+        _sparse_retrieval_from_nodes(exact_nodes, source_limit, _rrf)
+        if "sparse" in active_sources
+        else []
+    )
     retrieval_diagnostics: Dict[str, Any] = {}
+    if policy.semantic_enabled and config.enable_semantic:
+        semantic_hits = _semantic_retrieval(workspace_file, query, source_limit)
+        retrieval_diagnostics["semantic"] = {"status": "active", "returned": len(semantic_hits)}
+    else:
+        semantic_hits = []
+        retrieval_diagnostics["semantic"] = {
+            "status": "disabled",
+            "reason": "configured_off" if not config.enable_semantic else "policy_off",
+        }
     vector_hits: List[RetrievalResult] = []
-    if config.enable_vector:
+    if config.enable_vector and policy.vector_enabled:
         vector_hits = _vector_retrieval(
             workspace_file,
             query,
             tokens,
-            limit * 2,
+            source_limit,
             diagnostics=retrieval_diagnostics,
         )
     else:
-        retrieval_diagnostics["vector"] = {"status": "disabled", "reason": "configured_off"}
+        retrieval_diagnostics["vector"] = {
+            "status": "disabled",
+            "reason": "configured_off" if not config.enable_vector else "policy_off",
+        }
     bm25_hits: List[RetrievalResult] = []
-    if config.enable_sparse_bm25:
-        bm25_hits = _bm25_sparse_retrieval(workspace_file, query, limit * 2, diagnostics=retrieval_diagnostics)
+    if config.enable_sparse_bm25 and "bm25" in active_sources:
+        bm25_hits = _bm25_sparse_retrieval(workspace_file, query, source_limit, diagnostics=retrieval_diagnostics)
     else:
-        retrieval_diagnostics["bm25"] = {"status": "disabled", "reason": "configured_off"}
+        retrieval_diagnostics["bm25"] = {
+            "status": "disabled",
+            "reason": "configured_off" if not config.enable_sparse_bm25 else "policy_off",
+        }
+    retrieval_diagnostics["policy"] = {
+        "status": "active",
+        **policy.to_dict(),
+    }
 
     # Phase 2: Merge and rank results
     merged = _merge_retrieval_results(
@@ -287,21 +350,22 @@ def hybrid_retrieve(
         merged = _apply_type_boosting(merged, intent)
 
     # Phase 4: Neighbor enrichment (top results only for performance)
-    top_n = min(limit, 10)  # Only enrich top-10 to avoid N+1 BFS on large result sets
+    enrichment_budget = min(2, policy.evidence_budget) if intent.get("is_full_chain") else policy.evidence_budget
+    top_n = min(result_limit, 10, enrichment_budget)
     for item in merged[:top_n]:
         item.neighbors = graph.neighbors(
             item.node_id,
             direction="both",
-            max_depth=config.neighbor_depth,
+            max_depth=max(config.neighbor_depth, policy.graph_depth),
             limit=config.neighbor_limit,
         )
 
     # Phase 5: Cross-workspace resolution
     if config.enable_cross_workspace:
-        _resolve_cross_workspace_refs(merged[:limit], graph, workspace_file)
+        _resolve_cross_workspace_refs(merged[:result_limit], graph, workspace_file)
 
     # Phase 6: Build summary
-    results = [item for item in merged if item.score >= config.min_confidence][:limit]
+    results = [item for item in merged if item.score >= config.min_confidence][:result_limit]
 
     return {
         "query": query,
@@ -312,12 +376,14 @@ def hybrid_retrieve(
         "retrieval_summary": _build_retrieval_summary(results, intent),
         "progressive": _build_progressive_summary(results, intent),
         "retrieval_diagnostics": retrieval_diagnostics,
+        "retrieval_policy": policy.to_dict(),
         "config": {
             "graph_weight": config.graph_weight,
             "sparse_weight": config.sparse_weight,
             "semantic_weight": config.semantic_weight,
             "vector_weight": config.vector_weight,
             "enable_sparse_bm25": config.enable_sparse_bm25,
+            "enable_semantic": config.enable_semantic,
             "enable_vector": config.enable_vector,
         },
     }
@@ -419,6 +485,53 @@ def _graph_retrieval_from_nodes(
                         score=_rrf(rank + 100),
                         sources=["graph_token"],
                     )
+    return list(results.values())
+
+
+def _full_chain_neighbor_hits(
+    exact_nodes: List[Dict[str, Any]],
+    graph: GraphStore,
+    *,
+    max_depth: int,
+    limit: int,
+) -> List[RetrievalResult]:
+    """Promote graph traversal endpoints into the full-chain evidence pool."""
+    exact_ids = {str(node.get("id", "")) for node in exact_nodes}
+    results: Dict[str, RetrievalResult] = {}
+    per_anchor_limit = max(1, limit // max(1, len(exact_nodes)))
+    for exact in exact_nodes:
+        anchor_id = str(exact.get("id", ""))
+        if not anchor_id:
+            continue
+        for edge in graph.neighbors(
+            anchor_id,
+            direction="both",
+            max_depth=max_depth,
+            limit=per_anchor_limit,
+        ):
+            depth = max(1, int(edge.get("depth", 1) or 1))
+            for prefix in ("source", "target"):
+                neighbor_id = str(edge.get(f"{prefix}_id", ""))
+                nested = edge.get(prefix) if isinstance(edge.get(prefix), dict) else {}
+                if not neighbor_id or neighbor_id in exact_ids or neighbor_id in results:
+                    continue
+                node = {
+                    "id": neighbor_id,
+                    "type": nested.get("type", edge.get(f"{prefix}_type", "")),
+                    "name": nested.get("name", edge.get(f"{prefix}_name", "")),
+                    "project": nested.get("project", edge.get(f"{prefix}_project", "")),
+                    "file_path": nested.get("file_path", edge.get(f"{prefix}_file", "")),
+                    "line": nested.get("line", edge.get(f"{prefix}_line")),
+                }
+                if not node["name"]:
+                    continue
+                results[neighbor_id] = RetrievalResult(
+                    node_id=neighbor_id,
+                    node=node,
+                    score=0.9 / depth,
+                    sources=["graph_neighbor"],
+                    evidence={"edge_type": edge.get("type", ""), "depth": depth},
+                )
     return list(results.values())
 
 

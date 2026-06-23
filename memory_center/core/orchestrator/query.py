@@ -424,6 +424,27 @@ def memory_query_hybrid(workspace_file: str | Path, query: str, limit: int = 20,
 
     # Detect query intent first
     intent = detect_query_intent(query)
+    freshness_banner: Dict[str, Any]
+    try:
+        from ..freshness.status import IndexFreshnessService
+
+        freshness_banner = IndexFreshnessService(workspace_file).banner()
+    except Exception as exc:
+        freshness_banner = diag_entry(DIAG.UNKNOWN, exc=exc)
+    freshness_input = (
+        freshness_banner.get("freshness", {})
+        if isinstance(freshness_banner, dict)
+        else {}
+    )
+    try:
+        from ..verification.heuristics import load_retrieval_source_weights
+
+        learned_weights = load_retrieval_source_weights(
+            workspace_file,
+            intent=str(intent.get("primary_intent", "general") or "general"),
+        )
+    except Exception:
+        learned_weights = {}
 
     with GraphStore(store.graph_db_path) as graph:
         result = hybrid_retrieve(
@@ -433,6 +454,8 @@ def memory_query_hybrid(workspace_file: str | Path, query: str, limit: int = 20,
             config=config,
             node_types=node_types,
             limit=limit,
+            freshness=freshness_input,
+            learned_weights=learned_weights,
         )
 
     # Project filtering: when project is specified and matching results exist,
@@ -544,9 +567,7 @@ def memory_query_hybrid(workspace_file: str | Path, query: str, limit: int = 20,
 
     # NEXT_PHASE: integrate freshness warnings into query results
     try:
-        from ..freshness.status import IndexFreshnessService
-        svc = IndexFreshnessService(workspace_file)
-        banner = svc.banner()
+        banner = freshness_banner
         result["freshness"] = banner
         # D-01: Stale risk escalation - if freshness is stale/pending, add warning
         freshness_status = (banner.get("freshness", {}) or {}).get("status", "unknown")

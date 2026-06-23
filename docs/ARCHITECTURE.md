@@ -151,14 +151,16 @@ Hook 层属于宿主集成，不是核心业务层。推荐自动执行的只有
 
 ### Hybrid Retrieval Engine / 混合检索引擎
 
-**位置**: `memory_center/core/retrieval/hybrid.py`
+**位置**: `memory_center/core/retrieval/hybrid.py`, `memory_center/core/retrieval/policy.py`
 
 **职责**: 智能路由 graph、FTS、SQLite BM25、semantic 和可选 vector 检索源，提供更稳定的召回效果。
 
 **核心组件**:
 - `HybridRetrievalConfig`: 检索配置（权重、阈值、特性开关）
 - `RetrievalResult`: 统一检索结果（带来源追踪）
+- `RetrievalPolicy`: 不可变的自适应执行计划（sources、图深度、候选与证据预算）
 - `detect_query_intent()`: 查询意图自动检测
+- `select_retrieval_policy()`: 根据 intent、freshness 和有界学习权重生成确定性策略
 - `hybrid_retrieve()`: 主检索入口
 
 **检索策略**:
@@ -168,8 +170,9 @@ Hook 层属于宿主集成，不是核心业务层。推荐自动执行的只有
 - Semantic 检索: 模糊/概念匹配
 - Vector ANN: 当 semantic index 存在 dense vectors 时同步到 `VectorIndex`，默认关闭、按需启用
 - 基于意图的类型加权（feign/mq/endpoint/config/chain/class/method）
+- 全链路查询采用 deep-but-narrow 策略：exact + graph 为硬约束，图深度至少 4，入口和图邻居优先进入有界证据集
 
-`HybridRetrievalConfig.enable_sparse_bm25` 默认开启；`enable_vector` 默认关闭。禁用或不可用的检索源会在 `retrieval_diagnostics` 中返回明确状态，不静默伪装成功。
+策略在 source 执行前生效，未选中的 source 不会产生查询成本。学习权重按 intent/source 隔离并限制在 `[0.35, 0.75]`，不能移除 exact/graph 硬约束。`HybridRetrievalConfig.enable_sparse_bm25` 默认开启；`enable_vector` 默认关闭。禁用或不可用的检索源会在 `retrieval_diagnostics` 中返回明确状态，不静默伪装成功。
 
 ### Benchmark Trending / 基准趋势
 
