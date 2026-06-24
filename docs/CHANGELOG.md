@@ -8,6 +8,19 @@
 
 ## Unreleased
 
+### Java Call Resolution Gate / Java 调用解析真实门禁
+
+- 新增 `memory-center eval-java-call-resolution`，基于 graph 中的
+  `CALLS_METHOD` 边评测 Java 调用解析的 expected-edge recall、
+  high-confidence expected rate、resolution-level 命中率和 unresolved rate。
+- 新增 HTTP `/workspace/eval-java-call-resolution` 与 MCP
+  `mc_admin(action="eval_java_call_resolution", name="<cases.yaml>")` 入口。
+- cases 文件只允许 `Class#method` 这类逻辑锚点，不允许文件系统路径；
+  真实私有 UCAP 样例保存在本地 workspace `.memory-center/golden/`，不提交。
+- English summary: adds a real-workspace Java CALLS_METHOD precision gate with
+  logical anchors only, so resolver improvements can be compared against
+  private scenarios without committing private paths or generated indexes.
+
 ### 3.5.10: Java Call Resolver / Java 调用解析器
 
 - 新增 `memory_center/core/indexing/java_call_resolver.py`，基于全工程
@@ -176,7 +189,7 @@ English summary: the next release continues Ruff modernization, makes parser pre
 - 统一 import 排序：`I001` 已通过，后续 diff 更容易聚焦真实逻辑变化。
 - 修复 bugbear 风险项：`B006/B008/B904` 已通过，包含可变默认参数、Typer list 参数默认值和异常链处理。
 - 本地安装版本提升至 `3.5.9`，并继续通过真实场景验收脚本与 performance gate。
-- 下一步计划已更新到 `docs/NEXT_PHASE_EXECUTION_PLAN.md`：优先做 Ruff 现代化分层收口，其次处理剩余 bugbear 语义项，再继续输出体验、parser/retrieval/reasoning 精度深化。
+- 下一步计划已统一收敛到 `docs/NEXT_PHASE_MASTER_PLAN.md`：优先做 Java reindex 性能热点修复，其次推进 Java Parser / Call Resolver 真实精度深化，再继续 Retrieval / Reasoning 质量闭环与输出体验产品化。
 
 English summary: 3.5.9 establishes a practical Ruff governance baseline (`F/E9/I001/B006/B008/B904`) and documents the next staged cleanup and product-quality work.
 

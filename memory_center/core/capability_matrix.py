@@ -141,6 +141,16 @@ CAPABILITIES: list[Capability] = [
         ],
     ),
     Capability(
+        name="java-call-resolution",
+        core_fields=["summary", "thresholds", "cases"],
+        error_semantics="missing graph/cases -> validation error; unresolved calls -> explicit unresolved_rate",
+        entries=[
+            _cli("eval-java-call-resolution"),
+            _http("/workspace/eval-java-call-resolution"),
+            _mcp_admin("eval_java_call_resolution"),
+        ],
+    ),
+    Capability(
         name="backend-consistency",
         core_fields=["consistent", "comparisons", "divergences"],
         error_semantics="missing memory.db or JSONL -> diagnostics",

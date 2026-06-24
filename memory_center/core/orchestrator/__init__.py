@@ -42,6 +42,7 @@ from .eval import (
     memory_eval_context_weight,
     memory_eval_handoff,
     memory_eval_index_freshness,
+    memory_eval_java_call_resolution,
     memory_eval_parser_benchmark,
     memory_eval_regression_suite,
     memory_eval_resume,
@@ -179,7 +180,7 @@ __all__ = [
     # eval
     "memory_eval_write_quality", "memory_eval_resume", "memory_eval_handoff",
     "memory_eval_regression_suite", "memory_eval_index_freshness",
-    "memory_eval_tool_adoption", "memory_eval_context_weight", "memory_eval_workflow_orchestration", "memory_eval_token_gain", "memory_eval_parser_benchmark", "memory_eval_token_benchmark",
+    "memory_eval_tool_adoption", "memory_eval_context_weight", "memory_eval_workflow_orchestration", "memory_eval_token_gain", "memory_eval_parser_benchmark", "memory_eval_java_call_resolution", "memory_eval_token_benchmark",
     "memory_eval_token_benchmark_save", "memory_eval_token_benchmark_compare",
     # sync
     "workspace_sync_sniff_to_artifacts", "workspace_sync_case_to_artifacts",

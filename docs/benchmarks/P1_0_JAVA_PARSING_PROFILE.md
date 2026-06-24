@@ -7,6 +7,24 @@
 
 ---
 
+## 当前状态 / Current Status
+
+截至 2026-06-24,这份文档仍是**有效的性能诊断报告**,不是已关闭的修复
+记录。`bench-profile` 诊断能力已落地,Java 调用解析器精度门禁也已补充,
+但本文列出的三个主要性能修复仍未在当前代码中完成:
+
+- **Java parser 双轨开销仍存在**:`TreeSitterJavaParser.parse` 仍会先完整
+  执行 `RegexJavaParser().parse(...)`,tree-sitter 成功后再 merge。
+- **`JavaSymbol` 仍走通用 `dataclasses.asdict`**:`models.to_dict()` 仍是
+  generic `asdict(obj)`,Java 索引结果仍会触发深递归转换。
+- **graph metadata 仍逐节点/逐边 `json.dumps`**:`GraphStore` 写入节点和边时
+  仍对 metadata 做高频 JSON 序列化,尚未引入空 dict 快路径或批处理策略。
+
+因此,本文的 P1-0 结论应理解为“瓶颈已定位、后续修复目标明确”,不要把
+下文三个瓶颈标记为已修复。
+
+---
+
 ## 测量环境
 
 | 维度 | 值 |

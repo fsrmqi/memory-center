@@ -5,6 +5,11 @@ from .baseline import (
     record_baseline_sample,
 )
 from .golden import load_golden_cases, run_golden_suite, score_golden_case
+from .java_call_resolution import (
+    JavaCallResolutionCase,
+    load_java_call_resolution_cases,
+    run_java_call_resolution_suite,
+)
 from .models import GoldenCase
 from .trending import (
     BENCHMARK_BASELINE_FILE,
@@ -18,8 +23,11 @@ from .trending import (
 
 __all__ = [
     "GoldenCase",
+    "JavaCallResolutionCase",
     "load_golden_cases",
+    "load_java_call_resolution_cases",
     "run_golden_suite",
+    "run_java_call_resolution_suite",
     "score_golden_case",
     "PORTABLE_BASELINE_FILE",
     "compare_baseline_samples",

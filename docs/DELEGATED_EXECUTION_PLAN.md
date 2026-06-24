@@ -34,9 +34,8 @@
 4. `docs/MCP_GUIDE.md`
 5. `docs/ONTOLOGY.md`
 6. `docs/NEXT_PHASE_MASTER_PLAN.md`
-7. `docs/NEXT_PHASE_EXECUTION_PLAN.md`
-8. `docs/SPECIAL_NOTES.md`
-9. `docs/RELEASE.md`
+7. `docs/SPECIAL_NOTES.md`
+8. `docs/RELEASE.md`
 
 开发过程中应遵守以下底线：
 
@@ -1330,8 +1329,7 @@ workspace 污染检查:
 - [ ] 更新 ARCHITECTURE 中稳定结构。
 - [ ] 更新 MCP_GUIDE 中入口和 schema。
 - [ ] 更新 ONTOLOGY 中实体、边和语义。
-- [ ] 更新 NEXT_PHASE_MASTER_PLAN，将完成项迁出待办。
-- [ ] 更新 NEXT_PHASE_EXECUTION_PLAN 当前状态。
+- [ ] 更新 NEXT_PHASE_MASTER_PLAN，将完成项迁出待办，并同步当前执行状态。
 - [ ] 更新 SPECIAL_NOTES 中新增设计取舍。
 - [ ] 更新 ROADMAP 和 REFERENCE。
 - [ ] 检查文档中的“已实现”“已接入”“已验收”没有混写。

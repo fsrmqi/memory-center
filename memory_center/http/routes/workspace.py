@@ -21,6 +21,7 @@ from .dependencies import (
     memory_eval_context_weight,
     memory_eval_handoff,
     memory_eval_index_freshness,
+    memory_eval_java_call_resolution,
     memory_eval_parser_benchmark,
     memory_eval_regression_suite,
     memory_eval_resume,
@@ -363,6 +364,14 @@ def register_workspace_routes(registry: CommandRegistry) -> None:
         rp.workspace(),
         limit=_parse_int(rp.params, "limit", 200),
         max_findings=_parse_int(rp.params, "max_findings", 20),
+    ))
+    registry.register("/workspace/eval-java-call-resolution", lambda rp: memory_eval_java_call_resolution(
+        rp.workspace(),
+        rp.require("cases"),
+        min_recall=_parse_float(rp.params, "min_recall", 0.90),
+        min_confidence_rate=_parse_float(rp.params, "min_confidence_rate", 0.85),
+        max_unresolved_rate=_parse_float(rp.params, "max_unresolved_rate", 0.10),
+        fail_on_unexpected_high_confidence=rp.get("fail_on_unexpected_high_confidence", "").lower() in {"1", "true", "yes"},
     ))
 
     # --- tooling / refs / backend / verify ------------------------------------

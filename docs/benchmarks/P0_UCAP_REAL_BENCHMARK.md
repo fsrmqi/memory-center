@@ -130,7 +130,8 @@ P0 前 `GraphStore.connect()` 和 `MemoryBackendStore.connect()` **完全没
 
 之所以预测错,是因为我假设 SQLite 是瓶颈,但**对 Java tree-sitter
 解析这种 CPU + 字节流密集型工作负载,SQLite 写库占比只有 18.7%**。
-要把"5~10×"翻出来,必须先优化解析与 IO 阶段(P1-0 候选)。
+要把"5~10×"翻出来,必须先优化解析与 IO 阶段。P1-0 后续已完成
+Java 解析阶段 profile,但具体性能修复尚未全部落地。
 
 演进计划文档已同步修正,见下个 commit。
 
@@ -138,11 +139,15 @@ P0 前 `GraphStore.connect()` 和 `MemoryBackendStore.connect()` **完全没
 
 ## 后续行动建议
 
-### 留作 P1-0 候选
+### 已完成:P1-0 Java 解析热点 profile
 
-在 P1-1 (Java 调用解析器) 之前,先做一次 **Java 解析阶段的真实热点
-profile**(用 cProfile 跑 UCAP 一次,看 tree-sitter parse vs JavaParseResult
-组装 vs 单线程串行 哪个最大)。这是真正能动到那 96 s 的事。
+原先这里建议在 P1-1 (Java 调用解析器) 之前,先做一次 **Java 解析阶段的
+真实热点 profile**。该诊断项已完成,详见
+[P1_0_JAVA_PARSING_PROFILE.md](./P1_0_JAVA_PARSING_PROFILE.md)。
+
+当前状态:profile 已定位三个主要热点,但不等于热点已经修复。截至
+2026-06-24,Java parser 双轨执行、`dataclasses.asdict` 递归开销、
+graph metadata 高频 `json.dumps` 仍在当前代码路径中,需要后续独立修复。
 
 ### 不该回滚 P0-3 的理由
 
@@ -185,7 +190,7 @@ git checkout dev
 
 这份 benchmark **不是**严格意义上的科学测量,它只支撑"P0-3 在 Java-heavy
 大仓上没观测到 wall-clock 收益"这一个结论。下面列出本次测量做不到的事,
-作为后续(P1-0 之后)需要补的 future work。
+其中 P1-0 Java parsing profile 已完成,其余仍是后续需要补的 future work。
 
 1. **样本量偏小**:每个分支只有 3 次跑(1 cold + 2 warm)。差异在 5 s
    以内的结论统计意义有限,但**百分之几的差距对 P0-3 的"5-10x"预测
@@ -233,8 +238,10 @@ accounts for 18.7% of total time; Java parsing and IO dominate at ~71%.
 P0-3 did fix a real hidden bug (GraphStore/MemoryBackendStore opened
 SQLite without applying any PRAGMA), but the win does not surface in
 end-to-end reindex on this workload. The "5–10× reduction" prediction
-in the original evolution plan is now corrected. Recommended next step:
-profile the Java parsing stage before P1-1 (call resolver).
+in the original evolution plan is now corrected. The Java parsing profile
+recommended here has since been completed in
+`P1_0_JAVA_PARSING_PROFILE.md`; the identified parser/asdict/json metadata
+hot-path fixes are still pending.
 
 ---
 

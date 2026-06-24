@@ -447,6 +447,28 @@ def memory_eval_parser_benchmark(
     )
 
 
+def memory_eval_java_call_resolution(
+    workspace_file: str | Path,
+    cases_file: str | Path,
+    *,
+    min_recall: float = 0.90,
+    min_confidence_rate: float = 0.85,
+    max_unresolved_rate: float = 0.10,
+    fail_on_unexpected_high_confidence: bool = False,
+) -> dict[str, Any]:
+    """Evaluate indexed Java CALLS_METHOD precision against logical cases."""
+    from ..benchmark.java_call_resolution import run_java_call_resolution_suite
+
+    return run_java_call_resolution_suite(
+        workspace_file,
+        cases_file,
+        min_recall=min_recall,
+        min_confidence_rate=min_confidence_rate,
+        max_unresolved_rate=max_unresolved_rate,
+        fail_on_unexpected_high_confidence=fail_on_unexpected_high_confidence,
+    )
+
+
 def _benchmark_baseline_path(workspace_file: str | Path) -> Path:
     _, store = load_context(workspace_file)
     return store.base_dir / "benchmark-baseline.json"

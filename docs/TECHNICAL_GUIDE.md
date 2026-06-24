@@ -631,15 +631,61 @@ def memory_query_hybrid(...):
 - 限制扫描范围
 - 缓存常用查询
 
-## 10. 未来优化方向
+## 10. Java CALLS_METHOD Precision Gate / Java 调用解析精度门禁
 
-### 10.1 Hybrid Retrieval
+Java call resolver 的回归验证分两层：
+
+- 公开仓库提交 evaluator、单元测试和脱敏说明。
+- 真实 UCAP cases 与性能/精度基线保存在真实 workspace 的 `.memory-center/golden/`，不提交到本仓库。
+
+CLI 用法：
+
+```bash
+memory-center eval-java-call-resolution \
+  --workspace /path/to/.memory-center/workspace.yaml \
+  --cases /path/to/.memory-center/golden/java-call-resolution.yaml
+```
+
+cases 文件只允许逻辑锚点：
+
+```yaml
+schema_version: 1
+cases:
+  - case_id: controller-to-service
+    source: ExampleController#list
+    expected_target: ExampleService#list
+    min_confidence: 0.85
+    expected_resolution_levels: [import, same_package]
+```
+
+门禁指标：
+
+- `edge_recall`：预期调用边是否在 graph 的 `CALLS_METHOD` 中出现。
+- `high_confidence_expected_rate`：命中的预期边是否达到 case 的 `min_confidence`。
+- `resolution_level_rate`：如配置 `expected_resolution_levels`，解析层级是否符合预期。
+- `unresolved_rate`：预期链路没有命中或命中 unresolved 的比例。
+
+HTTP / MCP：
+
+- HTTP: `/workspace/eval-java-call-resolution?workspace=...&cases=...`
+- MCP: `mc_admin(action="eval_java_call_resolution", name="<cases.yaml>")`
+
+This gate intentionally validates resolver output at the graph edge layer,
+before walkthrough/report formatting, so parser/retrieval/reasoning changes
+cannot hide a broken Java call edge.
+
+该门禁故意在 graph edge 层做验证，而不是只看最终报告文本，避免
+walkthrough / retrieval / reasoning 的展示层优化掩盖 Java 调用边解析退化。
+
+## 11. 未来优化方向
+
+### 11.1 Hybrid Retrieval
 
 - 学习排序（Learning to Rank）
 - 查询扩展（Query Expansion）
 - 反馈循环（用户点击 → 权重调整）
 
-### 10.2 Benchmark Trending
+### 11.2 Benchmark Trending
 
 - 更细粒度的回归归因
 - 自动修复建议
@@ -647,19 +693,19 @@ def memory_query_hybrid(...):
 - 使用 `record_baseline_sample()` 记录脱敏 portable sample；只允许 operation、topology size、duration、result count、quality score、parser 和 timestamp
 - 使用 `compare_baseline_samples()` 比较 median / p95 延迟与质量下降，样本中禁止写入路径或任意 payload
 
-### 10.3 Unified Backend
+### 11.3 Unified Backend
 
 - 更多聚合维度
 - 查询缓存
 - 增量更新
 
-### 10.4 Drill-Down Navigation
+### 11.4 Drill-Down Navigation
 
 - 图形化导航
 - 智能推荐下一步
 - 跨 workspace 钻取
 
-### 10.5 Completion Audit
+### 11.5 Completion Audit
 
 - 实时审计（文件变更触发）
 - 自动修复建议

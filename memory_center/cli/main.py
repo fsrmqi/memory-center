@@ -855,6 +855,29 @@ def eval_golden_cmd(
     print(json.dumps(benchmark_module.run_golden_suite(workspace, cases, performance_baseline=baseline or None), ensure_ascii=False, indent=2, default=str))
 
 
+@app.command("eval-java-call-resolution")
+def eval_java_call_resolution_cmd(
+    workspace: str = typer.Option(..., help="Workspace yaml file."),
+    cases: str = typer.Option(..., help="Java call resolution cases yaml file."),
+    min_recall: float = typer.Option(0.90, help="Minimum expected-edge recall."),
+    min_confidence_rate: float = typer.Option(0.85, help="Minimum high-confidence expected-edge rate."),
+    max_unresolved_rate: float = typer.Option(0.10, help="Maximum unresolved case rate."),
+    fail_on_unexpected_high_confidence: bool = typer.Option(False, help="Fail on non-expected high-confidence CALLS_METHOD edges."),
+):
+    """Run Java CALLS_METHOD resolution gate against logical real-workspace cases."""
+    from memory_center.core.orchestrator import memory_eval_java_call_resolution
+
+    result = memory_eval_java_call_resolution(
+        workspace,
+        cases,
+        min_recall=min_recall,
+        min_confidence_rate=min_confidence_rate,
+        max_unresolved_rate=max_unresolved_rate,
+        fail_on_unexpected_high_confidence=fail_on_unexpected_high_confidence,
+    )
+    print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+
+
 @app.command("eval-token-benchmark-save")
 def eval_token_benchmark_save_cmd(
     workspace: str = typer.Option(...),

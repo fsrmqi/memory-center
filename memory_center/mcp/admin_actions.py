@@ -58,6 +58,7 @@ from memory_center.core.orchestrator import (
     memory_eval_context_weight,
     memory_eval_handoff,
     memory_eval_index_freshness,
+    memory_eval_java_call_resolution,
     memory_eval_parser_benchmark,
     memory_eval_regression_suite,
     memory_eval_resume,
@@ -289,6 +290,10 @@ def eval_golden_action(workspace_file: str, cases_file: str) -> dict[str, Any]:
     return benchmark_module.run_golden_suite(workspace_file, cases_file)
 
 
+def eval_java_call_resolution_action(workspace_file: str, cases_file: str) -> dict[str, Any]:
+    return memory_eval_java_call_resolution(workspace_file, cases_file)
+
+
 def build_admin_registry(
     *,
     workspace_file: str,
@@ -399,6 +404,7 @@ def build_admin_registry(
         "eval_workflow_orchestration": lambda: memory_eval_workflow_orchestration(wf, task_id=task_id, session_id=session_id, intent=intent, limit=limit),
         "eval_token_gain": lambda: memory_eval_token_gain(wf, tool_name=tool_name, budget=budget, model=model, limit=limit),
         "eval_parser_benchmark": lambda: memory_eval_parser_benchmark(wf, limit=limit),
+        "eval_java_call_resolution": lambda: eval_java_call_resolution_action(wf, name),
         "eval_golden": lambda: eval_golden_action(wf, name),
         "eval_token_benchmark": lambda: memory_eval_token_benchmark(wf, intent=intent, limit=limit),
         "eval_token_benchmark_trend": lambda: benchmark_trend_report(wf, name),
