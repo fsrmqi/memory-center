@@ -335,6 +335,14 @@ def hybrid_retrieve(
     retrieval_diagnostics["policy"] = {
         "status": "active",
         **policy.to_dict(),
+        # Surface user-facing config intent so callers can correlate
+        # ``enable_vector=true`` requests with the actual ``vector_enabled``
+        # policy choice (the latter may stay False when the policy decided
+        # vector is not useful for the current intent, or when no dense
+        # vectors are available).
+        "enable_vector": config.enable_vector,
+        "enable_sparse_bm25": config.enable_sparse_bm25,
+        "enable_semantic": config.enable_semantic,
     }
     retrieval_diagnostics["parser_precision"] = parser_precision_from_workspace(workspace_file)
 

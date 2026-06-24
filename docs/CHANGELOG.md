@@ -8,6 +8,22 @@
 
 ## Unreleased
 
+### Vector Retrieval Real Validation / 向量检索真实场景验证
+
+- 新增 [docs/benchmarks/P0_5_VECTOR_VALIDATION.md](./benchmarks/P0_5_VECTOR_VALIDATION.md):
+  在真实 UCAP workspace (316,696 nodes / 47,633 vector candidates)
+  上端到端验证 `MEMORY_CENTER_SEMANTIC_BACKEND=sentence-transformers`
+  + `selective` scope + ANN retrieval 全流程。`vector_status: ready`,
+  query "Feign 鉴权拦截器" elapsed 13.2s -> 2.8s(-78%),top1 命中从
+  file 级升级为 method 级语义命中(`vector_ann + sparse_bm25 + semantic`)。
+- `retrieval_diagnostics.policy` 同时暴露 `vector_enabled`(policy
+  实际选择)与 `enable_vector` / `enable_sparse_bm25` / `enable_semantic`
+  (user 请求),让宿主能解释"开了 vector 却没用"或"自动 policy
+  选择 vector"等情况。
+- 默认仍是 `sparse` backend;`sentence-transformers` / `sqlite-vec`
+  保持 optional 依赖,47K x 384 维 numpy brute_force 已经 sub-100ms,
+  当前规模不需要额外向量数据库。
+
 ### Vector Observability / 向量可观测性
 
 - reindex 汇总新增 `semantic_backend`、`requested_semantic_backend`、
