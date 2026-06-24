@@ -24,6 +24,7 @@
 - [docs/MCP_GUIDE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/MCP_GUIDE.md)
 - [docs/REFERENCE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/REFERENCE.md)
 - [docs/TECHNICAL_GUIDE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/TECHNICAL_GUIDE.md)
+- [docs/references/codebase-memory-mcp.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/references/codebase-memory-mcp.md)
 
 ---
 
@@ -58,16 +59,36 @@
 
 当前真正值得继续做的是：
 
-1. **Java reindex 性能热点修复**：P1-0 profile 已定位 parser 双轨、`dataclasses.asdict`、graph metadata `json.dumps` 三个热点，但代码仍未修复。
-2. **Java Parser / Call Resolver 真实精度深化**：已有门禁，但需要继续用真实跨项目 controller / service / feign case 扩充样本并修复误判。
-3. **Retrieval / Reasoning 质量闭环**：已有策略和解释字段，但还需要更多真实任务回归，减少“看似命中、实际偏题”。
-4. **真实性能基线长期治理**：已有 3.5.7 真实场景基线概念，后续版本必须证明不低于基线。
-5. **Workbench 与报告体验产品化**：能力已可用，但还要让人类阅读更顺、让 Agent 更少重复搜索。
-6. **External inspiration 收敛到工程能力**：只吸收确定性 diff scope、spec traceability、context pack first、workflow protocol 等工程思想，不引入外部叙事或重依赖。
+1. **CBM 参考设计对齐**：先用 [codebase-memory-mcp 关键设计参考](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/references/codebase-memory-mcp.md) 校准索引热路径、图查询和评测口径，避免 P0 性能修复零散返工。
+2. **Java reindex 性能热点修复**：P1-0 profile 已定位 parser 双轨、`dataclasses.asdict`、graph metadata `json.dumps` 三个热点，但代码仍未修复。
+3. **Java Parser / Call Resolver 真实精度深化**：已有门禁，但需要继续用真实跨项目 controller / service / feign case 扩充样本并修复误判。
+4. **Retrieval / Reasoning 质量闭环**：已有策略和解释字段，但还需要更多真实任务回归，减少“看似命中、实际偏题”。
+5. **真实性能基线长期治理**：已有 3.5.7 真实场景基线概念，后续版本必须证明不低于基线。
+6. **Workbench 与报告体验产品化**：能力已可用，但还要让人类阅读更顺、让 Agent 更少重复搜索。
 
 ---
 
 ## 3. 开发优先级 / Development Priorities
+
+### P0-0：CBM 参考设计对齐
+
+目标：在动 P0 性能代码前，先把 CBM 的关键工程设计转成 Memory Center 的索引热路径方案。
+
+依据：
+
+- [docs/references/codebase-memory-mcp.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/references/codebase-memory-mcp.md)
+
+任务：
+
+1. 明确本阶段吸收哪些 CBM 思路：RAM-first staging、批量写入、tree-sitter + resolver 分层、FTS/BM25 候选、watcher 增量、graph artifact。
+2. 明确本阶段不做哪些：C 重写、158 语言覆盖、CBM backend provider、复制源码、必选压缩依赖。
+3. 输出一个短设计或直接更新 P0 实施说明，保证 `asdict`、metadata JSON、parser 双轨三个修复能落在同一热路径策略里。
+
+验收：
+
+- 文档明确 P0 热点修复顺序和不做事项。
+- 不超过一个工作日，不能变成长期调研。
+- 完成后直接进入 P0 Java reindex 性能热点修复。
 
 ### P0：Java reindex 性能热点修复
 
@@ -151,26 +172,26 @@
 - Agent 可直接使用顶层字段，不需要读 `tool-results/*.json`
 - Workbench 不泄漏私有路径、源码片段或服务名
 
-### P4：长期治理与外部思想吸收
+### 已完成：外部吸收归档
 
-目标：只把外部项目里的工程能力吸收为 Memory Center 自己的模块，不复制其命令体系或运行时依赖。
+目标：已吸收的外部项目思想全部标记完成，后续无需继续参考这些外部项目推进主路线。
 
-吸收方向：
+已完成吸收：
 
-- `alibaba/open-code-review`：确定性 diff scope、exclusion reasons、finding relocation、review-to-verification memory loop
-- `github/spec-kit`：constitution、spec -> plan -> tasks -> implement、clarify / analyze、resumable workflow、human gates
-- `codegraph` 类项目：tree-sitter + SQLite + FTS、freshness banner、context pack first、shared warm state
-- `Understand-Anything` 类项目：guided tour、business flow、persona-adaptive explanation、理解资产增量刷新
-- `ECC` 类项目：workflow protocol、verification loop、continuous learning、agent runtime governance、bundle export
-- 概率树 / candidate path 视角：candidate paths、confidence / risk / verification cost、low-cost validation first
+- `codegraph` 类项目：tree-sitter Java parser、SQLite BM25 / inverted retrieval、freshness banner、watcher-to-incremental-reindex、context pack first、context pack benchmark、daemon feasibility 均已落地或归档。
+- `Understand-Anything` 类项目：guided tour / onboarding、统一 explanation schema、business flow、flow-aware impact、persona-adaptive explanation、理解资产增量刷新均已落地。
+- `ECC` 类项目：workflow profiles、verification loop、pattern promotion、learned heuristics、agent runtime audit、agent bundle export 均已落地。
+- `rtk`：token estimate、compact operation gain、discover / command compression 思路已吸收到 token benchmark、payload compression 和 discover 输出。
+- `agentmemory`：top-K memory ranking、token benchmark / trend 思路已吸收到 session memory、benchmark baseline 和 trend。
+- `mattpocock/skills`：constraint templates 和模型内工作协议思路已吸收到 templates / workflow profile / recommended next action。
+- candidate path / 概率树视角：candidate paths、recommended path、confidence / risk / verification cost、低成本验证优先和 learning feedback 已进入主链路。
 
-不吸收：
+归档判断：
 
-- 不引入外部项目作为必选 runtime dependency
-- 不复制外部 CLI / 配置目录 / slash command 体系
-- 不把自然语言 spec 置于真实代码和运行证据之上
-- 不把权重伪装成客观真值
-- 不引入非工程化叙事
+- 上述项目后续不再作为路线输入，不再继续追踪原项目变化；CBM 例外，仅保留为固定本地参考文档 [docs/references/codebase-memory-mcp.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/references/codebase-memory-mcp.md)，后续引用该文档而不是继续跟踪外部项目。
+- 未进入当前实现的 `open-code-review`、`spec-kit` 相关想法不再单列路线；如未来真实问题需要，再按本项目自己的 gate 重新立项。
+- 不引入外部项目作为必选 runtime dependency，不复制外部 CLI / 配置目录 / slash command 体系。
+- 不把自然语言 spec 置于真实代码和运行证据之上，不把权重伪装成客观真值，不引入非工程化叙事。
 
 ---
 
@@ -238,6 +259,8 @@
 - 最小可用版本如何验证。
 - 数据迁移、兼容和回滚如何处理。
 - 后续维护成本是否可接受。
+
+注意：开放方向不再依赖外部项目清单驱动。外部吸收项已经归档，后续立项必须来自真实使用问题、benchmark、gate 或当前架构缺口。
 
 ---
 
