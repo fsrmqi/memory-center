@@ -36,7 +36,7 @@ IGNORED_DIRS = {
 @observe_operation(
     "reindex_workspace",
     workspace_resolver=lambda args, kwargs: args[1].workspace_file if len(args) > 1 else kwargs["store"].workspace_file,
-    tags_resolver=lambda args, kwargs: {"parallel": bool(kwargs.get("parallel", False))},
+    tags_resolver=lambda args, kwargs: {"parallel": bool(kwargs.get("parallel", True))},
 )
 def reindex_workspace(
     config: WorkspaceConfig,
@@ -44,7 +44,7 @@ def reindex_workspace(
     *,
     projects: Sequence[str] | None = None,
     paths: Sequence[str] | None = None,
-    parallel: bool = False,
+    parallel: bool = True,
 ) -> dict[str, Any]:
     """Rebuild deterministic indexes and the local evidence graph."""
     project_filter = {item.strip() for item in (projects or []) if item and item.strip()}

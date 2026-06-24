@@ -59,12 +59,17 @@
 
 当前真正值得继续做的是：
 
-1. **CBM 参考设计对齐**：先用 [codebase-memory-mcp 关键设计参考](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/references/codebase-memory-mcp.md) 校准索引热路径、图查询和评测口径，避免 P0 性能修复零散返工。
-2. **Java reindex 性能热点修复**：P1-0 profile 定位的 parser 双轨、`dataclasses.asdict`、graph metadata `json.dumps` 三个热点已在代码中修复，并已在私有 UCAP workspace 上通过 call resolution / golden / performance / doctor / walkthrough gate 验收（详见 [docs/benchmarks/P0_INDEX_HOT_PATH_DESIGN.md §5](./benchmarks/P0_INDEX_HOT_PATH_DESIGN.md) 与 [docs/CHANGELOG.md](./CHANGELOG.md)）。
-3. **Java Parser / Call Resolver 真实精度深化**：已有门禁，但需要继续用真实跨项目 controller / service / feign case 扩充样本并修复误判。
-4. **Retrieval / Reasoning 质量闭环**：已有策略和解释字段，但还需要更多真实任务回归，减少“看似命中、实际偏题”。
-5. **真实性能基线长期治理**：已有 3.5.7 真实场景基线概念，后续版本必须证明不低于基线。
-6. **Workbench 与报告体验产品化**：能力已可用，但还要让人类阅读更顺、让 Agent 更少重复搜索。
+1. **Java Parser / Call Resolver 真实精度深化**：已有门禁，但需要继续用真实跨项目 controller / service / feign case 扩充样本并修复误判。
+2. **Retrieval / Reasoning 质量闭环**：已有策略和解释字段，但还需要更多真实任务回归，减少“看似命中、实际偏题”。
+3. **真实性能基线长期治理**：已有 3.5.7 真实场景基线概念，后续版本必须证明不低于基线。
+4. **Workbench 与报告体验产品化**：能力已可用，但还要让人类阅读更顺、让 Agent 更少重复搜索。
+
+### 最近完成 / Recently Completed
+
+以下事项已在最近一轮代码和真实场景验收中完成，不再作为待办：
+
+1. **CBM 参考设计对齐**：已形成固定参考文档 [docs/references/codebase-memory-mcp.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/references/codebase-memory-mcp.md) 和配套设计收口文档 [docs/benchmarks/P0_INDEX_HOT_PATH_DESIGN.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/benchmarks/P0_INDEX_HOT_PATH_DESIGN.md)。
+2. **Java reindex 性能热点修复**：P1-0 profile 定位的 parser 双轨、`dataclasses.asdict`、graph metadata `json.dumps` 三个热点已在代码中修复，并已在私有 UCAP workspace 上通过 call resolution / golden / performance / doctor / walkthrough gate 验收。
 
 ---
 

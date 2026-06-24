@@ -340,6 +340,61 @@ def _cli_project_workspace(tmp_path: Path):
     return str(workspace)
 
 
+def test_reindex_cli_defaults_to_parallel(monkeypatch, tmp_path: Path):
+    workspace = _cli_project_workspace(tmp_path)
+    observed: dict[str, object] = {}
+
+    class _FakeConfig:
+        root_path = Path(workspace).parent.parent
+
+    monkeypatch.setattr("memory_center.cli.main.load_workspace_config", lambda wf: _FakeConfig())
+    monkeypatch.setattr("memory_center.cli.main.WorkspaceStore", lambda wf: object())
+
+    def _fake_reindex(config, store, *, projects=None, paths=None, parallel=False):
+        observed["projects"] = projects
+        observed["paths"] = paths
+        observed["parallel"] = parallel
+        return {"mode": "full"}
+
+    monkeypatch.setattr("memory_center.cli.main.reindex_workspace", _fake_reindex)
+    monkeypatch.setattr("memory_center.cli.main.ensure_default_rules", lambda store: None)
+    monkeypatch.setattr("memory_center.cli.main.ensure_default_hooks", lambda store: None)
+    monkeypatch.setattr("memory_center.cli.main.ensure_default_artifacts", lambda wf: None)
+    monkeypatch.setattr("memory_center.cli.main.write_agent_instructions", lambda store, root: None)
+
+    runner = CliRunner()
+    result = runner.invoke(app, ["reindex", "--workspace", workspace])
+    assert result.exit_code == 0
+    assert observed["parallel"] is True
+    assert observed["paths"] == []
+
+
+def test_reindex_cli_can_disable_parallel(monkeypatch, tmp_path: Path):
+    workspace = _cli_project_workspace(tmp_path)
+    observed: dict[str, object] = {}
+
+    class _FakeConfig:
+        root_path = Path(workspace).parent.parent
+
+    monkeypatch.setattr("memory_center.cli.main.load_workspace_config", lambda wf: _FakeConfig())
+    monkeypatch.setattr("memory_center.cli.main.WorkspaceStore", lambda wf: object())
+
+    def _fake_reindex(config, store, *, projects=None, paths=None, parallel=False):
+        observed["parallel"] = parallel
+        return {"mode": "full"}
+
+    monkeypatch.setattr("memory_center.cli.main.reindex_workspace", _fake_reindex)
+    monkeypatch.setattr("memory_center.cli.main.ensure_default_rules", lambda store: None)
+    monkeypatch.setattr("memory_center.cli.main.ensure_default_hooks", lambda store: None)
+    monkeypatch.setattr("memory_center.cli.main.ensure_default_artifacts", lambda wf: None)
+    monkeypatch.setattr("memory_center.cli.main.write_agent_instructions", lambda store, root: None)
+
+    runner = CliRunner()
+    result = runner.invoke(app, ["reindex", "--workspace", workspace, "--no-parallel"])
+    assert result.exit_code == 0
+    assert observed["parallel"] is False
+
+
 def test_cli_query_project_filter(tmp_path: Path):
     import ast
     ws = _cli_project_workspace(tmp_path)
