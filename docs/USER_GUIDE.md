@@ -277,7 +277,7 @@ result = hybrid_retrieve(graph, workspace_file, query, config=config)
 - `progressive`: 渐进式摘要
 - `retrieval_diagnostics`: BM25 / Vector 的 disabled、empty、unavailable 或 active 状态
 
-默认情况下，reindex 会自动构建 SQLite BM25；Vector ANN 默认关闭。启用本地 embedding backend 并重新 reindex 后，dense vectors 会同步到 VectorIndex，再根据真实查询 benchmark 决定是否开启 vector。
+默认情况下，reindex 会自动构建 SQLite BM25；Vector ANN 默认关闭。启用本地 embedding backend 并重新 reindex 后，dense vectors 会同步到 VectorIndex，再根据真实查询 benchmark 决定是否开启 vector。reindex 汇总会返回 `semantic_backend`、`requested_semantic_backend`、`vector_scope`、`vector_candidate_count`、`dense_doc_count`、`vector_status`、`vector_disabled_reason`，用于解释 `vector_embeddings=0` 是因为 sparse backend、模型不可用、scope 无候选，还是 dense vector 已就绪。
 
 **意图检测示例**:
 - `"feign client"` → feign 意图

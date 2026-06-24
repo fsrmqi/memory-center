@@ -1644,6 +1644,13 @@ def test_local_embedding_backend_is_optional_and_selectable(tmp_path: Path):
         semantic._load_sentence_transformer_model = lambda model_name: FakeSentenceTransformer()
         counts = reindex_workspace(config, store)
         assert counts["semantic_docs"] > 0
+        assert counts["semantic_backend"] == "sentence-transformers"
+        assert counts["requested_semantic_backend"] == "sentence-transformers"
+        assert counts["vector_scope"] == "selective"
+        assert counts["vector_candidate_count"] > 0
+        assert counts["dense_doc_count"] == counts["vector_embeddings"]
+        assert counts["vector_status"] == "ready"
+        assert counts["vector_disabled_reason"] is None
 
         stats = semantic.semantic_index_stats(workspace)
         assert stats["backend"] == "sentence-transformers"

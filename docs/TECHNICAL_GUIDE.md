@@ -443,6 +443,8 @@ _resolve_cross_workspace_refs(merged[:limit], graph, workspace_file)
 
 reindex 会自动重建 SQLite BM25。只有 semantic index 中存在 `dense_vector` 时才会同步 VectorIndex；旧向量会在同步时清理，避免陈旧命中。
 
+reindex 汇总会透出 `semantic_backend`、`requested_semantic_backend`、`vector_scope`、`vector_candidate_count`、`dense_doc_count`、`vector_status`、`vector_disabled_reason`。其中 `vector_candidate_count` 表示按当前 scope 可向量化的核心节点数，`dense_doc_count` 表示实际生成 dense vector 的节点数；当 `vector_status=disabled|unavailable|no_candidates` 时，`vector_disabled_reason` 给出可操作原因。
+
 ### 8.2 Benchmark Trending 实现细节
 
 **问题**: 无法知道哪条链路的 token 使用又变胖了。

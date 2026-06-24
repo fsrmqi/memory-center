@@ -108,10 +108,10 @@ def build_workspace_semantic_index(workspace_file: str | Path) -> dict[str, Any]
 
     actual_backend = DEFAULT_SEMANTIC_BACKEND
     model_name = None
-    vector_candidate_count = 0
+    dense_docs = [doc for doc in docs if _doc_is_vector_eligible(doc, scope=requested_vector_scope)]
+    vector_candidate_count = len(dense_docs)
+    vector_model_unavailable = False
     if backend == "sentence-transformers":
-        dense_docs = [doc for doc in docs if _doc_is_vector_eligible(doc, scope=requested_vector_scope)]
-        vector_candidate_count = len(dense_docs)
         model = _load_sentence_transformer_model(requested_model)
         if model is not None and dense_docs:
             texts = [doc["text"] for doc in dense_docs]
@@ -120,8 +120,19 @@ def build_workspace_semantic_index(workspace_file: str | Path) -> dict[str, Any]
                 doc["dense_vector"] = [float(value) for value in vector]
             actual_backend = "sentence-transformers"
             model_name = requested_model
+        elif dense_docs:
+            vector_model_unavailable = True
     for doc in docs:
         del doc["text"]
+    dense_doc_count = sum(1 for doc in docs if doc.get("dense_vector"))
+    vector_state = _vector_state(
+        requested_backend=backend,
+        actual_backend=actual_backend,
+        vector_scope=requested_vector_scope,
+        vector_candidate_count=vector_candidate_count,
+        dense_doc_count=dense_doc_count,
+        model_unavailable=vector_model_unavailable,
+    )
 
     payload = {
         "version": SEMANTIC_INDEX_VERSION,
@@ -134,7 +145,8 @@ def build_workspace_semantic_index(workspace_file: str | Path) -> dict[str, Any]
         "backend": actual_backend,
         "model": model_name,
         "vector_candidate_count": vector_candidate_count,
-        "dense_doc_count": sum(1 for doc in docs if doc.get("dense_vector")),
+        "dense_doc_count": dense_doc_count,
+        **vector_state,
         "df": df,
         "docs": docs,
     }
@@ -212,8 +224,9 @@ def build_workspace_semantic_index_partial(workspace_file: str | Path, changed_n
             rescaled[token] = old_weight * idf_new / idf_old
         doc["sparse_vector"] = rescaled
         doc["sparse_norm"] = math.sqrt(sum(value * value for value in rescaled.values())) or 1.0
-    backend = DEFAULT_SEMANTIC_BACKEND
+    backend = _requested_backend()
     actual_backend = existing.get("backend", DEFAULT_SEMANTIC_BACKEND)
+    requested_model = _requested_model_name(backend)
     model_name = existing.get("model")
     requested_vector_scope = _requested_vector_scope()
     vector_candidate_count = sum(
@@ -227,18 +240,30 @@ def build_workspace_semantic_index_partial(workspace_file: str | Path, changed_n
             dense_vectors = model.encode(texts, normalize_embeddings=True)
             for doc, vector in zip_strict(dense_new_docs, dense_vectors):
                 doc["dense_vector"] = [float(value) for value in vector]
+    dense_doc_count = sum(1 for doc in merged_docs if doc.get("dense_vector"))
+    vector_state = _vector_state(
+        requested_backend=backend,
+        actual_backend=actual_backend,
+        vector_scope=requested_vector_scope,
+        vector_candidate_count=vector_candidate_count,
+        dense_doc_count=dense_doc_count,
+        model_unavailable=backend == "sentence-transformers"
+        and actual_backend != "sentence-transformers"
+        and vector_candidate_count > 0,
+    )
     payload = {
         "version": SEMANTIC_INDEX_VERSION,
         "node_count": total_node_count,
         "doc_count": len(merged_docs),
         "avgdl": sum(d.get("doc_len", 0) for d in merged_docs) / doc_count,
         "requested_backend": backend,
-        "requested_model": existing.get("requested_model"),
+        "requested_model": requested_model,
         "requested_vector_scope": requested_vector_scope,
         "backend": actual_backend,
         "model": model_name,
         "vector_candidate_count": vector_candidate_count,
-        "dense_doc_count": sum(1 for doc in merged_docs if doc.get("dense_vector")),
+        "dense_doc_count": dense_doc_count,
+        **vector_state,
         "df": df,
         "docs": merged_docs,
     }
@@ -258,18 +283,36 @@ def semantic_query(workspace_file: str | Path, query: str, limit: int = 20) -> l
 def semantic_index_stats(workspace_file: str | Path) -> dict[str, Any]:
     store = WorkspaceStore(workspace_file)
     payload = store.read_json_prefer_backend(SEMANTIC_INDEX_FILE, {})
+    backend = payload.get("backend", DEFAULT_SEMANTIC_BACKEND)
+    requested_backend = payload.get("requested_backend", DEFAULT_SEMANTIC_BACKEND)
+    vector_scope = payload.get("requested_vector_scope", DEFAULT_VECTOR_SCOPE)
+    vector_candidate_count = int(payload.get("vector_candidate_count", 0))
+    dense_doc_count = int(payload.get("dense_doc_count", 0))
+    vector_state = _vector_state(
+        requested_backend=requested_backend,
+        actual_backend=backend,
+        vector_scope=vector_scope,
+        vector_candidate_count=vector_candidate_count,
+        dense_doc_count=dense_doc_count,
+        model_unavailable=requested_backend == "sentence-transformers"
+        and backend != "sentence-transformers"
+        and vector_candidate_count > 0,
+    )
     return {
         "version": payload.get("version"),
         "node_count": int(payload.get("node_count", 0)),
         "doc_count": int(payload.get("doc_count", 0)),
         "ready": bool(payload.get("docs")),
-        "backend": payload.get("backend", DEFAULT_SEMANTIC_BACKEND),
-        "requested_backend": payload.get("requested_backend", DEFAULT_SEMANTIC_BACKEND),
+        "backend": backend,
+        "requested_backend": requested_backend,
+        "semantic_backend": backend,
+        "requested_semantic_backend": requested_backend,
         "model": payload.get("model"),
         "requested_model": payload.get("requested_model"),
-        "vector_scope": payload.get("requested_vector_scope", DEFAULT_VECTOR_SCOPE),
-        "vector_candidate_count": int(payload.get("vector_candidate_count", 0)),
-        "dense_doc_count": int(payload.get("dense_doc_count", 0)),
+        "vector_scope": vector_scope,
+        "vector_candidate_count": vector_candidate_count,
+        "dense_doc_count": dense_doc_count,
+        **vector_state,
     }
 
 
@@ -364,6 +407,28 @@ def _requested_model_name(backend: str) -> str | None:
     if backend == "sentence-transformers":
         return os.getenv("MEMORY_CENTER_EMBEDDING_MODEL", DEFAULT_SENTENCE_TRANSFORMER_MODEL).strip() or DEFAULT_SENTENCE_TRANSFORMER_MODEL
     return None
+
+
+def _vector_state(
+    *,
+    requested_backend: str,
+    actual_backend: str,
+    vector_scope: str,
+    vector_candidate_count: int,
+    dense_doc_count: int,
+    model_unavailable: bool = False,
+) -> dict[str, str | None]:
+    if vector_scope == "off":
+        return {"vector_status": "disabled", "vector_disabled_reason": "vector_scope_off"}
+    if requested_backend != "sentence-transformers":
+        return {"vector_status": "disabled", "vector_disabled_reason": "semantic_backend_sparse"}
+    if model_unavailable or actual_backend != "sentence-transformers":
+        return {"vector_status": "unavailable", "vector_disabled_reason": "sentence_transformers_model_unavailable"}
+    if vector_candidate_count <= 0:
+        return {"vector_status": "no_candidates", "vector_disabled_reason": "no_vector_eligible_docs"}
+    if dense_doc_count <= 0:
+        return {"vector_status": "unavailable", "vector_disabled_reason": "dense_embeddings_not_built"}
+    return {"vector_status": "ready", "vector_disabled_reason": None}
 
 
 def _load_sentence_transformer_model(model_name: str | None):

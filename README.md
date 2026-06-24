@@ -409,6 +409,10 @@ Reindex output also includes parser diagnostics: selected parser, parse count, f
 
 reindex 输出还会包含 parser diagnostics：实际 parser、解析次数、fallback 次数/原因、原生差异数和最终 critical disagreement 数。公开 parser 一致性由 `examples/parser-corpus/` 与 `tests/test_parser_differential.py` 守护。
 
+Reindex output also exposes semantic/vector observability fields: `semantic_backend`, `requested_semantic_backend`, `vector_scope`, `vector_candidate_count`, `dense_doc_count`, `vector_status`, and `vector_disabled_reason`. When `vector_embeddings=0`, these fields explain whether vectors are disabled by the sparse backend, blocked by a missing local embedding model, filtered by scope, or ready but empty.
+
+reindex 输出还会暴露语义/向量可观测字段：`semantic_backend`、`requested_semantic_backend`、`vector_scope`、`vector_candidate_count`、`dense_doc_count`、`vector_status` 和 `vector_disabled_reason`。当 `vector_embeddings=0` 时，可以直接判断是 sparse backend 未开启向量、本地 embedding 模型不可用、scope 过滤为空，还是已就绪但无结果。
+
 By default the semantic index uses the built-in sparse backend. If `sentence-transformers` is installed, you can switch to a local embedding backend with:
 
 默认情况下语义索引使用内置稀疏后端。如果安装了 `sentence-transformers`，可以通过下面的环境变量切换到本地 embedding backend：

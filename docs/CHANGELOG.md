@@ -8,6 +8,19 @@
 
 ## Unreleased
 
+### Vector Observability / 向量可观测性
+
+- reindex 汇总新增 `semantic_backend`、`requested_semantic_backend`、
+  `semantic_model`、`requested_semantic_model`、`vector_scope`、
+  `vector_candidate_count`、`dense_doc_count`、`vector_status`、
+  `vector_disabled_reason`。当 `vector_embeddings=0` 时可直接判断是
+  sparse backend 未开启、`sentence-transformers`/模型不可用、scope 无候选，
+  还是 dense vector 已生成但未同步。
+- `semantic_index_stats()` 同步返回上述状态字段，并保留原有
+  `backend` / `requested_backend` 字段，兼容现有调用。
+- English summary: reindex and semantic stats now explain vector readiness
+  instead of only reporting `vector_embeddings=0`.
+
 ### P0 Index Hot Path / 索引热路径修复
 
 - 新增 [docs/benchmarks/P0_INDEX_HOT_PATH_DESIGN.md](./benchmarks/P0_INDEX_HOT_PATH_DESIGN.md):

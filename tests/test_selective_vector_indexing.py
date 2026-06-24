@@ -86,3 +86,61 @@ def test_build_semantic_index_generates_dense_vectors_only_for_selective_nodes(t
     assert stats["vector_scope"] == "selective"
     assert stats["vector_candidate_count"] == 7
     assert stats["dense_doc_count"] == 7
+    assert stats["vector_status"] == "ready"
+    assert stats["vector_disabled_reason"] is None
+
+
+def test_semantic_index_stats_explain_default_sparse_vector_status(tmp_path: Path, monkeypatch) -> None:
+    workspace = _workspace(tmp_path)
+    store = WorkspaceStore(workspace)
+
+    with GraphStore(store.graph_db_path) as graph:
+        graph.rebuild(
+            [
+                GraphNode("Endpoint:demo:GET:/api/orders", "Endpoint", "GET /api/orders", "demo", "src/api/OrderController.java"),
+            ],
+            [],
+        )
+
+    monkeypatch.delenv("MEMORY_CENTER_SEMANTIC_BACKEND", raising=False)
+    monkeypatch.delenv("MEMORY_CENTER_VECTOR_SCOPE", raising=False)
+
+    payload = build_workspace_semantic_index(workspace)
+    stats = semantic_index_stats(workspace)
+
+    assert payload["requested_backend"] == "sparse"
+    assert stats["semantic_backend"] == "sparse"
+    assert stats["requested_semantic_backend"] == "sparse"
+    assert stats["vector_scope"] == "selective"
+    assert stats["vector_candidate_count"] == 1
+    assert stats["dense_doc_count"] == 0
+    assert stats["vector_status"] == "disabled"
+    assert stats["vector_disabled_reason"] == "semantic_backend_sparse"
+
+
+def test_semantic_index_stats_explain_unavailable_dense_backend(tmp_path: Path, monkeypatch) -> None:
+    workspace = _workspace(tmp_path)
+    store = WorkspaceStore(workspace)
+
+    with GraphStore(store.graph_db_path) as graph:
+        graph.rebuild(
+            [
+                GraphNode("Endpoint:demo:GET:/api/orders", "Endpoint", "GET /api/orders", "demo", "src/api/OrderController.java"),
+            ],
+            [],
+        )
+
+    monkeypatch.setenv("MEMORY_CENTER_SEMANTIC_BACKEND", "sentence-transformers")
+    monkeypatch.setenv("MEMORY_CENTER_VECTOR_SCOPE", "selective")
+    monkeypatch.setattr("memory_center.core.semantic._load_sentence_transformer_model", lambda _name: None)
+
+    payload = build_workspace_semantic_index(workspace)
+    stats = semantic_index_stats(workspace)
+
+    assert payload["requested_backend"] == "sentence-transformers"
+    assert stats["semantic_backend"] == "sparse"
+    assert stats["requested_semantic_backend"] == "sentence-transformers"
+    assert stats["vector_candidate_count"] == 1
+    assert stats["dense_doc_count"] == 0
+    assert stats["vector_status"] == "unavailable"
+    assert stats["vector_disabled_reason"] == "sentence_transformers_model_unavailable"
