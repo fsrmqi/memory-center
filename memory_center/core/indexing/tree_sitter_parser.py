@@ -6,6 +6,7 @@ Same JavaParser protocol as RegexJavaParser.
 from __future__ import annotations
 
 import json
+import os
 import threading
 from typing import Any
 
@@ -46,23 +47,53 @@ class TreeSitterJavaParser:
         return self._parser is not None
 
     def parse(self, text: str, file_path: str) -> JavaParseResult:
-        regex_result = RegexJavaParser().parse(text, file_path)
+        # tree-sitter unavailable / parse failed -> full regex fallback.
         if not self._parser:
+            regex_result = RegexJavaParser().parse(text, file_path)
             self._local.selected_parser = "regex"
-            self._record_parse(fallback_reason="tree_sitter_unavailable")
+            self._record_parse(
+                fallback_reason="tree_sitter_unavailable",
+                full_regex_fallback=True,
+            )
             return regex_result
         tree_result = self.parse_native(text, file_path)
         if tree_result is None:
+            regex_result = RegexJavaParser().parse(text, file_path)
             self._local.selected_parser = "regex"
-            self._record_parse(fallback_reason="tree_sitter_parse_error")
+            self._record_parse(
+                fallback_reason="tree_sitter_parse_error",
+                full_regex_fallback=True,
+            )
             return regex_result
 
-        merged = _merge_parse_results(tree_result, regex_result)
-        self._local.selected_parser = self.name
-        self._record_parse(
-            native_disagreements=_structural_missing_count(regex_result, tree_result),
-            critical_disagreements=_structural_missing_count(regex_result, merged),
+        # Opt-in escape hatch: if differential gates ever regress in the
+        # field, set ``MEMORY_CENTER_PARSER_FULL_DUAL=1`` to restore the
+        # legacy behaviour (always run the full regex parser and merge).
+        if _full_dual_enabled():
+            regex_result = RegexJavaParser().parse(text, file_path)
+            merged = _merge_parse_results(tree_result, regex_result)
+            self._local.selected_parser = self.name
+            self._record_parse(
+                native_disagreements=_structural_missing_count(regex_result, tree_result),
+                critical_disagreements=_structural_missing_count(regex_result, merged),
+                full_regex_fallback=True,
+            )
+            return merged
+
+        # Normal hot path: tree-sitter handles structural facts; regex runs
+        # only the supplements tree-sitter does not yet cover. This skips
+        # the ~58 s wall-clock that ``_parse_type_declarations`` /
+        # ``_parse_fields`` / ``_build_method_signatures`` previously
+        # contributed when called on every Java file in a 16K-file repo.
+        supplements = RegexJavaParser().parse_supplements(
+            text,
+            file_path,
+            classes=list(tree_result.classes) + list(tree_result.interfaces),
+            field_types=tree_result.field_types,
         )
+        merged = _merge_supplements(tree_result, supplements)
+        self._local.selected_parser = self.name
+        self._record_parse(supplement_call=True)
         return merged
 
     @property
@@ -76,6 +107,8 @@ class TreeSitterJavaParser:
         self._fallback_reasons: dict[str, int] = {}
         self._native_disagreement_count = 0
         self._critical_disagreement_count = 0
+        self._supplement_call_count = 0
+        self._full_regex_fallback_count = 0
 
     @property
     def diagnostics(self) -> dict[str, Any]:
@@ -89,6 +122,9 @@ class TreeSitterJavaParser:
                 "fallback_reasons": dict(sorted(self._fallback_reasons.items())),
                 "native_disagreement_count": self._native_disagreement_count,
                 "critical_disagreement_count": self._critical_disagreement_count,
+                "supplement_call_count": self._supplement_call_count,
+                "full_regex_fallback_count": self._full_regex_fallback_count,
+                "full_dual_mode": _full_dual_enabled(),
             }
 
     def _record_parse(
@@ -97,6 +133,8 @@ class TreeSitterJavaParser:
         fallback_reason: str = "",
         native_disagreements: int = 0,
         critical_disagreements: int = 0,
+        supplement_call: bool = False,
+        full_regex_fallback: bool = False,
     ) -> None:
         with self._diagnostics_lock:
             self._parse_count += 1
@@ -107,6 +145,10 @@ class TreeSitterJavaParser:
                 self._native_success_count += 1
             self._native_disagreement_count += max(0, native_disagreements)
             self._critical_disagreement_count += max(0, critical_disagreements)
+            if supplement_call:
+                self._supplement_call_count += 1
+            if full_regex_fallback:
+                self._full_regex_fallback_count += 1
 
     def parse_native(self, text: str, file_path: str) -> JavaParseResult | None:
         """Return AST-only facts, or ``None`` when tree-sitter cannot parse."""
@@ -119,7 +161,13 @@ class TreeSitterJavaParser:
         except Exception:
             return None
 
-        package = ""
+        # Use ``None`` for "no package declaration found" so the value
+        # matches ``RegexJavaParser`` (which returns ``None`` from
+        # ``_first_group``). Without this the supplements hot path was
+        # producing ``""`` for default-package files while the legacy
+        # full-dual path was producing ``None`` after the
+        # ``tree.package or regex.package`` fallback.
+        package: str | None = None
         imports: list[str] = []
         classes: list[str] = []
         interfaces: list[str] = []
@@ -139,11 +187,42 @@ class TreeSitterJavaParser:
                 # Extract package name
                 for child in node.children:
                     if child.type in {"scoped_identifier", "identifier"}:
-                        package = _node_text(child)
+                        nonlocal_package = _node_text(child)
+                        if nonlocal_package:
+                            package = nonlocal_package
             elif node.type == "import_declaration":
+                # Build one import string per ``import`` statement so wildcard
+                # imports stay attached to their package and ``import static``
+                # keeps the ``static`` prefix. Tree-sitter emits the path
+                # parts as siblings (``scoped_identifier`` + ``asterisk`` for
+                # ``java.util.*``; an ``identifier`` child ``static`` for
+                # static imports). Without this assembly each child would be
+                # appended individually, producing ``['java.util', '*']``
+                # instead of ``['java.util.*']``.
+                is_static = False
+                path_parts: list[str] = []
+                has_wildcard = False
                 for child in node.children:
-                    if child.type in {"scoped_identifier", "identifier", "asterisk"}:
-                        imports.append(_node_text(child))
+                    child_type = child.type
+                    if child_type == "static":
+                        is_static = True
+                        continue
+                    if child_type == "identifier" and _node_text(child) == "static":
+                        is_static = True
+                        continue
+                    if child_type == "asterisk":
+                        has_wildcard = True
+                        continue
+                    if child_type in {"scoped_identifier", "identifier"}:
+                        text = _node_text(child)
+                        if text and text != "static":
+                            path_parts.append(text)
+                base = ".".join(path_parts)
+                if base:
+                    statement = f"{base}.*" if has_wildcard else base
+                    if is_static:
+                        statement = f"static {statement}"
+                    imports.append(statement)
             elif node.type in ("class_declaration", "enum_declaration", "record_declaration"):
                 name_node = node.child_by_field_name("name")
                 if name_node:
@@ -156,6 +235,35 @@ class TreeSitterJavaParser:
                     interface_name = _node_text(name_node)
                     interfaces.append(interface_name)
                     interface_lines.setdefault(interface_name, _node_line(name_node))
+            elif node.type == "annotation_type_declaration":
+                # ``public @interface XXX { ... }`` -- modelled as an
+                # interface by ``RegexJavaParser`` (it treats ``@interface``
+                # as ``interface`` for the purpose of cataloging the type
+                # and its members), so mirror that here. Also push the
+                # literal ``interface`` token into annotations to match the
+                # legacy behaviour of ``@(\w+)`` regex matching ``@interface``.
+                name_node = node.child_by_field_name("name")
+                if name_node:
+                    interface_name = _node_text(name_node)
+                    interfaces.append(interface_name)
+                    interface_lines.setdefault(interface_name, _node_line(name_node))
+                annotations.append("interface")
+            elif node.type == "annotation_type_element_declaration":
+                # Methods inside ``@interface`` bodies; the regex parser
+                # picks these up via ``_parse_interface_methods``.
+                name_node = node.child_by_field_name("name")
+                if name_node:
+                    method_name = _node_text(name_node)
+                    methods.append(method_name)
+                    method_lines.setdefault(method_name, _node_line(name_node))
+                    method_signatures.append(
+                        {
+                            "identity": f"{method_name}()",
+                            "name": method_name,
+                            "parameter_types": [],
+                            "line": _node_line(name_node),
+                        }
+                    )
             elif node.type == "annotation" or node.type.endswith("_annotation"):
                 name_node = node.child_by_field_name("name")
                 if name_node:
@@ -176,6 +284,23 @@ class TreeSitterJavaParser:
                         }
                     )
             elif node.type == "field_declaration":
+                type_node = node.child_by_field_name("type")
+                type_text = _node_text(type_node) if type_node else ""
+                for child in node.children:
+                    if child.type == "variable_declarator":
+                        name_node = child.child_by_field_name("name")
+                        if name_node:
+                            fname = _node_text(name_node)
+                            fields.append(fname)
+                            field_lines.setdefault(fname, _node_line(name_node))
+                            if type_text:
+                                field_types[fname] = type_text
+            elif node.type == "constant_declaration":
+                # ``interface X { String FOO = "bar"; }`` and
+                # ``public static final String BAR = ...``. Tree-sitter
+                # models these as ``constant_declaration`` (not
+                # ``field_declaration``), so mirror the regex parser's
+                # behaviour and treat them as fields.
                 type_node = node.child_by_field_name("type")
                 type_text = _node_text(type_node) if type_node else ""
                 for child in node.children:
@@ -332,3 +457,69 @@ def _merge_parse_results(tree_result: JavaParseResult, regex_result: JavaParseRe
         config_usages=_merge_unique_dicts(tree_result.config_usages, regex_result.config_usages),
         data_resources=_merge_unique_dicts(tree_result.data_resources, regex_result.data_resources),
     )
+
+
+def _merge_supplements(tree_result: JavaParseResult, supplements: JavaParseResult) -> JavaParseResult:
+    """Merge tree-sitter structural facts with regex-only supplements.
+
+    Tree-sitter is authoritative for the structural fields it already
+    produces (package / imports / classes / interfaces / methods /
+    method_signatures / fields / annotations / field_types / *_lines);
+    the supplements pass only populates ``constants``,
+    ``method_variable_types``, ``bean_injections``, ``method_calls``,
+    ``dto_field_usages``, ``config_usages``, ``data_resources``.
+
+    ``field_types`` keeps tree-sitter values; regex-derived ``constants``
+    are layered in to mirror ``RegexJavaParser.parse`` behaviour
+    (``field_types.update(constants)``).
+    """
+    # Match RegexJavaParser.parse() merge order: ``field_types.update(constants)``
+    # is applied first, then any tree-sitter-derived types take precedence.
+    # Match the legacy ``_merge_parse_results`` field-types merge order:
+    # ``regex.field_types`` first (regex behaviour itself did
+    # ``field_types.update(constants)``), then tree-sitter values win.
+    field_types = dict(supplements.constants)
+    field_types.update(tree_result.field_types)
+    method_variable_types = dict(tree_result.method_variable_types)
+    method_variable_types.update(supplements.method_variable_types)
+    # All list-typed fields go through the same dedup helpers as legacy
+    # ``_merge_parse_results`` so the supplements hot path emits the same
+    # value the legacy "full regex + merge" path emitted. Tree-sitter may
+    # locally produce duplicates (e.g. method overloads, ``count`` field
+    # repeated in inheritance), and ``_parse_*`` helpers on the regex side
+    # do not internally dedup either; the legacy merge layer absorbed
+    # both. Keep that behaviour here.
+    return JavaParseResult(
+        package=tree_result.package,
+        imports=_merge_unique_strings(list(tree_result.imports), []),
+        classes=_merge_unique_strings(list(tree_result.classes), []),
+        interfaces=_merge_unique_strings(list(tree_result.interfaces), []),
+        methods=_merge_unique_strings(list(tree_result.methods), []),
+        method_signatures=_merge_unique_dicts(
+            list(tree_result.method_signatures),
+            list(supplements.method_signatures),
+        ),
+        fields=_merge_unique_strings(list(tree_result.fields), []),
+        class_lines=dict(tree_result.class_lines),
+        interface_lines=dict(tree_result.interface_lines),
+        method_lines=dict(tree_result.method_lines),
+        field_lines=dict(tree_result.field_lines),
+        annotations=_merge_unique_strings(list(tree_result.annotations), []),
+        field_types=field_types,
+        constants=dict(supplements.constants),
+        method_variable_types=method_variable_types,
+        bean_injections=_merge_unique_dicts([], list(supplements.bean_injections)),
+        method_calls=_merge_unique_dicts([], list(supplements.method_calls)),
+        dto_field_usages=_merge_unique_dicts([], list(supplements.dto_field_usages)),
+        config_usages=_merge_unique_dicts([], list(supplements.config_usages)),
+        data_resources=_merge_unique_dicts([], list(supplements.data_resources)),
+    )
+
+
+def _full_dual_enabled() -> bool:
+    """Return True when ``MEMORY_CENTER_PARSER_FULL_DUAL`` opts back in to
+    the legacy "always run full regex parser and merge" behaviour. Useful
+    as a safety hatch if differential gates ever regress in production.
+    """
+    value = os.getenv("MEMORY_CENTER_PARSER_FULL_DUAL", "").strip().lower()
+    return value in {"1", "true", "yes", "on"}

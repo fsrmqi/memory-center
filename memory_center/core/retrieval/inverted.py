@@ -5,11 +5,11 @@ instead of scanning every document in the workspace.
 """
 from __future__ import annotations
 
-import json
 import math
 from typing import Any
 
 from ..semantic import _count_tokens, semantic_tokens
+from ..storage.metadata import metadata_json as _metadata_json
 from ..storage.unified import UnifiedStore
 
 BM25_K1 = 1.5
@@ -180,6 +180,6 @@ def _node_text(node: dict[str, Any]) -> str:
         node.get("name", ""),
         node.get("project", ""),
         node.get("file_path", ""),
-        json.dumps(node.get("metadata", {}), ensure_ascii=False),
+        _metadata_json(node.get("metadata")),
     ]
     return " ".join(str(p) for p in parts if p)

@@ -9,19 +9,25 @@
 
 ## 当前状态 / Current Status
 
-截至 2026-06-24,这份文档仍是**有效的性能诊断报告**,不是已关闭的修复
-记录。`bench-profile` 诊断能力已落地,Java 调用解析器精度门禁也已补充,
-但本文列出的三个主要性能修复仍未在当前代码中完成:
+截至 2026-06-24,本文列出的三个主要性能修复**已在当前代码中完成**:
 
-- **Java parser 双轨开销仍存在**:`TreeSitterJavaParser.parse` 仍会先完整
-  执行 `RegexJavaParser().parse(...)`,tree-sitter 成功后再 merge。
-- **`JavaSymbol` 仍走通用 `dataclasses.asdict`**:`models.to_dict()` 仍是
-  generic `asdict(obj)`,Java 索引结果仍会触发深递归转换。
-- **graph metadata 仍逐节点/逐边 `json.dumps`**:`GraphStore` 写入节点和边时
-  仍对 metadata 做高频 JSON 序列化,尚未引入空 dict 快路径或批处理策略。
+- ~~Java parser 双轨开销~~:`TreeSitterJavaParser.parse` 在 tree-sitter
+  成功路径上改为只调用 `RegexJavaParser.parse_supplements`(仅补抽
+  tree-sitter 暂未覆盖的字段);`MEMORY_CENTER_PARSER_FULL_DUAL=1` 可
+  一键回退到旧的双轨全量行为。
+- ~~`JavaSymbol` 通用 `dataclasses.asdict`~~:`JavaSymbol.to_dict()` 已
+  改为手写浅拷贝,`core.models.to_dict` 优先调用对象自带 `to_dict`,
+  回退 `asdict`。本地微基准 ~97x。
+- ~~graph metadata 高频 `json.dumps`~~:`memory_center/core/storage/metadata.py`
+  统一 `metadata_json(meta)`,空 metadata 走 `'{}'` 字面量快路径;
+  `GraphStore` / `retrieval/inverted.py` / `semantic.py` 全部统一调用。
+  空 dict 微基准 ~19x。
 
-因此,本文的 P1-0 结论应理解为“瓶颈已定位、后续修复目标明确”,不要把
-下文三个瓶颈标记为已修复。
+真实 UCAP workspace 上的验收结果见
+[P0_INDEX_HOT_PATH_DESIGN.md §5](./P0_INDEX_HOT_PATH_DESIGN.md)。
+wall-clock 收益不显著(被 graph rebuild + semantic build 等不可改
+部分稀释),但 parser 精度反而提升、call resolution / golden /
+performance gate 零退步。
 
 ---
 

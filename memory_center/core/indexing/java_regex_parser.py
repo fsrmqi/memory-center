@@ -71,6 +71,75 @@ class RegexJavaParser:
             data_resources=data_resources,
         )
 
+    def parse_supplements(
+        self,
+        text: str,
+        file_path: str,
+        *,
+        classes: list[str] | None = None,
+        field_types: dict[str, str] | None = None,
+    ) -> JavaParseResult:
+        """Run only the regex passes that tree-sitter does not yet cover.
+
+        ``parse`` is kept untouched as a fallback / differential oracle. This
+        supplement entry is used by ``TreeSitterJavaParser`` on its success
+        path to avoid re-extracting structural facts (package / imports /
+        classes / interfaces / methods / fields / annotations) that
+        tree-sitter already produced. It returns a ``JavaParseResult`` where
+        only the supplement fields are populated:
+
+        - ``constants``
+        - ``method_variable_types``
+        - ``bean_injections``
+        - ``method_calls``
+        - ``dto_field_usages``
+        - ``config_usages``
+        - ``data_resources``
+
+        Structural fields are left at their dataclass defaults so the caller
+        can merge them with the tree-sitter result without losing any data.
+        ``classes`` / ``field_types`` are read-only inputs that already came
+        from tree-sitter; supplements use them as analysis context.
+        """
+        cleaned = _strip_comments(text)
+        constants = _parse_interface_constants(cleaned)
+        # Always run ``_parse_fields`` to keep supplements self-healing when
+        # tree-sitter under-reports fields (e.g. fake parsers in tests, or
+        # future Java syntax tree-sitter does not yet model). Tree-sitter
+        # field info still wins when provided.
+        _fields_local, regex_field_types, _field_lines = _parse_fields(cleaned)
+        # Downstream analyzers (``_parse_method_calls``,
+        # ``_parse_dto_field_usages``, ``_parse_bean_injections``) match
+        # legacy behaviour exactly only when they see the same field-type
+        # dict ``RegexJavaParser.parse`` historically built:
+        # ``field_types.update(constants)``. Mixing tree-sitter's
+        # ``field_types`` in changes the receivers/types these analyzers
+        # see and can introduce duplicate or shifted entries vs the legacy
+        # path. Keep the analyzer seed regex-only, and let the tree-sitter
+        # ``field_types`` be merged in at the final ``_merge_supplements``
+        # step instead.
+        seed_field_types: dict[str, str] = dict(regex_field_types)
+        seed_field_types.update(constants)
+        method_spans = _parse_method_spans(cleaned)
+        method_spans.extend(_parse_interface_methods(cleaned))
+        method_signatures = _build_method_signatures(method_spans)
+        method_variable_types = _parse_method_variable_types(cleaned, method_spans)
+        bean_injections = _parse_bean_injections(cleaned, list(classes or []), seed_field_types)
+        method_calls = _parse_method_calls(cleaned, method_spans, method_variable_types, seed_field_types)
+        dto_field_usages = _parse_dto_field_usages(cleaned, method_spans, method_variable_types, seed_field_types)
+        config_usages = _parse_config_usages(cleaned)
+        data_resources = _parse_data_resources(cleaned)
+        return JavaParseResult(
+            method_signatures=method_signatures,
+            constants=constants,
+            method_variable_types=method_variable_types,
+            bean_injections=bean_injections,
+            method_calls=method_calls,
+            dto_field_usages=dto_field_usages,
+            config_usages=config_usages,
+            data_resources=data_resources,
+        )
+
 
 def _strip_comments(text: str) -> str:
     """Remove Java comments while preserving string and character literals."""

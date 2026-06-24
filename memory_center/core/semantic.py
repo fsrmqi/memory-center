@@ -10,6 +10,7 @@ from typing import Any
 from .compat import zip_strict
 from .graph import GraphStore
 from .store import WorkspaceStore
+from .storage.metadata import metadata_json as _metadata_json
 
 SEMANTIC_INDEX_FILE = "semantic-node-index.json"
 SEMANTIC_INDEX_VERSION = 3
@@ -262,7 +263,7 @@ def _node_text(node: dict[str, Any]) -> str:
         node.get("name", ""),
         node.get("project", ""),
         node.get("file_path", ""),
-        json.dumps(node.get("metadata", {}), ensure_ascii=False),
+        _metadata_json(node.get("metadata")),
     ]
     return " ".join(str(part) for part in parts if part)
 

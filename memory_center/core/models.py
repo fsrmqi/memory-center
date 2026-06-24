@@ -101,6 +101,42 @@ class JavaSymbol:
     config_usages: list[dict[str, Any]] = field(default_factory=list)
     data_resources: list[dict[str, Any]] = field(default_factory=list)
 
+    # Hand-written shallow ``to_dict`` to avoid ``dataclasses.asdict`` recursion.
+    # P1-0 profile showed 22K JavaSymbol instances produced ~13.5M
+    # ``_asdict_inner`` calls and ~20s of total time on a real UCAP workspace.
+    # The output schema, key set, key order, and value types must match what
+    # ``dataclasses.asdict(self)`` returned, so downstream graph rebuild,
+    # benchmarks, and reports do not need any change.
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "project": self.project,
+            "file": self.file,
+            "parser": self.parser,
+            "package": self.package,
+            "classes": list(self.classes),
+            "interfaces": list(self.interfaces),
+            "methods": list(self.methods),
+            "method_signatures": list(self.method_signatures),
+            "fields": list(self.fields),
+            "class_lines": dict(self.class_lines),
+            "interface_lines": dict(self.interface_lines),
+            "method_lines": dict(self.method_lines),
+            "field_lines": dict(self.field_lines),
+            "annotations": list(self.annotations),
+            "imports": list(self.imports),
+            "field_types": dict(self.field_types),
+            "constants": dict(self.constants),
+            "method_variable_types": {
+                method: dict(variables)
+                for method, variables in self.method_variable_types.items()
+            },
+            "bean_injections": list(self.bean_injections),
+            "method_calls": list(self.method_calls),
+            "dto_field_usages": list(self.dto_field_usages),
+            "config_usages": list(self.config_usages),
+            "data_resources": list(self.data_resources),
+        }
+
 
 @dataclass
 class ApiEndpoint:
@@ -159,4 +195,11 @@ class TaskCase:
 
 
 def to_dict(obj: Any) -> dict[str, Any]:
+    # Prefer the object's own ``to_dict`` when present so hot-path types
+    # (e.g. ``JavaSymbol``) can skip the recursive ``dataclasses.asdict``
+    # path. Fall back to ``asdict`` for other dataclasses so callers stay
+    # source-compatible.
+    custom = getattr(obj, "to_dict", None)
+    if callable(custom) and not isinstance(obj, type):
+        return custom()
     return asdict(obj)

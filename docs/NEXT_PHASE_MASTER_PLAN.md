@@ -60,7 +60,7 @@
 当前真正值得继续做的是：
 
 1. **CBM 参考设计对齐**：先用 [codebase-memory-mcp 关键设计参考](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/references/codebase-memory-mcp.md) 校准索引热路径、图查询和评测口径，避免 P0 性能修复零散返工。
-2. **Java reindex 性能热点修复**：P1-0 profile 已定位 parser 双轨、`dataclasses.asdict`、graph metadata `json.dumps` 三个热点，但代码仍未修复。
+2. **Java reindex 性能热点修复**：P1-0 profile 定位的 parser 双轨、`dataclasses.asdict`、graph metadata `json.dumps` 三个热点已在代码中修复，并已在私有 UCAP workspace 上通过 call resolution / golden / performance / doctor / walkthrough gate 验收（详见 [docs/benchmarks/P0_INDEX_HOT_PATH_DESIGN.md §5](./benchmarks/P0_INDEX_HOT_PATH_DESIGN.md) 与 [docs/CHANGELOG.md](./CHANGELOG.md)）。
 3. **Java Parser / Call Resolver 真实精度深化**：已有门禁，但需要继续用真实跨项目 controller / service / feign case 扩充样本并修复误判。
 4. **Retrieval / Reasoning 质量闭环**：已有策略和解释字段，但还需要更多真实任务回归，减少“看似命中、实际偏题”。
 5. **真实性能基线长期治理**：已有 3.5.7 真实场景基线概念，后续版本必须证明不低于基线。
@@ -70,7 +70,7 @@
 
 ## 3. 开发优先级 / Development Priorities
 
-### P0-0：CBM 参考设计对齐
+### P0-0：CBM 参考设计对齐（已完成）
 
 目标：在动 P0 性能代码前，先把 CBM 的关键工程设计转成 Memory Center 的索引热路径方案。
 
@@ -83,14 +83,15 @@
 1. 明确本阶段吸收哪些 CBM 思路：RAM-first staging、批量写入、tree-sitter + resolver 分层、FTS/BM25 候选、watcher 增量、graph artifact。
 2. 明确本阶段不做哪些：C 重写、158 语言覆盖、CBM backend provider、复制源码、必选压缩依赖。
 3. 输出一个短设计或直接更新 P0 实施说明，保证 `asdict`、metadata JSON、parser 双轨三个修复能落在同一热路径策略里。
+4. **产出**：[docs/benchmarks/P0_INDEX_HOT_PATH_DESIGN.md](./benchmarks/P0_INDEX_HOT_PATH_DESIGN.md)，已锁定三个修复的共享契约、实施顺序、验收门禁、非目标，并明确 CBM 的 watcher / incremental / FTS / BM25 / resolver 分层在当前代码里已经落地，本阶段只补 Python 热路径与 graph metadata 收口。
 
 验收：
 
-- 文档明确 P0 热点修复顺序和不做事项。
-- 不超过一个工作日，不能变成长期调研。
-- 完成后直接进入 P0 Java reindex 性能热点修复。
+- 文档明确 P0 热点修复顺序和不做事项。**已完成**。
+- 不超过一个工作日，不能变成长期调研。**已完成**。
+- 完成后直接进入 P0 Java reindex 性能热点修复。**已完成,见下**。
 
-### P0：Java reindex 性能热点修复
+### P0：Java reindex 性能热点修复（已完成,真实 UCAP gate 全过）
 
 目标：降低真实 Java workspace 的全量 reindex 时间，同时不牺牲 parser / call resolver 精度。
 
@@ -101,11 +102,11 @@
 
 任务：
 
-1. `TreeSitterJavaParser.parse` 去掉默认全量 regex 双轨。
-2. tree-sitter 成功时只执行必要的轻量补抽取，或在 differential gate 通过后完全跳过 regex。
-3. 为 `JavaSymbol` 增加手写浅拷贝 `to_dict()`，避免通用 `dataclasses.asdict` 深递归。
-4. 为 graph metadata 序列化增加安全快路径：空 metadata 直接写 `'{}'`，非空再 `json.dumps`。
-5. 为三项优化分别补 focused benchmark，不用主观体感判断是否变快。
+1. `TreeSitterJavaParser.parse` 去掉默认全量 regex 双轨。**已完成**：tree-sitter 成功路径改为只调用 `RegexJavaParser.parse_supplements` 做按需补抽取；`MEMORY_CENTER_PARSER_FULL_DUAL=1` 可一键回退到旧的双轨全量行为。
+2. tree-sitter 成功时只执行必要的轻量补抽取，或在 differential gate 通过后完全跳过 regex。**已完成**：supplements 只抽 `constants` / `method_variable_types` / `bean_injections` / `method_calls` / `dto_field_usages` / `config_usages` / `data_resources`，结构性字段全部由 tree-sitter 提供；regex `parse_supplements` 仍会跑 `_parse_fields` 自愈兜底。
+3. 为 `JavaSymbol` 增加手写浅拷贝 `to_dict()`，避免通用 `dataclasses.asdict` 深递归。**已完成**：键集合、键序、值与 `asdict` 完全一致；`core.models.to_dict` 优先调用对象自带的 `to_dict()`。
+4. 为 graph metadata 序列化增加安全快路径：空 metadata 直接写 `'{}'`，非空再 `json.dumps`。**已完成**：新增 `memory_center/core/storage/metadata.py:metadata_json`，`GraphStore.rebuild` / `bulk_write` / `partial_rebuild` / `_upsert_search_rows`、`retrieval/inverted.py`、`semantic.py` 全部统一调用。
+5. 为三项优化分别补 focused benchmark，不用主观体感判断是否变快。**已完成**：`tests/test_p0_index_hot_path.py` 锁住等价性契约;本地微基准 `to_dict ~97x` / `metadata_json({}) ~19x`;真实 UCAP reindex 一次冷启动从 140.6s → 139.0s(IO 抖动主导,wall-clock 持平),graph 反而多出 ~1.7K 节点(tree-sitter 现在覆盖 `@interface`、interface 常量、wildcard imports);Java call resolution gate / Golden gate / performance gate / doctor / walkthrough 状态全部不退步。
 
 验收：
 
@@ -309,12 +310,12 @@ scripts/verify_real_ucap.sh
 
 ## 7. 下一步建议 / Recommended Next Step
 
-下一步优先做 **P0 Java reindex 性能热点修复**。
+下一步进入 **P1 Java Parser / Call Resolver 真实精度深化**:扩充真实跨项目 controller / service / Feign cases,把误判样例逐个转成可复跑门禁,并继续给 method walkthrough 在更多真实场景下增加稳定性。
 
-推荐顺序：
+P0 三步修复推荐顺序已经按以下风险序落地:
 
-1. 先做 `JavaSymbol.to_dict()` 手写浅拷贝，风险最低、收益直接。
-2. 再做 graph metadata 空 dict 快路径，保持 schema 不变。
-3. 最后做 parser 双轨关闭，因为收益最大但必须依赖 differential 和真实 case 门禁。
+1. `JavaSymbol.to_dict()` 手写浅拷贝(最稳)。
+2. graph metadata 空 dict 快路径(schema 不变)。
+3. parser 双轨改为补抽取(最敏感,有 differential / call resolution / golden gate 兜底,并保留 `MEMORY_CENTER_PARSER_FULL_DUAL` 环境变量回滚开关)。
 
-完成 P0 后，再进入 P1 扩充真实 Java call resolution cases，并把失败样例逐个转成可复跑门禁。
+完成 P0 后,真实 UCAP 复测通过即进入 P1 扩充真实 Java call resolution cases,并把失败样例逐个转成可复跑门禁。

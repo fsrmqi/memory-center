@@ -9,6 +9,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .storage.metadata import metadata_json as _metadata_json
+
 # Pre-compiled regex for _sanitize_fts_term (P1 performance)
 _RE_SANITIZE_FTS = re.compile(r"[^\w㐀-䶿一-鿿豈-﫿]")
 
@@ -145,7 +147,7 @@ class GraphStore:
                 node.project,
                 node.file_path,
                 node.line,
-                json.dumps(node.metadata or {}, ensure_ascii=False),
+                _metadata_json(node.metadata),
             )
             for node in nodes
         ]
@@ -156,7 +158,7 @@ class GraphStore:
                 edge.target_id,
                 edge.type,
                 edge.confidence,
-                json.dumps(edge.metadata or {}, ensure_ascii=False),
+                _metadata_json(edge.metadata),
             )
             for edge in edges
         ]
@@ -200,7 +202,7 @@ class GraphStore:
             if node_list:
                 node_rows = [
                     (node.id, node.type, node.name, node.project, node.file_path, node.line,
-                     json.dumps(node.metadata or {}, ensure_ascii=False))
+                     _metadata_json(node.metadata))
                     for node in node_list
                 ]
                 conn.executemany(
@@ -220,7 +222,7 @@ class GraphStore:
             if edge_list:
                 edge_rows = [
                     (edge.id, edge.source_id, edge.target_id, edge.type, edge.confidence,
-                     json.dumps(edge.metadata or {}, ensure_ascii=False))
+                     _metadata_json(edge.metadata))
                     for edge in edge_list
                 ]
                 conn.executemany(
@@ -454,8 +456,8 @@ class GraphStore:
         with self.connect() as conn:
             try:
                 for node in node_dicts:
-                    metadata_json = json.dumps(node.metadata or {}, ensure_ascii=False)
-                    content = " ".join([node.id, node.type, node.name, node.project, node.file_path, metadata_json])
+                    metadata_payload = _metadata_json(node.metadata)
+                    content = " ".join([node.id, node.type, node.name, node.project, node.file_path, metadata_payload])
                     conn.execute("DELETE FROM node_search WHERE id=?", (node.id,))
                     conn.execute(
                         "INSERT INTO node_search(id, type, name, project, file_path, content) VALUES(?, ?, ?, ?, ?, ?)",

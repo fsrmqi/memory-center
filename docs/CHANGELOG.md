@@ -8,6 +8,52 @@
 
 ## Unreleased
 
+### P0 Index Hot Path / 索引热路径修复
+
+- 新增 [docs/benchmarks/P0_INDEX_HOT_PATH_DESIGN.md](./benchmarks/P0_INDEX_HOT_PATH_DESIGN.md):
+  P0-0 CBM 参考对齐后的索引热路径设计,锁定三个修复的共享契约(MCP /
+  CLI / HTTP schema 零变化、parser 行为可观测可回滚、`RegexJavaParser`
+  保留为 fallback / differential oracle、真实 UCAP reindex 不慢于基线)。
+- `JavaSymbol.to_dict()` 手写浅拷贝;`core.models.to_dict` 优先调用
+  对象自带 `to_dict`,回退 `dataclasses.asdict`。输出键集合、键序、
+  值与 `asdict` 完全一致;本地微基准 22K JavaSymbol 实例提速 ~97x。
+- 新增 `memory_center/core/storage/metadata.py`:`metadata_json` 在
+  metadata 为空/`None` 时直接返回字面量 `'{}'`,非空才走 `json.dumps`。
+  `GraphStore.rebuild` / `bulk_write` / `partial_rebuild` /
+  `_upsert_search_rows` 以及 `retrieval/inverted.py`、`semantic.py`
+  全部统一调用。空 metadata 路径本地微基准提速 ~19x。
+- `TreeSitterJavaParser.parse` 不再默认全量执行 `RegexJavaParser.parse`:
+  tree-sitter 成功路径改为调用新的 `RegexJavaParser.parse_supplements`,
+  只补抽 `constants` / `method_variable_types` / `bean_injections` /
+  `method_calls` / `dto_field_usages` / `config_usages` / `data_resources`,
+  跳过 tree-sitter 已覆盖的结构性扫描。`MEMORY_CENTER_PARSER_FULL_DUAL=1`
+  可一键回退到旧的“双轨全量 + merge”行为。`TreeSitterJavaParser.diagnostics`
+  新增 `supplement_call_count`、`full_regex_fallback_count`、`full_dual_mode`
+  三个计数。
+- 在 `examples/spring-cloud-demo` 全量 Java 文件与代表性 Spring
+  Controller / Feign / Kafka 样例上,supplements 路径与 legacy
+  full-dual 路径 `JavaParseResult` 字段完全一致;新增
+  `tests/test_p0_index_hot_path.py` 锁住这条契约。
+- 同步修补 tree-sitter `_walk`,正确识别 `@interface`
+  (`annotation_type_declaration` / `annotation_type_element_declaration`)、
+  interface 内常量(`constant_declaration`)、wildcard / static imports,
+  使 tree-sitter 节点覆盖与 legacy regex 一致或更准。
+- 真实 UCAP workspace(20,516 Java files / 27 GB)验收(2026-06-24):
+  Java call resolution gate edge_recall/high_confidence_rate/resolution_level
+  全部 1.0、unresolved 0.0;Golden suite edge_recall=1.0、forbidden_hit=0.0、
+  performance_gate=pass、anchor_recall 0.8286 与 legacy 持平;Doctor 53
+  checks 0 fail;Walkthrough state=complete 5 层全部命中;Reindex 一次
+  冷启动 140.6s → 139.0s(wall-clock 持平,IO 抖动主导),graph
+  316,695 nodes / 1,023,066 edges(比 legacy 多 ~1.7K 节点,因为
+  tree-sitter 节点覆盖更全 + fast 路径跳过了 SQL 字符串里的 false
+  positive)。详情见
+  [docs/benchmarks/P0_INDEX_HOT_PATH_DESIGN.md §5](./benchmarks/P0_INDEX_HOT_PATH_DESIGN.md)。
+- `tests/test_parser_differential.py`、
+  `tests/test_java_call_resolution_benchmark.py`、
+  `tests/test_golden_benchmark.py`、`tests/test_graph_rebuild_perf.py`、
+  `tests/test_benchmark_workspace_perf.py` 全绿;`pytest -q` 1496 用例
+  无失败。
+
 ### Java Call Resolution Gate / Java 调用解析真实门禁
 
 - 新增 `memory-center eval-java-call-resolution`，基于 graph 中的
