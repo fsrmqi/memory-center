@@ -13,11 +13,34 @@ from .store import WorkspaceStore
 from .storage.metadata import metadata_json as _metadata_json
 
 SEMANTIC_INDEX_FILE = "semantic-node-index.json"
-SEMANTIC_INDEX_VERSION = 3
+SEMANTIC_INDEX_VERSION = 4
 DEFAULT_SEMANTIC_BACKEND = "sparse"
 DEFAULT_SENTENCE_TRANSFORMER_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+DEFAULT_VECTOR_SCOPE = "selective"
 BM25_K1 = 1.5
 BM25_B = 0.75
+
+_VECTOR_ELIGIBLE_TYPES = {
+    "Endpoint",
+    "FeignClient",
+    "MQConsumer",
+    "MQProducer",
+    "ConfigKey",
+}
+_VECTOR_CLASS_KEYWORDS = (
+    "service",
+    "controller",
+    "job",
+    "task",
+    "scheduler",
+    "config",
+    "configuration",
+    "listener",
+    "consumer",
+    "producer",
+    "handler",
+)
+_METHOD_EXCLUDE_PREFIXES = ("get", "set", "is", "to", "hash", "equals", "test")
 
 
 def ensure_workspace_semantic_index(workspace_file: str | Path) -> dict[str, Any]:
@@ -32,6 +55,7 @@ def ensure_workspace_semantic_index(workspace_file: str | Path) -> dict[str, Any
         and cached.get("node_count") == counts.get("nodes")
         and cached.get("requested_backend", DEFAULT_SEMANTIC_BACKEND) == backend
         and cached.get("requested_model") == model_name
+        and cached.get("requested_vector_scope", DEFAULT_VECTOR_SCOPE) == _requested_vector_scope()
     ):
         return cached
     return build_workspace_semantic_index(workspace_file)
@@ -45,6 +69,7 @@ def build_workspace_semantic_index(workspace_file: str | Path) -> dict[str, Any]
     df: dict[str, int] = {}
     backend = _requested_backend()
     requested_model = _requested_model_name(backend)
+    requested_vector_scope = _requested_vector_scope()
 
     for node in nodes:
         text = _node_text(node)
@@ -83,12 +108,15 @@ def build_workspace_semantic_index(workspace_file: str | Path) -> dict[str, Any]
 
     actual_backend = DEFAULT_SEMANTIC_BACKEND
     model_name = None
+    vector_candidate_count = 0
     if backend == "sentence-transformers":
+        dense_docs = [doc for doc in docs if _doc_is_vector_eligible(doc, scope=requested_vector_scope)]
+        vector_candidate_count = len(dense_docs)
         model = _load_sentence_transformer_model(requested_model)
-        if model is not None and docs:
-            texts = [doc["text"] for doc in docs]
+        if model is not None and dense_docs:
+            texts = [doc["text"] for doc in dense_docs]
             dense_vectors = model.encode(texts, normalize_embeddings=True)
-            for doc, vector in zip_strict(docs, dense_vectors):
+            for doc, vector in zip_strict(dense_docs, dense_vectors):
                 doc["dense_vector"] = [float(value) for value in vector]
             actual_backend = "sentence-transformers"
             model_name = requested_model
@@ -102,8 +130,11 @@ def build_workspace_semantic_index(workspace_file: str | Path) -> dict[str, Any]
         "avgdl": avgdl,
         "requested_backend": backend,
         "requested_model": requested_model,
+        "requested_vector_scope": requested_vector_scope,
         "backend": actual_backend,
         "model": model_name,
+        "vector_candidate_count": vector_candidate_count,
+        "dense_doc_count": sum(1 for doc in docs if doc.get("dense_vector")),
         "df": df,
         "docs": docs,
     }
@@ -184,12 +215,17 @@ def build_workspace_semantic_index_partial(workspace_file: str | Path, changed_n
     backend = DEFAULT_SEMANTIC_BACKEND
     actual_backend = existing.get("backend", DEFAULT_SEMANTIC_BACKEND)
     model_name = existing.get("model")
+    requested_vector_scope = _requested_vector_scope()
+    vector_candidate_count = sum(
+        1 for doc in merged_docs if _doc_is_vector_eligible(doc, scope=requested_vector_scope)
+    )
     if backend == "sentence-transformers" and actual_backend == "sentence-transformers":
+        dense_new_docs = [doc for doc in new_docs if _doc_is_vector_eligible(doc, scope=requested_vector_scope)]
         model = _load_sentence_transformer_model(model_name)
-        if model is not None and new_docs:
-            texts = [f"{d.get('type', '')} {d.get('name', '')} {d.get('project', '')} {d.get('file_path', '')}" for d in new_docs]
+        if model is not None and dense_new_docs:
+            texts = [_dense_text_for_doc(d) for d in dense_new_docs]
             dense_vectors = model.encode(texts, normalize_embeddings=True)
-            for doc, vector in zip_strict(new_docs, dense_vectors):
+            for doc, vector in zip_strict(dense_new_docs, dense_vectors):
                 doc["dense_vector"] = [float(value) for value in vector]
     payload = {
         "version": SEMANTIC_INDEX_VERSION,
@@ -198,8 +234,11 @@ def build_workspace_semantic_index_partial(workspace_file: str | Path, changed_n
         "avgdl": sum(d.get("doc_len", 0) for d in merged_docs) / doc_count,
         "requested_backend": backend,
         "requested_model": existing.get("requested_model"),
+        "requested_vector_scope": requested_vector_scope,
         "backend": actual_backend,
         "model": model_name,
+        "vector_candidate_count": vector_candidate_count,
+        "dense_doc_count": sum(1 for doc in merged_docs if doc.get("dense_vector")),
         "df": df,
         "docs": merged_docs,
     }
@@ -228,6 +267,9 @@ def semantic_index_stats(workspace_file: str | Path) -> dict[str, Any]:
         "requested_backend": payload.get("requested_backend", DEFAULT_SEMANTIC_BACKEND),
         "model": payload.get("model"),
         "requested_model": payload.get("requested_model"),
+        "vector_scope": payload.get("requested_vector_scope", DEFAULT_VECTOR_SCOPE),
+        "vector_candidate_count": int(payload.get("vector_candidate_count", 0)),
+        "dense_doc_count": int(payload.get("dense_doc_count", 0)),
     }
 
 
@@ -271,6 +313,51 @@ def _node_text(node: dict[str, Any]) -> str:
 def _requested_backend() -> str:
     value = os.getenv("MEMORY_CENTER_SEMANTIC_BACKEND", DEFAULT_SEMANTIC_BACKEND).strip().lower()
     return value if value in {"sparse", "sentence-transformers"} else DEFAULT_SEMANTIC_BACKEND
+
+
+def _dense_text_for_doc(doc: dict[str, Any]) -> str:
+    parts = [
+        doc.get("type", ""),
+        doc.get("name", ""),
+        doc.get("project", ""),
+        doc.get("file_path", ""),
+    ]
+    return " ".join(str(part) for part in parts if part)
+
+
+def _doc_is_vector_eligible(doc: dict[str, Any], *, scope: str) -> bool:
+    if scope == "off":
+        return False
+    if scope == "all":
+        return True
+
+    node_type = str(doc.get("type", "") or "")
+    name = str(doc.get("name", "") or "")
+    file_path = str(doc.get("file_path", "") or "").lower()
+    lower_name = name.lower()
+
+    if node_type in _VECTOR_ELIGIBLE_TYPES:
+        return True
+    if node_type == "Class":
+        return any(keyword in lower_name for keyword in _VECTOR_CLASS_KEYWORDS)
+    if node_type == "Method":
+        owner_class, _, method_name = name.partition(".")
+        method_lower = method_name.lower()
+        owner_lower = owner_class.lower()
+        if method_lower.startswith(_METHOD_EXCLUDE_PREFIXES):
+            return False
+        return any(keyword in owner_lower for keyword in _VECTOR_CLASS_KEYWORDS)
+    if node_type == "File":
+        return file_path.endswith(".md") and (
+            file_path.endswith("readme.md")
+            or "/docs/" in f"/{file_path.lstrip('/')}"
+        )
+    return False
+
+
+def _requested_vector_scope() -> str:
+    value = os.getenv("MEMORY_CENTER_VECTOR_SCOPE", DEFAULT_VECTOR_SCOPE).strip().lower()
+    return value if value in {"off", "selective", "all"} else DEFAULT_VECTOR_SCOPE
 
 
 def _requested_model_name(backend: str) -> str | None:

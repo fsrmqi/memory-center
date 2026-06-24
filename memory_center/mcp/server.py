@@ -389,6 +389,8 @@ def create_server(workspace_file: str):
         limit: int = 20,
         project: str = "",
         report_level: str = "standard",
+        enable_vector: bool = False,
+        vector_weight: float = 0.15,
     ):
         """Unified knowledge lookup. Mode selects strategy: auto (system decides via lookup_hint), symbol (resolve name), code (keyword search), query (graph-aware multi-source), trace (cross-service by class/Feign/endpoint/MQ), chain (caller/callee analysis, use chain_direction), walkthrough (method-level indexed walkthrough), context (360-degree context for a service/symbol), contracts (list all Feign/API/MQ contracts), ref (resolve short memory reference IDs). For Class#method requests that say full chain/全链路/到底层, prefer mode='walkthrough' or auto; walkthrough returns summary_lines, local_service_continuations, feign_continuations.server_walkthroughs, service_impl_continuations, and absolute_file_path. If absolute_file_path is present, read that path directly and do not run find/grep/IDEA search to locate the same controller or impl. Use project to disambiguate when multiple modules contain the same symbol name."""
         wf = ctx.workspace_file
@@ -438,13 +440,34 @@ def create_server(workspace_file: str):
                 return {"mode_used": "context", "result": memory_context(wf, name or resolved_symbol or query, resolved_depth, project=project, view="compact", budget="small"), **decision_fields}
             if "workspace_trace" in preferred_bare and (entry or resolved_symbol or query):
                 return {"mode_used": "trace", "result": workspace_trace(wf, entry or resolved_symbol or query), **decision_fields}
-            return {"mode_used": "query", "result": memory_query_hybrid(wf, query, limit, project=project), **decision_fields}
+            return {
+                "mode_used": "query",
+                "result": memory_query_hybrid(
+                    wf,
+                    query,
+                    limit,
+                    project=project,
+                    enable_vector=enable_vector,
+                    vector_weight=vector_weight,
+                ),
+                **decision_fields,
+            }
         if mode == "symbol":
             return {"mode": "symbol", "result": memory_symbol(wf, name or query, limit, project=project, view="compact", budget="small")}
         if mode == "code":
             return {"mode": "code", "result": memory_search_code(wf, query, scope, limit, project=project)}
         if mode == "query":
-            return {"mode": "query", "result": memory_query_hybrid(wf, query, limit, project=project)}
+            return {
+                "mode": "query",
+                "result": memory_query_hybrid(
+                    wf,
+                    query,
+                    limit,
+                    project=project,
+                    enable_vector=enable_vector,
+                    vector_weight=vector_weight,
+                ),
+            }
         if mode == "trace":
             return {"mode": "trace", "result": workspace_trace(wf, entry or query)}
         if mode == "chain":

@@ -341,9 +341,29 @@ def doctor(workspace: str = typer.Option(...), self_test: bool = typer.Option(Fa
 
 
 @app.command("query")
-def query_cmd(workspace: str = typer.Option(...), text: str = typer.Option(...), limit: int = typer.Option(20), project: str = typer.Option("", help="Filter by project name for disambiguation.")):
+def query_cmd(
+    workspace: str = typer.Option(...),
+    text: str = typer.Option(...),
+    limit: int = typer.Option(20),
+    project: str = typer.Option("", help="Filter by project name for disambiguation."),
+    vector: bool = typer.Option(False, "--vector/--no-vector", help="Enable ANN vector retrieval when dense embeddings are available."),
+    vector_weight: float = typer.Option(0.15, help="Fusion weight for vector retrieval when --vector is enabled."),
+):
     """Graph-aware query across services, files, symbols, contracts and memory."""
-    typer.echo(pprint.pformat(memory_query_hybrid(workspace, text, limit, project=project), width=240, sort_dicts=False))
+    typer.echo(
+        pprint.pformat(
+            memory_query_hybrid(
+                workspace,
+                text,
+                limit,
+                project=project,
+                enable_vector=vector,
+                vector_weight=vector_weight,
+            ),
+            width=240,
+            sort_dicts=False,
+        ),
+    )
 
 
 @app.command("search-code")

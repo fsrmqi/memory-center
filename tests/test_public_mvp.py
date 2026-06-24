@@ -395,6 +395,29 @@ def test_reindex_cli_can_disable_parallel(monkeypatch, tmp_path: Path):
     assert observed["parallel"] is False
 
 
+def test_query_cli_forwards_vector_options(monkeypatch, tmp_path: Path):
+    workspace = _cli_project_workspace(tmp_path)
+    observed: dict[str, object] = {}
+
+    def _fake_query(workspace_file, query, limit=20, node_types=None, config=None, project="", *, enable_vector=None, vector_weight=None):
+        observed["workspace"] = workspace_file
+        observed["query"] = query
+        observed["enable_vector"] = enable_vector
+        observed["vector_weight"] = vector_weight
+        observed["project"] = project
+        return {"query": query, "matches": [], "retrieval_summary": {}}
+
+    monkeypatch.setattr("memory_center.cli.main.memory_query_hybrid", _fake_query)
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        ["query", "--workspace", workspace, "--text", "ArticleFeignClient", "--vector", "--vector-weight", "0.35"],
+    )
+    assert result.exit_code == 0
+    assert observed["enable_vector"] is True
+    assert observed["vector_weight"] == 0.35
+
+
 def test_cli_query_project_filter(tmp_path: Path):
     import ast
     ws = _cli_project_workspace(tmp_path)
@@ -1460,10 +1483,11 @@ def test_http_bridge_routes(tmp_path: Path):
         assert sniff_sync["synced"] is True
         assert sniff_sync["auto_sync_mode"] == "aggressive"
 
-        query = json.loads(urlopen(f"{base}/workspace/query?text=ArticleFeignClient&project=task-service").read().decode("utf-8"))
+        query = json.loads(urlopen(f"{base}/workspace/query?text=ArticleFeignClient&project=task-service&enable_vector=true&vector_weight=0.25").read().decode("utf-8"))
         assert query["matches"]
         assert query["retrieval_summary"]["exact_matches"] >= 1
         assert query["retrieval_summary"]["semantic_matches"] >= 1
+        assert query["retrieval_diagnostics"]["policy"]["enable_vector"] is True
         assert all("task-service" in (item.get("node", {}).get("project") or "") for item in query["matches"])
         search = json.loads(urlopen(f"{base}/workspace/search-code?text=ArticleFeignClient&scope=task-service&project=task-service").read().decode("utf-8"))
         assert search["hits"]

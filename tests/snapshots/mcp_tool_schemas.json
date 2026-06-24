@@ -20,6 +20,7 @@
       "optional": [
         "chain_direction",
         "depth",
+        "enable_vector",
         "entry",
         "intent",
         "limit",
@@ -29,7 +30,8 @@
         "ref_id",
         "ref_ids",
         "scope",
-        "symbol"
+        "symbol",
+        "vector_weight"
       ]
     },
     "mc_analyze": {

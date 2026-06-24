@@ -186,6 +186,8 @@ def register_workspace_routes(registry: CommandRegistry) -> None:
         rp.require('text'),
         limit=_parse_int(rp.params, "limit", 20),
         project=rp.project(),
+        enable_vector=rp.bool_param("enable_vector"),
+        vector_weight=_parse_float(rp.params, "vector_weight", 0.15, min_val=0.0, max_val=1.0),
     ))
     registry.register("/workspace/search-code", lambda rp: memory_search_code(
         rp.workspace(),

@@ -430,7 +430,17 @@ def memory_query(workspace_file: str | Path, query: str, limit: int = 20, node_t
     workspace_resolver=lambda args, kwargs: args[0] if args else kwargs["workspace_file"],
     tags_resolver=lambda args, kwargs: {"limit": kwargs.get("limit", args[2] if len(args) > 2 else 20)},
 )
-def memory_query_hybrid(workspace_file: str | Path, query: str, limit: int = 20, node_types: list[str] | None = None, config: Any = None, project: str = "") -> dict[str, Any]:
+def memory_query_hybrid(
+    workspace_file: str | Path,
+    query: str,
+    limit: int = 20,
+    node_types: list[str] | None = None,
+    config: Any = None,
+    project: str = "",
+    *,
+    enable_vector: bool | None = None,
+    vector_weight: float | None = None,
+) -> dict[str, Any]:
     """Enhanced query using hybrid retrieval engine.
 
     Combines graph, sparse, and semantic search with intelligent routing.
@@ -445,6 +455,13 @@ def memory_query_hybrid(workspace_file: str | Path, query: str, limit: int = 20,
     # Convert config if needed
     if config is None:
         config = HybridRetrievalConfig()
+    else:
+        config = copy.deepcopy(config)
+
+    if enable_vector is not None:
+        config.enable_vector = bool(enable_vector)
+    if vector_weight is not None:
+        config.vector_weight = max(0.0, float(vector_weight))
 
     # Detect query intent first
     intent = detect_query_intent(query)

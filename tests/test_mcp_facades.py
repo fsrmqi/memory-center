@@ -616,6 +616,34 @@ def test_mc_lookup_auto_returns_decision_fields(tmp_path: Path):
 
 
 @pytest.mark.skipif(not HAS_MCP, reason="mcp package not installed")
+def test_mc_lookup_query_mode_forwards_vector_options(monkeypatch, tmp_path: Path):
+    import asyncio
+
+    import memory_center.mcp.server as mcp_server_mod
+    from memory_center.mcp.server import create_server
+
+    observed: dict[str, object] = {}
+
+    def _fake_query(workspace_file, query, limit=20, node_types=None, config=None, project="", *, enable_vector=None, vector_weight=None):
+        observed["workspace"] = workspace_file
+        observed["query"] = query
+        observed["enable_vector"] = enable_vector
+        observed["vector_weight"] = vector_weight
+        return {"query": query, "matches": [], "retrieval_summary": {}}
+
+    monkeypatch.setattr(mcp_server_mod, "memory_query_hybrid", _fake_query)
+    wf = _setup_workspace(tmp_path)
+    server = create_server(wf)
+    mc_lookup = server._tool_manager._tools["mc_lookup"]
+    result = asyncio.get_event_loop().run_until_complete(
+        mc_lookup.fn(query="ArticleFeignClient", mode="query", enable_vector=True, vector_weight=0.4),
+    )
+    assert result["mode"] == "query"
+    assert observed["enable_vector"] is True
+    assert observed["vector_weight"] == 0.4
+
+
+@pytest.mark.skipif(not HAS_MCP, reason="mcp package not installed")
 def test_mc_lookup_auto_prefers_chain_for_deep_method_trace_queries(tmp_path: Path):
     import asyncio
 
