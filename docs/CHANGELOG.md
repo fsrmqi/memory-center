@@ -15,6 +15,13 @@
 - 子项目级说明会显式写明应复用上层 `.memory-center/workspace.yaml`，降低“当前仓库没有本地 workspace 就不调用 MCP”的概率。
 - 本地安装版本提升至 `3.5.15`。
 
+### Documentation Status Cleanup / 文档状态收口
+
+- 新增 `docs/DOCS_STATUS.md`，明确 active docs 与 historical docs 的边界。
+- 新增 `docs/README.md` 作为 `docs/` 目录导航首页，按用途组织主文档、补充说明、benchmark 与历史文档入口。
+- README 不再把旧路线图、旧执行计划和旧执行日志当成默认阅读入口，而是统一指向当前主文档集合。
+- 历史规划与执行文档已集中归档到 `docs/archive/`，并保留历史文档提示，减少把旧计划误读为当前状态的风险。
+
 ### 3.5.14 Documentation Refresh / 架构文档刷新
 
 - 重写 `docs/ARCHITECTURE.md` 为面向外部评审者、集成方和维护者的独立当前架构说明。
@@ -303,7 +310,7 @@
   common 标签。
 - 真实验证:对 C 项目 `codebase-memory-mcp` 跑 `init --dry-run` 不再写入
   3 个虚假 Spring service,只识别 `graph-ui` (`node-app`)。
-- 新增长期演进计划 `docs/CBM_INSPIRED_EVOLUTION_PLAN.md`,记录 P0/P1/
+- 新增长期演进计划 `docs/archive/CBM_INSPIRED_EVOLUTION_PLAN.md`,记录 P0/P1/
   P2/P3 各阶段从 codebase-memory-mcp 学到的设计借鉴(多语言 parser、
   RAM-first 索引、跨服务边抽象、团队共享 graph artifact 等)。
 - English summary: introduced a service kind registry that decouples
@@ -711,7 +718,7 @@ English summary: reasoning now has one evidence-bounded pipeline, additive facad
 
 - **文档体系重构**
   - 补回根目录维护者文档：`TECHNICAL_GUIDE.md`、`NEXT_PHASE_MASTER_PLAN.md`
-  - `README.md`、`docs/ROADMAP.md`、`docs/RELEASE.md` 与技术/计划文档重新串联
+  - `README.md`、`docs/archive/ROADMAP.md`、`docs/RELEASE.md` 与技术/计划文档重新串联
   - 调整文档分层：对外使用线与对内维护线并存
 
 ## 2.1.2

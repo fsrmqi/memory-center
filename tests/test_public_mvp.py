@@ -587,6 +587,57 @@ def test_write_agent_instructions_are_mirrored_to_service_roots(tmp_path: Path):
     assert str(workspace.resolve()) in cursor_rules
 
 
+def test_write_agent_instructions_write_mcp_configs_to_service_roots(tmp_path: Path):
+    from tests.fixtures import copy_demo_workspace
+
+    workspace = copy_demo_workspace(tmp_path)
+    store = WorkspaceStore(workspace)
+    workspace_root = workspace.parent.parent
+
+    write_agent_instructions(store, workspace_root)
+
+    service_root = workspace_root / "task-service"
+    codex_config = json.loads((service_root / ".codex" / "mcp.json").read_text(encoding="utf-8"))
+    claude_config = json.loads((service_root / ".mcp.json").read_text(encoding="utf-8"))
+    cursor_config = json.loads((service_root / ".cursor" / "mcp.json").read_text(encoding="utf-8"))
+
+    for config in (codex_config, claude_config, cursor_config):
+        server = config["mcpServers"]["memory-center"]
+        assert server["command"] == "memory-center-mcp"
+        assert server["args"] == ["--workspace", str(workspace.resolve())]
+
+
+def test_write_agent_instructions_merge_existing_mcp_configs(tmp_path: Path):
+    from tests.fixtures import copy_demo_workspace
+
+    workspace = copy_demo_workspace(tmp_path)
+    store = WorkspaceStore(workspace)
+    workspace_root = workspace.parent.parent
+    codex_config_path = workspace_root / ".codex" / "mcp.json"
+    codex_config_path.parent.mkdir(parents=True, exist_ok=True)
+    codex_config_path.write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "idea": {
+                        "url": "http://127.0.0.1:64342/sse",
+                    }
+                }
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+    write_agent_instructions(store, workspace_root)
+
+    merged = json.loads(codex_config_path.read_text(encoding="utf-8"))
+    assert "idea" in merged["mcpServers"]
+    assert "memory-center" in merged["mcpServers"]
+    assert merged["mcpServers"]["memory-center"]["args"] == ["--workspace", str(workspace.resolve())]
+
+
 def test_workspace_service_maintenance_commands(tmp_path: Path):
     source = Path("examples/spring-cloud-demo")
     target = tmp_path / "workspace-maintenance-demo"

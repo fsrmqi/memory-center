@@ -78,6 +78,35 @@ def _normalize_symbol_name(name: str) -> str:
     return normalized.split(".")[-1]
 
 
+def _infer_project_from_workspace_context(workspace_file: str | Path) -> str:
+    """Prefer the active service when the process is running inside one service root.
+
+    This keeps multi-repo aggregate workspaces ergonomic for auto-routed agent
+    calls: if the current cwd is already inside one configured service root,
+    same-name symbols should resolve to that service first. If no service root
+    matches cwd, or multiple nested roots would match, fall back to no hint.
+    """
+    try:
+        config, _store = load_context(workspace_file)
+    except Exception:
+        return ""
+
+    cwd = Path.cwd().expanduser().resolve()
+    candidates: list[tuple[int, str]] = []
+    for service in getattr(config, "services", []) or []:
+        try:
+            service_root = config.resolve_service_path(service)
+            relative = cwd.relative_to(service_root)
+        except Exception:
+            continue
+        depth = len(relative.parts)
+        candidates.append((depth, str(service.name or "")))
+    if not candidates:
+        return ""
+    candidates.sort(key=lambda item: (-item[0], item[1]))
+    return candidates[0][1]
+
+
 def _looks_like_class_symbol_query(query: str) -> bool:
     token = _normalize_symbol_name(query)
     if not token or any(ch.isspace() for ch in query):
@@ -858,8 +887,8 @@ def memory_symbol(
     looks like a FQN (contains dots and a capitalised tail), the package
     segments are used to guess the project.
     """
-    # FQN inference: cn.kaipuyun.cloud.openapi...ServiceImpl → try "openapi"
-    inferred_project = project
+    # Prefer the active service root for bare symbols, then fall back to FQN inference.
+    inferred_project = project or _infer_project_from_workspace_context(workspace_file)
     if not inferred_project and "." in name and not name.startswith("."):
         inferred_project = _infer_project_from_fqn(name, workspace_file)
     internal_limit = max(limit, min(max(limit * 3, 12), 50))
@@ -881,6 +910,8 @@ def memory_symbol(
             project="",
         )
         all_lookup_matches = list(global_lookup.get("matches", []) or all_lookup_matches)
+        if not lookup.get("matches"):
+            lookup = global_lookup
     matches = [item.get("node", {}) for item in lookup.get("matches", []) if item.get("node")]
 
     # If inferred_project is known but no match found in that project,

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from .config import load_workspace_config
@@ -42,7 +43,8 @@ AGENT_PROTOCOL_TEMPLATE = """# Memory Center Agent Protocol
 8. 任务结束后，调用 `mc_close(session_id=..., outcome=..., record_case=True)` 结束并沉淀案例。
 9. 完成验证后，`mc_close` 已自动包含 record_case，无需额外操作。
 10. `context.md`、`requirement.md`、`design.md`、`plan.md`、`test-plan.md`、`change-log.md`、`current-summary.md` 属于追加保护工件，只允许尾部追加或去重，不允许整篇覆盖。
-11. 如果 MCP 不可用，必须明确说明：Memory Center MCP 当前不可用，以下基于本地代码搜索完成。
+11. 只有在确认当前会话工具列表里确实没有 `mc_*` 工具后，才说明：`Memory Center MCP 当前不可用，以下基于本地代码搜索完成。`
+12. 若当前目录是子项目且 `mc_*` 工具缺失，先检查并提示以下绑定是否存在：`.codex/mcp.json`、`.cursor/mcp.json` 或 `.mcp.json` 中的 `memory-center` server 是否指向上层 workspace：`{workspace_config_path}`。
 
 ## 推荐任务链路
 
@@ -63,6 +65,7 @@ AGENT_PROTOCOL_TEMPLATE = """# Memory Center Agent Protocol
 - `mc_admin(action="write_plan")` 不直接写入，而是返回执行计划。
 - `mc_close` 包含：结束 session + 同步案例到任务空间 + 记录到 cross-service memory，一步到位。
 - L3 级别信息优先进入 `workspace_profile`、`team_rules`、`architecture_invariants`、`active_migration_policy` 等核心记忆块。
+- 若在子项目中看不到 `mc_*` 工具，优先检查当前目录下的 `.codex/mcp.json`、`.cursor/mcp.json` 或 `.mcp.json` 是否已写入 `memory-center-mcp --workspace {workspace_config_path}`。
 
 ## Spring Cloud 重点风险
 
@@ -103,10 +106,47 @@ def write_agent_instructions(store: WorkspaceStore, workspace_root: str | Path) 
             else:
                 next_text = (current.rstrip() + "\n\n" if current.strip() else "") + block
             target.write_text(next_text, encoding="utf-8")
+        _write_mcp_configs(instruction_root, workspace_file)
 
 
 def managed_block(content: str) -> str:
     return f"<!-- memory-center:start -->\n{content.rstrip()}\n<!-- memory-center:end -->\n"
+
+
+def _memory_center_mcp_server_config(workspace_file: Path) -> dict[str, object]:
+    return {
+        "type": "stdio",
+        "command": "memory-center-mcp",
+        "args": ["--workspace", str(workspace_file.resolve())],
+    }
+
+
+def _merge_mcp_server_config(config_path: Path, workspace_file: Path) -> None:
+    current: dict[str, object] = {}
+    if config_path.exists():
+        try:
+            loaded = json.loads(config_path.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                current = loaded
+        except (json.JSONDecodeError, OSError, UnicodeDecodeError):
+            current = {}
+    servers = current.get("mcpServers")
+    if not isinstance(servers, dict):
+        servers = {}
+    servers["memory-center"] = _memory_center_mcp_server_config(workspace_file)
+    current["mcpServers"] = servers
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(json.dumps(current, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def _write_mcp_configs(instruction_root: Path, workspace_file: Path) -> None:
+    targets = [
+        instruction_root / ".codex" / "mcp.json",
+        instruction_root / ".cursor" / "mcp.json",
+        instruction_root / ".mcp.json",
+    ]
+    for target in targets:
+        _merge_mcp_server_config(target, workspace_file)
 
 
 def _instruction_roots(store: WorkspaceStore, workspace_root: Path) -> list[tuple[Path, str]]:
@@ -147,4 +187,8 @@ def _render_agent_protocol(
             f"- 即使当前目录没有自己的 `.memory-center/workspace.yaml`，也要复用上层 workspace：`{workspace_path}`。\n"
             f"- Current directory is a service root under the aggregate workspace. Reuse `{workspace_path}` even when this repo does not contain its own local `.memory-center/workspace.yaml`."
         )
-    return AGENT_PROTOCOL_TEMPLATE.replace("{workspace_binding_note}", binding_note)
+    return (
+        AGENT_PROTOCOL_TEMPLATE
+        .replace("{workspace_binding_note}", binding_note)
+        .replace("{workspace_config_path}", workspace_path)
+    )

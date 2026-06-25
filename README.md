@@ -33,20 +33,20 @@ Memory Center precomputes these relationships before the agent starts editing.
 
 记忆中心的核心思想是：**不要让 AI 每次临时理解项目，而是在索引阶段提前构建服务图、调用图、契约图、消息图、规则图、经验图。**
 
-实施路线图请见：
+当前主文档请优先看：
 
+- [docs/README.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/README.md)
+- [docs/DOCS_STATUS.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/DOCS_STATUS.md)
 - [docs/ARCHITECTURE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/ARCHITECTURE.md)
 - [docs/USER_GUIDE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/USER_GUIDE.md)
 - [docs/MCP_GUIDE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/MCP_GUIDE.md)
 - [docs/REFERENCE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/REFERENCE.md)
 - [docs/SPECS.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/SPECS.md)
-- [docs/SPECIAL_NOTES.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/SPECIAL_NOTES.md)
-- [docs/ONTOLOGY.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/ONTOLOGY.md)
-- [docs/ROADMAP.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/ROADMAP.md)
-- [docs/TECHNICAL_GUIDE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/TECHNICAL_GUIDE.md)
+- [docs/CHANGELOG.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/CHANGELOG.md)
+- [docs/RELEASE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/RELEASE.md)
 - [docs/NEXT_PHASE_MASTER_PLAN.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/NEXT_PHASE_MASTER_PLAN.md)
-- [docs/DELEGATED_EXECUTION_PLAN.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/DELEGATED_EXECUTION_PLAN.md)
-- [docs/DELEGATED_EXECUTION_LOG.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/DELEGATED_EXECUTION_LOG.md)
+
+历史规划、执行日志和外部参考演进文档仍保留在 `docs/archive/` 下，但不再作为默认阅读入口；具体见 [docs/README.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/README.md) 和 [docs/DOCS_STATUS.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/DOCS_STATUS.md)。
 
 ---
 
@@ -143,9 +143,9 @@ Detailed local setup and multi-project workflow / 详细本地初始化与多项
 - [docs/USER_GUIDE.md](./docs/USER_GUIDE.md)
 - [docs/MCP_GUIDE.md](./docs/MCP_GUIDE.md)
 - [docs/SPECS.md](./docs/SPECS.md)
-- [docs/ROADMAP.md](./docs/ROADMAP.md)
 - [docs/TECHNICAL_GUIDE.md](./docs/TECHNICAL_GUIDE.md)
 - [docs/NEXT_PHASE_MASTER_PLAN.md](./docs/NEXT_PHASE_MASTER_PLAN.md)
+- [docs/archive/ROADMAP.md](./docs/archive/ROADMAP.md)（historical / 历史）
 
 ---
 
@@ -1156,24 +1156,13 @@ Example routes:
 
 ---
 
-## Roadmap / 路线图
+## Documentation Status / 文档状态
 
-- v2.0.8: MCP facade 重构（82→8），hooks.yaml + runner + adapters
-- v2.0.9: 增量索引系统、SQLite 镜像后端、评测体系（7 eval + token_gain）
-- v2.0.10: WP2/WP3 收口（recent_evidence view/gain、ref→timeline 反向导航）
-- v2.0.10: WP5 交互增强（budget/compact UI 切换、refs `<details>` 内联展开）
-- v2.0.11: WP5 深化（guided tour overlay、Next Action hero、跨页 drill-down）
-- v2.0.11: WP3 深化（全部高频函数默认 compact、compact 收紧为严格短引用）
-- v2.0.11: Hooks 收口（Codex chmod +x、Cursor MCP 命令指令）
-- v2.1.0: 外部参考吸收（agentmemory benchmark/top-K/hybrid、skills 强约束模板）
-- v2.1.0: SQLite 后端更多真实读路径、长期趋势仪表盘
-- **v2.2.0: NEXT_PHASE_MASTER_PLAN 全部实现（2026-06-01）**
-  - ✅ **Hybrid Retrieval**: 智能混合检索引擎（graph/FTS/BM25/semantic/optional vector）
-  - ✅ **Benchmark Trending**: 基准趋势监控和回归检测
-  - ✅ **SQLite Main Read Path**: 统一后端查询层
-  - ✅ **Timeline/Ref/Task Drill-down**: 渐进式钻取导航
-  - ✅ **Completion Audit**: 自动化完成审计和设计决策记录
-- v2.2.0: 稳定 public component for Spring Cloud AI coding workflows
+- `docs/` 的目录导航首页是 [docs/README.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/README.md)。
+- 当前对外说明以 [docs/DOCS_STATUS.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/DOCS_STATUS.md) 为准。
+- 当前实现状态、最近改动和版本变化以 [docs/CHANGELOG.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/CHANGELOG.md) 为准。
+- 当前唯一活跃开发路线以 [docs/NEXT_PHASE_MASTER_PLAN.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/NEXT_PHASE_MASTER_PLAN.md) 为准。
+- `docs/archive/ROADMAP.md`、`docs/archive/DELEGATED_EXECUTION_PLAN.md`、`docs/archive/DELEGATED_EXECUTION_LOG.md`、`docs/archive/CBM_INSPIRED_EVOLUTION_PLAN.md` 仅保留为历史背景，不再作为当前版本状态说明。
 
 ---
 

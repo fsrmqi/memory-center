@@ -11,6 +11,8 @@ from memory_center.core.artifacts import (
     list_artifacts,
     list_task_spaces,
 )
+from memory_center.core.config import load_workspace_config
+from memory_center.core.indexer import reindex_workspace
 from memory_center.core.orchestrator import (
     memory_callees,
     memory_callers,
@@ -44,6 +46,7 @@ from memory_center.core.orchestrator import (
     workspace_trace,
     workspace_unresolved_items,
 )
+from memory_center.core.store import WorkspaceStore
 from memory_center.http.server import _route_request
 
 HAS_MCP = importlib.util.find_spec("mcp") is not None and importlib.util.find_spec("mcp.server.fastmcp") is not None
@@ -55,6 +58,62 @@ if HAS_MCP:
 def _setup_workspace(tmp_path: Path) -> str:
     from tests.fixtures import setup_demo_workspace
     return str(setup_demo_workspace(tmp_path))
+
+
+def _setup_duplicate_symbol_workspace(tmp_path: Path) -> Path:
+    root = tmp_path / "dupe-demo"
+    for service in ("alpha-service", "beta-service", "gamma-service"):
+        (root / service / "src" / "main" / "java" / "com" / "example").mkdir(parents=True, exist_ok=True)
+
+    shared_class = (
+        "package com.example;\n\n"
+        "public class RedisDelayedQueue {\n"
+        "    public String source() {\n"
+        "        return \"%s\";\n"
+        "    }\n"
+        "}\n"
+    )
+    (root / "alpha-service" / "src" / "main" / "java" / "com" / "example" / "RedisDelayedQueue.java").write_text(
+        shared_class % "alpha",
+        encoding="utf-8",
+    )
+    (root / "beta-service" / "src" / "main" / "java" / "com" / "example" / "RedisDelayedQueue.java").write_text(
+        shared_class % "beta",
+        encoding="utf-8",
+    )
+    (root / "gamma-service" / "src" / "main" / "java" / "com" / "example" / "GammaWorker.java").write_text(
+        "package com.example;\n\npublic class GammaWorker {}\n",
+        encoding="utf-8",
+    )
+
+    workspace_dir = root / ".memory-center"
+    workspace_dir.mkdir(parents=True, exist_ok=True)
+    workspace = workspace_dir / "workspace.yaml"
+    workspace.write_text(
+        "\n".join(
+            [
+                "workspace: duplicate-symbol-demo",
+                f"root: {root.as_posix()}",
+                "services:",
+                "  - name: alpha-service",
+                "    path: alpha-service",
+                "    type: spring-boot-service",
+                "  - name: beta-service",
+                "    path: beta-service",
+                "    type: spring-boot-service",
+                "  - name: gamma-service",
+                "    path: gamma-service",
+                "    type: spring-boot-service",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    config = load_workspace_config(workspace)
+    store = WorkspaceStore(workspace)
+    reindex_workspace(config, store)
+    return workspace
 
 @pytest.mark.skipif(not HAS_MCP, reason="mcp package not installed")
 def test_mcp_server_has_exactly_8_facade_tools(tmp_path: Path):
@@ -915,6 +974,29 @@ def test_memory_impact_project_filter_uses_anchor_and_project_evidence(tmp_path:
     assert impact["project_evidence"]
     assert impact["lookup"]["entrypoints"][0]["role"] == "anchor"
     assert any(item.get("role") == "project_evidence" for item in impact["lookup"]["entrypoints"])
+
+
+def test_memory_symbol_prefers_active_service_for_duplicate_symbols(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    wf = _setup_duplicate_symbol_workspace(tmp_path)
+    monkeypatch.chdir(wf.parent.parent / "beta-service")
+
+    result = memory_symbol(wf, "RedisDelayedQueue", limit=5)
+
+    assert result["found"] is True
+    assert result["best_match"]["project"] == "beta-service"
+    assert result["matches"]
+    assert result["matches"][0]["node"]["project"] == "beta-service"
+
+
+def test_memory_impact_falls_back_when_active_service_has_no_duplicate_symbol(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    wf = _setup_duplicate_symbol_workspace(tmp_path)
+    monkeypatch.chdir(wf.parent.parent / "gamma-service")
+
+    impact = memory_impact(wf, "RedisDelayedQueue", direction="upstream", max_depth=2)
+
+    assert impact["found"] is True
+    assert impact["target"]["name"] == "RedisDelayedQueue"
+    assert impact["target"]["project"] in {"alpha-service", "beta-service"}
 
 
 def test_mc_analyze_detect_changes_when_target_empty(tmp_path: Path):

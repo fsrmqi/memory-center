@@ -1,5 +1,11 @@
 # Memory Center 演进改造计划
 
+> Historical document / 历史文档
+>
+> 本文档记录基于外部项目参考形成的一轮演进草案，保留用于设计追溯，不再作为当前路线图。
+>
+> 当前文档入口请看 [DOCS_STATUS.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/DOCS_STATUS.md)，当前活跃路线请看 [NEXT_PHASE_MASTER_PLAN.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/NEXT_PHASE_MASTER_PLAN.md)。
+
 > 本计划基于对 [codebase-memory-mcp](https://github.com/DeusData/codebase-memory-mcp)(以下简称 **CBM**)的分析,
 > 结合 memory-center 现有架构,给出**逐步可执行**的能力扩展与性能优化路线。
 >

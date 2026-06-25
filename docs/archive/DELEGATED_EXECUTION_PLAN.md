@@ -1,5 +1,11 @@
 # Delegated Execution Plan / 外部协作执行手册
 
+> Historical document / 历史文档
+>
+> 本文档保留阶段性执行背景与工作拆分记录，不再作为当前唯一活跃计划。
+>
+> 当前主文档请看 [DOCS_STATUS.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/DOCS_STATUS.md)，当前活跃开发路线请看 [NEXT_PHASE_MASTER_PLAN.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/NEXT_PHASE_MASTER_PLAN.md)。
+
 ## 1. 文档用途 / Purpose
 
 本文档用于把 Memory Center 后续开发交给其他开发者执行。

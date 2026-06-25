@@ -19,7 +19,7 @@
 
 如果工作需要交给其他开发者执行，建议同时阅读：
 
-- [DELEGATED_EXECUTION_PLAN.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/DELEGATED_EXECUTION_PLAN.md)
+- [archive/DELEGATED_EXECUTION_PLAN.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/archive/DELEGATED_EXECUTION_PLAN.md)
 
 交接计划是可调整的产品方向和工作清单。执行者可以重排任务、合并工作包、重构核心模块、调整公开 schema 和引入新依赖，不需要因旧计划边界等待审批。开发决策优先看功能是否真正可用、使用是否顺畅、实现是否可维护，同时对数据安全、迁移方式和验证结果负责。
 

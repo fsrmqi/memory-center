@@ -1,5 +1,11 @@
 # Roadmap / 路线图
 
+> Historical document / 历史文档
+>
+> 本文档保留用于追溯早期路线图，不再作为当前版本状态或主开发路线的权威来源。
+>
+> For the current maintained doc set, see [DOCS_STATUS.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/DOCS_STATUS.md). For the active development roadmap, see [NEXT_PHASE_MASTER_PLAN.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/NEXT_PHASE_MASTER_PLAN.md).
+
 ## 1. Current State / 当前状态
 
 如果你需要维护者视角的详细方案，而不是简版路线图，请看：
