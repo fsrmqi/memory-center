@@ -8,6 +8,12 @@
 
 ## Unreleased
 
+### 3.5.14 Documentation Refresh / 架构文档刷新
+
+- 重写 `docs/ARCHITECTURE.md` 为面向外部评审者、集成方和维护者的独立当前架构说明。
+- 新增目录、系统定位、读者视角、核心能力域、部署形态、代码目录视图、分层契约和更完整的数据流说明。
+- 移除旧式推荐阅读、维护地图、路线图和 backlog 口径，避免架构说明与计划文档混杂。
+
 ### P1 Java Call Resolver Self-Loop Fix / Java 调用解析自环修复
 
 - 真实 UCAP 工作区上发现 ~13K `CALLS_METHOD` self-loop 假边
