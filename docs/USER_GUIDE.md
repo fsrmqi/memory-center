@@ -180,6 +180,10 @@ memory-center detect-changes --workspace /abs/path/.memory-center/workspace.yaml
 
 ### MCP
 
+默认安装已包含 MCP 运行时依赖，`memory-center-mcp` 安装后应直接可用。
+
+The default install includes MCP runtime dependencies, so `memory-center-mcp` should work immediately after install.
+
 ```bash
 memory-center-mcp --workspace /abs/path/.memory-center/workspace.yaml
 ```

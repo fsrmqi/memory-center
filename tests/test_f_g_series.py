@@ -662,6 +662,12 @@ class TestG07InstallBuild:
         assert "memory-center" in content
         assert "memory-center-mcp" in content
 
+    def test_pyproject_installs_mcp_runtime_by_default(self):
+        pyproject = Path("pyproject.toml")
+        content = pyproject.read_text()
+        project_section = content.split("[project.optional-dependencies]", 1)[0]
+        assert '"mcp>=1.2.0"' in project_section
+
     def test_three_entry_points_exist(self):
         from memory_center.cli.main import app as cli_app
         from memory_center.http.server import serve_http

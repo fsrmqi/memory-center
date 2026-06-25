@@ -204,30 +204,14 @@ Then rerun:
 bash install.sh
 ```
 
-### Enable MCP / 启用 MCP
+### Verify MCP / 验证 MCP
 
-The base install does not bundle MCP dependencies by default. To enable `memory-center-mcp`:
+The default install includes the MCP runtime dependencies. Verify `memory-center-mcp` directly:
 
-基础安装默认不附带 MCP 依赖。如果你要启用 `memory-center-mcp`：
-
-```bash
-pipx inject memory-center "mcp>=1.2.0"
-```
-
-Then verify:
-
-然后验证：
+默认安装已包含 MCP 运行时依赖，可直接验证 `memory-center-mcp`：
 
 ```bash
-memory-center-mcp --workspace /Users/cuijiaqi/javaworkspace/ucap/.memory-center/workspace.yaml
-```
-
-If your MCP client requires an absolute command path, use:
-
-如果你的 MCP 客户端要求命令绝对路径，可以使用：
-
-```bash
-/Users/cuijiaqi/.local/bin/memory-center-mcp --workspace /Users/cuijiaqi/javaworkspace/ucap/.memory-center/workspace.yaml
+memory-center-mcp --help
 ```
 
 ### Development install / 开发环境安装
