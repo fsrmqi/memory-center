@@ -8,12 +8,9 @@
 
 ## 1. 文档定位 / Scope
 
-本文件整合并替代以下旧路线来源：
+本文件整合并替代旧版执行计划、superpowers 演进计划和旧版 master plan；这些历史来源已合并到本文，不再作为独立文件维护。
 
-- `docs/NEXT_PHASE_EXECUTION_PLAN.md`
-- `docs/superpowers/plans/2026-06-18-next-evolution.md`
-- `docs/superpowers/plans/2026-06-18-long-term-convergence.md`
-- 旧版 `docs/NEXT_PHASE_MASTER_PLAN.md`
+This file consolidates and replaces the older execution plan, superpowers evolution plans, and the previous master plan. Those historical sources have been folded into this document and are no longer maintained as separate files.
 
 旧计划中的已完成任务不再作为待办重复跟踪；未完成方向按当前代码和 benchmark 重新排序。
 
@@ -214,7 +211,7 @@
 
 ## 4. 执行原则 / Execution Rules
 
-这些原则从旧 `NEXT_PHASE_EXECUTION_PLAN.md` 合并而来，后续不再单独维护执行计划文档。
+这些原则从旧版执行计划合并而来，后续不再单独维护执行计划文档。
 
 1. 功能真实可用、用户实际好用优先于遵守旧模块边界和旧任务顺序。
 2. 可以重排阶段、合并任务、替换旧实现和重构核心模块。

@@ -374,9 +374,10 @@ class GraphStore:
                 clauses.append(f"e.source_id IN ({ph})")
                 args.extend(frontier)
 
-            where_body = " OR ".join(clauses)
+            where_body = f"({' OR '.join(clauses)})"
             remaining = limit - len(results)
-            sql = f"""
+
+            select_sql = """
                 SELECT e.*, ns.type AS source_type, ns.name AS source_name,
                        ns.project AS source_project, ns.file_path AS source_file,
                        ns.line AS source_line,
@@ -386,24 +387,40 @@ class GraphStore:
                 FROM edges e
                 LEFT JOIN nodes ns ON ns.id = e.source_id
                 LEFT JOIN nodes nt ON nt.id = e.target_id
-                WHERE {where_body}
-                LIMIT ?
             """
-            rows = conn.execute(sql, [*args, remaining]).fetchall()
+            if type_set:
+                placeholders = ",".join("?" for _ in type_set)
+                collect_where = f"{where_body} AND e.type IN ({placeholders})"
+                rows = conn.execute(
+                    f"{select_sql} WHERE {collect_where} LIMIT ?",
+                    [*args, *sorted(type_set), remaining],
+                ).fetchall()
+                frontier_rows = conn.execute(
+                    f"SELECT e.source_id, e.target_id FROM edges e WHERE {where_body} LIMIT ?",
+                    [*args, remaining],
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    f"""
+                    {select_sql}
+                    WHERE {where_body}
+                LIMIT ?
+                    """,
+                    [*args, remaining],
+                ).fetchall()
+                frontier_rows = rows
+
             next_frontier: list[str] = []
-            for row in rows:
+            for row in frontier_rows:
                 sid = row["source_id"]
                 tid = row["target_id"]
-                # Always expand frontier through all edges
                 if tid not in seen and tid != node_id:
                     seen.add(tid)
                     next_frontier.append(tid)
                 elif sid not in seen and sid != node_id:
                     seen.add(sid)
                     next_frontier.append(sid)
-                # Only collect edges matching the type filter
-                if type_set and row["type"] not in type_set:
-                    continue
+            for row in rows:
                 rec = _row_edge(row)
                 rec["depth"] = depth + 1
                 results.append(rec)

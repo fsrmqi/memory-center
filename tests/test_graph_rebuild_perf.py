@@ -112,3 +112,37 @@ def test_rebuild_search_index_empty_graph_no_raise(tmp_path: Path) -> None:
     with GraphStore(tmp_path / "g.sqlite") as graph:
         graph.rebuild_search_index()  # should be a no-op
         assert graph.counts() == {"nodes": 0, "edges": 0}
+
+
+def test_neighbors_edge_type_filter_applies_before_limit(tmp_path: Path) -> None:
+    """A type-filtered neighbor query must limit matching edges, not all edges.
+
+    Large real graphs often have many mixed edge types from one anchor.
+    If ``LIMIT`` is applied before the edge-type predicate, callers can
+    miss the first matching relationship entirely.
+    """
+    nodes = [GraphNode("anchor", "Class", "Anchor")]
+    nodes.extend(GraphNode(f"noise_{i}", "Class", f"Noise{i}") for i in range(20))
+    nodes.append(GraphNode("target", "Class", "Target"))
+    edges = [
+        GraphEdge(
+            f"noise_edge_{i}",
+            "anchor",
+            f"noise_{i}",
+            "AAAA_NOISE",
+        )
+        for i in range(20)
+    ]
+    edges.append(GraphEdge("target_edge", "anchor", "target", "CALLS_METHOD"))
+
+    with GraphStore(tmp_path / "g.sqlite") as graph:
+        graph.rebuild(nodes, edges)
+        results = graph.neighbors(
+            "anchor",
+            direction="downstream",
+            max_depth=1,
+            limit=1,
+            edge_types=["CALLS_METHOD"],
+        )
+
+    assert [row["id"] for row in results] == ["target_edge"]
