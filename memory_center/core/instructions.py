@@ -2,11 +2,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from .config import load_workspace_config
 from .store import WorkspaceStore
 
-AGENT_PROTOCOL = """# Memory Center Agent Protocol
+AGENT_PROTOCOL_TEMPLATE = """# Memory Center Agent Protocol
 
 本 workspace 使用 Memory Center 作为 AI 编程助手的项目记忆 MCP 服务。
+
+{workspace_binding_note}
 
 ## MCP 工具速查
 
@@ -74,25 +77,74 @@ AGENT_PROTOCOL = """# Memory Center Agent Protocol
 
 def write_agent_instructions(store: WorkspaceStore, workspace_root: str | Path) -> None:
     root = Path(workspace_root).expanduser().resolve()
-    targets = [
-        root / "AGENTS.md",
-        root / "CLAUDE.md",
-        root / "GEMINI.md",
-        root / ".github" / "copilot-instructions.md",
-        root / ".cursor" / "rules" / "memory-center.mdc",
-    ]
-    for target in targets:
-        target.parent.mkdir(parents=True, exist_ok=True)
-        current = target.read_text(encoding="utf-8") if target.exists() else ""
-        block = managed_block(AGENT_PROTOCOL)
-        if "<!-- memory-center:start -->" in current and "<!-- memory-center:end -->" in current:
-            start = current.index("<!-- memory-center:start -->")
-            end = current.index("<!-- memory-center:end -->") + len("<!-- memory-center:end -->")
-            next_text = current[:start] + block + current[end:]
-        else:
-            next_text = (current.rstrip() + "\n\n" if current.strip() else "") + block
-        target.write_text(next_text, encoding="utf-8")
+    workspace_file = store.workspace_file
+    for instruction_root, service_name in _instruction_roots(store, root):
+        content = _render_agent_protocol(
+            workspace_file=workspace_file,
+            instruction_root=instruction_root,
+            workspace_root=root,
+            service_name=service_name,
+        )
+        targets = [
+            instruction_root / "AGENTS.md",
+            instruction_root / "CLAUDE.md",
+            instruction_root / "GEMINI.md",
+            instruction_root / ".github" / "copilot-instructions.md",
+            instruction_root / ".cursor" / "rules" / "memory-center.mdc",
+        ]
+        for target in targets:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            current = target.read_text(encoding="utf-8") if target.exists() else ""
+            block = managed_block(content)
+            if "<!-- memory-center:start -->" in current and "<!-- memory-center:end -->" in current:
+                start = current.index("<!-- memory-center:start -->")
+                end = current.index("<!-- memory-center:end -->") + len("<!-- memory-center:end -->")
+                next_text = current[:start] + block + current[end:]
+            else:
+                next_text = (current.rstrip() + "\n\n" if current.strip() else "") + block
+            target.write_text(next_text, encoding="utf-8")
 
 
 def managed_block(content: str) -> str:
     return f"<!-- memory-center:start -->\n{content.rstrip()}\n<!-- memory-center:end -->\n"
+
+
+def _instruction_roots(store: WorkspaceStore, workspace_root: Path) -> list[tuple[Path, str]]:
+    roots: list[tuple[Path, str]] = [(workspace_root, "")]
+    seen = {str(workspace_root)}
+    try:
+        config = load_workspace_config(store.workspace_file)
+    except Exception:
+        return roots
+    for service in config.services:
+        service_root = config.resolve_service_path(service)
+        if not service_root.exists() or not service_root.is_dir():
+            continue
+        key = str(service_root)
+        if key in seen:
+            continue
+        seen.add(key)
+        roots.append((service_root, service.name))
+    return roots
+
+
+def _render_agent_protocol(
+    workspace_file: Path,
+    instruction_root: Path,
+    workspace_root: Path,
+    service_name: str = "",
+) -> str:
+    workspace_path = str(workspace_file)
+    if instruction_root == workspace_root:
+        binding_note = (
+            f"- 默认 workspace 配置文件：`{workspace_path}`\n"
+            f"- 如果你当前在某个子项目目录中执行任务，也要继续复用这个上层 workspace，而不是假设当前目录必须有独立的 `.memory-center/workspace.yaml`。\n"
+            f"- Default workspace file: `{workspace_path}`. Subprojects under this workspace should reuse it instead of assuming each repo needs its own local `.memory-center/workspace.yaml`."
+        )
+    else:
+        binding_note = (
+            f"- 当前目录是聚合 workspace 下的子项目：`{service_name or instruction_root.name}`。\n"
+            f"- 即使当前目录没有自己的 `.memory-center/workspace.yaml`，也要复用上层 workspace：`{workspace_path}`。\n"
+            f"- Current directory is a service root under the aggregate workspace. Reuse `{workspace_path}` even when this repo does not contain its own local `.memory-center/workspace.yaml`."
+        )
+    return AGENT_PROTOCOL_TEMPLATE.replace("{workspace_binding_note}", binding_note)

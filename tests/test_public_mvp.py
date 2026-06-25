@@ -567,6 +567,26 @@ def test_write_agent_instructions_includes_sync_workflow(tmp_path: Path):
         assert "只允许尾部追加" in content
 
 
+def test_write_agent_instructions_are_mirrored_to_service_roots(tmp_path: Path):
+    from tests.fixtures import copy_demo_workspace
+
+    workspace = copy_demo_workspace(tmp_path)
+    store = WorkspaceStore(workspace)
+    workspace_root = workspace.parent.parent
+
+    write_agent_instructions(store, workspace_root)
+
+    service_agents = (workspace_root / "task-service" / "AGENTS.md").read_text(encoding="utf-8")
+    cursor_rules = (workspace_root / "task-service" / ".cursor" / "rules" / "memory-center.mdc").read_text(encoding="utf-8")
+
+    assert "当前目录是聚合 workspace 下的子项目" in service_agents
+    assert str(workspace.resolve()) in service_agents
+    assert "复用上层 workspace" in service_agents
+    assert "Current directory is a service root under the aggregate workspace." in service_agents
+    assert "mc_start" in service_agents
+    assert str(workspace.resolve()) in cursor_rules
+
+
 def test_workspace_service_maintenance_commands(tmp_path: Path):
     source = Path("examples/spring-cloud-demo")
     target = tmp_path / "workspace-maintenance-demo"

@@ -827,6 +827,10 @@ memory-center run-hook --workspace <workspace.yaml> --hook session_start  # 执�
 memory-center generate-hooks --workspace <workspace.yaml> --host claude-code  # 生成宿主配置
 ```
 
+从当前版本开始，`init` / `reindex` 写入的受管说明块不只落在聚合 workspace 根目录，也会镜像到各个已配置的 service 子项目根目录（如 `service-a/AGENTS.md`、`service-a/.cursor/rules/memory-center.mdc`）。这样当你直接在子项目目录里打开 Codex / Claude / Cursor 时，Agent 也能明确知道要复用上层的 `.memory-center/workspace.yaml`。
+
+Starting from this version, the managed instruction block written by `init` / `reindex` is mirrored not only to the aggregate workspace root but also to each configured service root (for example `service-a/AGENTS.md` and `service-a/.cursor/rules/memory-center.mdc`). This helps agents launched inside a subproject keep reusing the parent `.memory-center/workspace.yaml`.
+
 详见 [docs/MCP_GUIDE.md](./docs/MCP_GUIDE.md)。
 
 Supported model targets for handoff now include `codex`, `claude-code`, `cursor-agent`, `gemini`, `deepseek`, `glm`, `qwen`, `minimax`, `mimo`, and generic MCP agents.

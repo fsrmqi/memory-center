@@ -8,6 +8,13 @@
 
 ## Unreleased
 
+### Parent Workspace MCP Adoption Fix / 父级 Workspace MCP 采纳修复
+
+- 修复聚合 workspace 位于子项目上一层时，Agent 在子项目目录里较容易忽略 Memory Center MCP 的问题。
+- `memory-center init` / `memory-center reindex` 现在会把受管说明块镜像写入每个已配置 service root 的 `AGENTS.md`、`CLAUDE.md`、`GEMINI.md`、`.github/copilot-instructions.md` 与 `.cursor/rules/memory-center.mdc`。
+- 子项目级说明会显式写明应复用上层 `.memory-center/workspace.yaml`，降低“当前仓库没有本地 workspace 就不调用 MCP”的概率。
+- 本地安装版本提升至 `3.5.15`。
+
 ### 3.5.14 Documentation Refresh / 架构文档刷新
 
 - 重写 `docs/ARCHITECTURE.md` 为面向外部评审者、集成方和维护者的独立当前架构说明。
