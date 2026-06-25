@@ -8,6 +8,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from ..config import load_workspace_config
+from ..instructions import inspect_agent_mcp_bindings, repair_agent_mcp_bindings
 from ..store import WorkspaceStore
 from ..validators import doctor
 from ..verification.heuristics import apply_candidate_path_learning
@@ -15,7 +17,7 @@ from ..verification.heuristics import apply_candidate_path_learning
 AUDIT_LOG_FILE = "agent-runtime-audit.jsonl"
 
 
-def audit_agent_runtime(workspace_file: str | Path) -> dict[str, Any]:
+def audit_agent_runtime(workspace_file: str | Path, fix: bool = False) -> dict[str, Any]:
     """Audit the agent runtime configuration for a workspace.
 
     Checks: hooks config, MCP settings, agent profile, tool access.
@@ -34,15 +36,30 @@ def audit_agent_runtime(workspace_file: str | Path) -> dict[str, Any]:
             "message": "未配置 hooks（可选但推荐）",
         })
 
-    # Check MCP configuration
-    mcp_config = store.read_json_prefer_backend("mcp-config.json", {})
-    if not mcp_config:
+    config = load_workspace_config(workspace_file)
+    if fix:
+        mcp_bindings = repair_agent_mcp_bindings(store, config.root_path)
+    else:
+        mcp_bindings = inspect_agent_mcp_bindings(store, config.root_path)
+
+    # Check MCP configuration at the files real hosts read.
+    if not mcp_bindings.get("ok", False):
+        missing_count = len(mcp_bindings.get("missing_or_stale", []) or [])
         findings.append({
             "category": "mcp",
-            "severity": "info",
-            "code": "no_mcp_config",
-            "message": "未配置 MCP 服务（可选）",
+            "severity": "high",
+            "code": "mcp_binding_missing_or_stale",
+            "message": f"发现 {missing_count} 个 agent MCP 绑定缺失或未指向当前 workspace。",
         })
+        score -= 20
+    if not mcp_bindings.get("command_available", False):
+        findings.append({
+            "category": "mcp",
+            "severity": "high",
+            "code": "memory_center_mcp_not_on_path",
+            "message": "`memory-center-mcp` 不在当前 PATH 中，宿主可能无法启动 MCP server。",
+        })
+        score -= 15
 
     # Check agent profile
     agent_profile = store.read_json_prefer_backend("agent-profile.json", {})
@@ -121,6 +138,8 @@ def audit_agent_runtime(workspace_file: str | Path) -> dict[str, Any]:
         "quality": "high" if score >= 85 else "medium" if score >= 60 else "low",
         "findings": findings,
         "workspace_shape": workspace_shape,
+        "mcp_bindings": mcp_bindings,
+        "auto_fixed": bool(fix),
         "suggested_fixes": suggested_fixes,
         "candidate_paths": candidate_paths,
         "recommended_path": recommended_path,
@@ -184,6 +203,22 @@ def _build_runtime_audit_candidate_paths(
                 "weight": 0.66,
                 "why": "workspace 结构已基本健康，后续治理重点转向 hooks、MCP 和 agent profile 配置。",
                 "next_action": "按 findings 补 hooks / MCP / agent profile",
+                "verification_cost": "low",
+                "_learning_aliases": [
+                    {"candidate_type": "runtime_governance", "target": "hooks-mcp-agent-profile"},
+                ],
+            }
+        )
+
+    if any(item.get("code") == "mcp_binding_missing_or_stale" for item in findings):
+        candidates.append(
+            {
+                "candidate_type": "agent_mcp_repair",
+                "target": "memory-center",
+                "status": "confirmed",
+                "weight": 0.92,
+                "why": "当前 agent 实际读取的 MCP 配置缺失或未指向本 workspace，子项目里会看不到 mc_* 工具。",
+                "next_action": "运行 `memory-center runtime-audit --workspace <workspace.yaml> --fix` 自动补齐根目录和子项目 MCP 绑定",
                 "verification_cost": "low",
                 "_learning_aliases": [
                     {"candidate_type": "runtime_governance", "target": "hooks-mcp-agent-profile"},

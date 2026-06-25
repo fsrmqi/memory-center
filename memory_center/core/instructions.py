@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
+from typing import Any
 
 from .config import load_workspace_config
 from .store import WorkspaceStore
@@ -44,7 +46,7 @@ AGENT_PROTOCOL_TEMPLATE = """# Memory Center Agent Protocol
 9. 完成验证后，`mc_close` 已自动包含 record_case，无需额外操作。
 10. `context.md`、`requirement.md`、`design.md`、`plan.md`、`test-plan.md`、`change-log.md`、`current-summary.md` 属于追加保护工件，只允许尾部追加或去重，不允许整篇覆盖。
 11. 只有在确认当前会话工具列表里确实没有 `mc_*` 工具后，才说明：`Memory Center MCP 当前不可用，以下基于本地代码搜索完成。`
-12. 若当前目录是子项目且 `mc_*` 工具缺失，先检查并提示以下绑定是否存在：`.codex/mcp.json`、`.cursor/mcp.json` 或 `.mcp.json` 中的 `memory-center` server 是否指向上层 workspace：`{workspace_config_path}`。
+12. 若当前目录是子项目且 `mc_*` 工具缺失，先运行 `memory-center runtime-audit --workspace {workspace_config_path} --fix` 刷新 `.codex/mcp.json`、`.cursor/mcp.json`、`.mcp.json` 中的 `memory-center` server 绑定，再提示用户重开或刷新宿主会话。
 
 ## 推荐任务链路
 
@@ -65,7 +67,7 @@ AGENT_PROTOCOL_TEMPLATE = """# Memory Center Agent Protocol
 - `mc_admin(action="write_plan")` 不直接写入，而是返回执行计划。
 - `mc_close` 包含：结束 session + 同步案例到任务空间 + 记录到 cross-service memory，一步到位。
 - L3 级别信息优先进入 `workspace_profile`、`team_rules`、`architecture_invariants`、`active_migration_policy` 等核心记忆块。
-- 若在子项目中看不到 `mc_*` 工具，优先检查当前目录下的 `.codex/mcp.json`、`.cursor/mcp.json` 或 `.mcp.json` 是否已写入 `memory-center-mcp --workspace {workspace_config_path}`。
+- 若在子项目中看不到 `mc_*` 工具，优先运行 `memory-center runtime-audit --workspace {workspace_config_path} --fix` 自动补齐本目录和兄弟 service 的 MCP 绑定。
 
 ## Spring Cloud 重点风险
 
@@ -116,7 +118,7 @@ def managed_block(content: str) -> str:
 def _memory_center_mcp_server_config(workspace_file: Path) -> dict[str, object]:
     return {
         "type": "stdio",
-        "command": "memory-center-mcp",
+        "command": shutil.which("memory-center-mcp") or "memory-center-mcp",
         "args": ["--workspace", str(workspace_file.resolve())],
     }
 
@@ -140,13 +142,76 @@ def _merge_mcp_server_config(config_path: Path, workspace_file: Path) -> None:
 
 
 def _write_mcp_configs(instruction_root: Path, workspace_file: Path) -> None:
-    targets = [
-        instruction_root / ".codex" / "mcp.json",
-        instruction_root / ".cursor" / "mcp.json",
-        instruction_root / ".mcp.json",
+    for target in _mcp_config_targets(instruction_root):
+        _merge_mcp_server_config(target["path"], workspace_file)
+
+
+def _mcp_config_targets(instruction_root: Path) -> list[dict[str, Any]]:
+    return [
+        {"host": "codex", "path": instruction_root / ".codex" / "mcp.json"},
+        {"host": "cursor", "path": instruction_root / ".cursor" / "mcp.json"},
+        {"host": "generic", "path": instruction_root / ".mcp.json"},
     ]
-    for target in targets:
-        _merge_mcp_server_config(target, workspace_file)
+
+
+def inspect_agent_mcp_bindings(store: WorkspaceStore, workspace_root: str | Path) -> dict[str, Any]:
+    """Inspect generated MCP bindings in the aggregate root and service roots."""
+    root = Path(workspace_root).expanduser().resolve()
+    workspace_file = store.workspace_file.resolve()
+    expected_server = _memory_center_mcp_server_config(workspace_file)
+    bindings: list[dict[str, Any]] = []
+    for instruction_root, service_name in _instruction_roots(store, root):
+        for target in _mcp_config_targets(instruction_root):
+            config_path = target["path"]
+            server: dict[str, Any] = {}
+            parse_error = ""
+            if config_path.exists():
+                try:
+                    loaded = json.loads(config_path.read_text(encoding="utf-8"))
+                    if isinstance(loaded, dict):
+                        servers = loaded.get("mcpServers", {})
+                        if isinstance(servers, dict) and isinstance(servers.get("memory-center"), dict):
+                            server = servers["memory-center"]
+                except (json.JSONDecodeError, OSError, UnicodeDecodeError) as exc:
+                    parse_error = str(exc)
+            expected_args = expected_server["args"]
+            ok = (
+                bool(server)
+                and str(server.get("command", "")) == str(expected_server["command"])
+                and list(server.get("args", []) or []) == expected_args
+            )
+            bindings.append(
+                {
+                    "host": target["host"],
+                    "root": str(instruction_root),
+                    "service": service_name,
+                    "config_path": str(config_path),
+                    "exists": config_path.exists(),
+                    "has_memory_center": bool(server),
+                    "command": server.get("command", "") if server else "",
+                    "args": server.get("args", []) if server else [],
+                    "expected_command": expected_server["command"],
+                    "expected_args": expected_args,
+                    "parse_error": parse_error,
+                    "ok": ok,
+                }
+            )
+    missing = [item for item in bindings if not item["ok"]]
+    return {
+        "ok": not missing,
+        "workspace_file": str(workspace_file),
+        "command_available": bool(shutil.which("memory-center-mcp")),
+        "expected_server": expected_server,
+        "bindings": bindings,
+        "missing_or_stale": missing,
+    }
+
+
+def repair_agent_mcp_bindings(store: WorkspaceStore, workspace_root: str | Path) -> dict[str, Any]:
+    """Write or refresh Memory Center MCP bindings for all known agent roots."""
+    root = Path(workspace_root).expanduser().resolve()
+    write_agent_instructions(store, root)
+    return inspect_agent_mcp_bindings(store, root)
 
 
 def _instruction_roots(store: WorkspaceStore, workspace_root: Path) -> list[tuple[Path, str]]:

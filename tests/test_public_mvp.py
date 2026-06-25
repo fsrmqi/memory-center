@@ -603,7 +603,7 @@ def test_write_agent_instructions_write_mcp_configs_to_service_roots(tmp_path: P
 
     for config in (codex_config, claude_config, cursor_config):
         server = config["mcpServers"]["memory-center"]
-        assert server["command"] == "memory-center-mcp"
+        assert server["command"].endswith("memory-center-mcp")
         assert server["args"] == ["--workspace", str(workspace.resolve())]
 
 

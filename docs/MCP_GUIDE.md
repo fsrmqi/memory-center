@@ -64,7 +64,8 @@ MCP 当前公开的是 12 个 task-level tools：
 - Hybrid query responses include additive `retrieval_policy` and `retrieval_diagnostics.policy` fields. They explain selected sources and bounded budgets without changing existing MCP tool parameters.
 - Hybrid query 响应新增兼容型 `retrieval_policy` 与 `retrieval_diagnostics.policy` 字段，用于解释来源选择和有界预算，不改变现有 MCP tool 参数。
 - 如果当前 MCP workspace 是子项目，method walkthrough 会尝试自动升级到父级或 registry 中覆盖当前项目的聚合 workspace。查看 `workspace_escalation.status` 判断是否已切换；`not_needed_or_not_found` 不是错误。
-- `memory-center init` / `memory-center reindex` 写入的受管说明块现在会镜像到各个已配置 service root，明确提示子项目目录应复用上层 `.memory-center/workspace.yaml`；这能减少 Agent 在子项目里“没连上父级 workspace 就不调用 MCP”的情况。
+- `memory-center init` / `memory-center reindex` 写入的受管说明块和 MCP 绑定现在会镜像到各个已配置 service root，明确提示并实际绑定上层 `.memory-center/workspace.yaml`；这能减少 Agent 在子项目里“没连上父级 workspace 就不调用 MCP”的情况。
+- `memory-center runtime-audit --workspace <workspace.yaml> --fix` 会检查并刷新根目录和子项目目录下的 `.codex/mcp.json`、`.cursor/mcp.json`、`.mcp.json`，用于自动修复看不到 `mc_*` 工具的宿主接入问题。
 - 可在 `.memory-center/templates/method_walkthrough.md` 配置报告模板，支持占位符 `{target_label}`、`{summary_lines}`、`{read_targets}`、`{rule_groups}`、`{mermaid_flow}`、`{performance_risks}`、`{data_scope_guards}`、`{diff_context}`、`{glossary}`、`{next_actions}`。未配置时返回内置 `answer_markdown`，可用 `report_level=brief|standard|deep|risk-focused` 控制默认报告形态。
 - MCP server 的 `--workspace` 可以传 `workspace.yaml` 或项目目录；传目录时会向上寻找 `.memory-center/workspace.yaml`，找不到时保持原入参并由后续工具返回正常错误信息。
 - 可在 `.memory-center/glossary.yaml`、`.memory-center/glossary.yml` 或 `.memory-center/business-glossary.yaml` 配置业务词汇，命中结果会出现在 `glossary_hits`。

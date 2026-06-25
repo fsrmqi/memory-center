@@ -2056,11 +2056,12 @@ def bundle_export_cmd(
 @app.command("runtime-audit")
 def runtime_audit_cmd(
     workspace: str = typer.Option(..., help="Path to .memory-center/workspace.yaml"),
+    fix: bool = typer.Option(False, help="Write or refresh missing agent MCP bindings before auditing."),
 ):
     """Audit agent runtime configuration (hooks, MCP, agent profile)."""
     from memory_center.core.audit.runtime import audit_agent_runtime
-    result = audit_agent_runtime(workspace)
-    print(json.dumps(result, indent=2, default=str, ensure_ascii=False))
+    result = audit_agent_runtime(workspace, fix=fix)
+    typer.echo(json.dumps(result, indent=2, default=str, ensure_ascii=False))
 
 
 @app.command("explanation")

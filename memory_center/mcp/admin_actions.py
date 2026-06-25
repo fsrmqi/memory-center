@@ -343,6 +343,7 @@ def build_admin_registry(
     payload_type: str = "",
     layer: str = "",
     action_filter: str = "",
+    force: bool = False,
 ) -> CommandRegistry:
     """Return a CommandRegistry mapping action name -> zero-arg handler.
 
@@ -437,7 +438,7 @@ def build_admin_registry(
         "workflow_profile": lambda: get_workflow_profile(intent or "quick-fix"),
         "workflow_recommend": lambda: recommend_workflow_with_learning(wf, text or intent or ""),
         "bundle_export": lambda: generate_agent_bundle(wf, agent=name or "codex"),
-        "runtime_audit": lambda: audit_agent_runtime(wf),
+        "runtime_audit": lambda: audit_agent_runtime(wf, fix=bool(force)),
         "explanation": lambda: explanation_action(text, persona=intent or "developer"),
         "business_flow": lambda: business_flow_action(wf, name, max_depth),
         "business_flow_impact": lambda: business_flow_impact_action(wf, intent or text, max_depth),

@@ -16,6 +16,7 @@ G-07: Install & build flow
 """
 from __future__ import annotations
 
+import json
 import shutil
 from pathlib import Path
 
@@ -533,6 +534,40 @@ class TestG04AgentRuntimeAudit:
             assert "category" in finding
             assert "severity" in finding
             assert "message" in finding
+
+    def test_audit_reports_missing_agent_mcp_bindings(self, demo_workspace: Path):
+        from memory_center.core.audit.runtime import audit_agent_runtime
+        result = audit_agent_runtime(str(demo_workspace))
+        assert result["mcp_bindings"]["ok"] is False
+        assert any(item["code"] == "mcp_binding_missing_or_stale" for item in result["findings"])
+
+    def test_audit_fix_writes_agent_mcp_bindings(self, demo_workspace: Path):
+        from memory_center.core.audit.runtime import audit_agent_runtime
+        result = audit_agent_runtime(str(demo_workspace), fix=True)
+        assert result["auto_fixed"] is True
+        assert result["mcp_bindings"]["ok"] is True
+        service_config = demo_workspace.parent.parent / "task-service" / ".codex" / "mcp.json"
+        data = json.loads(service_config.read_text(encoding="utf-8"))
+        assert data["mcpServers"]["memory-center"]["args"] == ["--workspace", str(demo_workspace.resolve())]
+
+    def test_runtime_audit_cli_fix_writes_bindings(self, demo_workspace: Path):
+        from typer.testing import CliRunner
+
+        from memory_center.cli.main import app
+        runner = CliRunner()
+        result = runner.invoke(app, ["runtime-audit", "--workspace", str(demo_workspace), "--fix"])
+        assert result.exit_code == 0
+        payload = json.loads(result.stdout)
+        assert payload["auto_fixed"] is True
+        assert payload["mcp_bindings"]["ok"] is True
+
+    def test_runtime_audit_mcp_admin_force_writes_bindings(self, demo_workspace: Path):
+        from memory_center.mcp.admin_actions import build_admin_registry
+
+        registry = build_admin_registry(workspace_file=str(demo_workspace), action="runtime_audit", force=True)
+        result = registry.dispatch("runtime_audit")
+        assert result["auto_fixed"] is True
+        assert result["mcp_bindings"]["ok"] is True
 
 
 # ═════════════════════════════════════════════════════════════════════════════

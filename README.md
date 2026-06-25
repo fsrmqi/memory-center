@@ -827,9 +827,21 @@ memory-center run-hook --workspace <workspace.yaml> --hook session_start  # 执�
 memory-center generate-hooks --workspace <workspace.yaml> --host claude-code  # 生成宿主配置
 ```
 
-从当前版本开始，`init` / `reindex` 写入的受管说明块不只落在聚合 workspace 根目录，也会镜像到各个已配置的 service 子项目根目录（如 `service-a/AGENTS.md`、`service-a/.cursor/rules/memory-center.mdc`）。这样当你直接在子项目目录里打开 Codex / Claude / Cursor 时，Agent 也能明确知道要复用上层的 `.memory-center/workspace.yaml`。
+从当前版本开始，`init` / `reindex` 写入的受管说明块和 MCP 绑定不只落在聚合 workspace 根目录，也会镜像到各个已配置的 service 子项目根目录（如 `service-a/AGENTS.md`、`service-a/.codex/mcp.json`、`service-a/.cursor/mcp.json`、`service-a/.mcp.json`）。这样当你直接在子项目目录里打开 Codex / Claude / Cursor 时，Agent 能复用上层 `.memory-center/workspace.yaml` 并拿到 `mc_*` 工具。
 
-Starting from this version, the managed instruction block written by `init` / `reindex` is mirrored not only to the aggregate workspace root but also to each configured service root (for example `service-a/AGENTS.md` and `service-a/.cursor/rules/memory-center.mdc`). This helps agents launched inside a subproject keep reusing the parent `.memory-center/workspace.yaml`.
+Starting from this version, the managed instruction block and MCP bindings written by `init` / `reindex` are mirrored not only to the aggregate workspace root but also to each configured service root (for example `service-a/AGENTS.md`, `service-a/.codex/mcp.json`, `service-a/.cursor/mcp.json`, and `service-a/.mcp.json`). This helps agents launched inside a subproject reuse the parent `.memory-center/workspace.yaml` and receive the `mc_*` tools.
+
+如果子项目里仍看不到 `mc_*` 工具，可运行：
+
+```bash
+memory-center runtime-audit --workspace <workspace.yaml> --fix
+```
+
+If a subproject still does not expose `mc_*` tools, run:
+
+```bash
+memory-center runtime-audit --workspace <workspace.yaml> --fix
+```
 
 详见 [docs/MCP_GUIDE.md](./docs/MCP_GUIDE.md)。
 

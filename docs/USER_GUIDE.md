@@ -184,6 +184,14 @@ memory-center detect-changes --workspace /abs/path/.memory-center/workspace.yaml
 memory-center-mcp --workspace /abs/path/.memory-center/workspace.yaml
 ```
 
+`init` / `reindex` 会把 MCP 绑定写到聚合根目录和每个 service 子项目目录的 `.codex/mcp.json`、`.cursor/mcp.json`、`.mcp.json`。如果子项目里看不到 `mc_*` 工具，运行：
+
+`init` / `reindex` writes MCP bindings to the aggregate root and each service root under `.codex/mcp.json`, `.cursor/mcp.json`, and `.mcp.json`. If a subproject does not expose `mc_*` tools, run:
+
+```bash
+memory-center runtime-audit --workspace /abs/path/.memory-center/workspace.yaml --fix
+```
+
 ### HTTP + Workbench
 
 ```bash
