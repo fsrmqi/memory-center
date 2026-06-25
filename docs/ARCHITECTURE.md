@@ -1,73 +1,549 @@
-# Architecture / 架构说明
+# Memory Center 当前系统架构 / Current System Architecture
 
-## Overview / 总览
+> 本文基于当前全量代码实现整理，作为一份独立的系统架构说明。它面向外部评审者、集成方和维护者，说明 Memory Center 的设计目标、核心能力、运行模型、模块边界和数据安全边界。
+>
+> This is a standalone architecture document for the current implementation. It is written for external reviewers, integrators, and maintainers, and describes Memory Center's goals, core capabilities, runtime model, module boundaries, and data-safety boundaries.
 
-Memory Center 是一个面向 AI 编程助手的本地优先项目记忆系统，核心目标是把“代码索引、跨服务关系、任务上下文、经验沉淀、模型交接”收敛到同一个工作区里。
+---
 
-Memory Center is a local-first project memory system for coding agents. It unifies indexing, cross-service relationships, task context, experience memory, and model handoff into one workspace.
+## 目录 / Table of Contents
 
-系统入口统一为三类：
+1. [系统定位 / System Role](#1-系统定位--system-role)
+2. [整体架构 / Overall Architecture](#2-整体架构--overall-architecture)
+3. [顶层数据流 / Top-Level Flow](#3-顶层数据流--top-level-flow)
+4. [Workspace Model / 工作区模型](#4-workspace-model--工作区模型)
+5. [Indexing Layer / 索引层](#5-indexing-layer--索引层)
+6. [Storage Layer / 存储层](#6-storage-layer--存储层)
+7. [Retrieval and Query Layer / 检索与查询层](#7-retrieval-and-query-layer--检索与查询层)
+8. [Orchestrator Layer / 编排层](#8-orchestrator-layer--编排层)
+9. [MCP, CLI, HTTP Adapters / 入口适配层](#9-mcp-cli-http-adapters--入口适配层)
+10. [Task Memory and Artifacts / 任务记忆与工件](#10-task-memory-and-artifacts--任务记忆与工件)
+11. [Freshness, Hooks, and Host Integration / 新鲜度、Hook 与宿主集成](#11-freshness-hooks-and-host-integration--新鲜度hook-与宿主集成)
+12. [Error Model and Dispatch Seams / 错误模型与分发边界](#12-error-model-and-dispatch-seams--错误模型与分发边界)
+13. [Evaluation and Observability / 评测与可观测性](#13-evaluation-and-observability--评测与可观测性)
+14. [Security and Privacy Boundaries / 安全与隐私边界](#14-security-and-privacy-boundaries--安全与隐私边界)
 
-- `memory-center`：CLI
-- `memory-center-mcp`：MCP facade tools
-- `memory-center-http`：本地 HTTP bridge / workbench
+---
 
-## Core Model / 核心模型
+## 1. 系统定位 / System Role
 
-### 1. Workspace / 工作区
+Memory Center 是一个面向 AI 编程助手的本地优先项目记忆与知识图谱系统。它把多仓、多服务、多语言工程里的代码结构、服务关系、配置契约、消息链路、历史任务和团队规则统一沉淀到 `.memory-center/` 工作区，并通过 CLI、MCP、HTTP 和本地 Workbench 暴露给 Codex、Claude Code、Cursor、Copilot、Gemini 等宿主。
 
-每个 workspace 对应一个 `.memory-center/workspace.yaml`，定义：
+Memory Center is a local-first project memory and knowledge graph system for AI coding agents. It turns a multi-repository, multi-service, multi-language workspace into a queryable and traceable local context center.
 
-- root 路径
-- 服务列表
-- 索引输出目录
-- graph / memory / artifacts 存储位置
-- 可选的嵌入与 registry 配置
+### 1.1 为什么需要它 / Why It Exists
 
-### 2. Indexing / 索引层
+大型后端系统里的 AI Agent 通常会遇到四类问题：
 
-索引层负责从代码仓库中提取：
+- **上下文不可持续**：每个会话重新读代码，无法稳定继承历史任务、规则和验证结论。
+- **跨服务影响不可见**：Controller、Feign、MQ、配置、DTO、数据资源之间的影响链依赖人工搜索。
+- **检索不可解释**：纯关键词或语义检索能召回片段，但很难解释“为什么这些文件有关”。
+- **协作不可追溯**：多个模型或多个会话之间缺少统一的任务空间、交接包和证据链。
 
-- 文件索引
-- Java symbol 索引
-- API / Controller 索引
-- OpenFeign 索引
-- MQ / Topic 索引
-- 配置索引
-- 语义索引
+Memory Center 的核心设计是把这些上下文前置为本地可重建的工程资产：索引层提取事实，图谱层表达关系，检索层组合证据，编排层把复杂能力收敛为少量 agent 可调用的任务级接口。
 
-针对 Spring Cloud / Spring Boot 多模块项目，系统会额外识别：
+### 1.2 面向读者 / Intended Readers
 
-- Feign 客户端与下游 endpoint 的关系
-- DTO / 公共契约位置
-- MQ producer / consumer
-- 配置与跨服务调用线索
+本文面向三类读者：
 
-### 3. Graph / 图谱层
+| 读者 | 关注点 | 本文回答的问题 |
+|---|---|---|
+| 外部评审者 / Reviewer | 系统边界、隐私、安全、可解释性 | Memory Center 处理什么数据、写到哪里、如何避免黑盒检索 |
+| 集成方 / Integrator | CLI、MCP、HTTP、Hook 接入 | 如何把它接到不同 AI 编程宿主和本地工作流 |
+| 维护者 / Maintainer | 模块边界、索引链路、存储职责 | 新能力应该放在哪一层，哪些路径是事实源 |
 
-索引结果会转换为节点与边，落到本地 SQLite graph store 中，用于：
+### 1.3 核心能力域 / Capability Domains
 
-- 图感知查询
-- 调用链追踪
-- 影响面分析
-- 上下文拼装
+| 能力域 | 说明 | 关键模块 |
+|---|---|---|
+| Workspace Intelligence | 自动识别服务、语言、项目结构和 workspace shape 风险 | `core/config.py`, `core/workspace_shape.py`, `core/service_kinds.py` |
+| Code and Service Indexing | 提取文件、Java/Spring、Feign、MQ、配置、多语言结构化符号 | `core/indexer.py`, `core/indexing/*` |
+| Knowledge Graph | 将服务、文件、类、方法、Endpoint、Topic、Config、DataResource 转为节点和边 | `core/graph.py`, `core/ontology.py` |
+| Hybrid Retrieval | 融合 exact graph、neighbors、FTS、BM25、semantic、可选 vector | `core/retrieval/*`, `core/semantic.py` |
+| Method Walkthrough | 对 `Class#method` 做本地调用、Feign 续链、服务端 Controller/Impl 展开 | `core/walkthrough/*` |
+| Task Memory | 保存 session、case、task space、handoff、write receipt 和 L3 记忆块 | `core/orchestrator/session.py`, `write.py`, `sync.py` |
+| Agent Facade | 将复杂能力收敛为 `mc_start`、`mc_lookup`、`mc_analyze` 等任务级接口 | `mcp/server.py`, `core/orchestrator/*` |
+| Quality and Governance | freshness、audit、benchmark、parser precision、runtime diagnostics | `core/freshness/*`, `core/benchmark/*`, `core/audit/*` |
 
-图谱是 Memory Center 的结构化骨架；语义检索与规则系统都围绕它补强，而不是替代它。
+### 1.4 部署与运行形态 / Runtime Shape
 
-### 4. Memory / 记忆层
+Memory Center 不要求中心化服务。默认形态是每个 workspace 自带一个 `.memory-center/` 本地目录：
 
-记忆按层组织：
+- **Local CLI**：开发者或脚本直接运行 `memory-center`。
+- **MCP Server**：AI 编程助手通过 `memory-center-mcp` 调用任务级 tools。
+- **HTTP Bridge**：本地 `memory-center-http` 提供 JSON API 和 Workbench。
+- **Host Hooks**：在 SessionStart、PreToolUse、Stop 等生命周期节点自动触发上下文、影响分析和收尾。
 
-- `L0_session_events`：会话事件与过程证据
-- `L1_case_atoms`：经验原子 / case
-- `L2_task_spaces`：任务空间与协作工件
-- `L3_workspace_profile`：工作区长期规则与画像
+这种部署形态的关键收益是：工程事实不需要上传到远程平台，索引和记忆可以随 workspace 一起复制、清理、重建，也可以被人类直接审查。
 
-会话事件、写入回执、handoff、refs 元数据会镜像进入 SQLite `memory.db`，同时继续保留 JSONL / Markdown 作为可读、可追踪的落盘形式。
+核心原则：
 
-### 5. Workflow / 工作流层
+- **Local-first / 本地优先**：业务源码、索引、图谱、记忆和工件都落在本地 workspace。
+- **Graph-first / 图谱优先**：跨服务影响、调用链、契约、配置和消息关系先进入 SQLite graph，再由检索和推理层消费。
+- **Facade-first / 面向 Agent 暴露任务级接口**：MCP 只暴露少量 task-level tools，复杂实现留在 core。
+- **Evidence-first / 证据优先**：回答、handoff、case、ref、audit 都尽量保留来源和可追溯证据。
+- **Compatibility-first / 兼容优先**：MCP tool schema、CLI 命令、HTTP 路径默认保持兼容；新增能力优先 additive。
 
-对模型暴露的是任务级 facade，而不是大量原子工具：
+当前版本的系统入口：
+
+| 入口 | 命令 / 路径 | 代码位置 | 职责 |
+|---|---|---|---|
+| CLI | `memory-center` | `memory_center/cli/main.py` | 初始化、索引、查询、影响分析、任务工作流、评测、hook 生成 |
+| MCP | `memory-center-mcp` | `memory_center/mcp/server.py` | 12 个 task-level tools、resources、prompts、`mc_admin` |
+| HTTP | `memory-center-http` | `memory_center/http/server.py` | JSON API、本地 HTML UI、Vue Workbench `/app` |
+| Hooks | generated host hooks | `memory_center/hooks/` | SessionStart、PreToolUse、Stop 等宿主生命周期集成 |
+
+---
+
+## 2. 整体架构 / Overall Architecture
+
+Memory Center 当前是一个本地文件系统 + SQLite 派生索引驱动的多入口服务。核心代码分为五层：
+
+```text
+┌─────────────────────────────────────────────────────────────┐
+│ Host Agents / 用户入口                                      │
+│ CLI: memory-center   MCP: memory-center-mcp   HTTP: /app    │
+└──────────────────────────────┬──────────────────────────────┘
+                               │
+┌──────────────────────────────▼──────────────────────────────┐
+│ Adapter Layer / 入口适配层                                   │
+│ cli/main.py   mcp/server.py   http/server.py + routes/*      │
+│ 只负责参数绑定、展示、错误边界和公开 schema 兼容              │
+└──────────────────────────────┬──────────────────────────────┘
+                               │
+┌──────────────────────────────▼──────────────────────────────┐
+│ Orchestrator Layer / 业务编排层                              │
+│ start, lookup, analyze, sync, resume, handoff, close, eval   │
+│ 聚合索引、图谱、规则、记忆、freshness 和上下文包              │
+└──────────────────────────────┬──────────────────────────────┘
+                               │
+┌──────────────────────────────▼──────────────────────────────┐
+│ Core Engines / 核心引擎层                                    │
+│ indexer, graph, retrieval, walkthrough, reasoning, audit     │
+│ 负责确定性索引、知识图谱、检索融合、链路展开和质量评测        │
+└──────────────────────────────┬──────────────────────────────┘
+                               │
+┌──────────────────────────────▼──────────────────────────────┐
+│ Local Stores / 本地存储层                                    │
+│ workspace.yaml, index/*.json, graph.db, memory.db, artifacts │
+│ 源码 / YAML / Markdown 是事实源；SQLite 和 JSON index 是派生读路径 │
+└─────────────────────────────────────────────────────────────┘
+```
+
+这五层的职责边界是：
+
+- Adapter 不复制 core 决策；MCP、CLI、HTTP 对同一能力应复用 orchestrator。
+- Orchestrator 负责把 agent 任务语义转换成稳定的核心调用和返回结构。
+- Core engines 负责可验证的工程事实提取、图谱查询、检索融合和推理降级。
+- Stores 分清事实源和派生物：源码、`workspace.yaml`、rules、artifacts 是事实源；`index/*.json`、`graph.db`、`memory.db` 是可重建或可镜像的读路径。
+- Hooks 属于宿主集成层，只在生命周期节点触发已有 facade，不拥有业务状态。
+
+### 2.1 代码目录视图 / Codebase Layout
+
+当前仓库围绕 `memory_center/` Python package 展开，前端 Workbench 和测试分别独立放置：
+
+```text
+memory_center/
+├── cli/                    # memory-center 命令行入口
+├── core/                   # 索引、图谱、检索、记忆、评测、编排等核心逻辑
+│   ├── indexing/           # tree-sitter / regex / 多语言结构化解析
+│   ├── retrieval/          # hybrid retrieval, BM25, policy
+│   ├── walkthrough/        # method walkthrough 全链路展开
+│   ├── orchestrator/       # task-level 业务编排 facade
+│   ├── storage/            # SQLite 连接、PRAGMA、vector/unified store
+│   ├── freshness/          # 索引新鲜度与 workspace shape 状态
+│   ├── benchmark/          # golden、token、parser、Java call resolution 评测
+│   ├── audit/              # completion/runtime audit
+│   ├── context/            # context pack
+│   ├── domain/             # 业务域与业务流抽取
+│   ├── onboarding/         # persona-based onboarding
+│   └── reasoning/          # evidence-bounded reasoning pipeline
+├── mcp/                    # memory-center-mcp facade tools/resources/prompts
+├── http/                   # HTTP bridge, route registry, local UI serving
+├── hooks/                  # Codex / Claude Code / Cursor 等宿主 hook 生成
+└── templates/              # 内置模板与生成内容骨架
+
+web/
+└── src/                    # Vue Workbench 页面、路由、API client 和共享组件
+
+tests/                      # 单元、集成、回归、性能和 public surface 测试
+examples/                   # 可提交的脱敏示例 workspace / cases
+docs/                       # 面向用户和维护者的说明文档
+```
+
+从目录职责看，`core/` 是系统内核，`mcp/`、`cli/`、`http/` 是三种入口适配器，`web/` 是本地可视化工作台。测试覆盖按 public surface 和核心引擎组织，避免把私有 workspace 产物提交进仓库。
+
+### 2.2 架构分层契约 / Layer Contracts
+
+| 层 | 输入 | 输出 | 稳定性要求 |
+|---|---|---|---|
+| Adapter | CLI args、MCP tool params、HTTP query/body | 面向用户或模型的结构化响应 | 公开参数和返回字段默认兼容 |
+| Orchestrator | workspace path、intent、target、budget、view | task-level response、diagnostics、refs | 统一语义，不按入口复制逻辑 |
+| Core Engines | workspace config、index、graph、memory records | facts、relations、ranked evidence、reports | 失败可降级，但必须暴露原因 |
+| Store | YAML、JSON、JSONL、Markdown、SQLite | 可读事实源和可重建派生索引 | 路径职责清晰，写入可追溯 |
+| Host Integration | hook event、model/session context | start/analyze/close/handoff actions | 不拥有业务状态，不绕过 facade |
+
+---
+
+## 3. 顶层数据流 / Top-Level Flow
+
+Memory Center 的数据流分为四个阶段：索引期建立工程事实，任务期提供上下文和影响分析，写入期沉淀任务证据，恢复/交接期把历史上下文重新组织给模型。
+
+```text
+workspace.yaml
+  + source repositories
+  + rules / glossary / templates
+       │
+       ▼
+  reindex_workspace()
+       │
+       ├─> index/*.json
+       ├─> graph/graph.db
+       ├─> semantic-node-index.json
+       ├─> SQLite BM25 inverted index
+       └─> optional VectorIndex
+
+Agent task
+       │
+       ├─> mc_start / workspace_sniff
+       ├─> mc_lookup / mc_context_pack / mc_analyze
+       ├─> mc_sync / artifacts / task space
+       ├─> mc_resume / mc_handoff
+       └─> mc_close / case / feedback learning
+```
+
+### 3.1 索引期 / Index-Time Flow
+
+索引期的目标是把源码和配置转换成可解释、可重建的工程事实：
+
+| 输入 | 处理 | 输出 |
+|---|---|---|
+| `workspace.yaml` | 解析 workspace root、services、service kind、language override | 标准化 `WorkspaceConfig` |
+| 服务源码 | 文件扫描、Java/Spring 解析、多语言结构化解析 | `file-index.json`, `java-symbol-index.json` |
+| Spring annotations | Controller、Feign、MQ、配置、数据资源提取 | `api-index.json`, `feign-index.json`, `mq-index.json`, `config-index.json` |
+| 符号与关系 | graph node/edge 构建、call resolution、partial rebuild | `graph/graph.db`, `graph-summary.json` |
+| 文本与节点摘要 | sparse semantic、BM25、可选 dense vector | `semantic-node-index.json`, inverted index, vector index |
+
+索引产物都是本地文件或 SQLite 数据库。它们服务于查询性能和可解释性，但不是不可替代的事实源；当源码、规则或 workspace 配置变化后，可以重新生成。
+
+### 3.2 任务期 / Task-Time Flow
+
+任务期面向 AI Agent 暴露少量稳定动作：
+
+| Agent 需求 | 推荐入口 | 系统行为 |
+|---|---|---|
+| 开始理解任务 | `mc_start` | 嗅探 workspace、当前 intent、freshness、规则和推荐工作流 |
+| 查询符号或背景 | `mc_lookup(mode="auto")` | 根据 intent 自动选择 graph、BM25、semantic、walkthrough 等检索路径 |
+| 修改前看影响面 | `mc_analyze` | 汇总 contracts、跨服务关系、规则风险、验证建议 |
+| 需要紧凑上下文 | `mc_context_pack` | 生成带证据、风险和 checklist 的上下文包 |
+| 理解业务域 | `mc_domain` | 从图谱提取业务域、业务流和影响关系 |
+| 新人导览 | `mc_onboard` | 按 developer / architect / product / tester persona 生成导览 |
+
+### 3.3 写入与沉淀 / Write and Memory Flow
+
+Memory Center 不把模型临时输出直接当成长期知识。写入链路会区分 session event、task artifact、case atom 和 workspace profile：
+
+- Session event 记录原始过程证据，较大 payload 通过 refs offload。
+- Task artifact 保存当前任务的 context、requirement、design、plan、test-plan、change-log、current-summary。
+- Case atom 只记录经过验证、可复用的经验。
+- L3 memory block 保存跨任务稳定规则和工作区画像。
+
+核心任务工件默认 append-only 或 guarded append，避免模型覆盖已有协作上下文。
+
+### 3.4 恢复与交接 / Resume and Handoff Flow
+
+当任务跨会话、跨模型或跨 Agent 继续执行时，系统通过 `mc_resume` 和 `mc_handoff` 重新组织上下文：
+
+- 从 recent sessions、task space、case、refs、graph facts 中抽取证据。
+- 根据目标模型和 token budget 生成 compact 或 full 输出。
+- 保留 next actions、risks、read targets、validation status 和已知约束。
+- 对无法内联的大对象返回 ref，按需 drill-down。
+
+几个关键边界：
+
+- `workspace.yaml`、rules YAML、业务源码和 Markdown artifacts 是可读事实源。
+- `.memory-center/index/*.json` 是可读的确定性索引落盘，并镜像到 `memory.db.index_mirror`。
+- `.memory-center/graph/graph.db` 是派生知识图谱、FTS、BM25、vector fallback 等图向能力的主读后端。
+- `.memory-center/memory/memory.db` 是 memory / JSONL / refs / index mirror 的 SQLite 镜像和高频聚合查询后端，不是唯一事实源。
+- `.memory-center/artifacts/**/*.md` 是任务空间、计划、设计、变更记录和 L3 记忆块的人类可读事实源。
+
+---
+
+## 4. Workspace Model / 工作区模型
+
+每个 Memory Center workspace 以 `.memory-center/workspace.yaml` 为根配置。当前 `WorkspaceConfig` 和 `ServiceConfig` 支持：
+
+- `root`：workspace 根目录；相对路径按 `workspace.yaml` 所在目录解析。
+- `services[]`：服务列表。
+- `services[].path`：支持相对路径和绝对路径。
+- `services[].type`：通过 `service_kinds.py` 映射到语言、构建标记和 Spring-aware 行为。
+- `services[].language`：可覆盖 service kind 推断语言。
+- `services[].service_name`、`port`、`tags`：用于 Spring Cloud、契约和规则匹配。
+
+初始化路径：
+
+- `memory-center init --detect` 默认扫描 immediate child directories，识别 Spring、generic JVM、Python、Node/TypeScript、Go、Rust 等项目。
+- `--no-detect` 保留历史 Spring Cloud 模板，兼容旧教程和脚本。
+- 已存在的 `workspace.yaml` 不会被自动覆盖。
+
+工作区结构：
+
+```text
+.memory-center/
+├── workspace.yaml
+├── index/                  # deterministic JSON indexes
+├── graph/graph.db          # graph, FTS, BM25, vector fallback
+├── memory/                 # JSONL records, refs, memory.db
+├── artifacts/              # shared/task Markdown artifacts and L3 blocks
+├── rules/                  # matching/eval/handoff/write-policy rules
+├── instructions/           # generated agent instructions
+├── hooks.yaml              # host hook config
+└── store.lock              # file-level write lock
+```
+
+Workspace shape analysis lives in `memory_center/core/workspace_shape.py`。它会检测 duplicate roots、nested roots，并给出收窄 service path 的建议；`IndexFreshnessService.banner()` 会把 workspace shape warnings 合并进 freshness banner。
+
+---
+
+## 5. Indexing Layer / 索引层
+
+索引主入口是 `memory_center/core/indexer.py::reindex_workspace()`。它支持全量和按 project/path 的部分重建，默认并行解析 Java 文件。
+
+### 5.1 确定性索引产物
+
+`reindex_workspace()` 生成并写入：
+
+- `file-index.json`：服务、逻辑路径、绝对路径、后缀。
+- `java-symbol-index.json`：Java package、class/interface/method/field/import、方法签名、注解、常量、调用证据、配置使用、数据资源。
+- `api-index.json`：Spring MVC Controller endpoint。
+- `feign-index.json`：OpenFeign client、target service、method mapping。
+- `mq-index.json`：Kafka / RocketMQ consumer 和 producer。
+- `config-index.json`：`application.yml` / `bootstrap.yml` 等配置键。
+- `service-topology.json`：服务、Feign、MQ、配置拓扑摘要。
+- `graph-summary.json`：graph 计数、parser diagnostics、parser precision。
+- `semantic-node-index.json`：稀疏语义索引和可选 dense vectors。
+
+写入通过 `WorkspaceStore.write_json()` 完成：先写 `index/*.json`，再 best-effort 镜像到 `memory.db.index_mirror`。
+
+### 5.2 Java / Spring 深度解析
+
+Java 解析是 Spring-aware 主路径：
+
+- 优先使用 `TreeSitterJavaParser`，保留 regex fallback，并返回 fallback reason / disagreement diagnostics。
+- `RegexJavaParser` 仍是稳定兼容路径，提取 Spring 注解、方法、字段、imports、bean injection、method calls、DTO field usage、config usage、Mongo / Elasticsearch resource hints。
+- `JavaCallResolver` 构建全工程 `JavaClassIndex`，把 `method_calls` 解析为带置信度的 `CALLS_METHOD` 边。
+- Feign 与 API 匹配使用索引 lookup，避免大仓内线性扫描。
+
+当前 Java call resolution levels：
+
+| level | confidence | 含义 |
+|---|---:|---|
+| `same_class` | 1.0 | `this.foo()`、`super.foo()`、裸调用或 owner class 内方法 |
+| `same_package` | 0.9 | receiver type 在同 package 内匹配 |
+| `import` / `static_import` | 0.85 | 显式 import 或 static import 匹配 |
+| `wildcard_import` / `static_wildcard_import` | 0.6 | wildcard import 匹配 |
+| `unresolved` | 0.3 | 保留调用证据，但不绑定到随机同名方法 |
+
+默认 caller/callee 查询优先使用高置信边；高置信为空但低置信存在时会标注 fallback。
+
+### 5.3 多语言结构化索引
+
+多语言路径位于 `memory_center/core/indexing/`：
+
+- `language_registry.py`：注册 Java、Kotlin、Python、TypeScript、TSX、JavaScript、Go 等语言与 tree-sitter binding。
+- `structural_parser.py`：按语言 AST walker 输出 `StructuralParseResult`。
+- `parse_result.py`：跨语言通用实体：module、import、class、function、call、constant。
+- `multilang_indexer.py`：把非 Java 文件转换成 `Module` / `Class` / `Function` 节点和 `DEFINES` / `IMPORTS` / `CALLS` 边。
+
+Java 仍保留 Spring-aware 专用解析；多语言 structural pass 避免重复索引 `.java`。
+
+### 5.4 Graph 构建
+
+`build_graph_store()` 把索引结果转换成 `GraphNode` / `GraphEdge` 写入 `graph.db`。核心节点包括：
+
+- `Service`
+- `File`
+- `Class`
+- `Method`
+- `Field`
+- `Endpoint`
+- `FeignClient`
+- `FeignMethod`
+- `MQTopic`
+- `MQConsumer` / `MQProducer`
+- `ConfigKey`
+- `DataResource`
+- `Module`
+- `Function`
+
+核心边包括：
+
+- `CONTAINS`
+- `DECLARES`
+- `EXPOSES_ENDPOINT`
+- `HANDLES_ENDPOINT`
+- `CALLS_SERVICE`
+- `IMPLEMENTS_FEIGN`
+- `CONSUMES_TOPIC`
+- `PRODUCES_TOPIC`
+- `INJECTS_BEAN`
+- `CALLS_METHOD`
+- `READS_FIELD`
+- `READS_CONFIG`
+- `USES_DATA_RESOURCE`
+- `DEFINES`
+- `IMPORTS`
+- `CALLS`
+
+`GraphStore` 提供节点/边写入、FTS5 搜索、LIKE fallback、BFS neighbors、partial rebuild。全量 rebuild 使用 `executemany` 和 `fast_write_mode()`；部分 rebuild 会按 project/path 删除并 upsert scope 内节点边。
+
+---
+
+## 6. Storage Layer / 存储层
+
+Memory Center 当前有三类存储角色。
+
+### 6.1 File-backed WorkspaceStore
+
+`WorkspaceStore` 负责 `.memory-center` 目录下的文件读写：
+
+- JSON index：`index/*.json`
+- JSONL memory：`memory/*.jsonl`
+- refs：`memory/refs/**/*.json`
+- artifacts：`artifacts/**/*.md`
+- graph path / memory path 解析
+- 文件锁：`store.lock`
+
+`read_json_prefer_backend()` 当前 hot path 以文件为事实源，文件缺失或损坏时回退 backend。`read_json_observed()` / `read_jsonl_observed()` 用于一致性诊断，返回 source、fallback reason、consistency status。
+
+### 6.2 MemoryBackendStore
+
+`memory_center/core/memory_backend.py` 管理 `.memory-center/memory/memory.db`，是 JSONL、refs、index mirror 的轻量 SQLite 镜像。它服务于：
+
+- recent sessions / session summary
+- timeline / drill-down
+- write receipts
+- backend query
+- 聚合 dashboard / eval
+
+它不替代 Markdown artifacts、workspace YAML、rules YAML 或业务源码。
+
+### 6.3 GraphStore / UnifiedStore
+
+`GraphStore` 管理 graph-native 查询主路径。`UnifiedStore` 提供带连接池的 SQLite schema，用于 graph / memory / vector / inverted-index 相关模块复用。实际维护时必须区分：
+
+- `WorkspaceStore.graph_db_path`：传给 `GraphStore`、graph-oriented `UnifiedStore`、VectorIndex、InvertedIndex。
+- `WorkspaceStore.memory_db_path`：传给 `MemoryBackendStore`、`UnifiedBackendQuery`。
+
+不要把 `workspace.yaml` 直接传给 SQLite store，也不要把 `memory.db` 和 `graph.db` 混用。
+
+所有 SQLite 连接通过 `storage/pragmas.py` 应用统一 PRAGMA：WAL、`synchronous=NORMAL`、大 cache、`temp_store=MEMORY`、mmap、foreign keys。全量重建可临时进入 `synchronous=OFF` 的 fast write mode。
+
+---
+
+## 7. Retrieval and Query Layer / 检索与查询层
+
+公共查询入口在 `memory_center/core/orchestrator/query.py`，MCP/CLI/HTTP 都通过它或其 wrapper 调用。
+
+### 7.1 Hybrid Retrieval
+
+`memory_center/core/retrieval/hybrid.py` 负责融合：
+
+- exact graph lookup
+- graph neighbors
+- FTS / sparse keyword
+- SQLite BM25 inverted index
+- sparse semantic index
+- optional dense vector ANN
+
+`retrieval/policy.py` 根据 query intent、freshness、learned weights 生成确定性 `RetrievalPolicy`：
+
+- full-chain / walkthrough：exact + graph 是硬约束，深度更大，候选更窄。
+- chain：exact + graph + 可选 BM25 / sparse / semantic。
+- structured entity：class / method / Feign / MQ / endpoint / config 使用类型加权。
+- general：多源融合，vector 仍默认关闭。
+
+禁用或不可用的 source 会进入 `retrieval_diagnostics`，不静默伪装成功。
+
+### 7.2 Semantic / BM25 / Vector
+
+`semantic.py` 构建 `semantic-node-index.json`：
+
+- 默认 backend 是 `sparse`。
+- 设置 `MEMORY_CENTER_SEMANTIC_BACKEND=sentence-transformers` 后，可对 selective candidate 生成 dense vectors。
+- `MEMORY_CENTER_VECTOR_SCOPE=off|selective|all` 控制 dense candidate 范围。
+- `semantic_index_stats()` 返回 `vector_status`、candidate count、dense count 和 disabled reason。
+
+`retrieval/inverted.py` 将 graph nodes 写入 SQLite BM25 posting lists。`storage/vector_index.py` 支持 sqlite-vec（如果可用）和 brute-force fallback。
+
+### 7.3 Method Walkthrough
+
+全链路方法报告由 `memory_center/core/walkthrough/` 承载，公共入口仍在 `orchestrator/query.py`：
+
+- `runner.py`：端到端组装。
+- `symbols.py`：符号解析、Impl 查找、绝对路径、Java 方法体提取。
+- `continuations.py`：本地调用、Feign 续链、服务端 Controller / Impl 续链、同类方法续链。
+- `risks.py`：性能风险、数据范围保护、diff context、freshness、Mermaid。
+- `answer.py`：summary lines、read targets、agent policy、anti-patterns、Markdown 报告。
+- `cache.py`：短期进程内缓存。
+- `operations.py`：health、quality eval、artifact export。
+
+`mc_lookup(mode="auto")` 遇到 `Class#method` 且用户表达“全链路/到底层/full chain”时，会优先路由到 walkthrough。walkthrough 顶层返回 `answer`、`summary_lines`、`read_targets`、`completion_status`、`index_freshness`、`agent_usage_policy` 等字段，宿主不需要解析本地 tool-result 文件。
+
+### 7.4 Context Pack / Onboarding / Domain
+
+V3 task tools 直接面向 agent 减少 grep/read：
+
+- `ContextPackBuilder`：聚合 entrypoints、relationships、snippets、risks、checklist、freshness。
+- `onboarding/*`：按 persona 生成架构导览、glossary、tour。
+- `domain/*`：从图谱抽取业务域、业务流和业务影响。
+
+### 7.5 Reasoning Pipeline
+
+`ReasoningPipeline` 是 evidence-bounded 推理编排层。它不会替代图谱事实，而是把三类结果整理到稳定字段：
+
+- `facts`：目标节点和直接关系。
+- `inferences`：风险模式、结构模式。
+- `derived`：有界传递推理。
+- `quality`：证据数、截断状态、是否需要验证。
+
+底层引擎：
+
+- `GraphPatternEngine`
+- `RiskPatternEngine`
+- `TransitiveInferenceEngine`
+
+单个引擎失败会以 diagnostics 形式降级，不丢弃其他健康证据。
+
+---
+
+## 8. Orchestrator Layer / 编排层
+
+`memory_center/core/orchestrator/` 是核心业务编排层。入口层不应重复业务逻辑，而应调用这里的函数。
+
+| 模块 | 主要职责 |
+|---|---|
+| `common.py` | 上下文加载、token/budget、ref offload、排序、共享常量 |
+| `compact.py` | compact/full 输出裁剪 |
+| `workspace.py` | status、sniff、trace、lookup hint、dashboard、规则/契约检查 |
+| `query.py` | query、symbol、code search、callers/callees、context、contracts、walkthrough |
+| `impact.py` | detect changes、impact、plan change、verification checklist |
+| `session.py` | session start/log/end、recent sessions/evidence、case suggestion、close feedback |
+| `resume.py` | resume packet、handoff packet/history、model profile、next actions |
+| `sync.py` | sniff/case 同步到 artifacts/task space |
+| `write.py` | memory write judge/plan/execute、case record、write receipts、replay |
+| `group.py` | registry/group 跨 workspace 查询、影响、链路 |
+| `eval.py` | write/resume/handoff/regression/token/parser/java-call/golden 等评测 |
+
+`orchestrator/__init__.py` 重新导出公共函数，保持旧导入路径兼容。
+
+---
+
+## 9. MCP, CLI, HTTP Adapters / 入口适配层
+
+### 9.1 MCP Facade
+
+MCP 当前公开 12 个 task-level tools：
 
 - `mc_start`
 - `mc_lookup`
@@ -77,461 +553,150 @@ Memory Center is a local-first project memory system for coding agents. It unifi
 - `mc_handoff`
 - `mc_close`
 - `mc_admin`
+- `mc_context_pack`
+- `mc_onboard`
+- `mc_domain`
+- `mc_freshness`
 
-CLI / HTTP 仍保留细粒度原子操作，但 MCP 默认以 facade 为公开面，降低模型选择成本与 token 开销。
+设计意图：模型看到的是任务级接口，不是几十个内部原子工具。`mc_admin` 的 action table 在 `memory_center/mcp/admin_actions.py`，通过 `CommandRegistry` 分发。
 
-## Data Flow / 数据流
+MCP 还暴露 resources：
 
-典型链路如下：
+- `memory-center://status`
+- `memory-center://contracts`
+- `memory-center://topology`
 
-1. `reindex` 构建索引、graph、semantic 数据
-2. `mc_start` 或 `workspace_sniff` 获取当前任务上下文
-3. `mc_lookup` / `mc_analyze` 做检索、影响分析、规则检查
-4. `work-*` 或 `mc_sync` 将过程同步到 task space / memory
-5. `mc_resume` / `mc_handoff` 为恢复或跨模型交接提供轻量上下文
-6. `mc_close` 做会话收尾、case 同步与经验沉淀
+以及 prompts：impact、Spring Cloud safe change、onboarding、MQ safety、DTO impact、cross-service trace、freshness、domain overview、diff impact 等。
 
-## Token Strategy / Token 策略
+### 9.2 CLI
 
-系统默认按“轻量优先、细节按需展开”设计：
+CLI 命令集中在 `memory_center/cli/main.py`，覆盖：
 
-- `view=compact|full`
-- `budget=small|medium|large`
-- short refs：`ref_id + summary`
-- `memory_ref_get / memory_ref_batch` 按需展开
-- top-K evidence 策略
-- token gain / token benchmark 评测
+- workspace init / service maintenance
+- reindex / status / sniff / trace
+- query / search-code / symbol / callers / callees / walkthrough
+- impact / contracts / plan / checklist
+- memory write pipeline
+- eval / benchmark / parser / golden / java call resolution
+- session / work-* / handoff / dashboard
+- HTTP serving / hook generation / runtime audit / business flow / metrics
 
-## Unified Backend / 统一后端
+CLI 是维护者和本地脚本最完整的操作面，但核心语义应复用 orchestrator。
 
-`memory.db` 当前承担的是“镜像 + 高频读路径优先查询”的角色，而不是唯一事实源。
+### 9.3 HTTP Bridge and Workbench
 
-当前已经优先走 SQLite / backend 的典型高频路径包括：
+HTTP server 使用标准库 `ThreadingHTTPServer`，不是 FastAPI。它提供：
 
-- timeline
-- recent sessions / session summary
-- write receipts
-- 部分 query / resume / dashboard / eval 相关读取
+- `/health`
+- `/workspace/*` JSON routes
+- `/group/*` JSON routes
+- `/ui/*` HTML exporters
+- `/app` Vue SPA 静态托管
 
-其余路径仍允许 fallback 到 JSONL / Markdown，这样可以兼顾稳定性和渐进演进。
+路由表在 `memory_center/http/routes/`，由 `route_dispatch.py` 组合：
 
-完整读取路径、事实源、已知分叉和迁移顺序见：
+- `workspace.py`
+- `workflow.py`
+- `analysis.py`
 
-- [UNIFIED_BACKEND_READ_PATHS.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/UNIFIED_BACKEND_READ_PATHS.md)
+每个 route family 注册到共享 `CommandRegistry`。请求参数由 `RouteParams` 适配，避免在 server 中堆 if-chain。
 
-需要特别区分：
+Vue Workbench 位于 `web/src/`，主要页面包括 dashboard、query、impact、group、timeline、receipts、freshness、audit、health、onboard、flow、metrics、verification 等。
 
-- `memory.db`：memory、index、ref 镜像与聚合查询。
-- `graph.db`：派生知识图谱和 graph-oriented retrieval/reasoning 主读后端。
+---
 
-统一后端已提供 observable dual-read：`read_json_observed()` / `read_jsonl_observed()` 返回来源、fallback reason 和一致性状态；兼容入口仍只返回原始 value。
+## 10. Task Memory and Artifacts / 任务记忆与工件
 
-## Hooks / 宿主 Hook
+Memory Center 的记忆模型分为四层：
 
-Hook 层属于宿主集成，不是核心业务层。推荐自动执行的只有三类生命周期事件：
+| 层 | 位置 | 内容 |
+|---|---|---|
+| L0 session events | `memory/session-events.jsonl`、refs | 原始 prompt/tool/result/note、较大 payload 引用 |
+| L1 case atoms | `memory/cases.jsonl` | 已验证可复用经验 |
+| L2 task spaces | `artifacts/tasks/<task_id>/` | context、plan、design、change-log、current-summary 等任务协作工件 |
+| L3 workspace profile | `artifacts/memory-blocks/` | workspace-profile、team-rules、architecture-invariants、active-migration-policy |
+
+核心工件默认 append-only 或 guarded append，避免模型整篇覆盖上下文。写入链路包括：
+
+- `memory_write_judge`
+- `memory_plan_write`
+- `memory_execute_write`
+- `workspace_write_receipts`
+- `workspace_replay_write_chain`
+
+`mc_close` 会结束 session、同步 case 到 artifacts、生成 suggested case，并在可推断时写回 candidate path feedback，用于后续推荐权重学习。
+
+---
+
+## 11. Freshness, Hooks, and Host Integration / 新鲜度、Hook 与宿主集成
+
+`IndexFreshnessService` 通过 graph/index 时间和 workspace shape 生成 freshness banner。`mc_start`、hybrid retrieval、context pack、walkthrough 等主链路会暴露 freshness 相关信息，提醒 agent 在 stale/pending 时读取 live file 或 reindex。
+
+Hook 层在 `memory_center/hooks/`，属于宿主集成，不是核心业务层。默认建议：
 
 - `SessionStart -> mc_start`
 - `PreToolUse(Edit|Write) -> mc_analyze`
 - `Stop -> mc_close`
 
-`UserPromptSubmit` 默认不建议作为宿主 Hook 开启，因为它容易打断普通自然语言操作。
+`UserPromptSubmit` 默认不启用；它容易打断普通自然语言输入。Claude Code、Codex、Cursor adapter 分别生成适配各宿主的 hook/规则文件。
 
-## Recommended Reading / 推荐阅读
+---
 
-- [USER_GUIDE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/USER_GUIDE.md)
-- [MCP_GUIDE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/MCP_GUIDE.md)
-- [SPECS.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/SPECS.md)
-- [REFERENCE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/REFERENCE.md)
-- [ROADMAP.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/ROADMAP.md)
-- [TECHNICAL_GUIDE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/TECHNICAL_GUIDE.md)
+## 12. Error Model and Dispatch Seams / 错误模型与分发边界
 
-## Implemented Capabilities (3.x / V3 Foundation) / 已实现能力（3.x / V3 基础版）
+统一错误模型在 `core/errors.py`。CLI、MCP、HTTP 入口应捕获核心异常并返回结构化错误：
 
-以下模块是当前系统里已经存在的能力，用于说明“已经落地了什么”，而不是表示这些仍然是待做事项：
+| Error Type | HTTP | 含义 |
+|---|---:|---|
+| `invalid_input` | 400 | 参数缺失、格式错误或不支持的操作 |
+| `not_found` | 404 | workspace、route 或资源不存在 |
+| `unavailable` | 503 | backend、连接或能力暂时不可用 |
+| `conflict` | 409 | 与当前状态冲突 |
+| `internal_error` | 500 | 未预期内部错误 |
 
-### Hybrid Retrieval Engine / 混合检索引擎
+`core/dispatch.py::CommandRegistry` 是小而深的分发 seam：
 
-**位置**: `memory_center/core/retrieval/hybrid.py`, `memory_center/core/retrieval/policy.py`
+- MCP `mc_admin` action table 使用它。
+- HTTP route registry 使用它。
+- CLI walkthrough 命令组使用它。
 
-**职责**: 智能路由 graph、FTS、SQLite BM25、semantic 和可选 vector 检索源，提供更稳定的召回效果。
+它只负责注册、列出和分发 handler；参数绑定仍由 adapter 自己负责，以保持 public schema / path / command 兼容。
 
-**核心组件**:
-- `HybridRetrievalConfig`: 检索配置（权重、阈值、特性开关）
-- `RetrievalResult`: 统一检索结果（带来源追踪）
-- `RetrievalPolicy`: 不可变的自适应执行计划（sources、图深度、候选与证据预算）
-- `detect_query_intent()`: 查询意图自动检测
-- `select_retrieval_policy()`: 根据 intent、freshness 和有界学习权重生成确定性策略
-- `hybrid_retrieve()`: 主检索入口
+---
 
-`memory_query_hybrid()` 在进入 hybrid source 执行前还会处理一个高优先级路由：当自然语言中包含 `Class#method` 且意图明确为“全链路/到底层”时，core query 入口直接复用 method walkthrough，避免低信号 token 排序把入口方法挤出结果。
+## 13. Evaluation and Observability / 评测与可观测性
 
-Before running hybrid sources, `memory_query_hybrid()` has one high-priority route: natural-language `Class#method` full-chain requests are delegated to method walkthrough, preventing low-signal token ranking from hiding the entry method.
+评测与质量模块用于防止“看起来有结果但不可用”：
 
-**检索策略**:
-- Graph 检索: 结构化关系（callers, callees, chains）
-- Sparse/FTS 检索: 精确匹配和关键词查找
-- SQLite BM25: reindex 后自动重建的倒排候选检索
-- Semantic 检索: 模糊/概念匹配
-- Vector ANN: 当 semantic index 存在 dense vectors 时同步到 `VectorIndex`，默认关闭、按需启用
-- 基于意图的类型加权（feign/mq/endpoint/config/chain/class/method）
-- 全链路查询采用 deep-but-narrow 策略：exact + graph 为硬约束，图深度至少 4，入口和图邻居优先进入有界证据集
+- `benchmark/golden.py`：Golden Benchmark，case 使用逻辑锚点，禁止私有路径。
+- `benchmark/java_call_resolution.py`：Java `CALLS_METHOD` 解析精度门禁。
+- `benchmark/trending.py`：token benchmark trend 和回归告警。
+- `parser_precision.py` 与 parser diagnostics：tree-sitter / regex fallback、critical disagreement。
+- `audit/completion.py`：完成审计、设计决策、健康评分。
+- `audit/runtime.py`：Agent runtime audit。
+- `verification/*`：verification loop、pattern promotion、heuristics、workflow profile、agent bundle。
+- `metrics.py`：workspace metrics summary。
+- `observability.py`：操作观测装饰器。
 
-策略在 source 执行前生效，未选中的 source 不会产生查询成本。学习权重按 intent/source 隔离并限制在 `[0.35, 0.75]`，不能移除 exact/graph 硬约束。`HybridRetrievalConfig.enable_sparse_bm25` 默认开启；`enable_vector` 默认关闭。禁用或不可用的检索源会在 `retrieval_diagnostics` 中返回明确状态，不静默伪装成功。
+公开 examples 适合 CI、smoke 和文档模板；真实大仓验收必须使用用户提供的本地 workspace/cases，并且不得提交私有 index/memory 产物。
 
-### Benchmark Trending / 基准趋势
+---
 
-**位置**: `memory_center/core/benchmark/trending.py`
+## 14. Security and Privacy Boundaries / 安全与隐私边界
 
-**职责**: 长期监控 token 使用，检测回归问题。
+Memory Center 默认不改业务源码。写入范围主要限于：
 
-**核心组件**:
-- `record_benchmark_baseline()`: 记录基准线
-- `record_benchmark_trend()`: 记录趋势点
-- `get_benchmark_trends()`: 获取趋势分析
-- `generate_benchmark_report()`: 生成综合报告
+- `.memory-center/index`
+- `.memory-center/graph`
+- `.memory-center/memory`
+- `.memory-center/artifacts`
+- `.memory-center/rules`
+- `.memory-center/instructions`
+- host hook / rule 配置文件
 
-**特性**:
-- 自动回归检测（近期 vs 历史对比）
-- 健康评分和建议
-- 按函数/budget 维度分析
+维护时必须遵守：
 
-### Unified Backend Query / 统一后端查询
-
-**位置**: `memory_center/core/backend/query.py`
-
-**职责**: 统一 SQLite 读取路径，减少分叉读取。
-
-**核心组件**:
-- `UnifiedBackendQuery`: 统一查询类
-
-**查询能力**:
-- 索引查询: `read_index()`, `read_index_list()`, `read_index_dict()`
-- 记录查询: `query_records()`, `query_session_events()`, `query_write_receipts()`
-- 聚合查询: `aggregate_by_session()`, `aggregate_by_project()`
-- 健康检查: `check_health()`
-
-### Drill-Down Navigation / 钻取导航
-
-**位置**: `memory_center/core/navigation/drilldown.py`
-
-**职责**: 增强 timeline/ref/task 的导航和钻取体验。
-
-**核心组件**:
-- `DrillDownNavigator`: 钻取导航器
-
-**功能**:
-- 渐进式 ref 展开（Level 1 摘要 → Level 2 详情 → Level 3 相关项）
-- 时间线钻取: `drill_timeline()`
-- 任务钻取: `drill_task()`
-- 切换上下文: `build_handoff_context()`
-- Facade 摘要: `build_facade_summary()`
-
-### Walkthrough Readable Report / 全链路可读报告
-
-Method walkthrough 的结构化字段仍完整保留在顶层返回中；默认 Markdown 只负责“详细但有阅读顺序”的人类视图。标准报告按快速结论、主链路、分层详情、证据文件、风险与数据范围组织：主链路使用 `[F1]` 这类证据文件编号减少长路径噪音，证据文件区集中保留完整路径；性能风险按 code 聚合，Mermaid 只绘制主调用链。
-
-Method walkthrough keeps complete structured fields at the top level. The default Markdown is a human-readable view: quick conclusion, main chain, layered details, evidence files, and risks/scope guards. Long paths are referenced by numbered file IDs in the main chain, full paths remain in evidence files, performance risks are grouped by code, and Mermaid focuses on the main call chain.
-
-### Walkthrough Completion Status / 全链路完成状态
-
-**位置**: `memory_center/core/completion.py`
-
-Method walkthrough 生成后会附加 `completion_status`，这是 additive 字段，不改变 MCP 参数或旧字段语义。状态包含 `state`、`terminal_anchor`、`missing_layers`、`stop_reason` 和 `recommended_action`：完整链路返回 `complete/use_current_evidence`，索引过期返回 `stale/live_read_or_reindex`，证据缺层返回 `partial/fill_missing_layers`，无有效层返回 `blocked/targeted_lookup_or_reindex`。
-
-After a method walkthrough is assembled, Memory Center attaches `completion_status` as an additive field. The field gives agents a stable stop/continue signal without changing existing MCP schemas: use current evidence when complete, live-read or reindex when stale, and fill listed missing layers when partial.
-
-### Completion Audit / 完成审计
-
-**位置**: `memory_center/core/audit/completion.py`
-
-**职责**: 文档对齐检查、设计决策记录、健康评估。
-
-**核心组件**:
-- `run_completion_audit()`: 运行完成审计
-- `record_design_decision()`: 记录设计决策
-- `get_design_decisions()`: 查询设计决策
-- `generate_audit_report()`: 生成综合报告
-
-**审计维度**:
-- 文档检查: 关键文档存在性（自适应，不硬编码特定文件名）、SPECIAL_NOTES 完整性
-- 测试检查: 多语言测试文件检测（Python/Java/JS/TS/Go/Rust）、多框架配置（pytest/Maven Surefire/Gradle JUnit/package.json/Cargo.toml）
-- 实现检查: 模块完整性
-- 设计一致性: 冲突决策检测
-- 评分一致性: 审计分数与健康分数使用统一权重
-
-## Module Architecture / 模块架构
-
-### Python 后端 / Python Backend
-
-```
-memory_center/core/
-├── retrieval/           # 混合检索（Phase A）
-│   ├── __init__.py
-│   └── hybrid.py
-├── walkthrough/         # 方法全链路报告支持模块
-│   ├── __init__.py
-│   ├── artifact.py      # Markdown artifact 渲染
-│   ├── cache.py         # 短期进程内缓存适配器
-│   ├── quality.py       # agent-ready 质量评分
-│   ├── symbols.py       # 符号 / Impl / abs path / Java 方法体提取
-│   ├── continuations.py # local steps、Feign / 服务端 Impl / 同类续链
-│   ├── risks.py         # 性能风险、scope guard、freshness、diff、Mermaid
-│   ├── answer.py        # 模板、summary lines、compact view、agent policy
-│   ├── escalation.py    # workspace 输入解析 / 父级覆盖 / quality score
-│   ├── operations.py    # health / quality / export 编排
-│   └── runner.py        # build_walkthrough_result 端到端组装入口
-├── benchmark/           # 基准趋势（Phase B）
-│   ├── __init__.py
-│   └── trending.py
-├── reasoning/           # 证据预算化推理主链路
-│   ├── models.py        # ReasoningRequest
-│   ├── pipeline.py      # fact / inferred / derived 编排、预算、去重与降级
-│   ├── patterns.py      # workspace 级结构模式
-│   ├── transitive.py    # 有界分层传递推理
-│   ├── risk.py          # 目标级风险模式
-│   └── integration.py   # legacy groups 与 facade 兼容适配
-├── backend/             # 统一后端（Phase C）
-│   ├── __init__.py
-│   └── query.py
-├── navigation/          # 钻取导航（Phase D）
-│   ├── __init__.py
-│   └── drilldown.py
-├── audit/               # 完成审计（Phase E）
-│   ├── __init__.py
-│   └── completion.py
-├── graph.py             # 图存储
-├── dispatch.py          # MCP / HTTP / CLI 共享命令分发 seam
-├── semantic.py          # 语义索引
-├── store.py             # 工作区存储
-├── memory_backend.py    # SQLite 后端
-└── orchestrator/        # 编排层
-    ├── query.py         # 查询编排（已集成 hybrid retrieval；walkthrough 通过子模块承载渲染/缓存/评分）
-    └── ...
-```
-
-### Reasoning Pipeline / 推理主链路
-
-`ReasoningPipeline` 是 lookup context、impact 和 walkthrough 的唯一 reasoning 编排入口。它不重写 `patterns.py`、`transitive.py`、`risk.py` 的领域算法，只负责 intent 路由、证据预算、去重、语义分层、解释契约和单引擎失败降级。
-
-- Canonical fields: `facts`, `inferences`, `derived`, `quality`。
-- Compatibility fields: `patterns`, `transitive`, `risk` 继续保留给旧调用方。
-- Target intents (`context`, `impact`, `walkthrough`) 不执行 workspace-wide pattern scan。
-- Workspace intents (`workspace`, `audit`, `scan`) 才执行全局模式扫描。
-- Compact facade 每层最多保留两条证据；walkthrough 完整结果使用 8 条 evidence budget。
-- Transitive inference 使用有界 frontier 和每层批量 SQL，避免 recursive CTE 在大图上先枚举全部路径。
-
-The pipeline is additive and schema-compatible. Non-factual items always include source, relations, confidence, and `why`; a failed engine yields partial diagnostics without discarding facts from healthy engines.
-
-### Java Parser Differential / Java Parser 差异评测
-
-`memory_center.core.indexing.differential` compares parser outputs by logical entities instead of aggregate counts. The public corpus under `examples/parser-corpus/` is the reproducible gate; private workspaces are validation targets and are never committed.
-
-`memory_center.core.indexing.differential` 按逻辑实体比较 parser，而不是只比较总数量。`examples/parser-corpus/` 是可复现公开门禁；私有 workspace 只用于本地验证，不提交其源码或索引。
-
-- `methods` remains the compatibility name list; `method_signatures` preserves overload identity and declaration line.
-- `constants` separates annotation values from `field_types` while retaining the legacy field output.
-- Tree-sitter exposes AST-only facts through `parse_native()` and merged production facts through `parse()`.
-- Target mappings are scoped to the annotated Controller/Feign type body, preventing mappings from sibling types in the same file from leaking across boundaries.
-- Reindex resets and returns thread-safe parser diagnostics, including fallback reasons and critical disagreement count.
-
-### Real-Scenario Validation / 真实场景验证
-
-Public examples remain useful for CI, smoke tests, and documentation templates, but local acceptance for user-facing walkthrough, retrieval, parser, reasoning, and performance work must use the real workspace/cases provided by the user. In this environment, prefer `/Users/cuijiaqi/javaworkspace/ucap/.memory-center/workspace.yaml` and its private Golden cases for final regression evidence.
-
-公开 `examples/` 仍用于 CI、smoke test 和文档模板；但面向用户体验的 walkthrough、retrieval、parser、reasoning、performance 改动，本地验收必须使用用户提供的真实 workspace/cases。当前环境优先使用 `/Users/cuijiaqi/javaworkspace/ucap/.memory-center/workspace.yaml` 及其私有 Golden cases 作为最终回归证据。
-
-If the real workspace/cases/baseline are unavailable, record the status explicitly (`real_case_missing` or `baseline_missing`) and do not substitute public examples as proof of acceptance. Public examples can still prove compatibility, not product readiness for the user's scenario.
-
-如果真实 workspace、cases 或 baseline 不可用，必须显式记录 `real_case_missing` 或 `baseline_missing`，不要用公开 examples 指标替代真实验收。公开 examples 只能证明兼容性，不能证明用户真实场景已验收通过。
-
-### Walkthrough Refactoring / Walkthrough 拆分
-
-`memory_center.core.orchestrator.query` remains the compatibility facade for MCP, CLI, and HTTP callers. Method walkthrough support code is split across `memory_center.core.walkthrough`:
-
-- `cache.py`: short-lived process cache with defensive copies.
-- `artifact.py`: Markdown artifact rendering and slug generation.
-- `quality.py`: agent-ready quality scoring.
-- `symbols.py`: symbol parsing, owner/Impl resolution, file-abs path map, and Java method/body/case extraction.
-- `continuations.py`: local steps, Feign continuations, server impl continuations, same-class continuations, DTO field summary/rule groups, and next-action assembly.
-- `risks.py`: performance risk detection, data-scope guards, diff context, index freshness, branch outline, and Mermaid flow rendering.
-- `answer.py`: schema/contract, agent policy, anti-patterns, summary lines, compact view, template loading, and answer Markdown rendering.
-- `escalation.py`: workspace input resolution, parent/covering/sibling discovery, quality-score comparison, and bypass feedback.
-- `operations.py`: walkthrough health, quality evaluation, and artifact export orchestration.
-
-`orchestrator/query.py` keeps the public ``memory_method_walkthrough`` /
-``memory_walkthrough_health`` / ``memory_eval_walkthrough_quality`` /
-``memory_export_walkthrough_artifact`` entry points and a thin layer of
-underscore-prefixed delegators that re-export the new helpers; this keeps
-existing MCP / HTTP / CLI imports and tests stable.
-
-`memory_center.core.orchestrator.query` 仍然是 MCP、CLI 和 HTTP 调用方的兼容 facade。method walkthrough 的支撑逻辑已经按下面的子模块拆分到 `memory_center.core.walkthrough`：
-
-- `cache.py`：短期进程内缓存，防御性拷贝。
-- `artifact.py`：Markdown artifact 渲染和 slug 生成。
-- `quality.py`：agent-ready 评分。
-- `symbols.py`：符号解析、owner/Impl 查找、file-abs path map、Java 方法体与 case 提取。
-- `continuations.py`：本地 step、Feign 续链、服务端 Impl 续链、同类方法续链、DTO 字段摘要/规则分组、next actions。
-- `risks.py`：性能风险、数据范围保护、diff 上下文、索引新鲜度、分支轮廓、Mermaid。
-- `answer.py`：schema/contract、agent policy、反模式、summary lines、compact view、模板加载与 answer Markdown 渲染。
-- `escalation.py`：workspace 输入解析、父级/覆盖/兄弟 workspace 查找、质量分对比、绕过反馈。
-- `operations.py`：walkthrough 健康检查、质量评估和 artifact 导出编排。
-
-`orchestrator/query.py` 只保留公共入口（``memory_method_walkthrough`` /
-``memory_walkthrough_health`` / ``memory_eval_walkthrough_quality`` /
-``memory_export_walkthrough_artifact``）以及一层下划线前缀的轻量委托
-helper，把调用转给新模块；这样 MCP / HTTP / CLI 调用方和测试都不需要改动。
-
-### Command Dispatch Seam / 命令分发 Seam
-
-`memory_center.core.dispatch.CommandRegistry` is the shared dispatch module for MCP actions, HTTP routes, and CLI command groups that would otherwise repeat large dictionaries or if-chains. Its interface is intentionally small: register handlers, check available names, and dispatch one name. The adapter still owns parameter binding, so public MCP action names, HTTP paths, and CLI command names remain backward-compatible.
-
-`memory_center.core.dispatch.CommandRegistry` 是 MCP action、HTTP route 与 CLI command group 共享的分发 Module，用于减少大字典和 if-chain 的重复。它的 interface 保持很小：注册 handler、检查可用名称、按名称分发。参数绑定仍由各 adapter 自己负责，因此公开的 MCP action 名称、HTTP 路径和 CLI 命令名保持兼容。
-
-Current adapters using this seam:
-
-- MCP: `mc_admin` dispatches through `CommandRegistry(label="mc_admin action")`; `memory_center.mcp.action_registry` remains as a compatibility import.
-- CLI: method walkthrough commands dispatch through a walkthrough command registry.
-- HTTP: ``build_http_route_registry`` returns one process-wide registry composed from the ``workspace``, ``workflow``, and ``analysis`` route-family Modules under ``memory_center.http.routes``. Request-specific ``RouteParams`` are supplied at dispatch time, so the adapter does not rebuild every handler per request. ``server._route_request`` only handles ``/health`` and unknown-route errors.
-
-当前已接入的 adapter：
-
-- MCP：`mc_admin` 通过 `CommandRegistry(label="mc_admin action")` 分发；`memory_center.mcp.action_registry` 保留为兼容导入路径。
-- CLI：method walkthrough 相关命令通过 walkthrough command registry 分发。
-- HTTP：``build_http_route_registry`` 返回进程级单例 registry，由 ``memory_center.http.routes`` 下的 ``workspace``、``workflow``、``analysis`` 三个 route-family Module 组合。请求级 ``RouteParams`` 在 dispatch 时传入，不再为每个请求重建全部 handler。``server._route_request`` 只处理 ``/health`` 与未知路径错误。
-
-The seam is intentionally not a framework. It is a small deep Module: deleting it would push unknown-action errors, valid-name listing, and handler maps back into every adapter.
-
-该 seam 刻意不做成框架，而是一个小而深的 Module：如果删除它，unknown-action 错误、有效名称列表、handler map 会重新散落回每个 adapter。
-
-### Architecture Backlog / 后续架构优化队列
-
-The following work is intentionally documented as follow-up scope so it can be implemented in smaller, verifiable changes:
-
-- `P2` Migrate the remaining handful of low-frequency walkthrough helpers to ``core/walkthrough/`` if they grow new responsibilities; today the orchestrator only keeps the public facade and a thin ``lookup_provider`` / ``escalation_runner`` plumbing.
-- `P2` Watch ``memory_center/http/routes/`` for repeated optional flags. ``RouteParams`` already collapses ``view`` / ``budget`` / ``task_id`` / ``session_id`` / ``intent`` / ``project`` / ``auto_sync_mode`` / ``report_level`` etc.; extend it instead of bringing back repeated ``params.get`` literals.
-- `P2` Keep ``mc_admin`` action coverage in lockstep with the registry: ``tests/test_mcp_admin_actions.py`` is the canonical seam test; new actions should be added there rather than relying on the FastMCP shape test.
-- `P2` Keep retrieval fusion regression coverage in ``tests/test_hybrid_fusion_purity.py``. ``_merge_retrieval_results`` and ``_apply_type_boosting`` default to deep copies; if a future optimisation reintroduces in-place mutation, gate it behind an explicit flag and add a parallel purity test.
-- `P2` Maintain the indexed Feign↔API and field-by-class lookups in ``indexer.py``. ``tests/test_indexer_perf.py`` asserts indexed lookup remains at least 5x faster than a linear scan; if a refactor regresses that ratio, restore the index before merging.
-- `P2` Grow the synthetic Spring Cloud benchmark in ``tests/test_benchmark_workspace_perf.py`` rather than introducing private fixtures. Adjust ``SERVICES`` / ``CONTROLLERS_PER_SERVICE`` / ``ENDPOINTS_PER_CONTROLLER`` knobs when the topology under test changes; keep the wall-clock budgets generous so CI variance does not cause flakes.
-- `P2` Unify CLI / HTTP / MCP parameter models where the same operation exists in multiple adapters. Introduce light argument objects only when they reduce duplicated defaults and validation rules.
-- `P2` Keep architecture documentation and migration notes current. When public entrypoints remain compatible, document internal seams in `ARCHITECTURE.md`; only document breaking changes in README / CHANGELOG when legacy fallbacks are removed.
-- `P2` Run portable baselines on representative sanitized workspaces. Samples deliberately exclude paths and arbitrary payloads; operational datasets must not be committed.
-
-以下工作作为后续范围记录，便于小步实现和验证：
-
-- `P2` 当 walkthrough 子模块再出现新的轻量 helper 时，优先放到 ``core/walkthrough/``；目前 orchestrator 只保留公共 facade 与 ``lookup_provider`` / ``escalation_runner`` 的粘合。
-- `P2` 关注 ``memory_center/http/routes/`` 的可选参数重复。``RouteParams`` 已经把 ``view`` / ``budget`` / ``task_id`` / ``session_id`` / ``intent`` / ``project`` / ``auto_sync_mode`` / ``report_level`` 等收口；应扩 ``RouteParams``，不要重新复制 ``params.get`` 字面量。
-- `P2` ``mc_admin`` action 覆盖度与 registry 同步：``tests/test_mcp_admin_actions.py`` 是规范化的 seam 测试，新 action 应在这里加测试，而不是依赖 FastMCP 形状检测。
-- `P2` 保留 ``tests/test_hybrid_fusion_purity.py``：``_merge_retrieval_results`` 与 ``_apply_type_boosting`` 默认是纯函数（deep copy）。如果未来出于性能重新引入原地修改，必须挂在显式开关后并补一组对应的纯函数测试。
-- `P2` 维护 ``indexer.py`` 中的 Feign↔API 与 field-by-class 索引 lookup。``tests/test_indexer_perf.py`` 要求索引 lookup 至少比线性扫描快 5 倍；任何回归这个比例的改动都应在合入前恢复索引。
-- `P2` 在 ``tests/test_benchmark_workspace_perf.py`` 中扩展合成 Spring Cloud benchmark，不要引入私有 fixture。需要调拓扑时调整 ``SERVICES`` / ``CONTROLLERS_PER_SERVICE`` / ``ENDPOINTS_PER_CONTROLLER`` 等旋钮；wall-clock 上限保持宽松，避免 CI 抖动 flake。
-- `P2` 统一 CLI / HTTP / MCP 的参数模型。只有当同一个操作跨多个 adapter 重复默认值和校验规则时，才引入轻量参数对象。
-- `P2` 持续维护架构文档和迁移说明。公开入口保持兼容时，只在 `ARCHITECTURE.md` 记录内部 seam；只有移除 legacy fallback 或产生不兼容变化时，才写入 README / CHANGELOG。
-- `P2` 在代表性的脱敏 workspace 上持续运行 portable baseline。样本不记录路径或任意 payload，运营数据不得提交。
-
-### Vue 前端 / Vue Frontend
-
-```
-web/
-├── src/
-│   ├── api/client.js      # API 客户端（axios，代理到 Python 后端）
-│   ├── router/index.js    # Vue Router 配置
-│   ├── layouts/AppLayout.vue  # 主布局（侧边栏 + 工作区输入）
-│   ├── components/        # 共享组件
-│   │   ├── DataCard.vue   # 数据卡片（loading/error/content）
-│   │   ├── JsonTree.vue   # JSON 树形查看器
-│   │   └── KeyValueTable.vue  # 键值对表格
-│   └── views/             # 页面视图
-│       ├── WorkbenchView.vue   # 工作台首页
-│       ├── DashboardView.vue   # 工作区总面板
-│       ├── ContinuityView.vue  # 连续性面板
-│       ├── TaskView.vue        # 焦点任务
-│       ├── QueryView.vue       # 查询/检索
-│       ├── ImpactView.vue      # 影响分析
-│       ├── GroupView.vue       # 跨项目查询/影响/链路
-│       ├── TimelineView.vue    # 时间线
-│       ├── ReceiptsView.vue    # 写入回执
-│       ├── UsageView.vue       # 使用报告
-│       ├── BackendView.vue     # 后端数据
-│       ├── FreshnessView.vue   # 索引新鲜度
-│       ├── AuditView.vue       # 审计
-│       └── HealthView.vue      # 健康检查
-├── vite.config.js         # Vite 配置（含 API 代理）
-└── package.json           # 依赖：vue@3, vue-router@4, axios
-```
-
-前端通过 HTTP 服务器的 `/app` 路径托管，支持 SPA 客户端路由。
-
-## Integration Guide / 集成指南
-
-### 使用 Hybrid Retrieval
-
-```python
-from memory_center.core.retrieval import hybrid_retrieve, HybridRetrievalConfig
-
-# 默认配置
-result = hybrid_retrieve(graph, workspace_file, "asyncBusinessOperationExport")
-
-# 自定义配置
-config = HybridRetrievalConfig(
-    graph_weight=0.5,
-    sparse_weight=0.3,
-    semantic_weight=0.2,
-    vector_weight=0.15,
-    enable_sparse_bm25=True,
-    enable_vector=False,
-)
-result = hybrid_retrieve(graph, workspace_file, query, config=config)
-```
-
-### 使用 Benchmark Trending
-
-```python
-from memory_center.core.benchmark import record_benchmark_trend, get_benchmark_trends
-
-# 记录趋势
-record_benchmark_trend(workspace_file, "mc_lookup", raw_tokens=1000, compact_tokens=300)
-
-# 获取趋势分析
-trends = get_benchmark_trends(workspace_file, function_name="mc_lookup", days=30)
-```
-
-### 使用 Unified Backend
-
-```python
-from memory_center.core.backend import UnifiedBackendQuery
-
-with UnifiedBackendQuery(db_path) as backend:
-    records = backend.query_records(collection="session-events.jsonl")
-    stats = backend.aggregate_by_session()
-    health = backend.check_health()
-```
-
-### 使用 Drill-Down Navigation
-
-```python
-from memory_center.core.navigation import DrillDownNavigator
-
-with DrillDownNavigator(workspace_file) as nav:
-    ref = nav.expand_ref("session-event:abc123")
-    timeline = nav.drill_timeline(session_id="xyz")
-    task = nav.drill_task(task_id="task-001")
-    handoff = nav.build_handoff_context(session_id="xyz")
-```
-
-### 使用 Completion Audit
-
-```python
-from memory_center.core.audit import run_completion_audit, record_design_decision
-
-# 运行审计
-audit = run_completion_audit(workspace_file, work_package="Phase A")
-
-# 记录设计决策
-record_design_decision(
-    workspace_file,
-    topic="hybrid_retrieval",
-    decision="使用 RRF 合并三种检索源",
-    rationale="平衡精确性和召回率",
-)
-```
+- 不提交真实私有项目生成的 `.memory-center/index` 或 `.memory-center/memory`。
+- 示例、docs、tests 不写私有路径、内部服务名或真实密钥。
+- 新增测试如果会写 graph / memory / index / benchmark，必须复制 demo workspace 到 `tmp_path` 后操作。
+- MCP tool schema 变化默认 additive；破坏兼容时必须同步 README、CHANGELOG、docs 和测试。
