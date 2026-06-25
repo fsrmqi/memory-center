@@ -154,6 +154,7 @@ def reindex_workspace(
     store.write_json("config-index.json", merged_config_index)
     store.write_json("service-topology.json", topology)
     graph_counts = build_graph_store(config, store, project_filter=project_filter, path_filters=path_filters)
+    changed_ids: set[str] = set()
     if partial:
         changed_ids = set(graph_counts.get("changed_node_ids", []))
         semantic_counts = build_workspace_semantic_index_partial(store.workspace_file, changed_ids) if changed_ids else {
@@ -163,7 +164,11 @@ def reindex_workspace(
         }
     else:
         semantic_counts = build_workspace_semantic_index(store.workspace_file)
-    retrieval_counts = _sync_retrieval_indexes(store, semantic_counts)
+    retrieval_counts = _sync_retrieval_indexes(
+        store,
+        semantic_counts,
+        changed_node_ids=changed_ids if partial else None,
+    )
     parser_diagnostics = _parser_diagnostics(len(java_tasks))
     parser_precision = parser_precision_from_diagnostics(parser_diagnostics)
     graph_summary = {
@@ -324,7 +329,12 @@ def _parse_java_file(project: str, rel: str, path: Path) -> dict[str, Any]:
         return {"symbol": None, "apis": [], "pending_feign": None, "mq": []}
 
 
-def _sync_retrieval_indexes(store: WorkspaceStore, semantic_index: dict[str, Any]) -> dict[str, int]:
+def _sync_retrieval_indexes(
+    store: WorkspaceStore,
+    semantic_index: dict[str, Any],
+    *,
+    changed_node_ids: set[str] | None = None,
+) -> dict[str, int | str]:
     """Synchronize BM25 and dense vector indexes from the rebuilt graph."""
     from .retrieval.inverted import InvertedIndex
     from .storage.unified import UnifiedStore
@@ -333,23 +343,65 @@ def _sync_retrieval_indexes(store: WorkspaceStore, semantic_index: dict[str, Any
     with GraphStore(store.graph_db_path) as graph:
         nodes = graph.all_nodes()
 
-    dense_items = [
-        (str(doc.get("node_id", "")), [float(value) for value in doc.get("dense_vector", [])])
+    dense_docs = [
+        doc
         for doc in semantic_index.get("docs", [])
         if doc.get("node_id") and doc.get("dense_vector")
+    ]
+    if changed_node_ids is not None:
+        dense_docs = [doc for doc in dense_docs if str(doc.get("node_id", "")) in changed_node_ids]
+    dense_items = [
+        (str(doc.get("node_id", "")), [float(value) for value in doc.get("dense_vector", [])])
+        for doc in dense_docs
     ]
 
     with UnifiedStore(store.graph_db_path) as unified:
         bm25_stats = InvertedIndex(unified).rebuild(nodes)
 
-        vector_dimension = len(dense_items[0][1]) if dense_items else 384
-        vector_index = VectorIndex(unified, dimension=vector_dimension)
-        vector_index.clear()
-        vector_count = vector_index.upsert_embeddings_batch(dense_items) if dense_items else 0
+        # Only touch VectorIndex when the rebuilt semantic_index actually
+        # produced dense vectors. A reindex run with the default ``sparse``
+        # backend (no ``MEMORY_CENTER_SEMANTIC_BACKEND=sentence-transformers``)
+        # would otherwise silently wipe out the dense embeddings produced
+        # by a previous ST run, leaving ``vector.embedding_count = 0`` even
+        # though ``semantic_index_stats`` still reports a ready vector
+        # candidate set from a stale on-disk file.
+        vector_sync_mode = "preserved"
+        vector_deleted = 0
+        if dense_items:
+            vector_dimension = len(dense_items[0][1])
+            vector_index = VectorIndex(unified, dimension=vector_dimension)
+            if changed_node_ids is None:
+                vector_index.clear()
+                vector_sync_mode = "full"
+            else:
+                vector_sync_mode = "partial"
+                # Remove stale embeddings for every changed node first;
+                # nodes that remain vector-eligible are then upserted from
+                # ``dense_items``. This handles changed dense candidates,
+                # nodes that no longer qualify for vector indexing, and
+                # deleted nodes without clearing the whole VectorIndex.
+                for node_id in changed_node_ids:
+                    vector_index.delete_embedding(str(node_id))
+                    vector_deleted += 1
+            vector_count = vector_index.upsert_embeddings_batch(dense_items)
+        else:
+            vector_count = 0
+            if changed_node_ids is not None:
+                # Sparse-only or non-vector partial rebuild. Still remove
+                # embeddings for changed nodes because those nodes may have
+                # been deleted or may no longer be vector-eligible. Preserve
+                # all other embeddings.
+                vector_index = VectorIndex(unified)
+                for node_id in changed_node_ids:
+                    vector_index.delete_embedding(str(node_id))
+                    vector_deleted += 1
+                vector_sync_mode = "partial-delete-only"
 
     return {
         "bm25_docs": int(bm25_stats.get("doc_count", 0)),
         "vector_embeddings": vector_count,
+        "vector_deleted": vector_deleted,
+        "vector_sync_mode": vector_sync_mode,
     }
 
 

@@ -122,24 +122,35 @@
 - 真实场景 reindex 性能不低于当前基线
 - 不提交真实 workspace 生成的 `.memory-center/index`、`.memory-center/memory` 或源码片段
 
-### P1：Java Parser / Call Resolver 真实精度深化
+### P1：Java Parser / Call Resolver 真实精度深化（已完成第一轮,持续扩充）
 
 目标：让 method walkthrough 和跨项目链路在真实 Spring Cloud 场景下更稳。
 
 任务：
 
-1. 从真实 workspace 中选取 10-15 个跨项目 controller 入口，转成只含逻辑锚点的私有 cases。
-2. 扩展 Java call resolution case schema：覆盖 entry method、same-class private method、Service interface -> Impl、Feign -> Controller、Controller -> Service Impl、mapper / repository 边界。
-3. 对每类失败只修一个明确 parser / resolver gap，避免靠宽泛搜索掩盖问题。
-4. 将误判样例沉淀为可复跑 case，而不是只修当前文件。
-5. 在 `mc_admin(action="eval_java_call_resolution")`、CLI、HTTP 输出里持续保留失败原因和缺失锚点。
+1. 从真实 workspace 中选取 10-15 个跨项目 controller 入口，转成只含逻辑锚点的私有 cases。**已完成**：`golden/java-call-resolution-openapi.yaml` 从 15 个 case 扩到 26 个。
+2. 扩展 Java call resolution case schema：覆盖 entry method、same-class private method、Service interface -> Impl、Feign -> Controller、Controller -> Service Impl、mapper / repository 边界。**已完成**：新增 5 类 case（Controller -> ServiceImpl 直接 DI；Controller -> Service interface 多态 dispatch 3 个；ServiceImpl -> Mapper 3 个；ServiceImpl same-class private helper 2 个；static_import 2 个）。
+3. 对每类失败只修一个明确 parser / resolver gap，避免靠宽泛搜索掩盖问题。**已完成第一轮**：发现并修复 `RegexJavaParser` 把 interface 方法声明当 body 导致的 ~13K self-loop 假边（self-loop 12,812 -> 795，-94%）；CALLS_METHOD 总量从 294,230 -> 279,542 抹掉 14,688 条假边。
+4. 将误判样例沉淀为可复跑 case，而不是只修当前文件。**已完成**：`tests/test_p1_call_resolution_and_vector_gate.py` 锁住 interface declaration 自环不重现 + default 方法体仍正常抽取调用 + `enable_vector` schema round-trip + `_sync_retrieval_indexes` 不破坏现有 VectorIndex。
+5. 在 `mc_admin(action="eval_java_call_resolution")`、CLI、HTTP 输出里持续保留失败原因和缺失锚点。**保持现状**：26/26 cases edge_recall=1.0 / high_confidence=1.0 / unresolved=0.0。
+6. 后续继续扩充：unresolved CALLS_METHOD 占比仍达 80%（232,220 / 279,542），值得分类立项（external API、wildcard 真实 import、polymorphism dispatch）。
 
 验收：
 
-- 真实私有 cases anchor recall `>= 0.90`
-- edge recall `>= 0.85`
-- forbidden hit rate `= 0`
-- 每个失败 case 都能定位到 parser、resolver、graph 或 retrieval 中的具体一层
+- 真实私有 cases anchor recall `>= 0.90` **ok**（26/26 = 1.0）
+- edge recall `>= 0.85` **ok**（1.0）
+- forbidden hit rate `= 0` **ok**
+- 每个失败 case 都能定位到 parser、resolver、graph 或 retrieval 中的具体一层 **ok**（interface self-loop -> parser 层 `_parse_method_calls` bare-call 误匹配 declaration span）
+
+### P1.5：Vector Gate / 向量召回长期门禁（已完成）
+
+目标：把 [P0_5_VECTOR_VALIDATION.md](./benchmarks/P0_5_VECTOR_VALIDATION.md) 在真实 UCAP 上验证过的 vector 收益锁进 long-term golden gate。
+
+任务：
+
+1. `GoldenCase` schema 新增可选 `enable_vector` 字段（默认 False），让 hybrid case 可以显式声明走 ANN 路径。**已完成**。
+2. `golden/cases.yaml` 增加 vector-aware concept query case（Feign 鉴权拦截器、Kafka 消费者解析消息），expected_anchors 指向 method 级真实命中。**已完成**：anchor_recall 0.6444 -> 0.8667。
+3. 修复 `_sync_retrieval_indexes` 在 sparse-only reindex 时悄悄清空 VectorIndex 的 silent regression。**已完成**：`dense_items` 为空时保留现有 vector embeddings。
 
 ### P2：Retrieval / Reasoning 质量闭环
 

@@ -12,6 +12,7 @@ _CASE_FIELDS = {
     "expected_edges",
     "forbidden_anchors",
     "max_latency_ms",
+    "enable_vector",
 }
 
 
@@ -24,6 +25,11 @@ class GoldenCase:
     expected_edges: tuple[str, ...]
     forbidden_anchors: tuple[str, ...] = ()
     max_latency_ms: float = 5000.0
+    # Optional. When True the runner asks the hybrid retrieval engine to
+    # enable ANN vector search for this case. ``walkthrough`` cases ignore
+    # this flag because walkthrough already chooses its own retrieval path.
+    # Default is False so existing cases keep their current behaviour.
+    enable_vector: bool = False
 
     @classmethod
     def from_mapping(cls, data: Mapping[str, Any]) -> GoldenCase:
@@ -45,6 +51,7 @@ class GoldenCase:
             expected_edges=_logical_values(data.get("expected_edges", [])),
             forbidden_anchors=_logical_values(data.get("forbidden_anchors", [])),
             max_latency_ms=max(1.0, float(data.get("max_latency_ms", 5000.0) or 5000.0)),
+            enable_vector=bool(data.get("enable_vector", False)),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -56,6 +63,7 @@ class GoldenCase:
             "expected_edges": list(self.expected_edges),
             "forbidden_anchors": list(self.forbidden_anchors),
             "max_latency_ms": self.max_latency_ms,
+            "enable_vector": self.enable_vector,
         }
 
 

@@ -373,7 +373,12 @@ def _default_case_runner(workspace_file: str | Path) -> CaseRunner:
         else:
             from ..orchestrator import memory_query_hybrid
 
-            payload = memory_query_hybrid(workspace_file, case.query, limit=80)
+            payload = memory_query_hybrid(
+                workspace_file,
+                case.query,
+                limit=80,
+                enable_vector=case.enable_vector,
+            )
         evidence = extract_logical_evidence(payload)
         return {**evidence, "payload": payload}
 

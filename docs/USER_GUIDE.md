@@ -279,6 +279,26 @@ result = hybrid_retrieve(graph, workspace_file, query, config=config)
 
 默认情况下，reindex 会自动构建 SQLite BM25；Vector ANN 默认关闭。启用本地 embedding backend 并重新 reindex 后，dense vectors 会同步到 VectorIndex，再根据真实查询 benchmark 决定是否开启 vector。reindex 汇总会返回 `semantic_backend`、`requested_semantic_backend`、`vector_scope`、`vector_candidate_count`、`dense_doc_count`、`vector_status`、`vector_disabled_reason`，用于解释 `vector_embeddings=0` 是因为 sparse backend、模型不可用、scope 无候选，还是 dense vector 已就绪。
 
+增量 / 指定路径 reindex 时，VectorIndex 也会按 changed node 增量同步：变更节点先删除旧 embedding，再对仍然可向量化的节点 upsert 新 embedding；未变化节点的 dense embeddings 会保留。一次默认 sparse backend 的 reindex 不会清空之前本地 embedding backend 生成的 VectorIndex。
+
+Golden Benchmark 的 hybrid case 可以通过 `enable_vector: true` 显式启用 ANN，用于给概念查询建立长期门禁：
+
+```yaml
+schema_version: 1
+cases:
+  - case_id: vector-feign-auth-interceptor
+    query: Feign 调用的鉴权拦截器
+    mode: hybrid
+    enable_vector: true
+    expected_anchors:
+      - FeignConfig#feignDecoder
+      - FeignSpringFormConfiguration#feignContract
+    expected_edges: []
+    forbidden_anchors:
+      - VideoSolutionAudioService
+    max_latency_ms: 8000
+```
+
 **意图检测示例**:
 - `"feign client"` → feign 意图
 - `"/api/users"` → endpoint 意图

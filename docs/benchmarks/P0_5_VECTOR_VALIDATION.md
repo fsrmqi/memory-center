@@ -198,3 +198,32 @@ vector 真实价值:返回从 1 条扩到 10 条 method 级候选,候选集对
   本地 ST 模型已经能覆盖当前规模。
 - 不把 dense 向量数据(`.memory-center/index/semantic.v4.json`、
   `vec_fallback` 表)commit 进公开仓库。
+
+---
+
+## 9. 增量 reindex 验证 / Incremental vector validation
+
+2026-06-25 继续验证 partial semantic rebuild + VectorIndex sync:
+
+- 前置状态:`dense_doc_count=47,633`, `VectorIndex.embedding_count=47,633`
+- changed node:`File:ucap-cloud-datainterface/code-review/README.md`
+- `build_workspace_semantic_index_partial(..., {changed_node})`:
+  - elapsed: 26.34 s
+  - dense_doc_count: 47,633
+  - changed_dense_docs: **1**
+- `_sync_retrieval_indexes(..., changed_node_ids={changed_node})`:
+  - vector_sync_mode: **partial**
+  - vector_deleted: **1**
+  - vector_embeddings: **1**
+  - VectorIndex.embedding_count after: **47,633**
+
+结论:
+
+- dense vector 重算已经是增量的,只重 encode changed dense candidate。
+- VectorIndex 同步也已经是增量的,只 delete/upsert changed node 的 embedding,
+  不再 full clear + full upsert。
+- 当前 partial sync 的 22.9 s 主要仍来自 `InvertedIndex.rebuild(nodes)` 全量
+  BM25 重建;这是后续 P2 / performance follow-up,不属于 vector 本身。
+- 新增保护:`_sync_retrieval_indexes` 在 sparse-only reindex 时不会清空已有
+  dense embeddings;只有 changed_node_ids 明确传入时才删除 changed nodes 的
+  embeddings。

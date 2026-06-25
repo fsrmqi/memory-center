@@ -441,9 +441,11 @@ _resolve_cross_workspace_refs(merged[:limit], graph, workspace_file)
 - Semantic: 0.25（模糊匹配）
 - Vector: 0.15（可选 ANN；默认关闭）
 
-reindex 会自动重建 SQLite BM25。只有 semantic index 中存在 `dense_vector` 时才会同步 VectorIndex；旧向量会在同步时清理，避免陈旧命中。
+reindex 会自动重建 SQLite BM25。只有 semantic index 中存在 `dense_vector` 时才会同步 VectorIndex；full reindex 会重建完整 VectorIndex，partial / path-scoped reindex 会只 delete/upsert changed node 的 embedding。若当前 reindex 是 sparse-only 且没有 dense vectors，系统会保留已有 VectorIndex，避免一次默认 sparse reindex 悄悄清空本地 embedding backend 生成的向量。
 
 reindex 汇总会透出 `semantic_backend`、`requested_semantic_backend`、`vector_scope`、`vector_candidate_count`、`dense_doc_count`、`vector_status`、`vector_disabled_reason`。其中 `vector_candidate_count` 表示按当前 scope 可向量化的核心节点数，`dense_doc_count` 表示实际生成 dense vector 的节点数；当 `vector_status=disabled|unavailable|no_candidates` 时，`vector_disabled_reason` 给出可操作原因。
+
+真实 UCAP 验证中，`selective` scope 生成 47,633 个 dense docs。partial semantic rebuild 对单个 changed dense candidate 只重 encode 1 个 doc，VectorIndex sync 使用 `vector_sync_mode=partial`，只 delete/upsert 该 changed node，embedding 总数保持不变。当前 partial sync 的剩余主要成本来自 BM25 仍全量 rebuild，这是后续 P2 性能优化项。
 
 ### 8.2 Benchmark Trending 实现细节
 
@@ -658,6 +660,23 @@ cases:
     expected_target: ExampleService#list
     min_confidence: 0.85
     expected_resolution_levels: [import, same_package]
+```
+
+P1 真实 UCAP case 已覆盖 Controller -> Service interface、Controller -> ServiceImpl、ServiceImpl -> Mapper、same-class helper、static import 等路径。新增 case 时仍只写 `Class#method` 逻辑锚点，不写文件路径或私有源码片段。
+
+Golden Benchmark 的 hybrid case 可选 `enable_vector: true`，用于验证 ANN 路径：
+
+```yaml
+schema_version: 1
+cases:
+  - case_id: vector-concept-query
+    query: Feign 调用的鉴权拦截器
+    mode: hybrid
+    enable_vector: true
+    expected_anchors:
+      - FeignConfig#feignDecoder
+    expected_edges: []
+    max_latency_ms: 8000
 ```
 
 门禁指标：

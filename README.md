@@ -405,6 +405,10 @@ Reindex also rebuilds the local semantic node index and SQLite BM25 inverted ind
 
 重建索引时也会同步构建本地语义节点索引和 SQLite BM25 倒排索引，供混合检索使用；当语义 backend 生成 dense vectors 时，还会同步写入 `VectorIndex`。
 
+For incremental / path-scoped reindex, dense vector sync is also incremental: changed vector-eligible nodes are deleted and upserted in `VectorIndex`, while unrelated embeddings are preserved. A sparse-only reindex no longer clears dense embeddings from a previous local embedding run.
+
+对于增量 / 指定路径 reindex，dense vector 同步也是增量的：只有变更且可向量化的节点会在 `VectorIndex` 中 delete + upsert，未变化的 embedding 会保留。一次 sparse-only reindex 不会再清空之前本地 embedding backend 生成的 dense embeddings。
+
 Reindex output also includes parser diagnostics: selected parser, parse count, fallback count/reasons, native disagreement count, and final critical disagreement count. Public parser parity is gated by `examples/parser-corpus/` and `tests/test_parser_differential.py`.
 
 reindex 输出还会包含 parser diagnostics：实际 parser、解析次数、fallback 次数/原因、原生差异数和最终 critical disagreement 数。公开 parser 一致性由 `examples/parser-corpus/` 与 `tests/test_parser_differential.py` 守护。
@@ -454,6 +458,10 @@ Before executing sources, an adaptive policy now selects the source set, graph d
 When a local embedding backend is enabled, reindex synchronizes dense embeddings into `VectorIndex`. Vector ANN remains disabled by default and can be enabled through `HybridRetrievalConfig(enable_vector=True)`; sparse and BM25 retrieval remain safe fallbacks.
 
 启用本地 embedding backend 后，reindex 会把 dense embeddings 同步到 `VectorIndex`。原生向量 ANN 默认关闭，可通过 `HybridRetrievalConfig(enable_vector=True)` 启用；稀疏语义和 BM25 继续作为安全 fallback。
+
+Golden Benchmark hybrid cases can opt in to ANN with `enable_vector: true`, which keeps vector-backed concept-query behavior under regression coverage without changing existing cases.
+
+Golden Benchmark 的 hybrid case 可通过 `enable_vector: true` 显式启用 ANN，把向量支持的概念查询纳入长期回归门禁，同时不改变既有 case 行为。
 
 Workspace query now also exposes `retrieval_summary` and per-match `retrieval_sources`, so agents can tell whether a hit came from exact graph lookup, semantic recall, or both.
 

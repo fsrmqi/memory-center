@@ -8,6 +8,60 @@
 
 ## Unreleased
 
+### P1 Java Call Resolver Self-Loop Fix / Java 调用解析自环修复
+
+- 真实 UCAP 工作区上发现 ~13K `CALLS_METHOD` self-loop 假边
+  (`Service:m -> Service:m`),根因是 `RegexJavaParser` 把抽象 interface
+  方法声明也当成 method body。bare-call 正则在 `start..end` 内匹配到方法
+  自身签名,被 `_same_class_candidates` 解析成 self-call。
+- 修复:`_parse_interface_methods` 给抽象方法 span 加 `is_declaration=True`
+  标记;`_parse_method_calls` 跳过 declaration-only span。
+- 真实 UCAP 效果:self-loop CALLS_METHOD 12,812 -> 795
+  (-94%,残留 795 条是真实递归调用如 `RedisServiceImpl:hSet` 重载 dispatch);
+  CALLS_METHOD 总量 294,230 -> 279,542(-14,688 条假边消除);
+  same_class resolution_level 边 30,578 -> 18,558(全部去掉的都是 self-loop)。
+- Java call resolution gate (15 cases) 保持全过;不影响合法 same_class
+  fluent chain (`ServiceImpl#download -> ServiceImpl#buildObjectKey`)。
+- 新增 `tests/test_p1_call_resolution_and_vector_gate.py` 锁住 interface
+  自环不重现、default 方法体仍正常抽取调用。
+
+### P1 Java Call Resolution Cases Expansion / 调用解析 case 扩充
+
+- `golden/java-call-resolution-openapi.yaml` 从 15 个 case 扩到 **26 个**,
+  覆盖 5 类真实路径:
+  - Controller -> ServiceImpl(直接 DI Impl 注入)
+  - Controller -> Service interface(多态 dispatch,3 个 case)
+  - ServiceImpl -> Mapper / Dao(3 个 case)
+  - ServiceImpl same-class private helper(2 个 case)
+  - static_import call (Util / Helper,2 个 case)
+- 全 26 个 case 通过:`edge_recall=1.0` / `high_confidence_expected_rate=1.0` /
+  `resolution_level_rate=1.0` / `unresolved_rate=0.0`。
+- `java-call-resolution-baseline.json` 同步更新为新基线
+  (`case_count: 26`, `unexpected_high_confidence_edge_count: 42`)。
+
+### P1.5 Vector Gate / 向量召回长期门禁
+
+- `GoldenCase` schema 新增可选字段 `enable_vector`(默认 False),让概念
+  query 类型 case 可以显式声明走 ANN 路径。`memory_query_hybrid` 在
+  hybrid mode 下读取此字段并传给 retrieval policy。
+- `golden/cases.yaml` 新增两个 vector-aware case 把
+  [P0_5_VECTOR_VALIDATION.md](./benchmarks/P0_5_VECTOR_VALIDATION.md) 的
+  收益锁进 long-term gate:
+  - `vector-feign-auth-interceptor`("Feign 调用的鉴权拦截器" ->
+    `FeignConfig#feignDecoder` + `FeignSpringFormConfiguration#feignContract` + ...)
+  - `vector-kafka-consumer-handler`("Kafka 消费者解析消息" ->
+    `KafkaOneConfig#kafkaOneContainerFactory` + `KafkaTwoConfig#kafkaTwoContainerFactory`)
+- 真实 UCAP 效果:golden anchor_recall 0.6444 -> 0.8667(vector 命中
+  方法级 anchor 提升 recall)。
+- `_sync_retrieval_indexes` 修复:reindex 在 sparse backend 下不再清空
+  之前 ST run 留下的 `VectorIndex` 嵌入。原行为会导致任意一次
+  `memory-center reindex`(没传 `MEMORY_CENTER_SEMANTIC_BACKEND`)悄悄
+  把 dense vectors 抹掉。新行为:`dense_items` 为空时保留现有 VectorIndex。
+- Vector 增量同步完成真实验证:partial semantic rebuild 只重 encode 1 个
+  changed dense candidate;VectorIndex `vector_sync_mode=partial`,只 delete/upsert
+  该 changed node,embedding_count 保持 47,633。当前 partial sync 仍耗时 ~23s,
+  主因是 BM25 仍全量 rebuild,后续可作为 P2 性能项单独优化。
+
 ### Vector Retrieval Real Validation / 向量检索真实场景验证
 
 - 新增 [docs/benchmarks/P0_5_VECTOR_VALIDATION.md](./benchmarks/P0_5_VECTOR_VALIDATION.md):

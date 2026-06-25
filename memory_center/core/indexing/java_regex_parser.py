@@ -299,6 +299,13 @@ def _parse_interface_methods(text: str) -> list[dict[str, Any]]:
                 "start": abs_start,
                 "end": abs_end,
                 "line": _line_of(text, abs_start),
+                # Abstract interface methods (and ``@interface`` element
+                # declarations) are *declarations*, not call sites. They
+                # have no body. Without this flag the bare-call pass in
+                # ``_parse_method_calls`` matches the method's own signature
+                # inside ``start..end`` and produces a spurious self-call
+                # (e.g. ``Service:pageByDto -> Service:pageByDto``).
+                "is_declaration": True,
             })
 
         # 2) default / static methods with a body (ending with {)
@@ -547,6 +554,14 @@ def _parse_method_calls(
             }
         )
     for span in method_spans:
+        # Skip declaration-only spans (abstract interface methods,
+        # ``@interface`` element declarations). Their ``start..end``
+        # contains only the signature, not a method body, and treating
+        # them as bodies makes the bare-call regex match the method's
+        # own signature -- producing a fake ``Class:m -> Class:m``
+        # self-call edge after resolution.
+        if span.get("is_declaration"):
+            continue
         body_start = int(span.get("body_start") or span.get("start") or 0)
         body_end = max(body_start, int(span.get("end") or body_start))
         body = text[body_start:body_end]
