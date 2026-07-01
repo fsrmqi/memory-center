@@ -131,6 +131,7 @@ from .workspace import (
     workspace_lookup_hint,
     workspace_sniff,
     workspace_status,
+    workspace_task_resume_check,
     workspace_trace,
 )
 
@@ -172,7 +173,7 @@ __all__ = [
     # workspace
     "workspace_check_contract", "workspace_check_rules",
     "workspace_status", "workspace_sniff", "workspace_trace", "workspace_lookup_hint",
-    "workspace_dashboard", "workspace_continuity_dashboard",
+    "workspace_dashboard", "workspace_continuity_dashboard", "workspace_task_resume_check",
     # resume
     "workspace_resume_packet", "workspace_resume_context",
     "workspace_unresolved_items", "workspace_next_actions",

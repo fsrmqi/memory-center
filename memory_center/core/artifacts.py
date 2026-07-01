@@ -13,7 +13,7 @@ from filelock import FileLock
 from .config import load_workspace_config
 from .store import WorkspaceStore, _safe_path
 from .text_utils import base_tokenize
-from .write_receipts import build_write_receipt, persist_write_receipt
+from .write_receipts import build_write_receipt, persist_write_receipt, query_write_receipts
 
 DEFAULT_ARTIFACTS = {
     "context": "context.md",
@@ -31,6 +31,7 @@ CORE_MEMORY_BLOCKS = {
 }
 TASK_ONLY_ARTIFACTS = {
     "current_summary": "current-summary.md",
+    "summary_history": "summary-history.md",
 }
 APPEND_ONLY_ARTIFACT_KEYS = {
     "context",
@@ -47,6 +48,7 @@ ARCHIVE_DIR = "archive/tasks"
 TASK_STATUSES = {"draft", "active", "blocked", "done", "archived"}
 DEFAULT_RESOLVE_SCORE_THRESHOLD = 3
 ARTIFACT_WRITE_AUDIT_FILE = "artifact-write-audit.jsonl"
+TASK_HEALTH_ARTIFACTS = ["current_summary", "context", "requirement", "design", "plan", "test_plan", "change_log"]
 
 
 def ensure_default_artifacts(workspace_file: str | Path) -> list[dict[str, str]]:
@@ -356,13 +358,20 @@ def resolve_task_space(
     hint_keywords: list[str] = []
     for text in related_texts or []:
         hint_keywords.extend(_tokenize_text(text))
+    input_signature = _build_task_signature(
+        title=title,
+        intent=intent,
+        related_texts=related_texts or [],
+    )
     scored = []
     for task in candidates["active_tasks"] + candidates.get("archived_tasks", []):
         analysis = _task_match_analysis(workspace_file, task, keywords, hint_keywords)
         score = int(analysis["score"])
         if score <= 0:
             continue
-        scored.append({**task, **analysis})
+        task_signature = _task_signature_for_existing(workspace_file, task)
+        overlap = _task_signature_overlap(input_signature, task_signature)
+        scored.append({**task, **analysis, "task_signature": task_signature, "signature_overlap": overlap})
     scored.sort(
         key=lambda item: (
             -int(item["score"]),
@@ -381,16 +390,36 @@ def resolve_task_space(
             "priority": item.get("priority", "medium"),
             "score": item["score"],
             "match_reasons": item.get("match_reasons", {}),
+            "task_signature": item.get("task_signature", {}),
+            "signature_overlap": item.get("signature_overlap", {}),
             "path": item["path"],
         }
         for item in scored[: max(limit_candidates, 1)]
     ]
     if scored and int(scored[0]["score"]) >= score_threshold:
+        ambiguous = _is_ambiguous_task_match(scored, score_threshold)
+        if ambiguous:
+            return {
+                "workspace": config.workspace,
+                "resolved": False,
+                "created": False,
+                "resolution_status": "ambiguous",
+                "task_id": "",
+                "title": "",
+                "score": int(scored[0]["score"]),
+                "status": "",
+                "path": "",
+                "task_signature": input_signature,
+                "candidates": candidate_rows,
+                "score_threshold": score_threshold,
+                "reason": "multiple_task_spaces_have_similar_scores",
+            }
         top = scored[0]
         return {
             "workspace": config.workspace,
             "resolved": True,
             "created": False,
+            "resolution_status": "exact" if int(top["score"]) >= score_threshold + 3 else "likely",
             "task_id": top["task_id"],
             "title": top["title"],
             "score": top["score"],
@@ -400,6 +429,9 @@ def resolve_task_space(
             "priority": top.get("priority", "medium"),
             "path": top["path"],
             "match_reasons": top.get("match_reasons", {}),
+            "task_signature": top.get("task_signature", {}),
+            "input_signature": input_signature,
+            "signature_overlap": top.get("signature_overlap", {}),
             "candidates": candidate_rows,
             "score_threshold": score_threshold,
         }
@@ -408,16 +440,18 @@ def resolve_task_space(
             "workspace": config.workspace,
             "resolved": False,
             "created": False,
+            "resolution_status": "new",
             "task_id": "",
             "title": "",
             "score": 0,
             "status": "",
             "path": "",
+            "task_signature": input_signature,
             "candidates": candidate_rows,
             "score_threshold": score_threshold,
         }
     created = create_task_space(workspace_file, title=title, intent=intent)
-    return {**created, "resolved": True, "score": 0, "candidates": candidate_rows, "score_threshold": score_threshold}
+    return {**created, "resolved": True, "resolution_status": "new", "score": 0, "task_signature": input_signature, "candidates": candidate_rows, "score_threshold": score_threshold}
 
 
 def list_task_spaces(workspace_file: str | Path, include_archived: bool = False) -> dict[str, object]:
@@ -429,6 +463,97 @@ def list_task_spaces(workspace_file: str | Path, include_archived: bool = False)
         "workspace": config.workspace,
         "active_tasks": active,
         "archived_tasks": archived,
+    }
+
+
+def task_space_health(workspace_file: str | Path, task_id: str) -> dict[str, object]:
+    config = load_workspace_config(workspace_file)
+    store = WorkspaceStore(workspace_file)
+    task_dir, meta = _resolve_task_dir(store, task_id)
+    artifacts = _task_artifact_health_snapshot(task_dir)
+    receipts = query_write_receipts(str(workspace_file), task_id=str(meta.get("task_id", "")), limit=20)
+    issues: list[dict[str, object]] = []
+    suggestions: list[str] = []
+
+    _add_missing_artifact_issues(artifacts, issues, suggestions)
+    _add_current_summary_health(meta, artifacts, issues, suggestions)
+    _add_actionability_health(meta, artifacts, receipts, issues, suggestions)
+    _add_size_balance_health(artifacts, issues, suggestions)
+    similar_tasks = _similar_task_candidates(workspace_file, meta, limit=5)
+    if similar_tasks:
+        issues.append(
+            {
+                "code": "similar_task_spaces",
+                "severity": "warning",
+                "message": "存在相似任务空间，后续自然语言匹配可能出现 ambiguous。",
+                "evidence": similar_tasks,
+            }
+        )
+        suggestions.append("合并、重命名或归档相似 task space，降低后续 resolve-task 歧义。")
+
+    score = _task_health_score(issues)
+    health = _health_label(score, issues)
+    return {
+        "workspace": config.workspace,
+        "task_id": meta.get("task_id", task_id),
+        "title": meta.get("title", ""),
+        "status": meta.get("status", ""),
+        "health": health,
+        "score": score,
+        "issues": issues,
+        "repair_suggestions": _dedupe_preserve_order(suggestions),
+        "artifact_summary": artifacts,
+        "write_receipts": {
+            "count": len(receipts.get("receipts", [])),
+            "latest": receipts.get("receipts", [])[-3:],
+            "summary": receipts.get("summary", {}),
+        },
+    }
+
+
+def task_spaces_health(workspace_file: str | Path, include_archived: bool = False, limit: int = 50) -> dict[str, object]:
+    config = load_workspace_config(workspace_file)
+    listed = list_task_spaces(workspace_file, include_archived=include_archived)
+    tasks = [*listed.get("active_tasks", []), *listed.get("archived_tasks", [])]
+    results = [task_space_health(workspace_file, str(task.get("task_id", ""))) for task in tasks[: max(limit, 0)]]
+    health_counts: dict[str, int] = {}
+    for item in results:
+        label = str(item.get("health", "unknown"))
+        health_counts[label] = health_counts.get(label, 0) + 1
+    results.sort(key=lambda item: (int(item.get("score", 0)), str(item.get("task_id", ""))))
+    return {
+        "workspace": config.workspace,
+        "include_archived": include_archived,
+        "checked": len(results),
+        "total_tasks": len(tasks),
+        "health_counts": health_counts,
+        "tasks": results,
+        "top_issues": _summarize_task_health_issues(results),
+    }
+
+
+def task_space_repair_plan(workspace_file: str | Path, task_id: str) -> dict[str, object]:
+    health = task_space_health(workspace_file, task_id)
+    plan: list[dict[str, object]] = []
+    for issue in health.get("issues", []) if isinstance(health.get("issues", []), list) else []:
+        plan.extend(_repair_actions_for_issue(issue, health))
+    plan = _dedupe_repair_plan(plan)
+    safe_to_auto_apply = bool(plan) and all(bool(item.get("safe_to_auto_apply")) for item in plan)
+    return {
+        "workspace": health.get("workspace", ""),
+        "task_id": health.get("task_id", task_id),
+        "title": health.get("title", ""),
+        "health": health.get("health", ""),
+        "score": health.get("score", 0),
+        "safe_to_auto_apply": safe_to_auto_apply,
+        "apply_supported": False,
+        "reason": "repair_plan_is_read_only",
+        "repair_plan": plan,
+        "issue_count": len(health.get("issues", []) if isinstance(health.get("issues", []), list) else []),
+        "source_health": {
+            "issues": health.get("issues", []),
+            "repair_suggestions": health.get("repair_suggestions", []),
+        },
     }
 
 
@@ -543,6 +668,70 @@ def update_task_artifact(workspace_file: str | Path, task_id: str, name: str, co
         "file": filename,
         "path": str(path),
         "write_mode": mode,
+        "audit_ref": audit,
+        "write_receipt": receipt,
+    }
+
+
+def update_task_current_summary_snapshot(
+    workspace_file: str | Path,
+    task_id: str,
+    content: str,
+    source: str = "update_task_current_summary_snapshot",
+) -> dict[str, object]:
+    """Replace current-summary.md while preserving the previous snapshot in summary-history.md."""
+    config = load_workspace_config(workspace_file)
+    store = WorkspaceStore(workspace_file)
+    task_dir, meta = _resolve_task_dir(store, task_id)
+    filename = TASK_ONLY_ARTIFACTS["current_summary"]
+    history_filename = TASK_ONLY_ARTIFACTS["summary_history"]
+    path = task_dir / filename
+    history_path = task_dir / history_filename
+    existing = path.read_text(encoding="utf-8") if path.exists() else ""
+    next_content = content.strip() + "\n" if content.strip() else ""
+    stamp = datetime.now(timezone.utc).isoformat()
+    with FileLock(str(store.lock_file)):
+        if existing.strip():
+            previous_history = history_path.read_text(encoding="utf-8") if history_path.exists() else "# Summary History / 摘要历史\n"
+            history_entry = f"\n## {stamp} / {source}\n\n{existing.strip()}\n"
+            history_path.write_text(previous_history.rstrip() + "\n" + history_entry, encoding="utf-8")
+        path.write_text(next_content, encoding="utf-8")
+    _touch_task_meta(store, task_dir, meta, source=source)
+    audit = _record_artifact_write_audit(
+        store,
+        scope="task_space",
+        artifact_name="current_summary",
+        file_name=filename,
+        write_mode="replace_snapshot",
+        before_bytes=len(existing.encode("utf-8")),
+        after_bytes=len(next_content.encode("utf-8")),
+        task_id=meta["task_id"],
+        source=source,
+    )
+    receipt = persist_write_receipt(
+        store,
+        build_write_receipt(
+            layer="L2_task_spaces",
+            action=source,
+            scope="task_space",
+            target="current_summary",
+            target_file=filename,
+            task_id=meta["task_id"],
+            write_mode="replace_snapshot",
+            audit_ref=audit,
+            bytes_written=len(next_content.encode("utf-8")),
+        ),
+    )
+    return {
+        "workspace": config.workspace,
+        "updated": True,
+        "task_id": meta["task_id"],
+        "title": meta["title"],
+        "name": "current_summary",
+        "file": filename,
+        "path": str(path),
+        "history_file": history_filename,
+        "write_mode": "replace_snapshot",
         "audit_ref": audit,
         "write_receipt": receipt,
     }
@@ -712,6 +901,7 @@ def _default_artifact_content(workspace_name: str, artifact_name: str) -> str:
         "test_plan": "Test Plan / 测试策略",
         "change_log": "Change Log / 变更记录",
         "current_summary": "Current Summary / 当前最短上下文",
+        "summary_history": "Summary History / 摘要历史",
     }
     title = title_map[artifact_name]
     return (
@@ -766,6 +956,448 @@ def _default_core_memory_block_content(workspace_name: str, block_name: str) -> 
         "## Content\n\n"
         f"{body}\n"
     )
+
+
+def _task_artifact_health_snapshot(task_dir: Path) -> dict[str, object]:
+    summary: dict[str, object] = {}
+    mapping = _artifact_mapping(include_task_only=True)
+    for name in TASK_HEALTH_ARTIFACTS:
+        filename = mapping.get(name, "")
+        path = task_dir / filename
+        content = path.read_text(encoding="utf-8") if path.exists() else ""
+        body = _artifact_body_without_boilerplate(content)
+        summary[name] = {
+            "file": filename,
+            "exists": path.exists(),
+            "chars": len(content),
+            "body_chars": len(body),
+            "placeholder": _is_placeholder_artifact(content),
+            "section_count": len(_split_markdown_sections(content)),
+            "preview": content.splitlines()[:3],
+        }
+    return summary
+
+
+def _add_missing_artifact_issues(artifacts: dict[str, object], issues: list[dict[str, object]], suggestions: list[str]) -> None:
+    required = ["current_summary", "context", "plan"]
+    for name in required:
+        info = artifacts.get(name, {}) if isinstance(artifacts.get(name), dict) else {}
+        if not info.get("exists"):
+            issues.append(
+                {
+                    "code": f"missing_{name}",
+                    "severity": "error",
+                    "message": f"{name} 文件缺失，恢复链路会丢失关键上下文。",
+                }
+            )
+            suggestions.append(f"运行 sync-sniff-artifacts 或 update-task 补齐 {name}。")
+            continue
+        if bool(info.get("placeholder")) or int(info.get("body_chars", 0)) <= 20:
+            issues.append(
+                {
+                    "code": f"empty_{name}",
+                    "severity": "warning",
+                    "message": f"{name} 仍接近初始化占位，信息量不足。",
+                }
+            )
+            suggestions.append(f"补写 {name}，优先保留目标、证据、下一步。")
+
+
+def _add_current_summary_health(
+    meta: dict[str, object],
+    artifacts: dict[str, object],
+    issues: list[dict[str, object]],
+    suggestions: list[str],
+) -> None:
+    info = artifacts.get("current_summary", {}) if isinstance(artifacts.get("current_summary"), dict) else {}
+    chars = int(info.get("chars", 0))
+    if chars > 2500:
+        issues.append(
+            {
+                "code": "oversized_current_summary",
+                "severity": "warning",
+                "message": "current_summary 过长，不适合作为接手时的最短上下文。",
+                "evidence": {"chars": chars, "limit": 2500},
+            }
+        )
+        suggestions.append("用 sync-sniff-artifacts 或快照更新把 current_summary 压缩到目标、已做、下一步、风险。")
+    stale_days = _days_since_iso(str(meta.get("updated_at", "") or ""))
+    if stale_days is not None and stale_days >= 14 and str(meta.get("status", "")) not in {"done", "archived"}:
+        issues.append(
+            {
+                "code": "stale_task_space",
+                "severity": "warning",
+                "message": f"任务空间已 {stale_days} 天未更新，恢复前需要确认上下文是否仍有效。",
+                "evidence": {"updated_at": meta.get("updated_at", ""), "stale_days": stale_days},
+            }
+        )
+        suggestions.append("恢复前先运行 resume-packet，再根据当前意图刷新 current_summary。")
+
+
+def _add_actionability_health(
+    meta: dict[str, object],
+    artifacts: dict[str, object],
+    receipts: dict[str, object],
+    issues: list[dict[str, object]],
+    suggestions: list[str],
+) -> None:
+    summary = artifacts.get("current_summary", {}) if isinstance(artifacts.get("current_summary"), dict) else {}
+    plan = artifacts.get("plan", {}) if isinstance(artifacts.get("plan"), dict) else {}
+    text = "\n".join(
+        [
+            " ".join(str(item) for item in summary.get("preview", [])) if isinstance(summary.get("preview", []), list) else "",
+            " ".join(str(item) for item in plan.get("preview", [])) if isinstance(plan.get("preview", []), list) else "",
+        ]
+    ).lower()
+    action_terms = ["next", "todo", "action", "verify", "验证", "下一步", "待办", "检查", "修复", "确认"]
+    if not any(term in text for term in action_terms) and int(plan.get("body_chars", 0)) < 160:
+        issues.append(
+            {
+                "code": "weak_next_actions",
+                "severity": "warning",
+                "message": "任务空间缺少明确下一步，接手者需要重新推断工作方向。",
+            }
+        )
+        suggestions.append("在 plan 或 current_summary 中补充 1-3 条 next actions。")
+    if str(meta.get("status", "")) == "blocked" and "blocked" not in text and "阻塞" not in text:
+        issues.append(
+            {
+                "code": "blocked_without_reason",
+                "severity": "error",
+                "message": "任务状态为 blocked，但当前摘要/计划没有说明阻塞原因。",
+            }
+        )
+        suggestions.append("补充 blocked 原因、等待对象和解除阻塞后的第一步。")
+    if not receipts.get("receipts"):
+        issues.append(
+            {
+                "code": "missing_write_receipts",
+                "severity": "warning",
+                "message": "该任务没有写入凭证，难以回放最近是谁更新了哪些工件。",
+            }
+        )
+        suggestions.append("后续通过 sync-sniff-artifacts、sync-case-artifacts 或 update-task 写入，保留 write receipt。")
+
+
+def _add_size_balance_health(artifacts: dict[str, object], issues: list[dict[str, object]], suggestions: list[str]) -> None:
+    for name in ["context", "plan", "design", "change_log"]:
+        info = artifacts.get(name, {}) if isinstance(artifacts.get(name), dict) else {}
+        chars = int(info.get("chars", 0))
+        if chars > 12000:
+            issues.append(
+                {
+                    "code": f"oversized_{name}",
+                    "severity": "warning",
+                    "message": f"{name} 体量偏大，恢复时可能引入噪音。",
+                    "evidence": {"chars": chars, "limit": 12000},
+                }
+            )
+            suggestions.append(f"压缩或归档 {name} 中的旧章节，只保留当前任务仍需要的证据。")
+
+
+def _similar_task_candidates(workspace_file: str | Path, meta: dict[str, object], limit: int = 5) -> list[dict[str, object]]:
+    task_id = str(meta.get("task_id", "") or "")
+    current_signature = _task_signature_for_existing(workspace_file, meta)
+    listed = list_task_spaces(workspace_file, include_archived=False)
+    matches: list[dict[str, object]] = []
+    for task in listed.get("active_tasks", []):
+        if str(task.get("task_id", "")) == task_id:
+            continue
+        signature = _task_signature_for_existing(workspace_file, task)
+        overlap = _task_signature_overlap(current_signature, signature)
+        score = int(overlap.get("score", 0))
+        if score < 4:
+            continue
+        matches.append(
+            {
+                "task_id": task.get("task_id", ""),
+                "title": task.get("title", ""),
+                "status": task.get("status", ""),
+                "overlap": overlap,
+            }
+        )
+    matches.sort(key=lambda item: (-int((item.get("overlap", {}) or {}).get("score", 0)), str(item.get("task_id", ""))))
+    return matches[:limit]
+
+
+def _task_health_score(issues: list[dict[str, object]]) -> int:
+    penalty = 0
+    for issue in issues:
+        severity = str(issue.get("severity", "warning"))
+        if severity == "error":
+            penalty += 25
+        elif severity == "warning":
+            penalty += 10
+        else:
+            penalty += 4
+    return max(0, 100 - penalty)
+
+
+def _health_label(score: int, issues: list[dict[str, object]]) -> str:
+    if any(str(issue.get("severity", "")) == "error" for issue in issues) or score < 60:
+        return "bad"
+    if score < 85 or issues:
+        return "warning"
+    return "good"
+
+
+def _summarize_task_health_issues(results: list[dict[str, object]]) -> list[dict[str, object]]:
+    counts: dict[str, dict[str, object]] = {}
+    for result in results:
+        for issue in result.get("issues", []) if isinstance(result.get("issues", []), list) else []:
+            code = str(issue.get("code", "unknown"))
+            entry = counts.setdefault(code, {"code": code, "count": 0, "severity": issue.get("severity", "warning")})
+            entry["count"] = int(entry.get("count", 0)) + 1
+    rows = list(counts.values())
+    rows.sort(key=lambda item: (-int(item.get("count", 0)), str(item.get("code", ""))))
+    return rows[:10]
+
+
+def _repair_actions_for_issue(issue: dict[str, object], health: dict[str, object]) -> list[dict[str, object]]:
+    code = str(issue.get("code", ""))
+    task_id = str(health.get("task_id", ""))
+    workspace = str(health.get("workspace", ""))
+    title = str(health.get("title", ""))
+    if code == "missing_write_receipts":
+        return [
+            _repair_action(
+                issue,
+                action="use_receipted_write_command",
+                target="write_receipts",
+                command="memory-center sync-sniff-artifacts | memory-center sync-case-artifacts | memory-center artifact update-task",
+                requires_content=True,
+                safe=False,
+                preview="后续写入请走带 write receipt 的命令；历史缺失凭证不自动补造。",
+                notes=["不建议伪造历史 write receipt。"],
+            )
+        ]
+    if code.startswith("missing_") or code.startswith("empty_"):
+        artifact = code.removeprefix("missing_").removeprefix("empty_")
+        if artifact == "current_summary":
+            return [
+                _repair_action(
+                    issue,
+                    action="sync_sniff_artifacts",
+                    target="current_summary",
+                    command="memory-center sync-sniff-artifacts",
+                    requires_intent=True,
+                    safe=False,
+                    preview=_current_summary_repair_preview(title),
+                    notes=["需要提供当前任务意图，避免把过期上下文写入 current_summary。"],
+                )
+            ]
+        return [
+            _repair_action(
+                issue,
+                action="update_task_artifact",
+                target=artifact,
+                command="memory-center artifact update-task",
+                requires_content=True,
+                safe=False,
+                preview=_artifact_repair_preview(artifact, title),
+                notes=[f"目标 task_id: {task_id}", "先人工确认内容，再执行写入。"],
+            )
+        ]
+    if code == "oversized_current_summary":
+        return [
+            _repair_action(
+                issue,
+                action="update_current_summary_snapshot",
+                target="current_summary",
+                command="memory-center sync-sniff-artifacts",
+                requires_intent=True,
+                safe=False,
+                preview=_current_summary_repair_preview(title),
+                notes=["保留目标、已完成、下一步、风险，不复制完整历史。"],
+            )
+        ]
+    if code == "stale_task_space":
+        return [
+            _repair_action(
+                issue,
+                action="resume_then_sync",
+                target="current_summary",
+                command="memory-center resume-packet && memory-center sync-sniff-artifacts",
+                requires_intent=True,
+                safe=False,
+                preview="先读取 resume-packet，确认当前任务仍有效，再刷新 current_summary。",
+                notes=["如果任务已结束，改用 archive-task。"],
+            )
+        ]
+    if code == "weak_next_actions":
+        return [
+            _repair_action(
+                issue,
+                action="update_task_artifact",
+                target="plan",
+                command="memory-center artifact update-task",
+                requires_content=True,
+                safe=False,
+                preview="## Next Actions / 下一步\n\n- 确认当前目标和验收口径。\n- 补齐影响分析或验证项。\n- 执行最小回归并记录结果。",
+                notes=["把下一步写成 1-3 条可执行动作。"],
+            )
+        ]
+    if code == "blocked_without_reason":
+        return [
+            _repair_action(
+                issue,
+                action="update_task_artifact",
+                target="current_summary",
+                command="memory-center artifact update-task",
+                requires_content=True,
+                safe=False,
+                preview="## Blocked / 阻塞\n\n- Reason: \n- Waiting on: \n- First action after unblock: ",
+                notes=["blocked 任务必须写清楚阻塞原因和解除后的第一步。"],
+            )
+        ]
+    if code.startswith("oversized_"):
+        artifact = code.removeprefix("oversized_")
+        return [
+            _repair_action(
+                issue,
+                action="compact_task_artifact",
+                target=artifact,
+                command="memory-center artifact update-task",
+                requires_content=True,
+                safe=False,
+                preview=_compact_artifact_preview(artifact),
+                notes=["当前只生成压缩计划，不自动删除原文。"],
+            )
+        ]
+    if code == "similar_task_spaces":
+        evidence = issue.get("evidence", [])
+        return [
+            _repair_action(
+                issue,
+                action="disambiguate_task_spaces",
+                target="task_space",
+                command="memory-center artifact update-task-status | memory-center artifact archive-task",
+                requires_content=False,
+                safe=False,
+                preview="为相似任务补充更具体标题/计划，或归档已经结束的重复任务。",
+                notes=[f"相似候选: {', '.join(str(item.get('task_id', '')) for item in evidence[:3])}" if isinstance(evidence, list) else ""],
+            )
+        ]
+    return [
+        _repair_action(
+            issue,
+            action="manual_review",
+            target="task_space",
+            command="memory-center artifact health-task",
+            requires_content=False,
+            safe=False,
+            preview="人工复核该健康问题，并选择合适的 task artifact 更新方式。",
+            notes=[f"workspace: {workspace}"],
+        )
+    ]
+
+
+def _repair_action(
+    issue: dict[str, object],
+    *,
+    action: str,
+    target: str,
+    command: str,
+    preview: str,
+    requires_intent: bool = False,
+    requires_content: bool = False,
+    safe: bool = False,
+    notes: list[str] | None = None,
+) -> dict[str, object]:
+    return {
+        "issue_code": issue.get("code", ""),
+        "severity": issue.get("severity", "warning"),
+        "action": action,
+        "target": target,
+        "command": command,
+        "requires_intent": requires_intent,
+        "requires_content": requires_content,
+        "safe_to_auto_apply": safe,
+        "preview": preview,
+        "notes": [item for item in notes or [] if item],
+    }
+
+
+def _dedupe_repair_plan(plan: list[dict[str, object]]) -> list[dict[str, object]]:
+    seen: set[tuple[str, str, str]] = set()
+    result: list[dict[str, object]] = []
+    for item in plan:
+        key = (str(item.get("issue_code", "")), str(item.get("action", "")), str(item.get("target", "")))
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(item)
+    return result
+
+
+def _current_summary_repair_preview(title: str) -> str:
+    return (
+        "# Current Summary / 当前最短上下文\n\n"
+        f"**Task**: {title}\n"
+        "**Goal**: \n"
+        "**Done**: \n"
+        "**Next Actions**:\n"
+        "- \n"
+        "**Risks / Open Questions**:\n"
+        "- \n"
+    )
+
+
+def _artifact_repair_preview(artifact: str, title: str) -> str:
+    heading = artifact.replace("_", " ").title()
+    return f"# {heading}\n\nTask: {title}\n\n## Current Facts\n\n- \n\n## Next Actions\n\n- \n"
+
+
+def _compact_artifact_preview(artifact: str) -> str:
+    heading = artifact.replace("_", " ").title()
+    return f"# {heading}\n\n## Active Context\n\n- \n\n## Archived / Superseded Notes\n\n- Move old details to a history section or external archive.\n"
+
+
+def _artifact_body_without_boilerplate(content: str) -> str:
+    lines = []
+    for line in content.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.startswith("#"):
+            continue
+        if stripped.startswith("- Workspace:") or stripped.startswith("- Task:") or stripped.startswith("- Memory layer:") or stripped.startswith("- Last updated:"):
+            continue
+        if "Fill this" in stripped or "请协作补充" in stripped:
+            continue
+        lines.append(stripped)
+    return "\n".join(lines)
+
+
+def _is_placeholder_artifact(content: str) -> bool:
+    body = _artifact_body_without_boilerplate(content)
+    if not body.strip():
+        return True
+    markers = ["Fill this", "collaboratively", "请协作补充", "TBD"]
+    return len(body) < 80 and any(marker in content for marker in markers)
+
+
+def _days_since_iso(value: str) -> int | None:
+    if not value:
+        return None
+    try:
+        dt = datetime.fromisoformat(value)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return max(0, int((datetime.now(timezone.utc) - dt).total_seconds() // 86400))
+    except Exception:
+        return None
+
+
+def _dedupe_preserve_order(items: list[str]) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for item in items:
+        if item in seen:
+            continue
+        seen.add(item)
+        result.append(item)
+    return result
 
 
 def _slugify_task_title(title: str) -> str:
@@ -935,6 +1567,71 @@ def _task_match_analysis(
             "priority_boost": priority_boost,
         },
     }
+
+
+def _task_signature_for_existing(workspace_file: str | Path, task: dict[str, object]) -> dict[str, object]:
+    related_texts: list[str] = []
+    try:
+        for artifact_name in ["current_summary", "context", "requirement", "design", "plan", "test_plan"]:
+            artifact = get_task_artifact(workspace_file, str(task.get("task_id", "")), artifact_name)
+            related_texts.append(_artifact_body_without_boilerplate(str(artifact.get("content", ""))))
+    except Exception:
+        pass
+    return _build_task_signature(
+        title=str(task.get("title", "")),
+        intent=str(task.get("intent", "")),
+        related_texts=related_texts,
+        tags=task.get("tags", []) if isinstance(task.get("tags"), list) else [],
+    )
+
+
+def _build_task_signature(
+    title: str = "",
+    intent: str = "",
+    related_texts: list[str] | None = None,
+    tags: list[str] | None = None,
+) -> dict[str, object]:
+    text = "\n".join([title, intent, *(related_texts or []), " ".join(tags or [])])
+    tokens = _tokenize_text(text)
+    token_counts: dict[str, int] = {}
+    for token in tokens:
+        if len(token) < 2:
+            continue
+        token_counts[token] = token_counts.get(token, 0) + 1
+    ranked_tokens = sorted(token_counts, key=lambda item: (-token_counts[item], item))[:20]
+    service_refs = sorted({token for token in ranked_tokens if token.endswith("service") or token.endswith("服务")})[:10]
+    file_refs = sorted(set(re.findall(r"[\w./-]+\.(?:java|py|ts|js|vue|yaml|yml|md)", text, flags=re.IGNORECASE)))[:10]
+    risk_terms = sorted({token for token in ranked_tokens if token in {"feign", "mq", "kafka", "rocketmq", "dto", "config", "nacos", "migration", "兼容", "迁移", "配置", "消息", "验证"}})
+    return {
+        "tokens": ranked_tokens,
+        "service_refs": service_refs,
+        "file_refs": file_refs,
+        "risk_terms": risk_terms,
+    }
+
+
+def _task_signature_overlap(left: dict[str, object], right: dict[str, object]) -> dict[str, object]:
+    result: dict[str, object] = {}
+    for key in ("tokens", "service_refs", "file_refs", "risk_terms"):
+        left_set = set(left.get(key, []) if isinstance(left.get(key, []), list) else [])
+        right_set = set(right.get(key, []) if isinstance(right.get(key, []), list) else [])
+        result[key] = sorted(left_set & right_set)[:10]
+    result["score"] = sum(len(result.get(key, [])) for key in ("tokens", "service_refs", "file_refs", "risk_terms"))
+    return result
+
+
+def _is_ambiguous_task_match(scored: list[dict[str, object]], score_threshold: int) -> bool:
+    if len(scored) < 2:
+        return False
+    first = int(scored[0].get("score", 0))
+    second = int(scored[1].get("score", 0))
+    if first < score_threshold or second < score_threshold:
+        return False
+    if first != second:
+        return False
+    first_overlap = int((scored[0].get("signature_overlap", {}) or {}).get("score", 0))
+    second_overlap = int((scored[1].get("signature_overlap", {}) or {}).get("score", 0))
+    return abs(first_overlap - second_overlap) <= 1
 
 
 def _parse_dt(value: str):

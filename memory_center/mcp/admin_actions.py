@@ -34,6 +34,9 @@ from memory_center.core.artifacts import (
     list_artifacts,
     list_task_spaces,
     resolve_task_space,
+    task_space_health,
+    task_space_repair_plan,
+    task_spaces_health,
     touch_task_activity,
     update_artifact,
     update_task_artifact,
@@ -86,6 +89,7 @@ from memory_center.core.orchestrator import (
     workspace_session_summary,
     workspace_start_session,
     workspace_status,
+    workspace_task_resume_check,
     workspace_write_receipts,
 )
 from memory_center.core.verification.bundle_export import generate_agent_bundle
@@ -374,6 +378,10 @@ def build_admin_registry(
         "change_log_compact": lambda: compact_change_log(wf, keep_recent),
         "task_create": lambda: create_task_space(wf, title=title, intent=intent, owner=owner, tags=tags, priority=priority),
         "task_list": lambda: list_task_spaces(wf, include_archived=include_archived),
+        "task_health": lambda: task_space_health(wf, task_id),
+        "task_health_all": lambda: task_spaces_health(wf, include_archived=include_archived, limit=limit),
+        "task_repair_plan": lambda: task_space_repair_plan(wf, task_id),
+        "task_resume_check": lambda: workspace_task_resume_check(wf, intent=intent, task_id=task_id, session_id=session_id, limit=limit, budget=budget),
         "task_resolve": lambda: resolve_task_space(wf, intent=intent, title=title, create_if_missing=create_if_missing, include_archived=include_archived, limit_candidates=limit_candidates, score_threshold=score_threshold),
         "task_get": lambda: get_task_artifact(wf, task_id, name),
         "task_update": lambda: update_task_artifact(wf, task_id, name, content),

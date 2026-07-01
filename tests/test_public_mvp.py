@@ -25,7 +25,11 @@ from memory_center.core.artifacts import (
     list_artifacts,
     list_task_spaces,
     resolve_task_space,
+    task_space_health,
+    task_space_repair_plan,
+    task_spaces_health,
     touch_task_activity,
+    update_task_current_summary_snapshot,
     update_artifact,
     update_task_artifact,
     update_task_status,
@@ -70,6 +74,8 @@ from memory_center.core.orchestrator import (
     workspace_sniff,
     workspace_start_session,
     workspace_status,
+    workspace_sync_sniff_to_artifacts,
+    workspace_task_resume_check,
     workspace_trace,
     workspace_unresolved_items,
     workspace_write_receipts,
@@ -1619,6 +1625,9 @@ def test_http_bridge_routes(tmp_path: Path):
         resume_packet = json.loads(urlopen(f"{base}/workspace/resume-packet?intent=update%20rule&limit=10").read().decode("utf-8"))
         assert "next_recommended_actions" in resume_packet
         assert "resume_rule_profile" in resume_packet
+        resume_check = json.loads(urlopen(f"{base}/workspace/work-resume-check?task_id={quote(task_id)}&limit=5").read().decode("utf-8"))
+        assert resume_check["workflow"] == "task-resume-check"
+        assert "recommended_next_step" in resume_check
         model_profile = json.loads(urlopen(f"{base}/workspace/model-profile?model_name=deepseek-r1").read().decode("utf-8"))
         assert model_profile["normalized_model"] == "deepseek"
         handoff_packet = json.loads(urlopen(f"{base}/workspace/handoff-packet?target_model=glm-4&intent=update%20rule&limit=10").read().decode("utf-8"))
@@ -1777,6 +1786,198 @@ def test_resolve_task_score_threshold(tmp_path: Path):
     assert resolved_low["resolved"] is True
     assert resolved_low["task_id"] == task_id
     assert resolved_low["score_threshold"] == 1
+
+
+def test_resolve_task_space_returns_ambiguous_for_equal_candidates(tmp_path: Path):
+    workspace = _copy_demo_workspace(tmp_path, "resolve-ambiguous")
+
+    first = create_task_space(workspace, title="alpha Feign DTO 兼容治理", intent="处理 Feign DTO 兼容治理")
+    second = create_task_space(workspace, title="beta Feign DTO 兼容治理", intent="处理 Feign DTO 兼容治理")
+    update_task_artifact(workspace, first["task_id"], "plan", "# Plan\n\n处理 Feign DTO 兼容治理")
+    update_task_artifact(workspace, second["task_id"], "plan", "# Plan\n\n处理 Feign DTO 兼容治理")
+
+    resolved = resolve_task_space(
+        workspace,
+        intent="继续处理 Feign DTO 兼容治理",
+        create_if_missing=False,
+        score_threshold=1,
+        limit_candidates=5,
+    )
+
+    assert resolved["resolved"] is False
+    assert resolved["resolution_status"] == "ambiguous"
+    assert len(resolved["candidates"]) >= 2
+    assert "task_signature" in resolved
+    assert "task_signature" in resolved["candidates"][0]
+
+
+def test_current_summary_snapshot_replaces_and_archives_history(tmp_path: Path):
+    workspace = _copy_demo_workspace(tmp_path, "summary-snapshot")
+    task = create_task_space(workspace, title="摘要快照任务")
+    task_id = task["task_id"]
+
+    first = update_task_current_summary_snapshot(workspace, task_id, "# Current Summary\n\n第一版摘要", source="test")
+    second = update_task_current_summary_snapshot(workspace, task_id, "# Current Summary\n\n第二版摘要", source="test")
+
+    current = get_task_artifact(workspace, task_id, "current_summary")
+    history = get_task_artifact(workspace, task_id, "summary_history")
+    assert first["write_mode"] == "replace_snapshot"
+    assert second["write_mode"] == "replace_snapshot"
+    assert "第二版摘要" in current["content"]
+    assert "第一版摘要" not in current["content"]
+    assert "第一版摘要" in history["content"]
+
+
+def test_resume_packet_includes_readiness_fields(tmp_path: Path):
+    workspace = _copy_demo_workspace(tmp_path, "resume-readiness")
+    task = create_task_space(workspace, title="恢复包质量任务")
+    workspace_sync_sniff_to_artifacts(workspace, "ArticleFeignClient 调用链恢复", task_id=task["task_id"], limit=5)
+
+    packet = workspace_resume_packet(workspace, task_id=task["task_id"], view="full", limit=5)
+    compact = workspace_resume_packet(workspace, task_id=task["task_id"], view="compact", limit=5)
+
+    assert packet["resume_readiness"] in {"ready", "partial", "blocked"}
+    assert "missing_context" in packet
+    assert "stale_artifacts" in packet
+    assert "must_read_refs" in packet
+    assert 0 <= packet["confidence"] <= 1
+    assert packet["task_health"]["available"] is True
+    assert packet["task_health"]["health"] in {"good", "warning", "bad"}
+    assert "issue_count" in packet["task_health"]
+    assert "repair_plan_hint" in packet
+    assert "resume_readiness" in compact
+    assert "confidence" in compact
+    assert "task_health" in compact
+    assert "repair_plan_hint" in compact
+
+
+def test_resume_packet_recommends_repair_plan_for_unhealthy_task(tmp_path: Path):
+    workspace = _copy_demo_workspace(tmp_path, "resume-health-repair")
+    task = create_task_space(workspace, title="恢复包健康检查任务")
+
+    packet = workspace_resume_packet(workspace, task_id=task["task_id"], view="full", limit=5)
+    compact = workspace_resume_packet(workspace, task_id=task["task_id"], view="compact", limit=5)
+
+    assert packet["task_health"]["available"] is True
+    assert packet["task_health"]["issue_count"] >= 1
+    assert packet["repair_plan_hint"]["available"] is True
+    assert "task_repair_plan" in packet["repair_plan_hint"]["recommended_action"]
+    assert compact["task_health"]["issue_count"] >= 1
+    assert compact["repair_plan_hint"]["available"] is True
+
+
+def test_workspace_task_resume_check_for_ready_and_repair_states(tmp_path: Path):
+    workspace = _copy_demo_workspace(tmp_path, "task-resume-check")
+    empty = create_task_space(workspace, title="接手检查未同步任务")
+    synced = create_task_space(workspace, title="接手检查已同步任务")
+    workspace_sync_sniff_to_artifacts(workspace, "ArticleFeignClient 接手检查", task_id=synced["task_id"], limit=5)
+
+    needs_repair = workspace_task_resume_check(workspace, task_id=empty["task_id"], limit=5)
+    ready = workspace_task_resume_check(workspace, task_id=synced["task_id"], limit=5)
+
+    assert needs_repair["workflow"] == "task-resume-check"
+    assert needs_repair["status"] == "needs_repair"
+    assert needs_repair["repair_plan"]
+    assert needs_repair["recommended_next_step"]["action"] == "repair_plan"
+    assert ready["status"] == "ready"
+    assert ready["can_resume"] is True
+    assert ready["repair_plan"] == []
+    assert ready["recommended_next_step"]["action"] == "resume"
+
+
+def test_work_resume_check_cli(tmp_path: Path):
+    workspace = _copy_demo_workspace(tmp_path, "task-resume-check-cli")
+    task = create_task_space(workspace, title="CLI 接手检查任务")
+
+    runner = CliRunner()
+    result = runner.invoke(app, ["work-resume-check", "--workspace", str(workspace), "--task-id", task["task_id"], "--limit", "5"])
+
+    assert result.exit_code == 0
+    assert "task-resume-check" in result.output
+    assert "recommended_next_step" in result.output
+
+
+def test_task_space_health_reports_issues_and_suggestions(tmp_path: Path):
+    workspace = _copy_demo_workspace(tmp_path, "task-health")
+    task = create_task_space(workspace, title="任务空间健康检查")
+
+    health = task_space_health(workspace, task["task_id"])
+
+    assert health["task_id"] == task["task_id"]
+    assert health["health"] in {"good", "warning", "bad"}
+    assert 0 <= health["score"] <= 100
+    assert health["issues"]
+    assert health["repair_suggestions"]
+    assert "artifact_summary" in health
+    assert "write_receipts" in health
+
+
+def test_task_space_health_detects_similar_tasks(tmp_path: Path):
+    workspace = _copy_demo_workspace(tmp_path, "task-health-similar")
+    first = create_task_space(workspace, title="alpha ArticleFeignClient DTO 兼容治理")
+    second = create_task_space(workspace, title="beta ArticleFeignClient DTO 兼容治理")
+    update_task_artifact(workspace, first["task_id"], "plan", "# Plan\n\nArticleFeignClient DTO 兼容治理")
+    update_task_artifact(workspace, second["task_id"], "plan", "# Plan\n\nArticleFeignClient DTO 兼容治理")
+
+    health = task_space_health(workspace, first["task_id"])
+
+    assert any(issue["code"] == "similar_task_spaces" for issue in health["issues"])
+    similar = next(issue for issue in health["issues"] if issue["code"] == "similar_task_spaces")
+    assert similar["evidence"]
+
+
+def test_task_spaces_health_and_cli(tmp_path: Path):
+    workspace = _copy_demo_workspace(tmp_path, "task-health-cli")
+    task = create_task_space(workspace, title="CLI 健康检查任务")
+    workspace_sync_sniff_to_artifacts(workspace, "ArticleFeignClient CLI 健康检查", task_id=task["task_id"], limit=5)
+
+    overview = task_spaces_health(workspace)
+    assert overview["checked"] >= 1
+    assert overview["tasks"]
+    assert "health_counts" in overview
+    assert "top_issues" in overview
+
+    runner = CliRunner()
+    single = runner.invoke(app, ["artifact", "health-task", "--workspace", str(workspace), "--task-id", task["task_id"]])
+    assert single.exit_code == 0
+    assert "health" in single.output
+    assert "repair_suggestions" in single.output
+
+    all_tasks = runner.invoke(app, ["artifact", "health-tasks", "--workspace", str(workspace), "--limit", "5"])
+    assert all_tasks.exit_code == 0
+    assert "health_counts" in all_tasks.output
+
+
+def test_task_space_repair_plan_for_unhealthy_task(tmp_path: Path):
+    workspace = _copy_demo_workspace(tmp_path, "task-repair-plan")
+    task = create_task_space(workspace, title="修复计划任务")
+
+    plan = task_space_repair_plan(workspace, task["task_id"])
+
+    assert plan["task_id"] == task["task_id"]
+    assert plan["apply_supported"] is False
+    assert plan["reason"] == "repair_plan_is_read_only"
+    assert plan["issue_count"] >= 1
+    assert plan["repair_plan"]
+    assert any(item["issue_code"] == "empty_current_summary" for item in plan["repair_plan"])
+    assert all("command" in item for item in plan["repair_plan"])
+    assert plan["safe_to_auto_apply"] is False
+
+
+def test_task_space_repair_plan_cli_for_synced_task(tmp_path: Path):
+    workspace = _copy_demo_workspace(tmp_path, "task-repair-plan-cli")
+    task = create_task_space(workspace, title="CLI 修复计划任务")
+    workspace_sync_sniff_to_artifacts(workspace, "ArticleFeignClient CLI 修复计划", task_id=task["task_id"], limit=5)
+
+    plan = task_space_repair_plan(workspace, task["task_id"])
+    assert plan["repair_plan"] == []
+    assert plan["issue_count"] == 0
+
+    runner = CliRunner()
+    result = runner.invoke(app, ["artifact", "repair-plan-task", "--workspace", str(workspace), "--task-id", task["task_id"]])
+    assert result.exit_code == 0
+    assert "repair_plan" in result.output
+    assert "apply_supported" in result.output
 
 
 def test_touch_task_activity(tmp_path: Path):

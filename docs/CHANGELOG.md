@@ -8,6 +8,13 @@
 
 ## Unreleased
 
+### Task Space Resume Experience / 任务空间接手体验
+
+- 新增任务空间健康检查与只读修复计划，可通过 CLI 与 MCP `mc_admin` 检查 `current_summary`、next actions、write receipts、相似任务空间等问题。
+- `resume-packet` 现在携带轻量 `task_health` 与 `repair_plan_hint`，Agent 接手时可直接判断是否需要先修复记忆空间。
+- 新增 `work-resume-check` / `mc_admin(action="task_resume_check")` / `/workspace/work-resume-check` 一键接手检查入口，聚合恢复包、健康摘要、修复计划、下一步动作和近期证据。
+- 本地安装版本提升至 `3.5.19`。
+
 ### Parent Workspace MCP Adoption Fix / 父级 Workspace MCP 采纳修复
 
 - 修复聚合 workspace 位于子项目上一层时，Agent 在子项目目录里较容易忽略 Memory Center MCP 的问题。

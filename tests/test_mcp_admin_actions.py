@@ -8,8 +8,11 @@ demo workspace.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
+from memory_center.core.artifacts import create_task_space
 from memory_center.mcp.admin_actions import (
     build_admin_registry,
     explanation_action,
@@ -29,6 +32,10 @@ def test_build_admin_registry_lists_known_actions() -> None:
         "drill_ref",
         "drill_timeline",
         "task_list",
+        "task_health",
+        "task_health_all",
+        "task_repair_plan",
+        "task_resume_check",
         "session_recent",
         "write_judge",
         "eval_regression_suite",
@@ -78,3 +85,30 @@ def test_metrics_action_dispatch_through_registry() -> None:
     assert payload.get("workflow") == "mc-metrics"
     assert payload["summary"]["metric"] == "query_latency"
     assert payload["summary"]["count"] == 0
+
+
+def test_task_health_actions_dispatch_through_registry(tmp_path: Path) -> None:
+    from tests.fixtures import setup_demo_workspace
+
+    wf = str(setup_demo_workspace(tmp_path))
+    task = create_task_space(wf, title="MCP task health")
+    reg = build_admin_registry(workspace_file=wf, task_id=task["task_id"], limit=5)
+
+    health = reg.dispatch("task_health")
+    assert health["task_id"] == task["task_id"]
+    assert "issues" in health
+    assert "repair_suggestions" in health
+
+    all_health = reg.dispatch("task_health_all")
+    assert all_health["checked"] >= 1
+    assert "health_counts" in all_health
+
+    repair = reg.dispatch("task_repair_plan")
+    assert repair["task_id"] == task["task_id"]
+    assert repair["apply_supported"] is False
+    assert "repair_plan" in repair
+
+    resume_check = reg.dispatch("task_resume_check")
+    assert resume_check["workflow"] == "task-resume-check"
+    assert resume_check["task_id"] == task["task_id"]
+    assert "recommended_next_step" in resume_check

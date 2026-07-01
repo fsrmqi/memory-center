@@ -1131,6 +1131,41 @@ def test_mc_admin_dispatch_table_coverage(tmp_path: Path):
     assert isinstance(r, list) or isinstance(r, dict)
 
 
+@pytest.mark.skipif(not HAS_MCP, reason="mcp package not installed")
+def test_mc_admin_task_health_actions(tmp_path: Path):
+    import asyncio
+    import inspect
+
+    wf = _setup_workspace(tmp_path)
+    server = create_server(wf)
+    mc_admin = server._tool_manager._tools["mc_admin"]
+    created = create_task_space(wf, title="MCP 健康检查任务")
+
+    loop = asyncio.get_event_loop()
+    def call_admin(**kwargs):
+        payload = mc_admin.fn(**kwargs)
+        resolved = loop.run_until_complete(payload) if inspect.isawaitable(payload) else payload
+        return resolved.get("result", resolved) if isinstance(resolved, dict) else resolved
+
+    health = call_admin(action="task_health", task_id=created["task_id"])
+    assert health["task_id"] == created["task_id"]
+    assert "issues" in health
+
+    all_health = call_admin(action="task_health_all", limit=5)
+    assert all_health["checked"] >= 1
+    assert "health_counts" in all_health
+
+    repair = call_admin(action="task_repair_plan", task_id=created["task_id"])
+    assert repair["task_id"] == created["task_id"]
+    assert repair["apply_supported"] is False
+    assert "repair_plan" in repair
+
+    resume_check = call_admin(action="task_resume_check", task_id=created["task_id"])
+    assert resume_check["workflow"] == "task-resume-check"
+    assert resume_check["task_id"] == created["task_id"]
+    assert "recommended_next_step" in resume_check
+
+
 def test_mc_lookup_invalid_mode_raises(tmp_path: Path):
     """Verify that an invalid mode string raises ValueError with helpful message."""
     wf = _setup_workspace(tmp_path)

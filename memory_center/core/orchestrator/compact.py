@@ -151,6 +151,13 @@ def _compact_resume_packet(result: dict[str, Any], budget: str = "medium") -> di
             "unresolved_items": result.get("unresolved_items", [])[: limits["findings"]],
             "verification_pending": result.get("verification_pending", False),
             "resume_rule_profile": result.get("resume_rule_profile", ""),
+            "resume_readiness": result.get("resume_readiness", ""),
+            "missing_context": result.get("missing_context", [])[: limits["findings"]],
+            "stale_artifacts": result.get("stale_artifacts", [])[: limits["findings"]],
+            "must_read_refs": result.get("must_read_refs", [])[: limits["events"]],
+            "confidence": result.get("confidence", 0),
+            "task_health": result.get("task_health", {}),
+            "repair_plan_hint": result.get("repair_plan_hint", {}),
         },
     )
 

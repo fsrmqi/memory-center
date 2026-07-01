@@ -27,6 +27,9 @@ from memory_center.core.artifacts import (
     list_artifacts,
     list_task_spaces,
     resolve_task_space,
+    task_space_health,
+    task_space_repair_plan,
+    task_spaces_health,
     touch_task_activity,
     update_artifact,
     update_task_artifact,
@@ -107,6 +110,7 @@ from memory_center.core.orchestrator import (
     workspace_suggest_case,
     workspace_sync_case_to_artifacts,
     workspace_sync_sniff_to_artifacts,
+    workspace_task_resume_check,
     workspace_trace,
     workspace_unresolved_items,
     workspace_write_receipts,
@@ -1389,6 +1393,19 @@ def work_resume_cmd(
     )
 
 
+@app.command("work-resume-check")
+def work_resume_check_cmd(
+    workspace: str = typer.Option(...),
+    task_id: str = typer.Option(""),
+    session_id: str = typer.Option(""),
+    intent: str = typer.Option(""),
+    limit: int = typer.Option(8),
+    budget: str = typer.Option("medium", help="small|medium|large"),
+):
+    """Check whether one task is ready to resume, with health and repair hints."""
+    print(workspace_task_resume_check(workspace, task_id=task_id, session_id=session_id, intent=intent, limit=limit, budget=budget))
+
+
 @app.command("work-handoff")
 def work_handoff_cmd(
     workspace: str = typer.Option(...),
@@ -1774,6 +1791,34 @@ def artifact_list_tasks_cmd(
 ):
     """List active or archived task artifact spaces."""
     print(list_task_spaces(workspace, include_archived=include_archived))
+
+
+@artifact_app.command("health-task")
+def artifact_health_task_cmd(
+    workspace: str = typer.Option(...),
+    task_id: str = typer.Option(...),
+):
+    """Check one task-space health and repair suggestions."""
+    print(task_space_health(workspace, task_id))
+
+
+@artifact_app.command("health-tasks")
+def artifact_health_tasks_cmd(
+    workspace: str = typer.Option(...),
+    include_archived: bool = typer.Option(False),
+    limit: int = typer.Option(50),
+):
+    """Check task-space health across the workspace."""
+    print(task_spaces_health(workspace, include_archived=include_archived, limit=limit))
+
+
+@artifact_app.command("repair-plan-task")
+def artifact_repair_plan_task_cmd(
+    workspace: str = typer.Option(...),
+    task_id: str = typer.Option(...),
+):
+    """Build a read-only repair plan for one task-space health report."""
+    print(task_space_repair_plan(workspace, task_id))
 
 
 @artifact_app.command("resolve-task")

@@ -88,6 +88,7 @@ from memory_center.core.orchestrator import (
     workspace_suggest_case,
     workspace_sync_case_to_artifacts,
     workspace_sync_sniff_to_artifacts,
+    workspace_task_resume_check,
     workspace_unresolved_items,
     workspace_write_receipts,
 )
@@ -154,6 +155,7 @@ __all__ = [
     "workspace_start_session",
     "workspace_status",
     "workspace_suggest_case",
+    "workspace_task_resume_check",
     "workspace_sync_case_to_artifacts",
     "workspace_sync_sniff_to_artifacts",
     "workspace_unresolved_items",

@@ -28,6 +28,7 @@ from .dependencies import (
     workspace_suggest_case,
     workspace_sync_case_to_artifacts,
     workspace_sync_sniff_to_artifacts,
+    workspace_task_resume_check,
     workspace_unresolved_items,
 )
 from .params import RouteParams, _parse_int
@@ -90,6 +91,16 @@ def register_workflow_routes(registry: CommandRegistry) -> None:
             "unresolved_items": workspace_unresolved_items(ws, task_id=task_id, session_id=session_id, intent=intent, limit=limit),
             "recent_evidence": workspace_recent_evidence(ws, task_id=task_id, session_id=session_id, limit=min(limit, 5), budget=budget, view="compact"),
         }
+
+    def _work_resume_check(rp: RouteParams) -> dict[str, Any]:
+        return workspace_task_resume_check(
+            rp.workspace(),
+            task_id=rp.task_id(),
+            session_id=rp.session_id(),
+            intent=rp.intent(),
+            limit=rp.limit(8),
+            budget=rp.budget(),
+        )
 
     def _work_handoff(rp: RouteParams) -> dict[str, Any]:
         ws = rp.workspace()
@@ -161,6 +172,7 @@ def register_workflow_routes(registry: CommandRegistry) -> None:
     registry.register("/workspace/work-start", _work_start)
     registry.register("/workspace/work-sync", _work_sync)
     registry.register("/workspace/work-resume", _work_resume)
+    registry.register("/workspace/work-resume-check", _work_resume_check)
     registry.register("/workspace/work-handoff", _work_handoff)
     registry.register("/workspace/work-close", _work_close)
     registry.register("/workspace/work-health", _work_health)

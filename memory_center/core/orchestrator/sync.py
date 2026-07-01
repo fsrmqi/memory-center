@@ -8,6 +8,7 @@ from ..artifacts import (
     get_task_artifact,
     resolve_task_space,
     touch_task_activity,
+    update_task_current_summary_snapshot,
     update_task_artifact,
 )
 from ..write_receipts import build_write_receipt
@@ -49,6 +50,7 @@ def workspace_sync_sniff_to_artifacts(
         title=title or task_id,
         create_if_missing=True,
         score_threshold=threshold,
+        related_texts=_task_resolution_hints_from_sniff(sniff),
     )
     resolved_task_id = resolved.get("task_id", "")
     if not resolved_task_id:
@@ -83,7 +85,7 @@ def workspace_sync_sniff_to_artifacts(
     update_task_artifact(workspace_file, resolved_task_id, "plan", merged_plan, source="sync_sniff_artifacts")
 
     summary_body = _render_task_current_summary_from_sniff(sniff, resolved)
-    update_task_artifact(workspace_file, resolved_task_id, "current_summary", summary_body, source="sync_sniff_artifacts")
+    update_task_current_summary_snapshot(workspace_file, resolved_task_id, summary_body, source="sync_sniff_artifacts")
 
     updated_artifacts = ["context", "plan", "current_summary"]
     receipt = build_write_receipt(
@@ -156,6 +158,7 @@ def workspace_sync_case_to_artifacts(
         title=title or task_id,
         create_if_missing=True,
         score_threshold=threshold,
+        related_texts=_task_resolution_hints_from_case(case),
     )
     resolved_task_id = resolved.get("task_id", "")
     if not resolved_task_id:
@@ -183,7 +186,7 @@ def workspace_sync_case_to_artifacts(
     append_task_change_log(workspace_file, resolved_task_id, change_log_entry, source="sync_case_artifacts")
 
     summary_body = _render_task_current_summary_from_case(case, resolved, session_id)
-    update_task_artifact(workspace_file, resolved_task_id, "current_summary", summary_body, source="sync_case_artifacts")
+    update_task_current_summary_snapshot(workspace_file, resolved_task_id, summary_body, source="sync_case_artifacts")
 
     risk_profile = _case_risk_profile(case)
     updated_artifacts = ["design", "change_log", "current_summary"]
@@ -309,6 +312,35 @@ def _render_sniff_context_markdown(sniff: dict[str, Any]) -> str:
         parts.append("_No sniff context available._")
 
     return "\n".join(parts)
+
+
+def _task_resolution_hints_from_sniff(sniff: dict[str, Any]) -> list[str]:
+    hints: list[str] = []
+    for service in sniff.get("matched_services", []) or []:
+        if isinstance(service, dict):
+            hints.append(str(service.get("name", "") or service.get("service_name", "") or service.get("project", "")))
+        else:
+            hints.append(str(service))
+    for item in sniff.get("candidate_files", []) or []:
+        if isinstance(item, dict):
+            hints.append(str(item.get("path", "")))
+            hints.append(str(item.get("project", "")))
+    for key in ("related_feigns", "related_apis", "related_mq", "historical_cases"):
+        for item in sniff.get(key, []) or []:
+            hints.append(str(item))
+    return [item for item in hints if item.strip()]
+
+
+def _task_resolution_hints_from_case(case: dict[str, Any]) -> list[str]:
+    hints: list[str] = []
+    for key in ("projects", "files", "risk_points", "source_refs"):
+        for item in case.get(key, []) or []:
+            hints.append(str(item))
+    for key in ("task", "flow"):
+        value = str(case.get(key, "") or "")
+        if value:
+            hints.append(value)
+    return [item for item in hints if item.strip()]
 
 
 def _render_sniff_plan_markdown(sniff: dict[str, Any]) -> str:

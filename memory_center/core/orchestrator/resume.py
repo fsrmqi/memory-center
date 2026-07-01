@@ -105,12 +105,16 @@ def workspace_resume_packet(
         "verification_pending": bool(unresolved),
         "resume_rule_profile": resume_rules.get("profile_name", "default"),
     }
+    packet.update(_build_resume_readiness(packet, task_meta or {}, replay.get("timeline", [])))
+    packet.update(_build_resume_task_health(workspace_file, resolved_task_id))
     fields = resume_rules.get("fields", list(packet.keys()))
     filtered = {"workspace": config.workspace}
     for key in fields:
         if key in packet:
             filtered[key] = packet[key]
     filtered["resume_rule_profile"] = packet.get("resume_rule_profile", "default")
+    for key in ("resume_readiness", "missing_context", "stale_artifacts", "must_read_refs", "confidence", "task_health", "repair_plan_hint"):
+        filtered[key] = packet.get(key)
     result = with_schema("resume_packet", filtered)
     if (view or "").strip().lower() == "compact":
         compact = _compact_resume_packet(result, budget=budget)
@@ -430,3 +434,122 @@ def _infer_task_phase(current_summary: str, timeline: list[dict[str, Any]]) -> s
     if current_summary.strip():
         return "drafted"
     return "unknown"
+
+
+def _build_resume_readiness(packet: dict[str, Any], task_meta: dict[str, Any], timeline: list[dict[str, Any]]) -> dict[str, Any]:
+    missing: list[str] = []
+    stale: list[str] = []
+    must_read_refs: list[str] = []
+
+    if not packet.get("task_id"):
+        missing.append("task_id")
+    if not str(packet.get("current_summary", "") or "").strip():
+        missing.append("current_summary")
+    if not packet.get("next_recommended_actions"):
+        missing.append("next_recommended_actions")
+    if not packet.get("latest_receipts") and not timeline:
+        missing.append("write_receipts")
+    if packet.get("verification_pending"):
+        missing.append("verification_resolution")
+
+    stale_days = _days_since(str(task_meta.get("updated_at", "") or ""))
+    if stale_days is not None and stale_days >= 14:
+        stale.append(f"task_space_stale:{stale_days}d")
+
+    for item in packet.get("recent_evidence", []) or []:
+        ref_id = str(item.get("ref_id", "") or "")
+        if ref_id:
+            must_read_refs.append(ref_id)
+        if len(must_read_refs) >= 5:
+            break
+
+    if packet.get("verification_pending") or "verification_resolution" in missing:
+        readiness = "blocked"
+    elif missing:
+        readiness = "partial"
+    else:
+        readiness = "ready"
+
+    confidence = max(0.0, min(1.0, 1.0 - 0.18 * len(missing) - 0.08 * len(stale)))
+    return {
+        "resume_readiness": readiness,
+        "missing_context": missing,
+        "stale_artifacts": stale,
+        "must_read_refs": must_read_refs,
+        "confidence": round(confidence, 2),
+    }
+
+
+def _build_resume_task_health(workspace_file: str | Path, task_id: str) -> dict[str, Any]:
+    if not task_id:
+        return {
+            "task_health": {
+                "available": False,
+                "health": "unknown",
+                "score": 0,
+                "issue_count": 0,
+                "top_issues": [],
+            },
+            "repair_plan_hint": {
+                "available": False,
+                "recommended_action": "",
+                "reason": "missing_task_id",
+            },
+        }
+    try:
+        from ..artifacts import task_space_health
+
+        health = task_space_health(workspace_file, task_id)
+    except Exception as exc:
+        return {
+            "task_health": {
+                "available": False,
+                "health": "unknown",
+                "score": 0,
+                "issue_count": 0,
+                "top_issues": [],
+                "error": str(exc),
+            },
+            "repair_plan_hint": {
+                "available": False,
+                "recommended_action": "",
+                "reason": "task_health_failed",
+            },
+        }
+    issues = health.get("issues", []) if isinstance(health.get("issues", []), list) else []
+    top_issues = [
+        {
+            "code": str(issue.get("code", "")),
+            "severity": str(issue.get("severity", "")),
+        }
+        for issue in issues[:5]
+    ]
+    has_issues = bool(issues)
+    return {
+        "task_health": {
+            "available": True,
+            "health": health.get("health", "unknown"),
+            "score": health.get("score", 0),
+            "issue_count": len(issues),
+            "top_issues": top_issues,
+        },
+        "repair_plan_hint": {
+            "available": has_issues,
+            "recommended_action": f"mc_admin(action='task_repair_plan', task_id='{task_id}')" if has_issues else "",
+            "reason": "health_issues_detected" if has_issues else "no_health_issues",
+        },
+    }
+
+
+def _days_since(value: str) -> int | None:
+    if not value:
+        return None
+    try:
+        from datetime import datetime, timezone
+
+        dt = datetime.fromisoformat(value)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return max(0, int((datetime.now(timezone.utc) - dt).total_seconds() // 86400))
+    except Exception:
+        return None
