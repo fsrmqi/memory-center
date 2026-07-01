@@ -561,6 +561,19 @@ class TestG04AgentRuntimeAudit:
         assert payload["auto_fixed"] is True
         assert payload["mcp_bindings"]["ok"] is True
 
+    def test_setup_agent_cli_writes_bindings_and_next_steps(self, demo_workspace: Path):
+        from typer.testing import CliRunner
+
+        from memory_center.cli.main import app
+        runner = CliRunner()
+        result = runner.invoke(app, ["setup-agent", "--workspace", str(demo_workspace)])
+        assert result.exit_code == 0
+        payload = json.loads(result.stdout)
+        assert payload["workflow"] == "setup-agent"
+        assert payload["mcp_bindings"]["ok"] is True
+        assert payload["requires_host_reload"] is True
+        assert payload["next_steps"]
+
     def test_runtime_audit_mcp_admin_force_writes_bindings(self, demo_workspace: Path):
         from memory_center.mcp.admin_actions import build_admin_registry
 

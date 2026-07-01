@@ -9,12 +9,42 @@ from pathlib import Path
 from typing import Any
 
 from ..config import load_workspace_config
+from ..artifacts import ensure_default_artifacts
 from ..instructions import inspect_agent_mcp_bindings, repair_agent_mcp_bindings
+from ...hooks.spec import ensure_default_hooks
+from ..rules import ensure_default_rules
 from ..store import WorkspaceStore
 from ..validators import doctor
 from ..verification.heuristics import apply_candidate_path_learning
 
 AUDIT_LOG_FILE = "agent-runtime-audit.jsonl"
+
+
+def setup_agent_runtime(workspace_file: str | Path) -> dict[str, Any]:
+    """Prepare host-agent integration for a workspace in one explicit step."""
+    config = load_workspace_config(workspace_file)
+    store = WorkspaceStore(workspace_file)
+    ensure_default_rules(store)
+    ensure_default_hooks(store)
+    ensure_default_artifacts(workspace_file)
+    audit = audit_agent_runtime(workspace_file, fix=True)
+    mcp_bindings = audit.get("mcp_bindings", {}) or {}
+    next_steps = [
+        "如果当前 Codex / Cursor / Claude Code 会话已经启动，请重启或刷新宿主会话，让新的 MCP 配置生效。",
+        "在子项目目录里直接使用 MCP 时，传项目目录或父级 workspace.yaml 均可；Memory Center 会自动解析父级 workspace。",
+    ]
+    if not mcp_bindings.get("command_available", False):
+        next_steps.insert(0, "当前 PATH 未发现 memory-center-mcp，请先确认本地安装或 pipx PATH。")
+    return {
+        "workflow": "setup-agent",
+        "workspace": config.workspace,
+        "workspace_file": str(Path(workspace_file).expanduser().resolve()),
+        "workspace_root": str(Path(config.root_path).expanduser().resolve()),
+        "mcp_bindings": mcp_bindings,
+        "audit": audit,
+        "requires_host_reload": True,
+        "next_steps": next_steps,
+    }
 
 
 def audit_agent_runtime(workspace_file: str | Path, fix: bool = False) -> dict[str, Any]:

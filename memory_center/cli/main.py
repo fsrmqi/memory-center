@@ -2064,6 +2064,16 @@ def runtime_audit_cmd(
     typer.echo(json.dumps(result, indent=2, default=str, ensure_ascii=False))
 
 
+@app.command("setup-agent")
+def setup_agent_cmd(
+    workspace: str = typer.Option(..., help="Path to .memory-center/workspace.yaml"),
+):
+    """Generate instructions, repair MCP bindings, and audit host-agent readiness."""
+    from memory_center.core.audit.runtime import setup_agent_runtime
+    result = setup_agent_runtime(workspace)
+    typer.echo(json.dumps(result, indent=2, default=str, ensure_ascii=False))
+
+
 @app.command("explanation")
 def explanation_cmd(
     text: str = typer.Option(..., help="Content to explain"),

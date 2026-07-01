@@ -101,7 +101,48 @@ def _find_groups_for_workspace(workspace_file: str) -> list[str]:
 class _WorkspaceContext:
     """Holds workspace file path per server instance, avoiding module-level global."""
     def __init__(self, workspace_file: str):
+        self.workspace_input = workspace_file
         self.workspace_file = _resolve_workspace_input(workspace_file)
+        self.startup_diagnostics = _build_startup_diagnostics(self.workspace_input, self.workspace_file)
+
+
+def _build_startup_diagnostics(workspace_input: str, workspace_file: str) -> dict[str, Any]:
+    diagnostics: dict[str, Any] = {
+        "workspace_input": workspace_input,
+        "workspace_file": workspace_file,
+        "resolved_from_directory": str(workspace_input or "").strip() != workspace_file,
+        "ok": False,
+        "checks": [],
+        "next_actions": [],
+    }
+    try:
+        from memory_center.core.config import load_workspace_config
+        from memory_center.core.instructions import inspect_agent_mcp_bindings
+
+        config = load_workspace_config(workspace_file)
+        bindings = inspect_agent_mcp_bindings(WorkspaceStore(workspace_file), config.root_path)
+        diagnostics.update(
+            {
+                "ok": bool(bindings.get("ok")) and bool(bindings.get("command_available")),
+                "workspace": config.workspace,
+                "workspace_root": str(Path(config.root_path).expanduser().resolve()),
+                "mcp_bindings": bindings,
+            }
+        )
+        diagnostics["checks"].append({"name": "workspace_resolved", "ok": True})
+        diagnostics["checks"].append({"name": "mcp_bindings", "ok": bool(bindings.get("ok"))})
+        diagnostics["checks"].append({"name": "mcp_command_available", "ok": bool(bindings.get("command_available"))})
+        if not bindings.get("ok"):
+            diagnostics["next_actions"].append(
+                "运行 `memory-center setup-agent --workspace <workspace.yaml>` 自动刷新根目录和子项目 MCP 绑定。"
+            )
+        if not bindings.get("command_available"):
+            diagnostics["next_actions"].append("确认 memory-center-mcp 已安装且在宿主 PATH 中。")
+    except Exception as exc:
+        diagnostics["error"] = str(exc)
+        diagnostics["checks"].append({"name": "workspace_resolved", "ok": False})
+        diagnostics["next_actions"].append("确认 --workspace 指向 .memory-center/workspace.yaml，或传入聚合 workspace / 子项目目录。")
+    return diagnostics
 
 
 def _resolve_workspace_input(workspace_input: str) -> str:
@@ -752,6 +793,10 @@ def create_server(workspace_file: str):
     @mcp.resource("memory-center://status")
     def status_resource():
         return workspace_status(ctx.workspace_file)
+
+    @mcp.resource("memory-center://startup-diagnostics")
+    def startup_diagnostics_resource():
+        return ctx.startup_diagnostics
 
     @mcp.resource("memory-center://contracts")
     def contracts_resource():

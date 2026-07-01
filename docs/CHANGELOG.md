@@ -13,10 +13,13 @@
 - 修复聚合 workspace 位于子项目上一层时，Agent 在子项目目录里较容易忽略 Memory Center MCP 的问题。
 - `memory-center init` / `memory-center reindex` 现在会把受管说明块镜像写入每个已配置 service root 的 `AGENTS.md`、`CLAUDE.md`、`GEMINI.md`、`.github/copilot-instructions.md` 与 `.cursor/rules/memory-center.mdc`。
 - `memory-center init` / `memory-center reindex` 现在也会把 `memory-center` MCP server 绑定写入聚合根目录和每个 service root 的 `.codex/mcp.json`、`.cursor/mcp.json`、`.mcp.json`。
+- 新增 `memory-center setup-agent --workspace <workspace.yaml>` 一键接入命令，统一刷新说明、Hooks、MCP 绑定并输出宿主重启建议。
 - `memory-center runtime-audit --workspace <workspace.yaml> --fix` 现在会检查并刷新这些绑定，用于自动修复子项目里看不到 `mc_*` 工具的问题。
+- MCP server 新增 `memory-center://startup-diagnostics` resource，启动后可查看 workspace 解析、MCP 绑定状态和修复建议。
+- `memory_query_hybrid`、`memory_search_code`、`memory_method_walkthrough` 未显式传 `project` 时会优先使用当前子项目；当前子项目无命中时自动回退全局。
 - 子项目级说明会显式写明应复用上层 `.memory-center/workspace.yaml`，并在 MCP 缺失时提示检查本地绑定，降低“当前仓库没有本地 workspace 就不调用 MCP”的概率。
 - `memory-center-mcp` 的运行时依赖现在随默认安装一起安装，不再需要额外 `pipx inject memory-center "mcp>=1.2.0"`。
-- 本地安装版本提升至 `3.5.17`。
+- 本地安装版本提升至 `3.5.18`。
 
 ### Documentation Status Cleanup / 文档状态收口
 

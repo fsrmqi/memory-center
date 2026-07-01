@@ -988,6 +988,30 @@ def test_memory_symbol_prefers_active_service_for_duplicate_symbols(tmp_path: Pa
     assert result["matches"][0]["node"]["project"] == "beta-service"
 
 
+def test_memory_search_code_prefers_active_service_for_duplicate_symbols(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    wf = _setup_duplicate_symbol_workspace(tmp_path)
+    monkeypatch.chdir(wf.parent.parent / "beta-service")
+
+    result = memory_search_code(wf, "RedisDelayedQueue", limit=5)
+
+    assert result["project_scope"]["effective"] == "beta-service"
+    assert result["project_scope"]["fallback_used"] is False
+    assert result["hits"]
+    assert {hit["project"] for hit in result["hits"]} == {"beta-service"}
+
+
+def test_memory_search_code_falls_back_when_active_service_has_no_hit(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    wf = _setup_duplicate_symbol_workspace(tmp_path)
+    monkeypatch.chdir(wf.parent.parent / "gamma-service")
+
+    result = memory_search_code(wf, "RedisDelayedQueue", limit=5)
+
+    assert result["project_scope"]["effective"] == "gamma-service"
+    assert result["project_scope"]["fallback_used"] is True
+    assert result["hits"]
+    assert {hit["project"] for hit in result["hits"]} == {"alpha-service", "beta-service"}
+
+
 def test_memory_impact_falls_back_when_active_service_has_no_duplicate_symbol(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     wf = _setup_duplicate_symbol_workspace(tmp_path)
     monkeypatch.chdir(wf.parent.parent / "gamma-service")

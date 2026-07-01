@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import json
 import re
 from pathlib import Path
@@ -105,6 +106,16 @@ def _infer_project_from_workspace_context(workspace_file: str | Path) -> str:
         return ""
     candidates.sort(key=lambda item: (-item[0], item[1]))
     return candidates[0][1]
+
+
+def _resolve_effective_project(workspace_file: str | Path, project: str = "") -> dict[str, Any]:
+    explicit = (project or "").strip()
+    if explicit:
+        return {"project": explicit, "source": "explicit", "fallback_allowed": False}
+    inferred = _infer_project_from_workspace_context(workspace_file)
+    if inferred:
+        return {"project": inferred, "source": "active_service_root", "fallback_allowed": True}
+    return {"project": "", "source": "none", "fallback_allowed": False}
 
 
 def _looks_like_class_symbol_query(query: str) -> bool:
@@ -480,6 +491,8 @@ def memory_query_hybrid(
 
     config_obj = load_context(workspace_file)
     store = config_obj[1]
+    project_scope = _resolve_effective_project(workspace_file, project)
+    effective_project = str(project_scope.get("project", "") or "")
 
     # Convert config if needed
     if config is None:
@@ -501,7 +514,7 @@ def memory_query_hybrid(
             walkthrough_symbol,
             depth=4,
             limit=max(limit, 20),
-            project=project,
+            project=effective_project,
             view="compact",
             budget="small",
             report_level="standard",
@@ -547,11 +560,12 @@ def memory_query_hybrid(
             learned_weights=learned_weights,
         )
 
-    # Project filtering: when project is specified and matching results exist,
-    # narrow the primary result set to that project instead of only boosting.
-    if project:
+    # Project filtering: explicit project is strict; inferred active-service
+    # scope is preferred only when it has evidence, otherwise keep global hits.
+    fallback_used = False
+    if effective_project:
         results = result.get("results", [])
-        project_results = [r for r in results if _project_matches(project, r.get("node", {}).get("project", ""))]
+        project_results = [r for r in results if _project_matches(effective_project, r.get("node", {}).get("project", ""))]
         if project_results:
             for r in project_results:
                 r["score"] = r.get("score", 0) * 2.0
@@ -564,7 +578,7 @@ def memory_query_hybrid(
             result["returned"] = rebuild["returned"]
             result["retrieval_summary"] = rebuild["retrieval_summary"]
             result["progressive"] = rebuild["progressive"]
-        else:
+        elif not project_scope.get("fallback_allowed", False):
             # No results match the project filter — return empty but consistent
             empty_rebuild = _rebuild_summary_after_filter([], intent)
             result["results"] = []
@@ -572,10 +586,19 @@ def memory_query_hybrid(
             result["returned"] = 0
             result["retrieval_summary"] = empty_rebuild["retrieval_summary"]
             result["progressive"] = empty_rebuild["progressive"]
+        else:
+            fallback_used = True
 
     # Enrich with workspace context
     result["workspace"] = config_obj[0].workspace
     result["intent_analysis"] = intent
+    result["project_scope"] = {
+        "requested": project,
+        "effective": effective_project,
+        "source": project_scope.get("source", "none"),
+        "fallback_allowed": bool(project_scope.get("fallback_allowed", False)),
+        "fallback_used": fallback_used,
+    }
 
     # 根据意图补充 contracts 索引数据
     primary_intent = intent.get("primary_intent", "general")
@@ -622,10 +645,14 @@ def memory_query_hybrid(
             # feign 意图：只返回关联的 API
             filtered_api = linked_api
 
-        if project:
-            filtered_feign = [c for c in filtered_feign if _project_matches(project, c.get("project", ""))]
-            filtered_mq = [c for c in filtered_mq if _project_matches(project, c.get("project", ""))]
-            filtered_api = [c for c in filtered_api if _project_matches(project, c.get("project", ""))]
+        if effective_project:
+            project_feign = [c for c in filtered_feign if _project_matches(effective_project, c.get("project", ""))]
+            project_mq = [c for c in filtered_mq if _project_matches(effective_project, c.get("project", ""))]
+            project_api = [c for c in filtered_api if _project_matches(effective_project, c.get("project", ""))]
+            if not project_scope.get("fallback_allowed", False) or project_feign or project_mq or project_api:
+                filtered_feign = project_feign
+                filtered_mq = project_mq
+                filtered_api = project_api
 
         result["contracts"] = {
             "feign_contracts": filtered_feign,
@@ -1180,6 +1207,9 @@ def memory_method_walkthrough(
     DTO field reads, config/data-resource hints, and graph downstream edges.
     It does not pretend to execute Java control flow.
     """
+    project_scope = _resolve_effective_project(workspace_file, project)
+    effective_project = str(project_scope.get("project", "") or "")
+
     def _lookup_provider(ws: Path, sym: str, proj: str) -> dict[str, Any]:
         return memory_symbol(ws, sym, limit=5, project=proj).get("lookup", {}) or {}
 
@@ -1197,12 +1227,12 @@ def memory_method_walkthrough(
             allow=True,
         )
 
-    return _walkthrough_runner.build_walkthrough_result(
+    result = _walkthrough_runner.build_walkthrough_result(
         workspace_file,
         symbol,
         depth=depth,
         limit=limit,
-        project=project,
+        project=effective_project,
         view=view,
         budget=budget,
         report_level=report_level,
@@ -1211,6 +1241,35 @@ def memory_method_walkthrough(
         lookup_provider=_lookup_provider,
         escalation_runner=_escalation_runner,
     )
+    if (
+        effective_project
+        and project_scope.get("fallback_allowed", False)
+        and not result.get("found")
+    ):
+        result = _walkthrough_runner.build_walkthrough_result(
+            workspace_file,
+            symbol,
+            depth=depth,
+            limit=limit,
+            project="",
+            view=view,
+            budget=budget,
+            report_level=report_level,
+            allow_workspace_escalation=_allow_workspace_escalation,
+            cache=_METHOD_WALKTHROUGH_CACHE,
+            lookup_provider=_lookup_provider,
+            escalation_runner=_escalation_runner,
+        )
+        result.setdefault("project_scope", {})["fallback_used"] = True
+    result.setdefault("project_scope", {}).update(
+        {
+            "requested": project,
+            "effective": effective_project,
+            "source": project_scope.get("source", "none"),
+            "fallback_allowed": bool(project_scope.get("fallback_allowed", False)),
+        }
+    )
+    return result
 
 
 def memory_walkthrough_health(
@@ -1592,43 +1651,62 @@ def memory_search_code(workspace_file: str | Path, query: str, scope: str = "", 
     keywords = tokenize(query)
     files = store.read_json_prefer_backend("file-index.json", [])
     symbols = store.read_json_prefer_backend("java-symbol-index.json", [])
+    project_scope = _resolve_effective_project(workspace_file, project)
+    effective_project = str(project_scope.get("project", "") or "")
     symbol_entries = {}
     for item in symbols:
         key = item.get("file", "")
         symbol_entries.setdefault(key, []).append(item)
     scope_l = scope.lower().strip()
-    hits: list[dict[str, Any]] = []
-    for item in files:
-        path = item.get("path", "")
-        if scope_l and scope_l not in path.lower():
-            continue
-        item_project = item.get("project", "")
-        if project and not _project_matches(project, item_project):
-            continue
-        text = f"{path} {item.get('project', '')} {item.get('service_name', '')}".lower()
-        file_symbols = symbol_entries.get(path, [])
-        symbol_text = json.dumps(file_symbols, ensure_ascii=False).lower()
-        score = sum(1 for token in keywords if token in text or token in symbol_text)
-        if score <= 0:
-            continue
-        hits.append(
-            {
-                "project": item.get("project", ""),
-                "service_name": item.get("service_name", ""),
-                "path": path,
-                "score": score,
-                "symbol_count": sum(
-                    int(sym.get("class_count", 0)) + int(sym.get("method_count", 0)) + int(sym.get("field_count", 0))
-                    for sym in file_symbols
-                ),
-                "suffix": item.get("suffix", ""),
-            }
-        )
+
+    def collect_hits(project_filter: str = "") -> list[dict[str, Any]]:
+        collected: list[dict[str, Any]] = []
+        for item in files:
+            path = item.get("path", "")
+            if scope_l and scope_l not in path.lower():
+                continue
+            item_project = item.get("project", "")
+            if project_filter and not _project_matches(project_filter, item_project):
+                continue
+            text = f"{path} {item.get('project', '')} {item.get('service_name', '')}".lower()
+            file_symbols = symbol_entries.get(path, [])
+            symbol_text = json.dumps(file_symbols, ensure_ascii=False).lower()
+            score = sum(1 for token in keywords if token in text or token in symbol_text)
+            if score <= 0:
+                continue
+            collected.append(
+                {
+                    "project": item.get("project", ""),
+                    "service_name": item.get("service_name", ""),
+                    "path": path,
+                    "score": score,
+                    "symbol_count": sum(
+                        int(sym.get("class_count", 0)) + int(sym.get("method_count", 0)) + int(sym.get("field_count", 0))
+                        for sym in file_symbols
+                    ),
+                    "suffix": item.get("suffix", ""),
+                }
+            )
+        collected.sort(key=lambda row: (-int(row.get("score", 0)), -int(row.get("symbol_count", 0)), row.get("path", "")))
+        return collected
+
+    hits = collect_hits(effective_project)
+    fallback_used = False
+    if effective_project and project_scope.get("fallback_allowed", False) and not hits:
+        hits = collect_hits("")
+        fallback_used = True
     hits.sort(key=lambda row: (-int(row.get("score", 0)), -int(row.get("symbol_count", 0)), row.get("path", "")))
     return {
         "workspace": config.workspace,
         "query": query,
         "scope": scope,
+        "project_scope": {
+            "requested": project,
+            "effective": effective_project,
+            "source": project_scope.get("source", "none"),
+            "fallback_allowed": bool(project_scope.get("fallback_allowed", False)),
+            "fallback_used": fallback_used,
+        },
         "hits": hits[:limit],
         "total_hits": len(hits),
         "progressive": _build_search_progressive_view(query, scope, hits[:limit]),

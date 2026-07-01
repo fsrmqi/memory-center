@@ -117,8 +117,24 @@ export function listArtifacts(workspace) {
   return api.get('/workspace/artifacts', { params: { workspace } })
 }
 
-export function listTaskSpaces(workspace) {
-  return api.get('/workspace/task-spaces', { params: { workspace } })
+export function listTaskSpaces(workspace, params = {}) {
+  return api.get('/workspace/task-spaces', { params: { workspace, ...params } })
+}
+
+export function syncSniffArtifacts(workspace, intent, params = {}) {
+  return api.get('/workspace/artifacts/sync-sniff', { params: { workspace, intent, ...params } })
+}
+
+export function updateTaskStatus(workspace, taskId, status) {
+  return api.get('/workspace/task-space/status', { params: { workspace, task_id: taskId, status } })
+}
+
+export function archiveTaskSpace(workspace, taskId, reason = '') {
+  return api.get('/workspace/task-space/archive', { params: { workspace, task_id: taskId, reason } })
+}
+
+export function autoArchiveTaskSpaces(workspace, retentionDays = 30) {
+  return api.get('/workspace/task-spaces/auto-archive', { params: { workspace, retention_days: retentionDays } })
 }
 
 export function getResumePacket(workspace, params = {}) {

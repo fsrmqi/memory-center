@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, watch } from 'vue'
+import { inject, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 
 const router = useRouter()
@@ -9,7 +9,7 @@ const navItems = [
   { path: '/', label: 'Workbench', icon: '🏠' },
   { path: '/dashboard', label: 'Dashboard', icon: '📊' },
   { path: '/continuity', label: 'Continuity', icon: '🔗' },
-  { path: '/task', label: 'Focus Task', icon: '🎯' },
+  { path: '/task', label: '记忆空间', icon: 'TS' },
   { path: '/query', label: 'Query', icon: '🔍' },
   { path: '/impact', label: 'Impact', icon: '⚡' },
   { path: '/group', label: 'Group', icon: '🗂️' },
@@ -22,7 +22,7 @@ const navItems = [
   { path: '/health', label: 'Health', icon: '❤️' },
 ]
 
-const workspace = ref(localStorage.getItem('mc_workspace') || '')
+const workspace = inject('workspace')
 
 watch(workspace, (v) => {
   localStorage.setItem('mc_workspace', v)
@@ -156,5 +156,28 @@ nav {
   margin-left: 220px;
   padding: 24px;
   min-height: 100vh;
+}
+
+@media (max-width: 760px) {
+  .app-layout {
+    display: block;
+  }
+  .sidebar {
+    position: static;
+    width: auto;
+    max-height: none;
+    border-bottom: 1px solid #2a2a4a;
+  }
+  nav {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .nav-item {
+    min-width: 0;
+  }
+  .content {
+    margin-left: 0;
+    padding: 16px;
+  }
 }
 </style>

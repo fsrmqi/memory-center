@@ -2,7 +2,7 @@
 import { ref } from 'vue'
 
 const props = defineProps({
-  data: { type: [Object, Array], default: null },
+  data: { default: null },
   label: { type: String, default: 'root' },
   depth: { type: Number, default: 0 },
 })

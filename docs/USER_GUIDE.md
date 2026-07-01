@@ -188,13 +188,17 @@ The default install includes MCP runtime dependencies, so `memory-center-mcp` sh
 memory-center-mcp --workspace /abs/path/.memory-center/workspace.yaml
 ```
 
-`init` / `reindex` 会把 MCP 绑定写到聚合根目录和每个 service 子项目目录的 `.codex/mcp.json`、`.cursor/mcp.json`、`.mcp.json`。如果子项目里看不到 `mc_*` 工具，运行：
+`init` / `reindex` 会把 MCP 绑定写到聚合根目录和每个 service 子项目目录的 `.codex/mcp.json`、`.cursor/mcp.json`、`.mcp.json`。如果子项目里看不到 `mc_*` 工具，优先运行：
 
-`init` / `reindex` writes MCP bindings to the aggregate root and each service root under `.codex/mcp.json`, `.cursor/mcp.json`, and `.mcp.json`. If a subproject does not expose `mc_*` tools, run:
+`init` / `reindex` writes MCP bindings to the aggregate root and each service root under `.codex/mcp.json`, `.cursor/mcp.json`, and `.mcp.json`. If a subproject does not expose `mc_*` tools, prefer:
 
 ```bash
-memory-center runtime-audit --workspace /abs/path/.memory-center/workspace.yaml --fix
+memory-center setup-agent --workspace /abs/path/.memory-center/workspace.yaml
 ```
+
+`setup-agent` 会刷新说明、Hooks、MCP 绑定并输出是否需要重启宿主会话；需要只做诊断时可用 `memory-center runtime-audit --workspace ...`。
+
+`setup-agent` refreshes instructions, hooks, MCP bindings, and reports whether the host session should be restarted. Use `memory-center runtime-audit --workspace ...` when you only need diagnostics.
 
 ### HTTP + Workbench
 

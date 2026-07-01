@@ -815,17 +815,21 @@ memory-center generate-hooks --workspace <workspace.yaml> --host claude-code  # 
 
 Starting from this version, the managed instruction block and MCP bindings written by `init` / `reindex` are mirrored not only to the aggregate workspace root but also to each configured service root (for example `service-a/AGENTS.md`, `service-a/.codex/mcp.json`, `service-a/.cursor/mcp.json`, and `service-a/.mcp.json`). This helps agents launched inside a subproject reuse the parent `.memory-center/workspace.yaml` and receive the `mc_*` tools.
 
-如果子项目里仍看不到 `mc_*` 工具，可运行：
+如果子项目里仍看不到 `mc_*` 工具，优先运行一键接入命令：
 
 ```bash
-memory-center runtime-audit --workspace <workspace.yaml> --fix
+memory-center setup-agent --workspace <workspace.yaml>
 ```
 
-If a subproject still does not expose `mc_*` tools, run:
+If a subproject still does not expose `mc_*` tools, prefer the one-step setup command:
 
 ```bash
-memory-center runtime-audit --workspace <workspace.yaml> --fix
+memory-center setup-agent --workspace <workspace.yaml>
 ```
+
+该命令会刷新说明、Hooks、MCP 绑定并返回是否需要重启宿主会话；`runtime-audit --fix` 仍可作为底层诊断修复入口。
+
+This command refreshes instructions, hooks, MCP bindings, and reports whether the host session should be restarted; `runtime-audit --fix` remains available as the lower-level diagnostic repair entrypoint.
 
 详见 [docs/MCP_GUIDE.md](./docs/MCP_GUIDE.md)。
 
