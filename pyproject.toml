@@ -1,6 +1,6 @@
 [project]
 name = "memory-center"
-version = "3.5.19"
+version = "3.5.20"
 description = "Memory Center is an MCP-native project memory service and multi-agent shared context center for coding agents"
 readme = "README.md"
 requires-python = ">=3.10"

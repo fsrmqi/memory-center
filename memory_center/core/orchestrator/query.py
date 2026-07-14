@@ -718,7 +718,7 @@ def memory_query_hybrid(
             "evidence_type": "fact" if sources & {"exact", "graph_exact", "direct_lookup"} else "inferred",
         })
     result["_quality"] = build_quality_summary(quality_evidence, freshness_status=freshness_status)
-    result["agent_next_steps"] = _build_agent_next_steps_for_query(result, query=query)
+    result["agent_next_steps"] = _build_agent_next_steps_for_query(result, query=query, workspace_file=workspace_file)
     return attach_facade_metadata(
         result,
         operation="memory_query_hybrid",
@@ -772,13 +772,13 @@ def _build_agent_next_steps_for_walkthrough(result: dict[str, Any]) -> list[dict
     ]
 
 
-def _build_agent_next_steps_for_query(result: dict[str, Any], *, query: str) -> list[dict[str, Any]]:
+def _build_agent_next_steps_for_query(result: dict[str, Any], *, query: str, workspace_file: str | Path | None = None) -> list[dict[str, Any]]:
     freshness_status = str(((result.get("freshness", {}) or {}).get("freshness", {}) or {}).get("status", "unknown"))
     policy = result.get("retrieval_policy", {}) if isinstance(result.get("retrieval_policy", {}), dict) else {}
     diagnostics = result.get("retrieval_diagnostics", {}) if isinstance(result.get("retrieval_diagnostics", {}), dict) else {}
     results = result.get("results", []) if isinstance(result.get("results", []), list) else []
     if freshness_status in {"stale", "pending"}:
-        return [
+        return _apply_agent_guidance_adoption_feedback(workspace_file, [
             {
                 "action": "refresh_or_read_live_files",
                 "priority": "high",
@@ -786,9 +786,9 @@ def _build_agent_next_steps_for_query(result: dict[str, Any], *, query: str) -> 
                 "command": "read matched files live before editing; run memory-center reindex when freshness affects the target",
                 "uses_existing_evidence": True,
             }
-        ]
+        ])
     if not results:
-        return [
+        return _apply_agent_guidance_adoption_feedback(workspace_file, [
             {
                 "action": "refine_query",
                 "priority": "medium",
@@ -796,12 +796,12 @@ def _build_agent_next_steps_for_query(result: dict[str, Any], *, query: str) -> 
                 "command": "retry mc_lookup with a class, method, endpoint, Feign client, or business term from the task",
                 "uses_existing_evidence": False,
             }
-        ]
+        ])
     top = results[0].get("node", results[0]) if isinstance(results[0], dict) else {}
     top_type = str(top.get("type", "") or "")
     top_name = str(top.get("name", "") or query)
     if top_type in {"Method", "FeignMethod"} or "#" in query:
-        return [
+        return _apply_agent_guidance_adoption_feedback(workspace_file, [
             {
                 "action": "switch_to_walkthrough",
                 "priority": "high",
@@ -809,9 +809,9 @@ def _build_agent_next_steps_for_query(result: dict[str, Any], *, query: str) -> 
                 "command": f'mc_lookup(query="{top_name}", mode="walkthrough")',
                 "uses_existing_evidence": True,
             }
-        ]
+        ])
     if diagnostics.get("semantic", {}).get("status") == "active" and policy.get("primary_intent") == "general":
-        return [
+        return _apply_agent_guidance_adoption_feedback(workspace_file, [
             {
                 "action": "validate_semantic_hit",
                 "priority": "medium",
@@ -819,8 +819,8 @@ def _build_agent_next_steps_for_query(result: dict[str, Any], *, query: str) -> 
                 "command": "open the top result file or rerun mc_lookup with a concrete symbol from the hit",
                 "uses_existing_evidence": True,
             }
-        ]
-    return [
+        ])
+    return _apply_agent_guidance_adoption_feedback(workspace_file, [
         {
             "action": "inspect_top_result",
             "priority": "medium",
@@ -828,7 +828,56 @@ def _build_agent_next_steps_for_query(result: dict[str, Any], *, query: str) -> 
             "command": "read the top result file/symbol, then call mc_analyze before editing shared contracts",
             "uses_existing_evidence": True,
         }
-    ]
+    ])
+
+
+def _apply_agent_guidance_adoption_feedback(workspace_file: str | Path | None, steps: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if not workspace_file or not steps:
+        return steps
+    try:
+        from ..benchmark.trending import get_agent_guidance_adoption_trends
+
+        trends = get_agent_guidance_adoption_trends(workspace_file, limit=20)
+    except Exception:
+        return steps
+    if not trends.get("regressions"):
+        return steps
+    summary = trends.get("summary", {}) if isinstance(trends.get("summary", {}), dict) else {}
+    latest_counts = summary.get("latest_missed_action_counts", {})
+    if not isinstance(latest_counts, dict):
+        return steps
+    adjusted: list[dict[str, Any]] = []
+    for step in steps:
+        action = str(step.get("action", "") or "")
+        missed_count = int(latest_counts.get(action, 0) or 0)
+        if missed_count <= 0:
+            adjusted.append(step)
+            continue
+        reinforced = dict(step)
+        reinforced["priority"] = "high"
+        reinforced["adoption_feedback"] = {
+            "status": "reinforced",
+            "missed_count": missed_count,
+            "reason": "recent adoption trend shows this action was often missed",
+        }
+        command = str(reinforced.get("command", "") or "")
+        reinforced["command"] = f"{command}; low-adoption feedback: {_reinforced_agent_command(action)}"
+        adjusted.append(reinforced)
+    return adjusted
+
+
+def _reinforced_agent_command(action: str) -> str:
+    if action == "inspect_top_result":
+        return "first read result[0].node.file_path or result[0].node.abs_path directly; if no path is present, call mc_lookup(mode='context') with the top symbol"
+    if action == "validate_semantic_hit":
+        return "open the top result file before reasoning; if relevance is unclear, rerun mc_lookup(mode='query') with the concrete symbol from that hit"
+    if action == "switch_to_walkthrough":
+        return "call mc_lookup(mode='walkthrough') immediately with the returned method-like symbol, before any broad search"
+    if action == "refine_query":
+        return "retry mc_lookup(mode='query') with one concrete class, method, endpoint, Feign client, config key, or business term"
+    if action == "refresh_or_read_live_files":
+        return "read the matched live files first, then run memory-center reindex only if stale evidence affects the target"
+    return "execute this exact Memory Center next step before trying a broader local search"
 
 
 def _filter_contracts_by_query(contracts: list, query: str, intent: str) -> list:

@@ -752,6 +752,10 @@ When CLI `memory-center query`, HTTP `/workspace/query`, or MCP `mc_lookup` rece
 
 当 CLI `memory-center query`、HTTP `/workspace/query` 或 MCP `mc_lookup` 传入 `session_id` 时，Memory Center 会自动把返回的 `agent_next_steps` 记录为 `agent_guidance` session event。这样 `eval-agent-guidance-adoption` 可以直接评估后续执行情况，不再需要额外手工写日志。
 
+When adoption trend data shows a specific action is repeatedly missed, future query results keep the same action but add `adoption_feedback`, raise its priority, and rewrite `command` with a more explicit first tool/file step.
+
+当 adoption 趋势显示某个 action 连续未被执行时，后续 query 结果会保留同一 action，但会附加 `adoption_feedback`、提升 priority，并把 `command` 改写成更明确的第一步工具或文件动作。
+
 When a method walkthrough starts from a sub-project workspace, Memory Center can automatically escalate to a parent or registry-covered aggregate workspace if that workspace produces a more complete cross-service flow. The `workspace_escalation` field records whether this happened; missing parents are safe fallbacks, not errors.
 
 当 method walkthrough 从子项目 workspace 启动时，Memory Center 会尝试自动升级到父级或 registry 中覆盖当前项目的聚合 workspace，只在聚合结果更完整时切换。`workspace_escalation` 会记录是否切换；找不到父级不是错误。
@@ -934,9 +938,10 @@ The evaluation layer now also includes:
 - `mc_admin(action="eval_context_weight")`
 - `mc_admin(action="eval_agent_guidance")`
 - `mc_admin(action="eval_agent_guidance_adoption")`
+- `mc_admin(action="eval_agent_guidance_adoption_trend")`
 - `mc_admin(action="eval_agent_guidance_trend")`
 
-These help answer whether indexes are stale, whether models are actually using Memory Center, whether compact payloads are still too heavy, whether lookup output includes bounded `agent_next_steps` without invalid broad-search suggestions, and whether recorded guidance was actually followed by later tool calls. Use `eval_agent_guidance_trend` when you want to append a historical trend point into `.memory-center/memory/agent-guidance-trends.jsonl`; `eval_agent_guidance` and `eval_agent_guidance_adoption` are read-only.
+These help answer whether indexes are stale, whether models are actually using Memory Center, whether compact payloads are still too heavy, whether lookup output includes bounded `agent_next_steps` without invalid broad-search suggestions, and whether recorded guidance was actually followed by later tool calls. Use `eval_agent_guidance_trend` to append a quality trend point into `.memory-center/memory/agent-guidance-trends.jsonl`; use `eval_agent_guidance_adoption_trend` to append an adoption-rate trend point into `.memory-center/memory/agent-guidance-adoption-trends.jsonl`. `eval_agent_guidance` and `eval_agent_guidance_adoption` are read-only.
 
 评测层现在还额外包含：
 
@@ -945,9 +950,10 @@ These help answer whether indexes are stale, whether models are actually using M
 - `mc_admin(action="eval_context_weight")`
 - `mc_admin(action="eval_agent_guidance")`
 - `mc_admin(action="eval_agent_guidance_adoption")`
+- `mc_admin(action="eval_agent_guidance_adoption_trend")`
 - `mc_admin(action="eval_agent_guidance_trend")`
 
-它们分别用于判断索引是否过期、模型是否真的在使用 Memory Center、compact payload 是否仍然偏重、lookup 输出是否包含有界的 `agent_next_steps` 且没有无效的泛搜索建议，以及已记录的建议是否真的被后续 tool call 执行。需要把结果写入历史曲线时使用 `eval_agent_guidance_trend`，它会追加到 `.memory-center/memory/agent-guidance-trends.jsonl`；`eval_agent_guidance` 与 `eval_agent_guidance_adoption` 本身保持只读。
+它们分别用于判断索引是否过期、模型是否真的在使用 Memory Center、compact payload 是否仍然偏重、lookup 输出是否包含有界的 `agent_next_steps` 且没有无效的泛搜索建议，以及已记录的建议是否真的被后续 tool call 执行。需要写入建议质量历史曲线时使用 `eval_agent_guidance_trend`，它会追加到 `.memory-center/memory/agent-guidance-trends.jsonl`；需要写入 adoption rate 历史曲线时使用 `eval_agent_guidance_adoption_trend`，它会追加到 `.memory-center/memory/agent-guidance-adoption-trends.jsonl`。`eval_agent_guidance` 与 `eval_agent_guidance_adoption` 本身保持只读。
 
 To reduce model-side token usage, `workspace_sniff`, `workspace_status`, `workspace_resume_packet`, `workspace_recent_evidence` (now with `view=compact|full`), `workspace_continuity_dashboard`, `workspace_dashboard`, and `workspace_handoff_packet` all support `view=compact|full` plus `budget=small|medium|large`. MCP defaults to `compact + medium`; use `full` for local debugging or manual inspection.
 
@@ -968,6 +974,14 @@ It is now exposed through CLI, MCP, and HTTP as `eval-regression-suite`, `memory
 Agent guidance adoption is exposed as `eval-agent-guidance-adoption`, `/workspace/eval-agent-guidance-adoption`, and `mc_admin(action="eval_agent_guidance_adoption")`. It reads `agent_guidance` / `agent_next_steps` session events and checks whether following `tool_call` events match the suggested action.
 
 Agent guidance adoption 入口为 `eval-agent-guidance-adoption`、`/workspace/eval-agent-guidance-adoption` 和 `mc_admin(action="eval_agent_guidance_adoption")`。它会读取 `agent_guidance` / `agent_next_steps` session event，并检查后续 `tool_call` 是否匹配建议动作。
+
+Agent guidance adoption trend recording is exposed as `eval-agent-guidance-adoption-trend`, `/workspace/eval-agent-guidance-adoption-trend`, and `mc_admin(action="eval_agent_guidance_adoption_trend")`. Benchmark trend reports and regression alerts include `agent_guidance_adoption_trends`, so daily checks can catch falling adoption rate.
+
+Agent guidance adoption 趋势记录入口为 `eval-agent-guidance-adoption-trend`、`/workspace/eval-agent-guidance-adoption-trend` 和 `mc_admin(action="eval_agent_guidance_adoption_trend")`。Benchmark trend report 与 regression alerts 现在会包含 `agent_guidance_adoption_trends`，日常检查可以发现 adoption rate 下降。
+
+Adoption trend points also store `missed_action_counts`. Query-time `agent_next_steps` uses those counts as bounded feedback: only actions missed in the latest regressed trend are reinforced, and normal query behavior is unchanged when adoption is healthy.
+
+Adoption 趋势点还会记录 `missed_action_counts`。Query 阶段的 `agent_next_steps` 会把这些计数作为有界反馈：只强化最近退化趋势里确实 missed 的 action；adoption 健康时保持原有查询行为不变。
 
 Agent guidance trend recording is exposed as `eval-agent-guidance-trend`, `/workspace/eval-agent-guidance-trend`, and `mc_admin(action="eval_agent_guidance_trend")`. Benchmark trend reports and regression alerts include `agent_guidance_trends`, so daily checks can catch falling `agent_next_steps` coverage or renewed invalid broad-search suggestions.
 

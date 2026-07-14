@@ -541,7 +541,7 @@ V3 task tools 直接面向 agent 减少 grep/read：
 
 `orchestrator/__init__.py` 重新导出公共函数，保持旧导入路径兼容。
 
-Benchmark/observability 趋势数据写在 `.memory-center/memory/*-trends.jsonl`，例如 token benchmark 的 `benchmark-trends.jsonl` 和 agent guidance 的 `agent-guidance-trends.jsonl`。这些文件用于本地运营与回归告警，不应把真实私有项目生成内容提交到公开仓库。
+Benchmark/observability 趋势数据写在 `.memory-center/memory/*-trends.jsonl`，例如 token benchmark 的 `benchmark-trends.jsonl`、agent guidance quality 的 `agent-guidance-trends.jsonl` 和 agent guidance adoption 的 `agent-guidance-adoption-trends.jsonl`。这些文件用于本地运营与回归告警，不应把真实私有项目生成内容提交到公开仓库。
 
 ---
 

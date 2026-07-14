@@ -56,6 +56,7 @@
 - `eval-context-weight`
 - `eval-agent-guidance`
 - `eval-agent-guidance-adoption`
+- `eval-agent-guidance-adoption-trend`
 - `eval-agent-guidance-trend`
 - `eval-token-gain`
 - `eval-parser-benchmark`
@@ -212,6 +213,7 @@
 - `/workspace/backend-consistency`
 - `/workspace/eval-token-benchmark-trend`
 - `/workspace/eval-agent-guidance-adoption`
+- `/workspace/eval-agent-guidance-adoption-trend`
 - `/workspace/eval-agent-guidance-trend`
 - `/workspace/eval-parser-benchmark`
 - `/workspace/onboard`
@@ -250,16 +252,19 @@ Golden performance baseline / compare 会继续保存并比较这些字段；当
 
 - `memory_eval_agent_guidance` / `eval-agent-guidance` / `/workspace/eval-agent-guidance`
 - `memory_eval_agent_guidance_adoption` / `eval-agent-guidance-adoption` / `/workspace/eval-agent-guidance-adoption`
+- `memory_eval_agent_guidance_adoption_trend` / `eval-agent-guidance-adoption-trend` / `/workspace/eval-agent-guidance-adoption-trend`
 - `memory_eval_agent_guidance_trend` / `eval-agent-guidance-trend` / `/workspace/eval-agent-guidance-trend`
 - `mc_admin(action="eval_agent_guidance")`
 - `mc_admin(action="eval_agent_guidance_adoption")`
+- `mc_admin(action="eval_agent_guidance_adoption_trend")`
 - `mc_admin(action="eval_agent_guidance_trend")`
 - `workspace_dashboard.agent_guidance`
 
 这些字段用于快速查看 `agent_next_step_count`、`agent_next_step_actions`、`invalid_search_suggestion_count` 和相关 findings。
 Adoption 检查依赖 session event：先记录 `event_type="agent_guidance"` 或 `event_type="agent_next_steps"`，payload 中包含 `agent_next_steps`；再用后续 `tool_call` 判断建议动作是否被执行。
 CLI `memory-center query --session-id ...`、HTTP `/workspace/query?session_id=...` 与 MCP `mc_lookup(session_id=...)` 会自动记录该 `agent_guidance` event。
-趋势入口会追加 `.memory-center/memory/agent-guidance-trends.jsonl`，`generate_benchmark_report` 与 `check_regression_alerts` 会读取该文件并暴露 `agent_guidance_trends` / `agent_guidance` 告警摘要。
+趋势入口会追加 `.memory-center/memory/agent-guidance-trends.jsonl` 与 `.memory-center/memory/agent-guidance-adoption-trends.jsonl`，`generate_benchmark_report` 与 `check_regression_alerts` 会读取这些文件并暴露 `agent_guidance_trends`、`agent_guidance_adoption_trends` 以及对应告警摘要。
+`agent-guidance-adoption-trends.jsonl` 会保存 `missed_action_counts`；当最新退化趋势中某个 action 反复 missed 时，query 返回的 `agent_next_steps` 会附加 `adoption_feedback` 并强化 command。
 
 `resume_packet` 兼容保留既有字段，并可附加：
 

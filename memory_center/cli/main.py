@@ -63,6 +63,7 @@ from memory_center.core.orchestrator import (
     memory_detect_changes,
     memory_eval_agent_guidance,
     memory_eval_agent_guidance_adoption,
+    memory_eval_agent_guidance_adoption_trend,
     memory_eval_agent_guidance_trend,
     memory_eval_context_weight,
     memory_eval_handoff,
@@ -805,6 +806,16 @@ def eval_agent_guidance_adoption_cmd(
 ):
     """Evaluate whether recorded agent guidance was followed by later tool calls."""
     print(memory_eval_agent_guidance_adoption(workspace, session_id=session_id, limit=limit))
+
+
+@app.command("eval-agent-guidance-adoption-trend")
+def eval_agent_guidance_adoption_trend_cmd(
+    workspace: str = typer.Option(...),
+    session_id: str = typer.Option(""),
+    limit: int = typer.Option(200),
+):
+    """Evaluate agent guidance adoption and record one trend point."""
+    print(memory_eval_agent_guidance_adoption_trend(workspace, session_id=session_id, limit=limit))
 
 
 @app.command("eval-workflow-orchestration")

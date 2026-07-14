@@ -341,6 +341,43 @@ def memory_eval_agent_guidance_adoption(
     )
 
 
+def memory_eval_agent_guidance_adoption_trend(
+    workspace_file: str | Path,
+    *,
+    session_id: str = "",
+    limit: int = 200,
+) -> dict[str, Any]:
+    """Run agent guidance adoption eval and append one trend point."""
+
+    from ..benchmark.trending import record_agent_guidance_adoption_trend
+
+    result = memory_eval_agent_guidance_adoption(workspace_file, session_id=session_id, limit=limit)
+    summary = result.get("summary", {}) or {}
+    missed_action_counts: dict[str, int] = {}
+    for record in result.get("adoption_records", []) or []:
+        if not isinstance(record, dict) or record.get("status") != "missed":
+            continue
+        action = str(record.get("expected_action", "") or "")
+        if not action:
+            continue
+        missed_action_counts[action] = missed_action_counts.get(action, 0) + 1
+    recorded = record_agent_guidance_adoption_trend(
+        workspace_file,
+        total_guidance_events=int(summary.get("total_guidance_events", 0) or 0),
+        adopted_count=int(summary.get("adopted_count", 0) or 0),
+        missed_count=int(summary.get("missed_count", 0) or 0),
+        adoption_rate=float(summary.get("adoption_rate", 0.0) or 0.0),
+        score=int(result.get("score", 0) or 0),
+        quality=str(result.get("quality", "") or ""),
+        session_id=session_id,
+        missed_action_counts=missed_action_counts,
+    )
+    return {
+        **recorded,
+        "eval": result,
+    }
+
+
 def _match_agent_guidance_followup(action: str, followups: list[dict[str, Any]]) -> str:
     for event in followups:
         payload = _event_payload(event)

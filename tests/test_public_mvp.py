@@ -2630,6 +2630,67 @@ def test_agent_guidance_trend_records_and_alerts(tmp_path: Path):
     assert sampled["trend_point"]["agent_next_step_count"] >= 1
 
 
+def test_agent_guidance_adoption_trend_records_and_alerts(tmp_path: Path):
+    workspace = _copy_demo_workspace(tmp_path, "agent-guidance-adoption-trend")
+    from memory_center.core.benchmark.trending import (
+        check_regression_alerts,
+        generate_benchmark_report,
+        get_agent_guidance_adoption_trends,
+        record_agent_guidance_adoption_trend,
+    )
+    from memory_center.core.orchestrator import memory_eval_agent_guidance_adoption_trend
+
+    for idx in range(5):
+        record_agent_guidance_adoption_trend(
+            workspace,
+            total_guidance_events=10,
+            adopted_count=9,
+            missed_count=1,
+            adoption_rate=0.9,
+            score=95,
+            quality="high",
+            session_id=f"stable-{idx}",
+            missed_action_counts={"inspect_top_result": 1},
+        )
+    record_agent_guidance_adoption_trend(
+        workspace,
+        total_guidance_events=10,
+        adopted_count=2,
+        missed_count=8,
+        adoption_rate=0.2,
+        score=45,
+        quality="low",
+        session_id="regressed",
+        missed_action_counts={"inspect_top_result": 8},
+    )
+
+    trends = get_agent_guidance_adoption_trends(workspace, limit=20)
+    assert trends["summary"]["total_trend_points"] == 6
+    assert trends["summary"]["latest_adoption_rate"] == 0.2
+    assert trends["summary"]["latest_missed_action_counts"]["inspect_top_result"] == 8
+    assert trends["regressions"]
+
+    alerts = check_regression_alerts(workspace)
+    assert alerts["agent_guidance_adoption"]["total_regressions"] >= 1
+    assert any(alert["type"] == "agent_guidance_adoption" for alert in alerts["alerts"])
+    report = generate_benchmark_report(workspace)
+    assert report["agent_guidance_adoption_trends"]["summary"]["total_trend_points"] == 6
+
+    session = workspace_start_session(workspace, "adoption trend sample")
+    sid = session["session_id"]
+    workspace_log_session_event(
+        workspace,
+        sid,
+        "agent_guidance",
+        {"agent_next_steps": [{"action": "refine_query", "command": "mc_lookup(mode=query)"}]},
+    )
+    workspace_log_session_event(workspace, sid, "tool_call", {"tool_name": "memory_query_tool", "query": "ArticleFeignClient"})
+    sampled = memory_eval_agent_guidance_adoption_trend(workspace, session_id=sid, limit=20)
+    assert sampled["recorded"] is True
+    assert sampled["trend_point"]["adoption_rate"] == 1.0
+    assert sampled["trend_point"]["missed_action_counts"] == {}
+
+
 def test_eval_agent_guidance_trend_available_from_cli_and_http(tmp_path: Path):
     import ast
     from http.server import ThreadingHTTPServer
@@ -2666,6 +2727,53 @@ def test_eval_agent_guidance_trend_available_from_cli_and_http(tmp_path: Path):
 
     assert http["recorded"] is True
     assert http["trend_point"]["agent_next_step_count"] >= 1
+
+
+def test_eval_agent_guidance_adoption_trend_available_from_cli_and_http(tmp_path: Path):
+    import ast
+    from http.server import ThreadingHTTPServer
+
+    workspace = _copy_demo_workspace(tmp_path, "agent-guidance-adoption-trend-entrypoints")
+    session = workspace_start_session(workspace, "adoption trend entrypoint")
+    sid = session["session_id"]
+    workspace_log_session_event(
+        workspace,
+        sid,
+        "agent_guidance",
+        {"agent_next_steps": [{"action": "refine_query", "command": "mc_lookup(mode=query)"}]},
+    )
+    workspace_log_session_event(workspace, sid, "tool_call", {"tool_name": "memory_query_tool", "query": "ArticleFeignClient"})
+
+    runner = CliRunner()
+    cli_result = runner.invoke(
+        app,
+        [
+            "eval-agent-guidance-adoption-trend",
+            "--workspace",
+            str(workspace),
+            "--session-id",
+            sid,
+            "--limit",
+            "20",
+        ],
+    )
+    assert cli_result.exit_code == 0
+    cli = ast.literal_eval(cli_result.output)
+    assert cli["recorded"] is True
+    assert cli["trend_point"]["adoption_rate"] == 1.0
+
+    server = ThreadingHTTPServer(("127.0.0.1", _free_port()), create_handler(workspace))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        base = f"http://127.0.0.1:{server.server_address[1]}"
+        http = json.loads(urlopen(f"{base}/workspace/eval-agent-guidance-adoption-trend?session_id={sid}&limit=20").read().decode("utf-8"))
+    finally:
+        server.shutdown()
+        thread.join(timeout=2)
+
+    assert http["recorded"] is True
+    assert http["trend_point"]["adoption_rate"] == 1.0
 
 
 def test_bm25_scoring_returns_results(tmp_path: Path):

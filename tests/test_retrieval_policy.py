@@ -441,3 +441,48 @@ def test_agent_next_steps_switch_to_walkthrough_for_method_hits() -> None:
 
     assert steps[0]["action"] == "switch_to_walkthrough"
     assert "mode=\"walkthrough\"" in steps[0]["command"]
+
+
+def test_agent_next_steps_reinforce_actions_with_low_adoption(tmp_path: Path) -> None:
+    from memory_center.core.benchmark.trending import record_agent_guidance_adoption_trend
+    from memory_center.core.orchestrator.query import _build_agent_next_steps_for_query
+
+    workspace = tmp_path / ".memory-center" / "workspace.yaml"
+    workspace.parent.mkdir(parents=True)
+    workspace.write_text("workspace: adoption-feedback\nroot: ..\nservices: []\n", encoding="utf-8")
+
+    record_agent_guidance_adoption_trend(
+        workspace,
+        total_guidance_events=10,
+        adopted_count=9,
+        missed_count=1,
+        adoption_rate=0.9,
+        score=95,
+        quality="high",
+        missed_action_counts={"inspect_top_result": 1},
+    )
+    record_agent_guidance_adoption_trend(
+        workspace,
+        total_guidance_events=10,
+        adopted_count=2,
+        missed_count=8,
+        adoption_rate=0.2,
+        score=45,
+        quality="low",
+        missed_action_counts={"inspect_top_result": 8},
+    )
+
+    steps = _build_agent_next_steps_for_query(
+        {
+            "freshness": {"freshness": {"status": "fresh"}},
+            "results": [{"node": {"type": "Class", "name": "ArticleService"}}],
+        },
+        query="ArticleService",
+        workspace_file=workspace,
+    )
+
+    assert steps[0]["action"] == "inspect_top_result"
+    assert steps[0]["priority"] == "high"
+    assert steps[0]["adoption_feedback"]["status"] == "reinforced"
+    assert steps[0]["adoption_feedback"]["missed_count"] == 8
+    assert "low-adoption feedback" in steps[0]["command"]

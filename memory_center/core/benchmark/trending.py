@@ -18,6 +18,7 @@ from ..store import WorkspaceStore
 BENCHMARK_BASELINE_FILE = "benchmark-baselines.jsonl"
 BENCHMARK_TREND_FILE = "benchmark-trends.jsonl"
 AGENT_GUIDANCE_TREND_FILE = "agent-guidance-trends.jsonl"
+AGENT_GUIDANCE_ADOPTION_TREND_FILE = "agent-guidance-adoption-trends.jsonl"
 
 
 def record_benchmark_baseline(
@@ -128,6 +129,43 @@ def record_agent_guidance_trend(
         "passed": bool(passed),
     }
     store.append_jsonl(AGENT_GUIDANCE_TREND_FILE, entry)
+    return {
+        "recorded": True,
+        "trend_point": entry,
+    }
+
+
+def record_agent_guidance_adoption_trend(
+    workspace_file: str | Path,
+    *,
+    total_guidance_events: int = 0,
+    adopted_count: int = 0,
+    missed_count: int = 0,
+    adoption_rate: float = 0.0,
+    score: int = 0,
+    quality: str = "",
+    session_id: str = "",
+    missed_action_counts: dict[str, int] | None = None,
+) -> dict[str, Any]:
+    """Record an agent guidance adoption trend point."""
+
+    store = WorkspaceStore(workspace_file)
+    entry = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "session_id": session_id,
+        "total_guidance_events": int(total_guidance_events or 0),
+        "adopted_count": int(adopted_count or 0),
+        "missed_count": int(missed_count or 0),
+        "adoption_rate": round(float(adoption_rate or 0.0), 4),
+        "score": int(score or 0),
+        "quality": quality,
+        "missed_action_counts": {
+            str(action): int(count or 0)
+            for action, count in (missed_action_counts or {}).items()
+            if str(action) and int(count or 0) > 0
+        },
+    }
+    store.append_jsonl(AGENT_GUIDANCE_ADOPTION_TREND_FILE, entry)
     return {
         "recorded": True,
         "trend_point": entry,
@@ -268,6 +306,38 @@ def get_agent_guidance_trends(
     }
 
 
+def get_agent_guidance_adoption_trends(
+    workspace_file: str | Path,
+    *,
+    days: int = 30,
+    limit: int = 500,
+) -> dict[str, Any]:
+    """Retrieve agent guidance adoption trend data and regression signals."""
+
+    store = WorkspaceStore(workspace_file)
+    rows = store.read_jsonl_prefer_backend(AGENT_GUIDANCE_ADOPTION_TREND_FILE, limit=max(limit, 5000))
+    cutoff = datetime.now(timezone.utc).isoformat()
+    if days > 0:
+        from datetime import timedelta
+        cutoff_dt = datetime.now(timezone.utc) - timedelta(days=days)
+        cutoff = cutoff_dt.isoformat()
+        rows = [row for row in rows if row.get("timestamp", "") >= cutoff]
+
+    rows = rows[-limit:]
+    regressions = _detect_agent_guidance_adoption_regressions(rows)
+    return {
+        "total_records": len(rows),
+        "time_range": {
+            "from": cutoff,
+            "to": datetime.now(timezone.utc).isoformat(),
+            "days": days,
+        },
+        "trend_points": rows[-50:],
+        "regressions": regressions,
+        "summary": _build_agent_guidance_adoption_trend_summary(rows),
+    }
+
+
 def _detect_agent_guidance_regressions(points: list[dict[str, Any]]) -> list[dict[str, Any]]:
     regressions: list[dict[str, Any]] = []
     if len(points) < 2:
@@ -313,6 +383,53 @@ def _detect_agent_guidance_regressions(points: list[dict[str, Any]]) -> list[dic
     return regressions
 
 
+def _detect_agent_guidance_adoption_regressions(points: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    regressions: list[dict[str, Any]] = []
+    if len(points) < 2:
+        return regressions
+
+    latest = points[-1]
+    previous = points[:-1]
+    previous_rates = [float(p.get("adoption_rate", 0.0) or 0.0) for p in previous]
+    prev_rate_avg = sum(previous_rates) / len(previous_rates)
+    latest_rate = float(latest.get("adoption_rate", 0.0) or 0.0)
+    latest_missed = int(latest.get("missed_count", 0) or 0)
+    latest_total = int(latest.get("total_guidance_events", 0) or 0)
+    latest_score = int(latest.get("score", 0) or 0)
+
+    if latest_total > 0 and latest_rate < 0.6:
+        regressions.append({
+            "type": "agent_guidance_adoption",
+            "code": "low_agent_guidance_adoption_rate",
+            "severity": "critical" if latest_rate < 0.3 else "warning",
+            "latest_adoption_rate": round(latest_rate, 4),
+            "historical_avg_adoption_rate": round(prev_rate_avg, 4),
+            "latest_missed_count": latest_missed,
+            "message": "agent guidance adoption rate is low",
+            "recommendation": "检查 lookup 后续是否按 agent_next_steps 调用了对应 Memory Center 工具。",
+        })
+    if prev_rate_avg > 0 and latest_rate < prev_rate_avg * 0.7:
+        regressions.append({
+            "type": "agent_guidance_adoption",
+            "code": "agent_guidance_adoption_rate_dropped",
+            "severity": "warning",
+            "latest_adoption_rate": round(latest_rate, 4),
+            "historical_avg_adoption_rate": round(prev_rate_avg, 4),
+            "message": "agent guidance adoption rate dropped",
+            "recommendation": "对比最近 agent_guidance event 和 tool_call，确认建议动作是否太难执行或入口没有自动串联。",
+        })
+    if latest_score < 60:
+        regressions.append({
+            "type": "agent_guidance_adoption",
+            "code": "agent_guidance_adoption_gate_failed",
+            "severity": "critical" if latest_score < 50 else "warning",
+            "latest_score": latest_score,
+            "message": "agent guidance adoption quality gate failed",
+            "recommendation": "运行 eval-agent-guidance-adoption 并检查 missed adoption_records。",
+        })
+    return regressions
+
+
 def _build_agent_guidance_trend_summary(points: list[dict[str, Any]]) -> dict[str, Any]:
     if not points:
         return {
@@ -334,6 +451,51 @@ def _build_agent_guidance_trend_summary(points: list[dict[str, Any]]) -> dict[st
         "avg_agent_next_step_count": round(avg_steps, 2),
         "avg_invalid_search_suggestion_count": round(avg_invalid, 2),
         "pass_rate": round(pass_rate, 4),
+    }
+
+
+def _build_agent_guidance_adoption_trend_summary(points: list[dict[str, Any]]) -> dict[str, Any]:
+    if not points:
+        return {
+            "total_trend_points": 0,
+            "latest_adoption_rate": 0.0,
+            "avg_adoption_rate": 0.0,
+            "latest_missed_count": 0,
+            "total_guidance_events": 0,
+            "total_missed_count": 0,
+            "latest_missed_action_counts": {},
+            "missed_action_counts": {},
+        }
+    latest = points[-1]
+    avg_rate = sum(float(p.get("adoption_rate", 0.0) or 0.0) for p in points) / len(points)
+    total_events = sum(int(p.get("total_guidance_events", 0) or 0) for p in points)
+    total_missed = sum(int(p.get("missed_count", 0) or 0) for p in points)
+    missed_action_counts: dict[str, int] = {}
+    for point in points:
+        raw_counts = point.get("missed_action_counts", {})
+        if not isinstance(raw_counts, dict):
+            continue
+        for action, count in raw_counts.items():
+            action_key = str(action)
+            if not action_key:
+                continue
+            missed_action_counts[action_key] = missed_action_counts.get(action_key, 0) + int(count or 0)
+    latest_action_counts = latest.get("missed_action_counts", {})
+    if not isinstance(latest_action_counts, dict):
+        latest_action_counts = {}
+    return {
+        "total_trend_points": len(points),
+        "latest_adoption_rate": round(float(latest.get("adoption_rate", 0.0) or 0.0), 4),
+        "avg_adoption_rate": round(avg_rate, 4),
+        "latest_missed_count": int(latest.get("missed_count", 0) or 0),
+        "total_guidance_events": total_events,
+        "total_missed_count": total_missed,
+        "latest_missed_action_counts": {
+            str(action): int(count or 0)
+            for action, count in latest_action_counts.items()
+            if str(action) and int(count or 0) > 0
+        },
+        "missed_action_counts": dict(sorted(missed_action_counts.items(), key=lambda item: (-item[1], item[0]))),
     }
 
 
@@ -408,6 +570,8 @@ def check_regression_alerts(workspace_file: str | Path, threshold_pct: float = 1
     regressions = trends.get("regressions", [])
     agent_guidance = get_agent_guidance_trends(workspace_file)
     agent_regressions = agent_guidance.get("regressions", [])
+    agent_adoption = get_agent_guidance_adoption_trends(workspace_file)
+    agent_adoption_regressions = agent_adoption.get("regressions", [])
 
     alerts = []
     for reg in regressions:
@@ -436,6 +600,19 @@ def check_regression_alerts(workspace_file: str | Path, threshold_pct: float = 1
             "recommendation": reg.get("recommendation", ""),
             "code": reg.get("code", ""),
         })
+    for reg in agent_adoption_regressions:
+        severity = str(reg.get("severity", "warning") or "warning")
+        alerts.append({
+            "type": "agent_guidance_adoption",
+            "function": "agent_guidance_adoption",
+            "change_pct": 0,
+            "severity": severity,
+            "recent_avg": reg.get("latest_adoption_rate", 0),
+            "historical_avg": reg.get("historical_avg_adoption_rate", 0),
+            "message": reg.get("message", ""),
+            "recommendation": reg.get("recommendation", ""),
+            "code": reg.get("code", ""),
+        })
 
     return {
         "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -447,6 +624,11 @@ def check_regression_alerts(workspace_file: str | Path, threshold_pct: float = 1
             "total_regressions": len(agent_regressions),
             "summary": agent_guidance.get("summary", {}),
             "regressions": agent_regressions,
+        },
+        "agent_guidance_adoption": {
+            "total_regressions": len(agent_adoption_regressions),
+            "summary": agent_adoption.get("summary", {}),
+            "regressions": agent_adoption_regressions,
         },
         "health": "critical" if any(a["severity"] == "critical" for a in alerts) else "warning" if alerts else "healthy",
     }
@@ -463,6 +645,7 @@ def generate_benchmark_report(
         "baselines": baselines,
         "trends": trends,
         "agent_guidance_trends": get_agent_guidance_trends(workspace_file),
+        "agent_guidance_adoption_trends": get_agent_guidance_adoption_trends(workspace_file),
         "health_score": _calculate_health_score(baselines, trends),
         "recommendations": _generate_recommendations(baselines, trends),
     }

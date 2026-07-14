@@ -70,6 +70,8 @@ MCP 当前公开的是 12 个 task-level tools：
 - Lookup 响应还会返回兼容型 `agent_next_steps`；`mc_lookup` 在自动路由和直接 query/symbol/code/context/chain/trace 路由下会把它提升到顶层，让宿主 Agent 按证据边界执行下一步，而不是重新发散搜索路径。
 - When `session_id` is provided, `mc_lookup` records returned `agent_next_steps` as an `agent_guidance` session event for adoption evaluation.
 - 传入 `session_id` 时，`mc_lookup` 会把返回的 `agent_next_steps` 自动记录为 `agent_guidance` session event，用于后续 adoption 评估。
+- If adoption trends show a returned action is repeatedly missed, future query `agent_next_steps` may include `adoption_feedback` and a more explicit command while preserving the action.
+- 如果 adoption 趋势显示某个返回 action 反复未被执行，后续 query 的 `agent_next_steps` 可能会附加 `adoption_feedback` 并给出更明确的 command，但保留原 action。
 - The same field is visible from CLI `memory-center query` and HTTP `/workspace/query`; MCP only adds the top-level lift for non-query route wrappers.
 - CLI `memory-center query` 和 HTTP `/workspace/query` 也会返回同一字段；MCP 只是额外在非 query 路由包装层把它提升到顶层。
 - 如果当前 MCP workspace 是子项目，method walkthrough 会尝试自动升级到父级或 registry 中覆盖当前项目的聚合 workspace。查看 `workspace_escalation.status` 判断是否已切换；`not_needed_or_not_found` 不是错误。
@@ -101,6 +103,7 @@ MCP 当前公开的是 12 个 task-level tools：
 - `health` — 健康检查（状态 + 工具使用 + 回归套件）
 - `eval_agent_guidance` — 检查 lookup 输出是否包含有界 `agent_next_steps`，并标记低效搜索建议
 - `eval_agent_guidance_adoption` — 检查已记录的 agent guidance 是否被后续 tool call 执行
+- `eval_agent_guidance_adoption_trend` — 执行 adoption 检查并追加一条 adoption rate 趋势记录
 - `eval_agent_guidance_trend` — 执行同一检查并追加一条 agent guidance 趋势记录
 - `audit` — 完成审计（文档/测试/实现/设计一致性）
 - `discover` — 热点命令发现与下一步推荐
