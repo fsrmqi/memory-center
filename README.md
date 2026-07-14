@@ -1,4 +1,4 @@
-# Memory Center / 记忆中心
+0# Memory Center / 记忆中心
 
 > **MCP-native project memory and knowledge graph service for AI coding agents.**
 >
