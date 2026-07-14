@@ -138,6 +138,48 @@ def workspace_log_session_event(
     }
 
 
+def workspace_record_agent_guidance(
+    workspace_file: str | Path,
+    session_id: str,
+    *,
+    query: str = "",
+    mode: str = "",
+    source: str = "",
+    payload: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Record agent_next_steps from a lookup payload into the session log."""
+
+    if not session_id.strip():
+        return {"logged": False, "reason": "missing_session_id"}
+    lookup_payload = payload or {}
+    steps = _extract_agent_next_steps(lookup_payload)
+    if not steps:
+        return {"logged": False, "reason": "missing_agent_next_steps"}
+    return workspace_log_session_event(
+        workspace_file,
+        session_id,
+        "agent_guidance",
+        {
+            "query": query,
+            "mode": mode,
+            "source": source,
+            "agent_next_steps": steps,
+        },
+    )
+
+
+def _extract_agent_next_steps(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    steps = payload.get("agent_next_steps", [])
+    if isinstance(steps, list) and steps:
+        return [step for step in steps if isinstance(step, dict)]
+    nested = payload.get("result", {})
+    if isinstance(nested, dict):
+        nested_steps = nested.get("agent_next_steps", [])
+        if isinstance(nested_steps, list) and nested_steps:
+            return [step for step in nested_steps if isinstance(step, dict)]
+    return []
+
+
 def workspace_end_session(
     workspace_file: str | Path,
     session_id: str,

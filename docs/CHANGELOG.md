@@ -8,11 +8,25 @@
 
 ## Unreleased
 
+### P2 Retrieval / Reasoning Quality Loop / 检索与推理质量闭环
+
+- Hybrid query 与 auto-routed walkthrough 新增兼容字段 `agent_next_steps`，把 retrieval policy、freshness、completion status 和现有证据收敛成结构化下一步建议。
+- `agent_next_steps` 会明确提示 Agent 读取现有 `read_targets`、切换到 walkthrough、验证 semantic 命中、细化查询或先处理 stale/pending 证据，减少重复全局搜索。
+- MCP `mc_lookup` 在自动路由和直接 query/symbol/code/context/chain/trace 路由下会把 `agent_next_steps` 提升到顶层；Golden agent guidance 门禁现在也会检查 `agent_next_steps` 中的低效搜索建议。
+- CLI `memory-center query`、HTTP `/workspace/query` 与 core `memory_query_hybrid` 已补三入口可见性回归测试，确保查询入口都能返回结构化 `agent_next_steps`。
+- Golden Benchmark summary 现在会汇总 `agent_next_step_count` 与 `agent_next_step_action_counts`，报告层可直接看到下一步建议覆盖率和动作分布。
+- Golden performance baseline / compare 现在会保存并比较 `agent_next_steps` 覆盖率、低效搜索建议数量和 reduction rate；即使 latency/token 没退化，Agent 下一步建议质量退化也会让 gate 失败。
+- 新增 `memory_eval_agent_guidance` / `eval-agent-guidance` / `/workspace/eval-agent-guidance` / `mc_admin(action="eval_agent_guidance")`，日常 health、regression suite 与 workspace dashboard 现在也能看到 `agent_next_steps` 覆盖率和低效搜索建议风险。
+- 新增 `memory_eval_agent_guidance_adoption` / `eval-agent-guidance-adoption` / `/workspace/eval-agent-guidance-adoption` / `mc_admin(action="eval_agent_guidance_adoption")`，可基于 `agent_guidance` session event 与后续 `tool_call` 判断建议是否真的被执行。
+- CLI `memory-center query --session-id ...`、HTTP `/workspace/query?session_id=...` 与 MCP `mc_lookup(session_id=...)` 现在会自动把返回的 `agent_next_steps` 记录为 `agent_guidance` session event，adoption 指标不再依赖手工记录。
+- 新增 `agent-guidance-trends.jsonl`、`eval-agent-guidance-trend`、`/workspace/eval-agent-guidance-trend` 与 `mc_admin(action="eval_agent_guidance_trend")`，Benchmark trend report / regression alerts 现在能发现 `agent_next_steps` 覆盖率下降或无效泛搜索建议回潮。
+
 ### Task Space Resume Experience / 任务空间接手体验
 
 - 新增任务空间健康检查与只读修复计划，可通过 CLI 与 MCP `mc_admin` 检查 `current_summary`、next actions、write receipts、相似任务空间等问题。
 - `resume-packet` 现在携带轻量 `task_health` 与 `repair_plan_hint`，Agent 接手时可直接判断是否需要先修复记忆空间。
 - 新增 `work-resume-check` / `mc_admin(action="task_resume_check")` / `/workspace/work-resume-check` 一键接手检查入口，聚合恢复包、健康摘要、修复计划、下一步动作和近期证据。
+- 新增 `artifact repair-task` / `mc_admin(action="task_repair_apply")` 保守修复执行入口，默认 dry-run，显式 apply 时只执行低风险 task space 修复。
 - 本地安装版本提升至 `3.5.19`。
 
 ### Parent Workspace MCP Adoption Fix / 父级 Workspace MCP 采纳修复

@@ -206,6 +206,7 @@ def _compact_workspace_dashboard(result: dict[str, Any], budget: str = "medium")
     focus_dashboard = result.get("focus_dashboard", {}) or {}
     focus_resume_eval = result.get("focus_resume_eval", {}) or {}
     tool_usage_report = result.get("tool_usage_report", {}) or {}
+    agent_guidance = result.get("agent_guidance", {}) or {}
     write_receipts_overview = result.get("write_receipts_overview", {}) or {}
     return with_schema(
         "workspace_dashboard",
@@ -249,6 +250,16 @@ def _compact_workspace_dashboard(result: dict[str, Any], budget: str = "medium")
                 "lookup_tool_counts": tool_usage_report.get("lookup_tool_counts", {}),
                 "suspected_bypass": tool_usage_report.get("suspected_bypass", [])[: limits["events"]],
                 "adoption_hints": tool_usage_report.get("adoption_hints", [])[:2],
+            },
+            "agent_guidance": {
+                "quality": agent_guidance.get("quality", ""),
+                "score": agent_guidance.get("score", 0),
+                "passed": agent_guidance.get("passed", False),
+                "agent_next_step_count": agent_guidance.get("agent_next_step_count", 0),
+                "agent_next_step_actions": agent_guidance.get("agent_next_step_actions", [])[: limits["steps"]],
+                "invalid_search_suggestion_count": agent_guidance.get("invalid_search_suggestion_count", 0),
+                "adoption": agent_guidance.get("adoption", {}),
+                "findings": agent_guidance.get("findings", [])[: limits["findings"]],
             },
         },
     )

@@ -524,6 +524,7 @@ def memory_query_hybrid(
         result["query_symbol"] = walkthrough_symbol
         result["intent_analysis"] = intent
         result["workspace"] = result.get("workspace") or config_obj[0].workspace
+        result["agent_next_steps"] = _build_agent_next_steps_for_walkthrough(result)
         return result
 
     freshness_banner: dict[str, Any]
@@ -717,12 +718,117 @@ def memory_query_hybrid(
             "evidence_type": "fact" if sources & {"exact", "graph_exact", "direct_lookup"} else "inferred",
         })
     result["_quality"] = build_quality_summary(quality_evidence, freshness_status=freshness_status)
+    result["agent_next_steps"] = _build_agent_next_steps_for_query(result, query=query)
     return attach_facade_metadata(
         result,
         operation="memory_query_hybrid",
         result_kind="lookup",
         evidence_level="hybrid_indexed",
     )
+
+
+def _build_agent_next_steps_for_walkthrough(result: dict[str, Any]) -> list[dict[str, Any]]:
+    status = result.get("completion_status", {}) if isinstance(result.get("completion_status", {}), dict) else {}
+    policy = result.get("agent_usage_policy", {}) if isinstance(result.get("agent_usage_policy", {}), dict) else {}
+    freshness = result.get("index_freshness", {}) if isinstance(result.get("index_freshness", {}), dict) else {}
+    if bool(freshness.get("index_stale")):
+        return [
+            {
+                "action": "read_live_stale_targets",
+                "priority": "high",
+                "reason": "walkthrough target index is stale; live file evidence must win before editing",
+                "command": "read files from index_freshness.stale_read_targets",
+                "uses_existing_evidence": True,
+            }
+        ]
+    if status.get("recommended_action") == "use_current_evidence" and policy.get("do_not_search_when_absolute_path_present"):
+        return [
+            {
+                "action": "use_read_targets",
+                "priority": "high",
+                "reason": "walkthrough is complete and already includes absolute_file_path read targets",
+                "command": "read read_targets[].absolute_file_path directly; do not run find/grep-l for the same symbols",
+                "uses_existing_evidence": True,
+            }
+        ]
+    if status.get("state") in {"partial", "blocked"}:
+        return [
+            {
+                "action": "fill_missing_walkthrough_layers",
+                "priority": "high",
+                "reason": str(status.get("reason", "") or "walkthrough is not complete"),
+                "command": "inspect completion_status.missing_layers and then rerun mc_lookup(mode='walkthrough') if needed",
+                "uses_existing_evidence": True,
+            }
+        ]
+    return [
+        {
+            "action": "continue_with_current_evidence",
+            "priority": "medium",
+            "reason": "walkthrough returned bounded indexed evidence",
+            "command": "summarize from summary_lines/read_targets before using broader search",
+            "uses_existing_evidence": True,
+        }
+    ]
+
+
+def _build_agent_next_steps_for_query(result: dict[str, Any], *, query: str) -> list[dict[str, Any]]:
+    freshness_status = str(((result.get("freshness", {}) or {}).get("freshness", {}) or {}).get("status", "unknown"))
+    policy = result.get("retrieval_policy", {}) if isinstance(result.get("retrieval_policy", {}), dict) else {}
+    diagnostics = result.get("retrieval_diagnostics", {}) if isinstance(result.get("retrieval_diagnostics", {}), dict) else {}
+    results = result.get("results", []) if isinstance(result.get("results", []), list) else []
+    if freshness_status in {"stale", "pending"}:
+        return [
+            {
+                "action": "refresh_or_read_live_files",
+                "priority": "high",
+                "reason": f"index freshness is {freshness_status}; indexed hits may be outdated",
+                "command": "read matched files live before editing; run memory-center reindex when freshness affects the target",
+                "uses_existing_evidence": True,
+            }
+        ]
+    if not results:
+        return [
+            {
+                "action": "refine_query",
+                "priority": "medium",
+                "reason": "hybrid retrieval returned no evidence",
+                "command": "retry mc_lookup with a class, method, endpoint, Feign client, or business term from the task",
+                "uses_existing_evidence": False,
+            }
+        ]
+    top = results[0].get("node", results[0]) if isinstance(results[0], dict) else {}
+    top_type = str(top.get("type", "") or "")
+    top_name = str(top.get("name", "") or query)
+    if top_type in {"Method", "FeignMethod"} or "#" in query:
+        return [
+            {
+                "action": "switch_to_walkthrough",
+                "priority": "high",
+                "reason": "method-level evidence is available; walkthrough gives bounded chain and read targets",
+                "command": f'mc_lookup(query="{top_name}", mode="walkthrough")',
+                "uses_existing_evidence": True,
+            }
+        ]
+    if diagnostics.get("semantic", {}).get("status") == "active" and policy.get("primary_intent") == "general":
+        return [
+            {
+                "action": "validate_semantic_hit",
+                "priority": "medium",
+                "reason": "top results include semantic retrieval; verify the top file or symbol before assuming exact relevance",
+                "command": "open the top result file or rerun mc_lookup with a concrete symbol from the hit",
+                "uses_existing_evidence": True,
+            }
+        ]
+    return [
+        {
+            "action": "inspect_top_result",
+            "priority": "medium",
+            "reason": "hybrid retrieval returned indexed evidence",
+            "command": "read the top result file/symbol, then call mc_analyze before editing shared contracts",
+            "uses_existing_evidence": True,
+        }
+    ]
 
 
 def _filter_contracts_by_query(contracts: list, query: str, intent: str) -> list:

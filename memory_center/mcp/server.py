@@ -49,6 +49,7 @@ from memory_center.core.orchestrator import (
     workspace_lookup_hint,
     workspace_next_actions,
     workspace_recent_evidence,
+    workspace_record_agent_guidance,
     workspace_record_case,
     workspace_record_close_feedback,
     workspace_resume_packet,
@@ -271,6 +272,87 @@ def _collect_walkthrough_read_targets(result: dict[str, Any]) -> list[dict[str, 
     return targets
 
 
+def _lookup_payload_with_agent_steps(mode_key: str, mode_value: str, result: dict[str, Any], **extra: Any) -> dict[str, Any]:
+    payload = {mode_key: mode_value, "result": result, **extra}
+    agent_next_steps = result.get("agent_next_steps") if isinstance(result, dict) else None
+    if agent_next_steps:
+        payload["agent_next_steps"] = agent_next_steps
+    return payload
+
+
+def _agent_next_steps_for_lookup_route(mode: str, result: dict[str, Any], query: str = "") -> list[dict[str, Any]]:
+    found = bool(result.get("found", True)) if isinstance(result, dict) else False
+    if not found:
+        return [
+            {
+                "action": "refine_query",
+                "priority": "medium",
+                "reason": f"{mode} lookup did not find bounded evidence",
+                "command": "retry mc_lookup with a concrete class, method, endpoint, Feign client, or config key",
+                "uses_existing_evidence": False,
+            }
+        ]
+    if mode == "symbol":
+        return [
+            {
+                "action": "inspect_symbol_anchor",
+                "priority": "high",
+                "reason": "symbol lookup selected a bounded anchor",
+                "command": "read result.best_match / result.summary_lines before switching tools",
+                "uses_existing_evidence": True,
+            }
+        ]
+    if mode == "code":
+        return [
+            {
+                "action": "inspect_code_hits",
+                "priority": "medium",
+                "reason": "code search returned indexed hits",
+                "command": "read the top hit path/snippet, then rerun mc_lookup with a concrete symbol if needed",
+                "uses_existing_evidence": True,
+            }
+        ]
+    if mode.startswith("chain"):
+        return [
+            {
+                "action": "inspect_chain_summary",
+                "priority": "high",
+                "reason": "call-chain route returned graph evidence",
+                "command": "read result.summary_lines / result.chain_summary, then call mc_analyze before editing shared contracts",
+                "uses_existing_evidence": True,
+            }
+        ]
+    if mode == "context":
+        return [
+            {
+                "action": "inspect_context_summary",
+                "priority": "high",
+                "reason": "context route returned incoming/outgoing/risk summaries",
+                "command": "read result.summary_lines and risk/context sections before broadening search",
+                "uses_existing_evidence": True,
+            }
+        ]
+    if mode == "trace":
+        return [
+            {
+                "action": "inspect_trace_overview",
+                "priority": "high",
+                "reason": "trace route returned cross-service overview evidence",
+                "command": "use matched Feign/API/MQ entries to choose walkthrough or impact analysis",
+                "uses_existing_evidence": True,
+            }
+        ]
+    return [
+        {
+            "action": "inspect_route_result",
+            "priority": "medium",
+            "reason": f"{mode or 'lookup'} route returned bounded evidence",
+            "command": "read result summaries before using broader search",
+            "uses_existing_evidence": True,
+        }
+    ]
+
+
 def _run_audit(workspace_file: str, work_package: str = "") -> dict[str, Any]:
     """Run completion audit for mc_admin."""
     from ..core.audit.completion import run_completion_audit
@@ -432,9 +514,22 @@ def create_server(workspace_file: str):
         report_level: str = "standard",
         enable_vector: bool = False,
         vector_weight: float = 0.15,
+        session_id: str = "",
     ):
         """Unified knowledge lookup. Mode selects strategy: auto (system decides via lookup_hint), symbol (resolve name), code (keyword search), query (graph-aware multi-source), trace (cross-service by class/Feign/endpoint/MQ), chain (caller/callee analysis, use chain_direction), walkthrough (method-level indexed walkthrough), context (360-degree context for a service/symbol), contracts (list all Feign/API/MQ contracts), ref (resolve short memory reference IDs). For Class#method requests that say full chain/全链路/到底层, prefer mode='walkthrough' or auto; walkthrough returns summary_lines, local_service_continuations, feign_continuations.server_walkthroughs, service_impl_continuations, and absolute_file_path. If absolute_file_path is present, read that path directly and do not run find/grep/IDEA search to locate the same controller or impl. Use project to disambiguate when multiple modules contain the same symbol name."""
         wf = ctx.workspace_file
+        def emit(payload: dict[str, Any], emitted_mode: str) -> dict[str, Any]:
+            if session_id.strip():
+                workspace_record_agent_guidance(
+                    wf,
+                    session_id,
+                    query=query,
+                    mode=emitted_mode,
+                    source="mcp.mc_lookup",
+                    payload=payload,
+                )
+            return payload
+
         resolved_symbol = _extract_symbol_like_token(symbol, name, entry, query)
         resolved_depth = max(depth, 4) if _wants_deep_chain(query, intent, symbol, name, entry) else depth
         if mode == "auto":
@@ -452,95 +547,108 @@ def create_server(workspace_file: str):
                 result = memory_method_walkthrough(wf, resolved_symbol, depth=resolved_depth, limit=limit, project=project, view="compact", budget="small", report_level=report_level)
                 payload = _flatten_walkthrough_payload(result, mode_key="mode_used")
                 payload["routing_note"] = "auto selected walkthrough for Class#method full-chain query; use top-level answer/summary_lines/read_targets directly."
-                return payload
+                return emit(payload, "walkthrough")
             if "memory_callers" in preferred_bare and resolved_symbol:
                 matching_groups = _find_groups_for_workspace(wf)
                 if len(matching_groups) == 1:
                     result = group_chain(matching_groups[0], resolved_symbol, direction="callers", depth=resolved_depth, limit=limit)
-                    return {"mode_used": "chain-group", "result": result, **decision_fields}
+                    result["agent_next_steps"] = _agent_next_steps_for_lookup_route("chain-group", result, query)
+                    return emit(_lookup_payload_with_agent_steps("mode_used", "chain-group", result, **decision_fields), "chain-group")
                 result = memory_callers(wf, resolved_symbol, resolved_depth, limit, project=project, view="compact", budget="small")
                 _annotate_phantom_nodes(result, wf)
+                result["agent_next_steps"] = _agent_next_steps_for_lookup_route("chain-callers", result, query)
                 if len(matching_groups) > 1:
-                    return {"mode_used": "chain-callers", "result": result, "matching_groups": matching_groups, "_hint": f"Workspace 属于多个 group ({', '.join(matching_groups)})，请用 mc_admin(action='group_chain', group=...) 显式指定。", **decision_fields}
-                return {"mode_used": "chain-callers", "result": result, **decision_fields}
+                    return emit(_lookup_payload_with_agent_steps("mode_used", "chain-callers", result, matching_groups=matching_groups, _hint=f"Workspace 属于多个 group ({', '.join(matching_groups)})，请用 mc_admin(action='group_chain', group=...) 显式指定。", **decision_fields), "chain-callers")
+                return emit(_lookup_payload_with_agent_steps("mode_used", "chain-callers", result, **decision_fields), "chain-callers")
             if "memory_callees" in preferred_bare and resolved_symbol:
                 matching_groups = _find_groups_for_workspace(wf)
                 if len(matching_groups) == 1:
                     result = group_chain(matching_groups[0], resolved_symbol, direction="callees", depth=resolved_depth, limit=limit)
-                    return {"mode_used": "chain-group", "result": result, **decision_fields}
+                    result["agent_next_steps"] = _agent_next_steps_for_lookup_route("chain-group", result, query)
+                    return emit(_lookup_payload_with_agent_steps("mode_used", "chain-group", result, **decision_fields), "chain-group")
                 result = memory_callees(wf, resolved_symbol, resolved_depth, limit, project=project, view="compact", budget="small")
                 _annotate_phantom_nodes(result, wf)
+                result["agent_next_steps"] = _agent_next_steps_for_lookup_route("chain-callees", result, query)
                 if len(matching_groups) > 1:
-                    return {"mode_used": "chain-callees", "result": result, "matching_groups": matching_groups, "_hint": f"Workspace 属于多个 group ({', '.join(matching_groups)})，请用 mc_admin(action='group_chain', group=...) 显式指定。", **decision_fields}
-                return {"mode_used": "chain-callees", "result": result, **decision_fields}
+                    return emit(_lookup_payload_with_agent_steps("mode_used", "chain-callees", result, matching_groups=matching_groups, _hint=f"Workspace 属于多个 group ({', '.join(matching_groups)})，请用 mc_admin(action='group_chain', group=...) 显式指定。", **decision_fields), "chain-callees")
+                return emit(_lookup_payload_with_agent_steps("mode_used", "chain-callees", result, **decision_fields), "chain-callees")
             if "memory_symbol" in preferred_bare and (name or resolved_symbol or query):
-                return {"mode_used": "symbol", "result": memory_symbol(wf, name or resolved_symbol or query, limit, project=project, view="compact", budget="small"), **decision_fields}
+                result = memory_symbol(wf, name or resolved_symbol or query, limit, project=project, view="compact", budget="small")
+                result["agent_next_steps"] = _agent_next_steps_for_lookup_route("symbol", result, query)
+                return emit(_lookup_payload_with_agent_steps("mode_used", "symbol", result, **decision_fields), "symbol")
             if "memory_search_code" in preferred_bare:
-                return {"mode_used": "code", "result": memory_search_code(wf, query, scope, limit, project=project), **decision_fields}
+                result = memory_search_code(wf, query, scope, limit, project=project)
+                result["agent_next_steps"] = _agent_next_steps_for_lookup_route("code", result, query)
+                return emit(_lookup_payload_with_agent_steps("mode_used", "code", result, **decision_fields), "code")
             if "memory_context" in preferred_bare and (name or resolved_symbol or query):
-                return {"mode_used": "context", "result": memory_context(wf, name or resolved_symbol or query, resolved_depth, project=project, view="compact", budget="small"), **decision_fields}
+                result = memory_context(wf, name or resolved_symbol or query, resolved_depth, project=project, view="compact", budget="small")
+                result["agent_next_steps"] = _agent_next_steps_for_lookup_route("context", result, query)
+                return emit(_lookup_payload_with_agent_steps("mode_used", "context", result, **decision_fields), "context")
             if "workspace_trace" in preferred_bare and (entry or resolved_symbol or query):
-                return {"mode_used": "trace", "result": workspace_trace(wf, entry or resolved_symbol or query), **decision_fields}
-            return {
-                "mode_used": "query",
-                "result": memory_query_hybrid(
+                result = workspace_trace(wf, entry or resolved_symbol or query)
+                result["agent_next_steps"] = _agent_next_steps_for_lookup_route("trace", result, query)
+                return emit(_lookup_payload_with_agent_steps("mode_used", "trace", result, **decision_fields), "trace")
+            query_result = memory_query_hybrid(
                     wf,
                     query,
                     limit,
                     project=project,
                     enable_vector=enable_vector,
                     vector_weight=vector_weight,
-                ),
-                **decision_fields,
-            }
+                )
+            return emit(_lookup_payload_with_agent_steps("mode_used", "query", query_result, **decision_fields), "query")
         if mode == "symbol":
-            return {"mode": "symbol", "result": memory_symbol(wf, name or query, limit, project=project, view="compact", budget="small")}
+            result = memory_symbol(wf, name or query, limit, project=project, view="compact", budget="small")
+            result["agent_next_steps"] = _agent_next_steps_for_lookup_route("symbol", result, query)
+            return emit(_lookup_payload_with_agent_steps("mode", "symbol", result), "symbol")
         if mode == "code":
-            return {"mode": "code", "result": memory_search_code(wf, query, scope, limit, project=project)}
+            result = memory_search_code(wf, query, scope, limit, project=project)
+            result["agent_next_steps"] = _agent_next_steps_for_lookup_route("code", result, query)
+            return emit(_lookup_payload_with_agent_steps("mode", "code", result), "code")
         if mode == "query":
-            return {
-                "mode": "query",
-                "result": memory_query_hybrid(
+            query_result = memory_query_hybrid(
                     wf,
                     query,
                     limit,
                     project=project,
                     enable_vector=enable_vector,
                     vector_weight=vector_weight,
-                ),
-            }
+                )
+            return emit(_lookup_payload_with_agent_steps("mode", "query", query_result), "query")
         if mode == "trace":
-            return {"mode": "trace", "result": workspace_trace(wf, entry or query)}
+            result = workspace_trace(wf, entry or query)
+            result["agent_next_steps"] = _agent_next_steps_for_lookup_route("trace", result, query)
+            return emit(_lookup_payload_with_agent_steps("mode", "trace", result), "trace")
         if mode == "chain":
             cross_types = ["CALLS_SERVICE", "IMPLEMENTS_FEIGN"] if scope == "cross-service" else None
             matching_groups = _find_groups_for_workspace(wf)
             if len(matching_groups) == 1:
                 result = group_chain(matching_groups[0], symbol or query,
                                       direction=chain_direction, depth=depth, limit=limit)
-                return {"mode": "chain-group", "result": result}
+                result["agent_next_steps"] = _agent_next_steps_for_lookup_route("chain-group", result, query)
+                return emit(_lookup_payload_with_agent_steps("mode", "chain-group", result), "chain-group")
             if len(matching_groups) > 1:
                 if chain_direction == "callees":
                     result = memory_callees(wf, symbol or query, depth, limit, edge_type_filter=cross_types, project=project, view="compact", budget="small")
                 else:
                     result = memory_callers(wf, symbol or query, depth, limit, edge_type_filter=cross_types, project=project, view="compact", budget="small")
                 _annotate_phantom_nodes(result, wf)
-                return {
-                    "mode": f"chain-{chain_direction}",
-                    "result": result,
-                    "matching_groups": matching_groups,
-                    "_hint": f"Workspace 属于多个 group ({', '.join(matching_groups)})，请用 mc_admin(action='group_chain', group=...) 显式指定。",
-                }
+                result["agent_next_steps"] = _agent_next_steps_for_lookup_route(f"chain-{chain_direction}", result, query)
+                return emit(_lookup_payload_with_agent_steps("mode", f"chain-{chain_direction}", result, matching_groups=matching_groups, _hint=f"Workspace 属于多个 group ({', '.join(matching_groups)})，请用 mc_admin(action='group_chain', group=...) 显式指定。"), f"chain-{chain_direction}")
             if chain_direction == "callees":
                 result = memory_callees(wf, symbol or query, depth, limit, edge_type_filter=cross_types, project=project, view="compact", budget="small")
             else:
                 result = memory_callers(wf, symbol or query, depth, limit, edge_type_filter=cross_types, project=project, view="compact", budget="small")
             _annotate_phantom_nodes(result, wf)
-            return {"mode": f"chain-{chain_direction}", "result": result}
+            result["agent_next_steps"] = _agent_next_steps_for_lookup_route(f"chain-{chain_direction}", result, query)
+            return emit(_lookup_payload_with_agent_steps("mode", f"chain-{chain_direction}", result), f"chain-{chain_direction}")
         if mode == "walkthrough":
             result = memory_method_walkthrough(wf, symbol or resolved_symbol or query, depth=depth, limit=limit, project=project, view="compact", budget="small", report_level=report_level)
-            return _flatten_walkthrough_payload(result, mode_key="mode")
+            return emit(_flatten_walkthrough_payload(result, mode_key="mode"), "walkthrough")
         if mode == "context":
-            return {"mode": "context", "result": memory_context(wf, name or query, depth, project=project, view="compact", budget="small")}
+            result = memory_context(wf, name or query, depth, project=project, view="compact", budget="small")
+            result["agent_next_steps"] = _agent_next_steps_for_lookup_route("context", result, query)
+            return emit(_lookup_payload_with_agent_steps("mode", "context", result), "context")
         if mode == "contracts":
             return {"mode": "contracts", "result": memory_contracts(wf)}
         if mode == "ref":
@@ -734,7 +842,7 @@ def create_server(workspace_file: str):
         action_filter: str = "",
         force: bool = False,
     ):
-        """Admin and utility operations. Action selects sub-operation: status, dashboard, continuity, health, audit, discover, constraint, drill_ref, drill_timeline, drill_task, backend_consistency, artifact_list, artifact_get, artifact_outline, artifact_context, artifact_update, change_log_append, change_log_compact, task_create, task_list, task_health, task_health_all, task_repair_plan, task_resume_check, task_resolve, task_get, task_update, task_change_log_append, task_archive, task_auto_archive, task_status, task_activity_touch, session_start, session_log, session_end, session_recent, session_summary, model_profile, handoff_history, write_judge, write_plan, write_execute, receipts, replay, backend_query, eval_write_quality, eval_resume, eval_handoff, eval_regression_suite, eval_index_freshness, eval_tool_adoption, eval_context_weight, eval_workflow_orchestration, eval_token_gain, eval_parser_benchmark, eval_java_call_resolution, eval_token_benchmark, eval_token_benchmark_trend, tool_usage_report, generate_wiki, generate_skills, group_status, group_query, group_impact, group_chain, method_walkthrough, walkthrough_health, walkthrough_export, eval_walkthrough_quality."""
+        """Admin and utility operations. Action selects sub-operation: status, dashboard, continuity, health, audit, discover, constraint, drill_ref, drill_timeline, drill_task, backend_consistency, artifact_list, artifact_get, artifact_outline, artifact_context, artifact_update, change_log_append, change_log_compact, task_create, task_list, task_health, task_health_all, task_repair_plan, task_repair_apply, task_resume_check, task_resolve, task_get, task_update, task_change_log_append, task_archive, task_auto_archive, task_status, task_activity_touch, session_start, session_log, session_end, session_recent, session_summary, model_profile, handoff_history, write_judge, write_plan, write_execute, receipts, replay, backend_query, eval_write_quality, eval_resume, eval_handoff, eval_regression_suite, eval_index_freshness, eval_tool_adoption, eval_context_weight, eval_workflow_orchestration, eval_token_gain, eval_parser_benchmark, eval_java_call_resolution, eval_token_benchmark, eval_token_benchmark_trend, tool_usage_report, generate_wiki, generate_skills, group_status, group_query, group_impact, group_chain, method_walkthrough, walkthrough_health, walkthrough_export, eval_walkthrough_quality."""
         wf = ctx.workspace_file
         from memory_center.mcp.admin_actions import build_admin_registry
         registry = build_admin_registry(

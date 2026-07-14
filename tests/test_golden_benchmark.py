@@ -79,6 +79,12 @@ def test_run_golden_suite_reports_stable_quality_and_latency(tmp_path: Path) -> 
                     "missing_layers": [],
                 },
                 "agent_usage_policy": {"do_not_search_when_absolute_path_present": True},
+                "agent_next_steps": [
+                    {
+                        "action": "use_read_targets",
+                        "command": "read read_targets[].absolute_file_path directly; do not run find/grep-l",
+                    }
+                ],
                 "next_actions": ["使用当前 read_targets 证据继续总结，不需要 find"],
                 "summary_lines": ["one", "two"],
             },
@@ -96,7 +102,10 @@ def test_run_golden_suite_reports_stable_quality_and_latency(tmp_path: Path) -> 
     assert first["performance"]["token_estimate"] > 0
     assert first["summary"]["agent_invalid_search_suggestion_count"] == 0
     assert first["summary"]["agent_invalid_search_reduction_rate"] >= 0.5
+    assert first["summary"]["agent_next_step_count"] == 1
+    assert first["summary"]["agent_next_step_action_counts"] == {"use_read_targets": 1}
     assert first["cases"][0]["agent_guidance"]["completion_stop_signal"] is True
+    assert first["cases"][0]["agent_guidance"]["agent_next_step_actions"] == ["use_read_targets"]
     assert first["performance_gate"]["status"] == "baseline_missing"
     assert first["performance_gate"]["current_baseline"]["performance"]["token_estimate"] > 0
     assert first["summary"] == second["summary"]
@@ -157,6 +166,31 @@ def test_agent_guidance_counts_only_positive_invalid_search_advice() -> None:
     assert guidance["invalid_search_reduction_rate"] == 0.0
 
 
+def test_agent_guidance_checks_agent_next_steps_for_invalid_search_advice() -> None:
+    payload = {
+        "agent_next_steps": [
+            {
+                "action": "use_read_targets",
+                "command": "read read_targets[].absolute_file_path directly; do not run find/grep-l",
+            },
+            {
+                "action": "bad_search",
+                "command": "run grep -l across the repository to locate the same controller",
+            },
+        ]
+    }
+
+    guidance = evaluate_agent_guidance(payload)
+
+    assert guidance["invalid_search_suggestion_count"] == 1
+    assert guidance["agent_next_step_count"] == 2
+    assert guidance["agent_next_step_actions"] == ["use_read_targets", "bad_search"]
+    assert guidance["invalid_search_suggestions"] == [
+        "agent_next_steps[1].command: run grep -l across the repository to locate the same controller"
+    ]
+    assert guidance["passed"] is False
+
+
 def test_agent_guidance_accepts_payload_without_search_advice() -> None:
     guidance = evaluate_agent_guidance({"matches": [{"name": "ConfigKey"}]})
 
@@ -181,12 +215,27 @@ def test_golden_performance_gate_reports_missing_baseline_without_failing() -> N
 
 def test_golden_performance_gate_scores_latency_and_token_improvement(tmp_path: Path) -> None:
     current = {
-        "summary": {"anchor_recall": 1.0, "edge_recall": 1.0},
+        "summary": {
+            "case_count": 2,
+            "anchor_recall": 1.0,
+            "edge_recall": 1.0,
+            "agent_next_step_count": 2,
+            "agent_next_step_action_counts": {"use_read_targets": 2},
+            "agent_invalid_search_suggestion_count": 0,
+            "agent_invalid_search_reduction_rate": 1.0,
+        },
         "performance": {"median_latency_ms": 80.0, "token_estimate": 700},
     }
     baseline = {
         "schema_version": 1,
         "label": "v3.2.0",
+        "summary": {
+            "case_count": 2,
+            "agent_next_step_count": 2,
+            "agent_next_step_action_counts": {"use_read_targets": 2},
+            "agent_invalid_search_suggestion_count": 0,
+            "agent_invalid_search_reduction_rate": 1.0,
+        },
         "performance": {"median_latency_ms": 100.0, "token_estimate": 1000},
     }
     baseline_path = tmp_path / "baseline.json"
@@ -198,6 +247,8 @@ def test_golden_performance_gate_scores_latency_and_token_improvement(tmp_path: 
     assert gate["passed"] is True
     assert gate["latency"]["improvement_pct"] == 20.0
     assert gate["token"]["improvement_pct"] == 30.0
+    assert gate["agent_guidance"]["passed"] is True
+    assert gate["agent_guidance"]["current_steps_per_case"] == 1.0
 
 
 def test_golden_performance_gate_accepts_no_regression_against_current_baseline() -> None:
@@ -278,9 +329,55 @@ def test_golden_performance_gate_rejects_regression_against_current_baseline() -
     assert gate["token"]["passed"] is False
 
 
+def test_golden_performance_gate_rejects_agent_guidance_regression() -> None:
+    current = {
+        "summary": {
+            "case_count": 2,
+            "anchor_recall": 1.0,
+            "edge_recall": 1.0,
+            "agent_next_step_count": 1,
+            "agent_next_step_action_counts": {"refine_query": 1},
+            "agent_invalid_search_suggestion_count": 1,
+            "agent_invalid_search_reduction_rate": 0.0,
+        },
+        "performance": {"median_latency_ms": 90.0, "token_estimate": 900},
+    }
+    baseline = {
+        "schema_version": 1,
+        "label": "v3.5-agent-guidance",
+        "summary": {
+            "case_count": 2,
+            "agent_next_step_count": 2,
+            "agent_next_step_action_counts": {"use_read_targets": 2},
+            "agent_invalid_search_suggestion_count": 0,
+            "agent_invalid_search_reduction_rate": 1.0,
+        },
+        "performance": {"median_latency_ms": 100.0, "token_estimate": 1000},
+    }
+
+    gate = compare_golden_performance(current, baseline=baseline)
+
+    assert gate["status"] == "fail"
+    assert gate["passed"] is False
+    assert gate["latency"]["passed"] is True
+    assert gate["token"]["passed"] is True
+    assert gate["agent_guidance"]["passed"] is False
+    assert gate["agent_guidance"]["step_coverage_passed"] is False
+    assert gate["agent_guidance"]["invalid_search_passed"] is False
+    assert gate["agent_guidance"]["reduction_rate_passed"] is False
+
+
 def test_golden_performance_baseline_is_portable() -> None:
     result = {
-        "summary": {"case_count": 1, "anchor_recall": 1.0, "edge_recall": 1.0},
+        "summary": {
+            "case_count": 1,
+            "anchor_recall": 1.0,
+            "edge_recall": 1.0,
+            "agent_next_step_count": 2,
+            "agent_next_step_action_counts": {"use_read_targets": 2},
+            "agent_invalid_search_suggestion_count": 0,
+            "agent_invalid_search_reduction_rate": 1.0,
+        },
         "performance": {"median_latency_ms": 80.0, "p95_latency_ms": 90.0, "token_estimate": 700},
         "cases": [{"payload": {"absolute_file_path": "/private/path/Demo.java"}}],
     }
@@ -290,6 +387,8 @@ def test_golden_performance_baseline_is_portable() -> None:
     assert set(baseline) == {"schema_version", "label", "created_at", "summary", "performance"}
     assert "cases" not in baseline
     assert "path" not in json.dumps(baseline, ensure_ascii=False).lower()
+    assert baseline["summary"]["agent_next_step_count"] == 2
+    assert baseline["summary"]["agent_next_step_action_counts"] == {"use_read_targets": 2}
 
 
 def test_extract_logical_evidence_infers_walkthrough_edges_and_method_anchors() -> None:

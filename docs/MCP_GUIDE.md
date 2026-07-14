@@ -52,6 +52,9 @@ MCP 当前公开的是 12 个 task-level tools：
 10. 收尾：`mc_close`
 
 补充说明：
+- 回到已知任务空间时，优先调用 `mc_admin(action="task_resume_check", task_id="...")`。它会合并 resume packet、task health、repair plan、next actions、unresolved items 和 recent evidence，返回 `ready`、`needs_repair` 或 `blocked`。
+- 当 `task_resume_check.status="needs_repair"` 时，先看 `mc_admin(action="task_repair_plan", task_id="...")`。需要执行修复时再调用 `mc_admin(action="task_repair_apply", task_id="...", force=false)` 做 dry-run；确认后用 `force=true` 应用。刷新 `current-summary` 这类修复应传入 `intent`，例如 `intent="继续 Feign DTO 兼容改造"`。
+- `task_repair_apply` 只执行保守低风险修复：补齐缺失 context/plan 模板、在有 intent 时刷新 current-summary。它不会伪造 write receipt、自动归档相似任务空间或覆盖已有人工内容。
 - `mode="trace"` 适合先看跨服务索引概览，快速知道 Feign / API / MQ 命中了什么。
 - 如果需求是“某个方法一路追到最底层”，优先用 `mode="walkthrough"`；当查询里已经包含 `Class#method` 且明确提到“全链路/到底层”时，`mode="auto"` 现在也会优先转到 walkthrough。
 - `mode="chain"` 适合看图谱 callers / callees；`mode="walkthrough"` 适合看一个方法体内的已索引步骤、下游调用和 Feign 服务端候选。
@@ -63,6 +66,12 @@ MCP 当前公开的是 12 个 task-level tools：
 - `mc_lookup(auto|walkthrough)` 的 walkthrough 响应会把 `answer`、`answer_markdown`、`summary_lines`、`read_targets`、`mermaid_flow`、`performance_risks`、`data_scope_guards`、`diff_context`、`glossary_hits`、`index_freshness`、`branch_outline`、`anti_patterns`、`cache`、`schema_version`、`fields_contract` 提升到顶层；宿主模型应直接使用这些顶层字段，不需要读取或解析本地 `tool-results/*.json`。
 - Hybrid query responses include additive `retrieval_policy` and `retrieval_diagnostics.policy` fields. They explain selected sources and bounded budgets without changing existing MCP tool parameters.
 - Hybrid query 响应新增兼容型 `retrieval_policy` 与 `retrieval_diagnostics.policy` 字段，用于解释来源选择和有界预算，不改变现有 MCP tool 参数。
+- Lookup responses also include additive `agent_next_steps`; `mc_lookup` lifts it to the top level for auto-routed and direct query/symbol/code/context/chain/trace routes, so the host agent can follow a bounded next step instead of inventing a new search path.
+- Lookup 响应还会返回兼容型 `agent_next_steps`；`mc_lookup` 在自动路由和直接 query/symbol/code/context/chain/trace 路由下会把它提升到顶层，让宿主 Agent 按证据边界执行下一步，而不是重新发散搜索路径。
+- When `session_id` is provided, `mc_lookup` records returned `agent_next_steps` as an `agent_guidance` session event for adoption evaluation.
+- 传入 `session_id` 时，`mc_lookup` 会把返回的 `agent_next_steps` 自动记录为 `agent_guidance` session event，用于后续 adoption 评估。
+- The same field is visible from CLI `memory-center query` and HTTP `/workspace/query`; MCP only adds the top-level lift for non-query route wrappers.
+- CLI `memory-center query` 和 HTTP `/workspace/query` 也会返回同一字段；MCP 只是额外在非 query 路由包装层把它提升到顶层。
 - 如果当前 MCP workspace 是子项目，method walkthrough 会尝试自动升级到父级或 registry 中覆盖当前项目的聚合 workspace。查看 `workspace_escalation.status` 判断是否已切换；`not_needed_or_not_found` 不是错误。
 - `memory-center init` / `memory-center reindex` 写入的受管说明块和 MCP 绑定现在会镜像到各个已配置 service root，明确提示并实际绑定上层 `.memory-center/workspace.yaml`；这能减少 Agent 在子项目里“没连上父级 workspace 就不调用 MCP”的情况。
 - `memory-center setup-agent --workspace <workspace.yaml>` 是推荐的一键接入口，会刷新说明、Hooks、MCP 绑定并返回是否需要重启宿主会话。
@@ -90,6 +99,9 @@ MCP 当前公开的是 12 个 task-level tools：
 - `dashboard` — 工作区面板
 - `continuity` — 连续性面板
 - `health` — 健康检查（状态 + 工具使用 + 回归套件）
+- `eval_agent_guidance` — 检查 lookup 输出是否包含有界 `agent_next_steps`，并标记低效搜索建议
+- `eval_agent_guidance_adoption` — 检查已记录的 agent guidance 是否被后续 tool call 执行
+- `eval_agent_guidance_trend` — 执行同一检查并追加一条 agent guidance 趋势记录
 - `audit` — 完成审计（文档/测试/实现/设计一致性）
 - `discover` — 热点命令发现与下一步推荐
 - `constraint` — 约束模板与自动策略选择
@@ -124,6 +136,11 @@ MCP 当前公开的是 12 个 task-level tools：
 
 - `artifact_*` — 工件操作
 - `task_*` — 任务空间操作
+- `task_health` — 检查单个任务空间的恢复健康度和风险
+- `task_health_all` — 汇总所有任务空间健康度
+- `task_repair_plan` — 生成任务空间修复计划，不写入
+- `task_repair_apply` — 默认 dry-run，`force=true` 时执行保守修复；可带 `intent`
+- `task_resume_check` — 一键恢复门禁，合并恢复包、健康度、修复建议和证据
 - `session_*` — 会话操作
 - `group_*` — 跨工作区组操作
 - `walkthrough_health` / `eval_walkthrough_quality` / `walkthrough_export` — method walkthrough 自检、质量评测与 Markdown artifact 导出

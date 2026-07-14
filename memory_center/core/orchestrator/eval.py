@@ -13,6 +13,8 @@ from .common import (
     LAYER_L1,
     LAYER_L2,
     LAYER_L3,
+    SESSION_EVENTS_FILE,
+    _event_payload,
     _load_eval_rules,
     load_context,
 )
@@ -160,10 +162,14 @@ def memory_eval_regression_suite(
         intent=intent,
         limit=limit,
     )
+    agent_guidance_eval = memory_eval_agent_guidance(workspace_file, intent=intent, limit=limit)
+    agent_guidance_adoption = memory_eval_agent_guidance_adoption(workspace_file, session_id=session_id, limit=limit)
     components = {
         "write_quality": write_eval,
         "resume": resume_eval,
         "handoff": handoff_eval,
+        "agent_guidance": agent_guidance_eval,
+        "agent_guidance_adoption": agent_guidance_adoption,
     }
     scores = [int(item.get("score", 0) or 0) for item in components.values()]
     avg_score = int(sum(scores) / len(scores)) if scores else 0
@@ -180,6 +186,182 @@ def memory_eval_regression_suite(
         },
     )
     return suite
+
+
+def memory_eval_agent_guidance(
+    workspace_file: str | Path,
+    *,
+    intent: str = "",
+    limit: int = 20,
+) -> dict[str, Any]:
+    """Evaluate whether lookup output gives bounded, actionable next steps."""
+
+    from ..benchmark.golden import evaluate_agent_guidance  # lazy import
+    from .query import memory_query_hybrid  # lazy import
+    from .workspace import workspace_status  # lazy import
+
+    config, _ = load_context(workspace_file)
+    query = intent.strip()
+    if not query:
+        status = workspace_status(workspace_file, view="compact", budget="small")
+        focus = status.get("current_focus_task", {}) or {}
+        query = str(focus.get("title", "") or focus.get("summary_preview", "") or "").strip()
+
+    builder = EvalResultBuilder()
+    payload: dict[str, Any] = {}
+    guidance: dict[str, Any] = evaluate_agent_guidance(payload)
+    if not query:
+        builder.add("medium", "missing_guidance_query", "缺少 intent 或当前任务标题，无法抽样评估 agent_next_steps。", 25)
+    else:
+        payload = memory_query_hybrid(workspace_file, query=query, limit=limit)
+        guidance = evaluate_agent_guidance(payload)
+        if int(guidance.get("agent_next_step_count", 0) or 0) <= 0:
+            builder.add("high", "missing_agent_next_steps", "查询结果缺少 agent_next_steps，Agent 无法直接判断下一步。", 35)
+        invalid_count = int(guidance.get("invalid_search_suggestion_count", 0) or 0)
+        if invalid_count > 0:
+            builder.add("high", "invalid_search_suggestions", "agent-facing 建议仍包含低效或无界搜索提示。", 40)
+        if not guidance.get("passed", False):
+            builder.add("medium", "agent_guidance_gate_failed", "agent guidance 未通过建议质量门禁。", 20)
+
+    return builder.finalize(
+        workspace=config.workspace,
+        intent=query,
+        agent_next_step_count=int(guidance.get("agent_next_step_count", 0) or 0),
+        agent_next_step_actions=guidance.get("agent_next_step_actions", []),
+        invalid_search_suggestion_count=int(guidance.get("invalid_search_suggestion_count", 0) or 0),
+        invalid_search_suggestions=guidance.get("invalid_search_suggestions", []),
+        invalid_search_reduction_rate=float(guidance.get("invalid_search_reduction_rate", 0.0) or 0.0),
+        passed=bool(guidance.get("passed", False)) and builder.score >= 60,
+        sampled_result_summary={
+            "result_count": len(payload.get("results", [])) if isinstance(payload.get("results", []), list) else 0,
+            "freshness_status": ((payload.get("freshness", {}) or {}).get("freshness", {}) or {}).get("status", ""),
+        } if payload else {},
+    )
+
+
+def memory_eval_agent_guidance_trend(
+    workspace_file: str | Path,
+    *,
+    intent: str = "",
+    limit: int = 20,
+) -> dict[str, Any]:
+    """Run agent guidance eval and append one trend point."""
+
+    from ..benchmark.trending import record_agent_guidance_trend
+
+    result = memory_eval_agent_guidance(workspace_file, intent=intent, limit=limit)
+    recorded = record_agent_guidance_trend(
+        workspace_file,
+        intent=str(result.get("intent", "") or intent),
+        agent_next_step_count=int(result.get("agent_next_step_count", 0) or 0),
+        invalid_search_suggestion_count=int(result.get("invalid_search_suggestion_count", 0) or 0),
+        invalid_search_reduction_rate=float(result.get("invalid_search_reduction_rate", 0.0) or 0.0),
+        score=int(result.get("score", 0) or 0),
+        quality=str(result.get("quality", "") or ""),
+        passed=bool(result.get("passed", False)),
+        agent_next_step_actions=[
+            str(action)
+            for action in (result.get("agent_next_step_actions", []) or [])
+            if str(action)
+        ],
+    )
+    return {
+        **recorded,
+        "eval": result,
+    }
+
+
+def memory_eval_agent_guidance_adoption(
+    workspace_file: str | Path,
+    *,
+    session_id: str = "",
+    limit: int = 200,
+) -> dict[str, Any]:
+    """Evaluate whether recorded agent guidance was followed by matching tools."""
+
+    config, store = load_context(workspace_file)
+    events = store.read_jsonl_prefer_backend(SESSION_EVENTS_FILE, limit=max(limit, 1))
+    if session_id:
+        events = [event for event in events if event.get("session_id") == session_id]
+
+    records: list[dict[str, Any]] = []
+    for index, event in enumerate(events):
+        if event.get("event_type") not in {"agent_guidance", "agent_next_steps"}:
+            continue
+        payload = _event_payload(event)
+        steps = payload.get("agent_next_steps", [])
+        if not isinstance(steps, list) or not steps:
+            continue
+        first_step = next((step for step in steps if isinstance(step, dict) and step.get("action")), None)
+        if not first_step:
+            continue
+        sid = str(event.get("session_id", "") or "")
+        action = str(first_step.get("action", "") or "")
+        followups = [
+            candidate
+            for candidate in events[index + 1:]
+            if candidate.get("session_id") == sid and candidate.get("event_type") == "tool_call"
+        ][:5]
+        matched_tool = _match_agent_guidance_followup(action, followups)
+        records.append({
+            "session_id": sid,
+            "query": payload.get("query", "") or payload.get("intent", ""),
+            "expected_action": action,
+            "expected_command": first_step.get("command", ""),
+            "status": "adopted" if matched_tool else "missed",
+            "matched_tool": matched_tool,
+            "followup_tools": [
+                str((_event_payload(item).get("tool_name") or _event_payload(item).get("name") or "") or "")
+                for item in followups
+            ],
+        })
+
+    total = len(records)
+    adopted = sum(1 for record in records if record.get("status") == "adopted")
+    missed = total - adopted
+    adoption_rate = round(adopted / total, 3) if total else 0.0
+    builder = EvalResultBuilder()
+    if total == 0:
+        builder.add("low", "no_agent_guidance_events", "近期没有记录 agent_guidance 事件，无法评估建议是否被执行。", 10)
+    elif missed > 0:
+        builder.add("medium", "agent_guidance_not_adopted", f"{missed} 条 agent guidance 没有匹配到后续执行工具。", min(40, missed * 15))
+    if total >= 3 and adoption_rate < 0.6:
+        builder.add("medium", "low_agent_guidance_adoption_rate", f"agent guidance adoption rate 仅 {adoption_rate}。", 20)
+
+    return builder.finalize(
+        workspace=config.workspace,
+        session_id=session_id,
+        summary={
+            "total_guidance_events": total,
+            "adopted_count": adopted,
+            "missed_count": missed,
+            "adoption_rate": adoption_rate,
+        },
+        adoption_records=records[:50],
+    )
+
+
+def _match_agent_guidance_followup(action: str, followups: list[dict[str, Any]]) -> str:
+    for event in followups:
+        payload = _event_payload(event)
+        tool_name = str(payload.get("tool_name") or payload.get("name") or "")
+        mode = str(payload.get("mode") or "")
+        if _tool_matches_agent_guidance_action(action, tool_name, mode, payload):
+            return tool_name or mode
+    return ""
+
+
+def _tool_matches_agent_guidance_action(action: str, tool_name: str, mode: str, payload: dict[str, Any]) -> bool:
+    normalized_tool = tool_name.lower()
+    normalized_mode = mode.lower()
+    payload_text = json.dumps(payload, ensure_ascii=False).lower()
+    if action == "switch_to_walkthrough":
+        return "walkthrough" in normalized_tool or normalized_mode == "walkthrough" or "mode=\"walkthrough\"" in payload_text
+    if action in {"inspect_top_result", "validate_semantic_hit", "refresh_or_read_live_files", "use_read_targets"}:
+        return any(token in normalized_tool for token in ["read", "open", "memory_ref", "workspace_trace", "memory_context", "memory_search_code"])
+    if action == "refine_query":
+        return any(token in normalized_tool for token in ["memory_query", "mc_lookup", "memory_symbol", "memory_search_code"])
+    return normalized_tool.startswith("memory_") or normalized_tool.startswith("workspace_")
 
 
 def memory_eval_index_freshness(

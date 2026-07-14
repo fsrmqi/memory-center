@@ -259,6 +259,10 @@ Memory Center 不把模型临时输出直接当成长期知识。写入链路会
 - 保留 next actions、risks、read targets、validation status 和已知约束。
 - 对无法内联的大对象返回 ref，按需 drill-down。
 
+任务空间恢复现在包含一条显式门禁链路：`task_space_health -> task_space_repair_plan -> task_space_repair_execute -> workspace_task_resume_check`。健康检查负责发现缺失/过期 `current-summary`、空 next actions、未解决 write receipts、相似任务空间和过大工件；修复计划只描述可修复项；执行修复默认 dry-run，只有显式 apply/force 后才做保守写入；恢复门禁把 resume packet、健康度、修复建议、下一步动作、未解决事项和证据合并为 `ready`、`needs_repair` 或 `blocked`。
+
+这条链路的写入边界必须保守：可以补齐缺失 context/plan 模板，也可以在有明确 intent 时刷新 `current-summary`；不能伪造 write receipt、自动归档歧义任务空间、覆盖已有工件或把高风险修复当成自动操作。
+
 几个关键边界：
 
 - `workspace.yaml`、rules YAML、业务源码和 Markdown artifacts 是可读事实源。
@@ -533,9 +537,11 @@ V3 task tools 直接面向 agent 减少 grep/read：
 | `sync.py` | sniff/case 同步到 artifacts/task space |
 | `write.py` | memory write judge/plan/execute、case record、write receipts、replay |
 | `group.py` | registry/group 跨 workspace 查询、影响、链路 |
-| `eval.py` | write/resume/handoff/regression/token/parser/java-call/golden 等评测 |
+| `eval.py` | write/resume/handoff/agent-guidance/regression/token/parser/java-call/golden 等评测 |
 
 `orchestrator/__init__.py` 重新导出公共函数，保持旧导入路径兼容。
+
+Benchmark/observability 趋势数据写在 `.memory-center/memory/*-trends.jsonl`，例如 token benchmark 的 `benchmark-trends.jsonl` 和 agent guidance 的 `agent-guidance-trends.jsonl`。这些文件用于本地运营与回归告警，不应把真实私有项目生成内容提交到公开仓库。
 
 ---
 
@@ -583,6 +589,8 @@ CLI 命令集中在 `memory_center/cli/main.py`，覆盖：
 
 CLI 是维护者和本地脚本最完整的操作面，但核心语义应复用 orchestrator。
 
+任务空间健康检查和修复类 CLI（例如 `artifact health-task`、`artifact repair-plan-task`、`artifact repair-task`、`work-resume-check`）也必须复用 core 中的 artifacts/resume 语义。CLI 只负责参数适配和输出，不应自行复制匹配、健康评分或修复判断。
+
 ### 9.3 HTTP Bridge and Workbench
 
 HTTP server 使用标准库 `ThreadingHTTPServer`，不是 FastAPI。它提供：
@@ -623,6 +631,8 @@ Memory Center 的记忆模型分为四层：
 - `memory_execute_write`
 - `workspace_write_receipts`
 - `workspace_replay_write_chain`
+
+L2 task spaces 还提供恢复体验相关操作：健康检查、修复计划、保守修复执行和恢复门禁。MCP (`mc_admin`)、CLI (`artifact ...` / `work-resume-check`) 与 HTTP (`/workspace/work-resume-check`) 必须复用同一套核心函数，保证本地脚本、Agent 和 Web/IDE 集成看到一致结果。
 
 `mc_close` 会结束 session、同步 case 到 artifacts、生成 suggested case，并在可推断时写回 candidate path feedback，用于后续推荐权重学习。
 

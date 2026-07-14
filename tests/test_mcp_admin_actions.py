@@ -35,9 +35,13 @@ def test_build_admin_registry_lists_known_actions() -> None:
         "task_health",
         "task_health_all",
         "task_repair_plan",
+        "task_repair_apply",
         "task_resume_check",
         "session_recent",
         "write_judge",
+        "eval_agent_guidance",
+        "eval_agent_guidance_adoption",
+        "eval_agent_guidance_trend",
         "eval_regression_suite",
         "eval_golden",
         "method_walkthrough",
@@ -107,6 +111,11 @@ def test_task_health_actions_dispatch_through_registry(tmp_path: Path) -> None:
     assert repair["task_id"] == task["task_id"]
     assert repair["apply_supported"] is False
     assert "repair_plan" in repair
+
+    repair_apply = reg.dispatch("task_repair_apply")
+    assert repair_apply["dry_run"] is True
+    assert repair_apply["applied"] is False
+    assert "execution_plan" in repair_apply
 
     resume_check = reg.dispatch("task_resume_check")
     assert resume_check["workflow"] == "task-resume-check"

@@ -557,6 +557,59 @@ def task_space_repair_plan(workspace_file: str | Path, task_id: str) -> dict[str
     }
 
 
+def task_space_repair_execute(
+    workspace_file: str | Path,
+    task_id: str,
+    *,
+    apply: bool = False,
+    intent: str = "",
+) -> dict[str, object]:
+    plan = task_space_repair_plan(workspace_file, task_id)
+    steps = plan.get("repair_plan", []) if isinstance(plan.get("repair_plan", []), list) else []
+    executions = [_build_repair_execution_step(workspace_file, str(plan.get("task_id", task_id)), step, intent=intent) for step in steps]
+    if not apply:
+        return {
+            "workspace": plan.get("workspace", ""),
+            "task_id": plan.get("task_id", task_id),
+            "dry_run": True,
+            "applied": False,
+            "intent_required": any(bool(item.get("requires_intent")) for item in executions),
+            "supported_count": sum(1 for item in executions if item.get("supported")),
+            "skipped_count": sum(1 for item in executions if not item.get("supported")),
+            "execution_plan": executions,
+            "source_repair_plan": plan,
+        }
+    results = []
+    for item in executions:
+        if not item.get("supported"):
+            results.append({**item, "applied": False, "status": "skipped"})
+            continue
+        if item.get("requires_intent") and not intent.strip():
+            results.append({**item, "applied": False, "status": "blocked", "reason": "intent_required"})
+            continue
+        results.append(_apply_repair_execution_step(workspace_file, str(plan.get("task_id", task_id)), item, intent=intent))
+    after_health = task_space_health(workspace_file, str(plan.get("task_id", task_id)))
+    return {
+        "workspace": plan.get("workspace", ""),
+        "task_id": plan.get("task_id", task_id),
+        "dry_run": False,
+        "applied": any(bool(item.get("applied")) for item in results),
+        "executed_count": sum(1 for item in results if item.get("applied")),
+        "blocked_count": sum(1 for item in results if item.get("status") == "blocked"),
+        "skipped_count": sum(1 for item in results if item.get("status") == "skipped"),
+        "results": results,
+        "remaining_health": {
+            "health": after_health.get("health", ""),
+            "score": after_health.get("score", 0),
+            "issue_count": len(after_health.get("issues", []) if isinstance(after_health.get("issues", []), list) else []),
+            "top_issues": [
+                {"code": issue.get("code", ""), "severity": issue.get("severity", "")}
+                for issue in (after_health.get("issues", []) if isinstance(after_health.get("issues", []), list) else [])[:5]
+            ],
+        },
+    }
+
+
 def update_task_status(workspace_file: str | Path, task_id: str, status: str, source: str = "update_task_status") -> dict[str, object]:
     config = load_workspace_config(workspace_file)
     store = WorkspaceStore(workspace_file)
@@ -1328,6 +1381,80 @@ def _dedupe_repair_plan(plan: list[dict[str, object]]) -> list[dict[str, object]
         seen.add(key)
         result.append(item)
     return result
+
+
+def _build_repair_execution_step(workspace_file: str | Path, task_id: str, step: dict[str, object], intent: str = "") -> dict[str, object]:
+    action = str(step.get("action", ""))
+    target = str(step.get("target", ""))
+    issue_code = str(step.get("issue_code", ""))
+    supported = False
+    execution_action = "manual_review"
+    requires_intent = bool(step.get("requires_intent"))
+    if action in {"sync_sniff_artifacts", "update_current_summary_snapshot", "resume_then_sync"} and target == "current_summary":
+        supported = True
+        execution_action = "sync_sniff_artifacts"
+        requires_intent = True
+    elif action == "update_task_artifact" and target in {"context", "plan"}:
+        supported = True
+        execution_action = "append_repair_template"
+    return {
+        "issue_code": issue_code,
+        "source_action": action,
+        "action": execution_action,
+        "target": target,
+        "supported": supported,
+        "requires_intent": requires_intent,
+        "requires_content": bool(step.get("requires_content")),
+        "status": "ready" if supported and (not requires_intent or intent.strip()) else ("blocked" if supported else "skipped"),
+        "reason": "" if supported else "manual_or_high_risk_repair",
+        "preview": step.get("preview", ""),
+        "command": _repair_execution_command(workspace_file, task_id, execution_action, target),
+    }
+
+
+def _repair_execution_command(workspace_file: str | Path, task_id: str, action: str, target: str) -> str:
+    if action == "sync_sniff_artifacts":
+        return f"memory-center sync-sniff-artifacts --workspace {workspace_file} --task-id {task_id} --intent <intent>"
+    if action == "append_repair_template":
+        return f"memory-center artifact repair-task --workspace {workspace_file} --task-id {task_id} --apply"
+    return "manual review"
+
+
+def _apply_repair_execution_step(workspace_file: str | Path, task_id: str, item: dict[str, object], intent: str = "") -> dict[str, object]:
+    action = str(item.get("action", ""))
+    target = str(item.get("target", ""))
+    try:
+        if action == "sync_sniff_artifacts":
+            from .orchestrator.sync import workspace_sync_sniff_to_artifacts
+
+            result = workspace_sync_sniff_to_artifacts(workspace_file, intent, task_id=task_id, limit=8)
+            return {**item, "applied": bool(result.get("synced")), "status": "applied" if result.get("synced") else "failed", "result": result}
+        if action == "append_repair_template" and target in {"context", "plan"}:
+            content = _repair_apply_template(target, str(item.get("issue_code", "")))
+            result = update_task_artifact(workspace_file, task_id, target, content, source="repair_task")
+            return {**item, "applied": True, "status": "applied", "result": result}
+    except Exception as exc:
+        return {**item, "applied": False, "status": "failed", "error": str(exc)}
+    return {**item, "applied": False, "status": "skipped", "reason": "unsupported_repair_action"}
+
+
+def _repair_apply_template(target: str, issue_code: str) -> str:
+    if target == "plan":
+        return (
+            "## Next Actions / 下一步\n\n"
+            "- 确认当前目标和验收口径。\n"
+            "- 补齐影响分析或验证项。\n"
+            "- 执行最小回归并记录结果。\n"
+            f"\n> Added by repair_task for `{issue_code}`.\n"
+        )
+    if target == "context":
+        return (
+            "## Repair Context / 修复上下文\n\n"
+            "- 当前任务空间缺少可接手上下文。\n"
+            "- 请补充目标、关键证据、影响范围和下一步。\n"
+            f"\n> Added by repair_task for `{issue_code}`.\n"
+        )
+    return ""
 
 
 def _current_summary_repair_preview(title: str) -> str:

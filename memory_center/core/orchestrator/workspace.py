@@ -365,7 +365,7 @@ def workspace_dashboard(
 ) -> dict[str, Any]:
     # Lazy import to avoid circular dependency with .resume and .eval
     from ..timeline import timeline_query
-    from .eval import memory_eval_resume, memory_eval_write_quality
+    from .eval import memory_eval_agent_guidance, memory_eval_agent_guidance_adoption, memory_eval_resume, memory_eval_write_quality
 
     status = workspace_status(workspace_file, view="full", budget=budget)
     active_tasks = status.get("active_task_spaces", [])[: max(limit, 1)]
@@ -418,6 +418,8 @@ def workspace_dashboard(
         limit=min(limit, 10),
     )
     usage_report = memory_tool_usage_report(workspace_file, limit=max(limit * 10, 50))
+    agent_guidance_eval = memory_eval_agent_guidance(workspace_file, intent=intent, limit=limit)
+    agent_guidance_adoption = memory_eval_agent_guidance_adoption(workspace_file, limit=max(limit * 10, 50))
     result = with_schema(
         "workspace_dashboard",
         {
@@ -438,6 +440,16 @@ def workspace_dashboard(
             "lookup_tool_counts": usage_report.get("lookup_tool_counts", {}),
             "suspected_bypass": usage_report.get("suspected_bypass", [])[:5],
             "adoption_hints": usage_report.get("adoption_hints", []),
+        },
+        "agent_guidance": {
+            "quality": agent_guidance_eval.get("quality", ""),
+            "score": agent_guidance_eval.get("score", 0),
+            "passed": agent_guidance_eval.get("passed", False),
+            "agent_next_step_count": agent_guidance_eval.get("agent_next_step_count", 0),
+            "agent_next_step_actions": agent_guidance_eval.get("agent_next_step_actions", []),
+            "invalid_search_suggestion_count": agent_guidance_eval.get("invalid_search_suggestion_count", 0),
+            "adoption": agent_guidance_adoption.get("summary", {}),
+            "findings": agent_guidance_eval.get("findings", []),
         },
         },
     )

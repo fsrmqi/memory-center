@@ -28,6 +28,7 @@ from memory_center.core.artifacts import (
     list_task_spaces,
     resolve_task_space,
     task_space_health,
+    task_space_repair_execute,
     task_space_repair_plan,
     task_spaces_health,
     touch_task_activity,
@@ -60,6 +61,9 @@ from memory_center.core.orchestrator import (
     memory_context,
     memory_contracts,
     memory_detect_changes,
+    memory_eval_agent_guidance,
+    memory_eval_agent_guidance_adoption,
+    memory_eval_agent_guidance_trend,
     memory_eval_context_weight,
     memory_eval_handoff,
     memory_eval_index_freshness,
@@ -98,6 +102,7 @@ from memory_center.core.orchestrator import (
     workspace_next_actions,
     workspace_recent_evidence,
     workspace_recent_sessions,
+    workspace_record_agent_guidance,
     workspace_record_case,
     workspace_record_close_feedback,
     workspace_replay_write_chain,
@@ -350,20 +355,24 @@ def query_cmd(
     text: str = typer.Option(...),
     limit: int = typer.Option(20),
     project: str = typer.Option("", help="Filter by project name for disambiguation."),
+    session_id: str = typer.Option("", help="Record returned agent_next_steps into this session."),
     vector: bool = typer.Option(False, "--vector/--no-vector", help="Enable ANN vector retrieval when dense embeddings are available."),
     vector_weight: float = typer.Option(0.15, help="Fusion weight for vector retrieval when --vector is enabled."),
 ):
     """Graph-aware query across services, files, symbols, contracts and memory."""
+    result = memory_query_hybrid(
+        workspace,
+        text,
+        limit,
+        project=project,
+        enable_vector=vector,
+        vector_weight=vector_weight,
+    )
+    if session_id.strip():
+        workspace_record_agent_guidance(workspace, session_id, query=text, mode="query", source="cli.query", payload=result)
     typer.echo(
         pprint.pformat(
-            memory_query_hybrid(
-                workspace,
-                text,
-                limit,
-                project=project,
-                enable_vector=vector,
-                vector_weight=vector_weight,
-            ),
+            result,
             width=240,
             sort_dicts=False,
         ),
@@ -766,6 +775,36 @@ def eval_context_weight_cmd(
 ):
     """Evaluate whether compact budgeted payloads are still too heavy."""
     print(memory_eval_context_weight(workspace, intent=intent, limit=limit))
+
+
+@app.command("eval-agent-guidance")
+def eval_agent_guidance_cmd(
+    workspace: str = typer.Option(...),
+    intent: str = typer.Option(""),
+    limit: int = typer.Option(20),
+):
+    """Evaluate whether lookup output gives bounded agent next steps."""
+    print(memory_eval_agent_guidance(workspace, intent=intent, limit=limit))
+
+
+@app.command("eval-agent-guidance-trend")
+def eval_agent_guidance_trend_cmd(
+    workspace: str = typer.Option(...),
+    intent: str = typer.Option(""),
+    limit: int = typer.Option(20),
+):
+    """Evaluate agent next-step guidance and record one trend point."""
+    print(memory_eval_agent_guidance_trend(workspace, intent=intent, limit=limit))
+
+
+@app.command("eval-agent-guidance-adoption")
+def eval_agent_guidance_adoption_cmd(
+    workspace: str = typer.Option(...),
+    session_id: str = typer.Option(""),
+    limit: int = typer.Option(200),
+):
+    """Evaluate whether recorded agent guidance was followed by later tool calls."""
+    print(memory_eval_agent_guidance_adoption(workspace, session_id=session_id, limit=limit))
 
 
 @app.command("eval-workflow-orchestration")
@@ -1403,7 +1442,8 @@ def work_resume_check_cmd(
     budget: str = typer.Option("medium", help="small|medium|large"),
 ):
     """Check whether one task is ready to resume, with health and repair hints."""
-    print(workspace_task_resume_check(workspace, task_id=task_id, session_id=session_id, intent=intent, limit=limit, budget=budget))
+    payload = workspace_task_resume_check(workspace, task_id=task_id, session_id=session_id, intent=intent, limit=limit, budget=budget)
+    typer.echo(json.dumps(payload, ensure_ascii=False, indent=2))
 
 
 @app.command("work-handoff")
@@ -1819,6 +1859,17 @@ def artifact_repair_plan_task_cmd(
 ):
     """Build a read-only repair plan for one task-space health report."""
     print(task_space_repair_plan(workspace, task_id))
+
+
+@artifact_app.command("repair-task")
+def artifact_repair_task_cmd(
+    workspace: str = typer.Option(...),
+    task_id: str = typer.Option(...),
+    apply: bool = typer.Option(False, "--apply/--dry-run", help="Apply supported low-risk repairs. Default is dry-run."),
+    intent: str = typer.Option("", help="Required when applying current_summary repair through sync-sniff-artifacts."),
+):
+    """Dry-run or apply supported low-risk task-space repairs."""
+    print(task_space_repair_execute(workspace, task_id, apply=apply, intent=intent))
 
 
 @artifact_app.command("resolve-task")

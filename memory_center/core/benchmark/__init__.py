@@ -12,11 +12,14 @@ from .java_call_resolution import (
 )
 from .models import GoldenCase
 from .trending import (
+    AGENT_GUIDANCE_TREND_FILE,
     BENCHMARK_BASELINE_FILE,
     BENCHMARK_TREND_FILE,
     generate_benchmark_report,
+    get_agent_guidance_trends,
     get_benchmark_baselines,
     get_benchmark_trends,
+    record_agent_guidance_trend,
     record_benchmark_baseline,
     record_benchmark_trend,
 )
@@ -34,9 +37,12 @@ __all__ = [
     "record_baseline_sample",
     "BENCHMARK_BASELINE_FILE",
     "BENCHMARK_TREND_FILE",
+    "AGENT_GUIDANCE_TREND_FILE",
     "generate_benchmark_report",
+    "get_agent_guidance_trends",
     "get_benchmark_baselines",
     "get_benchmark_trends",
+    "record_agent_guidance_trend",
     "record_benchmark_baseline",
     "record_benchmark_trend",
 ]

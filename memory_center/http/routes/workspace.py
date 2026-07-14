@@ -18,6 +18,9 @@ from .dependencies import (
     memory_backend_query,
     memory_callees,
     memory_callers,
+    memory_eval_agent_guidance,
+    memory_eval_agent_guidance_adoption,
+    memory_eval_agent_guidance_trend,
     memory_eval_context_weight,
     memory_eval_handoff,
     memory_eval_index_freshness,
@@ -50,6 +53,7 @@ from .dependencies import (
     workspace_lookup_hint,
     workspace_recent_evidence,
     workspace_recent_sessions,
+    workspace_record_agent_guidance,
     workspace_replay_write_chain,
     workspace_session_summary,
     workspace_sniff,
@@ -59,6 +63,28 @@ from .dependencies import (
     workspace_write_receipts,
 )
 from .params import _parse_float, _parse_int
+
+
+def _workspace_query_with_guidance(rp):
+    result = memory_query_hybrid(
+        rp.workspace(),
+        rp.require('text'),
+        limit=_parse_int(rp.params, "limit", 20),
+        project=rp.project(),
+        enable_vector=rp.bool_param("enable_vector"),
+        vector_weight=_parse_float(rp.params, "vector_weight", 0.15, min_val=0.0, max_val=1.0),
+    )
+    session_id = rp.session_id()
+    if session_id:
+        workspace_record_agent_guidance(
+            rp.workspace(),
+            session_id,
+            query=rp.require('text'),
+            mode="query",
+            source="http.workspace.query",
+            payload=result,
+        )
+    return result
 
 
 def register_workspace_routes(registry: CommandRegistry) -> None:
@@ -181,14 +207,7 @@ def register_workspace_routes(registry: CommandRegistry) -> None:
     ))
 
     # --- query / search / symbols / call graph --------------------------------
-    registry.register("/workspace/query", lambda rp: memory_query_hybrid(
-        rp.workspace(),
-        rp.require('text'),
-        limit=_parse_int(rp.params, "limit", 20),
-        project=rp.project(),
-        enable_vector=rp.bool_param("enable_vector"),
-        vector_weight=_parse_float(rp.params, "vector_weight", 0.15, min_val=0.0, max_val=1.0),
-    ))
+    registry.register("/workspace/query", _workspace_query_with_guidance)
     registry.register("/workspace/search-code", lambda rp: memory_search_code(
         rp.workspace(),
         rp.require('text'),
@@ -361,6 +380,21 @@ def register_workspace_routes(registry: CommandRegistry) -> None:
         rp.workspace(),
         intent=rp.intent(),
         limit=_parse_int(rp.params, "limit", 8),
+    ))
+    registry.register("/workspace/eval-agent-guidance", lambda rp: memory_eval_agent_guidance(
+        rp.workspace(),
+        intent=rp.intent(),
+        limit=_parse_int(rp.params, "limit", 20),
+    ))
+    registry.register("/workspace/eval-agent-guidance-trend", lambda rp: memory_eval_agent_guidance_trend(
+        rp.workspace(),
+        intent=rp.intent(),
+        limit=_parse_int(rp.params, "limit", 20),
+    ))
+    registry.register("/workspace/eval-agent-guidance-adoption", lambda rp: memory_eval_agent_guidance_adoption(
+        rp.workspace(),
+        session_id=rp.session_id(),
+        limit=_parse_int(rp.params, "limit", 200),
     ))
     registry.register("/workspace/eval-parser-benchmark", lambda rp: memory_eval_parser_benchmark(
         rp.workspace(),

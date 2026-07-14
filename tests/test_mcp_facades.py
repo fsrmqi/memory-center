@@ -19,6 +19,7 @@ from memory_center.core.orchestrator import (
     memory_context,
     memory_contracts,
     memory_detect_changes,
+    memory_eval_agent_guidance_adoption,
     memory_eval_walkthrough_quality,
     memory_export_walkthrough_artifact,
     memory_impact,
@@ -653,13 +654,15 @@ def test_walkthrough_cli_commands(tmp_path: Path):
 @pytest.mark.skipif(not HAS_MCP, reason="mcp package not installed")
 def test_mc_lookup_auto_returns_decision_fields(tmp_path: Path):
     import asyncio
+    import inspect
 
     from memory_center.mcp.server import create_server
 
     wf = _setup_workspace(tmp_path)
     server = create_server(wf)
     mc_lookup = server._tool_manager._tools["mc_lookup"]
-    result = asyncio.get_event_loop().run_until_complete(mc_lookup.fn(query="ArticleFeignClient", mode="auto"))
+    payload = mc_lookup.fn(query="ArticleFeignClient", mode="auto")
+    result = asyncio.get_event_loop().run_until_complete(payload) if inspect.isawaitable(payload) else payload
     assert result["candidate_paths"]
     assert result["recommended_path"]["target"]
     assert "lookup_hint" in result
@@ -675,8 +678,29 @@ def test_mc_lookup_auto_returns_decision_fields(tmp_path: Path):
 
 
 @pytest.mark.skipif(not HAS_MCP, reason="mcp package not installed")
+def test_mc_lookup_with_session_id_records_agent_guidance(tmp_path: Path):
+    import asyncio
+    import inspect
+
+    from memory_center.mcp.server import create_server
+
+    wf = _setup_workspace(tmp_path)
+    session = workspace_start_session(wf, "MCP lookup guidance")
+    server = create_server(wf)
+    mc_lookup = server._tool_manager._tools["mc_lookup"]
+    payload = mc_lookup.fn(query="ArticleFeignClient", mode="query", project="task-service", session_id=session["session_id"], limit=10)
+    result = asyncio.get_event_loop().run_until_complete(payload) if inspect.isawaitable(payload) else payload
+    assert result["agent_next_steps"]
+
+    adoption = memory_eval_agent_guidance_adoption(wf, session_id=session["session_id"], limit=20)
+    assert adoption["summary"]["total_guidance_events"] == 1
+    assert adoption["adoption_records"][0]["expected_action"] == result["agent_next_steps"][0]["action"]
+
+
+@pytest.mark.skipif(not HAS_MCP, reason="mcp package not installed")
 def test_mc_lookup_query_mode_forwards_vector_options(monkeypatch, tmp_path: Path):
     import asyncio
+    import inspect
 
     import memory_center.mcp.server as mcp_server_mod
     from memory_center.mcp.server import create_server
@@ -688,18 +712,151 @@ def test_mc_lookup_query_mode_forwards_vector_options(monkeypatch, tmp_path: Pat
         observed["query"] = query
         observed["enable_vector"] = enable_vector
         observed["vector_weight"] = vector_weight
-        return {"query": query, "matches": [], "retrieval_summary": {}}
+        return {
+            "query": query,
+            "matches": [],
+            "retrieval_summary": {},
+            "agent_next_steps": [
+                {
+                    "action": "refine_query",
+                    "priority": "medium",
+                    "command": "retry mc_lookup with a concrete symbol",
+                    "uses_existing_evidence": False,
+                }
+            ],
+        }
 
     monkeypatch.setattr(mcp_server_mod, "memory_query_hybrid", _fake_query)
     wf = _setup_workspace(tmp_path)
     server = create_server(wf)
     mc_lookup = server._tool_manager._tools["mc_lookup"]
-    result = asyncio.get_event_loop().run_until_complete(
-        mc_lookup.fn(query="ArticleFeignClient", mode="query", enable_vector=True, vector_weight=0.4),
-    )
+    payload = mc_lookup.fn(query="ArticleFeignClient", mode="query", enable_vector=True, vector_weight=0.4)
+    result = asyncio.get_event_loop().run_until_complete(payload) if inspect.isawaitable(payload) else payload
     assert result["mode"] == "query"
+    assert result["agent_next_steps"][0]["action"] == "refine_query"
+    assert result["result"]["agent_next_steps"] == result["agent_next_steps"]
     assert observed["enable_vector"] is True
     assert observed["vector_weight"] == 0.4
+
+
+@pytest.mark.skipif(not HAS_MCP, reason="mcp package not installed")
+def test_mc_lookup_auto_query_lifts_agent_next_steps(monkeypatch, tmp_path: Path):
+    import asyncio
+    import inspect
+
+    import memory_center.mcp.server as mcp_server_mod
+    from memory_center.mcp.server import create_server
+
+    def _fake_hint(*_args, **_kwargs):
+        return {
+            "preferred_tools": [],
+            "candidate_paths": [{"candidate_type": "query", "target": "hybrid"}],
+            "recommended_candidate_path": {"candidate_type": "query", "target": "hybrid"},
+        }
+
+    def _fake_query(*_args, **_kwargs):
+        return {
+            "query": "业务概念",
+            "matches": [],
+            "retrieval_summary": {},
+            "agent_next_steps": [
+                {
+                    "action": "refine_query",
+                    "priority": "medium",
+                    "command": "retry mc_lookup with a concrete symbol",
+                    "uses_existing_evidence": False,
+                }
+            ],
+        }
+
+    monkeypatch.setattr(mcp_server_mod, "workspace_lookup_hint", _fake_hint)
+    monkeypatch.setattr(mcp_server_mod, "memory_query_hybrid", _fake_query)
+
+    wf = _setup_workspace(tmp_path)
+    server = create_server(wf)
+    mc_lookup = server._tool_manager._tools["mc_lookup"]
+    payload = mc_lookup.fn(query="业务概念", mode="auto")
+    result = asyncio.get_event_loop().run_until_complete(payload) if inspect.isawaitable(payload) else payload
+
+    assert result["mode_used"] == "query"
+    assert result["agent_next_steps"][0]["action"] == "refine_query"
+    assert result["result"]["agent_next_steps"] == result["agent_next_steps"]
+    assert result["candidate_paths"]
+
+
+@pytest.mark.skipif(not HAS_MCP, reason="mcp package not installed")
+def test_mc_lookup_auto_lifts_agent_next_steps_for_non_query_routes(monkeypatch, tmp_path: Path):
+    import asyncio
+    import inspect
+
+    import memory_center.mcp.server as mcp_server_mod
+    from memory_center.mcp.server import create_server
+
+    routes = [
+        ("symbol", ["memory_symbol_tool"], {"found": True, "best_match": {"name": "ArticleFeignClient"}, "summary_lines": ["symbol"]}, "inspect_symbol_anchor"),
+        ("code", ["memory_search_code_tool"], {"hits": [{"path": "Demo.java"}]}, "inspect_code_hits"),
+        ("context", ["memory_context_tool"], {"found": True, "summary_lines": ["context"]}, "inspect_context_summary"),
+        ("trace", ["workspace_trace_tool"], {"found": True, "matched_feign": [{"name": "ArticleFeignClient"}]}, "inspect_trace_overview"),
+        ("chain-callees", ["memory_callees_tool"], {"found": True, "summary_lines": ["chain"], "chain_summary": {}}, "inspect_chain_summary"),
+    ]
+
+    wf = _setup_workspace(tmp_path)
+    server = create_server(wf)
+    mc_lookup = server._tool_manager._tools["mc_lookup"]
+
+    for mode_used, preferred_tools, route_result, expected_action in routes:
+        def _fake_hint(*_args, _preferred_tools=preferred_tools, **_kwargs):
+            return {
+                "preferred_tools": list(_preferred_tools),
+                "candidate_paths": [{"candidate_type": mode_used, "target": "target"}],
+                "recommended_candidate_path": {"candidate_type": mode_used, "target": "target"},
+            }
+
+        monkeypatch.setattr(mcp_server_mod, "workspace_lookup_hint", _fake_hint)
+        monkeypatch.setattr(mcp_server_mod, "memory_symbol", lambda *_args, _result=route_result, **_kwargs: dict(_result))
+        monkeypatch.setattr(mcp_server_mod, "memory_search_code", lambda *_args, _result=route_result, **_kwargs: dict(_result))
+        monkeypatch.setattr(mcp_server_mod, "memory_context", lambda *_args, _result=route_result, **_kwargs: dict(_result))
+        monkeypatch.setattr(mcp_server_mod, "workspace_trace", lambda *_args, _result=route_result, **_kwargs: dict(_result))
+        monkeypatch.setattr(mcp_server_mod, "memory_callees", lambda *_args, _result=route_result, **_kwargs: dict(_result))
+
+        payload = mc_lookup.fn(query="ArticleFeignClient 调用链", mode="auto")
+        result = asyncio.get_event_loop().run_until_complete(payload) if inspect.isawaitable(payload) else payload
+
+        assert result["mode_used"] == mode_used
+        assert result["agent_next_steps"][0]["action"] == expected_action
+        assert result["result"]["agent_next_steps"] == result["agent_next_steps"]
+
+
+@pytest.mark.skipif(not HAS_MCP, reason="mcp package not installed")
+def test_mc_lookup_direct_modes_lift_agent_next_steps(monkeypatch, tmp_path: Path):
+    import asyncio
+    import inspect
+
+    import memory_center.mcp.server as mcp_server_mod
+    from memory_center.mcp.server import create_server
+
+    monkeypatch.setattr(mcp_server_mod, "memory_symbol", lambda *_args, **_kwargs: {"found": True, "summary_lines": ["symbol"]})
+    monkeypatch.setattr(mcp_server_mod, "memory_search_code", lambda *_args, **_kwargs: {"hits": [{"path": "Demo.java"}]})
+    monkeypatch.setattr(mcp_server_mod, "memory_context", lambda *_args, **_kwargs: {"found": True, "summary_lines": ["context"]})
+    monkeypatch.setattr(mcp_server_mod, "workspace_trace", lambda *_args, **_kwargs: {"found": True, "matched_feign": []})
+    monkeypatch.setattr(mcp_server_mod, "memory_callers", lambda *_args, **_kwargs: {"found": True, "summary_lines": ["chain"]})
+
+    wf = _setup_workspace(tmp_path)
+    server = create_server(wf)
+    mc_lookup = server._tool_manager._tools["mc_lookup"]
+    cases = [
+        ("symbol", {}, "inspect_symbol_anchor"),
+        ("code", {}, "inspect_code_hits"),
+        ("context", {}, "inspect_context_summary"),
+        ("trace", {}, "inspect_trace_overview"),
+        ("chain", {"chain_direction": "callers"}, "inspect_chain_summary"),
+    ]
+
+    for mode, kwargs, expected_action in cases:
+        payload = mc_lookup.fn(query="ArticleFeignClient", mode=mode, **kwargs)
+        result = asyncio.get_event_loop().run_until_complete(payload) if inspect.isawaitable(payload) else payload
+        assert result["agent_next_steps"][0]["action"] == expected_action
+        assert result["result"]["agent_next_steps"] == result["agent_next_steps"]
 
 
 @pytest.mark.skipif(not HAS_MCP, reason="mcp package not installed")

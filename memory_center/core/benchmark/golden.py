@@ -105,6 +105,8 @@ def build_golden_performance_baseline(result: dict[str, Any], *, label: str = "c
             "anchor_recall": float(summary.get("anchor_recall", 0.0) or 0.0),
             "edge_recall": float(summary.get("edge_recall", 0.0) or 0.0),
             "forbidden_hit_rate": float(summary.get("forbidden_hit_rate", 0.0) or 0.0),
+            "agent_next_step_count": int(summary.get("agent_next_step_count", 0) or 0),
+            "agent_next_step_action_counts": dict(summary.get("agent_next_step_action_counts", {}) or {}),
             "agent_invalid_search_suggestion_count": int(summary.get("agent_invalid_search_suggestion_count", 0) or 0),
             "agent_invalid_search_reduction_rate": float(summary.get("agent_invalid_search_reduction_rate", 0.0) or 0.0),
         },
@@ -163,9 +165,11 @@ def compare_golden_performance(
     token_improvement = _improvement_pct(base_tokens, current_tokens)
     latency_passed = latency_improvement >= latency_improvement_threshold_pct
     token_passed = token_improvement >= token_improvement_threshold_pct
+    guidance = _compare_agent_guidance_summary(baseline_summary, current_summary, base_case_count, current_case_count)
+    guidance_passed = bool(guidance.get("passed", True))
     return {
-        "status": "pass" if latency_passed and token_passed else "fail",
-        "passed": latency_passed and token_passed,
+        "status": "pass" if latency_passed and token_passed and guidance_passed else "fail",
+        "passed": latency_passed and token_passed and guidance_passed,
         "baseline_label": baseline.get("label", ""),
         "current_baseline": current_baseline,
         "latency": {
@@ -187,6 +191,45 @@ def compare_golden_performance(
             "threshold_pct": token_improvement_threshold_pct,
             "passed": token_passed,
         },
+        "agent_guidance": guidance,
+    }
+
+
+def _compare_agent_guidance_summary(
+    baseline_summary: dict[str, Any],
+    current_summary: dict[str, Any],
+    baseline_case_count: int,
+    current_case_count: int,
+) -> dict[str, Any]:
+    baseline_has_step_metric = "agent_next_step_count" in baseline_summary
+    baseline_has_invalid_metric = "agent_invalid_search_suggestion_count" in baseline_summary
+    base_steps_total = int(baseline_summary.get("agent_next_step_count", 0) or 0)
+    current_steps_total = int(current_summary.get("agent_next_step_count", 0) or 0)
+    base_invalid = int(baseline_summary.get("agent_invalid_search_suggestion_count", 0) or 0)
+    current_invalid = int(current_summary.get("agent_invalid_search_suggestion_count", 0) or 0)
+    base_steps_per_case = round(base_steps_total / max(1, baseline_case_count), 4)
+    current_steps_per_case = round(current_steps_total / max(1, current_case_count), 4)
+    base_reduction = float(baseline_summary.get("agent_invalid_search_reduction_rate", 0.0) or 0.0)
+    current_reduction = float(current_summary.get("agent_invalid_search_reduction_rate", 0.0) or 0.0)
+    step_coverage_passed = True if not baseline_has_step_metric else current_steps_per_case >= base_steps_per_case
+    invalid_search_passed = True if not baseline_has_invalid_metric else current_invalid <= base_invalid
+    reduction_passed = True if not baseline_has_invalid_metric else current_reduction >= base_reduction
+    return {
+        "baseline_step_count": base_steps_total,
+        "current_step_count": current_steps_total,
+        "baseline_steps_per_case": base_steps_per_case,
+        "current_steps_per_case": current_steps_per_case,
+        "baseline_action_counts": dict(baseline_summary.get("agent_next_step_action_counts", {}) or {}),
+        "current_action_counts": dict(current_summary.get("agent_next_step_action_counts", {}) or {}),
+        "baseline_invalid_search_suggestion_count": base_invalid,
+        "current_invalid_search_suggestion_count": current_invalid,
+        "baseline_invalid_search_reduction_rate": base_reduction,
+        "current_invalid_search_reduction_rate": current_reduction,
+        "step_coverage_passed": step_coverage_passed,
+        "invalid_search_passed": invalid_search_passed,
+        "reduction_rate_passed": reduction_passed,
+        "passed": step_coverage_passed and invalid_search_passed and reduction_passed,
+        "status": "pass" if step_coverage_passed and invalid_search_passed and reduction_passed else "fail",
     }
 
 
@@ -240,6 +283,7 @@ def _agent_guidance_strings(payload: Any) -> list[tuple[str, str]]:
             items.append((path, value.strip()))
 
     guidance_roots = {
+        "agent_next_steps",
         "next_actions",
         "agent_usage_policy",
         "anti_patterns",
@@ -277,6 +321,12 @@ def evaluate_agent_guidance(payload: Any) -> dict[str, Any]:
 
     completion = payload.get("completion_status", {}) if isinstance(payload, dict) else {}
     policy = payload.get("agent_usage_policy", {}) if isinstance(payload, dict) else {}
+    agent_steps = payload.get("agent_next_steps", []) if isinstance(payload, dict) else []
+    step_actions = [
+        str(item.get("action", "") or "")
+        for item in agent_steps
+        if isinstance(item, dict) and str(item.get("action", "") or "").strip()
+    ] if isinstance(agent_steps, list) else []
     completion_stop_signal = (
         isinstance(completion, dict)
         and completion.get("state") == "complete"
@@ -288,6 +338,8 @@ def evaluate_agent_guidance(payload: Any) -> dict[str, Any]:
         "completion_stop_signal": completion_stop_signal,
         "policy_stop_signal": policy_stop_signal,
         "search_reference_count": search_reference_count,
+        "agent_next_step_count": len(step_actions),
+        "agent_next_step_actions": step_actions,
         "invalid_search_suggestion_count": len(invalid),
         "invalid_search_suggestions": invalid,
         "invalid_search_reduction_rate": reduction_rate,
@@ -440,12 +492,21 @@ def run_golden_suite(
     invalid_search_count = sum(row["agent_guidance"]["invalid_search_suggestion_count"] for row in case_results)
     reduction_rates = [row["agent_guidance"]["invalid_search_reduction_rate"] for row in case_results]
     invalid_search_reduction_rate = sum(reduction_rates) / len(reduction_rates) if reduction_rates else 1.0
+    agent_next_step_count = sum(int(row["agent_guidance"].get("agent_next_step_count", 0) or 0) for row in case_results)
+    agent_next_step_action_counts: dict[str, int] = {}
+    for row in case_results:
+        for action in row["agent_guidance"].get("agent_next_step_actions", []) or []:
+            action_key = str(action or "").strip()
+            if action_key:
+                agent_next_step_action_counts[action_key] = agent_next_step_action_counts.get(action_key, 0) + 1
     summary = {
         "case_count": len(cases),
         "passed_cases": sum(1 for row in case_results if row["passed"]),
         "anchor_recall": round(anchor_recall, 4),
         "edge_recall": round(edge_recall, 4),
         "forbidden_hit_rate": round(forbidden_rate, 4),
+        "agent_next_step_count": agent_next_step_count,
+        "agent_next_step_action_counts": dict(sorted(agent_next_step_action_counts.items())),
         "agent_invalid_search_suggestion_count": invalid_search_count,
         "agent_invalid_search_reduction_rate": round(invalid_search_reduction_rate, 4),
         "passed": (

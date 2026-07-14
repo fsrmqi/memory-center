@@ -17,6 +17,7 @@ from ..store import WorkspaceStore
 
 BENCHMARK_BASELINE_FILE = "benchmark-baselines.jsonl"
 BENCHMARK_TREND_FILE = "benchmark-trends.jsonl"
+AGENT_GUIDANCE_TREND_FILE = "agent-guidance-trends.jsonl"
 
 
 def record_benchmark_baseline(
@@ -96,6 +97,39 @@ def record_benchmark_trend(
     return {
         "recorded": True,
         "function_name": function_name,
+        "trend_point": entry,
+    }
+
+
+def record_agent_guidance_trend(
+    workspace_file: str | Path,
+    *,
+    intent: str = "",
+    agent_next_step_count: int = 0,
+    invalid_search_suggestion_count: int = 0,
+    invalid_search_reduction_rate: float = 0.0,
+    score: int = 0,
+    quality: str = "",
+    passed: bool = False,
+    agent_next_step_actions: list[str] | None = None,
+) -> dict[str, Any]:
+    """Record an agent guidance quality trend point."""
+
+    store = WorkspaceStore(workspace_file)
+    entry = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "intent": intent,
+        "agent_next_step_count": int(agent_next_step_count or 0),
+        "agent_next_step_actions": list(agent_next_step_actions or []),
+        "invalid_search_suggestion_count": int(invalid_search_suggestion_count or 0),
+        "invalid_search_reduction_rate": round(float(invalid_search_reduction_rate or 0.0), 4),
+        "score": int(score or 0),
+        "quality": quality,
+        "passed": bool(passed),
+    }
+    store.append_jsonl(AGENT_GUIDANCE_TREND_FILE, entry)
+    return {
+        "recorded": True,
         "trend_point": entry,
     }
 
@@ -202,6 +236,107 @@ def get_benchmark_trends(
     }
 
 
+def get_agent_guidance_trends(
+    workspace_file: str | Path,
+    *,
+    days: int = 30,
+    limit: int = 500,
+) -> dict[str, Any]:
+    """Retrieve agent guidance trend data and regression signals."""
+
+    store = WorkspaceStore(workspace_file)
+    rows = store.read_jsonl_prefer_backend(AGENT_GUIDANCE_TREND_FILE, limit=max(limit, 5000))
+    cutoff = datetime.now(timezone.utc).isoformat()
+    if days > 0:
+        from datetime import timedelta
+        cutoff_dt = datetime.now(timezone.utc) - timedelta(days=days)
+        cutoff = cutoff_dt.isoformat()
+        rows = [row for row in rows if row.get("timestamp", "") >= cutoff]
+
+    rows = rows[-limit:]
+    regressions = _detect_agent_guidance_regressions(rows)
+    return {
+        "total_records": len(rows),
+        "time_range": {
+            "from": cutoff,
+            "to": datetime.now(timezone.utc).isoformat(),
+            "days": days,
+        },
+        "trend_points": rows[-50:],
+        "regressions": regressions,
+        "summary": _build_agent_guidance_trend_summary(rows),
+    }
+
+
+def _detect_agent_guidance_regressions(points: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    regressions: list[dict[str, Any]] = []
+    if len(points) < 2:
+        return regressions
+
+    latest = points[-1]
+    previous = points[:-1]
+    prev_invalid_avg = sum(int(p.get("invalid_search_suggestion_count", 0) or 0) for p in previous) / len(previous)
+    prev_step_avg = sum(int(p.get("agent_next_step_count", 0) or 0) for p in previous) / len(previous)
+    latest_invalid = int(latest.get("invalid_search_suggestion_count", 0) or 0)
+    latest_steps = int(latest.get("agent_next_step_count", 0) or 0)
+    latest_score = int(latest.get("score", 0) or 0)
+
+    if latest_invalid > prev_invalid_avg:
+        regressions.append({
+            "type": "agent_guidance",
+            "code": "invalid_search_suggestions_increased",
+            "severity": "critical" if latest_invalid >= 2 else "warning",
+            "latest_invalid_search_suggestion_count": latest_invalid,
+            "historical_avg_invalid_search_suggestion_count": round(prev_invalid_avg, 2),
+            "message": "agent guidance invalid search suggestions increased",
+            "recommendation": "检查 agent_next_steps 是否重新鼓励 find/grep/rg --files/sed 等无界搜索。",
+        })
+    if prev_step_avg > 0 and latest_steps < prev_step_avg * 0.5:
+        regressions.append({
+            "type": "agent_guidance",
+            "code": "agent_next_steps_coverage_dropped",
+            "severity": "warning",
+            "latest_agent_next_step_count": latest_steps,
+            "historical_avg_agent_next_step_count": round(prev_step_avg, 2),
+            "message": "agent_next_steps coverage dropped",
+            "recommendation": "检查 query/walkthrough 输出是否仍返回结构化下一步建议。",
+        })
+    if latest_score < 60 or latest.get("passed") is False:
+        regressions.append({
+            "type": "agent_guidance",
+            "code": "agent_guidance_gate_failed",
+            "severity": "critical" if latest_score < 50 else "warning",
+            "latest_score": latest_score,
+            "message": "agent guidance quality gate failed",
+            "recommendation": "运行 eval-agent-guidance 并检查 findings 与 invalid_search_suggestions。",
+        })
+    return regressions
+
+
+def _build_agent_guidance_trend_summary(points: list[dict[str, Any]]) -> dict[str, Any]:
+    if not points:
+        return {
+            "total_trend_points": 0,
+            "latest_agent_next_step_count": 0,
+            "latest_invalid_search_suggestion_count": 0,
+            "avg_agent_next_step_count": 0.0,
+            "avg_invalid_search_suggestion_count": 0.0,
+            "pass_rate": 0.0,
+        }
+    latest = points[-1]
+    avg_steps = sum(int(p.get("agent_next_step_count", 0) or 0) for p in points) / len(points)
+    avg_invalid = sum(int(p.get("invalid_search_suggestion_count", 0) or 0) for p in points) / len(points)
+    pass_rate = sum(1 for p in points if p.get("passed") is True) / len(points)
+    return {
+        "total_trend_points": len(points),
+        "latest_agent_next_step_count": int(latest.get("agent_next_step_count", 0) or 0),
+        "latest_invalid_search_suggestion_count": int(latest.get("invalid_search_suggestion_count", 0) or 0),
+        "avg_agent_next_step_count": round(avg_steps, 2),
+        "avg_invalid_search_suggestion_count": round(avg_invalid, 2),
+        "pass_rate": round(pass_rate, 4),
+    }
+
+
 def _detect_regressions(
     function_trends: dict[str, list[dict[str, Any]]],
     threshold_pct: float = 10.0,
@@ -271,6 +406,8 @@ def check_regression_alerts(workspace_file: str | Path, threshold_pct: float = 1
     """
     trends = get_benchmark_trends(workspace_file)
     regressions = trends.get("regressions", [])
+    agent_guidance = get_agent_guidance_trends(workspace_file)
+    agent_regressions = agent_guidance.get("regressions", [])
 
     alerts = []
     for reg in regressions:
@@ -286,6 +423,19 @@ def check_regression_alerts(workspace_file: str | Path, threshold_pct: float = 1
                 "message": f"{reg.get('function_name', '')} token usage increased {change_pct}%",
                 "recommendation": reg.get("recommendation", ""),
             })
+    for reg in agent_regressions:
+        severity = str(reg.get("severity", "warning") or "warning")
+        alerts.append({
+            "type": "agent_guidance",
+            "function": "agent_guidance",
+            "change_pct": 0,
+            "severity": severity,
+            "recent_avg": reg.get("latest_agent_next_step_count", reg.get("latest_invalid_search_suggestion_count", 0)),
+            "historical_avg": reg.get("historical_avg_agent_next_step_count", reg.get("historical_avg_invalid_search_suggestion_count", 0)),
+            "message": reg.get("message", ""),
+            "recommendation": reg.get("recommendation", ""),
+            "code": reg.get("code", ""),
+        })
 
     return {
         "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -293,6 +443,11 @@ def check_regression_alerts(workspace_file: str | Path, threshold_pct: float = 1
         "critical_count": sum(1 for a in alerts if a["severity"] == "critical"),
         "warning_count": sum(1 for a in alerts if a["severity"] == "warning"),
         "alerts": alerts,
+        "agent_guidance": {
+            "total_regressions": len(agent_regressions),
+            "summary": agent_guidance.get("summary", {}),
+            "regressions": agent_regressions,
+        },
         "health": "critical" if any(a["severity"] == "critical" for a in alerts) else "warning" if alerts else "healthy",
     }
 
@@ -307,6 +462,7 @@ def generate_benchmark_report(
     return {
         "baselines": baselines,
         "trends": trends,
+        "agent_guidance_trends": get_agent_guidance_trends(workspace_file),
         "health_score": _calculate_health_score(baselines, trends),
         "recommendations": _generate_recommendations(baselines, trends),
     }

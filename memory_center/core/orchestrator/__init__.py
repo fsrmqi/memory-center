@@ -39,6 +39,9 @@ from .common import (
 
 # --- evaluation functions ---
 from .eval import (
+    memory_eval_agent_guidance,
+    memory_eval_agent_guidance_adoption,
+    memory_eval_agent_guidance_trend,
     memory_eval_context_weight,
     memory_eval_handoff,
     memory_eval_index_freshness,
@@ -110,6 +113,7 @@ from .session import (
     workspace_log_session_event,
     workspace_recent_evidence,
     workspace_recent_sessions,
+    workspace_record_agent_guidance,
     workspace_record_close_feedback,
     workspace_session_summary,
     workspace_start_session,
@@ -157,7 +161,7 @@ __all__ = [
     "load_context", "tokenize", "rank_files", "preferred_edge_types",
     # session
     "workspace_start_session", "workspace_log_session_event", "workspace_end_session",
-    "workspace_record_close_feedback",
+    "workspace_record_agent_guidance", "workspace_record_close_feedback",
     "workspace_recent_sessions", "workspace_session_summary", "workspace_suggest_case",
     "workspace_recent_evidence",
     # query
@@ -180,6 +184,7 @@ __all__ = [
     "workspace_handoff_packet", "workspace_handoff_history", "workspace_model_profile",
     # eval
     "memory_eval_write_quality", "memory_eval_resume", "memory_eval_handoff",
+    "memory_eval_agent_guidance", "memory_eval_agent_guidance_adoption", "memory_eval_agent_guidance_trend",
     "memory_eval_regression_suite", "memory_eval_index_freshness",
     "memory_eval_tool_adoption", "memory_eval_context_weight", "memory_eval_workflow_orchestration", "memory_eval_token_gain", "memory_eval_parser_benchmark", "memory_eval_java_call_resolution", "memory_eval_token_benchmark",
     "memory_eval_token_benchmark_save", "memory_eval_token_benchmark_compare",

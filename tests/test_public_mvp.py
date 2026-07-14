@@ -26,6 +26,7 @@ from memory_center.core.artifacts import (
     list_task_spaces,
     resolve_task_space,
     task_space_health,
+    task_space_repair_execute,
     task_space_repair_plan,
     task_spaces_health,
     touch_task_activity,
@@ -45,6 +46,8 @@ from memory_center.core.instructions import write_agent_instructions
 from memory_center.core.orchestrator import (
     memory_backend_query,
     memory_eval_context_weight,
+    memory_eval_agent_guidance,
+    memory_eval_agent_guidance_adoption,
     memory_eval_handoff,
     memory_eval_index_freshness,
     memory_eval_regression_suite,
@@ -58,6 +61,7 @@ from memory_center.core.orchestrator import (
     memory_ref_get,
     memory_tool_usage_report,
     memory_write_judge,
+    memory_query_hybrid,
     workspace_continuity_dashboard,
     workspace_dashboard,
     workspace_end_session,
@@ -436,6 +440,139 @@ def test_cli_query_project_filter(tmp_path: Path):
     # P1 regression: summary must be consistent
     assert data["total_found"] == len(data["matches"])
     assert data["retrieval_summary"]["total_results"] == len(data["matches"])
+    assert data["agent_next_steps"]
+    assert data["agent_next_steps"][0]["command"]
+
+
+def test_query_agent_next_steps_consistent_across_core_cli_http(tmp_path: Path):
+    import ast
+    from http.server import ThreadingHTTPServer
+
+    workspace = _copy_demo_workspace(tmp_path, "query-agent-next-steps-consistency")
+    core = memory_query_hybrid(workspace, "ArticleFeignClient", limit=10, project="task-service")
+
+    runner = CliRunner()
+    cli_result = runner.invoke(app, ["query", "--workspace", str(workspace), "--text", "ArticleFeignClient", "--project", "task-service", "--limit", "10"])
+    assert cli_result.exit_code == 0
+    cli = ast.literal_eval(cli_result.output)
+
+    server = ThreadingHTTPServer(("127.0.0.1", _free_port()), create_handler(workspace))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        base = f"http://127.0.0.1:{server.server_address[1]}"
+        http = json.loads(urlopen(f"{base}/workspace/query?text=ArticleFeignClient&project=task-service&limit=10").read().decode("utf-8"))
+    finally:
+        server.shutdown()
+        thread.join(timeout=2)
+
+    def first_step(payload: dict[str, object]) -> dict[str, object]:
+        steps = payload.get("agent_next_steps", []) if isinstance(payload.get("agent_next_steps", []), list) else []
+        assert steps
+        first = steps[0]
+        assert isinstance(first, dict)
+        assert first.get("command")
+        assert first.get("priority") in {"high", "medium"}
+        assert isinstance(first.get("uses_existing_evidence"), bool)
+        assert first.get("action") in {
+            "refresh_or_read_live_files",
+            "switch_to_walkthrough",
+            "validate_semantic_hit",
+            "inspect_top_result",
+            "refine_query",
+        }
+        return first
+
+    assert first_step(core)
+    assert first_step(cli)
+    assert first_step(http)
+
+
+def test_query_with_session_id_records_agent_guidance_for_cli_and_http(tmp_path: Path):
+    import ast
+    from http.server import ThreadingHTTPServer
+
+    workspace = _copy_demo_workspace(tmp_path, "query-agent-guidance-session")
+    runner = CliRunner()
+
+    cli_session = workspace_start_session(workspace, "CLI query guidance")
+    cli_result = runner.invoke(
+        app,
+        [
+            "query",
+            "--workspace",
+            str(workspace),
+            "--text",
+            "ArticleFeignClient",
+            "--project",
+            "task-service",
+            "--session-id",
+            cli_session["session_id"],
+            "--limit",
+            "10",
+        ],
+    )
+    assert cli_result.exit_code == 0
+    cli = ast.literal_eval(cli_result.output)
+    assert cli["agent_next_steps"]
+    cli_adoption = memory_eval_agent_guidance_adoption(workspace, session_id=cli_session["session_id"], limit=20)
+    assert cli_adoption["summary"]["total_guidance_events"] == 1
+    assert cli_adoption["adoption_records"][0]["expected_action"] == cli["agent_next_steps"][0]["action"]
+
+    http_session = workspace_start_session(workspace, "HTTP query guidance")
+    server = ThreadingHTTPServer(("127.0.0.1", _free_port()), create_handler(workspace))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        base = f"http://127.0.0.1:{server.server_address[1]}"
+        http = json.loads(urlopen(f"{base}/workspace/query?text=ArticleFeignClient&project=task-service&session_id={http_session['session_id']}&limit=10").read().decode("utf-8"))
+    finally:
+        server.shutdown()
+        thread.join(timeout=2)
+
+    assert http["agent_next_steps"]
+    http_adoption = memory_eval_agent_guidance_adoption(workspace, session_id=http_session["session_id"], limit=20)
+    assert http_adoption["summary"]["total_guidance_events"] == 1
+    assert http_adoption["adoption_records"][0]["expected_action"] == http["agent_next_steps"][0]["action"]
+
+
+def test_eval_agent_guidance_available_from_cli_and_http(tmp_path: Path):
+    import ast
+    from http.server import ThreadingHTTPServer
+
+    workspace = _copy_demo_workspace(tmp_path, "eval-agent-guidance-entries")
+    runner = CliRunner()
+    cli_result = runner.invoke(
+        app,
+        [
+            "eval-agent-guidance",
+            "--workspace",
+            str(workspace),
+            "--intent",
+            "ArticleFeignClient 调用链",
+            "--limit",
+            "10",
+        ],
+    )
+    assert cli_result.exit_code == 0
+    cli = ast.literal_eval(cli_result.output)
+    assert cli["schema"]["name"] == "eval_result"
+    assert cli["agent_next_step_count"] >= 1
+
+    server = ThreadingHTTPServer(("127.0.0.1", _free_port()), create_handler(workspace))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        base = f"http://127.0.0.1:{server.server_address[1]}"
+        intent = quote("ArticleFeignClient 调用链")
+        http = json.loads(urlopen(f"{base}/workspace/eval-agent-guidance?intent={intent}&limit=10").read().decode("utf-8"))
+    finally:
+        server.shutdown()
+        thread.join(timeout=2)
+
+    assert http["schema"]["name"] == "eval_result"
+    assert http["agent_next_step_count"] >= 1
+    assert http["invalid_search_suggestion_count"] == 0
 
 
 def test_cli_symbol_project_filter(tmp_path: Path):
@@ -922,9 +1059,15 @@ def test_memory_write_judge_and_plan_write(tmp_path: Path):
     assert adoption_eval["schema"]["name"] == "eval_result"
     context_weight_eval = memory_eval_context_weight(workspace, intent="更新团队规则", limit=5)
     assert context_weight_eval["schema"]["name"] == "eval_result"
+    agent_guidance_eval = memory_eval_agent_guidance(workspace, intent="ArticleFeignClient 调用链", limit=5)
+    assert agent_guidance_eval["schema"]["name"] == "eval_result"
+    assert agent_guidance_eval["agent_next_step_count"] >= 1
+    assert agent_guidance_eval["invalid_search_suggestion_count"] == 0
     regression_suite = memory_eval_regression_suite(workspace, target_model="glm-4", intent="更新团队规则", limit=10)
     assert regression_suite["suite_name"] == "memory_eval_regression_suite"
     assert regression_suite["components"]["write_quality"]["schema"]["name"] == "eval_result"
+    assert regression_suite["components"]["agent_guidance"]["schema"]["name"] == "eval_result"
+    assert regression_suite["components"]["agent_guidance_adoption"]["schema"]["name"] == "eval_result"
     assert regression_suite["schema"]["name"] == "eval_result"
     handoff_history = workspace_handoff_history(workspace, target_model="glm-4", limit=10)
     assert handoff_history["handoffs"]
@@ -937,6 +1080,9 @@ def test_memory_write_judge_and_plan_write(tmp_path: Path):
     assert "focus_dashboard" in workspace_dash
     assert "tool_usage_report" in workspace_dash
     assert "summary" in workspace_dash["tool_usage_report"]
+    assert "agent_guidance" in workspace_dash
+    assert workspace_dash["agent_guidance"]["quality"] in {"high", "medium", "low"}
+    assert "adoption" in workspace_dash["agent_guidance"]
     assert workspace_dash["schema"]["name"] == "workspace_dashboard"
     timeline = timeline_query(str(workspace), kinds=["write_receipt", "handoff"], limit=20)
     assert timeline["timeline"]
@@ -1000,6 +1146,89 @@ def test_tool_usage_report_and_lookup_hint(tmp_path: Path):
     hint = workspace_lookup_hint(workspace, query="ArticleController 类", intent="想找调用链", limit=5)
     assert hint["recommended_path"] in {"symbol_lookup", "call_chain", "cross_service_analysis"}
     assert "memory_" in " ".join(hint["preferred_tools"]) or "workspace_" in " ".join(hint["preferred_tools"])
+
+
+def test_agent_guidance_adoption_matches_followup_tools(tmp_path: Path):
+    workspace = _copy_demo_workspace(tmp_path, "agent-guidance-adoption")
+    from memory_center.core.orchestrator import memory_eval_agent_guidance_adoption
+
+    adopted_session = workspace_start_session(workspace, "按建议追踪 ArticleFeignClient 调用链")
+    adopted_id = adopted_session["session_id"]
+    workspace_log_session_event(
+        workspace,
+        adopted_id,
+        "agent_guidance",
+        {
+            "query": "ArticleFeignClient#move",
+            "agent_next_steps": [
+                {
+                    "action": "switch_to_walkthrough",
+                    "priority": "high",
+                    "command": "mc_lookup(mode=\"walkthrough\")",
+                }
+            ],
+        },
+    )
+    workspace_log_session_event(
+        workspace,
+        adopted_id,
+        "tool_call",
+        {"tool_name": "memory_method_walkthrough_tool", "mode": "walkthrough", "query": "ArticleFeignClient#move"},
+    )
+
+    missed_session = workspace_start_session(workspace, "忽略建议重新搜索 ArticleController")
+    missed_id = missed_session["session_id"]
+    workspace_log_session_event(
+        workspace,
+        missed_id,
+        "agent_guidance",
+        {
+            "query": "ArticleController",
+            "agent_next_steps": [
+                {
+                    "action": "inspect_top_result",
+                    "priority": "medium",
+                    "command": "read the top result file",
+                }
+            ],
+        },
+    )
+    workspace_log_session_event(
+        workspace,
+        missed_id,
+        "tool_call",
+        {"tool_name": "rg", "query": "ArticleController class"},
+    )
+
+    evaluation = memory_eval_agent_guidance_adoption(workspace, limit=20)
+    assert evaluation["schema"]["name"] == "eval_result"
+    assert evaluation["summary"]["total_guidance_events"] == 2
+    assert evaluation["summary"]["adopted_count"] == 1
+    assert evaluation["summary"]["missed_count"] == 1
+    assert evaluation["summary"]["adoption_rate"] == 0.5
+    assert evaluation["adoption_records"][0]["status"] in {"adopted", "missed"}
+    assert any(record["expected_action"] == "switch_to_walkthrough" and record["status"] == "adopted" for record in evaluation["adoption_records"])
+    assert any(record["expected_action"] == "inspect_top_result" and record["status"] == "missed" for record in evaluation["adoption_records"])
+    assert any(finding["code"] == "agent_guidance_not_adopted" for finding in evaluation["findings"])
+
+    import ast
+    runner = CliRunner()
+    cli_result = runner.invoke(app, ["eval-agent-guidance-adoption", "--workspace", str(workspace), "--limit", "20"])
+    assert cli_result.exit_code == 0
+    cli = ast.literal_eval(cli_result.output)
+    assert cli["summary"]["total_guidance_events"] == 2
+
+    from http.server import ThreadingHTTPServer
+    server = ThreadingHTTPServer(("127.0.0.1", _free_port()), create_handler(workspace))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        base = f"http://127.0.0.1:{server.server_address[1]}"
+        http = json.loads(urlopen(f"{base}/workspace/eval-agent-guidance-adoption?limit=20").read().decode("utf-8"))
+    finally:
+        server.shutdown()
+        thread.join(timeout=2)
+    assert http["summary"]["adopted_count"] == 1
 
 
 def test_memory_backend_sqlite_mirror(tmp_path: Path):
@@ -1580,6 +1809,8 @@ def test_http_bridge_routes(tmp_path: Path):
         assert query["retrieval_summary"]["exact_matches"] >= 1
         assert query["retrieval_summary"]["semantic_matches"] >= 1
         assert query["retrieval_diagnostics"]["policy"]["enable_vector"] is True
+        assert query["agent_next_steps"]
+        assert query["agent_next_steps"][0]["action"]
         assert all("task-service" in (item.get("node", {}).get("project") or "") for item in query["matches"])
         search = json.loads(urlopen(f"{base}/workspace/search-code?text=ArticleFeignClient&scope=task-service&project=task-service").read().decode("utf-8"))
         assert search["hits"]
@@ -1893,8 +2124,59 @@ def test_work_resume_check_cli(tmp_path: Path):
     result = runner.invoke(app, ["work-resume-check", "--workspace", str(workspace), "--task-id", task["task_id"], "--limit", "5"])
 
     assert result.exit_code == 0
-    assert "task-resume-check" in result.output
-    assert "recommended_next_step" in result.output
+    payload = json.loads(result.output)
+    assert payload["workflow"] == "task-resume-check"
+    assert payload["task_id"] == task["task_id"]
+    assert "recommended_next_step" in payload
+
+
+def test_work_resume_check_cli_mcp_http_core_contract_consistency(tmp_path: Path):
+    from http.server import ThreadingHTTPServer
+
+    from memory_center.mcp.admin_actions import build_admin_registry
+
+    workspace = _copy_demo_workspace(tmp_path, "task-resume-check-consistency")
+    task = create_task_space(workspace, title="三入口接手检查任务")
+    task_id = task["task_id"]
+
+    core = workspace_task_resume_check(workspace, task_id=task_id, limit=5)
+
+    runner = CliRunner()
+    cli_result = runner.invoke(app, ["work-resume-check", "--workspace", str(workspace), "--task-id", task_id, "--limit", "5"])
+    assert cli_result.exit_code == 0
+    cli = json.loads(cli_result.output)
+
+    mcp = build_admin_registry(workspace_file=str(workspace), task_id=task_id, limit=5).dispatch("task_resume_check")
+
+    server = ThreadingHTTPServer(("127.0.0.1", _free_port()), create_handler(workspace))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        base = f"http://127.0.0.1:{server.server_address[1]}"
+        http_payload = json.loads(urlopen(f"{base}/workspace/work-resume-check?task_id={quote(task_id)}&limit=5").read().decode("utf-8"))
+    finally:
+        server.shutdown()
+        thread.join(timeout=2)
+
+    def comparable(payload: dict[str, object]) -> dict[str, object]:
+        health = payload.get("health", {}) if isinstance(payload.get("health", {}), dict) else {}
+        repair_summary = payload.get("repair_plan_summary", {}) if isinstance(payload.get("repair_plan_summary", {}), dict) else {}
+        next_step = payload.get("recommended_next_step", {}) if isinstance(payload.get("recommended_next_step", {}), dict) else {}
+        return {
+            "workflow": payload.get("workflow"),
+            "task_id": payload.get("task_id"),
+            "status": payload.get("status"),
+            "can_resume": payload.get("can_resume"),
+            "health": health.get("health"),
+            "health_issue_count": health.get("issue_count"),
+            "repair_issue_count": repair_summary.get("issue_count"),
+            "next_action": next_step.get("action"),
+        }
+
+    expected = comparable(core)
+    assert comparable(cli) == expected
+    assert comparable(mcp) == expected
+    assert comparable(http_payload) == expected
 
 
 def test_task_space_health_reports_issues_and_suggestions(tmp_path: Path):
@@ -1978,6 +2260,100 @@ def test_task_space_repair_plan_cli_for_synced_task(tmp_path: Path):
     assert result.exit_code == 0
     assert "repair_plan" in result.output
     assert "apply_supported" in result.output
+
+
+def test_task_space_repair_execute_dry_run_and_apply(tmp_path: Path):
+    workspace = _copy_demo_workspace(tmp_path, "task-repair-execute")
+    task = create_task_space(workspace, title="执行修复任务")
+    task_id = task["task_id"]
+
+    dry_run = task_space_repair_execute(workspace, task_id)
+    assert dry_run["dry_run"] is True
+    assert dry_run["applied"] is False
+    assert dry_run["supported_count"] >= 1
+    assert any(item["target"] == "current_summary" for item in dry_run["execution_plan"])
+
+    blocked = task_space_repair_execute(workspace, task_id, apply=True)
+    assert blocked["dry_run"] is False
+    assert blocked["blocked_count"] >= 1
+    assert any(item.get("reason") == "intent_required" for item in blocked["results"])
+
+    applied = task_space_repair_execute(workspace, task_id, apply=True, intent="ArticleFeignClient 执行修复任务")
+    assert applied["applied"] is True
+    assert applied["executed_count"] >= 1
+    assert applied["remaining_health"]["issue_count"] < dry_run["source_repair_plan"]["issue_count"]
+
+
+def test_task_space_repair_execute_preserves_safety_boundaries(tmp_path: Path):
+    workspace = _copy_demo_workspace(tmp_path, "task-repair-safety")
+    task = create_task_space(workspace, title="安全边界修复任务")
+    task_id = task["task_id"]
+
+    update_task_artifact(workspace, task_id, "context", "# Context\n\n已有人工上下文，不能被 dry-run 或 current-summary 修复覆盖。")
+    update_task_artifact(workspace, task_id, "plan", "# Plan\n\n## Next Actions / 下一步\n\n- 保留已有人工计划。")
+    before_context = get_task_artifact(workspace, task_id, "context")["content"]
+    before_plan = get_task_artifact(workspace, task_id, "plan")["content"]
+    before_summary = get_task_artifact(workspace, task_id, "current_summary")["content"]
+
+    dry_run = task_space_repair_execute(workspace, task_id)
+    assert dry_run["dry_run"] is True
+    assert dry_run["applied"] is False
+    assert get_task_artifact(workspace, task_id, "context")["content"] == before_context
+    assert get_task_artifact(workspace, task_id, "plan")["content"] == before_plan
+
+    blocked = task_space_repair_execute(workspace, task_id, apply=True)
+    assert blocked["blocked_count"] >= 1
+    assert any(item.get("target") == "current_summary" and item.get("reason") == "intent_required" for item in blocked["results"])
+    assert get_task_artifact(workspace, task_id, "current_summary")["content"] == before_summary
+    assert before_context in get_task_artifact(workspace, task_id, "context")["content"]
+    assert before_plan in get_task_artifact(workspace, task_id, "plan")["content"]
+
+
+def test_task_space_repair_execute_does_not_fake_missing_write_receipts(tmp_path: Path):
+    workspace = _copy_demo_workspace(tmp_path, "task-repair-no-fake-receipts")
+    task = create_task_space(workspace, title="缺少凭证修复任务")
+    task_id = task["task_id"]
+    task_dir = Path(str(task["path"]))
+    (task_dir / "current-summary.md").write_text("# Current Summary\n\n目标：验证缺失凭证不会被伪造。\n\n下一步：执行检查。", encoding="utf-8")
+    (task_dir / "context.md").write_text("# Context\n\n直接写入的历史上下文，没有经过 write receipt。", encoding="utf-8")
+    (task_dir / "plan.md").write_text("# Plan\n\n## Next Actions / 下一步\n\n- 检查 missing_write_receipts。", encoding="utf-8")
+
+    plan = task_space_repair_plan(workspace, task_id)
+    assert any(item["issue_code"] == "missing_write_receipts" for item in plan["repair_plan"])
+
+    applied = task_space_repair_execute(workspace, task_id, apply=True, intent="ArticleFeignClient 缺失凭证检查")
+    receipt_steps = [item for item in applied["results"] if item.get("issue_code") == "missing_write_receipts"]
+    assert receipt_steps
+    assert all(item.get("status") == "skipped" for item in receipt_steps)
+    assert all(item.get("applied") is not True for item in receipt_steps)
+
+
+def test_task_space_repair_execute_cli(tmp_path: Path):
+    workspace = _copy_demo_workspace(tmp_path, "task-repair-execute-cli")
+    task = create_task_space(workspace, title="CLI 执行修复任务")
+
+    runner = CliRunner()
+    dry_run = runner.invoke(app, ["artifact", "repair-task", "--workspace", str(workspace), "--task-id", task["task_id"]])
+    assert dry_run.exit_code == 0
+    assert "execution_plan" in dry_run.output
+    assert "dry_run" in dry_run.output
+
+    applied = runner.invoke(
+        app,
+        [
+            "artifact",
+            "repair-task",
+            "--workspace",
+            str(workspace),
+            "--task-id",
+            task["task_id"],
+            "--apply",
+            "--intent",
+            "ArticleFeignClient CLI 执行修复任务",
+        ],
+    )
+    assert applied.exit_code == 0
+    assert "remaining_health" in applied.output
 
 
 def test_touch_task_activity(tmp_path: Path):
@@ -2202,6 +2578,94 @@ def test_token_benchmark_save_and_compare(tmp_path: Path):
     # Compare again — should detect regression
     compare_result = memory_eval_token_benchmark_compare(str(workspace), intent="benchmark test", limit=5, regression_threshold=10)
     assert len(compare_result.get("regressions", [])) > 0
+
+
+def test_agent_guidance_trend_records_and_alerts(tmp_path: Path):
+    workspace = _copy_demo_workspace(tmp_path, "agent-guidance-trend")
+    from memory_center.core.benchmark.trending import (
+        check_regression_alerts,
+        generate_benchmark_report,
+        get_agent_guidance_trends,
+        record_agent_guidance_trend,
+    )
+    from memory_center.core.orchestrator import memory_eval_agent_guidance_trend
+
+    for idx in range(5):
+        record_agent_guidance_trend(
+            workspace,
+            intent=f"stable-{idx}",
+            agent_next_step_count=3,
+            invalid_search_suggestion_count=0,
+            invalid_search_reduction_rate=1.0,
+            score=95,
+            quality="high",
+            passed=True,
+            agent_next_step_actions=["inspect_top_result"],
+        )
+    record_agent_guidance_trend(
+        workspace,
+        intent="regressed",
+        agent_next_step_count=0,
+        invalid_search_suggestion_count=2,
+        invalid_search_reduction_rate=0.0,
+        score=45,
+        quality="low",
+        passed=False,
+        agent_next_step_actions=[],
+    )
+
+    trends = get_agent_guidance_trends(workspace, limit=20)
+    assert trends["summary"]["total_trend_points"] == 6
+    assert trends["summary"]["latest_invalid_search_suggestion_count"] == 2
+    assert trends["regressions"]
+
+    alerts = check_regression_alerts(workspace)
+    assert alerts["agent_guidance"]["total_regressions"] >= 1
+    assert any(alert["type"] == "agent_guidance" for alert in alerts["alerts"])
+    report = generate_benchmark_report(workspace)
+    assert report["agent_guidance_trends"]["summary"]["total_trend_points"] == 6
+
+    sampled = memory_eval_agent_guidance_trend(workspace, intent="ArticleFeignClient 调用链", limit=5)
+    assert sampled["recorded"] is True
+    assert sampled["trend_point"]["agent_next_step_count"] >= 1
+
+
+def test_eval_agent_guidance_trend_available_from_cli_and_http(tmp_path: Path):
+    import ast
+    from http.server import ThreadingHTTPServer
+
+    workspace = _copy_demo_workspace(tmp_path, "agent-guidance-trend-entrypoints")
+    runner = CliRunner()
+    cli_result = runner.invoke(
+        app,
+        [
+            "eval-agent-guidance-trend",
+            "--workspace",
+            str(workspace),
+            "--intent",
+            "ArticleFeignClient 调用链",
+            "--limit",
+            "5",
+        ],
+    )
+    assert cli_result.exit_code == 0
+    cli = ast.literal_eval(cli_result.output)
+    assert cli["recorded"] is True
+    assert cli["trend_point"]["agent_next_step_count"] >= 1
+
+    server = ThreadingHTTPServer(("127.0.0.1", _free_port()), create_handler(workspace))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        base = f"http://127.0.0.1:{server.server_address[1]}"
+        intent = quote("ArticleFeignClient 调用链")
+        http = json.loads(urlopen(f"{base}/workspace/eval-agent-guidance-trend?intent={intent}&limit=5").read().decode("utf-8"))
+    finally:
+        server.shutdown()
+        thread.join(timeout=2)
+
+    assert http["recorded"] is True
+    assert http["trend_point"]["agent_next_step_count"] >= 1
 
 
 def test_bm25_scoring_returns_results(tmp_path: Path):

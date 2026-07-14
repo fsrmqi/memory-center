@@ -357,3 +357,87 @@ def test_full_chain_symbol_query_routes_to_walkthrough(demo_workspace_indexed: P
     assert result["agent_usage_policy"]["read_files_by"] == "absolute_file_path"
     assert result["completion_status"]["state"] == "complete"
     assert result["completion_status"]["recommended_action"] == "use_current_evidence"
+    assert result["agent_next_steps"][0]["action"] == "use_read_targets"
+    assert "do not run find/grep-l" in result["agent_next_steps"][0]["command"]
+
+
+def test_hybrid_query_returns_structured_agent_next_steps(demo_workspace_indexed: Path) -> None:
+    from memory_center.core.orchestrator.query import memory_query_hybrid
+
+    result = memory_query_hybrid(
+        demo_workspace_indexed,
+        "ArticleFeignClient",
+        limit=10,
+        project="task-service",
+    )
+
+    assert result["results"]
+    assert result["agent_next_steps"]
+    first = result["agent_next_steps"][0]
+    assert first["action"] in {"switch_to_walkthrough", "inspect_top_result", "validate_semantic_hit"}
+    assert first["priority"] in {"high", "medium"}
+    assert first["command"]
+    assert isinstance(first["uses_existing_evidence"], bool)
+
+
+def test_agent_next_steps_prioritize_stale_evidence_before_search() -> None:
+    from memory_center.core.orchestrator.query import _build_agent_next_steps_for_query
+
+    steps = _build_agent_next_steps_for_query(
+        {
+            "freshness": {"freshness": {"status": "stale"}},
+            "results": [{"node": {"type": "Class", "name": "ArticleService"}}],
+        },
+        query="ArticleService",
+    )
+
+    assert steps[0]["action"] == "refresh_or_read_live_files"
+    assert steps[0]["priority"] == "high"
+    assert "read matched files live" in steps[0]["command"]
+
+
+def test_agent_next_steps_refine_when_query_has_no_evidence() -> None:
+    from memory_center.core.orchestrator.query import _build_agent_next_steps_for_query
+
+    steps = _build_agent_next_steps_for_query(
+        {
+            "freshness": {"freshness": {"status": "fresh"}},
+            "results": [],
+        },
+        query="模糊问题",
+    )
+
+    assert steps[0]["action"] == "refine_query"
+    assert steps[0]["uses_existing_evidence"] is False
+
+
+def test_agent_next_steps_validate_semantic_general_hits() -> None:
+    from memory_center.core.orchestrator.query import _build_agent_next_steps_for_query
+
+    steps = _build_agent_next_steps_for_query(
+        {
+            "freshness": {"freshness": {"status": "fresh"}},
+            "retrieval_policy": {"primary_intent": "general"},
+            "retrieval_diagnostics": {"semantic": {"status": "active"}},
+            "results": [{"node": {"type": "Class", "name": "ArticleService"}}],
+        },
+        query="文章处理逻辑",
+    )
+
+    assert steps[0]["action"] == "validate_semantic_hit"
+    assert "verify" in steps[0]["reason"]
+
+
+def test_agent_next_steps_switch_to_walkthrough_for_method_hits() -> None:
+    from memory_center.core.orchestrator.query import _build_agent_next_steps_for_query
+
+    steps = _build_agent_next_steps_for_query(
+        {
+            "freshness": {"freshness": {"status": "fresh"}},
+            "results": [{"node": {"type": "Method", "name": "ArticleMoveService.move"}}],
+        },
+        query="ArticleMoveService.move",
+    )
+
+    assert steps[0]["action"] == "switch_to_walkthrough"
+    assert "mode=\"walkthrough\"" in steps[0]["command"]
