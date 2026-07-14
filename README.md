@@ -537,10 +537,32 @@ memory-center artifact create-task \
 memory-center artifact list-tasks \
   --workspace /Users/cuijiaqi/javaworkspace/ucap/.memory-center/workspace.yaml
 
+memory-center artifact health-task \
+  --workspace /Users/cuijiaqi/javaworkspace/ucap/.memory-center/workspace.yaml \
+  --task-id feign-dto-compat
+
+memory-center artifact repair-plan-task \
+  --workspace /Users/cuijiaqi/javaworkspace/ucap/.memory-center/workspace.yaml \
+  --task-id feign-dto-compat
+
+memory-center artifact repair-task \
+  --workspace /Users/cuijiaqi/javaworkspace/ucap/.memory-center/workspace.yaml \
+  --task-id feign-dto-compat
+
+memory-center artifact repair-task \
+  --workspace /Users/cuijiaqi/javaworkspace/ucap/.memory-center/workspace.yaml \
+  --task-id feign-dto-compat \
+  --apply \
+  --intent "继续 Feign DTO 兼容改造"
+
 memory-center artifact auto-archive-tasks \
   --workspace /Users/cuijiaqi/javaworkspace/ucap/.memory-center/workspace.yaml \
   --retention-days 30
 ```
+
+Task health checks diagnose whether a task space is resumable: missing or stale `current-summary`, empty next actions, unresolved write receipts, similar task spaces, and oversized artifacts. `repair-task` defaults to dry-run. Applying repairs only performs conservative low-risk writes: it can append templates for missing context/plan and refresh `current-summary` when an explicit `--intent` is provided. It does not fake write receipts, auto-archive ambiguous task spaces, or overwrite existing artifacts.
+
+任务健康检查会判断任务空间是否适合恢复：例如缺失或过期的 `current-summary`、下一步为空、未解决写入回执、相似任务空间和过大的工件。`repair-task` 默认只做 dry-run。真正应用修复时只执行保守低风险写入：可以为缺失的 context/plan 追加模板，也可以在提供明确 `--intent` 后刷新 `current-summary`；不会伪造写入回执、不会自动归档歧义任务空间，也不会覆盖已有工件。
 
 When a new conversation starts, you do not have to pass `task_id` every time. The system can resolve the most relevant existing task space from your natural-language intent, and only create a new one when nothing matches well enough.
 
@@ -626,6 +648,10 @@ memory-center work-resume \
   --workspace /path/to/.memory-center/workspace.yaml \
   --task-id some-task
 
+memory-center work-resume-check \
+  --workspace /path/to/.memory-center/workspace.yaml \
+  --task-id some-task
+
 memory-center work-handoff \
   --workspace /path/to/.memory-center/workspace.yaml \
   --target-model glm-4 \
@@ -639,6 +665,10 @@ memory-center work-close \
 memory-center work-health \
   --workspace /path/to/.memory-center/workspace.yaml
 ```
+
+`work-resume-check` is the one-call resume gate: it combines the resume packet, task health, repair plan, next actions, unresolved items and evidence into `ready`, `needs_repair`, or `blocked`.
+
+`work-resume-check` 是恢复前的一键门禁：它会把恢复包、任务健康、修复计划、下一步动作、未解决事项和证据合并成 `ready`、`needs_repair` 或 `blocked`。
 
 ### 9. Real-world `ucap-all` examples / `ucap-all` 真实路径示例
 
@@ -694,6 +724,10 @@ Available MCP tools (8 facade tools) / MCP 工具（8 个任务级 facade）：
 | `mc_close` | Close task workflow: end session → sync case → record experience / 关闭任务工作流 |
 | `mc_admin` | Admin router (status/dashboard/eval/artifact/session/group etc.) / 管理路由，action 选择子操作 |
 
+Task-space resume experience is available through `mc_admin` actions: `task_health`, `task_health_all`, `task_repair_plan`, `task_repair_apply`, and `task_resume_check`. `task_resume_check` should be the default first call when an agent returns to a known `task_id`; `task_repair_apply` runs as dry-run unless `force=true` is passed, and current-summary refreshes should include an `intent`.
+
+任务空间恢复体验通过 `mc_admin` action 暴露：`task_health`、`task_health_all`、`task_repair_plan`、`task_repair_apply`、`task_resume_check`。Agent 回到已知 `task_id` 时，默认应先调用 `task_resume_check`；`task_repair_apply` 在未传 `force=true` 时只做 dry-run，刷新 current-summary 时建议同时传入 `intent`。
+
 `mc_lookup(mode="walkthrough")` targets `Class#method` traces. For local service calls, `local_service_continuations` resolves Service interface calls to Impl methods. For Feign calls, `feign_continuations[].server_walkthroughs` expands matching server-side Controller methods, and `service_impl_continuations` resolves same-project Service interface calls to Impl methods when indexed.
 
 `mc_lookup(mode="walkthrough")` 面向 `Class#method` 链路梳理。遇到本地 Service 调用时，`local_service_continuations` 会解析 Service interface 到 Impl 方法。遇到 Feign 调用时，`feign_continuations[].server_walkthroughs` 会展开匹配到的服务端 Controller 方法；如果 Controller 调用同项目 Service interface，`service_impl_continuations` 会继续解析到 Impl 方法。
@@ -709,6 +743,14 @@ walkthrough 还会为同类未限定辅助/私有方法调用返回 `same_class_
 For MCP `mc_lookup(auto|walkthrough)`, walkthrough responses expose `answer`, `answer_markdown`, `summary_lines`, `primary_flow`, `read_targets`, `mermaid_flow`, `performance_risks`, `data_scope_guards`, `diff_context`, `glossary_hits`, `index_freshness`, `branch_outline`, `anti_patterns`, `cache`, `schema_version`, `fields_contract`, and `agent_usage_policy` at the top level. Agents should use these top-level fields directly instead of parsing local `tool-results/*.json` files.
 
 MCP `mc_lookup(auto|walkthrough)` 的 walkthrough 响应会把 `answer`、`answer_markdown`、`summary_lines`、`primary_flow`、`read_targets`、`mermaid_flow`、`performance_risks`、`data_scope_guards`、`diff_context`、`glossary_hits`、`index_freshness`、`branch_outline`、`anti_patterns`、`cache`、`schema_version`、`fields_contract` 和 `agent_usage_policy` 提升到顶层。Agent 应直接使用这些顶层字段，不需要解析本地 `tool-results/*.json`。
+
+Lookup results also include additive `agent_next_steps`, a structured next-step list derived from retrieval policy, freshness, completion status and available evidence. CLI `memory-center query`, HTTP `/workspace/query`, and MCP `mc_lookup` expose this field. In MCP `mc_lookup`, it is lifted to the top level for auto-routed and direct query/symbol/code/context/chain/trace routes, so agents do not need to inspect nested `result` just to decide the next action. It tells agents whether to read existing `read_targets`, inspect a bounded symbol/code/chain/context result, switch to walkthrough, validate semantic hits, refine the query, or refresh stale evidence.
+
+Lookup 结果还会返回兼容新增字段 `agent_next_steps`，它会根据 retrieval policy、新鲜度、completion status 和现有证据生成结构化下一步。CLI `memory-center query`、HTTP `/workspace/query` 和 MCP `mc_lookup` 都会暴露该字段。MCP `mc_lookup` 在自动路由和直接 query/symbol/code/context/chain/trace 路由下还会把该字段提升到顶层，Agent 不需要为了判断下一步再深入读取嵌套 `result`；字段会明确提示应读取现有 `read_targets`、检查有界的 symbol/code/chain/context 结果、切到 walkthrough、验证语义命中、细化查询，还是先刷新过期证据。
+
+When CLI `memory-center query`, HTTP `/workspace/query`, or MCP `mc_lookup` receives `session_id`, Memory Center automatically records the returned `agent_next_steps` as an `agent_guidance` session event. This feeds `eval-agent-guidance-adoption` without requiring a separate manual log call.
+
+当 CLI `memory-center query`、HTTP `/workspace/query` 或 MCP `mc_lookup` 传入 `session_id` 时，Memory Center 会自动把返回的 `agent_next_steps` 记录为 `agent_guidance` session event。这样 `eval-agent-guidance-adoption` 可以直接评估后续执行情况，不再需要额外手工写日志。
 
 When a method walkthrough starts from a sub-project workspace, Memory Center can automatically escalate to a parent or registry-covered aggregate workspace if that workspace produces a more complete cross-service flow. The `workspace_escalation` field records whether this happened; missing parents are safe fallbacks, not errors.
 
@@ -861,9 +903,9 @@ At the workspace level, `mc_admin(action="dashboard")` provides a broader operat
 
 在 workspace 级别，`mc_admin(action="dashboard")` 会进一步提供更宽的运营视图：活跃任务、可恢复任务、阻塞任务、低质量任务、最近交接和最近写入回执。
 
-The dashboard also includes `focus_resume_eval`, so the current focus task has a directly visible resume-quality signal.
+The dashboard also includes `focus_resume_eval` and `agent_guidance`, so the current focus task has directly visible resume-quality and next-step guidance signals.
 
-总面板现在还会包含 `focus_resume_eval`，让当前焦点任务的恢复包质量直接可见。
+总面板现在还会包含 `focus_resume_eval` 和 `agent_guidance`，让当前焦点任务的恢复包质量与下一步建议质量直接可见。
 
 You can now export the workspace dashboard as HTML or Markdown with `memory-center export-workspace-dashboard --format html|markdown`.
 
@@ -890,16 +932,22 @@ The evaluation layer now also includes:
 - `mc_admin(action="eval_index_freshness")`
 - `mc_admin(action="eval_tool_adoption")`
 - `mc_admin(action="eval_context_weight")`
+- `mc_admin(action="eval_agent_guidance")`
+- `mc_admin(action="eval_agent_guidance_adoption")`
+- `mc_admin(action="eval_agent_guidance_trend")`
 
-These help answer whether indexes are stale, whether models are actually using Memory Center, and whether compact payloads are still too heavy.
+These help answer whether indexes are stale, whether models are actually using Memory Center, whether compact payloads are still too heavy, whether lookup output includes bounded `agent_next_steps` without invalid broad-search suggestions, and whether recorded guidance was actually followed by later tool calls. Use `eval_agent_guidance_trend` when you want to append a historical trend point into `.memory-center/memory/agent-guidance-trends.jsonl`; `eval_agent_guidance` and `eval_agent_guidance_adoption` are read-only.
 
 评测层现在还额外包含：
 
 - `mc_admin(action="eval_index_freshness")`
 - `mc_admin(action="eval_tool_adoption")`
 - `mc_admin(action="eval_context_weight")`
+- `mc_admin(action="eval_agent_guidance")`
+- `mc_admin(action="eval_agent_guidance_adoption")`
+- `mc_admin(action="eval_agent_guidance_trend")`
 
-它们分别用于判断索引是否过期、模型是否真的在使用 Memory Center、以及 compact payload 是否仍然偏重。
+它们分别用于判断索引是否过期、模型是否真的在使用 Memory Center、compact payload 是否仍然偏重、lookup 输出是否包含有界的 `agent_next_steps` 且没有无效的泛搜索建议，以及已记录的建议是否真的被后续 tool call 执行。需要把结果写入历史曲线时使用 `eval_agent_guidance_trend`，它会追加到 `.memory-center/memory/agent-guidance-trends.jsonl`；`eval_agent_guidance` 与 `eval_agent_guidance_adoption` 本身保持只读。
 
 To reduce model-side token usage, `workspace_sniff`, `workspace_status`, `workspace_resume_packet`, `workspace_recent_evidence` (now with `view=compact|full`), `workspace_continuity_dashboard`, `workspace_dashboard`, and `workspace_handoff_packet` all support `view=compact|full` plus `budget=small|medium|large`. MCP defaults to `compact + medium`; use `full` for local debugging or manual inspection.
 
@@ -909,13 +957,21 @@ To reduce model-side token usage, `workspace_sniff`, `workspace_status`, `worksp
 
 `workspace_handoff_packet` 现在也已经补齐 `view=compact|full` 和 `budget=small|medium|large`，因此轻量上下文协议在 sniff / resume / handoff / dashboard 这几条主链路上已经对齐。
 
-For fixed regressions, `memory_eval_regression_suite` now aggregates write/resume/handoff evals into one suite-level score.
+For fixed regressions, `memory_eval_regression_suite` now aggregates write/resume/handoff/agent-guidance evals into one suite-level score.
 
-为了做固定回归，`memory_eval_regression_suite` 现在会把 write/resume/handoff 三类评估聚合成一份 suite 级结果。
+为了做固定回归，`memory_eval_regression_suite` 现在会把 write/resume/handoff/agent-guidance 四类评估聚合成一份 suite 级结果。
 
 It is now exposed through CLI, MCP, and HTTP as `eval-regression-suite`, `memory_eval_regression_suite_tool`, and `/workspace/eval-regression-suite`.
 
 它现在已经通过 CLI、MCP、HTTP 三条入口暴露出来：`eval-regression-suite`、`memory_eval_regression_suite_tool`、`/workspace/eval-regression-suite`。
+
+Agent guidance adoption is exposed as `eval-agent-guidance-adoption`, `/workspace/eval-agent-guidance-adoption`, and `mc_admin(action="eval_agent_guidance_adoption")`. It reads `agent_guidance` / `agent_next_steps` session events and checks whether following `tool_call` events match the suggested action.
+
+Agent guidance adoption 入口为 `eval-agent-guidance-adoption`、`/workspace/eval-agent-guidance-adoption` 和 `mc_admin(action="eval_agent_guidance_adoption")`。它会读取 `agent_guidance` / `agent_next_steps` session event，并检查后续 `tool_call` 是否匹配建议动作。
+
+Agent guidance trend recording is exposed as `eval-agent-guidance-trend`, `/workspace/eval-agent-guidance-trend`, and `mc_admin(action="eval_agent_guidance_trend")`. Benchmark trend reports and regression alerts include `agent_guidance_trends`, so daily checks can catch falling `agent_next_steps` coverage or renewed invalid broad-search suggestions.
+
+Agent guidance 趋势记录入口为 `eval-agent-guidance-trend`、`/workspace/eval-agent-guidance-trend` 和 `mc_admin(action="eval_agent_guidance_trend")`。Benchmark trend report 与 regression alerts 现在会包含 `agent_guidance_trends`，日常检查可以发现 `agent_next_steps` 覆盖率下降或无效泛搜索建议回潮。
 
 Short references can now be expanded through `memory_ref_get` / `memory_ref_batch`, so compact evidence can stay tiny until the model explicitly needs the raw payload.
 
@@ -1150,6 +1206,7 @@ Example routes:
 - `GET /workspace/plan-change?workspace=/path/to/.memory-center/workspace.yaml&target=MoveArticleRequest`
 - `GET /workspace/verify-checklist?workspace=/path/to/.memory-center/workspace.yaml&target=MoveArticleRequest`
 - `GET /workspace/suggest-case?workspace=/path/to/.memory-center/workspace.yaml&session_id=session-xxxx`
+- `GET /workspace/work-resume-check?workspace=/path/to/.memory-center/workspace.yaml&task_id=some-task`
 - `GET /group/status?group=backend-platform`
 - `GET /group/query?group=backend-platform&text=ArticleFeignClient`
 - `GET /group/impact?group=backend-platform&target=ArticleFeignClient`
