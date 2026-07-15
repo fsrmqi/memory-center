@@ -19,6 +19,8 @@ JAVA_CALL_CASE_FIELDS = {
     "project",
     "min_confidence",
     "expected_resolution_levels",
+    "allowed_targets",
+    "forbidden_targets",
 }
 
 
@@ -30,6 +32,8 @@ class JavaCallResolutionCase:
     project: str = ""
     min_confidence: float = 0.85
     expected_resolution_levels: tuple[str, ...] = ()
+    allowed_targets: tuple[str, ...] = ()
+    forbidden_targets: tuple[str, ...] = ()
 
     @classmethod
     def from_mapping(cls, data: Mapping[str, Any]) -> "JavaCallResolutionCase":
@@ -48,6 +52,8 @@ class JavaCallResolutionCase:
             project=str(data.get("project", "") or "").strip(),
             min_confidence=max(0.0, min(1.0, float(data.get("min_confidence", 0.85) or 0.85))),
             expected_resolution_levels=_string_tuple(data.get("expected_resolution_levels", [])),
+            allowed_targets=_anchor_tuple(data.get("allowed_targets", []), "allowed_targets"),
+            forbidden_targets=_anchor_tuple(data.get("forbidden_targets", []), "forbidden_targets"),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -58,6 +64,8 @@ class JavaCallResolutionCase:
             "project": self.project,
             "min_confidence": self.min_confidence,
             "expected_resolution_levels": list(self.expected_resolution_levels),
+            "allowed_targets": list(self.allowed_targets),
+            "forbidden_targets": list(self.forbidden_targets),
         }
 
 
@@ -86,6 +94,7 @@ def run_java_call_resolution_suite(
     min_confidence_rate: float = 0.85,
     max_unresolved_rate: float = 0.10,
     fail_on_unexpected_high_confidence: bool = False,
+    fail_on_forbidden_high_confidence: bool = False,
 ) -> dict[str, Any]:
     cases = load_java_call_resolution_cases(cases_file)
     store = WorkspaceStore(workspace_file)
@@ -101,6 +110,8 @@ def run_java_call_resolution_suite(
     resolution_count = sum(1 for row in case_results if row["resolution_level_passed"])
     unresolved_count = sum(1 for row in case_results if row["unresolved"])
     unexpected_count = sum(len(row["unexpected_high_confidence_edges"]) for row in case_results)
+    allowed_count = sum(len(row["allowed_high_confidence_edges"]) for row in case_results)
+    forbidden_count = sum(len(row["forbidden_high_confidence_edges"]) for row in case_results)
     recall = found_count / case_count if case_count else 0.0
     confidence_rate = confidence_count / case_count if case_count else 0.0
     resolution_rate = resolution_count / case_count if case_count else 0.0
@@ -110,6 +121,7 @@ def run_java_call_resolution_suite(
         and confidence_rate >= min_confidence_rate
         and unresolved_rate <= max_unresolved_rate
         and (not fail_on_unexpected_high_confidence or unexpected_count == 0)
+        and (not fail_on_forbidden_high_confidence or forbidden_count == 0)
     )
     return {
         "schema_version": 1,
@@ -122,6 +134,8 @@ def run_java_call_resolution_suite(
             "resolution_level_rate": round(resolution_rate, 4),
             "unresolved_rate": round(unresolved_rate, 4),
             "unexpected_high_confidence_edge_count": unexpected_count,
+            "allowed_high_confidence_edge_count": allowed_count,
+            "forbidden_high_confidence_edge_count": forbidden_count,
             "passed": passed,
         },
         "thresholds": {
@@ -129,6 +143,7 @@ def run_java_call_resolution_suite(
             "min_confidence_rate": min_confidence_rate,
             "max_unresolved_rate": max_unresolved_rate,
             "fail_on_unexpected_high_confidence": fail_on_unexpected_high_confidence,
+            "fail_on_forbidden_high_confidence": fail_on_forbidden_high_confidence,
         },
         "cases": case_results,
     }
@@ -150,11 +165,25 @@ def _evaluate_case(conn: sqlite3.Connection, case: JavaCallResolutionCase) -> di
         target_found
         and (not case.expected_resolution_levels or resolution_level in set(case.expected_resolution_levels))
     )
+    allowed_names = _target_names(case.allowed_targets)
+    forbidden_names = _target_names(case.forbidden_targets)
     unexpected_high_confidence = [
         _edge_summary(edge)
         for edge in outgoing_edges
         if float(edge.get("confidence", 0.0) or 0.0) >= case.min_confidence
-        and edge.get("target_name") != expected_target_name
+        and edge.get("target_name") not in {expected_target_name, *allowed_names, *forbidden_names}
+    ]
+    allowed_high_confidence = [
+        _edge_summary(edge)
+        for edge in outgoing_edges
+        if float(edge.get("confidence", 0.0) or 0.0) >= case.min_confidence
+        and edge.get("target_name") in allowed_names
+    ]
+    forbidden_high_confidence = [
+        _edge_summary(edge)
+        for edge in outgoing_edges
+        if float(edge.get("confidence", 0.0) or 0.0) >= case.min_confidence
+        and edge.get("target_name") in forbidden_names
     ]
     unresolved = (not target_found) or resolution_level == "unresolved"
     passed = target_found and confidence_passed and resolution_level_passed and not unresolved
@@ -170,9 +199,13 @@ def _evaluate_case(conn: sqlite3.Connection, case: JavaCallResolutionCase) -> di
         "confidence_passed": confidence_passed,
         "resolution_level": resolution_level,
         "expected_resolution_levels": list(case.expected_resolution_levels),
+        "allowed_targets": list(case.allowed_targets),
+        "forbidden_targets": list(case.forbidden_targets),
         "resolution_level_passed": resolution_level_passed,
         "unresolved": unresolved,
         "unexpected_high_confidence_edges": unexpected_high_confidence,
+        "allowed_high_confidence_edges": allowed_high_confidence,
+        "forbidden_high_confidence_edges": forbidden_high_confidence,
         "matched_edge": _edge_summary(best_match) if best_match else None,
         "passed": passed,
     }
@@ -262,6 +295,10 @@ def _method_node_name(anchor: str) -> str:
     return text
 
 
+def _target_names(anchors: Sequence[str]) -> set[str]:
+    return {_method_node_name(anchor) for anchor in anchors}
+
+
 def _anchor_from_method_name(name: Any) -> str:
     text = str(name or "").strip()
     if "." not in text:
@@ -276,3 +313,11 @@ def _string_tuple(raw: Any) -> tuple[str, ...]:
     if not isinstance(raw, (list, tuple)):
         raise ValueError("expected_resolution_levels must be a list")
     return tuple(str(value).strip() for value in raw if str(value).strip())
+
+
+def _anchor_tuple(raw: Any, field: str) -> tuple[str, ...]:
+    if raw is None:
+        return ()
+    if not isinstance(raw, (list, tuple)):
+        raise ValueError(f"{field} must be a list")
+    return tuple(_validate_anchor(value, field) for value in raw)

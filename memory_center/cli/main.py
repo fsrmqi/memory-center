@@ -960,6 +960,7 @@ def eval_java_call_resolution_cmd(
     min_confidence_rate: float = typer.Option(0.85, help="Minimum high-confidence expected-edge rate."),
     max_unresolved_rate: float = typer.Option(0.10, help="Maximum unresolved case rate."),
     fail_on_unexpected_high_confidence: bool = typer.Option(False, help="Fail on non-expected high-confidence CALLS_METHOD edges."),
+    fail_on_forbidden_high_confidence: bool = typer.Option(False, help="Fail on high-confidence CALLS_METHOD edges listed in forbidden_targets."),
 ):
     """Run Java CALLS_METHOD resolution gate against logical real-workspace cases."""
     from memory_center.core.orchestrator import memory_eval_java_call_resolution
@@ -971,6 +972,7 @@ def eval_java_call_resolution_cmd(
         min_confidence_rate=min_confidence_rate,
         max_unresolved_rate=max_unresolved_rate,
         fail_on_unexpected_high_confidence=fail_on_unexpected_high_confidence,
+        fail_on_forbidden_high_confidence=fail_on_forbidden_high_confidence,
     )
     print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
 

@@ -896,6 +896,7 @@ def memory_eval_java_call_resolution(
     min_confidence_rate: float = 0.85,
     max_unresolved_rate: float = 0.10,
     fail_on_unexpected_high_confidence: bool = False,
+    fail_on_forbidden_high_confidence: bool = False,
 ) -> dict[str, Any]:
     """Evaluate indexed Java CALLS_METHOD precision against logical cases."""
     from ..benchmark.java_call_resolution import run_java_call_resolution_suite
@@ -907,6 +908,7 @@ def memory_eval_java_call_resolution(
         min_confidence_rate=min_confidence_rate,
         max_unresolved_rate=max_unresolved_rate,
         fail_on_unexpected_high_confidence=fail_on_unexpected_high_confidence,
+        fail_on_forbidden_high_confidence=fail_on_forbidden_high_confidence,
     )
 
 

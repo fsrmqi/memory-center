@@ -660,6 +660,10 @@ cases:
     expected_target: ExampleService#list
     min_confidence: 0.85
     expected_resolution_levels: [import, same_package]
+    # 该入口中的其他高置信调用是合法旁路，不应当作误绑定。
+    allowed_targets: [AuditService#record]
+    # 明确禁止出现的同名误绑定；严格模式下命中即失败。
+    forbidden_targets: [LegacyOrderService#list]
 ```
 
 P1 真实 UCAP case 已覆盖 Controller -> Service interface、Controller -> ServiceImpl、ServiceImpl -> Mapper、same-class helper、static import 等路径。新增 case 时仍只写 `Class#method` 逻辑锚点，不写文件路径或私有源码片段。
@@ -685,11 +689,13 @@ cases:
 - `high_confidence_expected_rate`：命中的预期边是否达到 case 的 `min_confidence`。
 - `resolution_level_rate`：如配置 `expected_resolution_levels`，解析层级是否符合预期。
 - `unresolved_rate`：预期链路没有命中或命中 unresolved 的比例。
+- `allowed_high_confidence_edge_count`：已声明为合法旁路的高置信调用数量。
+- `forbidden_high_confidence_edge_count`：命中 `forbidden_targets` 的高置信调用数量；传入 `--fail-on-forbidden-high-confidence` 时会让 CLI 门禁失败。
 
 HTTP / MCP：
 
-- HTTP: `/workspace/eval-java-call-resolution?workspace=...&cases=...`
-- MCP: `mc_admin(action="eval_java_call_resolution", name="<cases.yaml>")`
+- HTTP: `/workspace/eval-java-call-resolution?workspace=...&cases=...&fail_on_forbidden_high_confidence=true`
+- MCP: `mc_admin(action="eval_java_call_resolution", name="<cases.yaml>", strict=true)`
 
 This gate intentionally validates resolver output at the graph edge layer,
 before walkthrough/report formatting, so parser/retrieval/reasoning changes

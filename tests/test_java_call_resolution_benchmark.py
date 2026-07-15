@@ -36,13 +36,15 @@ def test_java_call_resolution_suite_scores_expected_edges(tmp_path: Path) -> Non
     store = WorkspaceStore(workspace)
     source_id = node_id("Method", "OrderController.submit", "api", "OrderController.java")
     target_id = node_id("Method", "OrderService.submit", "api", "OrderService.java")
-    noise_id = node_id("Method", "AuditService.record", "api", "AuditService.java")
+    allowed_id = node_id("Method", "AuditService.record", "api", "AuditService.java")
+    forbidden_id = node_id("Method", "WrongService.submit", "api", "WrongService.java")
     with GraphStore(store.graph_db_path) as graph:
         graph.bulk_write(
             [
                 GraphNode(source_id, "Method", "OrderController.submit", "api", "OrderController.java"),
                 GraphNode(target_id, "Method", "OrderService.submit", "api", "OrderService.java"),
-                GraphNode(noise_id, "Method", "AuditService.record", "api", "AuditService.java"),
+                GraphNode(allowed_id, "Method", "AuditService.record", "api", "AuditService.java"),
+                GraphNode(forbidden_id, "Method", "WrongService.submit", "api", "WrongService.java"),
             ],
             [
                 GraphEdge(
@@ -54,12 +56,20 @@ def test_java_call_resolution_suite_scores_expected_edges(tmp_path: Path) -> Non
                     metadata={"resolution_level": "import", "target_fqcn": "com.example.OrderService"},
                 ),
                 GraphEdge(
-                    edge_id(source_id, noise_id, "CALLS_METHOD"),
+                    edge_id(source_id, allowed_id, "CALLS_METHOD"),
                     source_id,
-                    noise_id,
+                    allowed_id,
                     "CALLS_METHOD",
-                    confidence=0.4,
-                    metadata={"resolution_level": "unresolved"},
+                    confidence=0.9,
+                    metadata={"resolution_level": "import"},
+                ),
+                GraphEdge(
+                    edge_id(source_id, forbidden_id, "CALLS_METHOD"),
+                    source_id,
+                    forbidden_id,
+                    "CALLS_METHOD",
+                    confidence=0.9,
+                    metadata={"resolution_level": "import"},
                 ),
             ],
         )
@@ -72,6 +82,8 @@ def test_java_call_resolution_suite_scores_expected_edges(tmp_path: Path) -> Non
             "project": "api",
             "min_confidence": 0.85,
             "expected_resolution_levels": ["import"],
+            "allowed_targets": ["AuditService#record"],
+            "forbidden_targets": ["WrongService#submit"],
         }],
     )
 
@@ -80,7 +92,19 @@ def test_java_call_resolution_suite_scores_expected_edges(tmp_path: Path) -> Non
     assert result["summary"]["passed"] is True
     assert result["summary"]["edge_recall"] == 1.0
     assert result["summary"]["high_confidence_expected_rate"] == 1.0
+    assert result["summary"]["allowed_high_confidence_edge_count"] == 1
+    assert result["summary"]["forbidden_high_confidence_edge_count"] == 1
+    assert result["summary"]["unexpected_high_confidence_edge_count"] == 0
     assert result["cases"][0]["matched_edge"]["target"] == "OrderService#submit"
+    assert result["cases"][0]["allowed_high_confidence_edges"][0]["target"] == "AuditService#record"
+    assert result["cases"][0]["forbidden_high_confidence_edges"][0]["target"] == "WrongService#submit"
+
+    strict_result = run_java_call_resolution_suite(
+        workspace,
+        cases,
+        fail_on_forbidden_high_confidence=True,
+    )
+    assert strict_result["summary"]["passed"] is False
 
 
 def test_java_call_resolution_suite_reports_unresolved_missing_target(tmp_path: Path) -> None:
@@ -138,3 +162,22 @@ def test_java_call_resolution_cases_reject_filesystem_paths(tmp_path: Path) -> N
         assert "filesystem path" in str(exc)
     else:
         raise AssertionError("expected filesystem path rejection")
+
+
+def test_java_call_resolution_cases_reject_non_list_edge_contracts(tmp_path: Path) -> None:
+    cases = _write_cases(
+        tmp_path / "java-call-cases.yaml",
+        [{
+            "case_id": "bad-contract",
+            "source": "OrderController#submit",
+            "expected_target": "OrderService#submit",
+            "allowed_targets": "AuditService#record",
+        }],
+    )
+
+    try:
+        load_java_call_resolution_cases(cases)
+    except ValueError as exc:
+        assert "allowed_targets must be a list" in str(exc)
+    else:
+        raise AssertionError("expected edge contract validation failure")

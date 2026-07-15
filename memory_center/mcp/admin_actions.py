@@ -301,8 +301,12 @@ def eval_golden_action(workspace_file: str, cases_file: str) -> dict[str, Any]:
     return benchmark_module.run_golden_suite(workspace_file, cases_file)
 
 
-def eval_java_call_resolution_action(workspace_file: str, cases_file: str) -> dict[str, Any]:
-    return memory_eval_java_call_resolution(workspace_file, cases_file)
+def eval_java_call_resolution_action(workspace_file: str, cases_file: str, *, strict: bool = False) -> dict[str, Any]:
+    return memory_eval_java_call_resolution(
+        workspace_file,
+        cases_file,
+        fail_on_forbidden_high_confidence=strict,
+    )
 
 
 def build_admin_registry(
@@ -355,6 +359,7 @@ def build_admin_registry(
     layer: str = "",
     action_filter: str = "",
     force: bool = False,
+    strict: bool = False,
 ) -> CommandRegistry:
     """Return a CommandRegistry mapping action name -> zero-arg handler.
 
@@ -427,7 +432,7 @@ def build_admin_registry(
         "eval_workflow_orchestration": lambda: memory_eval_workflow_orchestration(wf, task_id=task_id, session_id=session_id, intent=intent, limit=limit),
         "eval_token_gain": lambda: memory_eval_token_gain(wf, tool_name=tool_name, budget=budget, model=model, limit=limit),
         "eval_parser_benchmark": lambda: memory_eval_parser_benchmark(wf, limit=limit),
-        "eval_java_call_resolution": lambda: eval_java_call_resolution_action(wf, name),
+        "eval_java_call_resolution": lambda: eval_java_call_resolution_action(wf, name, strict=strict),
         "eval_golden": lambda: eval_golden_action(wf, name),
         "eval_token_benchmark": lambda: memory_eval_token_benchmark(wf, intent=intent, limit=limit),
         "eval_token_benchmark_trend": lambda: benchmark_trend_report(wf, name),

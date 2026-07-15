@@ -426,6 +426,7 @@ def register_workspace_routes(registry: CommandRegistry) -> None:
         min_confidence_rate=_parse_float(rp.params, "min_confidence_rate", 0.85),
         max_unresolved_rate=_parse_float(rp.params, "max_unresolved_rate", 0.10),
         fail_on_unexpected_high_confidence=rp.get("fail_on_unexpected_high_confidence", "").lower() in {"1", "true", "yes"},
+        fail_on_forbidden_high_confidence=rp.get("fail_on_forbidden_high_confidence", "").lower() in {"1", "true", "yes"},
     ))
 
     # --- tooling / refs / backend / verify ------------------------------------
