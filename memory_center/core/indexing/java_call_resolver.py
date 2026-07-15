@@ -14,6 +14,8 @@ class ClassInfo:
     fqcn: str
     methods: set[str] = field(default_factory=set)
     method_signatures: list[dict[str, Any]] = field(default_factory=list)
+    fields: set[str] = field(default_factory=set)
+    annotations: set[str] = field(default_factory=set)
 
 
 @dataclass(frozen=True)
@@ -43,6 +45,7 @@ class ResolvedCall:
     arg_count: int | None = None
     matched_signature: str = ""
     inferred_target: bool = False
+    unresolved_reason: str = ""
     evidence: dict[str, Any] = field(default_factory=dict)
 
 
@@ -58,6 +61,8 @@ def build_java_class_index(symbols: list[dict[str, Any]]) -> JavaClassIndex:
         file = str(sym.get("file") or "")
         methods = {str(item) for item in sym.get("methods", []) if item}
         signatures = list(sym.get("method_signatures", []) or [])
+        fields = {str(item) for item in sym.get("fields", []) if item}
+        annotations = {str(item) for item in sym.get("annotations", []) if item}
         for name in list(sym.get("classes", []) or []) + list(sym.get("interfaces", []) or []):
             class_name = str(name or "").strip()
             if not class_name:
@@ -71,6 +76,8 @@ def build_java_class_index(symbols: list[dict[str, Any]]) -> JavaClassIndex:
                 fqcn=fqcn,
                 methods=methods,
                 method_signatures=signatures,
+                fields=fields,
+                annotations=annotations,
             )
             by_fqcn[fqcn] = info
             by_package_simple[(package, class_name)] = info
@@ -114,6 +121,19 @@ class JavaCallResolver:
         for info, level, confidence in candidates:
             if target_method in info.methods:
                 return self._resolved(owner_symbol, owner, call, info, level, confidence, arg_count)
+            lombok_field = _lombok_accessor_field(info, target_method)
+            if lombok_field:
+                return self._resolved(
+                    owner_symbol,
+                    owner,
+                    call,
+                    info,
+                    f"{level}_lombok_accessor",
+                    confidence,
+                    arg_count,
+                    inferred_target=True,
+                    matched_signature=f"lombok_accessor:{lombok_field}",
+                )
 
         fallback_class = receiver_type or _class_like_receiver(receiver) or "unknown"
         return ResolvedCall(
@@ -133,6 +153,7 @@ class JavaCallResolver:
             line=int(call.get("line") or 0),
             arg_count=arg_count,
             inferred_target=True,
+            unresolved_reason=self._unresolved_reason(receiver, receiver_type, target_method),
             evidence=dict(call),
         )
 
@@ -145,6 +166,9 @@ class JavaCallResolver:
         level: str,
         confidence: float,
         arg_count: int | None,
+        *,
+        inferred_target: bool = False,
+        matched_signature: str = "",
     ) -> ResolvedCall:
         target_method = str(call.get("method_name") or "")
         return ResolvedCall(
@@ -163,10 +187,22 @@ class JavaCallResolver:
             receiver_type=self._receiver_type(owner_symbol, call),
             line=int(call.get("line") or 0),
             arg_count=arg_count,
-            matched_signature=_match_signature(info.method_signatures, target_method, arg_count),
-            inferred_target=False,
+            matched_signature=matched_signature or _match_signature(info.method_signatures, target_method, arg_count),
+            inferred_target=inferred_target,
             evidence=dict(call),
         )
+
+    def _unresolved_reason(self, receiver: str, receiver_type: str, target_method: str) -> str:
+        if not receiver_type:
+            return "unqualified_or_dynamic" if not receiver else "receiver_type_missing"
+        candidates = self.class_index.by_simple.get(receiver_type, [])
+        if not candidates:
+            return "receiver_type_not_indexed"
+        if any(target_method in info.methods for info in candidates):
+            return "target_out_of_scope"
+        if any(_lombok_accessor_field(info, target_method) for info in candidates):
+            return "lombok_target_out_of_scope"
+        return "target_method_not_indexed"
 
     def _owner_class(self, owner_symbol: dict[str, Any]) -> ClassInfo:
         project = str(owner_symbol.get("project") or "")
@@ -328,4 +364,22 @@ def _match_signature(signatures: list[dict[str, Any]], method_name: str, arg_cou
         parameter_types = item.get("parameter_types", []) or []
         if arg_count is None or len(parameter_types) == arg_count:
             return str(item.get("identity") or "")
+    return ""
+
+
+def _lombok_accessor_field(info: ClassInfo, method_name: str) -> str:
+    """Return the backing field when Lombok makes an accessor deterministic."""
+
+    annotation_names = {item.split(".")[-1].lower() for item in info.annotations}
+    for prefix, required_annotations in (
+        ("get", {"data", "getter", "value"}),
+        ("is", {"data", "getter", "value"}),
+        ("set", {"data", "setter"}),
+    ):
+        suffix = method_name[len(prefix):] if method_name.startswith(prefix) else ""
+        if not suffix or not suffix[0].isupper() or not (annotation_names & required_annotations):
+            continue
+        field_name = suffix[0].lower() + suffix[1:]
+        if field_name in info.fields:
+            return field_name
     return ""

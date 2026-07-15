@@ -24,6 +24,8 @@ def _symbol(project: str, file: str, source: str) -> dict:
         "interfaces": parsed.interfaces,
         "methods": parsed.methods,
         "method_signatures": parsed.method_signatures,
+        "fields": parsed.fields,
+        "annotations": parsed.annotations,
         "imports": parsed.imports,
         "field_types": parsed.field_types,
         "method_variable_types": parsed.method_variable_types,
@@ -167,6 +169,33 @@ public class InvoiceService {
     assert result.resolution_level == "import"
 
 
+def test_resolves_lombok_data_accessor_from_explicit_import() -> None:
+    caller = """package com.example.order;
+import com.example.api.OrderResult;
+public class OrderFacade {
+    private OrderResult result;
+    public String submit() { return result.getCode(); }
+}
+"""
+    target = """package com.example.api;
+import lombok.Data;
+@Data
+public class OrderResult {
+    private String code;
+}
+"""
+    result = _resolve(
+        [_symbol("svc", "OrderFacade.java", caller), _symbol("api", "OrderResult.java", target)],
+        "OrderFacade.java",
+        "getCode",
+    )
+    assert result.target_fqcn == "com.example.api.OrderResult"
+    assert result.resolution_level == "import_lombok_accessor"
+    assert result.confidence == 0.85
+    assert result.inferred_target is True
+    assert result.matched_signature == "lombok_accessor:code"
+
+
 def test_unresolved_call_is_low_confidence_and_not_bound_to_random_same_name() -> None:
     caller = """package com.example.order;
 public class OrderFacade {
@@ -187,6 +216,7 @@ public class OtherService {
     assert result.resolution_level == "unresolved"
     assert result.confidence == 0.3
     assert result.target_class == "UnknownService"
+    assert result.unresolved_reason == "receiver_type_not_indexed"
 
 
 def test_parser_does_not_treat_constructor_call_as_bare_method_call() -> None:
@@ -208,19 +238,24 @@ def test_reindex_persists_resolved_call_metadata_and_filters_low_confidence(tmp_
     service = tmp_path / "svc"
     source_dir = service / "src" / "main" / "java" / "com" / "example"
     billing_dir = service / "src" / "main" / "java" / "com" / "billing"
+    api_dir = service / "src" / "main" / "java" / "com" / "api"
     other_dir = service / "src" / "main" / "java" / "com" / "other"
     source_dir.mkdir(parents=True)
     billing_dir.mkdir(parents=True)
+    api_dir.mkdir(parents=True)
     other_dir.mkdir(parents=True)
     (source_dir / "OrderFacade.java").write_text(
         """package com.example;
 import com.billing.InvoiceService;
+import com.api.OrderResult;
 public class OrderFacade {
     private InvoiceService invoiceService;
     private MissingService missingService;
+    private OrderResult orderResult;
     public void submit() {
         invoiceService.create("id");
         missingService.create();
+        orderResult.getCode();
     }
 }
 """,
@@ -231,6 +266,16 @@ public class OrderFacade {
 public class InvoiceService {
     public void create() {}
     public void create(String id) {}
+}
+""",
+        encoding="utf-8",
+    )
+    (api_dir / "OrderResult.java").write_text(
+        """package com.api;
+import lombok.Data;
+@Data
+public class OrderResult {
+    private String code;
 }
 """,
         encoding="utf-8",
@@ -263,6 +308,7 @@ public class OtherService {
 
     source_id = node_id("Method", "svc", "OrderFacade", "submit")
     target_id = node_id("Method", "svc", "InvoiceService", "create")
+    lombok_target_id = node_id("Method", "svc", "OrderResult", "getCode")
     unresolved_id = node_id("Method", "svc", "MissingService", "create")
     unrelated_id = node_id("Method", "svc", "OtherService", "create")
     with GraphStore(store.graph_db_path) as graph:
@@ -275,6 +321,10 @@ public class OtherService {
             "SELECT * FROM edges WHERE source_id=? AND target_id=? AND type='CALLS_METHOD'",
             (source_id, unresolved_id),
         ).fetchone()
+        lombok_accessor = conn.execute(
+            "SELECT * FROM edges WHERE source_id=? AND target_id=? AND type='CALLS_METHOD'",
+            (source_id, lombok_target_id),
+        ).fetchone()
         unrelated = conn.execute(
             "SELECT * FROM edges WHERE source_id=? AND target_id=? AND type='CALLS_METHOD'",
             (source_id, unrelated_id),
@@ -285,9 +335,18 @@ public class OtherService {
     assert resolved["confidence"] == 0.85
     assert resolved_meta["resolution_level"] == "import"
     assert resolved_meta["matched_signature"] == "create(String)"
+    assert resolved_meta["unresolved_reason"] == ""
+    assert lombok_accessor is not None
+    lombok_meta = json.loads(lombok_accessor["metadata_json"])
+    assert lombok_accessor["confidence"] == 0.85
+    assert lombok_meta["resolution_level"] == "import_lombok_accessor"
+    assert lombok_meta["matched_signature"] == "lombok_accessor:code"
+    assert lombok_meta["inferred_target"] is True
     assert unresolved is not None
     assert unresolved["confidence"] == 0.3
-    assert json.loads(unresolved["metadata_json"])["resolution_level"] == "unresolved"
+    unresolved_meta = json.loads(unresolved["metadata_json"])
+    assert unresolved_meta["resolution_level"] == "unresolved"
+    assert unresolved_meta["unresolved_reason"] == "receiver_type_not_indexed"
     assert unrelated is None
 
     default_chain = memory_callees(str(workspace), "OrderFacade.submit", depth=1, limit=10)

@@ -1006,6 +1006,7 @@ def build_graph_store(config: WorkspaceConfig, store: WorkspaceStore, *, project
                             "arg_count": resolved.arg_count,
                             "matched_signature": resolved.matched_signature,
                             "inferred_target": resolved.inferred_target,
+                            "unresolved_reason": resolved.unresolved_reason,
                         },
                     )
                 )
