@@ -70,6 +70,7 @@ class WorkspaceStore:
         self.instructions_dir = self.base_dir / "instructions"
         self.graph_dir = self.base_dir / "graph"
         self.lock_file = self.base_dir / "store.lock"
+        self.reindex_lock_file = self.base_dir / "reindex.lock"
         self._memory_backend: MemoryBackendStore | None = None
         for p in [self.index_dir, self.rules_dir, self.memory_dir, self.refs_dir, self.artifacts_dir, self.instructions_dir, self.graph_dir]:
             p.mkdir(parents=True, exist_ok=True)

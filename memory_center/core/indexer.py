@@ -9,6 +9,7 @@ import yaml
 
 from .graph import GraphEdge, GraphNode, GraphStore, edge_id, node_id
 from .indexing.java_call_resolver import JavaCallResolver, build_java_class_index
+from .indexing.reindex_state import workspace_reindex_lock
 
 # Keep the tree-sitter wrapper active so fallback reasons remain observable.
 try:
@@ -38,7 +39,7 @@ IGNORED_DIRS = {
     workspace_resolver=lambda args, kwargs: args[1].workspace_file if len(args) > 1 else kwargs["store"].workspace_file,
     tags_resolver=lambda args, kwargs: {"parallel": bool(kwargs.get("parallel", True))},
 )
-def reindex_workspace(
+def _reindex_workspace_unlocked(
     config: WorkspaceConfig,
     store: WorkspaceStore,
     *,
@@ -208,6 +209,31 @@ def reindex_workspace(
         "parser_precision": parser_precision,
         **retrieval_counts,
     }
+
+
+def reindex_workspace(
+    config: WorkspaceConfig,
+    store: WorkspaceStore,
+    *,
+    projects: Sequence[str] | None = None,
+    paths: Sequence[str] | None = None,
+    parallel: bool = True,
+    lock_timeout: float = 0.0,
+) -> dict[str, Any]:
+    """Rebuild workspace indexes with one writer per workspace."""
+    with workspace_reindex_lock(
+        store,
+        projects=projects,
+        paths=paths,
+        timeout_seconds=lock_timeout,
+    ):
+        return _reindex_workspace_unlocked(
+            config,
+            store,
+            projects=projects,
+            paths=paths,
+            parallel=parallel,
+        )
 
 
 def _parser_diagnostics(parse_count: int) -> dict[str, Any]:

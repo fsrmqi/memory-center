@@ -40,6 +40,14 @@ onMounted(load); watch(workspace, load)
         <ul v-if="gates.benchmark.recommendations?.length" class="gate-recommendations"><li v-for="item in gates.benchmark.recommendations" :key="item">{{ item }}</li></ul>
         <div class="gate-actions"><RouterLink :to="{ path: '/query', query: { mode: 'walkthrough', report_level: 'standard' } }">Open walkthrough review</RouterLink></div>
       </section>
+      <section v-if="health?.status?.reindex" class="reindex-state" :class="`reindex-${health.status.reindex.status}`">
+        <div><h2>Index rebuild</h2><strong>{{ health.status.reindex.status }}</strong></div>
+        <p v-if="health.status.reindex.status === 'running'">Another reindex owns the workspace lock. Wait before starting another rebuild.</p>
+        <p v-else-if="health.status.reindex.status === 'succeeded'">Last successful rebuild: {{ health.status.reindex.last_success_at || health.status.reindex.completed_at }}</p>
+        <p v-else-if="health.status.reindex.status === 'interrupted'">Previous rebuild no longer owns the lock. It is safe to retry.</p>
+        <p v-else-if="health.status.reindex.error">{{ health.status.reindex.error }}</p>
+        <p v-if="health.status.reindex.lock_held">Workspace write lock is active.</p>
+      </section>
       <div v-if="health" class="section">
         <h3>Work Health</h3>
         <JsonTree :data="health" label="health" :depth="0" />
@@ -71,5 +79,6 @@ h1 { margin: 0 0 16px; }
 .gate-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; }.gate-grid div { border-left:3px solid #4a6fa5; padding-left:9px; display:flex; flex-direction:column; gap:3px; }.gate-grid span,.gate-grid small { color:#667085; font-size:12px; }.gate-grid b { font-size:18px; }
 .gate-recommendations { margin:12px 0 0; padding-left:18px; color:#344054; font-size:13px; }
 .gate-actions { margin-top: 12px; }.gate-actions a { display: inline-block; border: 1px solid #4a6fa5; border-radius: 6px; padding: 7px 10px; color: #2d568c; font-size: 12px; font-weight: 600; text-decoration: none; }.gate-actions a:hover { background: #f4f8fd; }
+.reindex-state { border-left: 3px solid #4a6fa5; padding: 10px 12px; margin-bottom: 16px; background: #f8fbff; }.reindex-state > div { display: flex; align-items: center; justify-content: space-between; gap: 12px; }.reindex-state h2 { margin: 0; font-size: 14px; }.reindex-state strong { font-size: 12px; text-transform: uppercase; }.reindex-state p { margin: 6px 0 0; color: #475467; font-size: 12px; }.reindex-running { border-color: #d49700; background: #fff9eb; }.reindex-failed, .reindex-interrupted { border-color: #c13c3c; background: #fff6f6; }.reindex-succeeded { border-color: #17733a; background: #f4fbf6; }
 @media (max-width: 700px) { .gate-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
 </style>

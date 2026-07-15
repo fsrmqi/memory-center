@@ -234,6 +234,7 @@ def reindex(
     changed_only: bool = typer.Option(False, help="Use changed files from memory-detect-changes as reindex scope."),
     scope: str = typer.Option("staged", help="When --changed-only is set: staged|head|all"),
     parallel: bool = typer.Option(True, "--parallel/--no-parallel", help="Parse Java files in parallel during reindex."),
+    lock_timeout: float = typer.Option(0.0, min=0.0, help="Seconds to wait for another workspace reindex writer."),
 ):
     """Rebuild file, symbol, API, Feign, MQ, config and topology indexes."""
     config = load_workspace_config(workspace)
@@ -246,7 +247,20 @@ def reindex(
         changed = memory_detect_changes(workspace, change_scope)
         selected_paths.extend(changed.get("changed_files", []))
         selected_paths.extend(changed.get("deleted_files", []))
-    counts = reindex_workspace(config, store, projects=project, paths=selected_paths, parallel=parallel)
+    from memory_center.core.indexing.reindex_state import ReindexBusyError
+
+    try:
+        reindex_kwargs = {
+            "projects": project,
+            "paths": selected_paths,
+            "parallel": parallel,
+        }
+        if lock_timeout > 0:
+            reindex_kwargs["lock_timeout"] = lock_timeout
+        counts = reindex_workspace(config, store, **reindex_kwargs)
+    except ReindexBusyError as exc:
+        typer.echo(exc.to_cli_message(), err=True)
+        raise typer.Exit(code=exc.cli_exit_code) from exc
     ensure_default_rules(store)
     ensure_default_hooks(store)
     ensure_default_artifacts(workspace)

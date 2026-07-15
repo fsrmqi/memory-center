@@ -1924,6 +1924,10 @@ def test_http_bridge_routes(tmp_path: Path):
         assert status["semantic_index"]["ready"] is True
         assert status["semantic_index"]["backends"]["sparse"] == 1
 
+        workspace_status_payload = json.loads(urlopen(f"{base}/workspace/status").read().decode("utf-8"))
+        assert workspace_status_payload["reindex"]["status"] == "succeeded"
+        assert workspace_status_payload["reindex"]["lock_held"] is False
+
         artifacts = json.loads(urlopen(f"{base}/workspace/artifacts").read().decode("utf-8"))
         assert artifacts["artifacts"]
         assert artifacts["core_memory_blocks"]

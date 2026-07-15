@@ -119,6 +119,7 @@ def _compact_workspace_status(result: dict[str, Any], budget: str = "medium") ->
         ],
         "index_counts": result.get("index_counts", {}),
         "semantic_index": result.get("semantic_index", {}),
+        "reindex": result.get("reindex", {}),
         "memory_layers": result.get("memory_layers", {}),
         "memory_overview": result.get("memory_overview", {}),
         "write_receipts_overview": {

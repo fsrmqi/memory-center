@@ -302,7 +302,8 @@ Memory Center 不把模型临时输出直接当成长期知识。写入链路会
 ├── rules/                  # matching/eval/handoff/write-policy rules
 ├── instructions/           # generated agent instructions
 ├── hooks.yaml              # host hook config
-└── store.lock              # file-level write lock
+├── store.lock              # file-level write lock
+└── reindex.lock            # full reindex writer lock
 ```
 
 Workspace shape analysis lives in `memory_center/core/workspace_shape.py`。它会检测 duplicate roots、nested roots，并给出收窄 service path 的建议；`IndexFreshnessService.banner()` 会把 workspace shape warnings 合并进 freshness banner。
@@ -312,6 +313,8 @@ Workspace shape analysis lives in `memory_center/core/workspace_shape.py`。它�
 ## 5. Indexing Layer / 索引层
 
 索引主入口是 `memory_center/core/indexer.py::reindex_workspace()`。它支持全量和按 project/path 的部分重建，默认并行解析 Java 文件。
+
+完整 reindex 生命周期由 `reindex.lock` 串行化；`index/reindex-state.json` 仅记录运行状态、时间、范围计数和脱敏失败原因，供 CLI、HTTP status 与 Workbench Health 判断是否等待或重试。它不记录源码路径或 payload。
 
 ### 5.1 确定性索引产物
 

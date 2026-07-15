@@ -14,6 +14,7 @@ from ..artifacts import (
     resolve_task_space,
 )
 from ..rules import match_rules
+from ..indexing.reindex_state import workspace_reindex_status
 from ..schemas import with_schema
 from ..semantic import semantic_index_stats
 from ..store import WorkspaceStore
@@ -86,6 +87,7 @@ def workspace_status(workspace_file: str | Path, view: str = "compact", budget: 
             "semantic_docs": semantic_index_stats(workspace_file).get("doc_count", 0),
         },
         "semantic_index": semantic_index_stats(workspace_file),
+        "reindex": workspace_reindex_status(store),
         "memory_layers": memory_layers,
         "memory_overview": _build_memory_overview(memory_layers),
         "memory_backend": store.memory_backend_stats(),

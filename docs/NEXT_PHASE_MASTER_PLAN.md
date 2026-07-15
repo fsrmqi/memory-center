@@ -64,6 +64,7 @@ This file consolidates and replaces the older execution plan, superpowers evolut
 2. **Retrieval / Reasoning 质量运营闭环**：策略、解释、replay、趋势与有界反馈已经落地；下一步是积累真实任务回放并只根据人工验证结果调整权重，减少“看似命中、实际偏题”。
 3. **真实性能基线长期治理**：已有 portable Golden 基线和回归比较；后续版本必须在真实 workspace 的冷/热查询、全量/增量索引上证明不低于基线。
 4. **Workbench 与报告体验产品化**：Health 已展示 benchmark/gate 摘要并可直达 walkthrough；walkthrough 导出时会同时呈现当时的 gate 摘要，形成面向人工复盘的阅读路径。
+5. **真实 workspace 重建可靠性**：reindex 已增加 workspace 级写锁、可恢复运行状态和 Workbench Health 状态展示；后续以实际并发使用数据调整等待策略，而不是扩大 SQLite 重试。
 
 ### 最近完成 / Recently Completed
 

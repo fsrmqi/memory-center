@@ -77,6 +77,37 @@ public class PaymentService {
     assert result.confidence == 0.9
 
 
+def test_resolves_package_private_method_parameter_and_local_types() -> None:
+    caller = """package com.example.order;
+public class CaptchaHandler {
+    void validate(LoginRequest request) {
+        CaptchaPayload payload = new CaptchaPayload();
+        payload.setCode(request.getCode());
+    }
+}
+"""
+    target = """package com.example.order;
+public class CaptchaPayload {
+    public void setCode(String code) {}
+}
+"""
+    symbols = [_symbol("svc", "CaptchaHandler.java", caller), _symbol("svc", "CaptchaPayload.java", target)]
+    owner = symbols[0]
+    assert owner["method_variable_types"]["validate"] == {
+        "request": "LoginRequest",
+        "payload": "CaptchaPayload",
+    }
+    supplements = RegexJavaParser().parse_supplements(caller, "CaptchaHandler.java")
+    assert supplements.method_variable_types["validate"] == owner["method_variable_types"]["validate"]
+    assert next(call for call in supplements.method_calls if call["method_name"] == "setCode")["owner_method"] == "validate"
+
+    result = _resolve(symbols, "CaptchaHandler.java", "setCode")
+
+    assert result.target_class == "CaptchaPayload"
+    assert result.target_method == "setCode"
+    assert result.resolution_level == "same_package"
+
+
 def test_resolves_explicit_import_receiver_type() -> None:
     caller = """package com.example.order;
 import com.example.billing.InvoiceService;

@@ -355,6 +355,16 @@ memory-center reindex \
   --scope all
 ```
 
+Reindex uses a workspace-level `reindex.lock` so only one index writer can run at a time. A concurrent request returns a conflict instead of a SQLite lock traceback; wait explicitly when that is intentional:
+
+```bash
+memory-center reindex \
+  --workspace /path/to/.memory-center/workspace.yaml \
+  --lock-timeout 30
+```
+
+`workspace status` and Workbench Health expose the latest reindex state (`running`, `succeeded`, `failed`, or `interrupted`) without exposing local paths.
+
 对于大 workspace，现在也支持局部重建：
 
 ```bash
@@ -371,6 +381,16 @@ memory-center reindex \
   --changed-only \
   --scope all
 ```
+
+重建会使用 workspace 级 `reindex.lock`，同一时间只允许一个索引写入者运行。并发请求会返回 conflict，而不是 SQLite 锁栈追踪；确实需要等待时可显式设置：
+
+```bash
+memory-center reindex \
+  --workspace /path/to/.memory-center/workspace.yaml \
+  --lock-timeout 30
+```
+
+`workspace status` 与 Workbench Health 会显示最近一次重建状态（`running`、`succeeded`、`failed` 或 `interrupted`），且不暴露本地路径。
 
 This generates:
 

@@ -240,7 +240,7 @@ def _parse_fields(text: str) -> tuple[list[str], dict[str, str], dict[str, int]]
 def _parse_method_spans(text: str) -> list[dict[str, Any]]:
     pattern = re.compile(
         r"(?:@\w+(?:\([^)]*\))?\s*)*"
-        r"(?:public|private|protected)\s+"
+        r"(?:(?:public|private|protected)\s+)?"
         r"(?:static\s+)?[\w<>, ?\.\[\]]+\s+"
         r"(\w+)\s*\(([^;{}]*)\)\s*(?:throws\s+[\w, ]+\s*)?\{",
         re.M,
