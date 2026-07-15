@@ -10,6 +10,9 @@
 
 ### P2 Retrieval / Reasoning Quality Loop / 检索与推理质量闭环
 
+- 新增 Java 未解析调用分类报告：CLI `eval-java-call-resolution-unresolved`、HTTP `/workspace/eval-java-call-resolution-unresolved` 和 MCP `mc_admin(action="eval_java_call_resolution_unresolved")` 按 `unresolved_reason` 汇总 `CALLS_METHOD`，输出脱敏逻辑锚点样本和下一步建议，避免盲目扩大 resolver fallback。
+- 新增 `eval-agent-guidance-replay-campaign`：检查真实 replay 的事件量与意图覆盖；它只读，不会把工具采纳误写成检索正确性反馈或自动修改 retrieval 权重。
+
 - Hybrid query 与 auto-routed walkthrough 新增兼容字段 `agent_next_steps`，把 retrieval policy、freshness、completion status 和现有证据收敛成结构化下一步建议。
 - `agent_next_steps` 会明确提示 Agent 读取现有 `read_targets`、切换到 walkthrough、验证 semantic 命中、细化查询或先处理 stale/pending 证据，减少重复全局搜索。
 - MCP `mc_lookup` 在自动路由和直接 query/symbol/code/context/chain/trace 路由下会把 `agent_next_steps` 提升到顶层；Golden agent guidance 门禁现在也会检查 `agent_next_steps` 中的低效搜索建议。

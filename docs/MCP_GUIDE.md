@@ -109,7 +109,9 @@ MCP 当前公开的是 12 个 task-level tools：
 - `eval_agent_guidance_adoption` — 检查已记录的 agent guidance 是否被后续 tool call 执行
 - `eval_agent_guidance_adoption_trend` — 执行 adoption 检查并追加一条 adoption rate 趋势记录
 - `eval_agent_guidance_replay` — 回放真实 session event，并把建议执行结果分类为 adopted / missed / bypassed / unobservable
+- `eval_agent_guidance_replay_campaign` — 检查真实 replay 的最小事件量和意图覆盖；只读，不会自动调整检索权重
 - `eval_agent_guidance_replay_trend` — 执行 replay 检查并追加一条 replay 趋势记录
+- `eval_java_call_resolution_unresolved` — 按可行动原因汇总未解析 Java `CALLS_METHOD`，只返回逻辑锚点样本，不返回文件路径或源码
 - `eval_agent_guidance_trend` — 执行同一检查并追加一条 agent guidance 趋势记录
 - `audit` — 完成审计（文档/测试/实现/设计一致性）
 - `discover` — 热点命令发现与下一步推荐

@@ -60,10 +60,10 @@ This file consolidates and replaces the older execution plan, superpowers evolut
 
 当前真正值得继续做的是：
 
-1. **Java Parser / Call Resolver 真实精度深化**：已有门禁，但需要继续用真实跨项目 controller / service / feign case 扩充样本并修复误判。
-2. **Retrieval / Reasoning 质量闭环**：已有策略和解释字段，但还需要更多真实任务回归，减少“看似命中、实际偏题”。
-3. **真实性能基线长期治理**：已有 3.5.7 真实场景基线概念，后续版本必须证明不低于基线。
-4. **Workbench 与报告体验产品化**：能力已可用，但还要让人类阅读更顺、让 Agent 更少重复搜索。
+1. **Java Parser / Call Resolver 真实精度深化**：已有严格门禁和未解析分类报告；持续用真实跨项目 controller / service / feign case 扩充样本并修复明确误判。
+2. **Retrieval / Reasoning 质量运营闭环**：策略、解释、replay、趋势与有界反馈已经落地；下一步是积累真实任务回放并只根据人工验证结果调整权重，减少“看似命中、实际偏题”。
+3. **真实性能基线长期治理**：已有 portable Golden 基线和回归比较；后续版本必须在真实 workspace 的冷/热查询、全量/增量索引上证明不低于基线。
+4. **Workbench 与报告体验产品化**：Query 已展示 completion status；仍需把 benchmark/gate 摘要和 walkthrough export 关联成面向人工复盘的阅读路径。
 
 ### 最近完成 / Recently Completed
 
@@ -134,7 +134,7 @@ This file consolidates and replaces the older execution plan, superpowers evolut
 3. 对每类失败只修一个明确 parser / resolver gap，避免靠宽泛搜索掩盖问题。**已完成第一轮**：发现并修复 `RegexJavaParser` 把 interface 方法声明当 body 导致的 ~13K self-loop 假边（self-loop 12,812 -> 795，-94%）；CALLS_METHOD 总量从 294,230 -> 279,542 抹掉 14,688 条假边。
 4. 将误判样例沉淀为可复跑 case，而不是只修当前文件。**已完成**：`tests/test_p1_call_resolution_and_vector_gate.py` 锁住 interface declaration 自环不重现 + default 方法体仍正常抽取调用 + `enable_vector` schema round-trip + `_sync_retrieval_indexes` 不破坏现有 VectorIndex。
 5. 在 `mc_admin(action="eval_java_call_resolution")`、CLI、HTTP 输出里持续保留失败原因和缺失锚点。**保持现状**：26/26 cases edge_recall=1.0 / high_confidence=1.0 / unresolved=0.0。
-6. 后续继续扩充：unresolved CALLS_METHOD 占比仍达 80%（232,220 / 279,542），值得分类立项（external API、wildcard 真实 import、polymorphism dispatch）。
+6. 未解析 CALLS_METHOD 已可通过 `eval-java-call-resolution-unresolved`、`/workspace/eval-java-call-resolution-unresolved`、`mc_admin(action="eval_java_call_resolution_unresolved")` 按原因分类，只返回逻辑锚点样本，不返回路径或源码。后续从最大分类开始补真实 case（external API、缺失模块、receiver type、polymorphism dispatch），不得以宽泛 fallback 提高召回率。
 
 验收：
 
@@ -159,11 +159,11 @@ This file consolidates and replaces the older execution plan, superpowers evolut
 
 任务：
 
-1. 用真实场景 replay 验证 adaptive retrieval policy，不再用 examples 作为主要验收。
-2. 将 retrieval diagnostics、reasoning explanation、completion status 统一成更稳定的“Agent 下一步建议”。
-3. 继续压缩无效搜索建议，特别是已有 `absolute_file_path` 时禁止推荐 `find` / `grep -l`。
-4. 对 full-chain、impact、architecture understanding 三类高频意图分别建立回归 case。
-5. 将成功 / 失败验证结果回写到 bounded learning weights，并保留解释。
+1. **实现完成，进入真实运营验证**：用真实 session replay 验证 adaptive retrieval policy，不再用 examples 作为主要验收；每个版本至少比较 adoption、bypass、unobservable 和 Golden 指标。
+2. **已完成**：retrieval diagnostics、reasoning explanation、completion status 已收敛为稳定的 `agent_next_steps`。
+3. **已完成**：存在 `absolute_file_path` / `read_targets` 时抑制 `find`、`grep -l` 等重复定位建议，并由 guidance gate 覆盖。
+4. **已完成**：Golden case 支持 full-chain、impact、context（architecture understanding）模式和禁止锚点。
+5. **已完成但必须人工验证**：retrieval source feedback 仅接受显式 verified outcome，并限制权重区间；replay 只影响下一步建议表达，不会把“执行过工具”误当成“检索正确”。
 
 验收：
 
@@ -171,6 +171,14 @@ This file consolidates and replaces the older execution plan, superpowers evolut
 - partial / stale case 明确指出缺失层或 stale 文件
 - same input 产生确定性 retrieval policy
 - token 和 latency 不低于真实基线
+
+### P2 下一轮执行计划 / Next Executable Plan
+
+1. 使用 `eval-agent-guidance-replay-campaign --min-events 20` 在私有真实 workspace 连续采集至少 20 个带 `session_id` 的任务回放，覆盖 full-chain、impact、MQ、config 与概念检索；该 gate 只评估覆盖与采纳，不会自动调整权重。
+2. 对每个 replay 记录人工确认的命中/偏题结果；只将确认结果写入 retrieval-source feedback。
+3. 每次权重变更后运行 Golden、replay trend、cold/hot query baseline；任一质量门禁退化即回滚。
+4. 对 Java 未解析报告中最高频分类补 3-5 个逻辑锚点 case；只有 case 证明精度时才改 resolver。
+5. 将 benchmark/gate 摘要与 walkthrough export 链接到 Workbench，且仅展示逻辑锚点、指标和状态。
 
 ### P3：Workbench 与报告体验产品化
 

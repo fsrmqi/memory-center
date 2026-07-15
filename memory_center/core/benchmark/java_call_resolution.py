@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from collections import Counter
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -214,6 +215,84 @@ def review_java_call_resolution_suite(
     }
 
 
+def summarize_unresolved_java_calls(
+    workspace_file: str | Path,
+    *,
+    sample_limit: int = 30,
+) -> dict[str, Any]:
+    """Classify unresolved Java call edges without exposing source paths or snippets.
+
+    The call-resolution gate answers whether selected expected edges work. This
+    report answers where the remaining unresolved population is concentrated so
+    parser work can be prioritized from evidence rather than raw edge counts.
+    """
+
+    store = WorkspaceStore(workspace_file)
+    category_counts: Counter[str] = Counter()
+    reason_counts: Counter[str] = Counter()
+    samples: list[dict[str, Any]] = []
+    total_call_edges = 0
+    unresolved_call_edges = 0
+    max_samples = max(0, sample_limit)
+
+    with GraphStore(store.graph_db_path) as graph:
+        conn = graph.connect()
+        rows = conn.execute(
+            """
+            SELECT e.confidence, e.metadata_json,
+                   source.name AS source_name, target.name AS target_name
+            FROM edges e
+            LEFT JOIN nodes source ON source.id = e.source_id
+            LEFT JOIN nodes target ON target.id = e.target_id
+            WHERE e.type = 'CALLS_METHOD'
+            ORDER BY e.id
+            """
+        )
+        for row in rows:
+            total_call_edges += 1
+            metadata = _json_dict(row["metadata_json"])
+            if str(metadata.get("resolution_level", "") or "") != "unresolved":
+                continue
+            unresolved_call_edges += 1
+            reason = str(metadata.get("unresolved_reason", "") or "unknown")
+            category = _unresolved_category(reason)
+            reason_counts[reason] += 1
+            category_counts[category] += 1
+            if len(samples) < max_samples:
+                samples.append({
+                    "source": _anchor_from_method_name(row["source_name"]),
+                    "target": _anchor_from_method_name(row["target_name"]),
+                    "category": category,
+                    "reason": reason,
+                    "confidence": round(float(row["confidence"] or 0.0), 4),
+                })
+
+    categories = [
+        {
+            "category": category,
+            "count": count,
+            "rate": round(count / unresolved_call_edges, 4) if unresolved_call_edges else 0.0,
+            "recommended_action": _unresolved_recommendation(category),
+        }
+        for category, count in sorted(category_counts.items(), key=lambda item: (-item[1], item[0]))
+    ]
+    return {
+        "schema_version": 1,
+        "suite": "java_call_resolution_unresolved",
+        "summary": {
+            "call_edge_count": total_call_edges,
+            "unresolved_call_edge_count": unresolved_call_edges,
+            "unresolved_rate": round(unresolved_call_edges / total_call_edges, 4) if total_call_edges else 0.0,
+            "category_counts": dict(sorted(category_counts.items())),
+            "reason_counts": dict(sorted(reason_counts.items())),
+            "returned_sample_count": len(samples),
+        },
+        "categories": categories,
+        "samples": samples,
+        "next_action": "Prioritize the largest category, add logical-anchor cases, then improve only the responsible parser or resolver layer.",
+    }
+
+
 def _evaluate_case(conn: sqlite3.Connection, case: JavaCallResolutionCase) -> dict[str, Any]:
     source_name = _method_node_name(case.source)
     expected_target_name = _method_node_name(case.expected_target)
@@ -386,3 +465,25 @@ def _anchor_tuple(raw: Any, field: str) -> tuple[str, ...]:
     if not isinstance(raw, (list, tuple)):
         raise ValueError(f"{field} must be a list")
     return tuple(_validate_anchor(value, field) for value in raw)
+
+
+def _unresolved_category(reason: str) -> str:
+    return {
+        "receiver_type_missing": "receiver_type_missing",
+        "unqualified_or_dynamic": "dynamic_or_unqualified",
+        "receiver_type_not_indexed": "external_or_missing_source",
+        "target_out_of_scope": "out_of_scope_target",
+        "lombok_target_out_of_scope": "out_of_scope_target",
+        "target_method_not_indexed": "missing_method_or_polymorphism",
+    }.get(reason, "unknown")
+
+
+def _unresolved_recommendation(category: str) -> str:
+    return {
+        "receiver_type_missing": "Improve local variable and injected-field type extraction before adding resolver fallbacks.",
+        "dynamic_or_unqualified": "Sample calls first; only add deterministic same-class or static-import handling when false positives stay zero.",
+        "external_or_missing_source": "Classify dependency or missing-module coverage; do not synthesize a target edge.",
+        "out_of_scope_target": "Verify workspace scope and project filters before changing call-resolution rules.",
+        "missing_method_or_polymorphism": "Add focused interface/implementation or overload cases before changing polymorphic dispatch.",
+        "unknown": "Inspect logical-anchor samples and add a dedicated unresolved_reason before implementing a fallback.",
+    }[category]

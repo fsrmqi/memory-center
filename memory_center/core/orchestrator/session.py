@@ -163,6 +163,9 @@ def workspace_record_agent_guidance(
             "query": query,
             "mode": mode,
             "source": source,
+            "intent": str(((lookup_payload.get("intent_analysis", {}) or {}).get("primary_intent", "") or "")),
+            "mode_used": str(lookup_payload.get("mode_used", "") or mode),
+            "retrieval_policy": dict(lookup_payload.get("retrieval_policy", {}) or {}),
             "agent_next_steps": steps,
         },
     )

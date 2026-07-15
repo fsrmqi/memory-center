@@ -207,6 +207,9 @@ def _normalize_heuristic_row(row: dict[str, Any], policy: dict[str, Any]) -> dic
     if not normalized:
         return {}
 
+    # Historical imports may have an archival timestamp rather than a verified
+    # observation time, so they must not be decayed during compatibility reads.
+    normalized["_legacy_schema_row"] = "schema_version" not in normalized
     normalized["schema_version"] = _safe_int(normalized.get("schema_version"), 1)
     normalized["policy_version"] = _safe_int(
         normalized.get("policy_version"),
@@ -363,7 +366,8 @@ def _apply_recommendation_guard(item: dict[str, Any], policy: dict[str, Any]) ->
     elif negative_count > 0 and positive_count <= 1:
         item["recommendation_state"] = "guarded-negative"
 
-    recommended_weight = _apply_time_decay(item, recommended_weight, policy)
+    if int(item.get("legacy_schema_count", 0) or 0) == 0:
+        recommended_weight = _apply_time_decay(item, recommended_weight, policy)
     item["recommended_weight"] = _clamp_weight(recommended_weight)
     return item
 
@@ -569,6 +573,7 @@ class HeuristicsRegister:
                     "task_ids": [],
                     "session_ids": [],
                     "last_updated_at": "",
+                    "legacy_schema_count": 0,
                 },
             )
 
@@ -587,6 +592,8 @@ class HeuristicsRegister:
             )
 
             current["event_count"] += 1
+            if row.get("_legacy_schema_row"):
+                current["legacy_schema_count"] += 1
             current["usage_count"] = max(
                 _safe_int(current.get("usage_count", 0), 0),
                 _safe_int(row.get("usage_count", 0), 0),

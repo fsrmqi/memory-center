@@ -22,6 +22,7 @@ from .dependencies import (
     memory_eval_agent_guidance_adoption,
     memory_eval_agent_guidance_adoption_trend,
     memory_eval_agent_guidance_replay,
+    memory_eval_agent_guidance_replay_campaign,
     memory_eval_agent_guidance_replay_trend,
     memory_eval_agent_guidance_trend,
     memory_eval_context_weight,
@@ -29,6 +30,7 @@ from .dependencies import (
     memory_eval_index_freshness,
     memory_eval_java_call_resolution,
     memory_eval_java_call_resolution_review,
+    memory_eval_java_call_resolution_unresolved,
     memory_eval_parser_benchmark,
     memory_eval_regression_suite,
     memory_eval_resume,
@@ -410,6 +412,11 @@ def register_workspace_routes(registry: CommandRegistry) -> None:
         session_id=rp.session_id(),
         limit=_parse_int(rp.params, "limit", 200),
     ))
+    registry.register("/workspace/eval-agent-guidance-replay-campaign", lambda rp: memory_eval_agent_guidance_replay_campaign(
+        rp.workspace(),
+        min_events=_parse_int(rp.params, "min_events", 20),
+        limit=_parse_int(rp.params, "limit", 500),
+    ))
     registry.register("/workspace/eval-agent-guidance-replay-trend", lambda rp: memory_eval_agent_guidance_replay_trend(
         rp.workspace(),
         session_id=rp.session_id(),
@@ -433,6 +440,10 @@ def register_workspace_routes(registry: CommandRegistry) -> None:
         rp.workspace(),
         rp.require("cases"),
         limit=_parse_int(rp.params, "limit", 200),
+    ))
+    registry.register("/workspace/eval-java-call-resolution-unresolved", lambda rp: memory_eval_java_call_resolution_unresolved(
+        rp.workspace(),
+        limit=_parse_int(rp.params, "limit", 30),
     ))
 
     # --- tooling / refs / backend / verify ------------------------------------

@@ -63,6 +63,7 @@ from memory_center.core.orchestrator import (
     memory_eval_agent_guidance_adoption,
     memory_eval_agent_guidance_adoption_trend,
     memory_eval_agent_guidance_replay,
+    memory_eval_agent_guidance_replay_campaign,
     memory_eval_agent_guidance_replay_trend,
     memory_eval_agent_guidance_trend,
     memory_eval_context_weight,
@@ -70,6 +71,7 @@ from memory_center.core.orchestrator import (
     memory_eval_index_freshness,
     memory_eval_java_call_resolution,
     memory_eval_java_call_resolution_review,
+    memory_eval_java_call_resolution_unresolved,
     memory_eval_parser_benchmark,
     memory_eval_regression_suite,
     memory_eval_resume,
@@ -314,6 +316,10 @@ def eval_java_call_resolution_review_action(workspace_file: str, cases_file: str
     return memory_eval_java_call_resolution_review(workspace_file, cases_file, limit=limit)
 
 
+def eval_java_call_resolution_unresolved_action(workspace_file: str, *, limit: int = 30) -> dict[str, Any]:
+    return memory_eval_java_call_resolution_unresolved(workspace_file, limit=limit)
+
+
 def build_admin_registry(
     *,
     workspace_file: str,
@@ -432,6 +438,7 @@ def build_admin_registry(
         "eval_agent_guidance_adoption": lambda: memory_eval_agent_guidance_adoption(wf, session_id=session_id, limit=limit),
         "eval_agent_guidance_adoption_trend": lambda: memory_eval_agent_guidance_adoption_trend(wf, session_id=session_id, limit=limit),
         "eval_agent_guidance_replay": lambda: memory_eval_agent_guidance_replay(wf, session_id=session_id, limit=limit),
+        "eval_agent_guidance_replay_campaign": lambda: memory_eval_agent_guidance_replay_campaign(wf, min_events=20, limit=max(limit, 500)),
         "eval_agent_guidance_replay_trend": lambda: memory_eval_agent_guidance_replay_trend(wf, session_id=session_id, limit=limit),
         "eval_agent_guidance_trend": lambda: memory_eval_agent_guidance_trend(wf, intent=intent, limit=limit),
         "eval_workflow_orchestration": lambda: memory_eval_workflow_orchestration(wf, task_id=task_id, session_id=session_id, intent=intent, limit=limit),
@@ -439,6 +446,7 @@ def build_admin_registry(
         "eval_parser_benchmark": lambda: memory_eval_parser_benchmark(wf, limit=limit),
         "eval_java_call_resolution": lambda: eval_java_call_resolution_action(wf, name, strict=strict),
         "eval_java_call_resolution_review": lambda: eval_java_call_resolution_review_action(wf, name, limit=limit),
+        "eval_java_call_resolution_unresolved": lambda: eval_java_call_resolution_unresolved_action(wf, limit=limit),
         "eval_golden": lambda: eval_golden_action(wf, name),
         "eval_token_benchmark": lambda: memory_eval_token_benchmark(wf, intent=intent, limit=limit),
         "eval_token_benchmark_trend": lambda: benchmark_trend_report(wf, name),

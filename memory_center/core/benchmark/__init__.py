@@ -11,6 +11,7 @@ from .java_call_resolution import (
     load_java_call_resolution_cases,
     review_java_call_resolution_suite,
     run_java_call_resolution_suite,
+    summarize_unresolved_java_calls,
 )
 from .models import GoldenCase
 from .trending import (
@@ -40,6 +41,7 @@ __all__ = [
     "review_java_call_resolution_suite",
     "run_golden_suite",
     "run_java_call_resolution_suite",
+    "summarize_unresolved_java_calls",
     "score_golden_case",
     "save_golden_performance_baseline",
     "PORTABLE_BASELINE_FILE",

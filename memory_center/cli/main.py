@@ -830,6 +830,17 @@ def eval_agent_guidance_replay_cmd(
     print(memory_eval_agent_guidance_replay(workspace, session_id=session_id, limit=limit))
 
 
+@app.command("eval-agent-guidance-replay-campaign")
+def eval_agent_guidance_replay_campaign_cmd(
+    workspace: str = typer.Option(...),
+    min_events: int = typer.Option(20, min=1),
+    limit: int = typer.Option(500, min=1),
+):
+    """Check whether real replay coverage is sufficient for retrieval-policy review."""
+    from memory_center.core.orchestrator import memory_eval_agent_guidance_replay_campaign
+    typer.echo(json.dumps(memory_eval_agent_guidance_replay_campaign(workspace, min_events=min_events, limit=limit), ensure_ascii=False, indent=2))
+
+
 @app.command("eval-agent-guidance-replay-trend")
 def eval_agent_guidance_replay_trend_cmd(
     workspace: str = typer.Option(...),
@@ -1003,6 +1014,18 @@ def eval_java_call_resolution_review_cmd(
 
     result = memory_eval_java_call_resolution_review(workspace, cases, limit=limit)
     print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+
+
+@app.command("eval-java-call-resolution-unresolved")
+def eval_java_call_resolution_unresolved_cmd(
+    workspace: str = typer.Option(..., help="Workspace yaml file."),
+    limit: int = typer.Option(30, min=0, help="Maximum logical-anchor samples to return."),
+):
+    """Classify unresolved Java CALLS_METHOD edges without source paths."""
+    from memory_center.core.orchestrator import memory_eval_java_call_resolution_unresolved
+
+    result = memory_eval_java_call_resolution_unresolved(workspace, limit=limit)
+    typer.echo(json.dumps(result, ensure_ascii=False, indent=2, default=str))
 
 
 @app.command("eval-token-benchmark-save")

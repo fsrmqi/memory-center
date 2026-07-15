@@ -57,6 +57,10 @@ export function getBenchmarkTrend(workspace, params = {}) {
   return api.get('/workspace/eval-token-benchmark-trend', { params: { workspace, ...params } })
 }
 
+export function getReplayCampaign(workspace, params = {}) {
+  return api.get('/workspace/eval-agent-guidance-replay-campaign', { params: { workspace, ...params } })
+}
+
 export function getAudit(workspace, params = {}) {
   return api.get('/workspace/audit', { params: { workspace, ...params } })
 }

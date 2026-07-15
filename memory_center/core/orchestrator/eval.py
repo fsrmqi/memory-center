@@ -309,6 +309,9 @@ def memory_eval_agent_guidance_adoption(
         records.append({
             "session_id": sid,
             "query": payload.get("query", "") or payload.get("intent", ""),
+            "intent": str(payload.get("intent", "") or "general"),
+            "mode": str(payload.get("mode_used", "") or payload.get("mode", "") or "query"),
+            "retrieval_sources": list(((payload.get("retrieval_policy", {}) or {}).get("sources", []) or [])),
             "expected_action": action,
             "expected_command": first_step.get("command", ""),
             "status": "adopted" if matched_tool else "missed",
@@ -422,6 +425,9 @@ def memory_eval_agent_guidance_replay(
         records.append({
             "session_id": sid,
             "query": payload.get("query", "") or payload.get("intent", ""),
+            "intent": str(payload.get("intent", "") or "general"),
+            "mode": str(payload.get("mode_used", "") or payload.get("mode", "") or "query"),
+            "retrieval_sources": list(((payload.get("retrieval_policy", {}) or {}).get("sources", []) or [])),
             "expected_action": action,
             "expected_command": first_step.get("command", ""),
             "status": status,
@@ -472,6 +478,35 @@ def memory_eval_agent_guidance_replay(
         },
         replay_records=records[:50],
     )
+
+
+def memory_eval_agent_guidance_replay_campaign(
+    workspace_file: str | Path,
+    *,
+    min_events: int = 20,
+    required_intents: tuple[str, ...] = ("walkthrough", "impact", "mq", "config", "general"),
+    limit: int = 500,
+) -> dict[str, Any]:
+    """Evaluate whether a real replay set is large and diverse enough for policy review.
+
+    This gate is intentionally read-only: replay adoption is not evidence that a
+    retrieval result was correct, so it never changes learned source weights.
+    """
+    replay = memory_eval_agent_guidance_replay(workspace_file, limit=limit)
+    records = replay.get("replay_records", []) or []
+    observed = {str(item.get("intent", "") or "general") for item in records if isinstance(item, dict)}
+    expected = tuple(dict.fromkeys(item.strip().lower() for item in required_intents if item.strip()))
+    missing = [item for item in expected if item not in observed]
+    total = int((replay.get("summary", {}) or {}).get("total_guidance_events", 0) or 0)
+    return {
+        "schema_version": 1,
+        "suite": "agent_guidance_replay_campaign",
+        "replay": replay,
+        "coverage": {"required_intents": list(expected), "observed_intents": sorted(observed), "missing_intents": missing},
+        "thresholds": {"min_events": max(1, min_events)},
+        "passed": total >= max(1, min_events) and not missing,
+        "next_action": "Collect session_id-backed real tasks for each missing intent, then record human-verified retrieval outcomes separately before changing source weights.",
+    }
 
 
 def memory_eval_agent_guidance_replay_trend(
@@ -922,6 +957,17 @@ def memory_eval_java_call_resolution_review(
     from ..benchmark.java_call_resolution import review_java_call_resolution_suite
 
     return review_java_call_resolution_suite(workspace_file, cases_file, limit=limit)
+
+
+def memory_eval_java_call_resolution_unresolved(
+    workspace_file: str | Path,
+    *,
+    limit: int = 30,
+) -> dict[str, Any]:
+    """Summarize unresolved Java call categories for evidence-led resolver work."""
+    from ..benchmark.java_call_resolution import summarize_unresolved_java_calls
+
+    return summarize_unresolved_java_calls(workspace_file, sample_limit=limit)
 
 
 def _benchmark_baseline_path(workspace_file: str | Path) -> Path:

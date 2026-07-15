@@ -1,16 +1,24 @@
 from __future__ import annotations
 
+import json
+import threading
+from http.server import ThreadingHTTPServer
 from pathlib import Path
+from urllib.request import urlopen
 
 import yaml
+from typer.testing import CliRunner
 
 from memory_center.core.benchmark.java_call_resolution import (
     load_java_call_resolution_cases,
     review_java_call_resolution_suite,
     run_java_call_resolution_suite,
+    summarize_unresolved_java_calls,
 )
 from memory_center.core.graph import GraphEdge, GraphNode, GraphStore, edge_id, node_id
 from memory_center.core.store import WorkspaceStore
+from memory_center.cli.main import app
+from memory_center.http.server import create_handler
 
 
 def _workspace(tmp_path: Path) -> Path:
@@ -222,3 +230,66 @@ def test_java_call_resolution_review_deduplicates_unclassified_edges(tmp_path: P
         "expected_targets": ["OrderService#submit"],
         "review_status": "unclassified",
     }]
+
+
+def test_unresolved_java_call_report_groups_reasons_without_paths(tmp_path: Path) -> None:
+    workspace = _workspace(tmp_path)
+    store = WorkspaceStore(workspace)
+    source_id = node_id("Method", "OrderController.submit", "api", "src/OrderController.java")
+    external_id = node_id("Method", "RemoteClient.send", "api", "src/OrderController.java")
+    polymorphic_id = node_id("Method", "OrderHandler.handle", "api", "src/OrderController.java")
+    resolved_id = node_id("Method", "OrderService.submit", "api", "src/OrderService.java")
+    with GraphStore(store.graph_db_path) as graph:
+        graph.bulk_write(
+            [
+                GraphNode(source_id, "Method", "OrderController.submit", "api", "src/OrderController.java"),
+                GraphNode(external_id, "Method", "RemoteClient.send", "api", "src/OrderController.java"),
+                GraphNode(polymorphic_id, "Method", "OrderHandler.handle", "api", "src/OrderController.java"),
+                GraphNode(resolved_id, "Method", "OrderService.submit", "api", "src/OrderService.java"),
+            ],
+            [
+                GraphEdge(edge_id(source_id, external_id, "CALLS_METHOD"), source_id, external_id, "CALLS_METHOD", 0.3, {"resolution_level": "unresolved", "unresolved_reason": "receiver_type_not_indexed"}),
+                GraphEdge(edge_id(source_id, polymorphic_id, "CALLS_METHOD"), source_id, polymorphic_id, "CALLS_METHOD", 0.3, {"resolution_level": "unresolved", "unresolved_reason": "target_method_not_indexed"}),
+                GraphEdge(edge_id(source_id, resolved_id, "CALLS_METHOD"), source_id, resolved_id, "CALLS_METHOD", 0.9, {"resolution_level": "import"}),
+            ],
+        )
+
+    result = summarize_unresolved_java_calls(workspace, sample_limit=10)
+
+    assert result["summary"]["call_edge_count"] == 3
+    assert result["summary"]["unresolved_call_edge_count"] == 2
+    assert result["summary"]["category_counts"] == {
+        "external_or_missing_source": 1,
+        "missing_method_or_polymorphism": 1,
+    }
+    assert result["samples"] == [
+        {"source": "OrderController#submit", "target": "OrderHandler#handle", "category": "missing_method_or_polymorphism", "reason": "target_method_not_indexed", "confidence": 0.3},
+        {"source": "OrderController#submit", "target": "RemoteClient#send", "category": "external_or_missing_source", "reason": "receiver_type_not_indexed", "confidence": 0.3},
+    ]
+    assert "src/" not in str(result)
+
+
+def test_unresolved_java_call_report_is_available_from_cli_and_http(tmp_path: Path) -> None:
+    workspace = _workspace(tmp_path)
+
+    cli = CliRunner().invoke(
+        app,
+        ["eval-java-call-resolution-unresolved", "--workspace", str(workspace), "--limit", "0"],
+    )
+
+    assert cli.exit_code == 0
+    assert json.loads(cli.output)["suite"] == "java_call_resolution_unresolved"
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), create_handler(workspace))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        response = json.loads(urlopen(
+            f"http://127.0.0.1:{server.server_address[1]}/workspace/eval-java-call-resolution-unresolved?limit=0"
+        ).read().decode("utf-8"))
+    finally:
+        server.shutdown()
+        thread.join(timeout=2)
+
+    assert response["suite"] == "java_call_resolution_unresolved"
+    assert response["summary"]["returned_sample_count"] == 0

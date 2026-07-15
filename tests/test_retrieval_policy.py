@@ -717,3 +717,32 @@ def test_method_level_agent_next_step_keeps_resolved_target_hint() -> None:
     assert steps[0]["action"] == "switch_to_walkthrough"
     assert steps[0]["target_ref"] == "/repo/src/ArticleService.java"
     assert steps[0]["read_targets"] == ["/repo/src/ArticleService.java"]
+
+
+def test_replay_campaign_requires_real_coverage_without_changing_weights(tmp_path: Path) -> None:
+    from memory_center.core.orchestrator import memory_eval_agent_guidance_replay_campaign, workspace_log_session_event
+
+    workspace = _workspace(tmp_path)
+    workspace_log_session_event(
+        workspace,
+        "session-1",
+        "agent_guidance",
+        {
+            "intent": "mq",
+            "mode_used": "query",
+            "retrieval_policy": {"sources": ["exact", "graph"]},
+            "agent_next_steps": [{"action": "inspect_top_result", "command": "mc_lookup(mode=query)"}],
+        },
+    )
+    workspace_log_session_event(workspace, "session-1", "tool_call", {"tool_name": "memory_query_tool"})
+
+    result = memory_eval_agent_guidance_replay_campaign(
+        workspace,
+        min_events=1,
+        required_intents=("mq", "config"),
+    )
+
+    assert result["passed"] is False
+    assert result["coverage"]["observed_intents"] == ["mq"]
+    assert result["coverage"]["missing_intents"] == ["config"]
+    assert result["replay"]["replay_records"][0]["retrieval_sources"] == ["exact", "graph"]
