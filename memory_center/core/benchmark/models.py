@@ -13,6 +13,7 @@ _CASE_FIELDS = {
     "forbidden_anchors",
     "max_latency_ms",
     "enable_vector",
+    "project",
 }
 
 
@@ -30,6 +31,7 @@ class GoldenCase:
     # this flag because walkthrough already chooses its own retrieval path.
     # Default is False so existing cases keep their current behaviour.
     enable_vector: bool = False
+    project: str = ""
 
     @classmethod
     def from_mapping(cls, data: Mapping[str, Any]) -> GoldenCase:
@@ -41,7 +43,7 @@ class GoldenCase:
         mode = str(data.get("mode", "walkthrough") or "walkthrough").strip().lower()
         if not case_id or not query:
             raise ValueError("case_id and query are required")
-        if mode not in {"walkthrough", "hybrid"}:
+        if mode not in {"walkthrough", "hybrid", "impact", "context"}:
             raise ValueError(f"unsupported golden mode: {mode}")
         return cls(
             case_id=case_id,
@@ -52,6 +54,7 @@ class GoldenCase:
             forbidden_anchors=_logical_values(data.get("forbidden_anchors", [])),
             max_latency_ms=max(1.0, float(data.get("max_latency_ms", 5000.0) or 5000.0)),
             enable_vector=bool(data.get("enable_vector", False)),
+            project=_project_value(data.get("project", "")),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -64,6 +67,7 @@ class GoldenCase:
             "forbidden_anchors": list(self.forbidden_anchors),
             "max_latency_ms": self.max_latency_ms,
             "enable_vector": self.enable_vector,
+            "project": self.project,
         }
 
 
@@ -77,3 +81,10 @@ def _logical_values(raw: Any) -> tuple[str, ...]:
         if value.startswith(("/", "~")) or "\\" in value:
             raise ValueError("golden cases must use logical identifiers, not filesystem paths")
     return values
+
+
+def _project_value(raw: Any) -> str:
+    value = str(raw or "").strip()
+    if value.startswith(("/", "~")) or "\\" in value:
+        raise ValueError("golden project must be a logical identifier, not a filesystem path")
+    return value

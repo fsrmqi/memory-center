@@ -952,6 +952,21 @@ def eval_golden_cmd(
     print(json.dumps(benchmark_module.run_golden_suite(workspace, cases, performance_baseline=baseline or None), ensure_ascii=False, indent=2, default=str))
 
 
+@app.command("eval-golden-baseline-save")
+def eval_golden_baseline_save_cmd(
+    workspace: str = typer.Option(..., help="Workspace yaml file."),
+    cases: str = typer.Option(..., help="Golden cases yaml file."),
+    output: str = typer.Option(..., help="Portable baseline JSON output path."),
+    label: str = typer.Option("current", help="Baseline label."),
+):
+    """Run Golden Benchmark and save a portable performance baseline."""
+    from memory_center.core import benchmark as benchmark_module
+
+    result = benchmark_module.run_golden_suite(workspace, cases)
+    saved = benchmark_module.save_golden_performance_baseline(result, output, label=label)
+    print(json.dumps({"result": result, **saved}, ensure_ascii=False, indent=2, default=str))
+
+
 @app.command("eval-java-call-resolution")
 def eval_java_call_resolution_cmd(
     workspace: str = typer.Option(..., help="Workspace yaml file."),

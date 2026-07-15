@@ -14,6 +14,7 @@ from memory_center.core.benchmark.golden import (
     load_golden_cases,
     load_golden_performance_baseline,
     run_golden_suite,
+    save_golden_performance_baseline,
     score_golden_case,
     summarize_golden_case_coverage,
 )
@@ -52,6 +53,89 @@ def test_load_golden_cases_rejects_private_path_fields(tmp_path: Path) -> None:
     )
     with pytest.raises(ValueError, match="unsupported fields"):
         load_golden_cases(cases)
+
+    cases.write_text(
+        "cases:\n"
+        "  - case_id: unsafe-project\n"
+        "    query: DemoService\n"
+        "    mode: context\n"
+        "    project: /private/project\n"
+        "    expected_anchors: [DemoService#run]\n"
+        "    expected_edges: []\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="golden project"):
+        load_golden_cases(cases)
+
+
+def test_golden_cases_support_impact_and_context_modes_with_project_scope(tmp_path: Path) -> None:
+    cases = tmp_path / "cases.yaml"
+    cases.write_text(
+        "cases:\n"
+        "  - case_id: impact\n"
+        "    query: OrderService\n"
+        "    mode: impact\n"
+        "    project: order-service\n"
+        "    expected_anchors: [OrderService#submit]\n"
+        "    expected_edges: [CALLS_METHOD]\n"
+        "  - case_id: context\n"
+        "    query: OrderService\n"
+        "    mode: context\n"
+        "    project: order-service\n"
+        "    expected_anchors: [OrderService#submit]\n"
+        "    expected_edges: []\n",
+        encoding="utf-8",
+    )
+
+    loaded = load_golden_cases(cases)
+
+    assert [(case.mode, case.project) for case in loaded] == [
+        ("impact", "order-service"),
+        ("context", "order-service"),
+    ]
+
+
+def test_golden_default_runner_dispatches_impact_and_context_modes(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    import memory_center.core.orchestrator as orchestrator
+
+    workspace = _workspace(tmp_path)
+    cases = tmp_path / "cases.yaml"
+    cases.write_text(
+        "cases:\n"
+        "  - case_id: impact\n"
+        "    query: OrderService\n"
+        "    mode: impact\n"
+        "    project: order-service\n"
+        "    expected_anchors: [OrderService#submit]\n"
+        "    expected_edges: []\n"
+        "  - case_id: context\n"
+        "    query: OrderService\n"
+        "    mode: context\n"
+        "    project: order-service\n"
+        "    expected_anchors: [OrderService#submit]\n"
+        "    expected_edges: []\n",
+        encoding="utf-8",
+    )
+    calls: list[tuple[str, str, str]] = []
+
+    def fake_impact(_workspace, target, *, project="", **_kwargs):
+        calls.append(("impact", target, project))
+        return {"affected": [{"class": "OrderService", "method": "submit"}]}
+
+    def fake_context(_workspace, name, *, project="", **_kwargs):
+        calls.append(("context", name, project))
+        return {"matches": [{"class": "OrderService", "method": "submit"}]}
+
+    monkeypatch.setattr(orchestrator, "memory_impact", fake_impact)
+    monkeypatch.setattr(orchestrator, "memory_context", fake_context)
+
+    result = run_golden_suite(workspace, cases)
+
+    assert result["summary"]["passed"] is True
+    assert calls == [("impact", "OrderService", "order-service"), ("context", "OrderService", "order-service")]
 
 
 def test_run_golden_suite_reports_stable_quality_and_latency(tmp_path: Path) -> None:
@@ -391,6 +475,19 @@ def test_golden_performance_baseline_is_portable() -> None:
     assert baseline["summary"]["agent_next_step_action_counts"] == {"use_read_targets": 2}
 
 
+def test_save_golden_performance_baseline_writes_portable_snapshot(tmp_path: Path) -> None:
+    output = tmp_path / "nested" / "golden-baseline.json"
+    saved = save_golden_performance_baseline(
+        {"summary": {"case_count": 1, "anchor_recall": 1.0}, "performance": {"median_latency_ms": 12.0, "token_estimate": 50}},
+        output,
+        label="test",
+    )
+
+    assert saved["saved"] is True
+    assert output.exists()
+    assert json.loads(output.read_text(encoding="utf-8"))["label"] == "test"
+
+
 def test_extract_logical_evidence_infers_walkthrough_edges_and_method_anchors() -> None:
     payload = {
         "target": {"class": "EntryService", "method": "run"},
@@ -433,6 +530,13 @@ def test_extract_logical_evidence_infers_walkthrough_edges_and_method_anchors() 
     assert "CALLS_METHOD" in evidence["edges"]
     assert "IMPLEMENTS_FEIGN" in evidence["edges"]
     assert "HANDLES_ENDPOINT" in evidence["edges"]
+
+
+def test_extract_logical_evidence_includes_mq_topics_and_config_keys() -> None:
+    evidence = extract_logical_evidence({"contracts": [{"topic": "orders.created"}, {"values": {"spring.application.name": "demo"}}]})
+
+    assert "MQTopic#orders.created" in evidence["anchors"]
+    assert "ConfigKey#spring.application.name" in evidence["anchors"]
 
 
 def test_eval_golden_cli_command_dispatches_suite(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

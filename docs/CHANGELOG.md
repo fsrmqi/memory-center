@@ -32,6 +32,10 @@
 - Java 调用解析现在可依据本地字段与 Lombok `@Data` / `@Getter` / `@Setter` / `@Value` 解析生成的访问器，并在低置信度调用元数据中标记未解析原因，便于真实工作空间继续分层治理。
 - Java 调用解析 benchmark case 新增 `allowed_targets` / `forbidden_targets`；CLI、HTTP、MCP 可选择对禁止的高置信边启用严格失败门禁，避免把合法同方法旁路误判为误绑定。
 - 新增 Java 调用解析审阅报告：CLI `eval-java-call-resolution-review`、HTTP `/workspace/eval-java-call-resolution-review`、MCP `eval_java_call_resolution_review` 会对未分类高置信边按逻辑锚点聚合去重，并给出回写 case 契约的下一步。
+- Golden Benchmark case 现支持 `impact`、`context` 模式和可选 `project` 范围，可为全链路、影响分析、架构理解三类真实检索意图建立带禁止锚点的统一回归门禁。
+- 公开 Golden case 模板补充 impact / context 示例，展示同名跨模块时的 `project` 约束和禁止锚点写法。
+- 新增 `eval-golden-baseline-save`，可在本地保存不含 case、路径和 payload 的 portable Golden 性能基线，供后续 `eval-golden --baseline` 做回归比较。
+- 本地安装版本提升至 `3.5.22`。
 - 修复 `parser-status` 的 Tree-sitter 安装提示仍指向旧版依赖范围的问题；提示现在与 `ast` extra 的 `tree-sitter>=0.25,<0.26`、`tree-sitter-java>=0.23,<0.24` 保持一致。
 - 本地安装版本提升至 `3.5.21`。
 

@@ -683,6 +683,14 @@ cases:
     max_latency_ms: 8000
 ```
 
+Golden case 还支持 `mode: impact` 与 `mode: context`，分别验证影响分析和架构上下文；`project` 可用于同名类跨模块场景。三类常用回归分别是 `walkthrough`（全链路）、`impact`（改动影响）和 `context`（架构理解）。所有 case 仍只允许逻辑锚点，`forbidden_anchors` 用于阻止相似模块误命中。
+
+可将当前结果保存为 portable baseline（只保存质量和性能指标，不保存 case、路径或 payload），后续 `eval-golden --baseline <file>` 会自动比较：
+
+```bash
+memory-center eval-golden-baseline-save --workspace /path/to/workspace.yaml --cases /path/to/cases.yaml --output /path/to/golden-baseline.json --label current
+```
+
 门禁指标：
 
 - `edge_recall`：预期调用边是否在 graph 的 `CALLS_METHOD` 中出现。

@@ -5,6 +5,7 @@ from .baseline import (
     record_baseline_sample,
 )
 from .golden import load_golden_cases, run_golden_suite, score_golden_case
+from .golden import save_golden_performance_baseline
 from .java_call_resolution import (
     JavaCallResolutionCase,
     load_java_call_resolution_cases,
@@ -40,6 +41,7 @@ __all__ = [
     "run_golden_suite",
     "run_java_call_resolution_suite",
     "score_golden_case",
+    "save_golden_performance_baseline",
     "PORTABLE_BASELINE_FILE",
     "compare_baseline_samples",
     "record_baseline_sample",

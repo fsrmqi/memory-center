@@ -608,6 +608,7 @@ def memory_query_hybrid(
         filtered_feign = _filter_contracts_by_query(contracts.get("feign_contracts", []), query, primary_intent)
         filtered_mq = _filter_contracts_by_query(contracts.get("mq_contracts", []), query, primary_intent)
         filtered_api = _filter_contracts_by_query(contracts.get("api_contracts", []), query, primary_intent)
+        filtered_config = _filter_contracts_by_query(contracts.get("config_contracts", []), query, primary_intent)
 
         # Feign 去重（worktree 可能产生重复）
         if filtered_feign:
@@ -650,16 +651,25 @@ def memory_query_hybrid(
             project_feign = [c for c in filtered_feign if _project_matches(effective_project, c.get("project", ""))]
             project_mq = [c for c in filtered_mq if _project_matches(effective_project, c.get("project", ""))]
             project_api = [c for c in filtered_api if _project_matches(effective_project, c.get("project", ""))]
-            if not project_scope.get("fallback_allowed", False) or project_feign or project_mq or project_api:
+            project_config = [c for c in filtered_config if _project_matches(effective_project, c.get("project", ""))]
+            if not project_scope.get("fallback_allowed", False) or project_feign or project_mq or project_api or project_config:
                 filtered_feign = project_feign
                 filtered_mq = project_mq
                 filtered_api = project_api
+                filtered_config = project_config
 
         result["contracts"] = {
-            "feign_contracts": filtered_feign,
-            "mq_contracts": filtered_mq,
-            "api_contracts": filtered_api,
+            "feign_contracts": filtered_feign if primary_intent != "mq" and primary_intent != "config" else [],
+            "mq_contracts": filtered_mq if primary_intent != "config" else [],
+            "api_contracts": filtered_api if primary_intent != "mq" and primary_intent != "config" else [],
+            "config_contracts": filtered_config if primary_intent != "mq" else [],
         }
+        if primary_intent in {"mq", "config"}:
+            result["contract_routing"] = {
+                "mode": "index_first",
+                "intent": primary_intent,
+                "evidence_count": len(filtered_mq if primary_intent == "mq" else filtered_config),
+            }
         # 标记 contracts 数据来源
         if "retrieval_sources" not in result:
             result["retrieval_sources"] = []
@@ -1970,6 +1980,7 @@ def memory_contracts(workspace_file: str | Path) -> dict[str, Any]:
         "feign_contracts": store.read_json_prefer_backend("feign-index.json", []),
         "mq_contracts": store.read_json_prefer_backend("mq-index.json", []),
         "api_contracts": store.read_json_prefer_backend("api-index.json", []),
+        "config_contracts": store.read_json_prefer_backend("config-index.json", []),
         "rules": match_rules(store, intent="contract feign dto message api", scopes=["contract", "dto", "feign", "message"]),
     }
 

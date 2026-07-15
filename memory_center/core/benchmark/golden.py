@@ -118,6 +118,21 @@ def build_golden_performance_baseline(result: dict[str, Any], *, label: str = "c
     }
 
 
+def save_golden_performance_baseline(
+    result: dict[str, Any],
+    output_file: str | Path,
+    *,
+    label: str = "current",
+) -> dict[str, Any]:
+    """Persist the portable Golden baseline without cases, payloads, or paths."""
+
+    baseline = build_golden_performance_baseline(result, label=label)
+    path = Path(output_file).expanduser().resolve()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(baseline, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return {"saved": True, "baseline_file": str(path), "baseline": baseline}
+
+
 def _improvement_pct(baseline_value: float, current_value: float) -> float:
     if baseline_value <= 0:
         return 0.0
@@ -379,6 +394,15 @@ def extract_logical_evidence(payload: Any) -> dict[str, list[str]]:
 
     def visit(value: Any) -> None:
         if isinstance(value, dict):
+            topic = str(value.get("topic") or value.get("topic_placeholder") or "").strip()
+            if topic:
+                anchors.add(f"MQTopic#{topic}")
+            values = value.get("values")
+            if isinstance(values, dict):
+                for config_key in values:
+                    key = str(config_key or "").strip()
+                    if key:
+                        anchors.add(f"ConfigKey#{key}")
             anchor = _canonical_anchor(
                 value.get("class") or value.get("controller") or value.get("interface") or value.get("owner_class"),
                 value.get("method") or value.get("method_name") or value.get("owner_method"),
@@ -421,6 +445,30 @@ def _default_case_runner(workspace_file: str | Path) -> CaseRunner:
                 view="full",
                 budget="large",
                 report_level="deep",
+                project=case.project,
+            )
+        elif case.mode == "impact":
+            from ..orchestrator import memory_impact
+
+            payload = memory_impact(
+                workspace_file,
+                case.query,
+                direction="upstream",
+                max_depth=4,
+                project=case.project,
+                view="full",
+                budget="large",
+            )
+        elif case.mode == "context":
+            from ..orchestrator import memory_context
+
+            payload = memory_context(
+                workspace_file,
+                case.query,
+                max_depth=3,
+                project=case.project,
+                view="full",
+                budget="large",
             )
         else:
             from ..orchestrator import memory_query_hybrid
@@ -430,6 +478,7 @@ def _default_case_runner(workspace_file: str | Path) -> CaseRunner:
                 case.query,
                 limit=80,
                 enable_vector=case.enable_vector,
+                project=case.project,
             )
         evidence = extract_logical_evidence(payload)
         return {**evidence, "payload": payload}
