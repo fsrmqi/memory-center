@@ -691,6 +691,12 @@ Golden case 还支持 `mode: impact` 与 `mode: context`，分别验证影响分
 memory-center eval-golden-baseline-save --workspace /path/to/workspace.yaml --cases /path/to/cases.yaml --output /path/to/golden-baseline.json --label current
 ```
 
+### 10.1 Release Gate / 发布门禁
+
+`memory-center release-gate` 在一次运行内完成全量 reindex，并按需执行 retrieval smoke、Golden、Java `CALLS_METHOD`、parser precision。它并不替代各专项报告，而是将其收敛为 CI 或人工发布前可读的一条结论。
+
+它的可移植 baseline 固定为 `schema_version`、label、时间和各组件的 `duration_ms`、`result_count`、`quality_score`、status；明确不保存 workspace 路径、query、case 文件、逻辑锚点或任何查询 payload。比较时只比较 baseline 和当前均存在的组件，超过 `max_latency_regression_pct`（默认 15%）或 `max_quality_drop`（默认 0.02）即失败。没有配置的专项检查为 `skipped`，不计入通过组件。
+
 门禁指标：
 
 - `edge_recall`：预期调用边是否在 graph 的 `CALLS_METHOD` 中出现。

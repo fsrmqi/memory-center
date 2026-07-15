@@ -838,6 +838,35 @@ Use [examples/golden-benchmark/cases.template.yaml](/Users/cuijiaqi/Ai-common-sk
 
 可先用 [examples/golden-benchmark/cases.template.yaml](/Users/cuijiaqi/Ai-common-skills/memory-center/examples/golden-benchmark/cases.template.yaml) 作为公开模板，再把真实 case 维护在你本地私有文件里。
 
+### Release Gate / 发布门禁
+
+`release-gate` runs a full reindex, repeatable retrieval smoke checks, and optional Golden, Java call-resolution, and parser-precision checks as one release decision. Its output and saved baseline contain metrics and statuses only: no query text, filesystem paths, case IDs, or result payloads.
+
+`release-gate` 会将全量重建、可重复的检索冒烟检查，以及可选的 Golden、Java 调用解析、解析器精度检查收敛为一次发布结论。输出和保存的 baseline 只包含指标与状态，不包含查询文本、文件路径、case ID 或结果 payload。
+
+```bash
+memory-center release-gate \
+  --workspace /path/to/.memory-center/workspace.yaml \
+  --query "logical symbol or business term" \
+  --query "another stable query" \
+  --golden-cases /path/to/.memory-center/golden/cases.yaml \
+  --java-call-cases /path/to/.memory-center/golden/java-call-resolution.yaml \
+  --parser-limit 200 \
+  --save-baseline /path/to/.memory-center/golden/release-gate-baseline.json \
+  --label vNext
+```
+
+Use the saved portable baseline in later releases. The gate fails when a configured quality check fails, or when a shared component exceeds the latency or quality-drop threshold. Missing optional checks are reported as `skipped`, not treated as a pass.
+
+后续版本可带上保存的 portable baseline。已配置的质量检查失败，或共有组件超过延迟退化/质量下降阈值时，门禁会失败；未配置的可选检查会标记为 `skipped`，不会被伪装为通过。
+
+```bash
+memory-center release-gate \
+  --workspace /path/to/.memory-center/workspace.yaml \
+  --query "logical symbol or business term" \
+  --baseline /path/to/.memory-center/golden/release-gate-baseline.json
+```
+
 Optional business glossary files `.memory-center/glossary.yaml`, `.memory-center/glossary.yml`, or `.memory-center/business-glossary.yaml` can enrich walkthrough output through `glossary_hits`.
 
 可选的业务词汇文件 `.memory-center/glossary.yaml`、`.memory-center/glossary.yml` 或 `.memory-center/business-glossary.yaml` 会通过 `glossary_hits` 补充链路解释。

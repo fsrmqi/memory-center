@@ -992,6 +992,40 @@ def eval_golden_baseline_save_cmd(
     print(json.dumps({"result": result, **saved}, ensure_ascii=False, indent=2, default=str))
 
 
+@app.command("release-gate")
+def release_gate_cmd(
+    workspace: str = typer.Option(..., help="Workspace yaml file."),
+    query: Optional[List[str]] = typer.Option(None, "--query", help="Portable query smoke check; repeatable and never persisted."),
+    golden_cases: str = typer.Option("", help="Optional private Golden cases yaml file."),
+    java_call_cases: str = typer.Option("", help="Optional private Java call resolution cases yaml file."),
+    parser_limit: int = typer.Option(0, min=0, help="Parser comparison sample size; 0 disables it."),
+    baseline: str = typer.Option("", help="Optional portable release-gate baseline JSON file."),
+    save_baseline: str = typer.Option("", help="Optional output path for the current portable baseline."),
+    label: str = typer.Option("current", help="Label used when saving a baseline."),
+    max_latency_regression_pct: float = typer.Option(15.0, min=0.0, help="Maximum median component latency regression."),
+    max_quality_drop: float = typer.Option(0.02, min=0.0, max=1.0, help="Maximum component quality-score drop."),
+):
+    """Run index, retrieval and optional precision checks as one release gate."""
+    from memory_center.core import benchmark as benchmark_module
+
+    result = benchmark_module.run_release_gate(
+        workspace,
+        queries=list(query or []),
+        golden_cases=golden_cases or None,
+        java_call_cases=java_call_cases or None,
+        parser_limit=parser_limit,
+        baseline=baseline or None,
+        max_latency_regression_pct=max_latency_regression_pct,
+        max_quality_drop=max_quality_drop,
+    )
+    response: dict[str, object] = {"result": result}
+    if save_baseline:
+        response["baseline"] = benchmark_module.save_release_gate_baseline(result, save_baseline, label=label)
+    print(json.dumps(response, ensure_ascii=False, indent=2, default=str))
+    if not result["passed"]:
+        raise typer.Exit(code=1)
+
+
 @app.command("eval-java-call-resolution")
 def eval_java_call_resolution_cmd(
     workspace: str = typer.Option(..., help="Workspace yaml file."),
