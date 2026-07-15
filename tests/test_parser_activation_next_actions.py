@@ -13,7 +13,12 @@ def test_tree_sitter_activation_status_exposes_install_and_validation_commands()
     status = tree_sitter_activation_status()
 
     assert status["extra"] == "ast"
-    assert "pipx inject memory-center" in status["install_commands"]["pipx"]
+    assert status["install_commands"]["pipx"] == (
+        'pipx inject memory-center "tree-sitter>=0.25,<0.26" "tree-sitter-java>=0.23,<0.24"'
+    )
+    assert status["install_commands"]["local"] == (
+        'python -m pip install "tree-sitter>=0.25,<0.26" "tree-sitter-java>=0.23,<0.24"'
+    )
     assert "memory-center eval-parser-benchmark" in status["validation_command"]
     assert status["recommended_action"] in {
         "use_tree_sitter_parser",

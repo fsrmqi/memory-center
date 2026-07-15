@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from typing import Any
 
-TREE_SITTER_INSTALL_HINT = 'pipx inject memory-center "tree-sitter>=0.22.0" "tree-sitter-java>=0.21.0"'
+TREE_SITTER_INSTALL_HINT = 'pipx inject memory-center "tree-sitter>=0.25,<0.26" "tree-sitter-java>=0.23,<0.24"'
 TREE_SITTER_VALIDATE_HINT = "memory-center eval-parser-benchmark --workspace <workspace.yaml>"
-TREE_SITTER_LOCAL_INSTALL_HINT = 'python -m pip install "tree-sitter>=0.22.0" "tree-sitter-java>=0.21.0"'
+TREE_SITTER_LOCAL_INSTALL_HINT = 'python -m pip install "tree-sitter>=0.25,<0.26" "tree-sitter-java>=0.23,<0.24"'
 
 
 def parser_precision_from_diagnostics(diagnostics: dict[str, Any] | None) -> dict[str, Any]:
