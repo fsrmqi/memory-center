@@ -186,12 +186,13 @@ def run_release_gate(
         parser_started = time.perf_counter()
         parser = memory_eval_parser_benchmark(workspace_file, limit=parser_limit, max_findings=0)
         parser_score = float(parser.get("score", 0.0) or 0.0) / 100.0
+        parser_passed = parser.get("quality") in {"high", "medium"}
         components["parser_precision"] = _component(
-            passed=parser.get("quality") not in {"unknown", "poor"},
+            passed=parser_passed,
             duration_ms=(time.perf_counter() - parser_started) * 1000,
             result_count=int(parser.get("files_scanned", 0) or 0),
             quality_score=parser_score,
-            reason="parser_quality_insufficient" if parser.get("quality") in {"unknown", "poor"} else "",
+            reason="parser_quality_insufficient" if not parser_passed else "",
         )
     else:
         components["parser_precision"] = _skipped("parser_benchmark_disabled")

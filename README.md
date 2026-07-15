@@ -856,9 +856,9 @@ memory-center release-gate \
   --label vNext
 ```
 
-Use the saved portable baseline in later releases. The gate fails when a configured quality check fails, or when a shared component exceeds the latency or quality-drop threshold. Missing optional checks are reported as `skipped`, not treated as a pass.
+Use the saved portable baseline in later releases. A baseline is written only after the gate passes. The gate fails when a configured quality check fails, or when a shared component exceeds the latency or quality-drop threshold. Missing optional checks are reported as `skipped`, not treated as a pass.
 
-后续版本可带上保存的 portable baseline。已配置的质量检查失败，或共有组件超过延迟退化/质量下降阈值时，门禁会失败；未配置的可选检查会标记为 `skipped`，不会被伪装为通过。
+后续版本可带上保存的 portable baseline。只有门禁通过时才会写入 baseline；已配置的质量检查失败，或共有组件超过延迟退化/质量下降阈值时，门禁会失败；未配置的可选检查会标记为 `skipped`，不会被伪装为通过。
 
 ```bash
 memory-center release-gate \

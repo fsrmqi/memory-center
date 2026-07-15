@@ -87,6 +87,29 @@ def test_nested_generic_parameter_keeps_receiver_type() -> None:
     assert call["receiver_type"] == "Map"
 
 
+def test_regex_parser_excludes_control_flow_and_constructors_from_methods() -> None:
+    parsed = RegexJavaParser().parse(
+        """
+        class FlowService {
+            FlowService() {}
+            void process(boolean enabled) {
+                if (enabled) {
+                    for (int i = 0; i < 1; i++) {
+                        while (false) {}
+                    }
+                } else {
+                    switch (enabled ? 1 : 0) { default: break; }
+                }
+            }
+        }
+        """,
+        "FlowService.java",
+    )
+
+    assert parsed.methods == ["process"]
+    assert {signature["identity"] for signature in parsed.method_signatures} == {"process(boolean)"}
+
+
 def test_annotation_constants_build_composite_paths() -> None:
     if not TreeSitterJavaParser().available:
         pytest.skip("tree-sitter Java dependency is optional")

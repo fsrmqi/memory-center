@@ -1019,8 +1019,10 @@ def release_gate_cmd(
         max_quality_drop=max_quality_drop,
     )
     response: dict[str, object] = {"result": result}
-    if save_baseline:
+    if save_baseline and result["passed"]:
         response["baseline"] = benchmark_module.save_release_gate_baseline(result, save_baseline, label=label)
+    elif save_baseline:
+        response["baseline"] = {"saved": False, "reason": "release_gate_failed"}
     print(json.dumps(response, ensure_ascii=False, indent=2, default=str))
     if not result["passed"]:
         raise typer.Exit(code=1)

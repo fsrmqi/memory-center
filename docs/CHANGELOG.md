@@ -10,8 +10,10 @@
 
 ### P2 Retrieval / Reasoning Quality Loop / 检索与推理质量闭环
 
+- 本地安装版本提升至 `3.5.23`。
 - reindex 现在使用 workspace 级 `reindex.lock` 串行化完整索引写入；并发请求会返回可处理的 conflict 和 `--lock-timeout` 建议，不再直接暴露 SQLite 锁错误。`workspace_status` 与 Workbench Health 会显示运行中、成功、失败或中断的重建状态。
 - 新增 `release-gate`：一次执行全量 reindex、重复检索冒烟检查以及可选 Golden、Java 调用解析、parser precision 检查，输出统一发布结论。它支持保存/比较 portable baseline；baseline 仅保存耗时、数量、质量分和状态，不保存私有 query、路径、case 或 payload。
+- 修复 `release-gate` 会把 parser precision 的 `low` 状态误判为通过的问题；现在仅 `high` / `medium` 可通过，且失败门禁不会写入 baseline。
 - Workbench Health 新增 Benchmark & Gate Summary；HTTP `/workspace/quality-gates-summary` 统一提供 benchmark score、regression alerts、replay campaign 与 Java unresolved-call 指标。接口仅返回状态、指标、分类和建议，不暴露私有路径、源码片段或服务名。
 - Workbench Query 新增 walkthrough 模式、`summary / standard / deep` 报告档位、结构化 quick conclusion / main chain / risks / next actions、质量评估与导出动作；导出反馈同时显示当前 gate snapshot，原始响应收进可展开 evidence 区。
 - 新增 Java 未解析调用分类报告：CLI `eval-java-call-resolution-unresolved`、HTTP `/workspace/eval-java-call-resolution-unresolved` 和 MCP `mc_admin(action="eval_java_call_resolution_unresolved")` 按 `unresolved_reason` 汇总 `CALLS_METHOD`，输出脱敏逻辑锚点样本和下一步建议，避免盲目扩大 resolver fallback。

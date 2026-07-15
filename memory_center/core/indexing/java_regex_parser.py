@@ -31,7 +31,7 @@ class RegexJavaParser:
         fields, field_types, field_lines = _parse_fields(cleaned)
         constants = _parse_interface_constants(cleaned)
         field_types.update(constants)
-        method_spans = _parse_method_spans(cleaned)
+        method_spans = _parse_method_spans(cleaned, type_names=classes)
         iface_methods = _parse_interface_methods(cleaned)
         method_spans.extend(iface_methods)
         methods = sorted({item["name"] for item in method_spans})
@@ -120,7 +120,8 @@ class RegexJavaParser:
         # step instead.
         seed_field_types: dict[str, str] = dict(regex_field_types)
         seed_field_types.update(constants)
-        method_spans = _parse_method_spans(cleaned)
+        known_types = list(classes or _parse_type_declarations(cleaned, ("class", "enum", "record"))[0])
+        method_spans = _parse_method_spans(cleaned, type_names=known_types)
         method_spans.extend(_parse_interface_methods(cleaned))
         method_signatures = _build_method_signatures(method_spans)
         method_variable_types = _parse_method_variable_types(cleaned, method_spans)
@@ -237,7 +238,12 @@ def _parse_fields(text: str) -> tuple[list[str], dict[str, str], dict[str, int]]
     return sorted(set(fields)), field_types, field_lines
 
 
-def _parse_method_spans(text: str) -> list[dict[str, Any]]:
+_NON_METHOD_KEYWORDS = frozenset({
+    "assert", "catch", "do", "else", "for", "if", "new", "switch", "synchronized", "try", "while",
+})
+
+
+def _parse_method_spans(text: str, *, type_names: list[str] | None = None) -> list[dict[str, Any]]:
     pattern = re.compile(
         r"(?:@\w+(?:\([^)]*\))?\s*)*"
         r"(?:(?:public|private|protected)\s+)?"
@@ -245,13 +251,21 @@ def _parse_method_spans(text: str) -> list[dict[str, Any]]:
         r"(\w+)\s*\(([^;{}]*)\)\s*(?:throws\s+[\w, ]+\s*)?\{",
         re.M,
     )
+    constructors = set(type_names or [])
     spans: list[dict[str, Any]] = []
     for match in pattern.finditer(text):
+        name = match.group(1)
+        # The permissive return-type fragment permits indentation to satisfy
+        # the type portion, so control-flow headers can otherwise be emitted
+        # as pseudo methods. Constructors also have no return type and are
+        # deliberately excluded because the graph models callable methods.
+        if name in _NON_METHOD_KEYWORDS or name in constructors:
+            continue
         body_start = match.end()
         end = _matching_brace_end(text, match.end() - 1)
         spans.append(
             {
-                "name": match.group(1),
+                "name": name,
                 "params": match.group(2),
                 "start": match.start(),
                 "body_start": body_start,

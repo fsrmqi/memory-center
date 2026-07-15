@@ -33,7 +33,7 @@ def _patch_successful_components(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         release_gate,
         "memory_eval_parser_benchmark",
-        lambda *_args, **_kwargs: {"quality": "good", "score": 95, "files_scanned": 10},
+        lambda *_args, **_kwargs: {"quality": "high", "score": 95, "files_scanned": 10},
     )
 
 
@@ -106,7 +106,22 @@ def test_release_gate_baseline_round_trip(tmp_path: Path) -> None:
     assert "private_query" not in output.read_text(encoding="utf-8")
 
 
-def test_release_gate_cli_saves_baseline_and_returns_failure(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_release_gate_fails_low_parser_precision(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    _patch_successful_components(monkeypatch)
+    monkeypatch.setattr(
+        release_gate,
+        "memory_eval_parser_benchmark",
+        lambda *_args, **_kwargs: {"quality": "low", "score": 0, "files_scanned": 10},
+    )
+
+    result = release_gate.run_release_gate(_workspace(tmp_path), parser_limit=10)
+
+    assert result["passed"] is False
+    assert result["failed_components"] == ["parser_precision"]
+    assert result["components"]["parser_precision"]["reason"] == "parser_quality_insufficient"
+
+
+def test_release_gate_cli_does_not_save_failed_baseline(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     output = tmp_path / "portable.json"
     monkeypatch.setattr(
         "memory_center.core.benchmark.run_release_gate",
@@ -123,5 +138,5 @@ def test_release_gate_cli_saves_baseline_and_returns_failure(monkeypatch: pytest
     invoked = CliRunner().invoke(app, ["release-gate", "--workspace", "demo.yaml", "--save-baseline", str(output), "--label", "v1"])
 
     assert invoked.exit_code == 1
-    assert '"saved": true' in invoked.output
-    assert '"label": "v1"' in invoked.output
+    assert '"saved": false' in invoked.output
+    assert "release_gate_failed" in invoked.output
