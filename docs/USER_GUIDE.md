@@ -9,7 +9,19 @@
 推荐安装方式：
 
 ```bash
-pipx install /path/to/memory-center
+bash /path/to/memory-center/install.sh
+```
+
+安装脚本会自动选择 Python 3.10+。如需手工刷新本地 `pipx` 安装，请显式指定符合版本要求的解释器：
+
+```bash
+pipx install --python python3.11 --force /path/to/memory-center
+```
+
+The install script automatically selects Python 3.10+. For a manual local `pipx` refresh, explicitly select a supported interpreter:
+
+```bash
+pipx install --python python3.11 --force /path/to/memory-center
 ```
 
 开发环境：

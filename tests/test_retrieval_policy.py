@@ -486,3 +486,234 @@ def test_agent_next_steps_reinforce_actions_with_low_adoption(tmp_path: Path) ->
     assert steps[0]["adoption_feedback"]["status"] == "reinforced"
     assert steps[0]["adoption_feedback"]["missed_count"] == 8
     assert "low-adoption feedback" in steps[0]["command"]
+
+
+def test_agent_next_steps_reinforce_actions_with_replay_feedback(tmp_path: Path) -> None:
+    from memory_center.core.benchmark.trending import record_agent_guidance_replay_trend
+    from memory_center.core.orchestrator.query import _build_agent_next_steps_for_query
+
+    workspace = tmp_path / ".memory-center" / "workspace.yaml"
+    workspace.parent.mkdir(parents=True)
+    workspace.write_text("workspace: replay-feedback\nroot: ..\nservices: []\n", encoding="utf-8")
+
+    record_agent_guidance_replay_trend(
+        workspace,
+        total_guidance_events=10,
+        adopted_count=9,
+        missed_count=1,
+        bypassed_count=0,
+        unobservable_count=0,
+        adoption_rate=0.9,
+        bypass_rate=0.0,
+        unobservable_rate=0.0,
+        score=95,
+        quality="high",
+        reason_counts={"matched_expected_tool": 9},
+    )
+    record_agent_guidance_replay_trend(
+        workspace,
+        total_guidance_events=10,
+        adopted_count=2,
+        missed_count=1,
+        bypassed_count=6,
+        unobservable_count=1,
+        adoption_rate=0.2,
+        bypass_rate=0.6,
+        unobservable_rate=0.1,
+        score=45,
+        quality="low",
+        reason_counts={"local_search_or_non_memory_tool_used": 6},
+    )
+
+    steps = _build_agent_next_steps_for_query(
+        {
+            "freshness": {"freshness": {"status": "fresh"}},
+            "results": [{"node": {"type": "Class", "name": "ArticleService", "file_path": "src/ArticleService.java"}}],
+        },
+        query="ArticleService",
+        workspace_file=workspace,
+    )
+
+    assert steps[0]["action"] == "inspect_top_result"
+    assert steps[0]["priority"] == "high"
+    assert steps[0]["target_ref"] == "src/ArticleService.java"
+    assert steps[0]["read_targets"] == ["src/ArticleService.java"]
+    assert steps[0]["replay_feedback"]["dominant_reason"] == "local_search_or_non_memory_tool_used"
+    assert "replay feedback" in steps[0]["command"]
+    assert "before rg/grep/find" in steps[0]["command"]
+
+
+def test_agent_next_steps_replay_feedback_for_unobservable_sessions(tmp_path: Path) -> None:
+    from memory_center.core.benchmark.trending import record_agent_guidance_replay_trend
+    from memory_center.core.orchestrator.query import _build_agent_next_steps_for_query
+
+    workspace = tmp_path / ".memory-center" / "workspace.yaml"
+    workspace.parent.mkdir(parents=True)
+    workspace.write_text("workspace: replay-unobservable\nroot: ..\nservices: []\n", encoding="utf-8")
+
+    record_agent_guidance_replay_trend(
+        workspace,
+        total_guidance_events=10,
+        adopted_count=9,
+        missed_count=1,
+        bypassed_count=0,
+        unobservable_count=0,
+        adoption_rate=0.9,
+        bypass_rate=0.0,
+        unobservable_rate=0.0,
+        score=95,
+        quality="high",
+        reason_counts={"matched_expected_tool": 9},
+    )
+    record_agent_guidance_replay_trend(
+        workspace,
+        total_guidance_events=10,
+        adopted_count=2,
+        missed_count=1,
+        bypassed_count=0,
+        unobservable_count=7,
+        adoption_rate=0.2,
+        bypass_rate=0.0,
+        unobservable_rate=0.7,
+        score=45,
+        quality="low",
+        reason_counts={"no_followup_tool_call": 7},
+    )
+
+    steps = _build_agent_next_steps_for_query(
+        {
+            "freshness": {"freshness": {"status": "fresh"}},
+            "results": [],
+        },
+        query="模糊问题",
+        workspace_file=workspace,
+    )
+
+    assert steps[0]["action"] == "refine_query"
+    assert steps[0]["replay_feedback"]["dominant_reason"] == "no_followup_tool_call"
+    assert "session_id" in steps[0]["command"]
+
+
+def test_agent_next_steps_replay_feedback_for_missing_target_hint(tmp_path: Path) -> None:
+    from memory_center.core.benchmark.trending import record_agent_guidance_replay_trend
+    from memory_center.core.orchestrator.query import _build_agent_next_steps_for_query
+
+    workspace = tmp_path / ".memory-center" / "workspace.yaml"
+    workspace.parent.mkdir(parents=True)
+    workspace.write_text("workspace: replay-target\nroot: ..\nservices: []\n", encoding="utf-8")
+
+    record_agent_guidance_replay_trend(
+        workspace,
+        total_guidance_events=10,
+        adopted_count=9,
+        missed_count=1,
+        bypassed_count=0,
+        unobservable_count=0,
+        adoption_rate=0.9,
+        bypass_rate=0.0,
+        unobservable_rate=0.0,
+        score=95,
+        quality="high",
+        reason_counts={"matched_expected_tool": 9},
+    )
+    record_agent_guidance_replay_trend(
+        workspace,
+        total_guidance_events=10,
+        adopted_count=2,
+        missed_count=8,
+        bypassed_count=0,
+        unobservable_count=0,
+        adoption_rate=0.2,
+        bypass_rate=0.0,
+        unobservable_rate=0.0,
+        score=45,
+        quality="low",
+        reason_counts={"guidance_missing_target_hint": 8},
+    )
+
+    steps = _build_agent_next_steps_for_query(
+        {
+            "freshness": {"freshness": {"status": "fresh"}},
+            "retrieval_policy": {"primary_intent": "general"},
+            "retrieval_diagnostics": {"semantic": {"status": "active"}},
+            "results": [{"node": {"type": "Class", "name": "ArticleService", "abs_path": "/tmp/ArticleService.java"}}],
+        },
+        query="文章处理逻辑",
+        workspace_file=workspace,
+    )
+
+    assert steps[0]["action"] == "validate_semantic_hit"
+    assert steps[0]["target_required"] is True
+    assert steps[0]["target_ref"] == "/tmp/ArticleService.java"
+    assert "read_targets[0]" in steps[0]["command"]
+
+
+def test_agent_next_steps_replay_feedback_for_action_mismatch(tmp_path: Path) -> None:
+    from memory_center.core.benchmark.trending import record_agent_guidance_replay_trend
+    from memory_center.core.orchestrator.query import _build_agent_next_steps_for_query
+
+    workspace = tmp_path / ".memory-center" / "workspace.yaml"
+    workspace.parent.mkdir(parents=True)
+    workspace.write_text("workspace: replay-mismatch\nroot: ..\nservices: []\n", encoding="utf-8")
+
+    record_agent_guidance_replay_trend(
+        workspace,
+        total_guidance_events=10,
+        adopted_count=9,
+        missed_count=1,
+        bypassed_count=0,
+        unobservable_count=0,
+        adoption_rate=0.9,
+        bypass_rate=0.0,
+        unobservable_rate=0.0,
+        score=95,
+        quality="high",
+        reason_counts={"matched_expected_tool": 9},
+    )
+    record_agent_guidance_replay_trend(
+        workspace,
+        total_guidance_events=10,
+        adopted_count=2,
+        missed_count=8,
+        bypassed_count=0,
+        unobservable_count=0,
+        adoption_rate=0.2,
+        bypass_rate=0.0,
+        unobservable_rate=0.0,
+        score=45,
+        quality="low",
+        reason_counts={"memory_tool_used_but_action_mismatch": 8},
+    )
+
+    steps = _build_agent_next_steps_for_query(
+        {
+            "freshness": {"freshness": {"status": "fresh"}},
+            "results": [{"node": {"type": "Method", "name": "ArticleMoveService.move"}}],
+        },
+        query="ArticleMoveService.move",
+        workspace_file=workspace,
+    )
+
+    assert steps[0]["action"] == "switch_to_walkthrough"
+    assert steps[0]["replay_feedback"]["dominant_reason"] == "memory_tool_used_but_action_mismatch"
+    assert "matches this action" in steps[0]["command"]
+
+
+def test_method_level_agent_next_step_keeps_resolved_target_hint() -> None:
+    from memory_center.core.orchestrator.query import _build_agent_next_steps_for_query
+
+    steps = _build_agent_next_steps_for_query(
+        {
+            "freshness": {"freshness": {"status": "fresh"}},
+            "results": [{"node": {
+                "type": "Method",
+                "name": "ArticleService.publish",
+                "abs_path": "/repo/src/ArticleService.java",
+            }}],
+        },
+        query="ArticleService#publish",
+    )
+
+    assert steps[0]["action"] == "switch_to_walkthrough"
+    assert steps[0]["target_ref"] == "/repo/src/ArticleService.java"
+    assert steps[0]["read_targets"] == ["/repo/src/ArticleService.java"]

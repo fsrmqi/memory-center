@@ -48,6 +48,7 @@ from memory_center.core.orchestrator import (
     memory_eval_context_weight,
     memory_eval_agent_guidance,
     memory_eval_agent_guidance_adoption,
+    memory_eval_agent_guidance_replay,
     memory_eval_handoff,
     memory_eval_index_freshness,
     memory_eval_regression_suite,
@@ -1229,6 +1230,155 @@ def test_agent_guidance_adoption_matches_followup_tools(tmp_path: Path):
         server.shutdown()
         thread.join(timeout=2)
     assert http["summary"]["adopted_count"] == 1
+
+
+def test_agent_guidance_replay_classifies_missed_bypassed_and_unobservable(tmp_path: Path):
+    workspace = _copy_demo_workspace(tmp_path, "agent-guidance-replay")
+
+    adopted = workspace_start_session(workspace, "按建议执行 walkthrough")
+    adopted_id = adopted["session_id"]
+    workspace_log_session_event(
+        workspace,
+        adopted_id,
+        "agent_guidance",
+        {
+            "query": "ArticleFeignClient#move",
+            "agent_next_steps": [
+                {
+                    "action": "switch_to_walkthrough",
+                    "priority": "high",
+                    "command": "mc_lookup(mode=\"walkthrough\")",
+                }
+            ],
+        },
+    )
+    workspace_log_session_event(
+        workspace,
+        adopted_id,
+        "tool_call",
+        {"tool_name": "memory_method_walkthrough_tool", "mode": "walkthrough", "query": "ArticleFeignClient#move"},
+    )
+
+    bypassed = workspace_start_session(workspace, "绕过建议直接 rg")
+    bypassed_id = bypassed["session_id"]
+    workspace_log_session_event(
+        workspace,
+        bypassed_id,
+        "agent_guidance",
+        {
+            "query": "ArticleController",
+            "agent_next_steps": [
+                {"action": "inspect_top_result", "command": "read the top result file", "read_targets": ["src/ArticleController.java"]}
+            ],
+        },
+    )
+    workspace_log_session_event(workspace, bypassed_id, "tool_call", {"tool_name": "rg", "query": "ArticleController class"})
+
+    missed = workspace_start_session(workspace, "用了 Memory Center 但没按建议动作")
+    missed_id = missed["session_id"]
+    workspace_log_session_event(
+        workspace,
+        missed_id,
+        "agent_guidance",
+        {
+            "query": "ArticleService",
+            "agent_next_steps": [
+                {"action": "use_read_targets", "command": "open referenced read target"}
+            ],
+        },
+    )
+    workspace_log_session_event(workspace, missed_id, "tool_call", {"tool_name": "memory_query_tool", "query": "ArticleService"})
+
+    unobservable = workspace_start_session(workspace, "没有后续工具事件")
+    unobservable_id = unobservable["session_id"]
+    workspace_log_session_event(
+        workspace,
+        unobservable_id,
+        "agent_guidance",
+        {
+            "query": "ArticleMapper",
+            "agent_next_steps": [
+                {"action": "refine_query", "command": "mc_lookup(mode=\"query\")"}
+            ],
+        },
+    )
+
+    evaluation = memory_eval_agent_guidance_replay(workspace, limit=50)
+    assert evaluation["schema"]["name"] == "eval_result"
+    assert evaluation["summary"]["total_guidance_events"] == 4
+    assert evaluation["summary"]["adopted_count"] == 1
+    assert evaluation["summary"]["bypassed_count"] == 1
+    assert evaluation["summary"]["missed_count"] == 1
+    assert evaluation["summary"]["unobservable_count"] == 1
+    assert evaluation["summary"]["reason_counts"]["matched_expected_tool"] == 1
+    assert evaluation["summary"]["reason_counts"]["local_search_or_non_memory_tool_used"] == 1
+    assert evaluation["summary"]["reason_counts"]["guidance_missing_target_hint"] == 1
+    assert evaluation["summary"]["reason_counts"]["no_followup_tool_call"] == 1
+    assert any(record["status"] == "bypassed" and record["matched_tool"] == "rg" for record in evaluation["replay_records"])
+    assert any(finding["code"] == "agent_guidance_bypassed" for finding in evaluation["findings"])
+
+    import ast
+    runner = CliRunner()
+    cli_result = runner.invoke(app, ["eval-agent-guidance-replay", "--workspace", str(workspace), "--limit", "50"])
+    assert cli_result.exit_code == 0
+    cli = ast.literal_eval(cli_result.output)
+    assert cli["summary"]["bypassed_count"] == 1
+
+    from http.server import ThreadingHTTPServer
+    server = ThreadingHTTPServer(("127.0.0.1", _free_port()), create_handler(workspace))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        base = f"http://127.0.0.1:{server.server_address[1]}"
+        http = json.loads(urlopen(f"{base}/workspace/eval-agent-guidance-replay?limit=50").read().decode("utf-8"))
+    finally:
+        server.shutdown()
+        thread.join(timeout=2)
+    assert http["summary"]["unobservable_count"] == 1
+
+
+def test_agent_guidance_replay_prioritizes_earlier_bypass_over_later_match(tmp_path: Path):
+    workspace = _copy_demo_workspace(tmp_path, "agent-guidance-replay-order")
+    session = workspace_start_session(workspace, "先绕过后补做")
+    session_id = session["session_id"]
+    workspace_log_session_event(
+        workspace,
+        session_id,
+        "agent_guidance",
+        {"agent_next_steps": [{"action": "switch_to_walkthrough", "command": "mc_lookup(mode=walkthrough)"}]},
+    )
+    workspace_log_session_event(workspace, session_id, "tool_call", {"tool_name": "rg", "query": "ArticleService"})
+    workspace_log_session_event(
+        workspace,
+        session_id,
+        "tool_call",
+        {"tool_name": "memory_method_walkthrough_tool", "mode": "walkthrough"},
+    )
+
+    evaluation = memory_eval_agent_guidance_replay(workspace, session_id=session_id)
+
+    assert evaluation["summary"]["bypassed_count"] == 1
+    assert evaluation["summary"]["adopted_count"] == 0
+    assert evaluation["replay_records"][0]["matched_tool"] == "rg"
+
+
+def test_agent_guidance_replay_does_not_match_search_tokens_inside_payload_text(tmp_path: Path):
+    workspace = _copy_demo_workspace(tmp_path, "agent-guidance-replay-token")
+    session = workspace_start_session(workspace, "普通工具调用")
+    session_id = session["session_id"]
+    workspace_log_session_event(
+        workspace,
+        session_id,
+        "agent_guidance",
+        {"agent_next_steps": [{"action": "refine_query", "command": "mc_lookup(mode=query)"}]},
+    )
+    workspace_log_session_event(workspace, session_id, "tool_call", {"tool_name": "git", "query": "application config"})
+
+    evaluation = memory_eval_agent_guidance_replay(workspace, session_id=session_id)
+
+    assert evaluation["summary"]["bypassed_count"] == 0
+    assert evaluation["summary"]["missed_count"] == 1
+    assert evaluation["replay_records"][0]["reason"] == "memory_tool_used_but_action_mismatch"
 
 
 def test_memory_backend_sqlite_mirror(tmp_path: Path):
@@ -2691,6 +2841,75 @@ def test_agent_guidance_adoption_trend_records_and_alerts(tmp_path: Path):
     assert sampled["trend_point"]["missed_action_counts"] == {}
 
 
+def test_agent_guidance_replay_trend_records_and_alerts(tmp_path: Path):
+    workspace = _copy_demo_workspace(tmp_path, "agent-guidance-replay-trend")
+    from memory_center.core.benchmark.trending import (
+        check_regression_alerts,
+        generate_benchmark_report,
+        get_agent_guidance_replay_trends,
+        record_agent_guidance_replay_trend,
+    )
+    from memory_center.core.orchestrator import memory_eval_agent_guidance_replay_trend
+
+    for idx in range(5):
+        record_agent_guidance_replay_trend(
+            workspace,
+            total_guidance_events=10,
+            adopted_count=9,
+            missed_count=1,
+            bypassed_count=0,
+            unobservable_count=0,
+            adoption_rate=0.9,
+            bypass_rate=0.0,
+            unobservable_rate=0.0,
+            score=95,
+            quality="high",
+            session_id=f"stable-{idx}",
+            reason_counts={"matched_expected_tool": 9},
+        )
+    record_agent_guidance_replay_trend(
+        workspace,
+        total_guidance_events=10,
+        adopted_count=2,
+        missed_count=1,
+        bypassed_count=6,
+        unobservable_count=1,
+        adoption_rate=0.2,
+        bypass_rate=0.6,
+        unobservable_rate=0.1,
+        score=45,
+        quality="low",
+        session_id="regressed",
+        reason_counts={"local_search_or_non_memory_tool_used": 6},
+    )
+
+    trends = get_agent_guidance_replay_trends(workspace, limit=20)
+    assert trends["summary"]["total_trend_points"] == 6
+    assert trends["summary"]["latest_bypass_rate"] == 0.6
+    assert trends["summary"]["reason_counts"]["local_search_or_non_memory_tool_used"] == 6
+    assert trends["regressions"]
+
+    alerts = check_regression_alerts(workspace)
+    assert alerts["agent_guidance_replay"]["total_regressions"] >= 1
+    assert any(alert["type"] == "agent_guidance_replay" for alert in alerts["alerts"])
+    report = generate_benchmark_report(workspace)
+    assert report["agent_guidance_replay_trends"]["summary"]["total_trend_points"] == 6
+
+    session = workspace_start_session(workspace, "replay trend sample")
+    sid = session["session_id"]
+    workspace_log_session_event(
+        workspace,
+        sid,
+        "agent_guidance",
+        {"agent_next_steps": [{"action": "refine_query", "command": "mc_lookup(mode=query)"}]},
+    )
+    workspace_log_session_event(workspace, sid, "tool_call", {"tool_name": "memory_query_tool", "query": "ArticleFeignClient"})
+    sampled = memory_eval_agent_guidance_replay_trend(workspace, session_id=sid, limit=20)
+    assert sampled["recorded"] is True
+    assert sampled["trend_point"]["adoption_rate"] == 1.0
+    assert sampled["trend_point"]["reason_counts"] == {"matched_expected_tool": 1}
+
+
 def test_eval_agent_guidance_trend_available_from_cli_and_http(tmp_path: Path):
     import ast
     from http.server import ThreadingHTTPServer
@@ -2768,6 +2987,53 @@ def test_eval_agent_guidance_adoption_trend_available_from_cli_and_http(tmp_path
     try:
         base = f"http://127.0.0.1:{server.server_address[1]}"
         http = json.loads(urlopen(f"{base}/workspace/eval-agent-guidance-adoption-trend?session_id={sid}&limit=20").read().decode("utf-8"))
+    finally:
+        server.shutdown()
+        thread.join(timeout=2)
+
+    assert http["recorded"] is True
+    assert http["trend_point"]["adoption_rate"] == 1.0
+
+
+def test_eval_agent_guidance_replay_trend_available_from_cli_and_http(tmp_path: Path):
+    import ast
+    from http.server import ThreadingHTTPServer
+
+    workspace = _copy_demo_workspace(tmp_path, "agent-guidance-replay-trend-entrypoints")
+    session = workspace_start_session(workspace, "replay trend entrypoint")
+    sid = session["session_id"]
+    workspace_log_session_event(
+        workspace,
+        sid,
+        "agent_guidance",
+        {"agent_next_steps": [{"action": "refine_query", "command": "mc_lookup(mode=query)"}]},
+    )
+    workspace_log_session_event(workspace, sid, "tool_call", {"tool_name": "memory_query_tool", "query": "ArticleFeignClient"})
+
+    runner = CliRunner()
+    cli_result = runner.invoke(
+        app,
+        [
+            "eval-agent-guidance-replay-trend",
+            "--workspace",
+            str(workspace),
+            "--session-id",
+            sid,
+            "--limit",
+            "20",
+        ],
+    )
+    assert cli_result.exit_code == 0
+    cli = ast.literal_eval(cli_result.output)
+    assert cli["recorded"] is True
+    assert cli["trend_point"]["adoption_rate"] == 1.0
+
+    server = ThreadingHTTPServer(("127.0.0.1", _free_port()), create_handler(workspace))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        base = f"http://127.0.0.1:{server.server_address[1]}"
+        http = json.loads(urlopen(f"{base}/workspace/eval-agent-guidance-replay-trend?session_id={sid}&limit=20").read().decode("utf-8"))
     finally:
         server.shutdown()
         thread.join(timeout=2)

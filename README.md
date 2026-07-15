@@ -178,6 +178,14 @@ The installer uses `pipx` by default and exposes:
 - `memory-center-mcp`
 - `memory-center-http`
 
+The install script selects an available Python 3.10+ interpreter automatically. For a manual `pipx` refresh, explicitly select a Python 3.10+ interpreter as well:
+
+安装脚本会自动选择可用的 Python 3.10+ 解释器。手工用 `pipx` 刷新时也应显式指定 Python 3.10+：
+
+```bash
+pipx install --python python3.11 --force /path/to/memory-center
+```
+
 Verify installation:
 
 安装后验证：
@@ -193,7 +201,7 @@ If `pipx` was installed but the current shell still says `command not found: pip
 Common macOS fix / macOS 常见修复：
 
 ```bash
-export PATH="$HOME/Library/Python/3.9/bin:$PATH"
+export PATH="$HOME/.local/bin:$PATH"
 ```
 
 Then rerun:
@@ -756,6 +764,10 @@ When adoption trend data shows a specific action is repeatedly missed, future qu
 
 当 adoption 趋势显示某个 action 连续未被执行时，后续 query 结果会保留同一 action，但会附加 `adoption_feedback`、提升 priority，并把 `command` 改写成更明确的第一步工具或文件动作。
 
+When replay trend data shows why guidance failed, future query results may also add `replay_feedback`. Bypass-heavy trends tell the agent to execute the Memory Center command before `rg` / `grep` / `find`; unobservable trends remind the caller to pass `session_id`; missing-target trends force `target_ref` / `read_targets` usage; action-mismatch trends point the agent to the Memory Center mode that matches the suggested action. Replay preserves event order: a local-search bypass before a later matching Memory Center call remains `bypassed`. Bypass detection uses structured tool names or shell command fields, not arbitrary text inside a tool payload. Method-level walkthrough suggestions preserve the resolved `target_ref` and `read_targets` when available.
+
+当 replay 趋势说明建议为什么失败时，后续 query 结果还可能附加 `replay_feedback`。如果高频原因是绕过本地搜索，会提示先执行 Memory Center 命令再用 `rg` / `grep` / `find`；如果是不可观测，会提示调用方传入 `session_id`；如果缺少目标，会强制使用 `target_ref` / `read_targets`；如果是动作不匹配，会提示使用与建议 action 对应的 Memory Center mode。Replay 会保留事件顺序：先发生本地搜索绕过、之后才调用匹配的 Memory Center 工具，仍会归类为 `bypassed`。绕过检测只检查结构化工具名或 shell 命令字段，不会从 payload 任意文本中猜测；方法级 walkthrough 建议在可用时会保留解析到的 `target_ref` 与 `read_targets`。
+
 When a method walkthrough starts from a sub-project workspace, Memory Center can automatically escalate to a parent or registry-covered aggregate workspace if that workspace produces a more complete cross-service flow. The `workspace_escalation` field records whether this happened; missing parents are safe fallbacks, not errors.
 
 当 method walkthrough 从子项目 workspace 启动时，Memory Center 会尝试自动升级到父级或 registry 中覆盖当前项目的聚合 workspace，只在聚合结果更完整时切换。`workspace_escalation` 会记录是否切换；找不到父级不是错误。
@@ -939,9 +951,11 @@ The evaluation layer now also includes:
 - `mc_admin(action="eval_agent_guidance")`
 - `mc_admin(action="eval_agent_guidance_adoption")`
 - `mc_admin(action="eval_agent_guidance_adoption_trend")`
+- `mc_admin(action="eval_agent_guidance_replay")`
+- `mc_admin(action="eval_agent_guidance_replay_trend")`
 - `mc_admin(action="eval_agent_guidance_trend")`
 
-These help answer whether indexes are stale, whether models are actually using Memory Center, whether compact payloads are still too heavy, whether lookup output includes bounded `agent_next_steps` without invalid broad-search suggestions, and whether recorded guidance was actually followed by later tool calls. Use `eval_agent_guidance_trend` to append a quality trend point into `.memory-center/memory/agent-guidance-trends.jsonl`; use `eval_agent_guidance_adoption_trend` to append an adoption-rate trend point into `.memory-center/memory/agent-guidance-adoption-trends.jsonl`. `eval_agent_guidance` and `eval_agent_guidance_adoption` are read-only.
+These help answer whether indexes are stale, whether models are actually using Memory Center, whether compact payloads are still too heavy, whether lookup output includes bounded `agent_next_steps` without invalid broad-search suggestions, and whether recorded guidance was actually followed by later tool calls. Use `eval_agent_guidance_replay` when adoption is low and you need the reason: it classifies guidance as `adopted`, `missed`, `bypassed`, or `unobservable` and reports reason counts. Use `eval_agent_guidance_trend` to append a quality trend point into `.memory-center/memory/agent-guidance-trends.jsonl`; use `eval_agent_guidance_adoption_trend` to append an adoption-rate trend point into `.memory-center/memory/agent-guidance-adoption-trends.jsonl`; use `eval_agent_guidance_replay_trend` to append a replay-quality trend point into `.memory-center/memory/agent-guidance-replay-trends.jsonl`. `eval_agent_guidance`, `eval_agent_guidance_adoption`, and `eval_agent_guidance_replay` are read-only.
 
 评测层现在还额外包含：
 
@@ -951,9 +965,11 @@ These help answer whether indexes are stale, whether models are actually using M
 - `mc_admin(action="eval_agent_guidance")`
 - `mc_admin(action="eval_agent_guidance_adoption")`
 - `mc_admin(action="eval_agent_guidance_adoption_trend")`
+- `mc_admin(action="eval_agent_guidance_replay")`
+- `mc_admin(action="eval_agent_guidance_replay_trend")`
 - `mc_admin(action="eval_agent_guidance_trend")`
 
-它们分别用于判断索引是否过期、模型是否真的在使用 Memory Center、compact payload 是否仍然偏重、lookup 输出是否包含有界的 `agent_next_steps` 且没有无效的泛搜索建议，以及已记录的建议是否真的被后续 tool call 执行。需要写入建议质量历史曲线时使用 `eval_agent_guidance_trend`，它会追加到 `.memory-center/memory/agent-guidance-trends.jsonl`；需要写入 adoption rate 历史曲线时使用 `eval_agent_guidance_adoption_trend`，它会追加到 `.memory-center/memory/agent-guidance-adoption-trends.jsonl`。`eval_agent_guidance` 与 `eval_agent_guidance_adoption` 本身保持只读。
+它们分别用于判断索引是否过期、模型是否真的在使用 Memory Center、compact payload 是否仍然偏重、lookup 输出是否包含有界的 `agent_next_steps` 且没有无效的泛搜索建议，以及已记录的建议是否真的被后续 tool call 执行。adoption 偏低时使用 `eval_agent_guidance_replay` 定位原因：它会把建议分类为 `adopted`、`missed`、`bypassed` 或 `unobservable`，并输出原因计数。需要写入建议质量历史曲线时使用 `eval_agent_guidance_trend`，它会追加到 `.memory-center/memory/agent-guidance-trends.jsonl`；需要写入 adoption rate 历史曲线时使用 `eval_agent_guidance_adoption_trend`，它会追加到 `.memory-center/memory/agent-guidance-adoption-trends.jsonl`；需要写入 replay 质量曲线时使用 `eval_agent_guidance_replay_trend`，它会追加到 `.memory-center/memory/agent-guidance-replay-trends.jsonl`。`eval_agent_guidance`、`eval_agent_guidance_adoption` 与 `eval_agent_guidance_replay` 本身保持只读。
 
 To reduce model-side token usage, `workspace_sniff`, `workspace_status`, `workspace_resume_packet`, `workspace_recent_evidence` (now with `view=compact|full`), `workspace_continuity_dashboard`, `workspace_dashboard`, and `workspace_handoff_packet` all support `view=compact|full` plus `budget=small|medium|large`. MCP defaults to `compact + medium`; use `full` for local debugging or manual inspection.
 
@@ -979,9 +995,17 @@ Agent guidance adoption trend recording is exposed as `eval-agent-guidance-adopt
 
 Agent guidance adoption 趋势记录入口为 `eval-agent-guidance-adoption-trend`、`/workspace/eval-agent-guidance-adoption-trend` 和 `mc_admin(action="eval_agent_guidance_adoption_trend")`。Benchmark trend report 与 regression alerts 现在会包含 `agent_guidance_adoption_trends`，日常检查可以发现 adoption rate 下降。
 
+Agent guidance replay is exposed as `eval-agent-guidance-replay`, `/workspace/eval-agent-guidance-replay`, and `mc_admin(action="eval_agent_guidance_replay")`. Replay trend recording is exposed as `eval-agent-guidance-replay-trend`, `/workspace/eval-agent-guidance-replay-trend`, and `mc_admin(action="eval_agent_guidance_replay_trend")`; benchmark reports and regression alerts include `agent_guidance_replay_trends` to surface bypass and unobservable rates.
+
+Agent guidance replay 入口为 `eval-agent-guidance-replay`、`/workspace/eval-agent-guidance-replay` 和 `mc_admin(action="eval_agent_guidance_replay")`。Replay 趋势记录入口为 `eval-agent-guidance-replay-trend`、`/workspace/eval-agent-guidance-replay-trend` 和 `mc_admin(action="eval_agent_guidance_replay_trend")`；benchmark report 与 regression alerts 会包含 `agent_guidance_replay_trends`，用于暴露绕过率和不可观测率。
+
 Adoption trend points also store `missed_action_counts`. Query-time `agent_next_steps` uses those counts as bounded feedback: only actions missed in the latest regressed trend are reinforced, and normal query behavior is unchanged when adoption is healthy.
 
 Adoption 趋势点还会记录 `missed_action_counts`。Query 阶段的 `agent_next_steps` 会把这些计数作为有界反馈：只强化最近退化趋势里确实 missed 的 action；adoption 健康时保持原有查询行为不变。
+
+Replay trend points store `reason_counts`. Query-time `agent_next_steps` uses the latest regressed replay reason as bounded feedback and leaves healthy workspaces unchanged.
+
+Replay 趋势点会记录 `reason_counts`。Query 阶段的 `agent_next_steps` 会把最近退化 replay 原因作为有界反馈；replay 健康时保持原有查询行为不变。
 
 Agent guidance trend recording is exposed as `eval-agent-guidance-trend`, `/workspace/eval-agent-guidance-trend`, and `mc_admin(action="eval_agent_guidance_trend")`. Benchmark trend reports and regression alerts include `agent_guidance_trends`, so daily checks can catch falling `agent_next_steps` coverage or renewed invalid broad-search suggestions.
 

@@ -21,8 +21,14 @@
 - CLI `memory-center query --session-id ...`、HTTP `/workspace/query?session_id=...` 与 MCP `mc_lookup(session_id=...)` 现在会自动把返回的 `agent_next_steps` 记录为 `agent_guidance` session event，adoption 指标不再依赖手工记录。
 - 新增 `agent-guidance-adoption-trends.jsonl`、`eval-agent-guidance-adoption-trend`、`/workspace/eval-agent-guidance-adoption-trend` 与 `mc_admin(action="eval_agent_guidance_adoption_trend")`，Benchmark trend report / regression alerts 现在能发现 adoption rate 下降。
 - Adoption 趋势点新增 `missed_action_counts`；当最新退化趋势显示某个 action 反复未被执行时，后续 query 的 `agent_next_steps` 会保留 action 并附加 `adoption_feedback`、提升 priority、强化 command。
+- 新增 `memory_eval_agent_guidance_replay` / `eval-agent-guidance-replay` / `/workspace/eval-agent-guidance-replay` / `mc_admin(action="eval_agent_guidance_replay")`，可回放真实 session event 并把建议执行结果分类为 `adopted`、`missed`、`bypassed` 或 `unobservable`。
+- 新增 `agent-guidance-replay-trends.jsonl`、`eval-agent-guidance-replay-trend`、`/workspace/eval-agent-guidance-replay-trend` 与 `mc_admin(action="eval_agent_guidance_replay_trend")`，Benchmark trend report / regression alerts 现在能发现 replay adoption rate 下降、绕过率升高和不可观测率升高。
+- Replay 趋势点新增 query-time 反哺：当最新退化趋势显示本地搜索绕过、不可观测、缺 target 或动作不匹配时，后续 `agent_next_steps` 会附加 `replay_feedback`，并强化 command、`session_id`、`target_ref/read_targets` 或 Memory Center mode。
 - 新增 `agent-guidance-trends.jsonl`、`eval-agent-guidance-trend`、`/workspace/eval-agent-guidance-trend` 与 `mc_admin(action="eval_agent_guidance_trend")`，Benchmark trend report / regression alerts 现在能发现 `agent_next_steps` 覆盖率下降或无效泛搜索建议回潮。
-- 本地安装版本提升至 `3.5.20`。
+- 修复 replay 回放把“先本地搜索绕过、后补做匹配工具”误记为 adopted 的问题；现在按后续工具事件顺序判定。
+- 修复本地搜索检测会因 payload 文本子串（例如 `application` 中的 `cat`）误报 bypass 的问题；现在只检查结构化工具名和 shell 命令入口。
+- 方法级 `switch_to_walkthrough` 建议现在保留 `target_ref` 和 `read_targets`，缺目标反馈可直接执行。
+- 本地安装版本提升至 `3.5.21`。
 
 ### Task Space Resume Experience / 任务空间接手体验
 

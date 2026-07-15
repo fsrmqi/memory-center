@@ -64,6 +64,8 @@ from memory_center.core.orchestrator import (
     memory_eval_agent_guidance,
     memory_eval_agent_guidance_adoption,
     memory_eval_agent_guidance_adoption_trend,
+    memory_eval_agent_guidance_replay,
+    memory_eval_agent_guidance_replay_trend,
     memory_eval_agent_guidance_trend,
     memory_eval_context_weight,
     memory_eval_handoff,
@@ -816,6 +818,26 @@ def eval_agent_guidance_adoption_trend_cmd(
 ):
     """Evaluate agent guidance adoption and record one trend point."""
     print(memory_eval_agent_guidance_adoption_trend(workspace, session_id=session_id, limit=limit))
+
+
+@app.command("eval-agent-guidance-replay")
+def eval_agent_guidance_replay_cmd(
+    workspace: str = typer.Option(...),
+    session_id: str = typer.Option(""),
+    limit: int = typer.Option(200),
+):
+    """Replay agent guidance events and classify missed, bypassed, and unobservable recommendations."""
+    print(memory_eval_agent_guidance_replay(workspace, session_id=session_id, limit=limit))
+
+
+@app.command("eval-agent-guidance-replay-trend")
+def eval_agent_guidance_replay_trend_cmd(
+    workspace: str = typer.Option(...),
+    session_id: str = typer.Option(""),
+    limit: int = typer.Option(200),
+):
+    """Replay agent guidance events and record one trend point."""
+    print(memory_eval_agent_guidance_replay_trend(workspace, session_id=session_id, limit=limit))
 
 
 @app.command("eval-workflow-orchestration")

@@ -72,6 +72,10 @@ MCP 当前公开的是 12 个 task-level tools：
 - 传入 `session_id` 时，`mc_lookup` 会把返回的 `agent_next_steps` 自动记录为 `agent_guidance` session event，用于后续 adoption 评估。
 - If adoption trends show a returned action is repeatedly missed, future query `agent_next_steps` may include `adoption_feedback` and a more explicit command while preserving the action.
 - 如果 adoption 趋势显示某个返回 action 反复未被执行，后续 query 的 `agent_next_steps` 可能会附加 `adoption_feedback` 并给出更明确的 command，但保留原 action。
+- If replay trends explain why guidance failed, future query `agent_next_steps` may include `replay_feedback`: bypass reasons suppress broad local search, unobservable reasons remind callers to pass `session_id`, missing-target reasons force `target_ref` / `read_targets`, and action-mismatch reasons point to the matching Memory Center mode. Replay preserves follow-up order, so a local-search bypass before a later matching Memory Center call is still `bypassed`; it detects bypasses from structured tool names or shell command fields only.
+- 如果 replay 趋势解释了建议失败原因，后续 query 的 `agent_next_steps` 可能会附加 `replay_feedback`：绕过原因会压制泛本地搜索，不可观测原因会提示传入 `session_id`，缺少目标原因会强制使用 `target_ref` / `read_targets`，动作不匹配原因会提示切到对应的 Memory Center mode。Replay 会保留后续事件顺序，因此先本地搜索绕过、之后才调用匹配的 Memory Center 工具仍会归类为 `bypassed`；绕过检测只使用结构化工具名或 shell 命令字段。
+- Method-level `switch_to_walkthrough` guidance preserves `target_ref` and `read_targets` when the indexed hit has a resolved path.
+- 当方法级 `switch_to_walkthrough` 建议对应的索引命中已解析路径时，会保留 `target_ref` 与 `read_targets`。
 - The same field is visible from CLI `memory-center query` and HTTP `/workspace/query`; MCP only adds the top-level lift for non-query route wrappers.
 - CLI `memory-center query` 和 HTTP `/workspace/query` 也会返回同一字段；MCP 只是额外在非 query 路由包装层把它提升到顶层。
 - 如果当前 MCP workspace 是子项目，method walkthrough 会尝试自动升级到父级或 registry 中覆盖当前项目的聚合 workspace。查看 `workspace_escalation.status` 判断是否已切换；`not_needed_or_not_found` 不是错误。
@@ -104,6 +108,8 @@ MCP 当前公开的是 12 个 task-level tools：
 - `eval_agent_guidance` — 检查 lookup 输出是否包含有界 `agent_next_steps`，并标记低效搜索建议
 - `eval_agent_guidance_adoption` — 检查已记录的 agent guidance 是否被后续 tool call 执行
 - `eval_agent_guidance_adoption_trend` — 执行 adoption 检查并追加一条 adoption rate 趋势记录
+- `eval_agent_guidance_replay` — 回放真实 session event，并把建议执行结果分类为 adopted / missed / bypassed / unobservable
+- `eval_agent_guidance_replay_trend` — 执行 replay 检查并追加一条 replay 趋势记录
 - `eval_agent_guidance_trend` — 执行同一检查并追加一条 agent guidance 趋势记录
 - `audit` — 完成审计（文档/测试/实现/设计一致性）
 - `discover` — 热点命令发现与下一步推荐

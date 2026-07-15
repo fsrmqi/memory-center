@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shlex
 from pathlib import Path
 from typing import Any
 
@@ -164,12 +165,14 @@ def memory_eval_regression_suite(
     )
     agent_guidance_eval = memory_eval_agent_guidance(workspace_file, intent=intent, limit=limit)
     agent_guidance_adoption = memory_eval_agent_guidance_adoption(workspace_file, session_id=session_id, limit=limit)
+    agent_guidance_replay = memory_eval_agent_guidance_replay(workspace_file, session_id=session_id, limit=limit)
     components = {
         "write_quality": write_eval,
         "resume": resume_eval,
         "handoff": handoff_eval,
         "agent_guidance": agent_guidance_eval,
         "agent_guidance_adoption": agent_guidance_adoption,
+        "agent_guidance_replay": agent_guidance_replay,
     }
     scores = [int(item.get("score", 0) or 0) for item in components.values()]
     avg_score = int(sum(scores) / len(scores)) if scores else 0
@@ -378,6 +381,136 @@ def memory_eval_agent_guidance_adoption_trend(
     }
 
 
+def memory_eval_agent_guidance_replay(
+    workspace_file: str | Path,
+    *,
+    session_id: str = "",
+    limit: int = 200,
+) -> dict[str, Any]:
+    """Replay recorded agent guidance and classify why each recommendation did or did not land."""
+
+    config, store = load_context(workspace_file)
+    events = store.read_jsonl_prefer_backend(SESSION_EVENTS_FILE, limit=max(limit, 1))
+    if session_id:
+        events = [event for event in events if event.get("session_id") == session_id]
+
+    records: list[dict[str, Any]] = []
+    reason_counts: dict[str, int] = {}
+    status_counts = {
+        "adopted": 0,
+        "missed": 0,
+        "bypassed": 0,
+        "unobservable": 0,
+    }
+
+    for index, event in enumerate(events):
+        if event.get("event_type") not in {"agent_guidance", "agent_next_steps"}:
+            continue
+        payload = _event_payload(event)
+        steps = payload.get("agent_next_steps", [])
+        if not isinstance(steps, list) or not steps:
+            continue
+        first_step = next((step for step in steps if isinstance(step, dict) and step.get("action")), None)
+        if not first_step:
+            continue
+        sid = str(event.get("session_id", "") or "")
+        action = str(first_step.get("action", "") or "")
+        followups = _agent_guidance_followups(events, index, sid)
+        status, reason, matched = _classify_agent_guidance_replay(action, first_step, followups)
+        status_counts[status] = status_counts.get(status, 0) + 1
+        reason_counts[reason] = reason_counts.get(reason, 0) + 1
+        records.append({
+            "session_id": sid,
+            "query": payload.get("query", "") or payload.get("intent", ""),
+            "expected_action": action,
+            "expected_command": first_step.get("command", ""),
+            "status": status,
+            "reason": reason,
+            "matched_tool": matched,
+            "followup_tools": [
+                str((_event_payload(item).get("tool_name") or _event_payload(item).get("name") or "") or "")
+                for item in followups[:8]
+            ],
+            "diagnostics": _agent_guidance_replay_diagnostics(first_step, followups),
+        })
+
+    total = len(records)
+    adopted = status_counts.get("adopted", 0)
+    bypassed = status_counts.get("bypassed", 0)
+    unobservable = status_counts.get("unobservable", 0)
+    missed = status_counts.get("missed", 0)
+    adoption_rate = round(adopted / total, 3) if total else 0.0
+    bypass_rate = round(bypassed / total, 3) if total else 0.0
+    unobservable_rate = round(unobservable / total, 3) if total else 0.0
+
+    builder = EvalResultBuilder()
+    if total == 0:
+        builder.add("low", "no_agent_guidance_events", "近期没有记录 agent_guidance 事件，无法回放建议执行链路。", 10)
+    if bypassed > 0:
+        builder.add("medium", "agent_guidance_bypassed", f"{bypassed} 条建议后续被本地搜索或非 Memory Center 工具绕过。", min(35, bypassed * 15))
+    if missed > 0:
+        builder.add("medium", "agent_guidance_missed", f"{missed} 条建议有后续工具调用但没有匹配预期动作。", min(35, missed * 12))
+    if total >= 3 and unobservable_rate > 0.3:
+        builder.add("medium", "agent_guidance_unobservable", f"agent guidance unobservable rate 为 {unobservable_rate}。", 20)
+    if total >= 3 and adoption_rate < 0.6:
+        builder.add("medium", "low_agent_guidance_replay_adoption_rate", f"agent guidance replay adoption rate 仅 {adoption_rate}。", 20)
+
+    return builder.finalize(
+        workspace=config.workspace,
+        session_id=session_id,
+        summary={
+            "total_guidance_events": total,
+            "adopted_count": adopted,
+            "missed_count": missed,
+            "bypassed_count": bypassed,
+            "unobservable_count": unobservable,
+            "adoption_rate": adoption_rate,
+            "bypass_rate": bypass_rate,
+            "unobservable_rate": unobservable_rate,
+            "status_counts": status_counts,
+            "reason_counts": reason_counts,
+        },
+        replay_records=records[:50],
+    )
+
+
+def memory_eval_agent_guidance_replay_trend(
+    workspace_file: str | Path,
+    *,
+    session_id: str = "",
+    limit: int = 200,
+) -> dict[str, Any]:
+    """Run agent guidance replay eval and append one trend point."""
+
+    from ..benchmark.trending import record_agent_guidance_replay_trend
+
+    result = memory_eval_agent_guidance_replay(workspace_file, session_id=session_id, limit=limit)
+    summary = result.get("summary", {}) or {}
+    recorded = record_agent_guidance_replay_trend(
+        workspace_file,
+        total_guidance_events=int(summary.get("total_guidance_events", 0) or 0),
+        adopted_count=int(summary.get("adopted_count", 0) or 0),
+        missed_count=int(summary.get("missed_count", 0) or 0),
+        bypassed_count=int(summary.get("bypassed_count", 0) or 0),
+        unobservable_count=int(summary.get("unobservable_count", 0) or 0),
+        adoption_rate=float(summary.get("adoption_rate", 0.0) or 0.0),
+        bypass_rate=float(summary.get("bypass_rate", 0.0) or 0.0),
+        unobservable_rate=float(summary.get("unobservable_rate", 0.0) or 0.0),
+        score=int(result.get("score", 0) or 0),
+        quality=str(result.get("quality", "") or ""),
+        session_id=session_id,
+        reason_counts={
+            str(reason): int(count or 0)
+            for reason, count in (summary.get("reason_counts", {}) or {}).items()
+            if str(reason)
+        },
+    )
+    return {
+        **recorded,
+        "eval": result,
+    }
+
+
 def _match_agent_guidance_followup(action: str, followups: list[dict[str, Any]]) -> str:
     for event in followups:
         payload = _event_payload(event)
@@ -386,6 +519,95 @@ def _match_agent_guidance_followup(action: str, followups: list[dict[str, Any]])
         if _tool_matches_agent_guidance_action(action, tool_name, mode, payload):
             return tool_name or mode
     return ""
+
+
+def _agent_guidance_followups(events: list[dict[str, Any]], index: int, session_id: str) -> list[dict[str, Any]]:
+    if not session_id:
+        return []
+    followups: list[dict[str, Any]] = []
+    for candidate in events[index + 1:]:
+        if candidate.get("session_id") != session_id:
+            continue
+        event_type = candidate.get("event_type")
+        if event_type in {"agent_guidance", "agent_next_steps", "session_end"}:
+            break
+        if event_type == "tool_call":
+            followups.append(candidate)
+        if len(followups) >= 8:
+            break
+    return followups
+
+
+def _classify_agent_guidance_replay(
+    action: str,
+    step: dict[str, Any],
+    followups: list[dict[str, Any]],
+) -> tuple[str, str, str]:
+    if not followups:
+        return "unobservable", "no_followup_tool_call", ""
+    for event in followups:
+        if _is_local_search_or_bypass_tool(event):
+            return "bypassed", "local_search_or_non_memory_tool_used", _tool_name_from_event(event)
+        payload = _event_payload(event)
+        tool_name = str(payload.get("tool_name") or payload.get("name") or "")
+        mode = str(payload.get("mode") or "")
+        if _tool_matches_agent_guidance_action(action, tool_name, mode, payload):
+            return "adopted", "matched_expected_tool", tool_name or mode
+    if not _step_has_execution_hint(step):
+        return "missed", "guidance_missing_executable_command", ""
+    if _step_missing_target_hint(step):
+        return "missed", "guidance_missing_target_hint", ""
+    return "missed", "memory_tool_used_but_action_mismatch", ""
+
+
+def _agent_guidance_replay_diagnostics(step: dict[str, Any], followups: list[dict[str, Any]]) -> dict[str, Any]:
+    return {
+        "has_command": bool(str(step.get("command", "") or "").strip()),
+        "has_read_targets": bool(step.get("read_targets") or step.get("target") or step.get("target_ref")),
+        "followup_count": len(followups),
+        "first_followup_tool": _tool_name_from_event(followups[0]) if followups else "",
+    }
+
+
+def _tool_name_from_event(event: dict[str, Any]) -> str:
+    payload = _event_payload(event)
+    return str((payload.get("tool_name") or payload.get("name") or payload.get("mode") or "") or "")
+
+
+def _is_local_search_or_bypass_tool(event: dict[str, Any]) -> bool:
+    payload = _event_payload(event)
+    tool_name = _tool_name_from_event(event).lower()
+    if tool_name.startswith(("memory_", "workspace_", "mc_")) or "mc_lookup" in tool_name:
+        return False
+    local_tools = {"rg", "grep", "find", "sed", "cat", "ls", "read_file", "open"}
+    if tool_name in local_tools:
+        return True
+    if tool_name not in {"exec_command", "shell", "terminal", "bash", "zsh"}:
+        return False
+    for field in ("cmd", "command", "script"):
+        command = payload.get(field)
+        if not isinstance(command, str) or not command.strip():
+            continue
+        try:
+            executable = shlex.split(command, posix=True)[0]
+        except ValueError:
+            continue
+        if executable.rsplit("/", 1)[-1].lower() in local_tools:
+            return True
+    return False
+
+
+def _step_has_execution_hint(step: dict[str, Any]) -> bool:
+    command = str(step.get("command", "") or "").strip()
+    mode = str(step.get("mode", "") or "").strip()
+    return bool(command or mode)
+
+
+def _step_missing_target_hint(step: dict[str, Any]) -> bool:
+    action = str(step.get("action", "") or "")
+    if action in {"use_read_targets", "inspect_top_result", "refresh_or_read_live_files", "validate_semantic_hit"}:
+        return not bool(step.get("read_targets") or step.get("target") or step.get("target_ref") or step.get("result_ref"))
+    return False
 
 
 def _tool_matches_agent_guidance_action(action: str, tool_name: str, mode: str, payload: dict[str, Any]) -> bool:

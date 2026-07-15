@@ -19,7 +19,7 @@
    - `mc_admin(action="health")`
    - Hook 生成
 4. README / docs 是否同步
-5. 本地 `pipx reinstall` 验证
+5. 本地安装验证：使用 Python 3.10+ 执行 `pipx reinstall --python "$(command -v python3.11)" memory-center`，再运行 `memory-center --version`；不要依赖可能指向旧 Python 的默认 `pipx reinstall`
 
 ## 3. Trusted Release Notes / 可信发布说明
 

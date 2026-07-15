@@ -21,6 +21,8 @@ from .dependencies import (
     memory_eval_agent_guidance,
     memory_eval_agent_guidance_adoption,
     memory_eval_agent_guidance_adoption_trend,
+    memory_eval_agent_guidance_replay,
+    memory_eval_agent_guidance_replay_trend,
     memory_eval_agent_guidance_trend,
     memory_eval_context_weight,
     memory_eval_handoff,
@@ -398,6 +400,16 @@ def register_workspace_routes(registry: CommandRegistry) -> None:
         limit=_parse_int(rp.params, "limit", 200),
     ))
     registry.register("/workspace/eval-agent-guidance-adoption-trend", lambda rp: memory_eval_agent_guidance_adoption_trend(
+        rp.workspace(),
+        session_id=rp.session_id(),
+        limit=_parse_int(rp.params, "limit", 200),
+    ))
+    registry.register("/workspace/eval-agent-guidance-replay", lambda rp: memory_eval_agent_guidance_replay(
+        rp.workspace(),
+        session_id=rp.session_id(),
+        limit=_parse_int(rp.params, "limit", 200),
+    ))
+    registry.register("/workspace/eval-agent-guidance-replay-trend", lambda rp: memory_eval_agent_guidance_replay_trend(
         rp.workspace(),
         session_id=rp.session_id(),
         limit=_parse_int(rp.params, "limit", 200),

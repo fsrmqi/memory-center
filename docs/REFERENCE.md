@@ -57,6 +57,8 @@
 - `eval-agent-guidance`
 - `eval-agent-guidance-adoption`
 - `eval-agent-guidance-adoption-trend`
+- `eval-agent-guidance-replay`
+- `eval-agent-guidance-replay-trend`
 - `eval-agent-guidance-trend`
 - `eval-token-gain`
 - `eval-parser-benchmark`
@@ -214,6 +216,8 @@
 - `/workspace/eval-token-benchmark-trend`
 - `/workspace/eval-agent-guidance-adoption`
 - `/workspace/eval-agent-guidance-adoption-trend`
+- `/workspace/eval-agent-guidance-replay`
+- `/workspace/eval-agent-guidance-replay-trend`
 - `/workspace/eval-agent-guidance-trend`
 - `/workspace/eval-parser-benchmark`
 - `/workspace/onboard`
@@ -253,18 +257,24 @@ Golden performance baseline / compare 会继续保存并比较这些字段；当
 - `memory_eval_agent_guidance` / `eval-agent-guidance` / `/workspace/eval-agent-guidance`
 - `memory_eval_agent_guidance_adoption` / `eval-agent-guidance-adoption` / `/workspace/eval-agent-guidance-adoption`
 - `memory_eval_agent_guidance_adoption_trend` / `eval-agent-guidance-adoption-trend` / `/workspace/eval-agent-guidance-adoption-trend`
+- `memory_eval_agent_guidance_replay` / `eval-agent-guidance-replay` / `/workspace/eval-agent-guidance-replay`
+- `memory_eval_agent_guidance_replay_trend` / `eval-agent-guidance-replay-trend` / `/workspace/eval-agent-guidance-replay-trend`
 - `memory_eval_agent_guidance_trend` / `eval-agent-guidance-trend` / `/workspace/eval-agent-guidance-trend`
 - `mc_admin(action="eval_agent_guidance")`
 - `mc_admin(action="eval_agent_guidance_adoption")`
 - `mc_admin(action="eval_agent_guidance_adoption_trend")`
+- `mc_admin(action="eval_agent_guidance_replay")`
+- `mc_admin(action="eval_agent_guidance_replay_trend")`
 - `mc_admin(action="eval_agent_guidance_trend")`
 - `workspace_dashboard.agent_guidance`
 
 这些字段用于快速查看 `agent_next_step_count`、`agent_next_step_actions`、`invalid_search_suggestion_count` 和相关 findings。
 Adoption 检查依赖 session event：先记录 `event_type="agent_guidance"` 或 `event_type="agent_next_steps"`，payload 中包含 `agent_next_steps`；再用后续 `tool_call` 判断建议动作是否被执行。
 CLI `memory-center query --session-id ...`、HTTP `/workspace/query?session_id=...` 与 MCP `mc_lookup(session_id=...)` 会自动记录该 `agent_guidance` event。
-趋势入口会追加 `.memory-center/memory/agent-guidance-trends.jsonl` 与 `.memory-center/memory/agent-guidance-adoption-trends.jsonl`，`generate_benchmark_report` 与 `check_regression_alerts` 会读取这些文件并暴露 `agent_guidance_trends`、`agent_guidance_adoption_trends` 以及对应告警摘要。
+Replay 检查会进一步把每条建议分类为 `adopted`、`missed`、`bypassed` 或 `unobservable`，并给出 `reason_counts`，用于定位是本地搜索绕过、后续工具不可观测、建议缺少可执行命令，还是 Memory Center 工具调用与建议动作不匹配。它按同一 session 中后续工具事件的出现顺序判定：若本地搜索先于匹配的 Memory Center 工具出现，该建议仍为 `bypassed`。本地搜索只依据结构化工具名或 shell 的 `cmd` / `command` / `script` 字段识别，不扫描 payload 任意文本，避免普通内容误报。
+趋势入口会追加 `.memory-center/memory/agent-guidance-trends.jsonl`、`.memory-center/memory/agent-guidance-adoption-trends.jsonl` 与 `.memory-center/memory/agent-guidance-replay-trends.jsonl`，`generate_benchmark_report` 与 `check_regression_alerts` 会读取这些文件并暴露 `agent_guidance_trends`、`agent_guidance_adoption_trends`、`agent_guidance_replay_trends` 以及对应告警摘要。
 `agent-guidance-adoption-trends.jsonl` 会保存 `missed_action_counts`；当最新退化趋势中某个 action 反复 missed 时，query 返回的 `agent_next_steps` 会附加 `adoption_feedback` 并强化 command。
+`agent-guidance-replay-trends.jsonl` 会保存 `reason_counts`；当最新退化趋势显示绕过、不可观测、缺 target 或动作不匹配时，query 返回的 `agent_next_steps` 会附加 `replay_feedback`，并把 command 强化成对应的第一步工具、`session_id`、`target_ref/read_targets` 或 Memory Center mode。方法级 `switch_to_walkthrough` 在有已解析路径时也会返回 `target_ref` 与 `read_targets`。
 
 `resume_packet` 兼容保留既有字段，并可附加：
 

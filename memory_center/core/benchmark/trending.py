@@ -19,6 +19,7 @@ BENCHMARK_BASELINE_FILE = "benchmark-baselines.jsonl"
 BENCHMARK_TREND_FILE = "benchmark-trends.jsonl"
 AGENT_GUIDANCE_TREND_FILE = "agent-guidance-trends.jsonl"
 AGENT_GUIDANCE_ADOPTION_TREND_FILE = "agent-guidance-adoption-trends.jsonl"
+AGENT_GUIDANCE_REPLAY_TREND_FILE = "agent-guidance-replay-trends.jsonl"
 
 
 def record_benchmark_baseline(
@@ -166,6 +167,51 @@ def record_agent_guidance_adoption_trend(
         },
     }
     store.append_jsonl(AGENT_GUIDANCE_ADOPTION_TREND_FILE, entry)
+    return {
+        "recorded": True,
+        "trend_point": entry,
+    }
+
+
+def record_agent_guidance_replay_trend(
+    workspace_file: str | Path,
+    *,
+    total_guidance_events: int = 0,
+    adopted_count: int = 0,
+    missed_count: int = 0,
+    bypassed_count: int = 0,
+    unobservable_count: int = 0,
+    adoption_rate: float = 0.0,
+    bypass_rate: float = 0.0,
+    unobservable_rate: float = 0.0,
+    score: int = 0,
+    quality: str = "",
+    session_id: str = "",
+    reason_counts: dict[str, int] | None = None,
+) -> dict[str, Any]:
+    """Record an agent guidance replay trend point."""
+
+    store = WorkspaceStore(workspace_file)
+    entry = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "session_id": session_id,
+        "total_guidance_events": int(total_guidance_events or 0),
+        "adopted_count": int(adopted_count or 0),
+        "missed_count": int(missed_count or 0),
+        "bypassed_count": int(bypassed_count or 0),
+        "unobservable_count": int(unobservable_count or 0),
+        "adoption_rate": round(float(adoption_rate or 0.0), 4),
+        "bypass_rate": round(float(bypass_rate or 0.0), 4),
+        "unobservable_rate": round(float(unobservable_rate or 0.0), 4),
+        "score": int(score or 0),
+        "quality": quality,
+        "reason_counts": {
+            str(reason): int(count or 0)
+            for reason, count in (reason_counts or {}).items()
+            if str(reason) and int(count or 0) > 0
+        },
+    }
+    store.append_jsonl(AGENT_GUIDANCE_REPLAY_TREND_FILE, entry)
     return {
         "recorded": True,
         "trend_point": entry,
@@ -338,6 +384,38 @@ def get_agent_guidance_adoption_trends(
     }
 
 
+def get_agent_guidance_replay_trends(
+    workspace_file: str | Path,
+    *,
+    days: int = 30,
+    limit: int = 500,
+) -> dict[str, Any]:
+    """Retrieve agent guidance replay trend data and regression signals."""
+
+    store = WorkspaceStore(workspace_file)
+    rows = store.read_jsonl_prefer_backend(AGENT_GUIDANCE_REPLAY_TREND_FILE, limit=max(limit, 5000))
+    cutoff = datetime.now(timezone.utc).isoformat()
+    if days > 0:
+        from datetime import timedelta
+        cutoff_dt = datetime.now(timezone.utc) - timedelta(days=days)
+        cutoff = cutoff_dt.isoformat()
+        rows = [row for row in rows if row.get("timestamp", "") >= cutoff]
+
+    rows = rows[-limit:]
+    regressions = _detect_agent_guidance_replay_regressions(rows)
+    return {
+        "total_records": len(rows),
+        "time_range": {
+            "from": cutoff,
+            "to": datetime.now(timezone.utc).isoformat(),
+            "days": days,
+        },
+        "trend_points": rows[-50:],
+        "regressions": regressions,
+        "summary": _build_agent_guidance_replay_trend_summary(rows),
+    }
+
+
 def _detect_agent_guidance_regressions(points: list[dict[str, Any]]) -> list[dict[str, Any]]:
     regressions: list[dict[str, Any]] = []
     if len(points) < 2:
@@ -430,6 +508,71 @@ def _detect_agent_guidance_adoption_regressions(points: list[dict[str, Any]]) ->
     return regressions
 
 
+def _detect_agent_guidance_replay_regressions(points: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    regressions: list[dict[str, Any]] = []
+    if len(points) < 2:
+        return regressions
+
+    latest = points[-1]
+    previous = points[:-1]
+    previous_rates = [float(p.get("adoption_rate", 0.0) or 0.0) for p in previous]
+    prev_rate_avg = sum(previous_rates) / len(previous_rates)
+    latest_rate = float(latest.get("adoption_rate", 0.0) or 0.0)
+    latest_bypass_rate = float(latest.get("bypass_rate", 0.0) or 0.0)
+    latest_unobservable_rate = float(latest.get("unobservable_rate", 0.0) or 0.0)
+    latest_total = int(latest.get("total_guidance_events", 0) or 0)
+    latest_score = int(latest.get("score", 0) or 0)
+
+    if latest_total > 0 and latest_rate < 0.6:
+        regressions.append({
+            "type": "agent_guidance_replay",
+            "code": "low_agent_guidance_replay_adoption_rate",
+            "severity": "critical" if latest_rate < 0.3 else "warning",
+            "latest_adoption_rate": round(latest_rate, 4),
+            "historical_avg_adoption_rate": round(prev_rate_avg, 4),
+            "message": "agent guidance replay adoption rate is low",
+            "recommendation": "运行 eval-agent-guidance-replay，检查 replay_records 的 reason 与 diagnostics。",
+        })
+    if latest_bypass_rate > 0.2:
+        regressions.append({
+            "type": "agent_guidance_replay",
+            "code": "agent_guidance_bypass_rate_high",
+            "severity": "critical" if latest_bypass_rate > 0.5 else "warning",
+            "latest_bypass_rate": round(latest_bypass_rate, 4),
+            "message": "agent guidance bypass rate is high",
+            "recommendation": "检查建议 command 是否足够可执行，以及宿主是否仍优先使用 rg/grep/find 等本地搜索。",
+        })
+    if latest_unobservable_rate > 0.3:
+        regressions.append({
+            "type": "agent_guidance_replay",
+            "code": "agent_guidance_unobservable_rate_high",
+            "severity": "warning",
+            "latest_unobservable_rate": round(latest_unobservable_rate, 4),
+            "message": "agent guidance unobservable rate is high",
+            "recommendation": "确认 lookup 入口是否传入 session_id，后续工具调用是否写入 session event。",
+        })
+    if prev_rate_avg > 0 and latest_rate < prev_rate_avg * 0.7:
+        regressions.append({
+            "type": "agent_guidance_replay",
+            "code": "agent_guidance_replay_adoption_rate_dropped",
+            "severity": "warning",
+            "latest_adoption_rate": round(latest_rate, 4),
+            "historical_avg_adoption_rate": round(prev_rate_avg, 4),
+            "message": "agent guidance replay adoption rate dropped",
+            "recommendation": "对比最近 replay trend 的 reason_counts，确认是绕过、不可观测还是动作不匹配。",
+        })
+    if latest_score < 60:
+        regressions.append({
+            "type": "agent_guidance_replay",
+            "code": "agent_guidance_replay_gate_failed",
+            "severity": "critical" if latest_score < 50 else "warning",
+            "latest_score": latest_score,
+            "message": "agent guidance replay quality gate failed",
+            "recommendation": "运行 eval-agent-guidance-replay 并优先处理最高频 reason。",
+        })
+    return regressions
+
+
 def _build_agent_guidance_trend_summary(points: list[dict[str, Any]]) -> dict[str, Any]:
     if not points:
         return {
@@ -496,6 +639,40 @@ def _build_agent_guidance_adoption_trend_summary(points: list[dict[str, Any]]) -
             if str(action) and int(count or 0) > 0
         },
         "missed_action_counts": dict(sorted(missed_action_counts.items(), key=lambda item: (-item[1], item[0]))),
+    }
+
+
+def _build_agent_guidance_replay_trend_summary(points: list[dict[str, Any]]) -> dict[str, Any]:
+    if not points:
+        return {
+            "total_trend_points": 0,
+            "latest_adoption_rate": 0.0,
+            "avg_adoption_rate": 0.0,
+            "latest_bypass_rate": 0.0,
+            "latest_unobservable_rate": 0.0,
+            "total_guidance_events": 0,
+            "reason_counts": {},
+        }
+    latest = points[-1]
+    avg_rate = sum(float(p.get("adoption_rate", 0.0) or 0.0) for p in points) / len(points)
+    reason_counts: dict[str, int] = {}
+    for point in points:
+        raw_counts = point.get("reason_counts", {})
+        if not isinstance(raw_counts, dict):
+            continue
+        for reason, count in raw_counts.items():
+            reason_key = str(reason)
+            if not reason_key:
+                continue
+            reason_counts[reason_key] = reason_counts.get(reason_key, 0) + int(count or 0)
+    return {
+        "total_trend_points": len(points),
+        "latest_adoption_rate": round(float(latest.get("adoption_rate", 0.0) or 0.0), 4),
+        "avg_adoption_rate": round(avg_rate, 4),
+        "latest_bypass_rate": round(float(latest.get("bypass_rate", 0.0) or 0.0), 4),
+        "latest_unobservable_rate": round(float(latest.get("unobservable_rate", 0.0) or 0.0), 4),
+        "total_guidance_events": sum(int(p.get("total_guidance_events", 0) or 0) for p in points),
+        "reason_counts": dict(sorted(reason_counts.items(), key=lambda item: (-item[1], item[0]))),
     }
 
 
@@ -572,6 +749,8 @@ def check_regression_alerts(workspace_file: str | Path, threshold_pct: float = 1
     agent_regressions = agent_guidance.get("regressions", [])
     agent_adoption = get_agent_guidance_adoption_trends(workspace_file)
     agent_adoption_regressions = agent_adoption.get("regressions", [])
+    agent_replay = get_agent_guidance_replay_trends(workspace_file)
+    agent_replay_regressions = agent_replay.get("regressions", [])
 
     alerts = []
     for reg in regressions:
@@ -613,6 +792,19 @@ def check_regression_alerts(workspace_file: str | Path, threshold_pct: float = 1
             "recommendation": reg.get("recommendation", ""),
             "code": reg.get("code", ""),
         })
+    for reg in agent_replay_regressions:
+        severity = str(reg.get("severity", "warning") or "warning")
+        alerts.append({
+            "type": "agent_guidance_replay",
+            "function": "agent_guidance_replay",
+            "change_pct": 0,
+            "severity": severity,
+            "recent_avg": reg.get("latest_adoption_rate", reg.get("latest_bypass_rate", reg.get("latest_unobservable_rate", 0))),
+            "historical_avg": reg.get("historical_avg_adoption_rate", 0),
+            "message": reg.get("message", ""),
+            "recommendation": reg.get("recommendation", ""),
+            "code": reg.get("code", ""),
+        })
 
     return {
         "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -630,6 +822,11 @@ def check_regression_alerts(workspace_file: str | Path, threshold_pct: float = 1
             "summary": agent_adoption.get("summary", {}),
             "regressions": agent_adoption_regressions,
         },
+        "agent_guidance_replay": {
+            "total_regressions": len(agent_replay_regressions),
+            "summary": agent_replay.get("summary", {}),
+            "regressions": agent_replay_regressions,
+        },
         "health": "critical" if any(a["severity"] == "critical" for a in alerts) else "warning" if alerts else "healthy",
     }
 
@@ -646,6 +843,7 @@ def generate_benchmark_report(
         "trends": trends,
         "agent_guidance_trends": get_agent_guidance_trends(workspace_file),
         "agent_guidance_adoption_trends": get_agent_guidance_adoption_trends(workspace_file),
+        "agent_guidance_replay_trends": get_agent_guidance_replay_trends(workspace_file),
         "health_score": _calculate_health_score(baselines, trends),
         "recommendations": _generate_recommendations(baselines, trends),
     }

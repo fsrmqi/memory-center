@@ -42,6 +42,8 @@ def test_build_admin_registry_lists_known_actions() -> None:
         "eval_agent_guidance",
         "eval_agent_guidance_adoption",
         "eval_agent_guidance_adoption_trend",
+        "eval_agent_guidance_replay",
+        "eval_agent_guidance_replay_trend",
         "eval_agent_guidance_trend",
         "eval_regression_suite",
         "eval_golden",
