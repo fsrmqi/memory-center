@@ -316,6 +316,7 @@ def build_walkthrough_result(
         downstream_summary,
         _budget_limits(budget),
     )
+    result["read_targets"] = _wt_answer.collect_method_walkthrough_read_targets(result)
     result["glossary_hits"] = _wt_answer.build_glossary_hits(workspace_file, result)
     result["performance_risks"] = _wt_risks.build_walkthrough_performance_risks(result)
     result["data_scope_guards"] = _wt_risks.build_data_scope_guards(result)

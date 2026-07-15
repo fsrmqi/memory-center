@@ -18,6 +18,7 @@ __all__ = [
     "build_method_walkthrough_anti_patterns",
     "select_compact_method_steps",
     "build_method_walkthrough_summary_lines",
+    "collect_method_walkthrough_read_targets",
     "compact_method_walkthrough_result",
     "method_walkthrough_read_targets_text",
     "method_walkthrough_rule_groups_text",
@@ -109,6 +110,52 @@ def build_method_walkthrough_anti_patterns() -> list[dict[str, str]]:
 
 def display_method_path(item: dict[str, Any]) -> str:
     return str(item.get("absolute_file_path") or item.get("file_path") or "")
+
+
+def collect_method_walkthrough_read_targets(result: dict[str, Any]) -> list[dict[str, Any]]:
+    """Collect the bounded primary walkthrough route into direct file targets."""
+
+    targets: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, int, str]] = set()
+
+    def add(role: str, item: dict[str, Any], label: str = "") -> None:
+        path = display_method_path(item)
+        if not path:
+            return
+        resolved_label = label or str(item.get("class") or item.get("controller") or item.get("method") or "")
+        key = (role, path, int(item.get("line", 0) or 0), resolved_label)
+        if key in seen:
+            return
+        seen.add(key)
+        targets.append({
+            "role": role,
+            "label": resolved_label,
+            "absolute_file_path": path,
+            "line": int(item.get("line", 0) or 0),
+            "project": item.get("project", ""),
+        })
+
+    target = result.get("target", {}) or {}
+    add("target", target, f"{target.get('class', '')}#{target.get('method', '')}")
+    for impl in result.get("local_service_continuations", []) or []:
+        impl_target = impl.get("target", {}) or {}
+        add("local_impl", impl_target, f"{impl_target.get('class', '')}#{impl_target.get('method', '')}")
+        for same in impl.get("same_class_method_continuations", []) or []:
+            same_target = same.get("target", {}) or {}
+            add("local_impl_same_class", same_target, f"{same_target.get('class', '')}#{same_target.get('method', '')}")
+    for same in result.get("same_class_method_continuations", []) or []:
+        same_target = same.get("target", {}) or {}
+        add("same_class", same_target, f"{same_target.get('class', '')}#{same_target.get('method', '')}")
+    for feign in result.get("feign_continuations", []) or []:
+        for server in (feign.get("server_walkthroughs", []) or [])[:1]:
+            add("server_controller", server, f"{server.get('controller', '')}#{server.get('method', '')}")
+            for impl in (server.get("service_impl_continuations", []) or [])[:1]:
+                impl_target = impl.get("target", {}) or {}
+                add("server_impl", impl_target, f"{impl_target.get('class', '')}#{impl_target.get('method', '')}")
+                for same in impl.get("same_class_method_continuations", []) or []:
+                    same_target = same.get("target", {}) or {}
+                    add("server_impl_same_class", same_target, f"{same_target.get('class', '')}#{same_target.get('method', '')}")
+    return targets
 
 
 def select_compact_method_steps(local_steps: list[dict[str, Any]], limits: dict[str, int]) -> list[dict[str, Any]]:
@@ -211,6 +258,7 @@ def compact_method_walkthrough_result(result: dict[str, Any], budget: str = "med
             "type_counts": downstream.get("type_counts", {}),
         },
         "summary_lines": build_method_walkthrough_summary_lines(target, result.get("local_steps", []), local_service_continuations, same_class_continuations, feigns, downstream, limits),
+        "read_targets": result.get("read_targets", []) or collect_method_walkthrough_read_targets(result),
         "answer_markdown": result.get("answer_markdown", ""),
         "answer_template": result.get("answer_template", {}),
         "mermaid_flow": result.get("mermaid_flow", ""),

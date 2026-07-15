@@ -201,6 +201,9 @@ def test_memory_method_walkthrough_returns_feign_continuations(tmp_path: Path):
     assert result["found"] is True
     assert result["target"]["class"] == "ArticleMoveService"
     assert result["target"]["absolute_file_path"].endswith("task-service/src/main/java/com/example/task/ArticleMoveService.java")
+    assert result["read_targets"]
+    assert result["read_targets"][0]["role"] == "target"
+    assert result["read_targets"][0]["absolute_file_path"] == result["target"]["absolute_file_path"]
     assert result["agent_usage_policy"]["do_not_search_when_absolute_path_present"] is True
     assert result["agent_usage_policy"]["do_not_sed_when_continuation_present"] is True
     assert "absolute_file_path" in result["agent_usage_policy"]["read_files_by"]

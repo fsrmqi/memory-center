@@ -230,6 +230,9 @@ def _flatten_walkthrough_payload(result: dict[str, Any], mode_key: str = "mode_u
 
 
 def _collect_walkthrough_read_targets(result: dict[str, Any]) -> list[dict[str, Any]]:
+    existing = result.get("read_targets", [])
+    if isinstance(existing, list) and existing:
+        return existing
     targets: list[dict[str, Any]] = []
     seen = set()
 
