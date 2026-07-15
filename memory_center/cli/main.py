@@ -977,6 +977,19 @@ def eval_java_call_resolution_cmd(
     print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
 
 
+@app.command("eval-java-call-resolution-review")
+def eval_java_call_resolution_review_cmd(
+    workspace: str = typer.Option(..., help="Workspace yaml file."),
+    cases: str = typer.Option(..., help="Java call resolution cases yaml file."),
+    limit: int = typer.Option(200, help="Maximum unclassified high-confidence edges to return."),
+):
+    """Review unclassified Java CALLS_METHOD edges without exposing file paths."""
+    from memory_center.core.orchestrator import memory_eval_java_call_resolution_review
+
+    result = memory_eval_java_call_resolution_review(workspace, cases, limit=limit)
+    print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+
+
 @app.command("eval-token-benchmark-save")
 def eval_token_benchmark_save_cmd(
     workspace: str = typer.Option(...),

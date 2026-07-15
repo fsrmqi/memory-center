@@ -28,6 +28,7 @@ from .dependencies import (
     memory_eval_handoff,
     memory_eval_index_freshness,
     memory_eval_java_call_resolution,
+    memory_eval_java_call_resolution_review,
     memory_eval_parser_benchmark,
     memory_eval_regression_suite,
     memory_eval_resume,
@@ -427,6 +428,11 @@ def register_workspace_routes(registry: CommandRegistry) -> None:
         max_unresolved_rate=_parse_float(rp.params, "max_unresolved_rate", 0.10),
         fail_on_unexpected_high_confidence=rp.get("fail_on_unexpected_high_confidence", "").lower() in {"1", "true", "yes"},
         fail_on_forbidden_high_confidence=rp.get("fail_on_forbidden_high_confidence", "").lower() in {"1", "true", "yes"},
+    ))
+    registry.register("/workspace/eval-java-call-resolution-review", lambda rp: memory_eval_java_call_resolution_review(
+        rp.workspace(),
+        rp.require("cases"),
+        limit=_parse_int(rp.params, "limit", 200),
     ))
 
     # --- tooling / refs / backend / verify ------------------------------------

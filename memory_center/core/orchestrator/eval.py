@@ -912,6 +912,18 @@ def memory_eval_java_call_resolution(
     )
 
 
+def memory_eval_java_call_resolution_review(
+    workspace_file: str | Path,
+    cases_file: str | Path,
+    *,
+    limit: int = 200,
+) -> dict[str, Any]:
+    """Return deduplicated, unclassified high-confidence Java call edges."""
+    from ..benchmark.java_call_resolution import review_java_call_resolution_suite
+
+    return review_java_call_resolution_suite(workspace_file, cases_file, limit=limit)
+
+
 def _benchmark_baseline_path(workspace_file: str | Path) -> Path:
     _, store = load_context(workspace_file)
     return store.base_dir / "benchmark-baseline.json"

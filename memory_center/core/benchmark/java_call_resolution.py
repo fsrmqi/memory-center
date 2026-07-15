@@ -149,6 +149,71 @@ def run_java_call_resolution_suite(
     }
 
 
+def review_java_call_resolution_suite(
+    workspace_file: str | Path,
+    cases_file: str | Path,
+    *,
+    limit: int = 200,
+) -> dict[str, Any]:
+    """List unclassified high-confidence calls using logical anchors only."""
+
+    cases = load_java_call_resolution_cases(cases_file)
+    store = WorkspaceStore(workspace_file)
+    grouped: dict[tuple[str, str, str], dict[str, Any]] = {}
+    with GraphStore(store.graph_db_path) as graph:
+        conn = graph.connect()
+        for case in cases:
+            result = _evaluate_case(conn, case)
+            for edge in result["unexpected_high_confidence_edges"]:
+                key = (
+                    str(edge.get("source") or case.source),
+                    str(edge.get("target") or ""),
+                    str(edge.get("resolution_level") or ""),
+                )
+                record = grouped.setdefault(
+                    key,
+                    {
+                        "source": key[0],
+                        "target": key[1],
+                        "resolution_level": key[2],
+                        "confidence": 0.0,
+                        "case_ids": [],
+                        "expected_targets": [],
+                        "review_status": "unclassified",
+                    },
+                )
+                record["confidence"] = max(float(record["confidence"]), float(edge.get("confidence", 0.0) or 0.0))
+                if case.case_id not in record["case_ids"]:
+                    record["case_ids"].append(case.case_id)
+                if case.expected_target not in record["expected_targets"]:
+                    record["expected_targets"].append(case.expected_target)
+
+    items = sorted(
+        grouped.values(),
+        key=lambda item: (-float(item["confidence"]), item["source"], item["target"], item["resolution_level"]),
+    )
+    for item in items:
+        item["confidence"] = round(float(item["confidence"]), 4)
+        item["case_ids"].sort()
+        item["expected_targets"].sort()
+    resolution_level_counts: dict[str, int] = {}
+    for item in items:
+        level = str(item["resolution_level"] or "unknown")
+        resolution_level_counts[level] = resolution_level_counts.get(level, 0) + 1
+    return {
+        "schema_version": 1,
+        "suite": "java_call_resolution_review",
+        "summary": {
+            "case_count": len(cases),
+            "unclassified_high_confidence_edge_count": len(items),
+            "returned_count": min(max(0, limit), len(items)),
+            "resolution_level_counts": dict(sorted(resolution_level_counts.items())),
+        },
+        "items": items[: max(0, limit)],
+        "next_action": "Classify each item into the case's allowed_targets or forbidden_targets; do not add filesystem paths or source snippets.",
+    }
+
+
 def _evaluate_case(conn: sqlite3.Connection, case: JavaCallResolutionCase) -> dict[str, Any]:
     source_name = _method_node_name(case.source)
     expected_target_name = _method_node_name(case.expected_target)

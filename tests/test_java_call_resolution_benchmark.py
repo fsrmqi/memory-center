@@ -6,6 +6,7 @@ import yaml
 
 from memory_center.core.benchmark.java_call_resolution import (
     load_java_call_resolution_cases,
+    review_java_call_resolution_suite,
     run_java_call_resolution_suite,
 )
 from memory_center.core.graph import GraphEdge, GraphNode, GraphStore, edge_id, node_id
@@ -181,3 +182,43 @@ def test_java_call_resolution_cases_reject_non_list_edge_contracts(tmp_path: Pat
         assert "allowed_targets must be a list" in str(exc)
     else:
         raise AssertionError("expected edge contract validation failure")
+
+
+def test_java_call_resolution_review_deduplicates_unclassified_edges(tmp_path: Path) -> None:
+    workspace = _workspace(tmp_path)
+    store = WorkspaceStore(workspace)
+    source_id = node_id("Method", "OrderController.submit", "api", "OrderController.java")
+    target_id = node_id("Method", "OrderService.submit", "api", "OrderService.java")
+    side_id = node_id("Method", "AuditService.record", "api", "AuditService.java")
+    with GraphStore(store.graph_db_path) as graph:
+        graph.bulk_write(
+            [
+                GraphNode(source_id, "Method", "OrderController.submit", "api", "OrderController.java"),
+                GraphNode(target_id, "Method", "OrderService.submit", "api", "OrderService.java"),
+                GraphNode(side_id, "Method", "AuditService.record", "api", "AuditService.java"),
+            ],
+            [
+                GraphEdge(edge_id(source_id, target_id, "CALLS_METHOD"), source_id, target_id, "CALLS_METHOD", 0.9, {}),
+                GraphEdge(edge_id(source_id, side_id, "CALLS_METHOD"), source_id, side_id, "CALLS_METHOD", 0.9, {"resolution_level": "import"}),
+            ],
+        )
+    cases = _write_cases(
+        tmp_path / "java-call-review-cases.yaml",
+        [
+            {"case_id": "same-source-a", "source": "OrderController#submit", "expected_target": "OrderService#submit", "project": "api"},
+            {"case_id": "same-source-b", "source": "OrderController#submit", "expected_target": "OrderService#submit", "project": "api"},
+        ],
+    )
+
+    result = review_java_call_resolution_suite(workspace, cases, limit=10)
+
+    assert result["summary"]["unclassified_high_confidence_edge_count"] == 1
+    assert result["items"] == [{
+        "source": "OrderController#submit",
+        "target": "AuditService#record",
+        "resolution_level": "import",
+        "confidence": 0.9,
+        "case_ids": ["same-source-a", "same-source-b"],
+        "expected_targets": ["OrderService#submit"],
+        "review_status": "unclassified",
+    }]

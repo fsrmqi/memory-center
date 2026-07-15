@@ -697,6 +697,20 @@ HTTP / MCP：
 - HTTP: `/workspace/eval-java-call-resolution?workspace=...&cases=...&fail_on_forbidden_high_confidence=true`
 - MCP: `mc_admin(action="eval_java_call_resolution", name="<cases.yaml>", strict=true)`
 
+审阅未分类高置信边时，使用下列入口。它只返回 `Class#method` 逻辑锚点、解析层级、置信度和关联 case ID，不返回文件路径或源码片段：
+
+```bash
+memory-center eval-java-call-resolution-review \
+  --workspace /path/to/.memory-center/workspace.yaml \
+  --cases /path/to/.memory-center/golden/java-call-resolution.yaml \
+  --limit 200
+```
+
+- HTTP: `/workspace/eval-java-call-resolution-review?workspace=...&cases=...&limit=200`
+- MCP: `mc_admin(action="eval_java_call_resolution_review", name="<cases.yaml>", limit=200)`
+
+审阅后仅把逻辑锚点写回对应 case 的 `allowed_targets` 或 `forbidden_targets`；不要把私有路径、源码片段或完整运行 payload 写入公开仓库。
+
 This gate intentionally validates resolver output at the graph edge layer,
 before walkthrough/report formatting, so parser/retrieval/reasoning changes
 cannot hide a broken Java call edge.

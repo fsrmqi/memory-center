@@ -8,6 +8,7 @@ from .golden import load_golden_cases, run_golden_suite, score_golden_case
 from .java_call_resolution import (
     JavaCallResolutionCase,
     load_java_call_resolution_cases,
+    review_java_call_resolution_suite,
     run_java_call_resolution_suite,
 )
 from .models import GoldenCase
@@ -35,6 +36,7 @@ __all__ = [
     "JavaCallResolutionCase",
     "load_golden_cases",
     "load_java_call_resolution_cases",
+    "review_java_call_resolution_suite",
     "run_golden_suite",
     "run_java_call_resolution_suite",
     "score_golden_case",
