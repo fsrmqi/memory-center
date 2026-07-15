@@ -63,7 +63,7 @@ This file consolidates and replaces the older execution plan, superpowers evolut
 1. **Java Parser / Call Resolver 真实精度深化**：已有严格门禁和未解析分类报告；持续用真实跨项目 controller / service / feign case 扩充样本并修复明确误判。
 2. **Retrieval / Reasoning 质量运营闭环**：策略、解释、replay、趋势与有界反馈已经落地；下一步是积累真实任务回放并只根据人工验证结果调整权重，减少“看似命中、实际偏题”。
 3. **真实性能基线长期治理**：已有 portable Golden 基线和回归比较；后续版本必须在真实 workspace 的冷/热查询、全量/增量索引上证明不低于基线。
-4. **Workbench 与报告体验产品化**：Query 已展示 completion status；仍需把 benchmark/gate 摘要和 walkthrough export 关联成面向人工复盘的阅读路径。
+4. **Workbench 与报告体验产品化**：Health 已展示 benchmark/gate 摘要并可直达 walkthrough；walkthrough 导出时会同时呈现当时的 gate 摘要，形成面向人工复盘的阅读路径。
 
 ### 最近完成 / Recently Completed
 
@@ -178,7 +178,7 @@ This file consolidates and replaces the older execution plan, superpowers evolut
 2. 对每个 replay 记录人工确认的命中/偏题结果；只将确认结果写入 retrieval-source feedback。
 3. 每次权重变更后运行 Golden、replay trend、cold/hot query baseline；任一质量门禁退化即回滚。
 4. 对 Java 未解析报告中最高频分类补 3-5 个逻辑锚点 case；只有 case 证明精度时才改 resolver。
-5. 将 benchmark/gate 摘要与 walkthrough export 链接到 Workbench，且仅展示逻辑锚点、指标和状态。
+5. Workbench Health 已展示 benchmark/gate 摘要，且仅输出指标、状态和建议，不暴露私有源码内容；已可直达 walkthrough，导出动作同时呈现当前 gate 快照。
 
 ### P3：Workbench 与报告体验产品化
 
@@ -186,11 +186,11 @@ This file consolidates and replaces the older execution plan, superpowers evolut
 
 任务：
 
-1. Query / Walkthrough 页面突出 quick conclusion、main chain、completion status、read targets、risks。
-2. `summary / standard / deep` 三档在 CLI / MCP / HTTP / Workbench 中展示语义一致。
-3. 报告里的长路径继续使用证据编号，完整路径集中在 evidence files 区。
-4. Workbench 增加 benchmark / gate 结果摘要，不展示私有源码内容。
-5. 将 walkthrough export 与真实 gate 结果关联，便于人工复盘。
+1. Query / Walkthrough 页面突出 quick conclusion、main chain、completion status、read targets、risks。**已完成**：Workbench walkthrough 使用顶层结构化字段，原始响应退到可展开 evidence 区。
+2. `summary / standard / deep` 三档在 CLI / MCP / HTTP / Workbench 中展示语义一致。**已完成**：Workbench walkthrough 可选择三档，并直接透传 `report_level`。
+3. 报告里的长路径继续使用证据编号，完整路径集中在 evidence files 区。**已完成**：Workbench 主阅读区仅展示角色和逻辑锚点，完整响应仅在折叠 evidence 区呈现。
+4. Workbench 增加 benchmark / gate 结果摘要，不展示私有源码内容。**已完成**：Health 页面通过 `/workspace/quality-gates-summary` 展示 benchmark、regression alerts、replay campaign 和 Java unresolved-call 指标。
+5. 将 walkthrough export 与真实 gate 结果关联，便于人工复盘。**已完成**：导出完成反馈显示对应的实时 gate snapshot；Health 摘要也可直接进入 walkthrough review。
 
 验收：
 

@@ -61,6 +61,10 @@ export function getReplayCampaign(workspace, params = {}) {
   return api.get('/workspace/eval-agent-guidance-replay-campaign', { params: { workspace, ...params } })
 }
 
+export function getQualityGatesSummary(workspace, params = {}) {
+  return api.get('/workspace/quality-gates-summary', { params: { workspace, ...params } })
+}
+
 export function getAudit(workspace, params = {}) {
   return api.get('/workspace/audit', { params: { workspace, ...params } })
 }
@@ -91,6 +95,18 @@ export function getCallers(workspace, name, params = {}) {
 
 export function getCallees(workspace, name, params = {}) {
   return api.get('/workspace/callees', { params: { workspace, name, ...params } })
+}
+
+export function getMethodWalkthrough(workspace, symbol, params = {}) {
+  return api.get('/workspace/method-walkthrough', { params: { workspace, symbol, ...params } })
+}
+
+export function getWalkthroughEvaluation(workspace, symbol, params = {}) {
+  return api.get('/workspace/walkthrough-eval', { params: { workspace, symbol, ...params } })
+}
+
+export function exportWalkthrough(workspace, symbol, params = {}) {
+  return api.get('/workspace/walkthrough-export', { params: { workspace, symbol, ...params } })
 }
 
 export function getGroupStatus(group) {

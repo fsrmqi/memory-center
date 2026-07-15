@@ -1962,6 +1962,16 @@ def test_http_bridge_routes(tmp_path: Path):
         assert query["agent_next_steps"]
         assert query["agent_next_steps"][0]["action"]
         assert all("task-service" in (item.get("node", {}).get("project") or "") for item in query["matches"])
+        walkthrough_symbol = quote("com.example.task.ArticleMoveService#move")
+        walkthrough = json.loads(urlopen(f"{base}/workspace/method-walkthrough?symbol={walkthrough_symbol}&report_level=summary").read().decode("utf-8"))
+        assert walkthrough["found"] is True
+        assert walkthrough["summary_lines"]
+        assert walkthrough["read_targets"]
+        walkthrough_eval = json.loads(urlopen(f"{base}/workspace/walkthrough-eval?symbol={walkthrough_symbol}&report_level=standard").read().decode("utf-8"))
+        assert walkthrough_eval["grade"] in {"pass", "warn", "fail"}
+        walkthrough_export = json.loads(urlopen(f"{base}/workspace/walkthrough-export?symbol={walkthrough_symbol}&report_level=deep").read().decode("utf-8"))
+        assert walkthrough_export["exported"] is True
+        assert walkthrough_export["artifact"].startswith("walkthroughs/")
         search = json.loads(urlopen(f"{base}/workspace/search-code?text=ArticleFeignClient&scope=task-service&project=task-service").read().decode("utf-8"))
         assert search["hits"]
         assert all("task-service" in (item.get("project") or "") for item in search["hits"])
@@ -2020,6 +2030,16 @@ def test_http_bridge_routes(tmp_path: Path):
         workspace_dashboard_payload = json.loads(urlopen(f"{base}/workspace/dashboard?intent=update%20rule&limit=10").read().decode("utf-8"))
         assert "active_tasks" in workspace_dashboard_payload
         assert "focus_resume_eval" in workspace_dashboard_payload
+        quality_gates = json.loads(urlopen(f"{base}/workspace/quality-gates-summary").read().decode("utf-8"))
+        assert quality_gates["schema_version"] == 1
+        assert quality_gates["health"] in {"healthy", "warning", "critical", "unknown"}
+        assert set(quality_gates["benchmark"]) == {"score", "quality", "recommendations"}
+        assert set(quality_gates["regression_alerts"]) == {"total", "critical", "warning", "items"}
+        assert set(quality_gates["replay_campaign"]) == {"passed", "total_guidance_events", "missing_intents"}
+        assert set(quality_gates["java_call_resolution"]) == {
+            "call_edge_count", "unresolved_call_edge_count", "unresolved_rate", "top_categories",
+        }
+        assert "task-service" not in json.dumps(quality_gates)
         ui_index = urlopen(f"{base}/ui?workspace={workspace}").read().decode("utf-8")
         assert "Memory Center Workbench" in ui_index
         ui_dashboard = urlopen(f"{base}/ui/dashboard?workspace={workspace}&intent=update%20rule").read().decode("utf-8")
