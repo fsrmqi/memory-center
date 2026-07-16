@@ -4,14 +4,14 @@ import json
 from pathlib import Path
 from typing import Any
 
-from ..artifacts import get_task_artifact, list_task_spaces
 from ..rules import (
     DEFAULT_HANDOFF_PROFILES,
     ensure_default_rules,
 )
 from ..schemas import with_schema
 from ..store import WorkspaceStore
-from ..timeline import timeline_query
+from ..tasks.artifacts import get_task_artifact, list_task_spaces
+from ..tasks.timeline import timeline_query
 from ..tracking import log_token_gain
 from .common import (
     LAYER_L0,
@@ -507,7 +507,7 @@ def _build_resume_task_health(workspace_file: str | Path, task_id: str) -> dict[
             },
         }
     try:
-        from ..artifacts import task_space_health
+        from ..tasks.artifacts import task_space_health
 
         health = task_space_health(workspace_file, task_id)
     except Exception as exc:

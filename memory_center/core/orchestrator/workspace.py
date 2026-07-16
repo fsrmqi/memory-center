@@ -9,23 +9,23 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from ..artifacts import (
+from ..graph import GraphStore
+from ..indexing.control_plane import index_control_status
+from ..indexing.reindex_state import workspace_reindex_status
+from ..query_planner import workspace_performance_summary
+from ..rules import match_rules
+from ..schemas import with_schema
+from ..store import WorkspaceStore
+from ..tasks.artifacts import (
     CORE_MEMORY_BLOCKS,
     get_task_artifact,
     list_task_spaces,
     resolve_task_space,
 )
-from ..graph import GraphStore
-from ..rules import match_rules
-from ..indexing.reindex_state import workspace_reindex_status
-from ..index_control import index_control_status
-from ..query_planner import workspace_performance_summary
-from ..schemas import with_schema
-from ..store import WorkspaceStore
+from ..tasks.receipts import WRITE_RECEIPTS_FILE
 from ..tracking import log_token_gain
 from ..verification.heuristics import apply_candidate_path_learning
 from ..workspace_shape import analyze_workspace_shape
-from ..write_receipts import WRITE_RECEIPTS_FILE
 from .common import (
     LAYER_L0,
     LAYER_L1,
@@ -514,8 +514,13 @@ def workspace_dashboard(
     budget: str = "medium",
 ) -> dict[str, Any]:
     # Lazy import to avoid circular dependency with .resume and .eval
-    from ..timeline import timeline_query
-    from .eval import memory_eval_agent_guidance, memory_eval_agent_guidance_adoption, memory_eval_resume, memory_eval_write_quality
+    from ..tasks.timeline import timeline_query
+    from .eval import (
+        memory_eval_agent_guidance,
+        memory_eval_agent_guidance_adoption,
+        memory_eval_resume,
+        memory_eval_write_quality,
+    )
 
     status = workspace_status(workspace_file, view="full", budget=budget)
     active_tasks = status.get("active_task_spaces", [])[: max(limit, 1)]
@@ -666,9 +671,9 @@ def workspace_task_resume_check(
     limit: int = 8,
     budget: str = "medium",
 ) -> dict[str, Any]:
+    from ..tasks.artifacts import task_space_repair_plan
     from .resume import workspace_next_actions, workspace_resume_packet, workspace_unresolved_items
     from .session import workspace_recent_evidence
-    from ..artifacts import task_space_repair_plan
 
     resume_packet = workspace_resume_packet(
         workspace_file,
@@ -1274,14 +1279,14 @@ def workspace_check_contract(workspace_file: str | Path, contract_file: str, cha
         text = item.get("path", "").lower()
         if basename in text:
             affected.append(item)
-    from ..contracts import CONTRACT_DIFF_FILE, CONTRACT_SNAPSHOT_FILE, contract_semantic_report
+    from ..contracting.static import CONTRACT_DIFF_FILE, CONTRACT_SNAPSHOT_FILE, contract_semantic_report
     semantic = contract_semantic_report(
         store.read_json_prefer_backend(CONTRACT_SNAPSHOT_FILE, {}),
         store.read_json_prefer_backend(CONTRACT_DIFF_FILE, {}),
         store.read_json_prefer_backend("service-topology.json", {}),
         contract_file,
     )
-    from ..runtime_contracts import runtime_contract_compatibility
+    from ..contracting.runtime import runtime_contract_compatibility
     runtime = runtime_contract_compatibility(workspace_file, contract_file)
     return {
         "contract_file": contract_file,

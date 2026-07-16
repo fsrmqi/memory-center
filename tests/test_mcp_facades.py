@@ -816,11 +816,11 @@ def test_mc_lookup_auto_lifts_agent_next_steps_for_non_query_routes(monkeypatch,
     mc_lookup = server._tool_manager._tools["mc_lookup"]
 
     for mode_used, preferred_tools, route_result, expected_action in routes:
-        def _fake_hint(*_args, _preferred_tools=preferred_tools, **_kwargs):
+        def _fake_hint(*_args, _preferred_tools=preferred_tools, _mode_used=mode_used, **_kwargs):
             return {
                 "preferred_tools": list(_preferred_tools),
-                "candidate_paths": [{"candidate_type": mode_used, "target": "target"}],
-                "recommended_candidate_path": {"candidate_type": mode_used, "target": "target"},
+                "candidate_paths": [{"candidate_type": _mode_used, "target": "target"}],
+                "recommended_candidate_path": {"candidate_type": _mode_used, "target": "target"},
             }
 
         monkeypatch.setattr(mcp_server_mod, "workspace_lookup_hint", _fake_hint)

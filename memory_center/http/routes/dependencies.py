@@ -2,37 +2,6 @@
 
 from typing import Any
 
-from memory_center.core.artifacts import (
-    append_change_log,
-    append_task_change_log,
-    archive_task_space,
-    artifact_context,
-    artifact_outline,
-    auto_archive_task_spaces,
-    compact_change_log,
-    create_task_space,
-    get_artifact,
-    get_task_artifact,
-    list_artifacts,
-    list_task_spaces,
-    resolve_task_space,
-    touch_task_activity,
-    update_artifact,
-    update_task_artifact,
-    update_task_status,
-)
-from memory_center.core.exporters import (
-    export_continuity_dashboard_html,
-    export_focus_task_html,
-    export_index_freshness_html,
-    export_memory_backend_html,
-    export_receipts_html,
-    export_ref_html,
-    export_timeline_html,
-    export_usage_report_html,
-    export_workbench_index_html,
-    export_workspace_dashboard_html,
-)
 from memory_center.core.orchestrator import (
     group_chain,
     group_impact,
@@ -101,6 +70,37 @@ from memory_center.core.orchestrator import (
     workspace_task_resume_check,
     workspace_unresolved_items,
     workspace_write_receipts,
+)
+from memory_center.core.presentation.exporters import (
+    export_continuity_dashboard_html,
+    export_focus_task_html,
+    export_index_freshness_html,
+    export_memory_backend_html,
+    export_receipts_html,
+    export_ref_html,
+    export_timeline_html,
+    export_usage_report_html,
+    export_workbench_index_html,
+    export_workspace_dashboard_html,
+)
+from memory_center.core.tasks.artifacts import (
+    append_change_log,
+    append_task_change_log,
+    archive_task_space,
+    artifact_context,
+    artifact_outline,
+    auto_archive_task_spaces,
+    compact_change_log,
+    create_task_space,
+    get_artifact,
+    get_task_artifact,
+    list_artifacts,
+    list_task_spaces,
+    resolve_task_space,
+    touch_task_activity,
+    update_artifact,
+    update_task_artifact,
+    update_task_status,
 )
 
 __all__ = [

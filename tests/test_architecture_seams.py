@@ -39,3 +39,19 @@ def test_walkthrough_public_operations_are_thin_facades() -> None:
     assert _function_size(query.memory_walkthrough_health) < 20
     assert _function_size(query.memory_eval_walkthrough_quality) < 20
     assert _function_size(query.memory_export_walkthrough_artifact) < 20
+
+
+def test_core_domain_modules_have_canonical_paths_and_legacy_compatibility() -> None:
+    from memory_center.core.artifacts import create_task_space as legacy_create_task_space
+    from memory_center.core.contracting.static import build_contract_snapshot
+    from memory_center.core.contracts import build_contract_snapshot as legacy_build_contract_snapshot
+    from memory_center.core.cross_shard import route_cross_service_shards as legacy_route_cross_service_shards
+    from memory_center.core.index_control import index_control_status as legacy_index_control_status
+    from memory_center.core.indexing.control_plane import index_control_status
+    from memory_center.core.retrieval.cross_service import route_cross_service_shards
+    from memory_center.core.tasks.artifacts import create_task_space
+
+    assert legacy_build_contract_snapshot is build_contract_snapshot
+    assert legacy_index_control_status is index_control_status
+    assert legacy_route_cross_service_shards is route_cross_service_shards
+    assert legacy_create_task_space is create_task_space

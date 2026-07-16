@@ -37,7 +37,7 @@ class JavaCallResolutionCase:
     forbidden_targets: tuple[str, ...] = ()
 
     @classmethod
-    def from_mapping(cls, data: Mapping[str, Any]) -> "JavaCallResolutionCase":
+    def from_mapping(cls, data: Mapping[str, Any]) -> JavaCallResolutionCase:
         unsupported = sorted(set(data) - JAVA_CALL_CASE_FIELDS)
         if unsupported:
             raise ValueError(f"unsupported java call case fields: {', '.join(unsupported)}")

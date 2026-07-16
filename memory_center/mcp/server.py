@@ -554,7 +554,10 @@ def create_server(workspace_file: str):
         if plan.tier == "fast":
             report_level = "compact"
         try:
-            from memory_center.core.cross_shard import query_cross_service_shards, route_cross_service_shards
+            from memory_center.core.retrieval.cross_service import (
+                query_cross_service_shards,
+                route_cross_service_shards,
+            )
 
             shard_route = route_cross_service_shards(wf, query or symbol or name or entry, tier=plan.tier, project=project)
             shard_evidence = query_cross_service_shards(wf, query or symbol or name or entry, shard_route, limit=limit)
@@ -573,7 +576,7 @@ def create_server(workspace_file: str):
             payload["shard_route"] = shard_route
             payload["shard_evidence"] = shard_evidence
             try:
-                from memory_center.core.cross_shard_fusion import fuse_cross_shard_result
+                from memory_center.core.retrieval.cross_service_fusion import fuse_cross_shard_result
                 payload["cross_shard_fusion"] = fuse_cross_shard_result(
                     wf,
                     query or symbol or name or entry,
@@ -785,7 +788,8 @@ def create_server(workspace_file: str):
                 if task_id.strip():
                     try:
                         import json
-                        from memory_center.core.artifacts import write_task_evidence_chunk
+
+                        from memory_center.core.tasks.artifacts import write_task_evidence_chunk
 
                         result["contract_evidence"] = write_task_evidence_chunk(
                             wf,

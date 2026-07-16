@@ -21,7 +21,6 @@ from memory_center.core.indexing.parse_result import (
     SymbolSpan,
 )
 
-
 # ── Registry contents ──────────────────────────────────────────────────────
 
 

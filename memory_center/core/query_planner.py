@@ -8,7 +8,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
-from .index_control import index_control_status
+from .indexing.control_plane import index_control_status
 from .store import WorkspaceStore
 
 PERFORMANCE_LEDGER_FILE = "query-performance.jsonl"

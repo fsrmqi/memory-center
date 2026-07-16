@@ -19,8 +19,8 @@ lets the module load even when no tree-sitter package is installed.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any, Callable
+from dataclasses import dataclass
+from typing import Any
 
 
 @dataclass(frozen=True)

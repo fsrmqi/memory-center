@@ -8,6 +8,12 @@
 
 ## Unreleased
 
+### Core Domain Layout and Query Reliability / Core 领域规整与查询可靠性
+
+- 修复 `memory_query` 在普通查询路径引用未定义项目作用域、导致 `mc_lookup(mode="query")` 崩溃的问题。
+- 重整 Core 领域模块：契约治理迁入 `contracting/`，索引控制与分片迁入 `indexing/`，跨服务分片检索迁入 `retrieval/`，任务工件/回执/时间线迁入 `tasks/`，导出迁入 `presentation/`。
+- 保留原 `core/*.py` 兼容转发模块，已有 Python import、CLI、MCP 和 HTTP 行为不变。
+
 ### P2 Retrieval / Reasoning Quality Loop / 检索与推理质量闭环
 
 - 本地安装版本提升至 `4.1.0`。

@@ -1,9 +1,9 @@
 from pathlib import Path
 
+from memory_center.core.artifacts import create_task_space
 from memory_center.core.config import load_workspace_config
 from memory_center.core.indexer import reindex_workspace
 from memory_center.core.orchestrator import workspace_sniff, workspace_status, workspace_sync_sniff_to_artifacts
-from memory_center.core.artifacts import create_task_space
 from memory_center.core.store import WorkspaceStore
 
 

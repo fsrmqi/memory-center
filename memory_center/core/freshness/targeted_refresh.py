@@ -1,12 +1,12 @@
 """Bounded, query-time graph refresh for recently changed source files."""
 from __future__ import annotations
 
+import json
 import time
 from hashlib import sha256
 from pathlib import Path
 from typing import Any
 
-import json
 from filelock import FileLock
 
 from ..graph import GraphEdge, GraphNode, GraphStore, edge_id, node_id

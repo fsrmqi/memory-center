@@ -9,7 +9,7 @@ from urllib.parse import parse_qs, urlparse
 
 from memory_center.core.dispatch import CommandRegistry as CommandRegistry  # re-exported for compatibility
 from memory_center.core.errors import normalize_exception
-from memory_center.core.exporters import (
+from memory_center.core.presentation.exporters import (
     export_continuity_dashboard_html,
     export_focus_task_html,
     export_index_freshness_html,

@@ -5,11 +5,11 @@ from memory_center.core.artifacts import (
     TASK_ARTIFACT_WRITE_MAX_BYTES,
     create_task_space,
     get_task_artifact,
+    get_task_evidence_chunk,
     resolve_task_space,
     task_space_health,
     update_task_artifact,
     write_task_evidence_chunk,
-    get_task_evidence_chunk,
 )
 from memory_center.core.orchestrator import sync as sync_module
 

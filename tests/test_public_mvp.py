@@ -30,9 +30,9 @@ from memory_center.core.artifacts import (
     task_space_repair_plan,
     task_spaces_health,
     touch_task_activity,
-    update_task_current_summary_snapshot,
     update_artifact,
     update_task_artifact,
+    update_task_current_summary_snapshot,
     update_task_status,
 )
 from memory_center.core.config import load_workspace_config
@@ -45,10 +45,10 @@ from memory_center.core.indexer import reindex_workspace
 from memory_center.core.instructions import write_agent_instructions
 from memory_center.core.orchestrator import (
     memory_backend_query,
-    memory_eval_context_weight,
     memory_eval_agent_guidance,
     memory_eval_agent_guidance_adoption,
     memory_eval_agent_guidance_replay,
+    memory_eval_context_weight,
     memory_eval_handoff,
     memory_eval_index_freshness,
     memory_eval_regression_suite,
@@ -58,11 +58,11 @@ from memory_center.core.orchestrator import (
     memory_eval_write_quality,
     memory_execute_write,
     memory_plan_write,
+    memory_query_hybrid,
     memory_ref_batch,
     memory_ref_get,
     memory_tool_usage_report,
     memory_write_judge,
-    memory_query_hybrid,
     workspace_continuity_dashboard,
     workspace_dashboard,
     workspace_end_session,

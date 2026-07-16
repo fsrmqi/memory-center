@@ -12,30 +12,6 @@ import typer
 from rich import print
 
 from memory_center import __version__
-from memory_center.core.artifacts import (
-    append_change_log,
-    append_task_change_log,
-    archive_task_space,
-    artifact_context,
-    artifact_outline,
-    auto_archive_task_spaces,
-    compact_change_log,
-    create_task_space,
-    ensure_default_artifacts,
-    get_artifact,
-    get_task_artifact,
-    list_artifacts,
-    list_task_spaces,
-    resolve_task_space,
-    task_space_health,
-    task_space_repair_execute,
-    task_space_repair_plan,
-    task_spaces_health,
-    touch_task_activity,
-    update_artifact,
-    update_task_artifact,
-    update_task_status,
-)
 from memory_center.core.config import (
     add_workspace_service,
     load_workspace_config,
@@ -44,11 +20,6 @@ from memory_center.core.config import (
 )
 from memory_center.core.dispatch import CommandRegistry
 from memory_center.core.errors import normalize_exception
-from memory_center.core.exporters import (
-    export_mermaid,
-    export_workspace_dashboard_html,
-    export_workspace_dashboard_markdown,
-)
 from memory_center.core.indexer import reindex_workspace
 from memory_center.core.instructions import write_agent_instructions
 from memory_center.core.orchestrator import (
@@ -123,9 +94,38 @@ from memory_center.core.orchestrator import (
     workspace_unresolved_items,
     workspace_write_receipts,
 )
+from memory_center.core.presentation.exporters import (
+    export_mermaid,
+    export_workspace_dashboard_html,
+    export_workspace_dashboard_markdown,
+)
 from memory_center.core.registry import add_to_group, create_group, list_workspaces, register_workspace
 from memory_center.core.rules import ensure_default_rules
 from memory_center.core.store import WorkspaceStore
+from memory_center.core.tasks.artifacts import (
+    append_change_log,
+    append_task_change_log,
+    archive_task_space,
+    artifact_context,
+    artifact_outline,
+    auto_archive_task_spaces,
+    compact_change_log,
+    create_task_space,
+    ensure_default_artifacts,
+    get_artifact,
+    get_task_artifact,
+    list_artifacts,
+    list_task_spaces,
+    resolve_task_space,
+    task_space_health,
+    task_space_repair_execute,
+    task_space_repair_plan,
+    task_spaces_health,
+    touch_task_activity,
+    update_artifact,
+    update_task_artifact,
+    update_task_status,
+)
 from memory_center.core.validators import doctor as run_doctor
 from memory_center.core.wiki import generate_skills, generate_wiki
 from memory_center.hooks.adapters.claude_code import generate_claude_code_hooks, write_claude_code_settings
@@ -136,6 +136,11 @@ from memory_center.hooks.spec import ensure_default_hooks, load_hooks_config
 from memory_center.http.server import serve_http
 
 app = typer.Typer(help="Memory Center CLI")
+RELEASE_GATE_QUERY_OPTION = typer.Option(
+    None,
+    "--query",
+    help="Portable query smoke check; repeatable and never persisted.",
+)
 registry_app = typer.Typer(help="Global registry commands")
 group_app = typer.Typer(help="Workspace group commands")
 workspace_app = typer.Typer(help="Workspace config maintenance commands")
@@ -995,7 +1000,7 @@ def eval_golden_baseline_save_cmd(
 @app.command("release-gate")
 def release_gate_cmd(
     workspace: str = typer.Option(..., help="Workspace yaml file."),
-    query: Optional[List[str]] = typer.Option(None, "--query", help="Portable query smoke check; repeatable and never persisted."),
+    query: Optional[List[str]] = RELEASE_GATE_QUERY_OPTION,
     golden_cases: str = typer.Option("", help="Optional private Golden cases yaml file."),
     java_call_cases: str = typer.Option("", help="Optional private Java call resolution cases yaml file."),
     parser_limit: int = typer.Option(0, min=0, help="Parser comparison sample size; 0 disables it."),

@@ -35,9 +35,9 @@ from .common import (
     _node_type_priority,
     _resolve_memory_ref,
     _rrf,
+    _symbol_search_text,
     load_context,
     preferred_edge_types,
-    _symbol_search_text,
     summarize_chain_edges,
     tokenize,
 )
@@ -422,21 +422,9 @@ def _project_matches(query_project: str, item_project: str) -> bool:
 
 def memory_query(workspace_file: str | Path, query: str, limit: int = 20, node_types: list[str] | None = None, alpha: float | None = None) -> dict[str, Any]:
     config, store = load_context(workspace_file)
-    graph_path = store.graph_db_path
-    shard_graph_used = False
-    if effective_project:
-        try:
-            from ..index_control import index_control_status
-            from ..index_shards import service_shard_graph_path
-
-            generation = str(index_control_status(store).get("active_generation", "") or "")
-            shard_path = service_shard_graph_path(store, generation, effective_project) if generation else None
-            if shard_path:
-                graph_path = shard_path
-                shard_graph_used = True
-        except Exception:
-            pass
-    with GraphStore(graph_path) as graph:
+    # This legacy query facade has no project scope. Project-aware callers use
+    # memory_query_hybrid or memory_search_code, which can safely select a shard.
+    with GraphStore(store.graph_db_path) as graph:
         exact_nodes = graph.find_nodes(query, types=node_types, limit=limit)
         if not exact_nodes:
             seen_nodes = {}
@@ -569,8 +557,8 @@ def memory_query_hybrid(
     shard_graph_used = False
     if effective_project:
         try:
-            from ..index_control import index_control_status
-            from ..index_shards import service_shard_graph_path
+            from ..indexing.control_plane import index_control_status
+            from ..indexing.shards import service_shard_graph_path
 
             generation = str(index_control_status(store).get("active_generation", "") or "")
             shard_path = service_shard_graph_path(store, generation, effective_project) if generation else None
@@ -1944,8 +1932,8 @@ def memory_search_code(workspace_file: str | Path, query: str, scope: str = "", 
     symbols: list[dict[str, Any]] = []
     if effective_project:
         try:
-            from ..index_control import index_control_status
-            from ..index_shards import load_service_shard
+            from ..indexing.control_plane import index_control_status
+            from ..indexing.shards import load_service_shard
 
             generation = str(index_control_status(store).get("active_generation", "") or "")
             shard = load_service_shard(store, generation, effective_project) if generation else None

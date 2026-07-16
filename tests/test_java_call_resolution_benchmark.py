@@ -9,6 +9,7 @@ from urllib.request import urlopen
 import yaml
 from typer.testing import CliRunner
 
+from memory_center.cli.main import app
 from memory_center.core.benchmark.java_call_resolution import (
     load_java_call_resolution_cases,
     review_java_call_resolution_suite,
@@ -17,7 +18,6 @@ from memory_center.core.benchmark.java_call_resolution import (
 )
 from memory_center.core.graph import GraphEdge, GraphNode, GraphStore, edge_id, node_id
 from memory_center.core.store import WorkspaceStore
-from memory_center.cli.main import app
 from memory_center.http.server import create_handler
 
 

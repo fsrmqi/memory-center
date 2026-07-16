@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from ..store import WorkspaceStore
-from ..write_receipts import build_write_receipt, persist_write_receipt
+from ..tasks.receipts import build_write_receipt, persist_write_receipt
 from .common import (
     LAYER_L0,
     SESSION_EVENTS_FILE,
@@ -163,7 +163,7 @@ def workspace_record_agent_guidance(
             "query": query,
             "mode": mode,
             "source": source,
-            "intent": str(((lookup_payload.get("intent_analysis", {}) or {}).get("primary_intent", "") or "")),
+            "intent": str((lookup_payload.get("intent_analysis", {}) or {}).get("primary_intent", "") or ""),
             "mode_used": str(lookup_payload.get("mode_used", "") or mode),
             "retrieval_policy": dict(lookup_payload.get("retrieval_policy", {}) or {}),
             "agent_next_steps": steps,
@@ -352,7 +352,7 @@ def workspace_recent_evidence(
     budget: str = "medium",
     view: str = "compact",
 ) -> dict[str, Any]:
-    from ..timeline import timeline_query
+    from ..tasks.timeline import timeline_query
 
     config, store = load_context(workspace_file)
     result = timeline_query(str(workspace_file), task_id=task_id.strip(), session_id=session_id.strip(), kinds=["session_event", "write_receipt"], limit=limit)

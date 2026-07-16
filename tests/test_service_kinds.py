@@ -24,7 +24,6 @@ from memory_center.core.service_kinds import (
     resolve_kind,
 )
 
-
 # ── Registry shape ─────────────────────────────────────────────────────────
 
 

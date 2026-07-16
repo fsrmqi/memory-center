@@ -8,12 +8,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from ..config import load_workspace_config
-from ..artifacts import ensure_default_artifacts
-from ..instructions import inspect_agent_mcp_bindings, repair_agent_mcp_bindings
 from ...hooks.spec import ensure_default_hooks
+from ..config import load_workspace_config
+from ..instructions import inspect_agent_mcp_bindings, repair_agent_mcp_bindings
 from ..rules import ensure_default_rules
 from ..store import WorkspaceStore
+from ..tasks.artifacts import ensure_default_artifacts
 from ..validators import doctor
 from ..verification.heuristics import apply_candidate_path_learning
 

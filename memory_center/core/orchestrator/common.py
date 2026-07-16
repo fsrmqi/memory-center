@@ -782,7 +782,7 @@ def _impact_checklist(node: dict[str, Any], risk_level: str) -> list[str]:
 
 
 def _resolve_memory_ref(store: WorkspaceStore, ref_id: str) -> dict[str, Any] | None:
-    from ..write_receipts import WRITE_RECEIPTS_FILE
+    from ..tasks.receipts import WRITE_RECEIPTS_FILE
 
     if not ref_id:
         return None

@@ -115,10 +115,10 @@ class TestSyncRetrievalPreservesExistingVectors:
         # embedding, then call _sync_retrieval_indexes with a
         # semantic_index that has no ``dense_vector``. The embedding
         # should still be there afterwards.
+        from memory_center.core.graph import GraphStore
         from memory_center.core.indexer import _sync_retrieval_indexes
         from memory_center.core.storage.unified import UnifiedStore
         from memory_center.core.storage.vector_index import VectorIndex
-        from memory_center.core.graph import GraphStore
 
         graph_db = tmp_path / "graph.db"
         # Seed graph with one node

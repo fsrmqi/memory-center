@@ -92,7 +92,7 @@
   - 匹配逻辑
 - `core/schemas.py`
   - 稳定返回 schema
-- `core/write_receipts.py`
+- `core/tasks/receipts.py`
   - 写入回执
 
 ### 3.4 编排器
@@ -160,14 +160,20 @@
 - `core/benchmark/models.py`
   - portable `GoldenCase` schema
   - private-path / unsupported-field guardrails
-- `core/timeline.py`
+- `core/tasks/timeline.py`
   - session_event / write_receipt / handoff 统一时间线
 - `core/tracking.py`
   - token gain 日志
 - `core/token_utils.py`
   - token 估算与节省统计
-- `core/exporters.py`
+- `core/presentation/exporters.py`
   - HTML / Markdown / UI 片段渲染
+- `core/contracting/*`
+  - 静态契约快照、运行时脱敏样本与兼容门禁
+- `core/indexing/control_plane.py`、`core/indexing/shards.py`
+  - generation 控制面与物理服务分片
+- `core/retrieval/cross_service*.py`
+  - 跨服务分片路由、并行取证与融合
 - `core/wiki.py`
   - wiki / skills 生成
 - `core/instructions.py`

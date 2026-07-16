@@ -7,12 +7,17 @@ from typing import Any
 
 import yaml
 
+from .contracting.static import (
+    CONTRACT_DIFF_FILE,
+    CONTRACT_SNAPSHOT_FILE,
+    build_contract_snapshot,
+    diff_contract_snapshots,
+)
 from .graph import GraphEdge, GraphNode, GraphStore, edge_id, node_id
+from .indexing.control_plane import activate_generation, begin_generation, build_shard_manifest, fail_generation
 from .indexing.java_call_resolver import JavaCallResolver, build_java_class_index
 from .indexing.reindex_state import workspace_reindex_lock
-from .index_control import activate_generation, begin_generation, build_shard_manifest, fail_generation
-from .index_shards import write_generation_shards
-from .contracts import CONTRACT_DIFF_FILE, CONTRACT_SNAPSHOT_FILE, build_contract_snapshot, diff_contract_snapshots
+from .indexing.shards import write_generation_shards
 
 # Keep the tree-sitter wrapper active so fallback reasons remain observable.
 try:
@@ -1062,7 +1067,6 @@ def build_graph_store(config: WorkspaceConfig, store: WorkspaceStore, *, project
             owner_classes = sym.get("classes", []) + sym.get("interfaces", [])
             owner_class = owner_classes[0] if owner_classes else Path(sym["file"]).stem
             owner_class_id = node_id("Class", sym["project"], owner_class)
-            file_field_types = field_type_by_file.get(sym["file"], {})
 
             for inj in sym.get("bean_injections", []):
                 target_type = inj.get("type")

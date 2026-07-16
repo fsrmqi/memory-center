@@ -93,6 +93,12 @@ Memory Center 不要求中心化服务。默认形态是每个 workspace 自带�
 | HTTP | `memory-center-http` | `memory_center/http/server.py` | JSON API、本地 HTML UI、Vue Workbench `/app` |
 | Hooks | generated host hooks | `memory_center/hooks/` | SessionStart、PreToolUse、Stop 等宿主生命周期集成 |
 
+### 1.5 Core 领域布局 / Core Domain Layout
+
+`core/` 根目录只保留配置、存储、图谱、模型和兼容入口；按业务能力归类的实现放入子包。索引控制与物理分片位于 `indexing/`，跨服务分片路由与融合位于 `retrieval/`，静态和运行时契约治理位于 `contracting/`，任务工件、写入回执和时间线位于 `tasks/`，人类可读导出位于 `presentation/`。原 `core/*.py` 路径仅保留兼容转发，不改变已有 CLI、MCP、HTTP 或第三方脚本的 import。
+
+The `core/` root contains foundations and compatibility entrypoints only. Domain implementations live in dedicated packages: index control and physical shards in `indexing/`, cross-service routing and fusion in `retrieval/`, static/runtime contract governance in `contracting/`, task artifacts/receipts/timelines in `tasks/`, and human-readable exports in `presentation/`. Legacy root modules remain compatibility shims.
+
 ---
 
 ## 2. 整体架构 / Overall Architecture

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import math
 import os
 import re
@@ -9,8 +8,8 @@ from typing import Any
 
 from .compat import zip_strict
 from .graph import GraphStore
-from .store import WorkspaceStore
 from .storage.metadata import metadata_json as _metadata_json
+from .store import WorkspaceStore
 
 SEMANTIC_INDEX_FILE = "semantic-node-index.json"
 SEMANTIC_INDEX_VERSION = 4

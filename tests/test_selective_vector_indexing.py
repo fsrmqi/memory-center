@@ -4,9 +4,9 @@ from pathlib import Path
 
 from memory_center.core.graph import GraphNode, GraphStore
 from memory_center.core.semantic import (
+    _doc_is_vector_eligible,
     build_workspace_semantic_index,
     semantic_index_stats,
-    _doc_is_vector_eligible,
 )
 from memory_center.core.store import WorkspaceStore
 

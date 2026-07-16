@@ -4,8 +4,7 @@ from .baseline import (
     compare_baseline_samples,
     record_baseline_sample,
 )
-from .golden import load_golden_cases, run_golden_suite, score_golden_case
-from .golden import save_golden_performance_baseline
+from .golden import load_golden_cases, run_golden_suite, save_golden_performance_baseline, score_golden_case
 from .java_call_resolution import (
     JavaCallResolutionCase,
     load_java_call_resolution_cases,

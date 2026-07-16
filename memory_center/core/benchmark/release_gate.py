@@ -7,7 +7,8 @@ from pathlib import Path
 from typing import Any
 
 from ..config import load_workspace_config
-from ..contracts import CONTRACT_DIFF_FILE, CONTRACT_SNAPSHOT_FILE, contract_semantic_report
+from ..contracting.runtime import RUNTIME_SAMPLES_FILE, runtime_contract_compatibility
+from ..contracting.static import CONTRACT_DIFF_FILE, CONTRACT_SNAPSHOT_FILE, contract_semantic_report
 from ..indexer import reindex_workspace
 from ..orchestrator import (
     memory_eval_java_call_resolution,
@@ -15,7 +16,6 @@ from ..orchestrator import (
     memory_query_hybrid,
 )
 from ..store import WorkspaceStore
-from ..runtime_contracts import RUNTIME_SAMPLES_FILE, runtime_contract_compatibility
 from .golden import run_golden_suite
 
 

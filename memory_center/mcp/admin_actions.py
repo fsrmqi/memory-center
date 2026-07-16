@@ -20,50 +20,23 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from memory_center.core.artifacts import (
-    append_change_log,
-    append_task_change_log,
-    archive_task_space,
-    artifact_context,
-    artifact_outline,
-    auto_archive_task_spaces,
-    compact_change_log,
-    create_task_space,
-    get_artifact,
-    get_task_artifact,
-    list_artifacts,
-    list_task_spaces,
-    resolve_task_space,
-    task_space_health,
-    task_space_repair_execute,
-    task_space_repair_plan,
-    task_spaces_health,
-    task_evidence_gc,
-    touch_task_activity,
-    record_task_decision,
-    list_task_decisions,
-    update_artifact,
-    update_task_artifact,
-    update_task_status,
-    write_task_evidence_chunk,
-)
 from memory_center.core.audit.runtime import audit_agent_runtime
-from memory_center.core.index_control import index_control_status, rollback_generation
-from memory_center.core.index_shards import cleanup_generations
-from memory_center.core.cross_shard import evaluate_cross_shard_replay
-from memory_center.core.cross_shard_fusion import evaluate_cross_shard_fusion
-from memory_center.core.jobs import cancel_workspace_job, submit_reindex_workspace_job, workspace_job_status
-from memory_center.core.query_planner import workspace_performance_summary
-from memory_center.core.runtime_contracts import ingest_runtime_contract_samples, runtime_contract_compatibility, set_contract_migration
 from memory_center.core.benchmark.trending import check_regression_alerts
+from memory_center.core.contracting.runtime import (
+    ingest_runtime_contract_samples,
+    runtime_contract_compatibility,
+    set_contract_migration,
+)
 from memory_center.core.dispatch import CommandRegistry
 from memory_center.core.domain.flow import (
     business_flow_impact_for_workspace,
     extract_business_flows_for_workspace,
 )
 from memory_center.core.explanation.schema import Explanation
+from memory_center.core.indexing.control_plane import index_control_status, rollback_generation
+from memory_center.core.indexing.shards import cleanup_generations
+from memory_center.core.jobs import cancel_workspace_job, submit_reindex_workspace_job, workspace_job_status
 from memory_center.core.metrics import MetricsCollector
-from memory_center.core.store import WorkspaceStore
 from memory_center.core.orchestrator import (
     group_chain,
     group_impact,
@@ -100,8 +73,8 @@ from memory_center.core.orchestrator import (
     memory_tool_usage_report,
     memory_walkthrough_health,
     memory_write_judge,
-    workspace_continuity_dashboard,
     workspace_check_contract,
+    workspace_continuity_dashboard,
     workspace_dashboard,
     workspace_end_session,
     workspace_handoff_history,
@@ -114,6 +87,37 @@ from memory_center.core.orchestrator import (
     workspace_status,
     workspace_task_resume_check,
     workspace_write_receipts,
+)
+from memory_center.core.query_planner import workspace_performance_summary
+from memory_center.core.retrieval.cross_service import evaluate_cross_shard_replay
+from memory_center.core.retrieval.cross_service_fusion import evaluate_cross_shard_fusion
+from memory_center.core.store import WorkspaceStore
+from memory_center.core.tasks.artifacts import (
+    append_change_log,
+    append_task_change_log,
+    archive_task_space,
+    artifact_context,
+    artifact_outline,
+    auto_archive_task_spaces,
+    compact_change_log,
+    create_task_space,
+    get_artifact,
+    get_task_artifact,
+    list_artifacts,
+    list_task_decisions,
+    list_task_spaces,
+    record_task_decision,
+    resolve_task_space,
+    task_evidence_gc,
+    task_space_health,
+    task_space_repair_execute,
+    task_space_repair_plan,
+    task_spaces_health,
+    touch_task_activity,
+    update_artifact,
+    update_task_artifact,
+    update_task_status,
+    write_task_evidence_chunk,
 )
 from memory_center.core.verification.bundle_export import generate_agent_bundle
 from memory_center.core.verification.heuristics import HeuristicsRegister

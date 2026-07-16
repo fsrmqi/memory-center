@@ -19,7 +19,6 @@ These tests lock in the P0-0 contract documented in
 from __future__ import annotations
 
 import json
-import os
 from dataclasses import asdict
 from pathlib import Path
 from unittest import mock

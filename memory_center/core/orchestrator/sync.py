@@ -3,15 +3,15 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from ..artifacts import (
+from ..tasks.artifacts import (
     append_task_change_log,
     get_task_artifact,
     resolve_task_space,
     touch_task_activity,
-    update_task_current_summary_snapshot,
     update_task_artifact,
+    update_task_current_summary_snapshot,
 )
-from ..write_receipts import build_write_receipt
+from ..tasks.receipts import build_write_receipt
 from .common import (
     LAYER_L2,
     TOOL_WORKSPACE_SYNC_CASE_ARTIFACTS,
@@ -25,7 +25,6 @@ from .common import (
     _score_threshold_for_sync_mode,
     load_context,
 )
-
 
 TASK_SYNC_EXISTING_ARTIFACT_MAX_BYTES = 512 * 1024
 

@@ -9,8 +9,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from memory_center.core.graph import GraphEdge, GraphNode, GraphStore
 from memory_center.core.storage.pragmas import read_pragma_state
 
