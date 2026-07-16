@@ -142,3 +142,10 @@ def test_resume_check_has_its_own_orchestrator_module() -> None:
 
     assert callable(resume_check.workspace_task_resume_check)
     assert "def workspace_task_resume_check" not in Path(workspace_ops.__file__).read_text(encoding="utf-8")
+
+
+def test_module_boundary_adr_defines_completion_criteria() -> None:
+    adr = Path(__file__).parents[1] / "docs" / "adr" / "0002-module-boundaries-and-completion.md"
+    content = adr.read_text(encoding="utf-8")
+    assert "本轮验收条件" in content
+    assert "core 非 orchestrator 包零依赖" in content

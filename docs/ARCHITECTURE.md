@@ -105,7 +105,7 @@ The `core/` root contains only `__init__.py`; it has no implementation or compat
 
 ## 2. 整体架构 / Overall Architecture
 
-Memory Center 当前是一个本地文件系统 + SQLite 派生索引驱动的多入口服务。核心代码分为五层：
+Memory Center 当前是一个本地文件系统 + SQLite 派生索引驱动的多入口服务。核心代码分为六层：
 
 ```text
 ┌─────────────────────────────────────────────────────────────┐
