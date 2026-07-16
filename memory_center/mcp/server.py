@@ -472,10 +472,24 @@ def create_server(workspace_file: str):
         auto_sync_mode: str = "balanced",
         sync_task_space: bool = True,
         budget: str = "medium",
+        deadline_ms: int = 5_000,
     ):
         """Start a new task workflow. Sniffs workspace context, optionally syncs to task space, and starts a session. Returns consolidated context with services, files, rules, risk level, session_id, and task_id."""
         wf = ctx.workspace_file
-        sniff_result = workspace_sniff(wf, intent, limit=limit, auto_sync_mode=auto_sync_mode, view="compact", budget=budget)
+        try:
+            from memory_center.core.freshness.targeted_refresh import refresh_query_targets
+            auto_refresh = refresh_query_targets(wf, intent, limit=min(limit, 12))
+        except Exception:
+            auto_refresh = {"checked": 0, "refreshed": False, "files": [], "elapsed_ms": 0.0, "mode": "unavailable", "coalesced": False}
+        sniff_result = workspace_sniff(
+            wf,
+            intent,
+            limit=limit,
+            auto_sync_mode=auto_sync_mode,
+            view="compact",
+            budget=budget,
+            deadline_ms=deadline_ms,
+        )
         synced = None
         resolved_task = sniff_result.get("resolved_task", {}) or {}
         auto_sync = sniff_result.get("auto_sync_recommendation", {}) or {}
@@ -485,6 +499,7 @@ def create_server(workspace_file: str):
                 task_id=str(resolved_task.get("task_id", "") or ""),
                 title=str(resolved_task.get("title", "") or ""),
                 auto_sync_mode=auto_sync_mode,
+                sniff_result=sniff_result,
             )
         session = workspace_start_session(wf, intent)
         guidance = get_workflow_guidance("work-start", {"risk_level": sniff_result.get("risk_level", ""), "task_id": resolved_task.get("task_id", "")})
@@ -496,7 +511,7 @@ def create_server(workspace_file: str):
             _freshness = {"status": "unknown", "recommended_actions": [], "semantics": ""}
         # D-02: Context Pack recommendation for architecture/change intents
         _cp_rec = _build_context_pack_recommendation(wf, intent, sniff_result)
-        return {"workflow": "mc-start", "sniff": sniff_result, "sync_sniff": synced, "session": session, "_workflow_guidance": guidance, "freshness": _freshness, "context_pack_recommendation": _cp_rec}
+        return {"workflow": "mc-start", "sniff": sniff_result, "sync_sniff": synced, "session": session, "auto_refresh": auto_refresh, "_workflow_guidance": guidance, "freshness": _freshness, "context_pack_recommendation": _cp_rec}
 
     # ===================== FACADE 2: mc_lookup =====================
     @_safe_mcp_tool(mcp)
@@ -521,7 +536,13 @@ def create_server(workspace_file: str):
     ):
         """Unified knowledge lookup. Mode selects strategy: auto (system decides via lookup_hint), symbol (resolve name), code (keyword search), query (graph-aware multi-source), trace (cross-service by class/Feign/endpoint/MQ), chain (caller/callee analysis, use chain_direction), walkthrough (method-level indexed walkthrough), context (360-degree context for a service/symbol), contracts (list all Feign/API/MQ contracts), ref (resolve short memory reference IDs). For Class#method requests that say full chain/全链路/到底层, prefer mode='walkthrough' or auto; walkthrough returns summary_lines, local_service_continuations, feign_continuations.server_walkthroughs, service_impl_continuations, and absolute_file_path. If absolute_file_path is present, read that path directly and do not run find/grep/IDEA search to locate the same controller or impl. Use project to disambiguate when multiple modules contain the same symbol name."""
         wf = ctx.workspace_file
+        try:
+            from memory_center.core.freshness.targeted_refresh import refresh_query_targets
+            auto_refresh = refresh_query_targets(wf, query or symbol or name or entry, limit=min(limit, 12))
+        except Exception:
+            auto_refresh = {"checked": 0, "refreshed": False, "files": [], "elapsed_ms": 0.0, "mode": "unavailable", "coalesced": False}
         def emit(payload: dict[str, Any], emitted_mode: str) -> dict[str, Any]:
+            payload["auto_refresh"] = auto_refresh
             if session_id.strip():
                 workspace_record_agent_guidance(
                     wf,

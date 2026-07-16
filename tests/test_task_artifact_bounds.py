@@ -2,10 +2,12 @@ from pathlib import Path
 
 from memory_center.core.artifacts import (
     TASK_ARTIFACT_EXCERPT_BYTES,
+    TASK_ARTIFACT_WRITE_MAX_BYTES,
     create_task_space,
     get_task_artifact,
     resolve_task_space,
     task_space_health,
+    update_task_artifact,
 )
 from memory_center.core.orchestrator import sync as sync_module
 
@@ -65,3 +67,16 @@ def test_sync_preserves_oversized_artifact_without_merging(tmp_path: Path):
 
     assert skipped is True
     assert context_path.read_text(encoding="utf-8") == original
+
+
+def test_direct_task_update_rejects_oversized_merge_without_reading(tmp_path: Path):
+    workspace = _workspace(tmp_path)
+    task = create_task_space(workspace, title="直接更新超大工件")
+    plan_path = Path(task["path"]) / "plan.md"
+    plan_path.write_text("x" * (TASK_ARTIFACT_WRITE_MAX_BYTES + 1), encoding="utf-8")
+
+    result = update_task_artifact(workspace, task["task_id"], "plan", "new plan")
+
+    assert result["updated"] is False
+    assert result["reason"] == "artifact_too_large_for_merge"
+    assert plan_path.stat().st_size > TASK_ARTIFACT_WRITE_MAX_BYTES

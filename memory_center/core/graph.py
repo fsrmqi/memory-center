@@ -427,7 +427,7 @@ class GraphStore:
             frontier = next_frontier
         return results[:limit]
 
-    def remove_by_scope(self, project_filter: set[str], path_filters: list[str]) -> set[str]:
+    def remove_by_scope(self, project_filter: set[str], path_filters: list[str], *, preserve_incoming: bool = False) -> set[str]:
         """Remove nodes/edges matching project or path scope. Returns removed node IDs."""
         with self.connect() as conn:
             conditions: list[str] = []
@@ -447,7 +447,10 @@ class GraphStore:
             if not removed_ids:
                 return set()
             placeholders = ",".join("?" for _ in removed_ids)
-            conn.execute(f"DELETE FROM edges WHERE source_id IN ({placeholders}) OR target_id IN ({placeholders})", removed_ids * 2)
+            if preserve_incoming:
+                conn.execute(f"DELETE FROM edges WHERE source_id IN ({placeholders})", removed_ids)
+            else:
+                conn.execute(f"DELETE FROM edges WHERE source_id IN ({placeholders}) OR target_id IN ({placeholders})", removed_ids * 2)
             conn.execute(f"DELETE FROM nodes WHERE id IN ({placeholders})", removed_ids)
             try:
                 conn.execute(f"DELETE FROM node_search WHERE id IN ({placeholders})", removed_ids)
@@ -455,9 +458,17 @@ class GraphStore:
                 pass
             return set(removed_ids)
 
-    def partial_rebuild(self, nodes: Iterable[GraphNode], edges: Iterable[GraphEdge], project_filter: set[str], path_filters: list[str]) -> dict[str, Any]:
+    def partial_rebuild(
+        self,
+        nodes: Iterable[GraphNode],
+        edges: Iterable[GraphEdge],
+        project_filter: set[str],
+        path_filters: list[str],
+        *,
+        preserve_incoming: bool = False,
+    ) -> dict[str, Any]:
         """Remove scope-matched nodes/edges, then upsert refreshed ones."""
-        removed_ids = self.remove_by_scope(project_filter, path_filters)
+        removed_ids = self.remove_by_scope(project_filter, path_filters, preserve_incoming=preserve_incoming)
         refreshed_nodes = list(nodes)
         refreshed_edges = list(edges)
         self.bulk_write(refreshed_nodes, refreshed_edges)

@@ -19,7 +19,6 @@ from ..graph import GraphStore
 from ..rules import match_rules
 from ..indexing.reindex_state import workspace_reindex_status
 from ..schemas import with_schema
-from ..semantic import semantic_index_stats
 from ..store import WorkspaceStore
 from ..tracking import log_token_gain
 from ..verification.heuristics import apply_candidate_path_learning
@@ -78,6 +77,7 @@ def workspace_status(workspace_file: str | Path, view: str = "compact", budget: 
     index_summary = store.read_json_prefer_backend("index-summary.json", {})
     semantic_summary = {
         "doc_count": int(index_summary.get("semantic_docs", 0) or 0),
+        "ready": int(index_summary.get("semantic_docs", 0) or 0) > 0,
         "backend": index_summary.get("semantic_backend", "unknown"),
         "model": index_summary.get("semantic_model"),
         "vector_status": index_summary.get("vector_status", "unknown"),
@@ -101,6 +101,7 @@ def workspace_status(workspace_file: str | Path, view: str = "compact", budget: 
             "semantic_docs": semantic_summary["doc_count"],
         },
         "semantic_index": semantic_summary,
+        "index_summary_status": semantic_summary["summary_source"],
         "reindex": workspace_reindex_status(store),
         "memory_layers": memory_layers,
         "memory_overview": _build_memory_overview(memory_layers),

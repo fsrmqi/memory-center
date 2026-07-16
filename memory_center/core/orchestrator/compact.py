@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from typing import Any
 
 from ..schemas import with_schema
@@ -10,9 +11,11 @@ from .common import _budget_limits, _trim_summary
 
 def _measure_compact_gain(raw_result: dict[str, Any], compact_result: dict[str, Any]) -> dict[str, Any]:
     """Measure token savings from raw to compact. Returns savings dict for gain logging."""
+    if os.getenv("MEMORY_CENTER_MEASURE_COMPACT_GAIN", "").strip().lower() not in {"1", "true", "yes"}:
+        return {"raw_tokens": 0, "compact_tokens": 0, "saved_tokens": 0, "reduction_rate": 0.0, "measured": False}
     raw_tokens = estimate_tokens(json.dumps(raw_result, ensure_ascii=False))
     compact_tokens = estimate_tokens(json.dumps(compact_result, ensure_ascii=False))
-    return compute_savings(raw_tokens, compact_tokens)
+    return {**compute_savings(raw_tokens, compact_tokens), "measured": True}
 
 
 def _compact_task_rows(rows: list[dict[str, Any]], limit: int = 5) -> list[dict[str, Any]]:
@@ -94,6 +97,7 @@ def _compact_sniff_result(result: dict[str, Any], budget: str = "medium") -> dic
             },
         },
         "next_steps": result.get("next_steps", [])[: limits["steps"]],
+        "performance": result.get("performance", {}),
     }
 
 
@@ -119,6 +123,7 @@ def _compact_workspace_status(result: dict[str, Any], budget: str = "medium") ->
         ],
         "index_counts": result.get("index_counts", {}),
         "semantic_index": result.get("semantic_index", {}),
+        "index_summary_status": result.get("index_summary_status", "unknown"),
         "reindex": result.get("reindex", {}),
         "memory_layers": result.get("memory_layers", {}),
         "memory_overview": result.get("memory_overview", {}),

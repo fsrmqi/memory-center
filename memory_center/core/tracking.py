@@ -21,6 +21,8 @@ def log_token_gain(
     view: str = "",
 ) -> None:
     """Append one token gain record to the workspace gain log."""
+    if raw_tokens <= 0:
+        return
     store = WorkspaceStore(workspace_file)
     saved = raw_tokens - compact_tokens
     pct = (saved / raw_tokens * 100) if raw_tokens > 0 else 0.0

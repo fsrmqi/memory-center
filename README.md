@@ -768,6 +768,14 @@ Task-space matching, health checks, resume summaries, and automatic sync read ta
 
 任务空间匹配、健康检查、恢复摘要和自动同步都会对任务工件采用有界摘要读取。超大工件会在任务健康检查中提示，并在自动同步时保持原样跳过，避免生成型 Markdown 让普通分析请求退化为无界内存读取。
 
+`mc_start` reuses its first sniff result during optional task sync. Sniff responses include `performance` with stage timings, cache state, retrieval mode, and the soft request deadline. Reindex also writes `index-summary.json`; status and Workbench read that small summary instead of loading full Java or semantic indexes.
+
+`mc_start` 在可选任务同步时会复用首次 sniff 结果。sniff 响应包含 `performance`，提供阶段耗时、缓存状态、检索模式和软请求时限。reindex 还会写入 `index-summary.json`，状态页和 Workbench 只读取这一轻量摘要，不再加载完整 Java 或语义索引。
+
+Before `mc_start` and `mc_lookup` return indexed evidence, Memory Center checks a bounded set of graph/path candidates. When a source file changed since indexing, it refreshes only that file's File/Class/Method graph overlay and returns `auto_refresh`; it never runs a full index merge on the request path.
+
+`mc_start` 和 `mc_lookup` 返回索引证据前，会检查有界数量的图谱/路径候选。发现源码在索引后已变更时，只刷新该文件的 File/Class/Method 图谱覆盖层，并返回 `auto_refresh`；请求链路不会触发全量索引合并。
+
 Walkthrough key locations include `absolute_file_path`; agents should read that path directly instead of running `find` first.
 
 walkthrough 的关键落点包含 `absolute_file_path`；Agent 应直接读取该路径，不需要先执行 `find` 定位文件。

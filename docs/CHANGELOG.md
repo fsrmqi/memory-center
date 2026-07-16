@@ -10,7 +10,11 @@
 
 ### P2 Retrieval / Reasoning Quality Loop / 检索与推理质量闭环
 
-- 本地安装版本提升至 `3.5.24`。
+- 本地安装版本提升至 `3.5.26`。
+- `mc_start` 和 `mc_lookup` 现在会在主检索前自动检查有限数量的相关源码；检测到源文件比索引更新时，仅刷新对应 File/Class/Method 图谱覆盖层，不读取或合并全量 Java/semantic 索引。响应增加 `auto_refresh`，显示检查数量、刷新文件数量、耗时与模式。
+- `mc_start` 复用首次 sniff 结果，不再因自动同步重复执行同一检索；sniff 返回阶段耗时、缓存命中、检索路径与软时限状态，便于 Agent 判断是否需要补充更精确的入口。
+- reindex 写入轻量 `index-summary.json`；Workbench/状态查询只读取该摘要，不再为计数加载完整 Java/semantic 索引。紧凑输出的 token 节省统计默认关闭，仅在 `MEMORY_CENTER_MEASURE_COMPACT_GAIN=1` 时启用。
+- 任务工件写入、摘要历史与 change-log 压缩新增容量门禁，避免直接写入路径重新读取或拼接超大 Markdown。
 - 修复大型 workspace 的正常链路分析可能长时间占用 CPU/内存的问题：`Class#method` 全链路请求现在直接走 walkthrough，跳过不必要的 sniff；sniff 候选文件改为优先使用 graph FTS，code-search/sniff 不再按文件序列化完整 Java 符号、调用和 DTO payload。
 - 任务空间解析、健康检查、恢复摘要和自动同步改为有界读取任务工件；超过阈值的工件会在 health 中告警，并在自动同步时保持原样跳过，避免 GB 级 Markdown 被全文读入或拼接。
 - 本地安装版本提升至 `3.5.23`。

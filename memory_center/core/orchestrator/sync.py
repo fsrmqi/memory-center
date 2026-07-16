@@ -37,11 +37,12 @@ def workspace_sync_sniff_to_artifacts(
     task_id: str = "",
     title: str = "",
     auto_sync_mode: str = "balanced",
+    sniff_result: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     from .workspace import workspace_sniff
 
     config, store = load_context(workspace_file)
-    sniff = workspace_sniff(workspace_file, intent, limit=limit)
+    sniff = sniff_result if isinstance(sniff_result, dict) else workspace_sniff(workspace_file, intent, limit=limit)
     auto_sync_rules = _load_auto_sync_rules(store)
     aliases = (auto_sync_rules or {}).get("mode_aliases", {}) or {}
     resolved_mode = aliases.get(auto_sync_mode, auto_sync_mode)
@@ -123,6 +124,7 @@ def workspace_sync_sniff_to_artifacts(
             "related_mq_count": len(sniff.get("related_mq", [])),
         },
         "write_receipt": receipt,
+        "sniff_reused": sniff_result is not None,
     }
 
 

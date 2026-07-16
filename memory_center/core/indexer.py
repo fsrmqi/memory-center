@@ -91,6 +91,8 @@ def _reindex_workspace_unlocked(
                     "abs_path": str(path.resolve()),
                     "service_root": str(service_root),
                     "suffix": path.suffix,
+                    "source_mtime_ns": path.stat().st_mtime_ns,
+                    "source_size": path.stat().st_size,
                 }
             )
             if path.suffix in JAVA_EXTENSIONS:
@@ -179,7 +181,7 @@ def _reindex_workspace_unlocked(
         "parser_precision": parser_precision,
     }
     store.write_json("graph-summary.json", graph_summary)
-    return {
+    counts = {
         "mode": "partial" if partial else "full",
         "filtered_projects": sorted(project_filter),
         "filtered_paths": path_filters,
@@ -209,6 +211,26 @@ def _reindex_workspace_unlocked(
         "parser_precision": parser_precision,
         **retrieval_counts,
     }
+    store.write_json(
+        "index-summary.json",
+        {
+            "schema_version": 1,
+            "mode": counts["mode"],
+            "files": counts["files"],
+            "symbols": counts["symbols"],
+            "apis": counts["apis"],
+            "feigns": counts["feigns"],
+            "mq": counts["mq"],
+            "configs": counts["configs"],
+            "graph_nodes": counts["graph_nodes"],
+            "graph_edges": counts["graph_edges"],
+            "semantic_docs": counts["semantic_docs"],
+            "semantic_backend": counts["semantic_backend"],
+            "semantic_model": counts["semantic_model"],
+            "vector_status": counts["vector_status"],
+        },
+    )
+    return counts
 
 
 def reindex_workspace(

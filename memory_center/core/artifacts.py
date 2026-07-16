@@ -49,6 +49,7 @@ TASK_STATUSES = {"draft", "active", "blocked", "done", "archived"}
 DEFAULT_RESOLVE_SCORE_THRESHOLD = 3
 TASK_ARTIFACT_EXCERPT_BYTES = 16 * 1024
 TASK_ARTIFACT_HEALTH_EXCERPT_BYTES = 64 * 1024
+TASK_ARTIFACT_WRITE_MAX_BYTES = 512 * 1024
 ARTIFACT_WRITE_AUDIT_FILE = "artifact-write-audit.jsonl"
 TASK_HEALTH_ARTIFACTS = ["current_summary", "context", "requirement", "design", "plan", "test_plan", "change_log"]
 
@@ -701,6 +702,21 @@ def update_task_artifact(workspace_file: str | Path, task_id: str, name: str, co
     task_dir, meta = _resolve_task_dir(store, task_id)
     key, filename = _resolve_artifact_name(name, include_task_only=True)
     path = task_dir / filename
+    existing_bytes = path.stat().st_size if path.exists() else 0
+    if existing_bytes > TASK_ARTIFACT_WRITE_MAX_BYTES:
+        return {
+            "workspace": config.workspace,
+            "updated": False,
+            "reason": "artifact_too_large_for_merge",
+            "task_id": meta["task_id"],
+            "title": meta["title"],
+            "name": key,
+            "file": filename,
+            "path": str(path),
+            "existing_bytes": existing_bytes,
+            "max_merge_bytes": TASK_ARTIFACT_WRITE_MAX_BYTES,
+            "recommended_action": "archive_or_split_artifact_then_retry; keep a concise current_summary",
+        }
     existing = path.read_text(encoding="utf-8") if path.exists() else ""
     next_content, mode = _merge_append_only_artifact(existing, content, key)
     with FileLock(str(store.lock_file)):
@@ -759,12 +775,19 @@ def update_task_current_summary_snapshot(
     history_filename = TASK_ONLY_ARTIFACTS["summary_history"]
     path = task_dir / filename
     history_path = task_dir / history_filename
-    existing = path.read_text(encoding="utf-8") if path.exists() else ""
+    existing_bytes = path.stat().st_size if path.exists() else 0
+    history_skipped = existing_bytes > TASK_ARTIFACT_WRITE_MAX_BYTES
+    existing = "" if history_skipped or not path.exists() else path.read_text(encoding="utf-8")
     next_content = content.strip() + "\n" if content.strip() else ""
     stamp = datetime.now(timezone.utc).isoformat()
     with FileLock(str(store.lock_file)):
         if existing.strip():
-            previous_history = history_path.read_text(encoding="utf-8") if history_path.exists() else "# Summary History / 摘要历史\n"
+            history_bytes = history_path.stat().st_size if history_path.exists() else 0
+            previous_history = (
+                "# Summary History / 摘要历史\n"
+                if history_bytes > TASK_ARTIFACT_WRITE_MAX_BYTES
+                else (history_path.read_text(encoding="utf-8") if history_path.exists() else "# Summary History / 摘要历史\n")
+            )
             history_entry = f"\n## {stamp} / {source}\n\n{existing.strip()}\n"
             history_path.write_text(previous_history.rstrip() + "\n" + history_entry, encoding="utf-8")
         path.write_text(next_content, encoding="utf-8")
@@ -775,7 +798,7 @@ def update_task_current_summary_snapshot(
         artifact_name="current_summary",
         file_name=filename,
         write_mode="replace_snapshot",
-        before_bytes=len(existing.encode("utf-8")),
+        before_bytes=existing_bytes,
         after_bytes=len(next_content.encode("utf-8")),
         task_id=meta["task_id"],
         source=source,
@@ -804,6 +827,7 @@ def update_task_current_summary_snapshot(
         "path": str(path),
         "history_file": history_filename,
         "write_mode": "replace_snapshot",
+        "history_skipped": history_skipped,
         "audit_ref": audit,
         "write_receipt": receipt,
     }
@@ -837,6 +861,16 @@ def compact_task_change_log(workspace_file: str | Path, task_id: str, keep_recen
     task_dir, meta = _resolve_task_dir(store, task_id)
     path = task_dir / DEFAULT_ARTIFACTS["change_log"]
     archive_path = task_dir / "change-log.archive.md"
+    existing_bytes = path.stat().st_size if path.exists() else 0
+    if existing_bytes > TASK_ARTIFACT_WRITE_MAX_BYTES:
+        return {
+            "workspace": config.workspace,
+            "task_id": meta["task_id"],
+            "compacted": False,
+            "skipped": "artifact_too_large_for_compaction",
+            "existing_bytes": existing_bytes,
+            "max_compaction_bytes": TASK_ARTIFACT_WRITE_MAX_BYTES,
+        }
     content = path.read_text(encoding="utf-8") if path.exists() else ""
     prefix, entries = _split_change_log_entries(content)
     if len(entries) <= keep_recent:
