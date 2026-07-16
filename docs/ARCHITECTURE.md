@@ -232,6 +232,14 @@ Agent task
 
 Every reindex builds a staging generation and publishes it as the active generation only after graph, retrieval/semantic, and summary artifacts complete. Existing JSON/SQLite artifacts remain compatible read models. The control plane owns consistency boundaries, previous generation, lifecycle state, and recovery evidence. `shard-manifest.json` is routing metadata rather than a duplicated index payload.
 
+当前 generation 目录还保存真实的 `services/<project>.json`、`services/<project>.graph.db`、`contracts.json` 与 `topology.json`。服务分片是完整索引的不可变快照；带明确 project 范围的 code/hybrid 查询优先使用服务分片，跨服务路由仍从 topology/contract 分片出发并可回退到全局读模型。watcher 将失效计划提交为可合并的后台 partial reindex，控制面允许回滚到前一保留 generation，并通过显式 GC 清理过期 generation。
+
+局部 reindex 使用 copy-on-write：它从前一 generation 继承未受影响的服务分片，只重建失效计划命中的服务分片，再发布新的 generation。这样增量更新不需要复制或解析全部服务，同时保持 generation 级一致性。
+
+The generation directory also contains physical `services/<project>.json`, `services/<project>.graph.db`, `contracts.json`, and `topology.json` artifacts. Service shards are immutable snapshots; project-scoped code/hybrid queries prefer them, while cross-service routing starts from topology/contracts and can fall back to the compatible global read model. Watcher invalidation plans submit coalesced background partial reindex work, and the control plane supports rollback plus explicit generation GC.
+
+Partial reindex uses copy-on-write: unchanged service shards are inherited from the preceding generation, only invalidated services are rebuilt, and the new generation is then published atomically.
+
 ### 3.2 任务期 / Task-Time Flow
 
 任务期面向 AI Agent 暴露少量稳定动作：

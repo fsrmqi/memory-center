@@ -47,7 +47,8 @@ from memory_center.core.artifacts import (
     update_task_status,
 )
 from memory_center.core.audit.runtime import audit_agent_runtime
-from memory_center.core.index_control import index_control_status
+from memory_center.core.index_control import index_control_status, rollback_generation
+from memory_center.core.index_shards import cleanup_generations
 from memory_center.core.jobs import cancel_workspace_job, submit_reindex_workspace_job, workspace_job_status
 from memory_center.core.query_planner import workspace_performance_summary
 from memory_center.core.benchmark.trending import check_regression_alerts
@@ -438,6 +439,14 @@ def build_admin_registry(
         "replay": lambda: workspace_replay_write_chain(wf, task_id=task_id, session_id=session_id, limit=limit),
         "backend_query": lambda: memory_backend_query(wf, collection=collection, record_id=record_id, created_after=created_after, ref_path=ref_path, project=project, payload_type=payload_type, limit=limit),
         "index_control": lambda: index_control_status(WorkspaceStore(wf)),
+        "index_rollback": lambda: rollback_generation(WorkspaceStore(wf), record_id),
+        "index_generation_gc": lambda: cleanup_generations(
+            WorkspaceStore(wf),
+            active_generation=str(index_control_status(WorkspaceStore(wf)).get("active_generation", "") or ""),
+            previous_generation=str(index_control_status(WorkspaceStore(wf)).get("previous_generation", "") or ""),
+            keep=max(2, keep_recent),
+            apply=force,
+        ),
         "query_performance": lambda: workspace_performance_summary(wf, limit=max(limit, 20)),
         "job_status": lambda: workspace_job_status(wf, record_id, limit=limit),
         "job_cancel": lambda: cancel_workspace_job(wf, record_id),

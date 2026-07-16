@@ -588,6 +588,22 @@ class GraphStore:
             rows = conn.execute("SELECT * FROM nodes").fetchall()
         return [_row_node(row) for row in rows]
 
+    def project_subgraph(self, project: str) -> tuple[list[GraphNode], list[GraphEdge]]:
+        """Export a self-contained graph shard for one project."""
+        with self.connect() as conn:
+            node_rows = conn.execute("SELECT * FROM nodes WHERE project=?", (project,)).fetchall()
+            node_ids = [str(row["id"]) for row in node_rows]
+            if not node_ids:
+                return [], []
+            placeholders = ",".join("?" for _ in node_ids)
+            edge_rows = conn.execute(
+                f"SELECT * FROM edges WHERE source_id IN ({placeholders}) AND target_id IN ({placeholders})",
+                node_ids * 2,
+            ).fetchall()
+        nodes = [GraphNode(row["id"], row["type"], row["name"], row["project"], row["file_path"], row["line"], _loads_json(row["metadata_json"])) for row in node_rows]
+        edges = [GraphEdge(row["id"], row["source_id"], row["target_id"], row["type"], row["confidence"], _loads_json(row["metadata_json"])) for row in edge_rows]
+        return nodes, edges
+
 
 def node_id(kind: str, *parts: str) -> str:
     body = ":".join(str(p).strip().replace(" ", "_") for p in parts if str(p).strip())

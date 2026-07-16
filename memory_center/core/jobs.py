@@ -46,6 +46,10 @@ def workspace_job_status(workspace_file: str, job_id: str = "", limit: int = 20)
 
 def submit_reindex_workspace_job(workspace_file: str, *, projects: list[str] | None = None, paths: list[str] | None = None) -> dict[str, Any]:
     """Schedule a resumable-status reindex without blocking an Agent request."""
+    existing = workspace_job_status(workspace_file, limit=100).get("jobs", [])
+    active = next((row for row in existing if row.get("kind") == "reindex" and row.get("status") in {"queued", "running", "cancel_requested"}), None)
+    if active:
+        return {**active, "coalesced": True}
     def work() -> dict[str, Any]:
         from .config import load_workspace_config
         from .indexer import reindex_workspace

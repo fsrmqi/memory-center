@@ -40,6 +40,8 @@ MCP 当前公开的是 12 个 task-level tools：
 
 管理类异步重建使用 `mc_admin(action="job_reindex", projects=[...], files=[...])`。返回值中的 `job_id` 传给 `mc_admin(action="job_status", record_id="...")` 或 `mc_admin(action="job_cancel", record_id="...")`。可使用 `index_control` 查看 active/staging generation，使用 `query_performance` 查看 P50/P95/P99 查询耗时。任务级架构决策使用 `task_decision_record` / `task_decision_list`；`task_evidence_gc` 仅在 `force=true` 时删除候选证据。
 
+传入 `mc_lookup(..., project="service-name")` 时，服务范围内的 code/hybrid 查询会优先读取 active generation 的物理服务分片。回滚使用 `mc_admin(action="index_rollback", record_id="<generation>")`；generation 清理使用 `mc_admin(action="index_generation_gc", keep_recent=2, force=false)`，默认仅返回候选项。
+
 ## 3. Recommended Agent Behavior / 推荐 Agent 行为
 
 推荐顺序：

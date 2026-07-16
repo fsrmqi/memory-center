@@ -7,7 +7,12 @@ from memory_center.core.artifacts import (
     update_task_artifact,
 )
 from memory_center.core.freshness.invalidation import build_invalidation_plan
+from memory_center.core.freshness.watcher import trigger_incremental_reindex
+from memory_center.core.index_control import index_control_status, rollback_generation
+from memory_center.core.indexer import reindex_workspace
+from memory_center.core.config import load_workspace_config
 from memory_center.core.query_planner import QueryPlanner
+from memory_center.core.store import WorkspaceStore
 
 
 def _workspace(tmp_path: Path) -> Path:
@@ -38,3 +43,20 @@ def test_task_decision_and_evidence_gc_are_safe_by_default(tmp_path: Path) -> No
     assert decision["recorded"] is True
     assert gc["apply"] is False
     assert gc["candidates"] == []
+
+
+def test_watcher_schedules_coalesced_partial_reindex_and_generation_can_rollback(tmp_path: Path) -> None:
+    workspace = _workspace(tmp_path)
+    store = WorkspaceStore(workspace)
+    reindex_workspace(load_workspace_config(workspace), store, parallel=False)
+    first = index_control_status(store)["active_generation"]
+    reindex_workspace(load_workspace_config(workspace), store, parallel=False)
+    second = index_control_status(store)["active_generation"]
+
+    rollback = rollback_generation(store)
+
+    assert first != second
+    assert rollback["rolled_back"] is True
+    assert index_control_status(store)["active_generation"] == first
+    queued = trigger_incremental_reindex(workspace, ["api/src/main/java/example/OrderDto.java"])
+    assert queued["reindex_job"]["kind"] == "reindex"

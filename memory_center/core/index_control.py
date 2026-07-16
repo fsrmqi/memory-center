@@ -76,6 +76,27 @@ def index_control_status(store: WorkspaceStore) -> dict[str, Any]:
     return state
 
 
+def rollback_generation(store: WorkspaceStore, generation: str = "") -> dict[str, Any]:
+    """Atomically repoint readers to the retained previous generation."""
+    current = index_control_status(store)
+    target = generation or str(current.get("previous_generation", "") or "")
+    if not target:
+        return {"rolled_back": False, "reason": "no_previous_generation"}
+    manifest = store.index_dir / "generations" / target / "manifest.json"
+    if not manifest.exists():
+        return {"rolled_back": False, "reason": "generation_not_retained", "generation": target}
+    state = {
+        **current,
+        "active_generation": target,
+        "previous_generation": current.get("active_generation", ""),
+        "status": "ready",
+        "updated_at": time.time(),
+        "rollback_at": time.time(),
+    }
+    store.write_json(CONTROL_FILE, state)
+    return {"rolled_back": True, "active_generation": target, "previous_generation": state["previous_generation"]}
+
+
 def build_shard_manifest(
     generation: str,
     file_index: list[dict[str, Any]],

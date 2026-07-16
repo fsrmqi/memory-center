@@ -10,6 +10,9 @@
 
 ### P2 Retrieval / Reasoning Quality Loop / 检索与推理质量闭环
 
+- 本地安装版本提升至 `3.7.0`。
+- generation 从路由元数据升级为真实物理分片：每次 reindex 生成不可变服务 JSON、服务 SQLite 图、契约和拓扑快照，完成后才激活；partial reindex 采用 copy-on-write，仅重建受影响服务分片；显式 project 范围的 code/hybrid 查询优先读取服务分片并保留全局兼容回退。
+- watcher 的有界失效计划现在会合并提交后台 partial reindex；新增 generation 回滚、保留与默认 dry-run 的清理入口。
 - 本地安装版本提升至 `3.6.0`。
 - 新增 versioned index control plane：reindex 在 staging generation 内构建，完成图、检索与分片路由元数据后才激活；既有 reindex 返回结构和读模型保持兼容。状态新增 generation、分片路由和查询 P50/P95/P99 可观测性。
 - 新增有界变更失效计划，按 DTO、Feign、MQ、HTTP、配置和普通代码输出传播规则；watcher 的 dirty journal 记录对应失效依据。

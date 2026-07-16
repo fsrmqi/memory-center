@@ -177,13 +177,20 @@ def trigger_incremental_reindex(workspace_file: str | Path, changed_files: list[
     a targeted reindex for only those files.
     """
     from .targeted_refresh import record_dirty_files
+    from ..jobs import submit_reindex_workspace_job
 
     try:
         result = record_dirty_files(workspace_file, changed_files, source="watcher")
+        invalidation = result.get("invalidation", {}) or {}
+        job = submit_reindex_workspace_job(
+            str(workspace_file),
+            paths=list(invalidation.get("impacted_paths", []) or changed_files)[:48],
+        )
         return {
             "status": "queued",
             "changed_files": len(changed_files),
             "dirty_journal": result,
+            "reindex_job": job,
         }
     except Exception as exc:
         return {

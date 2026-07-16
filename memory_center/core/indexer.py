@@ -11,6 +11,7 @@ from .graph import GraphEdge, GraphNode, GraphStore, edge_id, node_id
 from .indexing.java_call_resolver import JavaCallResolver, build_java_class_index
 from .indexing.reindex_state import workspace_reindex_lock
 from .index_control import activate_generation, begin_generation, build_shard_manifest, fail_generation
+from .index_shards import write_generation_shards
 
 # Keep the tree-sitter wrapper active so fallback reasons remain observable.
 try:
@@ -274,6 +275,24 @@ def reindex_workspace(
                 store.read_json_prefer_backend("config-index.json", []),
                 store.read_json_prefer_backend("service-topology.json", {}),
             )
+            physical_shards = write_generation_shards(
+                store,
+                generation,
+                file_index=store.read_json_prefer_backend("file-index.json", []),
+                symbol_index=store.read_json_prefer_backend("java-symbol-index.json", []),
+                api_index=store.read_json_prefer_backend("api-index.json", []),
+                feign_index=store.read_json_prefer_backend("feign-index.json", []),
+                mq_index=store.read_json_prefer_backend("mq-index.json", []),
+                config_index=store.read_json_prefer_backend("config-index.json", []),
+                topology=store.read_json_prefer_backend("service-topology.json", {}),
+                reuse_generation=str(control.get("active_generation", "") or "") if (projects or paths) else "",
+                    affected_projects=_affected_shard_projects(
+                        store.read_json_prefer_backend("file-index.json", []),
+                        {item.strip() for item in (projects or []) if item and item.strip()},
+                        [item.strip() for item in (paths or []) if item and item.strip()],
+                ) if (projects or paths) else None,
+            )
+            manifest["physical_shards"] = physical_shards
             activate_generation(store, generation, counts=counts, shard_manifest=manifest)
             # Preserve the historical reindex return schema. Generation and
             # shard routing are published through index-control/status files.
@@ -281,6 +300,18 @@ def reindex_workspace(
         except Exception as exc:
             fail_generation(store, generation, str(exc))
             raise
+
+
+def _affected_shard_projects(file_index: list[dict[str, Any]], project_filter: set[str], path_filters: list[str]) -> set[str]:
+    if project_filter:
+        return set(project_filter)
+    normalized = {path.replace("\\", "/").lstrip("/") for path in path_filters}
+    projects = {
+        str(item.get("project", "") or "")
+        for item in file_index
+        if str(item.get("path", "") or "").replace("\\", "/") in normalized
+    }
+    return {project for project in projects if project}
 
 
 def _parser_diagnostics(parse_count: int) -> dict[str, Any]:

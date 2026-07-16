@@ -422,7 +422,21 @@ def _project_matches(query_project: str, item_project: str) -> bool:
 
 def memory_query(workspace_file: str | Path, query: str, limit: int = 20, node_types: list[str] | None = None, alpha: float | None = None) -> dict[str, Any]:
     config, store = load_context(workspace_file)
-    with GraphStore(store.graph_db_path) as graph:
+    graph_path = store.graph_db_path
+    shard_graph_used = False
+    if effective_project:
+        try:
+            from ..index_control import index_control_status
+            from ..index_shards import service_shard_graph_path
+
+            generation = str(index_control_status(store).get("active_generation", "") or "")
+            shard_path = service_shard_graph_path(store, generation, effective_project) if generation else None
+            if shard_path:
+                graph_path = shard_path
+                shard_graph_used = True
+        except Exception:
+            pass
+    with GraphStore(graph_path) as graph:
         exact_nodes = graph.find_nodes(query, types=node_types, limit=limit)
         if not exact_nodes:
             seen_nodes = {}
@@ -520,6 +534,7 @@ def memory_query_hybrid(
             budget="small",
             report_level="standard",
         )
+
         result["mode_used"] = "query_walkthrough"
         result["query"] = query
         result["query_symbol"] = walkthrough_symbol
@@ -550,7 +565,21 @@ def memory_query_hybrid(
     except Exception:
         learned_weights = {}
 
-    with GraphStore(store.graph_db_path) as graph:
+    graph_path = store.graph_db_path
+    shard_graph_used = False
+    if effective_project:
+        try:
+            from ..index_control import index_control_status
+            from ..index_shards import service_shard_graph_path
+
+            generation = str(index_control_status(store).get("active_generation", "") or "")
+            shard_path = service_shard_graph_path(store, generation, effective_project) if generation else None
+            if shard_path:
+                graph_path = shard_path
+                shard_graph_used = True
+        except Exception:
+            pass
+    with GraphStore(graph_path) as graph:
         result = hybrid_retrieve(
             graph=graph,
             workspace_file=str(workspace_file),
@@ -561,6 +590,7 @@ def memory_query_hybrid(
             freshness=freshness_input,
             learned_weights=learned_weights,
         )
+    result["index_source"] = "service_graph_shard" if shard_graph_used else "global_graph"
 
     # Project filtering: explicit project is strict; inferred active-service
     # scope is preferred only when it has evidence, otherwise keep global hits.
@@ -1907,10 +1937,27 @@ def _display_method_path(item: dict[str, Any]) -> str:
 def memory_search_code(workspace_file: str | Path, query: str, scope: str = "", limit: int = 20, project: str = "") -> dict[str, Any]:
     config, store = load_context(workspace_file)
     keywords = tokenize(query)
-    files = store.read_json_prefer_backend("file-index.json", [])
-    symbols = store.read_json_prefer_backend("java-symbol-index.json", [])
     project_scope = _resolve_effective_project(workspace_file, project)
     effective_project = str(project_scope.get("project", "") or "")
+    shard_used = False
+    files: list[dict[str, Any]] = []
+    symbols: list[dict[str, Any]] = []
+    if effective_project:
+        try:
+            from ..index_control import index_control_status
+            from ..index_shards import load_service_shard
+
+            generation = str(index_control_status(store).get("active_generation", "") or "")
+            shard = load_service_shard(store, generation, effective_project) if generation else None
+            if shard:
+                files = list(shard.get("files", []) or [])
+                symbols = list(shard.get("symbols", []) or [])
+                shard_used = True
+        except Exception:
+            pass
+    if not shard_used:
+        files = store.read_json_prefer_backend("file-index.json", [])
+        symbols = store.read_json_prefer_backend("java-symbol-index.json", [])
     symbol_entries = {}
     for item in symbols:
         key = item.get("file", "")
@@ -1951,6 +1998,12 @@ def memory_search_code(workspace_file: str | Path, query: str, scope: str = "", 
     hits = collect_hits(effective_project)
     fallback_used = False
     if effective_project and project_scope.get("fallback_allowed", False) and not hits:
+        if shard_used:
+            files = store.read_json_prefer_backend("file-index.json", [])
+            symbols = store.read_json_prefer_backend("java-symbol-index.json", [])
+            symbol_entries = {}
+            for item in symbols:
+                symbol_entries.setdefault(item.get("file", ""), []).append(item)
         hits = collect_hits("")
         fallback_used = True
     hits.sort(key=lambda row: (-int(row.get("score", 0)), -int(row.get("symbol_count", 0)), row.get("path", "")))
@@ -1967,6 +2020,7 @@ def memory_search_code(workspace_file: str | Path, query: str, scope: str = "", 
         },
         "hits": hits[:limit],
         "total_hits": len(hits),
+        "index_source": "service_shard" if shard_used and not fallback_used else "global_compatible",
         "progressive": _build_search_progressive_view(query, scope, hits[:limit]),
         "tips": [
             "命中后可继续调用 memory_symbol / memory_context 深挖。",

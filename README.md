@@ -794,6 +794,12 @@ For large asynchronous work, use `mc_admin(action="job_reindex")`, then `job_sta
 
 对于较大的异步工作，可使用 `mc_admin(action="job_reindex")`，再通过 `job_status` 或 `job_cancel` 并传入 `record_id=<job_id>` 查询或取消。任务决策可通过 `task_decision_record` 记录；`task_evidence_gc` 默认只预览，必须传 `force=true` 才会删除未引用证据。
 
+### Physical Index Shards / 物理索引分片
+
+Each active generation now contains immutable service JSON shards, service-local SQLite graph shards, a shared contract shard, and a topology shard. Explicit project-scoped code and hybrid graph queries read the service shard first, then fall back to legacy global indexes only when the shard is absent or scope expansion is required. File watcher changes create a bounded invalidation plan and coalesce an asynchronous partial reindex job. `mc_admin(action="index_rollback", record_id="<generation>")` restores a retained generation; `index_generation_gc` previews cleanup unless `force=true` is supplied.
+
+每个 active generation 现在包含不可变的服务 JSON 分片、服务本地 SQLite 图分片、共享契约分片和拓扑分片。明确传入 `project` 的代码搜索与混合图查询会优先读取服务分片，只有分片缺失或需要扩展范围时才回退到兼容的全局索引。file watcher 的变更会生成有界失效计划并合并异步局部 reindex job。`mc_admin(action="index_rollback", record_id="<generation>")` 可恢复保留的 generation；`index_generation_gc` 默认只预览清理，传 `force=true` 才会执行。
+
 Walkthrough key locations include `absolute_file_path`; agents should read that path directly instead of running `find` first.
 
 walkthrough 的关键落点包含 `absolute_file_path`；Agent 应直接读取该路径，不需要先执行 `find` 定位文件。
