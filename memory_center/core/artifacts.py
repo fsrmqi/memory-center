@@ -52,6 +52,7 @@ TASK_ARTIFACT_EXCERPT_BYTES = 16 * 1024
 TASK_ARTIFACT_HEALTH_EXCERPT_BYTES = 64 * 1024
 TASK_ARTIFACT_WRITE_MAX_BYTES = 512 * 1024
 TASK_EVIDENCE_INLINE_MAX_BYTES = 64 * 1024
+TASK_DECISIONS_FILE = "decisions.jsonl"
 ARTIFACT_WRITE_AUDIT_FILE = "artifact-write-audit.jsonl"
 TASK_HEALTH_ARTIFACTS = ["current_summary", "context", "requirement", "design", "plan", "test_plan", "change_log"]
 
@@ -817,6 +818,69 @@ def get_task_evidence_chunk(workspace_file: str | Path, task_id: str, ref: str, 
     with path.open("rb") as handle:
         content = handle.read(max(0, max_bytes)).decode("utf-8", errors="replace")
     return {"task_id": meta["task_id"], "ref": f"evidence:{digest}", "found": True, "content": content, "total_bytes": total_bytes, "truncated": total_bytes > max_bytes}
+
+
+def record_task_decision(
+    workspace_file: str | Path,
+    task_id: str,
+    topic: str,
+    decision: str,
+    rationale: str,
+    *,
+    evidence_refs: list[str] | None = None,
+    status: str = "accepted",
+) -> dict[str, object]:
+    """Persist a task-scoped ADR linked to immutable evidence where available."""
+    store = WorkspaceStore(workspace_file)
+    task_dir, meta = _resolve_task_dir(store, task_id)
+    entry = {
+        "decision_id": f"dec-{uuid4().hex[:12]}",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "topic": topic.strip(),
+        "decision": decision.strip(),
+        "rationale": rationale.strip(),
+        "evidence_refs": [ref for ref in (evidence_refs or []) if ref.startswith("evidence:")][:20],
+        "status": status if status in {"proposed", "accepted", "superseded"} else "accepted",
+    }
+    path = task_dir / TASK_DECISIONS_FILE
+    with FileLock(str(store.lock_file)):
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    _touch_task_meta(store, task_dir, meta, source="record_task_decision")
+    return {"task_id": meta["task_id"], "recorded": True, **entry}
+
+
+def list_task_decisions(workspace_file: str | Path, task_id: str, limit: int = 30) -> dict[str, object]:
+    store = WorkspaceStore(workspace_file)
+    task_dir, meta = _resolve_task_dir(store, task_id)
+    path = task_dir / TASK_DECISIONS_FILE
+    rows: list[dict[str, Any]] = []
+    if path.exists():
+        for line in path.read_text(encoding="utf-8").splitlines()[-max(1, limit):]:
+            try:
+                rows.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+    return {"task_id": meta["task_id"], "decisions": rows, "total": len(rows)}
+
+
+def task_evidence_gc(workspace_file: str | Path, task_id: str, *, apply: bool = False) -> dict[str, object]:
+    """Report or remove unreferenced evidence chunks; deletion is opt-in."""
+    store = WorkspaceStore(workspace_file)
+    task_dir, meta = _resolve_task_dir(store, task_id)
+    evidence_dir = task_dir / "evidence"
+    references: set[str] = set()
+    for markdown in task_dir.rglob("*.md"):
+        try:
+            references.update(re.findall(r"evidence:([0-9a-f]{64})", markdown.read_text(encoding="utf-8")))
+        except OSError:
+            continue
+    candidates = [path for path in evidence_dir.glob("*.md") if path.stem not in references] if evidence_dir.exists() else []
+    if apply:
+        with FileLock(str(store.lock_file)):
+            for path in candidates:
+                path.unlink(missing_ok=True)
+    return {"task_id": meta["task_id"], "apply": apply, "referenced": len(references), "candidates": [path.name for path in candidates], "removed": len(candidates) if apply else 0}
 
 
 def update_task_current_summary_snapshot(

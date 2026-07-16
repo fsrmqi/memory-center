@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import inspect
 import re
+import time
 from functools import wraps
 from pathlib import Path
 from typing import Any
@@ -477,8 +478,13 @@ def create_server(workspace_file: str):
     ):
         """Start a new task workflow. Sniffs workspace context, optionally syncs to task space, and starts a session. Returns consolidated context with services, files, rules, risk level, session_id, and task_id."""
         wf = ctx.workspace_file
-        if request_tier == "fast":
-            limit, budget, deadline_ms = min(limit, 6), "small", min(deadline_ms, 1_500)
+        from memory_center.core.query_planner import QueryPlanner
+        planner = QueryPlanner(wf)
+        plan = planner.plan(tier=request_tier, limit=limit)
+        started_at = time.perf_counter()
+        limit, deadline_ms = plan.limit, min(deadline_ms, plan.deadline_ms)
+        if plan.tier == "fast":
+            budget = "small"
         try:
             from memory_center.core.freshness.targeted_refresh import refresh_query_targets
             auto_refresh = refresh_query_targets(wf, intent, limit=min(limit, 12))
@@ -514,7 +520,7 @@ def create_server(workspace_file: str):
             _freshness = {"status": "unknown", "recommended_actions": [], "semantics": ""}
         # D-02: Context Pack recommendation for architecture/change intents
         _cp_rec = _build_context_pack_recommendation(wf, intent, sniff_result)
-        return {"workflow": "mc-start", "request_tier": request_tier, "sniff": sniff_result, "sync_sniff": synced, "session": session, "auto_refresh": auto_refresh, "_workflow_guidance": guidance, "freshness": _freshness, "context_pack_recommendation": _cp_rec}
+        return {"workflow": "mc-start", "request_tier": plan.tier, "query_plan": planner.record("mc_start", plan, started_at, outcome="completed"), "sniff": sniff_result, "sync_sniff": synced, "session": session, "auto_refresh": auto_refresh, "_workflow_guidance": guidance, "freshness": _freshness, "context_pack_recommendation": _cp_rec}
 
     # ===================== FACADE 2: mc_lookup =====================
     @_safe_mcp_tool(mcp)
@@ -540,8 +546,13 @@ def create_server(workspace_file: str):
     ):
         """Unified knowledge lookup. Mode selects strategy: auto (system decides via lookup_hint), symbol (resolve name), code (keyword search), query (graph-aware multi-source), trace (cross-service by class/Feign/endpoint/MQ), chain (caller/callee analysis, use chain_direction), walkthrough (method-level indexed walkthrough), context (360-degree context for a service/symbol), contracts (list all Feign/API/MQ contracts), ref (resolve short memory reference IDs). For Class#method requests that say full chain/全链路/到底层, prefer mode='walkthrough' or auto; walkthrough returns summary_lines, local_service_continuations, feign_continuations.server_walkthroughs, service_impl_continuations, and absolute_file_path. If absolute_file_path is present, read that path directly and do not run find/grep/IDEA search to locate the same controller or impl. Use project to disambiguate when multiple modules contain the same symbol name."""
         wf = ctx.workspace_file
-        if request_tier == "fast":
-            limit, depth, report_level = min(limit, 8), min(depth, 1), "compact"
+        from memory_center.core.query_planner import QueryPlanner
+        planner = QueryPlanner(wf)
+        plan = planner.plan(tier=request_tier, limit=limit, depth=depth, enable_vector=enable_vector, project=project)
+        started_at = time.perf_counter()
+        limit, depth, enable_vector = plan.limit, plan.depth, plan.enable_vector
+        if plan.tier == "fast":
+            report_level = "compact"
         try:
             from memory_center.core.freshness.targeted_refresh import refresh_query_targets
             auto_refresh = refresh_query_targets(wf, query or symbol or name or entry, limit=min(limit, 12))
@@ -549,7 +560,8 @@ def create_server(workspace_file: str):
             auto_refresh = {"checked": 0, "refreshed": False, "files": [], "elapsed_ms": 0.0, "mode": "unavailable", "coalesced": False}
         def emit(payload: dict[str, Any], emitted_mode: str) -> dict[str, Any]:
             payload["auto_refresh"] = auto_refresh
-            payload["request_tier"] = request_tier
+            payload["request_tier"] = plan.tier
+            payload["query_plan"] = planner.record("mc_lookup", plan, started_at, outcome="completed")
             if session_id.strip():
                 workspace_record_agent_guidance(
                     wf,

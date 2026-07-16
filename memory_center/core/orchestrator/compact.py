@@ -125,6 +125,12 @@ def _compact_workspace_status(result: dict[str, Any], budget: str = "medium") ->
         "semantic_index": result.get("semantic_index", {}),
         "index_summary_status": result.get("index_summary_status", "unknown"),
         "hot_refresh": result.get("hot_refresh", {}),
+        "index_control": {
+            "status": (result.get("index_control", {}) or {}).get("status", "unknown"),
+            "active_generation": (result.get("index_control", {}) or {}).get("active_generation", ""),
+            "staging_generation": (result.get("index_control", {}) or {}).get("staging_generation", ""),
+        },
+        "query_performance": result.get("query_performance", {}),
         "reindex": result.get("reindex", {}),
         "memory_layers": result.get("memory_layers", {}),
         "memory_overview": result.get("memory_overview", {}),

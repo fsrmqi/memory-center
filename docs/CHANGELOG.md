@@ -10,6 +10,11 @@
 
 ### P2 Retrieval / Reasoning Quality Loop / 检索与推理质量闭环
 
+- 本地安装版本提升至 `3.6.0`。
+- 新增 versioned index control plane：reindex 在 staging generation 内构建，完成图、检索与分片路由元数据后才激活；既有 reindex 返回结构和读模型保持兼容。状态新增 generation、分片路由和查询 P50/P95/P99 可观测性。
+- 新增有界变更失效计划，按 DTO、Feign、MQ、HTTP、配置和普通代码输出传播规则；watcher 的 dirty journal 记录对应失效依据。
+- `QueryPlanner` 收敛 `mc_start` / `mc_lookup` 的 fast/standard/deep 请求预算并记录性能账本；新增后台 reindex job、恢复中断 job 的状态机，以及管理入口。
+- 任务空间新增与 evidence refs 关联的 ADR 决策记录；证据 GC 默认 dry-run，需显式 `force=true` 才会清理未引用块。
 - 本地安装版本提升至 `3.5.29`。
 - 热刷新新增 `RefreshCoordinator`，按 workspace 协调多 Agent/多进程请求；文件内容哈希、generation 和子图替换在同一 SQLite 事务中提交，并对既有图关系执行有上限的一跳依赖闭包。
 - `mc_start` / `mc_lookup` 新增兼容的 `request_tier`；`mc_analyze` 新增显式后台 job、状态读取和取消入口，默认同步行为不变。

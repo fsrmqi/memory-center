@@ -142,10 +142,16 @@ def record_dirty_files(workspace_file: str | Path, paths: list[str], source: str
     """Persist debounced file changes for the next bounded query refresh."""
     store = WorkspaceStore(workspace_file)
     unique = sorted({path.replace("\\", "/").lstrip("/") for path in paths if path})[:200]
+    try:
+        from .invalidation import build_invalidation_plan
+        invalidation = build_invalidation_plan(workspace_file, unique)
+    except Exception:
+        invalidation = {"paths": unique, "impacted_paths": unique, "categories": [], "rules": [], "mode": "unavailable"}
     for path in unique:
-        store.append_jsonl(DIRTY_JOURNAL_FILE, {"path": path, "source": source})
+        matching = next((item for item in invalidation.get("rules", []) if item.get("path") == path), {})
+        store.append_jsonl(DIRTY_JOURNAL_FILE, {"path": path, "source": source, "invalidation": matching})
     compacted = compact_dirty_journal(store) if len(store.read_jsonl_prefer_backend(DIRTY_JOURNAL_FILE, limit=600)) >= 500 else False
-    return {"recorded": len(unique), "paths": unique, "compacted": compacted}
+    return {"recorded": len(unique), "paths": unique, "compacted": compacted, "invalidation": invalidation}
 
 
 def hot_refresh_status(workspace_file: str | Path) -> dict[str, Any]:

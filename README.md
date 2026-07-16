@@ -784,6 +784,16 @@ Task artifacts keep `current_summary` concise. Large writes are stored as immuta
 
 任务工件保持 `current_summary` 紧凑。超大写入会保存为不可变、内容寻址的证据块，并在工件中只留下轻量引用，因此恢复和交接不需要加载完整原始 payload。
 
+### Versioned Index Control / 版本化索引控制
+
+Reindex now builds under a staging generation and activates it only after graph, retrieval, semantic, and shard-routing metadata are complete. Existing index files remain compatible read models; `index-control.json` records the active generation and `shard-manifest.json` provides service, contract, and topology routing summaries. Status exposes both generation state and recent query latency percentiles.
+
+reindex 现在会先构建 staging generation，只有图、检索、语义和分片路由元数据全部完成后才激活。既有索引文件仍保持兼容的读取模型；`index-control.json` 记录 active generation，`shard-manifest.json` 提供服务、契约和拓扑路由摘要。状态接口同时提供 generation 状态与近期查询延迟分位数。
+
+For large asynchronous work, use `mc_admin(action="job_reindex")`, then `job_status` or `job_cancel` with `record_id=<job_id>`. Task decisions can be recorded with `task_decision_record`; `task_evidence_gc` is dry-run by default and needs `force=true` to remove unreferenced evidence.
+
+对于较大的异步工作，可使用 `mc_admin(action="job_reindex")`，再通过 `job_status` 或 `job_cancel` 并传入 `record_id=<job_id>` 查询或取消。任务决策可通过 `task_decision_record` 记录；`task_evidence_gc` 默认只预览，必须传 `force=true` 才会删除未引用证据。
+
 Walkthrough key locations include `absolute_file_path`; agents should read that path directly instead of running `find` first.
 
 walkthrough 的关键落点包含 `absolute_file_path`；Agent 应直接读取该路径，不需要先执行 `find` 定位文件。

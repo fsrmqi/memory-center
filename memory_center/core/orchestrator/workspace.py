@@ -18,6 +18,8 @@ from ..artifacts import (
 from ..graph import GraphStore
 from ..rules import match_rules
 from ..indexing.reindex_state import workspace_reindex_status
+from ..index_control import index_control_status
+from ..query_planner import workspace_performance_summary
 from ..schemas import with_schema
 from ..store import WorkspaceStore
 from ..tracking import log_token_gain
@@ -108,6 +110,8 @@ def workspace_status(workspace_file: str | Path, view: str = "compact", budget: 
         "semantic_index": semantic_summary,
         "index_summary_status": semantic_summary["summary_source"],
         "hot_refresh": refresh_status,
+        "index_control": index_control_status(store),
+        "query_performance": workspace_performance_summary(workspace_file),
         "reindex": workspace_reindex_status(store),
         "memory_layers": memory_layers,
         "memory_overview": _build_memory_overview(memory_layers),

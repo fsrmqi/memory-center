@@ -226,6 +226,12 @@ Agent task
 
 索引产物都是本地文件或 SQLite 数据库。它们服务于查询性能和可解释性，但不是不可替代的事实源；当源码、规则或 workspace 配置变化后，可以重新生成。
 
+### 3.1.1 索引控制面与分片路由 / Index Control Plane and Shard Routing
+
+每次 reindex 会生成 staging generation，并在图、关键词/语义检索和索引摘要写入完成后原子发布为 active generation。兼容性考虑下，既有 JSON/SQLite 文件仍是查询读模型；控制面只维护一致性边界、上一个 generation、构建状态和回滚证据。`shard-manifest.json` 不复制完整索引，而是按服务统计 Service Shard，并汇总 Contract Shard（API/Feign/MQ/config）与 Topology Shard 的路由元数据。
+
+Every reindex builds a staging generation and publishes it as the active generation only after graph, retrieval/semantic, and summary artifacts complete. Existing JSON/SQLite artifacts remain compatible read models. The control plane owns consistency boundaries, previous generation, lifecycle state, and recovery evidence. `shard-manifest.json` is routing metadata rather than a duplicated index payload.
+
 ### 3.2 任务期 / Task-Time Flow
 
 任务期面向 AI Agent 暴露少量稳定动作：
@@ -242,6 +248,10 @@ Agent task
 查询期的热刷新不是一次全量重建：`RefreshCoordinator` 以 workspace 锁协调并发 Agent，先对命中/dirty 文件做内容哈希和 generation 校验，再以单 SQLite 事务替换子图及 generation 记录。它只扩展一跳既有依赖边，避免正常链路分析变成全库扫描。深度分析可提交为本地后台 job，并通过任务状态读取或取消；任务空间的大证据则以 SHA-256 内容块保存，摘要仅持有引用。
 
 Query-time refresh is not a full rebuild: `RefreshCoordinator` coordinates concurrent local Agents, validates content hash and generation for matched/dirty files, and replaces the subgraph plus generation record in one SQLite transaction. It expands only one existing dependency hop. Deep analysis can run as a local background job; large task evidence is stored as SHA-256 addressed chunks while summaries retain only references.
+
+公共入口会先经 `QueryPlanner` 生成 fast/standard/deep 的有限预算计划，并记录 generation、分片范围、耗时和超时结果。需要更完整的失效传播时，变更文件会按 DTO、Feign、MQ、HTTP、配置或普通代码分类，产出有界依赖计划；长耗时 reindex 可进入持久状态的本地 job。任务空间还保存任务级 ADR（decision、rationale、evidence refs），证据回收默认为 dry-run。
+
+Public facades first use `QueryPlanner` to apply fast/standard/deep budgets and record generation, shard scope, latency, and timeout outcomes. Changed files are classified as DTO, Feign, MQ, HTTP, configuration, or code to produce a bounded invalidation plan; long reindex work can run as a local persistent-status job. Task spaces also retain task-scoped ADRs, while evidence GC is dry-run by default.
 
 ### 3.3 写入与沉淀 / Write and Memory Flow
 

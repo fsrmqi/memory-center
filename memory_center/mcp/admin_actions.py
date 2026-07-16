@@ -38,12 +38,18 @@ from memory_center.core.artifacts import (
     task_space_repair_execute,
     task_space_repair_plan,
     task_spaces_health,
+    task_evidence_gc,
     touch_task_activity,
+    record_task_decision,
+    list_task_decisions,
     update_artifact,
     update_task_artifact,
     update_task_status,
 )
 from memory_center.core.audit.runtime import audit_agent_runtime
+from memory_center.core.index_control import index_control_status
+from memory_center.core.jobs import cancel_workspace_job, submit_reindex_workspace_job, workspace_job_status
+from memory_center.core.query_planner import workspace_performance_summary
 from memory_center.core.benchmark.trending import check_regression_alerts
 from memory_center.core.dispatch import CommandRegistry
 from memory_center.core.domain.flow import (
@@ -52,6 +58,7 @@ from memory_center.core.domain.flow import (
 )
 from memory_center.core.explanation.schema import Explanation
 from memory_center.core.metrics import MetricsCollector
+from memory_center.core.store import WorkspaceStore
 from memory_center.core.orchestrator import (
     group_chain,
     group_impact,
@@ -409,6 +416,9 @@ def build_admin_registry(
         "task_resolve": lambda: resolve_task_space(wf, intent=intent, title=title, create_if_missing=create_if_missing, include_archived=include_archived, limit_candidates=limit_candidates, score_threshold=score_threshold),
         "task_get": lambda: get_task_artifact(wf, task_id, name),
         "task_update": lambda: update_task_artifact(wf, task_id, name, content),
+        "task_decision_record": lambda: record_task_decision(wf, task_id, title or name, content, reason or intent, evidence_refs=[item.strip() for item in payload.split(",") if item.strip()]),
+        "task_decision_list": lambda: list_task_decisions(wf, task_id, limit=limit),
+        "task_evidence_gc": lambda: task_evidence_gc(wf, task_id, apply=force),
         "task_change_log_append": lambda: append_task_change_log(wf, task_id, entry, keep_recent=keep_recent),
         "task_archive": lambda: archive_task_space(wf, task_id, reason=reason),
         "task_auto_archive": lambda: auto_archive_task_spaces(wf, retention_days=keep_recent),
@@ -427,6 +437,11 @@ def build_admin_registry(
         "receipts": lambda: workspace_write_receipts(wf, layer=layer, action=action_filter, scope=scope, task_id=task_id, session_id=session_id, limit=limit),
         "replay": lambda: workspace_replay_write_chain(wf, task_id=task_id, session_id=session_id, limit=limit),
         "backend_query": lambda: memory_backend_query(wf, collection=collection, record_id=record_id, created_after=created_after, ref_path=ref_path, project=project, payload_type=payload_type, limit=limit),
+        "index_control": lambda: index_control_status(WorkspaceStore(wf)),
+        "query_performance": lambda: workspace_performance_summary(wf, limit=max(limit, 20)),
+        "job_status": lambda: workspace_job_status(wf, record_id, limit=limit),
+        "job_cancel": lambda: cancel_workspace_job(wf, record_id),
+        "job_reindex": lambda: submit_reindex_workspace_job(wf, projects=projects, paths=files),
         "eval_write_quality": lambda: memory_eval_write_quality(wf, task_id=task_id, session_id=session_id, intent=intent, limit=limit),
         "eval_resume": lambda: memory_eval_resume(wf, task_id=task_id, session_id=session_id, intent=intent, limit=limit),
         "eval_handoff": lambda: memory_eval_handoff(wf, target_model=target_model, task_id=task_id, session_id=session_id, intent=intent, limit=limit),

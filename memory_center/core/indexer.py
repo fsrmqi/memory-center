@@ -10,6 +10,7 @@ import yaml
 from .graph import GraphEdge, GraphNode, GraphStore, edge_id, node_id
 from .indexing.java_call_resolver import JavaCallResolver, build_java_class_index
 from .indexing.reindex_state import workspace_reindex_lock
+from .index_control import activate_generation, begin_generation, build_shard_manifest, fail_generation
 
 # Keep the tree-sitter wrapper active so fallback reasons remain observable.
 try:
@@ -249,13 +250,37 @@ def reindex_workspace(
         paths=paths,
         timeout_seconds=lock_timeout,
     ):
-        return _reindex_workspace_unlocked(
-            config,
+        control = begin_generation(
             store,
-            projects=projects,
-            paths=paths,
-            parallel=parallel,
+            mode="partial" if projects or paths else "full",
+            projects={item for item in (projects or []) if item},
+            paths=list(paths or []),
         )
+        generation = str(control["staging_generation"])
+        try:
+            counts = _reindex_workspace_unlocked(
+                config,
+                store,
+                projects=projects,
+                paths=paths,
+                parallel=parallel,
+            )
+            manifest = build_shard_manifest(
+                generation,
+                store.read_json_prefer_backend("file-index.json", []),
+                store.read_json_prefer_backend("api-index.json", []),
+                store.read_json_prefer_backend("feign-index.json", []),
+                store.read_json_prefer_backend("mq-index.json", []),
+                store.read_json_prefer_backend("config-index.json", []),
+                store.read_json_prefer_backend("service-topology.json", {}),
+            )
+            activate_generation(store, generation, counts=counts, shard_manifest=manifest)
+            # Preserve the historical reindex return schema. Generation and
+            # shard routing are published through index-control/status files.
+            return counts
+        except Exception as exc:
+            fail_generation(store, generation, str(exc))
+            raise
 
 
 def _parser_diagnostics(parse_count: int) -> dict[str, Any]:
