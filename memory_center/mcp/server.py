@@ -554,6 +554,14 @@ def create_server(workspace_file: str):
         if plan.tier == "fast":
             report_level = "compact"
         try:
+            from memory_center.core.cross_shard import query_cross_service_shards, route_cross_service_shards
+
+            shard_route = route_cross_service_shards(wf, query or symbol or name or entry, tier=plan.tier, project=project)
+            shard_evidence = query_cross_service_shards(wf, query or symbol or name or entry, shard_route, limit=limit)
+        except Exception:
+            shard_route = {"available": False, "reason": "routing_unavailable", "selected_projects": []}
+            shard_evidence = {"queried_projects": [], "matches": [], "source": "unavailable"}
+        try:
             from memory_center.core.freshness.targeted_refresh import refresh_query_targets
             auto_refresh = refresh_query_targets(wf, query or symbol or name or entry, limit=min(limit, 12))
         except Exception:
@@ -562,6 +570,8 @@ def create_server(workspace_file: str):
             payload["auto_refresh"] = auto_refresh
             payload["request_tier"] = plan.tier
             payload["query_plan"] = planner.record("mc_lookup", plan, started_at, outcome="completed")
+            payload["shard_route"] = shard_route
+            payload["shard_evidence"] = shard_evidence
             if session_id.strip():
                 workspace_record_agent_guidance(
                     wf,

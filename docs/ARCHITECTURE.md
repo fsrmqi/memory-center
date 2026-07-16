@@ -240,6 +240,12 @@ The generation directory also contains physical `services/<project>.json`, `serv
 
 Partial reindex uses copy-on-write: unchanged service shards are inherited from the preceding generation, only invalidated services are rebuilt, and the new generation is then published atomically.
 
+### 3.1.2 跨服务分片编排 / Cross-Service Shard Orchestration
+
+未指定 project 的请求不再直接默认全局检索。系统先从 Contract Shard 与 Topology Shard 识别服务、Feign 契约、API、MQ 与配置相关性，对候选服务评分；再按 fast/standard/deep 的服务数量与拓扑深度预算扩展下游服务。最终在选中的服务 JSON/SQLite 图分片上并行取证，响应携带 generation、路由依据、查询分片和证据来源。全局索引只在分片不可用或调用方明确需要扩大范围时作为兼容回退。
+
+Requests without an explicit project no longer default straight to global retrieval. The system scores candidate services from Contract and Topology shards, then expands downstream services under fast/standard/deep budgets. Evidence is queried in parallel from selected service JSON/SQLite graph shards, with generation, routing rationale, queried shards, and evidence source returned to the caller. The global index is a compatibility fallback only.
+
 ### 3.2 任务期 / Task-Time Flow
 
 任务期面向 AI Agent 暴露少量稳定动作：

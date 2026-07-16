@@ -42,6 +42,8 @@ MCP 当前公开的是 12 个 task-level tools：
 
 传入 `mc_lookup(..., project="service-name")` 时，服务范围内的 code/hybrid 查询会优先读取 active generation 的物理服务分片。回滚使用 `mc_admin(action="index_rollback", record_id="<generation>")`；generation 清理使用 `mc_admin(action="index_generation_gc", keep_recent=2, force=false)`，默认仅返回候选项。
 
+不传 `project` 的 `mc_lookup` 也会返回 `shard_route`（generation、起始服务、扩展深度、契约/拓扑依据）和 `shard_evidence`（并行查询的服务分片及命中）。跨服务性能门禁使用 `mc_admin(action="eval_cross_shard_replay", text="每行一个查询", budget="fast|standard|deep")`；结果只记录耗时、选片数量和证据覆盖率。
+
 ## 3. Recommended Agent Behavior / 推荐 Agent 行为
 
 推荐顺序：

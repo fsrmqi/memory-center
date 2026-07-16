@@ -86,6 +86,15 @@ def service_shard_graph_path(store: WorkspaceStore, generation: str, project: st
     return path if path.exists() else None
 
 
+def load_contract_shard(store: WorkspaceStore, generation: str) -> dict[str, Any] | None:
+    return _read_json(_generation_root(store, generation) / "contracts.json")
+
+
+def load_topology_shard(store: WorkspaceStore, generation: str) -> dict[str, Any] | None:
+    payload = _read_json(_generation_root(store, generation) / "topology.json")
+    return payload.get("topology", {}) if payload else None
+
+
 def cleanup_generations(store: WorkspaceStore, *, active_generation: str, previous_generation: str = "", keep: int = 2, apply: bool = False) -> dict[str, Any]:
     base = store.index_dir / GENERATIONS_DIR
     entries = sorted((path for path in base.iterdir() if path.is_dir()), key=lambda path: path.stat().st_mtime_ns, reverse=True) if base.exists() else []

@@ -49,6 +49,7 @@ from memory_center.core.artifacts import (
 from memory_center.core.audit.runtime import audit_agent_runtime
 from memory_center.core.index_control import index_control_status, rollback_generation
 from memory_center.core.index_shards import cleanup_generations
+from memory_center.core.cross_shard import evaluate_cross_shard_replay
 from memory_center.core.jobs import cancel_workspace_job, submit_reindex_workspace_job, workspace_job_status
 from memory_center.core.query_planner import workspace_performance_summary
 from memory_center.core.benchmark.trending import check_regression_alerts
@@ -448,6 +449,11 @@ def build_admin_registry(
             apply=force,
         ),
         "query_performance": lambda: workspace_performance_summary(wf, limit=max(limit, 20)),
+        "eval_cross_shard_replay": lambda: evaluate_cross_shard_replay(
+            wf,
+            [line.strip() for line in text.splitlines() if line.strip()],
+            tier=budget if budget in {"fast", "standard", "deep"} else "standard",
+        ),
         "job_status": lambda: workspace_job_status(wf, record_id, limit=limit),
         "job_cancel": lambda: cancel_workspace_job(wf, record_id),
         "job_reindex": lambda: submit_reindex_workspace_job(wf, projects=projects, paths=files),

@@ -10,6 +10,9 @@
 
 ### P2 Retrieval / Reasoning Quality Loop / 检索与推理质量闭环
 
+- 本地安装版本提升至 `3.8.0`。
+- 新增自动跨服务分片编排：未指定 project 的 MCP 查询会基于 Contract/Topology Shard 路由、按档位有界扩展 Feign 邻居，并行查询服务 JSON/SQLite 图分片；响应新增 generation 绑定的 `shard_route` 与 `shard_evidence`。
+- 新增 `eval_cross_shard_replay`，以不持久化原始查询的方式统计跨服务选片 P95、选片上限和证据覆盖率。
 - 本地安装版本提升至 `3.7.0`。
 - generation 从路由元数据升级为真实物理分片：每次 reindex 生成不可变服务 JSON、服务 SQLite 图、契约和拓扑快照，完成后才激活；partial reindex 采用 copy-on-write，仅重建受影响服务分片；显式 project 范围的 code/hybrid 查询优先读取服务分片并保留全局兼容回退。
 - watcher 的有界失效计划现在会合并提交后台 partial reindex；新增 generation 回滚、保留与默认 dry-run 的清理入口。

@@ -800,6 +800,10 @@ Each active generation now contains immutable service JSON shards, service-local
 
 每个 active generation 现在包含不可变的服务 JSON 分片、服务本地 SQLite 图分片、共享契约分片和拓扑分片。明确传入 `project` 的代码搜索与混合图查询会优先读取服务分片，只有分片缺失或需要扩展范围时才回退到兼容的全局索引。file watcher 的变更会生成有界失效计划并合并异步局部 reindex job。`mc_admin(action="index_rollback", record_id="<generation>")` 可恢复保留的 generation；`index_generation_gc` 默认只预览清理，传 `force=true` 才会执行。
 
+When `mc_lookup` has no explicit `project`, it now routes through the active topology and contract shards, selects a bounded set of service shards by request tier, and queries them in parallel. Responses include `shard_route` and `shard_evidence`, each tied to the active generation. Use `mc_admin(action="eval_cross_shard_replay", text="one intent per line")` to verify cross-service shard P95 and evidence coverage without persisting the raw replay text.
+
+当 `mc_lookup` 未传 `project` 时，现在会先通过 active topology 与 contract 分片路由，按请求档位选择有界服务分片集合，再并行查询。响应包含与 active generation 绑定的 `shard_route` 和 `shard_evidence`。可使用 `mc_admin(action="eval_cross_shard_replay", text="每行一个意图")` 验证跨服务分片 P95 与证据覆盖率，原始 replay 文本不会被持久化。
+
 Walkthrough key locations include `absolute_file_path`; agents should read that path directly instead of running `find` first.
 
 walkthrough 的关键落点包含 `absolute_file_path`；Agent 应直接读取该路径，不需要先执行 `find` 定位文件。

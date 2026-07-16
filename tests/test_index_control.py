@@ -6,6 +6,7 @@ from memory_center.core.index_control import index_control_status
 from memory_center.core.indexer import reindex_workspace
 from memory_center.core.index_shards import load_service_shard, service_shard_graph_path
 from memory_center.core.orchestrator.query import memory_query_hybrid, memory_search_code
+from memory_center.core.cross_shard import evaluate_cross_shard_replay, query_cross_service_shards, route_cross_service_shards
 from memory_center.core.store import WorkspaceStore
 
 
@@ -57,3 +58,21 @@ def test_partial_reindex_uses_copy_on_write_service_shards(tmp_path: Path) -> No
 
     assert manifest["copy_on_write"] is True
     assert manifest["rebuilt_services"] == [project]
+
+
+def test_cross_service_router_uses_contracts_topology_and_parallel_shards(tmp_path: Path) -> None:
+    from tests.fixtures import copy_demo_workspace
+
+    workspace = copy_demo_workspace(tmp_path)
+    store = WorkspaceStore(workspace)
+    reindex_workspace(load_workspace_config(workspace), store, parallel=False)
+
+    route = route_cross_service_shards(workspace, "ArticleFeignClient 全链路", tier="standard")
+    evidence = query_cross_service_shards(workspace, "ArticleFeignClient", route)
+    gate = evaluate_cross_shard_replay(workspace, ["ArticleFeignClient", "article-service"], tier="fast")
+
+    assert route["available"] is True
+    assert "common-api" in route["selected_projects"]
+    assert evidence["source"] == "parallel_service_shards"
+    assert evidence["queried_projects"]
+    assert gate["samples"] == 2
