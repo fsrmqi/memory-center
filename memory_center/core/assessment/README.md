@@ -1,5 +1,5 @@
-# Assessment
+# 评估
 
-Generic completion states, quality summaries, and reusable evaluation result builders.
+提供通用完成状态、质量摘要和可复用的评估结果构建器。
 
-These helpers evaluate evidence without owning a specific benchmark or walkthrough implementation.
+这些辅助能力只评估证据，不负责某个具体 benchmark 或链路分析的实现。

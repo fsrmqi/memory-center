@@ -1,5 +1,5 @@
-# Performance
+# 性能
 
-Local performance profiling utilities and evidence-oriented measurement helpers.
+提供本地性能分析工具和面向证据的度量辅助能力。
 
-Profiles guide optimization but are not release gates; formal gates live in `benchmark/`.
+性能分析用于指导优化，但不是发布门禁；正式门禁位于 `benchmark/`。

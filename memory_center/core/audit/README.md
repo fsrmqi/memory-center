@@ -1,5 +1,5 @@
-# Audit
+# 审计
 
-Completion audit reports and runtime integration audit.
+提供完成度审计报告与运行时集成审计。
 
-`reports.py` owns completion-audit records; use this package for assessment evidence, not generic task state.
+`reports.py` 负责完成度审计记录；本包用于保存评估证据，不用于保存通用任务状态。

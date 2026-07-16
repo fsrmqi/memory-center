@@ -1,5 +1,5 @@
-# Workspace
+# 工作区
 
-Workspace configuration, health checks, shape analysis, service-kind classification, and background job lifecycle.
+提供工作区配置、健康检查、结构分析、服务类型识别和后台作业生命周期管理。
 
-`config.py` owns workspace YAML and persisted workspace data. `doctor.py` validates a configured workspace. Use this package for workspace topology and lifecycle concerns, not indexed code facts or retrieval algorithms.
+`config.py` 负责工作区 YAML 和持久化工作区数据。`doctor.py` 验证已配置的工作区。本包用于工作区拓扑与生命周期问题，不用于保存已索引代码事实或检索算法。

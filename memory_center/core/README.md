@@ -1,7 +1,7 @@
-# Core Architecture
+# 核心架构
 
-`core/` is the domain boundary of Memory Center. The root contains no implementation: choose a child package by responsibility.
+`core/` 是 Memory Center 的领域边界。根目录不包含具体实现，应按职责选择对应的子包。
 
-- `foundation/` and `storage/` are lower layers and must not import orchestration or adapters.
-- Domain packages expose facts or bounded operations; `orchestrator/` composes them.
-- CLI, MCP, HTTP, and hooks live outside this directory and call canonical package paths only.
+- `foundation/` 与 `storage/` 属于底层，不得依赖编排层或适配器层。
+- 领域包提供事实或边界明确的操作，由 `orchestrator/` 进行组合。
+- CLI、MCP、HTTP 与 hooks 位于本目录外，只能调用各领域的规范路径。

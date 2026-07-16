@@ -1,5 +1,5 @@
-# Observability
+# 可观测性
 
-Safe diagnostics, metrics, operation events, and token-gain tracking.
+提供安全的诊断、指标、操作事件和 Token 收益跟踪。
 
-All records must remain local and redact source paths, secrets, payloads, and raw business content.
+所有记录必须保留在本地，并脱敏源码路径、密钥、载荷和原始业务内容。

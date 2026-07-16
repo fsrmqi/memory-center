@@ -1,5 +1,5 @@
-# Context
+# 上下文
 
-Evidence selection, token budgets, and compact context-pack construction for agents.
+提供证据选择、Token 预算与面向 Agent 的紧凑上下文包构建。
 
-Use this package to shape already retrieved evidence; do not put parser or persistence code here.
+本包只整理已经检索到的证据，不应放入解析器或持久化代码。

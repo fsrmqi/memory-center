@@ -1,5 +1,5 @@
-# Explanation
+# 解释
 
-Stable explanation schema for fact, inferred, and derived conclusions.
+为事实、推断和派生结论提供稳定的解释 Schema。
 
-Keep this package format-focused; computation belongs to retrieval, reasoning, or domain packages.
+本包只负责解释格式；计算逻辑应放在检索、推理或领域包中。

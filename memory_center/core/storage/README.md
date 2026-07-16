@@ -1,5 +1,5 @@
-# Storage
+# 存储
 
-Workspace filesystem access, graph SQLite, memory SQLite, vector indexes, and database pragmas.
+提供工作区文件系统访问、图 SQLite、记忆 SQLite、向量索引和数据库 pragma。
 
-Keep persistence mechanics here; interpretation, retrieval policy, and task workflow belong to higher layers.
+持久化机制应放在此处；解释、检索策略和任务工作流属于上层。

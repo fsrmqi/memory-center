@@ -1,5 +1,5 @@
-# Benchmark
+# 基准测试
 
-Golden cases, baselines, Java call-resolution gates, release gates, and trends.
+提供 Golden 用例、基线、Java 调用解析门禁、发布门禁与趋势分析。
 
-`cases.py` defines benchmark case models. Benchmarks must use portable logical anchors and never commit private workspace data.
+`cases.py` 定义基准测试用例模型。基准测试必须使用可移植的逻辑锚点，禁止提交私有工作区数据。

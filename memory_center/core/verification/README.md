@@ -1,5 +1,5 @@
-# Verification
+# 验证
 
-Verification loops, learned heuristics, pattern promotion, workflow profiles, and agent bundle export.
+提供验证循环、学习型启发式规则、模式晋升、工作流画像和 Agent 包导出。
 
-Learning must use explicit verified outcomes and bounded feedback, never raw unverified agent behavior.
+学习必须基于明确验证过的结果和范围受控的反馈，绝不能直接使用未经验证的 Agent 行为。

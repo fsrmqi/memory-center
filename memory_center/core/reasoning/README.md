@@ -1,5 +1,5 @@
-# Reasoning
+# 推理
 
-Evidence-bounded fact, inference, and transitive reasoning for indexed graph results.
+针对索引图谱结果提供受证据边界约束的事实、推断与传递推理。
 
-`request.py` defines reasoning input. Reasoning must remain additive and never replace graph facts with unsupported conclusions.
+`request.py` 定义推理输入。推理必须以增量方式补充信息，绝不能用无证据结论覆盖图谱事实。

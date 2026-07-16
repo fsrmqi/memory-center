@@ -1,5 +1,5 @@
-# Indexing
+# 索引
 
-Source parsing, language registry, call resolution, incremental rebuild, generation control, shards, and `reindex.py`.
+提供源码解析、语言注册、调用解析、增量重建、代次控制、分片和 `reindex.py`。
 
-This package produces derived index facts. It must not contain MCP, HTTP, or task-memory orchestration.
+本包产出派生索引事实，不得包含 MCP、HTTP 或任务记忆编排逻辑。

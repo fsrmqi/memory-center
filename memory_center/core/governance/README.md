@@ -1,5 +1,5 @@
-# Governance
+# 治理
 
-Workspace rules, generated host instructions, workflow templates, and workspace registry operations.
+提供工作区规则、宿主指令生成、工作流模板和工作区注册表操作。
 
-This package defines policy and protocol. It must not own query execution or adapter dispatch.
+本包定义策略与协议，不得承担查询执行或适配器分发职责。

@@ -1,5 +1,5 @@
-# Tasks
+# 任务
 
-Task artifacts, durable write receipts, and unified task timelines.
+提供任务工件、持久化写入回执和统一任务时间线。
 
-This package owns append-only task evidence and recovery data; policy decisions remain in `governance/` or `orchestrator/`.
+本包负责只追加的任务证据和恢复数据；策略决策仍应位于 `governance/` 或 `orchestrator/`。

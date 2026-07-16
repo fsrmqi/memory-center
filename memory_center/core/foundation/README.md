@@ -1,5 +1,5 @@
-# Foundation
+# 基础层
 
-Shared types, errors, schemas, dispatch, and pure text/token helpers.
+提供共享类型、错误、Schema、分发机制和纯文本、Token 辅助能力。
 
-Do not add workspace I/O, configuration loading, graph queries, or domain workflow logic here. This is the lowest application layer.
+不得在此加入工作区 I/O、配置加载、图查询或领域工作流逻辑。这是系统最低层的应用代码。

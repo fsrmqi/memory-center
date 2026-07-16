@@ -1,5 +1,5 @@
-# Domain
+# 领域分析
 
-Business-domain extraction, flow mapping, and flow impact analysis from indexed graph facts.
+基于已索引图谱事实提供业务领域提取、流程映射与流程影响分析。
 
-Domain outputs are derived evidence and must retain confidence and validation guidance.
+领域输出属于派生证据，必须保留置信度和验证建议。

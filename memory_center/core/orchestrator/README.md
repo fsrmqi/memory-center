@@ -1,5 +1,5 @@
-# Orchestrator
+# 编排
 
-Task-level composition for query, impact, session, resume, sync, write, group, evaluation, and workspace operations.
+提供查询、影响分析、会话、恢复、同步、写入、分组、评估和工作区操作的任务级组合。
 
-Use `workspace_ops.py` for workspace-facing facades and `shared.py` for internal orchestration primitives. Do not add persistence engines here.
+面向工作区的门面放在 `workspace_ops.py`，内部编排基础能力放在 `shared.py`。不得在此加入持久化引擎。

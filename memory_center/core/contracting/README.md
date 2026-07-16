@@ -1,5 +1,5 @@
-# Contracting
+# 契约治理
 
-Static API/Feign/MQ/DTO snapshots, runtime metadata samples, migration state, and compatibility gates.
+提供静态 API、Feign、MQ、DTO 快照，运行时元数据样本，迁移状态和兼容性门禁。
 
-Runtime inputs are metadata only. Never persist request bodies, headers, payloads, or message content.
+运行时输入只能包含元数据，严禁持久化请求体、请求头、载荷或消息正文。

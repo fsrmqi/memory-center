@@ -1,5 +1,5 @@
-# Knowledge
+# 知识
 
-Knowledge-graph ontology plus generated wiki and skill artifacts.
+提供知识图谱本体，以及生成的 Wiki 与技能产物。
 
-Keep graph vocabulary and human-readable knowledge exports here; graph persistence remains in `storage/`.
+图谱词汇和面向人的知识导出应放在此处；图谱持久化仍属于 `storage/`。

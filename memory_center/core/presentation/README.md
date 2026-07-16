@@ -1,5 +1,5 @@
-# Presentation
+# 展示
 
-Progressive views and human-readable exports for CLI, HTTP, and Workbench consumers.
+为 CLI、HTTP 和 Workbench 使用者提供渐进视图和可读导出。
 
-Presentation formats existing results only; it must not become a second retrieval or workflow layer.
+展示层只格式化已有结果，不得演变为第二套检索或工作流层。

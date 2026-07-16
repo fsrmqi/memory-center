@@ -1,5 +1,5 @@
-# Matching
+# 匹配
 
-Small deterministic matching helpers shared by workspace and retrieval logic.
+提供供工作区和检索逻辑复用的小型确定性匹配辅助能力。
 
-Keep matching pure and side-effect free; avoid adding workflow decisions here.
+匹配逻辑必须保持纯函数和无副作用，避免在此加入工作流决策。

@@ -1,5 +1,5 @@
-# Navigation
+# 导航
 
-Progressive drill-down of task, timeline, and evidence references.
+提供任务、时间线和证据引用的渐进式下钻。
 
-Navigation controls disclosure depth; persistence remains in `tasks/` and `storage/`.
+导航只控制信息披露深度；持久化仍归属 `tasks/` 和 `storage/`。

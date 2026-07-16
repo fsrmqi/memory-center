@@ -1,5 +1,5 @@
-# Retrieval
+# 检索
 
-Hybrid, semantic, inverted, policy, planner, and cross-service shard retrieval.
+提供混合检索、语义检索、倒排检索、策略、规划器和跨服务分片检索。
 
-Retrieval returns bounded evidence and confidence; task-level composition belongs in `orchestrator/`.
+检索只返回范围受控的证据和置信度；任务级组合属于 `orchestrator/`。

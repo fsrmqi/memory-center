@@ -1,5 +1,5 @@
-# Views
+# 视图
 
-Structured graph views for change bundles and persona-specific inspection.
+提供变更包和面向不同角色检查的结构化图谱视图。
 
-Views are projections over indexed facts and must not mutate storage or introduce new inferences.
+视图是对已索引事实的投影，不得修改存储或引入新的推断。

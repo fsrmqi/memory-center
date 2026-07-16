@@ -1,5 +1,5 @@
-# Onboarding
+# 上手引导
 
-Persona-based architecture guide, glossary, and project tour generation.
+提供基于角色的架构指南、术语表和项目导览生成能力。
 
-Use indexed evidence and avoid exposing private paths or source content in guidance summaries.
+应使用已索引证据，并避免在引导摘要中暴露私有路径或源码内容。

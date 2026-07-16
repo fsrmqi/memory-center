@@ -1,5 +1,5 @@
-# Freshness
+# 新鲜度
 
-Index freshness status, dirty-file coordination, targeted refresh, invalidation, reconciliation, and watchers.
+提供索引新鲜度状态、脏文件协调、定向刷新、失效处理、对账与监听能力。
 
-Refresh work must stay bounded and generation-aware; full rebuild ownership remains in `indexing/`.
+刷新操作必须范围可控并感知索引代次；全量重建仍由 `indexing/` 负责。

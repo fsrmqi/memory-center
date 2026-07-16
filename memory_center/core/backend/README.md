@@ -1,5 +1,5 @@
-# Backend
+# 后端查询
 
-Unified read-side queries over local JSONL and SQLite-backed memory records.
+基于本地 JSONL 和 SQLite 记忆记录提供统一的读取查询。
 
-This is a query adapter over storage, not the source of truth for workspace writes.
+这是存储层之上的查询适配器，不是工作区写入数据的唯一事实来源。
