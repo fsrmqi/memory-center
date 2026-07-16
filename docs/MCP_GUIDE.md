@@ -48,6 +48,8 @@ MCP 当前公开的是 12 个 task-level tools：
 
 契约语义校验使用 `mc_admin(action="contract_gate", name="SomeRequestDto.java")`，返回 `semantic_compatibility.status`：`pass`、`attention` 或 `block`。`mc_analyze(depth="full", target="...", task_id="...")` 自动执行同一校验并可将完整报告写为任务 evidence。guard 模式 pre-edit hook 遇到 `block` 会拒绝编辑；release gate 在索引存在契约快照时失败。
 
+运行时样本通过 `mc_admin(action="runtime_contract_ingest", payload="...")` 导入，payload 应只包含 `samples` 元数据数组，禁止业务 payload/body/header/message。用 `runtime_contract_migration` 登记双读/双写迁移，用 `runtime_contract_gate` 获取活跃流量兼容结论；传 `task_id` 会将该报告保存为任务 evidence。release gate 仅在存在样本时增加运行时契约组件。
+
 ## 3. Recommended Agent Behavior / 推荐 Agent 行为
 
 推荐顺序：

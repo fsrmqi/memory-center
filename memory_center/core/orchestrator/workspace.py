@@ -1281,6 +1281,8 @@ def workspace_check_contract(workspace_file: str | Path, contract_file: str, cha
         store.read_json_prefer_backend("service-topology.json", {}),
         contract_file,
     )
+    from ..runtime_contracts import runtime_contract_compatibility
+    runtime = runtime_contract_compatibility(workspace_file, contract_file)
     return {
         "contract_file": contract_file,
         "change_type": change_type,
@@ -1288,6 +1290,8 @@ def workspace_check_contract(workspace_file: str | Path, contract_file: str, cha
         "related_feigns": [x for x in feigns if basename in json.dumps(x, ensure_ascii=False).lower()][:20],
         "related_mq": [x for x in mq if basename in json.dumps(x, ensure_ascii=False).lower()][:20],
         "semantic_compatibility": semantic,
+        "runtime_compatibility": runtime,
+        "gate_status": runtime["status"] if runtime.get("sample_count", 0) else semantic["status"],
         "rules": match_rules(store, intent=f"contract {change_type} {contract_file}", files=[contract_file], scopes=["contract", "dto", "feign", "message"]),
         "required_checks": [
             "全 workspace 搜索字段引用点",

@@ -15,6 +15,7 @@ from ..orchestrator import (
     memory_query_hybrid,
 )
 from ..store import WorkspaceStore
+from ..runtime_contracts import RUNTIME_SAMPLES_FILE, runtime_contract_compatibility
 from .golden import run_golden_suite
 
 
@@ -148,6 +149,17 @@ def run_release_gate(
             result_count=contract_blocking,
             quality_score=1.0 if contract_report.get("status") == "pass" else 0.7 if contract_report.get("status") == "attention" else 0.0,
             reason="breaking_contract_change" if contract_report.get("status") == "block" else "",
+        )
+    runtime_samples = store.read_jsonl_prefer_backend(RUNTIME_SAMPLES_FILE, limit=1)
+    if runtime_samples:
+        runtime_report = runtime_contract_compatibility(workspace_file)
+        runtime_blocks = len([item for item in runtime_report.get("breaking_runtime_findings", []) if item.get("status") == "block"])
+        components["runtime_contract_compatibility"] = _component(
+            passed=runtime_report.get("status") != "block",
+            duration_ms=0.0,
+            result_count=runtime_blocks,
+            quality_score=1.0 if runtime_report.get("status") == "pass" else 0.7 if runtime_report.get("status") == "attention" else 0.0,
+            reason="active_runtime_contract_break" if runtime_report.get("status") == "block" else "",
         )
 
     query_rows: list[dict[str, Any]] = []

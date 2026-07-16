@@ -356,7 +356,8 @@ def run_hook(
                     system_message += " | Verify checklist generated"
                 contract_result = workspace_check_contract(wf, target, change_type)
                 hook_result["contract_semantics"] = contract_result.get("semantic_compatibility", {})
-                contract_status = str((contract_result.get("semantic_compatibility", {}) or {}).get("status", "pass"))
+                hook_result["runtime_contract"] = contract_result.get("runtime_compatibility", {})
+                contract_status = str(contract_result.get("gate_status", "pass"))
                 system_message += f" | Contract: {contract_status}"
                 # Guard mode: block if must-severity rules match
                 if mode == "guard":

@@ -814,6 +814,10 @@ Reindex writes a normalized API/Feign/MQ/DTO contract snapshot and compares it w
 
 reindex 会写入标准化的 API/Feign/MQ/DTO 契约快照，并与前一快照比较。删除 API、删除 DTO 字段、DTO 字段类型变更、删除 Feign/MQ 契约会标记为破坏性变更。`mc_analyze(depth="full")` 始终包含 `contract.semantic_compatibility`；可传 `task_id` 将报告存为不可变任务证据。`mc_admin(action="contract_gate", name="...")` 与 CLI `check-contract` 暴露相同校验。guard 模式的 pre-edit hook 会阻断破坏性契约变更；release-gate 在存在真实契约快照时也会纳入该检查。
 
+### Runtime Contract Verification / 运行时契约验证
+
+通过 `mc_admin(action="runtime_contract_ingest")` 只导入脱敏元数据：服务、API 方法/路径或 MQ topic/方向、DTO 名称、字段名集合和成功/失败计数。payload/body/header/message 内容会被拒绝，绝不会存储。`runtime_contract_gate` 会将活跃样本与静态 breaking change、endpoint/topic 可用性比较。活跃破坏性变更会阻断发布；已有记录的 `dual_read` / `dual_write` 迁移可降级为 `attention`。存在样本时，full 契约分析与 release-gate 都会纳入运行时结果。
+
 Walkthrough key locations include `absolute_file_path`; agents should read that path directly instead of running `find` first.
 
 walkthrough 的关键落点包含 `absolute_file_path`；Agent 应直接读取该路径，不需要先执行 `find` 定位文件。

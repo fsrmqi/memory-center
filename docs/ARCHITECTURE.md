@@ -258,6 +258,12 @@ The fusion layer preserves existing query fields while deduplicating primary and
 
 Every reindex normalizes APIs, Feign methods, MQ endpoints, and DTO field types, then diffs them against the previous snapshot. Removed API/Feign/MQ contracts, removed DTO fields, and DTO type changes are high-severity breaking changes; new DTO fields are medium risk and require default/consumer review. Static validation also checks Feign target service plus HTTP method/path and MQ producer/consumer coverage. Full analysis, task evidence, pre-edit guard, explicit contract gate, and release gate consume the same report.
 
+### 3.1.5 脱敏运行时契约闭环 / Redacted Runtime Contract Loop
+
+运行时层只接受元数据样本，不保存 payload、请求体、消息内容或 header。API 样本包含服务、HTTP 方法/路径、DTO 名称、字段名集合和成功/失败计数；MQ 样本包含服务、topic、producer/consumer 方向和计数。校验器将样本与当前 endpoint/topic、静态 breaking diff 对照，识别已影响流量的风险。迁移记录采用 `planned`、`dual_read`、`dual_write`、`consumer_migrated`、`completed` 状态；处于批准双读/双写阶段的活跃风险会降级为 attention，但仍会进入发布报告和任务证据。
+
+The runtime layer accepts metadata samples only and never stores payloads, request bodies, message content, or headers. API samples include service, HTTP method/path, DTO name, field names, and counters; MQ samples include service, topic, direction, and counters. The verifier compares samples with active endpoints/topics and static breaking diffs to distinguish active traffic impact. Approved migration states can downgrade controlled dual-read/dual-write risk to attention while retaining it in release reports and task evidence.
+
 ### 3.2 任务期 / Task-Time Flow
 
 任务期面向 AI Agent 暴露少量稳定动作：

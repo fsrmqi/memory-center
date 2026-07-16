@@ -45,6 +45,7 @@ from memory_center.core.artifacts import (
     update_artifact,
     update_task_artifact,
     update_task_status,
+    write_task_evidence_chunk,
 )
 from memory_center.core.audit.runtime import audit_agent_runtime
 from memory_center.core.index_control import index_control_status, rollback_generation
@@ -53,6 +54,7 @@ from memory_center.core.cross_shard import evaluate_cross_shard_replay
 from memory_center.core.cross_shard_fusion import evaluate_cross_shard_fusion
 from memory_center.core.jobs import cancel_workspace_job, submit_reindex_workspace_job, workspace_job_status
 from memory_center.core.query_planner import workspace_performance_summary
+from memory_center.core.runtime_contracts import ingest_runtime_contract_samples, runtime_contract_compatibility, set_contract_migration
 from memory_center.core.benchmark.trending import check_regression_alerts
 from memory_center.core.dispatch import CommandRegistry
 from memory_center.core.domain.flow import (
@@ -156,6 +158,18 @@ def parse_payload(payload_str: str) -> dict[str, Any] | None:
     except json.JSONDecodeError:
         return {"raw": payload_str}
     return data if isinstance(data, dict) else {"value": data}
+
+
+def runtime_contract_gate_action(workspace_file: str, *, contract_file: str = "", task_id: str = "") -> dict[str, Any]:
+    result = runtime_contract_compatibility(workspace_file, contract_file)
+    if task_id.strip():
+        result["evidence"] = write_task_evidence_chunk(
+            workspace_file,
+            task_id,
+            json.dumps(result, ensure_ascii=False, indent=2),
+            source="runtime_contract_gate",
+        )
+    return result
 
 
 def benchmark_trend_report(workspace_file: str, function_name: str = "") -> dict[str, Any]:
@@ -443,6 +457,9 @@ def build_admin_registry(
         "backend_query": lambda: memory_backend_query(wf, collection=collection, record_id=record_id, created_after=created_after, ref_path=ref_path, project=project, payload_type=payload_type, limit=limit),
         "index_control": lambda: index_control_status(WorkspaceStore(wf)),
         "contract_gate": lambda: workspace_check_contract(wf, name or ref_path or text, action_filter or "modify"),
+        "runtime_contract_ingest": lambda: ingest_runtime_contract_samples(wf, list((parse_payload(payload) or {}).get("samples", [])), source=source or "mcp_admin"),
+        "runtime_contract_migration": lambda: set_contract_migration(wf, parse_payload(payload) or {}),
+        "runtime_contract_gate": lambda: runtime_contract_gate_action(wf, contract_file=name or ref_path or text, task_id=task_id),
         "index_rollback": lambda: rollback_generation(WorkspaceStore(wf), record_id),
         "index_generation_gc": lambda: cleanup_generations(
             WorkspaceStore(wf),

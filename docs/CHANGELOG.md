@@ -10,6 +10,9 @@
 
 ### P2 Retrieval / Reasoning Quality Loop / 检索与推理质量闭环
 
+- 本地安装版本提升至 `4.1.0`。
+- 新增脱敏运行时契约样本与兼容校验：只接受服务、API/MQ 标识、DTO 字段名和计数，不保存 payload/body/header/message；活跃流量命中破坏性静态变更会阻断发布。
+- 新增双读/双写迁移状态，已批准迁移可把受控活跃风险降为 attention；full 契约分析、任务 evidence、pre-edit guard、runtime gate 和 release gate 复用同一运行时报告。
 - 本地安装版本提升至 `4.0.0`。
 - 新增 API/Feign/MQ/DTO 标准化契约快照与前后 diff；删除契约、DTO 字段删除和字段类型变化会作为 high severity breaking change。
 - `mc_analyze(depth="full")`、任务证据、pre-edit guard、`mc_admin(action="contract_gate")` 和 release-gate 统一使用契约语义报告，包含 Feign 服务端方法/路径、MQ producer/consumer、DTO 消费者风险和受影响消费者。
