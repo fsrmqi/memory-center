@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import time
+from hashlib import sha256
 from pathlib import Path
 from typing import Any
 
@@ -11,6 +12,7 @@ from filelock import FileLock
 from ..graph import GraphEdge, GraphNode, GraphStore, edge_id, node_id
 from ..indexer import parse_java_symbols, safe_read
 from ..store import WorkspaceStore
+from .coordinator import RefreshCoordinator
 
 MAX_REFRESH_FILES = 12
 MANIFEST_FILE = "hot-refresh-manifest.json"
@@ -19,19 +21,34 @@ DIRTY_JOURNAL_FILE = "dirty-files.jsonl"
 
 def refresh_query_targets(workspace_file: str | Path, query: str, limit: int = MAX_REFRESH_FILES) -> dict[str, Any]:
     """Refresh only stale indexed Java files plausibly related to ``query``."""
-    started = time.perf_counter()
     store = WorkspaceStore(workspace_file)
+    coordinator = RefreshCoordinator(store.memory_dir)
+    return coordinator.run(
+        lambda: _refresh_query_targets(store, query, limit),
+        lambda: {"checked": 0, "refreshed": False, "files": [], "elapsed_ms": 0.0, "mode": "targeted_overlay", "coalesced": True, "generation": {}},
+    )
+
+
+def _refresh_query_targets(store: WorkspaceStore, query: str, limit: int) -> dict[str, Any]:
+    started = time.perf_counter()
     manifest = store.read_json(MANIFEST_FILE, {}) or {}
     dirty_rows = store.read_jsonl_prefer_backend(DIRTY_JOURNAL_FILE, limit=200)
     files = store.read_json_prefer_backend("file-index.json", [])
     tokens = [part.lower() for part in query.replace("#", " ").replace(".", " ").split() if len(part) > 2]
     candidates: list[dict[str, Any]] = []
+    closure_paths: list[str] = []
     try:
         with GraphStore(store.graph_db_path) as graph:
             for node in graph.find_nodes(" ".join(tokens[:6]), types=["File", "Class", "Method"], limit=limit * 4):
                 path = str(node.get("file_path", "") or "")
                 if path:
                     candidates.append({"path": path})
+            # Query-matched files form the first hop; their graph neighbors
+            # cover API/Feign/DTO/MQ/config relationships already resolved by
+            # the full index, without scanning the complete workspace.
+            seed_paths = [str(item.get("path", "") or "") for item in candidates if item.get("path")][:max(1, min(limit, 6))]
+            for path in seed_paths:
+                closure_paths.extend(graph.file_neighbors(path, limit=8))
     except Exception:
         pass
     for item in files:
@@ -40,6 +57,7 @@ def refresh_query_targets(workspace_file: str | Path, query: str, limit: int = M
             candidates.append(item)
     dirty_paths = {str(row.get("path", "") or "") for row in dirty_rows}
     candidates.extend(item for item in files if str(item.get("path", "") or "") in dirty_paths)
+    candidates.extend({"path": path} for path in closure_paths)
 
     by_path = {str(item.get("path", "")): item for item in files}
     selected: list[dict[str, Any]] = []
@@ -65,8 +83,9 @@ def refresh_query_targets(workspace_file: str | Path, query: str, limit: int = M
         stat = abs_path.stat()
         if stat.st_mtime_ns <= indexed_mtime and stat.st_size == int(version.get("size", item.get("source_size", stat.st_size)) or stat.st_size):
             continue
-        _refresh_java_graph(store, item, abs_path)
-        manifest[rel] = {"mtime_ns": stat.st_mtime_ns, "size": stat.st_size, "generation": int(version.get("generation", 0) or 0) + 1}
+        generation = int(version.get("generation", 0) or 0) + 1
+        content_hash = _refresh_java_graph(store, item, abs_path, generation)
+        manifest[rel] = {"mtime_ns": stat.st_mtime_ns, "size": stat.st_size, "content_hash": content_hash, "generation": generation}
         refreshed.append(rel)
     if refreshed:
         store.write_json(MANIFEST_FILE, manifest)
@@ -78,16 +97,19 @@ def refresh_query_targets(workspace_file: str | Path, query: str, limit: int = M
         "mode": "targeted_overlay",
         "coalesced": False,
         "generation": {path: manifest[path]["generation"] for path in refreshed},
+        "dependency_closure": {"paths": sorted(set(closure_paths))[:24], "depth": 1},
     }
 
 
-def _refresh_java_graph(store: WorkspaceStore, item: dict[str, Any], source: Path) -> None:
+def _refresh_java_graph(store: WorkspaceStore, item: dict[str, Any], source: Path, generation: int) -> str:
     project = str(item.get("project", "") or "")
     rel = str(item.get("path", "") or "")
-    symbol = parse_java_symbols(project, rel, safe_read(source))
+    source_text = safe_read(source)
+    content_hash = sha256(source_text.encode("utf-8", errors="replace")).hexdigest()
+    symbol = parse_java_symbols(project, rel, source_text)
     raw = symbol.__dict__
     file_id = node_id("File", rel)
-    nodes = [GraphNode(file_id, "File", Path(rel).name, project, rel, metadata={**item, "source_mtime_ns": source.stat().st_mtime_ns, "source_size": source.stat().st_size, "hot_refreshed": True})]
+    nodes = [GraphNode(file_id, "File", Path(rel).name, project, rel, metadata={**item, "source_mtime_ns": source.stat().st_mtime_ns, "source_size": source.stat().st_size, "generation": generation, "content_hash": content_hash, "hot_refreshed": True})]
     edges: list[GraphEdge] = []
     for cls in raw.get("classes", []) + raw.get("interfaces", []):
         class_id = node_id("Class", project, cls)
@@ -112,7 +134,8 @@ def _refresh_java_graph(store: WorkspaceStore, item: dict[str, Any], source: Pat
                 target_id = node_id("Method", project, target_class, method_name)
                 edges.append(GraphEdge(edge_id("CALLS_METHOD", source_id, target_id), source_id, target_id, "CALLS_METHOD", 0.55, {"hot_refreshed": True, "resolution_level": "targeted_heuristic"}))
     with GraphStore(store.graph_db_path) as graph:
-        graph.replace_file_subgraph(rel, nodes, edges)
+        graph.replace_file_subgraph(rel, nodes, edges, generation=generation, content_hash=content_hash)
+    return content_hash
 
 
 def record_dirty_files(workspace_file: str | Path, paths: list[str], source: str = "watcher") -> dict[str, Any]:
@@ -129,7 +152,8 @@ def hot_refresh_status(workspace_file: str | Path) -> dict[str, Any]:
     store = WorkspaceStore(workspace_file)
     manifest = store.read_json(MANIFEST_FILE, {}) or {}
     dirty = store.read_jsonl_prefer_backend(DIRTY_JOURNAL_FILE, limit=500)
-    return {"manifest_files": len(manifest) if isinstance(manifest, dict) else 0, "dirty_paths": len({str(row.get("path", "") or "") for row in dirty}), "dirty_events": len(dirty), "mode": "targeted_overlay"}
+    summary = store.read_json("hot-refresh-summary.json", {}) or {}
+    return {"manifest_files": len(manifest) if isinstance(manifest, dict) else 0, "dirty_paths": len({str(row.get("path", "") or "") for row in dirty}), "dirty_events": len(dirty), "mode": "targeted_overlay", "compacted_at": summary.get("compacted_at"), "compacted_generation_count": summary.get("generation_count", 0)}
 
 
 def compact_dirty_journal(store: WorkspaceStore) -> bool:
@@ -144,3 +168,20 @@ def compact_dirty_journal(store: WorkspaceStore) -> bool:
     with FileLock(str(store.lock_file)):
         path.write_text("".join(json.dumps(row, ensure_ascii=False) + "\n" for row in latest.values()), encoding="utf-8")
     return len(rows) != len(latest)
+
+
+def compact_hot_refresh_overlay(workspace_file: str | Path) -> dict[str, Any]:
+    """Compact the mutable refresh journal into a stable generation snapshot."""
+    store = WorkspaceStore(workspace_file)
+    manifest = store.read_json(MANIFEST_FILE, {}) or {}
+    dirty = store.read_jsonl_prefer_backend(DIRTY_JOURNAL_FILE, limit=5000)
+    compact_dirty_journal(store)
+    summary = {
+        "mode": "targeted_overlay",
+        "compacted_at": int(time.time()),
+        "generation_count": len(manifest) if isinstance(manifest, dict) else 0,
+        "max_generation": max((int(value.get("generation", 0) or 0) for value in manifest.values()), default=0) if isinstance(manifest, dict) else 0,
+        "dirty_events_before": len(dirty),
+    }
+    store.write_json("hot-refresh-summary.json", summary)
+    return summary

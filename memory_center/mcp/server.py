@@ -473,9 +473,12 @@ def create_server(workspace_file: str):
         sync_task_space: bool = True,
         budget: str = "medium",
         deadline_ms: int = 5_000,
+        request_tier: str = "standard",
     ):
         """Start a new task workflow. Sniffs workspace context, optionally syncs to task space, and starts a session. Returns consolidated context with services, files, rules, risk level, session_id, and task_id."""
         wf = ctx.workspace_file
+        if request_tier == "fast":
+            limit, budget, deadline_ms = min(limit, 6), "small", min(deadline_ms, 1_500)
         try:
             from memory_center.core.freshness.targeted_refresh import refresh_query_targets
             auto_refresh = refresh_query_targets(wf, intent, limit=min(limit, 12))
@@ -511,7 +514,7 @@ def create_server(workspace_file: str):
             _freshness = {"status": "unknown", "recommended_actions": [], "semantics": ""}
         # D-02: Context Pack recommendation for architecture/change intents
         _cp_rec = _build_context_pack_recommendation(wf, intent, sniff_result)
-        return {"workflow": "mc-start", "sniff": sniff_result, "sync_sniff": synced, "session": session, "auto_refresh": auto_refresh, "_workflow_guidance": guidance, "freshness": _freshness, "context_pack_recommendation": _cp_rec}
+        return {"workflow": "mc-start", "request_tier": request_tier, "sniff": sniff_result, "sync_sniff": synced, "session": session, "auto_refresh": auto_refresh, "_workflow_guidance": guidance, "freshness": _freshness, "context_pack_recommendation": _cp_rec}
 
     # ===================== FACADE 2: mc_lookup =====================
     @_safe_mcp_tool(mcp)
@@ -533,9 +536,12 @@ def create_server(workspace_file: str):
         enable_vector: bool = False,
         vector_weight: float = 0.15,
         session_id: str = "",
+        request_tier: str = "standard",
     ):
         """Unified knowledge lookup. Mode selects strategy: auto (system decides via lookup_hint), symbol (resolve name), code (keyword search), query (graph-aware multi-source), trace (cross-service by class/Feign/endpoint/MQ), chain (caller/callee analysis, use chain_direction), walkthrough (method-level indexed walkthrough), context (360-degree context for a service/symbol), contracts (list all Feign/API/MQ contracts), ref (resolve short memory reference IDs). For Class#method requests that say full chain/全链路/到底层, prefer mode='walkthrough' or auto; walkthrough returns summary_lines, local_service_continuations, feign_continuations.server_walkthroughs, service_impl_continuations, and absolute_file_path. If absolute_file_path is present, read that path directly and do not run find/grep/IDEA search to locate the same controller or impl. Use project to disambiguate when multiple modules contain the same symbol name."""
         wf = ctx.workspace_file
+        if request_tier == "fast":
+            limit, depth, report_level = min(limit, 8), min(depth, 1), "compact"
         try:
             from memory_center.core.freshness.targeted_refresh import refresh_query_targets
             auto_refresh = refresh_query_targets(wf, query or symbol or name or entry, limit=min(limit, 12))
@@ -543,6 +549,7 @@ def create_server(workspace_file: str):
             auto_refresh = {"checked": 0, "refreshed": False, "files": [], "elapsed_ms": 0.0, "mode": "unavailable", "coalesced": False}
         def emit(payload: dict[str, Any], emitted_mode: str) -> dict[str, Any]:
             payload["auto_refresh"] = auto_refresh
+            payload["request_tier"] = request_tier
             if session_id.strip():
                 workspace_record_agent_guidance(
                     wf,
@@ -709,26 +716,45 @@ def create_server(workspace_file: str):
         projects: list[str] | None = None,
         files: list[str] | None = None,
         scope: str = "staged",
+        execution_mode: str = "sync",
+        job_action: str = "",
+        job_id: str = "",
     ):
         """Analyze change impact and generate action plans. Depth quick: impact only. Depth standard: impact + change plan + rules check. Depth full: standard + contract check + verification checklist. If target is empty, runs detect-changes instead of impact."""
         wf = ctx.workspace_file
-        project_filter = project or ((projects or [None])[0] or "")
-        if target:
-            impact_result = memory_impact(wf, target, direction, max_depth, project=project_filter, view="compact", budget="small")
-        else:
-            impact_result = memory_detect_changes(wf, scope)
-        result = {"workflow": "mc-analyze", "depth": depth, "impact": impact_result}
-        if target:
-            result["candidate_paths"] = impact_result.get("candidate_paths", [])
-            result["recommended_path"] = impact_result.get("recommended_path", {})
-        if depth in ("standard", "full") and target:
-            result["plan"] = memory_plan_change(wf, target, direction, max_depth)
-            result["rules"] = workspace_check_rules(wf, projects, change_type, files)
-        if depth == "full" and target:
-            if contract_file:
-                result["contract"] = workspace_check_contract(wf, contract_file, change_type)
-            result["checklist"] = memory_verify_checklist(wf, target)
-        return result
+        if job_action == "status":
+            from memory_center.core.jobs import workspace_job_status
+            return {"workflow": "mc-analyze", "job": workspace_job_status(wf, job_id)}
+        if job_action == "cancel":
+            from memory_center.core.jobs import cancel_workspace_job
+            return {"workflow": "mc-analyze", "job": cancel_workspace_job(wf, job_id)}
+
+        def run_analysis() -> dict[str, Any]:
+            return _run_analysis()
+
+        def _run_analysis() -> dict[str, Any]:
+            project_filter = project or ((projects or [None])[0] or "")
+            if target:
+                impact_result = memory_impact(wf, target, direction, max_depth, project=project_filter, view="compact", budget="small")
+            else:
+                impact_result = memory_detect_changes(wf, scope)
+            result = {"workflow": "mc-analyze", "depth": depth, "impact": impact_result}
+            if target:
+                result["candidate_paths"] = impact_result.get("candidate_paths", [])
+                result["recommended_path"] = impact_result.get("recommended_path", {})
+            if depth in ("standard", "full") and target:
+                result["plan"] = memory_plan_change(wf, target, direction, max_depth)
+                result["rules"] = workspace_check_rules(wf, projects, change_type, files)
+            if depth == "full" and target:
+                if contract_file:
+                    result["contract"] = workspace_check_contract(wf, contract_file, change_type)
+                result["checklist"] = memory_verify_checklist(wf, target)
+            return result
+
+        if execution_mode == "background":
+            from memory_center.core.jobs import submit_workspace_job
+            return {"workflow": "mc-analyze", "job": submit_workspace_job(wf, "analysis", run_analysis), "execution_mode": "background"}
+        return run_analysis()
 
     # ===================== FACADE 4: mc_sync =====================
     @_safe_mcp_tool(mcp)

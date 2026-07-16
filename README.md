@@ -776,6 +776,14 @@ Before `mc_start` and `mc_lookup` return indexed evidence, Memory Center checks 
 
 `mc_start` 和 `mc_lookup` 返回索引证据前，会检查有界数量的图谱/路径候选。发现源码在索引后已变更时，只刷新该文件的 File/Class/Method 子图及其声明、注入、方法调用出边，并返回 `auto_refresh`；请求链路不会触发全量索引合并。文件 watcher 只写入去抖后的 dirty journal，由下一次相关请求消费。
 
+Hot refresh is coordinated per workspace across local Agents. Each replacement commits a content hash and file generation in the same SQLite transaction, then expands at most one graph hop to related API/Feign/DTO/MQ/config files. `mc_start` and `mc_lookup` support `request_tier="fast"|"standard"|"deep"`; `fast` has bounded retrieval. For costly impact analysis, use `mc_analyze(execution_mode="background")`, then poll or cancel with `job_action="status"|"cancel"` and `job_id`.
+
+热刷新会在同一 workspace 的本地 Agent 之间协调执行。每次替换会在同一个 SQLite 事务中提交内容哈希与文件 generation，并最多扩展一跳已有图关联的 API/Feign/DTO/MQ/config 文件。`mc_start` 与 `mc_lookup` 支持 `request_tier="fast"|"standard"|"deep"`；`fast` 强制有界检索。代价较高的影响分析可调用 `mc_analyze(execution_mode="background")`，再通过 `job_action="status"|"cancel"` 和 `job_id` 查询或取消。
+
+Task artifacts keep `current_summary` concise. Large writes are stored as immutable content-addressed evidence chunks and leave a lightweight evidence reference in the artifact, so resume/handoff never needs to load the entire original payload.
+
+任务工件保持 `current_summary` 紧凑。超大写入会保存为不可变、内容寻址的证据块，并在工件中只留下轻量引用，因此恢复和交接不需要加载完整原始 payload。
+
 Walkthrough key locations include `absolute_file_path`; agents should read that path directly instead of running `find` first.
 
 walkthrough 的关键落点包含 `absolute_file_path`；Agent 应直接读取该路径，不需要先执行 `find` 定位文件。

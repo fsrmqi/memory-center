@@ -105,6 +105,12 @@ class GraphStore:
                 CREATE INDEX IF NOT EXISTS idx_edges_source_type ON edges(source_id, type);
                 CREATE INDEX IF NOT EXISTS idx_edges_target_type ON edges(target_id, type);
                 CREATE INDEX IF NOT EXISTS idx_nodes_name ON nodes(name);
+                CREATE TABLE IF NOT EXISTS file_generations (
+                  file_path TEXT PRIMARY KEY,
+                  generation INTEGER NOT NULL DEFAULT 0,
+                  content_hash TEXT DEFAULT '',
+                  updated_at INTEGER NOT NULL DEFAULT 0
+                );
                 """
             )
             try:
@@ -119,6 +125,7 @@ class GraphStore:
         conn = self.connect()
         conn.execute("DELETE FROM edges")
         conn.execute("DELETE FROM nodes")
+        conn.execute("DELETE FROM file_generations")
         try:
             conn.execute("DELETE FROM node_search")
         except sqlite3.OperationalError:
@@ -165,6 +172,7 @@ class GraphStore:
         with fast_write_mode(conn):
             conn.execute("DELETE FROM edges")
             conn.execute("DELETE FROM nodes")
+            conn.execute("DELETE FROM file_generations")
             try:
                 conn.execute("DELETE FROM node_search")
             except sqlite3.OperationalError:
@@ -479,7 +487,15 @@ class GraphStore:
         counts["changed_node_ids"] = list(changed_ids)
         return counts
 
-    def replace_file_subgraph(self, file_path: str, nodes: Iterable[GraphNode], edges: Iterable[GraphEdge]) -> dict[str, Any]:
+    def replace_file_subgraph(
+        self,
+        file_path: str,
+        nodes: Iterable[GraphNode],
+        edges: Iterable[GraphEdge],
+        *,
+        generation: int | None = None,
+        content_hash: str = "",
+    ) -> dict[str, Any]:
         """Atomically replace one file's nodes and outgoing edges.
 
         Incoming edges are intentionally retained: callers in unchanged files
@@ -519,7 +535,32 @@ class GraphStore:
                     )
             except sqlite3.OperationalError:
                 pass
+            if generation is not None:
+                conn.execute(
+                    "INSERT INTO file_generations(file_path,generation,content_hash,updated_at) VALUES(?,?,?,strftime('%s','now')) "
+                    "ON CONFLICT(file_path) DO UPDATE SET generation=excluded.generation,content_hash=excluded.content_hash,updated_at=excluded.updated_at",
+                    (file_path, generation, content_hash),
+                )
         return {"removed_node_count": len(removed), "refreshed_node_count": len(node_list), "refreshed_edge_count": len(edge_list)}
+
+    def file_neighbors(self, file_path: str, limit: int = 24) -> list[str]:
+        """Return distinct source files connected to a file's graph nodes."""
+        sql = """
+            SELECT DISTINCT other.file_path
+            FROM edges e
+            JOIN nodes current ON current.id = e.source_id OR current.id = e.target_id
+            JOIN nodes other ON other.id = CASE WHEN e.source_id = current.id THEN e.target_id ELSE e.source_id END
+            WHERE current.file_path = ? AND other.file_path != '' AND other.file_path != ?
+            LIMIT ?
+        """
+        with self.connect() as conn:
+            rows = conn.execute(sql, (file_path, file_path, limit)).fetchall()
+        return [str(row[0]) for row in rows if row[0]]
+
+    def file_generation(self, file_path: str) -> dict[str, Any] | None:
+        with self.connect() as conn:
+            row = conn.execute("SELECT file_path,generation,content_hash,updated_at FROM file_generations WHERE file_path=?", (file_path,)).fetchone()
+        return dict(row) if row else None
 
     def _upsert_search_rows(self, node_dicts: Iterable[GraphNode]) -> None:
         """Insert/update FTS rows for a subset of nodes."""

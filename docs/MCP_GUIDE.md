@@ -36,6 +36,8 @@ MCP 当前公开的是 12 个 task-level tools：
 | `mc_domain` | 提取业务域和业务流 |
 | `mc_freshness` | 检查索引新鲜度与 stale/pending 风险 |
 
+`mc_start` / `mc_lookup` 可传 `request_tier="fast"|"standard"|"deep"`，其中 `fast` 会收紧候选数量和深度。`mc_analyze(execution_mode="background")` 会立即返回 `job_id`；使用同一工具并传入 `job_action="status"|"cancel"` 与 `job_id` 即可读取或取消后台分析。默认仍是同步执行，保持既有调用兼容。
+
 ## 3. Recommended Agent Behavior / 推荐 Agent 行为
 
 推荐顺序：

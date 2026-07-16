@@ -8,6 +8,8 @@ from memory_center.core.artifacts import (
     resolve_task_space,
     task_space_health,
     update_task_artifact,
+    write_task_evidence_chunk,
+    get_task_evidence_chunk,
 )
 from memory_center.core.orchestrator import sync as sync_module
 
@@ -80,3 +82,19 @@ def test_direct_task_update_rejects_oversized_merge_without_reading(tmp_path: Pa
     assert result["updated"] is False
     assert result["reason"] == "artifact_too_large_for_merge"
     assert plan_path.stat().st_size > TASK_ARTIFACT_WRITE_MAX_BYTES
+
+
+def test_large_task_update_is_content_addressed_evidence(tmp_path: Path):
+    workspace = _workspace(tmp_path)
+    task = create_task_space(workspace, title="证据分块")
+    payload = "证据" * (40 * 1024)
+
+    result = update_task_artifact(workspace, task["task_id"], "context", payload)
+    duplicate = write_task_evidence_chunk(workspace, task["task_id"], payload)
+    loaded = get_task_evidence_chunk(workspace, task["task_id"], result["evidence"]["ref"], max_bytes=32)
+
+    assert result["updated"] is True
+    assert result["evidence"]["hash"] == duplicate["hash"]
+    assert duplicate["deduplicated"] is True
+    assert loaded["found"] is True
+    assert loaded["truncated"] is True

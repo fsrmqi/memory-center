@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from memory_center.core.config import load_workspace_config
-from memory_center.core.freshness.targeted_refresh import refresh_query_targets
+from memory_center.core.freshness.targeted_refresh import compact_hot_refresh_overlay, hot_refresh_status, refresh_query_targets
 from memory_center.core.graph import GraphStore
 from memory_center.core.indexer import reindex_workspace
 from memory_center.core.store import WorkspaceStore
@@ -26,4 +26,11 @@ def test_targeted_refresh_updates_only_changed_query_file(tmp_path: Path) -> Non
     assert second["refreshed"] is False
     with GraphStore(store.graph_db_path) as graph:
         nodes = graph.find_nodes("ArticleFeignClient", types=["Class"], limit=5)
+        generation = graph.file_generation(row["path"])
     assert any(node["name"] == "ArticleFeignClient" for node in nodes)
+    assert generation and generation["generation"] == 1
+    assert generation["content_hash"]
+    compacted = compact_hot_refresh_overlay(workspace)
+    status = hot_refresh_status(workspace)
+    assert compacted["generation_count"] == 1
+    assert status["compacted_generation_count"] == 1

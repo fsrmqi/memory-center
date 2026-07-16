@@ -239,6 +239,10 @@ Agent task
 | 理解业务域 | `mc_domain` | 从图谱提取业务域、业务流和影响关系 |
 | 新人导览 | `mc_onboard` | 按 developer / architect / product / tester persona 生成导览 |
 
+查询期的热刷新不是一次全量重建：`RefreshCoordinator` 以 workspace 锁协调并发 Agent，先对命中/dirty 文件做内容哈希和 generation 校验，再以单 SQLite 事务替换子图及 generation 记录。它只扩展一跳既有依赖边，避免正常链路分析变成全库扫描。深度分析可提交为本地后台 job，并通过任务状态读取或取消；任务空间的大证据则以 SHA-256 内容块保存，摘要仅持有引用。
+
+Query-time refresh is not a full rebuild: `RefreshCoordinator` coordinates concurrent local Agents, validates content hash and generation for matched/dirty files, and replaces the subgraph plus generation record in one SQLite transaction. It expands only one existing dependency hop. Deep analysis can run as a local background job; large task evidence is stored as SHA-256 addressed chunks while summaries retain only references.
+
 ### 3.3 写入与沉淀 / Write and Memory Flow
 
 Memory Center 不把模型临时输出直接当成长期知识。写入链路会区分 session event、task artifact、case atom 和 workspace profile：

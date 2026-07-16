@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 import shutil
+from hashlib import sha256
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -50,6 +51,7 @@ DEFAULT_RESOLVE_SCORE_THRESHOLD = 3
 TASK_ARTIFACT_EXCERPT_BYTES = 16 * 1024
 TASK_ARTIFACT_HEALTH_EXCERPT_BYTES = 64 * 1024
 TASK_ARTIFACT_WRITE_MAX_BYTES = 512 * 1024
+TASK_EVIDENCE_INLINE_MAX_BYTES = 64 * 1024
 ARTIFACT_WRITE_AUDIT_FILE = "artifact-write-audit.jsonl"
 TASK_HEALTH_ARTIFACTS = ["current_summary", "context", "requirement", "design", "plan", "test_plan", "change_log"]
 
@@ -702,6 +704,14 @@ def update_task_artifact(workspace_file: str | Path, task_id: str, name: str, co
     task_dir, meta = _resolve_task_dir(store, task_id)
     key, filename = _resolve_artifact_name(name, include_task_only=True)
     path = task_dir / filename
+    evidence = None
+    if len(content.encode("utf-8")) > TASK_EVIDENCE_INLINE_MAX_BYTES:
+        evidence = write_task_evidence_chunk(workspace_file, task_id, content, source=source)
+        content = (
+            "## Evidence Reference / 证据引用\n\n"
+            f"Large evidence was stored by content hash: `{evidence['ref']}`. "
+            "Use task evidence retrieval when full detail is needed.\n"
+        )
     existing_bytes = path.stat().st_size if path.exists() else 0
     if existing_bytes > TASK_ARTIFACT_WRITE_MAX_BYTES:
         return {
@@ -758,7 +768,55 @@ def update_task_artifact(workspace_file: str | Path, task_id: str, name: str, co
         "write_mode": mode,
         "audit_ref": audit,
         "write_receipt": receipt,
+        "evidence": evidence,
     }
+
+
+def write_task_evidence_chunk(
+    workspace_file: str | Path,
+    task_id: str,
+    content: str,
+    *,
+    source: str = "evidence",
+) -> dict[str, object]:
+    """Store immutable task evidence by content hash and return a stable ref."""
+    store = WorkspaceStore(workspace_file)
+    task_dir, meta = _resolve_task_dir(store, task_id)
+    payload = content.encode("utf-8")
+    digest = sha256(payload).hexdigest()
+    relative = f"evidence/{digest}.md"
+    path = task_dir / relative
+    with FileLock(str(store.lock_file)):
+        existed = path.exists()
+        if not existed:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(content, encoding="utf-8")
+    return {
+        "task_id": meta["task_id"],
+        "ref": f"evidence:{digest}",
+        "hash": digest,
+        "file": relative,
+        "path": str(path),
+        "bytes": len(payload),
+        "source": source,
+        "deduplicated": existed,
+    }
+
+
+def get_task_evidence_chunk(workspace_file: str | Path, task_id: str, ref: str, *, max_bytes: int = TASK_ARTIFACT_EXCERPT_BYTES) -> dict[str, object]:
+    """Read a bounded evidence excerpt; callers can request a larger bound explicitly."""
+    store = WorkspaceStore(workspace_file)
+    task_dir, meta = _resolve_task_dir(store, task_id)
+    digest = ref.removeprefix("evidence:").strip()
+    if not re.fullmatch(r"[0-9a-f]{64}", digest):
+        raise ValueError("Invalid evidence reference")
+    path = task_dir / "evidence" / f"{digest}.md"
+    total_bytes = path.stat().st_size if path.exists() else 0
+    if not path.exists():
+        return {"task_id": meta["task_id"], "ref": f"evidence:{digest}", "found": False, "content": ""}
+    with path.open("rb") as handle:
+        content = handle.read(max(0, max_bytes)).decode("utf-8", errors="replace")
+    return {"task_id": meta["task_id"], "ref": f"evidence:{digest}", "found": True, "content": content, "total_bytes": total_bytes, "truncated": total_bytes > max_bytes}
 
 
 def update_task_current_summary_snapshot(
