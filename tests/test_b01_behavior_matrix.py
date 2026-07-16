@@ -759,9 +759,9 @@ class TestBackendFunctionSharing:
             )
 
     def test_http_uses_shared_backend(self):
-        from memory_center.http.routes import analysis, workflow, workspace
+        from memory_center.application import admin, analysis, quality_gates
 
-        http_src = "\n".join(inspect.getsource(module) for module in (workspace, workflow, analysis))
+        http_src = "\n".join(inspect.getsource(module) for module in (admin, analysis, quality_gates))
         for cap_name, func_name in self.BACKEND_FUNCTIONS.items():
             assert func_name in http_src, (
                 f"HTTP route registry does not reference backend function "

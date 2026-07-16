@@ -75,9 +75,7 @@ def test_metrics_summary_action_is_pure() -> None:
 
 def test_explanation_action_uses_persona() -> None:
     out = explanation_action("hello", persona="developer")
-    assert "explanation" in out
-    inner = out["explanation"]
-    assert inner.get("persona") == "developer"
+    assert out.get("persona") == "developer"
 
 
 def test_parse_payload_handles_json_and_plain_text() -> None:

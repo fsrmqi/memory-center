@@ -8,7 +8,7 @@ from pathlib import Path
 def _imports_package(path: Path, package: str) -> bool:
     tree = ast.parse(path.read_text(encoding="utf-8"))
     for node in ast.walk(tree):
-        if isinstance(node, ast.ImportFrom) and (node.module or "").startswith(package):
+        if isinstance(node, ast.ImportFrom) and ((node.module or "").startswith(package) or (node.module or "") == package.rsplit(".", 1)[-1]):
             return True
         if isinstance(node, ast.Import) and any(alias.name.startswith(package) for alias in node.names):
             return True
@@ -97,9 +97,13 @@ def test_ambiguous_core_module_names_do_not_return() -> None:
     assert not [path for path in forbidden if (root / path).exists()]
 
 
-def test_lower_core_packages_do_not_depend_on_orchestrator() -> None:
+def test_non_orchestrator_core_packages_do_not_depend_on_orchestrator() -> None:
     root = Path(__file__).parents[1] / "memory_center" / "core"
-    protected_packages = ("workspace", "knowledge", "retrieval")
+    protected_packages = tuple(
+        path.name
+        for path in root.iterdir()
+        if path.is_dir() and (path / "__init__.py").exists() and path.name != "orchestrator"
+    )
     offenders = [
         str(path)
         for package in protected_packages
@@ -108,3 +112,17 @@ def test_lower_core_packages_do_not_depend_on_orchestrator() -> None:
         or _imports_package(path, "..orchestrator")
     ]
     assert not offenders
+
+
+def test_http_routes_only_depend_on_application_or_foundation() -> None:
+    root = Path(__file__).parents[1] / "memory_center" / "http" / "routes"
+    forbidden = []
+    for path in root.glob("*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.ImportFrom):
+                continue
+            module = node.module or ""
+            if module.startswith("memory_center.core.") and not module.startswith("memory_center.core.foundation."):
+                forbidden.append(f"{path}:{module}")
+    assert not forbidden

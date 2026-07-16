@@ -9,6 +9,12 @@ from urllib.request import urlopen
 from typer.testing import CliRunner
 
 from memory_center import __version__
+from memory_center.application.presentation import (
+    export_mermaid,
+    export_workspace_dashboard_html,
+    export_workspace_dashboard_markdown,
+)
+from memory_center.application.tasks import execute_task_repair as task_space_repair_execute
 from memory_center.cli.main import app
 from memory_center.core.foundation.schemas import validate_schema_payload
 from memory_center.core.governance.instructions import write_agent_instructions
@@ -58,11 +64,6 @@ from memory_center.core.orchestrator import (
     workspace_write_receipts,
 )
 from memory_center.core.orchestrator.shared import _merge_artifact_section
-from memory_center.core.presentation.exporters import (
-    export_mermaid,
-    export_workspace_dashboard_html,
-    export_workspace_dashboard_markdown,
-)
 from memory_center.core.storage.workspace import WorkspaceStore
 from memory_center.core.tasks.artifacts import (
     ARTIFACT_WRITE_AUDIT_FILE,
@@ -80,7 +81,6 @@ from memory_center.core.tasks.artifacts import (
     list_task_spaces,
     resolve_task_space,
     task_space_health,
-    task_space_repair_execute,
     task_space_repair_plan,
     task_spaces_health,
     touch_task_activity,

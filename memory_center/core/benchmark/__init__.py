@@ -1,4 +1,5 @@
 """Benchmark — token usage monitoring and regression detection."""
+
 from .baseline import (
     PORTABLE_BASELINE_FILE,
     compare_baseline_samples,
@@ -12,13 +13,6 @@ from .java_call_resolution import (
     review_java_call_resolution_suite,
     run_java_call_resolution_suite,
     summarize_unresolved_java_calls,
-)
-from .release_gate import (
-    build_release_gate_baseline,
-    compare_release_gate_baseline,
-    load_release_gate_baseline,
-    run_release_gate,
-    save_release_gate_baseline,
 )
 from .trending import (
     AGENT_GUIDANCE_ADOPTION_TREND_FILE,
@@ -50,11 +44,6 @@ __all__ = [
     "summarize_unresolved_java_calls",
     "score_golden_case",
     "save_golden_performance_baseline",
-    "build_release_gate_baseline",
-    "compare_release_gate_baseline",
-    "load_release_gate_baseline",
-    "run_release_gate",
-    "save_release_gate_baseline",
     "PORTABLE_BASELINE_FILE",
     "compare_baseline_samples",
     "record_baseline_sample",

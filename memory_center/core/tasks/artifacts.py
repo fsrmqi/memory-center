@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 import shutil
+from collections.abc import Callable
 from datetime import datetime, timezone
 from hashlib import sha256
 from pathlib import Path
@@ -570,6 +571,7 @@ def task_space_repair_execute(
     *,
     apply: bool = False,
     intent: str = "",
+    sync_sniff: Callable[[str | Path, str, str], dict[str, object]] | None = None,
 ) -> dict[str, object]:
     plan = task_space_repair_plan(workspace_file, task_id)
     steps = plan.get("repair_plan", []) if isinstance(plan.get("repair_plan", []), list) else []
@@ -594,7 +596,7 @@ def task_space_repair_execute(
         if item.get("requires_intent") and not intent.strip():
             results.append({**item, "applied": False, "status": "blocked", "reason": "intent_required"})
             continue
-        results.append(_apply_repair_execution_step(workspace_file, str(plan.get("task_id", task_id)), item, intent=intent))
+        results.append(_apply_repair_execution_step(workspace_file, str(plan.get("task_id", task_id)), item, intent=intent, sync_sniff=sync_sniff))
     after_health = task_space_health(workspace_file, str(plan.get("task_id", task_id)))
     return {
         "workspace": plan.get("workspace", ""),
@@ -1616,14 +1618,14 @@ def _repair_execution_command(workspace_file: str | Path, task_id: str, action: 
     return "manual review"
 
 
-def _apply_repair_execution_step(workspace_file: str | Path, task_id: str, item: dict[str, object], intent: str = "") -> dict[str, object]:
+def _apply_repair_execution_step(workspace_file: str | Path, task_id: str, item: dict[str, object], intent: str = "", sync_sniff: Callable[[str | Path, str, str], dict[str, object]] | None = None) -> dict[str, object]:
     action = str(item.get("action", ""))
     target = str(item.get("target", ""))
     try:
         if action == "sync_sniff_artifacts":
-            from ..orchestrator.sync import workspace_sync_sniff_to_artifacts
-
-            result = workspace_sync_sniff_to_artifacts(workspace_file, intent, task_id=task_id, limit=8)
+            if sync_sniff is None:
+                return {**item, "applied": False, "status": "blocked", "reason": "sync_sniff_callback_required"}
+            result = sync_sniff(workspace_file, intent, task_id)
             return {**item, "applied": bool(result.get("synced")), "status": "applied" if result.get("synced") else "failed", "result": result}
         if action == "append_repair_template" and target in {"context", "plan"}:
             content = _repair_apply_template(target, str(item.get("issue_code", "")))

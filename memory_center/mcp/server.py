@@ -16,15 +16,9 @@ CLI and HTTP server keep their fine-grained interfaces unchanged.
 from __future__ import annotations
 
 import argparse
-import inspect
 import re
-import time
-from functools import wraps
-from pathlib import Path
 from typing import Any
 
-from memory_center.core.foundation.errors import normalize_exception
-from memory_center.core.governance.registry import load_registry
 from memory_center.core.orchestrator import (
     _annotate_phantom_nodes,
     group_chain,
@@ -55,8 +49,6 @@ from memory_center.core.orchestrator import (
     workspace_record_case,
     workspace_record_close_feedback,
     workspace_resume_packet,
-    workspace_sniff,
-    workspace_start_session,
     workspace_status,
     workspace_suggest_case,
     workspace_sync_case_to_artifacts,
@@ -64,7 +56,7 @@ from memory_center.core.orchestrator import (
     workspace_trace,
     workspace_unresolved_items,
 )
-from memory_center.core.storage.workspace import WorkspaceStore
+from memory_center.mcp.runtime import WorkspaceContext, find_groups_for_workspace, safe_mcp_tool
 
 _JAVA_CHAIN_SYMBOL_RE = re.compile(
     r"((?:[a-z_][\w$]*\.)+[A-Z][\w$]*(?:#[a-zA-Z_][\w$]*)?|[A-Z][\w$]*(?:#[a-zA-Z_][\w$]*)?)"
@@ -81,89 +73,6 @@ _SHARED_BACKEND_CONTRACTS = (
     "extract_business_flows_for_workspace",
     "business_flow_impact_for_workspace",
 )
-
-def _find_workspace_name_in_registry(workspace_file: str, registry: dict[str, Any]) -> str | None:
-    wf_resolved = str(Path(workspace_file).expanduser().resolve())
-    for repo in registry.get("repos", []):
-        if str(Path(repo.get("workspace_file", "")).expanduser().resolve()) == wf_resolved:
-            return repo.get("name")
-    return None
-
-def _find_groups_for_workspace(workspace_file: str) -> list[str]:
-    registry = load_registry()
-    ws_name = _find_workspace_name_in_registry(workspace_file, registry)
-    if not ws_name:
-        return []
-    groups: list[str] = []
-    for group in registry.get("groups", []):
-        if ws_name in group.get("members", []):
-            groups.append(group.get("name", ""))
-    return groups
-
-class _WorkspaceContext:
-    """Holds workspace file path per server instance, avoiding module-level global."""
-    def __init__(self, workspace_file: str):
-        self.workspace_input = workspace_file
-        self.workspace_file = _resolve_workspace_input(workspace_file)
-        self.startup_diagnostics = _build_startup_diagnostics(self.workspace_input, self.workspace_file)
-
-
-def _build_startup_diagnostics(workspace_input: str, workspace_file: str) -> dict[str, Any]:
-    diagnostics: dict[str, Any] = {
-        "workspace_input": workspace_input,
-        "workspace_file": workspace_file,
-        "resolved_from_directory": str(workspace_input or "").strip() != workspace_file,
-        "ok": False,
-        "checks": [],
-        "next_actions": [],
-    }
-    try:
-        from memory_center.core.governance.instructions import inspect_agent_mcp_bindings
-        from memory_center.core.workspace.config import load_workspace_config
-
-        config = load_workspace_config(workspace_file)
-        bindings = inspect_agent_mcp_bindings(WorkspaceStore(workspace_file), config.root_path)
-        diagnostics.update(
-            {
-                "ok": bool(bindings.get("ok")) and bool(bindings.get("command_available")),
-                "workspace": config.workspace,
-                "workspace_root": str(Path(config.root_path).expanduser().resolve()),
-                "mcp_bindings": bindings,
-            }
-        )
-        diagnostics["checks"].append({"name": "workspace_resolved", "ok": True})
-        diagnostics["checks"].append({"name": "mcp_bindings", "ok": bool(bindings.get("ok"))})
-        diagnostics["checks"].append({"name": "mcp_command_available", "ok": bool(bindings.get("command_available"))})
-        if not bindings.get("ok"):
-            diagnostics["next_actions"].append(
-                "运行 `memory-center setup-agent --workspace <workspace.yaml>` 自动刷新根目录和子项目 MCP 绑定。"
-            )
-        if not bindings.get("command_available"):
-            diagnostics["next_actions"].append("确认 memory-center-mcp 已安装且在宿主 PATH 中。")
-    except Exception as exc:
-        diagnostics["error"] = str(exc)
-        diagnostics["checks"].append({"name": "workspace_resolved", "ok": False})
-        diagnostics["next_actions"].append("确认 --workspace 指向 .memory-center/workspace.yaml，或传入聚合 workspace / 子项目目录。")
-    return diagnostics
-
-
-def _resolve_workspace_input(workspace_input: str) -> str:
-    """Resolve a file/dir input to workspace.yaml when possible, without hard failure."""
-    raw = (workspace_input or ".").strip() or "."
-    path = Path(raw).expanduser()
-    if path.is_file():
-        return str(path.resolve())
-    start = path.resolve() if path.exists() else Path.cwd().resolve()
-    if start.name == ".memory-center":
-        candidate = start / "workspace.yaml"
-        if candidate.exists():
-            return str(candidate.resolve())
-    for parent in [start, *start.parents]:
-        candidate = parent / ".memory-center" / "workspace.yaml"
-        if candidate.exists():
-            return str(candidate.resolve())
-    return str(path.resolve())
-
 
 def _extract_symbol_like_token(*values: str) -> str:
     for raw in values:
@@ -423,50 +332,19 @@ def _build_context_pack_recommendation(wf: str, intent: str, sniff_result: dict)
     }
 
 
-def _mcp_error_boundary(fn):
-    """Wrap an MCP tool without changing its registered schema."""
-    if inspect.iscoroutinefunction(fn):
-        @wraps(fn)
-        async def async_wrapped(*args, **kwargs):
-            try:
-                return await fn(*args, **kwargs)
-            except Exception as exc:
-                return normalize_exception(exc).to_mcp_dict()
-
-        return async_wrapped
-
-    @wraps(fn)
-    def wrapped(*args, **kwargs):
-        try:
-            return fn(*args, **kwargs)
-        except Exception as exc:
-            return normalize_exception(exc).to_mcp_dict()
-
-    return wrapped
-
-
-def _safe_mcp_tool(mcp):
-    """Register an MCP tool with the unified error boundary."""
-    def decorator(fn):
-        return mcp.tool()(_mcp_error_boundary(fn))
-
-    return decorator
-
-
 def create_server(workspace_file: str):
     try:
         from mcp.server.fastmcp import FastMCP
     except Exception as exc:  # pragma: no cover
         raise RuntimeError("Please install MCP dependency: pip install -e .[mcp]") from exc
 
-    ctx = _WorkspaceContext(workspace_file)
+    ctx = WorkspaceContext(workspace_file)
     mcp = FastMCP("Memory Center")
 
     # Import workflow templates for guidance
-    from memory_center.core.governance.templates import get_workflow_guidance
 
     # ===================== FACADE 1: mc_start =====================
-    @_safe_mcp_tool(mcp)
+    @safe_mcp_tool(mcp)
     def mc_start(
         intent: str,
         limit: int = 12,
@@ -477,53 +355,14 @@ def create_server(workspace_file: str):
         request_tier: str = "standard",
     ):
         """Start a new task workflow. Sniffs workspace context, optionally syncs to task space, and starts a session. Returns consolidated context with services, files, rules, risk level, session_id, and task_id."""
-        wf = ctx.workspace_file
-        from memory_center.core.retrieval.planner import QueryPlanner
-        planner = QueryPlanner(wf)
-        plan = planner.plan(tier=request_tier, limit=limit)
-        started_at = time.perf_counter()
-        limit, deadline_ms = plan.limit, min(deadline_ms, plan.deadline_ms)
-        if plan.tier == "fast":
-            budget = "small"
-        try:
-            from memory_center.core.freshness.targeted_refresh import refresh_query_targets
-            auto_refresh = refresh_query_targets(wf, intent, limit=min(limit, 12))
-        except Exception:
-            auto_refresh = {"checked": 0, "refreshed": False, "files": [], "elapsed_ms": 0.0, "mode": "unavailable", "coalesced": False}
-        sniff_result = workspace_sniff(
-            wf,
-            intent,
-            limit=limit,
-            auto_sync_mode=auto_sync_mode,
-            view="compact",
-            budget=budget,
-            deadline_ms=deadline_ms,
-        )
-        synced = None
-        resolved_task = sniff_result.get("resolved_task", {}) or {}
-        auto_sync = sniff_result.get("auto_sync_recommendation", {}) or {}
-        if sync_task_space and (auto_sync.get("recommended") or resolved_task.get("task_id")):
-            synced = workspace_sync_sniff_to_artifacts(
-                wf, intent, limit=limit,
-                task_id=str(resolved_task.get("task_id", "") or ""),
-                title=str(resolved_task.get("title", "") or ""),
-                auto_sync_mode=auto_sync_mode,
-                sniff_result=sniff_result,
-            )
-        session = workspace_start_session(wf, intent)
-        guidance = get_workflow_guidance("work-start", {"risk_level": sniff_result.get("risk_level", ""), "task_id": resolved_task.get("task_id", "")})
-        # D-01: Freshness enters mc_start main chain
-        try:
-            from memory_center.core.freshness.integration import get_freshness_with_actions
-            _freshness = get_freshness_with_actions(wf)
-        except Exception:
-            _freshness = {"status": "unknown", "recommended_actions": [], "semantics": ""}
-        # D-02: Context Pack recommendation for architecture/change intents
-        _cp_rec = _build_context_pack_recommendation(wf, intent, sniff_result)
-        return {"workflow": "mc-start", "request_tier": plan.tier, "query_plan": planner.record("mc_start", plan, started_at, outcome="completed"), "sniff": sniff_result, "sync_sniff": synced, "session": session, "auto_refresh": auto_refresh, "_workflow_guidance": guidance, "freshness": _freshness, "context_pack_recommendation": _cp_rec}
+        from memory_center.application.task_start import start_task
+
+        result = start_task(ctx.workspace_file, intent, limit=limit, auto_sync_mode=auto_sync_mode, sync_task_space=sync_task_space, budget=budget, deadline_ms=deadline_ms, request_tier=request_tier)
+        result["context_pack_recommendation"] = _build_context_pack_recommendation(ctx.workspace_file, intent, result["sniff"])
+        return result
 
     # ===================== FACADE 2: mc_lookup =====================
-    @_safe_mcp_tool(mcp)
+    @safe_mcp_tool(mcp)
     def mc_lookup(
         query: str,
         mode: str = "auto",
@@ -546,46 +385,25 @@ def create_server(workspace_file: str):
     ):
         """Unified knowledge lookup. Mode selects strategy: auto (system decides via lookup_hint), symbol (resolve name), code (keyword search), query (graph-aware multi-source), trace (cross-service by class/Feign/endpoint/MQ), chain (caller/callee analysis, use chain_direction), walkthrough (method-level indexed walkthrough), context (360-degree context for a service/symbol), contracts (list all Feign/API/MQ contracts), ref (resolve short memory reference IDs). For Class#method requests that say full chain/全链路/到底层, prefer mode='walkthrough' or auto; walkthrough returns summary_lines, local_service_continuations, feign_continuations.server_walkthroughs, service_impl_continuations, and absolute_file_path. If absolute_file_path is present, read that path directly and do not run find/grep/IDEA search to locate the same controller or impl. Use project to disambiguate when multiple modules contain the same symbol name."""
         wf = ctx.workspace_file
-        from memory_center.core.retrieval.planner import QueryPlanner
-        planner = QueryPlanner(wf)
-        plan = planner.plan(tier=request_tier, limit=limit, depth=depth, enable_vector=enable_vector, project=project)
-        started_at = time.perf_counter()
+        from memory_center.application.lookup import finalize_lookup, prepare_lookup
+
+        lookup_target = query or symbol or name or entry
+        prepared = prepare_lookup(
+            wf,
+            lookup_target,
+            request_tier=request_tier,
+            limit=limit,
+            depth=depth,
+            enable_vector=enable_vector,
+            project=project,
+        )
+        plan = prepared["plan"]
         limit, depth, enable_vector = plan.limit, plan.depth, plan.enable_vector
         if plan.tier == "fast":
             report_level = "compact"
-        try:
-            from memory_center.core.retrieval.cross_service import (
-                query_cross_service_shards,
-                route_cross_service_shards,
-            )
 
-            shard_route = route_cross_service_shards(wf, query or symbol or name or entry, tier=plan.tier, project=project)
-            shard_evidence = query_cross_service_shards(wf, query or symbol or name or entry, shard_route, limit=limit)
-        except Exception:
-            shard_route = {"available": False, "reason": "routing_unavailable", "selected_projects": []}
-            shard_evidence = {"queried_projects": [], "matches": [], "source": "unavailable"}
-        try:
-            from memory_center.core.freshness.targeted_refresh import refresh_query_targets
-            auto_refresh = refresh_query_targets(wf, query or symbol or name or entry, limit=min(limit, 12))
-        except Exception:
-            auto_refresh = {"checked": 0, "refreshed": False, "files": [], "elapsed_ms": 0.0, "mode": "unavailable", "coalesced": False}
         def emit(payload: dict[str, Any], emitted_mode: str) -> dict[str, Any]:
-            payload["auto_refresh"] = auto_refresh
-            payload["request_tier"] = plan.tier
-            payload["query_plan"] = planner.record("mc_lookup", plan, started_at, outcome="completed")
-            payload["shard_route"] = shard_route
-            payload["shard_evidence"] = shard_evidence
-            try:
-                from memory_center.core.retrieval.cross_service_fusion import fuse_cross_shard_result
-                payload["cross_shard_fusion"] = fuse_cross_shard_result(
-                    wf,
-                    query or symbol or name or entry,
-                    payload,
-                    shard_route,
-                    shard_evidence,
-                )
-            except Exception:
-                payload["cross_shard_fusion"] = {"generation": {"consistent": False, "status": "fusion_unavailable"}, "conclusions": [], "next_actions": []}
+            payload = finalize_lookup(wf, lookup_target, payload, prepared, "mc_lookup")
             if session_id.strip():
                 workspace_record_agent_guidance(
                     wf,
@@ -629,7 +447,7 @@ def create_server(workspace_file: str):
             # Strip suffix for cleaner matching
             preferred_bare = [t.replace("_tool", "") for t in preferred]
             if "memory_callers" in preferred_bare and resolved_symbol:
-                matching_groups = _find_groups_for_workspace(wf)
+                matching_groups = find_groups_for_workspace(wf)
                 if len(matching_groups) == 1:
                     result = group_chain(matching_groups[0], resolved_symbol, direction="callers", depth=resolved_depth, limit=limit)
                     result["agent_next_steps"] = _agent_next_steps_for_lookup_route("chain-group", result, query)
@@ -641,7 +459,7 @@ def create_server(workspace_file: str):
                     return emit(_lookup_payload_with_agent_steps("mode_used", "chain-callers", result, matching_groups=matching_groups, _hint=f"Workspace 属于多个 group ({', '.join(matching_groups)})，请用 mc_admin(action='group_chain', group=...) 显式指定。", **decision_fields), "chain-callers")
                 return emit(_lookup_payload_with_agent_steps("mode_used", "chain-callers", result, **decision_fields), "chain-callers")
             if "memory_callees" in preferred_bare and resolved_symbol:
-                matching_groups = _find_groups_for_workspace(wf)
+                matching_groups = find_groups_for_workspace(wf)
                 if len(matching_groups) == 1:
                     result = group_chain(matching_groups[0], resolved_symbol, direction="callees", depth=resolved_depth, limit=limit)
                     result["agent_next_steps"] = _agent_next_steps_for_lookup_route("chain-group", result, query)
@@ -701,7 +519,7 @@ def create_server(workspace_file: str):
             return emit(_lookup_payload_with_agent_steps("mode", "trace", result), "trace")
         if mode == "chain":
             cross_types = ["CALLS_SERVICE", "IMPLEMENTS_FEIGN"] if scope == "cross-service" else None
-            matching_groups = _find_groups_for_workspace(wf)
+            matching_groups = find_groups_for_workspace(wf)
             if len(matching_groups) == 1:
                 result = group_chain(matching_groups[0], symbol or query,
                                       direction=chain_direction, depth=depth, limit=limit)
@@ -740,7 +558,7 @@ def create_server(workspace_file: str):
         raise ValueError(f"Unknown mc_lookup mode: {mode}. Valid: auto, symbol, code, query, trace, chain, walkthrough, context, contracts, ref, backend")
 
     # ===================== FACADE 3: mc_analyze =====================
-    @_safe_mcp_tool(mcp)
+    @safe_mcp_tool(mcp)
     def mc_analyze(
         target: str,
         depth: str = "standard",
@@ -760,11 +578,11 @@ def create_server(workspace_file: str):
         """Analyze change impact and generate action plans. Depth quick: impact only. Depth standard: impact + change plan + rules check. Depth full: standard + contract check + verification checklist. If target is empty, runs detect-changes instead of impact."""
         wf = ctx.workspace_file
         if job_action == "status":
-            from memory_center.core.workspace.jobs import workspace_job_status
-            return {"workflow": "mc-analyze", "job": workspace_job_status(wf, job_id)}
+            from memory_center.application.jobs import analysis_job_status
+            return {"workflow": "mc-analyze", "job": analysis_job_status(wf, job_id)}
         if job_action == "cancel":
-            from memory_center.core.workspace.jobs import cancel_workspace_job
-            return {"workflow": "mc-analyze", "job": cancel_workspace_job(wf, job_id)}
+            from memory_center.application.jobs import cancel_analysis_job
+            return {"workflow": "mc-analyze", "job": cancel_analysis_job(wf, job_id)}
 
         def run_analysis() -> dict[str, Any]:
             return _run_analysis()
@@ -786,28 +604,17 @@ def create_server(workspace_file: str):
                 result["contract"] = workspace_check_contract(wf, contract_file or target, change_type)
                 result["checklist"] = memory_verify_checklist(wf, target)
                 if task_id.strip():
-                    try:
-                        import json
-
-                        from memory_center.core.tasks.artifacts import write_task_evidence_chunk
-
-                        result["contract_evidence"] = write_task_evidence_chunk(
-                            wf,
-                            task_id,
-                            json.dumps(result["contract"], ensure_ascii=False, indent=2),
-                            source="mc_analyze_contract",
-                        )
-                    except Exception as exc:
-                        result["contract_evidence"] = {"stored": False, "reason": str(exc)}
+                    from memory_center.application.jobs import write_contract_evidence
+                    result["contract_evidence"] = write_contract_evidence(wf, task_id, result["contract"])
             return result
 
         if execution_mode == "background":
-            from memory_center.core.workspace.jobs import submit_workspace_job
-            return {"workflow": "mc-analyze", "job": submit_workspace_job(wf, "analysis", run_analysis), "execution_mode": "background"}
+            from memory_center.application.jobs import submit_analysis_job
+            return {"workflow": "mc-analyze", "job": submit_analysis_job(wf, run_analysis), "execution_mode": "background"}
         return run_analysis()
 
     # ===================== FACADE 4: mc_sync =====================
-    @_safe_mcp_tool(mcp)
+    @safe_mcp_tool(mcp)
     def mc_sync(
         intent: str = "",
         session_id: str = "",
@@ -825,7 +632,7 @@ def create_server(workspace_file: str):
         raise ValueError("mc_sync requires intent or session_id")
 
     # ===================== FACADE 5: mc_resume =====================
-    @_safe_mcp_tool(mcp)
+    @safe_mcp_tool(mcp)
     def mc_resume(
         intent: str = "",
         task_id: str = "",
@@ -844,7 +651,7 @@ def create_server(workspace_file: str):
         }
 
     # ===================== FACADE 6: mc_handoff =====================
-    @_safe_mcp_tool(mcp)
+    @safe_mcp_tool(mcp)
     def mc_handoff(
         target_model: str,
         task_id: str = "",
@@ -863,7 +670,7 @@ def create_server(workspace_file: str):
         }
 
     # ===================== FACADE 7: mc_close =====================
-    @_safe_mcp_tool(mcp)
+    @safe_mcp_tool(mcp)
     def mc_close(
         session_id: str,
         outcome: str = "",
@@ -905,7 +712,7 @@ def create_server(workspace_file: str):
         }
 
     # ===================== FACADE 8: mc_admin =====================
-    @_safe_mcp_tool(mcp)
+    @safe_mcp_tool(mcp)
     def mc_admin(
         action: str,
         view: str = "compact",
@@ -1129,7 +936,7 @@ def create_server(workspace_file: str):
 
     # ===================== FACADE 9-12: V3 MCP Tools (§20.6) =====================
 
-    @_safe_mcp_tool(mcp)
+    @safe_mcp_tool(mcp)
     def mc_context_pack(
         query: str,
         intent: str = "auto",
@@ -1137,82 +944,44 @@ def create_server(workspace_file: str):
         limit: int = 10,
     ):
         """Return a compact, evidence-backed context package for coding agents. Assembles entrypoints, relationships, risk patterns, and checklist into a single response to reduce agent grep/read cycles. Use this before mc_lookup for architecture or change-impact questions."""
-        from memory_center.core.context.pack import ContextPackBuilder
+        from memory_center.application.analysis import build_context_pack
         wf = ctx.workspace_file
-        builder = ContextPackBuilder(wf)
-        pack = builder.build(query=query, intent=intent, budget_tokens=budget_tokens, limit=limit)
+        pack = build_context_pack(wf, query, intent, budget_tokens, limit)
         return {
             "workflow": "mc-context-pack",
-            "query": pack.query,
-            "intent": pack.intent,
-            "entrypoints": pack.entrypoints,
-            "relationships": pack.relationships[:20],
-            "snippets": pack.snippets,
-            "risks": pack.risks,
-            "checklist": pack.checklist,
-            "freshness": pack.freshness,
-            "token_estimate": pack.token_estimate,
-            "progressive": pack.progressive,
+            **pack,
+            "relationships": pack["relationships"][:20],
         }
 
-    @_safe_mcp_tool(mcp)
+    @safe_mcp_tool(mcp)
     def mc_onboard(
         scope: str = "workspace",
         persona: str = "developer",
         target: str = "",
     ):
         """Generate a guided architecture tour for onboarding. persona: developer | architect | product | tester. Returns step-by-step walkthrough of the project structure."""
-        from memory_center.core.onboarding.tour import ArchitectureTourGenerator
-        from memory_center.core.storage.unified import UnifiedStore
+        from memory_center.application.analysis import onboarding_tour
         wf = ctx.workspace_file
-        store = WorkspaceStore(wf)
-        db_path = store.graph_db_path
-        unified = UnifiedStore(db_path)
-        try:
-            gen = ArchitectureTourGenerator(unified)
-            tour = gen.generate_tour(persona=persona, scope=scope, target=target or None)
-            return {"workflow": "mc-onboard", "tour": tour.to_dict()}
-        finally:
-            unified.close()
+        return {"workflow": "mc-onboard", **onboarding_tour(wf, persona, scope, target)}
 
-    @_safe_mcp_tool(mcp)
+    @safe_mcp_tool(mcp)
     def mc_domain(
         scope: str = "workspace",
         include_flows: bool = True,
     ):
         """Extract business domains and business flows from the code knowledge graph. Shows how code entities map to business concepts like user management, order processing, payment, etc."""
-        from memory_center.core.domain.extractor import BusinessDomainExtractor
-        from memory_center.core.storage.unified import UnifiedStore
+        from memory_center.application.analysis import domain_overview
         wf = ctx.workspace_file
-        store = WorkspaceStore(wf)
-        db_path = store.graph_db_path
-        unified = UnifiedStore(db_path)
-        try:
-            extractor = BusinessDomainExtractor(unified)
-            domains = extractor.extract_domains()
-            result = {
-                "workflow": "mc-domain",
-                "domains": [d.to_dict() for d in domains],
-                "domain_count": len(domains),
-            }
-            if include_flows:
-                flows = extractor.extract_flows()
-                result["flows"] = [f.to_dict() for f in flows]
-                result["flow_count"] = len(flows)
-            return result
-        finally:
-            unified.close()
+        return {"workflow": "mc-domain", **domain_overview(wf, include_flows)}
 
-    @_safe_mcp_tool(mcp)
+    @safe_mcp_tool(mcp)
     def mc_freshness(
         scope: str = "workspace",
     ):
         """Return index freshness status. If pending files affect the query target, instruct the agent to read the live file before editing."""
-        from memory_center.core.freshness.status import IndexFreshnessService
+        from memory_center.application.analysis import freshness_banner
         wf = ctx.workspace_file
-        svc = IndexFreshnessService(wf)
-        banner = svc.banner()
-        return {"workflow": "mc-freshness", **banner}
+        return {"workflow": "mc-freshness", **freshness_banner(wf)}
 
     return mcp
 

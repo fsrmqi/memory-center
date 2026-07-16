@@ -6,8 +6,8 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
+from memory_center.application import release_gate
 from memory_center.cli.main import app
-from memory_center.core.benchmark import release_gate
 
 
 def _workspace(tmp_path: Path) -> Path:
@@ -124,14 +124,14 @@ def test_release_gate_fails_low_parser_precision(monkeypatch: pytest.MonkeyPatch
 def test_release_gate_cli_does_not_save_failed_baseline(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     output = tmp_path / "portable.json"
     monkeypatch.setattr(
-        "memory_center.core.benchmark.run_release_gate",
+            "memory_center.application.release_gate.run_release_gate",
         lambda *_args, **_kwargs: {
             "passed": False,
             "components": {"reindex": {"status": "fail", "metrics": {"duration_ms": 1, "result_count": 0, "quality_score": 0}}},
         },
     )
     monkeypatch.setattr(
-        "memory_center.core.benchmark.save_release_gate_baseline",
+            "memory_center.application.release_gate.save_release_gate_baseline",
         lambda result, path, *, label: {"saved": True, "baseline_file": str(path), "baseline": {"label": label, "components": result["components"]}},
     )
 

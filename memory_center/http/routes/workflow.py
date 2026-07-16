@@ -10,9 +10,7 @@ from memory_center.application.admin import (
     regression_alerts_action,
     run_audit,
 )
-from memory_center.core.foundation.dispatch import CommandRegistry
-
-from .dependencies import (
+from memory_center.application.http_facades import (
     Any,
     group_impact,
     group_query,
@@ -41,6 +39,9 @@ from .dependencies import (
     workspace_task_resume_check,
     workspace_unresolved_items,
 )
+from memory_center.application.quality_gates import quality_gates_summary
+from memory_center.core.foundation.dispatch import CommandRegistry
+
 from .params import RouteParams, _parse_int
 
 
@@ -317,45 +318,6 @@ def register_workflow_routes(registry: CommandRegistry) -> None:
     registry.register("/workspace/regression-alerts", _regression_alerts)
 
     def _quality_gates_summary(rp: RouteParams) -> dict[str, Any]:
-        from memory_center.core.benchmark.trending import check_regression_alerts, generate_benchmark_report
-        from memory_center.core.orchestrator import (
-            memory_eval_agent_guidance_replay_campaign,
-            memory_eval_java_call_resolution_unresolved,
-        )
-
-        workspace = rp.workspace()
-        benchmark = generate_benchmark_report(workspace)
-        alerts = check_regression_alerts(workspace)
-        campaign = memory_eval_agent_guidance_replay_campaign(workspace, min_events=_parse_int(rp.params, "min_events", 20))
-        unresolved = memory_eval_java_call_resolution_unresolved(workspace, limit=0)
-        return {
-            "schema_version": 1,
-            "health": alerts.get("health", "unknown"),
-            "benchmark": {
-                "score": (benchmark.get("health_score", {}) or {}).get("score", 0),
-                "quality": (benchmark.get("health_score", {}) or {}).get("quality", "unknown"),
-                "recommendations": (benchmark.get("recommendations", []) or [])[:5],
-            },
-            "regression_alerts": {
-                "total": alerts.get("total_regressions", 0),
-                "critical": alerts.get("critical_count", 0),
-                "warning": alerts.get("warning_count", 0),
-                "items": [
-                    {key: alert.get(key, "") for key in ("severity", "code", "message", "recommendation")}
-                    for alert in (alerts.get("alerts", []) or [])[:10]
-                ],
-            },
-            "replay_campaign": {
-                "passed": campaign.get("passed", False),
-                "total_guidance_events": ((campaign.get("replay", {}) or {}).get("summary", {}) or {}).get("total_guidance_events", 0),
-                "missing_intents": ((campaign.get("coverage", {}) or {}).get("missing_intents", []) or []),
-            },
-            "java_call_resolution": {
-                "call_edge_count": (unresolved.get("summary", {}) or {}).get("call_edge_count", 0),
-                "unresolved_call_edge_count": (unresolved.get("summary", {}) or {}).get("unresolved_call_edge_count", 0),
-                "unresolved_rate": (unresolved.get("summary", {}) or {}).get("unresolved_rate", 0.0),
-                "top_categories": (unresolved.get("categories", []) or [])[:3],
-            },
-        }
+        return quality_gates_summary(rp.workspace(), _parse_int(rp.params, "min_events", 20))
 
     registry.register("/workspace/quality-gates-summary", _quality_gates_summary)

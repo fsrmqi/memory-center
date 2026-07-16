@@ -9,9 +9,24 @@ from memory_center.application.admin import (
     pattern_promote_action,
     verification_loop_action,
 )
+from memory_center.application.analysis import (
+    build_context_pack,
+    export_agent_bundle,
+    freshness_banner,
+    onboarding_tour,
+    recommend_workflow,
+    runtime_audit,
+    workflow_profile,
+)
+from memory_center.application.groups import (
+    workspace_group_chain,
+    workspace_group_impact,
+    workspace_group_query,
+    workspace_group_status,
+)
+from memory_center.application.http_facades import Any
 from memory_center.core.foundation.dispatch import CommandRegistry
 
-from .dependencies import Any, group_chain, group_impact, group_query, group_status
 from .params import RouteParams, _parse_int
 
 
@@ -33,36 +48,30 @@ def register_analysis_routes(registry: CommandRegistry) -> None:
     registry.register("/workspace/heuristics", _heuristics)
 
     def _workflow_profile(rp: RouteParams) -> dict[str, Any]:
-        from memory_center.core.verification.workflow_profiles import get_workflow_profile
-        return get_workflow_profile(rp.get("profile", "quick-fix"))
+        return workflow_profile(rp.get("profile", "quick-fix"))
 
     registry.register("/workspace/workflow-profile", _workflow_profile)
 
     def _workflow_recommend(rp: RouteParams) -> dict[str, Any]:
-        from memory_center.core.verification.workflow_profiles import recommend_workflow_with_learning
-        ws = rp.workspace()
-        return recommend_workflow_with_learning(ws, rp.require('description'))
+        return recommend_workflow(rp.workspace(), rp.require('description'))
 
     registry.register("/workspace/workflow-recommend", _workflow_recommend)
 
     def _bundle_export(rp: RouteParams) -> dict[str, Any]:
-        from memory_center.core.verification.bundle_export import generate_agent_bundle
-        ws = rp.workspace()
-        return generate_agent_bundle(ws, agent=rp.get("agent", "codex"))
+        return export_agent_bundle(rp.workspace(), rp.get("agent", "codex"))
 
     registry.register("/workspace/bundle-export", _bundle_export)
 
     def _runtime_audit(rp: RouteParams) -> dict[str, Any]:
-        from memory_center.core.audit.runtime import audit_agent_runtime
-        return audit_agent_runtime(rp.workspace())
+        return runtime_audit(rp.workspace())
 
     registry.register("/workspace/runtime-audit", _runtime_audit)
 
     def _eval_golden(rp: RouteParams) -> dict[str, Any]:
-        from memory_center.core import benchmark as benchmark_module
+        from memory_center.application.golden import run_golden_suite
 
         baseline = rp.get("baseline", "")
-        return benchmark_module.run_golden_suite(rp.workspace(), rp.require('cases'), performance_baseline=baseline or None)
+        return run_golden_suite(rp.workspace(), rp.require('cases'), performance_baseline=baseline or None)
 
     registry.register("/workspace/eval-golden", _eval_golden)
 
@@ -88,82 +97,37 @@ def register_analysis_routes(registry: CommandRegistry) -> None:
     registry.register("/workspace/metrics-summary", _metrics_summary)
 
     def _onboard(rp: RouteParams) -> dict[str, Any]:
-        from memory_center.core.onboarding.tour import ArchitectureTourGenerator
-        from memory_center.core.storage.unified import UnifiedStore
-        from memory_center.core.storage.workspace import WorkspaceStore
-        ws = rp.workspace()
-        persona = rp.get("persona", "developer")
-        workspace_store = WorkspaceStore(ws)
-        unified = UnifiedStore(workspace_store.graph_db_path)
-        try:
-            gen = ArchitectureTourGenerator(unified)
-            tour = gen.generate_tour(persona=persona)
-            return {"tour": tour.to_dict()}
-        finally:
-            unified.close()
+        return onboarding_tour(rp.workspace(), rp.get("persona", "developer"))
 
     registry.register("/workspace/onboard", _onboard)
 
     def _context_pack(rp: RouteParams) -> dict[str, Any]:
-        from memory_center.core.context.pack import ContextPackBuilder
-        ws = rp.workspace()
-        builder = ContextPackBuilder(ws)
-        query = rp.require('query')
-        intent = rp.intent()
-        budget_tokens = _parse_int(rp.params, "budget_tokens", 8000)
-        limit = rp.limit(10)
-        pack = builder.build(query=query, intent=intent or "auto", budget_tokens=budget_tokens, limit=limit)
-        return {
-            "query": pack.query,
-            "intent": pack.intent,
-            "entrypoints": pack.entrypoints,
-            "relationships": pack.relationships,
-            "snippets": pack.snippets,
-            "risks": pack.risks,
-            "checklist": pack.checklist,
-            "freshness": pack.freshness,
-            "token_estimate": pack.token_estimate,
-            "progressive": pack.progressive,
-        }
+        return build_context_pack(rp.workspace(), rp.require('query'), rp.intent(), _parse_int(rp.params, "budget_tokens", 8000), rp.limit(10))
 
     registry.register("/workspace/context-pack", _context_pack)
 
     def _freshness(rp: RouteParams) -> dict[str, Any]:
-        from memory_center.core.freshness.status import IndexFreshnessService
-        ws = rp.workspace()
-        return IndexFreshnessService(ws).banner()
+        return freshness_banner(rp.workspace())
 
     registry.register("/workspace/freshness", _freshness)
 
     # --- workspace-anchored group helpers (load_registry from workspace) ------
     def _workspace_group_status(rp: RouteParams) -> dict[str, Any]:
-        from memory_center.core.governance.registry import load_registry
-        ws = rp.workspace()
-        return group_status(load_registry(ws))
+        return workspace_group_status(rp.workspace())
 
     registry.register("/workspace/group-status", _workspace_group_status)
 
     def _workspace_group_query(rp: RouteParams) -> dict[str, Any]:
-        from memory_center.core.governance.registry import load_registry
-        ws = rp.workspace()
-        return group_query(
-            load_registry(ws),
-            query=rp.require('query'),
-            limit=_parse_int(rp.params, "limit", 20),
-        )
+        return workspace_group_query(rp.workspace(), rp.require('query'), _parse_int(rp.params, "limit", 20))
 
     registry.register("/workspace/group-query", _workspace_group_query)
 
     def _workspace_group_impact(rp: RouteParams) -> dict[str, Any]:
-        from memory_center.core.governance.registry import load_registry
-        ws = rp.workspace()
-        return group_impact(load_registry(ws), target=rp.require('target'))
+        return workspace_group_impact(rp.workspace(), rp.require('target'))
 
     registry.register("/workspace/group-impact", _workspace_group_impact)
 
     def _workspace_group_chain(rp: RouteParams) -> dict[str, Any]:
-        from memory_center.core.governance.registry import load_registry
-        ws = rp.workspace()
-        return group_chain(load_registry(ws), symbol=rp.require('symbol'))
+        return workspace_group_chain(rp.workspace(), rp.require('symbol'))
 
     registry.register("/workspace/group-chain", _workspace_group_chain)

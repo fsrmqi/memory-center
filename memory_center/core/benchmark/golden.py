@@ -432,60 +432,6 @@ def extract_logical_evidence(payload: Any) -> dict[str, list[str]]:
     return {"anchors": sorted(anchors), "edges": sorted(edges)}
 
 
-def _default_case_runner(workspace_file: str | Path) -> CaseRunner:
-    def run(case: GoldenCase) -> dict[str, Any]:
-        if case.mode == "walkthrough":
-            from ..orchestrator import memory_method_walkthrough
-
-            payload = memory_method_walkthrough(
-                workspace_file,
-                case.query,
-                depth=6,
-                limit=160,
-                view="full",
-                budget="large",
-                report_level="deep",
-                project=case.project,
-            )
-        elif case.mode == "impact":
-            from ..orchestrator import memory_impact
-
-            payload = memory_impact(
-                workspace_file,
-                case.query,
-                direction="upstream",
-                max_depth=4,
-                project=case.project,
-                view="full",
-                budget="large",
-            )
-        elif case.mode == "context":
-            from ..orchestrator import memory_context
-
-            payload = memory_context(
-                workspace_file,
-                case.query,
-                max_depth=3,
-                project=case.project,
-                view="full",
-                budget="large",
-            )
-        else:
-            from ..orchestrator import memory_query_hybrid
-
-            payload = memory_query_hybrid(
-                workspace_file,
-                case.query,
-                limit=80,
-                enable_vector=case.enable_vector,
-                project=case.project,
-            )
-        evidence = extract_logical_evidence(payload)
-        return {**evidence, "payload": payload}
-
-    return run
-
-
 def _percentile(values: list[float], ratio: float) -> float:
     if not values:
         return 0.0
@@ -502,7 +448,9 @@ def run_golden_suite(
     performance_baseline: dict[str, Any] | str | Path | None = None,
 ) -> dict[str, Any]:
     cases = load_golden_cases(cases_file)
-    runner = case_runner or _default_case_runner(workspace_file)
+    if case_runner is None:
+        raise ValueError("core golden scoring requires a case_runner; use memory_center.application.golden for task execution")
+    runner = case_runner
     case_results: list[dict[str, Any]] = []
     latencies: list[float] = []
     token_estimate = 0

@@ -12,17 +12,24 @@ import typer
 from rich import print
 
 from memory_center import __version__
+from memory_center.application.presentation import (
+    export_mermaid,
+    export_workspace_dashboard_html,
+    export_workspace_dashboard_markdown,
+)
+from memory_center.cli.commands.artifacts import register_artifact_commands
+from memory_center.cli.commands.workspaces import (
+    register_group_commands,
+    register_registry_commands,
+    register_workspace_commands,
+)
 from memory_center.core.foundation.dispatch import CommandRegistry
 from memory_center.core.foundation.errors import normalize_exception
 from memory_center.core.governance.instructions import write_agent_instructions
-from memory_center.core.governance.registry import add_to_group, create_group, list_workspaces, register_workspace
 from memory_center.core.governance.rules import ensure_default_rules
 from memory_center.core.indexing.reindex import reindex_workspace
 from memory_center.core.knowledge.wiki import generate_skills, generate_wiki
 from memory_center.core.orchestrator import (
-    group_impact,
-    group_query,
-    group_status,
     memory_backend_query,
     memory_callees,
     memory_callers,
@@ -91,40 +98,14 @@ from memory_center.core.orchestrator import (
     workspace_unresolved_items,
     workspace_write_receipts,
 )
-from memory_center.core.presentation.exporters import (
-    export_mermaid,
-    export_workspace_dashboard_html,
-    export_workspace_dashboard_markdown,
-)
 from memory_center.core.storage.workspace import WorkspaceStore
 from memory_center.core.tasks.artifacts import (
-    append_change_log,
-    append_task_change_log,
-    archive_task_space,
-    artifact_context,
-    artifact_outline,
-    auto_archive_task_spaces,
-    compact_change_log,
     create_task_space,
     ensure_default_artifacts,
-    get_artifact,
-    get_task_artifact,
-    list_artifacts,
-    list_task_spaces,
-    resolve_task_space,
-    task_space_health,
-    task_space_repair_execute,
-    task_space_repair_plan,
-    task_spaces_health,
-    touch_task_activity,
-    update_artifact,
     update_task_artifact,
-    update_task_status,
 )
 from memory_center.core.workspace.config import (
-    add_workspace_service,
     load_workspace_config,
-    remove_workspace_service,
     write_default_workspace,
 )
 from memory_center.core.workspace.doctor import doctor as run_doctor
@@ -149,6 +130,10 @@ app.add_typer(registry_app, name="registry")
 app.add_typer(group_app, name="group")
 app.add_typer(workspace_app, name="workspace")
 app.add_typer(artifact_app, name="artifact")
+register_artifact_commands(artifact_app)
+register_registry_commands(registry_app)
+register_group_commands(group_app)
+register_workspace_commands(workspace_app)
 
 OPTIONAL_PROJECT_FILTER = typer.Option(None, help="Only rebuild indexes for these projects.")
 OPTIONAL_PATH_FILTER = typer.Option(None, help="Only rebuild indexes for these logical or absolute paths.")
@@ -977,9 +962,9 @@ def eval_golden_cmd(
     baseline: str = typer.Option("", help="Optional Golden performance baseline JSON file."),
 ):
     """Run Golden Benchmark against a workspace and a portable cases file."""
-    from memory_center.core import benchmark as benchmark_module
+    from memory_center.application.golden import run_golden_suite
 
-    print(json.dumps(benchmark_module.run_golden_suite(workspace, cases, performance_baseline=baseline or None), ensure_ascii=False, indent=2, default=str))
+    print(json.dumps(run_golden_suite(workspace, cases, performance_baseline=baseline or None), ensure_ascii=False, indent=2, default=str))
 
 
 @app.command("eval-golden-baseline-save")
@@ -990,9 +975,10 @@ def eval_golden_baseline_save_cmd(
     label: str = typer.Option("current", help="Baseline label."),
 ):
     """Run Golden Benchmark and save a portable performance baseline."""
+    from memory_center.application.golden import run_golden_suite
     from memory_center.core import benchmark as benchmark_module
 
-    result = benchmark_module.run_golden_suite(workspace, cases)
+    result = run_golden_suite(workspace, cases)
     saved = benchmark_module.save_golden_performance_baseline(result, output, label=label)
     print(json.dumps({"result": result, **saved}, ensure_ascii=False, indent=2, default=str))
 
@@ -1011,9 +997,10 @@ def release_gate_cmd(
     max_quality_drop: float = typer.Option(0.02, min=0.0, max=1.0, help="Maximum component quality-score drop."),
 ):
     """Run index, retrieval and optional precision checks as one release gate."""
-    from memory_center.core import benchmark as benchmark_module
 
-    result = benchmark_module.run_release_gate(
+    from memory_center.application.release_gate import run_release_gate, save_release_gate_baseline
+
+    result = run_release_gate(
         workspace,
         queries=list(query or []),
         golden_cases=golden_cases or None,
@@ -1025,7 +1012,7 @@ def release_gate_cmd(
     )
     response: dict[str, object] = {"result": result}
     if save_baseline and result["passed"]:
-        response["baseline"] = benchmark_module.save_release_gate_baseline(result, save_baseline, label=label)
+        response["baseline"] = save_release_gate_baseline(result, save_baseline, label=label)
     elif save_baseline:
         response["baseline"] = {"saved": False, "reason": "release_gate_failed"}
     print(json.dumps(response, ensure_ascii=False, indent=2, default=str))
@@ -1802,300 +1789,6 @@ def sync_case_artifacts_cmd(
             auto_sync_mode=auto_sync_mode,
         )
     )
-
-
-@registry_app.command("add")
-def registry_add(name: str = typer.Option(...), workspace: str = typer.Option(...)):
-    """Register a workspace globally under ~/.memory-center/registry.json."""
-    print(register_workspace(name, workspace))
-
-
-@registry_app.command("list")
-def registry_list():
-    """List globally registered workspaces."""
-    print(list_workspaces())
-
-
-@group_app.command("create")
-def group_create(name: str = typer.Option(...)):
-    """Create a logical group for multiple registered workspaces."""
-    print(create_group(name))
-
-
-@group_app.command("add")
-def group_add(name: str = typer.Option(...), repo: str = typer.Option(...)):
-    """Add a registered workspace to a logical group."""
-    print(add_to_group(name, repo))
-
-
-@group_app.command("status")
-def group_status_cmd(name: str = typer.Option(...)):
-    """Show aggregated status for all workspaces in a logical group."""
-    print(group_status(name))
-
-
-@group_app.command("query")
-def group_query_cmd(name: str = typer.Option(...), text: str = typer.Option(...), limit: int = typer.Option(20)):
-    """Run a merged query across all workspaces in a logical group."""
-    print(group_query(name, text, limit))
-
-
-@group_app.command("impact")
-def group_impact_cmd(
-    name: str = typer.Option(...),
-    target: str = typer.Option(...),
-    direction: str = typer.Option("upstream"),
-    max_depth: int = typer.Option(3),
-):
-    """Run cross-workspace impact analysis for a logical group."""
-    print(group_impact(name, target, direction, max_depth))
-
-
-@workspace_app.command("list-services")
-def workspace_list_services(workspace: str = typer.Option(...)):
-    """List configured services in workspace.yaml."""
-    config = load_workspace_config(workspace)
-    print({"workspace": config.workspace, "root": str(config.root_path), "services": [item.__dict__ for item in config.services]})
-
-
-@workspace_app.command("add-service")
-def workspace_add_service(
-    workspace: str = typer.Option(...),
-    name: str = typer.Option(...),
-    path: str = typer.Option(...),
-    service_type: str = typer.Option("spring-boot-service", "--type"),
-    service_name: Optional[str] = typer.Option(None),
-    tag: Optional[List[str]] = OPTIONAL_TAGS,
-):
-    """Add or replace one service entry in workspace.yaml."""
-    result = add_workspace_service(workspace, name, path, service_type, service_name, tag)
-    result["next_steps"] = [
-        f"memory-center reindex --workspace {Path(workspace).expanduser().resolve()}",
-        f"memory-center doctor --workspace {Path(workspace).expanduser().resolve()} --self-test",
-    ]
-    print(result)
-
-
-@workspace_app.command("remove-service")
-def workspace_remove_service(
-    workspace: str = typer.Option(...),
-    name: str = typer.Option(..., help="Service name or path to remove."),
-):
-    """Remove one service entry from workspace.yaml by name or path."""
-    result = remove_workspace_service(workspace, name)
-    result["next_steps"] = [
-        f"memory-center reindex --workspace {Path(workspace).expanduser().resolve()}",
-        f"memory-center doctor --workspace {Path(workspace).expanduser().resolve()} --self-test",
-    ]
-    print(result)
-
-
-@artifact_app.command("list")
-def artifact_list_cmd(workspace: str = typer.Option(...)):
-    """List shared workspace artifacts."""
-    print(list_artifacts(workspace))
-
-
-@artifact_app.command("get")
-def artifact_get_cmd(
-    workspace: str = typer.Option(...),
-    name: str = typer.Option(...),
-):
-    """Read one shared artifact."""
-    print(get_artifact(workspace, name))
-
-
-@artifact_app.command("outline")
-def artifact_outline_cmd(
-    workspace: str = typer.Option(...),
-    name: str = typer.Option(...),
-):
-    """Read one artifact outline instead of full content."""
-    print(artifact_outline(workspace, name))
-
-
-@artifact_app.command("context")
-def artifact_context_cmd(
-    workspace: str = typer.Option(...),
-    intent: str = typer.Option(...),
-    limit: int = typer.Option(6),
-):
-    """Retrieve only relevant artifact snippets for the current intent."""
-    print(artifact_context(workspace, intent, limit=limit))
-
-
-@artifact_app.command("update")
-def artifact_update_cmd(
-    workspace: str = typer.Option(...),
-    name: str = typer.Option(...),
-    content: str = typer.Option(...),
-):
-    """Replace one shared artifact content."""
-    print(update_artifact(workspace, name, content))
-
-
-@artifact_app.command("append-change-log")
-def artifact_append_change_log_cmd(
-    workspace: str = typer.Option(...),
-    entry: str = typer.Option(...),
-):
-    """Append one timestamped entry into change-log.md."""
-    print(append_change_log(workspace, entry))
-
-
-@artifact_app.command("compact-change-log")
-def artifact_compact_change_log_cmd(
-    workspace: str = typer.Option(...),
-    keep_recent: int = typer.Option(30),
-):
-    """Archive older change-log entries to avoid oversized shared context."""
-    print(compact_change_log(workspace, keep_recent=keep_recent))
-
-
-@artifact_app.command("create-task")
-def artifact_create_task_cmd(
-    workspace: str = typer.Option(...),
-    title: str = typer.Option(""),
-    intent: str = typer.Option(""),
-    owner: str = typer.Option(""),
-    tag: Optional[List[str]] = OPTIONAL_TAGS,
-    priority: str = typer.Option("medium"),
-):
-    """Create one task-specific artifact space from a custom title or intent."""
-    print(create_task_space(workspace, title=title, intent=intent, owner=owner, tags=tag, priority=priority))
-
-
-@artifact_app.command("list-tasks")
-def artifact_list_tasks_cmd(
-    workspace: str = typer.Option(...),
-    include_archived: bool = typer.Option(False),
-):
-    """List active or archived task artifact spaces."""
-    print(list_task_spaces(workspace, include_archived=include_archived))
-
-
-@artifact_app.command("health-task")
-def artifact_health_task_cmd(
-    workspace: str = typer.Option(...),
-    task_id: str = typer.Option(...),
-):
-    """Check one task-space health and repair suggestions."""
-    print(task_space_health(workspace, task_id))
-
-
-@artifact_app.command("health-tasks")
-def artifact_health_tasks_cmd(
-    workspace: str = typer.Option(...),
-    include_archived: bool = typer.Option(False),
-    limit: int = typer.Option(50),
-):
-    """Check task-space health across the workspace."""
-    print(task_spaces_health(workspace, include_archived=include_archived, limit=limit))
-
-
-@artifact_app.command("repair-plan-task")
-def artifact_repair_plan_task_cmd(
-    workspace: str = typer.Option(...),
-    task_id: str = typer.Option(...),
-):
-    """Build a read-only repair plan for one task-space health report."""
-    print(task_space_repair_plan(workspace, task_id))
-
-
-@artifact_app.command("repair-task")
-def artifact_repair_task_cmd(
-    workspace: str = typer.Option(...),
-    task_id: str = typer.Option(...),
-    apply: bool = typer.Option(False, "--apply/--dry-run", help="Apply supported low-risk repairs. Default is dry-run."),
-    intent: str = typer.Option("", help="Required when applying current_summary repair through sync-sniff-artifacts."),
-):
-    """Dry-run or apply supported low-risk task-space repairs."""
-    print(task_space_repair_execute(workspace, task_id, apply=apply, intent=intent))
-
-
-@artifact_app.command("resolve-task")
-def artifact_resolve_task_cmd(
-    workspace: str = typer.Option(...),
-    intent: str = typer.Option(...),
-    title: str = typer.Option(""),
-    create_if_missing: bool = typer.Option(True),
-    include_archived: bool = typer.Option(False),
-    limit_candidates: int = typer.Option(3),
-    score_threshold: int = typer.Option(3, help="Minimum score to auto-match an existing task space."),
-):
-    """Resolve one task space from natural language; create one if needed."""
-    print(resolve_task_space(workspace, intent=intent, title=title, create_if_missing=create_if_missing, include_archived=include_archived, limit_candidates=limit_candidates, score_threshold=score_threshold))
-
-
-@artifact_app.command("get-task")
-def artifact_get_task_cmd(
-    workspace: str = typer.Option(...),
-    task_id: str = typer.Option(...),
-    name: str = typer.Option(...),
-):
-    """Read one task-space artifact."""
-    print(get_task_artifact(workspace, task_id, name))
-
-
-@artifact_app.command("update-task")
-def artifact_update_task_cmd(
-    workspace: str = typer.Option(...),
-    task_id: str = typer.Option(...),
-    name: str = typer.Option(...),
-    content: str = typer.Option(...),
-):
-    """Replace one task-space artifact content."""
-    print(update_task_artifact(workspace, task_id, name, content))
-
-
-@artifact_app.command("append-task-change-log")
-def artifact_append_task_change_log_cmd(
-    workspace: str = typer.Option(...),
-    task_id: str = typer.Option(...),
-    entry: str = typer.Option(...),
-    keep_recent: int = typer.Option(30),
-):
-    """Append one timestamped entry into a task-space change log."""
-    print(append_task_change_log(workspace, task_id, entry, keep_recent=keep_recent))
-
-
-@artifact_app.command("archive-task")
-def artifact_archive_task_cmd(
-    workspace: str = typer.Option(...),
-    task_id: str = typer.Option(...),
-    reason: str = typer.Option(""),
-):
-    """Archive one task artifact space manually."""
-    print(archive_task_space(workspace, task_id, reason=reason))
-
-
-@artifact_app.command("update-task-status")
-def artifact_update_task_status_cmd(
-    workspace: str = typer.Option(...),
-    task_id: str = typer.Option(...),
-    status: str = typer.Option(...),
-):
-    """Update one task space status: draft/active/blocked/done/archived."""
-    print(update_task_status(workspace, task_id, status))
-
-
-@artifact_app.command("auto-archive-tasks")
-def artifact_auto_archive_tasks_cmd(
-    workspace: str = typer.Option(...),
-    retention_days: int = typer.Option(30),
-):
-    """Auto-archive stale task artifact spaces by retention days."""
-    print(auto_archive_task_spaces(workspace, retention_days=retention_days))
-
-
-@artifact_app.command("touch-task-activity")
-def artifact_touch_task_activity_cmd(
-    workspace: str = typer.Option(...),
-    task_id: str = typer.Option(...),
-    source: str = typer.Option(..., help="Caller identifier, e.g. sync-sniff, sync-case, mcp."),
-):
-    """Record last activity source for a task space."""
-    print(touch_task_activity(workspace, task_id, source))
 
 
 @app.command("serve-http")

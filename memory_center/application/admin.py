@@ -20,6 +20,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from memory_center.application.tasks import execute_task_repair
 from memory_center.core.audit.runtime import audit_agent_runtime
 from memory_center.core.benchmark.trending import check_regression_alerts
 from memory_center.core.contracting.runtime import (
@@ -110,7 +111,6 @@ from memory_center.core.tasks.artifacts import (
     resolve_task_space,
     task_evidence_gc,
     task_space_health,
-    task_space_repair_execute,
     task_space_repair_plan,
     task_spaces_health,
     touch_task_activity,
@@ -285,7 +285,7 @@ def heuristics_action(workspace_file: str, action_type: str, text: str) -> dict[
 
 def explanation_action(text: str, persona: str = "developer") -> dict[str, Any]:
     exp = Explanation(subject="explanation", summary=text or "", persona=persona)
-    return {"explanation": exp.adapt_for_persona(persona).to_full()}
+    return exp.adapt_for_persona(persona).to_full()
 
 
 def business_flow_action(workspace_file: str, name: str, max_depth: int) -> dict[str, Any]:
@@ -323,14 +323,13 @@ def metrics_summary_action(workspace_file: str = "", metric_name: str = "") -> d
 
 
 def regression_alerts_action(workspace_file: str, _name_unused: str = "") -> dict[str, Any]:
-    alerts = check_regression_alerts(workspace_file)
-    return {"alerts": alerts, "workflow": "mc-regression-alerts"}
+    return check_regression_alerts(workspace_file)
 
 
 def eval_golden_action(workspace_file: str, cases_file: str) -> dict[str, Any]:
-    from memory_center.core import benchmark as benchmark_module
+    from memory_center.application.golden import run_golden_suite
 
-    return benchmark_module.run_golden_suite(workspace_file, cases_file)
+    return run_golden_suite(workspace_file, cases_file)
 
 
 def eval_java_call_resolution_action(workspace_file: str, cases_file: str, *, strict: bool = False) -> dict[str, Any]:
@@ -433,7 +432,7 @@ def build_admin_registry(
         "task_health": lambda: task_space_health(wf, task_id),
         "task_health_all": lambda: task_spaces_health(wf, include_archived=include_archived, limit=limit),
         "task_repair_plan": lambda: task_space_repair_plan(wf, task_id),
-        "task_repair_apply": lambda: task_space_repair_execute(wf, task_id, apply=force, intent=intent or text),
+        "task_repair_apply": lambda: execute_task_repair(wf, task_id, apply=force, intent=intent or text),
         "task_resume_check": lambda: workspace_task_resume_check(wf, intent=intent, task_id=task_id, session_id=session_id, limit=limit, budget=budget),
         "task_resolve": lambda: resolve_task_space(wf, intent=intent, title=title, create_if_missing=create_if_missing, include_archived=include_archived, limit_candidates=limit_candidates, score_threshold=score_threshold),
         "task_get": lambda: get_task_artifact(wf, task_id, name),

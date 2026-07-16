@@ -386,7 +386,7 @@ def build_walkthrough_result(
     result["cache"] = {"hit": False, "ttl_seconds": walkthrough_cache.ttl_seconds}
 
     if _is_compact_view(view):
-        from ..orchestrator.compact import _measure_compact_gain  # local import keeps cycles away
+        from ..foundation.tokens import measure_compact_gain
 
         compact = _wt_answer.compact_method_walkthrough_result(
             result, budget=budget, cache_ttl_seconds=walkthrough_cache.ttl_seconds,
@@ -398,7 +398,7 @@ def build_walkthrough_result(
             evidence_level="indexed_static_analysis",
             schema_version=METHOD_WALKTHROUGH_SCHEMA_VERSION,
         )
-        gain = _measure_compact_gain(result, compact)
+        gain = measure_compact_gain(result, compact)
         log_token_gain(
             workspace_file,
             "memory_method_walkthrough",

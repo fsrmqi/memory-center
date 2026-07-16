@@ -7,6 +7,7 @@ import pytest
 from typer.testing import CliRunner
 
 from memory_center.application.admin import build_admin_registry
+from memory_center.application.golden import run_golden_suite
 from memory_center.core.benchmark.golden import (
     build_golden_performance_baseline,
     compare_golden_performance,
@@ -14,7 +15,6 @@ from memory_center.core.benchmark.golden import (
     extract_logical_evidence,
     load_golden_cases,
     load_golden_performance_baseline,
-    run_golden_suite,
     save_golden_performance_baseline,
     score_golden_case,
     summarize_golden_case_coverage,

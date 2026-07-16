@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-from memory_center.core.foundation.dispatch import CommandRegistry
-
-from .dependencies import (
+from memory_center.application.http_facades import (
     append_change_log,
     append_task_change_log,
     archive_task_space,
@@ -68,6 +66,8 @@ from .dependencies import (
     workspace_sync_sniff_to_artifacts,
     workspace_write_receipts,
 )
+from memory_center.core.foundation.dispatch import CommandRegistry
+
 from .params import _parse_float, _parse_int
 
 

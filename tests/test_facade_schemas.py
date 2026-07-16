@@ -182,7 +182,7 @@ class TestMCPReturnConsistency:
     """Verify that MCP server return statements include the required fields."""
 
     def test_mc_start_returns_workflow_sniff_session(self):
-        import memory_center.mcp.server as mcp_mod
+        import memory_center.application.task_start as mcp_mod
         src = inspect.getsource(mcp_mod)
         assert '"workflow": "mc-start"' in src
         assert '"sniff":' in src
@@ -222,26 +222,32 @@ class TestMCPReturnConsistency:
 
     def test_mc_context_pack_returns_all_required(self):
         import memory_center.mcp.server as mcp_mod
+        from memory_center.application import analysis
+
         src = inspect.getsource(mcp_mod)
+        app_src = inspect.getsource(analysis.build_context_pack)
         assert '"workflow": "mc-context-pack"' in src
-        assert '"query": pack.query' in src
-        assert '"intent": pack.intent' in src
-        assert '"entrypoints":' in src
-        assert '"relationships":' in src
-        assert '"checklist":' in src
+        for field in ("query", "intent", "entrypoints", "relationships", "checklist"):
+            assert field in app_src
 
     def test_mc_onboard_returns_workflow_tour(self):
         import memory_center.mcp.server as mcp_mod
+        from memory_center.application import analysis
+
         src = inspect.getsource(mcp_mod)
+        app_src = inspect.getsource(analysis.onboarding_tour)
         assert '"workflow": "mc-onboard"' in src
-        assert '"tour":' in src
+        assert '"tour"' in app_src
 
     def test_mc_domain_returns_workflow_domains_domain_count(self):
         import memory_center.mcp.server as mcp_mod
+        from memory_center.application import analysis
+
         src = inspect.getsource(mcp_mod)
+        app_src = inspect.getsource(analysis.domain_overview)
         assert '"workflow": "mc-domain"' in src
-        assert '"domains":' in src
-        assert '"domain_count":' in src
+        assert '"domains"' in app_src
+        assert '"domain_count"' in app_src
 
     def test_mc_freshness_returns_workflow(self):
         import memory_center.mcp.server as mcp_mod

@@ -10,7 +10,7 @@ from typer.testing import CliRunner
 from memory_center.cli.main import app
 from memory_center.core.foundation.errors import MCError, normalize_exception
 from memory_center.http.server import _http_error_response
-from memory_center.mcp.server import _mcp_error_boundary
+from memory_center.mcp.runtime import _mcp_error_boundary
 
 
 @pytest.mark.parametrize(

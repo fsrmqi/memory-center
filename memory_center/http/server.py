@@ -7,9 +7,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from memory_center.core.foundation.dispatch import CommandRegistry as CommandRegistry  # re-exported for compatibility
-from memory_center.core.foundation.errors import normalize_exception
-from memory_center.core.presentation.exporters import (
+from memory_center.application.presentation import (
     export_continuity_dashboard_html,
     export_focus_task_html,
     export_index_freshness_html,
@@ -21,6 +19,8 @@ from memory_center.core.presentation.exporters import (
     export_workbench_index_html,
     export_workspace_dashboard_html,
 )
+from memory_center.core.foundation.dispatch import CommandRegistry as CommandRegistry  # re-exported for compatibility
+from memory_center.core.foundation.errors import normalize_exception
 from memory_center.http.route_dispatch import (
     RouteParams,
     _parse_int,

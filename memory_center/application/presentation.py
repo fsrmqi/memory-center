@@ -129,7 +129,7 @@ def topology_summary(workspace_file: str | Path) -> dict[str, Any]:
 
 
 def export_workspace_dashboard_markdown(workspace_file: str | Path, intent: str = "", limit: int = 10) -> str:
-    from ..orchestrator import workspace_dashboard
+    from memory_center.core.orchestrator import workspace_dashboard
 
     dashboard = workspace_dashboard(workspace_file, intent=intent, limit=limit)
     lines: list[str] = [
@@ -167,7 +167,7 @@ def export_workspace_dashboard_markdown(workspace_file: str | Path, intent: str 
 
 
 def export_workspace_dashboard_html(workspace_file: str | Path, intent: str = "", limit: int = 10, view: str = "compact", budget: str = "medium") -> str:
-    from ..orchestrator import workspace_dashboard
+    from memory_center.core.orchestrator import workspace_dashboard
 
     dashboard = workspace_dashboard(workspace_file, intent=intent, limit=limit, view=view, budget=budget)
     focus_task = dashboard.get("focus_task") or {}
@@ -276,7 +276,7 @@ def export_continuity_dashboard_html(
     view: str = "compact",
     budget: str = "medium",
 ) -> str:
-    from ..orchestrator import workspace_continuity_dashboard
+    from memory_center.core.orchestrator import workspace_continuity_dashboard
 
     dashboard = workspace_continuity_dashboard(workspace_file, intent=intent, task_id=task_id, session_id=session_id, limit=limit, view=view, budget=budget)
     focus_task = dashboard.get("focus_task") or {}
@@ -489,8 +489,8 @@ def export_workbench_index_html(workspace_file: str | Path) -> str:
 
 
 def export_focus_task_html(workspace_file: str | Path, intent: str = "", task_id: str = "", limit: int = 10) -> str:
-    from ..orchestrator import workspace_continuity_dashboard
-    from ..tasks.artifacts import get_task_artifact
+    from memory_center.core.orchestrator import workspace_continuity_dashboard
+    from memory_center.core.tasks.artifacts import get_task_artifact
 
     dashboard = workspace_continuity_dashboard(workspace_file, intent=intent, task_id=task_id, limit=limit, view="compact", budget="medium")
     focus = dashboard.get("focus_task") or {}
@@ -552,7 +552,7 @@ def export_focus_task_html(workspace_file: str | Path, intent: str = "", task_id
 
 
 def export_timeline_html(workspace_file: str | Path, intent: str = "", limit: int = 20) -> str:
-    from ..orchestrator import memory_backend_query, workspace_replay_write_chain, workspace_status
+    from memory_center.core.orchestrator import memory_backend_query, workspace_replay_write_chain, workspace_status
 
     workspace_param = str(Path(workspace_file).resolve())
     sidebar = _nav_sidebar_html(workspace_param)
@@ -611,7 +611,7 @@ def export_timeline_html(workspace_file: str | Path, intent: str = "", limit: in
 
 
 def export_usage_report_html(workspace_file: str | Path, limit: int = 50) -> str:
-    from ..orchestrator import memory_backend_query, memory_tool_usage_report
+    from memory_center.core.orchestrator import memory_backend_query, memory_tool_usage_report
 
     workspace_param = str(Path(workspace_file).resolve())
     sidebar = _nav_sidebar_html(workspace_param)
@@ -661,7 +661,7 @@ def export_usage_report_html(workspace_file: str | Path, limit: int = 50) -> str
 
 
 def export_receipts_html(workspace_file: str | Path, limit: int = 20) -> str:
-    from ..orchestrator import workspace_write_receipts
+    from memory_center.core.orchestrator import workspace_write_receipts
 
     workspace_param = str(Path(workspace_file).resolve())
     sidebar = _nav_sidebar_html(workspace_param)
@@ -726,7 +726,7 @@ def export_receipts_html(workspace_file: str | Path, limit: int = 20) -> str:
 
 
 def export_index_freshness_html(workspace_file: str | Path) -> str:
-    from ..orchestrator import memory_eval_index_freshness
+    from memory_center.core.orchestrator import memory_eval_index_freshness
 
     workspace_param = str(Path(workspace_file).resolve())
     sidebar = _nav_sidebar_html(workspace_param)
@@ -861,7 +861,7 @@ def export_memory_backend_html(workspace_file: str | Path, limit: int = 20) -> s
 
 
 def export_ref_html(workspace_file: str | Path, ref_id: str) -> str:
-    from ..orchestrator import memory_ref_get
+    from memory_center.core.orchestrator import memory_ref_get
 
     workspace_param = str(Path(workspace_file).resolve())
     sidebar = _nav_sidebar_html(workspace_param)

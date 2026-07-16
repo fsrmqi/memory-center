@@ -115,12 +115,18 @@ Memory Center 当前是一个本地文件系统 + SQLite 派生索引驱动的�
                                │
 ┌──────────────────────────────▼──────────────────────────────┐
 │ Adapter Layer / 入口适配层                                   │
-│ cli/main.py   mcp/server.py   http/server.py + routes/*      │
+│ cli/main.py + commands/*   mcp/server.py   http/routes/*     │
 │ 只负责参数绑定、展示、错误边界和公开 schema 兼容              │
 └──────────────────────────────┬──────────────────────────────┘
                                │
 ┌──────────────────────────────▼──────────────────────────────┐
-│ Orchestrator Layer / 业务编排层                              │
+│ Application Layer / 应用层                                   │
+│ task_start, lookup, analysis, tasks, admin, presentation     │
+│ 跨领域用例、局部刷新、结果装配与入口共享编排                  │
+└──────────────────────────────┬──────────────────────────────┘
+                               │
+┌──────────────────────────────▼──────────────────────────────┐
+│ Core Orchestrator / 核心任务编排                             │
 │ start, lookup, analyze, sync, resume, handoff, close, eval   │
 │ 聚合索引、图谱、规则、记忆、freshness 和上下文包              │
 └──────────────────────────────┬──────────────────────────────┘
@@ -140,8 +146,9 @@ Memory Center 当前是一个本地文件系统 + SQLite 派生索引驱动的�
 
 这五层的职责边界是：
 
-- Adapter 不复制 core 决策；MCP、CLI、HTTP 对同一能力应复用 orchestrator。
-- Orchestrator 负责把 agent 任务语义转换成稳定的核心调用和返回结构。
+- Adapter 不复制 core 决策；MCP、CLI、HTTP 对同一能力应优先复用 `application/` 用例。
+- Application 负责入口间共享的跨领域用例、局部刷新和返回装配；它可依赖 core，但 core 不得反向依赖 application。
+- Orchestrator 负责核心任务语义与稳定的核心调用和返回结构。
 - Core engines 负责可验证的工程事实提取、图谱查询、检索融合和推理降级。
 - Stores 分清事实源和派生物：源码、`workspace.yaml`、rules、artifacts 是事实源；`index/*.json`、`graph.db`、`memory.db` 是可重建或可镜像的读路径。
 - Hooks 属于宿主集成层，只在生命周期节点触发已有 facade，不拥有业务状态。
@@ -152,7 +159,9 @@ Memory Center 当前是一个本地文件系统 + SQLite 派生索引驱动的�
 
 ```text
 memory_center/
+├── application/            # 入口共享用例、局部刷新和输出装配
 ├── cli/                    # memory-center 命令行入口
+│   └── commands/           # registry/group/workspace/artifact 等子命令注册
 ├── core/                   # 索引、图谱、检索、记忆、评测、编排等核心逻辑
 │   ├── indexing/           # tree-sitter / regex / 多语言结构化解析
 │   ├── retrieval/          # hybrid retrieval, BM25, policy
@@ -179,13 +188,14 @@ examples/                   # 可提交的脱敏示例 workspace / cases
 docs/                       # 面向用户和维护者的说明文档
 ```
 
-从目录职责看，`core/` 是系统内核，`mcp/`、`cli/`、`http/` 是三种入口适配器，`web/` 是本地可视化工作台。测试覆盖按 public surface 和核心引擎组织，避免把私有 workspace 产物提交进仓库。
+从目录职责看，`core/` 是系统内核，`application/` 是入口共享的用例层，`mcp/`、`cli/`、`http/` 是三种入口适配器，`web/` 是本地可视化工作台。测试覆盖按 public surface 和核心引擎组织，避免把私有 workspace 产物提交进仓库。
 
 ### 2.2 架构分层契约 / Layer Contracts
 
 | 层 | 输入 | 输出 | 稳定性要求 |
 |---|---|---|---|
 | Adapter | CLI args、MCP tool params、HTTP query/body | 面向用户或模型的结构化响应 | 公开参数和返回字段默认兼容 |
+| Application | 已标准化的入口请求、workspace 路径、任务参数 | 跨领域用例结果、刷新/路由诊断 | 可依赖 core，不得被 core 反向依赖 |
 | Orchestrator | workspace path、intent、target、budget、view | task-level response、diagnostics、refs | 统一语义，不按入口复制逻辑 |
 | Core Engines | workspace config、index、graph、memory records | facts、relations、ranked evidence、reports | 失败可降级，但必须暴露原因 |
 | Store | YAML、JSON、JSONL、Markdown、SQLite | 可读事实源和可重建派生索引 | 路径职责清晰，写入可追溯 |
