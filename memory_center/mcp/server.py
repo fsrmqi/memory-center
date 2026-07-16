@@ -572,6 +572,17 @@ def create_server(workspace_file: str):
             payload["query_plan"] = planner.record("mc_lookup", plan, started_at, outcome="completed")
             payload["shard_route"] = shard_route
             payload["shard_evidence"] = shard_evidence
+            try:
+                from memory_center.core.cross_shard_fusion import fuse_cross_shard_result
+                payload["cross_shard_fusion"] = fuse_cross_shard_result(
+                    wf,
+                    query or symbol or name or entry,
+                    payload,
+                    shard_route,
+                    shard_evidence,
+                )
+            except Exception:
+                payload["cross_shard_fusion"] = {"generation": {"consistent": False, "status": "fusion_unavailable"}, "conclusions": [], "next_actions": []}
             if session_id.strip():
                 workspace_record_agent_guidance(
                     wf,

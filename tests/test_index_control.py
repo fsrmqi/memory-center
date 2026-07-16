@@ -7,6 +7,7 @@ from memory_center.core.indexer import reindex_workspace
 from memory_center.core.index_shards import load_service_shard, service_shard_graph_path
 from memory_center.core.orchestrator.query import memory_query_hybrid, memory_search_code
 from memory_center.core.cross_shard import evaluate_cross_shard_replay, query_cross_service_shards, route_cross_service_shards
+from memory_center.core.cross_shard_fusion import evaluate_cross_shard_fusion, fuse_cross_shard_result
 from memory_center.core.store import WorkspaceStore
 
 
@@ -76,3 +77,23 @@ def test_cross_service_router_uses_contracts_topology_and_parallel_shards(tmp_pa
     assert evidence["source"] == "parallel_service_shards"
     assert evidence["queried_projects"]
     assert gate["samples"] == 2
+
+
+def test_cross_shard_fusion_deduplicates_evidence_and_checks_generation(tmp_path: Path) -> None:
+    from tests.fixtures import copy_demo_workspace
+
+    workspace = copy_demo_workspace(tmp_path)
+    store = WorkspaceStore(workspace)
+    reindex_workspace(load_workspace_config(workspace), store, parallel=False)
+    route = route_cross_service_shards(workspace, "ArticleFeignClient", tier="standard")
+    evidence = query_cross_service_shards(workspace, "ArticleFeignClient", route)
+    fused = fuse_cross_shard_result(workspace, "ArticleFeignClient", {"matches": evidence["matches"]}, route, evidence)
+    gate = evaluate_cross_shard_fusion(
+        workspace,
+        [{"query": "ArticleFeignClient", "expected_projects": ["common-api"]}],
+    )
+
+    assert fused["generation"]["consistent"] is True
+    assert fused["normalized_matches"]
+    assert fused["conclusions"]
+    assert gate["passed"] is True

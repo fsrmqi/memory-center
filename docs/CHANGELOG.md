@@ -10,6 +10,9 @@
 
 ### P2 Retrieval / Reasoning Quality Loop / 检索与推理质量闭环
 
+- 本地安装版本提升至 `3.9.0`。
+- `mc_lookup` 新增 `cross_shard_fusion`：融合主检索/服务分片命中，按证据键去重排序，校验 active/routed generation，并输出事实/推断/派生强度、置信度、契约结论和下一步动作。
+- 新增 Feign 目标解析、MQ producer/consumer 覆盖、DTO 审核提示，以及 `eval_cross_shard_fusion` Golden-like 门禁，覆盖服务选片、generation 一致性和可解释性。
 - 本地安装版本提升至 `3.8.0`。
 - 新增自动跨服务分片编排：未指定 project 的 MCP 查询会基于 Contract/Topology Shard 路由、按档位有界扩展 Feign 邻居，并行查询服务 JSON/SQLite 图分片；响应新增 generation 绑定的 `shard_route` 与 `shard_evidence`。
 - 新增 `eval_cross_shard_replay`，以不持久化原始查询的方式统计跨服务选片 P95、选片上限和证据覆盖率。

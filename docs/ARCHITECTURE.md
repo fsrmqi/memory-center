@@ -246,6 +246,12 @@ Partial reindex uses copy-on-write: unchanged service shards are inherited from 
 
 Requests without an explicit project no longer default straight to global retrieval. The system scores candidate services from Contract and Topology shards, then expands downstream services under fast/standard/deep budgets. Evidence is queried in parallel from selected service JSON/SQLite graph shards, with generation, routing rationale, queried shards, and evidence source returned to the caller. The global index is a compatibility fallback only.
 
+### 3.1.3 跨分片融合与可信结论 / Cross-Shard Fusion and Trusted Conclusions
+
+融合层在不改变既有查询字段的前提下，统一主检索与服务分片命中，按 `project/type/name/file` 去重并合并来源。它校验 routed generation 是否等于 active generation；不一致时把结论降为派生证据并要求重试。对于选中的服务，融合层基于 Contract/Topology Shard 生成 Feign 目标解析、MQ producer/consumer 覆盖和 DTO 审核提示。输出使用事实/推断/派生强度、置信度、契约状态和下一步动作，避免把“未命中”误作“没有影响”。
+
+The fusion layer preserves existing query fields while deduplicating primary and service-shard hits by `project/type/name/file` and merging sources. It verifies the routed generation equals the active generation; mismatches downgrade conclusions to derived evidence and request a retry. Contract/Topology shards produce Feign target resolution, MQ producer/consumer coverage, and DTO review hints. Output includes fact/inferred/derived strength, confidence, contract status, and next actions.
+
 ### 3.2 任务期 / Task-Time Flow
 
 任务期面向 AI Agent 暴露少量稳定动作：

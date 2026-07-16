@@ -804,6 +804,10 @@ When `mc_lookup` has no explicit `project`, it now routes through the active top
 
 当 `mc_lookup` 未传 `project` 时，现在会先通过 active topology 与 contract 分片路由，按请求档位选择有界服务分片集合，再并行查询。响应包含与 active generation 绑定的 `shard_route` 和 `shard_evidence`。可使用 `mc_admin(action="eval_cross_shard_replay", text="每行一个意图")` 验证跨服务分片 P95 与证据覆盖率，原始 replay 文本不会被持久化。
 
+`mc_lookup` also returns `cross_shard_fusion`: deduplicated matches from primary and shard retrieval, active/routed generation consistency, Feign/MQ/DTO contract checks, confidence, semantic strength, and explicit next actions. Use `mc_admin(action="eval_cross_shard_fusion", payload='{"cases":[{"query":"...","expected_projects":["..."]}]}')` for a Golden-like gate covering service selection, generation consistency, and explainability.
+
+`mc_lookup` 还会返回 `cross_shard_fusion`：它融合主检索和分片取证结果，执行去重、active/routed generation 一致性检查、Feign/MQ/DTO 契约检查，并给出置信度、证据强度和明确的下一步动作。可使用 `mc_admin(action="eval_cross_shard_fusion", payload='{"cases":[{"query":"...","expected_projects":["..."]}]}')` 运行类似 Golden 的门禁，验证服务选片、generation 一致性和可解释性。
+
 Walkthrough key locations include `absolute_file_path`; agents should read that path directly instead of running `find` first.
 
 walkthrough 的关键落点包含 `absolute_file_path`；Agent 应直接读取该路径，不需要先执行 `find` 定位文件。

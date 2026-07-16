@@ -44,6 +44,8 @@ MCP 当前公开的是 12 个 task-level tools：
 
 不传 `project` 的 `mc_lookup` 也会返回 `shard_route`（generation、起始服务、扩展深度、契约/拓扑依据）和 `shard_evidence`（并行查询的服务分片及命中）。跨服务性能门禁使用 `mc_admin(action="eval_cross_shard_replay", text="每行一个查询", budget="fast|standard|deep")`；结果只记录耗时、选片数量和证据覆盖率。
 
+`mc_lookup` 的 `cross_shard_fusion` 是可直接用于决策的融合结果：`generation.consistent` 必须为 `true` 才应将索引结论当作事实；`contract_consistency.overall="attention"` 时，应继续调用 `mc_analyze(depth="full")`。融合质量门禁使用 `mc_admin(action="eval_cross_shard_fusion", payload='{"cases":[{"query":"...","expected_projects":["..."]}]}')`，检查服务选择、generation 一致性和结论可解释性。
+
 ## 3. Recommended Agent Behavior / 推荐 Agent 行为
 
 推荐顺序：
