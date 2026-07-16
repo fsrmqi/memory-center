@@ -575,7 +575,7 @@ class TestG04AgentRuntimeAudit:
         assert payload["next_steps"]
 
     def test_runtime_audit_mcp_admin_force_writes_bindings(self, demo_workspace: Path):
-        from memory_center.mcp.admin_actions import build_admin_registry
+        from memory_center.application.admin import build_admin_registry
 
         registry = build_admin_registry(workspace_file=str(demo_workspace), action="runtime_audit", force=True)
         result = registry.dispatch("runtime_audit")

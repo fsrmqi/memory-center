@@ -1,7 +1,14 @@
 from __future__ import annotations
 
-import json as _json
-
+from memory_center.application.admin import (
+    business_flow_action,
+    business_flow_impact_action,
+    explanation_action,
+    heuristics_action,
+    metrics_summary_action,
+    pattern_promote_action,
+    verification_loop_action,
+)
 from memory_center.core.foundation.dispatch import CommandRegistry
 
 from .dependencies import Any, group_chain, group_impact, group_query, group_status
@@ -11,77 +18,17 @@ from .params import RouteParams, _parse_int
 def register_analysis_routes(registry: CommandRegistry) -> None:
     # --- next-phase verification / explanation / business flow ----------------
     def _verification_loop(rp: RouteParams) -> dict[str, Any]:
-        from memory_center.core.verification.loop import VerificationLoop
-        ws = rp.workspace()
-        vl = VerificationLoop(ws)
-        task_type = rp.get("task_type", "general")
-        task_id = rp.get("task_id", "default")
-        analysis = {"task_type": task_type, "workspace": ws}
-        return {
-            "checklist": vl.generate_checklist(analysis),
-            "status": vl.get_status(task_id),
-        }
+        return verification_loop_action(rp.workspace(), rp.get("task_type", "general"), rp.get("task_id", "default"))
 
     registry.register("/workspace/verification-loop", _verification_loop)
 
     def _pattern_promotion(rp: RouteParams) -> dict[str, Any]:
-        from memory_center.core.verification.pattern_promotion import PatternPromotion
-        ws = rp.workspace()
-        pp = PatternPromotion(ws)
-        action_type = rp.get("action", "list")
-        if action_type == "list":
-            return {"proposals": pp.list_proposals()}
-        if action_type == "propose":
-            return pp.propose({"rule_text": rp.require('text'), "source": "http"})
-        if action_type == "promote":
-            return pp.promote(rp.require('text'))
-        return {"error": f"Unknown action: {action_type}"}
+        return pattern_promote_action(rp.workspace(), rp.get("action", "list"), rp.get("text", ""))
 
     registry.register("/workspace/pattern-promotion", _pattern_promotion)
 
     def _heuristics(rp: RouteParams) -> dict[str, Any]:
-        from memory_center.core.verification.heuristics import HeuristicsRegister
-        ws = rp.workspace()
-        hr = HeuristicsRegister(ws)
-        action_type = rp.get("action", "query")
-        if action_type == "query":
-            return {"heuristics": hr.query(rp.get("text", ""))}
-        if action_type in {"record", "feedback", "explain"}:
-            try:
-                data = _json.loads(rp.require('text'))
-            except Exception:
-                data = {"pattern": rp.require('text')}
-            if action_type == "record":
-                entry = hr.record(data)
-                return {"status": "recorded", "entry": entry}
-            if action_type == "explain":
-                return hr.explain(
-                    candidate_type=str(data.get("candidate_type", "") or ""),
-                    target=str(data.get("target", "") or ""),
-                    category=str(data.get("category", "") or "candidate-path"),
-                    heuristic_id=str(data.get("heuristic_id", "") or ""),
-                    pattern=str(data.get("pattern", "") or ""),
-                    limit=int(data.get("limit", 10) or 10),
-                )
-            feedback = hr.record_candidate_path_feedback(
-                candidate_type=str(data.get("candidate_type", "") or ""),
-                target=str(data.get("target", "") or ""),
-                outcome=str(data.get("outcome", "") or ""),
-                evidence=data.get("evidence") or [],
-                source=str(data.get("source", "") or "http"),
-                task_id=str(data.get("task_id", "") or ""),
-                session_id=str(data.get("session_id", "") or ""),
-                weight_before=data.get("weight_before"),
-                weight_delta=data.get("weight_delta"),
-                why=str(data.get("why", "") or ""),
-                next_action=str(data.get("next_action", "") or ""),
-                verification_cost=str(data.get("verification_cost", "") or ""),
-                category=str(data.get("category", "") or "candidate-path"),
-                pattern=str(data.get("pattern", "") or ""),
-                trigger=str(data.get("trigger", "") or ""),
-            )
-            return {"status": "recorded", "feedback": feedback}
-        return {"error": f"Unknown action: {action_type}"}
+        return heuristics_action(rp.workspace(), rp.get("action", "query"), rp.get("text", ""))
 
     registry.register("/workspace/heuristics", _heuristics)
 
@@ -120,45 +67,23 @@ def register_analysis_routes(registry: CommandRegistry) -> None:
     registry.register("/workspace/eval-golden", _eval_golden)
 
     def _explanation(rp: RouteParams) -> dict[str, Any]:
-        from memory_center.core.explanation.schema import Explanation
-        text = rp.require('text')
-        persona = rp.get("persona", "developer")
-        exp = Explanation(subject="explanation", summary=text, persona=persona)
-        return exp.adapt_for_persona(persona).to_full()
+        return explanation_action(rp.require('text'), rp.get("persona", "developer"))
 
     registry.register("/workspace/explanation", _explanation)
 
     def _business_flow(rp: RouteParams) -> dict[str, Any]:
-        from memory_center.core.domain.flow import extract_business_flows_for_workspace
-        ws = rp.workspace()
-        return extract_business_flows_for_workspace(
-            ws,
-            rp.require('seed'),
-            max_depth=_parse_int(rp.params, "max_depth", 4),
-        )
+        return business_flow_action(rp.workspace(), rp.require('seed'), _parse_int(rp.params, "max_depth", 4))
 
     registry.register("/workspace/business-flow", _business_flow)
 
     def _business_flow_impact(rp: RouteParams) -> dict[str, Any]:
-        from memory_center.core.domain.flow import business_flow_impact_for_workspace
-        ws = rp.workspace()
-        return business_flow_impact_for_workspace(
-            ws,
-            rp.require('node_id'),
-            max_depth=_parse_int(rp.params, "max_depth", 3),
-        )
+        return business_flow_impact_action(rp.workspace(), rp.require('node_id'), _parse_int(rp.params, "max_depth", 3))
 
     registry.register("/workspace/business-flow-impact", _business_flow_impact)
 
     def _metrics_summary(rp: RouteParams) -> dict[str, Any]:
-        from memory_center.core.observability.metrics import MetricsCollector
         ws = rp.params.get("workspace", [rp.default_workspace])[0]
-        if not ws:
-            return {"summary": {}, "note": "no_workspace_in_context"}
-        metric_name = rp.get("metric_name", "")
-        if not metric_name:
-            return {"summary": {}, "note": "metric_name_required"}
-        return {"summary": MetricsCollector(ws).summary(metric_name)}
+        return metrics_summary_action(ws, rp.get("metric_name", ""))
 
     registry.register("/workspace/metrics-summary", _metrics_summary)
 

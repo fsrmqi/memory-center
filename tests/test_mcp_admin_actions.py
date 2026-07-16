@@ -12,13 +12,13 @@ from pathlib import Path
 
 import pytest
 
-from memory_center.core.tasks.artifacts import create_task_space
-from memory_center.mcp.admin_actions import (
+from memory_center.application.admin import (
     build_admin_registry,
     explanation_action,
     metrics_summary_action,
     parse_payload,
 )
+from memory_center.core.tasks.artifacts import create_task_space
 
 
 def test_build_admin_registry_lists_known_actions() -> None:

@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
+from memory_center.application.admin import build_admin_registry
 from memory_center.core.benchmark.golden import (
     build_golden_performance_baseline,
     compare_golden_performance,
@@ -18,7 +19,6 @@ from memory_center.core.benchmark.golden import (
     score_golden_case,
     summarize_golden_case_coverage,
 )
-from memory_center.mcp.admin_actions import build_admin_registry
 
 
 def _workspace(tmp_path: Path) -> Path:

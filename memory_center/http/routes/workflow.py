@@ -1,5 +1,15 @@
 from __future__ import annotations
 
+from memory_center.application.admin import (
+    backend_consistency,
+    benchmark_trend_report,
+    constraint_action,
+    drill_ref,
+    drill_task,
+    drill_timeline,
+    regression_alerts_action,
+    run_audit,
+)
 from memory_center.core.foundation.dispatch import CommandRegistry
 
 from .dependencies import (
@@ -267,80 +277,42 @@ def register_workflow_routes(registry: CommandRegistry) -> None:
     ))
 
     def _constraint(rp: RouteParams) -> dict[str, Any]:
-        from memory_center.core.governance.templates import auto_select_action, get_constraint_template
-        template = rp.get("template", "coding_agent")
-        context = rp.get("context", "")
-        if context:
-            return {"context": context, "template": template, "recommended_action": auto_select_action(context, template)}
-        tmpl = get_constraint_template(template)
-        return tmpl or {"error": f"Unknown template: {template}"}
+        return constraint_action(rp.get("context", ""), rp.get("template", "coding_agent"))
 
     registry.register("/workspace/constraint", _constraint)
 
     def _audit(rp: RouteParams) -> dict[str, Any]:
-        from memory_center.core.audit.reports import run_completion_audit
-        return run_completion_audit(
-            rp.workspace(),
-            work_package=rp.get("work_package", ""),
-        )
+        return run_audit(rp.workspace(), rp.get("work_package", ""))
 
     registry.register("/workspace/audit", _audit)
 
     def _drill_ref(rp: RouteParams) -> dict[str, Any]:
-        from memory_center.core.navigation.drilldown import DrillDownNavigator
-        ws = rp.workspace()
-        ref_id = rp.require('ref_id')
-        with DrillDownNavigator(ws) as nav:
-            return nav.expand_ref(ref_id)
+        return drill_ref(rp.workspace(), rp.require('ref_id'))
 
     registry.register("/workspace/drill-ref", _drill_ref)
 
     def _drill_timeline(rp: RouteParams) -> dict[str, Any]:
-        from memory_center.core.navigation.drilldown import DrillDownNavigator
-        ws = rp.workspace()
-        with DrillDownNavigator(ws) as nav:
-            return nav.drill_timeline(
-                session_id=rp.session_id(),
-                task_id=rp.task_id(),
-                limit=_parse_int(rp.params, "limit", 50),
-            )
+        return drill_timeline(rp.workspace(), rp.session_id(), rp.task_id(), _parse_int(rp.params, "limit", 50))
 
     registry.register("/workspace/drill-timeline", _drill_timeline)
 
     def _drill_task(rp: RouteParams) -> dict[str, Any]:
-        from memory_center.core.navigation.drilldown import DrillDownNavigator
-        ws = rp.workspace()
-        task_id = rp.require('task_id')
-        with DrillDownNavigator(ws) as nav:
-            return nav.drill_task(task_id)
+        return drill_task(rp.workspace(), rp.require('task_id'))
 
     registry.register("/workspace/drill-task", _drill_task)
 
     def _backend_consistency(rp: RouteParams) -> dict[str, Any]:
-        from memory_center.core.backend.query import UnifiedBackendQuery
-        from memory_center.core.storage.workspace import WorkspaceStore
-        ws = rp.workspace()
-        store = WorkspaceStore(ws)
-        with UnifiedBackendQuery(store.memory_db_path) as backend:
-            return backend.check_consistency(store.base_dir)
+        return backend_consistency(rp.workspace())
 
     registry.register("/workspace/backend-consistency", _backend_consistency)
 
     def _benchmark_trend(rp: RouteParams) -> dict[str, Any]:
-        from memory_center.core.benchmark.trending import generate_benchmark_report
-        return generate_benchmark_report(
-            rp.workspace(),
-            function_name=rp.get("function_name", ""),
-        )
+        return benchmark_trend_report(rp.workspace(), rp.get("function_name", ""))
 
     registry.register("/workspace/eval-token-benchmark-trend", _benchmark_trend)
 
     def _regression_alerts(rp: RouteParams) -> dict[str, Any]:
-        from memory_center.core.benchmark.trending import check_regression_alerts
-        return check_regression_alerts(
-            rp.workspace(),
-            threshold_pct=float(rp.get("threshold_pct", "10.0")),
-        )
+        return regression_alerts_action(rp.workspace())
 
     registry.register("/workspace/regression-alerts", _regression_alerts)
 

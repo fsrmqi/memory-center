@@ -99,7 +99,7 @@ Memory Center 不要求中心化服务。默认形态是每个 workspace 自带�
 
 The `core/` root contains only `__init__.py`; it has no implementation or compatibility shims. Shared models, errors, schemas, dispatch, and pure utilities live in `foundation/`; workspace configuration, health checks, shape, service kinds, and jobs live in `workspace/`; workspace, graph, and memory SQLite storage live in `storage/`; rules and host protocol live in `governance/`; diagnostics, metrics, and operation events live in `observability/`; quality/completion live in `assessment/`; ontology and wiki generation live in `knowledge/`. Each domain has one canonical import path.
 
-核心依赖方向由 `docs/adr/0001-core-dependency-direction.md` 约束：底层事实与存储不依赖编排或入口；编排层只负责组合任务级用例；CLI、MCP、HTTP、hooks 均为入口适配层。
+核心依赖方向由 `docs/adr/0001-core-dependency-direction.md` 约束：底层事实与存储不依赖编排或入口；`application/` 负责组合跨领域任务用例；编排层只负责核心任务组合；CLI、MCP、HTTP、hooks 均为入口适配层。
 
 ---
 

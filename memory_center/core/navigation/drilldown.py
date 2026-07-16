@@ -44,9 +44,9 @@ class DrillDownNavigator:
         - Level 2: Details (on demand)
         - Level 3: Related items (on demand)
         """
-        from ..orchestrator.shared import _resolve_memory_ref
+        from ..tasks.references import resolve_memory_ref
 
-        resolved = _resolve_memory_ref(self.store, ref_id)
+        resolved = resolve_memory_ref(self.store, ref_id)
         if not resolved:
             return {
                 "ref_id": ref_id,

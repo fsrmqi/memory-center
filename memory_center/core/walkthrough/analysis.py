@@ -9,9 +9,7 @@ owning walkthrough internals.
 
 The runner stays decoupled from the orchestrator by:
 
-- Importing ``load_context`` and a few shared helpers from
-  ``orchestrator.shared`` (these are workspace primitives, not
-  walkthrough-specific code).
+- 使用工作区运行时、上下文预算和本包的链路边工具，不依赖编排层。
 - Receiving the ``GraphStore`` neighbour-edges loader through a callable
   (defaults to using the workspace store's graph DB).
 - Receiving the optional ``memory_symbol`` lookup callable through a parameter
@@ -37,6 +35,23 @@ from . import escalation as _wt_escalation
 from . import risks as _wt_risks
 from . import symbols as _wt_symbols
 from .cache import WalkthroughCache
+
+
+def _filter_walkthrough_edges(edges: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    preferred = {"HANDLES_ENDPOINT", "CALLS_METHOD", "CALLS_SERVICE", "IMPLEMENTS_FEIGN", "PRODUCES_TOPIC", "INJECTS_BEAN", "IMPORTS"}
+    filtered = [edge for edge in edges if edge.get("type") in preferred]
+    if any(edge.get("type") != "IMPORTS" for edge in filtered):
+        filtered = [edge for edge in filtered if edge.get("type") != "IMPORTS"]
+    return sorted(filtered, key=lambda edge: (int(edge.get("depth", 99) or 99), str(edge.get("type", ""))))
+
+
+def _summarize_walkthrough_edges(edges: list[dict[str, Any]]) -> dict[str, Any]:
+    counts: dict[str, int] = {}
+    for edge in edges:
+        kind = str(edge.get("type", "") or "")
+        counts[kind] = counts.get(kind, 0) + 1
+    return {"items": edges, "total_edges": len(edges), "depth_reached": max((int(edge.get("depth", 0) or 0) for edge in edges), default=0), "type_counts": counts}
+
 
 __all__ = [
     "METHOD_WALKTHROUGH_SCHEMA_VERSION",
@@ -191,18 +206,12 @@ def build_walkthrough_result(
     covering / sibling workspace and is normally provided by the orchestrator.
     """
 
-    # Lazy imports keep the runner decoupled from orchestrator-level pipelines
-    # while still re-using their already-tested helpers.
-    from ..orchestrator.shared import (
-        _budget_limits,
-        _filter_call_edges,
-        load_context,
-        summarize_chain_edges,
-    )
+    from ..context.profiles import budget_limits
+    from ..workspace.runtime import load_workspace_context
 
     walkthrough_cache = cache or default_walkthrough_cache()
     workspace_file = _wt_escalation.resolve_walkthrough_workspace_input(workspace_file)
-    config, store = load_context(workspace_file)
+    config, store = load_workspace_context(workspace_file)
     active_workspace_file = str(Path(workspace_file).expanduser().resolve())
 
     symbols = store.read_json_prefer_backend("java-symbol-index.json", [])
@@ -269,8 +278,8 @@ def build_walkthrough_result(
             limit=limit,
             edge_types={"HANDLES_ENDPOINT", "PRODUCES_TOPIC", "CALLS_METHOD", "CALLS_SERVICE", "IMPLEMENTS_FEIGN", "INJECTS_BEAN"},
         )
-    downstream_edges = _filter_call_edges(downstream_edges, direction="downstream")[:limit]
-    downstream_summary = summarize_chain_edges(downstream_edges)
+    downstream_edges = _filter_walkthrough_edges(downstream_edges)[:limit]
+    downstream_summary = _summarize_walkthrough_edges(downstream_edges)
 
     result: dict[str, Any] = {
         "schema_version": METHOD_WALKTHROUGH_SCHEMA_VERSION,
@@ -315,7 +324,7 @@ def build_walkthrough_result(
         same_class_continuations,
         feign_continuations,
         downstream_summary,
-        _budget_limits(budget),
+        budget_limits(budget),
     )
     result["read_targets"] = _wt_answer.collect_method_walkthrough_read_targets(result)
     result["glossary_hits"] = _wt_answer.build_glossary_hits(workspace_file, result)

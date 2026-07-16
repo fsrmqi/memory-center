@@ -2307,7 +2307,7 @@ def test_work_resume_check_cli(tmp_path: Path):
 def test_work_resume_check_cli_mcp_http_core_contract_consistency(tmp_path: Path):
     from http.server import ThreadingHTTPServer
 
-    from memory_center.mcp.admin_actions import build_admin_registry
+    from memory_center.application.admin import build_admin_registry
 
     workspace = _copy_demo_workspace(tmp_path, "task-resume-check-consistency")
     task = create_task_space(workspace, title="三入口接手检查任务")
