@@ -12,6 +12,7 @@ from .indexing.java_call_resolver import JavaCallResolver, build_java_class_inde
 from .indexing.reindex_state import workspace_reindex_lock
 from .index_control import activate_generation, begin_generation, build_shard_manifest, fail_generation
 from .index_shards import write_generation_shards
+from .contracts import CONTRACT_DIFF_FILE, CONTRACT_SNAPSHOT_FILE, build_contract_snapshot, diff_contract_snapshots
 
 # Keep the tree-sitter wrapper active so fallback reasons remain observable.
 try:
@@ -60,6 +61,7 @@ def _reindex_workspace_unlocked(
     old_feign_index: list[dict[str, Any]] = store.read_json_prefer_backend("feign-index.json", [])
     old_mq_index: list[dict[str, Any]] = store.read_json_prefer_backend("mq-index.json", [])
     old_config_index: list[dict[str, Any]] = store.read_json_prefer_backend("config-index.json", [])
+    old_contract_snapshot = store.read_json_prefer_backend(CONTRACT_SNAPSHOT_FILE, {})
 
     file_index: list[dict[str, Any]] = []
     symbol_index: list[dict[str, Any]] = []
@@ -158,6 +160,10 @@ def _reindex_workspace_unlocked(
     store.write_json("mq-index.json", merged_mq_index)
     store.write_json("config-index.json", merged_config_index)
     store.write_json("service-topology.json", topology)
+    contract_snapshot = build_contract_snapshot(merged_api_index, merged_feign_index, merged_mq_index, merged_symbol_index)
+    contract_diff = diff_contract_snapshots(old_contract_snapshot, contract_snapshot)
+    store.write_json(CONTRACT_SNAPSHOT_FILE, contract_snapshot)
+    store.write_json(CONTRACT_DIFF_FILE, contract_diff)
     graph_counts = build_graph_store(config, store, project_filter=project_filter, path_filters=path_filters)
     changed_ids: set[str] = set()
     if partial:
@@ -194,6 +200,7 @@ def _reindex_workspace_unlocked(
         "feigns": len(merged_feign_index),
         "mq": len(merged_mq_index),
         "configs": len(merged_config_index),
+        "contract_breaking_changes": contract_diff["breaking_count"],
         "graph_nodes": graph_counts.get("nodes", 0),
         "graph_edges": graph_counts.get("edges", 0),
         "semantic_docs": semantic_counts.get("doc_count", 0),

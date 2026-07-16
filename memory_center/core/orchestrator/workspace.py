@@ -1274,12 +1274,20 @@ def workspace_check_contract(workspace_file: str | Path, contract_file: str, cha
         text = item.get("path", "").lower()
         if basename in text:
             affected.append(item)
+    from ..contracts import CONTRACT_DIFF_FILE, CONTRACT_SNAPSHOT_FILE, contract_semantic_report
+    semantic = contract_semantic_report(
+        store.read_json_prefer_backend(CONTRACT_SNAPSHOT_FILE, {}),
+        store.read_json_prefer_backend(CONTRACT_DIFF_FILE, {}),
+        store.read_json_prefer_backend("service-topology.json", {}),
+        contract_file,
+    )
     return {
         "contract_file": contract_file,
         "change_type": change_type,
         "affected_candidates": affected[:50],
         "related_feigns": [x for x in feigns if basename in json.dumps(x, ensure_ascii=False).lower()][:20],
         "related_mq": [x for x in mq if basename in json.dumps(x, ensure_ascii=False).lower()][:20],
+        "semantic_compatibility": semantic,
         "rules": match_rules(store, intent=f"contract {change_type} {contract_file}", files=[contract_file], scopes=["contract", "dto", "feign", "message"]),
         "required_checks": [
             "全 workspace 搜索字段引用点",

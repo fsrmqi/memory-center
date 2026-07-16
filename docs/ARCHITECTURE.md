@@ -252,6 +252,12 @@ Requests without an explicit project no longer default straight to global retrie
 
 The fusion layer preserves existing query fields while deduplicating primary and service-shard hits by `project/type/name/file` and merging sources. It verifies the routed generation equals the active generation; mismatches downgrade conclusions to derived evidence and request a retry. Contract/Topology shards produce Feign target resolution, MQ producer/consumer coverage, and DTO review hints. Output includes fact/inferred/derived strength, confidence, contract status, and next actions.
 
+### 3.1.4 契约语义快照与变更门禁 / Contract Snapshots and Change Gates
+
+每次 reindex 会标准化 API、Feign 方法、MQ endpoint 和 DTO 字段类型，并与前一快照生成差异。删除 API/Feign/MQ 契约、删除 DTO 字段或修改字段类型被判定为 high severity breaking change；新增 DTO 字段为中等风险，要求检查默认值和消费者兼容性。静态校验同时验证 Feign 的 target service、HTTP 方法和路径是否存在服务端 API，以及 MQ topic 是否同时具有 producer/consumer。full 分析、任务证据、pre-edit guard、显式 contract gate 和 release gate 使用同一报告，避免不同入口给出相互矛盾的结论。
+
+Every reindex normalizes APIs, Feign methods, MQ endpoints, and DTO field types, then diffs them against the previous snapshot. Removed API/Feign/MQ contracts, removed DTO fields, and DTO type changes are high-severity breaking changes; new DTO fields are medium risk and require default/consumer review. Static validation also checks Feign target service plus HTTP method/path and MQ producer/consumer coverage. Full analysis, task evidence, pre-edit guard, explicit contract gate, and release gate consume the same report.
+
 ### 3.2 任务期 / Task-Time Flow
 
 任务期面向 AI Agent 暴露少量稳定动作：

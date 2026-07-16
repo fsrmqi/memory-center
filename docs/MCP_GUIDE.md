@@ -46,6 +46,8 @@ MCP 当前公开的是 12 个 task-level tools：
 
 `mc_lookup` 的 `cross_shard_fusion` 是可直接用于决策的融合结果：`generation.consistent` 必须为 `true` 才应将索引结论当作事实；`contract_consistency.overall="attention"` 时，应继续调用 `mc_analyze(depth="full")`。融合质量门禁使用 `mc_admin(action="eval_cross_shard_fusion", payload='{"cases":[{"query":"...","expected_projects":["..."]}]}')`，检查服务选择、generation 一致性和结论可解释性。
 
+契约语义校验使用 `mc_admin(action="contract_gate", name="SomeRequestDto.java")`，返回 `semantic_compatibility.status`：`pass`、`attention` 或 `block`。`mc_analyze(depth="full", target="...", task_id="...")` 自动执行同一校验并可将完整报告写为任务 evidence。guard 模式 pre-edit hook 遇到 `block` 会拒绝编辑；release gate 在索引存在契约快照时失败。
+
 ## 3. Recommended Agent Behavior / 推荐 Agent 行为
 
 推荐顺序：

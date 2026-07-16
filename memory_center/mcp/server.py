@@ -749,6 +749,7 @@ def create_server(workspace_file: str):
         projects: list[str] | None = None,
         files: list[str] | None = None,
         scope: str = "staged",
+        task_id: str = "",
         execution_mode: str = "sync",
         job_action: str = "",
         job_id: str = "",
@@ -779,9 +780,21 @@ def create_server(workspace_file: str):
                 result["plan"] = memory_plan_change(wf, target, direction, max_depth)
                 result["rules"] = workspace_check_rules(wf, projects, change_type, files)
             if depth == "full" and target:
-                if contract_file:
-                    result["contract"] = workspace_check_contract(wf, contract_file, change_type)
+                result["contract"] = workspace_check_contract(wf, contract_file or target, change_type)
                 result["checklist"] = memory_verify_checklist(wf, target)
+                if task_id.strip():
+                    try:
+                        import json
+                        from memory_center.core.artifacts import write_task_evidence_chunk
+
+                        result["contract_evidence"] = write_task_evidence_chunk(
+                            wf,
+                            task_id,
+                            json.dumps(result["contract"], ensure_ascii=False, indent=2),
+                            source="mc_analyze_contract",
+                        )
+                    except Exception as exc:
+                        result["contract_evidence"] = {"stored": False, "reason": str(exc)}
             return result
 
         if execution_mode == "background":

@@ -25,6 +25,7 @@ from ..core.orchestrator import (
     memory_search_code,
     memory_symbol,
     memory_verify_checklist,
+    workspace_check_contract,
     workspace_check_rules,
     workspace_end_session,
     workspace_handoff_packet,
@@ -353,19 +354,23 @@ def run_hook(
                     )
                     hook_result["verify"] = verify_result
                     system_message += " | Verify checklist generated"
+                contract_result = workspace_check_contract(wf, target, change_type)
+                hook_result["contract_semantics"] = contract_result.get("semantic_compatibility", {})
+                contract_status = str((contract_result.get("semantic_compatibility", {}) or {}).get("status", "pass"))
+                system_message += f" | Contract: {contract_status}"
                 # Guard mode: block if must-severity rules match
                 if mode == "guard":
                     has_must = any(
                         r.get("severity") == "must" for r in matched
                     )
-                    if has_must:
+                    if has_must or contract_status == "block":
                         must_rules = [
                             r.get("title", r.get("id", ""))
                             for r in matched
                             if r.get("severity") == "must"
                         ]
                         system_message += (
-                            f" | BLOCKED: must-severity rules: {must_rules}"
+                            f" | BLOCKED: must-severity rules: {must_rules}; contract_status={contract_status}"
                         )
                         _run_cleanup(cleanup_actions)
                         return {

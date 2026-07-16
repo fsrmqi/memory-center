@@ -99,6 +99,7 @@ from memory_center.core.orchestrator import (
     memory_walkthrough_health,
     memory_write_judge,
     workspace_continuity_dashboard,
+    workspace_check_contract,
     workspace_dashboard,
     workspace_end_session,
     workspace_handoff_history,
@@ -441,6 +442,7 @@ def build_admin_registry(
         "replay": lambda: workspace_replay_write_chain(wf, task_id=task_id, session_id=session_id, limit=limit),
         "backend_query": lambda: memory_backend_query(wf, collection=collection, record_id=record_id, created_after=created_after, ref_path=ref_path, project=project, payload_type=payload_type, limit=limit),
         "index_control": lambda: index_control_status(WorkspaceStore(wf)),
+        "contract_gate": lambda: workspace_check_contract(wf, name or ref_path or text, action_filter or "modify"),
         "index_rollback": lambda: rollback_generation(WorkspaceStore(wf), record_id),
         "index_generation_gc": lambda: cleanup_generations(
             WorkspaceStore(wf),

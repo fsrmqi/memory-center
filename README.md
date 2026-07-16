@@ -808,6 +808,12 @@ When `mc_lookup` has no explicit `project`, it now routes through the active top
 
 `mc_lookup` 还会返回 `cross_shard_fusion`：它融合主检索和分片取证结果，执行去重、active/routed generation 一致性检查、Feign/MQ/DTO 契约检查，并给出置信度、证据强度和明确的下一步动作。可使用 `mc_admin(action="eval_cross_shard_fusion", payload='{"cases":[{"query":"...","expected_projects":["..."]}]}')` 运行类似 Golden 的门禁，验证服务选片、generation 一致性和可解释性。
 
+### Contract Semantic Gate / 契约语义门禁
+
+Reindex writes a normalized API/Feign/MQ/DTO contract snapshot and compares it with the prior snapshot. Removed APIs, removed DTO fields, DTO field type changes, and removed Feign/MQ contracts are marked breaking. `mc_analyze(depth="full")` always includes `contract.semantic_compatibility`; optionally pass `task_id` to store the report as immutable task evidence. `mc_admin(action="contract_gate", name="...")` and CLI `check-contract` expose the same check. Guard-mode pre-edit hooks block on breaking contract changes, while release-gate includes the check when a real contract snapshot exists.
+
+reindex 会写入标准化的 API/Feign/MQ/DTO 契约快照，并与前一快照比较。删除 API、删除 DTO 字段、DTO 字段类型变更、删除 Feign/MQ 契约会标记为破坏性变更。`mc_analyze(depth="full")` 始终包含 `contract.semantic_compatibility`；可传 `task_id` 将报告存为不可变任务证据。`mc_admin(action="contract_gate", name="...")` 与 CLI `check-contract` 暴露相同校验。guard 模式的 pre-edit hook 会阻断破坏性契约变更；release-gate 在存在真实契约快照时也会纳入该检查。
+
 Walkthrough key locations include `absolute_file_path`; agents should read that path directly instead of running `find` first.
 
 walkthrough 的关键落点包含 `absolute_file_path`；Agent 应直接读取该路径，不需要先执行 `find` 定位文件。

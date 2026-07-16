@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from ..config import load_workspace_config
+from ..contracts import CONTRACT_DIFF_FILE, CONTRACT_SNAPSHOT_FILE, contract_semantic_report
 from ..indexer import reindex_workspace
 from ..orchestrator import (
     memory_eval_java_call_resolution,
@@ -133,6 +134,21 @@ def run_release_gate(
         quality_score=1.0 if indexed > 0 else 0.0,
         reason="indexed_files_missing" if indexed <= 0 else "",
     )
+    contract_snapshot = store.read_json_prefer_backend(CONTRACT_SNAPSHOT_FILE, {})
+    if contract_snapshot:
+        contract_report = contract_semantic_report(
+            contract_snapshot,
+            store.read_json_prefer_backend(CONTRACT_DIFF_FILE, {}),
+            store.read_json_prefer_backend("service-topology.json", {}),
+        )
+        contract_blocking = len(contract_report.get("breaking_changes", []) or [])
+        components["contract_compatibility"] = _component(
+            passed=contract_report.get("status") != "block",
+            duration_ms=0.0,
+            result_count=contract_blocking,
+            quality_score=1.0 if contract_report.get("status") == "pass" else 0.7 if contract_report.get("status") == "attention" else 0.0,
+            reason="breaking_contract_change" if contract_report.get("status") == "block" else "",
+        )
 
     query_rows: list[dict[str, Any]] = []
     for query in queries or []:
