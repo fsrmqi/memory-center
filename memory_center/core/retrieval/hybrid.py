@@ -14,16 +14,17 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
-from ..diagnostics import DIAG, diag_entry
-from ..graph import GraphStore
-from ..ontology import (
+from memory_center.core.indexing.precision import parser_precision_from_workspace
+from memory_center.core.knowledge.ontology import (
     EDGE_SEMANTIC_STRENGTH,
     EntityValidator,
     annotate_semantic_strength,
     multi_hop_confidence,
 )
-from ..parser_precision import parser_precision_from_workspace
-from ..semantic import semantic_query
+from memory_center.core.observability.diagnostics import DIAG, diag_entry
+from memory_center.core.retrieval.semantic import semantic_query
+from memory_center.core.storage.graph import GraphStore
+
 from .policy import select_retrieval_policy
 
 __all__ = [
@@ -39,7 +40,7 @@ __all__ = [
 
 def _get_common_functions():
     """Lazy import to avoid circular dependency."""
-    from ..orchestrator.common import _best_match, _rrf, tokenize
+    from ..orchestrator.shared import _best_match, _rrf, tokenize
     return tokenize, _rrf, _best_match
 
 
@@ -608,14 +609,15 @@ def _vector_retrieval(
     results: list[RetrievalResult] = []
     vector_diag: dict[str, Any] = {"status": "disabled", "reason": "not_checked"}
     try:
-        from ..semantic import (
+        from memory_center.core.retrieval.semantic import (
             DEFAULT_SENTENCE_TRANSFORMER_MODEL,
             _load_sentence_transformer_model,
             semantic_index_stats,
         )
+        from memory_center.core.storage.workspace import WorkspaceStore
+
         from ..storage.unified import UnifiedStore
         from ..storage.vector_index import VectorIndex
-        from ..store import WorkspaceStore
 
         workspace_store = WorkspaceStore(workspace_file)
         unified = UnifiedStore(workspace_store.graph_db_path)
@@ -648,7 +650,7 @@ def _vector_retrieval(
                 vector_diag = {"status": "active", "returned": 0, **status}
                 return results
 
-            from ..graph import GraphStore
+            from memory_center.core.storage.graph import GraphStore
             with GraphStore(workspace_store.graph_db_path) as graph:
                 for rank, hit in enumerate(vector_results[:limit], start=1):
                     node_id = hit.get("node_id", "")
@@ -687,9 +689,10 @@ def _bm25_sparse_retrieval(
     results: list[RetrievalResult] = []
     bm25_diag: dict[str, Any] = {"status": "disabled", "reason": "not_checked"}
     try:
+        from memory_center.core.storage.workspace import WorkspaceStore
+
         from ..retrieval.inverted import InvertedIndex
         from ..storage.unified import UnifiedStore
-        from ..store import WorkspaceStore
 
         workspace_store = WorkspaceStore(workspace_file)
         unified = UnifiedStore(workspace_store.graph_db_path)
@@ -705,7 +708,7 @@ def _bm25_sparse_retrieval(
                 bm25_diag = {"status": "active", "returned": 0, **stats}
                 return results
 
-            from ..graph import GraphStore
+            from memory_center.core.storage.graph import GraphStore
             with GraphStore(workspace_store.graph_db_path) as graph:
                 for hit in bm25_results:
                     node_id = hit.get("node_id", "")
@@ -946,7 +949,7 @@ def _resolve_cross_workspace_refs(
     """Resolve cross-workspace references and add summary layer."""
     # Load service topology for cross-workspace detection
     try:
-        from ..store import WorkspaceStore
+        from memory_center.core.storage.workspace import WorkspaceStore
         store = WorkspaceStore(workspace_file)
         topology = store.read_json_prefer_backend("service-topology.json", {})
         local_services = {svc.get("service_name") or svc.get("name") for svc in topology.get("services", [])}

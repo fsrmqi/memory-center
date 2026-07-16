@@ -5,7 +5,7 @@ Covers:
 - Safe reason sanitizer (no path/secret leakage)
 - Entry builder for success / disabled / empty / unavailable
 """
-from memory_center.core.diagnostics import DIAG, diag_entry, safe_reason
+from memory_center.core.observability.diagnostics import DIAG, diag_entry, safe_reason
 
 # --- Status vocabulary ---
 

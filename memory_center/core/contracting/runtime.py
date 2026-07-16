@@ -6,7 +6,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from ..store import WorkspaceStore
+from memory_center.core.storage.workspace import WorkspaceStore
+
 from .static import CONTRACT_DIFF_FILE, CONTRACT_SNAPSHOT_FILE
 
 RUNTIME_SAMPLES_FILE = "runtime-contract-samples.jsonl"

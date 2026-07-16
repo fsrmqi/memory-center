@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from ..store import WorkspaceStore
+from memory_center.core.storage.workspace import WorkspaceStore
 
 
 def _nav_sidebar_html(workspace_param: str) -> str:

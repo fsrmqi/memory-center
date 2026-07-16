@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from memory_center.core.reasoning.models import ReasoningRequest
 from memory_center.core.reasoning.pipeline import ReasoningPipeline
+from memory_center.core.reasoning.request import ReasoningRequest
 from memory_center.core.storage.unified import UnifiedStore
 
 
@@ -169,9 +169,9 @@ def test_reasoning_request_normalizes_limits() -> None:
 
 
 def test_reasoning_integration_exposes_pipeline_layers(demo_workspace_indexed: Path) -> None:
-    from memory_center.core.graph import GraphStore
     from memory_center.core.reasoning.integration import run_reasoning_patterns
-    from memory_center.core.store import WorkspaceStore
+    from memory_center.core.storage.graph import GraphStore
+    from memory_center.core.storage.workspace import WorkspaceStore
 
     workspace_store = WorkspaceStore(demo_workspace_indexed)
     with GraphStore(workspace_store.graph_db_path) as graph:

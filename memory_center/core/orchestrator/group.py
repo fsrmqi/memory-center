@@ -7,15 +7,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 
-from ..compat import zip_strict
-from ..registry import resolve_group
-from .common import (
-    _build_progressive_levels,
-    _rrf,
-    _unknown_static_analysis_risks,
-    load_context,
-    tokenize,
-)
+from memory_center.core.foundation.compat import zip_strict
+from memory_center.core.governance.registry import resolve_group
+
 from .query import (
     _query_node_priority,
     _sort_target_types,
@@ -24,10 +18,17 @@ from .query import (
     memory_query,
     memory_symbol,
 )
+from .shared import (
+    _build_progressive_levels,
+    _rrf,
+    _unknown_static_analysis_risks,
+    load_context,
+    tokenize,
+)
 
 
 def group_status(group: str, home: str | Path | None = None) -> dict[str, Any]:
-    from .workspace import workspace_status
+    from .workspace_ops import workspace_status
 
     resolved = _cached_resolve_group(group, home)
     workspaces: list[dict[str, Any]] = []

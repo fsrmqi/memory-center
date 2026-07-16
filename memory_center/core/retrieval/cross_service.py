@@ -7,11 +7,12 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 
-from ..graph import GraphStore
+from memory_center.core.foundation.text import base_tokenize
+from memory_center.core.storage.graph import GraphStore
+from memory_center.core.storage.workspace import WorkspaceStore
+
 from ..indexing.control_plane import index_control_status
 from ..indexing.shards import load_contract_shard, load_service_shard, load_topology_shard, service_shard_graph_path
-from ..store import WorkspaceStore
-from ..text_utils import base_tokenize
 
 _TIER_LIMITS = {"fast": (2, 1), "standard": (4, 2), "deep": (8, 3)}
 

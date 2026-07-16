@@ -11,9 +11,10 @@ from uuid import uuid4
 
 from filelock import FileLock
 
-from ..config import load_workspace_config
-from ..store import WorkspaceStore, _safe_path
-from ..text_utils import base_tokenize
+from memory_center.core.foundation.text import base_tokenize
+from memory_center.core.storage.workspace import WorkspaceStore, _safe_path
+from memory_center.core.workspace.config import load_workspace_config
+
 from .receipts import build_write_receipt, persist_write_receipt, query_write_receipts
 
 DEFAULT_ARTIFACTS = {
@@ -1823,7 +1824,7 @@ def _sortable_dt_value(value: str) -> float:
 
 
 def _resolve_task_dir(store: WorkspaceStore, task_id: str) -> tuple[Path, dict[str, object]]:
-    from ..store import _safe_path
+    from memory_center.core.storage.workspace import _safe_path
 
     slug = task_id.strip()
     active = _safe_path(store.artifacts_dir, f"{TASKS_DIR}/{slug}")

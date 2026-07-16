@@ -1,14 +1,14 @@
 from pathlib import Path
 
-from memory_center.core.config import load_workspace_config
 from memory_center.core.freshness.targeted_refresh import (
     compact_hot_refresh_overlay,
     hot_refresh_status,
     refresh_query_targets,
 )
-from memory_center.core.graph import GraphStore
-from memory_center.core.indexer import reindex_workspace
-from memory_center.core.store import WorkspaceStore
+from memory_center.core.indexing.reindex import reindex_workspace
+from memory_center.core.storage.graph import GraphStore
+from memory_center.core.storage.workspace import WorkspaceStore
+from memory_center.core.workspace.config import load_workspace_config
 
 
 def test_targeted_refresh_updates_only_changed_query_file(tmp_path: Path) -> None:

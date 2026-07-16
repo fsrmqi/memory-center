@@ -6,7 +6,7 @@ preserving the existing path and query-parameter interface.
 
 from __future__ import annotations
 
-from memory_center.core.dispatch import CommandRegistry
+from memory_center.core.foundation.dispatch import CommandRegistry
 from memory_center.http.routes import (
     register_analysis_routes,
     register_workflow_routes,

@@ -6,10 +6,15 @@ from collections import defaultdict, deque
 from pathlib import Path
 from typing import Any
 
-from ..config import load_workspace_config
-from ..diagnostics import DIAG, diag_entry
-from ..indexer import JAVA_EXTENSIONS, safe_read, walk_project
-from ..workspace_shape import analyze_workspace_shape, collect_workspace_service_entries, select_primary_service_entry
+from memory_center.core.indexing.reindex import JAVA_EXTENSIONS, safe_read, walk_project
+from memory_center.core.observability.diagnostics import DIAG, diag_entry
+from memory_center.core.workspace.config import load_workspace_config
+from memory_center.core.workspace.shape import (
+    analyze_workspace_shape,
+    collect_workspace_service_entries,
+    select_primary_service_entry,
+)
+
 from .base import JavaParseResult
 from .java_regex_parser import RegexJavaParser
 from .tree_sitter_parser import TreeSitterJavaParser

@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..schemas import with_schema
-from ..store import WorkspaceStore
+from memory_center.core.foundation.schemas import with_schema
+from memory_center.core.storage.workspace import WorkspaceStore
 
 WRITE_RECEIPTS_FILE = "write-receipts.jsonl"
 

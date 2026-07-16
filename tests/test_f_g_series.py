@@ -46,7 +46,7 @@ class TestF02BackendConsistency:
 
     def test_unified_backend_query_reads_indexes(self, demo_workspace: Path):
         from memory_center.core.backend.query import UnifiedBackendQuery
-        from memory_center.core.store import WorkspaceStore
+        from memory_center.core.storage.workspace import WorkspaceStore
         ws = WorkspaceStore(str(demo_workspace))
         db_path = ws.memory_db_path
         with UnifiedBackendQuery(db_path) as ubq:
@@ -55,7 +55,7 @@ class TestF02BackendConsistency:
 
     def test_backend_query_records(self, demo_workspace: Path):
         from memory_center.core.backend.query import UnifiedBackendQuery
-        from memory_center.core.store import WorkspaceStore
+        from memory_center.core.storage.workspace import WorkspaceStore
         ws = WorkspaceStore(str(demo_workspace))
         db_path = ws.memory_db_path
         with UnifiedBackendQuery(db_path) as ubq:
@@ -77,11 +77,11 @@ class TestF02BackendConsistency:
 
 class TestF03Metrics:
     def test_metrics_collector_class(self):
-        from memory_center.core.metrics import MetricsCollector
+        from memory_center.core.observability.metrics import MetricsCollector
         assert MetricsCollector is not None
 
     def test_metrics_record_and_query(self, tmp_path: Path):
-        from memory_center.core.metrics import MetricsCollector
+        from memory_center.core.observability.metrics import MetricsCollector
         ws_file = tmp_path / ".memory-center" / "workspace.yaml"
         ws_file.parent.mkdir(parents=True, exist_ok=True)
         ws_file.write_text("root: /tmp/test\n")
@@ -92,7 +92,7 @@ class TestF03Metrics:
         assert rows[0]["value"] == 42.0
 
     def test_metrics_timer(self, tmp_path: Path):
-        from memory_center.core.metrics import MetricsCollector
+        from memory_center.core.observability.metrics import MetricsCollector
         ws_file = tmp_path / ".memory-center" / "workspace.yaml"
         ws_file.parent.mkdir(parents=True, exist_ok=True)
         ws_file.write_text("root: /tmp/test\n")
@@ -103,7 +103,7 @@ class TestF03Metrics:
         assert len(rows) >= 1
 
     def test_metrics_summary(self, tmp_path: Path):
-        from memory_center.core.metrics import MetricsCollector
+        from memory_center.core.observability.metrics import MetricsCollector
         ws_file = tmp_path / ".memory-center" / "workspace.yaml"
         ws_file.parent.mkdir(parents=True, exist_ok=True)
         ws_file.write_text("root: /tmp/test\n")
@@ -184,17 +184,17 @@ class TestF05RegressionAlerts:
 
 class TestF06RuntimeAudit:
     def test_completion_audit_exists(self):
-        from memory_center.core.audit.completion import run_completion_audit
+        from memory_center.core.audit.reports import run_completion_audit
         assert callable(run_completion_audit)
 
     def test_completion_audit_on_demo(self, demo_workspace: Path):
-        from memory_center.core.audit.completion import run_completion_audit
+        from memory_center.core.audit.reports import run_completion_audit
         result = run_completion_audit(str(demo_workspace))
         assert isinstance(result, dict)
         assert "score" in result
 
     def test_workspace_type_detection(self):
-        from memory_center.core.audit.completion import detect_workspace_type
+        from memory_center.core.audit.reports import detect_workspace_type
         assert callable(detect_workspace_type)
 
     def test_audit_cli_entry(self, demo_workspace: Path):

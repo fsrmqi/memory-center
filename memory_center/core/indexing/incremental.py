@@ -192,9 +192,9 @@ class IncrementalIndexer:
         reindex_error = ""
         if affected_paths:
             try:
-                from ..config import load_workspace_config
-                from ..indexer import reindex_workspace
-                from ..store import WorkspaceStore
+                from memory_center.core.indexing.reindex import reindex_workspace
+                from memory_center.core.storage.workspace import WorkspaceStore
+                from memory_center.core.workspace.config import load_workspace_config
 
                 if self._workspace_file:
                     config = load_workspace_config(self._workspace_file)

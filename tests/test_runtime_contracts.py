@@ -1,13 +1,13 @@
 from pathlib import Path
 
-from memory_center.core.config import load_workspace_config
-from memory_center.core.indexer import reindex_workspace
-from memory_center.core.runtime_contracts import (
+from memory_center.core.contracting.runtime import (
     ingest_runtime_contract_samples,
     runtime_contract_compatibility,
     set_contract_migration,
 )
-from memory_center.core.store import WorkspaceStore
+from memory_center.core.indexing.reindex import reindex_workspace
+from memory_center.core.storage.workspace import WorkspaceStore
+from memory_center.core.workspace.config import load_workspace_config
 
 
 def test_active_runtime_dto_usage_blocks_breaking_change_until_migrated(tmp_path: Path) -> None:

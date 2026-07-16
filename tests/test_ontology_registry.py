@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import pytest
 
-from memory_center.core.ontology import (
+from memory_center.core.knowledge.ontology import (
     ALL_EDGE_TYPES,
     ALL_NODE_TYPES,
     EDGE_CONFIDENCE_RANGES,
@@ -174,25 +174,25 @@ class TestConfidenceLabel:
     """Tests for confidence_label() — maps numeric confidence to human label."""
 
     def test_high_confidence(self):
-        from memory_center.core.ontology import confidence_label
+        from memory_center.core.knowledge.ontology import confidence_label
         assert confidence_label(1.0) == "high"
         assert confidence_label(0.9) == "high"
         assert confidence_label(0.8) == "high"
 
     def test_medium_confidence(self):
-        from memory_center.core.ontology import confidence_label
+        from memory_center.core.knowledge.ontology import confidence_label
         assert confidence_label(0.79) == "medium"
         assert confidence_label(0.6) == "medium"
         assert confidence_label(0.5) == "medium"
 
     def test_low_confidence(self):
-        from memory_center.core.ontology import confidence_label
+        from memory_center.core.knowledge.ontology import confidence_label
         assert confidence_label(0.49) == "low"
         assert confidence_label(0.1) == "low"
         assert confidence_label(0.0) == "low"
 
     def test_boundary_values(self):
-        from memory_center.core.ontology import confidence_label
+        from memory_center.core.knowledge.ontology import confidence_label
         assert confidence_label(0.8) == "high"
         assert confidence_label(0.5) == "medium"
         assert confidence_label(0.0) == "low"

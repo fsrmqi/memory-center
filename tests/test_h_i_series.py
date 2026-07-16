@@ -45,11 +45,11 @@ def demo_workspace(tmp_path: Path) -> Path:
 
 class TestH01Constitution:
     def test_rules_module_exists(self):
-        from memory_center.core.rules import match_rules
+        from memory_center.core.governance.rules import match_rules
         assert callable(match_rules)
 
     def test_default_rules_have_ids_and_severity(self):
-        from memory_center.core.rules import DEFAULT_RULES
+        from memory_center.core.governance.rules import DEFAULT_RULES
         assert len(DEFAULT_RULES) > 0
         for rule in DEFAULT_RULES:
             assert "id" in rule
@@ -57,22 +57,22 @@ class TestH01Constitution:
             assert rule["severity"] in ("must", "should", "may", "info")
 
     def test_rules_match_on_scope_and_keywords(self, demo_workspace: Path):
-        from memory_center.core.rules import match_rules
-        from memory_center.core.store import WorkspaceStore
+        from memory_center.core.governance.rules import match_rules
+        from memory_center.core.storage.workspace import WorkspaceStore
         ws = WorkspaceStore(str(demo_workspace))
-        from memory_center.core.config import load_workspace_config
+        from memory_center.core.workspace.config import load_workspace_config
         load_workspace_config(str(demo_workspace))
-        from memory_center.core.store import WorkspaceStore
+        from memory_center.core.storage.workspace import WorkspaceStore
         ws = WorkspaceStore(str(demo_workspace))
         results = match_rules(ws, intent="kafka consumer idempotent")
         assert isinstance(results, list)
 
     def test_rules_load_yaml_config_callable(self):
-        from memory_center.core.rules import load_yaml_rule_config
+        from memory_center.core.governance.rules import load_yaml_rule_config
         assert callable(load_yaml_rule_config)
 
     def test_rules_not_overridden_silently(self):
-        from memory_center.core.rules import DEFAULT_RULES
+        from memory_center.core.governance.rules import DEFAULT_RULES
         ids = [r["id"] for r in DEFAULT_RULES]
         assert len(ids) == len(set(ids)), "Duplicate rule IDs found"
 
@@ -83,11 +83,11 @@ class TestH01Constitution:
 
 class TestH02Traceability:
     def test_write_receipts_module(self):
-        from memory_center.core.write_receipts import build_write_receipt
+        from memory_center.core.tasks.receipts import build_write_receipt
         assert callable(build_write_receipt)
 
     def test_build_write_receipt_returns_dict(self):
-        from memory_center.core.write_receipts import build_write_receipt
+        from memory_center.core.tasks.receipts import build_write_receipt
         receipt = build_write_receipt(
             layer="L1",
             action="write",
@@ -98,17 +98,17 @@ class TestH02Traceability:
         assert isinstance(receipt, dict)
 
     def test_artifacts_module(self):
-        from memory_center.core.artifacts import get_task_artifact, list_task_spaces
+        from memory_center.core.tasks.artifacts import get_task_artifact, list_task_spaces
         assert callable(list_task_spaces)
         assert callable(get_task_artifact)
 
     def test_list_task_spaces_returns_list(self, demo_workspace: Path):
-        from memory_center.core.artifacts import list_task_spaces
+        from memory_center.core.tasks.artifacts import list_task_spaces
         spaces = list_task_spaces(str(demo_workspace))
         assert isinstance(spaces, dict)
 
     def test_write_receipts_file_defined(self):
-        from memory_center.core.write_receipts import WRITE_RECEIPTS_FILE
+        from memory_center.core.tasks.receipts import WRITE_RECEIPTS_FILE
         assert isinstance(WRITE_RECEIPTS_FILE, str)
         assert len(WRITE_RECEIPTS_FILE) > 0
 
@@ -119,24 +119,24 @@ class TestH02Traceability:
 
 class TestH03ClarifyConsistency:
     def test_rules_have_required_fields(self):
-        from memory_center.core.rules import DEFAULT_RULES
+        from memory_center.core.governance.rules import DEFAULT_RULES
         for rule in DEFAULT_RULES:
             assert "id" in rule
             assert "title" in rule
             assert "scope" in rule
 
     def test_rules_scope_is_list(self):
-        from memory_center.core.rules import DEFAULT_RULES
+        from memory_center.core.governance.rules import DEFAULT_RULES
         for rule in DEFAULT_RULES:
             assert isinstance(rule["scope"], list)
 
     def test_glob_match_basic(self):
-        from memory_center.core.rules import _glob_match
+        from memory_center.core.governance.rules import _glob_match
         assert _glob_match("src/main/java/UserConsumer.java", "**/*Consumer.java")
         assert not _glob_match("src/main/java/User.java", "**/*Consumer.java")
 
     def test_glob_match_recursive(self):
-        from memory_center.core.rules import _glob_match
+        from memory_center.core.governance.rules import _glob_match
         assert _glob_match("a/b/c/d.java", "**/*.java")
 
 
@@ -226,27 +226,27 @@ class TestH06ChangeBundles:
 
 class TestH07LayeredRules:
     def test_default_rules_count(self):
-        from memory_center.core.rules import DEFAULT_RULES
+        from memory_center.core.governance.rules import DEFAULT_RULES
         assert len(DEFAULT_RULES) >= 5
 
     def test_rule_severity_levels(self):
-        from memory_center.core.rules import DEFAULT_RULES
+        from memory_center.core.governance.rules import DEFAULT_RULES
         severities = {r["severity"] for r in DEFAULT_RULES}
         assert "must" in severities or "should" in severities
 
     def test_rules_have_file_patterns(self):
-        from memory_center.core.rules import DEFAULT_RULES
+        from memory_center.core.governance.rules import DEFAULT_RULES
         rules_with_patterns = [r for r in DEFAULT_RULES if "file_patterns" in r]
         assert len(rules_with_patterns) > 0
 
     def test_rules_have_trigger_keywords(self):
-        from memory_center.core.rules import DEFAULT_RULES
+        from memory_center.core.governance.rules import DEFAULT_RULES
         rules_with_keywords = [r for r in DEFAULT_RULES if "trigger_keywords" in r]
         assert len(rules_with_keywords) > 0
 
     def test_match_rules_returns_list(self, demo_workspace: Path):
-        from memory_center.core.rules import match_rules
-        from memory_center.core.store import WorkspaceStore
+        from memory_center.core.governance.rules import match_rules
+        from memory_center.core.storage.workspace import WorkspaceStore
         ws = WorkspaceStore(str(demo_workspace))
         results = match_rules(ws, intent="feign client contract change")
         assert isinstance(results, list)
@@ -295,7 +295,7 @@ class TestH08ContextAwareReview:
 
 class TestH09FindingLocation:
     def test_write_receipts_have_ids(self):
-        from memory_center.core.write_receipts import build_write_receipt
+        from memory_center.core.tasks.receipts import build_write_receipt
         receipt = build_write_receipt(layer="L1", action="write", scope="test", target="test", target_file="test.txt")
         assert isinstance(receipt, dict)
         # Should have some kind of unique identifier
@@ -448,12 +448,12 @@ class TestI02CompatibilityAudit:
         assert test_file.exists()
 
     def test_schema_version_registry_exists(self):
-        from memory_center.core.schemas import SCHEMA_VERSIONS
+        from memory_center.core.foundation.schemas import SCHEMA_VERSIONS
         assert isinstance(SCHEMA_VERSIONS, dict)
         assert len(SCHEMA_VERSIONS) > 0
 
     def test_schema_required_fields_registry_exists(self):
-        from memory_center.core.schemas import SCHEMA_REQUIRED_FIELDS
+        from memory_center.core.foundation.schemas import SCHEMA_REQUIRED_FIELDS
         assert isinstance(SCHEMA_REQUIRED_FIELDS, dict)
 
 
@@ -482,11 +482,11 @@ class TestI03SecurityPrivacy:
         assert result.stdout.strip() == "" or result.returncode != 0
 
     def test_diagnostics_safe_reason_exists(self):
-        from memory_center.core.diagnostics import safe_reason
+        from memory_center.core.observability.diagnostics import safe_reason
         assert callable(safe_reason)
 
     def test_diagnostics_strips_paths(self):
-        from memory_center.core.diagnostics import safe_reason
+        from memory_center.core.observability.diagnostics import safe_reason
         result = safe_reason(reason="/Users/test/secret/path")
         assert "/Users/test" not in result
 

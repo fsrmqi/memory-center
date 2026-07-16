@@ -2,7 +2,13 @@
 import importlib.util
 from pathlib import Path
 
-from memory_center.core.indexer import (
+from memory_center.core.governance.registry import (
+    add_to_group,
+    create_group,
+    load_registry,
+    register_workspace,
+)
+from memory_center.core.indexing.reindex import (
     _endpoint_matches,
     _normalize_path_params,
 )
@@ -10,12 +16,6 @@ from memory_center.core.orchestrator import (
     _annotate_phantom_nodes,
     group_chain,
     memory_callers,
-)
-from memory_center.core.registry import (
-    add_to_group,
-    create_group,
-    load_registry,
-    register_workspace,
 )
 
 HAS_MCP = importlib.util.find_spec("mcp") is not None and importlib.util.find_spec("mcp.server.fastmcp") is not None

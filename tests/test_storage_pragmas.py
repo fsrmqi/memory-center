@@ -90,7 +90,7 @@ def test_fast_write_mode_restores_on_exception(tmp_path: Path) -> None:
 
 
 def test_graph_store_connect_applies_pragmas(tmp_path: Path) -> None:
-    from memory_center.core.graph import GraphStore
+    from memory_center.core.storage.graph import GraphStore
 
     with GraphStore(tmp_path / "graph.sqlite") as graph:
         state = read_pragma_state(graph.connect())
@@ -101,7 +101,7 @@ def test_graph_store_connect_applies_pragmas(tmp_path: Path) -> None:
 
 
 def test_memory_backend_connect_applies_pragmas(tmp_path: Path) -> None:
-    from memory_center.core.memory_backend import MemoryBackendStore
+    from memory_center.core.storage.memory_backend import MemoryBackendStore
 
     with MemoryBackendStore(tmp_path / "mem.sqlite") as mem:
         state = read_pragma_state(mem.connect())

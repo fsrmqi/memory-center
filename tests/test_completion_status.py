@@ -1,4 +1,8 @@
-from memory_center.core.completion import CompletionStatus, evaluate_completion, evaluate_walkthrough_completion
+from memory_center.core.assessment.completion import (
+    CompletionStatus,
+    evaluate_completion,
+    evaluate_walkthrough_completion,
+)
 
 
 def test_complete_chain_tells_agent_to_stop_searching() -> None:

@@ -5,9 +5,10 @@ import time
 from pathlib import Path
 from typing import Any
 
+from memory_center.core.storage.workspace import WorkspaceStore
+
 from ..indexing.control_plane import index_control_status
 from ..indexing.shards import load_contract_shard, load_topology_shard
-from ..store import WorkspaceStore
 from .cross_service import query_cross_service_shards, route_cross_service_shards
 
 

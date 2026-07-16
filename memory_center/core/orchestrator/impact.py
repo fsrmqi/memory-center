@@ -4,20 +4,14 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from ..diagnostics import DIAG, diag_entry
+from memory_center.core.governance.rules import match_rules
+from memory_center.core.knowledge.ontology import edge_strength
+from memory_center.core.observability.diagnostics import DIAG, diag_entry
+from memory_center.core.observability.tracking import log_token_gain
+from memory_center.core.storage.graph import GraphStore
+
 from ..explanation import explanation_entry, merge_explanations
-from ..graph import GraphStore
-from ..ontology import edge_strength
-from ..rules import match_rules
-from ..tracking import log_token_gain
 from ..verification.heuristics import apply_candidate_path_learning
-from .common import (
-    _build_progressive_levels,
-    _impact_checklist,
-    _is_compact_view,
-    _unknown_static_analysis_risks,
-    load_context,
-)
 from .compact import _measure_compact_gain
 from .query import (
     _build_augmented_lookup_payload,
@@ -30,6 +24,13 @@ from .query import (
     _format_compact_node_summary,
     _summarize_chain_edges,
     memory_symbol,
+)
+from .shared import (
+    _build_progressive_levels,
+    _impact_checklist,
+    _is_compact_view,
+    _unknown_static_analysis_risks,
+    load_context,
 )
 
 
@@ -150,7 +151,7 @@ def memory_impact(
 
 def _compact_impact_result(result: dict[str, Any], budget: str = "medium") -> dict[str, Any]:
     from ..reasoning.integration import compact_reasoning_view
-    from .common import _budget_limits
+    from .shared import _budget_limits
 
     limits = _budget_limits(budget)
     target = result.get("target", {}) or {}

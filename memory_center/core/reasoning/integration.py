@@ -16,7 +16,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from ..diagnostics import DIAG, diag_entry
+from memory_center.core.observability.diagnostics import DIAG, diag_entry
 
 # Semantic strength constants aligned with ONTOLOGY.md
 SEMANTIC_STRENGTH_FACT = "fact"
@@ -83,10 +83,11 @@ def run_reasoning_patterns(
     Returns dict with keys: patterns, transitive, risk, optionally _diagnostics.
     Each entry carries _semantic_strength, _confidence, _pattern_group, _evidence.
     """
+    from memory_center.core.storage.workspace import WorkspaceStore
+
     from ..storage.unified import UnifiedStore
-    from ..store import WorkspaceStore
-    from .models import ReasoningRequest
     from .pipeline import ReasoningPipeline
+    from .request import ReasoningRequest
 
     result: dict[str, Any] = {
         "facts": [],
@@ -122,7 +123,7 @@ def run_reasoning_patterns(
         result["_diagnostics"] = diagnostics
         return result
     try:
-        from ..parser_precision import parser_precision_from_workspace
+        from memory_center.core.indexing.precision import parser_precision_from_workspace
 
         parser_precision = parser_precision_from_workspace(workspace_file)
         if parser_precision.get("status") in {"regex_only", "mixed_fallback"}:

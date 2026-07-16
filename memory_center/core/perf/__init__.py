@@ -5,7 +5,7 @@ wall-clock on Java-heavy monorepos lives outside SQLite write — in
 the Java parsing + IO + Python assembly pipeline. To know which sub-
 layer to attack next, we need a real-flame profile, not more guesses.
 
-This module wraps :func:`memory_center.core.indexer.reindex_workspace`
+This module wraps :func:`memory_center.core.indexing.reindex.reindex_workspace`
 in :mod:`cProfile` and emits both the raw ``pstats`` file (for
 ``snakeviz`` / ``pyprof2calltree``) and a human-readable top-N
 summary (so ``memory-center bench-profile`` prints something useful
@@ -90,9 +90,9 @@ def profile_reindex(
     # when no profiling is happening.
     import time
 
-    from memory_center.core.config import load_workspace_config
-    from memory_center.core.indexer import reindex_workspace
-    from memory_center.core.store import WorkspaceStore
+    from memory_center.core.indexing.reindex import reindex_workspace
+    from memory_center.core.storage.workspace import WorkspaceStore
+    from memory_center.core.workspace.config import load_workspace_config
 
     config = load_workspace_config(str(workspace_file))
     store = WorkspaceStore(workspace_file)

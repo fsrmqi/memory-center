@@ -1,7 +1,7 @@
 """Tests for hooks.yaml spec module — schema, validation, loading, defaults."""
 from pathlib import Path
 
-from memory_center.core.store import WorkspaceStore
+from memory_center.core.storage.workspace import WorkspaceStore
 from memory_center.hooks.spec import (
     ensure_default_hooks,
     load_default_hooks,

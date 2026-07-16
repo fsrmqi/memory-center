@@ -7,9 +7,9 @@ without going through the orchestrator.
 """
 
 from . import answer, continuations, escalation, risks, symbols
-from .artifact import render_walkthrough_markdown, slugify_walkthrough_symbol
 from .cache import WalkthroughCache
-from .quality import evaluate_walkthrough_result
+from .evaluation import evaluate_walkthrough_result
+from .report import render_walkthrough_markdown, slugify_walkthrough_symbol
 
 __all__ = [
     "WalkthroughCache",

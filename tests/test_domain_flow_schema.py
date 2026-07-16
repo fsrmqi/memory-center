@@ -30,8 +30,8 @@ def demo_workspace(tmp_path: Path) -> Path:
 class TestFlowSchema:
     def test_extract_returns_required_keys(self, demo_workspace: Path):
         from memory_center.core.domain.flow import extract_business_flows_for_workspace
-        from memory_center.core.graph import GraphStore
-        from memory_center.core.store import WorkspaceStore
+        from memory_center.core.storage.graph import GraphStore
+        from memory_center.core.storage.workspace import WorkspaceStore
         ws = WorkspaceStore(str(demo_workspace))
         with GraphStore(ws.graph_db_path) as graph:
             nodes = graph.find_nodes("Order", limit=1)
@@ -87,7 +87,7 @@ class TestDomainSchema:
     def test_domain_extractor_works(self, demo_workspace: Path):
         from memory_center.core.domain.extractor import BusinessDomainExtractor
         from memory_center.core.storage.unified import UnifiedStore
-        from memory_center.core.store import WorkspaceStore
+        from memory_center.core.storage.workspace import WorkspaceStore
         ws = WorkspaceStore(str(demo_workspace))
         with UnifiedStore(ws.graph_db_path) as store:
             extractor = BusinessDomainExtractor(store)

@@ -5,13 +5,13 @@ from pathlib import Path
 
 import yaml
 
-from memory_center.core.config import load_workspace_config
-from memory_center.core.graph import GraphStore, node_id
-from memory_center.core.indexer import reindex_workspace
 from memory_center.core.indexing.java_call_resolver import JavaCallResolver, build_java_class_index
 from memory_center.core.indexing.java_regex_parser import RegexJavaParser
+from memory_center.core.indexing.reindex import reindex_workspace
 from memory_center.core.orchestrator.query import memory_callees
-from memory_center.core.store import WorkspaceStore
+from memory_center.core.storage.graph import GraphStore, node_id
+from memory_center.core.storage.workspace import WorkspaceStore
+from memory_center.core.workspace.config import load_workspace_config
 
 
 def _symbol(project: str, file: str, source: str) -> dict:

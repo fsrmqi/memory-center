@@ -6,16 +6,17 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from ..config import load_workspace_config
+from memory_center.core.indexing.reindex import reindex_workspace
+from memory_center.core.storage.workspace import WorkspaceStore
+from memory_center.core.workspace.config import load_workspace_config
+
 from ..contracting.runtime import RUNTIME_SAMPLES_FILE, runtime_contract_compatibility
 from ..contracting.static import CONTRACT_DIFF_FILE, CONTRACT_SNAPSHOT_FILE, contract_semantic_report
-from ..indexer import reindex_workspace
 from ..orchestrator import (
     memory_eval_java_call_resolution,
     memory_eval_parser_benchmark,
     memory_query_hybrid,
 )
-from ..store import WorkspaceStore
 from .golden import run_golden_suite
 
 

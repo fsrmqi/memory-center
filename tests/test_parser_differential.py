@@ -148,9 +148,9 @@ def test_tree_sitter_fallback_reason_is_observable() -> None:
 
 
 def test_reindex_returns_parser_selection_diagnostics(demo_workspace: Path) -> None:
-    from memory_center.core.config import load_workspace_config
-    from memory_center.core.indexer import reindex_workspace
-    from memory_center.core.store import WorkspaceStore
+    from memory_center.core.indexing.reindex import reindex_workspace
+    from memory_center.core.storage.workspace import WorkspaceStore
+    from memory_center.core.workspace.config import load_workspace_config
 
     config = load_workspace_config(demo_workspace)
     result = reindex_workspace(config, WorkspaceStore(demo_workspace))
@@ -173,10 +173,10 @@ def test_reindex_returns_parser_selection_diagnostics(demo_workspace: Path) -> N
 
 
 def test_retrieval_exposes_parser_precision_diagnostics(demo_workspace: Path) -> None:
-    from memory_center.core.config import load_workspace_config
-    from memory_center.core.indexer import reindex_workspace
+    from memory_center.core.indexing.reindex import reindex_workspace
     from memory_center.core.orchestrator import memory_query_hybrid
-    from memory_center.core.store import WorkspaceStore
+    from memory_center.core.storage.workspace import WorkspaceStore
+    from memory_center.core.workspace.config import load_workspace_config
 
     config = load_workspace_config(demo_workspace)
     reindex_workspace(config, WorkspaceStore(demo_workspace))
@@ -188,7 +188,7 @@ def test_retrieval_exposes_parser_precision_diagnostics(demo_workspace: Path) ->
 
 
 def test_java_symbol_preserves_overloaded_method_signatures() -> None:
-    from memory_center.core.indexer import parse_java_symbols
+    from memory_center.core.indexing.reindex import parse_java_symbols
 
     text = (CORPUS / "OverloadedService.java").read_text(encoding="utf-8")
     symbol = parse_java_symbols("parser-corpus", "OverloadedService.java", text)

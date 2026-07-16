@@ -1,10 +1,10 @@
 from pathlib import Path
 
-from memory_center.core.config import load_workspace_config
-from memory_center.core.contracts import CONTRACT_DIFF_FILE
-from memory_center.core.indexer import reindex_workspace
-from memory_center.core.orchestrator.workspace import workspace_check_contract
-from memory_center.core.store import WorkspaceStore
+from memory_center.core.contracting.static import CONTRACT_DIFF_FILE
+from memory_center.core.indexing.reindex import reindex_workspace
+from memory_center.core.orchestrator.workspace_ops import workspace_check_contract
+from memory_center.core.storage.workspace import WorkspaceStore
+from memory_center.core.workspace.config import load_workspace_config
 
 
 def test_dto_field_removal_is_breaking_contract_change(tmp_path: Path) -> None:

@@ -10,39 +10,11 @@ from typer.testing import CliRunner
 
 from memory_center import __version__
 from memory_center.cli.main import app
-from memory_center.core.artifacts import (
-    ARTIFACT_WRITE_AUDIT_FILE,
-    append_change_log,
-    append_task_change_log,
-    archive_task_space,
-    artifact_context,
-    artifact_outline,
-    auto_archive_task_spaces,
-    compact_change_log,
-    create_task_space,
-    get_artifact,
-    get_task_artifact,
-    list_artifacts,
-    list_task_spaces,
-    resolve_task_space,
-    task_space_health,
-    task_space_repair_execute,
-    task_space_repair_plan,
-    task_spaces_health,
-    touch_task_activity,
-    update_artifact,
-    update_task_artifact,
-    update_task_current_summary_snapshot,
-    update_task_status,
-)
-from memory_center.core.config import load_workspace_config
-from memory_center.core.exporters import (
-    export_mermaid,
-    export_workspace_dashboard_html,
-    export_workspace_dashboard_markdown,
-)
-from memory_center.core.indexer import reindex_workspace
-from memory_center.core.instructions import write_agent_instructions
+from memory_center.core.foundation.schemas import validate_schema_payload
+from memory_center.core.governance.instructions import write_agent_instructions
+from memory_center.core.governance.registry import add_to_group, create_group, register_workspace
+from memory_center.core.governance.rules import ensure_default_rules
+from memory_center.core.indexing.reindex import reindex_workspace
 from memory_center.core.orchestrator import (
     memory_backend_query,
     memory_eval_agent_guidance,
@@ -85,13 +57,41 @@ from memory_center.core.orchestrator import (
     workspace_unresolved_items,
     workspace_write_receipts,
 )
-from memory_center.core.orchestrator.common import _merge_artifact_section
-from memory_center.core.registry import add_to_group, create_group, register_workspace
-from memory_center.core.rules import ensure_default_rules
-from memory_center.core.schemas import validate_schema_payload
-from memory_center.core.store import WorkspaceStore
-from memory_center.core.timeline import timeline_query
-from memory_center.core.validators import doctor
+from memory_center.core.orchestrator.shared import _merge_artifact_section
+from memory_center.core.presentation.exporters import (
+    export_mermaid,
+    export_workspace_dashboard_html,
+    export_workspace_dashboard_markdown,
+)
+from memory_center.core.storage.workspace import WorkspaceStore
+from memory_center.core.tasks.artifacts import (
+    ARTIFACT_WRITE_AUDIT_FILE,
+    append_change_log,
+    append_task_change_log,
+    archive_task_space,
+    artifact_context,
+    artifact_outline,
+    auto_archive_task_spaces,
+    compact_change_log,
+    create_task_space,
+    get_artifact,
+    get_task_artifact,
+    list_artifacts,
+    list_task_spaces,
+    resolve_task_space,
+    task_space_health,
+    task_space_repair_execute,
+    task_space_repair_plan,
+    task_spaces_health,
+    touch_task_activity,
+    update_artifact,
+    update_task_artifact,
+    update_task_current_summary_snapshot,
+    update_task_status,
+)
+from memory_center.core.tasks.timeline import timeline_query
+from memory_center.core.workspace.config import load_workspace_config
+from memory_center.core.workspace.doctor import doctor
 from memory_center.http.server import create_handler
 
 
@@ -1598,8 +1598,8 @@ def test_session_memory_flow(tmp_path: Path):
 
 
 def test_graph_query_context_and_impact(tmp_path):
-    from memory_center.core.config import load_workspace_config
-    from memory_center.core.indexer import reindex_workspace
+    from memory_center.core.governance.rules import ensure_default_rules
+    from memory_center.core.indexing.reindex import reindex_workspace
     from memory_center.core.orchestrator import (
         memory_callees,
         memory_callers,
@@ -1612,8 +1612,8 @@ def test_graph_query_context_and_impact(tmp_path):
         memory_verify_checklist,
         workspace_status,
     )
-    from memory_center.core.rules import ensure_default_rules
-    from memory_center.core.store import WorkspaceStore
+    from memory_center.core.storage.workspace import WorkspaceStore
+    from memory_center.core.workspace.config import load_workspace_config
 
     workspace = str(_copy_root_demo_workspace(tmp_path))
     config = load_workspace_config(workspace)
@@ -1742,11 +1742,11 @@ def test_graph_query_context_and_impact(tmp_path):
 def test_trusted_graph_edges_and_evidence_based_impact(tmp_path: Path):
     import shutil
 
-    from memory_center.core.config import load_workspace_config
-    from memory_center.core.graph import GraphStore
-    from memory_center.core.indexer import reindex_workspace
+    from memory_center.core.indexing.reindex import reindex_workspace
     from memory_center.core.orchestrator import memory_impact
-    from memory_center.core.store import WorkspaceStore
+    from memory_center.core.storage.graph import GraphStore
+    from memory_center.core.storage.workspace import WorkspaceStore
+    from memory_center.core.workspace.config import load_workspace_config
 
     source = Path("examples/spring-cloud-demo")
     target = tmp_path / "trusted-demo"
@@ -2111,7 +2111,7 @@ def test_http_bridge_routes(tmp_path: Path):
 def test_local_embedding_backend_is_optional_and_selectable(tmp_path: Path):
     import shutil
 
-    import memory_center.core.semantic as semantic
+    import memory_center.core.retrieval.semantic as semantic
 
     source = Path("examples/spring-cloud-demo")
     target = tmp_path / "semantic-backend-demo"
@@ -2650,8 +2650,8 @@ def test_case_risk_level_with_evidence_refs():
 
 def test_partial_reindex_only_touches_changed_project(tmp_path: Path):
     """Partial reindex with --project only rebuilds graph nodes for that project."""
-    from memory_center.core.config import load_workspace_config
-    from memory_center.core.graph import GraphStore
+    from memory_center.core.storage.graph import GraphStore
+    from memory_center.core.workspace.config import load_workspace_config
 
     workspace = _copy_demo_workspace(tmp_path, "partial-reindex")
     config = load_workspace_config(workspace)
@@ -2673,7 +2673,7 @@ def test_partial_reindex_only_touches_changed_project(tmp_path: Path):
 
 def test_index_mirror_on_write_and_prefer_backend(tmp_path: Path):
     """write_json mirrors to SQLite; read_json_prefer_backend returns same data."""
-    from memory_center.core.config import load_workspace_config
+    from memory_center.core.workspace.config import load_workspace_config
 
     workspace = _copy_demo_workspace(tmp_path, "index-mirror")
     config = load_workspace_config(workspace)
@@ -3072,7 +3072,7 @@ def test_bm25_scoring_returns_results(tmp_path: Path):
     store = WorkspaceStore(workspace)
     reindex_workspace(config, store)
 
-    from memory_center.core.semantic import semantic_query
+    from memory_center.core.retrieval.semantic import semantic_query
     results = semantic_query(str(workspace), "ArticleFeignClient", limit=5)
     assert len(results) > 0
     # BM25 results should have score and backend field

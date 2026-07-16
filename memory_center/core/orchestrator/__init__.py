@@ -9,36 +9,8 @@ continue to work unchanged through this ``__init__.py``.
 
 from __future__ import annotations
 
-# --- common utilities (re-exported for convenience) ---
-# --- private helpers needed by tests ---
-from .common import (
-    EVENT_PAYLOAD_INLINE_LIMIT,
-    LAYER_L0,
-    LAYER_L1,
-    LAYER_L2,
-    LAYER_L3,
-    MEMORY_LAYER_ORDER,
-    SESSION_EVENTS_FILE,
-    SESSION_SUMMARIES_FILE,
-    TOOL_WORKSPACE_ARTIFACT_UPDATE,
-    TOOL_WORKSPACE_LOG_SESSION_EVENT,
-    TOOL_WORKSPACE_RECORD_CASE,
-    TOOL_WORKSPACE_START_SESSION,
-    TOOL_WORKSPACE_SUGGEST_CASE,
-    TOOL_WORKSPACE_SYNC_CASE_ARTIFACTS,
-    TOOL_WORKSPACE_SYNC_SNIFF_ARTIFACTS,
-    _build_sniff_auto_sync_recommendation,
-    _case_risk_level,
-    _score_threshold_for_sync_mode,
-    _sniff_risk_level,
-    load_context,
-    preferred_edge_types,
-    rank_files,
-    tokenize,
-)
-
 # --- evaluation functions ---
-from .eval import (
+from .evaluations import (
     memory_eval_agent_guidance,
     memory_eval_agent_guidance_adoption,
     memory_eval_agent_guidance_adoption_trend,
@@ -126,6 +98,34 @@ from .session import (
     workspace_suggest_case,
 )
 
+# --- common utilities (re-exported for convenience) ---
+# --- private helpers needed by tests ---
+from .shared import (
+    EVENT_PAYLOAD_INLINE_LIMIT,
+    LAYER_L0,
+    LAYER_L1,
+    LAYER_L2,
+    LAYER_L3,
+    MEMORY_LAYER_ORDER,
+    SESSION_EVENTS_FILE,
+    SESSION_SUMMARIES_FILE,
+    TOOL_WORKSPACE_ARTIFACT_UPDATE,
+    TOOL_WORKSPACE_LOG_SESSION_EVENT,
+    TOOL_WORKSPACE_RECORD_CASE,
+    TOOL_WORKSPACE_START_SESSION,
+    TOOL_WORKSPACE_SUGGEST_CASE,
+    TOOL_WORKSPACE_SYNC_CASE_ARTIFACTS,
+    TOOL_WORKSPACE_SYNC_SNIFF_ARTIFACTS,
+    _build_sniff_auto_sync_recommendation,
+    _case_risk_level,
+    _score_threshold_for_sync_mode,
+    _sniff_risk_level,
+    load_context,
+    preferred_edge_types,
+    rank_files,
+    tokenize,
+)
+
 # --- artifact sync ---
 from .sync import (
     workspace_sync_case_to_artifacts,
@@ -133,7 +133,7 @@ from .sync import (
 )
 
 # --- workspace operations ---
-from .workspace import (
+from .workspace_ops import (
     workspace_check_contract,
     workspace_check_rules,
     workspace_continuity_dashboard,

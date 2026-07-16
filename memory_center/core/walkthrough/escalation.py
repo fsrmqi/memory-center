@@ -44,8 +44,9 @@ def path_is_within(path: Path, maybe_parent: Path) -> bool:
 
 def registry_covering_workspaces(current_ws: Path, current_root: Path) -> list[Path]:
     try:
-        from ..orchestrator.common import load_context
-        from ..registry import load_registry
+        from memory_center.core.governance.registry import load_registry
+
+        from ..orchestrator.shared import load_context
     except Exception:
         return []
     out: list[Path] = []
@@ -71,7 +72,7 @@ def registry_covering_workspaces(current_ws: Path, current_root: Path) -> list[P
 
 def registry_group_sibling_workspaces(current_ws: Path) -> list[Path]:
     try:
-        from ..registry import load_registry
+        from memory_center.core.governance.registry import load_registry
     except Exception:
         return []
     try:
@@ -105,7 +106,7 @@ def registry_group_sibling_workspaces(current_ws: Path) -> list[Path]:
 
 
 def find_parent_or_covering_workspace(workspace_file: str | Path) -> Path | None:
-    from ..orchestrator.common import load_context
+    from ..orchestrator.shared import load_context
 
     current_ws = Path(workspace_file).expanduser().resolve()
     try:

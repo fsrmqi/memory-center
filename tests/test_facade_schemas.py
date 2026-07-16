@@ -13,7 +13,7 @@ import inspect
 
 import pytest
 
-from memory_center.core.schemas import (
+from memory_center.core.foundation.schemas import (
     SCHEMA_REQUIRED_FIELDS,
     SCHEMA_VERSIONS,
     schema_meta,

@@ -3,8 +3,9 @@ from __future__ import annotations
 from collections.abc import Iterable
 from typing import Any
 
-from ..schemas import with_schema
-from ..store import WorkspaceStore
+from memory_center.core.foundation.schemas import with_schema
+from memory_center.core.storage.workspace import WorkspaceStore
+
 from .receipts import WRITE_RECEIPTS_FILE
 
 SESSION_EVENTS_FILE = "session-events.jsonl"

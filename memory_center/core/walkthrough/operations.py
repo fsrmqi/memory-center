@@ -4,12 +4,13 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from ..orchestrator.common import SESSION_EVENTS_FILE, load_context
-from ..store import WorkspaceStore, _safe_path
+from memory_center.core.storage.workspace import WorkspaceStore, _safe_path
+
+from ..orchestrator.shared import SESSION_EVENTS_FILE, load_context
 from . import answer, escalation
-from .artifact import render_walkthrough_markdown, slugify_walkthrough_symbol
 from .cache import WalkthroughCache
-from .quality import evaluate_walkthrough_result
+from .evaluation import evaluate_walkthrough_result
+from .report import render_walkthrough_markdown, slugify_walkthrough_symbol
 
 WalkthroughProvider = Callable[..., dict[str, Any]]
 

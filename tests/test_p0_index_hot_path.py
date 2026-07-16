@@ -25,12 +25,12 @@ from unittest import mock
 
 import pytest
 
+from memory_center.core.foundation.models import JavaSymbol
+from memory_center.core.foundation.models import to_dict as models_to_dict
 from memory_center.core.indexing.tree_sitter_parser import (
     _HAS_TREE_SITTER,
     TreeSitterJavaParser,
 )
-from memory_center.core.models import JavaSymbol
-from memory_center.core.models import to_dict as models_to_dict
 from memory_center.core.storage.metadata import metadata_json
 
 

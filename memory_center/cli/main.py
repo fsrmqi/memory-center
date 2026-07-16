@@ -12,16 +12,13 @@ import typer
 from rich import print
 
 from memory_center import __version__
-from memory_center.core.config import (
-    add_workspace_service,
-    load_workspace_config,
-    remove_workspace_service,
-    write_default_workspace,
-)
-from memory_center.core.dispatch import CommandRegistry
-from memory_center.core.errors import normalize_exception
-from memory_center.core.indexer import reindex_workspace
-from memory_center.core.instructions import write_agent_instructions
+from memory_center.core.foundation.dispatch import CommandRegistry
+from memory_center.core.foundation.errors import normalize_exception
+from memory_center.core.governance.instructions import write_agent_instructions
+from memory_center.core.governance.registry import add_to_group, create_group, list_workspaces, register_workspace
+from memory_center.core.governance.rules import ensure_default_rules
+from memory_center.core.indexing.reindex import reindex_workspace
+from memory_center.core.knowledge.wiki import generate_skills, generate_wiki
 from memory_center.core.orchestrator import (
     group_impact,
     group_query,
@@ -99,9 +96,7 @@ from memory_center.core.presentation.exporters import (
     export_workspace_dashboard_html,
     export_workspace_dashboard_markdown,
 )
-from memory_center.core.registry import add_to_group, create_group, list_workspaces, register_workspace
-from memory_center.core.rules import ensure_default_rules
-from memory_center.core.store import WorkspaceStore
+from memory_center.core.storage.workspace import WorkspaceStore
 from memory_center.core.tasks.artifacts import (
     append_change_log,
     append_task_change_log,
@@ -126,8 +121,13 @@ from memory_center.core.tasks.artifacts import (
     update_task_artifact,
     update_task_status,
 )
-from memory_center.core.validators import doctor as run_doctor
-from memory_center.core.wiki import generate_skills, generate_wiki
+from memory_center.core.workspace.config import (
+    add_workspace_service,
+    load_workspace_config,
+    remove_workspace_service,
+    write_default_workspace,
+)
+from memory_center.core.workspace.doctor import doctor as run_doctor
 from memory_center.hooks.adapters.claude_code import generate_claude_code_hooks, write_claude_code_settings
 from memory_center.hooks.adapters.codex import generate_codex_scripts
 from memory_center.hooks.adapters.cursor import generate_cursor_rules
@@ -920,7 +920,7 @@ def eval_parser_benchmark_cmd(
 @app.command("parser-status")
 def parser_status_cmd():
     """Show tree-sitter Java activation status and install hints."""
-    from memory_center.core.parser_precision import tree_sitter_activation_status
+    from memory_center.core.indexing.precision import tree_sitter_activation_status
 
     print(json.dumps(tree_sitter_activation_status(), ensure_ascii=False, indent=2, default=str))
 
@@ -1136,7 +1136,7 @@ def constraint_cmd(
     context: str = typer.Option("", help="Context for auto-select."),
 ):
     """Show constraint template or auto-select action."""
-    from memory_center.core.templates import auto_select_action, get_constraint_template
+    from memory_center.core.governance.templates import auto_select_action, get_constraint_template
     if context:
         action = auto_select_action(context, template)
         print({"context": context, "template": template, "recommended_action": action})
@@ -1662,7 +1662,7 @@ def audit_cmd(
     work_package: str = typer.Option("", help="Work package to audit."),
 ):
     """Run completion audit for documentation, tests, and implementation."""
-    from memory_center.core.audit.completion import run_completion_audit
+    from memory_center.core.audit.reports import run_completion_audit
     print(run_completion_audit(workspace, work_package=work_package))
 
 
@@ -1707,7 +1707,7 @@ def backend_consistency_cmd(
 ):
     """Check consistency between JSONL files and SQLite backend."""
     from memory_center.core.backend.query import UnifiedBackendQuery
-    from memory_center.core.store import WorkspaceStore
+    from memory_center.core.storage.workspace import WorkspaceStore
     store = WorkspaceStore(workspace)
     with UnifiedBackendQuery(store.memory_db_path) as backend:
         print(backend.check_consistency(store.base_dir))
@@ -2350,7 +2350,7 @@ def business_flow_impact_cmd(
 @app.command("metrics-summary")
 def metrics_summary_cmd():
     """Show metrics summary."""
-    from memory_center.core.metrics import MetricsCollector
+    from memory_center.core.observability.metrics import MetricsCollector
     mc = MetricsCollector()
     print(json.dumps(mc.summary(), indent=2, default=str))
 

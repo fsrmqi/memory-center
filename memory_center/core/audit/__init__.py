@@ -1,5 +1,5 @@
 """Audit — completion tracking and documentation alignment."""
-from .completion import (
+from .reports import (
     AUDIT_LOG_FILE,
     DESIGN_DECISIONS_FILE,
     generate_audit_report,

@@ -550,7 +550,7 @@ class TestIncrementalIndexer:
         }
 
         with patch(
-            "memory_center.core.indexer.reindex_workspace",
+            "memory_center.core.indexing.reindex.reindex_workspace",
             return_value={"mode": "partial", "scanned_files": 1},
         ) as reindex:
             result = indexer.incremental_reindex(parse_fn=None)

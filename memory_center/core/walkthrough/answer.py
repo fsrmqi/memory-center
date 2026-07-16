@@ -230,7 +230,7 @@ def build_method_walkthrough_summary_lines(
 
 
 def compact_method_walkthrough_result(result: dict[str, Any], budget: str = "medium", *, cache_ttl_seconds: int = 15) -> dict[str, Any]:
-    from ..orchestrator.common import _budget_limits
+    from ..orchestrator.shared import _budget_limits
     from ..reasoning.integration import compact_reasoning_view
 
     limits = _budget_limits(budget)

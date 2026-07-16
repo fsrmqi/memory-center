@@ -22,29 +22,29 @@ class TestEntityValidator:
     """Test EntityValidator from ontology module."""
 
     def test_is_feign_entity_by_name(self):
-        from memory_center.core.ontology import EntityValidator
+        from memory_center.core.knowledge.ontology import EntityValidator
         assert EntityValidator.is_feign_entity("ArticleFeignClient") is True
         assert EntityValidator.is_feign_entity("FeignArticleService") is True
         assert EntityValidator.is_feign_entity("FeginAutomaticReviewTaskService") is True
 
     def test_is_feign_entity_by_annotation(self):
-        from memory_center.core.ontology import EntityValidator
+        from memory_center.core.knowledge.ontology import EntityValidator
         assert EntityValidator.is_feign_entity("SomeClient", metadata={"has_feign_annotation": True}) is True
 
     def test_is_feign_entity_by_node_type(self):
-        from memory_center.core.ontology import EntityValidator
+        from memory_center.core.knowledge.ontology import EntityValidator
         assert EntityValidator.is_feign_entity("foo", node_type="FeignClient") is True
         assert EntityValidator.is_feign_entity("foo", node_type="FeignMethod") is True
 
     def test_is_local_service(self):
-        from memory_center.core.ontology import EntityValidator
+        from memory_center.core.knowledge.ontology import EntityValidator
         assert EntityValidator.is_local_service("ArticleService", node_type="Class") is True
         assert EntityValidator.is_local_service("ArticleServiceImpl", node_type="Class") is True
         # Feign should NOT be local
         assert EntityValidator.is_local_service("ArticleFeignClient", node_type="Class") is False
 
     def test_validate_endpoint_path(self):
-        from memory_center.core.ontology import EntityValidator
+        from memory_center.core.knowledge.ontology import EntityValidator
         specific = EntityValidator.validate_endpoint_path("/api/users")
         assert specific["is_specific"] is True
         assert specific["confidence"] == 0.9
@@ -53,7 +53,7 @@ class TestEntityValidator:
         assert vague["confidence"] == 0.1
 
     def test_classify_entity_category(self):
-        from memory_center.core.ontology import EntityValidator
+        from memory_center.core.knowledge.ontology import EntityValidator
         assert EntityValidator.classify_entity_category("Service") == "structural"
         assert EntityValidator.classify_entity_category("Class") == "declarative"
         assert EntityValidator.classify_entity_category("Endpoint") == "contractual"
@@ -63,7 +63,7 @@ class TestEntityValidator:
         assert EntityValidator.classify_entity_category("Unknown") == "unknown"
 
     def test_validate_memory_layer(self):
-        from memory_center.core.ontology import EntityValidator
+        from memory_center.core.knowledge.ontology import EntityValidator
         assert EntityValidator.validate_memory_layer("SessionEvent")["layer"] == "L0"
         assert EntityValidator.validate_memory_layer("Handoff")["layer"] == "L1"
         assert EntityValidator.validate_memory_layer("Task")["layer"] == "L2"
@@ -74,26 +74,26 @@ class TestSemanticStrengthAnnotation:
     """Test annotate_semantic_strength and multi_hop_confidence."""
 
     def test_annotate_by_node_type(self):
-        from memory_center.core.ontology import annotate_semantic_strength
+        from memory_center.core.knowledge.ontology import annotate_semantic_strength
         results = [{"node": {"type": "Class"}, "type": "Class"}]
         annotated = annotate_semantic_strength(results)
         assert annotated[0]["semantic_strength"] == "fact"
 
     def test_annotate_by_edge_type(self):
-        from memory_center.core.ontology import annotate_semantic_strength
+        from memory_center.core.knowledge.ontology import annotate_semantic_strength
         results = [{"edge_type": "CALLS_METHOD"}]
         annotated = annotate_semantic_strength(results)
         assert annotated[0]["semantic_strength"] == "confirmed"
 
     def test_multi_hop_decay(self):
-        from memory_center.core.ontology import multi_hop_confidence
+        from memory_center.core.knowledge.ontology import multi_hop_confidence
         assert multi_hop_confidence(1.0, 1) == 1.0
         assert multi_hop_confidence(1.0, 2) == 0.9
         assert multi_hop_confidence(1.0, 3) == 0.8
         assert multi_hop_confidence(1.0, 5) == 0.7  # 4+ hops
 
     def test_ontology_exports(self):
-        from memory_center.core.ontology import (
+        from memory_center.core.knowledge.ontology import (
             edge_confidence_range,
             edge_strength,
             validate_edge_type,
@@ -229,7 +229,7 @@ class TestCompletionAudit:
         import tempfile
         from pathlib import Path
 
-        from memory_center.core.audit.completion import detect_workspace_type
+        from memory_center.core.audit.reports import detect_workspace_type
         with tempfile.TemporaryDirectory() as td:
             assert detect_workspace_type(Path(td)) == "unknown"
 
@@ -446,7 +446,7 @@ class TestEnhancedWorkspaceDetection:
         import tempfile
         from pathlib import Path
 
-        from memory_center.core.audit.completion import detect_workspace_type
+        from memory_center.core.audit.reports import detect_workspace_type
         with tempfile.TemporaryDirectory() as td:
             assert detect_workspace_type(Path(td)) == "unknown"
 
@@ -454,7 +454,7 @@ class TestEnhancedWorkspaceDetection:
         import tempfile
         from pathlib import Path
 
-        from memory_center.core.audit.completion import detect_workspace_type
+        from memory_center.core.audit.reports import detect_workspace_type
         with tempfile.TemporaryDirectory() as td:
             (Path(td) / "pyproject.toml").write_text("[project]\nname='test'")
             assert detect_workspace_type(Path(td)) == "python"
@@ -463,7 +463,7 @@ class TestEnhancedWorkspaceDetection:
         import tempfile
         from pathlib import Path
 
-        from memory_center.core.audit.completion import detect_workspace_type
+        from memory_center.core.audit.reports import detect_workspace_type
         with tempfile.TemporaryDirectory() as td:
             (Path(td) / "package.json").write_text('{"name":"test"}')
             assert detect_workspace_type(Path(td)) == "node"
@@ -472,7 +472,7 @@ class TestEnhancedWorkspaceDetection:
         import tempfile
         from pathlib import Path
 
-        from memory_center.core.audit.completion import detect_workspace_type
+        from memory_center.core.audit.reports import detect_workspace_type
         with tempfile.TemporaryDirectory() as td:
             (Path(td) / "build.sbt").write_text('name := "test"')
             assert detect_workspace_type(Path(td)) == "scala"
@@ -481,7 +481,7 @@ class TestEnhancedWorkspaceDetection:
         import tempfile
         from pathlib import Path
 
-        from memory_center.core.audit.completion import detect_workspace_type
+        from memory_center.core.audit.reports import detect_workspace_type
         with tempfile.TemporaryDirectory() as td:
             (Path(td) / "pnpm-workspace.yaml").write_text("packages:\n  - apps/*")
             assert detect_workspace_type(Path(td)) == "monorepo"
@@ -490,7 +490,7 @@ class TestEnhancedWorkspaceDetection:
         import tempfile
         from pathlib import Path
 
-        from memory_center.core.audit.completion import detect_workspace_type
+        from memory_center.core.audit.reports import detect_workspace_type
         with tempfile.TemporaryDirectory() as td:
             (Path(td) / "pom.xml").write_text('<project><artifactId>test</artifactId></project>')
             assert detect_workspace_type(Path(td)) == "java-maven"
@@ -499,7 +499,7 @@ class TestEnhancedWorkspaceDetection:
         import tempfile
         from pathlib import Path
 
-        from memory_center.core.audit.completion import detect_workspace_type
+        from memory_center.core.audit.reports import detect_workspace_type
         with tempfile.TemporaryDirectory() as td:
             (Path(td) / "build.gradle").write_text('apply plugin: "java"')
             assert detect_workspace_type(Path(td)) == "java-gradle"

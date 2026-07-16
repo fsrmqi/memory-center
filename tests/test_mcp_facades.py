@@ -6,13 +6,7 @@ import pytest
 from typer.testing import CliRunner
 
 from memory_center.cli.main import app
-from memory_center.core.artifacts import (
-    create_task_space,
-    list_artifacts,
-    list_task_spaces,
-)
-from memory_center.core.config import load_workspace_config
-from memory_center.core.indexer import reindex_workspace
+from memory_center.core.indexing.reindex import reindex_workspace
 from memory_center.core.orchestrator import (
     memory_callees,
     memory_callers,
@@ -47,7 +41,13 @@ from memory_center.core.orchestrator import (
     workspace_trace,
     workspace_unresolved_items,
 )
-from memory_center.core.store import WorkspaceStore
+from memory_center.core.storage.workspace import WorkspaceStore
+from memory_center.core.tasks.artifacts import (
+    create_task_space,
+    list_artifacts,
+    list_task_spaces,
+)
+from memory_center.core.workspace.config import load_workspace_config
 from memory_center.http.server import _route_request
 
 HAS_MCP = importlib.util.find_spec("mcp") is not None and importlib.util.find_spec("mcp.server.fastmcp") is not None
@@ -602,7 +602,7 @@ def test_walkthrough_support_modules_keep_query_contracts():
 
 
 def test_command_registry_shared_seam_and_mcp_compat_import():
-    from memory_center.core.dispatch import CommandRegistry
+    from memory_center.core.foundation.dispatch import CommandRegistry
     from memory_center.mcp.action_registry import ActionRegistry
 
     registry = CommandRegistry(label="demo action").register_many({

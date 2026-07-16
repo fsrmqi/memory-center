@@ -313,9 +313,9 @@ def test_memory_query_passes_freshness_and_learned_weights_once(
 
 
 def test_full_chain_budget_keeps_entry_method_anchor(demo_workspace_indexed: Path) -> None:
-    from memory_center.core.graph import GraphStore
-    from memory_center.core.orchestrator.common import load_context
+    from memory_center.core.orchestrator.shared import load_context
     from memory_center.core.retrieval.hybrid import hybrid_retrieve
+    from memory_center.core.storage.graph import GraphStore
 
     _config, store = load_context(demo_workspace_indexed)
     with GraphStore(store.graph_db_path) as graph:

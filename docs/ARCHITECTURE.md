@@ -56,10 +56,10 @@ Memory Center 的核心设计是把这些上下文前置为本地可重建的工
 
 | 能力域 | 说明 | 关键模块 |
 |---|---|---|
-| Workspace Intelligence | 自动识别服务、语言、项目结构和 workspace shape 风险 | `core/config.py`, `core/workspace_shape.py`, `core/service_kinds.py` |
-| Code and Service Indexing | 提取文件、Java/Spring、Feign、MQ、配置、多语言结构化符号 | `core/indexer.py`, `core/indexing/*` |
-| Knowledge Graph | 将服务、文件、类、方法、Endpoint、Topic、Config、DataResource 转为节点和边 | `core/graph.py`, `core/ontology.py` |
-| Hybrid Retrieval | 融合 exact graph、neighbors、FTS、BM25、semantic、可选 vector | `core/retrieval/*`, `core/semantic.py` |
+| Workspace Intelligence | 自动识别服务、语言、项目结构和 workspace shape 风险 | `core/workspace/config.py`, `core/workspace/doctor.py`, `core/workspace/shape.py`, `core/workspace/kinds.py` |
+| Code and Service Indexing | 提取文件、Java/Spring、Feign、MQ、配置、多语言结构化符号 | `core/indexing/reindex.py`, `core/indexing/*` |
+| Knowledge Graph | 将服务、文件、类、方法、Endpoint、Topic、Config、DataResource 转为节点和边 | `core/storage/graph.py`, `core/knowledge/ontology.py` |
+| Hybrid Retrieval | 融合 exact graph、neighbors、FTS、BM25、semantic、可选 vector | `core/retrieval/*` |
 | Method Walkthrough | 对 `Class#method` 做本地调用、Feign 续链、服务端 Controller/Impl 展开 | `core/walkthrough/*` |
 | Task Memory | 保存 session、case、task space、handoff、write receipt 和 L3 记忆块 | `core/orchestrator/session.py`, `write.py`, `sync.py` |
 | Agent Facade | 将复杂能力收敛为 `mc_start`、`mc_lookup`、`mc_analyze` 等任务级接口 | `mcp/server.py`, `core/orchestrator/*` |
@@ -95,9 +95,9 @@ Memory Center 不要求中心化服务。默认形态是每个 workspace 自带�
 
 ### 1.5 Core 领域布局 / Core Domain Layout
 
-`core/` 根目录只保留配置、存储、图谱、模型和兼容入口；按业务能力归类的实现放入子包。索引控制与物理分片位于 `indexing/`，跨服务分片路由与融合位于 `retrieval/`，静态和运行时契约治理位于 `contracting/`，任务工件、写入回执和时间线位于 `tasks/`，人类可读导出位于 `presentation/`。原 `core/*.py` 路径仅保留兼容转发，不改变已有 CLI、MCP、HTTP 或第三方脚本的 import。
+`core/` 根目录只保留 `__init__.py`，不承载实现或兼容转发。共享模型、错误、schema、分发和纯工具位于 `foundation/`；workspace 配置、健康检查、工作区形态、服务类型和后台 job 位于 `workspace/`；workspace、图和 memory SQLite 存储位于 `storage/`；规则和宿主协议位于 `governance/`；诊断、指标和操作事件位于 `observability/`；质量/完成度位于 `assessment/`；本体与 Wiki 位于 `knowledge/`。索引、检索、契约、任务、编排和展示各自只使用自己的领域包。
 
-The `core/` root contains foundations and compatibility entrypoints only. Domain implementations live in dedicated packages: index control and physical shards in `indexing/`, cross-service routing and fusion in `retrieval/`, static/runtime contract governance in `contracting/`, task artifacts/receipts/timelines in `tasks/`, and human-readable exports in `presentation/`. Legacy root modules remain compatibility shims.
+The `core/` root contains only `__init__.py`; it has no implementation or compatibility shims. Shared models, errors, schemas, dispatch, and pure utilities live in `foundation/`; workspace configuration, health checks, shape, service kinds, and jobs live in `workspace/`; workspace, graph, and memory SQLite storage live in `storage/`; rules and host protocol live in `governance/`; diagnostics, metrics, and operation events live in `observability/`; quality/completion live in `assessment/`; ontology and wiki generation live in `knowledge/`. Each domain has one canonical import path.
 
 ---
 
@@ -358,13 +358,13 @@ Memory Center 不把模型临时输出直接当成长期知识。写入链路会
 └── reindex.lock            # full reindex writer lock
 ```
 
-Workspace shape analysis lives in `memory_center/core/workspace_shape.py`。它会检测 duplicate roots、nested roots，并给出收窄 service path 的建议；`IndexFreshnessService.banner()` 会把 workspace shape warnings 合并进 freshness banner。
+Workspace shape analysis lives in `memory_center/core/workspace/shape.py`。它会检测 duplicate roots、nested roots，并给出收窄 service path 的建议；`IndexFreshnessService.banner()` 会把 workspace shape warnings 合并进 freshness banner。
 
 ---
 
 ## 5. Indexing Layer / 索引层
 
-索引主入口是 `memory_center/core/indexer.py::reindex_workspace()`。它支持全量和按 project/path 的部分重建，默认并行解析 Java 文件。
+索引主入口是 `memory_center/core/indexing/reindex.py::reindex_workspace()`。它支持全量和按 project/path 的部分重建，默认并行解析 Java 文件。
 
 完整 reindex 生命周期由 `reindex.lock` 串行化；`index/reindex-state.json` 仅记录运行状态、时间、范围计数和脱敏失败原因，供 CLI、HTTP status 与 Workbench Health 判断是否等待或重试。它不记录源码路径或 payload。
 
@@ -477,7 +477,7 @@ Memory Center 当前有三类存储角色。
 
 ### 6.2 MemoryBackendStore
 
-`memory_center/core/memory_backend.py` 管理 `.memory-center/memory/memory.db`，是 JSONL、refs、index mirror 的轻量 SQLite 镜像。它服务于：
+`memory_center/core/storage/memory_backend.py` 管理 `.memory-center/memory/memory.db`，是 JSONL、refs、index mirror 的轻量 SQLite 镜像。它服务于：
 
 - recent sessions / session summary
 - timeline / drill-down
@@ -582,9 +582,9 @@ V3 task tools 直接面向 agent 减少 grep/read：
 
 | 模块 | 主要职责 |
 |---|---|
-| `common.py` | 上下文加载、token/budget、ref offload、排序、共享常量 |
+| `shared.py` | 上下文加载、token/budget、ref offload、排序、共享常量 |
 | `compact.py` | compact/full 输出裁剪 |
-| `workspace.py` | status、sniff、trace、lookup hint、dashboard、规则/契约检查 |
+| `workspace_ops.py` | status、sniff、trace、lookup hint、dashboard、规则/契约检查 |
 | `query.py` | query、symbol、code search、callers/callees、context、contracts、walkthrough |
 | `impact.py` | detect changes、impact、plan change、verification checklist |
 | `session.py` | session start/log/end、recent sessions/evidence、case suggestion、close feedback |
@@ -592,9 +592,9 @@ V3 task tools 直接面向 agent 减少 grep/read：
 | `sync.py` | sniff/case 同步到 artifacts/task space |
 | `write.py` | memory write judge/plan/execute、case record、write receipts、replay |
 | `group.py` | registry/group 跨 workspace 查询、影响、链路 |
-| `eval.py` | write/resume/handoff/agent-guidance/regression/token/parser/java-call/golden 等评测 |
+| `evaluations.py` | write/resume/handoff/agent-guidance/regression/token/parser/java-call/golden 等评测 |
 
-`orchestrator/__init__.py` 重新导出公共函数，保持旧导入路径兼容。
+`orchestrator/__init__.py` 导出编排层公共函数；其他领域模块不经由根目录转发。
 
 Benchmark/observability 趋势数据写在 `.memory-center/memory/*-trends.jsonl`，例如 token benchmark 的 `benchmark-trends.jsonl`、agent guidance quality 的 `agent-guidance-trends.jsonl` 和 agent guidance adoption 的 `agent-guidance-adoption-trends.jsonl`。这些文件用于本地运营与回归告警，不应把真实私有项目生成内容提交到公开仓库。
 
@@ -709,7 +709,7 @@ Hook 层在 `memory_center/hooks/`，属于宿主集成，不是核心业务层�
 
 ## 12. Error Model and Dispatch Seams / 错误模型与分发边界
 
-统一错误模型在 `core/errors.py`。CLI、MCP、HTTP 入口应捕获核心异常并返回结构化错误：
+统一错误模型在 `core/foundation/errors.py`。CLI、MCP、HTTP 入口应捕获核心异常并返回结构化错误：
 
 | Error Type | HTTP | 含义 |
 |---|---:|---|
@@ -719,7 +719,7 @@ Hook 层在 `memory_center/hooks/`，属于宿主集成，不是核心业务层�
 | `conflict` | 409 | 与当前状态冲突 |
 | `internal_error` | 500 | 未预期内部错误 |
 
-`core/dispatch.py::CommandRegistry` 是小而深的分发 seam：
+`core/foundation/dispatch.py::CommandRegistry` 是小而深的分发 seam：
 
 - MCP `mc_admin` action table 使用它。
 - HTTP route registry 使用它。
@@ -737,7 +737,7 @@ Hook 层在 `memory_center/hooks/`，属于宿主集成，不是核心业务层�
 - `benchmark/java_call_resolution.py`：Java `CALLS_METHOD` 解析精度门禁。
 - `benchmark/trending.py`：token benchmark trend 和回归告警。
 - `parser_precision.py` 与 parser diagnostics：tree-sitter / regex fallback、critical disagreement。
-- `audit/completion.py`：完成审计、设计决策、健康评分。
+- `audit/reports.py`：完成审计、设计决策、健康评分。
 - `audit/runtime.py`：Agent runtime audit。
 - `verification/*`：verification loop、pattern promotion、heuristics、workflow profile、agent bundle。
 - `metrics.py`：workspace metrics summary。

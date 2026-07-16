@@ -17,14 +17,14 @@ from pathlib import Path
 
 import pytest
 
-from memory_center.core.config import load_workspace_config
-from memory_center.core.indexer import build_graph_store, reindex_workspace
-from memory_center.core.orchestrator.common import load_context
+from memory_center.core.indexing.reindex import build_graph_store, reindex_workspace
 from memory_center.core.orchestrator.query import (
     memory_method_walkthrough,
     memory_query_hybrid,
 )
-from memory_center.core.store import WorkspaceStore
+from memory_center.core.orchestrator.shared import load_context
+from memory_center.core.storage.workspace import WorkspaceStore
+from memory_center.core.workspace.config import load_workspace_config
 
 SERVICES = 8
 CONTROLLERS_PER_SERVICE = 6

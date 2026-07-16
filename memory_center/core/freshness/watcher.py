@@ -176,7 +176,8 @@ def trigger_incremental_reindex(workspace_file: str | Path, changed_files: list[
     Takes changed file paths from FileWatcher and triggers
     a targeted reindex for only those files.
     """
-    from ..jobs import submit_reindex_workspace_job
+    from memory_center.core.workspace.jobs import submit_reindex_workspace_job
+
     from .targeted_refresh import record_dirty_files
 
     try:

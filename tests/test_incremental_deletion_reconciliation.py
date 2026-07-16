@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from memory_center.core.config import load_workspace_config
-from memory_center.core.indexer import reindex_workspace
 from memory_center.core.indexing.incremental import ChangedFile, IncrementalIndexer
+from memory_center.core.indexing.reindex import reindex_workspace
 from memory_center.core.storage.unified import UnifiedStore
-from memory_center.core.store import WorkspaceStore
+from memory_center.core.storage.workspace import WorkspaceStore
+from memory_center.core.workspace.config import load_workspace_config
 
 
 def _workspace(tmp_path: Path) -> tuple[Path, Path, WorkspaceStore]:

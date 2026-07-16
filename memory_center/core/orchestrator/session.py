@@ -4,9 +4,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from ..store import WorkspaceStore
+from memory_center.core.storage.workspace import WorkspaceStore
+
 from ..tasks.receipts import build_write_receipt, persist_write_receipt
-from .common import (
+from .shared import (
     LAYER_L0,
     SESSION_EVENTS_FILE,
     SESSION_SUMMARIES_FILE,
@@ -395,9 +396,10 @@ def workspace_recent_evidence(
         "session_id": session_id,
         "evidence": evidence[-limit:],
     }
-    from ..tracking import log_token_gain
-    from .common import _is_compact_view
+    from memory_center.core.observability.tracking import log_token_gain
+
     from .compact import _measure_compact_gain
+    from .shared import _is_compact_view
 
     if _is_compact_view(view):
         compact_evidence = _compact_evidence_entries(result["evidence"], budget=budget)

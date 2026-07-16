@@ -11,7 +11,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from ..memory_backend import MemoryBackendStore
+from memory_center.core.storage.memory_backend import MemoryBackendStore
 
 
 class UnifiedBackendQuery:

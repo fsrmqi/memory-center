@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from ..store import WorkspaceStore
+from memory_center.core.storage.workspace import WorkspaceStore
 
 PROMOTION_LOG_FILE = "pattern-promotions.jsonl"
 

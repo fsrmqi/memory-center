@@ -32,7 +32,7 @@ class TestOnboardingPersona:
     def test_all_personas_generate_tour(self, demo_workspace: Path):
         from memory_center.core.onboarding.tour import ArchitectureTourGenerator
         from memory_center.core.storage.unified import UnifiedStore
-        from memory_center.core.store import WorkspaceStore
+        from memory_center.core.storage.workspace import WorkspaceStore
         ws = WorkspaceStore(str(demo_workspace))
         with UnifiedStore(ws.graph_db_path) as store:
             gen = ArchitectureTourGenerator(store)
@@ -45,7 +45,7 @@ class TestOnboardingPersona:
     def test_tour_has_required_fields(self, demo_workspace: Path):
         from memory_center.core.onboarding.tour import ArchitectureTourGenerator
         from memory_center.core.storage.unified import UnifiedStore
-        from memory_center.core.store import WorkspaceStore
+        from memory_center.core.storage.workspace import WorkspaceStore
         ws = WorkspaceStore(str(demo_workspace))
         with UnifiedStore(ws.graph_db_path) as store:
             gen = ArchitectureTourGenerator(store)
@@ -61,7 +61,7 @@ class TestOnboardingPersona:
     def test_step_has_required_fields(self, demo_workspace: Path):
         from memory_center.core.onboarding.tour import ArchitectureTourGenerator
         from memory_center.core.storage.unified import UnifiedStore
-        from memory_center.core.store import WorkspaceStore
+        from memory_center.core.storage.workspace import WorkspaceStore
         ws = WorkspaceStore(str(demo_workspace))
         with UnifiedStore(ws.graph_db_path) as store:
             gen = ArchitectureTourGenerator(store)
@@ -77,7 +77,7 @@ class TestOnboardingPersona:
         """Different personas should produce different content, not just title swaps."""
         from memory_center.core.onboarding.tour import ArchitectureTourGenerator
         from memory_center.core.storage.unified import UnifiedStore
-        from memory_center.core.store import WorkspaceStore
+        from memory_center.core.storage.workspace import WorkspaceStore
         ws = WorkspaceStore(str(demo_workspace))
         with UnifiedStore(ws.graph_db_path) as store:
             gen = ArchitectureTourGenerator(store)

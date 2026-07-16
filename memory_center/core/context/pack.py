@@ -16,11 +16,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from ..diagnostics import DIAG, diag_entry
+from memory_center.core.governance.rules import match_rules
+from memory_center.core.observability.diagnostics import DIAG, diag_entry
+from memory_center.core.storage.graph import GraphStore
+
 from ..freshness.status import IndexFreshnessService
-from ..graph import GraphStore
 from ..retrieval.hybrid import HybridRetrievalConfig, detect_query_intent, hybrid_retrieve
-from ..rules import match_rules
 
 # Extensions that are treated as non-code (skipped for snippet extraction)
 _NON_CODE_EXTENSIONS = frozenset({".md", ".txt", ".yaml", ".yml", ".json", ".xml",
@@ -52,7 +53,7 @@ class ContextPackBuilder:
 
     def __init__(self, workspace_file: str | Path):
         self._workspace_file = str(workspace_file)
-        from ..store import WorkspaceStore
+        from memory_center.core.storage.workspace import WorkspaceStore
         self._store = WorkspaceStore(workspace_file)
         self._config = self._store._config if hasattr(self._store, '_config') else None
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
-from memory_center.core.jobs import submit_workspace_job, workspace_job_status
+from memory_center.core.workspace.jobs import submit_workspace_job, workspace_job_status
 
 
 def test_background_job_persists_completed_result(tmp_path: Path) -> None:

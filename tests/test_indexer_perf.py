@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import time
 
-from memory_center.core.indexer import (
+from memory_center.core.indexing.reindex import (
     _build_api_lookup,
     _candidate_apis_for_feign_method,
     _endpoint_matches,

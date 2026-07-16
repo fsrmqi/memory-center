@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from memory_center.core.dispatch import CommandRegistry
+from memory_center.core.foundation.dispatch import CommandRegistry
 
 from .dependencies import (
     Any,
@@ -267,7 +267,7 @@ def register_workflow_routes(registry: CommandRegistry) -> None:
     ))
 
     def _constraint(rp: RouteParams) -> dict[str, Any]:
-        from memory_center.core.templates import auto_select_action, get_constraint_template
+        from memory_center.core.governance.templates import auto_select_action, get_constraint_template
         template = rp.get("template", "coding_agent")
         context = rp.get("context", "")
         if context:
@@ -278,7 +278,7 @@ def register_workflow_routes(registry: CommandRegistry) -> None:
     registry.register("/workspace/constraint", _constraint)
 
     def _audit(rp: RouteParams) -> dict[str, Any]:
-        from memory_center.core.audit.completion import run_completion_audit
+        from memory_center.core.audit.reports import run_completion_audit
         return run_completion_audit(
             rp.workspace(),
             work_package=rp.get("work_package", ""),
@@ -318,7 +318,7 @@ def register_workflow_routes(registry: CommandRegistry) -> None:
 
     def _backend_consistency(rp: RouteParams) -> dict[str, Any]:
         from memory_center.core.backend.query import UnifiedBackendQuery
-        from memory_center.core.store import WorkspaceStore
+        from memory_center.core.storage.workspace import WorkspaceStore
         ws = rp.workspace()
         store = WorkspaceStore(ws)
         with UnifiedBackendQuery(store.memory_db_path) as backend:

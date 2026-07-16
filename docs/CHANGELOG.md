@@ -12,7 +12,9 @@
 
 - 修复 `memory_query` 在普通查询路径引用未定义项目作用域、导致 `mc_lookup(mode="query")` 崩溃的问题。
 - 重整 Core 领域模块：契约治理迁入 `contracting/`，索引控制与分片迁入 `indexing/`，跨服务分片检索迁入 `retrieval/`，任务工件/回执/时间线迁入 `tasks/`，导出迁入 `presentation/`。
-- 保留原 `core/*.py` 兼容转发模块，已有 Python import、CLI、MCP 和 HTTP 行为不变。
+- 移除 `core/*.py` 兼容转发层；所有内部调用、测试与文档只使用唯一的领域导入路径。
+- 进一步消除跨领域同名模块：索引入口为 `indexing/reindex.py`，编排工作区入口为 `orchestrator/workspace_ops.py`，benchmark case、reasoning request、walkthrough report/evaluation、audit reports 使用语义化文件名。
+- 为 `core` 及所有领域目录新增 README，说明职责、依赖边界和新增代码落点。
 
 ### P2 Retrieval / Reasoning Quality Loop / 检索与推理质量闭环
 

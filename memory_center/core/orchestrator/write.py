@@ -4,11 +4,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from ..schemas import with_schema
+from memory_center.core.foundation.schemas import with_schema
+
 from ..tasks.artifacts import update_artifact
 from ..tasks.receipts import build_write_receipt, persist_write_receipt, query_write_receipts
 from ..tasks.timeline import timeline_query
-from .common import (
+from .session import (
+    workspace_log_session_event,
+    workspace_suggest_case,
+)
+from .shared import (
     LAYER_L0,
     LAYER_L1,
     LAYER_L2,
@@ -24,10 +29,6 @@ from .common import (
     _choose_l3_artifact_name,
     _load_write_policy_rules,
     load_context,
-)
-from .session import (
-    workspace_log_session_event,
-    workspace_suggest_case,
 )
 
 

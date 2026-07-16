@@ -5,8 +5,8 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from memory_center.cli.main import app
+from memory_center.core.indexing.precision import tree_sitter_activation_status
 from memory_center.core.orchestrator.resume import workspace_next_actions
-from memory_center.core.parser_precision import tree_sitter_activation_status
 
 
 def test_tree_sitter_activation_status_exposes_install_and_validation_commands() -> None:

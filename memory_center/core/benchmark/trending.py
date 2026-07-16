@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from ..store import WorkspaceStore
+from memory_center.core.storage.workspace import WorkspaceStore
 
 BENCHMARK_BASELINE_FILE = "benchmark-baselines.jsonl"
 BENCHMARK_TREND_FILE = "benchmark-trends.jsonl"

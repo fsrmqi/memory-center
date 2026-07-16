@@ -27,45 +27,45 @@ def demo_workspace(tmp_path: Path) -> Path:
 
 class TestIndexerContract:
     def test_file_index_has_entries(self, demo_workspace: Path):
-        from memory_center.core.store import WorkspaceStore
+        from memory_center.core.storage.workspace import WorkspaceStore
         ws = WorkspaceStore(str(demo_workspace))
         fi = ws.read_json_prefer_backend("file-index.json", [])
         assert isinstance(fi, list)
 
     def test_symbol_index_has_entries(self, demo_workspace: Path):
-        from memory_center.core.store import WorkspaceStore
+        from memory_center.core.storage.workspace import WorkspaceStore
         ws = WorkspaceStore(str(demo_workspace))
         si = ws.read_json_prefer_backend("java-symbol-index.json", [])
         assert isinstance(si, list)
 
     def test_api_index_has_entries(self, demo_workspace: Path):
-        from memory_center.core.store import WorkspaceStore
+        from memory_center.core.storage.workspace import WorkspaceStore
         ws = WorkspaceStore(str(demo_workspace))
         ai = ws.read_json_prefer_backend("api-index.json", [])
         assert isinstance(ai, list)
 
     def test_feign_index_has_entries(self, demo_workspace: Path):
-        from memory_center.core.store import WorkspaceStore
+        from memory_center.core.storage.workspace import WorkspaceStore
         ws = WorkspaceStore(str(demo_workspace))
         fi = ws.read_json_prefer_backend("feign-index.json", [])
         assert isinstance(fi, list)
 
     def test_mq_index_has_entries(self, demo_workspace: Path):
-        from memory_center.core.store import WorkspaceStore
+        from memory_center.core.storage.workspace import WorkspaceStore
         ws = WorkspaceStore(str(demo_workspace))
         mi = ws.read_json_prefer_backend("mq-index.json", [])
         assert isinstance(mi, list)
 
     def test_graph_has_nodes_and_edges(self, demo_workspace: Path):
-        from memory_center.core.graph import GraphStore
-        from memory_center.core.store import WorkspaceStore
+        from memory_center.core.storage.graph import GraphStore
+        from memory_center.core.storage.workspace import WorkspaceStore
         ws = WorkspaceStore(str(demo_workspace))
         with GraphStore(ws.graph_db_path) as graph:
             nodes = graph.all_nodes()
             assert len(nodes) > 0
 
     def test_index_entries_have_required_fields(self, demo_workspace: Path):
-        from memory_center.core.store import WorkspaceStore
+        from memory_center.core.storage.workspace import WorkspaceStore
         ws = WorkspaceStore(str(demo_workspace))
         fi = ws.read_json_prefer_backend("file-index.json", [])
         if fi:

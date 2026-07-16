@@ -1,18 +1,18 @@
 from pathlib import Path
 
-from memory_center.core.artifacts import (
+from memory_center.core.freshness.invalidation import build_invalidation_plan
+from memory_center.core.freshness.watcher import trigger_incremental_reindex
+from memory_center.core.indexing.control_plane import index_control_status, rollback_generation
+from memory_center.core.indexing.reindex import reindex_workspace
+from memory_center.core.retrieval.planner import QueryPlanner
+from memory_center.core.storage.workspace import WorkspaceStore
+from memory_center.core.tasks.artifacts import (
     create_task_space,
     record_task_decision,
     task_evidence_gc,
     update_task_artifact,
 )
-from memory_center.core.config import load_workspace_config
-from memory_center.core.freshness.invalidation import build_invalidation_plan
-from memory_center.core.freshness.watcher import trigger_incremental_reindex
-from memory_center.core.index_control import index_control_status, rollback_generation
-from memory_center.core.indexer import reindex_workspace
-from memory_center.core.query_planner import QueryPlanner
-from memory_center.core.store import WorkspaceStore
+from memory_center.core.workspace.config import load_workspace_config
 
 
 def _workspace(tmp_path: Path) -> Path:

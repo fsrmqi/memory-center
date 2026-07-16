@@ -246,7 +246,7 @@ class TestD04_DomainFlow:
         ws = copy_demo_workspace(tmp_path)
         from memory_center.core.domain.extractor import BusinessDomainExtractor
         from memory_center.core.storage.unified import UnifiedStore
-        from memory_center.core.store import WorkspaceStore
+        from memory_center.core.storage.workspace import WorkspaceStore
         store = WorkspaceStore(str(ws))
         with UnifiedStore(store.graph_db_path) as unified:
             extractor = BusinessDomainExtractor(unified)
@@ -264,7 +264,7 @@ class TestD04_DomainFlow:
         ws = copy_demo_workspace(tmp_path)
         from memory_center.core.domain.flow import BusinessFlowGraph
         from memory_center.core.storage.unified import UnifiedStore
-        from memory_center.core.store import WorkspaceStore
+        from memory_center.core.storage.workspace import WorkspaceStore
         store = WorkspaceStore(str(ws))
         with UnifiedStore(store.graph_db_path) as unified:
             graph = BusinessFlowGraph(unified)
@@ -439,8 +439,8 @@ class TestC05_ChainBehavior:
     def test_graph_neighbors_upstream(self, tmp_path):
         """Graph neighbors in upstream direction returns incoming edges."""
         ws = copy_demo_workspace(tmp_path)
-        from memory_center.core.graph import GraphStore
-        from memory_center.core.store import WorkspaceStore
+        from memory_center.core.storage.graph import GraphStore
+        from memory_center.core.storage.workspace import WorkspaceStore
         store = WorkspaceStore(str(ws))
         with GraphStore(store.graph_db_path) as graph:
             nodes = graph.find_nodes("OrderService", limit=3)
@@ -452,8 +452,8 @@ class TestC05_ChainBehavior:
     def test_graph_neighbors_downstream(self, tmp_path):
         """Graph neighbors in downstream direction returns outgoing edges."""
         ws = copy_demo_workspace(tmp_path)
-        from memory_center.core.graph import GraphStore
-        from memory_center.core.store import WorkspaceStore
+        from memory_center.core.storage.graph import GraphStore
+        from memory_center.core.storage.workspace import WorkspaceStore
         store = WorkspaceStore(str(ws))
         with GraphStore(store.graph_db_path) as graph:
             nodes = graph.find_nodes("OrderService", limit=3)
@@ -526,7 +526,7 @@ class TestF03_Metrics:
 
     def test_metrics_record_and_query(self, tmp_path):
         """MetricsCollector records and queries metrics."""
-        from memory_center.core.metrics import MetricsCollector
+        from memory_center.core.observability.metrics import MetricsCollector
         mc = MetricsCollector(tmp_path / "workspace.yaml")
         mc.record("test_metric", 42.0, unit="ms")
         mc.record("test_metric", 55.0, unit="ms")
@@ -536,7 +536,7 @@ class TestF03_Metrics:
 
     def test_metrics_summary(self, tmp_path):
         """MetricsCollector.summary() computes avg/p50/p95."""
-        from memory_center.core.metrics import MetricsCollector
+        from memory_center.core.observability.metrics import MetricsCollector
         mc = MetricsCollector(tmp_path / "workspace.yaml")
         for v in [10, 20, 30, 40, 50]:
             mc.record("latency", float(v), unit="ms")
@@ -550,7 +550,7 @@ class TestF03_Metrics:
         """MetricsCollector.timer() records elapsed time."""
         import time
 
-        from memory_center.core.metrics import MetricsCollector
+        from memory_center.core.observability.metrics import MetricsCollector
         mc = MetricsCollector(tmp_path / "workspace.yaml")
         with mc.timer("operation"):
             time.sleep(0.01)
@@ -588,7 +588,7 @@ class TestF06_Audit:
 
     def test_workspace_type_detection(self, tmp_path):
         """detect_workspace_type returns correct type for various projects."""
-        from memory_center.core.audit.completion import detect_workspace_type
+        from memory_center.core.audit.reports import detect_workspace_type
         # Empty dir → unknown
         result = detect_workspace_type(tmp_path)
         assert result in ("unknown",)
@@ -596,7 +596,7 @@ class TestF06_Audit:
     def test_java_maven_detection(self, tmp_path):
         """Maven project detected correctly."""
         (tmp_path / "pom.xml").write_text("<project/>")
-        from memory_center.core.audit.completion import detect_workspace_type
+        from memory_center.core.audit.reports import detect_workspace_type
         assert detect_workspace_type(tmp_path) == "java-maven"
 
 
@@ -760,7 +760,7 @@ class TestH01_Constitution:
 
     def test_constitution_rules_exist(self):
         """CONSTITUTION_RULES has 5 governance invariants."""
-        from memory_center.core.rules import CONSTITUTION_RULES
+        from memory_center.core.governance.rules import CONSTITUTION_RULES
         assert len(CONSTITUTION_RULES) == 5
         for rule in CONSTITUTION_RULES:
             assert "id" in rule
@@ -770,20 +770,20 @@ class TestH01_Constitution:
 
     def test_constitution_conflict_detection(self):
         """check_constitution_conflicts detects secret patterns."""
-        from memory_center.core.rules import check_constitution_conflicts
+        from memory_center.core.governance.rules import check_constitution_conflicts
         conflicts = check_constitution_conflicts(intent="set password=abc123")
         assert len(conflicts) >= 1
         assert conflicts[0]["severity"] == "critical"
 
     def test_constitution_no_conflict_for_safe_intent(self):
         """check_constitution_conflicts returns empty for safe intents."""
-        from memory_center.core.rules import check_constitution_conflicts
+        from memory_center.core.governance.rules import check_constitution_conflicts
         conflicts = check_constitution_conflicts(intent="add new feature")
         assert len(conflicts) == 0
 
     def test_constitution_private_path_detection(self):
         """check_constitution_conflicts detects private paths in files."""
-        from memory_center.core.rules import check_constitution_conflicts
+        from memory_center.core.governance.rules import check_constitution_conflicts
         conflicts = check_constitution_conflicts(files=["/Users/john/project/src/Main.java"])
         assert len(conflicts) >= 1
 
@@ -798,7 +798,7 @@ class TestH02_Traceability:
     def test_build_traceability_graph(self, tmp_path):
         """build_traceability_graph returns nodes, edges, diagnostics."""
         ws = copy_demo_workspace(tmp_path)
-        from memory_center.core.artifacts import build_traceability_graph
+        from memory_center.core.tasks.artifacts import build_traceability_graph
         result = build_traceability_graph(str(ws))
         assert "nodes" in result
         assert "edges" in result
@@ -868,8 +868,8 @@ class TestH06_H08_ChangeReview:
     def test_rules_load(self, tmp_path):
         """load_rules returns rules from workspace."""
         ws = copy_demo_workspace(tmp_path)
-        from memory_center.core.rules import load_rules
-        from memory_center.core.store import WorkspaceStore
+        from memory_center.core.governance.rules import load_rules
+        from memory_center.core.storage.workspace import WorkspaceStore
         store = WorkspaceStore(str(ws))
         rules = load_rules(store)
         assert len(rules) >= 5  # Default rules
@@ -880,8 +880,8 @@ class TestH06_H08_ChangeReview:
     def test_match_rules(self, tmp_path):
         """match_rules matches by intent, files, and scopes."""
         ws = copy_demo_workspace(tmp_path)
-        from memory_center.core.rules import match_rules
-        from memory_center.core.store import WorkspaceStore
+        from memory_center.core.governance.rules import match_rules
+        from memory_center.core.storage.workspace import WorkspaceStore
         store = WorkspaceStore(str(ws))
         # Match by intent keywords
         matched = match_rules(store, intent="MQ consumer kafka")
@@ -891,8 +891,8 @@ class TestH06_H08_ChangeReview:
     def test_match_rules_glob(self, tmp_path):
         """match_rules matches file patterns with glob."""
         ws = copy_demo_workspace(tmp_path)
-        from memory_center.core.rules import match_rules
-        from memory_center.core.store import WorkspaceStore
+        from memory_center.core.governance.rules import match_rules
+        from memory_center.core.storage.workspace import WorkspaceStore
         store = WorkspaceStore(str(ws))
         matched = match_rules(store, files=["src/OrderConsumer.java"])
         assert len(matched) >= 1
@@ -971,32 +971,32 @@ class TestI01_I05_FinalVerification:
 
     def test_facade_schemas_defined(self):
         """Facade schemas are properly defined."""
-        from memory_center.core.schemas import with_schema
+        from memory_center.core.foundation.schemas import with_schema
         result = with_schema("test_schema", {"key": "value"})
         assert result["key"] == "value"
         assert "schema" in result
 
     def test_diagnostics_safe_reason(self):
         """safe_reason doesn't expose private info."""
-        from memory_center.core.diagnostics import safe_reason
+        from memory_center.core.observability.diagnostics import safe_reason
         reason = safe_reason("error at /Users/john/secret/file.py")
         # Should not contain the full private path
         assert isinstance(reason, str)
 
     def test_error_model_exists(self):
         """MCError hierarchy exists."""
-        from memory_center.core.errors import MCError
+        from memory_center.core.foundation.errors import MCError
         assert issubclass(MCError, Exception)
 
     def test_capability_matrix_exists(self):
         """Capability matrix is importable."""
-        from memory_center.core.capability_matrix import CAPABILITIES
+        from memory_center.core.foundation.capabilities import CAPABILITIES
         assert isinstance(CAPABILITIES, (list, dict))
         assert len(CAPABILITIES) > 0
 
     def test_ontology_registry_consistency(self):
         """Ontology edge types are consistent."""
-        from memory_center.core.ontology import edge_strength
+        from memory_center.core.knowledge.ontology import edge_strength
         # Known edge types
         for edge_type in ["CALLS", "CALLS_SERVICE", "IMPLEMENTS_FEIGN", "DECLARES", "CONTAINS"]:
             strength = edge_strength(edge_type)
@@ -1004,7 +1004,7 @@ class TestI01_I05_FinalVerification:
 
     def test_schema_snapshot_compat(self, tmp_path):
         """Schema compatibility test structure exists."""
-        from memory_center.core.schemas import with_schema
+        from memory_center.core.foundation.schemas import with_schema
         # Schema versioning works
         result = with_schema("memory_query", {"results": []})
         assert "schema" in result

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from memory_center.core.errors import (
+from memory_center.core.foundation.errors import (
     ERROR_TYPES,
     ConflictError,
     InternalError,

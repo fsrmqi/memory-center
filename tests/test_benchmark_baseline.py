@@ -6,7 +6,7 @@ from memory_center.core.benchmark.baseline import (
     compare_baseline_samples,
     record_baseline_sample,
 )
-from memory_center.core.store import WorkspaceStore
+from memory_center.core.storage.workspace import WorkspaceStore
 
 
 def _workspace(tmp_path: Path) -> Path:

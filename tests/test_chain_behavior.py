@@ -5,13 +5,13 @@ and compress_chain_tree behavior for memory_callers/memory_callees.
 """
 from __future__ import annotations
 
-from memory_center.core.orchestrator.common import (
+from memory_center.core.orchestrator.query import _compress_chain_tree
+from memory_center.core.orchestrator.shared import (
     _INBOUND_PREFERRED,
     _OUTBOUND_PREFERRED,
     _filter_call_edges,
     _is_noise_call,
 )
-from memory_center.core.orchestrator.query import _compress_chain_tree
 
 # Sample edges for testing
 EDGE_CALLS_METHOD = {"type": "CALLS_METHOD", "target": {"name": "com.example.OrderService.getOrder"}, "confidence": 0.9, "depth": 1}

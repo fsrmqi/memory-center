@@ -2,13 +2,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from memory_center.core.graph import GraphNode, GraphStore
-from memory_center.core.semantic import (
+from memory_center.core.retrieval.semantic import (
     _doc_is_vector_eligible,
     build_workspace_semantic_index,
     semantic_index_stats,
 )
-from memory_center.core.store import WorkspaceStore
+from memory_center.core.storage.graph import GraphNode, GraphStore
+from memory_center.core.storage.workspace import WorkspaceStore
 
 
 def _workspace(tmp_path: Path) -> Path:
@@ -61,7 +61,7 @@ def test_build_semantic_index_generates_dense_vectors_only_for_selective_nodes(t
         def encode(self, texts, normalize_embeddings=True):
             return [[float(i + 1), 0.0, 0.0] for i, _text in enumerate(texts)]
 
-    monkeypatch.setattr("memory_center.core.semantic._load_sentence_transformer_model", lambda _name: _FakeModel())
+    monkeypatch.setattr("memory_center.core.retrieval.semantic._load_sentence_transformer_model", lambda _name: _FakeModel())
 
     payload = build_workspace_semantic_index(workspace)
     docs = {doc["node_id"]: doc for doc in payload["docs"]}
@@ -132,7 +132,7 @@ def test_semantic_index_stats_explain_unavailable_dense_backend(tmp_path: Path, 
 
     monkeypatch.setenv("MEMORY_CENTER_SEMANTIC_BACKEND", "sentence-transformers")
     monkeypatch.setenv("MEMORY_CENTER_VECTOR_SCOPE", "selective")
-    monkeypatch.setattr("memory_center.core.semantic._load_sentence_transformer_model", lambda _name: None)
+    monkeypatch.setattr("memory_center.core.retrieval.semantic._load_sentence_transformer_model", lambda _name: None)
 
     payload = build_workspace_semantic_index(workspace)
     stats = semantic_index_stats(workspace)

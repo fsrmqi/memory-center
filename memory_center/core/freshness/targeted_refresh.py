@@ -9,9 +9,10 @@ from typing import Any
 
 from filelock import FileLock
 
-from ..graph import GraphEdge, GraphNode, GraphStore, edge_id, node_id
-from ..indexer import parse_java_symbols, safe_read
-from ..store import WorkspaceStore
+from memory_center.core.indexing.reindex import parse_java_symbols, safe_read
+from memory_center.core.storage.graph import GraphEdge, GraphNode, GraphStore, edge_id, node_id
+from memory_center.core.storage.workspace import WorkspaceStore
+
 from .coordinator import RefreshCoordinator
 
 MAX_REFRESH_FILES = 12

@@ -17,8 +17,7 @@ from memory_center.core.context.budget import (
 )
 from memory_center.core.domain.extractor import BusinessDomainExtractor
 from memory_center.core.freshness.status import IndexFreshnessService
-from memory_center.core.onboarding.tour import ArchitectureTourGenerator
-from memory_center.core.ontology import (
+from memory_center.core.knowledge.ontology import (
     ALL_EDGE_TYPES,
     ALL_NODE_TYPES,
     EDGE_SEMANTIC_STRENGTH,
@@ -44,6 +43,7 @@ from memory_center.core.ontology import (
     validate_edge_type,
     validate_node_type,
 )
+from memory_center.core.onboarding.tour import ArchitectureTourGenerator
 from memory_center.core.storage.unified import UnifiedStore
 from memory_center.core.views.builder import GraphViewBuilder
 

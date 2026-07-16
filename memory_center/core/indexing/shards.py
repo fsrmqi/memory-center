@@ -10,8 +10,8 @@ from typing import Any
 
 from filelock import FileLock
 
-from ..graph import GraphStore
-from ..store import WorkspaceStore
+from memory_center.core.storage.graph import GraphStore
+from memory_center.core.storage.workspace import WorkspaceStore
 
 GENERATIONS_DIR = "generations"
 

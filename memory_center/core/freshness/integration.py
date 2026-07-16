@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..diagnostics import DIAG, diag_entry
+from memory_center.core.observability.diagnostics import DIAG, diag_entry
 
 # Stable semantics for freshness statuses
 FRESH = "fresh"

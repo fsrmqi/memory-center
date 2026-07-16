@@ -8,7 +8,8 @@ from __future__ import annotations
 import math
 from typing import Any
 
-from ..semantic import _count_tokens, semantic_tokens
+from memory_center.core.retrieval.semantic import _count_tokens, semantic_tokens
+
 from ..storage.metadata import metadata_json as _metadata_json
 from ..storage.unified import UnifiedStore
 

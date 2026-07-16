@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from memory_center.core.capability_matrix import (
+from memory_center.core.foundation.capabilities import (
     CAPABILITIES,
     CAPABILITY_MAP,
     all_cli_commands,

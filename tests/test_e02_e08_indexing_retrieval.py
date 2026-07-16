@@ -33,7 +33,7 @@ def demo_workspace(tmp_path: Path) -> Path:
 
 @pytest.fixture()
 def unified_store(demo_workspace: Path):
-    from memory_center.core.store import WorkspaceStore
+    from memory_center.core.storage.workspace import WorkspaceStore
     ws = WorkspaceStore(str(demo_workspace))
     from memory_center.core.storage.unified import UnifiedStore
     store = UnifiedStore(ws.graph_db_path)
@@ -89,7 +89,7 @@ class TestE02TreeSitterOptional:
         assert "RequestMapping" in result.annotations
 
     def test_indexer_auto_selects_parser(self):
-        import memory_center.core.indexer as indexer_mod
+        import memory_center.core.indexing.reindex as indexer_mod
         assert hasattr(indexer_mod, "_JAVA_PARSER")
         assert hasattr(indexer_mod._JAVA_PARSER, "parse")
         assert hasattr(indexer_mod._JAVA_PARSER, "name")
@@ -182,7 +182,7 @@ public class UserService {
         assert any(item["kind"] == "MongoCollection" for item in result.data_resources)
 
     def test_parse_java_symbols_records_selected_parser(self, monkeypatch):
-        import memory_center.core.indexer as indexer_mod
+        import memory_center.core.indexing.reindex as indexer_mod
         from memory_center.core.indexing.base import JavaParseResult
 
         class FakeParser:
@@ -419,7 +419,7 @@ public class DemoService {
         assert [item["node"]["type"] for item in entrypoints] == ["FeignMethod", "Class"]
 
     def test_filter_call_edges_drops_redundant_import_when_stronger_edge_exists(self):
-        from memory_center.core.orchestrator.common import _filter_call_edges
+        from memory_center.core.orchestrator.shared import _filter_call_edges
 
         edges = [
             {
@@ -459,7 +459,7 @@ public class DemoService {
         assert filtered[0]["type"] == "INJECTS_BEAN"
 
     def test_filter_call_edges_prefers_stronger_edge_type_before_weaker_import(self):
-        from memory_center.core.orchestrator.common import _filter_call_edges
+        from memory_center.core.orchestrator.shared import _filter_call_edges
 
         edges = [
             {
@@ -483,7 +483,7 @@ public class DemoService {
         assert all(item["type"] != "IMPORTS" for item in filtered)
 
     def test_filter_call_edges_keeps_imports_only_as_fallback(self):
-        from memory_center.core.orchestrator.common import _filter_call_edges
+        from memory_center.core.orchestrator.shared import _filter_call_edges
 
         edges = [
             {
@@ -507,7 +507,7 @@ public class DemoService {
         assert all(item["type"] == "IMPORTS" for item in filtered)
 
     def test_row_edge_exposes_source_and_target_line(self):
-        from memory_center.core.graph import _row_edge
+        from memory_center.core.storage.graph import _row_edge
 
         class FakeRow(dict):
             def __getitem__(self, key):
@@ -537,7 +537,7 @@ public class DemoService {
         assert edge["target"]["line"] == 42
 
     def test_row_edge_falls_back_to_source_evidence_line_when_node_line_missing(self):
-        from memory_center.core.graph import _row_edge
+        from memory_center.core.storage.graph import _row_edge
 
         class FakeRow(dict):
             def __getitem__(self, key):
@@ -876,7 +876,7 @@ class TestE03ParallelIndexing:
         assert isinstance(config_files, list)
 
     def test_walk_project_ignores_agent_worktree_directories(self, tmp_path: Path):
-        from memory_center.core.indexer import walk_project
+        from memory_center.core.indexing.reindex import walk_project
 
         root = tmp_path / "repo"
         (root / "src").mkdir(parents=True)
@@ -1030,11 +1030,11 @@ class TestE06InvertedRetrieval:
         assert stats["doc_count"] == 1
 
     def test_reindex_builds_bm25_index(self, demo_workspace: Path):
-        from memory_center.core.config import load_workspace_config
-        from memory_center.core.indexer import reindex_workspace
+        from memory_center.core.indexing.reindex import reindex_workspace
         from memory_center.core.retrieval.inverted import InvertedIndex
         from memory_center.core.storage.unified import UnifiedStore
-        from memory_center.core.store import WorkspaceStore
+        from memory_center.core.storage.workspace import WorkspaceStore
+        from memory_center.core.workspace.config import load_workspace_config
 
         workspace_store = WorkspaceStore(demo_workspace)
         reindex_workspace(load_workspace_config(demo_workspace), workspace_store)
@@ -1103,10 +1103,10 @@ class TestE07VectorRetrieval:
         assert "vector_index" in source or "VectorIndex" in source or "_vector_retrieval" in source
 
     def test_retrieval_index_sync_writes_dense_embeddings(self, demo_workspace: Path):
-        from memory_center.core.indexer import _sync_retrieval_indexes
+        from memory_center.core.indexing.reindex import _sync_retrieval_indexes
         from memory_center.core.storage.unified import UnifiedStore
         from memory_center.core.storage.vector_index import VectorIndex
-        from memory_center.core.store import WorkspaceStore
+        from memory_center.core.storage.workspace import WorkspaceStore
 
         workspace_store = WorkspaceStore(demo_workspace)
         stats = _sync_retrieval_indexes(
@@ -1168,11 +1168,11 @@ class TestE08HybridRetrievalFusion:
 
     def test_hybrid_retrieval_on_demo(self, demo_workspace: Path):
         """Full hybrid retrieval should return results on demo workspace."""
-        from memory_center.core.graph import GraphStore
         from memory_center.core.retrieval.hybrid import hybrid_retrieve
+        from memory_center.core.storage.graph import GraphStore
 
         # hybrid_retrieve needs GraphStore + workspace_file + query
-        from memory_center.core.store import WorkspaceStore
+        from memory_center.core.storage.workspace import WorkspaceStore
         ws = WorkspaceStore(str(demo_workspace))
         with GraphStore(ws.graph_db_path) as graph:
             result = hybrid_retrieve(graph, str(demo_workspace), "UserService")
@@ -1289,7 +1289,7 @@ class TestE07VectorRetrievalIntegration:
         """VectorIndex.stats returns expected fields."""
         from memory_center.core.storage.unified import UnifiedStore
         from memory_center.core.storage.vector_index import VectorIndex
-        from memory_center.core.store import WorkspaceStore
+        from memory_center.core.storage.workspace import WorkspaceStore
         ws = WorkspaceStore(str(demo_workspace))
         with UnifiedStore(ws.graph_db_path) as unified:
             vec = VectorIndex(unified)
@@ -1303,7 +1303,7 @@ class TestE07VectorRetrievalIntegration:
         """VectorIndex can upsert and query embeddings."""
         from memory_center.core.storage.unified import UnifiedStore
         from memory_center.core.storage.vector_index import VectorIndex
-        from memory_center.core.store import WorkspaceStore
+        from memory_center.core.storage.workspace import WorkspaceStore
         ws = WorkspaceStore(str(demo_workspace))
         with UnifiedStore(ws.graph_db_path) as unified:
             vec = VectorIndex(unified, dimension=4)
@@ -1323,7 +1323,7 @@ class TestE07VectorRetrievalIntegration:
         """VectorIndex raises ValueError on dimension mismatch."""
         from memory_center.core.storage.unified import UnifiedStore
         from memory_center.core.storage.vector_index import VectorIndex
-        from memory_center.core.store import WorkspaceStore
+        from memory_center.core.storage.workspace import WorkspaceStore
         ws = WorkspaceStore(str(demo_workspace))
         with UnifiedStore(ws.graph_db_path) as unified:
             vec = VectorIndex(unified, dimension=4)
@@ -1336,7 +1336,7 @@ class TestE07VectorRetrievalIntegration:
         """VectorIndex.delete_embedding removes embeddings."""
         from memory_center.core.storage.unified import UnifiedStore
         from memory_center.core.storage.vector_index import VectorIndex
-        from memory_center.core.store import WorkspaceStore
+        from memory_center.core.storage.workspace import WorkspaceStore
         ws = WorkspaceStore(str(demo_workspace))
         with UnifiedStore(ws.graph_db_path) as unified:
             vec = VectorIndex(unified, dimension=3)
@@ -1412,9 +1412,9 @@ class TestE07VectorRetrievalIntegration:
         diagnostics = {}
         with (
             patch("memory_center.core.storage.vector_index.VectorIndex", FakeVectorIndex),
-            patch("memory_center.core.graph.GraphStore", FakeGraph),
-            patch("memory_center.core.semantic.semantic_index_stats", return_value={"model": None, "requested_model": None}),
-            patch("memory_center.core.semantic._load_sentence_transformer_model", return_value=FakeModel()),
+            patch("memory_center.core.storage.graph.GraphStore", FakeGraph),
+            patch("memory_center.core.retrieval.semantic.semantic_index_stats", return_value={"model": None, "requested_model": None}),
+            patch("memory_center.core.retrieval.semantic._load_sentence_transformer_model", return_value=FakeModel()),
         ):
             results = _vector_retrieval(
                 str(demo_workspace),

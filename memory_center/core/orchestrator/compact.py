@@ -4,9 +4,10 @@ import json
 import os
 from typing import Any
 
-from ..schemas import with_schema
-from ..token_utils import compute_savings, estimate_tokens
-from .common import _budget_limits, _trim_summary
+from memory_center.core.foundation.schemas import with_schema
+from memory_center.core.foundation.tokens import compute_savings, estimate_tokens
+
+from .shared import _budget_limits, _trim_summary
 
 
 def _measure_compact_gain(raw_result: dict[str, Any], compact_result: dict[str, Any]) -> dict[str, Any]:

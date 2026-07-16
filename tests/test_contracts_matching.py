@@ -244,18 +244,18 @@ class TestWeakMatchNotHighConfidence:
 
 class TestFeignEndpointAssociation:
     def test_validate_endpoint_path_specific(self):
-        from memory_center.core.ontology import EntityValidator
+        from memory_center.core.knowledge.ontology import EntityValidator
         result = EntityValidator.validate_endpoint_path("/api/users/{id}")
         assert result["is_specific"] is True
         assert result["confidence"] == 0.9
 
     def test_validate_endpoint_path_too_short(self):
-        from memory_center.core.ontology import EntityValidator
+        from memory_center.core.knowledge.ontology import EntityValidator
         result = EntityValidator.validate_endpoint_path("/api")
         assert result["is_specific"] is False
         assert result["confidence"] == 0.1
 
     def test_validate_endpoint_path_root(self):
-        from memory_center.core.ontology import EntityValidator
+        from memory_center.core.knowledge.ontology import EntityValidator
         result = EntityValidator.validate_endpoint_path("/")
         assert result["is_specific"] is False

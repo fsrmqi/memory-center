@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from memory_center.core.observability import OperationObserver, observe_operation
-from memory_center.core.store import WorkspaceStore
+from memory_center.core.observability.operations import OperationObserver, observe_operation
+from memory_center.core.storage.workspace import WorkspaceStore
 
 
 def _workspace(tmp_path: Path) -> Path:

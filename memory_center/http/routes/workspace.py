@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from memory_center.core.dispatch import CommandRegistry
+from memory_center.core.foundation.dispatch import CommandRegistry
 
 from .dependencies import (
     append_change_log,

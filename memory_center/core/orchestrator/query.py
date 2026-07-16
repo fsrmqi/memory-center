@@ -6,25 +6,27 @@ import re
 from pathlib import Path
 from typing import Any
 
-from ..diagnostics import DIAG, diag_entry
-from ..graph import GraphStore
-from ..observability import observe_operation
-from ..ontology import EntityValidator
-from ..quality import build_quality_summary
-from ..result_types import attach_facade_metadata
-from ..rules import match_rules
-from ..schemas import with_schema
-from ..semantic import semantic_query
-from ..tracking import log_token_gain
+from memory_center.core.assessment.quality import build_quality_summary
+from memory_center.core.foundation.result_types import attach_facade_metadata
+from memory_center.core.foundation.schemas import with_schema
+from memory_center.core.governance.rules import match_rules
+from memory_center.core.knowledge.ontology import EntityValidator
+from memory_center.core.observability.diagnostics import DIAG, diag_entry
+from memory_center.core.observability.operations import observe_operation
+from memory_center.core.observability.tracking import log_token_gain
+from memory_center.core.retrieval.semantic import semantic_query
+from memory_center.core.storage.graph import GraphStore
+
 from ..verification.heuristics import apply_candidate_path_learning
+from ..walkthrough import analysis as _walkthrough_analysis
 from ..walkthrough import answer as _wt_answer
 from ..walkthrough import continuations as _wt_continuations
 from ..walkthrough import escalation as _wt_escalation
 from ..walkthrough import operations as _walkthrough_operations
 from ..walkthrough import risks as _wt_risks
-from ..walkthrough import runner as _walkthrough_runner
 from ..walkthrough import symbols as _wt_symbols
-from .common import (
+from .compact import _measure_compact_gain
+from .shared import (
     SESSION_EVENTS_FILE,
     _best_match,
     _budget_limits,
@@ -41,12 +43,11 @@ from .common import (
     summarize_chain_edges,
     tokenize,
 )
-from .compact import _measure_compact_gain
 
-METHOD_WALKTHROUGH_SCHEMA_VERSION = _walkthrough_runner.METHOD_WALKTHROUGH_SCHEMA_VERSION
-_METHOD_WALKTHROUGH_CACHE_TTL_SECONDS = _walkthrough_runner.DEFAULT_CACHE_TTL_SECONDS
-_METHOD_WALKTHROUGH_CACHE_MAX_ITEMS = _walkthrough_runner.DEFAULT_CACHE_MAX_ITEMS
-_METHOD_WALKTHROUGH_CACHE = _walkthrough_runner.default_walkthrough_cache()
+METHOD_WALKTHROUGH_SCHEMA_VERSION = _walkthrough_analysis.METHOD_WALKTHROUGH_SCHEMA_VERSION
+_METHOD_WALKTHROUGH_CACHE_TTL_SECONDS = _walkthrough_analysis.DEFAULT_CACHE_TTL_SECONDS
+_METHOD_WALKTHROUGH_CACHE_MAX_ITEMS = _walkthrough_analysis.DEFAULT_CACHE_MAX_ITEMS
+_METHOD_WALKTHROUGH_CACHE = _walkthrough_analysis.default_walkthrough_cache()
 _JAVA_CHAIN_SYMBOL_RE = re.compile(
     r"((?:[a-z_][\w$]*\.)+[A-Z][\w$]*(?:#[a-zA-Z_][\w$]*)?|[A-Z][\w$]*(?:#[a-zA-Z_][\w$]*)?)"
 )
@@ -732,7 +733,7 @@ def memory_query_hybrid(
 
     # F-03: Record query metrics (best-effort)
     try:
-        from ..metrics import MetricsCollector
+        from memory_center.core.observability.metrics import MetricsCollector
         mc = MetricsCollector(workspace_file)
         mc.record("memory_query_hybrid", len(json.dumps(result, ensure_ascii=False)), unit="chars")
     except Exception:
@@ -1220,7 +1221,7 @@ def memory_symbol(
     # If inferred_project is known but no match found in that project,
     # try a direct graph lookup by class name + project
     if inferred_project and not any(_project_matches(inferred_project, m.get("project", "")) for m in matches):
-        from ..graph import GraphStore
+        from memory_center.core.storage.graph import GraphStore
         store = load_context(workspace_file)[1]
         with GraphStore(store.graph_db_path) as g:
             # Extract class name from FQN (last segment)
@@ -1503,7 +1504,7 @@ def memory_method_walkthrough(
             allow=True,
         )
 
-    result = _walkthrough_runner.build_walkthrough_result(
+    result = _walkthrough_analysis.build_walkthrough_result(
         workspace_file,
         symbol,
         depth=depth,
@@ -1522,7 +1523,7 @@ def memory_method_walkthrough(
         and project_scope.get("fallback_allowed", False)
         and not result.get("found")
     ):
-        result = _walkthrough_runner.build_walkthrough_result(
+        result = _walkthrough_analysis.build_walkthrough_result(
             workspace_file,
             symbol,
             depth=depth,
@@ -2072,7 +2073,7 @@ def memory_ref_get(workspace_file: str | Path, ref_id: str) -> dict[str, Any]:
 
 
 def memory_ref_batch(workspace_file: str | Path, ref_ids: list[str]) -> dict[str, Any]:
-    from ..config import load_workspace_config
+    from memory_center.core.workspace.config import load_workspace_config
 
     refs = [memory_ref_get(workspace_file, ref_id) for ref_id in ref_ids]
     return with_schema(
@@ -2211,7 +2212,7 @@ def memory_discover(
     recommendations: list = []
     candidate_paths: list[dict[str, Any]] = []
     try:
-        from .workspace import workspace_status
+        from .workspace_ops import workspace_status
         status = workspace_status(workspace_file, view="compact", budget="medium")
         layers = status.get("memory_layers", {})
         if layers.get("L0", {}).get("count", 0) == 0:

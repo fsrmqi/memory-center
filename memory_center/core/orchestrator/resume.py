@@ -4,16 +4,20 @@ import json
 from pathlib import Path
 from typing import Any
 
-from ..rules import (
+from memory_center.core.foundation.schemas import with_schema
+from memory_center.core.governance.rules import (
     DEFAULT_HANDOFF_PROFILES,
     ensure_default_rules,
 )
-from ..schemas import with_schema
-from ..store import WorkspaceStore
+from memory_center.core.observability.tracking import log_token_gain
+from memory_center.core.storage.workspace import WorkspaceStore
+
 from ..tasks.artifacts import get_task_artifact, list_task_spaces
 from ..tasks.timeline import timeline_query
-from ..tracking import log_token_gain
-from .common import (
+from .compact import _compact_handoff_packet, _compact_resume_packet, _measure_compact_gain
+from .query import memory_query
+from .session import workspace_recent_evidence
+from .shared import (
     LAYER_L0,
     LAYER_L1,
     LAYER_L2,
@@ -30,9 +34,6 @@ from .common import (
     load_context,
     tokenize,
 )
-from .compact import _compact_handoff_packet, _compact_resume_packet, _measure_compact_gain
-from .query import memory_query
-from .session import workspace_recent_evidence
 
 
 def workspace_resume_packet(
@@ -44,7 +45,7 @@ def workspace_resume_packet(
     view: str = "compact",
     budget: str = "medium",
 ) -> dict[str, Any]:
-    from .workspace import workspace_status  # lazy import to avoid circular dep
+    from .workspace_ops import workspace_status  # lazy import to avoid circular dep
 
     config, store = load_context(workspace_file)
     resolved_task_id = task_id.strip()
@@ -169,7 +170,7 @@ def workspace_unresolved_items(
     intent: str = "",
     limit: int = 10,
 ) -> dict[str, Any]:
-    from .eval import memory_eval_write_quality
+    from .evaluations import memory_eval_write_quality
 
     config, _ = load_context(workspace_file)
     unresolved: list[str] = []
@@ -208,7 +209,7 @@ def workspace_next_actions(
     intent: str = "",
     limit: int = 8,
 ) -> dict[str, Any]:
-    from .eval import memory_eval_write_quality
+    from .evaluations import memory_eval_write_quality
 
     config, _ = load_context(workspace_file)
     action_items: list[dict[str, Any]] = []
@@ -297,7 +298,7 @@ def workspace_handoff_packet(
     view: str = "compact",
     budget: str = "medium",
 ) -> dict[str, Any]:
-    from .eval import memory_eval_write_quality
+    from .evaluations import memory_eval_write_quality
 
     config, store = load_context(workspace_file)
     profile = workspace_model_profile(target_model, workspace_file=workspace_file)

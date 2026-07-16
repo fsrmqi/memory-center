@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from ..store import WorkspaceStore
+from memory_center.core.storage.workspace import WorkspaceStore
 
 PORTABLE_BASELINE_FILE = "portable-benchmark-baselines.jsonl"
 _SAFE_NAME = re.compile(r"^[A-Za-z0-9_.-]{1,80}$")

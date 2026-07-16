@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from memory_center.core.quality import build_quality_summary
+from memory_center.core.assessment.quality import build_quality_summary
 
 
 def test_quality_summary_classifies_fact_inferred_and_derived() -> None:

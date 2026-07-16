@@ -11,9 +11,9 @@ from uuid import uuid4
 
 from filelock import FileLock, Timeout
 
-from ..diagnostics import safe_reason
-from ..errors import ConflictError
-from ..store import WorkspaceStore
+from memory_center.core.foundation.errors import ConflictError
+from memory_center.core.observability.diagnostics import safe_reason
+from memory_center.core.storage.workspace import WorkspaceStore
 
 REINDEX_STATE_FILE = "reindex-state.json"
 

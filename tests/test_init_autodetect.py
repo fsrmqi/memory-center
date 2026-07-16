@@ -22,7 +22,7 @@ from pathlib import Path
 
 import yaml
 
-from memory_center.core.config import write_default_workspace
+from memory_center.core.workspace.config import write_default_workspace
 
 
 def _touch(path: Path, content: str = "") -> Path:

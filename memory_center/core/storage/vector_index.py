@@ -11,7 +11,8 @@ import math
 import struct
 from typing import Any
 
-from ..compat import zip_strict
+from memory_center.core.foundation.compat import zip_strict
+
 from .unified import UnifiedStore
 
 # Try to import sqlite_vec

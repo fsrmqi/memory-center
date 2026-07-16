@@ -11,9 +11,10 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from memory_center.core.assessment.quality import build_quality_summary
+from memory_center.core.storage.workspace import WorkspaceStore
+
 from ..backend.query import UnifiedBackendQuery
-from ..quality import build_quality_summary
-from ..store import WorkspaceStore
 
 
 class DrillDownNavigator:
@@ -43,7 +44,7 @@ class DrillDownNavigator:
         - Level 2: Details (on demand)
         - Level 3: Related items (on demand)
         """
-        from ..orchestrator.common import _resolve_memory_ref
+        from ..orchestrator.shared import _resolve_memory_ref
 
         resolved = _resolve_memory_ref(self.store, ref_id)
         if not resolved:

@@ -8,7 +8,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from ..rules import match_rules
+from memory_center.core.governance.rules import match_rules
+
 from ..storage.unified import UnifiedStore
 
 

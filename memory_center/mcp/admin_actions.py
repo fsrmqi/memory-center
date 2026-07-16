@@ -27,16 +27,16 @@ from memory_center.core.contracting.runtime import (
     runtime_contract_compatibility,
     set_contract_migration,
 )
-from memory_center.core.dispatch import CommandRegistry
 from memory_center.core.domain.flow import (
     business_flow_impact_for_workspace,
     extract_business_flows_for_workspace,
 )
 from memory_center.core.explanation.schema import Explanation
+from memory_center.core.foundation.dispatch import CommandRegistry
 from memory_center.core.indexing.control_plane import index_control_status, rollback_generation
 from memory_center.core.indexing.shards import cleanup_generations
-from memory_center.core.jobs import cancel_workspace_job, submit_reindex_workspace_job, workspace_job_status
-from memory_center.core.metrics import MetricsCollector
+from memory_center.core.knowledge.wiki import generate_skills, generate_wiki
+from memory_center.core.observability.metrics import MetricsCollector
 from memory_center.core.orchestrator import (
     group_chain,
     group_impact,
@@ -88,10 +88,10 @@ from memory_center.core.orchestrator import (
     workspace_task_resume_check,
     workspace_write_receipts,
 )
-from memory_center.core.query_planner import workspace_performance_summary
 from memory_center.core.retrieval.cross_service import evaluate_cross_shard_replay
 from memory_center.core.retrieval.cross_service_fusion import evaluate_cross_shard_fusion
-from memory_center.core.store import WorkspaceStore
+from memory_center.core.retrieval.planner import workspace_performance_summary
+from memory_center.core.storage.workspace import WorkspaceStore
 from memory_center.core.tasks.artifacts import (
     append_change_log,
     append_task_change_log,
@@ -127,7 +127,7 @@ from memory_center.core.verification.workflow_profiles import (
     get_workflow_profile,
     recommend_workflow_with_learning,
 )
-from memory_center.core.wiki import generate_skills, generate_wiki
+from memory_center.core.workspace.jobs import cancel_workspace_job, submit_reindex_workspace_job, workspace_job_status
 
 __all__ = [
     "build_admin_registry",
@@ -182,7 +182,7 @@ def benchmark_trend_report(workspace_file: str, function_name: str = "") -> dict
 
 
 def run_audit(workspace_file: str, work_package: str = "") -> dict[str, Any]:
-    from memory_center.core.audit.completion import run_completion_audit
+    from memory_center.core.audit.reports import run_completion_audit
     return run_completion_audit(workspace_file, work_package=work_package)
 
 
@@ -206,14 +206,14 @@ def drill_task(workspace_file: str, task_id: str = "") -> dict[str, Any]:
 
 def backend_consistency(workspace_file: str) -> dict[str, Any]:
     from memory_center.core.backend.query import UnifiedBackendQuery
-    from memory_center.core.store import WorkspaceStore
+    from memory_center.core.storage.workspace import WorkspaceStore
     store = WorkspaceStore(workspace_file)
     with UnifiedBackendQuery(store.memory_db_path) as backend:
         return backend.check_consistency(store.base_dir)
 
 
 def constraint_action(context: str = "", template: str = "coding_agent") -> dict[str, Any]:
-    from memory_center.core.templates import auto_select_action, get_constraint_template
+    from memory_center.core.governance.templates import auto_select_action, get_constraint_template
     if context:
         return {"context": context, "template": template, "recommended_action": auto_select_action(context, template)}
     tmpl = get_constraint_template(template)

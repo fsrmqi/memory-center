@@ -30,7 +30,7 @@ from pathlib import Path
 
 import pytest
 
-from memory_center.core.benchmark.models import GoldenCase
+from memory_center.core.benchmark.cases import GoldenCase
 from memory_center.core.indexing.java_regex_parser import RegexJavaParser
 
 
@@ -115,8 +115,8 @@ class TestSyncRetrievalPreservesExistingVectors:
         # embedding, then call _sync_retrieval_indexes with a
         # semantic_index that has no ``dense_vector``. The embedding
         # should still be there afterwards.
-        from memory_center.core.graph import GraphStore
-        from memory_center.core.indexer import _sync_retrieval_indexes
+        from memory_center.core.indexing.reindex import _sync_retrieval_indexes
+        from memory_center.core.storage.graph import GraphStore
         from memory_center.core.storage.unified import UnifiedStore
         from memory_center.core.storage.vector_index import VectorIndex
 
@@ -124,7 +124,7 @@ class TestSyncRetrievalPreservesExistingVectors:
         # Seed graph with one node
         with GraphStore(graph_db) as graph:
             graph.rebuild([], [])
-            from memory_center.core.graph import GraphNode
+            from memory_center.core.storage.graph import GraphNode
 
             graph.bulk_write([GraphNode(id="n1", type="Method", name="m", project="p")], [])
 
@@ -153,8 +153,8 @@ class TestSyncRetrievalPreservesExistingVectors:
     def test_partial_sync_upserts_changed_dense_doc_and_preserves_others(
         self, tmp_path: Path
     ) -> None:
-        from memory_center.core.graph import GraphNode, GraphStore
-        from memory_center.core.indexer import _sync_retrieval_indexes
+        from memory_center.core.indexing.reindex import _sync_retrieval_indexes
+        from memory_center.core.storage.graph import GraphNode, GraphStore
         from memory_center.core.storage.unified import UnifiedStore
         from memory_center.core.storage.vector_index import VectorIndex
 

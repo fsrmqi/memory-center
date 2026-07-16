@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from memory_center.core.orchestrator import workspace as workspace_module
+from memory_center.core.orchestrator import workspace_ops as workspace_module
 
 
 class _FakeGraph:

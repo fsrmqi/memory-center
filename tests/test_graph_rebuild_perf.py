@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from memory_center.core.graph import GraphEdge, GraphNode, GraphStore
+from memory_center.core.storage.graph import GraphEdge, GraphNode, GraphStore
 from memory_center.core.storage.pragmas import read_pragma_state
 
 

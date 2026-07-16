@@ -9,7 +9,7 @@ from typing import Any
 
 import yaml
 
-from ..core.store import WorkspaceStore
+from ..core.storage.workspace import WorkspaceStore
 
 _VALID_MODES = ("soft", "guard", "suggest", "off")
 _VALID_FACADES = (

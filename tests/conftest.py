@@ -63,9 +63,9 @@ def _copy_and_index(tmp_path: Path) -> Path:
         for line in lines
     ]
     workspace.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    from memory_center.core.config import load_workspace_config
-    from memory_center.core.indexer import reindex_workspace
-    from memory_center.core.store import WorkspaceStore
+    from memory_center.core.indexing.reindex import reindex_workspace
+    from memory_center.core.storage.workspace import WorkspaceStore
+    from memory_center.core.workspace.config import load_workspace_config
 
     config = load_workspace_config(workspace)
     store = WorkspaceStore(workspace)

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json as _json
 
-from memory_center.core.dispatch import CommandRegistry
+from memory_center.core.foundation.dispatch import CommandRegistry
 
 from .dependencies import Any, group_chain, group_impact, group_query, group_status
 from .params import RouteParams, _parse_int
@@ -151,7 +151,7 @@ def register_analysis_routes(registry: CommandRegistry) -> None:
     registry.register("/workspace/business-flow-impact", _business_flow_impact)
 
     def _metrics_summary(rp: RouteParams) -> dict[str, Any]:
-        from memory_center.core.metrics import MetricsCollector
+        from memory_center.core.observability.metrics import MetricsCollector
         ws = rp.params.get("workspace", [rp.default_workspace])[0]
         if not ws:
             return {"summary": {}, "note": "no_workspace_in_context"}
@@ -165,7 +165,7 @@ def register_analysis_routes(registry: CommandRegistry) -> None:
     def _onboard(rp: RouteParams) -> dict[str, Any]:
         from memory_center.core.onboarding.tour import ArchitectureTourGenerator
         from memory_center.core.storage.unified import UnifiedStore
-        from memory_center.core.store import WorkspaceStore
+        from memory_center.core.storage.workspace import WorkspaceStore
         ws = rp.workspace()
         persona = rp.get("persona", "developer")
         workspace_store = WorkspaceStore(ws)
@@ -212,14 +212,14 @@ def register_analysis_routes(registry: CommandRegistry) -> None:
 
     # --- workspace-anchored group helpers (load_registry from workspace) ------
     def _workspace_group_status(rp: RouteParams) -> dict[str, Any]:
-        from memory_center.core.registry import load_registry
+        from memory_center.core.governance.registry import load_registry
         ws = rp.workspace()
         return group_status(load_registry(ws))
 
     registry.register("/workspace/group-status", _workspace_group_status)
 
     def _workspace_group_query(rp: RouteParams) -> dict[str, Any]:
-        from memory_center.core.registry import load_registry
+        from memory_center.core.governance.registry import load_registry
         ws = rp.workspace()
         return group_query(
             load_registry(ws),
@@ -230,14 +230,14 @@ def register_analysis_routes(registry: CommandRegistry) -> None:
     registry.register("/workspace/group-query", _workspace_group_query)
 
     def _workspace_group_impact(rp: RouteParams) -> dict[str, Any]:
-        from memory_center.core.registry import load_registry
+        from memory_center.core.governance.registry import load_registry
         ws = rp.workspace()
         return group_impact(load_registry(ws), target=rp.require('target'))
 
     registry.register("/workspace/group-impact", _workspace_group_impact)
 
     def _workspace_group_chain(rp: RouteParams) -> dict[str, Any]:
-        from memory_center.core.registry import load_registry
+        from memory_center.core.governance.registry import load_registry
         ws = rp.workspace()
         return group_chain(load_registry(ws), symbol=rp.require('symbol'))
 

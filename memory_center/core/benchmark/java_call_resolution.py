@@ -10,8 +10,8 @@ from typing import Any
 
 import yaml
 
-from ..graph import GraphStore
-from ..store import WorkspaceStore
+from memory_center.core.storage.graph import GraphStore
+from memory_center.core.storage.workspace import WorkspaceStore
 
 JAVA_CALL_CASE_FIELDS = {
     "case_id",

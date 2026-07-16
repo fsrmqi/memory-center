@@ -11,7 +11,7 @@ from typing import Any
 
 import yaml
 
-from .models import GoldenCase
+from .cases import GoldenCase
 
 CaseRunner = Callable[[GoldenCase], dict[str, Any]]
 

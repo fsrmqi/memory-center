@@ -10,9 +10,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from ..config import load_workspace_config
-from ..store import WorkspaceStore
-from ..workspace_shape import analyze_workspace_shape
+from memory_center.core.storage.workspace import WorkspaceStore
+from memory_center.core.workspace.config import load_workspace_config
+from memory_center.core.workspace.shape import analyze_workspace_shape
 
 
 @dataclass

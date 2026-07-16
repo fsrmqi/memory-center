@@ -3,10 +3,11 @@ from __future__ import annotations
 from collections.abc import Iterable
 from typing import Any
 
-from ..diagnostics import DIAG, diag_entry
+from memory_center.core.observability.diagnostics import DIAG, diag_entry
+
 from ..explanation import explanation_entry
-from .models import ReasoningRequest
 from .patterns import GraphPatternEngine
+from .request import ReasoningRequest
 from .risk import RiskPatternEngine
 from .transitive import TransitiveInferenceEngine
 

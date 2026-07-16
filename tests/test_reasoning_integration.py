@@ -157,9 +157,9 @@ class TestRunReasoningPatterns:
         assert isinstance(result["risk"], list)
 
     def test_parser_precision_warning_is_visible_after_reindex(self, demo_workspace: Path):
-        from memory_center.core.config import load_workspace_config
-        from memory_center.core.indexer import reindex_workspace
-        from memory_center.core.store import WorkspaceStore
+        from memory_center.core.indexing.reindex import reindex_workspace
+        from memory_center.core.storage.workspace import WorkspaceStore
+        from memory_center.core.workspace.config import load_workspace_config
 
         config = load_workspace_config(demo_workspace)
         reindex_result = reindex_workspace(config, WorkspaceStore(demo_workspace))
@@ -202,9 +202,9 @@ class TestRunReasoningPatterns:
     def test_with_target_id_returns_transitive_and_risk(self, demo_workspace: Path):
         """When target_id is provided, transitive and risk engines run."""
         # Get a real node ID from the graph
-        from memory_center.core.store import WorkspaceStore
+        from memory_center.core.storage.workspace import WorkspaceStore
         ws = WorkspaceStore(str(demo_workspace))
-        from memory_center.core.graph import GraphStore
+        from memory_center.core.storage.graph import GraphStore
         with GraphStore(ws.graph_db_path) as graph:
             nodes = graph.find_nodes("Order", limit=1)
         if not nodes:
@@ -242,11 +242,11 @@ class TestRunReasoningPatterns:
 
     def test_reasoning_does_not_override_factual_results(self, demo_workspace: Path):
         """Reasoning is additive — it never replaces factual impact results."""
-        from memory_center.core.graph import GraphStore
         from memory_center.core.orchestrator.impact import memory_impact
+        from memory_center.core.storage.graph import GraphStore
 
         # Get a real target from the graph
-        from memory_center.core.store import WorkspaceStore
+        from memory_center.core.storage.workspace import WorkspaceStore
         ws_store = WorkspaceStore(str(demo_workspace))
         with GraphStore(ws_store.graph_db_path) as graph:
             nodes = graph.find_nodes("Order", limit=1)

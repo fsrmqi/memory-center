@@ -1,18 +1,18 @@
 import json
 from pathlib import Path
 
-from memory_center.core.config import load_workspace_config
-from memory_center.core.cross_shard import (
+from memory_center.core.indexing.control_plane import index_control_status
+from memory_center.core.indexing.reindex import reindex_workspace
+from memory_center.core.indexing.shards import load_service_shard, service_shard_graph_path
+from memory_center.core.orchestrator.query import memory_query_hybrid, memory_search_code
+from memory_center.core.retrieval.cross_service import (
     evaluate_cross_shard_replay,
     query_cross_service_shards,
     route_cross_service_shards,
 )
-from memory_center.core.cross_shard_fusion import evaluate_cross_shard_fusion, fuse_cross_shard_result
-from memory_center.core.index_control import index_control_status
-from memory_center.core.index_shards import load_service_shard, service_shard_graph_path
-from memory_center.core.indexer import reindex_workspace
-from memory_center.core.orchestrator.query import memory_query_hybrid, memory_search_code
-from memory_center.core.store import WorkspaceStore
+from memory_center.core.retrieval.cross_service_fusion import evaluate_cross_shard_fusion, fuse_cross_shard_result
+from memory_center.core.storage.workspace import WorkspaceStore
+from memory_center.core.workspace.config import load_workspace_config
 
 
 def test_reindex_publishes_active_generation_and_shard_manifest(tmp_path: Path) -> None:

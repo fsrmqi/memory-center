@@ -158,8 +158,8 @@ def _spring_mappings(
     text: str,
     file_name: str,
 ) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
-    from ..indexer import parse_controllers, parse_feign_clients
-    from ..models import JavaSymbol
+    from memory_center.core.foundation.models import JavaSymbol
+    from memory_center.core.indexing.reindex import parse_controllers, parse_feign_clients
 
     symbol = JavaSymbol(
         project="parser-corpus",

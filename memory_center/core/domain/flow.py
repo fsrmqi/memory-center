@@ -9,9 +9,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from ..graph import GraphStore
+from memory_center.core.storage.graph import GraphStore
+from memory_center.core.storage.workspace import WorkspaceStore
+
 from ..storage.unified import UnifiedStore
-from ..store import WorkspaceStore
 
 
 @dataclass

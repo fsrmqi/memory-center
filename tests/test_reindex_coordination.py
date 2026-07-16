@@ -7,13 +7,13 @@ import yaml
 from filelock import Timeout
 from typer.testing import CliRunner
 
-import memory_center.core.indexer as indexer
+import memory_center.core.indexing.reindex as indexer
 from memory_center.cli.main import app
-from memory_center.core.config import load_workspace_config
 from memory_center.core.indexing import reindex_state
 from memory_center.core.indexing.reindex_state import ReindexBusyError, workspace_reindex_lock, workspace_reindex_status
 from memory_center.core.orchestrator import workspace_status
-from memory_center.core.store import WorkspaceStore
+from memory_center.core.storage.workspace import WorkspaceStore
+from memory_center.core.workspace.config import load_workspace_config
 
 
 def _workspace(tmp_path: Path) -> Path:

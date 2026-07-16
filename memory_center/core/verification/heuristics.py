@@ -8,8 +8,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from ..config import load_workspace_data
-from ..store import WorkspaceStore
+from memory_center.core.storage.workspace import WorkspaceStore
+from memory_center.core.workspace.config import load_workspace_data
 
 HEURISTICS_FILE = "learned-heuristics.jsonl"
 _DEFAULT_CONFIDENCE = 0.5

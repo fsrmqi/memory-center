@@ -4,6 +4,7 @@ from .baseline import (
     compare_baseline_samples,
     record_baseline_sample,
 )
+from .cases import GoldenCase
 from .golden import load_golden_cases, run_golden_suite, save_golden_performance_baseline, score_golden_case
 from .java_call_resolution import (
     JavaCallResolutionCase,
@@ -12,7 +13,6 @@ from .java_call_resolution import (
     run_java_call_resolution_suite,
     summarize_unresolved_java_calls,
 )
-from .models import GoldenCase
 from .release_gate import (
     build_release_gate_baseline,
     compare_release_gate_baseline,

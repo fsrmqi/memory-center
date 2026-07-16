@@ -1,10 +1,10 @@
 from pathlib import Path
 
-from memory_center.core.artifacts import create_task_space
-from memory_center.core.config import load_workspace_config
-from memory_center.core.indexer import reindex_workspace
+from memory_center.core.indexing.reindex import reindex_workspace
 from memory_center.core.orchestrator import workspace_sniff, workspace_status, workspace_sync_sniff_to_artifacts
-from memory_center.core.store import WorkspaceStore
+from memory_center.core.storage.workspace import WorkspaceStore
+from memory_center.core.tasks.artifacts import create_task_space
+from memory_center.core.workspace.config import load_workspace_config
 
 
 def _workspace(tmp_path: Path) -> Path:
@@ -47,7 +47,7 @@ def test_sync_reuses_supplied_sniff_without_second_query(tmp_path: Path, monkeyp
     task = create_task_space(workspace, title="复用 sniff 任务")
     sniff = workspace_sniff(workspace, "ArticleFeignClient", view="compact")
 
-    import memory_center.core.orchestrator.workspace as workspace_module
+    import memory_center.core.orchestrator.workspace_ops as workspace_module
 
     monkeypatch.setattr(workspace_module, "workspace_sniff", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("must reuse sniff")))
     result = workspace_sync_sniff_to_artifacts(workspace, "ArticleFeignClient", task_id=task["task_id"], sniff_result=sniff)

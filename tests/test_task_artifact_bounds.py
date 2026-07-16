@@ -1,6 +1,7 @@
 from pathlib import Path
 
-from memory_center.core.artifacts import (
+from memory_center.core.orchestrator import sync as sync_module
+from memory_center.core.tasks.artifacts import (
     TASK_ARTIFACT_EXCERPT_BYTES,
     TASK_ARTIFACT_WRITE_MAX_BYTES,
     create_task_space,
@@ -11,7 +12,6 @@ from memory_center.core.artifacts import (
     update_task_artifact,
     write_task_evidence_chunk,
 )
-from memory_center.core.orchestrator import sync as sync_module
 
 
 def _workspace(tmp_path: Path) -> Path:

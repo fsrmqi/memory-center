@@ -1,4 +1,4 @@
-"""Tests for memory_center.core.service_kinds.
+"""Tests for memory_center.core.workspace.kinds.
 
 Covers:
 - Registry shape (all kinds carry the required fields).
@@ -15,8 +15,8 @@ from pathlib import Path
 
 import pytest
 
-from memory_center.core.models import ServiceConfig
-from memory_center.core.service_kinds import (
+from memory_center.core.foundation.models import ServiceConfig
+from memory_center.core.workspace.kinds import (
     SERVICE_KIND_REGISTRY,
     detect_kind_from_path,
     is_known_kind,

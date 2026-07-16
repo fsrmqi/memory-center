@@ -61,7 +61,7 @@ def _extract_current_tools() -> dict[str, Any]:
 
 def _extract_current_facade_schemas() -> dict[str, dict[str, Any]]:
     """Extract facade required fields from schemas.py."""
-    from memory_center.core.schemas import SCHEMA_REQUIRED_FIELDS
+    from memory_center.core.foundation.schemas import SCHEMA_REQUIRED_FIELDS
 
     facade_names = [
         "mc_start", "mc_lookup", "mc_analyze", "mc_sync", "mc_resume",

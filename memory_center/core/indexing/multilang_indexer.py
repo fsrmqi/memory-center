@@ -1,6 +1,6 @@
 """Indexer-side glue for multi-language structural parsing.
 
-This module sits between :mod:`memory_center.core.indexer` and the
+This module sits between :mod:`memory_center.core.indexing.reindex` and the
 generic ``TreeSitterStructuralParser``. Indexer's main loop is already
 big and Java-shaped; the goal here is to add multi-language support
 without rewriting it.
@@ -31,7 +31,8 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
-from ..graph import GraphEdge, GraphNode, edge_id, node_id
+from memory_center.core.storage.graph import GraphEdge, GraphNode, edge_id, node_id
+
 from .language_registry import (
     get_language_spec_for_extension,
     supported_extensions,

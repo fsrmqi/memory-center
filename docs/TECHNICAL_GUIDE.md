@@ -61,7 +61,7 @@
 
 ### 3.1 索引与图谱
 
-- `core/indexer.py`
+- `core/indexing/reindex.py`
   - workspace 全量 / 增量索引
   - 文件、symbol、API、Feign、MQ、config、semantic 入口
 - `core/indexing/java_regex_parser.py`
@@ -69,28 +69,28 @@
 - `core/indexing/java_call_resolver.py`
   - Java 方法调用解析
   - 将 `method_calls` 从文本证据提升为带置信度的 `CALLS_METHOD` 边
-- `core/graph.py`
+- `core/storage/graph.py`
   - graph.db 节点边写入与查询
 
 ### 3.2 配置与存储
 
-- `core/config.py`
+- `core/workspace/config.py`
   - 读取 `workspace.yaml`
-- `core/store.py`
+- `core/storage/workspace.py`
   - workspace 目录读写
   - JSON / JSONL / refs
   - `read_json_prefer_backend` / `read_jsonl_prefer_backend`
-- `core/memory_backend.py`
+- `core/storage/memory_backend.py`
   - SQLite `memory.db`
   - 镜像写入与统一后端查询
 
 ### 3.3 规则与协议
 
-- `core/rules.py`
+- `core/governance/rules.py`
   - 默认规则
   - YAML 规则读取
   - 匹配逻辑
-- `core/schemas.py`
+- `core/foundation/schemas.py`
   - 稳定返回 schema
 - `core/tasks/receipts.py`
   - 写入回执
@@ -99,17 +99,17 @@
 
 现在编排器已经拆分到：
 
-- `core/orchestrator/common.py`
+- `core/orchestrator/shared.py`
 - `core/orchestrator/compact.py`
 - `core/orchestrator/query.py`
 - `core/orchestrator/impact.py`
 - `core/orchestrator/session.py`
 - `core/orchestrator/resume.py`
 - `core/orchestrator/sync.py`
-- `core/orchestrator/workspace.py`
+- `core/orchestrator/workspace_ops.py`
 - `core/orchestrator/write.py`
 - `core/orchestrator/group.py`
-- `core/orchestrator/eval.py`
+- `core/orchestrator/evaluations.py`
 
 这是当前系统最核心的一层。
 
@@ -157,14 +157,14 @@
   - Golden Benchmark case loading
   - logical anchor / edge extraction
   - suite scoring and latency summary
-- `core/benchmark/models.py`
+- `core/benchmark/cases.py`
   - portable `GoldenCase` schema
   - private-path / unsupported-field guardrails
 - `core/tasks/timeline.py`
   - session_event / write_receipt / handoff 统一时间线
-- `core/tracking.py`
+- `core/observability/tracking.py`
   - token gain 日志
-- `core/token_utils.py`
+- `core/foundation/tokens.py`
   - token 估算与节省统计
 - `core/presentation/exporters.py`
   - HTML / Markdown / UI 片段渲染
@@ -174,9 +174,9 @@
   - generation 控制面与物理服务分片
 - `core/retrieval/cross_service*.py`
   - 跨服务分片路由、并行取证与融合
-- `core/wiki.py`
+- `core/knowledge/wiki.py`
   - wiki / skills 生成
-- `core/instructions.py`
+- `core/governance/instructions.py`
   - AGENT / CLAUDE / GEMINI 指令文件生成
 
 ### 3.6 V3 层
@@ -187,10 +187,10 @@
   - business domain / business flow 抽取与查询
 - `core/freshness/*`
   - 索引新鲜度检测、watcher、reconcile
-- `core/ontology.py`
+- `core/knowledge/ontology.py`
   - Code KG ontology node / edge typing
 - `core/reasoning/*`
-  - `models.py`: immutable `ReasoningRequest`
+  - `request.py`: immutable `ReasoningRequest`
   - `pipeline.py`: fact / inferred / derived orchestration, global evidence budget, deduplication and partial degradation
   - `patterns.py`: workspace-level structural scans
   - `transitive.py`: bounded breadth traversal for target call chains
@@ -373,10 +373,10 @@ Hook 的价值在于自动触发关键生命周期动作，但不应该过度侵
 
 如果后面继续优化，最容易碰到的热点是：
 
-- `core/indexer.py`
+- `core/indexing/reindex.py`
 - `core/orchestrator/*`
-- `core/store.py`
-- `core/memory_backend.py`
+- `core/storage/workspace.py`
+- `core/storage/memory_backend.py`
 - `mcp/server.py`
 - `http/server.py`
 - `hooks/*`

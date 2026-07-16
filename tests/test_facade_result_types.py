@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from memory_center.core.result_types import FacadeMetadata, attach_facade_metadata
+from memory_center.core.foundation.result_types import FacadeMetadata, attach_facade_metadata
 
 
 def test_facade_metadata_has_stable_dict_contract() -> None:

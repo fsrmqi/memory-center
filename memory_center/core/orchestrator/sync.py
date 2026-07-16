@@ -12,7 +12,7 @@ from ..tasks.artifacts import (
     update_task_current_summary_snapshot,
 )
 from ..tasks.receipts import build_write_receipt
-from .common import (
+from .shared import (
     LAYER_L2,
     TOOL_WORKSPACE_SYNC_CASE_ARTIFACTS,
     TOOL_WORKSPACE_SYNC_SNIFF_ARTIFACTS,
@@ -38,7 +38,7 @@ def workspace_sync_sniff_to_artifacts(
     auto_sync_mode: str = "balanced",
     sniff_result: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    from .workspace import workspace_sniff
+    from .workspace_ops import workspace_sniff
 
     config, store = load_context(workspace_file)
     sniff = sniff_result if isinstance(sniff_result, dict) else workspace_sniff(workspace_file, intent, limit=limit)

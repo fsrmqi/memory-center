@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..orchestrator.common import _project_matches
+from ..orchestrator.shared import _project_matches
 from .symbols import (
     detect_unqualified_same_class_calls,
     find_method_span_lines,

@@ -10,7 +10,7 @@ import time
 from typing import Any
 from uuid import uuid4
 
-from ..store import WorkspaceStore
+from memory_center.core.storage.workspace import WorkspaceStore
 
 CONTROL_FILE = "index-control.json"
 SHARD_MANIFEST_FILE = "shard-manifest.json"

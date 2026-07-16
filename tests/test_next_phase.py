@@ -348,7 +348,7 @@ class TestCompletionAudit:
     """Test completion audit module."""
 
     def test_get_project_root_with_memory_center(self):
-        from memory_center.core.audit.completion import _get_project_root
+        from memory_center.core.audit.reports import _get_project_root
         with tempfile.TemporaryDirectory() as tmpdir:
             mc_dir = Path(tmpdir) / ".memory-center"
             mc_dir.mkdir()
@@ -358,7 +358,7 @@ class TestCompletionAudit:
             assert root == Path(tmpdir)
 
     def test_get_project_root_without_memory_center(self):
-        from memory_center.core.audit.completion import _get_project_root
+        from memory_center.core.audit.reports import _get_project_root
         with tempfile.TemporaryDirectory() as tmpdir:
             workspace_file = Path(tmpdir) / "workspace.yaml"
             workspace_file.write_text("workspace: test")
@@ -366,7 +366,7 @@ class TestCompletionAudit:
             assert root == Path(tmpdir)
 
     def test_check_documentation_alignment_finds_docs(self):
-        from memory_center.core.audit.completion import _check_documentation_alignment
+        from memory_center.core.audit.reports import _check_documentation_alignment
         with tempfile.TemporaryDirectory() as tmpdir:
             mc_dir = Path(tmpdir) / ".memory-center"
             mc_dir.mkdir()
@@ -381,7 +381,7 @@ class TestCompletionAudit:
             assert len(missing_readme) == 0
 
     def test_check_documentation_alignment_missing_docs(self):
-        from memory_center.core.audit.completion import _check_documentation_alignment
+        from memory_center.core.audit.reports import _check_documentation_alignment
         with tempfile.TemporaryDirectory() as tmpdir:
             mc_dir = Path(tmpdir) / ".memory-center"
             mc_dir.mkdir()
@@ -394,7 +394,7 @@ class TestCompletionAudit:
             assert any(f["code"] == "missing_doc" for f in findings)
 
     def test_check_test_coverage_finds_tests(self):
-        from memory_center.core.audit.completion import _check_test_coverage
+        from memory_center.core.audit.reports import _check_test_coverage
         with tempfile.TemporaryDirectory() as tmpdir:
             mc_dir = Path(tmpdir) / ".memory-center"
             mc_dir.mkdir()
@@ -414,7 +414,7 @@ class TestCompletionAudit:
             assert len(no_tests) == 0
 
     def test_check_test_coverage_missing_tests(self):
-        from memory_center.core.audit.completion import _check_test_coverage
+        from memory_center.core.audit.reports import _check_test_coverage
         with tempfile.TemporaryDirectory() as tmpdir:
             mc_dir = Path(tmpdir) / ".memory-center"
             mc_dir.mkdir()
@@ -426,7 +426,7 @@ class TestCompletionAudit:
             assert any(f["code"] == "no_tests" for f in findings)
 
     def test_check_implementation_completeness_with_source(self):
-        from memory_center.core.audit.completion import _check_implementation_completeness
+        from memory_center.core.audit.reports import _check_implementation_completeness
         with tempfile.TemporaryDirectory() as tmpdir:
             mc_dir = Path(tmpdir) / ".memory-center"
             mc_dir.mkdir()
@@ -443,7 +443,7 @@ class TestCompletionAudit:
             assert len(no_source) == 0
 
     def test_check_implementation_completeness_without_source(self):
-        from memory_center.core.audit.completion import _check_implementation_completeness
+        from memory_center.core.audit.reports import _check_implementation_completeness
         with tempfile.TemporaryDirectory() as tmpdir:
             mc_dir = Path(tmpdir) / ".memory-center"
             mc_dir.mkdir()
@@ -455,7 +455,7 @@ class TestCompletionAudit:
             assert len(findings) > 0
 
     def test_score_to_quality(self):
-        from memory_center.core.audit.completion import _score_to_quality
+        from memory_center.core.audit.reports import _score_to_quality
         assert _score_to_quality(90) == "high"
         assert _score_to_quality(85) == "high"
         assert _score_to_quality(70) == "medium"
@@ -464,7 +464,7 @@ class TestCompletionAudit:
         assert _score_to_quality(0) == "low"
 
     def test_categorize_findings(self):
-        from memory_center.core.audit.completion import _categorize_findings
+        from memory_center.core.audit.reports import _categorize_findings
         findings = [
             {"category": "docs", "severity": "high"},
             {"category": "tests", "severity": "medium"},
@@ -475,7 +475,7 @@ class TestCompletionAudit:
         assert categories["tests"] == 1
 
     def test_build_audit_summary(self):
-        from memory_center.core.audit.completion import _build_audit_summary
+        from memory_center.core.audit.reports import _build_audit_summary
         findings = [
             {"category": "docs", "severity": "high"},
             {"category": "tests", "severity": "medium"},
@@ -489,7 +489,7 @@ class TestCompletionAudit:
         assert summary["by_severity"]["low"] == 1
 
     def test_check_test_coverage_java_project(self):
-        from memory_center.core.audit.completion import _check_test_coverage
+        from memory_center.core.audit.reports import _check_test_coverage
         with tempfile.TemporaryDirectory() as tmpdir:
             mc_dir = Path(tmpdir) / ".memory-center"
             mc_dir.mkdir()
@@ -504,7 +504,7 @@ class TestCompletionAudit:
             assert len(no_tests) == 0
 
     def test_check_test_coverage_js_project(self):
-        from memory_center.core.audit.completion import _check_test_coverage
+        from memory_center.core.audit.reports import _check_test_coverage
         with tempfile.TemporaryDirectory() as tmpdir:
             mc_dir = Path(tmpdir) / ".memory-center"
             mc_dir.mkdir()
@@ -519,7 +519,7 @@ class TestCompletionAudit:
             assert len(no_tests) == 0
 
     def test_check_test_config_package_json(self):
-        from memory_center.core.audit.completion import _check_test_coverage
+        from memory_center.core.audit.reports import _check_test_coverage
         with tempfile.TemporaryDirectory() as tmpdir:
             mc_dir = Path(tmpdir) / ".memory-center"
             mc_dir.mkdir()
@@ -538,7 +538,7 @@ class TestCompletionAudit:
             assert len(no_test_config) == 0
 
     def test_check_documentation_adaptive(self):
-        from memory_center.core.audit.completion import _check_documentation_alignment
+        from memory_center.core.audit.reports import _check_documentation_alignment
         with tempfile.TemporaryDirectory() as tmpdir:
             mc_dir = Path(tmpdir) / ".memory-center"
             mc_dir.mkdir()
@@ -555,7 +555,7 @@ class TestCompletionAudit:
             assert len(missing_docs) == 0
 
     def test_overall_health_scoring_consistency(self):
-        from memory_center.core.audit.completion import (
+        from memory_center.core.audit.reports import (
             _calculate_overall_health,
             run_completion_audit,
         )
@@ -597,7 +597,7 @@ class TestBackendQuery:
 
     def test_append_and_query_records(self):
         from memory_center.core.backend.query import UnifiedBackendQuery
-        from memory_center.core.memory_backend import MemoryBackendStore
+        from memory_center.core.storage.memory_backend import MemoryBackendStore
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = Path(tmpdir) / "test.db"
             with MemoryBackendStore(db_path) as store:
@@ -619,7 +619,7 @@ class TestBackendQuery:
 
     def test_aggregate_by_session(self):
         from memory_center.core.backend.query import UnifiedBackendQuery
-        from memory_center.core.memory_backend import MemoryBackendStore
+        from memory_center.core.storage.memory_backend import MemoryBackendStore
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = Path(tmpdir) / "test.db"
             with MemoryBackendStore(db_path) as store:
@@ -643,7 +643,7 @@ class TestBackendQuery:
 
     def test_get_session_summary(self):
         from memory_center.core.backend.query import UnifiedBackendQuery
-        from memory_center.core.memory_backend import MemoryBackendStore
+        from memory_center.core.storage.memory_backend import MemoryBackendStore
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = Path(tmpdir) / "test.db"
             with MemoryBackendStore(db_path) as store:
@@ -678,7 +678,7 @@ class TestBackendQuery:
 
     def test_check_consistency_with_data(self):
         from memory_center.core.backend.query import UnifiedBackendQuery
-        from memory_center.core.memory_backend import MemoryBackendStore
+        from memory_center.core.storage.memory_backend import MemoryBackendStore
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = Path(tmpdir) / "test.db"
             with MemoryBackendStore(db_path) as store:

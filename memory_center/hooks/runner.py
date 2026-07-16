@@ -491,7 +491,14 @@ def run_hook(
             system_message = "[Memory Center] Handoff completed"
 
         elif facade == "mc_admin":
-            from ..core.artifacts import (
+            from ..core.knowledge.wiki import generate_skills, generate_wiki
+            from ..core.orchestrator import (
+                memory_tool_usage_report,
+                memory_write_judge,
+                workspace_dashboard,
+                workspace_model_profile,
+            )
+            from ..core.tasks.artifacts import (
                 artifact_context,
                 artifact_outline,
                 create_task_space,
@@ -501,13 +508,6 @@ def run_hook(
                 resolve_task_space,
                 update_artifact,
             )
-            from ..core.orchestrator import (
-                memory_tool_usage_report,
-                memory_write_judge,
-                workspace_dashboard,
-                workspace_model_profile,
-            )
-            from ..core.wiki import generate_skills, generate_wiki
             wf = _get_workspace_file(workspace)
             action = params_spec.get("action", "status")
             _ADMIN_DISPATCH = {

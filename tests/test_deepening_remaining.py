@@ -262,7 +262,7 @@ class TestD04DomainFlowIntegration:
         ws = copy_demo_workspace(tmp_path)
         from memory_center.core.domain.extractor import BusinessDomainExtractor
         from memory_center.core.storage.unified import UnifiedStore
-        from memory_center.core.store import WorkspaceStore
+        from memory_center.core.storage.workspace import WorkspaceStore
         store = WorkspaceStore(str(ws))
         with UnifiedStore(store.graph_db_path) as unified:
             extractor = BusinessDomainExtractor(unified)
@@ -281,7 +281,7 @@ class TestD04DomainFlowIntegration:
         ws = copy_demo_workspace(tmp_path)
         from memory_center.core.domain.extractor import BusinessDomainExtractor
         from memory_center.core.storage.unified import UnifiedStore
-        from memory_center.core.store import WorkspaceStore
+        from memory_center.core.storage.workspace import WorkspaceStore
         store = WorkspaceStore(str(ws))
         with UnifiedStore(store.graph_db_path) as unified:
             extractor = BusinessDomainExtractor(unified)
@@ -298,8 +298,8 @@ class TestD04DomainFlowIntegration:
         """BusinessFlowExtractor returns flows from demo workspace."""
         ws = copy_demo_workspace(tmp_path)
         from memory_center.core.domain.flow import BusinessFlowExtractor
-        from memory_center.core.graph import GraphStore
-        from memory_center.core.store import WorkspaceStore
+        from memory_center.core.storage.graph import GraphStore
+        from memory_center.core.storage.workspace import WorkspaceStore
         store = WorkspaceStore(str(ws))
         with GraphStore(store.graph_db_path) as graph:
             extractor = BusinessFlowExtractor(graph)
@@ -317,7 +317,7 @@ class TestD04DomainFlowIntegration:
         ws = copy_demo_workspace(tmp_path)
         from memory_center.core.domain.flow import BusinessFlowGraph
         from memory_center.core.storage.unified import UnifiedStore
-        from memory_center.core.store import WorkspaceStore
+        from memory_center.core.storage.workspace import WorkspaceStore
         store = WorkspaceStore(str(ws))
         with UnifiedStore(store.graph_db_path) as unified:
             fg = BusinessFlowGraph(unified)
@@ -332,7 +332,7 @@ class TestD04DomainFlowIntegration:
         ws = copy_demo_workspace(tmp_path)
         from memory_center.core.domain.flow import BusinessFlowGraph
         from memory_center.core.storage.unified import UnifiedStore
-        from memory_center.core.store import WorkspaceStore
+        from memory_center.core.storage.workspace import WorkspaceStore
         store = WorkspaceStore(str(ws))
         with UnifiedStore(store.graph_db_path) as unified:
             fg = BusinessFlowGraph(unified)
@@ -346,7 +346,7 @@ class TestD04DomainFlowIntegration:
         ws = copy_demo_workspace(tmp_path)
         from memory_center.core.domain.flow import BusinessFlowGraph
         from memory_center.core.storage.unified import UnifiedStore
-        from memory_center.core.store import WorkspaceStore
+        from memory_center.core.storage.workspace import WorkspaceStore
         store = WorkspaceStore(str(ws))
         with UnifiedStore(store.graph_db_path) as unified:
             fg = BusinessFlowGraph(unified)
@@ -451,8 +451,8 @@ class TestC05ChainTraversal:
     def test_neighbors_returns_list(self, tmp_path):
         """GraphStore.neighbors returns a list for any node."""
         ws = copy_demo_workspace(tmp_path)
-        from memory_center.core.graph import GraphStore
-        from memory_center.core.store import WorkspaceStore
+        from memory_center.core.storage.graph import GraphStore
+        from memory_center.core.storage.workspace import WorkspaceStore
         store = WorkspaceStore(str(ws))
         with GraphStore(store.graph_db_path) as graph:
             nodes = graph.find_nodes("", limit=1)
@@ -463,8 +463,8 @@ class TestC05ChainTraversal:
     def test_neighbors_nonexistent_node(self, tmp_path):
         """GraphStore.neighbors returns empty list for nonexistent node."""
         ws = copy_demo_workspace(tmp_path)
-        from memory_center.core.graph import GraphStore
-        from memory_center.core.store import WorkspaceStore
+        from memory_center.core.storage.graph import GraphStore
+        from memory_center.core.storage.workspace import WorkspaceStore
         store = WorkspaceStore(str(ws))
         with GraphStore(store.graph_db_path) as graph:
             nb = graph.neighbors("nonexistent-id-12345", direction="downstream", max_depth=2, limit=10)
@@ -474,8 +474,8 @@ class TestC05ChainTraversal:
     def test_neighbors_upstream_downstream(self, tmp_path):
         """Upstream and downstream directions both return results."""
         ws = copy_demo_workspace(tmp_path)
-        from memory_center.core.graph import GraphStore
-        from memory_center.core.store import WorkspaceStore
+        from memory_center.core.storage.graph import GraphStore
+        from memory_center.core.storage.workspace import WorkspaceStore
         store = WorkspaceStore(str(ws))
         with GraphStore(store.graph_db_path) as graph:
             nodes = graph.find_nodes("", limit=5)
@@ -488,8 +488,8 @@ class TestC05ChainTraversal:
     def test_neighbors_max_depth_limits_results(self, tmp_path):
         """Higher max_depth should return >= lower max_depth results."""
         ws = copy_demo_workspace(tmp_path)
-        from memory_center.core.graph import GraphStore
-        from memory_center.core.store import WorkspaceStore
+        from memory_center.core.storage.graph import GraphStore
+        from memory_center.core.storage.workspace import WorkspaceStore
         store = WorkspaceStore(str(ws))
         with GraphStore(store.graph_db_path) as graph:
             nodes = graph.find_nodes("", limit=1)
@@ -973,7 +973,7 @@ class TestG03PatternPromotionDeep:
     def test_legacy_candidate_feedback_without_schema_version_is_aggregated(self, tmp_path):
         """legacy candidate rows should still aggregate even without explicit schema metadata."""
         ws = copy_demo_workspace(tmp_path)
-        from memory_center.core.store import WorkspaceStore
+        from memory_center.core.storage.workspace import WorkspaceStore
         from memory_center.core.verification.heuristics import HEURISTICS_FILE, HeuristicsRegister
 
         store = WorkspaceStore(str(ws))
@@ -1004,7 +1004,7 @@ class TestG03PatternPromotionDeep:
     def test_legacy_confidence_delta_row_still_influences_query(self, tmp_path):
         """old confidence_delta-only rows should still adjust the latest aggregated confidence."""
         ws = copy_demo_workspace(tmp_path)
-        from memory_center.core.store import WorkspaceStore
+        from memory_center.core.storage.workspace import WorkspaceStore
         from memory_center.core.verification.heuristics import HEURISTICS_FILE, HeuristicsRegister
 
         hr = HeuristicsRegister(str(ws))
@@ -1035,8 +1035,8 @@ class TestG03PatternPromotionDeep:
     def test_learning_policy_defaults_version_when_missing(self, tmp_path):
         """workspace learning_policy without version should inherit the default policy version."""
         ws = copy_demo_workspace(tmp_path)
-        from memory_center.core.config import load_workspace_data, write_workspace_data
         from memory_center.core.verification.heuristics import load_learning_policy
+        from memory_center.core.workspace.config import load_workspace_data, write_workspace_data
 
         data = load_workspace_data(ws)
         data["learning_policy"] = {
@@ -1053,11 +1053,11 @@ class TestG03PatternPromotionDeep:
     def test_new_records_include_schema_and_policy_version(self, tmp_path):
         """new heuristic records should persist explicit schema_version and policy_version."""
         ws = copy_demo_workspace(tmp_path)
-        from memory_center.core.config import load_workspace_data, write_workspace_data
         from memory_center.core.verification.heuristics import (
             HEURISTICS_SCHEMA_VERSION,
             HeuristicsRegister,
         )
+        from memory_center.core.workspace.config import load_workspace_data, write_workspace_data
 
         data = load_workspace_data(ws)
         data["learning_policy"] = {
@@ -1085,8 +1085,8 @@ class TestG03PatternPromotionDeep:
     def test_learning_policy_can_override_provisional_cap(self, tmp_path):
         """workspace learning_policy should override provisional recommendation cap."""
         ws = copy_demo_workspace(tmp_path)
-        from memory_center.core.config import load_workspace_data, write_workspace_data
         from memory_center.core.verification.heuristics import HeuristicsRegister
+        from memory_center.core.workspace.config import load_workspace_data, write_workspace_data
 
         data = load_workspace_data(ws)
         data["learning_policy"] = {
@@ -1112,8 +1112,8 @@ class TestG03PatternPromotionDeep:
     def test_learning_policy_can_override_candidate_merge_weights(self, tmp_path):
         """workspace learning_policy should override rule/learned weight blending."""
         ws = copy_demo_workspace(tmp_path)
-        from memory_center.core.config import load_workspace_data, write_workspace_data
         from memory_center.core.verification.heuristics import HeuristicsRegister, apply_candidate_path_learning
+        from memory_center.core.workspace.config import load_workspace_data, write_workspace_data
 
         data = load_workspace_data(ws)
         data["learning_policy"] = {
@@ -1161,9 +1161,9 @@ class TestG03PatternPromotionDeep:
     def test_learning_policy_can_override_workflow_merge_weights(self, tmp_path):
         """workspace learning_policy should override workflow profile blend weights."""
         ws = copy_demo_workspace(tmp_path)
-        from memory_center.core.config import load_workspace_data, write_workspace_data
         from memory_center.core.verification.heuristics import HeuristicsRegister
         from memory_center.core.verification.workflow_profiles import recommend_workflow_with_learning
+        from memory_center.core.workspace.config import load_workspace_data, write_workspace_data
 
         data = load_workspace_data(ws)
         data["learning_policy"] = {
@@ -1277,8 +1277,8 @@ class TestH07LayeredRulesDeep:
     def test_rules_glob_match(self, tmp_path):
         """Rules with file_patterns match against file paths."""
         ws = copy_demo_workspace(tmp_path)
-        from memory_center.core.rules import load_rules
-        from memory_center.core.store import WorkspaceStore
+        from memory_center.core.governance.rules import load_rules
+        from memory_center.core.storage.workspace import WorkspaceStore
         store = WorkspaceStore(str(ws))
         rules = load_rules(store)
         assert len(rules) > 0
@@ -1291,8 +1291,8 @@ class TestH07LayeredRulesDeep:
     def test_match_rules_returns_matches(self, tmp_path):
         """match_rules returns matching rules for given intent and files."""
         ws = copy_demo_workspace(tmp_path)
-        from memory_center.core.rules import match_rules
-        from memory_center.core.store import WorkspaceStore
+        from memory_center.core.governance.rules import match_rules
+        from memory_center.core.storage.workspace import WorkspaceStore
         store = WorkspaceStore(str(ws))
         matched = match_rules(store, intent="security audit", files=["src/main/java/Secret.java"])
         assert isinstance(matched, list)
@@ -1302,28 +1302,28 @@ class TestH07LayeredRulesDeep:
     def test_match_rules_empty_files(self, tmp_path):
         """match_rules handles empty file list gracefully."""
         ws = copy_demo_workspace(tmp_path)
-        from memory_center.core.rules import match_rules
-        from memory_center.core.store import WorkspaceStore
+        from memory_center.core.governance.rules import match_rules
+        from memory_center.core.storage.workspace import WorkspaceStore
         store = WorkspaceStore(str(ws))
         matched = match_rules(store, intent="general query", files=[])
         assert isinstance(matched, list)
 
     def test_constitution_rules_have_ids(self):
         """All constitution rules have unique IDs."""
-        from memory_center.core.rules import CONSTITUTION_RULES
+        from memory_center.core.governance.rules import CONSTITUTION_RULES
         assert len(CONSTITUTION_RULES) == 5
         ids = [r["id"] for r in CONSTITUTION_RULES]
         assert len(ids) == len(set(ids)), "Constitution rule IDs must be unique"
 
     def test_constitution_conflict_detection(self):
         """check_constitution_conflicts detects secret-related intents."""
-        from memory_center.core.rules import check_constitution_conflicts
+        from memory_center.core.governance.rules import check_constitution_conflicts
         conflicts = check_constitution_conflicts(intent="add API key to config", files=[])
         assert isinstance(conflicts, list)
 
     def test_constitution_no_conflict_for_safe_intent(self):
         """check_constitution_conflicts returns empty for safe intents."""
-        from memory_center.core.rules import check_constitution_conflicts
+        from memory_center.core.governance.rules import check_constitution_conflicts
         conflicts = check_constitution_conflicts(intent="add unit test for UserService", files=["src/test/UserServiceTest.java"])
         assert len(conflicts) == 0
 
@@ -1336,7 +1336,7 @@ class TestH09FindingLocation:
     def test_write_receipts_have_ids(self, tmp_path):
         """write receipts have unique receipt_id."""
         copy_demo_workspace(tmp_path)
-        from memory_center.core.write_receipts import build_write_receipt
+        from memory_center.core.tasks.receipts import build_write_receipt
         r1 = build_write_receipt(layer="L0", action="test_action", scope="memory", target="test_target", target_file="memory/test.jsonl")
         r2 = build_write_receipt(layer="L0", action="test_action_2", scope="memory", target="test_target_2", target_file="memory/test2.jsonl")
         assert "receipt_id" in r1
@@ -1346,8 +1346,8 @@ class TestH09FindingLocation:
     def test_write_receipts_persisted(self, tmp_path):
         """persist_write_receipt stores the receipt in workspace."""
         ws = copy_demo_workspace(tmp_path)
-        from memory_center.core.store import WorkspaceStore
-        from memory_center.core.write_receipts import build_write_receipt, persist_write_receipt
+        from memory_center.core.storage.workspace import WorkspaceStore
+        from memory_center.core.tasks.receipts import build_write_receipt, persist_write_receipt
         store = WorkspaceStore(str(ws))
         receipt = build_write_receipt(layer="L1", action="persist_test", scope="memory", target="test", target_file="memory/test.jsonl")
         result = persist_write_receipt(store, receipt)
@@ -1414,7 +1414,7 @@ class TestH10ReviewVerification:
         step_status = vl.get_status("trace-task-1")
         assert step_status["task_id"] == "trace-task-1"
 
-        from memory_center.core.artifacts import build_traceability_graph
+        from memory_center.core.tasks.artifacts import build_traceability_graph
         graph = build_traceability_graph(str(ws))
         verify_nodes = [n for n in graph["nodes"] if n.get("id") == f"verify:{loop['loop_id']}"]
         verify_edges = [
@@ -1442,14 +1442,14 @@ class TestF07HealthGovernance:
     def test_completion_audit_on_demo(self, tmp_path):
         """run_completion_audit returns findings on demo workspace."""
         ws = copy_demo_workspace(tmp_path)
-        from memory_center.core.audit.completion import run_completion_audit
+        from memory_center.core.audit.reports import run_completion_audit
         result = run_completion_audit(str(ws))
         assert isinstance(result, dict)
         assert "score" in result or "findings" in result
 
     def test_workspace_type_detection(self, tmp_path):
         """detect_workspace_type identifies different project types."""
-        from memory_center.core.audit.completion import detect_workspace_type
+        from memory_center.core.audit.reports import detect_workspace_type
         # Create a python project dir
         py_dir = tmp_path / "pyproject"
         py_dir.mkdir()
@@ -1527,7 +1527,7 @@ class TestMetricsDeepening:
         """MetricsCollector.timer() measures elapsed time."""
         import time
 
-        from memory_center.core.metrics import MetricsCollector
+        from memory_center.core.observability.metrics import MetricsCollector
         mc = MetricsCollector(tmp_path / "workspace.yaml")
         with mc.timer("test_op"):
             time.sleep(0.01)
@@ -1537,7 +1537,7 @@ class TestMetricsDeepening:
 
     def test_metrics_collector_record_and_query(self, tmp_path):
         """MetricsCollector records and queries metrics."""
-        from memory_center.core.metrics import MetricsCollector
+        from memory_center.core.observability.metrics import MetricsCollector
         mc = MetricsCollector(tmp_path / "workspace.yaml")
         mc.record("lookup", {"query": "UserService", "latency_ms": 42})
         mc.record("lookup", {"query": "OrderService", "latency_ms": 38})
@@ -1546,7 +1546,7 @@ class TestMetricsDeepening:
 
     def test_metrics_collector_summary(self, tmp_path):
         """MetricsCollector.summary returns aggregated stats."""
-        from memory_center.core.metrics import MetricsCollector
+        from memory_center.core.observability.metrics import MetricsCollector
         mc = MetricsCollector(tmp_path / "workspace.yaml")
         mc.record("op1", 42.0)
         mc.record("op1", 38.0)

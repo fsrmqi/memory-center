@@ -4,8 +4,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from ..graph import GraphStore
-from ..store import WorkspaceStore
+from memory_center.core.storage.graph import GraphStore
+from memory_center.core.storage.workspace import WorkspaceStore
 
 
 def build_invalidation_plan(workspace_file: str | Path, paths: list[str], limit: int = 48) -> dict[str, Any]:

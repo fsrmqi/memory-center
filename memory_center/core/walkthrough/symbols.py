@@ -11,7 +11,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from ..orchestrator.common import _project_matches
+from ..orchestrator.shared import _project_matches
 
 __all__ = [
     "parse_method_walkthrough_symbol",

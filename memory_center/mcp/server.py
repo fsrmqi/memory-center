@@ -23,7 +23,8 @@ from functools import wraps
 from pathlib import Path
 from typing import Any
 
-from memory_center.core.errors import normalize_exception
+from memory_center.core.foundation.errors import normalize_exception
+from memory_center.core.governance.registry import load_registry
 from memory_center.core.orchestrator import (
     _annotate_phantom_nodes,
     group_chain,
@@ -63,8 +64,7 @@ from memory_center.core.orchestrator import (
     workspace_trace,
     workspace_unresolved_items,
 )
-from memory_center.core.registry import load_registry
-from memory_center.core.store import WorkspaceStore
+from memory_center.core.storage.workspace import WorkspaceStore
 
 _JAVA_CHAIN_SYMBOL_RE = re.compile(
     r"((?:[a-z_][\w$]*\.)+[A-Z][\w$]*(?:#[a-zA-Z_][\w$]*)?|[A-Z][\w$]*(?:#[a-zA-Z_][\w$]*)?)"
@@ -118,8 +118,8 @@ def _build_startup_diagnostics(workspace_input: str, workspace_file: str) -> dic
         "next_actions": [],
     }
     try:
-        from memory_center.core.config import load_workspace_config
-        from memory_center.core.instructions import inspect_agent_mcp_bindings
+        from memory_center.core.governance.instructions import inspect_agent_mcp_bindings
+        from memory_center.core.workspace.config import load_workspace_config
 
         config = load_workspace_config(workspace_file)
         bindings = inspect_agent_mcp_bindings(WorkspaceStore(workspace_file), config.root_path)
@@ -359,7 +359,7 @@ def _agent_next_steps_for_lookup_route(mode: str, result: dict[str, Any], query:
 
 def _run_audit(workspace_file: str, work_package: str = "") -> dict[str, Any]:
     """Run completion audit for mc_admin."""
-    from ..core.audit.completion import run_completion_audit
+    from ..core.audit.reports import run_completion_audit
     return run_completion_audit(workspace_file, work_package=work_package)
 
 
@@ -387,7 +387,7 @@ def _drill_task(workspace_file: str, task_id: str = "") -> dict[str, Any]:
 def _backend_consistency(workspace_file: str) -> dict[str, Any]:
     """Check backend consistency for mc_admin."""
     from ..core.backend.query import UnifiedBackendQuery
-    from ..core.store import WorkspaceStore
+    from ..core.storage.workspace import WorkspaceStore
     store = WorkspaceStore(workspace_file)
     with UnifiedBackendQuery(store.memory_db_path) as backend:
         return backend.check_consistency(store.base_dir)
@@ -395,7 +395,7 @@ def _backend_consistency(workspace_file: str) -> dict[str, Any]:
 
 def _constraint_action(context: str = "", template: str = "coding_agent") -> dict[str, Any]:
     """Show constraint template or auto-select action for mc_admin."""
-    from ..core.templates import auto_select_action, get_constraint_template
+    from ..core.governance.templates import auto_select_action, get_constraint_template
     if context:
         action = auto_select_action(context, template)
         return {"context": context, "template": template, "recommended_action": action}
@@ -463,7 +463,7 @@ def create_server(workspace_file: str):
     mcp = FastMCP("Memory Center")
 
     # Import workflow templates for guidance
-    from memory_center.core.templates import get_workflow_guidance
+    from memory_center.core.governance.templates import get_workflow_guidance
 
     # ===================== FACADE 1: mc_start =====================
     @_safe_mcp_tool(mcp)
@@ -478,7 +478,7 @@ def create_server(workspace_file: str):
     ):
         """Start a new task workflow. Sniffs workspace context, optionally syncs to task space, and starts a session. Returns consolidated context with services, files, rules, risk level, session_id, and task_id."""
         wf = ctx.workspace_file
-        from memory_center.core.query_planner import QueryPlanner
+        from memory_center.core.retrieval.planner import QueryPlanner
         planner = QueryPlanner(wf)
         plan = planner.plan(tier=request_tier, limit=limit)
         started_at = time.perf_counter()
@@ -546,7 +546,7 @@ def create_server(workspace_file: str):
     ):
         """Unified knowledge lookup. Mode selects strategy: auto (system decides via lookup_hint), symbol (resolve name), code (keyword search), query (graph-aware multi-source), trace (cross-service by class/Feign/endpoint/MQ), chain (caller/callee analysis, use chain_direction), walkthrough (method-level indexed walkthrough), context (360-degree context for a service/symbol), contracts (list all Feign/API/MQ contracts), ref (resolve short memory reference IDs). For Class#method requests that say full chain/全链路/到底层, prefer mode='walkthrough' or auto; walkthrough returns summary_lines, local_service_continuations, feign_continuations.server_walkthroughs, service_impl_continuations, and absolute_file_path. If absolute_file_path is present, read that path directly and do not run find/grep/IDEA search to locate the same controller or impl. Use project to disambiguate when multiple modules contain the same symbol name."""
         wf = ctx.workspace_file
-        from memory_center.core.query_planner import QueryPlanner
+        from memory_center.core.retrieval.planner import QueryPlanner
         planner = QueryPlanner(wf)
         plan = planner.plan(tier=request_tier, limit=limit, depth=depth, enable_vector=enable_vector, project=project)
         started_at = time.perf_counter()
@@ -760,10 +760,10 @@ def create_server(workspace_file: str):
         """Analyze change impact and generate action plans. Depth quick: impact only. Depth standard: impact + change plan + rules check. Depth full: standard + contract check + verification checklist. If target is empty, runs detect-changes instead of impact."""
         wf = ctx.workspace_file
         if job_action == "status":
-            from memory_center.core.jobs import workspace_job_status
+            from memory_center.core.workspace.jobs import workspace_job_status
             return {"workflow": "mc-analyze", "job": workspace_job_status(wf, job_id)}
         if job_action == "cancel":
-            from memory_center.core.jobs import cancel_workspace_job
+            from memory_center.core.workspace.jobs import cancel_workspace_job
             return {"workflow": "mc-analyze", "job": cancel_workspace_job(wf, job_id)}
 
         def run_analysis() -> dict[str, Any]:
@@ -802,7 +802,7 @@ def create_server(workspace_file: str):
             return result
 
         if execution_mode == "background":
-            from memory_center.core.jobs import submit_workspace_job
+            from memory_center.core.workspace.jobs import submit_workspace_job
             return {"workflow": "mc-analyze", "job": submit_workspace_job(wf, "analysis", run_analysis), "execution_mode": "background"}
         return run_analysis()
 

@@ -44,16 +44,16 @@ def setup_demo_workspace(tmp_path: Path, *, ensure_rules: bool = False, ensure_h
     Returns the workspace.yaml Path inside the temporary copy.
     """
     workspace = copy_demo_workspace(tmp_path)
-    from memory_center.core.config import load_workspace_config
-    from memory_center.core.indexer import reindex_workspace
-    from memory_center.core.store import WorkspaceStore
+    from memory_center.core.indexing.reindex import reindex_workspace
+    from memory_center.core.storage.workspace import WorkspaceStore
+    from memory_center.core.workspace.config import load_workspace_config
 
     config = load_workspace_config(workspace)
     store = WorkspaceStore(workspace)
     reindex_workspace(config, store)
 
     if ensure_rules:
-        from memory_center.core.rules import ensure_default_rules
+        from memory_center.core.governance.rules import ensure_default_rules
         ensure_default_rules(store)
 
     if ensure_hooks:

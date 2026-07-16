@@ -19,7 +19,7 @@ from typing import Any
 import pytest
 from typer.testing import CliRunner
 
-from memory_center.core.capability_matrix import CAPABILITY_MAP
+from memory_center.core.foundation.capabilities import CAPABILITY_MAP
 
 # ---------------------------------------------------------------------------
 # Shared helpers
@@ -123,7 +123,7 @@ def _parser_benchmark_keys(demo_workspace: Path) -> set:
 @pytest.fixture()
 def _backend_consistency_keys(demo_workspace: Path) -> set:
     from memory_center.core.backend.query import UnifiedBackendQuery
-    from memory_center.core.store import WorkspaceStore
+    from memory_center.core.storage.workspace import WorkspaceStore
 
     store = WorkspaceStore(str(demo_workspace))
     with UnifiedBackendQuery(store.memory_db_path) as backend:
@@ -134,7 +134,7 @@ def _backend_consistency_keys(demo_workspace: Path) -> set:
 def _graph_seed(demo_workspace_indexed: Path) -> str:
     """Return a node_id from the indexed graph for business-flow tests."""
     from memory_center.core.storage.unified import UnifiedStore
-    from memory_center.core.store import WorkspaceStore
+    from memory_center.core.storage.workspace import WorkspaceStore
 
     store = WorkspaceStore(str(demo_workspace_indexed))
     unified = UnifiedStore(store.graph_db_path)
@@ -266,7 +266,7 @@ class TestThreeEntryPointExecution:
         self, demo_workspace: Path, _backend_consistency_keys
     ):
         from memory_center.core.backend.query import UnifiedBackendQuery
-        from memory_center.core.store import WorkspaceStore
+        from memory_center.core.storage.workspace import WorkspaceStore
 
         ws = str(demo_workspace)
         store = WorkspaceStore(ws)
@@ -463,7 +463,7 @@ class TestSingleEntryPointBehavior:
         cap = CAPABILITY_MAP["onboard"]
         from memory_center.core.onboarding.tour import ArchitectureTourGenerator
         from memory_center.core.storage.unified import UnifiedStore
-        from memory_center.core.store import WorkspaceStore
+        from memory_center.core.storage.workspace import WorkspaceStore
 
         ws = str(demo_workspace)
         store = WorkspaceStore(ws)
@@ -483,7 +483,7 @@ class TestSingleEntryPointBehavior:
         cap = CAPABILITY_MAP["domain"]
         from memory_center.core.domain.extractor import BusinessDomainExtractor
         from memory_center.core.storage.unified import UnifiedStore
-        from memory_center.core.store import WorkspaceStore
+        from memory_center.core.storage.workspace import WorkspaceStore
 
         ws = str(demo_workspace)
         store = WorkspaceStore(ws)
@@ -599,7 +599,7 @@ class TestCoreFieldAlignment:
 
     def test_backend_consistency_core_fields(self, demo_workspace: Path):
         from memory_center.core.backend.query import UnifiedBackendQuery
-        from memory_center.core.store import WorkspaceStore
+        from memory_center.core.storage.workspace import WorkspaceStore
 
         cap = CAPABILITY_MAP["backend-consistency"]
         store = WorkspaceStore(str(demo_workspace))
