@@ -368,7 +368,7 @@ def export_mermaid_cmd(workspace: str = typer.Option(...), output: Optional[str]
 @app.command()
 def doctor(workspace: str = typer.Option(...), self_test: bool = typer.Option(False, help="Run lightweight query smoke tests.")):
     """Validate workspace configuration, index health and optional smoke tests."""
-    print(run_doctor(workspace, self_test=self_test))
+    print(run_doctor(workspace, self_test=self_test, query_probe=lambda path, text: memory_query_hybrid(path, text, limit=5)))
 
 
 @app.command("query")

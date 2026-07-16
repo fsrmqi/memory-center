@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..orchestrator.shared import _project_matches
+from ..matching.project import project_matches
 from .symbols import (
     detect_unqualified_same_class_calls,
     find_method_span_lines,
@@ -76,7 +76,7 @@ def _with_endpoint_confidence(api: dict[str, Any], target_service: str) -> dict[
     controller = str(api.get("controller", "") or "")
     reasons: list[str] = []
     score = 0.35
-    if target_service and (_project_matches(target_service, project) or _project_matches(project, target_service)):
+    if target_service and (project_matches(target_service, project) or project_matches(project, target_service)):
         score += 0.35
         reasons.append("project_matches_target_service")
     if target_service and target_service.replace("-", "").lower() in file_path.replace("-", "").lower():

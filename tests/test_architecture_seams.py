@@ -5,6 +5,16 @@ import inspect
 from pathlib import Path
 
 
+def _imports_package(path: Path, package: str) -> bool:
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and (node.module or "").startswith(package):
+            return True
+        if isinstance(node, ast.Import) and any(alias.name.startswith(package) for alias in node.names):
+            return True
+    return False
+
+
 def _function_size(function) -> int:
     source = inspect.getsource(function)
     node = ast.parse(source).body[0]
@@ -85,3 +95,16 @@ def test_ambiguous_core_module_names_do_not_return() -> None:
         "walkthrough/runner.py",
     }
     assert not [path for path in forbidden if (root / path).exists()]
+
+
+def test_lower_core_packages_do_not_depend_on_orchestrator() -> None:
+    root = Path(__file__).parents[1] / "memory_center" / "core"
+    protected_packages = ("workspace", "knowledge", "retrieval")
+    offenders = [
+        str(path)
+        for package in protected_packages
+        for path in (root / package).glob("*.py")
+        if _imports_package(path, "memory_center.core.orchestrator")
+        or _imports_package(path, "..orchestrator")
+    ]
+    assert not offenders

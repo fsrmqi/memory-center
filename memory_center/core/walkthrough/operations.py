@@ -6,11 +6,13 @@ from typing import Any
 
 from memory_center.core.storage.workspace import WorkspaceStore, _safe_path
 
-from ..orchestrator.shared import SESSION_EVENTS_FILE, load_context
+from ..workspace.runtime import load_workspace_context
 from . import answer, escalation
 from .cache import WalkthroughCache
 from .evaluation import evaluate_walkthrough_result
 from .report import render_walkthrough_markdown, slugify_walkthrough_symbol
+
+SESSION_EVENTS_FILE = "session-events.jsonl"
 
 WalkthroughProvider = Callable[..., dict[str, Any]]
 
@@ -25,7 +27,7 @@ def build_walkthrough_health(
     cache: WalkthroughCache,
 ) -> dict[str, Any]:
     workspace_file = escalation.resolve_walkthrough_workspace_input(workspace_file)
-    config, store = load_context(workspace_file)
+    config, store = load_workspace_context(workspace_file)
     template_info = answer.load_method_walkthrough_template(workspace_file)
     glossary = answer.load_walkthrough_glossary(workspace_file)
     index_signature = escalation.walkthrough_index_signature(store)
@@ -113,7 +115,7 @@ def export_walkthrough(
     walkthrough_provider: WalkthroughProvider,
 ) -> dict[str, Any]:
     workspace_file = escalation.resolve_walkthrough_workspace_input(workspace_file)
-    config, _ = load_context(workspace_file)
+    config, _ = load_workspace_context(workspace_file)
     store = WorkspaceStore(workspace_file)
     result = walkthrough_provider(
         workspace_file, symbol, depth=4, limit=80, project=project,

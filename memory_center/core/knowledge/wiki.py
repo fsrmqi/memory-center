@@ -3,14 +3,17 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from memory_center.core.orchestrator import load_context, workspace_status
+from memory_center.core.storage.graph import GraphStore
+from memory_center.core.storage.workspace import WorkspaceStore
+from memory_center.core.workspace.config import load_workspace_config
 
 
 def generate_wiki(workspace_file: str | Path, output_dir: str | Path | None = None) -> dict[str, Any]:
-    config, store = load_context(workspace_file)
+    config, store = load_workspace_config(workspace_file), WorkspaceStore(workspace_file)
     out = Path(output_dir) if output_dir else store.base_dir / "wiki"
     out.mkdir(parents=True, exist_ok=True)
-    status = workspace_status(workspace_file)
+    with GraphStore(store.graph_db_path) as graph:
+        status = {"workspace": config.workspace, "index_counts": graph.counts()}
     topology = store.read_json_prefer_backend("service-topology.json", {})
     cases = store.read_jsonl_prefer_backend("cross-service-task-memory.jsonl", limit=1000)
 
@@ -24,7 +27,7 @@ def generate_wiki(workspace_file: str | Path, output_dir: str | Path | None = No
 
 
 def generate_skills(workspace_file: str | Path, output_dir: str | Path | None = None) -> dict[str, Any]:
-    _, store = load_context(workspace_file)
+    store = WorkspaceStore(workspace_file)
     out = Path(output_dir) if output_dir else store.base_dir / "skills" / "generated"
     out.mkdir(parents=True, exist_ok=True)
     cases = store.read_jsonl_prefer_backend("cross-service-task-memory.jsonl", limit=1000)

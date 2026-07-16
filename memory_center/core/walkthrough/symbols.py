@@ -11,7 +11,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from ..orchestrator.shared import _project_matches
+from ..matching.project import project_matches
 
 __all__ = [
     "parse_method_walkthrough_symbol",
@@ -57,7 +57,7 @@ def find_method_symbol_entry(
         owner_names = list(item.get("classes", []) or []) + list(item.get("interfaces", []) or [])
         if class_name not in owner_names or method not in (item.get("methods", []) or []):
             continue
-        if project and not _project_matches(project, item.get("project", "")):
+        if project and not project_matches(project, item.get("project", "")):
             continue
         score = 0
         if package and item.get("package") == package:
@@ -91,7 +91,7 @@ def find_receiver_impl_method(
     for item in symbols:
         if method_name not in (item.get("methods", []) or []):
             continue
-        if project and not _project_matches(project, item.get("project", "")):
+        if project and not project_matches(project, item.get("project", "")):
             continue
         class_names = list(item.get("classes", []) or [])
         interface_names = list(item.get("interfaces", []) or [])

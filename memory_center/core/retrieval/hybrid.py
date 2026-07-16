@@ -22,6 +22,7 @@ from memory_center.core.knowledge.ontology import (
     multi_hop_confidence,
 )
 from memory_center.core.observability.diagnostics import DIAG, diag_entry
+from memory_center.core.retrieval.scoring import best_match, reciprocal_rank, tokenize
 from memory_center.core.retrieval.semantic import semantic_query
 from memory_center.core.storage.graph import GraphStore
 
@@ -36,13 +37,6 @@ __all__ = [
     "hybrid_retrieve",
     "multi_hop_confidence",
 ]
-
-
-def _get_common_functions():
-    """Lazy import to avoid circular dependency."""
-    from ..orchestrator.shared import _best_match, _rrf, tokenize
-    return tokenize, _rrf, _best_match
-
 
 
 # Ontology semantic strength mapping (from docs/ONTOLOGY.md §3.1)
@@ -269,7 +263,7 @@ def hybrid_retrieve(
 
     intent = detect_query_intent(query)
     policy = select_retrieval_policy(intent, freshness or {}, learned_weights or {})
-    tokenize, _rrf, _best_match = _get_common_functions()
+    _rrf, _best_match = reciprocal_rank, best_match
     tokens = tokenize(query)
     source_limit = max(limit, policy.candidate_limit)
     result_limit = min(limit, policy.evidence_budget) if intent.get("is_full_chain") else limit

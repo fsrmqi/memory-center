@@ -1743,7 +1743,7 @@ def test_trusted_graph_edges_and_evidence_based_impact(tmp_path: Path):
     import shutil
 
     from memory_center.core.indexing.reindex import reindex_workspace
-    from memory_center.core.orchestrator import memory_impact
+    from memory_center.core.orchestrator import memory_impact, memory_query_hybrid
     from memory_center.core.storage.graph import GraphStore
     from memory_center.core.storage.workspace import WorkspaceStore
     from memory_center.core.workspace.config import load_workspace_config
@@ -1797,7 +1797,7 @@ def test_trusted_graph_edges_and_evidence_based_impact(tmp_path: Path):
     assert impact["candidate_paths"][0]["target"]
     assert "unknown_risks" in impact
 
-    report = doctor(workspace, self_test=True)
+    report = doctor(workspace, self_test=True, query_probe=lambda path, text: memory_query_hybrid(path, text, limit=5))
     assert report["ok"] is True
     assert report["self_test"]["query_matches"] > 0
     assert any(item["name"] == "semantic:docs" and item["ok"] for item in report["checks"])

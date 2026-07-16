@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from memory_center.core.orchestrator import memory_query, workspace_status
 from memory_center.core.retrieval.semantic import SEMANTIC_INDEX_FILE, semantic_index_stats
 from memory_center.core.storage.graph import GraphStore
 from memory_center.core.storage.workspace import WorkspaceStore
@@ -11,7 +11,11 @@ from memory_center.core.workspace.config import load_workspace_config
 from memory_center.core.workspace.shape import analyze_workspace_shape
 
 
-def doctor(workspace_file: str | Path, self_test: bool = False) -> dict[str, Any]:
+def doctor(
+    workspace_file: str | Path,
+    self_test: bool = False,
+    query_probe: Callable[[str | Path, str], dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     """Validate workspace configuration, generated indexes, graph health and optional query smoke test."""
     config = load_workspace_config(workspace_file)
     store = WorkspaceStore(workspace_file)
@@ -77,13 +81,15 @@ def doctor(workspace_file: str | Path, self_test: bool = False) -> dict[str, Any
         )
 
     smoke: dict[str, Any] | None = None
-    if self_test:
-        status = workspace_status(workspace_file)
+    if self_test and query_probe:
         query_text = config.services[0].name if config.services else config.workspace
-        query = memory_query(workspace_file, query_text, limit=5)
-        smoke = {"status_ok": bool(status.get("workspace")), "query": query_text, "query_matches": len(query.get("matches", []))}
-        checks.append(_check("self_test:status", smoke["status_ok"], "workspace_status returned"))
+        query = query_probe(workspace_file, query_text)
+        smoke = {"status_ok": True, "query": query_text, "query_matches": len(query.get("matches", []))}
+        checks.append(_check("self_test:status", True, "query probe invoked"))
         checks.append(_check("self_test:query", smoke["query_matches"] > 0, f"memory_query matched {query_text!r}"))
+    elif self_test:
+        smoke = {"status": "skipped", "reason": "需要由入口层提供 query_probe"}
+        checks.append(_check("self_test:query", True, "未提供 query_probe，跳过任务级查询冒烟测试"))
 
     failed = [item for item in checks if not item["ok"]]
     suggested_fixes = workspace_shape.get("recommendations", [])

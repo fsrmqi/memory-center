@@ -230,10 +230,10 @@ def build_method_walkthrough_summary_lines(
 
 
 def compact_method_walkthrough_result(result: dict[str, Any], budget: str = "medium", *, cache_ttl_seconds: int = 15) -> dict[str, Any]:
-    from ..orchestrator.shared import _budget_limits
+    from ..context.profiles import budget_limits
     from ..reasoning.integration import compact_reasoning_view
 
-    limits = _budget_limits(budget)
+    limits = budget_limits(budget)
     target = result.get("target", {}) or {}
     feigns = result.get("feign_continuations", []) or []
     local_service_continuations = result.get("local_service_continuations", []) or []

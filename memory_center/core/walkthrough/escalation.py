@@ -46,7 +46,7 @@ def registry_covering_workspaces(current_ws: Path, current_root: Path) -> list[P
     try:
         from memory_center.core.governance.registry import load_registry
 
-        from ..orchestrator.shared import load_context
+        from ..workspace.runtime import load_workspace_context
     except Exception:
         return []
     out: list[Path] = []
@@ -62,7 +62,7 @@ def registry_covering_workspaces(current_ws: Path, current_root: Path) -> list[P
         if candidate == current_ws or not candidate.exists():
             continue
         try:
-            cfg = load_context(candidate)[0]
+            cfg = load_workspace_context(candidate)[0]
         except Exception:
             continue
         if path_is_within(current_root, cfg.root_path):
@@ -106,11 +106,11 @@ def registry_group_sibling_workspaces(current_ws: Path) -> list[Path]:
 
 
 def find_parent_or_covering_workspace(workspace_file: str | Path) -> Path | None:
-    from ..orchestrator.shared import load_context
+    from ..workspace.runtime import load_workspace_context
 
     current_ws = Path(workspace_file).expanduser().resolve()
     try:
-        current_config, _ = load_context(current_ws)
+        current_config, _ = load_workspace_context(current_ws)
         current_root = current_config.root_path
     except Exception:
         current_root = current_ws.parent.parent.resolve()
@@ -136,7 +136,7 @@ def find_parent_or_covering_workspace(workspace_file: str | Path) -> Path | None
 
     def score(candidate: Path) -> tuple:
         try:
-            cfg = load_context(candidate)[0]
+            cfg = load_workspace_context(candidate)[0]
             covers = 1 if path_is_within(current_root, cfg.root_path) else 0
             service_count = len(getattr(cfg, "services", []) or [])
             root_len = len(str(cfg.root_path))
