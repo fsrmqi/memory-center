@@ -976,7 +976,7 @@ def rank_files(file_index: list[dict], symbols: list[dict], keywords: list[str])
     for item in file_index:
         path = item.get("path", "")
         file_syms = symbol_entries.get(path, [])
-        haystack = (path + " " + json.dumps(file_syms, ensure_ascii=False)).lower()
+        haystack = f"{path} {_symbol_search_text(file_syms)}".lower()
         score = sum(1 for k in keywords if k in haystack)
         if any(mark in path for mark in ["Consumer", "Listener", "Feign", "Controller", "Service", "Repository", "Mapper"]):
             score += 1
@@ -984,3 +984,53 @@ def rank_files(file_index: list[dict], symbols: list[dict], keywords: list[str])
             ranked.append({**item, "score": score, "symbols": file_syms})
     ranked.sort(key=lambda x: x["score"], reverse=True)
     return ranked
+
+
+def _symbol_search_text(symbols: list[dict[str, Any]]) -> str:
+    """Return the bounded, query-relevant surface of one file's symbols.
+
+    Sniff and code search used to serialize every symbol payload for every file.
+    On a large Java workspace that repeatedly encoded method-call and DTO detail
+    that neither route returns, multiplying CPU and peak memory for each MCP
+    process. Keep structural and callable names, which are the searchable
+    contract for these routes, and leave detailed evidence to symbol/context
+    lookup after a file is selected.
+    """
+    parts: list[str] = []
+    for symbol in symbols:
+        for field in ("project", "file", "package"):
+            value = str(symbol.get(field, "") or "")
+            if value:
+                parts.append(value)
+        for field in ("classes", "interfaces", "methods", "fields", "annotations", "imports", "config_usages", "data_resources"):
+            value = symbol.get(field, []) or []
+            if isinstance(value, dict):
+                parts.extend(_searchable_symbol_value(key, item) for key, item in value.items())
+            elif isinstance(value, list):
+                parts.extend(_searchable_symbol_value(item) for item in value)
+        for call in (symbol.get("method_calls", []) or []):
+            if not isinstance(call, dict):
+                continue
+            parts.extend(
+                str(call.get(field, "") or "")
+                for field in ("owner_method", "method_name", "receiver", "receiver_type")
+            )
+    return " ".join(parts)
+
+
+def _searchable_symbol_value(key: object, value: object = "") -> str:
+    """Extract names from structured symbol fields without serializing payloads."""
+    if isinstance(value, dict):
+        parts = [str(key)]
+        for field in ("name", "class_name", "method_name", "field_name", "type", "owner", "package", "path"):
+            item = value.get(field, "")
+            if isinstance(item, (str, int, float)) and item:
+                parts.append(str(item))
+        return " ".join(parts)
+    if isinstance(key, dict):
+        return _searchable_symbol_value("", key)
+    if isinstance(value, (str, int, float)):
+        return f"{key} {value}".strip()
+    if isinstance(key, (str, int, float)):
+        return str(key)
+    return ""

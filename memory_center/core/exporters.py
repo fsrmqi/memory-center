@@ -495,7 +495,11 @@ def export_focus_task_html(workspace_file: str | Path, intent: str = "", task_id
     dashboard = workspace_continuity_dashboard(workspace_file, intent=intent, task_id=task_id, limit=limit, view="compact", budget="medium")
     focus = dashboard.get("focus_task") or {}
     resolved_task_id = str(focus.get("task_id", "") or "")
-    current_summary = get_task_artifact(workspace_file, resolved_task_id, "current_summary").get("content", "") if resolved_task_id else ""
+    current_summary = (
+        get_task_artifact(workspace_file, resolved_task_id, "current_summary", max_bytes=16 * 1024).get("content", "")
+        if resolved_task_id
+        else ""
+    )
     workspace_param = str(Path(workspace_file).resolve())
     sidebar = _nav_sidebar_html(workspace_param)
     return f"""<!doctype html>

@@ -37,6 +37,7 @@ from .common import (
     _rrf,
     load_context,
     preferred_edge_types,
+    _symbol_search_text,
     summarize_chain_edges,
     tokenize,
 )
@@ -1927,7 +1928,7 @@ def memory_search_code(workspace_file: str | Path, query: str, scope: str = "", 
                 continue
             text = f"{path} {item.get('project', '')} {item.get('service_name', '')}".lower()
             file_symbols = symbol_entries.get(path, [])
-            symbol_text = json.dumps(file_symbols, ensure_ascii=False).lower()
+            symbol_text = _symbol_search_text(file_symbols).lower()
             score = sum(1 for token in keywords if token in text or token in symbol_text)
             if score <= 0:
                 continue

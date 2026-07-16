@@ -63,7 +63,12 @@ def workspace_resume_packet(
             ),
             None,
         )
-        current_summary = get_task_artifact(workspace_file, resolved_task_id, "current_summary").get("content", "")
+        current_summary = get_task_artifact(
+            workspace_file,
+            resolved_task_id,
+            "current_summary",
+            max_bytes=16 * 1024,
+        ).get("content", "")
     resume_rules = _load_resume_rules(store, intent or current_summary)
     evidence = workspace_recent_evidence(
         workspace_file,
@@ -174,7 +179,12 @@ def workspace_unresolved_items(
     for finding in quality.get("findings", []):
         unresolved.append(str(finding.get("message", "") or "").strip())
     if task_id.strip():
-        current_summary = get_task_artifact(workspace_file, task_id.strip(), "current_summary").get("content", "")
+        current_summary = get_task_artifact(
+            workspace_file,
+            task_id.strip(),
+            "current_summary",
+            max_bytes=16 * 1024,
+        ).get("content", "")
         if "Verification pending" in current_summary or "verification_pending" in current_summary.lower():
             unresolved.append("任务摘要显示仍有待验证项。")
     seen = set()

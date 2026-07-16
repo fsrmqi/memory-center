@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import json
 import re
+import time
+from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -13,6 +15,7 @@ from ..artifacts import (
     list_task_spaces,
     resolve_task_space,
 )
+from ..graph import GraphStore
 from ..rules import match_rules
 from ..indexing.reindex_state import workspace_reindex_status
 from ..schemas import with_schema
@@ -53,6 +56,9 @@ from .write import memory_write_judge, workspace_write_receipts
 _JAVA_CHAIN_SYMBOL_RE = re.compile(
     r"((?:[a-z_][\w$]*\.)+[A-Z][\w$]*(?:#[a-zA-Z_][\w$]*)?|[A-Z][\w$]*(?:#[a-zA-Z_][\w$]*)?)"
 )
+_LARGE_WORKSPACE_FILE_THRESHOLD = 2_000
+_SNIFF_CACHE_TTL_SECONDS = 15.0
+_SNIFF_CACHE: dict[tuple[object, ...], tuple[float, dict[str, Any]]] = {}
 
 
 # ---------------------------------------------------------------------------
@@ -69,6 +75,14 @@ def workspace_status(workspace_file: str | Path, view: str = "compact", budget: 
     core_memory_blocks = _build_core_memory_blocks_status(store)
     if current_focus_task:
         current_focus_task["focus_reason"] = _build_focus_reason(current_focus_task)
+    index_summary = store.read_json_prefer_backend("index-summary.json", {})
+    semantic_summary = {
+        "doc_count": int(index_summary.get("semantic_docs", 0) or 0),
+        "backend": index_summary.get("semantic_backend", "unknown"),
+        "model": index_summary.get("semantic_model"),
+        "vector_status": index_summary.get("vector_status", "unknown"),
+        "summary_source": "index-summary.json" if index_summary else "missing_reindex_required",
+    }
     result = {
         "workspace": config.workspace,
         "root": str(config.root_path),
@@ -76,17 +90,17 @@ def workspace_status(workspace_file: str | Path, view: str = "compact", budget: 
         "workspace_shape": workspace_shape,
         "workspace_warnings": workspace_shape.get("warnings", []),
         "index_counts": {
-            "files": len(store.read_json_prefer_backend("file-index.json", [])),
-            "symbols": len(store.read_json_prefer_backend("java-symbol-index.json", [])),
-            "apis": len(store.read_json_prefer_backend("api-index.json", [])),
-            "feigns": len(store.read_json_prefer_backend("feign-index.json", [])),
-            "mq": len(store.read_json_prefer_backend("mq-index.json", [])),
+            "files": int(index_summary.get("files", 0) or 0),
+            "symbols": int(index_summary.get("symbols", 0) or 0),
+            "apis": int(index_summary.get("apis", 0) or 0),
+            "feigns": int(index_summary.get("feigns", 0) or 0),
+            "mq": int(index_summary.get("mq", 0) or 0),
             "cases": len(store.read_jsonl_prefer_backend("cross-service-task-memory.jsonl", limit=1000)),
             "session_events": len(store.read_jsonl_prefer_backend(SESSION_EVENTS_FILE, limit=5000)),
             "session_summaries": len(store.read_jsonl_prefer_backend(SESSION_SUMMARIES_FILE, limit=1000)),
-            "semantic_docs": semantic_index_stats(workspace_file).get("doc_count", 0),
+            "semantic_docs": semantic_summary["doc_count"],
         },
-        "semantic_index": semantic_index_stats(workspace_file),
+        "semantic_index": semantic_summary,
         "reindex": workspace_reindex_status(store),
         "memory_layers": memory_layers,
         "memory_overview": _build_memory_overview(memory_layers),
@@ -114,17 +128,30 @@ def workspace_sniff(
     include_lookup_hint: bool = True,
     view: str = "compact",
     budget: str = "medium",
+    deadline_ms: int = 5_000,
 ) -> dict[str, Any]:
+    started_at = time.perf_counter()
     config, store = load_context(workspace_file)
+    cache_key = _sniff_cache_key(store, intent, limit, auto_sync_mode, include_lookup_hint, view, budget, deadline_ms)
+    cached = _SNIFF_CACHE.get(cache_key)
+    if cached and cached[0] > time.monotonic():
+        result = deepcopy(cached[1])
+        result.setdefault("performance", {})["cache_hit"] = True
+        result["performance"]["total_ms"] = round((time.perf_counter() - started_at) * 1000, 2)
+        return result
+    stage_started = time.perf_counter()
     file_index = store.read_json_prefer_backend("file-index.json", [])
-    symbols = store.read_json_prefer_backend("java-symbol-index.json", [])
     apis = store.read_json_prefer_backend("api-index.json", [])
     feigns = store.read_json_prefer_backend("feign-index.json", [])
     mq = store.read_json_prefer_backend("mq-index.json", [])
     cases = store.read_jsonl_prefer_backend("cross-service-task-memory.jsonl", limit=200)
+    index_load_ms = round((time.perf_counter() - stage_started) * 1000, 2)
 
     keywords = tokenize(intent)
-    matched_files = rank_files(file_index, symbols, keywords)[:limit]
+    stage_started = time.perf_counter()
+    matched_files = _rank_sniff_files(store, file_index, keywords, limit)
+    candidate_rank_ms = round((time.perf_counter() - stage_started) * 1000, 2)
+    retrieval_mode = "graph_fts" if len(file_index) >= _LARGE_WORKSPACE_FILE_THRESHOLD and matched_files and any(item.get("symbols") for item in matched_files) else ("path_fallback" if len(file_index) >= _LARGE_WORKSPACE_FILE_THRESHOLD else "symbol_rank")
     matched_services = sorted({item["project"] for item in matched_files})
     related_apis = [x for x in apis if any(k in json.dumps(x, ensure_ascii=False).lower() for k in keywords)][:limit]
     related_feigns = [x for x in feigns if any(k in json.dumps(x, ensure_ascii=False).lower() for k in keywords)][:limit]
@@ -229,13 +256,123 @@ def workspace_sniff(
             '如果涉及 DTO/Feign/MQ Message，用 mc_analyze(target="...", depth="full", contract_file="...")',
             '长任务建议用 mc_admin(action="session_log", ...) 记录关键步骤，结束后用 mc_close(session_id="...", record_case=True) 沉淀案例',
         ],
+        "performance": {
+            "total_ms": round((time.perf_counter() - started_at) * 1000, 2),
+            "index_load_ms": index_load_ms,
+            "candidate_rank_ms": candidate_rank_ms,
+            "deadline_ms": max(100, deadline_ms),
+            "partial": (time.perf_counter() - started_at) * 1000 > max(100, deadline_ms),
+            "cache_hit": False,
+            "retrieval_mode": retrieval_mode,
+        },
     }
     if _is_compact_view(view):
         compact = _compact_sniff_result(result, budget=budget)
         gain = _measure_compact_gain(result, compact)
         log_token_gain(workspace_file, "workspace_sniff", budget=budget, model="", raw_tokens=gain["raw_tokens"], compact_tokens=gain["compact_tokens"], view=view)
-        return compact
+        result = compact
+    _SNIFF_CACHE[cache_key] = (time.monotonic() + _SNIFF_CACHE_TTL_SECONDS, deepcopy(result))
     return result
+
+
+def _sniff_cache_key(store: WorkspaceStore, intent: str, limit: int, auto_sync_mode: str, include_lookup_hint: bool, view: str, budget: str, deadline_ms: int) -> tuple[object, ...]:
+    def fingerprint(path: Path) -> tuple[int, int]:
+        try:
+            stat = path.stat()
+            return stat.st_mtime_ns, stat.st_size
+        except OSError:
+            return 0, 0
+
+    return (
+        str(store.workspace_file), intent, limit, auto_sync_mode, include_lookup_hint, view, budget, deadline_ms,
+        fingerprint(store.index_dir / "file-index.json"), fingerprint(store.graph_db_path), fingerprint(store.artifacts_dir / "tasks"),
+    )
+
+
+def _rank_sniff_files(
+    store: WorkspaceStore,
+    file_index: list[dict[str, Any]],
+    keywords: list[str],
+    limit: int,
+) -> list[dict[str, Any]]:
+    """Use graph FTS for large workspaces before loading the full symbol JSON.
+
+    The symbol index is intentionally rich and can be hundreds of MB. A task
+    startup only needs a few candidate files, so FTS is both sufficient and
+    substantially cheaper. Small workspaces retain the legacy in-memory ranker
+    to preserve its broad matching behaviour.
+    """
+    if len(file_index) >= _LARGE_WORKSPACE_FILE_THRESHOLD and keywords:
+        graph_hits = _rank_sniff_files_from_graph(store, keywords, limit)
+        if graph_hits:
+            return graph_hits
+        return _rank_sniff_paths(file_index, keywords, limit)
+    symbols = store.read_json_prefer_backend("java-symbol-index.json", [])
+    return rank_files(file_index, symbols, keywords)[:limit]
+
+
+def _rank_sniff_paths(file_index: list[dict[str, Any]], keywords: list[str], limit: int) -> list[dict[str, Any]]:
+    """Cheap large-workspace fallback when graph FTS has no lexical hit."""
+    ranked: list[dict[str, Any]] = []
+    for item in file_index:
+        path = str(item.get("path", "") or "")
+        lowered = path.lower()
+        score = sum(1 for keyword in keywords if keyword in lowered)
+        if score <= 0:
+            continue
+        ranked.append({**item, "score": score, "symbols": []})
+    ranked.sort(key=lambda item: (-int(item["score"]), str(item.get("path", ""))))
+    return ranked[: max(1, limit)]
+
+
+def _rank_sniff_files_from_graph(
+    store: WorkspaceStore,
+    keywords: list[str],
+    limit: int,
+) -> list[dict[str, Any]]:
+    query = " ".join(keywords[:8])
+    try:
+        with GraphStore(store.graph_db_path) as graph:
+            nodes = graph.find_nodes(
+                query,
+                types=["File", "Class", "Interface", "Method", "Endpoint", "FeignClient", "FeignMethod", "MQConsumer"],
+                limit=max(20, min(120, max(1, limit) * 12)),
+            )
+    except Exception:
+        return []
+
+    ranked: dict[str, dict[str, Any]] = {}
+    for node in nodes:
+        metadata = node.get("metadata", {}) or {}
+        path = str(node.get("file_path", "") or metadata.get("path", "") or "")
+        if not path:
+            continue
+        searchable = " ".join(
+            [
+                path,
+                str(node.get("name", "") or ""),
+                str(node.get("project", "") or ""),
+                str(metadata.get("service_name", "") or ""),
+            ]
+        ).lower()
+        score = sum(1 for keyword in keywords if keyword in searchable)
+        if score <= 0:
+            score = 1
+        item = ranked.setdefault(
+            path,
+            {
+                "project": str(node.get("project", "") or metadata.get("project", "") or ""),
+                "service_name": str(metadata.get("service_name", "") or node.get("project", "") or ""),
+                "path": path,
+                "suffix": str(metadata.get("suffix", "") or Path(path).suffix),
+                "score": 0,
+                "symbols": [],
+            },
+        )
+        item["score"] = max(int(item["score"]), score)
+        if node.get("type") in {"Class", "Interface", "Method"}:
+            item["symbols"].append({"name": node.get("name", ""), "type": node.get("type", "")})
+    return sorted(ranked.values(), key=lambda item: (-int(item["score"]), item["path"]))[: max(1, limit)]
 
 
 def workspace_trace(workspace_file: str | Path, entry: str) -> dict[str, Any]:
@@ -641,7 +778,12 @@ def _active_task_summaries(workspace_file: str | Path, limit: int = 5) -> list[d
     rows = []
     for item in sorted_tasks[:limit]:
         try:
-            summary = get_task_artifact(workspace_file, str(item.get("task_id", "")), "current_summary").get("content", "")
+            summary = get_task_artifact(
+                workspace_file,
+                str(item.get("task_id", "")),
+                "current_summary",
+                max_bytes=16 * 1024,
+            ).get("content", "")
         except Exception:
             summary = ""
         rows.append(

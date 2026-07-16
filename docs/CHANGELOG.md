@@ -10,6 +10,9 @@
 
 ### P2 Retrieval / Reasoning Quality Loop / 检索与推理质量闭环
 
+- 本地安装版本提升至 `3.5.24`。
+- 修复大型 workspace 的正常链路分析可能长时间占用 CPU/内存的问题：`Class#method` 全链路请求现在直接走 walkthrough，跳过不必要的 sniff；sniff 候选文件改为优先使用 graph FTS，code-search/sniff 不再按文件序列化完整 Java 符号、调用和 DTO payload。
+- 任务空间解析、健康检查、恢复摘要和自动同步改为有界读取任务工件；超过阈值的工件会在 health 中告警，并在自动同步时保持原样跳过，避免 GB 级 Markdown 被全文读入或拼接。
 - 本地安装版本提升至 `3.5.23`。
 - reindex 现在使用 workspace 级 `reindex.lock` 串行化完整索引写入；并发请求会返回可处理的 conflict 和 `--lock-timeout` 建议，不再直接暴露 SQLite 锁错误。`workspace_status` 与 Workbench Health 会显示运行中、成功、失败或中断的重建状态。
 - 新增 `release-gate`：一次执行全量 reindex、重复检索冒烟检查以及可选 Golden、Java 调用解析、parser precision 检查，输出统一发布结论。它支持保存/比较 portable baseline；baseline 仅保存耗时、数量、质量分和状态，不保存私有 query、路径、case 或 payload。

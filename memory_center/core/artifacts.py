@@ -47,6 +47,8 @@ TASKS_DIR = "tasks"
 ARCHIVE_DIR = "archive/tasks"
 TASK_STATUSES = {"draft", "active", "blocked", "done", "archived"}
 DEFAULT_RESOLVE_SCORE_THRESHOLD = 3
+TASK_ARTIFACT_EXCERPT_BYTES = 16 * 1024
+TASK_ARTIFACT_HEALTH_EXCERPT_BYTES = 64 * 1024
 ARTIFACT_WRITE_AUDIT_FILE = "artifact-write-audit.jsonl"
 TASK_HEALTH_ARTIFACTS = ["current_summary", "context", "requirement", "design", "plan", "test_plan", "change_log"]
 
@@ -659,19 +661,36 @@ def update_task_status(workspace_file: str | Path, task_id: str, status: str, so
     }
 
 
-def get_task_artifact(workspace_file: str | Path, task_id: str, name: str) -> dict[str, object]:
+def get_task_artifact(
+    workspace_file: str | Path,
+    task_id: str,
+    name: str,
+    *,
+    max_bytes: int | None = None,
+) -> dict[str, object]:
     config = load_workspace_config(workspace_file)
     store = WorkspaceStore(workspace_file)
     task_dir, meta = _resolve_task_dir(store, task_id)
     key, filename = _resolve_artifact_name(name, include_task_only=True)
     path = task_dir / filename
+    total_bytes = path.stat().st_size if path.exists() else 0
+    truncated = bool(max_bytes is not None and total_bytes > max_bytes)
+    if not path.exists():
+        content = ""
+    elif truncated:
+        with path.open("rb") as handle:
+            content = handle.read(max(0, max_bytes or 0)).decode("utf-8", errors="replace")
+    else:
+        content = path.read_text(encoding="utf-8")
     return {
         "workspace": config.workspace,
         "task_id": meta["task_id"],
         "title": meta["title"],
         "name": key,
         "file": filename,
-        "content": path.read_text(encoding="utf-8") if path.exists() else "",
+        "content": content,
+        "total_bytes": total_bytes,
+        "truncated": truncated,
         "archived": bool(meta.get("archived", False)),
     }
 
@@ -1017,12 +1036,22 @@ def _task_artifact_health_snapshot(task_dir: Path) -> dict[str, object]:
     for name in TASK_HEALTH_ARTIFACTS:
         filename = mapping.get(name, "")
         path = task_dir / filename
-        content = path.read_text(encoding="utf-8") if path.exists() else ""
+        total_bytes = path.stat().st_size if path.exists() else 0
+        truncated = total_bytes > TASK_ARTIFACT_HEALTH_EXCERPT_BYTES
+        if not path.exists():
+            content = ""
+        elif truncated:
+            with path.open("rb") as handle:
+                content = handle.read(TASK_ARTIFACT_HEALTH_EXCERPT_BYTES).decode("utf-8", errors="replace")
+        else:
+            content = path.read_text(encoding="utf-8")
         body = _artifact_body_without_boilerplate(content)
         summary[name] = {
             "file": filename,
             "exists": path.exists(),
             "chars": len(content),
+            "bytes": total_bytes,
+            "truncated": truncated,
             "body_chars": len(body),
             "placeholder": _is_placeholder_artifact(content),
             "section_count": len(_split_markdown_sections(content)),
@@ -1045,6 +1074,16 @@ def _add_missing_artifact_issues(artifacts: dict[str, object], issues: list[dict
             )
             suggestions.append(f"运行 sync-sniff-artifacts 或 update-task 补齐 {name}。")
             continue
+        if bool(info.get("truncated")):
+            issues.append(
+                {
+                    "code": f"oversized_{name}",
+                    "severity": "warning",
+                    "message": f"{name} 体积过大，自动任务匹配和同步将只读取摘要并跳过原文件合并。",
+                    "evidence": {"bytes": int(info.get("bytes", 0)), "excerpt_bytes": TASK_ARTIFACT_HEALTH_EXCERPT_BYTES},
+                }
+            )
+            suggestions.append(f"拆分或归档 {name}，将可恢复摘要保留在 current_summary。")
         if bool(info.get("placeholder")) or int(info.get("body_chars", 0)) <= 20:
             issues.append(
                 {
@@ -1662,7 +1701,12 @@ def _task_match_analysis(
     artifact_hits: list[str] = []
     try:
         for artifact_name in ["current-summary.md", "context.md", "requirement.md", "design.md", "plan.md", "test-plan.md"]:
-            artifact = get_task_artifact(workspace_file, str(task.get("task_id", "")), artifact_name)
+            artifact = get_task_artifact(
+                workspace_file,
+                str(task.get("task_id", "")),
+                artifact_name,
+                max_bytes=TASK_ARTIFACT_EXCERPT_BYTES,
+            )
             trimmed = _trim_text(str(artifact.get("content", "")), 800)
             haystack_parts.append(trimmed)
             artifact_text = trimmed.lower()
@@ -1700,7 +1744,12 @@ def _task_signature_for_existing(workspace_file: str | Path, task: dict[str, obj
     related_texts: list[str] = []
     try:
         for artifact_name in ["current_summary", "context", "requirement", "design", "plan", "test_plan"]:
-            artifact = get_task_artifact(workspace_file, str(task.get("task_id", "")), artifact_name)
+            artifact = get_task_artifact(
+                workspace_file,
+                str(task.get("task_id", "")),
+                artifact_name,
+                max_bytes=TASK_ARTIFACT_EXCERPT_BYTES,
+            )
             related_texts.append(_artifact_body_without_boilerplate(str(artifact.get("content", ""))))
     except Exception:
         pass
@@ -1863,7 +1912,12 @@ def build_traceability_graph(workspace_file: str | Path) -> dict[str, Any]:
 
         # Link task to requirement artifacts
         for artifact_key in ["requirement", "design", "plan", "test_plan"]:
-            content = get_task_artifact(workspace_file, task_id, artifact_key).get("content", "")
+            content = get_task_artifact(
+                workspace_file,
+                task_id,
+                artifact_key,
+                max_bytes=TASK_ARTIFACT_EXCERPT_BYTES,
+            ).get("content", "")
             if content.strip():
                 edges.append({
                     "source": f"task:{task_id}",

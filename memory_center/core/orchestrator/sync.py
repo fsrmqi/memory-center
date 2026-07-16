@@ -27,6 +27,9 @@ from .common import (
 )
 
 
+TASK_SYNC_EXISTING_ARTIFACT_MAX_BYTES = 512 * 1024
+
+
 def workspace_sync_sniff_to_artifacts(
     workspace_file: str | Path,
     intent: str,
@@ -66,28 +69,30 @@ def workspace_sync_sniff_to_artifacts(
 
     auto_sync = _build_sniff_auto_sync_recommendation(store, resolved, sniff.get("risk_level", ""), auto_sync_mode=auto_sync_mode)
 
-    context_body = _render_sniff_context_markdown(sniff)
-    existing_context = ""
-    try:
-        existing_context = get_task_artifact(workspace_file, resolved_task_id, "context").get("content", "")
-    except Exception:
-        pass
-    merged_context = _merge_artifact_section(existing_context, "Sniff Context", context_body)
-    update_task_artifact(workspace_file, resolved_task_id, "context", merged_context, source="sync_sniff_artifacts")
-
-    plan_body = _render_sniff_plan_markdown(sniff)
-    existing_plan = ""
-    try:
-        existing_plan = get_task_artifact(workspace_file, resolved_task_id, "plan").get("content", "")
-    except Exception:
-        pass
-    merged_plan = _merge_artifact_section(existing_plan, "Sniff Plan", plan_body)
-    update_task_artifact(workspace_file, resolved_task_id, "plan", merged_plan, source="sync_sniff_artifacts")
+    skipped_oversized_artifacts: list[str] = []
+    if _sync_task_artifact_section(
+        workspace_file,
+        resolved_task_id,
+        "context",
+        "Sniff Context",
+        _render_sniff_context_markdown(sniff),
+        source="sync_sniff_artifacts",
+    ):
+        skipped_oversized_artifacts.append("context")
+    if _sync_task_artifact_section(
+        workspace_file,
+        resolved_task_id,
+        "plan",
+        "Sniff Plan",
+        _render_sniff_plan_markdown(sniff),
+        source="sync_sniff_artifacts",
+    ):
+        skipped_oversized_artifacts.append("plan")
 
     summary_body = _render_task_current_summary_from_sniff(sniff, resolved)
     update_task_current_summary_snapshot(workspace_file, resolved_task_id, summary_body, source="sync_sniff_artifacts")
 
-    updated_artifacts = ["context", "plan", "current_summary"]
+    updated_artifacts = [name for name in ["context", "plan"] if name not in skipped_oversized_artifacts] + ["current_summary"]
     receipt = build_write_receipt(
         layer=LAYER_L2,
         action=TOOL_WORKSPACE_SYNC_SNIFF_ARTIFACTS,
@@ -107,6 +112,7 @@ def workspace_sync_sniff_to_artifacts(
         "auto_sync_mode": auto_sync_mode,
         "auto_sync_recommendation": auto_sync,
         "updated_artifacts": updated_artifacts,
+        "skipped_oversized_artifacts": skipped_oversized_artifacts,
         "resolved": resolved,
         "sniff_summary": {
             "risk_level": sniff.get("risk_level", ""),
@@ -173,14 +179,16 @@ def workspace_sync_case_to_artifacts(
 
     touch_task_activity(workspace_file, resolved_task_id, source="sync_case_artifacts")
 
-    design_body = _render_case_markdown(case)
-    existing_design = ""
-    try:
-        existing_design = get_task_artifact(workspace_file, resolved_task_id, "design").get("content", "")
-    except Exception:
-        pass
-    merged_design = _merge_artifact_section(existing_design, "Case Design", design_body)
-    update_task_artifact(workspace_file, resolved_task_id, "design", merged_design, source="sync_case_artifacts")
+    skipped_oversized_artifacts: list[str] = []
+    if _sync_task_artifact_section(
+        workspace_file,
+        resolved_task_id,
+        "design",
+        "Case Design",
+        _render_case_markdown(case),
+        source="sync_case_artifacts",
+    ):
+        skipped_oversized_artifacts.append("design")
 
     change_log_entry = _render_change_log_entry(case, session_id)
     append_task_change_log(workspace_file, resolved_task_id, change_log_entry, source="sync_case_artifacts")
@@ -189,7 +197,7 @@ def workspace_sync_case_to_artifacts(
     update_task_current_summary_snapshot(workspace_file, resolved_task_id, summary_body, source="sync_case_artifacts")
 
     risk_profile = _case_risk_profile(case)
-    updated_artifacts = ["design", "change_log", "current_summary"]
+    updated_artifacts = [name for name in ["design"] if name not in skipped_oversized_artifacts] + ["change_log", "current_summary"]
     receipt = build_write_receipt(
         layer=LAYER_L2,
         action=TOOL_WORKSPACE_SYNC_CASE_ARTIFACTS,
@@ -211,6 +219,7 @@ def workspace_sync_case_to_artifacts(
         "auto_sync_mode": auto_sync_mode,
         "auto_sync_recommendation": _build_sniff_auto_sync_recommendation(store, resolved, risk_profile.get("risk_level", ""), auto_sync_mode=auto_sync_mode),
         "updated_artifacts": updated_artifacts,
+        "skipped_oversized_artifacts": skipped_oversized_artifacts,
         "resolved": resolved,
         "case_summary": {
             "task": case.get("task", ""),
@@ -221,6 +230,33 @@ def workspace_sync_case_to_artifacts(
         },
         "write_receipt": receipt,
     }
+
+
+def _sync_task_artifact_section(
+    workspace_file: str | Path,
+    task_id: str,
+    artifact_name: str,
+    section_name: str,
+    section_body: str,
+    *,
+    source: str,
+) -> bool:
+    """Return True when a large artifact is intentionally preserved unchanged."""
+    try:
+        artifact = get_task_artifact(
+            workspace_file,
+            task_id,
+            artifact_name,
+            max_bytes=TASK_SYNC_EXISTING_ARTIFACT_MAX_BYTES,
+        )
+        if artifact.get("truncated"):
+            return True
+        existing = str(artifact.get("content", ""))
+    except Exception:
+        existing = ""
+    merged = _merge_artifact_section(existing, section_name, section_body)
+    update_task_artifact(workspace_file, task_id, artifact_name, merged, source=source)
+    return False
 
 
 def _render_sniff_context_markdown(sniff: dict[str, Any]) -> str:

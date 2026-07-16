@@ -760,6 +760,14 @@ Task-space resume experience is available through `mc_admin` actions: `task_heal
 
 `mc_lookup(mode="walkthrough")` 面向 `Class#method` 链路梳理。遇到本地 Service 调用时，`local_service_continuations` 会解析 Service interface 到 Impl 方法。遇到 Feign 调用时，`feign_continuations[].server_walkthroughs` 会展开匹配到的服务端 Controller 方法；如果 Controller 调用同项目 Service interface，`service_impl_continuations` 会继续解析到 Impl 方法。
 
+For a request containing both `Class#method` and a full-chain intent, `mc_lookup(mode="auto")` now enters the indexed walkthrough directly. It skips broad workspace sniffing, keeps the chain depth bounded, and returns compact evidence first. Large-workspace task startup also uses graph FTS for candidate files instead of loading the full Java symbol payload.
+
+当请求同时包含 `Class#method` 和“全链路”语义时，`mc_lookup(mode="auto")` 会直接进入索引化 walkthrough，跳过宽泛的 workspace sniff，保持链路深度有界并优先返回紧凑证据。大型 workspace 的任务启动也会用 graph FTS 定位候选文件，不再加载完整 Java 符号 payload。
+
+Task-space matching, health checks, resume summaries, and automatic sync read task artifacts with bounded excerpts. Oversized artifacts are reported by task health and preserved unchanged during automatic sync, so generated Markdown cannot turn a normal analysis request into an unbounded memory read.
+
+任务空间匹配、健康检查、恢复摘要和自动同步都会对任务工件采用有界摘要读取。超大工件会在任务健康检查中提示，并在自动同步时保持原样跳过，避免生成型 Markdown 让普通分析请求退化为无界内存读取。
+
 Walkthrough key locations include `absolute_file_path`; agents should read that path directly instead of running `find` first.
 
 walkthrough 的关键落点包含 `absolute_file_path`；Agent 应直接读取该路径，不需要先执行 `find` 定位文件。

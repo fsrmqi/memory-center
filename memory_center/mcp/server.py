@@ -536,6 +536,24 @@ def create_server(workspace_file: str):
         resolved_symbol = _extract_symbol_like_token(symbol, name, entry, query)
         resolved_depth = max(depth, 4) if _wants_deep_chain(query, intent, symbol, name, entry) else depth
         if mode == "auto":
+            # A full-chain request with an explicit method already has a
+            # precise indexed entrypoint. Do not run the broad sniff/hint
+            # preflight first: on a large workspace it needlessly loads and
+            # scans the full symbol index before the walkthrough begins.
+            if _wants_deep_chain(query, intent, symbol, name, entry) and "#" in resolved_symbol:
+                result = memory_method_walkthrough(
+                    wf,
+                    resolved_symbol,
+                    depth=resolved_depth,
+                    limit=min(max(1, limit), 20),
+                    project=project,
+                    view="compact",
+                    budget="small",
+                    report_level=report_level,
+                )
+                payload = _flatten_walkthrough_payload(result, mode_key="mode_used")
+                payload["routing_note"] = "auto selected direct walkthrough for Class#method full-chain query; broad workspace sniff was skipped."
+                return emit(payload, "walkthrough")
             hint = workspace_lookup_hint(wf, query=query, intent=intent, limit=limit)
             preferred = hint.get("preferred_tools", [])
             decision_fields = {
@@ -546,11 +564,6 @@ def create_server(workspace_file: str):
             # preferred_tools returns names with "_tool" suffix (e.g. "memory_symbol_tool")
             # Strip suffix for cleaner matching
             preferred_bare = [t.replace("_tool", "") for t in preferred]
-            if _wants_deep_chain(query, intent, symbol, name, entry) and "#" in resolved_symbol:
-                result = memory_method_walkthrough(wf, resolved_symbol, depth=resolved_depth, limit=limit, project=project, view="compact", budget="small", report_level=report_level)
-                payload = _flatten_walkthrough_payload(result, mode_key="mode_used")
-                payload["routing_note"] = "auto selected walkthrough for Class#method full-chain query; use top-level answer/summary_lines/read_targets directly."
-                return emit(payload, "walkthrough")
             if "memory_callers" in preferred_bare and resolved_symbol:
                 matching_groups = _find_groups_for_workspace(wf)
                 if len(matching_groups) == 1:

@@ -185,6 +185,14 @@ def test_mc_lookup_modes_direct(tmp_path: Path):
     assert r
 
 
+def test_code_search_keeps_method_call_names_searchable(tmp_path: Path):
+    wf = _setup_workspace(tmp_path)
+
+    result = memory_search_code(wf, "moveArticle", limit=5)
+
+    assert result["total_hits"] >= 1
+
+
 def test_workspace_trace_attaches_chain_preview_for_deep_method_queries(tmp_path: Path):
     wf = _setup_workspace(tmp_path)
     r = workspace_trace(wf, "梳理下 com.example.api.ArticleFeignClient#moveArticle 全链路，一直到最底层逻辑处理")
@@ -863,20 +871,26 @@ def test_mc_lookup_direct_modes_lift_agent_next_steps(monkeypatch, tmp_path: Pat
 
 
 @pytest.mark.skipif(not HAS_MCP, reason="mcp package not installed")
-def test_mc_lookup_auto_prefers_chain_for_deep_method_trace_queries(tmp_path: Path):
+def test_mc_lookup_auto_prefers_chain_for_deep_method_trace_queries(monkeypatch, tmp_path: Path):
     import asyncio
+    import inspect
 
+    import memory_center.mcp.server as server_module
     from memory_center.mcp.server import create_server
 
     wf = _setup_workspace(tmp_path)
+    monkeypatch.setattr(
+        server_module,
+        "workspace_lookup_hint",
+        lambda *_args, **_kwargs: pytest.fail("full-chain method lookup must skip broad workspace sniff"),
+    )
     server = create_server(wf)
     mc_lookup = server._tool_manager._tools["mc_lookup"]
-    result = asyncio.get_event_loop().run_until_complete(
-        mc_lookup.fn(
-            query="梳理下 com.example.api.ArticleFeignClient#moveArticle 全链路，一直到最底层逻辑处理",
-            mode="auto",
-        )
+    payload = mc_lookup.fn(
+        query="梳理下 com.example.api.ArticleFeignClient#moveArticle 全链路，一直到最底层逻辑处理",
+        mode="auto",
     )
+    result = asyncio.get_event_loop().run_until_complete(payload) if inspect.isawaitable(payload) else payload
     assert result["mode_used"] == "walkthrough"
     assert result["found"] is True
     assert result["summary_lines"]
