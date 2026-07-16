@@ -10,7 +10,9 @@
 
 ### P2 Retrieval / Reasoning Quality Loop / 检索与推理质量闭环
 
-- 本地安装版本提升至 `3.5.26`。
+- 本地安装版本提升至 `3.5.28`。
+- Workbench/status 现在显示 `hot_refresh` 的 manifest 文件数和 dirty journal 状态；dirty journal 达到阈值会自动按路径压实，只保留最新事件，不影响正式索引。
+- 热刷新新增文件版本 manifest 与 dirty journal；watcher 只登记去抖后的变更，相关请求再消费这些路径。文件子图替换改为 SQLite 单事务，并重建声明、注入和方法调用出边，同时保留未变文件的调用入边。
 - `mc_start` 和 `mc_lookup` 现在会在主检索前自动检查有限数量的相关源码；检测到源文件比索引更新时，仅刷新对应 File/Class/Method 图谱覆盖层，不读取或合并全量 Java/semantic 索引。响应增加 `auto_refresh`，显示检查数量、刷新文件数量、耗时与模式。
 - `mc_start` 复用首次 sniff 结果，不再因自动同步重复执行同一检索；sniff 返回阶段耗时、缓存命中、检索路径与软时限状态，便于 Agent 判断是否需要补充更精确的入口。
 - reindex 写入轻量 `index-summary.json`；Workbench/状态查询只读取该摘要，不再为计数加载完整 Java/semantic 索引。紧凑输出的 token 节省统计默认关闭，仅在 `MEMORY_CENTER_MEASURE_COMPACT_GAIN=1` 时启用。

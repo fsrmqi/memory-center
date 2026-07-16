@@ -75,6 +75,11 @@ def workspace_status(workspace_file: str | Path, view: str = "compact", budget: 
     if current_focus_task:
         current_focus_task["focus_reason"] = _build_focus_reason(current_focus_task)
     index_summary = store.read_json_prefer_backend("index-summary.json", {})
+    try:
+        from ..freshness.targeted_refresh import hot_refresh_status
+        refresh_status = hot_refresh_status(workspace_file)
+    except Exception:
+        refresh_status = {"mode": "unavailable"}
     semantic_summary = {
         "doc_count": int(index_summary.get("semantic_docs", 0) or 0),
         "ready": int(index_summary.get("semantic_docs", 0) or 0) > 0,
@@ -102,6 +107,7 @@ def workspace_status(workspace_file: str | Path, view: str = "compact", budget: 
         },
         "semantic_index": semantic_summary,
         "index_summary_status": semantic_summary["summary_source"],
+        "hot_refresh": refresh_status,
         "reindex": workspace_reindex_status(store),
         "memory_layers": memory_layers,
         "memory_overview": _build_memory_overview(memory_layers),

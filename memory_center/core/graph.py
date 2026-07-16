@@ -479,6 +479,48 @@ class GraphStore:
         counts["changed_node_ids"] = list(changed_ids)
         return counts
 
+    def replace_file_subgraph(self, file_path: str, nodes: Iterable[GraphNode], edges: Iterable[GraphEdge]) -> dict[str, Any]:
+        """Atomically replace one file's nodes and outgoing edges.
+
+        Incoming edges are intentionally retained: callers in unchanged files
+        remain valid when a declaration keeps the same stable node id.
+        """
+        node_list = list(nodes)
+        edge_list = list(edges)
+        conn = self.connect()
+        with conn:
+            removed = [row["id"] for row in conn.execute("SELECT id FROM nodes WHERE file_path = ?", (file_path,)).fetchall()]
+            if removed:
+                placeholders = ",".join("?" for _ in removed)
+                conn.execute(f"DELETE FROM edges WHERE source_id IN ({placeholders})", removed)
+                conn.execute(f"DELETE FROM nodes WHERE id IN ({placeholders})", removed)
+                try:
+                    conn.execute(f"DELETE FROM node_search WHERE id IN ({placeholders})", removed)
+                except sqlite3.OperationalError:
+                    pass
+            for node in node_list:
+                conn.execute(
+                    "INSERT INTO nodes(id,type,name,project,file_path,line,metadata_json) VALUES(?,?,?,?,?,?,?) "
+                    "ON CONFLICT(id) DO UPDATE SET type=excluded.type,name=excluded.name,project=excluded.project,file_path=excluded.file_path,line=excluded.line,metadata_json=excluded.metadata_json",
+                    (node.id, node.type, node.name, node.project, node.file_path, node.line, _metadata_json(node.metadata)),
+                )
+            for edge in edge_list:
+                conn.execute(
+                    "INSERT INTO edges(id,source_id,target_id,type,confidence,metadata_json) VALUES(?,?,?,?,?,?) "
+                    "ON CONFLICT(id) DO UPDATE SET source_id=excluded.source_id,target_id=excluded.target_id,type=excluded.type,confidence=excluded.confidence,metadata_json=excluded.metadata_json",
+                    (edge.id, edge.source_id, edge.target_id, edge.type, edge.confidence, _metadata_json(edge.metadata)),
+                )
+            try:
+                for node in node_list:
+                    conn.execute("DELETE FROM node_search WHERE id=?", (node.id,))
+                    conn.execute(
+                        "INSERT INTO node_search(id,type,name,project,file_path,content) VALUES(?,?,?,?,?,?)",
+                        (node.id, node.type, node.name, node.project, node.file_path, " ".join([node.id, node.type, node.name, node.project, node.file_path, _metadata_json(node.metadata)])),
+                    )
+            except sqlite3.OperationalError:
+                pass
+        return {"removed_node_count": len(removed), "refreshed_node_count": len(node_list), "refreshed_edge_count": len(edge_list)}
+
     def _upsert_search_rows(self, node_dicts: Iterable[GraphNode]) -> None:
         """Insert/update FTS rows for a subset of nodes."""
         with self.connect() as conn:

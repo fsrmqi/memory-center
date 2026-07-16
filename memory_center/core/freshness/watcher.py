@@ -176,18 +176,14 @@ def trigger_incremental_reindex(workspace_file: str | Path, changed_files: list[
     Takes changed file paths from FileWatcher and triggers
     a targeted reindex for only those files.
     """
-    from ..config import load_workspace_config
-    from ..indexer import reindex_workspace
-    from ..store import WorkspaceStore
+    from .targeted_refresh import record_dirty_files
 
     try:
-        config = load_workspace_config(workspace_file)
-        store = WorkspaceStore(workspace_file)
-        result = reindex_workspace(config, store, paths=changed_files)
+        result = record_dirty_files(workspace_file, changed_files, source="watcher")
         return {
-            "status": "ok",
+            "status": "queued",
             "changed_files": len(changed_files),
-            "reindexed": result,
+            "dirty_journal": result,
         }
     except Exception as exc:
         return {

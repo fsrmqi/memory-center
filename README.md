@@ -774,7 +774,7 @@ Task-space matching, health checks, resume summaries, and automatic sync read ta
 
 Before `mc_start` and `mc_lookup` return indexed evidence, Memory Center checks a bounded set of graph/path candidates. When a source file changed since indexing, it refreshes only that file's File/Class/Method graph overlay and returns `auto_refresh`; it never runs a full index merge on the request path.
 
-`mc_start` 和 `mc_lookup` 返回索引证据前，会检查有界数量的图谱/路径候选。发现源码在索引后已变更时，只刷新该文件的 File/Class/Method 图谱覆盖层，并返回 `auto_refresh`；请求链路不会触发全量索引合并。
+`mc_start` 和 `mc_lookup` 返回索引证据前，会检查有界数量的图谱/路径候选。发现源码在索引后已变更时，只刷新该文件的 File/Class/Method 子图及其声明、注入、方法调用出边，并返回 `auto_refresh`；请求链路不会触发全量索引合并。文件 watcher 只写入去抖后的 dirty journal，由下一次相关请求消费。
 
 Walkthrough key locations include `absolute_file_path`; agents should read that path directly instead of running `find` first.
 

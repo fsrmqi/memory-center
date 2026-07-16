@@ -22,6 +22,8 @@ def test_targeted_refresh_updates_only_changed_query_file(tmp_path: Path) -> Non
     assert result["refreshed"] is True
     assert row["path"] in result["files"]
     assert result["checked"] <= 4
+    second = refresh_query_targets(workspace, "ArticleFeignClient", limit=4)
+    assert second["refreshed"] is False
     with GraphStore(store.graph_db_path) as graph:
         nodes = graph.find_nodes("ArticleFeignClient", types=["Class"], limit=5)
     assert any(node["name"] == "ArticleFeignClient" for node in nodes)
