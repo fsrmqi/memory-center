@@ -121,16 +121,16 @@ class TestMCPCoverage:
     """Verify every MCP entry in the matrix is registered."""
 
     def test_mcp_tools_are_defined(self):
-        """Check that mc_* tool functions exist in the MCP server module."""
+        """检查 mc_* 工具定义位于 MCP 的任一注册模块。"""
+        import memory_center.mcp.insights as insights_mod
         import memory_center.mcp.server as mcp_mod
-        src = inspect.getsource(mcp_mod)
+        sources = (inspect.getsource(mcp_mod), inspect.getsource(insights_mod))
         for cap in CAPABILITIES:
             for entry in cap.entries:
                 if entry.kind == "mcp_tool":
-                    # Tool functions are defined as 'def mc_*('
-                    assert f"def {entry.identifier}(" in src, (
+                    assert any(f"def {entry.identifier}(" in source for source in sources), (
                         f"MCP tool '{entry.identifier}' for capability "
-                        f"'{cap.name}' not found as function in mcp/server.py"
+                        f"'{cap.name}' not found in MCP registration modules"
                     )
 
     def test_mcp_admin_actions_in_dispatch(self):
@@ -272,7 +272,8 @@ class TestWorkspaceParsingContract:
         assert "WorkspaceStore" in src or "workspace_file" in src
 
     def test_mcp_server_uses_workspace_store(self):
-        """MCP server should use WorkspaceStore for workspace resolution."""
+        """MCP runtime should use WorkspaceStore for workspace resolution."""
+        import memory_center.mcp.runtime as runtime_mod
         import memory_center.mcp.server as mcp_mod
-        src = inspect.getsource(mcp_mod)
-        assert "WorkspaceStore" in src
+        assert "WorkspaceContext" in inspect.getsource(mcp_mod)
+        assert "WorkspaceStore" in inspect.getsource(runtime_mod)

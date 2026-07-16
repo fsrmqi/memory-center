@@ -84,6 +84,7 @@ from .resume import (
     workspace_resume_packet,
     workspace_unresolved_items,
 )
+from .resume_check import workspace_task_resume_check
 
 # --- session lifecycle ---
 from .session import (
@@ -141,7 +142,6 @@ from .workspace_ops import (
     workspace_lookup_hint,
     workspace_sniff,
     workspace_status,
-    workspace_task_resume_check,
     workspace_trace,
 )
 

@@ -126,3 +126,19 @@ def test_http_routes_only_depend_on_application_or_foundation() -> None:
             if module.startswith("memory_center.core.") and not module.startswith("memory_center.core.foundation."):
                 forbidden.append(f"{path}:{module}")
     assert not forbidden
+
+
+def test_mcp_server_delegates_runtime_and_insight_registration() -> None:
+    from memory_center.mcp import server
+
+    source = Path(server.__file__).read_text(encoding="utf-8")
+    assert len(source.splitlines()) < 900
+    assert "WorkspaceContext" in source
+    assert "register_insight_surface(mcp, ctx)" in source
+
+
+def test_resume_check_has_its_own_orchestrator_module() -> None:
+    from memory_center.core.orchestrator import resume_check, workspace_ops
+
+    assert callable(resume_check.workspace_task_resume_check)
+    assert "def workspace_task_resume_check" not in Path(workspace_ops.__file__).read_text(encoding="utf-8")

@@ -221,35 +221,46 @@ class TestMCPReturnConsistency:
         assert '"suggested_case":' in src
 
     def test_mc_context_pack_returns_all_required(self):
+        import memory_center.mcp.insights as insights
         import memory_center.mcp.server as mcp_mod
         from memory_center.application import analysis
 
         src = inspect.getsource(mcp_mod)
+        insights_src = inspect.getsource(insights)
         app_src = inspect.getsource(analysis.build_context_pack)
-        assert '"workflow": "mc-context-pack"' in src
+        assert "register_insight_surface(mcp, ctx)" in src
+        assert '"workflow": "mc-context-pack"' in insights_src
         for field in ("query", "intent", "entrypoints", "relationships", "checklist"):
             assert field in app_src
 
     def test_mc_onboard_returns_workflow_tour(self):
+        import memory_center.mcp.insights as insights
         import memory_center.mcp.server as mcp_mod
         from memory_center.application import analysis
 
         src = inspect.getsource(mcp_mod)
+        insights_src = inspect.getsource(insights)
         app_src = inspect.getsource(analysis.onboarding_tour)
-        assert '"workflow": "mc-onboard"' in src
+        assert "register_insight_surface(mcp, ctx)" in src
+        assert '"workflow": "mc-onboard"' in insights_src
         assert '"tour"' in app_src
 
     def test_mc_domain_returns_workflow_domains_domain_count(self):
+        import memory_center.mcp.insights as insights
         import memory_center.mcp.server as mcp_mod
         from memory_center.application import analysis
 
         src = inspect.getsource(mcp_mod)
+        insights_src = inspect.getsource(insights)
         app_src = inspect.getsource(analysis.domain_overview)
-        assert '"workflow": "mc-domain"' in src
+        assert "register_insight_surface(mcp, ctx)" in src
+        assert '"workflow": "mc-domain"' in insights_src
         assert '"domains"' in app_src
         assert '"domain_count"' in app_src
 
     def test_mc_freshness_returns_workflow(self):
+        import memory_center.mcp.insights as insights
         import memory_center.mcp.server as mcp_mod
         src = inspect.getsource(mcp_mod)
-        assert '"workflow": "mc-freshness"' in src
+        assert "register_insight_surface(mcp, ctx)" in src
+        assert '"workflow": "mc-freshness"' in inspect.getsource(insights)

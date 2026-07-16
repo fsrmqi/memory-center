@@ -214,7 +214,7 @@ def test_multi_group_ambiguity(tmp_path: Path):
     add_to_group("group-b", "spring-cloud-demo", home=home)
 
     registry = load_registry(home)
-    from memory_center.mcp.server import _find_workspace_name_in_registry
+    from memory_center.mcp.runtime import _find_workspace_name_in_registry
     ws_name = _find_workspace_name_in_registry(str(workspace), registry)
     groups = []
     for group in registry.get("groups", []):

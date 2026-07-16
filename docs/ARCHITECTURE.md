@@ -115,7 +115,7 @@ Memory Center 当前是一个本地文件系统 + SQLite 派生索引驱动的�
                                │
 ┌──────────────────────────────▼──────────────────────────────┐
 │ Adapter Layer / 入口适配层                                   │
-│ cli/main.py + commands/*   mcp/server.py   http/routes/*     │
+│ cli/main.py + commands/*   mcp/server.py + runtime/insights   │
 │ 只负责参数绑定、展示、错误边界和公开 schema 兼容              │
 └──────────────────────────────┬──────────────────────────────┘
                                │
@@ -176,6 +176,8 @@ memory_center/
 │   ├── onboarding/         # persona-based onboarding
 │   └── reasoning/          # evidence-bounded reasoning pipeline
 ├── mcp/                    # memory-center-mcp facade tools/resources/prompts
+│   ├── runtime.py           # workspace 解析、启动诊断、统一 MCP 错误边界
+│   └── insights.py          # resources、prompts、context/onboard/domain/freshness tools
 ├── http/                   # HTTP bridge, route registry, local UI serving
 ├── hooks/                  # Codex / Claude Code / Cursor 等宿主 hook 生成
 └── templates/              # 内置模板与生成内容骨架

@@ -783,13 +783,13 @@ def test_write_agent_instructions_merge_existing_mcp_configs(tmp_path: Path):
 
 
 def test_mcp_workspace_context_exposes_startup_diagnostics_for_service_root(tmp_path: Path):
-    from memory_center.mcp.server import _WorkspaceContext
+    from memory_center.mcp.runtime import WorkspaceContext
     from tests.fixtures import copy_demo_workspace
 
     workspace = copy_demo_workspace(tmp_path)
     service_root = workspace.parent.parent / "task-service"
 
-    ctx = _WorkspaceContext(str(service_root))
+    ctx = WorkspaceContext(str(service_root))
 
     assert ctx.workspace_file == str(workspace.resolve())
     assert ctx.startup_diagnostics["workspace_file"] == str(workspace.resolve())

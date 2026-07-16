@@ -49,7 +49,6 @@ from memory_center.core.orchestrator import (
     workspace_record_case,
     workspace_record_close_feedback,
     workspace_resume_packet,
-    workspace_status,
     workspace_suggest_case,
     workspace_sync_case_to_artifacts,
     workspace_sync_sniff_to_artifacts,
@@ -89,24 +88,6 @@ def _extract_symbol_like_token(*values: str) -> str:
 def _wants_deep_chain(*values: str) -> bool:
     text = " ".join((value or "") for value in values).lower()
     return any(token in text for token in ["全链路", "到底层", "最底层", "一路到底", "full chain", "trace to sink"])
-
-
-def _parse_payload(payload_str: str) -> dict[str, Any] | None:
-    """Parse a JSON string payload for MCP tool compatibility."""
-    if not payload_str:
-        return None
-    try:
-        import json
-        result = json.loads(payload_str)
-        return result if isinstance(result, dict) else None
-    except (json.JSONDecodeError, ValueError, TypeError):
-        return None
-
-
-def _benchmark_trend_report(workspace_file: str, function_name: str = "") -> dict[str, Any]:
-    """Generate benchmark trend report for mc_admin."""
-    from ..core.benchmark.trending import generate_benchmark_report
-    return generate_benchmark_report(workspace_file, function_name=function_name)
 
 
 def _flatten_walkthrough_payload(result: dict[str, Any], mode_key: str = "mode_used") -> dict[str, Any]:
@@ -265,51 +246,6 @@ def _agent_next_steps_for_lookup_route(mode: str, result: dict[str, Any], query:
         }
     ]
 
-
-def _run_audit(workspace_file: str, work_package: str = "") -> dict[str, Any]:
-    """Run completion audit for mc_admin."""
-    from ..core.audit.reports import run_completion_audit
-    return run_completion_audit(workspace_file, work_package=work_package)
-
-
-def _drill_ref(workspace_file: str, ref_id: str = "") -> dict[str, Any]:
-    """Expand a ref with progressive disclosure for mc_admin."""
-    from ..core.navigation.drilldown import DrillDownNavigator
-    with DrillDownNavigator(workspace_file) as nav:
-        return nav.expand_ref(ref_id)
-
-
-def _drill_timeline(workspace_file: str, session_id: str = "", task_id: str = "", limit: int = 50) -> dict[str, Any]:
-    """Drill into timeline for mc_admin."""
-    from ..core.navigation.drilldown import DrillDownNavigator
-    with DrillDownNavigator(workspace_file) as nav:
-        return nav.drill_timeline(session_id=session_id, task_id=task_id, limit=limit)
-
-
-def _drill_task(workspace_file: str, task_id: str = "") -> dict[str, Any]:
-    """Drill into task context for mc_admin."""
-    from ..core.navigation.drilldown import DrillDownNavigator
-    with DrillDownNavigator(workspace_file) as nav:
-        return nav.drill_task(task_id)
-
-
-def _backend_consistency(workspace_file: str) -> dict[str, Any]:
-    """Check backend consistency for mc_admin."""
-    from ..core.backend.query import UnifiedBackendQuery
-    from ..core.storage.workspace import WorkspaceStore
-    store = WorkspaceStore(workspace_file)
-    with UnifiedBackendQuery(store.memory_db_path) as backend:
-        return backend.check_consistency(store.base_dir)
-
-
-def _constraint_action(context: str = "", template: str = "coding_agent") -> dict[str, Any]:
-    """Show constraint template or auto-select action for mc_admin."""
-    from ..core.governance.templates import auto_select_action, get_constraint_template
-    if context:
-        action = auto_select_action(context, template)
-        return {"context": context, "template": template, "recommended_action": action}
-    tmpl = get_constraint_template(template)
-    return tmpl or {"error": f"Unknown template: {template}"}
 
 def _build_context_pack_recommendation(wf: str, intent: str, sniff_result: dict) -> dict:
     """D-02: Recommend context pack based on intent and risk level."""
@@ -819,170 +755,9 @@ def create_server(workspace_file: str):
         )
         return {"action": action, "result": registry.dispatch(action)}
 
-    # ===================== Resources (unchanged) =====================
-    @mcp.resource("memory-center://status")
-    def status_resource():
-        return workspace_status(ctx.workspace_file)
+    from memory_center.mcp.insights import register_insight_surface
 
-    @mcp.resource("memory-center://startup-diagnostics")
-    def startup_diagnostics_resource():
-        return ctx.startup_diagnostics
-
-    @mcp.resource("memory-center://contracts")
-    def contracts_resource():
-        return memory_contracts(ctx.workspace_file)
-
-    @mcp.resource("memory-center://topology")
-    def topology_resource():
-        return workspace_status(ctx.workspace_file).get("topology", {})
-
-    # ===================== Prompts (updated tool names) =====================
-    @mcp.prompt()
-    def detect_impact(target: str) -> str:
-        return (
-            "Use Memory Center before editing. Call mc_analyze for the target "
-            "to get impact analysis, change plan, and rules check. "
-            f"Target: {target}"
-        )
-
-    @mcp.prompt()
-    def spring_cloud_safe_change(task: str) -> str:
-        return (
-            "For this Spring Cloud task, call mc_start first. "
-            "Then use mc_lookup or mc_analyze for important contracts. "
-            "Use mc_sync to save progress, and mc_close when done. "
-            f"Task: {task}"
-        )
-
-    @mcp.prompt()
-    def onboard_new_dev(scope: str = "workspace") -> str:
-        return (
-            "You are onboarding a new developer to this project. "
-            "Call mc_onboard with persona='developer' to get a guided "
-            "architecture tour. Then call mc_domain to understand business "
-            "domains and flows. Finally call mc_freshness to check if "
-            "the index is up to date."
-        )
-
-    @mcp.prompt()
-    def check_mq_safety(topic: str = "") -> str:
-        base = (
-            "Check MQ consumer safety for this project. "
-            "Call mc_lookup to find MQ consumers and topics. "
-            "Verify each consumer has idempotent handling. "
-            "Check message format compatibility. "
-        )
-        return base + (f"Focus topic: {topic}" if topic else "Check all MQ consumers in the workspace.")
-
-    @mcp.prompt()
-    def analyze_dto_impact(dto_class: str = "") -> str:
-        base = (
-            "Analyze the impact of changing a DTO class. "
-            "Call mc_analyze to get the full impact analysis. "
-            "Check serialization compatibility, MQ message bodies, "
-            "and Feign client contracts. "
-        )
-        return base + (f"Target DTO: {dto_class}" if dto_class else "Analyze all DTOs in the workspace.")
-
-    @mcp.prompt()
-    def cross_service_trace(service: str = "") -> str:
-        base = (
-            "Trace cross-service call chains. "
-            "If the input contains Class#method or asks for full chain/全链路/到底层, call mc_lookup with mode='walkthrough' first. "
-            "Use mode='chain' only for generic caller/callee graph exploration. "
-            "For walkthrough results, follow summary_lines, local_service_continuations, feign_continuations.server_walkthroughs, and service_impl_continuations. "
-            "When absolute_file_path is present, read that path directly; do not run find/grep/IDEA search to locate the same controller or impl. "
-            "Then map Feign clients, MQ producers/consumers, and shared configs as needed. "
-        )
-        return base + (f"Starting from: {service}" if service else "Trace all cross-service interactions.")
-
-    @mcp.prompt()
-    def config_propagation_check(key: str = "") -> str:
-        base = (
-            "Check configuration key propagation across services. "
-            "Call mc_lookup to find ConfigKey nodes. "
-            "Identify which services read the same config keys. "
-            "Flag potential configuration drift. "
-        )
-        return base + (f"Focus key: {key}" if key else "Check all shared configuration keys.")
-
-    @mcp.prompt()
-    def freshness_check() -> str:
-        return (
-            "Check index freshness before making code changes. "
-            "Call mc_freshness to see if the graph index is up to date. "
-            "If status is 'pending' or 'stale', read live files before editing. "
-            "Never edit based on stale index data."
-        )
-
-    @mcp.prompt()
-    def domain_overview() -> str:
-        return (
-            "Get a business domain overview of this project. "
-            "Call mc_domain to extract business domains and flows. "
-            "Understand how code maps to business concepts. "
-            "Use this for product/business stakeholder discussions."
-        )
-
-    @mcp.prompt()
-    def diff_impact_analysis(diff_summary: str = "") -> str:
-        base = (
-            "Analyze the impact of a git diff. "
-            "Call mc_context_pack to get a compact context package. "
-            "Then call mc_analyze for detailed impact analysis. "
-            "Generate a change checklist with risk assessment. "
-        )
-        return base + (f"Diff summary: {diff_summary}" if diff_summary else "Analyze the current working tree changes.")
-
-    # ===================== FACADE 9-12: V3 MCP Tools (§20.6) =====================
-
-    @safe_mcp_tool(mcp)
-    def mc_context_pack(
-        query: str,
-        intent: str = "auto",
-        budget_tokens: int = 8000,
-        limit: int = 10,
-    ):
-        """Return a compact, evidence-backed context package for coding agents. Assembles entrypoints, relationships, risk patterns, and checklist into a single response to reduce agent grep/read cycles. Use this before mc_lookup for architecture or change-impact questions."""
-        from memory_center.application.analysis import build_context_pack
-        wf = ctx.workspace_file
-        pack = build_context_pack(wf, query, intent, budget_tokens, limit)
-        return {
-            "workflow": "mc-context-pack",
-            **pack,
-            "relationships": pack["relationships"][:20],
-        }
-
-    @safe_mcp_tool(mcp)
-    def mc_onboard(
-        scope: str = "workspace",
-        persona: str = "developer",
-        target: str = "",
-    ):
-        """Generate a guided architecture tour for onboarding. persona: developer | architect | product | tester. Returns step-by-step walkthrough of the project structure."""
-        from memory_center.application.analysis import onboarding_tour
-        wf = ctx.workspace_file
-        return {"workflow": "mc-onboard", **onboarding_tour(wf, persona, scope, target)}
-
-    @safe_mcp_tool(mcp)
-    def mc_domain(
-        scope: str = "workspace",
-        include_flows: bool = True,
-    ):
-        """Extract business domains and business flows from the code knowledge graph. Shows how code entities map to business concepts like user management, order processing, payment, etc."""
-        from memory_center.application.analysis import domain_overview
-        wf = ctx.workspace_file
-        return {"workflow": "mc-domain", **domain_overview(wf, include_flows)}
-
-    @safe_mcp_tool(mcp)
-    def mc_freshness(
-        scope: str = "workspace",
-    ):
-        """Return index freshness status. If pending files affect the query target, instruct the agent to read the live file before editing."""
-        from memory_center.application.analysis import freshness_banner
-        wf = ctx.workspace_file
-        return {"workflow": "mc-freshness", **freshness_banner(wf)}
-
+    register_insight_surface(mcp, ctx)
     return mcp
 
 
