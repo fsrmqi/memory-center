@@ -97,6 +97,10 @@ MCP 当前公开的是 12 个 task-level tools：
 - `memory-center setup-agent --workspace <workspace.yaml>` 是推荐的一键接入口，会刷新说明、Hooks、MCP 绑定并返回是否需要重启宿主会话。
 - `memory-center runtime-audit --workspace <workspace.yaml> --fix` 会检查并刷新根目录和子项目目录下的 `.codex/mcp.json`、`.cursor/mcp.json`、`.mcp.json`，用于自动修复看不到 `mc_*` 工具的宿主接入问题。
 - MCP server 暴露 `memory-center://startup-diagnostics` resource，用于查看启动时解析到的 workspace、MCP 绑定状态和下一步修复建议。
+- 每次 MCP 工具调用都会自动记录到 `.memory-center/memory/mcp-invocations.jsonl`，仅保留工具名、脱敏参数摘要、耗时、状态、结果规模与可选 session/task 关联，不保存完整请求或响应。`mc_start` 创建的 session 会自动关联同一 MCP 进程后的调用，并同步为 `tool_call` session event，供 replay、采纳分析和后续验证使用。
+- Every MCP tool call is automatically recorded in `.memory-center/memory/mcp-invocations.jsonl`. The audit log keeps only tool name, redacted input summary, duration, status, result size, and optional session/task linkage. Calls following `mc_start` reuse its session in the same MCP process and are mirrored as `tool_call` session events for replay and verification.
+- 可通过 `mc_admin(action="backend_query", collection="mcp-invocations.jsonl", limit=20)` 查看最近审计记录。
+- Use `mc_admin(action="backend_query", collection="mcp-invocations.jsonl", limit=20)` to inspect recent audit records.
 - 可在 `.memory-center/templates/method_walkthrough.md` 配置报告模板，支持占位符 `{target_label}`、`{summary_lines}`、`{read_targets}`、`{rule_groups}`、`{mermaid_flow}`、`{performance_risks}`、`{data_scope_guards}`、`{diff_context}`、`{glossary}`、`{next_actions}`。未配置时返回内置 `answer_markdown`，可用 `report_level=brief|standard|deep|risk-focused` 控制默认报告形态。
 - MCP server 的 `--workspace` 可以传 `workspace.yaml` 或项目目录；传目录时会向上寻找 `.memory-center/workspace.yaml`，找不到时保持原入参并由后续工具返回正常错误信息。
 - 可在 `.memory-center/glossary.yaml`、`.memory-center/glossary.yml` 或 `.memory-center/business-glossary.yaml` 配置业务词汇，命中结果会出现在 `glossary_hits`。

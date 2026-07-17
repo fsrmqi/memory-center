@@ -8,6 +8,12 @@
 
 ## Unreleased
 
+### 4.1.2 MCP 调用审计
+
+- 所有公开 MCP 工具自动写入 `mcp-invocations.jsonl`，记录脱敏参数摘要、状态、耗时、结果规模和 session/task 关联，默认不保存请求或响应正文。
+- `mc_start` 后同一 MCP 进程的调用自动关联 session，并同步为 `tool_call` session event，供 replay、采纳分析和后续验证使用。
+- 修复 MCP schema 兼容测试仅扫描单个注册模块、且受函数排版影响的问题，改为跨公开模块的 AST 解析。
+
 ### 4.1.1 定向刷新一致性修复
 
 - 定向刷新统一委托正式的按路径局部重建，避免刷新后丢失 API、Feign、MQ、配置与图谱关系。

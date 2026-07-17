@@ -73,23 +73,23 @@ def register_insight_surface(mcp: Any, workspace_context: Any) -> None:
         base = "Analyze the impact of a git diff. Call mc_context_pack to get a compact context package. Then call mc_analyze for detailed impact analysis. Generate a change checklist with risk assessment. "
         return base + (f"Diff summary: {diff_summary}" if diff_summary else "Analyze the current working tree changes.")
 
-    @safe_mcp_tool(mcp)
+    @safe_mcp_tool(mcp, workspace_context)
     def mc_context_pack(query: str, intent: str = "auto", budget_tokens: int = 8000, limit: int = 10):
         """返回面向编码 Agent 的紧凑、带证据上下文包。"""
         pack = build_context_pack(workspace_context.workspace_file, query, intent, budget_tokens, limit)
         return {"workflow": "mc-context-pack", **pack, "relationships": pack["relationships"][:20]}
 
-    @safe_mcp_tool(mcp)
+    @safe_mcp_tool(mcp, workspace_context)
     def mc_onboard(scope: str = "workspace", persona: str = "developer", target: str = ""):
         """按角色生成项目架构导览。"""
         return {"workflow": "mc-onboard", **onboarding_tour(workspace_context.workspace_file, persona, scope, target)}
 
-    @safe_mcp_tool(mcp)
+    @safe_mcp_tool(mcp, workspace_context)
     def mc_domain(scope: str = "workspace", include_flows: bool = True):
         """从知识图谱提取业务领域和业务流。"""
         return {"workflow": "mc-domain", **build_domain_overview(workspace_context.workspace_file, include_flows)}
 
-    @safe_mcp_tool(mcp)
+    @safe_mcp_tool(mcp, workspace_context)
     def mc_freshness(scope: str = "workspace"):
         """返回索引新鲜度状态。"""
         return {"workflow": "mc-freshness", **freshness_banner(workspace_context.workspace_file)}

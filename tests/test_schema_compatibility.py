@@ -16,7 +16,7 @@ Rules:
 """
 from __future__ import annotations
 
-import inspect
+import ast
 import json
 from pathlib import Path
 from typing import Any
@@ -31,31 +31,28 @@ def _load_snapshot() -> dict[str, Any]:
 
 
 def _extract_current_tools() -> dict[str, Any]:
-    """Extract current MCP tool schemas from source code via importlib."""
+    """通过 AST 提取公开 MCP 工具 schema，避免格式变化影响兼容性检查。"""
     import importlib
-    import re
 
-    mod = importlib.import_module("memory_center.mcp.server")
-    src = inspect.getsource(mod)
-    tool_pattern = r"    def (mc_\w+)\((.*?)\):"
+    modules = (
+        importlib.import_module("memory_center.mcp.server"),
+        importlib.import_module("memory_center.mcp.insights"),
+    )
     tools: dict[str, Any] = {}
-    for match in re.finditer(tool_pattern, src, re.DOTALL):
-        name = match.group(1)
-        params_str = match.group(2).strip()
-        required = []
-        optional = []
-        for line in params_str.split("\n"):
-            line = line.strip().rstrip(",")
-            if not line or line == "ctx: Context":
+    for module in modules:
+        source = Path(module.__file__).read_text(encoding="utf-8")
+        for node in ast.walk(ast.parse(source)):
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) or not node.name.startswith("mc_"):
                 continue
-            if "=" in line:
-                param_name = line.split(":")[0].strip()
-                optional.append(param_name)
-            else:
-                param_name = line.split(":")[0].strip()
-                if param_name != "ctx":
-                    required.append(param_name)
-        tools[name] = {"required": sorted(required), "optional": sorted(optional)}
+            positional = [*node.args.posonlyargs, *node.args.args]
+            required_count = len(positional) - len(node.args.defaults)
+            required = [argument.arg for argument in positional[:required_count] if argument.arg != "ctx"]
+            optional = [argument.arg for argument in positional[required_count:] if argument.arg != "ctx"]
+            assert len(node.args.kwonlyargs) == len(node.args.kw_defaults)
+            for index, argument in enumerate(node.args.kwonlyargs):
+                default = node.args.kw_defaults[index]
+                (required if default is None else optional).append(argument.arg)
+            tools[node.name] = {"required": sorted(required), "optional": sorted(optional)}
     return tools
 
 

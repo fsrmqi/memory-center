@@ -280,7 +280,7 @@ def create_server(workspace_file: str):
     # Import workflow templates for guidance
 
     # ===================== FACADE 1: mc_start =====================
-    @safe_mcp_tool(mcp)
+    @safe_mcp_tool(mcp, ctx)
     def mc_start(
         intent: str,
         limit: int = 12,
@@ -298,7 +298,7 @@ def create_server(workspace_file: str):
         return result
 
     # ===================== FACADE 2: mc_lookup =====================
-    @safe_mcp_tool(mcp)
+    @safe_mcp_tool(mcp, ctx)
     def mc_lookup(
         query: str,
         mode: str = "auto",
@@ -494,7 +494,7 @@ def create_server(workspace_file: str):
         raise ValueError(f"Unknown mc_lookup mode: {mode}. Valid: auto, symbol, code, query, trace, chain, walkthrough, context, contracts, ref, backend")
 
     # ===================== FACADE 3: mc_analyze =====================
-    @safe_mcp_tool(mcp)
+    @safe_mcp_tool(mcp, ctx)
     def mc_analyze(
         target: str,
         depth: str = "standard",
@@ -550,7 +550,7 @@ def create_server(workspace_file: str):
         return run_analysis()
 
     # ===================== FACADE 4: mc_sync =====================
-    @safe_mcp_tool(mcp)
+    @safe_mcp_tool(mcp, ctx)
     def mc_sync(
         intent: str = "",
         session_id: str = "",
@@ -568,7 +568,7 @@ def create_server(workspace_file: str):
         raise ValueError("mc_sync requires intent or session_id")
 
     # ===================== FACADE 5: mc_resume =====================
-    @safe_mcp_tool(mcp)
+    @safe_mcp_tool(mcp, ctx)
     def mc_resume(
         intent: str = "",
         task_id: str = "",
@@ -587,7 +587,7 @@ def create_server(workspace_file: str):
         }
 
     # ===================== FACADE 6: mc_handoff =====================
-    @safe_mcp_tool(mcp)
+    @safe_mcp_tool(mcp, ctx)
     def mc_handoff(
         target_model: str,
         task_id: str = "",
@@ -606,7 +606,7 @@ def create_server(workspace_file: str):
         }
 
     # ===================== FACADE 7: mc_close =====================
-    @safe_mcp_tool(mcp)
+    @safe_mcp_tool(mcp, ctx)
     def mc_close(
         session_id: str,
         outcome: str = "",
@@ -648,7 +648,7 @@ def create_server(workspace_file: str):
         }
 
     # ===================== FACADE 8: mc_admin =====================
-    @safe_mcp_tool(mcp)
+    @safe_mcp_tool(mcp, ctx)
     def mc_admin(
         action: str,
         view: str = "compact",

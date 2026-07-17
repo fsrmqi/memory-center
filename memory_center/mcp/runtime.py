@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import inspect
+import time
 from functools import wraps
 from pathlib import Path
 from typing import Any
@@ -9,6 +10,13 @@ from typing import Any
 from memory_center.core.foundation.errors import normalize_exception
 from memory_center.core.governance.registry import load_registry
 from memory_center.core.storage.workspace import WorkspaceStore
+
+MCP_INVOCATIONS_FILE = "mcp-invocations.jsonl"
+_SAFE_MCP_INPUT_FIELDS = (
+    "action", "budget", "change_type", "depth", "direction", "intent", "limit",
+    "mode", "name", "project", "query", "request_tier", "scope", "target",
+    "task_id", "title", "session_id", "execution_mode",
+)
 
 
 def find_groups_for_workspace(workspace_file: str) -> list[str]:
@@ -27,6 +35,7 @@ class WorkspaceContext:
         self.workspace_input = workspace_file
         self.workspace_file = resolve_workspace_input(workspace_file)
         self.startup_diagnostics = build_startup_diagnostics(self.workspace_input, self.workspace_file)
+        self.active_session_id = ""
 
 
 def build_startup_diagnostics(workspace_input: str, workspace_file: str) -> dict[str, Any]:
@@ -88,11 +97,11 @@ def resolve_workspace_input(workspace_input: str) -> str:
     return str(path.resolve())
 
 
-def safe_mcp_tool(mcp):
-    """注册保持原始 schema 的统一异常边界。"""
+def safe_mcp_tool(mcp, workspace_context: WorkspaceContext | None = None):
+    """注册保持原始 schema 的统一异常边界和调用审计。"""
 
     def decorator(fn):
-        return mcp.tool()(_mcp_error_boundary(fn))
+        return mcp.tool()(_mcp_error_boundary(fn, workspace_context))
 
     return decorator
 
@@ -105,22 +114,151 @@ def _find_workspace_name_in_registry(workspace_file: str, registry: dict[str, An
     return None
 
 
-def _mcp_error_boundary(fn):
+def _mcp_error_boundary(fn, workspace_context: WorkspaceContext | None = None):
     if inspect.iscoroutinefunction(fn):
         @wraps(fn)
         async def async_wrapped(*args, **kwargs):
+            started_at = time.perf_counter()
             try:
-                return await fn(*args, **kwargs)
+                result = await fn(*args, **kwargs)
+                _record_mcp_invocation(workspace_context, fn, args, kwargs, result, "success", started_at)
+                return result
             except Exception as exc:
-                return normalize_exception(exc).to_mcp_dict()
+                result = normalize_exception(exc).to_mcp_dict()
+                _record_mcp_invocation(workspace_context, fn, args, kwargs, result, "error", started_at)
+                return result
 
         return async_wrapped
 
     @wraps(fn)
     def wrapped(*args, **kwargs):
+        started_at = time.perf_counter()
         try:
-            return fn(*args, **kwargs)
+            result = fn(*args, **kwargs)
+            _record_mcp_invocation(workspace_context, fn, args, kwargs, result, "success", started_at)
+            return result
         except Exception as exc:
-            return normalize_exception(exc).to_mcp_dict()
+            result = normalize_exception(exc).to_mcp_dict()
+            _record_mcp_invocation(workspace_context, fn, args, kwargs, result, "error", started_at)
+            return result
 
     return wrapped
+
+
+def _record_mcp_invocation(
+    workspace_context: WorkspaceContext | None,
+    fn: Any,
+    args: tuple[Any, ...],
+    kwargs: dict[str, Any],
+    result: Any,
+    status: str,
+    started_at: float,
+) -> None:
+    """持久化精简的 MCP 审计事件，不保留请求或响应正文。"""
+    if workspace_context is None:
+        return
+    try:
+        inputs = _bound_mcp_inputs(fn, args, kwargs)
+        session_id = _resolve_mcp_session_id(workspace_context, inputs, result)
+        event = {
+            "event_type": "mcp_tool_call",
+            "tool_name": fn.__name__,
+            "source": "mcp",
+            "status": status,
+            "duration_ms": round((time.perf_counter() - started_at) * 1000, 2),
+            "session_id": session_id,
+            "task_id": str(inputs.get("task_id", "") or ""),
+            "inputs": _safe_mcp_inputs(inputs),
+            "result": _safe_mcp_result(result),
+        }
+        store = WorkspaceStore(workspace_context.workspace_file)
+        store.append_jsonl(MCP_INVOCATIONS_FILE, event)
+        if session_id and fn.__name__ != "mc_close":
+            from memory_center.core.orchestrator.session import workspace_log_session_event
+
+            workspace_log_session_event(
+                workspace_context.workspace_file,
+                session_id,
+                "tool_call",
+                {
+                    "tool_name": fn.__name__,
+                    "source": "mcp",
+                    "status": status,
+                    "duration_ms": event["duration_ms"],
+                    "mode": str(inputs.get("mode", "") or ""),
+                    "action": str(inputs.get("action", "") or ""),
+                    "query": _safe_mcp_text(inputs.get("query", "")),
+                    "target": _safe_mcp_text(inputs.get("target", "")),
+                },
+            )
+    except Exception:
+        # 审计失败不得改变 MCP 的公开响应和错误语义。
+        return
+
+
+def _bound_mcp_inputs(fn: Any, args: tuple[Any, ...], kwargs: dict[str, Any]) -> dict[str, Any]:
+    try:
+        return dict(inspect.signature(fn).bind_partial(*args, **kwargs).arguments)
+    except TypeError:
+        return dict(kwargs)
+
+
+def _resolve_mcp_session_id(workspace_context: WorkspaceContext, inputs: dict[str, Any], result: Any) -> str:
+    explicit = str(inputs.get("session_id", "") or "").strip()
+    discovered = _session_id_from_result(result)
+    session_id = explicit or discovered or workspace_context.active_session_id
+    if session_id:
+        workspace_context.active_session_id = session_id
+    return session_id
+
+
+def _session_id_from_result(result: Any) -> str:
+    if not isinstance(result, dict):
+        return ""
+    direct = str(result.get("session_id", "") or "").strip()
+    if direct:
+        return direct
+    for key in ("session", "ended", "result"):
+        nested = result.get(key)
+        if isinstance(nested, dict):
+            value = str(nested.get("session_id", "") or "").strip()
+            if value:
+                return value
+    return ""
+
+
+def _safe_mcp_inputs(inputs: dict[str, Any]) -> dict[str, Any]:
+    safe: dict[str, Any] = {}
+    for key in _SAFE_MCP_INPUT_FIELDS:
+        value = inputs.get(key)
+        if value in (None, "", [], {}):
+            continue
+        if isinstance(value, str):
+            safe[key] = _safe_mcp_text(value)
+        elif isinstance(value, (int, float, bool)):
+            safe[key] = value
+        elif isinstance(value, (list, tuple)):
+            safe[f"{key}_count"] = len(value)
+    return safe
+
+
+def _safe_mcp_result(result: Any) -> dict[str, Any]:
+    if not isinstance(result, dict):
+        return {"kind": type(result).__name__}
+    summary: dict[str, Any] = {"top_level_keys": sorted(str(key) for key in result)[:16]}
+    for key in ("workflow", "mode", "action", "execution_mode"):
+        value = result.get(key)
+        if isinstance(value, str) and value:
+            summary[key] = _safe_mcp_text(value)
+    for key in ("results", "matches", "findings", "next_actions"):
+        value = result.get(key)
+        if isinstance(value, list):
+            summary[f"{key}_count"] = len(value)
+    error = result.get("error")
+    if error:
+        summary["error"] = True
+    return summary
+
+
+def _safe_mcp_text(value: Any, limit: int = 240) -> str:
+    return " ".join(str(value or "").split())[:limit]
