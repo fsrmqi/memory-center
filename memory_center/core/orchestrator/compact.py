@@ -133,6 +133,18 @@ def _compact_workspace_status(result: dict[str, Any], budget: str = "medium") ->
         },
         "query_performance": result.get("query_performance", {}),
         "reindex": result.get("reindex", {}),
+        "jobs": {
+            "jobs": [
+                {
+                    "job_id": item.get("job_id", ""),
+                    "kind": item.get("kind", ""),
+                    "status": item.get("status", ""),
+                    "progress": item.get("progress", {}),
+                    "updated_at": item.get("updated_at", 0),
+                }
+                for item in (result.get("jobs", {}) or {}).get("jobs", [])[:3]
+            ]
+        },
         "memory_layers": result.get("memory_layers", {}),
         "memory_overview": result.get("memory_overview", {}),
         "write_receipts_overview": {

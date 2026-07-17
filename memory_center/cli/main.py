@@ -5,6 +5,7 @@ from __future__ import annotations
 # ruff: noqa: UP006,UP035,UP045
 import json
 import pprint
+from inspect import signature
 from pathlib import Path
 from typing import List, Optional
 
@@ -109,6 +110,7 @@ from memory_center.core.workspace.config import (
     write_default_workspace,
 )
 from memory_center.core.workspace.doctor import doctor as run_doctor
+from memory_center.core.workspace.jobs import workspace_job_status
 from memory_center.hooks.adapters.claude_code import generate_claude_code_hooks, write_claude_code_settings
 from memory_center.hooks.adapters.codex import generate_codex_scripts
 from memory_center.hooks.adapters.cursor import generate_cursor_rules
@@ -240,11 +242,22 @@ def reindex(
     from memory_center.core.indexing.reindex_state import ReindexBusyError
 
     try:
+        def report_progress(stage: str, percent: int, message: str) -> None:
+            typer.echo(
+                json.dumps(
+                    {"progress": {"stage": stage, "percent": percent, "message": message}},
+                    ensure_ascii=False,
+                ),
+                err=True,
+            )
+
         reindex_kwargs = {
             "projects": project,
             "paths": selected_paths,
             "parallel": parallel,
         }
+        if "progress" in signature(reindex_workspace).parameters:
+            reindex_kwargs["progress"] = report_progress
         if lock_timeout > 0:
             reindex_kwargs["lock_timeout"] = lock_timeout
         counts = reindex_workspace(config, store, **reindex_kwargs)
@@ -266,6 +279,16 @@ def status(
 ):
     """Print workspace index and memory status."""
     print(workspace_status(workspace, view=view, budget=budget))
+
+
+@app.command("job-status")
+def job_status(
+    workspace: str = typer.Option(..., help="Path to .memory-center/workspace.yaml"),
+    job_id: str = typer.Option("", help="Optional background job id; omit to list recent jobs."),
+    limit: int = typer.Option(20, min=1, max=100, help="Maximum jobs to return when job-id is omitted."),
+):
+    """Show persisted background-job progress."""
+    typer.echo(json.dumps(workspace_job_status(workspace, job_id, limit=limit), ensure_ascii=False, indent=2))
 
 
 @app.command("inspect")

@@ -2,6 +2,7 @@
 
 from typing import Any
 
+from memory_center.application.jobs import analysis_job_status
 from memory_center.application.presentation import (
     export_continuity_dashboard_html,
     export_focus_task_html,
@@ -103,6 +104,12 @@ from memory_center.core.tasks.artifacts import (
     update_task_status,
 )
 
+
+def workspace_background_job_status(workspace_file: str, job_id: str = "", *, limit: int = 20) -> dict[str, Any]:
+    """通过 application 边界读取持久化后台任务状态。"""
+    return analysis_job_status(workspace_file, job_id, limit=limit)
+
+
 __all__ = [
     "Any",
     "export_continuity_dashboard_html",
@@ -156,6 +163,7 @@ __all__ = [
     "memory_verify_checklist",
     "memory_write_judge",
     "workspace_end_session",
+    "workspace_background_job_status",
     "workspace_handoff_packet",
     "workspace_handoff_history",
     "workspace_lookup_hint",

@@ -52,6 +52,8 @@ MCP 当前公开的是 12 个 task-level tools：
 
 `mc_start` 会追加 Git 分支、HEAD 和脏文件数量快照；`mc_close` 可追加已经执行过的 `validation_command`、`validation_exit_code`、`validation_summary` 和 `validation_status`。Memory Center 只记录脱敏摘要，绝不执行传入的验证命令；会话 summary 的 `evidence_chain` 会关联起始/结束代码版本、验证结果与 outcome。非 Git 工作空间或未提供验证结果时自动降级，不阻断关闭流程。
 
+后台 reindex 的 `mc_admin(action="job_reindex")` 会返回 `job_id`；用 `mc_admin(action="job_status", record_id="...")` 读取同一份持久化进度。`progress.stage` 依次使用 `queued`、`scanning`、`parsing`、`graph`、`semantic`、`retrieval`、`finalizing`，并在完成、失败、取消或中断时返回对应终态和有界事件历史。
+
 契约语义校验使用 `mc_admin(action="contract_gate", name="SomeRequestDto.java")`，返回 `semantic_compatibility.status`：`pass`、`attention` 或 `block`。`mc_analyze(depth="full", target="...", task_id="...")` 自动执行同一校验并可将完整报告写为任务 evidence。guard 模式 pre-edit hook 遇到 `block` 会拒绝编辑；release gate 在索引存在契约快照时失败。
 
 运行时样本通过 `mc_admin(action="runtime_contract_ingest", payload="...")` 导入，payload 应只包含 `samples` 元数据数组，禁止业务 payload/body/header/message。用 `runtime_contract_migration` 登记双读/双写迁移，用 `runtime_contract_gate` 获取活跃流量兼容结论；传 `task_id` 会将该报告保存为任务 evidence。release gate 仅在存在样本时增加运行时契约组件。

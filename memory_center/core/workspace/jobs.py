@@ -10,26 +10,61 @@ from uuid import uuid4
 from memory_center.core.storage.workspace import WorkspaceStore
 
 JOBS_FILE = "workspace-jobs.json"
+PROGRESS_STAGES = frozenset(
+    {
+        "queued",
+        "scanning",
+        "parsing",
+        "graph",
+        "retrieval",
+        "semantic",
+        "finalizing",
+        "completed",
+        "failed",
+        "cancelled",
+        "interrupted",
+    }
+)
+MAX_PROGRESS_EVENTS = 24
 _CANCELLED: set[str] = set()
 _GUARD = threading.Lock()
 
 
-def submit_workspace_job(workspace_file: str, kind: str, work: Callable[[], dict[str, Any]]) -> dict[str, Any]:
+def submit_workspace_job(
+    workspace_file: str,
+    kind: str,
+    work: Callable[[], dict[str, Any]],
+    *,
+    progress_work: Callable[[Callable[[str, int, str], None]], dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     store = WorkspaceStore(workspace_file)
     job_id = f"job-{uuid4().hex[:12]}"
-    record = {"schema_version": 1, "job_id": job_id, "kind": kind, "status": "queued", "created_at": time.time(), "updated_at": time.time(), "progress": {"stage": "queued", "percent": 0}}
+    now = time.time()
+    record = {
+        "schema_version": 2,
+        "job_id": job_id,
+        "kind": kind,
+        "status": "queued",
+        "created_at": now,
+        "updated_at": now,
+        "progress": _progress("queued", 0, "任务已进入队列", now),
+        "progress_events": [_progress("queued", 0, "任务已进入队列", now)],
+    }
     _upsert(store, record)
 
     def runner() -> None:
-        _upsert(store, {**record, "status": "running", "updated_at": time.time(), "progress": {"stage": "running", "percent": 10}})
+        _update_progress(store, job_id, "scanning", 5, "正在准备任务输入")
         try:
-            result = work()
+            result = progress_work(lambda stage, percent, message="": _update_progress(store, job_id, stage, percent, message)) if progress_work else work()
             if _is_cancelled(job_id):
-                _upsert(store, {**record, "status": "cancelled", "updated_at": time.time(), "progress": {"stage": "cancelled", "percent": 100}})
+                _finish_job(store, job_id, "cancelled", progress_stage="cancelled", message="任务已取消")
             else:
-                _upsert(store, {**record, "status": "completed", "updated_at": time.time(), "result": result, "progress": {"stage": "completed", "percent": 100}})
+                _update_progress(store, job_id, "finalizing", 95, "正在整理任务结果")
+                _finish_job(store, job_id, "completed", result=result, progress_stage="completed", message="任务已完成")
         except Exception as exc:  # pragma: no cover - error boundary is exposed via status
-            _upsert(store, {**record, "status": "failed", "updated_at": time.time(), "error": str(exc), "progress": {"stage": "failed", "percent": 100}})
+            from memory_center.core.observability.diagnostics import safe_reason
+
+            _finish_job(store, job_id, "failed", error=safe_reason(reason=str(exc)), progress_stage="failed", message="任务执行失败")
 
     threading.Thread(target=runner, name=job_id, daemon=True).start()
     return record
@@ -54,7 +89,20 @@ def submit_reindex_workspace_job(workspace_file: str, *, projects: list[str] | N
         from memory_center.core.indexing.reindex import reindex_workspace
         from memory_center.core.workspace.config import load_workspace_config
         return reindex_workspace(load_workspace_config(workspace_file), WorkspaceStore(workspace_file), projects=projects, paths=paths)
-    return submit_workspace_job(workspace_file, "reindex", work)
+
+    def progress_work(report: Callable[[str, int, str], None]) -> dict[str, Any]:
+        from memory_center.core.indexing.reindex import reindex_workspace
+        from memory_center.core.workspace.config import load_workspace_config
+
+        return reindex_workspace(
+            load_workspace_config(workspace_file),
+            WorkspaceStore(workspace_file),
+            projects=projects,
+            paths=paths,
+            progress=report,
+        )
+
+    return submit_workspace_job(workspace_file, "reindex", work, progress_work=progress_work)
 
 
 def recover_interrupted_workspace_jobs(store: WorkspaceStore) -> int:
@@ -65,7 +113,8 @@ def recover_interrupted_workspace_jobs(store: WorkspaceStore) -> int:
     recovered = []
     for row in rows:
         if row.get("status") == "running" and now - float(row.get("updated_at", now)) > 30:
-            recovered.append({**row, "status": "interrupted", "updated_at": now, "progress": {"stage": "interrupted", "percent": int((row.get("progress") or {}).get("percent", 0))}})
+            progress = _progress("interrupted", int((row.get("progress") or {}).get("percent", 0)), "宿主进程中断", now)
+            recovered.append({**row, "status": "interrupted", "updated_at": now, "progress": progress, "progress_events": [*(row.get("progress_events", []) or [])[-(MAX_PROGRESS_EVENTS - 1):], progress]})
             changed += 1
         else:
             recovered.append(row)
@@ -81,6 +130,8 @@ def cancel_workspace_job(workspace_file: str, job_id: str) -> dict[str, Any]:
     current = workspace_job_status(workspace_file, job_id)
     if not current.get("job_id") or current.get("found") is False:
         return {"job_id": job_id, "cancelled": False, "reason": "not_found"}
+    _update_progress(store, job_id, str((current.get("progress") or {}).get("stage", "queued")), int((current.get("progress") or {}).get("percent", 0)), "已请求取消")
+    current = workspace_job_status(workspace_file, job_id)
     _upsert(store, {**current, "status": "cancel_requested", "updated_at": time.time()})
     return {"job_id": job_id, "cancelled": True, "status": "cancel_requested"}
 
@@ -96,3 +147,55 @@ def _upsert(store: WorkspaceStore, record: dict[str, Any]) -> None:
         rows = [row for row in rows if row.get("job_id") != record["job_id"]]
         rows.append(record)
         store.write_json(JOBS_FILE, rows[-100:])
+
+
+def _update_progress(store: WorkspaceStore, job_id: str, stage: str, percent: int, message: str = "") -> None:
+    if stage not in PROGRESS_STAGES:
+        stage = "failed"
+        message = "任务报告了未知进度阶段"
+    rows = store.read_json(JOBS_FILE, []) or []
+    current = next((row for row in rows if row.get("job_id") == job_id), None)
+    if not isinstance(current, dict):
+        return
+    existing = current.get("progress", {}) or {}
+    bounded_percent = max(int(existing.get("percent", 0) or 0), min(100, max(0, int(percent))))
+    now = time.time()
+    progress = _progress(stage, bounded_percent, message, now)
+    events = [*(current.get("progress_events", []) or [])[-(MAX_PROGRESS_EVENTS - 1):], progress]
+    _upsert(store, {**current, "status": "running", "updated_at": now, "progress": progress, "progress_events": events})
+
+
+def _finish_job(
+    store: WorkspaceStore,
+    job_id: str,
+    status: str,
+    *,
+    result: dict[str, Any] | None = None,
+    error: str = "",
+    progress_stage: str,
+    message: str,
+) -> None:
+    rows = store.read_json(JOBS_FILE, []) or []
+    current = next((row for row in rows if row.get("job_id") == job_id), None)
+    if not isinstance(current, dict):
+        return
+    now = time.time()
+    current_progress = current.get("progress", {}) or {}
+    terminal_percent = 100 if status == "completed" else int(current_progress.get("percent", 0) or 0)
+    progress = _progress(progress_stage, terminal_percent, message, now)
+    record = {
+        **current,
+        "status": status,
+        "updated_at": now,
+        "progress": progress,
+        "progress_events": [*(current.get("progress_events", []) or [])[-(MAX_PROGRESS_EVENTS - 1):], progress],
+    }
+    if result is not None:
+        record["result"] = result
+    if error:
+        record["error"] = error
+    _upsert(store, record)
+
+
+def _progress(stage: str, percent: int, message: str, now: float) -> dict[str, Any]:
+    return {"stage": stage, "percent": max(0, min(100, int(percent))), "message": message[:160], "updated_at": now}

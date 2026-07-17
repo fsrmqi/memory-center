@@ -54,6 +54,7 @@ from memory_center.application.http_facades import (
     update_artifact,
     update_task_artifact,
     update_task_status,
+    workspace_background_job_status,
     workspace_lookup_hint,
     workspace_recent_evidence,
     workspace_recent_sessions,
@@ -99,6 +100,11 @@ def register_workspace_routes(registry: CommandRegistry) -> None:
         rp.workspace(),
         view=rp.view(),
         budget=rp.budget(),
+    ))
+    registry.register("/workspace/job-status", lambda rp: workspace_background_job_status(
+        rp.workspace(),
+        rp.params.get("job_id", [""])[0],
+        limit=_parse_int(rp.params, "limit", 20, max_val=100),
     ))
     registry.register("/workspace/sniff", lambda rp: workspace_sniff(
         rp.workspace(),

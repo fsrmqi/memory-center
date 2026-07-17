@@ -15,6 +15,7 @@ from memory_center.core.observability.tracking import log_token_gain
 from memory_center.core.retrieval.planner import workspace_performance_summary
 from memory_center.core.storage.graph import GraphStore
 from memory_center.core.storage.workspace import WorkspaceStore
+from memory_center.core.workspace.jobs import workspace_job_status
 from memory_center.core.workspace.shape import analyze_workspace_shape
 
 from ..indexing.control_plane import index_control_status
@@ -114,6 +115,7 @@ def workspace_status(workspace_file: str | Path, view: str = "compact", budget: 
         "index_control": index_control_status(store),
         "query_performance": workspace_performance_summary(workspace_file),
         "reindex": workspace_reindex_status(store),
+        "jobs": workspace_job_status(str(workspace_file), limit=5),
         "memory_layers": memory_layers,
         "memory_overview": _build_memory_overview(memory_layers),
         "memory_backend": store.memory_backend_stats(),

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -66,6 +66,7 @@ def _reindex_workspace_unlocked(
     projects: Sequence[str] | None = None,
     paths: Sequence[str] | None = None,
     parallel: bool = True,
+    progress: Callable[[str, int, str], None] | None = None,
 ) -> dict[str, Any]:
     """Rebuild deterministic indexes and the local evidence graph."""
     project_filter = {item.strip() for item in (projects or []) if item and item.strip()}
@@ -94,6 +95,7 @@ def _reindex_workspace_unlocked(
     if callable(reset_parser_diagnostics):
         reset_parser_diagnostics()
 
+    _report_progress(progress, "scanning", 10, "正在扫描工作区文件")
     for svc in config.services:
         if project_filter and svc.name not in project_filter:
             continue
@@ -121,6 +123,7 @@ def _reindex_workspace_unlocked(
             elif path.name in CONFIG_NAMES:
                 config_index.append({"project": svc.name, "path": rel, **parse_yaml_config(path)})
 
+    _report_progress(progress, "parsing", 30, f"正在解析 {len(java_tasks)} 个 Java 文件")
     # Parse Java files (sequential or parallel)
     if parallel and len(java_tasks) > 10:
         from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -169,6 +172,7 @@ def _reindex_workspace_unlocked(
         merged_mq_index = mq_index
         merged_config_index = config_index
 
+    _report_progress(progress, "graph", 50, "正在构建契约、拓扑和知识图谱")
     topology = build_topology(config, merged_feign_index, merged_api_index, merged_mq_index, merged_config_index)
     store.write_json("file-index.json", merged_file_index)
     store.write_json("java-symbol-index.json", merged_symbol_index)
@@ -183,6 +187,7 @@ def _reindex_workspace_unlocked(
     store.write_json(CONTRACT_DIFF_FILE, contract_diff)
     graph_counts = build_graph_store(config, store, project_filter=project_filter, path_filters=path_filters)
     changed_ids: set[str] = set()
+    _report_progress(progress, "semantic", 68, "正在构建语义索引")
     if partial:
         changed_ids = set(graph_counts.get("changed_node_ids", []))
         semantic_counts = build_workspace_semantic_index_partial(store.workspace_file, changed_ids) if changed_ids else {
@@ -192,6 +197,7 @@ def _reindex_workspace_unlocked(
         }
     else:
         semantic_counts = build_workspace_semantic_index(store.workspace_file)
+    _report_progress(progress, "retrieval", 82, "正在同步检索索引")
     retrieval_counts = _sync_retrieval_indexes(
         store,
         semantic_counts,
@@ -237,6 +243,7 @@ def _reindex_workspace_unlocked(
         "parser_precision": parser_precision,
         **retrieval_counts,
     }
+    _report_progress(progress, "finalizing", 92, "正在写入索引摘要")
     store.write_json(
         "index-summary.json",
         {
@@ -267,6 +274,7 @@ def reindex_workspace(
     paths: Sequence[str] | None = None,
     parallel: bool = True,
     lock_timeout: float = 0.0,
+    progress: Callable[[str, int, str], None] | None = None,
 ) -> dict[str, Any]:
     """Rebuild workspace indexes with one writer per workspace."""
     with workspace_reindex_lock(
@@ -283,13 +291,16 @@ def reindex_workspace(
         )
         generation = str(control["staging_generation"])
         try:
-            counts = _reindex_workspace_unlocked(
-                config,
-                store,
-                projects=projects,
-                paths=paths,
-                parallel=parallel,
-            )
+            _report_progress(progress, "scanning", 8, "已获取工作区写锁，开始构建索引")
+            reindex_kwargs: dict[str, Any] = {
+                "projects": projects,
+                "paths": paths,
+                "parallel": parallel,
+            }
+            if progress is not None:
+                reindex_kwargs["progress"] = progress
+            counts = _reindex_workspace_unlocked(config, store, **reindex_kwargs)
+            _report_progress(progress, "finalizing", 94, "正在发布索引代际")
             manifest = build_shard_manifest(
                 generation,
                 store.read_json_prefer_backend("file-index.json", []),
@@ -318,12 +329,23 @@ def reindex_workspace(
             )
             manifest["physical_shards"] = physical_shards
             activate_generation(store, generation, counts=counts, shard_manifest=manifest)
+            _report_progress(progress, "finalizing", 98, "索引代际已发布")
             # Preserve the historical reindex return schema. Generation and
             # shard routing are published through index-control/status files.
             return counts
         except Exception as exc:
             fail_generation(store, generation, str(exc))
             raise
+
+
+def _report_progress(
+    progress: Callable[[str, int, str], None] | None,
+    stage: str,
+    percent: int,
+    message: str,
+) -> None:
+    if progress:
+        progress(stage, percent, message)
 
 
 def _affected_shard_projects(file_index: list[dict[str, Any]], project_filter: set[str], path_filters: list[str]) -> set[str]:

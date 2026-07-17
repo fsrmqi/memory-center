@@ -22,6 +22,10 @@
 - `mc_start` 自动记录 Git 分支、HEAD 和脏文件数量；`mc_close`、`work-close` 和 HTTP close 接口可记录已执行验证命令的脱敏摘要、退出码与状态。
 - session summary 新增 `evidence_chain`，关联起始/结束代码版本、验证结论和 outcome；不会执行外部传入命令，非 Git 工作空间保持兼容降级。
 
+### 后台任务进度
+
+- workspace job 升级为版本化阶段进度，持久化 `progress` 和有界 `progress_events`；reindex 会上报扫描、解析、图谱、语义、检索和发布阶段，失败状态返回脱敏诊断。
+
 ### 4.1.4 交互历史与效果闭环
 
 - 新增脱敏交互历史：MCP 调用记录 trace/thread/turn、工具版本和索引 generation；Host Hook 可记录用户提示、编辑前检查和会话收尾等事件，不保存原始正文、源码或 payload。

@@ -9,8 +9,8 @@ from memory_center.core.tasks.artifacts import write_task_evidence_chunk
 from memory_center.core.workspace.jobs import cancel_workspace_job, submit_workspace_job, workspace_job_status
 
 
-def analysis_job_status(workspace_file: str, job_id: str) -> dict[str, Any]:
-    return workspace_job_status(workspace_file, job_id)
+def analysis_job_status(workspace_file: str, job_id: str = "", *, limit: int = 20) -> dict[str, Any]:
+    return workspace_job_status(workspace_file, job_id, limit=limit)
 
 
 def cancel_analysis_job(workspace_file: str, job_id: str) -> dict[str, Any]:
