@@ -9,9 +9,10 @@ from typing import Any
 
 from filelock import FileLock
 
-from memory_center.core.indexing.reindex import parse_java_symbols, safe_read
-from memory_center.core.storage.graph import GraphEdge, GraphNode, GraphStore, edge_id, node_id
+from memory_center.core.indexing.reindex import reindex_workspace
+from memory_center.core.storage.graph import GraphStore
 from memory_center.core.storage.workspace import WorkspaceStore
+from memory_center.core.workspace.config import load_workspace_config
 
 from .coordinator import RefreshCoordinator
 
@@ -31,10 +32,19 @@ def refresh_query_targets(workspace_file: str | Path, query: str, limit: int = M
 
 
 def _refresh_query_targets(store: WorkspaceStore, query: str, limit: int) -> dict[str, Any]:
+    """Refresh bounded paths through the canonical partial reindex pipeline.
+
+    The refresh path must not maintain a smaller, independent graph writer.
+    A partial reindex updates every deterministic index and recreates the full
+    set of graph facts for a file, including endpoints, Feign, MQ and config
+    relationships. It also reconciles paths which were added or deleted since
+    the previous index generation.
+    """
     started = time.perf_counter()
     manifest = store.read_json(MANIFEST_FILE, {}) or {}
     dirty_rows = store.read_jsonl_prefer_backend(DIRTY_JOURNAL_FILE, limit=200)
     files = store.read_json_prefer_backend("file-index.json", [])
+    config = load_workspace_config(store.workspace_file)
     tokens = [part.lower() for part in query.replace("#", " ").replace(".", " ").split() if len(part) > 2]
     candidates: list[dict[str, Any]] = []
     closure_paths: list[str] = []
@@ -58,85 +68,105 @@ def _refresh_query_targets(store: WorkspaceStore, query: str, limit: int) -> dic
             candidates.append(item)
     dirty_paths = {str(row.get("path", "") or "") for row in dirty_rows}
     candidates.extend(item for item in files if str(item.get("path", "") or "") in dirty_paths)
+    candidates.extend({"path": path} for path in dirty_paths)
     candidates.extend({"path": path} for path in closure_paths)
 
     by_path = {str(item.get("path", "")): item for item in files}
-    selected: list[dict[str, Any]] = []
+    selected_paths: list[str] = []
     for candidate in candidates:
         path = str(candidate.get("path", "") or "")
-        item = by_path.get(path, candidate)
-        if path and item not in selected:
-            selected.append(item)
-        if len(selected) >= min(MAX_REFRESH_FILES, max(1, limit)):
+        if path and path not in selected_paths:
+            selected_paths.append(path)
+        if len(selected_paths) >= min(MAX_REFRESH_FILES, max(1, limit)):
             break
 
-    refreshed: list[str] = []
+    refresh_paths: list[str] = []
     checked: list[str] = []
-    graph_mtime = store.graph_db_path.stat().st_mtime_ns if store.graph_db_path.exists() else 0
-    for item in selected:
-        abs_path = Path(str(item.get("abs_path", "") or ""))
-        rel = str(item.get("path", "") or "")
-        if not abs_path.exists() or abs_path.suffix != ".java":
+    states: dict[str, dict[str, Any]] = {}
+    for rel in selected_paths:
+        item = by_path.get(rel, {})
+        abs_path = Path(str(item.get("abs_path", "") or "")) if item else _resolve_workspace_path(config, rel)
+        if abs_path is None:
             continue
         checked.append(rel)
         version = manifest.get(rel, {}) if isinstance(manifest, dict) else {}
-        indexed_mtime = int(version.get("mtime_ns", item.get("source_mtime_ns", graph_mtime)) or graph_mtime)
-        stat = abs_path.stat()
-        if stat.st_mtime_ns <= indexed_mtime and stat.st_size == int(version.get("size", item.get("source_size", stat.st_size)) or stat.st_size):
+        state = _source_state(abs_path)
+        states[rel] = state
+        if _manifest_matches(version, state):
             continue
-        generation = int(version.get("generation", 0) or 0) + 1
-        content_hash = _refresh_java_graph(store, item, abs_path, generation)
-        manifest[rel] = {"mtime_ns": stat.st_mtime_ns, "size": stat.st_size, "content_hash": content_hash, "generation": generation}
-        refreshed.append(rel)
-    if refreshed:
+        if not version and _indexed_state_matches(item, state):
+            continue
+        refresh_paths.append(rel)
+
+    if refresh_paths:
+        reindex_workspace(config, store, paths=refresh_paths)
+        with GraphStore(store.graph_db_path) as graph:
+            for rel in refresh_paths:
+                previous = manifest.get(rel, {}) if isinstance(manifest, dict) else {}
+                manifest[rel] = {
+                    **states[rel],
+                    "generation": int(previous.get("generation", 0) or 0) + 1,
+                }
+                graph.record_file_generation(rel, manifest[rel]["generation"], str(states[rel].get("content_hash", "")))
         store.write_json(MANIFEST_FILE, manifest)
     return {
         "checked": len(checked),
-        "refreshed": bool(refreshed),
-        "files": refreshed,
+        "refreshed": bool(refresh_paths),
+        "files": refresh_paths,
         "elapsed_ms": round((time.perf_counter() - started) * 1000, 2),
         "mode": "targeted_overlay",
         "coalesced": False,
-        "generation": {path: manifest[path]["generation"] for path in refreshed},
+        "generation": {path: manifest[path]["generation"] for path in refresh_paths},
         "dependency_closure": {"paths": sorted(set(closure_paths))[:24], "depth": 1},
     }
 
 
-def _refresh_java_graph(store: WorkspaceStore, item: dict[str, Any], source: Path, generation: int) -> str:
-    project = str(item.get("project", "") or "")
-    rel = str(item.get("path", "") or "")
-    source_text = safe_read(source)
-    content_hash = sha256(source_text.encode("utf-8", errors="replace")).hexdigest()
-    symbol = parse_java_symbols(project, rel, source_text)
-    raw = symbol.__dict__
-    file_id = node_id("File", rel)
-    nodes = [GraphNode(file_id, "File", Path(rel).name, project, rel, metadata={**item, "source_mtime_ns": source.stat().st_mtime_ns, "source_size": source.stat().st_size, "generation": generation, "content_hash": content_hash, "hot_refreshed": True})]
-    edges: list[GraphEdge] = []
-    for cls in raw.get("classes", []) + raw.get("interfaces", []):
-        class_id = node_id("Class", project, cls)
-        nodes.append(GraphNode(class_id, "Class", cls, project, rel, int(raw.get("class_lines", {}).get(cls, 0) or 0), metadata={"hot_refreshed": True}))
-        edges.append(GraphEdge(edge_id("DECLARES", file_id, class_id), file_id, class_id, "DECLARES"))
-        for method in raw.get("methods", []):
-            method_id = node_id("Method", project, cls, method)
-            nodes.append(GraphNode(method_id, "Method", f"{cls}.{method}", project, rel, int(raw.get("method_lines", {}).get(method, 0) or 0), metadata={"method": method, "hot_refreshed": True}))
-            edges.append(GraphEdge(edge_id("DECLARES", class_id, method_id), class_id, method_id, "DECLARES"))
-        for injection in raw.get("bean_injections", []):
-            target_type = str(injection.get("type", "") or "")
-            if target_type:
-                target_id = node_id("Class", project, target_type)
-                edges.append(GraphEdge(edge_id("INJECTS_BEAN", class_id, target_id), class_id, target_id, "INJECTS_BEAN", 0.8, {"hot_refreshed": True}))
-        for call in raw.get("method_calls", []):
-            method_name = str(call.get("method_name", "") or "")
-            target_class = str(call.get("receiver_type", "") or cls)
-            owner_method = str(call.get("owner_method", "") or "")
-            source_method = owner_method.split(".")[-1] if owner_method else ""
-            if method_name and source_method:
-                source_id = node_id("Method", project, cls, source_method)
-                target_id = node_id("Method", project, target_class, method_name)
-                edges.append(GraphEdge(edge_id("CALLS_METHOD", source_id, target_id), source_id, target_id, "CALLS_METHOD", 0.55, {"hot_refreshed": True, "resolution_level": "targeted_heuristic"}))
-    with GraphStore(store.graph_db_path) as graph:
-        graph.replace_file_subgraph(rel, nodes, edges, generation=generation, content_hash=content_hash)
-    return content_hash
+def _resolve_workspace_path(config: Any, logical_path: str) -> Path | None:
+    """Resolve a workspace logical path, including files absent from file-index."""
+    normalized = logical_path.replace("\\", "/").strip("/")
+    for service in config.services:
+        prefix = config.service_logical_prefix(service)
+        if normalized == prefix:
+            return config.resolve_service_path(service)
+        if normalized.startswith(prefix + "/"):
+            return config.resolve_service_path(service) / normalized[len(prefix) + 1 :]
+    return None
+
+
+def _manifest_matches(version: dict[str, Any], state: dict[str, Any]) -> bool:
+    if version.get("status", "present") != state["status"]:
+        return False
+    if state["status"] == "deleted":
+        return bool(version)
+    return (
+        int(version.get("mtime_ns", -1) or -1) == state["mtime_ns"]
+        and int(version.get("size", -1) or -1) == state["size"]
+        and str(version.get("content_hash", "")) == state["content_hash"]
+    )
+
+
+def _source_state(path: Path) -> dict[str, Any]:
+    """Capture a stable source fingerprint; concurrent removal is a deletion."""
+    try:
+        stat = path.stat()
+        return {
+            "status": "present",
+            "mtime_ns": stat.st_mtime_ns,
+            "size": stat.st_size,
+            "content_hash": sha256(path.read_bytes()).hexdigest(),
+        }
+    except OSError:
+        return {"status": "deleted"}
+
+
+def _indexed_state_matches(item: dict[str, Any], state: dict[str, Any]) -> bool:
+    """Use the full-index file metadata as the baseline before first refresh."""
+    if not item or state["status"] != "present":
+        return False
+    return (
+        int(item.get("source_mtime_ns", -1) or -1) == state["mtime_ns"]
+        and int(item.get("source_size", -1) or -1) == state["size"]
+    )
 
 
 def record_dirty_files(workspace_file: str | Path, paths: list[str], source: str = "watcher") -> dict[str, Any]:

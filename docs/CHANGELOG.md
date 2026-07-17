@@ -8,6 +8,12 @@
 
 ## Unreleased
 
+### 4.1.1 定向刷新一致性修复
+
+- 定向刷新统一委托正式的按路径局部重建，避免刷新后丢失 API、Feign、MQ、配置与图谱关系。
+- dirty journal 现在可处理新增与删除源码文件；首次查询刷新继续以全量索引元数据为基线，避免无变更邻居被重复重建。
+- 保持热刷新 file generation 诊断，并新增 Controller Endpoint 保留、新增文件和删除文件的回归测试。
+
 ### Core Domain Layout and Query Reliability / Core 领域规整与查询可靠性
 
 - 修复 `memory_query` 在普通查询路径引用未定义项目作用域、导致 `mc_lookup(mode="query")` 崩溃的问题。

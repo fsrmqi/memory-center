@@ -562,6 +562,15 @@ class GraphStore:
             row = conn.execute("SELECT file_path,generation,content_hash,updated_at FROM file_generations WHERE file_path=?", (file_path,)).fetchone()
         return dict(row) if row else None
 
+    def record_file_generation(self, file_path: str, generation: int, content_hash: str = "") -> None:
+        """Record a successful bounded refresh without replacing graph facts."""
+        with self.connect() as conn:
+            conn.execute(
+                "INSERT INTO file_generations(file_path,generation,content_hash,updated_at) VALUES(?,?,?,strftime('%s','now')) "
+                "ON CONFLICT(file_path) DO UPDATE SET generation=excluded.generation,content_hash=excluded.content_hash,updated_at=excluded.updated_at",
+                (file_path, generation, content_hash),
+            )
+
     def _upsert_search_rows(self, node_dicts: Iterable[GraphNode]) -> None:
         """Insert/update FTS rows for a subset of nodes."""
         with self.connect() as conn:
