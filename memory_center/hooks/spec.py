@@ -70,9 +70,10 @@ DEFAULT_HOOKS = {
             "async": True,
         },
         "user_prompt_submit": {
-            "enabled": False,
+            "enabled": True,
             "facade": "mc_start",
             "mode": "suggest",
+            "record_only": True,
             "prompt_template": (
                 "The user submitted a prompt. Always treat this hook as advisory only: "
                 "do not block, stop, or deny the operation solely because the prompt is short, "

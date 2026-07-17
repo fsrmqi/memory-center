@@ -46,9 +46,10 @@ hooks:
     async: true
 
   user_prompt_submit:
-    enabled: false
+    enabled: true
     facade: mc_start
-    mode: suggest               # suggest = inject prompt, no shell command
+    mode: suggest               # record_only 时仅记录，不注入提示、不阻塞
+    record_only: true
     prompt_template: |
       The user submitted a prompt. Always treat this hook as advisory only:
       do not block, stop, or deny the operation solely because the prompt is short,

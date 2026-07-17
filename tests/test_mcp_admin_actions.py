@@ -53,6 +53,10 @@ def test_build_admin_registry_lists_known_actions() -> None:
         "regression_alerts",
         "verification_loop",
         "explanation",
+        "interaction_record",
+        "interaction_effects",
+        "interaction_effects_refresh",
+        "active_session_bindings",
     }
     missing = expected - names
     assert not missing, f"missing actions: {missing}"
@@ -123,3 +127,23 @@ def test_task_health_actions_dispatch_through_registry(tmp_path: Path) -> None:
     assert resume_check["workflow"] == "task-resume-check"
     assert resume_check["task_id"] == task["task_id"]
     assert "recommended_next_step" in resume_check
+
+
+def test_interaction_actions_dispatch_through_registry(tmp_path: Path) -> None:
+    from tests.fixtures import setup_demo_workspace
+
+    wf = str(setup_demo_workspace(tmp_path))
+    reg = build_admin_registry(
+        workspace_file=wf,
+        session_id="session-admin-history",
+        payload='{"event_type":"tool_call","tool_name":"Read","query":"token=private"}',
+    )
+
+    recorded = reg.dispatch("interaction_record")
+    effects = reg.dispatch("interaction_effects")
+    refreshed = reg.dispatch("interaction_effects_refresh")
+
+    assert recorded["recorded"] is True
+    assert "private" not in recorded["event"]["interaction"]["query"]
+    assert effects["host_interactions"]["total"] == 1
+    assert refreshed["host_interactions"]["total"] == 1

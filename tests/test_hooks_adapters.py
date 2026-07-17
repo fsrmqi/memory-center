@@ -15,14 +15,14 @@ def _setup_workspace(tmp_path: Path) -> str:
     from tests.fixtures import setup_demo_workspace
     return str(setup_demo_workspace(tmp_path, ensure_hooks=True))
 
-def test_claude_code_adapter_generates_3_hook_types(tmp_path: Path):
+def test_claude_code_adapter_generates_prompt_recording_hook(tmp_path: Path):
     ws = _setup_workspace(tmp_path)
     config = load_hooks_config(ws)
     hooks = generate_claude_code_hooks(ws, config)
     assert "SessionStart" in hooks
     assert "PreToolUse" in hooks
     assert "Stop" in hooks
-    assert "UserPromptSubmit" not in hooks
+    assert "UserPromptSubmit" in hooks
 
 
 def test_claude_code_adapter_session_start_is_command(tmp_path: Path):
@@ -48,11 +48,11 @@ def test_claude_code_adapter_pre_edit_has_matcher(tmp_path: Path):
     assert "run-hook" in hook["command"]
 
 
-def test_claude_code_adapter_skips_user_prompt_submit(tmp_path: Path):
+def test_claude_code_adapter_includes_record_only_user_prompt_submit(tmp_path: Path):
     ws = _setup_workspace(tmp_path)
     config = load_hooks_config(ws)
     hooks = generate_claude_code_hooks(ws, config)
-    assert "UserPromptSubmit" not in hooks
+    assert hooks["UserPromptSubmit"][0]["hooks"][0]["type"] == "command"
 
 
 def test_claude_code_adapter_skips_off_mode(tmp_path: Path):
@@ -107,7 +107,7 @@ def test_codex_adapter_generates_scripts(tmp_path: Path):
         content = script.read_text(encoding="utf-8")
         assert "memory-center" in content or "suggest" in content
     names = {script.name for script in scripts}
-    assert "mc_prompt_submit.sh" not in names
+    assert "mc_prompt_submit.sh" in names
 
 
 def test_codex_adapter_skips_enabled_false(tmp_path: Path):

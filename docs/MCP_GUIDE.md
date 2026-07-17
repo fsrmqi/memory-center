@@ -99,8 +99,20 @@ MCP 当前公开的是 12 个 task-level tools：
 - MCP server 暴露 `memory-center://startup-diagnostics` resource，用于查看启动时解析到的 workspace、MCP 绑定状态和下一步修复建议。
 - 每次 MCP 工具调用都会自动记录到 `.memory-center/memory/mcp-invocations.jsonl`，仅保留工具名、脱敏参数摘要、耗时、状态、结果规模与可选 session/task 关联，不保存完整请求或响应。`mc_start` 创建的 session 会自动关联同一 MCP 进程后的调用，并同步为 `tool_call` session event，供 replay、采纳分析和后续验证使用。
 - Every MCP tool call is automatically recorded in `.memory-center/memory/mcp-invocations.jsonl`. The audit log keeps only tool name, redacted input summary, duration, status, result size, and optional session/task linkage. Calls following `mc_start` reuse its session in the same MCP process and are mirrored as `tool_call` session events for replay and verification.
+- 审计记录默认只保留最近 30 天且最多 100,000 条；首次调用、每 5 分钟或达到条数上限时自动清理，并同步清理本地 SQLite 镜像。
+- Audit records retain the latest 30 days and at most 100,000 entries. Cleanup runs on the first call, every five minutes, or when the entry limit is reached, and also prunes the local SQLite mirror.
+- 历史生命周期分层执行：MCP 与宿主原始交互保留 30 天，session event 保留 90 天，session summary 保留 365 天，均最多 100,000 条；case、任务工件和聚合效果摘要不按此规则删除。
+- History lifecycle is tiered: raw MCP and host interactions retain 30 days, session events retain 90 days, and session summaries retain 365 days, each capped at 100,000 entries. Cases, task artifacts, and aggregate effect summaries are not removed by this policy.
 - 可通过 `mc_admin(action="backend_query", collection="mcp-invocations.jsonl", limit=20)` 查看最近审计记录。
 - Use `mc_admin(action="backend_query", collection="mcp-invocations.jsonl", limit=20)` to inspect recent audit records.
+- 宿主 Hook 会自动记录 session_start、pre_edit、session_stop 等交互元数据到 `host-interactions.jsonl`；只保存白名单字段和脱敏预览，不保存对话正文、文件内容或 payload。宿主可通过 `mc_admin(action="interaction_record", session_id="...", payload="{...}")` 补记其他工具事件。
+- Host hooks automatically record metadata for session_start, pre_edit, and session_stop in `host-interactions.jsonl`. Only allowlisted metadata and redacted previews are retained; dialogue bodies, file contents, and payloads are excluded. Hosts can record additional tool events with `mc_admin(action="interaction_record", session_id="...", payload="{...}")`.
+- 默认 `user_prompt_submit` Hook 是 `record_only`：只记录脱敏的用户提示预览，不向宿主注入额外提示、不阻塞请求，也不会触发 `mc_start`。
+- The default `user_prompt_submit` hook is `record_only`: it stores a redacted user-prompt preview without injecting guidance, blocking the request, or invoking `mc_start`.
+- 设置 `MEMORY_CENTER_THREAD_ID`（可选 `MEMORY_CENTER_TRACE_ID`、`MEMORY_CENTER_TURN_ID`）后，MCP 会持久化 thread 到 session 的绑定；重启 MCP 进程后同一 thread 仍会自动续接。`mc_admin(action="active_session_bindings")` 可查看当前绑定。
+- With `MEMORY_CENTER_THREAD_ID` (and optional `MEMORY_CENTER_TRACE_ID` / `MEMORY_CENTER_TURN_ID`), MCP persists thread-to-session bindings so the same thread resumes after an MCP restart. Use `mc_admin(action="active_session_bindings")` to inspect bindings.
+- `mc_admin(action="interaction_effects")` 汇总调用量、状态、P50/P95、session 关联率、宿主交互覆盖和已关闭会话的验证成功率；`interaction_effects_refresh` 会刷新本地快照。
+- `mc_admin(action="interaction_effects")` summarizes call volume, status, P50/P95, session-link rate, host interaction coverage, and verified success for closed sessions; `interaction_effects_refresh` refreshes the local snapshot.
 - 可在 `.memory-center/templates/method_walkthrough.md` 配置报告模板，支持占位符 `{target_label}`、`{summary_lines}`、`{read_targets}`、`{rule_groups}`、`{mermaid_flow}`、`{performance_risks}`、`{data_scope_guards}`、`{diff_context}`、`{glossary}`、`{next_actions}`。未配置时返回内置 `answer_markdown`，可用 `report_level=brief|standard|deep|risk-focused` 控制默认报告形态。
 - MCP server 的 `--workspace` 可以传 `workspace.yaml` 或项目目录；传目录时会向上寻找 `.memory-center/workspace.yaml`，找不到时保持原入参并由后续工具返回正常错误信息。
 - 可在 `.memory-center/glossary.yaml`、`.memory-center/glossary.yml` 或 `.memory-center/business-glossary.yaml` 配置业务词汇，命中结果会出现在 `glossary_hits`。

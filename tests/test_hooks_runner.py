@@ -103,7 +103,6 @@ def test_run_hook_pre_edit_guard_mode_non_must_passes(tmp_path: Path):
 
 def test_run_hook_user_prompt_submit_suggest_mode(tmp_path: Path):
     ws = _setup_workspace(tmp_path)
-    # Default has user_prompt_submit disabled — enable it for this test
     import yaml
 
     from memory_center.hooks.spec import load_default_hooks
@@ -112,10 +111,12 @@ def test_run_hook_user_prompt_submit_suggest_mode(tmp_path: Path):
     ws_hooks = Path(ws).expanduser().resolve().parent / "hooks.yaml"
     ws_hooks.write_text(yaml.safe_dump(config, allow_unicode=True, sort_keys=False), encoding="utf-8")
     result = run_hook(ws, "user_prompt_submit", {"prompt": "how does Kafka consumer work?"})
-    assert result["mode"] == "suggest"
+    assert result["mode"] == "record_only"
     assert result["exit_code"] == 0
-    assert result["hook_result"]["type"] == "prompt"
-    assert "how does Kafka consumer work?" in result["hook_result"]["prompt"]
+    assert result["hook_result"]["type"] == "recorded"
+    from memory_center.core.storage.workspace import WorkspaceStore
+    event = WorkspaceStore(ws).read_jsonl("host-interactions.jsonl", limit=1)[0]
+    assert event["interaction"]["query"] == "how does Kafka consumer work?"
 
 
 def test_run_hook_unknown_hook(tmp_path: Path):

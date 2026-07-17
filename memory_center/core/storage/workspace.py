@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections import deque
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -58,6 +59,16 @@ def _drop_json_cache(path: Path) -> None:
         _JSON_FILE_CACHE.pop(key, None)
 
 
+def _parse_record_timestamp(value: Any) -> datetime:
+    text = str(value or "").strip()
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    parsed = datetime.fromisoformat(text)
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
 class WorkspaceStore:
     def __init__(self, workspace_file: str | Path):
         self.workspace_file = Path(workspace_file).expanduser().resolve()
@@ -109,6 +120,50 @@ class WorkspaceStore:
                 self.memory_backend().append_record(name, item, record_id=self._infer_record_id(name, item))
             except Exception:
                 pass
+
+    def prune_jsonl(self, name: str, *, created_before: datetime, max_records: int) -> dict[str, int]:
+        """删除过期 JSONL 记录并限制条数，同时清理 SQLite 镜像。"""
+        if max_records < 1:
+            raise ValueError("max_records must be at least 1")
+        path = self.memory_dir / name
+        cutoff = created_before.astimezone(timezone.utc)
+        kept_lines: deque[str] = deque(maxlen=max_records)
+        total = expired = invalid = overflow = 0
+        with FileLock(str(self.lock_file)):
+            if path.exists():
+                for line in path.read_text(encoding="utf-8").splitlines():
+                    if not line.strip():
+                        continue
+                    total += 1
+                    try:
+                        item = json.loads(line)
+                        created_at = _parse_record_timestamp(item.get("created_at", ""))
+                    except (json.JSONDecodeError, TypeError, ValueError):
+                        invalid += 1
+                        continue
+                    if created_at < cutoff:
+                        expired += 1
+                        continue
+                    kept_lines.append(line)
+                overflow = max(0, total - expired - invalid - len(kept_lines))
+                if expired or invalid or overflow:
+                    content = "\n".join(kept_lines)
+                    path.write_text(content + ("\n" if content else ""), encoding="utf-8")
+            try:
+                self.memory_backend().prune_records(
+                    name,
+                    created_before=cutoff.isoformat(),
+                    max_records=max_records,
+                )
+            except Exception:
+                pass
+        return {
+            "total": total,
+            "expired": expired,
+            "invalid": invalid,
+            "overflow": overflow,
+            "kept": len(kept_lines),
+        }
 
     def read_jsonl(self, name: str, limit: int = 50) -> list[dict[str, Any]]:
         path = self.memory_dir / name

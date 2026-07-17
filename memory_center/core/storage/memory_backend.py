@@ -122,6 +122,37 @@ class MemoryBackendStore:
                 ),
             )
 
+    def prune_records(self, collection: str, *, created_before: str, max_records: int) -> dict[str, int]:
+        """删除过期记录，并仅保留指定集合中最新的有限条目。"""
+        if max_records < 1:
+            raise ValueError("max_records must be at least 1")
+        with self.connect() as conn:
+            expired = conn.execute(
+                "DELETE FROM json_records WHERE collection = ? AND created_at < ?",
+                (collection, created_before),
+            ).rowcount
+            total = int(
+                conn.execute(
+                    "SELECT COUNT(*) FROM json_records WHERE collection = ?",
+                    (collection,),
+                ).fetchone()[0]
+            )
+            overflow = max(0, total - max_records)
+            if overflow:
+                conn.execute(
+                    """
+                    DELETE FROM json_records
+                    WHERE id IN (
+                        SELECT id FROM json_records
+                        WHERE collection = ?
+                        ORDER BY id ASC
+                        LIMIT ?
+                    )
+                    """,
+                    (collection, overflow),
+                )
+            return {"expired": max(0, expired), "overflow": overflow, "kept": total - overflow}
+
     def upsert_ref(self, ref_path: str, payload: Any) -> None:
         created_at = ""
         if isinstance(payload, dict):

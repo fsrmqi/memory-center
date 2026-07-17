@@ -36,9 +36,10 @@ def test_default_hooks_modes():
     assert config["hooks"]["user_prompt_submit"]["mode"] == "suggest"
 
 
-def test_default_user_prompt_submit_disabled():
+def test_default_user_prompt_submit_records_without_prompt_injection():
     config = load_default_hooks()
-    assert config["hooks"]["user_prompt_submit"]["enabled"] is False
+    assert config["hooks"]["user_prompt_submit"]["enabled"] is True
+    assert config["hooks"]["user_prompt_submit"]["record_only"] is True
 
 
 def test_default_hooks_facades():

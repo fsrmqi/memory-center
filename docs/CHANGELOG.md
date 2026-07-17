@@ -8,6 +8,19 @@
 
 ## Unreleased
 
+### 4.1.4 交互历史与效果闭环
+
+- 新增脱敏交互历史：MCP 调用记录 trace/thread/turn、工具版本和索引 generation；Host Hook 可记录用户提示、编辑前检查和会话收尾等事件，不保存原始正文、源码或 payload。
+- 新增 `MEMORY_CENTER_THREAD_ID` 驱动的 thread-session 持久绑定，MCP 进程重启后可自动续接同一宿主线程的 session。
+- 新增 `mc_admin(action="interaction_record|interaction_effects|interaction_effects_refresh|active_session_bindings")`，用于补记宿主事件、查看调用 P50/P95、关联率和已关闭会话的验证成功率。
+- 历史数据按层治理：MCP/宿主原始交互 30 天、session event 90 天、session summary 365 天，均最多 100,000 条；JSONL 与 SQLite 镜像同步裁剪。
+- Workbench Usage 页面展示 MCP 调用效果，Backend 页面可筛选 MCP 与宿主交互账本。
+
+### 4.1.3 MCP 审计保留策略
+
+- `mcp-invocations.jsonl` 自动只保留最近 30 天且最多 100,000 条；首次 MCP 调用、每 5 分钟或达到上限时触发维护。
+- 清理会同步裁剪 JSONL 文件和本地 SQLite 镜像，避免已过期调用继续出现在验证查询中。
+
 ### 4.1.2 MCP 调用审计
 
 - 所有公开 MCP 工具自动写入 `mcp-invocations.jsonl`，记录脱敏参数摘要、状态、耗时、结果规模和 session/task 关联，默认不保存请求或响应正文。

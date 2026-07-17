@@ -62,6 +62,7 @@ Memory Center 的核心设计是把这些上下文前置为本地可重建的工
 | Hybrid Retrieval | 融合 exact graph、neighbors、FTS、BM25、semantic、可选 vector | `core/retrieval/*` |
 | Method Walkthrough | 对 `Class#method` 做本地调用、Feign 续链、服务端 Controller/Impl 展开 | `core/walkthrough/*` |
 | Task Memory | 保存 session、case、task space、handoff、write receipt 和 L3 记忆块 | `core/orchestrator/session.py`, `write.py`, `sync.py` |
+| Interaction History | 记录脱敏的 MCP/宿主交互、thread-session 绑定和效果聚合 | `core/audit/interactions.py`, `mcp/runtime.py`, `hooks/runner.py` |
 | Agent Facade | 将复杂能力收敛为 `mc_start`、`mc_lookup`、`mc_analyze` 等任务级接口 | `mcp/server.py`, `core/orchestrator/*` |
 | Quality and Governance | freshness、audit、benchmark、parser precision、runtime diagnostics | `core/freshness/*`, `core/benchmark/*`, `core/audit/*` |
 

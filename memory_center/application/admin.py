@@ -21,6 +21,7 @@ import json
 from typing import Any
 
 from memory_center.application.tasks import execute_task_repair
+from memory_center.core.audit.interactions import build_effect_summary, record_host_interaction, refresh_effect_summary
 from memory_center.core.audit.runtime import audit_agent_runtime
 from memory_center.core.benchmark.trending import check_regression_alerts
 from memory_center.core.contracting.runtime import (
@@ -458,6 +459,10 @@ def build_admin_registry(
         "receipts": lambda: workspace_write_receipts(wf, layer=layer, action=action_filter, scope=scope, task_id=task_id, session_id=session_id, limit=limit),
         "replay": lambda: workspace_replay_write_chain(wf, task_id=task_id, session_id=session_id, limit=limit),
         "backend_query": lambda: memory_backend_query(wf, collection=collection, record_id=record_id, created_after=created_after, ref_path=ref_path, project=project, payload_type=payload_type, limit=limit),
+        "interaction_record": lambda: record_host_interaction(wf, parse_payload(payload) or {}, session_id=session_id, task_id=task_id),
+        "interaction_effects": lambda: build_effect_summary(wf, limit=max(limit, 100)),
+        "interaction_effects_refresh": lambda: refresh_effect_summary(wf),
+        "active_session_bindings": lambda: WorkspaceStore(wf).read_json_prefer_backend("active-session-bindings.json", {}),
         "index_control": lambda: index_control_status(WorkspaceStore(wf)),
         "contract_gate": lambda: workspace_check_contract(wf, name or ref_path or text, action_filter or "modify"),
         "runtime_contract_ingest": lambda: ingest_runtime_contract_samples(wf, list((parse_payload(payload) or {}).get("samples", [])), source=source or "mcp_admin"),

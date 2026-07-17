@@ -611,11 +611,13 @@ def export_timeline_html(workspace_file: str | Path, intent: str = "", limit: in
 
 
 def export_usage_report_html(workspace_file: str | Path, limit: int = 50) -> str:
+    from memory_center.core.audit.interactions import build_effect_summary
     from memory_center.core.orchestrator import memory_backend_query, memory_tool_usage_report
 
     workspace_param = str(Path(workspace_file).resolve())
     sidebar = _nav_sidebar_html(workspace_param)
     report = memory_tool_usage_report(workspace_file, limit=limit)
+    effects = build_effect_summary(workspace_file, limit=max(limit, 100))
     backend = memory_backend_query(workspace_file, collection="session-events.jsonl", limit=min(limit, 10))
     summary = report.get("summary", {}) or {}
     return f"""<!doctype html>
@@ -651,6 +653,7 @@ def export_usage_report_html(workspace_file: str | Path, limit: int = 50) -> str
     <h1>Usage Report</h1>
     <div class="grid">
       <section class="card"><h2>Summary</h2><div class="muted">Total calls: {summary.get('total_tool_calls', 0)}</div><div class="muted">Memory Center ratio: {summary.get('memory_center_ratio', 0)}</div><div class="muted">Bypasses: {summary.get('suspected_bypass_count', 0)}</div><div class="muted">Mirrored session events: {backend.get('records', {}).get('count', 0)}</div></section>
+      <section class="card"><h2>MCP Effects / 调用效果</h2><div class="muted">MCP calls: {effects.get('calls', {}).get('total', 0)}</div><div class="muted">Session link rate: {effects.get('calls', {}).get('session_link_rate', 0)}</div><div class="muted">P95: {effects.get('calls', {}).get('latency_ms', {}).get('p95', 0)} ms</div><div class="muted">Verified success: {effects.get('outcomes', {}).get('verified_success_rate', 0)}</div></section>
       <section class="card"><h2>Adoption Hints</h2>{_render_simple_list_html(report.get('adoption_hints', []))}</section>
       <section class="card"><h2>Bypass Samples</h2>{_render_ref_list_html([{'ref_id': item.get('session_id', ''), 'summary': item.get('reason', '') + ' | ' + str(item.get('query', ''))} for item in report.get('suspected_bypass', [])])}</section>
     </div>
@@ -839,6 +842,8 @@ def export_memory_backend_html(workspace_file: str | Path, limit: int = 20) -> s
       <select name="collection">
         <option value="">All collections</option>
         <option value="session-events.jsonl">session-events.jsonl</option>
+        <option value="mcp-invocations.jsonl">mcp-invocations.jsonl</option>
+        <option value="host-interactions.jsonl">host-interactions.jsonl</option>
         <option value="write-receipts.jsonl">write-receipts.jsonl</option>
         <option value="session-summaries.jsonl">session-summaries.jsonl</option>
         <option value="handoff-history.jsonl">handoff-history.jsonl</option>

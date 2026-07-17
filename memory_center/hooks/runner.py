@@ -11,6 +11,7 @@ import re
 import sys
 from typing import Any
 
+from ..core.audit.interactions import record_host_interaction
 from ..core.orchestrator import (
     group_impact,
     group_query,
@@ -231,10 +232,30 @@ def run_hook(
 
     # Mode: suggest — return prompt template, no command execution
     if mode == "suggest":
-        prompt_template = hook_spec.get("prompt_template", "")
-        arguments = ""
         local_stdin = stdin_json or {}
         arguments = local_stdin.get("prompt") or local_stdin.get("text") or local_stdin.get("content") or ""
+        if hook_spec.get("record_only", False):
+            try:
+                record_host_interaction(
+                    _get_workspace_file(workspace),
+                    {
+                        "event_type": hook_name,
+                        "source": "host_prompt",
+                        "query": arguments,
+                        "thread_id": str(local_stdin.get("thread_id", "") or ""),
+                        "turn_id": str(local_stdin.get("turn_id", "") or ""),
+                    },
+                    session_id=str(local_stdin.get("session_id", "") or ""),
+                )
+            except Exception:
+                pass
+            return {
+                "exit_code": 0,
+                "system_message": "",
+                "hook_result": {"type": "recorded", "event_type": hook_name},
+                "mode": "record_only",
+            }
+        prompt_template = hook_spec.get("prompt_template", "")
         rendered = prompt_template.replace("$ARGUMENTS", arguments)
         return {
             "exit_code": 0,
@@ -283,6 +304,28 @@ def run_hook(
     # Dispatch to facade
     hook_result: Any = None
     system_message = ""
+    workspace_file = _get_workspace_file(workspace)
+    host_tool_name = str(
+        (stdin_json or {}).get("tool_name", "")
+        or ((stdin_json or {}).get("tool_input", {}) or {}).get("tool_name", "")
+        or ""
+    )
+    try:
+        record_host_interaction(
+            workspace_file,
+            {
+                "event_type": hook_name,
+                "source": "host_hook",
+                "tool_name": host_tool_name,
+                "query": intent,
+                "target": target,
+                "thread_id": str((stdin_json or {}).get("thread_id", "") or ""),
+                "turn_id": str((stdin_json or {}).get("turn_id", "") or ""),
+            },
+            session_id=session_id,
+        )
+    except Exception:
+        pass
     try:
         if facade == "mc_start":
             wf = _get_workspace_file(workspace)

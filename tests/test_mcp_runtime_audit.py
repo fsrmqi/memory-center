@@ -1,10 +1,17 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from memory_center.core.orchestrator import workspace_start_session
 from memory_center.core.storage.workspace import WorkspaceStore
-from memory_center.mcp.runtime import MCP_INVOCATIONS_FILE, WorkspaceContext, safe_mcp_tool
+from memory_center.mcp.runtime import (
+    MCP_AUDIT_MAX_RECORDS,
+    MCP_AUDIT_RETENTION_DAYS,
+    MCP_INVOCATIONS_FILE,
+    WorkspaceContext,
+    safe_mcp_tool,
+)
 
 
 class _FakeMcp:
@@ -60,3 +67,49 @@ def test_mcp_call_audit_redacts_unapproved_inputs_and_records_errors(tmp_path: P
     assert invocation["inputs"] == {"action": "session_log"}
     assert "content" not in invocation["inputs"]
     assert "payload" not in invocation["inputs"]
+
+
+def test_mcp_audit_retention_prunes_file_and_backend(tmp_path: Path) -> None:
+    from tests.fixtures import setup_demo_workspace
+
+    workspace = setup_demo_workspace(tmp_path)
+    store = WorkspaceStore(workspace)
+    now = datetime.now(timezone.utc)
+    store.append_jsonl(MCP_INVOCATIONS_FILE, {"tool_name": "expired", "created_at": (now - timedelta(days=31)).isoformat()})
+    for index in range(3):
+        store.append_jsonl(
+            MCP_INVOCATIONS_FILE,
+            {"tool_name": f"recent-{index}", "created_at": (now - timedelta(minutes=3 - index)).isoformat()},
+        )
+
+    summary = store.prune_jsonl(
+        MCP_INVOCATIONS_FILE,
+        created_before=now - timedelta(days=MCP_AUDIT_RETENTION_DAYS),
+        max_records=2,
+    )
+
+    assert (MCP_AUDIT_RETENTION_DAYS, MCP_AUDIT_MAX_RECORDS) == (30, 100_000)
+    assert summary["expired"] == 1
+    assert summary["overflow"] == 1
+    assert [row["tool_name"] for row in store.read_jsonl(MCP_INVOCATIONS_FILE, limit=10)] == ["recent-1", "recent-2"]
+    assert store.memory_backend_query_records(collection=MCP_INVOCATIONS_FILE, limit=10)["total_count"] == 2
+
+
+def test_first_mcp_call_applies_audit_retention(tmp_path: Path) -> None:
+    from tests.fixtures import setup_demo_workspace
+
+    workspace = setup_demo_workspace(tmp_path)
+    store = WorkspaceStore(workspace)
+    store.append_jsonl(
+        MCP_INVOCATIONS_FILE,
+        {"tool_name": "expired", "created_at": (datetime.now(timezone.utc) - timedelta(days=31)).isoformat()},
+    )
+    context = WorkspaceContext(str(workspace))
+
+    @safe_mcp_tool(_FakeMcp(), context)
+    def mc_lookup(query: str):
+        return {"workflow": "mc-lookup", "results": []}
+
+    mc_lookup("ArticleService")
+
+    assert [row["tool_name"] for row in store.read_jsonl(MCP_INVOCATIONS_FILE, limit=10)] == ["mc_lookup"]

@@ -2,16 +2,29 @@
 from __future__ import annotations
 
 import inspect
+import os
 import time
+import uuid
+from datetime import datetime, timedelta, timezone
 from functools import wraps
 from pathlib import Path
 from typing import Any
 
+from memory_center.core.audit.interactions import (
+    bind_active_session,
+    redact_interaction_text,
+    refresh_effect_summary,
+    resolve_active_session,
+    unbind_active_session,
+)
 from memory_center.core.foundation.errors import normalize_exception
 from memory_center.core.governance.registry import load_registry
 from memory_center.core.storage.workspace import WorkspaceStore
 
 MCP_INVOCATIONS_FILE = "mcp-invocations.jsonl"
+MCP_AUDIT_RETENTION_DAYS = 30
+MCP_AUDIT_MAX_RECORDS = 100_000
+MCP_AUDIT_PRUNE_INTERVAL_SECONDS = 300
 _SAFE_MCP_INPUT_FIELDS = (
     "action", "budget", "change_type", "depth", "direction", "intent", "limit",
     "mode", "name", "project", "query", "request_tier", "scope", "target",
@@ -35,7 +48,12 @@ class WorkspaceContext:
         self.workspace_input = workspace_file
         self.workspace_file = resolve_workspace_input(workspace_file)
         self.startup_diagnostics = build_startup_diagnostics(self.workspace_input, self.workspace_file)
-        self.active_session_id = ""
+        self.thread_id = os.environ.get("MEMORY_CENTER_THREAD_ID", "").strip()
+        self.turn_id = os.environ.get("MEMORY_CENTER_TURN_ID", "").strip()
+        self.trace_id = os.environ.get("MEMORY_CENTER_TRACE_ID", "").strip() or uuid.uuid4().hex
+        self.active_session_id = resolve_active_session(self.workspace_file, self.thread_id)
+        self.mcp_audit_entry_count: int | None = None
+        self.mcp_audit_last_pruned_at = 0.0
 
 
 def build_startup_diagnostics(workspace_input: str, workspace_file: str) -> dict[str, Any]:
@@ -160,6 +178,7 @@ def _record_mcp_invocation(
     try:
         inputs = _bound_mcp_inputs(fn, args, kwargs)
         session_id = _resolve_mcp_session_id(workspace_context, inputs, result)
+        store = WorkspaceStore(workspace_context.workspace_file)
         event = {
             "event_type": "mcp_tool_call",
             "tool_name": fn.__name__,
@@ -168,11 +187,25 @@ def _record_mcp_invocation(
             "duration_ms": round((time.perf_counter() - started_at) * 1000, 2),
             "session_id": session_id,
             "task_id": str(inputs.get("task_id", "") or ""),
+            "trace_id": workspace_context.trace_id,
+            "thread_id": workspace_context.thread_id,
+            "turn_id": workspace_context.turn_id,
+            "runtime": _audit_runtime_context(store),
             "inputs": _safe_mcp_inputs(inputs),
             "result": _safe_mcp_result(result),
         }
-        store = WorkspaceStore(workspace_context.workspace_file)
         store.append_jsonl(MCP_INVOCATIONS_FILE, event)
+        _maintain_mcp_audit_retention(workspace_context, store)
+        if fn.__name__ == "mc_close":
+            unbind_active_session(workspace_context.workspace_file, workspace_context.thread_id, session_id)
+            refresh_effect_summary(workspace_context.workspace_file)
+        elif session_id:
+            bind_active_session(
+                workspace_context.workspace_file,
+                workspace_context.thread_id,
+                session_id,
+                workspace_context.trace_id,
+            )
         if session_id and fn.__name__ != "mc_close":
             from memory_center.core.orchestrator.session import workspace_log_session_event
 
@@ -194,6 +227,27 @@ def _record_mcp_invocation(
     except Exception:
         # 审计失败不得改变 MCP 的公开响应和错误语义。
         return
+
+
+def _maintain_mcp_audit_retention(workspace_context: WorkspaceContext, store: WorkspaceStore) -> None:
+    """有界清理 MCP 审计记录，避免每次工具调用扫描整个日志。"""
+    now = time.monotonic()
+    if workspace_context.mcp_audit_entry_count is not None:
+        workspace_context.mcp_audit_entry_count += 1
+    needs_prune = (
+        workspace_context.mcp_audit_entry_count is None
+        or workspace_context.mcp_audit_entry_count > MCP_AUDIT_MAX_RECORDS
+        or now - workspace_context.mcp_audit_last_pruned_at >= MCP_AUDIT_PRUNE_INTERVAL_SECONDS
+    )
+    if not needs_prune:
+        return
+    summary = store.prune_jsonl(
+        MCP_INVOCATIONS_FILE,
+        created_before=datetime.now(timezone.utc) - timedelta(days=MCP_AUDIT_RETENTION_DAYS),
+        max_records=MCP_AUDIT_MAX_RECORDS,
+    )
+    workspace_context.mcp_audit_entry_count = summary["kept"]
+    workspace_context.mcp_audit_last_pruned_at = now
 
 
 def _bound_mcp_inputs(fn: Any, args: tuple[Any, ...], kwargs: dict[str, Any]) -> dict[str, Any]:
@@ -261,4 +315,14 @@ def _safe_mcp_result(result: Any) -> dict[str, Any]:
 
 
 def _safe_mcp_text(value: Any, limit: int = 240) -> str:
-    return " ".join(str(value or "").split())[:limit]
+    return redact_interaction_text(value, limit=limit)
+
+
+def _audit_runtime_context(store: WorkspaceStore) -> dict[str, str]:
+    from memory_center import __version__
+
+    control = store.read_json_prefer_backend("index-control.json", {})
+    return {
+        "memory_center_version": __version__,
+        "index_generation": str(control.get("active_generation", "") or "") if isinstance(control, dict) else "",
+    }

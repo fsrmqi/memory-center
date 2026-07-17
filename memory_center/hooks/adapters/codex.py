@@ -46,9 +46,8 @@ def generate_codex_scripts(
     generated: list[Path] = []
 
     for event_name, spec in hooks_spec.items():
-        # Codex shell wrappers should not inject suggest-style user prompt hooks by
-        # default, otherwise ordinary NL follow-ups can be turned into host-side stops.
-        if event_name == "user_prompt_submit":
+        # 普通 user prompt 不注入建议；record_only 事件仅写入脱敏交互历史。
+        if event_name == "user_prompt_submit" and not spec.get("record_only", False):
             continue
 
         enabled = spec.get("enabled", True)
@@ -59,7 +58,7 @@ def generate_codex_scripts(
         script_name = _EVENT_TO_SCRIPT_NAME.get(event_name, f"mc_{event_name}.sh")
         script_path = output_dir / script_name
 
-        if mode == "suggest":
+        if mode == "suggest" and not spec.get("record_only", False):
             # Suggest mode: output the prompt template via safe heredoc
             prompt = spec.get("prompt_template", "")
             content = f"""#!/bin/bash
