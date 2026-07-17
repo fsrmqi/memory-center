@@ -268,6 +268,17 @@ def status(
     print(workspace_status(workspace, view=view, budget=budget))
 
 
+@app.command("inspect")
+def inspect_cmd(
+    workspace: str = typer.Option(..., help="Path to .memory-center/workspace.yaml"),
+    thread_id: str = typer.Option("", help="Optional host thread id; falls back to MEMORY_CENTER_THREAD_ID."),
+):
+    """Show the effective MCP, Hook, session, history, and index runtime state."""
+    from memory_center.core.audit.inspect import inspect_runtime
+
+    typer.echo(json.dumps(inspect_runtime(workspace, thread_id=thread_id), ensure_ascii=False, indent=2))
+
+
 @app.command()
 def sniff(
     workspace: str = typer.Option(...),
@@ -1302,9 +1313,13 @@ def end_session_cmd(
     session_id: str = typer.Option(...),
     outcome: str = typer.Option(""),
     verified_by: Optional[List[str]] = OPTIONAL_VERIFIED_BY,
+    validation_command: str = typer.Option("", help="Completed validation command; recorded only, never executed."),
+    validation_exit_code: Optional[int] = typer.Option(None, help="Exit code from the completed validation command."),
+    validation_summary: str = typer.Option("", help="Bounded validation result summary."),
+    validation_status: str = typer.Option("", help="passed|failed|skipped|not_run|recorded"),
 ):
     """Finalize one session and generate a summary record."""
-    print(workspace_end_session(workspace, session_id, outcome=outcome, verified_by=verified_by))
+    print(workspace_end_session(workspace, session_id, outcome=outcome, verified_by=verified_by, validation_command=validation_command, validation_exit_code=validation_exit_code, validation_summary=validation_summary, validation_status=validation_status))
 
 
 @app.command("recent-sessions")
@@ -1605,9 +1620,13 @@ def work_close_cmd(
     auto_sync_mode: str = typer.Option("balanced"),
     record_case: bool = typer.Option(True, help="Auto record the suggested case after syncing."),
     verified_by: Optional[List[str]] = OPTIONAL_VERIFIED_BY,
+    validation_command: str = typer.Option("", help="Completed validation command; recorded only, never executed."),
+    validation_exit_code: Optional[int] = typer.Option(None, help="Exit code from the completed validation command."),
+    validation_summary: str = typer.Option("", help="Bounded validation result summary."),
+    validation_status: str = typer.Option("", help="passed|failed|skipped|not_run|recorded"),
 ):
     """Close one task workflow: end session, sync case, optionally record case."""
-    ended = workspace_end_session(workspace, session_id, outcome=outcome, verified_by=verified_by)
+    ended = workspace_end_session(workspace, session_id, outcome=outcome, verified_by=verified_by, validation_command=validation_command, validation_exit_code=validation_exit_code, validation_summary=validation_summary, validation_status=validation_status)
     synced = workspace_sync_case_to_artifacts(workspace, session_id, task_id=task_id, title=title, auto_sync_mode=auto_sync_mode)
     draft = workspace_suggest_case(workspace, session_id)
     recorded = None

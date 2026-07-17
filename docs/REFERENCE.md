@@ -7,6 +7,7 @@
 - `init`
 - `reindex`
 - `status`
+- `inspect`
 - `serve-http`
 
 ### Query / Analysis

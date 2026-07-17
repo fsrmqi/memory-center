@@ -615,10 +615,23 @@ def create_server(workspace_file: str):
         auto_sync_mode: str = "balanced",
         record_case: bool = True,
         verified_by: list[str] | None = None,
+        validation_command: str = "",
+        validation_exit_code: int | None = None,
+        validation_summary: str = "",
+        validation_status: str = "",
     ):
-        """Close a task workflow. Ends session, syncs case to artifacts, suggests case record, and optionally records it to cross-service memory."""
+        """Close a task workflow. Optionally record a completed validation command and result; the command is never executed by this tool."""
         wf = ctx.workspace_file
-        ended = workspace_end_session(wf, session_id, outcome, verified_by)
+        ended = workspace_end_session(
+            wf,
+            session_id,
+            outcome,
+            verified_by,
+            validation_command=validation_command,
+            validation_exit_code=validation_exit_code,
+            validation_summary=validation_summary,
+            validation_status=validation_status,
+        )
         synced = workspace_sync_case_to_artifacts(wf, session_id, task_id=task_id, title=title, auto_sync_mode=auto_sync_mode)
         draft = workspace_suggest_case(wf, session_id)
         recorded = None
@@ -699,7 +712,7 @@ def create_server(workspace_file: str):
         force: bool = False,
         strict: bool = False,
     ):
-        """Admin and utility operations. Action selects sub-operation: status, dashboard, continuity, health, audit, discover, constraint, drill_ref, drill_timeline, drill_task, backend_consistency, artifact_list, artifact_get, artifact_outline, artifact_context, artifact_update, change_log_append, change_log_compact, task_create, task_list, task_health, task_health_all, task_repair_plan, task_repair_apply, task_resume_check, task_resolve, task_get, task_update, task_change_log_append, task_archive, task_auto_archive, task_status, task_activity_touch, session_start, session_log, session_end, session_recent, session_summary, model_profile, handoff_history, write_judge, write_plan, write_execute, receipts, replay, backend_query, eval_write_quality, eval_resume, eval_handoff, eval_regression_suite, eval_index_freshness, eval_tool_adoption, eval_context_weight, eval_workflow_orchestration, eval_token_gain, eval_parser_benchmark, eval_agent_guidance_replay_campaign, eval_java_call_resolution, eval_java_call_resolution_review, eval_java_call_resolution_unresolved, eval_token_benchmark, eval_token_benchmark_trend, tool_usage_report, generate_wiki, generate_skills, group_status, group_query, group_impact, group_chain, method_walkthrough, walkthrough_health, walkthrough_export, eval_walkthrough_quality."""
+        """Admin and utility operations. Action selects sub-operation: status, dashboard, continuity, health, audit, runtime_audit, runtime_inspect, discover, constraint, drill_ref, drill_timeline, drill_task, backend_consistency, artifact_list, artifact_get, artifact_outline, artifact_context, artifact_update, change_log_append, change_log_compact, task_create, task_list, task_health, task_health_all, task_repair_plan, task_repair_apply, task_resume_check, task_resolve, task_get, task_update, task_change_log_append, task_archive, task_auto_archive, task_status, task_activity_touch, session_start, session_log, session_end, session_recent, session_summary, model_profile, handoff_history, write_judge, write_plan, write_execute, receipts, replay, backend_query, eval_write_quality, eval_resume, eval_handoff, eval_regression_suite, eval_index_freshness, eval_tool_adoption, eval_context_weight, eval_workflow_orchestration, eval_token_gain, eval_parser_benchmark, eval_agent_guidance_replay_campaign, eval_java_call_resolution, eval_java_call_resolution_review, eval_java_call_resolution_unresolved, eval_token_benchmark, eval_token_benchmark_trend, tool_usage_report, generate_wiki, generate_skills, group_status, group_query, group_impact, group_chain, method_walkthrough, walkthrough_health, walkthrough_export, eval_walkthrough_quality."""
         wf = ctx.workspace_file
         from memory_center.application.admin import build_admin_registry
         registry = build_admin_registry(

@@ -4,6 +4,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from memory_center.core.audit.snapshots import (
+    build_session_evidence_chain,
+    capture_git_snapshot,
+    normalize_validation_snapshot,
+)
 from memory_center.core.storage.workspace import WorkspaceStore
 
 from ..tasks.receipts import build_write_receipt, persist_write_receipt
@@ -53,7 +58,7 @@ def workspace_start_session(
         "workspace": config.workspace,
         "event_type": "session_start",
         "intent": intent,
-        "payload": metadata or {},
+        "payload": {**(metadata or {}), "code_snapshot": capture_git_snapshot(workspace_file)},
     }
     store.append_jsonl(SESSION_EVENTS_FILE, item)
     # E-05: Connect-time catch-up — include freshness info
@@ -94,6 +99,7 @@ def workspace_start_session(
         "freshness": freshness_info,
         "context_pack_hint": context_pack_hint,
         "workflow_recommendation": workflow_recommendation,
+        "code_snapshot": item["payload"]["code_snapshot"],
     }
 
 
@@ -189,13 +195,35 @@ def workspace_end_session(
     session_id: str,
     outcome: str = "",
     verified_by: list[str] | None = None,
+    validation_command: str = "",
+    validation_exit_code: int | None = None,
+    validation_summary: str = "",
+    validation_status: str = "",
 ) -> dict[str, Any]:
     config, store = load_context(workspace_file)
+    validation = normalize_validation_snapshot(
+        command=validation_command,
+        exit_code=validation_exit_code,
+        summary=validation_summary,
+        status=validation_status,
+    )
+    if verified_by and validation["status"] == "not_run":
+        validation = {
+            **validation,
+            "status": "passed",
+            "verified": True,
+            "verification_source": "human_confirmation",
+        }
     workspace_log_session_event(
         workspace_file,
         session_id,
         "session_end",
-        {"outcome": outcome, "verified_by": verified_by or []},
+        {
+            "outcome": outcome,
+            "verified_by": verified_by or [],
+            "code_snapshot": capture_git_snapshot(workspace_file),
+            "validation": validation,
+        },
     )
     events = _session_events(store, session_id)
     summary = _build_session_summary(config.workspace, session_id, events, outcome, verified_by or [])
@@ -205,6 +233,7 @@ def workspace_end_session(
         "session_id": session_id,
         "workspace": config.workspace,
         "summary": summary,
+        "evidence_chain": summary["evidence_chain"],
     }
 
 
@@ -450,6 +479,7 @@ def _build_session_summary(
                 notable_terms.append(value)
     unique_tools = list(dict.fromkeys(tool_calls))
     summary_text = outcome or _summary_text(intent, unique_tools, files, projects, event_types)
+    evidence_chain = build_session_evidence_chain(events, outcome)
     return {
         "session_id": session_id,
         "workspace": workspace,
@@ -463,6 +493,7 @@ def _build_session_summary(
         "verified_by": verified_by,
         "summary": summary_text,
         "notable_terms": notable_terms[-10:],
+        "evidence_chain": evidence_chain,
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
 

@@ -46,6 +46,12 @@ MCP 当前公开的是 12 个 task-level tools：
 
 `mc_lookup` 的 `cross_shard_fusion` 是可直接用于决策的融合结果：`generation.consistent` 必须为 `true` 才应将索引结论当作事实；`contract_consistency.overall="attention"` 时，应继续调用 `mc_analyze(depth="full")`。融合质量门禁使用 `mc_admin(action="eval_cross_shard_fusion", payload='{"cases":[{"query":"...","expected_projects":["..."]}]}')`，检查服务选择、generation 一致性和结论可解释性。
 
+查询结果、推理项、图边和质量摘要会追加四级 `evidence_level`：`EXTRACTED`、`INFERRED`、`AMBIGUOUS`、`VERIFIED`。其中 `VERIFIED` 只接受显式验证状态；`_meta.evidence_level` 仍是旧的来源/处理阶段标识，调用方不得将其当作结论验证等级。
+
+运行 `memory-center inspect --workspace <workspace.yaml>` 可在不暴露私有路径、原始提示词或会话 ID 的前提下，集中查看实际生效的 MCP 版本、AGENTS、Hook、线程会话绑定、交互保留策略、索引代际和修复建议。HTTP 可调用 `/workspace/inspect`；MCP 可调用 `mc_admin(action="runtime_inspect")`，并通过 `payload` 传入可选的宿主 thread ID。
+
+`mc_start` 会追加 Git 分支、HEAD 和脏文件数量快照；`mc_close` 可追加已经执行过的 `validation_command`、`validation_exit_code`、`validation_summary` 和 `validation_status`。Memory Center 只记录脱敏摘要，绝不执行传入的验证命令；会话 summary 的 `evidence_chain` 会关联起始/结束代码版本、验证结果与 outcome。非 Git 工作空间或未提供验证结果时自动降级，不阻断关闭流程。
+
 契约语义校验使用 `mc_admin(action="contract_gate", name="SomeRequestDto.java")`，返回 `semantic_compatibility.status`：`pass`、`attention` 或 `block`。`mc_analyze(depth="full", target="...", task_id="...")` 自动执行同一校验并可将完整报告写为任务 evidence。guard 模式 pre-edit hook 遇到 `block` 会拒绝编辑；release gate 在索引存在契约快照时失败。
 
 运行时样本通过 `mc_admin(action="runtime_contract_ingest", payload="...")` 导入，payload 应只包含 `samples` 元数据数组，禁止业务 payload/body/header/message。用 `runtime_contract_migration` 登记双读/双写迁移，用 `runtime_contract_gate` 获取活跃流量兼容结论；传 `task_id` 会将该报告保存为任务 evidence。release gate 仅在存在样本时增加运行时契约组件。

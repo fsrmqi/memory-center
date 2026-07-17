@@ -9,6 +9,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from memory_center.core.assessment.quality import evidence_level_for
+from memory_center.core.knowledge.ontology import edge_strength
+
 from .metadata import metadata_json as _metadata_json
 
 # Pre-compiled regex for _sanitize_fts_term (P1 performance)
@@ -165,7 +168,7 @@ class GraphStore:
                 edge.target_id,
                 edge.type,
                 edge.confidence,
-                _metadata_json(edge.metadata),
+                _metadata_json(_edge_metadata(edge.type, edge.metadata)),
             )
             for edge in edges
         ]
@@ -230,7 +233,7 @@ class GraphStore:
             if edge_list:
                 edge_rows = [
                     (edge.id, edge.source_id, edge.target_id, edge.type, edge.confidence,
-                     _metadata_json(edge.metadata))
+                     _metadata_json(_edge_metadata(edge.type, edge.metadata)))
                     for edge in edge_list
                 ]
                 conn.executemany(
@@ -524,7 +527,7 @@ class GraphStore:
                 conn.execute(
                     "INSERT INTO edges(id,source_id,target_id,type,confidence,metadata_json) VALUES(?,?,?,?,?,?) "
                     "ON CONFLICT(id) DO UPDATE SET source_id=excluded.source_id,target_id=excluded.target_id,type=excluded.type,confidence=excluded.confidence,metadata_json=excluded.metadata_json",
-                    (edge.id, edge.source_id, edge.target_id, edge.type, edge.confidence, _metadata_json(edge.metadata)),
+                    (edge.id, edge.source_id, edge.target_id, edge.type, edge.confidence, _metadata_json(_edge_metadata(edge.type, edge.metadata))),
                 )
             try:
                 for node in node_list:
@@ -667,12 +670,16 @@ def _edge_endpoint_line(row: sqlite3.Row, endpoint: str, metadata: dict[str, Any
 
 def _row_edge(row: sqlite3.Row) -> dict[str, Any]:
     metadata = _loads_json(row["metadata_json"])
+    evidence_level = evidence_level_for(
+        metadata, semantic_strength=edge_strength(str(row["type"] or ""))
+    )
     return {
         "id": row["id"],
         "type": row["type"],
         "source_id": row["source_id"],
         "target_id": row["target_id"],
         "confidence": row["confidence"],
+        "evidence_level": evidence_level,
         "metadata": metadata,
         "evidence": metadata.get("evidence", metadata),
         "source": {
@@ -690,3 +697,13 @@ def _row_edge(row: sqlite3.Row) -> dict[str, Any]:
             "line": _edge_endpoint_line(row, "target", metadata),
         },
     }
+
+
+def _edge_metadata(edge_type: str, metadata: dict[str, Any] | None) -> dict[str, Any]:
+    """Persist an additive evidence level on newly written graph edges."""
+    result = dict(metadata or {})
+    result.setdefault(
+        "evidence_level",
+        evidence_level_for(result, semantic_strength=edge_strength(edge_type)),
+    )
+    return result

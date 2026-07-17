@@ -48,7 +48,12 @@ def setup_agent_runtime(workspace_file: str | Path) -> dict[str, Any]:
     }
 
 
-def audit_agent_runtime(workspace_file: str | Path, fix: bool = False) -> dict[str, Any]:
+def audit_agent_runtime(
+    workspace_file: str | Path,
+    fix: bool = False,
+    *,
+    record: bool = True,
+) -> dict[str, Any]:
     """Audit the agent runtime configuration for a workspace.
 
     Checks: hooks config, MCP settings, agent profile, tool access.
@@ -162,7 +167,8 @@ def audit_agent_runtime(workspace_file: str | Path, fix: bool = False) -> dict[s
         "workspace_shape_risk_level": workspace_shape.get("risk_level", "low"),
         "suggested_fix_count": len(suggested_fixes),
     }
-    store.append_jsonl(AUDIT_LOG_FILE, audit_record)
+    if record:
+        store.append_jsonl(AUDIT_LOG_FILE, audit_record)
 
     return {
         "score": max(0, score),

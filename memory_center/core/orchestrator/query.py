@@ -6,7 +6,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from memory_center.core.assessment.quality import build_quality_summary
+from memory_center.core.assessment.quality import build_quality_summary, evidence_level_for
 from memory_center.core.foundation.result_types import attach_facade_metadata
 from memory_center.core.foundation.schemas import with_schema
 from memory_center.core.governance.rules import match_rules
@@ -746,6 +746,8 @@ def memory_query_hybrid(
         quality_evidence.append({
             "confidence": item.get("score", 0.0),
             "evidence_type": "fact" if sources & {"exact", "graph_exact", "direct_lookup"} else "inferred",
+            "evidence_level": item.get("evidence_level", ""),
+            "_is_fallback": bool(item.get("_is_fallback", False)),
         })
     result["_quality"] = build_quality_summary(quality_evidence, freshness_status=freshness_status)
     result["agent_next_steps"] = _build_agent_next_steps_for_query(result, query=query, workspace_file=workspace_file)
@@ -1064,6 +1066,9 @@ def _filter_contracts_by_query(contracts: list, query: str, intent: str) -> list
             enriched["_confidence"] = confidence
             enriched["_match_type"] = match_type
             enriched["_semantic_strength"] = _contract_semantic_strength(confidence)
+            enriched["evidence_level"] = evidence_level_for(
+                enriched, semantic_strength=enriched["_semantic_strength"]
+            )
             enriched["_match_reason"] = _contract_match_reason(match_type, contract, query)
             result.append(enriched)
         return result
@@ -1076,6 +1081,9 @@ def _filter_contracts_by_query(contracts: list, query: str, intent: str) -> list
         enriched["_match_type"] = "fallback"
         enriched["_is_fallback"] = True
         enriched["_semantic_strength"] = "derived"
+        enriched["evidence_level"] = evidence_level_for(
+            enriched, semantic_strength=enriched["_semantic_strength"]
+        )
         enriched["_match_reason"] = "无精确匹配，返回候选契约作为参考"
         fallback.append(enriched)
     return fallback

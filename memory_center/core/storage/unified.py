@@ -451,4 +451,11 @@ def _row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
             d["metadata"] = json.loads(d.pop("metadata_json") or "{}")
         except (json.JSONDecodeError, TypeError):
             d["metadata"] = {}
+    if {"source_id", "target_id", "type"}.issubset(d):
+        from memory_center.core.assessment.quality import evidence_level_for
+        from memory_center.core.knowledge.ontology import edge_strength
+
+        d["evidence_level"] = evidence_level_for(
+            d.get("metadata", {}), semantic_strength=edge_strength(str(d["type"] or ""))
+        )
     return d

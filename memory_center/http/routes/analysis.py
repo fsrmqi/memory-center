@@ -16,6 +16,7 @@ from memory_center.application.analysis import (
     onboarding_tour,
     recommend_workflow,
     runtime_audit,
+    runtime_inspect,
     workflow_profile,
 )
 from memory_center.application.groups import (
@@ -66,6 +67,11 @@ def register_analysis_routes(registry: CommandRegistry) -> None:
         return runtime_audit(rp.workspace())
 
     registry.register("/workspace/runtime-audit", _runtime_audit)
+
+    def _runtime_inspect(rp: RouteParams) -> dict[str, Any]:
+        return runtime_inspect(rp.workspace(), rp.get("thread_id", ""))
+
+    registry.register("/workspace/inspect", _runtime_inspect)
 
     def _eval_golden(rp: RouteParams) -> dict[str, Any]:
         from memory_center.application.golden import run_golden_suite

@@ -14,6 +14,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
+from memory_center.core.assessment.quality import evidence_level_for
 from memory_center.core.indexing.precision import parser_precision_from_workspace
 from memory_center.core.knowledge.ontology import (
     EDGE_SEMANTIC_STRENGTH,
@@ -1025,6 +1026,9 @@ def _result_to_dict(result: RetrievalResult) -> dict[str, Any]:
         "neighbor_count": len(result.neighbors),
         "cross_workspace_refs": result.cross_workspace_refs,
         "semantic_strength": semantic_strength,
+        "evidence_level": evidence_level_for(
+            {"semantic_strength": semantic_strength, "evidence": result.evidence}
+        ),
         "confidence_label": confidence_label,
     }
 

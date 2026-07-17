@@ -7,6 +7,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from memory_center.core.assessment.quality import evidence_level_for
+
 # ---------------------------------------------------------------------------
 # Display rules per semantic strength (D-03 spec)
 # fact:      directly observed — high prominence
@@ -32,6 +34,7 @@ class Explanation:
     next_actions: list[str] = field(default_factory=list)
     related_entities: list[dict[str, Any]] = field(default_factory=list)
     next_refs: list[dict[str, str]] = field(default_factory=list)
+    evidence_level: str = ""  # EXTRACTED | INFERRED | AMBIGUOUS | VERIFIED
 
     def to_compact(self) -> dict[str, Any]:
         """Compact view for token-constrained contexts."""
@@ -39,6 +42,9 @@ class Explanation:
             "subject": self.subject,
             "summary": self.summary,
             "strength": self.semantic_strength,
+            "evidence_level": evidence_level_for(
+                {"evidence_level": self.evidence_level}, semantic_strength=self.semantic_strength
+            ),
             "confidence": round(self.confidence, 2),
             "next_actions": self.next_actions[:3],
             "next_refs": self.next_refs[:3],
@@ -51,6 +57,9 @@ class Explanation:
             "summary": self.summary,
             "evidence": self.evidence,
             "semantic_strength": self.semantic_strength,
+            "evidence_level": evidence_level_for(
+                {"evidence_level": self.evidence_level}, semantic_strength=self.semantic_strength
+            ),
             "confidence": round(self.confidence, 4),
             "persona": self.persona,
             "next_actions": self.next_actions,
@@ -86,6 +95,7 @@ def explanation_entry(
     semantic_strength: str = "inferred",
     confidence: float = 0.5,
     next_actions: list[str] | None = None,
+    evidence_level: str = "",
 ) -> dict:
     """Build a standard explanation dict (D-03 helper)."""
     valid = {"fact", "inferred", "derived"}
@@ -98,6 +108,7 @@ def explanation_entry(
         "next_actions": next_actions or [],
         "next_refs": next_refs or [],
     }
+    entry["evidence_level"] = evidence_level_for(entry, semantic_strength=semantic_strength) if not evidence_level else evidence_level_for({"evidence_level": evidence_level})
     return entry
 
 
@@ -121,12 +132,22 @@ def merge_explanations(explanations: list[dict]) -> dict:
     strength_order = {"fact": 2, "inferred": 1, "derived": 0}
     weakest = min((strength_order.get(e.get("semantic_strength", "inferred"), 1) for e in explanations), default=0)
     strength_map = {2: "fact", 1: "inferred", 0: "derived"}
+    level_order = {"VERIFIED": 3, "EXTRACTED": 2, "INFERRED": 1, "AMBIGUOUS": 0}
+    weakest_level = min(
+        (
+            level_order.get(evidence_level_for(entry), level_order["AMBIGUOUS"])
+            for entry in explanations
+        ),
+        default=level_order["AMBIGUOUS"],
+    )
+    level_map = {value: key for key, value in level_order.items()}
     min_conf = min((e.get("confidence", 0.5) for e in explanations), default=0.5)
     return {
         "subject": " | ".join(e.get("subject", "") for e in explanations if e.get("subject"))[:200],
         "summary": " | ".join(summaries[:5]),
         "evidence": all_evidence[:20],
         "semantic_strength": strength_map.get(weakest, "inferred"),
+        "evidence_level": level_map[weakest_level],
         "confidence": round(min_conf, 3),
         "next_actions": all_actions[:10],
         "next_refs": all_refs[:10],
@@ -142,6 +163,7 @@ def backward_compat_wrapper(old_explanation: dict) -> dict:
         "summary": old_explanation.get("summary", str(old_explanation)),
         "evidence": [],
         "semantic_strength": "inferred",
+        "evidence_level": "INFERRED",
         "confidence": 0.5,
         "next_actions": [],
         "next_refs": [],

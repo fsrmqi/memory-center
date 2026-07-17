@@ -8,6 +8,20 @@
 
 ## Unreleased
 
+### 证据等级
+
+- 查询结果、推理项、图边和质量摘要新增兼容的四级 `evidence_level`：`EXTRACTED`、`INFERRED`、`AMBIGUOUS`、`VERIFIED`；`VERIFIED` 仅由显式验证状态产生，不会因高置信度自动升级。
+- 质量摘要新增 `evidence_level_counts`，保留原有 `evidence_counts` 与 facade `_meta.evidence_level` 的来源语义不变。
+
+### 运行时检查
+
+- 新增 `memory-center inspect`、`/workspace/inspect` 和 `mc_admin(action="runtime_inspect")`，统一输出脱敏的 MCP、AGENTS、Hook、会话绑定、交互历史和索引运行状态，以及可执行的修复建议。
+
+### 会话证据链
+
+- `mc_start` 自动记录 Git 分支、HEAD 和脏文件数量；`mc_close`、`work-close` 和 HTTP close 接口可记录已执行验证命令的脱敏摘要、退出码与状态。
+- session summary 新增 `evidence_chain`，关联起始/结束代码版本、验证结论和 outcome；不会执行外部传入命令，非 Git 工作空间保持兼容降级。
+
 ### 4.1.4 交互历史与效果闭环
 
 - 新增脱敏交互历史：MCP 调用记录 trace/thread/turn、工具版本和索引 generation；Host Hook 可记录用户提示、编辑前检查和会话收尾等事件，不保存原始正文、源码或 payload。

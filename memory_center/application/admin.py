@@ -21,6 +21,7 @@ import json
 from typing import Any
 
 from memory_center.application.tasks import execute_task_repair
+from memory_center.core.audit.inspect import inspect_runtime
 from memory_center.core.audit.interactions import build_effect_summary, record_host_interaction, refresh_effect_summary
 from memory_center.core.audit.runtime import audit_agent_runtime
 from memory_center.core.benchmark.trending import check_regression_alerts
@@ -543,6 +544,7 @@ def build_admin_registry(
         "workflow_recommend": lambda: recommend_workflow_with_learning(wf, text or intent or ""),
         "bundle_export": lambda: generate_agent_bundle(wf, agent=name or "codex"),
         "runtime_audit": lambda: audit_agent_runtime(wf, fix=bool(force)),
+        "runtime_inspect": lambda: inspect_runtime(wf, thread_id=payload or session_id),
         "explanation": lambda: explanation_action(text, persona=intent or "developer"),
         "business_flow": lambda: business_flow_action(wf, name, max_depth),
         "business_flow_impact": lambda: business_flow_impact_action(wf, intent or text, max_depth),

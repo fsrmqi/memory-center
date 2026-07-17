@@ -33,126 +33,31 @@ This file consolidates and replaces the older execution plan, superpowers evolut
 
 当前重点不再是“补一个新工具”，而是把已有能力收敛成更快、更准、更少误导 Agent 的主链路。
 
-### 已完成，不再作为待办 / Completed
+当前未完成方向：
 
-以下能力已经进入当前代码或主文档体系：
-
-- MCP facade：`mc_start`、`mc_lookup`、`mc_analyze`、`mc_sync`、`mc_resume`、`mc_handoff`、`mc_close`、`mc_admin`、`mc_context_pack`、`mc_onboard`、`mc_domain`、`mc_freshness`
-- V3 基础模块：context pack、domain / business flow、freshness、onboarding、presentation、ontology、reasoning、storage
-- Hybrid retrieval：intent detection、policy selection、BM25 / graph / semantic / optional vector fusion
-- 自适应检索策略：`RetrievalPolicy` 已接入 source 执行前，学习权重受边界约束
-- Golden Benchmark：公开 fixture + 私有真实场景 case 支持，含 recall、forbidden hit、latency、token、agent guidance 门禁
-- Java parser differential：regex / tree-sitter 差异评测、fallback diagnostics、critical disagreement 统计
-- Java call resolution benchmark：基于逻辑锚点的 `CALLS_METHOD` 精度门禁，CLI / MCP / HTTP 入口已接入
-- Reasoning pipeline：`_reasoning` additive 字段，区分 fact / inferred / derived 并保留 explanation
-- Completion status：method walkthrough 返回 complete / partial / blocked / stale，指导 Agent 停止或继续补证据
-- Walkthrough 输出分级：`summary / standard / deep`，结构化字段保持不变
-- Candidate paths：`workspace_sniff`、`lookup_hint`、`memory_impact`、`runtime_audit`、`discover` 已有候选路径、推荐路径和学习回流
-- Context Pack / Freshness 推荐：`mc_start` 已返回 context pack / freshness 相关提示
-- Observable dual-read：JSON / JSONL 与 SQLite mirror 的读取来源、fallback 和一致性状态可观测
-- 删除/移动感知增量索引：scoped reconciliation 会清理确定性索引和 graph stale 数据
-- Typed facade metadata：`_meta`、`_quality` 等 additive 元数据保持 dict 兼容
-- Unified observability：reindex / hybrid lookup 结构化记录 duration、outcome、result count，路径类标签脱敏
-- Portable benchmark baseline：支持 median / p95 latency 与 quality regression 比较
-- Vue Workbench：HTTP `/app` 托管，覆盖 dashboard、query、impact、freshness、audit、health 等页面
-
-### 仍未完成 / Still Open
-
-当前真正值得继续做的是：
-
-1. **Java Parser / Call Resolver 真实精度深化**：已有严格门禁和未解析分类报告；持续用真实跨项目 controller / service / feign case 扩充样本并修复明确误判。
-2. **Retrieval / Reasoning 质量运营闭环**：策略、解释、replay、趋势与有界反馈已经落地；下一步是积累真实任务回放并只根据人工验证结果调整权重，减少“看似命中、实际偏题”。
-3. **真实性能基线长期治理**：已有 portable Golden 基线和回归比较，并新增 `release-gate` 将全量重建、冷/热检索、Golden、Java 调用精度和 parser precision 统一为可保存、可比较的发布结论；后续版本必须在真实 workspace 上持续积累并证明不低于基线。
-4. **Workbench 与报告体验产品化**：Health 已展示 benchmark/gate 摘要并可直达 walkthrough；walkthrough 导出时会同时呈现当时的 gate 摘要，形成面向人工复盘的阅读路径。
-5. **真实 workspace 重建可靠性**：reindex 已增加 workspace 级写锁、可恢复运行状态和 Workbench Health 状态展示；后续以实际并发使用数据调整等待策略，而不是扩大 SQLite 重试。
-
-### 最近完成 / Recently Completed
-
-以下事项已在最近一轮代码和真实场景验收中完成，不再作为待办：
-
-1. **CBM 参考设计对齐**：已形成固定参考文档 [docs/references/codebase-memory-mcp.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/references/codebase-memory-mcp.md) 和配套设计收口文档 [docs/benchmarks/P0_INDEX_HOT_PATH_DESIGN.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/benchmarks/P0_INDEX_HOT_PATH_DESIGN.md)。
-2. **Java reindex 性能热点修复**：P1-0 profile 定位的 parser 双轨、`dataclasses.asdict`、graph metadata `json.dumps` 三个热点已在代码中修复，并已在私有 UCAP workspace 上通过 call resolution / golden / performance / doctor / walkthrough gate 验收。
+1. **可信交互历史与图谱可解释性**：统一结论证据等级，补齐运行时检查、会话版本/验证快照、后台任务进度和按需子图导出。
+2. **真实任务质量运营**：积累经过人工验证的任务回放，仅依据确认结果优化检索策略与下一步建议。
+3. **Java 解析与调用解析精度**：从真实未解析分类中补充逻辑锚点样例，只修复可复现的具体误判。
+4. **真实性能与重建可靠性**：持续积累真实工作空间的冷/热查询、增量索引和并发重建数据，使用基准决定优化优先级。
 
 ---
 
 ## 3. 开发优先级 / Development Priorities
 
-### P0-0：CBM 参考设计对齐（已完成）
-
-目标：在动 P0 性能代码前，先把 CBM 的关键工程设计转成 Memory Center 的索引热路径方案。
-
-依据：
-
-- [docs/references/codebase-memory-mcp.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/references/codebase-memory-mcp.md)
-
-任务：
-
-1. 明确本阶段吸收哪些 CBM 思路：RAM-first staging、批量写入、tree-sitter + resolver 分层、FTS/BM25 候选、watcher 增量、graph artifact。
-2. 明确本阶段不做哪些：C 重写、158 语言覆盖、CBM backend provider、复制源码、必选压缩依赖。
-3. 输出一个短设计或直接更新 P0 实施说明，保证 `asdict`、metadata JSON、parser 双轨三个修复能落在同一热路径策略里。
-4. **产出**：[docs/benchmarks/P0_INDEX_HOT_PATH_DESIGN.md](./benchmarks/P0_INDEX_HOT_PATH_DESIGN.md)，已锁定三个修复的共享契约、实施顺序、验收门禁、非目标，并明确 CBM 的 watcher / incremental / FTS / BM25 / resolver 分层在当前代码里已经落地，本阶段只补 Python 热路径与 graph metadata 收口。
-
-验收：
-
-- 文档明确 P0 热点修复顺序和不做事项。**已完成**。
-- 不超过一个工作日，不能变成长期调研。**已完成**。
-- 完成后直接进入 P0 Java reindex 性能热点修复。**已完成,见下**。
-
-### P0：Java reindex 性能热点修复（已完成,真实 UCAP gate 全过）
-
-目标：降低真实 Java workspace 的全量 reindex 时间，同时不牺牲 parser / call resolver 精度。
-
-依据：
-
-- [P0_UCAP_REAL_BENCHMARK.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/benchmarks/P0_UCAP_REAL_BENCHMARK.md)
-- [P1_0_JAVA_PARSING_PROFILE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/benchmarks/P1_0_JAVA_PARSING_PROFILE.md)
-
-任务：
-
-1. `TreeSitterJavaParser.parse` 去掉默认全量 regex 双轨。**已完成**：tree-sitter 成功路径改为只调用 `RegexJavaParser.parse_supplements` 做按需补抽取；`MEMORY_CENTER_PARSER_FULL_DUAL=1` 可一键回退到旧的双轨全量行为。
-2. tree-sitter 成功时只执行必要的轻量补抽取，或在 differential gate 通过后完全跳过 regex。**已完成**：supplements 只抽 `constants` / `method_variable_types` / `bean_injections` / `method_calls` / `dto_field_usages` / `config_usages` / `data_resources`，结构性字段全部由 tree-sitter 提供；regex `parse_supplements` 仍会跑 `_parse_fields` 自愈兜底。
-3. 为 `JavaSymbol` 增加手写浅拷贝 `to_dict()`，避免通用 `dataclasses.asdict` 深递归。**已完成**：键集合、键序、值与 `asdict` 完全一致；`core.models.to_dict` 优先调用对象自带的 `to_dict()`。
-4. 为 graph metadata 序列化增加安全快路径：空 metadata 直接写 `'{}'`，非空再 `json.dumps`。**已完成**：新增 `memory_center/core/storage/metadata.py:metadata_json`，`GraphStore.rebuild` / `bulk_write` / `partial_rebuild` / `_upsert_search_rows`、`retrieval/inverted.py`、`semantic.py` 全部统一调用。
-5. 为三项优化分别补 focused benchmark，不用主观体感判断是否变快。**已完成**：`tests/test_p0_index_hot_path.py` 锁住等价性契约;本地微基准 `to_dict ~97x` / `metadata_json({}) ~19x`;真实 UCAP reindex 一次冷启动从 140.6s → 139.0s(IO 抖动主导,wall-clock 持平),graph 反而多出 ~1.7K 节点(tree-sitter 现在覆盖 `@interface`、interface 常量、wildcard imports);Java call resolution gate / Golden gate / performance gate / doctor / walkthrough 状态全部不退步。
-
-验收：
-
-- parser differential critical disagreement `= 0`
-- Java call resolution gate 不下降
-- Golden anchor recall / edge recall 不下降
-- forbidden hit rate `= 0`
-- 真实场景 reindex 性能不低于当前基线
-- 不提交真实 workspace 生成的 `.memory-center/index`、`.memory-center/memory` 或源码片段
-
-### P1：Java Parser / Call Resolver 真实精度深化（已完成第一轮,持续扩充）
+### P1：Java Parser / Call Resolver 真实精度深化
 
 目标：让 method walkthrough 和跨项目链路在真实 Spring Cloud 场景下更稳。
 
 任务：
 
-1. 从真实 workspace 中选取 10-15 个跨项目 controller 入口，转成只含逻辑锚点的私有 cases。**已完成**：`golden/java-call-resolution-openapi.yaml` 从 15 个 case 扩到 26 个。
-2. 扩展 Java call resolution case schema：覆盖 entry method、same-class private method、Service interface -> Impl、Feign -> Controller、Controller -> Service Impl、mapper / repository 边界。**已完成**：新增 5 类 case（Controller -> ServiceImpl 直接 DI；Controller -> Service interface 多态 dispatch 3 个；ServiceImpl -> Mapper 3 个；ServiceImpl same-class private helper 2 个；static_import 2 个）。
-3. 对每类失败只修一个明确 parser / resolver gap，避免靠宽泛搜索掩盖问题。**已完成第一轮**：发现并修复 `RegexJavaParser` 把 interface 方法声明当 body 导致的 ~13K self-loop 假边（self-loop 12,812 -> 795，-94%）；CALLS_METHOD 总量从 294,230 -> 279,542 抹掉 14,688 条假边。
-4. 将误判样例沉淀为可复跑 case，而不是只修当前文件。**已完成**：`tests/test_p1_call_resolution_and_vector_gate.py` 锁住 interface declaration 自环不重现 + default 方法体仍正常抽取调用 + `enable_vector` schema round-trip + `_sync_retrieval_indexes` 不破坏现有 VectorIndex。
-5. 在 `mc_admin(action="eval_java_call_resolution")`、CLI、HTTP 输出里持续保留失败原因和缺失锚点。**保持现状**：26/26 cases edge_recall=1.0 / high_confidence=1.0 / unresolved=0.0。
-6. 未解析 CALLS_METHOD 已可通过 `eval-java-call-resolution-unresolved`、`/workspace/eval-java-call-resolution-unresolved`、`mc_admin(action="eval_java_call_resolution_unresolved")` 按原因分类，只返回逻辑锚点样本，不返回路径或源码。后续从最大分类开始补真实 case（external API、缺失模块、receiver type、polymorphism dispatch），不得以宽泛 fallback 提高召回率。
+1. 从真实未解析分类中选择最高频且可复现的一类，补充 3-5 个只含逻辑锚点的私有 case。
+2. 每次仅修复一个明确的 parser 或 resolver 缺口，不以宽泛 fallback 换取表面召回率。
+3. 将每个误判转成可复跑 case，并在 CLI、MCP、HTTP 中保留失败原因和缺失锚点。
 
 验收：
 
-- 真实私有 cases anchor recall `>= 0.90` **ok**（26/26 = 1.0）
-- edge recall `>= 0.85` **ok**（1.0）
-- forbidden hit rate `= 0` **ok**
-- 每个失败 case 都能定位到 parser、resolver、graph 或 retrieval 中的具体一层 **ok**（interface self-loop -> parser 层 `_parse_method_calls` bare-call 误匹配 declaration span）
-
-### P1.5：Vector Gate / 向量召回长期门禁（已完成）
-
-目标：把 [P0_5_VECTOR_VALIDATION.md](./benchmarks/P0_5_VECTOR_VALIDATION.md) 在真实 UCAP 上验证过的 vector 收益锁进 long-term golden gate。
-
-任务：
-
-1. `GoldenCase` schema 新增可选 `enable_vector` 字段（默认 False），让 hybrid case 可以显式声明走 ANN 路径。**已完成**。
-2. `golden/cases.yaml` 增加 vector-aware concept query case（Feign 鉴权拦截器、Kafka 消费者解析消息），expected_anchors 指向 method 级真实命中。**已完成**：anchor_recall 0.6444 -> 0.8667。
-3. 修复 `_sync_retrieval_indexes` 在 sparse-only reindex 时悄悄清空 VectorIndex 的 silent regression。**已完成**：`dense_items` 为空时保留现有 vector embeddings。
+- 新增 case 不得降低既有真实 case 的 anchor recall、edge recall 或 forbidden hit 指标。
+- 每个失败 case 都能定位到 parser、resolver、graph 或 retrieval 中的具体一层。
 
 ### P2：Retrieval / Reasoning 质量闭环
 
@@ -160,11 +65,9 @@ This file consolidates and replaces the older execution plan, superpowers evolut
 
 任务：
 
-1. **实现完成，进入真实运营验证**：用真实 session replay 验证 adaptive retrieval policy，不再用 examples 作为主要验收；每个版本至少比较 adoption、bypass、unobservable 和 Golden 指标。
-2. **已完成**：retrieval diagnostics、reasoning explanation、completion status 已收敛为稳定的 `agent_next_steps`。
-3. **已完成**：存在 `absolute_file_path` / `read_targets` 时抑制 `find`、`grep -l` 等重复定位建议，并由 guidance gate 覆盖。
-4. **已完成**：Golden case 支持 full-chain、impact、context（architecture understanding）模式和禁止锚点。
-5. **已完成但必须人工验证**：retrieval source feedback 仅接受显式 verified outcome，并限制权重区间；replay 只影响下一步建议表达，不会把“执行过工具”误当成“检索正确”。
+1. 用真实 session replay 验证 adaptive retrieval policy，不再用 examples 作为主要验收；每个版本至少比较 adoption、bypass、unobservable 和 Golden 指标。
+2. 对每个 replay 记录人工确认的命中/偏题结果；只将确认结果写入 retrieval-source feedback。
+3. 每次权重变更后运行 Golden、replay trend、cold/hot query baseline；任一质量门禁退化即回滚。
 
 验收：
 
@@ -173,52 +76,68 @@ This file consolidates and replaces the older execution plan, superpowers evolut
 - same input 产生确定性 retrieval policy
 - token 和 latency 不低于真实基线
 
-### P2 下一轮执行计划 / Next Executable Plan
+### P2.5：可信交互历史与图谱可解释性（下一阶段）
 
-1. 使用 `eval-agent-guidance-replay-campaign --min-events 20` 在私有真实 workspace 连续采集至少 20 个带 `session_id` 的任务回放，覆盖 full-chain、impact、MQ、config 与概念检索；该 gate 只评估覆盖与采纳，不会自动调整权重。
-2. 对每个 replay 记录人工确认的命中/偏题结果；只将确认结果写入 retrieval-source feedback。
-3. 每次权重变更后运行 Golden、replay trend、cold/hot query baseline；任一质量门禁退化即回滚。
-4. 对 Java 未解析报告中最高频分类补 3-5 个逻辑锚点 case；只有 case 证明精度时才改 resolver。
-5. Workbench Health 已展示 benchmark/gate 摘要，且仅输出指标、状态和建议，不暴露私有源码内容；已可直达 walkthrough，导出动作同时呈现当前 gate 快照。
+目标：将任务历史从调用日志提升为可复现、可归因、可审查的工程证据闭环，降低真实链路分析中的误判风险，并让长任务的状态和结果对使用者可见。
 
-### P3：Workbench 与报告体验产品化
+设计边界：
 
-目标：详细输出继续保留，但阅读顺序和视觉组织更适合人和 Agent。
+- 参考 Graphify 的“抽取事实与推断结论分层”思想，但不采用其放弃向量检索的路线；Memory Center 继续保留混合检索和按需索引能力。
+- 参考 Grok Build 的运行时检查、会话恢复与结构化进度事件思想，但不引入其终端界面、运行时或产品依赖。
+- 不保存原始对话正文、源码正文或工具载荷；继续遵守本地优先、脱敏、一个月保留期和十万条上限。
 
-任务：
+#### P2.5-1：统一证据等级
 
-1. Query / Walkthrough 页面突出 quick conclusion、main chain、completion status、read targets、risks。**已完成**：Workbench walkthrough 使用顶层结构化字段，原始响应退到可展开 evidence 区。
-2. `summary / standard / deep` 三档在 CLI / MCP / HTTP / Workbench 中展示语义一致。**已完成**：Workbench walkthrough 可选择三档，并直接透传 `report_level`。
-3. 报告里的长路径继续使用证据编号，完整路径集中在 evidence files 区。**已完成**：Workbench 主阅读区仅展示角色和逻辑锚点，完整响应仅在折叠 evidence 区呈现。
-4. Workbench 增加 benchmark / gate 结果摘要，不展示私有源码内容。**已完成**：Health 页面通过 `/workspace/quality-gates-summary` 展示 benchmark、regression alerts、replay campaign 和 Java unresolved-call 指标。
-5. 将 walkthrough export 与真实 gate 结果关联，便于人工复盘。**已完成**：导出完成反馈显示对应的实时 gate snapshot；Health 摘要也可直接进入 walkthrough review。
+- 在图边、查询结果、分析报告、案例和交互历史中增加兼容的 `evidence_level`：`EXTRACTED`、`INFERRED`、`AMBIGUOUS`、`VERIFIED`。
+- 所有摘要输出同时展示证据来源、等级统计和推断边界；不得把推断结论表述为已验证事实。
+- 仅当存在验证命令结果、人工确认或可追溯运行结果时，才允许标记为 `VERIFIED`。
 
-验收：
+验收：既有 MCP 字段保持兼容；真实链路输出可以区分事实、推断和待确认项；新增单元测试覆盖等级传播与降级规则。
 
-- 人类阅读不需要解析原始 JSON 才能知道主链路
-- Agent 可直接使用顶层字段，不需要读 `tool-results/*.json`
-- Workbench 不泄漏私有路径、源码片段或服务名
+#### P2.5-2：运行时配置检查
 
-### 已完成：外部吸收归档
+- 新增 `memory-center inspect`，集中展示实际生效的工作空间、MCP 可执行文件与版本、AGENTS 指令、Hook、会话绑定、记忆生命周期、近期效果摘要和索引活动代际。
+- 对配置陈旧、Hook 未安装、可执行文件版本不一致、会话未绑定等状态给出可执行的修复建议。
+- 输出默认脱敏，不展示完整私有路径、原始提示词或敏感配置值。
 
-目标：已吸收的外部项目思想全部标记完成，后续无需继续参考这些外部项目推进主路线。
+验收：在真实工作空间可一次看清宿主实际看到的运行状态；故障场景能够给出明确原因和修复命令。
 
-已完成吸收：
+#### P2.5-3：会话代码版本与验证快照
 
-- `codegraph` 类项目：tree-sitter Java parser、SQLite BM25 / inverted retrieval、freshness banner、watcher-to-incremental-reindex、context pack first、context pack benchmark、daemon feasibility 均已落地或归档。
-- `Understand-Anything` 类项目：guided tour / onboarding、统一 explanation schema、business flow、flow-aware impact、persona-adaptive explanation、理解资产增量刷新均已落地。
-- `ECC` 类项目：workflow profiles、verification loop、pattern promotion、learned heuristics、agent runtime audit、agent bundle export 均已落地。
-- `rtk`：token estimate、compact operation gain、discover / command compression 思路已吸收到 token benchmark、payload compression 和 discover 输出。
-- `agentmemory`：top-K memory ranking、token benchmark / trend 思路已吸收到 session memory、benchmark baseline 和 trend。
-- `mattpocock/skills`：constraint templates 和模型内工作协议思路已吸收到 templates / workflow profile / recommended next action。
-- candidate path / 概率树视角：candidate paths、recommended path、confidence / risk / verification cost、低成本验证优先和 learning feedback 已进入主链路。
+- 在 `mc_start` 记录 Git 分支、提交标识和工作区脏文件计数；非 Git 工作空间自动跳过。
+- 在 `mc_close` 关联验证命令、退出状态、结果摘要和任务结论，形成“调用 -> 改动 -> 验证 -> 结果”的最小证据链。
+- 对失败、回滚、重新打开的任务保留规范化状态，支持后续效果分析。
 
-归档判断：
+验收：单次会话回放可定位所对应的代码版本和验证结果；未配置 Git 或验证命令时不影响主流程。
 
-- 上述项目后续不再作为路线输入，不再继续追踪原项目变化；CBM 例外，仅保留为固定本地参考文档 [docs/references/codebase-memory-mcp.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/references/codebase-memory-mcp.md)，后续引用该文档而不是继续跟踪外部项目。
-- 未进入当前实现的 `open-code-review`、`spec-kit` 相关想法不再单列路线；如未来真实问题需要，再按本项目自己的 gate 重新立项。
-- 不引入外部项目作为必选 runtime dependency，不复制外部 CLI / 配置目录 / slash command 体系。
-- 不把自然语言 spec 置于真实代码和运行证据之上，不把权重伪装成客观真值，不引入非工程化叙事。
+#### P2.5-4：后台任务阶段进度协议
+
+- 为重建、增量索引、图谱计算和基准测试建立版本化进度事件：`queued`、`scanning`、`parsing`、`graph`、`retrieval`、`semantic`、`finalizing`、`failed`。
+- 进度统一持久化并可通过 HTTP、MCP 后台任务和 Workbench 读取；同一任务只能有一个权威状态源。
+- 对高频进度事件限流、合并和保留诊断信息，支持失败和取消后的可解释反馈。
+
+验收：长任务不再无输出等待；进度、失败原因和最终统计一致，且不会显著影响索引热路径。
+
+#### P2.5-5：架构社区与按需子图导出
+
+- 在离线或显式任务中计算模块/服务社区与高中心性节点，避免影响日常检索延迟。
+- 支持围绕查询链路导出受限子图（JSON、HTML、Markdown），携带证据等级、决策和规则/ADR 引用。
+- 默认不导出全量图，不导出受保护的原始数据；由查询范围和权限策略约束输出。
+
+验收：可为一次链路分析生成小而可读的证据子图；导出不会拖慢普通 MCP 查询，也不会泄露受保护内容。
+
+#### P2.5-6：真实工作空间可复现基准
+
+- 在真实工作空间持续记录冷/热查询 P50、P95、增量索引开销、输出 Token、证据等级覆盖率和人工复核的错误事实率。
+- 将交互历史中的采纳、验证、结果和回退纳入效果指标，但不以模拟数据或外部项目宣传数据作为发布门槛。
+- 每次性能优化都提供前后对比、数据范围和回归结论。
+
+验收：每项性能或检索优化都有可复现的真实数据证据；基准报告可直接用于版本发布门禁。
+
+### 外部方案参考边界
+
+- Graphify 与 Grok Build 仅作为 P2.5 的架构参考，不引入其运行时依赖、命令行实现或界面形态。
+- 所有吸收项必须先经过真实工作空间基准和兼容性验证，再进入默认行为或发布门禁。
 
 ---
 
@@ -287,7 +206,7 @@ This file consolidates and replaces the older execution plan, superpowers evolut
 - 数据迁移、兼容和回滚如何处理。
 - 后续维护成本是否可接受。
 
-注意：开放方向不再依赖外部项目清单驱动。外部吸收项已经归档，后续立项必须来自真实使用问题、benchmark、gate 或当前架构缺口。
+注意：开放方向不依赖外部项目清单驱动；后续立项必须来自真实使用问题、benchmark、gate 或当前架构缺口。
 
 ---
 
@@ -336,12 +255,13 @@ scripts/verify_real_ucap.sh
 
 ## 7. 下一步建议 / Recommended Next Step
 
-下一步进入 **P1 Java Parser / Call Resolver 真实精度深化**:扩充真实跨项目 controller / service / Feign cases,把误判样例逐个转成可复跑门禁,并继续给 method walkthrough 在更多真实场景下增加稳定性。
+下一阶段优先进入 **P2.5**，先完成“统一证据等级 + 运行时配置检查”。
 
-P0 三步修复推荐顺序已经按以下风险序落地:
+原因：4.1.4 已经能够采集 Hook、MCP 调用、会话摘要和效果数据；在继续扩大图谱分析、后台任务和 Workbench 之前，必须先让使用者能判断结论是否可信、运行配置是否真正生效。否则更复杂的分析只会放大不可见的误差和排障成本。
 
-1. `JavaSymbol.to_dict()` 手写浅拷贝(最稳)。
-2. graph metadata 空 dict 快路径(schema 不变)。
-3. parser 双轨改为补抽取(最敏感,有 differential / call resolution / golden gate 兜底,并保留 `MEMORY_CENTER_PARSER_FULL_DUAL` 环境变量回滚开关)。
+建议实施顺序：
 
-完成 P0 后,真实 UCAP 复测通过即进入 P1 扩充真实 Java call resolution cases,并把失败样例逐个转成可复跑门禁。
+1. 建立 `evidence_level` 兼容字段和传播规则，复用现有事实/推断/派生判断，不改变既有 MCP 契约。
+2. 实现 `memory-center inspect`，将 MCP、Hook、AGENTS、会话、生命周期和索引状态集中成一个脱敏诊断视图。
+3. 在真实工作空间验证证据标签和诊断输出，再补齐 Git/验证快照。
+4. 最后接入后台进度协议、按需子图导出和社区计算，并以真实基准决定是否扩大默认范围。

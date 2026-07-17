@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from typing import Any
 
+from memory_center.core.assessment.quality import evidence_level_for
 from memory_center.core.observability.diagnostics import DIAG, diag_entry
 
 from ..explanation import explanation_entry
@@ -228,6 +229,7 @@ def _canonical_item(
     return {
         "kind": kind,
         "semantic_strength": semantic_strength,
+        "evidence_level": evidence_level_for({"semantic_strength": semantic_strength}),
         "source_id": source_id,
         "target_id": target_id,
         "relations": relations,

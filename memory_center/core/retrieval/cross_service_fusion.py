@@ -5,6 +5,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from memory_center.core.assessment.quality import evidence_level_for
 from memory_center.core.storage.workspace import WorkspaceStore
 
 from ..indexing.control_plane import index_control_status
@@ -38,6 +39,7 @@ def fuse_cross_shard_result(
         "contract_consistency": contract_summary,
         "conclusions": conclusions,
         "semantic_strength": strength,
+        "evidence_level": evidence_level_for({"semantic_strength": strength}),
         "confidence": confidence,
         "next_actions": _next_actions(consistent, contract_summary),
     }
@@ -133,11 +135,12 @@ def _conclusions(matches: list[dict[str, Any]], contracts: dict[str, Any], consi
     conclusions = []
     if matches:
         projects = sorted({str(item.get("project", "")) for item in matches if item.get("project")})
-        conclusions.append({"kind": "service_scope", "summary": f"命中 {len(projects)} 个相关服务分片：{', '.join(projects[:6])}", "semantic_strength": "fact" if consistent else "derived", "evidence_count": len(matches)})
+        strength = "fact" if consistent else "derived"
+        conclusions.append({"kind": "service_scope", "summary": f"命中 {len(projects)} 个相关服务分片：{', '.join(projects[:6])}", "semantic_strength": strength, "evidence_level": evidence_level_for({"semantic_strength": strength}), "evidence_count": len(matches)})
     if contracts.get("overall") == "attention":
-        conclusions.append({"kind": "contract_risk", "summary": "发现需要人工确认的跨服务契约关联。", "semantic_strength": "inferred", "evidence_count": len(contracts.get("feign", [])) + len(contracts.get("mq", []))})
+        conclusions.append({"kind": "contract_risk", "summary": "发现需要人工确认的跨服务契约关联。", "semantic_strength": "inferred", "evidence_level": "INFERRED", "evidence_count": len(contracts.get("feign", [])) + len(contracts.get("mq", []))})
     if not conclusions:
-        conclusions.append({"kind": "no_evidence", "summary": "当前分片未返回足够证据，建议缩小入口或运行局部 reindex。", "semantic_strength": "derived", "evidence_count": 0})
+        conclusions.append({"kind": "no_evidence", "summary": "当前分片未返回足够证据，建议缩小入口或运行局部 reindex。", "semantic_strength": "derived", "evidence_level": "AMBIGUOUS", "evidence_count": 0})
     return conclusions
 
 

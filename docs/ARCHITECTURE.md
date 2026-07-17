@@ -581,6 +581,10 @@ V3 task tools 直接面向 agent 减少 grep/read：
 - `derived`：有界传递推理。
 - `quality`：证据数、截断状态、是否需要验证。
 
+每个证据项可额外返回 `evidence_level`，用于统一展示结论可信边界：`EXTRACTED` 表示直接从索引或源码结构抽取，`INFERRED` 表示规则、模式或多跳推理，`AMBIGUOUS` 表示回退或证据不足，`VERIFIED` 仅表示存在显式验证结果。它是对既有 `semantic_strength` 的兼容扩展，不会由高置信度自动升级为 `VERIFIED`。
+
+Each evidence item may additionally expose `evidence_level`: `EXTRACTED`, `INFERRED`, `AMBIGUOUS`, or explicitly validated `VERIFIED`. This is additive to `semantic_strength`; confidence alone never upgrades evidence to `VERIFIED`.
+
 底层引擎：
 
 - `GraphPatternEngine`

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from memory_center.core.audit.inspect import inspect_runtime
 from memory_center.core.audit.runtime import audit_agent_runtime
 from memory_center.core.context.pack import ContextPackBuilder
 from memory_center.core.domain.extractor import BusinessDomainExtractor
@@ -28,6 +29,10 @@ def export_agent_bundle(workspace_file: str, agent: str = "codex") -> dict[str, 
 
 def runtime_audit(workspace_file: str) -> dict[str, Any]:
     return audit_agent_runtime(workspace_file)
+
+
+def runtime_inspect(workspace_file: str, thread_id: str = "") -> dict[str, Any]:
+    return inspect_runtime(workspace_file, thread_id=thread_id)
 
 
 def onboarding_tour(

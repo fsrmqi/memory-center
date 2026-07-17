@@ -136,7 +136,16 @@ def register_workflow_routes(registry: CommandRegistry) -> None:
         title = rp.title()
         auto_sync_mode = rp.auto_sync_mode()
         record_case = rp.bool_param("record_case", True)
-        ended = workspace_end_session(ws, session_id, outcome=outcome, verified_by=rp.list_param("verified_by") or None)
+        ended = workspace_end_session(
+            ws,
+            session_id,
+            outcome=outcome,
+            verified_by=rp.list_param("verified_by") or None,
+            validation_command=rp.get("validation_command", ""),
+            validation_exit_code=_parse_int(rp.params, "validation_exit_code", 0) if rp.get("validation_exit_code", "") else None,
+            validation_summary=rp.get("validation_summary", ""),
+            validation_status=rp.get("validation_status", ""),
+        )
         synced = workspace_sync_case_to_artifacts(ws, session_id, task_id=task_id, title=title, auto_sync_mode=auto_sync_mode)
         draft = workspace_suggest_case(ws, session_id)
         recorded = None
