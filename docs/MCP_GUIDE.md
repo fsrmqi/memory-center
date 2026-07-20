@@ -167,6 +167,24 @@ MCP 当前公开的是 12 个 task-level tools：
 - `eval_agent_guidance_replay` — 回放真实 session event，并把建议执行结果分类为 adopted / missed / bypassed / unobservable
 - `eval_agent_guidance_replay_campaign` — 检查真实 replay 的最小事件量和意图覆盖；只读，不会自动调整检索权重
 - `eval_agent_guidance_replay_trend` — 执行 replay 检查并追加一条 replay 趋势记录
+- `advanced_query` — 面向概念型或中英文混合查询，启用 ANN 与最多 12 条候选的 Cross-Encoder 重排；只使用本地缓存模型，不会在 MCP 请求中下载权重
+- `vector_ann_status` — 检查 dense vector 的 ANN 可用性和当前查询 `ef`
+- `vector_ann_rebuild` — 从已有 dense embeddings 显式重建 HNSW；仅在 `rebuild_vector_ann` 下一步动作或维护任务中调用
+- `vector_ann_tune` — 使用有界 self-recall 探针调优 HNSW 查询 `ef`；重建或大规模 reindex 后调用一次
+- `retrieval_reranker_status` — 检查可选 Cross-Encoder 是否已缓存且可立即使用
+- `retrieval_reranker_prewarm` — 在显式维护窗口下载并加载 Cross-Encoder；不得由普通查询自动触发
+- `retrieval_model_profile` — 查看或选择 embedding 档案；`text="multilingual"` 且 `force=true` 仅写档案，完整 reindex 必须单独确认
+- `eval_retrieval_replay` — 读取带 evidence 的人工验证检索反馈；只有结果 `ready` 时才允许 `force=true` 应用权重提案
+
+### Agent 自动维护 / Agent-directed maintenance
+
+`mc_lookup` / `/workspace/query` 返回的 `agent_next_steps` 是 Agent 的可执行控制面。若出现 `rebuild_vector_ann`，Agent 必须顺序调用：
+
+1. `mc_admin(action="vector_ann_rebuild")`
+2. `mc_admin(action="vector_ann_tune")`
+3. 以原 query 重试 `mc_lookup`
+
+该规则只在已有大规模 dense embeddings 且 ANN 不可用时触发；不会在普通查询中隐式全量重建。对复杂概念查询，Agent 应调用 `mc_admin(action="advanced_query", text="原查询")`，而非自行执行无界本地搜索。若结果诊断为 `reranker_model_not_cached`，基础排序仍可直接使用；只有用户明确同意时才调用 `mc_admin(action="retrieval_reranker_prewarm")`。模型档案和全量 reindex 也不会由 Agent 自动发起。
 - `eval_java_call_resolution_unresolved` — 按可行动原因汇总未解析 Java `CALLS_METHOD`，只返回逻辑锚点样本，不返回文件路径或源码
 - `eval_agent_guidance_trend` — 执行同一检查并追加一条 agent guidance 趋势记录
 - `audit` — 完成审计（文档/测试/实现/设计一致性）

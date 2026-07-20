@@ -922,14 +922,44 @@ def _merge_retrieval_results(
     return sorted(merged.values(), key=lambda x: x.score, reverse=True)
 
 
-@lru_cache(maxsize=1)
-def _load_reranker(model_name: str):
+@lru_cache(maxsize=2)
+def _load_reranker(model_name: str, allow_download: bool = False):
+    """只从本地缓存加载重排器；下载只能由显式预热命令触发。"""
     try:
+        from huggingface_hub import snapshot_download
         from sentence_transformers import CrossEncoder
 
-        return CrossEncoder(model_name)
-    except Exception:
+        local_path = snapshot_download(repo_id=model_name, local_files_only=not allow_download)
+        return CrossEncoder(local_path)
+    except (ImportError, OSError, RuntimeError, ValueError):
         return None
+
+
+def reranker_status(model_name: str | None = None) -> dict[str, Any]:
+    """报告本地重排器是否可立即使用，不访问网络。"""
+    selected = model_name or os.getenv("MEMORY_CENTER_RERANKER_MODEL", "BAAI/bge-reranker-v2-m3").strip()
+    try:
+        from huggingface_hub import snapshot_download
+
+        local_path = snapshot_download(repo_id=selected, local_files_only=True)
+        return {"status": "ready", "model": selected, "local_path": str(local_path), "network_accessed": False}
+    except (ImportError, OSError, RuntimeError, ValueError):
+        return {
+            "status": "not_cached",
+            "model": selected,
+            "network_accessed": False,
+            "next_action": "run retrieval-reranker-prewarm explicitly before enabling rerank",
+        }
+
+
+def prewarm_reranker(model_name: str | None = None) -> dict[str, Any]:
+    """显式下载并加载模型，避免 MCP 请求链路承受首次下载成本。"""
+    selected = model_name or os.getenv("MEMORY_CENTER_RERANKER_MODEL", "BAAI/bge-reranker-v2-m3").strip()
+    _load_reranker.cache_clear()
+    model = _load_reranker(selected, allow_download=True)
+    if model is None:
+        return {"status": "unavailable", "model": selected, "download_requested": True}
+    return {"status": "ready", "model": selected, "download_requested": True}
 
 
 def _rerank_candidates(
@@ -942,13 +972,18 @@ def _rerank_candidates(
     model_name = os.getenv("MEMORY_CENTER_RERANKER_MODEL", "BAAI/bge-reranker-v2-m3").strip()
     model = _load_reranker(model_name)
     if model is None:
-        return candidates, {"status": "unavailable", "reason": "reranker_model_unavailable", "model": model_name}
+        return candidates, {
+            "status": "unavailable",
+            "reason": "reranker_model_not_cached",
+            "model": model_name,
+            "next_action": "run retrieval-reranker-prewarm explicitly; query did not download a model",
+        }
     selected = candidates[:limit]
     pairs = [(query, _reranker_text(item.node)) for item in selected]
     try:
         raw_scores = model.predict(pairs)
         values = [float(value) for value in raw_scores]
-    except Exception as exc:
+    except (OSError, RuntimeError, ValueError) as exc:
         return candidates, {"status": "unavailable", "reason": str(exc)[:160], "model": model_name}
     if not values:
         return candidates, {"status": "active", "returned": 0, "model": model_name}

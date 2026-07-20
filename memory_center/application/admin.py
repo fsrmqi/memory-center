@@ -80,6 +80,7 @@ from memory_center.core.orchestrator import (
     memory_export_walkthrough_artifact,
     memory_method_walkthrough,
     memory_plan_write,
+    memory_query_hybrid,
     memory_tool_usage_report,
     memory_walkthrough_health,
     memory_write_judge,
@@ -91,6 +92,7 @@ from memory_center.core.orchestrator import (
     workspace_log_session_event,
     workspace_model_profile,
     workspace_recent_sessions,
+    workspace_record_agent_guidance,
     workspace_replay_write_chain,
     workspace_session_summary,
     workspace_start_session,
@@ -99,9 +101,13 @@ from memory_center.core.orchestrator import (
     workspace_write_receipts,
 )
 from memory_center.core.presentation.evidence_subgraph import export_evidence_subgraph
+from memory_center.core.retrieval.calibration import evaluate_retrieval_replay_calibration
 from memory_center.core.retrieval.cross_service import evaluate_cross_shard_replay
 from memory_center.core.retrieval.cross_service_fusion import evaluate_cross_shard_fusion
+from memory_center.core.retrieval.model_profiles import retrieval_model_profile
 from memory_center.core.retrieval.planner import workspace_performance_summary
+from memory_center.core.storage.runtime import RuntimeStore
+from memory_center.core.storage.vector_index import VectorIndex
 from memory_center.core.storage.workspace import WorkspaceStore
 from memory_center.core.tasks.artifacts import (
     append_change_log,
@@ -138,6 +144,53 @@ from memory_center.core.verification.workflow_profiles import (
     recommend_workflow_with_learning,
 )
 from memory_center.core.workspace.jobs import cancel_workspace_job, submit_reindex_workspace_job, workspace_job_status
+
+
+def _vector_ann_action(workspace_file: str, operation: str, limit: int) -> dict[str, Any]:
+    """MCP/HTTP/CLI 共用的受限 ANN 维护入口。"""
+    store = WorkspaceStore(workspace_file)
+    with RuntimeStore(store.graph_db_path) as runtime:
+        index = VectorIndex(runtime)
+        if operation == "rebuild":
+            return index.rebuild_ann()
+        if operation == "tune":
+            return index.tune_ann(sample_size=max(8, min(limit, 128)))
+        return index.stats()
+
+
+def _advanced_query_action(
+    workspace_file: str,
+    text: str,
+    *,
+    limit: int,
+    project: str,
+    session_id: str,
+) -> dict[str, Any]:
+    """高级查询与普通查询共享 session guidance 闭环。"""
+    result = memory_query_hybrid(
+        workspace_file,
+        text,
+        limit=limit,
+        project=project,
+        enable_vector=True,
+        enable_reranker=True,
+    )
+    if session_id.strip():
+        workspace_record_agent_guidance(
+            workspace_file,
+            session_id,
+            query=text,
+            mode="advanced_query",
+            source="mcp_admin.advanced_query",
+            payload=result,
+        )
+    return result
+
+
+def _reranker_action(operation: str, model_name: str = "") -> dict[str, Any]:
+    from memory_center.core.retrieval.hybrid import prewarm_reranker, reranker_status
+
+    return prewarm_reranker(model_name or None) if operation == "prewarm" else reranker_status(model_name or None)
 
 __all__ = [
     "build_admin_registry",
@@ -505,6 +558,14 @@ def build_admin_registry(
             apply=force,
         ),
         "query_performance": lambda: workspace_performance_summary(wf, limit=max(limit, 20)),
+        "advanced_query": lambda: _advanced_query_action(wf, text, limit=limit, project=project, session_id=session_id),
+        "vector_ann_status": lambda: _vector_ann_action(wf, "status", limit),
+        "vector_ann_rebuild": lambda: _vector_ann_action(wf, "rebuild", limit),
+        "vector_ann_tune": lambda: _vector_ann_action(wf, "tune", limit),
+        "retrieval_reranker_status": lambda: _reranker_action("status", model),
+        "retrieval_reranker_prewarm": lambda: _reranker_action("prewarm", model),
+        "retrieval_model_profile": lambda: retrieval_model_profile(wf, text, apply=force),
+        "eval_retrieval_replay": lambda: evaluate_retrieval_replay_calibration(wf, min_samples=max(1, limit), apply=force),
         "eval_cross_shard_replay": lambda: evaluate_cross_shard_replay(
             wf,
             [line.strip() for line in text.splitlines() if line.strip()],

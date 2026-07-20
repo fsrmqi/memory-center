@@ -310,6 +310,26 @@ def vector_ann_tune(
         typer.echo(json.dumps(VectorIndex(runtime).tune_ann(sample_size), ensure_ascii=False, indent=2))
 
 
+@app.command("retrieval-reranker-status")
+def retrieval_reranker_status_cmd(
+    model: str = typer.Option("", help="Optional Cross-Encoder model name."),
+):
+    """Show whether the optional reranker is already cached locally."""
+    from memory_center.core.retrieval.hybrid import reranker_status
+
+    typer.echo(json.dumps(reranker_status(model or None), ensure_ascii=False, indent=2))
+
+
+@app.command("retrieval-reranker-prewarm")
+def retrieval_reranker_prewarm_cmd(
+    model: str = typer.Option("", help="Optional Cross-Encoder model name."),
+):
+    """Explicitly download and load the optional reranker outside MCP query requests."""
+    from memory_center.core.retrieval.hybrid import prewarm_reranker
+
+    typer.echo(json.dumps(prewarm_reranker(model or None), ensure_ascii=False, indent=2))
+
+
 @app.command("retrieval-model-profile")
 def retrieval_model_profile_cmd(
     workspace: str = typer.Option(..., help="Path to .memory-center/workspace.yaml"),

@@ -837,6 +837,19 @@ def _build_agent_next_steps_for_query(result: dict[str, Any], *, query: str, wor
     policy = result.get("retrieval_policy", {}) if isinstance(result.get("retrieval_policy", {}), dict) else {}
     diagnostics = result.get("retrieval_diagnostics", {}) if isinstance(result.get("retrieval_diagnostics", {}), dict) else {}
     results = result.get("results", []) if isinstance(result.get("results", []), list) else []
+    vector = diagnostics.get("vector", {}) if isinstance(diagnostics.get("vector", {}), dict) else {}
+    if vector.get("status") == "unavailable" and int(vector.get("embedding_count", 0) or 0) > 64:
+        return _apply_agent_guidance_adoption_feedback(workspace_file, [
+            {
+                "action": "rebuild_vector_ann",
+                "priority": "high",
+                "reason": "dense embeddings exist but the persistent ANN index is unavailable; large indexes must not use exact fallback",
+                "command": "mc_admin(action='vector_ann_rebuild') then mc_admin(action='vector_ann_tune')",
+                "uses_existing_evidence": False,
+                "stop_condition": "vector_ann_status reports ann_ready=true",
+                "failure_fallback": "continue with BM25/graph retrieval and report ANN unavailable",
+            }
+        ])
     if freshness_status in {"stale", "pending"}:
         return _apply_agent_guidance_adoption_feedback(workspace_file, [
             {

@@ -6,6 +6,19 @@
 - 重要行为变化
 - 明确修复的真实 bug
 
+## 4.3.10 检索稳定性与冷启动修复
+
+- 修复 embedding 档案切换后的向量维度漂移：sqlite-vec 现在显式保存表维度，维度不一致时不会误查询旧表，状态会要求完整 reindex 重建当前维度。
+- HNSW 的 rebuild、增量同步、删除、调优和读取使用同一文件锁，索引文件经临时路径原子替换；并发 reindex 与 ANN 维护不会再写出半个 ANN 文件或错配标签。
+- Cross-Encoder 重排器只加载本地缓存，普通 CLI/MCP 查询不会下载模型；新增 `retrieval-reranker-status`、`retrieval-reranker-prewarm` 和对应 `mc_admin` action，将下载移到显式维护窗口。
+- `advanced_query` 与普通 query 一样记录 `session_id` 的 `agent_guidance`，使 replay、采纳分析与后续检索调优获得完整输入。
+
+## 4.3.9 Agent 检索维护闭环
+
+- 高级检索和 ANN 维护能力通过 `mc_admin` 统一暴露：`advanced_query`、`vector_ann_status`、`vector_ann_rebuild`、`vector_ann_tune`、`retrieval_model_profile` 与 `eval_retrieval_replay`。
+- lookup 在大规模 dense embeddings 缺失 ANN 时返回可执行 `rebuild_vector_ann` Action，Agent 协议要求先重建、再调优、再重试原查询；普通查询不会隐式全量重建。
+- 生成到 Codex、Claude、Gemini、Copilot、Cursor 的 Agent 指令和 MCP 指南同步了触发条件、停止条件与模型切换边界。
+
 ## 4.3.8 代码检索与自适应排序
 
 - SQLite 倒排检索升级为代码感知 BM25F：类/方法/契约名称权重高于路径和元数据，并复用驼峰拆分后的标识符 token。

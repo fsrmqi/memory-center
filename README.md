@@ -489,19 +489,27 @@ memory-center eval-retrieval-replay --workspace .memory-center/workspace.yaml --
 
 ### Advanced Retrieval / 高级检索
 
-The default sparse path uses code-aware BM25F: entity names and contracts outweigh paths and metadata. Hybrid results also receive bounded personalized graph ranking. For difficult conceptual queries, opt into a bounded cross-encoder stage; it reranks at most 12 candidates and degrades without changing the base result if the local model is unavailable.
+The default sparse path uses code-aware BM25F: entity names and contracts outweigh paths and metadata. Hybrid results also receive bounded personalized graph ranking. For difficult conceptual queries, opt into a bounded cross-encoder stage; it reranks at most 12 candidates. Query requests only use an already cached local model and never download weights, so a cold model cannot block an MCP request.
 
-默认稀疏检索使用代码感知 BM25F：实体名称和契约的权重高于路径和元数据。混合结果还会做有界个性化图排序。概念型复杂查询可显式启用 Cross-Encoder；它最多重排 12 条候选，本地模型不可用时不会改变基础结果。
+默认稀疏检索使用代码感知 BM25F：实体名称和契约的权重高于路径和元数据。混合结果还会做有界个性化图排序。概念型复杂查询可显式启用 Cross-Encoder；它最多重排 12 条候选，查询只使用本地已缓存模型，绝不会下载权重，因此冷模型不会阻塞 MCP 请求。
 
 ```bash
 memory-center query --workspace .memory-center/workspace.yaml --text '用户登录调用链' --vector --rerank
 memory-center vector-ann-tune --workspace .memory-center/workspace.yaml
+
+# Check or explicitly prewarm the optional reranker outside an MCP request.
+memory-center retrieval-reranker-status
+memory-center retrieval-reranker-prewarm
 
 # Preview or select a multilingual BGE-M3 profile. A full reindex remains explicit.
 memory-center retrieval-model-profile --workspace .memory-center/workspace.yaml --profile multilingual
 memory-center retrieval-model-profile --workspace .memory-center/workspace.yaml --profile multilingual --apply
 MEMORY_CENTER_SEMANTIC_BACKEND=sentence-transformers memory-center reindex --workspace .memory-center/workspace.yaml
 ```
+
+Agents do not need to parse shell examples to use these capabilities. Generated `AGENTS.md` routes retrieval maintenance through MCP: `mc_admin(action="vector_ann_status")`, `vector_ann_rebuild`, `vector_ann_tune`, `advanced_query`, `retrieval_reranker_status`, `retrieval_reranker_prewarm`, `retrieval_model_profile`, and `eval_retrieval_replay`. When lookup returns `agent_next_steps.action="rebuild_vector_ann"`, the Agent must rebuild then tune ANN before retrying. Model-profile application, full reindex, and reranker prewarm remain explicit user-approved operations.
+
+Agent 不需要依赖 shell 示例才能使用这些能力。生成的 `AGENTS.md` 会通过 MCP 路由检索维护：`mc_admin(action="vector_ann_status")`、`vector_ann_rebuild`、`vector_ann_tune`、`advanced_query`、`retrieval_reranker_status`、`retrieval_reranker_prewarm`、`retrieval_model_profile` 与 `eval_retrieval_replay`。当 lookup 返回 `agent_next_steps.action="rebuild_vector_ann"` 时，Agent 必须先重建并调优 ANN，再重试查询；模型档案应用、完整 reindex 和重排器预热仍是需要用户明确确认的操作。
 
 Golden Benchmark hybrid cases can opt in to ANN with `enable_vector: true`, which keeps vector-backed concept-query behavior under regression coverage without changing existing cases.
 

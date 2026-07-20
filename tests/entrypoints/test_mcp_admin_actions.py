@@ -9,6 +9,7 @@ demo workspace.
 from __future__ import annotations
 
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -147,3 +148,24 @@ def test_interaction_actions_dispatch_through_registry(tmp_path: Path) -> None:
     assert "private" not in recorded["event"]["interaction"]["query"]
     assert effects["host_interactions"]["total"] == 1
     assert refreshed["host_interactions"]["total"] == 1
+
+
+def test_advanced_query_records_session_guidance(tmp_path: Path) -> None:
+    from tests.fixtures import setup_demo_workspace
+
+    wf = str(setup_demo_workspace(tmp_path))
+    result = {"agent_next_steps": {"action": "read_target"}, "matches": []}
+    with (
+        patch("memory_center.application.admin.memory_query_hybrid", return_value=result) as query,
+        patch("memory_center.application.admin.workspace_record_agent_guidance") as record,
+    ):
+        response = build_admin_registry(
+            workspace_file=wf,
+            text="登录链路",
+            session_id="session-advanced-query",
+        ).dispatch("advanced_query")
+
+    assert response == result
+    assert query.call_args.kwargs["enable_reranker"] is True
+    assert record.call_args.kwargs["mode"] == "advanced_query"
+    assert record.call_args.kwargs["source"] == "mcp_admin.advanced_query"

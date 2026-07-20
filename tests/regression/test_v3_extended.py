@@ -188,6 +188,51 @@ class TestVectorIndex:
         assert "backend" in s
         assert s["dimension"] == 384
 
+    def test_dimension_switch_ignores_prior_vectors_until_full_clear(self, store):
+        old = VectorIndex(store, dimension=4)
+        old.upsert_embedding("node:old", [1.0, 0.0, 0.0, 0.0])
+
+        switched = VectorIndex(store, dimension=8)
+        assert switched.stats()["embedding_count"] == 0
+        assert switched.query([1.0] + [0.0] * 7) == []
+
+        switched.clear()
+        switched.upsert_embedding("node:new", [1.0] + [0.0] * 7)
+        assert switched.stats()["embedding_count"] == 1
+
+    def test_sqlite_vec_dimension_mismatch_is_not_treated_as_ready(self, store, monkeypatch):
+        from memory_center.core.storage import vector_index as vector_index_module
+
+        VectorIndex(store, dimension=4)
+        with store.pool.transaction() as conn:
+            table_exists = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE name='node_vec' LIMIT 1"
+            ).fetchone()
+            if not table_exists:
+                conn.execute("CREATE TABLE node_vec(node_id TEXT PRIMARY KEY, embedding TEXT)")
+            conn.execute(
+                "INSERT OR REPLACE INTO vec_backend_meta(backend, dimension) VALUES('sqlite-vec', 4)"
+            )
+        monkeypatch.setattr(vector_index_module, "_HAS_SQLITE_VEC", True)
+
+        switched = VectorIndex(store, dimension=8)
+        status = switched.stats()
+        assert status["sqlite_vec_status"] == "dimension_mismatch"
+        assert status["ann_backend"] != "sqlite-vec"
+        assert status["next_action"] == "full-reindex"
+
+    def test_atomic_hnsw_save_replaces_final_path(self, store):
+        vi = VectorIndex(store, dimension=4)
+
+        class FakeIndex:
+            def save_index(self, path):
+                Path(path).write_text("new-index")
+
+        vi._hnsw_path.write_text("old-index")
+        vi._save_hnsw_atomically(FakeIndex())
+        assert vi._hnsw_path.read_text() == "new-index"
+        assert not list(vi._hnsw_path.parent.glob(f"{vi._hnsw_path.name}.*.tmp"))
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # BusinessDomainExtractor tests
