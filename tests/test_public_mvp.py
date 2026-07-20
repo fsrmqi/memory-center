@@ -1408,6 +1408,7 @@ def test_memory_backend_sqlite_mirror(tmp_path: Path):
         source_session_id=sid,
     )
     ref = store.write_memory_ref_json("refs/sessions/test-backend.json", {"created_at": "2026-01-01T00:00:00+00:00", "note": "backend"})
+    (store.memory_dir / "refs/sessions/test-backend.json").unlink()
 
     stats = store.memory_backend_stats()
     status = workspace_status(workspace, view="full")
@@ -1416,6 +1417,7 @@ def test_memory_backend_sqlite_mirror(tmp_path: Path):
     assert stats["collections"]["cross-service-task-memory.jsonl"] >= 1
     assert stats["ref_count"] >= 1
     assert ref
+    assert store.read_memory_ref_json(ref) == {"created_at": "2026-01-01T00:00:00+00:00", "note": "backend"}
     assert status["memory_backend"]["collections"]["session-events.jsonl"] >= 1
     assert query["records"]["count"] >= 1
 

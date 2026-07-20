@@ -192,26 +192,25 @@ class WorkspaceStore:
     def write_memory_ref_json(self, name: str, data: Any) -> str:
         path = _safe_path(self.memory_dir, name)
         path.parent.mkdir(parents=True, exist_ok=True)
+        ref = str(path.relative_to(self.base_dir))
         with FileLock(str(self.lock_file)):
+            self.memory_backend().upsert_ref(ref, data)
             path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
-            ref = str(path.relative_to(self.base_dir))
-            try:
-                self.memory_backend().upsert_ref(ref, data)
-            except Exception:
-                pass
         return ref
 
     def read_memory_ref_json(self, ref: str, default: Any = _MISSING) -> Any:
         normalized = ref.replace("\\", "/").lstrip("/")
         if normalized.startswith("memory/"):
             normalized = normalized[len("memory/") :]
-        path = _safe_path(self.memory_dir, normalized)
-        if not path.exists():
-            return {} if default is _MISSING else default
         try:
-            return json.loads(path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, UnicodeDecodeError, OSError):
+            canonical_ref = str(_safe_path(self.memory_dir, normalized).relative_to(self.base_dir))
+            rows = self.memory_backend_query_refs(ref_path=canonical_ref, limit=1).get("refs", [])
+        except Exception:
+            rows = []
+        if not rows:
             return {} if default is _MISSING else default
+        payload = rows[0].get("payload")
+        return payload if payload is not None else ({} if default is _MISSING else default)
 
     def write_artifact(self, name: str, content: str) -> Path:
         path = _safe_path(self.artifacts_dir, name)

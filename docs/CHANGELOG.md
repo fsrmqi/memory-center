@@ -6,6 +6,12 @@
 - 重要行为变化
 - 明确修复的真实 bug
 
+## 4.3.4 Ref 事实源与死 shim 清理
+
+- payload ref 读写统一以 `graph.db.refs` 为准；删除 JSON 导出后仍可解析 ref，不再发生文件回退。
+- 删除无生产调用的 `mcp.action_registry` 转发模块及其兼容测试。
+- 读取矩阵明确区分 SQLite refs 与人工 Markdown 工件，消除文档与实现冲突。
+
 ## 4.3.3 新架构收尾与历史冲突清理
 
 - 删除固定 Spring Cloud 初始化模板、旧 explanation 字段包装器、Python 3.9 `zip_strict` 兼容层和相应无效测试；`init` 只生成自动识别出的工作区模型。

@@ -23,7 +23,8 @@ unavailable SQLite fact store must produce a structured diagnostic or
 | Sessions, audit, cases, receipts, verification | `read_jsonl_prefer_backend()` or `read_jsonl_via_backend()` | Inspectable JSONL export |
 | Graph, FTS, vectors, reasoning | `GraphStore` / `UnifiedStore` on `runtime_db_path` | No file query fallback |
 | Assertions, aliases, governance | SQLite assertion and index tables | JSONL/JSON audit export |
-| Refs and Markdown artifacts | Explicit file reads | Human-authored or payload artifacts, not query fallback |
+| Payload refs | SQLite refs table | Inspectable JSON export |
+| Markdown artifacts | Explicit file reads | Human-authored artifacts, not query fallback |
 | Workspace YAML, rules, source code | Explicit file reads | External configuration and source inputs |
 
 ## Error and recovery policy / 错误与恢复策略

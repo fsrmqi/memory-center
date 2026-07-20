@@ -622,16 +622,14 @@ def test_walkthrough_support_modules_keep_query_contracts():
     assert "flowchart TD" in markdown
 
 
-def test_command_registry_shared_seam_and_mcp_compat_import():
+def test_command_registry_shared_seam():
     from memory_center.core.foundation.dispatch import CommandRegistry
-    from memory_center.mcp.action_registry import ActionRegistry
 
     registry = CommandRegistry(label="demo action").register_many({
         "ping": lambda: {"ok": True},
     })
     assert registry.dispatch("ping") == {"ok": True}
     assert registry.names() == ["ping"]
-    assert ActionRegistry(label="compat").register("x", lambda: 1).dispatch("x") == 1
     with pytest.raises(ValueError, match="Unknown demo action"):
         registry.dispatch("missing")
 
