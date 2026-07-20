@@ -6,12 +6,18 @@
 - 重要行为变化
 - 明确修复的真实 bug
 
+## 4.3.2 运行时事实源收口
+
+- 会话、MCP/宿主交互、验证循环、回执、任务与刷新状态全部只从 SQLite 运行时事实库读取；JSON/JSONL 不再作为任意运行时查询的兜底。
+- `memory_query_hybrid` 仅在 freshness 为 `stale` 或 `pending` 且已解析服务范围时，执行最多 4 个候选文件的局部刷新；正常查询不增加刷新成本。
+- 清理遗留的文件/SQLite 双读诊断与旧 `memory_db_path` 命名，统一使用 `runtime_db_path`。
+
 ## 4.3.1 存储与检索收敛
 
 - 运行时图、索引镜像、会话记录和断言统一收敛到 `.memory-center/graph/graph.db`；JSON/JSONL 保留为可审查导出，不再参与查询回退。
 - 删除无范围的 `memory_query` 内部门面，hooks、group 和 resume 统一使用 `memory_query_hybrid`。
 - 已解析服务范围的 hybrid/code 查询不再静默退回全局索引；服务分片缺失明确返回 `NOT_INDEXED`，避免扩大延迟和越过查询边界。
-- 移除 V2 TF-IDF 稀疏索引读取及无 schema 启发式记录的热路径兼容；旧工作空间需显式 `reindex` 后使用。
+- 移除无 schema 启发式记录的热路径兼容；当前稀疏余弦与 BM25 均作为受支持的检索算法。旧工作空间需显式 `reindex` 后使用。
 
 ## 4.3.0 本体旧格式移除
 

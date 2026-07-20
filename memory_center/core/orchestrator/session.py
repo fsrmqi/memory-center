@@ -246,7 +246,7 @@ def workspace_end_session(
 
 def workspace_recent_sessions(workspace_file: str | Path, limit: int = 10) -> dict[str, Any]:
     config, store = load_context(workspace_file)
-    summaries = store.read_jsonl_via_backend(SESSION_SUMMARIES_FILE, limit=max(limit, 1)) or store.read_jsonl(SESSION_SUMMARIES_FILE, limit=max(limit, 1))
+    summaries = store.read_jsonl_via_backend(SESSION_SUMMARIES_FILE, limit=max(limit, 1))
     return {
         "workspace": config.workspace,
         "recent_sessions": list(reversed(summaries[-limit:])),
@@ -255,7 +255,7 @@ def workspace_recent_sessions(workspace_file: str | Path, limit: int = 10) -> di
 
 def workspace_session_summary(workspace_file: str | Path, session_id: str) -> dict[str, Any]:
     config, store = load_context(workspace_file)
-    summaries = store.find_jsonl_via_backend(SESSION_SUMMARIES_FILE, lambda row: row.get("session_id") == session_id, limit=1) or store.find_jsonl(SESSION_SUMMARIES_FILE, lambda row: row.get("session_id") == session_id, limit=1)
+    summaries = store.find_jsonl_via_backend(SESSION_SUMMARIES_FILE, lambda row: row.get("session_id") == session_id, limit=1)
     events = _session_events(store, session_id)
     session_overview = _build_session_overview(events)
     return {

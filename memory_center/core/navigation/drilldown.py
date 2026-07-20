@@ -23,7 +23,7 @@ class DrillDownNavigator:
     def __init__(self, workspace_file: str | Path):
         self.workspace_file = Path(workspace_file)
         self.store = WorkspaceStore(workspace_file)
-        self.backend = UnifiedBackendQuery(self.store.memory_db_path)
+        self.backend = UnifiedBackendQuery(self.store.runtime_db_path)
 
     def close(self) -> None:
         self.backend.close()

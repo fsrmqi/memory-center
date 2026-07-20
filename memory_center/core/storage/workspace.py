@@ -2,35 +2,16 @@ from __future__ import annotations
 
 import json
 from collections import deque
-from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Generic, TypeVar
+from typing import Any
 
 from filelock import FileLock
 
 from memory_center.core.storage.memory_backend import MemoryBackendStore
 
 _MISSING = object()
-T = TypeVar("T")
 _JSON_FILE_CACHE: dict[tuple[str, int, int], Any] = {}
-
-
-@dataclass(frozen=True)
-class ReadResult(Generic[T]):
-    value: T
-    source: str
-    fallback_used: bool = False
-    fallback_reason: str = ""
-    consistency_status: str = "unknown"
-
-    def diagnostics(self) -> dict[str, Any]:
-        return {
-            "source": self.source,
-            "fallback_used": self.fallback_used,
-            "fallback_reason": self.fallback_reason,
-            "consistency_status": self.consistency_status,
-        }
 
 
 def _safe_path(base: Path, name: str) -> Path:
@@ -105,7 +86,7 @@ class WorkspaceStore:
         except (json.JSONDecodeError, UnicodeDecodeError):
             return default
 
-    def append_jsonl(self, name: str, item: dict[str, Any]) -> None:
+    def append_jsonl(self, name: str, item: dict[str, Any]) -> dict[str, Any]:
         path = self.memory_dir / name
         item = dict(item)
         item.setdefault("created_at", datetime.now(timezone.utc).isoformat())
@@ -116,6 +97,7 @@ class WorkspaceStore:
                 self.memory_backend().append_record(name, item, record_id=self._infer_record_id(name, item))
             except Exception:
                 pass
+        return item
 
     def append_jsonl_batch(self, name: str, items: list[dict[str, Any]]) -> int:
         """Append a collection with one workspace lock and one SQLite transaction."""
@@ -263,13 +245,13 @@ class WorkspaceStore:
         return self.graph_dir / "graph.db"
 
     @property
-    def memory_db_path(self) -> Path:
+    def runtime_db_path(self) -> Path:
         """Return the single SQLite fact store for graph, index and memory data."""
         return self.graph_db_path
 
     def memory_backend(self) -> MemoryBackendStore:
         if self._memory_backend is None:
-            self._memory_backend = MemoryBackendStore(self.memory_db_path)
+            self._memory_backend = MemoryBackendStore(self.runtime_db_path)
         return self._memory_backend
 
     def memory_backend_stats(self) -> dict[str, Any]:
@@ -292,75 +274,6 @@ class WorkspaceStore:
         if backend_entry.get("found"):
             return backend_entry.get("value")
         return default
-
-    def read_json_observed(self, name: str, default: Any) -> ReadResult[Any]:
-        path = self.index_dir / name
-        file_exists = path.exists()
-        file_value = self.read_json(name, default) if file_exists else default
-        try:
-            backend_entry = self.memory_backend().read_index_entry(name)
-        except Exception as exc:
-            return ReadResult(
-                file_value,
-                "file" if file_exists else "default",
-                fallback_used=True,
-                fallback_reason=f"backend_unavailable:{type(exc).__name__}",
-                consistency_status="backend_unavailable",
-            )
-        if not backend_entry.get("found"):
-            return ReadResult(
-                file_value,
-                "file" if file_exists else "default",
-                fallback_used=file_exists,
-                fallback_reason="backend_missing",
-                consistency_status="file_only" if file_exists else "missing",
-            )
-        backend_value = backend_entry.get("value")
-        if not file_exists:
-            return ReadResult(backend_value, "backend", consistency_status="backend_only")
-        if backend_value == file_value:
-            return ReadResult(backend_value, "backend", consistency_status="consistent")
-        return ReadResult(
-            file_value,
-            "file",
-            fallback_used=True,
-            fallback_reason="backend_stale",
-            consistency_status="diverged",
-        )
-
-    def read_jsonl_observed(self, name: str, limit: int = 50) -> ReadResult[list[dict[str, Any]]]:
-        file_path = self.memory_dir / name
-        file_exists = file_path.exists()
-        file_rows = self.read_jsonl(name, limit=limit)
-        try:
-            query = self.memory_backend_query_records(collection=name, limit=limit)
-            records = list(reversed(query.get("records", [])))
-            backend_rows = [item.get("payload", {}) for item in records if isinstance(item.get("payload"), dict)]
-            total_count = int(query.get("total_count", len(backend_rows)) or 0)
-        except Exception as exc:
-            return ReadResult(
-                file_rows,
-                "file" if file_exists else "default",
-                fallback_used=True,
-                fallback_reason=f"backend_unavailable:{type(exc).__name__}",
-                consistency_status="backend_unavailable",
-            )
-        if total_count == 0:
-            return ReadResult(
-                file_rows,
-                "file" if file_exists else "default",
-                fallback_used=file_exists,
-                fallback_reason="backend_missing",
-                consistency_status="file_only" if file_exists else "missing",
-            )
-        if not file_exists:
-            return ReadResult(backend_rows, "backend", consistency_status="backend_only")
-        expected_count = len(self.read_jsonl(name, limit=500000))
-        if total_count < expected_count:
-            return ReadResult(file_rows, "file", True, "backend_partial", "diverged")
-        if backend_rows == file_rows:
-            return ReadResult(backend_rows, "backend", consistency_status="consistent")
-        return ReadResult(file_rows, "file", True, "backend_stale", "diverged")
 
     def memory_backend_query_refs(self, *, ref_path: str = "", limit: int = 50) -> dict[str, Any]:
         return self.memory_backend().query_refs(ref_path=ref_path, limit=limit)

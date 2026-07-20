@@ -71,7 +71,7 @@ def recent_change_impact_reports(workspace_file: str | Path, limit: int = 20, *,
     store = WorkspaceStore(workspace_file)
     bounded_limit = min(max(1, limit), 100)
     candidate_limit = min(max(bounded_limit * 5, 100), 500)
-    feedback_index = store.read_json(CHANGE_IMPACT_FEEDBACK_INDEX_FILE, {}) or {}
+    feedback_index = store.read_json_prefer_backend(CHANGE_IMPACT_FEEDBACK_INDEX_FILE, {}) or {}
     reports = [_with_feedback(report, feedback_index) for report in reversed(store.read_jsonl_prefer_backend(CHANGE_IMPACT_REPORTS_FILE, limit=candidate_limit))]
     if pending_only:
         reports = [report for report in reports if report["feedback"]["status"] == "pending"]
@@ -128,7 +128,7 @@ def record_change_impact_feedback(
         "evidence_level": evidence_level,
     }
     store.append_jsonl(CHANGE_IMPACT_FEEDBACK_FILE, feedback)
-    index = store.read_json(CHANGE_IMPACT_FEEDBACK_INDEX_FILE, {}) or {}
+    index = store.read_json_prefer_backend(CHANGE_IMPACT_FEEDBACK_INDEX_FILE, {}) or {}
     index[report_id] = feedback
     _trim_feedback_index(index)
     store.write_json(CHANGE_IMPACT_FEEDBACK_INDEX_FILE, index)
@@ -224,7 +224,7 @@ def _trim_feedback_index(index: dict[str, Any]) -> None:
 
 
 def _maybe_prune_reports(store: WorkspaceStore) -> None:
-    maintenance = store.read_json(CHANGE_IMPACT_REPORTS_MAINTENANCE_FILE, {}) or {}
+    maintenance = store.read_json_prefer_backend(CHANGE_IMPACT_REPORTS_MAINTENANCE_FILE, {}) or {}
     now = time.time()
     if now - float(maintenance.get("pruned_at", 0) or 0) < 24 * 60 * 60:
         return
@@ -237,7 +237,7 @@ def _maybe_prune_reports(store: WorkspaceStore) -> None:
 
 
 def _maybe_prune_feedback(store: WorkspaceStore) -> None:
-    maintenance = store.read_json(CHANGE_IMPACT_REPORTS_MAINTENANCE_FILE, {}) or {}
+    maintenance = store.read_json_prefer_backend(CHANGE_IMPACT_REPORTS_MAINTENANCE_FILE, {}) or {}
     now = time.time()
     if now - float(maintenance.get("feedback_pruned_at", 0) or 0) < 24 * 60 * 60:
         return

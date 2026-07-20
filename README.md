@@ -1148,7 +1148,7 @@ You can also query the mirrored backend directly through `memory-backend-query` 
 
 `timeline_query` and the higher-level evidence/replay views can now read from the mirrored SQLite backend in `auto/sqlite` mode, so the backend is already starting to participate in real read paths instead of being write-only.
 
-`timeline_query` 以及上层的 evidence/replay 视图现在也已经可以在 `auto/sqlite` 模式下直接读取镜像后的 SQLite backend，这意味着后端已经开始参与真实读路径，而不只是写入镜像。
+`timeline_query` 以及上层的 evidence/replay 视图直接读取 SQLite 运行时事实库；JSONL 只作为可审查导出，不再作为查询兜底。
 
 `workspace_recent_sessions`、`workspace_session_summary`、`workspace_write_receipts` 现在也会优先复用镜像后的 SQLite backend，并在需要时回退到原始 JSONL。
 

@@ -126,7 +126,7 @@ def _backend_consistency_keys(demo_workspace: Path) -> set:
     from memory_center.core.storage.workspace import WorkspaceStore
 
     store = WorkspaceStore(str(demo_workspace))
-    with UnifiedBackendQuery(store.memory_db_path) as backend:
+    with UnifiedBackendQuery(store.runtime_db_path) as backend:
         return set(backend.check_consistency(store.base_dir).keys())
 
 
@@ -270,7 +270,7 @@ class TestThreeEntryPointExecution:
 
         ws = str(demo_workspace)
         store = WorkspaceStore(ws)
-        with UnifiedBackendQuery(store.memory_db_path) as backend:
+        with UnifiedBackendQuery(store.runtime_db_path) as backend:
             result = backend.check_consistency(store.base_dir)
         assert isinstance(result, dict)
         _assert_no_database_error(result)
@@ -603,7 +603,7 @@ class TestCoreFieldAlignment:
 
         cap = CAPABILITY_MAP["backend-consistency"]
         store = WorkspaceStore(str(demo_workspace))
-        with UnifiedBackendQuery(store.memory_db_path) as backend:
+        with UnifiedBackendQuery(store.runtime_db_path) as backend:
             actual_keys = set(backend.check_consistency(store.base_dir).keys())
         for field in cap.core_fields:
             assert field in actual_keys, (

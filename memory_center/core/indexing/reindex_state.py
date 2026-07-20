@@ -37,7 +37,7 @@ class ReindexBusyError(ConflictError):
 
 def workspace_reindex_status(store: WorkspaceStore) -> dict[str, Any]:
     """Return a path-free reindex lifecycle snapshot for status surfaces."""
-    state = store.read_json(REINDEX_STATE_FILE, {})
+    state = store.read_json_prefer_backend(REINDEX_STATE_FILE, {})
     if not isinstance(state, dict) or not state:
         return {
             "status": "idle",
@@ -90,7 +90,7 @@ def workspace_reindex_lock(
 
     started_at = _utc_now()
     started_monotonic = time.monotonic()
-    previous = store.read_json(REINDEX_STATE_FILE, {})
+    previous = store.read_json_prefer_backend(REINDEX_STATE_FILE, {})
     previous_success = _last_success_at(previous)
     state = {
         "schema_version": 1,

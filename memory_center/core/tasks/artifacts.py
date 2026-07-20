@@ -2092,7 +2092,7 @@ def build_traceability_graph(workspace_file: str | Path) -> dict[str, Any]:
     # Add verification nodes from verification loop data
     try:
         from ..verification.loop import VERIFICATION_LOG_FILE
-        loop_entries = store.read_jsonl(VERIFICATION_LOG_FILE, limit=100) if hasattr(store, 'read_jsonl') else []
+        loop_entries = store.read_jsonl_via_backend(VERIFICATION_LOG_FILE, limit=100)
         for entry in loop_entries:
             loop_id = entry.get("loop_id", "")
             if loop_id:

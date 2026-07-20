@@ -124,9 +124,9 @@ def record_host_interaction(
 def build_effect_summary(workspace_file: str, *, limit: int = 100_000) -> dict[str, Any]:
     """汇总调用可靠性、会话关联和已关闭会话的结果质量。"""
     store = WorkspaceStore(workspace_file)
-    calls = store.read_jsonl(MCP_INVOCATIONS_FILE, limit=max(1, limit))
-    host_events = store.read_jsonl(HOST_INTERACTIONS_FILE, limit=max(1, limit))
-    sessions = store.read_jsonl("session-summaries.jsonl", limit=max(1, limit))
+    calls = store.read_jsonl_via_backend(MCP_INVOCATIONS_FILE, limit=max(1, limit))
+    host_events = store.read_jsonl_via_backend(HOST_INTERACTIONS_FILE, limit=max(1, limit))
+    sessions = store.read_jsonl_via_backend("session-summaries.jsonl", limit=max(1, limit))
     durations = sorted(float(item.get("duration_ms", 0) or 0) for item in calls if item.get("duration_ms") is not None)
     status_counts = _count_values(calls, "status")
     tool_counts = _count_values(calls, "tool_name")

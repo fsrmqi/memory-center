@@ -73,7 +73,7 @@ def submit_workspace_job(
 def workspace_job_status(workspace_file: str, job_id: str = "", limit: int = 20) -> dict[str, Any]:
     store = WorkspaceStore(workspace_file)
     recover_interrupted_workspace_jobs(store)
-    rows = store.read_json(JOBS_FILE, []) or []
+    rows = store.read_json_prefer_backend(JOBS_FILE, []) or []
     if job_id:
         return next((row for row in rows if row.get("job_id") == job_id), {"job_id": job_id, "found": False})
     return {"jobs": sorted(rows, key=lambda row: float(row.get("updated_at", 0)), reverse=True)[:limit]}
@@ -107,7 +107,7 @@ def submit_reindex_workspace_job(workspace_file: str, *, projects: list[str] | N
 
 def recover_interrupted_workspace_jobs(store: WorkspaceStore) -> int:
     """Mark jobs left running by a terminated local process as interrupted."""
-    rows = store.read_json(JOBS_FILE, []) or []
+    rows = store.read_json_prefer_backend(JOBS_FILE, []) or []
     now = time.time()
     changed = 0
     recovered = []
@@ -143,7 +143,7 @@ def _is_cancelled(job_id: str) -> bool:
 
 def _upsert(store: WorkspaceStore, record: dict[str, Any]) -> None:
     with _GUARD:
-        rows = store.read_json(JOBS_FILE, []) or []
+        rows = store.read_json_prefer_backend(JOBS_FILE, []) or []
         rows = [row for row in rows if row.get("job_id") != record["job_id"]]
         rows.append(record)
         store.write_json(JOBS_FILE, rows[-100:])
@@ -153,7 +153,7 @@ def _update_progress(store: WorkspaceStore, job_id: str, stage: str, percent: in
     if stage not in PROGRESS_STAGES:
         stage = "failed"
         message = "任务报告了未知进度阶段"
-    rows = store.read_json(JOBS_FILE, []) or []
+    rows = store.read_json_prefer_backend(JOBS_FILE, []) or []
     current = next((row for row in rows if row.get("job_id") == job_id), None)
     if not isinstance(current, dict):
         return
@@ -175,7 +175,7 @@ def _finish_job(
     progress_stage: str,
     message: str,
 ) -> None:
-    rows = store.read_json(JOBS_FILE, []) or []
+    rows = store.read_json_prefer_backend(JOBS_FILE, []) or []
     current = next((row for row in rows if row.get("job_id") == job_id), None)
     if not isinstance(current, dict):
         return

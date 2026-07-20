@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 from memory_center.core.storage.workspace import WorkspaceStore
@@ -13,49 +12,31 @@ def _store(tmp_path: Path) -> WorkspaceStore:
     return WorkspaceStore(workspace)
 
 
-def test_observed_json_prefers_newer_file_over_stale_backend(tmp_path: Path) -> None:
+def test_runtime_json_ignores_changed_export_file(tmp_path: Path) -> None:
     store = _store(tmp_path)
     store.write_json("file-index.json", [{"path": "old.java"}])
     (store.index_dir / "file-index.json").write_text(
-        json.dumps([{"path": "new.java"}]), encoding="utf-8"
+        '[{"path":"new.java"}]', encoding="utf-8"
     )
-
-    result = store.read_json_observed("file-index.json", [])
-
-    assert result.value == [{"path": "new.java"}]
-    assert result.source == "file"
-    assert result.fallback_used is True
-    assert result.fallback_reason == "backend_stale"
-    assert result.consistency_status == "diverged"
+    assert store.read_json_prefer_backend("file-index.json", []) == [{"path": "old.java"}]
 
 
-def test_observed_jsonl_prefers_file_when_backend_is_partial(tmp_path: Path) -> None:
+def test_runtime_jsonl_ignores_unrecorded_export_row(tmp_path: Path) -> None:
     store = _store(tmp_path)
     store.append_jsonl("events.jsonl", {"id": "one"})
     with (store.memory_dir / "events.jsonl").open("a", encoding="utf-8") as handle:
-        handle.write(json.dumps({"id": "two", "created_at": "2099-01-01T00:00:00+00:00"}) + "\n")
-
-    result = store.read_jsonl_observed("events.jsonl", limit=10)
-
-    assert [row["id"] for row in result.value] == ["one", "two"]
-    assert result.source == "file"
-    assert result.fallback_reason == "backend_partial"
-    assert result.consistency_status == "diverged"
+        handle.write('{"id":"two"}\n')
+    assert [row["id"] for row in store.read_jsonl_prefer_backend("events.jsonl", limit=10)] == ["one"]
 
 
-def test_observed_json_accepts_legal_empty_backend_payload(tmp_path: Path) -> None:
+def test_runtime_json_reads_empty_sqlite_payload(tmp_path: Path) -> None:
     store = _store(tmp_path)
     store.memory_backend().upsert_index("empty.json", [])
 
-    result = store.read_json_observed("empty.json", ["default"])
-
-    assert result.value == []
-    assert result.source == "backend"
-    assert result.fallback_used is False
-    assert result.consistency_status == "backend_only"
+    assert store.read_json_prefer_backend("empty.json", ["default"]) == []
 
 
-def test_legacy_read_returns_value_only(tmp_path: Path) -> None:
+def test_runtime_json_returns_sqlite_value(tmp_path: Path) -> None:
     store = _store(tmp_path)
     store.write_json("data.json", {"ok": True})
     assert store.read_json_prefer_backend("data.json", {}) == {"ok": True}

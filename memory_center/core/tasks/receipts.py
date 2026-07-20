@@ -55,9 +55,8 @@ def build_write_receipt(
 
 
 def persist_write_receipt(store: WorkspaceStore, receipt: dict[str, Any]) -> dict[str, Any]:
-    store.append_jsonl(WRITE_RECEIPTS_FILE, receipt)
-    rows = store.read_jsonl(WRITE_RECEIPTS_FILE, limit=1)
-    created_at = rows[-1].get("created_at", "") if rows else ""
+    stored = store.append_jsonl(WRITE_RECEIPTS_FILE, receipt)
+    created_at = str(stored.get("created_at", "") or "")
     persisted = dict(receipt)
     persisted["receipt_ref"] = f"memory/{WRITE_RECEIPTS_FILE}#{created_at}" if created_at else f"memory/{WRITE_RECEIPTS_FILE}"
     return persisted
@@ -74,8 +73,7 @@ def query_write_receipts(
     limit: int = 50,
 ) -> dict[str, Any]:
     store = WorkspaceStore(workspace_file)
-    backend_rows = store.read_jsonl_via_backend(WRITE_RECEIPTS_FILE, limit=5000)
-    rows = backend_rows or store.read_jsonl(WRITE_RECEIPTS_FILE, limit=5000)
+    rows = store.read_jsonl_via_backend(WRITE_RECEIPTS_FILE, limit=5000)
     matched = []
     for row in rows:
         if layer and row.get("layer") != layer:

@@ -27,7 +27,7 @@ _MONITORED_JOBS_LOCK = threading.Lock()
 def watcher_daemon_status(workspace_file: str | Path) -> dict[str, Any]:
     """Read persisted daemon state without starting a watcher."""
     store = WorkspaceStore(workspace_file)
-    state = store.read_json(WATCHER_DAEMON_FILE, {}) or {}
+    state = store.read_json_prefer_backend(WATCHER_DAEMON_FILE, {}) or {}
     if not state:
         return {"status": "stopped", "active": False, "configured": False}
     pid = int(state.get("pid", 0) or 0)
@@ -144,8 +144,8 @@ def record_watcher_batch(workspace_file: str | Path, events: list[WatchEvent]) -
     _update_state(
         store,
         updated_at=time.time(),
-        event_batches=int((store.read_json(WATCHER_DAEMON_FILE, {}) or {}).get("event_batches", 0) or 0) + 1,
-        changed_files=int((store.read_json(WATCHER_DAEMON_FILE, {}) or {}).get("changed_files", 0) or 0) + len(changed_paths),
+        event_batches=int((store.read_json_prefer_backend(WATCHER_DAEMON_FILE, {}) or {}).get("event_batches", 0) or 0) + 1,
+        changed_files=int((store.read_json_prefer_backend(WATCHER_DAEMON_FILE, {}) or {}).get("changed_files", 0) or 0) + len(changed_paths),
         last_event_at=time.time(),
         last_changed_paths=changed_paths[:24],
         last_reindex_job=(result.get("reindex_job", {}) or {}).get("job_id", ""),
@@ -203,7 +203,7 @@ def _write_state(store: WorkspaceStore, state: dict[str, Any]) -> None:
 
 
 def _update_state(store: WorkspaceStore, **changes: Any) -> None:
-    current = store.read_json(WATCHER_DAEMON_FILE, {}) or {}
+    current = store.read_json_prefer_backend(WATCHER_DAEMON_FILE, {}) or {}
     _write_state(store, {**current, **changes, "updated_at": time.time()})
 
 

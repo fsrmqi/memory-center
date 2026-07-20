@@ -213,7 +213,7 @@ docs/                       # 面向用户和维护者的说明文档
 | Application | 已标准化的入口请求、workspace 路径、任务参数 | 跨领域用例结果、刷新/路由诊断 | 可依赖 core，不得被 core 反向依赖 |
 | Orchestrator | workspace path、intent、target、budget、view | task-level response、diagnostics、refs | 统一语义，不按入口复制逻辑 |
 | Core Engines | workspace config、index、graph、memory records | facts、relations、ranked evidence、reports | 失败可降级，但必须暴露原因 |
-| Store | YAML、JSON、JSONL、Markdown、SQLite | 可读事实源和可重建派生索引 | 路径职责清晰，写入可追溯 |
+| Store | YAML、JSON、JSONL、Markdown、SQLite | SQLite 运行时事实库与可审查导出 | 路径职责清晰，写入可追溯 |
 | Host Integration | hook event、model/session context | start/analyze/close/handoff actions | 不拥有业务状态，不绕过 facade |
 
 ---
@@ -257,7 +257,7 @@ Agent task
 | 符号与关系 | graph node/edge 构建、call resolution、partial rebuild | `graph/graph.db`, `graph-summary.json` |
 | 文本与节点摘要 | sparse semantic、BM25、可选 dense vector | `semantic-node-index.json`, inverted index, vector index |
 
-索引产物都是本地文件或 SQLite 数据库。它们服务于查询性能和可解释性，但不是不可替代的事实源；当源码、规则或 workspace 配置变化后，可以重新生成。
+索引产物由源码、规则和 workspace 配置重建；运行时查询统一从 SQLite 事实库读取，文件产物用于原子发布、审查和导出，不参与读取兜底。
 
 ### 3.1.1 索引控制面与分片路由 / Index Control Plane and Shard Routing
 
@@ -277,7 +277,7 @@ Partial reindex uses copy-on-write: unchanged service shards are inherited from 
 
 未指定 project 的请求由路由层决定全局或服务范围。已解析 service 的请求只在对应 SQLite 图分片取证；分片未发布时明确返回 `NOT_INDEXED` 并要求局部 refresh/reindex，不回退全局索引。响应携带 generation、路由依据、查询分片和证据来源。
 
-Requests without an explicit project no longer default straight to global retrieval. The system scores candidate services from Contract and Topology shards, then expands downstream services under fast/standard/deep budgets. Evidence is queried in parallel from selected service JSON/SQLite graph shards, with generation, routing rationale, queried shards, and evidence source returned to the caller. The global index is a compatibility fallback only.
+Requests without an explicit project are routed by the query planner. Scoped requests read only the selected SQLite graph shards; unavailable shards return `NOT_INDEXED` and schedule/require a bounded refresh rather than silently expanding to a global search.
 
 ### 3.1.3 跨分片融合与可信结论 / Cross-Shard Fusion and Trusted Conclusions
 
@@ -345,9 +345,9 @@ Memory Center 不把模型临时输出直接当成长期知识。写入链路会
 几个关键边界：
 
 - `workspace.yaml`、rules YAML、业务源码和 Markdown artifacts 是可读事实源。
-- `.memory-center/index/*.json` 是可读的确定性索引落盘，并镜像到 `memory.db.index_mirror`。
+- `.memory-center/index/*.json` 是 SQLite 索引状态的可审查导出。
 - `.memory-center/graph/graph.db` 是派生知识图谱、FTS、BM25、vector fallback 等图向能力的主读后端。
-- `.memory-center/memory/memory.db` 是 memory / JSONL / refs / index mirror 的 SQLite 镜像和高频聚合查询后端，不是唯一事实源。
+- `.memory-center/graph/graph.db` 同时保存图、索引状态、记忆记录、断言和检索结构，是唯一运行时事实库。
 - `.memory-center/artifacts/**/*.md` 是任务空间、计划、设计、变更记录和 L3 记忆块的人类可读事实源。
 
 ---
@@ -376,7 +376,7 @@ Memory Center 不把模型临时输出直接当成长期知识。写入链路会
 ├── workspace.yaml
 ├── index/                  # deterministic JSON indexes
 ├── graph/graph.db          # graph, FTS, BM25, vector fallback
-├── memory/                 # JSONL records, refs, memory.db
+├── memory/                 # JSONL exports and refs
 ├── artifacts/              # shared/task Markdown artifacts and L3 blocks
 ├── rules/                  # matching/eval/handoff/write-policy rules
 ├── instructions/           # generated agent instructions
@@ -409,7 +409,7 @@ Workspace shape analysis lives in `memory_center/core/workspace/shape.py`。它�
 - `graph-summary.json`：graph 计数、parser diagnostics、parser precision。
 - `semantic-node-index.json`：稀疏语义索引和可选 dense vectors。
 
-写入通过 `WorkspaceStore.write_json()` 完成：先写 `index/*.json`，再 best-effort 镜像到 `memory.db.index_mirror`。
+写入通过 `WorkspaceStore.write_json()` 完成：在 SQLite 中提交运行时状态，并同步生成 `index/*.json` 审查导出。
 
 ### 5.2 Java / Spring 深度解析
 
@@ -500,11 +500,11 @@ Memory Center 当前有三类存储角色。
 - graph path / memory path 解析
 - 文件锁：`store.lock`
 
-`read_json_prefer_backend()` 当前 hot path 以文件为事实源，文件缺失或损坏时回退 backend。`read_json_observed()` / `read_jsonl_observed()` 用于一致性诊断，返回 source、fallback reason、consistency status。
+`read_json_prefer_backend()` 与 `read_jsonl_prefer_backend()` 只读取 SQLite 事实库。文件读取 API 仅用于导出检查和显式恢复流程，不是运行时降级路径。
 
 ### 6.2 MemoryBackendStore
 
-`memory_center/core/storage/memory_backend.py` 管理 `.memory-center/memory/memory.db`，是 JSONL、refs、index mirror 的轻量 SQLite 镜像。它服务于：
+`memory_center/core/storage/memory_backend.py` 管理 `.memory-center/graph/graph.db` 中的记忆表、refs、断言和索引状态。它服务于：
 
 - recent sessions / session summary
 - timeline / drill-down
@@ -521,7 +521,7 @@ Memory Center 当前有三类存储角色。
 - `WorkspaceStore.graph_db_path`：传给 `GraphStore`、graph-oriented `UnifiedStore`、VectorIndex、InvertedIndex。
 - `WorkspaceStore.memory_db_path`：传给 `MemoryBackendStore`、`UnifiedBackendQuery`。
 
-不要把 `workspace.yaml` 直接传给 SQLite store，也不要把 `memory.db` 和 `graph.db` 混用。
+不要把 `workspace.yaml` 直接传给 SQLite store；所有运行时存储访问都应从 `WorkspaceStore.runtime_db_path` 获取数据库路径。
 
 所有 SQLite 连接通过 `storage/pragmas.py` 应用统一 PRAGMA：WAL、`synchronous=NORMAL`、大 cache、`temp_store=MEMORY`、mmap、foreign keys。全量重建可临时进入 `synchronous=OFF` 的 fast write mode。
 

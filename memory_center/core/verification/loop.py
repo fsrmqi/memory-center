@@ -42,7 +42,7 @@ class VerificationLoop:
         """Complete a phase of the verification loop."""
         task_id = ""
         try:
-            entries = self._store.read_jsonl(VERIFICATION_LOG_FILE)
+            entries = self._store.read_jsonl_via_backend(VERIFICATION_LOG_FILE)
         except Exception:
             entries = []
         for existing in entries:
@@ -110,7 +110,7 @@ class VerificationLoop:
         Never raises.
         """
         try:
-            entries = self._store.read_jsonl(VERIFICATION_LOG_FILE)
+            entries = self._store.read_jsonl_via_backend(VERIFICATION_LOG_FILE)
         except Exception:
             entries = []
 
@@ -192,7 +192,7 @@ class VerificationLoop:
         If no log entries exist for *task_id*, returns a default "pending" status.
         """
         try:
-            entries = self._store.read_jsonl(VERIFICATION_LOG_FILE)
+            entries = self._store.read_jsonl_via_backend(VERIFICATION_LOG_FILE)
         except Exception:
             entries = []
         task_entries = [e for e in entries if e.get("task_id") == task_id]
@@ -261,7 +261,7 @@ class VerificationLoop:
     def get_step_states(self, loop_id: str) -> list[dict[str, Any]]:
         """Get all step states for a loop, enabling resume from last completed step."""
         try:
-            entries = self._store.read_jsonl(VERIFICATION_LOG_FILE)
+            entries = self._store.read_jsonl_via_backend(VERIFICATION_LOG_FILE)
         except Exception:
             entries = []
         return [e for e in entries if e.get("loop_id") == loop_id and "step_name" in e]

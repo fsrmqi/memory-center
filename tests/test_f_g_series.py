@@ -48,7 +48,7 @@ class TestF02BackendConsistency:
         from memory_center.core.backend.query import UnifiedBackendQuery
         from memory_center.core.storage.workspace import WorkspaceStore
         ws = WorkspaceStore(str(demo_workspace))
-        db_path = ws.memory_db_path
+        db_path = ws.runtime_db_path
         with UnifiedBackendQuery(db_path) as ubq:
             idx = ubq.read_index_list("file-index.json")
             assert isinstance(idx, list)
@@ -57,7 +57,7 @@ class TestF02BackendConsistency:
         from memory_center.core.backend.query import UnifiedBackendQuery
         from memory_center.core.storage.workspace import WorkspaceStore
         ws = WorkspaceStore(str(demo_workspace))
-        db_path = ws.memory_db_path
+        db_path = ws.runtime_db_path
         with UnifiedBackendQuery(db_path) as ubq:
             result = ubq.query_records(limit=5)
             assert isinstance(result, dict)

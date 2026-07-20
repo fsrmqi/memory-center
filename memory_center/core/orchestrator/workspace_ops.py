@@ -91,7 +91,7 @@ def workspace_status(workspace_file: str | Path, view: str = "compact", budget: 
         "backend": index_summary.get("semantic_backend", "unknown"),
         "model": index_summary.get("semantic_model"),
         "vector_status": index_summary.get("vector_status", "unknown"),
-        "summary_source": "index-summary.json" if index_summary else "missing_reindex_required",
+        "summary_source": "sqlite_index_store" if index_summary else "missing_reindex_required",
     }
     result = {
         "workspace": config.workspace,

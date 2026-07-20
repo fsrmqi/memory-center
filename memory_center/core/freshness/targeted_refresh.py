@@ -41,7 +41,7 @@ def _refresh_query_targets(store: WorkspaceStore, query: str, limit: int) -> dic
     the previous index generation.
     """
     started = time.perf_counter()
-    manifest = store.read_json(MANIFEST_FILE, {}) or {}
+    manifest = store.read_json_prefer_backend(MANIFEST_FILE, {}) or {}
     dirty_rows = store.read_jsonl_prefer_backend(DIRTY_JOURNAL_FILE, limit=200)
     files = store.read_json_prefer_backend("file-index.json", [])
     config = load_workspace_config(store.workspace_file)
@@ -188,9 +188,9 @@ def record_dirty_files(workspace_file: str | Path, paths: list[str], source: str
 
 def hot_refresh_status(workspace_file: str | Path) -> dict[str, Any]:
     store = WorkspaceStore(workspace_file)
-    manifest = store.read_json(MANIFEST_FILE, {}) or {}
+    manifest = store.read_json_prefer_backend(MANIFEST_FILE, {}) or {}
     dirty = store.read_jsonl_prefer_backend(DIRTY_JOURNAL_FILE, limit=500)
-    summary = store.read_json("hot-refresh-summary.json", {}) or {}
+    summary = store.read_json_prefer_backend("hot-refresh-summary.json", {}) or {}
     from .change_reports import pending_change_impact_reports, recent_change_impact_reports
     from .daemon import watcher_daemon_status
 
@@ -224,7 +224,7 @@ def compact_dirty_journal(store: WorkspaceStore) -> bool:
 def compact_hot_refresh_overlay(workspace_file: str | Path) -> dict[str, Any]:
     """Compact the mutable refresh journal into a stable generation snapshot."""
     store = WorkspaceStore(workspace_file)
-    manifest = store.read_json(MANIFEST_FILE, {}) or {}
+    manifest = store.read_json_prefer_backend(MANIFEST_FILE, {}) or {}
     dirty = store.read_jsonl_prefer_backend(DIRTY_JOURNAL_FILE, limit=5000)
     compact_dirty_journal(store)
     summary = {

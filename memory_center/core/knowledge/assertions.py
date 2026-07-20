@@ -157,7 +157,7 @@ def _persist_batch(store: WorkspaceStore, assertions: list[dict[str, Any]]) -> N
 
 def _maybe_maintain_assertions(store: WorkspaceStore) -> None:
     """Run low-frequency cleanup outside the ordinary query path."""
-    maintenance = store.read_json(ASSERTION_MAINTENANCE_FILE, {}) or {}
+    maintenance = store.read_json_prefer_backend(ASSERTION_MAINTENANCE_FILE, {}) or {}
     now = datetime.now(timezone.utc)
     if (now.timestamp() - float(maintenance.get("pruned_at", 0) or 0)) < 24 * 60 * 60:
         return

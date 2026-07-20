@@ -120,6 +120,26 @@ def _resolve_effective_project(workspace_file: str | Path, project: str = "") ->
     return {"project": "", "source": "none", "fallback_allowed": False}
 
 
+def _refresh_scoped_query_if_stale(
+    workspace_file: str | Path,
+    query: str,
+    project: str,
+    *,
+    freshness_status: str = "",
+) -> dict[str, Any]:
+    """Refresh a small relevant scope before a scoped read when freshness requires it."""
+    if not project:
+        return {"attempted": False, "reason": "no_project_scope"}
+    if freshness_status not in {"stale", "pending"}:
+        return {"attempted": False, "reason": "index_current"}
+    try:
+        from ..freshness.targeted_refresh import refresh_query_targets
+
+        return {"attempted": True, **refresh_query_targets(workspace_file, query, limit=4)}
+    except Exception as exc:
+        return {"attempted": True, "refreshed": False, "reason": f"refresh_unavailable:{type(exc).__name__}"}
+
+
 def _looks_like_class_symbol_query(query: str) -> bool:
     token = _normalize_symbol_name(query)
     if not token or any(ch.isspace() for ch in query):
@@ -523,6 +543,12 @@ def memory_query_hybrid(
         if isinstance(freshness_banner, dict)
         else {}
     )
+    targeted_refresh = _refresh_scoped_query_if_stale(
+        workspace_file,
+        query,
+        effective_project,
+        freshness_status=str(freshness_input.get("status", "") or ""),
+    )
     try:
         from ..verification.heuristics import load_retrieval_source_weights
 
@@ -613,11 +639,12 @@ def memory_query_hybrid(
         "fallback_allowed": bool(project_scope.get("fallback_allowed", False)),
         "fallback_used": fallback_used,
     }
+    result["targeted_refresh"] = targeted_refresh
 
     # 根据意图补充 contracts 索引数据
     primary_intent = intent.get("primary_intent", "general")
     if primary_intent in ("feign", "mq", "endpoint", "config"):
-        contracts = memory_contracts(workspace_file)
+        contracts = memory_contracts(workspace_file, project=effective_project)
         filtered_feign = _filter_contracts_by_query(contracts.get("feign_contracts", []), query, primary_intent)
         filtered_mq = _filter_contracts_by_query(contracts.get("mq_contracts", []), query, primary_intent)
         filtered_api = _filter_contracts_by_query(contracts.get("api_contracts", []), query, primary_intent)
@@ -2026,13 +2053,18 @@ def memory_search_code(workspace_file: str | Path, query: str, scope: str = "", 
     return attach_knowledge_state(store, result, query=query, project=effective_project, mode="memory_search_code")
 
 
-def memory_contracts(workspace_file: str | Path) -> dict[str, Any]:
+def memory_contracts(workspace_file: str | Path, project: str = "") -> dict[str, Any]:
     _, store = load_context(workspace_file)
+    def scoped(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        if not project:
+            return rows
+        return [row for row in rows if _project_matches(project, str(row.get("project", "") or ""))]
+
     return {
-        "feign_contracts": store.read_json_prefer_backend("feign-index.json", []),
-        "mq_contracts": store.read_json_prefer_backend("mq-index.json", []),
-        "api_contracts": store.read_json_prefer_backend("api-index.json", []),
-        "config_contracts": store.read_json_prefer_backend("config-index.json", []),
+        "feign_contracts": scoped(store.read_json_prefer_backend("feign-index.json", [])),
+        "mq_contracts": scoped(store.read_json_prefer_backend("mq-index.json", [])),
+        "api_contracts": scoped(store.read_json_prefer_backend("api-index.json", [])),
+        "config_contracts": scoped(store.read_json_prefer_backend("config-index.json", [])),
         "rules": match_rules(store, intent="contract feign dto message api", scopes=["contract", "dto", "feign", "message"]),
     }
 

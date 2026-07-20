@@ -1937,7 +1937,7 @@ def backend_consistency_cmd(
     from memory_center.core.backend.query import UnifiedBackendQuery
     from memory_center.core.storage.workspace import WorkspaceStore
     store = WorkspaceStore(workspace)
-    with UnifiedBackendQuery(store.memory_db_path) as backend:
+    with UnifiedBackendQuery(store.runtime_db_path) as backend:
         print(backend.check_consistency(store.base_dir))
 
 

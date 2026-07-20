@@ -237,7 +237,7 @@ def backend_consistency(workspace_file: str) -> dict[str, Any]:
     from memory_center.core.backend.query import UnifiedBackendQuery
     from memory_center.core.storage.workspace import WorkspaceStore
     store = WorkspaceStore(workspace_file)
-    with UnifiedBackendQuery(store.memory_db_path) as backend:
+    with UnifiedBackendQuery(store.runtime_db_path) as backend:
         return backend.check_consistency(store.base_dir)
 
 
