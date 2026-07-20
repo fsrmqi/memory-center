@@ -9,6 +9,7 @@
 ## 4.3.12 查询热路径与后台任务可靠性修复
 
 - 普通语义查询改为复用进程内本地 embedding 模型缓存；不会重复加载权重、不会联网下载，也不会因索引代际不一致隐式全量重建。大规模 dense 查询统一通过已发布 ANN，只有极小测试索引保留精确计算。
+- 默认 lookup 的断言摘要不再读取“最近断言”正文；修复百万级断言表为取一条记录而进行全表排序的 P0 延迟问题，断言详情页才会显式读取该切片。
 - `mc_start`、`mc_lookup` 的定向刷新改为后台合并执行；请求立刻使用当前已发布 generation，并通过 `auto_refresh.scheduled` 告知刷新已排队，避免哈希、图遍历和 partial reindex 阻塞 Agent。
 - 修复向量后端故障被误报为正常空结果的问题；现在返回 `vector_backend_query_failed` 和 `vector-ann-rebuild` 下一步动作。ANN rebuild/tune 管理操作最多等待 1 秒，不再被长维护锁卡住。
 - 后台任务增加进程 PID 与心跳，只在宿主 PID 已失效时标记 `interrupted`；取消请求持久化并在每个重建阶段协作生效，不再把正常长任务误判为中断。

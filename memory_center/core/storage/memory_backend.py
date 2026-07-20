@@ -270,13 +270,17 @@ class _MemoryRecordOperations:
                 WHERE valid_to='' GROUP BY status ORDER BY status
                 """
             ).fetchall()
-            recent = conn.execute(
-                """
-                SELECT status, payload_json FROM assertions WHERE valid_to=''
-                ORDER BY valid_from DESC, assertion_id DESC LIMIT ?
-                """,
-                (min(max(1, limit), 100),),
-            ).fetchall()
+            # 查询首页只需要聚合状态。不要为 ``limit=0`` 读取/排序百万级断言
+            # payload；详情页再显式请求 recent slice。
+            recent = []
+            if limit > 0:
+                recent = conn.execute(
+                    """
+                    SELECT status, payload_json FROM assertions WHERE valid_to=''
+                    ORDER BY valid_from DESC, assertion_id DESC LIMIT ?
+                    """,
+                    (min(limit, 100),),
+                ).fetchall()
         return {
             "active": total,
             "by_status": {str(row["status"]): int(row["count"]) for row in rows},
