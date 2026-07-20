@@ -11,6 +11,7 @@ const navItems = [
   { path: '/continuity', label: 'Continuity', icon: '🔗' },
   { path: '/task', label: '记忆空间', icon: 'TS' },
   { path: '/query', label: 'Query', icon: '🔍' },
+  { path: '/assertion', label: '断言确认', icon: '✓' },
   { path: '/impact', label: 'Impact', icon: '⚡' },
   { path: '/group', label: 'Group', icon: '🗂️' },
   { path: '/timeline', label: 'Timeline', icon: '⏱️' },

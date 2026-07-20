@@ -9,6 +9,8 @@ from memory_center.core.storage.workspace import WorkspaceStore
 
 GOVERNANCE_ASSERTIONS_FILE = "governance-assertions.jsonl"
 GOVERNANCE_ASSERTION_INDEX_FILE = "governance-assertion-index.json"
+GOVERNANCE_ENTITIES_FILE = "governance-entities.jsonl"
+GOVERNANCE_MODEL_INDEX_FILE = "governance-model-index.json"
 
 
 def project_change_feedback(store: WorkspaceStore, report: dict[str, Any], feedback: dict[str, Any]) -> dict[str, Any]:
@@ -26,7 +28,8 @@ def project_change_feedback(store: WorkspaceStore, report: dict[str, Any], feedb
     store.append_jsonl_batch(GOVERNANCE_ASSERTIONS_FILE, rows)
     index = store.read_json_prefer_backend(GOVERNANCE_ASSERTION_INDEX_FILE, {"recent": []})
     recent = (list(index.get("recent", [])) if isinstance(index, dict) else []) + rows
-    store.write_json(GOVERNANCE_ASSERTION_INDEX_FILE, {"schema_version": 1, "updated_at": now, "recent": recent[-100:]})
+    store.write_json(GOVERNANCE_ASSERTION_INDEX_FILE, {"schema_version": 2, "updated_at": now, "recent": recent[-100:]})
+    _record_model(store, rows, now)
     return {"projected": len(rows), "relations": [row["predicate"] for row in rows]}
 
 
@@ -50,7 +53,8 @@ def project_session_validation(store: WorkspaceStore, session_id: str, validatio
     store.append_jsonl(GOVERNANCE_ASSERTIONS_FILE, row)
     index = store.read_json_prefer_backend(GOVERNANCE_ASSERTION_INDEX_FILE, {"recent": []})
     recent = (list(index.get("recent", [])) if isinstance(index, dict) else []) + [row]
-    store.write_json(GOVERNANCE_ASSERTION_INDEX_FILE, {"schema_version": 1, "updated_at": now, "recent": recent[-100:]})
+    store.write_json(GOVERNANCE_ASSERTION_INDEX_FILE, {"schema_version": 2, "updated_at": now, "recent": recent[-100:]})
+    _record_model(store, [row], now)
     return {"projected": 1, "relations": [row["predicate"]], "evidence_level": evidence_level}
 
 
@@ -64,6 +68,45 @@ def _row(subject_id: str, predicate: str, object_id: str, created_at: str, evide
         "object_id": object_id,
         "status": "VERIFIED" if str(evidence.get("evidence_level", "")) == "VERIFIED" else "EXTRACTED",
         "source_kind": "GOVERNANCE",
+        "provenance_kind": "HUMAN",
+        "relation_mode": "STRUCTURAL",
+        "evidence_refs": [value for value in (str(evidence.get("verification_source", "") or ""),) if value],
+        "event_at": created_at,
+        "observed_at": created_at,
+        "valid_from": created_at,
+        "valid_to": "",
         "created_at": created_at,
         "evidence": {key: evidence.get(key) for key in ("decision", "validation_status", "task_id", "session_id", "evidence_level", "summary_hash", "verification_source")},
     }
+
+
+def record_action(store: WorkspaceStore, *, assertion_id: str, status: str, action: dict[str, Any], task_id: str = "", session_id: str = "", actor: str = "") -> dict[str, Any]:
+    """Persist one bounded, traceable Action for an assertion detail view."""
+    now = datetime.now(timezone.utc).isoformat()
+    action_id = sha256(f"{assertion_id}|{action.get('action_type', '')}|{status}".encode()).hexdigest()[:32]
+    row = {
+        "entity_id": f"Action:{action_id}", "entity_type": "Action", "action_id": action_id,
+        "assertion_id": assertion_id, "status": status, "task_id": task_id, "session_id": session_id,
+        "actor": actor[:120], "created_at": now, "event_at": now, "observed_at": now,
+        "action": action,
+    }
+    store.append_jsonl(GOVERNANCE_ENTITIES_FILE, row)
+    index = store.read_json_prefer_backend(GOVERNANCE_MODEL_INDEX_FILE, {"entities": [], "relations": []}) or {}
+    entities = list(index.get("entities", [])) + [row]
+    relation = {"subject_id": row["entity_id"], "subject_type": "Action", "predicate": "EXPLAINS", "object_id": f"Assertion:{assertion_id}", "object_type": "Assertion", "created_at": now}
+    relations = list(index.get("relations", [])) + [relation]
+    store.write_json(GOVERNANCE_MODEL_INDEX_FILE, {"schema_version": 1, "updated_at": now, "entities": entities[-200:], "relations": relations[-400:]})
+    return row
+
+
+def _record_model(store: WorkspaceStore, rows: list[dict[str, Any]], now: str) -> None:
+    entities: list[dict[str, Any]] = []
+    for row in rows:
+        for value in (row.get("subject_id", ""), row.get("object_id", "")):
+            entity_type = str(value).split(":", 1)[0] if value else ""
+            if entity_type:
+                entities.append({"entity_id": value, "entity_type": entity_type, "created_at": now})
+    if entities:
+        store.append_jsonl_batch(GOVERNANCE_ENTITIES_FILE, entities)
+    current = store.read_json_prefer_backend(GOVERNANCE_MODEL_INDEX_FILE, {"entities": [], "relations": []}) or {}
+    store.write_json(GOVERNANCE_MODEL_INDEX_FILE, {"schema_version": 1, "updated_at": now, "entities": (list(current.get("entities", [])) + entities)[-200:], "relations": (list(current.get("relations", [])) + rows)[-400:]})

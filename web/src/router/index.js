@@ -11,6 +11,7 @@ const routes = [
   { path: '/backend', name: 'backend', component: () => import('../views/BackendView.vue') },
   { path: '/freshness', name: 'freshness', component: () => import('../views/FreshnessView.vue') },
   { path: '/query', name: 'query', component: () => import('../views/QueryView.vue') },
+  { path: '/assertion', name: 'assertion', component: () => import('../views/AssertionView.vue') },
   { path: '/impact', name: 'impact', component: () => import('../views/ImpactView.vue') },
   { path: '/group', name: 'group', component: () => import('../views/GroupView.vue') },
   { path: '/audit', name: 'audit', component: () => import('../views/AuditView.vue') },

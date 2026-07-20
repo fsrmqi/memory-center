@@ -1064,6 +1064,31 @@ def eval_ontology_gate_cmd(
     print(json.dumps(evaluate_ontology_hot_path(workspace, samples=samples, budget_ms=budget_ms), ensure_ascii=False, indent=2))
 
 
+@app.command("eval-assertion-scope-gate")
+def eval_assertion_scope_gate_cmd(
+    workspace: str = typer.Option(...),
+    path: List[str] = typer.Option(..., help="Logical indexed path; repeat for multiple paths."),  # noqa: B008
+    apply: bool = typer.Option(False, help="Publish one real partial reindex generation."),
+    max_scope_edges: int = typer.Option(200_000, help="Maximum permitted selected assertion edges."),
+):
+    """Check that a partial reindex only materializes its scoped assertions."""
+    from memory_center.core.knowledge.benchmark import evaluate_assertion_scope_gate
+
+    print(json.dumps(evaluate_assertion_scope_gate(workspace, paths=path, apply=apply, max_scope_edges=max_scope_edges), ensure_ascii=False, indent=2))
+
+
+@app.command("eval-assertion-reindex-gate")
+def eval_assertion_reindex_gate_cmd(
+    workspace: str = typer.Option(...),
+    path: List[str] = typer.Option([], help="Logical indexed path; required unless --full."),  # noqa: B008
+    full: bool = typer.Option(False, help="Measure a full reindex in temporary stores."),
+):
+    """Measure graph-only versus assertion-sidecar indexing in isolated storage."""
+    from memory_center.core.knowledge.benchmark import evaluate_assertion_reindex_gate
+
+    print(json.dumps(evaluate_assertion_reindex_gate(workspace, paths=path, full=full), ensure_ascii=False, indent=2))
+
+
 @app.command("assertion-status")
 def assertion_status_cmd(
     workspace: str = typer.Option(...),
@@ -1089,6 +1114,33 @@ def assertion_inspect_cmd(
     from memory_center.core.storage.workspace import WorkspaceStore
 
     print(json.dumps(inspect_assertion(WorkspaceStore(workspace), assertion_id), ensure_ascii=False, indent=2))
+
+
+@app.command("assertion-query")
+def assertion_query_cmd(
+    workspace: str = typer.Option(...),
+    as_of_generation: str = typer.Option(""),
+    as_of_time: str = typer.Option(""),
+    time_axis: str = typer.Option("valid", help="valid, event, or observed."),
+    limit: int = typer.Option(20, min=1, max=500),
+):
+    """Read a bounded assertion history by validity, event, or observation time."""
+    from memory_center.core.knowledge.assertions import query_assertions
+    from memory_center.core.storage.workspace import WorkspaceStore
+
+    print(json.dumps(query_assertions(WorkspaceStore(workspace), as_of_generation=as_of_generation, as_of_time=as_of_time, time_axis=time_axis, limit=limit), ensure_ascii=False, indent=2))
+
+
+@app.command("ontology-migrate")
+def ontology_migrate_cmd(
+    workspace: str = typer.Option(...),
+    apply: bool = typer.Option(False, help="Backfill additive ontology fields; default is read-only."),
+):
+    """Inspect or explicitly backfill the ontology v2 sidecar fields."""
+    from memory_center.core.knowledge.migration import migrate_ontology
+    from memory_center.core.storage.workspace import WorkspaceStore
+
+    print(json.dumps(migrate_ontology(WorkspaceStore(workspace), apply=apply), ensure_ascii=False, indent=2))
 
 
 @app.command("parser-status")
@@ -1183,6 +1235,8 @@ def release_gate_cmd(
     save_baseline: str = typer.Option("", help="Optional output path for the current portable baseline."),
     label: str = typer.Option("current", help="Label used when saving a baseline."),
     max_latency_regression_pct: float = typer.Option(15.0, min=0.0, help="Maximum median component latency regression."),
+    ontology_path: List[str] = typer.Option([], help="Optional logical paths for isolated ontology performance gate."),  # noqa: B008
+    ontology_full: bool = typer.Option(False, help="Run the isolated full ontology reindex gate."),
     max_quality_drop: float = typer.Option(0.02, min=0.0, max=1.0, help="Maximum component quality-score drop."),
 ):
     """Run index, retrieval and optional precision checks as one release gate."""
@@ -1197,6 +1251,8 @@ def release_gate_cmd(
         parser_limit=parser_limit,
         baseline=baseline or None,
         max_latency_regression_pct=max_latency_regression_pct,
+        ontology_paths=ontology_path,
+        ontology_full=ontology_full,
         max_quality_drop=max_quality_drop,
     )
     response: dict[str, object] = {"result": result}

@@ -114,6 +114,8 @@ def run_release_gate(
     baseline: dict[str, Any] | str | Path | None = None,
     max_latency_regression_pct: float = 15.0,
     max_quality_drop: float = 0.02,
+    ontology_paths: list[str] | None = None,
+    ontology_full: bool = False,
 ) -> dict[str, Any]:
     """Run a publish-ready index and retrieval gate with optional private suites.
 
@@ -123,6 +125,23 @@ def run_release_gate(
     config = load_workspace_config(workspace_file)
     store = WorkspaceStore(workspace_file)
     components: dict[str, dict[str, Any]] = {}
+
+    if ontology_paths or ontology_full:
+        from memory_center.core.knowledge.benchmark import evaluate_assertion_reindex_gate, evaluate_ontology_hot_path
+
+        ontology_started = time.perf_counter()
+        hot = evaluate_ontology_hot_path(str(workspace_file))
+        reindex_gate = evaluate_assertion_reindex_gate(
+            str(workspace_file), paths=ontology_paths, full=ontology_full
+        )
+        ontology_passed = bool(hot["passed"]) and bool(reindex_gate["passed"])
+        components["ontology_performance"] = _component(
+            passed=ontology_passed,
+            duration_ms=(time.perf_counter() - ontology_started) * 1000,
+            result_count=int(reindex_gate.get("written_assertions", 0) or 0),
+            quality_score=1.0 if ontology_passed else 0.0,
+            reason="ontology_budget_exceeded" if not ontology_passed else "",
+        )
 
     started = time.perf_counter()
     counts = reindex_workspace(config, store)

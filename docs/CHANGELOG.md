@@ -6,6 +6,29 @@
 - 重要行为变化
 - 明确修复的真实 bug
 
+## 4.1.34 本体发布性能门禁
+
+- 新增隔离临时存储中的 graph-only 与 assertion-sidecar reindex 对比门禁，并可接入 `release-gate`；局部范围预算为 5%，完整范围预算为 10%。
+
+## 4.1.33 身份与断言确认体验
+
+- 别名新增验证状态、置信度、有效期与 `ALIAS_OF`、`SAME_AS`、`RENAMED_FROM`、`REPLACES` 语义；默认仅合并有验证证据的等价关系。
+- CLI、MCP admin、HTTP、旧 Workbench 和 Vue Workbench 新增断言详情、验证、拒绝与深度分析入口；状态操作不会修改源码或删除历史。
+
+## 4.1.32 治理本体与双时间断言
+
+- registry 新增治理实体与关系端点约束；断言增加 provenance、relation mode、evidence refs、event/observed/valid 时间字段。
+- 新增 `ontology-migrate` 只读预检和显式回填，旧断言读模型保持兼容。
+
+## 4.1.31 统一知识状态
+
+- 查询与工作区状态新增 additive `knowledge_state`，明确 `FOUND`、`NOT_FOUND`、`NOT_INDEXED`、`STALE`、`UNKNOWN` 的范围、原因和下一步动作。
+
+## 4.1.30 局部刷新范围门禁
+
+- 新增 `eval-assertion-scope-gate`：先以只读方式统计指定逻辑路径实际选中的断言边，并与全图边数和范围上限比较；只有显式传入 `--apply` 才会发布一次局部 reindex。
+- 门禁输出范围比例、选中边数与可选实刷耗时，便于在真实工作空间验证局部索引没有退化为全量物化。
+
 ## 4.1.29 静态断言历史保留
 
 - 已关闭静态断言新增低频保留策略：活跃事实永不裁剪；历史按 90 天与 200 万条上限同步清理 SQLite 镜像和 JSONL 审计流，避免长期全量 reindex 导致无限增长。

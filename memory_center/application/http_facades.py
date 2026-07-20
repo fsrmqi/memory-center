@@ -16,7 +16,7 @@ from memory_center.application.presentation import (
     export_workspace_dashboard_html,
 )
 from memory_center.core.freshness.change_reports import recent_change_impact_reports, record_change_impact_feedback
-from memory_center.core.knowledge.assertions import inspect_assertion, update_assertion_status
+from memory_center.core.knowledge.assertions import inspect_assertion, query_assertions, update_assertion_status
 from memory_center.core.knowledge.communities import analyze_architecture_communities
 from memory_center.core.orchestrator import (
     group_chain,
@@ -189,6 +189,10 @@ def workspace_assertion_inspect(workspace_file: str, assertion_id: str) -> dict[
     return inspect_assertion(WorkspaceStore(workspace_file), assertion_id)
 
 
+def workspace_assertion_query(workspace_file: str, *, as_of_generation: str = "", as_of_time: str = "", time_axis: str = "valid", limit: int = 20) -> dict[str, Any]:
+    return {"assertions": query_assertions(WorkspaceStore(workspace_file), as_of_generation=as_of_generation, as_of_time=as_of_time, time_axis=time_axis, limit=limit)}
+
+
 __all__ = [
     "Any",
     "export_continuity_dashboard_html",
@@ -249,6 +253,7 @@ __all__ = [
     "workspace_architecture_communities",
     "workspace_assertion_status",
     "workspace_assertion_inspect",
+    "workspace_assertion_query",
     "workspace_handoff_packet",
     "workspace_handoff_history",
     "workspace_lookup_hint",

@@ -291,6 +291,8 @@ CLI、HTTP 和 Workbench 默认使用同一结论卡，而不是直接抛出图�
 
 当前提供 `memory-center eval-ontology-gate --workspace <workspace.yaml>`，用于验证默认查询新增 assertion summary 的真实 workspace P50/P95 门禁。
 
+当前还提供 `memory-center eval-assertion-scope-gate --workspace <workspace.yaml> --path <logical-path>`，默认只读地校验局部刷新选中的断言边数必须小于全图边数且不超过范围上限。只有在需要验证真实局部发布时，才显式追加 `--apply`；该选项会产生一个新的局部索引 generation。
+
 ## 7. 测试与发布门禁
 
 每个阶段必须增加：
@@ -326,3 +328,9 @@ CLI、HTTP 和 Workbench 默认使用同一结论卡，而不是直接抛出图�
 - 不因本体重构破坏 MCP facade 或既有 dict schema。
 - 不在普通查询中推理全量跨域关系。
 - 不将 LLM 输出自动升级为 VERIFIED。
+
+## 10. 收尾实现状态（4.1.34）
+
+- 查询与状态入口已提供兼容的 `knowledge_state`，避免以空结果表达不存在；断言支持有效期、事件时间与观测时间查询。
+- 治理实体、关系、Action 读模型、验证别名和全入口断言确认已接入；旧 sidecar 可通过 `ontology-migrate` 预检或显式回填。
+- `eval-ontology-gate`、`eval-assertion-scope-gate` 与 `eval-assertion-reindex-gate` 覆盖默认查询、局部范围和隔离 reindex 开销门禁。

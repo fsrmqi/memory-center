@@ -128,6 +128,9 @@ def workspace_status(workspace_file: str | Path, view: str = "compact", budget: 
         "topology": store.read_json_prefer_backend("service-topology.json", {}),
         "architecture_communities": architecture_communities_status(workspace_file),
     }
+    from memory_center.core.knowledge.state import attach_knowledge_state
+
+    attach_knowledge_state(store, result, mode="workspace_status")
     if _is_compact_view(view):
         compact = _compact_workspace_status(result, budget=budget)
         gain = _measure_compact_gain(result, compact)

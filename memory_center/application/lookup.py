@@ -38,4 +38,14 @@ def finalize_lookup(workspace_file: str, target: str, payload: dict[str, Any], p
         payload["cross_shard_fusion"] = fuse_cross_shard_result(workspace_file, target, payload, prepared["shard_route"], prepared["shard_evidence"])
     except Exception:
         payload["cross_shard_fusion"] = {"generation": {"consistent": False, "status": "fusion_unavailable"}, "conclusions": [], "next_actions": []}
+    from memory_center.core.knowledge.state import attach_knowledge_state
+    from memory_center.core.storage.workspace import WorkspaceStore
+
+    attach_knowledge_state(
+        WorkspaceStore(workspace_file),
+        payload,
+        query=target,
+        project=str(getattr(plan, "project", "") or ""),
+        mode=operation,
+    )
     return payload

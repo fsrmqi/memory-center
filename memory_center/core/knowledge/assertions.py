@@ -64,6 +64,8 @@ def materialize_static_assertions(
             "by_status": summary["by_status"],
             "recent": summary["recent"],
             "updated_at": created_at,
+            "written": total,
+            "mode": "partial" if partial else "full",
         },
     )
     _maybe_maintain_assertions(store)
@@ -75,12 +77,14 @@ def query_assertions(
     *,
     as_of_generation: str = "",
     as_of_time: str = "",
+    time_axis: str = "valid",
     limit: int = 20,
 ) -> list[dict[str, Any]]:
     """Bounded temporal read API for current or historical assertions."""
     return store.memory_backend().query_assertions(
         as_of_generation=as_of_generation,
         as_of_time=as_of_time,
+        time_axis=time_axis,
         limit=limit,
     )
 
@@ -115,7 +119,26 @@ def update_assertion_status(
 def inspect_assertion(store: WorkspaceStore, assertion_id: str) -> dict[str, Any]:
     """Return one assertion by stable ref without scanning the audit stream."""
     assertion = store.memory_backend().assertion_by_id(assertion_id)
-    return {"found": assertion is not None, "assertion": assertion, "assertion_ref": assertion_id}
+    if assertion is None:
+        return {"found": False, "assertion": None, "assertion_ref": assertion_id}
+    from memory_center.core.knowledge.aliases import resolve_canonical_identity
+    from memory_center.core.knowledge.governance import record_action
+    from memory_center.core.presentation.conclusion_cards import _action
+
+    status = str(assertion.get("status", "EXTRACTED") or "EXTRACTED")
+    action = _action(status)
+    persisted = record_action(store, assertion_id=assertion_id, status=status, action=action)
+    return {
+        "found": True,
+        "assertion": assertion,
+        "assertion_ref": assertion_id,
+        "identity_resolution": {
+            "subject": resolve_canonical_identity(store, str(assertion.get("subject_id", ""))),
+            "object": resolve_canonical_identity(store, str(assertion.get("object_id", ""))),
+        },
+        "action": {**action, "action_id": persisted["action_id"], "assertion_ref": assertion_id},
+        "state_change_notice": "此操作仅改变断言状态，不会修改源码或删除历史证据。",
+    }
 
 
 def _persist_batch(store: WorkspaceStore, assertions: list[dict[str, Any]]) -> None:
@@ -167,6 +190,12 @@ def _assertion_from_edge(edge: dict[str, Any], *, generation: str, created_at: s
         "confidence": float(edge.get("confidence", 1.0) or 1.0),
         "generation": generation,
         "source_kind": "STATIC",
+        "provenance_kind": "STATIC",
+        "relation_mode": str(edge.get("relation_mode", "STRUCTURAL") or "STRUCTURAL"),
+        "evidence_refs": [f"ev:graph-edge:{edge.get('id', '')}"],
+        "event_at": created_at,
+        "observed_at": created_at,
+        "event_time_source": "observed_at_fallback",
         "valid_from": created_at,
         "valid_to": "",
         "created_at": created_at,

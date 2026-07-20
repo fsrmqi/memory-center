@@ -21,6 +21,7 @@ def _nav_sidebar_html(workspace_param: str) -> str:
         ("/ui/usage", "Usage / 使用报告"),
         ("/ui/backend", "Backend / 后端"),
         ("/ui/index-freshness", "Freshness / 索引新鲜度"),
+        ("/ui/assertion", "Assertion / 断言确认"),
     ]
     items = "".join(
         f'<li><a href="{path}?workspace={ws}" style="display:block;padding:6px 8px;color:var(--ink);text-decoration:none;border-radius:6px;">{label}</a></li>'
@@ -480,12 +481,29 @@ def export_workbench_index_html(workspace_file: str | Path) -> str:
       <a class="card" href="/ui/usage"><h2>Usage Report</h2><p>Lookup adoption and suspected bypasses.</p></a>
       <a class="card" href="/ui/backend"><h2>Memory Backend</h2><p>Mirrored SQLite collections, records, and refs.</p></a>
       <a class="card" href="/ui/index-freshness"><h2>Index Freshness</h2><p>Stale index signals and semantic readiness.</p></a>
+      <a class="card" href="/ui/assertion"><h2>Assertion Review</h2><p>Verify, reject, or request deeper analysis.</p></a>
       <a class="card" href="/workspace/status?view=compact&budget=medium"><h2>Workspace Status JSON</h2><p>Compact machine-readable status.</p></a>
     </div>
   </div>
 </body>
 </html>
 """
+
+
+def export_assertion_html(workspace_file: str | Path, assertion_id: str = "") -> str:
+    """Render the legacy Workbench assertion confirmation page."""
+    from memory_center.core.knowledge.assertions import inspect_assertion
+
+    workspace_param = str(Path(workspace_file).resolve())
+    details = inspect_assertion(WorkspaceStore(workspace_file), assertion_id) if assertion_id else {}
+    assertion = details.get("assertion", {}) if isinstance(details, dict) else {}
+    message = html.escape(str(details.get("state_change_notice", "状态操作只改变断言状态，不会修改源码或删除历史证据。")))
+    content = html.escape(json.dumps(details, ensure_ascii=False, indent=2)) if details else "请输入 assertion_id 查看详情。"
+    return f"""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>断言确认</title><style>body{{font-family:system-ui;margin:32px;max-width:920px}}input,button{{padding:8px;margin:4px}}pre{{white-space:pre-wrap;background:#f5f7fa;padding:12px;border-radius:6px}}.notice{{color:#475569}}.reject{{background:#9f3333;color:#fff;border:0}}</style></head><body>
+<h1>断言确认</h1><p class="notice">{message}</p>
+<form method="get" action="/ui/assertion"><input type="hidden" name="workspace" value="{html.escape(workspace_param)}"><input name="assertion_id" value="{html.escape(assertion_id)}" placeholder="assertion_id"><button>查看</button></form>
+<p>当前状态：<strong>{html.escape(str(assertion.get('status', '')))}</strong></p>
+<form method="get" action="/workspace/assertion-status"><input type="hidden" name="workspace" value="{html.escape(workspace_param)}"><input type="hidden" name="assertion_id" value="{html.escape(assertion_id)}"><input name="verification_ref" placeholder="验证引用（验证成立必填）"><input name="actor" placeholder="操作人"><button name="status" value="VERIFIED">验证成立</button><button class="reject" name="status" value="REJECTED">发现误报</button><button name="status" value="AMBIGUOUS">需要深度分析</button></form><pre>{content}</pre></body></html>"""
 
 
 def export_focus_task_html(workspace_file: str | Path, intent: str = "", task_id: str = "", limit: int = 10) -> str:

@@ -31,6 +31,8 @@ Traditional coding agents often rely on ad-hoc file reads and grep. That works f
 
 Memory Center precomputes these relationships before the agent starts editing.
 
+查询结果同时提供可追溯的 `knowledge_state`：它区分当前范围内找到、未索引、未发现、索引过期和证据不足，避免把“未找到”误读为“工程中不存在”。断言详情可按有效期、事件时间或观测时间读取，并通过 CLI、MCP、HTTP 或 Workbench 完成验证与拒绝。
+
 记忆中心的核心思想是：**不要让 AI 每次临时理解项目，而是在索引阶段提前构建服务图、调用图、契约图、消息图、规则图、经验图。**
 
 当前主文档请优先看：

@@ -275,6 +275,7 @@ def reindex_workspace(
     parallel: bool = True,
     lock_timeout: float = 0.0,
     progress: Callable[[str, int, str], None] | None = None,
+    materialize_assertions: bool = True,
 ) -> dict[str, Any]:
     """Rebuild workspace indexes with one writer per workspace."""
     with workspace_reindex_lock(
@@ -333,6 +334,8 @@ def reindex_workspace(
             # already visible, so an assertion write failure must never roll
             # back or delay the usable index.
             try:
+                if not materialize_assertions:
+                    raise RuntimeError("assertion_sidecar_disabled_for_benchmark")
                 from memory_center.core.knowledge.assertions import materialize_static_assertions
 
                 materialize_static_assertions(
@@ -342,6 +345,9 @@ def reindex_workspace(
                     projects=list(projects or []),
                 )
             except Exception as exc:
+                if not materialize_assertions:
+                    _report_progress(progress, "finalizing", 98, "索引代际已发布（断言侧车基准已跳过）")
+                    return counts
                 store.write_json(
                     "assertion-index.json",
                     {"schema_version": 1, "generation": generation, "status": "unavailable", "reason": str(exc)[:200]},

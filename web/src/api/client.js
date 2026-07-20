@@ -81,6 +81,14 @@ export function queryWorkspace(workspace, text, params = {}) {
   return api.get('/workspace/query', { params: { workspace, text, ...params } })
 }
 
+export function inspectAssertion(workspace, assertionId) {
+  return api.get('/workspace/assertion', { params: { workspace, assertion_id: assertionId } })
+}
+
+export function updateAssertionStatus(workspace, assertionId, status, params = {}) {
+  return api.get('/workspace/assertion-status', { params: { workspace, assertion_id: assertionId, status, ...params } })
+}
+
 export function searchCode(workspace, query, params = {}) {
   return api.get('/workspace/search-code', { params: { workspace, query, ...params } })
 }

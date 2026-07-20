@@ -1,5 +1,11 @@
 # MCP Guide / MCP 接入指南
 
+## Ontology / 本体状态与断言
+
+`mc_lookup` 会附加 `knowledge_state`，其中 `state`、`absence_reason`、`scope_checked` 与 `next_action` 说明当前范围内的知识状态。不要将 `NOT_FOUND` 当作不存在的事实结论。
+
+`mc_admin(action="assertion_inspect")` 可读取断言详情和 Action；`mc_admin(action="assertion_status")` 用于验证或拒绝，`VERIFIED` 必须带脱敏 `verification_ref`。`mc_admin(action="ontology_migrate", force=true)` 才会回填既有 sidecar 字段。
+
 ## 1. Public Surface / 对外公开面
 
 MCP 当前公开的是 12 个 task-level tools：

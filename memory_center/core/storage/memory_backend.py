@@ -90,6 +90,11 @@ class MemoryBackendStore:
               generation TEXT NOT NULL,
               valid_from TEXT NOT NULL,
               valid_to TEXT DEFAULT '',
+              event_at TEXT DEFAULT '',
+              observed_at TEXT DEFAULT '',
+              provenance_kind TEXT DEFAULT '',
+              relation_mode TEXT DEFAULT '',
+              evidence_refs_json TEXT DEFAULT '[]',
               source_file TEXT DEFAULT '',
               target_file TEXT DEFAULT '',
               source_project TEXT DEFAULT '',
@@ -104,7 +109,10 @@ class MemoryBackendStore:
               ON assertions(subject_id, predicate, object_id, valid_to);
             """
         )
-        for column in ("source_file", "target_file", "source_project", "target_project"):
+        for column in (
+            "source_file", "target_file", "source_project", "target_project",
+            "event_at", "observed_at", "provenance_kind", "relation_mode", "evidence_refs_json",
+        ):
             try:
                 conn.execute(f"ALTER TABLE assertions ADD COLUMN {column} TEXT DEFAULT ''")
             except sqlite3.OperationalError:
@@ -113,6 +121,8 @@ class MemoryBackendStore:
         conn.execute("CREATE INDEX IF NOT EXISTS idx_assertions_target_file_active ON assertions(target_file, valid_to)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_assertions_source_project_active ON assertions(source_project, valid_to)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_assertions_target_project_active ON assertions(target_project, valid_to)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_assertions_event_at ON assertions(event_at)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_assertions_observed_at ON assertions(observed_at)")
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS refs (
@@ -190,6 +200,9 @@ class MemoryBackendStore:
             (
                 row["assertion_id"], row["subject_id"], row["predicate"], row["object_id"],
                 row["status"], row["generation"], row["valid_from"], row.get("valid_to", ""),
+                row.get("event_at", row["valid_from"]), row.get("observed_at", row["valid_from"]),
+                row.get("provenance_kind", row.get("source_kind", "")), row.get("relation_mode", ""),
+                json.dumps(row.get("evidence_refs", []), ensure_ascii=False),
                 row.get("source_file", ""), row.get("target_file", ""),
                 row.get("source_project", ""), row.get("target_project", ""),
                 json.dumps(row, ensure_ascii=False),
@@ -208,8 +221,8 @@ class MemoryBackendStore:
                 )
             conn.executemany(
                 """
-                INSERT INTO assertions(assertion_id, subject_id, predicate, object_id, status, generation, valid_from, valid_to, source_file, target_file, source_project, target_project, payload_json)
-                VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO assertions(assertion_id, subject_id, predicate, object_id, status, generation, valid_from, valid_to, event_at, observed_at, provenance_kind, relation_mode, evidence_refs_json, source_file, target_file, source_project, target_project, payload_json)
+                VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(assertion_id) DO NOTHING
                 """,
                 rows,
@@ -272,7 +285,7 @@ class MemoryBackendStore:
             "recent": [{**json.loads(str(row["payload_json"])), "status": str(row["status"])} for row in recent],
         }
 
-    def query_assertions(self, *, as_of_generation: str = "", as_of_time: str = "", limit: int = 20) -> list[dict[str, Any]]:
+    def query_assertions(self, *, as_of_generation: str = "", as_of_time: str = "", time_axis: str = "valid", limit: int = 20) -> list[dict[str, Any]]:
         """Read a bounded historical assertion slice; defaults to active facts."""
         clauses = ["1=1"]
         args: list[Any] = []
@@ -280,11 +293,18 @@ class MemoryBackendStore:
             clauses.append("generation = ?")
             args.append(as_of_generation)
         elif as_of_time:
-            clauses.extend(["valid_from <= ?", "(valid_to = '' OR valid_to > ?)"])
-            args.extend([as_of_time, as_of_time])
+            if time_axis == "event":
+                clauses.append("event_at <= ?")
+                args.append(as_of_time)
+            elif time_axis == "observed":
+                clauses.append("observed_at <= ?")
+                args.append(as_of_time)
+            else:
+                clauses.extend(["valid_from <= ?", "(valid_to = '' OR valid_to > ?)"])
+                args.extend([as_of_time, as_of_time])
         else:
             clauses.append("valid_to = ''")
-        args.append(min(max(1, limit), 100))
+        args.append(min(max(1, limit), 500))
         with self.connect() as conn:
             rows = conn.execute(
                 f"SELECT status, payload_json FROM assertions WHERE {' AND '.join(clauses)} ORDER BY valid_from DESC, assertion_id DESC LIMIT ?",

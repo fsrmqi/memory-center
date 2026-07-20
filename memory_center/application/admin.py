@@ -536,6 +536,8 @@ def build_admin_registry(
         ),
         "assertion_status": lambda: _update_assertion_status_action(wf, record_id, status, payload, source),
         "assertion_inspect": lambda: _inspect_assertion_action(wf, record_id),
+        "assertion_query": lambda: __import__("memory_center.core.knowledge.assertions", fromlist=["query_assertions"]).query_assertions(WorkspaceStore(wf), as_of_generation=str((parse_payload(payload) or {}).get("as_of_generation", "")), as_of_time=str((parse_payload(payload) or {}).get("as_of_time", "")), time_axis=str((parse_payload(payload) or {}).get("time_axis", "valid")), limit=min(max(1, limit), 500)),
+        "ontology_migrate": lambda: __import__("memory_center.core.knowledge.migration", fromlist=["migrate_ontology"]).migrate_ontology(WorkspaceStore(wf), apply=force),
         "evidence_subgraph_export": lambda: export_evidence_subgraph(
             wf,
             text or name or record_id,

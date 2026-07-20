@@ -375,12 +375,13 @@ def _rebuild_summary_after_filter(filtered: list, intent: dict) -> dict:
         "level_3_next_actions": next_actions,
     }
 
-    return {
+    result = {
         "total_found": len(filtered),
         "returned": len(filtered),
         "retrieval_summary": retrieval_summary,
         "progressive": progressive,
     }
+    return result
 
 
 def _project_matches(query_project: str, item_project: str) -> bool:
@@ -432,13 +433,14 @@ def _assertion_summary(store: WorkspaceStore) -> dict[str, Any]:
     stale = int(statuses.get("STALE", 0) or 0)
     verified = int(statuses.get("VERIFIED", 0) or 0)
     inferred = int(statuses.get("INFERRED", 0) or 0)
-    return {
+    result = {
         "active": int(summary.get("active", 0) or 0),
         "verified": verified,
         "inferred": inferred,
         "stale": stale,
         "next_action": "刷新关联索引" if stale else ("验证高风险推断" if inferred else "按需展开证据"),
     }
+    return result
 
 
 def memory_query(workspace_file: str | Path, query: str, limit: int = 20, node_types: list[str] | None = None, alpha: float | None = None) -> dict[str, Any]:
@@ -477,7 +479,7 @@ def memory_query(workspace_file: str | Path, query: str, limit: int = 20, node_t
     related_rules = match_rules(store, intent=query, files=[item["node"].get("file_path", "") for item in merged])[:10]
     cases = store.read_jsonl_prefer_backend("cross-service-task-memory.jsonl", limit=200)
     related_cases = [c for c in cases if any(k in json.dumps(c, ensure_ascii=False).lower() for k in tokenize(query))][-5:]
-    return {
+    result = {
         "workspace": config.workspace,
         "query": query,
         "matches": merged,
@@ -488,6 +490,9 @@ def memory_query(workspace_file: str | Path, query: str, limit: int = 20, node_t
         "historical_cases": related_cases,
         "assertion_summary": _assertion_summary(store),
     }
+    from memory_center.core.knowledge.state import attach_knowledge_state
+
+    return attach_knowledge_state(store, result, query=query, mode="memory_query")
 
 
 @observe_operation(
@@ -551,7 +556,9 @@ def memory_query_hybrid(
         result["intent_analysis"] = intent
         result["workspace"] = result.get("workspace") or config_obj[0].workspace
         result["agent_next_steps"] = _build_agent_next_steps_for_walkthrough(result)
-        return result
+        from memory_center.core.knowledge.state import attach_knowledge_state
+
+        return attach_knowledge_state(store, result, query=query, project=effective_project, mode="memory_query_hybrid")
 
     freshness_banner: dict[str, Any]
     try:
@@ -773,12 +780,15 @@ def memory_query_hybrid(
         })
     result["_quality"] = build_quality_summary(quality_evidence, freshness_status=freshness_status)
     result["agent_next_steps"] = _build_agent_next_steps_for_query(result, query=query, workspace_file=workspace_file)
-    return attach_facade_metadata(
+    result = attach_facade_metadata(
         result,
         operation="memory_query_hybrid",
         result_kind="lookup",
         evidence_level="hybrid_indexed",
     )
+    from memory_center.core.knowledge.state import attach_knowledge_state
+
+    return attach_knowledge_state(store, result, query=query, project=effective_project, mode="memory_query_hybrid")
 
 
 def _build_agent_next_steps_for_walkthrough(result: dict[str, Any]) -> list[dict[str, Any]]:

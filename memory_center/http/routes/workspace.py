@@ -56,6 +56,7 @@ from memory_center.application.http_facades import (
     update_task_status,
     workspace_architecture_communities,
     workspace_assertion_inspect,
+    workspace_assertion_query,
     workspace_assertion_status,
     workspace_background_job_status,
     workspace_change_impact_confirm,
@@ -148,6 +149,13 @@ def register_workspace_routes(registry: CommandRegistry) -> None:
     ))
     registry.register("/workspace/assertion", lambda rp: workspace_assertion_inspect(
         rp.workspace(), rp.require("assertion_id")
+    ))
+    registry.register("/workspace/assertions", lambda rp: workspace_assertion_query(
+        rp.workspace(),
+        as_of_generation=rp.get("as_of_generation", ""),
+        as_of_time=rp.get("as_of_time", ""),
+        time_axis=rp.get("time_axis", "valid"),
+        limit=rp.int_param("limit", 20, max_val=500),
     ))
     registry.register("/workspace/sniff", lambda rp: workspace_sniff(
         rp.workspace(),

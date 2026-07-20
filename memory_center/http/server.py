@@ -8,6 +8,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from memory_center.application.presentation import (
+    export_assertion_html,
     export_continuity_dashboard_html,
     export_focus_task_html,
     export_index_freshness_html,
@@ -105,6 +106,10 @@ def create_handler(default_workspace: str | Path | None = None) -> type[BaseHTTP
                         return
                 if parsed.path == "/ui":
                     self._write_html(200, export_workbench_index_html(_require_workspace(params, workspace_file)))
+                    return
+                if parsed.path == "/ui/assertion":
+                    workspace = _require_workspace(params, workspace_file)
+                    self._write_html(200, export_assertion_html(workspace, params.get("assertion_id", [""])[0]))
                     return
                 if parsed.path == "/ui/dashboard":
                     workspace = _require_workspace(params, workspace_file)

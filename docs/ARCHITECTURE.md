@@ -85,6 +85,8 @@ Memory Center 不要求中心化服务。默认形态是每个 workspace 自带�
 - **Evidence-first / 证据优先**：回答、handoff、case、ref、audit 都尽量保留来源和可追溯证据。
 - **Compatibility-first / 兼容优先**：MCP tool schema、CLI 命令、HTTP 路径默认保持兼容；新增能力优先 additive。
 
+- **Ontology state / 本体状态**：查询通过 `knowledge_state` 明确当前索引范围、未发现、过期和未知状态；Assertion sidecar 保存来源、有效期、事件时间与观测时间，治理 Action 采用有界读模型而不进入图查询热路径。
+
 ### 1.4.1 架构不可变量 / Architectural Invariants
 
 以下规则是未来重构的判定标准，而不是可选建议：
