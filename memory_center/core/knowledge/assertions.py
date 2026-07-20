@@ -101,6 +101,8 @@ def update_assertion_status(
     status: str,
     verification_ref: str = "",
     actor: str = "",
+    task_id: str = "",
+    session_id: str = "",
 ) -> dict[str, Any]:
     """Explicitly verify or reject an assertion without deleting its history."""
     normalized = status.strip().upper()
@@ -115,6 +117,8 @@ def update_assertion_status(
         "status": normalized,
         "verification_ref": verification_ref[:240],
         "actor": actor[:120],
+        "task_id": task_id[:120],
+        "session_id": session_id[:120],
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
     store.append_jsonl(ASSERTION_EVENTS_FILE, event)

@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import time
-from hashlib import sha256
 from typing import Any
 
 from memory_center.core.freshness.targeted_refresh import refresh_query_targets
@@ -39,7 +38,7 @@ def finalize_lookup(workspace_file: str, target: str, payload: dict[str, Any], p
         payload["cross_shard_fusion"] = fuse_cross_shard_result(workspace_file, target, payload, prepared["shard_route"], prepared["shard_evidence"])
     except Exception:
         payload["cross_shard_fusion"] = {"generation": {"consistent": False, "status": "fusion_unavailable"}, "conclusions": [], "next_actions": []}
-    from memory_center.core.knowledge.governance import record_action
+    from memory_center.core.knowledge.governance import record_actions
     from memory_center.core.knowledge.state import attach_knowledge_state
     from memory_center.core.storage.workspace import WorkspaceStore
 
@@ -51,11 +50,7 @@ def finalize_lookup(workspace_file: str, target: str, payload: dict[str, Any], p
         mode=operation,
     )
     store = WorkspaceStore(workspace_file)
-    actions = []
-    for item in (payload.get("agent_next_steps", []) or [])[:20]:
-        action = item if isinstance(item, dict) else {"action_type": "follow_recommendation", "label": str(item)}
-        row = record_action(store, assertion_id=f"lookup:{sha256((target + str(action)).encode()).hexdigest()[:16]}", status="EXTRACTED", action=action)
-        actions.append({**action, "action_id": row["action_id"]})
+    actions = record_actions(store, origin=f"{operation}:{target}", actions=list(payload.get("agent_next_steps", []) or []))
     if actions:
         payload["agent_actions"] = actions
     return payload

@@ -329,8 +329,8 @@ CLI、HTTP 和 Workbench 默认使用同一结论卡，而不是直接抛出图�
 - 不在普通查询中推理全量跨域关系。
 - 不将 LLM 输出自动升级为 VERIFIED。
 
-## 10. 收尾实现状态（4.1.34）
+## 10. 收尾实现状态（4.1.36）
 
 - 查询与状态入口已提供兼容的 `knowledge_state`，避免以空结果表达不存在；断言支持有效期、事件时间与观测时间查询。
-- 治理实体、关系、Action 读模型、验证别名和全入口断言确认已接入；旧 sidecar 可通过 `ontology-migrate` 预检或显式回填。
-- `eval-ontology-gate`、`eval-assertion-scope-gate` 与 `eval-assertion-reindex-gate` 覆盖默认查询、局部范围和隔离 reindex 开销门禁。
+- 治理实体、关系、Action 读模型、验证别名和全入口断言确认已接入；Action 覆盖 hybrid 查询与 MCP lookup，Workbench 自动继承 task/session/actor 上下文；旧 sidecar 可通过 `ontology-migrate` 预检或显式回填。
+- `eval-ontology-gate`、`eval-assertion-scope-gate` 与 `eval-assertion-reindex-gate` 覆盖默认查询、局部范围和隔离 reindex 开销门禁；真实 workspace 局部基线已验证通过。

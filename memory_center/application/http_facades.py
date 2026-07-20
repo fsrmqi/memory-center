@@ -178,10 +178,12 @@ def workspace_assertion_status(
     status: str,
     verification_ref: str = "",
     actor: str = "",
+    task_id: str = "",
+    session_id: str = "",
 ) -> dict[str, Any]:
     """HTTP facade for an explicit, auditable assertion status transition."""
     return update_assertion_status(
-        WorkspaceStore(workspace_file), assertion_id, status=status, verification_ref=verification_ref, actor=actor
+        WorkspaceStore(workspace_file), assertion_id, status=status, verification_ref=verification_ref, actor=actor, task_id=task_id, session_id=session_id
     )
 
 

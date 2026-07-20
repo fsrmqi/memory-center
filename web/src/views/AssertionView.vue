@@ -1,16 +1,27 @@
 <script setup>
-import { inject, ref } from 'vue'
+import { inject, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { inspectAssertion, updateAssertionStatus } from '../api/client.js'
 import DataCard from '../components/DataCard.vue'
 import JsonTree from '../components/JsonTree.vue'
 
 const workspace = inject('workspace')
+const route = useRoute()
 const assertionId = ref('')
 const verificationRef = ref('')
 const actor = ref('')
+const taskId = ref('')
+const sessionId = ref('')
 const data = ref(null)
 const error = ref('')
 const loading = ref(false)
+
+watch(() => route.query, (query) => {
+  assertionId.value = String(query.assertion_id || assertionId.value || '')
+  taskId.value = String(query.task_id || taskId.value || '')
+  sessionId.value = String(query.session_id || sessionId.value || '')
+  actor.value = String(query.actor || actor.value || '')
+}, { immediate: true })
 
 async function inspect() {
   if (!workspace.value || !assertionId.value) return
@@ -24,7 +35,7 @@ async function changeStatus(status) {
   if (status === 'VERIFIED' && !verificationRef.value) { error.value = '验证成立需要填写脱敏验证引用'; return }
   loading.value = true; error.value = ''
   try {
-    await updateAssertionStatus(workspace.value, assertionId.value, status, { verification_ref: verificationRef.value, actor: actor.value })
+    await updateAssertionStatus(workspace.value, assertionId.value, status, { verification_ref: verificationRef.value, actor: actor.value, task_id: taskId.value, session_id: sessionId.value })
     await inspect()
   } catch (e) { error.value = e.message }
   loading.value = false
@@ -43,7 +54,7 @@ async function changeStatus(status) {
       <div v-if="data?.found">
         <div class="summary"><b>{{ data.assertion?.subject_id }}</b><span>{{ data.assertion?.predicate }}</span><b>{{ data.assertion?.object_id }}</b></div>
         <p>当前状态：<strong>{{ data.assertion?.status }}</strong>；建议：{{ data.action?.action_type }}</p>
-        <div class="controls"><input v-model="verificationRef" placeholder="脱敏 verification_ref（验证时必填）" /><input v-model="actor" placeholder="操作人（可选）" /></div>
+        <div class="controls"><input v-model="verificationRef" placeholder="脱敏 verification_ref（验证时必填）" /><input v-model="actor" placeholder="操作人（可选）" /><input v-model="taskId" placeholder="任务 ID（自动继承）" /><input v-model="sessionId" placeholder="会话 ID（自动继承）" /></div>
         <div class="actions"><button @click="changeStatus('VERIFIED')">验证成立</button><button class="reject" @click="changeStatus('REJECTED')">发现误报</button><button @click="changeStatus('AMBIGUOUS')">需要深度分析</button></div>
         <details><summary>身份归并与完整证据</summary><JsonTree :data="data" label="assertion" :depth="0" /></details>
       </div>

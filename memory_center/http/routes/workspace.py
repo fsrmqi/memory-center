@@ -146,6 +146,8 @@ def register_workspace_routes(registry: CommandRegistry) -> None:
         status=rp.require("status"),
         verification_ref=rp.get("verification_ref", ""),
         actor=rp.get("actor", ""),
+        task_id=rp.task_id(),
+        session_id=rp.session_id(),
     ))
     registry.register("/workspace/assertion", lambda rp: workspace_assertion_inspect(
         rp.workspace(), rp.require("assertion_id")

@@ -99,6 +99,17 @@ def record_action(store: WorkspaceStore, *, assertion_id: str, status: str, acti
     return row
 
 
+def record_actions(store: WorkspaceStore, *, origin: str, actions: list[Any], task_id: str = "", session_id: str = "", actor: str = "") -> list[dict[str, Any]]:
+    """Persist bounded actionable recommendations from every public query entry."""
+    persisted: list[dict[str, Any]] = []
+    for item in actions[:20]:
+        action = dict(item) if isinstance(item, dict) else {"action_type": "follow_recommendation", "label": str(item)}
+        key = sha256(f"{origin}|{action}".encode()).hexdigest()[:16]
+        row = record_action(store, assertion_id=f"lookup:{key}", status="EXTRACTED", action=action, task_id=task_id, session_id=session_id, actor=actor)
+        persisted.append({**action, "action_id": row["action_id"]})
+    return persisted
+
+
 def _record_model(store: WorkspaceStore, rows: list[dict[str, Any]], now: str) -> None:
     entities: list[dict[str, Any]] = []
     for row in rows:

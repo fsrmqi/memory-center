@@ -785,6 +785,12 @@ def memory_query_hybrid(
         })
     result["_quality"] = build_quality_summary(quality_evidence, freshness_status=freshness_status)
     result["agent_next_steps"] = _build_agent_next_steps_for_query(result, query=query, workspace_file=workspace_file)
+    try:
+        from memory_center.core.knowledge.governance import record_actions
+
+        result["agent_actions"] = record_actions(store, origin=f"memory_query_hybrid:{query}", actions=list(result["agent_next_steps"]))
+    except Exception:
+        result["agent_actions"] = []
     result = attach_facade_metadata(
         result,
         operation="memory_query_hybrid",
