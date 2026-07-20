@@ -57,6 +57,8 @@ This page is the main entrypoint for the `docs/` directory.
   - active docs / historical docs 边界与更新规则。
 - [DOCUMENT_CONSTITUTION.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/DOCUMENT_CONSTITUTION.md)
   - 文档真相层级、生命周期和不可变量。
+- [ONTOLOGY_EVOLUTION_PLAN.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/ONTOLOGY_EVOLUTION_PLAN.md)
+  - 本体实体、断言、时间、验证和迁移的独立实施计划。
 
 ### Notes And References / 补充说明与参考
 

@@ -32,6 +32,8 @@ This document explains which documents are the **current maintained entrypoints*
   - 当前唯一活跃的开发路线。
 - [DOCUMENT_CONSTITUTION.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/DOCUMENT_CONSTITUTION.md)
   - 文档类型、权威来源、生命周期与更新门禁。
+- [ONTOLOGY_EVOLUTION_PLAN.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/ONTOLOGY_EVOLUTION_PLAN.md)
+  - 需要单独评审的本体演进决策与实施计划。
 
 ---
 
