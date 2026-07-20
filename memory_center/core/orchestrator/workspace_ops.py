@@ -79,6 +79,7 @@ def workspace_status(workspace_file: str | Path, view: str = "compact", budget: 
     if current_focus_task:
         current_focus_task["focus_reason"] = _build_focus_reason(current_focus_task)
     index_summary = store.read_json_prefer_backend("index-summary.json", {})
+    from memory_center.core.knowledge.communities import architecture_communities_status
     try:
         from ..freshness.targeted_refresh import hot_refresh_status
         refresh_status = hot_refresh_status(workspace_file)
@@ -125,6 +126,7 @@ def workspace_status(workspace_file: str | Path, view: str = "compact", budget: 
         "active_task_spaces": active_tasks,
         "current_focus_task": current_focus_task,
         "topology": store.read_json_prefer_backend("service-topology.json", {}),
+        "architecture_communities": architecture_communities_status(workspace_file),
     }
     if _is_compact_view(view):
         compact = _compact_workspace_status(result, budget=budget)

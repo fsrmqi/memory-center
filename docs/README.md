@@ -15,6 +15,7 @@ This page is the main entrypoint for the `docs/` directory.
 3. [MCP_GUIDE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/MCP_GUIDE.md)
 4. [REFERENCE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/REFERENCE.md)
 5. [CHANGELOG.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/CHANGELOG.md)
+6. [DOCUMENT_CONSTITUTION.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/DOCUMENT_CONSTITUTION.md)
 
 ---
 
@@ -54,6 +55,8 @@ This page is the main entrypoint for the `docs/` directory.
   - 当前唯一活跃开发路线。
 - [DOCS_STATUS.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/DOCS_STATUS.md)
   - active docs / historical docs 边界与更新规则。
+- [DOCUMENT_CONSTITUTION.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/DOCUMENT_CONSTITUTION.md)
+  - 文档真相层级、生命周期和不可变量。
 
 ### Notes And References / 补充说明与参考
 

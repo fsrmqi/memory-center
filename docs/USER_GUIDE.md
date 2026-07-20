@@ -4,6 +4,20 @@
 
 这份文档面向日常使用者：想安装、初始化、重建索引、查询上下文、做影响分析、维护 workspace 的开发者或 Agent 使用者。
 
+## 任务地图 / Task Map
+
+不要从命令列表开始。按当前任务选择一条路径，完成停止条件后再升级：
+
+| 任务 | 主入口 | 停止条件 | 升级路径 |
+|---|---|---|---|
+| 首次接入 | `init` -> `reindex` -> `inspect` | parser active、workspace 正确 | `setup-agent` 修复宿主绑定 |
+| 日常定位 | `work-start` -> `query` / `symbol` | 已有证据文件和明确下一步 | `mc_lookup(mode="walkthrough")` |
+| 变更影响 | `impact` 或 `mc_analyze` | 风险、规则、验证清单明确 | 高风险时 `depth="full"` |
+| 索引新鲜度 | `status` / `watcher-status` | 没有相关 dirty path | `watcher-start` 或局部 reindex |
+| 长任务恢复 | `work-resume-check` | 状态为 `ready` | `repair-task --apply` 后重试 |
+| 分析交接 | `export-evidence-subgraph` | 已得到有界证据图 | 补充人工确认或验证结论 |
+| 宿主排障 | `inspect` | 已得到可执行修复建议 | 重启宿主会话后复查 |
+
 ## 1. Install / 安装
 
 推荐安装方式：

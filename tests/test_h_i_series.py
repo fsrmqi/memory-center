@@ -565,17 +565,17 @@ class TestI05VersionRelease:
         assert len(parts) >= 2, f"Version should be semver-like: {__version__}"
 
     def test_pyproject_version_matches(self):
-        import tomli as tomllib
+        try:
+            import tomllib
+        except ImportError:  # pragma: no cover - Python 3.10 compatibility
+            import tomli as tomllib
+
         pyproject = Path("pyproject.toml")
         if pyproject.exists():
-            try:
-                with open(pyproject, "rb") as f:
-                    data = tomllib.load(f)
-                # Version should exist in pyproject
-                assert "project" in data
-            except ImportError:
-                # Python < 3.11
-                pass
+            with open(pyproject, "rb") as f:
+                data = tomllib.load(f)
+            # Version should exist in pyproject
+            assert "project" in data
 
     def test_changelog_exists(self):
         changelog = Path("CHANGELOG.md")

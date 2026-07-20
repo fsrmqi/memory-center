@@ -54,7 +54,11 @@ from memory_center.application.http_facades import (
     update_artifact,
     update_task_artifact,
     update_task_status,
+    workspace_architecture_communities,
     workspace_background_job_status,
+    workspace_change_impact_confirm,
+    workspace_change_impact_reports,
+    workspace_evidence_subgraph,
     workspace_lookup_hint,
     workspace_recent_evidence,
     workspace_recent_sessions,
@@ -105,6 +109,33 @@ def register_workspace_routes(registry: CommandRegistry) -> None:
         rp.workspace(),
         rp.params.get("job_id", [""])[0],
         limit=_parse_int(rp.params, "limit", 20, max_val=100),
+    ))
+    registry.register("/workspace/change-impact-reports", lambda rp: workspace_change_impact_reports(
+        rp.workspace(),
+        limit=_parse_int(rp.params, "limit", 20, max_val=100),
+        pending_only=rp.bool_param("pending_only"),
+    ))
+    registry.register("/workspace/change-impact-confirm", lambda rp: workspace_change_impact_confirm(
+        rp.workspace(),
+        rp.require("report_id"),
+        decision=rp.require("decision"),
+        task_id=rp.task_id(),
+        session_id=rp.session_id(),
+        validation_status=rp.get("validation_status", "not_run"),
+        validation_summary=rp.get("validation_summary", ""),
+        verified_by=rp.list_param("verified_by") or None,
+        note=rp.get("note", ""),
+    ))
+    registry.register("/workspace/evidence-subgraph", lambda rp: workspace_evidence_subgraph(
+        rp.workspace(),
+        rp.require("target"),
+        direction=rp.get("direction", "both"),
+        max_depth=rp.int_param("max_depth", 2, max_val=3),
+        max_edges=rp.int_param("max_edges", 60, max_val=120),
+        output_format=rp.get("format", "json"),
+    ))
+    registry.register("/workspace/architecture-communities", lambda rp: workspace_architecture_communities(
+        rp.workspace(), limit=rp.int_param("limit", 20, max_val=50)
     ))
     registry.register("/workspace/sniff", lambda rp: workspace_sniff(
         rp.workspace(),

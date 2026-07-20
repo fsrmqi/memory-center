@@ -30,6 +30,8 @@ This document explains which documents are the **current maintained entrypoints*
   - 发布时的最小检查清单。
 - [NEXT_PHASE_MASTER_PLAN.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/NEXT_PHASE_MASTER_PLAN.md)
   - 当前唯一活跃的开发路线。
+- [DOCUMENT_CONSTITUTION.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/DOCUMENT_CONSTITUTION.md)
+  - 文档类型、权威来源、生命周期与更新门禁。
 
 ---
 
@@ -57,6 +59,7 @@ This document explains which documents are the **current maintained entrypoints*
 3. `docs/MCP_GUIDE.md`
 4. `docs/REFERENCE.md` 或 `docs/SPECS.md`
 5. `docs/CHANGELOG.md`
+6. `docs/DOCUMENT_CONSTITUTION.md` 规定的公开入口可发现性检查
 
 只有在该变更确实影响开发路线或发布流程时，再更新：
 

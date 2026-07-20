@@ -26,9 +26,17 @@ from memory_center.cli.commands.workspaces import (
 )
 from memory_center.core.foundation.dispatch import CommandRegistry
 from memory_center.core.foundation.errors import normalize_exception
+from memory_center.core.freshness.change_reports import recent_change_impact_reports, record_change_impact_feedback
+from memory_center.core.freshness.daemon import (
+    run_watcher_daemon,
+    start_watcher_daemon,
+    stop_watcher_daemon,
+    watcher_daemon_status,
+)
 from memory_center.core.governance.instructions import write_agent_instructions
 from memory_center.core.governance.rules import ensure_default_rules
 from memory_center.core.indexing.reindex import reindex_workspace
+from memory_center.core.knowledge.communities import analyze_architecture_communities
 from memory_center.core.knowledge.wiki import generate_skills, generate_wiki
 from memory_center.core.orchestrator import (
     memory_backend_query,
@@ -99,6 +107,7 @@ from memory_center.core.orchestrator import (
     workspace_unresolved_items,
     workspace_write_receipts,
 )
+from memory_center.core.presentation.evidence_subgraph import export_evidence_subgraph
 from memory_center.core.storage.workspace import WorkspaceStore
 from memory_center.core.tasks.artifacts import (
     create_task_space,
@@ -291,6 +300,84 @@ def job_status(
     typer.echo(json.dumps(workspace_job_status(workspace, job_id, limit=limit), ensure_ascii=False, indent=2))
 
 
+@app.command("watcher-start")
+def watcher_start(
+    workspace: str = typer.Option(..., help="Path to .memory-center/workspace.yaml"),
+    poll_interval: float = typer.Option(5.0, min=0.2, help="File scan interval in seconds."),
+    debounce_seconds: float = typer.Option(2.0, min=0.0, help="Quiet period before one partial reindex."),
+):
+    """Start one persistent watcher that queues targeted reindex jobs."""
+    typer.echo(json.dumps(start_watcher_daemon(workspace, poll_interval=poll_interval, debounce_seconds=debounce_seconds), ensure_ascii=False, indent=2))
+
+
+@app.command("watcher-status")
+def watcher_status(
+    workspace: str = typer.Option(..., help="Path to .memory-center/workspace.yaml"),
+):
+    """Show persistent watcher state and its latest targeted reindex job."""
+    typer.echo(json.dumps(watcher_daemon_status(workspace), ensure_ascii=False, indent=2))
+
+
+@app.command("watcher-stop")
+def watcher_stop(
+    workspace: str = typer.Option(..., help="Path to .memory-center/workspace.yaml"),
+):
+    """Stop the persistent watcher for this workspace."""
+    typer.echo(json.dumps(stop_watcher_daemon(workspace), ensure_ascii=False, indent=2))
+
+
+@app.command("change-impact-reports")
+def change_impact_reports(
+    workspace: str = typer.Option(..., help="Path to .memory-center/workspace.yaml"),
+    limit: int = typer.Option(20, min=1, max=100, help="Maximum recent reports to return."),
+    pending_only: bool = typer.Option(False, help="Only show reports without a final human decision."),
+):
+    """Show lightweight watcher change impact reports after partial reindex jobs finish."""
+    typer.echo(json.dumps(recent_change_impact_reports(workspace, limit=limit, pending_only=pending_only), ensure_ascii=False, indent=2))
+
+
+@app.command("change-impact-confirm")
+def change_impact_confirm(
+    workspace: str = typer.Option(..., help="Path to .memory-center/workspace.yaml"),
+    report_id: str = typer.Option(..., help="Change impact report id."),
+    decision: str = typer.Option(..., help="confirmed|false_positive|deep_analysis_required|resolved"),
+    task_id: str = typer.Option("", help="Optional related task id."),
+    session_id: str = typer.Option("", help="Optional related session id."),
+    validation_status: str = typer.Option("not_run", help="passed|failed|skipped|not_run|recorded"),
+    validation_summary: str = typer.Option("", help="Structured validation conclusion only; no raw output."),
+    verified_by: Optional[List[str]] = OPTIONAL_VERIFIED_BY,
+    note: str = typer.Option("", help="Short structured conclusion; no source or conversation body."),
+):
+    """Record a human decision for one watcher change impact report."""
+    typer.echo(
+        json.dumps(
+            record_change_impact_feedback(
+                workspace,
+                report_id,
+                decision=decision,
+                task_id=task_id,
+                session_id=session_id,
+                validation_status=validation_status,
+                validation_summary=validation_summary,
+                verified_by=verified_by,
+                note=note,
+            ),
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
+
+
+@app.command("watcher-run", hidden=True)
+def watcher_run(
+    workspace: str = typer.Option(...),
+    poll_interval: float = typer.Option(5.0, min=0.2),
+    debounce_seconds: float = typer.Option(2.0, min=0.0),
+):
+    """Internal detached watcher process entrypoint."""
+    run_watcher_daemon(workspace, poll_interval=poll_interval, debounce_seconds=debounce_seconds)
+
+
 @app.command("inspect")
 def inspect_cmd(
     workspace: str = typer.Option(..., help="Path to .memory-center/workspace.yaml"),
@@ -382,6 +469,35 @@ def export_mermaid_cmd(workspace: str = typer.Option(...), output: Optional[str]
         print(f"[green]Wrote:[/green] {output}")
     else:
         print(diagram)
+
+
+@app.command("export-evidence-subgraph")
+def export_evidence_subgraph_cmd(
+    workspace: str = typer.Option(...),
+    target: str = typer.Option(..., help="Graph node id or bounded symbol query."),
+    direction: str = typer.Option("both"),
+    max_depth: int = typer.Option(2, min=1, max=3),
+    max_edges: int = typer.Option(60, min=1, max=120),
+    output_format: str = typer.Option("json", "--format"),
+    output: Optional[str] = typer.Option(None),
+):
+    """Export a bounded evidence subgraph; it never scans the full graph."""
+    result = export_evidence_subgraph(workspace, target, direction=direction, max_depth=max_depth, max_edges=max_edges, output_format=output_format)
+    content = result.get("content", json.dumps(result, ensure_ascii=False, indent=2))
+    if output:
+        Path(output).write_text(content, encoding="utf-8")
+        print(f"[green]Wrote:[/green] {output}")
+    else:
+        print(content)
+
+
+@app.command("architecture-communities")
+def architecture_communities_cmd(
+    workspace: str = typer.Option(...),
+    limit: int = typer.Option(20, min=1, max=50),
+):
+    """Explicitly aggregate project communities and central graph nodes."""
+    print(analyze_architecture_communities(workspace, limit=limit))
 
 
 @app.command()

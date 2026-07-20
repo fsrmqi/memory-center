@@ -595,6 +595,49 @@ class GraphStore:
             edges = conn.execute("SELECT COUNT(*) FROM edges").fetchone()[0]
         return {"nodes": nodes, "edges": edges}
 
+    def community_projection(self, *, limit: int = 30) -> dict[str, list[dict[str, Any]]]:
+        """Aggregate cross-project relationships and central nodes in SQLite.
+
+        This is intentionally an explicit offline query: it transfers only
+        grouped rows, never the complete graph, to the caller.
+        """
+        bounded_limit = min(max(1, limit), 100)
+        with self.connect() as conn:
+            relationships = conn.execute(
+                """
+                SELECT source.project AS source_project, target.project AS target_project, COUNT(*) AS edge_count
+                FROM edges edge
+                JOIN nodes source ON source.id=edge.source_id
+                JOIN nodes target ON target.id=edge.target_id
+                WHERE source.project <> '' AND target.project <> '' AND source.project <> target.project
+                GROUP BY source.project, target.project
+                ORDER BY edge_count DESC, source.project, target.project
+                LIMIT ?
+                """,
+                (bounded_limit * 4,),
+            ).fetchall()
+            central_nodes = conn.execute(
+                """
+                SELECT node.id, node.name, node.type, node.project, node.file_path, node.line,
+                       COUNT(edge.id) AS degree,
+                       COUNT(DISTINCT CASE
+                           WHEN source.project = node.project THEN target.project ELSE source.project END) AS connected_projects
+                FROM nodes node
+                JOIN edges edge ON edge.source_id=node.id OR edge.target_id=node.id
+                LEFT JOIN nodes source ON source.id=edge.source_id
+                LEFT JOIN nodes target ON target.id=edge.target_id
+                WHERE node.project <> ''
+                GROUP BY node.id
+                ORDER BY connected_projects DESC, degree DESC, node.name
+                LIMIT ?
+                """,
+                (bounded_limit,),
+            ).fetchall()
+        return {
+            "relationships": [dict(row) for row in relationships],
+            "central_nodes": [dict(row) for row in central_nodes],
+        }
+
     def all_nodes(self) -> list[dict[str, Any]]:
         with self.connect() as conn:
             rows = conn.execute("SELECT * FROM nodes").fetchall()

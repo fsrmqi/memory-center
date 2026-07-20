@@ -6,7 +6,27 @@
 - 重要行为变化
 - 明确修复的真实 bug
 
-## 4.1.5 可信任务进度与运行证据
+## 4.1.10 离线架构社区分析
+
+- 新增 `architecture-communities`、`GET /workspace/architecture-communities` 与 `mc_admin(action="architecture_communities")`，显式聚合项目社区、跨项目关系和高中心性节点。
+- 计算只在 SQLite 内聚合，结果缓存为轻量摘要；普通查询与 status 不触发计算，不加载完整图或源码。
+
+## 4.1.9 文档宪章与任务旅程
+
+- 新增 `DOCUMENT_CONSTITUTION.md`，定义文档真相层级、生命周期、公开入口更新门禁与架构不可变量；测试确保新能力在操作、参考、MCP 文档中可发现。
+- `USER_GUIDE` 新增按任务组织的操作地图；主计划移除已完成能力的旧执行顺序，架构文档新增可审计的不可变量。
+
+## 4.1.8 有界证据子图导出
+
+- 新增 `export-evidence-subgraph`、`GET /workspace/evidence-subgraph` 与 `mc_admin(action="evidence_subgraph_export")`，围绕一个节点或符号导出 JSON、Markdown、HTML 证据子图。
+- 导出严格限制为最多 3 跳、120 条边、80 个节点；不读取源码、不扫描全图、不进入普通查询热路径，输出携带节点/边证据等级。
+
+## 4.1.7 变更影响确认闭环
+
+- watcher 变更影响报告新增人工确认闭环：`confirmed`、`false_positive`、`deep_analysis_required`、`resolved` 可关联 task/session、结构化验证结论和验证人；CLI、HTTP 与 MCP admin 复用同一读写模型。
+- Workbench 的 `hot_refresh.pending_change_reports.high_risk_reports` 仅返回最多 5 条未确认高风险项。报告、确认审计和紧凑索引均按 30 天、10 万条维护，查询不加载代码或全量图。
+
+## 4.1.6 可信任务进度与运行证据
 
 ### 证据等级
 
@@ -25,6 +45,11 @@
 ### 后台任务进度
 
 - workspace job 升级为版本化阶段进度，持久化 `progress` 和有界 `progress_events`；reindex 会上报扫描、解析、图谱、语义、检索和发布阶段，失败状态返回脱敏诊断。
+
+### 常驻定向索引
+
+- 新增每工作区单实例 watcher daemon：`watcher-start|status|stop` 与 `mc_admin(action="watcher_start|watcher_status|watcher_stop")` 支持后台监听、去抖、局部重建、PID 存活检查与优雅停止；Workbench 的 `hot_refresh.watcher` 显示相同持久化状态。
+- watcher 的局部 reindex 到达终态后会生成有界变更影响摘要，记录变更类别、受影响服务、generation、任务结果与证据等级；高风险契约变更只建议显式深度分析，避免后台自动消耗索引资源。
 
 ### 4.1.4 交互历史与效果闭环
 

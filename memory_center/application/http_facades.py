@@ -15,6 +15,8 @@ from memory_center.application.presentation import (
     export_workbench_index_html,
     export_workspace_dashboard_html,
 )
+from memory_center.core.freshness.change_reports import recent_change_impact_reports, record_change_impact_feedback
+from memory_center.core.knowledge.communities import analyze_architecture_communities
 from memory_center.core.orchestrator import (
     group_chain,
     group_impact,
@@ -84,6 +86,7 @@ from memory_center.core.orchestrator import (
     workspace_unresolved_items,
     workspace_write_receipts,
 )
+from memory_center.core.presentation.evidence_subgraph import export_evidence_subgraph
 from memory_center.core.tasks.artifacts import (
     append_change_log,
     append_task_change_log,
@@ -108,6 +111,62 @@ from memory_center.core.tasks.artifacts import (
 def workspace_background_job_status(workspace_file: str, job_id: str = "", *, limit: int = 20) -> dict[str, Any]:
     """通过 application 边界读取持久化后台任务状态。"""
     return analysis_job_status(workspace_file, job_id, limit=limit)
+
+
+def workspace_change_impact_reports(workspace_file: str, *, limit: int = 20, pending_only: bool = False) -> dict[str, Any]:
+    """通过 application 边界读取 watcher 的轻量变更影响报告。"""
+    return recent_change_impact_reports(workspace_file, limit=limit, pending_only=pending_only)
+
+
+def workspace_change_impact_confirm(
+    workspace_file: str,
+    report_id: str,
+    *,
+    decision: str,
+    task_id: str = "",
+    session_id: str = "",
+    validation_status: str = "not_run",
+    validation_summary: str = "",
+    verified_by: list[str] | None = None,
+    note: str = "",
+) -> dict[str, Any]:
+    """通过 application 边界追加一条变更影响人工确认。"""
+    return record_change_impact_feedback(
+        workspace_file,
+        report_id,
+        decision=decision,
+        task_id=task_id,
+        session_id=session_id,
+        validation_status=validation_status,
+        validation_summary=validation_summary,
+        verified_by=verified_by,
+        note=note,
+    )
+
+
+def workspace_evidence_subgraph(
+    workspace_file: str,
+    target: str,
+    *,
+    direction: str = "both",
+    max_depth: int = 2,
+    max_edges: int = 60,
+    output_format: str = "json",
+) -> dict[str, Any]:
+    """通过 application 边界导出有界证据子图。"""
+    return export_evidence_subgraph(
+        workspace_file,
+        target,
+        direction=direction,
+        max_depth=max_depth,
+        max_edges=max_edges,
+        output_format=output_format,
+    )
+
+
+def workspace_architecture_communities(workspace_file: str, *, limit: int = 20) -> dict[str, Any]:
+    """通过 application 边界显式计算架构社区。"""
+    return analyze_architecture_communities(workspace_file, limit=limit)
 
 
 __all__ = [
@@ -164,6 +223,10 @@ __all__ = [
     "memory_write_judge",
     "workspace_end_session",
     "workspace_background_job_status",
+    "workspace_change_impact_reports",
+    "workspace_change_impact_confirm",
+    "workspace_evidence_subgraph",
+    "workspace_architecture_communities",
     "workspace_handoff_packet",
     "workspace_handoff_history",
     "workspace_lookup_hint",

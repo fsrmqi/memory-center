@@ -1,5 +1,7 @@
-"""Tests for MCP facade tools (8 task-level tools replacing 82 atomic tools)."""
+"""Tests for MCP workflow facades and focused insight tools."""
+import asyncio
 import importlib.util
+import inspect
 from pathlib import Path
 
 import pytest
@@ -54,6 +56,23 @@ HAS_MCP = importlib.util.find_spec("mcp") is not None and importlib.util.find_sp
 
 if HAS_MCP:
     from memory_center.mcp.server import create_server
+
+
+@pytest.fixture(autouse=True)
+def _main_thread_event_loop():
+    """Keep legacy synchronous FastMCP tests compatible with Python 3.11+."""
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        yield loop
+    finally:
+        loop.close()
+        asyncio.set_event_loop(None)
+
+
+def _resolve_mcp_result(payload):
+    """Resolve either sync or async FastMCP tool wrappers in direct tests."""
+    return asyncio.get_event_loop().run_until_complete(payload) if inspect.isawaitable(payload) else payload
 
 
 def _setup_workspace(tmp_path: Path) -> str:
@@ -117,13 +136,16 @@ def _setup_duplicate_symbol_workspace(tmp_path: Path) -> Path:
     return workspace
 
 @pytest.mark.skipif(not HAS_MCP, reason="mcp package not installed")
-def test_mcp_server_has_exactly_8_facade_tools(tmp_path: Path):
+def test_mcp_server_exposes_workflow_facades_and_insight_tools(tmp_path: Path):
     wf = _setup_workspace(tmp_path)
     server = create_server(wf)
     # FastMCP stores tools internally; verify count and names
     tool_names = list(server._tool_manager._tools.keys())
-    assert len(tool_names) == 8
-    expected = {"mc_start", "mc_lookup", "mc_analyze", "mc_sync", "mc_resume", "mc_handoff", "mc_close", "mc_admin"}
+    expected = {
+        "mc_start", "mc_lookup", "mc_analyze", "mc_sync", "mc_resume", "mc_handoff", "mc_close", "mc_admin",
+        "mc_context_pack", "mc_onboard", "mc_domain", "mc_freshness",
+    }
+    assert len(tool_names) == len(expected)
     assert set(tool_names) == expected
 
 
@@ -916,7 +938,6 @@ def test_mc_lookup_auto_prefers_chain_for_deep_method_trace_queries(monkeypatch,
 
 @pytest.mark.skipif(not HAS_MCP, reason="mcp package not installed")
 def test_mc_admin_walkthrough_actions(tmp_path: Path):
-    import asyncio
 
     from memory_center.mcp.server import create_server
 
@@ -924,37 +945,32 @@ def test_mc_admin_walkthrough_actions(tmp_path: Path):
     symbol = "com.example.task.ArticleMoveService#move"
     server = create_server(wf)
     mc_admin = server._tool_manager._tools["mc_admin"]
-    loop = asyncio.get_event_loop()
-
-    health = loop.run_until_complete(mc_admin.fn(action="walkthrough_health", text=symbol))
+    health = _resolve_mcp_result(mc_admin.fn(action="walkthrough_health", text=symbol))
     assert health["result"]["status"] in {"pass", "warn"}
-    quality = loop.run_until_complete(mc_admin.fn(action="eval_walkthrough_quality", text=symbol))
+    quality = _resolve_mcp_result(mc_admin.fn(action="eval_walkthrough_quality", text=symbol))
     assert quality["result"]["grade"] == "pass"
-    exported = loop.run_until_complete(mc_admin.fn(action="walkthrough_export", text=symbol))
+    exported = _resolve_mcp_result(mc_admin.fn(action="walkthrough_export", text=symbol))
     assert exported["result"]["exported"] is True
 
 
 @pytest.mark.skipif(not HAS_MCP, reason="mcp package not installed")
 def test_mcp_create_server_resolves_directory_workspace(tmp_path: Path):
-    from memory_center.mcp.server import _resolve_workspace_input
+    from memory_center.mcp.runtime import resolve_workspace_input
 
     wf = Path(_setup_workspace(tmp_path))
     repo_root = wf.parent.parent
-    assert _resolve_workspace_input(str(repo_root)) == str(wf.resolve())
+    assert resolve_workspace_input(str(repo_root)) == str(wf.resolve())
 
 
 @pytest.mark.skipif(not HAS_MCP, reason="mcp package not installed")
 def test_mcp_lookup_and_analyze_default_to_compact_views(tmp_path: Path):
-    import asyncio
 
     from memory_center.mcp.server import create_server
 
     wf = _setup_workspace(tmp_path)
     server = create_server(wf)
-    loop = asyncio.get_event_loop()
-
     mc_lookup = server._tool_manager._tools["mc_lookup"]
-    symbol_payload = loop.run_until_complete(mc_lookup.fn(query="ArticleFeignClient", mode="symbol"))
+    symbol_payload = _resolve_mcp_result(mc_lookup.fn(query="ArticleFeignClient", mode="symbol"))
     assert symbol_payload["result"]["found"] is True
     assert "best_match" in symbol_payload["result"]
     assert "lookup" in symbol_payload["result"]
@@ -962,14 +978,14 @@ def test_mcp_lookup_and_analyze_default_to_compact_views(tmp_path: Path):
     assert symbol_payload["result"]["summary_lines"]
     assert "progressive" not in symbol_payload["result"]
 
-    chain_payload = loop.run_until_complete(mc_lookup.fn(query="ArticleFeignClient", mode="chain", chain_direction="callers"))
+    chain_payload = _resolve_mcp_result(mc_lookup.fn(query="ArticleFeignClient", mode="chain", chain_direction="callers"))
     assert chain_payload["result"]["found"] is True
     assert chain_payload["result"]["direction"] == "callers"
     assert "chain_summary" in chain_payload["result"]
     assert chain_payload["result"]["summary_lines"]
     assert "callers" not in chain_payload["result"]
 
-    context_payload = loop.run_until_complete(mc_lookup.fn(query="ArticleFeignClient", mode="context"))
+    context_payload = _resolve_mcp_result(mc_lookup.fn(query="ArticleFeignClient", mode="context"))
     assert context_payload["result"]["found"] is True
     assert "incoming_summary" in context_payload["result"]
     assert "outgoing_summary" in context_payload["result"]
@@ -977,12 +993,12 @@ def test_mcp_lookup_and_analyze_default_to_compact_views(tmp_path: Path):
     assert "incoming" not in context_payload["result"]
 
     mc_analyze = server._tool_manager._tools["mc_analyze"]
-    analyze_payload = loop.run_until_complete(mc_analyze.fn(target="ArticleFeignClient", depth="quick", direction="upstream", max_depth=2))
+    analyze_payload = _resolve_mcp_result(mc_analyze.fn(target="ArticleFeignClient", depth="quick", direction="upstream", max_depth=2))
     assert analyze_payload["impact"]["found"] is True
     assert "confirmed_summary" in analyze_payload["impact"]
     assert analyze_payload["impact"]["summary_lines"]
     assert "confirmed_impacts" not in analyze_payload["impact"]
-    analyze_project_payload = loop.run_until_complete(
+    analyze_project_payload = _resolve_mcp_result(
         mc_analyze.fn(target="ArticleFeignClient", depth="quick", direction="upstream", max_depth=2, project="task-service")
     )
     assert analyze_project_payload["impact"]["project_scope"]["uses_cross_project_anchor"] is True
@@ -1040,13 +1056,10 @@ def test_http_next_phase_entrypoint_matrix_uses_workspace_yaml(tmp_path: Path):
 
 @pytest.mark.skipif(not HAS_MCP, reason="mcp package not installed")
 def test_mcp_next_phase_entrypoint_matrix_uses_workspace_yaml(tmp_path: Path):
-    import asyncio
 
     wf = _setup_workspace(tmp_path)
     server = create_server(wf)
     tools = server._tool_manager._tools
-    loop = asyncio.get_event_loop()
-
     direct_cases = [
         ("mc_context_pack", {"query": "ArticleFeignClient"}, ["workflow", "freshness", "progressive"]),
         ("mc_freshness", {}, ["workflow", "freshness", "banner"]),
@@ -1054,7 +1067,7 @@ def test_mcp_next_phase_entrypoint_matrix_uses_workspace_yaml(tmp_path: Path):
         ("mc_domain", {}, ["workflow", "domains", "domain_count"]),
     ]
     for tool_name, kwargs, required_keys in direct_cases:
-        payload = loop.run_until_complete(tools[tool_name].fn(**kwargs))
+        payload = _resolve_mcp_result(tools[tool_name].fn(**kwargs))
         for key in required_keys:
             assert key in payload, f"{tool_name} missing {key}: {payload}"
 
@@ -1067,7 +1080,7 @@ def test_mcp_next_phase_entrypoint_matrix_uses_workspace_yaml(tmp_path: Path):
         ({"action": "regression_alerts"}, ["action", "result"]),
     ]
     for kwargs, required_keys in admin_cases:
-        payload = loop.run_until_complete(tools["mc_admin"].fn(**kwargs))
+        payload = _resolve_mcp_result(tools["mc_admin"].fn(**kwargs))
         for key in required_keys:
             assert key in payload, f"mc_admin {kwargs['action']} missing {key}: {payload}"
         assert "file is not a database" not in str(payload)
@@ -1262,7 +1275,6 @@ def test_mc_close_full_workflow(tmp_path: Path):
 
 @pytest.mark.skipif(not HAS_MCP, reason="mcp package not installed")
 def test_mc_close_auto_records_candidate_feedback(tmp_path: Path):
-    import asyncio
 
     wf = _setup_workspace(tmp_path)
     server = create_server(wf)
@@ -1272,9 +1284,7 @@ def test_mc_close_auto_records_candidate_feedback(tmp_path: Path):
     from memory_center.core.orchestrator import workspace_log_session_event
     workspace_log_session_event(wf, sid, "tool_call", {"tool_name": "memory_symbol_tool", "query": "ArticleFeignClient"})
 
-    payload = asyncio.get_event_loop().run_until_complete(
-        tools["mc_close"].fn(session_id=sid, outcome="完成定位", verified_by=["manual-check"])
-    )
+    payload = _resolve_mcp_result(tools["mc_close"].fn(session_id=sid, outcome="完成定位", verified_by=["manual-check"]))
     assert payload["candidate_feedback"]["recorded"] is True
     assert payload["candidate_feedback"]["feedback_items"][0]["target"] == "symbol_lookup"
     assert "ended" in payload
@@ -1340,37 +1350,37 @@ def test_mc_admin_task_health_actions(tmp_path: Path):
     assert "recommended_next_step" in resume_check
 
 
-def test_mc_lookup_invalid_mode_raises(tmp_path: Path):
-    """Verify that an invalid mode string raises ValueError with helpful message."""
+def test_mc_lookup_invalid_mode_returns_structured_mcp_error(tmp_path: Path):
+    """MCP boundary must normalize invalid lookup modes instead of raising."""
     wf = _setup_workspace(tmp_path)
     if not HAS_MCP:
         pytest.skip("mcp package not installed")
     server = create_server(wf)
     mc_lookup = server._tool_manager._tools["mc_lookup"]
-    import asyncio
-    with pytest.raises(ValueError, match="Unknown mc_lookup mode"):
-        asyncio.get_event_loop().run_until_complete(mc_lookup.fn(query="test", mode="nonexistent"))
+    result = _resolve_mcp_result(mc_lookup.fn(query="test", mode="nonexistent"))
+    assert result["error"] is True
+    assert "Unknown mc_lookup mode" in result["message"]
 
 
-def test_mc_admin_invalid_action_raises(tmp_path: Path):
-    """Verify that an invalid action string raises ValueError with action list."""
+def test_mc_admin_invalid_action_returns_structured_mcp_error(tmp_path: Path):
+    """MCP boundary must normalize invalid admin actions instead of raising."""
     wf = _setup_workspace(tmp_path)
     if not HAS_MCP:
         pytest.skip("mcp package not installed")
     server = create_server(wf)
     mc_admin = server._tool_manager._tools["mc_admin"]
-    import asyncio
-    with pytest.raises(ValueError, match="Unknown mc_admin action"):
-        asyncio.get_event_loop().run_until_complete(mc_admin.fn(action="nonexistent_action"))
+    result = _resolve_mcp_result(mc_admin.fn(action="nonexistent_action"))
+    assert result["error"] is True
+    assert "Unknown mc_admin action" in result["message"]
 
 
-def test_mc_sync_requires_intent_or_session_id(tmp_path: Path):
-    """Verify mc_sync raises ValueError when neither intent nor session_id is provided."""
+def test_mc_sync_missing_input_returns_structured_mcp_error(tmp_path: Path):
+    """MCP boundary must normalize missing workflow inputs instead of raising."""
     wf = _setup_workspace(tmp_path)
     if not HAS_MCP:
         pytest.skip("mcp package not installed")
     server = create_server(wf)
     mc_sync = server._tool_manager._tools["mc_sync"]
-    import asyncio
-    with pytest.raises(ValueError, match="mc_sync requires intent or session_id"):
-        asyncio.get_event_loop().run_until_complete(mc_sync.fn())
+    result = _resolve_mcp_result(mc_sync.fn())
+    assert result["error"] is True
+    assert "mc_sync requires intent or session_id" in result["message"]

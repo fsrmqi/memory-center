@@ -36,8 +36,15 @@ from memory_center.core.domain.flow import (
 )
 from memory_center.core.explanation.schema import Explanation
 from memory_center.core.foundation.dispatch import CommandRegistry
+from memory_center.core.freshness.change_reports import (
+    pending_change_impact_reports,
+    recent_change_impact_reports,
+    record_change_impact_feedback,
+)
+from memory_center.core.freshness.daemon import start_watcher_daemon, stop_watcher_daemon, watcher_daemon_status
 from memory_center.core.indexing.control_plane import index_control_status, rollback_generation
 from memory_center.core.indexing.shards import cleanup_generations
+from memory_center.core.knowledge.communities import analyze_architecture_communities
 from memory_center.core.knowledge.wiki import generate_skills, generate_wiki
 from memory_center.core.observability.metrics import MetricsCollector
 from memory_center.core.orchestrator import (
@@ -91,6 +98,7 @@ from memory_center.core.orchestrator import (
     workspace_task_resume_check,
     workspace_write_receipts,
 )
+from memory_center.core.presentation.evidence_subgraph import export_evidence_subgraph
 from memory_center.core.retrieval.cross_service import evaluate_cross_shard_replay
 from memory_center.core.retrieval.cross_service_fusion import evaluate_cross_shard_fusion
 from memory_center.core.retrieval.planner import workspace_performance_summary
@@ -491,6 +499,31 @@ def build_admin_registry(
         "job_status": lambda: workspace_job_status(wf, record_id, limit=limit),
         "job_cancel": lambda: cancel_workspace_job(wf, record_id),
         "job_reindex": lambda: submit_reindex_workspace_job(wf, projects=projects, paths=files),
+        "watcher_start": lambda: start_watcher_daemon(wf),
+        "watcher_status": lambda: watcher_daemon_status(wf),
+        "watcher_stop": lambda: stop_watcher_daemon(wf),
+        "change_impact_recent": lambda: recent_change_impact_reports(wf, limit=limit),
+        "change_impact_pending": lambda: pending_change_impact_reports(wf, limit=limit),
+        "change_impact_confirm": lambda: record_change_impact_feedback(
+            wf,
+            record_id,
+            decision=action_filter or status,
+            task_id=task_id,
+            session_id=session_id,
+            validation_status=str((parse_payload(payload) or {}).get("validation_status", "not_run")),
+            validation_summary=str((parse_payload(payload) or {}).get("validation_summary", "")),
+            verified_by=verified_by,
+            note=str((parse_payload(payload) or {}).get("note", "")),
+        ),
+        "evidence_subgraph_export": lambda: export_evidence_subgraph(
+            wf,
+            text or name or record_id,
+            direction=direction if direction in {"both", "upstream", "downstream"} else "both",
+            max_depth=min(max(1, max_depth), 3),
+            max_edges=min(max(1, limit), 120),
+            output_format=action_filter or "json",
+        ),
+        "architecture_communities": lambda: analyze_architecture_communities(wf, limit=min(max(1, limit), 50)),
         "eval_write_quality": lambda: memory_eval_write_quality(wf, task_id=task_id, session_id=session_id, intent=intent, limit=limit),
         "eval_resume": lambda: memory_eval_resume(wf, task_id=task_id, session_id=session_id, intent=intent, limit=limit),
         "eval_handoff": lambda: memory_eval_handoff(wf, target_model=target_model, task_id=task_id, session_id=session_id, intent=intent, limit=limit),

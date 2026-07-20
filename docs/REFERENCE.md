@@ -24,6 +24,8 @@
 - `verify-checklist`
 - `detect-changes`
 - `trace`
+- `export-evidence-subgraph`：显式导出 JSON / Markdown / HTML 证据子图；`--max-depth<=3`、`--max-edges<=120`，不扫描全图。
+- `architecture-communities`：显式聚合项目社区、跨项目关系与高中心性节点；只传输 SQL 聚合结果。
 
 ### Workflow / Session
 
@@ -93,6 +95,24 @@
 `artifact repair-task` 默认 dry-run；传 `--apply` 才写入。刷新 `current-summary` 时建议同时传 `--intent`，修复器不会伪造 write receipt、自动归档相似任务空间或覆盖已有人工内容。
 
 ## 2. MCP Facade Parameters / MCP Facade 参数
+
+### Public Discovery Contract / 公开入口发现约定
+
+每个公开能力必须在 CLI、HTTP 或 MCP 中至少有一个入口，并在 USER_GUIDE、MCP_GUIDE 与本参考手册中可发现。代码、`memory-center <command> --help`、HTTP route registry 与 MCP schema 是参数和返回字段的最终事实来源。
+
+### Evidence Subgraph / 证据子图
+
+- CLI：`export-evidence-subgraph --workspace <workspace.yaml> --target <node-id-or-symbol> --format json|markdown|html`
+- HTTP：`GET /workspace/evidence-subgraph?target=...&direction=both&max_depth=2&max_edges=60&format=json`
+- MCP：`mc_admin(action="evidence_subgraph_export", text="<node-id-or-symbol>")`
+- 边界：最多 3 跳、120 条边、80 个节点；不读取源码、原始工具载荷或全图。
+
+### Architecture Communities / 架构社区
+
+- CLI：`architecture-communities --workspace <workspace.yaml> --limit 20`
+- HTTP：`GET /workspace/architecture-communities?limit=20`
+- MCP：`mc_admin(action="architecture_communities")`
+- 边界：仅显式执行 SQL 聚合，最多返回 50 个关键节点；普通查询和 status 只读取已有摘要。
 
 ### `mc_lookup`
 

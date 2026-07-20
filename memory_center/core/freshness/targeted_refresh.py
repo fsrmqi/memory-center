@@ -190,7 +190,20 @@ def hot_refresh_status(workspace_file: str | Path) -> dict[str, Any]:
     manifest = store.read_json(MANIFEST_FILE, {}) or {}
     dirty = store.read_jsonl_prefer_backend(DIRTY_JOURNAL_FILE, limit=500)
     summary = store.read_json("hot-refresh-summary.json", {}) or {}
-    return {"manifest_files": len(manifest) if isinstance(manifest, dict) else 0, "dirty_paths": len({str(row.get("path", "") or "") for row in dirty}), "dirty_events": len(dirty), "mode": "targeted_overlay", "compacted_at": summary.get("compacted_at"), "compacted_generation_count": summary.get("generation_count", 0)}
+    from .change_reports import pending_change_impact_reports, recent_change_impact_reports
+    from .daemon import watcher_daemon_status
+
+    return {
+        "manifest_files": len(manifest) if isinstance(manifest, dict) else 0,
+        "dirty_paths": len({str(row.get("path", "") or "") for row in dirty}),
+        "dirty_events": len(dirty),
+        "mode": "targeted_overlay",
+        "compacted_at": summary.get("compacted_at"),
+        "compacted_generation_count": summary.get("generation_count", 0),
+        "watcher": watcher_daemon_status(workspace_file),
+        "recent_change_reports": recent_change_impact_reports(workspace_file, limit=3),
+        "pending_change_reports": pending_change_impact_reports(workspace_file, limit=5),
+    }
 
 
 def compact_dirty_journal(store: WorkspaceStore) -> bool:

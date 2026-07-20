@@ -85,6 +85,16 @@ Memory Center 不要求中心化服务。默认形态是每个 workspace 自带�
 - **Evidence-first / 证据优先**：回答、handoff、case、ref、audit 都尽量保留来源和可追溯证据。
 - **Compatibility-first / 兼容优先**：MCP tool schema、CLI 命令、HTTP 路径默认保持兼容；新增能力优先 additive。
 
+### 1.4.1 架构不可变量 / Architectural Invariants
+
+以下规则是未来重构的判定标准，而不是可选建议：
+
+- 默认查询不得扫描全图，也不得隐式触发全量重建；高成本分析必须显式请求或进入后台 job。
+- `VERIFIED` 结论必须关联验证命令结果、人工确认或可追溯运行结果；置信度不能替代验证。
+- 文件、JSONL、Markdown 等事实源优先于 SQLite 镜像；镜像不一致必须可观测，不能静默覆盖新事实。
+- CLI、MCP、HTTP 的异常必须收敛为结构化诊断和可行动建议，禁止无界重试。
+- 文档、审计和导出默认不包含私有源码、原始对话正文或工具载荷。
+
 当前版本的系统入口：
 
 | 入口 | 命令 / 路径 | 代码位置 | 职责 |
@@ -714,7 +724,9 @@ L2 task spaces 还提供恢复体验相关操作：健康检查、修复计划�
 
 ## 11. Freshness, Hooks, and Host Integration / 新鲜度、Hook 与宿主集成
 
-`IndexFreshnessService` 通过 graph/index 时间和 workspace shape 生成 freshness banner。`mc_start`、hybrid retrieval、context pack、walkthrough 等主链路会暴露 freshness 相关信息，提醒 agent 在 stale/pending 时读取 live file 或 reindex。
+`IndexFreshnessService` 通过 graph/index 时间和 workspace shape 生成 freshness banner。`mc_start`、hybrid retrieval、context pack、walkthrough 等主链路会暴露 freshness 相关信息，提醒 agent 在 stale/pending 时读取 live file 或 reindex。`freshness/daemon.py` 以独立本地进程持有每个 workspace 的 watcher lock，轮询并去抖源码和配置变更，再通过既有失效计划提交有界 partial reindex job；状态持久化在 `watcher-daemon.json`，CLI、MCP 与 Workbench 读取同一状态，不在查询热路径执行全量扫描。job 到达终态后 `change_reports.py` 仅使用失效计划、任务结果、服务路径前缀和 generation 元数据生成有界影响摘要；它不会加载全量图或自动调用深度 impact，契约类高风险变更只返回显式复核建议。报告确认采用追加式审计事件与紧凑索引读模型：`confirmed`、`false_positive`、`resolved` 关闭报告，`deep_analysis_required` 保持待确认。Workbench 仅读取最多 5 条未确认高风险项；报告和确认审计均按 30 天、10 万条做日常裁剪。
+
+`presentation/evidence_subgraph.py` 是显式导出路径：先以 node id 或受限 symbol 查询定位一个根节点，再执行最多 3 跳、120 条边、80 个节点的邻接遍历。输出只包含节点标识、项目、文件路径、边类型、置信度和证据等级，可渲染为 JSON、Markdown 或 HTML；不读取源码、原始工具载荷或全图，因此不会增加普通查询的延迟与数据暴露面。
 
 Hook 层在 `memory_center/hooks/`，属于宿主集成，不是核心业务层。默认建议：
 

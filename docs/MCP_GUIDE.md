@@ -54,6 +54,16 @@ MCP 当前公开的是 12 个 task-level tools：
 
 后台 reindex 的 `mc_admin(action="job_reindex")` 会返回 `job_id`；用 `mc_admin(action="job_status", record_id="...")` 读取同一份持久化进度。`progress.stage` 依次使用 `queued`、`scanning`、`parsing`、`graph`、`semantic`、`retrieval`、`finalizing`，并在完成、失败、取消或中断时返回对应终态和有界事件历史。
 
+常驻索引更新通过 `memory-center watcher-start --workspace <workspace.yaml>` 启动；它对去抖后的源码、配置变更创建有界局部重建任务，不在查询链路执行全量重建。使用 `watcher-status` / `watcher-stop` 查看或停止。MCP 对应 `mc_admin(action="watcher_start|watcher_status|watcher_stop")`；Workbench 的 `hot_refresh.watcher` 同步显示相同状态。
+
+局部重建完成后，watcher 自动写入轻量变更影响摘要，只复用失效计划、任务结果和 index generation，不会自动执行深度影响分析。通过 `memory-center change-impact-reports`、`GET /workspace/change-impact-reports` 或 `mc_admin(action="change_impact_recent")` 查询；DTO、Feign、MQ、HTTP、配置变更会标为高风险并建议显式调用 `mc_analyze(depth="full")`。
+
+确认闭环使用 `memory-center change-impact-confirm`、`POST /workspace/change-impact-confirm` 或 `mc_admin(action="change_impact_confirm")`。决策为 `confirmed`、`false_positive`、`deep_analysis_required`、`resolved`；可附带 `task_id`、`session_id`、`validation_status`、结构化验证摘要和 `verified_by`。其中 `deep_analysis_required` 保持待确认，其他决策关闭报告；`GET /workspace/change-impact-reports?pending_only=true` 与 `mc_admin(action="change_impact_pending")` 返回有界待处理清单。
+
+证据子图导出使用 `mc_admin(action="evidence_subgraph_export", text="<node-id-or-symbol>")`；可选 `direction`、`max_depth`、`limit` 与 `action_filter="json|markdown|html"`。HTTP 为 `GET /workspace/evidence-subgraph?target=...`，CLI 为 `export-evidence-subgraph`。该能力仅做显式、有界邻接读取，限制为最多 3 跳、120 条边、80 个节点，不读取源码、不扫描全图。
+
+架构社区分析使用 `mc_admin(action="architecture_communities")`，HTTP 为 `GET /workspace/architecture-communities`，CLI 为 `architecture-communities`。它只聚合跨项目边和节点度数，返回项目社区、跨项目耦合与高中心性节点；仅在显式调用时执行，Workbench/status 仅读取已缓存摘要。
+
 契约语义校验使用 `mc_admin(action="contract_gate", name="SomeRequestDto.java")`，返回 `semantic_compatibility.status`：`pass`、`attention` 或 `block`。`mc_analyze(depth="full", target="...", task_id="...")` 自动执行同一校验并可将完整报告写为任务 evidence。guard 模式 pre-edit hook 遇到 `block` 会拒绝编辑；release gate 在索引存在契约快照时失败。
 
 运行时样本通过 `mc_admin(action="runtime_contract_ingest", payload="...")` 导入，payload 应只包含 `samples` 元数据数组，禁止业务 payload/body/header/message。用 `runtime_contract_migration` 登记双读/双写迁移，用 `runtime_contract_gate` 获取活跃流量兼容结论；传 `task_id` 会将该报告保存为任务 evidence。release gate 仅在存在样本时增加运行时契约组件。

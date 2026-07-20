@@ -776,6 +776,16 @@ Before `mc_start` and `mc_lookup` return indexed evidence, Memory Center checks 
 
 `mc_start` 和 `mc_lookup` 返回索引证据前，会检查有界数量的图谱/路径候选。发现源码在索引后已变更时，只刷新该文件的 File/Class/Method 子图及其声明、注入、方法调用出边，并返回 `auto_refresh`；请求链路不会触发全量索引合并。文件 watcher 只写入去抖后的 dirty journal，由下一次相关请求消费。
 
+需要在不查询时也保持索引更新，可启动每个工作区唯一的本地守护：`memory-center watcher-start --workspace <workspace.yaml>`。它使用轮询和去抖合并源码、配置变更，提交有界局部 reindex job；`watcher-status` 展示 PID、最近变更与 job，`watcher-stop` 优雅停止。守护状态也会出现在 Workbench 的 `hot_refresh.watcher`，不会在 Agent 查询热路径扫描全量工作区。
+
+每个 watcher 局部 reindex 到达终态后都会写入轻量变更影响摘要。摘要只使用变更路径、已有失效计划、任务统计和 index generation，记录受影响服务、风险等级与证据边界；通过 `memory-center change-impact-reports` 查看。DTO、Feign、MQ、HTTP、配置等高风险变更只会提示显式执行深度分析，不会由后台自动触发昂贵的全图检索。
+
+摘要可通过 `memory-center change-impact-confirm --report-id <id> --decision confirmed|false_positive|deep_analysis_required|resolved` 追加人工结论；可关联任务、会话、验证状态和验证人。`deep_analysis_required` 会继续保留为待确认项，Workbench 的 `hot_refresh.pending_change_reports.high_risk_reports` 只展示最多 5 条未确认高风险报告。审计事件与紧凑反馈索引都自动保留 30 天且最多 10 万条，读取只扫描有界报告窗口。
+
+需要为一次链路分析生成可交接的证据视图时，使用 `memory-center export-evidence-subgraph --workspace <workspace.yaml> --target <node-id-or-symbol> --format markdown`。也可通过 `GET /workspace/evidence-subgraph` 或 `mc_admin(action="evidence_subgraph_export")` 获取 JSON、Markdown、HTML。导出严格限制为最多 3 跳、120 条边、80 个节点，不读取源码、不扫描全图，也不会进入普通查询热路径。
+
+需要理解模块边界和共享核心节点时，显式运行 `memory-center architecture-communities --workspace <workspace.yaml>`。它仅在 SQLite 中聚合跨项目边与节点度数，输出项目社区、跨项目关系和高中心性节点；结果缓存到轻量摘要供 Workbench/status 读取，不会在查询热路径计算。
+
 Hot refresh is coordinated per workspace across local Agents. Each replacement commits a content hash and file generation in the same SQLite transaction, then expands at most one graph hop to related API/Feign/DTO/MQ/config files. `mc_start` and `mc_lookup` support `request_tier="fast"|"standard"|"deep"`; `fast` has bounded retrieval. For costly impact analysis, use `mc_analyze(execution_mode="background")`, then poll or cancel with `job_action="status"|"cancel"` and `job_id`.
 
 热刷新会在同一 workspace 的本地 Agent 之间协调执行。每次替换会在同一个 SQLite 事务中提交内容哈希与文件 generation，并最多扩展一跳已有图关联的 API/Feign/DTO/MQ/config 文件。`mc_start` 与 `mc_lookup` 支持 `request_tier="fast"|"standard"|"deep"`；`fast` 强制有界检索。代价较高的影响分析可调用 `mc_analyze(execution_mode="background")`，再通过 `job_action="status"|"cancel"` 和 `job_id` 查询或取消。
