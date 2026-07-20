@@ -1131,18 +1131,6 @@ def assertion_query_cmd(
     print(json.dumps(query_assertions(WorkspaceStore(workspace), as_of_generation=as_of_generation, as_of_time=as_of_time, time_axis=time_axis, limit=limit), ensure_ascii=False, indent=2))
 
 
-@app.command("ontology-migrate")
-def ontology_migrate_cmd(
-    workspace: str = typer.Option(...),
-    apply: bool = typer.Option(False, help="Backfill additive ontology fields; default is read-only."),
-):
-    """Inspect or explicitly backfill the ontology v2 sidecar fields."""
-    from memory_center.core.knowledge.migration import migrate_ontology
-    from memory_center.core.storage.workspace import WorkspaceStore
-
-    print(json.dumps(migrate_ontology(WorkspaceStore(workspace), apply=apply), ensure_ascii=False, indent=2))
-
-
 @app.command("parser-status")
 def parser_status_cmd():
     """Show tree-sitter Java activation status and install hints."""

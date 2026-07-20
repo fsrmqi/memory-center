@@ -4,7 +4,7 @@
 
 `mc_lookup` 会附加 `knowledge_state`，其中 `state`、`absence_reason`、`scope_checked` 与 `next_action` 说明当前范围内的知识状态。不要将 `NOT_FOUND` 当作不存在的事实结论。
 
-`mc_admin(action="assertion_inspect")` 可读取断言详情和 Action；`mc_admin(action="assertion_status")` 用于验证或拒绝，`VERIFIED` 必须带脱敏 `verification_ref`。`mc_admin(action="ontology_migrate", force=true)` 才会回填既有 sidecar 字段。
+`mc_admin(action="assertion_inspect")` 可读取断言详情和 Action；`mc_admin(action="assertion_status")` 用于验证或拒绝，`VERIFIED` 必须带脱敏 `verification_ref`。本体只使用 V2 读模型；升级后的旧 sidecar 必须运行完整 `reindex` 重建，不提供迁移或旧格式回退。
 
 ## 1. Public Surface / 对外公开面
 

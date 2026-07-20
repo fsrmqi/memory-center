@@ -10,7 +10,7 @@
 2. `confidence` 不再承担“事实性”“来源”“人工确认”的混合职责。
 3. 代码图、变更报告、任务、验证和证据子图可通过同一关系语言关联。
 4. 默认 `mc_lookup`、`workspace_status` 不增加全图扫描或明显延迟。
-5. 既有 CLI、HTTP、MCP 字段保持 additive 兼容；迁移失败可以回退到旧读模型。
+5. CLI、HTTP、MCP 的公开命令和关键字段保持稳定；本体内部只接受 V2 读模型，升级后通过完整 reindex 重建，不迁移或读取旧 sidecar。
 
 ## 2. 设计原则
 
@@ -314,7 +314,7 @@ CLI、HTTP 和 Workbench 默认使用同一结论卡，而不是直接抛出图�
 | 版本 | 交付 | 完成定义 |
 |---|---|---|
 | O1 | Registry 对齐 | 文档/代码/索引类型一致。 |
-| O2 | Assertion Sidecar | 新旧读模型并存，查询可返回 ref。 |
+| O2 | Assertion Sidecar | V2 读模型统一，查询可返回 ref。 |
 | O3 | 时间与失效 | generation、stale、历史读取可解释。 |
 | O4 | 验证与决策闭环 | confirmation、validation、task 跨域关联。 |
 | O5 | 体验与门禁 | 结论卡、Action、inspect、真实 benchmark 全部可用。 |
@@ -329,8 +329,8 @@ CLI、HTTP 和 Workbench 默认使用同一结论卡，而不是直接抛出图�
 - 不在普通查询中推理全量跨域关系。
 - 不将 LLM 输出自动升级为 VERIFIED。
 
-## 10. 收尾实现状态（4.1.36）
+## 10. 收尾实现状态（4.2.0）
 
 - 查询与状态入口已提供兼容的 `knowledge_state`，避免以空结果表达不存在；断言支持有效期、事件时间与观测时间查询。
-- 治理实体、关系、Action 读模型、验证别名和全入口断言确认已接入；Action 覆盖 hybrid 查询与 MCP lookup，Workbench 自动继承 task/session/actor 上下文；旧 sidecar 可通过 `ontology-migrate` 预检或显式回填。
+- 治理实体、关系、Action 读模型、验证别名和全入口断言确认已接入；Action 覆盖 hybrid 查询与 MCP lookup，Workbench 自动继承 task/session/actor 上下文；本体侧只保留 V2，旧 sidecar 必须完整 reindex 重建。
 - `eval-ontology-gate`、`eval-assertion-scope-gate` 与 `eval-assertion-reindex-gate` 覆盖默认查询、局部范围和隔离 reindex 开销门禁；真实 workspace 局部基线已验证通过。

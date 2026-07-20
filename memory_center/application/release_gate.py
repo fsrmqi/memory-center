@@ -130,10 +130,8 @@ def run_release_gate(
         diagnostics = store.memory_backend().assertion_diagnostics(str(assertion_index.get("generation", "") or ""))
         private_fields = 0
         with store.memory_backend().connect() as conn:
-            rows = conn.execute("SELECT payload_json FROM assertions ORDER BY valid_from DESC LIMIT 500").fetchall()
-        for row in rows:
-            payload = json.loads(str(row[0]))
-            private_fields += sum(1 for key in ("source_code", "raw_payload", "tool_payload", "conversation") if key in payload)
+            for key in ("source_code", "raw_payload", "tool_payload", "conversation"):
+                private_fields += int(conn.execute("SELECT COUNT(*) FROM assertions WHERE payload_json LIKE ?", (f'%\"{key}\"%',)).fetchone()[0])
         ontology_integrity_passed = not diagnostics.get("verified_without_source") and not diagnostics.get("active_old_generation") and private_fields == 0
         components["ontology_integrity"] = _component(
             passed=ontology_integrity_passed,

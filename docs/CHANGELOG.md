@@ -6,6 +6,16 @@
 - 重要行为变化
 - 明确修复的真实 bug
 
+## 4.3.0 本体旧格式移除
+
+- 删除 `ontology-migrate`、旧 sidecar 自动转换和旧读模型回退逻辑；本体数据只接受 V2 格式。
+- 升级后的已有工作空间必须运行完整 `reindex` 重建 Assertion、Alias 与治理读模型；CLI、MCP、HTTP 的公开查询和管理入口保持不变。
+
+## 4.2.0 本体 V2 强制切换
+
+- 本体内部停止旧 sidecar 双读和回退：首次 Assertion 查询会强制把 SQLite 列与 JSON payload 迁移到 V2；迁移异常需重新 reindex，不再返回旧读模型。
+- release gate 的隐私字段检测改为全量 SQL 扫描，不再抽样最近断言；CLI、MCP 与 HTTP 的公开命令和字段保持稳定。
+
 ## 4.1.36 本体演进完整收尾
 
 - 所有 hybrid 查询与 MCP lookup 的 `agent_next_steps` 都会投影为有界、稳定 ID 的 Action；Workbench 可从路由继承 task/session/actor 并写入断言状态审计。

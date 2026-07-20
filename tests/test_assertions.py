@@ -9,7 +9,6 @@ from memory_center.core.knowledge.assertions import (
     update_assertion_status,
 )
 from memory_center.core.knowledge.governance import project_session_validation
-from memory_center.core.knowledge.migration import migrate_ontology
 from memory_center.core.knowledge.state import attach_knowledge_state
 from memory_center.core.orchestrator.query import memory_query
 from memory_center.core.presentation.evidence_subgraph import export_evidence_subgraph
@@ -113,7 +112,6 @@ def test_assertion_temporal_fields_migration_and_negative_state(tmp_path):
     materialize_static_assertions(store, "gen-1")
     item = query_assertions(store, as_of_time="9999-01-01T00:00:00+00:00", time_axis="observed", limit=500)[0]
     assert item["event_at"] and item["observed_at"] and item["provenance_kind"] == "STATIC"
-    assert migrate_ontology(store)["pending_backfill"] == 0
     store.write_json("index-summary.json", {"files": 1})
     payload = attach_knowledge_state(store, {"results": []}, query="missing", mode="test")
     assert payload["knowledge_state"]["state"] == "NOT_FOUND"
