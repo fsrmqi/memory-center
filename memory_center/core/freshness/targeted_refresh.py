@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import threading
 import time
 from hashlib import sha256
 from pathlib import Path
@@ -19,16 +20,82 @@ from .coordinator import RefreshCoordinator
 MAX_REFRESH_FILES = 12
 MANIFEST_FILE = "hot-refresh-manifest.json"
 DIRTY_JOURNAL_FILE = "dirty-files.jsonl"
+_REFRESH_THREADS: dict[str, threading.Thread] = {}
+_REFRESH_PENDING: dict[str, list[tuple[str, str, int]]] = {}
+_REFRESH_THREADS_GUARD = threading.Lock()
+_MAX_PENDING_REFRESHES = 8
 
 
-def refresh_query_targets(workspace_file: str | Path, query: str, limit: int = MAX_REFRESH_FILES) -> dict[str, Any]:
-    """Refresh only stale indexed Java files plausibly related to ``query``."""
+def refresh_query_targets(
+    workspace_file: str | Path,
+    query: str,
+    limit: int = MAX_REFRESH_FILES,
+    *,
+    synchronous: bool = False,
+) -> dict[str, Any]:
+    """排队定向刷新，默认不占用查询请求线程。
+
+    文件哈希、图邻居查询和 partial reindex 都在后台执行；调用方立刻读取当前已
+    发布代际。``synchronous`` 仅用于维护命令和确定性测试，不能由 MCP 查询入口使用。
+    """
     store = WorkspaceStore(workspace_file)
     coordinator = RefreshCoordinator(store.memory_dir)
-    return coordinator.run(
-        lambda: _refresh_query_targets(store, query, limit),
-        lambda: {"checked": 0, "refreshed": False, "files": [], "elapsed_ms": 0.0, "mode": "targeted_overlay", "coalesced": True, "generation": {}},
-    )
+    if synchronous:
+        return coordinator.run(
+            lambda: _refresh_query_targets(store, query, limit),
+            lambda: {"checked": 0, "refreshed": False, "files": [], "elapsed_ms": 0.0, "mode": "targeted_overlay", "coalesced": True, "generation": {}},
+        )
+    key = str(store.memory_dir.resolve())
+    with _REFRESH_THREADS_GUARD:
+        active = _REFRESH_THREADS.get(key)
+        if active is not None and active.is_alive():
+            pending = _REFRESH_PENDING.setdefault(key, [])
+            item = (str(workspace_file), query, limit)
+            if item not in pending and len(pending) < _MAX_PENDING_REFRESHES:
+                pending.append(item)
+            return _scheduled_refresh_result(coalesced=True)
+        _REFRESH_PENDING[key] = [(str(workspace_file), query, limit)]
+
+        def run() -> None:
+            try:
+                while True:
+                    with _REFRESH_THREADS_GUARD:
+                        pending = _REFRESH_PENDING.get(key, [])
+                        if not pending:
+                            break
+                        pending_workspace, pending_query, pending_limit = pending.pop(0)
+                    worker_store = WorkspaceStore(pending_workspace)
+                    try:
+                        coordinator.run(
+                            lambda store=worker_store, query_text=pending_query, refresh_limit=pending_limit: _refresh_query_targets(store, query_text, refresh_limit),
+                            lambda: {"checked": 0, "refreshed": False, "files": [], "elapsed_ms": 0.0, "mode": "targeted_overlay", "coalesced": True, "generation": {}},
+                        )
+                    except Exception:
+                        # 刷新失败只影响当前候选，不应阻塞同一工作区后续已排队目标。
+                        continue
+            finally:
+                with _REFRESH_THREADS_GUARD:
+                    _REFRESH_THREADS.pop(key, None)
+                    _REFRESH_PENDING.pop(key, None)
+
+        active = threading.Thread(target=run, name="memory-center-targeted-refresh", daemon=True)
+        _REFRESH_THREADS[key] = active
+        active.start()
+    return _scheduled_refresh_result(coalesced=False)
+
+
+def _scheduled_refresh_result(*, coalesced: bool) -> dict[str, Any]:
+    return {
+        "checked": 0,
+        "refreshed": False,
+        "files": [],
+        "elapsed_ms": 0.0,
+        "mode": "targeted_overlay_async",
+        "scheduled": True,
+        "coalesced": coalesced,
+        "generation": {},
+        "next_action": "当前查询使用已发布索引；后台定向刷新完成后自动使用新代际。",
+    }
 
 
 def _refresh_query_targets(store: WorkspaceStore, query: str, limit: int) -> dict[str, Any]:

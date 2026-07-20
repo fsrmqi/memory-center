@@ -22,12 +22,12 @@ def test_targeted_refresh_updates_only_changed_query_file(tmp_path: Path) -> Non
     source = Path(row["abs_path"])
     source.write_text(source.read_text(encoding="utf-8") + "\n// HotRefreshMarker\n", encoding="utf-8")
 
-    result = refresh_query_targets(workspace, "ArticleFeignClient", limit=4)
+    result = refresh_query_targets(workspace, "ArticleFeignClient", limit=4, synchronous=True)
 
     assert result["refreshed"] is True
     assert row["path"] in result["files"]
     assert result["checked"] <= 4
-    second = refresh_query_targets(workspace, "ArticleFeignClient", limit=4)
+    second = refresh_query_targets(workspace, "ArticleFeignClient", limit=4, synchronous=True)
     assert second["refreshed"] is False
     with RuntimeStore(store.graph_db_path) as graph:
         nodes = graph.find_nodes("ArticleFeignClient", types=["Class"], limit=5)
@@ -39,6 +39,16 @@ def test_targeted_refresh_updates_only_changed_query_file(tmp_path: Path) -> Non
     status = hot_refresh_status(workspace)
     assert compacted["generation_count"] == 1
     assert status["compacted_generation_count"] == 1
+
+
+def test_query_refresh_is_scheduled_without_waiting_for_reindex(tmp_path: Path) -> None:
+    from tests.fixtures import setup_demo_workspace
+
+    workspace = setup_demo_workspace(tmp_path)
+    result = refresh_query_targets(workspace, "ArticleFeignClient", limit=4)
+
+    assert result["scheduled"] is True
+    assert result["mode"] == "targeted_overlay_async"
 
 
 def test_targeted_refresh_preserves_controller_endpoint_facts(tmp_path: Path) -> None:
@@ -55,7 +65,7 @@ def test_targeted_refresh_preserves_controller_endpoint_facts(tmp_path: Path) ->
             before = conn.execute("SELECT COUNT(*) FROM nodes WHERE type='Endpoint' AND file_path=?", (api["file"],)).fetchone()[0]
 
     source.write_text(source.read_text(encoding="utf-8") + "\n// RefreshEndpointFact\n", encoding="utf-8")
-    result = refresh_query_targets(workspace, api["controller"], limit=4)
+    result = refresh_query_targets(workspace, api["controller"], limit=4, synchronous=True)
 
     with RuntimeStore(store.graph_db_path) as graph:
         with graph.connect() as conn:
@@ -76,12 +86,12 @@ def test_targeted_refresh_reconciles_added_and_deleted_files(tmp_path: Path) -> 
     added_path = added.relative_to(root).as_posix()
 
     record_dirty_files(workspace, [added_path])
-    added_result = refresh_query_targets(workspace, "NewRefreshController", limit=4)
+    added_result = refresh_query_targets(workspace, "NewRefreshController", limit=4, synchronous=True)
     assert added_result["refreshed"] is True
     assert any(item["path"] == added_path for item in store.read_json_prefer_backend("file-index.json", []))
 
     added.unlink()
     record_dirty_files(workspace, [added_path])
-    deleted_result = refresh_query_targets(workspace, "NewRefreshController", limit=4)
+    deleted_result = refresh_query_targets(workspace, "NewRefreshController", limit=4, synchronous=True)
     assert deleted_result["refreshed"] is True
     assert not any(item["path"] == added_path for item in store.read_json_prefer_backend("file-index.json", []))

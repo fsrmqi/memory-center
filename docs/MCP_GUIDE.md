@@ -184,7 +184,7 @@ MCP 当前公开的是 12 个 task-level tools：
 2. `mc_admin(action="vector_ann_tune")`
 3. 以原 query 重试 `mc_lookup`
 
-该规则只在已有大规模 dense embeddings 且 ANN 不可用时触发；不会在普通查询中隐式全量重建。ANN 正在维护时，查询最多等待 300ms 并返回 `vector_ann_maintenance_in_progress` 与 `retry_after_ms`，不阻塞 MCP。对复杂概念查询，Agent 应调用 `mc_admin(action="advanced_query", text="原查询")`，而非自行执行无界本地搜索。若结果诊断为 `reranker_not_prewarmed`，基础排序仍可直接使用；只有用户明确同意时才调用当前 MCP 进程中的 `mc_admin(action="retrieval_reranker_prewarm")`。模型档案和全量 reindex 也不会由 Agent 自动发起。
+该规则只在已有大规模 dense embeddings 且 ANN 不可用时触发；不会在普通查询中隐式全量重建。ANN 正在维护时，查询最多等待 300ms 并返回 `vector_ann_maintenance_in_progress` 与 `retry_after_ms`，向量后端读取失败会返回 `vector_backend_query_failed` 和 `vector-ann-rebuild`，两者都不阻塞 MCP。定向 freshness refresh 只会后台排队，`auto_refresh.scheduled=true` 表示当前响应使用已发布 generation。对复杂概念查询，Agent 应调用 `mc_admin(action="advanced_query", text="原查询")`，而非自行执行无界本地搜索。若结果诊断为 `reranker_not_prewarmed` 或 `reranker_timeout`，基础排序仍可直接使用；只有用户明确同意时才调用当前 MCP 进程中的 `mc_admin(action="retrieval_reranker_prewarm")`。模型档案和全量 reindex 也不会由 Agent 自动发起。
 - `eval_java_call_resolution_unresolved` — 按可行动原因汇总未解析 Java `CALLS_METHOD`，只返回逻辑锚点样本，不返回文件路径或源码
 - `eval_agent_guidance_trend` — 执行同一检查并追加一条 agent guidance 趋势记录
 - `audit` — 完成审计（文档/测试/实现/设计一致性）

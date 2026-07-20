@@ -1,6 +1,7 @@
 """Small local job registry for deep, interruptible analysis requests."""
 from __future__ import annotations
 
+import os
 import threading
 import time
 from collections.abc import Callable
@@ -28,6 +29,11 @@ PROGRESS_STAGES = frozenset(
 MAX_PROGRESS_EVENTS = 24
 _CANCELLED: set[str] = set()
 _GUARD = threading.Lock()
+_HEARTBEAT_SECONDS = 5.0
+
+
+class WorkspaceJobCancelled(RuntimeError):
+    """任务在一个可协作的阶段确认了取消请求。"""
 
 
 def submit_workspace_job(
@@ -47,6 +53,7 @@ def submit_workspace_job(
         "status": "queued",
         "created_at": now,
         "updated_at": now,
+        "runner_pid": None,
         "progress": _progress("queued", 0, "任务已进入队列", now),
         "progress_events": [_progress("queued", 0, "任务已进入队列", now)],
     }
@@ -56,18 +63,37 @@ def submit_workspace_job(
         # SQLite connections are thread-affine. The worker must own its store
         # instead of reusing the caller's connection created on the submit thread.
         worker_store = WorkspaceStore(workspace_file)
+        _upsert(worker_store, {**record, "status": "running", "runner_pid": os.getpid(), "updated_at": time.time()})
         _update_progress(worker_store, job_id, "scanning", 5, "正在准备任务输入")
+        stopped = threading.Event()
+
+        def heartbeat() -> None:
+            while not stopped.wait(_HEARTBEAT_SECONDS):
+                _heartbeat(worker_store, job_id)
+
+        heartbeat_thread = threading.Thread(target=heartbeat, name=f"{job_id}-heartbeat", daemon=True)
+        heartbeat_thread.start()
+
+        def report(stage: str, percent: int, message: str = "") -> None:
+            if _is_cancel_requested(worker_store, job_id):
+                raise WorkspaceJobCancelled("任务已取消")
+            _update_progress(worker_store, job_id, stage, percent, message)
         try:
-            result = progress_work(lambda stage, percent, message="": _update_progress(worker_store, job_id, stage, percent, message)) if progress_work else work()
-            if _is_cancelled(job_id):
+            report("scanning", 5, "正在准备任务输入")
+            result = progress_work(report) if progress_work else work()
+            if _is_cancel_requested(worker_store, job_id):
                 _finish_job(worker_store, job_id, "cancelled", progress_stage="cancelled", message="任务已取消")
             else:
                 _update_progress(worker_store, job_id, "finalizing", 95, "正在整理任务结果")
                 _finish_job(worker_store, job_id, "completed", result=result, progress_stage="completed", message="任务已完成")
+        except WorkspaceJobCancelled:
+            _finish_job(worker_store, job_id, "cancelled", progress_stage="cancelled", message="任务已取消")
         except Exception as exc:  # pragma: no cover - error boundary is exposed via status
             from memory_center.core.observability.diagnostics import safe_reason
 
             _finish_job(worker_store, job_id, "failed", error=safe_reason(reason=str(exc)), progress_stage="failed", message="任务执行失败")
+        finally:
+            stopped.set()
 
     threading.Thread(target=runner, name=job_id, daemon=True).start()
     return record
@@ -115,7 +141,8 @@ def recover_interrupted_workspace_jobs(store: WorkspaceStore) -> int:
     changed = 0
     recovered = []
     for row in rows:
-        if row.get("status") == "running" and now - float(row.get("updated_at", now)) > 30:
+        runner_pid = row.get("runner_pid")
+        if row.get("status") == "running" and runner_pid and not _pid_is_alive(int(runner_pid)):
             progress = _progress("interrupted", int((row.get("progress") or {}).get("percent", 0)), "宿主进程中断", now)
             recovered.append({**row, "status": "interrupted", "updated_at": now, "progress": progress, "progress_events": [*(row.get("progress_events", []) or [])[-(MAX_PROGRESS_EVENTS - 1):], progress]})
             changed += 1
@@ -128,8 +155,6 @@ def recover_interrupted_workspace_jobs(store: WorkspaceStore) -> int:
 
 def cancel_workspace_job(workspace_file: str, job_id: str) -> dict[str, Any]:
     store = WorkspaceStore(workspace_file)
-    with _GUARD:
-        _CANCELLED.add(job_id)
     current = workspace_job_status(workspace_file, job_id)
     if not current.get("job_id") or current.get("found") is False:
         return {"job_id": job_id, "cancelled": False, "reason": "not_found"}
@@ -142,6 +167,26 @@ def cancel_workspace_job(workspace_file: str, job_id: str) -> dict[str, Any]:
 def _is_cancelled(job_id: str) -> bool:
     with _GUARD:
         return job_id in _CANCELLED
+
+
+def _is_cancel_requested(store: WorkspaceStore, job_id: str) -> bool:
+    current = workspace_job_status(store.workspace_file, job_id)
+    return current.get("status") == "cancel_requested" or _is_cancelled(job_id)
+
+
+def _heartbeat(store: WorkspaceStore, job_id: str) -> None:
+    rows = store.read_json_prefer_backend(JOBS_FILE, []) or []
+    current = next((row for row in rows if row.get("job_id") == job_id), None)
+    if isinstance(current, dict) and current.get("status") in {"running", "cancel_requested"}:
+        _upsert(store, {**current, "updated_at": time.time()})
+
+
+def _pid_is_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    return True
 
 
 def _upsert(store: WorkspaceStore, record: dict[str, Any]) -> None:

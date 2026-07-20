@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import inspect
 import os
+import threading
 import time
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -25,6 +26,8 @@ MCP_INVOCATIONS_FILE = "mcp-invocations.jsonl"
 MCP_AUDIT_RETENTION_DAYS = 30
 MCP_AUDIT_MAX_RECORDS = 100_000
 MCP_AUDIT_PRUNE_INTERVAL_SECONDS = 300
+_AUDIT_PRUNE_IN_FLIGHT: set[str] = set()
+_AUDIT_PRUNE_GUARD = threading.Lock()
 _SAFE_MCP_INPUT_FIELDS = (
     "action", "budget", "change_type", "depth", "direction", "intent", "limit",
     "mode", "name", "project", "query", "request_tier", "scope", "target",
@@ -230,7 +233,7 @@ def _record_mcp_invocation(
 
 
 def _maintain_mcp_audit_retention(workspace_context: WorkspaceContext, store: WorkspaceStore) -> None:
-    """有界清理 MCP 审计记录，避免每次工具调用扫描整个日志。"""
+    """异步清理 MCP 审计记录，审计维护不得阻塞业务工具响应。"""
     now = time.monotonic()
     if workspace_context.mcp_audit_entry_count is not None:
         workspace_context.mcp_audit_entry_count += 1
@@ -241,13 +244,27 @@ def _maintain_mcp_audit_retention(workspace_context: WorkspaceContext, store: Wo
     )
     if not needs_prune:
         return
-    summary = store.prune_jsonl(
-        MCP_INVOCATIONS_FILE,
-        created_before=datetime.now(timezone.utc) - timedelta(days=MCP_AUDIT_RETENTION_DAYS),
-        max_records=MCP_AUDIT_MAX_RECORDS,
-    )
-    workspace_context.mcp_audit_entry_count = summary["kept"]
     workspace_context.mcp_audit_last_pruned_at = now
+    key = str(store.memory_dir.resolve())
+    with _AUDIT_PRUNE_GUARD:
+        if key in _AUDIT_PRUNE_IN_FLIGHT:
+            return
+        _AUDIT_PRUNE_IN_FLIGHT.add(key)
+
+    def prune() -> None:
+        try:
+            worker_store = WorkspaceStore(workspace_context.workspace_file)
+            summary = worker_store.prune_jsonl(
+                MCP_INVOCATIONS_FILE,
+                created_before=datetime.now(timezone.utc) - timedelta(days=MCP_AUDIT_RETENTION_DAYS),
+                max_records=MCP_AUDIT_MAX_RECORDS,
+            )
+            workspace_context.mcp_audit_entry_count = summary["kept"]
+        finally:
+            with _AUDIT_PRUNE_GUARD:
+                _AUDIT_PRUNE_IN_FLIGHT.discard(key)
+
+    threading.Thread(target=prune, name="memory-center-audit-prune", daemon=True).start()
 
 
 def _bound_mcp_inputs(fn: Any, args: tuple[Any, ...], kwargs: dict[str, Any]) -> dict[str, Any]:

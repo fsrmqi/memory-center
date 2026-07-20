@@ -812,9 +812,9 @@ Task-space matching, health checks, resume summaries, and automatic sync read ta
 
 `mc_start` 在可选任务同步时会复用首次 sniff 结果。sniff 响应包含 `performance`，提供阶段耗时、缓存状态、检索模式和软请求时限。reindex 还会写入 `index-summary.json`，状态页和 Workbench 只读取这一轻量摘要，不再加载完整 Java 或语义索引。
 
-Before `mc_start` and `mc_lookup` return indexed evidence, Memory Center checks a bounded set of graph/path candidates. When a source file changed since indexing, it refreshes only that file's File/Class/Method graph overlay and returns `auto_refresh`; it never runs a full index merge on the request path.
+Before `mc_start` and `mc_lookup` return indexed evidence, Memory Center schedules a bounded set of graph/path candidates for background freshness checking. When a source file changed since indexing, the File/Class/Method overlay refresh is queued and returned as `auto_refresh.scheduled`; the request always reads the current published generation and never performs index work on the request path.
 
-`mc_start` 和 `mc_lookup` 返回索引证据前，会检查有界数量的图谱/路径候选。发现源码在索引后已变更时，只刷新该文件的 File/Class/Method 子图及其声明、注入、方法调用出边，并返回 `auto_refresh`；请求链路不会触发全量索引合并。文件 watcher 只写入去抖后的 dirty journal，由下一次相关请求消费。
+`mc_start` 和 `mc_lookup` 返回索引证据前，会把有界数量的图谱/路径候选提交给后台 freshness 检查。发现源码在索引后已变更时，文件的 File/Class/Method 子图及其声明、注入、方法调用出边会以 `auto_refresh.scheduled` 排队刷新；请求始终读取当前已发布 generation，不执行哈希、图遍历或索引重建。文件 watcher 只写入去抖后的 dirty journal，由后台定向刷新消费。
 
 需要在不查询时也保持索引更新，可启动每个工作区唯一的本地守护：`memory-center watcher-start --workspace <workspace.yaml>`。它使用轮询和去抖合并源码、配置变更，提交有界局部 reindex job；`watcher-status` 展示 PID、最近变更与 job，`watcher-stop` 优雅停止。守护状态也会出现在 Workbench 的 `hot_refresh.watcher`，不会在 Agent 查询热路径扫描全量工作区。
 

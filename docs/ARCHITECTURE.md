@@ -313,7 +313,7 @@ The runtime layer accepts metadata samples only and never stores payloads, reque
 
 查询期的热刷新不是一次全量重建：`RefreshCoordinator` 以 workspace 锁协调并发 Agent，先对命中/dirty 文件做内容哈希和 generation 校验，再以单 SQLite 事务替换子图及 generation 记录。它只扩展一跳既有依赖边，避免正常链路分析变成全库扫描。深度分析可提交为本地后台 job，并通过任务状态读取或取消；任务空间的大证据则以 SHA-256 内容块保存，摘要仅持有引用。
 
-Query-time refresh is not a full rebuild: `RefreshCoordinator` coordinates concurrent local Agents, validates content hash and generation for matched/dirty files, and replaces the subgraph plus generation record in one SQLite transaction. It expands only one existing dependency hop. Deep analysis can run as a local background job; large task evidence is stored as SHA-256 addressed chunks while summaries retain only references.
+Freshness refresh is not a full rebuild: `RefreshCoordinator` coordinates concurrent local Agents, validates content hash and generation for matched/dirty files, and replaces the subgraph plus generation record in one SQLite transaction. Lookup only schedules this work and reads the current published generation; it never hashes files, traverses graphs, or reindexes in the request thread. It expands only one existing dependency hop. Deep analysis can run as a local background job with PID/heartbeat state and cooperative cancellation; large task evidence is stored as SHA-256 addressed chunks while summaries retain only references.
 
 公共入口会先经 `QueryPlanner` 生成 fast/standard/deep 的有限预算计划，并记录 generation、分片范围、耗时和超时结果。需要更完整的失效传播时，变更文件会按 DTO、Feign、MQ、HTTP、配置或普通代码分类，产出有界依赖计划；长耗时 reindex 可进入持久状态的本地 job。任务空间还保存任务级 ADR（decision、rationale、evidence refs），证据回收默认为 dry-run。
 

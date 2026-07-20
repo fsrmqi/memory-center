@@ -4,6 +4,7 @@ import math
 import os
 import re
 from pathlib import Path
+from threading import Lock
 from typing import Any
 
 from memory_center.core.storage.runtime import RuntimeStore
@@ -40,6 +41,8 @@ _VECTOR_CLASS_KEYWORDS = (
     "handler",
 )
 _METHOD_EXCLUDE_PREFIXES = ("get", "set", "is", "to", "hash", "equals", "test")
+_MODEL_CACHE: dict[str, Any] = {}
+_MODEL_CACHE_LOCK = Lock()
 
 
 def ensure_workspace_semantic_index(workspace_file: str | Path) -> dict[str, Any]:
@@ -271,9 +274,13 @@ def build_workspace_semantic_index_partial(workspace_file: str | Path, changed_n
 
 
 def semantic_query(workspace_file: str | Path, query: str, limit: int = 20) -> list[dict[str, Any]]:
-    index = ensure_workspace_semantic_index(workspace_file)
+    # 查询只读取已发布代际。索引过期由 freshness/后台 refresh 处理，不能在 MCP
+    # 热路径隐式重建完整语义索引。
+    index = WorkspaceStore(workspace_file).read_json_prefer_backend(SEMANTIC_INDEX_FILE, {}) or {}
+    if not index.get("docs"):
+        return []
     if index.get("backend") == "sentence-transformers":
-        dense_hits = _dense_semantic_query(index, query, limit)
+        dense_hits = _dense_semantic_query(workspace_file, index, query, limit)
         if dense_hits:
             return dense_hits
     return _sparse_semantic_query(index, query, limit)
@@ -443,28 +450,65 @@ def _vector_state(
     return {"vector_status": "ready", "vector_disabled_reason": None}
 
 
-def _load_sentence_transformer_model(model_name: str | None):
+def _load_sentence_transformer_model(model_name: str | None, *, allow_download: bool = False):
+    """加载进程内单例 embedding 模型。
+
+    默认仅使用本地缓存，避免普通请求被 Hugging Face 下载或重复加载权重阻塞。
+    ``allow_download`` 仅供显式 reindex/预热维护窗口使用。
+    """
     if not model_name:
         return None
+    with _MODEL_CACHE_LOCK:
+        cached = _MODEL_CACHE.get(model_name)
+        if cached is not None:
+            return cached
     try:
         from sentence_transformers import SentenceTransformer
     except Exception:
         return None
     try:
-        return SentenceTransformer(model_name)
+        model = SentenceTransformer(model_name, local_files_only=not allow_download)
     except Exception:
         return None
+    with _MODEL_CACHE_LOCK:
+        # embedding 模型由工作区 profile 决定，最多保留当前和上一个，避免管理面
+        # 切换 profile 后在常驻 MCP 进程中无界积累。
+        if model_name not in _MODEL_CACHE and len(_MODEL_CACHE) >= 2:
+            _MODEL_CACHE.pop(next(iter(_MODEL_CACHE)))
+        _MODEL_CACHE[model_name] = model
+    return model
 
 
-def _dense_semantic_query(index: dict[str, Any], query: str, limit: int) -> list[dict[str, Any]]:
+def _dense_semantic_query(workspace_file: str | Path, index: dict[str, Any], query: str, limit: int) -> list[dict[str, Any]]:
     model_name = index.get("model")
     model = _load_sentence_transformer_model(model_name)
     if model is None:
         return []
     vector = model.encode([query], normalize_embeddings=True)[0]
     query_vector = [float(value) for value in vector]
+    dense_docs = [doc for doc in index.get("docs", []) if doc.get("dense_vector")]
+    # 小索引保留精确校验；大型工作区必须经 VectorIndex 的 ANN 查询，避免 Python
+    # 全量扫描和排序占用 MCP 请求线程。
+    if len(dense_docs) > 64:
+        try:
+            from memory_center.core.storage.vector_index import VectorIndex
+
+            workspace_store = WorkspaceStore(workspace_file)
+            runtime = RuntimeStore(workspace_store.graph_db_path)
+            try:
+                hits = VectorIndex(runtime, dimension=len(query_vector)).query(query_vector, limit=limit)
+            finally:
+                runtime.close()
+            by_id = {str(doc.get("node_id", "")): doc for doc in dense_docs}
+            return [
+                {**by_id[str(hit["node_id"])], "score": float(hit.get("score", 1.0 - float(hit.get("distance", 1.0)))), "backend": "sentence-transformers-ann"}
+                for hit in hits
+                if str(hit.get("node_id", "")) in by_id
+            ]
+        except Exception:
+            return []
     scored = []
-    for doc in index.get("docs", []):
+    for doc in dense_docs:
         dense_vector = doc.get("dense_vector")
         if not dense_vector:
             continue

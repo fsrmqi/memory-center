@@ -12,6 +12,8 @@ from __future__ import annotations
 import copy
 import os
 import re
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FutureTimeoutError
 from dataclasses import dataclass, field
 from threading import Lock
 from typing import Any
@@ -925,6 +927,8 @@ def _merge_retrieval_results(
 
 _RERANKER_MODELS: dict[str, Any] = {}
 _RERANKER_LOCK = Lock()
+_RERANKER_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="memory-center-reranker")
+_RERANK_TIMEOUT_SECONDS = 3.0
 
 
 def _load_reranker(model_name: str, allow_download: bool = False):
@@ -939,6 +943,9 @@ def _load_reranker(model_name: str, allow_download: bool = False):
                 return active
             local_path = snapshot_download(repo_id=model_name, local_files_only=not allow_download)
             model = CrossEncoder(local_path)
+            # 一个 MCP 进程只有一个活跃重排模型。预热新模型明确替换旧模型，避免
+            # 管理面切换 profile 后无界占用内存。
+            _RERANKER_MODELS.clear()
             _RERANKER_MODELS[model_name] = model
             return model
     except (ImportError, OSError, RuntimeError, ValueError):
@@ -1018,8 +1025,16 @@ def _rerank_candidates(
     selected = candidates[:limit]
     pairs = [(query, _reranker_text(item.node)) for item in selected]
     try:
-        raw_scores = model.predict(pairs)
+        future = _RERANKER_EXECUTOR.submit(model.predict, pairs)
+        raw_scores = future.result(timeout=_RERANK_TIMEOUT_SECONDS)
         values = [float(value) for value in raw_scores]
+    except FutureTimeoutError:
+        return candidates, {
+            "status": "unavailable",
+            "reason": "reranker_timeout",
+            "model": model_name,
+            "next_action": "重排超出 3 秒预算，已保留原始排序；检查模型资源后再预热或重试。",
+        }
     except (OSError, RuntimeError, ValueError) as exc:
         return candidates, {"status": "unavailable", "reason": str(exc)[:160], "model": model_name}
     if not values:

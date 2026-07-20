@@ -6,6 +6,20 @@
 - 重要行为变化
 - 明确修复的真实 bug
 
+## 4.3.12 查询热路径与后台任务可靠性修复
+
+- 普通语义查询改为复用进程内本地 embedding 模型缓存；不会重复加载权重、不会联网下载，也不会因索引代际不一致隐式全量重建。大规模 dense 查询统一通过已发布 ANN，只有极小测试索引保留精确计算。
+- `mc_start`、`mc_lookup` 的定向刷新改为后台合并执行；请求立刻使用当前已发布 generation，并通过 `auto_refresh.scheduled` 告知刷新已排队，避免哈希、图遍历和 partial reindex 阻塞 Agent。
+- 修复向量后端故障被误报为正常空结果的问题；现在返回 `vector_backend_query_failed` 和 `vector-ann-rebuild` 下一步动作。ANN rebuild/tune 管理操作最多等待 1 秒，不再被长维护锁卡住。
+- 后台任务增加进程 PID 与心跳，只在宿主 PID 已失效时标记 `interrupted`；取消请求持久化并在每个重建阶段协作生效，不再把正常长任务误判为中断。
+- 重排模型在单一执行器中最多等待 3 秒，超时保留原排序并返回诊断；同一 MCP 进程只保留一个活跃重排模型。MCP 审计清理移出工具请求线程，HTTP POST 请求体限制为 1 MiB。
+
+## 4.3.12 Query Hot-path and Background Job Reliability
+
+- Normal semantic queries reuse local process-cached embedding models, never download or rebuild a full semantic index implicitly, and use published ANN for large dense indexes.
+- Targeted refresh is scheduled in the background so lookup returns the current published generation immediately.
+- Vector backend failures, job heartbeat/cancellation, reranker deadlines, asynchronous audit retention, and HTTP request-size limits now have explicit bounded behavior.
+
 ## 4.3.11 ANN 并发一致性与请求时延收口
 
 - 向量事实写入、HNSW 生成和 label 映射改为同一维护锁的原子推进；查询映射 label 前保持锁，消除 rebuild 与局部 refresh 交错造成的错位与部分索引。

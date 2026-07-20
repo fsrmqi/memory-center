@@ -1,11 +1,19 @@
 from __future__ import annotations
 
+import os
+import threading
 import time
 from pathlib import Path
 
 from typer.testing import CliRunner
 
-from memory_center.core.workspace.jobs import PROGRESS_STAGES, submit_workspace_job, workspace_job_status
+from memory_center.core.workspace.jobs import (
+    JOBS_FILE,
+    PROGRESS_STAGES,
+    cancel_workspace_job,
+    submit_workspace_job,
+    workspace_job_status,
+)
 
 
 def test_background_job_persists_completed_result(tmp_path: Path) -> None:
@@ -113,3 +121,48 @@ def test_reindex_reports_all_main_stages(tmp_path: Path) -> None:
     )
 
     assert {"scanning", "parsing", "graph", "semantic", "retrieval", "finalizing"}.issubset(stages)
+
+
+def test_current_process_long_running_job_is_not_marked_interrupted(tmp_path: Path) -> None:
+    from memory_center.core.storage.workspace import WorkspaceStore
+    from tests.fixtures import copy_demo_workspace
+    workspace = copy_demo_workspace(tmp_path)
+    store = WorkspaceStore(workspace)
+    store.write_json(JOBS_FILE, [{
+        "job_id": "job-long",
+        "kind": "reindex",
+        "status": "running",
+        "runner_pid": os.getpid(),
+        "updated_at": time.time() - 3600,
+        "progress": {"stage": "parsing", "percent": 30},
+    }])
+
+    status = workspace_job_status(str(workspace), "job-long")
+
+    assert status["status"] == "running"
+
+
+def test_cancellation_is_persisted_and_observed_at_progress_boundary(tmp_path: Path) -> None:
+    from tests.fixtures import copy_demo_workspace
+
+    workspace = copy_demo_workspace(tmp_path)
+    started = threading.Event()
+    release = threading.Event()
+
+    def progress_work(report):
+        report("parsing", 30, "started")
+        started.set()
+        release.wait(1)
+        report("graph", 55, "should cancel")
+        return {"unexpected": True}
+
+    job = submit_workspace_job(str(workspace), "test", lambda: {}, progress_work=progress_work)
+    assert started.wait(1)
+    assert cancel_workspace_job(str(workspace), job["job_id"])["status"] == "cancel_requested"
+    release.set()
+    for _ in range(40):
+        status = workspace_job_status(str(workspace), job["job_id"])
+        if status.get("status") == "cancelled":
+            break
+        time.sleep(0.02)
+    assert status["status"] == "cancelled"

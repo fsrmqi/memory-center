@@ -31,6 +31,7 @@ EXACT_TINY_VECTOR_LIMIT = 64
 _HNSW_MIN_CAPACITY = 1024
 _QUERY_LOCK_TIMEOUT_SECONDS = 0.3
 _MAINTENANCE_LOCK_TIMEOUT_SECONDS = 120.0
+_ADMIN_LOCK_TIMEOUT_SECONDS = 1.0
 
 
 class VectorIndexBusyError(RuntimeError):
@@ -39,6 +40,10 @@ class VectorIndexBusyError(RuntimeError):
     def __init__(self, retry_after_ms: int):
         super().__init__("vector ANN maintenance is in progress")
         self.retry_after_ms = retry_after_ms
+
+
+class VectorIndexQueryError(RuntimeError):
+    """向量后端读取失败，不能被误报为正常空结果。"""
 
 
 class VectorIndex:
@@ -199,6 +204,14 @@ class VectorIndex:
                 "retry_after_ms": exc.retry_after_ms,
             }
             return []
+        except VectorIndexQueryError as exc:
+            self._last_query_diagnostics = {
+                "status": "unavailable",
+                "reason": "vector_backend_query_failed",
+                "detail": str(exc)[:160],
+                "next_action": "vector-ann-rebuild",
+            }
+            return []
 
     def query_diagnostics(self) -> dict[str, Any]:
         """返回最近一次查询的短生命周期状态，不写入工作区。"""
@@ -211,7 +224,7 @@ class VectorIndex:
         if not (_HAS_HNSWLIB and _HAS_NUMPY):
             return {"rebuilt": False, "reason": "hnswlib_unavailable", **self.stats()}
         try:
-            with self._ann_lock(_MAINTENANCE_LOCK_TIMEOUT_SECONDS):
+            with self._ann_lock(_ADMIN_LOCK_TIMEOUT_SECONDS):
                 with self._store.pool.connection() as conn:
                     rows = conn.execute(
                         """SELECT fallback.node_id, fallback.embedding FROM vec_fallback fallback
@@ -237,7 +250,7 @@ class VectorIndex:
             import hnswlib  # type: ignore[import-not-found]
             import numpy as np  # type: ignore[import-not-found]
 
-            with self._ann_lock(_MAINTENANCE_LOCK_TIMEOUT_SECONDS):
+            with self._ann_lock(_ADMIN_LOCK_TIMEOUT_SECONDS):
                 if not self._hnsw_ready():
                     return {"tuned": False, "reason": "ann_not_ready", **self.stats()}
                 meta = self._ann_meta()
@@ -293,8 +306,8 @@ class VectorIndex:
                 {"node_id": str(row["node_id"]), "distance": float(row["distance"]), "backend": "sqlite-vec"}
                 for row in rows
             ]
-        except sqlite3.Error:
-            return []
+        except sqlite3.Error as exc:
+            raise VectorIndexQueryError("sqlite-vec query failed") from exc
 
     def _query_hnsw(self, query_embedding: list[float], limit: int) -> list[dict[str, Any]]:
         try:
@@ -329,8 +342,8 @@ class VectorIndex:
                 ]
         except VectorIndexBusyError:
             raise
-        except (ImportError, OSError, RuntimeError, ValueError):
-            return []
+        except (ImportError, OSError, RuntimeError, ValueError) as exc:
+            raise VectorIndexQueryError("hnsw query failed") from exc
 
     def _query_tiny_exact(self, query_embedding: list[float], limit: int) -> list[dict[str, Any]]:
         """仅用于很小索引的精确校验，不允许扩展为大索引回退。"""

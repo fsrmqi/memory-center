@@ -31,6 +31,7 @@ from memory_center.http.route_dispatch import (
 )
 
 _VUE_DIST_DIR: Path | None = None
+_MAX_POST_BODY_BYTES = 1_048_576
 
 
 def _find_vue_dist() -> Path | None:
@@ -198,11 +199,19 @@ def create_handler(default_workspace: str | Path | None = None) -> type[BaseHTTP
             body_data = {}
             try:
                 content_length = int(self.headers.get("Content-Length", 0))
-                if content_length > 0:
+                if content_length < 0:
+                    raise ValueError("invalid Content-Length")
+                if content_length > _MAX_POST_BODY_BYTES:
+                    self._write_json(413, {"error": "request_too_large", "max_bytes": _MAX_POST_BODY_BYTES})
+                    return
+                if content_length:
                     raw_body = self.rfile.read(content_length)
                     body_data = _json.loads(raw_body) if raw_body else {}
-            except Exception:
-                body_data = {}
+                    if not isinstance(body_data, dict):
+                        raise ValueError("JSON body must be an object")
+            except (TypeError, ValueError, _json.JSONDecodeError) as exc:
+                self._write_json(400, {"error": "invalid_request_body", "detail": str(exc)[:160]})
+                return
             try:
                 # Merge body data into params; body values override query-string
                 merged_params = dict(params)  # shallow copy of query-string params
