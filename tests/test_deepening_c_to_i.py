@@ -224,16 +224,6 @@ class TestD03_ExplanationSchema:
         assert "b" in merged["subject"]
         assert merged["confidence"] == 0.7  # min confidence
 
-    def test_backward_compat_wrapper(self):
-        """backward_compat_wrapper adds missing fields to old explanations."""
-        from memory_center.core.explanation.schema import backward_compat_wrapper
-        old = {"result": "something", "type": "test"}
-        wrapped = backward_compat_wrapper(old)
-        assert "summary" in wrapped
-        assert "semantic_strength" in wrapped
-        assert "confidence" in wrapped
-
-
 # ===========================================================================
 # D-04: Domain / Business Flow output
 # ===========================================================================
@@ -417,16 +407,6 @@ class TestC04_Contracts:
         assert len(filtered) >= 1
         # Best match should have high confidence
         assert filtered[0]["_confidence"] >= 0.9
-
-    def test_filter_contracts_fallback(self):
-        """_filter_contracts_by_query returns fallback when no match."""
-        from memory_center.core.orchestrator.query import _filter_contracts_by_query
-        contracts = [
-            {"interface": "FooClient", "methods": [], "project": "foo"},
-        ]
-        filtered = _filter_contracts_by_query(contracts, "zzz_nonexistent", "feign")
-        assert len(filtered) >= 1
-        assert filtered[0].get("_is_fallback") is True
 
 
 # ===========================================================================
@@ -1001,11 +981,3 @@ class TestI01_I05_FinalVerification:
         for edge_type in ["CALLS", "CALLS_SERVICE", "IMPLEMENTS_FEIGN", "DECLARES", "CONTAINS"]:
             strength = edge_strength(edge_type)
             assert isinstance(strength, str) and len(strength) > 0
-
-    def test_schema_snapshot_compat(self, tmp_path):
-        """Schema compatibility test structure exists."""
-        from memory_center.core.foundation.schemas import with_schema
-        # Schema versioning works
-        result = with_schema("memory_query", {"results": []})
-        assert "schema" in result
-        assert result["schema"]["name"] == "memory_query"

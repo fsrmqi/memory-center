@@ -245,7 +245,7 @@ def serve_http(default_workspace: str | Path | None = None, host: str = "127.0.0
 
 
 def _http_error_response(exc: Exception) -> tuple[int, dict]:
-    """Return the backward-compatible HTTP error body with unified metadata."""
+    """Return the unified structured HTTP error body."""
     return normalize_exception(exc).to_http_response()
 
 

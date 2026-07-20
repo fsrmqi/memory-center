@@ -44,7 +44,6 @@
 - `.memory-center/graph/graph.db`
 - `.memory-center/graph/graph.db-wal`
 - `.memory-center/graph/graph.db-shm`
-- `.memory-center/memory/memory.db`
 - `.memory-center/memory/*.jsonl`
 - `.memory-center/index/*.json`
 
@@ -317,38 +316,11 @@ Hook 配置里：
 
 所以看到“原子工具还在”不代表 facade 重构失败。
 
-## 8. SQLite `memory.db` 不是唯一真相源
+## 8. `graph.db` 是运行时事实库
 
-当前 `memory.db` 的定位是：
+运行记录、断言、引用与图数据统一写入 `.memory-center/graph/graph.db`，所有运行时读取都以它为准。JSON、JSONL 和 Markdown 仍会保留，但它们分别是可检查导出、审计投影或人工工件，不能在查询中作为静默回退来源。
 
-- 镜像
-- 高频读路径优先查询
-- 聚合、观测、workbench 支撑
-
-但它**不是唯一事实源**。
-
-系统仍然保留：
-
-- JSON
-- JSONL
-- Markdown
-
-这样做是为了：
-
-- 保持可读性
-- 保持可追踪性
-- 降低一次性强切主后端的风险
-
-所以看到代码里同时存在：
-
-- `read_json*`
-- `read_json*_prefer_backend`
-
-并不表示设计不统一，而是渐进切换中的有意状态。
-
-完整读取路径与后续迁移边界见 [UNIFIED_BACKEND_READ_PATHS.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/UNIFIED_BACKEND_READ_PATHS.md)。
-
-需要注意：当前镜像写入是 best-effort，而 backend-first 读取尚未返回 `source` 或 `fallback_reason`。如果文件写入成功但镜像失败，旧 backend 数据可能暂时覆盖文件中的新数据。新增迁移必须先补双读一致性测试，不允许直接删除文件 fallback。
+导出与 SQLite 出现差异时，系统返回结构化诊断并要求修复或显式重建，而不是以旧文件覆盖当前运行时状态。完整边界见 [UNIFIED_BACKEND_READ_PATHS.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/UNIFIED_BACKEND_READ_PATHS.md)。
 
 ## 9. 文档与实现冲突时怎么判断
 

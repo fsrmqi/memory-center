@@ -4,14 +4,12 @@ Exercises ``write_default_workspace`` directly (CLI-agnostic) so the
 behaviour can evolve independently of Typer surface details.
 
 Covers:
-- ``detect=True`` walks the workspace root and emits one service per
+- auto-detection walks the workspace root and emits one service per
   recognized child directory.
-- ``detect=True`` falls back to a single ``path='.'`` service when the
+- auto-detection falls back to a single ``path='.'`` service when the
   root itself is a flat module (e.g. a Python package with no submodules).
-- ``detect=True`` emits an empty service list when nothing matches —
+- auto-detection emits an empty service list when nothing matches —
   callers must handle this gracefully.
-- ``detect=False`` preserves the legacy Spring-Cloud template byte-for-
-  byte so existing onboarding scripts keep working.
 - ``dry_run=True`` produces a report without writing anything to disk.
 - Re-invoking ``write_default_workspace`` on an existing workspace does
   not overwrite the file.
@@ -137,27 +135,6 @@ def test_detect_unrecognized_project_yields_empty_services(tmp_path: Path) -> No
     assert workspace_file.exists()
     data = yaml.safe_load(workspace_file.read_text(encoding="utf-8"))
     assert data["services"] == []
-
-
-# ── Legacy template ───────────────────────────────────────────────────────
-
-
-def test_no_detect_writes_legacy_spring_template(tmp_path: Path) -> None:
-    """``--no-detect`` must write the historical Spring template
-    verbatim so older docs / scripts keep working."""
-    workspace_file, report = write_default_workspace(
-        tmp_path, "ws", detect=False
-    )
-
-    assert report["detection_mode"] == "legacy-template"
-    names = [svc["name"] for svc in report["services"]]
-    assert names == ["gateway", "common-api", "common-core"]
-    types = [svc["type"] for svc in report["services"]]
-    assert types == [
-        "spring-cloud-gateway",
-        "shared-library",
-        "shared-library",
-    ]
 
 
 # ── Dry run ────────────────────────────────────────────────────────────────

@@ -113,11 +113,11 @@ def _infer_project_from_workspace_context(workspace_file: str | Path) -> str:
 def _resolve_effective_project(workspace_file: str | Path, project: str = "") -> dict[str, Any]:
     explicit = (project or "").strip()
     if explicit:
-        return {"project": explicit, "source": "explicit", "fallback_allowed": False}
+        return {"project": explicit, "source": "explicit"}
     inferred = _infer_project_from_workspace_context(workspace_file)
     if inferred:
-        return {"project": inferred, "source": "active_service_root", "fallback_allowed": False}
-    return {"project": "", "source": "none", "fallback_allowed": False}
+        return {"project": inferred, "source": "active_service_root"}
+    return {"project": "", "source": "none"}
 
 
 def _refresh_scoped_query_if_stale(
@@ -481,7 +481,7 @@ def memory_query_hybrid(
     """Enhanced query using hybrid retrieval engine.
 
     Combines graph, sparse, and semantic search with intelligent routing.
-    Provides better recall and more stable results than memory_query.
+    Provides stable, evidence-scoped retrieval for the active workspace.
     """
     # Lazy import to avoid circular dependency
     from ..retrieval.hybrid import HybridRetrievalConfig, detect_query_intent, hybrid_retrieve
@@ -602,7 +602,6 @@ def memory_query_hybrid(
 
     # Project filtering: explicit project is strict; inferred active-service
     # scope is preferred only when it has evidence, otherwise keep global hits.
-    fallback_used = False
     if effective_project and shard_available:
         results = result.get("results", [])
         project_results = [r for r in results if _project_matches(effective_project, r.get("node", {}).get("project", ""))]
@@ -618,7 +617,7 @@ def memory_query_hybrid(
             result["returned"] = rebuild["returned"]
             result["retrieval_summary"] = rebuild["retrieval_summary"]
             result["progressive"] = rebuild["progressive"]
-        elif not project_scope.get("fallback_allowed", False):
+        else:
             # No results match the project filter — return empty but consistent
             empty_rebuild = _rebuild_summary_after_filter([], intent)
             result["results"] = []
@@ -626,8 +625,6 @@ def memory_query_hybrid(
             result["returned"] = 0
             result["retrieval_summary"] = empty_rebuild["retrieval_summary"]
             result["progressive"] = empty_rebuild["progressive"]
-        else:
-            fallback_used = True
 
     # Enrich with workspace context
     result["workspace"] = config_obj[0].workspace
@@ -636,8 +633,6 @@ def memory_query_hybrid(
         "requested": project,
         "effective": effective_project,
         "source": project_scope.get("source", "none"),
-        "fallback_allowed": bool(project_scope.get("fallback_allowed", False)),
-        "fallback_used": fallback_used,
     }
     result["targeted_refresh"] = targeted_refresh
 
@@ -692,11 +687,10 @@ def memory_query_hybrid(
             project_mq = [c for c in filtered_mq if _project_matches(effective_project, c.get("project", ""))]
             project_api = [c for c in filtered_api if _project_matches(effective_project, c.get("project", ""))]
             project_config = [c for c in filtered_config if _project_matches(effective_project, c.get("project", ""))]
-            if not project_scope.get("fallback_allowed", False) or project_feign or project_mq or project_api or project_config:
-                filtered_feign = project_feign
-                filtered_mq = project_mq
-                filtered_api = project_api
-                filtered_config = project_config
+            filtered_feign = project_feign
+            filtered_mq = project_mq
+            filtered_api = project_api
+            filtered_config = project_config
 
         result["contracts"] = {
             "feign_contracts": filtered_feign if primary_intent != "mq" and primary_intent != "config" else [],
@@ -1043,7 +1037,6 @@ def _filter_contracts_by_query(contracts: list, query: str, intent: str) -> list
     - 0.85: method name exact match
     - 0.60: token match in interface name
     - 0.30: token match in JSON dump
-    - 0.10: fallback (no match, top-N returned with is_fallback=True)
     """
     if not contracts:
         return []
@@ -1104,20 +1097,7 @@ def _filter_contracts_by_query(contracts: list, query: str, intent: str) -> list
             result.append(enriched)
         return result
 
-    # 无匹配回退：返回 top-N，标记为 fallback
-    fallback = []
-    for contract in contracts[:10]:
-        enriched = dict(contract)
-        enriched["_confidence"] = 0.10
-        enriched["_match_type"] = "fallback"
-        enriched["_is_fallback"] = True
-        enriched["_semantic_strength"] = "derived"
-        enriched["evidence_level"] = evidence_level_for(
-            enriched, semantic_strength=enriched["_semantic_strength"]
-        )
-        enriched["_match_reason"] = "无精确匹配，返回候选契约作为参考"
-        fallback.append(enriched)
-    return fallback
+    return []
 
 
 def _contract_semantic_strength(confidence: float) -> str:
@@ -1145,8 +1125,6 @@ def _contract_match_reason(match_type: str, contract: dict, query: str) -> str:
         return '查询词与契约字段部分匹配'
     if match_type == "json_scan":
         return '查询词在契约全文扫描中匹配'
-    if match_type == "fallback":
-        return '无精确匹配，返回候选契约作为参考'
     return '匹配类型: ' + match_type
 
 
@@ -1557,32 +1535,11 @@ def memory_method_walkthrough(
         lookup_provider=_lookup_provider,
         escalation_runner=_escalation_runner,
     )
-    if (
-        effective_project
-        and project_scope.get("fallback_allowed", False)
-        and not result.get("found")
-    ):
-        result = _walkthrough_analysis.build_walkthrough_result(
-            workspace_file,
-            symbol,
-            depth=depth,
-            limit=limit,
-            project="",
-            view=view,
-            budget=budget,
-            report_level=report_level,
-            allow_workspace_escalation=_allow_workspace_escalation,
-            cache=_METHOD_WALKTHROUGH_CACHE,
-            lookup_provider=_lookup_provider,
-            escalation_runner=_escalation_runner,
-        )
-        result.setdefault("project_scope", {})["fallback_used"] = True
     result.setdefault("project_scope", {}).update(
         {
             "requested": project,
             "effective": effective_project,
             "source": project_scope.get("source", "none"),
-            "fallback_allowed": bool(project_scope.get("fallback_allowed", False)),
         }
     )
     return result
@@ -2025,7 +1982,6 @@ def memory_search_code(workspace_file: str | Path, query: str, scope: str = "", 
         return collected
 
     hits = collect_hits(effective_project)
-    fallback_used = False
     hits.sort(key=lambda row: (-int(row.get("score", 0)), -int(row.get("symbol_count", 0)), row.get("path", "")))
     result = {
         "workspace": config.workspace,
@@ -2035,8 +1991,6 @@ def memory_search_code(workspace_file: str | Path, query: str, scope: str = "", 
             "requested": project,
             "effective": effective_project,
             "source": project_scope.get("source", "none"),
-            "fallback_allowed": bool(project_scope.get("fallback_allowed", False)),
-            "fallback_used": fallback_used,
         },
         "hits": hits[:limit],
         "total_hits": len(hits),

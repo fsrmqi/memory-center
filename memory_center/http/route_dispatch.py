@@ -42,7 +42,8 @@ _HTTP_ROUTE_REGISTRY = _create_http_route_registry()
 def build_http_route_registry(params: dict | None = None, default_workspace: str | None = None) -> CommandRegistry:
     """Return the process-wide immutable HTTP route table.
 
-    ``params`` and ``default_workspace`` remain accepted for source compatibility;
-    request values are supplied to ``dispatch`` as a ``RouteParams`` adapter.
+    Request values are supplied to ``dispatch`` as a ``RouteParams`` adapter.
+    The unused arguments are retained only because the HTTP server passes them
+    during routing.
     """
     return _HTTP_ROUTE_REGISTRY

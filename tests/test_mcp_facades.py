@@ -1181,7 +1181,6 @@ def test_memory_search_code_prefers_active_service_for_duplicate_symbols(tmp_pat
     result = memory_search_code(wf, "RedisDelayedQueue", limit=5)
 
     assert result["project_scope"]["effective"] == "beta-service"
-    assert result["project_scope"]["fallback_used"] is False
     assert result["hits"]
     assert {hit["project"] for hit in result["hits"]} == {"beta-service"}
 
@@ -1193,7 +1192,6 @@ def test_memory_search_code_keeps_active_service_scope_when_no_hit(tmp_path: Pat
     result = memory_search_code(wf, "RedisDelayedQueue", limit=5)
 
     assert result["project_scope"]["effective"] == "gamma-service"
-    assert result["project_scope"]["fallback_used"] is False
     assert result["hits"] == []
     assert result["knowledge_state"]["state"] == "NOT_FOUND"
 

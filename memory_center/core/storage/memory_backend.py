@@ -8,11 +8,9 @@ from typing import Any
 
 
 class MemoryBackendStore:
-    """Lightweight SQLite mirror for memory-side JSONL/refs data.
+    """访问 ``graph.db`` 中的运行记录、审计流和引用读模型。
 
-    This backend does not replace the existing local-first files yet. It mirrors
-    them so higher-level queries, dashboards, and future migrations can rely on
-    a more structured substrate.
+    JSON/JSONL 是便于检查与导出的投影；运行时查询与状态判定只读取 SQLite。
     """
 
     def __init__(self, db_path: str | Path):

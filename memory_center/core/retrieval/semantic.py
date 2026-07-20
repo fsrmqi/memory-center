@@ -6,7 +6,6 @@ import re
 from pathlib import Path
 from typing import Any
 
-from memory_center.core.foundation.compat import zip_strict
 from memory_center.core.storage.graph import GraphStore
 from memory_center.core.storage.workspace import WorkspaceStore
 
@@ -116,7 +115,7 @@ def build_workspace_semantic_index(workspace_file: str | Path) -> dict[str, Any]
         if model is not None and dense_docs:
             texts = [doc["text"] for doc in dense_docs]
             dense_vectors = model.encode(texts, normalize_embeddings=True)
-            for doc, vector in zip_strict(dense_docs, dense_vectors):
+            for doc, vector in zip(dense_docs, dense_vectors, strict=True):
                 doc["dense_vector"] = [float(value) for value in vector]
             actual_backend = "sentence-transformers"
             model_name = requested_model
@@ -238,7 +237,7 @@ def build_workspace_semantic_index_partial(workspace_file: str | Path, changed_n
         if model is not None and dense_new_docs:
             texts = [_dense_text_for_doc(d) for d in dense_new_docs]
             dense_vectors = model.encode(texts, normalize_embeddings=True)
-            for doc, vector in zip_strict(dense_new_docs, dense_vectors):
+            for doc, vector in zip(dense_new_docs, dense_vectors, strict=True):
                 doc["dense_vector"] = [float(value) for value in vector]
     dense_doc_count = sum(1 for doc in merged_docs if doc.get("dense_vector"))
     vector_state = _vector_state(
@@ -456,7 +455,7 @@ def _dense_semantic_query(index: dict[str, Any], query: str, limit: int) -> list
         dense_vector = doc.get("dense_vector")
         if not dense_vector:
             continue
-        score = sum(float(left) * float(right) for left, right in zip_strict(query_vector, dense_vector))
+        score = sum(float(left) * float(right) for left, right in zip(query_vector, dense_vector, strict=True))
         if score <= 0:
             continue
         scored.append({**doc, "score": score, "backend": "sentence-transformers"})

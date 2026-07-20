@@ -153,7 +153,7 @@ CAPABILITIES: list[Capability] = [
     Capability(
         name="backend-consistency",
         core_fields=["consistent", "comparisons", "divergences"],
-        error_semantics="missing memory.db or JSONL -> diagnostics",
+        error_semantics="missing graph.db or exported JSONL -> diagnostics",
         entries=[
             _cli("backend-consistency"),
             _http("/workspace/backend-consistency"),

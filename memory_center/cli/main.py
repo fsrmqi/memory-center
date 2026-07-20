@@ -175,13 +175,6 @@ def main_callback(
 def init(
     workspace_root: str = typer.Option(...),
     name: str = typer.Option("dev-workspace"),
-    detect: bool = typer.Option(
-        True,
-        "--detect/--no-detect",
-        help="Auto-detect service types under workspace-root (default). "
-        "Pass --no-detect to write the legacy Spring template "
-        "(gateway/common-api/common-core).",
-    ),
     dry_run: bool = typer.Option(
         False,
         "--dry-run",
@@ -189,9 +182,7 @@ def init(
     ),
 ):
     """Initialize a .memory-center workspace under a multi-project root."""
-    workspace_file, report = write_default_workspace(
-        workspace_root, name, detect=detect, dry_run=dry_run
-    )
+    workspace_file, report = write_default_workspace(workspace_root, name, dry_run=dry_run)
     services = report.get("services", [])
 
     if dry_run:
@@ -216,14 +207,13 @@ def init(
     ensure_default_artifacts(workspace_file)
     write_agent_instructions(store, workspace_root)
     print(f"[green]Initialized:[/green] {workspace_file}")
-    if detect:
-        if services:
-            print(f"  Detected {len(services)} service(s):")
-            for svc in services:
-                print(f"    - {svc['name']:<20} type={svc['type']} path={svc['path']}")
-        else:
-            print("  [yellow]No recognizable services detected.[/yellow] "
-                  "Edit workspace.yaml and add entries by hand.")
+    if services:
+        print(f"  Detected {len(services)} service(s):")
+        for svc in services:
+            print(f"    - {svc['name']:<20} type={svc['type']} path={svc['path']}")
+    else:
+        print("  [yellow]No recognizable services detected.[/yellow] "
+              "Edit workspace.yaml and add entries by hand.")
     print("Edit workspace.yaml services, then run: memory-center reindex --workspace <workspace.yaml>")
 
 
@@ -1383,7 +1373,7 @@ def regression_smoke_cmd(
         workspace,
         session["session_id"],
         "tool_call",
-        {"tool_name": "memory_query_tool", "query": "ArticleFeignClient", "project": "task-service"},
+        {"tool_name": "mc_lookup", "query": "ArticleFeignClient", "project": "task-service"},
     )
     workspace_end_session(workspace, session["session_id"], outcome="smoke complete")
     sync_sniff = workspace_sync_sniff_to_artifacts(workspace, "ArticleFeignClient 调用链", task_id=task["task_id"], limit=limit)

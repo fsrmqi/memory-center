@@ -68,10 +68,6 @@ outputs (`target`, `build`, `dist`, `node_modules`, `.venv`, …) are skipped.
 # 预览将生成的内容,但不写入文件。
 memory-center init --workspace-root /abs/path/to/repo --dry-run
 
-# Use the legacy Spring-Cloud placeholder template
-# (gateway / common-api / common-core).
-# 使用旧版 Spring Cloud 占位模板。
-memory-center init --workspace-root /abs/path/to/repo --no-detect
 ```
 
 ### Supported service types / 支持的服务类型
@@ -290,7 +286,7 @@ memory-center eval-golden --workspace /abs/path/.memory-center/workspace.yaml --
 
 ### 11.1 Hybrid Retrieval / 混合检索
 
-**何时使用**: 需要查询代码、符号、调用链时，hybrid retrieval 比旧的 `memory_query` 更稳定。
+**何时使用**: 需要查询代码、符号、调用链时，使用 hybrid retrieval。
 
 **使用方式**: 通过 `memory_query_hybrid()` 或在 Python 代码中直接调用。
 

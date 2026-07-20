@@ -365,8 +365,7 @@ Memory Center 不把模型临时输出直接当成长期知识。写入链路会
 
 初始化路径：
 
-- `memory-center init --detect` 默认扫描 immediate child directories，识别 Spring、generic JVM、Python、Node/TypeScript、Go、Rust 等项目。
-- `--no-detect` 保留历史 Spring Cloud 模板，兼容旧教程和脚本。
+- `memory-center init` 默认扫描 immediate child directories，识别 Spring、generic JVM、Python、Node/TypeScript、Go、Rust 等项目。
 - 已存在的 `workspace.yaml` 不会被自动覆盖。
 
 工作区结构：
@@ -518,10 +517,9 @@ Memory Center 当前有三类存储角色。
 
 `GraphStore` 管理 graph-native 查询主路径。`UnifiedStore` 提供带连接池的 SQLite schema，用于 graph / memory / vector / inverted-index 相关模块复用。实际维护时必须区分：
 
-- `WorkspaceStore.graph_db_path`：传给 `GraphStore`、graph-oriented `UnifiedStore`、VectorIndex、InvertedIndex。
-- `WorkspaceStore.memory_db_path`：传给 `MemoryBackendStore`、`UnifiedBackendQuery`。
+- `WorkspaceStore.graph_db_path`（等同于 `runtime_db_path`）：传给 `GraphStore`、`UnifiedStore`、VectorIndex、InvertedIndex、`MemoryBackendStore` 与 `UnifiedBackendQuery`。
 
-不要把 `workspace.yaml` 直接传给 SQLite store；所有运行时存储访问都应从 `WorkspaceStore.runtime_db_path` 获取数据库路径。
+不要把 `workspace.yaml` 直接传给 SQLite store；所有运行时存储访问都应从 `WorkspaceStore.runtime_db_path` 获取数据库路径，统一落在 `.memory-center/graph/graph.db`。
 
 所有 SQLite 连接通过 `storage/pragmas.py` 应用统一 PRAGMA：WAL、`synchronous=NORMAL`、大 cache、`temp_store=MEMORY`、mmap、foreign keys。全量重建可临时进入 `synchronous=OFF` 的 fast write mode。
 

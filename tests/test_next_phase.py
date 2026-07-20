@@ -179,18 +179,6 @@ class TestContracts:
         assert users[0]["_confidence"] == 0.90
         assert users[0]["_match_type"] == "path_exact"
 
-    def test_filter_contracts_by_query_fallback(self):
-        from memory_center.core.orchestrator.query import _filter_contracts_by_query
-        contracts = [
-            {"interface": "OrderFeignClient", "project": "svc-b", "methods": []},
-        ]
-        result = _filter_contracts_by_query(contracts, "xyz_nonexistent", "feign")
-        assert isinstance(result, list)
-        assert len(result) == 1
-        assert result[0]["_confidence"] == 0.10
-        assert result[0]["_match_type"] == "fallback"
-        assert result[0]["_is_fallback"] is True
-
     def test_filter_contracts_by_query_empty(self):
         from memory_center.core.orchestrator.query import _filter_contracts_by_query
         result = _filter_contracts_by_query([], "anything", "feign")

@@ -81,8 +81,8 @@
   - JSON / JSONL / refs
   - `read_json_prefer_backend` / `read_jsonl_prefer_backend`
 - `core/storage/memory_backend.py`
-  - SQLite `memory.db`
-  - 镜像写入与统一后端查询
+  - `graph.db` 中的运行记录与引用读模型
+  - 统一后端写入与查询
 
 ### 3.3 规则与协议
 
@@ -124,7 +124,7 @@
   - compact/full 输出裁剪
   - dashboard / sniff / handoff / resume 压缩层
 - `query.py`
-  - `memory_query`
+  - `memory_query_hybrid`
   - `memory_ref_get / batch`
 - `impact.py`
   - `memory_impact`
@@ -308,10 +308,10 @@ Known limitation: 目前 resolver 仍是轻量静态解析，不处理继承分�
 
 ### 4.5 统一后端链路
 
-1. JSONL / Markdown 继续落盘
-2. 关键记录镜像到 `memory.db`
-3. 高频读路径优先走 backend
-4. fallback 到 JSON/JSONL
+1. 运行记录统一写入 `graph.db`
+2. JSONL / Markdown 按需生成可检查导出或人工工件
+3. 高频和低频运行时读取均走 SQLite
+4. 导出异常返回诊断，不回退到旧 JSON/JSONL
 
 ## 5. 当前最重要的设计取舍
 
@@ -339,21 +339,9 @@ Known limitation: 目前 resolver 仍是轻量静态解析，不处理继承分�
 - short refs
 - top-K evidence
 
-### 5.3 SQLite 不是唯一真相源
+### 5.3 SQLite 运行时单一事实库
 
-当前仍然保留：
-
-- JSON
-- JSONL
-- Markdown
-
-SQLite `memory.db` 负责：
-
-- 镜像
-- 高频查询优先
-- 观察与聚合
-
-这是渐进统一，而不是一步替换。
+`graph.db` 负责图、断言、会话、审计和聚合的运行时事实。JSON、JSONL 与 Markdown 继续保留为导出或人工工件，但不承担查询回退职责；导出异常必须显式诊断。
 
 ### 5.4 Hook 是宿主集成，不是核心业务
 
@@ -398,7 +386,7 @@ Hook 的价值在于自动触发关键生命周期动作，但不应该过度侵
 
 ### 8.1 Hybrid Retrieval 实现细节
 
-**问题**: 之前 `memory_query()` 只使用 graph + semantic 两种检索源，对于某些查询（如 Feign、MQ、endpoint）召回不稳定。
+**背景**: 早期两路检索对 Feign、MQ、endpoint 等查询的召回不稳定。
 
 **解决方案**: 实现 graph / FTS / BM25 / semantic / optional vector 多源混合检索 + 智能路由。
 

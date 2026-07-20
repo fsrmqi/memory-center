@@ -655,7 +655,7 @@ def _tool_matches_agent_guidance_action(action: str, tool_name: str, mode: str, 
     if action in {"inspect_top_result", "validate_semantic_hit", "refresh_or_read_live_files", "use_read_targets"}:
         return any(token in normalized_tool for token in ["read", "open", "memory_ref", "workspace_trace", "memory_context", "memory_search_code"])
     if action == "refine_query":
-        return any(token in normalized_tool for token in ["memory_query", "mc_lookup", "memory_symbol", "memory_search_code"])
+        return any(token in normalized_tool for token in ["memory_query_hybrid", "mc_lookup", "memory_symbol", "memory_search_code"])
     return normalized_tool.startswith("memory_") or normalized_tool.startswith("workspace_")
 
 

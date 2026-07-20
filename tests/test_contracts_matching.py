@@ -111,27 +111,6 @@ class TestEndpointPathMatch:
 
 
 # ============================================================
-# TestFallback: 0.10 confidence with _is_fallback
-# ============================================================
-
-class TestFallback:
-    def test_no_match_returns_fallback(self):
-        result = _filter_contracts_by_query(FEIGN_CONTRACTS, "xyzzy_nonexistent_query", "feign")
-        assert len(result) > 0
-        assert all(c["_confidence"] == 0.10 for c in result)
-        assert all(c["_match_type"] == "fallback" for c in result)
-        assert all(c["_is_fallback"] is True for c in result)
-
-    def test_fallback_returns_top_n(self):
-        result = _filter_contracts_by_query(FEIGN_CONTRACTS, "nonexistent", "feign")
-        assert len(result) <= 10  # fallback returns top-N
-
-    def test_empty_contracts_returns_empty(self):
-        result = _filter_contracts_by_query([], "anything", "feign")
-        assert result == []
-
-
-# ============================================================
 # TestJsonScan: 0.30 confidence
 # ============================================================
 
@@ -191,10 +170,6 @@ class TestSemanticStrength:
         result = _filter_contracts_by_query(FEIGN_CONTRACTS, "getOrder", "feign")
         assert result[0]["_semantic_strength"] == "inferred"
 
-    def test_fallback_has_derived_strength(self):
-        result = _filter_contracts_by_query(FEIGN_CONTRACTS, "nonexistent_xyz", "feign")
-        assert all(c["_semantic_strength"] == "derived" for c in result)
-
     def test_match_reason_present(self):
         result = _filter_contracts_by_query(FEIGN_CONTRACTS, "OrderFeignClient", "feign")
         assert "_match_reason" in result[0]
@@ -211,12 +186,6 @@ class TestWeakMatchNotHighConfidence:
         result = _filter_contracts_by_query(MQ_CONTRACTS, "order-events", "feign")
         assert len(result) > 0
         assert all(c["_confidence"] <= 0.30 for c in result)
-
-    def test_fallback_is_lowest_confidence(self):
-        """Fallback results must have confidence 0.10."""
-        result = _filter_contracts_by_query(FEIGN_CONTRACTS, "xyzzy_nonexistent", "feign")
-        assert all(c["_confidence"] == 0.10 for c in result)
-        assert all(c["_is_fallback"] is True for c in result)
 
     def test_no_false_high_confidence_from_partial_match(self):
         """Partial token match should not produce high confidence."""

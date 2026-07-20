@@ -47,20 +47,14 @@ def write_default_workspace(
     root: str | Path,
     name: str,
     *,
-    detect: bool = True,
     dry_run: bool = False,
 ) -> tuple[Path, dict[str, Any]]:
     """Create ``.memory-center/workspace.yaml``.
 
-    When ``detect`` is True (default) the workspace root is scanned for
-    recognizable service kinds (Spring/Python/Go/Node/Rust/…) and the
+    The workspace root is scanned for recognizable service kinds (Spring/Python/Go/Node/Rust/…) and the
     resulting list is written into the yaml. When detection finds nothing,
     a workspace with an empty ``services: []`` list is written together
     with a help comment guiding the user to add entries by hand.
-
-    When ``detect`` is False the historical Spring-Cloud-oriented template
-    (gateway / common-api / common-core) is written verbatim — this keeps
-    older tutorials and scripts working unchanged.
 
     Returns the path to the workspace file and a structured report
     describing what was detected / written. The report is intended for
@@ -73,13 +67,8 @@ def write_default_workspace(
     ctx_dir = root_path / ".memory-center"
     workspace_file = ctx_dir / "workspace.yaml"
 
-    if detect:
-        detected_services = _autodetect_services(root_path)
-        services = detected_services
-        detection_mode = "auto"
-    else:
-        services = _legacy_default_services()
-        detection_mode = "legacy-template"
+    services = _autodetect_services(root_path)
+    detection_mode = "auto"
 
     report: dict[str, Any] = {
         "workspace_file": str(workspace_file),
@@ -113,18 +102,6 @@ def write_default_workspace(
     )
     report["written"] = True
     return workspace_file, report
-
-
-def _legacy_default_services() -> list[dict[str, Any]]:
-    """The original Spring-Cloud-oriented placeholder list.
-
-    Used when ``detect=False`` so existing onboarding flows keep working.
-    """
-    return [
-        {"name": "gateway", "path": "gateway", "type": "spring-cloud-gateway", "service_name": "gateway"},
-        {"name": "common-api", "path": "common-api", "type": "shared-library", "tags": ["contract"]},
-        {"name": "common-core", "path": "common-core", "type": "shared-library", "tags": ["common"]},
-    ]
 
 
 def _autodetect_services(root: Path) -> list[dict[str, Any]]:

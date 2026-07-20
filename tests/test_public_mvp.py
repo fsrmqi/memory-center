@@ -1284,7 +1284,7 @@ def test_agent_guidance_replay_classifies_missed_bypassed_and_unobservable(tmp_p
             ],
         },
     )
-    workspace_log_session_event(workspace, missed_id, "tool_call", {"tool_name": "memory_query_tool", "query": "ArticleService"})
+    workspace_log_session_event(workspace, missed_id, "tool_call", {"tool_name": "mc_lookup", "query": "ArticleService"})
 
     unobservable = workspace_start_session(workspace, "没有后续工具事件")
     unobservable_id = unobservable["session_id"]
@@ -1395,7 +1395,7 @@ def test_memory_backend_sqlite_mirror(tmp_path: Path):
 
     session = workspace_start_session(workspace, "sqlite backend mirror smoke")
     sid = session["session_id"]
-    workspace_log_session_event(workspace, sid, "tool_call", {"tool_name": "memory_query_tool", "query": "ArticleFeignClient"})
+    workspace_log_session_event(workspace, sid, "tool_call", {"tool_name": "mc_lookup", "query": "ArticleFeignClient"})
     workspace_end_session(workspace, sid, outcome="done")
     workspace_record_case(
         workspace,
@@ -1498,7 +1498,7 @@ def test_artifact_sync_from_sniff_and_case(tmp_path: Path):
 
     started = workspace_start_session(workspace, "修复 ArticleFeignClient 调用链")
     session_id = started["session_id"]
-    workspace_log_session_event(workspace, session_id, "tool_call", {"tool_name": "memory_query_tool", "query": "ArticleFeignClient", "project": "task-service"})
+    workspace_log_session_event(workspace, session_id, "tool_call", {"tool_name": "mc_lookup", "query": "ArticleFeignClient", "project": "task-service"})
     workspace_end_session(workspace, session_id, outcome="完成 Feign 调用链定位", verified_by=["manual-check"])
 
     synced_case = workspace_sync_case_to_artifacts(
@@ -1559,14 +1559,14 @@ def test_session_memory_flow(tmp_path: Path):
     started = workspace_start_session(workspace, "修复 ArticleFeignClient 调用链")
     session_id = started["session_id"]
     workspace_log_session_event(workspace, session_id, "user_prompt", {"intent": "修复 ArticleFeignClient 调用链"})
-    workspace_log_session_event(workspace, session_id, "tool_call", {"tool_name": "memory_query_tool", "query": "ArticleFeignClient"})
+    workspace_log_session_event(workspace, session_id, "tool_call", {"tool_name": "mc_lookup", "query": "ArticleFeignClient"})
     workspace_log_session_event(workspace, session_id, "tool_result", {"project": "task-service", "file_path": "task-service/src/main/java/com/example/task/ArticleMoveService.java"})
     large_payload = {"tool_name": "memory_context_tool", "query": "ArticleFeignClient", "project": "task-service", "blob": "X" * 6000}
     offloaded = workspace_log_session_event(workspace, session_id, "tool_result", large_payload)
     ended = workspace_end_session(workspace, session_id, outcome="完成 Feign 调用链定位", verified_by=["manual-check"])
 
     assert ended["ended"] is True
-    assert ended["summary"]["tool_calls"] == ["memory_query_tool"]
+    assert ended["summary"]["tool_calls"] == ["mc_lookup"]
     assert offloaded["payload_ref"]
 
     summary = workspace_session_summary(workspace, session_id)
@@ -1888,7 +1888,7 @@ def test_http_bridge_routes(tmp_path: Path):
     reindex_workspace(config, store)
     session = workspace_start_session(workspace, "HTTP bridge route test")
     session_id = session["session_id"]
-    workspace_log_session_event(workspace, session_id, "tool_call", {"tool_name": "memory_query_tool", "query": "ArticleFeignClient", "project": "task-service"})
+    workspace_log_session_event(workspace, session_id, "tool_call", {"tool_name": "mc_lookup", "query": "ArticleFeignClient", "project": "task-service"})
     workspace_end_session(workspace, session_id, outcome="HTTP route validation", verified_by=["test"])
 
     home = tmp_path / "home" / ".memory-center"
@@ -2630,7 +2630,7 @@ def test_case_risk_level_with_evidence_refs():
         "risk_points": ["Feign contract 兼容风险", "MQ topic 变更风险"],
         "evidence_refs": [
             {"event_type": "tool_call", "tool_name": "workspace_check_contract_tool", "query": "ArticleFeignClient"},
-            {"event_type": "tool_call", "tool_name": "memory_query_tool", "query": "article-pubtime-change topic kafka"},
+            {"event_type": "tool_call", "tool_name": "mc_lookup", "query": "article-pubtime-change topic kafka"},
         ],
     }
 
@@ -2689,7 +2689,7 @@ def test_backend_query_with_project_and_type(tmp_path: Path):
     from memory_center.core.orchestrator import workspace_log_session_event, workspace_start_session
 
     session = workspace_start_session(workspace, "backend query test")
-    workspace_log_session_event(workspace, session["session_id"], "tool_call", {"tool_name": "memory_query_tool", "project": "task-service", "query": "ArticleFeignClient"})
+    workspace_log_session_event(workspace, session["session_id"], "tool_call", {"tool_name": "mc_lookup", "project": "task-service", "query": "ArticleFeignClient"})
     workspace_log_session_event(workspace, session["session_id"], "tool_call", {"tool_name": "memory_symbol_tool", "project": "article-service", "query": "ArticleService"})
 
     result_all = memory_backend_query(workspace, collection="session-events.jsonl", limit=50)
@@ -2849,7 +2849,7 @@ def test_agent_guidance_adoption_trend_records_and_alerts(tmp_path: Path):
         "agent_guidance",
         {"agent_next_steps": [{"action": "refine_query", "command": "mc_lookup(mode=query)"}]},
     )
-    workspace_log_session_event(workspace, sid, "tool_call", {"tool_name": "memory_query_tool", "query": "ArticleFeignClient"})
+    workspace_log_session_event(workspace, sid, "tool_call", {"tool_name": "mc_lookup", "query": "ArticleFeignClient"})
     sampled = memory_eval_agent_guidance_adoption_trend(workspace, session_id=sid, limit=20)
     assert sampled["recorded"] is True
     assert sampled["trend_point"]["adoption_rate"] == 1.0
@@ -2918,7 +2918,7 @@ def test_agent_guidance_replay_trend_records_and_alerts(tmp_path: Path):
         "agent_guidance",
         {"agent_next_steps": [{"action": "refine_query", "command": "mc_lookup(mode=query)"}]},
     )
-    workspace_log_session_event(workspace, sid, "tool_call", {"tool_name": "memory_query_tool", "query": "ArticleFeignClient"})
+    workspace_log_session_event(workspace, sid, "tool_call", {"tool_name": "mc_lookup", "query": "ArticleFeignClient"})
     sampled = memory_eval_agent_guidance_replay_trend(workspace, session_id=sid, limit=20)
     assert sampled["recorded"] is True
     assert sampled["trend_point"]["adoption_rate"] == 1.0
@@ -2976,7 +2976,7 @@ def test_eval_agent_guidance_adoption_trend_available_from_cli_and_http(tmp_path
         "agent_guidance",
         {"agent_next_steps": [{"action": "refine_query", "command": "mc_lookup(mode=query)"}]},
     )
-    workspace_log_session_event(workspace, sid, "tool_call", {"tool_name": "memory_query_tool", "query": "ArticleFeignClient"})
+    workspace_log_session_event(workspace, sid, "tool_call", {"tool_name": "mc_lookup", "query": "ArticleFeignClient"})
 
     runner = CliRunner()
     cli_result = runner.invoke(
@@ -3023,7 +3023,7 @@ def test_eval_agent_guidance_replay_trend_available_from_cli_and_http(tmp_path: 
         "agent_guidance",
         {"agent_next_steps": [{"action": "refine_query", "command": "mc_lookup(mode=query)"}]},
     )
-    workspace_log_session_event(workspace, sid, "tool_call", {"tool_name": "memory_query_tool", "query": "ArticleFeignClient"})
+    workspace_log_session_event(workspace, sid, "tool_call", {"tool_name": "mc_lookup", "query": "ArticleFeignClient"})
 
     runner = CliRunner()
     cli_result = runner.invoke(

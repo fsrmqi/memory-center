@@ -20,8 +20,6 @@ DISPLAY_RULES: dict[str, dict[str, Any]] = {
     "inferred":  {"label": "推断", "prominence": "medium", "require_evidence": True},
     "derived":   {"label": "派生", "prominence": "low", "require_evidence": True},
 }
-
-
 @dataclass
 class Explanation:
     """Structured explanation for a query result, impact analysis, or chain trace."""
@@ -151,20 +149,4 @@ def merge_explanations(explanations: list[dict]) -> dict:
         "confidence": round(min_conf, 3),
         "next_actions": all_actions[:10],
         "next_refs": all_refs[:10],
-    }
-
-
-def backward_compat_wrapper(old_explanation: dict) -> dict:
-    """Convert legacy explanation dict to new schema while preserving old fields."""
-    if "summary" in old_explanation and "semantic_strength" in old_explanation:
-        return old_explanation
-    return {
-        **old_explanation,
-        "summary": old_explanation.get("summary", str(old_explanation)),
-        "evidence": [],
-        "semantic_strength": "inferred",
-        "evidence_level": "INFERRED",
-        "confidence": 0.5,
-        "next_actions": [],
-        "next_refs": [],
     }

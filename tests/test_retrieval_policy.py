@@ -734,7 +734,7 @@ def test_replay_campaign_requires_real_coverage_without_changing_weights(tmp_pat
             "agent_next_steps": [{"action": "inspect_top_result", "command": "mc_lookup(mode=query)"}],
         },
     )
-    workspace_log_session_event(workspace, "session-1", "tool_call", {"tool_name": "memory_query_tool"})
+    workspace_log_session_event(workspace, "session-1", "tool_call", {"tool_name": "mc_lookup"})
 
     result = memory_eval_agent_guidance_replay_campaign(
         workspace,

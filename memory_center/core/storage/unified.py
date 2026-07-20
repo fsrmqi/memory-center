@@ -1,11 +1,10 @@
-"""Unified SQLite store — merges graph.db + memory.db into a single database.
+"""统一 SQLite 运行时事实库。
 
-This is the V3 storage foundation.  It inherits all table schemas from
-GraphStore and MemoryBackendStore so existing data can be migrated in-place.
+该存储承载图、运行记录和向量相关表，统一写入 ``graph.db``。
 
 Key improvements over 2.x:
 - WAL mode + connection pool (via SQLitePool)
-- Graph tables + memory tables in one DB
+- 图与运行记录表共用一个数据库
 - Prepared vector column (BLOB) for sqlite-vec / future ANN indexes
 - Recursive CTE neighbor queries (no more N+1 BFS)
 """

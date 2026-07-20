@@ -28,7 +28,7 @@ def test_status_uses_index_summary_without_reading_large_indexes(tmp_path: Path,
     result = workspace_status(workspace, view="compact")
 
     assert result["index_counts"]["symbols"] > 0
-    assert result["semantic_index"]["summary_source"] == "index-summary.json"
+    assert result["semantic_index"]["summary_source"] == "sqlite_index_store"
 
 
 def test_sniff_reports_cache_and_retrieval_performance(tmp_path: Path) -> None:

@@ -190,14 +190,14 @@ Alias 必须记录 `identity_confidence`、来源、有效期；低置信别名�
 
 ### Phase B：Assertion Sidecar（已完成第一版）
 
-1. 新建 `.memory-center/memory/assertions.jsonl` 与 SQLite mirror，不改写既有 `edges` 表。
+1. 新建 `.memory-center/memory/assertions.jsonl` 导出与 `graph.db.assertions` 活跃读模型，不改写既有 `edges` 表。
 2. 每次 reindex/局部 refresh 为新边写 Assertion；旧边读取仍可工作。
 3. `assertion_id` 以 subject、predicate、object、generation、来源的稳定 hash 生成。
 4. 增加 `assertion-index.json`，只保存活跃 Assertion 的有界读模型。
 
 验收：旧查询结果不变；新查询可选返回 `assertion_ref`；写入失败不阻断索引发布。
 
-当前实现以 `assertions.jsonl` 保留审计流，以 `memory.db.assertions` 提供活跃断言索引；证据子图仅在有已发布 sidecar generation 时附加 `assertion_ref`，不在普通图查询中引入额外扫描。
+当前实现以 `assertions.jsonl` 保留可检查审计导出，以 `graph.db.assertions` 提供活跃断言索引；证据子图仅在有已发布 sidecar generation 时附加 `assertion_ref`，不在普通图查询中引入额外扫描。
 
 ### Phase C：时间与失效（已完成第一版）
 

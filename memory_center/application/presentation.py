@@ -491,7 +491,7 @@ def export_workbench_index_html(workspace_file: str | Path) -> str:
 
 
 def export_assertion_html(workspace_file: str | Path, assertion_id: str = "") -> str:
-    """Render the legacy Workbench assertion confirmation page."""
+    """Render the Workbench assertion confirmation page."""
     from memory_center.core.knowledge.assertions import inspect_assertion
 
     workspace_param = str(Path(workspace_file).resolve())

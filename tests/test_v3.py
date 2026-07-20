@@ -651,14 +651,15 @@ class TestContextPackIntegration:
         src.write_text("\n".join(lines))
 
         # file-index.json maps logical path → abs_path
-        index_file = ws_dir / "index" / "file-index.json"
-        index_file.write_text(json.dumps([{
+        index_data = [{
             "project": "test-svc",
             "path": "src/UserService.java",
             "abs_path": str(src.resolve()),
             "service_root": str(tmp_path),
             "suffix": ".java",
-        }]))
+        }]
+        from memory_center.core.storage.workspace import WorkspaceStore
+        WorkspaceStore(ws_dir / "workspace.yaml").write_json("file-index.json", index_data)
 
         return ws_dir / "workspace.yaml", src
 
@@ -805,14 +806,15 @@ class TestContextPackIntegration:
         src = tmp_path / "Foo.java"
         src.write_text("\n".join([f"// line {i}" for i in range(1, 101)]))
 
-        index_file = ws_dir / "index" / "file-index.json"
-        index_file.write_text(json.dumps([{
+        index_data = [{
             "project": "p",
             "path": "Foo.java",
             "abs_path": str(src.resolve()),
             "service_root": str(tmp_path),
             "suffix": ".java",
-        }]))
+        }]
+        from memory_center.core.storage.workspace import WorkspaceStore
+        WorkspaceStore(ws_dir / "workspace.yaml").write_json("file-index.json", index_data)
 
         fake_results = [
             {"node": {"id": "A", "type": "Class", "name": "Foo", "project": "p",

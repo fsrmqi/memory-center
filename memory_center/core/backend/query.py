@@ -318,9 +318,9 @@ class UnifiedBackendQuery:
         self,
         workspace_dir: str | Path | None = None,
     ) -> dict[str, Any]:
-        """Compare JSONL file counts vs SQLite record counts per collection.
+        """核验 JSONL 导出与 SQLite 运行记录的集合计数。
 
-        Reports divergences between the file system and the backend mirror.
+        JSONL 仅是可检查导出；差异用于诊断导出或写入异常，不参与读取回退。
         """
         stats = self.get_backend_stats()
         backend_collections = stats.get("collections", {})
@@ -328,7 +328,7 @@ class UnifiedBackendQuery:
         divergences: list[str] = []
 
         if workspace_dir is None:
-            # Infer from db_path: db is at <workspace>/memory/memory.db
+            # graph.db is at <workspace>/graph/graph.db.
             workspace_dir = self.db_path.parent.parent
         workspace_dir = Path(workspace_dir)
         memory_dir = workspace_dir / "memory"

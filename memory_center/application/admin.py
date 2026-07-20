@@ -11,8 +11,8 @@ Public surface:
 
 - ``build_admin_registry(workspace_file, **kwargs)`` returns a
   ``CommandRegistry`` whose handlers close over the supplied workspace and
-  parameters.  The handler shape mirrors the legacy in-line table so existing
-  ``mc_admin(action=...)`` callers do not see any behavioural change.
+parameters. The action table is centralized so CLI, HTTP and MCP share one
+deterministic dispatch implementation.
 """
 
 from __future__ import annotations

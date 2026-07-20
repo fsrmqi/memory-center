@@ -630,7 +630,7 @@ memory-center log-session-event \
   --workspace examples/spring-cloud-demo/.memory-center/workspace.yaml \
   --session-id session-xxxx \
   --event-type tool_call \
-  --payload '{"tool_name":"memory_query_tool","query":"ArticleFeignClient"}'
+  --payload '{"tool_name":"mc_lookup","query":"ArticleFeignClient"}'
 
 memory-center end-session \
   --workspace examples/spring-cloud-demo/.memory-center/workspace.yaml \

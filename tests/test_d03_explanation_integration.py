@@ -2,7 +2,6 @@
 
 Verifies that impact, reasoning, domain, and onboarding all produce
 explanation entries conforming to the standard schema.
-Old fields are preserved for backward compatibility.
 """
 from __future__ import annotations
 
@@ -13,7 +12,6 @@ from typer.testing import CliRunner
 from memory_center.core.explanation import (
     DISPLAY_RULES,
     Explanation,
-    backward_compat_wrapper,
     display_rule_for_strength,
     explanation_entry,
     merge_explanations,
@@ -59,17 +57,6 @@ class TestExplanationSchemaEnhancements:
         full = ex.to_full()
         assert "display_rule" in full
         assert full["display_rule"]["label"] == "事实"
-
-    def test_backward_compat_preserves_old_fields(self):
-        old = {"confirmed": ">=0.80", "probable": ">=0.55"}
-        result = backward_compat_wrapper(old)
-        assert result["confirmed"] == ">=0.80"
-        assert result["semantic_strength"] == "inferred"
-
-    def test_backward_compat_new_format_passthrough(self):
-        new = explanation_entry(summary="new", semantic_strength="fact")
-        result = backward_compat_wrapper(new)
-        assert result is new
 
     def test_merge_explanations_preserves_structure(self):
         e1 = explanation_entry(summary="a", next_refs=[{"id": "1", "name": "n1"}])

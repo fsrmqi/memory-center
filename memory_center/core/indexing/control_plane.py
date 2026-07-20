@@ -1,6 +1,6 @@
 """Versioned control plane for workspace index artifacts.
 
-The existing index files remain the read model for compatibility.  This module
+Generation index files remain immutable build artifacts. This module
 adds an explicit active generation and a compact shard manifest so writers can
 publish a complete index set atomically from the perspective of readers.
 """

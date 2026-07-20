@@ -53,18 +53,21 @@ def submit_workspace_job(
     _upsert(store, record)
 
     def runner() -> None:
-        _update_progress(store, job_id, "scanning", 5, "正在准备任务输入")
+        # SQLite connections are thread-affine. The worker must own its store
+        # instead of reusing the caller's connection created on the submit thread.
+        worker_store = WorkspaceStore(workspace_file)
+        _update_progress(worker_store, job_id, "scanning", 5, "正在准备任务输入")
         try:
-            result = progress_work(lambda stage, percent, message="": _update_progress(store, job_id, stage, percent, message)) if progress_work else work()
+            result = progress_work(lambda stage, percent, message="": _update_progress(worker_store, job_id, stage, percent, message)) if progress_work else work()
             if _is_cancelled(job_id):
-                _finish_job(store, job_id, "cancelled", progress_stage="cancelled", message="任务已取消")
+                _finish_job(worker_store, job_id, "cancelled", progress_stage="cancelled", message="任务已取消")
             else:
-                _update_progress(store, job_id, "finalizing", 95, "正在整理任务结果")
-                _finish_job(store, job_id, "completed", result=result, progress_stage="completed", message="任务已完成")
+                _update_progress(worker_store, job_id, "finalizing", 95, "正在整理任务结果")
+                _finish_job(worker_store, job_id, "completed", result=result, progress_stage="completed", message="任务已完成")
         except Exception as exc:  # pragma: no cover - error boundary is exposed via status
             from memory_center.core.observability.diagnostics import safe_reason
 
-            _finish_job(store, job_id, "failed", error=safe_reason(reason=str(exc)), progress_stage="failed", message="任务执行失败")
+            _finish_job(worker_store, job_id, "failed", error=safe_reason(reason=str(exc)), progress_stage="failed", message="任务执行失败")
 
     threading.Thread(target=runner, name=job_id, daemon=True).start()
     return record

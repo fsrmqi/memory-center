@@ -1,4 +1,4 @@
-"""Physical, versioned service and contract shards with legacy fallbacks."""
+"""物理、版本化的服务与契约分片。"""
 from __future__ import annotations
 
 import json

@@ -857,7 +857,6 @@ class TestG03PatternPromotionDeep:
         assert learned["learning_state"] == "rolled-back"
         assert learned["weight"] == 0.56
         assert learned["status"] == "possible"
-        assert hint["candidate_paths"][0]["candidate_type"] != "lookup_path"
 
     def test_memory_impact_candidate_paths_apply_learned_weights(self, tmp_path):
         """memory_impact should surface learned impact recommendation state on candidate paths."""
@@ -969,68 +968,6 @@ class TestG03PatternPromotionDeep:
         assert result["recent_events"][0]["outcome"] == "rollback"
         assert any(reason["type"] == "recommendation_state" for reason in result["reasons"])
         assert result["policy_snapshot"]["kind"] == "candidate_path_learning"
-
-    def test_legacy_candidate_feedback_without_schema_version_is_aggregated(self, tmp_path):
-        """legacy candidate rows should still aggregate even without explicit schema metadata."""
-        ws = copy_demo_workspace(tmp_path)
-        from memory_center.core.storage.workspace import WorkspaceStore
-        from memory_center.core.verification.heuristics import HEURISTICS_FILE, HeuristicsRegister
-
-        store = WorkspaceStore(str(ws))
-        store.append_jsonl(
-            HEURISTICS_FILE,
-            {
-                "heuristic_id": "legacy-candidate-1",
-                "candidate_type": "lookup_path",
-                "target": "symbol_lookup",
-                "outcome": "confirmed",
-                "evidence": [{"type": "test", "id": "legacy-1"}],
-                "source": "legacy-import",
-                "session_id": "legacy-session-1",
-                "weight_before": 0.60,
-                "confidence_delta": 0.12,
-                "recorded_at": "2026-06-01T00:00:00+00:00",
-            },
-        )
-
-        result = HeuristicsRegister(str(ws)).query(category="candidate-path")[0]
-        assert result["category"] == "candidate-path"
-        assert result["target"] == "symbol_lookup"
-        assert result["schema_version"] == 1
-        assert result["policy_version"] == 1
-        assert result["confidence"] == 0.72
-        assert result["recommended_weight"] == 0.54
-
-    def test_legacy_confidence_delta_row_still_influences_query(self, tmp_path):
-        """old confidence_delta-only rows should still adjust the latest aggregated confidence."""
-        ws = copy_demo_workspace(tmp_path)
-        from memory_center.core.storage.workspace import WorkspaceStore
-        from memory_center.core.verification.heuristics import HEURISTICS_FILE, HeuristicsRegister
-
-        hr = HeuristicsRegister(str(ws))
-        hr.record(
-            "retrieval",
-            "exact-match-first",
-            "feign query",
-            "use exact match",
-            confidence=0.62,
-            heuristic_id="legacy-heur-1",
-            recorded_at="2026-06-01T00:00:00+00:00",
-        )
-
-        WorkspaceStore(str(ws)).append_jsonl(
-            HEURISTICS_FILE,
-            {
-                "heuristic_id": "legacy-heur-1",
-                "confidence_delta": 0.08,
-                "updated_at": "2026-06-02T00:00:00+00:00",
-            },
-        )
-
-        result = next(item for item in hr.query(category="retrieval") if item["heuristic_id"] == "legacy-heur-1")
-        assert result["confidence"] == 0.7
-        assert result["schema_version"] == 2
-        assert result["policy_version"] == 1
 
     def test_learning_policy_defaults_version_when_missing(self, tmp_path):
         """workspace learning_policy without version should inherit the default policy version."""
@@ -1465,24 +1402,7 @@ class TestF07HealthGovernance:
 # ── Explanation Schema Deepening ────────────────────────────────────
 
 class TestExplanationSchemaDeep:
-    """Test explanation schema backward compat and merge."""
-
-    def test_backward_compat_wrapper_preserves_fields(self):
-        """backward_compat_wrapper preserves existing fields."""
-        from memory_center.core.explanation.schema import backward_compat_wrapper
-        old = {"name": "UserService", "type": "Service", "project": "user-back"}
-        wrapped = backward_compat_wrapper(old)
-        assert wrapped["name"] == "UserService"
-        assert wrapped["type"] == "Service"
-        assert "summary" in wrapped
-        assert "semantic_strength" in wrapped
-
-    def test_backward_compat_already_valid(self):
-        """backward_compat_wrapper passes through already-valid entries."""
-        from memory_center.core.explanation.schema import backward_compat_wrapper
-        valid = {"subject": "test", "summary": "test", "semantic_strength": "fact", "confidence": 0.9}
-        result = backward_compat_wrapper(valid)
-        assert result == valid
+    """Test explanation schema merge behavior."""
 
     def test_merge_explanations_empty(self):
         """merge_explanations handles empty list."""

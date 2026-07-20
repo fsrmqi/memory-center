@@ -7,7 +7,6 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 
-from memory_center.core.foundation.compat import zip_strict
 from memory_center.core.governance.registry import resolve_group
 
 from .query import (
@@ -91,7 +90,7 @@ def group_query(
     with ThreadPoolExecutor(max_workers=min(max(len(resolved["members"]), 1), 4)) as pool:
         query_results = list(pool.map(_query_member, resolved["members"]))
 
-    for member, result in zip_strict(resolved["members"], query_results):
+    for member, result in zip(resolved["members"], query_results, strict=True):
         workspace_ref = member["name"]
         workspace_name = result.get("workspace", workspace_ref)
         workspace_results.append({

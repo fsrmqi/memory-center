@@ -11,8 +11,6 @@ import math
 import struct
 from typing import Any
 
-from memory_center.core.foundation.compat import zip_strict
-
 from .unified import UnifiedStore
 
 # Try to import sqlite_vec
@@ -175,7 +173,7 @@ class VectorIndex:
                 continue
             embedding = struct.unpack(f"{self._dimension}f", blob)
             # Cosine similarity
-            dot = sum(q * e for q, e in zip_strict(query_embedding, embedding))
+            dot = sum(q * e for q, e in zip(query_embedding, embedding, strict=True))
             emb_norm = math.sqrt(sum(e * e for e in embedding)) or 1.0
             similarity = dot / (query_norm * emb_norm)
             if similarity > 0:

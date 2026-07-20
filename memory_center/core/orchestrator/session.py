@@ -447,7 +447,12 @@ def workspace_recent_evidence(
 
 
 def _session_events(store: WorkspaceStore, session_id: str) -> list[dict[str, Any]]:
-    return store.find_jsonl_via_backend(SESSION_EVENTS_FILE, lambda row: row.get("session_id") == session_id, limit=1000, session_id=session_id) or store.find_jsonl(SESSION_EVENTS_FILE, lambda row: row.get("session_id") == session_id, limit=1000)
+    return store.find_jsonl_via_backend(
+        SESSION_EVENTS_FILE,
+        lambda row: row.get("session_id") == session_id,
+        limit=1000,
+        session_id=session_id,
+    )
 
 
 def _build_session_summary(

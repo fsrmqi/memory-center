@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from memory_center.core.explanation import (
     Explanation,
-    backward_compat_wrapper,
     explanation_entry,
     merge_explanations,
 )
@@ -58,18 +57,6 @@ class TestMergeExplanations:
         e2 = explanation_entry(summary="b", evidence=[{"k": 2}, {"k": 3}])
         result = merge_explanations([e1, e2])
         assert len(result["evidence"]) == 3
-
-class TestBackwardCompat:
-    def test_already_new_format(self):
-        new = explanation_entry(summary="new")
-        result = backward_compat_wrapper(new)
-        assert result is new
-
-    def test_old_format_preserved(self):
-        old = {"confirmed": ">=0.80", "probable": ">=0.55"}
-        result = backward_compat_wrapper(old)
-        assert result["confirmed"] == ">=0.80"
-        assert result["semantic_strength"] == "inferred"
 
 class TestExplanationDataclass:
     def test_to_compact(self):
