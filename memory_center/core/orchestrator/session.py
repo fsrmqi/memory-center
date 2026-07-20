@@ -624,7 +624,7 @@ def _lookup_feedback_target(tool_name: str, payload: dict[str, Any]) -> str:
         "mc_lookup": "lookup_auto",
         "memory_symbol": "symbol_lookup",
         "memory_search_code": "code_lookup",
-        "memory_query": "keyword_lookup",
+        "memory_query_hybrid": "keyword_lookup",
         "memory_callers": "call_chain",
         "memory_callees": "call_chain",
         "workspace_trace": "trace_lookup",

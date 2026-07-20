@@ -24,7 +24,9 @@ def attach_knowledge_state(
     assertion = payload.get("assertion_summary", {}) or {}
     stale = int(assertion.get("stale", 0) or 0) > 0 or bool(payload.get("index_freshness", {}).get("index_stale"))
     indexed_files = int(index.get("files", 0) or 0)
-    if matches:
+    if payload.get("index_scope_unavailable"):
+        state, reason = "NOT_INDEXED", "requested_service_shard_not_published"
+    elif matches:
         state, reason = "FOUND", "matched_indexed_evidence"
     elif not indexed_files:
         state, reason = "NOT_INDEXED", "no_published_index_for_workspace"

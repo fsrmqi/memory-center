@@ -83,7 +83,7 @@ Memory Center 不要求中心化服务。默认形态是每个 workspace 自带�
 - **Graph-first / 图谱优先**：跨服务影响、调用链、契约、配置和消息关系先进入 SQLite graph，再由检索和推理层消费。
 - **Facade-first / 面向 Agent 暴露任务级接口**：MCP 只暴露少量 task-level tools，复杂实现留在 core。
 - **Evidence-first / 证据优先**：回答、handoff、case、ref、audit 都尽量保留来源和可追溯证据。
-- **Compatibility-first / 兼容优先**：MCP tool schema、CLI 命令、HTTP 路径默认保持兼容；新增能力优先 additive。
+- **Stable-entry / 稳定入口**：MCP tool schema、CLI 命令和 HTTP 路径保持稳定；内部读模型只保留当前架构，不保留历史数据回退。
 
 - **Ontology state / 本体状态**：查询通过 `knowledge_state` 明确当前索引范围、未发现、过期和未知状态；Assertion sidecar 保存来源、有效期、事件时间与观测时间，治理 Action 采用有界读模型而不进入图查询热路径。
 
@@ -93,7 +93,7 @@ Memory Center 不要求中心化服务。默认形态是每个 workspace 自带�
 
 - 默认查询不得扫描全图，也不得隐式触发全量重建；高成本分析必须显式请求或进入后台 job。
 - `VERIFIED` 结论必须关联验证命令结果、人工确认或可追溯运行结果；置信度不能替代验证。
-- 文件、JSONL、Markdown 等事实源优先于 SQLite 镜像；镜像不一致必须可观测，不能静默覆盖新事实。
+- 运行时事实统一写入 SQLite；JSON/JSONL 是可审查导出，不能成为查询回退或覆盖 SQLite 的新事实。
 - CLI、MCP、HTTP 的异常必须收敛为结构化诊断和可行动建议，禁止无界重试。
 - 文档、审计和导出默认不包含私有源码、原始对话正文或工具载荷。
 
@@ -152,8 +152,8 @@ Memory Center 当前是一个本地文件系统 + SQLite 派生索引驱动的�
                                │
 ┌──────────────────────────────▼──────────────────────────────┐
 │ Local Stores / 本地存储层                                    │
-│ workspace.yaml, index/*.json, graph.db, memory.db, artifacts │
-│ 源码 / YAML / Markdown 是事实源；SQLite 和 JSON index 是派生读路径 │
+│ workspace.yaml, index/*.json, graph.db, artifacts             │
+│ graph.db 是运行时事实库；源码 / YAML / Markdown 是外部输入与工件 │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -163,7 +163,7 @@ Memory Center 当前是一个本地文件系统 + SQLite 派生索引驱动的�
 - Application 负责入口间共享的跨领域用例、局部刷新和返回装配；它可依赖 core，但 core 不得反向依赖 application。
 - Orchestrator 负责核心任务语义与稳定的核心调用和返回结构。
 - Core engines 负责可验证的工程事实提取、图谱查询、检索融合和推理降级。
-- Stores 分清事实源和派生物：源码、`workspace.yaml`、rules、artifacts 是事实源；`index/*.json`、`graph.db`、`memory.db` 是可重建或可镜像的读路径。
+- Stores 分清运行时事实与导出物：`graph.db` 是唯一运行时事实库；源码、`workspace.yaml`、rules 和 artifacts 是外部输入或人工工件；`index/*.json`、JSONL 是可重建导出物。
 - Hooks 属于宿主集成层，只在生命周期节点触发已有 facade，不拥有业务状态。
 
 ### 2.1 代码目录视图 / Codebase Layout
@@ -261,7 +261,7 @@ Agent task
 
 ### 3.1.1 索引控制面与分片路由 / Index Control Plane and Shard Routing
 
-每次 reindex 会生成 staging generation，并在图、关键词/语义检索和索引摘要写入完成后原子发布为 active generation。兼容性考虑下，既有 JSON/SQLite 文件仍是查询读模型；控制面只维护一致性边界、上一个 generation、构建状态和回滚证据。`shard-manifest.json` 不复制完整索引，而是按服务统计 Service Shard，并汇总 Contract Shard（API/Feign/MQ/config）与 Topology Shard 的路由元数据。
+每次 reindex 会生成 staging generation，并在图、关键词/语义检索和索引摘要写入完成后原子发布为 active generation。SQLite 是唯一查询读模型；JSON/JSONL 仅作导出。控制面维护 active/previous generation、构建状态和回滚证据。`shard-manifest.json` 不复制完整索引，而是按服务统计 Service Shard，并汇总 Contract Shard（API/Feign/MQ/config）与 Topology Shard 的路由元数据。
 
 Every reindex builds a staging generation and publishes it as the active generation only after graph, retrieval/semantic, and summary artifacts complete. Existing JSON/SQLite artifacts remain compatible read models. The control plane owns consistency boundaries, previous generation, lifecycle state, and recovery evidence. `shard-manifest.json` is routing metadata rather than a duplicated index payload.
 
@@ -275,7 +275,7 @@ Partial reindex uses copy-on-write: unchanged service shards are inherited from 
 
 ### 3.1.2 跨服务分片编排 / Cross-Service Shard Orchestration
 
-未指定 project 的请求不再直接默认全局检索。系统先从 Contract Shard 与 Topology Shard 识别服务、Feign 契约、API、MQ 与配置相关性，对候选服务评分；再按 fast/standard/deep 的服务数量与拓扑深度预算扩展下游服务。最终在选中的服务 JSON/SQLite 图分片上并行取证，响应携带 generation、路由依据、查询分片和证据来源。全局索引只在分片不可用或调用方明确需要扩大范围时作为兼容回退。
+未指定 project 的请求由路由层决定全局或服务范围。已解析 service 的请求只在对应 SQLite 图分片取证；分片未发布时明确返回 `NOT_INDEXED` 并要求局部 refresh/reindex，不回退全局索引。响应携带 generation、路由依据、查询分片和证据来源。
 
 Requests without an explicit project no longer default straight to global retrieval. The system scores candidate services from Contract and Topology shards, then expands downstream services under fast/standard/deep budgets. Evidence is queried in parallel from selected service JSON/SQLite graph shards, with generation, routing rationale, queried shards, and evidence source returned to the caller. The global index is a compatibility fallback only.
 

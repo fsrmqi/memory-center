@@ -1,10 +1,6 @@
 """Orchestrator subpackage — re-exports all public functions.
 
-All callers that previously did::
-
-    from memory_center.core.orchestrator import memory_query, workspace_sniff, ...
-
-continue to work unchanged through this ``__init__.py``.
+Public task operations are re-exported here for MCP, CLI, HTTP and hooks.
 """
 
 from __future__ import annotations
@@ -64,7 +60,6 @@ from .query import (
     memory_eval_walkthrough_quality,
     memory_export_walkthrough_artifact,
     memory_method_walkthrough,
-    memory_query,
     memory_query_hybrid,
     memory_ref_batch,
     memory_ref_get,
@@ -171,7 +166,7 @@ __all__ = [
     "workspace_recent_sessions", "workspace_session_summary", "workspace_suggest_case",
     "workspace_recent_evidence",
     # query
-    "memory_query", "memory_query_hybrid", "memory_context", "memory_symbol", "memory_callers", "memory_callees", "memory_method_walkthrough",
+    "memory_query_hybrid", "memory_context", "memory_symbol", "memory_callers", "memory_callees", "memory_method_walkthrough",
     "memory_walkthrough_health", "memory_eval_walkthrough_quality", "memory_export_walkthrough_artifact",
     "memory_search_code", "memory_contracts", "memory_ref_get", "memory_ref_batch",
     "memory_backend_query", "memory_tool_usage_report", "memory_discover", "_annotate_phantom_nodes",

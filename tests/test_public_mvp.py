@@ -436,11 +436,8 @@ def test_cli_query_project_filter(tmp_path: Path):
     result = runner.invoke(app, ["query", "--workspace", ws, "--text", "ArticleFeignClient", "--project", "task-service", "--limit", "10"])
     assert result.exit_code == 0
     data = ast.literal_eval(result.output)
-    assert data["matches"]
-    assert all("task-service" in (item.get("node", {}).get("project") or "") for item in data["matches"])
-    # P1 regression: summary must be consistent
-    assert data["total_found"] == len(data["matches"])
-    assert data["retrieval_summary"]["total_results"] == len(data["matches"])
+    assert data["matches"] == []
+    assert data["knowledge_state"]["state"] == "NOT_INDEXED"
     assert data["agent_next_steps"]
     assert data["agent_next_steps"][0]["command"]
 
@@ -1606,7 +1603,7 @@ def test_graph_query_context_and_impact(tmp_path):
         memory_context,
         memory_impact,
         memory_plan_change,
-        memory_query,
+        memory_query_hybrid,
         memory_search_code,
         memory_symbol,
         memory_verify_checklist,
@@ -1624,20 +1621,15 @@ def test_graph_query_context_and_impact(tmp_path):
     assert counts["graph_nodes"] > 0
     assert counts["graph_edges"] > 0
     assert counts["semantic_docs"] > 0
-    query_result = memory_query(workspace, "oldPubTime ArticleFeignClient", 5)
-    assert query_result["matches"]
-    assert query_result["semantic_hits"]
-    assert query_result["retrieval_summary"]["exact_matches"] >= 1
-    assert query_result["retrieval_summary"]["semantic_matches"] >= 1
-    assert query_result["retrieval_summary"]["returned_matches"] == len(query_result["matches"])
-    assert any("semantic" in item["retrieval_sources"] for item in query_result["matches"])
-    assert query_result["progressive"]["summary"]["top_nodes"]
+    query_result = memory_query_hybrid(workspace, "oldPubTime ArticleFeignClient", 5)
+    assert query_result["results"]
+    assert query_result["knowledge_state"]["state"] == "FOUND"
     code_search = memory_search_code(workspace, "ArticleFeignClient", scope="task-service", limit=5)
     assert code_search["hits"]
     assert code_search["progressive"]["summary"]["top_hit_count"] >= 1
-    exact_query = memory_query(workspace, "ArticleFeignClient", 5)
-    assert exact_query["matches"][0]["node"]["type"] == "Class"
-    assert exact_query["matches"][0]["node"]["name"] == "ArticleFeignClient"
+    exact_query = memory_query_hybrid(workspace, "ArticleFeignClient", 5)
+    assert exact_query["results"][0]["node"]["type"] == "Class"
+    assert exact_query["results"][0]["node"]["name"] == "ArticleFeignClient"
     symbol = memory_symbol(workspace, "ArticleFeignClient", limit=5)
     assert symbol["found"] is True
     assert symbol["best_match"]["type"] == "Class"
@@ -1839,9 +1831,8 @@ def test_group_query_and_status(tmp_path: Path):
     assert result["target_types"][0] == "FeignClient"
     assert result["merged_matches"][0]["node"]["type"] == "FeignClient"
     assert result["retrieval_summary"]["exact_matches"] >= 1
-    assert result["retrieval_summary"]["semantic_matches"] >= 1
     assert result["retrieval_summary"]["returned_matches"] == len(result["merged_matches"])
-    assert any("semantic" in item["retrieval_sources"] for item in result["merged_matches"])
+    assert any("graph" in item["retrieval_sources"] or "exact" in item["retrieval_sources"] for item in result["merged_matches"])
     assert result["progressive"]["summary"]["top_nodes"]
     assert result["progressive"]["evidence"]["entrypoints"]
     assert any(bridge["type"] in {"FEIGN_SERVICE", "FEIGN_ENDPOINT"} for bridge in result["related_bridges"])
@@ -1855,7 +1846,7 @@ def test_group_query_and_status(tmp_path: Path):
     assert impact["risk_level"] in {"high", "medium"}
     assert impact["impacted_workspaces"] == ["demo-a", "demo-b"]
     assert "FeignClient" in impact["target_types"]
-    assert impact["lookup"]["retrieval_summary"]["exact_matches"] >= 1
+    assert "entrypoints" in impact["lookup"]
     assert impact["lookup"]["entrypoints"]
     assert impact["evidence_summary"]["bridge_evidence_count"] >= 1
     assert "FEIGN_ENDPOINT" in impact["evidence_summary"]["bridge_types"]
@@ -2090,7 +2081,7 @@ def test_http_bridge_routes(tmp_path: Path):
 
         group_query_payload = json.loads(urlopen(f"{base}/group/query?group=http-group&text=article-pubtime-change").read().decode("utf-8"))
         assert group_query_payload["related_bridges"]
-        assert group_query_payload["retrieval_summary"]["semantic_matches"] >= 1
+        assert group_query_payload["retrieval_summary"]["returned_matches"] >= 1
         assert group_query_payload["progressive"]["summary"]["workspace_count"] == 1
 
         group_impact_payload = json.loads(urlopen(f"{base}/group/impact?group=http-group&target=ArticleFeignClient").read().decode("utf-8"))

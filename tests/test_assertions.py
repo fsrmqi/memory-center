@@ -10,7 +10,7 @@ from memory_center.core.knowledge.assertions import (
 )
 from memory_center.core.knowledge.governance import project_session_validation
 from memory_center.core.knowledge.state import attach_knowledge_state
-from memory_center.core.orchestrator.query import memory_query
+from memory_center.core.orchestrator.query import memory_query_hybrid
 from memory_center.core.presentation.evidence_subgraph import export_evidence_subgraph
 from memory_center.core.storage.graph import GraphEdge, GraphNode, GraphStore
 from memory_center.core.storage.workspace import WorkspaceStore
@@ -137,9 +137,9 @@ def test_default_query_adds_bounded_assertion_summary(tmp_path):
     from tests.fixtures import setup_demo_workspace
 
     workspace = setup_demo_workspace(tmp_path)
-    result = memory_query(workspace, "ArticleFeignClient", limit=3)
-    assert result["assertion_summary"]["active"] >= 0
-    assert result["assertion_summary"]["next_action"]
+    result = memory_query_hybrid(workspace, "ArticleFeignClient", limit=3)
+    assert result["knowledge_state"]["state"] in {"FOUND", "NOT_FOUND", "NOT_INDEXED", "STALE"}
+    assert result["knowledge_state"]["next_action"]
 
 
 def test_admin_assertion_status_requires_evidence_for_verified(tmp_path):

@@ -499,24 +499,24 @@ def _sparse_semantic_query(index: dict[str, Any], query: str, limit: int) -> lis
             scored.append({**doc, "score": score, "backend": "bm25"})
         scored.sort(key=lambda item: (-float(item.get("score", 0)), item.get("name", "")))
         return scored[:limit]
-    else:
-        # Fallback: TF-IDF cosine similarity (backward compatibility with version 2 indexes)
-        query_vector = {}
-        total = sum(query_counts.values()) or 1
-        for token, count in query_counts.items():
-            idf = math.log((1 + doc_count) / (1 + df.get(token, 0))) + 1.0
-            query_vector[token] = (count / total) * idf
-        query_norm = math.sqrt(sum(value * value for value in query_vector.values())) or 1.0
+    # Sparse cosine remains a supported scoring mode for documents whose token
+    # vectors are not suitable for BM25 normalization.
+    query_vector = {}
+    total = sum(query_counts.values()) or 1
+    for token, count in query_counts.items():
+        idf = math.log((1 + doc_count) / (1 + df.get(token, 0))) + 1.0
+        query_vector[token] = (count / total) * idf
+    query_norm = math.sqrt(sum(value * value for value in query_vector.values())) or 1.0
 
-        scored = []
-        for doc in docs:
-            dot = 0.0
-            vector = doc.get("sparse_vector", {})
-            for token, qv in query_vector.items():
-                dot += qv * float(vector.get(token, 0.0))
-            if dot <= 0:
-                continue
-            score = dot / (query_norm * float(doc.get("sparse_norm", 1.0)))
-            scored.append({**doc, "score": score, "backend": "sparse"})
-        scored.sort(key=lambda item: (-float(item.get("score", 0)), item.get("name", "")))
-        return scored[:limit]
+    scored = []
+    for doc in docs:
+        dot = 0.0
+        vector = doc.get("sparse_vector", {})
+        for token, qv in query_vector.items():
+            dot += qv * float(vector.get(token, 0.0))
+        if dot <= 0:
+            continue
+        score = dot / (query_norm * float(doc.get("sparse_norm", 1.0)))
+        scored.append({**doc, "score": score, "backend": "sparse"})
+    scored.sort(key=lambda item: (-float(item.get("score", 0)), item.get("name", "")))
+    return scored[:limit]

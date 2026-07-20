@@ -22,7 +22,7 @@ from ..core.orchestrator import (
     memory_contracts,
     memory_method_walkthrough,
     memory_plan_change,
-    memory_query,
+    memory_query_hybrid,
     memory_search_code,
     memory_symbol,
     memory_verify_checklist,
@@ -471,13 +471,13 @@ def run_hook(
                 elif "workspace_trace" in preferred and (entry or resolved_symbol):
                     hook_result = {"mode_used": "trace", "result": workspace_trace(wf, entry or resolved_symbol)}
                 else:
-                    hook_result = {"mode_used": "query", "result": memory_query(wf, intent, limit), "lookup_hint": hint}
+                    hook_result = {"mode_used": "query", "result": memory_query_hybrid(wf, intent, limit), "lookup_hint": hint}
             elif lookup_mode == "symbol":
                 hook_result = {"mode": "symbol", "result": memory_symbol(wf, name, limit, view=view, budget=budget)}
             elif lookup_mode == "code":
                 hook_result = {"mode": "code", "result": memory_search_code(wf, intent, scope, limit)}
             elif lookup_mode == "query":
-                hook_result = {"mode": "query", "result": memory_query(wf, intent, limit)}
+                hook_result = {"mode": "query", "result": memory_query_hybrid(wf, intent, limit)}
             elif lookup_mode == "trace":
                 hook_result = {"mode": "trace", "result": workspace_trace(wf, entry)}
             elif lookup_mode == "chain":
@@ -498,7 +498,7 @@ def run_hook(
             elif lookup_mode == "contracts":
                 hook_result = {"mode": "contracts", "result": memory_contracts(wf)}
             else:
-                hook_result = {"mode": "query", "result": memory_query(wf, intent, limit)}
+                hook_result = {"mode": "query", "result": memory_query_hybrid(wf, intent, limit)}
             system_message = f"[Memory Center] Lookup completed: mode={hook_result.get('mode_used', hook_result.get('mode', 'auto'))}"
 
         elif facade == "mc_sync":

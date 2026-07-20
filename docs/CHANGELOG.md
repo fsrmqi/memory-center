@@ -6,6 +6,13 @@
 - 重要行为变化
 - 明确修复的真实 bug
 
+## 4.3.1 存储与检索收敛
+
+- 运行时图、索引镜像、会话记录和断言统一收敛到 `.memory-center/graph/graph.db`；JSON/JSONL 保留为可审查导出，不再参与查询回退。
+- 删除无范围的 `memory_query` 内部门面，hooks、group 和 resume 统一使用 `memory_query_hybrid`。
+- 已解析服务范围的 hybrid/code 查询不再静默退回全局索引；服务分片缺失明确返回 `NOT_INDEXED`，避免扩大延迟和越过查询边界。
+- 移除 V2 TF-IDF 稀疏索引读取及无 schema 启发式记录的热路径兼容；旧工作空间需显式 `reindex` 后使用。
+
 ## 4.3.0 本体旧格式移除
 
 - 删除 `ontology-migrate`、旧 sidecar 自动转换和旧读模型回退逻辑；本体数据只接受 V2 格式。

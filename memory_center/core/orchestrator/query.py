@@ -14,7 +14,6 @@ from memory_center.core.knowledge.ontology import EntityValidator
 from memory_center.core.observability.diagnostics import DIAG, diag_entry
 from memory_center.core.observability.operations import observe_operation
 from memory_center.core.observability.tracking import log_token_gain
-from memory_center.core.retrieval.semantic import semantic_query
 from memory_center.core.storage.graph import GraphStore
 from memory_center.core.storage.workspace import WorkspaceStore
 
@@ -117,7 +116,7 @@ def _resolve_effective_project(workspace_file: str | Path, project: str = "") ->
         return {"project": explicit, "source": "explicit", "fallback_allowed": False}
     inferred = _infer_project_from_workspace_context(workspace_file)
     if inferred:
-        return {"project": inferred, "source": "active_service_root", "fallback_allowed": True}
+        return {"project": inferred, "source": "active_service_root", "fallback_allowed": False}
     return {"project": "", "source": "none", "fallback_allowed": False}
 
 
@@ -443,58 +442,6 @@ def _assertion_summary(store: WorkspaceStore) -> dict[str, Any]:
     return result
 
 
-def memory_query(workspace_file: str | Path, query: str, limit: int = 20, node_types: list[str] | None = None, alpha: float | None = None) -> dict[str, Any]:
-    config, store = load_context(workspace_file)
-    # This legacy query facade has no project scope. Project-aware callers use
-    # memory_query_hybrid or memory_search_code, which can safely select a shard.
-    with GraphStore(store.graph_db_path) as graph:
-        exact_nodes = graph.find_nodes(query, types=node_types, limit=limit)
-        if not exact_nodes:
-            seen_nodes = {}
-            for token in tokenize(query):
-                for item in graph.find_nodes(token, types=node_types, limit=limit):
-                    seen_nodes[item["id"]] = item
-            exact_nodes = list(seen_nodes.values())[:limit]
-    semantic_hits = semantic_query(workspace_file, query, limit=max(limit * 3, 20))
-    # 复用同一个 GraphStore 连接来 enrich 所有 semantic hits，避免每个 hit 单独打开连接
-    enriched_semantic_hits = []
-    with GraphStore(store.graph_db_path) as graph:
-        for hit in semantic_hits:
-            node = graph.node_by_id(hit.get("node_id", ""))
-            if not node:
-                node = {
-                    "id": hit.get("node_id", ""),
-                    "type": hit.get("type", ""),
-                    "name": hit.get("name", ""),
-                    "project": hit.get("project", ""),
-                    "file_path": hit.get("file_path", ""),
-                }
-            enriched_semantic_hits.append({**hit, "node": node})
-    semantic_hits = enriched_semantic_hits
-    if node_types:
-        semantic_hits = [item for item in semantic_hits if item.get("node", {}).get("type") in node_types]
-    with GraphStore(store.graph_db_path) as graph:
-        merged = _merge_workspace_query_hits(graph, query, exact_nodes, semantic_hits, limit, alpha=alpha)
-    merged = _rerank_symbol_like_matches(_suppress_semantic_only_noise(merged, query), query)
-    related_rules = match_rules(store, intent=query, files=[item["node"].get("file_path", "") for item in merged])[:10]
-    cases = store.read_jsonl_prefer_backend("cross-service-task-memory.jsonl", limit=200)
-    related_cases = [c for c in cases if any(k in json.dumps(c, ensure_ascii=False).lower() for k in tokenize(query))][-5:]
-    result = {
-        "workspace": config.workspace,
-        "query": query,
-        "matches": merged,
-        "retrieval_summary": _summarize_query_matches(merged, limit),
-        "progressive": _build_query_progressive_view(query, merged, semantic_hits[:limit], related_cases),
-        "semantic_hits": semantic_hits[:limit],
-        "related_rules": related_rules,
-        "historical_cases": related_cases,
-        "assertion_summary": _assertion_summary(store),
-    }
-    from memory_center.core.knowledge.state import attach_knowledge_state
-
-    return attach_knowledge_state(store, result, query=query, mode="memory_query")
-
-
 @observe_operation(
     "memory_query_hybrid",
     workspace_resolver=lambda args, kwargs: args[0] if args else kwargs["workspace_file"],
@@ -588,6 +535,7 @@ def memory_query_hybrid(
 
     graph_path = store.graph_db_path
     shard_graph_used = False
+    shard_available = True
     if effective_project:
         try:
             from ..indexing.control_plane import index_control_status
@@ -598,25 +546,38 @@ def memory_query_hybrid(
             if shard_path:
                 graph_path = shard_path
                 shard_graph_used = True
+            else:
+                shard_available = False
         except Exception:
-            pass
-    with GraphStore(graph_path) as graph:
-        result = hybrid_retrieve(
-            graph=graph,
-            workspace_file=str(workspace_file),
-            query=query,
-            config=config,
-            node_types=node_types,
-            limit=limit,
-            freshness=freshness_input,
-            learned_weights=learned_weights,
-        )
-    result["index_source"] = "service_graph_shard" if shard_graph_used else "global_graph"
+            shard_available = False
+    if not shard_available:
+        result = {
+            "results": [],
+            "total_found": 0,
+            "returned": 0,
+            "retrieval_summary": {"total": 0, "reason": "service_shard_not_published"},
+            "progressive": {"summary": [], "details": [], "evidence": []},
+            "index_scope_unavailable": True,
+            "index_source": "service_shard_unavailable",
+        }
+    else:
+        with GraphStore(graph_path) as graph:
+            result = hybrid_retrieve(
+                graph=graph,
+                workspace_file=str(workspace_file),
+                query=query,
+                config=config,
+                node_types=node_types,
+                limit=limit,
+                freshness=freshness_input,
+                learned_weights=learned_weights,
+            )
+        result["index_source"] = "service_graph_shard" if shard_graph_used else "global_graph"
 
     # Project filtering: explicit project is strict; inferred active-service
     # scope is preferred only when it has evidence, otherwise keep global hits.
     fallback_used = False
-    if effective_project:
+    if effective_project and shard_available:
         results = result.get("results", [])
         project_results = [r for r in results if _project_matches(effective_project, r.get("node", {}).get("project", ""))]
         if project_results:
@@ -1995,7 +1956,8 @@ def memory_search_code(workspace_file: str | Path, query: str, scope: str = "", 
                 shard_used = True
         except Exception:
             pass
-    if not shard_used:
+    shard_unavailable = bool(effective_project and not shard_used)
+    if not shard_used and not shard_unavailable:
         files = store.read_json_prefer_backend("file-index.json", [])
         symbols = store.read_json_prefer_backend("java-symbol-index.json", [])
     symbol_entries = {}
@@ -2037,17 +1999,8 @@ def memory_search_code(workspace_file: str | Path, query: str, scope: str = "", 
 
     hits = collect_hits(effective_project)
     fallback_used = False
-    if effective_project and project_scope.get("fallback_allowed", False) and not hits:
-        if shard_used:
-            files = store.read_json_prefer_backend("file-index.json", [])
-            symbols = store.read_json_prefer_backend("java-symbol-index.json", [])
-            symbol_entries = {}
-            for item in symbols:
-                symbol_entries.setdefault(item.get("file", ""), []).append(item)
-        hits = collect_hits("")
-        fallback_used = True
     hits.sort(key=lambda row: (-int(row.get("score", 0)), -int(row.get("symbol_count", 0)), row.get("path", "")))
-    return {
+    result = {
         "workspace": config.workspace,
         "query": query,
         "scope": scope,
@@ -2060,13 +2013,17 @@ def memory_search_code(workspace_file: str | Path, query: str, scope: str = "", 
         },
         "hits": hits[:limit],
         "total_hits": len(hits),
-        "index_source": "service_shard" if shard_used and not fallback_used else "global_compatible",
+        "index_source": "service_shard" if shard_used else ("service_shard_unavailable" if shard_unavailable else "global_graph"),
+        "index_scope_unavailable": shard_unavailable,
         "progressive": _build_search_progressive_view(query, scope, hits[:limit]),
         "tips": [
             "命中后可继续调用 memory_symbol / memory_context 深挖。",
             "改动前建议调用 memory_impact 和 workspace_check_rules。",
         ],
     }
+    from memory_center.core.knowledge.state import attach_knowledge_state
+
+    return attach_knowledge_state(store, result, query=query, project=effective_project, mode="memory_search_code")
 
 
 def memory_contracts(workspace_file: str | Path) -> dict[str, Any]:

@@ -84,9 +84,9 @@ def doctor(
     if self_test and query_probe:
         query_text = config.services[0].name if config.services else config.workspace
         query = query_probe(workspace_file, query_text)
-        smoke = {"status_ok": True, "query": query_text, "query_matches": len(query.get("matches", []))}
+        smoke = {"status_ok": True, "query": query_text, "query_matches": len(query.get("results", []))}
         checks.append(_check("self_test:status", True, "query probe invoked"))
-        checks.append(_check("self_test:query", smoke["query_matches"] > 0, f"memory_query matched {query_text!r}"))
+        checks.append(_check("self_test:query", smoke["query_matches"] > 0, f"memory_query_hybrid matched {query_text!r}"))
     elif self_test:
         smoke = {"status": "skipped", "reason": "需要由入口层提供 query_probe"}
         checks.append(_check("self_test:query", True, "未提供 query_probe，跳过任务级查询冒烟测试"))

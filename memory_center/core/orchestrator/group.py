@@ -15,7 +15,7 @@ from .query import (
     _sort_target_types,
     memory_callees,
     memory_callers,
-    memory_query,
+    memory_query_hybrid,
     memory_symbol,
 )
 from .shared import (
@@ -86,7 +86,7 @@ def group_query(
     target_types = set()
 
     def _query_member(member: dict[str, Any]) -> dict[str, Any]:
-        return memory_query(member["workspace_file"], query, limit=limit, node_types=node_types)
+        return memory_query_hybrid(member["workspace_file"], query, limit=limit, node_types=node_types)
 
     with ThreadPoolExecutor(max_workers=min(max(len(resolved["members"]), 1), 4)) as pool:
         query_results = list(pool.map(_query_member, resolved["members"]))
@@ -100,7 +100,7 @@ def group_query(
             "workspace_file": member["workspace_file"],
             "result": result,
         })
-        for rank, item in enumerate(result.get("matches", []), start=1):
+        for rank, item in enumerate(result.get("results", []), start=1):
             node = item.get("node", {})
             if node.get("type"):
                 target_types.add(node.get("type"))
@@ -247,8 +247,8 @@ def group_impact(
     lookup_entries: list[dict[str, Any]] = []
     for member in group_data:
         try:
-            member_lookup = memory_query(member.get("workspace_file", ""), target, limit=5)
-            for match in member_lookup.get("matches", []):
+            member_lookup = memory_query_hybrid(member.get("workspace_file", ""), target, limit=5)
+            for match in member_lookup.get("results", []):
                 lookup_entries.append({
                     "node": match.get("node", {}),
                     "retrieval_sources": match.get("retrieval_sources", []),

@@ -800,7 +800,7 @@ Task artifacts keep `current_summary` concise. Large writes are stored as immuta
 
 Reindex now builds under a staging generation and activates it only after graph, retrieval, semantic, and shard-routing metadata are complete. Existing index files remain compatible read models; `index-control.json` records the active generation and `shard-manifest.json` provides service, contract, and topology routing summaries. Status exposes both generation state and recent query latency percentiles.
 
-reindex 现在会先构建 staging generation，只有图、检索、语义和分片路由元数据全部完成后才激活。既有索引文件仍保持兼容的读取模型；`index-control.json` 记录 active generation，`shard-manifest.json` 提供服务、契约和拓扑路由摘要。状态接口同时提供 generation 状态与近期查询延迟分位数。
+reindex 会先构建 staging generation，只有图、检索、语义和分片路由元数据全部完成后才激活。运行时查询只读取 `graph.db` 中的 SQLite 事实库；`index/*.json` 与 JSONL 仅作为可审查导出，不参与查询回退。`index-control.json` 记录 active generation，`shard-manifest.json` 提供服务、契约和拓扑路由摘要。状态接口同时提供 generation 状态与近期查询延迟分位数。
 
 For large asynchronous work, use `mc_admin(action="job_reindex")`, then `job_status` or `job_cancel` with `record_id=<job_id>`. Task decisions can be recorded with `task_decision_record`; `task_evidence_gc` is dry-run by default and needs `force=true` to remove unreferenced evidence.
 
@@ -810,7 +810,7 @@ For large asynchronous work, use `mc_admin(action="job_reindex")`, then `job_sta
 
 Each active generation now contains immutable service JSON shards, service-local SQLite graph shards, a shared contract shard, and a topology shard. Explicit project-scoped code and hybrid graph queries read the service shard first, then fall back to legacy global indexes only when the shard is absent or scope expansion is required. File watcher changes create a bounded invalidation plan and coalesce an asynchronous partial reindex job. `mc_admin(action="index_rollback", record_id="<generation>")` restores a retained generation; `index_generation_gc` previews cleanup unless `force=true` is supplied.
 
-每个 active generation 现在包含不可变的服务 JSON 分片、服务本地 SQLite 图分片、共享契约分片和拓扑分片。明确传入 `project` 的代码搜索与混合图查询会优先读取服务分片，只有分片缺失或需要扩展范围时才回退到兼容的全局索引。file watcher 的变更会生成有界失效计划并合并异步局部 reindex job。`mc_admin(action="index_rollback", record_id="<generation>")` 可恢复保留的 generation；`index_generation_gc` 默认只预览清理，传 `force=true` 才会执行。
+每个 active generation 包含不可变的服务 JSON 分片、服务本地 SQLite 图分片、共享契约分片和拓扑分片。已解析 `project` 的代码搜索与混合图查询只读取对应服务分片；分片未发布时返回 `NOT_INDEXED`，不会悄悄退回全局扫描。file watcher 的变更会生成有界失效计划并合并异步局部 reindex job。`mc_admin(action="index_rollback", record_id="<generation>")` 可恢复保留的 generation；`index_generation_gc` 默认只预览清理，传 `force=true` 才会执行。
 
 When `mc_lookup` has no explicit `project`, it now routes through the active topology and contract shards, selects a bounded set of service shards by request tier, and queries them in parallel. Responses include `shard_route` and `shard_evidence`, each tied to the active generation. Use `mc_admin(action="eval_cross_shard_replay", text="one intent per line")` to verify cross-service shard P95 and evidence coverage without persisting the raw replay text.
 
@@ -1138,9 +1138,9 @@ For one-command health checks, `memory-center regression-smoke --workspace ...` 
 
 为了做一键健康检查，现在可以直接运行 `memory-center regression-smoke --workspace ...`，它会一起检查写入、session、sync、短引用展开、compact 视图和 regression suite。
 
-The first unified backend step is now in place: session events, session summaries, handoff history, case atoms, write receipts, and ref metadata are mirrored into a local SQLite `memory.db`, while JSONL/Markdown files remain the source of truth.
+Runtime state is stored in the single local SQLite database `.memory-center/graph/graph.db`: graph, index metadata, session records, assertions and retrieval structures share one transactional fact store. JSON/JSONL files remain inspectable exports; Markdown artifacts remain human-authored source material.
 
-统一后端的第一步也已经落地：session events、session summaries、handoff history、case atoms、write receipts 和 ref metadata 现在会镜像写入本地 SQLite `memory.db`，同时继续保留 JSONL/Markdown 作为主落盘形态。
+运行时状态统一保存在 `.memory-center/graph/graph.db`：图、索引元数据、会话记录、断言和检索结构共享同一个事务事实库。JSON/JSONL 文件仅供审查和导出；Markdown 工件仍是人工维护的内容来源。
 
 You can also query the mirrored backend directly through `memory-backend-query` / `memory_backend_query_tool` / `/workspace/memory-backend-query`.
 

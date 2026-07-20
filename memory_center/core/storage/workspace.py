@@ -103,10 +103,6 @@ class WorkspaceStore:
         try:
             return _read_json_file_cached(path)
         except (json.JSONDecodeError, UnicodeDecodeError):
-            # Corrupt JSON file — try backend before falling back to default
-            backend_val = self.memory_backend().read_index(name)
-            if backend_val is not None:
-                return backend_val
             return default
 
     def append_jsonl(self, name: str, item: dict[str, Any]) -> None:
@@ -205,11 +201,11 @@ class WorkspaceStore:
         return matched[-limit:]
 
     def read_jsonl_prefer_backend(self, name: str, limit: int = 50) -> list[dict[str, Any]]:
-        return self.read_jsonl_observed(name, limit=limit).value
+        """Read runtime memory records from the canonical SQLite store."""
+        return self.read_jsonl_via_backend(name, limit=limit)
 
     def find_jsonl_prefer_backend(self, name: str, predicate, limit: int = 200) -> list[dict[str, Any]]:
-        rows = self.find_jsonl_via_backend(name, predicate, limit=limit)
-        return rows or self.find_jsonl(name, predicate, limit=limit)
+        return self.find_jsonl_via_backend(name, predicate, limit=limit)
 
     def write_memory_ref_json(self, name: str, data: Any) -> str:
         path = _safe_path(self.memory_dir, name)
@@ -268,7 +264,8 @@ class WorkspaceStore:
 
     @property
     def memory_db_path(self) -> Path:
-        return self.memory_dir / "memory.db"
+        """Return the single SQLite fact store for graph, index and memory data."""
+        return self.graph_db_path
 
     def memory_backend(self) -> MemoryBackendStore:
         if self._memory_backend is None:
@@ -282,16 +279,12 @@ class WorkspaceStore:
         return self.memory_backend().query_records(collection=collection, record_id=record_id, created_after=created_after, project=project, payload_type=payload_type, session_id=session_id, limit=limit)
 
     def read_json_prefer_backend(self, name: str, default: Any) -> Any:
-        """Read deterministic index on the hot path.
+        """Read deterministic runtime state from the canonical SQLite store.
 
-        The public diagnostics API still uses read_json_observed() for backend/file
-        consistency checks. Hot query paths avoid that dual-read cost and use the
-        file as the current fact source, with backend fallback when the file is
-        missing or corrupt.
+        JSON files remain inspectable exports written by the indexing pipeline;
+        they are intentionally not a query fallback. A workspace created by an
+        earlier release therefore needs one explicit reindex before use.
         """
-        path = self.index_dir / name
-        if path.exists():
-            return self.read_json(name, default)
         try:
             backend_entry = self.memory_backend().read_index_entry(name)
         except Exception:

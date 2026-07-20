@@ -21,7 +21,6 @@ from memory_center.core.orchestrator import (
     memory_impact,
     memory_method_walkthrough,
     memory_plan_change,
-    memory_query,
     memory_query_hybrid,
     memory_search_code,
     memory_symbol,
@@ -174,7 +173,7 @@ def test_mc_lookup_mode_auto_routes_correctly(tmp_path: Path):
     sym = memory_symbol(wf, "ArticleFeignClient", limit=5)
     assert sym
     # Test that query mode works
-    q = memory_query(wf, "ArticleFeignClient", limit=5)
+    q = memory_query_hybrid(wf, "ArticleFeignClient", limit=5)
     assert q
 
 
@@ -195,7 +194,7 @@ def test_mc_lookup_modes_direct(tmp_path: Path):
     r = memory_search_code(wf, "ArticleFeignClient", "", limit=5)
     assert r
     # query
-    r = memory_query(wf, "ArticleFeignClient", limit=5)
+    r = memory_query_hybrid(wf, "ArticleFeignClient", limit=5)
     assert r
     # trace
     r = workspace_trace(wf, "ArticleFeignClient")
@@ -1187,27 +1186,25 @@ def test_memory_search_code_prefers_active_service_for_duplicate_symbols(tmp_pat
     assert {hit["project"] for hit in result["hits"]} == {"beta-service"}
 
 
-def test_memory_search_code_falls_back_when_active_service_has_no_hit(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+def test_memory_search_code_keeps_active_service_scope_when_no_hit(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     wf = _setup_duplicate_symbol_workspace(tmp_path)
     monkeypatch.chdir(wf.parent.parent / "gamma-service")
 
     result = memory_search_code(wf, "RedisDelayedQueue", limit=5)
 
     assert result["project_scope"]["effective"] == "gamma-service"
-    assert result["project_scope"]["fallback_used"] is True
-    assert result["hits"]
-    assert {hit["project"] for hit in result["hits"]} == {"alpha-service", "beta-service"}
+    assert result["project_scope"]["fallback_used"] is False
+    assert result["hits"] == []
+    assert result["knowledge_state"]["state"] == "NOT_FOUND"
 
 
-def test_memory_impact_falls_back_when_active_service_has_no_duplicate_symbol(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+def test_memory_impact_keeps_active_service_scope_when_no_duplicate_symbol(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     wf = _setup_duplicate_symbol_workspace(tmp_path)
     monkeypatch.chdir(wf.parent.parent / "gamma-service")
 
     impact = memory_impact(wf, "RedisDelayedQueue", direction="upstream", max_depth=2)
 
-    assert impact["found"] is True
-    assert impact["target"]["name"] == "RedisDelayedQueue"
-    assert impact["target"]["project"] in {"alpha-service", "beta-service"}
+    assert impact["found"] is False
 
 
 def test_mc_analyze_detect_changes_when_target_empty(tmp_path: Path):

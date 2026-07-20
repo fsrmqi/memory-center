@@ -15,7 +15,7 @@ from memory_center.core.storage.workspace import WorkspaceStore
 from ..tasks.artifacts import get_task_artifact, list_task_spaces
 from ..tasks.timeline import timeline_query
 from .compact import _compact_handoff_packet, _compact_resume_packet, _measure_compact_gain
-from .query import memory_query
+from .query import memory_query_hybrid
 from .session import workspace_recent_evidence
 from .shared import (
     LAYER_L0,
@@ -132,7 +132,7 @@ def workspace_resume_packet(
 
 def workspace_resume_context(workspace_file: str | Path, intent: str, limit: int = 5) -> dict[str, Any]:
     config, store = load_context(workspace_file)
-    query_result = memory_query(workspace_file, intent, limit=limit)
+    query_result = memory_query_hybrid(workspace_file, intent, limit=limit)
     summaries = store.read_jsonl_prefer_backend(SESSION_SUMMARIES_FILE, limit=500)
     tokens = tokenize(intent)
     related_sessions = []
@@ -153,12 +153,12 @@ def workspace_resume_context(workspace_file: str | Path, intent: str, limit: int
         "retrieval_summary": query_result.get("retrieval_summary", {}),
         "related_sessions": related_sessions[:limit],
         "related_cases": related_cases,
-        "entrypoints": query_result.get("matches", [])[:limit],
+        "entrypoints": query_result.get("results", [])[:limit],
         "suggested_context": _suggest_resume_context(
             intent,
             related_sessions[:limit],
             related_cases,
-            query_result.get("matches", [])[:limit],
+            query_result.get("results", [])[:limit],
         ),
     }
 

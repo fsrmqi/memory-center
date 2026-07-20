@@ -44,6 +44,8 @@ MCP 当前公开的是 12 个 task-level tools：
 
 `mc_start` / `mc_lookup` 可传 `request_tier="fast"|"standard"|"deep"`，其中 `fast` 会收紧候选数量和深度。`mc_analyze(execution_mode="background")` 会立即返回 `job_id`；使用同一工具并传入 `job_action="status"|"cancel"` 与 `job_id` 即可读取或取消后台分析。默认仍是同步执行，保持既有调用兼容。
 
+当 `mc_lookup` 已解析出 `project` 时，系统只查询该服务的 active generation 分片；分片未发布会返回 `knowledge_state.state=NOT_INDEXED`，不会静默退回全局索引。运行时索引、会话和断言统一读取 SQLite 事实库，JSON/JSONL 仅用于审查与导出。
+
 管理类异步重建使用 `mc_admin(action="job_reindex", projects=[...], files=[...])`。返回值中的 `job_id` 传给 `mc_admin(action="job_status", record_id="...")` 或 `mc_admin(action="job_cancel", record_id="...")`。可使用 `index_control` 查看 active/staging generation，使用 `query_performance` 查看 P50/P95/P99 查询耗时。任务级架构决策使用 `task_decision_record` / `task_decision_list`；`task_evidence_gc` 仅在 `force=true` 时删除候选证据。
 
 传入 `mc_lookup(..., project="service-name")` 时，服务范围内的 code/hybrid 查询会优先读取 active generation 的物理服务分片。回滚使用 `mc_admin(action="index_rollback", record_id="<generation>")`；generation 清理使用 `mc_admin(action="index_generation_gc", keep_recent=2, force=false)`，默认仅返回候选项。
