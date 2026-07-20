@@ -8,10 +8,11 @@ from __future__ import annotations
 import importlib.util
 import json
 import math
+import sqlite3
 import struct
 from typing import Any
 
-from .unified import UnifiedStore
+from .runtime import RuntimeStore
 
 # Try to import sqlite_vec
 _HAS_SQLITE_VEC = importlib.util.find_spec("sqlite_vec") is not None
@@ -28,7 +29,7 @@ class VectorIndex:
     Falls back to pure Python cosine similarity as last resort.
     """
 
-    def __init__(self, store: UnifiedStore, dimension: int = 384):
+    def __init__(self, store: RuntimeStore, dimension: int = 384):
         self._store = store
         self._dimension = dimension
         self._ensure_schema()
@@ -54,7 +55,7 @@ class VectorIndex:
                             embedding FLOAT[{self._dimension}]
                         )
                     """)
-                except Exception:
+                except sqlite3.Error:
                     pass  # sqlite-vec not available, will use fallback
 
             # Always create a BLOB column for fallback storage
@@ -84,7 +85,7 @@ class VectorIndex:
                         "INSERT OR REPLACE INTO node_vec(node_id, embedding) VALUES(?, vec_f32(?))",
                         (node_id, json.dumps(embedding)),
                     )
-                except Exception:
+                except sqlite3.Error:
                     pass
 
             # Always store in fallback (as packed float32 bytes)
@@ -118,7 +119,7 @@ class VectorIndex:
                             "INSERT OR REPLACE INTO node_vec(node_id, embedding) VALUES(?, vec_f32(?))",
                             (node_id, json.dumps(embedding)),
                         )
-                    except Exception:
+                    except sqlite3.Error:
                         pass
         return count
 
@@ -152,7 +153,7 @@ class VectorIndex:
                 {"node_id": str(r["node_id"]), "distance": float(r["distance"]), "backend": "sqlite-vec"}
                 for r in rows
             ]
-        except Exception:
+        except sqlite3.Error:
             return []
 
     def _query_brute_force(self, query_embedding: list[float], limit: int) -> list[dict[str, Any]]:
@@ -211,7 +212,7 @@ class VectorIndex:
             if _HAS_SQLITE_VEC:
                 try:
                     conn.execute("DELETE FROM node_vec WHERE node_id=?", (node_id,))
-                except Exception:
+                except sqlite3.Error:
                     pass
 
     def clear(self) -> None:
@@ -222,5 +223,5 @@ class VectorIndex:
             if _HAS_SQLITE_VEC:
                 try:
                     conn.execute("DELETE FROM node_vec")
-                except Exception:
+                except sqlite3.Error:
                     pass

@@ -1,8 +1,8 @@
 """Shared JSON serialization helpers for SQLite-backed stores.
 
 Memory Center writes graph metadata as a JSON string in many hot paths
-(``GraphStore.rebuild``, ``GraphStore.bulk_write``,
-``GraphStore.partial_rebuild``, ``GraphStore._upsert_search_rows``,
+(``RuntimeStore.rebuild``, ``RuntimeStore.bulk_write``,
+``RuntimeStore.partial_rebuild``, ``RuntimeStore._upsert_search_rows``,
 ``retrieval/inverted.py``, ``semantic.py``). On real UCAP workspaces
 ``json.dumps`` is called ~4.6M times during one reindex; ``{}`` itself is
 by far the most common payload (most nodes carry no extra metadata).

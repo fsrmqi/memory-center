@@ -6,6 +6,12 @@
 - 重要行为变化
 - 明确修复的真实 bug
 
+## 4.3.5 运行时存储与测试职责收敛
+
+- 移除 `UnifiedStore`，以唯一 `RuntimeStore` 承载图索引、运行记录、断言和 refs，统一落在 `graph.db`。
+- 明确 `neighbors` 返回节点、`traverse_edges` 返回关系边；写事务回滚后继续抛出，FTS 和向量等可选能力保留可诊断降级。
+- 测试重组为 `entrypoints`、`index_storage`、`domain` 和 `regression` 四类，测试资源通过统一根映射访问，不再依赖平铺文件位置。
+
 ## 4.3.4 Ref 事实源与死 shim 清理
 
 - payload ref 读写统一以 `graph.db.refs` 为准；删除 JSON 导出后仍可解析 ref，不再发生文件回退。

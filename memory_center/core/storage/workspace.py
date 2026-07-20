@@ -8,7 +8,7 @@ from typing import Any
 
 from filelock import FileLock
 
-from memory_center.core.storage.memory_backend import MemoryBackendStore
+from memory_center.core.storage.runtime import RuntimeStore
 
 _MISSING = object()
 _JSON_FILE_CACHE: dict[tuple[str, int, int], Any] = {}
@@ -63,19 +63,16 @@ class WorkspaceStore:
         self.graph_dir = self.base_dir / "graph"
         self.lock_file = self.base_dir / "store.lock"
         self.reindex_lock_file = self.base_dir / "reindex.lock"
-        self._memory_backend: MemoryBackendStore | None = None
+        self._memory_backend: RuntimeStore | None = None
         for p in [self.index_dir, self.rules_dir, self.memory_dir, self.refs_dir, self.artifacts_dir, self.instructions_dir, self.graph_dir]:
             p.mkdir(parents=True, exist_ok=True)
 
     def write_json(self, name: str, data: Any) -> None:
         path = self.index_dir / name
         with FileLock(str(self.lock_file)):
+            self.memory_backend().upsert_index(name, data)
             path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
             _drop_json_cache(path)
-            try:
-                self.memory_backend().upsert_index(name, data)
-            except Exception:
-                pass
 
     def read_json(self, name: str, default: Any) -> Any:
         path = self.index_dir / name
@@ -91,12 +88,9 @@ class WorkspaceStore:
         item = dict(item)
         item.setdefault("created_at", datetime.now(timezone.utc).isoformat())
         with FileLock(str(self.lock_file)):
+            self.memory_backend().append_record(name, item, record_id=self._infer_record_id(name, item))
             with path.open("a", encoding="utf-8") as f:
                 f.write(json.dumps(item, ensure_ascii=False) + "\n")
-            try:
-                self.memory_backend().append_record(name, item, record_id=self._infer_record_id(name, item))
-            except Exception:
-                pass
         return item
 
     def append_jsonl_batch(self, name: str, items: list[dict[str, Any]]) -> int:
@@ -107,16 +101,13 @@ class WorkspaceStore:
         now = datetime.now(timezone.utc).isoformat()
         rows = [dict(item, created_at=item.get("created_at") or now) for item in items]
         with FileLock(str(self.lock_file)):
+            self.memory_backend().append_records(
+                name,
+                rows,
+                record_ids=[self._infer_record_id(name, row) for row in rows],
+            )
             with path.open("a", encoding="utf-8") as handle:
                 handle.writelines(json.dumps(row, ensure_ascii=False) + "\n" for row in rows)
-            try:
-                self.memory_backend().append_records(
-                    name,
-                    rows,
-                    record_ids=[self._infer_record_id(name, row) for row in rows],
-                )
-            except Exception:
-                pass
         return len(rows)
 
     def prune_jsonl(self, name: str, *, created_before: datetime, max_records: int) -> dict[str, int]:
@@ -147,14 +138,11 @@ class WorkspaceStore:
                 if expired or invalid or overflow:
                     content = "\n".join(kept_lines)
                     path.write_text(content + ("\n" if content else ""), encoding="utf-8")
-            try:
-                self.memory_backend().prune_records(
-                    name,
-                    created_before=cutoff.isoformat(),
-                    max_records=max_records,
-                )
-            except Exception:
-                pass
+            self.memory_backend().prune_records(
+                name,
+                created_before=cutoff.isoformat(),
+                max_records=max_records,
+            )
         return {
             "total": total,
             "expired": expired,
@@ -205,7 +193,7 @@ class WorkspaceStore:
         try:
             canonical_ref = str(_safe_path(self.memory_dir, normalized).relative_to(self.base_dir))
             rows = self.memory_backend_query_refs(ref_path=canonical_ref, limit=1).get("refs", [])
-        except Exception:
+        except (OSError, ValueError):
             rows = []
         if not rows:
             return {} if default is _MISSING else default
@@ -248,9 +236,9 @@ class WorkspaceStore:
         """Return the single SQLite fact store for graph, index and memory data."""
         return self.graph_db_path
 
-    def memory_backend(self) -> MemoryBackendStore:
+    def memory_backend(self) -> RuntimeStore:
         if self._memory_backend is None:
-            self._memory_backend = MemoryBackendStore(self.runtime_db_path)
+            self._memory_backend = RuntimeStore(self.runtime_db_path)
         return self._memory_backend
 
     def memory_backend_stats(self) -> dict[str, Any]:
@@ -268,7 +256,7 @@ class WorkspaceStore:
         """
         try:
             backend_entry = self.memory_backend().read_index_entry(name)
-        except Exception:
+        except (OSError, ValueError):
             return default
         if backend_entry.get("found"):
             return backend_entry.get("value")

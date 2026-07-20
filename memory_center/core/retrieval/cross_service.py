@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from memory_center.core.foundation.text import base_tokenize
-from memory_center.core.storage.graph import GraphStore
+from memory_center.core.storage.runtime import RuntimeStore
 from memory_center.core.storage.workspace import WorkspaceStore
 
 from ..indexing.control_plane import index_control_status
@@ -112,7 +112,7 @@ def _query_one_shard(store: WorkspaceStore, generation: str, project: str, query
     graph_path = service_shard_graph_path(store, generation, project)
     nodes = []
     if graph_path:
-        with GraphStore(graph_path) as graph:
+        with RuntimeStore(graph_path) as graph:
             nodes = graph.find_nodes(query, limit=limit)
     if nodes:
         return [{"project": project, "name": node.get("name", ""), "type": node.get("type", ""), "file_path": node.get("file_path", ""), "line": node.get("line", 0), "score": 10.0 - index, "source": "service_graph_shard"} for index, node in enumerate(nodes)]

@@ -9,7 +9,7 @@ from memory_center.core.context.pack import ContextPackBuilder
 from memory_center.core.domain.extractor import BusinessDomainExtractor
 from memory_center.core.freshness.status import IndexFreshnessService
 from memory_center.core.onboarding.tour import ArchitectureTourGenerator
-from memory_center.core.storage.unified import UnifiedStore
+from memory_center.core.storage.runtime import RuntimeStore
 from memory_center.core.storage.workspace import WorkspaceStore
 from memory_center.core.verification.bundle_export import generate_agent_bundle
 from memory_center.core.verification.workflow_profiles import get_workflow_profile, recommend_workflow_with_learning
@@ -42,7 +42,7 @@ def onboarding_tour(
     target: str = "",
 ) -> dict[str, Any]:
     store = WorkspaceStore(workspace_file)
-    unified = UnifiedStore(store.graph_db_path)
+    unified = RuntimeStore(store.graph_db_path)
     try:
         tour = ArchitectureTourGenerator(unified).generate_tour(persona=persona, scope=scope, target=target or None)
         return {"tour": tour.to_dict()}
@@ -61,7 +61,7 @@ def freshness_banner(workspace_file: str) -> dict[str, Any]:
 
 def domain_overview(workspace_file: str, include_flows: bool = True) -> dict[str, Any]:
     store = WorkspaceStore(workspace_file)
-    unified = UnifiedStore(store.graph_db_path)
+    unified = RuntimeStore(store.graph_db_path)
     try:
         extractor = BusinessDomainExtractor(unified)
         domains = extractor.extract_domains()

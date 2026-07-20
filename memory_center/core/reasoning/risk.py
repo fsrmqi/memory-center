@@ -10,7 +10,7 @@ from typing import Any
 
 from memory_center.core.governance.rules import match_rules
 
-from ..storage.unified import UnifiedStore
+from ..storage.runtime import RuntimeStore
 
 
 @dataclass
@@ -26,7 +26,7 @@ class RiskFinding:
 class RiskPatternEngine:
     """Detect risk patterns combining graph analysis + rules."""
 
-    def __init__(self, store: UnifiedStore, workspace_store: Any = None):
+    def __init__(self, store: RuntimeStore, workspace_store: Any = None):
         self._store = store
         self._ws_store = workspace_store
 

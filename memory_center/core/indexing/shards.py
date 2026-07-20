@@ -10,7 +10,7 @@ from typing import Any
 
 from filelock import FileLock
 
-from memory_center.core.storage.graph import GraphStore
+from memory_center.core.storage.runtime import RuntimeStore
 from memory_center.core.storage.workspace import WorkspaceStore
 
 GENERATIONS_DIR = "generations"
@@ -47,7 +47,7 @@ def write_generation_shards(
         if not rebuild_projects or not rebuild_projects.issubset(set(projects)):
             rebuild_projects = set(projects)
         service_files: dict[str, str] = {}
-        with GraphStore(store.graph_db_path) as graph:
+        with RuntimeStore(store.graph_db_path) as graph:
             for project in projects:
                 service_files[project] = f"services/{_safe_name(project)}.json"
                 if project not in rebuild_projects:
@@ -66,7 +66,7 @@ def write_generation_shards(
                 _atomic_json(service_dir / f"{_safe_name(project)}.json", payload)
                 nodes, edges = graph.project_subgraph(project)
                 shard_db = service_dir / f"{_safe_name(project)}.graph.db"
-                with GraphStore(shard_db) as shard:
+                with RuntimeStore(shard_db) as shard:
                     shard.clear()
                     shard.bulk_write(nodes, edges)
                     shard.rebuild_search_index()

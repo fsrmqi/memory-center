@@ -7,7 +7,7 @@ from typing import Any
 
 from memory_center.core.assessment.quality import evidence_level_for
 from memory_center.core.knowledge.ontology import edge_strength
-from memory_center.core.storage.graph import GraphStore
+from memory_center.core.storage.runtime import RuntimeStore
 from memory_center.core.storage.workspace import WorkspaceStore
 
 ASSERTIONS_FILE = "assertions.jsonl"
@@ -47,7 +47,7 @@ def materialize_static_assertions(
             valid_to=created_at,
         )
     total = 0
-    with GraphStore(store.graph_db_path) as graph:
+    with RuntimeStore(store.graph_db_path) as graph:
         batch: list[dict[str, Any]] = []
         for edge in graph.iter_assertion_rows(batch_size=batch_size, paths=paths, projects=projects):
             payload = _assertion_from_edge(edge, generation=generation, created_at=created_at, file_times=file_times)

@@ -1,6 +1,6 @@
 """Pure helpers for resolving Java symbols, paths and method bodies for walkthroughs.
 
-These functions intentionally do not touch the GraphStore or workspace cache.
+These functions intentionally do not touch the RuntimeStore or workspace cache.
 They take indexed dicts (from ``java-symbol-index.json`` / ``file-index.json``)
 and the workspace config, and return plain dictionaries.
 """

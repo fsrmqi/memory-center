@@ -11,7 +11,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from memory_center.core.storage.memory_backend import MemoryBackendStore
+from memory_center.core.storage.runtime import RuntimeStore
 
 
 class UnifiedBackendQuery:
@@ -22,12 +22,12 @@ class UnifiedBackendQuery:
 
     def __init__(self, db_path: str | Path):
         self.db_path = Path(db_path)
-        self._store: MemoryBackendStore | None = None
+        self._store: RuntimeStore | None = None
 
     @property
-    def store(self) -> MemoryBackendStore:
+    def store(self) -> RuntimeStore:
         if self._store is None:
-            self._store = MemoryBackendStore(self.db_path)
+            self._store = RuntimeStore(self.db_path)
         return self._store
 
     def close(self) -> None:

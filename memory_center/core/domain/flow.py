@@ -9,10 +9,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from memory_center.core.storage.graph import GraphStore
 from memory_center.core.storage.workspace import WorkspaceStore
 
-from ..storage.unified import UnifiedStore
+from ..storage.runtime import RuntimeStore
 
 
 @dataclass
@@ -116,7 +115,7 @@ def extract_business_flows_for_workspace(workspace_file: str, seed_node_id: str,
     if not seed_node_id:
         return {"error": "seed node required", "flows": [], "workflow": "business-flow"}
     workspace_store = WorkspaceStore(workspace_file)
-    with GraphStore(workspace_store.graph_db_path) as graph:
+    with RuntimeStore(workspace_store.graph_db_path) as graph:
         extractor = BusinessFlowExtractor(graph)
         flows = extractor.extract_flows(seed_node_id, max_depth=max_depth or 4)
     return {"flows": [flow.to_dict() for flow in flows], "workflow": "business-flow"}
@@ -125,7 +124,7 @@ def extract_business_flows_for_workspace(workspace_file: str, seed_node_id: str,
 def business_flow_impact_for_workspace(workspace_file: str, node_id: str, max_depth: int = 3) -> dict[str, Any]:
     """Find business-flow impact from a workspace.yaml path."""
     workspace_store = WorkspaceStore(workspace_file)
-    with UnifiedStore(workspace_store.graph_db_path) as store:
+    with RuntimeStore(workspace_store.graph_db_path) as store:
         graph = BusinessFlowGraph(store)
         impacted = graph.find_impact_along_flows(node_id or "", max_depth=max_depth or 3)
     return {"impacted": impacted, "workflow": "business-flow-impact"}
@@ -134,10 +133,10 @@ def business_flow_impact_for_workspace(workspace_file: str, node_id: str, max_de
 class BusinessFlowGraph:
     """Build and query a graph of business flows.
 
-    Uses UnifiedStore for path queries, impact tracing, and flow graph building.
+    Uses RuntimeStore for path queries, impact tracing, and flow graph building.
     """
 
-    def __init__(self, store: UnifiedStore):
+    def __init__(self, store: RuntimeStore):
         self._store = store
 
     def build_flow_graph(self) -> dict[str, Any]:
@@ -188,7 +187,7 @@ class BusinessFlowGraph:
         current = endpoint_id
         confidence = 1.0
 
-        upstream = self._store.neighbors(current, direction="upstream", max_depth=1, limit=5)
+        upstream = self._store.traverse_edges(current, direction="upstream", max_depth=1, limit=5)
         if upstream:
             parent = upstream[0]
             pid = parent.get("id", "")
@@ -200,7 +199,7 @@ class BusinessFlowGraph:
                 confidence *= 0.95
 
         for _ in range(max_depth - 1):
-            downstream = self._store.neighbors(current, direction="downstream", max_depth=1, limit=5)
+            downstream = self._store.traverse_edges(current, direction="downstream", max_depth=1, limit=5)
             if not downstream:
                 break
 
@@ -254,7 +253,7 @@ class BusinessFlowGraph:
                     "depth": depth,
                 })
 
-            downstream = self._store.neighbors(current, direction="downstream", max_depth=1, limit=20)
+            downstream = self._store.traverse_edges(current, direction="downstream", max_depth=1, limit=20)
             for neighbor in downstream:
                 nid = neighbor.get("id", "")
                 if nid not in visited:
@@ -295,7 +294,7 @@ class BusinessFlowGraph:
 class BusinessFlowExtractor:
     """Extract business flows from the code knowledge graph."""
 
-    def __init__(self, graph: GraphStore):
+    def __init__(self, graph: RuntimeStore):
         self._graph = graph
 
     def extract_flows(self, seed_node_id: str, max_depth: int = 4, limit: int = 10) -> list[BusinessFlow]:
@@ -315,7 +314,7 @@ class BusinessFlowExtractor:
                 break
             next_frontier = []
             for nid in frontier:
-                neighbors = self._graph.neighbors(nid, direction="downstream", max_depth=1, limit=20)
+                neighbors = self._graph.traverse_edges(nid, direction="downstream", max_depth=1, limit=20)
                 for nb in neighbors:
                     target = nb.get("target", {})
                     tid = target.get("id", "")

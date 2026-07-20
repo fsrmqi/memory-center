@@ -8,7 +8,7 @@ from typing import Any
 
 from memory_center.core.knowledge.assertions import ASSERTION_INDEX_FILE, assertion_id_for
 from memory_center.core.presentation.conclusion_cards import build_conclusion_cards
-from memory_center.core.storage.graph import GraphStore
+from memory_center.core.storage.runtime import RuntimeStore
 from memory_center.core.storage.workspace import WorkspaceStore
 
 _MAX_DEPTH = 3
@@ -32,7 +32,7 @@ def export_evidence_subgraph(
     bounded_depth = min(max(1, max_depth), _MAX_DEPTH)
     bounded_edges = min(max(1, max_edges), _MAX_EDGES)
     store = WorkspaceStore(workspace_file)
-    with GraphStore(store.graph_db_path) as graph:
+    with RuntimeStore(store.graph_db_path) as graph:
         root = graph.node_by_id(target) or _first_match(graph, target)
         if not root:
             return {
@@ -42,7 +42,7 @@ def export_evidence_subgraph(
                 "limits": _limits(bounded_depth, bounded_edges),
                 "reason": "target_not_found",
             }
-        edges = graph.neighbors(root["id"], direction=direction, max_depth=bounded_depth, limit=bounded_edges)
+        edges = graph.traverse_edges(root["id"], direction=direction, max_depth=bounded_depth, limit=bounded_edges)
 
     nodes_by_id = {root["id"]: _node(root, is_root=True)}
     assertion_generation = str(store.read_json_prefer_backend(ASSERTION_INDEX_FILE, {}).get("generation", "") or "")
@@ -81,7 +81,7 @@ def export_evidence_subgraph(
     return payload
 
 
-def _first_match(graph: GraphStore, target: str) -> dict[str, Any] | None:
+def _first_match(graph: RuntimeStore, target: str) -> dict[str, Any] | None:
     matches = graph.find_nodes(target, limit=1)
     return matches[0] if matches else None
 

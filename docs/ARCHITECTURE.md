@@ -58,7 +58,7 @@ Memory Center 的核心设计是把这些上下文前置为本地可重建的工
 |---|---|---|
 | Workspace Intelligence | 自动识别服务、语言、项目结构和 workspace shape 风险 | `core/workspace/config.py`, `core/workspace/doctor.py`, `core/workspace/shape.py`, `core/workspace/kinds.py` |
 | Code and Service Indexing | 提取文件、Java/Spring、Feign、MQ、配置、多语言结构化符号 | `core/indexing/reindex.py`, `core/indexing/*` |
-| Knowledge Graph | 将服务、文件、类、方法、Endpoint、Topic、Config、DataResource 转为节点和边 | `core/storage/graph.py`, `core/knowledge/ontology.py` |
+| Knowledge Graph | 将服务、文件、类、方法、Endpoint、Topic、Config、DataResource 转为节点和边 | `core/storage/runtime.py`, `core/knowledge/ontology.py` |
 | Hybrid Retrieval | 融合 exact graph、neighbors、FTS、BM25、semantic、可选 vector | `core/retrieval/*` |
 | Method Walkthrough | 对 `Class#method` 做本地调用、Feign 续链、服务端 Controller/Impl 展开 | `core/walkthrough/*` |
 | Task Memory | 保存 session、case、task space、handoff、write receipt 和 L3 记忆块 | `core/orchestrator/session.py`, `write.py`, `sync.py` |
@@ -180,7 +180,7 @@ memory_center/
 │   ├── retrieval/          # hybrid retrieval, BM25, policy
 │   ├── walkthrough/        # method walkthrough 全链路展开
 │   ├── orchestrator/       # task-level 业务编排 facade
-│   ├── storage/            # SQLite 连接、PRAGMA、vector/unified store
+│   ├── storage/            # RuntimeStore、SQLite 连接、PRAGMA 与 vector
 │   ├── freshness/          # 索引新鲜度与 workspace shape 状态
 │   ├── benchmark/          # golden、token、parser、Java call resolution 评测
 │   ├── audit/              # completion/runtime audit

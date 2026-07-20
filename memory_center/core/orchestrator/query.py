@@ -14,7 +14,7 @@ from memory_center.core.knowledge.ontology import EntityValidator
 from memory_center.core.observability.diagnostics import DIAG, diag_entry
 from memory_center.core.observability.operations import observe_operation
 from memory_center.core.observability.tracking import log_token_gain
-from memory_center.core.storage.graph import GraphStore
+from memory_center.core.storage.runtime import RuntimeStore
 from memory_center.core.storage.workspace import WorkspaceStore
 
 from ..verification.heuristics import apply_candidate_path_learning
@@ -587,7 +587,7 @@ def memory_query_hybrid(
             "index_source": "service_shard_unavailable",
         }
     else:
-        with GraphStore(graph_path) as graph:
+        with RuntimeStore(graph_path) as graph:
             result = hybrid_retrieve(
                 graph=graph,
                 workspace_file=str(workspace_file),
@@ -1141,9 +1141,9 @@ def memory_context(
     if not symbol_info.get("found"):
         return {"name": name, "found": False, "matches": [], "lookup": symbol_info.get("lookup", {})}
     node = symbol_info.get("best_match", {}) or {}
-    with GraphStore(store.graph_db_path) as graph:
-        incoming = graph.neighbors(node["id"], direction="upstream", max_depth=max_depth, limit=100)
-        outgoing = graph.neighbors(node["id"], direction="downstream", max_depth=max_depth, limit=100)
+    with RuntimeStore(store.graph_db_path) as graph:
+        incoming = graph.traverse_edges(node["id"], direction="upstream", max_depth=max_depth, limit=100)
+        outgoing = graph.traverse_edges(node["id"], direction="downstream", max_depth=max_depth, limit=100)
     # Integrate unified reasoning patterns into context (C-07)
     reasoning: dict[str, Any] = {"patterns": [], "transitive": [], "risk": []}
     diagnostics: dict[str, Any] = {}
@@ -1238,9 +1238,9 @@ def memory_symbol(
     # If inferred_project is known but no match found in that project,
     # try a direct graph lookup by class name + project
     if inferred_project and not any(_project_matches(inferred_project, m.get("project", "")) for m in matches):
-        from memory_center.core.storage.graph import GraphStore
+        from memory_center.core.storage.runtime import RuntimeStore
         store = load_context(workspace_file)[1]
-        with GraphStore(store.graph_db_path) as g:
+        with RuntimeStore(store.graph_db_path) as g:
             # Extract class name from FQN (last segment)
             class_name = name.replace("#", ".").split(".")[-1]
             direct = g.find_nodes(class_name, types=["Class"], limit=50)
@@ -1397,8 +1397,8 @@ def memory_callers(
         return {"symbol": symbol, "found": False, "callers": [], "lookup": info.get("lookup", {})}
     node = info["best_match"]
     et = edge_type_filter or preferred_edge_types("upstream")
-    with GraphStore(load_context(workspace_file)[1].graph_db_path) as graph:
-        edges = graph.neighbors(node["id"], direction="upstream", max_depth=depth, limit=limit, edge_types=et)
+    with RuntimeStore(load_context(workspace_file)[1].graph_db_path) as graph:
+        edges = graph.traverse_edges(node["id"], direction="upstream", max_depth=depth, limit=limit, edge_types=et)
     filtered_edges = _filter_call_edges(edges, direction="upstream")
     callers, confidence_filter = _apply_confidence_filter_with_fallback(filtered_edges, min_confidence, limit)
     result = {
@@ -1438,8 +1438,8 @@ def memory_callees(
         return {"symbol": symbol, "found": False, "callees": [], "lookup": info.get("lookup", {})}
     node = info["best_match"]
     et = edge_type_filter or preferred_edge_types("downstream")
-    with GraphStore(load_context(workspace_file)[1].graph_db_path) as graph:
-        edges = graph.neighbors(node["id"], direction="downstream", max_depth=depth, limit=limit, edge_types=et)
+    with RuntimeStore(load_context(workspace_file)[1].graph_db_path) as graph:
+        edges = graph.traverse_edges(node["id"], direction="downstream", max_depth=depth, limit=limit, edge_types=et)
     filtered_edges = _filter_call_edges(edges, direction="downstream")
     callees, confidence_filter = _apply_confidence_filter_with_fallback(filtered_edges, min_confidence, limit)
     result = {
@@ -2676,7 +2676,7 @@ def _annotate_phantom_nodes(chain_result: dict[str, Any], workspace_file: str | 
 
 
 def _merge_workspace_query_hits(
-    graph: GraphStore,
+    graph: RuntimeStore,
     query: str,
     exact_nodes: list[dict[str, Any]],
     semantic_hits: list[dict[str, Any]],
@@ -2694,7 +2694,7 @@ def _merge_workspace_query_hits(
             node_id,
             {
                 "node": node,
-                "neighbors": graph.neighbors(node_id, direction="both", max_depth=1, limit=20),
+                "neighbors": graph.traverse_edges(node_id, direction="both", max_depth=1, limit=20),
                 "exact_score": 0.0,
                 "semantic_score": 0.0,
                 "best_rank": rank,
@@ -2717,7 +2717,7 @@ def _merge_workspace_query_hits(
             node_id,
             {
                 "node": node,
-                "neighbors": graph.neighbors(node_id, direction="both", max_depth=1, limit=20),
+                "neighbors": graph.traverse_edges(node_id, direction="both", max_depth=1, limit=20),
                 "exact_score": 0.0,
                 "semantic_score": 0.0,
                 "best_rank": semantic_rank + 1000,

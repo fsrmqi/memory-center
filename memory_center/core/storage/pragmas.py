@@ -1,10 +1,8 @@
 """Shared SQLite tuning helpers.
 
 Single source of truth for the PRAGMA values memory-center applies to every
-SQLite connection it owns. Multiple stores (``GraphStore``,
-``MemoryBackendStore``, ``UnifiedStore`` via ``SQLitePool``) historically
-configured PRAGMAs independently, with at least one of them not configuring
-them at all — that hidden inconsistency was a major reindex bottleneck.
+SQLite connection it owns. 过去图索引和运行记录分别创建连接，容易产生
+不一致的配置；现在统一由 ``RuntimeStore`` 复用同一套设置。
 
 This module keeps the configuration declarative so every store applies the
 same defaults, and so we can ship one ``fast_write_mode`` context manager

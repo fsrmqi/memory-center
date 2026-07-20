@@ -8,7 +8,7 @@ from memory_center.core.governance.rules import match_rules
 from memory_center.core.knowledge.ontology import edge_strength
 from memory_center.core.observability.diagnostics import DIAG, diag_entry
 from memory_center.core.observability.tracking import log_token_gain
-from memory_center.core.storage.graph import GraphStore
+from memory_center.core.storage.runtime import RuntimeStore
 
 from ..explanation import explanation_entry, merge_explanations
 from ..verification.heuristics import apply_candidate_path_learning
@@ -44,7 +44,7 @@ def memory_impact(
     budget: str = "medium",
 ) -> dict[str, Any]:
     _, store = load_context(workspace_file)
-    with GraphStore(store.graph_db_path) as graph:
+    with RuntimeStore(store.graph_db_path) as graph:
         symbol_info = memory_symbol(workspace_file, target, limit=8, project=project)
         lookup = symbol_info.get("lookup", {})
         if not symbol_info.get("found"):
@@ -82,7 +82,7 @@ def memory_impact(
                 return compact
             return result
         node = symbol_info.get("best_match", {}) or {}
-        impacts = graph.neighbors(node["id"], direction=direction, max_depth=max_depth, limit=300)
+        impacts = graph.traverse_edges(node["id"], direction=direction, max_depth=max_depth, limit=300)
         confirmed = [x for x in impacts if float(x.get("confidence", 0)) >= 0.80]
         probable = [x for x in impacts if 0.55 <= float(x.get("confidence", 0)) < 0.80]
         possible = [x for x in impacts if float(x.get("confidence", 0)) < 0.55]
@@ -305,7 +305,7 @@ def memory_verify_checklist(workspace_file: str | Path, target: str) -> dict[str
 
 def memory_detect_changes(workspace_file: str | Path, scope: str = "staged") -> dict[str, Any]:
     config, store = load_context(workspace_file)
-    with GraphStore(store.graph_db_path) as graph:
+    with RuntimeStore(store.graph_db_path) as graph:
         changed: list[str] = []
         deleted: list[str] = []
         for svc in config.services:
@@ -348,7 +348,7 @@ def memory_detect_changes(workspace_file: str | Path, scope: str = "staged") -> 
             graph_hits.extend(graph.find_nodes(file, types=["File"], limit=5))
         confirmed_edges = []
         for hit in graph_hits[:20]:
-            confirmed_edges.extend(graph.neighbors(hit["id"], direction="both", max_depth=1, limit=20))
+            confirmed_edges.extend(graph.traverse_edges(hit["id"], direction="both", max_depth=1, limit=20))
         high_markers = ["common-api", "Feign", "Message", "Consumer", "Controller", "DTO", "application.yml", "bootstrap.yml"]
         risk_level = "high" if any(m in changed_text for m in high_markers) or any(e.get("type") in {"IMPLEMENTS_FEIGN", "CONSUMES_TOPIC", "READS_FIELD"} for e in confirmed_edges) else "medium" if changed else "low"
         return {

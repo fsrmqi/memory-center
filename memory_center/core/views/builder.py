@@ -12,7 +12,7 @@ from typing import Any
 
 from ..domain.extractor import BusinessDomainExtractor
 from ..reasoning.risk import RiskFinding, RiskPatternEngine
-from ..storage.unified import UnifiedStore
+from ..storage.runtime import RuntimeStore
 
 
 @dataclass
@@ -43,7 +43,7 @@ class GraphView:
 class GraphViewBuilder:
     """Build structured graph views for different use cases."""
 
-    def __init__(self, store: UnifiedStore):
+    def __init__(self, store: RuntimeStore):
         self._store = store
 
     def build(

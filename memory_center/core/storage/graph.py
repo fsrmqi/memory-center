@@ -39,8 +39,8 @@ class GraphEdge:
     metadata: dict[str, Any] | None = None
 
 
-class GraphStore:
-    """Portable SQLite graph store.
+class _GraphOperations:
+    """`RuntimeStore` 的图索引实现组件，不作为独立存储入口暴露。
 
     The graph is deliberately simple: node/edge tables plus an optional FTS5
     search table. This keeps Memory Center local-first and easy to inspect.
@@ -57,7 +57,7 @@ class GraphStore:
         with self._lock:
             if self._conn is None:
                 self._conn = sqlite3.connect(self.db_path)
-                # Apply the shared PRAGMA profile here — GraphStore is the
+                # Apply the shared PRAGMA profile here — RuntimeStore is the
                 # hot path for reindex writes and previously opened bare
                 # connections without WAL / cache tuning, which dominated
                 # large-repo indexing latency.
@@ -73,7 +73,7 @@ class GraphStore:
                 self._conn.close()
                 self._conn = None
 
-    def __enter__(self) -> GraphStore:
+    def __enter__(self) -> _GraphOperations:
         return self
 
     def __exit__(self, *exc: Any) -> None:
@@ -720,7 +720,7 @@ def _sanitize_fts_term(term: str) -> str:
 def _loads_json(value: str) -> dict[str, Any]:
     try:
         return json.loads(value or "{}")
-    except Exception:
+    except (TypeError, ValueError, json.JSONDecodeError):
         return {}
 
 

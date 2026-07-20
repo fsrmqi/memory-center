@@ -10,7 +10,7 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
-from ..storage.unified import UnifiedStore
+from ..storage.runtime import RuntimeStore
 from .extractor import _DOMAIN_KEYWORDS
 
 
@@ -44,7 +44,7 @@ class CodeEntityDomainMapper:
     3. Graph neighborhood domain propagation
     """
 
-    def __init__(self, store: UnifiedStore):
+    def __init__(self, store: RuntimeStore):
         self._store = store
         self._service_domain_cache: dict[str, str] = {}
 

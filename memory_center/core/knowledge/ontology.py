@@ -261,7 +261,7 @@ class RouteNode:
     service: str = ""
 
     def to_node_tuple(self) -> tuple[str, str, str, str, str, int, str]:
-        """Convert to UnifiedStore.upsert_nodes compatible tuple."""
+        """Convert to RuntimeStore.upsert_nodes compatible tuple."""
         meta = {
             "route_type": self.route_type,
             "method": self.method,

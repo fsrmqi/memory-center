@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ..explanation import explanation_entry
-from ..storage.unified import UnifiedStore
+from ..storage.runtime import RuntimeStore
 
 # Domain keywords derived from common Spring Cloud patterns
 _DOMAIN_KEYWORDS: dict[str, list[str]] = {
@@ -92,7 +92,7 @@ class BusinessFlow:
 class BusinessDomainExtractor:
     """Extract business domains from the code knowledge graph."""
 
-    def __init__(self, store: UnifiedStore):
+    def __init__(self, store: RuntimeStore):
         self._store = store
 
     def extract_domains(self) -> list[BusinessDomain]:

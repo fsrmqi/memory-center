@@ -10,7 +10,7 @@ owning walkthrough internals.
 The runner stays decoupled from the orchestrator by:
 
 - 使用工作区运行时、上下文预算和本包的链路边工具，不依赖编排层。
-- Receiving the ``GraphStore`` neighbour-edges loader through a callable
+- Receiving the ``RuntimeStore`` neighbour-edges loader through a callable
   (defaults to using the workspace store's graph DB).
 - Receiving the optional ``memory_symbol`` lookup callable through a parameter
   so that unit tests can stub it without spinning up the full orchestrator.
@@ -27,7 +27,8 @@ from typing import Any
 from memory_center.core.assessment.completion import evaluate_walkthrough_completion
 from memory_center.core.foundation.result_types import attach_facade_metadata
 from memory_center.core.observability.tracking import log_token_gain
-from memory_center.core.storage.graph import GraphStore, node_id
+from memory_center.core.storage.graph import node_id
+from memory_center.core.storage.runtime import RuntimeStore
 
 from . import answer as _wt_answer
 from . import continuations as _wt_continuations
@@ -270,8 +271,8 @@ def build_walkthrough_result(
     )
 
     downstream_edges: list[dict[str, Any]] = []
-    with GraphStore(store.graph_db_path) as graph:
-        downstream_edges = graph.neighbors(
+    with RuntimeStore(store.graph_db_path) as graph:
+        downstream_edges = graph.traverse_edges(
             target["node_id"],
             direction="downstream",
             max_depth=depth,

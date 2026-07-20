@@ -5,7 +5,7 @@ from pathlib import Path
 from time import time
 from typing import Any
 
-from memory_center.core.storage.graph import GraphStore
+from memory_center.core.storage.runtime import RuntimeStore
 from memory_center.core.storage.workspace import WorkspaceStore
 
 ARCHITECTURE_COMMUNITIES_FILE = "architecture-communities.json"
@@ -15,7 +15,7 @@ def analyze_architecture_communities(workspace_file: str | Path, *, limit: int =
     """Compute project communities from bounded SQL aggregates and cache summary."""
     store = WorkspaceStore(workspace_file)
     bounded_limit = min(max(1, limit), 50)
-    with GraphStore(store.graph_db_path) as graph:
+    with RuntimeStore(store.graph_db_path) as graph:
         projection = graph.community_projection(limit=bounded_limit)
     relationships = projection["relationships"]
     projects = sorted({row["source_project"] for row in relationships} | {row["target_project"] for row in relationships})

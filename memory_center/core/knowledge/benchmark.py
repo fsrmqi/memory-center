@@ -6,7 +6,7 @@ from tempfile import TemporaryDirectory
 from time import perf_counter
 from typing import Any
 
-from memory_center.core.storage.graph import GraphStore
+from memory_center.core.storage.runtime import RuntimeStore
 from memory_center.core.storage.workspace import WorkspaceStore
 from memory_center.core.workspace.config import load_workspace_config
 
@@ -49,7 +49,7 @@ def evaluate_assertion_scope_gate(
     normalized_paths = sorted({str(path).replace("\\", "/").lstrip("/") for path in paths if path})[:48]
     if not normalized_paths:
         raise ValueError("at least one path is required")
-    with GraphStore(store.graph_db_path) as graph:
+    with RuntimeStore(store.graph_db_path) as graph:
         total_edges = int(graph.counts().get("edges", 0))
         selected_edges = 0
         for _ in graph.iter_assertion_rows(paths=normalized_paths):

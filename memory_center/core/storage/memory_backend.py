@@ -7,8 +7,8 @@ from pathlib import Path
 from typing import Any
 
 
-class MemoryBackendStore:
-    """访问 ``graph.db`` 中的运行记录、审计流和引用读模型。
+class _MemoryRecordOperations:
+    """`RuntimeStore` 的运行记录和断言实现组件，不作为独立存储入口暴露。
 
     JSON/JSONL 是便于检查与导出的投影；运行时查询与状态判定只读取 SQLite。
     """
@@ -24,7 +24,7 @@ class MemoryBackendStore:
         with self._lock:
             if self._conn is None:
                 self._conn = sqlite3.connect(self.db_path)
-                # Apply the same PRAGMA profile as GraphStore so memory
+                # Apply the same PRAGMA profile as RuntimeStore so memory
                 # writes also benefit from WAL + large cache + temp_store
                 # in memory. Without this, status/sniff queries hit cold
                 # pages on cold start.
@@ -40,7 +40,7 @@ class MemoryBackendStore:
                 self._conn.close()
                 self._conn = None
 
-    def __enter__(self) -> MemoryBackendStore:
+    def __enter__(self) -> _MemoryRecordOperations:
         return self
 
     def __exit__(self, *exc: Any) -> None:

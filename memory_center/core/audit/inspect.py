@@ -17,7 +17,7 @@ from memory_center.core.audit.runtime import audit_agent_runtime
 from memory_center.core.indexing.control_plane import index_control_status
 from memory_center.core.indexing.reindex_state import workspace_reindex_status
 from memory_center.core.knowledge.ontology import ALL_EDGE_TYPES, ALL_NODE_TYPES
-from memory_center.core.storage.graph import GraphStore
+from memory_center.core.storage.runtime import RuntimeStore
 from memory_center.core.storage.workspace import WorkspaceStore
 from memory_center.core.workspace.config import load_workspace_config
 from memory_center.hooks.spec import load_hooks_config, validate_hooks_config
@@ -98,7 +98,7 @@ def _ontology_status(store: WorkspaceStore) -> dict[str, Any]:
 
 
 def _unknown_graph_types(store: WorkspaceStore) -> dict[str, list[str]]:
-    with GraphStore(store.graph_db_path) as graph:
+    with RuntimeStore(store.graph_db_path) as graph:
         conn = graph.connect()
         node_types = {str(row[0]) for row in conn.execute("SELECT DISTINCT type FROM nodes").fetchall()}
         edge_types = {str(row[0]) for row in conn.execute("SELECT DISTINCT type FROM edges").fetchall()}

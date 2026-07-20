@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from memory_center.core.retrieval.semantic import SEMANTIC_INDEX_FILE, semantic_index_stats
-from memory_center.core.storage.graph import GraphStore
+from memory_center.core.storage.runtime import RuntimeStore
 from memory_center.core.storage.workspace import WorkspaceStore
 from memory_center.core.workspace.config import load_workspace_config
 from memory_center.core.workspace.shape import analyze_workspace_shape
@@ -42,7 +42,7 @@ def doctor(
         p = store.index_dir / name
         checks.append(_check(f"index:{name}", p.exists(), str(p)))
 
-    with GraphStore(store.graph_db_path) as graph:
+    with RuntimeStore(store.graph_db_path) as graph:
         counts = graph.counts()
         # Surface the actual PRAGMA state so doctor users can tell at a
         # glance whether their SQLite connection is tuned for reindex

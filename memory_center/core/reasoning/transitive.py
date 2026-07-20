@@ -7,7 +7,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from ..storage.unified import UnifiedStore
+from ..storage.runtime import RuntimeStore
 
 
 @dataclass
@@ -22,7 +22,7 @@ class TransitiveRelation:
 class TransitiveInferenceEngine:
     """Derive transitive relationships using recursive CTEs."""
 
-    def __init__(self, store: UnifiedStore):
+    def __init__(self, store: RuntimeStore):
         self._store = store
 
     def find_transitive_calls(

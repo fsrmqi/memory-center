@@ -11,7 +11,7 @@ import json
 from dataclasses import dataclass, field
 from typing import Any
 
-from ..storage.unified import UnifiedStore
+from ..storage.runtime import RuntimeStore
 
 
 @dataclass
@@ -27,7 +27,7 @@ class PatternMatch:
 class GraphPatternEngine:
     """Declarative graph pattern matching using SQLite recursive CTEs."""
 
-    def __init__(self, store: UnifiedStore):
+    def __init__(self, store: RuntimeStore):
         self._store = store
 
     # ── Built-in patterns ────────────────────────────────────────────────

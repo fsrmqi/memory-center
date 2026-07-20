@@ -85,7 +85,7 @@ def run_reasoning_patterns(
     """
     from memory_center.core.storage.workspace import WorkspaceStore
 
-    from ..storage.unified import UnifiedStore
+    from ..storage.runtime import RuntimeStore
     from .pipeline import ReasoningPipeline
     from .request import ReasoningRequest
 
@@ -134,7 +134,7 @@ def run_reasoning_patterns(
     # Pipeline owns engine orchestration. Legacy groups and each item's
     # ``_explanation`` remain in the result for backward compatibility.
     try:
-        with UnifiedStore(ws.graph_db_path) as store:
+        with RuntimeStore(ws.graph_db_path) as store:
             result = ReasoningPipeline(store, workspace_store=ws, enabled=enabled).analyze(
                 ReasoningRequest(
                     target_id=target_id,

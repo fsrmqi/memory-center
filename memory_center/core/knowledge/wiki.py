@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from memory_center.core.storage.graph import GraphStore
+from memory_center.core.storage.runtime import RuntimeStore
 from memory_center.core.storage.workspace import WorkspaceStore
 from memory_center.core.workspace.config import load_workspace_config
 
@@ -12,7 +12,7 @@ def generate_wiki(workspace_file: str | Path, output_dir: str | Path | None = No
     config, store = load_workspace_config(workspace_file), WorkspaceStore(workspace_file)
     out = Path(output_dir) if output_dir else store.base_dir / "wiki"
     out.mkdir(parents=True, exist_ok=True)
-    with GraphStore(store.graph_db_path) as graph:
+    with RuntimeStore(store.graph_db_path) as graph:
         status = {"workspace": config.workspace, "index_counts": graph.counts()}
     topology = store.read_json_prefer_backend("service-topology.json", {})
     cases = store.read_jsonl_prefer_backend("cross-service-task-memory.jsonl", limit=1000)

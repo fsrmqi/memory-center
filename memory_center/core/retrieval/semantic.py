@@ -6,7 +6,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from memory_center.core.storage.graph import GraphStore
+from memory_center.core.storage.runtime import RuntimeStore
 from memory_center.core.storage.workspace import WorkspaceStore
 
 from ..storage.metadata import metadata_json as _metadata_json
@@ -44,7 +44,7 @@ _METHOD_EXCLUDE_PREFIXES = ("get", "set", "is", "to", "hash", "equals", "test")
 
 def ensure_workspace_semantic_index(workspace_file: str | Path) -> dict[str, Any]:
     store = WorkspaceStore(workspace_file)
-    with GraphStore(store.graph_db_path) as graph:
+    with RuntimeStore(store.graph_db_path) as graph:
         counts = graph.counts()
     cached = store.read_json_prefer_backend(SEMANTIC_INDEX_FILE, {})
     backend = _requested_backend()
@@ -62,7 +62,7 @@ def ensure_workspace_semantic_index(workspace_file: str | Path) -> dict[str, Any
 
 def build_workspace_semantic_index(workspace_file: str | Path) -> dict[str, Any]:
     store = WorkspaceStore(workspace_file)
-    with GraphStore(store.graph_db_path) as graph:
+    with RuntimeStore(store.graph_db_path) as graph:
         nodes = graph.all_nodes()
     docs = []
     df: dict[str, int] = {}
@@ -160,7 +160,7 @@ def build_workspace_semantic_index_partial(workspace_file: str | Path, changed_n
     if not existing.get("docs"):
         return build_workspace_semantic_index(workspace_file)
     kept_docs = [doc for doc in existing.get("docs", []) if doc.get("node_id") not in changed_node_ids]
-    with GraphStore(store.graph_db_path) as graph:
+    with RuntimeStore(store.graph_db_path) as graph:
         changed_nodes = [n for n in graph.all_nodes() if n.get("id") in changed_node_ids]
         total_node_count = graph.counts().get("nodes", 0)
     new_docs: list[dict[str, Any]] = []

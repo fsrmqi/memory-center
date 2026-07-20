@@ -10,7 +10,7 @@ from typing import Any
 
 import yaml
 
-from memory_center.core.storage.graph import GraphStore
+from memory_center.core.storage.runtime import RuntimeStore
 from memory_center.core.storage.workspace import WorkspaceStore
 
 JAVA_CALL_CASE_FIELDS = {
@@ -100,7 +100,7 @@ def run_java_call_resolution_suite(
     cases = load_java_call_resolution_cases(cases_file)
     store = WorkspaceStore(workspace_file)
     case_results: list[dict[str, Any]] = []
-    with GraphStore(store.graph_db_path) as graph:
+    with RuntimeStore(store.graph_db_path) as graph:
         conn = graph.connect()
         for case in cases:
             case_results.append(_evaluate_case(conn, case))
@@ -161,7 +161,7 @@ def review_java_call_resolution_suite(
     cases = load_java_call_resolution_cases(cases_file)
     store = WorkspaceStore(workspace_file)
     grouped: dict[tuple[str, str, str], dict[str, Any]] = {}
-    with GraphStore(store.graph_db_path) as graph:
+    with RuntimeStore(store.graph_db_path) as graph:
         conn = graph.connect()
         for case in cases:
             result = _evaluate_case(conn, case)
@@ -235,7 +235,7 @@ def summarize_unresolved_java_calls(
     unresolved_call_edges = 0
     max_samples = max(0, sample_limit)
 
-    with GraphStore(store.graph_db_path) as graph:
+    with RuntimeStore(store.graph_db_path) as graph:
         conn = graph.connect()
         rows = conn.execute(
             """

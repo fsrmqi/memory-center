@@ -6,12 +6,13 @@ instead of re-indexing the entire workspace.
 from __future__ import annotations
 
 import fnmatch
+import sqlite3
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from ..storage.unified import UnifiedStore
+from ..storage.runtime import RuntimeStore
 
 
 @dataclass
@@ -89,7 +90,7 @@ class IncrementalIndexer:
 
     def __init__(
         self,
-        store: UnifiedStore,
+        store: RuntimeStore,
         repo_root: str | Path,
         workspace_file: str | Path | None = None,
     ):
@@ -150,7 +151,7 @@ class IncrementalIndexer:
             conn.execute(f"DELETE FROM nodes WHERE id IN ({placeholders})", id_list)
             try:
                 conn.execute(f"DELETE FROM node_search WHERE id IN ({placeholders})", id_list)
-            except Exception:
+            except sqlite3.OperationalError:
                 pass
 
         return removed_ids

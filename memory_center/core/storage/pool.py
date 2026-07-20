@@ -59,7 +59,8 @@ class SQLitePool:
             try:
                 yield conn
                 conn.commit()
-            except Exception:
+            except BaseException:
+                # 事务边界只负责回滚；调用者必须看到原始写入失败。
                 conn.rollback()
                 raise
 
@@ -70,7 +71,7 @@ class SQLitePool:
             try:
                 conn = self._pool.get_nowait()
                 conn.close()
-            except Exception:
+            except (OSError, sqlite3.Error):
                 pass
 
     def __enter__(self) -> SQLitePool:

@@ -25,7 +25,7 @@ from memory_center.core.knowledge.ontology import (
 from memory_center.core.observability.diagnostics import DIAG, diag_entry
 from memory_center.core.retrieval.scoring import best_match, reciprocal_rank, tokenize
 from memory_center.core.retrieval.semantic import semantic_query
-from memory_center.core.storage.graph import GraphStore
+from memory_center.core.storage.runtime import RuntimeStore
 
 from .policy import select_retrieval_policy
 
@@ -246,7 +246,7 @@ def detect_query_intent(query: str) -> dict[str, Any]:
 
 
 def hybrid_retrieve(
-    graph: GraphStore,
+    graph: RuntimeStore,
     workspace_file: str,
     query: str,
     config: HybridRetrievalConfig | None = None,
@@ -359,7 +359,7 @@ def hybrid_retrieve(
     enrichment_budget = min(2, policy.evidence_budget) if intent.get("is_full_chain") else policy.evidence_budget
     top_n = min(result_limit, 10, enrichment_budget)
     for item in merged[:top_n]:
-        item.neighbors = graph.neighbors(
+        item.neighbors = graph.traverse_edges(
             item.node_id,
             direction="both",
             max_depth=max(config.neighbor_depth, policy.graph_depth),
@@ -396,7 +396,7 @@ def hybrid_retrieve(
 
 
 def _graph_retrieval(
-    graph: GraphStore,
+    graph: RuntimeStore,
     query: str,
     tokens: list[str],
     node_types: list[str] | None,
@@ -435,7 +435,7 @@ def _graph_retrieval(
 
 
 def _sparse_retrieval(
-    graph: GraphStore,
+    graph: RuntimeStore,
     query: str,
     tokens: list[str],
     node_types: list[str] | None,
@@ -463,7 +463,7 @@ def _sparse_retrieval(
 def _graph_retrieval_from_nodes(
     exact_nodes: list,
     tokens: list[str],
-    graph: GraphStore,
+    graph: RuntimeStore,
     node_types: list[str] | None,
     limit: int,
     _rrf: Any,
@@ -496,7 +496,7 @@ def _graph_retrieval_from_nodes(
 
 def _full_chain_neighbor_hits(
     exact_nodes: list[dict[str, Any]],
-    graph: GraphStore,
+    graph: RuntimeStore,
     *,
     max_depth: int,
     limit: int,
@@ -509,7 +509,7 @@ def _full_chain_neighbor_hits(
         anchor_id = str(exact.get("id", ""))
         if not anchor_id:
             continue
-        for edge in graph.neighbors(
+        for edge in graph.traverse_edges(
             anchor_id,
             direction="both",
             max_depth=max_depth,
@@ -611,11 +611,11 @@ def _vector_retrieval(
         )
         from memory_center.core.storage.workspace import WorkspaceStore
 
-        from ..storage.unified import UnifiedStore
+        from ..storage.runtime import RuntimeStore
         from ..storage.vector_index import VectorIndex
 
         workspace_store = WorkspaceStore(workspace_file)
-        unified = UnifiedStore(workspace_store.graph_db_path)
+        unified = RuntimeStore(workspace_store.graph_db_path)
         try:
             vec = VectorIndex(unified)
             status = vec.stats()
@@ -645,8 +645,8 @@ def _vector_retrieval(
                 vector_diag = {"status": "active", "returned": 0, **status}
                 return results
 
-            from memory_center.core.storage.graph import GraphStore
-            with GraphStore(workspace_store.graph_db_path) as graph:
+            from memory_center.core.storage.runtime import RuntimeStore
+            with RuntimeStore(workspace_store.graph_db_path) as graph:
                 for rank, hit in enumerate(vector_results[:limit], start=1):
                     node_id = hit.get("node_id", "")
                     if not node_id:
@@ -687,10 +687,10 @@ def _bm25_sparse_retrieval(
         from memory_center.core.storage.workspace import WorkspaceStore
 
         from ..retrieval.inverted import InvertedIndex
-        from ..storage.unified import UnifiedStore
+        from ..storage.runtime import RuntimeStore
 
         workspace_store = WorkspaceStore(workspace_file)
-        unified = UnifiedStore(workspace_store.graph_db_path)
+        unified = RuntimeStore(workspace_store.graph_db_path)
         try:
             idx = InvertedIndex(unified)
             stats = idx.stats()
@@ -703,8 +703,8 @@ def _bm25_sparse_retrieval(
                 bm25_diag = {"status": "active", "returned": 0, **stats}
                 return results
 
-            from memory_center.core.storage.graph import GraphStore
-            with GraphStore(workspace_store.graph_db_path) as graph:
+            from memory_center.core.storage.runtime import RuntimeStore
+            with RuntimeStore(workspace_store.graph_db_path) as graph:
                 for hit in bm25_results:
                     node_id = hit.get("node_id", "")
                     if not node_id:
@@ -938,7 +938,7 @@ def _apply_type_boosting(
 
 def _resolve_cross_workspace_refs(
     results: list[RetrievalResult],
-    graph: GraphStore,
+    graph: RuntimeStore,
     workspace_file: str,
 ) -> None:
     """Resolve cross-workspace references and add summary layer."""

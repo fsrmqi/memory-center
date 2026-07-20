@@ -7,7 +7,8 @@ from typing import Any
 
 import yaml
 
-from memory_center.core.storage.graph import GraphEdge, GraphNode, GraphStore, edge_id, node_id
+from memory_center.core.storage.graph import GraphEdge, GraphNode, edge_id, node_id
+from memory_center.core.storage.runtime import RuntimeStore
 
 from ..contracting.static import (
     CONTRACT_DIFF_FILE,
@@ -510,10 +511,10 @@ def _sync_retrieval_indexes(
 ) -> dict[str, int | str]:
     """Synchronize BM25 and dense vector indexes from the rebuilt graph."""
     from ..retrieval.inverted import InvertedIndex
-    from ..storage.unified import UnifiedStore
+    from ..storage.runtime import RuntimeStore
     from ..storage.vector_index import VectorIndex
 
-    with GraphStore(store.graph_db_path) as graph:
+    with RuntimeStore(store.graph_db_path) as graph:
         nodes = graph.all_nodes()
 
     dense_docs = [
@@ -528,7 +529,7 @@ def _sync_retrieval_indexes(
         for doc in dense_docs
     ]
 
-    with UnifiedStore(store.graph_db_path) as unified:
+    with RuntimeStore(store.graph_db_path) as unified:
         bm25_stats = InvertedIndex(unified).rebuild(nodes)
 
         # Only touch VectorIndex when the rebuilt semantic_index actually
@@ -961,7 +962,7 @@ def flatten_dict(data: dict[str, Any], prefix: str = "") -> dict[str, str]:
 
 
 def build_graph_store(config: WorkspaceConfig, store: WorkspaceStore, *, project_filter: set[str] | None = None, path_filters: Sequence[str] | None = None) -> dict[str, Any]:
-    with GraphStore(store.graph_db_path) as graph:
+    with RuntimeStore(store.graph_db_path) as graph:
         nodes: list[GraphNode] = []
         edges: list[GraphEdge] = []
         partial = bool(project_filter or path_filters)

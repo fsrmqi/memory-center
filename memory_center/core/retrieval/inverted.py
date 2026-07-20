@@ -11,14 +11,14 @@ from typing import Any
 from memory_center.core.retrieval.semantic import _count_tokens, semantic_tokens
 
 from ..storage.metadata import metadata_json as _metadata_json
-from ..storage.unified import UnifiedStore
+from ..storage.runtime import RuntimeStore
 
 BM25_K1 = 1.5
 BM25_B = 0.75
 
 
 class InvertedIndex:
-    """Posting-list inverted index backed by SQLite (UnifiedStore).
+    """Posting-list inverted index backed by SQLite (RuntimeStore).
 
     Stores per-token posting lists so queries only touch matching documents
     instead of scanning all N documents.
@@ -28,7 +28,7 @@ class InvertedIndex:
         inv_docs(doc_idx INTEGER PRIMARY KEY, node_id TEXT, doc_len INTEGER, norm REAL)
     """
 
-    def __init__(self, store: UnifiedStore):
+    def __init__(self, store: RuntimeStore):
         self._store = store
         self._ensure_schema()
 

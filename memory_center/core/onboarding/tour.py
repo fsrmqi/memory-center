@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from ..explanation import explanation_entry
-from ..storage.unified import UnifiedStore
+from ..storage.runtime import RuntimeStore
 
 
 @dataclass
@@ -66,7 +66,7 @@ class ArchitectureTour:
 class ArchitectureTourGenerator:
     """Generate guided architecture tours from the code knowledge graph."""
 
-    def __init__(self, store: UnifiedStore):
+    def __init__(self, store: RuntimeStore):
         self._store = store
 
     def generate_tour(
@@ -206,7 +206,7 @@ def generate_architecture_tour(workspace_file: str | Path, persona: str = "devel
     4. MQ topics and data flows
     5. Configuration patterns
     """
-    from memory_center.core.storage.graph import GraphStore
+    from memory_center.core.storage.runtime import RuntimeStore
     from memory_center.core.storage.workspace import WorkspaceStore
 
     store = WorkspaceStore(workspace_file)
@@ -229,7 +229,7 @@ def generate_architecture_tour(workspace_file: str | Path, persona: str = "devel
     })
 
     # Stop 2: Graph overview
-    with GraphStore(store.graph_db_path) as graph:
+    with RuntimeStore(store.graph_db_path) as graph:
         counts = graph.counts()
         tour_stops.append({
             "stop": 2,

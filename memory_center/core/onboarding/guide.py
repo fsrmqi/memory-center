@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from ..storage.unified import UnifiedStore
+from ..storage.runtime import RuntimeStore
 from .glossary import GlossaryExtractor
 from .tour import ArchitectureTourGenerator
 
@@ -53,7 +53,7 @@ class OnboardingGuide:
 class OnboardingGuideGenerator:
     """Generate structured onboarding guides from the code knowledge graph."""
 
-    def __init__(self, store: UnifiedStore):
+    def __init__(self, store: RuntimeStore):
         self._store = store
         self._tour_gen = ArchitectureTourGenerator(store)
         self._glossary = GlossaryExtractor(store)

@@ -4,7 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from memory_center.core.storage.graph import GraphStore
+from memory_center.core.storage.runtime import RuntimeStore
 from memory_center.core.storage.workspace import WorkspaceStore
 
 
@@ -15,7 +15,7 @@ def build_invalidation_plan(workspace_file: str | Path, paths: list[str], limit:
     impacted: set[str] = set(normalized)
     categories: set[str] = set()
     try:
-        with GraphStore(store.graph_db_path) as graph:
+        with RuntimeStore(store.graph_db_path) as graph:
             for path in normalized:
                 neighbors = graph.file_neighbors(path, limit=12)
                 impacted.update(neighbors)

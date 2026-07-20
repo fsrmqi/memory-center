@@ -12,7 +12,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 from typing import Any
 
-from ..storage.unified import UnifiedStore
+from ..storage.runtime import RuntimeStore
 
 
 @dataclass
@@ -42,7 +42,7 @@ def _split_camel(name: str) -> list[str]:
 class GlossaryExtractor:
     """Extract project-specific glossary from the code knowledge graph."""
 
-    def __init__(self, store: UnifiedStore):
+    def __init__(self, store: RuntimeStore):
         self._store = store
 
     def extract(self, limit: int = 50) -> list[GlossaryEntry]:

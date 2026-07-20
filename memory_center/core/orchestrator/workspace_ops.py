@@ -13,7 +13,7 @@ from memory_center.core.foundation.schemas import with_schema
 from memory_center.core.governance.rules import match_rules
 from memory_center.core.observability.tracking import log_token_gain
 from memory_center.core.retrieval.planner import workspace_performance_summary
-from memory_center.core.storage.graph import GraphStore
+from memory_center.core.storage.runtime import RuntimeStore
 from memory_center.core.storage.workspace import WorkspaceStore
 from memory_center.core.workspace.jobs import workspace_job_status
 from memory_center.core.workspace.shape import analyze_workspace_shape
@@ -351,7 +351,7 @@ def _rank_sniff_files_from_graph(
 ) -> list[dict[str, Any]]:
     query = " ".join(keywords[:8])
     try:
-        with GraphStore(store.graph_db_path) as graph:
+        with RuntimeStore(store.graph_db_path) as graph:
             nodes = graph.find_nodes(
                 query,
                 types=["File", "Class", "Interface", "Method", "Endpoint", "FeignClient", "FeignMethod", "MQConsumer"],

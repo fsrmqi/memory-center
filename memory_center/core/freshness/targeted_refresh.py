@@ -10,7 +10,7 @@ from typing import Any
 from filelock import FileLock
 
 from memory_center.core.indexing.reindex import reindex_workspace
-from memory_center.core.storage.graph import GraphStore
+from memory_center.core.storage.runtime import RuntimeStore
 from memory_center.core.storage.workspace import WorkspaceStore
 from memory_center.core.workspace.config import load_workspace_config
 
@@ -49,7 +49,7 @@ def _refresh_query_targets(store: WorkspaceStore, query: str, limit: int) -> dic
     candidates: list[dict[str, Any]] = []
     closure_paths: list[str] = []
     try:
-        with GraphStore(store.graph_db_path) as graph:
+        with RuntimeStore(store.graph_db_path) as graph:
             for node in graph.find_nodes(" ".join(tokens[:6]), types=["File", "Class", "Method"], limit=limit * 4):
                 path = str(node.get("file_path", "") or "")
                 if path:
@@ -100,7 +100,7 @@ def _refresh_query_targets(store: WorkspaceStore, query: str, limit: int) -> dic
 
     if refresh_paths:
         reindex_workspace(config, store, paths=refresh_paths)
-        with GraphStore(store.graph_db_path) as graph:
+        with RuntimeStore(store.graph_db_path) as graph:
             for rel in refresh_paths:
                 previous = manifest.get(rel, {}) if isinstance(manifest, dict) else {}
                 manifest[rel] = {

@@ -18,7 +18,7 @@ from typing import Any
 
 from memory_center.core.governance.rules import match_rules
 from memory_center.core.observability.diagnostics import DIAG, diag_entry
-from memory_center.core.storage.graph import GraphStore
+from memory_center.core.storage.runtime import RuntimeStore
 
 from ..freshness.status import IndexFreshnessService
 from ..retrieval.hybrid import HybridRetrievalConfig, detect_query_intent, hybrid_retrieve
@@ -88,9 +88,9 @@ class ContextPackBuilder:
             node = item.get("node", {})
             node_id = node.get("id", "")
             if node_id:
-                with GraphStore(self._store.graph_db_path) as graph:
-                    incoming = graph.neighbors(node_id, direction="upstream", max_depth=1, limit=10)
-                    outgoing = graph.neighbors(node_id, direction="downstream", max_depth=1, limit=10)
+                with RuntimeStore(self._store.graph_db_path) as graph:
+                    incoming = graph.traverse_edges(node_id, direction="upstream", max_depth=1, limit=10)
+                    outgoing = graph.traverse_edges(node_id, direction="downstream", max_depth=1, limit=10)
                 relationships.extend(incoming[:5])
                 relationships.extend(outgoing[:5])
 
@@ -155,8 +155,8 @@ class ContextPackBuilder:
             progressive=progressive,
         )
 
-    def _get_graph(self) -> GraphStore:
-        gs = GraphStore(self._store.graph_db_path)
+    def _get_graph(self) -> RuntimeStore:
+        gs = RuntimeStore(self._store.graph_db_path)
         return gs
 
 
