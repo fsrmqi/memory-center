@@ -48,7 +48,7 @@ def ensure_workspace_semantic_index(workspace_file: str | Path) -> dict[str, Any
         counts = graph.counts()
     cached = store.read_json_prefer_backend(SEMANTIC_INDEX_FILE, {})
     backend = _requested_backend()
-    model_name = _requested_model_name(backend)
+    model_name = _requested_model_name(backend, workspace_file)
     if (
         cached.get("version") == SEMANTIC_INDEX_VERSION
         and cached.get("node_count") == counts.get("nodes")
@@ -67,7 +67,7 @@ def build_workspace_semantic_index(workspace_file: str | Path) -> dict[str, Any]
     docs = []
     df: dict[str, int] = {}
     backend = _requested_backend()
-    requested_model = _requested_model_name(backend)
+    requested_model = _requested_model_name(backend, workspace_file)
     requested_vector_scope = _requested_vector_scope()
 
     for node in nodes:
@@ -225,7 +225,7 @@ def build_workspace_semantic_index_partial(workspace_file: str | Path, changed_n
         doc["sparse_norm"] = math.sqrt(sum(value * value for value in rescaled.values())) or 1.0
     backend = _requested_backend()
     actual_backend = existing.get("backend", DEFAULT_SEMANTIC_BACKEND)
-    requested_model = _requested_model_name(backend)
+    requested_model = _requested_model_name(backend, workspace_file)
     model_name = existing.get("model")
     requested_vector_scope = _requested_vector_scope()
     vector_candidate_count = sum(
@@ -402,9 +402,22 @@ def _requested_vector_scope() -> str:
     return value if value in {"off", "selective", "all"} else DEFAULT_VECTOR_SCOPE
 
 
-def _requested_model_name(backend: str) -> str | None:
+def _requested_model_name(backend: str, workspace_file: str | Path | None = None) -> str | None:
     if backend == "sentence-transformers":
-        return os.getenv("MEMORY_CENTER_EMBEDDING_MODEL", DEFAULT_SENTENCE_TRANSFORMER_MODEL).strip() or DEFAULT_SENTENCE_TRANSFORMER_MODEL
+        configured = os.getenv("MEMORY_CENTER_EMBEDDING_MODEL", "").strip()
+        if configured:
+            return configured
+        if workspace_file:
+            try:
+                from memory_center.core.retrieval.model_profiles import MODEL_PROFILE_FILE
+
+                profile = WorkspaceStore(workspace_file).read_json_prefer_backend(MODEL_PROFILE_FILE, {})
+                selected = str(profile.get("embedding_model", "") or "") if isinstance(profile, dict) else ""
+                if selected:
+                    return selected
+            except Exception:
+                pass
+        return DEFAULT_SENTENCE_TRANSFORMER_MODEL
     return None
 
 

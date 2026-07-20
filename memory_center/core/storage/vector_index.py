@@ -12,6 +12,7 @@ import json
 import math
 import sqlite3
 import struct
+import time
 from pathlib import Path
 from typing import Any
 
@@ -60,6 +61,16 @@ class VectorIndex:
                     dimension INTEGER NOT NULL,
                     capacity INTEGER NOT NULL,
                     embedding_count INTEGER NOT NULL DEFAULT 0,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS vec_ann_tuning (
+                    singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+                    ef_search INTEGER NOT NULL,
+                    self_recall REAL NOT NULL,
+                    p95_ms REAL NOT NULL,
+                    sample_size INTEGER NOT NULL,
                     updated_at TEXT DEFAULT CURRENT_TIMESTAMP
                 )
             """)
@@ -143,6 +154,53 @@ class VectorIndex:
             return {"rebuilt": False, "reason": "hnswlib_initialization_failed", **self.stats()}
         return {"rebuilt": True, "indexed": len(items), **self.stats()}
 
+    def tune_ann(self, sample_size: int = 48) -> dict[str, Any]:
+        """以索引内 self-recall 探针选择最低满足精度的查询 ef。"""
+        if not self._hnsw_ready():
+            return {"tuned": False, "reason": "ann_not_ready", **self.stats()}
+        try:
+            import hnswlib  # type: ignore[import-not-found]
+            import numpy as np  # type: ignore[import-not-found]
+
+            meta = self._ann_meta()
+            if not meta:
+                return {"tuned": False, "reason": "ann_metadata_missing", **self.stats()}
+            with self._store.pool.connection() as conn:
+                rows = conn.execute(
+                    """SELECT labels.label, fallback.embedding FROM vec_ann_labels labels
+                       JOIN vec_fallback fallback ON fallback.node_id=labels.node_id
+                       ORDER BY labels.label LIMIT ?""",
+                    (max(8, min(sample_size, 128)),),
+                ).fetchall()
+            if not rows:
+                return {"tuned": False, "reason": "no_embeddings", **self.stats()}
+            vectors = np.asarray([self._unpack_embedding(row["embedding"]) for row in rows], dtype=np.float32)
+            expected = [int(row["label"]) for row in rows]
+            index = hnswlib.Index(space="cosine", dim=self._dimension)
+            index.load_index(str(self._hnsw_path), max_elements=int(meta["capacity"]))
+            probes = []
+            for ef in (32, 48, 64, 96, 128):
+                index.set_ef(ef)
+                timings = []
+                hits = 0
+                for position, label in enumerate(expected):
+                    vector = vectors[position]
+                    started = time.perf_counter()
+                    found, _ = index.knn_query(np.asarray([vector]), k=1)
+                    timings.append((time.perf_counter() - started) * 1000)
+                    hits += int(int(found[0][0]) == label)
+                timings.sort()
+                probes.append({"ef_search": ef, "self_recall": hits / len(expected), "p95_ms": timings[min(len(timings) - 1, int(len(timings) * 0.95))]})
+            selected = next((probe for probe in probes if probe["self_recall"] >= 0.99), probes[-1])
+            with self._store.pool.transaction() as conn:
+                conn.execute(
+                    "INSERT OR REPLACE INTO vec_ann_tuning(singleton, ef_search, self_recall, p95_ms, sample_size, updated_at) VALUES(1, ?, ?, ?, ?, CURRENT_TIMESTAMP)",
+                    (selected["ef_search"], round(selected["self_recall"], 4), round(selected["p95_ms"], 3), len(expected)),
+                )
+            return {"tuned": True, "selected": selected, "probes": probes, **self.stats()}
+        except (ImportError, OSError, RuntimeError, ValueError):
+            return {"tuned": False, "reason": "ann_tuning_failed", **self.stats()}
+
     def _query_vec(self, query_embedding: list[float], limit: int) -> list[dict[str, Any]]:
         try:
             with self._store.pool.connection() as conn:
@@ -168,7 +226,7 @@ class VectorIndex:
                 return []
             index = hnswlib.Index(space="cosine", dim=self._dimension)
             index.load_index(str(self._hnsw_path), max_elements=int(meta["capacity"]))
-            index.set_ef(max(64, limit * 4))
+            index.set_ef(max(self._tuned_ef(), limit * 4))
             active_count = self._embedding_count()
             if active_count <= 0:
                 return []
@@ -301,6 +359,11 @@ class VectorIndex:
         with self._store.pool.connection() as conn:
             return int(conn.execute("SELECT COUNT(*) FROM vec_metadata").fetchone()[0])
 
+    def _tuned_ef(self) -> int:
+        with self._store.pool.connection() as conn:
+            row = conn.execute("SELECT ef_search FROM vec_ann_tuning WHERE singleton=1").fetchone()
+        return max(32, int(row["ef_search"])) if row else 64
+
     def _valid_blob(self, raw: Any) -> bool:
         return raw is not None and len(bytes(raw)) == self._dimension * 4
 
@@ -330,6 +393,7 @@ class VectorIndex:
             "has_numpy": _HAS_NUMPY,
             "reason": reason,
             "next_action": "vector-ann-rebuild" if backend == "unavailable" else "",
+            "ef_search": self._tuned_ef() if hnsw_ready else None,
         }
 
     def delete_embedding(self, node_id: str) -> None:

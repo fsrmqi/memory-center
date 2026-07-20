@@ -15,6 +15,9 @@ from ..storage.runtime import RuntimeStore
 
 BM25_K1 = 1.5
 BM25_B = 0.75
+# Code identifiers and externally visible contracts carry much more retrieval
+# signal than a path fragment or arbitrary metadata value.
+_FIELD_WEIGHTS = {"name": 4.0, "type": 1.5, "project": 1.0, "path": 1.4, "metadata": 0.6}
 
 
 class InvertedIndex:
@@ -63,11 +66,9 @@ class InvertedIndex:
         df: dict[str, int] = {}
 
         for idx, node in enumerate(nodes):
-            text = _node_text(node)
-            tokens = semantic_tokens(text)
-            if not tokens:
+            counts = _weighted_node_tokens(node)
+            if not counts:
                 continue
-            counts = _count_tokens(tokens)
             docs.append({
                 "doc_idx": idx,
                 "node_id": node.get("id", ""),
@@ -175,12 +176,18 @@ class InvertedIndex:
         return {"doc_count": docs, "posting_count": postings, "token_count": tokens}
 
 
-def _node_text(node: dict[str, Any]) -> str:
-    parts = [
-        node.get("type", ""),
-        node.get("name", ""),
-        node.get("project", ""),
-        node.get("file_path", ""),
-        _metadata_json(node.get("metadata")),
-    ]
-    return " ".join(str(p) for p in parts if p)
+def _weighted_node_tokens(node: dict[str, Any]) -> dict[str, float]:
+    """Build BM25F-style weighted token frequencies for code entities."""
+    fields = {
+        "name": node.get("name", ""),
+        "type": node.get("type", ""),
+        "project": node.get("project", ""),
+        "path": node.get("file_path", ""),
+        "metadata": _metadata_json(node.get("metadata")),
+    }
+    counts: dict[str, float] = {}
+    for field, value in fields.items():
+        weight = _FIELD_WEIGHTS[field]
+        for token, count in _count_tokens(semantic_tokens(str(value))).items():
+            counts[token] = counts.get(token, 0.0) + count * weight
+    return counts

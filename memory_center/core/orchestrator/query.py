@@ -477,6 +477,7 @@ def memory_query_hybrid(
     *,
     enable_vector: bool | None = None,
     vector_weight: float | None = None,
+    enable_reranker: bool | None = None,
 ) -> dict[str, Any]:
     """Enhanced query using hybrid retrieval engine.
 
@@ -505,6 +506,8 @@ def memory_query_hybrid(
         config.enable_vector = bool(enable_vector)
     if vector_weight is not None:
         config.vector_weight = max(0.0, float(vector_weight))
+    if enable_reranker is not None:
+        config.enable_reranker = bool(enable_reranker)
 
     # Detect query intent first
     intent = detect_query_intent(query)

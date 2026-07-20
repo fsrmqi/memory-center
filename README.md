@@ -487,6 +487,22 @@ memory-center eval-retrieval-replay --workspace .memory-center/workspace.yaml --
 
 `eval-retrieval-replay` 只使用带 evidence 的人工验证 `retrieval-source` 结果。Agent 是否采纳建议属于运行遥测，不等于召回正确性，因此不会改变融合权重。命令默认统计近 30 天，使用有界权重和样本收缩；样本不足时返回 `insufficient_replay` 且不写入任何内容。
 
+### Advanced Retrieval / 高级检索
+
+The default sparse path uses code-aware BM25F: entity names and contracts outweigh paths and metadata. Hybrid results also receive bounded personalized graph ranking. For difficult conceptual queries, opt into a bounded cross-encoder stage; it reranks at most 12 candidates and degrades without changing the base result if the local model is unavailable.
+
+默认稀疏检索使用代码感知 BM25F：实体名称和契约的权重高于路径和元数据。混合结果还会做有界个性化图排序。概念型复杂查询可显式启用 Cross-Encoder；它最多重排 12 条候选，本地模型不可用时不会改变基础结果。
+
+```bash
+memory-center query --workspace .memory-center/workspace.yaml --text '用户登录调用链' --vector --rerank
+memory-center vector-ann-tune --workspace .memory-center/workspace.yaml
+
+# Preview or select a multilingual BGE-M3 profile. A full reindex remains explicit.
+memory-center retrieval-model-profile --workspace .memory-center/workspace.yaml --profile multilingual
+memory-center retrieval-model-profile --workspace .memory-center/workspace.yaml --profile multilingual --apply
+MEMORY_CENTER_SEMANTIC_BACKEND=sentence-transformers memory-center reindex --workspace .memory-center/workspace.yaml
+```
+
 Golden Benchmark hybrid cases can opt in to ANN with `enable_vector: true`, which keeps vector-backed concept-query behavior under regression coverage without changing existing cases.
 
 Golden Benchmark 的 hybrid case 可通过 `enable_vector: true` 显式启用 ANN，把向量支持的概念查询纳入长期回归门禁，同时不改变既有 case 行为。

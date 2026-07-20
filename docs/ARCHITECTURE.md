@@ -560,7 +560,9 @@ Memory Center 当前有三类存储角色。
 - `MEMORY_CENTER_VECTOR_SCOPE=off|selective|all` 控制 dense candidate 范围。
 - `semantic_index_stats()` 返回 `vector_status`、candidate count、dense count 和 disabled reason。
 
-`retrieval/inverted.py` 将 graph nodes 写入 SQLite BM25 posting lists。`storage/vector_index.py` 优先支持 sqlite-vec，否则使用持久化 hnswlib HNSW；大索引未安装 ANN 时返回可诊断不可用状态，禁止 Python 全量余弦回退。少于 64 条向量仅用于开发/测试的有界精确校验。
+`retrieval/inverted.py` 将 graph nodes 写入 SQLite 代码感知 BM25F posting lists，名称、契约、路径和元数据采用不同字段权重。`storage/vector_index.py` 优先支持 sqlite-vec，否则使用持久化 hnswlib HNSW；大索引未安装 ANN 时返回可诊断不可用状态，禁止 Python 全量余弦回退。少于 64 条向量仅用于开发/测试的有界精确校验。HNSW 的查询 `ef` 可由有界 self-recall 探针调优。
+
+融合阶段在固定候选预算内执行 relation-weighted personalized graph ranking；可选 Cross-Encoder 只重排前 12 个候选。模型档案可选择 MiniLM 平衡档或 BGE-M3 多语言档，档案切换必须通过显式完整 reindex 创建新 generation。LTR 只接受候选级人工验证标签，不能从 agent guidance 采纳率推断。
 
 检索融合权重不从“是否执行建议”推断。`retrieval/calibration.py` 只读取带 evidence 的人工验证 `retrieval-source` 回放，使用平滑后验与样本收缩生成提案，并仅由显式 `--apply` 写入当前工作区的校准快照。
 

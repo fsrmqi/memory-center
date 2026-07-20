@@ -6,6 +6,13 @@
 - 重要行为变化
 - 明确修复的真实 bug
 
+## 4.3.8 代码检索与自适应排序
+
+- SQLite 倒排检索升级为代码感知 BM25F：类/方法/契约名称权重高于路径和元数据，并复用驼峰拆分后的标识符 token。
+- hybrid 融合结果增加有界个性化图排序，只从 Top-3 查询种子沿关系传播最多两层，不扫描全图。
+- 新增可选 Cross-Encoder 级联重排：`query --rerank` 最多重排 12 条候选，模型不可用时保持原排序并返回诊断。
+- 新增 `vector-ann-tune`，以有界 self-recall 与 P95 探针选择 HNSW 查询 `ef`；新增工作区 `retrieval-model-profile`，可显式选择 BGE-M3 多语言 embedding 档案，仍须完整 reindex 后才生效。
+
 ## 4.3.7 持久化 ANN 与真实回放校准
 
 - dense vector 检索不再在大型索引上回退到 Python 全量余弦扫描：优先使用 `sqlite-vec`，否则使用可持久化的 `hnswlib` HNSW；未就绪时返回明确诊断和 `vector-ann-rebuild` 下一步动作。

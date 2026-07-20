@@ -296,6 +296,32 @@ def vector_ann_rebuild(
         typer.echo(json.dumps(VectorIndex(runtime).rebuild_ann(), ensure_ascii=False, indent=2))
 
 
+@app.command("vector-ann-tune")
+def vector_ann_tune(
+    workspace: str = typer.Option(..., help="Path to .memory-center/workspace.yaml"),
+    sample_size: int = typer.Option(48, min=8, max=128),
+):
+    """Tune HNSW query ef using bounded self-recall probes."""
+    from memory_center.core.storage.runtime import RuntimeStore
+    from memory_center.core.storage.vector_index import VectorIndex
+
+    store = WorkspaceStore(workspace)
+    with RuntimeStore(store.graph_db_path) as runtime:
+        typer.echo(json.dumps(VectorIndex(runtime).tune_ann(sample_size), ensure_ascii=False, indent=2))
+
+
+@app.command("retrieval-model-profile")
+def retrieval_model_profile_cmd(
+    workspace: str = typer.Option(..., help="Path to .memory-center/workspace.yaml"),
+    profile: str = typer.Option("", help="balanced|multilingual"),
+    apply: bool = typer.Option(False, help="Persist the selected profile; a full reindex is still explicit."),
+):
+    """Preview or select an embedding profile without implicitly rebuilding indexes."""
+    from memory_center.core.retrieval.model_profiles import retrieval_model_profile
+
+    typer.echo(json.dumps(retrieval_model_profile(workspace, profile, apply), ensure_ascii=False, indent=2))
+
+
 @app.command()
 def status(
     workspace: str = typer.Option(...),
@@ -531,16 +557,17 @@ def query_cmd(
     session_id: str = typer.Option("", help="Record returned agent_next_steps into this session."),
     vector: bool = typer.Option(False, "--vector/--no-vector", help="Enable ANN vector retrieval when dense embeddings are available."),
     vector_weight: float = typer.Option(0.15, help="Fusion weight for vector retrieval when --vector is enabled."),
+    rerank: bool = typer.Option(False, "--rerank/--no-rerank", help="Rerank a bounded top-K candidate set with the optional cross-encoder."),
 ):
     """Graph-aware query across services, files, symbols, contracts and memory."""
-    result = memory_query_hybrid(
-        workspace,
-        text,
-        limit,
-        project=project,
-        enable_vector=vector,
-        vector_weight=vector_weight,
-    )
+    query_kwargs = {
+        "project": project,
+        "enable_vector": vector,
+        "vector_weight": vector_weight,
+    }
+    if rerank:
+        query_kwargs["enable_reranker"] = True
+    result = memory_query_hybrid(workspace, text, limit, **query_kwargs)
     if session_id.strip():
         workspace_record_agent_guidance(workspace, session_id, query=text, mode="query", source="cli.query", payload=result)
     typer.echo(

@@ -13,6 +13,7 @@ import copy
 import os
 import re
 from dataclasses import dataclass, field
+from functools import lru_cache
 from typing import Any
 
 from memory_center.core.assessment.quality import evidence_level_for
@@ -28,6 +29,7 @@ from memory_center.core.retrieval.scoring import best_match, reciprocal_rank, to
 from memory_center.core.retrieval.semantic import semantic_query
 from memory_center.core.storage.runtime import RuntimeStore
 
+from .graph_rank import bounded_personalized_rank
 from .policy import select_retrieval_policy
 
 __all__ = [
@@ -85,6 +87,8 @@ class HybridRetrievalConfig:
     enable_sparse_bm25: bool = True
     enable_semantic: bool = True
     enable_vector: bool = False
+    enable_graph_rank: bool = True
+    enable_reranker: bool = False
 
 
 # Query pattern detection
@@ -366,6 +370,24 @@ def hybrid_retrieve(
     if config.enable_type_boosting:
         merged = _apply_type_boosting(merged, intent)
 
+    if config.enable_graph_rank and merged:
+        seed_ids = [item.node_id for item in merged[:3]]
+        graph_scores = bounded_personalized_rank(
+            graph, seed_ids, max_depth=min(2, policy.graph_depth), frontier_limit=min(96, policy.candidate_limit * 3)
+        )
+        for item in merged:
+            score = graph_scores.get(item.node_id, 0.0)
+            if score:
+                item.score *= 1.0 + min(0.18, score * 0.3)
+                item.evidence["personalized_graph_score"] = round(score, 4)
+        merged.sort(key=lambda item: item.score, reverse=True)
+
+    if config.enable_reranker and merged:
+        merged, reranker_diag = _rerank_candidates(query, merged, limit=min(12, source_limit))
+        retrieval_diagnostics["reranker"] = reranker_diag
+    else:
+        retrieval_diagnostics["reranker"] = {"status": "disabled", "reason": "configured_off"}
+
     # Phase 4: Neighbor enrichment (top results only for performance)
     enrichment_budget = min(2, policy.evidence_budget) if intent.get("is_full_chain") else policy.evidence_budget
     top_n = min(result_limit, 10, enrichment_budget)
@@ -402,6 +424,8 @@ def hybrid_retrieve(
             "enable_sparse_bm25": config.enable_sparse_bm25,
             "enable_semantic": config.enable_semantic,
             "enable_vector": config.enable_vector,
+            "enable_graph_rank": config.enable_graph_rank,
+            "enable_reranker": config.enable_reranker,
         },
     }
 
@@ -896,6 +920,53 @@ def _merge_retrieval_results(
             item.evidence["symbol_exact_class_boost"] = 1.8
 
     return sorted(merged.values(), key=lambda x: x.score, reverse=True)
+
+
+@lru_cache(maxsize=1)
+def _load_reranker(model_name: str):
+    try:
+        from sentence_transformers import CrossEncoder
+
+        return CrossEncoder(model_name)
+    except Exception:
+        return None
+
+
+def _rerank_candidates(
+    query: str,
+    candidates: list[RetrievalResult],
+    *,
+    limit: int,
+) -> tuple[list[RetrievalResult], dict[str, Any]]:
+    """仅重排有界候选，重模型失败时保留原始顺序。"""
+    model_name = os.getenv("MEMORY_CENTER_RERANKER_MODEL", "BAAI/bge-reranker-v2-m3").strip()
+    model = _load_reranker(model_name)
+    if model is None:
+        return candidates, {"status": "unavailable", "reason": "reranker_model_unavailable", "model": model_name}
+    selected = candidates[:limit]
+    pairs = [(query, _reranker_text(item.node)) for item in selected]
+    try:
+        raw_scores = model.predict(pairs)
+        values = [float(value) for value in raw_scores]
+    except Exception as exc:
+        return candidates, {"status": "unavailable", "reason": str(exc)[:160], "model": model_name}
+    if not values:
+        return candidates, {"status": "active", "returned": 0, "model": model_name}
+    low, high = min(values), max(values)
+    span = high - low or 1.0
+    reranked = [copy.deepcopy(item) for item in candidates]
+    for index, raw in enumerate(values):
+        item = reranked[index]
+        normalized = (raw - low) / span if high != low else 1.0
+        item.score = item.score * 0.45 + normalized * 0.55
+        item.evidence["reranker_score"] = round(raw, 4)
+        item.evidence["reranker_model"] = model_name
+    reranked.sort(key=lambda item: item.score, reverse=True)
+    return reranked, {"status": "active", "model": model_name, "candidates": len(selected)}
+
+
+def _reranker_text(node: dict[str, Any]) -> str:
+    return " ".join(str(node.get(key, "") or "") for key in ("type", "name", "project", "file_path"))
 
 
 def _apply_type_boosting(
