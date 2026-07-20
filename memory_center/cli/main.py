@@ -270,6 +270,32 @@ def reindex(
     print({"reindexed": True, "counts": counts})
 
 
+@app.command("vector-ann-status")
+def vector_ann_status(
+    workspace: str = typer.Option(..., help="Path to .memory-center/workspace.yaml"),
+):
+    """Show dense-vector ANN readiness without querying or rebuilding the index."""
+    from memory_center.core.storage.runtime import RuntimeStore
+    from memory_center.core.storage.vector_index import VectorIndex
+
+    store = WorkspaceStore(workspace)
+    with RuntimeStore(store.graph_db_path) as runtime:
+        typer.echo(json.dumps(VectorIndex(runtime).stats(), ensure_ascii=False, indent=2))
+
+
+@app.command("vector-ann-rebuild")
+def vector_ann_rebuild(
+    workspace: str = typer.Option(..., help="Path to .memory-center/workspace.yaml"),
+):
+    """Explicitly rebuild the persistent HNSW index from existing dense vectors."""
+    from memory_center.core.storage.runtime import RuntimeStore
+    from memory_center.core.storage.vector_index import VectorIndex
+
+    store = WorkspaceStore(workspace)
+    with RuntimeStore(store.graph_db_path) as runtime:
+        typer.echo(json.dumps(VectorIndex(runtime).rebuild_ann(), ensure_ascii=False, indent=2))
+
+
 @app.command()
 def status(
     workspace: str = typer.Option(...),
@@ -993,6 +1019,25 @@ def eval_agent_guidance_replay_trend_cmd(
 ):
     """Replay agent guidance events and record one trend point."""
     print(memory_eval_agent_guidance_replay_trend(workspace, session_id=session_id, limit=limit))
+
+
+@app.command("eval-retrieval-replay")
+def eval_retrieval_replay_cmd(
+    workspace: str = typer.Option(..., help="Path to .memory-center/workspace.yaml"),
+    lookback_days: int = typer.Option(30, min=1, max=365),
+    min_samples: int = typer.Option(20, min=1, max=100_000),
+    apply: bool = typer.Option(False, help="Persist eligible calibrated weights after reporting the proposal."),
+):
+    """Calibrate retrieval fusion weights from human-verified replay evidence only."""
+    from memory_center.core.retrieval.calibration import evaluate_retrieval_replay_calibration
+
+    result = evaluate_retrieval_replay_calibration(
+        workspace,
+        lookback_days=lookback_days,
+        min_samples=min_samples,
+        apply=apply,
+    )
+    typer.echo(json.dumps(result, ensure_ascii=False, indent=2))
 
 
 @app.command("eval-workflow-orchestration")

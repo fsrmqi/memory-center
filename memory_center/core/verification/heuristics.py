@@ -12,6 +12,7 @@ from memory_center.core.storage.workspace import WorkspaceStore
 from memory_center.core.workspace.config import load_workspace_data
 
 HEURISTICS_FILE = "learned-heuristics.jsonl"
+RETRIEVAL_CALIBRATION_FILE = "retrieval-calibration.json"
 _DEFAULT_CONFIDENCE = 0.5
 _MAX_QUERY_SCAN = 5000
 _RETRIEVAL_SOURCE_WEIGHT_MIN = 0.35
@@ -979,6 +980,21 @@ def load_retrieval_source_weights(
         return {}
 
     requested_intent = str(intent or "general").strip().lower()
+    calibrated: dict[str, Any] = {}
+    calibration_applied_at: datetime | None = None
+    try:
+        calibration = WorkspaceStore(workspace_file).read_json_prefer_backend(RETRIEVAL_CALIBRATION_FILE, {})
+        weights = calibration.get("weights", {}) if isinstance(calibration, dict) else {}
+        if isinstance(weights, dict):
+            wildcard_calibration = weights.get("*", {})
+            exact_calibration = weights.get(requested_intent, {})
+            if isinstance(wildcard_calibration, dict):
+                calibrated.update(wildcard_calibration)
+            if isinstance(exact_calibration, dict):
+                calibrated.update(exact_calibration)
+        calibration_applied_at = _parse_iso_datetime(str(calibration.get("generated_at", "") or "")) if isinstance(calibration, dict) else None
+    except Exception:
+        calibrated = {}
     wildcard: dict[str, Any] = {}
     exact: dict[str, Any] = {}
     for row in rows:
@@ -987,13 +1003,19 @@ def load_retrieval_source_weights(
         target = str(row.get("target", "") or "")
         if ":" not in target:
             continue
+        # 周期校准应成为当时的基线；只有之后新录入的人工验证可以覆盖它。
+        if calibration_applied_at is not None:
+            row_timestamp = _parse_iso_datetime(str(row.get("last_updated_at", "") or ""))
+            if row_timestamp is None or row_timestamp <= calibration_applied_at:
+                continue
         row_intent, source = target.split(":", 1)
         weight = row.get("recommended_weight", row.get("confidence", _DEFAULT_CONFIDENCE))
         if row_intent == "*":
             wildcard[source] = weight
         elif row_intent == requested_intent:
             exact[source] = weight
-    return bounded_retrieval_source_weights({**wildcard, **exact})
+    # 直接人工验证优先于周期性回放校准，避免校准覆盖刚刚记录的反例。
+    return bounded_retrieval_source_weights({**calibrated, **wildcard, **exact})
 
 
 def record_retrieval_source_feedback(

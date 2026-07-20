@@ -290,6 +290,50 @@ def test_bounded_retrieval_weights_ignore_unknown_sources() -> None:
     assert bounded == {"graph": 0.75, "semantic": 0.35}
 
 
+def test_verified_replay_calibration_requires_evidence_and_applies_only_after_threshold(tmp_path: Path) -> None:
+    from memory_center.core.retrieval.calibration import evaluate_retrieval_replay_calibration
+    from memory_center.core.verification.heuristics import (
+        load_retrieval_source_weights,
+        record_retrieval_source_feedback,
+    )
+
+    workspace = _workspace(tmp_path)
+    for _ in range(4):
+        record_retrieval_source_feedback(
+            workspace,
+            intent="general",
+            source="semantic",
+            outcome="confirmed",
+            evidence=[{"type": "human-review"}],
+        )
+    # 无证据样本不会成为校准数据。
+    record_retrieval_source_feedback(
+        workspace,
+        intent="general",
+        source="semantic",
+        outcome="confirmed",
+        evidence=[],
+    )
+
+    preview = evaluate_retrieval_replay_calibration(workspace, min_samples=4)
+    assert preview["status"] == "ready"
+    assert preview["applied"] is False
+    assert preview["proposals"]["general"]["semantic"]["sample_count"] == 4
+
+    applied = evaluate_retrieval_replay_calibration(workspace, min_samples=4, apply=True)
+    assert applied["applied"] is True
+    assert load_retrieval_source_weights(workspace, intent="general")["semantic"] == applied["applied_weights"]["general"]["semantic"]
+
+
+def test_verified_replay_calibration_does_not_use_guidance_adoption_as_evidence(tmp_path: Path) -> None:
+    from memory_center.core.retrieval.calibration import evaluate_retrieval_replay_calibration
+
+    workspace = _workspace(tmp_path)
+    result = evaluate_retrieval_replay_calibration(workspace, min_samples=1)
+    assert result["status"] == "insufficient_replay"
+    assert result["total_verified_samples"] == 0
+
+
 def test_memory_query_passes_freshness_and_learned_weights_once(
     demo_workspace_indexed: Path, monkeypatch,
 ) -> None:

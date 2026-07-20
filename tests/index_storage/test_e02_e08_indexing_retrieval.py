@@ -1048,7 +1048,7 @@ class TestE06InvertedRetrieval:
 # ═════════════════════════════════════════════════════════════════════════════
 
 class TestE07VectorRetrieval:
-    """E-07: Vector index with sqlite-vec / brute force fallback."""
+    """E-07: Vector index with sqlite-vec / persistent ANN."""
 
     def test_vector_index_class(self):
         from memory_center.core.storage.vector_index import VectorIndex
@@ -1089,6 +1089,16 @@ class TestE07VectorRetrieval:
         ]
         count = vec.upsert_embeddings_batch(items)
         assert count == 2
+
+    def test_large_index_without_ann_never_uses_python_full_scan(self, unified_store):
+        from memory_center.core.storage.vector_index import VectorIndex
+
+        vec = VectorIndex(unified_store, dimension=2)
+        vec.upsert_embeddings_batch([(f"node-{index}", [1.0, 0.0]) for index in range(65)])
+        stats = vec.stats()
+        if not stats["ann_ready"]:
+            assert stats["backend"] == "unavailable"
+            assert vec.query([1.0, 0.0]) == []
 
     def test_vector_index_dimension_mismatch(self, unified_store):
         from memory_center.core.storage.vector_index import VectorIndex
@@ -1297,7 +1307,7 @@ class TestE07VectorRetrievalIntegration:
             assert "embedding_count" in stats
             assert "dimension" in stats
             assert "backend" in stats
-            assert stats["backend"] in ("sqlite-vec", "brute_force")
+            assert stats["backend"] in ("sqlite-vec", "hnswlib", "exact_small", "unavailable")
 
     def test_vector_index_upsert_and_query(self, demo_workspace):
         """VectorIndex can upsert and query embeddings."""

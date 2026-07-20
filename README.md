@@ -469,9 +469,23 @@ Before executing sources, an adaptive policy now selects the source set, graph d
 
 检索源执行前，自适应策略会根据查询意图、索引新鲜度和有界验证反馈选择来源、图深度、候选上限与证据预算。全链路查询始终保留 exact + graph 硬约束，并采用“深但窄”的证据路径。
 
-When a local embedding backend is enabled, reindex synchronizes dense embeddings into `VectorIndex`. Vector ANN remains disabled by default and can be enabled through `HybridRetrievalConfig(enable_vector=True)`; sparse and BM25 retrieval remain safe fallbacks.
+When a local embedding backend is enabled, reindex synchronizes dense embeddings into `VectorIndex`. Vector ANN remains disabled by default and can be enabled through `HybridRetrievalConfig(enable_vector=True)`; sparse and BM25 retrieval remain safe fallbacks. For large dense indexes, install the `semantic-ann` extra (or `pipx inject memory-center hnswlib numpy`) and use the persistent HNSW index. Memory Center never falls back to a Python full scan for a large vector corpus.
 
-启用本地 embedding backend 后，reindex 会把 dense embeddings 同步到 `VectorIndex`。原生向量 ANN 默认关闭，可通过 `HybridRetrievalConfig(enable_vector=True)` 启用；稀疏语义和 BM25 继续作为安全 fallback。
+启用本地 embedding backend 后，reindex 会把 dense embeddings 同步到 `VectorIndex`。原生向量 ANN 默认关闭，可通过 `HybridRetrievalConfig(enable_vector=True)` 启用；稀疏语义和 BM25 继续作为安全 fallback。大型 dense 索引请安装 `semantic-ann` extra（或执行 `pipx inject memory-center hnswlib numpy`）并使用持久化 HNSW；Memory Center 不会再对大型向量库执行 Python 全量扫描。
+
+```bash
+# Inspect / rebuild the persistent ANN index without a full reindex.
+memory-center vector-ann-status --workspace .memory-center/workspace.yaml
+memory-center vector-ann-rebuild --workspace .memory-center/workspace.yaml
+
+# Preview calibrated weights from human-verified retrieval replay; apply is explicit.
+memory-center eval-retrieval-replay --workspace .memory-center/workspace.yaml
+memory-center eval-retrieval-replay --workspace .memory-center/workspace.yaml --apply
+```
+
+`eval-retrieval-replay` only consumes evidence-backed, human-verified `retrieval-source` outcomes. Agent guidance adoption is operational telemetry, not relevance evidence, so it never changes fusion weights. The command uses a 30-day window by default, bounded source weights, and sample shrinkage; it reports `insufficient_replay` without writing anything until the threshold is met.
+
+`eval-retrieval-replay` 只使用带 evidence 的人工验证 `retrieval-source` 结果。Agent 是否采纳建议属于运行遥测，不等于召回正确性，因此不会改变融合权重。命令默认统计近 30 天，使用有界权重和样本收缩；样本不足时返回 `insufficient_replay` 且不写入任何内容。
 
 Golden Benchmark hybrid cases can opt in to ANN with `enable_vector: true`, which keeps vector-backed concept-query behavior under regression coverage without changing existing cases.
 

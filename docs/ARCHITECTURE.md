@@ -347,7 +347,7 @@ Memory Center 不把模型临时输出直接当成长期知识。写入链路会
 
 - `workspace.yaml`、rules YAML、业务源码和 Markdown artifacts 是可读事实源。
 - `.memory-center/index/*.json` 是 SQLite 索引状态的可审查导出。
-- `.memory-center/graph/graph.db` 是派生知识图谱、FTS、BM25、vector fallback 等图向能力的主读后端。
+- `.memory-center/graph/graph.db` 是派生知识图谱、FTS、BM25、向量元数据与 HNSW 映射等图向能力的主读后端；相邻的 `.hnsw` 文件仅保存可重建的 ANN 图。
 - `.memory-center/graph/graph.db` 同时保存图、索引状态、记忆记录、断言和检索结构，是唯一运行时事实库。
 - `.memory-center/artifacts/**/*.md` 是任务空间、计划、设计、变更记录和 L3 记忆块的人类可读事实源。
 
@@ -375,7 +375,8 @@ Memory Center 不把模型临时输出直接当成长期知识。写入链路会
 .memory-center/
 ├── workspace.yaml
 ├── index/                  # deterministic JSON indexes
-├── graph/graph.db          # graph, FTS, BM25, vector fallback
+├── graph/graph.db          # graph, FTS, BM25, vector metadata and ANN labels
+├── graph/graph.hnsw        # optional, rebuildable persistent HNSW index
 ├── memory/                 # JSONL exports and refs
 ├── artifacts/              # shared/task Markdown artifacts and L3 blocks
 ├── rules/                  # matching/eval/handoff/write-policy rules
@@ -516,7 +517,7 @@ Memory Center 当前有三类存储角色。
 
 ### 6.3 GraphStore / UnifiedStore
 
-`GraphStore` 管理 graph-native 查询主路径。`UnifiedStore` 提供带连接池的 SQLite schema，用于 graph / memory / vector / inverted-index 相关模块复用。实际维护时必须区分：
+`RuntimeStore` 是 graph-native 查询、运行记录、vector 与 inverted-index 共用的唯一 SQLite 访问层。实际维护时必须区分：
 
 - `WorkspaceStore.graph_db_path`（等同于 `runtime_db_path`）：传给 `GraphStore`、`UnifiedStore`、VectorIndex、InvertedIndex、`MemoryBackendStore` 与 `UnifiedBackendQuery`。
 
@@ -559,7 +560,9 @@ Memory Center 当前有三类存储角色。
 - `MEMORY_CENTER_VECTOR_SCOPE=off|selective|all` 控制 dense candidate 范围。
 - `semantic_index_stats()` 返回 `vector_status`、candidate count、dense count 和 disabled reason。
 
-`retrieval/inverted.py` 将 graph nodes 写入 SQLite BM25 posting lists。`storage/vector_index.py` 支持 sqlite-vec（如果可用）和 brute-force fallback。
+`retrieval/inverted.py` 将 graph nodes 写入 SQLite BM25 posting lists。`storage/vector_index.py` 优先支持 sqlite-vec，否则使用持久化 hnswlib HNSW；大索引未安装 ANN 时返回可诊断不可用状态，禁止 Python 全量余弦回退。少于 64 条向量仅用于开发/测试的有界精确校验。
+
+检索融合权重不从“是否执行建议”推断。`retrieval/calibration.py` 只读取带 evidence 的人工验证 `retrieval-source` 回放，使用平滑后验与样本收缩生成提案，并仅由显式 `--apply` 写入当前工作区的校准快照。
 
 ### 7.3 Method Walkthrough
 

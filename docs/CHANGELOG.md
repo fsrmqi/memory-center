@@ -6,6 +6,13 @@
 - 重要行为变化
 - 明确修复的真实 bug
 
+## 4.3.7 持久化 ANN 与真实回放校准
+
+- dense vector 检索不再在大型索引上回退到 Python 全量余弦扫描：优先使用 `sqlite-vec`，否则使用可持久化的 `hnswlib` HNSW；未就绪时返回明确诊断和 `vector-ann-rebuild` 下一步动作。
+- 小于 64 条向量的开发/测试索引保留有界精确校验；超过阈值没有 ANN 时不会静默扫描全部 embedding，避免阻塞 MCP 查询。
+- 新增 `memory-center vector-ann-status` 与 `memory-center vector-ann-rebuild`，旧 dense 向量可显式重建 HNSW，不在查询或局部 refresh 热路径隐式全量重建。
+- 新增 `memory-center eval-retrieval-replay [--apply]`：仅根据有 evidence 的人工验证 `retrieval-source` 反馈，以 Beta 平滑和样本收缩生成融合权重提案；agent guidance 采纳率不会被误当成召回正确性。样本不足时不写入任何权重。
+
 ## 4.3.6 检索与图遍历算法优化
 
 - `RuntimeStore.neighbors` 由递归 CTE 改为有界分层 BFS，环状或高分支调用图不会重复物化路径；每层 SQL 查询受结果预算约束。

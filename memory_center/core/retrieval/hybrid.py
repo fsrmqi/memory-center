@@ -633,6 +633,14 @@ def _vector_retrieval(
             vector_diag = {"status": "empty", **status}
             if status.get("embedding_count", 0) == 0:
                 return results
+            if status.get("ann_ready") is False and status.get("backend") != "exact_small":
+                vector_diag = {
+                    "status": "unavailable",
+                    "reason": status.get("reason", "ANN index unavailable"),
+                    "next_action": status.get("next_action", "vector-ann-rebuild"),
+                    **status,
+                }
+                return results
 
             semantic_stats = semantic_index_stats(workspace_file)
             model_name = (
