@@ -521,6 +521,10 @@ def memory_query_hybrid(
 
     config_obj = load_context(workspace_file)
     store = config_obj[1]
+    from memory_center.core.knowledge.aliases import expand_verified_alias_query
+
+    alias_expansion = expand_verified_alias_query(store, query)
+    query = str(alias_expansion["query"])
     project_scope = _resolve_effective_project(workspace_file, project)
     effective_project = str(project_scope.get("project", "") or "")
 
@@ -732,6 +736,7 @@ def memory_query_hybrid(
     result["results"] = _rerank_symbol_like_matches(result.get("results", []), query)
     result["matches"] = result["results"]
     result["assertion_summary"] = _assertion_summary(store)
+    result["identity_resolution"] = alias_expansion["identity_resolution"]
 
     # 确保 retrieval_summary 包含旧接口期望的字段
     if "retrieval_summary" in result:

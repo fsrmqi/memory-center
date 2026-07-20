@@ -80,3 +80,12 @@ def resolve_canonical_identity(store: WorkspaceStore, entity_id: str, *, max_hop
         current = target
         chain.append(current)
     return {"entity_id": entity_id, "canonical_id": current, "chain": chain, "ambiguous": True, "reason": "max_hops"}
+
+
+def expand_verified_alias_query(store: WorkspaceStore, query: str) -> dict[str, Any]:
+    """Expand an exact verified alias token without merging low-confidence names."""
+    resolution = resolve_canonical_identity(store, query)
+    canonical = str(resolution.get("canonical_id", "") or "")
+    if resolution.get("auto_merged") and canonical and canonical != query:
+        return {"query": f"{query} {canonical}", "identity_resolution": resolution}
+    return {"query": query, "identity_resolution": resolution}

@@ -33,6 +33,11 @@ def materialize_static_assertions(
     from graph availability; a later reindex can reconstruct the sidecar.
     """
     created_at = datetime.now(timezone.utc).isoformat()
+    file_times = {
+        str(row.get("path", "") or "").replace("\\", "/").lstrip("/"): int(row.get("source_mtime_ns", 0) or 0)
+        for row in store.read_json_prefer_backend("file-index.json", [])
+        if isinstance(row, dict)
+    }
     partial = bool(paths or projects)
     if partial:
         store.memory_backend().supersede_assertions_in_scope(
@@ -45,7 +50,7 @@ def materialize_static_assertions(
     with GraphStore(store.graph_db_path) as graph:
         batch: list[dict[str, Any]] = []
         for edge in graph.iter_assertion_rows(batch_size=batch_size, paths=paths, projects=projects):
-            payload = _assertion_from_edge(edge, generation=generation, created_at=created_at)
+            payload = _assertion_from_edge(edge, generation=generation, created_at=created_at, file_times=file_times)
             batch.append(payload)
             if len(batch) >= batch_size:
                 _persist_batch(store, batch)
@@ -167,12 +172,15 @@ def _maybe_maintain_assertions(store: WorkspaceStore) -> None:
     )
 
 
-def _assertion_from_edge(edge: dict[str, Any], *, generation: str, created_at: str) -> dict[str, Any]:
+def _assertion_from_edge(edge: dict[str, Any], *, generation: str, created_at: str, file_times: dict[str, int]) -> dict[str, Any]:
     subject_id = str(edge["source_id"])
     predicate = str(edge["type"])
     object_id = str(edge["target_id"])
     assertion_id = assertion_id_for(subject_id, predicate, object_id, generation)
     evidence_level = evidence_level_for({}, semantic_strength=edge_strength(predicate))
+    source_path = str(edge.get("source_file", "") or "")
+    event_ns = file_times.get(source_path, 0) or file_times.get(str(edge.get("target_file", "") or ""), 0)
+    event_at = datetime.fromtimestamp(event_ns / 1_000_000_000, tz=timezone.utc).isoformat() if event_ns else created_at
     return {
         "assertion_id": assertion_id,
         "type": "static_assertion",
@@ -193,9 +201,9 @@ def _assertion_from_edge(edge: dict[str, Any], *, generation: str, created_at: s
         "provenance_kind": "STATIC",
         "relation_mode": str(edge.get("relation_mode", "STRUCTURAL") or "STRUCTURAL"),
         "evidence_refs": [f"ev:graph-edge:{edge.get('id', '')}"],
-        "event_at": created_at,
+        "event_at": event_at,
         "observed_at": created_at,
-        "event_time_source": "observed_at_fallback",
+        "event_time_source": "source_mtime" if event_ns else "observed_at_fallback",
         "valid_from": created_at,
         "valid_to": "",
         "created_at": created_at,

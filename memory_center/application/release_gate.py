@@ -125,6 +125,23 @@ def run_release_gate(
     config = load_workspace_config(workspace_file)
     store = WorkspaceStore(workspace_file)
     components: dict[str, dict[str, Any]] = {}
+    assertion_index = store.read_json_prefer_backend("assertion-index.json", {}) or {}
+    if assertion_index:
+        diagnostics = store.memory_backend().assertion_diagnostics(str(assertion_index.get("generation", "") or ""))
+        private_fields = 0
+        with store.memory_backend().connect() as conn:
+            rows = conn.execute("SELECT payload_json FROM assertions ORDER BY valid_from DESC LIMIT 500").fetchall()
+        for row in rows:
+            payload = json.loads(str(row[0]))
+            private_fields += sum(1 for key in ("source_code", "raw_payload", "tool_payload", "conversation") if key in payload)
+        ontology_integrity_passed = not diagnostics.get("verified_without_source") and not diagnostics.get("active_old_generation") and private_fields == 0
+        components["ontology_integrity"] = _component(
+            passed=ontology_integrity_passed,
+            duration_ms=0.0,
+            result_count=int(diagnostics.get("verified_without_source", 0) or 0) + int(diagnostics.get("active_old_generation", 0) or 0) + private_fields,
+            quality_score=1.0 if ontology_integrity_passed else 0.0,
+            reason="ontology_integrity_violation" if not ontology_integrity_passed else "",
+        )
 
     if ontology_paths or ontology_full:
         from memory_center.core.knowledge.benchmark import evaluate_assertion_reindex_gate, evaluate_ontology_hot_path
