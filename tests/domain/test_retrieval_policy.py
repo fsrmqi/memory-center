@@ -214,6 +214,31 @@ def test_general_policy_allows_explicit_vector_and_semantic_execution() -> None:
     vector.assert_called_once()
 
 
+def test_sparse_semantic_is_skipped_when_sqlite_bm25_is_ready() -> None:
+    from memory_center.core.retrieval.hybrid import HybridRetrievalConfig, hybrid_retrieve
+
+    graph = _RecordingGraph()
+
+    def ready_bm25(*_args, diagnostics, **_kwargs):
+        diagnostics["bm25"] = {"status": "active", "doc_count": 100}
+        return []
+
+    with (
+        patch("memory_center.core.retrieval.hybrid._bm25_sparse_retrieval", side_effect=ready_bm25),
+        patch("memory_center.core.retrieval.hybrid._semantic_retrieval") as semantic,
+    ):
+        result = hybrid_retrieve(
+            graph,
+            "/missing/workspace.yaml",
+            "how are audit records persisted",
+            config=HybridRetrievalConfig(enable_cross_workspace=False),
+            freshness={"status": "fresh"},
+        )
+
+    semantic.assert_not_called()
+    assert result["retrieval_diagnostics"]["semantic"]["reason"] == "redundant_sparse_semantic_bm25_active"
+
+
 def _workspace(tmp_path: Path) -> Path:
     workspace = tmp_path / ".memory-center" / "workspace.yaml"
     workspace.parent.mkdir(parents=True)

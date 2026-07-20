@@ -75,40 +75,83 @@ class RuntimeStore(_GraphOperations, _MemoryRecordOperations):
         limit: int = 200,
         edge_types: list[str] | None = None,
     ) -> list[dict[str, Any]]:
-        """返回邻居节点；关系遍历必须显式使用 ``traverse_edges``。"""
-        if direction == "downstream":
-            join_condition = "edge.source_id = chain.node_id"
-        elif direction == "upstream":
-            join_condition = "edge.target_id = chain.node_id"
-        else:
-            join_condition = "(edge.source_id = chain.node_id OR edge.target_id = chain.node_id)"
-        filters = ""
-        params: list[Any] = [node_id, max_depth]
-        if edge_types:
-            filters = f" AND edge.type IN ({','.join('?' for _ in edge_types)})"
-            params.extend(edge_types)
-        params.extend([node_id, limit])
-        sql = f"""
-        WITH RECURSIVE chain(node_id, depth) AS (
-            SELECT ?, 0
-            UNION
-            SELECT CASE WHEN edge.source_id = chain.node_id THEN edge.target_id ELSE edge.source_id END,
-                   chain.depth + 1
-            FROM edges edge JOIN chain ON {join_condition}
-            WHERE chain.depth < ?{filters}
-              AND CASE WHEN edge.source_id = chain.node_id THEN edge.target_id ELSE edge.source_id END <> ?
-        )
-        SELECT DISTINCT node.*, chain.depth FROM chain JOIN nodes node ON node.id = chain.node_id
-        WHERE chain.node_id <> ? ORDER BY chain.depth LIMIT ?
+        """按层返回邻居节点，避免递归 CTE 在高分支图中物化路径组合。
+
+        每一层只查询当前 frontier，并在进入下一层前按节点 ID 去重。这样
+        复杂度受 ``max_depth``、``limit`` 和有界候选数约束；环状调用图不会
+        因为相同节点的不同路径而重复膨胀。关系边遍历仍须显式使用
+        :meth:`traverse_edges`。
         """
-        # The start-node predicate appears in both the recursive and final clauses.
-        params.insert(-1, node_id)
+        if not node_id or limit <= 0 or max_depth <= 0:
+            return []
+
+        normalized_direction = {"outgoing": "downstream", "incoming": "upstream"}.get(direction, direction)
+        directions = ("downstream", "upstream") if normalized_direction == "both" else (normalized_direction,)
+        if not set(directions).issubset({"downstream", "upstream"}):
+            directions = ("downstream",)
+
+        seen = {node_id}
+        frontier = [node_id]
+        discovered: list[tuple[str, int]] = []
+        type_values = sorted({str(edge_type) for edge_type in edge_types or [] if edge_type})
+
         with self.connect() as conn:
-            rows = conn.execute(sql, params).fetchall()
-        return [
-            {**dict(row), "metadata": _decode_metadata(row["metadata_json"])}
-            for row in rows
-        ]
+            for depth in range(1, max_depth + 1):
+                if not frontier or len(discovered) >= limit:
+                    break
+                placeholders = ",".join("?" for _ in frontier)
+                candidate_limit = min(4096, max(128, (limit - len(discovered)) * 8))
+                next_frontier: list[str] = []
+
+                for traversal_direction in directions:
+                    source_column, target_column = (
+                        ("source_id", "target_id")
+                        if traversal_direction == "downstream"
+                        else ("target_id", "source_id")
+                    )
+                    filters = ""
+                    params: list[Any] = [*frontier]
+                    if type_values:
+                        type_placeholders = ",".join("?" for _ in type_values)
+                        filters = f" AND type IN ({type_placeholders})"
+                        params.extend(type_values)
+                    params.append(candidate_limit)
+                    rows = conn.execute(
+                        f"""
+                        SELECT DISTINCT {target_column} AS neighbor_id
+                        FROM edges
+                        WHERE {source_column} IN ({placeholders}){filters}
+                        ORDER BY {target_column}
+                        LIMIT ?
+                        """,
+                        params,
+                    ).fetchall()
+                    for row in rows:
+                        neighbor_id = str(row["neighbor_id"])
+                        if neighbor_id in seen:
+                            continue
+                        seen.add(neighbor_id)
+                        next_frontier.append(neighbor_id)
+                        discovered.append((neighbor_id, depth))
+                        if len(discovered) >= limit:
+                            break
+                    if len(discovered) >= limit:
+                        break
+                frontier = next_frontier
+
+            if not discovered:
+                return []
+            ids = [item[0] for item in discovered]
+            placeholders = ",".join("?" for _ in ids)
+            rows = conn.execute(f"SELECT * FROM nodes WHERE id IN ({placeholders})", ids).fetchall()
+
+        rows_by_id = {str(row["id"]): row for row in rows}
+        result = []
+        for neighbor_id, depth in discovered:
+            row = rows_by_id.get(neighbor_id)
+            if row is not None:
+                result.append({**dict(row), "metadata": _decode_metadata(row["metadata_json"]), "depth": depth})
+        return result
 
     def edges_for_node(self, node_id: str, direction: str = "both", limit: int = 200) -> list[dict[str, Any]]:
         with self.connect() as conn:

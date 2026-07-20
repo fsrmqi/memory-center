@@ -123,26 +123,26 @@ class InvertedIndex:
 
         query_counts = _count_tokens(tokens)
 
-        # Fetch doc_count and avgdl from inv_docs
+        # Aggregate and rank inside SQLite. Returning every matching posting to
+        # Python makes common query terms proportional to the entire corpus;
+        # this query returns only the bounded top-K document IDs.
         with self._store.pool.connection() as conn:
-            # Fetch candidate postings for query tokens
             placeholders = ",".join("?" for _ in query_counts)
             rows = conn.execute(
-                f"SELECT token, doc_idx, bm25_score FROM inv_postings WHERE token IN ({placeholders})",
-                list(query_counts.keys()),
+                f"""
+                SELECT doc_idx, SUM(bm25_score) AS score
+                FROM inv_postings
+                WHERE token IN ({placeholders})
+                GROUP BY doc_idx
+                ORDER BY score DESC, doc_idx ASC
+                LIMIT ?
+                """,
+                [*query_counts.keys(), limit],
             ).fetchall()
 
         if not rows:
             return []
-
-        # Aggregate BM25 scores per doc
-        doc_scores: dict[int, float] = {}
-        for row in rows:
-            doc_idx = int(row["doc_idx"])
-            doc_scores[doc_idx] = doc_scores.get(doc_idx, 0.0) + float(row["bm25_score"])
-
-        # Sort by score, take top-K
-        ranked = sorted(doc_scores.items(), key=lambda x: -x[1])[:limit]
+        ranked = [(int(row["doc_idx"]), float(row["score"])) for row in rows]
 
         # Fetch doc metadata
         if not ranked:

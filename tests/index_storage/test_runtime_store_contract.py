@@ -28,3 +28,20 @@ def test_runtime_store_transaction_rolls_back_and_propagates_write_failure(tmp_p
                 raise RuntimeError("write failed")
 
         assert store.query_refs(ref_path="broken")["refs"] == []
+
+
+def test_runtime_neighbors_uses_bounded_bfs_for_wide_cyclic_graph(tmp_path) -> None:
+    """高分支且有回边时，节点遍历仍应有界、去重并排除起点。"""
+    fanout = 256
+    nodes = [GraphNode("root", "Method", "root")]
+    nodes.extend(GraphNode(f"n{index:03d}", "Method", f"n{index:03d}") for index in range(fanout))
+    edges = [GraphEdge(f"out-{index}", "root", f"n{index:03d}", "CALLS_METHOD") for index in range(fanout)]
+    edges.extend(GraphEdge(f"back-{index}", f"n{index:03d}", "root", "CALLS_METHOD") for index in range(fanout))
+
+    with RuntimeStore(tmp_path / "graph.db") as store:
+        store.rebuild(nodes, edges)
+        results = store.neighbors("root", direction="both", max_depth=4, limit=20, edge_types=["CALLS_METHOD"])
+
+    assert len(results) == 20
+    assert len({item["id"] for item in results}) == 20
+    assert all(item["id"] != "root" and item["depth"] == 1 for item in results)

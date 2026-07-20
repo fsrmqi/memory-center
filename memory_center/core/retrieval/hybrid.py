@@ -10,6 +10,7 @@ This module implements the hybrid retrieval strategy from NEXT_PHASE_MASTER_PLAN
 from __future__ import annotations
 
 import copy
+import os
 import re
 from dataclasses import dataclass, field
 from typing import Any
@@ -297,15 +298,33 @@ def hybrid_retrieve(
         else []
     )
     retrieval_diagnostics: dict[str, Any] = {}
-    if policy.semantic_enabled and config.enable_semantic:
+    bm25_hits: list[RetrievalResult] = []
+    if config.enable_sparse_bm25 and "bm25" in active_sources:
+        bm25_hits = _bm25_sparse_retrieval(workspace_file, query, source_limit, diagnostics=retrieval_diagnostics)
+    else:
+        retrieval_diagnostics["bm25"] = {
+            "status": "disabled",
+            "reason": "configured_off" if not config.enable_sparse_bm25 else "policy_off",
+        }
+
+    # Optional retrieval implementations and test doubles may return no
+    # diagnostics. Treat that as an unavailable index, never as evidence that
+    # a full sparse-semantic scan is redundant.
+    bm25_diagnostic = retrieval_diagnostics.setdefault(
+        "bm25", {"status": "unavailable", "reason": "missing_diagnostics"}
+    )
+    bm25_has_index = int(bm25_diagnostic.get("doc_count", 0) or 0) > 0
+    sparse_semantic = os.getenv("MEMORY_CENTER_SEMANTIC_BACKEND", "sparse").strip().lower() in {"", "sparse"}
+    if policy.semantic_enabled and config.enable_semantic and not (bm25_has_index and sparse_semantic):
         semantic_hits = _semantic_retrieval(workspace_file, query, source_limit)
         retrieval_diagnostics["semantic"] = {"status": "active", "returned": len(semantic_hits)}
     else:
         semantic_hits = []
-        retrieval_diagnostics["semantic"] = {
-            "status": "disabled",
-            "reason": "configured_off" if not config.enable_semantic else "policy_off",
-        }
+        if bm25_has_index and sparse_semantic:
+            reason = "redundant_sparse_semantic_bm25_active"
+        else:
+            reason = "configured_off" if not config.enable_semantic else "policy_off"
+        retrieval_diagnostics["semantic"] = {"status": "disabled", "reason": reason}
     vector_hits: list[RetrievalResult] = []
     if config.enable_vector and policy.vector_enabled:
         vector_hits = _vector_retrieval(
@@ -319,14 +338,6 @@ def hybrid_retrieve(
         retrieval_diagnostics["vector"] = {
             "status": "disabled",
             "reason": "configured_off" if not config.enable_vector else "policy_off",
-        }
-    bm25_hits: list[RetrievalResult] = []
-    if config.enable_sparse_bm25 and "bm25" in active_sources:
-        bm25_hits = _bm25_sparse_retrieval(workspace_file, query, source_limit, diagnostics=retrieval_diagnostics)
-    else:
-        retrieval_diagnostics["bm25"] = {
-            "status": "disabled",
-            "reason": "configured_off" if not config.enable_sparse_bm25 else "policy_off",
         }
     retrieval_diagnostics["policy"] = {
         "status": "active",

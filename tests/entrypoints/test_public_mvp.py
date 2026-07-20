@@ -1708,7 +1708,7 @@ def test_graph_query_context_and_impact(tmp_path):
     assert any(item.get("role") == "project_evidence" for item in context_project_full["lookup"]["entrypoints"])
     impact = memory_impact(workspace, "MoveArticleRequest")
     assert impact["found"] is True
-    assert impact["lookup"]["retrieval_summary"]["semantic_matches"] >= 1
+    assert impact["lookup"]["retrieval_summary"]["exact_matches"] >= 1
     assert impact["evidence_summary"]["confirmed_count"] >= 0
     assert impact["progressive"]["summary"]["target"]
     assert impact["candidate_paths"]
@@ -1954,7 +1954,8 @@ def test_http_bridge_routes(tmp_path: Path):
         query = json.loads(urlopen(f"{base}/workspace/query?text=ArticleFeignClient&project=task-service&enable_vector=true&vector_weight=0.25").read().decode("utf-8"))
         assert query["matches"]
         assert query["retrieval_summary"]["exact_matches"] >= 1
-        assert query["retrieval_summary"]["semantic_matches"] >= 1
+        assert query["retrieval_summary"]["exact_matches"] >= 1
+        assert query["retrieval_diagnostics"]["semantic"]["reason"] == "redundant_sparse_semantic_bm25_active"
         assert query["retrieval_diagnostics"]["policy"]["enable_vector"] is True
         assert query["agent_next_steps"]
         assert query["agent_next_steps"][0]["action"]

@@ -323,7 +323,9 @@ class _GraphOperations:
         if types:
             sql += f" AND n.type IN ({','.join('?' for _ in types)})"
             args.extend(types)
-        sql += " LIMIT ?"
+        # FTS5 bm25 values are lower for better matches. Ordering here keeps
+        # the first graph candidates stable and relevant before hybrid fusion.
+        sql += " ORDER BY bm25(node_search), n.name, n.id LIMIT ?"
         args.append(limit)
         try:
             with self.connect() as conn:

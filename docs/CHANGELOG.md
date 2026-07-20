@@ -6,6 +6,13 @@
 - 重要行为变化
 - 明确修复的真实 bug
 
+## 4.3.6 检索与图遍历算法优化
+
+- `RuntimeStore.neighbors` 由递归 CTE 改为有界分层 BFS，环状或高分支调用图不会重复物化路径；每层 SQL 查询受结果预算约束。
+- FTS 候选按 SQLite FTS5 `bm25` 相关度及稳定字段排序，改善多关键词检索的首屏结果稳定性。
+- SQLite 倒排索引的 BM25 查询改在数据库内完成 posting 聚合、排序和 Top-K 截断，避免高频词查询把全部候选回传 Python。
+- 默认稀疏语义检索在 SQLite BM25 索引就绪时不再重复扫描完整语义 JSON；BM25 缺失或显式启用 dense backend 时仍保留语义路径。
+
 ## 4.3.5 运行时存储与测试职责收敛
 
 - 移除 `UnifiedStore`，以唯一 `RuntimeStore` 承载图索引、运行记录、断言和 refs，统一落在 `graph.db`。
