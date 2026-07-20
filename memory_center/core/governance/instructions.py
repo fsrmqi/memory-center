@@ -48,7 +48,7 @@ AGENT_PROTOCOL_TEMPLATE = """# Memory Center Agent Protocol
 11. 只有在确认当前会话工具列表里确实没有 `mc_*` 工具后，才说明：`Memory Center MCP 当前不可用，以下基于本地代码搜索完成。`
 12. 若当前目录是子项目且 `mc_*` 工具缺失，先运行 `memory-center runtime-audit --workspace {workspace_config_path} --fix` 刷新 `.codex/mcp.json`、`.cursor/mcp.json`、`.mcp.json` 中的 `memory-center` server 绑定，再提示用户重开或刷新宿主会话。
 13. 当 `mc_lookup` 的 `agent_next_steps` 返回 `rebuild_vector_ann` 时，必须依次调用 `mc_admin(action="vector_ann_rebuild")` 和 `mc_admin(action="vector_ann_tune")`，再重试原查询；不得对大型向量库使用 Python 全量扫描。
-14. 对概念型、中文需求与代码混合查询，优先调用 `mc_admin(action="advanced_query", text="原查询")`，它会启用 ANN 和有界 Cross-Encoder 重排；重排器只使用本地已缓存模型，返回 `reranker_model_not_cached` 时保留基础排序，不得在请求链路下载模型。管理员可在空闲期显式调用 `mc_admin(action="retrieval_reranker_prewarm")`；普通符号查找仍使用 `mc_lookup`。
+14. 对概念型、中文需求与代码混合查询，优先调用 `mc_admin(action="advanced_query", text="原查询")`，它会启用 ANN 和有界 Cross-Encoder 重排；重排器只使用当前 MCP 进程已预热模型，返回 `reranker_not_prewarmed` 时保留基础排序，不得在请求链路加载或下载模型。只有用户明确同意时，管理员才可在当前 MCP 进程调用 `mc_admin(action="retrieval_reranker_prewarm")`；普通符号查找仍使用 `mc_lookup`。
 15. `mc_admin(action="retrieval_model_profile", text="multilingual", force=true)` 会选择 BGE-M3 档案，但随后必须显式完整 reindex；Agent 不得自行切换模型档案或触发全量 reindex，除非用户明确要求。
 16. 定期调用 `mc_admin(action="eval_retrieval_replay")` 检查带 evidence 的人工验证样本；只有返回 `ready` 才可使用 `force=true` 应用融合权重提案。
 

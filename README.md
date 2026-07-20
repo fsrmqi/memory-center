@@ -497,7 +497,7 @@ The default sparse path uses code-aware BM25F: entity names and contracts outwei
 memory-center query --workspace .memory-center/workspace.yaml --text '用户登录调用链' --vector --rerank
 memory-center vector-ann-tune --workspace .memory-center/workspace.yaml
 
-# Check or explicitly prewarm the optional reranker outside an MCP request.
+# Check local cache, or explicitly prewarm inside the active MCP process.
 memory-center retrieval-reranker-status
 memory-center retrieval-reranker-prewarm
 
@@ -507,9 +507,9 @@ memory-center retrieval-model-profile --workspace .memory-center/workspace.yaml 
 MEMORY_CENTER_SEMANTIC_BACKEND=sentence-transformers memory-center reindex --workspace .memory-center/workspace.yaml
 ```
 
-Agents do not need to parse shell examples to use these capabilities. Generated `AGENTS.md` routes retrieval maintenance through MCP: `mc_admin(action="vector_ann_status")`, `vector_ann_rebuild`, `vector_ann_tune`, `advanced_query`, `retrieval_reranker_status`, `retrieval_reranker_prewarm`, `retrieval_model_profile`, and `eval_retrieval_replay`. When lookup returns `agent_next_steps.action="rebuild_vector_ann"`, the Agent must rebuild then tune ANN before retrying. Model-profile application, full reindex, and reranker prewarm remain explicit user-approved operations.
+Agents do not need to parse shell examples to use these capabilities. Generated `AGENTS.md` routes retrieval maintenance through MCP: `mc_admin(action="vector_ann_status")`, `vector_ann_rebuild`, `vector_ann_tune`, `advanced_query`, `retrieval_reranker_status`, `retrieval_reranker_prewarm`, `retrieval_model_profile`, and `eval_retrieval_replay`. A query waits for an ANN maintenance lock for at most 300ms and then returns a retry diagnostic. When lookup returns `agent_next_steps.action="rebuild_vector_ann"`, the Agent must rebuild then tune ANN before retrying. Model-profile application, full reindex, and reranker prewarm remain explicit user-approved operations.
 
-Agent 不需要依赖 shell 示例才能使用这些能力。生成的 `AGENTS.md` 会通过 MCP 路由检索维护：`mc_admin(action="vector_ann_status")`、`vector_ann_rebuild`、`vector_ann_tune`、`advanced_query`、`retrieval_reranker_status`、`retrieval_reranker_prewarm`、`retrieval_model_profile` 与 `eval_retrieval_replay`。当 lookup 返回 `agent_next_steps.action="rebuild_vector_ann"` 时，Agent 必须先重建并调优 ANN，再重试查询；模型档案应用、完整 reindex 和重排器预热仍是需要用户明确确认的操作。
+Agent 不需要依赖 shell 示例才能使用这些能力。生成的 `AGENTS.md` 会通过 MCP 路由检索维护：`mc_admin(action="vector_ann_status")`、`vector_ann_rebuild`、`vector_ann_tune`、`advanced_query`、`retrieval_reranker_status`、`retrieval_reranker_prewarm`、`retrieval_model_profile` 与 `eval_retrieval_replay`。查询最多等待 ANN 维护锁 300ms，超时会返回重试诊断而不是卡住。当 lookup 返回 `agent_next_steps.action="rebuild_vector_ann"` 时，Agent 必须先重建并调优 ANN，再重试查询；模型档案应用、完整 reindex 和重排器预热仍是需要用户明确确认的操作。CLI 预热只保证模型已下载；要让高级查询使用重排器，必须在当前 MCP 进程调用 `mc_admin(action="retrieval_reranker_prewarm")`。
 
 Golden Benchmark hybrid cases can opt in to ANN with `enable_vector: true`, which keeps vector-backed concept-query behavior under regression coverage without changing existing cases.
 

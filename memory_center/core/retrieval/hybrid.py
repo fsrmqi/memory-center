@@ -13,7 +13,7 @@ import copy
 import os
 import re
 from dataclasses import dataclass, field
-from functools import lru_cache
+from threading import Lock
 from typing import Any
 
 from memory_center.core.assessment.quality import evidence_level_for
@@ -685,7 +685,8 @@ def _vector_retrieval(
             query_vector = [float(value) for value in model.encode([query], normalize_embeddings=True)[0]]
             vector_results = vec.query(query_vector, limit=limit)
             if not vector_results:
-                vector_diag = {"status": "active", "returned": 0, **status}
+                query_diagnostics = vec.query_diagnostics()
+                vector_diag = {"status": query_diagnostics.get("status", "active"), "returned": 0, **status, **query_diagnostics}
                 return results
 
             from memory_center.core.storage.runtime import RuntimeStore
@@ -922,15 +923,24 @@ def _merge_retrieval_results(
     return sorted(merged.values(), key=lambda x: x.score, reverse=True)
 
 
-@lru_cache(maxsize=2)
+_RERANKER_MODELS: dict[str, Any] = {}
+_RERANKER_LOCK = Lock()
+
+
 def _load_reranker(model_name: str, allow_download: bool = False):
-    """只从本地缓存加载重排器；下载只能由显式预热命令触发。"""
+    """仅由显式预热将模型载入当前 MCP 进程。"""
     try:
         from huggingface_hub import snapshot_download
         from sentence_transformers import CrossEncoder
 
-        local_path = snapshot_download(repo_id=model_name, local_files_only=not allow_download)
-        return CrossEncoder(local_path)
+        with _RERANKER_LOCK:
+            active = _RERANKER_MODELS.get(model_name)
+            if active is not None:
+                return active
+            local_path = snapshot_download(repo_id=model_name, local_files_only=not allow_download)
+            model = CrossEncoder(local_path)
+            _RERANKER_MODELS[model_name] = model
+            return model
     except (ImportError, OSError, RuntimeError, ValueError):
         return None
 
@@ -942,24 +952,41 @@ def reranker_status(model_name: str | None = None) -> dict[str, Any]:
         from huggingface_hub import snapshot_download
 
         local_path = snapshot_download(repo_id=selected, local_files_only=True)
-        return {"status": "ready", "model": selected, "local_path": str(local_path), "network_accessed": False}
+        if not _RERANKER_LOCK.acquire(blocking=False):
+            return {
+                "status": "prewarming",
+                "model": selected,
+                "local_path": str(local_path),
+                "process_scope": "loading_in_current_process",
+                "network_accessed": False,
+            }
+        try:
+            active = selected in _RERANKER_MODELS
+        finally:
+            _RERANKER_LOCK.release()
+        return {
+            "status": "ready" if active else "cached_not_prewarmed",
+            "model": selected,
+            "local_path": str(local_path),
+            "process_scope": "active" if active else "not_loaded_in_current_process",
+            "network_accessed": False,
+        }
     except (ImportError, OSError, RuntimeError, ValueError):
         return {
             "status": "not_cached",
             "model": selected,
             "network_accessed": False,
-            "next_action": "run retrieval-reranker-prewarm explicitly before enabling rerank",
+            "next_action": "run retrieval-reranker-prewarm explicitly in the MCP process before enabling rerank",
         }
 
 
 def prewarm_reranker(model_name: str | None = None) -> dict[str, Any]:
     """显式下载并加载模型，避免 MCP 请求链路承受首次下载成本。"""
     selected = model_name or os.getenv("MEMORY_CENTER_RERANKER_MODEL", "BAAI/bge-reranker-v2-m3").strip()
-    _load_reranker.cache_clear()
     model = _load_reranker(selected, allow_download=True)
     if model is None:
-        return {"status": "unavailable", "model": selected, "download_requested": True}
-    return {"status": "ready", "model": selected, "download_requested": True}
+        return {"status": "unavailable", "model": selected, "download_requested": True, "process_scope": "not_loaded"}
+    return {"status": "ready", "model": selected, "download_requested": True, "process_scope": "active"}
 
 
 def _rerank_candidates(
@@ -970,13 +997,23 @@ def _rerank_candidates(
 ) -> tuple[list[RetrievalResult], dict[str, Any]]:
     """仅重排有界候选，重模型失败时保留原始顺序。"""
     model_name = os.getenv("MEMORY_CENTER_RERANKER_MODEL", "BAAI/bge-reranker-v2-m3").strip()
-    model = _load_reranker(model_name)
+    if not _RERANKER_LOCK.acquire(blocking=False):
+        return candidates, {
+            "status": "unavailable",
+            "reason": "reranker_prewarming",
+            "model": model_name,
+            "next_action": "retry after the explicit reranker prewarm completes; query did not wait",
+        }
+    try:
+        model = _RERANKER_MODELS.get(model_name)
+    finally:
+        _RERANKER_LOCK.release()
     if model is None:
         return candidates, {
             "status": "unavailable",
-            "reason": "reranker_model_not_cached",
+            "reason": "reranker_not_prewarmed",
             "model": model_name,
-            "next_action": "run retrieval-reranker-prewarm explicitly; query did not download a model",
+            "next_action": "prewarm the reranker in this MCP process explicitly; query did not load or download a model",
         }
     selected = candidates[:limit]
     pairs = [(query, _reranker_text(item.node)) for item in selected]

@@ -14,11 +14,13 @@ import os
 import sqlite3
 import struct
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from filelock import FileLock
+from filelock import FileLock, Timeout
 
 from .runtime import RuntimeStore
 
@@ -27,6 +29,16 @@ _HAS_HNSWLIB = importlib.util.find_spec("hnswlib") is not None
 _HAS_NUMPY = importlib.util.find_spec("numpy") is not None
 EXACT_TINY_VECTOR_LIMIT = 64
 _HNSW_MIN_CAPACITY = 1024
+_QUERY_LOCK_TIMEOUT_SECONDS = 0.3
+_MAINTENANCE_LOCK_TIMEOUT_SECONDS = 120.0
+
+
+class VectorIndexBusyError(RuntimeError):
+    """ANN 维护占用索引时的有界等待信号。"""
+
+    def __init__(self, retry_after_ms: int):
+        super().__init__("vector ANN maintenance is in progress")
+        self.retry_after_ms = retry_after_ms
 
 
 class VectorIndex:
@@ -37,7 +49,16 @@ class VectorIndex:
         self._dimension = dimension
         self._hnsw_path = Path(store.db_path).with_suffix(".hnsw")
         self._hnsw_lock = FileLock(f"{self._hnsw_path}.lock")
+        self._last_query_diagnostics: dict[str, Any] = {"status": "not_run"}
         self._ensure_schema()
+
+    @contextmanager
+    def _ann_lock(self, timeout_seconds: float) -> Iterator[None]:
+        try:
+            with self._hnsw_lock.acquire(timeout=timeout_seconds):
+                yield
+        except Timeout as exc:
+            raise VectorIndexBusyError(int(timeout_seconds * 1000)) from exc
 
     def _ensure_schema(self) -> None:
         with self._store.pool.connection() as conn:
@@ -115,30 +136,33 @@ class VectorIndex:
         valid = [(node_id, embedding) for node_id, embedding in items if len(embedding) == self._dimension]
         if not valid:
             return 0
-        with self._store.pool.connection() as conn:
-            existing_count = self._embedding_count(conn)
-        with self._store.pool.transaction() as conn:
-            for node_id, embedding in valid:
-                conn.execute(
-                    "INSERT OR REPLACE INTO vec_metadata(node_id, dimension) VALUES(?, ?)",
-                    (node_id, self._dimension),
-                )
-                conn.execute(
-                    "INSERT OR REPLACE INTO vec_fallback(node_id, embedding) VALUES(?, ?)",
-                    (node_id, struct.pack(f"{self._dimension}f", *embedding)),
-                )
-                if self._sqlite_vec_status(conn) == "ready":
-                    try:
-                        conn.execute(
-                            "INSERT OR REPLACE INTO node_vec(node_id, embedding) VALUES(?, vec_f32(?))",
-                            (node_id, json.dumps(embedding)),
-                        )
-                    except sqlite3.Error as exc:
-                        raise RuntimeError("sqlite-vec write failed; run a full reindex to recreate the vector table") from exc
-        if not self._has_sqlite_vec_table() and _HAS_HNSWLIB and _HAS_NUMPY:
-            # 旧索引升级时不能在局部 refresh 中偷跑一次全库重建。
-            if self._hnsw_path.exists() or existing_count == 0:
-                self._sync_hnsw_items(valid)
+        # 向量事实、ANN 文件和 label 映射必须在同一维护锁中推进，避免 reindex
+        # 与 rebuild 交错后留下“新 SQLite + 旧 HNSW”的不可恢复状态。
+        with self._ann_lock(_MAINTENANCE_LOCK_TIMEOUT_SECONDS):
+            with self._store.pool.connection() as conn:
+                existing_count = self._embedding_count(conn)
+            with self._store.pool.transaction() as conn:
+                for node_id, embedding in valid:
+                    conn.execute(
+                        "INSERT OR REPLACE INTO vec_metadata(node_id, dimension) VALUES(?, ?)",
+                        (node_id, self._dimension),
+                    )
+                    conn.execute(
+                        "INSERT OR REPLACE INTO vec_fallback(node_id, embedding) VALUES(?, ?)",
+                        (node_id, struct.pack(f"{self._dimension}f", *embedding)),
+                    )
+                    if self._sqlite_vec_status(conn) == "ready":
+                        try:
+                            conn.execute(
+                                "INSERT OR REPLACE INTO node_vec(node_id, embedding) VALUES(?, vec_f32(?))",
+                                (node_id, json.dumps(embedding)),
+                            )
+                        except sqlite3.Error as exc:
+                            raise RuntimeError("sqlite-vec write failed; run a full reindex to recreate the vector table") from exc
+            if not self._has_sqlite_vec_table() and _HAS_HNSWLIB and _HAS_NUMPY:
+                # 旧索引升级时不能在局部 refresh 中偷跑一次全库重建。
+                if self._hnsw_path.exists() or existing_count == 0:
+                    self._sync_hnsw_items(valid)
         return len(valid)
 
     def query(self, query_embedding: list[float], limit: int = 20) -> list[dict[str, Any]]:
@@ -147,17 +171,38 @@ class VectorIndex:
             raise ValueError(f"Embedding dimension mismatch: expected {self._dimension}, got {len(query_embedding)}")
         if limit <= 0:
             return []
-        if self._has_sqlite_vec_table():
-            results = self._query_vec(query_embedding, limit)
-            if results or not self._hnsw_ready():
-                return results
-            # sqlite-vec 仍为首选；扩展的瞬时故障不能伪装成“没有命中”。
-            return self._query_hnsw(query_embedding, limit)
-        if self._hnsw_ready():
-            return self._query_hnsw(query_embedding, limit)
-        if self._embedding_count() <= EXACT_TINY_VECTOR_LIMIT:
-            return self._query_tiny_exact(query_embedding, limit)
-        return []
+        try:
+            with self._ann_lock(_QUERY_LOCK_TIMEOUT_SECONDS):
+                if self._has_sqlite_vec_table():
+                    results = self._query_vec(query_embedding, limit)
+                    if results or not self._hnsw_ready():
+                        self._last_query_diagnostics = {"status": "active"}
+                        return results
+                    # sqlite-vec 仍为首选；扩展的瞬时故障不能伪装成“没有命中”。
+                    results = self._query_hnsw(query_embedding, limit)
+                    self._last_query_diagnostics = {"status": "active"}
+                    return results
+                if self._hnsw_ready():
+                    results = self._query_hnsw(query_embedding, limit)
+                    self._last_query_diagnostics = {"status": "active"}
+                    return results
+                if self._embedding_count() <= EXACT_TINY_VECTOR_LIMIT:
+                    results = self._query_tiny_exact(query_embedding, limit)
+                    self._last_query_diagnostics = {"status": "active"}
+                    return results
+                self._last_query_diagnostics = {"status": "unavailable"}
+                return []
+        except VectorIndexBusyError as exc:
+            self._last_query_diagnostics = {
+                "status": "busy",
+                "reason": "vector_ann_maintenance_in_progress",
+                "retry_after_ms": exc.retry_after_ms,
+            }
+            return []
+
+    def query_diagnostics(self) -> dict[str, Any]:
+        """返回最近一次查询的短生命周期状态，不写入工作区。"""
+        return dict(self._last_query_diagnostics)
 
     def rebuild_ann(self) -> dict[str, Any]:
         """显式从持久化向量重建 HNSW，不在查询热路径执行。"""
@@ -165,48 +210,50 @@ class VectorIndex:
             return {"rebuilt": False, "reason": "sqlite_vec_active", **self.stats()}
         if not (_HAS_HNSWLIB and _HAS_NUMPY):
             return {"rebuilt": False, "reason": "hnswlib_unavailable", **self.stats()}
-        with self._store.pool.connection() as conn:
-            rows = conn.execute(
-                """SELECT fallback.node_id, fallback.embedding FROM vec_fallback fallback
-                   JOIN vec_metadata metadata ON metadata.node_id=fallback.node_id
-                   WHERE metadata.dimension=? ORDER BY fallback.node_id""",
-                (self._dimension,),
-            ).fetchall()
-        items = [
-            (str(row["node_id"]), self._unpack_embedding(row["embedding"]))
-            for row in rows
-            if self._valid_blob(row["embedding"])
-        ]
         try:
-            with self._hnsw_lock:
+            with self._ann_lock(_MAINTENANCE_LOCK_TIMEOUT_SECONDS):
+                with self._store.pool.connection() as conn:
+                    rows = conn.execute(
+                        """SELECT fallback.node_id, fallback.embedding FROM vec_fallback fallback
+                           JOIN vec_metadata metadata ON metadata.node_id=fallback.node_id
+                           WHERE metadata.dimension=? ORDER BY fallback.node_id""",
+                        (self._dimension,),
+                    ).fetchall()
+                items = [
+                    (str(row["node_id"]), self._unpack_embedding(row["embedding"]))
+                    for row in rows
+                    if self._valid_blob(row["embedding"])
+                ]
                 self._build_hnsw(items)
+        except VectorIndexBusyError as exc:
+            return {"rebuilt": False, "reason": "ann_maintenance_busy", "retry_after_ms": exc.retry_after_ms, **self.stats()}
         except (ImportError, OSError, RuntimeError, ValueError):
             return {"rebuilt": False, "reason": "hnswlib_initialization_failed", **self.stats()}
         return {"rebuilt": True, "indexed": len(items), **self.stats()}
 
     def tune_ann(self, sample_size: int = 48) -> dict[str, Any]:
         """以索引内 self-recall 探针选择最低满足精度的查询 ef。"""
-        if not self._hnsw_ready():
-            return {"tuned": False, "reason": "ann_not_ready", **self.stats()}
         try:
             import hnswlib  # type: ignore[import-not-found]
             import numpy as np  # type: ignore[import-not-found]
 
-            meta = self._ann_meta()
-            if not meta:
-                return {"tuned": False, "reason": "ann_metadata_missing", **self.stats()}
-            with self._store.pool.connection() as conn:
-                rows = conn.execute(
-                    """SELECT labels.label, fallback.embedding FROM vec_ann_labels labels
-                       JOIN vec_fallback fallback ON fallback.node_id=labels.node_id
-                       ORDER BY labels.label LIMIT ?""",
-                    (max(8, min(sample_size, 128)),),
-                ).fetchall()
-            if not rows:
-                return {"tuned": False, "reason": "no_embeddings", **self.stats()}
-            vectors = np.asarray([self._unpack_embedding(row["embedding"]) for row in rows], dtype=np.float32)
-            expected = [int(row["label"]) for row in rows]
-            with self._hnsw_lock:
+            with self._ann_lock(_MAINTENANCE_LOCK_TIMEOUT_SECONDS):
+                if not self._hnsw_ready():
+                    return {"tuned": False, "reason": "ann_not_ready", **self.stats()}
+                meta = self._ann_meta()
+                if not meta:
+                    return {"tuned": False, "reason": "ann_metadata_missing", **self.stats()}
+                with self._store.pool.connection() as conn:
+                    rows = conn.execute(
+                        """SELECT labels.label, fallback.embedding FROM vec_ann_labels labels
+                           JOIN vec_fallback fallback ON fallback.node_id=labels.node_id
+                           ORDER BY labels.label LIMIT ?""",
+                        (max(8, min(sample_size, 128)),),
+                    ).fetchall()
+                if not rows:
+                    return {"tuned": False, "reason": "no_embeddings", **self.stats()}
+                vectors = np.asarray([self._unpack_embedding(row["embedding"]) for row in rows], dtype=np.float32)
+                expected = [int(row["label"]) for row in rows]
                 index = hnswlib.Index(space="cosine", dim=self._dimension)
                 index.load_index(str(self._hnsw_path), max_elements=int(meta["capacity"]))
                 probes = []
@@ -222,13 +269,15 @@ class VectorIndex:
                         hits += int(int(found[0][0]) == label)
                     timings.sort()
                     probes.append({"ef_search": ef, "self_recall": hits / len(expected), "p95_ms": timings[min(len(timings) - 1, int(len(timings) * 0.95))]})
-            selected = next((probe for probe in probes if probe["self_recall"] >= 0.99), probes[-1])
-            with self._store.pool.transaction() as conn:
-                conn.execute(
-                    "INSERT OR REPLACE INTO vec_ann_tuning(singleton, ef_search, self_recall, p95_ms, sample_size, updated_at) VALUES(1, ?, ?, ?, ?, CURRENT_TIMESTAMP)",
-                    (selected["ef_search"], round(selected["self_recall"], 4), round(selected["p95_ms"], 3), len(expected)),
-                )
+                selected = next((probe for probe in probes if probe["self_recall"] >= 0.99), probes[-1])
+                with self._store.pool.transaction() as conn:
+                    conn.execute(
+                        "INSERT OR REPLACE INTO vec_ann_tuning(singleton, ef_search, self_recall, p95_ms, sample_size, updated_at) VALUES(1, ?, ?, ?, ?, CURRENT_TIMESTAMP)",
+                        (selected["ef_search"], round(selected["self_recall"], 4), round(selected["p95_ms"], 3), len(expected)),
+                    )
             return {"tuned": True, "selected": selected, "probes": probes, **self.stats()}
+        except VectorIndexBusyError as exc:
+            return {"tuned": False, "reason": "ann_maintenance_busy", "retry_after_ms": exc.retry_after_ms, **self.stats()}
         except (ImportError, OSError, RuntimeError, ValueError):
             return {"tuned": False, "reason": "ann_tuning_failed", **self.stats()}
 
@@ -255,7 +304,7 @@ class VectorIndex:
             meta = self._ann_meta()
             if not meta:
                 return []
-            with self._hnsw_lock:
+            with self._ann_lock(_QUERY_LOCK_TIMEOUT_SECONDS):
                 index = hnswlib.Index(space="cosine", dim=self._dimension)
                 index.load_index(str(self._hnsw_path), max_elements=int(meta["capacity"]))
                 index.set_ef(max(self._tuned_ef(), limit * 4))
@@ -263,21 +312,23 @@ class VectorIndex:
                 if active_count <= 0:
                     return []
                 labels, distances = index.knn_query(np.asarray([query_embedding], dtype=np.float32), k=min(limit, active_count))
-            label_values = [int(label) for label in labels[0]]
-            if not label_values:
-                return []
-            placeholders = ",".join("?" for _ in label_values)
-            with self._store.pool.connection() as conn:
-                rows = conn.execute(
-                    f"SELECT node_id, label FROM vec_ann_labels WHERE label IN ({placeholders})",
-                    label_values,
-                ).fetchall()
-            ids = {int(row["label"]): str(row["node_id"]) for row in rows}
-            return [
-                {"node_id": ids[label], "distance": float(distance), "score": round(1.0 - float(distance), 4), "backend": "hnswlib"}
-                for label, distance in zip(label_values, distances[0], strict=True)
-                if label in ids
-            ]
+                label_values = [int(label) for label in labels[0]]
+                if not label_values:
+                    return []
+                placeholders = ",".join("?" for _ in label_values)
+                with self._store.pool.connection() as conn:
+                    rows = conn.execute(
+                        f"SELECT node_id, label FROM vec_ann_labels WHERE label IN ({placeholders})",
+                        label_values,
+                    ).fetchall()
+                ids = {int(row["label"]): str(row["node_id"]) for row in rows}
+                return [
+                    {"node_id": ids[label], "distance": float(distance), "score": round(1.0 - float(distance), 4), "backend": "hnswlib"}
+                    for label, distance in zip(label_values, distances[0], strict=True)
+                    if label in ids
+                ]
+        except VectorIndexBusyError:
+            raise
         except (ImportError, OSError, RuntimeError, ValueError):
             return []
 
@@ -304,8 +355,10 @@ class VectorIndex:
             import hnswlib  # type: ignore[import-not-found]
             import numpy as np  # type: ignore[import-not-found]
 
-            with self._hnsw_lock:
+            with self._ann_lock(_MAINTENANCE_LOCK_TIMEOUT_SECONDS):
                 if not self._hnsw_ready():
+                    if self._embedding_count() != len(items):
+                        return
                     self._build_hnsw(items)
                     return
                 meta = self._ann_meta()
@@ -471,7 +524,7 @@ class VectorIndex:
         }
 
     def delete_embedding(self, node_id: str) -> None:
-        with self._hnsw_lock:
+        with self._ann_lock(_MAINTENANCE_LOCK_TIMEOUT_SECONDS):
             hnsw_was_ready = self._hnsw_ready()
             with self._store.pool.transaction() as conn:
                 row = conn.execute("SELECT label FROM vec_ann_labels WHERE node_id=?", (node_id,)).fetchone()
@@ -499,7 +552,7 @@ class VectorIndex:
                     pass
 
     def clear(self) -> None:
-        with self._hnsw_lock:
+        with self._ann_lock(_MAINTENANCE_LOCK_TIMEOUT_SECONDS):
             with self._store.pool.transaction() as conn:
                 conn.execute("DELETE FROM vec_metadata")
                 conn.execute("DELETE FROM vec_fallback")

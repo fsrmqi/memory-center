@@ -6,6 +6,12 @@
 - 重要行为变化
 - 明确修复的真实 bug
 
+## 4.3.11 ANN 并发一致性与请求时延收口
+
+- 向量事实写入、HNSW 生成和 label 映射改为同一维护锁的原子推进；查询映射 label 前保持锁，消除 rebuild 与局部 refresh 交错造成的错位与部分索引。
+- ANN 查询锁等待上限为 300ms；维护占用时返回 `vector_ann_maintenance_in_progress` 和 `retry_after_ms`，不再无限等待造成 MCP 卡住。
+- Cross-Encoder 仅由当前 MCP 进程的显式预热激活；高级查询不会因磁盘缓存模型而同步加载权重。状态区分 `cached_not_prewarmed` 与 `ready`。
+
 ## 4.3.10 检索稳定性与冷启动修复
 
 - 修复 embedding 档案切换后的向量维度漂移：sqlite-vec 现在显式保存表维度，维度不一致时不会误查询旧表，状态会要求完整 reindex 重建当前维度。

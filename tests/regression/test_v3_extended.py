@@ -14,6 +14,7 @@ Covers:
 from __future__ import annotations
 
 import time
+from contextlib import contextmanager
 from pathlib import Path
 from unittest.mock import patch
 
@@ -40,7 +41,7 @@ from memory_center.core.onboarding.tour import (
     TourStep,
 )
 from memory_center.core.storage.runtime import RuntimeStore
-from memory_center.core.storage.vector_index import VectorIndex
+from memory_center.core.storage.vector_index import VectorIndex, VectorIndexBusyError
 from memory_center.core.views.builder import GraphView, GraphViewBuilder
 
 # ── Fixtures ─────────────────────────────────────────────────────────────────
@@ -232,6 +233,39 @@ class TestVectorIndex:
         vi._save_hnsw_atomically(FakeIndex())
         assert vi._hnsw_path.read_text() == "new-index"
         assert not list(vi._hnsw_path.parent.glob(f"{vi._hnsw_path.name}.*.tmp"))
+
+    def test_query_returns_busy_diagnostics_without_waiting_for_maintenance(self, store, monkeypatch):
+        vi = VectorIndex(store, dimension=4)
+
+        @contextmanager
+        def busy_lock(_timeout):
+            raise VectorIndexBusyError(300)
+            yield
+
+        monkeypatch.setattr(vi, "_ann_lock", busy_lock)
+        assert vi.query([1.0, 0.0, 0.0, 0.0]) == []
+        assert vi.query_diagnostics() == {
+            "status": "busy",
+            "reason": "vector_ann_maintenance_in_progress",
+            "retry_after_ms": 300,
+        }
+
+
+def test_reranker_does_not_load_model_inside_query(monkeypatch):
+    from memory_center.core.retrieval import hybrid
+
+    previous = dict(hybrid._RERANKER_MODELS)
+    hybrid._RERANKER_MODELS.clear()
+    candidates = [hybrid.RetrievalResult(node_id="node:1", node={"name": "登录"}, score=1.0)]
+    try:
+        with patch("memory_center.core.retrieval.hybrid._load_reranker") as load:
+            returned, diagnostics = hybrid._rerank_candidates("登录", candidates, limit=1)
+        assert returned == candidates
+        assert diagnostics["reason"] == "reranker_not_prewarmed"
+        load.assert_not_called()
+    finally:
+        hybrid._RERANKER_MODELS.clear()
+        hybrid._RERANKER_MODELS.update(previous)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
