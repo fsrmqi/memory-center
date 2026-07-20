@@ -133,7 +133,14 @@ def record_change_impact_feedback(
     _trim_feedback_index(index)
     store.write_json(CHANGE_IMPACT_FEEDBACK_INDEX_FILE, index)
     _maybe_prune_feedback(store)
-    return {"recorded": True, "feedback": feedback}
+    report = _find_report(store, report_id) or {}
+    try:
+        from memory_center.core.knowledge.governance import project_change_feedback
+
+        governance = project_change_feedback(store, report, feedback)
+    except Exception as exc:
+        governance = {"status": "unavailable", "reason": str(exc)[:160]}
+    return {"recorded": True, "feedback": feedback, "governance": governance}
 
 
 def _bounded_paths(paths: list[Any]) -> list[str]:

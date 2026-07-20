@@ -6,6 +6,77 @@
 - 重要行为变化
 - 明确修复的真实 bug
 
+## 4.1.29 静态断言历史保留
+
+- 已关闭静态断言新增低频保留策略：活跃事实永不裁剪；历史按 90 天与 200 万条上限同步清理 SQLite 镜像和 JSONL 审计流，避免长期全量 reindex 导致无限增长。
+
+## 4.1.28 局部断言物化修复
+
+- 局部 reindex 仅关闭并重建受影响路径/项目的断言，不再全图遍历、全量追加或替代无关 `VERIFIED/REJECTED` 断言。
+- `assertion_summary.recent` 以 SQLite 当前状态覆盖 payload 历史状态；证据等级与断言状态保持正交，`STALE`、`REJECTED` 不再污染 `evidence_level`。
+
+## 4.1.27 断言引用按需展开
+
+- 新增 `assertion-inspect`、`mc_admin(action="assertion_inspect")` 和 `/workspace/assertion`，可通过稳定 `assertion_ref` 按主键读取单条断言，不扫描审计 JSONL。
+
+## 4.1.26 断言状态三入口
+
+- 断言状态变更新增 `POST` 风格的 HTTP 路由 `/workspace/assertion-status`；CLI、MCP admin、HTTP 均复用同一校验和审计模型。
+
+## 4.1.25 断言验证与拒绝生命周期
+
+- 新增 `assertion-status` 与 `mc_admin(action="assertion_status")`；支持显式 `VERIFIED`、`REJECTED` 等状态更新，并追加审计事件。`VERIFIED` 必须提供脱敏验证引用，不能由置信度自动升级。
+
+## 4.1.24 本体热路径性能门禁
+
+- 新增 `eval-ontology-gate`，测量默认查询新增 assertion summary 的 SQLite 聚合开销，输出 P50/P95、10ms 预算和 pass/fail；不会扫描图、源码或历史审计流。
+
+## 4.1.23 治理证据关联
+
+- evidence subgraph 仅在当前目标直接关联时附加最多 20 条治理断言，实现从变更、决策、验证到任务节点的按需追溯，不进行全局关系推理。
+
+## 4.1.22 结构化行动对象
+
+- 可信结论卡新增 `Action` 对象，包含 action_type、前置条件、停止条件和失败回退，避免 Agent 或用户执行无界重试。
+
+## 4.1.21 本体诊断门禁
+
+- `runtime-inspect` 新增 SQL 聚合诊断：未知节点/关系类型、无来源 VERIFIED 和旧 generation 活跃断言，逐项给出命令级修复建议；不进入普通查询热路径。
+
+## 4.1.20 查询断言摘要
+
+- 旧 `memory_query` 与 hybrid 查询在保留原 schema 的前提下新增常量大小的 `assertion_summary`，包含 active、verified、inferred、stale 及下一步建议，不读取断言明细。
+
+## 4.1.19 本体运行检视
+
+- `runtime-inspect` 新增有界本体摘要：断言代际与状态、近期治理关系、身份别名数量及可执行修复建议，不扫描 JSONL 审计历史。
+
+## 4.1.18 可信结论卡
+
+- evidence subgraph 新增统一、最多 20 条的可信结论卡，展示状态、证据引用、新鲜度、风险和下一步动作；不读取源码或历史审计流。
+
+## 4.1.17 治理断言投影
+
+- watcher 变更确认会投影为 `Decision`、`Validation` 与 `VERIFIES` / `REJECTS` / `REQUESTS_ANALYSIS` 治理断言；复用现有确认输入，不改变已有 MCP、HTTP 或 CLI 契约。
+
+## 4.1.16 断言失效与身份别名
+
+- Assertion mirror 保存关系两端的文件归属；watcher/targeted refresh 写入 dirty journal 时，仅将匹配文件的活跃断言标为 `STALE`，不扫描或回写全图。
+- 新增独立身份别名 sidecar，支持可追溯的 canonical identity、重命名链解析及循环歧义提示，历史实体 ID 保持不变。
+
+## 4.1.15 断言历史读取
+
+- Assertion sidecar 增加受限的当前、指定 generation 与指定时间点读取接口；默认只返回 active 断言，避免普通使用场景扫描历史审计流。
+
+## 4.1.13 本体 registry 对齐
+
+- 本体 registry 补齐索引器实际使用的 Workspace/File/Bean/DataResource 节点与关系 endpoint 约束；新增 CI 校验，防止索引器边类型与 registry、文档漂移。
+
+## 4.1.14 本体断言侧车
+
+- 图关系会在代际发布后批量物化为 `assertions.jsonl` 和 SQLite 活跃断言镜像；图发布不再被侧车失败阻断，旧 `reindex` 返回 schema 保持不变。
+- 证据子图可按需附加 `assertion_ref`，用于追溯断言代际与来源，不增加普通查询的图扫描。
+
 ## 4.1.12 本体认识论与体验扩展
 
 - 本体演进计划补充开放世界否定性结论、身份/别名、双时间、因果与相关性、规范/行动对象、信念修订约束，以及默认可信结论卡与可行动状态体验。

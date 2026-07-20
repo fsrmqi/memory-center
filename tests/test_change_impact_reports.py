@@ -116,6 +116,7 @@ def test_change_report_confirmation_closes_high_risk_report_with_validation_cont
         verified_by=["qa", "qa"],
         note="contract compatibility confirmed",
     )
+    assert result["governance"]["projected"] == 2
 
     assert result["recorded"] is True
     feedback = result["feedback"]

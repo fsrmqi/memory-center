@@ -15,6 +15,11 @@ def test_evidence_subgraph_is_bounded_and_does_not_include_node_metadata(tmp_pat
     assert result["limits"] == {"max_depth": 3, "max_edges": 120, "max_nodes": 80}
     assert len(result["nodes"]) <= 80
     assert len(result["edges"]) <= 120
+    assert len(result["conclusion_cards"]) <= 20
+    assert all("next_action" in card for card in result["conclusion_cards"])
+    assert all(card["action"]["stop_condition"] for card in result["conclusion_cards"])
+    assert result["governance_assertions"] == []
+    assert {edge["evidence_level"] for edge in result["edges"]} <= {"EXTRACTED", "INFERRED", "AMBIGUOUS", "VERIFIED"}
     assert "metadata" not in result["nodes"][0]
     assert "# 证据子图" in result["content"]
 

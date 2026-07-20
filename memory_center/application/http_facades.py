@@ -16,6 +16,7 @@ from memory_center.application.presentation import (
     export_workspace_dashboard_html,
 )
 from memory_center.core.freshness.change_reports import recent_change_impact_reports, record_change_impact_feedback
+from memory_center.core.knowledge.assertions import inspect_assertion, update_assertion_status
 from memory_center.core.knowledge.communities import analyze_architecture_communities
 from memory_center.core.orchestrator import (
     group_chain,
@@ -87,6 +88,7 @@ from memory_center.core.orchestrator import (
     workspace_write_receipts,
 )
 from memory_center.core.presentation.evidence_subgraph import export_evidence_subgraph
+from memory_center.core.storage.workspace import WorkspaceStore
 from memory_center.core.tasks.artifacts import (
     append_change_log,
     append_task_change_log,
@@ -169,6 +171,24 @@ def workspace_architecture_communities(workspace_file: str, *, limit: int = 20) 
     return analyze_architecture_communities(workspace_file, limit=limit)
 
 
+def workspace_assertion_status(
+    workspace_file: str,
+    assertion_id: str,
+    *,
+    status: str,
+    verification_ref: str = "",
+    actor: str = "",
+) -> dict[str, Any]:
+    """HTTP facade for an explicit, auditable assertion status transition."""
+    return update_assertion_status(
+        WorkspaceStore(workspace_file), assertion_id, status=status, verification_ref=verification_ref, actor=actor
+    )
+
+
+def workspace_assertion_inspect(workspace_file: str, assertion_id: str) -> dict[str, Any]:
+    return inspect_assertion(WorkspaceStore(workspace_file), assertion_id)
+
+
 __all__ = [
     "Any",
     "export_continuity_dashboard_html",
@@ -227,6 +247,8 @@ __all__ = [
     "workspace_change_impact_confirm",
     "workspace_evidence_subgraph",
     "workspace_architecture_communities",
+    "workspace_assertion_status",
+    "workspace_assertion_inspect",
     "workspace_handoff_packet",
     "workspace_handoff_history",
     "workspace_lookup_hint",

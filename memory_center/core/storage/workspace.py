@@ -121,6 +121,26 @@ class WorkspaceStore:
             except Exception:
                 pass
 
+    def append_jsonl_batch(self, name: str, items: list[dict[str, Any]]) -> int:
+        """Append a collection with one workspace lock and one SQLite transaction."""
+        if not items:
+            return 0
+        path = self.memory_dir / name
+        now = datetime.now(timezone.utc).isoformat()
+        rows = [dict(item, created_at=item.get("created_at") or now) for item in items]
+        with FileLock(str(self.lock_file)):
+            with path.open("a", encoding="utf-8") as handle:
+                handle.writelines(json.dumps(row, ensure_ascii=False) + "\n" for row in rows)
+            try:
+                self.memory_backend().append_records(
+                    name,
+                    rows,
+                    record_ids=[self._infer_record_id(name, row) for row in rows],
+                )
+            except Exception:
+                pass
+        return len(rows)
+
     def prune_jsonl(self, name: str, *, created_before: datetime, max_records: int) -> dict[str, int]:
         """删除过期 JSONL 记录并限制条数，同时清理 SQLite 镜像。"""
         if max_records < 1:

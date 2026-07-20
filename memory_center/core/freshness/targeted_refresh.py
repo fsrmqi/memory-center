@@ -181,8 +181,9 @@ def record_dirty_files(workspace_file: str | Path, paths: list[str], source: str
     for path in unique:
         matching = next((item for item in invalidation.get("rules", []) if item.get("path") == path), {})
         store.append_jsonl(DIRTY_JOURNAL_FILE, {"path": path, "source": source, "invalidation": matching})
+    stale_assertions = store.memory_backend().mark_assertions_stale(unique)
     compacted = compact_dirty_journal(store) if len(store.read_jsonl_prefer_backend(DIRTY_JOURNAL_FILE, limit=600)) >= 500 else False
-    return {"recorded": len(unique), "paths": unique, "compacted": compacted, "invalidation": invalidation}
+    return {"recorded": len(unique), "paths": unique, "compacted": compacted, "invalidation": invalidation, "stale_assertions": stale_assertions}
 
 
 def hot_refresh_status(workspace_file: str | Path) -> dict[str, Any]:

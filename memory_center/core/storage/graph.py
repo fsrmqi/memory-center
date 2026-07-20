@@ -643,6 +643,50 @@ class GraphStore:
             rows = conn.execute("SELECT * FROM nodes").fetchall()
         return [_row_node(row) for row in rows]
 
+    def iter_assertion_rows(
+        self,
+        *,
+        batch_size: int = 1000,
+        paths: list[str] | None = None,
+        projects: list[str] | None = None,
+    ):
+        """Stream graph relations with endpoint types for assertion materialization."""
+        size = min(max(1, batch_size), 5000)
+        path_scope = sorted({str(path).replace("\\", "/").lstrip("/") for path in paths or [] if path})
+        project_scope = sorted({str(project) for project in projects or [] if project})
+        last_id = ""
+        while True:
+            scope_clauses: list[str] = []
+            scope_args: list[Any] = []
+            if path_scope:
+                placeholders = ",".join("?" for _ in path_scope)
+                scope_clauses.append(f"(source.file_path IN ({placeholders}) OR target.file_path IN ({placeholders}))")
+                scope_args.extend(path_scope * 2)
+            if project_scope:
+                placeholders = ",".join("?" for _ in project_scope)
+                scope_clauses.append(f"(source.project IN ({placeholders}) OR target.project IN ({placeholders}))")
+                scope_args.extend(project_scope * 2)
+            scope_sql = f" AND ({' OR '.join(scope_clauses)})" if scope_clauses else ""
+            with self.connect() as conn:
+                rows = conn.execute(
+                    f"""
+                    SELECT edge.id, edge.source_id, edge.target_id, edge.type, edge.confidence,
+                           edge.metadata_json, source.type AS subject_type, target.type AS object_type,
+                           source.file_path AS source_file, target.file_path AS target_file,
+                           source.project AS source_project, target.project AS target_project
+                    FROM edges edge
+                    JOIN nodes source ON source.id=edge.source_id
+                    JOIN nodes target ON target.id=edge.target_id
+                    WHERE edge.id > ? {scope_sql} ORDER BY edge.id LIMIT ?
+                    """,
+                    [last_id, *scope_args, size],
+                ).fetchall()
+            if not rows:
+                return
+            for row in rows:
+                yield dict(row)
+            last_id = str(rows[-1]["id"])
+
     def project_subgraph(self, project: str) -> tuple[list[GraphNode], list[GraphEdge]]:
         """Export a self-contained graph shard for one project."""
         with self.connect() as conn:

@@ -5,6 +5,9 @@ handles unknown types correctly, and that documentation matches code.
 """
 from __future__ import annotations
 
+import ast
+from pathlib import Path
+
 import pytest
 
 from memory_center.core.knowledge.ontology import (
@@ -17,8 +20,10 @@ from memory_center.core.knowledge.ontology import (
     edge_confidence_range,
     edge_strength,
     multi_hop_confidence,
+    relation_type_spec,
     validate_edge_type,
     validate_node_type,
+    validate_relation,
 )
 
 # ============================================================
@@ -61,6 +66,37 @@ class TestRegistryCompleteness:
         """Every edge in ALL_EDGE_TYPES must have exactly one strength mapping."""
         for edge in ALL_EDGE_TYPES:
             assert edge in EDGE_SEMANTIC_STRENGTH, f"{edge} not in EDGE_SEMANTIC_STRENGTH"
+
+    def test_every_edge_has_relation_contract(self):
+        for edge in ALL_EDGE_TYPES:
+            assert relation_type_spec(edge) is not None
+
+    def test_indexer_relation_contracts_accept_known_endpoint_pairs(self):
+        assert validate_relation("Workspace", "CONTAINS", "Service")
+        assert validate_relation("File", "DECLARES", "Class")
+        assert validate_relation("Method", "HANDLES_ENDPOINT", "Endpoint")
+        assert validate_relation("FeignMethod", "IMPLEMENTS_FEIGN", "Endpoint")
+        assert validate_relation("Class", "USES_DATA_RESOURCE", "DataResource")
+        assert not validate_relation("Method", "DECLARES_CONFIG", "ConfigKey")
+
+    def test_literal_indexer_edge_types_are_registered(self):
+        source = (Path(__file__).parents[1] / "memory_center/core/indexing/reindex.py").read_text(encoding="utf-8")
+        tree = ast.parse(source)
+        literal_types = {
+            call.args[3].value
+            for call in ast.walk(tree)
+            if isinstance(call, ast.Call)
+            and getattr(call.func, "id", None) == "GraphEdge"
+            and len(call.args) >= 4
+            and isinstance(call.args[3], ast.Constant)
+            and isinstance(call.args[3].value, str)
+        }
+        assert literal_types <= ALL_EDGE_TYPES, f"Indexer edge types missing from registry: {literal_types - ALL_EDGE_TYPES}"
+
+    def test_data_resources_keep_a_single_ontology_type(self):
+        source = (Path(__file__).parents[1] / "memory_center/core/indexing/reindex.py").read_text(encoding="utf-8")
+        assert 'GraphNode(rid, "DataResource"' in source
+        assert '"resource_kind": resource.get("kind", "DataResource")' in source
 
 
 # ============================================================

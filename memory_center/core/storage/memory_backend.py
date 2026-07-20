@@ -79,6 +79,40 @@ class MemoryBackendStore:
         conn.execute("CREATE INDEX IF NOT EXISTS idx_json_records_type ON json_records(type)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_json_records_session_id ON json_records(session_id)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_json_records_project ON json_records(project)")
+        conn.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS assertions (
+              assertion_id TEXT PRIMARY KEY,
+              subject_id TEXT NOT NULL,
+              predicate TEXT NOT NULL,
+              object_id TEXT NOT NULL,
+              status TEXT NOT NULL,
+              generation TEXT NOT NULL,
+              valid_from TEXT NOT NULL,
+              valid_to TEXT DEFAULT '',
+              source_file TEXT DEFAULT '',
+              target_file TEXT DEFAULT '',
+              source_project TEXT DEFAULT '',
+              target_project TEXT DEFAULT '',
+              payload_json TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_assertions_subject_active
+              ON assertions(subject_id, status, valid_to);
+            CREATE INDEX IF NOT EXISTS idx_assertions_object_active
+              ON assertions(object_id, status, valid_to);
+            CREATE INDEX IF NOT EXISTS idx_assertions_relation_active
+              ON assertions(subject_id, predicate, object_id, valid_to);
+            """
+        )
+        for column in ("source_file", "target_file", "source_project", "target_project"):
+            try:
+                conn.execute(f"ALTER TABLE assertions ADD COLUMN {column} TEXT DEFAULT ''")
+            except sqlite3.OperationalError:
+                pass
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_assertions_source_file_active ON assertions(source_file, valid_to)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_assertions_target_file_active ON assertions(target_file, valid_to)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_assertions_source_project_active ON assertions(source_project, valid_to)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_assertions_target_project_active ON assertions(target_project, valid_to)")
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS refs (
@@ -121,6 +155,241 @@ class MemoryBackendStore:
                     json.dumps(payload, ensure_ascii=False),
                 ),
             )
+
+    def append_records(self, collection: str, payloads: list[dict[str, Any]], record_ids: list[str] | None = None) -> None:
+        """Batch variant used by high-volume sidecars such as assertions."""
+        if not payloads:
+            return
+        ids = record_ids or [""] * len(payloads)
+        rows = []
+        for payload, record_id in zip(payloads, ids, strict=True):
+            nested = payload.get("payload", {}) if isinstance(payload.get("payload"), dict) else {}
+            rows.append((
+                collection,
+                record_id,
+                str(payload.get("type", "") or ""),
+                str(payload.get("session_id", "") or nested.get("session_id", "") or ""),
+                str(payload.get("project", "") or nested.get("project", "") or ""),
+                str(payload.get("created_at", "") or ""),
+                json.dumps(payload, ensure_ascii=False),
+            ))
+        with self.connect() as conn:
+            conn.executemany(
+                """
+                INSERT INTO json_records(collection, record_id, type, session_id, project, created_at, payload_json)
+                VALUES(?, ?, ?, ?, ?, ?, ?)
+                """,
+                rows,
+            )
+
+    def upsert_assertions(self, assertions: list[dict[str, Any]]) -> int:
+        """Publish a batch of static assertions without loading historical rows."""
+        if not assertions:
+            return 0
+        rows = [
+            (
+                row["assertion_id"], row["subject_id"], row["predicate"], row["object_id"],
+                row["status"], row["generation"], row["valid_from"], row.get("valid_to", ""),
+                row.get("source_file", ""), row.get("target_file", ""),
+                row.get("source_project", ""), row.get("target_project", ""),
+                json.dumps(row, ensure_ascii=False),
+            )
+            for row in assertions
+        ]
+        with self.connect() as conn:
+            for row in assertions:
+                conn.execute(
+                    """
+                    UPDATE assertions SET valid_to=?, status='SUPERSEDED'
+                    WHERE subject_id=? AND predicate=? AND object_id=?
+                      AND valid_to='' AND generation<>?
+                    """,
+                    (row["valid_from"], row["subject_id"], row["predicate"], row["object_id"], row["generation"]),
+                )
+            conn.executemany(
+                """
+                INSERT INTO assertions(assertion_id, subject_id, predicate, object_id, status, generation, valid_from, valid_to, source_file, target_file, source_project, target_project, payload_json)
+                VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(assertion_id) DO NOTHING
+                """,
+                rows,
+            )
+        return len(rows)
+
+    def supersede_assertions_in_scope(
+        self,
+        *,
+        paths: list[str] | None = None,
+        projects: list[str] | None = None,
+        generation: str,
+        valid_to: str,
+    ) -> int:
+        """Close only the active facts affected by a partial reindex scope."""
+        path_scope = sorted({str(path).replace("\\", "/").lstrip("/") for path in paths or [] if path})
+        project_scope = sorted({str(project) for project in projects or [] if project})
+        clauses: list[str] = []
+        args: list[Any] = []
+        if path_scope:
+            placeholders = ",".join("?" for _ in path_scope)
+            clauses.append(f"(source_file IN ({placeholders}) OR target_file IN ({placeholders}))")
+            args.extend(path_scope * 2)
+        if project_scope:
+            placeholders = ",".join("?" for _ in project_scope)
+            clauses.append(f"(source_project IN ({placeholders}) OR target_project IN ({placeholders}))")
+            args.extend(project_scope * 2)
+        if not clauses:
+            return 0
+        with self.connect() as conn:
+            return int(
+                conn.execute(
+                    f"""
+                    UPDATE assertions SET valid_to=?, status='SUPERSEDED'
+                    WHERE valid_to='' AND generation<>? AND ({' OR '.join(clauses)})
+                    """,
+                    [valid_to, generation, *args],
+                ).rowcount
+            )
+
+    def assertion_summary(self, *, limit: int = 20) -> dict[str, Any]:
+        with self.connect() as conn:
+            total = int(conn.execute("SELECT COUNT(*) FROM assertions WHERE valid_to='' ").fetchone()[0])
+            rows = conn.execute(
+                """
+                SELECT status, COUNT(*) AS count FROM assertions
+                WHERE valid_to='' GROUP BY status ORDER BY status
+                """
+            ).fetchall()
+            recent = conn.execute(
+                """
+                SELECT status, payload_json FROM assertions WHERE valid_to=''
+                ORDER BY valid_from DESC, assertion_id DESC LIMIT ?
+                """,
+                (min(max(1, limit), 100),),
+            ).fetchall()
+        return {
+            "active": total,
+            "by_status": {str(row["status"]): int(row["count"]) for row in rows},
+            "recent": [{**json.loads(str(row["payload_json"])), "status": str(row["status"])} for row in recent],
+        }
+
+    def query_assertions(self, *, as_of_generation: str = "", as_of_time: str = "", limit: int = 20) -> list[dict[str, Any]]:
+        """Read a bounded historical assertion slice; defaults to active facts."""
+        clauses = ["1=1"]
+        args: list[Any] = []
+        if as_of_generation:
+            clauses.append("generation = ?")
+            args.append(as_of_generation)
+        elif as_of_time:
+            clauses.extend(["valid_from <= ?", "(valid_to = '' OR valid_to > ?)"])
+            args.extend([as_of_time, as_of_time])
+        else:
+            clauses.append("valid_to = ''")
+        args.append(min(max(1, limit), 100))
+        with self.connect() as conn:
+            rows = conn.execute(
+                f"SELECT status, payload_json FROM assertions WHERE {' AND '.join(clauses)} ORDER BY valid_from DESC, assertion_id DESC LIMIT ?",
+                args,
+            ).fetchall()
+        result = []
+        for row in rows:
+            payload = json.loads(str(row["payload_json"]))
+            payload["status"] = str(row["status"])
+            result.append(payload)
+        return result
+
+    def set_assertion_status(self, assertion_id: str, status: str, *, verification_ref: str = "") -> bool:
+        """Update the active read model while callers preserve the audit event."""
+        allowed = {"VERIFIED", "REJECTED", "EXTRACTED", "INFERRED", "AMBIGUOUS"}
+        if status not in allowed:
+            raise ValueError(f"unsupported assertion status: {status}")
+        with self.connect() as conn:
+            row = conn.execute("SELECT payload_json FROM assertions WHERE assertion_id=?", (assertion_id,)).fetchone()
+            if row is None:
+                return False
+            payload = json.loads(str(row["payload_json"]))
+            payload["status"] = status
+            if verification_ref:
+                payload["verification_ref"] = verification_ref[:240]
+            conn.execute(
+                "UPDATE assertions SET status=?, payload_json=? WHERE assertion_id=?",
+                (status, json.dumps(payload, ensure_ascii=False), assertion_id),
+            )
+        return True
+
+    def assertion_statuses(self, assertion_ids: list[str]) -> dict[str, str]:
+        ids = [item for item in dict.fromkeys(assertion_ids) if item][:120]
+        if not ids:
+            return {}
+        placeholders = ",".join("?" for _ in ids)
+        with self.connect() as conn:
+            rows = conn.execute(
+                f"SELECT assertion_id, status FROM assertions WHERE assertion_id IN ({placeholders})", ids
+            ).fetchall()
+        return {str(row["assertion_id"]): str(row["status"]) for row in rows}
+
+    def assertion_by_id(self, assertion_id: str) -> dict[str, Any] | None:
+        with self.connect() as conn:
+            row = conn.execute("SELECT status, payload_json FROM assertions WHERE assertion_id=?", (assertion_id,)).fetchone()
+        if row is None:
+            return None
+        payload = json.loads(str(row["payload_json"]))
+        payload["status"] = str(row["status"])
+        return payload
+
+    def mark_assertions_stale(self, paths: list[str]) -> int:
+        """Mark only assertions whose persisted source path is dirty."""
+        normalized = sorted({str(path).replace("\\", "/").lstrip("/") for path in paths if path})[:200]
+        if not normalized:
+            return 0
+        placeholders = ",".join("?" for _ in normalized)
+        with self.connect() as conn:
+            return int(conn.execute(
+                f"""
+                UPDATE assertions SET status='STALE'
+                WHERE valid_to='' AND status<>'STALE'
+                  AND (source_file IN ({placeholders}) OR target_file IN ({placeholders}))
+                """,
+                normalized * 2,
+            ).rowcount)
+
+    def assertion_diagnostics(self, active_generation: str = "") -> dict[str, int]:
+        """Small aggregate checks used only by explicit runtime inspection."""
+        with self.connect() as conn:
+            verified_without_source = int(
+                conn.execute(
+                    """
+                    SELECT COUNT(*) FROM assertions
+                    WHERE status='VERIFIED' AND (payload_json NOT LIKE '%verification%' AND payload_json NOT LIKE '%evidence_ref%')
+                    """
+                ).fetchone()[0]
+            )
+            old_generation = 0
+            if active_generation:
+                old_generation = int(
+                    conn.execute(
+                        "SELECT COUNT(*) FROM assertions WHERE valid_to='' AND generation<>?", (active_generation,)
+                    ).fetchone()[0]
+                )
+        return {"verified_without_source": verified_without_source, "active_old_generation": old_generation}
+
+    def prune_closed_assertions(self, *, valid_before: str, max_closed: int) -> dict[str, int]:
+        """Retain all active facts while bounding closed static assertion history."""
+        with self.connect() as conn:
+            expired = int(
+                conn.execute("DELETE FROM assertions WHERE valid_to<>'' AND valid_to < ?", (valid_before,)).rowcount
+            )
+            total_closed = int(conn.execute("SELECT COUNT(*) FROM assertions WHERE valid_to<>''").fetchone()[0])
+            overflow = max(0, total_closed - max_closed)
+            if overflow:
+                conn.execute(
+                    """
+                    DELETE FROM assertions WHERE assertion_id IN (
+                        SELECT assertion_id FROM assertions WHERE valid_to<>'' ORDER BY valid_to ASC LIMIT ?
+                    )
+                    """,
+                    (overflow,),
+                )
+        return {"expired": expired, "overflow": overflow}
 
     def prune_records(self, collection: str, *, created_before: str, max_records: int) -> dict[str, int]:
         """删除过期记录，并仅保留指定集合中最新的有限条目。"""

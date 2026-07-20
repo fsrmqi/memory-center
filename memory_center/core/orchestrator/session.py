@@ -228,12 +228,19 @@ def workspace_end_session(
     events = _session_events(store, session_id)
     summary = _build_session_summary(config.workspace, session_id, events, outcome, verified_by or [])
     store.append_jsonl(SESSION_SUMMARIES_FILE, summary)
+    try:
+        from memory_center.core.knowledge.governance import project_session_validation
+
+        governance = project_session_validation(store, session_id, validation)
+    except Exception as exc:
+        governance = {"status": "unavailable", "reason": str(exc)[:160]}
     return {
         "ended": True,
         "session_id": session_id,
         "workspace": config.workspace,
         "summary": summary,
         "evidence_chain": summary["evidence_chain"],
+        "governance": governance,
     }
 
 

@@ -174,6 +174,25 @@ def parse_payload(payload_str: str) -> dict[str, Any] | None:
     return data if isinstance(data, dict) else {"value": data}
 
 
+def _update_assertion_status_action(workspace_file: str, assertion_id: str, status: str, payload: str, actor: str) -> dict[str, Any]:
+    from memory_center.core.knowledge.assertions import update_assertion_status
+
+    data = parse_payload(payload) or {}
+    return update_assertion_status(
+        WorkspaceStore(workspace_file),
+        assertion_id,
+        status=status,
+        verification_ref=str(data.get("verification_ref", "") or ""),
+        actor=actor,
+    )
+
+
+def _inspect_assertion_action(workspace_file: str, assertion_id: str) -> dict[str, Any]:
+    from memory_center.core.knowledge.assertions import inspect_assertion
+
+    return inspect_assertion(WorkspaceStore(workspace_file), assertion_id)
+
+
 def runtime_contract_gate_action(workspace_file: str, *, contract_file: str = "", task_id: str = "") -> dict[str, Any]:
     result = runtime_contract_compatibility(workspace_file, contract_file)
     if task_id.strip():
@@ -515,6 +534,8 @@ def build_admin_registry(
             verified_by=verified_by,
             note=str((parse_payload(payload) or {}).get("note", "")),
         ),
+        "assertion_status": lambda: _update_assertion_status_action(wf, record_id, status, payload, source),
+        "assertion_inspect": lambda: _inspect_assertion_action(wf, record_id),
         "evidence_subgraph_export": lambda: export_evidence_subgraph(
             wf,
             text or name or record_id,

@@ -16,6 +16,8 @@ from memory_center.core.audit.interactions import (
 from memory_center.core.audit.runtime import audit_agent_runtime
 from memory_center.core.indexing.control_plane import index_control_status
 from memory_center.core.indexing.reindex_state import workspace_reindex_status
+from memory_center.core.knowledge.ontology import ALL_EDGE_TYPES, ALL_NODE_TYPES
+from memory_center.core.storage.graph import GraphStore
 from memory_center.core.storage.workspace import WorkspaceStore
 from memory_center.core.workspace.config import load_workspace_config
 from memory_center.hooks.spec import load_hooks_config, validate_hooks_config
@@ -32,6 +34,7 @@ def inspect_runtime(workspace_file: str | Path, *, thread_id: str = "") -> dict[
     bindings = _binding_status(store, active_thread)
     effects = _effect_status(workspace_file, store)
     index = _index_status(store)
+    ontology = _ontology_status(store)
     mcp = _mcp_status()
     instructions = _instruction_status(root)
     actions = _recommended_actions(audit, hooks, bindings, index, mcp, instructions)
@@ -53,6 +56,7 @@ def inspect_runtime(workspace_file: str | Path, *, thread_id: str = "") -> dict[
         "session": bindings,
         "history": effects,
         "index": index,
+        "ontology": ontology,
         "runtime_audit": {
             "score": audit.get("score", 0),
             "quality": audit.get("quality", "unknown"),
@@ -64,6 +68,41 @@ def inspect_runtime(workspace_file: str | Path, *, thread_id: str = "") -> dict[
         },
         "recommended_actions": actions,
     }
+
+
+def _ontology_status(store: WorkspaceStore) -> dict[str, Any]:
+    assertion_index = store.read_json_prefer_backend("assertion-index.json", {}) or {}
+    governance_index = store.read_json_prefer_backend("governance-assertion-index.json", {}) or {}
+    aliases = store.read_json_prefer_backend("identity-alias-index.json", {}) or {}
+    active_generation = str(assertion_index.get("generation", "") or "")
+    diagnostics = store.memory_backend().assertion_diagnostics(active_generation)
+    unknown = _unknown_graph_types(store)
+    findings = []
+    if unknown["node_types"] or unknown["edge_types"]:
+        findings.append({"code": "unknown_graph_type", "command": "memory-center reindex --workspace <workspace.yaml>"})
+    if diagnostics["verified_without_source"]:
+        findings.append({"code": "verified_without_source", "command": "memory-center runtime-inspect --workspace <workspace.yaml>"})
+    if diagnostics["active_old_generation"]:
+        findings.append({"code": "active_old_generation", "command": "memory-center reindex --workspace <workspace.yaml>"})
+    return {
+        "assertions": {
+            "generation": active_generation,
+            "active": int(assertion_index.get("active", 0) or 0),
+            "by_status": assertion_index.get("by_status", {}),
+        },
+        "governance_recent": len(governance_index.get("recent", []) or []),
+        "identity_aliases": len(aliases.get("aliases", {}) or {}),
+        "diagnostics": {**unknown, **diagnostics, "findings": findings},
+        "recommended_action": "inspect_evidence_subgraph" if assertion_index else "run_reindex_to_materialize_assertions",
+    }
+
+
+def _unknown_graph_types(store: WorkspaceStore) -> dict[str, list[str]]:
+    with GraphStore(store.graph_db_path) as graph:
+        conn = graph.connect()
+        node_types = {str(row[0]) for row in conn.execute("SELECT DISTINCT type FROM nodes").fetchall()}
+        edge_types = {str(row[0]) for row in conn.execute("SELECT DISTINCT type FROM edges").fetchall()}
+    return {"node_types": sorted(node_types - ALL_NODE_TYPES), "edge_types": sorted(edge_types - ALL_EDGE_TYPES)}
 
 
 def _mcp_status() -> dict[str, Any]:

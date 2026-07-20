@@ -179,16 +179,16 @@ Alias 必须记录 `identity_confidence`、来源、有效期；低置信别名�
 
 ## 4. 存储与迁移设计
 
-### Phase A：Registry 对齐
+### Phase A：Registry 对齐（已完成）
 
 1. 以 `core/knowledge/ontology.py` 为唯一 registry。
 2. 补齐 `File`、`Bean`、`DataResource` 等已使用节点，删除或标记未实现关系。
 3. 由 registry 生成/校验 `ONTOLOGY.md` 表格，禁止手工漂移。
 4. 新增 `RelationTypeSpec`，在单元测试中校验 source/target 类型约束。
 
-验收：文档、registry、indexer 实际输出三者无未知类型；CI 给出明确差异。
+验收：文档、registry、indexer 实际输出三者无未知类型；CI 给出明确差异。当前已完成第一版，后续新增类型继续受同一门禁约束。
 
-### Phase B：Assertion Sidecar
+### Phase B：Assertion Sidecar（已完成第一版）
 
 1. 新建 `.memory-center/memory/assertions.jsonl` 与 SQLite mirror，不改写既有 `edges` 表。
 2. 每次 reindex/局部 refresh 为新边写 Assertion；旧边读取仍可工作。
@@ -197,7 +197,9 @@ Alias 必须记录 `identity_confidence`、来源、有效期；低置信别名�
 
 验收：旧查询结果不变；新查询可选返回 `assertion_ref`；写入失败不阻断索引发布。
 
-### Phase C：时间与失效
+当前实现以 `assertions.jsonl` 保留审计流，以 `memory.db.assertions` 提供活跃断言索引；证据子图仅在有已发布 sidecar generation 时附加 `assertion_ref`，不在普通图查询中引入额外扫描。
+
+### Phase C：时间与失效（已完成第一版）
 
 1. generation 发布后关闭被替代 Assertion 的 `valid_to`。
 2. watcher dirty path 只标记相关 Assertion 为 `STALE`，不触发全局回写。
@@ -206,6 +208,8 @@ Alias 必须记录 `identity_confidence`、来源、有效期；低置信别名�
 5. 增加 Alias sidecar，支持 canonical identity、重命名与替代关系；历史查询可选择事件时间或知识时间。
 
 验收：历史任务可解释“当时为什么成立”；默认查询不读取过期历史。
+
+当前已提供按 generation 或时间点的有界读取，默认仅读取 active Assertion；文件级 `STALE` 标记已接入 watcher dirty journal，只更新关联文件的断言。Alias sidecar 支持 canonical identity、重命名链和循环歧义，不会改写历史实体 ID。
 
 ### Phase D：治理闭环
 
@@ -216,6 +220,8 @@ Alias 必须记录 `identity_confidence`、来源、有效期；低置信别名�
 5. 将 Policy、GateResult、Decision 和 Action 写入跨域关系读模型；默认结论只返回最小证据集。
 
 验收：从 Task 可回溯到变更、断言、验证和最终结论。
+
+当前已完成 change-impact confirmation、任务关闭验证到治理断言的投影；证据子图会按目标节点精确呈现关联治理关系。跨域读模型保持为有界 index，不进入普通图查询。
 
 ## 5. API 与体验设计
 
@@ -236,6 +242,8 @@ Alias 必须记录 `identity_confidence`、来源、有效期；低置信别名�
 ```
 
 默认只展示与答案直接相关的最多 20 个 Assertion，详细证据通过 `assertion_ref` 按需展开。
+
+当前默认查询已返回兼容的聚合 `assertion_summary`；evidence subgraph 提供有界 assertion ref，CLI、HTTP 和 MCP 均可按 ref 展开断言详情。
 
 ### 5.1.1 可信结论卡
 
@@ -281,6 +289,8 @@ CLI、HTTP 和 Workbench 默认使用同一结论卡，而不是直接抛出图�
 
 所有预算以真实 workspace P50/P95 为发布门禁，不以示例项目替代。
 
+当前提供 `memory-center eval-ontology-gate --workspace <workspace.yaml>`，用于验证默认查询新增 assertion summary 的真实 workspace P50/P95 门禁。
+
 ## 7. 测试与发布门禁
 
 每个阶段必须增加：
@@ -288,6 +298,8 @@ CLI、HTTP 和 Workbench 默认使用同一结论卡，而不是直接抛出图�
 1. registry 与 `ONTOLOGY.md` 一致性测试。
 2. 实体/关系类型约束测试。
 3. Assertion 生命周期：创建、验证、拒绝、失效、替代、裁剪。
+
+当前已覆盖创建、验证、拒绝、文件级失效与 generation 替代；运行/审计 JSONL 的 30 天、10 万条裁剪复用 WorkspaceStore 既有保留策略。
 4. 负向结论、别名归并、双时间查询、因果/相关性语言和 Action 停止条件测试。
 5. CLI/HTTP/MCP 三入口一致性测试。
 6. 旧 schema 回归与旧索引读取测试。

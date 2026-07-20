@@ -1052,6 +1052,45 @@ def eval_parser_benchmark_cmd(
     print(json.dumps(memory_eval_parser_benchmark(workspace, limit=limit, max_findings=max_findings), ensure_ascii=False, indent=2, default=str))
 
 
+@app.command("eval-ontology-gate")
+def eval_ontology_gate_cmd(
+    workspace: str = typer.Option(...),
+    samples: int = typer.Option(20, help="Number of bounded assertion-summary reads."),
+    budget_ms: float = typer.Option(10.0, help="P95 hot-path budget in milliseconds."),
+):
+    """Validate the ontology sidecar's default-query hot-path budget."""
+    from memory_center.core.knowledge.benchmark import evaluate_ontology_hot_path
+
+    print(json.dumps(evaluate_ontology_hot_path(workspace, samples=samples, budget_ms=budget_ms), ensure_ascii=False, indent=2))
+
+
+@app.command("assertion-status")
+def assertion_status_cmd(
+    workspace: str = typer.Option(...),
+    assertion_id: str = typer.Option(...),
+    status: str = typer.Option(..., help="VERIFIED, REJECTED, EXTRACTED, INFERRED, or AMBIGUOUS."),
+    verification_ref: str = typer.Option("", help="Required when status is VERIFIED; use a sanitized evidence reference."),
+    actor: str = typer.Option(""),
+):
+    """Explicitly update one assertion status while preserving an audit event."""
+    from memory_center.core.knowledge.assertions import update_assertion_status
+    from memory_center.core.storage.workspace import WorkspaceStore
+
+    print(json.dumps(update_assertion_status(WorkspaceStore(workspace), assertion_id, status=status, verification_ref=verification_ref, actor=actor), ensure_ascii=False, indent=2))
+
+
+@app.command("assertion-inspect")
+def assertion_inspect_cmd(
+    workspace: str = typer.Option(...),
+    assertion_id: str = typer.Option(...),
+):
+    """Expand one assertion reference without reading the assertion audit stream."""
+    from memory_center.core.knowledge.assertions import inspect_assertion
+    from memory_center.core.storage.workspace import WorkspaceStore
+
+    print(json.dumps(inspect_assertion(WorkspaceStore(workspace), assertion_id), ensure_ascii=False, indent=2))
+
+
 @app.command("parser-status")
 def parser_status_cmd():
     """Show tree-sitter Java activation status and install hints."""

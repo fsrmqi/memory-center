@@ -16,6 +16,7 @@ from memory_center.core.observability.operations import observe_operation
 from memory_center.core.observability.tracking import log_token_gain
 from memory_center.core.retrieval.semantic import semantic_query
 from memory_center.core.storage.graph import GraphStore
+from memory_center.core.storage.workspace import WorkspaceStore
 
 from ..verification.heuristics import apply_candidate_path_learning
 from ..walkthrough import analysis as _walkthrough_analysis
@@ -421,6 +422,25 @@ def _project_matches(query_project: str, item_project: str) -> bool:
     return False
 
 
+def _assertion_summary(store: WorkspaceStore) -> dict[str, Any]:
+    """Return a constant-size assertion view for default query responses."""
+    try:
+        summary = store.memory_backend().assertion_summary(limit=1)
+    except Exception:
+        return {"active": 0, "verified": 0, "inferred": 0, "stale": 0, "next_action": "运行 reindex 生成断言侧车"}
+    statuses = summary.get("by_status", {}) if isinstance(summary, dict) else {}
+    stale = int(statuses.get("STALE", 0) or 0)
+    verified = int(statuses.get("VERIFIED", 0) or 0)
+    inferred = int(statuses.get("INFERRED", 0) or 0)
+    return {
+        "active": int(summary.get("active", 0) or 0),
+        "verified": verified,
+        "inferred": inferred,
+        "stale": stale,
+        "next_action": "刷新关联索引" if stale else ("验证高风险推断" if inferred else "按需展开证据"),
+    }
+
+
 def memory_query(workspace_file: str | Path, query: str, limit: int = 20, node_types: list[str] | None = None, alpha: float | None = None) -> dict[str, Any]:
     config, store = load_context(workspace_file)
     # This legacy query facade has no project scope. Project-aware callers use
@@ -466,6 +486,7 @@ def memory_query(workspace_file: str | Path, query: str, limit: int = 20, node_t
         "semantic_hits": semantic_hits[:limit],
         "related_rules": related_rules,
         "historical_cases": related_cases,
+        "assertion_summary": _assertion_summary(store),
     }
 
 
@@ -703,6 +724,7 @@ def memory_query_hybrid(
 
     result["results"] = _rerank_symbol_like_matches(result.get("results", []), query)
     result["matches"] = result["results"]
+    result["assertion_summary"] = _assertion_summary(store)
 
     # 确保 retrieval_summary 包含旧接口期望的字段
     if "retrieval_summary" in result:

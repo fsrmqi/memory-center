@@ -55,6 +55,8 @@ from memory_center.application.http_facades import (
     update_task_artifact,
     update_task_status,
     workspace_architecture_communities,
+    workspace_assertion_inspect,
+    workspace_assertion_status,
     workspace_background_job_status,
     workspace_change_impact_confirm,
     workspace_change_impact_reports,
@@ -136,6 +138,16 @@ def register_workspace_routes(registry: CommandRegistry) -> None:
     ))
     registry.register("/workspace/architecture-communities", lambda rp: workspace_architecture_communities(
         rp.workspace(), limit=rp.int_param("limit", 20, max_val=50)
+    ))
+    registry.register("/workspace/assertion-status", lambda rp: workspace_assertion_status(
+        rp.workspace(),
+        rp.require("assertion_id"),
+        status=rp.require("status"),
+        verification_ref=rp.get("verification_ref", ""),
+        actor=rp.get("actor", ""),
+    ))
+    registry.register("/workspace/assertion", lambda rp: workspace_assertion_inspect(
+        rp.workspace(), rp.require("assertion_id")
     ))
     registry.register("/workspace/sniff", lambda rp: workspace_sniff(
         rp.workspace(),

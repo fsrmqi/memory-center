@@ -17,6 +17,8 @@ from typing import Any
 
 # Standard node types (already in 2.x)
 NODE_TYPE_SERVICE = "Service"
+NODE_TYPE_WORKSPACE = "Workspace"
+NODE_TYPE_FILE = "File"
 NODE_TYPE_CLASS = "Class"
 NODE_TYPE_METHOD = "Method"
 NODE_TYPE_FIELD = "Field"
@@ -28,6 +30,8 @@ NODE_TYPE_MQ_TOPIC = "MQTopic"
 NODE_TYPE_MQ_CONSUMER = "MQConsumer"
 NODE_TYPE_MQ_PRODUCER = "MQProducer"
 NODE_TYPE_CONFIG_KEY = "ConfigKey"
+NODE_TYPE_BEAN = "Bean"
+NODE_TYPE_DATA_RESOURCE = "DataResource"
 
 # New V3 node types — §3.3
 NODE_TYPE_CODE_SUMMARY = "CodeSummary"
@@ -44,10 +48,10 @@ NODE_TYPE_ARCHITECTURE_TOUR = "ArchitectureTour"
 NODE_TYPE_INDEX_FRESHNESS = "IndexFreshness"
 
 ALL_NODE_TYPES = frozenset({
-    NODE_TYPE_SERVICE, NODE_TYPE_CLASS, NODE_TYPE_METHOD, NODE_TYPE_FIELD,
+    NODE_TYPE_WORKSPACE, NODE_TYPE_SERVICE, NODE_TYPE_FILE, NODE_TYPE_CLASS, NODE_TYPE_METHOD, NODE_TYPE_FIELD,
     NODE_TYPE_INTERFACE, NODE_TYPE_FEIGN_CLIENT, NODE_TYPE_FEIGN_METHOD,
     NODE_TYPE_ENDPOINT, NODE_TYPE_MQ_TOPIC, NODE_TYPE_MQ_CONSUMER,
-    NODE_TYPE_MQ_PRODUCER, NODE_TYPE_CONFIG_KEY,
+    NODE_TYPE_MQ_PRODUCER, NODE_TYPE_CONFIG_KEY, NODE_TYPE_BEAN, NODE_TYPE_DATA_RESOURCE,
     NODE_TYPE_CODE_SUMMARY, NODE_TYPE_BUSINESS_INTENT, NODE_TYPE_RISK_PATTERN,
     NODE_TYPE_ARCHITECTURAL_LAYER, NODE_TYPE_DATA_FLOW_NODE,
     NODE_TYPE_ROUTE, NODE_TYPE_BUSINESS_FLOW, NODE_TYPE_FLOW_STEP,
@@ -70,6 +74,12 @@ EDGE_TYPE_PRODUCES_TOPIC = "PRODUCES_TOPIC"
 EDGE_TYPE_READS_CONFIG = "READS_CONFIG"
 EDGE_TYPE_EXPOSES_ENDPOINT = "EXPOSES_ENDPOINT"
 EDGE_TYPE_DECLARES = "DECLARES"
+EDGE_TYPE_DECLARES_CONFIG = "DECLARES_CONFIG"
+EDGE_TYPE_HANDLES_ENDPOINT = "HANDLES_ENDPOINT"
+EDGE_TYPE_IMPLEMENTS_FEIGN = "IMPLEMENTS_FEIGN"
+EDGE_TYPE_INJECTS_BEAN = "INJECTS_BEAN"
+EDGE_TYPE_READS_FIELD = "READS_FIELD"
+EDGE_TYPE_USES_DATA_RESOURCE = "USES_DATA_RESOURCE"
 
 # New V3 edge types — §3.4
 EDGE_TYPE_TRANSITIVELY_CALLS = "TRANSITIVELY_CALLS"
@@ -90,7 +100,9 @@ ALL_EDGE_TYPES = frozenset({
     EDGE_TYPE_CALLS_METHOD, EDGE_TYPE_CALLS_SERVICE, EDGE_TYPE_INJECTS,
     EDGE_TYPE_IMPORTS, EDGE_TYPE_CONTAINS, EDGE_TYPE_CONSUMES_TOPIC,
     EDGE_TYPE_PRODUCES_TOPIC, EDGE_TYPE_READS_CONFIG, EDGE_TYPE_EXPOSES_ENDPOINT,
-    EDGE_TYPE_DECLARES,
+    EDGE_TYPE_DECLARES, EDGE_TYPE_DECLARES_CONFIG, EDGE_TYPE_HANDLES_ENDPOINT,
+    EDGE_TYPE_IMPLEMENTS_FEIGN, EDGE_TYPE_INJECTS_BEAN, EDGE_TYPE_READS_FIELD,
+    EDGE_TYPE_USES_DATA_RESOURCE,
     EDGE_TYPE_TRANSITIVELY_CALLS, EDGE_TYPE_DATA_FLOWS_TO,
     EDGE_TYPE_CONFIG_PROPAGATES, EDGE_TYPE_HISTORICALLY_RELATED,
     EDGE_TYPE_SEMANTIC_SIMILAR, EDGE_TYPE_RISK_CORRELATED,
@@ -110,6 +122,12 @@ EDGE_SEMANTIC_STRENGTH: dict[str, str] = {
     EDGE_TYPE_READS_CONFIG: "confirmed",
     EDGE_TYPE_EXPOSES_ENDPOINT: "confirmed",
     EDGE_TYPE_DECLARES: "confirmed",
+    EDGE_TYPE_DECLARES_CONFIG: "confirmed",
+    EDGE_TYPE_HANDLES_ENDPOINT: "inferred",
+    EDGE_TYPE_IMPLEMENTS_FEIGN: "inferred",
+    EDGE_TYPE_INJECTS_BEAN: "inferred",
+    EDGE_TYPE_READS_FIELD: "inferred",
+    EDGE_TYPE_USES_DATA_RESOURCE: "derived",
     EDGE_TYPE_TRANSITIVELY_CALLS: "derived",
     EDGE_TYPE_DATA_FLOWS_TO: "inferred",
     EDGE_TYPE_CONFIG_PROPAGATES: "inferred",
@@ -125,6 +143,11 @@ EDGE_SEMANTIC_STRENGTH: dict[str, str] = {
 
 # Default confidence ranges per §3.4
 EDGE_CONFIDENCE_RANGES: dict[str, tuple[float, float]] = {
+    EDGE_TYPE_HANDLES_ENDPOINT: (0.7, 1.0),
+    EDGE_TYPE_IMPLEMENTS_FEIGN: (0.6, 0.95),
+    EDGE_TYPE_INJECTS_BEAN: (0.6, 0.95),
+    EDGE_TYPE_READS_FIELD: (0.5, 0.9),
+    EDGE_TYPE_USES_DATA_RESOURCE: (0.5, 0.9),
     EDGE_TYPE_TRANSITIVELY_CALLS: (0.4, 0.6),
     EDGE_TYPE_DATA_FLOWS_TO: (0.5, 0.7),
     EDGE_TYPE_CONFIG_PROPAGATES: (0.7, 0.7),
@@ -137,6 +160,40 @@ EDGE_CONFIDENCE_RANGES: dict[str, tuple[float, float]] = {
     EDGE_TYPE_EXPLAINS: (0.6, 0.9),
     EDGE_TYPE_STALE_FOR: (1.0, 1.0),
 }
+
+
+@dataclass(frozen=True)
+class RelationTypeSpec:
+    """Registry contract for valid graph predicates and their endpoints."""
+
+    subject_types: frozenset[str]
+    object_types: frozenset[str]
+    provenance_kind: str
+    relation_mode: str
+    max_safe_depth: int = 2
+
+
+_ANY_NODE_TYPES = ALL_NODE_TYPES
+RELATION_TYPE_SPECS: dict[str, RelationTypeSpec] = {
+    EDGE_TYPE_CONTAINS: RelationTypeSpec(frozenset({NODE_TYPE_WORKSPACE, NODE_TYPE_SERVICE}), _ANY_NODE_TYPES, "STATIC", "STRUCTURAL"),
+    EDGE_TYPE_DECLARES: RelationTypeSpec(frozenset({NODE_TYPE_FILE, NODE_TYPE_CLASS, NODE_TYPE_FEIGN_CLIENT}), frozenset({NODE_TYPE_CLASS, NODE_TYPE_INTERFACE, NODE_TYPE_METHOD, NODE_TYPE_FIELD, NODE_TYPE_FEIGN_CLIENT, NODE_TYPE_FEIGN_METHOD}), "STATIC", "STRUCTURAL"),
+    EDGE_TYPE_DECLARES_CONFIG: RelationTypeSpec(frozenset({NODE_TYPE_FILE}), frozenset({NODE_TYPE_CONFIG_KEY}), "STATIC", "STRUCTURAL"),
+    EDGE_TYPE_EXPOSES_ENDPOINT: RelationTypeSpec(frozenset({NODE_TYPE_CLASS}), frozenset({NODE_TYPE_ENDPOINT}), "STATIC", "STRUCTURAL"),
+    EDGE_TYPE_HANDLES_ENDPOINT: RelationTypeSpec(frozenset({NODE_TYPE_METHOD}), frozenset({NODE_TYPE_ENDPOINT}), "STATIC", "CAUSAL_CANDIDATE"),
+    EDGE_TYPE_CALLS_SERVICE: RelationTypeSpec(frozenset({NODE_TYPE_FEIGN_CLIENT}), frozenset({NODE_TYPE_SERVICE}), "STATIC", "CAUSAL_CANDIDATE"),
+    EDGE_TYPE_IMPLEMENTS_FEIGN: RelationTypeSpec(frozenset({NODE_TYPE_FEIGN_METHOD}), frozenset({NODE_TYPE_ENDPOINT}), "STATIC", "CAUSAL_CANDIDATE"),
+    EDGE_TYPE_PRODUCES_TOPIC: RelationTypeSpec(frozenset({NODE_TYPE_MQ_PRODUCER}), frozenset({NODE_TYPE_MQ_TOPIC}), "STATIC", "STRUCTURAL"),
+    EDGE_TYPE_CONSUMES_TOPIC: RelationTypeSpec(frozenset({NODE_TYPE_MQ_CONSUMER}), frozenset({NODE_TYPE_MQ_TOPIC}), "STATIC", "STRUCTURAL"),
+    EDGE_TYPE_INJECTS_BEAN: RelationTypeSpec(frozenset({NODE_TYPE_CLASS}), frozenset({NODE_TYPE_CLASS, NODE_TYPE_BEAN}), "STATIC", "CAUSAL_CANDIDATE"),
+    EDGE_TYPE_READS_CONFIG: RelationTypeSpec(frozenset({NODE_TYPE_CLASS}), frozenset({NODE_TYPE_CONFIG_KEY}), "STATIC", "CAUSAL_CANDIDATE"),
+    EDGE_TYPE_READS_FIELD: RelationTypeSpec(frozenset({NODE_TYPE_METHOD}), frozenset({NODE_TYPE_FIELD}), "STATIC", "CAUSAL_CANDIDATE"),
+    EDGE_TYPE_USES_DATA_RESOURCE: RelationTypeSpec(frozenset({NODE_TYPE_CLASS}), frozenset({NODE_TYPE_DATA_RESOURCE}), "STATIC", "CORRELATIONAL"),
+    EDGE_TYPE_IMPORTS: RelationTypeSpec(frozenset({NODE_TYPE_FILE}), frozenset({NODE_TYPE_FILE}), "STATIC", "STRUCTURAL"),
+}
+
+# Derived and runtime relations may connect multiple registered types.
+for _edge_type in ALL_EDGE_TYPES:
+    RELATION_TYPE_SPECS.setdefault(_edge_type, RelationTypeSpec(_ANY_NODE_TYPES, _ANY_NODE_TYPES, "DERIVED", "CORRELATIONAL"))
 
 
 @dataclass(frozen=True)
@@ -213,6 +270,17 @@ def validate_node_type(node_type: str) -> bool:
 def validate_edge_type(edge_type: str) -> bool:
     """Check if an edge type is in the known ontology."""
     return edge_type in ALL_EDGE_TYPES
+
+
+def relation_type_spec(edge_type: str) -> RelationTypeSpec | None:
+    """Return the registry contract for an edge type, if known."""
+    return RELATION_TYPE_SPECS.get(edge_type)
+
+
+def validate_relation(subject_type: str, edge_type: str, object_type: str) -> bool:
+    """Validate relation endpoints against the ontology registry."""
+    spec = relation_type_spec(edge_type)
+    return bool(spec and subject_type in spec.subject_types and object_type in spec.object_types)
 
 
 def edge_strength(edge_type: str) -> str:

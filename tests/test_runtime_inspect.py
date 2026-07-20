@@ -35,6 +35,9 @@ def test_runtime_inspect_is_path_free_and_reports_effective_state(tmp_path: Path
     }
     assert result["session"]["thread_session_bound"] is True
     assert result["history"]["retention"] == {"days": 30, "max_records": 100_000}
+    assert result["ontology"]["assertions"]["active"] >= 0
+    assert result["ontology"]["diagnostics"]["node_types"] == []
+    assert result["ontology"]["diagnostics"]["edge_types"] == []
     assert str(tmp_path) not in rendered
     assert "session-1" not in rendered
     assert WorkspaceStore(workspace).read_jsonl(AUDIT_LOG_FILE, limit=10) == []

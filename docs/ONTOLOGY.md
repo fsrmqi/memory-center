@@ -275,4 +275,4 @@
 
 新增或修改语义强度时，必须同步更新 ontology registry、本文档和覆盖全部 edge type 的测试。
 
-**注意：** §3.1 表中部分关系（HANDLES_ENDPOINT、IMPLEMENTS_FEIGN、INJECTS_BEAN、READS_FIELD、USES_DATA_RESOURCE、DECLARES_CONFIG）在当前代码 `ALL_EDGE_TYPES` 中不存在，待负责人确认是否为遗留设计或待实现项。
+本体 registry 已覆盖索引器实际产出的 `HANDLES_ENDPOINT`、`IMPLEMENTS_FEIGN`、`INJECTS_BEAN`、`READS_FIELD`、`USES_DATA_RESOURCE`、`DECLARES_CONFIG` 等边；CI 会校验索引器字面量边类型均已注册。新增关系必须先在 registry 声明 endpoint、来源和关系模式，再进入索引器。

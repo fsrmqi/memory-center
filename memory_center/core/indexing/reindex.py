@@ -329,6 +329,23 @@ def reindex_workspace(
             )
             manifest["physical_shards"] = physical_shards
             activate_generation(store, generation, counts=counts, shard_manifest=manifest)
+            # The assertion sidecar is auxiliary: the graph generation is
+            # already visible, so an assertion write failure must never roll
+            # back or delay the usable index.
+            try:
+                from memory_center.core.knowledge.assertions import materialize_static_assertions
+
+                materialize_static_assertions(
+                    store,
+                    generation,
+                    paths=list(paths or []),
+                    projects=list(projects or []),
+                )
+            except Exception as exc:
+                store.write_json(
+                    "assertion-index.json",
+                    {"schema_version": 1, "generation": generation, "status": "unavailable", "reason": str(exc)[:200]},
+                )
             _report_progress(progress, "finalizing", 98, "索引代际已发布")
             # Preserve the historical reindex return schema. Generation and
             # shard routing are published through index-control/status files.
@@ -1189,8 +1206,11 @@ def build_graph_store(config: WorkspaceConfig, store: WorkspaceStore, *, project
                 edges.append(GraphEdge(edge_id("READS_CONFIG", owner_class_id, kid), owner_class_id, kid, "READS_CONFIG", 0.84, {"evidence": usage}))
 
             for resource in sym.get("data_resources", []):
-                rid = node_id(resource.get("kind", "DataResource"), resource.get("name", "unknown"))
-                nodes.append(GraphNode(rid, resource.get("kind", "DataResource"), resource.get("name", "unknown"), sym["project"], sym["file"], metadata=resource))
+                # Keep the ontology type stable while retaining the concrete
+                # storage technology in metadata for filtering and display.
+                resource_metadata = {**resource, "resource_kind": resource.get("kind", "DataResource")}
+                rid = node_id("DataResource", resource.get("kind", "DataResource"), resource.get("name", "unknown"))
+                nodes.append(GraphNode(rid, "DataResource", resource.get("name", "unknown"), sym["project"], sym["file"], metadata=resource_metadata))
                 edges.append(GraphEdge(edge_id("USES_DATA_RESOURCE", owner_class_id, rid), owner_class_id, rid, "USES_DATA_RESOURCE", 0.72, {"evidence": resource}))
 
         # ── Multi-language structural pass ────────────────────────────────
