@@ -730,7 +730,7 @@ L2 task spaces 还提供恢复体验相关操作：健康检查、修复计划�
 
 ## 11. Freshness, Hooks, and Host Integration / 新鲜度、Hook 与宿主集成
 
-`IndexFreshnessService` 通过 graph/index 时间和 workspace shape 生成 freshness banner。`mc_start`、hybrid retrieval、context pack、walkthrough 等主链路会暴露 freshness 相关信息，提醒 agent 在 stale/pending 时读取 live file 或 reindex。`freshness/daemon.py` 以独立本地进程持有每个 workspace 的 watcher lock，轮询并去抖源码和配置变更，再通过既有失效计划提交有界 partial reindex job；状态持久化在 `watcher-daemon.json`，CLI、MCP 与 Workbench 读取同一状态，不在查询热路径执行全量扫描。job 到达终态后 `change_reports.py` 仅使用失效计划、任务结果、服务路径前缀和 generation 元数据生成有界影响摘要；它不会加载全量图或自动调用深度 impact，契约类高风险变更只返回显式复核建议。报告确认采用追加式审计事件与紧凑索引读模型：`confirmed`、`false_positive`、`resolved` 关闭报告，`deep_analysis_required` 保持待确认。Workbench 仅读取最多 5 条未确认高风险项；报告和确认审计均按 30 天、10 万条做日常裁剪。
+`IndexFreshnessService` 通过 graph/index 时间和 workspace shape 生成 freshness banner。`mc_start`、hybrid retrieval、context pack、walkthrough 等主链路会暴露 freshness 相关信息，提醒 agent 在 stale/pending 时读取 live file 或 reindex。`freshness/daemon.py` 以独立本地进程持有每个 workspace 的 watcher lock，轮询并去抖源码和配置变更，再通过既有失效计划提交有界 partial reindex job；状态持久化在 `watcher-daemon.json`，CLI、MCP 与 Workbench 读取同一状态，不在查询热路径执行全量扫描。job 到达终态后 `change_reports.py` 仅使用失效计划、任务结果、服务路径前缀和 generation 元数据生成有界影响摘要；它不会加载全量图或自动调用深度 impact，契约类高风险变更只返回显式复核建议。报告确认采用追加式审计事件与紧凑索引读模型：`confirmed`、`false_positive`、`resolved` 关闭报告，`deep_analysis_required` 保持待确认。Workbench 仅读取最多 5 条未确认高风险项；报告和确认审计均按 30 天、10 万条做日常裁剪。MCP 审计采用分层维护：64 KiB 以下的日志同步收口以保证首次维护后的即时一致性，超过阈值的日志改由后台完成物理压缩，避免把十万级 JSONL 扫描置于工具响应链路。
 
 `presentation/evidence_subgraph.py` 是显式导出路径：先以 node id 或受限 symbol 查询定位一个根节点，再执行最多 3 跳、120 条边、80 个节点的邻接遍历。输出只包含节点标识、项目、文件路径、边类型、置信度和证据等级，可渲染为 JSON、Markdown 或 HTML；不读取源码、原始工具载荷或全图，因此不会增加普通查询的延迟与数据暴露面。
 
