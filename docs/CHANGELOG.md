@@ -6,6 +6,14 @@
 - 重要行为变化
 - 明确修复的真实 bug
 
+## 4.3.13 MCP 审计保留一致性
+
+- 修复首次 MCP 调用后过期审计记录仍短暂可见的回归。64 KiB 以内的小型审计日志同步收口，保证返回后立即符合 30 天/10 万条策略；大日志继续后台物理压缩，避免请求线程扫描和重写十万级 JSONL。
+
+## 4.3.13 MCP Audit Retention Consistency
+
+- Expired audit records are now removed synchronously for small logs, while large logs keep asynchronous physical compaction to preserve MCP latency.
+
 ## 4.3.12 查询热路径与后台任务可靠性修复
 
 - 普通语义查询改为复用进程内本地 embedding 模型缓存；不会重复加载权重、不会联网下载，也不会因索引代际不一致隐式全量重建。大规模 dense 查询统一通过已发布 ANN，只有极小测试索引保留精确计算。

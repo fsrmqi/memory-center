@@ -26,6 +26,7 @@ MCP_INVOCATIONS_FILE = "mcp-invocations.jsonl"
 MCP_AUDIT_RETENTION_DAYS = 30
 MCP_AUDIT_MAX_RECORDS = 100_000
 MCP_AUDIT_PRUNE_INTERVAL_SECONDS = 300
+MCP_AUDIT_SYNC_PRUNE_MAX_BYTES = 64 * 1024
 _AUDIT_PRUNE_IN_FLIGHT: set[str] = set()
 _AUDIT_PRUNE_GUARD = threading.Lock()
 _SAFE_MCP_INPUT_FIELDS = (
@@ -233,7 +234,7 @@ def _record_mcp_invocation(
 
 
 def _maintain_mcp_audit_retention(workspace_context: WorkspaceContext, store: WorkspaceStore) -> None:
-    """异步清理 MCP 审计记录，审计维护不得阻塞业务工具响应。"""
+    """在小日志上立即收口，大日志异步物理压缩。"""
     now = time.monotonic()
     if workspace_context.mcp_audit_entry_count is not None:
         workspace_context.mcp_audit_entry_count += 1
@@ -245,6 +246,18 @@ def _maintain_mcp_audit_retention(workspace_context: WorkspaceContext, store: Wo
     if not needs_prune:
         return
     workspace_context.mcp_audit_last_pruned_at = now
+    cutoff = datetime.now(timezone.utc) - timedelta(days=MCP_AUDIT_RETENTION_DAYS)
+    audit_path = store.memory_dir / MCP_INVOCATIONS_FILE
+    # 首次使用和测试/轻量工作区常只有极少量记录。同步裁剪可保证调用返回后
+    # 过期数据不可见；大日志仍完全移出 MCP 请求线程。
+    if not audit_path.exists() or audit_path.stat().st_size <= MCP_AUDIT_SYNC_PRUNE_MAX_BYTES:
+        summary = store.prune_jsonl(
+            MCP_INVOCATIONS_FILE,
+            created_before=cutoff,
+            max_records=MCP_AUDIT_MAX_RECORDS,
+        )
+        workspace_context.mcp_audit_entry_count = summary["kept"]
+        return
     key = str(store.memory_dir.resolve())
     with _AUDIT_PRUNE_GUARD:
         if key in _AUDIT_PRUNE_IN_FLIGHT:
@@ -256,7 +269,7 @@ def _maintain_mcp_audit_retention(workspace_context: WorkspaceContext, store: Wo
             worker_store = WorkspaceStore(workspace_context.workspace_file)
             summary = worker_store.prune_jsonl(
                 MCP_INVOCATIONS_FILE,
-                created_before=datetime.now(timezone.utc) - timedelta(days=MCP_AUDIT_RETENTION_DAYS),
+                created_before=cutoff,
                 max_records=MCP_AUDIT_MAX_RECORDS,
             )
             workspace_context.mcp_audit_entry_count = summary["kept"]
