@@ -6,10 +6,33 @@ the repository demo workspace.
 """
 from __future__ import annotations
 
+import hashlib
 import shutil
 from pathlib import Path
 
 import pytest
+
+_PROTECTED_DEMO_MEMORY = Path(__file__).resolve().parents[1] / "examples" / "spring-cloud-demo" / ".memory-center"
+
+
+def _protected_demo_snapshot() -> dict[str, str]:
+    """Hash every generated-demo file so tests cannot silently mutate fixtures."""
+    if not _PROTECTED_DEMO_MEMORY.exists():
+        return {}
+    return {
+        str(path.relative_to(_PROTECTED_DEMO_MEMORY)): hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in sorted(_PROTECTED_DEMO_MEMORY.rglob("*"))
+        if path.is_file()
+    }
+
+
+@pytest.fixture(autouse=True)
+def protected_demo_workspace_unchanged():
+    """Fail at the mutating test instead of discovering fixture pollution later."""
+    before = _protected_demo_snapshot()
+    yield
+    after = _protected_demo_snapshot()
+    assert after == before, "测试不得修改 examples/spring-cloud-demo/.memory-center；请使用 tmp_path 副本。"
 
 
 @pytest.fixture()

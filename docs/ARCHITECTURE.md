@@ -801,4 +801,5 @@ Memory Center 默认不改业务源码。写入范围主要限于：
 - 不提交真实私有项目生成的 `.memory-center/index` 或 `.memory-center/memory`。
 - 示例、docs、tests 不写私有路径、内部服务名或真实密钥。
 - 新增测试如果会写 graph / memory / index / benchmark，必须复制 demo workspace 到 `tmp_path` 后操作。
+- `tests/conftest.py` 会在每个测试前后校验受跟踪 demo workspace 的摘要；测试不得绕过该门禁直接写入 `examples/spring-cloud-demo/.memory-center`。
 - MCP tool schema 变化默认 additive；破坏兼容时必须同步 README、CHANGELOG、docs 和测试。

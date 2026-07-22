@@ -6,6 +6,14 @@
 - 重要行为变化
 - 明确修复的真实 bug
 
+## 4.3.15 测试样例工作区隔离
+
+- 测试框架现在在每个测试前后校验 `examples/spring-cloud-demo/.memory-center` 的完整摘要。任何直接写入受跟踪样例工作区的测试会在当场失败，所有写操作必须使用 `tmp_path` 副本。
+
+## 4.3.15 Test Fixture Workspace Isolation
+
+- The test framework now hashes the demo workspace before and after every test, failing at the exact test that writes to the tracked fixture. Write tests must use a `tmp_path` copy.
+
 ## 4.3.14 MCP 大日志保留闭环
 
 - MCP 审计的 JSONL 与 SQLite 查询在后台物理压缩期间立即按 30 天、10 万条窗口过滤；大日志不再短暂暴露过期数据。新增大日志非阻塞回归，确保维护线程不会拉长 MCP 工具响应。
