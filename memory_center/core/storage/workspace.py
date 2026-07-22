@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from collections import deque
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -12,6 +12,9 @@ from memory_center.core.storage.runtime import RuntimeStore
 
 _MISSING = object()
 _JSON_FILE_CACHE: dict[tuple[str, int, int], Any] = {}
+_MCP_INVOCATIONS_FILE = "mcp-invocations.jsonl"
+_MCP_AUDIT_RETENTION_DAYS = 30
+_MCP_AUDIT_MAX_RECORDS = 100_000
 
 
 def _safe_path(base: Path, name: str) -> Path:
@@ -48,6 +51,30 @@ def _parse_record_timestamp(value: Any) -> datetime:
     if parsed.tzinfo is None:
         return parsed.replace(tzinfo=timezone.utc)
     return parsed.astimezone(timezone.utc)
+
+
+def _mcp_audit_cutoff() -> str:
+    return (datetime.now(timezone.utc) - timedelta(days=_MCP_AUDIT_RETENTION_DAYS)).isoformat()
+
+
+def _read_tail_lines(path: Path, limit: int) -> list[str]:
+    """读取 JSONL 末尾有限行，避免审计读取扫描完整大文件。"""
+    if limit <= 0:
+        return []
+    block_size = 64 * 1024
+    with path.open("rb") as handle:
+        handle.seek(0, 2)
+        position = handle.tell()
+        blocks: list[bytes] = []
+        newlines = 0
+        while position > 0 and newlines <= limit:
+            read_size = min(block_size, position)
+            position -= read_size
+            handle.seek(position)
+            block = handle.read(read_size)
+            blocks.append(block)
+            newlines += block.count(b"\n")
+    return b"".join(reversed(blocks)).decode("utf-8", errors="replace").splitlines()[-limit:]
 
 
 class WorkspaceStore:
@@ -156,14 +183,25 @@ class WorkspaceStore:
         if not path.exists():
             return []
         rows: list[dict[str, Any]] = []
-        for line in path.read_text(encoding="utf-8").splitlines()[-limit:]:
+        # MCP audit exports may be physically compacted in a background thread.
+        # Read a bounded tail and enforce the retention window immediately so a
+        # caller never observes expired rows while compaction is in flight.
+        tail_limit = max(1, limit)
+        cutoff = ""
+        if name == _MCP_INVOCATIONS_FILE:
+            tail_limit = max(tail_limit, min(4096, tail_limit * 8))
+            cutoff = _mcp_audit_cutoff()
+        for line in _read_tail_lines(path, tail_limit):
             if not line.strip():
                 continue
             try:
-                rows.append(json.loads(line))
+                item = json.loads(line)
+                if cutoff and str(item.get("created_at", "") or "") < cutoff:
+                    continue
+                rows.append(item)
             except (json.JSONDecodeError, UnicodeDecodeError):
                 continue
-        return rows
+        return rows[-limit:]
 
     def find_jsonl(self, name: str, predicate, limit: int = 200) -> list[dict[str, Any]]:
         rows = self.read_jsonl(name, limit=5000)
@@ -245,7 +283,13 @@ class WorkspaceStore:
         return self.memory_backend().stats()
 
     def memory_backend_query_records(self, *, collection: str = "", record_id: str = "", created_after: str = "", project: str = "", payload_type: str = "", session_id: str = "", limit: int = 50) -> dict[str, Any]:
-        return self.memory_backend().query_records(collection=collection, record_id=record_id, created_after=created_after, project=project, payload_type=payload_type, session_id=session_id, limit=limit)
+        if collection == _MCP_INVOCATIONS_FILE:
+            cutoff = _mcp_audit_cutoff()
+            created_after = max(created_after, cutoff) if created_after else cutoff
+        result = self.memory_backend().query_records(collection=collection, record_id=record_id, created_after=created_after, project=project, payload_type=payload_type, session_id=session_id, limit=limit)
+        if collection == _MCP_INVOCATIONS_FILE:
+            result["total_count"] = min(int(result.get("total_count", 0) or 0), _MCP_AUDIT_MAX_RECORDS)
+        return result
 
     def read_json_prefer_backend(self, name: str, default: Any) -> Any:
         """Read deterministic runtime state from the canonical SQLite store.

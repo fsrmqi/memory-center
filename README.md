@@ -820,7 +820,7 @@ Before `mc_start` and `mc_lookup` return indexed evidence, Memory Center schedul
 
 每个 watcher 局部 reindex 到达终态后都会写入轻量变更影响摘要。摘要只使用变更路径、已有失效计划、任务统计和 index generation，记录受影响服务、风险等级与证据边界；通过 `memory-center change-impact-reports` 查看。DTO、Feign、MQ、HTTP、配置等高风险变更只会提示显式执行深度分析，不会由后台自动触发昂贵的全图检索。
 
-摘要可通过 `memory-center change-impact-confirm --report-id <id> --decision confirmed|false_positive|deep_analysis_required|resolved` 追加人工结论；可关联任务、会话、验证状态和验证人。`deep_analysis_required` 会继续保留为待确认项，Workbench 的 `hot_refresh.pending_change_reports.high_risk_reports` 只展示最多 5 条未确认高风险报告。审计事件与紧凑反馈索引都自动保留 30 天且最多 10 万条：64 KiB 以内的 MCP 审计日志会在首次维护时同步收口，大日志在后台物理压缩，避免请求线程扫描和重写十万级 JSONL。
+摘要可通过 `memory-center change-impact-confirm --report-id <id> --decision confirmed|false_positive|deep_analysis_required|resolved` 追加人工结论；可关联任务、会话、验证状态和验证人。`deep_analysis_required` 会继续保留为待确认项，Workbench 的 `hot_refresh.pending_change_reports.high_risk_reports` 只展示最多 5 条未确认高风险报告。审计事件与紧凑反馈索引都自动保留 30 天且最多 10 万条：读取会立即按窗口过滤，64 KiB 以内的 MCP 审计日志同步收口，大日志在后台物理压缩，避免请求线程扫描和重写十万级 JSONL。
 
 需要为一次链路分析生成可交接的证据视图时，使用 `memory-center export-evidence-subgraph --workspace <workspace.yaml> --target <node-id-or-symbol> --format markdown`。也可通过 `GET /workspace/evidence-subgraph` 或 `mc_admin(action="evidence_subgraph_export")` 获取 JSON、Markdown、HTML。导出严格限制为最多 3 跳、120 条边、80 个节点，不读取源码、不扫描全图，也不会进入普通查询热路径。
 

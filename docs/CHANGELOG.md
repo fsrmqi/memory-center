@@ -6,6 +6,14 @@
 - 重要行为变化
 - 明确修复的真实 bug
 
+## 4.3.14 MCP 大日志保留闭环
+
+- MCP 审计的 JSONL 与 SQLite 查询在后台物理压缩期间立即按 30 天、10 万条窗口过滤；大日志不再短暂暴露过期数据。新增大日志非阻塞回归，确保维护线程不会拉长 MCP 工具响应。
+
+## 4.3.14 MCP Large-log Retention Closure
+
+- MCP audit reads now enforce the 30-day/100k window while background compaction is in progress. Large-log retention has a non-blocking regression guard.
+
 ## 4.3.13 MCP 审计保留一致性
 
 - 修复首次 MCP 调用后过期审计记录仍短暂可见的回归。64 KiB 以内的小型审计日志同步收口，保证返回后立即符合 30 天/10 万条策略；大日志继续后台物理压缩，避免请求线程扫描和重写十万级 JSONL。
