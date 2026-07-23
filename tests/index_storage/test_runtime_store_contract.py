@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from memory_center.core.storage.graph import GraphEdge, GraphNode
+from memory_center.core.storage.maintenance import cleanup_legacy_memory_store
 from memory_center.core.storage.runtime import RuntimeStore
 
 
@@ -45,3 +46,20 @@ def test_runtime_neighbors_uses_bounded_bfs_for_wide_cyclic_graph(tmp_path) -> N
     assert len(results) == 20
     assert len({item["id"] for item in results}) == 20
     assert all(item["id"] != "root" and item["depth"] == 1 for item in results)
+
+
+def test_legacy_memory_store_cleanup_never_targets_runtime_db(tmp_path) -> None:
+    workspace = tmp_path / ".memory-center" / "workspace.yaml"
+    workspace.parent.mkdir(parents=True)
+    workspace.write_text("workspace: demo\nservices: []\n", encoding="utf-8")
+    legacy = workspace.parent / "memory" / "memory.db"
+    legacy.parent.mkdir()
+    legacy.write_bytes(b"retired-store")
+
+    preview = cleanup_legacy_memory_store(workspace)
+    assert preview["bytes"] == len(b"retired-store")
+    assert legacy.exists()
+    result = cleanup_legacy_memory_store(workspace, apply=True)
+    assert result["removed"]
+    assert not legacy.exists()
+    assert (workspace.parent / "graph" / "graph.db").exists() is False

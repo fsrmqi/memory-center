@@ -1,5 +1,13 @@
 # Changelog / 更新日志
 
+## 4.3.19 运行时存储去重 / Runtime Storage Deduplication
+
+- 新增 `artifact storage-legacy-cleanup --dry-run|--apply`，仅在当前运行时已经使用 `graph/graph.db` 时识别和清理遗留 `memory/memory.db`，避免旧双存储架构继续占用磁盘。
+
+## 4.3.19 Runtime Storage Deduplication
+
+- Added `artifact storage-legacy-cleanup --dry-run|--apply`, which detects and removes retired `memory/memory.db` only when the active runtime already uses `graph/graph.db`.
+
 ## 4.3.18 交付 Skill 演进与空间治理 / Delivery Skill Evolution and Storage Governance
 
 - 新增已验证交付到 Agent Skill 的受控闭环：只有已关闭、验收全部通过且存在定位证据的任务才能生成候选；候选必须显式发布，避免未验证经验自动进入正式 Skill。

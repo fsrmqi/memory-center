@@ -12,6 +12,7 @@ from rich import print
 from memory_center.application.tasks import execute_task_repair
 from memory_center.core.indexing.control_plane import index_control_status
 from memory_center.core.indexing.shards import cleanup_generations
+from memory_center.core.storage.maintenance import cleanup_legacy_memory_store
 from memory_center.core.storage.workspace import WorkspaceStore
 from memory_center.core.tasks.artifacts import (
     append_change_log,
@@ -236,3 +237,8 @@ def register_artifact_commands(app: typer.Typer) -> None:
         store = WorkspaceStore(workspace)
         control = index_control_status(store)
         print(cleanup_generations(store, active_generation=str(control.get("active_generation", "") or ""), previous_generation=str(control.get("previous_generation", "") or ""), keep=max(2, keep), apply=apply))
+
+    @app.command("storage-legacy-cleanup")
+    def artifact_storage_legacy_cleanup_cmd(workspace: str = typer.Option(...), apply: bool = typer.Option(False, "--apply/--dry-run", help="默认只预览；--apply 删除未被当前运行时使用的旧 memory.db。")):
+        """清理旧存储架构遗留的 memory/memory.db 副本。"""
+        print(cleanup_legacy_memory_store(workspace, apply=apply))
