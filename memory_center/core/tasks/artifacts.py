@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import gzip
 import json
+import os
 import re
 import shutil
 from collections.abc import Callable
@@ -53,6 +55,8 @@ DEFAULT_RESOLVE_SCORE_THRESHOLD = 3
 TASK_ARTIFACT_EXCERPT_BYTES = 16 * 1024
 TASK_ARTIFACT_HEALTH_EXCERPT_BYTES = 64 * 1024
 TASK_ARTIFACT_WRITE_MAX_BYTES = 512 * 1024
+TASK_ARTIFACT_COMPACT_THRESHOLD_BYTES = 2 * 1024 * 1024
+TASK_ARTIFACT_COMPACT_KEEP_BYTES = 64 * 1024
 TASK_EVIDENCE_INLINE_MAX_BYTES = 64 * 1024
 TASK_DECISIONS_FILE = "decisions.jsonl"
 ARTIFACT_WRITE_AUDIT_FILE = "artifact-write-audit.jsonl"
@@ -1059,6 +1063,37 @@ def auto_archive_task_spaces(workspace_file: str | Path, retention_days: int = 3
         "archived_count": len(archived_items),
         "archived_tasks": archived_items,
     }
+
+
+def compact_task_artifacts(workspace_file: str | Path, task_id: str, *, threshold_bytes: int = TASK_ARTIFACT_COMPACT_THRESHOLD_BYTES, keep_bytes: int = TASK_ARTIFACT_COMPACT_KEEP_BYTES) -> dict[str, object]:
+    """Gzip oversized task artifacts and retain a bounded live tail for agents."""
+    store = WorkspaceStore(workspace_file)
+    task_dir, meta = _resolve_task_dir(store, task_id)
+    archive_dir = task_dir / "archives"
+    compacted: list[dict[str, object]] = []
+    for key, filename in _artifact_mapping(include_task_only=True).items():
+        path = task_dir / filename
+        if not path.exists() or path.stat().st_size <= threshold_bytes:
+            continue
+        before_bytes = path.stat().st_size
+        archive_dir.mkdir(parents=True, exist_ok=True)
+        archive = archive_dir / f"{filename}.{int(path.stat().st_mtime)}.gz"
+        with path.open("rb") as source, gzip.open(archive, "wb", compresslevel=6) as target:
+            shutil.copyfileobj(source, target, length=1024 * 1024)
+        with path.open("rb") as source:
+            source.seek(max(0, path.stat().st_size - keep_bytes))
+            tail = source.read().decode("utf-8", errors="replace")
+        compact = (
+            f"# {key} / 已压缩任务工件\n\n"
+            f"> 原文件 `{filename}` 过大，已压缩归档到 `archives/{archive.name}`；保留以下最近 {keep_bytes} 字节供 Agent 恢复上下文。\n\n"
+            f"{tail.lstrip()}"
+        )
+        temp = path.with_name(f".{path.name}.compact")
+        temp.write_text(compact, encoding="utf-8")
+        os.replace(temp, path)
+        compacted.append({"name": key, "file": filename, "before_bytes": before_bytes, "archive_bytes": archive.stat().st_size, "archive": str(archive.relative_to(task_dir)), "after_bytes": path.stat().st_size})
+    _touch_task_meta(store, task_dir, meta, source="compact_task_artifacts")
+    return {"task_id": meta["task_id"], "compacted": compacted, "threshold_bytes": threshold_bytes, "keep_bytes": keep_bytes}
 
 
 def _resolve_artifact_name(name: str, include_task_only: bool = False) -> tuple[str, str]:

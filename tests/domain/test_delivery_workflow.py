@@ -1,10 +1,17 @@
 from __future__ import annotations
 
 from memory_center.application.admin import build_admin_registry
-from memory_center.core.tasks.artifacts import create_task_space, list_task_spaces
+from memory_center.core.tasks.artifacts import (
+    compact_task_artifacts,
+    create_task_space,
+    list_task_spaces,
+    update_task_artifact,
+)
 from memory_center.core.tasks.delivery import (
+    delivery_skill_candidate,
     delivery_workflow_status,
     initialize_delivery_workflow,
+    publish_delivery_skill,
     record_delivery_validation,
     transition_delivery_stage,
     update_delivery_contract,
@@ -59,3 +66,36 @@ def test_delivery_admin_contract_actions_use_existing_facade(demo_workspace) -> 
     result = registry.dispatch("delivery_contract_update")
     assert result["updated"] is True
     assert result["items"][0]["id"] == "REQ-1"
+
+
+def test_closed_verified_delivery_can_publish_reviewed_skill(demo_workspace) -> None:
+    task = create_task_space(demo_workspace, title="发布接口", intent="新增发布接口")
+    task_id = task["task_id"]
+    initialize_delivery_workflow(demo_workspace, task_id)
+    update_delivery_contract(demo_workspace, task_id, kind="requirements", items=[{"id": "REQ-1", "title": "发布", "scope": "接口", "acceptance_ids": ["AC-1"]}])
+    update_delivery_contract(demo_workspace, task_id, kind="acceptance", items=[{"id": "AC-1", "title": "测试", "required": True}])
+    transition_delivery_stage(demo_workspace, task_id, "breakdown")
+    transition_delivery_stage(demo_workspace, task_id, "locate")
+    update_delivery_contract(demo_workspace, task_id, kind="subtasks", items=[{"id": "SUB-1", "title": "实现", "code_targets": ["ArticleController#publish"]}])
+    transition_delivery_stage(demo_workspace, task_id, "implement")
+    update_delivery_subtask_status(demo_workspace, task_id, "SUB-1", "implemented")
+    transition_delivery_stage(demo_workspace, task_id, "verify")
+    record_delivery_validation(demo_workspace, task_id, status="passed", acceptance_ids=["AC-1"])
+    transition_delivery_stage(demo_workspace, task_id, "close")
+
+    candidate = delivery_skill_candidate(demo_workspace, task_id)
+    assert candidate["candidate"]["eligible"] is True
+    published = publish_delivery_skill(demo_workspace, task_id)
+    assert published["published"] is True
+    assert (demo_workspace.parent / "artifacts" / "skills" / "delivery-published" / task_id / "SKILL.md").exists()
+
+
+def test_compact_task_artifacts_keeps_bounded_live_content(demo_workspace) -> None:
+    task = create_task_space(demo_workspace, title="大工件", intent="压缩")
+    task_id = task["task_id"]
+    result = update_task_artifact(demo_workspace, task_id, "context", "x" * 60_000)
+    assert result["updated"] is True
+    compacted = compact_task_artifacts(demo_workspace, task_id, threshold_bytes=1_000, keep_bytes=512)
+    assert compacted["compacted"]
+    item = compacted["compacted"][0]
+    assert item["before_bytes"] > item["after_bytes"]

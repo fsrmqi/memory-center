@@ -1,5 +1,15 @@
 # Changelog / 更新日志
 
+## 4.3.18 交付 Skill 演进与空间治理 / Delivery Skill Evolution and Storage Governance
+
+- 新增已验证交付到 Agent Skill 的受控闭环：只有已关闭、验收全部通过且存在定位证据的任务才能生成候选；候选必须显式发布，避免未验证经验自动进入正式 Skill。
+- 新增 `artifact delivery-skill-candidate|publish|status` 与 MCP admin 对应动作，并新增 `artifact compact-task`：超大任务工件流式 gzip 归档，仅保留有界恢复上下文。
+
+## 4.3.18 Delivery Skill Evolution and Storage Governance
+
+- Added a governed verified-delivery-to-Agent-Skill loop: only closed tasks with complete passing acceptance evidence and located code targets can create candidates, and candidates require explicit publication.
+- Added `artifact delivery-skill-candidate|publish|status`, matching MCP admin actions, and `artifact compact-task` to stream-gzip oversized task artifacts while retaining bounded recovery context.
+
 ## 4.3.17 Java 调用边准确性 / Java Call-Edge Accuracy
 
 - 修复 Java 调用提取器扫描整个文件导致的伪调用：注解表达式字符串和字段初始化不再被写入 `CALLS_METHOD`。

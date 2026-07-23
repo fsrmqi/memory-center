@@ -24,6 +24,8 @@ REQUIREMENTS_FILE = "requirements.json"
 SUBTASKS_FILE = "subtasks.json"
 ACCEPTANCE_FILE = "acceptance.json"
 VALIDATION_RECEIPTS_FILE = "verification-receipts.jsonl"
+DELIVERY_SKILL_CANDIDATES_DIR = "skills/delivery-candidates"
+DELIVERY_SKILL_PUBLISHED_DIR = "skills/delivery-published"
 WORKFLOW_PROFILE = "feature_delivery_v1"
 STAGES = ("intake", "breakdown", "locate", "implement", "verify", "close")
 SUBTASK_STATUSES = {"pending", "located", "implemented", "blocked", "skipped"}
@@ -188,6 +190,67 @@ def delivery_workflow_status(workspace_file: str | Path, task_id: str) -> dict[s
     }
 
 
+def delivery_skill_candidate(workspace_file: str | Path, task_id: str) -> dict[str, Any]:
+    """Create a bounded, reviewable Skill candidate from one proven delivery."""
+    store = WorkspaceStore(workspace_file)
+    task_dir, meta = _resolve_task_dir(store, task_id)
+    status = delivery_workflow_status(workspace_file, task_id)
+    requirements = _items(task_dir / REQUIREMENTS_FILE)
+    subtasks = _items(task_dir / SUBTASKS_FILE)
+    acceptance = _items(task_dir / ACCEPTANCE_FILE)
+    receipts = _recent_receipts(task_dir)
+    passed = [row for row in receipts if row.get("status") == "passed"]
+    required_ids = {str(item.get("id", "")) for item in acceptance if bool(item.get("required", True))}
+    passed_ids = {identifier for row in passed for identifier in row.get("acceptance_ids", [])}
+    missing = sorted(required_ids - passed_ids)
+    located = [item for item in subtasks if item.get("code_targets")]
+    eligible = status.get("state") == "done" and not missing and bool(located) and bool(passed)
+    score = min(100, 35 + min(25, len(requirements) * 5) + min(25, len(located) * 5) + min(15, len(passed) * 3)) if eligible else 0
+    candidate = {
+        "schema_version": 1,
+        "candidate_id": f"delivery-skill-{meta['task_id']}",
+        "task_id": meta["task_id"],
+        "title": str(meta.get("title", "")),
+        "created_at": _now(),
+        "eligible": eligible,
+        "quality_score": score,
+        "missing": missing,
+        "requirements": [{"id": item["id"], "title": item["title"], "scope": item.get("scope", "")} for item in requirements[:30]],
+        "code_targets": [target for item in located for target in item.get("code_targets", [])][:80],
+        "acceptance": [{"id": item["id"], "title": item["title"], "verification_type": item.get("verification_type", "test")} for item in acceptance[:30]],
+        "validation": [{"receipt_id": row.get("receipt_id", ""), "summary": str(row.get("summary", ""))[:500], "acceptance_ids": row.get("acceptance_ids", [])[:30]} for row in passed[-20:]],
+    }
+    path = store.artifacts_dir / DELIVERY_SKILL_CANDIDATES_DIR / f"{meta['task_id']}.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(candidate, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return {"generated": True, "candidate": candidate, "path": str(path), "next_action": "eligible 时执行 delivery-skill-publish；否则先补齐缺失验收或定位证据。"}
+
+
+def publish_delivery_skill(workspace_file: str | Path, task_id: str) -> dict[str, Any]:
+    """Publish an approved candidate as an agent-readable Skill artifact."""
+    store = WorkspaceStore(workspace_file)
+    candidate_path = store.artifacts_dir / DELIVERY_SKILL_CANDIDATES_DIR / f"{task_id}.json"
+    if not candidate_path.exists():
+        return {"published": False, "reason": "candidate_not_found", "next_action": "先执行 delivery-skill-candidate。"}
+    candidate = json.loads(candidate_path.read_text(encoding="utf-8"))
+    if not candidate.get("eligible"):
+        return {"published": False, "reason": "candidate_not_eligible", "missing": candidate.get("missing", []), "next_action": "补齐交付门禁后重新生成候选。"}
+    slug = _skill_slug(str(candidate.get("task_id", "delivery-skill")))
+    path = store.artifacts_dir / DELIVERY_SKILL_PUBLISHED_DIR / slug / "SKILL.md"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(_delivery_skill_markdown(candidate), encoding="utf-8")
+    manifest_path = path.parent / "manifest.json"
+    manifest_path.write_text(json.dumps({"schema_version": 1, "task_id": candidate["task_id"], "candidate_id": candidate["candidate_id"], "quality_score": candidate["quality_score"], "published_at": _now()}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return {"published": True, "task_id": candidate["task_id"], "quality_score": candidate["quality_score"], "path": str(path), "next_action": "将该 Skill 加入 Agent 指令的按需读取列表；后续仅从新的已验证交付生成候选。"}
+
+
+def delivery_skill_status(workspace_file: str | Path, task_id: str) -> dict[str, Any]:
+    store = WorkspaceStore(workspace_file)
+    candidate = store.artifacts_dir / DELIVERY_SKILL_CANDIDATES_DIR / f"{task_id}.json"
+    published = store.artifacts_dir / DELIVERY_SKILL_PUBLISHED_DIR / _skill_slug(task_id) / "SKILL.md"
+    return {"task_id": task_id, "candidate": str(candidate) if candidate.exists() else "", "published_skill": str(published) if published.exists() else "", "next_action": "delivery-skill-candidate" if not candidate.exists() else ("delivery-skill-publish" if not published.exists() else "use_published_skill")}
+
+
 def _gate_for_target(task_dir: Path, target: str) -> dict[str, Any]:
     requirements, subtasks, acceptance, receipts = (_items(task_dir / REQUIREMENTS_FILE), _items(task_dir / SUBTASKS_FILE), _items(task_dir / ACCEPTANCE_FILE), _recent_receipts(task_dir))
     if target == "intake":
@@ -286,3 +349,39 @@ def _bounded(value: str, limit: int = 120) -> str:
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _skill_slug(value: str) -> str:
+    return "-".join("".join(char.lower() if char.isalnum() else " " for char in value).split()) or "delivery-skill"
+
+
+def _delivery_skill_markdown(candidate: dict[str, Any]) -> str:
+    targets = "\n".join(f"- `{item}`" for item in candidate.get("code_targets", [])) or "- 先通过 Memory Center 定位代码目标。"
+    acceptance = "\n".join(f"- `{item.get('id', '')}` {item.get('title', '')} ({item.get('verification_type', 'test')})" for item in candidate.get("acceptance", [])) or "- 为每项需求定义可验证验收标准。"
+    return f"""# {candidate.get('title', '已验证需求交付')} / Verified Delivery Skill
+
+## 适用场景 / When to use
+
+当新需求与该已验证交付的范围和代码目标相似时使用。本 Skill 来自已关闭任务及其通过的验证回执，质量分为 `{candidate.get('quality_score', 0)}`。
+
+## 执行流程 / Workflow
+
+1. 初始化 `feature_delivery_v1`，录入需求和验收标准。
+2. 为每个子任务关联确切 `code_targets` 后再进入实现。
+3. 实现完成后记录真实验证回执；每个必需验收项必须有 `passed` 回执。
+4. 仅在所有门禁通过后关闭任务，并生成下一轮 Skill 候选。
+
+## 历史代码目标 / Proven Code Targets
+
+{targets}
+
+## 验收清单 / Acceptance Checklist
+
+{acceptance}
+
+## 约束 / Guardrails
+
+- 不将未验证的推断发布为正式经验。
+- 不把大段日志或源码写入任务工件；使用证据引用。
+- Skill 发布需要显式执行 `artifact delivery-skill-publish`。
+"""

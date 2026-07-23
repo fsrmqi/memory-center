@@ -10,6 +10,9 @@ import typer
 from rich import print
 
 from memory_center.application.tasks import execute_task_repair
+from memory_center.core.indexing.control_plane import index_control_status
+from memory_center.core.indexing.shards import cleanup_generations
+from memory_center.core.storage.workspace import WorkspaceStore
 from memory_center.core.tasks.artifacts import (
     append_change_log,
     append_task_change_log,
@@ -18,6 +21,7 @@ from memory_center.core.tasks.artifacts import (
     artifact_outline,
     auto_archive_task_spaces,
     compact_change_log,
+    compact_task_artifacts,
     create_task_space,
     get_artifact,
     get_task_artifact,
@@ -33,8 +37,11 @@ from memory_center.core.tasks.artifacts import (
     update_task_status,
 )
 from memory_center.core.tasks.delivery import (
+    delivery_skill_candidate,
+    delivery_skill_status,
     delivery_workflow_status,
     initialize_delivery_workflow,
+    publish_delivery_skill,
     record_delivery_validation,
     transition_delivery_stage,
     update_delivery_contract,
@@ -202,3 +209,30 @@ def register_artifact_commands(app: typer.Typer) -> None:
     def artifact_delivery_transition_cmd(workspace: str = typer.Option(...), task_id: str = typer.Option(...), stage: str = typer.Option(...), actor: str = typer.Option(""), force: bool = typer.Option(False, help="仅用于已知例外；会保留强制推进历史。")):
         """按门禁将需求交付流程推进到下一阶段。"""
         print(transition_delivery_stage(workspace, task_id, stage, actor=actor, force=force))
+
+    @app.command("delivery-skill-candidate")
+    def artifact_delivery_skill_candidate_cmd(workspace: str = typer.Option(...), task_id: str = typer.Option(...)):
+        """从已验证的关闭任务生成待审核交付 Skill 候选。"""
+        print(delivery_skill_candidate(workspace, task_id))
+
+    @app.command("delivery-skill-publish")
+    def artifact_delivery_skill_publish_cmd(workspace: str = typer.Option(...), task_id: str = typer.Option(...)):
+        """显式发布已合格的交付 Skill 候选。"""
+        print(publish_delivery_skill(workspace, task_id))
+
+    @app.command("delivery-skill-status")
+    def artifact_delivery_skill_status_cmd(workspace: str = typer.Option(...), task_id: str = typer.Option(...)):
+        """查看一个任务的交付 Skill 候选和发布状态。"""
+        print(delivery_skill_status(workspace, task_id))
+
+    @app.command("compact-task")
+    def artifact_compact_task_cmd(workspace: str = typer.Option(...), task_id: str = typer.Option(...), threshold_mb: int = typer.Option(2), keep_kb: int = typer.Option(64)):
+        """压缩归档超大任务工件，保留有界恢复摘要。"""
+        print(compact_task_artifacts(workspace, task_id, threshold_bytes=max(1, threshold_mb) * 1024 * 1024, keep_bytes=max(1, keep_kb) * 1024))
+
+    @app.command("generation-gc")
+    def artifact_generation_gc_cmd(workspace: str = typer.Option(...), keep: int = typer.Option(2, min=2), apply: bool = typer.Option(False, "--apply/--dry-run", help="默认只预览；--apply 删除可回收的旧索引代际。")):
+        """清理旧索引代际，始终保留当前和上一代。"""
+        store = WorkspaceStore(workspace)
+        control = index_control_status(store)
+        print(cleanup_generations(store, active_generation=str(control.get("active_generation", "") or ""), previous_generation=str(control.get("previous_generation", "") or ""), keep=max(2, keep), apply=apply))

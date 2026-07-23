@@ -14,6 +14,8 @@
 - `mc_admin(action="delivery_contract_update", task_id="...", payload='{"kind":"requirements|subtasks|acceptance","items":[...]}')` 更新需求、子任务或验收标准。
 - `mc_admin(action="delivery_subtask_status"|"delivery_validation_record"|"delivery_transition" ...)` 分别更新子任务、记录已执行验证、推进阶段；所有动作返回门禁、缺失项与确定的下一步。
 - 关闭阶段要求每项 `required=true` 的验收标准都关联一条 `passed` 验证回执。传入的 `command` 仅被记录为有界摘要，Memory Center 绝不会执行它。
+- `mc_admin(action="delivery_skill_candidate"|"delivery_skill_publish"|"delivery_skill_status", task_id="...")` 将已验证关闭任务转为可审核、显式发布的 Skill；Agent 不得把未通过候选当成正式经验。
+- 当任务工件或索引代际空间异常时，Agent 先建议 `artifact compact-task` 或 `artifact generation-gc --dry-run`；涉及删除必须由显式 `--apply` 或 `mc_admin(action="index_generation_gc", force=true)` 确认。
 
 ## 1. Public Surface / 对外公开面
 

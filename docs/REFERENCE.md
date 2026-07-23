@@ -178,6 +178,9 @@
 - `artifact delivery-contract --kind requirements|subtasks|acceptance --items '<JSON数组>'`：写入结构化需求、代码定位子任务或验收标准。
 - `artifact delivery-transition --stage breakdown|locate|implement|verify|close`：按门禁推进；验收未被通过回执覆盖时不能关闭。
 - `artifact delivery-record-validation`：仅记录已执行验证的命令摘要、退出码、结果和证据引用，绝不执行命令。
+- `artifact delivery-skill-candidate|delivery-skill-publish|delivery-skill-status`：从已验证关闭任务生成候选、显式发布并查询交付 Skill 状态。
+- `artifact compact-task --task-id <task>`：对超大任务工件进行流式 gzip 归档，保留有界恢复摘要；先执行 `artifact health-task` 识别异常空间。
+- `artifact generation-gc --workspace <workspace.yaml> --dry-run`：预览可回收的旧索引代际；确认后追加 `--apply`。该命令始终保留当前和上一代，Agent 在发现 `index/generations` 占用异常时应先执行预览。
 
 ### `mc_context_pack`
 

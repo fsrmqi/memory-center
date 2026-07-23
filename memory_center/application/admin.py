@@ -136,8 +136,11 @@ from memory_center.core.tasks.artifacts import (
     write_task_evidence_chunk,
 )
 from memory_center.core.tasks.delivery import (
+    delivery_skill_candidate,
+    delivery_skill_status,
     delivery_workflow_status,
     initialize_delivery_workflow,
+    publish_delivery_skill,
     record_delivery_validation,
     transition_delivery_stage,
     update_delivery_contract,
@@ -569,6 +572,9 @@ def build_admin_registry(
             actor=source,
             force=force,
         ),
+        "delivery_skill_candidate": lambda: delivery_skill_candidate(wf, task_id),
+        "delivery_skill_publish": lambda: publish_delivery_skill(wf, task_id),
+        "delivery_skill_status": lambda: delivery_skill_status(wf, task_id),
         "session_start": lambda: workspace_start_session(wf, intent, session_id=session_id or None),
         "session_log": lambda: workspace_log_session_event(wf, session_id, event_type, parse_payload(payload)),
         "session_end": lambda: workspace_end_session(wf, session_id, outcome, verified_by),
