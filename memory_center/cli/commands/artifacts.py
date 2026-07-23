@@ -42,14 +42,19 @@ from memory_center.core.tasks.artifacts import (
     update_task_status,
 )
 from memory_center.core.tasks.delivery import (
+    delivery_matrix,
+    delivery_policy_status,
     delivery_skill_candidate,
     delivery_skill_status,
     delivery_workflow_status,
+    execute_delivery_validation,
     initialize_delivery_workflow,
+    propose_delivery_breakdown,
     publish_delivery_skill,
     record_delivery_validation,
     transition_delivery_stage,
     update_delivery_contract,
+    update_delivery_policy,
     update_delivery_subtask_status,
 )
 
@@ -209,6 +214,26 @@ def register_artifact_commands(app: typer.Typer) -> None:
     def artifact_delivery_validation_cmd(workspace: str = typer.Option(...), task_id: str = typer.Option(...), status: str = typer.Option(...), summary: str = typer.Option(""), command: str = typer.Option(""), exit_code: typing.Optional[int] = typer.Option(None), acceptance_ids: str = typer.Option("[]", help="JSON 数组"), evidence_refs: str = typer.Option("[]", help="JSON 数组"), actor: str = typer.Option("")):
         """记录已执行的验证结果，不会执行传入命令。"""
         print(record_delivery_validation(workspace, task_id, status=status, summary=summary, command=command, exit_code=exit_code, acceptance_ids=json.loads(acceptance_ids), evidence_refs=json.loads(evidence_refs), actor=actor))
+
+    @app.command("delivery-breakdown")
+    def artifact_delivery_breakdown_cmd(workspace: str = typer.Option(...), task_id: str = typer.Option(...), source_refs: str = typer.Option("[]", help="JSON 数组"), summary: str = typer.Option("")):
+        """生成不写入的需求拆解候选，确认后再更新 requirements。"""
+        print(propose_delivery_breakdown(workspace, task_id, source_refs=json.loads(source_refs), summary=summary))
+
+    @app.command("delivery-policy")
+    def artifact_delivery_policy_cmd(workspace: str = typer.Option(...), policy: str = typer.Option("", help="JSON 对象；为空时仅查询"), actor: str = typer.Option("")):
+        """查看或更新受限验证 profile 策略。"""
+        print(update_delivery_policy(workspace, json.loads(policy), actor=actor) if policy else delivery_policy_status(workspace))
+
+    @app.command("delivery-execute-validation")
+    def artifact_delivery_execute_validation_cmd(workspace: str = typer.Option(...), task_id: str = typer.Option(...), profile_id: str = typer.Option(...), acceptance_ids: str = typer.Option("[]", help="JSON 数组"), actor: str = typer.Option("")):
+        """执行工作区预注册验证 profile，不接受任意 shell 命令。"""
+        print(execute_delivery_validation(workspace, task_id, profile_id=profile_id, acceptance_ids=json.loads(acceptance_ids), actor=actor))
+
+    @app.command("delivery-matrix")
+    def artifact_delivery_matrix_cmd(workspace: str = typer.Option(...), task_id: str = typer.Option(...), write: bool = typer.Option(True, "--write/--dry-run")):
+        """生成需求到代码、验收与验证证据的派生矩阵和 TECH_SPEC。"""
+        print(delivery_matrix(workspace, task_id, write=write))
 
     @app.command("delivery-transition")
     def artifact_delivery_transition_cmd(workspace: str = typer.Option(...), task_id: str = typer.Option(...), stage: str = typer.Option(...), actor: str = typer.Option(""), force: bool = typer.Option(False, help="仅用于已知例外；会保留强制推进历史。")):

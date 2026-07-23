@@ -5,6 +5,8 @@ import {
   archiveTaskSpace,
   autoArchiveTaskSpaces,
   getContinuityDashboard,
+  getDeliveryMatrix,
+  getDeliveryStatus,
   getDrillTask,
   getNextActions,
   getResumePacket,
@@ -26,6 +28,8 @@ const continuity = ref(null)
 const resumePacket = ref(null)
 const nextActions = ref(null)
 const taskDetail = ref(null)
+const delivery = ref(null)
+const deliveryMatrix = ref(null)
 const workspaceDashboard = ref(null)
 const loading = ref(false)
 const actionLoading = ref(false)
@@ -109,19 +113,25 @@ async function loadSelectedTask() {
   resumePacket.value = null
   nextActions.value = null
   taskDetail.value = null
+  delivery.value = null
+  deliveryMatrix.value = null
   if (!workspace.value || !selectedTaskId.value) return
 
   const params = { task_id: selectedTaskId.value, view: 'full', limit: 8 }
-  const [continuityResult, resumeResult, actionsResult, detailResult] = await Promise.all([
+  const [continuityResult, resumeResult, actionsResult, detailResult, deliveryResult, matrixResult] = await Promise.all([
     getContinuityDashboard(workspace.value, params),
     getResumePacket(workspace.value, params),
     getNextActions(workspace.value, { task_id: selectedTaskId.value, limit: 8 }),
     getDrillTask(workspace.value, selectedTaskId.value),
+    getDeliveryStatus(workspace.value, selectedTaskId.value),
+    getDeliveryMatrix(workspace.value, selectedTaskId.value),
   ])
   continuity.value = continuityResult
   resumePacket.value = resumeResult
   nextActions.value = actionsResult
   taskDetail.value = detailResult
+  delivery.value = deliveryResult
+  deliveryMatrix.value = matrixResult
   selectedStatus.value = selectedTask.value?.status || ''
   router.replace({
     query: { ...route.query, task_id: selectedTaskId.value, workspace: workspace.value },
@@ -454,6 +464,17 @@ watch(workspace, () => {
             </section>
           </div>
 
+          <section v-if="delivery?.initialized" class="panel delivery-panel">
+            <div class="panel-heading"><h3>需求交付闭环 / Delivery</h3><span class="status-pill">{{ delivery.stage }}</span></div>
+            <p>{{ delivery.next_action }}</p>
+            <div class="stats-grid">
+              <div><span>需求</span><strong>{{ delivery.counts?.requirements || 0 }}</strong></div>
+              <div><span>子任务</span><strong>{{ delivery.counts?.subtasks || 0 }}</strong></div>
+              <div><span>已验证验收</span><strong>{{ delivery.counts?.verified_acceptance || 0 }}</strong></div>
+            </div>
+            <details><summary>需求到证据矩阵</summary><JsonTree :data="deliveryMatrix?.matrix || deliveryMatrix" label="delivery-matrix" :depth="0" /></details>
+          </section>
+
           <div class="panel-grid">
             <section class="panel">
               <h3>最近证据 / Recent Evidence</h3>
@@ -481,7 +502,7 @@ watch(workspace, () => {
           <details class="raw-data">
             <summary>完整原始数据 / Raw Data</summary>
             <JsonTree
-              :data="{ selectedTask, continuity, resumePacket, nextActions, taskDetail }"
+              :data="{ selectedTask, continuity, resumePacket, nextActions, taskDetail, delivery, deliveryMatrix }"
               label="memory-space"
               :depth="0"
             />
@@ -494,6 +515,11 @@ watch(workspace, () => {
 
 <style scoped>
 .memory-space { max-width: 1280px; }
+.panel-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.stats-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 12px 0; }
+.stats-grid div { display: grid; gap: 4px; }
+.stats-grid span { color: #667085; font-size: 12px; }
+.stats-grid strong { font-size: 20px; }
 .page-header {
   display: flex;
   justify-content: space-between;

@@ -39,6 +39,7 @@ This file consolidates and replaces the older execution plan, superpowers evolut
 2. **真实任务质量运营**：积累经过人工验证的任务回放，仅依据确认结果优化检索策略与下一步建议。
 3. **Java 解析与调用解析精度**：从真实未解析分类中补充逻辑锚点样例，只修复可复现的具体误判。
 4. **真实性能与重建可靠性**：持续积累真实工作空间的冷/热查询、增量索引和并发重建数据，使用基准决定优化优先级。
+5. **证据优先的需求交付闭环**：将已有任务、索引、治理和验证能力收敛为可拆解、可定位、可验证、可恢复的需求交付状态机。
 
 ---
 
@@ -75,6 +76,57 @@ This file consolidates and replaces the older execution plan, superpowers evolut
 - partial / stale case 明确指出缺失层或 stale 文件
 - same input 产生确定性 retrieval policy
 - token 和 latency 不低于真实基线
+
+### P3：证据优先的需求交付闭环 / Evidence-First Delivery Loop
+
+目标：把 Memory Center 从“提供分析与任务组件”收敛为 Agent 可默认遵循的需求交付流程。每个阶段都必须有结构化输入、可审查产物、可执行门禁和可追溯证据；不能以模型自报“已完成”代替验证。
+
+现有基础：任务空间已具备 `requirements.json`、`subtasks.json`、`acceptance.json`、验证回执、阶段流转和交付 Skill 候选；本体已具备 `Policy`、`Constraint`、`GateResult`、`Waiver`、`Validation`、`Action`；索引已具备定向刷新、freshness 和图谱定位。P3 只补齐编排与约束，不重建这些领域能力。
+
+#### P3-1：确定性需求拆解契约
+
+1. 将需求项扩展为可追溯结构：`source_refs`、`scope`、`out_of_scope`、`evidence_refs`、`search_terms`、`candidate_modules`、`acceptance_ids`、`ambiguities` 与 `decision_required`。
+2. 提供需求拆解服务：输入可引用的需求材料或人工摘要，输出候选需求项和缺失项；范围、归属、重复、未覆盖验收项由确定性规则检查，LLM 只负责语义解释和候选补充。
+3. 将“联想用于搜索、引用用于决策”固化为规则：搜索词可扩展，但会影响实现范围的条目必须带来源引用；没有证据时只能标记 `AMBIGUOUS` 或 `UNKNOWN`，不得自动进入实现。
+4. 为每个需求项建立 `Requirement -> Subtask -> CodeTarget -> Acceptance` 链接，定位阶段只能使用已索引目标；索引 stale 时先排队定向刷新并向用户说明使用的 generation。
+
+验收：需求项可回溯来源和范围；未关联验收、未定位代码目标、存在未决歧义时不能进入相应后续阶段；CLI、MCP、HTTP、Workbench 返回同一交付状态与下一步 Action。
+
+#### P3-2：按需三级项目地图与语义桥
+
+1. 将现有 `generate-wiki` 升级为派生读模型，而非新的人工事实源：L1 为受限大小的 workspace/module 总览，L2 为模块内文件与符号职责地图，L3 为业务术语、接口契约、配置键、设计规范到代码实体的语义桥。
+2. 每个地图条目保存来源 generation、输入 hash、最后刷新时间和 stale 状态；只对 dirty path 涉及的模块重建，禁止为了生成 Wiki 触发全量 reindex 或读取全库源码。
+3. L1 作为任务定位的默认轻量上下文；L2 仅在模块候选确定后读取；L3 仅由需求类型或命中的语义桥触发。生成结果必须能在没有 LLM 的情况下被人和 Agent 阅读。
+4. 语义桥采用 workspace profile 扩展。Spring Cloud、Web、移动端和设计系统规则不得硬编码到核心；没有对应 profile 时返回 `UNKNOWN` 与配置建议。
+
+验收：同一 dirty path 的地图刷新只写受影响模块；地图命中可减少无关文件读取；索引新鲜度和地图新鲜度不一致时明确提示，不能伪装为最新。
+
+#### P3-3：策略化门禁与真实验证回执
+
+1. 复用统一本体中的 `Policy`、`Constraint`、`GateResult`、`Waiver` 和 `Validation`，为 intake、breakdown、locate、implement、verify、close 定义版本化门禁；禁止再建一套未关联治理读模型的红线 YAML。
+2. 增加受 workspace policy 限制的验证执行适配器：仅允许运行预注册命令/profile，记录命令 ID、参数摘要、超时、退出码、受限输出摘要、产物路径及 hash；不执行来自需求正文、模型输出或外部材料的任意 shell 字符串。
+3. 支持外部验证回执，但必须标记 `recorded_external` 并提供脱敏证据引用；只有执行器产物、人工确认或可追溯运行时证据才能将断言提升为 `VERIFIED`。
+4. 失败按“可自动修复、配置/环境阻塞、需求/路径错误、人工决策”分类；每类给出停止条件，重试上限由 policy 配置，不能在失败状态无限循环。
+
+验收：任务关闭的每项必需验收都能追溯到有效验证证据；伪造 `passed`、越权命令、缺失豁免或超过重试上限必须阻断门禁；所有阻断都返回可行动的下一步，而不是笼统错误。
+
+#### P3-4：交付矩阵、恢复说明与已验证 Skill 提炼
+
+1. 从既有 JSON 工件和时间线派生 `delivery-matrix.json` 与可读的 `TECH_SPEC.md`，作为只读投影，不引入第二套真源。矩阵展示需求、范围、代码目标、验收、验证、决策、豁免、当前阶段和缺口。
+2. `task_resume_check` 直接消费该投影，优先展示未决歧义、失败验证、stale 目标和下一条最小 Action；长任务归档继续使用有界摘要与压缩归档，不恢复巨型原始上下文。
+3. 仅从已关闭、验收完整、验证通过且不存在未决豁免的任务生成交付 Skill 候选。候选内容只提炼结构化经验、逻辑锚点和安全验证步骤，不包含私有源码、原始需求正文或工具载荷。
+4. 增加任务级效果度量：需求覆盖率、定位覆盖率、验收覆盖率、验证成功率、人工阻断率、阶段耗时、Agent 建议采纳/绕过率；真实 replay 充足前只观测，不自动调权。
+
+验收：新会话可以通过一份有界恢复包理解任务边界、证据和未完成事项；Skill 只能由已验证交付生成；任务级质量指标不读取或保存原始私有正文。
+
+#### P3 性能、迁移与测试约束
+
+- 需求拆解、地图读取、阶段状态和门禁判断必须使用有界 JSON、索引和派生视图，禁止在 MCP/HTTP 热路径全量扫描 workspace、重建图或加载完整需求附件。
+- 只有显式维护动作可以生成地图、执行验证、刷新索引或提炼 Skill；普通查询只返回已发布 generation 和排队状态。任何新增默认读取的 P95 延迟不得超过当前同类入口真实基线的 10%。
+- 新字段只做 additive 扩展；已有任务空间采用惰性创建和只读投影。旧的人工回执继续可读，但必须显式标为外部记录，不能被误认为执行器证据。
+- 新增单元与系统测试覆盖：需求范围/歧义、需求到验收完整性、定向地图刷新、policy/waiver、命令白名单与超时、失败分类/停止条件、矩阵投影、Skill 提炼资格、CLI/MCP/HTTP/Workbench 一致性及真实 workspace 指标格式。
+
+非目标：不将移动端设计稿、Figma、模拟器、Bazel 或任何单一技术栈规则放入核心；不强制所有任务使用交付流程；不让 Agent 自动执行不可逆操作、下载模型或全量重建索引。
 
 ### P2.5：可信交互历史与图谱可解释性（已收口，按真实反馈维护）
 

@@ -48,7 +48,7 @@ def test_delivery_workflow_requires_contracts_and_validation(demo_workspace) -> 
 
     blocked_close = transition_delivery_stage(demo_workspace, task_id, "close")
     assert blocked_close["transitioned"] is False
-    receipt = record_delivery_validation(demo_workspace, task_id, status="passed", summary="1 passed", exit_code=0, acceptance_ids=["AC-1"])
+    receipt = record_delivery_validation(demo_workspace, task_id, status="passed", summary="1 passed", exit_code=0, acceptance_ids=["AC-1"], evidence_kind="manual_verified")
     assert receipt["receipt"]["command"] == ""
     closed = transition_delivery_stage(demo_workspace, task_id, "close")
     assert closed["transitioned"] is True
@@ -80,7 +80,7 @@ def test_closed_verified_delivery_can_publish_reviewed_skill(demo_workspace) -> 
     transition_delivery_stage(demo_workspace, task_id, "implement")
     update_delivery_subtask_status(demo_workspace, task_id, "SUB-1", "implemented")
     transition_delivery_stage(demo_workspace, task_id, "verify")
-    record_delivery_validation(demo_workspace, task_id, status="passed", acceptance_ids=["AC-1"])
+    record_delivery_validation(demo_workspace, task_id, status="passed", acceptance_ids=["AC-1"], evidence_kind="manual_verified")
     transition_delivery_stage(demo_workspace, task_id, "close")
 
     candidate = delivery_skill_candidate(demo_workspace, task_id)
@@ -88,6 +88,31 @@ def test_closed_verified_delivery_can_publish_reviewed_skill(demo_workspace) -> 
     published = publish_delivery_skill(demo_workspace, task_id)
     assert published["published"] is True
     assert (demo_workspace.parent / "artifacts" / "skills" / "delivery-published" / task_id / "SKILL.md").exists()
+
+
+def test_delivery_matrix_and_policy_control_executor(demo_workspace) -> None:
+    from memory_center.core.tasks.delivery import (
+        delivery_matrix,
+        execute_delivery_validation,
+        propose_delivery_breakdown,
+        update_delivery_policy,
+    )
+
+    task_id = create_task_space(demo_workspace, title="验证", intent="测试")["task_id"]
+    initialize_delivery_workflow(demo_workspace, task_id)
+    candidate = propose_delivery_breakdown(demo_workspace, task_id, source_refs=["req:1"], summary="发布接口")
+    assert candidate["candidate"]["source_refs"] == ["req:1"]
+    update_delivery_contract(demo_workspace, task_id, kind="requirements", items=[{"id": "REQ-1", "title": "发布", "scope": "接口", "source_refs": ["req:1"], "acceptance_ids": ["AC-1"]}])
+    update_delivery_contract(demo_workspace, task_id, kind="acceptance", items=[{"id": "AC-1", "title": "解释器可用"}])
+    matrix = delivery_matrix(demo_workspace, task_id)
+    assert matrix["matrix"]["coverage"]["requirements"] == 1
+    assert (demo_workspace.parent / "artifacts" / "tasks" / task_id / "TECH_SPEC.md").exists()
+    blocked = execute_delivery_validation(demo_workspace, task_id, profile_id="missing")
+    assert blocked["reason"] == "profile_not_allowed"
+    update_delivery_policy(demo_workspace, {"validation_profiles": [{"id": "python-version", "argv": ["python3", "--version"], "timeout_sec": 10}]})
+    executed = execute_delivery_validation(demo_workspace, task_id, profile_id="python-version", acceptance_ids=["AC-1"])
+    assert executed["executed"] is True
+    assert executed["receipt"]["evidence_kind"] == "executor"
 
 
 def test_compact_task_artifacts_keeps_bounded_live_content(demo_workspace) -> None:

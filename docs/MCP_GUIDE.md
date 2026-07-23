@@ -8,12 +8,14 @@
 
 ## Delivery Workflow / 需求交付工作流
 
-`feature_delivery_v1` 将需求交付收敛为 `intake -> breakdown -> locate -> implement -> verify -> close`。它不执行代码修改或测试命令，只保存任务级结构化状态和证据引用。
+`feature_delivery_v2` 将需求交付收敛为 `intake -> breakdown -> locate -> implement -> verify -> close`。需求项必须包含来源、范围和验收关联；模型只能提出候选，范围决策必须有引用证据。
 
 - `mc_admin(action="delivery_init", task_id="...")` 初始化任务工作流。
 - `mc_admin(action="delivery_contract_update", task_id="...", payload='{"kind":"requirements|subtasks|acceptance","items":[...]}')` 更新需求、子任务或验收标准。
-- `mc_admin(action="delivery_subtask_status"|"delivery_validation_record"|"delivery_transition" ...)` 分别更新子任务、记录已执行验证、推进阶段；所有动作返回门禁、缺失项与确定的下一步。
-- 关闭阶段要求每项 `required=true` 的验收标准都关联一条 `passed` 验证回执。传入的 `command` 仅被记录为有界摘要，Memory Center 绝不会执行它。
+- `mc_admin(action="delivery_breakdown"|"delivery_matrix" ...)` 生成不写入的需求候选，以及 `Requirement -> Subtask -> CodeTarget -> Acceptance -> Evidence` 派生矩阵与 `TECH_SPEC.md`。
+- `mc_admin(action="delivery_policy"|"delivery_validation_execute" ...)` 分别读取/更新预注册验证 profile，或执行其中一个 profile。只接受 policy 中的 argv，不能传入 shell 命令。
+- `mc_admin(action="delivery_subtask_status"|"delivery_validation_record"|"delivery_transition" ...)` 分别更新子任务、记录外部/人工验证、推进阶段；所有动作返回门禁、缺失项与确定的下一步。
+- 关闭阶段要求每项 `required=true` 的验收标准都关联 `executor` 或 `manual_verified` 的 `passed` 证据。普通外部回执标记为 `recorded_external`，不能伪装成执行器验证。
 - `mc_admin(action="delivery_skill_candidate"|"delivery_skill_publish"|"delivery_skill_status", task_id="...")` 将已验证关闭任务转为可审核、显式发布的 Skill；Agent 不得把未通过候选当成正式经验。
 - 当任务工件或索引代际空间异常时，Agent 先建议 `artifact compact-task` 或 `artifact generation-gc --dry-run`；涉及删除必须由显式 `--apply` 或 `mc_admin(action="index_generation_gc", force=true)` 确认。
 

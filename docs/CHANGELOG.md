@@ -1,5 +1,19 @@
 # Changelog / 更新日志
 
+## 4.3.21 证据优先需求交付闭环 / Evidence-First Delivery Loop
+
+- 交付工作流升级为 `feature_delivery_v2`：需求项新增来源、范围边界、搜索词、候选模块、歧义和决策标记；阶段门禁会写入可追溯 `GateResult`。
+- 新增非写入需求拆解候选、`Requirement -> Subtask -> CodeTarget -> Acceptance -> Evidence` 交付矩阵以及派生 `TECH_SPEC.md`，任务恢复可读取有界矩阵。
+- 验证回执区分 `recorded_external`、`manual_verified` 与 `executor`。关闭和 Skill 提炼只接受执行器或人工验证证据；执行器仅运行 workspace policy 中预注册的 argv profile，保存超时、退出码、受限输出摘要和 hash。
+- Wiki 生成新增每个项目的有界模块地图，供 Agent 在候选模块确定后按需读取。
+
+## 4.3.21 Evidence-First Delivery Loop
+
+- Upgraded delivery workflow to `feature_delivery_v2` with requirement source, scope boundary, search-term, candidate-module, ambiguity, and decision fields; stage checks persist traceable `GateResult` records.
+- Added non-writing breakdown candidates, a derived `Requirement -> Subtask -> CodeTarget -> Acceptance -> Evidence` matrix, and a read-only `TECH_SPEC.md` projection consumed by task recovery.
+- Validation receipts now distinguish `recorded_external`, `manual_verified`, and `executor`. Closing and Skill extraction require executor or manual evidence; the executor only runs policy-registered argv profiles and records timeout, exit code, bounded output, and hash.
+- Wiki generation now emits a bounded per-project module map for on-demand Agent use.
+
 ## 4.3.20 静态断言稀疏化 / Derived Static Assertions
 
 - 静态断言改由 `graph.db.edges` 按需派生，reindex 不再全量写入 `EXTRACTED` 断言表或 `assertions.jsonl`；断言存储仅保留人工验证、拒绝与治理状态覆盖。

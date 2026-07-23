@@ -63,8 +63,12 @@ from memory_center.application.http_facades import (
     workspace_background_job_status,
     workspace_change_impact_confirm,
     workspace_change_impact_reports,
+    workspace_delivery_breakdown,
     workspace_delivery_contract,
+    workspace_delivery_execute_validation,
     workspace_delivery_init,
+    workspace_delivery_matrix,
+    workspace_delivery_policy,
     workspace_delivery_status,
     workspace_delivery_subtask_status,
     workspace_delivery_transition,
@@ -160,6 +164,25 @@ def _workspace_delivery_transition(rp):
     return workspace_delivery_transition(
         rp.workspace(), rp.require("task_id"), stage=str(payload.get("stage", "")), actor=rp.get("actor", ""), force=rp.bool_param("force")
     )
+
+
+def _workspace_delivery_breakdown(rp):
+    payload = _delivery_payload(rp)
+    return workspace_delivery_breakdown(rp.workspace(), rp.require("task_id"), source_refs=[str(item) for item in payload.get("source_refs", []) if str(item).strip()], summary=str(payload.get("summary", "")))
+
+
+def _workspace_delivery_policy(rp):
+    payload = _delivery_payload(rp) if rp.get("payload") else None
+    return workspace_delivery_policy(rp.workspace(), policy=payload, actor=rp.get("actor", ""))
+
+
+def _workspace_delivery_execute_validation(rp):
+    payload = _delivery_payload(rp)
+    return workspace_delivery_execute_validation(rp.workspace(), rp.require("task_id"), profile_id=str(payload.get("profile_id", "")), acceptance_ids=[str(item) for item in payload.get("acceptance_ids", []) if str(item).strip()], actor=rp.get("actor", ""))
+
+
+def _workspace_delivery_matrix(rp):
+    return workspace_delivery_matrix(rp.workspace(), rp.require("task_id"), write=not rp.bool_param("dry_run"))
 
 
 def register_workspace_routes(registry: CommandRegistry) -> None:
@@ -287,6 +310,10 @@ def register_workspace_routes(registry: CommandRegistry) -> None:
         rp.workspace(), rp.require("task_id"), actor=rp.get("actor", "")
     ))
     registry.register("/workspace/delivery/contract", _workspace_delivery_contract)
+    registry.register("/workspace/delivery/breakdown", _workspace_delivery_breakdown)
+    registry.register("/workspace/delivery/policy", _workspace_delivery_policy)
+    registry.register("/workspace/delivery/execute-validation", _workspace_delivery_execute_validation)
+    registry.register("/workspace/delivery/matrix", _workspace_delivery_matrix)
     registry.register("/workspace/delivery/subtask-status", _workspace_delivery_subtask_status)
     registry.register("/workspace/delivery/validation", _workspace_delivery_validation)
     registry.register("/workspace/delivery/transition", _workspace_delivery_transition)

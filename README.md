@@ -136,9 +136,9 @@ For core task-memory artifacts such as `context.md`, `requirement.md`, `design.m
 
 对于 `context.md`、`requirement.md`、`design.md`、`plan.md`、`test-plan.md`、`change-log.md` 以及任务空间里的 `current-summary.md` 这类核心记忆工件，记忆中心现在默认强制“只能尾部追加，不能整篇覆盖”。
 
-对于可持续的需求开发任务，可在任务空间初始化 `feature_delivery_v1`：它把需求、代码定位子任务、验收标准和验证回执关联为 `intake -> breakdown -> locate -> implement -> verify -> close` 的有界状态机。阶段推进只检查结构化工件和证据引用，不会执行测试命令或修改源码；CLI、MCP、HTTP 的具体用法见 [docs/REFERENCE.md](./docs/REFERENCE.md) 与 [docs/MCP_GUIDE.md](./docs/MCP_GUIDE.md)。
+对于可持续的需求开发任务，可在任务空间初始化 `feature_delivery_v2`：它将需求来源、范围边界、代码定位、验收、策略门禁和验证证据关联为 `intake -> breakdown -> locate -> implement -> verify -> close` 的有界状态机。普通回执仅标为外部记录；关闭任务需要执行器证据或带引用的人工验证。执行器只运行 workspace policy 中预注册的 argv profile，绝不执行模型或需求正文传入的 shell 字符串；CLI、MCP、HTTP 的具体用法见 [docs/REFERENCE.md](./docs/REFERENCE.md) 与 [docs/MCP_GUIDE.md](./docs/MCP_GUIDE.md)。
 
-For long-running feature work, `feature_delivery_v1` links requirements, located subtasks, acceptance criteria, and validation receipts through a bounded delivery state machine. It never executes a supplied command or edits source code.
+For long-running feature work, `feature_delivery_v2` links requirement sources and scope, located subtasks, acceptance criteria, policy gates, and verification evidence through a bounded delivery state machine. It never executes a supplied command or edits source code; its executor only runs reviewed argv profiles registered by the workspace owner.
 
 Each protected write also records `write_mode` and an `audit_ref` into `memory/artifact-write-audit.jsonl`, so you can later inspect whether a model attempted a full overwrite or was downgraded to guarded append.
 

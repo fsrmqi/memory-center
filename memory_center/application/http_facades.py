@@ -109,11 +109,16 @@ from memory_center.core.tasks.artifacts import (
     update_task_status,
 )
 from memory_center.core.tasks.delivery import (
+    delivery_matrix,
+    delivery_policy_status,
     delivery_workflow_status,
+    execute_delivery_validation,
     initialize_delivery_workflow,
+    propose_delivery_breakdown,
     record_delivery_validation,
     transition_delivery_stage,
     update_delivery_contract,
+    update_delivery_policy,
     update_delivery_subtask_status,
 )
 
@@ -223,6 +228,22 @@ def workspace_delivery_validation(workspace_file: str, task_id: str, *, status: 
     return record_delivery_validation(workspace_file, task_id, status=status, summary=summary, command=command, exit_code=exit_code, acceptance_ids=acceptance_ids, evidence_refs=evidence_refs, actor=actor)
 
 
+def workspace_delivery_breakdown(workspace_file: str, task_id: str, *, source_refs: list[str], summary: str = "") -> dict[str, Any]:
+    return propose_delivery_breakdown(workspace_file, task_id, source_refs=source_refs, summary=summary)
+
+
+def workspace_delivery_policy(workspace_file: str, *, policy: dict[str, Any] | None = None, actor: str = "") -> dict[str, Any]:
+    return update_delivery_policy(workspace_file, policy, actor=actor) if policy is not None else delivery_policy_status(workspace_file)
+
+
+def workspace_delivery_execute_validation(workspace_file: str, task_id: str, *, profile_id: str, acceptance_ids: list[str] | None = None, actor: str = "") -> dict[str, Any]:
+    return execute_delivery_validation(workspace_file, task_id, profile_id=profile_id, acceptance_ids=acceptance_ids, actor=actor)
+
+
+def workspace_delivery_matrix(workspace_file: str, task_id: str, *, write: bool = True) -> dict[str, Any]:
+    return delivery_matrix(workspace_file, task_id, write=write)
+
+
 def workspace_delivery_transition(workspace_file: str, task_id: str, *, stage: str, actor: str = "", force: bool = False) -> dict[str, Any]:
     return transition_delivery_stage(workspace_file, task_id, stage, actor=actor, force=force)
 
@@ -284,6 +305,16 @@ __all__ = [
     "workspace_change_impact_reports",
     "workspace_change_impact_confirm",
     "workspace_evidence_subgraph",
+    "workspace_delivery_breakdown",
+    "workspace_delivery_contract",
+    "workspace_delivery_execute_validation",
+    "workspace_delivery_init",
+    "workspace_delivery_matrix",
+    "workspace_delivery_policy",
+    "workspace_delivery_status",
+    "workspace_delivery_subtask_status",
+    "workspace_delivery_transition",
+    "workspace_delivery_validation",
     "workspace_architecture_communities",
     "workspace_assertion_status",
     "workspace_assertion_inspect",

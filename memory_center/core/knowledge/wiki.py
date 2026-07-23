@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+from datetime import datetime, timezone
+from hashlib import sha256
 from pathlib import Path
 from typing import Any
 
@@ -20,10 +23,19 @@ def generate_wiki(workspace_file: str | Path, output_dir: str | Path | None = No
     (out / "overview.md").write_text(_overview(config.workspace, status, topology), encoding="utf-8")
     service_dir = out / "services"
     service_dir.mkdir(exist_ok=True)
+    module_manifest: list[dict[str, Any]] = []
     for svc in topology.get("services", []):
-        (service_dir / f"{svc['name']}.md").write_text(_service_page(svc, topology), encoding="utf-8")
+        name = str(svc["name"])
+        (service_dir / f"{name}.md").write_text(_service_page(svc, topology), encoding="utf-8")
+        with RuntimeStore(store.graph_db_path) as graph:
+            nodes, _ = graph.project_subgraph(name)
+        module_path = out / "modules" / f"{name}.md"
+        module_path.parent.mkdir(exist_ok=True)
+        module_path.write_text(_module_page(name, nodes), encoding="utf-8")
+        module_manifest.append({"module": name, "path": str(module_path.relative_to(out)), "node_count": len(nodes), "input_hash": sha256("|".join(node.id for node in nodes).encode()).hexdigest()[:16]})
+    (out / "module-manifest.json").write_text(json.dumps({"schema_version": 1, "generated_at": datetime.now(timezone.utc).isoformat(), "modules": module_manifest}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     (out / "memory.md").write_text(_memory_page(cases), encoding="utf-8")
-    return {"generated": True, "output_dir": str(out), "files": [str(p.relative_to(out)) for p in out.rglob("*.md")]}
+    return {"generated": True, "output_dir": str(out), "files": [str(p.relative_to(out)) for p in out.rglob("*.md")], "modules": module_manifest}
 
 
 def generate_skills(workspace_file: str | Path, output_dir: str | Path | None = None) -> dict[str, Any]:
@@ -85,6 +97,25 @@ def _memory_page(cases: list[dict[str, Any]]) -> str:
     for c in cases:
         body += f"## {c.get('task')}\n\n- Projects: {', '.join(c.get('projects', []))}\n- Flow: {c.get('flow', '')}\n- Risk: {', '.join(c.get('risk_points', []))}\n\n"
     return body
+
+
+def _module_page(name: str, nodes: list[Any]) -> str:
+    """Generate a bounded L2 map from one project graph shard."""
+    grouped: dict[str, list[Any]] = {}
+    for node in nodes:
+        if node.type in {"Class", "Method", "Endpoint", "FeignClient", "MQTopic", "ConfigKey", "File"}:
+            grouped.setdefault(node.type, []).append(node)
+    lines = [f"# {name} 模块地图 / Module Map", "", "本页由已发布图索引派生；索引过期时请先执行定向刷新。", ""]
+    for kind in sorted(grouped):
+        lines.extend([f"## {kind}", ""])
+        entries = sorted(grouped[kind], key=lambda item: (item.file_path, item.name))
+        for node in entries[:120]:
+            location = f" — `{node.file_path}`" if node.file_path else ""
+            lines.append(f"- `{node.name}`{location}")
+        if len(entries) > 120:
+            lines.append(f"- 其余 {len(entries) - 120} 项请通过精确查询展开。")
+        lines.append("")
+    return "\n".join(lines)
 
 
 def _skill_page(case: dict[str, Any]) -> str:

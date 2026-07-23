@@ -136,14 +136,19 @@ from memory_center.core.tasks.artifacts import (
     write_task_evidence_chunk,
 )
 from memory_center.core.tasks.delivery import (
+    delivery_matrix,
+    delivery_policy_status,
     delivery_skill_candidate,
     delivery_skill_status,
     delivery_workflow_status,
+    execute_delivery_validation,
     initialize_delivery_workflow,
+    propose_delivery_breakdown,
     publish_delivery_skill,
     record_delivery_validation,
     transition_delivery_stage,
     update_delivery_contract,
+    update_delivery_policy,
     update_delivery_subtask_status,
 )
 from memory_center.core.verification.bundle_export import generate_agent_bundle
@@ -540,6 +545,8 @@ def build_admin_registry(
         "task_activity_touch": lambda: touch_task_activity(wf, task_id, source),
         "delivery_init": lambda: initialize_delivery_workflow(wf, task_id, actor=source),
         "delivery_status": lambda: delivery_workflow_status(wf, task_id),
+        "delivery_breakdown": lambda: propose_delivery_breakdown(wf, task_id, source_refs=list((parse_payload(payload) or {}).get("source_refs", [])), summary=str((parse_payload(payload) or {}).get("summary", ""))),
+        "delivery_policy": lambda: update_delivery_policy(wf, parse_payload(payload) or {}, actor=source) if payload else delivery_policy_status(wf),
         "delivery_contract_update": lambda: update_delivery_contract(
             wf,
             task_id,
@@ -565,6 +572,8 @@ def build_admin_registry(
             evidence_refs=list((parse_payload(payload) or {}).get("evidence_refs", [])),
             actor=source,
         ),
+        "delivery_validation_execute": lambda: execute_delivery_validation(wf, task_id, profile_id=str((parse_payload(payload) or {}).get("profile_id", "")), acceptance_ids=list((parse_payload(payload) or {}).get("acceptance_ids", [])), actor=source),
+        "delivery_matrix": lambda: delivery_matrix(wf, task_id, write=not force),
         "delivery_transition": lambda: transition_delivery_stage(
             wf,
             task_id,

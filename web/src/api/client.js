@@ -141,6 +141,14 @@ export function getDrillTask(workspace, taskId) {
   return api.get('/workspace/drill-task', { params: { workspace, task_id: taskId } })
 }
 
+export function getDeliveryStatus(workspace, taskId) {
+  return api.get('/workspace/delivery', { params: { workspace, task_id: taskId } })
+}
+
+export function getDeliveryMatrix(workspace, taskId) {
+  return api.get('/workspace/delivery/matrix', { params: { workspace, task_id: taskId, dry_run: true } })
+}
+
 export function listArtifacts(workspace) {
   return api.get('/workspace/artifacts', { params: { workspace } })
 }

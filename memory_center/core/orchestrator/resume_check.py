@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from ..tasks.artifacts import task_space_repair_plan
+from ..tasks.delivery import delivery_matrix, delivery_workflow_status
 from .resume import workspace_next_actions, workspace_resume_packet, workspace_unresolved_items
 from .session import workspace_recent_evidence
 
@@ -36,12 +37,15 @@ def workspace_task_resume_check(
     next_actions = workspace_next_actions(workspace_file, task_id=resolved_task_id, session_id=session_id, intent=intent, limit=limit).get("actions", [])
     unresolved = workspace_unresolved_items(workspace_file, task_id=resolved_task_id, session_id=session_id, intent=intent, limit=limit).get("items", [])
     evidence = workspace_recent_evidence(workspace_file, task_id=resolved_task_id, session_id=session_id, limit=min(limit, 5), budget=budget, view="compact").get("evidence", [])
+    delivery = delivery_workflow_status(workspace_file, resolved_task_id) if resolved_task_id else {"initialized": False}
+    matrix = delivery_matrix(workspace_file, resolved_task_id, write=False).get("matrix", {}) if delivery.get("initialized") else {}
     status = _resume_check_status(resume_packet, health, repair_plan, unresolved)
     return {
         "workflow": "task-resume-check", "workspace": resume_packet.get("workspace", ""), "task_id": resolved_task_id,
         "session_id": session_id, "can_resume": status in {"ready", "needs_repair"}, "status": status,
         "summary": _resume_check_summary(status, health, repair_plan, unresolved), "resume_packet": resume_packet,
         "health": health, "repair_plan": repair_plan.get("repair_plan", []),
+        "delivery": delivery, "delivery_matrix": matrix,
         "repair_plan_summary": {"available": bool(repair_hint.get("available")), "issue_count": repair_plan.get("issue_count", health.get("issue_count", 0)), "apply_supported": repair_plan.get("apply_supported", False)},
         "next_actions": next_actions, "unresolved_items": unresolved, "recent_evidence": evidence,
         "recommended_next_step": _resume_check_next_step(status, resolved_task_id),
