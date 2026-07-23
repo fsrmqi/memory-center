@@ -102,6 +102,7 @@ class _GraphOperations:
                 );
                 CREATE INDEX IF NOT EXISTS idx_nodes_type_name ON nodes(type, name);
                 CREATE INDEX IF NOT EXISTS idx_nodes_project ON nodes(project);
+                CREATE INDEX IF NOT EXISTS idx_nodes_file_path ON nodes(file_path);
                 CREATE INDEX IF NOT EXISTS idx_edges_source ON edges(source_id);
                 CREATE INDEX IF NOT EXISTS idx_edges_target ON edges(target_id);
                 CREATE INDEX IF NOT EXISTS idx_edges_type ON edges(type);
@@ -451,8 +452,12 @@ class _GraphOperations:
                 args.extend(sorted(project_filter))
             for pf in path_filters:
                 normalized = pf.replace("\\", "/").strip("/")
-                conditions.append("file_path LIKE ?")
-                args.append(normalized + "%")
+                # build_graph_store expands directory filters against the
+                # file index before reaching this low-level operation. The
+                # graph therefore receives canonical file paths and can use
+                # an index-only exact lookup instead of a LIKE table scan.
+                conditions.append("file_path = ?")
+                args.append(normalized)
             if not conditions:
                 return set()
             where = " OR ".join(conditions)
@@ -693,13 +698,20 @@ class _GraphOperations:
         """Export a self-contained graph shard for one project."""
         with self.connect() as conn:
             node_rows = conn.execute("SELECT * FROM nodes WHERE project=?", (project,)).fetchall()
-            node_ids = [str(row["id"]) for row in node_rows]
-            if not node_ids:
+            if not node_rows:
                 return [], []
-            placeholders = ",".join("?" for _ in node_ids)
+            # A large service can have tens of thousands of nodes. Joining
+            # through the indexed node project avoids two giant IN lists and
+            # keeps partial-generation export bounded by SQLite's planner.
             edge_rows = conn.execute(
-                f"SELECT * FROM edges WHERE source_id IN ({placeholders}) AND target_id IN ({placeholders})",
-                node_ids * 2,
+                """
+                SELECT edge.*
+                FROM edges AS edge
+                JOIN nodes AS source_node ON source_node.id = edge.source_id
+                JOIN nodes AS target_node ON target_node.id = edge.target_id
+                WHERE source_node.project = ? AND target_node.project = ?
+                """,
+                (project, project),
             ).fetchall()
         nodes = [GraphNode(row["id"], row["type"], row["name"], row["project"], row["file_path"], row["line"], _loads_json(row["metadata_json"])) for row in node_rows]
         edges = [GraphEdge(row["id"], row["source_id"], row["target_id"], row["type"], row["confidence"], _loads_json(row["metadata_json"])) for row in edge_rows]

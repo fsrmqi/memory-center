@@ -375,13 +375,34 @@ def _report_progress(
 def _affected_shard_projects(file_index: list[dict[str, Any]], project_filter: set[str], path_filters: list[str]) -> set[str]:
     if project_filter:
         return set(project_filter)
-    normalized = {path.replace("\\", "/").lstrip("/") for path in path_filters}
     projects = {
         str(item.get("project", "") or "")
         for item in file_index
-        if str(item.get("path", "") or "").replace("\\", "/") in normalized
+        # Keep generation-shard routing aligned with partial index merging.
+        # File records keep a workspace-relative path plus the source absolute
+        # path, while CLI refresh accepts either form.
+        if _row_matches_scope(item, set(), path_filters)
     }
     return {project for project in projects if project}
+
+
+def _graph_scope_path_filters(file_index: list[dict[str, Any]], path_filters: Sequence[str]) -> list[str]:
+    """Convert matching absolute refresh paths to graph-stable logical paths."""
+    resolved: set[str] = set()
+    for raw_filter in path_filters:
+        matched = [
+            str(item.get("path", "") or "")
+            for item in file_index
+            if _row_matches_scope(item, set(), [raw_filter])
+        ]
+        if matched:
+            resolved.update(path for path in matched if path)
+        else:
+            # Preserve the original path for the no-match safe path. It will
+            # not delete unrelated graph nodes, while shard publication falls
+            # back to a complete rebuild for correctness.
+            resolved.add(raw_filter)
+    return sorted(resolved)
 
 
 def _parser_diagnostics(parse_count: int) -> dict[str, Any]:
@@ -973,6 +994,8 @@ def build_graph_store(config: WorkspaceConfig, store: WorkspaceStore, *, project
         nodes.append(GraphNode(ws_id, "Workspace", config.workspace))
 
         file_index = store.read_json_prefer_backend("file-index.json", [])
+        if pfs:
+            pfs = _graph_scope_path_filters(file_index, pfs)
         symbols = store.read_json_prefer_backend("java-symbol-index.json", [])
         apis_full = store.read_json_prefer_backend("api-index.json", [])
         feigns = store.read_json_prefer_backend("feign-index.json", [])

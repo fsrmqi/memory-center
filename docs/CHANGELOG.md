@@ -1,5 +1,23 @@
 # Changelog / 更新日志
 
+## 4.3.17 Java 调用边准确性 / Java Call-Edge Accuracy
+
+- 修复 Java 调用提取器扫描整个文件导致的伪调用：注解表达式字符串和字段初始化不再被写入 `CALLS_METHOD`。
+- 调用图现在仅从真实方法体提取调用，避免将 `@PreAuthorize("@ss.hasPermission(...)")` 等框架元数据误判为业务调用链，并降低真实工作区中的无接收者类型噪声。
+- 修复按绝对文件路径执行局部刷新时的分片路由：命中文件只重建所属服务的物理分片，避免保守回退触发全服务分片重建。
+- 局部刷新发布采用硬链接复用未变 SQLite 分片，并将重建分片临时写入后原子替换，避免复制整代大索引或修改上一代数据。
+- 图存储新增 `nodes.file_path` 索引；目录范围会先展开为已索引文件，图清理统一走精确匹配，避免大图数据库全表扫描。
+- 服务分片导出改为使用项目节点索引连接边表，不再向 SQLite 传入成千上万个双重 `IN` 参数。
+
+## 4.3.17 Java Call-Edge Accuracy
+
+- Fixed false Java calls caused by scanning entire files: annotation-expression strings and field initializers are no longer emitted as `CALLS_METHOD` edges.
+- Calls are now extracted only from executable method bodies, preventing framework metadata such as `@PreAuthorize("@ss.hasPermission(...)")` from polluting business call chains.
+- Fixed service-shard routing for absolute-path refreshes: a matching file now rebuilds only its owning service shard instead of falling back to all service shards.
+- Partial publication now hard-links unchanged SQLite shards and atomically replaces rebuilt shards, avoiding multi-generation index copies or mutation of the prior generation.
+- Graph storage now indexes `nodes.file_path`; directory scopes expand to indexed files before graph cleanup, so all graph removal uses exact lookups and avoids full scans of large graph databases.
+- Service-shard export now joins edges through indexed project nodes instead of passing SQLite two massive `IN` parameter lists.
+
 ## 4.3.16 需求交付工作流 / Delivery Workflow
 
 - 新增可复用的 `feature_delivery_v1` 需求交付状态机：`intake -> breakdown -> locate -> implement -> verify -> close`；每个阶段均通过结构化门禁推进。

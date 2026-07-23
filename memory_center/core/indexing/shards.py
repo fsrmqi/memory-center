@@ -38,7 +38,9 @@ def write_generation_shards(
             shutil.rmtree(root)
         previous = _generation_root(store, reuse_generation) if reuse_generation else None
         if previous and (previous / "services").exists():
-            shutil.copytree(previous, root)
+            # Generations are immutable. Link unchanged shard files instead
+            # of physically copying potentially multi-gigabyte SQLite files.
+            shutil.copytree(previous, root, copy_function=_link_or_copy)
         service_dir.mkdir(parents=True, exist_ok=True)
         projects = sorted({str(item.get("project", "") or "") for item in file_index if item.get("project")})
         rebuild_projects = set(projects) if affected_projects is None else set(affected_projects)
@@ -66,10 +68,7 @@ def write_generation_shards(
                 _atomic_json(service_dir / f"{_safe_name(project)}.json", payload)
                 nodes, edges = graph.project_subgraph(project)
                 shard_db = service_dir / f"{_safe_name(project)}.graph.db"
-                with RuntimeStore(shard_db) as shard:
-                    shard.clear()
-                    shard.bulk_write(nodes, edges)
-                    shard.rebuild_search_index()
+                _atomic_graph_shard(shard_db, nodes, edges)
         _atomic_json(root / "contracts.json", {"schema_version": 1, "generation": generation, "apis": api_index, "feigns": feign_index, "mq": mq_index, "configs": config_index})
         _atomic_json(root / "topology.json", {"schema_version": 1, "generation": generation, "topology": topology})
         _atomic_json(root / "manifest.json", {"schema_version": 1, "generation": generation, "services": service_files, "contracts": "contracts.json", "topology": "topology.json", "copy_on_write": bool(reuse_generation), "rebuilt_services": sorted(rebuild_projects)})
@@ -129,6 +128,32 @@ def _atomic_json(path: Path, payload: dict[str, Any]) -> None:
         os.replace(raw, path)
     finally:
         Path(raw).unlink(missing_ok=True)
+
+
+def _atomic_graph_shard(path: Path, nodes: list[Any], edges: list[Any]) -> None:
+    """Publish a rebuilt SQLite shard without mutating a hard-linked parent."""
+    fd, raw = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
+    os.close(fd)
+    temp_path = Path(raw)
+    temp_path.unlink(missing_ok=True)
+    try:
+        with RuntimeStore(temp_path) as shard:
+            shard.clear()
+            shard.bulk_write(nodes, edges)
+            shard.rebuild_search_index()
+        os.replace(temp_path, path)
+    finally:
+        temp_path.unlink(missing_ok=True)
+        for suffix in ("-journal", "-shm", "-wal"):
+            temp_path.with_name(temp_path.name + suffix).unlink(missing_ok=True)
+
+
+def _link_or_copy(source: str, destination: str) -> str:
+    try:
+        os.link(source, destination)
+    except OSError:
+        shutil.copy2(source, destination)
+    return destination
 
 
 def _read_json(path: Path) -> dict[str, Any] | None:

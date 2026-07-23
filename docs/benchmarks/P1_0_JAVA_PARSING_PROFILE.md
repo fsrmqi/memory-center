@@ -9,6 +9,28 @@
 
 ## 当前状态 / Current Status
 
+### 2026-07-23 调用边噪声收口 / Call-edge noise closure
+
+真实 UCAP 工作区的 unresolved 分类显示，`receiver_type_missing` 中包含注解 SpEL 与字段初始化产生的非方法体伪调用。当前实现已将 `CALLS_METHOD` 提取范围收紧到真实方法体；外部库与缺失模块仍明确保留为未解析边，不会伪造目标。
+
+同次修复还收敛了定向刷新发布阶段：CLI 或 Agent 传入绝对源码路径时，分片路由会根据索引记录的 `abs_path` 精确识别所属服务，并复用上一代其余服务分片。未匹配任何已索引文件时仍保守地重建全部分片，保证结果正确性。
+
+未变的 SQLite 服务分片通过硬链接复用；目标服务分片在临时路径完成构建后再原子替换。因此局部刷新不会复制整代大型索引，也不会修改仍可供回滚读取的上一代分片。
+
+图数据库为 `nodes.file_path` 建立了索引。目录范围会先按文件索引展开，再以精确谓词清理图节点，避免在大图中执行无索引的 `LIKE` 全表扫描。既有工作区会在首次打开新版运行时创建该索引；这是一次性迁移成本，后续刷新复用该索引。
+
+服务分片导出通过 `nodes.project` 索引连接边表，不再构造数万节点的双重 `IN` 参数列表；目标服务较大时，查询规划与绑定开销保持稳定。
+
+The real UCAP unresolved report showed that `receiver_type_missing` included non-executable annotation SpEL and field-initializer noise. `CALLS_METHOD` extraction now only scans executable method bodies; external libraries and missing modules remain explicitly unresolved rather than being synthesized.
+
+The same change also narrows targeted-refresh publishing: when a CLI or agent supplies an absolute source path, shard routing uses the indexed `abs_path` to rebuild only the owning service and reuses prior shards for the rest. An unmatched path still conservatively rebuilds all shards to preserve correctness.
+
+Unchanged SQLite service shards are reused through hard links, while the target service shard is built at a temporary path and atomically replaced. A partial refresh therefore avoids copying a whole large generation and never mutates the generation retained for rollback.
+
+The graph database indexes `nodes.file_path`. Directory scopes expand through the file index, then graph cleanup uses exact predicates, avoiding an unindexed `LIKE` full scan on large graphs. Existing workspaces create this index on their first upgraded open; that is a one-time migration cost reused by later refreshes.
+
+Service-shard export joins edges through the `nodes.project` index instead of constructing two `IN` parameter lists containing tens of thousands of node ids, keeping query planning and binding stable for large target services.
+
 截至 2026-06-24,本文列出的三个主要性能修复**已在当前代码中完成**:
 
 - ~~Java parser 双轨开销~~:`TreeSitterJavaParser.parse` 在 tree-sitter

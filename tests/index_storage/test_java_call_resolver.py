@@ -266,6 +266,26 @@ public class OrderFacade {
     assert "run" in method_names
 
 
+def test_parser_ignores_annotation_expressions_and_field_initializers() -> None:
+    src = """package com.example.order;
+@PreAuthorize("@ss.hasPermission('order:read')")
+public class OrderFacade {
+    private ExecutorService executor = Executors.newSingleThreadExecutor();
+    private OrderService orderService;
+
+    public void submit() {
+        orderService.create();
+    }
+}
+"""
+    parsed = RegexJavaParser().parse(src, "OrderFacade.java")
+    calls = {(item["receiver"], item["method_name"], item["owner_method"]) for item in parsed.method_calls}
+
+    assert ("ss", "hasPermission", "") not in calls
+    assert ("Executors", "newSingleThreadExecutor", "") not in calls
+    assert calls == {("orderService", "create", "submit")}
+
+
 def test_reindex_persists_resolved_call_metadata_and_filters_low_confidence(tmp_path: Path) -> None:
     service = tmp_path / "svc"
     source_dir = service / "src" / "main" / "java" / "com" / "example"

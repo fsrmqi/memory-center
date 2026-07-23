@@ -549,24 +549,6 @@ def _parse_method_calls(
     ignored = {"log", "logger", "System", "Objects", "String", "Collections", "Arrays", "Optional", "Map", "List", "Set"}
     ignored_methods = {"stream", "map", "filter", "collect", "of", "empty", "println", "if", "for", "while", "switch", "catch", "return"}
     seen: set[tuple[int, str, str]] = set()
-    for m in qualified_pattern.finditer(text):
-        receiver = m.group("receiver")
-        method = m.group("method")
-        if receiver in ignored or method in ignored_methods:
-            continue
-        owner_method = _owner_method(method_spans, m.start())
-        receiver_type = (method_variable_types.get(owner_method or "", {}).get(receiver) or field_types.get(receiver))
-        seen.add((m.start("method"), receiver, method))
-        calls.append(
-            {
-                "receiver": receiver,
-                "receiver_type": receiver_type,
-                "method_name": method,
-                "owner_method": owner_method,
-                "line": _line_of(text, m.start()),
-                "arg_count": len(_split_top_level(m.group("args") or "")),
-            }
-        )
     for span in method_spans:
         # Skip declaration-only spans (abstract interface methods,
         # ``@interface`` element declarations). Their ``start..end``
@@ -579,6 +561,25 @@ def _parse_method_calls(
         body_start = int(span.get("body_start") or span.get("start") or 0)
         body_end = max(body_start, int(span.get("end") or body_start))
         body = text[body_start:body_end]
+        owner_method = str(span.get("name") or "")
+        for m in qualified_pattern.finditer(body):
+            receiver = m.group("receiver")
+            method = m.group("method")
+            if receiver in ignored or method in ignored_methods:
+                continue
+            absolute_method_pos = body_start + m.start("method")
+            receiver_type = method_variable_types.get(owner_method, {}).get(receiver) or field_types.get(receiver)
+            seen.add((absolute_method_pos, receiver, method))
+            calls.append(
+                {
+                    "receiver": receiver,
+                    "receiver_type": receiver_type,
+                    "method_name": method,
+                    "owner_method": owner_method,
+                    "line": _line_of(text, body_start + m.start()),
+                    "arg_count": len(_split_top_level(m.group("args") or "")),
+                }
+            )
         for m in bare_pattern.finditer(body):
             absolute_method_pos = body_start + m.start("method")
             method = m.group("method")

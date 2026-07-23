@@ -443,7 +443,12 @@ def test_hybrid_query_returns_structured_agent_next_steps(demo_workspace_indexed
     assert result["results"]
     assert result["agent_next_steps"]
     first = result["agent_next_steps"][0]
-    assert first["action"] in {"switch_to_walkthrough", "inspect_top_result", "validate_semantic_hit"}
+    assert first["action"] in {
+        "refresh_or_read_live_files",
+        "switch_to_walkthrough",
+        "inspect_top_result",
+        "validate_semantic_hit",
+    }
     assert first["priority"] in {"high", "medium"}
     assert first["command"]
     assert isinstance(first["uses_existing_evidence"], bool)
