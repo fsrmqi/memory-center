@@ -12,7 +12,11 @@ from rich import print
 from memory_center.application.tasks import execute_task_repair
 from memory_center.core.indexing.control_plane import index_control_status
 from memory_center.core.indexing.shards import cleanup_generations
-from memory_center.core.storage.maintenance import cleanup_legacy_memory_store
+from memory_center.core.storage.maintenance import (
+    cleanup_legacy_memory_store,
+    sparsify_static_assertions,
+    vacuum_runtime_store,
+)
 from memory_center.core.storage.workspace import WorkspaceStore
 from memory_center.core.tasks.artifacts import (
     append_change_log,
@@ -242,3 +246,13 @@ def register_artifact_commands(app: typer.Typer) -> None:
     def artifact_storage_legacy_cleanup_cmd(workspace: str = typer.Option(...), apply: bool = typer.Option(False, "--apply/--dry-run", help="默认只预览；--apply 删除未被当前运行时使用的旧 memory.db。")):
         """清理旧存储架构遗留的 memory/memory.db 副本。"""
         print(cleanup_legacy_memory_store(workspace, apply=apply))
+
+    @app.command("assertion-sparsify")
+    def artifact_assertion_sparsify_cmd(workspace: str = typer.Option(...), apply: bool = typer.Option(False, "--apply/--dry-run", help="默认只预览；--apply 删除可从图边派生的 EXTRACTED 断言副本。")):
+        """迁移到图边派生静态断言，保留人工状态覆盖。"""
+        print(sparsify_static_assertions(workspace, apply=apply))
+
+    @app.command("assertion-vacuum")
+    def artifact_assertion_vacuum_cmd(workspace: str = typer.Option(...), apply: bool = typer.Option(False, "--apply/--dry-run", help="默认只预览；--apply 独占重整 graph.db 并回收已删除页。")):
+        """在断言稀疏化后显式回收 SQLite 页。"""
+        print(vacuum_runtime_store(workspace, apply=apply))

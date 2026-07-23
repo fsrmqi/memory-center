@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from memory_center.core.knowledge.assertions import ASSERTION_INDEX_FILE, assertion_id_for
+from memory_center.core.knowledge.assertions import ASSERTION_INDEX_FILE
 from memory_center.core.presentation.conclusion_cards import build_conclusion_cards
 from memory_center.core.storage.runtime import RuntimeStore
 from memory_center.core.storage.workspace import WorkspaceStore
@@ -120,10 +120,8 @@ def _edge(item: dict[str, Any], *, assertion_generation: str = "") -> dict[str, 
         "depth": item.get("depth", 0),
         "evidence_level": "EXTRACTED" if confidence >= 0.8 else "INFERRED",
     }
-    if assertion_generation:
-        result["assertion_ref"] = assertion_id_for(
-            str(item.get("source_id", "")), str(item.get("type", "")), str(item.get("target_id", "")), assertion_generation
-        )
+    if assertion_generation and item.get("id"):
+        result["assertion_ref"] = f"static:{item['id']}"
     return result
 
 

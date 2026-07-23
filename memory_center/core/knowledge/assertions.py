@@ -1,8 +1,7 @@
 """Append-only assertion sidecar for versioned ontology facts."""
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
-from hashlib import sha256
+from datetime import datetime, timezone
 from typing import Any
 
 from memory_center.core.assessment.quality import evidence_level_for
@@ -15,8 +14,6 @@ ASSERTION_INDEX_FILE = "assertion-index.json"
 ASSERTION_EVENTS_FILE = "assertion-events.jsonl"
 ASSERTION_MAINTENANCE_FILE = "assertion-maintenance.json"
 ASSERTION_STATUS_EXTRACTED = "EXTRACTED"
-ASSERTION_RETENTION_DAYS = 90
-ASSERTION_CLOSED_MAX_RECORDS = 2_000_000
 
 
 def materialize_static_assertions(
@@ -27,39 +24,13 @@ def materialize_static_assertions(
     paths: list[str] | None = None,
     projects: list[str] | None = None,
 ) -> dict[str, int | str]:
-    """Mirror the published graph as immutable, generation-scoped assertions.
-
-    This runs after generation publication. Failure is intentionally isolated
-    from graph availability; a later reindex can reconstruct the sidecar.
-    """
+    """Publish a compact manifest; static assertions are derived from graph edges."""
     created_at = datetime.now(timezone.utc).isoformat()
-    file_times = {
-        str(row.get("path", "") or "").replace("\\", "/").lstrip("/"): int(row.get("source_mtime_ns", 0) or 0)
-        for row in store.read_json_prefer_backend("file-index.json", [])
-        if isinstance(row, dict)
-    }
     partial = bool(paths or projects)
-    if partial:
-        store.memory_backend().supersede_assertions_in_scope(
-            paths=paths,
-            projects=projects,
-            generation=generation,
-            valid_to=created_at,
-        )
-    total = 0
     with RuntimeStore(store.graph_db_path) as graph:
-        batch: list[dict[str, Any]] = []
-        for edge in graph.iter_assertion_rows(batch_size=batch_size, paths=paths, projects=projects):
-            payload = _assertion_from_edge(edge, generation=generation, created_at=created_at, file_times=file_times)
-            batch.append(payload)
-            if len(batch) >= batch_size:
-                _persist_batch(store, batch)
-                total += len(batch)
-                batch = []
-        if batch:
-            _persist_batch(store, batch)
-            total += len(batch)
-    summary = store.memory_backend().assertion_summary(limit=20)
+        counts = graph.counts()
+    summary = sparse_assertion_summary(store, static_count=int(counts.get("edges", 0)))
+    summary["recent"] = _derived_assertion_slice(store, generation=generation, created_at=created_at, limit=20)
     store.write_json(
         ASSERTION_INDEX_FILE,
         {
@@ -69,12 +40,12 @@ def materialize_static_assertions(
             "by_status": summary["by_status"],
             "recent": summary["recent"],
             "updated_at": created_at,
-            "written": total,
+            "written": 0,
+            "derived_static_count": int(counts.get("edges", 0)),
             "mode": "partial" if partial else "full",
         },
     )
-    _maybe_maintain_assertions(store)
-    return {"written": total, "active": int(summary["active"]), "generation": generation, "mode": "partial" if partial else "full"}
+    return {"written": 0, "active": int(summary["active"]), "generation": generation, "mode": "derived_partial" if partial else "derived"}
 
 
 def query_assertions(
@@ -85,13 +56,26 @@ def query_assertions(
     time_axis: str = "valid",
     limit: int = 20,
 ) -> list[dict[str, Any]]:
-    """Bounded temporal read API for current or historical assertions."""
-    return store.memory_backend().query_assertions(
-        as_of_generation=as_of_generation,
-        as_of_time=as_of_time,
-        time_axis=time_axis,
-        limit=limit,
-    )
+    """Derive current static facts from the graph; history remains sparse overrides."""
+    if as_of_generation:
+        return store.memory_backend().query_assertions(as_of_generation=as_of_generation, as_of_time=as_of_time, time_axis=time_axis, limit=limit)
+    generation = str(store.read_json_prefer_backend(ASSERTION_INDEX_FILE, {}).get("generation", "") or "")
+    created_at = str(store.read_json_prefer_backend(ASSERTION_INDEX_FILE, {}).get("updated_at", "") or "")
+    derived = _derived_assertion_slice(store, generation=generation, created_at=created_at, limit=limit)
+    return derived
+
+
+def _derived_assertion_slice(store: WorkspaceStore, *, generation: str, created_at: str, limit: int) -> list[dict[str, Any]]:
+    derived: list[dict[str, Any]] = []
+    with RuntimeStore(store.graph_db_path) as graph:
+        for edge in graph.iter_assertion_rows(batch_size=min(max(1, limit), 500)):
+            derived.append(_assertion_from_edge(edge, generation=generation, created_at=created_at))
+            if len(derived) >= min(max(1, limit), 500):
+                break
+    statuses = store.memory_backend().assertion_statuses([item["assertion_id"] for item in derived])
+    for item in derived:
+        item["status"] = statuses.get(item["assertion_id"], ASSERTION_STATUS_EXTRACTED)
+    return derived
 
 
 def update_assertion_status(
@@ -108,6 +92,11 @@ def update_assertion_status(
     normalized = status.strip().upper()
     if normalized == "VERIFIED" and not verification_ref.strip():
         raise ValueError("VERIFIED assertions require verification_ref")
+    if assertion_id.startswith("static:") and store.memory_backend().assertion_by_id(assertion_id) is None:
+        derived = _derived_assertion_by_id(store, assertion_id)
+        if derived is None:
+            return {"updated": False, "reason": "assertion_not_found", "assertion_id": assertion_id}
+        store.memory_backend().upsert_assertions([derived])
     updated = store.memory_backend().set_assertion_status(assertion_id, normalized, verification_ref=verification_ref)
     if not updated:
         return {"updated": False, "reason": "assertion_not_found", "assertion_id": assertion_id}
@@ -127,7 +116,7 @@ def update_assertion_status(
 
 def inspect_assertion(store: WorkspaceStore, assertion_id: str) -> dict[str, Any]:
     """Return one assertion by stable ref without scanning the audit stream."""
-    assertion = store.memory_backend().assertion_by_id(assertion_id)
+    assertion = store.memory_backend().assertion_by_id(assertion_id) or _derived_assertion_by_id(store, assertion_id)
     if assertion is None:
         return {"found": False, "assertion": None, "assertion_ref": assertion_id}
     from memory_center.core.knowledge.aliases import resolve_canonical_identity
@@ -150,41 +139,32 @@ def inspect_assertion(store: WorkspaceStore, assertion_id: str) -> dict[str, Any
     }
 
 
-def _persist_batch(store: WorkspaceStore, assertions: list[dict[str, Any]]) -> None:
-    store.memory_backend().upsert_assertions(assertions)
-    store.append_jsonl_batch(ASSERTIONS_FILE, assertions)
+def sparse_assertion_summary(store: WorkspaceStore, *, static_count: int = 0) -> dict[str, Any]:
+    summary = store.memory_backend().assertion_summary(limit=0)
+    statuses = dict(summary.get("by_status", {}))
+    overrides = sum(int(value) for value in statuses.values())
+    statuses[ASSERTION_STATUS_EXTRACTED] = max(0, static_count - overrides) + int(statuses.get(ASSERTION_STATUS_EXTRACTED, 0))
+    return {"active": static_count, "by_status": statuses, "recent": []}
 
 
-def _maybe_maintain_assertions(store: WorkspaceStore) -> None:
-    """Run low-frequency cleanup outside the ordinary query path."""
-    maintenance = store.read_json_prefer_backend(ASSERTION_MAINTENANCE_FILE, {}) or {}
-    now = datetime.now(timezone.utc)
-    if (now.timestamp() - float(maintenance.get("pruned_at", 0) or 0)) < 24 * 60 * 60:
-        return
-    cutoff = now - timedelta(days=ASSERTION_RETENTION_DAYS)
-    backend = store.memory_backend().prune_closed_assertions(
-        valid_before=cutoff.isoformat(), max_closed=ASSERTION_CLOSED_MAX_RECORDS
-    )
-    journal = store.prune_jsonl(
-        ASSERTIONS_FILE,
-        created_before=cutoff,
-        max_records=ASSERTION_CLOSED_MAX_RECORDS,
-    )
-    store.write_json(
-        ASSERTION_MAINTENANCE_FILE,
-        {"pruned_at": now.timestamp(), "cutoff": cutoff.isoformat(), "backend": backend, "journal": journal},
-    )
+def _derived_assertion_by_id(store: WorkspaceStore, assertion_id: str) -> dict[str, Any] | None:
+    if not assertion_id.startswith("static:"):
+        return None
+    with RuntimeStore(store.graph_db_path) as graph:
+        edge = graph.assertion_row_by_edge_id(assertion_id.removeprefix("static:"))
+    if edge is None:
+        return None
+    generation = str(store.read_json_prefer_backend(ASSERTION_INDEX_FILE, {}).get("generation", "") or "")
+    return _assertion_from_edge(edge, generation=generation, created_at="")
 
 
-def _assertion_from_edge(edge: dict[str, Any], *, generation: str, created_at: str, file_times: dict[str, int]) -> dict[str, Any]:
+def _assertion_from_edge(edge: dict[str, Any], *, generation: str, created_at: str) -> dict[str, Any]:
     subject_id = str(edge["source_id"])
     predicate = str(edge["type"])
     object_id = str(edge["target_id"])
-    assertion_id = assertion_id_for(subject_id, predicate, object_id, generation)
+    assertion_id = f"static:{edge.get('id', '')}"
     evidence_level = evidence_level_for({}, semantic_strength=edge_strength(predicate))
-    source_path = str(edge.get("source_file", "") or "")
-    event_ns = file_times.get(source_path, 0) or file_times.get(str(edge.get("target_file", "") or ""), 0)
-    event_at = datetime.fromtimestamp(event_ns / 1_000_000_000, tz=timezone.utc).isoformat() if event_ns else created_at
+    event_at = created_at
     return {
         "assertion_id": assertion_id,
         "type": "static_assertion",
@@ -207,7 +187,7 @@ def _assertion_from_edge(edge: dict[str, Any], *, generation: str, created_at: s
         "evidence_refs": [f"ev:graph-edge:{edge.get('id', '')}"],
         "event_at": event_at,
         "observed_at": created_at,
-        "event_time_source": "source_mtime" if event_ns else "observed_at_fallback",
+        "event_time_source": "observed_at_fallback",
         "valid_from": created_at,
         "valid_to": "",
         "created_at": created_at,
@@ -215,4 +195,5 @@ def _assertion_from_edge(edge: dict[str, Any], *, generation: str, created_at: s
 
 
 def assertion_id_for(subject_id: str, predicate: str, object_id: str, generation: str) -> str:
-    return sha256(f"{subject_id}|{predicate}|{object_id}|{generation}|STATIC".encode()).hexdigest()[:32]
+    """Deprecated endpoint-based helper; graph exports use `static:<edge_id>`."""
+    return f"static:{subject_id}|{predicate}|{object_id}"

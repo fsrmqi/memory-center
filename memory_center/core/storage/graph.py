@@ -694,6 +694,24 @@ class _GraphOperations:
                 yield dict(row)
             last_id = str(rows[-1]["id"])
 
+    def assertion_row_by_edge_id(self, edge_id: str) -> dict[str, Any] | None:
+        """Return one graph edge in the same shape as derived assertions."""
+        with self.connect() as conn:
+            row = conn.execute(
+                """
+                SELECT edge.id, edge.source_id, edge.target_id, edge.type, edge.confidence,
+                       edge.metadata_json, source.type AS subject_type, target.type AS object_type,
+                       source.file_path AS source_file, target.file_path AS target_file,
+                       source.project AS source_project, target.project AS target_project
+                FROM edges edge
+                JOIN nodes source ON source.id=edge.source_id
+                JOIN nodes target ON target.id=edge.target_id
+                WHERE edge.id=?
+                """,
+                (edge_id,),
+            ).fetchone()
+        return dict(row) if row else None
+
     def project_subgraph(self, project: str) -> tuple[list[GraphNode], list[GraphEdge]]:
         """Export a self-contained graph shard for one project."""
         with self.connect() as conn:

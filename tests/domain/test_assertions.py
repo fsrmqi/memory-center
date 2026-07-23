@@ -17,7 +17,7 @@ from memory_center.core.storage.runtime import RuntimeStore
 from memory_center.core.storage.workspace import WorkspaceStore
 
 
-def test_materialize_static_assertions_keeps_history_and_active_read_model(tmp_path):
+def test_static_assertions_are_derived_and_status_is_sparse_override(tmp_path):
     workspace_file = tmp_path / "workspace.yaml"
     workspace_file.write_text("workspace: demo\nservices: []\n", encoding="utf-8")
     store = WorkspaceStore(workspace_file)
@@ -30,21 +30,16 @@ def test_materialize_static_assertions_keeps_history_and_active_read_model(tmp_p
     first = materialize_static_assertions(store, "gen-1", batch_size=1)
     second = materialize_static_assertions(store, "gen-2", batch_size=1)
 
-    assert first["written"] == 1
+    assert first["written"] == 0
     assert second["active"] == 1
-    records = store.read_jsonl("assertions.jsonl", limit=10)
-    assert len(records) == 2
-    assert records[-1]["evidence_level"] == "EXTRACTED"
     summary = store.read_json(ASSERTION_INDEX_FILE, {})
     assert summary["generation"] == "gen-2"
     assert summary["active"] == 1
     exported = export_evidence_subgraph(workspace_file, "Class:A")
-    assert exported["edges"][0]["assertion_ref"] == records[-1]["assertion_id"]
-    assert len(query_assertions(store, as_of_generation="gen-1")) == 1
-    assert len(query_assertions(store, limit=1)) == 1
-    assert store.memory_backend().mark_assertions_stale(["src/A.java"]) == 1
-    assert query_assertions(store, limit=1)[0]["status"] == "STALE"
-    changed = update_assertion_status(store, records[-1]["assertion_id"], status="VERIFIED", verification_ref="validation:test-1")
+    assertion_id = exported["edges"][0]["assertion_ref"]
+    assert assertion_id.startswith("static:")
+    assert query_assertions(store, limit=1)[0]["status"] == "EXTRACTED"
+    changed = update_assertion_status(store, assertion_id, status="VERIFIED", verification_ref="validation:test-1")
     assert changed["updated"] is True
     assert query_assertions(store, limit=1)[0]["status"] == "VERIFIED"
     exported = export_evidence_subgraph(workspace_file, "Class:A")
@@ -79,19 +74,19 @@ def test_partial_materialization_only_replaces_scoped_assertions(tmp_path):
             ],
         )
     materialize_static_assertions(store, "gen-1")
-    old_b = next(item for item in query_assertions(store, as_of_generation="gen-1", limit=10) if item["subject_id"] == "Class:B")
+    old_b = next(item for item in query_assertions(store, limit=10) if item["subject_id"] == "Class:B")
     update_assertion_status(store, old_b["assertion_id"], status="VERIFIED", verification_ref="validation:b")
 
     result = materialize_static_assertions(store, "gen-2", paths=["src/A.java"])
     active = query_assertions(store, limit=10)
 
-    assert result["mode"] == "partial"
-    assert result["written"] == 1
+    assert result["mode"] == "derived_partial"
+    assert result["written"] == 0
     assert next(item for item in active if item["subject_id"] == "Class:B")["status"] == "VERIFIED"
-    assert next(item for item in active if item["subject_id"] == "Class:B")["generation"] == "gen-1"
+    assert next(item for item in active if item["subject_id"] == "Class:B")["assertion_id"] == old_b["assertion_id"]
 
 
-def test_closed_assertion_retention_never_removes_active_facts(tmp_path):
+def test_derived_static_assertions_do_not_create_closed_history(tmp_path):
     workspace_file = tmp_path / "workspace.yaml"
     workspace_file.write_text("workspace: demo\nservices: []\n", encoding="utf-8")
     store = WorkspaceStore(workspace_file)
@@ -100,7 +95,7 @@ def test_closed_assertion_retention_never_removes_active_facts(tmp_path):
     materialize_static_assertions(store, "gen-1")
     materialize_static_assertions(store, "gen-2")
     result = store.memory_backend().prune_closed_assertions(valid_before="9999-01-01T00:00:00+00:00", max_closed=0)
-    assert result["expired"] == 1
+    assert result["expired"] == 0
     assert len(query_assertions(store, limit=10)) == 1
 
 

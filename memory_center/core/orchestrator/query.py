@@ -446,7 +446,11 @@ def _assertion_summary(store: WorkspaceStore) -> dict[str, Any]:
     """Return a constant-size assertion view for default query responses."""
     try:
         # 默认 lookup 仅展示聚合计数；断言正文和时间排序只在 assertion 详情页读取。
-        summary = store.memory_backend().assertion_summary(limit=0)
+        from memory_center.core.knowledge.assertions import sparse_assertion_summary
+        from memory_center.core.storage.runtime import RuntimeStore
+
+        with RuntimeStore(store.graph_db_path) as graph:
+            summary = sparse_assertion_summary(store, static_count=int(graph.counts().get("edges", 0)))
     except Exception:
         return {"active": 0, "verified": 0, "inferred": 0, "stale": 0, "next_action": "运行 reindex 生成断言侧车"}
     statuses = summary.get("by_status", {}) if isinstance(summary, dict) else {}

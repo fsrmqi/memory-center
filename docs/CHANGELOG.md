@@ -1,5 +1,15 @@
 # Changelog / 更新日志
 
+## 4.3.20 静态断言稀疏化 / Derived Static Assertions
+
+- 静态断言改由 `graph.db.edges` 按需派生，reindex 不再全量写入 `EXTRACTED` 断言表或 `assertions.jsonl`；断言存储仅保留人工验证、拒绝与治理状态覆盖。
+- 新增 `artifact assertion-sparsify --dry-run|--apply`，显式删除可派生的旧 `EXTRACTED` 副本，并将 JSONL 收敛为轻量迁移标记；SQLite 页回收保持为后续显式维护操作。
+
+## 4.3.20 Derived Static Assertions
+
+- Static assertions are now derived from `graph.db.edges` on demand. Reindex no longer materializes all `EXTRACTED` assertions into SQLite or `assertions.jsonl`; assertion storage keeps only sparse human verification, rejection, and governance overrides.
+- Added `artifact assertion-sparsify --dry-run|--apply` to explicitly delete derivable legacy rows and replace the JSONL export with a compact migration marker. SQLite page reclamation remains an explicit maintenance operation.
+
 ## 4.3.19 运行时存储去重 / Runtime Storage Deduplication
 
 - 新增 `artifact storage-legacy-cleanup --dry-run|--apply`，仅在当前运行时已经使用 `graph/graph.db` 时识别和清理遗留 `memory/memory.db`，避免旧双存储架构继续占用磁盘。
