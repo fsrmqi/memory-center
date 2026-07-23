@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from memory_center.application.http_facades import (
     append_change_log,
     append_task_change_log,
@@ -61,6 +63,12 @@ from memory_center.application.http_facades import (
     workspace_background_job_status,
     workspace_change_impact_confirm,
     workspace_change_impact_reports,
+    workspace_delivery_contract,
+    workspace_delivery_init,
+    workspace_delivery_status,
+    workspace_delivery_subtask_status,
+    workspace_delivery_transition,
+    workspace_delivery_validation,
     workspace_evidence_subgraph,
     workspace_lookup_hint,
     workspace_recent_evidence,
@@ -99,6 +107,59 @@ def _workspace_query_with_guidance(rp):
             payload=result,
         )
     return result
+
+
+def _delivery_payload(rp) -> dict:
+    try:
+        payload = json.loads(rp.require("payload"))
+    except json.JSONDecodeError as exc:
+        raise ValueError("payload must be a JSON object") from exc
+    if not isinstance(payload, dict):
+        raise ValueError("payload must be a JSON object")
+    return payload
+
+
+def _delivery_items(payload: dict) -> list[dict]:
+    items = payload.get("items", [])
+    if not isinstance(items, list) or not all(isinstance(item, dict) for item in items):
+        raise ValueError("payload.items must be an array of objects")
+    return items
+
+
+def _workspace_delivery_contract(rp):
+    payload = _delivery_payload(rp)
+    return workspace_delivery_contract(
+        rp.workspace(),
+        rp.require("task_id"),
+        kind=str(payload.get("kind", "")),
+        items=_delivery_items(payload),
+        actor=rp.get("actor", ""),
+    )
+
+
+def _workspace_delivery_subtask_status(rp):
+    payload = _delivery_payload(rp)
+    return workspace_delivery_subtask_status(
+        rp.workspace(), rp.require("task_id"),
+        subtask_id=str(payload.get("subtask_id", "")), status=str(payload.get("status", "")), actor=rp.get("actor", ""),
+    )
+
+
+def _workspace_delivery_validation(rp):
+    payload = _delivery_payload(rp)
+    return workspace_delivery_validation(
+        rp.workspace(), rp.require("task_id"), status=str(payload.get("status", "recorded")),
+        summary=str(payload.get("summary", "")), command=str(payload.get("command", "")), exit_code=payload.get("exit_code"),
+        acceptance_ids=[str(item) for item in payload.get("acceptance_ids", []) if str(item).strip()],
+        evidence_refs=[str(item) for item in payload.get("evidence_refs", []) if str(item).strip()], actor=rp.get("actor", ""),
+    )
+
+
+def _workspace_delivery_transition(rp):
+    payload = _delivery_payload(rp)
+    return workspace_delivery_transition(
+        rp.workspace(), rp.require("task_id"), stage=str(payload.get("stage", "")), actor=rp.get("actor", ""), force=rp.bool_param("force")
+    )
 
 
 def register_workspace_routes(registry: CommandRegistry) -> None:
@@ -219,6 +280,16 @@ def register_workspace_routes(registry: CommandRegistry) -> None:
         tags=rp.list_param("tag"),
         priority=rp.get("priority", "medium"),
     ))
+    registry.register("/workspace/delivery", lambda rp: workspace_delivery_status(
+        rp.workspace(), rp.require("task_id")
+    ))
+    registry.register("/workspace/delivery/init", lambda rp: workspace_delivery_init(
+        rp.workspace(), rp.require("task_id"), actor=rp.get("actor", "")
+    ))
+    registry.register("/workspace/delivery/contract", _workspace_delivery_contract)
+    registry.register("/workspace/delivery/subtask-status", _workspace_delivery_subtask_status)
+    registry.register("/workspace/delivery/validation", _workspace_delivery_validation)
+    registry.register("/workspace/delivery/transition", _workspace_delivery_transition)
     registry.register("/workspace/task-artifact", lambda rp: get_task_artifact(
         rp.workspace(),
         rp.require('task_id'),

@@ -172,6 +172,13 @@
 - `task_repair_apply(task_id=..., force=false, intent=...)`：默认 dry-run，`force=true` 时执行保守修复。
 - `task_resume_check(task_id=...)`：返回恢复门禁，合并恢复包、健康度、修复建议、下一步动作、未解决事项和证据。
 
+### 需求交付工作流 / Delivery workflow
+
+- `artifact delivery-init --workspace <workspace.yaml> --task-id <task>`：初始化 `feature_delivery_v1`。
+- `artifact delivery-contract --kind requirements|subtasks|acceptance --items '<JSON数组>'`：写入结构化需求、代码定位子任务或验收标准。
+- `artifact delivery-transition --stage breakdown|locate|implement|verify|close`：按门禁推进；验收未被通过回执覆盖时不能关闭。
+- `artifact delivery-record-validation`：仅记录已执行验证的命令摘要、退出码、结果和证据引用，绝不执行命令。
+
 ### `mc_context_pack`
 
 常见参数：

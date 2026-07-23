@@ -135,6 +135,14 @@ from memory_center.core.tasks.artifacts import (
     update_task_status,
     write_task_evidence_chunk,
 )
+from memory_center.core.tasks.delivery import (
+    delivery_workflow_status,
+    initialize_delivery_workflow,
+    record_delivery_validation,
+    transition_delivery_stage,
+    update_delivery_contract,
+    update_delivery_subtask_status,
+)
 from memory_center.core.verification.bundle_export import generate_agent_bundle
 from memory_center.core.verification.heuristics import HeuristicsRegister
 from memory_center.core.verification.loop import VerificationLoop
@@ -527,6 +535,40 @@ def build_admin_registry(
         "task_auto_archive": lambda: auto_archive_task_spaces(wf, retention_days=keep_recent),
         "task_status": lambda: update_task_status(wf, task_id, status),
         "task_activity_touch": lambda: touch_task_activity(wf, task_id, source),
+        "delivery_init": lambda: initialize_delivery_workflow(wf, task_id, actor=source),
+        "delivery_status": lambda: delivery_workflow_status(wf, task_id),
+        "delivery_contract_update": lambda: update_delivery_contract(
+            wf,
+            task_id,
+            kind=str((parse_payload(payload) or {}).get("kind", "")),
+            items=list((parse_payload(payload) or {}).get("items", [])),
+            actor=source,
+        ),
+        "delivery_subtask_status": lambda: update_delivery_subtask_status(
+            wf,
+            task_id,
+            str((parse_payload(payload) or {}).get("subtask_id", "")),
+            str((parse_payload(payload) or {}).get("status", "")),
+            actor=source,
+        ),
+        "delivery_validation_record": lambda: record_delivery_validation(
+            wf,
+            task_id,
+            status=str((parse_payload(payload) or {}).get("status", "recorded")),
+            summary=str((parse_payload(payload) or {}).get("summary", "")),
+            command=str((parse_payload(payload) or {}).get("command", "")),
+            exit_code=(parse_payload(payload) or {}).get("exit_code"),
+            acceptance_ids=list((parse_payload(payload) or {}).get("acceptance_ids", [])),
+            evidence_refs=list((parse_payload(payload) or {}).get("evidence_refs", [])),
+            actor=source,
+        ),
+        "delivery_transition": lambda: transition_delivery_stage(
+            wf,
+            task_id,
+            str((parse_payload(payload) or {}).get("stage", "")),
+            actor=source,
+            force=force,
+        ),
         "session_start": lambda: workspace_start_session(wf, intent, session_id=session_id or None),
         "session_log": lambda: workspace_log_session_event(wf, session_id, event_type, parse_payload(payload)),
         "session_end": lambda: workspace_end_session(wf, session_id, outcome, verified_by),

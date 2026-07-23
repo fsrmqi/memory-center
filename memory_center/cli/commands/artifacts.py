@@ -3,6 +3,7 @@ from __future__ import annotations
 
 # Typer evaluates command annotations at runtime in Python 3.9 environments.
 # ruff: noqa: UP006,UP045
+import json
 import typing
 
 import typer
@@ -30,6 +31,14 @@ from memory_center.core.tasks.artifacts import (
     update_artifact,
     update_task_artifact,
     update_task_status,
+)
+from memory_center.core.tasks.delivery import (
+    delivery_workflow_status,
+    initialize_delivery_workflow,
+    record_delivery_validation,
+    transition_delivery_stage,
+    update_delivery_contract,
+    update_delivery_subtask_status,
 )
 
 
@@ -160,3 +169,36 @@ def register_artifact_commands(app: typer.Typer) -> None:
     def artifact_touch_task_activity_cmd(workspace: str = typer.Option(...), task_id: str = typer.Option(...), source: str = typer.Option(..., help="调用来源，例如 sync-sniff、sync-case、mcp。")):
         """记录任务空间的最近活动来源。"""
         print(touch_task_activity(workspace, task_id, source))
+
+    @app.command("delivery-init")
+    def artifact_delivery_init_cmd(workspace: str = typer.Option(...), task_id: str = typer.Option(...), actor: str = typer.Option("")):
+        """初始化需求交付状态机及其结构化工件。"""
+        print(initialize_delivery_workflow(workspace, task_id, actor=actor))
+
+    @app.command("delivery-status")
+    def artifact_delivery_status_cmd(workspace: str = typer.Option(...), task_id: str = typer.Option(...)):
+        """读取需求交付阶段、门禁和下一步动作。"""
+        print(delivery_workflow_status(workspace, task_id))
+
+    @app.command("delivery-contract")
+    def artifact_delivery_contract_cmd(workspace: str = typer.Option(...), task_id: str = typer.Option(...), kind: str = typer.Option(..., help="requirements|subtasks|acceptance"), items: str = typer.Option(..., help="JSON 数组"), actor: str = typer.Option("")):
+        """写入需求、子任务或验收标准契约。"""
+        parsed = json.loads(items)
+        if not isinstance(parsed, list):
+            raise typer.BadParameter("items 必须是 JSON 数组")
+        print(update_delivery_contract(workspace, task_id, kind=kind, items=parsed, actor=actor))
+
+    @app.command("delivery-subtask-status")
+    def artifact_delivery_subtask_status_cmd(workspace: str = typer.Option(...), task_id: str = typer.Option(...), subtask_id: str = typer.Option(...), status: str = typer.Option(...), actor: str = typer.Option("")):
+        """更新一个子任务的定位或实现状态。"""
+        print(update_delivery_subtask_status(workspace, task_id, subtask_id, status, actor=actor))
+
+    @app.command("delivery-record-validation")
+    def artifact_delivery_validation_cmd(workspace: str = typer.Option(...), task_id: str = typer.Option(...), status: str = typer.Option(...), summary: str = typer.Option(""), command: str = typer.Option(""), exit_code: typing.Optional[int] = typer.Option(None), acceptance_ids: str = typer.Option("[]", help="JSON 数组"), evidence_refs: str = typer.Option("[]", help="JSON 数组"), actor: str = typer.Option("")):
+        """记录已执行的验证结果，不会执行传入命令。"""
+        print(record_delivery_validation(workspace, task_id, status=status, summary=summary, command=command, exit_code=exit_code, acceptance_ids=json.loads(acceptance_ids), evidence_refs=json.loads(evidence_refs), actor=actor))
+
+    @app.command("delivery-transition")
+    def artifact_delivery_transition_cmd(workspace: str = typer.Option(...), task_id: str = typer.Option(...), stage: str = typer.Option(...), actor: str = typer.Option(""), force: bool = typer.Option(False, help="仅用于已知例外；会保留强制推进历史。")):
+        """按门禁将需求交付流程推进到下一阶段。"""
+        print(transition_delivery_stage(workspace, task_id, stage, actor=actor, force=force))

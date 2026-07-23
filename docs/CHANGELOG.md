@@ -1,5 +1,17 @@
 # Changelog / 更新日志
 
+## 4.3.16 需求交付工作流 / Delivery Workflow
+
+- 新增可复用的 `feature_delivery_v1` 需求交付状态机：`intake -> breakdown -> locate -> implement -> verify -> close`；每个阶段均通过结构化门禁推进。
+- 任务空间新增需求、子任务、验收标准与只追加验证回执契约；完成关闭前必须为每项必需验收标准关联通过的验证回执。
+- CLI `artifact delivery-*`、MCP `mc_admin(action="delivery_*")` 和 HTTP `/workspace/delivery*` 共享同一应用服务；记录验证时只保存输入的脱敏摘要，不会执行命令。
+
+## 4.3.16 Delivery Workflow
+
+- Added reusable `feature_delivery_v1`: `intake -> breakdown -> locate -> implement -> verify -> close`, advanced only through structured gates.
+- Task spaces now carry requirement, subtask, acceptance, and append-only validation-receipt contracts; closing requires a passing receipt for every required acceptance criterion.
+- CLI `artifact delivery-*`, MCP `mc_admin(action="delivery_*")`, and HTTP `/workspace/delivery*` share one application service. Recording validation never executes a supplied command.
+
 本更新日志按**版本号**归纳，优先记录：
 
 - 用户可感知的新能力

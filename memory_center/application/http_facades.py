@@ -108,6 +108,14 @@ from memory_center.core.tasks.artifacts import (
     update_task_artifact,
     update_task_status,
 )
+from memory_center.core.tasks.delivery import (
+    delivery_workflow_status,
+    initialize_delivery_workflow,
+    record_delivery_validation,
+    transition_delivery_stage,
+    update_delivery_contract,
+    update_delivery_subtask_status,
+)
 
 
 def workspace_background_job_status(workspace_file: str, job_id: str = "", *, limit: int = 20) -> dict[str, Any]:
@@ -193,6 +201,30 @@ def workspace_assertion_inspect(workspace_file: str, assertion_id: str) -> dict[
 
 def workspace_assertion_query(workspace_file: str, *, as_of_generation: str = "", as_of_time: str = "", time_axis: str = "valid", limit: int = 20) -> dict[str, Any]:
     return {"assertions": query_assertions(WorkspaceStore(workspace_file), as_of_generation=as_of_generation, as_of_time=as_of_time, time_axis=time_axis, limit=limit)}
+
+
+def workspace_delivery_status(workspace_file: str, task_id: str) -> dict[str, Any]:
+    return delivery_workflow_status(workspace_file, task_id)
+
+
+def workspace_delivery_init(workspace_file: str, task_id: str, *, actor: str = "") -> dict[str, Any]:
+    return initialize_delivery_workflow(workspace_file, task_id, actor=actor)
+
+
+def workspace_delivery_contract(workspace_file: str, task_id: str, *, kind: str, items: list[dict[str, Any]], actor: str = "") -> dict[str, Any]:
+    return update_delivery_contract(workspace_file, task_id, kind=kind, items=items, actor=actor)
+
+
+def workspace_delivery_subtask_status(workspace_file: str, task_id: str, *, subtask_id: str, status: str, actor: str = "") -> dict[str, Any]:
+    return update_delivery_subtask_status(workspace_file, task_id, subtask_id, status, actor=actor)
+
+
+def workspace_delivery_validation(workspace_file: str, task_id: str, *, status: str, summary: str = "", command: str = "", exit_code: int | None = None, acceptance_ids: list[str] | None = None, evidence_refs: list[str] | None = None, actor: str = "") -> dict[str, Any]:
+    return record_delivery_validation(workspace_file, task_id, status=status, summary=summary, command=command, exit_code=exit_code, acceptance_ids=acceptance_ids, evidence_refs=evidence_refs, actor=actor)
+
+
+def workspace_delivery_transition(workspace_file: str, task_id: str, *, stage: str, actor: str = "", force: bool = False) -> dict[str, Any]:
+    return transition_delivery_stage(workspace_file, task_id, stage, actor=actor, force=force)
 
 
 __all__ = [

@@ -522,6 +522,7 @@ def workspace_dashboard(
     budget: str = "medium",
 ) -> dict[str, Any]:
     # Lazy import to avoid circular dependency with .resume and .eval
+    from ..tasks.delivery import delivery_workflow_status
     from ..tasks.timeline import timeline_query
     from .evaluations import (
         memory_eval_agent_guidance,
@@ -550,6 +551,7 @@ def workspace_dashboard(
             "score": quality.get("score", 0),
             "receipt_count": quality.get("receipt_count", 0),
             "summary_preview": summary_preview,
+            "delivery": delivery_workflow_status(workspace_file, task_id),
         }
         if task.get("status") == "blocked":
             blocked_tasks.append(entry)
@@ -580,6 +582,7 @@ def workspace_dashboard(
         intent=intent,
         limit=min(limit, 10),
     )
+    focus_delivery = delivery_workflow_status(workspace_file, (focus_task or {}).get("task_id", "")) if focus_task else None
     usage_report = memory_tool_usage_report(workspace_file, limit=max(limit * 10, 50))
     agent_guidance_eval = memory_eval_agent_guidance(workspace_file, intent=intent, limit=limit)
     agent_guidance_adoption = memory_eval_agent_guidance_adoption(workspace_file, limit=max(limit * 10, 50))
@@ -598,6 +601,7 @@ def workspace_dashboard(
         "recent_handoffs": handoffs,
         "focus_dashboard": focus_dashboard,
         "focus_resume_eval": focus_resume_eval,
+        "focus_delivery": focus_delivery,
         "tool_usage_report": {
             "summary": usage_report.get("summary", {}),
             "lookup_tool_counts": usage_report.get("lookup_tool_counts", {}),
