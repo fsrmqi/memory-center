@@ -1,5 +1,15 @@
 # Changelog / 更新日志
 
+## 4.3.25 工作流回滚保护与刷新队列并发修复 / Workflow Rollback and Refresh Queue Fixes
+
+- 已回滚的 workflow profile 不再参与自动推荐；全部画像都被回滚时明确返回 withheld 状态，而非继续给出不安全默认流程。
+- 修复异步定向刷新 worker 在队列为空时的清理竞态，后到请求会启动新 worker 或由现有 worker 消费，不再被注册表清理丢失。
+
+## 4.3.25 Workflow Rollback and Refresh Queue Fixes
+
+- Rolled-back workflow profiles are excluded from automatic recommendations. When every profile is rolled back, the result is explicitly withheld instead of returning an unsafe default.
+- Fixed the async targeted-refresh cleanup race. Requests arriving around worker shutdown are now processed by the active worker or a newly registered worker rather than being discarded.
+
 ## 4.3.24 受控交付画像与范围契约 / Scoped Delivery Profiles
 
 - 新增 `maintenance` 工作流画像，用于健康检查、技术债治理与架构增量演进；所有画像明确返回分层上下文与交付护栏建议。

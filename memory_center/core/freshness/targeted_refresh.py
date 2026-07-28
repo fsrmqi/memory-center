@@ -57,26 +57,27 @@ def refresh_query_targets(
         _REFRESH_PENDING[key] = [(str(workspace_file), query, limit)]
 
         def run() -> None:
-            try:
-                while True:
-                    with _REFRESH_THREADS_GUARD:
-                        pending = _REFRESH_PENDING.get(key, [])
-                        if not pending:
-                            break
-                        pending_workspace, pending_query, pending_limit = pending.pop(0)
-                    worker_store = WorkspaceStore(pending_workspace)
-                    try:
-                        coordinator.run(
-                            lambda store=worker_store, query_text=pending_query, refresh_limit=pending_limit: _refresh_query_targets(store, query_text, refresh_limit),
-                            lambda: {"checked": 0, "refreshed": False, "files": [], "elapsed_ms": 0.0, "mode": "targeted_overlay", "coalesced": True, "generation": {}},
-                        )
-                    except Exception:
-                        # 刷新失败只影响当前候选，不应阻塞同一工作区后续已排队目标。
-                        continue
-            finally:
+            while True:
                 with _REFRESH_THREADS_GUARD:
-                    _REFRESH_THREADS.pop(key, None)
-                    _REFRESH_PENDING.pop(key, None)
+                    pending = _REFRESH_PENDING.get(key, [])
+                    if not pending:
+                        # Empty detection and registry cleanup must be atomic.
+                        # A request arriving after this block starts a new worker
+                        # instead of being appended to a queue that is about to be removed.
+                        if _REFRESH_THREADS.get(key) is threading.current_thread():
+                            _REFRESH_THREADS.pop(key, None)
+                            _REFRESH_PENDING.pop(key, None)
+                        return
+                    pending_workspace, pending_query, pending_limit = pending.pop(0)
+                worker_store = WorkspaceStore(pending_workspace)
+                try:
+                    coordinator.run(
+                        lambda store=worker_store, query_text=pending_query, refresh_limit=pending_limit: _refresh_query_targets(store, query_text, refresh_limit),
+                        lambda: {"checked": 0, "refreshed": False, "files": [], "elapsed_ms": 0.0, "mode": "targeted_overlay", "coalesced": True, "generation": {}},
+                    )
+                except Exception:
+                    # 刷新失败只影响当前候选，不应阻塞同一工作区后续已排队目标。
+                    continue
 
         active = threading.Thread(target=run, name="memory-center-targeted-refresh", daemon=True)
         _REFRESH_THREADS[key] = active

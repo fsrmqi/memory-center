@@ -294,6 +294,46 @@ class TestG01WorkflowProfiles:
         assert result["candidate_profiles"][0]["status"] == "probable"
         assert all(item["status"] == "possible" for item in result["candidate_profiles"][1:])
 
+    def test_rolled_back_workflow_profile_is_not_recommended(self, demo_workspace: Path):
+        from memory_center.core.verification.heuristics import HeuristicsRegister
+        from memory_center.core.verification.workflow_profiles import recommend_workflow_with_learning
+
+        HeuristicsRegister(str(demo_workspace)).record_candidate_path_feedback(
+            candidate_type="workflow_profile",
+            target="quick-fix",
+            outcome="rollback",
+            evidence=[{"type": "review", "id": "workflow-rollback"}],
+            source="unit-test",
+            session_id="workflow-rollback",
+            weight_before=0.99,
+        )
+
+        result = recommend_workflow_with_learning(str(demo_workspace), "修复登录 bug")
+        assert result["recommended_profile"] == "long-task"
+        rolled_back = next(item for item in result["candidate_profiles"] if item["name"] == "quick-fix")
+        assert rolled_back["learning_state"] == "rolled-back"
+        assert rolled_back["status"] == "possible"
+
+    def test_all_rolled_back_workflow_profiles_withhold_recommendation(self, demo_workspace: Path):
+        from memory_center.core.verification.heuristics import HeuristicsRegister
+        from memory_center.core.verification.workflow_profiles import BUILTIN_PROFILES, recommend_workflow_with_learning
+
+        register = HeuristicsRegister(str(demo_workspace))
+        for index, profile_name in enumerate(BUILTIN_PROFILES):
+            register.record_candidate_path_feedback(
+                candidate_type="workflow_profile",
+                target=profile_name,
+                outcome="rollback",
+                evidence=[{"type": "review", "id": f"workflow-withhold-{index}"}],
+                source="unit-test",
+                session_id=f"workflow-withhold-{index}",
+                weight_before=0.99,
+            )
+
+        result = recommend_workflow_with_learning(str(demo_workspace), "修复登录 bug")
+        assert result["recommended_profile"] == ""
+        assert result["learning_state"] == "withheld_all_rolled_back"
+
     def test_profile_cli(self):
         from typer.testing import CliRunner
 

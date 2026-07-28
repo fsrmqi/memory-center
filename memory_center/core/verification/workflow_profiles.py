@@ -204,16 +204,29 @@ def recommend_workflow_with_learning(
 
     adjusted_candidates.sort(
         key=lambda item: (
+            item.get("learning_state") == "rolled-back",
             -float(item.get("weight", 0.0)),
             _WORKFLOW_PRIORITY.get(str(item.get("name", "") or ""), 99),
             item.get("name", ""),
         )
     )
-    top = adjusted_candidates[0]
+    top = next((item for item in adjusted_candidates if item.get("learning_state") != "rolled-back"), None)
     for item in adjusted_candidates:
-        item["status"] = "probable" if item["name"] == top["name"] else "possible"
+        item["status"] = "probable" if top is not None and item["name"] == top["name"] else "possible"
         if item.get("learning_state") == "rolled-back":
             item["status"] = "possible"
+    if top is None:
+        return {
+            "recommended_profile": "",
+            "description": "所有工作流画像均已回滚，暂不自动推荐。",
+            "tools_sequence": [],
+            "steps": [],
+            "learning_applied": True,
+            "learning_state": "withheld_all_rolled_back",
+            "learning_guard_reason": "all_workflow_profiles_rolled_back",
+            "learned_recommended_weight": None,
+            "candidate_profiles": adjusted_candidates,
+        }
     profile = BUILTIN_PROFILES[top["name"]]
     return {
         "recommended_profile": profile.name,

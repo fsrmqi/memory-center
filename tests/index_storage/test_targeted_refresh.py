@@ -1,3 +1,5 @@
+import threading
+import time
 from pathlib import Path
 
 from memory_center.core.freshness.targeted_refresh import (
@@ -49,6 +51,35 @@ def test_query_refresh_is_scheduled_without_waiting_for_reindex(tmp_path: Path) 
 
     assert result["scheduled"] is True
     assert result["mode"] == "targeted_overlay_async"
+
+
+def test_async_refresh_processes_requests_queued_while_worker_is_active(tmp_path: Path, monkeypatch) -> None:
+    from tests.fixtures import setup_demo_workspace
+    import memory_center.core.freshness.targeted_refresh as refresh_module
+
+    workspace = setup_demo_workspace(tmp_path)
+    entered = threading.Event()
+    release = threading.Event()
+    processed: list[str] = []
+
+    def controlled_refresh(store, query: str, limit: int):
+        processed.append(query)
+        if query == "first":
+            entered.set()
+            assert release.wait(timeout=3)
+        return {"checked": 0, "refreshed": False, "files": [], "elapsed_ms": 0.0}
+
+    monkeypatch.setattr(refresh_module, "_refresh_query_targets", controlled_refresh)
+    refresh_query_targets(workspace, "first", limit=4)
+    assert entered.wait(timeout=3)
+    queued = refresh_query_targets(workspace, "second", limit=4)
+    assert queued["coalesced"] is True
+    release.set()
+
+    deadline = time.monotonic() + 3
+    while "second" not in processed and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert processed == ["first", "second"]
 
 
 def test_targeted_refresh_preserves_controller_endpoint_facts(tmp_path: Path) -> None:
