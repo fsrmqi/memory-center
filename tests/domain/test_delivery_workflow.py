@@ -164,6 +164,47 @@ def test_delivery_matrix_and_policy_control_executor(demo_workspace) -> None:
     assert executed["receipt"]["evidence_kind"] == "executor"
 
 
+def test_delivery_scope_contract_is_visible_and_can_be_enforced(demo_workspace) -> None:
+    from memory_center.core.tasks.delivery import delivery_matrix, update_delivery_policy
+
+    task_id = create_task_space(demo_workspace, title="范围受控交付", intent="实现受控接口")["task_id"]
+    initialize_delivery_workflow(demo_workspace, task_id)
+    update_delivery_contract(demo_workspace, task_id, kind="requirements", items=[{
+        "id": "REQ-1", "title": "实现接口", "scope": "发布接口", "acceptance_ids": ["AC-1"],
+    }])
+    update_delivery_contract(demo_workspace, task_id, kind="acceptance", items=[{"id": "AC-1", "title": "回归测试"}])
+    transition_delivery_stage(demo_workspace, task_id, "breakdown")
+    transition_delivery_stage(demo_workspace, task_id, "locate")
+    update_delivery_contract(demo_workspace, task_id, kind="subtasks", items=[{
+        "id": "SUB-1",
+        "title": "实现发布接口",
+        "requirement_ids": ["REQ-1"],
+        "code_targets": ["ArticleController#publish"],
+        "read_targets": ["ArticleController", "ArticleService"],
+        "write_targets": ["ArticleController#publish"],
+        "stop_conditions": ["发现跨服务契约变更时停止并重新分析"],
+    }])
+    matrix = delivery_matrix(demo_workspace, task_id)
+    subtask = matrix["matrix"]["rows"][0]["subtasks"][0]
+    assert subtask["read_targets"] == ["ArticleController", "ArticleService"]
+    assert subtask["write_targets"] == ["ArticleController#publish"]
+    assert matrix["matrix"]["coverage"]["scoped_subtasks"] == 1
+
+    update_delivery_policy(demo_workspace, {"enforce_scope_contract": True})
+    assert transition_delivery_stage(demo_workspace, task_id, "implement")["transitioned"] is True
+
+    unscoped_task = create_task_space(demo_workspace, title="缺少范围", intent="实现接口")["task_id"]
+    initialize_delivery_workflow(demo_workspace, unscoped_task)
+    update_delivery_contract(demo_workspace, unscoped_task, kind="requirements", items=[{"id": "REQ-1", "title": "实现接口", "scope": "接口"}])
+    update_delivery_contract(demo_workspace, unscoped_task, kind="acceptance", items=[{"id": "AC-1", "title": "回归测试"}])
+    transition_delivery_stage(demo_workspace, unscoped_task, "breakdown")
+    transition_delivery_stage(demo_workspace, unscoped_task, "locate")
+    update_delivery_contract(demo_workspace, unscoped_task, kind="subtasks", items=[{"id": "SUB-1", "title": "实现", "code_targets": ["ArticleController#publish"]}])
+    blocked = transition_delivery_stage(demo_workspace, unscoped_task, "implement")
+    assert blocked["transitioned"] is False
+    assert blocked["gate"]["code"] == "scoped_subtasks_required"
+
+
 def test_compact_task_artifacts_keeps_bounded_live_content(demo_workspace) -> None:
     task = create_task_space(demo_workspace, title="大工件", intent="压缩")
     task_id = task["task_id"]

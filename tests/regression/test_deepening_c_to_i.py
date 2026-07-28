@@ -619,6 +619,7 @@ class TestG01_WorkflowProfiles:
         assert recommend_workflow("refactor the Feign contract").name == "contract-change"
         assert recommend_workflow("migrate to new architecture").name == "architecture"
         assert recommend_workflow("implement new feature X").name == "long-task"
+        assert recommend_workflow("执行项目健康巡检并治理技术债").name == "maintenance"
 
     def test_profile_has_steps(self):
         """Each profile has steps and tools_sequence."""

@@ -133,11 +133,20 @@
 
 ### `mc_analyze`
 
-常见 `depth`：
+参数约束：
 
-- `quick`
-- `standard`
-- `full`
+- `depth`：`quick|standard|full`。
+- `direction`：`upstream|downstream|both`。
+- `max_depth`：`1..6`；更深的分析应分阶段执行，避免无界图遍历。
+- `execution_mode`：`sync|background`；后台模式返回 job，使用同一工具的 `job_action=status|cancel` 和 `job_id` 查询或取消。
+
+稳定的 additive 返回字段：
+
+- `analysis_status`：`complete|partial`。`partial` 表示影响图已返回，但计划、规则、契约、检查清单或工件写入中存在不可用阶段。
+- `diagnostics`：按阶段返回安全状态、原因类别和下一步动作；入口错误还包含 `operation`、`exception_class`、`trace_id`。
+- `candidate_paths`、`recommended_path`：优先验证的有界影响路径。
+
+`analysis_status=partial` 不是空结果，也不是“无需影响”。调用方应保留 `impact` 作为当前证据，并按诊断补充或重试辅助阶段。
 
 ### `mc_admin`
 
@@ -174,6 +183,7 @@
 
 ### 需求交付工作流 / Delivery workflow
 
+- `workflow-profile` / `workflow-recommend`：按任务意图推荐 `quick-fix`、`contract-change`、`long-task`、`architecture` 或 `maintenance`。画像返回稳定工作区规则、架构证据、变更契约与当前子任务范围的分层加载建议；`maintenance` 面向健康检查、技术债治理和架构增量演进，不会替代既有交付状态机。
 - `artifact delivery-init --workspace <workspace.yaml> --task-id <task>`：初始化 `feature_delivery_v2`。
 - `artifact delivery-breakdown --source-refs '["req:..." ]' --summary '...'`：生成不写入的需求候选；候选必须确认后再写入契约。
 - `artifact delivery-contract --kind requirements|subtasks|acceptance --items '<JSON数组>'`：写入结构化需求、代码定位子任务或验收标准。需求项应提供 `source_refs`、`scope`、`out_of_scope`、`search_terms`、`candidate_modules`、`ambiguities` 和 `acceptance_ids`。
@@ -184,6 +194,8 @@
 - `artifact delivery-record-validation`：仅记录外部验证摘要；默认 `recorded_external` 不可用于关闭门禁。
 - `artifact delivery-skill-candidate|delivery-skill-canary|delivery-skill-observe|delivery-skill-evaluate|delivery-skill-publish|delivery-skill-rollback|delivery-skill-recommend`：Skill 必须先进入隔离灰度；仅三条以上带证据的成功观测、且无失败观测时可发布。默认检索仅返回 `published` 状态；回滚不删除证据。
 - `artifact delivery-failure-candidates|delivery-skill-synthesize`：显式、离线地聚类跨任务失败和多个已验证交付的共同结构；只保存脱敏元数据和证据引用，不在查询热路径运行。
+
+交付 `subtasks` 除 `code_targets` 外可附加 `read_targets`、`write_targets`、`stop_conditions`：分别表示实现前必须核实的目标、允许修改的范围，以及触发重新分析或请求决策的停止条件。`delivery-matrix` 与派生 `TECH_SPEC.md` 会展示范围契约覆盖率。工作区 `delivery-policy.json` 设置 `enforce_scope_contract: true` 后，进入 `implement` 前每个子任务必须同时具备上述范围字段；默认关闭，既有任务不受影响。
 - `artifact compact-task --task-id <task>`：对超大任务工件进行流式 gzip 归档，保留有界恢复摘要；先执行 `artifact health-task` 识别异常空间。
 - `artifact generation-gc --workspace <workspace.yaml> --dry-run`：预览可回收的旧索引代际；确认后追加 `--apply`。该命令始终保留当前和上一代，Agent 在发现 `index/generations` 占用异常时应先执行预览。
 - `artifact storage-legacy-cleanup --workspace <workspace.yaml> --dry-run`：检查已废弃的 `memory/memory.db` 副本；仅在运行时事实库已是 `graph/graph.db` 时允许 `--apply` 删除。
@@ -264,6 +276,16 @@
 - `/workspace/freshness`
 - `/workspace/business-flow`
 - `/workspace/business-flow-impact`
+- `/workspace/delivery`
+- `/workspace/delivery/init`
+- `/workspace/delivery/contract`
+- `/workspace/delivery/skill/canary`
+- `/workspace/delivery/skill/observe`
+- `/workspace/delivery/skill/evaluate`
+- `/workspace/delivery/skill/recommend`
+- `/workspace/delivery/skill/rollback`
+- `/workspace/delivery/failure-candidates`
+- `/workspace/delivery/skill/synthesize`
 
 ## 4. Stable Schemas / 稳定协议
 

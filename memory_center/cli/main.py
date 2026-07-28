@@ -2280,7 +2280,7 @@ def workflow_profile_cmd(
     result = get_workflow_profile(profile)
     if _dc.is_dataclass(result) and not isinstance(result, type):
         result = _dc.asdict(result)
-    print(json.dumps(result, indent=2, default=str))
+    typer.echo(json.dumps(result, indent=2, default=str, ensure_ascii=False))
 
 
 @app.command("workflow-recommend")
@@ -2291,7 +2291,7 @@ def workflow_recommend_cmd(
     """Recommend a workflow profile based on task description."""
     from memory_center.core.verification.workflow_profiles import recommend_workflow, recommend_workflow_with_learning
     result = recommend_workflow_with_learning(workspace, description) if workspace else recommend_workflow(description)
-    print(json.dumps(result, indent=2, default=str))
+    typer.echo(json.dumps(result, indent=2, default=str, ensure_ascii=False))
 
 
 @app.command("bundle-export")

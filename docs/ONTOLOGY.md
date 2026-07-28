@@ -60,6 +60,9 @@
 | **ResumePacket** | 运行时生成 | L1 | 恢复上下文包 |
 | **TokenGain** | token-gain-log.jsonl | L0 | Token 节省记录 |
 | **BenchmarkTrend** | benchmark-trends.jsonl | L0 | 基准趋势数据点 |
+| **DeliverySkill** | `artifacts/skills/delivery-skill-registry.json` | L2 | 从已验证交付派生的可复用经验，带稳定 ID、版本和生命周期 |
+| **SkillObservation** | delivery-skill-observations.jsonl | L0 | 对 canary/published Skill 的脱敏效果观测 |
+| **FailureCandidate** | delivery-failure-candidates.json | L2 | 仅含哈希任务引用、验证 profile、验收标识和证据引用的离线失败模式候选 |
 
 ### 2.3 运行/治理实体
 
@@ -115,6 +118,10 @@
 - `SUMMARIZES` — SessionSummary 总结 Session
 - `HANDOFF_OF` — Handoff 是某次 Session 的交接
 - `RESUME_OF` — ResumePacket 是某次 Session 的恢复
+- `CANDIDATE_FROM` — DeliverySkill 候选来源于已关闭、已验证的 Task
+- `OBSERVES` — SkillObservation 记录 DeliverySkill 的真实使用结果
+- `PROMOTES` — 满足证据阈值后 canary Skill 显式发布
+- `ROLLS_BACK` — 回归时将 Skill 撤出默认推荐，保留历史证据
 
 ## 4. 语义强度
 
@@ -214,6 +221,13 @@
 - 2 跳：取各跳最小置信度 × 0.9
 - 3 跳：取各跳最小置信度 × 0.8
 - 4+ 跳：取各跳最小置信度 × 0.7
+
+### 5.9 Skill 不是事实源
+
+- `DeliverySkill` 是从已验证交付派生的可复用操作结构，不是源码或业务事实。
+- `candidate` 和 `canary` 只能作为待验证建议，默认查询不可将它们作为正式经验。
+- 只有 `published` Skill 才可参与默认推荐；发布依赖外部验证证据，不接受模型自评。
+- `rolled_back` 不代表历史任务被删除或结论被篡改，只表示该经验不再被默认建议使用。
 
 ## 6. 意图到实体的映射
 

@@ -20,6 +20,8 @@ class WorkflowProfile:
     steps: list[dict[str, str]] = field(default_factory=list)
     applicable_when: list[str] = field(default_factory=list)
     tools_sequence: list[str] = field(default_factory=list)
+    context_layers: list[dict[str, str]] = field(default_factory=list)
+    delivery_guardrails: list[str] = field(default_factory=list)
 
 
 # Built-in workflow profiles
@@ -36,6 +38,11 @@ BUILTIN_PROFILES: dict[str, WorkflowProfile] = {
         ],
         applicable_when=["bugfix", "config_change", "hotfix"],
         tools_sequence=["mc_lookup", "mc_analyze", "edit", "test", "mc_close"],
+        context_layers=[
+            {"layer": "workspace_rules", "when": "开始前", "purpose": "读取稳定规则和禁动边界。"},
+            {"layer": "change_scope", "when": "修改前", "purpose": "只加载当前目标和直接影响证据。"},
+        ],
+        delivery_guardrails=["先确认影响范围，再进行最小修改。", "验证失败时停止扩大修改范围。"],
     ),
     "contract-change": WorkflowProfile(
         name="contract-change",
@@ -50,6 +57,12 @@ BUILTIN_PROFILES: dict[str, WorkflowProfile] = {
         ],
         applicable_when=["feign_change", "dto_change", "api_change", "contract_change"],
         tools_sequence=["mc_lookup", "mc_analyze", "group_chain", "edit", "test", "mc_close"],
+        context_layers=[
+            {"layer": "workspace_rules", "when": "开始前", "purpose": "读取跨服务规则和兼容策略。"},
+            {"layer": "architecture", "when": "分析时", "purpose": "加载调用链、契约关系和上下游证据。"},
+            {"layer": "change_scope", "when": "实现前", "purpose": "加载任务读写边界和验收条件。"},
+        ],
+        delivery_guardrails=["必须记录上下游代码目标。", "未完成契约验证不得关闭任务。"],
     ),
     "long-task": WorkflowProfile(
         name="long-task",
@@ -65,6 +78,13 @@ BUILTIN_PROFILES: dict[str, WorkflowProfile] = {
         ],
         applicable_when=["feature", "refactor", "migration", "architecture_change"],
         tools_sequence=["mc_start", "mc_lookup", "mc_analyze", "mc_sync", "verify", "mc_handoff", "mc_close"],
+        context_layers=[
+            {"layer": "workspace_rules", "when": "启动时", "purpose": "加载稳定规则、团队约束和现行决策。"},
+            {"layer": "architecture", "when": "定位时", "purpose": "按需加载图谱关系、模块边界和影响证据。"},
+            {"layer": "change_contract", "when": "设计时", "purpose": "加载需求、范围、验收和未决事项。"},
+            {"layer": "task_scope", "when": "实施时", "purpose": "加载当前子任务的读写目标、停止条件与验证要求。"},
+        ],
+        delivery_guardrails=["每个子任务先定位读写目标，再进入实现。", "跨会话只读取当前阶段所需的上下文包。", "验证失败时记录证据并回到受影响子任务。"],
     ),
     "architecture": WorkflowProfile(
         name="architecture",
@@ -79,17 +99,48 @@ BUILTIN_PROFILES: dict[str, WorkflowProfile] = {
         ],
         applicable_when=["new_module", "architectural_decision", "major_refactor"],
         tools_sequence=["mc_lookup", "group_status", "mc_analyze", "group_impact", "doc", "mc_sync", "audit", "mc_close"],
+        context_layers=[
+            {"layer": "workspace_rules", "when": "开始前", "purpose": "读取稳定约束和迁移策略。"},
+            {"layer": "architecture", "when": "调研时", "purpose": "加载服务拓扑、模块边界、依赖与容量证据。"},
+            {"layer": "change_contract", "when": "设计时", "purpose": "加载 ADR、范围、风险和验收标准。"},
+            {"layer": "task_scope", "when": "实施时", "purpose": "逐子任务限定读写范围和停止条件。"},
+        ],
+        delivery_guardrails=["设计结论必须关联证据或明确标为推断。", "破坏性变更必须声明停止条件和回退路径。"],
+    ),
+    "maintenance": WorkflowProfile(
+        name="maintenance",
+        description="项目健康检查、技术债治理或架构增量演进",
+        steps=[
+            {"step": "启动", "tool": "mc_start", "description": "创建可追溯任务空间"},
+            {"step": "体检", "tool": "runtime_inspect", "description": "检查运行配置、索引、审计和任务健康"},
+            {"step": "调研", "tool": "mc_lookup", "description": "定位模块、重复问题和现有约束"},
+            {"step": "分析", "tool": "mc_analyze", "description": "确认候选改动的影响与风险"},
+            {"step": "治理", "tool": "mc_sync", "description": "记录架构决策、任务边界和验证计划"},
+            {"step": "验证", "tool": "验证循环", "description": "执行已注册验证并记录证据"},
+            {"step": "关闭", "tool": "mc_close", "description": "沉淀可复用结论或后续行动"},
+        ],
+        applicable_when=["health_check", "maintenance", "technical_debt", "architecture_evolution", "audit"],
+        tools_sequence=["mc_start", "runtime_inspect", "mc_lookup", "mc_analyze", "mc_sync", "verify", "mc_close"],
+        context_layers=[
+            {"layer": "workspace_rules", "when": "启动时", "purpose": "加载稳定规则、运行策略和历史决策。"},
+            {"layer": "architecture", "when": "体检时", "purpose": "加载拓扑、质量指标、架构证据和已知风险。"},
+            {"layer": "change_contract", "when": "立项时", "purpose": "记录治理范围、优先级、风险和验收。"},
+            {"layer": "task_scope", "when": "执行时", "purpose": "对每项治理动作限定读写范围、停止条件和验证。"},
+        ],
+        delivery_guardrails=["体检结论与实际修改分为独立子任务。", "未确认影响前不执行大范围重构或删除。", "架构决策必须保留证据、有效期和后续验证。"],
     ),
 }
 
 _BUGFIX_KEYWORDS = ("bug", "fix", "修复", "hotfix", "配置")
 _CONTRACT_KEYWORDS = ("feign", "dto", "契约", "api", "contract")
 _ARCHITECTURE_KEYWORDS = ("架构", "重构", "migration", "新模块", "architecture")
+_MAINTENANCE_KEYWORDS = ("健康", "巡检", "技术债", "治理", "审计", "health", "maintenance", "debt", "audit")
 _WORKFLOW_PRIORITY = {
-    "contract-change": 0,
-    "architecture": 1,
-    "long-task": 2,
-    "quick-fix": 3,
+    "maintenance": 0,
+    "contract-change": 1,
+    "architecture": 2,
+    "long-task": 3,
+    "quick-fix": 4,
 }
 
 
@@ -108,12 +159,15 @@ def recommend_workflow(task_description: str, available_tools: list[str] | None 
     has_contract = _has_any_keyword(desc_lower, _CONTRACT_KEYWORDS)
     has_architecture = _has_any_keyword(desc_lower, _ARCHITECTURE_KEYWORDS)
     has_bugfix = _has_any_keyword(desc_lower, _BUGFIX_KEYWORDS)
+    has_maintenance = _has_any_keyword(desc_lower, _MAINTENANCE_KEYWORDS)
 
     # 契约变更优先于泛化 bugfix；架构类问题优先于普通长期任务。
     if has_contract:
         return BUILTIN_PROFILES["contract-change"]
     if has_architecture:
         return BUILTIN_PROFILES["architecture"]
+    if has_maintenance:
+        return BUILTIN_PROFILES["maintenance"]
     if has_bugfix:
         return BUILTIN_PROFILES["quick-fix"]
     return BUILTIN_PROFILES["long-task"]
@@ -181,11 +235,13 @@ def _build_workflow_profile_candidates(task_description: str, recommended_name: 
         "contract-change": 0.58,
         "long-task": 0.62,
         "architecture": 0.56,
+        "maintenance": 0.56,
     }
 
     has_bugfix = _has_any_keyword(desc_lower, _BUGFIX_KEYWORDS)
     has_contract = _has_any_keyword(desc_lower, _CONTRACT_KEYWORDS)
     has_architecture = _has_any_keyword(desc_lower, _ARCHITECTURE_KEYWORDS)
+    has_maintenance = _has_any_keyword(desc_lower, _MAINTENANCE_KEYWORDS)
 
     if has_bugfix:
         scores["quick-fix"] = 0.92
@@ -196,6 +252,9 @@ def _build_workflow_profile_candidates(task_description: str, recommended_name: 
     if has_architecture:
         scores["architecture"] = 0.92
         scores["long-task"] = max(scores["long-task"], 0.7)
+    if has_maintenance:
+        scores["maintenance"] = 0.92
+        scores["architecture"] = max(scores["architecture"], 0.68)
     if recommended_name == "long-task":
         scores["long-task"] = max(scores["long-task"], 0.86)
 

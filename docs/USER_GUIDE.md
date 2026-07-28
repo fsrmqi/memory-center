@@ -139,8 +139,9 @@ to see which bindings are missing.
 Call edges from the structural pass start at low confidence
 (``confidence=0.3``, ``metadata.resolution_level=unresolved``) because
 the cross-language walker only has textual evidence. P1-1's Java call
-resolver will rewrite these in place with higher-confidence targets
-once it ships.
+resolver is already active for Java and rewrites resolvable calls with
+higher-confidence targets; other languages remain structural evidence until
+their language-specific resolver is added.
 
 结构 pass 的调用边初始 `confidence=0.3` 且标记 `resolution_level=unresolved`,
 P1-1 的 Java 调用解析器上线后会就地改写为更高置信度的目标。
@@ -197,6 +198,12 @@ memory-center callees --workspace /abs/path/.memory-center/workspace.yaml --symb
 memory-center impact --workspace /abs/path/.memory-center/workspace.yaml --target ArticleDTO
 memory-center detect-changes --workspace /abs/path/.memory-center/workspace.yaml --scope all
 ```
+
+### 影响分析的结果与降级
+
+MCP 使用 `mc_analyze` 时，参数边界为：`depth=quick|standard|full`、`direction=upstream|downstream|both`、`max_depth=1..6`。`quick` 只返回影响图；`standard` 增加变更计划和规则；`full` 再增加契约检查与验证清单。
+
+当影响图已成功、但计划或契约等辅助阶段暂时不可用时，返回 `analysis_status="partial"`。这表示已返回的 `impact` 仍可使用，应先沿 `candidate_paths` 验证高置信影响，再根据 `diagnostics` 修复或单独重试失败阶段；不要把它误解为“完全分析失败”。只有 MCP 返回 `error=true` 时才是入口级失败，此时使用 `diagnostics.trace_id` 对照本地审计并检查宿主、工作区和索引状态。
 
 ## 6. MCP / HTTP / UI
 
@@ -265,6 +272,47 @@ memory-center eval-token-benchmark --workspace /abs/path/.memory-center/workspac
 memory-center eval-golden --workspace /abs/path/.memory-center/workspace.yaml --cases /abs/path/private-cases.yaml
 ```
 
+### 可验证交付 Skill
+
+长期重复的已验证交付可以沉淀为 Skill，但不会自动进入默认检索。最小流程是：
+
+```bash
+memory-center artifact delivery-skill-candidate --workspace /abs/path/.memory-center/workspace.yaml --task-id <task_id>
+memory-center artifact delivery-skill-canary --workspace /abs/path/.memory-center/workspace.yaml --task-id <task_id>
+memory-center artifact delivery-skill-observe --workspace /abs/path/.memory-center/workspace.yaml --skill-id <skill_id> --outcome passed --evidence-refs '["validation:<ref>"]'
+memory-center artifact delivery-skill-evaluate --workspace /abs/path/.memory-center/workspace.yaml --skill-id <skill_id>
+memory-center artifact delivery-skill-publish --workspace /abs/path/.memory-center/workspace.yaml --task-id <task_id>
+```
+
+发布至少需要三条带证据引用的成功观测且没有失败观测。默认检索只使用 `published` Skill；发现回归时使用 `delivery-skill-rollback` 撤出默认推荐，历史证据不会删除。`delivery-failure-candidates` 与 `delivery-skill-synthesize` 是显式离线维护命令，不在日常查询中自动运行。
+
+### 选择交付画像并约束任务范围
+
+`mc_start` 会按任务意图返回 workflow 推荐。除常规修复、契约变更、长期任务和架构变更外，`maintenance` 适用于健康检查、技术债治理与架构演进。画像只决定推荐的上下文层与操作顺序，实际状态仍由 `feature_delivery_v2` 管理。
+
+对子任务建议同时记录：
+
+```json
+{
+  "id": "SUB-1",
+  "title": "实现发布接口",
+  "code_targets": ["ArticleController#publish"],
+  "read_targets": ["ArticleController", "ArticleService"],
+  "write_targets": ["ArticleController#publish"],
+  "stop_conditions": ["发现跨服务契约变更时停止并重新运行影响分析"]
+}
+```
+
+需要严格控制 Agent 修改边界时，由工作区维护者在 `delivery-policy.json` 中设置：
+
+```json
+{
+  "enforce_scope_contract": true
+}
+```
+
+该策略会阻止范围不完整的子任务进入实现阶段；它不会执行模型传入的命令，也不会修改源码。
+
 ## 9. Keep It Small / 如何避免用法膨胀
 
 优先顺序建议：
@@ -279,6 +327,7 @@ memory-center eval-golden --workspace /abs/path/.memory-center/workspace.yaml --
 - [MCP_GUIDE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/MCP_GUIDE.md)
 - [REFERENCE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/REFERENCE.md)
 - [SPECS.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/SPECS.md)
+- [PRODUCT_TECHNICAL_OVERVIEW.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/PRODUCT_TECHNICAL_OVERVIEW.md)
 
 ## 11. Implemented Features (3.x / V3 Foundation) / 已实现功能（3.x / V3 基础版）
 
@@ -598,6 +647,15 @@ record_design_decision(workspace_file, topic="...", decision="...", rationale=".
 1. 检查 ref_id/session_id 是否正确
 2. 确认数据已写入 backend
 3. 使用 `check_health()` 检查后端状态
+
+### 12.5 `mc_analyze` 返回错误或部分结果
+
+**问题**：MCP 返回 `error=true`，或 `analysis_status="partial"`。
+
+**解决**：
+1. `error_type=invalid_input`：检查 `depth`、`direction`、`max_depth` 和 `execution_mode` 是否在允许范围内。
+2. `analysis_status=partial`：保留并使用 `impact`，查看 `diagnostics` 中的失败阶段，必要时改用 `depth="quick"` 或在依赖恢复后重试。
+3. 入口级错误：记录 `diagnostics.trace_id`，运行 `memory-center inspect --workspace <workspace.yaml>`，必要时重启宿主 MCP 会话。
 
 ## 13. API Reference Quick Links / API 参考快速链接
 

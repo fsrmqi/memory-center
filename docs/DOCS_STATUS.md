@@ -14,6 +14,8 @@ This document explains which documents are the **current maintained entrypoints*
   - `docs/` 目录导航首页，按用途分组。
 - [README.md](/Users/cuijiaqi/Ai-common-skills/memory-center/README.md)
   - 项目总览、安装、快速开始、主入口说明。
+- [PRODUCT_TECHNICAL_OVERVIEW.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/PRODUCT_TECHNICAL_OVERVIEW.md)
+  - 对外产品技术介绍，适用于面试、分享和客户沟通；必须基于已实现能力与公开边界编写。
 - [ARCHITECTURE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/ARCHITECTURE.md)
   - 当前系统架构、分层边界、运行模型。
 - [MCP_GUIDE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/MCP_GUIDE.md)
@@ -57,11 +59,12 @@ This document explains which documents are the **current maintained entrypoints*
 当实现发生变化时，默认更新顺序应为：
 
 1. `README.md`
-2. `docs/ARCHITECTURE.md`
-3. `docs/MCP_GUIDE.md`
-4. `docs/REFERENCE.md` 或 `docs/SPECS.md`
-5. `docs/CHANGELOG.md`
-6. `docs/DOCUMENT_CONSTITUTION.md` 规定的公开入口可发现性检查
+2. `docs/PRODUCT_TECHNICAL_OVERVIEW.md`（影响产品定位、技术边界或对外能力时）
+3. `docs/ARCHITECTURE.md`
+4. `docs/MCP_GUIDE.md`
+5. `docs/REFERENCE.md` 或 `docs/SPECS.md`
+6. `docs/CHANGELOG.md`
+7. `docs/DOCUMENT_CONSTITUTION.md` 规定的公开入口可发现性检查
 
 只有在该变更确实影响开发路线或发布流程时，再更新：
 
@@ -77,7 +80,8 @@ This document explains which documents are the **current maintained entrypoints*
 如果你只想快速判断“现在该信哪份文档”，按下面顺序读：
 
 1. [README.md](/Users/cuijiaqi/Ai-common-skills/memory-center/README.md)
-2. [docs/README.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/README.md)
-3. [ARCHITECTURE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/ARCHITECTURE.md)
-4. [MCP_GUIDE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/MCP_GUIDE.md)
-5. [CHANGELOG.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/CHANGELOG.md)
+2. [PRODUCT_TECHNICAL_OVERVIEW.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/PRODUCT_TECHNICAL_OVERVIEW.md)
+3. [docs/README.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/README.md)
+4. [ARCHITECTURE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/ARCHITECTURE.md)
+5. [MCP_GUIDE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/MCP_GUIDE.md)
+6. [CHANGELOG.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/CHANGELOG.md)

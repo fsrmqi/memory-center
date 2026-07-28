@@ -467,7 +467,20 @@ Hook 配置里：
 - 如需改变成功返回 schema，应同步迁移说明、文档和测试。
 - MCP tool 必须通过安全注册装饰器注册，避免绕过统一错误边界。
 
-## 15. BM25 与 Vector 是两条不同的检索路径
+## 15. 影响分析的 `partial` 不等于分析失败
+
+`mc_analyze` 先计算图谱影响，再补充计划、规则、契约、检查清单和任务证据。后续步骤依赖可选能力或工作区状态，因此允许单独不可用。
+
+当返回 `analysis_status="partial"` 时：
+
+- `impact`、`candidate_paths` 和 `recommended_path` 仍是可用的已获取证据。
+- `diagnostics` 会指出具体不可用阶段与下一步动作。
+- 应先验证高置信影响，或用 `depth="quick"` 获取最小影响面；不应把 partial 当作“没有影响”。
+- 只有 `error=true` 才表示 MCP 入口级失败。此时记录 `diagnostics.trace_id`，关联本地 MCP 审计，不要通过无界重试掩盖问题。
+
+这个设计是为了避免一个可恢复的辅助依赖错误丢弃已经计算完成的工程事实。
+
+## 16. BM25 与 Vector 是两条不同的检索路径
 
 ### 当前行为
 

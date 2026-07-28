@@ -16,9 +16,10 @@
 3. 关键 smoke：
    - `status`
    - `work-start`
+   - `mc_analyze` 的 `quick` 与 `full`；确认 `complete` 或可解释的 `partial`，而非笼统内部错误
    - `mc_admin(action="health")`
    - Hook 生成
-4. README / docs 是否同步
+4. README / docs 是否同步；若影响对外价值、技术边界或演示能力，同步 `PRODUCT_TECHNICAL_OVERVIEW.md`
 5. 本地安装验证：使用 Python 3.10+ 执行 `pipx reinstall --python "$(command -v python3.11)" memory-center`，再运行 `memory-center --version`；不要依赖可能指向旧 Python 的默认 `pipx reinstall`
 
 ## 3. Trusted Release Notes / 可信发布说明

@@ -101,3 +101,22 @@
 - MCP facade schema 兼容优先
 - 破坏性变更必须同步 README / docs / changelog
 - 原子 CLI / HTTP 能力可继续保留，但默认公开面以 facade 为主
+
+## 7. 分析与经验演进契约 / Analysis and Skill Contracts
+
+### `mc_analyze`
+
+- `depth` 仅接受 `quick|standard|full`。
+- `direction` 仅接受 `upstream|downstream|both`。
+- `max_depth` 为 `1..6`。
+- `analysis_status` 是 additive 字段：`complete` 表示所有请求阶段完成；`partial` 表示影响图已成功，但一项或多项辅助阶段不可用。
+- `partial` 响应必须保留已有 `impact`、给出 `diagnostics` 和可行动的 `next_action`；不得把部分成功改写为 `internal_error`。
+- MCP 错误的安全诊断可以含 `operation`、异常类别和 `trace_id`，不得包含私有路径、源码、密钥或异常正文。
+
+### Delivery Skill
+
+- 生命周期固定为 `candidate -> canary -> published|rolled_back`。
+- `canary` 和候选不参与默认推荐。
+- 发布至少需要三条带证据引用的成功观测，且没有失败观测。
+- 回滚撤出默认推荐但不删除来源、观测和证据。
+- 失败聚类和多轨迹归纳仅可显式离线触发，输出不保存原始源码、需求正文或验证日志。

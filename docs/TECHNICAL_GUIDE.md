@@ -69,8 +69,10 @@
 - `core/indexing/java_call_resolver.py`
   - Java 方法调用解析
   - 将 `method_calls` 从文本证据提升为带置信度的 `CALLS_METHOD` 边
+- `core/storage/runtime.py`
+  - graph.db 节点边、全文检索、运行记录与事务性查询
 - `core/storage/graph.py`
-  - graph.db 节点边写入与查询
+  - 图谱兼容访问与结构化图操作
 
 ### 3.2 配置与存储
 
@@ -111,11 +113,11 @@
 - `core/orchestrator/group.py`
 - `core/orchestrator/evaluations.py`
 
-这是当前系统最核心的一层。
+这是当前系统最核心的一层。`mc_analyze` 在 MCP adapter 中将 impact 作为主阶段，把 plan、rules、contract、checklist 和 evidence write 作为可独立降级的补充阶段；返回 `analysis_status=partial` 时不会丢弃已完成的图谱证据。
 
 #### 主要职责拆分
 
-- `common.py`
+- `shared.py`
   - load/store 上下文
   - budget/profile
   - ref 解析
@@ -139,7 +141,7 @@
   - `workspace_handoff_packet`
 - `sync.py`
   - sync sniff / sync case
-- `workspace.py`
+- `workspace_ops.py`
   - `workspace_status`
   - `workspace_sniff`
   - `workspace_dashboard`
@@ -147,7 +149,7 @@
   - write judge / plan / execute
 - `group.py`
   - registry/group 聚合
-- `eval.py`
+- `evaluations.py`
   - quality eval
   - token gain / token benchmark
 
@@ -380,9 +382,9 @@ Hook 的价值在于自动触发关键生命周期动作，但不应该过度侵
 5. [docs/REFERENCE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/REFERENCE.md)
 6. [docs/NEXT_PHASE_MASTER_PLAN.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/NEXT_PHASE_MASTER_PLAN.md)
 
-## 8. 已实现能力细节 (v2.2.0)
+## 8. 已实现能力细节（当前实现索引）
 
-这一节记录的是 v2.2.0 阶段已经落地的实现细节，便于维护者理解当前代码；它不是新的待办计划列表。
+这一节记录已经落地的实现细节，便于维护者理解当前代码；它不是新的待办计划列表。以 `CHANGELOG.md`、代码和入口测试为当前版本事实来源。
 
 ### 8.1 Hybrid Retrieval 实现细节
 

@@ -8,12 +8,12 @@
 
 ## Delivery Workflow / 需求交付工作流
 
-`feature_delivery_v2` 将需求交付收敛为 `intake -> breakdown -> locate -> implement -> verify -> close`。需求项必须包含来源、范围和验收关联；模型只能提出候选，范围决策必须有引用证据。
+`feature_delivery_v2` 将需求交付收敛为 `intake -> breakdown -> locate -> implement -> verify -> close`。需求项必须包含来源、范围和验收关联；模型只能提出候选，范围决策必须有引用证据。`mc_start` 的 workflow 推荐会根据任务意图选择修复、契约、长期、架构或 `maintenance` 画像，并返回稳定规则、架构证据、变更契约和任务范围的分层上下文建议。
 
 - `mc_admin(action="delivery_init", task_id="...")` 初始化任务工作流。
-- `mc_admin(action="delivery_contract_update", task_id="...", payload='{"kind":"requirements|subtasks|acceptance","items":[...]}')` 更新需求、子任务或验收标准。
+- `mc_admin(action="delivery_contract_update", task_id="...", payload='{"kind":"requirements|subtasks|acceptance","items":[...]}')` 更新需求、子任务或验收标准。子任务可附加 `read_targets`、`write_targets` 与 `stop_conditions`，分别约束实现前核实范围、允许修改范围和必须停止并重新分析的条件。
 - `mc_admin(action="delivery_breakdown"|"delivery_matrix" ...)` 生成不写入的需求候选，以及 `Requirement -> Subtask -> CodeTarget -> Acceptance -> Evidence` 派生矩阵与 `TECH_SPEC.md`。
-- `mc_admin(action="delivery_policy"|"delivery_validation_execute" ...)` 分别读取/更新预注册验证 profile，或执行其中一个 profile。只接受 policy 中的 argv，不能传入 shell 命令。
+- `mc_admin(action="delivery_policy"|"delivery_validation_execute" ...)` 分别读取/更新预注册验证 profile，或执行其中一个 profile。只接受 policy 中的 argv，不能传入 shell 命令。工作区可设置 `enforce_scope_contract=true`，要求所有子任务在进入 `implement` 前具备完整范围契约；默认关闭以保持既有任务可用。
 - `mc_admin(action="delivery_subtask_status"|"delivery_validation_record"|"delivery_transition" ...)` 分别更新子任务、记录外部/人工验证、推进阶段；所有动作返回门禁、缺失项与确定的下一步。
 - 关闭阶段要求每项 `required=true` 的验收标准都关联 `executor` 或 `manual_verified` 的 `passed` 证据。普通外部回执标记为 `recorded_external`，不能伪装成执行器验证。
 - `mc_admin(action="delivery_skill_candidate"|"delivery_skill_canary"|"delivery_skill_observe"|"delivery_skill_evaluate"|"delivery_skill_publish"|"delivery_skill_rollback"|"delivery_skill_recommend", task_id="...", payload="...")` 管理可验证 Skill 生命周期。候选必须先进入 canary；仅至少三条带证据的成功观测且没有失败时可以发布。Agent 不得把候选、canary 或模型自评当成正式经验。

@@ -224,8 +224,9 @@ def delivery_matrix(workspace_file: str | Path, task_id: str, *, write: bool = T
         requirement_id = str(requirement.get("id", ""))
         linked_subtasks = [item for item in subtasks if requirement_id in item.get("requirement_ids", [])]
         required_acceptance = [item for item in acceptance if str(item.get("id", "")) in requirement.get("acceptance_ids", [])]
-        rows.append({"requirement_id": requirement_id, "title": requirement.get("title", ""), "scope": requirement.get("scope", ""), "out_of_scope": requirement.get("out_of_scope", []), "source_refs": requirement.get("source_refs", []), "ambiguities": requirement.get("ambiguities", []), "subtasks": [{"id": item.get("id", ""), "status": item.get("status", ""), "code_targets": item.get("code_targets", [])} for item in linked_subtasks], "acceptance": [{"id": item.get("id", ""), "title": item.get("title", ""), "verified": str(item.get("id", "")) in verified} for item in required_acceptance]})
-    payload = {"schema_version": 1, "task_id": meta["task_id"], "generated_at": _now(), "rows": rows, "coverage": {"requirements": len(requirements), "located_requirements": sum(bool(row["subtasks"]) for row in rows), "verified_acceptance": len(verified), "required_acceptance": sum(bool(item.get("required", True)) for item in acceptance)}}
+        rows.append({"requirement_id": requirement_id, "title": requirement.get("title", ""), "scope": requirement.get("scope", ""), "out_of_scope": requirement.get("out_of_scope", []), "source_refs": requirement.get("source_refs", []), "ambiguities": requirement.get("ambiguities", []), "subtasks": [{"id": item.get("id", ""), "status": item.get("status", ""), "code_targets": item.get("code_targets", []), "read_targets": item.get("read_targets", []), "write_targets": item.get("write_targets", []), "stop_conditions": item.get("stop_conditions", [])} for item in linked_subtasks], "acceptance": [{"id": item.get("id", ""), "title": item.get("title", ""), "verified": str(item.get("id", "")) in verified} for item in required_acceptance]})
+    scoped_subtasks = [item for item in subtasks if item.get("read_targets") and item.get("write_targets") and item.get("stop_conditions")]
+    payload = {"schema_version": 2, "task_id": meta["task_id"], "generated_at": _now(), "rows": rows, "coverage": {"requirements": len(requirements), "located_requirements": sum(bool(row["subtasks"]) for row in rows), "scoped_subtasks": len(scoped_subtasks), "total_subtasks": len(subtasks), "verified_acceptance": len(verified), "required_acceptance": sum(bool(item.get("required", True)) for item in acceptance)}}
     if write:
         _write_json(task_dir / DELIVERY_MATRIX_FILE, payload)
         (task_dir / TECH_SPEC_FILE).write_text(_tech_spec_markdown(meta, payload), encoding="utf-8")
@@ -598,7 +599,11 @@ def _gate_for_target(task_dir: Path, target: str) -> dict[str, Any]:
         missing = [str(item.get("id", "")) for item in subtasks if not item.get("code_targets")]
         if not subtasks:
             missing.append("subtasks")
-        return _gate("located_subtasks_required", missing, "为每个子任务关联已定位的代码目标后再实现。")
+        policy = _delivery_scope_policy(task_dir)
+        if policy["enforce_scope_contract"]:
+            missing.extend(str(item.get("id", "")) for item in subtasks if not item.get("read_targets") or not item.get("write_targets") or not item.get("stop_conditions"))
+            return _gate("scoped_subtasks_required", sorted(set(missing)), "为每个子任务补齐已定位代码目标、读范围、写范围和停止条件后再实现。")
+        return _gate("located_subtasks_required", missing, "为每个子任务关联已定位的代码目标后再实现；建议同时补齐读范围、写范围和停止条件。")
     if target == "verify":
         missing = [str(item.get("id", "")) for item in subtasks if item.get("status") not in {"implemented", "skipped"}]
         return _gate("implementation_required", missing, "将所有子任务标记为已实现或跳过，并记录原因。")
@@ -626,7 +631,7 @@ def _normalize_item(kind: str, raw: dict[str, Any], index: int) -> dict[str, Any
         status = str(raw.get("status", "pending")).lower()
         if status not in SUBTASK_STATUSES:
             raise ValueError(f"unknown subtask status: {status}")
-        return {**base, "requirement_ids": _bounded_refs(raw.get("requirement_ids", [])), "code_targets": _bounded_refs(raw.get("code_targets", [])), "status": status}
+        return {**base, "requirement_ids": _bounded_refs(raw.get("requirement_ids", [])), "code_targets": _bounded_refs(raw.get("code_targets", [])), "read_targets": _bounded_refs(raw.get("read_targets", raw.get("code_targets", []))), "write_targets": _bounded_refs(raw.get("write_targets", [])), "stop_conditions": _bounded_refs(raw.get("stop_conditions", [])), "status": status}
     return {**base, "required": bool(raw.get("required", True)), "verification_type": str(raw.get("verification_type", "test")), "status": str(raw.get("status", "pending"))}
 
 
@@ -648,7 +653,7 @@ def _verified_acceptance_ids(receipts: list[dict[str, Any]]) -> set[str]:
 
 
 def _default_policy() -> dict[str, Any]:
-    return {"schema_version": 1, "policy_id": "feature_delivery_v2", "validation_profiles": [], "retry_limits": {"auto_repair": 2}, "updated_at": ""}
+    return {"schema_version": 2, "policy_id": "feature_delivery_v2", "validation_profiles": [], "retry_limits": {"auto_repair": 2}, "enforce_scope_contract": False, "updated_at": ""}
 
 
 def _normalize_policy(value: dict[str, Any]) -> dict[str, Any]:
@@ -666,7 +671,12 @@ def _normalize_policy(value: dict[str, Any]) -> dict[str, Any]:
     if len(ids) != len(set(ids)):
         raise ValueError("validation profile ids must be unique")
     retries = raw.get("retry_limits", {}) if isinstance(raw.get("retry_limits", {}), dict) else {}
-    return {"schema_version": 1, "policy_id": _bounded(str(raw.get("policy_id", "feature_delivery_v2")), 80) or "feature_delivery_v2", "validation_profiles": profiles, "retry_limits": {"auto_repair": min(10, max(0, int(retries.get("auto_repair", 2))))}, "updated_at": _bounded(str(raw.get("updated_at", "")), 80), "actor": _bounded(str(raw.get("actor", "")), 120)}
+    return {"schema_version": 2, "policy_id": _bounded(str(raw.get("policy_id", "feature_delivery_v2")), 80) or "feature_delivery_v2", "validation_profiles": profiles, "retry_limits": {"auto_repair": min(10, max(0, int(retries.get("auto_repair", 2))))}, "enforce_scope_contract": bool(raw.get("enforce_scope_contract", False)), "updated_at": _bounded(str(raw.get("updated_at", "")), 80), "actor": _bounded(str(raw.get("actor", "")), 120)}
+
+
+def _delivery_scope_policy(task_dir: Path) -> dict[str, Any]:
+    workspace_artifacts = task_dir.parent.parent
+    return _normalize_policy(_read_json(workspace_artifacts / DELIVERY_POLICY_FILE, _default_policy()))
 
 
 def _search_terms(text: str) -> list[str]:
@@ -687,11 +697,16 @@ def _tech_spec_markdown(meta: dict[str, Any], matrix: dict[str, Any]) -> str:
         targets = ", ".join(target for item in row.get("subtasks", []) for target in item.get("code_targets", [])) or "未定位"
         accepted = ", ".join(f"{item.get('id')}={'已验证' if item.get('verified') else '待验证'}" for item in row.get("acceptance", [])) or "未定义"
         body.extend([f"### {row.get('requirement_id')} {row.get('title')}", f"- 范围：{row.get('scope') or '未定义'}", f"- 代码目标：{targets}", f"- 验收：{accepted}"])
+        for subtask in row.get("subtasks", []):
+            read_targets = ", ".join(subtask.get("read_targets", [])) or "未声明"
+            write_targets = ", ".join(subtask.get("write_targets", [])) or "未声明"
+            stop_conditions = "; ".join(subtask.get("stop_conditions", [])) or "未声明"
+            body.append(f"- 子任务 {subtask.get('id')}: 读范围={read_targets}; 写范围={write_targets}; 停止条件={stop_conditions}")
         if row.get("ambiguities"):
             body.append(f"- 未决事项：{'; '.join(row['ambiguities'])}")
         body.append("")
     coverage = matrix.get("coverage", {})
-    body.extend(["## 覆盖率", "", f"- 需求：{coverage.get('requirements', 0)}", f"- 已定位需求：{coverage.get('located_requirements', 0)}", f"- 已验证验收：{coverage.get('verified_acceptance', 0)}/{coverage.get('required_acceptance', 0)}", ""])
+    body.extend(["## 覆盖率", "", f"- 需求：{coverage.get('requirements', 0)}", f"- 已定位需求：{coverage.get('located_requirements', 0)}", f"- 已声明范围的子任务：{coverage.get('scoped_subtasks', 0)}/{coverage.get('total_subtasks', 0)}", f"- 已验证验收：{coverage.get('verified_acceptance', 0)}/{coverage.get('required_acceptance', 0)}", ""])
     return "\n".join(body)
 
 

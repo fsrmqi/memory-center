@@ -656,7 +656,7 @@ MCP 当前公开 12 个 task-level tools：
 - `mc_domain`
 - `mc_freshness`
 
-设计意图：模型看到的是任务级接口，不是几十个内部原子工具。`mc_admin` 的 action table 在 `memory_center/mcp/admin_actions.py`，通过 `CommandRegistry` 分发。
+设计意图：模型看到的是任务级接口，不是几十个内部原子工具。`mc_admin` 的 action table 位于 `memory_center/application/admin.py`，通过 `CommandRegistry` 分发。
 
 MCP 还暴露 resources：
 
@@ -695,7 +695,7 @@ HTTP server 使用标准库 `ThreadingHTTPServer`，不是 FastAPI。它提供�
 
 路由表在 `memory_center/http/routes/`，由 `route_dispatch.py` 组合：
 
-- `workspace.py`
+- `workspace_ops.py`
 - `workflow.py`
 - `analysis.py`
 
@@ -706,6 +706,12 @@ Vue Workbench 位于 `web/src/`，主要页面包括 dashboard、query、impact�
 ---
 
 ## 10. Task Memory and Artifacts / 任务记忆与工件
+
+### 10.1 Workflow Profiles and Scoped Delivery / 工作流画像与受控交付
+
+工作流画像是推荐层，不是第二套编排器。`quick-fix`、`contract-change`、`long-task`、`architecture` 与 `maintenance` 只描述任务应加载的上下文层和推荐工具顺序；真正的状态、门禁、验证回执与审计仍归属 `feature_delivery_v2`。
+
+交付子任务可附带 `read_targets`、`write_targets`、`stop_conditions`。它们作为任务级范围契约写入现有 delivery 工件，并在 `delivery-matrix`、`TECH_SPEC.md` 中派生展示。默认只提供透明度；工作区策略启用 `enforce_scope_contract` 后，范围不完整的子任务不能进入 `implement`，从而避免高风险任务在上下文不足时扩大修改面。
 
 Memory Center 的记忆模型分为四层：
 
@@ -765,6 +771,8 @@ Hook 层在 `memory_center/hooks/`，属于宿主集成，不是核心业务层�
 - CLI walkthrough 命令组使用它。
 
 它只负责注册、列出和分发 handler；参数绑定仍由 adapter 自己负责，以保持 public schema / path / command 兼容。
+
+`mc_analyze` 还定义了阶段性成功语义：图谱 impact 是主结果，plan、rules、contract、checklist 和 contract evidence 是可独立诊断的补充阶段。主结果已成功时，补充阶段故障返回 `analysis_status=partial` 与阶段级 diagnostics；只有主结果或入口本身无法完成时才走统一错误模型。这样 Agent 能继续验证已有高置信影响，不会因一个可恢复依赖错误丢失工程证据。
 
 ---
 

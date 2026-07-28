@@ -1,5 +1,7 @@
 """Shared route dependencies kept behind the HTTP adapter seam."""
 
+from __future__ import annotations
+
 from typing import Any
 
 from memory_center.application.jobs import analysis_job_status

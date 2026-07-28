@@ -13,6 +13,7 @@
 | 规范 | 什么不能被违反？ | ADR、SPECS、公开 schema 与测试 |
 | 操作 | 当前任务怎样完成？ | USER_GUIDE、MCP_GUIDE |
 | 事实 | 现在有哪些入口和字段？ | 代码、`--help`、路由注册、REFERENCE |
+| 对外介绍 | 价值、能力边界和技术路线如何被非维护者理解？ | PRODUCT_TECHNICAL_OVERVIEW、README、ARCHITECTURE |
 | 决策 | 为什么这样设计，何时推翻？ | ADR、decisions、主计划 |
 | 历史 | 过去发生过什么？ | archive、CHANGELOG |
 

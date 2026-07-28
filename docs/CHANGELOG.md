@@ -1,5 +1,17 @@
 # Changelog / 更新日志
 
+## 4.3.24 受控交付画像与范围契约 / Scoped Delivery Profiles
+
+- 新增 `maintenance` 工作流画像，用于健康检查、技术债治理与架构增量演进；所有画像明确返回分层上下文与交付护栏建议。
+- 交付子任务新增 `read_targets`、`write_targets`、`stop_conditions`；交付矩阵和派生 `TECH_SPEC.md` 展示范围覆盖率。
+- 工作区可通过 `delivery-policy.json` 的 `enforce_scope_contract` 严格要求范围契约，未满足时阻止进入实现阶段；默认保持关闭。
+
+## 4.3.24 Scoped Delivery Profiles
+
+- Added the `maintenance` workflow profile for health checks, technical-debt governance, and incremental architecture evolution. Workflow profiles now expose layered context and delivery guardrail guidance.
+- Delivery subtasks now support `read_targets`, `write_targets`, and `stop_conditions`; the delivery matrix and derived `TECH_SPEC.md` show scope-contract coverage.
+- Workspace owners can enable `enforce_scope_contract` in `delivery-policy.json` to block incomplete subtasks from entering implementation. It remains disabled by default.
+
 ## 4.3.23 影响分析降级与可诊断错误 / Resilient Impact Analysis
 
 - `mc_analyze` 现在校验 `depth`、`direction`、`max_depth` 和 `execution_mode`。无效参数返回 `invalid_input`，不再误报为内部异常。

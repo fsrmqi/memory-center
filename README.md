@@ -38,6 +38,7 @@ Memory Center precomputes these relationships before the agent starts editing.
 当前主文档请优先看：
 
 - [docs/README.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/README.md)
+- [docs/PRODUCT_TECHNICAL_OVERVIEW.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/PRODUCT_TECHNICAL_OVERVIEW.md)
 - [docs/DOCS_STATUS.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/DOCS_STATUS.md)
 - [docs/ARCHITECTURE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/ARCHITECTURE.md)
 - [docs/USER_GUIDE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/USER_GUIDE.md)

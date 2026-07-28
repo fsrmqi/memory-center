@@ -53,7 +53,7 @@ P0 三个修复必须共同满足:
    都必须能从 `TreeSitterJavaParser.diagnostics` 看出来,且能通过环境
    变量一键回到当前行为。
 3. **`RegexJavaParser` 不删**。它是 tree-sitter 不可用时的 fallback,
-   也是 [tests/test_parser_differential.py](../../tests/test_parser_differential.py)
+   也是 [tests/index_storage/test_parser_differential.py](../../tests/index_storage/test_parser_differential.py)
    的 oracle。
 4. **质量 gate 优先于性能**。parser differential critical disagreement
    保持 `=0`;Java call resolution gate 不退步;Golden anchor recall /
