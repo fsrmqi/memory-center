@@ -112,10 +112,17 @@ from memory_center.core.tasks.delivery import (
     delivery_matrix,
     delivery_policy_status,
     delivery_workflow_status,
+    derive_delivery_failure_candidates,
+    evaluate_delivery_skill,
     execute_delivery_validation,
     initialize_delivery_workflow,
     propose_delivery_breakdown,
+    recommend_delivery_skills,
+    record_delivery_skill_observation,
     record_delivery_validation,
+    rollback_delivery_skill,
+    start_delivery_skill_canary,
+    synthesize_delivery_skill_trajectories,
     transition_delivery_stage,
     update_delivery_contract,
     update_delivery_policy,
@@ -248,6 +255,34 @@ def workspace_delivery_transition(workspace_file: str, task_id: str, *, stage: s
     return transition_delivery_stage(workspace_file, task_id, stage, actor=actor, force=force)
 
 
+def workspace_delivery_skill_canary(workspace_file: str, task_id: str, *, actor: str = "") -> dict[str, Any]:
+    return start_delivery_skill_canary(workspace_file, task_id, actor=actor)
+
+
+def workspace_delivery_skill_observe(workspace_file: str, *, skill_id: str, outcome: str, evidence_refs: list[str] | None = None, latency_ms: int | None = None, token_count: int | None = None, actor: str = "") -> dict[str, Any]:
+    return record_delivery_skill_observation(workspace_file, skill_id, outcome=outcome, evidence_refs=evidence_refs, latency_ms=latency_ms, token_count=token_count, actor=actor)
+
+
+def workspace_delivery_skill_evaluate(workspace_file: str, *, skill_id: str = "") -> dict[str, Any]:
+    return evaluate_delivery_skill(workspace_file, skill_id=skill_id)
+
+
+def workspace_delivery_skill_rollback(workspace_file: str, *, skill_id: str, reason: str, actor: str = "") -> dict[str, Any]:
+    return rollback_delivery_skill(workspace_file, skill_id, reason=reason, actor=actor)
+
+
+def workspace_delivery_skill_recommend(workspace_file: str, *, intent: str, limit: int = 5) -> dict[str, Any]:
+    return recommend_delivery_skills(workspace_file, intent, limit=limit)
+
+
+def workspace_delivery_failure_candidates(workspace_file: str, *, limit_tasks: int = 200) -> dict[str, Any]:
+    return derive_delivery_failure_candidates(workspace_file, limit_tasks=limit_tasks)
+
+
+def workspace_delivery_skill_synthesize(workspace_file: str, *, min_support: int = 3) -> dict[str, Any]:
+    return synthesize_delivery_skill_trajectories(workspace_file, min_support=min_support)
+
+
 __all__ = [
     "Any",
     "export_continuity_dashboard_html",
@@ -311,6 +346,13 @@ __all__ = [
     "workspace_delivery_init",
     "workspace_delivery_matrix",
     "workspace_delivery_policy",
+    "workspace_delivery_failure_candidates",
+    "workspace_delivery_skill_canary",
+    "workspace_delivery_skill_evaluate",
+    "workspace_delivery_skill_observe",
+    "workspace_delivery_skill_recommend",
+    "workspace_delivery_skill_rollback",
+    "workspace_delivery_skill_synthesize",
     "workspace_delivery_status",
     "workspace_delivery_subtask_status",
     "workspace_delivery_transition",

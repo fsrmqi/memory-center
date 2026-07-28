@@ -138,6 +138,14 @@ For core task-memory artifacts such as `context.md`, `requirement.md`, `design.m
 
 对于可持续的需求开发任务，可在任务空间初始化 `feature_delivery_v2`：它将需求来源、范围边界、代码定位、验收、策略门禁和验证证据关联为 `intake -> breakdown -> locate -> implement -> verify -> close` 的有界状态机。普通回执仅标为外部记录；关闭任务需要执行器证据或带引用的人工验证。执行器只运行 workspace policy 中预注册的 argv profile，绝不执行模型或需求正文传入的 shell 字符串；CLI、MCP、HTTP 的具体用法见 [docs/REFERENCE.md](./docs/REFERENCE.md) 与 [docs/MCP_GUIDE.md](./docs/MCP_GUIDE.md)。
 
+已关闭且验证完整的交付可以生成 Skill 候选，但候选不会直接进入默认检索。它必须先进入 `canary`，累计至少三条带验证证据引用的成功观测、且没有失败观测后，才可显式发布为 `published`；出现回归可立即 `rolled_back`，历史证据不会删除。失败聚类和多轨迹归纳都是显式离线维护动作，只保存脱敏的结构元数据、哈希任务引用和证据引用，不读取或落盘原始源码、需求正文及验证日志。
+
+Closed, fully verified deliveries can produce Skill candidates, but candidates never enter default retrieval directly. A candidate must first enter `canary`, collect at least three successful observations with verification evidence and no failed observations, then be explicitly published. Regressions can be rolled back immediately without deleting evidence. Failure clustering and multi-trajectory synthesis are explicit offline maintenance actions; they store only sanitized structural metadata, hashed task references, and evidence references, never source text, request bodies, or validation logs.
+
+影响分析中的图谱证据与辅助检查也采用分阶段降级：`mc_analyze` 成功获取影响图后，计划、规则、契约或检查清单阶段暂时不可用只会返回 `analysis_status="partial"`、安全诊断和后续动作，不会把已获得的影响证据替换为笼统内部异常。MCP 错误中的 `diagnostics.trace_id` 可与本地审计记录关联。
+
+Impact analysis also degrades by phase: after `mc_analyze` obtains graph evidence, an unavailable plan, rule, contract, or checklist phase returns `analysis_status="partial"`, safe diagnostics, and a next action instead of replacing the evidence with a generic internal error. `diagnostics.trace_id` in MCP errors correlates with the local audit record.
+
 For long-running feature work, `feature_delivery_v2` links requirement sources and scope, located subtasks, acceptance criteria, policy gates, and verification evidence through a bounded delivery state machine. It never executes a supplied command or edits source code; its executor only runs reviewed argv profiles registered by the workspace owner.
 
 Each protected write also records `write_mode` and an `audit_ref` into `memory/artifact-write-audit.jsonl`, so you can later inspect whether a model attempted a full overwrite or was downgraded to guarded append.

@@ -1,5 +1,31 @@
 # Changelog / 更新日志
 
+## 4.3.23 影响分析降级与可诊断错误 / Resilient Impact Analysis
+
+- `mc_analyze` 现在校验 `depth`、`direction`、`max_depth` 和 `execution_mode`。无效参数返回 `invalid_input`，不再误报为内部异常。
+- `standard` / `full` 的计划、规则、契约、检查清单和工件写入改为独立可降级阶段：影响图成功后，任一辅助阶段不可用只会返回 `analysis_status=partial`、阶段诊断和下一步动作，不会丢弃已获得的影响证据。
+- MCP 错误响应新增安全的 `diagnostics.operation`、`diagnostics.exception_class` 和 `diagnostics.trace_id`，可与本地 MCP 调用审计关联，同时不暴露源码、路径、密钥或异常正文。
+
+## 4.3.23 Resilient Impact Analysis
+
+- `mc_analyze` now validates `depth`, `direction`, `max_depth`, and `execution_mode`. Invalid parameters return `invalid_input` instead of an internal error.
+- Plan, rule, contract, checklist, and artifact-write phases in `standard` / `full` analysis are independently degradable. Once graph impact succeeds, an unavailable enrichment returns `analysis_status=partial`, phase diagnostics, and an actionable next step instead of discarding evidence.
+- MCP error responses now include safe `diagnostics.operation`, `diagnostics.exception_class`, and `diagnostics.trace_id` fields for correlation with local MCP audit records, without exposing source, paths, secrets, or exception text.
+
+## 4.3.22 可验证 Skill 演进闭环 / Verifiable Skill Evolution Loop
+
+- 交付 Skill 从“候选后直接发布”升级为 `candidate -> canary -> published|rolled_back` 生命周期。canary 不进入默认检索；正式发布至少需要三条带证据引用的成功观测且没有失败观测，禁止模型自评直接晋升。
+- 新增 `delivery-skill-canary|observe|evaluate|rollback|recommend`：以有界观测记录成功、失败、绕过、延迟和 Token 指标；回滚会立即撤出默认推荐，但不删除历史证据。
+- 新增离线 `delivery-failure-candidates` 与 `delivery-skill-synthesize`：前者按验证 profile 与验收标识聚合跨任务失败，后者从多个已验证候选归纳共同结构。两者均不写入原始源码、需求正文或验证日志，且不在 MCP/HTTP 查询热路径运行。
+- Skill registry 保存稳定 ID、版本、结构签名、生命周期、来源证据和工件路径；候选在进入 canary 前先进行结构相似度检查，重复候选要求人工合并审核。
+
+## 4.3.22 Verifiable Skill Evolution Loop
+
+- Delivery Skills now follow `candidate -> canary -> published|rolled_back`. Canary Skills stay out of default retrieval; publishing requires at least three successful observations with evidence references and no failed observations, never an LLM self-rating.
+- Added `delivery-skill-canary|observe|evaluate|rollback|recommend` for bounded success, failure, bypass, latency, and token measurements. Rollback removes default recommendation without deleting historical evidence.
+- Added offline `delivery-failure-candidates` and `delivery-skill-synthesize`. They aggregate cross-task failure metadata and synthesize common patterns from proven candidates without storing source text, request bodies, or validation logs, and never run on MCP/HTTP query hot paths.
+- The Skill registry now persists stable IDs, versions, structural signatures, lifecycle, evidence references, and artifact locations. Candidates are structurally compared before canary entry; likely duplicates require a human merge review.
+
 ## 4.3.21 证据优先需求交付闭环 / Evidence-First Delivery Loop
 
 - 交付工作流升级为 `feature_delivery_v2`：需求项新增来源、范围边界、搜索词、候选模块、歧义和决策标记；阶段门禁会写入可追溯 `GateResult`。

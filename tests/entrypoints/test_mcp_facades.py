@@ -1003,6 +1003,40 @@ def test_mcp_lookup_and_analyze_default_to_compact_views(tmp_path: Path):
     assert analyze_project_payload["impact"]["lookup"]["entrypoints"][0]["role"] == "anchor"
 
 
+@pytest.mark.skipif(not HAS_MCP, reason="mcp package not installed")
+def test_mc_analyze_keeps_impact_when_optional_plan_fails(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    import memory_center.mcp.server as mcp_server
+
+    wf = _setup_workspace(tmp_path)
+    server = create_server(wf)
+
+    def fail_plan(*_args, **_kwargs):
+        raise RuntimeError("optional plan backend failed")
+
+    monkeypatch.setattr(mcp_server, "memory_plan_change", fail_plan)
+    tool = server._tool_manager._tools["mc_analyze"]
+    result = _resolve_mcp_result(tool.fn(target="ArticleFeignClient", depth="standard", direction="upstream", max_depth=2))
+
+    assert result.get("error", False) is False
+    assert result["analysis_status"] == "partial"
+    assert result["impact"]["found"] is True
+    assert result["diagnostics"]["plan"]["status"] == "unavailable"
+    assert "plan" not in result
+
+
+@pytest.mark.skipif(not HAS_MCP, reason="mcp package not installed")
+def test_mc_analyze_rejects_invalid_direction_without_internal_error(tmp_path: Path):
+    wf = _setup_workspace(tmp_path)
+    server = create_server(wf)
+    tool = server._tool_manager._tools["mc_analyze"]
+
+    result = _resolve_mcp_result(tool.fn(target="ArticleFeignClient", depth="quick", direction="sideways", max_depth=2))
+
+    assert result["error"] is True
+    assert result["error_type"] == "invalid_input"
+    assert result["diagnostics"]["operation"] == "mc_analyze"
+
+
 def test_memory_context_risk_patterns_do_not_fail_silently(tmp_path: Path):
     wf = _setup_workspace(tmp_path)
     r = memory_context(wf, "ArticleFeignClient", max_depth=2)

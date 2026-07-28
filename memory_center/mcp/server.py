@@ -19,6 +19,8 @@ import argparse
 import re
 from typing import Any
 
+from memory_center.core.foundation.errors import InvalidInputError
+from memory_center.core.observability.diagnostics import DIAG, diag_entry
 from memory_center.core.orchestrator import (
     _annotate_phantom_nodes,
     group_chain,
@@ -88,6 +90,30 @@ def _extract_symbol_like_token(*values: str) -> str:
 def _wants_deep_chain(*values: str) -> bool:
     text = " ".join((value or "") for value in values).lower()
     return any(token in text for token in ["全链路", "到底层", "最底层", "一路到底", "full chain", "trace to sink"])
+
+
+def _validate_analyze_request(depth: str, direction: str, max_depth: int, execution_mode: str) -> None:
+    if depth not in {"quick", "standard", "full"}:
+        raise InvalidInputError("depth must be quick, standard, or full", suggested_action="使用 quick、standard 或 full 重试。")
+    if direction not in {"upstream", "downstream", "both"}:
+        raise InvalidInputError("direction must be upstream, downstream, or both", suggested_action="使用 upstream、downstream 或 both 重试。")
+    if not 1 <= max_depth <= 6:
+        raise InvalidInputError("max_depth must be between 1 and 6", suggested_action="将 max_depth 设置在 1 到 6 之间；更深分析请分阶段执行。")
+    if execution_mode not in {"sync", "background"}:
+        raise InvalidInputError("execution_mode must be sync or background", suggested_action="使用 sync 或 background 重试。")
+
+
+def _degraded_analysis_step(name: str, operation) -> tuple[Any | None, dict[str, Any] | None]:
+    """Keep a successful impact result usable when an optional phase fails."""
+    try:
+        return operation(), None
+    except Exception as exc:  # Optional enrichments must not hide graph evidence.
+        return None, diag_entry(
+            DIAG.UNAVAILABLE,
+            exc=exc,
+            phase=name,
+            next_action="保留已有影响证据；检查该阶段依赖后单独重试，或改用 depth=quick。",
+        )
 
 
 def _flatten_walkthrough_payload(result: dict[str, Any], mode_key: str = "mode_used") -> dict[str, Any]:
@@ -513,6 +539,7 @@ def create_server(workspace_file: str):
     ):
         """Analyze change impact and generate action plans. Depth quick: impact only. Depth standard: impact + change plan + rules check. Depth full: standard + contract check + verification checklist. If target is empty, runs detect-changes instead of impact."""
         wf = ctx.workspace_file
+        _validate_analyze_request(depth, direction, max_depth, execution_mode)
         if job_action == "status":
             from memory_center.application.jobs import analysis_job_status
             return {"workflow": "mc-analyze", "job": analysis_job_status(wf, job_id)}
@@ -529,19 +556,42 @@ def create_server(workspace_file: str):
                 impact_result = memory_impact(wf, target, direction, max_depth, project=project_filter, view="compact", budget="small")
             else:
                 impact_result = memory_detect_changes(wf, scope)
-            result = {"workflow": "mc-analyze", "depth": depth, "impact": impact_result}
+            result = {"workflow": "mc-analyze", "depth": depth, "impact": impact_result, "analysis_status": "complete", "diagnostics": {}}
             if target:
                 result["candidate_paths"] = impact_result.get("candidate_paths", [])
                 result["recommended_path"] = impact_result.get("recommended_path", {})
             if depth in ("standard", "full") and target:
-                result["plan"] = memory_plan_change(wf, target, direction, max_depth)
-                result["rules"] = workspace_check_rules(wf, projects, change_type, files)
+                plan, plan_diagnostic = _degraded_analysis_step("plan", lambda: memory_plan_change(wf, target, direction, max_depth))
+                rules, rules_diagnostic = _degraded_analysis_step("rules", lambda: workspace_check_rules(wf, projects, change_type, files))
+                if plan is not None:
+                    result["plan"] = plan
+                if rules is not None:
+                    result["rules"] = rules
+                if plan_diagnostic:
+                    result["diagnostics"]["plan"] = plan_diagnostic
+                if rules_diagnostic:
+                    result["diagnostics"]["rules"] = rules_diagnostic
             if depth == "full" and target:
-                result["contract"] = workspace_check_contract(wf, contract_file or target, change_type)
-                result["checklist"] = memory_verify_checklist(wf, target)
-                if task_id.strip():
+                contract, contract_diagnostic = _degraded_analysis_step("contract", lambda: workspace_check_contract(wf, contract_file or target, change_type))
+                checklist, checklist_diagnostic = _degraded_analysis_step("checklist", lambda: memory_verify_checklist(wf, target))
+                if contract is not None:
+                    result["contract"] = contract
+                if checklist is not None:
+                    result["checklist"] = checklist
+                if contract_diagnostic:
+                    result["diagnostics"]["contract"] = contract_diagnostic
+                if checklist_diagnostic:
+                    result["diagnostics"]["checklist"] = checklist_diagnostic
+                if task_id.strip() and contract is not None:
                     from memory_center.application.jobs import write_contract_evidence
-                    result["contract_evidence"] = write_contract_evidence(wf, task_id, result["contract"])
+                    evidence, evidence_diagnostic = _degraded_analysis_step("contract_evidence", lambda: write_contract_evidence(wf, task_id, contract))
+                    if evidence is not None:
+                        result["contract_evidence"] = evidence
+                    if evidence_diagnostic:
+                        result["diagnostics"]["contract_evidence"] = evidence_diagnostic
+            if result["diagnostics"]:
+                result["analysis_status"] = "partial"
+                result["next_action"] = "影响图已返回；修复 diagnostics 中不可用阶段后重试，或先沿 candidate_paths 验证高置信影响。"
             return result
 
         if execution_mode == "background":

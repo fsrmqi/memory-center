@@ -182,7 +182,8 @@
 - `artifact delivery-matrix --task-id <task>`：派生交付矩阵和只读 `TECH_SPEC.md`。
 - `artifact delivery-transition --stage breakdown|locate|implement|verify|close`：按门禁推进；验收未被执行器或人工验证证据覆盖时不能关闭。
 - `artifact delivery-record-validation`：仅记录外部验证摘要；默认 `recorded_external` 不可用于关闭门禁。
-- `artifact delivery-skill-candidate|delivery-skill-publish|delivery-skill-status`：从已验证关闭任务生成候选、显式发布并查询交付 Skill 状态。
+- `artifact delivery-skill-candidate|delivery-skill-canary|delivery-skill-observe|delivery-skill-evaluate|delivery-skill-publish|delivery-skill-rollback|delivery-skill-recommend`：Skill 必须先进入隔离灰度；仅三条以上带证据的成功观测、且无失败观测时可发布。默认检索仅返回 `published` 状态；回滚不删除证据。
+- `artifact delivery-failure-candidates|delivery-skill-synthesize`：显式、离线地聚类跨任务失败和多个已验证交付的共同结构；只保存脱敏元数据和证据引用，不在查询热路径运行。
 - `artifact compact-task --task-id <task>`：对超大任务工件进行流式 gzip 归档，保留有界恢复摘要；先执行 `artifact health-task` 识别异常空间。
 - `artifact generation-gc --workspace <workspace.yaml> --dry-run`：预览可回收的旧索引代际；确认后追加 `--apply`。该命令始终保留当前和上一代，Agent 在发现 `index/generations` 占用异常时应先执行预览。
 - `artifact storage-legacy-cleanup --workspace <workspace.yaml> --dry-run`：检查已废弃的 `memory/memory.db` 副本；仅在运行时事实库已是 `graph/graph.db` 时允许 `--apply` 删除。

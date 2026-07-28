@@ -10,9 +10,16 @@ from memory_center.core.tasks.artifacts import (
 from memory_center.core.tasks.delivery import (
     delivery_skill_candidate,
     delivery_workflow_status,
+    derive_delivery_failure_candidates,
+    evaluate_delivery_skill,
     initialize_delivery_workflow,
     publish_delivery_skill,
+    recommend_delivery_skills,
+    record_delivery_skill_observation,
     record_delivery_validation,
+    rollback_delivery_skill,
+    start_delivery_skill_canary,
+    synthesize_delivery_skill_trajectories,
     transition_delivery_stage,
     update_delivery_contract,
     update_delivery_subtask_status,
@@ -68,7 +75,7 @@ def test_delivery_admin_contract_actions_use_existing_facade(demo_workspace) -> 
     assert result["items"][0]["id"] == "REQ-1"
 
 
-def test_closed_verified_delivery_can_publish_reviewed_skill(demo_workspace) -> None:
+def test_closed_verified_delivery_canary_requires_objective_evidence_before_publish(demo_workspace) -> None:
     task = create_task_space(demo_workspace, title="发布接口", intent="新增发布接口")
     task_id = task["task_id"]
     initialize_delivery_workflow(demo_workspace, task_id)
@@ -85,9 +92,51 @@ def test_closed_verified_delivery_can_publish_reviewed_skill(demo_workspace) -> 
 
     candidate = delivery_skill_candidate(demo_workspace, task_id)
     assert candidate["candidate"]["eligible"] is True
+    assert publish_delivery_skill(demo_workspace, task_id)["reason"] == "canary_required"
+    canary = start_delivery_skill_canary(demo_workspace, task_id, actor="test")
+    assert canary["started"] is True
+    skill_id = canary["skill"]["skill_id"]
+    assert record_delivery_skill_observation(demo_workspace, skill_id, outcome="passed")["reason"] == "evidence_required"
+    for index in range(3):
+        result = record_delivery_skill_observation(demo_workspace, skill_id, outcome="passed", evidence_refs=[f"validation:{index}"], latency_ms=100, token_count=20)
+        assert result["recorded"] is True
+    assert evaluate_delivery_skill(demo_workspace, skill_id=skill_id)["metrics"]["verified_passed"] == 3
     published = publish_delivery_skill(demo_workspace, task_id)
     assert published["published"] is True
-    assert (demo_workspace.parent / "artifacts" / "skills" / "delivery-published" / task_id / "SKILL.md").exists()
+    assert recommend_delivery_skills(demo_workspace, "发布接口")["skills"][0]["skill_id"] == skill_id
+    assert rollback_delivery_skill(demo_workspace, skill_id, reason="发现回归")["rolled_back"] is True
+    assert not recommend_delivery_skills(demo_workspace, "发布接口")["skills"]
+
+
+def test_delivery_offline_failure_and_trajectory_synthesis_are_bounded(demo_workspace) -> None:
+    from memory_center.core.storage.workspace import WorkspaceStore
+    from memory_center.core.tasks.artifacts import create_task_space
+
+    store = WorkspaceStore(demo_workspace)
+    for task_id in ("task-a", "task-b"):
+        task_dir = store.artifacts_dir / "tasks" / task_id
+        task_dir.mkdir(parents=True, exist_ok=True)
+        (task_dir / "verification-receipts.jsonl").write_text(
+            '{"status":"failed","profile_id":"unit-test","acceptance_ids":["AC-1"],"evidence_refs":["e:1"],"summary":"private output"}\n',
+            encoding="utf-8",
+        )
+    failures = derive_delivery_failure_candidates(demo_workspace)
+    assert failures["candidates"][0]["support"] == 2
+    assert "private output" not in str(failures)
+
+    for suffix in ("alpha", "beta", "gamma"):
+        task = create_task_space(demo_workspace, title=f"shared-test-{suffix}", intent="共享测试")
+        task_id = task["task_id"]
+        initialize_delivery_workflow(demo_workspace, task_id)
+        update_delivery_contract(demo_workspace, task_id, kind="requirements", items=[{"id": "REQ-1", "title": "共享测试", "scope": "接口", "acceptance_ids": ["AC-1"]}])
+        update_delivery_contract(demo_workspace, task_id, kind="acceptance", items=[{"id": "AC-1", "title": "测试", "required": True}])
+        update_delivery_contract(demo_workspace, task_id, kind="subtasks", items=[{"id": "SUB-1", "title": "实现", "code_targets": ["SharedController#run"]}])
+        update_delivery_subtask_status(demo_workspace, task_id, "SUB-1", "implemented")
+        record_delivery_validation(demo_workspace, task_id, status="passed", acceptance_ids=["AC-1"], evidence_kind="manual_verified")
+        transition_delivery_stage(demo_workspace, task_id, "close")
+        delivery_skill_candidate(demo_workspace, task_id)
+    synthesis = synthesize_delivery_skill_trajectories(demo_workspace)
+    assert synthesis["syntheses"]
 
 
 def test_delivery_matrix_and_policy_control_executor(demo_workspace) -> None:

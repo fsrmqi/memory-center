@@ -146,7 +146,7 @@ def _mcp_error_boundary(fn, workspace_context: WorkspaceContext | None = None):
                 _record_mcp_invocation(workspace_context, fn, args, kwargs, result, "success", started_at)
                 return result
             except Exception as exc:
-                result = normalize_exception(exc).to_mcp_dict()
+                result = _mcp_error_result(exc, fn, workspace_context)
                 _record_mcp_invocation(workspace_context, fn, args, kwargs, result, "error", started_at)
                 return result
 
@@ -160,11 +160,25 @@ def _mcp_error_boundary(fn, workspace_context: WorkspaceContext | None = None):
             _record_mcp_invocation(workspace_context, fn, args, kwargs, result, "success", started_at)
             return result
         except Exception as exc:
-            result = normalize_exception(exc).to_mcp_dict()
+            result = _mcp_error_result(exc, fn, workspace_context)
             _record_mcp_invocation(workspace_context, fn, args, kwargs, result, "error", started_at)
             return result
 
     return wrapped
+
+
+def _mcp_error_result(exc: Exception, fn: Any, workspace_context: WorkspaceContext | None) -> dict[str, Any]:
+    """Return a safe correlation handle without exposing exception details."""
+    result = normalize_exception(exc).to_mcp_dict()
+    diagnostics = dict(result.get("diagnostics") or {})
+    diagnostics.update({
+        "operation": getattr(fn, "__name__", "mcp_tool"),
+        "exception_class": type(exc).__name__,
+    })
+    if workspace_context is not None:
+        diagnostics["trace_id"] = workspace_context.trace_id
+    result["diagnostics"] = diagnostics
+    return result
 
 
 def _record_mcp_invocation(

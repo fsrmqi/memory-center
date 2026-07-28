@@ -47,11 +47,17 @@ from memory_center.core.tasks.delivery import (
     delivery_skill_candidate,
     delivery_skill_status,
     delivery_workflow_status,
+    derive_delivery_failure_candidates,
     execute_delivery_validation,
     initialize_delivery_workflow,
     propose_delivery_breakdown,
     publish_delivery_skill,
+    recommend_delivery_skills,
+    record_delivery_skill_observation,
     record_delivery_validation,
+    rollback_delivery_skill,
+    start_delivery_skill_canary,
+    synthesize_delivery_skill_trajectories,
     transition_delivery_stage,
     update_delivery_contract,
     update_delivery_policy,
@@ -247,13 +253,49 @@ def register_artifact_commands(app: typer.Typer) -> None:
 
     @app.command("delivery-skill-publish")
     def artifact_delivery_skill_publish_cmd(workspace: str = typer.Option(...), task_id: str = typer.Option(...)):
-        """显式发布已合格的交付 Skill 候选。"""
+        """发布已通过灰度证据门槛的交付 Skill。"""
         print(publish_delivery_skill(workspace, task_id))
 
     @app.command("delivery-skill-status")
     def artifact_delivery_skill_status_cmd(workspace: str = typer.Option(...), task_id: str = typer.Option(...)):
         """查看一个任务的交付 Skill 候选和发布状态。"""
         print(delivery_skill_status(workspace, task_id))
+
+    @app.command("delivery-skill-canary")
+    def artifact_delivery_skill_canary_cmd(workspace: str = typer.Option(...), task_id: str = typer.Option(...), actor: str = typer.Option("")):
+        """显式将合格候选放入隔离灰度，不进入默认检索。"""
+        print(start_delivery_skill_canary(workspace, task_id, actor=actor))
+
+    @app.command("delivery-skill-observe")
+    def artifact_delivery_skill_observe_cmd(workspace: str = typer.Option(...), skill_id: str = typer.Option(...), outcome: str = typer.Option(..., help="passed|failed|bypassed|unobservable"), evidence_refs: str = typer.Option("[]", help="JSON 数组；passed 必填"), latency_ms: typing.Optional[int] = typer.Option(None), token_count: typing.Optional[int] = typer.Option(None), actor: str = typer.Option("")):
+        """记录脱敏、可引用的真实 Skill 使用结果，不接受模型自评。"""
+        print(record_delivery_skill_observation(workspace, skill_id, outcome=outcome, evidence_refs=json.loads(evidence_refs), latency_ms=latency_ms, token_count=token_count, actor=actor))
+
+    @app.command("delivery-skill-evaluate")
+    def artifact_delivery_skill_evaluate_cmd(workspace: str = typer.Option(...), skill_id: str = typer.Option("")):
+        """只读汇总 Skill 成功、失败、绕过、耗时与 Token 指标。"""
+        from memory_center.core.tasks.delivery import evaluate_delivery_skill
+        print(evaluate_delivery_skill(workspace, skill_id=skill_id))
+
+    @app.command("delivery-skill-rollback")
+    def artifact_delivery_skill_rollback_cmd(workspace: str = typer.Option(...), skill_id: str = typer.Option(...), reason: str = typer.Option(...), actor: str = typer.Option("")):
+        """从默认推荐中回滚有问题的 canary 或正式 Skill，保留历史证据。"""
+        print(rollback_delivery_skill(workspace, skill_id, reason=reason, actor=actor))
+
+    @app.command("delivery-skill-recommend")
+    def artifact_delivery_skill_recommend_cmd(workspace: str = typer.Option(...), intent: str = typer.Option(...), limit: int = typer.Option(5)):
+        """按意图检索已发布的结构化交付 Skill。"""
+        print(recommend_delivery_skills(workspace, intent, limit=limit))
+
+    @app.command("delivery-failure-candidates")
+    def artifact_delivery_failure_candidates_cmd(workspace: str = typer.Option(...), limit_tasks: int = typer.Option(200)):
+        """离线聚类已验证失败，仅生成待审核反模式候选。"""
+        print(derive_delivery_failure_candidates(workspace, limit_tasks=limit_tasks))
+
+    @app.command("delivery-skill-synthesize")
+    def artifact_delivery_skill_synthesize_cmd(workspace: str = typer.Option(...), min_support: int = typer.Option(3)):
+        """离线归纳多个已验证交付的共同结构，不影响查询热路径。"""
+        print(synthesize_delivery_skill_trajectories(workspace, min_support=min_support))
 
     @app.command("compact-task")
     def artifact_compact_task_cmd(workspace: str = typer.Option(...), task_id: str = typer.Option(...), threshold_mb: int = typer.Option(2), keep_kb: int = typer.Option(64)):

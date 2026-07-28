@@ -86,7 +86,8 @@ Memory Center 不要求中心化服务。默认形态是每个 workspace 自带�
 - **Stable-entry / 稳定入口**：MCP tool schema、CLI 命令和 HTTP 路径保持稳定；内部读模型只保留当前架构，不保留历史数据回退。
 
 - **Ontology state / 本体状态**：查询通过 `knowledge_state` 明确当前索引范围、未发现、过期和未知状态；Assertion sidecar 保存来源、有效期、事件时间与观测时间，治理 Action 采用有界读模型而不进入图查询热路径。
-- **Delivery workflow / 需求交付工作流**：`core/tasks/delivery.py` 在任务空间内维护需求来源/范围、子任务、验收、GateResult、验证回执和派生交付矩阵。执行器只消费 workspace policy 的预注册 argv profile，记录受限输出与 hash；任意模型或需求文本都不能转化为可执行 shell。
+- **Delivery workflow / 需求交付工作流**：`core/tasks/delivery.py` 在任务空间内维护需求来源/范围、子任务、验收、GateResult、验证回执和派生交付矩阵。执行器只消费 workspace policy 的预注册 argv profile，记录受限输出与 hash；任意模型或需求文本都不能转化为可执行 shell。已验证交付的 Skill 使用 `candidate -> canary -> published|rolled_back` 生命周期；registry、观测事件、失败聚类和多轨迹归纳均为有界本地工件，其中后两者只在显式离线维护中运行。
+- **Resilient analysis / 可降级分析**：`mc_analyze` 把图谱影响、计划、规则、契约和验证清单分成可诊断阶段。影响图已成功时，后续辅助阶段故障只会产生 `partial` 结果和安全诊断，不会覆盖已获得的图谱证据；入口错误通过 trace ID 与本地 MCP 审计关联。
 
 ### 1.4.1 架构不可变量 / Architectural Invariants
 

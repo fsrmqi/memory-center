@@ -66,9 +66,16 @@ from memory_center.application.http_facades import (
     workspace_delivery_breakdown,
     workspace_delivery_contract,
     workspace_delivery_execute_validation,
+    workspace_delivery_failure_candidates,
     workspace_delivery_init,
     workspace_delivery_matrix,
     workspace_delivery_policy,
+    workspace_delivery_skill_canary,
+    workspace_delivery_skill_evaluate,
+    workspace_delivery_skill_observe,
+    workspace_delivery_skill_recommend,
+    workspace_delivery_skill_rollback,
+    workspace_delivery_skill_synthesize,
     workspace_delivery_status,
     workspace_delivery_subtask_status,
     workspace_delivery_transition,
@@ -183,6 +190,20 @@ def _workspace_delivery_execute_validation(rp):
 
 def _workspace_delivery_matrix(rp):
     return workspace_delivery_matrix(rp.workspace(), rp.require("task_id"), write=not rp.bool_param("dry_run"))
+
+
+def _workspace_delivery_skill_observe(rp):
+    payload = _delivery_payload(rp)
+    return workspace_delivery_skill_observe(
+        rp.workspace(), skill_id=str(payload.get("skill_id", "")), outcome=str(payload.get("outcome", "")),
+        evidence_refs=[str(item) for item in payload.get("evidence_refs", []) if str(item).strip()],
+        latency_ms=payload.get("latency_ms"), token_count=payload.get("token_count"), actor=rp.get("actor", ""),
+    )
+
+
+def _workspace_delivery_skill_rollback(rp):
+    payload = _delivery_payload(rp)
+    return workspace_delivery_skill_rollback(rp.workspace(), skill_id=str(payload.get("skill_id", "")), reason=str(payload.get("reason", "")), actor=rp.get("actor", ""))
 
 
 def register_workspace_routes(registry: CommandRegistry) -> None:
@@ -317,6 +338,13 @@ def register_workspace_routes(registry: CommandRegistry) -> None:
     registry.register("/workspace/delivery/subtask-status", _workspace_delivery_subtask_status)
     registry.register("/workspace/delivery/validation", _workspace_delivery_validation)
     registry.register("/workspace/delivery/transition", _workspace_delivery_transition)
+    registry.register("/workspace/delivery/skill/canary", lambda rp: workspace_delivery_skill_canary(rp.workspace(), rp.require("task_id"), actor=rp.get("actor", "")))
+    registry.register("/workspace/delivery/skill/observe", _workspace_delivery_skill_observe)
+    registry.register("/workspace/delivery/skill/evaluate", lambda rp: workspace_delivery_skill_evaluate(rp.workspace(), skill_id=rp.get("skill_id", "")))
+    registry.register("/workspace/delivery/skill/rollback", _workspace_delivery_skill_rollback)
+    registry.register("/workspace/delivery/skill/recommend", lambda rp: workspace_delivery_skill_recommend(rp.workspace(), intent=rp.require("intent"), limit=rp.int_param("limit", 5, max_val=20)))
+    registry.register("/workspace/delivery/failure-candidates", lambda rp: workspace_delivery_failure_candidates(rp.workspace(), limit_tasks=rp.int_param("limit_tasks", 200, max_val=500)))
+    registry.register("/workspace/delivery/skill/synthesize", lambda rp: workspace_delivery_skill_synthesize(rp.workspace(), min_support=rp.int_param("min_support", 3, max_val=20)))
     registry.register("/workspace/task-artifact", lambda rp: get_task_artifact(
         rp.workspace(),
         rp.require('task_id'),

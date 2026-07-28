@@ -128,6 +128,18 @@ This file consolidates and replaces the older execution plan, superpowers evolut
 
 非目标：不将移动端设计稿、Figma、模拟器、Bazel 或任何单一技术栈规则放入核心；不强制所有任务使用交付流程；不让 Agent 自动执行不可逆操作、下载模型或全量重建索引。
 
+### P4：可验证 Skill 演进闭环（已完成，按真实样本持续校准）
+
+目标：让已验证交付产生可回滚、可度量、不会自我污染的可复用经验，而不是把模型自评或原始对话直接写入 Skill 库。
+
+1. Skill 统一使用稳定 ID、版本、结构签名、来源证据、`candidate -> canary -> published|rolled_back` 生命周期和有界 registry；结构相似候选先提示人工合并，避免库膨胀。
+2. canary 不参与默认检索。只有不少于三条带证据引用的成功观测、且没有失败观测时，才可显式发布；记录成功、失败、绕过、耗时和 Token 后仅生成建议，不自动改变状态。
+3. 默认检索仅返回 `published` Skill；回滚立即撤出默认推荐，但历史观测和来源证据继续保留以便审计。
+4. 失败经验提炼和多轨迹归纳均为显式离线维护操作。前者仅按验证 profile、验收标识、哈希任务引用和证据引用聚类，后者仅在至少三条独立已验证候选的共同结构上输出待审核不变量；两者都不保存原始源码、需求正文或日志。
+5. CLI、MCP admin 和 HTTP 共享同一应用服务：`delivery-skill-canary|observe|evaluate|publish|rollback|recommend`、`delivery-failure-candidates`、`delivery-skill-synthesize`。不把离线扫描加入查询热路径。
+
+验收：未验证候选和 canary 永远不会默认被检索；模型自评无法作为发布依据；发布、回滚和观测均可追溯；失败归纳不泄露私有正文；常规 MCP/HTTP 查询不增加全 workspace 扫描。
+
 ### P2.5：可信交互历史与图谱可解释性（已收口，按真实反馈维护）
 
 目标：将任务历史从调用日志提升为可复现、可归因、可审查的工程证据闭环，降低真实链路分析中的误判风险，并让长任务的状态和结果对使用者可见。

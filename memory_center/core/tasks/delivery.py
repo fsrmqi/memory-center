@@ -33,11 +33,18 @@ TECH_SPEC_FILE = "TECH_SPEC.md"
 DELIVERY_POLICY_FILE = "delivery-policy.json"
 DELIVERY_SKILL_CANDIDATES_DIR = "skills/delivery-candidates"
 DELIVERY_SKILL_PUBLISHED_DIR = "skills/delivery-published"
+DELIVERY_SKILL_CANARY_DIR = "skills/delivery-canary"
+DELIVERY_SKILL_REGISTRY_FILE = "skills/delivery-skill-registry.json"
+DELIVERY_SKILL_OBSERVATIONS_FILE = "skills/delivery-skill-observations.jsonl"
+DELIVERY_SKILL_FAILURES_FILE = "skills/delivery-failure-candidates.json"
+DELIVERY_SKILL_SYNTHESIS_FILE = "skills/delivery-skill-synthesis.json"
 WORKFLOW_PROFILE = "feature_delivery_v2"
 STAGES = ("intake", "breakdown", "locate", "implement", "verify", "close")
 SUBTASK_STATUSES = {"pending", "located", "implemented", "blocked", "skipped"}
 VALIDATION_STATUSES = {"passed", "failed", "skipped", "not_run", "recorded"}
 EVIDENCE_KINDS = {"recorded_external", "manual_verified", "executor"}
+SKILL_OUTCOMES = {"passed", "failed", "bypassed", "unobservable"}
+SKILL_LIFECYCLES = {"candidate", "canary", "published", "superseded", "rejected", "rolled_back"}
 
 
 def initialize_delivery_workflow(workspace_file: str | Path, task_id: str, *, actor: str = "") -> dict[str, Any]:
@@ -298,14 +305,24 @@ def delivery_skill_candidate(workspace_file: str | Path, task_id: str) -> dict[s
     located = [item for item in subtasks if item.get("code_targets")]
     eligible = status.get("state") == "done" and not missing and bool(located) and bool(passed)
     score = min(100, 35 + min(25, len(requirements) * 5) + min(25, len(located) * 5) + min(15, len(passed) * 3)) if eligible else 0
+    signature = _skill_signature(requirements, located, acceptance)
+    registry = _read_skill_registry(store)
+    similar = _similar_skills(signature, registry.get("skills", []))
     candidate = {
-        "schema_version": 1,
+        "schema_version": 2,
         "candidate_id": f"delivery-skill-{meta['task_id']}",
+        "skill_id": _skill_id(meta["task_id"]),
         "task_id": meta["task_id"],
         "title": str(meta.get("title", "")),
         "created_at": _now(),
         "eligible": eligible,
         "quality_score": score,
+        "lifecycle": "candidate",
+        "version": 1,
+        "signature": signature,
+        "evidence_refs": _bounded_refs([ref for row in passed for ref in row.get("evidence_refs", [])]),
+        "similar_skills": similar,
+        "recommended_disposition": "merge" if similar and similar[0]["similarity"] >= 0.8 else "add",
         "missing": missing,
         "requirements": [{"id": item["id"], "title": item["title"], "scope": item.get("scope", "")} for item in requirements[:30]],
         "code_targets": [target for item in located for target in item.get("code_targets", [])][:80],
@@ -315,11 +332,11 @@ def delivery_skill_candidate(workspace_file: str | Path, task_id: str) -> dict[s
     path = store.artifacts_dir / DELIVERY_SKILL_CANDIDATES_DIR / f"{meta['task_id']}.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(candidate, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    return {"generated": True, "candidate": candidate, "path": str(path), "next_action": "eligible 时执行 delivery-skill-publish；否则先补齐缺失验收或定位证据。"}
+    return {"generated": True, "candidate": candidate, "path": str(path), "next_action": "eligible 时先执行 delivery-skill-canary；否则先补齐缺失验收或定位证据。"}
 
 
 def publish_delivery_skill(workspace_file: str | Path, task_id: str) -> dict[str, Any]:
-    """Publish an approved candidate as an agent-readable Skill artifact."""
+    """Publish a canary only after objective, referenced observations pass."""
     store = WorkspaceStore(workspace_file)
     candidate_path = store.artifacts_dir / DELIVERY_SKILL_CANDIDATES_DIR / f"{task_id}.json"
     if not candidate_path.exists():
@@ -327,20 +344,238 @@ def publish_delivery_skill(workspace_file: str | Path, task_id: str) -> dict[str
     candidate = json.loads(candidate_path.read_text(encoding="utf-8"))
     if not candidate.get("eligible"):
         return {"published": False, "reason": "candidate_not_eligible", "missing": candidate.get("missing", []), "next_action": "补齐交付门禁后重新生成候选。"}
-    slug = _skill_slug(str(candidate.get("task_id", "delivery-skill")))
+    registry = _read_skill_registry(store)
+    skill = _registry_skill(registry, str(candidate.get("skill_id", "")))
+    if not skill or skill.get("lifecycle") != "canary":
+        return {"published": False, "reason": "canary_required", "next_action": "先执行 delivery-skill-canary，再记录带证据引用的真实使用结果。"}
+    evaluation = evaluate_delivery_skill(workspace_file, skill_id=str(skill["skill_id"]))
+    metrics = evaluation["metrics"]
+    if metrics["verified_passed"] < 3 or metrics["failed"] > 0:
+        return {"published": False, "reason": "canary_evidence_insufficient", "metrics": metrics, "next_action": "至少记录 3 条带证据引用的成功观测，且没有失败后再发布。"}
+    slug = _skill_slug(str(candidate.get("skill_id", "delivery-skill")))
     path = store.artifacts_dir / DELIVERY_SKILL_PUBLISHED_DIR / slug / "SKILL.md"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(_delivery_skill_markdown(candidate), encoding="utf-8")
     manifest_path = path.parent / "manifest.json"
-    manifest_path.write_text(json.dumps({"schema_version": 1, "task_id": candidate["task_id"], "candidate_id": candidate["candidate_id"], "quality_score": candidate["quality_score"], "published_at": _now()}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    return {"published": True, "task_id": candidate["task_id"], "quality_score": candidate["quality_score"], "path": str(path), "next_action": "将该 Skill 加入 Agent 指令的按需读取列表；后续仅从新的已验证交付生成候选。"}
+    published_at = _now()
+    manifest_path.write_text(json.dumps({"schema_version": 2, "skill_id": skill["skill_id"], "task_id": candidate["task_id"], "candidate_id": candidate["candidate_id"], "quality_score": candidate["quality_score"], "version": skill["version"], "published_at": published_at, "evidence_refs": skill.get("evidence_refs", [])}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    skill.update({"lifecycle": "published", "published_at": published_at, "updated_at": published_at, "published_path": str(path)})
+    _write_skill_registry(store, registry)
+    return {"published": True, "skill_id": skill["skill_id"], "task_id": candidate["task_id"], "quality_score": candidate["quality_score"], "path": str(path), "metrics": metrics, "next_action": "已进入默认检索范围；持续记录效果，失败时执行 delivery-skill-rollback。"}
 
 
 def delivery_skill_status(workspace_file: str | Path, task_id: str) -> dict[str, Any]:
     store = WorkspaceStore(workspace_file)
     candidate = store.artifacts_dir / DELIVERY_SKILL_CANDIDATES_DIR / f"{task_id}.json"
-    published = store.artifacts_dir / DELIVERY_SKILL_PUBLISHED_DIR / _skill_slug(task_id) / "SKILL.md"
-    return {"task_id": task_id, "candidate": str(candidate) if candidate.exists() else "", "published_skill": str(published) if published.exists() else "", "next_action": "delivery-skill-candidate" if not candidate.exists() else ("delivery-skill-publish" if not published.exists() else "use_published_skill")}
+    payload = _read_json(candidate, {}) if candidate.exists() else {}
+    skill = _registry_skill(_read_skill_registry(store), str(payload.get("skill_id", ""))) if payload else None
+    published = str(skill.get("published_path", "")) if skill else ""
+    lifecycle = str(skill.get("lifecycle", "candidate")) if skill else "candidate"
+    next_action = "delivery-skill-candidate" if not candidate.exists() else ("delivery-skill-canary" if lifecycle == "candidate" else ("delivery-skill-observe" if lifecycle == "canary" else "use_published_skill"))
+    return {"task_id": task_id, "candidate": str(candidate) if candidate.exists() else "", "published_skill": published, "skill_id": str(payload.get("skill_id", "")), "lifecycle": lifecycle, "next_action": next_action}
+
+
+def start_delivery_skill_canary(workspace_file: str | Path, task_id: str, *, actor: str = "") -> dict[str, Any]:
+    """Explicitly expose one eligible candidate to a bounded shadow/canary cohort."""
+    store = WorkspaceStore(workspace_file)
+    candidate_path = store.artifacts_dir / DELIVERY_SKILL_CANDIDATES_DIR / f"{task_id}.json"
+    if not candidate_path.exists():
+        return {"started": False, "reason": "candidate_not_found", "next_action": "先执行 delivery-skill-candidate。"}
+    candidate = _read_json(candidate_path, {})
+    if not candidate.get("eligible"):
+        return {"started": False, "reason": "candidate_not_eligible", "next_action": "补齐交付门禁后重新生成候选。"}
+    registry = _read_skill_registry(store)
+    skill_id = str(candidate.get("skill_id", ""))
+    existing = _registry_skill(registry, skill_id)
+    if existing and existing.get("lifecycle") in {"canary", "published"}:
+        return {"started": False, "reason": "already_active", "skill": existing, "next_action": "记录观测或查看效果评估。"}
+    if candidate.get("recommended_disposition") == "merge":
+        return {"started": False, "reason": "merge_review_required", "similar_skills": candidate.get("similar_skills", []), "next_action": "先人工确认是否合并，避免重复 Skill 进入灰度。"}
+    now = _now()
+    skill = {"schema_version": 1, "skill_id": skill_id, "task_id": task_id, "candidate_id": candidate.get("candidate_id", ""), "title": _bounded(str(candidate.get("title", "")), 160), "lifecycle": "canary", "version": 1, "signature": candidate.get("signature", {}), "evidence_refs": _bounded_refs(candidate.get("evidence_refs", [])), "created_at": now, "updated_at": now, "canary_started_at": now, "actor": _bounded(actor)}
+    registry.setdefault("skills", []).append(skill)
+    canary_path = store.artifacts_dir / DELIVERY_SKILL_CANARY_DIR / _skill_slug(skill_id) / "SKILL.md"
+    canary_path.parent.mkdir(parents=True, exist_ok=True)
+    canary_path.write_text(_delivery_skill_markdown(candidate), encoding="utf-8")
+    skill["canary_path"] = str(canary_path)
+    _write_skill_registry(store, registry)
+    return {"started": True, "skill": skill, "path": str(canary_path), "next_action": "在真实相似任务中以 shadow/canary 方式使用，并用 delivery-skill-observe 记录结果。"}
+
+
+def record_delivery_skill_observation(workspace_file: str | Path, skill_id: str, *, outcome: str, evidence_refs: list[str] | None = None, latency_ms: int | None = None, token_count: int | None = None, actor: str = "") -> dict[str, Any]:
+    """Append a privacy-safe, evidence-referenced Skill outcome observation."""
+    normalized = outcome.strip().lower()
+    if normalized not in SKILL_OUTCOMES:
+        raise ValueError(f"unknown skill outcome: {outcome}")
+    store = WorkspaceStore(workspace_file)
+    skill = _registry_skill(_read_skill_registry(store), skill_id)
+    if not skill or skill.get("lifecycle") not in {"canary", "published"}:
+        return {"recorded": False, "reason": "skill_not_active", "next_action": "只能为 canary 或 published Skill 记录观测。"}
+    refs = _bounded_refs(evidence_refs)
+    if normalized == "passed" and not refs:
+        return {"recorded": False, "reason": "evidence_required", "next_action": "成功观测必须提供验证证据引用，不能用模型自评替代。"}
+    row = {"schema_version": 1, "observation_id": f"sobs-{uuid4().hex[:12]}", "skill_id": skill_id, "outcome": normalized, "evidence_refs": refs, "latency_ms": _bounded_metric(latency_ms), "token_count": _bounded_metric(token_count), "actor": _bounded(actor), "observed_at": _now()}
+    with FileLock(str(store.lock_file)):
+        with (store.artifacts_dir / DELIVERY_SKILL_OBSERVATIONS_FILE).open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(row, ensure_ascii=False) + "\n")
+    return {"recorded": True, "observation": row, "metrics": evaluate_delivery_skill(workspace_file, skill_id=skill_id)["metrics"]}
+
+
+def evaluate_delivery_skill(workspace_file: str | Path, *, skill_id: str = "") -> dict[str, Any]:
+    """Read bounded observations; evaluation never changes lifecycle automatically."""
+    store = WorkspaceStore(workspace_file)
+    rows = [row for row in _recent_skill_observations(store) if not skill_id or row.get("skill_id") == skill_id]
+    outcomes = {name: sum(row.get("outcome") == name for row in rows) for name in SKILL_OUTCOMES}
+    verified_passed = sum(row.get("outcome") == "passed" and bool(row.get("evidence_refs")) for row in rows)
+    measured_latency = [int(row["latency_ms"]) for row in rows if isinstance(row.get("latency_ms"), int)]
+    measured_tokens = [int(row["token_count"]) for row in rows if isinstance(row.get("token_count"), int)]
+    metrics = {"observations": len(rows), **outcomes, "verified_passed": verified_passed, "success_rate": round(outcomes["passed"] / max(1, outcomes["passed"] + outcomes["failed"]), 4), "bypass_rate": round(outcomes["bypassed"] / max(1, len(rows)), 4), "avg_latency_ms": round(sum(measured_latency) / len(measured_latency), 2) if measured_latency else None, "avg_token_count": round(sum(measured_tokens) / len(measured_tokens), 2) if measured_tokens else None}
+    return {"skill_id": skill_id, "metrics": metrics, "recommendation": "可以发布" if metrics["verified_passed"] >= 3 and metrics["failed"] == 0 else "继续灰度并记录真实验证证据"}
+
+
+def rollback_delivery_skill(workspace_file: str | Path, skill_id: str, *, reason: str, actor: str = "") -> dict[str, Any]:
+    """Remove a published Skill from default recommendation without deleting evidence."""
+    store = WorkspaceStore(workspace_file)
+    registry = _read_skill_registry(store)
+    skill = _registry_skill(registry, skill_id)
+    if not skill or skill.get("lifecycle") not in {"canary", "published"}:
+        return {"rolled_back": False, "reason": "skill_not_active", "next_action": "只能回滚当前 canary 或 published Skill。"}
+    skill.update({"lifecycle": "rolled_back", "rollback_reason": _bounded(reason, 500), "updated_at": _now(), "actor": _bounded(actor)})
+    _write_skill_registry(store, registry)
+    return {"rolled_back": True, "skill": skill, "next_action": "历史观测和证据仍保留；需要修订时从新的已验证交付生成候选。"}
+
+
+def recommend_delivery_skills(workspace_file: str | Path, intent: str, *, limit: int = 5) -> dict[str, Any]:
+    """Retrieve only published Skills using bounded structural token overlap."""
+    store = WorkspaceStore(workspace_file)
+    query_terms = set(_search_terms(intent))
+    matches = []
+    for skill in _read_skill_registry(store).get("skills", []):
+        if skill.get("lifecycle") != "published":
+            continue
+        terms = set(skill.get("signature", {}).get("terms", []))
+        overlap = len(query_terms & terms) / max(1, len(query_terms | terms))
+        if overlap:
+            matches.append({"skill_id": skill.get("skill_id", ""), "title": skill.get("title", ""), "version": skill.get("version", 1), "score": round(overlap, 4), "path": skill.get("published_path", ""), "evidence_refs": skill.get("evidence_refs", [])[:10]})
+    matches.sort(key=lambda item: (-item["score"], item["skill_id"]))
+    return {"intent_terms": sorted(query_terms)[:20], "skills": matches[:max(1, min(limit, 20))], "next_action": "读取命中的 published Skill；没有命中时按正常交付流程处理，不得把空结果理解为不存在经验。"}
+
+
+def derive_delivery_failure_candidates(workspace_file: str | Path, *, limit_tasks: int = 200) -> dict[str, Any]:
+    """Offline-only failure clustering; stores no validation summaries or source text."""
+    store = WorkspaceStore(workspace_file)
+    groups: dict[str, dict[str, Any]] = {}
+    task_root = store.artifacts_dir / "tasks"
+    for task_dir in sorted((path for path in task_root.glob("*") if path.is_dir()), key=lambda path: path.name)[-max(1, min(limit_tasks, 500)):]:
+        for receipt in _recent_receipts(task_dir):
+            if receipt.get("status") != "failed":
+                continue
+            profile = _bounded(str(receipt.get("profile_id") or receipt.get("command") or "external"), 80)
+            acceptance = sorted(_bounded_refs(receipt.get("acceptance_ids", [])))
+            key = hashlib.sha256((profile + "|" + ",".join(acceptance)).encode("utf-8")).hexdigest()[:16]
+            row = groups.setdefault(key, {"pattern_id": f"failure-{key}", "profile_id": profile, "acceptance_ids": acceptance, "task_refs": [], "evidence_refs": []})
+            row["task_refs"].append(hashlib.sha256(task_dir.name.encode("utf-8")).hexdigest()[:12])
+            row["evidence_refs"].extend(_bounded_refs(receipt.get("evidence_refs", [])))
+    candidates = []
+    for row in groups.values():
+        support = len(set(row["task_refs"]))
+        if support < 2:
+            continue
+        candidates.append({"schema_version": 1, "pattern_id": row["pattern_id"], "profile_id": row["profile_id"], "acceptance_ids": row["acceptance_ids"], "support": support, "task_refs": sorted(set(row["task_refs"]))[:50], "evidence_refs": _bounded_refs(row["evidence_refs"]), "proposed_action": "先检查验证 profile、环境和验收范围；确认根因后再形成可审核的反模式或修复 Skill。"})
+    candidates.sort(key=lambda row: (-row["support"], row["pattern_id"]))
+    payload = {"schema_version": 1, "generated_at": _now(), "candidates": candidates[:100], "privacy": "仅保存哈希任务引用、验证 profile、验收标识和证据引用；不保存原始日志、源码或需求正文。"}
+    _write_json(store.artifacts_dir / DELIVERY_SKILL_FAILURES_FILE, payload)
+    return {"generated": True, "path": str(store.artifacts_dir / DELIVERY_SKILL_FAILURES_FILE), **payload}
+
+
+def synthesize_delivery_skill_trajectories(workspace_file: str | Path, *, min_support: int = 3) -> dict[str, Any]:
+    """Offline horizontal synthesis across proven candidates, never on query hot paths."""
+    store = WorkspaceStore(workspace_file)
+    clusters: dict[str, list[dict[str, Any]]] = {}
+    candidates_dir = store.artifacts_dir / DELIVERY_SKILL_CANDIDATES_DIR
+    for path in candidates_dir.glob("*.json"):
+        candidate = _read_json(path, {})
+        if not candidate.get("eligible"):
+            continue
+        terms = candidate.get("signature", {}).get("terms", [])
+        key = hashlib.sha256("|".join(terms[:8]).encode("utf-8")).hexdigest()[:16]
+        clusters.setdefault(key, []).append(candidate)
+    syntheses = []
+    for key, candidates in clusters.items():
+        if len(candidates) < max(2, min_support):
+            continue
+        common_targets = sorted(set.intersection(*(set(item.get("code_targets", [])) for item in candidates))) if candidates else []
+        syntheses.append({"schema_version": 1, "synthesis_id": f"synthesis-{key}", "support": len(candidates), "candidate_refs": [str(item.get("candidate_id", "")) for item in candidates][:50], "terms": candidates[0].get("signature", {}).get("terms", [])[:20], "common_code_targets": common_targets[:30], "invariant": "多个独立且已验证交付共享相同结构特征；仅作为候选经验，需人工审核后才可形成 Skill。"})
+    payload = {"schema_version": 1, "generated_at": _now(), "min_support": max(2, min_support), "syntheses": sorted(syntheses, key=lambda row: (-row["support"], row["synthesis_id"]))[:100], "execution": "offline_only"}
+    _write_json(store.artifacts_dir / DELIVERY_SKILL_SYNTHESIS_FILE, payload)
+    return {"generated": True, "path": str(store.artifacts_dir / DELIVERY_SKILL_SYNTHESIS_FILE), **payload}
+
+
+def _read_skill_registry(store: WorkspaceStore) -> dict[str, Any]:
+    return _read_json(store.artifacts_dir / DELIVERY_SKILL_REGISTRY_FILE, {"schema_version": 1, "skills": []})
+
+
+def _write_skill_registry(store: WorkspaceStore, registry: dict[str, Any]) -> None:
+    registry["schema_version"] = 1
+    registry["updated_at"] = _now()
+    registry["skills"] = [item for item in registry.get("skills", []) if isinstance(item, dict) and item.get("lifecycle") in SKILL_LIFECYCLES][-500:]
+    with FileLock(str(store.lock_file)):
+        _write_json(store.artifacts_dir / DELIVERY_SKILL_REGISTRY_FILE, registry)
+
+
+def _registry_skill(registry: dict[str, Any], skill_id: str) -> dict[str, Any] | None:
+    return next((item for item in registry.get("skills", []) if item.get("skill_id") == skill_id), None)
+
+
+def _recent_skill_observations(store: WorkspaceStore) -> list[dict[str, Any]]:
+    path = store.artifacts_dir / DELIVERY_SKILL_OBSERVATIONS_FILE
+    if not path.exists():
+        return []
+    rows: list[dict[str, Any]] = []
+    for line in path.read_text(encoding="utf-8").splitlines()[-10_000:]:
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(row, dict):
+            rows.append(row)
+    return rows
+
+
+def _skill_id(task_id: str) -> str:
+    return f"dskill-{hashlib.sha256(task_id.encode('utf-8')).hexdigest()[:16]}"
+
+
+def _skill_signature(requirements: list[dict[str, Any]], subtasks: list[dict[str, Any]], acceptance: list[dict[str, Any]]) -> dict[str, Any]:
+    text = " ".join(
+        [str(item.get("title", "")) + " " + str(item.get("scope", "")) for item in requirements]
+        + [str(target) for item in subtasks for target in item.get("code_targets", [])]
+        + [str(item.get("verification_type", "")) for item in acceptance]
+    )
+    terms = _search_terms(text)
+    return {"terms": terms, "target_kinds": sorted({_bounded(str(target).split("#", 1)[0], 120) for item in subtasks for target in item.get("code_targets", []) if str(target).strip()})[:30], "verification_types": sorted({_bounded(str(item.get("verification_type", "test")), 80) for item in acceptance})[:10]}
+
+
+def _similar_skills(signature: dict[str, Any], skills: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    source = set(signature.get("terms", []))
+    matches = []
+    for skill in skills:
+        if skill.get("lifecycle") not in {"canary", "published"}:
+            continue
+        other = set(skill.get("signature", {}).get("terms", []))
+        similarity = len(source & other) / max(1, len(source | other))
+        if similarity >= 0.35:
+            matches.append({"skill_id": skill.get("skill_id", ""), "title": skill.get("title", ""), "lifecycle": skill.get("lifecycle", ""), "similarity": round(similarity, 4)})
+    return sorted(matches, key=lambda row: (-row["similarity"], row["skill_id"]))[:5]
+
+
+def _bounded_metric(value: int | None) -> int | None:
+    if value is None:
+        return None
+    try:
+        return min(10_000_000, max(0, int(value)))
+    except (TypeError, ValueError):
+        return None
 
 
 def _gate_for_target(task_dir: Path, target: str) -> dict[str, Any]:
@@ -436,7 +671,13 @@ def _normalize_policy(value: dict[str, Any]) -> dict[str, Any]:
 
 def _search_terms(text: str) -> list[str]:
     chunks = [part.strip().lower() for part in text.replace("/", " ").replace("_", " ").replace("-", " ").split()]
-    return list(dict.fromkeys(part[:80] for part in chunks if len(part) >= 2))[:20]
+    terms = [part[:80] for part in chunks if len(part) >= 2]
+    # CJK text commonly has no whitespace. Add bounded two-character terms so
+    # a query such as "发布接口" can retrieve a Skill tagged as "发布 接口".
+    for chunk in chunks:
+        cjk = "".join(char for char in chunk if "\u4e00" <= char <= "\u9fff")
+        terms.extend(cjk[index:index + 2] for index in range(max(0, len(cjk) - 1)))
+    return list(dict.fromkeys(term for term in terms if len(term) >= 2))[:20]
 
 
 def _tech_spec_markdown(meta: dict[str, Any], matrix: dict[str, Any]) -> str:
@@ -463,6 +704,7 @@ def _read_json(path: Path, default: dict[str, Any]) -> dict[str, Any]:
 
 
 def _write_json(path: Path, value: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
@@ -514,7 +756,7 @@ def _delivery_skill_markdown(candidate: dict[str, Any]) -> str:
 
 ## 执行流程 / Workflow
 
-1. 初始化 `feature_delivery_v1`，录入需求和验收标准。
+1. 初始化 `feature_delivery_v2`，录入需求和验收标准。
 2. 为每个子任务关联确切 `code_targets` 后再进入实现。
 3. 实现完成后记录真实验证回执；每个必需验收项必须有 `passed` 回执。
 4. 仅在所有门禁通过后关闭任务，并生成下一轮 Skill 候选。
