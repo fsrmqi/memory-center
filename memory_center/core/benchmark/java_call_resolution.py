@@ -477,6 +477,7 @@ def _unresolved_category(reason: str) -> str:
         "receiver_type_missing": "receiver_type_missing",
         "unqualified_or_dynamic": "dynamic_or_unqualified",
         "receiver_type_not_indexed": "external_or_missing_source",
+        "inherited_method_out_of_scope": "external_or_missing_source",
         "static_receiver_not_indexed": "external_or_missing_source",
         "static_receiver_without_visible_import": "out_of_scope_target",
         "target_out_of_scope": "out_of_scope_target",

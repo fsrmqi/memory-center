@@ -213,6 +213,8 @@ class JavaCallResolver:
         target_method: str,
     ) -> str:
         if not receiver_type:
+            if receiver in {"this", "super"}:
+                return "inherited_method_out_of_scope"
             if not receiver:
                 return "unqualified_or_dynamic"
             # A capitalized receiver is a static-style call.  It is not

@@ -546,11 +546,11 @@ def _parse_method_variable_types(text: str, method_spans: list[dict[str, Any]]) 
     out: dict[str, dict[str, str]] = {}
     local_decl = re.compile(
         r"(?:^|[;{]\s*|\n\s*)"
-        r"(?:final\s+)?(?P<type>[\w<>\.\[\]]+)\s+"
+        r"(?:final\s+)?(?P<type>[\w<>, ?\.\[\]]+)\s+"
         r"(?P<name>[a-zA-Z_]\w*)\s*(?:=|;)",
         re.M,
     )
-    foreach_decl = re.compile(r"for\s*\(\s*(?:final\s+)?(?P<type>[\w<>\.\[\]]+)\s+(?P<name>[a-zA-Z_]\w*)\s*:", re.M)
+    foreach_decl = re.compile(r"for\s*\(\s*(?:final\s+)?(?P<type>[\w<>, ?\.\[\]]+)\s+(?P<name>[a-zA-Z_]\w*)\s*:", re.M)
     catch_decl = re.compile(
         r"catch\s*\(\s*(?:@\w+(?:\([^)]*\))?\s*)*(?:final\s+)?"
         r"(?P<type>[\w<>\.\[\]]+(?:\s*\|\s*[\w<>\.\[\]]+)*)\s+"

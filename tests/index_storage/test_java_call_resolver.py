@@ -192,6 +192,12 @@ public class OrderController {
     assert result.unresolved_reason == "static_receiver_not_indexed"
 
 
+def test_this_call_without_workspace_declaration_is_inherited_scope_not_missing_type() -> None:
+    symbol = _symbol("api", "OrderController.java", "package com.example; public class OrderController { void run() { this.list(); } }")
+    result = _resolve([symbol], "OrderController.java", "list")
+    assert result.unresolved_reason == "inherited_method_out_of_scope"
+
+
 def test_external_static_import_is_not_confused_with_same_named_workspace_type() -> None:
     caller = """package com.example.order;
 import com.thirdparty.DateUtil;
@@ -270,6 +276,14 @@ import lombok.Data;
     assert result.target_class == "BaseRequest"
     assert result.resolution_level == "same_package_inherited_lombok_accessor"
     assert result.inferred_target is True
+
+
+def test_extracts_generic_enhanced_for_variable_type() -> None:
+    symbol = _symbol("api", "Demo.java", """package com.example;
+import java.util.Map;
+public class Demo { void run(Map<String, Long> values) { for (Map.Entry<String, Long> entry : values.entrySet()) { entry.getValue(); } } }
+""")
+    assert symbol["method_variable_types"]["run"]["entry"] == "Entry"
 
 
 def test_overload_keeps_matching_signature_evidence() -> None:
