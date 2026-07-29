@@ -230,6 +230,7 @@ def summarize_unresolved_java_calls(
     store = WorkspaceStore(workspace_file)
     category_counts: Counter[str] = Counter()
     reason_counts: Counter[str] = Counter()
+    receiver_shape_counts: Counter[str] = Counter()
     samples: list[dict[str, Any]] = []
     total_call_edges = 0
     unresolved_call_edges = 0
@@ -254,16 +255,19 @@ def summarize_unresolved_java_calls(
             if str(metadata.get("resolution_level", "") or "") != "unresolved":
                 continue
             unresolved_call_edges += 1
-            reason = str(metadata.get("unresolved_reason", "") or "unknown")
+            reason = _effective_unresolved_reason(metadata)
             category = _unresolved_category(reason)
+            receiver_shape = _receiver_shape(metadata)
             reason_counts[reason] += 1
             category_counts[category] += 1
+            receiver_shape_counts[receiver_shape] += 1
             if len(samples) < max_samples:
                 samples.append({
                     "source": _anchor_from_method_name(row["source_name"]),
                     "target": _anchor_from_method_name(row["target_name"]),
                     "category": category,
                     "reason": reason,
+                    "receiver_shape": receiver_shape,
                     "confidence": round(float(row["confidence"] or 0.0), 4),
                 })
 
@@ -285,6 +289,7 @@ def summarize_unresolved_java_calls(
             "unresolved_rate": round(unresolved_call_edges / total_call_edges, 4) if total_call_edges else 0.0,
             "category_counts": dict(sorted(category_counts.items())),
             "reason_counts": dict(sorted(reason_counts.items())),
+            "receiver_shape_counts": dict(sorted(receiver_shape_counts.items())),
             "returned_sample_count": len(samples),
         },
         "categories": categories,
@@ -472,6 +477,8 @@ def _unresolved_category(reason: str) -> str:
         "receiver_type_missing": "receiver_type_missing",
         "unqualified_or_dynamic": "dynamic_or_unqualified",
         "receiver_type_not_indexed": "external_or_missing_source",
+        "static_receiver_not_indexed": "external_or_missing_source",
+        "static_receiver_without_visible_import": "out_of_scope_target",
         "target_out_of_scope": "out_of_scope_target",
         "lombok_target_out_of_scope": "out_of_scope_target",
         "target_method_not_indexed": "missing_method_or_polymorphism",
@@ -487,3 +494,37 @@ def _unresolved_recommendation(category: str) -> str:
         "missing_method_or_polymorphism": "Add focused interface/implementation or overload cases before changing polymorphic dispatch.",
         "unknown": "Inspect logical-anchor samples and add a dedicated unresolved_reason before implementing a fallback.",
     }[category]
+
+
+def _effective_unresolved_reason(metadata: Mapping[str, Any]) -> str:
+    """Refine legacy rows without requiring a full reindex.
+
+    Earlier generations classified every receiver with no extracted type as
+    ``receiver_type_missing``.  A capitalized receiver is instead a static
+    class-style invocation; when it has no workspace declaration it belongs
+    to dependency/scope coverage, not local type extraction.  The original
+    graph edge remains untouched and no target is synthesized.
+    """
+
+    reason = str(metadata.get("unresolved_reason", "") or "unknown")
+    receiver = str(metadata.get("receiver", "") or "").strip()
+    receiver_type = str(metadata.get("receiver_type", "") or "").strip()
+    if reason == "receiver_type_missing" and not receiver_type and _is_class_like_receiver(receiver):
+        return "static_receiver_not_indexed"
+    return reason
+
+
+def _receiver_shape(metadata: Mapping[str, Any]) -> str:
+    receiver = str(metadata.get("receiver", "") or "").strip()
+    receiver_type = str(metadata.get("receiver_type", "") or "").strip()
+    if receiver_type:
+        return "typed_receiver"
+    if not receiver:
+        return "unqualified_or_dynamic"
+    if _is_class_like_receiver(receiver):
+        return "static_class_receiver"
+    return "untyped_instance_receiver"
+
+
+def _is_class_like_receiver(receiver: str) -> bool:
+    return bool(receiver) and receiver[0:1].isupper()

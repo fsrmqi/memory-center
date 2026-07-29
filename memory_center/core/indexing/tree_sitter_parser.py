@@ -440,6 +440,7 @@ def _merge_parse_results(tree_result: JavaParseResult, regex_result: JavaParseRe
         imports=_merge_unique_strings(tree_result.imports, regex_result.imports),
         classes=_merge_unique_strings(tree_result.classes, regex_result.classes),
         interfaces=_merge_unique_strings(tree_result.interfaces, regex_result.interfaces),
+        type_supertypes={**regex_result.type_supertypes, **tree_result.type_supertypes},
         methods=_merge_unique_strings(tree_result.methods, regex_result.methods),
         method_signatures=_merge_unique_dicts(tree_result.method_signatures, regex_result.method_signatures),
         fields=_merge_unique_strings(tree_result.fields, regex_result.fields),
@@ -494,6 +495,7 @@ def _merge_supplements(tree_result: JavaParseResult, supplements: JavaParseResul
         imports=_merge_unique_strings(list(tree_result.imports), []),
         classes=_merge_unique_strings(list(tree_result.classes), []),
         interfaces=_merge_unique_strings(list(tree_result.interfaces), []),
+        type_supertypes=dict(supplements.type_supertypes),
         methods=_merge_unique_strings(list(tree_result.methods), []),
         method_signatures=_merge_unique_dicts(
             list(tree_result.method_signatures),

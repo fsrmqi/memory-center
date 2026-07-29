@@ -16,6 +16,8 @@ class ClassInfo:
     method_signatures: list[dict[str, Any]] = field(default_factory=list)
     fields: set[str] = field(default_factory=set)
     annotations: set[str] = field(default_factory=set)
+    imports: tuple[str, ...] = ()
+    supertypes: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -78,6 +80,8 @@ def build_java_class_index(symbols: list[dict[str, Any]]) -> JavaClassIndex:
                 method_signatures=signatures,
                 fields=fields,
                 annotations=annotations,
+                imports=tuple(str(item) for item in sym.get("imports", []) if item),
+                supertypes=tuple(str(item) for item in (sym.get("type_supertypes", {}) or {}).get(class_name, []) if item),
             )
             by_fqcn[fqcn] = info
             by_package_simple[(package, class_name)] = info
@@ -134,6 +138,15 @@ class JavaCallResolver:
                     inferred_target=True,
                     matched_signature=f"lombok_accessor:{lombok_field}",
                 )
+            for ancestor in self._ancestor_candidates(info):
+                if target_method in ancestor.methods:
+                    return self._resolved(owner_symbol, owner, call, ancestor, f"{level}_inherited", 0.8, arg_count)
+                lombok_field = _lombok_accessor_field(ancestor, target_method)
+                if lombok_field:
+                    return self._resolved(
+                        owner_symbol, owner, call, ancestor, f"{level}_inherited_lombok_accessor", 0.82, arg_count,
+                        inferred_target=True, matched_signature=f"lombok_accessor:{lombok_field}",
+                    )
 
         fallback_class = receiver_type or _class_like_receiver(receiver) or "unknown"
         return ResolvedCall(
@@ -153,7 +166,7 @@ class JavaCallResolver:
             line=int(call.get("line") or 0),
             arg_count=arg_count,
             inferred_target=True,
-            unresolved_reason=self._unresolved_reason(receiver, receiver_type, target_method),
+            unresolved_reason=self._unresolved_reason(owner_symbol, receiver, receiver_type, target_method),
             evidence=dict(call),
         )
 
@@ -192,9 +205,28 @@ class JavaCallResolver:
             evidence=dict(call),
         )
 
-    def _unresolved_reason(self, receiver: str, receiver_type: str, target_method: str) -> str:
+    def _unresolved_reason(
+        self,
+        owner_symbol: dict[str, Any],
+        receiver: str,
+        receiver_type: str,
+        target_method: str,
+    ) -> str:
         if not receiver_type:
-            return "unqualified_or_dynamic" if not receiver else "receiver_type_missing"
+            if not receiver:
+                return "unqualified_or_dynamic"
+            # A capitalized receiver is a static-style call.  It is not
+            # evidence that local variable type extraction failed, and must
+            # never be turned into a workspace edge when the class is absent.
+            static_type = _class_like_receiver(receiver)
+            if static_type:
+                candidates = self._visible_type_candidates(owner_symbol, static_type)
+                if not candidates:
+                    return "static_receiver_not_indexed"
+                if any(target_method in info.methods for info in candidates):
+                    return "static_receiver_without_visible_import"
+                return "target_method_not_indexed"
+            return "receiver_type_missing"
         candidates = self.class_index.by_simple.get(receiver_type, [])
         if not candidates:
             return "receiver_type_not_indexed"
@@ -203,6 +235,51 @@ class JavaCallResolver:
         if any(_lombok_accessor_field(info, target_method) for info in candidates):
             return "lombok_target_out_of_scope"
         return "target_method_not_indexed"
+
+    def _visible_type_candidates(self, owner_symbol: dict[str, Any], class_name: str) -> list[ClassInfo]:
+        """Return only workspace classes visible to this source file.
+
+        A simple-name lookup is intentionally insufficient here: a project
+        can contain a local ``DateUtil`` while the source imports a third-party
+        ``DateUtil``. Treating that collision as a local missing method sends
+        external static calls into the polymorphism queue and encourages false
+        call edges. Visibility mirrors the resolver's import/package rules.
+        """
+
+        candidates: list[ClassInfo] = []
+        package = str(owner_symbol.get("package") or "")
+        same_package = self.class_index.by_package_simple.get((package, class_name))
+        if same_package:
+            candidates.append(same_package)
+        for imported in _normal_imports(owner_symbol.get("imports", []) or []):
+            if imported.endswith(f".{class_name}"):
+                info = self.class_index.by_fqcn.get(imported)
+                if info:
+                    candidates.append(info)
+        for imported_package in _wildcard_import_packages(owner_symbol.get("imports", []) or []):
+            info = self.class_index.by_package_simple.get((imported_package, class_name))
+            if info:
+                candidates.append(info)
+        return _unique_class_infos(candidates)
+
+    def _ancestor_candidates(self, info: ClassInfo) -> list[ClassInfo]:
+        """Follow only directly visible, workspace-declared parent types."""
+
+        candidates: list[ClassInfo] = []
+        for parent in info.supertypes:
+            same_package = self.class_index.by_package_simple.get((info.package, parent))
+            if same_package:
+                candidates.append(same_package)
+            for imported in _normal_imports(list(info.imports)):
+                if imported.endswith(f".{parent}"):
+                    target = self.class_index.by_fqcn.get(imported)
+                    if target:
+                        candidates.append(target)
+            for imported_package in _wildcard_import_packages(list(info.imports)):
+                target = self.class_index.by_package_simple.get((imported_package, parent))
+                if target:
+                    candidates.append(target)
+        return _unique_class_infos(candidates)
 
     def _owner_class(self, owner_symbol: dict[str, Any]) -> ClassInfo:
         project = str(owner_symbol.get("project") or "")
@@ -346,6 +423,17 @@ def _normalize_type_name(value: str) -> str:
         return ""
     clean = clean.split("<", 1)[0].rstrip("[]")
     return clean.split(".")[-1]
+
+
+def _unique_class_infos(candidates: list[ClassInfo]) -> list[ClassInfo]:
+    result: list[ClassInfo] = []
+    seen: set[str] = set()
+    for info in candidates:
+        if info.fqcn in seen:
+            continue
+        seen.add(info.fqcn)
+        result.append(info)
+    return result
 
 
 def _safe_int_or_none(value: Any) -> int | None:

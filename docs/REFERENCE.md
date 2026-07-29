@@ -313,6 +313,25 @@ Golden Benchmark summary 会聚合：
 
 Golden performance baseline / compare 会继续保存并比较这些字段；当 `agent_next_steps` 覆盖率下降、低效搜索建议增加或 reduction rate 下降时，`performance_gate.agent_guidance.passed=false`，整体 gate 也会失败。
 
+### Java 调用解析真实精度 / Java Call Resolution Precision
+
+先执行只读诊断，再建立私有逻辑锚点案例；诊断不会读取或输出源码正文、文件路径或实际项目名：
+
+```bash
+memory-center eval-java-call-resolution-unresolved --workspace <workspace.yaml> --limit 30
+```
+
+输出中的 `receiver_shape_counts` 用于区分 `static_class_receiver`、`typed_receiver`、`untyped_instance_receiver` 与无接收者调用。静态类或缺失依赖源码的调用属于 `external_or_missing_source`，不能为了降低未解析率而合成为项目内调用边。只对 `receiver_type_missing`、`missing_method_or_polymorphism` 等可复现类别建立 3-5 个私有 case，并运行：
+
+```bash
+memory-center eval-java-call-resolution --workspace <workspace.yaml> --cases <private-logical-cases.yaml>
+memory-center release-gate --workspace <workspace.yaml> --java-call-cases <private-logical-cases.yaml>
+```
+
+`private-logical-cases.yaml` 仅保存 `Class#method` 逻辑锚点和预期关系，不得保存路径、源码片段、请求正文或密钥。
+
+Run the read-only diagnostic before creating private logical-anchor cases. `receiver_shape_counts` separates static/dependency calls from missing local receiver types. Never synthesize workspace call edges just to lower the unresolved rate; only promote reproducible local categories into a 3-5 case private suite and release gate.
+
 日常运营视图也会暴露相同方向的轻量检查：
 
 - `memory_eval_agent_guidance` / `eval-agent-guidance` / `/workspace/eval-agent-guidance`

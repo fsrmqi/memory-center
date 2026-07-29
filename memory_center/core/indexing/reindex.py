@@ -619,6 +619,7 @@ def parse_java_symbols(project: str, rel: str, text: str) -> JavaSymbol:
         package=parsed.package,
         classes=parsed.classes,
         interfaces=parsed.interfaces,
+        type_supertypes=parsed.type_supertypes,
         methods=parsed.methods,
         method_signatures=parsed.method_signatures,
         fields=parsed.fields,

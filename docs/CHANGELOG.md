@@ -1,5 +1,47 @@
 # Changelog / 更新日志
 
+## 4.3.29 继承 Lombok 访问器解析 / Inherited Lombok Accessor Resolution
+
+- Java 索引新增直接父类型事实；当接收者类型、父类可见性、父类字段和 Lombok 注解均可验证时，调用可定位到父类的推断访问器。
+- 只沿工作区内直接可见的继承关系解析；外部 Mapper 基类、多实现接口和不确定泛型分派仍保持未解析，避免伪造业务调用边。
+
+## 4.3.29 Inherited Lombok Accessor Resolution
+
+- Java indexing now carries direct parent-type facts. A call resolves to an inherited Lombok accessor only when receiver type, parent visibility, backing field, and Lombok annotation are all verifiable.
+- Resolution follows only directly visible workspace inheritance. External mapper bases, multi-implementation interfaces, and uncertain generic dispatch remain unresolved to avoid false business edges.
+
+## 4.3.28 静态同名类型碰撞隔离 / Static Simple-Name Collision Isolation
+
+- 静态调用的未解析原因现在按当前文件的包与 import 可见性判断，不再因工作区其他位置存在同名类而把第三方工具类误列为“方法缺失/多态”。
+- 这项调整只改善分类与优化优先级，不为外部静态 API 合成项目内调用边。
+
+## 4.3.28 Static Simple-Name Collision Isolation
+
+- Static-call unresolved reasons now honor package and import visibility, so a same-named class elsewhere in the workspace cannot misclassify a third-party utility as a missing-method or polymorphism case.
+- This change improves diagnostics and prioritization only; it never synthesizes workspace call edges for external static APIs.
+
+## 4.3.27 Catch 参数类型提取 / Catch Parameter Type Extraction
+
+- Java 补充解析器现在会把单类型 `catch (Exception e)` 参数写入所属方法的局部类型表，使 `e.getMessage()` 等调用正确归为已知外部类型，而非本地接收者类型缺失。
+- 多异常联合 catch 保持未推断，避免选择其中一个类型后产生错误的项目内调用边。
+
+## 4.3.27 Catch Parameter Type Extraction
+
+- The Java supplement parser now records single-type `catch (Exception e)` parameters in the owning method's local type table, so calls such as `e.getMessage()` are classified as known external types rather than missing local receiver types.
+- Multi-catch remains intentionally unresolved, avoiding a false workspace edge from choosing one possible exception type.
+
+## 4.3.26 Java 未解析调用诊断收敛 / Java Unresolved-Call Diagnostics Refinement
+
+- 静态类风格调用且目标类不在工作区时，改标记为 `static_receiver_not_indexed`，不再误归类为本地接收者类型缺失；不会为外部 API 合成项目内调用边。
+- 未解析调用报告新增 `receiver_shape_counts`，并可在不全量重建旧索引的前提下，将旧记录中的静态类调用按外部依赖范围重新分类。
+- CLI、MCP admin 与 HTTP 继续共享同一只读诊断；文档明确 Agent 应先按类别采样，再用私有逻辑锚点 case 和 release gate 验证单一解析修复。
+
+## 4.3.26 Java Unresolved-Call Diagnostics Refinement
+
+- Static class-style calls whose target is outside the workspace now use `static_receiver_not_indexed` instead of being misclassified as missing local receiver types; no workspace edge is synthesized for external APIs.
+- The unresolved-call report now includes `receiver_shape_counts` and refines legacy static-call rows at read time, without requiring a full reindex.
+- CLI, MCP admin, and HTTP continue to share the same read-only diagnostic. Documentation now requires category-first sampling followed by private logical-anchor cases and a release-gate check for a single parser fix.
+
 ## 4.3.25 工作流回滚保护与刷新队列并发修复 / Workflow Rollback and Refresh Queue Fixes
 
 - 已回滚的 workflow profile 不再参与自动推荐；全部画像都被回滚时明确返回 withheld 状态，而非继续给出不安全默认流程。

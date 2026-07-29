@@ -264,10 +264,41 @@ def test_unresolved_java_call_report_groups_reasons_without_paths(tmp_path: Path
         "missing_method_or_polymorphism": 1,
     }
     assert result["samples"] == [
-        {"source": "OrderController#submit", "target": "OrderHandler#handle", "category": "missing_method_or_polymorphism", "reason": "target_method_not_indexed", "confidence": 0.3},
-        {"source": "OrderController#submit", "target": "RemoteClient#send", "category": "external_or_missing_source", "reason": "receiver_type_not_indexed", "confidence": 0.3},
+        {"source": "OrderController#submit", "target": "OrderHandler#handle", "category": "missing_method_or_polymorphism", "reason": "target_method_not_indexed", "receiver_shape": "unqualified_or_dynamic", "confidence": 0.3},
+        {"source": "OrderController#submit", "target": "RemoteClient#send", "category": "external_or_missing_source", "reason": "receiver_type_not_indexed", "receiver_shape": "unqualified_or_dynamic", "confidence": 0.3},
     ]
     assert "src/" not in str(result)
+
+
+def test_unresolved_java_call_report_reclassifies_legacy_static_receivers(tmp_path: Path) -> None:
+    workspace = _workspace(tmp_path)
+    store = WorkspaceStore(workspace)
+    source_id = node_id("Method", "OrderController.submit", "api", "src/OrderController.java")
+    target_id = node_id("Method", "Assert.notNull", "api", "src/OrderController.java")
+    with RuntimeStore(store.graph_db_path) as graph:
+        graph.bulk_write(
+            [
+                GraphNode(source_id, "Method", "OrderController.submit", "api", "src/OrderController.java"),
+                GraphNode(target_id, "Method", "Assert.notNull", "api", "src/OrderController.java"),
+            ],
+            [
+                GraphEdge(
+                    edge_id(source_id, target_id, "CALLS_METHOD"),
+                    source_id,
+                    target_id,
+                    "CALLS_METHOD",
+                    0.3,
+                    {"resolution_level": "unresolved", "unresolved_reason": "receiver_type_missing", "receiver": "Assert", "receiver_type": ""},
+                ),
+            ],
+        )
+
+    result = summarize_unresolved_java_calls(workspace, sample_limit=1)
+
+    assert result["summary"]["category_counts"] == {"external_or_missing_source": 1}
+    assert result["summary"]["reason_counts"] == {"static_receiver_not_indexed": 1}
+    assert result["summary"]["receiver_shape_counts"] == {"static_class_receiver": 1}
+    assert result["samples"][0]["reason"] == "static_receiver_not_indexed"
 
 
 def test_unresolved_java_call_report_is_available_from_cli_and_http(tmp_path: Path) -> None:

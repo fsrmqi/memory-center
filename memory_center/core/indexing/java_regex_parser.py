@@ -26,6 +26,7 @@ class RegexJavaParser:
         ]
         classes, class_lines = _parse_type_declarations(cleaned, ("class", "enum", "record"))
         interfaces, interface_lines = _parse_type_declarations(cleaned, ("interface",))
+        type_supertypes = _parse_type_supertypes(cleaned)
         annotations = sorted(set(re.findall(r"@(\w+)(?:\(|\s|\n)", cleaned)))
 
         fields, field_types, field_lines = _parse_fields(cleaned)
@@ -53,6 +54,7 @@ class RegexJavaParser:
             imports=imports,
             classes=classes,
             interfaces=interfaces,
+            type_supertypes=type_supertypes,
             methods=methods,
             method_signatures=method_signatures,
             fields=fields,
@@ -121,6 +123,7 @@ class RegexJavaParser:
         seed_field_types: dict[str, str] = dict(regex_field_types)
         seed_field_types.update(constants)
         known_types = list(classes or _parse_type_declarations(cleaned, ("class", "enum", "record"))[0])
+        type_supertypes = _parse_type_supertypes(cleaned)
         method_spans = _parse_method_spans(cleaned, type_names=known_types)
         method_spans.extend(_parse_interface_methods(cleaned))
         method_signatures = _build_method_signatures(method_spans)
@@ -131,6 +134,7 @@ class RegexJavaParser:
         config_usages = _parse_config_usages(cleaned)
         data_resources = _parse_data_resources(cleaned)
         return JavaParseResult(
+            type_supertypes=type_supertypes,
             method_signatures=method_signatures,
             constants=constants,
             method_variable_types=method_variable_types,
@@ -214,6 +218,27 @@ def _parse_type_declarations(text: str, keywords: tuple[str, ...]) -> tuple[list
         names.append(name)
         lines.setdefault(name, _line_of(text, match.start(2)))
     return sorted(set(names)), lines
+
+
+def _parse_type_supertypes(text: str) -> dict[str, list[str]]:
+    """Extract direct extends/implements names without attempting type solving."""
+
+    result: dict[str, list[str]] = {}
+    declaration = re.compile(
+        r"\b(?:class|interface|enum|record)\s+(?P<name>\w+)(?:\s*<[^{}]*?>)?(?P<header>[^{}]*)\{",
+        re.M,
+    )
+    for match in declaration.finditer(text):
+        parents: list[str] = []
+        header = match.group("header") or ""
+        for relation in re.finditer(r"\b(?:extends|implements)\s+(.+?)(?=\s+\b(?:extends|implements)\b|$)", header):
+            for candidate in _split_top_level(relation.group(1)):
+                simple = _simple_type(candidate.strip())
+                if simple and simple not in parents:
+                    parents.append(simple)
+        if parents:
+            result[match.group("name")] = parents
+    return result
 
 
 def _parse_fields(text: str) -> tuple[list[str], dict[str, str], dict[str, int]]:
@@ -526,6 +551,12 @@ def _parse_method_variable_types(text: str, method_spans: list[dict[str, Any]]) 
         re.M,
     )
     foreach_decl = re.compile(r"for\s*\(\s*(?:final\s+)?(?P<type>[\w<>\.\[\]]+)\s+(?P<name>[a-zA-Z_]\w*)\s*:", re.M)
+    catch_decl = re.compile(
+        r"catch\s*\(\s*(?:@\w+(?:\([^)]*\))?\s*)*(?:final\s+)?"
+        r"(?P<type>[\w<>\.\[\]]+(?:\s*\|\s*[\w<>\.\[\]]+)*)\s+"
+        r"(?P<name>[a-zA-Z_]\w*)\s*\)",
+        re.M,
+    )
     for span in method_spans:
         vars_for_method = _parse_params(span.get("params", ""))
         body = text[span["start"]:span["end"]]
@@ -533,6 +564,13 @@ def _parse_method_variable_types(text: str, method_spans: list[dict[str, Any]]) 
             vars_for_method.setdefault(match.group("name"), _simple_type(match.group("type")))
         for match in foreach_decl.finditer(body):
             vars_for_method.setdefault(match.group("name"), _simple_type(match.group("type")))
+        for match in catch_decl.finditer(body):
+            catch_type = match.group("type")
+            # Multi-catch has more than one possible runtime type. Keeping it
+            # unresolved is safer than selecting the first arm and emitting a
+            # potentially false workspace call edge.
+            if "|" not in catch_type:
+                vars_for_method.setdefault(match.group("name"), _simple_type(catch_type))
         out[span["name"]] = vars_for_method
     return out
 

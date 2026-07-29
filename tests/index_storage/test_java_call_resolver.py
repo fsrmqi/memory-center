@@ -23,6 +23,7 @@ def _symbol(project: str, file: str, source: str) -> dict:
         "package": parsed.package,
         "classes": parsed.classes,
         "interfaces": parsed.interfaces,
+        "type_supertypes": parsed.type_supertypes,
         "methods": parsed.methods,
         "method_signatures": parsed.method_signatures,
         "fields": parsed.fields,
@@ -175,6 +176,100 @@ public class OrderNames {
     assert result.target_class == "OrderNames"
     assert result.resolution_level == "static_import"
     assert result.confidence == 0.85
+
+
+def test_static_receiver_without_workspace_source_is_not_counted_as_missing_local_type() -> None:
+    caller = """package com.example.order;
+public class OrderController {
+    void submit() { Assert.notNull("order"); }
+}
+"""
+    symbols = [_symbol("api", "OrderController.java", caller)]
+
+    result = _resolve(symbols, "OrderController.java", "notNull")
+
+    assert result.resolution_level == "unresolved"
+    assert result.unresolved_reason == "static_receiver_not_indexed"
+
+
+def test_external_static_import_is_not_confused_with_same_named_workspace_type() -> None:
+    caller = """package com.example.order;
+import com.thirdparty.DateUtil;
+public class OrderController {
+    void submit() { DateUtil.now(); }
+}
+"""
+    local_collision = """package com.example.internal;
+public class DateUtil {
+    public static void localOnly() {}
+}
+"""
+    result = _resolve(
+        [_symbol("api", "OrderController.java", caller), _symbol("api", "DateUtil.java", local_collision)],
+        "OrderController.java",
+        "now",
+    )
+
+    assert result.resolution_level == "unresolved"
+    assert result.unresolved_reason == "static_receiver_not_indexed"
+
+
+def test_catch_parameter_type_is_available_to_call_resolution() -> None:
+    caller = """package com.example.order;
+public class OrderController {
+    void submit() {
+        try { run(); }
+        catch (Exception e) { e.getMessage(); }
+    }
+    void run() {}
+}
+"""
+    symbol = _symbol("api", "OrderController.java", caller)
+
+    assert symbol["method_variable_types"]["submit"]["e"] == "Exception"
+    result = _resolve([symbol], "OrderController.java", "getMessage")
+
+    assert result.resolution_level == "unresolved"
+    assert result.receiver_type == "Exception"
+    assert result.unresolved_reason == "receiver_type_not_indexed"
+
+
+def test_multi_catch_parameter_remains_unresolved_without_guessing_a_type() -> None:
+    caller = """package com.example.order;
+public class OrderController {
+    void submit() {
+        try { run(); }
+        catch (IllegalArgumentException | IllegalStateException e) { e.getMessage(); }
+    }
+    void run() {}
+}
+"""
+    symbol = _symbol("api", "OrderController.java", caller)
+
+    assert "e" not in symbol["method_variable_types"]["submit"]
+
+
+def test_resolves_inherited_lombok_accessor_to_workspace_parent() -> None:
+    caller = """package com.example.order;
+public class OrderFacade { void submit(OrderRequest request) { request.getTenantId(); } }
+"""
+    child = """package com.example.order;
+import lombok.Data;
+@Data public class OrderRequest extends BaseRequest { private String orderId; }
+"""
+    parent = """package com.example.order;
+import lombok.Data;
+@Data public class BaseRequest { private Long tenantId; }
+"""
+    result = _resolve(
+        [_symbol("api", "OrderFacade.java", caller), _symbol("api", "OrderRequest.java", child), _symbol("api", "BaseRequest.java", parent)],
+        "OrderFacade.java",
+        "getTenantId",
+    )
+
+    assert result.target_class == "BaseRequest"
+    assert result.resolution_level == "same_package_inherited_lombok_accessor"
+    assert result.inferred_target is True
 
 
 def test_overload_keeps_matching_signature_evidence() -> None:
