@@ -224,6 +224,7 @@ MCP 当前公开的是 12 个 task-level tools：
 
 - `eval_parser_benchmark` — 真实 workspace 下的 regex / tree-sitter parser 对比评测；reindex 同时返回 parser、fallback 原因与 disagreement diagnostics
 - `eval_java_call_resolution` — 对 Java `CALLS_METHOD` 解析结果运行真实精度门禁；`name` 参数传 cases YAML 路径，cases 只允许逻辑锚点，不允许私有文件路径；传 `strict=true` 时会对 `forbidden_targets` 启用严格失败门禁
+- `eval_java_call_resolution_metrics` — 返回解析等级分布、链式调用数量、平均置信度和未解析率；仅返回聚合指标，不暴露路径、源码或私有 case
 - `eval_java_call_resolution_review` — 汇总未分类高置信 Java 调用边，按逻辑锚点去重后供人工回写为 `allowed_targets` 或 `forbidden_targets`
 - `eval_golden` — 对指定 workspace + cases 文件运行 Golden Benchmark；hybrid case 可用 `enable_vector: true` 显式启用 ANN 向量检索，用于概念查询回归
 - `eval_token_benchmark` — Token 基准测试

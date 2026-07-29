@@ -931,6 +931,7 @@ def memory_eval_java_call_resolution(
     *,
     min_recall: float = 0.90,
     min_confidence_rate: float = 0.85,
+    min_resolution_level_rate: float = 1.0,
     max_unresolved_rate: float = 0.10,
     fail_on_unexpected_high_confidence: bool = False,
     fail_on_forbidden_high_confidence: bool = False,
@@ -943,6 +944,7 @@ def memory_eval_java_call_resolution(
         cases_file,
         min_recall=min_recall,
         min_confidence_rate=min_confidence_rate,
+        min_resolution_level_rate=min_resolution_level_rate,
         max_unresolved_rate=max_unresolved_rate,
         fail_on_unexpected_high_confidence=fail_on_unexpected_high_confidence,
         fail_on_forbidden_high_confidence=fail_on_forbidden_high_confidence,
@@ -970,6 +972,13 @@ def memory_eval_java_call_resolution_unresolved(
     from ..benchmark.java_call_resolution import summarize_unresolved_java_calls
 
     return summarize_unresolved_java_calls(workspace_file, sample_limit=limit)
+
+
+def memory_eval_java_call_resolution_metrics(workspace_file: str | Path) -> dict[str, Any]:
+    """Return safe aggregate resolution-mode metrics for the active graph."""
+    from ..benchmark.java_call_resolution import summarize_java_call_resolution_metrics
+
+    return summarize_java_call_resolution_metrics(workspace_file)
 
 
 def _benchmark_baseline_path(workspace_file: str | Path) -> Path:

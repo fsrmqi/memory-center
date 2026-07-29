@@ -65,6 +65,7 @@ from memory_center.core.orchestrator import (
     memory_eval_handoff,
     memory_eval_index_freshness,
     memory_eval_java_call_resolution,
+    memory_eval_java_call_resolution_metrics,
     memory_eval_java_call_resolution_review,
     memory_eval_java_call_resolution_unresolved,
     memory_eval_parser_benchmark,
@@ -445,6 +446,10 @@ def eval_java_call_resolution_action(workspace_file: str, cases_file: str, *, st
     )
 
 
+def eval_java_call_resolution_metrics_action(workspace_file: str) -> dict[str, Any]:
+    return memory_eval_java_call_resolution_metrics(workspace_file)
+
+
 def eval_java_call_resolution_review_action(workspace_file: str, cases_file: str, *, limit: int = 200) -> dict[str, Any]:
     return memory_eval_java_call_resolution_review(workspace_file, cases_file, limit=limit)
 
@@ -702,6 +707,7 @@ def build_admin_registry(
         "eval_token_gain": lambda: memory_eval_token_gain(wf, tool_name=tool_name, budget=budget, model=model, limit=limit),
         "eval_parser_benchmark": lambda: memory_eval_parser_benchmark(wf, limit=limit),
         "eval_java_call_resolution": lambda: eval_java_call_resolution_action(wf, name, strict=strict),
+        "eval_java_call_resolution_metrics": lambda: eval_java_call_resolution_metrics_action(wf),
         "eval_java_call_resolution_review": lambda: eval_java_call_resolution_review_action(wf, name, limit=limit),
         "eval_java_call_resolution_unresolved": lambda: eval_java_call_resolution_unresolved_action(wf, limit=limit),
         "eval_golden": lambda: eval_golden_action(wf, name),

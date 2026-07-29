@@ -83,6 +83,29 @@ def test_release_gate_baseline_is_portable_and_detects_regression() -> None:
     assert comparison["components"]["reindex"]["latency_change_pct"] == 30.0
 
 
+def test_release_gate_records_and_compares_hot_query_p95(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    _patch_successful_components(monkeypatch)
+    durations = iter(index / 100.0 for index in range(20))
+    monkeypatch.setattr(release_gate.time, "perf_counter", lambda: next(durations))
+
+    result = release_gate.run_release_gate(
+        _workspace(tmp_path),
+        queries=["stable logical query"],
+        query_samples=2,
+    )
+    metrics = result["components"]["retrieval"]["metrics"]
+    baseline = release_gate.build_release_gate_baseline(result)
+
+    assert metrics["query_samples"] == 2
+    assert "cold_duration_ms" in metrics
+    assert "hot_p95_duration_ms" in metrics
+    assert baseline["components"]["retrieval"]["hot_p95_duration_ms"] == round(metrics["hot_p95_duration_ms"], 3)
+
+
+def test_release_gate_percentile_uses_upper_rank_for_small_samples() -> None:
+    assert release_gate._percentile([10.0, 20.0], 0.95) == 20.0
+
+
 def test_release_gate_baseline_round_trip(tmp_path: Path) -> None:
     output = tmp_path / "release-gate-baseline.json"
     saved = release_gate.save_release_gate_baseline(

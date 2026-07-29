@@ -1,5 +1,17 @@
 # Changelog / 更新日志
 
+## 4.3.34 Java 调用精度门禁与 P95 性能观测 / Java Call Gate and P95 Performance Observability
+
+- Java 调用评测现在将 `expected_resolution_levels` 纳入通过条件；例如链式调用 case 声明 `chain_return_type` 后，退化为普通解析会阻断门禁。
+- 新增 `eval-java-call-resolution-metrics`、HTTP `/workspace/eval-java-call-resolution-metrics` 和 MCP `mc_admin(action="eval_java_call_resolution_metrics")`，仅返回解析等级、链式调用数量、置信度和未解析率等聚合指标，不返回路径或源码。
+- `release-gate --query-samples N` 可记录冷查询 P95 和热查询 P95；可移植 baseline 优先比较热查询 P95，旧 baseline 继续回退比较 `duration_ms`。
+
+## 4.3.34 Java Call Gate and P95 Performance Observability
+
+- Java call evaluation now gates on `expected_resolution_levels`, so a `chain_return_type` case fails if it regresses to a generic resolution level.
+- Added aggregate-only Java call metrics through CLI, HTTP, and MCP; it exposes resolution levels, chain counts, confidence, and unresolved rate without source paths or code.
+- `release-gate --query-samples N` records cold and hot-query P95. Portable baselines prefer hot P95 and remain compatible with earlier `duration_ms` baselines.
+
 ## 4.3.33 方法返回类型与链式调用 / Method Return Types and Chained Calls
 
 - Java 方法签名和 Method 图节点新增 `return_type`。

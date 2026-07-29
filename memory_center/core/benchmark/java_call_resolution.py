@@ -93,6 +93,7 @@ def run_java_call_resolution_suite(
     *,
     min_recall: float = 0.90,
     min_confidence_rate: float = 0.85,
+    min_resolution_level_rate: float = 1.0,
     max_unresolved_rate: float = 0.10,
     fail_on_unexpected_high_confidence: bool = False,
     fail_on_forbidden_high_confidence: bool = False,
@@ -120,6 +121,7 @@ def run_java_call_resolution_suite(
     passed = (
         recall >= min_recall
         and confidence_rate >= min_confidence_rate
+        and resolution_rate >= min_resolution_level_rate
         and unresolved_rate <= max_unresolved_rate
         and (not fail_on_unexpected_high_confidence or unexpected_count == 0)
         and (not fail_on_forbidden_high_confidence or forbidden_count == 0)
@@ -133,6 +135,7 @@ def run_java_call_resolution_suite(
             "edge_recall": round(recall, 4),
             "high_confidence_expected_rate": round(confidence_rate, 4),
             "resolution_level_rate": round(resolution_rate, 4),
+            "resolution_level_mismatch_count": case_count - resolution_count,
             "unresolved_rate": round(unresolved_rate, 4),
             "unexpected_high_confidence_edge_count": unexpected_count,
             "allowed_high_confidence_edge_count": allowed_count,
@@ -142,11 +145,60 @@ def run_java_call_resolution_suite(
         "thresholds": {
             "min_recall": min_recall,
             "min_confidence_rate": min_confidence_rate,
+            "min_resolution_level_rate": min_resolution_level_rate,
             "max_unresolved_rate": max_unresolved_rate,
             "fail_on_unexpected_high_confidence": fail_on_unexpected_high_confidence,
             "fail_on_forbidden_high_confidence": fail_on_forbidden_high_confidence,
         },
         "cases": case_results,
+    }
+
+
+def summarize_java_call_resolution_metrics(workspace_file: str | Path) -> dict[str, Any]:
+    """Return aggregate CALLS_METHOD metrics without source details.
+
+    The report makes newly introduced resolution modes observable in a real
+    workspace without reading source, paths, or private benchmark cases.
+    Expected and forbidden edges remain the responsibility of the separate
+    logical-anchor suite.
+    """
+
+    store = WorkspaceStore(workspace_file)
+    resolution_level_counts: Counter[str] = Counter()
+    source_ids_by_level: dict[str, set[str]] = {}
+    confidence_total = 0.0
+    total = 0
+    unresolved = 0
+    with RuntimeStore(store.graph_db_path) as graph:
+        conn = graph.connect()
+        rows = conn.execute(
+            "SELECT source_id, confidence, metadata_json FROM edges WHERE type = 'CALLS_METHOD'"
+        )
+        for row in rows:
+            total += 1
+            metadata = _json_dict(row["metadata_json"])
+            level = str(metadata.get("resolution_level", "") or "unknown")
+            resolution_level_counts[level] += 1
+            source_ids_by_level.setdefault(level, set()).add(str(row["source_id"] or ""))
+            confidence_total += float(row["confidence"] or 0.0)
+            if level == "unresolved":
+                unresolved += 1
+
+    chain_count = resolution_level_counts["chain_return_type"]
+    return {
+        "schema_version": 1,
+        "suite": "java_call_resolution_metrics",
+        "summary": {
+            "call_edge_count": total,
+            "resolved_call_edge_count": total - unresolved,
+            "unresolved_call_edge_count": unresolved,
+            "unresolved_rate": round(unresolved / total, 4) if total else 0.0,
+            "mean_confidence": round(confidence_total / total, 4) if total else 0.0,
+            "resolution_level_counts": dict(sorted(resolution_level_counts.items())),
+            "chain_return_type_edge_count": chain_count,
+            "chain_return_type_source_count": len(source_ids_by_level.get("chain_return_type", set())),
+        },
+        "next_action": "Use private logical-anchor cases to validate expected and forbidden edges before changing resolver rules.",
     }
 
 

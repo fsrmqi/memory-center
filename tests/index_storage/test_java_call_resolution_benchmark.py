@@ -14,6 +14,7 @@ from memory_center.core.benchmark.java_call_resolution import (
     load_java_call_resolution_cases,
     review_java_call_resolution_suite,
     run_java_call_resolution_suite,
+    summarize_java_call_resolution_metrics,
     summarize_unresolved_java_calls,
 )
 from memory_center.core.storage.graph import GraphEdge, GraphNode, edge_id, node_id
@@ -154,6 +155,68 @@ def test_java_call_resolution_suite_reports_unresolved_missing_target(tmp_path: 
     assert result["summary"]["edge_recall"] == 0.0
     assert result["summary"]["unresolved_rate"] == 1.0
     assert result["cases"][0]["target_found"] is False
+
+
+def test_java_call_resolution_suite_gates_expected_resolution_level(tmp_path: Path) -> None:
+    workspace = _workspace(tmp_path)
+    store = WorkspaceStore(workspace)
+    source_id = node_id("Method", "Facade.invoke", "api", "Facade.java")
+    target_id = node_id("Method", "Result.execute", "api", "Result.java")
+    with RuntimeStore(store.graph_db_path) as graph:
+        graph.bulk_write(
+            [
+                GraphNode(source_id, "Method", "Facade.invoke", "api", "Facade.java"),
+                GraphNode(target_id, "Method", "Result.execute", "api", "Result.java"),
+            ],
+            [GraphEdge(
+                edge_id(source_id, target_id, "CALLS_METHOD"),
+                source_id,
+                target_id,
+                "CALLS_METHOD",
+                0.9,
+                {"resolution_level": "import"},
+            )],
+        )
+    cases = _write_cases(tmp_path / "java-call-level-cases.yaml", [{
+        "case_id": "chain-return-type",
+        "source": "Facade#invoke",
+        "expected_target": "Result#execute",
+        "expected_resolution_levels": ["chain_return_type"],
+    }])
+
+    result = run_java_call_resolution_suite(workspace, cases)
+
+    assert result["summary"]["edge_recall"] == 1.0
+    assert result["summary"]["resolution_level_rate"] == 0.0
+    assert result["summary"]["resolution_level_mismatch_count"] == 1
+    assert result["summary"]["passed"] is False
+
+
+def test_java_call_resolution_metrics_exposes_chain_counts_without_paths(tmp_path: Path) -> None:
+    workspace = _workspace(tmp_path)
+    store = WorkspaceStore(workspace)
+    source_id = node_id("Method", "Facade.invoke", "api", "src/Facade.java")
+    target_id = node_id("Method", "Result.execute", "api", "src/Result.java")
+    unresolved_id = node_id("Method", "Remote.call", "api", "src/Facade.java")
+    with RuntimeStore(store.graph_db_path) as graph:
+        graph.bulk_write(
+            [
+                GraphNode(source_id, "Method", "Facade.invoke", "api", "src/Facade.java"),
+                GraphNode(target_id, "Method", "Result.execute", "api", "src/Result.java"),
+                GraphNode(unresolved_id, "Method", "Remote.call", "api", "src/Facade.java"),
+            ],
+            [
+                GraphEdge(edge_id(source_id, target_id, "CALLS_METHOD"), source_id, target_id, "CALLS_METHOD", 0.78, {"resolution_level": "chain_return_type"}),
+                GraphEdge(edge_id(source_id, unresolved_id, "CALLS_METHOD"), source_id, unresolved_id, "CALLS_METHOD", 0.2, {"resolution_level": "unresolved"}),
+            ],
+        )
+
+    result = summarize_java_call_resolution_metrics(workspace)
+
+    assert result["summary"]["chain_return_type_edge_count"] == 1
+    assert result["summary"]["chain_return_type_source_count"] == 1
+    assert result["summary"]["unresolved_rate"] == 0.5
+    assert "src/" not in str(result)
 
 
 def test_java_call_resolution_cases_reject_filesystem_paths(tmp_path: Path) -> None:
@@ -325,3 +388,28 @@ def test_unresolved_java_call_report_is_available_from_cli_and_http(tmp_path: Pa
 
     assert response["suite"] == "java_call_resolution_unresolved"
     assert response["summary"]["returned_sample_count"] == 0
+
+
+def test_java_call_metrics_are_available_from_cli_http_and_mcp(tmp_path: Path) -> None:
+    workspace = _workspace(tmp_path)
+
+    cli = CliRunner().invoke(app, ["eval-java-call-resolution-metrics", "--workspace", str(workspace)])
+    assert cli.exit_code == 0
+    assert json.loads(cli.output)["suite"] == "java_call_resolution_metrics"
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), create_handler(workspace))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        response = json.loads(urlopen(
+            f"http://127.0.0.1:{server.server_address[1]}/workspace/eval-java-call-resolution-metrics"
+        ).read().decode("utf-8"))
+    finally:
+        server.shutdown()
+        thread.join(timeout=2)
+    assert response["suite"] == "java_call_resolution_metrics"
+
+    from memory_center.application.admin import build_admin_registry
+
+    mcp = build_admin_registry(workspace_file=str(workspace)).dispatch("eval_java_call_resolution_metrics")
+    assert mcp["suite"] == "java_call_resolution_metrics"

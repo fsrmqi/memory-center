@@ -977,6 +977,10 @@ memory-center release-gate \
   --label vNext
 ```
 
+`--query-samples N`（默认 `1`）可让同一查询执行 N 次：首轮记录冷查询，后续样本计算热查询 P95。发布 baseline 优先比较热查询 P95；N=1 时保持现有的单次查询开销。
+
+Use `--query-samples N` (default `1`) to execute each query N times: the first sample records cold-query latency and the remaining samples produce hot-query P95. Release baselines prefer hot P95; N=1 preserves the existing single-query cost.
+
 Use the saved portable baseline in later releases. A baseline is written only after the gate passes. The gate fails when a configured quality check fails, or when a shared component exceeds the latency or quality-drop threshold. Missing optional checks are reported as `skipped`, not treated as a pass.
 
 后续版本可带上保存的 portable baseline。只有门禁通过时才会写入 baseline；已配置的质量检查失败，或共有组件超过延迟退化/质量下降阈值时，门禁会失败；未配置的可选检查会标记为 `skipped`，不会被伪装为通过。

@@ -1304,7 +1304,8 @@ def release_gate_cmd(
     baseline: str = typer.Option("", help="Optional portable release-gate baseline JSON file."),
     save_baseline: str = typer.Option("", help="Optional output path for the current portable baseline."),
     label: str = typer.Option("current", help="Label used when saving a baseline."),
-    max_latency_regression_pct: float = typer.Option(15.0, min=0.0, help="Maximum median component latency regression."),
+    max_latency_regression_pct: float = typer.Option(15.0, min=0.0, help="Maximum component P95 latency regression."),
+    query_samples: int = typer.Option(1, min=1, max=20, help="Samples per query; first is cold, later samples measure hot P95."),
     ontology_path: List[str] = typer.Option([], help="Optional logical paths for isolated ontology performance gate."),  # noqa: B008
     ontology_full: bool = typer.Option(False, help="Run the isolated full ontology reindex gate."),
     max_quality_drop: float = typer.Option(0.02, min=0.0, max=1.0, help="Maximum component quality-score drop."),
@@ -1321,6 +1322,7 @@ def release_gate_cmd(
         parser_limit=parser_limit,
         baseline=baseline or None,
         max_latency_regression_pct=max_latency_regression_pct,
+        query_samples=query_samples,
         ontology_paths=ontology_path,
         ontology_full=ontology_full,
         max_quality_drop=max_quality_drop,
@@ -1341,6 +1343,7 @@ def eval_java_call_resolution_cmd(
     cases: str = typer.Option(..., help="Java call resolution cases yaml file."),
     min_recall: float = typer.Option(0.90, help="Minimum expected-edge recall."),
     min_confidence_rate: float = typer.Option(0.85, help="Minimum high-confidence expected-edge rate."),
+    min_resolution_level_rate: float = typer.Option(1.0, help="Minimum expected resolution-level match rate."),
     max_unresolved_rate: float = typer.Option(0.10, help="Maximum unresolved case rate."),
     fail_on_unexpected_high_confidence: bool = typer.Option(False, help="Fail on non-expected high-confidence CALLS_METHOD edges."),
     fail_on_forbidden_high_confidence: bool = typer.Option(False, help="Fail on high-confidence CALLS_METHOD edges listed in forbidden_targets."),
@@ -1353,11 +1356,23 @@ def eval_java_call_resolution_cmd(
         cases,
         min_recall=min_recall,
         min_confidence_rate=min_confidence_rate,
+        min_resolution_level_rate=min_resolution_level_rate,
         max_unresolved_rate=max_unresolved_rate,
         fail_on_unexpected_high_confidence=fail_on_unexpected_high_confidence,
         fail_on_forbidden_high_confidence=fail_on_forbidden_high_confidence,
     )
     print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+
+
+@app.command("eval-java-call-resolution-metrics")
+def eval_java_call_resolution_metrics_cmd(
+    workspace: str = typer.Option(..., help="Workspace yaml file."),
+):
+    """Report aggregate Java call-resolution metrics without source details."""
+    from memory_center.core.orchestrator import memory_eval_java_call_resolution_metrics
+
+    result = memory_eval_java_call_resolution_metrics(workspace)
+    typer.echo(json.dumps(result, ensure_ascii=False, indent=2, default=str))
 
 
 @app.command("eval-java-call-resolution-review")

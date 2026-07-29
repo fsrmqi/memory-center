@@ -54,7 +54,7 @@ This file consolidates and replaces the older execution plan, superpowers evolut
 1. 先运行 `eval-java-call-resolution-unresolved`；报告会把静态类/外部依赖与实例接收者缺少类型分开，不能把外部 API 误当作本地解析缺陷。
 2. 从真实未解析分类中选择最高频且可复现的一类，补充 3-5 个只含逻辑锚点的私有 case。
 3. 每次仅修复一个明确的 parser 或 resolver 缺口，不以宽泛 fallback 换取表面召回率。
-4. 将每个误判转成可复跑 case，并在 CLI、MCP、HTTP 中保留失败原因和缺失锚点。
+4. 将每个误判转成可复跑 case，并在 CLI、MCP、HTTP 中保留失败原因和缺失锚点。`expected_resolution_levels` 必须作为门禁条件；用聚合 metrics 观察解析等级与链式边变化，用私有 case 判定正确/错误边。
 
 验收：
 

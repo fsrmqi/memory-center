@@ -29,6 +29,7 @@ from memory_center.application.http_facades import (
     memory_eval_handoff,
     memory_eval_index_freshness,
     memory_eval_java_call_resolution,
+    memory_eval_java_call_resolution_metrics,
     memory_eval_java_call_resolution_review,
     memory_eval_java_call_resolution_unresolved,
     memory_eval_parser_benchmark,
@@ -617,9 +618,13 @@ def register_workspace_routes(registry: CommandRegistry) -> None:
         rp.require("cases"),
         min_recall=_parse_float(rp.params, "min_recall", 0.90),
         min_confidence_rate=_parse_float(rp.params, "min_confidence_rate", 0.85),
+        min_resolution_level_rate=_parse_float(rp.params, "min_resolution_level_rate", 1.0),
         max_unresolved_rate=_parse_float(rp.params, "max_unresolved_rate", 0.10),
         fail_on_unexpected_high_confidence=rp.get("fail_on_unexpected_high_confidence", "").lower() in {"1", "true", "yes"},
         fail_on_forbidden_high_confidence=rp.get("fail_on_forbidden_high_confidence", "").lower() in {"1", "true", "yes"},
+    ))
+    registry.register("/workspace/eval-java-call-resolution-metrics", lambda rp: memory_eval_java_call_resolution_metrics(
+        rp.workspace(),
     ))
     registry.register("/workspace/eval-java-call-resolution-review", lambda rp: memory_eval_java_call_resolution_review(
         rp.workspace(),

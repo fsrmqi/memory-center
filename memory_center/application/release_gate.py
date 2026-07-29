@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -34,12 +35,16 @@ def build_release_gate_baseline(result: dict[str, Any], *, label: str = "current
         if component.get("status") == "skipped":
             continue
         metrics = component.get("metrics", {}) or {}
-        portable_components[str(name)] = {
+        row = {
             "status": str(component.get("status", "unknown")),
             "duration_ms": round(float(metrics.get("duration_ms", 0.0) or 0.0), 3),
             "result_count": max(0, int(metrics.get("result_count", 0) or 0)),
             "quality_score": round(min(1.0, max(0.0, float(metrics.get("quality_score", 0.0) or 0.0))), 4),
         }
+        for key in ("cold_duration_ms", "hot_p95_duration_ms"):
+            if key in metrics:
+                row[key] = round(float(metrics.get(key, 0.0) or 0.0), 3)
+        portable_components[str(name)] = row
     return {
         "schema_version": 1,
         "label": str(label or "current"),
@@ -74,8 +79,8 @@ def compare_release_gate_baseline(
         if not baseline_row:
             comparisons[name] = {"status": "baseline_missing", "passed": None}
             continue
-        previous_duration = float(baseline_row.get("duration_ms", 0.0) or 0.0)
-        current_duration = float(current_row.get("duration_ms", 0.0) or 0.0)
+        previous_duration = float(baseline_row.get("hot_p95_duration_ms", baseline_row.get("duration_ms", 0.0)) or 0.0)
+        current_duration = float(current_row.get("hot_p95_duration_ms", current_row.get("duration_ms", 0.0)) or 0.0)
         latency_change = (
             ((current_duration - previous_duration) / previous_duration * 100.0)
             if previous_duration > 0
@@ -114,6 +119,7 @@ def run_release_gate(
     baseline: dict[str, Any] | str | Path | None = None,
     max_latency_regression_pct: float = 15.0,
     max_quality_drop: float = 0.02,
+    query_samples: int = 1,
     ontology_paths: list[str] | None = None,
     ontology_full: bool = False,
 ) -> dict[str, Any]:
@@ -197,20 +203,31 @@ def run_release_gate(
         )
 
     query_rows: list[dict[str, Any]] = []
+    query_samples = max(1, int(query_samples))
     for query in queries or []:
-        query_started = time.perf_counter()
-        payload = memory_query_hybrid(workspace_file, query, limit=10)
-        duration_ms = (time.perf_counter() - query_started) * 1000
-        matches = payload.get("matches", []) or []
-        query_rows.append({"duration_ms": duration_ms, "match_count": len(matches)})
+        samples: list[float] = []
+        match_count = 0
+        for _ in range(query_samples):
+            query_started = time.perf_counter()
+            payload = memory_query_hybrid(workspace_file, query, limit=10)
+            samples.append((time.perf_counter() - query_started) * 1000)
+            match_count = max(match_count, len(payload.get("matches", []) or []))
+        query_rows.append({"samples": samples, "match_count": match_count})
     if query_rows:
         positive = sum(1 for row in query_rows if row["match_count"] > 0)
+        cold_samples = [row["samples"][0] for row in query_rows]
+        hot_samples = [sample for row in query_rows for sample in row["samples"][1:]] or cold_samples
         components["retrieval"] = _component(
             passed=positive == len(query_rows),
-            duration_ms=sum(row["duration_ms"] for row in query_rows) / len(query_rows),
+            duration_ms=_percentile(hot_samples, 0.95),
             result_count=sum(int(row["match_count"]) for row in query_rows),
             quality_score=positive / len(query_rows),
             reason="query_returned_no_matches" if positive != len(query_rows) else "",
+            extra_metrics={
+                "cold_duration_ms": _percentile(cold_samples, 0.95),
+                "hot_p95_duration_ms": _percentile(hot_samples, 0.95),
+                "query_samples": query_samples,
+            },
         )
     else:
         components["retrieval"] = _skipped("no_queries_provided")
@@ -239,7 +256,10 @@ def run_release_gate(
             passed=bool(summary.get("passed")),
             duration_ms=(time.perf_counter() - java_started) * 1000,
             result_count=int(summary.get("case_count", 0) or 0),
-            quality_score=float(summary.get("edge_recall", 0.0) or 0.0),
+            quality_score=min(
+                float(summary.get("edge_recall", 0.0) or 0.0),
+                float(summary.get("resolution_level_rate", 1.0) or 0.0),
+            ),
         )
     else:
         components["java_call_resolution"] = _skipped("no_java_call_cases_provided")
@@ -283,7 +303,15 @@ def run_release_gate(
     }
 
 
-def _component(*, passed: bool, duration_ms: float, result_count: int, quality_score: float, reason: str = "") -> dict[str, Any]:
+def _component(
+    *,
+    passed: bool,
+    duration_ms: float,
+    result_count: int,
+    quality_score: float,
+    reason: str = "",
+    extra_metrics: dict[str, float | int] | None = None,
+) -> dict[str, Any]:
     row = {
         "status": "pass" if passed else "fail",
         "passed": passed,
@@ -295,8 +323,18 @@ def _component(*, passed: bool, duration_ms: float, result_count: int, quality_s
     }
     if reason:
         row["reason"] = reason
+    if extra_metrics:
+        row["metrics"].update(extra_metrics)
     return row
 
 
 def _skipped(reason: str) -> dict[str, Any]:
     return {"status": "skipped", "passed": None, "reason": reason, "metrics": {}}
+
+
+def _percentile(values: list[float], percentile: float) -> float:
+    if not values:
+        return 0.0
+    ordered = sorted(max(0.0, float(value)) for value in values)
+    index = min(len(ordered) - 1, max(0, math.ceil(len(ordered) * percentile) - 1))
+    return ordered[index]
