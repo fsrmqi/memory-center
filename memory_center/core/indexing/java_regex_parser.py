@@ -272,14 +272,14 @@ def _parse_method_spans(text: str, *, type_names: list[str] | None = None) -> li
     pattern = re.compile(
         r"(?:@\w+(?:\([^)]*\))?\s*)*"
         r"(?:(?:public|private|protected)\s+)?"
-        r"(?:static\s+)?[\w<>, ?\.\[\]]+\s+"
-        r"(\w+)\s*\(([^;{}]*)\)\s*(?:throws\s+[\w, ]+\s*)?\{",
+        r"(?:static\s+)?(?P<return_type>[\w<>, ?\.\[\]]+)\s+"
+        r"(?P<name>\w+)\s*\((?P<params>[^;{}]*)\)\s*(?:throws\s+[\w, ]+\s*)?\{",
         re.M,
     )
     constructors = set(type_names or [])
     spans: list[dict[str, Any]] = []
     for match in pattern.finditer(text):
-        name = match.group(1)
+        name = match.group("name")
         # The permissive return-type fragment permits indentation to satisfy
         # the type portion, so control-flow headers can otherwise be emitted
         # as pseudo methods. Constructors also have no return type and are
@@ -291,7 +291,8 @@ def _parse_method_spans(text: str, *, type_names: list[str] | None = None) -> li
         spans.append(
             {
                 "name": name,
-                "params": match.group(2),
+                "params": match.group("params"),
+                "return_type": _normalize_type_identity(match.group("return_type")),
                 "start": match.start(),
                 "body_start": body_start,
                 "end": end,
@@ -388,6 +389,7 @@ def _build_method_signatures(method_spans: list[dict[str, Any]]) -> list[dict[st
                 "identity": identity,
                 "name": name,
                 "parameter_types": parameter_types,
+                "return_type": str(span.get("return_type", "") or ""),
                 "line": int(span.get("line", 0) or 0),
             }
         )
@@ -551,6 +553,7 @@ def _parse_method_variable_types(text: str, method_spans: list[dict[str, Any]]) 
         re.M,
     )
     foreach_decl = re.compile(r"for\s*\(\s*(?:final\s+)?(?P<type>[\w<>, ?\.\[\]]+)\s+(?P<name>[a-zA-Z_]\w*)\s*:", re.M)
+    resource_decl = re.compile(r"try\s*\(\s*(?:final\s+)?(?P<type>[\w<>, ?\.\[\]]+)\s+(?P<name>[a-zA-Z_]\w*)\s*=", re.M)
     catch_decl = re.compile(
         r"catch\s*\(\s*(?:@\w+(?:\([^)]*\))?\s*)*(?:final\s+)?"
         r"(?P<type>[\w<>\.\[\]]+(?:\s*\|\s*[\w<>\.\[\]]+)*)\s+"
@@ -563,6 +566,8 @@ def _parse_method_variable_types(text: str, method_spans: list[dict[str, Any]]) 
         for match in local_decl.finditer(body):
             vars_for_method.setdefault(match.group("name"), _simple_type(match.group("type")))
         for match in foreach_decl.finditer(body):
+            vars_for_method.setdefault(match.group("name"), _simple_type(match.group("type")))
+        for match in resource_decl.finditer(body):
             vars_for_method.setdefault(match.group("name"), _simple_type(match.group("type")))
         for match in catch_decl.finditer(body):
             catch_type = match.group("type")
@@ -583,6 +588,7 @@ def _parse_method_calls(
 ) -> list[dict[str, Any]]:
     calls: list[dict[str, Any]] = []
     qualified_pattern = re.compile(r"(?P<receiver>\b[a-zA-Z_]\w*)\s*\.\s*(?P<method>[a-zA-Z_]\w*)\s*\((?P<args>[^)]*)\)", re.M)
+    chained_pattern = re.compile(r"(?P<receiver>\b[a-zA-Z_]\w*)\s*\.\s*(?P<first>[a-zA-Z_]\w*)\s*\((?P<first_args>[^)]*)\)\s*\.\s*(?P<method>[a-zA-Z_]\w*)\s*\((?P<args>[^)]*)\)", re.M)
     bare_pattern = re.compile(r"(?<![\.\w])(?P<method>[a-zA-Z_]\w*)\s*\((?P<args>[^)]*)\)", re.M)
     ignored = {"log", "logger", "System", "Objects", "String", "Collections", "Arrays", "Optional", "Map", "List", "Set"}
     ignored_methods = {"stream", "map", "filter", "collect", "of", "empty", "println", "if", "for", "while", "switch", "catch", "return"}
@@ -600,6 +606,9 @@ def _parse_method_calls(
         body_end = max(body_start, int(span.get("end") or body_start))
         body = text[body_start:body_end]
         owner_method = str(span.get("name") or "")
+        for m in chained_pattern.finditer(body):
+            receiver = m.group("receiver")
+            calls.append({"receiver": receiver, "receiver_type": method_variable_types.get(owner_method, {}).get(receiver) or field_types.get(receiver), "method_name": m.group("method"), "owner_method": owner_method, "line": _line_of(text, body_start + m.start()), "arg_count": len(_split_top_level(m.group("args") or "")), "chain_receiver_method": m.group("first")})
         for m in qualified_pattern.finditer(body):
             receiver = m.group("receiver")
             method = m.group("method")

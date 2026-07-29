@@ -1,5 +1,15 @@
 # Changelog / 更新日志
 
+## 4.3.33 方法返回类型与链式调用 / Method Return Types and Chained Calls
+
+- Java 方法签名和 Method 图节点新增 `return_type`。
+- 对 `receiver.first().second()`，仅当首段返回类型和第二段目标均在工作区唯一可见时，生成 `chain_return_type` 调用解析结果。
+
+## 4.3.33 Method Return Types and Chained Calls
+
+- Java method signatures and Method graph nodes now include `return_type`.
+- `receiver.first().second()` resolves as `chain_return_type` only when both the first return type and second target are uniquely visible in the workspace.
+
 ## 4.3.29 继承 Lombok 访问器解析 / Inherited Lombok Accessor Resolution
 
 - Java 索引新增直接父类型事实；当接收者类型、父类可见性、父类字段和 Lombok 注解均可验证时，调用可定位到父类的推断访问器。

@@ -280,6 +280,7 @@ class TreeSitterJavaParser:
                             "identity": f"{method_name}({','.join(parameter_types)})",
                             "name": method_name,
                             "parameter_types": parameter_types,
+                            "return_type": _normalize_type_identity(_node_text(node.child_by_field_name("type"))),
                             "line": _node_line(name_node),
                         }
                     )

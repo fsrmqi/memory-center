@@ -1082,7 +1082,8 @@ def build_graph_store(config: WorkspaceConfig, store: WorkspaceStore, *, project
                     mid = node_id("Method", sym["project"], cls, m)
                     declared_method_ids.add(mid)
                     method_line = int(method_lines.get(m) or 0)
-                    nodes.append(GraphNode(mid, "Method", f"{cls}.{m}", sym["project"], sym["file"], method_line, metadata={"method": m}))
+                    signature = next((item for item in sym.get("method_signatures", []) if item.get("name") == m), {})
+                    nodes.append(GraphNode(mid, "Method", f"{cls}.{m}", sym["project"], sym["file"], method_line, metadata={"method": m, "return_type": signature.get("return_type", "")}))
                     edges.append(GraphEdge(edge_id("DECLARES", cid, mid), cid, mid, "DECLARES", 1.0, {"evidence": "method declaration"}))
                 for fld in sym.get("fields", []):
                     field_id = node_id("Field", sym["project"], cls, fld)

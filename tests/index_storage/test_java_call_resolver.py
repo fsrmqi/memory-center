@@ -286,6 +286,20 @@ public class Demo { void run(Map<String, Long> values) { for (Map.Entry<String, 
     assert symbol["method_variable_types"]["run"]["entry"] == "Entry"
 
 
+def test_extracts_try_with_resources_variable_type() -> None:
+    symbol = _symbol("api", "Demo.java", "package com.example; public class Demo { void run() { try (InputStream stream = open()) { stream.read(); } } }")
+    assert symbol["method_variable_types"]["run"]["stream"] == "InputStream"
+
+
+def test_resolves_chain_when_return_type_is_unique() -> None:
+    caller = """package com.example; public class Caller { void run(Factory factory) { factory.create().execute(); } }"""
+    factory = """package com.example; public class Factory { public Result create() { return null; } }"""
+    result = """package com.example; public class Result { public void execute() {} }"""
+    resolved = _resolve([_symbol("api", "Caller.java", caller), _symbol("api", "Factory.java", factory), _symbol("api", "Result.java", result)], "Caller.java", "execute")
+    assert resolved.target_class == "Result"
+    assert resolved.resolution_level == "chain_return_type"
+
+
 def test_overload_keeps_matching_signature_evidence() -> None:
     caller = """package com.example.order;
 import com.example.billing.InvoiceService;

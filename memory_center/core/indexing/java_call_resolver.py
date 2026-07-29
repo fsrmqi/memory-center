@@ -122,6 +122,14 @@ class JavaCallResolver:
         candidates.extend(self._same_package_candidates(owner_symbol, receiver_type, receiver, target_method))
         candidates.extend(self._wildcard_import_candidates(owner_symbol, receiver_type, receiver, target_method))
 
+        chain_method = str(call.get("chain_receiver_method") or "")
+        if chain_method:
+            for info, _level, _confidence in candidates:
+                return_type = _method_return_type(info.method_signatures, chain_method)
+                return_candidates = self.class_index.by_simple.get(return_type, []) if return_type else []
+                if len(return_candidates) == 1 and target_method in return_candidates[0].methods:
+                    return self._resolved(owner_symbol, owner, call, return_candidates[0], "chain_return_type", 0.78, arg_count)
+
         for info, level, confidence in candidates:
             if target_method in info.methods:
                 return self._resolved(owner_symbol, owner, call, info, level, confidence, arg_count)
@@ -455,6 +463,12 @@ def _match_signature(signatures: list[dict[str, Any]], method_name: str, arg_cou
         if arg_count is None or len(parameter_types) == arg_count:
             return str(item.get("identity") or "")
     return ""
+
+
+def _method_return_type(signatures: list[dict[str, Any]], method_name: str) -> str:
+    matches = {str(item.get("return_type") or "") for item in signatures if item.get("name") == method_name}
+    matches.discard("")
+    return _normalize_type_name(matches.pop().split()[-1]) if len(matches) == 1 else ""
 
 
 def _lombok_accessor_field(info: ClassInfo, method_name: str) -> str:
