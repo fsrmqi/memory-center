@@ -16,6 +16,23 @@ _MCP_INVOCATIONS_FILE = "mcp-invocations.jsonl"
 _MCP_AUDIT_RETENTION_DAYS = 30
 _MCP_AUDIT_MAX_RECORDS = 100_000
 
+# These payloads are large, deterministic runtime indexes. SQLite is their
+# canonical store, so a second JSON copy only adds rebuild I/O and disk usage.
+RUNTIME_ONLY_INDEXES = frozenset(
+    {
+        "file-index.json",
+        "java-symbol-index.json",
+        "api-index.json",
+        "feign-index.json",
+        "mq-index.json",
+        "config-index.json",
+        "service-topology.json",
+        "contract-snapshot.json",
+        "contract-diff.json",
+        "semantic-node-index.json",
+    }
+)
+
 
 def _safe_path(base: Path, name: str) -> Path:
     resolved_base = base.resolve()
@@ -98,10 +115,15 @@ class WorkspaceStore:
         path = self.index_dir / name
         with FileLock(str(self.lock_file)):
             self.memory_backend().upsert_index(name, data)
-            path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+            if name in RUNTIME_ONLY_INDEXES:
+                path.unlink(missing_ok=True)
+            else:
+                path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
             _drop_json_cache(path)
 
     def read_json(self, name: str, default: Any) -> Any:
+        if name in RUNTIME_ONLY_INDEXES:
+            return self.read_json_prefer_backend(name, default)
         path = self.index_dir / name
         if not path.exists():
             return default
@@ -305,6 +327,35 @@ class WorkspaceStore:
         if backend_entry.get("found"):
             return backend_entry.get("value")
         return default
+
+    def cleanup_runtime_only_index_exports(self, *, apply: bool = False) -> dict[str, Any]:
+        """Remove obsolete JSON copies only when SQLite has the canonical payload."""
+        candidates: list[dict[str, Any]] = []
+        for name in sorted(RUNTIME_ONLY_INDEXES):
+            path = self.index_dir / name
+            if not path.exists() or not self.memory_backend().read_index_entry(name).get("found"):
+                continue
+            candidates.append({"name": name, "bytes": path.stat().st_size})
+        payload: dict[str, Any] = {
+            "apply": apply,
+            "candidates": candidates,
+            "candidate_bytes": sum(int(item["bytes"]) for item in candidates),
+            "removed": [],
+            "next_action": "运行 index-export-cleanup --apply 删除 SQLite 已覆盖的大型 JSON 索引导出。"
+            if candidates
+            else "当前没有可清理的大型 JSON 索引导出。",
+        }
+        if not apply or not candidates:
+            return payload
+        with FileLock(str(self.lock_file)):
+            for item in candidates:
+                path = self.index_dir / str(item["name"])
+                if path.exists():
+                    path.unlink()
+                    _drop_json_cache(path)
+                    payload["removed"].append(item)
+        payload["next_action"] = "已删除 SQLite 的重复 JSON 索引导出。"
+        return payload
 
     def memory_backend_query_refs(self, *, ref_path: str = "", limit: int = 50) -> dict[str, Any]:
         return self.memory_backend().query_refs(ref_path=ref_path, limit=limit)

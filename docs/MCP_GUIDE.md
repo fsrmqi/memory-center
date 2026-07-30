@@ -19,7 +19,8 @@
 - `mc_admin(action="delivery_skill_candidate"|"delivery_skill_canary"|"delivery_skill_observe"|"delivery_skill_evaluate"|"delivery_skill_publish"|"delivery_skill_rollback"|"delivery_skill_recommend", task_id="...", payload="...")` 管理可验证 Skill 生命周期。候选必须先进入 canary；仅至少三条带证据的成功观测且没有失败时可以发布。Agent 不得把候选、canary 或模型自评当成正式经验。
 - `mc_admin(action="delivery_failure_candidates"|"delivery_skill_synthesize")` 仅显式执行离线失败归纳和多轨迹归纳，不会读取原始代码、需求正文或验证日志，也不会影响普通查询延迟。
 - `mc_analyze` 的 `depth` 仅支持 `quick|standard|full`，`direction` 仅支持 `upstream|downstream|both`，`max_depth` 为 `1..6`。标准和完整分析若计划、规则、契约等辅助阶段不可用，会保留已成功的影响图并返回 `analysis_status="partial"`、`diagnostics` 与下一步动作；MCP 错误响应的 `diagnostics.trace_id` 可对应本地调用审计。
-- 当任务工件或索引代际空间异常时，Agent 先建议 `artifact compact-task` 或 `artifact generation-gc --dry-run`；涉及删除必须由显式 `--apply` 或 `mc_admin(action="index_generation_gc", force=true)` 确认。
+- 当任务工件或索引代际空间异常时，Agent 先建议 `artifact compact-task`、`artifact generation-gc --dry-run`、`artifact index-export-cleanup --dry-run` 或 `artifact semantic-index-compact --dry-run`；涉及删除必须由显式 `--apply` 或 `mc_admin(action="index_generation_gc", force=true)` 确认。语义镜像清理后，Agent 应在无写入任务时建议 `artifact storage-vacuum --apply` 回收 SQLite 页。
+- Skill 外部评测不属于 MCP 查询热路径。Agent 只有在用户要求评测已发布 Skill 时，才可建议 CLI 依次执行 `artifact delivery-skill-eval-status`、`delivery-skill-eval-init`、`delivery-skill-eval-run --dry-run`；运行外部引擎必须获得明确 `--apply` 授权，结果只能作为待审核的外部证据。
 
 ## 1. Public Surface / 对外公开面
 

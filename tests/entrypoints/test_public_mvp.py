@@ -2153,7 +2153,7 @@ def test_local_embedding_backend_is_optional_and_selectable(tmp_path: Path):
 
         hits = semantic.semantic_query(workspace, "ArticleFeignClient", limit=3)
         assert hits
-        assert all(item["backend"] == "sentence-transformers" for item in hits)
+        assert all(item["backend"] == "sentence-transformers-ann" for item in hits)
     finally:
         semantic._load_sentence_transformer_model = old_loader
         if old_backend is None:

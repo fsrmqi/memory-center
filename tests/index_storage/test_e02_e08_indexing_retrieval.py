@@ -1069,6 +1069,21 @@ class TestE06InvertedRetrieval:
 
         assert index.query("user service")[0]["node_id"] == "n1"
 
+    def test_inverted_index_v2_rebuild_does_not_precompute_legacy_scores(self, unified_store):
+        from memory_center.core.retrieval.inverted import InvertedIndex
+
+        index = InvertedIndex(unified_store)
+        index.rebuild([
+            {"id": "n1", "type": "Service", "name": "UserService", "project": "user", "file_path": "src/UserService.java", "metadata": {}},
+        ])
+        with unified_store.pool.connection() as conn:
+            row = conn.execute("SELECT tf_idf, bm25_score, term_count FROM inv_postings LIMIT 1").fetchone()
+
+        assert row["tf_idf"] == 0.0
+        assert row["bm25_score"] == 0.0
+        assert row["term_count"] > 0
+        assert index.query("user service")[0]["node_id"] == "n1"
+
     def test_reindex_builds_bm25_index(self, demo_workspace: Path):
         from memory_center.core.indexing.reindex import reindex_workspace
         from memory_center.core.retrieval.inverted import InvertedIndex

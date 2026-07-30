@@ -5,7 +5,6 @@ instead of scanning every document in the workspace.
 """
 from __future__ import annotations
 
-import math
 from typing import Any
 
 from memory_center.core.retrieval.semantic import _count_tokens, semantic_tokens
@@ -95,26 +94,21 @@ class InvertedIndex:
             for token in counts:
                 df[token] = df.get(token, 0) + 1
 
+        total_doc_len = sum(doc["doc_len"] for doc in docs)
         doc_count = max(len(docs), 1)
-        avgdl = sum(d["doc_len"] for d in docs) / doc_count if docs else 1.0
+        avgdl = total_doc_len / doc_count if docs else 1.0
 
         # Build posting rows
         posting_rows: list[tuple] = []
         doc_rows: list[tuple] = []
         for doc in docs:
             idx = doc["doc_idx"]
-            total = doc["doc_len"] or 1
-            norm_sq = 0.0
             for token, count in doc["token_counts"].items():
-                idf = math.log((1 + doc_count) / (1 + df.get(token, 0))) + 1.0
-                tf_idf = (count / total) * idf
-                # BM25 component
-                bm25_idf = math.log((doc_count - df.get(token, 0) + 0.5) / (df.get(token, 0) + 0.5) + 1)
-                bm25 = bm25_idf * (count * (BM25_K1 + 1)) / (count + BM25_K1 * (1 - BM25_B + BM25_B * doc["doc_len"] / avgdl))
-                posting_rows.append((token, idx, tf_idf, bm25, count))
-                norm_sq += tf_idf * tf_idf
-            norm = math.sqrt(norm_sq) or 1.0
-            doc_rows.append((idx, doc["node_id"], doc["doc_len"], norm))
+                # V2 scores from raw counts at query time. Keeping legacy
+                # score columns at zero avoids millions of obsolete rebuild
+                # calculations while preserving the additive SQLite schema.
+                posting_rows.append((token, idx, 0.0, 0.0, count))
+            doc_rows.append((idx, doc["node_id"], doc["doc_len"], 1.0))
 
         # Bulk insert
         with self._store.pool.transaction() as conn:
@@ -129,7 +123,7 @@ class InvertedIndex:
             )
             conn.execute(
                 "INSERT INTO inv_index_meta(id, format_version, doc_count, total_doc_len) VALUES(1, 2, ?, ?)",
-                (len(docs), sum(doc["doc_len"] for doc in docs)),
+                (len(docs), total_doc_len),
             )
 
         return {

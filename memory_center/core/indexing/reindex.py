@@ -16,10 +16,16 @@ from ..contracting.static import (
     build_contract_snapshot,
     diff_contract_snapshots,
 )
-from .control_plane import activate_generation, begin_generation, build_shard_manifest, fail_generation
+from .control_plane import (
+    activate_generation,
+    begin_generation,
+    build_shard_manifest,
+    fail_generation,
+    index_control_status,
+)
 from .java_call_resolver import JavaCallResolver, build_java_class_index
 from .reindex_state import workspace_reindex_lock
-from .shards import write_generation_shards
+from .shards import cleanup_generations, write_generation_shards
 
 # Keep the tree-sitter wrapper active so fallback reasons remain observable.
 try:
@@ -331,6 +337,14 @@ def reindex_workspace(
             )
             manifest["physical_shards"] = physical_shards
             activate_generation(store, generation, counts=counts, shard_manifest=manifest)
+            control = index_control_status(store)
+            counts["generation_gc"] = cleanup_generations(
+                store,
+                active_generation=str(control.get("active_generation", "") or ""),
+                previous_generation=str(control.get("previous_generation", "") or ""),
+                keep=2,
+                apply=True,
+            )
             # The assertion sidecar is auxiliary: the graph generation is
             # already visible, so an assertion write failure must never roll
             # back or delay the usable index.
@@ -357,8 +371,8 @@ def reindex_workspace(
             # Preserve the historical reindex return schema. Generation and
             # shard routing are published through index-control/status files.
             return counts
-        except Exception as exc:
-            fail_generation(store, generation, str(exc))
+        except BaseException as exc:
+            fail_generation(store, generation, str(exc) or type(exc).__name__)
             raise
 
 
@@ -1289,9 +1303,8 @@ def build_graph_store(config: WorkspaceConfig, store: WorkspaceStore, *, project
         if partial:
             graph_counts = graph.partial_rebuild(nodes, edges, pf, pfs)
         else:
-            graph.rebuild(nodes, edges)
-            graph.rebuild_search_index()
-            graph_counts = graph.counts()
+            graph.rebuild(nodes, edges, clear_search=False)
+            graph_counts = {**graph.counts(), **graph.rebuild_search_index()}
         store.write_json("graph-summary.json", graph_counts)
         return graph_counts
 

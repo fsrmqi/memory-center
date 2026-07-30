@@ -9,6 +9,32 @@ from typing import Any
 from .workspace import WorkspaceStore
 
 
+def compact_semantic_runtime_state(workspace_file: str | Path, *, apply: bool = False) -> dict[str, Any]:
+    """Remove the retired semantic document mirror without rebuilding the graph."""
+    from memory_center.core.retrieval.semantic import SEMANTIC_INDEX_FILE, SEMANTIC_INDEX_VERSION
+
+    store = WorkspaceStore(workspace_file)
+    payload = store.read_json_prefer_backend(SEMANTIC_INDEX_FILE, {}) or {}
+    removable = {key: payload[key] for key in ("docs", "df", "avgdl") if key in payload}
+    before_bytes = len(json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
+    compacted = {key: value for key, value in payload.items() if key not in removable}
+    compacted["version"] = SEMANTIC_INDEX_VERSION
+    compacted["storage_mode"] = "runtime_indexes_v1"
+    after_bytes = len(json.dumps(compacted, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
+    result: dict[str, Any] = {
+        "apply": apply,
+        "semantic_metadata_bytes_before": before_bytes,
+        "semantic_metadata_bytes_after": after_bytes,
+        "estimated_reclaimable_bytes": max(0, before_bytes - after_bytes),
+        "removed_fields": sorted(removable),
+        "changed": bool(removable),
+        "next_action": "运行 artifact semantic-index-compact --apply；随后在无写入任务时运行 artifact storage-vacuum --apply 回收 SQLite 页。" if removable and not apply else "语义状态已精简；运行 artifact storage-vacuum --apply 回收 SQLite 页。",
+    }
+    if apply and removable:
+        store.write_json(SEMANTIC_INDEX_FILE, compacted)
+    return result
+
+
 def cleanup_legacy_memory_store(workspace_file: str | Path, *, apply: bool = False) -> dict[str, Any]:
     """Remove the retired `memory/memory.db` only when it is not the runtime DB."""
     store = WorkspaceStore(workspace_file)
@@ -36,16 +62,54 @@ def cleanup_legacy_memory_store(workspace_file: str | Path, *, apply: bool = Fal
 
 
 def sparsify_static_assertions(workspace_file: str | Path, *, apply: bool = False) -> dict[str, Any]:
-    """Delete materialized EXTRACTED rows; graph edges become the static source."""
+    """Delete every legacy static assertion mirror; graph edges remain the source."""
     store = WorkspaceStore(workspace_file)
     with store.memory_backend().connect() as conn:
-        extracted = int(conn.execute("SELECT COUNT(*) FROM assertions WHERE status='EXTRACTED'").fetchone()[0])
+        assertion_rows = int(
+            conn.execute(
+                """
+                SELECT COUNT(*) FROM assertions
+                WHERE provenance_kind='STATIC' AND relation_mode='STRUCTURAL'
+                """
+            ).fetchone()[0]
+        )
+        json_rows = int(
+            conn.execute(
+                """
+                SELECT COUNT(*) FROM json_records
+                WHERE collection='assertions.jsonl' AND type='static_assertion'
+                """
+            ).fetchone()[0]
+        )
     export = store.memory_dir / "assertions.jsonl"
-    payload: dict[str, Any] = {"extracted_rows": extracted, "export_bytes": export.stat().st_size if export.exists() else 0, "apply": apply, "deleted_rows": 0, "next_action": "运行 assertion-sparsify --apply 删除旧静态断言副本；随后按需执行 assertion-vacuum 回收 SQLite 页。"}
+    payload: dict[str, Any] = {
+        "static_assertion_rows": assertion_rows,
+        "static_json_rows": json_rows,
+        "export_bytes": export.stat().st_size if export.exists() else 0,
+        "apply": apply,
+        "deleted_assertion_rows": 0,
+        "deleted_json_rows": 0,
+        "next_action": "运行 assertion-sparsify --apply 删除旧静态断言镜像；随后按需执行 assertion-vacuum 回收 SQLite 页。",
+    }
     if not apply:
         return payload
     with store.memory_backend().connect() as conn:
-        payload["deleted_rows"] = int(conn.execute("DELETE FROM assertions WHERE status='EXTRACTED'").rowcount)
+        payload["deleted_assertion_rows"] = int(
+            conn.execute(
+                """
+                DELETE FROM assertions
+                WHERE provenance_kind='STATIC' AND relation_mode='STRUCTURAL'
+                """
+            ).rowcount
+        )
+        payload["deleted_json_rows"] = int(
+            conn.execute(
+                """
+                DELETE FROM json_records
+                WHERE collection='assertions.jsonl' AND type='static_assertion'
+                """
+            ).rowcount
+        )
     export.write_text(json.dumps({"schema_version": 2, "mode": "derived_static_assertions", "note": "静态断言从 graph edges 按需派生；本文件不再保存全量副本。"}, ensure_ascii=False) + "\n", encoding="utf-8")
     payload["next_action"] = "已删除静态副本；运行 assertion-vacuum 可回收 SQLite 文件空间。"
     return payload
@@ -56,7 +120,7 @@ def vacuum_runtime_store(workspace_file: str | Path, *, apply: bool = False) -> 
     store = WorkspaceStore(workspace_file)
     path = store.runtime_db_path
     before = path.stat().st_size if path.exists() else 0
-    payload: dict[str, Any] = {"db": str(path), "before_bytes": before, "apply": apply, "after_bytes": before, "next_action": "确认无重建任务后运行 assertion-vacuum --apply；该操作会短暂独占 SQLite。"}
+    payload: dict[str, Any] = {"db": str(path), "before_bytes": before, "apply": apply, "after_bytes": before, "next_action": "确认无重建任务后运行 storage-vacuum --apply；该操作会短暂独占 SQLite。"}
     if not apply:
         return payload
     with sqlite3.connect(path, timeout=30) as conn:

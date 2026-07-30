@@ -75,6 +75,22 @@ def test_partial_reindex_uses_copy_on_write_service_shards(tmp_path: Path) -> No
     assert current_unchanged.stat().st_ino == previous_unchanged.stat().st_ino
 
 
+def test_reindex_automatically_keeps_only_active_and_previous_generations(tmp_path: Path) -> None:
+    from tests.fixtures import copy_demo_workspace
+
+    workspace = copy_demo_workspace(tmp_path)
+    store = WorkspaceStore(workspace)
+    config = load_workspace_config(workspace)
+    for _ in range(3):
+        reindex_workspace(config, store, parallel=False)
+
+    control = index_control_status(store)
+    generations = sorted(path.name for path in (store.index_dir / "generations").iterdir() if path.is_dir())
+    assert len(generations) == 2
+    assert control["active_generation"] in generations
+    assert control["previous_generation"] in generations
+
+
 def test_absolute_path_filter_rebuilds_only_its_service_shard() -> None:
     file_index = [
         {

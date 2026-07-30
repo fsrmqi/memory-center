@@ -27,6 +27,7 @@ class ClassInfo:
     methods: set[str] = field(default_factory=set)
     method_signatures: list[dict[str, Any]] = field(default_factory=list)
     fields: set[str] = field(default_factory=set)
+    field_types: dict[str, str] = field(default_factory=dict)
     annotations: set[str] = field(default_factory=set)
     imports: tuple[str, ...] = ()
     supertypes: tuple[str, ...] = ()
@@ -91,6 +92,7 @@ def build_java_class_index(symbols: list[dict[str, Any]]) -> JavaClassIndex:
                 methods=methods,
                 method_signatures=signatures,
                 fields=fields,
+                field_types={str(key): str(value) for key, value in (sym.get("field_types", {}) or {}).items() if key and value},
                 annotations=annotations,
                 imports=tuple(str(item) for item in sym.get("imports", []) if item),
                 supertypes=tuple(str(item) for item in (sym.get("type_supertypes", {}) or {}).get(class_name, []) if item),
@@ -138,9 +140,16 @@ class JavaCallResolver:
         if chain_method:
             for info, _level, _confidence in candidates:
                 return_type = _method_return_type(info.method_signatures, chain_method)
+                resolution_level = "chain_return_type"
+                confidence = 0.78
+                if not return_type:
+                    lombok_field = _lombok_accessor_field(info, chain_method)
+                    return_type = _normalize_type_name(info.field_types.get(lombok_field, "")) if lombok_field else ""
+                    resolution_level = "chain_lombok_accessor_return_type"
+                    confidence = 0.8
                 return_candidates = self.class_index.by_simple.get(return_type, []) if return_type else []
                 if len(return_candidates) == 1 and target_method in return_candidates[0].methods:
-                    return self._resolved(owner_symbol, owner, call, return_candidates[0], "chain_return_type", 0.78, arg_count)
+                    return self._resolved(owner_symbol, owner, call, return_candidates[0], resolution_level, confidence, arg_count)
 
         for info, level, confidence in candidates:
             if target_method in info.methods:
@@ -501,6 +510,11 @@ def _lombok_accessor_field(info: ClassInfo, method_name: str) -> str:
         if not suffix or not suffix[0].isupper() or not (annotation_names & required_annotations):
             continue
         field_name = suffix[0].lower() + suffix[1:]
-        if field_name in info.fields:
-            return field_name
+        # Lombok treats a boolean field named ``isSuccess`` as property
+        # ``success``: it generates ``isSuccess()`` and ``setSuccess(...)``.
+        # The source declaration retains the ``is`` prefix, so checking only
+        # the JavaBeans property name loses a deterministic local edge.
+        for candidate in (field_name, f"is{suffix}"):
+            if candidate in info.fields:
+                return candidate
     return ""

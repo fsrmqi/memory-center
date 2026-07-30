@@ -66,11 +66,15 @@ def test_build_semantic_index_generates_dense_vectors_only_for_selective_nodes(t
 
     payload = build_workspace_semantic_index(workspace)
     docs = {doc["node_id"]: doc for doc in payload["docs"]}
+    persisted = store.read_json_prefer_backend("semantic-node-index.json", {})
 
     assert payload["backend"] == "sentence-transformers"
     assert payload["requested_vector_scope"] == "selective"
     assert payload["vector_candidate_count"] == 7
     assert payload["dense_doc_count"] == 7
+    assert persisted["storage_mode"] == "runtime_indexes_v1"
+    assert "docs" not in persisted
+    assert "df" not in persisted
 
     assert "dense_vector" in docs["Endpoint:demo:GET:/api/orders"]
     assert "dense_vector" in docs["Class:demo:OrderService"]

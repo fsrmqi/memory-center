@@ -3,8 +3,13 @@ from __future__ import annotations
 import pytest
 
 from memory_center.core.storage.graph import GraphEdge, GraphNode
-from memory_center.core.storage.maintenance import cleanup_legacy_memory_store
+from memory_center.core.storage.maintenance import (
+    cleanup_legacy_memory_store,
+    compact_semantic_runtime_state,
+    sparsify_static_assertions,
+)
 from memory_center.core.storage.runtime import RuntimeStore
+from memory_center.core.storage.workspace import WorkspaceStore
 
 
 def test_runtime_store_unifies_graph_and_runtime_records(tmp_path) -> None:
@@ -63,3 +68,59 @@ def test_legacy_memory_store_cleanup_never_targets_runtime_db(tmp_path) -> None:
     assert result["removed"]
     assert not legacy.exists()
     assert (workspace.parent / "graph" / "graph.db").exists() is False
+
+
+def test_assertion_sparsify_removes_legacy_static_rows_from_both_mirrors(tmp_path) -> None:
+    workspace = tmp_path / ".memory-center" / "workspace.yaml"
+    workspace.parent.mkdir(parents=True)
+    workspace.write_text("workspace: demo\nservices: []\n", encoding="utf-8")
+    store = RuntimeStore(workspace.parent / "graph" / "graph.db")
+    try:
+        static = {
+            "assertion_id": "static:edge-1",
+            "subject_id": "Class:demo:Source",
+            "predicate": "CALLS_METHOD",
+            "object_id": "Method:demo:Target",
+            "status": "EXTRACTED",
+            "generation": "gen-1",
+            "valid_from": "2026-01-01T00:00:00Z",
+            "provenance_kind": "STATIC",
+            "relation_mode": "STRUCTURAL",
+        }
+        store.upsert_assertions([static])
+        store.append_record("assertions.jsonl", {**static, "type": "static_assertion"})
+        store.upsert_assertions([{**static, "assertion_id": "manual:1", "provenance_kind": "MANUAL", "relation_mode": "GOVERNANCE"}])
+    finally:
+        store.close()
+
+    preview = sparsify_static_assertions(workspace)
+    assert preview["static_assertion_rows"] == 1
+    assert preview["static_json_rows"] == 1
+    result = sparsify_static_assertions(workspace, apply=True)
+    assert result["deleted_assertion_rows"] == 1
+    assert result["deleted_json_rows"] == 1
+    with RuntimeStore(workspace.parent / "graph" / "graph.db") as verify:
+        assert verify.assertion_by_id("static:edge-1") is None
+        assert verify.assertion_by_id("manual:1") is not None
+        assert verify.query_records(collection="assertions.jsonl")["records"] == []
+
+
+def test_semantic_compaction_removes_duplicated_document_payload(tmp_path) -> None:
+    workspace = tmp_path / ".memory-center" / "workspace.yaml"
+    workspace.parent.mkdir(parents=True)
+    workspace.write_text("workspace: demo\nservices: []\n", encoding="utf-8")
+    store = WorkspaceStore(workspace)
+    store.write_json("semantic-node-index.json", {
+        "version": 4, "node_count": 1, "doc_count": 1, "docs": [{"node_id": "n1", "dense_vector": [0.1]}],
+        "df": {"demo": 1}, "avgdl": 3.0,
+    })
+
+    preview = compact_semantic_runtime_state(workspace)
+    assert preview["changed"] is True
+    assert set(preview["removed_fields"]) == {"avgdl", "df", "docs"}
+
+    result = compact_semantic_runtime_state(workspace, apply=True)
+    persisted = store.read_json_prefer_backend("semantic-node-index.json", {})
+    assert result["changed"] is True
+    assert persisted["storage_mode"] == "runtime_indexes_v1"
+    assert "docs" not in persisted

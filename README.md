@@ -610,6 +610,16 @@ For longer-running work, prefer task-specific spaces under `artifacts/tasks/<tas
 
 对于周期更长的任务，建议使用 `artifacts/tasks/<任务标题-slug>/` 这种按需求分空间的方式，让同一需求拥有自己的 `context/design/plan/change-log`；过期任务空间还可以按保留天数自动归档。
 
+### 索引存储与空间维护 / Index Storage and Space Maintenance
+
+语义检索的倒排 posting 与 ANN 向量分别保存在 SQLite 运行时索引中；`semantic-node-index` 只保留轻量状态，不复制全量节点和 embedding。旧工作区可先运行 `artifact semantic-index-compact --workspace <workspace.yaml> --dry-run`，确认后追加 `--apply`，再在没有 reindex 或写入任务时运行 `artifact storage-vacuum --workspace <workspace.yaml> --apply` 回收 SQLite 页。该维护不会重建源码索引。
+
+Sparse postings and ANN vectors are stored in dedicated SQLite runtime indexes; `semantic-node-index` retains only lightweight state and no longer duplicates all nodes or embeddings. Existing workspaces can run `artifact semantic-index-compact --workspace <workspace.yaml> --dry-run`, then `--apply`, followed by `artifact storage-vacuum --workspace <workspace.yaml> --apply` while no reindex or write task is running. This maintenance does not rebuild source indexes.
+
+已发布的交付 Skill 可选接入外部 `skill-up` 评测器：Agent 先运行 `artifact delivery-skill-eval-status`；仅当二进制可用且 Skill 已发布时，执行 `delivery-skill-eval-init` 生成脱敏用例骨架。Agent 必须先运行 `delivery-skill-eval-run --dry-run`，只有维护者明确要求后才可追加 `--apply`；外部评测结果不能自动发布或提升 Skill 状态。
+
+Published delivery Skills can optionally use the external `skill-up` evaluator. Agents first run `artifact delivery-skill-eval-status`; only when the binary is available and the Skill is published may they initialize a sanitized evaluation skeleton. Agents must use `delivery-skill-eval-run --dry-run` before an explicitly requested `--apply`; external results never auto-publish or promote a Skill.
+
 ```bash
 memory-center artifact create-task \
   --workspace /Users/cuijiaqi/javaworkspace/ucap/.memory-center/workspace.yaml \

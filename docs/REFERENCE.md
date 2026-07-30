@@ -197,10 +197,16 @@
 
 交付 `subtasks` 除 `code_targets` 外可附加 `read_targets`、`write_targets`、`stop_conditions`：分别表示实现前必须核实的目标、允许修改的范围，以及触发重新分析或请求决策的停止条件。`delivery-matrix` 与派生 `TECH_SPEC.md` 会展示范围契约覆盖率。工作区 `delivery-policy.json` 设置 `enforce_scope_contract: true` 后，进入 `implement` 前每个子任务必须同时具备上述范围字段；默认关闭，既有任务不受影响。
 - `artifact compact-task --task-id <task>`：对超大任务工件进行流式 gzip 归档，保留有界恢复摘要；先执行 `artifact health-task` 识别异常空间。
-- `artifact generation-gc --workspace <workspace.yaml> --dry-run`：预览可回收的旧索引代际；确认后追加 `--apply`。该命令始终保留当前和上一代，Agent 在发现 `index/generations` 占用异常时应先执行预览。
+- 成功 reindex 后会自动回收旧索引代际，只保留当前和上一代；`artifact generation-gc --workspace <workspace.yaml> --dry-run` 可在异常空间占用排查时预览同一回收策略，确认后追加 `--apply`。Agent 不得手工删除 generation 目录。
+- `artifact index-export-cleanup --workspace <workspace.yaml> --dry-run`：预览由 SQLite `index_mirror` 覆盖的大型结构化索引 JSON 副本；确认后追加 `--apply`。运行时不从这些文件回退读取，未存在 SQLite canonical payload 的文件不会被删除。
 - `artifact storage-legacy-cleanup --workspace <workspace.yaml> --dry-run`：检查已废弃的 `memory/memory.db` 副本；仅在运行时事实库已是 `graph/graph.db` 时允许 `--apply` 删除。
-- `artifact assertion-sparsify --workspace <workspace.yaml> --dry-run`：预览可由图边派生的旧 `EXTRACTED` 断言和 JSONL 导出；确认后追加 `--apply`。此操作保留人工验证、拒绝和治理覆盖。
+- `artifact assertion-sparsify --workspace <workspace.yaml> --dry-run`：预览可由图边派生的旧静态断言镜像，包括早期 `EXTRACTED`、已 superseded 的静态 SQLite 行及 `json_records` 镜像；确认后追加 `--apply`。此操作保留人工验证、拒绝和治理覆盖。
 - `artifact assertion-vacuum --workspace <workspace.yaml> --dry-run`：预览 `graph.db` 重整；仅在确认没有 reindex 或写入任务时追加 `--apply` 回收稀疏化后的 SQLite 页。
+- `artifact semantic-index-compact --workspace <workspace.yaml> --dry-run`：预览并在 `--apply` 后删除旧版 `semantic-node-index` 中与 SQLite 倒排、ANN 向量索引重复的全量文档镜像，不触发 reindex。
+- `artifact storage-vacuum --workspace <workspace.yaml> --dry-run`：在大型存储清理后显式重整 `graph.db` 并回收 SQLite 空闲页；执行期间需要独占数据库。
+- `artifact delivery-skill-eval-status`：检查可选外部 `skill-up` 评测器；未安装不会影响检索或交付流程。
+- `artifact delivery-skill-eval-init --workspace <workspace.yaml> --skill-id <id>`：仅为已发布 Skill 创建脱敏 `eval.yaml` 与 `cases/` 骨架。
+- `artifact delivery-skill-eval-run --workspace <workspace.yaml> --skill-id <id> --dry-run|--apply`：预览或显式执行固定的 `skill-up validate/run`，产出 JSON、JUnit、HTML；结果只能作为外部评测证据，不能自动发布 Skill。
 
 ### `mc_context_pack`
 
@@ -345,7 +351,15 @@ When a case declares `expected_resolution_levels`, that level is gated too. For 
 
 Path-scoped `reindex --path ...` returns `bm25_sync_mode` and `bm25_changed_docs`. A normal scoped refresh reports `partial` and replaces postings only for affected nodes. A legacy index can report `full-legacy-fallback` once while persistent term frequencies are migrated, after which scoped updates resume. BM25 queries score from persisted term frequencies and global statistics, so partial results remain equivalent to a full rebuild.
 
+定向 `reindex --path ...` 还会返回 `fts_sync_mode`、`fts_changed_nodes` 与 `fts_elapsed_ms`。局部刷新仅替换变更节点的 FTS 行；完整重建由 SQLite 内部 `INSERT ... SELECT` 写入 FTS，不会把全量节点先加载到 Python 内存。`fts_elapsed_ms` 是真实 workspace 重建性能门禁与排障的优先指标。
+
+Path-scoped `reindex --path ...` also returns `fts_sync_mode`, `fts_changed_nodes`, and `fts_elapsed_ms`. Scoped refresh replaces only FTS rows for changed nodes; full rebuild uses SQLite-internal `INSERT ... SELECT` and never materializes all graph nodes in Python first. `fts_elapsed_ms` is a primary metric for real-workspace rebuild gates and diagnosis.
+
 After an application upgrade but before reindex, queries continue to use the legacy persisted BM25 scores rather than returning empty results. Migration occurs only on the next explicit reindex.
+
+Java 调用链中，`receiver.getField().target()` 只有在 `getField` 可由 Lombok 注解和字段事实验证、字段类型在工作区唯一且 `target` 在该类型源码中声明时，才会返回 `chain_lombok_accessor_return_type`。外部库、同名歧义或缺失字段类型不会建立调用边。
+
+For Java chains, `receiver.getField().target()` returns `chain_lombok_accessor_return_type` only when Lombok annotations and field facts verify `getField`, the field type is unique in the workspace, and `target` is declared in that type's source. External libraries, ambiguous names, and missing field types never create a call edge.
 
 批量治理记录、语义编码向量和 ANN 标签/距离都会先校验数量一致再配对；这避免异常响应被静默截断，也使 macOS 默认 Python 的本地开发与生产解释器保持相同行为。
 

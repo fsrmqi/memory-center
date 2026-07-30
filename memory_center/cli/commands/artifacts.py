@@ -14,6 +14,7 @@ from memory_center.core.indexing.control_plane import index_control_status
 from memory_center.core.indexing.shards import cleanup_generations
 from memory_center.core.storage.maintenance import (
     cleanup_legacy_memory_store,
+    compact_semantic_runtime_state,
     sparsify_static_assertions,
     vacuum_runtime_store,
 )
@@ -63,6 +64,7 @@ from memory_center.core.tasks.delivery import (
     update_delivery_policy,
     update_delivery_subtask_status,
 )
+from memory_center.core.tasks.skill_up import initialize_skill_up_eval, run_skill_up_eval, skill_up_status
 
 
 def register_artifact_commands(app: typer.Typer) -> None:
@@ -297,6 +299,21 @@ def register_artifact_commands(app: typer.Typer) -> None:
         """离线归纳多个已验证交付的共同结构，不影响查询热路径。"""
         print(synthesize_delivery_skill_trajectories(workspace, min_support=min_support))
 
+    @app.command("delivery-skill-eval-status")
+    def artifact_delivery_skill_eval_status_cmd():
+        """检查可选 skill-up 外部评测器是否可用。"""
+        print(skill_up_status())
+
+    @app.command("delivery-skill-eval-init")
+    def artifact_delivery_skill_eval_init_cmd(workspace: str = typer.Option(...), skill_id: str = typer.Option(...), engine: str = typer.Option("codex")):
+        """为已发布交付 Skill 生成脱敏 skill-up 评测骨架。"""
+        print(initialize_skill_up_eval(workspace, skill_id=skill_id, engine=engine))
+
+    @app.command("delivery-skill-eval-run")
+    def artifact_delivery_skill_eval_run_cmd(workspace: str = typer.Option(...), skill_id: str = typer.Option(...), apply: bool = typer.Option(False, "--apply/--dry-run")):
+        """显式运行固定 skill-up validate/run，不接受任意 shell 参数。"""
+        print(run_skill_up_eval(workspace, skill_id=skill_id, apply=apply))
+
     @app.command("compact-task")
     def artifact_compact_task_cmd(workspace: str = typer.Option(...), task_id: str = typer.Option(...), threshold_mb: int = typer.Option(2), keep_kb: int = typer.Option(64)):
         """压缩归档超大任务工件，保留有界恢复摘要。"""
@@ -308,6 +325,11 @@ def register_artifact_commands(app: typer.Typer) -> None:
         store = WorkspaceStore(workspace)
         control = index_control_status(store)
         print(cleanup_generations(store, active_generation=str(control.get("active_generation", "") or ""), previous_generation=str(control.get("previous_generation", "") or ""), keep=max(2, keep), apply=apply))
+
+    @app.command("index-export-cleanup")
+    def artifact_index_export_cleanup_cmd(workspace: str = typer.Option(...), apply: bool = typer.Option(False, "--apply/--dry-run", help="默认只预览；--apply 删除 SQLite 已覆盖的大型 JSON 索引导出。")):
+        """清理 SQLite 运行时索引的重复 JSON 导出。"""
+        print(WorkspaceStore(workspace).cleanup_runtime_only_index_exports(apply=apply))
 
     @app.command("storage-legacy-cleanup")
     def artifact_storage_legacy_cleanup_cmd(workspace: str = typer.Option(...), apply: bool = typer.Option(False, "--apply/--dry-run", help="默认只预览；--apply 删除未被当前运行时使用的旧 memory.db。")):
@@ -322,4 +344,14 @@ def register_artifact_commands(app: typer.Typer) -> None:
     @app.command("assertion-vacuum")
     def artifact_assertion_vacuum_cmd(workspace: str = typer.Option(...), apply: bool = typer.Option(False, "--apply/--dry-run", help="默认只预览；--apply 独占重整 graph.db 并回收已删除页。")):
         """在断言稀疏化后显式回收 SQLite 页。"""
+        print(vacuum_runtime_store(workspace, apply=apply))
+
+    @app.command("semantic-index-compact")
+    def artifact_semantic_index_compact_cmd(workspace: str = typer.Option(...), apply: bool = typer.Option(False, "--apply/--dry-run", help="默认只预览；--apply 删除被倒排和向量索引覆盖的旧语义文档镜像。")):
+        """将旧语义全量镜像压缩为运行时索引元数据，不触发 reindex。"""
+        print(compact_semantic_runtime_state(workspace, apply=apply))
+
+    @app.command("storage-vacuum")
+    def artifact_storage_vacuum_cmd(workspace: str = typer.Option(...), apply: bool = typer.Option(False, "--apply/--dry-run", help="默认只预览；--apply 独占重整 graph.db 并回收已删除页。")):
+        """在任何大型存储清理后显式回收 SQLite 页。"""
         print(vacuum_runtime_store(workspace, apply=apply))

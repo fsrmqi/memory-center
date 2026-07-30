@@ -1,13 +1,83 @@
 # Changelog / 更新日志
 
+## 4.3.48 可选 skill-up 评测适配器 / Optional skill-up Evaluation Adapter
+
+- 新增 `delivery-skill-eval-status|init|run`：对已发布 Skill 生成脱敏的 `skill-up` 评测骨架，并通过固定 argv 执行 `validate/run`，可输出 JSON、JUnit、HTML 报告。
+- `skill-up` 是可选外部组件，未安装时返回明确诊断；执行必须显式 `--apply`，不接受任意 shell、不会进入查询热路径，也不会绕过现有 canary、证据或发布门禁。
+
+## 4.3.48 Optional skill-up Evaluation Adapter
+
+- Added `delivery-skill-eval-status|init|run`: creates a sanitized `skill-up` evaluation skeleton for published Skills and invokes fixed `validate/run` argv with JSON, JUnit, and HTML reports.
+- `skill-up` remains optional. Missing installations are diagnosable; execution requires explicit `--apply`, accepts no arbitrary shell, stays out of query paths, and cannot bypass canary, evidence, or publication gates.
+
+## 4.3.47 Lombok 布尔属性调用解析 / Lombok Boolean Property Call Resolution
+
+- Java 调用解析器现识别 Lombok `@Data`、`@Getter`、`@Setter` 或 `@Value` 中 `isSuccess` 形式布尔字段生成的 `isSuccess()` / `setSuccess(...)` 访问器。仅在字段与 Lombok 注解均已索引时补充本地边，外部类型和普通未声明方法仍保持未解析。
+
+## 4.3.47 Lombok Boolean Property Call Resolution
+
+- The Java call resolver now recognizes `isSuccess`-style boolean fields and their Lombok-generated `isSuccess()` / `setSuccess(...)` accessors for indexed `@Data`, `@Getter`, `@Setter`, or `@Value` types. External types and ordinary undeclared methods remain unresolved.
+
+## 4.3.46 语义索引去重与运行时检索 / Semantic Index Deduplication and Runtime Retrieval
+
+- `semantic-node-index` 不再持久化全量节点文档、稀疏向量、词频和 dense embedding；SQLite 倒排索引与 ANN 向量索引成为唯一检索存储，命中后仅按 ID 有界回填图节点，消除大型工作空间的重复镜像与 Python 全量扫描。
+- 新增 `artifact semantic-index-compact --dry-run|--apply`，可无 reindex 压缩旧版本语义镜像；随后通过 `artifact storage-vacuum --apply` 显式回收 SQLite 页。
+
+## 4.3.46 Semantic Index Deduplication and Runtime Retrieval
+
+- `semantic-node-index` no longer persists full node documents, sparse vectors, term frequencies, or dense embeddings. SQLite inverted and ANN vector indexes are now the sole retrieval stores; hits are bounded and hydrated by node ID.
+- Added `artifact semantic-index-compact --dry-run|--apply` to compact legacy semantic mirrors without reindex, followed by `artifact storage-vacuum --apply` to reclaim SQLite pages.
+
+## 4.3.45 FTS5 批量重建与局部维护 / FTS5 Bulk Rebuild and Scoped Maintenance
+
+- 完整 FTS5 重建改为 SQLite 内部 `INSERT ... SELECT`，不再将全量节点与搜索文本加载进 Python；主图 rebuild 可避免与 FTS rebuild 重复清空搜索表。
+- 局部刷新把 FTS 删除与插入收敛为单事务批量操作，并在 reindex 结果中增加 `fts_sync_mode`、`fts_changed_nodes`、`fts_elapsed_ms`。
+
+## 4.3.45 FTS5 Bulk Rebuild and Scoped Maintenance
+
+- Full FTS5 rebuild now uses SQLite-internal `INSERT ... SELECT` without loading all graph nodes and search text into Python; main graph rebuild can avoid clearing the search table twice.
+- Scoped refresh batches FTS deletes and inserts in one transaction and adds `fts_sync_mode`, `fts_changed_nodes`, and `fts_elapsed_ms` to reindex output.
+
+## 4.3.44 SQLite 单副本索引导出 / SQLite Single-Copy Index Exports
+
+- 文件、符号、契约、拓扑和语义等大型可重建索引只保留在 SQLite `index_mirror`，不再额外写入同内容 JSON 文件；读取入口统一走 SQLite。
+- 新增 `artifact index-export-cleanup --dry-run|--apply`，只删除已存在 SQLite canonical payload 的旧导出，不会删除未迁移的孤立文件。
+
+## 4.3.44 SQLite Single-Copy Index Exports
+
+- Large rebuildable file, symbol, contract, topology, and semantic indexes now remain only in SQLite `index_mirror`; identical JSON files are no longer written, and read paths use SQLite consistently.
+- Added `artifact index-export-cleanup --dry-run|--apply`, which removes legacy exports only when a canonical SQLite payload exists and never deletes unmigrated orphan files.
+
+## 4.3.43 索引代际与静态断言空间回收 / Index Generation and Static Assertion Reclamation
+
+- 成功 reindex 后自动执行 generation GC，仅保留当前与上一代；中断（包括 `Ctrl-C`）会将 reindex 生命周期和 index control 明确标记为失败，不再遗留伪 `building` 状态。
+- `assertion-sparsify` 现同时删除全部可由图边派生的旧静态断言镜像，包括历史 `SUPERSEDED` SQLite 行与 `json_records` 中的静态 JSON 镜像；人工验证、拒绝和治理覆盖保持不变。
+
+## 4.3.43 Index Generation and Static Assertion Reclamation
+
+- Successful reindex now runs generation GC automatically and retains only the active and previous generations. Interruptions, including `Ctrl-C`, mark both reindex lifecycle and index control as failed instead of leaving a false `building` state.
+- `assertion-sparsify` now removes every graph-derived legacy static assertion mirror, including historical `SUPERSEDED` SQLite rows and static JSON mirrors in `json_records`; human verification, rejection, and governance overrides remain intact.
+
+## 4.3.42 Lombok 链式返回类型解析 / Lombok Chained Return-Type Resolution
+
+- Java call resolver 现在可在首段为可验证 Lombok getter、字段类型在工作区唯一且第二段方法真实存在时，解析 `receiver.getField().target()` 为 `chain_lombok_accessor_return_type`；外部或歧义字段类型继续保持未解析。
+- 首次 BM25 格式迁移移除了数百万条 posting 的废弃预计算分值，只写入动态查询需要的原始统计，降低完整迁移与完整重建 CPU 成本。
+
+## 4.3.42 Lombok Chained Return-Type Resolution
+
+- The Java call resolver now resolves `receiver.getField().target()` as `chain_lombok_accessor_return_type` only when the first segment is a verifiable Lombok getter, the field type is unique in the workspace, and the second method exists. External or ambiguous field types remain unresolved.
+- Initial BM25 migration no longer computes obsolete scores for millions of postings; it writes only raw statistics used by dynamic queries, reducing full-migration and full-rebuild CPU cost.
+
 ## 4.3.41 定向刷新增量 BM25 / Incremental BM25 for Scoped Refresh
 
 - SQLite 倒排索引现在持久化原始词频、文档频率和全局长度统计。局部 reindex 只读取、重分词并替换 `changed_node_ids`，未变化 posting 不再删除重写；查询时动态计分，保证与完整重建一致。
+- 新格式完整构建不再计算已废弃的逐 posting 预计算分值，首次迁移和完整重建只写入查询所需的原始统计。
 - reindex 新增 `bm25_sync_mode` 和 `bm25_changed_docs`。旧 BM25 格式仅在第一次局部刷新时安全完整迁移一次，返回 `full-legacy-fallback`，后续使用 `partial`。
 
 ## 4.3.41 Incremental BM25 for Scoped Refresh
 
 - The SQLite inverted index now persists raw term frequencies, document frequencies, and global length statistics. Scoped reindex reads, tokenizes, and replaces only `changed_node_ids`, while untouched postings remain in place. Query-time scoring preserves full-rebuild equivalence.
+- Full V2 builds no longer compute obsolete per-posting scores; initial migration and full rebuild retain only raw statistics required at query time.
 - Reindex now reports `bm25_sync_mode` and `bm25_changed_docs`. A legacy BM25 index performs one safe full migration on its first scoped refresh as `full-legacy-fallback`; later scoped refreshes report `partial`.
 
 ## 4.3.40 发布产物新鲜度与热缓存修复 / Published-Artifact Freshness and Hot-Cache Fix

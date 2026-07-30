@@ -44,7 +44,9 @@ def test_reindex_lock_records_lifecycle_and_workspace_status(tmp_path: Path, mon
         parallel=False,
     )
 
-    assert result == {"mode": "partial", "files": 1}
+    assert result["mode"] == "partial"
+    assert result["files"] == 1
+    assert result["generation_gc"]["removed"] == 0
     status = workspace_reindex_status(store)
     assert status["status"] == "succeeded"
     assert status["lock_held"] is False
@@ -77,6 +79,20 @@ def test_reindex_lock_returns_conflict_when_writer_is_busy(tmp_path: Path, monke
     assert error.error_type == "conflict"
     assert error.diagnostics["status"] == "idle"
     assert "--lock-timeout" in error.suggested_action
+
+
+def test_reindex_lock_marks_keyboard_interrupt_as_failed(tmp_path: Path) -> None:
+    workspace = _workspace(tmp_path)
+    store = WorkspaceStore(workspace)
+
+    with pytest.raises(KeyboardInterrupt):
+        with workspace_reindex_lock(store):
+            raise KeyboardInterrupt
+
+    status = workspace_reindex_status(store)
+    assert status["status"] == "failed"
+    assert status["lock_held"] is False
+    assert status["error"] == "KeyboardInterrupt"
 
 
 def test_reindex_cli_reports_lock_conflict_without_traceback(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

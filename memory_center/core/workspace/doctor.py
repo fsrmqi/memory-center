@@ -6,7 +6,7 @@ from typing import Any
 
 from memory_center.core.retrieval.semantic import SEMANTIC_INDEX_FILE, semantic_index_stats
 from memory_center.core.storage.runtime import RuntimeStore
-from memory_center.core.storage.workspace import WorkspaceStore
+from memory_center.core.storage.workspace import RUNTIME_ONLY_INDEXES, WorkspaceStore
 from memory_center.core.workspace.config import load_workspace_config
 from memory_center.core.workspace.shape import analyze_workspace_shape
 
@@ -39,8 +39,12 @@ def doctor(
         "service-topology.json",
         SEMANTIC_INDEX_FILE,
     ]:
-        p = store.index_dir / name
-        checks.append(_check(f"index:{name}", p.exists(), str(p)))
+        if name in RUNTIME_ONLY_INDEXES:
+            entry = store.memory_backend().read_index_entry(name)
+            checks.append(_check(f"index:{name}", bool(entry.get("found")), "sqlite:index_mirror"))
+        else:
+            p = store.index_dir / name
+            checks.append(_check(f"index:{name}", p.exists(), str(p)))
 
     with RuntimeStore(store.graph_db_path) as graph:
         counts = graph.counts()

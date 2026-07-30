@@ -96,7 +96,7 @@ Memory Center 不要求中心化服务。默认形态是每个 workspace 自带�
 - 默认查询不得扫描全图，也不得隐式触发全量重建；高成本分析必须显式请求或进入后台 job。
 - 节点邻居查询采用有界分层 BFS：每层仅访问当前 frontier，并在扩展前去重；关系边遍历与节点查询分别通过 `traverse_edges`、`neighbors` 表达，避免递归路径物化和语义混淆。
 - `VERIFIED` 结论必须关联验证命令结果、人工确认或可追溯运行结果；置信度不能替代验证。
-- 运行时事实统一写入 SQLite；JSON/JSONL 是可审查导出，不能成为查询回退或覆盖 SQLite 的新事实。
+- 运行时事实统一写入 SQLite；大体积、可重建的结构化索引不再写出 JSON 副本，JSON/JSONL 仅保留小型控制面和人工工件，且不能成为查询回退或覆盖 SQLite 的新事实。
 - CLI、MCP、HTTP 的异常必须收敛为结构化诊断和可行动建议，禁止无界重试。
 - 文档、审计和导出默认不包含私有源码、原始对话正文或工具载荷。
 
@@ -268,7 +268,7 @@ Agent task
 
 Every reindex builds a staging generation and publishes it as the active generation only after graph, retrieval/semantic, and summary artifacts complete. Existing JSON/SQLite artifacts remain compatible read models. The control plane owns consistency boundaries, previous generation, lifecycle state, and recovery evidence. `shard-manifest.json` is routing metadata rather than a duplicated index payload.
 
-当前 generation 目录还保存真实的 `services/<project>.json`、`services/<project>.graph.db`、`contracts.json` 与 `topology.json`。服务分片是完整索引的不可变快照；带明确 project 范围的 code/hybrid 查询优先使用服务分片，跨服务路由仍从 topology/contract 分片出发并可回退到全局读模型。watcher 将失效计划提交为可合并的后台 partial reindex，控制面允许回滚到前一保留 generation，并通过显式 GC 清理过期 generation。
+当前 generation 目录还保存真实的 `services/<project>.json`、`services/<project>.graph.db`、`contracts.json` 与 `topology.json`。服务分片是完整索引的不可变快照；带明确 project 范围的 code/hybrid 查询优先使用服务分片，跨服务路由仍从 topology/contract 分片出发并可回退到全局读模型。watcher 将失效计划提交为可合并的后台 partial reindex；每次成功发布后控制面自动保留当前与上一代并回收更早代际，既支持一次回滚，也避免历史快照无限累积。
 
 局部 reindex 使用 copy-on-write：它从前一 generation 继承未受影响的服务分片，只重建失效计划命中的服务分片，再发布新的 generation。这样增量更新不需要复制或解析全部服务，同时保持 generation 级一致性。
 
@@ -484,7 +484,7 @@ Java 仍保留 Spring-aware 专用解析；多语言 structural pass 避免重�
 - `IMPORTS`
 - `CALLS`
 
-`GraphStore` 提供节点/边写入、FTS5 搜索、LIKE fallback、BFS neighbors、partial rebuild。全量 rebuild 使用 `executemany` 和 `fast_write_mode()`；部分 rebuild 会按 project/path 删除并 upsert scope 内节点边。
+`GraphStore` 提供节点/边写入、FTS5 搜索、LIKE fallback、BFS neighbors、partial rebuild。全量 rebuild 使用 `executemany` 和 `fast_write_mode()`；FTS 使用 SQLite 内部 `INSERT ... SELECT` 构建，不向 Python 物化全量节点。部分 rebuild 按 project/path 删除并 upsert scope 内节点边，只批量替换变更节点的 FTS 行，并输出同步模式、节点数与耗时。
 
 ---
 
@@ -555,16 +555,19 @@ Memory Center 当前有三类存储角色。
 
 ### 7.2 Semantic / BM25 / Vector
 
-`semantic.py` 构建 `semantic-node-index.json`：
+`semantic.py` 只保存 `semantic-node-index.json` 的轻量状态，不再持久化全量节点、词频或 embedding 副本：
 
 - 默认 backend 是 `sparse`。
 - 设置 `MEMORY_CENTER_SEMANTIC_BACKEND=sentence-transformers` 后，可对 selective candidate 生成 dense vectors。
 - `MEMORY_CENTER_VECTOR_SCOPE=off|selective|all` 控制 dense candidate 范围。
+- 稀疏检索直接查询 SQLite `InvertedIndex`，dense 检索直接查询 `VectorIndex`，随后按命中 ID 有界回填图节点；查询热路径不会扫描或反序列化全量语义文档。
 - `semantic_index_stats()` 返回 `vector_status`、candidate count、dense count 和 disabled reason。
 
 `retrieval/inverted.py` 将 graph nodes 写入 SQLite 代码感知 BM25F posting lists，名称、契约、路径和元数据采用不同字段权重。`storage/vector_index.py` 优先支持 sqlite-vec，否则使用持久化 hnswlib HNSW；sqlite-vec 的维度作为显式元数据校验，模型维度不一致时拒绝使用旧表并要求完整 reindex。大索引未安装 ANN 时返回可诊断不可用状态，禁止 Python 全量余弦回退。少于 64 条向量仅用于开发/测试的有界精确校验。HNSW 的向量事实写入、rebuild、增量同步、删除、调优、读取和 label 映射通过同一索引锁串行化，文件保存采用临时路径原子替换；查询锁最多等待 300ms，维护占用时返回可重试诊断而不是阻塞。HNSW 的查询 `ef` 可由有界 self-recall 探针调优。
 
 融合阶段在固定候选预算内执行 relation-weighted personalized graph ranking；可选 Cross-Encoder 只重排前 12 个候选，并且仅使用当前 MCP 进程已显式预热的模型。磁盘缓存不触发查询期加载；预热中并发查询立即保留基础排序，不等待模型锁。模型档案可选择 MiniLM 平衡档或 BGE-M3 多语言档，档案切换必须通过显式完整 reindex 创建新 generation。LTR 只接受候选级人工验证标签，不能从 agent guidance 采纳率推断。
+
+交付 Skill 的外部评测采用可选 `skill-up` 适配器：Memory Center 仍是 Skill ID、发布状态、证据和回滚的唯一事实源；适配器仅为已发布 Skill 生成脱敏评测骨架，并通过固定 argv 运行外部 `validate/run`。外部二进制不存在、配置无效或运行失败都返回有界诊断，不阻塞查询，也不能自动改变 Skill 发布状态。
 
 检索融合权重不从“是否执行建议”推断。`retrieval/calibration.py` 只读取带 evidence 的人工验证 `retrieval-source` 回放，使用平滑后验与样本收缩生成提案，并仅由显式 `--apply` 写入当前工作区的校准快照。
 

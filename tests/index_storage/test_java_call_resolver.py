@@ -319,6 +319,26 @@ import lombok.Data;
     assert result.inferred_target is True
 
 
+def test_resolves_lombok_boolean_is_prefixed_field_setter() -> None:
+    caller = """package com.example.order;
+public class OrderFacade { void submit(Result result) { result.setSuccess(true); } }
+"""
+    target = """package com.example.order;
+import lombok.Data;
+@Data public class Result { private boolean isSuccess; }
+"""
+
+    result = _resolve(
+        [_symbol("api", "OrderFacade.java", caller), _symbol("api", "Result.java", target)],
+        "OrderFacade.java",
+        "setSuccess",
+    )
+
+    assert result.target_class == "Result"
+    assert result.resolution_level == "same_package_lombok_accessor"
+    assert result.matched_signature == "lombok_accessor:isSuccess"
+
+
 def test_extracts_generic_enhanced_for_variable_type() -> None:
     symbol = _symbol("api", "Demo.java", """package com.example;
 import java.util.Map;
@@ -339,6 +359,37 @@ def test_resolves_chain_when_return_type_is_unique() -> None:
     resolved = _resolve([_symbol("api", "Caller.java", caller), _symbol("api", "Factory.java", factory), _symbol("api", "Result.java", result)], "Caller.java", "execute")
     assert resolved.target_class == "Result"
     assert resolved.resolution_level == "chain_return_type"
+
+
+def test_resolves_chain_when_lombok_accessor_field_type_is_unique() -> None:
+    caller = """package com.example; public class Caller { void run(Envelope envelope) { envelope.getPayload().execute(); } }"""
+    envelope = """package com.example; import lombok.Data; @Data public class Envelope { private Payload payload; }"""
+    payload = """package com.example; public class Payload { public void execute() {} }"""
+
+    resolved = _resolve(
+        [_symbol("api", "Caller.java", caller), _symbol("api", "Envelope.java", envelope), _symbol("api", "Payload.java", payload)],
+        "Caller.java",
+        "execute",
+    )
+
+    assert resolved.target_class == "Payload"
+    assert resolved.target_method == "execute"
+    assert resolved.resolution_level == "chain_lombok_accessor_return_type"
+    assert resolved.confidence == 0.8
+
+
+def test_lombok_chain_does_not_resolve_field_type_outside_workspace() -> None:
+    caller = """package com.example; public class Caller { void run(Envelope envelope) { envelope.getPage().getCurrent(); } }"""
+    envelope = """package com.example; import lombok.Data; @Data public class Envelope { private ExternalPage page; }"""
+
+    resolved = _resolve(
+        [_symbol("api", "Caller.java", caller), _symbol("api", "Envelope.java", envelope)],
+        "Caller.java",
+        "getCurrent",
+    )
+
+    assert resolved.resolution_level == "unresolved"
+    assert resolved.unresolved_reason == "target_method_not_indexed"
 
 
 def test_overload_keeps_matching_signature_evidence() -> None:

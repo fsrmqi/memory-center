@@ -4,6 +4,7 @@ import json
 import re
 import sqlite3
 import threading
+import time
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
@@ -136,7 +137,13 @@ class _GraphOperations:
             pass
         conn.commit()
 
-    def rebuild(self, nodes: Iterable[GraphNode], edges: Iterable[GraphEdge]) -> None:
+    def rebuild(
+        self,
+        nodes: Iterable[GraphNode],
+        edges: Iterable[GraphEdge],
+        *,
+        clear_search: bool = True,
+    ) -> None:
         # rebuild() is the hot path during full reindex. Two changes
         # versus the previous loop-of-INSERT implementation:
         #
@@ -177,10 +184,11 @@ class _GraphOperations:
             conn.execute("DELETE FROM edges")
             conn.execute("DELETE FROM nodes")
             conn.execute("DELETE FROM file_generations")
-            try:
-                conn.execute("DELETE FROM node_search")
-            except sqlite3.OperationalError:
-                pass
+            if clear_search:
+                try:
+                    conn.execute("DELETE FROM node_search")
+                except sqlite3.OperationalError:
+                    pass
             if node_rows:
                 conn.executemany(
                     """INSERT INTO nodes(id, type, name, project, file_path, line, metadata_json)
@@ -251,48 +259,43 @@ class _GraphOperations:
                     edge_rows,
                 )
 
-    def rebuild_search_index(self) -> None:
-        # Same executemany rewrite as rebuild(): one prepared INSERT
-        # instead of N. The FTS5 table can have hundreds of thousands of
-        # rows on real Java monorepos.
+    def rebuild_search_index(self) -> dict[str, int | float | str]:
+        """Rebuild FTS in SQLite without materializing all graph rows in Python."""
         from .pragmas import fast_write_mode
 
+        started = time.perf_counter()
         with self.connect() as conn:
             try:
                 with fast_write_mode(conn):
                     conn.execute("DELETE FROM node_search")
-                    rows = conn.execute("SELECT * FROM nodes").fetchall()
-                    if not rows:
-                        return
-                    payload = [
-                        (
-                            row["id"],
-                            row["type"],
-                            row["name"],
-                            row["project"],
-                            row["file_path"],
-                            " ".join(
-                                [
-                                    row["id"],
-                                    row["type"],
-                                    row["name"],
-                                    row["project"] or "",
-                                    row["file_path"] or "",
-                                    row["metadata_json"] or "",
-                                ]
-                            ),
-                        )
-                        for row in rows
-                    ]
-                    conn.executemany(
-                        "INSERT INTO node_search(id, type, name, project, file_path, content)"
-                        " VALUES(?, ?, ?, ?, ?, ?)",
-                        payload,
+                    conn.execute(
+                        """
+                        INSERT INTO node_search(id, type, name, project, file_path, content)
+                        SELECT id, type, name, project, file_path,
+                               id || ' ' || type || ' ' || name || ' ' ||
+                               COALESCE(project, '') || ' ' || COALESCE(file_path, '') || ' ' ||
+                               COALESCE(metadata_json, '')
+                        FROM nodes
+                        """
                     )
+                    indexed = int(conn.execute("SELECT COUNT(*) FROM nodes").fetchone()[0])
+                    # ``fast_write_mode`` restores synchronous on exit; SQLite
+                    # forbids that PRAGMA transition while this FTS write
+                    # transaction is still open.
+                    conn.commit()
+                    return {
+                        "fts_sync_mode": "full_sql",
+                        "fts_changed_nodes": indexed,
+                        "fts_elapsed_ms": round((time.perf_counter() - started) * 1000, 3),
+                    }
             except sqlite3.OperationalError:
                 # FTS5 may be unavailable on stripped-down SQLite builds.
                 # The LIKE fallback path keeps queries working.
-                pass
+                return {
+                    "fts_sync_mode": "unavailable",
+                    "fts_changed_nodes": 0,
+                    "fts_elapsed_ms": round((time.perf_counter() - started) * 1000, 3),
+                }
 
     def node_by_id(self, node_id: str) -> dict[str, Any] | None:
         with self.connect() as conn:
@@ -492,9 +495,10 @@ class _GraphOperations:
         self.bulk_write(refreshed_nodes, refreshed_edges)
         refreshed_ids = {node.id for node in refreshed_nodes}
         changed_ids = removed_ids | refreshed_ids
-        self._upsert_search_rows([node for node in refreshed_nodes if node.id in changed_ids])
+        fts_metrics = self._upsert_search_rows([node for node in refreshed_nodes if node.id in changed_ids])
         counts = self.counts()
         counts["changed_node_ids"] = list(changed_ids)
+        counts.update(fts_metrics)
         return counts
 
     def replace_file_subgraph(
@@ -581,20 +585,44 @@ class _GraphOperations:
                 (file_path, generation, content_hash),
             )
 
-    def _upsert_search_rows(self, node_dicts: Iterable[GraphNode]) -> None:
-        """Insert/update FTS rows for a subset of nodes."""
+    def _upsert_search_rows(self, node_dicts: Iterable[GraphNode]) -> dict[str, int | float | str]:
+        """Replace FTS rows for one bounded refresh scope in a single transaction."""
+        started = time.perf_counter()
+        nodes = list(node_dicts)
+        if not nodes:
+            return {"fts_sync_mode": "partial", "fts_changed_nodes": 0, "fts_elapsed_ms": 0.0}
         with self.connect() as conn:
             try:
-                for node in node_dicts:
-                    metadata_payload = _metadata_json(node.metadata)
-                    content = " ".join([node.id, node.type, node.name, node.project, node.file_path, metadata_payload])
-                    conn.execute("DELETE FROM node_search WHERE id=?", (node.id,))
-                    conn.execute(
-                        "INSERT INTO node_search(id, type, name, project, file_path, content) VALUES(?, ?, ?, ?, ?, ?)",
-                        (node.id, node.type, node.name, node.project, node.file_path, content),
-                    )
+                ids = [node.id for node in nodes]
+                conn.execute(
+                    f"DELETE FROM node_search WHERE id IN ({','.join('?' for _ in ids)})",
+                    ids,
+                )
+                conn.executemany(
+                    "INSERT INTO node_search(id, type, name, project, file_path, content) VALUES(?, ?, ?, ?, ?, ?)",
+                    [
+                        (
+                            node.id,
+                            node.type,
+                            node.name,
+                            node.project,
+                            node.file_path,
+                            " ".join([node.id, node.type, node.name, node.project, node.file_path, _metadata_json(node.metadata)]),
+                        )
+                        for node in nodes
+                    ],
+                )
+                return {
+                    "fts_sync_mode": "partial",
+                    "fts_changed_nodes": len(nodes),
+                    "fts_elapsed_ms": round((time.perf_counter() - started) * 1000, 3),
+                }
             except sqlite3.OperationalError:
-                pass
+                return {
+                    "fts_sync_mode": "unavailable",
+                    "fts_changed_nodes": 0,
+                    "fts_elapsed_ms": round((time.perf_counter() - started) * 1000, 3),
+                }
 
     def counts(self) -> dict[str, int]:
         with self.connect() as conn:

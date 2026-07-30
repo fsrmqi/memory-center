@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import math
 import os
 import re
 from pathlib import Path
@@ -13,7 +12,7 @@ from memory_center.core.storage.workspace import WorkspaceStore
 from ..storage.metadata import metadata_json as _metadata_json
 
 SEMANTIC_INDEX_FILE = "semantic-node-index.json"
-SEMANTIC_INDEX_VERSION = 4
+SEMANTIC_INDEX_VERSION = 5
 DEFAULT_SEMANTIC_BACKEND = "sparse"
 DEFAULT_SENTENCE_TRANSFORMER_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 DEFAULT_VECTOR_SCOPE = "selective"
@@ -68,7 +67,6 @@ def build_workspace_semantic_index(workspace_file: str | Path) -> dict[str, Any]
     with RuntimeStore(store.graph_db_path) as graph:
         nodes = graph.all_nodes()
     docs = []
-    df: dict[str, int] = {}
     backend = _requested_backend()
     requested_model = _requested_model_name(backend, workspace_file)
     requested_vector_scope = _requested_vector_scope()
@@ -78,7 +76,6 @@ def build_workspace_semantic_index(workspace_file: str | Path) -> dict[str, Any]
         tokens = semantic_tokens(text)
         if not tokens:
             continue
-        counts = _count_tokens(tokens)
         docs.append(
             {
                 "node_id": node["id"],
@@ -87,27 +84,8 @@ def build_workspace_semantic_index(workspace_file: str | Path) -> dict[str, Any]
                 "project": node.get("project", ""),
                 "file_path": node.get("file_path", ""),
                 "text": text,
-                "token_counts": counts,
             }
         )
-        for token in counts:
-            df[token] = df.get(token, 0) + 1
-
-    doc_count = max(len(docs), 1)
-    for doc in docs:
-        vector = {}
-        total = sum(doc["token_counts"].values()) or 1
-        doc["doc_len"] = total
-        for token, count in doc["token_counts"].items():
-            idf = math.log((1 + doc_count) / (1 + df.get(token, 0))) + 1.0
-            vector[token] = (count / total) * idf
-        norm = math.sqrt(sum(value * value for value in vector.values())) or 1.0
-        doc["sparse_vector"] = vector
-        doc["sparse_norm"] = norm
-        del doc["token_counts"]
-
-    avgdl = sum(d["doc_len"] for d in docs) / doc_count
-
     actual_backend = DEFAULT_SEMANTIC_BACKEND
     model_name = None
     dense_docs = [doc for doc in docs if _doc_is_vector_eligible(doc, scope=requested_vector_scope)]
@@ -138,11 +116,11 @@ def build_workspace_semantic_index(workspace_file: str | Path) -> dict[str, Any]
         model_unavailable=vector_model_unavailable,
     )
 
-    payload = {
+    metadata = {
         "version": SEMANTIC_INDEX_VERSION,
         "node_count": len(nodes),
         "doc_count": len(docs),
-        "avgdl": avgdl,
+        "storage_mode": "runtime_indexes_v1",
         "requested_backend": backend,
         "requested_model": requested_model,
         "requested_vector_scope": requested_vector_scope,
@@ -151,33 +129,29 @@ def build_workspace_semantic_index(workspace_file: str | Path) -> dict[str, Any]
         "vector_candidate_count": vector_candidate_count,
         "dense_doc_count": dense_doc_count,
         **vector_state,
-        "df": df,
-        "docs": docs,
     }
-    store.write_json(SEMANTIC_INDEX_FILE, payload)
-    return payload
+    # BM25 posting lists and dense vectors have dedicated runtime stores.  The
+    # returned docs are build-scoped input for vector synchronization only;
+    # persisting them here used to duplicate the complete graph payload.
+    store.write_json(SEMANTIC_INDEX_FILE, metadata)
+    return {**metadata, "docs": docs}
 
 
 def build_workspace_semantic_index_partial(workspace_file: str | Path, changed_node_ids: set[str]) -> dict[str, Any]:
-    """Rebuild semantic docs only for changed nodes, keeping untouched docs."""
+    """Build only changed dense documents; BM25 is updated by InvertedIndex."""
     store = WorkspaceStore(workspace_file)
     existing = store.read_json_prefer_backend(SEMANTIC_INDEX_FILE, {})
-    if not existing.get("docs"):
+    if not existing or existing.get("version") != SEMANTIC_INDEX_VERSION:
         return build_workspace_semantic_index(workspace_file)
-    kept_docs = [doc for doc in existing.get("docs", []) if doc.get("node_id") not in changed_node_ids]
     with RuntimeStore(store.graph_db_path) as graph:
         changed_nodes = graph.nodes_by_ids(changed_node_ids)
         total_node_count = graph.counts().get("nodes", 0)
     new_docs: list[dict[str, Any]] = []
-    df_existing: dict[str, int] = existing.get("df") or {}
-    existing_doc_count = max(int(existing.get("doc_count", 0)), 1)
-    df_new: dict[str, int] = {}
     for node in changed_nodes:
         text = _node_text(node)
         tokens = semantic_tokens(text)
         if not tokens:
             continue
-        counts = _count_tokens(tokens)
         new_docs.append(
             {
                 "node_id": node["id"],
@@ -185,57 +159,15 @@ def build_workspace_semantic_index_partial(workspace_file: str | Path, changed_n
                 "name": node.get("name", ""),
                 "project": node.get("project", ""),
                 "file_path": node.get("file_path", ""),
-                "token_counts": counts,
+                "text": text,
             },
         )
-        for token in counts:
-            df_new[token] = df_new.get(token, 0) + 1
-    # Compute removed docs to include their tokens in df for accurate IDF
-    removed_docs = [doc for doc in existing.get("docs", []) if doc.get("node_id") in changed_node_ids]
-    # Build df including tokens from removed docs so IDF accounts for them
-    df: dict[str, int] = {}
-    for doc in kept_docs:
-        for token in doc.get("sparse_vector", {}):
-            df[token] = df.get(token, 0) + 1
-    for doc in removed_docs:
-        for token in doc.get("sparse_vector", {}):
-            df[token] = df.get(token, 0) + 1
-    for token, count in df_new.items():
-        df[token] = df.get(token, 0) + count
-    merged_docs = kept_docs + new_docs
-    doc_count = max(len(merged_docs), 1)
-    for doc in new_docs:
-        total = sum(doc["token_counts"].values()) or 1
-        doc["doc_len"] = total
-        vector = {}
-        for token, count in doc["token_counts"].items():
-            idf = math.log((1 + doc_count) / (1 + df.get(token, 0))) + 1.0
-            vector[token] = (count / total) * idf
-        norm = math.sqrt(sum(value * value for value in vector.values())) or 1.0
-        doc["sparse_vector"] = vector
-        doc["sparse_norm"] = norm
-        del doc["token_counts"]
-    for doc in kept_docs:
-        vector = doc.get("sparse_vector", {})
-        if not vector:
-            continue
-        # Re-scale sparse_vector from old IDF to merged IDF so all docs share the same baseline.
-        # old weight = (tf/total) * idf_old; new weight = (tf/total) * idf_new = old * idf_new / idf_old
-        rescaled = {}
-        for token, old_weight in vector.items():
-            idf_new = math.log((1 + doc_count) / (1 + df.get(token, 0))) + 1.0
-            idf_old = math.log((1 + existing_doc_count) / (1 + df_existing.get(token, 0))) + 1.0
-            rescaled[token] = old_weight * idf_new / idf_old
-        doc["sparse_vector"] = rescaled
-        doc["sparse_norm"] = math.sqrt(sum(value * value for value in rescaled.values())) or 1.0
     backend = _requested_backend()
     actual_backend = existing.get("backend", DEFAULT_SEMANTIC_BACKEND)
     requested_model = _requested_model_name(backend, workspace_file)
     model_name = existing.get("model")
     requested_vector_scope = _requested_vector_scope()
-    vector_candidate_count = sum(
-        1 for doc in merged_docs if _doc_is_vector_eligible(doc, scope=requested_vector_scope)
-    )
+    vector_candidate_count = int(existing.get("vector_candidate_count", 0))
     if backend == "sentence-transformers" and actual_backend == "sentence-transformers":
         dense_new_docs = [doc for doc in new_docs if _doc_is_vector_eligible(doc, scope=requested_vector_scope)]
         model = _load_sentence_transformer_model(model_name)
@@ -246,7 +178,9 @@ def build_workspace_semantic_index_partial(workspace_file: str | Path, changed_n
                 raise RuntimeError("semantic encoder returned an unexpected vector count")
             for doc, vector in zip(dense_new_docs, dense_vectors):  # noqa: B905 - lengths validated above
                 doc["dense_vector"] = [float(value) for value in vector]
-    dense_doc_count = sum(1 for doc in merged_docs if doc.get("dense_vector"))
+    for doc in new_docs:
+        del doc["text"]
+    dense_doc_count = int(existing.get("dense_doc_count", 0))
     vector_state = _vector_state(
         requested_backend=backend,
         actual_backend=actual_backend,
@@ -260,8 +194,8 @@ def build_workspace_semantic_index_partial(workspace_file: str | Path, changed_n
     payload = {
         "version": SEMANTIC_INDEX_VERSION,
         "node_count": total_node_count,
-        "doc_count": len(merged_docs),
-        "avgdl": sum(d.get("doc_len", 0) for d in merged_docs) / doc_count,
+        "doc_count": total_node_count,
+        "storage_mode": "runtime_indexes_v1",
         "requested_backend": backend,
         "requested_model": requested_model,
         "requested_vector_scope": requested_vector_scope,
@@ -270,24 +204,22 @@ def build_workspace_semantic_index_partial(workspace_file: str | Path, changed_n
         "vector_candidate_count": vector_candidate_count,
         "dense_doc_count": dense_doc_count,
         **vector_state,
-        "df": df,
-        "docs": merged_docs,
     }
     store.write_json(SEMANTIC_INDEX_FILE, payload)
-    return payload
+    return {**payload, "docs": new_docs}
 
 
 def semantic_query(workspace_file: str | Path, query: str, limit: int = 20) -> list[dict[str, Any]]:
     # 查询只读取已发布代际。索引过期由 freshness/后台 refresh 处理，不能在 MCP
     # 热路径隐式重建完整语义索引。
     index = WorkspaceStore(workspace_file).read_json_prefer_backend(SEMANTIC_INDEX_FILE, {}) or {}
-    if not index.get("docs"):
+    if not index.get("doc_count"):
         return []
     if index.get("backend") == "sentence-transformers":
         dense_hits = _dense_semantic_query(workspace_file, index, query, limit)
         if dense_hits:
             return dense_hits
-    return _sparse_semantic_query(index, query, limit)
+    return _sparse_semantic_query(workspace_file, query, limit)
 
 
 def semantic_index_stats(workspace_file: str | Path) -> dict[str, Any]:
@@ -312,7 +244,7 @@ def semantic_index_stats(workspace_file: str | Path) -> dict[str, Any]:
         "version": payload.get("version"),
         "node_count": int(payload.get("node_count", 0)),
         "doc_count": int(payload.get("doc_count", 0)),
-        "ready": bool(payload.get("docs")),
+        "ready": bool(payload.get("doc_count")),
         "backend": backend,
         "requested_backend": requested_backend,
         "semantic_backend": backend,
@@ -342,14 +274,6 @@ def _count_tokens(tokens: list[str]) -> dict[str, int]:
     for token in tokens:
         counts[token] = counts.get(token, 0) + 1
     return counts
-
-
-def _estimate_df(index: dict[str, Any]) -> dict[str, int]:
-    df: dict[str, int] = {}
-    for doc in index.get("docs", []):
-        for token in doc.get("sparse_vector", {}):
-            df[token] = df.get(token, 0) + 1
-    return df
 
 
 def _node_text(node: dict[str, Any]) -> str:
@@ -490,95 +414,41 @@ def _dense_semantic_query(workspace_file: str | Path, index: dict[str, Any], que
         return []
     vector = model.encode([query], normalize_embeddings=True)[0]
     query_vector = [float(value) for value in vector]
-    dense_docs = [doc for doc in index.get("docs", []) if doc.get("dense_vector")]
-    # 小索引保留精确校验；大型工作区必须经 VectorIndex 的 ANN 查询，避免 Python
-    # 全量扫描和排序占用 MCP 请求线程。
-    if len(dense_docs) > 64:
-        try:
-            from memory_center.core.storage.vector_index import VectorIndex
+    try:
+        from memory_center.core.storage.vector_index import VectorIndex
 
-            workspace_store = WorkspaceStore(workspace_file)
-            runtime = RuntimeStore(workspace_store.graph_db_path)
-            try:
-                hits = VectorIndex(runtime, dimension=len(query_vector)).query(query_vector, limit=limit)
-            finally:
-                runtime.close()
-            by_id = {str(doc.get("node_id", "")): doc for doc in dense_docs}
-            return [
-                {**by_id[str(hit["node_id"])], "score": float(hit.get("score", 1.0 - float(hit.get("distance", 1.0)))), "backend": "sentence-transformers-ann"}
-                for hit in hits
-                if str(hit.get("node_id", "")) in by_id
-            ]
-        except Exception:
-            return []
-    scored = []
-    for doc in dense_docs:
-        dense_vector = doc.get("dense_vector")
-        if not dense_vector:
-            continue
-        if len(query_vector) != len(dense_vector):
-            continue
-        score = sum(float(left) * float(right) for left, right in zip(query_vector, dense_vector))  # noqa: B905 - lengths validated above
-        if score <= 0:
-            continue
-        scored.append({**doc, "score": score, "backend": "sentence-transformers"})
-    scored.sort(key=lambda item: (-float(item.get("score", 0)), item.get("name", "")))
-    return scored[:limit]
-
-
-def _sparse_semantic_query(index: dict[str, Any], query: str, limit: int) -> list[dict[str, Any]]:
-    tokens = semantic_tokens(query)
-    if not tokens:
+        workspace_store = WorkspaceStore(workspace_file)
+        with RuntimeStore(workspace_store.graph_db_path) as runtime:
+            hits = VectorIndex(runtime, dimension=len(query_vector)).query(query_vector, limit=limit)
+            nodes = runtime.nodes_by_ids({str(hit.get("node_id", "")) for hit in hits})
+        return _hydrate_hits(nodes, hits, backend="sentence-transformers-ann")
+    except Exception:
         return []
-    query_counts = _count_tokens(tokens)
-    doc_count = max(index.get("doc_count", 1), 1)
-    df = index.get("df") or _estimate_df(index)
-    avgdl = index.get("avgdl", 0)
 
-    # Check if any doc has doc_len (BM25 mode) or fall back to TF-IDF cosine
-    docs = index.get("docs", [])
-    has_bm25 = avgdl > 0 and any(d.get("doc_len", 0) > 0 for d in docs[:5])
 
-    if has_bm25:
-        # Okapi BM25 scoring
-        if avgdl <= 0:
-            avgdl = sum(d.get("doc_len", 0) for d in docs) / max(len(docs), 1) or 1.0
-        scored = []
-        for doc in docs:
-            doc_len = doc.get("doc_len", 0)
-            if doc_len <= 0:
-                continue
-            vector = doc.get("sparse_vector", {})
-            score = 0.0
-            for token in query_counts:
-                tf = vector.get(token, 0.0)
-                if tf <= 0:
-                    continue
-                idf = math.log((doc_count - df.get(token, 0) + 0.5) / (df.get(token, 0) + 0.5) + 1)
-                score += idf * (tf * (BM25_K1 + 1)) / (tf + BM25_K1 * (1 - BM25_B + BM25_B * doc_len / avgdl))
-            if score <= 0:
-                continue
-            scored.append({**doc, "score": score, "backend": "bm25"})
-        scored.sort(key=lambda item: (-float(item.get("score", 0)), item.get("name", "")))
-        return scored[:limit]
-    # Sparse cosine remains a supported scoring mode for documents whose token
-    # vectors are not suitable for BM25 normalization.
-    query_vector = {}
-    total = sum(query_counts.values()) or 1
-    for token, count in query_counts.items():
-        idf = math.log((1 + doc_count) / (1 + df.get(token, 0))) + 1.0
-        query_vector[token] = (count / total) * idf
-    query_norm = math.sqrt(sum(value * value for value in query_vector.values())) or 1.0
+def _sparse_semantic_query(workspace_file: str | Path, query: str, limit: int) -> list[dict[str, Any]]:
+    from memory_center.core.retrieval.inverted import InvertedIndex
 
-    scored = []
-    for doc in docs:
-        dot = 0.0
-        vector = doc.get("sparse_vector", {})
-        for token, qv in query_vector.items():
-            dot += qv * float(vector.get(token, 0.0))
-        if dot <= 0:
+    workspace_store = WorkspaceStore(workspace_file)
+    with RuntimeStore(workspace_store.graph_db_path) as runtime:
+        hits = InvertedIndex(runtime).query(query, limit=limit)
+        nodes = runtime.nodes_by_ids({str(hit.get("node_id", "")) for hit in hits})
+    # Keep the established public source label; the implementation is the
+    # SQLite inverted index rather than the retired in-memory sparse mirror.
+    return _hydrate_hits(nodes, hits, backend="bm25")
+
+
+def _hydrate_hits(nodes: list[dict[str, Any]], hits: list[dict[str, Any]], *, backend: str) -> list[dict[str, Any]]:
+    """Join bounded index hits to graph metadata without materializing all nodes."""
+    by_id = {str(node.get("id", "")): node for node in nodes}
+    results = []
+    for hit in hits:
+        node = by_id.get(str(hit.get("node_id", "")))
+        if node is None:
             continue
-        score = dot / (query_norm * float(doc.get("sparse_norm", 1.0)))
-        scored.append({**doc, "score": score, "backend": "sparse"})
-    scored.sort(key=lambda item: (-float(item.get("score", 0)), item.get("name", "")))
-    return scored[:limit]
+        results.append({
+            "node_id": node["id"], "type": node.get("type", ""), "name": node.get("name", ""),
+            "project": node.get("project", ""), "file_path": node.get("file_path", ""),
+            "score": float(hit.get("score", 1.0 - float(hit.get("distance", 1.0)))), "backend": backend,
+        })
+    return results

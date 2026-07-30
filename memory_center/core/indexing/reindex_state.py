@@ -106,12 +106,15 @@ def workspace_reindex_lock(
     store.write_json(REINDEX_STATE_FILE, state)
     try:
         yield
-    except Exception as exc:
+    except BaseException as exc:
+        # KeyboardInterrupt bypasses ``Exception``. Persisting the interrupted
+        # state prevents the control plane from presenting an abandoned writer
+        # as an active reindex after Ctrl-C.
         state.update({
             "status": "failed",
             "completed_at": _utc_now(),
             "duration_seconds": round(time.monotonic() - started_monotonic, 3),
-            "error": safe_reason(reason=str(exc)),
+            "error": safe_reason(reason=str(exc) or type(exc).__name__),
         })
         store.write_json(REINDEX_STATE_FILE, state)
         raise

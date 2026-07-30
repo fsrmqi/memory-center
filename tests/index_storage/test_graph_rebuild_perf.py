@@ -99,18 +99,40 @@ def test_rebuild_search_index_populates_fts(tmp_path: Path) -> None:
 
     with RuntimeStore(tmp_path / "g.sqlite") as graph:
         graph.rebuild(nodes, [])
-        graph.rebuild_search_index()
+        metrics = graph.rebuild_search_index()
 
         matches = graph.find_nodes("func_3", limit=5)
         names = {row["name"] for row in matches}
-        assert "func_3" in names
+    assert "func_3" in names
+    assert metrics["fts_sync_mode"] == "full_sql"
+    assert metrics["fts_changed_nodes"] == len(nodes)
 
 
 def test_rebuild_search_index_empty_graph_no_raise(tmp_path: Path) -> None:
     """An empty graph must not blow up the FTS path."""
     with RuntimeStore(tmp_path / "g.sqlite") as graph:
-        graph.rebuild_search_index()  # should be a no-op
+        metrics = graph.rebuild_search_index()  # should be a no-op
         assert graph.counts() == {"nodes": 0, "edges": 0}
+    assert metrics["fts_sync_mode"] == "full_sql"
+    assert metrics["fts_changed_nodes"] == 0
+
+
+def test_partial_rebuild_replaces_only_changed_fts_rows(tmp_path: Path) -> None:
+    old = GraphNode("old", "Class", "Old", "demo", "src/Changed.java")
+    untouched = GraphNode("untouched", "Class", "Untouched", "demo", "src/Stable.java")
+    refreshed = GraphNode("fresh", "Class", "Fresh", "demo", "src/Changed.java")
+
+    with RuntimeStore(tmp_path / "g.sqlite") as graph:
+        graph.rebuild([old, untouched], [])
+        graph.rebuild_search_index()
+        result = graph.partial_rebuild([refreshed], [], set(), ["src/Changed.java"])
+
+        assert {item["id"] for item in graph.find_nodes("Fresh", limit=5)} == {"fresh"}
+        assert {item["id"] for item in graph.find_nodes("Untouched", limit=5)} == {"untouched"}
+        assert not graph.find_nodes("Old", limit=5)
+
+    assert result["fts_sync_mode"] == "partial"
+    assert result["fts_changed_nodes"] == 1
 
 
 def test_neighbors_edge_type_filter_applies_before_limit(tmp_path: Path) -> None:
