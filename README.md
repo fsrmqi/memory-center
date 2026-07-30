@@ -428,13 +428,13 @@ This generates:
     default-rules.yaml
 ```
 
-Reindex also rebuilds the local semantic node index and SQLite BM25 inverted index used by hybrid retrieval. When the semantic backend produces dense vectors, they are synchronized into `VectorIndex`.
+Reindex also rebuilds the local semantic node index and SQLite BM25 inverted index used by hybrid retrieval. Full rebuilds recreate BM25; later path-scoped rebuilds replace only changed BM25 documents and preserve untouched postings. When the semantic backend produces dense vectors, they are synchronized into `VectorIndex`.
 
-重建索引时也会同步构建本地语义节点索引和 SQLite BM25 倒排索引，供混合检索使用；当语义 backend 生成 dense vectors 时，还会同步写入 `VectorIndex`。
+重建索引时也会同步构建本地语义节点索引和 SQLite BM25 倒排索引，供混合检索使用。完整重建会重建 BM25；之后的指定路径重建只替换变更节点的 BM25 文档，并保留未变更 posting。当语义 backend 生成 dense vectors 时，还会同步写入 `VectorIndex`。
 
-For incremental / path-scoped reindex, dense vector sync is also incremental: changed vector-eligible nodes are deleted and upserted in `VectorIndex`, while unrelated embeddings are preserved. A sparse-only reindex no longer clears dense embeddings from a previous local embedding run.
+For incremental / path-scoped reindex, BM25 and dense vector sync are incremental: changed vector-eligible nodes are deleted and upserted in `VectorIndex`, while unrelated embeddings and BM25 postings are preserved. A sparse-only reindex no longer clears dense embeddings from a previous local embedding run. A legacy BM25 index is rebuilt once to migrate its persisted term frequencies, then later scoped refreshes stay incremental.
 
-对于增量 / 指定路径 reindex，dense vector 同步也是增量的：只有变更且可向量化的节点会在 `VectorIndex` 中 delete + upsert，未变化的 embedding 会保留。一次 sparse-only reindex 不会再清空之前本地 embedding backend 生成的 dense embeddings。
+对于增量 / 指定路径 reindex，BM25 和 dense vector 同步都是增量的：只有变更且可向量化的节点会在 `VectorIndex` 中 delete + upsert，未变化的 embedding 与 BM25 posting 会保留。一次 sparse-only reindex 不会再清空之前本地 embedding backend 生成的 dense embeddings。旧格式 BM25 索引会为迁移持久化词频完整重建一次，之后的局部刷新保持增量。
 
 Reindex output also includes parser diagnostics: selected parser, parse count, fallback count/reasons, native disagreement count, and final critical disagreement count. Public parser parity is gated by `examples/parser-corpus/` and `tests/test_parser_differential.py`.
 

@@ -650,6 +650,19 @@ class _GraphOperations:
             rows = conn.execute("SELECT * FROM nodes").fetchall()
         return [_row_node(row) for row in rows]
 
+    def nodes_by_ids(self, node_ids: set[str] | list[str]) -> list[dict[str, Any]]:
+        """Read a bounded node set without materializing the full graph."""
+        ids = sorted({str(node_id) for node_id in node_ids if node_id})
+        if not ids:
+            return []
+        rows = []
+        with self.connect() as conn:
+            for start in range(0, len(ids), 900):
+                batch = ids[start : start + 900]
+                placeholders = ",".join("?" for _ in batch)
+                rows.extend(conn.execute(f"SELECT * FROM nodes WHERE id IN ({placeholders})", batch).fetchall())
+        return [_row_node(row) for row in rows]
+
     def iter_assertion_rows(
         self,
         *,

@@ -108,6 +108,32 @@ class TestGoldenCaseEnableVector:
 
 
 class TestSyncRetrievalPreservesExistingVectors:
+    def test_partial_bm25_sync_reads_only_changed_nodes(self, tmp_path: Path, monkeypatch) -> None:
+        from memory_center.core.indexing.reindex import _sync_retrieval_indexes
+        from memory_center.core.storage.graph import GraphNode
+        from memory_center.core.storage.runtime import RuntimeStore
+
+        graph_db = tmp_path / "graph.db"
+        with RuntimeStore(graph_db) as graph:
+            graph.rebuild(
+                [
+                    GraphNode(id="n1", type="Method", name="changed", project="p"),
+                    GraphNode(id="n2", type="Method", name="kept", project="p"),
+                ],
+                [],
+            )
+
+        class _Store:
+            graph_db_path = graph_db
+            workspace_file = tmp_path / "workspace.yaml"
+
+        _sync_retrieval_indexes(_Store(), {"docs": []})
+        monkeypatch.setattr(RuntimeStore, "all_nodes", lambda _self: (_ for _ in ()).throw(AssertionError("partial sync must not scan all nodes")))
+        counts = _sync_retrieval_indexes(_Store(), {"docs": []}, changed_node_ids={"n1"})
+
+        assert counts["bm25_sync_mode"] == "partial"
+        assert counts["bm25_changed_docs"] == 1
+
     def test_empty_semantic_index_does_not_clear_existing_embeddings(
         self, tmp_path: Path, monkeypatch
     ) -> None:

@@ -166,7 +166,7 @@ def build_workspace_semantic_index_partial(workspace_file: str | Path, changed_n
         return build_workspace_semantic_index(workspace_file)
     kept_docs = [doc for doc in existing.get("docs", []) if doc.get("node_id") not in changed_node_ids]
     with RuntimeStore(store.graph_db_path) as graph:
-        changed_nodes = [n for n in graph.all_nodes() if n.get("id") in changed_node_ids]
+        changed_nodes = graph.nodes_by_ids(changed_node_ids)
         total_node_count = graph.counts().get("nodes", 0)
     new_docs: list[dict[str, Any]] = []
     df_existing: dict[str, int] = existing.get("df") or {}

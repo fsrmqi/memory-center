@@ -535,9 +535,6 @@ def _sync_retrieval_indexes(
     from ..storage.runtime import RuntimeStore
     from ..storage.vector_index import VectorIndex
 
-    with RuntimeStore(store.graph_db_path) as graph:
-        nodes = graph.all_nodes()
-
     dense_docs = [
         doc
         for doc in semantic_index.get("docs", [])
@@ -551,7 +548,17 @@ def _sync_retrieval_indexes(
     ]
 
     with RuntimeStore(store.graph_db_path) as unified:
-        bm25_stats = InvertedIndex(unified).rebuild(nodes)
+        bm25_index = InvertedIndex(unified)
+        if changed_node_ids is not None and bm25_index.can_incrementally_update():
+            changed_nodes = unified.nodes_by_ids(changed_node_ids)
+            bm25_stats = bm25_index.replace_nodes(changed_nodes, changed_node_ids)
+        else:
+            # First partial refresh after an upgrade has no persisted raw term
+            # frequencies. Rebuild once, then later scoped refreshes stay local.
+            bm25_stats = {
+                **bm25_index.rebuild(unified.all_nodes()),
+                "mode": "full" if changed_node_ids is None else "full-legacy-fallback",
+            }
 
         # Only touch VectorIndex when the rebuilt semantic_index actually
         # produced dense vectors. A reindex run with the default ``sparse``
@@ -594,6 +601,8 @@ def _sync_retrieval_indexes(
 
     return {
         "bm25_docs": int(bm25_stats.get("doc_count", 0)),
+        "bm25_sync_mode": str(bm25_stats.get("mode", "full")),
+        "bm25_changed_docs": int(bm25_stats.get("changed_doc_count", 0)),
         "vector_embeddings": vector_count,
         "vector_deleted": vector_deleted,
         "vector_sync_mode": vector_sync_mode,

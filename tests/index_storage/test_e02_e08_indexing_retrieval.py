@@ -1029,6 +1029,46 @@ class TestE06InvertedRetrieval:
         assert "doc_count" in stats
         assert stats["doc_count"] == 1
 
+    def test_inverted_index_partial_replace_matches_full_rebuild(self, unified_store, tmp_path: Path):
+        from memory_center.core.retrieval.inverted import InvertedIndex
+        from memory_center.core.storage.runtime import RuntimeStore
+
+        initial_nodes = [
+            {"id": "n1", "type": "Service", "name": "UserService", "project": "user", "file_path": "src/UserService.java", "metadata": {}},
+            {"id": "n2", "type": "Service", "name": "OrderService", "project": "order", "file_path": "src/OrderService.java", "metadata": {}},
+            {"id": "n3", "type": "Endpoint", "name": "getUser", "project": "user", "file_path": "src/UserController.java", "metadata": {}},
+        ]
+        refreshed_nodes = [
+            {"id": "n1", "type": "Service", "name": "AccountService", "project": "user", "file_path": "src/AccountService.java", "metadata": {}},
+            initial_nodes[2],
+        ]
+        partial = InvertedIndex(unified_store)
+        partial.rebuild(initial_nodes)
+        stats = partial.replace_nodes([refreshed_nodes[0]], {"n1", "n2"})
+
+        with RuntimeStore(tmp_path / "full-rebuild.db") as full_store:
+            full = InvertedIndex(full_store)
+            full.rebuild(refreshed_nodes)
+            for query in ("account service", "order service", "user"):
+                assert [item["node_id"] for item in partial.query(query)] == [item["node_id"] for item in full.query(query)]
+                assert [item["score"] for item in partial.query(query)] == pytest.approx([item["score"] for item in full.query(query)])
+
+        assert stats["mode"] == "partial"
+        assert stats["changed_doc_count"] == 1
+        assert partial.stats()["doc_count"] == 2
+
+    def test_inverted_index_keeps_legacy_scores_readable_until_migration(self, unified_store):
+        from memory_center.core.retrieval.inverted import InvertedIndex
+
+        index = InvertedIndex(unified_store)
+        index.rebuild([
+            {"id": "n1", "type": "Service", "name": "UserService", "project": "user", "file_path": "src/UserService.java", "metadata": {}},
+        ])
+        with unified_store.pool.transaction() as conn:
+            conn.execute("DELETE FROM inv_index_meta")
+
+        assert index.query("user service")[0]["node_id"] == "n1"
+
     def test_reindex_builds_bm25_index(self, demo_workspace: Path):
         from memory_center.core.indexing.reindex import reindex_workspace
         from memory_center.core.retrieval.inverted import InvertedIndex

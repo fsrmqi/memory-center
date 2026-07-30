@@ -1,5 +1,15 @@
 # Changelog / 更新日志
 
+## 4.3.41 定向刷新增量 BM25 / Incremental BM25 for Scoped Refresh
+
+- SQLite 倒排索引现在持久化原始词频、文档频率和全局长度统计。局部 reindex 只读取、重分词并替换 `changed_node_ids`，未变化 posting 不再删除重写；查询时动态计分，保证与完整重建一致。
+- reindex 新增 `bm25_sync_mode` 和 `bm25_changed_docs`。旧 BM25 格式仅在第一次局部刷新时安全完整迁移一次，返回 `full-legacy-fallback`，后续使用 `partial`。
+
+## 4.3.41 Incremental BM25 for Scoped Refresh
+
+- The SQLite inverted index now persists raw term frequencies, document frequencies, and global length statistics. Scoped reindex reads, tokenizes, and replaces only `changed_node_ids`, while untouched postings remain in place. Query-time scoring preserves full-rebuild equivalence.
+- Reindex now reports `bm25_sync_mode` and `bm25_changed_docs`. A legacy BM25 index performs one safe full migration on its first scoped refresh as `full-legacy-fallback`; later scoped refreshes report `partial`.
+
 ## 4.3.40 发布产物新鲜度与热缓存修复 / Published-Artifact Freshness and Hot-Cache Fix
 
 - 新鲜度优先以已发布 `graph-summary.json` 的时间判断；运行时审计、治理和记忆写入更新共享 `graph.db` 时，不再把索引错误标记为刚刷新。

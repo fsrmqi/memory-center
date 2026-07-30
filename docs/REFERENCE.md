@@ -339,6 +339,14 @@ When a case declares `expected_resolution_levels`, that level is gated too. For 
 
 ### 检索热路径性能 / Retrieval Hot Path Performance
 
+定向 `reindex --path ...` 会返回 `bm25_sync_mode` 与 `bm25_changed_docs`。正常局部刷新为 `partial`，只替换受影响节点的 BM25 posting；旧格式索引首次升级可能返回 `full-legacy-fallback`，用于一次性迁移持久化词频，之后恢复局部更新。BM25 查询使用持久化词频和全局统计动态计分，局部刷新结果与完整重建一致。
+
+升级到该格式但尚未执行 reindex 时，查询会继续使用旧索引中已保存的 BM25 分值；不会返回空结果。下一次显式重建才执行迁移。
+
+Path-scoped `reindex --path ...` returns `bm25_sync_mode` and `bm25_changed_docs`. A normal scoped refresh reports `partial` and replaces postings only for affected nodes. A legacy index can report `full-legacy-fallback` once while persistent term frequencies are migrated, after which scoped updates resume. BM25 queries score from persisted term frequencies and global statistics, so partial results remain equivalent to a full rebuild.
+
+After an application upgrade but before reindex, queries continue to use the legacy persisted BM25 scores rather than returning empty results. Migration occurs only on the next explicit reindex.
+
 批量治理记录、语义编码向量和 ANN 标签/距离都会先校验数量一致再配对；这避免异常响应被静默截断，也使 macOS 默认 Python 的本地开发与生产解释器保持相同行为。
 
 Governance batches, semantic vectors, and ANN label/distance pairs validate their counts before pairing. This prevents silent truncation and keeps macOS default-Python development behavior aligned with production interpreters.

@@ -437,11 +437,11 @@ _resolve_cross_workspace_refs(merged[:limit], graph, workspace_file)
 - Semantic: 0.25（模糊匹配）
 - Vector: 0.15（可选 ANN；默认关闭）
 
-reindex 会自动重建 SQLite BM25。只有 semantic index 中存在 `dense_vector` 时才会同步 VectorIndex；full reindex 会重建完整 VectorIndex，partial / path-scoped reindex 会只 delete/upsert changed node 的 embedding。若当前 reindex 是 sparse-only 且没有 dense vectors，系统会保留已有 VectorIndex，避免一次默认 sparse reindex 悄悄清空本地 embedding backend 生成的向量。
+full reindex 会完整重建 SQLite BM25；partial / path-scoped reindex 则保存原始词频与全局统计，只替换 `changed_node_ids` 对应的倒排文档，查询时动态计算 BM25，因此结果与完整重建一致而不重写未变更 posting。只有 semantic index 中存在 `dense_vector` 时才会同步 VectorIndex；full reindex 会重建完整 VectorIndex，partial / path-scoped reindex 会只 delete/upsert changed node 的 embedding。若当前 reindex 是 sparse-only 且没有 dense vectors，系统会保留已有 VectorIndex，避免一次默认 sparse reindex 悄悄清空本地 embedding backend 生成的向量。
 
 reindex 汇总会透出 `semantic_backend`、`requested_semantic_backend`、`vector_scope`、`vector_candidate_count`、`dense_doc_count`、`vector_status`、`vector_disabled_reason`。其中 `vector_candidate_count` 表示按当前 scope 可向量化的核心节点数，`dense_doc_count` 表示实际生成 dense vector 的节点数；当 `vector_status=disabled|unavailable|no_candidates` 时，`vector_disabled_reason` 给出可操作原因。
 
-真实 UCAP 验证中，`selective` scope 生成 47,633 个 dense docs。partial semantic rebuild 对单个 changed dense candidate 只重 encode 1 个 doc，VectorIndex sync 使用 `vector_sync_mode=partial`，只 delete/upsert 该 changed node，embedding 总数保持不变。当前 partial sync 的剩余主要成本来自 BM25 仍全量 rebuild，这是后续 P2 性能优化项。
+真实 UCAP 验证中，`selective` scope 生成 47,633 个 dense docs。partial semantic rebuild 对单个 changed dense candidate 只读取和重 encode 该节点，VectorIndex sync 使用 `vector_sync_mode=partial`，只 delete/upsert 该 changed node，embedding 总数保持不变。BM25 同步同样只读取和替换变更节点；首次遇到旧 BM25 格式时会显式执行一次完整迁移，并在 `bm25_sync_mode` 中返回 `full-legacy-fallback`。
 
 ### 8.2 Benchmark Trending 实现细节
 
