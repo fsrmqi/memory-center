@@ -4,6 +4,18 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+_JAVA_OBJECT_METHODS = frozenset({
+    "clone",
+    "equals",
+    "finalize",
+    "getClass",
+    "hashCode",
+    "notify",
+    "notifyAll",
+    "toString",
+    "wait",
+})
+
 
 @dataclass(frozen=True)
 class ClassInfo:
@@ -244,6 +256,11 @@ class JavaCallResolver:
             return "target_out_of_scope"
         if any(_lombok_accessor_field(info, target_method) for info in candidates):
             return "lombok_target_out_of_scope"
+        # ``Object`` methods are inherited by every workspace class but are
+        # normally absent from the source-defined method index. They are not
+        # a local polymorphism gap and must not produce a synthetic edge.
+        if target_method in _JAVA_OBJECT_METHODS:
+            return "inherited_method_out_of_scope"
         return "target_method_not_indexed"
 
     def _visible_type_candidates(self, owner_symbol: dict[str, Any], class_name: str) -> list[ClassInfo]:

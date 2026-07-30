@@ -106,6 +106,32 @@ def test_release_gate_percentile_uses_upper_rank_for_small_samples() -> None:
     assert release_gate._percentile([10.0, 20.0], 0.95) == 20.0
 
 
+def test_release_gate_blocks_hot_query_p95_budget(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    _patch_successful_components(monkeypatch)
+    moments = iter([0.0, 3.0, 3.0, 6.0, 6.0, 9.0])
+    monkeypatch.setattr(release_gate.time, "perf_counter", lambda: next(moments))
+    monkeypatch.setattr(
+        release_gate,
+        "memory_query_hybrid",
+        lambda *_args, **_kwargs: {
+            "matches": [{"id": "safe"}],
+            "retrieval_diagnostics": {"timing_ms": {"semantic": 2500.0, "total": 3000.0}},
+        },
+    )
+
+    result = release_gate.run_release_gate(
+        _workspace(tmp_path),
+        queries=["stable logical query"],
+        query_samples=2,
+        max_hot_query_p95_ms=2_000.0,
+    )
+
+    retrieval = result["components"]["retrieval"]
+    assert retrieval["passed"] is False
+    assert retrieval["reason"] == "hot_query_p95_budget_exceeded"
+    assert retrieval["metrics"]["stage_p95_ms"] == {"semantic": 2500.0, "total": 3000.0}
+
+
 def test_release_gate_baseline_round_trip(tmp_path: Path) -> None:
     output = tmp_path / "release-gate-baseline.json"
     saved = release_gate.save_release_gate_baseline(

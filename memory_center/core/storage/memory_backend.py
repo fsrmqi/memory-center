@@ -169,8 +169,10 @@ class _MemoryRecordOperations:
         if not payloads:
             return
         ids = record_ids or [""] * len(payloads)
+        if len(payloads) != len(ids):
+            raise ValueError("payloads and record_ids must have the same length")
         rows = []
-        for payload, record_id in zip(payloads, ids, strict=True):
+        for payload, record_id in zip(payloads, ids):  # noqa: B905 - lengths validated above
             nested = payload.get("payload", {}) if isinstance(payload.get("payload"), dict) else {}
             rows.append((
                 collection,

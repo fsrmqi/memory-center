@@ -12,9 +12,12 @@ from __future__ import annotations
 import copy
 import os
 import re
+import time
+from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from dataclasses import dataclass, field
+from pathlib import Path
 from threading import Lock
 from typing import Any
 
@@ -51,6 +54,11 @@ _EDGE_SEMANTIC_STRENGTH = {
 }
 # Merge ontology module's edge strength into local lookup
 _EDGE_SEMANTIC_STRENGTH.update(EDGE_SEMANTIC_STRENGTH)
+
+_RETRIEVAL_CACHE_TTL_SECONDS = 20.0
+_RETRIEVAL_CACHE_MAX_ITEMS = 64
+_RETRIEVAL_CACHE: OrderedDict[tuple[object, ...], tuple[float, dict[str, Any]]] = OrderedDict()
+_RETRIEVAL_CACHE_LOCK = Lock()
 
 
 @dataclass
@@ -276,6 +284,30 @@ def hybrid_retrieve(
     source_limit = max(limit, policy.candidate_limit)
     result_limit = min(limit, policy.evidence_budget) if intent.get("is_full_chain") else limit
     active_sources = set(policy.sources)
+    started = time.perf_counter()
+    timings: dict[str, float] = {}
+    cache_key = _retrieval_cache_key(
+        graph,
+        workspace_file=workspace_file,
+        query=query,
+        node_types=node_types,
+        limit=limit,
+        config=config,
+        intent=intent,
+        policy=policy,
+        freshness=freshness or {},
+    )
+    cached = _get_cached_retrieval(cache_key)
+    if cached is not None:
+        diagnostics = cached.setdefault("retrieval_diagnostics", {})
+        diagnostics["cache"] = {"status": "hit", "ttl_seconds": _RETRIEVAL_CACHE_TTL_SECONDS}
+        diagnostics["timing_ms"] = {
+            "cache_lookup": round((time.perf_counter() - started) * 1000, 3),
+            "total": round((time.perf_counter() - started) * 1000, 3),
+        }
+        return cached
+
+    phase_started = time.perf_counter()
 
     # Phase 1: execute only policy-selected sources.
     exact_nodes = (
@@ -283,6 +315,8 @@ def hybrid_retrieve(
         if "exact" in active_sources
         else []
     )
+    timings["exact"] = _elapsed_ms(phase_started)
+    phase_started = time.perf_counter()
     graph_hits = (
         _graph_retrieval_from_nodes(exact_nodes, tokens, graph, node_types, source_limit, _rrf)
         if "graph" in active_sources
@@ -298,6 +332,8 @@ def hybrid_retrieve(
                 limit=policy.candidate_limit,
             )
         )
+    timings["graph"] = _elapsed_ms(phase_started)
+    phase_started = time.perf_counter()
     sparse_hits = (
         _sparse_retrieval_from_nodes(exact_nodes, source_limit, _rrf)
         if "sparse" in active_sources
@@ -312,6 +348,8 @@ def hybrid_retrieve(
             "status": "disabled",
             "reason": "configured_off" if not config.enable_sparse_bm25 else "policy_off",
         }
+    timings["bm25"] = _elapsed_ms(phase_started)
+    phase_started = time.perf_counter()
 
     # Optional retrieval implementations and test doubles may return no
     # diagnostics. Treat that as an unavailable index, never as evidence that
@@ -331,6 +369,8 @@ def hybrid_retrieve(
         else:
             reason = "configured_off" if not config.enable_semantic else "policy_off"
         retrieval_diagnostics["semantic"] = {"status": "disabled", "reason": reason}
+    timings["semantic"] = _elapsed_ms(phase_started)
+    phase_started = time.perf_counter()
     vector_hits: list[RetrievalResult] = []
     if config.enable_vector and policy.vector_enabled:
         vector_hits = _vector_retrieval(
@@ -345,6 +385,8 @@ def hybrid_retrieve(
             "status": "disabled",
             "reason": "configured_off" if not config.enable_vector else "policy_off",
         }
+    timings["vector"] = _elapsed_ms(phase_started)
+    phase_started = time.perf_counter()
     retrieval_diagnostics["policy"] = {
         "status": "active",
         **policy.to_dict(),
@@ -358,6 +400,8 @@ def hybrid_retrieve(
         "enable_semantic": config.enable_semantic,
     }
     retrieval_diagnostics["parser_precision"] = parser_precision_from_workspace(workspace_file)
+    timings["diagnostics"] = _elapsed_ms(phase_started)
+    phase_started = time.perf_counter()
 
     # Phase 2: Merge and rank results
     merged = _merge_retrieval_results(
@@ -371,6 +415,8 @@ def hybrid_retrieve(
     # Phase 3: Type-based boosting
     if config.enable_type_boosting:
         merged = _apply_type_boosting(merged, intent)
+    timings["merge_and_type_boost"] = _elapsed_ms(phase_started)
+    phase_started = time.perf_counter()
 
     if config.enable_graph_rank and merged:
         seed_ids = [item.node_id for item in merged[:3]]
@@ -383,12 +429,16 @@ def hybrid_retrieve(
                 item.score *= 1.0 + min(0.18, score * 0.3)
                 item.evidence["personalized_graph_score"] = round(score, 4)
         merged.sort(key=lambda item: item.score, reverse=True)
+    timings["graph_rank"] = _elapsed_ms(phase_started)
+    phase_started = time.perf_counter()
 
     if config.enable_reranker and merged:
         merged, reranker_diag = _rerank_candidates(query, merged, limit=min(12, source_limit))
         retrieval_diagnostics["reranker"] = reranker_diag
     else:
         retrieval_diagnostics["reranker"] = {"status": "disabled", "reason": "configured_off"}
+    timings["reranker"] = _elapsed_ms(phase_started)
+    phase_started = time.perf_counter()
 
     # Phase 4: Neighbor enrichment (top results only for performance)
     enrichment_budget = min(2, policy.evidence_budget) if intent.get("is_full_chain") else policy.evidence_budget
@@ -400,15 +450,19 @@ def hybrid_retrieve(
             max_depth=max(config.neighbor_depth, policy.graph_depth),
             limit=config.neighbor_limit,
         )
+    timings["neighbor_enrichment"] = _elapsed_ms(phase_started)
+    phase_started = time.perf_counter()
 
     # Phase 5: Cross-workspace resolution
     if config.enable_cross_workspace:
         _resolve_cross_workspace_refs(merged[:result_limit], graph, workspace_file)
+    timings["cross_workspace"] = _elapsed_ms(phase_started)
+    phase_started = time.perf_counter()
 
     # Phase 6: Build summary
     results = [item for item in merged if item.score >= config.min_confidence][:result_limit]
 
-    return {
+    response = {
         "query": query,
         "intent": intent,
         "results": [_result_to_dict(r) for r in results],
@@ -430,6 +484,94 @@ def hybrid_retrieve(
             "enable_reranker": config.enable_reranker,
         },
     }
+    timings["result_assembly"] = _elapsed_ms(phase_started)
+    retrieval_diagnostics["cache"] = {"status": "miss", "ttl_seconds": _RETRIEVAL_CACHE_TTL_SECONDS}
+    retrieval_diagnostics["timing_ms"] = {**timings, "total": _elapsed_ms(started)}
+    _cache_retrieval(cache_key, response)
+    return copy.deepcopy(response)
+
+
+def _retrieval_cache_key(
+    graph: RuntimeStore,
+    *,
+    workspace_file: str,
+    query: str,
+    node_types: list[str] | None,
+    limit: int,
+    config: HybridRetrievalConfig,
+    intent: dict[str, Any],
+    policy: Any,
+    freshness: dict[str, Any],
+) -> tuple[object, ...]:
+    """Bind cache entries to the published generation and effective read plan.
+
+    Runtime governance records share the SQLite backend with the graph, so its
+    file mtime changes on legitimate read-side audit writes. Index-control and
+    graph-summary instead change only when the published graph generation is
+    replaced or refreshed.
+    """
+
+    graph_path = getattr(graph, "db_path", None)
+    if graph_path is None:
+        # Keep the object alive while its cache entry exists so a released
+        # in-memory graph cannot have its id reused for unrelated results.
+        graph_version: tuple[object, ...] = ("ephemeral_graph", graph)
+    else:
+        try:
+            path = Path(graph_path)
+            from memory_center.core.storage.workspace import WorkspaceStore
+
+            store = WorkspaceStore(workspace_file)
+            control = store.read_json("index-control.json", {}) or {}
+            graph_summary = store.index_dir / "graph-summary.json"
+            graph_summary_version = (
+                (graph_summary.stat().st_mtime_ns, graph_summary.stat().st_size)
+                if graph_summary.exists()
+                else ("missing",)
+            )
+            graph_version = (
+                str(path.resolve()),
+                str(control.get("active_generation", "") or ""),
+                graph_summary_version,
+            )
+        except OSError:
+            graph_version = (str(graph_path), "unavailable")
+    config_values = tuple(sorted((key, repr(value)) for key, value in vars(config).items()))
+    intent_values = tuple(sorted((key, repr(value)) for key, value in intent.items()))
+    policy_values = tuple(sorted((key, repr(value)) for key, value in policy.to_dict().items()))
+    freshness_values = (
+        str(freshness.get("status", "") or ""),
+        str(freshness.get("staleness_level", "") or ""),
+        tuple(str(value) for value in freshness.get("changed_files", []) or []),
+        tuple(str(value) for value in freshness.get("pending_files", []) or []),
+    )
+    return (graph_version, query, tuple(sorted(node_types or [])), int(limit), config_values, intent_values, policy_values, freshness_values)
+
+
+def _get_cached_retrieval(key: tuple[object, ...]) -> dict[str, Any] | None:
+    now = time.monotonic()
+    with _RETRIEVAL_CACHE_LOCK:
+        cached = _RETRIEVAL_CACHE.get(key)
+        if cached is None:
+            return None
+        expires_at, value = cached
+        if expires_at <= now:
+            _RETRIEVAL_CACHE.pop(key, None)
+            return None
+        _RETRIEVAL_CACHE.move_to_end(key)
+        return copy.deepcopy(value)
+
+
+def _cache_retrieval(key: tuple[object, ...], value: dict[str, Any]) -> None:
+    with _RETRIEVAL_CACHE_LOCK:
+        _RETRIEVAL_CACHE[key] = (time.monotonic() + _RETRIEVAL_CACHE_TTL_SECONDS, copy.deepcopy(value))
+        _RETRIEVAL_CACHE.move_to_end(key)
+        while len(_RETRIEVAL_CACHE) > _RETRIEVAL_CACHE_MAX_ITEMS:
+            _RETRIEVAL_CACHE.popitem(last=False)
+
+
+def _elapsed_ms(started: float) -> float:
+    return round((time.perf_counter() - started) * 1000, 3)
 
 
 def _graph_retrieval(

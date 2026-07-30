@@ -337,6 +337,32 @@ Run the read-only diagnostic before creating private logical-anchor cases. `rece
 
 When a case declares `expected_resolution_levels`, that level is gated too. For example, a chain case should declare `chain_return_type`; a generic fallback fails even if the target still matches. `eval-java-call-resolution-metrics` reports only aggregate resolution-level distribution, chain edge/source counts, mean confidence, and unresolved rate. Use it to observe real-workspace edge changes, not as a replacement for private cases with `forbidden_targets`.
 
+### 检索热路径性能 / Retrieval Hot Path Performance
+
+批量治理记录、语义编码向量和 ANN 标签/距离都会先校验数量一致再配对；这避免异常响应被静默截断，也使 macOS 默认 Python 的本地开发与生产解释器保持相同行为。
+
+Governance batches, semantic vectors, and ANN label/distance pairs validate their counts before pairing. This prevents silent truncation and keeps macOS default-Python development behavior aligned with production interpreters.
+
+普通 query 会在 `retrieval_diagnostics.timing_ms` 返回阶段耗时和缓存状态。缓存只在同一已发布图 generation、相同 query、配置、策略和新鲜度下生效，TTL 为 20 秒；命中缓存不会跳过新鲜度检查、治理动作或响应包装。
+
+新鲜度优先读取已发布的 `graph-summary.json` 时间。运行时审计、治理与记忆记录共享 `graph.db`，它们的写入不会伪装为索引刷新，也不会使同一 generation 的检索缓存失效；缺少图摘要的旧工作空间才回退到图数据库时间。
+
+`performance.timing_ms` 还会记录 query 外层阶段耗时；同样的聚合数值会写入操作审计，便于比较缓存命中前后的核心检索、断言摘要和 Action 开销。
+
+同一 query 派生的 `agent_actions` 使用稳定 ID 去重：首次出现才写入治理 JSONL 与读模型，后续相同建议直接复用 ID，避免把普通读取变成重复写入负载。
+
+`release-gate --query-samples 5` 会记录首查冷查询 P95、其余样本的热查询 P95 和 `stage_p95_ms`。热查询 P95 默认预算为 `2000ms`；超出时 `retrieval.reason=hot_query_p95_budget_exceeded`。仅在明确维护窗口可使用 `--max-hot-query-p95-ms 0` 关闭绝对预算。
+
+Regular query responses expose stage timings and cache status under `retrieval_diagnostics.timing_ms`. The cache applies only to the same published graph generation, query, configuration, policy, and freshness for 20 seconds; cache hits do not bypass freshness, governance, or response wrapping.
+
+Freshness prefers the published `graph-summary.json` timestamp. Runtime audit, governance, and memory records share `graph.db`; their writes neither masquerade as reindexing nor invalidate retrieval cache entries for the same generation. Legacy workspaces without a graph summary fall back to the graph database timestamp.
+
+`performance.timing_ms` also covers outer query stages. The same aggregate values are stored in operation audit to compare core retrieval, assertion-summary, and action costs before and after a cache hit.
+
+`agent_actions` derived from the same query are stable-ID deduplicated: only the first observation writes governance JSONL and the read model, and later identical recommendations reuse the ID instead of turning reads into write load.
+
+`release-gate --query-samples 5` reports cold-query P95, hot-query P95, and `stage_p95_ms`. The default hot-query budget is `2000ms`; excess latency yields `retrieval.reason=hot_query_p95_budget_exceeded`. Only an explicit maintenance window should use `--max-hot-query-p95-ms 0` to disable the absolute budget.
+
 日常运营视图也会暴露相同方向的轻量检查：
 
 - `memory_eval_agent_guidance` / `eval-agent-guidance` / `/workspace/eval-agent-guidance`

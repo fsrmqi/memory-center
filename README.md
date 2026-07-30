@@ -981,6 +981,10 @@ memory-center release-gate \
 
 Use `--query-samples N` (default `1`) to execute each query N times: the first sample records cold-query latency and the remaining samples produce hot-query P95. Release baselines prefer hot P95; N=1 preserves the existing single-query cost.
 
+`release-gate` 默认要求热查询 P95 不超过 `2000ms`，并返回 `stage_p95_ms` 帮助定位精确检索、BM25、语义、图排序或邻居扩展的瓶颈。维护窗口可通过 `--max-hot-query-p95-ms 0` 显式关闭绝对预算，但仍会保留基线退化检查。
+
+`release-gate` enforces a default `2000ms` hot-query P95 and returns `stage_p95_ms` to locate exact, BM25, semantic, graph-rank, or enrichment bottlenecks. A maintenance window can explicitly disable the absolute budget with `--max-hot-query-p95-ms 0`; baseline-regression checks remain active.
+
 Use the saved portable baseline in later releases. A baseline is written only after the gate passes. The gate fails when a configured quality check fails, or when a shared component exceeds the latency or quality-drop threshold. Missing optional checks are reported as `skipped`, not treated as a pass.
 
 后续版本可带上保存的 portable baseline。只有门禁通过时才会写入 baseline；已配置的质量检查失败，或共有组件超过延迟退化/质量下降阈值时，门禁会失败；未配置的可选检查会标记为 `skipped`，不会被伪装为通过。

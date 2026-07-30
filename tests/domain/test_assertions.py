@@ -8,7 +8,11 @@ from memory_center.core.knowledge.assertions import (
     query_assertions,
     update_assertion_status,
 )
-from memory_center.core.knowledge.governance import project_session_validation
+from memory_center.core.knowledge.governance import (
+    GOVERNANCE_ENTITIES_FILE,
+    project_session_validation,
+    record_actions,
+)
 from memory_center.core.knowledge.state import attach_knowledge_state
 from memory_center.core.orchestrator.query import memory_query_hybrid
 from memory_center.core.presentation.evidence_subgraph import export_evidence_subgraph
@@ -54,6 +58,20 @@ def test_identity_aliases_keep_historical_ids_and_detect_cycles(tmp_path):
     assert resolve_canonical_identity(store, "Class:Old")["canonical_id"] == "Class:New"
     record_identity_alias(store, alias_id="Class:New", canonical_id="Class:Old")
     assert resolve_canonical_identity(store, "Class:Old")["ambiguous"] is True
+
+
+def test_repeated_query_actions_reuse_stable_ids_without_duplicate_writes(tmp_path):
+    workspace_file = tmp_path / "workspace.yaml"
+    workspace_file.write_text("workspace: demo\nservices: []\n", encoding="utf-8")
+    store = WorkspaceStore(workspace_file)
+    actions = [{"action": "inspect_top_result", "command": "memory-center symbol --name OrderService"}]
+
+    first = record_actions(store, origin="memory_query_hybrid:OrderService", actions=actions)
+    second = record_actions(store, origin="memory_query_hybrid:OrderService", actions=actions)
+
+    rows = store.read_jsonl(GOVERNANCE_ENTITIES_FILE)
+    assert first[0]["action_id"] == second[0]["action_id"]
+    assert len(rows) == 1
 
 
 def test_partial_materialization_only_replaces_scoped_assertions(tmp_path):
@@ -136,6 +154,26 @@ def test_default_query_adds_bounded_assertion_summary(tmp_path):
     result = memory_query_hybrid(workspace, "ArticleFeignClient", limit=3)
     assert result["knowledge_state"]["state"] in {"FOUND", "NOT_FOUND", "NOT_INDEXED", "STALE"}
     assert result["knowledge_state"]["next_action"]
+    timings = result["performance"]["timing_ms"]
+    assert {"setup", "core_retrieval", "quality_and_actions", "total"} <= set(timings)
+    assert all(value >= 0 for value in timings.values())
+
+
+def test_freshness_uses_published_summary_not_runtime_write_mtime(tmp_path):
+    from memory_center.core.freshness.status import IndexFreshnessService
+
+    workspace_file = tmp_path / "workspace.yaml"
+    workspace_file.write_text("workspace: demo\nservices: []\n", encoding="utf-8")
+    store = WorkspaceStore(workspace_file)
+    store.write_json("file-index.json", [{"path": "Demo.java"}])
+    store.write_json("graph-summary.json", {"nodes": 1, "edges": 0})
+
+    before = IndexFreshnessService(workspace_file).check()
+    store.append_jsonl("operation-events.jsonl", {"operation": "query"})
+    after = IndexFreshnessService(workspace_file).check()
+
+    assert before.status == after.status == "fresh"
+    assert before.last_indexed_at == after.last_indexed_at
 
 
 def test_admin_assertion_status_requires_evidence_for_verified(tmp_path):

@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import json
 import re
+import time
 from pathlib import Path
 from typing import Any
 
@@ -492,6 +493,8 @@ def memory_query_hybrid(
     # Lazy import to avoid circular dependency
     from ..retrieval.hybrid import HybridRetrievalConfig, detect_query_intent, hybrid_retrieve
 
+    started = time.perf_counter()
+    timings: dict[str, float] = {}
     config_obj = load_context(workspace_file)
     store = config_obj[1]
     from memory_center.core.knowledge.aliases import expand_verified_alias_query
@@ -500,6 +503,8 @@ def memory_query_hybrid(
     query = str(alias_expansion["query"])
     project_scope = _resolve_effective_project(workspace_file, project)
     effective_project = str(project_scope.get("project", "") or "")
+    timings["setup"] = _elapsed_ms(started)
+    phase_started = time.perf_counter()
 
     # Convert config if needed
     if config is None:
@@ -566,6 +571,8 @@ def memory_query_hybrid(
         )
     except Exception:
         learned_weights = {}
+    timings["freshness_and_policy"] = _elapsed_ms(phase_started)
+    phase_started = time.perf_counter()
 
     graph_path = store.graph_db_path
     shard_graph_used = False
@@ -607,6 +614,8 @@ def memory_query_hybrid(
                 learned_weights=learned_weights,
             )
         result["index_source"] = "service_graph_shard" if shard_graph_used else "global_graph"
+    timings["core_retrieval"] = _elapsed_ms(phase_started)
+    phase_started = time.perf_counter()
 
     # Project filtering: explicit project is strict; inferred active-service
     # scope is preferred only when it has evidence, otherwise keep global hits.
@@ -716,6 +725,8 @@ def memory_query_hybrid(
         if "retrieval_sources" not in result:
             result["retrieval_sources"] = []
         result["retrieval_sources"].append("contracts_index")
+    timings["scope_and_contracts"] = _elapsed_ms(phase_started)
+    phase_started = time.perf_counter()
 
     # 向后兼容：添加 matches 字段（旧接口返回 matches，新接口返回 results）
     if "results" in result and "matches" not in result:
@@ -727,6 +738,8 @@ def memory_query_hybrid(
     result["matches"] = result["results"]
     result["assertion_summary"] = _assertion_summary(store)
     result["identity_resolution"] = alias_expansion["identity_resolution"]
+    timings["assertion_summary"] = _elapsed_ms(phase_started)
+    phase_started = time.perf_counter()
 
     # 确保 retrieval_summary 包含旧接口期望的字段
     if "retrieval_summary" in result:
@@ -781,6 +794,8 @@ def memory_query_hybrid(
         result["agent_actions"] = record_actions(store, origin=f"memory_query_hybrid:{query}", actions=list(result["agent_next_steps"]))
     except Exception:
         result["agent_actions"] = []
+    timings["quality_and_actions"] = _elapsed_ms(phase_started)
+    phase_started = time.perf_counter()
     result = attach_facade_metadata(
         result,
         operation="memory_query_hybrid",
@@ -789,7 +804,14 @@ def memory_query_hybrid(
     )
     from memory_center.core.knowledge.state import attach_knowledge_state
 
-    return attach_knowledge_state(store, result, query=query, project=effective_project, mode="memory_query_hybrid")
+    result = attach_knowledge_state(store, result, query=query, project=effective_project, mode="memory_query_hybrid")
+    timings["response_envelope"] = _elapsed_ms(phase_started)
+    result["performance"] = {"timing_ms": {**timings, "total": _elapsed_ms(started)}}
+    return result
+
+
+def _elapsed_ms(started: float) -> float:
+    return round((time.perf_counter() - started) * 1000, 3)
 
 
 def _build_agent_next_steps_for_walkthrough(result: dict[str, Any]) -> list[dict[str, Any]]:

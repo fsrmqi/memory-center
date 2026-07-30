@@ -118,7 +118,9 @@ def build_workspace_semantic_index(workspace_file: str | Path) -> dict[str, Any]
         if model is not None and dense_docs:
             texts = [doc["text"] for doc in dense_docs]
             dense_vectors = model.encode(texts, normalize_embeddings=True)
-            for doc, vector in zip(dense_docs, dense_vectors, strict=True):
+            if len(dense_docs) != len(dense_vectors):
+                raise RuntimeError("semantic encoder returned an unexpected vector count")
+            for doc, vector in zip(dense_docs, dense_vectors):  # noqa: B905 - lengths validated above
                 doc["dense_vector"] = [float(value) for value in vector]
             actual_backend = "sentence-transformers"
             model_name = requested_model
@@ -240,7 +242,9 @@ def build_workspace_semantic_index_partial(workspace_file: str | Path, changed_n
         if model is not None and dense_new_docs:
             texts = [_dense_text_for_doc(d) for d in dense_new_docs]
             dense_vectors = model.encode(texts, normalize_embeddings=True)
-            for doc, vector in zip(dense_new_docs, dense_vectors, strict=True):
+            if len(dense_new_docs) != len(dense_vectors):
+                raise RuntimeError("semantic encoder returned an unexpected vector count")
+            for doc, vector in zip(dense_new_docs, dense_vectors):  # noqa: B905 - lengths validated above
                 doc["dense_vector"] = [float(value) for value in vector]
     dense_doc_count = sum(1 for doc in merged_docs if doc.get("dense_vector"))
     vector_state = _vector_state(
@@ -512,7 +516,9 @@ def _dense_semantic_query(workspace_file: str | Path, index: dict[str, Any], que
         dense_vector = doc.get("dense_vector")
         if not dense_vector:
             continue
-        score = sum(float(left) * float(right) for left, right in zip(query_vector, dense_vector, strict=True))
+        if len(query_vector) != len(dense_vector):
+            continue
+        score = sum(float(left) * float(right) for left, right in zip(query_vector, dense_vector))  # noqa: B905 - lengths validated above
         if score <= 0:
             continue
         scored.append({**doc, "score": score, "backend": "sentence-transformers"})

@@ -53,34 +53,44 @@ class IndexFreshnessService:
         if not index_counts:
             return FreshnessStatus(status="stale", staleness_level="high", message="索引为空，需要先运行 reindex")
 
-        # Check graph-summary mtime as proxy for last index time
+        # Prefer the published graph summary. Runtime audit, governance, and
+        # memory writes share graph.db, so its mtime is not an index timestamp.
+        graph_summary_path = self._store.index_dir / "graph-summary.json"
+        if graph_summary_path.exists():
+            mtime = graph_summary_path.stat().st_mtime
+            return self._status_from_index_mtime(mtime, threshold_seconds)
+
+        # Legacy workspaces may not yet have a published graph summary.
         graph_path = Path(self._store.graph_db_path)
         if graph_path.exists():
-            mtime = graph_path.stat().st_mtime
-            age = time.time() - mtime
-            if age < threshold_seconds:
-                return FreshnessStatus(
-                    status="fresh",
-                    staleness_level="low",
-                    last_indexed_at=time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(mtime)),
-                    message=f"索引新鲜（{int(age)}秒前更新）",
-                )
-            elif age < threshold_seconds * 4:
-                return FreshnessStatus(
-                    status="pending",
-                    staleness_level="medium",
-                    last_indexed_at=time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(mtime)),
-                    message=f"索引可能过期（{int(age)}秒前更新），建议对关键文件 Read 实时内容",
-                )
-            else:
-                return FreshnessStatus(
-                    status="stale",
-                    staleness_level="high",
-                    last_indexed_at=time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(mtime)),
-                    message=f"索引较旧（{int(age)}秒前更新），建议先运行 reindex",
-                )
+            return self._status_from_index_mtime(graph_path.stat().st_mtime, threshold_seconds)
 
         return FreshnessStatus(status="unknown", message="无法检测索引文件")
+
+    @staticmethod
+    def _status_from_index_mtime(mtime: float, threshold_seconds: int) -> FreshnessStatus:
+        age = time.time() - mtime
+        last_indexed_at = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(mtime))
+        if age < threshold_seconds:
+            return FreshnessStatus(
+                status="fresh",
+                staleness_level="low",
+                last_indexed_at=last_indexed_at,
+                message=f"索引新鲜（{int(age)}秒前更新）",
+            )
+        if age < threshold_seconds * 4:
+            return FreshnessStatus(
+                status="pending",
+                staleness_level="medium",
+                last_indexed_at=last_indexed_at,
+                message=f"索引可能过期（{int(age)}秒前更新），建议对关键文件 Read 实时内容",
+            )
+        return FreshnessStatus(
+            status="stale",
+            staleness_level="high",
+            last_indexed_at=last_indexed_at,
+            message=f"索引较旧（{int(age)}秒前更新），建议先运行 reindex",
+        )
 
     def check_files(self, file_paths: list[str]) -> dict[str, str]:
         """Check freshness of specific files. Returns {path: fresh|stale|unknown}."""

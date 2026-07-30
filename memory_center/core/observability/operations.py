@@ -49,6 +49,8 @@ class OperationObserver:
             "result_count": self.result_count,
             "tags": self.tags,
         }
+        if not exc_type and isinstance(getattr(self, "result", None), dict):
+            event["stage_timings_ms"] = _safe_stage_timings(self.result)
         try:
             WorkspaceStore(self.workspace_file).append_jsonl(OPERATION_EVENTS_FILE, event)
             metrics = MetricsCollector(self.workspace_file)
@@ -87,7 +89,26 @@ def observe_operation(
             tags = tags_resolver(args, kwargs) if tags_resolver else {}
             with OperationObserver(workspace, operation, tags=tags) as observer:
                 result = function(*args, **kwargs)
+                observer.result = result
                 observer.set_result_count(_result_count(result))
                 return result
         return wrapped
     return decorator
+
+
+def _safe_stage_timings(result: dict[str, Any]) -> dict[str, dict[str, float]]:
+    """Keep bounded performance stages in audit events without request content."""
+
+    sections = {
+        "query": ((result.get("performance", {}) or {}).get("timing_ms", {}) or {}),
+        "retrieval": ((result.get("retrieval_diagnostics", {}) or {}).get("timing_ms", {}) or {}),
+    }
+    return {
+        section: {
+            str(name): round(float(value), 3)
+            for name, value in timings.items()
+            if isinstance(value, (int, float))
+        }
+        for section, timings in sections.items()
+        if isinstance(timings, dict)
+    }

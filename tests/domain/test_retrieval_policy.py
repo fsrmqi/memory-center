@@ -239,6 +239,46 @@ def test_sparse_semantic_is_skipped_when_sqlite_bm25_is_ready() -> None:
     assert result["retrieval_diagnostics"]["semantic"]["reason"] == "redundant_sparse_semantic_bm25_active"
 
 
+def test_hybrid_retrieval_reports_stage_timings_and_caches_same_generation() -> None:
+    from memory_center.core.retrieval.hybrid import (
+        _RETRIEVAL_CACHE,
+        _RETRIEVAL_CACHE_LOCK,
+        HybridRetrievalConfig,
+        hybrid_retrieve,
+    )
+
+    graph = _RecordingGraph()
+    config = HybridRetrievalConfig(enable_cross_workspace=False)
+    with _RETRIEVAL_CACHE_LOCK:
+        _RETRIEVAL_CACHE.clear()
+    with (
+        patch("memory_center.core.retrieval.hybrid._bm25_sparse_retrieval", return_value=[]) as bm25,
+        patch("memory_center.core.retrieval.hybrid._semantic_retrieval", return_value=[]) as semantic,
+    ):
+        first = hybrid_retrieve(
+            graph,
+            "/missing/workspace.yaml",
+            "how are audit records persisted",
+            config=config,
+            freshness={"status": "fresh"},
+        )
+        second = hybrid_retrieve(
+            graph,
+            "/missing/workspace.yaml",
+            "how are audit records persisted",
+            config=config,
+            freshness={"status": "fresh"},
+        )
+
+    assert first["retrieval_diagnostics"]["cache"]["status"] == "miss"
+    assert "semantic" in first["retrieval_diagnostics"]["timing_ms"]
+    assert first["retrieval_diagnostics"]["timing_ms"]["total"] >= 0
+    assert second["retrieval_diagnostics"]["cache"]["status"] == "hit"
+    assert set(second["retrieval_diagnostics"]["timing_ms"]) == {"cache_lookup", "total"}
+    assert bm25.call_count == 1
+    assert semantic.call_count == 1
+
+
 def _workspace(tmp_path: Path) -> Path:
     workspace = tmp_path / ".memory-center" / "workspace.yaml"
     workspace.parent.mkdir(parents=True)

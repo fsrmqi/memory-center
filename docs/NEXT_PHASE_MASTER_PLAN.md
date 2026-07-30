@@ -38,7 +38,7 @@ This file consolidates and replaces the older execution plan, superpowers evolut
 1. **图谱可解释性收口**：统一证据等级、运行时检查、会话版本/验证快照、后台任务进度和按需子图导出均已落地；后续只按真实使用反馈优化。
 2. **真实任务质量运营**：积累经过人工验证的任务回放，仅依据确认结果优化检索策略与下一步建议。
 3. **Java 解析与调用解析精度**：从真实未解析分类中补充逻辑锚点样例，只修复可复现的具体误判。
-4. **真实性能与重建可靠性**：持续积累真实工作空间的冷/热查询、增量索引和并发重建数据，使用基准决定优化优先级。
+4. **真实性能与重建可靠性**：持续积累真实工作空间的冷/热查询、增量索引和并发重建数据，使用基准决定优化优先级。查询必须输出阶段耗时，并受热查询 P95 预算保护；只在确认的最高耗时阶段优化。
 5. **证据优先的需求交付闭环**：将已有任务、索引、治理和验证能力收敛为可拆解、可定位、可验证、可恢复的需求交付状态机。
 
 ---
@@ -51,7 +51,7 @@ This file consolidates and replaces the older execution plan, superpowers evolut
 
 任务：
 
-1. 先运行 `eval-java-call-resolution-unresolved`；报告会把静态类/外部依赖与实例接收者缺少类型分开，不能把外部 API 误当作本地解析缺陷。
+1. 先运行 `eval-java-call-resolution-unresolved`；报告会把静态类/外部依赖、基础继承方法与实例接收者缺少类型分开，不能把外部 API 或 `Object` 基础方法误当作本地解析缺陷。
 2. 从真实未解析分类中选择最高频且可复现的一类，补充 3-5 个只含逻辑锚点的私有 case。
 3. 每次仅修复一个明确的 parser 或 resolver 缺口，不以宽泛 fallback 换取表面召回率。
 4. 将每个误判转成可复跑 case，并在 CLI、MCP、HTTP 中保留失败原因和缺失锚点。`expected_resolution_levels` 必须作为门禁条件；用聚合 metrics 观察解析等级与链式边变化，用私有 case 判定正确/错误边。

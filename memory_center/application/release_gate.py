@@ -44,6 +44,13 @@ def build_release_gate_baseline(result: dict[str, Any], *, label: str = "current
         for key in ("cold_duration_ms", "hot_p95_duration_ms"):
             if key in metrics:
                 row[key] = round(float(metrics.get(key, 0.0) or 0.0), 3)
+        stage_p95 = metrics.get("stage_p95_ms")
+        if isinstance(stage_p95, dict):
+            row["stage_p95_ms"] = {
+                str(stage): round(float(duration or 0.0), 3)
+                for stage, duration in sorted(stage_p95.items())
+                if isinstance(duration, (int, float))
+            }
         portable_components[str(name)] = row
     return {
         "schema_version": 1,
@@ -120,6 +127,7 @@ def run_release_gate(
     max_latency_regression_pct: float = 15.0,
     max_quality_drop: float = 0.02,
     query_samples: int = 1,
+    max_hot_query_p95_ms: float = 2000.0,
     ontology_paths: list[str] | None = None,
     ontology_full: bool = False,
 ) -> dict[str, Any]:
@@ -206,27 +214,51 @@ def run_release_gate(
     query_samples = max(1, int(query_samples))
     for query in queries or []:
         samples: list[float] = []
+        timing_samples: list[dict[str, float]] = []
         match_count = 0
         for _ in range(query_samples):
             query_started = time.perf_counter()
             payload = memory_query_hybrid(workspace_file, query, limit=10)
             samples.append((time.perf_counter() - query_started) * 1000)
+            timings = ((payload.get("retrieval_diagnostics", {}) or {}).get("timing_ms", {}) or {})
+            timing_samples.append({
+                str(name): float(value)
+                for name, value in timings.items()
+                if isinstance(value, (int, float))
+            })
             match_count = max(match_count, len(payload.get("matches", []) or []))
-        query_rows.append({"samples": samples, "match_count": match_count})
+        query_rows.append({"samples": samples, "timing_samples": timing_samples, "match_count": match_count})
     if query_rows:
         positive = sum(1 for row in query_rows if row["match_count"] > 0)
         cold_samples = [row["samples"][0] for row in query_rows]
         hot_samples = [sample for row in query_rows for sample in row["samples"][1:]] or cold_samples
+        stage_samples: dict[str, list[float]] = {}
+        for row in query_rows:
+            hot_timings = row["timing_samples"][1:] or row["timing_samples"][:1]
+            for timings in hot_timings:
+                for stage, duration in timings.items():
+                    stage_samples.setdefault(stage, []).append(duration)
+        stage_p95 = {stage: _percentile(samples, 0.95) for stage, samples in sorted(stage_samples.items())}
+        hot_p95 = _percentile(hot_samples, 0.95)
+        retrieval_passed = positive == len(query_rows) and (
+            max_hot_query_p95_ms <= 0 or hot_p95 <= max_hot_query_p95_ms
+        )
         components["retrieval"] = _component(
-            passed=positive == len(query_rows),
-            duration_ms=_percentile(hot_samples, 0.95),
+            passed=retrieval_passed,
+            duration_ms=hot_p95,
             result_count=sum(int(row["match_count"]) for row in query_rows),
             quality_score=positive / len(query_rows),
-            reason="query_returned_no_matches" if positive != len(query_rows) else "",
+            reason=(
+                "query_returned_no_matches" if positive != len(query_rows)
+                else "hot_query_p95_budget_exceeded" if max_hot_query_p95_ms > 0 and hot_p95 > max_hot_query_p95_ms
+                else ""
+            ),
             extra_metrics={
                 "cold_duration_ms": _percentile(cold_samples, 0.95),
-                "hot_p95_duration_ms": _percentile(hot_samples, 0.95),
+                "hot_p95_duration_ms": hot_p95,
                 "query_samples": query_samples,
+                "max_hot_query_p95_ms": max_hot_query_p95_ms,
+                "stage_p95_ms": stage_p95,
             },
         )
     else:
@@ -310,7 +342,7 @@ def _component(
     result_count: int,
     quality_score: float,
     reason: str = "",
-    extra_metrics: dict[str, float | int] | None = None,
+    extra_metrics: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     row = {
         "status": "pass" if passed else "fail",

@@ -198,6 +198,47 @@ def test_this_call_without_workspace_declaration_is_inherited_scope_not_missing_
     assert result.unresolved_reason == "inherited_method_out_of_scope"
 
 
+def test_known_workspace_type_object_method_is_inherited_scope_not_polymorphism() -> None:
+    caller = """package com.example;
+public class OrderFacade {
+    private Order order;
+    void compare(Order other) { order.equals(other); }
+}
+"""
+    target = """package com.example;
+public class Order { private String id; }
+"""
+
+    result = _resolve(
+        [_symbol("api", "OrderFacade.java", caller), _symbol("api", "Order.java", target)],
+        "OrderFacade.java",
+        "equals",
+    )
+
+    assert result.resolution_level == "unresolved"
+    assert result.unresolved_reason == "inherited_method_out_of_scope"
+
+
+def test_known_workspace_type_unknown_method_stays_polymorphism_candidate() -> None:
+    caller = """package com.example;
+public class OrderFacade {
+    private Order order;
+    void process() { order.applyPolicy(); }
+}
+"""
+    target = """package com.example;
+public class Order { private String id; }
+"""
+
+    result = _resolve(
+        [_symbol("api", "OrderFacade.java", caller), _symbol("api", "Order.java", target)],
+        "OrderFacade.java",
+        "applyPolicy",
+    )
+
+    assert result.unresolved_reason == "target_method_not_indexed"
+
+
 def test_external_static_import_is_not_confused_with_same_named_workspace_type() -> None:
     caller = """package com.example.order;
 import com.thirdparty.DateUtil;

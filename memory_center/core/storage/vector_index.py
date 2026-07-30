@@ -328,6 +328,8 @@ class VectorIndex:
                 label_values = [int(label) for label in labels[0]]
                 if not label_values:
                     return []
+                if len(label_values) != len(distances[0]):
+                    raise VectorIndexQueryError("hnsw query returned mismatched labels and distances")
                 placeholders = ",".join("?" for _ in label_values)
                 with self._store.pool.connection() as conn:
                     rows = conn.execute(
@@ -337,7 +339,7 @@ class VectorIndex:
                 ids = {int(row["label"]): str(row["node_id"]) for row in rows}
                 return [
                     {"node_id": ids[label], "distance": float(distance), "score": round(1.0 - float(distance), 4), "backend": "hnswlib"}
-                    for label, distance in zip(label_values, distances[0], strict=True)
+                    for label, distance in zip(label_values, distances[0])  # noqa: B905 - lengths validated above
                     if label in ids
                 ]
         except VectorIndexBusyError:

@@ -1,5 +1,69 @@
 # Changelog / 更新日志
 
+## 4.3.40 发布产物新鲜度与热缓存修复 / Published-Artifact Freshness and Hot-Cache Fix
+
+- 新鲜度优先以已发布 `graph-summary.json` 的时间判断；运行时审计、治理和记忆写入更新共享 `graph.db` 时，不再把索引错误标记为刚刷新。
+- 检索缓存键仅使用影响检索策略的新鲜度字段，不再包含展示用的时间与提示文本；同一 generation 的连续查询可以稳定命中缓存。
+
+## 4.3.40 Published-Artifact Freshness and Hot-Cache Fix
+
+- Freshness now prefers the published `graph-summary.json` timestamp. Runtime audit, governance, and memory writes that update shared `graph.db` no longer make the index appear freshly rebuilt.
+- Retrieval cache keys retain only freshness fields that affect the retrieval plan, excluding display timestamps and messages so consecutive queries on one generation can reliably hit cache.
+
+## 4.3.39 本地解释器兼容与批量写入修复 / Local Interpreter Compatibility and Batch-Write Fix
+
+- 批量治理写入、向量配对、语义编码结果和工作空间组查询不再依赖 `zip(strict=True)`；改为显式长度校验，因此保留不一致即失败的语义，同时能在 macOS 默认 Python 下正确运行。
+- HNSW 返回标签与距离数量不一致时会明确诊断，不再静默截断。
+
+## 4.3.39 Local Interpreter Compatibility and Batch-Write Fix
+
+- Governance batch writes, vector pairing, semantic encoder results, and workspace-group queries no longer depend on `zip(strict=True)`. Explicit length checks preserve fail-fast mismatch semantics while working on the macOS default Python.
+- A mismatched HNSW label/distance response now fails with an explicit diagnostic instead of silently truncating.
+
+## 4.3.38 查询外层阶段审计 / Query Outer-Stage Audit
+
+- `memory_query_hybrid` 新增 `performance.timing_ms`，覆盖初始化、新鲜度与策略、核心检索、范围与契约、断言摘要、质量与 Action、响应封装。
+- 查询操作审计仅记录上述聚合阶段耗时和核心检索阶段耗时，不记录查询正文、路径或结果载荷，便于在真实工作空间定位缓存外瓶颈。
+
+## 4.3.38 Query Outer-Stage Audit
+
+- `memory_query_hybrid` now exposes `performance.timing_ms` for setup, freshness and policy, core retrieval, scope and contracts, assertion summary, quality and actions, and response wrapping.
+- Query operation audit stores only aggregate outer and core-retrieval stage timings, never query text, paths, or result payloads, making real-workspace cache-external bottlenecks observable.
+
+## 4.3.37 已发布 generation 缓存键修复 / Published-Generation Cache-Key Fix
+
+- 检索缓存版本不再依赖共享 SQLite 的文件修改时间；治理 Action、审计和其他运行时写入不会让同一已发布 generation 的核心检索缓存失效。
+- 缓存键改为已发布 `active_generation` 与图摘要版本；发布或定向刷新后仍会自动失效。
+
+## 4.3.37 Published-Generation Cache-Key Fix
+
+- Retrieval-cache versioning no longer uses the shared SQLite file mtime, so governance actions, audit events, and other runtime writes do not invalidate the core cache for the same published generation.
+- Cache keys now use published `active_generation` and graph-summary versioning; publish and targeted refresh still invalidate automatically.
+
+## 4.3.36 检索热路径性能门禁 / Retrieval Hot-Path Performance Gate
+
+- Hybrid retrieval 新增阶段级 `retrieval_diagnostics.timing_ms`：精确检索、图检索、BM25、语义、向量、图排序、邻居扩展、跨工作空间和结果组装均可定位耗时。
+- 相同图 generation、查询、检索配置、策略和新鲜度下启用 20 秒、最多 64 项的进程内核心检索缓存；缓存只复用已索引证据，外层仍执行新鲜度、治理、行动和结果包装逻辑。
+- 相同 query 派生的 Action 改用稳定 ID 去重；只在首次出现时写入治理 JSONL 和读模型，重复读取仍返回同一 Action ID。
+- `release-gate` 新增默认 `2000ms` 的热查询 P95 绝对预算与 `stage_p95_ms`。超出预算会以 `hot_query_p95_budget_exceeded` 阻断发布；`--max-hot-query-p95-ms 0` 可显式关闭该绝对预算。
+
+## 4.3.36 Retrieval Hot-Path Performance Gate
+
+- Hybrid retrieval now returns per-stage `retrieval_diagnostics.timing_ms` for exact, graph, BM25, semantic, vector, graph rank, enrichment, cross-workspace, and assembly work.
+- A bounded 20-second, 64-entry in-process core retrieval cache applies only when graph generation, query, configuration, policy, and freshness match. Freshness, governance, actions, and response wrapping still run outside the cache.
+- Actions derived from the same query now use stable-ID deduplication: only the first occurrence writes governance JSONL and its read model, while repeated reads return the same Action ID.
+- `release-gate` now enforces a default 2000ms hot-query P95 budget and reports `stage_p95_ms`. Budget overruns fail with `hot_query_p95_budget_exceeded`; `--max-hot-query-p95-ms 0` explicitly disables the absolute budget.
+
+## 4.3.35 Java 基础对象方法范围分类 / Java Object-Method Scope Classification
+
+- 当接收者类型已在工作区可见、但 `equals`、`toString`、`hashCode`、`getClass` 等 Java 基础对象方法未在源码索引中声明时，未解析原因改为 `inherited_method_out_of_scope`。
+- 不生成业务调用边、不降低外部依赖边界；该调整仅将基础继承方法从本地多态待修队列中移出，使真实未解析报告更准确。
+
+## 4.3.35 Java Object-Method Scope Classification
+
+- Calls on visible workspace types to source-absent Java object methods such as `equals`, `toString`, `hashCode`, and `getClass` now use `inherited_method_out_of_scope`.
+- No business call edge is synthesized and external boundaries remain intact. This only removes base inherited methods from the local polymorphism-fix queue.
+
 ## 4.3.34 Java 调用精度门禁与 P95 性能观测 / Java Call Gate and P95 Performance Observability
 
 - Java 调用评测现在将 `expected_resolution_levels` 纳入通过条件；例如链式调用 case 声明 `chain_return_type` 后，退化为普通解析会阻断门禁。

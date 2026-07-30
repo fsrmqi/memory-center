@@ -90,7 +90,9 @@ def group_query(
     with ThreadPoolExecutor(max_workers=min(max(len(resolved["members"]), 1), 4)) as pool:
         query_results = list(pool.map(_query_member, resolved["members"]))
 
-    for member, result in zip(resolved["members"], query_results, strict=True):
+    if len(resolved["members"]) != len(query_results):
+        raise RuntimeError("group query result count does not match member count")
+    for member, result in zip(resolved["members"], query_results):  # noqa: B905 - lengths validated above
         workspace_ref = member["name"]
         workspace_name = result.get("workspace", workspace_ref)
         workspace_results.append({

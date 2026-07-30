@@ -1306,6 +1306,7 @@ def release_gate_cmd(
     label: str = typer.Option("current", help="Label used when saving a baseline."),
     max_latency_regression_pct: float = typer.Option(15.0, min=0.0, help="Maximum component P95 latency regression."),
     query_samples: int = typer.Option(1, min=1, max=20, help="Samples per query; first is cold, later samples measure hot P95."),
+    max_hot_query_p95_ms: float = typer.Option(2000.0, min=0.0, help="Maximum hot-query P95 in milliseconds; 0 disables the absolute budget."),
     ontology_path: List[str] = typer.Option([], help="Optional logical paths for isolated ontology performance gate."),  # noqa: B008
     ontology_full: bool = typer.Option(False, help="Run the isolated full ontology reindex gate."),
     max_quality_drop: float = typer.Option(0.02, min=0.0, max=1.0, help="Maximum component quality-score drop."),
@@ -1323,6 +1324,7 @@ def release_gate_cmd(
         baseline=baseline or None,
         max_latency_regression_pct=max_latency_regression_pct,
         query_samples=query_samples,
+        max_hot_query_p95_ms=max_hot_query_p95_ms,
         ontology_paths=ontology_path,
         ontology_full=ontology_full,
         max_quality_drop=max_quality_drop,
