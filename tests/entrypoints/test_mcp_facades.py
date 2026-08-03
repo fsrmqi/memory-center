@@ -141,11 +141,33 @@ def test_mcp_server_exposes_workflow_facades_and_insight_tools(tmp_path: Path):
     # FastMCP stores tools internally; verify count and names
     tool_names = list(server._tool_manager._tools.keys())
     expected = {
-        "mc_start", "mc_lookup", "mc_analyze", "mc_sync", "mc_resume", "mc_handoff", "mc_close", "mc_admin",
+        "mc_bootstrap_context", "mc_start", "mc_lookup", "mc_analyze", "mc_sync", "mc_resume", "mc_handoff", "mc_close", "mc_admin",
         "mc_context_pack", "mc_onboard", "mc_domain", "mc_freshness",
     }
     assert len(tool_names) == len(expected)
     assert set(tool_names) == expected
+
+
+@pytest.mark.skipif(not HAS_MCP, reason="mcp package not installed")
+def test_mcp_exposes_zero_initialization_context_bootstrap(tmp_path: Path):
+    server = create_server(str(tmp_path))
+    assert "mc_bootstrap_context" in server._tool_manager._tools
+
+
+@pytest.mark.skipif(not HAS_MCP, reason="mcp package not installed")
+def test_mcp_bootstrap_does_not_create_workspace_state(tmp_path: Path):
+    project = tmp_path / "uninitialized-project"
+    project.mkdir()
+    server = create_server(str(project))
+
+    result = _resolve_mcp_result(
+        server._tool_manager._tools["mc_bootstrap_context"].fn(path=str(project), query="payment handler")
+    )
+
+    assert result["context_state"] in {"FEDERATED", "LIVE_SEARCH"}
+    assert not (project / ".memory-center").exists()
+    assert not (tmp_path / "index").exists()
+    assert not (tmp_path / "memory").exists()
 
 
 def test_mc_start_returns_consolidated_context(tmp_path: Path):

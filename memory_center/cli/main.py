@@ -39,6 +39,7 @@ from memory_center.core.indexing.reindex import reindex_workspace
 from memory_center.core.knowledge.communities import analyze_architecture_communities
 from memory_center.core.knowledge.wiki import generate_skills, generate_wiki
 from memory_center.core.orchestrator import (
+    bootstrap_workspace_context,
     memory_backend_query,
     memory_callees,
     memory_callers,
@@ -1514,6 +1515,18 @@ def lookup_hint_cmd(
 ):
     """Suggest whether to use Memory Center lookup tools or local search first."""
     print(workspace_lookup_hint(workspace, query=query, intent=intent, limit=limit))
+
+
+@app.command("bootstrap-context")
+def bootstrap_context_cmd(
+    path: str = typer.Option(".", help="Project directory or workspace.yaml; no workspace initialization is performed."),
+    intent: str = typer.Option(""),
+    query: str = typer.Option(""),
+    target: str = typer.Option(""),
+    limit: int = typer.Option(8, min=1, max=12),
+):
+    """Use Memory Center when initialized, otherwise query the optional GitNexus read-only provider."""
+    print(bootstrap_workspace_context(path, intent=intent, query=query, target=target, limit=limit))
 
 
 @app.command("tool-usage-report")

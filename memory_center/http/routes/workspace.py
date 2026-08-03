@@ -9,6 +9,7 @@ from memory_center.application.http_facades import (
     artifact_context,
     artifact_outline,
     auto_archive_task_spaces,
+    bootstrap_workspace_context,
     compact_change_log,
     create_task_space,
     get_artifact,
@@ -213,6 +214,13 @@ def register_workspace_routes(registry: CommandRegistry) -> None:
         rp.workspace(),
         view=rp.view(),
         budget=rp.budget(),
+    ))
+    registry.register("/workspace/bootstrap-context", lambda rp: bootstrap_workspace_context(
+        rp.require("path"),
+        intent=rp.intent(),
+        query=rp.get("query", ""),
+        target=rp.get("target", ""),
+        limit=rp.int_param("limit", 8, max_val=12),
     ))
     registry.register("/workspace/job-status", lambda rp: workspace_background_job_status(
         rp.workspace(),

@@ -1,5 +1,15 @@
 # Changelog / 更新日志
 
+## 4.3.49 零初始化联邦上下文 / Zero-Initialization Federated Context
+
+- 新增 `bootstrap-context`、`GET /workspace/bootstrap-context` 与 MCP `mc_bootstrap_context`。已有 workspace 时读取 Memory Center；未初始化目录会尝试 GitNexus 的固定只读 `status/query/context` 命令，失败后才建议有界本地搜索。
+- GitNexus 结果标记为临时外部证据，不写入 `.memory-center/`、不合并进图谱、不会触发 analyze/reindex/clean 或任意 shell。结果含 provider、范围、观测时间、耗时、持久化边界与下一步动作；会话缓存最长 30 秒。
+
+## 4.3.49 Zero-Initialization Federated Context
+
+- Added `bootstrap-context`, `GET /workspace/bootstrap-context`, and MCP `mc_bootstrap_context`. Existing workspaces use Memory Center; uninitialized directories attempt fixed read-only GitNexus `status/query/context` commands before suggesting bounded local search.
+- GitNexus results are ephemeral external evidence: they never write `.memory-center/`, merge into the graph, trigger analyze/reindex/clean, or execute arbitrary shell. Results include provider, scope, observed time, latency, persistence boundary, and next action; the session cache is capped at 30 seconds.
+
 ## 4.3.48 可选 skill-up 评测适配器 / Optional skill-up Evaluation Adapter
 
 - 新增 `delivery-skill-eval-status|init|run`：对已发布 Skill 生成脱敏的 `skill-up` 评测骨架，并通过固定 argv 执行 `validate/run`，可输出 JSON、JUnit、HTML 报告。

@@ -39,6 +39,7 @@ Memory Center precomputes these relationships before the agent starts editing.
 
 - [docs/README.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/README.md)
 - [docs/PRODUCT_TECHNICAL_OVERVIEW.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/PRODUCT_TECHNICAL_OVERVIEW.md)
+- [docs/INTERVIEW_TECHNICAL_GUIDE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/INTERVIEW_TECHNICAL_GUIDE.md)
 - [docs/DOCS_STATUS.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/DOCS_STATUS.md)
 - [docs/ARCHITECTURE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/ARCHITECTURE.md)
 - [docs/USER_GUIDE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/USER_GUIDE.md)
@@ -67,6 +68,12 @@ Memory Center stores code and service relationships as graph nodes and edges in 
 This makes impact analysis and context retrieval deterministic and explainable.
 
 这样 AI 查询上下文时不是靠猜，而是沿着真实的工程关系返回影响面。
+
+### 1.1 Zero-initialization federation / 零初始化联邦上下文
+
+即使当前项目尚未创建 `.memory-center/workspace.yaml`，也可以调用 `mc_bootstrap_context` 或 `memory-center bootstrap-context --path <project-dir>`。它会先探测已有 Memory Center workspace；没有 workspace 时仅以固定只读命令调用可选 GitNexus Provider，返回会话级外部证据；Provider 不可用时才建议有界本地搜索。该流程不初始化目录、不触发 reindex，也不把外部结果写进图谱。
+
+Even without `.memory-center/workspace.yaml`, `mc_bootstrap_context` or `memory-center bootstrap-context --path <project-dir>` first detects an existing workspace, then optionally uses a read-only GitNexus provider, and finally suggests bounded local search. It never initializes, reindexes, or persists external results into the graph.
 
 ### 2. Spring Cloud deep indexing / Spring Cloud 深度索引
 

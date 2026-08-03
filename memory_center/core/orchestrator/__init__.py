@@ -130,6 +130,8 @@ from .sync import (
 )
 
 # --- workspace operations ---
+from .bootstrap import bootstrap_workspace_context
+
 from .workspace_ops import (
     workspace_check_contract,
     workspace_check_rules,
@@ -178,7 +180,7 @@ __all__ = [
     "workspace_record_case", "workspace_write_receipts", "workspace_replay_write_chain",
     # workspace
     "workspace_check_contract", "workspace_check_rules",
-    "workspace_status", "workspace_sniff", "workspace_trace", "workspace_lookup_hint",
+    "workspace_status", "workspace_sniff", "workspace_trace", "workspace_lookup_hint", "bootstrap_workspace_context",
     "workspace_dashboard", "workspace_continuity_dashboard", "workspace_task_resume_check",
     # resume
     "workspace_resume_packet", "workspace_resume_context",

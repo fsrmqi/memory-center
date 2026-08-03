@@ -51,11 +51,16 @@ class WorkspaceContext:
     def __init__(self, workspace_file: str):
         self.workspace_input = workspace_file
         self.workspace_file = resolve_workspace_input(workspace_file)
+        self.is_initialized_workspace = _is_initialized_workspace(self.workspace_file)
         self.startup_diagnostics = build_startup_diagnostics(self.workspace_input, self.workspace_file)
         self.thread_id = os.environ.get("MEMORY_CENTER_THREAD_ID", "").strip()
         self.turn_id = os.environ.get("MEMORY_CENTER_TURN_ID", "").strip()
         self.trace_id = os.environ.get("MEMORY_CENTER_TRACE_ID", "").strip() or uuid.uuid4().hex
-        self.active_session_id = resolve_active_session(self.workspace_file, self.thread_id)
+        self.active_session_id = (
+            resolve_active_session(self.workspace_file, self.thread_id)
+            if self.is_initialized_workspace
+            else ""
+        )
         self.mcp_audit_entry_count: int | None = None
         self.mcp_audit_last_pruned_at = 0.0
 
@@ -117,6 +122,12 @@ def resolve_workspace_input(workspace_input: str) -> str:
         if candidate.exists():
             return str(candidate.resolve())
     return str(path.resolve())
+
+
+def _is_initialized_workspace(workspace_file: str) -> bool:
+    """只有真实 workspace.yaml 才允许后续会话和审计持久化。"""
+    path = Path(workspace_file).expanduser()
+    return path.is_file() and path.name == "workspace.yaml" and path.parent.name == ".memory-center"
 
 
 def safe_mcp_tool(mcp, workspace_context: WorkspaceContext | None = None):
@@ -191,7 +202,7 @@ def _record_mcp_invocation(
     started_at: float,
 ) -> None:
     """持久化精简的 MCP 审计事件，不保留请求或响应正文。"""
-    if workspace_context is None:
+    if workspace_context is None or not workspace_context.is_initialized_workspace:
         return
     try:
         inputs = _bound_mcp_inputs(fn, args, kwargs)

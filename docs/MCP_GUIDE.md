@@ -24,8 +24,9 @@
 
 ## 1. Public Surface / 对外公开面
 
-MCP 当前公开的是 12 个 task-level tools：
+MCP 当前公开的是 13 个 task-level tools：
 
+- `mc_bootstrap_context`
 - `mc_start`
 - `mc_lookup`
 - `mc_analyze`
@@ -45,6 +46,7 @@ MCP 当前公开的是 12 个 task-level tools：
 
 | Tool | Purpose |
 |---|---|
+| `mc_bootstrap_context` | 零初始化上下文入口：已有 workspace 用 Memory Center；否则只读调用可选 GitNexus，再降级为有界本地搜索；外部结果不持久化 |
 | `mc_start` | 嗅探任务上下文、可选同步、启动 session |
 | `mc_lookup` | 统一检索入口：symbol / code / query / trace / chain / context / ref / backend |
 | `mc_analyze` | 统一影响分析入口：quick / standard / full |

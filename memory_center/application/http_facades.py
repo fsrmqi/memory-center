@@ -63,6 +63,7 @@ from memory_center.core.orchestrator import (
     memory_verify_checklist,
     memory_walkthrough_health,
     memory_write_judge,
+    bootstrap_workspace_context,
     workspace_continuity_dashboard,
     workspace_dashboard,
     workspace_end_session,

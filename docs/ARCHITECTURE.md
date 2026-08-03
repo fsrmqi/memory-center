@@ -644,8 +644,9 @@ Benchmark/observability 趋势数据写在 `.memory-center/memory/*-trends.jsonl
 
 ### 9.1 MCP Facade
 
-MCP 当前公开 12 个 task-level tools：
+MCP 当前公开 13 个 task-level tools：
 
+- `mc_bootstrap_context`
 - `mc_start`
 - `mc_lookup`
 - `mc_analyze`
@@ -660,6 +661,8 @@ MCP 当前公开 12 个 task-level tools：
 - `mc_freshness`
 
 设计意图：模型看到的是任务级接口，不是几十个内部原子工具。`mc_admin` 的 action table 位于 `memory_center/application/admin.py`，通过 `CommandRegistry` 分发。
+
+`mc_bootstrap_context` 是联邦读取入口：它先向上发现已有 `.memory-center/workspace.yaml`；找不到时以可选 Provider 调用 GitNexus 的固定只读 `status/query/context`，结果包装为带 provider、范围、观测时间和持久化边界的临时证据。它不创建 workspace、不触发 reindex、不调用 `analyze/index/clean`，也不将外部输出写入 SQLite 图谱。Provider 不可用时仅返回有界本地搜索计划。
 
 MCP 还暴露 resources：
 

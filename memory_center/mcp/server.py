@@ -23,6 +23,7 @@ from memory_center.core.foundation.errors import InvalidInputError
 from memory_center.core.observability.diagnostics import DIAG, diag_entry
 from memory_center.core.orchestrator import (
     _annotate_phantom_nodes,
+    bootstrap_workspace_context,
     group_chain,
     memory_backend_query,
     memory_callees,
@@ -306,6 +307,17 @@ def create_server(workspace_file: str):
     # Import workflow templates for guidance
 
     # ===================== FACADE 1: mc_start =====================
+    @safe_mcp_tool(mcp, ctx)
+    def mc_bootstrap_context(
+        path: str = "",
+        intent: str = "",
+        query: str = "",
+        target: str = "",
+        limit: int = 8,
+    ):
+        """Build context without initializing a workspace. Uses an existing Memory Center workspace when available; otherwise invokes the optional GitNexus provider through fixed read-only commands. External evidence is session-ephemeral and never written into the graph."""
+        return bootstrap_workspace_context(path or ctx.workspace_input, intent=intent, query=query, target=target, limit=limit)
+
     @safe_mcp_tool(mcp, ctx)
     def mc_start(
         intent: str,

@@ -80,6 +80,7 @@
 - `domain`
 - `freshness`
 - `context-pack`
+- `bootstrap-context`：`--path <project-dir>` 在不初始化 workspace 的前提下，优先复用已有 Memory Center，否则尝试只读 GitNexus，再返回有界本地搜索计划。
 
 ### Artifact / Task Space
 
@@ -99,6 +100,14 @@
 ### Public Discovery Contract / 公开入口发现约定
 
 每个公开能力必须在 CLI、HTTP 或 MCP 中至少有一个入口，并在 USER_GUIDE、MCP_GUIDE 与本参考手册中可发现。代码、`memory-center <command> --help`、HTTP route registry 与 MCP schema 是参数和返回字段的最终事实来源。
+
+### Federated Bootstrap / 联邦初始化
+
+- CLI：`memory-center bootstrap-context --path <project-dir> --intent "..." --query "..." --target "..."`
+- HTTP：`GET /workspace/bootstrap-context?path=<project-dir>&intent=...&query=...&target=...`
+- MCP：`mc_bootstrap_context(path="<project-dir>", intent="...", query="...", target="...")`
+- 返回：`context_state=READY|FEDERATED|LIVE_SEARCH`、`provider`、`freshness`、`evidence`、`tool_plan`、`persistence`、`next_action`。
+- 边界：GitNexus 仅允许 `status/query/context`，不允许 `analyze`、`index`、`clean`、`--content` 或任意 shell；外部结果仅保留在进程内最多 30 秒，绝不写入图谱或工作区。
 
 ### Evidence Subgraph / 证据子图
 
