@@ -312,7 +312,7 @@ intake -> breakdown -> locate -> implement -> verify -> close
 
 ```text
 已验证交付 -> Skill candidate -> canary
--> 至少三条成功且有证据的观测 -> published
+-> 达到契约最低样本数（默认三条）的成功且有证据观测 -> published
 -> 发现回归 -> rolled_back
 ```
 
@@ -575,7 +575,7 @@ flowchart LR
 
 ### 13.5 P3：外部生态与 Agent 能力进化
 
-Provider Registry 已解决外部工具的声明、能力路由、调用健康与受控动作边界；受限 MCP Client Bridge 已补齐直接 HTTP MCP 协同与策略门禁。下一阶段应重点研究跨 Provider 冲突检测、Skill Contract 与脱敏回归集，以及将 Bridge 的健康与成本数据纳入统一 Provider 路由。
+Provider Registry 已解决外部工具的声明、能力路由、调用健康与受控动作边界；受限 MCP Client Bridge 已补齐直接 HTTP MCP 协同与策略门禁；跨 Provider Claim 冲突检测、Skill Contract 与脱敏回归集也已接入。下一阶段只应基于真实回放校准融合排序和推荐质量，而非在缺乏证据时增加自动化策略。
 
 Skill 已被建模为“有适用语言、前置/停止条件、输入输出契约、脱敏 replay、验证集和回滚条件”的可执行知识单元。候选 Skill 仍采用保守的规则匹配和结构相似度召回，并按请求语言过滤；当真实 replay 足够时，再研究 contextual bandit 在“选择哪个已发布 Skill”上的探索，但发布决策仍必须由验证证据驱动。
 

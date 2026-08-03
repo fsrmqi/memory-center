@@ -3,14 +3,14 @@
 ## 4.3.56 可执行 Skill 契约与脱敏 Replay / Executable Skill Contracts and Redacted Replays
 
 - 交付 Skill 候选新增版本化 `contract`：适用语言、前置条件、停止条件、输入字段、输出字段和 replay 策略。`delivery-skill-contract-update`、`/workspace/delivery/skill/contract`、`mc_admin(action="delivery_skill_contract_update")` 复用同一状态转换。
-- canary 与发布会校验契约；发布还要求至少三条带验证引用的成功观测和三条自动生成的脱敏 replay，且没有失败。推荐入口可按 `language` 过滤已发布 Skill，并返回适用边界与停止条件。
+- canary 与发布会校验契约；发布要求达到 `minimum_verified_passed`（默认三条）的带验证引用成功观测和自动生成脱敏 replay，且没有失败。推荐入口可按 `language` 过滤已发布 Skill，并返回适用边界与停止条件。
 - 新增 `delivery-skill-replay`、`/workspace/delivery/skill/replay`、`mc_admin(action="delivery_skill_replay")`。replay 仅保存契约哈希、语言、结果、证据引用、时延和 Token 指标；不保存源码、需求正文、日志、外部正文、密钥或操作人。
 - 观测与 replay 按 `contract_sha256` 隔离；修订 canary 契约会要求重新积累当前版本证据，已发布 Skill 的契约不可原地修改。
 
 ## 4.3.56 Executable Skill Contracts and Redacted Replays
 
 - Delivery Skill candidates now carry a versioned `contract`: applicable languages, preconditions, stop conditions, input fields, output fields, and replay policy. `delivery-skill-contract-update`, `/workspace/delivery/skill/contract`, and `mc_admin(action="delivery_skill_contract_update")` share the same state transition.
-- Canary and publication validate the contract. Publication additionally requires at least three successful observations with verification references and three automatically generated redacted replays, with no failures. Recommendations can filter published Skills by `language` and return applicability boundaries and stop conditions.
+- Canary and publication validate the contract. Publication requires the contract's `minimum_verified_passed` threshold (three by default) of successful observations with verification references and automatically generated redacted replays, with no failures. Recommendations can filter published Skills by `language` and return applicability boundaries and stop conditions.
 - Added `delivery-skill-replay`, `/workspace/delivery/skill/replay`, and `mc_admin(action="delivery_skill_replay")`. Replays retain only contract hashes, languages, outcomes, evidence references, latency, and token metrics; they never store source, request bodies, logs, external bodies, secrets, or actors.
 - Observations and replays are isolated by `contract_sha256`; a revised canary contract requires fresh evidence, while a published Skill contract is immutable.
 

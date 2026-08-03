@@ -60,8 +60,9 @@
 | **ResumePacket** | 运行时生成 | L1 | 恢复上下文包 |
 | **TokenGain** | token-gain-log.jsonl | L0 | Token 节省记录 |
 | **BenchmarkTrend** | benchmark-trends.jsonl | L0 | 基准趋势数据点 |
-| **DeliverySkill** | `artifacts/skills/delivery-skill-registry.json` | L2 | 从已验证交付派生的可复用经验，带稳定 ID、版本和生命周期 |
-| **SkillObservation** | delivery-skill-observations.jsonl | L0 | 对 canary/published Skill 的脱敏效果观测 |
+| **DeliverySkill** | `artifacts/skills/delivery-skill-registry.json` | L2 | 从已验证交付派生的可复用经验，带稳定 ID、生命周期及版本化语言/前置/停止/I/O 契约 |
+| **SkillObservation** | delivery-skill-observations.jsonl | L0 | 对 canary/published Skill 的有界效果观测，绑定 `contract_sha256` |
+| **SkillReplay** | `artifacts/skills/delivery-replays/<skill-id>.jsonl` | L0 | 自动派生的脱敏回放，仅含契约哈希、语言、结果、证据引用和性能指标 |
 | **FailureCandidate** | delivery-failure-candidates.json | L2 | 仅含哈希任务引用、验证 profile、验收标识和证据引用的离线失败模式候选 |
 
 ### 2.3 运行/治理实体
