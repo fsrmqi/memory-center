@@ -672,6 +672,8 @@ MCP 当前公开 15 个 task-level tools：
 
 Provider Registry 的路由健康数据只在进程内保存最近调用的耗时和状态，计算 P95、错误率和成本惩罚后与静态 priority 合并排序。它不在热路径外启动探测扫描。外部索引状态仅在 Provider 明确报告 `gitnexus_index_not_found` 或 `gitnexus_index_stale` 时生成确认型行动卡；行动卡指向固定 `analyze --index-only`，绝不自动执行。
 
+Bridge 策略中声明 `capabilities: [code_navigation]` 的 `read_only` tool 会动态注册到同一 Provider Registry。因此零初始化联邦上下文会在 GitNexus 与健康的 IDEA/GitNexus MCP 等 Provider 间按 `priority + health penalty` 选择，而不是永远阻塞在一个外部工具上。跨 Provider 融合只消费临时 EvidenceRef 的来源、范围、哈希和显式结构化 Claim：同一 `subject/predicate` 的不同值返回 `CONFLICT` 与 `verify_conflict` Action；缺少 Claim 或来源不足只返回 `INSUFFICIENT_EVIDENCE`。融合器不解释、不拼接外部正文，也不写入长期层。
+
 MCP 还暴露 resources：
 
 - `memory-center://status`

@@ -1,6 +1,6 @@
 """可选外部证据提供者；只读、可诊断且不持久化外部结果。"""
 
-from .evidence import build_external_evidence_ref
+from .evidence import build_external_evidence_ref, fuse_external_evidence_refs
 from .gitnexus import GitNexusProvider
 from .health import ProviderHealthMonitor
 from .mcp_bridge import (
@@ -25,6 +25,7 @@ __all__ = [
     "ProviderRegistry",
     "ProviderSpec",
     "build_external_evidence_ref",
+    "fuse_external_evidence_refs",
     "bridge_policy_path",
     "load_mcp_bridge_policy",
     "mcp_bridge_policy_status",

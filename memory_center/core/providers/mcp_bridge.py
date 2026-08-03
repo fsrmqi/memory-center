@@ -27,6 +27,8 @@ class McpToolPolicy:
     mode: str
     arguments: dict[str, str]
     confirmation_required: bool
+    capabilities: tuple[str, ...]
+    evidence_claim: dict[str, str]
 
 
 @dataclass(frozen=True)
@@ -36,6 +38,7 @@ class McpProviderPolicy:
     url: str
     transport: str
     timeout_seconds: float
+    priority: int
     tools: tuple[McpToolPolicy, ...]
 
 
@@ -71,8 +74,15 @@ def mcp_bridge_policy_status(root: str | Path) -> dict[str, Any]:
                 "server": policy.server,
                 "transport": policy.transport,
                 "timeout_seconds": policy.timeout_seconds,
+                "priority": policy.priority,
                 "actions": [
-                    {"action": tool.action, "tool": tool.tool, "mode": tool.mode, "confirmation_required": tool.confirmation_required}
+                    {
+                        "action": tool.action,
+                        "tool": tool.tool,
+                        "mode": tool.mode,
+                        "confirmation_required": tool.confirmation_required,
+                        "capabilities": list(tool.capabilities),
+                    }
                     for tool in policy.tools
                 ],
             }
@@ -97,6 +107,7 @@ class McpBridgeProvider:
                 "tool": tool.tool,
                 "mode": tool.mode,
                 "confirmation_required": tool.confirmation_required,
+                "capabilities": list(tool.capabilities),
             }
             for tool in self._policy.tools
         ]
@@ -151,7 +162,36 @@ class McpBridgeProvider:
             "duration_ms": round((monotonic() - started_at) * 1000, 3),
             "scope_checked": _scope_checked(self._policy, tool_policy),
             "persistence": "session_ephemeral",
+            "claim": _extract_claim(response) or _render_claim(tool_policy.evidence_claim, query=query, target=target),
         }
+
+    def lookup(self, root: str | Path, query: str, *, target: str = "", intent: str = "", limit: int = 8) -> dict[str, Any]:
+        """将策略显式允许的只读能力作为 Registry 的动态上下文 Provider。"""
+        tool = next(
+            (
+                item
+                for item in self._policy.tools
+                if item.mode == "read_only" and "code_navigation" in item.capabilities
+            ),
+            None,
+        )
+        if tool is None:
+            return {
+                "provider": self.name,
+                "status": "unavailable",
+                "reason": "mcp_bridge_capability_not_allowed",
+                "scope_checked": {"root": str(Path(root).expanduser().resolve()), "capability": "code_navigation"},
+                "next_action": "在 Bridge 策略的只读 tool 中显式声明 capabilities: [code_navigation]。",
+            }
+        result = self.execute(tool.action, query=query or intent, target=target)
+        result["operation"] = "lookup"
+        scope = result.setdefault("scope_checked", {})
+        if isinstance(scope, dict):
+            scope.update({"root": str(Path(root).expanduser().resolve()), "capability": "code_navigation", "limit": min(max(1, limit), 12)})
+        return result
+
+    def supports_capability(self, capability: str) -> bool:
+        return any(tool.mode == "read_only" and capability in tool.capabilities for tool in self._policy.tools)
 
 
 class HttpMcpBridgeClient:
@@ -240,6 +280,8 @@ def _normalize_provider_policy(raw: Any) -> McpProviderPolicy | None:
         tool = str(item.get("tool", "") or "").strip()
         mode = str(item.get("mode", "read_only") or "read_only").strip()
         arguments = item.get("arguments", {})
+        capabilities = _normalize_capabilities(item.get("capabilities", ["code_navigation"]))
+        evidence_claim = item.get("evidence_claim", {})
         normalized_arguments = {str(key): str(value) for key, value in arguments.items()} if isinstance(arguments, dict) else {}
         if (
             action
@@ -247,6 +289,8 @@ def _normalize_provider_policy(raw: Any) -> McpProviderPolicy | None:
             and mode in {"read_only", "controlled_write", "destructive"}
             and isinstance(arguments, dict)
             and _valid_argument_template(normalized_arguments)
+            and isinstance(evidence_claim, dict)
+            and _valid_argument_template({str(key): str(value) for key, value in evidence_claim.items()})
         ):
             tools.append(
                 McpToolPolicy(
@@ -255,6 +299,8 @@ def _normalize_provider_policy(raw: Any) -> McpProviderPolicy | None:
                     mode,
                     normalized_arguments,
                     bool(item.get("confirmation_required", False)) or mode != "read_only",
+                    capabilities,
+                    {str(key): str(value) for key, value in evidence_claim.items()},
                 )
             )
     return McpProviderPolicy(
@@ -263,6 +309,7 @@ def _normalize_provider_policy(raw: Any) -> McpProviderPolicy | None:
         url,
         transport,
         _bounded_timeout(raw.get("timeout_seconds", 10.0)),
+        _bounded_priority(raw.get("priority", 20)),
         tuple(tools),
     )
 
@@ -284,6 +331,19 @@ def _bounded_timeout(value: Any) -> float:
         return min(_MAX_TIMEOUT_SECONDS, max(1.0, float(value or 10.0)))
     except (TypeError, ValueError):
         return 10.0
+
+
+def _bounded_priority(value: Any) -> int:
+    try:
+        return min(1_000, max(1, int(value or 20)))
+    except (TypeError, ValueError):
+        return 20
+
+
+def _normalize_capabilities(value: Any) -> tuple[str, ...]:
+    if not isinstance(value, list):
+        return ()
+    return tuple(sorted({str(item).strip() for item in value if str(item).strip()}))[:8]
 
 
 def _render_arguments(template: dict[str, str], *, query: str, target: str) -> dict[str, str]:
@@ -313,8 +373,25 @@ def _scope_checked(policy: McpProviderPolicy, tool: McpToolPolicy) -> dict[str, 
         "transport": policy.transport,
         "tool": tool.tool,
         "mode": tool.mode,
+        "capabilities": list(tool.capabilities),
     }
 
 
 def _bounded_response(value: dict[str, Any]) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, default=str)[:_MAX_OUTPUT_CHARS]
+
+
+def _extract_claim(response: dict[str, Any]) -> dict[str, str]:
+    """只接收外部工具显式提供的结构化 Claim，绝不从正文推断。"""
+    structured = response.get("structuredContent", response.get("structured_content", {}))
+    if not isinstance(structured, dict):
+        return {}
+    claim = structured.get("claim", structured.get("evidence_claim", {}))
+    return _render_claim(claim, query="", target="") if isinstance(claim, dict) else {}
+
+
+def _render_claim(template: dict[str, str], *, query: str, target: str) -> dict[str, str]:
+    if not template:
+        return {}
+    rendered = _render_arguments(template, query=query, target=target)
+    return rendered if all(rendered.get(key, "").strip() for key in ("subject", "predicate", "value")) else {}

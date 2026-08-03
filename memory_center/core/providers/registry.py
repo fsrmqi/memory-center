@@ -50,12 +50,19 @@ class ProviderRegistry:
         self._specs = tuple(sorted(specs or (), key=lambda item: item.priority))
         self._health = health or ProviderHealthMonitor()
 
-    def descriptors(self) -> list[dict[str, Any]]:
-        return [spec.descriptor() for spec in self._specs]
+    def descriptors(self, extra_specs: tuple[ProviderSpec, ...] | list[ProviderSpec] = ()) -> list[dict[str, Any]]:
+        return [spec.descriptor() for spec in self._all_specs(extra_specs)]
 
-    def health_snapshot(self) -> dict[str, dict[str, float | int | str]]:
+    def health_snapshot(self, extra_specs: tuple[ProviderSpec, ...] | list[ProviderSpec] = ()) -> dict[str, dict[str, float | int | str]]:
         """返回进程内观测结果，供路由诊断与行动卡使用。"""
-        return {spec.provider_id: self._health.snapshot(spec.provider_id) for spec in self._specs}
+        provider_ids = {spec.provider_id for spec in self._all_specs(extra_specs)} | set(self._health.providers())
+        return {provider_id: self._health.snapshot(provider_id) for provider_id in sorted(provider_ids)}
+
+    def record_external_result(self, provider_id: str, result: dict[str, Any]) -> None:
+        """记录动态外部 Provider 的真实调用结果，不要求其预注册为静态 Provider。"""
+        status = str(result.get("status", "unavailable") or "unavailable")
+        if status in {"ready", "unavailable"}:
+            self._health.record(provider_id, float(result.get("duration_ms", 0.0) or 0.0), status)
 
     def lookup(
         self,
@@ -66,9 +73,10 @@ class ProviderRegistry:
         intent: str = "",
         limit: int = 8,
         capability: str = "code_navigation",
+        extra_specs: tuple[ProviderSpec, ...] | list[ProviderSpec] = (),
     ) -> tuple[dict[str, Any], dict[str, Any]]:
         candidates = sorted(
-            (spec for spec in self._specs if capability in spec.capabilities),
+            (spec for spec in self._all_specs(extra_specs) if capability in spec.capabilities),
             key=lambda spec: spec.priority + self._health.routing_penalty(spec.provider_id),
         )
         attempted: list[dict[str, str]] = []
@@ -85,8 +93,8 @@ class ProviderRegistry:
                     "capability": capability,
                     "selected": spec.provider_id,
                     "attempted": attempted,
-                    "registry": self.descriptors(),
-                    "health": self.health_snapshot(),
+                    "registry": self.descriptors(extra_specs),
+                    "health": self.health_snapshot(extra_specs),
                 }
         unavailable = last_result or {
             "provider": "",
@@ -98,8 +106,8 @@ class ProviderRegistry:
             "capability": capability,
             "selected": "",
             "attempted": attempted,
-            "registry": self.descriptors(),
-            "health": self.health_snapshot(),
+            "registry": self.descriptors(extra_specs),
+            "health": self.health_snapshot(extra_specs),
         }
 
     def execute(
@@ -132,6 +140,17 @@ class ProviderRegistry:
             "provider_registry": self.descriptors(),
             "provider_health": self.health_snapshot(),
         }
+
+    def _all_specs(self, extra_specs: tuple[ProviderSpec, ...] | list[ProviderSpec]) -> tuple[ProviderSpec, ...]:
+        """合并动态策略 Provider；静态注册项拥有同名优先权。"""
+        seen = {spec.provider_id for spec in self._specs}
+        dynamic: list[ProviderSpec] = []
+        for spec in extra_specs:
+            if spec.provider_id in seen:
+                continue
+            seen.add(spec.provider_id)
+            dynamic.append(spec)
+        return tuple((*self._specs, *dynamic))
 
 
 DEFAULT_PROVIDER_REGISTRY = ProviderRegistry(

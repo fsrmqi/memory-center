@@ -87,6 +87,10 @@ Memory Center 也可作为受限 MCP Client 直接调用外部 IDEA MCP、GitNex
 
 Memory Center can also act as a restricted MCP Client for external HTTP servers such as IDEA MCP and GitNexus MCP. A workspace maintainer must explicitly whitelist the URL, transport, tools, and argument templates in `.memory-center/provider-mcp-policy.json`; use `memory-center mcp-bridge-status --path <project-dir>` to inspect the policy, then `mcp-bridge-action --provider <id> --action <action>` to invoke it. Only `sse` and `streamable_http` are supported, templates may only use `{query}` and `{target}`, and every `controlled_write` / `destructive` action requires `--confirm`. External bodies stay in the response; the long-term layer retains only ephemeral `evidence_ref` metadata and hashes.
 
+Bridge 的只读工具可声明 `capabilities: [code_navigation]`，自动进入联邦初始化的健康路由，与 GitNexus 按优先级、P95 和错误率共同选择；失败或超时会被降权。不同 Provider 的 `evidence_ref` 可经 `provider-evidence-fuse` 或 `mc_mcp_bridge(evidence_refs_json="...")` 融合。只有外部工具显式返回，或策略显式声明的 `{subject,predicate,value}` 结构化 Claim 才会判定一致或冲突；无 Claim 的不同正文哈希只表示证据不足，不会被误判为冲突。
+
+Read-only bridge tools can declare `capabilities: [code_navigation]` to join federated bootstrap health routing alongside GitNexus, selected by priority, P95, and error rate; failures and timeouts are penalized. `evidence_ref` values from different providers can be fused with `provider-evidence-fuse` or `mc_mcp_bridge(evidence_refs_json="...")`. Only explicit structured `{subject,predicate,value}` claims returned by a tool or declared in policy can be judged consistent or conflicting. Different body hashes without a claim mean insufficient evidence, never an inferred conflict.
+
 ### 2. Spring Cloud deep indexing / Spring Cloud 深度索引
 
 Current scanner supports:

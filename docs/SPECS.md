@@ -85,12 +85,14 @@
 可选策略文件位于 `.memory-center/provider-mcp-policy.json`，仅用于声明 Memory Center 可以作为 Client 直接调用的外部 HTTP MCP Server。它不是 workspace 初始化条件，缺失时 Bridge 仅返回空策略状态。
 
 - 顶层：`schema_version: 1`、`providers: []`。
-- Provider：`id`、`server`、`url`、`transport`、可选 `timeout_seconds`、`tools`。
+- Provider：`id`、`server`、`url`、`transport`、可选 `timeout_seconds`、`priority`、`tools`。
 - `url` 只能为不含用户名、密码、查询串或 fragment 的 `http(s)` URL；`transport` 仅为 `sse|streamable_http`；`timeout_seconds` 被限制在 `1..60` 秒。
-- Tool：`action`、`tool`、`mode`、`arguments`、可选 `confirmation_required`。`mode` 只能是 `read_only|controlled_write|destructive`；后两类始终需要明确确认。
+- Tool：`action`、`tool`、`mode`、`arguments`、可选 `capabilities`、`evidence_claim`、`confirmation_required`。`mode` 只能是 `read_only|controlled_write|destructive`；后两类始终需要明确确认。
 - `arguments` 仅允许常量及 `{query}`、`{target}` 占位符，不能出现格式化属性、索引、转换或未知字段。
 - 调用时 Client 必须先执行 `list_tools` 确认 `tool` 仍由外部 Server 暴露；不得支持 stdio、token/认证字段、任意工具或任意参数。
 - 原始响应不进入图谱、SQLite、断言、审计或长期记忆；只在当前响应中展示，并派生不含正文的会话级 `EvidenceRef`。
+- `read_only` Tool 声明 `capabilities: [code_navigation]` 后可作为动态 Provider 参与联邦初始化；它与静态 Provider 共享进程内健康路由，但不会触发后台探测。
+- `evidence_claim` 必须是只含 `subject`、`predicate`、`value` 的模板。融合器仅比较显式 Claim；多个 Provider 的相同 Claim 值为 `CONSISTENT`，不同值为 `CONFLICT`，无 Claim 或独立 Provider 不足为 `INSUFFICIENT_EVIDENCE`。
 
 ## 5. Timeline / Ref / Receipt
 

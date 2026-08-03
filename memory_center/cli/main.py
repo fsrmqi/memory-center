@@ -42,6 +42,7 @@ from memory_center.core.orchestrator import (
     bootstrap_workspace_context,
     execute_mcp_bridge_action,
     execute_provider_action,
+    fuse_provider_evidence,
     mcp_bridge_status,
     memory_backend_query,
     memory_callees,
@@ -1567,6 +1568,21 @@ def mcp_bridge_action_cmd(
 ):
     """Invoke one policy-whitelisted external HTTP MCP tool with fixed argument templates."""
     print(execute_mcp_bridge_action(path, provider=provider, action=action, query=query, target=target, confirm=confirm))
+
+
+@app.command("provider-evidence-fuse")
+def provider_evidence_fuse_cmd(
+    path: str = typer.Option(".", help="Project directory or workspace.yaml; no workspace initialization is performed."),
+    evidence_json: str = typer.Option(..., help="JSON array of redacted EvidenceRef objects returned by providers."),
+):
+    """Fuse external EvidenceRef claims without storing external tool bodies."""
+    try:
+        evidence_refs = json.loads(evidence_json)
+    except json.JSONDecodeError as exc:
+        raise typer.BadParameter("evidence-json must be a JSON array") from exc
+    if not isinstance(evidence_refs, list) or not all(isinstance(item, dict) for item in evidence_refs):
+        raise typer.BadParameter("evidence-json must be a JSON array of objects")
+    print(fuse_provider_evidence(path, evidence_refs))
 
 
 @app.command("tool-usage-report")

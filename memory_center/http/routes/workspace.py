@@ -14,6 +14,7 @@ from memory_center.application.http_facades import (
     create_task_space,
     execute_mcp_bridge_action,
     execute_provider_action,
+    fuse_provider_evidence,
     get_artifact,
     get_task_artifact,
     list_artifacts,
@@ -142,6 +143,16 @@ def _delivery_items(payload: dict) -> list[dict]:
     return items
 
 
+def _provider_evidence_refs(rp) -> list[dict]:
+    try:
+        payload = json.loads(rp.require("evidence_json"))
+    except json.JSONDecodeError as exc:
+        raise ValueError("evidence_json must be a JSON array") from exc
+    if not isinstance(payload, list) or not all(isinstance(item, dict) for item in payload):
+        raise ValueError("evidence_json must be a JSON array of objects")
+    return payload
+
+
 def _workspace_delivery_contract(rp):
     payload = _delivery_payload(rp)
     return workspace_delivery_contract(
@@ -246,6 +257,10 @@ def register_workspace_routes(registry: CommandRegistry) -> None:
         query=rp.get("query", ""),
         target=rp.get("target", ""),
         confirm=rp.bool_param("confirm", False),
+    ))
+    registry.register("/workspace/provider-evidence-fuse", lambda rp: fuse_provider_evidence(
+        rp.require("path"),
+        _provider_evidence_refs(rp),
     ))
     registry.register("/workspace/job-status", lambda rp: workspace_background_job_status(
         rp.workspace(),

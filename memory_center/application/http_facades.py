@@ -24,6 +24,7 @@ from memory_center.core.orchestrator import (
     bootstrap_workspace_context,  # noqa: F401 - re-exported for HTTP route modules
     execute_mcp_bridge_action,  # noqa: F401 - re-exported for HTTP route modules
     execute_provider_action,  # noqa: F401 - re-exported for HTTP route modules
+    fuse_provider_evidence,  # noqa: F401 - re-exported for HTTP route modules
     group_chain,
     group_impact,
     group_query,

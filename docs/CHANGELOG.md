@@ -1,5 +1,17 @@
 # Changelog / 更新日志
 
+## 4.3.55 跨 Provider 证据融合与健康路由 / Cross-Provider Evidence Fusion and Health Routing
+
+- Bridge 的只读 `code_navigation` 工具现在作为动态 Provider 进入 `ProviderRegistry`，与 GitNexus 使用同一进程内 P95、错误率和成本分排序；超时或失败会在后续联邦初始化中被降权。
+- 新增 `provider-evidence-fuse`、`GET /workspace/provider-evidence-fuse` 与 `mc_mcp_bridge(evidence_refs_json=...)`。融合仅接受脱敏 EvidenceRef，按显式 `claim.subject/predicate/value` 去重并返回 `CONSISTENT`、`CONFLICT` 或 `INSUFFICIENT_EVIDENCE`。
+- 冲突生成只读 `verify_conflict` Action；无结构化 Claim 的结果只保留来源线索，绝不根据外部正文、哈希或文本差异制造冲突。融合器不持久化外部正文或 EvidenceRef。
+
+## 4.3.55 Cross-Provider Evidence Fusion and Health Routing
+
+- Read-only Bridge tools with `code_navigation` now join `ProviderRegistry` as dynamic providers and share in-process P95, error-rate, and cost-score routing with GitNexus. Timeouts and failures are penalized for later federated bootstrap calls.
+- Added `provider-evidence-fuse`, `GET /workspace/provider-evidence-fuse`, and `mc_mcp_bridge(evidence_refs_json=...)`. Fusion accepts only redacted EvidenceRef values, deduplicates explicit `claim.subject/predicate/value`, and returns `CONSISTENT`, `CONFLICT`, or `INSUFFICIENT_EVIDENCE`.
+- Conflicts emit read-only `verify_conflict` Actions. Results without structured claims remain provenance hints and never become conflicts from external body, hash, or text differences. The fuser persists neither external bodies nor EvidenceRef values.
+
 ## 4.3.54 MCP SDK 运行时兼容修复 / MCP SDK Runtime Compatibility Fix
 
 - 将 MCP SDK 约束为 `mcp>=1.2.0,<2.0.0`。SDK 2.0 已移除本项目 MCP Server 使用的 `mcp.server.fastmcp` 路径；此前宽泛依赖会使 `memory-center-mcp` 在已安装环境中无法启动。

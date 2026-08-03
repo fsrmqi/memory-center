@@ -11,9 +11,11 @@ from memory_center.core.providers import (
     McpBridgeProvider,
     ProviderRegistry,
     build_external_evidence_ref,
+    fuse_external_evidence_refs,
     load_mcp_bridge_policy,
     mcp_bridge_policy_status,
 )
+from memory_center.core.providers.registry import ProviderSpec
 
 from .workspace_ops import workspace_status
 
@@ -75,7 +77,12 @@ def bootstrap_workspace_context(
         }
     else:
         external, provider_selection = (registry or DEFAULT_PROVIDER_REGISTRY).lookup(
-            root, query or intent, target=target, intent=intent, limit=limit
+            root,
+            query or intent,
+            target=target,
+            intent=intent,
+            limit=limit,
+            extra_specs=_mcp_bridge_provider_specs(root),
         )
     if external.get("status") == "ready":
         provider_name = str(external.get("provider", provider_selection["selected"]) or provider_selection["selected"])
@@ -93,7 +100,7 @@ def bootstrap_workspace_context(
             "tool_plan": [{"tool": "mc_bootstrap_context", "arguments": {"path": str(root), "query": query or intent}}],
             "result_summary": external.get("output", ""),
             "persistence": "session_ephemeral_no_workspace_write",
-            "next_action": "已使用 GitNexus 只读上下文；需要跨服务图谱、任务记忆或验证治理时，再显式执行 Memory Center 初始化。",
+            "next_action": "已使用外部只读上下文；需要跨服务图谱、任务记忆或验证治理时，再显式执行 Memory Center 初始化。",
             "cache": {"hit": False, "ttl_seconds": int(_CACHE_TTL_SECONDS)},
         }
     else:
@@ -204,6 +211,7 @@ def execute_mcp_bridge_action(
     query: str = "",
     target: str = "",
     confirm: bool = False,
+    registry: ProviderRegistry | None = None,
 ) -> dict[str, Any]:
     """按工作区策略调用一个外部 MCP 工具，外部正文仅在本次响应中存在。"""
     root, workspace_file = _resolve_root_and_workspace(path)
@@ -221,17 +229,54 @@ def execute_mcp_bridge_action(
             "persistence": "none",
             "next_action": "在 .memory-center/provider-mcp-policy.json 显式登记受信任的 HTTP MCP Server、工具和参数模板。",
         }
+    active_registry = registry or DEFAULT_PROVIDER_REGISTRY
     result = McpBridgeProvider(policy).execute(action, query=query, target=target, confirm=confirm)
+    active_registry.record_external_result(policy.provider_id, result)
     result.update(
         root=str(root),
         workspace=str(workspace_file) if workspace_file else "",
         persistence="session_ephemeral_external_mcp",
+        provider_health=active_registry.health_snapshot(_mcp_bridge_provider_specs(root)),
     )
     if result.get("status") == "ready":
         result["evidence_ref"] = build_external_evidence_ref(
             policy.provider_id, root, result, provenance_kind="EXTRACTED"
         )
     return result
+
+
+def fuse_provider_evidence(path: str | Path, evidence_refs: list[dict[str, Any]]) -> dict[str, Any]:
+    """融合外部脱敏证据；不读取或保存任何外部正文。"""
+    root, workspace_file = _resolve_root_and_workspace(path)
+    result = fuse_external_evidence_refs(evidence_refs)
+    result.update(
+        root=str(root),
+        workspace=str(workspace_file) if workspace_file else "",
+        persistence="session_ephemeral_external_evidence",
+    )
+    return result
+
+
+def _mcp_bridge_provider_specs(root: Path) -> tuple[ProviderSpec, ...]:
+    """把策略中声明了 code_navigation 的只读 MCP 工具接入同一健康路由。"""
+    specs: list[ProviderSpec] = []
+    for policy in load_mcp_bridge_policy(root).values():
+        bridge = McpBridgeProvider(policy)
+        if not bridge.supports_capability("code_navigation"):
+            continue
+        specs.append(
+            ProviderSpec(
+                provider_id=policy.provider_id,
+                capabilities=("code_navigation",),
+                factory=lambda profile=policy: McpBridgeProvider(profile),
+                mutation_mode="read_only",
+                privacy_mode="metadata_only",
+                timeout_seconds=policy.timeout_seconds,
+                max_results=8,
+                priority=policy.priority,
+            )
+        )
+    return tuple(specs)
 
 
 def _resolve_root_and_workspace(path: str | Path) -> tuple[Path, Path | None]:

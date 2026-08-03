@@ -4,11 +4,13 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from memory_center.core.providers.evidence import fuse_external_evidence_refs
 from memory_center.core.providers.mcp_bridge import (
     McpBridgeProvider,
     load_mcp_bridge_policy,
     mcp_bridge_policy_status,
 )
+from memory_center.core.providers.registry import ProviderRegistry, ProviderSpec
 
 
 class _FakeMcpClient:
@@ -46,6 +48,7 @@ def test_bridge_invokes_only_registered_tool_with_fixed_template(tmp_path: Path)
             "tool": "get_symbol_info",
             "mode": "read_only",
             "arguments": {"symbol": "{target}", "query": "{query}"},
+            "evidence_claim": {"subject": "{target}", "predicate": "symbol_context", "value": "available"},
         }],
     }])
     policy = load_mcp_bridge_policy(tmp_path)["idea_mcp"]
@@ -58,6 +61,11 @@ def test_bridge_invokes_only_registered_tool_with_fixed_template(tmp_path: Path)
     assert result["status"] == "ready"
     assert result["scope_checked"]["tool"] == "get_symbol_info"
     assert result["persistence"] == "session_ephemeral"
+    assert result["claim"] == {
+        "subject": "PaymentService",
+        "predicate": "symbol_context",
+        "value": "available",
+    }
     assert client.calls == [{
         "url": "http://127.0.0.1:64342/sse",
         "transport": "sse",
@@ -121,3 +129,71 @@ def test_bridge_ignores_policy_url_credentials_and_invalid_timeout(tmp_path: Pat
     policies = load_mcp_bridge_policy(tmp_path)
     assert set(policies) == {"bounded"}
     assert policies["bounded"].timeout_seconds == 10.0
+
+
+def test_fusion_requires_structured_claims_and_returns_conflict_action() -> None:
+    consistent = fuse_external_evidence_refs([
+        {
+            "ref_id": "evidence:external:idea:one",
+            "provider": "idea_mcp",
+            "claim": {"subject": "PaymentService", "predicate": "symbol_exists", "value": "true"},
+        },
+        {
+            "ref_id": "evidence:external:gitnexus:two",
+            "provider": "gitnexus_mcp",
+            "claim": {"subject": "PaymentService", "predicate": "symbol_exists", "value": "true"},
+        },
+    ])
+    conflict = fuse_external_evidence_refs([
+        {
+            "ref_id": "evidence:external:idea:one",
+            "provider": "idea_mcp",
+            "claim": {"subject": "PaymentService", "predicate": "symbol_exists", "value": "true"},
+        },
+        {
+            "ref_id": "evidence:external:gitnexus:two",
+            "provider": "gitnexus_mcp",
+            "claim": {"subject": "PaymentService", "predicate": "symbol_exists", "value": "false"},
+        },
+    ])
+    unclassified = fuse_external_evidence_refs([
+        {"ref_id": "evidence:external:idea:one", "provider": "idea_mcp", "content_sha256": "abc"},
+        {"ref_id": "evidence:external:gitnexus:two", "provider": "gitnexus_mcp", "content_sha256": "def"},
+    ])
+
+    assert consistent["overall_status"] == "CONSISTENT"
+    assert conflict["overall_status"] == "CONFLICT"
+    assert conflict["action_cards"][0]["action"] == "verify_conflict"
+    assert unclassified["overall_status"] == "INSUFFICIENT_EVIDENCE"
+    assert unclassified["action_cards"] == []
+
+
+def test_dynamic_provider_health_routes_away_from_failed_bridge_provider(tmp_path: Path) -> None:
+    class FailedBridge:
+        name = "failed_bridge"
+        calls = 0
+
+        def lookup(self, *_args, **_kwargs):
+            type(self).calls += 1
+            return {"provider": self.name, "status": "unavailable", "duration_ms": 1_000}
+
+    class ReadyBridge:
+        name = "ready_bridge"
+        calls = 0
+
+        def lookup(self, *_args, **_kwargs):
+            type(self).calls += 1
+            return {"provider": self.name, "status": "ready", "duration_ms": 2, "output": "metadata"}
+
+    registry = ProviderRegistry()
+    specs = [
+        ProviderSpec("failed_bridge", ("code_navigation",), FailedBridge, priority=10),
+        ProviderSpec("ready_bridge", ("code_navigation",), ReadyBridge, priority=11),
+    ]
+    registry.lookup(tmp_path, "first", extra_specs=specs)
+    _, selection = registry.lookup(tmp_path, "second", extra_specs=specs)
+
+    assert FailedBridge.calls == 1
+    assert ReadyBridge.calls == 2
+    assert selection["selected"] == "ready_bridge"
+    assert selection["health"]["failed_bridge"]["status"] == "degraded"

@@ -41,6 +41,8 @@ This file consolidates and replaces the older execution plan, superpowers evolut
 4. **真实性能与重建可靠性**：持续积累真实工作空间的冷/热查询、增量索引和并发重建数据，使用基准决定优化优先级。查询必须输出阶段耗时，并受热查询 P95 预算保护；只在确认的最高耗时阶段优化。
 5. **证据优先的需求交付闭环**：将已有任务、索引、治理和验证能力收敛为可拆解、可定位、可验证、可恢复的需求交付状态机。
 
+已完成的外部协同基线：受限 MCP Client Bridge 已可直接调用策略白名单中的 HTTP MCP；声明 `code_navigation` 的只读工具已接入 Provider 健康路由；跨 Provider EvidenceRef 已可对显式结构化 Claim 返回一致、冲突或证据不足，并在冲突时生成验证 Action。后续只依据真实 replay 校准可信排序，不把外部正文写入长期层。
+
 ---
 
 ## 3. 开发优先级 / Development Priorities

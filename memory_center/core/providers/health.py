@@ -26,6 +26,10 @@ class ProviderHealthMonitor:
             ProviderObservation(max(0.0, float(duration_ms or 0.0)), str(status or "unavailable"), monotonic())
         )
 
+    def providers(self) -> tuple[str, ...]:
+        """返回本进程已观测的 Provider，供动态 Provider 诊断使用。"""
+        return tuple(sorted(self._records))
+
     def snapshot(self, provider: str) -> dict[str, float | int | str]:
         rows = list(self._records.get(provider, ()))
         if not rows:

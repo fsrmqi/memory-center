@@ -16,6 +16,7 @@ CLI and HTTP server keep their fine-grained interfaces unchanged.
 from __future__ import annotations
 
 import argparse
+import json
 import re
 from typing import Any
 
@@ -26,6 +27,7 @@ from memory_center.core.orchestrator import (
     bootstrap_workspace_context,
     execute_mcp_bridge_action,
     execute_provider_action,
+    fuse_provider_evidence,
     group_chain,
     mcp_bridge_status,
     memory_backend_query,
@@ -352,8 +354,17 @@ def create_server(workspace_file: str):
         query: str = "",
         target: str = "",
         confirm: bool = False,
+        evidence_refs_json: str = "",
     ):
-        """Inspect or invoke a policy-whitelisted external HTTP MCP tool. Leave action empty to inspect allowed providers; only registered tools and fixed argument templates are callable. Controlled-write or destructive actions require confirm=true."""
+        """Inspect or invoke a policy-whitelisted external HTTP MCP tool, or fuse redacted EvidenceRef claims. Leave action empty to inspect allowed providers; pass evidence_refs_json as a JSON EvidenceRef array to fuse claims. Only registered tools and fixed argument templates are callable. Controlled-write or destructive actions require confirm=true."""
+        if evidence_refs_json.strip():
+            try:
+                evidence_refs = json.loads(evidence_refs_json)
+            except json.JSONDecodeError as exc:
+                raise InvalidInputError("evidence_refs_json must be a JSON array") from exc
+            if not isinstance(evidence_refs, list) or not all(isinstance(item, dict) for item in evidence_refs):
+                raise InvalidInputError("evidence_refs_json must be a JSON array of objects")
+            return fuse_provider_evidence(ctx.workspace_input, evidence_refs)
         if not action.strip():
             return mcp_bridge_status(ctx.workspace_input)
         if not provider.strip():

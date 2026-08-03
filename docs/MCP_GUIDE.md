@@ -66,6 +66,8 @@ MCP 当前公开的是 15 个 task-level tools：
 
 `mc_start` / `mc_lookup` 可传 `request_tier="fast"|"standard"|"deep"`，其中 `fast` 会收紧候选数量和深度。`mc_analyze(execution_mode="background")` 会立即返回 `job_id`；使用同一工具并传入 `job_action="status"|"cancel"` 与 `job_id` 即可读取或取消后台分析。默认仍是同步执行，保持既有调用兼容。
 
+`mc_mcp_bridge(evidence_refs_json="...")` 可融合多个 Provider 返回的脱敏 `EvidenceRef`。只有显式 `claim={subject,predicate,value}` 才会参与一致性判断：多个独立 Provider 同值为 `CONSISTENT`，异值为 `CONFLICT` 并返回 `verify_conflict`；没有 Claim 时是 `INSUFFICIENT_EVIDENCE`，不得根据正文差异编造冲突。策略中有 `capabilities: ["code_navigation"]` 的只读 Bridge tool 会进入联邦初始化的健康路由，使用现有 P95、错误率和成本分避开慢或失败 Provider。
+
 当 `mc_lookup` 已解析出 `project` 时，系统只查询该服务的 active generation 分片；分片未发布会返回 `knowledge_state.state=NOT_INDEXED`，不会静默退回全局索引。运行时索引、会话和断言统一读取 SQLite 事实库，JSON/JSONL 仅用于审查与导出。
 
 管理类异步重建使用 `mc_admin(action="job_reindex", projects=[...], files=[...])`。返回值中的 `job_id` 传给 `mc_admin(action="job_status", record_id="...")` 或 `mc_admin(action="job_cancel", record_id="...")`。可使用 `index_control` 查看 active/staging generation，使用 `query_performance` 查看 P50/P95/P99 查询耗时。任务级架构决策使用 `task_decision_record` / `task_decision_list`；`task_evidence_gc` 仅在 `force=true` 时删除候选证据。

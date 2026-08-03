@@ -141,7 +141,9 @@
           "action": "symbol_context",
           "tool": "get_symbol_info",
           "mode": "read_only",
-          "arguments": {"symbol": "{target}", "query": "{query}"}
+          "capabilities": ["code_navigation"],
+          "arguments": {"symbol": "{target}", "query": "{query}"},
+          "evidence_claim": {"subject": "{target}", "predicate": "symbol_context", "value": "available"}
         }
       ]
     }
@@ -152,6 +154,14 @@
 - `url` 只能是 `http(s)`，传输只能是 `sse` 或 `streamable_http`；工具会在调用前由 `list_tools` 校验。参数模板只允许常量、`{query}` 与 `{target}`，单个值最长 2,000 字符；每次调用最长 60 秒，响应正文最多 12,000 字符。
 - `read_only` 可以直接调用；`controlled_write` 与 `destructive` 必须 `confirm=true`。Bridge 不支持 stdio、token/认证字段、自由工具名、自由参数或任意 shell；外部正文仅在当前响应中返回，`evidence_ref` 不包含正文。
 - MCP Server 运行时依赖固定为 `mcp>=1.2.0,<2.0.0`；SDK 2.x 不兼容当前 FastMCP Server 入口。
+
+### Cross-Provider Evidence Fusion / 跨 Provider 证据融合
+
+- CLI：`memory-center provider-evidence-fuse --path <project-dir> --evidence-json '<EvidenceRef JSON 数组>'`。
+- HTTP：`GET /workspace/provider-evidence-fuse?path=<project-dir>&evidence_json=<JSON 数组>`。
+- MCP：`mc_mcp_bridge(evidence_refs_json="<EvidenceRef JSON 数组>")`。
+- Fusion 最多接收 20 条不含 `output/content/text/payload/body` 的 `evidence:*` 引用。只有至少两个独立 Provider 对相同 `claim.subject + claim.predicate` 提供值时，才会返回 `CONSISTENT` 或 `CONFLICT`；其它情况是 `INSUFFICIENT_EVIDENCE`。
+- `CONFLICT` 返回 `verify_conflict` Action 和关联引用，要求补充测试、运行时或人工验证。没有 Claim 的引用不会因正文哈希不同而冲突。融合过程不写入 workspace、图谱、SQLite 或审计。
 
 ### Evidence Subgraph / 证据子图
 

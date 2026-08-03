@@ -363,17 +363,19 @@ flowchart LR
 
 这个取舍同时改善性能和体验：已初始化项目走低延迟的已发布索引；未初始化项目走零写入的外部导航；真正需要长期任务、跨服务影响和可验证沉淀时，才由用户显式初始化。这样不会把几十 GB 的索引构建塞进一次普通链路分析。
 
-### 6.6 已实现：Provider Registry 与跨 Provider EvidenceRef
+### 6.6 已实现：Provider Registry、跨 Provider EvidenceRef 与融合
 
 外部能力不能以散落的 `if/else` 或任意命令调用接入。系统已经提供 Provider Registry：每个 Provider 声明能力、优先级、超时、结果上限、写入模式和隐私模式；查询根据 `code_navigation` 等能力选择 Provider，记录每次尝试和降级序列，并将其返回为 `provider_selection`。具体动作仍分别受 `read_only`、`controlled_write` 与 `destructive` 门禁约束。
 
 跨 Provider 结果同时生成统一的临时 `EvidenceRef`：它有稳定引用 ID、Provider、证据等级、关系模式、检查范围、观测时间、耗时、正文哈希、持久化边界和验证状态，但不携带外部正文。这样 GitNexus、未来的 SCIP 或 IDE Provider 可以共享同一证据语言，而不会把工具输出直接混入图谱或长期记忆。
 
+融合层只接受脱敏引用和 Provider 显式给出的 `claim={subject,predicate,value}`，不会从工具正文、文本相似度或哈希差异猜测语义。同一 Claim 的多 Provider 同值为 `CONSISTENT`，异值为 `CONFLICT` 并生成 `verify_conflict` Action；无 Claim、无第二独立来源时为 `INSUFFICIENT_EVIDENCE`。这让“多个工具返回不同内容”保持可解释，而不把工具拼接变成不可靠的自动结论。
+
 ### 6.7 已实现：受限 MCP Client Bridge 与后续生态方向
 
 Memory Center 已可作为受限 MCP Client，不再只能由宿主 Agent 分别调用外部 MCP。工作区维护者通过 `.memory-center/provider-mcp-policy.json` 显式声明 Provider、HTTP URL、`sse|streamable_http` transport、允许的工具与 `{query}` / `{target}` 参数模板；Bridge 建立 MCP 会话后先 `list_tools`，再 `call_tool`。这使 IDEA MCP、GitNexus MCP 等能力可保留结构化参数与工具版本，同时仍受超时、结果上限、确认门禁和临时证据边界约束。
 
-Bridge 不支持 stdio、自由工具/参数、认证字段或任意命令，避免 Memory Center 成为未经治理的远程执行代理。外部输出不进入图谱、SQLite、断言和审计存储；成功调用只形成不含正文的会话级 `EvidenceRef`。`read_only` 可直接读取，`controlled_write` 与 `destructive` 一律需要明确确认。
+Bridge 不支持 stdio、自由工具/参数、认证字段或任意命令，避免 Memory Center 成为未经治理的远程执行代理。外部输出不进入图谱、SQLite、断言和审计存储；成功调用只形成不含正文的会话级 `EvidenceRef`。`read_only` 可直接读取，`controlled_write` 与 `destructive` 一律需要明确确认。声明 `capabilities: [code_navigation]` 的只读 Bridge 工具会动态加入现有 Provider Registry，和 GitNexus 共同使用 P95、错误率、成本分和静态优先级路由；失败或超时只影响后续选择，不触发后台探测或仓库扫描。
 
 以下是尚未交付的后续方向：
 
@@ -381,10 +383,9 @@ Bridge 不支持 stdio、自由工具/参数、认证字段或任意命令，避
 
 | 方向 | 可实现机制 | 预期收益 | 前置约束 |
 |---|---|---|---|
-| 跨 Provider 证据融合 | 将图谱、GitNexus、SCIP、测试结果的 `EvidenceRef` 做冲突检测和可信排序 | 多工具结果不再只是文本拼接，可解释冲突与置信度 | 不能把外部全文或私有正文复制进长期索引 |
 | Skill Contract 与回归集 | 给 Skill 声明适用语言、前置条件、停止条件、输入输出契约和脱敏 replay 集 | Skill 从提示词片段升级为可评测、可回滚的交付能力 | 发布仍需真实验证证据，不能只依赖 LLM judge |
 
-已交付的 Provider 健康路由以进程内调用窗口计算 P95、错误率和成本分，不做后台扫描；GitNexus 明确未索引或陈旧时会生成确认型 `analyze --index-only` 行动卡，不会自动执行。下一优先级是跨 Provider 证据融合：让多工具结论可检测冲突和可信排序。
+已交付的 Provider 健康路由以进程内调用窗口计算 P95、错误率和成本分，不做后台扫描；Bridge 动态 Provider 与 GitNexus 共用该路由；GitNexus 明确未索引或陈旧时会生成确认型 `analyze --index-only` 行动卡，不会自动执行。下一优先级是让 Skill Contract 与脱敏 replay 集在真实任务中闭环，并根据真实回放校准融合可信排序。
 
 ---
 

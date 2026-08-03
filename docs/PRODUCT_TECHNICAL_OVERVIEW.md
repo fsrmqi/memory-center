@@ -46,7 +46,7 @@ MCP 不暴露几十个底层原子能力，而是聚合为 `mc_start`、`mc_look
 
 ### 3.6 外部工具协同而非工具堆叠
 
-Memory Center 可以通过受限 MCP Client Bridge 直接协同已配置的 IDEA MCP、GitNexus MCP 等 HTTP 工具。它不把外部工具变成任意远程执行：工作区维护者必须显式白名单 Provider、URL、transport、工具和参数模板；调用前会再次校验 Server 实际暴露的工具；写入操作必须确认。外部结果只在当前会话响应中存在，并被压缩成不含正文的临时证据引用，因此既能复用 IDE 语义和专用索引，又不会污染本地图谱或形成不可追溯的多工具状态。
+Memory Center 可以通过受限 MCP Client Bridge 直接协同已配置的 IDEA MCP、GitNexus MCP 等 HTTP 工具。它不把外部工具变成任意远程执行：工作区维护者必须显式白名单 Provider、URL、transport、工具和参数模板；调用前会再次校验 Server 实际暴露的工具；写入操作必须确认。外部结果只在当前会话响应中存在，并被压缩成不含正文的临时证据引用，因此既能复用 IDE 语义和专用索引，又不会污染本地图谱或形成不可追溯的多工具状态。只读 Bridge Provider 与 GitNexus 共享 P95、错误率和成本路由，自动避开连续慢或失败的能力；跨工具只比较显式结构化 Claim，冲突会转为验证 Action，而不会由正文差异自动下结论。
 
 ## 4. 系统全景
 
