@@ -1,6 +1,6 @@
 # Memory Center 面试技术讲解手册
 
-> 面向 30 至 60 分钟技术面试和架构评审。本文以 `4.3.49` 已实现能力为准；规划项会明确标注为“后续方向”，不与现状混淆。
+> 面向 30 至 60 分钟技术面试和架构评审。本文以 `4.3.50` 已实现能力为准；规划项会明确标注为“后续方向”，不与现状混淆。
 >
 > English summary: an interview-ready technical narrative for a local-first, graph-first engineering context system for AI coding agents.
 >
@@ -243,6 +243,70 @@ intake -> breakdown -> locate -> implement -> verify -> close
 ```
 
 这回答了一个关键治理问题：如何让 Agent 自我改进但不把错误经验快速扩散。
+
+### 6.4 外部工具协同：不替代生态，而是统一编排生态
+
+现实中，编码 Agent 可能已经具备 GitNexus、IDE 索引、测试执行器、Skill、MCP Server 或企业内部工具。Memory Center 不应要求它们全部被重写，而应担任**工程上下文控制面**：识别当前可用能力，选择成本最低且证据最可靠的路径，并把外部结果统一成可解释的证据。
+
+当前已落地的协同路径如下：
+
+```mermaid
+flowchart LR
+    A["Codex / Claude Code"] --> M["Memory Center MCP"]
+    M --> D{"是否存在已发布\nMemory Center workspace"}
+    D -->|是| I["图谱、检索、任务与治理"]
+    D -->|否| G["GitNexus Provider\n固定只读命令"]
+    G -->|可用且已索引| E["会话级外部证据"]
+    G -->|不可用或未索引| L["有界实时搜索计划"]
+    I --> C["统一结论：范围、来源、新鲜度、下一步"]
+    E --> C
+    L --> C
+    C --> A
+```
+
+它解决了一个实际体验问题：新项目尚未初始化 Memory Center 时，Agent 不必先执行全量索引才能开始理解代码；如果宿主已全局接入 Memory Center MCP，它可以先调用 `mc_bootstrap_context`。该入口按以下优先级工作：
+
+1. 向上发现已有 `.memory-center/workspace.yaml`，存在则直接使用已发布 generation。
+2. 不存在时调用 GitNexus 的固定只读 `status`、`query`、`context`，只取得当前会话可用的结构化线索。
+3. GitNexus 不可用、未索引或超时时，返回有界 `rg` 实时搜索计划，而不是静默失败或触发隐式全量索引。
+
+这一机制的重点不是“多调一个工具”，而是明确外部能力的身份：GitNexus 提供局部代码导航，Memory Center 提供跨服务事实图、任务连续性、验证治理和长期可重建记忆。二者是分层互补关系，不是互相覆盖。
+
+| 协同对象 | 当前协同方式 | Memory Center 统一的内容 | 不允许发生的事 |
+|---|---|---|---|
+| GitNexus | 固定 argv 的只读 Provider | provider、检查范围、耗时、观测时间、临时证据、下一步动作 | `--content` 读取源码正文、`analyze/index/clean`、任意 shell、写入图谱 |
+| Skill | 已验证交付产生候选，经 canary、观测、发布或回滚演进 | 生命周期、结构签名、验证引用、适用边界、效果指标 | 模型自评后直接发布、未验证经验覆盖事实 |
+| Hooks | 宿主会话开始、结束、代码变化时触发受限动作 | session 关联、变更提示、定向刷新建议、审计摘要 | 在查询热路径执行全量重建或收集原始对话正文 |
+| MCP / CLI / HTTP / Workbench | 多入口调用同一应用服务 | 相同状态转换、证据等级、负向结论与 Action 语义 | 因入口不同而出现不同的事实或治理规则 |
+| 测试和交付执行器 | 预注册 argv profile 的受控执行 | 验证状态、回执、失败原因、发布门禁 | 根据需求文本或模型输出拼接 shell |
+
+外部证据默认是**会话级、临时且不可反向污染知识图**。当前 GitNexus 结果最多缓存 30 秒，不写入 `.memory-center`、SQLite、图谱或 MCP 审计日志。只有经过明确验证的结论，才可以通过既有断言、验证和 Skill 生命周期进入长期治理层。
+
+### 6.5 面试中如何解释“为什么不直接让 Agent 自由调用所有工具”
+
+> “Agent 工具越多，不等于工程能力越强。没有统一边界时，工具会产生互相冲突的索引、不可追溯的结论和不可控的副作用。我的做法是把外部工具视为可插拔的证据 Provider 或受控执行器：Provider 默认只读、限时、限量、带来源；执行器必须有固定 profile 和验证回执。Memory Center 不抢占工具能力，而是统一工具之间的事实、上下文和治理语义。”
+
+这个取舍同时改善性能和体验：已初始化项目走低延迟的已发布索引；未初始化项目走零写入的外部导航；真正需要长期任务、跨服务影响和可验证沉淀时，才由用户显式初始化。这样不会把几十 GB 的索引构建塞进一次普通链路分析。
+
+### 6.6 已实现：Provider Registry 与跨 Provider EvidenceRef
+
+外部能力不能以散落的 `if/else` 或任意命令调用接入。系统已经提供只读 Provider Registry：每个 Provider 声明能力、优先级、超时、结果上限、写入模式和隐私模式；查询根据 `code_navigation` 等能力选择 Provider，记录每次尝试和降级序列，并将其返回为 `provider_selection`。
+
+跨 Provider 结果同时生成统一的临时 `EvidenceRef`：它有稳定引用 ID、Provider、证据等级、关系模式、检查范围、观测时间、耗时、正文哈希、持久化边界和验证状态，但不携带外部正文。这样 GitNexus、未来的 SCIP 或 IDE Provider 可以共享同一证据语言，而不会把工具输出直接混入图谱或长期记忆。
+
+### 6.7 可继续实现的生态协同方向
+
+以下是明确的后续方向，不是当前已交付能力：
+
+| 方向 | 可实现机制 | 预期收益 | 前置约束 |
+|---|---|---|---|
+| MCP Client Bridge | Memory Center 作为受限 MCP Client，调用经白名单批准的外部 MCP 工具 | 不依赖 CLI 包装，保留结构化参数与工具版本 | 需要超时、并发、身份、循环调用和审计隔离设计 |
+| Provider 健康与成本路由 | 定期轻量探测 Provider 版本、索引新鲜度、P95、错误率和单位成本，动态调整 Registry 优先级 | Agent 自动跳过不可用或过慢工具，减少卡住体验 | 探测不能扫描仓库，也不能影响查询热路径 |
+| 跨 Provider 证据融合 | 将图谱、GitNexus、SCIP、测试结果的 `EvidenceRef` 做冲突检测和可信排序 | 多工具结果不再只是文本拼接，可解释冲突与置信度 | 不能把外部全文或私有正文复制进长期索引 |
+| Skill Contract 与回归集 | 给 Skill 声明适用语言、前置条件、停止条件、输入输出契约和脱敏 replay 集 | Skill 从提示词片段升级为可评测、可回滚的交付能力 | 发布仍需真实验证证据，不能只依赖 LLM judge |
+| 外部索引按需升级 | 将外部工具的“已索引/未索引”状态接入行动卡，只建议与当前任务相关的局部初始化或刷新 | 避免全局重建，降低首次使用成本 | 必须明确用户确认点和资源预算 |
+
+下一优先级是 Provider 健康与成本路由，再引入 MCP Client Bridge。前者让 Registry 基于真实质量自动选择，后者才将 CLI 适配逐步升级为受控 MCP 协作，避免过早形成无法治理的分布式调用链。
 
 ---
 

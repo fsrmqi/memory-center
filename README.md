@@ -75,6 +75,10 @@ This makes impact analysis and context retrieval deterministic and explainable.
 
 Even without `.memory-center/workspace.yaml`, `mc_bootstrap_context` or `memory-center bootstrap-context --path <project-dir>` first detects an existing workspace, then optionally uses a read-only GitNexus provider, and finally suggests bounded local search. It never initializes, reindexes, or persists external results into the graph.
 
+外部能力通过只读 Provider Registry 统一选择；联邦结果包含 `provider_selection` 与临时 `evidence_ref`，后者只保存来源、范围和内容哈希，不保存外部正文。后续可接入更多 Provider，而不改变 Agent 的上下文入口。
+
+External capabilities are selected through a read-only Provider Registry. Federated responses include `provider_selection` and an ephemeral `evidence_ref`, which retains provenance, scope, and a content hash rather than external body content. More providers can be added without changing the Agent context entrypoint.
+
 ### 2. Spring Cloud deep indexing / Spring Cloud 深度索引
 
 Current scanner supports:

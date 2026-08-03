@@ -106,7 +106,8 @@
 - CLI：`memory-center bootstrap-context --path <project-dir> --intent "..." --query "..." --target "..."`
 - HTTP：`GET /workspace/bootstrap-context?path=<project-dir>&intent=...&query=...&target=...`
 - MCP：`mc_bootstrap_context(path="<project-dir>", intent="...", query="...", target="...")`
-- 返回：`context_state=READY|FEDERATED|LIVE_SEARCH`、`provider`、`freshness`、`evidence`、`tool_plan`、`persistence`、`next_action`。
+- 返回：`context_state=READY|FEDERATED|LIVE_SEARCH`、`provider`、`freshness`、`evidence`、`provider_selection`、`tool_plan`、`persistence`、`next_action`；`FEDERATED` 和 `LIVE_SEARCH` 额外返回 `evidence_ref`。
+- `provider_selection`：能力路由的选中 Provider、尝试序列和只读 Provider Registry 描述；`evidence_ref`：只保留来源、范围、观测时间、耗时、内容哈希和验证状态的临时证据引用。
 - 边界：GitNexus 仅允许 `status/query/context`，不允许 `analyze`、`index`、`clean`、`--content` 或任意 shell；外部结果仅保留在进程内最多 30 秒，绝不写入图谱或工作区。
 
 ### Evidence Subgraph / 证据子图

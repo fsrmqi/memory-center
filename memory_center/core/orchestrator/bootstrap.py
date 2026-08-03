@@ -5,7 +5,12 @@ import time
 from pathlib import Path
 from typing import Any
 
-from memory_center.core.providers import GitNexusProvider
+from memory_center.core.providers import (
+    DEFAULT_PROVIDER_REGISTRY,
+    GitNexusProvider,
+    ProviderRegistry,
+    build_external_evidence_ref,
+)
 
 from .workspace_ops import workspace_status
 
@@ -21,6 +26,7 @@ def bootstrap_workspace_context(
     target: str = "",
     limit: int = 8,
     provider: GitNexusProvider | None = None,
+    registry: ProviderRegistry | None = None,
 ) -> dict[str, Any]:
     """优先使用已存在的 Memory Center，否则以 GitNexus 只读结果建立会话上下文。"""
     root, workspace_file = _resolve_root_and_workspace(path)
@@ -34,6 +40,12 @@ def bootstrap_workspace_context(
             "root": str(root),
             "freshness": status.get("freshness", status.get("index_freshness", {})),
             "evidence": _evidence("memory_center", root, "published_generation", scope={"workspace": str(workspace_file)}),
+            "provider_selection": {
+                "capability": "code_navigation",
+                "selected": "memory_center",
+                "attempted": [{"provider": "memory_center", "status": "ready"}],
+                "registry": DEFAULT_PROVIDER_REGISTRY.descriptors(),
+            },
             "tool_plan": [
                 {"tool": "mc_start", "arguments": {"intent": intent or query}},
                 {"tool": "mc_lookup", "arguments": {"query": query or intent, "mode": "auto"}},
@@ -50,16 +62,31 @@ def bootstrap_workspace_context(
         result["cache"] = {"hit": True, "ttl_seconds": int(_CACHE_TTL_SECONDS - (now - cached[0]))}
         return result
 
-    external = (provider or GitNexusProvider()).lookup(root, query or intent, target=target, intent=intent, limit=limit)
+    if provider is not None:
+        external = provider.lookup(root, query or intent, target=target, intent=intent, limit=limit)
+        provider_selection = {
+            "capability": "code_navigation",
+            "selected": getattr(provider, "name", "external"),
+            "attempted": [{"provider": getattr(provider, "name", "external"), "status": external.get("status", "unavailable")}],
+            "registry": [],
+        }
+    else:
+        external, provider_selection = (registry or DEFAULT_PROVIDER_REGISTRY).lookup(
+            root, query or intent, target=target, intent=intent, limit=limit
+        )
     if external.get("status") == "ready":
+        provider_name = str(external.get("provider", provider_selection["selected"]) or provider_selection["selected"])
+        evidence_ref = build_external_evidence_ref(provider_name, root, external)
         result = {
             "schema_version": 1,
             "context_state": "FEDERATED",
-            "provider": "gitnexus",
+            "provider": provider_name,
             "workspace": "",
             "root": str(root),
-            "freshness": {"status": "provider_reported", "provider": "gitnexus"},
-            "evidence": _evidence("gitnexus", root, "external_extracted", scope=external.get("scope_checked", {}), details=external),
+            "freshness": {"status": "provider_reported", "provider": provider_name},
+            "evidence": _evidence(provider_name, root, "external_extracted", scope=external.get("scope_checked", {}), details=external),
+            "evidence_ref": evidence_ref,
+            "provider_selection": provider_selection,
             "tool_plan": [{"tool": "mc_bootstrap_context", "arguments": {"path": str(root), "query": query or intent}}],
             "result_summary": external.get("output", ""),
             "persistence": "session_ephemeral_no_workspace_write",
@@ -75,6 +102,8 @@ def bootstrap_workspace_context(
             "root": str(root),
             "freshness": {"status": "not_indexed"},
             "evidence": _evidence("local_search", root, "unavailable", scope=external.get("scope_checked", {}), details=external),
+            "evidence_ref": build_external_evidence_ref("local_search", root, external, provenance_kind="AMBIGUOUS"),
+            "provider_selection": provider_selection,
             "tool_plan": [{"tool": "rg", "arguments": {"query": query or target or intent, "root": str(root), "scope": "bounded"}}],
             "persistence": "none",
             "next_action": "GitNexus 不可用或未索引；先做小范围实时搜索。需要连续任务与跨服务治理时，显式初始化 Memory Center。",

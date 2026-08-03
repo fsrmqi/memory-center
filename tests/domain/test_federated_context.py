@@ -5,6 +5,7 @@ from pathlib import Path
 
 from memory_center.core.orchestrator.bootstrap import bootstrap_workspace_context
 from memory_center.core.providers.gitnexus import GitNexusProvider
+from memory_center.core.providers.registry import ProviderRegistry, ProviderSpec
 from memory_center.http.server import _route_request
 
 
@@ -39,6 +40,8 @@ def test_uninitialized_workspace_uses_ephemeral_gitnexus_evidence(tmp_path: Path
     assert result["provider"] == "gitnexus"
     assert result["persistence"] == "session_ephemeral_no_workspace_write"
     assert result["evidence"]["provenance_kind"] == "external_extracted"
+    assert result["evidence_ref"]["provenance_kind"] == "EXTRACTED"
+    assert "Process: payment" not in result["evidence_ref"].values()
     assert provider.calls == [(str(root), "payment flow")]
     assert not (root / ".memory-center").exists()
 
@@ -65,6 +68,7 @@ def test_existing_workspace_remains_primary_and_does_not_call_provider(tmp_path:
     assert result["context_state"] == "READY"
     assert result["provider"] == "memory_center"
     assert result["persistence"] == "existing_memory_center"
+    assert result["provider_selection"]["selected"] == "memory_center"
 
 
 def test_gitnexus_provider_uses_only_fixed_read_only_commands(tmp_path: Path) -> None:
@@ -83,6 +87,37 @@ def test_gitnexus_provider_uses_only_fixed_read_only_commands(tmp_path: Path) ->
         ["gitnexus", "query", "payment flow", "--limit", "12", "--context", "trace request"],
     ]
     assert all("--content" not in command for command in invocations)
+
+
+def test_provider_registry_falls_back_to_next_read_only_provider(tmp_path: Path) -> None:
+    class UnavailableProvider:
+        name = "unavailable"
+
+        def lookup(self, root, query, **_kwargs):
+            return {"provider": self.name, "status": "unavailable", "scope_checked": {"root": str(root)}}
+
+    class ReadyProvider:
+        name = "ready"
+
+        def lookup(self, root, query, **_kwargs):
+            return {"provider": self.name, "status": "ready", "output": query, "scope_checked": {"root": str(root)}}
+
+    registry = ProviderRegistry(
+        [
+            ProviderSpec("unavailable", ("code_navigation",), UnavailableProvider, priority=1),
+            ProviderSpec("ready", ("code_navigation",), ReadyProvider, priority=2),
+        ]
+    )
+
+    result, selection = registry.lookup(tmp_path, "payment flow")
+
+    assert result["provider"] == "ready"
+    assert selection["selected"] == "ready"
+    assert selection["attempted"] == [
+        {"provider": "unavailable", "status": "unavailable"},
+        {"provider": "ready", "status": "ready"},
+    ]
+    assert all(item["mutation_mode"] == "read_only" for item in selection["registry"])
 
 
 def test_http_bootstrap_context_keeps_uninitialized_project_write_free(tmp_path: Path) -> None:

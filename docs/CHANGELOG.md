@@ -1,5 +1,15 @@
 # Changelog / 更新日志
 
+## 4.3.50 Provider Registry 与临时 EvidenceRef / Provider Registry and Ephemeral EvidenceRef
+
+- 新增只读 `ProviderRegistry`：按能力、优先级、超时、结果上限、写入模式和隐私模式选择外部 Provider，并记录完整降级尝试。
+- 联邦上下文结果新增 additive `provider_selection` 与 `evidence_ref`。`EvidenceRef` 仅保留来源、范围、观测时间、耗时、正文哈希和验证状态，不保存外部正文，也不会进入长期图谱。
+
+## 4.3.50 Provider Registry and Ephemeral EvidenceRef
+
+- Added read-only `ProviderRegistry`, selecting external providers by capability, priority, timeout, result cap, mutation mode, and privacy mode while reporting every fallback attempt.
+- Federated context now adds `provider_selection` and `evidence_ref`. An `EvidenceRef` retains only provenance, scope, observation time, latency, content hash, and verification state; it never stores external body content or enters the long-term graph.
+
 ## 4.3.49 零初始化联邦上下文 / Zero-Initialization Federated Context
 
 - 新增 `bootstrap-context`、`GET /workspace/bootstrap-context` 与 MCP `mc_bootstrap_context`。已有 workspace 时读取 Memory Center；未初始化目录会尝试 GitNexus 的固定只读 `status/query/context` 命令，失败后才建议有界本地搜索。
