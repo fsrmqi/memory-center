@@ -119,6 +119,40 @@
 - GitNexus 固定读取动作：`status`、`query`、`context`、`impact`、`trace`、`detect-changes`、`check`；`analyze` 是受控索引动作，`clean` 是破坏性清理动作，二者必须 `confirm=true`。
 - 参数只能使用动作契约中的 `query`、`target`、`limit`、`depth`、`force`；系统不会转发任意 argv、shell 或外部正文。
 
+### Restricted MCP Client Bridge / 受限 MCP Client Bridge
+
+- CLI：`memory-center mcp-bridge-status --path <project-dir>` 查看策略；`memory-center mcp-bridge-action --path <project-dir> --provider <provider-id> --action <action> --query "..." --target "..."` 调用一个白名单动作。
+- HTTP：`GET /workspace/mcp-bridge-status?path=<project-dir>`；`GET /workspace/mcp-bridge-action?path=<project-dir>&provider=<provider-id>&action=<action>&query=...&target=...&confirm=false`。
+- MCP：`mc_mcp_bridge()` 查看策略；`mc_mcp_bridge(provider="<provider-id>", action="<action>", query="...", target="...", confirm=false)` 调用。
+- 策略路径：`<project-dir>/.memory-center/provider-mcp-policy.json`。缺失或不合法策略只返回 `provider_not_configured`，不会初始化 workspace。
+
+```json
+{
+  "schema_version": 1,
+  "providers": [
+    {
+      "id": "idea_mcp",
+      "server": "idea",
+      "url": "http://127.0.0.1:64342/sse",
+      "transport": "sse",
+      "timeout_seconds": 10,
+      "tools": [
+        {
+          "action": "symbol_context",
+          "tool": "get_symbol_info",
+          "mode": "read_only",
+          "arguments": {"symbol": "{target}", "query": "{query}"}
+        }
+      ]
+    }
+  ]
+}
+```
+
+- `url` 只能是 `http(s)`，传输只能是 `sse` 或 `streamable_http`；工具会在调用前由 `list_tools` 校验。参数模板只允许常量、`{query}` 与 `{target}`，单个值最长 2,000 字符；每次调用最长 60 秒，响应正文最多 12,000 字符。
+- `read_only` 可以直接调用；`controlled_write` 与 `destructive` 必须 `confirm=true`。Bridge 不支持 stdio、token/认证字段、自由工具名、自由参数或任意 shell；外部正文仅在当前响应中返回，`evidence_ref` 不包含正文。
+- MCP Server 运行时依赖固定为 `mcp>=1.2.0,<2.0.0`；SDK 2.x 不兼容当前 FastMCP Server 入口。
+
 ### Evidence Subgraph / 证据子图
 
 - CLI：`export-evidence-subgraph --workspace <workspace.yaml> --target <node-id-or-symbol> --format json|markdown|html`

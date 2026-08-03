@@ -341,7 +341,7 @@ flowchart LR
 它解决了一个实际体验问题：新项目尚未初始化 Memory Center 时，Agent 不必先执行全量索引才能开始理解代码；如果宿主已全局接入 Memory Center MCP，它可以先调用 `mc_bootstrap_context`。该入口按以下优先级工作：
 
 1. 向上发现已有 `.memory-center/workspace.yaml`，存在则直接使用已发布 generation。
-2. 不存在时通过 Provider Registry 调用 GitNexus 的固定 `status`、`query`、`context`，或由宿主直接使用已配置的 IDEA MCP 读取能力，只取得当前会话可用的结构化线索。
+2. 不存在时通过 Provider Registry 调用 GitNexus 的固定 `status`、`query`、`context`；也可通过受限 MCP Client Bridge 直接调用策略登记的 IDEA MCP、GitNexus MCP 等 HTTP 工具，只取得当前会话可用的结构化线索。
 3. 所有外部读取能力不可用、未索引或超时时，返回有界 `rg` 实时搜索计划，而不是静默失败或触发隐式全量索引。
 
 这一机制的重点不是“多调一个工具”，而是明确外部能力的身份：GitNexus 提供局部代码导航、影响分析和索引维护；IDEA MCP 提供 IDE 语义、文件与运行配置能力；Memory Center 提供跨服务事实图、任务连续性、验证治理和长期可重建记忆。它们是分层互补关系，不是互相覆盖。
@@ -349,7 +349,7 @@ flowchart LR
 | 协同对象 | 当前协同方式 | Memory Center 统一的内容 | 不允许发生的事 |
 |---|---|---|---|
 | GitNexus | 固定动作 Provider：读取、影响、链路、变更检测、受控索引与清理 | provider、检查范围、耗时、观测时间、临时证据、下一步动作 | 任意 argv、任意 shell、外部正文直接写入图谱 |
-| IDEA MCP | 宿主直接工具调用；后续可通过受限 MCP Client Bridge 纳入 Registry | IDE 语义、文件定位、重构建议、运行配置结果 | 未声明工具 schema、无确认的写入或运行配置 |
+| IDEA MCP | 宿主直接工具调用，或通过受限 MCP Client Bridge 直连已登记 HTTP MCP | IDE 语义、文件定位、重构建议、运行配置结果 | 未声明工具 schema、无确认的写入或运行配置 |
 | Skill | 已验证交付产生候选，经 canary、观测、发布或回滚演进 | 生命周期、结构签名、验证引用、适用边界、效果指标 | 模型自评后直接发布、未验证经验覆盖事实 |
 | Hooks | 宿主会话开始、结束、代码变化时触发受限动作 | session 关联、变更提示、定向刷新建议、审计摘要 | 在查询热路径执行全量重建或收集原始对话正文 |
 | MCP / CLI / HTTP / Workbench | 多入口调用同一应用服务 | 相同状态转换、证据等级、负向结论与 Action 语义 | 因入口不同而出现不同的事实或治理规则 |
@@ -369,17 +369,22 @@ flowchart LR
 
 跨 Provider 结果同时生成统一的临时 `EvidenceRef`：它有稳定引用 ID、Provider、证据等级、关系模式、检查范围、观测时间、耗时、正文哈希、持久化边界和验证状态，但不携带外部正文。这样 GitNexus、未来的 SCIP 或 IDE Provider 可以共享同一证据语言，而不会把工具输出直接混入图谱或长期记忆。
 
-### 6.7 可继续实现的生态协同方向
+### 6.7 已实现：受限 MCP Client Bridge 与后续生态方向
+
+Memory Center 已可作为受限 MCP Client，不再只能由宿主 Agent 分别调用外部 MCP。工作区维护者通过 `.memory-center/provider-mcp-policy.json` 显式声明 Provider、HTTP URL、`sse|streamable_http` transport、允许的工具与 `{query}` / `{target}` 参数模板；Bridge 建立 MCP 会话后先 `list_tools`，再 `call_tool`。这使 IDEA MCP、GitNexus MCP 等能力可保留结构化参数与工具版本，同时仍受超时、结果上限、确认门禁和临时证据边界约束。
+
+Bridge 不支持 stdio、自由工具/参数、认证字段或任意命令，避免 Memory Center 成为未经治理的远程执行代理。外部输出不进入图谱、SQLite、断言和审计存储；成功调用只形成不含正文的会话级 `EvidenceRef`。`read_only` 可直接读取，`controlled_write` 与 `destructive` 一律需要明确确认。
+
+以下是尚未交付的后续方向：
 
 以下是明确的后续方向，不是当前已交付能力：
 
 | 方向 | 可实现机制 | 预期收益 | 前置约束 |
 |---|---|---|---|
-| MCP Client Bridge | Memory Center 作为受限 MCP Client，调用经白名单批准的外部 MCP 工具 | 不依赖 CLI 包装，保留结构化参数与工具版本 | 需要超时、并发、身份、循环调用和审计隔离设计 |
 | 跨 Provider 证据融合 | 将图谱、GitNexus、SCIP、测试结果的 `EvidenceRef` 做冲突检测和可信排序 | 多工具结果不再只是文本拼接，可解释冲突与置信度 | 不能把外部全文或私有正文复制进长期索引 |
 | Skill Contract 与回归集 | 给 Skill 声明适用语言、前置条件、停止条件、输入输出契约和脱敏 replay 集 | Skill 从提示词片段升级为可评测、可回滚的交付能力 | 发布仍需真实验证证据，不能只依赖 LLM judge |
 
-已交付的 Provider 健康路由以进程内调用窗口计算 P95、错误率和成本分，不做后台扫描；GitNexus 明确未索引或陈旧时会生成确认型 `analyze --index-only` 行动卡，不会自动执行。下一优先级是 MCP Client Bridge 与跨 Provider 证据融合：前者将 CLI 适配逐步升级为受控 MCP 协作，后者让多工具结论可检测冲突和可信排序。
+已交付的 Provider 健康路由以进程内调用窗口计算 P95、错误率和成本分，不做后台扫描；GitNexus 明确未索引或陈旧时会生成确认型 `analyze --index-only` 行动卡，不会自动执行。下一优先级是跨 Provider 证据融合：让多工具结论可检测冲突和可信排序。
 
 ---
 
@@ -570,7 +575,7 @@ flowchart LR
 
 ### 13.5 P3：外部生态与 Agent 能力进化
 
-Provider Registry 已解决外部工具的声明、能力路由、调用健康与受控动作边界；下一阶段应重点研究：受限 MCP Client Bridge、跨 Provider 冲突检测、Skill Contract 与脱敏回归集。
+Provider Registry 已解决外部工具的声明、能力路由、调用健康与受控动作边界；受限 MCP Client Bridge 已补齐直接 HTTP MCP 协同与策略门禁。下一阶段应重点研究跨 Provider 冲突检测、Skill Contract 与脱敏回归集，以及将 Bridge 的健康与成本数据纳入统一 Provider 路由。
 
 Skill 的研究重点不是生成更多 Markdown，而是将 Skill 建模为“有适用条件、有输入输出契约、有停止条件、有验证集、有回滚条件”的可执行知识单元。候选 Skill 可先采用保守的规则匹配和语义相似度召回；当 replay 足够时，再研究 contextual bandit 在“选择哪个已发布 Skill”上的探索，但发布决策仍必须由验证证据驱动。
 

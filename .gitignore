@@ -25,6 +25,7 @@ docs/benchmarks/*.prof
 
 # Generated index data (rebuild with `memory-center reindex`)
 .memory-center/graph/
+.memory-center/provider-mcp-policy.json
 
 # Example workspace runtime outputs. Keep examples reproducible via source,
 # workspace.yaml, cases, indexes and graph snapshots; do not track mutable

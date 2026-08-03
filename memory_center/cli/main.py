@@ -40,7 +40,9 @@ from memory_center.core.knowledge.communities import analyze_architecture_commun
 from memory_center.core.knowledge.wiki import generate_skills, generate_wiki
 from memory_center.core.orchestrator import (
     bootstrap_workspace_context,
+    execute_mcp_bridge_action,
     execute_provider_action,
+    mcp_bridge_status,
     memory_backend_query,
     memory_callees,
     memory_callers,
@@ -1544,6 +1546,27 @@ def provider_action_cmd(
 ):
     """Run a registered external-provider action with fixed arguments and confirmation gates."""
     print(execute_provider_action(path, provider=provider, action=action, query=query, target=target, confirm=confirm, force=force, limit=limit, depth=depth))
+
+
+@app.command("mcp-bridge-status")
+def mcp_bridge_status_cmd(
+    path: str = typer.Option(".", help="Project directory or workspace.yaml; no workspace initialization is performed."),
+):
+    """Show the explicitly allowed external HTTP MCP bridge actions for a project."""
+    print(mcp_bridge_status(path))
+
+
+@app.command("mcp-bridge-action")
+def mcp_bridge_action_cmd(
+    path: str = typer.Option(".", help="Project directory or workspace.yaml."),
+    provider: str = typer.Option(..., help="Provider id declared in provider-mcp-policy.json."),
+    action: str = typer.Option(..., help="Whitelisted external MCP action."),
+    query: str = typer.Option(""),
+    target: str = typer.Option(""),
+    confirm: bool = typer.Option(False, help="Required for controlled-write and destructive actions."),
+):
+    """Invoke one policy-whitelisted external HTTP MCP tool with fixed argument templates."""
+    print(execute_mcp_bridge_action(path, provider=provider, action=action, query=query, target=target, confirm=confirm))
 
 
 @app.command("tool-usage-report")

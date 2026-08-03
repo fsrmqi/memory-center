@@ -1,5 +1,29 @@
 # Changelog / 更新日志
 
+## 4.3.54 MCP SDK 运行时兼容修复 / MCP SDK Runtime Compatibility Fix
+
+- 将 MCP SDK 约束为 `mcp>=1.2.0,<2.0.0`。SDK 2.0 已移除本项目 MCP Server 使用的 `mcp.server.fastmcp` 路径；此前宽泛依赖会使 `memory-center-mcp` 在已安装环境中无法启动。
+- 同步更新回归断言并在本地 pipx 环境验证 MCP Server 能创建，确保受限 MCP Client Bridge 的 MCP 入口不是仅源码可达。
+
+## 4.3.54 MCP SDK Runtime Compatibility Fix
+
+- Constrained the MCP SDK to `mcp>=1.2.0,<2.0.0`. SDK 2.0 removed the `mcp.server.fastmcp` path used by this project's MCP Server, so the former broad dependency could prevent `memory-center-mcp` from starting.
+- Updated the regression assertion and verify MCP Server creation in the local pipx environment so the restricted MCP Client Bridge is reachable through MCP at runtime, not only in source.
+
+## 4.3.53 受限 MCP Client Bridge / Restricted MCP Client Bridge
+
+- 新增 `mcp-bridge-status`、`mcp-bridge-action`、`GET /workspace/mcp-bridge-status`、`GET /workspace/mcp-bridge-action` 和 MCP `mc_mcp_bridge`。Memory Center 可直接调用工作区策略白名单中的 IDEA MCP、GitNexus MCP 等外部 HTTP MCP Server。
+- 策略固定在 `.memory-center/provider-mcp-policy.json`：仅接受 `http(s)` URL、`sse|streamable_http` 传输、允许的工具名以及 `{query}` / `{target}` 参数模板；不支持 stdio、自由工具名、自由参数、令牌字段或任意命令。
+- Bridge 在调用前通过 MCP `list_tools` 校验工具真实暴露，单次超时最多 60 秒，输出最多 12,000 字符。外部正文不进入索引、SQLite、断言或审计存储；成功结果只附带会话级 `EvidenceRef`。
+- `controlled_write` 和 `destructive` 动作无条件要求显式 `confirm=true`，即使策略错误声明为无需确认也不会放行。
+
+## 4.3.53 Restricted MCP Client Bridge
+
+- Added `mcp-bridge-status`, `mcp-bridge-action`, `GET /workspace/mcp-bridge-status`, `GET /workspace/mcp-bridge-action`, and MCP `mc_mcp_bridge`. Memory Center can directly invoke external HTTP MCP servers such as IDEA MCP and GitNexus MCP that are explicitly whitelisted by workspace policy.
+- `.memory-center/provider-mcp-policy.json` accepts only `http(s)` URLs, `sse|streamable_http` transports, allowed tool names, and `{query}` / `{target}` argument templates. Stdio, free-form tools and parameters, token fields, and arbitrary commands are unsupported.
+- The bridge verifies the exposed tool with MCP `list_tools`, caps each call at 60 seconds and output at 12,000 characters. External bodies never enter indexes, SQLite, assertions, or audit storage; a successful result only adds a session-level `EvidenceRef`.
+- `controlled_write` and `destructive` actions always require explicit `confirm=true`, even if a malformed policy declares otherwise.
+
 ## 4.3.52 Provider 健康路由与按需索引行动卡 / Provider Health Routing and On-Demand Index Actions
 
 - Provider Registry 新增进程内滑动窗口健康观测：每次调用记录耗时和结果，返回 P95、错误率和成本分，并以静态优先级加健康惩罚选择读取 Provider；不启动后台扫描，也不写入工作区。

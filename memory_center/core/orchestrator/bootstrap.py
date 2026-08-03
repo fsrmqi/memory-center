@@ -8,8 +8,11 @@ from typing import Any
 from memory_center.core.providers import (
     DEFAULT_PROVIDER_REGISTRY,
     GitNexusProvider,
+    McpBridgeProvider,
     ProviderRegistry,
     build_external_evidence_ref,
+    load_mcp_bridge_policy,
+    mcp_bridge_policy_status,
 )
 
 from .workspace_ops import workspace_status
@@ -178,6 +181,56 @@ def execute_provider_action(
         workspace=str(workspace_file) if workspace_file else "",
         persistence="external_provider_managed",
     )
+    return result
+
+
+def mcp_bridge_status(path: str | Path) -> dict[str, Any]:
+    """返回外部 MCP Bridge 的策略状态；不创建工作区目录。"""
+    root, workspace_file = _resolve_root_and_workspace(path)
+    result = mcp_bridge_policy_status(root)
+    result.update(
+        root=str(root),
+        workspace=str(workspace_file) if workspace_file else "",
+        persistence="none",
+    )
+    return result
+
+
+def execute_mcp_bridge_action(
+    path: str | Path,
+    *,
+    provider: str,
+    action: str,
+    query: str = "",
+    target: str = "",
+    confirm: bool = False,
+) -> dict[str, Any]:
+    """按工作区策略调用一个外部 MCP 工具，外部正文仅在本次响应中存在。"""
+    root, workspace_file = _resolve_root_and_workspace(path)
+    policies = load_mcp_bridge_policy(root)
+    policy = policies.get(provider)
+    if policy is None:
+        return {
+            "provider": provider,
+            "action": action,
+            "status": "provider_not_configured",
+            "reason": "mcp_bridge_policy_missing_or_provider_not_allowed",
+            "root": str(root),
+            "workspace": str(workspace_file) if workspace_file else "",
+            "policy": mcp_bridge_policy_status(root),
+            "persistence": "none",
+            "next_action": "在 .memory-center/provider-mcp-policy.json 显式登记受信任的 HTTP MCP Server、工具和参数模板。",
+        }
+    result = McpBridgeProvider(policy).execute(action, query=query, target=target, confirm=confirm)
+    result.update(
+        root=str(root),
+        workspace=str(workspace_file) if workspace_file else "",
+        persistence="session_ephemeral_external_mcp",
+    )
+    if result.get("status") == "ready":
+        result["evidence_ref"] = build_external_evidence_ref(
+            policy.provider_id, root, result, provenance_kind="EXTRACTED"
+        )
     return result
 
 

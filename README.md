@@ -83,6 +83,10 @@ Provider Registry 还会在进程内记录调用 P95、错误率和成本分，�
 
 The Provider Registry also records in-process P95, error rate, and cost score to avoid persistently failing or slow read providers. If GitNexus explicitly reports a missing or stale index, `bootstrap-context` returns confirmation-gated `action_cards` suggesting fixed `provider-action --action analyze --confirm`; the system never builds an external index automatically.
 
+Memory Center 也可作为受限 MCP Client 直接调用外部 IDEA MCP、GitNexus MCP 等 HTTP Server。工作区维护者必须在 `.memory-center/provider-mcp-policy.json` 显式登记 URL、传输、工具和参数模板；调用 `memory-center mcp-bridge-status --path <project-dir>` 查看白名单，再用 `mcp-bridge-action --provider <id> --action <action>` 调用。只支持 `sse` 与 `streamable_http`，参数模板只允许 `{query}`、`{target}`；所有 `controlled_write` / `destructive` 动作必须 `--confirm`。外部正文只停留在响应中，长期层仅保留临时 `evidence_ref` 的元数据与哈希。
+
+Memory Center can also act as a restricted MCP Client for external HTTP servers such as IDEA MCP and GitNexus MCP. A workspace maintainer must explicitly whitelist the URL, transport, tools, and argument templates in `.memory-center/provider-mcp-policy.json`; use `memory-center mcp-bridge-status --path <project-dir>` to inspect the policy, then `mcp-bridge-action --provider <id> --action <action>` to invoke it. Only `sse` and `streamable_http` are supported, templates may only use `{query}` and `{target}`, and every `controlled_write` / `destructive` action requires `--confirm`. External bodies stay in the response; the long-term layer retains only ephemeral `evidence_ref` metadata and hashes.
+
 ### 2. Spring Cloud deep indexing / Spring Cloud 深度索引
 
 Current scanner supports:

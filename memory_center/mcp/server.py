@@ -24,8 +24,10 @@ from memory_center.core.observability.diagnostics import DIAG, diag_entry
 from memory_center.core.orchestrator import (
     _annotate_phantom_nodes,
     bootstrap_workspace_context,
+    execute_mcp_bridge_action,
     execute_provider_action,
     group_chain,
+    mcp_bridge_status,
     memory_backend_query,
     memory_callees,
     memory_callers,
@@ -341,6 +343,32 @@ def create_server(workspace_file: str):
             force=force,
             limit=limit,
             depth=depth,
+        )
+
+    @safe_mcp_tool(mcp, ctx)
+    def mc_mcp_bridge(
+        action: str = "",
+        provider: str = "",
+        query: str = "",
+        target: str = "",
+        confirm: bool = False,
+    ):
+        """Inspect or invoke a policy-whitelisted external HTTP MCP tool. Leave action empty to inspect allowed providers; only registered tools and fixed argument templates are callable. Controlled-write or destructive actions require confirm=true."""
+        if not action.strip():
+            return mcp_bridge_status(ctx.workspace_input)
+        if not provider.strip():
+            return {
+                "status": "invalid_input",
+                "reason": "provider_required_for_mcp_bridge_action",
+                "next_action": "先调用 mc_mcp_bridge() 查看已登记 provider，再指定 provider 与 action。",
+            }
+        return execute_mcp_bridge_action(
+            ctx.workspace_input,
+            provider=provider,
+            action=action,
+            query=query,
+            target=target,
+            confirm=confirm,
         )
 
     @safe_mcp_tool(mcp, ctx)

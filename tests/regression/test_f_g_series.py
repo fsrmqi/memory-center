@@ -719,7 +719,7 @@ class TestG07InstallBuild:
         pyproject = Path("pyproject.toml")
         content = pyproject.read_text()
         project_section = content.split("[project.optional-dependencies]", 1)[0]
-        assert '"mcp>=1.2.0"' in project_section
+        assert '"mcp>=1.2.0,<2.0.0"' in project_section
 
     def test_three_entry_points_exist(self):
         from memory_center.cli.main import app as cli_app

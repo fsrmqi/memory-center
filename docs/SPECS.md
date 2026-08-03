@@ -80,6 +80,18 @@
   instructions/
 ```
 
+### 4.1 `provider-mcp-policy.json` / 外部 MCP Bridge 策略
+
+可选策略文件位于 `.memory-center/provider-mcp-policy.json`，仅用于声明 Memory Center 可以作为 Client 直接调用的外部 HTTP MCP Server。它不是 workspace 初始化条件，缺失时 Bridge 仅返回空策略状态。
+
+- 顶层：`schema_version: 1`、`providers: []`。
+- Provider：`id`、`server`、`url`、`transport`、可选 `timeout_seconds`、`tools`。
+- `url` 只能为不含用户名、密码、查询串或 fragment 的 `http(s)` URL；`transport` 仅为 `sse|streamable_http`；`timeout_seconds` 被限制在 `1..60` 秒。
+- Tool：`action`、`tool`、`mode`、`arguments`、可选 `confirmation_required`。`mode` 只能是 `read_only|controlled_write|destructive`；后两类始终需要明确确认。
+- `arguments` 仅允许常量及 `{query}`、`{target}` 占位符，不能出现格式化属性、索引、转换或未知字段。
+- 调用时 Client 必须先执行 `list_tools` 确认 `tool` 仍由外部 Server 暴露；不得支持 stdio、token/认证字段、任意工具或任意参数。
+- 原始响应不进入图谱、SQLite、断言、审计或长期记忆；只在当前响应中展示，并派生不含正文的会话级 `EvidenceRef`。
+
 ## 5. Timeline / Ref / Receipt
 
 当前正式 `timeline_item.kind`：

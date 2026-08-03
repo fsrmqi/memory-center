@@ -6,7 +6,12 @@ Public task operations are re-exported here for MCP, CLI, HTTP and hooks.
 from __future__ import annotations
 
 # --- external provider actions ---
-from .bootstrap import bootstrap_workspace_context, execute_provider_action
+from .bootstrap import (
+    bootstrap_workspace_context,
+    execute_mcp_bridge_action,
+    execute_provider_action,
+    mcp_bridge_status,
+)
 
 # --- evaluation functions ---
 from .evaluations import (
@@ -181,7 +186,7 @@ __all__ = [
     "workspace_record_case", "workspace_write_receipts", "workspace_replay_write_chain",
     # workspace
     "workspace_check_contract", "workspace_check_rules",
-    "workspace_status", "workspace_sniff", "workspace_trace", "workspace_lookup_hint", "bootstrap_workspace_context", "execute_provider_action",
+    "workspace_status", "workspace_sniff", "workspace_trace", "workspace_lookup_hint", "bootstrap_workspace_context", "execute_provider_action", "mcp_bridge_status", "execute_mcp_bridge_action",
     "workspace_dashboard", "workspace_continuity_dashboard", "workspace_task_resume_check",
     # resume
     "workspace_resume_packet", "workspace_resume_context",

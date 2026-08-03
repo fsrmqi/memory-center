@@ -22,11 +22,13 @@ from memory_center.core.knowledge.assertions import inspect_assertion, query_ass
 from memory_center.core.knowledge.communities import analyze_architecture_communities
 from memory_center.core.orchestrator import (
     bootstrap_workspace_context,  # noqa: F401 - re-exported for HTTP route modules
+    execute_mcp_bridge_action,  # noqa: F401 - re-exported for HTTP route modules
     execute_provider_action,  # noqa: F401 - re-exported for HTTP route modules
     group_chain,
     group_impact,
     group_query,
     group_status,
+    mcp_bridge_status,  # noqa: F401 - re-exported for HTTP route modules
     memory_backend_query,
     memory_callees,
     memory_callers,

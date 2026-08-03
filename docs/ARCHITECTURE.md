@@ -644,9 +644,11 @@ Benchmark/observability 趋势数据写在 `.memory-center/memory/*-trends.jsonl
 
 ### 9.1 MCP Facade
 
-MCP 当前公开 14 个 task-level tools：
+MCP 当前公开 15 个 task-level tools：
 
 - `mc_bootstrap_context`
+- `mc_provider_action`
+- `mc_mcp_bridge`
 - `mc_start`
 - `mc_lookup`
 - `mc_analyze`
@@ -665,6 +667,8 @@ MCP 当前公开 14 个 task-level tools：
 `mc_bootstrap_context` 是联邦读取入口：它先向上发现已有 `.memory-center/workspace.yaml`；找不到时通过 Provider Registry 选择 GitNexus 的固定 `status/query/context` 能力，结果包装为带 provider、范围、观测时间、持久化边界、`provider_selection` 和 `evidence_ref` 的临时证据。`EvidenceRef` 仅保存元数据和正文哈希，不复制外部正文。它不创建 workspace，也不将外部读取结果写入 SQLite 图谱。Provider 不可用时仅返回有界本地搜索计划。
 
 `mc_provider_action` / `provider-action` 是独立的受控动作面。GitNexus 的 `impact/trace/detect-changes/check` 为读取动作；`analyze` 是受控索引动作、`clean` 是破坏性清理动作，均使用固定参数模板并要求 `confirm=true`。Provider Registry 可以声明混合能力，但每个动作仍单独标记 `read_only`、`controlled_write` 或 `destructive`，不会把外部命令变成 Agent 可自由拼接的 shell。
+
+`mc_mcp_bridge` / `mcp-bridge-action` 是独立的受限 MCP Client 面，不通过宿主 Agent 转发。它只读取 `<root>/.memory-center/provider-mcp-policy.json` 中维护者明确登记的 HTTP URL、`sse|streamable_http` transport、工具名和参数模板，并在建立会话后以 `list_tools` 二次校验。策略不接受 stdio、认证字段、任意工具或参数；写入和破坏性动作总是需要 `confirm=true`。调用的原始结果不写入图谱、SQLite、断言或审计存储，只作为响应正文与不含正文的会话级 `EvidenceRef` 返回。该层以 60 秒超时、12,000 字符输出上限和同步线程隔离避免外部 MCP 卡住主查询链路。
 
 Provider Registry 的路由健康数据只在进程内保存最近调用的耗时和状态，计算 P95、错误率和成本惩罚后与静态 priority 合并排序。它不在热路径外启动探测扫描。外部索引状态仅在 Provider 明确报告 `gitnexus_index_not_found` 或 `gitnexus_index_stale` 时生成确认型行动卡；行动卡指向固定 `analyze --index-only`，绝不自动执行。
 
