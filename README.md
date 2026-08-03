@@ -39,7 +39,7 @@ Memory Center precomputes these relationships before the agent starts editing.
 
 - [docs/README.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/README.md)
 - [docs/PRODUCT_TECHNICAL_OVERVIEW.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/PRODUCT_TECHNICAL_OVERVIEW.md)
-- [docs/INTERVIEW_TECHNICAL_GUIDE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/INTERVIEW_TECHNICAL_GUIDE.md)
+- [docs/TECHNICAL_ARCHITECTURE_AND_EVOLUTION.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/TECHNICAL_ARCHITECTURE_AND_EVOLUTION.md)
 - [docs/DOCS_STATUS.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/DOCS_STATUS.md)
 - [docs/ARCHITECTURE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/ARCHITECTURE.md)
 - [docs/USER_GUIDE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/USER_GUIDE.md)
@@ -71,13 +71,13 @@ This makes impact analysis and context retrieval deterministic and explainable.
 
 ### 1.1 Zero-initialization federation / 零初始化联邦上下文
 
-即使当前项目尚未创建 `.memory-center/workspace.yaml`，也可以调用 `mc_bootstrap_context` 或 `memory-center bootstrap-context --path <project-dir>`。它会先探测已有 Memory Center workspace；没有 workspace 时仅以固定只读命令调用可选 GitNexus Provider，返回会话级外部证据；Provider 不可用时才建议有界本地搜索。该流程不初始化目录、不触发 reindex，也不把外部结果写进图谱。
+即使当前项目尚未创建 `.memory-center/workspace.yaml`，也可以调用 `mc_bootstrap_context` 或 `memory-center bootstrap-context --path <project-dir>`。它会先探测已有 Memory Center workspace；没有 workspace 时调用 GitNexus 的固定读取能力并返回会话级外部证据；Provider 不可用时才建议有界本地搜索。该流程不初始化目录，也不把外部读取结果写进图谱。
 
-Even without `.memory-center/workspace.yaml`, `mc_bootstrap_context` or `memory-center bootstrap-context --path <project-dir>` first detects an existing workspace, then optionally uses a read-only GitNexus provider, and finally suggests bounded local search. It never initializes, reindexes, or persists external results into the graph.
+Even without `.memory-center/workspace.yaml`, `mc_bootstrap_context` or `memory-center bootstrap-context --path <project-dir>` first detects an existing workspace, then optionally uses fixed GitNexus read capabilities, and finally suggests bounded local search. It never initializes or persists external read results into the graph.
 
-外部能力通过只读 Provider Registry 统一选择；联邦结果包含 `provider_selection` 与临时 `evidence_ref`，后者只保存来源、范围和内容哈希，不保存外部正文。后续可接入更多 Provider，而不改变 Agent 的上下文入口。
+外部能力通过 Provider Registry 统一选择；联邦结果包含 `provider_selection` 与临时 `evidence_ref`，后者只保存来源、范围和内容哈希，不保存外部正文。通过 `provider-action` 可执行注册的固定动作：读取动作直接运行，索引或清理动作必须显式确认。后续可接入更多 Provider，而不改变 Agent 的上下文入口。
 
-External capabilities are selected through a read-only Provider Registry. Federated responses include `provider_selection` and an ephemeral `evidence_ref`, which retains provenance, scope, and a content hash rather than external body content. More providers can be added without changing the Agent context entrypoint.
+External capabilities are selected through the Provider Registry. Federated responses include `provider_selection` and an ephemeral `evidence_ref`, which retains provenance, scope, and a content hash rather than external body content. `provider-action` runs registered fixed actions: reads run directly while indexing or cleanup requires explicit confirmation. More providers can be added without changing the Agent context entrypoint.
 
 ### 2. Spring Cloud deep indexing / Spring Cloud 深度索引
 

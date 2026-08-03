@@ -10,11 +10,13 @@ from .gitnexus import GitNexusProvider
 
 
 class ContextProvider(Protocol):
-    """零初始化上下文 Provider 的最小只读接口。"""
+    """外部上下文 Provider 的最小接口。"""
 
     name: str
 
     def lookup(self, root: str | Path, query: str, *, target: str = "", intent: str = "", limit: int = 8) -> dict[str, Any]: ...
+
+    def execute(self, root: str | Path, action: str, **kwargs: Any) -> dict[str, Any]: ...
 
 
 @dataclass(frozen=True)
@@ -41,7 +43,7 @@ class ProviderSpec:
 
 
 class ProviderRegistry:
-    """按能力和安全属性选择 Provider，失败时顺序降级。"""
+    """按能力、安全属性和确认状态选择 Provider。"""
 
     def __init__(self, specs: tuple[ProviderSpec, ...] | list[ProviderSpec] | None = None) -> None:
         self._specs = tuple(sorted(specs or (), key=lambda item: item.priority))
@@ -59,7 +61,7 @@ class ProviderRegistry:
         limit: int = 8,
         capability: str = "code_navigation",
     ) -> tuple[dict[str, Any], dict[str, Any]]:
-        candidates = [spec for spec in self._specs if capability in spec.capabilities and spec.mutation_mode == "read_only"]
+        candidates = [spec for spec in self._specs if capability in spec.capabilities]
         attempted: list[dict[str, str]] = []
         for spec in candidates:
             provider = spec.factory()
@@ -85,13 +87,46 @@ class ProviderRegistry:
             "registry": self.descriptors(),
         }
 
+    def execute(
+        self,
+        root: str | Path,
+        *,
+        provider_id: str,
+        action: str,
+        query: str = "",
+        target: str = "",
+        confirm: bool = False,
+        force: bool = False,
+        limit: int = 8,
+        depth: int = 3,
+    ) -> dict[str, Any]:
+        """通过固定 Provider 与动作名执行受控操作，禁止自由命令。"""
+        spec = next((item for item in self._specs if item.provider_id == provider_id), None)
+        if spec is None:
+            return {"executed": False, "reason": "provider_not_registered", "provider": provider_id, "action": action}
+        provider = spec.factory()
+        result = provider.execute(
+            root, action, query=query, target=target, confirm=confirm, force=force, limit=limit, depth=depth
+        )
+        return {
+            "executed": result.get("status") == "ready",
+            "provider": provider_id,
+            "action": action,
+            "result": result,
+            "provider_registry": self.descriptors(),
+        }
+
 
 DEFAULT_PROVIDER_REGISTRY = ProviderRegistry(
     (
         ProviderSpec(
             provider_id="gitnexus",
-            capabilities=("code_navigation", "symbol_context", "impact_navigation"),
+            capabilities=(
+                "code_navigation", "symbol_context", "impact_navigation", "path_navigation",
+                "change_detection", "graph_validation", "index_refresh", "index_cleanup",
+            ),
             factory=GitNexusProvider,
+            mutation_mode="mixed",
             priority=10,
         ),
     )

@@ -107,8 +107,16 @@
 - HTTP：`GET /workspace/bootstrap-context?path=<project-dir>&intent=...&query=...&target=...`
 - MCP：`mc_bootstrap_context(path="<project-dir>", intent="...", query="...", target="...")`
 - 返回：`context_state=READY|FEDERATED|LIVE_SEARCH`、`provider`、`freshness`、`evidence`、`provider_selection`、`tool_plan`、`persistence`、`next_action`；`FEDERATED` 和 `LIVE_SEARCH` 额外返回 `evidence_ref`。
-- `provider_selection`：能力路由的选中 Provider、尝试序列和只读 Provider Registry 描述；`evidence_ref`：只保留来源、范围、观测时间、耗时、内容哈希和验证状态的临时证据引用。
-- 边界：GitNexus 仅允许 `status/query/context`，不允许 `analyze`、`index`、`clean`、`--content` 或任意 shell；外部结果仅保留在进程内最多 30 秒，绝不写入图谱或工作区。
+- `provider_selection`：能力路由的选中 Provider、尝试序列和 Provider Registry 描述；`evidence_ref`：只保留来源、范围、观测时间、耗时、内容哈希和验证状态的临时证据引用。
+- 边界：`bootstrap-context` 只使用 GitNexus 的 `status/query/context` 读取能力；读取结果最多保留在进程内 30 秒，绝不写入图谱或工作区。写入类操作只能经下方的 Provider Action 契约执行。
+
+### Provider Actions / 外部 Provider 动作
+
+- CLI：`memory-center provider-action --path <project-dir> --action impact --target <symbol>`。
+- HTTP：`GET /workspace/provider-action?path=<project-dir>&provider=gitnexus&action=impact&target=<symbol>`。
+- MCP：`mc_provider_action(action="impact", target="<symbol>")`。
+- GitNexus 固定读取动作：`status`、`query`、`context`、`impact`、`trace`、`detect-changes`、`check`；`analyze` 是受控索引动作，`clean` 是破坏性清理动作，二者必须 `confirm=true`。
+- 参数只能使用动作契约中的 `query`、`target`、`limit`、`depth`、`force`；系统不会转发任意 argv、shell 或外部正文。
 
 ### Evidence Subgraph / 证据子图
 

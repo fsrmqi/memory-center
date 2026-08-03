@@ -113,6 +113,40 @@ def bootstrap_workspace_context(
     return result
 
 
+def execute_provider_action(
+    path: str | Path,
+    *,
+    provider: str = "gitnexus",
+    action: str,
+    query: str = "",
+    target: str = "",
+    confirm: bool = False,
+    force: bool = False,
+    limit: int = 8,
+    depth: int = 3,
+    registry: ProviderRegistry | None = None,
+) -> dict[str, Any]:
+    """执行 Provider 注册的固定动作；写入或破坏性动作必须显式确认。"""
+    root, workspace_file = _resolve_root_and_workspace(path)
+    result = (registry or DEFAULT_PROVIDER_REGISTRY).execute(
+        root,
+        provider_id=provider,
+        action=action,
+        query=query,
+        target=target,
+        confirm=confirm,
+        force=force,
+        limit=limit,
+        depth=depth,
+    )
+    result.update(
+        root=str(root),
+        workspace=str(workspace_file) if workspace_file else "",
+        persistence="external_provider_managed",
+    )
+    return result
+
+
 def _resolve_root_and_workspace(path: str | Path) -> tuple[Path, Path | None]:
     source = Path(path or ".").expanduser().resolve()
     start = source.parent if source.is_file() else source

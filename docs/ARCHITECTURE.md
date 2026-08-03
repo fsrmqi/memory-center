@@ -644,7 +644,7 @@ Benchmark/observability 趋势数据写在 `.memory-center/memory/*-trends.jsonl
 
 ### 9.1 MCP Facade
 
-MCP 当前公开 13 个 task-level tools：
+MCP 当前公开 14 个 task-level tools：
 
 - `mc_bootstrap_context`
 - `mc_start`
@@ -662,7 +662,9 @@ MCP 当前公开 13 个 task-level tools：
 
 设计意图：模型看到的是任务级接口，不是几十个内部原子工具。`mc_admin` 的 action table 位于 `memory_center/application/admin.py`，通过 `CommandRegistry` 分发。
 
-`mc_bootstrap_context` 是联邦读取入口：它先向上发现已有 `.memory-center/workspace.yaml`；找不到时通过只读 Provider Registry 选择 GitNexus 的固定 `status/query/context` 能力，结果包装为带 provider、范围、观测时间、持久化边界、`provider_selection` 和 `evidence_ref` 的临时证据。`EvidenceRef` 仅保存元数据和正文哈希，不复制外部正文。它不创建 workspace、不触发 reindex、不调用 `analyze/index/clean`，也不将外部输出写入 SQLite 图谱。Provider 不可用时仅返回有界本地搜索计划。
+`mc_bootstrap_context` 是联邦读取入口：它先向上发现已有 `.memory-center/workspace.yaml`；找不到时通过 Provider Registry 选择 GitNexus 的固定 `status/query/context` 能力，结果包装为带 provider、范围、观测时间、持久化边界、`provider_selection` 和 `evidence_ref` 的临时证据。`EvidenceRef` 仅保存元数据和正文哈希，不复制外部正文。它不创建 workspace，也不将外部读取结果写入 SQLite 图谱。Provider 不可用时仅返回有界本地搜索计划。
+
+`mc_provider_action` / `provider-action` 是独立的受控动作面。GitNexus 的 `impact/trace/detect-changes/check` 为读取动作；`analyze` 是受控索引动作、`clean` 是破坏性清理动作，均使用固定参数模板并要求 `confirm=true`。Provider Registry 可以声明混合能力，但每个动作仍单独标记 `read_only`、`controlled_write` 或 `destructive`，不会把外部命令变成 Agent 可自由拼接的 shell。
 
 MCP 还暴露 resources：
 

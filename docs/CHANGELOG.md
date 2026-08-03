@@ -1,5 +1,15 @@
 # Changelog / 更新日志
 
+## 4.3.51 受控外部动作 / Controlled External Actions
+
+- 新增 `provider-action`、`GET /workspace/provider-action` 与 MCP `mc_provider_action`。GitNexus 支持固定的 `impact`、`trace`、`detect-changes`、`check`、`analyze` 与 `clean` 动作。
+- 读取动作可直接执行；`analyze` 为 `controlled_write`、`clean` 为 `destructive`，均必须显式 `confirm=true`。所有参数由固定动作模板生成，不接受自由 argv 或 shell。
+
+## 4.3.51 Controlled External Actions
+
+- Added `provider-action`, `GET /workspace/provider-action`, and MCP `mc_provider_action`. GitNexus supports fixed `impact`, `trace`, `detect-changes`, `check`, `analyze`, and `clean` actions.
+- Read actions execute directly; `analyze` is `controlled_write` and `clean` is `destructive`, both requiring explicit `confirm=true`. All arguments come from fixed action templates; free argv and shell input are rejected.
+
 ## 4.3.50 Provider Registry 与临时 EvidenceRef / Provider Registry and Ephemeral EvidenceRef
 
 - 新增只读 `ProviderRegistry`：按能力、优先级、超时、结果上限、写入模式和隐私模式选择外部 Provider，并记录完整降级尝试。

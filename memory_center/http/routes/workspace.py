@@ -12,6 +12,7 @@ from memory_center.application.http_facades import (
     bootstrap_workspace_context,
     compact_change_log,
     create_task_space,
+    execute_provider_action,
     get_artifact,
     get_task_artifact,
     list_artifacts,
@@ -221,6 +222,17 @@ def register_workspace_routes(registry: CommandRegistry) -> None:
         query=rp.get("query", ""),
         target=rp.get("target", ""),
         limit=rp.int_param("limit", 8, max_val=12),
+    ))
+    registry.register("/workspace/provider-action", lambda rp: execute_provider_action(
+        rp.require("path"),
+        provider=rp.get("provider", "gitnexus"),
+        action=rp.require("action"),
+        query=rp.get("query", ""),
+        target=rp.get("target", ""),
+        confirm=rp.bool_param("confirm", False),
+        force=rp.bool_param("force", False),
+        limit=rp.int_param("limit", 8, max_val=12),
+        depth=rp.int_param("depth", 3, max_val=5),
     ))
     registry.register("/workspace/job-status", lambda rp: workspace_background_job_status(
         rp.workspace(),

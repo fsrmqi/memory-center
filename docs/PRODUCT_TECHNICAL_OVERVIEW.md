@@ -2,7 +2,7 @@
 
 > 适用于技术面试、架构评审、客户交流、售前演示和内部技术分享。
 >
-> 本文描述当前 `4.3.49` 的真实能力与边界。它不是产品承诺书；性能指标须以目标工作区的本地基准为准。需要用于 30 至 60 分钟面试或技术分享时，请配合 [INTERVIEW_TECHNICAL_GUIDE.md](INTERVIEW_TECHNICAL_GUIDE.md)。
+> 本文描述当前 `4.3.49` 的真实能力与边界。它不是产品承诺书；性能指标须以目标工作区的本地基准为准。需要深入理解架构、算法取舍和后续研究路线时，请配合 [TECHNICAL_ARCHITECTURE_AND_EVOLUTION.md](TECHNICAL_ARCHITECTURE_AND_EVOLUTION.md)。
 
 ## 1. 一句话介绍
 

@@ -21,6 +21,8 @@ from memory_center.core.freshness.change_reports import recent_change_impact_rep
 from memory_center.core.knowledge.assertions import inspect_assertion, query_assertions, update_assertion_status
 from memory_center.core.knowledge.communities import analyze_architecture_communities
 from memory_center.core.orchestrator import (
+    bootstrap_workspace_context,  # noqa: F401 - re-exported for HTTP route modules
+    execute_provider_action,  # noqa: F401 - re-exported for HTTP route modules
     group_chain,
     group_impact,
     group_query,
@@ -63,7 +65,6 @@ from memory_center.core.orchestrator import (
     memory_verify_checklist,
     memory_walkthrough_health,
     memory_write_judge,
-    bootstrap_workspace_context,
     workspace_continuity_dashboard,
     workspace_dashboard,
     workspace_end_session,

@@ -24,6 +24,7 @@ from memory_center.core.observability.diagnostics import DIAG, diag_entry
 from memory_center.core.orchestrator import (
     _annotate_phantom_nodes,
     bootstrap_workspace_context,
+    execute_provider_action,
     group_chain,
     memory_backend_query,
     memory_callees,
@@ -317,6 +318,30 @@ def create_server(workspace_file: str):
     ):
         """Build context without initializing a workspace. Uses an existing Memory Center workspace when available; otherwise invokes the optional GitNexus provider through fixed read-only commands. External evidence is session-ephemeral and never written into the graph."""
         return bootstrap_workspace_context(path or ctx.workspace_input, intent=intent, query=query, target=target, limit=limit)
+
+    @safe_mcp_tool(mcp, ctx)
+    def mc_provider_action(
+        action: str,
+        provider: str = "gitnexus",
+        query: str = "",
+        target: str = "",
+        confirm: bool = False,
+        force: bool = False,
+        limit: int = 8,
+        depth: int = 3,
+    ):
+        """Run a registered external-provider action. Read actions run directly; index or clean actions require confirm=true and use fixed arguments only."""
+        return execute_provider_action(
+            ctx.workspace_input,
+            provider=provider,
+            action=action,
+            query=query,
+            target=target,
+            confirm=confirm,
+            force=force,
+            limit=limit,
+            depth=depth,
+        )
 
     @safe_mcp_tool(mcp, ctx)
     def mc_start(

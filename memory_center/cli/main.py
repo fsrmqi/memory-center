@@ -40,6 +40,7 @@ from memory_center.core.knowledge.communities import analyze_architecture_commun
 from memory_center.core.knowledge.wiki import generate_skills, generate_wiki
 from memory_center.core.orchestrator import (
     bootstrap_workspace_context,
+    execute_provider_action,
     memory_backend_query,
     memory_callees,
     memory_callers,
@@ -1527,6 +1528,22 @@ def bootstrap_context_cmd(
 ):
     """Use Memory Center when initialized, otherwise query the optional GitNexus read-only provider."""
     print(bootstrap_workspace_context(path, intent=intent, query=query, target=target, limit=limit))
+
+
+@app.command("provider-action")
+def provider_action_cmd(
+    path: str = typer.Option(".", help="Project directory or workspace.yaml."),
+    action: str = typer.Option(..., help="Registered provider action, such as impact, detect-changes, analyze, or clean."),
+    provider: str = typer.Option("gitnexus"),
+    query: str = typer.Option(""),
+    target: str = typer.Option(""),
+    confirm: bool = typer.Option(False, help="Required for controlled-write and destructive actions."),
+    force: bool = typer.Option(False, help="Only applies to registered actions that support force."),
+    limit: int = typer.Option(8, min=1, max=12),
+    depth: int = typer.Option(3, min=1, max=5),
+):
+    """Run a registered external-provider action with fixed arguments and confirmation gates."""
+    print(execute_provider_action(path, provider=provider, action=action, query=query, target=target, confirm=confirm, force=force, limit=limit, depth=depth))
 
 
 @app.command("tool-usage-report")

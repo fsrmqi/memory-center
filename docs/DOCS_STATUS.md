@@ -16,8 +16,8 @@ This document explains which documents are the **current maintained entrypoints*
   - 项目总览、安装、快速开始、主入口说明。
 - [PRODUCT_TECHNICAL_OVERVIEW.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/PRODUCT_TECHNICAL_OVERVIEW.md)
   - 对外产品技术介绍，适用于面试、分享和客户沟通；必须基于已实现能力与公开边界编写。
-- [INTERVIEW_TECHNICAL_GUIDE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/INTERVIEW_TECHNICAL_GUIDE.md)
-  - 面向面试和技术分享的独立讲解手册；以已实现能力为准，包含讲述顺序、架构取舍、性能治理和高频追问。
+- [TECHNICAL_ARCHITECTURE_AND_EVOLUTION.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/TECHNICAL_ARCHITECTURE_AND_EVOLUTION.md)
+  - 完整技术架构与演进路线；以已实现能力为准，覆盖架构取舍、算法选型、性能治理、生态协同和研究方向。
 - [ARCHITECTURE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/ARCHITECTURE.md)
   - 当前系统架构、分层边界、运行模型。
 - [MCP_GUIDE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/MCP_GUIDE.md)

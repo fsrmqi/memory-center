@@ -3,7 +3,10 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-from memory_center.core.orchestrator.bootstrap import bootstrap_workspace_context
+from memory_center.core.orchestrator.bootstrap import (
+    bootstrap_workspace_context,
+    execute_provider_action,
+)
 from memory_center.core.providers.gitnexus import GitNexusProvider
 from memory_center.core.providers.registry import ProviderRegistry, ProviderSpec
 from memory_center.http.server import _route_request
@@ -89,6 +92,29 @@ def test_gitnexus_provider_uses_only_fixed_read_only_commands(tmp_path: Path) ->
     assert all("--content" not in command for command in invocations)
 
 
+def test_gitnexus_provider_actions_require_confirmation_and_use_fixed_argv(tmp_path: Path) -> None:
+    invocations: list[list[str]] = []
+
+    def runner(argv, **_kwargs):
+        invocations.append(argv)
+        return subprocess.CompletedProcess(argv, 0, stdout="done", stderr="")
+
+    provider = GitNexusProvider(runner=runner, executable="gitnexus")
+
+    pending = provider.execute(tmp_path, "analyze", force=True)
+    impact = provider.execute(tmp_path, "impact", target="PaymentService", depth=99, limit=99)
+    executed = provider.execute(tmp_path, "analyze", confirm=True, force=True)
+
+    assert pending["status"] == "confirmation_required"
+    assert impact["status"] == "ready"
+    assert executed["status"] == "ready"
+    assert invocations == [
+        ["gitnexus", "impact", "PaymentService", "--depth", "5", "--limit", "12"],
+        ["gitnexus", "analyze", "--index-only", "--force"],
+    ]
+    assert all("--content" not in command for command in invocations)
+
+
 def test_provider_registry_falls_back_to_next_read_only_provider(tmp_path: Path) -> None:
     class UnavailableProvider:
         name = "unavailable"
@@ -118,6 +144,14 @@ def test_provider_registry_falls_back_to_next_read_only_provider(tmp_path: Path)
         {"provider": "ready", "status": "ready"},
     ]
     assert all(item["mutation_mode"] == "read_only" for item in selection["registry"])
+
+
+def test_provider_action_rejects_unknown_provider_without_running_external_command(tmp_path: Path) -> None:
+    result = execute_provider_action(tmp_path, provider="idea_mcp", action="rename", confirm=True)
+
+    assert result["executed"] is False
+    assert result["reason"] == "provider_not_registered"
+    assert result["persistence"] == "external_provider_managed"
 
 
 def test_http_bootstrap_context_keeps_uninitialized_project_write_free(tmp_path: Path) -> None:

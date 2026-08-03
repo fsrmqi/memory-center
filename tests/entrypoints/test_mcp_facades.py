@@ -141,7 +141,7 @@ def test_mcp_server_exposes_workflow_facades_and_insight_tools(tmp_path: Path):
     # FastMCP stores tools internally; verify count and names
     tool_names = list(server._tool_manager._tools.keys())
     expected = {
-        "mc_bootstrap_context", "mc_start", "mc_lookup", "mc_analyze", "mc_sync", "mc_resume", "mc_handoff", "mc_close", "mc_admin",
+        "mc_bootstrap_context", "mc_provider_action", "mc_start", "mc_lookup", "mc_analyze", "mc_sync", "mc_resume", "mc_handoff", "mc_close", "mc_admin",
         "mc_context_pack", "mc_onboard", "mc_domain", "mc_freshness",
     }
     assert len(tool_names) == len(expected)
@@ -152,6 +152,7 @@ def test_mcp_server_exposes_workflow_facades_and_insight_tools(tmp_path: Path):
 def test_mcp_exposes_zero_initialization_context_bootstrap(tmp_path: Path):
     server = create_server(str(tmp_path))
     assert "mc_bootstrap_context" in server._tool_manager._tools
+    assert "mc_provider_action" in server._tool_manager._tools
 
 
 @pytest.mark.skipif(not HAS_MCP, reason="mcp package not installed")
