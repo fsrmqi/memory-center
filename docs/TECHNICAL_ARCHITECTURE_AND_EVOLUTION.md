@@ -383,9 +383,8 @@ Bridge 不支持 stdio、自由工具/参数、认证字段或任意命令，避
 
 | 方向 | 可实现机制 | 预期收益 | 前置约束 |
 |---|---|---|---|
-| Skill Contract 与回归集 | 给 Skill 声明适用语言、前置条件、停止条件、输入输出契约和脱敏 replay 集 | Skill 从提示词片段升级为可评测、可回滚的交付能力 | 发布仍需真实验证证据，不能只依赖 LLM judge |
 
-已交付的 Provider 健康路由以进程内调用窗口计算 P95、错误率和成本分，不做后台扫描；Bridge 动态 Provider 与 GitNexus 共用该路由；GitNexus 明确未索引或陈旧时会生成确认型 `analyze --index-only` 行动卡，不会自动执行。下一优先级是让 Skill Contract 与脱敏 replay 集在真实任务中闭环，并根据真实回放校准融合可信排序。
+已交付的 Provider 健康路由以进程内调用窗口计算 P95、错误率和成本分，不做后台扫描；Bridge 动态 Provider 与 GitNexus 共用该路由；GitNexus 明确未索引或陈旧时会生成确认型 `analyze --index-only` 行动卡，不会自动执行。Skill Contract 与脱敏 replay 集已进入 candidate/canary/published 生命周期：只有声明语言、适用前置、停止条件、输入输出字段并积累真实验证 replay 的 Skill 才能发布。下一优先级是根据真实回放校准融合可信排序与 Skill 推荐质量。
 
 ---
 
@@ -578,7 +577,7 @@ flowchart LR
 
 Provider Registry 已解决外部工具的声明、能力路由、调用健康与受控动作边界；受限 MCP Client Bridge 已补齐直接 HTTP MCP 协同与策略门禁。下一阶段应重点研究跨 Provider 冲突检测、Skill Contract 与脱敏回归集，以及将 Bridge 的健康与成本数据纳入统一 Provider 路由。
 
-Skill 的研究重点不是生成更多 Markdown，而是将 Skill 建模为“有适用条件、有输入输出契约、有停止条件、有验证集、有回滚条件”的可执行知识单元。候选 Skill 可先采用保守的规则匹配和语义相似度召回；当 replay 足够时，再研究 contextual bandit 在“选择哪个已发布 Skill”上的探索，但发布决策仍必须由验证证据驱动。
+Skill 已被建模为“有适用语言、前置/停止条件、输入输出契约、脱敏 replay、验证集和回滚条件”的可执行知识单元。候选 Skill 仍采用保守的规则匹配和结构相似度召回，并按请求语言过滤；当真实 replay 足够时，再研究 contextual bandit 在“选择哪个已发布 Skill”上的探索，但发布决策仍必须由验证证据驱动。
 
 ### 13.6 P4：规模化存储与跨工作区协作
 

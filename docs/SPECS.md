@@ -96,6 +96,17 @@
 
 ## 5. Timeline / Ref / Receipt
 
+### 5.1 Delivery Skill Contract / 交付 Skill 契约
+
+交付 Skill 候选、canary 和 published registry 使用同一个 `contract` 读模型：
+
+- `languages`：至少一个适用编程语言；`unknown` 不能进入 canary 或发布。
+- `preconditions`、`stop_conditions`：各至少一条；前者约束何时可用，后者要求 Agent 停止并重新分析。
+- `input_contract`、`output_contract`：分别包含 `required_fields`、可选 `optional_fields` 和 `forbidden_fields`；输入输出不得承载源码、密钥或工具正文。
+- `replay_policy`：固定 `redacted=true`、`max_samples=1..500`、`minimum_verified_passed=1..10`。当前发布门禁最低要求为三条带验证引用的成功观测和三条 replay。
+- replay 位于任务工件 `skills/delivery-replays/<skill-id>.jsonl`，只含契约哈希、语言、结果、证据引用、时延、Token 与时间；不保存需求、源码、日志、外部正文、操作人或模型原始输出。
+- 每条观测和 replay 都绑定生成时的 `contract_sha256`。canary 修订契约后，评测和发布只统计当前哈希的证据；`published` Skill 契约不可原地修改，必须生成新的候选并重新灰度。
+
 当前正式 `timeline_item.kind`：
 
 - `session_event`

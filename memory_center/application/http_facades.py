@@ -119,6 +119,7 @@ from memory_center.core.tasks.artifacts import (
 from memory_center.core.tasks.delivery import (
     delivery_matrix,
     delivery_policy_status,
+    delivery_skill_replay_set,
     delivery_workflow_status,
     derive_delivery_failure_candidates,
     evaluate_delivery_skill,
@@ -134,6 +135,7 @@ from memory_center.core.tasks.delivery import (
     transition_delivery_stage,
     update_delivery_contract,
     update_delivery_policy,
+    update_delivery_skill_contract,
     update_delivery_subtask_status,
 )
 
@@ -275,12 +277,20 @@ def workspace_delivery_skill_evaluate(workspace_file: str, *, skill_id: str = ""
     return evaluate_delivery_skill(workspace_file, skill_id=skill_id)
 
 
+def workspace_delivery_skill_contract_update(workspace_file: str, task_id: str, *, contract: dict[str, Any], actor: str = "") -> dict[str, Any]:
+    return update_delivery_skill_contract(workspace_file, task_id, contract=contract, actor=actor)
+
+
+def workspace_delivery_skill_replay(workspace_file: str, *, skill_id: str, limit: int = 100) -> dict[str, Any]:
+    return delivery_skill_replay_set(workspace_file, skill_id=skill_id, limit=limit)
+
+
 def workspace_delivery_skill_rollback(workspace_file: str, *, skill_id: str, reason: str, actor: str = "") -> dict[str, Any]:
     return rollback_delivery_skill(workspace_file, skill_id, reason=reason, actor=actor)
 
 
-def workspace_delivery_skill_recommend(workspace_file: str, *, intent: str, limit: int = 5) -> dict[str, Any]:
-    return recommend_delivery_skills(workspace_file, intent, limit=limit)
+def workspace_delivery_skill_recommend(workspace_file: str, *, intent: str, language: str = "", limit: int = 5) -> dict[str, Any]:
+    return recommend_delivery_skills(workspace_file, intent, language=language, limit=limit)
 
 
 def workspace_delivery_failure_candidates(workspace_file: str, *, limit_tasks: int = 200) -> dict[str, Any]:
@@ -357,9 +367,11 @@ __all__ = [
     "workspace_delivery_policy",
     "workspace_delivery_failure_candidates",
     "workspace_delivery_skill_canary",
+    "workspace_delivery_skill_contract_update",
     "workspace_delivery_skill_evaluate",
     "workspace_delivery_skill_observe",
     "workspace_delivery_skill_recommend",
+    "workspace_delivery_skill_replay",
     "workspace_delivery_skill_rollback",
     "workspace_delivery_skill_synthesize",
     "workspace_delivery_status",

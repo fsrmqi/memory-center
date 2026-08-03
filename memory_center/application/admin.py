@@ -140,6 +140,7 @@ from memory_center.core.tasks.delivery import (
     delivery_matrix,
     delivery_policy_status,
     delivery_skill_candidate,
+    delivery_skill_replay_set,
     delivery_skill_status,
     delivery_workflow_status,
     derive_delivery_failure_candidates,
@@ -157,6 +158,7 @@ from memory_center.core.tasks.delivery import (
     transition_delivery_stage,
     update_delivery_contract,
     update_delivery_policy,
+    update_delivery_skill_contract,
     update_delivery_subtask_status,
 )
 from memory_center.core.verification.bundle_export import generate_agent_bundle
@@ -596,6 +598,7 @@ def build_admin_registry(
         "delivery_skill_candidate": lambda: delivery_skill_candidate(wf, task_id),
         "delivery_skill_publish": lambda: publish_delivery_skill(wf, task_id),
         "delivery_skill_status": lambda: delivery_skill_status(wf, task_id),
+        "delivery_skill_contract_update": lambda: update_delivery_skill_contract(wf, task_id, contract=parse_payload(payload) or {}, actor=source),
         "delivery_skill_canary": lambda: start_delivery_skill_canary(wf, task_id, actor=source),
         "delivery_skill_observe": lambda: record_delivery_skill_observation(
             wf, str((parse_payload(payload) or {}).get("skill_id", "")),
@@ -606,7 +609,8 @@ def build_admin_registry(
         ),
         "delivery_skill_evaluate": lambda: evaluate_delivery_skill(wf, skill_id=str((parse_payload(payload) or {}).get("skill_id", ""))),
         "delivery_skill_rollback": lambda: rollback_delivery_skill(wf, str((parse_payload(payload) or {}).get("skill_id", "")), reason=str((parse_payload(payload) or {}).get("reason", "")), actor=source),
-        "delivery_skill_recommend": lambda: recommend_delivery_skills(wf, str((parse_payload(payload) or {}).get("intent", intent)), limit=limit),
+        "delivery_skill_recommend": lambda: recommend_delivery_skills(wf, str((parse_payload(payload) or {}).get("intent", intent)), language=str((parse_payload(payload) or {}).get("language", "")), limit=limit),
+        "delivery_skill_replay": lambda: delivery_skill_replay_set(wf, skill_id=str((parse_payload(payload) or {}).get("skill_id", "")), limit=limit),
         "delivery_failure_candidates": lambda: derive_delivery_failure_candidates(wf, limit_tasks=limit),
         "delivery_skill_synthesize": lambda: synthesize_delivery_skill_trajectories(wf, min_support=max(2, min(limit, 20))),
         "session_start": lambda: workspace_start_session(wf, intent, session_id=session_id or None),

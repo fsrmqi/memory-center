@@ -46,6 +46,7 @@ from memory_center.core.tasks.delivery import (
     delivery_matrix,
     delivery_policy_status,
     delivery_skill_candidate,
+    delivery_skill_replay_set,
     delivery_skill_status,
     delivery_workflow_status,
     derive_delivery_failure_candidates,
@@ -62,6 +63,7 @@ from memory_center.core.tasks.delivery import (
     transition_delivery_stage,
     update_delivery_contract,
     update_delivery_policy,
+    update_delivery_skill_contract,
     update_delivery_subtask_status,
 )
 from memory_center.core.tasks.skill_up import initialize_skill_up_eval, run_skill_up_eval, skill_up_status
@@ -263,6 +265,22 @@ def register_artifact_commands(app: typer.Typer) -> None:
         """查看一个任务的交付 Skill 候选和发布状态。"""
         print(delivery_skill_status(workspace, task_id))
 
+    @app.command("delivery-skill-contract-update")
+    def artifact_delivery_skill_contract_update_cmd(workspace: str = typer.Option(...), task_id: str = typer.Option(...), contract: str = typer.Option(..., help="JSON object: languages, preconditions, stop_conditions, input_contract, output_contract, replay_policy"), actor: str = typer.Option("")):
+        """为已生成候选声明适用范围、停止条件和输入输出契约。"""
+        try:
+            payload = json.loads(contract)
+        except json.JSONDecodeError as exc:
+            raise typer.BadParameter("contract must be a JSON object") from exc
+        if not isinstance(payload, dict):
+            raise typer.BadParameter("contract must be a JSON object")
+        print(update_delivery_skill_contract(workspace, task_id, contract=payload, actor=actor))
+
+    @app.command("delivery-skill-replay")
+    def artifact_delivery_skill_replay_cmd(workspace: str = typer.Option(...), skill_id: str = typer.Option(...), limit: int = typer.Option(100)):
+        """读取一个 Skill 的脱敏 replay 集，不包含源码、需求或日志正文。"""
+        print(delivery_skill_replay_set(workspace, skill_id=skill_id, limit=limit))
+
     @app.command("delivery-skill-canary")
     def artifact_delivery_skill_canary_cmd(workspace: str = typer.Option(...), task_id: str = typer.Option(...), actor: str = typer.Option("")):
         """显式将合格候选放入隔离灰度，不进入默认检索。"""
@@ -285,9 +303,9 @@ def register_artifact_commands(app: typer.Typer) -> None:
         print(rollback_delivery_skill(workspace, skill_id, reason=reason, actor=actor))
 
     @app.command("delivery-skill-recommend")
-    def artifact_delivery_skill_recommend_cmd(workspace: str = typer.Option(...), intent: str = typer.Option(...), limit: int = typer.Option(5)):
+    def artifact_delivery_skill_recommend_cmd(workspace: str = typer.Option(...), intent: str = typer.Option(...), language: str = typer.Option(""), limit: int = typer.Option(5)):
         """按意图检索已发布的结构化交付 Skill。"""
-        print(recommend_delivery_skills(workspace, intent, limit=limit))
+        print(recommend_delivery_skills(workspace, intent, language=language, limit=limit))
 
     @app.command("delivery-failure-candidates")
     def artifact_delivery_failure_candidates_cmd(workspace: str = typer.Option(...), limit_tasks: int = typer.Option(200)):

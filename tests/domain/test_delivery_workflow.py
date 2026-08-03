@@ -9,6 +9,7 @@ from memory_center.core.tasks.artifacts import (
 )
 from memory_center.core.tasks.delivery import (
     delivery_skill_candidate,
+    delivery_skill_replay_set,
     delivery_workflow_status,
     derive_delivery_failure_candidates,
     evaluate_delivery_skill,
@@ -22,6 +23,7 @@ from memory_center.core.tasks.delivery import (
     synthesize_delivery_skill_trajectories,
     transition_delivery_stage,
     update_delivery_contract,
+    update_delivery_skill_contract,
     update_delivery_subtask_status,
 )
 
@@ -75,6 +77,24 @@ def test_delivery_admin_contract_actions_use_existing_facade(demo_workspace) -> 
     assert result["items"][0]["id"] == "REQ-1"
 
 
+def test_delivery_skill_contract_is_available_through_admin_and_http(demo_workspace) -> None:
+    from memory_center.http.server import _route_request
+
+    task = create_task_space(demo_workspace, title="Skill 契约", intent="声明 Skill 范围")
+    task_id = task["task_id"]
+    delivery_skill_candidate(demo_workspace, task_id)
+    payload = '{"languages":["java"],"preconditions":["已定位"],"stop_conditions":["索引陈旧"],"input_contract":{"required_fields":["intent"]},"output_contract":{"required_fields":["next_action"]},"replay_policy":{"redacted":true}}'
+
+    admin = build_admin_registry(workspace_file=str(demo_workspace), task_id=task_id, source="mcp", payload=payload)
+    assert admin.dispatch("delivery_skill_contract_update")["updated"] is True
+    http = _route_request(
+        "/workspace/delivery/skill/contract",
+        {"task_id": [task_id], "payload": [payload]},
+        str(demo_workspace),
+    )
+    assert http["updated"] is True
+
+
 def test_closed_verified_delivery_canary_requires_objective_evidence_before_publish(demo_workspace) -> None:
     task = create_task_space(demo_workspace, title="发布接口", intent="新增发布接口")
     task_id = task["task_id"]
@@ -92,6 +112,17 @@ def test_closed_verified_delivery_canary_requires_objective_evidence_before_publ
 
     candidate = delivery_skill_candidate(demo_workspace, task_id)
     assert candidate["candidate"]["eligible"] is True
+    assert candidate["candidate"]["contract"]["languages"] == ["java"]
+    assert update_delivery_skill_contract(demo_workspace, task_id, contract={})["reason"] == "skill_contract_invalid"
+    contract = update_delivery_skill_contract(demo_workspace, task_id, contract={
+        "languages": ["java"],
+        "preconditions": ["已完成影响分析"],
+        "stop_conditions": ["索引陈旧时停止"],
+        "input_contract": {"required_fields": ["intent", "task_id"]},
+        "output_contract": {"required_fields": ["next_action", "validation_evidence"]},
+        "replay_policy": {"redacted": True},
+    })
+    assert contract["updated"] is True
     assert publish_delivery_skill(demo_workspace, task_id)["reason"] == "canary_required"
     canary = start_delivery_skill_canary(demo_workspace, task_id, actor="test")
     assert canary["started"] is True
@@ -101,9 +132,34 @@ def test_closed_verified_delivery_canary_requires_objective_evidence_before_publ
         result = record_delivery_skill_observation(demo_workspace, skill_id, outcome="passed", evidence_refs=[f"validation:{index}"], latency_ms=100, token_count=20)
         assert result["recorded"] is True
     assert evaluate_delivery_skill(demo_workspace, skill_id=skill_id)["metrics"]["verified_passed"] == 3
+    replay = delivery_skill_replay_set(demo_workspace, skill_id=skill_id)
+    assert replay["count"] == 3
+    assert "发布接口" not in str(replay)
+    revised = update_delivery_skill_contract(demo_workspace, task_id, contract={
+        "languages": ["java"],
+        "preconditions": ["已完成影响分析"],
+        "stop_conditions": ["索引陈旧或验收变化时停止"],
+        "input_contract": {"required_fields": ["intent", "task_id"]},
+        "output_contract": {"required_fields": ["next_action", "validation_evidence"]},
+        "replay_policy": {"redacted": True},
+    })
+    assert revised["updated"] is True
+    assert evaluate_delivery_skill(demo_workspace, skill_id=skill_id)["metrics"]["verified_passed"] == 0
+    assert delivery_skill_replay_set(demo_workspace, skill_id=skill_id)["count"] == 0
+    for index in range(3, 6):
+        assert record_delivery_skill_observation(demo_workspace, skill_id, outcome="passed", evidence_refs=[f"validation:{index}"])["recorded"] is True
     published = publish_delivery_skill(demo_workspace, task_id)
     assert published["published"] is True
+    assert update_delivery_skill_contract(demo_workspace, task_id, contract={
+        "languages": ["python"],
+        "preconditions": ["已定位"],
+        "stop_conditions": ["停止"],
+        "input_contract": {"required_fields": ["intent"]},
+        "output_contract": {"required_fields": ["next_action"]},
+        "replay_policy": {"redacted": True},
+    })["reason"] == "published_skill_contract_immutable"
     assert recommend_delivery_skills(demo_workspace, "发布接口")["skills"][0]["skill_id"] == skill_id
+    assert not recommend_delivery_skills(demo_workspace, "发布接口", language="python")["skills"]
     assert rollback_delivery_skill(demo_workspace, skill_id, reason="发现回归")["rolled_back"] is True
     assert not recommend_delivery_skills(demo_workspace, "发布接口")["skills"]
 

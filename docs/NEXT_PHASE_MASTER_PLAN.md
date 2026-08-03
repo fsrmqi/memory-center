@@ -39,7 +39,7 @@ This file consolidates and replaces the older execution plan, superpowers evolut
 2. **真实任务质量运营**：积累经过人工验证的任务回放，仅依据确认结果优化检索策略与下一步建议。
 3. **Java 解析与调用解析精度**：从真实未解析分类中补充逻辑锚点样例，只修复可复现的具体误判。
 4. **真实性能与重建可靠性**：持续积累真实工作空间的冷/热查询、增量索引和并发重建数据，使用基准决定优化优先级。查询必须输出阶段耗时，并受热查询 P95 预算保护；只在确认的最高耗时阶段优化。
-5. **证据优先的需求交付闭环**：将已有任务、索引、治理和验证能力收敛为可拆解、可定位、可验证、可恢复的需求交付状态机。
+5. **证据优先的需求交付闭环**：将已有任务、索引、治理和验证能力收敛为可拆解、可定位、可验证、可恢复的需求交付状态机；Skill 契约与脱敏 replay 已完成，后续只用真实回放校准推荐质量。
 
 已完成的外部协同基线：受限 MCP Client Bridge 已可直接调用策略白名单中的 HTTP MCP；声明 `code_navigation` 的只读工具已接入 Provider 健康路由；跨 Provider EvidenceRef 已可对显式结构化 Claim 返回一致、冲突或证据不足，并在冲突时生成验证 Action。后续只依据真实 replay 校准可信排序，不把外部正文写入长期层。
 
@@ -139,7 +139,7 @@ This file consolidates and replaces the older execution plan, superpowers evolut
 2. canary 不参与默认检索。只有不少于三条带证据引用的成功观测、且没有失败观测时，才可显式发布；记录成功、失败、绕过、耗时和 Token 后仅生成建议，不自动改变状态。
 3. 默认检索仅返回 `published` Skill；回滚立即撤出默认推荐，但历史观测和来源证据继续保留以便审计。
 4. 失败经验提炼和多轨迹归纳均为显式离线维护操作。前者仅按验证 profile、验收标识、哈希任务引用和证据引用聚类，后者仅在至少三条独立已验证候选的共同结构上输出待审核不变量；两者都不保存原始源码、需求正文或日志。
-5. CLI、MCP admin 和 HTTP 共享同一应用服务：`delivery-skill-canary|observe|evaluate|publish|rollback|recommend`、`delivery-failure-candidates`、`delivery-skill-synthesize`。不把离线扫描加入查询热路径。
+5. CLI、MCP admin 和 HTTP 共享同一应用服务：`delivery-skill-contract-update|canary|observe|evaluate|publish|rollback|recommend|replay`、`delivery-failure-candidates`、`delivery-skill-synthesize`。契约、自动脱敏 replay 与发布门禁已完成；不把离线扫描加入查询热路径。
 
 验收：未验证候选和 canary 永远不会默认被检索；模型自评无法作为发布依据；发布、回滚和观测均可追溯；失败归纳不泄露私有正文；常规 MCP/HTTP 查询不增加全 workspace 扫描。
 

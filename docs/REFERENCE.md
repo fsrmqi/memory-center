@@ -255,7 +255,8 @@
 - `artifact delivery-matrix --task-id <task>`：派生交付矩阵和只读 `TECH_SPEC.md`。
 - `artifact delivery-transition --stage breakdown|locate|implement|verify|close`：按门禁推进；验收未被执行器或人工验证证据覆盖时不能关闭。
 - `artifact delivery-record-validation`：仅记录外部验证摘要；默认 `recorded_external` 不可用于关闭门禁。
-- `artifact delivery-skill-candidate|delivery-skill-canary|delivery-skill-observe|delivery-skill-evaluate|delivery-skill-publish|delivery-skill-rollback|delivery-skill-recommend`：Skill 必须先进入隔离灰度；仅三条以上带证据的成功观测、且无失败观测时可发布。默认检索仅返回 `published` 状态；回滚不删除证据。
+- `artifact delivery-skill-candidate|delivery-skill-contract-update|delivery-skill-canary|delivery-skill-observe|delivery-skill-evaluate|delivery-skill-publish|delivery-skill-rollback|delivery-skill-recommend|delivery-skill-replay`：候选先通过 `delivery-skill-contract-update --contract '<JSON>'` 声明语言、前置条件、停止条件、输入输出字段和 `replay_policy.redacted=true`，才可进入隔离灰度。发布要求三条以上带证据的成功观测、三条自动脱敏 replay 且无失败。`delivery-skill-recommend --language java` 可按语言过滤；默认检索仅返回 `published`，回滚不删除证据。
+- HTTP：`GET /workspace/delivery/skill/contract?task_id=<id>&payload=<JSON>` 更新契约；`GET /workspace/delivery/skill/replay?skill_id=<id>&limit=100` 读取 replay。MCP 使用 `mc_admin(action="delivery_skill_contract_update"|"delivery_skill_replay", ...)`。
 - `artifact delivery-failure-candidates|delivery-skill-synthesize`：显式、离线地聚类跨任务失败和多个已验证交付的共同结构；只保存脱敏元数据和证据引用，不在查询热路径运行。
 
 交付 `subtasks` 除 `code_targets` 外可附加 `read_targets`、`write_targets`、`stop_conditions`：分别表示实现前必须核实的目标、允许修改的范围，以及触发重新分析或请求决策的停止条件。`delivery-matrix` 与派生 `TECH_SPEC.md` 会展示范围契约覆盖率。工作区 `delivery-policy.json` 设置 `enforce_scope_contract: true` 后，进入 `implement` 前每个子任务必须同时具备上述范围字段；默认关闭，既有任务不受影响。

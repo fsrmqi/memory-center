@@ -36,6 +36,7 @@ DELIVERY_SKILL_PUBLISHED_DIR = "skills/delivery-published"
 DELIVERY_SKILL_CANARY_DIR = "skills/delivery-canary"
 DELIVERY_SKILL_REGISTRY_FILE = "skills/delivery-skill-registry.json"
 DELIVERY_SKILL_OBSERVATIONS_FILE = "skills/delivery-skill-observations.jsonl"
+DELIVERY_SKILL_REPLAYS_DIR = "skills/delivery-replays"
 DELIVERY_SKILL_FAILURES_FILE = "skills/delivery-failure-candidates.json"
 DELIVERY_SKILL_SYNTHESIS_FILE = "skills/delivery-skill-synthesis.json"
 WORKFLOW_PROFILE = "feature_delivery_v2"
@@ -307,6 +308,7 @@ def delivery_skill_candidate(workspace_file: str | Path, task_id: str) -> dict[s
     eligible = status.get("state") == "done" and not missing and bool(located) and bool(passed)
     score = min(100, 35 + min(25, len(requirements) * 5) + min(25, len(located) * 5) + min(15, len(passed) * 3)) if eligible else 0
     signature = _skill_signature(requirements, located, acceptance)
+    contract = _default_skill_contract(workspace_file, subtasks, signature, acceptance)
     registry = _read_skill_registry(store)
     similar = _similar_skills(signature, registry.get("skills", []))
     candidate = {
@@ -321,6 +323,7 @@ def delivery_skill_candidate(workspace_file: str | Path, task_id: str) -> dict[s
         "lifecycle": "candidate",
         "version": 1,
         "signature": signature,
+        "contract": contract,
         "evidence_refs": _bounded_refs([ref for row in passed for ref in row.get("evidence_refs", [])]),
         "similar_skills": similar,
         "recommended_disposition": "merge" if similar and similar[0]["similarity"] >= 0.8 else "add",
@@ -345,22 +348,32 @@ def publish_delivery_skill(workspace_file: str | Path, task_id: str) -> dict[str
     candidate = json.loads(candidate_path.read_text(encoding="utf-8"))
     if not candidate.get("eligible"):
         return {"published": False, "reason": "candidate_not_eligible", "missing": candidate.get("missing", []), "next_action": "补齐交付门禁后重新生成候选。"}
+    contract = _normalize_skill_contract(candidate.get("contract"))
+    if not _skill_contract_valid(contract):
+        return {"published": False, "reason": "skill_contract_invalid", "contract": contract, "next_action": "通过 delivery-skill-contract-update 声明语言、前置条件、停止条件和输入输出契约。"}
     registry = _read_skill_registry(store)
     skill = _registry_skill(registry, str(candidate.get("skill_id", "")))
     if not skill or skill.get("lifecycle") != "canary":
         return {"published": False, "reason": "canary_required", "next_action": "先执行 delivery-skill-canary，再记录带证据引用的真实使用结果。"}
+    if _skill_contract_hash(contract) != _skill_contract_hash(_normalize_skill_contract(skill.get("contract"))):
+        return {
+            "published": False,
+            "reason": "candidate_contract_outdated",
+            "next_action": "候选契约与当前灰度契约不一致；请重新生成候选并重新灰度，避免以不同契约复用证据。",
+        }
     evaluation = evaluate_delivery_skill(workspace_file, skill_id=str(skill["skill_id"]))
     metrics = evaluation["metrics"]
-    if metrics["verified_passed"] < 3 or metrics["failed"] > 0:
-        return {"published": False, "reason": "canary_evidence_insufficient", "metrics": metrics, "next_action": "至少记录 3 条带证据引用的成功观测，且没有失败后再发布。"}
+    minimum_verified = int(contract["replay_policy"]["minimum_verified_passed"])
+    if metrics["verified_passed"] < minimum_verified or metrics["redacted_replays"] < minimum_verified or metrics["failed"] > 0:
+        return {"published": False, "reason": "canary_evidence_insufficient", "metrics": metrics, "minimum_verified_passed": minimum_verified, "next_action": f"至少记录 {minimum_verified} 条带证据引用的成功观测和脱敏 replay，且没有失败后再发布。"}
     slug = _skill_slug(str(candidate.get("skill_id", "delivery-skill")))
     path = store.artifacts_dir / DELIVERY_SKILL_PUBLISHED_DIR / slug / "SKILL.md"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(_delivery_skill_markdown(candidate), encoding="utf-8")
     manifest_path = path.parent / "manifest.json"
     published_at = _now()
-    manifest_path.write_text(json.dumps({"schema_version": 2, "skill_id": skill["skill_id"], "task_id": candidate["task_id"], "candidate_id": candidate["candidate_id"], "quality_score": candidate["quality_score"], "version": skill["version"], "published_at": published_at, "evidence_refs": skill.get("evidence_refs", [])}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    skill.update({"lifecycle": "published", "published_at": published_at, "updated_at": published_at, "published_path": str(path)})
+    manifest_path.write_text(json.dumps({"schema_version": 3, "skill_id": skill["skill_id"], "task_id": candidate["task_id"], "candidate_id": candidate["candidate_id"], "quality_score": candidate["quality_score"], "version": skill["version"], "published_at": published_at, "evidence_refs": skill.get("evidence_refs", []), "contract": contract, "replay_set": _skill_replay_path(store, str(skill["skill_id"])).name}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    skill.update({"lifecycle": "published", "contract": contract, "published_at": published_at, "updated_at": published_at, "published_path": str(path)})
     _write_skill_registry(store, registry)
     return {"published": True, "skill_id": skill["skill_id"], "task_id": candidate["task_id"], "quality_score": candidate["quality_score"], "path": str(path), "metrics": metrics, "next_action": "已进入默认检索范围；持续记录效果，失败时执行 delivery-skill-rollback。"}
 
@@ -373,7 +386,67 @@ def delivery_skill_status(workspace_file: str | Path, task_id: str) -> dict[str,
     published = str(skill.get("published_path", "")) if skill else ""
     lifecycle = str(skill.get("lifecycle", "candidate")) if skill else "candidate"
     next_action = "delivery-skill-candidate" if not candidate.exists() else ("delivery-skill-canary" if lifecycle == "candidate" else ("delivery-skill-observe" if lifecycle == "canary" else "use_published_skill"))
-    return {"task_id": task_id, "candidate": str(candidate) if candidate.exists() else "", "published_skill": published, "skill_id": str(payload.get("skill_id", "")), "lifecycle": lifecycle, "next_action": next_action}
+    return {"task_id": task_id, "candidate": str(candidate) if candidate.exists() else "", "published_skill": published, "skill_id": str(payload.get("skill_id", "")), "lifecycle": lifecycle, "contract": _normalize_skill_contract((skill or payload).get("contract")), "replay": delivery_skill_replay_set(workspace_file, skill_id=str(payload.get("skill_id", "")), limit=20), "next_action": next_action}
+
+
+def update_delivery_skill_contract(workspace_file: str | Path, task_id: str, *, contract: dict[str, Any], actor: str = "") -> dict[str, Any]:
+    """为一个已生成候选声明可评测 Skill 契约，并同步活跃 canary。"""
+    store = WorkspaceStore(workspace_file)
+    candidate_path = store.artifacts_dir / DELIVERY_SKILL_CANDIDATES_DIR / f"{task_id}.json"
+    if not candidate_path.exists():
+        return {"updated": False, "reason": "candidate_not_found", "next_action": "先执行 delivery-skill-candidate，再声明契约。"}
+    candidate = _read_json(candidate_path, {})
+    registry = _read_skill_registry(store)
+    skill = _registry_skill(registry, str(candidate.get("skill_id", "")))
+    if skill and skill.get("lifecycle") == "published":
+        return {
+            "updated": False,
+            "reason": "published_skill_contract_immutable",
+            "skill_id": str(candidate.get("skill_id", "")),
+            "next_action": "已发布 Skill 的契约不可原地修改；请从新的已验证交付生成候选并重新灰度。",
+        }
+    normalized = _normalize_skill_contract(contract)
+    if not _skill_contract_valid(normalized):
+        return {"updated": False, "reason": "skill_contract_invalid", "contract": normalized, "next_action": "至少声明一种语言，以及非空前置条件、停止条件、输入字段和输出字段。"}
+    contract_changed = _normalize_skill_contract(candidate.get("contract")) != normalized
+    candidate["contract"] = normalized
+    candidate["updated_at"] = _now()
+    candidate["contract_actor"] = _bounded(actor)
+    _write_json(candidate_path, candidate)
+    if skill and skill.get("lifecycle") == "canary":
+        skill.update({
+            "contract": normalized,
+            "contract_revision": int(skill.get("contract_revision", 1)) + int(contract_changed),
+            "contract_updated_at": _now(),
+            "updated_at": _now(),
+            "actor": _bounded(actor),
+        })
+        _write_skill_registry(store, registry)
+    return {
+        "updated": True,
+        "task_id": task_id,
+        "skill_id": str(candidate.get("skill_id", "")),
+        "contract": normalized,
+        "next_action": "契约已更新；当前契约需要重新积累 canary 证据，使用 delivery-skill-observe 自动生成脱敏 replay。",
+    }
+
+
+def delivery_skill_replay_set(workspace_file: str | Path, *, skill_id: str, limit: int = 100) -> dict[str, Any]:
+    """读取某个 Skill 的脱敏 replay 集，不读取需求、源码、日志或工具正文。"""
+    store = WorkspaceStore(workspace_file)
+    skill = _registry_skill(_read_skill_registry(store), skill_id)
+    contract_hash = _skill_contract_hash(_normalize_skill_contract(skill.get("contract"))) if skill else ""
+    rows = _recent_skill_replays(store, skill_id=skill_id, limit=limit)
+    if contract_hash:
+        rows = [row for row in rows if row.get("contract_sha256") == contract_hash]
+    return {
+        "skill_id": skill_id,
+        "contract_sha256": contract_hash,
+        "replays": rows,
+        "count": len(rows),
+        "privacy": "仅包含契约哈希、语言、结果、证据引用、时延和 token 指标；不包含源码、需求正文、日志、工具正文或操作人。",
+        "next_action": "将 replay 用于离线评测和人工复核；不得直接据此自动发布或调权。",
+    }
 
 
 def start_delivery_skill_canary(workspace_file: str | Path, task_id: str, *, actor: str = "") -> dict[str, Any]:
@@ -393,7 +466,10 @@ def start_delivery_skill_canary(workspace_file: str | Path, task_id: str, *, act
     if candidate.get("recommended_disposition") == "merge":
         return {"started": False, "reason": "merge_review_required", "similar_skills": candidate.get("similar_skills", []), "next_action": "先人工确认是否合并，避免重复 Skill 进入灰度。"}
     now = _now()
-    skill = {"schema_version": 1, "skill_id": skill_id, "task_id": task_id, "candidate_id": candidate.get("candidate_id", ""), "title": _bounded(str(candidate.get("title", "")), 160), "lifecycle": "canary", "version": 1, "signature": candidate.get("signature", {}), "evidence_refs": _bounded_refs(candidate.get("evidence_refs", [])), "created_at": now, "updated_at": now, "canary_started_at": now, "actor": _bounded(actor)}
+    contract = _normalize_skill_contract(candidate.get("contract"))
+    if not _skill_contract_valid(contract):
+        return {"started": False, "reason": "skill_contract_invalid", "contract": contract, "next_action": "先通过 delivery-skill-contract-update 补齐 Skill 契约。"}
+    skill = {"schema_version": 2, "skill_id": skill_id, "task_id": task_id, "candidate_id": candidate.get("candidate_id", ""), "title": _bounded(str(candidate.get("title", "")), 160), "lifecycle": "canary", "version": 1, "signature": candidate.get("signature", {}), "contract": contract, "contract_revision": 1, "evidence_refs": _bounded_refs(candidate.get("evidence_refs", [])), "created_at": now, "updated_at": now, "canary_started_at": now, "actor": _bounded(actor)}
     registry.setdefault("skills", []).append(skill)
     canary_path = store.artifacts_dir / DELIVERY_SKILL_CANARY_DIR / _skill_slug(skill_id) / "SKILL.md"
     canary_path.parent.mkdir(parents=True, exist_ok=True)
@@ -415,10 +491,11 @@ def record_delivery_skill_observation(workspace_file: str | Path, skill_id: str,
     refs = _bounded_refs(evidence_refs)
     if normalized == "passed" and not refs:
         return {"recorded": False, "reason": "evidence_required", "next_action": "成功观测必须提供验证证据引用，不能用模型自评替代。"}
-    row = {"schema_version": 1, "observation_id": f"sobs-{uuid4().hex[:12]}", "skill_id": skill_id, "outcome": normalized, "evidence_refs": refs, "latency_ms": _bounded_metric(latency_ms), "token_count": _bounded_metric(token_count), "actor": _bounded(actor), "observed_at": _now()}
+    row = {"schema_version": 1, "observation_id": f"sobs-{uuid4().hex[:12]}", "skill_id": skill_id, "contract_sha256": _skill_contract_hash(_normalize_skill_contract(skill.get("contract"))), "outcome": normalized, "evidence_refs": refs, "latency_ms": _bounded_metric(latency_ms), "token_count": _bounded_metric(token_count), "actor": _bounded(actor), "observed_at": _now()}
     with FileLock(str(store.lock_file)):
         with (store.artifacts_dir / DELIVERY_SKILL_OBSERVATIONS_FILE).open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(row, ensure_ascii=False) + "\n")
+    _append_skill_replay(store, skill, row)
     return {"recorded": True, "observation": row, "metrics": evaluate_delivery_skill(workspace_file, skill_id=skill_id)["metrics"]}
 
 
@@ -426,11 +503,18 @@ def evaluate_delivery_skill(workspace_file: str | Path, *, skill_id: str = "") -
     """Read bounded observations; evaluation never changes lifecycle automatically."""
     store = WorkspaceStore(workspace_file)
     rows = [row for row in _recent_skill_observations(store) if not skill_id or row.get("skill_id") == skill_id]
+    skill = _registry_skill(_read_skill_registry(store), skill_id) if skill_id else None
+    contract_hash = _skill_contract_hash(_normalize_skill_contract(skill.get("contract"))) if skill else ""
+    if contract_hash:
+        rows = [row for row in rows if row.get("contract_sha256") == contract_hash]
     outcomes = {name: sum(row.get("outcome") == name for row in rows) for name in SKILL_OUTCOMES}
     verified_passed = sum(row.get("outcome") == "passed" and bool(row.get("evidence_refs")) for row in rows)
     measured_latency = [int(row["latency_ms"]) for row in rows if isinstance(row.get("latency_ms"), int)]
     measured_tokens = [int(row["token_count"]) for row in rows if isinstance(row.get("token_count"), int)]
-    metrics = {"observations": len(rows), **outcomes, "verified_passed": verified_passed, "success_rate": round(outcomes["passed"] / max(1, outcomes["passed"] + outcomes["failed"]), 4), "bypass_rate": round(outcomes["bypassed"] / max(1, len(rows)), 4), "avg_latency_ms": round(sum(measured_latency) / len(measured_latency), 2) if measured_latency else None, "avg_token_count": round(sum(measured_tokens) / len(measured_tokens), 2) if measured_tokens else None}
+    replay_rows = _recent_skill_replays(store, skill_id=skill_id)
+    if contract_hash:
+        replay_rows = [row for row in replay_rows if row.get("contract_sha256") == contract_hash]
+    metrics = {"observations": len(rows), **outcomes, "verified_passed": verified_passed, "redacted_replays": len(replay_rows), "success_rate": round(outcomes["passed"] / max(1, outcomes["passed"] + outcomes["failed"]), 4), "bypass_rate": round(outcomes["bypassed"] / max(1, len(rows)), 4), "avg_latency_ms": round(sum(measured_latency) / len(measured_latency), 2) if measured_latency else None, "avg_token_count": round(sum(measured_tokens) / len(measured_tokens), 2) if measured_tokens else None}
     return {"skill_id": skill_id, "metrics": metrics, "recommendation": "可以发布" if metrics["verified_passed"] >= 3 and metrics["failed"] == 0 else "继续灰度并记录真实验证证据"}
 
 
@@ -446,7 +530,7 @@ def rollback_delivery_skill(workspace_file: str | Path, skill_id: str, *, reason
     return {"rolled_back": True, "skill": skill, "next_action": "历史观测和证据仍保留；需要修订时从新的已验证交付生成候选。"}
 
 
-def recommend_delivery_skills(workspace_file: str | Path, intent: str, *, limit: int = 5) -> dict[str, Any]:
+def recommend_delivery_skills(workspace_file: str | Path, intent: str, *, language: str = "", limit: int = 5) -> dict[str, Any]:
     """Retrieve only published Skills using bounded structural token overlap."""
     store = WorkspaceStore(workspace_file)
     query_terms = set(_search_terms(intent))
@@ -454,12 +538,15 @@ def recommend_delivery_skills(workspace_file: str | Path, intent: str, *, limit:
     for skill in _read_skill_registry(store).get("skills", []):
         if skill.get("lifecycle") != "published":
             continue
+        contract = _normalize_skill_contract(skill.get("contract"))
+        if language.strip() and language.strip().lower() not in {item.lower() for item in contract["languages"]}:
+            continue
         terms = set(skill.get("signature", {}).get("terms", []))
         overlap = len(query_terms & terms) / max(1, len(query_terms | terms))
         if overlap:
-            matches.append({"skill_id": skill.get("skill_id", ""), "title": skill.get("title", ""), "version": skill.get("version", 1), "score": round(overlap, 4), "path": skill.get("published_path", ""), "evidence_refs": skill.get("evidence_refs", [])[:10]})
+            matches.append({"skill_id": skill.get("skill_id", ""), "title": skill.get("title", ""), "version": skill.get("version", 1), "score": round(overlap, 4), "path": skill.get("published_path", ""), "languages": contract["languages"], "preconditions": contract["preconditions"], "stop_conditions": contract["stop_conditions"], "evidence_refs": skill.get("evidence_refs", [])[:10]})
     matches.sort(key=lambda item: (-item["score"], item["skill_id"]))
-    return {"intent_terms": sorted(query_terms)[:20], "skills": matches[:max(1, min(limit, 20))], "next_action": "读取命中的 published Skill；没有命中时按正常交付流程处理，不得把空结果理解为不存在经验。"}
+    return {"intent_terms": sorted(query_terms)[:20], "language": _bounded(language, 80), "skills": matches[:max(1, min(limit, 20))], "next_action": "读取命中的 published Skill；没有命中时按正常交付流程处理，不得把空结果理解为不存在经验。"}
 
 
 def derive_delivery_failure_candidates(workspace_file: str | Path, *, limit_tasks: int = 200) -> dict[str, Any]:
@@ -541,6 +628,151 @@ def _recent_skill_observations(store: WorkspaceStore) -> list[dict[str, Any]]:
         if isinstance(row, dict):
             rows.append(row)
     return rows
+
+
+def _default_skill_contract(
+    workspace_file: str | Path,
+    subtasks: list[dict[str, Any]],
+    signature: dict[str, Any],
+    acceptance: list[dict[str, Any]],
+) -> dict[str, Any]:
+    config = load_workspace_config(workspace_file)
+    languages = sorted({service.resolved_language() for service in config.services if service.resolved_language()})
+    stop_conditions = [
+        str(condition)
+        for item in subtasks
+        for condition in item.get("stop_conditions", [])
+        if str(condition).strip()
+    ]
+    return _normalize_skill_contract({
+        "languages": languages or ["unknown"],
+        "preconditions": [
+            "需求、范围和验收标准已明确。",
+            "代码目标已定位且索引未标记为 STALE。",
+        ],
+        "stop_conditions": stop_conditions or [
+            "出现未决歧义、索引陈旧、越出声明语言范围或缺少验证证据时停止并重新分析。",
+        ],
+        "input_contract": {
+            "required_fields": ["intent", "task_id", "acceptance_ids"],
+            "optional_fields": ["target", "project", "evidence_refs"],
+            "forbidden_fields": ["raw_source", "secret", "external_tool_body"],
+        },
+        "output_contract": {
+            "required_fields": ["requirements", "subtasks", "acceptance", "validation_evidence", "next_action"],
+            "forbidden_fields": ["raw_source", "secret", "unverified_fact"],
+        },
+        "replay_policy": {
+            "redacted": True,
+            "max_samples": 200,
+            "minimum_verified_passed": 3,
+            "signature_terms": len(signature.get("terms", [])),
+            "verification_types": signature.get("verification_types", [])[:10],
+        },
+    })
+
+
+def _normalize_skill_contract(value: Any) -> dict[str, Any]:
+    raw = value if isinstance(value, dict) else {}
+    input_raw = raw.get("input_contract", {}) if isinstance(raw.get("input_contract"), dict) else {}
+    output_raw = raw.get("output_contract", {}) if isinstance(raw.get("output_contract"), dict) else {}
+    replay_raw = raw.get("replay_policy", {}) if isinstance(raw.get("replay_policy"), dict) else {}
+    return {
+        "schema_version": 1,
+        "languages": _bounded_string_list(raw.get("languages"), 20, 40),
+        "preconditions": _bounded_string_list(raw.get("preconditions"), 20, 300),
+        "stop_conditions": _bounded_string_list(raw.get("stop_conditions"), 20, 300),
+        "input_contract": _normalize_io_contract(input_raw),
+        "output_contract": _normalize_io_contract(output_raw),
+        "replay_policy": {
+            "redacted": bool(replay_raw.get("redacted", True)),
+            "max_samples": min(500, max(1, _safe_int(replay_raw.get("max_samples"), 200))),
+            "minimum_verified_passed": min(10, max(1, _safe_int(replay_raw.get("minimum_verified_passed"), 3))),
+        },
+    }
+
+
+def _normalize_io_contract(value: dict[str, Any]) -> dict[str, list[str]]:
+    return {
+        "required_fields": _bounded_string_list(value.get("required_fields"), 30, 80),
+        "optional_fields": _bounded_string_list(value.get("optional_fields"), 30, 80),
+        "forbidden_fields": _bounded_string_list(value.get("forbidden_fields"), 30, 80),
+    }
+
+
+def _skill_contract_valid(contract: dict[str, Any]) -> bool:
+    return bool(
+        contract.get("languages")
+        and "unknown" not in {str(item).lower() for item in contract.get("languages", [])}
+        and contract.get("preconditions")
+        and contract.get("stop_conditions")
+        and contract.get("input_contract", {}).get("required_fields")
+        and contract.get("output_contract", {}).get("required_fields")
+        and bool(contract.get("replay_policy", {}).get("redacted"))
+    )
+
+
+def _append_skill_replay(store: WorkspaceStore, skill: dict[str, Any], observation: dict[str, Any]) -> None:
+    contract = _normalize_skill_contract(skill.get("contract"))
+    if not _skill_contract_valid(contract):
+        return
+    skill_id = str(skill.get("skill_id", ""))
+    contract_hash = _skill_contract_hash(contract)
+    row = {
+        "schema_version": 1,
+        "replay_id": f"sreplay-{uuid4().hex[:12]}",
+        "skill_id": skill_id,
+        "contract_sha256": contract_hash,
+        "languages": contract["languages"],
+        "outcome": observation.get("outcome", ""),
+        "evidence_refs": _bounded_refs(observation.get("evidence_refs", [])),
+        "latency_ms": observation.get("latency_ms"),
+        "token_count": observation.get("token_count"),
+        "observed_at": observation.get("observed_at", ""),
+        "privacy": "redacted_contract_metrics_only",
+    }
+    path = _skill_replay_path(store, skill_id)
+    with FileLock(str(store.lock_file)):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+
+def _recent_skill_replays(store: WorkspaceStore, *, skill_id: str, limit: int = 10_000) -> list[dict[str, Any]]:
+    if not skill_id:
+        return []
+    path = _skill_replay_path(store, skill_id)
+    if not path.exists():
+        return []
+    rows: list[dict[str, Any]] = []
+    for line in path.read_text(encoding="utf-8").splitlines()[-max(1, min(limit, 10_000)):]:
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(row, dict) and row.get("privacy") == "redacted_contract_metrics_only":
+            rows.append(row)
+    return rows
+
+
+def _skill_replay_path(store: WorkspaceStore, skill_id: str) -> Path:
+    return store.artifacts_dir / DELIVERY_SKILL_REPLAYS_DIR / f"{_skill_slug(skill_id)}.jsonl"
+
+
+def _skill_contract_hash(contract: dict[str, Any]) -> str:
+    return hashlib.sha256(json.dumps(contract, ensure_ascii=True, sort_keys=True).encode("utf-8")).hexdigest()[:20]
+
+
+def _bounded_string_list(value: Any, limit: int, item_limit: int) -> list[str]:
+    values = value if isinstance(value, list) else []
+    return list(dict.fromkeys(_bounded(str(item), item_limit) for item in values if str(item).strip()))[:limit]
+
+
+def _safe_int(value: Any, default: int) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
 
 
 def _skill_id(task_id: str) -> str:
@@ -763,11 +995,33 @@ def _skill_slug(value: str) -> str:
 def _delivery_skill_markdown(candidate: dict[str, Any]) -> str:
     targets = "\n".join(f"- `{item}`" for item in candidate.get("code_targets", [])) or "- 先通过 Memory Center 定位代码目标。"
     acceptance = "\n".join(f"- `{item.get('id', '')}` {item.get('title', '')} ({item.get('verification_type', 'test')})" for item in candidate.get("acceptance", [])) or "- 为每项需求定义可验证验收标准。"
+    contract = _normalize_skill_contract(candidate.get("contract"))
+    languages = ", ".join(contract["languages"]) or "未声明"
+    preconditions = "\n".join(f"- {item}" for item in contract["preconditions"]) or "- 未声明"
+    stop_conditions = "\n".join(f"- {item}" for item in contract["stop_conditions"]) or "- 未声明"
+    input_fields = ", ".join(contract["input_contract"]["required_fields"]) or "未声明"
+    output_fields = ", ".join(contract["output_contract"]["required_fields"]) or "未声明"
     return f"""# {candidate.get('title', '已验证需求交付')} / Verified Delivery Skill
 
 ## 适用场景 / When to use
 
 当新需求与该已验证交付的范围和代码目标相似时使用。本 Skill 来自已关闭任务及其通过的验证回执，质量分为 `{candidate.get('quality_score', 0)}`。
+
+## 适用与契约 / Applicability and Contract
+
+- 适用语言：`{languages}`
+- 必需输入：`{input_fields}`
+- 必需输出：`{output_fields}`
+
+### 前置条件
+
+{preconditions}
+
+### 停止条件
+
+{stop_conditions}
+
+Skill 观测会自动形成仅含契约哈希、语言、结果、证据引用、时延和 Token 指标的脱敏 replay；不得将源码、需求正文、日志、外部工具正文或密钥写入 replay。
 
 ## 执行流程 / Workflow
 
