@@ -1,5 +1,15 @@
 # Changelog / 更新日志
 
+## 4.3.57 架构门禁修复 / Architecture Gate Fixes
+
+- 补齐 `core/providers` 模块边界说明，并修正 targeted refresh 测试导入顺序，恢复全量 Ruff 与架构回归门禁。
+- 将 MCP 查询工具共享的符号提取、请求校验、可降级分析和响应整形迁移至 `mcp/tool_support.py`，使 `mcp/server.py` 保持为轻量工具注册入口。
+
+## 4.3.57 Architecture Gate Fixes
+
+- Added the `core/providers` module guide and fixed targeted-refresh test import order, restoring Ruff and architecture regression gates.
+- Moved shared MCP query helpers for symbol extraction, validation, graceful degradation, and response shaping into `mcp/tool_support.py`, keeping `mcp/server.py` focused on tool registration.
+
 ## 4.3.56 可执行 Skill 契约与脱敏 Replay / Executable Skill Contracts and Redacted Replays
 
 - 交付 Skill 候选新增版本化 `contract`：适用语言、前置条件、停止条件、输入字段、输出字段和 replay 策略。`delivery-skill-contract-update`、`/workspace/delivery/skill/contract`、`mc_admin(action="delivery_skill_contract_update")` 复用同一状态转换。

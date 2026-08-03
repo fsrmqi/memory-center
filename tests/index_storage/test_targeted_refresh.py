@@ -54,8 +54,8 @@ def test_query_refresh_is_scheduled_without_waiting_for_reindex(tmp_path: Path) 
 
 
 def test_async_refresh_processes_requests_queued_while_worker_is_active(tmp_path: Path, monkeypatch) -> None:
-    from tests.fixtures import setup_demo_workspace
     import memory_center.core.freshness.targeted_refresh as refresh_module
+    from tests.fixtures import setup_demo_workspace
 
     workspace = setup_demo_workspace(tmp_path)
     entered = threading.Event()

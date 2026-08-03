@@ -202,11 +202,11 @@ def test_mc_lookup_mode_auto_routes_correctly(tmp_path: Path):
 
 
 def test_mcp_lookup_extracts_symbol_from_natural_language_query():
-    from memory_center.mcp.server import _extract_symbol_like_token, _wants_deep_chain
+    from memory_center.mcp.tool_support import extract_symbol_like_token, wants_deep_chain
 
     query = "梳理下 com.example.api.ArticleFeignClient#moveArticle 全链路，一直到最底层逻辑处理"
-    assert _extract_symbol_like_token(query) == "com.example.api.ArticleFeignClient#moveArticle"
-    assert _wants_deep_chain(query) is True
+    assert extract_symbol_like_token(query) == "com.example.api.ArticleFeignClient#moveArticle"
+    assert wants_deep_chain(query) is True
 
 
 def test_mc_lookup_modes_direct(tmp_path: Path):

@@ -17,11 +17,9 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 from typing import Any
 
 from memory_center.core.foundation.errors import InvalidInputError
-from memory_center.core.observability.diagnostics import DIAG, diag_entry
 from memory_center.core.orchestrator import (
     _annotate_phantom_nodes,
     bootstrap_workspace_context,
@@ -64,9 +62,12 @@ from memory_center.core.orchestrator import (
     workspace_unresolved_items,
 )
 from memory_center.mcp.runtime import WorkspaceContext, find_groups_for_workspace, safe_mcp_tool
-
-_JAVA_CHAIN_SYMBOL_RE = re.compile(
-    r"((?:[a-z_][\w$]*\.)+[A-Z][\w$]*(?:#[a-zA-Z_][\w$]*)?|[A-Z][\w$]*(?:#[a-zA-Z_][\w$]*)?)"
+from memory_center.mcp.tool_support import (
+    degraded_analysis_step,
+    extract_symbol_like_token,
+    flatten_walkthrough_payload,
+    validate_analyze_request,
+    wants_deep_chain,
 )
 
 # Behavior-matrix tests assert that MCP keeps parity with shared backends even
@@ -80,123 +81,6 @@ _SHARED_BACKEND_CONTRACTS = (
     "extract_business_flows_for_workspace",
     "business_flow_impact_for_workspace",
 )
-
-def _extract_symbol_like_token(*values: str) -> str:
-    for raw in values:
-        text = (raw or "").strip()
-        if not text:
-            continue
-        matches = _JAVA_CHAIN_SYMBOL_RE.findall(text)
-        if matches:
-            matches.sort(key=len, reverse=True)
-            return matches[0]
-    return ""
-
-
-def _wants_deep_chain(*values: str) -> bool:
-    text = " ".join((value or "") for value in values).lower()
-    return any(token in text for token in ["全链路", "到底层", "最底层", "一路到底", "full chain", "trace to sink"])
-
-
-def _validate_analyze_request(depth: str, direction: str, max_depth: int, execution_mode: str) -> None:
-    if depth not in {"quick", "standard", "full"}:
-        raise InvalidInputError("depth must be quick, standard, or full", suggested_action="使用 quick、standard 或 full 重试。")
-    if direction not in {"upstream", "downstream", "both"}:
-        raise InvalidInputError("direction must be upstream, downstream, or both", suggested_action="使用 upstream、downstream 或 both 重试。")
-    if not 1 <= max_depth <= 6:
-        raise InvalidInputError("max_depth must be between 1 and 6", suggested_action="将 max_depth 设置在 1 到 6 之间；更深分析请分阶段执行。")
-    if execution_mode not in {"sync", "background"}:
-        raise InvalidInputError("execution_mode must be sync or background", suggested_action="使用 sync 或 background 重试。")
-
-
-def _degraded_analysis_step(name: str, operation) -> tuple[Any | None, dict[str, Any] | None]:
-    """Keep a successful impact result usable when an optional phase fails."""
-    try:
-        return operation(), None
-    except Exception as exc:  # Optional enrichments must not hide graph evidence.
-        return None, diag_entry(
-            DIAG.UNAVAILABLE,
-            exc=exc,
-            phase=name,
-            next_action="保留已有影响证据；检查该阶段依赖后单独重试，或改用 depth=quick。",
-        )
-
-
-def _flatten_walkthrough_payload(result: dict[str, Any], mode_key: str = "mode_used") -> dict[str, Any]:
-    summary_lines = result.get("summary_lines", []) or []
-    return {
-        mode_key: "walkthrough",
-        "found": result.get("found", False),
-        "target": result.get("target", {}),
-        "answer": "\n".join(summary_lines),
-        "answer_markdown": result.get("answer_markdown", ""),
-        "answer_template": result.get("answer_template", {}),
-        "summary_lines": summary_lines,
-        "primary_flow": summary_lines,
-        "read_targets": _collect_walkthrough_read_targets(result),
-        "mermaid_flow": result.get("mermaid_flow", ""),
-        "performance_risks": result.get("performance_risks", []),
-        "data_scope_guards": result.get("data_scope_guards", []),
-        "diff_context": result.get("diff_context", {}),
-        "glossary_hits": result.get("glossary_hits", []),
-        "schema_version": result.get("schema_version", 1),
-        "fields_contract": result.get("fields_contract", {}),
-        "index_freshness": result.get("index_freshness", {}),
-        "completion_status": result.get("completion_status", {}),
-        "branch_outline": result.get("branch_outline", []),
-        "anti_patterns": result.get("anti_patterns", []),
-        "cache": result.get("cache", {}),
-        "agent_usage_policy": result.get("agent_usage_policy", {}),
-        "next_actions": result.get("next_actions", []),
-        "result": result,
-    }
-
-
-def _collect_walkthrough_read_targets(result: dict[str, Any]) -> list[dict[str, Any]]:
-    existing = result.get("read_targets", [])
-    if isinstance(existing, list) and existing:
-        return existing
-    targets: list[dict[str, Any]] = []
-    seen = set()
-
-    def add(role: str, item: dict[str, Any], label: str = "") -> None:
-        abs_path = item.get("absolute_file_path") or item.get("file_path")
-        if not abs_path:
-            return
-        key = (role, abs_path, item.get("line", 0), label)
-        if key in seen:
-            return
-        seen.add(key)
-        targets.append({
-            "role": role,
-            "label": label or item.get("class") or item.get("controller") or item.get("method") or "",
-            "absolute_file_path": abs_path,
-            "line": item.get("line", 0),
-            "project": item.get("project", ""),
-        })
-
-    target = result.get("target", {}) or {}
-    add("target", target, f"{target.get('class', '')}#{target.get('method', '')}")
-    for impl in result.get("local_service_continuations", []) or []:
-        impl_target = impl.get("target", {}) or {}
-        add("local_impl", impl_target, f"{impl_target.get('class', '')}#{impl_target.get('method', '')}")
-        for same in impl.get("same_class_method_continuations", []) or []:
-            same_target = same.get("target", {}) or {}
-            add("local_impl_same_class", same_target, f"{same_target.get('class', '')}#{same_target.get('method', '')}")
-    for same in result.get("same_class_method_continuations", []) or []:
-        same_target = same.get("target", {}) or {}
-        add("same_class", same_target, f"{same_target.get('class', '')}#{same_target.get('method', '')}")
-    for feign in result.get("feign_continuations", []) or []:
-        for server in (feign.get("server_walkthroughs", []) or [])[:1]:
-            add("server_controller", server, f"{server.get('controller', '')}#{server.get('method', '')}")
-            for impl in (server.get("service_impl_continuations", []) or [])[:1]:
-                impl_target = impl.get("target", {}) or {}
-                add("server_impl", impl_target, f"{impl_target.get('class', '')}#{impl_target.get('method', '')}")
-                for same in impl.get("same_class_method_continuations", []) or []:
-                    same_target = same.get("target", {}) or {}
-                    add("server_impl_same_class", same_target, f"{same_target.get('class', '')}#{same_target.get('method', '')}")
-    return targets
-
 
 def _lookup_payload_with_agent_steps(mode_key: str, mode_value: str, result: dict[str, Any], **extra: Any) -> dict[str, Any]:
     payload = {mode_key: mode_value, "result": result, **extra}
@@ -453,14 +337,14 @@ def create_server(workspace_file: str):
                 )
             return payload
 
-        resolved_symbol = _extract_symbol_like_token(symbol, name, entry, query)
-        resolved_depth = max(depth, 4) if _wants_deep_chain(query, intent, symbol, name, entry) else depth
+        resolved_symbol = extract_symbol_like_token(symbol, name, entry, query)
+        resolved_depth = max(depth, 4) if wants_deep_chain(query, intent, symbol, name, entry) else depth
         if mode == "auto":
             # A full-chain request with an explicit method already has a
             # precise indexed entrypoint. Do not run the broad sniff/hint
             # preflight first: on a large workspace it needlessly loads and
             # scans the full symbol index before the walkthrough begins.
-            if _wants_deep_chain(query, intent, symbol, name, entry) and "#" in resolved_symbol:
+            if wants_deep_chain(query, intent, symbol, name, entry) and "#" in resolved_symbol:
                 result = memory_method_walkthrough(
                     wf,
                     resolved_symbol,
@@ -471,7 +355,7 @@ def create_server(workspace_file: str):
                     budget="small",
                     report_level=report_level,
                 )
-                payload = _flatten_walkthrough_payload(result, mode_key="mode_used")
+                payload = flatten_walkthrough_payload(result, mode_key="mode_used")
                 payload["routing_note"] = "auto selected direct walkthrough for Class#method full-chain query; broad workspace sniff was skipped."
                 return emit(payload, "walkthrough")
             hint = workspace_lookup_hint(wf, query=query, intent=intent, limit=limit)
@@ -580,7 +464,7 @@ def create_server(workspace_file: str):
             return emit(_lookup_payload_with_agent_steps("mode", f"chain-{chain_direction}", result), f"chain-{chain_direction}")
         if mode == "walkthrough":
             result = memory_method_walkthrough(wf, symbol or resolved_symbol or query, depth=depth, limit=limit, project=project, view="compact", budget="small", report_level=report_level)
-            return emit(_flatten_walkthrough_payload(result, mode_key="mode"), "walkthrough")
+            return emit(flatten_walkthrough_payload(result, mode_key="mode"), "walkthrough")
         if mode == "context":
             result = memory_context(wf, name or query, depth, project=project, view="compact", budget="small")
             result["agent_next_steps"] = _agent_next_steps_for_lookup_route("context", result, query)
@@ -615,7 +499,7 @@ def create_server(workspace_file: str):
     ):
         """Analyze change impact and generate action plans. Depth quick: impact only. Depth standard: impact + change plan + rules check. Depth full: standard + contract check + verification checklist. If target is empty, runs detect-changes instead of impact."""
         wf = ctx.workspace_file
-        _validate_analyze_request(depth, direction, max_depth, execution_mode)
+        validate_analyze_request(depth, direction, max_depth, execution_mode)
         if job_action == "status":
             from memory_center.application.jobs import analysis_job_status
             return {"workflow": "mc-analyze", "job": analysis_job_status(wf, job_id)}
@@ -637,8 +521,8 @@ def create_server(workspace_file: str):
                 result["candidate_paths"] = impact_result.get("candidate_paths", [])
                 result["recommended_path"] = impact_result.get("recommended_path", {})
             if depth in ("standard", "full") and target:
-                plan, plan_diagnostic = _degraded_analysis_step("plan", lambda: memory_plan_change(wf, target, direction, max_depth))
-                rules, rules_diagnostic = _degraded_analysis_step("rules", lambda: workspace_check_rules(wf, projects, change_type, files))
+                plan, plan_diagnostic = degraded_analysis_step("plan", lambda: memory_plan_change(wf, target, direction, max_depth))
+                rules, rules_diagnostic = degraded_analysis_step("rules", lambda: workspace_check_rules(wf, projects, change_type, files))
                 if plan is not None:
                     result["plan"] = plan
                 if rules is not None:
@@ -648,8 +532,8 @@ def create_server(workspace_file: str):
                 if rules_diagnostic:
                     result["diagnostics"]["rules"] = rules_diagnostic
             if depth == "full" and target:
-                contract, contract_diagnostic = _degraded_analysis_step("contract", lambda: workspace_check_contract(wf, contract_file or target, change_type))
-                checklist, checklist_diagnostic = _degraded_analysis_step("checklist", lambda: memory_verify_checklist(wf, target))
+                contract, contract_diagnostic = degraded_analysis_step("contract", lambda: workspace_check_contract(wf, contract_file or target, change_type))
+                checklist, checklist_diagnostic = degraded_analysis_step("checklist", lambda: memory_verify_checklist(wf, target))
                 if contract is not None:
                     result["contract"] = contract
                 if checklist is not None:
@@ -660,7 +544,7 @@ def create_server(workspace_file: str):
                     result["diagnostics"]["checklist"] = checklist_diagnostic
                 if task_id.strip() and contract is not None:
                     from memory_center.application.jobs import write_contract_evidence
-                    evidence, evidence_diagnostic = _degraded_analysis_step("contract_evidence", lambda: write_contract_evidence(wf, task_id, contract))
+                    evidence, evidence_diagnostic = degraded_analysis_step("contract_evidence", lambda: write_contract_evidence(wf, task_id, contract))
                     if evidence is not None:
                         result["contract_evidence"] = evidence
                     if evidence_diagnostic:
