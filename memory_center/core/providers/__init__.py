@@ -2,11 +2,13 @@
 
 from .evidence import build_external_evidence_ref
 from .gitnexus import GitNexusProvider
+from .health import ProviderHealthMonitor
 from .registry import DEFAULT_PROVIDER_REGISTRY, ProviderRegistry, ProviderSpec
 
 __all__ = [
     "DEFAULT_PROVIDER_REGISTRY",
     "GitNexusProvider",
+    "ProviderHealthMonitor",
     "ProviderRegistry",
     "ProviderSpec",
     "build_external_evidence_ref",

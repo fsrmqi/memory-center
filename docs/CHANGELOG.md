@@ -1,5 +1,15 @@
 # Changelog / 更新日志
 
+## 4.3.52 Provider 健康路由与按需索引行动卡 / Provider Health Routing and On-Demand Index Actions
+
+- Provider Registry 新增进程内滑动窗口健康观测：每次调用记录耗时和结果，返回 P95、错误率和成本分，并以静态优先级加健康惩罚选择读取 Provider；不启动后台扫描，也不写入工作区。
+- GitNexus 明确返回未索引或陈旧状态时，`bootstrap-context` 增加 `action_cards`，建议确认后运行固定的 `analyze --index-only`；不会隐式建立或刷新外部索引。
+
+## 4.3.52 Provider Health Routing and On-Demand Index Actions
+
+- Provider Registry adds in-process sliding-window health observations. Each call records latency and status, returning P95, error rate, and cost score; read routing combines static priority with health penalties without background scans or workspace writes.
+- When GitNexus explicitly reports a missing or stale index, `bootstrap-context` adds confirmation-gated `action_cards` for fixed `analyze --index-only`; it never creates or refreshes an external index implicitly.
+
 ## 4.3.51 受控外部动作 / Controlled External Actions
 
 - 新增 `provider-action`、`GET /workspace/provider-action` 与 MCP `mc_provider_action`。GitNexus 支持固定的 `impact`、`trace`、`detect-changes`、`check`、`analyze` 与 `clean` 动作。

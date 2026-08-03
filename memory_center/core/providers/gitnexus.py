@@ -42,6 +42,8 @@ class GitNexusProvider:
         output = result["output"].lower()
         if any(marker in output for marker in ("not indexed", "no index", "not found")):
             result.update(status="unavailable", reason="gitnexus_index_not_found")
+        elif any(marker in output for marker in ("stale", "outdated", "needs analysis", "needs reindex")):
+            result.update(status="stale", reason="gitnexus_index_stale")
         return result
 
     def lookup(

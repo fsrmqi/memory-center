@@ -79,6 +79,10 @@ Even without `.memory-center/workspace.yaml`, `mc_bootstrap_context` or `memory-
 
 External capabilities are selected through the Provider Registry. Federated responses include `provider_selection` and an ephemeral `evidence_ref`, which retains provenance, scope, and a content hash rather than external body content. `provider-action` runs registered fixed actions: reads run directly while indexing or cleanup requires explicit confirmation. More providers can be added without changing the Agent context entrypoint.
 
+Provider Registry 还会在进程内记录调用 P95、错误率和成本分，用于在同类读取 Provider 间避开持续失败或过慢的能力。若 GitNexus 明确报告未索引或陈旧，`bootstrap-context` 返回确认型 `action_cards`，建议使用固定的 `provider-action --action analyze --confirm`；系统不会自动建立外部索引。
+
+The Provider Registry also records in-process P95, error rate, and cost score to avoid persistently failing or slow read providers. If GitNexus explicitly reports a missing or stale index, `bootstrap-context` returns confirmation-gated `action_cards` suggesting fixed `provider-action --action analyze --confirm`; the system never builds an external index automatically.
+
 ### 2. Spring Cloud deep indexing / Spring Cloud 深度索引
 
 Current scanner supports:

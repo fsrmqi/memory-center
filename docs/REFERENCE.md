@@ -108,6 +108,7 @@
 - MCP：`mc_bootstrap_context(path="<project-dir>", intent="...", query="...", target="...")`
 - 返回：`context_state=READY|FEDERATED|LIVE_SEARCH`、`provider`、`freshness`、`evidence`、`provider_selection`、`tool_plan`、`persistence`、`next_action`；`FEDERATED` 和 `LIVE_SEARCH` 额外返回 `evidence_ref`。
 - `provider_selection`：能力路由的选中 Provider、尝试序列和 Provider Registry 描述；`evidence_ref`：只保留来源、范围、观测时间、耗时、内容哈希和验证状态的临时证据引用。
+- `provider_selection.health`：进程内滑动窗口的 Provider P95、错误率和成本分；仅由实际调用更新，不触发后台探测或仓库扫描。GitNexus 明确未索引或陈旧时，`LIVE_SEARCH.action_cards` 提供确认型 `analyze --index-only` 建议。
 - 边界：`bootstrap-context` 只使用 GitNexus 的 `status/query/context` 读取能力；读取结果最多保留在进程内 30 秒，绝不写入图谱或工作区。写入类操作只能经下方的 Provider Action 契约执行。
 
 ### Provider Actions / 外部 Provider 动作

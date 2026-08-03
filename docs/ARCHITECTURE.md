@@ -666,6 +666,8 @@ MCP 当前公开 14 个 task-level tools：
 
 `mc_provider_action` / `provider-action` 是独立的受控动作面。GitNexus 的 `impact/trace/detect-changes/check` 为读取动作；`analyze` 是受控索引动作、`clean` 是破坏性清理动作，均使用固定参数模板并要求 `confirm=true`。Provider Registry 可以声明混合能力，但每个动作仍单独标记 `read_only`、`controlled_write` 或 `destructive`，不会把外部命令变成 Agent 可自由拼接的 shell。
 
+Provider Registry 的路由健康数据只在进程内保存最近调用的耗时和状态，计算 P95、错误率和成本惩罚后与静态 priority 合并排序。它不在热路径外启动探测扫描。外部索引状态仅在 Provider 明确报告 `gitnexus_index_not_found` 或 `gitnexus_index_stale` 时生成确认型行动卡；行动卡指向固定 `analyze --index-only`，绝不自动执行。
+
 MCP 还暴露 resources：
 
 - `memory-center://status`

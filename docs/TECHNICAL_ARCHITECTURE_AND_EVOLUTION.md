@@ -376,12 +376,10 @@ flowchart LR
 | 方向 | 可实现机制 | 预期收益 | 前置约束 |
 |---|---|---|---|
 | MCP Client Bridge | Memory Center 作为受限 MCP Client，调用经白名单批准的外部 MCP 工具 | 不依赖 CLI 包装，保留结构化参数与工具版本 | 需要超时、并发、身份、循环调用和审计隔离设计 |
-| Provider 健康与成本路由 | 定期轻量探测 Provider 版本、索引新鲜度、P95、错误率和单位成本，动态调整 Registry 优先级 | Agent 自动跳过不可用或过慢工具，减少卡住体验 | 探测不能扫描仓库，也不能影响查询热路径 |
 | 跨 Provider 证据融合 | 将图谱、GitNexus、SCIP、测试结果的 `EvidenceRef` 做冲突检测和可信排序 | 多工具结果不再只是文本拼接，可解释冲突与置信度 | 不能把外部全文或私有正文复制进长期索引 |
 | Skill Contract 与回归集 | 给 Skill 声明适用语言、前置条件、停止条件、输入输出契约和脱敏 replay 集 | Skill 从提示词片段升级为可评测、可回滚的交付能力 | 发布仍需真实验证证据，不能只依赖 LLM judge |
-| 外部索引按需升级 | 将外部工具的“已索引/未索引”状态接入行动卡，只建议与当前任务相关的局部初始化或刷新 | 避免全局重建，降低首次使用成本 | 必须明确用户确认点和资源预算 |
 
-下一优先级是 Provider 健康与成本路由，再引入 MCP Client Bridge。前者让 Registry 基于真实质量自动选择，后者才将 CLI 适配逐步升级为受控 MCP 协作，避免过早形成无法治理的分布式调用链。
+已交付的 Provider 健康路由以进程内调用窗口计算 P95、错误率和成本分，不做后台扫描；GitNexus 明确未索引或陈旧时会生成确认型 `analyze --index-only` 行动卡，不会自动执行。下一优先级是 MCP Client Bridge 与跨 Provider 证据融合：前者将 CLI 适配逐步升级为受控 MCP 协作，后者让多工具结论可检测冲突和可信排序。
 
 ---
 
@@ -572,7 +570,7 @@ flowchart LR
 
 ### 13.5 P3：外部生态与 Agent 能力进化
 
-Provider Registry 已解决外部工具的声明和只读选择；下一阶段应重点研究：Provider 健康和成本路由、受限 MCP Client Bridge、跨 Provider 冲突检测、Skill Contract 与脱敏回归集。
+Provider Registry 已解决外部工具的声明、能力路由、调用健康与受控动作边界；下一阶段应重点研究：受限 MCP Client Bridge、跨 Provider 冲突检测、Skill Contract 与脱敏回归集。
 
 Skill 的研究重点不是生成更多 Markdown，而是将 Skill 建模为“有适用条件、有输入输出契约、有停止条件、有验证集、有回滚条件”的可执行知识单元。候选 Skill 可先采用保守的规则匹配和语义相似度召回；当 replay 足够时，再研究 contextual bandit 在“选择哪个已发布 Skill”上的探索，但发布决策仍必须由验证证据驱动。
 

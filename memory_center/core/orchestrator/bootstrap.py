@@ -94,23 +94,57 @@ def bootstrap_workspace_context(
             "cache": {"hit": False, "ttl_seconds": int(_CACHE_TTL_SECONDS)},
         }
     else:
+        action_cards = _external_index_action_cards(external, root)
+        external_status = str(external.get("status", "unavailable") or "unavailable")
         result = {
             "schema_version": 1,
             "context_state": "LIVE_SEARCH",
             "provider": "local_search",
             "workspace": "",
             "root": str(root),
-            "freshness": {"status": "not_indexed"},
+            "freshness": {
+                "status": "stale" if external_status == "stale" else "not_indexed",
+                "provider": str(external.get("provider", "") or ""),
+                "reason": str(external.get("reason", "") or ""),
+            },
             "evidence": _evidence("local_search", root, "unavailable", scope=external.get("scope_checked", {}), details=external),
             "evidence_ref": build_external_evidence_ref("local_search", root, external, provenance_kind="AMBIGUOUS"),
             "provider_selection": provider_selection,
+            "action_cards": action_cards,
             "tool_plan": [{"tool": "rg", "arguments": {"query": query or target or intent, "root": str(root), "scope": "bounded"}}],
             "persistence": "none",
-            "next_action": "GitNexus 不可用或未索引；先做小范围实时搜索。需要连续任务与跨服务治理时，显式初始化 Memory Center。",
+            "next_action": _external_next_action(external, action_cards),
             "cache": {"hit": False, "ttl_seconds": int(_CACHE_TTL_SECONDS)},
         }
     _SESSION_CACHE[key] = (now, result)
     return result
+
+
+def _external_index_action_cards(external: dict[str, Any], root: Path) -> list[dict[str, Any]]:
+    """仅针对可诊断的外部索引状态返回确认后的最小升级动作。"""
+    provider = str(external.get("provider", "") or "")
+    reason = str(external.get("reason", "") or "")
+    if provider != "gitnexus" or reason not in {"gitnexus_index_not_found", "gitnexus_index_stale"}:
+        return []
+    return [{
+        "action_id": f"provider-index-{provider}",
+        "title": "建立或刷新 GitNexus 索引",
+        "provider": provider,
+        "action": "analyze",
+        "arguments": {"path": str(root), "provider": provider, "action": "analyze", "confirm": True},
+        "mode": "controlled_write",
+        "requires_confirmation": True,
+        "reason": "GitNexus 索引未建立或已陈旧；仅在确认后执行受限 index-only 分析。",
+        "stop_condition": "Provider status 恢复为 ready，或用户取消操作。",
+    }]
+
+
+def _external_next_action(external: dict[str, Any], action_cards: list[dict[str, Any]]) -> str:
+    if action_cards:
+        return "GitNexus 索引未建立或已陈旧；可先做小范围实时搜索，或确认行动卡后定向建立/刷新外部索引。"
+    if str(external.get("reason", "")) == "gitnexus_not_installed":
+        return "GitNexus 未安装；先做小范围实时搜索。需要外部索引能力时安装并配置 GitNexus。"
+    return "外部 Provider 不可用；先做小范围实时搜索。需要连续任务与跨服务治理时，显式初始化 Memory Center。"
 
 
 def execute_provider_action(

@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from .gitnexus import GitNexusProvider
+from .health import ProviderHealthMonitor
 
 
 class ContextProvider(Protocol):
@@ -45,11 +46,16 @@ class ProviderSpec:
 class ProviderRegistry:
     """按能力、安全属性和确认状态选择 Provider。"""
 
-    def __init__(self, specs: tuple[ProviderSpec, ...] | list[ProviderSpec] | None = None) -> None:
+    def __init__(self, specs: tuple[ProviderSpec, ...] | list[ProviderSpec] | None = None, *, health: ProviderHealthMonitor | None = None) -> None:
         self._specs = tuple(sorted(specs or (), key=lambda item: item.priority))
+        self._health = health or ProviderHealthMonitor()
 
     def descriptors(self) -> list[dict[str, Any]]:
         return [spec.descriptor() for spec in self._specs]
+
+    def health_snapshot(self) -> dict[str, dict[str, float | int | str]]:
+        """返回进程内观测结果，供路由诊断与行动卡使用。"""
+        return {spec.provider_id: self._health.snapshot(spec.provider_id) for spec in self._specs}
 
     def lookup(
         self,
@@ -61,30 +67,39 @@ class ProviderRegistry:
         limit: int = 8,
         capability: str = "code_navigation",
     ) -> tuple[dict[str, Any], dict[str, Any]]:
-        candidates = [spec for spec in self._specs if capability in spec.capabilities]
+        candidates = sorted(
+            (spec for spec in self._specs if capability in spec.capabilities),
+            key=lambda spec: spec.priority + self._health.routing_penalty(spec.provider_id),
+        )
         attempted: list[dict[str, str]] = []
+        last_result: dict[str, Any] | None = None
         for spec in candidates:
             provider = spec.factory()
             result = provider.lookup(root, query, target=target, intent=intent, limit=min(max(1, limit), spec.max_results))
             status = str(result.get("status", "unavailable") or "unavailable")
+            self._health.record(spec.provider_id, float(result.get("duration_ms", 0.0) or 0.0), status)
             attempted.append({"provider": spec.provider_id, "status": status})
+            last_result = result
             if status == "ready":
                 return result, {
                     "capability": capability,
                     "selected": spec.provider_id,
                     "attempted": attempted,
                     "registry": self.descriptors(),
+                    "health": self.health_snapshot(),
                 }
-        return {
+        unavailable = last_result or {
             "provider": "",
             "status": "unavailable",
             "reason": "no_ready_provider",
             "scope_checked": {"root": str(Path(root).expanduser().resolve())},
-        }, {
+        }
+        return unavailable, {
             "capability": capability,
             "selected": "",
             "attempted": attempted,
             "registry": self.descriptors(),
+            "health": self.health_snapshot(),
         }
 
     def execute(
@@ -108,12 +123,14 @@ class ProviderRegistry:
         result = provider.execute(
             root, action, query=query, target=target, confirm=confirm, force=force, limit=limit, depth=depth
         )
+        self._health.record(provider_id, float(result.get("duration_ms", 0.0) or 0.0), str(result.get("status", "unavailable")))
         return {
             "executed": result.get("status") == "ready",
             "provider": provider_id,
             "action": action,
             "result": result,
             "provider_registry": self.descriptors(),
+            "provider_health": self.health_snapshot(),
         }
 
 

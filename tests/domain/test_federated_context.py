@@ -61,6 +61,35 @@ def test_uninitialized_workspace_falls_back_to_bounded_live_search(tmp_path: Pat
     assert result["persistence"] == "none"
 
 
+def test_unindexed_gitnexus_returns_confirmation_gated_refresh_action(tmp_path: Path) -> None:
+    class UnindexedProvider:
+        name = "gitnexus"
+
+        def lookup(self, root, query, **_kwargs):
+            return {
+                "provider": self.name,
+                "status": "unavailable",
+                "reason": "gitnexus_index_not_found",
+                "scope_checked": {"root": str(root)},
+            }
+
+    result = bootstrap_workspace_context(tmp_path, query="payment flow", provider=UnindexedProvider())
+
+    assert result["context_state"] == "LIVE_SEARCH"
+    assert result["freshness"]["status"] == "not_indexed"
+    assert result["action_cards"] == [{
+        "action_id": "provider-index-gitnexus",
+        "title": "建立或刷新 GitNexus 索引",
+        "provider": "gitnexus",
+        "action": "analyze",
+        "arguments": {"path": str(tmp_path), "provider": "gitnexus", "action": "analyze", "confirm": True},
+        "mode": "controlled_write",
+        "requires_confirmation": True,
+        "reason": "GitNexus 索引未建立或已陈旧；仅在确认后执行受限 index-only 分析。",
+        "stop_condition": "Provider status 恢复为 ready，或用户取消操作。",
+    }]
+
+
 def test_existing_workspace_remains_primary_and_does_not_call_provider(tmp_path: Path) -> None:
     from tests.fixtures import setup_demo_workspace
 
@@ -144,6 +173,22 @@ def test_provider_registry_falls_back_to_next_read_only_provider(tmp_path: Path)
         {"provider": "ready", "status": "ready"},
     ]
     assert all(item["mutation_mode"] == "read_only" for item in selection["registry"])
+    assert selection["health"]["ready"]["samples"] == 1
+
+
+def test_provider_health_penalizes_repeated_failures(tmp_path: Path) -> None:
+    class FlakyProvider:
+        name = "flaky"
+
+        def lookup(self, root, query, **_kwargs):
+            return {"provider": self.name, "status": "unavailable", "duration_ms": 1_000, "scope_checked": {"root": str(root)}}
+
+    registry = ProviderRegistry([ProviderSpec("flaky", ("code_navigation",), FlakyProvider)])
+    registry.lookup(tmp_path, "first")
+    _, selection = registry.lookup(tmp_path, "second")
+
+    assert selection["health"]["flaky"]["status"] == "degraded"
+    assert selection["health"]["flaky"]["error_rate"] == 1.0
 
 
 def test_provider_action_rejects_unknown_provider_without_running_external_command(tmp_path: Path) -> None:
