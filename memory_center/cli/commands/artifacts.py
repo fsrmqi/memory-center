@@ -88,9 +88,9 @@ def register_artifact_commands(app: typer.Typer) -> None:
         print(list_artifacts(workspace))
 
     @app.command("asset-status")
-    def artifact_asset_status_cmd(workspace: str = typer.Option(...), limit: int = typer.Option(100)):
+    def artifact_asset_status_cmd(workspace: str = typer.Option(...), limit: int = typer.Option(100), max_chars: int = typer.Option(0)):
         """查看任务、Skill、Wiki、CodeGraph 协作资产及审批状态。"""
-        print(collaboration_asset_status(workspace, limit=limit))
+        print(collaboration_asset_status(workspace, limit=limit, max_chars=max_chars))
 
     @app.command("asset-sync")
     def artifact_asset_sync_cmd(workspace: str = typer.Option(...), owner: str = typer.Option("")):
@@ -118,9 +118,9 @@ def register_artifact_commands(app: typer.Typer) -> None:
         print(bind_collaboration_asset(workspace, asset_id, actor=actor, agents=json.loads(agents), roles=json.loads(roles)))
 
     @app.command("asset-loadout")
-    def artifact_asset_loadout_cmd(workspace: str = typer.Option(...), agent_id: str = typer.Option(""), role: str = typer.Option(""), limit: int = typer.Option(12)):
+    def artifact_asset_loadout_cmd(workspace: str = typer.Option(...), agent_id: str = typer.Option(""), role: str = typer.Option(""), limit: int = typer.Option(12), max_chars: int = typer.Option(0)):
         """查看指定 Agent 或角色会装载的有界资产。"""
-        print(collaboration_asset_loadout(workspace, agent_id=agent_id, role=role, limit=limit))
+        print(collaboration_asset_loadout(workspace, agent_id=agent_id, role=role, limit=limit, max_chars=max_chars))
 
     @app.command("wiki-document-ingest")
     def artifact_wiki_document_ingest_cmd(workspace: str = typer.Option(...), document_path: str = typer.Option(...), owner: str = typer.Option(...), visibility: str = typer.Option("private"), tags: str = typer.Option("[]")):

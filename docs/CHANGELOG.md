@@ -1,5 +1,17 @@
 # Changelog / 更新日志
 
+## 4.3.60 HTTP 安全、资产可靠性与 Context Pack 硬预算 / HTTP Security, Asset Reliability, and Context-Pack Hard Budgets
+
+- HTTP GET 现在严格只读；所有会改变工作区状态的路由必须 POST。非回环地址绑定必须提供 `--access-token` 或 `MEMORY_CENTER_HTTP_TOKEN`。
+- 协作资产 registry 改为临时文件原子替换和有效备份恢复；损坏且无法恢复时拒绝写入，不再以空 registry 覆盖历史数据。活跃 CodeGraph 使用稳定系统主体，多个 Agent 可重复同步。
+- 资产 metadata 限制为 16 KiB，status/loadout 使用默认总预算并返回 `truncated`；Context Pack 增加 `budget_tokens`、`truncated_sections`，最终响应执行硬性 Token 裁剪。
+
+## 4.3.60 HTTP Security, Asset Reliability, and Context-Pack Hard Budgets
+
+- HTTP GET is now strictly read-only; every route that can change workspace state requires POST. Non-loopback binding requires `--access-token` or `MEMORY_CENTER_HTTP_TOKEN`.
+- Collaboration asset registries now use temporary-file atomic replacement and valid-backup recovery. Writes fail safely when neither copy is valid, while the active CodeGraph has a stable system owner for multi-Agent synchronization.
+- Asset metadata is capped at 16 KiB; status/loadout use total response budgets and expose `truncated`. Context packs add `budget_tokens` and `truncated_sections`, with a final hard token-budget guard.
+
 ## 4.3.59 协作资产权限与预算修复 / Collaboration Asset Authorization and Budget Fixes
 
 - 既有协作资产只允许 owner 更新或绑定；审批禁止 owner 自审，registry 的读改写在同一文件锁内完成，避免并发丢写。

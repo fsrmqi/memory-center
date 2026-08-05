@@ -18,7 +18,7 @@
 - 关闭阶段要求每项 `required=true` 的验收标准都关联 `executor` 或 `manual_verified` 的 `passed` 证据。普通外部回执标记为 `recorded_external`，不能伪装成执行器验证。
 - `mc_admin(action="delivery_skill_candidate"|"delivery_skill_contract_update"|"delivery_skill_canary"|"delivery_skill_observe"|"delivery_skill_evaluate"|"delivery_skill_publish"|"delivery_skill_rollback"|"delivery_skill_recommend"|"delivery_skill_replay", task_id="...", payload="...")` 管理可验证 Skill 生命周期。候选必须先声明语言、前置/停止条件和输入输出契约，才可进入 canary；观测和 replay 按 `contract_sha256` 隔离，只有当前契约达到 `minimum_verified_passed`（默认 3）条带证据的成功观测和脱敏 replay、且没有失败时可以发布。canary 修订契约需重新积累证据，已发布契约不可原地改写。`delivery_skill_replay` 只返回契约哈希和指标，不返回正文。Agent 不得把候选、canary 或模型自评当成正式经验。
 - `mc_admin(action="delivery_failure_candidates"|"delivery_skill_synthesize")` 仅显式执行离线失败归纳和多轨迹归纳，不会读取原始代码、需求正文或验证日志，也不会影响普通查询延迟。
-- `mc_admin(action="asset_status|asset_register|asset_sync|asset_share|asset_approve|asset_bind|asset_loadout|wiki_document_ingest", source="...", payload="...")` 管理本地协作资产。`asset_register` 的 `source` 必须与 payload 的 owner 相同；既有资产更新与绑定只接受 owner 身份。共享资产默认 `pending_review`，仅该状态的 team/restricted 资产可由非 owner 审批，owner 不能自审，审批前不会进入任何 Agent 装载；`mc_context_pack(agent_id="...", role="...")` 仅返回授权资产的有界摘要和来源证据。
+- `mc_admin(action="asset_status|asset_register|asset_sync|asset_share|asset_approve|asset_bind|asset_loadout|wiki_document_ingest", source="...", payload="...")` 管理本地协作资产。`asset_register` 的 `source` 必须与 payload 的 owner 相同；既有资产更新与绑定只接受 owner 身份。共享资产默认 `pending_review`，仅该状态的 team/restricted 资产可由非 owner 审批，owner 不能自审，审批前不会进入任何 Agent 装载。metadata 最大 16 KiB，`asset_status` / `asset_loadout` 可通过 payload `max_chars` 控制有界输出并返回 `truncated`；`mc_context_pack(agent_id="...", role="...")` 还返回 `budget_tokens` 与 `truncated_sections`。
 - `mc_analyze` 的 `depth` 仅支持 `quick|standard|full`，`direction` 仅支持 `upstream|downstream|both`，`max_depth` 为 `1..6`。标准和完整分析若计划、规则、契约等辅助阶段不可用，会保留已成功的影响图并返回 `analysis_status="partial"`、`diagnostics` 与下一步动作；MCP 错误响应的 `diagnostics.trace_id` 可对应本地调用审计。
 - 当任务工件或索引代际空间异常时，Agent 先建议 `artifact compact-task`、`artifact generation-gc --dry-run`、`artifact index-export-cleanup --dry-run` 或 `artifact semantic-index-compact --dry-run`；涉及删除必须由显式 `--apply` 或 `mc_admin(action="index_generation_gc", force=true)` 确认。语义镜像清理后，Agent 应在无写入任务时建议 `artifact storage-vacuum --apply` 回收 SQLite 页。
 - Skill 外部评测不属于 MCP 查询热路径。Agent 只有在用户要求评测已发布 Skill 时，才可建议 CLI 依次执行 `artifact delivery-skill-eval-status`、`delivery-skill-eval-init`、`delivery-skill-eval-run --dry-run`；运行外部引擎必须获得明确 `--apply` 授权，结果只能作为待审核的外部证据。
@@ -374,6 +374,8 @@ MCP 之外，还可通过 HTTP bridge 复用同一套能力：
 ```bash
 memory-center serve-http --workspace /abs/path/.memory-center/workspace.yaml --host 127.0.0.1 --port 8765
 ```
+
+HTTP GET 只允许无副作用读取；所有写入 route 必须 POST。非回环 `--host` 必须设置 `MEMORY_CENTER_HTTP_TOKEN`，调用方使用 `Authorization: Bearer <token>`；`actor` 仅表示审计归因，不是网络认证。
 
 ## 11. Related Docs / 相关文档
 

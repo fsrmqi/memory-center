@@ -87,7 +87,7 @@ Memory Center 不要求中心化服务。默认形态是每个 workspace 自带�
 
 - **Ontology state / 本体状态**：查询通过 `knowledge_state` 明确当前索引范围、未发现、过期和未知状态；Assertion sidecar 保存来源、有效期、事件时间与观测时间，治理 Action 采用有界读模型而不进入图查询热路径。
 - **Delivery workflow / 需求交付工作流**：`core/tasks/delivery.py` 在任务空间内维护需求来源/范围、子任务、验收、GateResult、验证回执和派生交付矩阵。执行器只消费 workspace policy 的预注册 argv profile，记录受限输出与 hash；任意模型或需求文本都不能转化为可执行 shell。已验证交付的 Skill 使用 `candidate -> canary -> published|rolled_back` 生命周期，并在同一 registry 中维护语言、前置/停止条件、输入输出契约和 replay 策略；每条观测和自动脱敏 replay 绑定 `contract_sha256`，发布只统计当前契约且达到其 `minimum_verified_passed` 门槛、没有失败。已发布契约不可原地修改。registry、观测事件、replay、失败聚类和多轨迹归纳均为有界本地工件，其中后两者只在显式离线维护中运行。
-- **Collaboration assets / 协作资产**：`core/knowledge/assets.py` 将任务、已发布 Skill、Wiki 文档和 CodeGraph 统一为本地资产。资产带 owner、版本、状态、可见性与 Agent/角色绑定；既有资产只允许 owner 更新，团队共享须由 owner 提交、另一维护者审批，且同步不会重置已审批状态。context pack 仅装载已授权的元数据、摘要、来源和代码证据，并有独立预算，避免把资产正文和全局记忆压入热路径。
+- **Collaboration assets / 协作资产**：`core/knowledge/assets.py` 将任务、已发布 Skill、Wiki 文档和 CodeGraph 统一为本地资产。资产带 owner、版本、状态、可见性与 Agent/角色绑定；既有资产只允许 owner 更新，团队共享须由 owner 提交、另一维护者审批。registry 用原子替换与有效备份恢复，双副本损坏时拒绝写入；活跃 CodeGraph 使用稳定系统主体，避免多 Agent 同步冲突。metadata 限制 16 KiB，status/loadout 与 context pack 都有总预算和截断标记，避免把资产正文和全局记忆压入热路径。
 - **Resilient analysis / 可降级分析**：`mc_analyze` 把图谱影响、计划、规则、契约和验证清单分成可诊断阶段。影响图已成功时，后续辅助阶段故障只会产生 `partial` 结果和安全诊断，不会覆盖已获得的图谱证据；入口错误通过 trace ID 与本地 MCP 审计关联。
 
 ### 1.4.1 架构不可变量 / Architectural Invariants
@@ -717,6 +717,8 @@ HTTP server 使用标准库 `ThreadingHTTPServer`，不是 FastAPI。它提供�
 - `analysis.py`
 
 每个 route family 注册到共享 `CommandRegistry`。请求参数由 `RouteParams` 适配，避免在 server 中堆 if-chain。
+
+HTTP 的方法语义由 `route_dispatch.is_mutating_http_route` 统一约束：GET 严格只读，所有写入和可能执行外部动作的 route 必须 POST。服务默认绑定 loopback；非回环绑定必须使用访问令牌，并通过 `Authorization: Bearer` 验证。`actor` 是审计归因字段，不是远程身份认证机制。
 
 Vue Workbench 位于 `web/src/`，主要页面包括 dashboard、query、impact、group、timeline、receipts、freshness、audit、health、onboard、flow、metrics、verification 等。
 

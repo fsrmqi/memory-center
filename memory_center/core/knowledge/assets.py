@@ -3,7 +3,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
+import shutil
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -21,6 +24,15 @@ ASSET_STATUSES = {"draft", "pending_review", "active", "archived", "rejected"}
 _MAX_ASSETS = 2_000
 _MAX_LINKS = 80
 _MAX_EVIDENCE = 30
+_MAX_METADATA_BYTES = 16 * 1024
+_DEFAULT_LOADOUT_CHARS = 12 * 1024
+_MAX_LOADOUT_CHARS = 24 * 1024
+_DEFAULT_STATUS_CHARS = 24 * 1024
+SYSTEM_ASSET_OWNER = "workspace-system"
+
+
+class AssetRegistryCorruptionError(RuntimeError):
+    """协作资产 registry 无法安全恢复时中止写入，避免覆盖历史数据。"""
 
 
 def register_collaboration_asset(
@@ -49,10 +61,19 @@ def register_collaboration_asset(
         raise ValueError("actor is required when registering a collaboration asset")
     if update_actor != normalized_owner:
         raise PermissionError("asset actor must match the declared owner")
+    normalized_metadata = _safe_metadata(metadata)
+    if _json_size(normalized_metadata) > _MAX_METADATA_BYTES:
+        raise ValueError(f"asset metadata exceeds {_MAX_METADATA_BYTES} bytes; store content externally and keep a source_ref")
 
     def mutate(registry: dict[str, Any]) -> dict[str, Any]:
         existing = next((item for item in registry["assets"] if item.get("asset_id") == asset_id), None)
-        if existing and update_actor != existing.get("owner"):
+        system_graph_migration = bool(
+            existing
+            and asset_id == "asset-code-graph-active"
+            and normalized_kind == "code_graph"
+            and update_actor == SYSTEM_ASSET_OWNER
+        )
+        if existing and update_actor != existing.get("owner") and not system_graph_migration:
             raise PermissionError("only the existing asset owner can update an asset")
         now = _now()
         visibility_changed = bool(existing and normalized_visibility != existing.get("visibility"))
@@ -61,14 +82,14 @@ def register_collaboration_asset(
             "asset_id": asset_id,
             "kind": existing.get("kind", normalized_kind) if existing else normalized_kind,
             "title": normalized_title,
-            "owner": existing.get("owner", normalized_owner) if existing else normalized_owner,
+            "owner": SYSTEM_ASSET_OWNER if system_graph_migration else (existing.get("owner", normalized_owner) if existing else normalized_owner),
             "visibility": normalized_visibility,
             "status": ("pending_review" if normalized_visibility != "private" else "active") if not existing or visibility_changed else existing.get("status", "active"),
             "version": int((existing or {}).get("version", 0)) + 1,
             "source_ref": _bounded(source_ref, 300),
             "tags": _strings(tags, 20, 80),
             "context_excerpt": _bounded(context_excerpt, 800),
-            "metadata": _safe_metadata(metadata),
+            "metadata": normalized_metadata,
             "allowed_agents": _strings((existing or {}).get("allowed_agents"), 50, 120),
             "allowed_roles": _strings((existing or {}).get("allowed_roles"), 30, 80),
             "approval": {} if visibility_changed else (existing or {}).get("approval", {}),
@@ -149,13 +170,15 @@ def bind_collaboration_asset(workspace_file: str | Path, asset_id: str, *, actor
     return {"bound": True, "asset": asset, "next_action": "Agent 下一次 context pack 会按绑定范围读取资产摘要。"}
 
 
-def collaboration_asset_loadout(workspace_file: str | Path, *, agent_id: str = "", role: str = "", limit: int = 12, max_chars: int = 0) -> dict[str, Any]:
+def collaboration_asset_loadout(workspace_file: str | Path, *, agent_id: str = "", role: str = "", limit: int = 12, max_chars: int = _DEFAULT_LOADOUT_CHARS) -> dict[str, Any]:
     store = WorkspaceStore(workspace_file)
     agent, normalized_role = _bounded(agent_id, 120), _bounded(role, 80)
     visible = [asset for asset in _read_registry(store)["assets"] if _asset_visible(asset, agent, normalized_role)]
     visible.sort(key=lambda item: (item["kind"] != "skill", item["title"], item["asset_id"]))
     items = []
-    remaining = max(0, max_chars)
+    budget = _normalize_budget(max_chars, _DEFAULT_LOADOUT_CHARS, _MAX_LOADOUT_CHARS)
+    remaining = budget
+    truncated = False
     for asset in visible[:max(1, min(limit, 50))]:
         item = _asset_summary(asset)
         encoded = json.dumps(item, ensure_ascii=False)
@@ -164,18 +187,24 @@ def collaboration_asset_loadout(workspace_file: str | Path, *, agent_id: str = "
             item["metadata"] = {"truncated": True, "source_ref": item.get("source_ref", "")}
             encoded = json.dumps(item, ensure_ascii=False)
         if remaining and len(encoded) > remaining:
+            truncated = True
             continue
         items.append(item)
         if remaining:
             remaining -= len(encoded)
-    return {"agent_id": agent, "role": normalized_role, "assets": items, "count": len(items), "max_chars": max(0, max_chars), "next_action": "优先读取 Skill 的契约和 Wiki/CodeGraph 的来源引用；未命中资产时走默认图谱检索。"}
+    if len(items) < min(len(visible), max(1, min(limit, 50))):
+        truncated = True
+    return {"agent_id": agent, "role": normalized_role, "assets": items, "count": len(items), "max_chars": budget, "truncated": truncated, "next_action": "优先读取 Skill 的契约和 Wiki/CodeGraph 的来源引用；未命中资产时走默认图谱检索。"}
 
 
-def collaboration_asset_status(workspace_file: str | Path, *, limit: int = 100) -> dict[str, Any]:
+def collaboration_asset_status(workspace_file: str | Path, *, limit: int = 100, max_chars: int = _DEFAULT_STATUS_CHARS) -> dict[str, Any]:
     store = WorkspaceStore(workspace_file)
     assets = _read_registry(store)["assets"]
     counts = {kind: sum(asset.get("kind") == kind for asset in assets) for kind in sorted(ASSET_KINDS)}
-    return {"assets": [_asset_summary(item) for item in assets[-max(1, min(limit, 200)):]], "counts": counts, "pending_review": sum(item.get("status") == "pending_review" for item in assets)}
+    budget = _normalize_budget(max_chars, _DEFAULT_STATUS_CHARS, _MAX_LOADOUT_CHARS)
+    selected = assets[-max(1, min(limit, 200)):]
+    summaries, truncated = _bounded_summaries(selected, budget)
+    return {"assets": summaries, "counts": counts, "pending_review": sum(item.get("status") == "pending_review" for item in assets), "max_chars": budget, "truncated": truncated}
 
 
 def sync_workspace_collaboration_assets(workspace_file: str | Path, *, owner: str = "") -> dict[str, Any]:
@@ -205,7 +234,7 @@ def sync_workspace_collaboration_assets(workspace_file: str | Path, *, owner: st
     config = load_workspace_config(workspace_file)
     with RuntimeStore(store.graph_db_path) as graph:
         counts = graph.counts()
-    result = register_collaboration_asset(workspace_file, kind="code_graph", title=f"{config.workspace} CodeGraph", owner=owner, source_ref="graph:active", visibility="team", metadata={"counts": counts, "workspace": config.workspace}, context_excerpt="代码图谱资产：通过 mc_lookup、mc_context_pack 与 mc_analyze 按需读取。", asset_id="asset-code-graph-active", actor=owner)
+    result = register_collaboration_asset(workspace_file, kind="code_graph", title=f"{config.workspace} CodeGraph", owner=SYSTEM_ASSET_OWNER, source_ref="graph:active", visibility="team", metadata={"counts": counts, "workspace": config.workspace}, context_excerpt="代码图谱资产：通过 mc_lookup、mc_context_pack 与 mc_analyze 按需读取。", asset_id="asset-code-graph-active", actor=SYSTEM_ASSET_OWNER)
     created.append(result["asset"]["asset_id"])
     return {"synced": True, "asset_ids": created, "next_action": "团队共享资产仍需提交并审批；私有资产可直接绑定。"}
 
@@ -234,13 +263,16 @@ def ingest_wiki_document_asset(workspace_file: str | Path, document_path: str | 
 
 
 def _read_registry(store: WorkspaceStore) -> dict[str, Any]:
-    try:
-        value = json.loads(store.read_artifact(ASSET_REGISTRY_FILE, ""))
-    except json.JSONDecodeError:
-        value = {"schema_version": 1, "assets": []}
-    if not isinstance(value, dict):
-        value = {"schema_version": 1, "assets": []}
-    return {"schema_version": 1, "assets": [item for item in value.get("assets", []) if isinstance(item, dict)][-_MAX_ASSETS:]}
+    path = store.artifacts_dir / ASSET_REGISTRY_FILE
+    backup = _registry_backup_path(path)
+    if not path.exists():
+        return {"schema_version": 1, "assets": []}
+    value = _parse_registry(path)
+    if value is None:
+        value = _parse_registry(backup)
+        if value is None:
+            raise AssetRegistryCorruptionError("collaboration asset registry is invalid; preserve the file and restore it from a backup before writing")
+    return {"schema_version": 1, "assets": [item for item in value["assets"] if isinstance(item, dict)][-_MAX_ASSETS:]}
 
 
 def _write_registry(store: WorkspaceStore, registry: dict[str, Any]) -> None:
@@ -248,7 +280,19 @@ def _write_registry(store: WorkspaceStore, registry: dict[str, Any]) -> None:
     registry["assets"] = registry.get("assets", [])[-_MAX_ASSETS:]
     path = store.artifacts_dir / ASSET_REGISTRY_FILE
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(registry, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    backup = _registry_backup_path(path)
+    if path.exists() and _parse_registry(path) is not None:
+        shutil.copy2(path, backup)
+    payload = json.dumps(registry, ensure_ascii=False, indent=2) + "\n"
+    descriptor, temporary = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            handle.write(payload)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    finally:
+        Path(temporary).unlink(missing_ok=True)
 
 
 def _mutate_registry(store: WorkspaceStore, operation):
@@ -261,6 +305,47 @@ def _mutate_registry(store: WorkspaceStore, operation):
 
 def _find_asset(registry: dict[str, Any], asset_id: str) -> dict[str, Any] | None:
     return next((item for item in registry["assets"] if item.get("asset_id") == asset_id), None)
+
+
+def _parse_registry(path: Path) -> dict[str, Any] | None:
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    return value if isinstance(value, dict) and isinstance(value.get("assets"), list) else None
+
+
+def _registry_backup_path(path: Path) -> Path:
+    return path.with_name(f"{path.name}.bak")
+
+
+def _json_size(value: Any) -> int:
+    return len(json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
+
+
+def _normalize_budget(value: int, default: int, maximum: int) -> int:
+    try:
+        normalized = int(value)
+    except (TypeError, ValueError):
+        normalized = default
+    return min(maximum, normalized if normalized > 0 else default)
+
+
+def _bounded_summaries(assets: list[dict[str, Any]], budget: int) -> tuple[list[dict[str, Any]], bool]:
+    summaries: list[dict[str, Any]] = []
+    remaining = budget
+    for asset in assets:
+        summary = _asset_summary(asset)
+        encoded = json.dumps(summary, ensure_ascii=False)
+        if len(encoded) > remaining:
+            summary["context_excerpt"] = _bounded(str(summary.get("context_excerpt", "")), max(0, remaining // 3))
+            summary["metadata"] = {"truncated": True, "source_ref": summary.get("source_ref", "")}
+            encoded = json.dumps(summary, ensure_ascii=False)
+        if len(encoded) > remaining:
+            return summaries, True
+        summaries.append(summary)
+        remaining -= len(encoded)
+    return summaries, False
 
 
 def _asset_visible(asset: dict[str, Any], agent_id: str, role: str) -> bool:

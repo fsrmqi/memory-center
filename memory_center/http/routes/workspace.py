@@ -378,13 +378,13 @@ def register_workspace_routes(registry: CommandRegistry) -> None:
         rp.require('intent'),
         limit=_parse_int(rp.params, "limit", 6),
     ))
-    registry.register("/workspace/assets", lambda rp: workspace_asset_status(rp.workspace(), limit=rp.int_param("limit", 100, max_val=200)))
+    registry.register("/workspace/assets", lambda rp: workspace_asset_status(rp.workspace(), limit=rp.int_param("limit", 100, max_val=200), max_chars=rp.int_param("max_chars", 0, min_val=0, max_val=24_576)))
     registry.register("/workspace/asset/register", _workspace_asset_register)
     registry.register("/workspace/asset/sync", lambda rp: workspace_asset_sync(rp.workspace(), owner=rp.get("owner", "")))
     registry.register("/workspace/asset/share", _workspace_asset_share)
     registry.register("/workspace/asset/approve", _workspace_asset_approve)
     registry.register("/workspace/asset/bind", _workspace_asset_bind)
-    registry.register("/workspace/asset/loadout", lambda rp: workspace_asset_loadout(rp.workspace(), agent_id=rp.get("agent_id", ""), role=rp.get("role", ""), limit=rp.int_param("limit", 12, max_val=50)))
+    registry.register("/workspace/asset/loadout", lambda rp: workspace_asset_loadout(rp.workspace(), agent_id=rp.get("agent_id", ""), role=rp.get("role", ""), limit=rp.int_param("limit", 12, max_val=50), max_chars=rp.int_param("max_chars", 0, min_val=0, max_val=24_576)))
     registry.register("/workspace/wiki/document-ingest", _workspace_wiki_document_ingest)
     registry.register("/workspace/artifact/update", lambda rp: update_artifact(
         rp.workspace(),

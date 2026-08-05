@@ -1447,6 +1447,19 @@ Or:
 memory-center-http --workspace /path/to/.memory-center/workspace.yaml
 ```
 
+`GET` 只用于无副作用读取；所有会修改 workspace 的 HTTP 路由必须使用 `POST`。默认仅允许回环地址；如需绑定局域网或其他非回环地址，必须显式设置强随机令牌：
+
+`GET` is only for side-effect-free reads; every workspace mutation requires `POST`. The bridge defaults to loopback-only use. Binding to a LAN or any other non-loopback address requires an explicit strong token:
+
+```bash
+MEMORY_CENTER_HTTP_TOKEN="replace-with-a-strong-random-token" \
+memory-center serve-http --workspace /path/to/.memory-center/workspace.yaml --host 0.0.0.0 --port 8765
+```
+
+远程调用通过 `Authorization: Bearer <token>` 传递令牌。协作资产的 metadata 最大 16 KiB；`asset-status`、`asset-loadout` 和 Context Pack 都会返回预算与 `truncated`/`truncated_sections`，调用方应按来源引用继续按需读取，而不是请求无界正文。
+
+Remote callers send `Authorization: Bearer <token>`. Collaboration-asset metadata is capped at 16 KiB; `asset-status`, `asset-loadout`, and Context Pack report their budgets plus `truncated`/`truncated_sections`, so callers can continue from provenance references instead of requesting unbounded content.
+
 Example routes:
 
 - `GET /health`
@@ -1463,6 +1476,10 @@ Example routes:
 - `GET /group/status?group=backend-platform`
 - `GET /group/query?group=backend-platform&text=ArticleFeignClient`
 - `GET /group/impact?group=backend-platform&target=ArticleFeignClient`
+
+写入示例：`POST /workspace/asset/register`、`POST /workspace/artifact/update`、`POST /workspace/work-start`。`/workspace/query` 不带 `session_id` 可用 GET；带 `session_id` 会记录指导事件，因此必须 POST。
+
+Mutation examples: `POST /workspace/asset/register`, `POST /workspace/artifact/update`, and `POST /workspace/work-start`. `/workspace/query` may use GET without `session_id`; a query with `session_id` records a guidance event and therefore requires POST.
 
 ---
 

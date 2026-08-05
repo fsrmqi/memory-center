@@ -235,6 +235,8 @@ memory-center setup-agent --workspace /abs/path/.memory-center/workspace.yaml
 memory-center serve-http --workspace /abs/path/.memory-center/workspace.yaml --host 127.0.0.1 --port 8765
 ```
 
+HTTP `GET` 仅用于无副作用读取；写入、会话记录和受控外部动作必须使用 `POST`。默认只能绑定 loopback；如需非回环地址，设置 `MEMORY_CENTER_HTTP_TOKEN`，并在请求中携带 `Authorization: Bearer <token>`。
+
 常用页面：
 
 - `/ui`

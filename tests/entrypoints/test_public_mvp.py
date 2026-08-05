@@ -3,8 +3,9 @@ import os
 import socket
 import threading
 from pathlib import Path
+from urllib.error import HTTPError
 from urllib.parse import quote
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 
 from typer.testing import CliRunner
 
@@ -92,7 +93,17 @@ from memory_center.core.tasks.artifacts import (
 from memory_center.core.tasks.timeline import timeline_query
 from memory_center.core.workspace.config import load_workspace_config
 from memory_center.core.workspace.doctor import doctor
-from memory_center.http.server import create_handler
+from memory_center.http.server import create_handler, serve_http
+
+
+def _post_json(url: str, payload: dict | None = None) -> dict:
+    request = Request(
+        url,
+        data=json.dumps(payload or {}).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    return json.loads(urlopen(request).read().decode("utf-8"))
 
 
 def _copy_root_demo_workspace(tmp_path: Path) -> Path:
@@ -523,7 +534,7 @@ def test_query_with_session_id_records_agent_guidance_for_cli_and_http(tmp_path:
     thread.start()
     try:
         base = f"http://127.0.0.1:{server.server_address[1]}"
-        http = json.loads(urlopen(f"{base}/workspace/query?text=ArticleFeignClient&project=task-service&session_id={http_session['session_id']}&limit=10").read().decode("utf-8"))
+        http = _post_json(f"{base}/workspace/query?text=ArticleFeignClient&project=task-service&session_id={http_session['session_id']}&limit=10")
     finally:
         server.shutdown()
         thread.join(timeout=2)
@@ -1930,24 +1941,18 @@ def test_http_bridge_routes(tmp_path: Path):
         assert context_outline["sections"]
         context_search = json.loads(urlopen(f"{base}/workspace/artifact/context?intent=shared%20context&limit=3").read().decode("utf-8"))
         assert "summary" in context_search
-        updated_artifact = json.loads(urlopen(f"{base}/workspace/artifact/update?name=context&content=HTTP-shared-context").read().decode("utf-8"))
+        updated_artifact = _post_json(f"{base}/workspace/artifact/update?name=context&content=HTTP-shared-context")
         assert updated_artifact["updated"] is True
-        changed_artifact = json.loads(urlopen(f"{base}/workspace/change-log/append?entry=HTTP-change-log-entry").read().decode("utf-8"))
+        changed_artifact = _post_json(f"{base}/workspace/change-log/append?entry=HTTP-change-log-entry")
         assert changed_artifact["appended"] is True
-        compacted_log = json.loads(urlopen(f"{base}/workspace/change-log/compact?keep_recent=5").read().decode("utf-8"))
+        compacted_log = _post_json(f"{base}/workspace/change-log/compact?keep_recent=5")
         assert "compacted" in compacted_log
-        task_space = json.loads(urlopen(f"{base}/workspace/task-space/create?title=HTTP%20Feign%20Task").read().decode("utf-8"))
+        task_space = _post_json(f"{base}/workspace/task-space/create?title=HTTP%20Feign%20Task")
         assert task_space["created"] is True
         task_id = task_space["task_id"]
         task_spaces = json.loads(urlopen(f"{base}/workspace/task-spaces").read().decode("utf-8"))
         assert task_spaces["active_tasks"]
-        sniff_sync = json.loads(
-            urlopen(
-                f"{base}/workspace/artifacts/sync-sniff?intent=HTTP%20Feign%20task&limit=5&task_id={task_id}&auto_sync_mode=aggressive"
-            )
-            .read()
-            .decode("utf-8")
-        )
+        sniff_sync = _post_json(f"{base}/workspace/artifacts/sync-sniff?intent=HTTP%20Feign%20task&limit=5&task_id={task_id}&auto_sync_mode=aggressive")
         assert sniff_sync["synced"] is True
         assert sniff_sync["auto_sync_mode"] == "aggressive"
 
@@ -1967,7 +1972,7 @@ def test_http_bridge_routes(tmp_path: Path):
         assert walkthrough["read_targets"]
         walkthrough_eval = json.loads(urlopen(f"{base}/workspace/walkthrough-eval?symbol={walkthrough_symbol}&report_level=standard").read().decode("utf-8"))
         assert walkthrough_eval["grade"] in {"pass", "warn", "fail"}
-        walkthrough_export = json.loads(urlopen(f"{base}/workspace/walkthrough-export?symbol={walkthrough_symbol}&report_level=deep").read().decode("utf-8"))
+        walkthrough_export = _post_json(f"{base}/workspace/walkthrough-export?symbol={walkthrough_symbol}&report_level=deep")
         assert walkthrough_export["exported"] is True
         assert walkthrough_export["artifact"].startswith("walkthroughs/")
         search = json.loads(urlopen(f"{base}/workspace/search-code?text=ArticleFeignClient&scope=task-service&project=task-service").read().decode("utf-8"))
@@ -1990,9 +1995,9 @@ def test_http_bridge_routes(tmp_path: Path):
         assert checklist["checklist"]
         judge = json.loads(urlopen(f"{base}/workspace/memory-write-judge?text={quote('团队规范：DTO变更需向后兼容')}&source=note&intent={quote('更新团队规则')}").read().decode("utf-8"))
         assert judge["decision"]["selected_layer"] == "L3_workspace_profile"
-        plan_write = json.loads(urlopen(f"{base}/workspace/memory-plan-write?text=HTTP%20task%20context&source=note&intent=HTTP%20task").read().decode("utf-8"))
+        plan_write = _post_json(f"{base}/workspace/memory-plan-write?text=HTTP%20task%20context&source=note&intent=HTTP%20task")
         assert plan_write["memory_layer"] == "L2_task_spaces"
-        execute_write = json.loads(urlopen(f"{base}/workspace/memory-execute-write?text=HTTP%20team%20rule&source=note&intent=update%20rule").read().decode("utf-8"))
+        execute_write = _post_json(f"{base}/workspace/memory-execute-write?text=HTTP%20team%20rule&source=note&intent=update%20rule")
         assert execute_write["executed"]
         assert execute_write["write_receipts"]
         write_receipts = json.loads(urlopen(f"{base}/workspace/write-receipts?limit=10").read().decode("utf-8"))
@@ -2070,13 +2075,7 @@ def test_http_bridge_routes(tmp_path: Path):
         suggested_case = json.loads(urlopen(f"{base}/workspace/suggest-case?session_id={session_id}").read().decode("utf-8"))
         assert suggested_case["found"] is True
         assert suggested_case["draft_case"]["task"]
-        case_sync = json.loads(
-            urlopen(
-                f"{base}/workspace/artifacts/sync-case?session_id={session_id}&task_id={task_id}&auto_sync_mode=strict"
-            )
-            .read()
-            .decode("utf-8")
-        )
+        case_sync = _post_json(f"{base}/workspace/artifacts/sync-case?session_id={session_id}&task_id={task_id}&auto_sync_mode=strict")
         assert case_sync["synced"] is True
         assert case_sync["auto_sync_mode"] == "strict"
         task_context = json.loads(urlopen(f"{base}/workspace/task-artifact?task_id={task_id}&name=context").read().decode("utf-8"))
@@ -3101,6 +3100,33 @@ def _copy_demo_workspace(tmp_path: Path, name: str) -> Path:
     lines = [f"root: {target.as_posix()}" if line.startswith("root:") else line for line in lines]
     workspace.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return workspace
+
+
+def test_http_mutations_require_post_and_remote_binding_requires_token(tmp_path: Path):
+    from http.server import ThreadingHTTPServer
+
+    workspace = _copy_demo_workspace(tmp_path, "http-post-only")
+    server = ThreadingHTTPServer(("127.0.0.1", _free_port()), create_handler(workspace))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        base = f"http://127.0.0.1:{server.server_port}"
+        try:
+            urlopen(f"{base}/workspace/artifact/update?name=context&content=blocked")
+        except HTTPError as exc:
+            assert exc.code == 405
+        else:
+            raise AssertionError("GET mutation must be rejected")
+        assert _post_json(f"{base}/workspace/artifact/update?name=context&content=allowed")["updated"] is True
+    finally:
+        server.shutdown()
+        thread.join(timeout=2)
+    try:
+        serve_http(workspace, host="0.0.0.0", port=_free_port())
+    except ValueError as exc:
+        assert "access token" in str(exc)
+    else:
+        raise AssertionError("remote binding without an access token must be rejected")
 
 
 def _free_port() -> int:

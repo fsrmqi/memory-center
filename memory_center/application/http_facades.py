@@ -155,8 +155,8 @@ def workspace_background_job_status(workspace_file: str, job_id: str = "", *, li
     return analysis_job_status(workspace_file, job_id, limit=limit)
 
 
-def workspace_asset_status(workspace_file: str, *, limit: int = 100) -> dict[str, Any]:
-    return collaboration_asset_status(workspace_file, limit=limit)
+def workspace_asset_status(workspace_file: str, *, limit: int = 100, max_chars: int = 0) -> dict[str, Any]:
+    return collaboration_asset_status(workspace_file, limit=limit, max_chars=max_chars)
 
 
 def workspace_asset_register(workspace_file: str, payload: dict[str, Any], *, actor: str = "") -> dict[str, Any]:
@@ -179,8 +179,8 @@ def workspace_asset_bind(workspace_file: str, asset_id: str, *, actor: str, agen
     return bind_collaboration_asset(workspace_file, asset_id, actor=actor, agents=agents, roles=roles)
 
 
-def workspace_asset_loadout(workspace_file: str, *, agent_id: str = "", role: str = "", limit: int = 12) -> dict[str, Any]:
-    return collaboration_asset_loadout(workspace_file, agent_id=agent_id, role=role, limit=limit)
+def workspace_asset_loadout(workspace_file: str, *, agent_id: str = "", role: str = "", limit: int = 12, max_chars: int = 0) -> dict[str, Any]:
+    return collaboration_asset_loadout(workspace_file, agent_id=agent_id, role=role, limit=limit, max_chars=max_chars)
 
 
 def workspace_wiki_document_ingest(workspace_file: str, document_path: str, *, owner: str, visibility: str = "private", tags: list[str] | None = None) -> dict[str, Any]:

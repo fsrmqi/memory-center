@@ -3,14 +3,18 @@ from __future__ import annotations
 from memory_center.application.admin import build_admin_registry
 from memory_center.application.analysis import build_context_pack
 from memory_center.core.knowledge.assets import (
+    ASSET_REGISTRY_FILE,
+    SYSTEM_ASSET_OWNER,
     approve_collaboration_asset,
     bind_collaboration_asset,
     collaboration_asset_loadout,
+    collaboration_asset_status,
     ingest_wiki_document_asset,
     register_collaboration_asset,
     submit_asset_for_sharing,
     sync_workspace_collaboration_assets,
 )
+from memory_center.core.storage.workspace import WorkspaceStore
 from memory_center.core.tasks.artifacts import create_task_space
 
 
@@ -76,6 +80,42 @@ def test_asset_sync_preserves_approved_team_asset(demo_workspace) -> None:
     assert collaboration_asset_loadout(demo_workspace, agent_id="codex")["count"] == 1
 
 
+def test_asset_sync_is_idempotent_across_agents(demo_workspace) -> None:
+    sync_workspace_collaboration_assets(demo_workspace, owner="alice")
+    synced = sync_workspace_collaboration_assets(demo_workspace, owner="bob")
+    graph_asset = next(item for item in collaboration_asset_status(demo_workspace)["assets"] if item["asset_id"] == "asset-code-graph-active")
+    assert synced["synced"] is True
+    assert graph_asset["owner"] == SYSTEM_ASSET_OWNER
+
+
+def test_registry_recovers_from_last_valid_backup_without_dropping_assets(demo_workspace) -> None:
+    register_collaboration_asset(demo_workspace, kind="wiki", title="一", owner="alice", source_ref="wiki:one", actor="alice")
+    register_collaboration_asset(demo_workspace, kind="wiki", title="二", owner="alice", source_ref="wiki:two", actor="alice")
+    store = WorkspaceStore(demo_workspace)
+    (store.artifacts_dir / ASSET_REGISTRY_FILE).write_text("{invalid", encoding="utf-8")
+    recovered = collaboration_asset_status(demo_workspace)
+    assert [asset["title"] for asset in recovered["assets"]] == ["一"]
+    register_collaboration_asset(demo_workspace, kind="wiki", title="三", owner="alice", source_ref="wiki:three", actor="alice")
+    assert {asset["title"] for asset in collaboration_asset_status(demo_workspace)["assets"]} == {"一", "三"}
+
+
+def test_asset_metadata_and_loadout_have_total_size_budgets(demo_workspace) -> None:
+    try:
+        register_collaboration_asset(
+            demo_workspace, kind="wiki", title="过大", owner="alice", source_ref="wiki:large",
+            metadata={f"field-{index}": "x" * 800 for index in range(40)}, actor="alice",
+        )
+    except ValueError as exc:
+        assert "metadata exceeds" in str(exc)
+    else:
+        raise AssertionError("oversized metadata must be rejected")
+    asset = register_collaboration_asset(demo_workspace, kind="wiki", title="有界", owner="alice", source_ref="wiki:bounded", metadata={f"field-{index}": "x" * 350 for index in range(40)}, actor="alice")["asset"]
+    assert asset["metadata"]
+    loadout = collaboration_asset_loadout(demo_workspace, agent_id="alice")
+    assert loadout["max_chars"] == 12 * 1024
+    assert len(str(loadout["assets"])) <= loadout["max_chars"] + 2_000
+
+
 def test_wiki_document_asset_links_code_evidence_and_context_pack(demo_workspace) -> None:
     workspace_root = demo_workspace.parent.parent
     document = workspace_root / "architecture-note.md"
@@ -88,6 +128,12 @@ def test_wiki_document_asset_links_code_evidence_and_context_pack(demo_workspace
     pack = build_context_pack(str(demo_workspace), "发布", "auto", 1000, 4, agent_id="reviewer")
     assert any(item["asset_id"] == asset_id for item in pack["collaboration_assets"]["assets"])
     assert ingested["document_graph"]["links"] == ["docs/flow.md"]
+
+
+def test_context_pack_enforces_effective_token_budget(demo_workspace) -> None:
+    pack = build_context_pack(str(demo_workspace), "发布链路", "auto", 128, 12, agent_id="reviewer")
+    assert pack["budget_tokens"] == 128
+    assert pack["token_estimate"] <= pack["budget_tokens"]
 
 
 def test_asset_sync_and_admin_actions_share_the_same_domain_service(demo_workspace) -> None:

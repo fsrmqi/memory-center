@@ -130,7 +130,7 @@ from memory_center.hooks.adapters.codex import generate_codex_scripts
 from memory_center.hooks.adapters.cursor import generate_cursor_rules
 from memory_center.hooks.runner import run_hook_cli
 from memory_center.hooks.spec import ensure_default_hooks, load_hooks_config
-from memory_center.http.server import serve_http
+from memory_center.http.server import serve_http, validate_http_binding
 
 app = typer.Typer(help="Memory Center CLI")
 RELEASE_GATE_QUERY_OPTION = typer.Option(
@@ -2205,10 +2205,12 @@ def serve_http_cmd(
     workspace: Optional[str] = typer.Option(None, help="Default workspace.yaml for workspace routes."),
     host: str = typer.Option("127.0.0.1"),
     port: int = typer.Option(8765),
+    access_token: str = typer.Option("", envvar="MEMORY_CENTER_HTTP_TOKEN", help="Required for non-loopback binding."),
 ):
     """Serve a lightweight local HTTP bridge for workspace and group queries."""
-    print({"http": "starting", "host": host, "port": port, "workspace": workspace})
-    serve_http(workspace, host=host, port=port)
+    validate_http_binding(host, access_token)
+    print({"http": "starting", "host": host, "port": port, "workspace": workspace, "authentication": bool(access_token)})
+    serve_http(workspace, host=host, port=port, access_token=access_token)
 
 
 def _parse_event_payload(payload: str):

@@ -21,11 +21,43 @@ from memory_center.http.routes.params import (
 
 __all__ = [
     "build_http_route_registry",
+    "is_mutating_http_route",
     "_require_workspace",
     "_require_one",
     "_parse_int",
     "RouteParams",
 ]
+
+# HTTP GET is a strictly read-only contract. Paths below may persist workspace
+# state, execute approved external actions, or compact/export artifacts.
+_MUTATING_HTTP_PATHS = frozenset({
+    "/workspace/work-start", "/workspace/work-sync", "/workspace/work-close",
+    "/workspace/provider-action", "/workspace/mcp-bridge-action", "/workspace/provider-evidence-fuse",
+    "/workspace/change-impact-confirm", "/workspace/assertion-status", "/workspace/sniff",
+    "/workspace/asset/register", "/workspace/asset/sync", "/workspace/asset/share",
+    "/workspace/asset/approve", "/workspace/asset/bind", "/workspace/wiki/document-ingest",
+    "/workspace/artifact/update", "/workspace/change-log/append", "/workspace/change-log/compact",
+    "/workspace/task-space/create", "/workspace/delivery/init", "/workspace/delivery/contract",
+    "/workspace/delivery/policy", "/workspace/delivery/execute-validation", "/workspace/delivery/matrix",
+    "/workspace/delivery/subtask-status", "/workspace/delivery/validation", "/workspace/delivery/transition",
+    "/workspace/delivery/skill/canary", "/workspace/delivery/skill/contract",
+    "/workspace/delivery/skill/observe", "/workspace/delivery/skill/rollback",
+    "/workspace/delivery/skill/synthesize", "/workspace/task-artifact/update",
+    "/workspace/task-change-log/append", "/workspace/task-space/archive",
+    "/workspace/task-space/status", "/workspace/task-space/touch-activity",
+    "/workspace/task-spaces/auto-archive", "/workspace/artifacts/sync-sniff",
+    "/workspace/artifacts/sync-case", "/workspace/walkthrough-export",
+    "/workspace/memory-plan-write", "/workspace/memory-execute-write",
+    "/workspace/pattern-promotion", "/workspace/heuristics", "/workspace/verification-loop",
+    "/workspace/bundle-export", "/workspace/eval-golden",
+})
+
+
+def is_mutating_http_route(path: str, params: dict | None = None) -> bool:
+    """Whether the route may change local state and therefore requires POST."""
+    if path == "/workspace/query":
+        return bool((params or {}).get("session_id", [""])[0])
+    return path in _MUTATING_HTTP_PATHS
 
 
 def _create_http_route_registry() -> CommandRegistry:

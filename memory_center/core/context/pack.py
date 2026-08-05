@@ -46,6 +46,8 @@ class ContextPack:
     checklist: list[str] = field(default_factory=list)
     freshness: dict[str, Any] = field(default_factory=dict)
     token_estimate: int = 0
+    budget_tokens: int = 0
+    truncated_sections: list[str] = field(default_factory=list)
     progressive: dict[str, Any] = field(default_factory=dict)
     collaboration_assets: dict[str, Any] = field(default_factory=dict)
 
@@ -75,6 +77,8 @@ class ContextPackBuilder:
             primary_intent = intent_info.get("primary_intent", "general")
         else:
             primary_intent = intent
+
+        effective_budget = max(128, min(int(budget_tokens), 32_000))
 
         # 2. Retrieve entrypoints via hybrid retrieval
         retrieval = hybrid_retrieve(
@@ -110,7 +114,7 @@ class ContextPackBuilder:
                     checklist.append(item)
 
         # 6. Extract code snippets from top entrypoints
-        snippets = _extract_snippets(self._store, results, budget_tokens)
+        snippets = _extract_snippets(self._store, results, effective_budget)
 
         # 7. Check index freshness
         try:
@@ -118,31 +122,35 @@ class ContextPackBuilder:
         except Exception as exc:
             freshness_info = diag_entry(DIAG.UNAVAILABLE, exc=exc)
 
-        # 8. Estimate token usage (include snippets)
-        snippet_text = "".join(s.get("content", "") for s in snippets)
-        # 9. Load collaboration assets from a fixed 10% context budget.
+        # 8. Load collaboration assets from a fixed 10% context budget.
         collaboration_assets = collaboration_asset_loadout(
             self._workspace_file,
             agent_id=agent_id,
             role=role,
             limit=min(12, max(1, limit)),
-            max_chars=max(256, budget_tokens * 4 // 10),
+            max_chars=max(1, effective_budget * 4 // 10),
         )
-        total_text = (
-            json.dumps(results[:5], ensure_ascii=False)
-            + json.dumps(relationships, ensure_ascii=False)
-            + snippet_text
-            + json.dumps(collaboration_assets, ensure_ascii=False)
+        entrypoints = [{"node": item.get("node", {}), "score": item.get("score", 0), "sources": item.get("sources", [])} for item in results]
+        entrypoints, relationships, snippets, risks, checklist, freshness_info, collaboration_assets, truncated_sections = _fit_context_budget(
+            query=query,
+            intent=primary_intent,
+            entrypoints=entrypoints,
+            relationships=relationships,
+            snippets=snippets,
+            risks=risks,
+            checklist=checklist,
+            freshness=freshness_info,
+            collaboration_assets=collaboration_assets,
+            budget_tokens=effective_budget,
         )
-        token_estimate = len(total_text) // 4  # rough estimate
 
-        # 10. Build progressive disclosure
+        # 9. Build progressive disclosure after trimming so counts describe the actual response.
         progressive = {
             "level_1_quick": {
-                "entrypoint_count": len(results),
+                "entrypoint_count": len(entrypoints),
                 "top_matches": [
                     {"type": item.get("node", {}).get("type", ""), "name": item.get("node", {}).get("name", ""), "score": round(item.get("score", 0), 2)}
-                    for item in results[:3]
+                    for item in entrypoints[:3]
                 ],
                 "intent": primary_intent,
             },
@@ -152,26 +160,152 @@ class ContextPackBuilder:
                 "checklist_items": len(checklist),
                 "snippet_count": len(snippets),
             },
-            "level_3_next_actions": _suggest_next_actions(primary_intent, results, risks),
+            "level_3_next_actions": _suggest_next_actions(primary_intent, entrypoints, risks),
         }
+        response = {
+            "query": _bounded_response_text(query, max(32, effective_budget * 2)),
+            "intent": primary_intent,
+            "entrypoints": entrypoints,
+            "relationships": relationships,
+            "snippets": snippets,
+            "risks": risks,
+            "checklist": checklist,
+            "freshness": freshness_info,
+            "progressive": progressive,
+            "collaboration_assets": collaboration_assets,
+            "budget_tokens": effective_budget,
+            "truncated_sections": truncated_sections,
+        }
+        _enforce_response_budget(response, effective_budget)
+        entrypoints = response["entrypoints"]
+        relationships = response["relationships"]
+        snippets = response["snippets"]
+        risks = response["risks"]
+        checklist = response["checklist"]
+        freshness_info = response["freshness"]
+        collaboration_assets = response["collaboration_assets"]
+        truncated_sections = response["truncated_sections"]
+        token_estimate = _payload_tokens(response)
 
         return ContextPack(
-            query=query,
+            query=response["query"],
             intent=primary_intent,
-            entrypoints=[{"node": item.get("node", {}), "score": item.get("score", 0), "sources": item.get("sources", [])} for item in results],
+            entrypoints=entrypoints,
             relationships=relationships,
             snippets=snippets,
             risks=risks,
             checklist=checklist,
             freshness=freshness_info,
             token_estimate=token_estimate,
+            budget_tokens=effective_budget,
+            truncated_sections=truncated_sections,
             progressive=progressive,
             collaboration_assets=collaboration_assets,
         )
 
     def _get_graph(self) -> RuntimeStore:
-        gs = RuntimeStore(self._store.graph_db_path)
-        return gs
+        return RuntimeStore(self._store.graph_db_path)
+
+
+def _fit_context_budget(*, query: str, intent: str, entrypoints: list[dict[str, Any]], relationships: list[dict[str, Any]], snippets: list[dict[str, Any]], risks: list[dict[str, Any]], checklist: list[str], freshness: dict[str, Any], collaboration_assets: dict[str, Any], budget_tokens: int) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[str], dict[str, Any], dict[str, Any], list[str]]:
+    """Trim lowest-priority context parts until the serialized response fits its budget."""
+    # Reserve envelope space for progressive disclosure and response metadata,
+    # which are assembled after the main evidence sections are trimmed.
+    limit_chars = max(128, budget_tokens * 4 - 256)
+    truncated: list[str] = []
+    entrypoints = list(entrypoints)
+    relationships = list(relationships)
+    snippets = list(snippets)
+    risks = list(risks)
+    checklist = list(checklist)
+    collaboration_assets = dict(collaboration_assets)
+    collaboration_assets["assets"] = list(collaboration_assets.get("assets", []))
+
+    def payload_size() -> int:
+        return _payload_chars({
+            "query": _bounded_response_text(query, max(32, budget_tokens * 2)), "intent": intent,
+            "entrypoints": entrypoints, "relationships": relationships, "snippets": snippets,
+            "risks": risks, "checklist": checklist, "freshness": freshness,
+            "collaboration_assets": collaboration_assets, "budget_tokens": budget_tokens,
+            "truncated_sections": truncated,
+        })
+
+    for section, values in (("snippets", snippets), ("relationships", relationships), ("risks", risks), ("checklist", checklist), ("collaboration_assets", collaboration_assets["assets"])):
+        while values and payload_size() > limit_chars:
+            values.pop()
+            if section not in truncated:
+                truncated.append(section)
+    if payload_size() > limit_chars and entrypoints:
+        entrypoints[:] = [_compact_entrypoint(item) for item in entrypoints]
+        truncated.append("entrypoint_details")
+    while entrypoints and payload_size() > limit_chars:
+        entrypoints.pop()
+        if "entrypoints" not in truncated:
+            truncated.append("entrypoints")
+    if payload_size() > limit_chars:
+        freshness = _bounded_json(freshness, max(64, limit_chars // 12))
+        truncated.append("freshness")
+    while payload_size() > limit_chars and checklist:
+        checklist.pop()
+        if "checklist" not in truncated:
+            truncated.append("checklist")
+    return entrypoints, relationships, snippets, risks, checklist, freshness, collaboration_assets, truncated
+
+
+def _compact_entrypoint(item: dict[str, Any]) -> dict[str, Any]:
+    node = item.get("node", {}) if isinstance(item.get("node"), dict) else {}
+    return {
+        "node": {key: node.get(key, "") for key in ("id", "name", "type", "file_path", "line")},
+        "score": item.get("score", 0),
+        "sources": [str(value)[:80] for value in item.get("sources", [])[:3]],
+    }
+
+
+def _bounded_json(value: Any, max_chars: int) -> dict[str, Any]:
+    encoded = json.dumps(value, ensure_ascii=False)
+    if len(encoded) <= max_chars:
+        return value if isinstance(value, dict) else {"value": value}
+    return {"truncated": True, "preview": encoded[:max_chars]}
+
+
+def _bounded_response_text(value: str, max_chars: int) -> str:
+    return str(value)[:max_chars]
+
+
+def _payload_chars(value: dict[str, Any]) -> int:
+    return len(json.dumps(value, ensure_ascii=False, separators=(",", ":")))
+
+
+def _payload_tokens(value: dict[str, Any]) -> int:
+    return (_payload_chars(value) + 3) // 4
+
+
+def _enforce_response_budget(response: dict[str, Any], budget_tokens: int) -> None:
+    """Apply a final envelope guard after progressive disclosure is assembled."""
+    limit_chars = max(128, budget_tokens * 4 - 64)
+    truncated = response["truncated_sections"]
+
+    def mark(section: str) -> None:
+        if section not in truncated:
+            truncated.append(section)
+
+    for section in ("snippets", "relationships", "risks", "checklist", "entrypoints"):
+        while response[section] and _payload_chars(response) > limit_chars:
+            response[section].pop()
+            mark(section)
+    if _payload_chars(response) > limit_chars:
+        response["progressive"] = {"truncated": True}
+        mark("progressive")
+    if _payload_chars(response) > limit_chars:
+        response["freshness"] = {"truncated": True}
+        mark("freshness")
+    if _payload_chars(response) > limit_chars:
+        assets = response["collaboration_assets"]
+        response["collaboration_assets"] = {"count": int(assets.get("count", 0)), "truncated": True}
+        mark("collaboration_assets")
+    while len(response["query"]) > 16 and _payload_chars(response) > limit_chars:
+        response["query"] = response["query"][:-16]
+        mark("query")
 
 
 def _suggest_next_actions(intent: str, results: list, risks: list) -> list[str]:

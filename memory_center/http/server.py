@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import argparse
+import hmac
 import json
 import json as _json
+import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -28,6 +30,7 @@ from memory_center.http.route_dispatch import (
     _require_one,
     _require_workspace,
     build_http_route_registry,
+    is_mutating_http_route,
 )
 
 _VUE_DIST_DIR: Path | None = None
@@ -66,13 +69,19 @@ _MIME_TYPES: dict[str, str] = {
     ".json": "application/json; charset=utf-8",
 }
 
-def create_handler(default_workspace: str | Path | None = None) -> type[BaseHTTPRequestHandler]:
+def create_handler(default_workspace: str | Path | None = None, *, access_token: str = "") -> type[BaseHTTPRequestHandler]:
     workspace_file = str(Path(default_workspace).expanduser().resolve()) if default_workspace else None
+    required_token = str(access_token)
 
     class MemoryCenterHandler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:  # noqa: N802
             parsed = urlparse(self.path)
             params = parse_qs(parsed.query)
+            if not self._authorized():
+                return
+            if is_mutating_http_route(parsed.path, params):
+                self._write_json(405, {"error": "method_not_allowed", "detail": "workspace mutations require POST", "allowed": ["POST"]})
+                return
             try:
                 # Serve Vue frontend SPA for /app routes
                 vue_dist = _find_vue_dist()
@@ -195,6 +204,8 @@ def create_handler(default_workspace: str | Path | None = None) -> type[BaseHTTP
         def do_POST(self) -> None:  # noqa: N802
             parsed = urlparse(self.path)
             params = parse_qs(parsed.query)
+            if not self._authorized():
+                return
             # Read JSON body for POST requests (used for mutation routes with large content)
             body_data = {}
             try:
@@ -229,6 +240,16 @@ def create_handler(default_workspace: str | Path | None = None) -> type[BaseHTTP
         def log_message(self, format: str, *args) -> None:  # noqa: A003
             return
 
+        def _authorized(self) -> bool:
+            if not required_token:
+                return True
+            supplied = self.headers.get("Authorization", "")
+            expected = f"Bearer {required_token}"
+            if hmac.compare_digest(supplied, expected):
+                return True
+            self._write_json(401, {"error": "unauthorized", "detail": "Bearer access token required"})
+            return False
+
         def _write_json(self, status: int, payload: dict) -> None:
             body = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
             self.send_response(status)
@@ -248,9 +269,19 @@ def create_handler(default_workspace: str | Path | None = None) -> type[BaseHTTP
     return MemoryCenterHandler
 
 
-def serve_http(default_workspace: str | Path | None = None, host: str = "127.0.0.1", port: int = 8765) -> None:
-    server = ThreadingHTTPServer((host, port), create_handler(default_workspace))
+def serve_http(default_workspace: str | Path | None = None, host: str = "127.0.0.1", port: int = 8765, access_token: str = "") -> None:
+    validate_http_binding(host, access_token)
+    server = ThreadingHTTPServer((host, port), create_handler(default_workspace, access_token=access_token))
     server.serve_forever()
+
+
+def _is_loopback_host(host: str) -> bool:
+    return str(host).strip().lower() in {"127.0.0.1", "::1", "localhost"}
+
+
+def validate_http_binding(host: str, access_token: str = "") -> None:
+    if not _is_loopback_host(host) and not access_token:
+        raise ValueError("non-loopback HTTP binding requires an access token")
 
 
 def _http_error_response(exc: Exception) -> tuple[int, dict]:
@@ -277,9 +308,10 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--workspace", help="Default workspace.yaml for workspace routes")
     parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--access-token", default=os.environ.get("MEMORY_CENTER_HTTP_TOKEN", ""))
     parser.add_argument("--port", type=int, default=8765)
     args = parser.parse_args()
-    serve_http(args.workspace, host=args.host, port=args.port)
+    serve_http(args.workspace, host=args.host, port=args.port, access_token=args.access_token)
 
 
 if __name__ == "__main__":

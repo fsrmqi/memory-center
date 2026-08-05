@@ -52,7 +52,7 @@ def onboarding_tour(
 
 def build_context_pack(workspace_file: str, query: str, intent: str, budget_tokens: int, limit: int, *, agent_id: str = "", role: str = "") -> dict[str, Any]:
     pack = ContextPackBuilder(workspace_file).build(query=query, intent=intent or "auto", budget_tokens=budget_tokens, limit=limit, agent_id=agent_id, role=role)
-    return {key: getattr(pack, key) for key in ("query", "intent", "entrypoints", "relationships", "snippets", "risks", "checklist", "freshness", "token_estimate", "progressive", "collaboration_assets")}
+    return {key: getattr(pack, key) for key in ("query", "intent", "entrypoints", "relationships", "snippets", "risks", "checklist", "freshness", "token_estimate", "budget_tokens", "truncated_sections", "progressive", "collaboration_assets")}
 
 
 def freshness_banner(workspace_file: str) -> dict[str, Any]:

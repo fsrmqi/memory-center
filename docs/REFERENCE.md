@@ -114,7 +114,7 @@
 ### Provider Actions / 外部 Provider 动作
 
 - CLI：`memory-center provider-action --path <project-dir> --action impact --target <symbol>`。
-- HTTP：`GET /workspace/provider-action?path=<project-dir>&provider=gitnexus&action=impact&target=<symbol>`。
+- HTTP：`POST /workspace/provider-action?path=<project-dir>&provider=gitnexus&action=impact&target=<symbol>`。
 - MCP：`mc_provider_action(action="impact", target="<symbol>")`。
 - GitNexus 固定读取动作：`status`、`query`、`context`、`impact`、`trace`、`detect-changes`、`check`；`analyze` 是受控索引动作，`clean` 是破坏性清理动作，二者必须 `confirm=true`。
 - 参数只能使用动作契约中的 `query`、`target`、`limit`、`depth`、`force`；系统不会转发任意 argv、shell 或外部正文。
@@ -122,7 +122,7 @@
 ### Restricted MCP Client Bridge / 受限 MCP Client Bridge
 
 - CLI：`memory-center mcp-bridge-status --path <project-dir>` 查看策略；`memory-center mcp-bridge-action --path <project-dir> --provider <provider-id> --action <action> --query "..." --target "..."` 调用一个白名单动作。
-- HTTP：`GET /workspace/mcp-bridge-status?path=<project-dir>`；`GET /workspace/mcp-bridge-action?path=<project-dir>&provider=<provider-id>&action=<action>&query=...&target=...&confirm=false`。
+- HTTP：`GET /workspace/mcp-bridge-status?path=<project-dir>`；`POST /workspace/mcp-bridge-action?path=<project-dir>&provider=<provider-id>&action=<action>&query=...&target=...&confirm=false`。
 - MCP：`mc_mcp_bridge()` 查看策略；`mc_mcp_bridge(provider="<provider-id>", action="<action>", query="...", target="...", confirm=false)` 调用。
 - 策略路径：`<project-dir>/.memory-center/provider-mcp-policy.json`。缺失或不合法策略只返回 `provider_not_configured`，不会初始化 workspace。
 
@@ -158,7 +158,7 @@
 ### Cross-Provider Evidence Fusion / 跨 Provider 证据融合
 
 - CLI：`memory-center provider-evidence-fuse --path <project-dir> --evidence-json '<EvidenceRef JSON 数组>'`。
-- HTTP：`GET /workspace/provider-evidence-fuse?path=<project-dir>&evidence_json=<JSON 数组>`。
+- HTTP：`POST /workspace/provider-evidence-fuse?path=<project-dir>&evidence_json=<JSON 数组>`。
 - MCP：`mc_mcp_bridge(evidence_refs_json="<EvidenceRef JSON 数组>")`。
 - Fusion 最多接收 20 条不含 `output/content/text/payload/body` 的 `evidence:*` 引用。只有至少两个独立 Provider 对相同 `claim.subject + claim.predicate` 提供值时，才会返回 `CONSISTENT` 或 `CONFLICT`；其它情况是 `INSUFFICIENT_EVIDENCE`。
 - `CONFLICT` 返回 `verify_conflict` Action 和关联引用，要求补充测试、运行时或人工验证。没有 Claim 的引用不会因正文哈希不同而冲突。融合过程不写入 workspace、图谱、SQLite 或审计。
@@ -256,8 +256,8 @@
 - `artifact delivery-transition --stage breakdown|locate|implement|verify|close`：按门禁推进；验收未被执行器或人工验证证据覆盖时不能关闭。
 - `artifact delivery-record-validation`：仅记录外部验证摘要；默认 `recorded_external` 不可用于关闭门禁。
 - `artifact delivery-skill-candidate|delivery-skill-contract-update|delivery-skill-canary|delivery-skill-observe|delivery-skill-evaluate|delivery-skill-publish|delivery-skill-rollback|delivery-skill-recommend|delivery-skill-replay`：候选先通过 `delivery-skill-contract-update --contract '<JSON>'` 声明语言、前置条件、停止条件、输入输出字段和 `replay_policy.redacted=true`，才可进入隔离灰度。`minimum_verified_passed`（默认 3）决定当前 `contract_sha256` 下发布所需的带证据成功观测和自动脱敏 replay 数量；失败会阻断发布。修订 canary 契约后旧 replay 不再计入，已发布 Skill 契约不可原地更新。`delivery-skill-recommend --language java` 可按语言过滤；默认检索仅返回 `published`，回滚不删除证据。
-- `artifact asset-status|asset-sync|asset-register|asset-share|asset-approve|asset-bind|asset-loadout|wiki-document-ingest`：管理本地任务、Skill、Wiki、CodeGraph 协作资产。`asset-register` 必须提供与 `owner` 一致的 `actor`；既有资产的更新和绑定也只允许 owner。团队/受限共享必须先由 owner 提交、再由另一维护者审批，只有 active 且绑定匹配的资产会进入 Agent/角色 loadout。HTTP 对应 `/workspace/assets`、`/workspace/asset/*` 和 `/workspace/wiki/document-ingest`；MCP 使用同名 `mc_admin` action。
-- HTTP：`GET /workspace/delivery/skill/contract?task_id=<id>&payload=<JSON>` 更新契约；`GET /workspace/delivery/skill/replay?skill_id=<id>&limit=100` 读取 replay。MCP 使用 `mc_admin(action="delivery_skill_contract_update"|"delivery_skill_replay", ...)`。
+- `artifact asset-status|asset-sync|asset-register|asset-share|asset-approve|asset-bind|asset-loadout|wiki-document-ingest`：管理本地任务、Skill、Wiki、CodeGraph 协作资产。`asset-register` 必须提供与 `owner` 一致的 `actor`；既有资产的更新和绑定也只允许 owner。metadata 最大 16 KiB；`asset-status` / `asset-loadout` 采用默认总输出预算，可用 `max_chars` 收紧并查看 `truncated`。团队/受限共享必须先由 owner 提交、再由另一维护者审批，只有 active 且绑定匹配的资产会进入 Agent/角色 loadout。HTTP 读取使用 `GET /workspace/assets|/workspace/asset/loadout`，写入使用 `POST /workspace/asset/*` 和 `POST /workspace/wiki/document-ingest`；MCP 使用同名 `mc_admin` action。
+- HTTP：`POST /workspace/delivery/skill/contract?task_id=<id>&payload=<JSON>` 更新契约；`GET /workspace/delivery/skill/replay?skill_id=<id>&limit=100` 读取 replay。MCP 使用 `mc_admin(action="delivery_skill_contract_update"|"delivery_skill_replay", ...)`。
 - `artifact delivery-failure-candidates|delivery-skill-synthesize`：显式、离线地聚类跨任务失败和多个已验证交付的共同结构；只保存脱敏元数据和证据引用，不在查询热路径运行。
 
 交付 `subtasks` 除 `code_targets` 外可附加 `read_targets`、`write_targets`、`stop_conditions`：分别表示实现前必须核实的目标、允许修改的范围，以及触发重新分析或请求决策的停止条件。`delivery-matrix` 与派生 `TECH_SPEC.md` 会展示范围契约覆盖率。工作区 `delivery-policy.json` 设置 `enforce_scope_contract: true` 后，进入 `implement` 前每个子任务必须同时具备上述范围字段；默认关闭，既有任务不受影响。
@@ -306,6 +306,8 @@
 ## 3. HTTP Endpoints / HTTP 端点
 
 高频端点：
+
+HTTP 方法规则：GET 只读；会修改 workspace、记录会话、执行受控外部动作或导出工件的端点必须 POST。默认仅绑定 loopback；非回环 host 必须使用 `MEMORY_CENTER_HTTP_TOKEN`，通过 `Authorization: Bearer <token>` 校验。
 
 - `/workspace/status`
 - `/workspace/sniff`
