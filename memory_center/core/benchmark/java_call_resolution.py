@@ -171,9 +171,7 @@ def summarize_java_call_resolution_metrics(workspace_file: str | Path) -> dict[s
     unresolved = 0
     with RuntimeStore(store.graph_db_path) as graph:
         conn = graph.connect()
-        rows = conn.execute(
-            "SELECT source_id, confidence, metadata_json FROM edges WHERE type = 'CALLS_METHOD'"
-        )
+        rows = conn.execute("SELECT source_id, confidence, metadata_json FROM edges WHERE type = 'CALLS_METHOD'")
         for row in rows:
             total += 1
             metadata = _json_dict(row["metadata_json"])
@@ -314,14 +312,16 @@ def summarize_unresolved_java_calls(
             category_counts[category] += 1
             receiver_shape_counts[receiver_shape] += 1
             if len(samples) < max_samples:
-                samples.append({
-                    "source": _anchor_from_method_name(row["source_name"]),
-                    "target": _anchor_from_method_name(row["target_name"]),
-                    "category": category,
-                    "reason": reason,
-                    "receiver_shape": receiver_shape,
-                    "confidence": round(float(row["confidence"] or 0.0), 4),
-                })
+                samples.append(
+                    {
+                        "source": _anchor_from_method_name(row["source_name"]),
+                        "target": _anchor_from_method_name(row["target_name"]),
+                        "category": category,
+                        "reason": reason,
+                        "receiver_shape": receiver_shape,
+                        "confidence": round(float(row["confidence"] or 0.0), 4),
+                    }
+                )
 
     categories = [
         {
@@ -332,6 +332,22 @@ def summarize_unresolved_java_calls(
         }
         for category, count in sorted(category_counts.items(), key=lambda item: (-item[1], item[0]))
     ]
+    top_category = categories[0] if categories else {}
+    campaign = {
+        "status": "ready_for_case_design" if top_category else "no_unresolved_calls",
+        "target_category": top_category.get("category", ""),
+        "target_count": top_category.get("count", 0),
+        "case_contract": {
+            "minimum_cases": 3,
+            "maximum_cases": 5,
+            "required_fields": ["source", "expected_target", "allowed_targets", "forbidden_targets"],
+            "rule_change_allowed": False,
+            "unlock_condition": "至少 3 个新逻辑锚点 case 通过 expected/allowed/forbidden 门禁。",
+        },
+        "next_action": "先为最大本地可证明类别补 3 到 5 个逻辑锚点 case；通过 precision/forbidden-hit 门禁后才修改 parser 或 resolver。"
+        if top_category
+        else "当前没有未解析调用；继续在真实工作区采样，不添加猜测性 fallback。",
+    }
     return {
         "schema_version": 1,
         "suite": "java_call_resolution_unresolved",
@@ -345,6 +361,7 @@ def summarize_unresolved_java_calls(
             "returned_sample_count": len(samples),
         },
         "categories": categories,
+        "campaign": campaign,
         "samples": samples,
         "next_action": "Prioritize the largest category, add logical-anchor cases, then improve only the responsible parser or resolver layer.",
     }
@@ -362,9 +379,8 @@ def _evaluate_case(conn: sqlite3.Connection, case: JavaCallResolutionCase) -> di
     metadata = _json_dict(best_match.get("metadata_json")) if best_match else {}
     resolution_level = str(metadata.get("resolution_level", "") or "")
     confidence_passed = target_found and confidence >= case.min_confidence
-    resolution_level_passed = (
-        target_found
-        and (not case.expected_resolution_levels or resolution_level in set(case.expected_resolution_levels))
+    resolution_level_passed = target_found and (
+        not case.expected_resolution_levels or resolution_level in set(case.expected_resolution_levels)
     )
     allowed_names = _target_names(case.allowed_targets)
     forbidden_names = _target_names(case.forbidden_targets)
@@ -377,8 +393,7 @@ def _evaluate_case(conn: sqlite3.Connection, case: JavaCallResolutionCase) -> di
     allowed_high_confidence = [
         _edge_summary(edge)
         for edge in outgoing_edges
-        if float(edge.get("confidence", 0.0) or 0.0) >= case.min_confidence
-        and edge.get("target_name") in allowed_names
+        if float(edge.get("confidence", 0.0) or 0.0) >= case.min_confidence and edge.get("target_name") in allowed_names
     ]
     forbidden_high_confidence = [
         _edge_summary(edge)

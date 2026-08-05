@@ -1,5 +1,15 @@
 # Changelog / 更新日志
 
+## 4.3.63 评测可信化与 Java 精度 Campaign / Evaluation Trust and Java Precision Campaign
+
+- `skill-up` 初始化新增本地评测 policy，默认禁用未隔离的 `without_skill` 对比并要求 3 到 5 个脱敏可观察 case；执行结果区分 `pass`、`skill_failure`、`evaluation_failure` 与 `environment_error`，环境故障不计入 Skill 失败率。
+- Java 未解析调用报告新增 `campaign` 与逻辑锚点 case 契约。报告选定最大类别，但在 expected/allowed/forbidden target 门禁通过前明确锁定 resolver/parser 规则修改，避免猜测性 fallback。
+
+## 4.3.63 Evaluation Trust and Java Precision Campaign
+
+- `skill-up` initialization now writes a local evaluation policy that disables non-isolated `without_skill` comparisons and requires 3 to 5 sanitized observable cases. Runs classify `pass`, `skill_failure`, `evaluation_failure`, and `environment_error`, with environment faults excluded from Skill failure rates.
+- The unresolved Java-call report now adds a `campaign` and logical-anchor case contract. It identifies the largest category but locks resolver/parser changes until expected/allowed/forbidden target gates pass, preventing speculative fallbacks.
+
 ## 4.3.62 真实 P95 闭环、路由契约审计与长任务体验 / Real P95 Loop, Route Contract Audit, and Long-Task UX
 
 - 新增显式 `performance-snapshot` / `performance-status`、HTTP 性能快照接口和 MCP Admin action。快照只保存 generation 与聚合 P50/P95/P99/结果计数，不保存查询、路径或源码，且永不进入普通查询热路径。

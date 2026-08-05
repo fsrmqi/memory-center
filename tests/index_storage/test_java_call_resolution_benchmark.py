@@ -27,11 +27,13 @@ def _workspace(tmp_path: Path) -> Path:
     workspace = tmp_path / ".memory-center" / "workspace.yaml"
     workspace.parent.mkdir(parents=True)
     workspace.write_text(
-        yaml.safe_dump({
-            "workspace": "test",
-            "root": str(tmp_path),
-            "services": [],
-        }),
+        yaml.safe_dump(
+            {
+                "workspace": "test",
+                "root": str(tmp_path),
+                "services": [],
+            }
+        ),
         encoding="utf-8",
     )
     return workspace
@@ -86,16 +88,18 @@ def test_java_call_resolution_suite_scores_expected_edges(tmp_path: Path) -> Non
         )
     cases = _write_cases(
         tmp_path / "java-call-cases.yaml",
-        [{
-            "case_id": "controller-to-service",
-            "source": "OrderController#submit",
-            "expected_target": "OrderService#submit",
-            "project": "api",
-            "min_confidence": 0.85,
-            "expected_resolution_levels": ["import"],
-            "allowed_targets": ["AuditService#record"],
-            "forbidden_targets": ["WrongService#submit"],
-        }],
+        [
+            {
+                "case_id": "controller-to-service",
+                "source": "OrderController#submit",
+                "expected_target": "OrderService#submit",
+                "project": "api",
+                "min_confidence": 0.85,
+                "expected_resolution_levels": ["import"],
+                "allowed_targets": ["AuditService#record"],
+                "forbidden_targets": ["WrongService#submit"],
+            }
+        ],
     )
 
     result = run_java_call_resolution_suite(workspace, cases)
@@ -142,11 +146,13 @@ def test_java_call_resolution_suite_reports_unresolved_missing_target(tmp_path: 
         )
     cases = _write_cases(
         tmp_path / "java-call-cases.yaml",
-        [{
-            "case_id": "missing-service",
-            "source": "OrderController#submit",
-            "expected_target": "OrderService#submit",
-        }],
+        [
+            {
+                "case_id": "missing-service",
+                "source": "OrderController#submit",
+                "expected_target": "OrderService#submit",
+            }
+        ],
     )
 
     result = run_java_call_resolution_suite(workspace, cases)
@@ -168,21 +174,28 @@ def test_java_call_resolution_suite_gates_expected_resolution_level(tmp_path: Pa
                 GraphNode(source_id, "Method", "Facade.invoke", "api", "Facade.java"),
                 GraphNode(target_id, "Method", "Result.execute", "api", "Result.java"),
             ],
-            [GraphEdge(
-                edge_id(source_id, target_id, "CALLS_METHOD"),
-                source_id,
-                target_id,
-                "CALLS_METHOD",
-                0.9,
-                {"resolution_level": "import"},
-            )],
+            [
+                GraphEdge(
+                    edge_id(source_id, target_id, "CALLS_METHOD"),
+                    source_id,
+                    target_id,
+                    "CALLS_METHOD",
+                    0.9,
+                    {"resolution_level": "import"},
+                )
+            ],
         )
-    cases = _write_cases(tmp_path / "java-call-level-cases.yaml", [{
-        "case_id": "chain-return-type",
-        "source": "Facade#invoke",
-        "expected_target": "Result#execute",
-        "expected_resolution_levels": ["chain_return_type"],
-    }])
+    cases = _write_cases(
+        tmp_path / "java-call-level-cases.yaml",
+        [
+            {
+                "case_id": "chain-return-type",
+                "source": "Facade#invoke",
+                "expected_target": "Result#execute",
+                "expected_resolution_levels": ["chain_return_type"],
+            }
+        ],
+    )
 
     result = run_java_call_resolution_suite(workspace, cases)
 
@@ -206,8 +219,22 @@ def test_java_call_resolution_metrics_exposes_chain_counts_without_paths(tmp_pat
                 GraphNode(unresolved_id, "Method", "Remote.call", "api", "src/Facade.java"),
             ],
             [
-                GraphEdge(edge_id(source_id, target_id, "CALLS_METHOD"), source_id, target_id, "CALLS_METHOD", 0.78, {"resolution_level": "chain_return_type"}),
-                GraphEdge(edge_id(source_id, unresolved_id, "CALLS_METHOD"), source_id, unresolved_id, "CALLS_METHOD", 0.2, {"resolution_level": "unresolved"}),
+                GraphEdge(
+                    edge_id(source_id, target_id, "CALLS_METHOD"),
+                    source_id,
+                    target_id,
+                    "CALLS_METHOD",
+                    0.78,
+                    {"resolution_level": "chain_return_type"},
+                ),
+                GraphEdge(
+                    edge_id(source_id, unresolved_id, "CALLS_METHOD"),
+                    source_id,
+                    unresolved_id,
+                    "CALLS_METHOD",
+                    0.2,
+                    {"resolution_level": "unresolved"},
+                ),
             ],
         )
 
@@ -222,11 +249,13 @@ def test_java_call_resolution_metrics_exposes_chain_counts_without_paths(tmp_pat
 def test_java_call_resolution_cases_reject_filesystem_paths(tmp_path: Path) -> None:
     cases = _write_cases(
         tmp_path / "java-call-cases.yaml",
-        [{
-            "case_id": "bad",
-            "source": "/tmp/OrderController.java",
-            "expected_target": "OrderService#submit",
-        }],
+        [
+            {
+                "case_id": "bad",
+                "source": "/tmp/OrderController.java",
+                "expected_target": "OrderService#submit",
+            }
+        ],
     )
 
     try:
@@ -240,12 +269,14 @@ def test_java_call_resolution_cases_reject_filesystem_paths(tmp_path: Path) -> N
 def test_java_call_resolution_cases_reject_non_list_edge_contracts(tmp_path: Path) -> None:
     cases = _write_cases(
         tmp_path / "java-call-cases.yaml",
-        [{
-            "case_id": "bad-contract",
-            "source": "OrderController#submit",
-            "expected_target": "OrderService#submit",
-            "allowed_targets": "AuditService#record",
-        }],
+        [
+            {
+                "case_id": "bad-contract",
+                "source": "OrderController#submit",
+                "expected_target": "OrderService#submit",
+                "allowed_targets": "AuditService#record",
+            }
+        ],
     )
 
     try:
@@ -271,29 +302,48 @@ def test_java_call_resolution_review_deduplicates_unclassified_edges(tmp_path: P
             ],
             [
                 GraphEdge(edge_id(source_id, target_id, "CALLS_METHOD"), source_id, target_id, "CALLS_METHOD", 0.9, {}),
-                GraphEdge(edge_id(source_id, side_id, "CALLS_METHOD"), source_id, side_id, "CALLS_METHOD", 0.9, {"resolution_level": "import"}),
+                GraphEdge(
+                    edge_id(source_id, side_id, "CALLS_METHOD"),
+                    source_id,
+                    side_id,
+                    "CALLS_METHOD",
+                    0.9,
+                    {"resolution_level": "import"},
+                ),
             ],
         )
     cases = _write_cases(
         tmp_path / "java-call-review-cases.yaml",
         [
-            {"case_id": "same-source-a", "source": "OrderController#submit", "expected_target": "OrderService#submit", "project": "api"},
-            {"case_id": "same-source-b", "source": "OrderController#submit", "expected_target": "OrderService#submit", "project": "api"},
+            {
+                "case_id": "same-source-a",
+                "source": "OrderController#submit",
+                "expected_target": "OrderService#submit",
+                "project": "api",
+            },
+            {
+                "case_id": "same-source-b",
+                "source": "OrderController#submit",
+                "expected_target": "OrderService#submit",
+                "project": "api",
+            },
         ],
     )
 
     result = review_java_call_resolution_suite(workspace, cases, limit=10)
 
     assert result["summary"]["unclassified_high_confidence_edge_count"] == 1
-    assert result["items"] == [{
-        "source": "OrderController#submit",
-        "target": "AuditService#record",
-        "resolution_level": "import",
-        "confidence": 0.9,
-        "case_ids": ["same-source-a", "same-source-b"],
-        "expected_targets": ["OrderService#submit"],
-        "review_status": "unclassified",
-    }]
+    assert result["items"] == [
+        {
+            "source": "OrderController#submit",
+            "target": "AuditService#record",
+            "resolution_level": "import",
+            "confidence": 0.9,
+            "case_ids": ["same-source-a", "same-source-b"],
+            "expected_targets": ["OrderService#submit"],
+            "review_status": "unclassified",
+        }
+    ]
 
 
 def test_unresolved_java_call_report_groups_reasons_without_paths(tmp_path: Path) -> None:
@@ -312,9 +362,30 @@ def test_unresolved_java_call_report_groups_reasons_without_paths(tmp_path: Path
                 GraphNode(resolved_id, "Method", "OrderService.submit", "api", "src/OrderService.java"),
             ],
             [
-                GraphEdge(edge_id(source_id, external_id, "CALLS_METHOD"), source_id, external_id, "CALLS_METHOD", 0.3, {"resolution_level": "unresolved", "unresolved_reason": "receiver_type_not_indexed"}),
-                GraphEdge(edge_id(source_id, polymorphic_id, "CALLS_METHOD"), source_id, polymorphic_id, "CALLS_METHOD", 0.3, {"resolution_level": "unresolved", "unresolved_reason": "target_method_not_indexed"}),
-                GraphEdge(edge_id(source_id, resolved_id, "CALLS_METHOD"), source_id, resolved_id, "CALLS_METHOD", 0.9, {"resolution_level": "import"}),
+                GraphEdge(
+                    edge_id(source_id, external_id, "CALLS_METHOD"),
+                    source_id,
+                    external_id,
+                    "CALLS_METHOD",
+                    0.3,
+                    {"resolution_level": "unresolved", "unresolved_reason": "receiver_type_not_indexed"},
+                ),
+                GraphEdge(
+                    edge_id(source_id, polymorphic_id, "CALLS_METHOD"),
+                    source_id,
+                    polymorphic_id,
+                    "CALLS_METHOD",
+                    0.3,
+                    {"resolution_level": "unresolved", "unresolved_reason": "target_method_not_indexed"},
+                ),
+                GraphEdge(
+                    edge_id(source_id, resolved_id, "CALLS_METHOD"),
+                    source_id,
+                    resolved_id,
+                    "CALLS_METHOD",
+                    0.9,
+                    {"resolution_level": "import"},
+                ),
             ],
         )
 
@@ -327,9 +398,26 @@ def test_unresolved_java_call_report_groups_reasons_without_paths(tmp_path: Path
         "missing_method_or_polymorphism": 1,
     }
     assert result["samples"] == [
-        {"source": "OrderController#submit", "target": "OrderHandler#handle", "category": "missing_method_or_polymorphism", "reason": "target_method_not_indexed", "receiver_shape": "unqualified_or_dynamic", "confidence": 0.3},
-        {"source": "OrderController#submit", "target": "RemoteClient#send", "category": "external_or_missing_source", "reason": "receiver_type_not_indexed", "receiver_shape": "unqualified_or_dynamic", "confidence": 0.3},
+        {
+            "source": "OrderController#submit",
+            "target": "OrderHandler#handle",
+            "category": "missing_method_or_polymorphism",
+            "reason": "target_method_not_indexed",
+            "receiver_shape": "unqualified_or_dynamic",
+            "confidence": 0.3,
+        },
+        {
+            "source": "OrderController#submit",
+            "target": "RemoteClient#send",
+            "category": "external_or_missing_source",
+            "reason": "receiver_type_not_indexed",
+            "receiver_shape": "unqualified_or_dynamic",
+            "confidence": 0.3,
+        },
     ]
+    assert result["campaign"]["target_category"] == "external_or_missing_source"
+    assert result["campaign"]["case_contract"]["minimum_cases"] == 3
+    assert result["campaign"]["case_contract"]["rule_change_allowed"] is False
     assert "src/" not in str(result)
 
 
@@ -351,7 +439,12 @@ def test_unresolved_java_call_report_reclassifies_legacy_static_receivers(tmp_pa
                     target_id,
                     "CALLS_METHOD",
                     0.3,
-                    {"resolution_level": "unresolved", "unresolved_reason": "receiver_type_missing", "receiver": "Assert", "receiver_type": ""},
+                    {
+                        "resolution_level": "unresolved",
+                        "unresolved_reason": "receiver_type_missing",
+                        "receiver": "Assert",
+                        "receiver_type": "",
+                    },
                 ),
             ],
         )
@@ -379,9 +472,13 @@ def test_unresolved_java_call_report_is_available_from_cli_and_http(tmp_path: Pa
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
-        response = json.loads(urlopen(
-            f"http://127.0.0.1:{server.server_address[1]}/workspace/eval-java-call-resolution-unresolved?limit=0"
-        ).read().decode("utf-8"))
+        response = json.loads(
+            urlopen(
+                f"http://127.0.0.1:{server.server_address[1]}/workspace/eval-java-call-resolution-unresolved?limit=0"
+            )
+            .read()
+            .decode("utf-8")
+        )
     finally:
         server.shutdown()
         thread.join(timeout=2)
@@ -401,9 +498,11 @@ def test_java_call_metrics_are_available_from_cli_http_and_mcp(tmp_path: Path) -
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
-        response = json.loads(urlopen(
-            f"http://127.0.0.1:{server.server_address[1]}/workspace/eval-java-call-resolution-metrics"
-        ).read().decode("utf-8"))
+        response = json.loads(
+            urlopen(f"http://127.0.0.1:{server.server_address[1]}/workspace/eval-java-call-resolution-metrics")
+            .read()
+            .decode("utf-8")
+        )
     finally:
         server.shutdown()
         thread.join(timeout=2)

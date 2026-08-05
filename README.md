@@ -647,6 +647,10 @@ Sparse postings and ANN vectors are stored in dedicated SQLite runtime indexes; 
 
 Published delivery Skills can optionally use the external `skill-up` evaluator. Agents first run `artifact delivery-skill-eval-status`; only when the binary is available and the Skill is published may they initialize a sanitized evaluation skeleton. Agents must use `delivery-skill-eval-run --dry-run` before an explicitly requested `--apply`; external results never auto-publish or promote a Skill.
 
+`skill-up` skeletons now require 3 to 5 sanitized cases with observable assertions and store a local policy that disables `without_skill` gain comparisons until an isolated runtime exists. Applied runs classify outcomes as `pass`, `skill_failure`, `evaluation_failure`, or `environment_error`; authentication, network, MCP, process, and timeout failures never count as Skill failures. `eval-java-call-resolution-unresolved` also returns a case-design campaign: it selects the largest category but keeps rule changes locked until 3 to 5 logical-anchor cases pass expected/allowed/forbidden-target gates.
+
+`skill-up` 骨架现在要求 3 到 5 个带可观察断言的脱敏 case，并通过本地 policy 在隔离运行环境建立前禁用 `without_skill` 增益比较。实际运行会将结果分类为 `pass`、`skill_failure`、`evaluation_failure` 或 `environment_error`；认证、网络、MCP、进程和超时故障不会计入 Skill 失败。`eval-java-call-resolution-unresolved` 还会返回 case 设计 campaign：选定最大的类别，但只有 3 到 5 个逻辑锚点 case 通过 expected/allowed/forbidden-target 门禁后才允许修改规则。
+
 ```bash
 memory-center artifact create-task \
   --workspace /Users/cuijiaqi/javaworkspace/ucap/.memory-center/workspace.yaml \

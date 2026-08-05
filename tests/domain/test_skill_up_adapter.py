@@ -22,7 +22,10 @@ def _published_skill(workspace: Path) -> str:
     path.parent.mkdir(parents=True)
     path.write_text("# Demo\n", encoding="utf-8")
     registry = store.artifacts_dir / "skills" / "delivery-skill-registry.json"
-    registry.write_text(json.dumps({"skills": [{"skill_id": skill_id, "lifecycle": "published", "published_path": str(path)}]}), encoding="utf-8")
+    registry.write_text(
+        json.dumps({"skills": [{"skill_id": skill_id, "lifecycle": "published", "published_path": str(path)}]}),
+        encoding="utf-8",
+    )
     return skill_id
 
 
@@ -41,6 +44,10 @@ def test_skill_up_init_creates_bounded_skeleton_for_published_skill(tmp_path: Pa
     assert result["initialized"] is True
     assert Path(result["eval_config"]).exists()
     assert Path(result["cases_dir"], "README.md").exists()
+    assert (
+        json.loads(Path(result["evaluation_policy"]).read_text(encoding="utf-8"))["comparison_status"]
+        == "not_comparable"
+    )
 
 
 def test_skill_up_dry_run_never_executes_external_binary(tmp_path: Path, monkeypatch) -> None:
@@ -60,3 +67,19 @@ def test_skill_up_dry_run_never_executes_external_binary(tmp_path: Path, monkeyp
     assert result["executed"] is False
     assert result["apply"] is False
     assert calls == [["/usr/local/bin/skill-up", "--version"]]
+
+
+def test_skill_up_environment_failure_is_not_counted_as_skill_failure(tmp_path: Path, monkeypatch) -> None:
+    workspace = _workspace(tmp_path)
+    skill_id = _published_skill(workspace)
+    monkeypatch.setattr("memory_center.core.tasks.skill_up.shutil.which", lambda _name: "/usr/local/bin/skill-up")
+    monkeypatch.setattr(
+        "memory_center.core.tasks.skill_up.subprocess.run",
+        lambda argv, **_kwargs: subprocess.CompletedProcess(argv, 1, "", "MCP authentication token expired"),
+    )
+    initialize_skill_up_eval(workspace, skill_id=skill_id)
+
+    result = run_skill_up_eval(workspace, skill_id=skill_id, apply=True)
+
+    assert result["classification"] == "environment_error"
+    assert result["passed"] is False

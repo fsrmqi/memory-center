@@ -91,6 +91,8 @@ MCP 当前公开的是 15 个 task-level tools：
 
 `job_status` also derives `progress_percent`, `elapsed_ms`, `estimated_remaining_ms`, `can_cancel`, and `recovery_action` for Agents and `/ui/jobs`; it never rewrites job history or indexes. Real-workspace performance is sampled only by explicit `mc_admin(action="performance_snapshot", limit=5, budget="fast")`, then read through `performance_snapshot_status`. Snapshots retain aggregate metrics and generation only, never queries, paths, or source text. `mc_admin(action="http_route_contract_audit")` audits HTTP read/write contracts before release.
 
+外部 `skill-up` 评测必须使用 3 到 5 个脱敏、可观察的 case；隔离运行环境未建立前，`without_skill` 基线固定为不可比较。执行结果会返回 `pass`、`skill_failure`、`evaluation_failure` 或 `environment_error`，其中认证、网络、MCP、进程和超时问题绝不计入 Skill 失败率。Java 调用解析的 `eval_java_call_resolution_unresolved` 返回 `campaign`，要求先增加 3 到 5 个 `expected_target`、`allowed_targets`、`forbidden_targets` 逻辑锚点 case，再允许变更 resolver/parser。
+
 常驻索引更新通过 `memory-center watcher-start --workspace <workspace.yaml>` 启动；它对去抖后的源码、配置变更创建有界局部重建任务，不在查询链路执行全量重建。使用 `watcher-status` / `watcher-stop` 查看或停止。MCP 对应 `mc_admin(action="watcher_start|watcher_status|watcher_stop")`；Workbench 的 `hot_refresh.watcher` 同步显示相同状态。
 
 局部重建完成后，watcher 自动写入轻量变更影响摘要，只复用失效计划、任务结果和 index generation，不会自动执行深度影响分析。通过 `memory-center change-impact-reports`、`GET /workspace/change-impact-reports` 或 `mc_admin(action="change_impact_recent")` 查询；DTO、Feign、MQ、HTTP、配置变更会标为高风险并建议显式调用 `mc_analyze(depth="full")`。
