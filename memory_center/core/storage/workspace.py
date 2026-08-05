@@ -106,6 +106,9 @@ class WorkspaceStore:
         self.instructions_dir = self.base_dir / "instructions"
         self.graph_dir = self.base_dir / "graph"
         self.lock_file = self.base_dir / "store.lock"
+        self.index_lock_file = self.base_dir / "index.lock"
+        self.artifact_lock_file = self.base_dir / "artifacts.lock"
+        self.audit_lock_file = self.base_dir / "audit.lock"
         self.reindex_lock_file = self.base_dir / "reindex.lock"
         self._memory_backend: RuntimeStore | None = None
         for p in [self.index_dir, self.rules_dir, self.memory_dir, self.refs_dir, self.artifacts_dir, self.instructions_dir, self.graph_dir]:
@@ -113,7 +116,7 @@ class WorkspaceStore:
 
     def write_json(self, name: str, data: Any) -> None:
         path = self.index_dir / name
-        with FileLock(str(self.lock_file)):
+        with FileLock(str(self.index_lock_file)):
             self.memory_backend().upsert_index(name, data)
             if name in RUNTIME_ONLY_INDEXES:
                 path.unlink(missing_ok=True)
@@ -136,7 +139,7 @@ class WorkspaceStore:
         path = self.memory_dir / name
         item = dict(item)
         item.setdefault("created_at", datetime.now(timezone.utc).isoformat())
-        with FileLock(str(self.lock_file)):
+        with FileLock(str(self.audit_lock_file)):
             self.memory_backend().append_record(name, item, record_id=self._infer_record_id(name, item))
             with path.open("a", encoding="utf-8") as f:
                 f.write(json.dumps(item, ensure_ascii=False) + "\n")
@@ -149,7 +152,7 @@ class WorkspaceStore:
         path = self.memory_dir / name
         now = datetime.now(timezone.utc).isoformat()
         rows = [dict(item, created_at=item.get("created_at") or now) for item in items]
-        with FileLock(str(self.lock_file)):
+        with FileLock(str(self.audit_lock_file)):
             self.memory_backend().append_records(
                 name,
                 rows,
@@ -167,7 +170,7 @@ class WorkspaceStore:
         cutoff = created_before.astimezone(timezone.utc)
         kept_lines: deque[str] = deque(maxlen=max_records)
         total = expired = invalid = overflow = 0
-        with FileLock(str(self.lock_file)):
+        with FileLock(str(self.artifact_lock_file)):
             if path.exists():
                 for line in path.read_text(encoding="utf-8").splitlines():
                     if not line.strip():
@@ -241,7 +244,7 @@ class WorkspaceStore:
         path = _safe_path(self.memory_dir, name)
         path.parent.mkdir(parents=True, exist_ok=True)
         ref = str(path.relative_to(self.base_dir))
-        with FileLock(str(self.lock_file)):
+        with FileLock(str(self.artifact_lock_file)):
             self.memory_backend().upsert_ref(ref, data)
             path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
         return ref
@@ -263,7 +266,7 @@ class WorkspaceStore:
     def write_artifact(self, name: str, content: str) -> Path:
         path = _safe_path(self.artifacts_dir, name)
         path.parent.mkdir(parents=True, exist_ok=True)
-        with FileLock(str(self.lock_file)):
+        with FileLock(str(self.artifact_lock_file)):
             path.write_text(content, encoding="utf-8")
         return path
 
@@ -279,13 +282,27 @@ class WorkspaceStore:
     def append_artifact(self, name: str, content: str) -> Path:
         path = _safe_path(self.artifacts_dir, name)
         path.parent.mkdir(parents=True, exist_ok=True)
-        with FileLock(str(self.lock_file)):
+        with FileLock(str(self.artifact_lock_file)):
             with path.open("a", encoding="utf-8") as f:
                 f.write(content)
         return path
 
     def artifact_exists(self, name: str) -> bool:
         return _safe_path(self.artifacts_dir, name).exists()
+
+    def storage_budget_report(self, *, warning_bytes: int = 8 * 1024**3) -> dict[str, Any]:
+        """按存储类别汇总空间、增长治理建议；只读且不扫描源码目录。"""
+        categories = {"graph": self.graph_dir, "index": self.index_dir, "artifacts": self.artifacts_dir, "memory": self.memory_dir}
+        sizes = {name: sum(path.stat().st_size for path in directory.rglob("*") if path.is_file()) for name, directory in categories.items()}
+        total = sum(sizes.values())
+        actions = []
+        if sizes["graph"] > warning_bytes // 2:
+            actions.append("artifact assertion-vacuum --workspace <workspace.yaml> --dry-run")
+        if sizes["index"] > warning_bytes // 4:
+            actions.append("artifact index-export-cleanup --workspace <workspace.yaml> --dry-run")
+        if sizes["memory"] > warning_bytes // 8:
+            actions.append("artifact compact-task --workspace <workspace.yaml> --task-id <task-id>")
+        return {"categories": sizes, "total_bytes": total, "warning_bytes": warning_bytes, "status": "warning" if total >= warning_bytes else "healthy", "recommended_actions": actions, "next_action": actions[0] if actions else "当前空间在预算内。"}
 
     @property
     def graph_db_path(self) -> Path:

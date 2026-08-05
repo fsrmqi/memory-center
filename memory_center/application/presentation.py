@@ -4,6 +4,7 @@ import html
 import json
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 from memory_center.core.storage.workspace import WorkspaceStore
 
@@ -22,6 +23,7 @@ def _nav_sidebar_html(workspace_param: str) -> str:
         ("/ui/backend", "Backend / 后端"),
         ("/ui/index-freshness", "Freshness / 索引新鲜度"),
         ("/ui/assertion", "Assertion / 断言确认"),
+        ("/ui/jobs", "Jobs / 后台任务"),
     ]
     items = "".join(
         f'<li><a href="{path}?workspace={ws}" style="display:block;padding:6px 8px;color:var(--ink);text-decoration:none;border-radius:6px;">{label}</a></li>'
@@ -29,11 +31,11 @@ def _nav_sidebar_html(workspace_param: str) -> str:
     )
     return (
         '<nav style="position:fixed;top:0;left:0;width:220px;height:100vh;'
-        'background:var(--panel);border-right:1px solid var(--line);'
+        "background:var(--panel);border-right:1px solid var(--line);"
         'padding:18px 12px;font-size:14px;z-index:100;overflow-y:auto;">'
         '<div style="font-weight:700;margin-bottom:14px;color:var(--accent);">Memory Center</div>'
         f'<ul style="list-style:none;padding:0;margin:0;">{items}</ul>'
-        '</nav>'
+        "</nav>"
     )
 
 
@@ -104,7 +106,9 @@ def export_mermaid(workspace_file: str | Path) -> str:
         lines.append(f'  {src} -- "Feign: {label}" --> {dst}')
 
     mq_topics = topology.get("mq_topics", {})
-    topic_items = mq_topics.items() if isinstance(mq_topics, dict) else [(x.get("topic", "unknown"), x) for x in mq_topics]
+    topic_items = (
+        mq_topics.items() if isinstance(mq_topics, dict) else [(x.get("topic", "unknown"), x) for x in mq_topics]
+    )
     for topic, data in topic_items:
         topic_node = _node(f"topic_{topic}")
         lines.append(f'  {topic_node}(["Topic: {topic}"])')
@@ -167,7 +171,9 @@ def export_workspace_dashboard_markdown(workspace_file: str | Path, intent: str 
     return "\n".join(lines).rstrip() + "\n"
 
 
-def export_workspace_dashboard_html(workspace_file: str | Path, intent: str = "", limit: int = 10, view: str = "compact", budget: str = "medium") -> str:
+def export_workspace_dashboard_html(
+    workspace_file: str | Path, intent: str = "", limit: int = 10, view: str = "compact", budget: str = "medium"
+) -> str:
     from memory_center.core.orchestrator import workspace_dashboard
 
     dashboard = workspace_dashboard(workspace_file, intent=intent, limit=limit, view=view, budget=budget)
@@ -232,34 +238,34 @@ def export_workspace_dashboard_html(workspace_file: str | Path, intent: str = ""
     <section class="hero">
       <h1>Workspace Dashboard</h1>
       <div class="meta">
-        <span>Workspace: {html.escape(str(dashboard.get('workspace', '')))}</span>
-        <span>Focus: {html.escape(str(focus_task.get('title', '') or focus_task.get('task_id', 'None')))}</span>
-        <span>Active: {len(dashboard.get('active_tasks', []))}</span>
-        <span>Blocked: {len(dashboard.get('blocked_tasks', []))}</span>
+        <span>Workspace: {html.escape(str(dashboard.get("workspace", "")))}</span>
+        <span>Focus: {html.escape(str(focus_task.get("title", "") or focus_task.get("task_id", "None")))}</span>
+        <span>Active: {len(dashboard.get("active_tasks", []))}</span>
+        <span>Blocked: {len(dashboard.get("blocked_tasks", []))}</span>
       </div>
     </section>
     {_next_action_hero_html(dashboard, focus_task)}
     <div class="grid">
       <section class="card">
         <h2>Focus Resume Eval</h2>
-        <div class="muted">Rule: {html.escape(str(focus_eval.get('resume_rule_profile', '')))}</div>
-        <div class="score">Quality: {html.escape(str(focus_eval.get('quality', '')))} / Score: {html.escape(str(focus_eval.get('score', '')))}</div>
+        <div class="muted">Rule: {html.escape(str(focus_eval.get("resume_rule_profile", "")))}</div>
+        <div class="score">Quality: {html.escape(str(focus_eval.get("quality", "")))} / Score: {html.escape(str(focus_eval.get("score", "")))}</div>
       </section>
       <section class="card">
         <h2>Active Tasks</h2>
-        {_render_task_list_html(dashboard.get('active_tasks', []))}
+        {_render_task_list_html(dashboard.get("active_tasks", []))}
       </section>
       <section class="card">
         <h2>Low Quality Tasks</h2>
-        {_render_task_list_html(dashboard.get('low_quality_tasks', []))}
+        {_render_task_list_html(dashboard.get("low_quality_tasks", []))}
       </section>
       <section class="card">
         <h2>Recent Handoffs</h2>
-        {_render_handoff_list_html(dashboard.get('recent_handoffs', []))}
+        {_render_handoff_list_html(dashboard.get("recent_handoffs", []))}
       </section>
       <section class="card">
         <h2>Recent Receipts</h2>
-        {_render_receipt_list_html(dashboard.get('recent_receipts', []))}
+        {_render_receipt_list_html(dashboard.get("recent_receipts", []))}
       </section>
     </div>
   </div>
@@ -279,7 +285,9 @@ def export_continuity_dashboard_html(
 ) -> str:
     from memory_center.core.orchestrator import workspace_continuity_dashboard
 
-    dashboard = workspace_continuity_dashboard(workspace_file, intent=intent, task_id=task_id, session_id=session_id, limit=limit, view=view, budget=budget)
+    dashboard = workspace_continuity_dashboard(
+        workspace_file, intent=intent, task_id=task_id, session_id=session_id, limit=limit, view=view, budget=budget
+    )
     focus_task = dashboard.get("focus_task") or {}
     resume_packet = dashboard.get("resume_packet") or {}
     workspace_param = str(Path(workspace_file).resolve())
@@ -342,29 +350,29 @@ def export_continuity_dashboard_html(
     <section class="hero">
       <h1>Continuity Dashboard</h1>
       <div class="meta">
-        <span>Workspace: {html.escape(str(dashboard.get('workspace', '')))}</span>
-        <span>Focus: {html.escape(str(focus_task.get('title', '') or focus_task.get('task_id', 'None')))}</span>
-        <span>Phase: {html.escape(str(resume_packet.get('current_phase', '')))}</span>
-        {f'<span><a class="cross-link" href="/ui/task?task_id={html.escape(str(focus_task.get("task_id", "")))}&workspace={html.escape(workspace_param)}">View Focus Task →</a></span>' if focus_task.get('task_id') else ''}
+        <span>Workspace: {html.escape(str(dashboard.get("workspace", "")))}</span>
+        <span>Focus: {html.escape(str(focus_task.get("title", "") or focus_task.get("task_id", "None")))}</span>
+        <span>Phase: {html.escape(str(resume_packet.get("current_phase", "")))}</span>
+        {f'<span><a class="cross-link" href="/ui/task?task_id={html.escape(str(focus_task.get("task_id", "")))}&workspace={html.escape(workspace_param)}">View Focus Task →</a></span>' if focus_task.get("task_id") else ""}
       </div>
     </section>
     <div class="grid">
       <section class="card">
         <h2>Resume Packet</h2>
-        <div class="chip">{html.escape(str(resume_packet.get('resume_rule_profile', '')))}</div>
-        <div class="muted">{html.escape(str(resume_packet.get('current_summary', '')))}</div>
+        <div class="chip">{html.escape(str(resume_packet.get("resume_rule_profile", "")))}</div>
+        <div class="muted">{html.escape(str(resume_packet.get("current_summary", "")))}</div>
       </section>
       <section class="card">
         <h2>Next Actions</h2>
-        {_render_simple_list_html(dashboard.get('next_actions', []))}
+        {_render_simple_list_html(dashboard.get("next_actions", []))}
       </section>
       <section class="card">
         <h2>Unresolved Items</h2>
-        {_render_simple_list_html(dashboard.get('unresolved_items', []))}
+        {_render_simple_list_html(dashboard.get("unresolved_items", []))}
       </section>
       <section class="card">
         <h2>Recent Evidence</h2>
-        {_render_ref_list_html(dashboard.get('recent_evidence', []))}
+        {_render_ref_list_html(dashboard.get("recent_evidence", []))}
       </section>
     </div>
   </div>
@@ -482,6 +490,7 @@ def export_workbench_index_html(workspace_file: str | Path) -> str:
       <a class="card" href="/ui/backend"><h2>Memory Backend</h2><p>Mirrored SQLite collections, records, and refs.</p></a>
       <a class="card" href="/ui/index-freshness"><h2>Index Freshness</h2><p>Stale index signals and semantic readiness.</p></a>
       <a class="card" href="/ui/assertion"><h2>Assertion Review</h2><p>Verify, reject, or request deeper analysis.</p></a>
+      <a class="card" href="/ui/jobs"><h2>Background Jobs</h2><p>Progress, ETA, cancellation, and recovery actions.</p></a>
       <a class="card" href="/workspace/status?view=compact&budget=medium"><h2>Workspace Status JSON</h2><p>Compact machine-readable status.</p></a>
     </div>
   </div>
@@ -497,20 +506,47 @@ def export_assertion_html(workspace_file: str | Path, assertion_id: str = "") ->
     workspace_param = str(Path(workspace_file).resolve())
     details = inspect_assertion(WorkspaceStore(workspace_file), assertion_id) if assertion_id else {}
     assertion = details.get("assertion", {}) if isinstance(details, dict) else {}
-    message = html.escape(str(details.get("state_change_notice", "状态操作只改变断言状态，不会修改源码或删除历史证据。")))
-    content = html.escape(json.dumps(details, ensure_ascii=False, indent=2)) if details else "请输入 assertion_id 查看详情。"
+    message = html.escape(
+        str(details.get("state_change_notice", "状态操作只改变断言状态，不会修改源码或删除历史证据。"))
+    )
+    content = (
+        html.escape(json.dumps(details, ensure_ascii=False, indent=2)) if details else "请输入 assertion_id 查看详情。"
+    )
     return f"""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>断言确认</title><style>body{{font-family:system-ui;margin:32px;max-width:920px}}input,button{{padding:8px;margin:4px}}pre{{white-space:pre-wrap;background:#f5f7fa;padding:12px;border-radius:6px}}.notice{{color:#475569}}.reject{{background:#9f3333;color:#fff;border:0}}</style></head><body>
 <h1>断言确认</h1><p class="notice">{message}</p>
 <form method="get" action="/ui/assertion"><input type="hidden" name="workspace" value="{html.escape(workspace_param)}"><input name="assertion_id" value="{html.escape(assertion_id)}" placeholder="assertion_id"><button>查看</button></form>
-<p>当前状态：<strong>{html.escape(str(assertion.get('status', '')))}</strong></p>
+<p>当前状态：<strong>{html.escape(str(assertion.get("status", "")))}</strong></p>
 <form method="get" action="/workspace/assertion-status"><input type="hidden" name="workspace" value="{html.escape(workspace_param)}"><input type="hidden" name="assertion_id" value="{html.escape(assertion_id)}"><input name="verification_ref" placeholder="验证引用（验证成立必填）"><input name="actor" placeholder="操作人"><button name="status" value="VERIFIED">验证成立</button><button class="reject" name="status" value="REJECTED">发现误报</button><button name="status" value="AMBIGUOUS">需要深度分析</button></form><pre>{content}</pre></body></html>"""
+
+
+def export_jobs_html(workspace_file: str | Path, limit: int = 20) -> str:
+    """Render a polling-safe view for long-running local jobs."""
+    from memory_center.core.workspace.jobs import workspace_job_status
+
+    workspace_param = str(Path(workspace_file).resolve())
+    payload = workspace_job_status(workspace_file, limit=limit)
+    encoded_workspace = quote(workspace_param, safe="")
+    initial = html.escape(json.dumps(payload, ensure_ascii=False, indent=2))
+    return f"""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>后台任务</title><style>body{{font-family:system-ui;margin:32px;max-width:980px;color:#1f2937}}pre{{white-space:pre-wrap;background:#f5f7fa;padding:14px;border-radius:8px;line-height:1.45}}button{{padding:7px 12px;border:1px solid #cbd5e1;border-radius:6px;background:#fff;cursor:pointer}}.hint{{color:#475569}}</style></head><body>
+<h1>后台任务 / Jobs</h1><p class="hint">页面每 3 秒刷新。显示的 ETA 只根据当前进度估算；取消和恢复不会删除已有索引 generation。</p>
+<p><button onclick="refreshJobs()">立即刷新</button></p><pre id="jobs">{initial}</pre>
+<script>
+const workspace = '{encoded_workspace}';
+async function refreshJobs() {{
+  const response = await fetch('/workspace/job-status?workspace=' + workspace + '&limit={min(100, max(1, limit))}');
+  document.getElementById('jobs').textContent = JSON.stringify(await response.json(), null, 2);
+}}
+setInterval(refreshJobs, 3000);
+</script></body></html>"""
 
 
 def export_focus_task_html(workspace_file: str | Path, intent: str = "", task_id: str = "", limit: int = 10) -> str:
     from memory_center.core.orchestrator import workspace_continuity_dashboard
     from memory_center.core.tasks.artifacts import get_task_artifact
 
-    dashboard = workspace_continuity_dashboard(workspace_file, intent=intent, task_id=task_id, limit=limit, view="compact", budget="medium")
+    dashboard = workspace_continuity_dashboard(
+        workspace_file, intent=intent, task_id=task_id, limit=limit, view="compact", budget="medium"
+    )
     focus = dashboard.get("focus_task") or {}
     resolved_task_id = str(focus.get("task_id", "") or "")
     current_summary = (
@@ -552,15 +588,15 @@ def export_focus_task_html(workspace_file: str | Path, intent: str = "", task_id
   {sidebar}
   <div class="wrap">
     <section class="hero">
-      <h1>{html.escape(str(focus.get('title', '') or focus.get('task_id', 'Focus Task')))}</h1>
-      <div class="muted">{html.escape(str(focus.get('focus_reason', '')))}</div>
+      <h1>{html.escape(str(focus.get("title", "") or focus.get("task_id", "Focus Task")))}</h1>
+      <div class="muted">{html.escape(str(focus.get("focus_reason", "")))}</div>
       <a class="cross-link" href="/ui/timeline?workspace={html.escape(workspace_param)}&task_id={html.escape(resolved_task_id)}">View Timeline → / 查看时间线</a>
       <a class="cross-link" href="/ui/receipts?workspace={html.escape(workspace_param)}" style="margin-left:8px;">View Receipts → / 查看回执</a>
     </section>
     <div class="grid">
-      <section class="card"><h2>Next Actions</h2>{_render_simple_list_html(dashboard.get('next_actions', []))}</section>
-      <section class="card"><h2>Unresolved Items</h2>{_render_simple_list_html(dashboard.get('unresolved_items', []))}</section>
-      <section class="card"><h2>Recent Evidence</h2>{_render_ref_list_html(dashboard.get('recent_evidence', []))}</section>
+      <section class="card"><h2>Next Actions</h2>{_render_simple_list_html(dashboard.get("next_actions", []))}</section>
+      <section class="card"><h2>Unresolved Items</h2>{_render_simple_list_html(dashboard.get("unresolved_items", []))}</section>
+      <section class="card"><h2>Recent Evidence</h2>{_render_ref_list_html(dashboard.get("recent_evidence", []))}</section>
       <section class="card"><h2>Current Summary</h2><div class="muted">{html.escape(str(current_summary))}</div></section>
     </div>
   </div>
@@ -578,14 +614,17 @@ def export_timeline_html(workspace_file: str | Path, intent: str = "", limit: in
     task_id = str(focus.get("task_id", "") or "")
     timeline = workspace_replay_write_chain(workspace_file, task_id=task_id, limit=limit).get("timeline", [])
     backend = memory_backend_query(workspace_file, collection="write-receipts.jsonl", limit=min(limit, 10))
-    items = "".join(
-        f"<li><strong>{html.escape(str(item.get('kind', '')))}</strong> "
-        f"<span class='chip'>{html.escape(str(item.get('action', '')))}</span> "
-        f"<a href='/ui/ref?workspace={html.escape(workspace_param)}&ref_id={html.escape(str(item.get('ref_id', '')))}' style='color:var(--accent);text-decoration:none;'>"
-        f"<span class='muted'>{html.escape(str(item.get('target', '')))}</span></a>"
-        f"<details><summary>Expand / 展开</summary><pre>{html.escape(json.dumps(item, ensure_ascii=False, indent=2))}</pre></details></li>"
-        for item in timeline
-    ) or "<div class='muted'>None</div>"
+    items = (
+        "".join(
+            f"<li><strong>{html.escape(str(item.get('kind', '')))}</strong> "
+            f"<span class='chip'>{html.escape(str(item.get('action', '')))}</span> "
+            f"<a href='/ui/ref?workspace={html.escape(workspace_param)}&ref_id={html.escape(str(item.get('ref_id', '')))}' style='color:var(--accent);text-decoration:none;'>"
+            f"<span class='muted'>{html.escape(str(item.get('target', '')))}</span></a>"
+            f"<details><summary>Expand / 展开</summary><pre>{html.escape(json.dumps(item, ensure_ascii=False, indent=2))}</pre></details></li>"
+            for item in timeline
+        )
+        or "<div class='muted'>None</div>"
+    )
     return f"""<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -618,9 +657,9 @@ def export_timeline_html(workspace_file: str | Path, intent: str = "", limit: in
   <div class="wrap">
     <section class="card">
       <h1>Timeline</h1>
-      <div class="muted">Focus task: {html.escape(task_id or 'None')}</div>
+      <div class="muted">Focus task: {html.escape(task_id or "None")}</div>
       <ul>{items}</ul>
-      <div class="muted" style="margin-top:12px;">Mirrored backend receipts: {backend.get('records', {}).get('count', 0)}</div>
+      <div class="muted" style="margin-top:12px;">Mirrored backend receipts: {backend.get("records", {}).get("count", 0)}</div>
     </section>
   </div>
 </body>
@@ -670,10 +709,10 @@ def export_usage_report_html(workspace_file: str | Path, limit: int = 50) -> str
   <div class="wrap">
     <h1>Usage Report</h1>
     <div class="grid">
-      <section class="card"><h2>Summary</h2><div class="muted">Total calls: {summary.get('total_tool_calls', 0)}</div><div class="muted">Memory Center ratio: {summary.get('memory_center_ratio', 0)}</div><div class="muted">Bypasses: {summary.get('suspected_bypass_count', 0)}</div><div class="muted">Mirrored session events: {backend.get('records', {}).get('count', 0)}</div></section>
-      <section class="card"><h2>MCP Effects / 调用效果</h2><div class="muted">MCP calls: {effects.get('calls', {}).get('total', 0)}</div><div class="muted">Session link rate: {effects.get('calls', {}).get('session_link_rate', 0)}</div><div class="muted">P95: {effects.get('calls', {}).get('latency_ms', {}).get('p95', 0)} ms</div><div class="muted">Verified success: {effects.get('outcomes', {}).get('verified_success_rate', 0)}</div></section>
-      <section class="card"><h2>Adoption Hints</h2>{_render_simple_list_html(report.get('adoption_hints', []))}</section>
-      <section class="card"><h2>Bypass Samples</h2>{_render_ref_list_html([{'ref_id': item.get('session_id', ''), 'summary': item.get('reason', '') + ' | ' + str(item.get('query', ''))} for item in report.get('suspected_bypass', [])])}</section>
+      <section class="card"><h2>Summary</h2><div class="muted">Total calls: {summary.get("total_tool_calls", 0)}</div><div class="muted">Memory Center ratio: {summary.get("memory_center_ratio", 0)}</div><div class="muted">Bypasses: {summary.get("suspected_bypass_count", 0)}</div><div class="muted">Mirrored session events: {backend.get("records", {}).get("count", 0)}</div></section>
+      <section class="card"><h2>MCP Effects / 调用效果</h2><div class="muted">MCP calls: {effects.get("calls", {}).get("total", 0)}</div><div class="muted">Session link rate: {effects.get("calls", {}).get("session_link_rate", 0)}</div><div class="muted">P95: {effects.get("calls", {}).get("latency_ms", {}).get("p95", 0)} ms</div><div class="muted">Verified success: {effects.get("outcomes", {}).get("verified_success_rate", 0)}</div></section>
+      <section class="card"><h2>Adoption Hints</h2>{_render_simple_list_html(report.get("adoption_hints", []))}</section>
+      <section class="card"><h2>Bypass Samples</h2>{_render_ref_list_html([{"ref_id": item.get("session_id", ""), "summary": item.get("reason", "") + " | " + str(item.get("query", ""))} for item in report.get("suspected_bypass", [])])}</section>
     </div>
   </div>
 </body>
@@ -688,12 +727,15 @@ def export_receipts_html(workspace_file: str | Path, limit: int = 20) -> str:
     sidebar = _nav_sidebar_html(workspace_param)
     payload = workspace_write_receipts(workspace_file, limit=limit)
     rows = payload.get("receipts", [])
-    items = "".join(
-        f"<li><strong>{html.escape(str(item.get('receipt_id', '')))}</strong> "
-        f"<span class='muted'>{html.escape(str(item.get('summary', '')))}</span>"
-        f"<details><summary>Expand / 展开</summary><pre>{html.escape(json.dumps(item, ensure_ascii=False, indent=2))}</pre></details></li>"
-        for item in rows
-    ) or "<div class='muted'>None</div>"
+    items = (
+        "".join(
+            f"<li><strong>{html.escape(str(item.get('receipt_id', '')))}</strong> "
+            f"<span class='muted'>{html.escape(str(item.get('summary', '')))}</span>"
+            f"<details><summary>Expand / 展开</summary><pre>{html.escape(json.dumps(item, ensure_ascii=False, indent=2))}</pre></details></li>"
+            for item in rows
+        )
+        or "<div class='muted'>None</div>"
+    )
     return f"""<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -737,7 +779,7 @@ def export_receipts_html(workspace_file: str | Path, limit: int = 20) -> str:
     </form>
     <section class="card">
       <h1>Receipts</h1>
-      <div class="muted">Total: {payload.get('summary', {}).get('total', 0)}</div>
+      <div class="muted">Total: {payload.get("summary", {}).get("total", 0)}</div>
       <ul>{items}</ul>
     </section>
   </div>
@@ -752,12 +794,18 @@ def export_index_freshness_html(workspace_file: str | Path) -> str:
     workspace_param = str(Path(workspace_file).resolve())
     sidebar = _nav_sidebar_html(workspace_param)
     payload = memory_eval_index_freshness(workspace_file, scope="all")
-    findings = "".join(
-        f"<li><strong>{html.escape(str(item.get('severity', '')))}</strong> "
-        f"<span class='muted'>{html.escape(str(item.get('message', '')))}</span></li>"
-        for item in payload.get("findings", [])
-    ) or "<div class='muted'>None</div>"
-    stale = "".join(f"<li>{html.escape(str(item))}</li>" for item in payload.get("stale_changed_files", [])) or "<div class='muted'>None</div>"
+    findings = (
+        "".join(
+            f"<li><strong>{html.escape(str(item.get('severity', '')))}</strong> "
+            f"<span class='muted'>{html.escape(str(item.get('message', '')))}</span></li>"
+            for item in payload.get("findings", [])
+        )
+        or "<div class='muted'>None</div>"
+    )
+    stale = (
+        "".join(f"<li>{html.escape(str(item))}</li>" for item in payload.get("stale_changed_files", []))
+        or "<div class='muted'>None</div>"
+    )
     return f"""<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -790,7 +838,7 @@ def export_index_freshness_html(workspace_file: str | Path) -> str:
   <div class="wrap">
     <h1>Index Freshness</h1>
     <div class="grid">
-      <section class="card"><h2>Summary</h2><div class="muted">Quality: {payload.get('quality', '')}</div><div class="muted">Score: {payload.get('score', 0)}</div><div class="muted">Changed files: {payload.get('changed_file_count', 0)}</div></section>
+      <section class="card"><h2>Summary</h2><div class="muted">Quality: {payload.get("quality", "")}</div><div class="muted">Score: {payload.get("score", 0)}</div><div class="muted">Changed files: {payload.get("changed_file_count", 0)}</div></section>
       <section class="card"><h2>Stale Changed Files</h2><ul>{stale}</ul></section>
       <section class="card"><h2>Findings</h2><ul>{findings}</ul></section>
     </div>
@@ -807,19 +855,27 @@ def export_memory_backend_html(workspace_file: str | Path, limit: int = 20) -> s
     stats = store.memory_backend_stats()
     records = store.memory_backend_query_records(limit=limit)
     refs = store.memory_backend_query_refs(limit=limit)
-    record_items = "".join(
-        f"<li><strong>{html.escape(str(item.get('collection', '')))}</strong> "
-        f"<span class='muted'>{html.escape(str(item.get('record_id', '')))}</span></li>"
-        for item in records.get("records", [])
-    ) or "<div class='muted'>None</div>"
-    ref_items = "".join(
-        f"<li><strong>{html.escape(str(item.get('ref_path', '')))}</strong></li>"
-        for item in refs.get("refs", [])
-    ) or "<div class='muted'>None</div>"
-    collections = "".join(
-        f"<li><strong>{html.escape(name)}</strong>: {count}</li>"
-        for name, count in (stats.get("collections", {}) or {}).items()
-    ) or "<div class='muted'>None</div>"
+    record_items = (
+        "".join(
+            f"<li><strong>{html.escape(str(item.get('collection', '')))}</strong> "
+            f"<span class='muted'>{html.escape(str(item.get('record_id', '')))}</span></li>"
+            for item in records.get("records", [])
+        )
+        or "<div class='muted'>None</div>"
+    )
+    ref_items = (
+        "".join(
+            f"<li><strong>{html.escape(str(item.get('ref_path', '')))}</strong></li>" for item in refs.get("refs", [])
+        )
+        or "<div class='muted'>None</div>"
+    )
+    collections = (
+        "".join(
+            f"<li><strong>{html.escape(name)}</strong>: {count}</li>"
+            for name, count in (stats.get("collections", {}) or {}).items()
+        )
+        or "<div class='muted'>None</div>"
+    )
     return f"""<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -873,7 +929,7 @@ def export_memory_backend_html(workspace_file: str | Path, limit: int = 20) -> s
     </form>
     <h1>Memory Backend</h1>
     <div class="grid">
-      <section class="card"><h2>Collections</h2><ul>{collections}</ul><div class="muted">Refs: {stats.get('ref_count', 0)}</div></section>
+      <section class="card"><h2>Collections</h2><ul>{collections}</ul><div class="muted">Refs: {stats.get("ref_count", 0)}</div></section>
       <section class="card"><h2>Recent Records</h2><ul>{record_items}</ul></section>
       <section class="card"><h2>Recent Refs</h2><ul>{ref_items}</ul></section>
     </div>
@@ -922,8 +978,8 @@ def export_ref_html(workspace_file: str | Path, ref_id: str) -> str:
   {sidebar}
   <div class="wrap">
     <section class="card">
-      <h1>{html.escape(str(payload.get('ref_id', 'Reference')))}</h1>
-      <div class="muted">{html.escape(str(payload.get('summary', '')))}</div>
+      <h1>{html.escape(str(payload.get("ref_id", "Reference")))}</h1>
+      <div class="muted">{html.escape(str(payload.get("summary", "")))}</div>
       {timeline_link}
       <pre>{raw_text}</pre>
     </section>
@@ -952,17 +1008,14 @@ def _render_handoff_lines(rows: list[dict[str, Any]]) -> list[str]:
 
 
 def _render_receipt_lines(rows: list[dict[str, Any]]) -> list[str]:
-    return [
-        f"- {item.get('layer', '')} | {item.get('action', '')} | {item.get('target', '')}"
-        for item in rows
-    ]
+    return [f"- {item.get('layer', '')} | {item.get('action', '')} | {item.get('target', '')}" for item in rows]
 
 
 def _render_task_list_html(tasks: list[dict[str, Any]]) -> str:
     if not tasks:
         return "<div class='muted'>None</div>"
     items = "".join(
-        f"<li><strong><a href=\"/ui/task?task_id={html.escape(str(item.get('task_id', '')))}\">{html.escape(str(item.get('title', item.get('task_id', ''))))}</a></strong> "
+        f'<li><strong><a href="/ui/task?task_id={html.escape(str(item.get("task_id", "")))}">{html.escape(str(item.get("title", item.get("task_id", ""))))}</a></strong> '
         f"<span class='chip'>{html.escape(str(item.get('status', '')))}</span> "
         f"<span class='chip'>quality={html.escape(str(item.get('quality', '')))}</span> "
         f"<span class='chip'>score={html.escape(str(item.get('score', '')))}</span>"
@@ -1008,7 +1061,7 @@ def _render_ref_list_html(rows: list[dict[str, Any]]) -> str:
     if not rows:
         return "<div class='muted'>None</div>"
     items = "".join(
-        f"<li><strong><a href=\"/ui/ref?ref_id={html.escape(str(item.get('ref_id', '')))}\">{html.escape(str(item.get('ref_id', '')))}</a></strong> "
+        f'<li><strong><a href="/ui/ref?ref_id={html.escape(str(item.get("ref_id", "")))}">{html.escape(str(item.get("ref_id", "")))}</a></strong> '
         f"<span class='muted'>{html.escape(str(item.get('summary', '')))}</span>"
         f"<details><summary>Expand / 展开</summary><pre>{html.escape(json.dumps(item, ensure_ascii=False, indent=2))}</pre></details></li>"
         for item in rows

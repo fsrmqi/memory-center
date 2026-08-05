@@ -87,6 +87,10 @@ MCP 当前公开的是 15 个 task-level tools：
 
 后台 reindex 的 `mc_admin(action="job_reindex")` 会返回 `job_id`；用 `mc_admin(action="job_status", record_id="...")` 读取同一份持久化进度。`progress.stage` 依次使用 `queued`、`scanning`、`parsing`、`graph`、`semantic`、`retrieval`、`finalizing`，并在完成、失败、取消或中断时返回对应终态和有界事件历史。
 
+`job_status` 还会派生 `progress_percent`、`elapsed_ms`、`estimated_remaining_ms`、`can_cancel` 与 `recovery_action`，供 Agent 和 `/ui/jobs` 使用；这些字段不会改写任务历史或索引。真实工作区性能通过显式 `mc_admin(action="performance_snapshot", limit=5, budget="fast")` 采样，随后用 `performance_snapshot_status` 查看 P95 趋势。快照只保存聚合指标和 generation，不保存查询、文件路径或正文。`mc_admin(action="http_route_contract_audit")` 可在发布前审计 HTTP 路由读写契约。
+
+`job_status` also derives `progress_percent`, `elapsed_ms`, `estimated_remaining_ms`, `can_cancel`, and `recovery_action` for Agents and `/ui/jobs`; it never rewrites job history or indexes. Real-workspace performance is sampled only by explicit `mc_admin(action="performance_snapshot", limit=5, budget="fast")`, then read through `performance_snapshot_status`. Snapshots retain aggregate metrics and generation only, never queries, paths, or source text. `mc_admin(action="http_route_contract_audit")` audits HTTP read/write contracts before release.
+
 常驻索引更新通过 `memory-center watcher-start --workspace <workspace.yaml>` 启动；它对去抖后的源码、配置变更创建有界局部重建任务，不在查询链路执行全量重建。使用 `watcher-status` / `watcher-stop` 查看或停止。MCP 对应 `mc_admin(action="watcher_start|watcher_status|watcher_stop")`；Workbench 的 `hot_refresh.watcher` 同步显示相同状态。
 
 局部重建完成后，watcher 自动写入轻量变更影响摘要，只复用失效计划、任务结果和 index generation，不会自动执行深度影响分析。通过 `memory-center change-impact-reports`、`GET /workspace/change-impact-reports` 或 `mc_admin(action="change_impact_recent")` 查询；DTO、Feign、MQ、HTTP、配置变更会标为高风险并建议显式调用 `mc_analyze(depth="full")`。

@@ -177,6 +177,31 @@ class RuntimeStore(_GraphOperations, _MemoryRecordOperations):
         """按关系边遍历图，供影响分析和证据子图等边导向场景使用。"""
         return _GraphOperations.neighbors(self, node_id, direction, max_depth, limit, edge_types)
 
+    def traverse_edges_batch(self, node_ids: list[str], *, direction: str = "both", limit_per_node: int = 10) -> dict[str, list[dict[str, Any]]]:
+        """一次读取多个节点的一跳边，供 Context Pack 避免 N 次 SQLite 往返。"""
+        ids = list(dict.fromkeys(str(node_id) for node_id in node_ids if node_id))[:32]
+        if not ids:
+            return {}
+        limit = max(1, min(int(limit_per_node), 100))
+        placeholders = ",".join("?" for _ in ids)
+        clauses: list[str] = []
+        params: list[Any] = []
+        if direction in {"both", "downstream"}:
+            clauses.append(f"source_id IN ({placeholders})")
+            params.extend(ids)
+        if direction in {"both", "upstream"}:
+            clauses.append(f"target_id IN ({placeholders})")
+            params.extend(ids)
+        with self.connect() as conn:
+            rows = conn.execute(f"SELECT * FROM edges WHERE {' OR '.join(clauses)} ORDER BY id", params).fetchall()
+        result = {node_id: [] for node_id in ids}
+        for row in rows:
+            edge = dict(row)
+            for node_id in (edge.get("source_id"), edge.get("target_id")):
+                if node_id in result and len(result[node_id]) < limit:
+                    result[node_id].append(edge)
+        return result
+
     def clear_graph(self) -> None:
         self.clear()
 

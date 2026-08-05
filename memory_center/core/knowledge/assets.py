@@ -296,7 +296,7 @@ def _write_registry(store: WorkspaceStore, registry: dict[str, Any]) -> None:
 
 
 def _mutate_registry(store: WorkspaceStore, operation):
-    with FileLock(str(store.lock_file)):
+    with FileLock(str(store.artifact_lock_file)):
         registry = _read_registry(store)
         result = operation(registry)
         _write_registry(store, registry)

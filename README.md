@@ -894,6 +894,10 @@ For large asynchronous work, use `mc_admin(action="job_reindex")`, then `job_sta
 
 对于较大的异步工作，可使用 `mc_admin(action="job_reindex")`，再通过 `job_status` 或 `job_cancel` 并传入 `record_id=<job_id>` 查询或取消。任务决策可通过 `task_decision_record` 记录；`task_evidence_gc` 默认只预览，必须传 `force=true` 才会删除未引用证据。
 
+Use `memory-center performance-snapshot --workspace <workspace.yaml> --samples 5` after an explicit reindex or dependency upgrade to establish a real-workspace P95 trend. It stores only generation, aggregate latency, and outcome counts; it never stores the probe query, code, or source paths, and it is never invoked by normal lookup. Read the result with `performance-status`, `GET /workspace/performance-status`, or `mc_admin(action="performance_snapshot_status")`. `memory-center http-route-contract-audit` checks that every registered HTTP route has an explicit GET/POST contract before release. Background job responses and `/ui/jobs` expose `progress_percent`, elapsed time, estimated remaining time, cancellation availability, and a safe recovery action.
+
+在显式 reindex 或依赖升级后，可运行 `memory-center performance-snapshot --workspace <workspace.yaml> --samples 5` 建立真实工作区 P95 趋势。它只保存 generation、聚合耗时和结果计数，不保存探针查询、源码或路径，普通 lookup 也不会自动触发。可通过 `performance-status`、`GET /workspace/performance-status` 或 `mc_admin(action="performance_snapshot_status")` 查看结果。`memory-center http-route-contract-audit` 会在发布前校验每个已注册 HTTP 路由都有明确的 GET/POST 契约。后台任务响应和 `/ui/jobs` 会提供 `progress_percent`、已耗时、预计剩余时间、是否可取消和安全恢复动作。
+
 ### Physical Index Shards / 物理索引分片
 
 Each active generation now contains immutable service JSON shards, service-local SQLite graph shards, a shared contract shard, and a topology shard. Explicit project-scoped code and hybrid graph queries read the service shard first, then fall back to legacy global indexes only when the shard is absent or scope expansion is required. File watcher changes create a bounded invalidation plan and coalesce an asynchronous partial reindex job. `mc_admin(action="index_rollback", record_id="<generation>")` restores a retained generation; `index_generation_gc` previews cleanup unless `force=true` is supplied.
@@ -1459,6 +1463,10 @@ memory-center serve-http --workspace /path/to/.memory-center/workspace.yaml --ho
 远程调用通过 `Authorization: Bearer <token>` 传递令牌。协作资产的 metadata 最大 16 KiB；`asset-status`、`asset-loadout` 和 Context Pack 都会返回预算与 `truncated`/`truncated_sections`，调用方应按来源引用继续按需读取，而不是请求无界正文。
 
 Remote callers send `Authorization: Bearer <token>`. Collaboration-asset metadata is capped at 16 KiB; `asset-status`, `asset-loadout`, and Context Pack report their budgets plus `truncated`/`truncated_sections`, so callers can continue from provenance references instead of requesting unbounded content.
+
+本地空间治理使用 `memory-center artifact storage-budget --workspace <workspace.yaml>`，按 graph、index、artifacts、memory 展示占用和仅 dry-run 的维护建议。Context Pack 对 top-K 节点批量读取关系；未变化文件由内容哈希 generation 复用识别，不生成重复 AST 文件缓存。
+
+Use `memory-center artifact storage-budget --workspace <workspace.yaml>` for local storage governance. It reports graph, index, artifacts, and memory usage with dry-run-only maintenance suggestions. Context Pack batch-reads relationships for top-K nodes, while unchanged inputs are recognized through content-hash generations without a duplicate AST-file cache.
 
 Example routes:
 

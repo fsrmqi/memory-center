@@ -92,6 +92,11 @@ def register_artifact_commands(app: typer.Typer) -> None:
         """查看任务、Skill、Wiki、CodeGraph 协作资产及审批状态。"""
         print(collaboration_asset_status(workspace, limit=limit, max_chars=max_chars))
 
+    @app.command("storage-budget")
+    def artifact_storage_budget_cmd(workspace: str = typer.Option(...), warning_gib: int = typer.Option(8, min=1)):
+        """按 graph、index、artifacts、memory 查看本地空间预算与维护建议。"""
+        print(WorkspaceStore(workspace).storage_budget_report(warning_bytes=warning_gib * 1024**3))
+
     @app.command("asset-sync")
     def artifact_asset_sync_cmd(workspace: str = typer.Option(...), owner: str = typer.Option("")):
         """将当前任务、已发布 Skill 和活跃代码图谱登记为协作资产。"""

@@ -14,6 +14,7 @@ from memory_center.application.presentation import (
     export_continuity_dashboard_html,
     export_focus_task_html,
     export_index_freshness_html,
+    export_jobs_html,
     export_memory_backend_html,
     export_receipts_html,
     export_ref_html,
@@ -30,6 +31,7 @@ from memory_center.http.route_dispatch import (
     _require_one,
     _require_workspace,
     build_http_route_registry,
+    http_route_spec,
     is_mutating_http_route,
 )
 
@@ -43,6 +45,7 @@ def _find_vue_dist() -> Path | None:
     if _VUE_DIST_DIR is not None:
         return _VUE_DIST_DIR
     import memory_center
+
     pkg_dir = Path(memory_center.__file__).parent.parent
     vue_dist = pkg_dir / "web" / "dist"
     if vue_dist.exists() and (vue_dist / "index.html").exists():
@@ -69,7 +72,10 @@ _MIME_TYPES: dict[str, str] = {
     ".json": "application/json; charset=utf-8",
 }
 
-def create_handler(default_workspace: str | Path | None = None, *, access_token: str = "") -> type[BaseHTTPRequestHandler]:
+
+def create_handler(
+    default_workspace: str | Path | None = None, *, access_token: str = ""
+) -> type[BaseHTTPRequestHandler]:
     workspace_file = str(Path(default_workspace).expanduser().resolve()) if default_workspace else None
     required_token = str(access_token)
 
@@ -80,7 +86,10 @@ def create_handler(default_workspace: str | Path | None = None, *, access_token:
             if not self._authorized():
                 return
             if is_mutating_http_route(parsed.path, params):
-                self._write_json(405, {"error": "method_not_allowed", "detail": "workspace mutations require POST", "allowed": ["POST"]})
+                self._write_json(
+                    405,
+                    {"error": "method_not_allowed", "detail": "workspace mutations require POST", "allowed": ["POST"]},
+                )
                 return
             try:
                 # Serve Vue frontend SPA for /app routes
@@ -121,9 +130,19 @@ def create_handler(default_workspace: str | Path | None = None, *, access_token:
                     workspace = _require_workspace(params, workspace_file)
                     self._write_html(200, export_assertion_html(workspace, params.get("assertion_id", [""])[0]))
                     return
+                if parsed.path == "/ui/jobs":
+                    workspace = _require_workspace(params, workspace_file)
+                    self._write_html(200, export_jobs_html(workspace, limit=_parse_int(params, "limit", 20)))
+                    return
                 if parsed.path == "/ui/dashboard":
                     workspace = _require_workspace(params, workspace_file)
-                    html_text = export_workspace_dashboard_html(workspace, intent=params.get("intent", [""])[0], limit=_parse_int(params, "limit", 10), view=params.get("view", ["compact"])[0], budget=params.get("budget", ["medium"])[0])
+                    html_text = export_workspace_dashboard_html(
+                        workspace,
+                        intent=params.get("intent", [""])[0],
+                        limit=_parse_int(params, "limit", 10),
+                        view=params.get("view", ["compact"])[0],
+                        budget=params.get("budget", ["medium"])[0],
+                    )
                     self._write_html(200, html_text)
                     return
                 if parsed.path == "/ui/continuity":
@@ -206,6 +225,12 @@ def create_handler(default_workspace: str | Path | None = None, *, access_token:
             params = parse_qs(parsed.query)
             if not self._authorized():
                 return
+            if "POST" not in http_route_spec(parsed.path, params).methods:
+                self._write_json(
+                    405,
+                    {"error": "method_not_allowed", "detail": "read-only route requires GET", "allowed": ["GET"]},
+                )
+                return
             # Read JSON body for POST requests (used for mutation routes with large content)
             body_data = {}
             try:
@@ -269,7 +294,9 @@ def create_handler(default_workspace: str | Path | None = None, *, access_token:
     return MemoryCenterHandler
 
 
-def serve_http(default_workspace: str | Path | None = None, host: str = "127.0.0.1", port: int = 8765, access_token: str = "") -> None:
+def serve_http(
+    default_workspace: str | Path | None = None, host: str = "127.0.0.1", port: int = 8765, access_token: str = ""
+) -> None:
     validate_http_binding(host, access_token)
     server = ThreadingHTTPServer((host, port), create_handler(default_workspace, access_token=access_token))
     server.serve_forever()

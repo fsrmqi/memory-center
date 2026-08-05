@@ -639,6 +639,10 @@ Each evidence item may additionally expose `evidence_level`: `EXTRACTED`, `INFER
 
 Benchmark/observability 趋势数据写在 `.memory-center/memory/*-trends.jsonl`，例如 token benchmark 的 `benchmark-trends.jsonl`、agent guidance quality 的 `agent-guidance-trends.jsonl` 和 agent guidance adoption 的 `agent-guidance-adoption-trends.jsonl`。这些文件用于本地运营与回归告警，不应把真实私有项目生成内容提交到公开仓库。
 
+真实工作区 P95 采用显式快照而不是请求内测量：`workspace-performance-snapshots.jsonl` 仅保存 generation、采样次数、P50/P95/P99、最大值和成功/失败计数。它不保存查询、文件路径或正文，且不会在 lookup 热路径运行。快照状态只读取最近有界记录，比较上一条 P95 后给出局部刷新或重新采样建议。HTTP route dispatch 在进程初始化后为每条已注册路由生成读写契约；审计会阻断未分类、无效方法、孤立声明和名称表现为写入却被声明为 GET 的路由。
+
+后台任务仍以 `workspace-jobs.json` 为唯一持久化模型。读取适配层按运行状态派生 `progress_percent`、`elapsed_ms`、`estimated_remaining_ms`、`can_cancel` 和 `recovery_action`，不回写或篡改历史结果；`/ui/jobs` 只轮询该紧凑状态，不读 graph、index 或源码。
+
 ---
 
 ## 9. MCP, CLI, HTTP Adapters / 入口适配层
@@ -719,6 +723,8 @@ HTTP server 使用标准库 `ThreadingHTTPServer`，不是 FastAPI。它提供�
 每个 route family 注册到共享 `CommandRegistry`。请求参数由 `RouteParams` 适配，避免在 server 中堆 if-chain。
 
 HTTP 的方法语义由 `route_dispatch.is_mutating_http_route` 统一约束：GET 严格只读，所有写入和可能执行外部动作的 route 必须 POST。服务默认绑定 loopback；非回环绑定必须使用访问令牌，并通过 `Authorization: Bearer` 验证。`actor` 是审计归因字段，不是远程身份认证机制。
+
+Context Pack 将 top-K 节点聚合为一次有界的一跳边读取，再进行预算裁剪；不为每个节点重复建立 SQLite 读取。`WorkspaceStore` 将 index、artifact、audit 写锁拆分，generation 仍由独立 reindex lock 串行化。空间治理只扫描 `.memory-center` 的 graph/index/artifacts/memory 四类目录，并只返回显式 dry-run 维护建议。
 
 Vue Workbench 位于 `web/src/`，主要页面包括 dashboard、query、impact、group、timeline、receipts、freshness、audit、health、onboard、flow、metrics、verification 等。
 

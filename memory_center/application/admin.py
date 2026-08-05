@@ -20,6 +20,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from memory_center.application.performance import record_workspace_performance_snapshot
 from memory_center.application.tasks import execute_task_repair
 from memory_center.core.audit.inspect import inspect_runtime
 from memory_center.core.audit.interactions import build_effect_summary, record_host_interaction, refresh_effect_summary
@@ -116,7 +117,10 @@ from memory_center.core.retrieval.calibration import evaluate_retrieval_replay_c
 from memory_center.core.retrieval.cross_service import evaluate_cross_shard_replay
 from memory_center.core.retrieval.cross_service_fusion import evaluate_cross_shard_fusion
 from memory_center.core.retrieval.model_profiles import retrieval_model_profile
-from memory_center.core.retrieval.planner import workspace_performance_summary
+from memory_center.core.retrieval.planner import (
+    workspace_performance_snapshot_status,
+    workspace_performance_summary,
+)
 from memory_center.core.storage.runtime import RuntimeStore
 from memory_center.core.storage.vector_index import VectorIndex
 from memory_center.core.storage.workspace import WorkspaceStore
@@ -228,6 +232,7 @@ def _reranker_action(operation: str, model_name: str = "") -> dict[str, Any]:
 
     return prewarm_reranker(model_name or None) if operation == "prewarm" else reranker_status(model_name or None)
 
+
 __all__ = [
     "build_admin_registry",
     "parse_payload",
@@ -253,6 +258,7 @@ __all__ = [
 # Helper actions (previously inline / static methods inside create_server)
 # ---------------------------------------------------------------------------
 
+
 def parse_payload(payload_str: str) -> dict[str, Any] | None:
     if not payload_str:
         return None
@@ -263,7 +269,9 @@ def parse_payload(payload_str: str) -> dict[str, Any] | None:
     return data if isinstance(data, dict) else {"value": data}
 
 
-def _update_assertion_status_action(workspace_file: str, assertion_id: str, status: str, payload: str, actor: str) -> dict[str, Any]:
+def _update_assertion_status_action(
+    workspace_file: str, assertion_id: str, status: str, payload: str, actor: str
+) -> dict[str, Any]:
     from memory_center.core.knowledge.assertions import update_assertion_status
 
     data = parse_payload(payload) or {}
@@ -296,28 +304,33 @@ def runtime_contract_gate_action(workspace_file: str, *, contract_file: str = ""
 
 def benchmark_trend_report(workspace_file: str, function_name: str = "") -> dict[str, Any]:
     from memory_center.core.benchmark.trending import generate_benchmark_report
+
     return generate_benchmark_report(workspace_file, function_name=function_name)
 
 
 def run_audit(workspace_file: str, work_package: str = "") -> dict[str, Any]:
     from memory_center.core.audit.reports import run_completion_audit
+
     return run_completion_audit(workspace_file, work_package=work_package)
 
 
 def drill_ref(workspace_file: str, ref_id: str = "") -> dict[str, Any]:
     from memory_center.core.navigation.drilldown import DrillDownNavigator
+
     with DrillDownNavigator(workspace_file) as nav:
         return nav.expand_ref(ref_id)
 
 
 def drill_timeline(workspace_file: str, session_id: str = "", task_id: str = "", limit: int = 50) -> dict[str, Any]:
     from memory_center.core.navigation.drilldown import DrillDownNavigator
+
     with DrillDownNavigator(workspace_file) as nav:
         return nav.drill_timeline(session_id=session_id, task_id=task_id, limit=limit)
 
 
 def drill_task(workspace_file: str, task_id: str = "") -> dict[str, Any]:
     from memory_center.core.navigation.drilldown import DrillDownNavigator
+
     with DrillDownNavigator(workspace_file) as nav:
         return nav.drill_task(task_id)
 
@@ -325,6 +338,7 @@ def drill_task(workspace_file: str, task_id: str = "") -> dict[str, Any]:
 def backend_consistency(workspace_file: str) -> dict[str, Any]:
     from memory_center.core.backend.query import UnifiedBackendQuery
     from memory_center.core.storage.workspace import WorkspaceStore
+
     store = WorkspaceStore(workspace_file)
     with UnifiedBackendQuery(store.runtime_db_path) as backend:
         return backend.check_consistency(store.base_dir)
@@ -332,6 +346,7 @@ def backend_consistency(workspace_file: str) -> dict[str, Any]:
 
 def constraint_action(context: str = "", template: str = "coding_agent") -> dict[str, Any]:
     from memory_center.core.governance.templates import auto_select_action, get_constraint_template
+
     if context:
         return {"context": context, "template": template, "recommended_action": auto_select_action(context, template)}
     tmpl = get_constraint_template(template)
@@ -462,7 +477,9 @@ def eval_java_call_resolution_metrics_action(workspace_file: str) -> dict[str, A
     return memory_eval_java_call_resolution_metrics(workspace_file)
 
 
-def eval_java_call_resolution_review_action(workspace_file: str, cases_file: str, *, limit: int = 200) -> dict[str, Any]:
+def eval_java_call_resolution_review_action(
+    workspace_file: str, cases_file: str, *, limit: int = 200
+) -> dict[str, Any]:
     return memory_eval_java_call_resolution_review(workspace_file, cases_file, limit=limit)
 
 
@@ -532,244 +549,450 @@ def build_admin_registry(
     wf = workspace_file
     registry = CommandRegistry(label="mc_admin action")
 
-    registry.register_many({
-        "status": lambda: workspace_status(wf, view=view, budget=budget),
-        "dashboard": lambda: workspace_dashboard(wf, intent=intent, limit=limit, view=view, budget=budget),
-        "continuity": lambda: workspace_continuity_dashboard(wf, intent=intent, task_id=task_id, session_id=session_id, limit=limit, view=view, budget=budget),
-        "health": lambda: {
-            "workflow": "mc-admin-health",
-            "status": workspace_status(wf, view="compact", budget="medium"),
-            "tool_usage_report": memory_tool_usage_report(wf, limit=50),
-            "regression_suite": memory_eval_regression_suite(wf, intent=intent, target_model=target_model, limit=limit),
-        },
-        "artifact_list": lambda: list_artifacts(wf),
-        "artifact_get": lambda: get_artifact(wf, name),
-        "artifact_outline": lambda: artifact_outline(wf, name),
-        "artifact_context": lambda: artifact_context(wf, intent, limit=limit),
-        "asset_status": lambda: collaboration_asset_status(wf, limit=limit, max_chars=int((parse_payload(payload) or {}).get("max_chars", 0) or 0)),
-        "asset_register": lambda: register_collaboration_asset(wf, **{**(parse_payload(payload) or {}), "actor": source}),
-        "asset_sync": lambda: sync_workspace_collaboration_assets(wf, owner=owner or source),
-        "asset_share": lambda: submit_asset_for_sharing(wf, str((parse_payload(payload) or {}).get("asset_id", "")), visibility=str((parse_payload(payload) or {}).get("visibility", "team")), actor=source, allowed_agents=list((parse_payload(payload) or {}).get("allowed_agents", [])), allowed_roles=list((parse_payload(payload) or {}).get("allowed_roles", []))),
-        "asset_approve": lambda: approve_collaboration_asset(wf, str((parse_payload(payload) or {}).get("asset_id", "")), approved=bool((parse_payload(payload) or {}).get("approved", False)), actor=source, note=str((parse_payload(payload) or {}).get("note", ""))),
-        "asset_bind": lambda: bind_collaboration_asset(wf, str((parse_payload(payload) or {}).get("asset_id", "")), actor=source, agents=list((parse_payload(payload) or {}).get("agents", [])), roles=list((parse_payload(payload) or {}).get("roles", []))),
-        "asset_loadout": lambda: collaboration_asset_loadout(wf, agent_id=str((parse_payload(payload) or {}).get("agent_id", "")), role=str((parse_payload(payload) or {}).get("role", "")), limit=limit, max_chars=int((parse_payload(payload) or {}).get("max_chars", 0) or 0)),
-        "wiki_document_ingest": lambda: ingest_wiki_document_asset(wf, str((parse_payload(payload) or {}).get("document_path", "")), owner=owner or source, visibility=str((parse_payload(payload) or {}).get("visibility", "private")), tags=list((parse_payload(payload) or {}).get("tags", []))),
-        "artifact_update": lambda: update_artifact(wf, name, content),
-        "change_log_append": lambda: append_change_log(wf, entry),
-        "change_log_compact": lambda: compact_change_log(wf, keep_recent),
-        "task_create": lambda: create_task_space(wf, title=title, intent=intent, owner=owner, tags=tags, priority=priority),
-        "task_list": lambda: list_task_spaces(wf, include_archived=include_archived),
-        "task_health": lambda: task_space_health(wf, task_id),
-        "task_health_all": lambda: task_spaces_health(wf, include_archived=include_archived, limit=limit),
-        "task_repair_plan": lambda: task_space_repair_plan(wf, task_id),
-        "task_repair_apply": lambda: execute_task_repair(wf, task_id, apply=force, intent=intent or text),
-        "task_resume_check": lambda: workspace_task_resume_check(wf, intent=intent, task_id=task_id, session_id=session_id, limit=limit, budget=budget),
-        "task_resolve": lambda: resolve_task_space(wf, intent=intent, title=title, create_if_missing=create_if_missing, include_archived=include_archived, limit_candidates=limit_candidates, score_threshold=score_threshold),
-        "task_get": lambda: get_task_artifact(wf, task_id, name),
-        "task_update": lambda: update_task_artifact(wf, task_id, name, content),
-        "task_decision_record": lambda: record_task_decision(wf, task_id, title or name, content, reason or intent, evidence_refs=[item.strip() for item in payload.split(",") if item.strip()]),
-        "task_decision_list": lambda: list_task_decisions(wf, task_id, limit=limit),
-        "task_evidence_gc": lambda: task_evidence_gc(wf, task_id, apply=force),
-        "task_change_log_append": lambda: append_task_change_log(wf, task_id, entry, keep_recent=keep_recent),
-        "task_archive": lambda: archive_task_space(wf, task_id, reason=reason),
-        "task_auto_archive": lambda: auto_archive_task_spaces(wf, retention_days=keep_recent),
-        "task_status": lambda: update_task_status(wf, task_id, status),
-        "task_activity_touch": lambda: touch_task_activity(wf, task_id, source),
-        "delivery_init": lambda: initialize_delivery_workflow(wf, task_id, actor=source),
-        "delivery_status": lambda: delivery_workflow_status(wf, task_id),
-        "delivery_breakdown": lambda: propose_delivery_breakdown(wf, task_id, source_refs=list((parse_payload(payload) or {}).get("source_refs", [])), summary=str((parse_payload(payload) or {}).get("summary", ""))),
-        "delivery_policy": lambda: update_delivery_policy(wf, parse_payload(payload) or {}, actor=source) if payload else delivery_policy_status(wf),
-        "delivery_contract_update": lambda: update_delivery_contract(
-            wf,
-            task_id,
-            kind=str((parse_payload(payload) or {}).get("kind", "")),
-            items=list((parse_payload(payload) or {}).get("items", [])),
-            actor=source,
-        ),
-        "delivery_subtask_status": lambda: update_delivery_subtask_status(
-            wf,
-            task_id,
-            str((parse_payload(payload) or {}).get("subtask_id", "")),
-            str((parse_payload(payload) or {}).get("status", "")),
-            actor=source,
-        ),
-        "delivery_validation_record": lambda: record_delivery_validation(
-            wf,
-            task_id,
-            status=str((parse_payload(payload) or {}).get("status", "recorded")),
-            summary=str((parse_payload(payload) or {}).get("summary", "")),
-            command=str((parse_payload(payload) or {}).get("command", "")),
-            exit_code=(parse_payload(payload) or {}).get("exit_code"),
-            acceptance_ids=list((parse_payload(payload) or {}).get("acceptance_ids", [])),
-            evidence_refs=list((parse_payload(payload) or {}).get("evidence_refs", [])),
-            actor=source,
-        ),
-        "delivery_validation_execute": lambda: execute_delivery_validation(wf, task_id, profile_id=str((parse_payload(payload) or {}).get("profile_id", "")), acceptance_ids=list((parse_payload(payload) or {}).get("acceptance_ids", [])), actor=source),
-        "delivery_matrix": lambda: delivery_matrix(wf, task_id, write=not force),
-        "delivery_transition": lambda: transition_delivery_stage(
-            wf,
-            task_id,
-            str((parse_payload(payload) or {}).get("stage", "")),
-            actor=source,
-            force=force,
-        ),
-        "delivery_skill_candidate": lambda: delivery_skill_candidate(wf, task_id),
-        "delivery_skill_publish": lambda: publish_delivery_skill(wf, task_id),
-        "delivery_skill_status": lambda: delivery_skill_status(wf, task_id),
-        "delivery_skill_contract_update": lambda: update_delivery_skill_contract(wf, task_id, contract=parse_payload(payload) or {}, actor=source),
-        "delivery_skill_canary": lambda: start_delivery_skill_canary(wf, task_id, actor=source),
-        "delivery_skill_observe": lambda: record_delivery_skill_observation(
-            wf, str((parse_payload(payload) or {}).get("skill_id", "")),
-            outcome=str((parse_payload(payload) or {}).get("outcome", "")),
-            evidence_refs=list((parse_payload(payload) or {}).get("evidence_refs", [])),
-            latency_ms=(parse_payload(payload) or {}).get("latency_ms"),
-            token_count=(parse_payload(payload) or {}).get("token_count"), actor=source,
-        ),
-        "delivery_skill_evaluate": lambda: evaluate_delivery_skill(wf, skill_id=str((parse_payload(payload) or {}).get("skill_id", ""))),
-        "delivery_skill_rollback": lambda: rollback_delivery_skill(wf, str((parse_payload(payload) or {}).get("skill_id", "")), reason=str((parse_payload(payload) or {}).get("reason", "")), actor=source),
-        "delivery_skill_recommend": lambda: recommend_delivery_skills(wf, str((parse_payload(payload) or {}).get("intent", intent)), language=str((parse_payload(payload) or {}).get("language", "")), limit=limit),
-        "delivery_skill_replay": lambda: delivery_skill_replay_set(wf, skill_id=str((parse_payload(payload) or {}).get("skill_id", "")), limit=limit),
-        "delivery_failure_candidates": lambda: derive_delivery_failure_candidates(wf, limit_tasks=limit),
-        "delivery_skill_synthesize": lambda: synthesize_delivery_skill_trajectories(wf, min_support=max(2, min(limit, 20))),
-        "session_start": lambda: workspace_start_session(wf, intent, session_id=session_id or None),
-        "session_log": lambda: workspace_log_session_event(wf, session_id, event_type, parse_payload(payload)),
-        "session_end": lambda: workspace_end_session(wf, session_id, outcome, verified_by),
-        "session_recent": lambda: workspace_recent_sessions(wf, limit),
-        "session_summary": lambda: workspace_session_summary(wf, session_id),
-        "model_profile": lambda: workspace_model_profile(target_model),
-        "handoff_history": lambda: workspace_handoff_history(wf, target_model=target_model, task_id=task_id, session_id=session_id, limit=limit),
-        "write_judge": lambda: memory_write_judge(wf, text=text, source=source, intent=intent, prefer_layer=prefer_layer, projects=projects, files=files),
-        "write_plan": lambda: memory_plan_write(wf, text=text, source=source, intent=intent, session_id=session_id, task_id=task_id, title=title, prefer_layer=prefer_layer, projects=projects, files=files),
-        "write_execute": lambda: memory_execute_write(wf, text=text, source=source, intent=intent, session_id=session_id, task_id=task_id, title=title, prefer_layer=prefer_layer, projects=projects, files=files),
-        "receipts": lambda: workspace_write_receipts(wf, layer=layer, action=action_filter, scope=scope, task_id=task_id, session_id=session_id, limit=limit),
-        "replay": lambda: workspace_replay_write_chain(wf, task_id=task_id, session_id=session_id, limit=limit),
-        "backend_query": lambda: memory_backend_query(wf, collection=collection, record_id=record_id, created_after=created_after, ref_path=ref_path, project=project, payload_type=payload_type, limit=limit),
-        "interaction_record": lambda: record_host_interaction(wf, parse_payload(payload) or {}, session_id=session_id, task_id=task_id),
-        "interaction_effects": lambda: build_effect_summary(wf, limit=max(limit, 100)),
-        "interaction_effects_refresh": lambda: refresh_effect_summary(wf),
-        "active_session_bindings": lambda: WorkspaceStore(wf).read_json_prefer_backend("active-session-bindings.json", {}),
-        "index_control": lambda: index_control_status(WorkspaceStore(wf)),
-        "contract_gate": lambda: workspace_check_contract(wf, name or ref_path or text, action_filter or "modify"),
-        "runtime_contract_ingest": lambda: ingest_runtime_contract_samples(wf, list((parse_payload(payload) or {}).get("samples", [])), source=source or "mcp_admin"),
-        "runtime_contract_migration": lambda: set_contract_migration(wf, parse_payload(payload) or {}),
-        "runtime_contract_gate": lambda: runtime_contract_gate_action(wf, contract_file=name or ref_path or text, task_id=task_id),
-        "index_rollback": lambda: rollback_generation(WorkspaceStore(wf), record_id),
-        "index_generation_gc": lambda: cleanup_generations(
-            WorkspaceStore(wf),
-            active_generation=str(index_control_status(WorkspaceStore(wf)).get("active_generation", "") or ""),
-            previous_generation=str(index_control_status(WorkspaceStore(wf)).get("previous_generation", "") or ""),
-            keep=max(2, keep_recent),
-            apply=force,
-        ),
-        "query_performance": lambda: workspace_performance_summary(wf, limit=max(limit, 20)),
-        "advanced_query": lambda: _advanced_query_action(wf, text, limit=limit, project=project, session_id=session_id),
-        "vector_ann_status": lambda: _vector_ann_action(wf, "status", limit),
-        "vector_ann_rebuild": lambda: _vector_ann_action(wf, "rebuild", limit),
-        "vector_ann_tune": lambda: _vector_ann_action(wf, "tune", limit),
-        "retrieval_reranker_status": lambda: _reranker_action("status", model),
-        "retrieval_reranker_prewarm": lambda: _reranker_action("prewarm", model),
-        "retrieval_model_profile": lambda: retrieval_model_profile(wf, text, apply=force),
-        "eval_retrieval_replay": lambda: evaluate_retrieval_replay_calibration(wf, min_samples=max(1, limit), apply=force),
-        "eval_cross_shard_replay": lambda: evaluate_cross_shard_replay(
-            wf,
-            [line.strip() for line in text.splitlines() if line.strip()],
-            tier=budget if budget in {"fast", "standard", "deep"} else "standard",
-        ),
-        "eval_cross_shard_fusion": lambda: evaluate_cross_shard_fusion(
-            wf,
-            list((parse_payload(payload) or {}).get("cases", [])),
-            tier=budget if budget in {"fast", "standard", "deep"} else "standard",
-        ),
-        "job_status": lambda: workspace_job_status(wf, record_id, limit=limit),
-        "job_cancel": lambda: cancel_workspace_job(wf, record_id),
-        "job_reindex": lambda: submit_reindex_workspace_job(wf, projects=projects, paths=files),
-        "watcher_start": lambda: start_watcher_daemon(wf),
-        "watcher_status": lambda: watcher_daemon_status(wf),
-        "watcher_stop": lambda: stop_watcher_daemon(wf),
-        "change_impact_recent": lambda: recent_change_impact_reports(wf, limit=limit),
-        "change_impact_pending": lambda: pending_change_impact_reports(wf, limit=limit),
-        "change_impact_confirm": lambda: record_change_impact_feedback(
-            wf,
-            record_id,
-            decision=action_filter or status,
-            task_id=task_id,
-            session_id=session_id,
-            validation_status=str((parse_payload(payload) or {}).get("validation_status", "not_run")),
-            validation_summary=str((parse_payload(payload) or {}).get("validation_summary", "")),
-            verified_by=verified_by,
-            note=str((parse_payload(payload) or {}).get("note", "")),
-        ),
-        "assertion_status": lambda: _update_assertion_status_action(wf, record_id, status, payload, source),
-        "assertion_inspect": lambda: _inspect_assertion_action(wf, record_id),
-        "assertion_query": lambda: __import__("memory_center.core.knowledge.assertions", fromlist=["query_assertions"]).query_assertions(WorkspaceStore(wf), as_of_generation=str((parse_payload(payload) or {}).get("as_of_generation", "")), as_of_time=str((parse_payload(payload) or {}).get("as_of_time", "")), time_axis=str((parse_payload(payload) or {}).get("time_axis", "valid")), limit=min(max(1, limit), 500)),
-        "evidence_subgraph_export": lambda: export_evidence_subgraph(
-            wf,
-            text or name or record_id,
-            direction=direction if direction in {"both", "upstream", "downstream"} else "both",
-            max_depth=min(max(1, max_depth), 3),
-            max_edges=min(max(1, limit), 120),
-            output_format=action_filter or "json",
-        ),
-        "architecture_communities": lambda: analyze_architecture_communities(wf, limit=min(max(1, limit), 50)),
-        "eval_write_quality": lambda: memory_eval_write_quality(wf, task_id=task_id, session_id=session_id, intent=intent, limit=limit),
-        "eval_resume": lambda: memory_eval_resume(wf, task_id=task_id, session_id=session_id, intent=intent, limit=limit),
-        "eval_handoff": lambda: memory_eval_handoff(wf, target_model=target_model, task_id=task_id, session_id=session_id, intent=intent, limit=limit),
-        "eval_regression_suite": lambda: memory_eval_regression_suite(wf, target_model=target_model, task_id=task_id, session_id=session_id, intent=intent, limit=limit),
-        "eval_index_freshness": lambda: memory_eval_index_freshness(wf, scope=scope),
-        "eval_tool_adoption": lambda: memory_eval_tool_adoption(wf, limit=limit),
-        "eval_context_weight": lambda: memory_eval_context_weight(wf, intent=intent, limit=limit),
-        "eval_agent_guidance": lambda: memory_eval_agent_guidance(wf, intent=intent, limit=limit),
-        "eval_agent_guidance_adoption": lambda: memory_eval_agent_guidance_adoption(wf, session_id=session_id, limit=limit),
-        "eval_agent_guidance_adoption_trend": lambda: memory_eval_agent_guidance_adoption_trend(wf, session_id=session_id, limit=limit),
-        "eval_agent_guidance_replay": lambda: memory_eval_agent_guidance_replay(wf, session_id=session_id, limit=limit),
-        "eval_agent_guidance_replay_campaign": lambda: memory_eval_agent_guidance_replay_campaign(wf, min_events=20, limit=max(limit, 500)),
-        "eval_agent_guidance_replay_trend": lambda: memory_eval_agent_guidance_replay_trend(wf, session_id=session_id, limit=limit),
-        "eval_agent_guidance_trend": lambda: memory_eval_agent_guidance_trend(wf, intent=intent, limit=limit),
-        "eval_workflow_orchestration": lambda: memory_eval_workflow_orchestration(wf, task_id=task_id, session_id=session_id, intent=intent, limit=limit),
-        "eval_token_gain": lambda: memory_eval_token_gain(wf, tool_name=tool_name, budget=budget, model=model, limit=limit),
-        "eval_parser_benchmark": lambda: memory_eval_parser_benchmark(wf, limit=limit),
-        "eval_java_call_resolution": lambda: eval_java_call_resolution_action(wf, name, strict=strict),
-        "eval_java_call_resolution_metrics": lambda: eval_java_call_resolution_metrics_action(wf),
-        "eval_java_call_resolution_review": lambda: eval_java_call_resolution_review_action(wf, name, limit=limit),
-        "eval_java_call_resolution_unresolved": lambda: eval_java_call_resolution_unresolved_action(wf, limit=limit),
-        "eval_golden": lambda: eval_golden_action(wf, name),
-        "eval_token_benchmark": lambda: memory_eval_token_benchmark(wf, intent=intent, limit=limit),
-        "eval_token_benchmark_trend": lambda: benchmark_trend_report(wf, name),
-        "audit": lambda: run_audit(wf, intent),
-        "drill_ref": lambda: drill_ref(wf, ref_path),
-        "drill_timeline": lambda: drill_timeline(wf, session_id, task_id, limit),
-        "drill_task": lambda: drill_task(wf, task_id),
-        "backend_consistency": lambda: backend_consistency(wf),
-        "discover": lambda: memory_discover(wf, limit=limit),
-        "constraint": lambda: constraint_action(text, name),
-        "tool_usage_report": lambda: memory_tool_usage_report(wf, limit=limit),
-        "generate_wiki": lambda: generate_wiki(wf, output_dir or None),
-        "generate_skills": lambda: generate_skills(wf, output_dir or None),
-        "group_status": lambda: group_status(group),
-        "group_query": lambda: group_query(group, query=text, limit=limit),
-        "group_impact": lambda: group_impact(group, target=intent or text, direction=direction, max_depth=max_depth),
-        "group_chain": lambda: group_chain(group, symbol=name or text, direction=direction, depth=max_depth, limit=limit),
-        "method_walkthrough": lambda: memory_method_walkthrough(wf, name or text or intent, depth=max_depth, limit=limit, project=project, view=view, budget=budget, report_level=model or "standard"),
-        "walkthrough_health": lambda: memory_walkthrough_health(wf, symbol=name or text or intent, project=project, report_level=model or "standard"),
-        "walkthrough_export": lambda: memory_export_walkthrough_artifact(wf, symbol=name or text or intent, project=project, report_level=model or "deep", title=title),
-        "eval_walkthrough_quality": lambda: memory_eval_walkthrough_quality(wf, symbol=name or text or intent, project=project, report_level=model or "standard"),
-        "verification_loop": lambda: verification_loop_action(wf, intent, task_id),
-        "pattern_promotion_propose": lambda: pattern_promote_action(wf, "propose", text),
-        "pattern_promotion_list": lambda: pattern_promote_action(wf, "list", ""),
-        "pattern_promotion_promote": lambda: pattern_promote_action(wf, "promote", text),
-        "heuristics_query": lambda: heuristics_action(wf, "query", text),
-        "heuristics_record": lambda: heuristics_action(wf, "record", text),
-        "heuristics_feedback": lambda: heuristics_action(wf, "feedback", text),
-        "heuristics_explain": lambda: heuristics_action(wf, "explain", text),
-        "workflow_profile": lambda: get_workflow_profile(intent or "quick-fix"),
-        "workflow_recommend": lambda: recommend_workflow_with_learning(wf, text or intent or ""),
-        "bundle_export": lambda: generate_agent_bundle(wf, agent=name or "codex"),
-        "runtime_audit": lambda: audit_agent_runtime(wf, fix=bool(force)),
-        "runtime_inspect": lambda: inspect_runtime(wf, thread_id=payload or session_id),
-        "explanation": lambda: explanation_action(text, persona=intent or "developer"),
-        "business_flow": lambda: business_flow_action(wf, name, max_depth),
-        "business_flow_impact": lambda: business_flow_impact_action(wf, intent or text, max_depth),
-        "metrics_summary": lambda: metrics_summary_action(wf, name),
-        "regression_alerts": lambda: regression_alerts_action(wf, name),
-    })
+    registry.register_many(
+        {
+            "status": lambda: workspace_status(wf, view=view, budget=budget),
+            "dashboard": lambda: workspace_dashboard(wf, intent=intent, limit=limit, view=view, budget=budget),
+            "continuity": lambda: workspace_continuity_dashboard(
+                wf, intent=intent, task_id=task_id, session_id=session_id, limit=limit, view=view, budget=budget
+            ),
+            "health": lambda: {
+                "workflow": "mc-admin-health",
+                "status": workspace_status(wf, view="compact", budget="medium"),
+                "tool_usage_report": memory_tool_usage_report(wf, limit=50),
+                "regression_suite": memory_eval_regression_suite(
+                    wf, intent=intent, target_model=target_model, limit=limit
+                ),
+            },
+            "artifact_list": lambda: list_artifacts(wf),
+            "artifact_get": lambda: get_artifact(wf, name),
+            "artifact_outline": lambda: artifact_outline(wf, name),
+            "artifact_context": lambda: artifact_context(wf, intent, limit=limit),
+            "asset_status": lambda: collaboration_asset_status(
+                wf, limit=limit, max_chars=int((parse_payload(payload) or {}).get("max_chars", 0) or 0)
+            ),
+            "asset_register": lambda: register_collaboration_asset(
+                wf,
+                **{
+                    **(parse_payload(payload) or {}),
+                    "actor": source or str((parse_payload(payload) or {}).get("owner", "")) or "local-agent",
+                },
+            ),
+            "asset_sync": lambda: sync_workspace_collaboration_assets(wf, owner=owner or source),
+            "asset_share": lambda: submit_asset_for_sharing(
+                wf,
+                str((parse_payload(payload) or {}).get("asset_id", "")),
+                visibility=str((parse_payload(payload) or {}).get("visibility", "team")),
+                actor=source,
+                allowed_agents=list((parse_payload(payload) or {}).get("allowed_agents", [])),
+                allowed_roles=list((parse_payload(payload) or {}).get("allowed_roles", [])),
+            ),
+            "asset_approve": lambda: approve_collaboration_asset(
+                wf,
+                str((parse_payload(payload) or {}).get("asset_id", "")),
+                approved=bool((parse_payload(payload) or {}).get("approved", False)),
+                actor=source,
+                note=str((parse_payload(payload) or {}).get("note", "")),
+            ),
+            "asset_bind": lambda: bind_collaboration_asset(
+                wf,
+                str((parse_payload(payload) or {}).get("asset_id", "")),
+                actor=source,
+                agents=list((parse_payload(payload) or {}).get("agents", [])),
+                roles=list((parse_payload(payload) or {}).get("roles", [])),
+            ),
+            "asset_loadout": lambda: collaboration_asset_loadout(
+                wf,
+                agent_id=str((parse_payload(payload) or {}).get("agent_id", "")),
+                role=str((parse_payload(payload) or {}).get("role", "")),
+                limit=limit,
+                max_chars=int((parse_payload(payload) or {}).get("max_chars", 0) or 0),
+            ),
+            "wiki_document_ingest": lambda: ingest_wiki_document_asset(
+                wf,
+                str((parse_payload(payload) or {}).get("document_path", "")),
+                owner=owner or source,
+                visibility=str((parse_payload(payload) or {}).get("visibility", "private")),
+                tags=list((parse_payload(payload) or {}).get("tags", [])),
+            ),
+            "artifact_update": lambda: update_artifact(wf, name, content),
+            "change_log_append": lambda: append_change_log(wf, entry),
+            "change_log_compact": lambda: compact_change_log(wf, keep_recent),
+            "task_create": lambda: create_task_space(
+                wf, title=title, intent=intent, owner=owner, tags=tags, priority=priority
+            ),
+            "task_list": lambda: list_task_spaces(wf, include_archived=include_archived),
+            "task_health": lambda: task_space_health(wf, task_id),
+            "task_health_all": lambda: task_spaces_health(wf, include_archived=include_archived, limit=limit),
+            "task_repair_plan": lambda: task_space_repair_plan(wf, task_id),
+            "task_repair_apply": lambda: execute_task_repair(wf, task_id, apply=force, intent=intent or text),
+            "task_resume_check": lambda: workspace_task_resume_check(
+                wf, intent=intent, task_id=task_id, session_id=session_id, limit=limit, budget=budget
+            ),
+            "task_resolve": lambda: resolve_task_space(
+                wf,
+                intent=intent,
+                title=title,
+                create_if_missing=create_if_missing,
+                include_archived=include_archived,
+                limit_candidates=limit_candidates,
+                score_threshold=score_threshold,
+            ),
+            "task_get": lambda: get_task_artifact(wf, task_id, name),
+            "task_update": lambda: update_task_artifact(wf, task_id, name, content),
+            "task_decision_record": lambda: record_task_decision(
+                wf,
+                task_id,
+                title or name,
+                content,
+                reason or intent,
+                evidence_refs=[item.strip() for item in payload.split(",") if item.strip()],
+            ),
+            "task_decision_list": lambda: list_task_decisions(wf, task_id, limit=limit),
+            "task_evidence_gc": lambda: task_evidence_gc(wf, task_id, apply=force),
+            "task_change_log_append": lambda: append_task_change_log(wf, task_id, entry, keep_recent=keep_recent),
+            "task_archive": lambda: archive_task_space(wf, task_id, reason=reason),
+            "task_auto_archive": lambda: auto_archive_task_spaces(wf, retention_days=keep_recent),
+            "task_status": lambda: update_task_status(wf, task_id, status),
+            "task_activity_touch": lambda: touch_task_activity(wf, task_id, source),
+            "delivery_init": lambda: initialize_delivery_workflow(wf, task_id, actor=source),
+            "delivery_status": lambda: delivery_workflow_status(wf, task_id),
+            "delivery_breakdown": lambda: propose_delivery_breakdown(
+                wf,
+                task_id,
+                source_refs=list((parse_payload(payload) or {}).get("source_refs", [])),
+                summary=str((parse_payload(payload) or {}).get("summary", "")),
+            ),
+            "delivery_policy": lambda: (
+                update_delivery_policy(wf, parse_payload(payload) or {}, actor=source)
+                if payload
+                else delivery_policy_status(wf)
+            ),
+            "delivery_contract_update": lambda: update_delivery_contract(
+                wf,
+                task_id,
+                kind=str((parse_payload(payload) or {}).get("kind", "")),
+                items=list((parse_payload(payload) or {}).get("items", [])),
+                actor=source,
+            ),
+            "delivery_subtask_status": lambda: update_delivery_subtask_status(
+                wf,
+                task_id,
+                str((parse_payload(payload) or {}).get("subtask_id", "")),
+                str((parse_payload(payload) or {}).get("status", "")),
+                actor=source,
+            ),
+            "delivery_validation_record": lambda: record_delivery_validation(
+                wf,
+                task_id,
+                status=str((parse_payload(payload) or {}).get("status", "recorded")),
+                summary=str((parse_payload(payload) or {}).get("summary", "")),
+                command=str((parse_payload(payload) or {}).get("command", "")),
+                exit_code=(parse_payload(payload) or {}).get("exit_code"),
+                acceptance_ids=list((parse_payload(payload) or {}).get("acceptance_ids", [])),
+                evidence_refs=list((parse_payload(payload) or {}).get("evidence_refs", [])),
+                actor=source,
+            ),
+            "delivery_validation_execute": lambda: execute_delivery_validation(
+                wf,
+                task_id,
+                profile_id=str((parse_payload(payload) or {}).get("profile_id", "")),
+                acceptance_ids=list((parse_payload(payload) or {}).get("acceptance_ids", [])),
+                actor=source,
+            ),
+            "delivery_matrix": lambda: delivery_matrix(wf, task_id, write=not force),
+            "delivery_transition": lambda: transition_delivery_stage(
+                wf,
+                task_id,
+                str((parse_payload(payload) or {}).get("stage", "")),
+                actor=source,
+                force=force,
+            ),
+            "delivery_skill_candidate": lambda: delivery_skill_candidate(wf, task_id),
+            "delivery_skill_publish": lambda: publish_delivery_skill(wf, task_id),
+            "delivery_skill_status": lambda: delivery_skill_status(wf, task_id),
+            "delivery_skill_contract_update": lambda: update_delivery_skill_contract(
+                wf, task_id, contract=parse_payload(payload) or {}, actor=source
+            ),
+            "delivery_skill_canary": lambda: start_delivery_skill_canary(wf, task_id, actor=source),
+            "delivery_skill_observe": lambda: record_delivery_skill_observation(
+                wf,
+                str((parse_payload(payload) or {}).get("skill_id", "")),
+                outcome=str((parse_payload(payload) or {}).get("outcome", "")),
+                evidence_refs=list((parse_payload(payload) or {}).get("evidence_refs", [])),
+                latency_ms=(parse_payload(payload) or {}).get("latency_ms"),
+                token_count=(parse_payload(payload) or {}).get("token_count"),
+                actor=source,
+            ),
+            "delivery_skill_evaluate": lambda: evaluate_delivery_skill(
+                wf, skill_id=str((parse_payload(payload) or {}).get("skill_id", ""))
+            ),
+            "delivery_skill_rollback": lambda: rollback_delivery_skill(
+                wf,
+                str((parse_payload(payload) or {}).get("skill_id", "")),
+                reason=str((parse_payload(payload) or {}).get("reason", "")),
+                actor=source,
+            ),
+            "delivery_skill_recommend": lambda: recommend_delivery_skills(
+                wf,
+                str((parse_payload(payload) or {}).get("intent", intent)),
+                language=str((parse_payload(payload) or {}).get("language", "")),
+                limit=limit,
+            ),
+            "delivery_skill_replay": lambda: delivery_skill_replay_set(
+                wf, skill_id=str((parse_payload(payload) or {}).get("skill_id", "")), limit=limit
+            ),
+            "delivery_failure_candidates": lambda: derive_delivery_failure_candidates(wf, limit_tasks=limit),
+            "delivery_skill_synthesize": lambda: synthesize_delivery_skill_trajectories(
+                wf, min_support=max(2, min(limit, 20))
+            ),
+            "session_start": lambda: workspace_start_session(wf, intent, session_id=session_id or None),
+            "session_log": lambda: workspace_log_session_event(wf, session_id, event_type, parse_payload(payload)),
+            "session_end": lambda: workspace_end_session(wf, session_id, outcome, verified_by),
+            "session_recent": lambda: workspace_recent_sessions(wf, limit),
+            "session_summary": lambda: workspace_session_summary(wf, session_id),
+            "model_profile": lambda: workspace_model_profile(target_model),
+            "handoff_history": lambda: workspace_handoff_history(
+                wf, target_model=target_model, task_id=task_id, session_id=session_id, limit=limit
+            ),
+            "write_judge": lambda: memory_write_judge(
+                wf, text=text, source=source, intent=intent, prefer_layer=prefer_layer, projects=projects, files=files
+            ),
+            "write_plan": lambda: memory_plan_write(
+                wf,
+                text=text,
+                source=source,
+                intent=intent,
+                session_id=session_id,
+                task_id=task_id,
+                title=title,
+                prefer_layer=prefer_layer,
+                projects=projects,
+                files=files,
+            ),
+            "write_execute": lambda: memory_execute_write(
+                wf,
+                text=text,
+                source=source,
+                intent=intent,
+                session_id=session_id,
+                task_id=task_id,
+                title=title,
+                prefer_layer=prefer_layer,
+                projects=projects,
+                files=files,
+            ),
+            "receipts": lambda: workspace_write_receipts(
+                wf, layer=layer, action=action_filter, scope=scope, task_id=task_id, session_id=session_id, limit=limit
+            ),
+            "replay": lambda: workspace_replay_write_chain(wf, task_id=task_id, session_id=session_id, limit=limit),
+            "backend_query": lambda: memory_backend_query(
+                wf,
+                collection=collection,
+                record_id=record_id,
+                created_after=created_after,
+                ref_path=ref_path,
+                project=project,
+                payload_type=payload_type,
+                limit=limit,
+            ),
+            "interaction_record": lambda: record_host_interaction(
+                wf, parse_payload(payload) or {}, session_id=session_id, task_id=task_id
+            ),
+            "interaction_effects": lambda: build_effect_summary(wf, limit=max(limit, 100)),
+            "interaction_effects_refresh": lambda: refresh_effect_summary(wf),
+            "active_session_bindings": lambda: WorkspaceStore(wf).read_json_prefer_backend(
+                "active-session-bindings.json", {}
+            ),
+            "index_control": lambda: index_control_status(WorkspaceStore(wf)),
+            "contract_gate": lambda: workspace_check_contract(wf, name or ref_path or text, action_filter or "modify"),
+            "runtime_contract_ingest": lambda: ingest_runtime_contract_samples(
+                wf, list((parse_payload(payload) or {}).get("samples", [])), source=source or "mcp_admin"
+            ),
+            "runtime_contract_migration": lambda: set_contract_migration(wf, parse_payload(payload) or {}),
+            "runtime_contract_gate": lambda: runtime_contract_gate_action(
+                wf, contract_file=name or ref_path or text, task_id=task_id
+            ),
+            "index_rollback": lambda: rollback_generation(WorkspaceStore(wf), record_id),
+            "index_generation_gc": lambda: cleanup_generations(
+                WorkspaceStore(wf),
+                active_generation=str(index_control_status(WorkspaceStore(wf)).get("active_generation", "") or ""),
+                previous_generation=str(index_control_status(WorkspaceStore(wf)).get("previous_generation", "") or ""),
+                keep=max(2, keep_recent),
+                apply=force,
+            ),
+            "query_performance": lambda: workspace_performance_summary(wf, limit=max(limit, 20)),
+            "performance_snapshot": lambda: record_workspace_performance_snapshot(
+                wf, samples=max(1, min(limit, 20)), tier=budget if budget in {"fast", "standard", "deep"} else "fast"
+            ),
+            "performance_snapshot_status": lambda: workspace_performance_snapshot_status(wf, limit=max(limit, 20)),
+            "http_route_contract_audit": lambda: __import__(
+                "memory_center.http.route_dispatch", fromlist=["audit_http_route_contract"]
+            ).audit_http_route_contract(),
+            "advanced_query": lambda: _advanced_query_action(
+                wf, text, limit=limit, project=project, session_id=session_id
+            ),
+            "vector_ann_status": lambda: _vector_ann_action(wf, "status", limit),
+            "vector_ann_rebuild": lambda: _vector_ann_action(wf, "rebuild", limit),
+            "vector_ann_tune": lambda: _vector_ann_action(wf, "tune", limit),
+            "retrieval_reranker_status": lambda: _reranker_action("status", model),
+            "retrieval_reranker_prewarm": lambda: _reranker_action("prewarm", model),
+            "retrieval_model_profile": lambda: retrieval_model_profile(wf, text, apply=force),
+            "eval_retrieval_replay": lambda: evaluate_retrieval_replay_calibration(
+                wf, min_samples=max(1, limit), apply=force
+            ),
+            "eval_cross_shard_replay": lambda: evaluate_cross_shard_replay(
+                wf,
+                [line.strip() for line in text.splitlines() if line.strip()],
+                tier=budget if budget in {"fast", "standard", "deep"} else "standard",
+            ),
+            "eval_cross_shard_fusion": lambda: evaluate_cross_shard_fusion(
+                wf,
+                list((parse_payload(payload) or {}).get("cases", [])),
+                tier=budget if budget in {"fast", "standard", "deep"} else "standard",
+            ),
+            "job_status": lambda: workspace_job_status(wf, record_id, limit=limit),
+            "job_cancel": lambda: cancel_workspace_job(wf, record_id),
+            "job_reindex": lambda: submit_reindex_workspace_job(wf, projects=projects, paths=files),
+            "watcher_start": lambda: start_watcher_daemon(wf),
+            "watcher_status": lambda: watcher_daemon_status(wf),
+            "watcher_stop": lambda: stop_watcher_daemon(wf),
+            "change_impact_recent": lambda: recent_change_impact_reports(wf, limit=limit),
+            "change_impact_pending": lambda: pending_change_impact_reports(wf, limit=limit),
+            "change_impact_confirm": lambda: record_change_impact_feedback(
+                wf,
+                record_id,
+                decision=action_filter or status,
+                task_id=task_id,
+                session_id=session_id,
+                validation_status=str((parse_payload(payload) or {}).get("validation_status", "not_run")),
+                validation_summary=str((parse_payload(payload) or {}).get("validation_summary", "")),
+                verified_by=verified_by,
+                note=str((parse_payload(payload) or {}).get("note", "")),
+            ),
+            "assertion_status": lambda: _update_assertion_status_action(wf, record_id, status, payload, source),
+            "assertion_inspect": lambda: _inspect_assertion_action(wf, record_id),
+            "assertion_query": lambda: __import__(
+                "memory_center.core.knowledge.assertions", fromlist=["query_assertions"]
+            ).query_assertions(
+                WorkspaceStore(wf),
+                as_of_generation=str((parse_payload(payload) or {}).get("as_of_generation", "")),
+                as_of_time=str((parse_payload(payload) or {}).get("as_of_time", "")),
+                time_axis=str((parse_payload(payload) or {}).get("time_axis", "valid")),
+                limit=min(max(1, limit), 500),
+            ),
+            "evidence_subgraph_export": lambda: export_evidence_subgraph(
+                wf,
+                text or name or record_id,
+                direction=direction if direction in {"both", "upstream", "downstream"} else "both",
+                max_depth=min(max(1, max_depth), 3),
+                max_edges=min(max(1, limit), 120),
+                output_format=action_filter or "json",
+            ),
+            "architecture_communities": lambda: analyze_architecture_communities(wf, limit=min(max(1, limit), 50)),
+            "eval_write_quality": lambda: memory_eval_write_quality(
+                wf, task_id=task_id, session_id=session_id, intent=intent, limit=limit
+            ),
+            "eval_resume": lambda: memory_eval_resume(
+                wf, task_id=task_id, session_id=session_id, intent=intent, limit=limit
+            ),
+            "eval_handoff": lambda: memory_eval_handoff(
+                wf, target_model=target_model, task_id=task_id, session_id=session_id, intent=intent, limit=limit
+            ),
+            "eval_regression_suite": lambda: memory_eval_regression_suite(
+                wf, target_model=target_model, task_id=task_id, session_id=session_id, intent=intent, limit=limit
+            ),
+            "eval_index_freshness": lambda: memory_eval_index_freshness(wf, scope=scope),
+            "eval_tool_adoption": lambda: memory_eval_tool_adoption(wf, limit=limit),
+            "eval_context_weight": lambda: memory_eval_context_weight(wf, intent=intent, limit=limit),
+            "eval_agent_guidance": lambda: memory_eval_agent_guidance(wf, intent=intent, limit=limit),
+            "eval_agent_guidance_adoption": lambda: memory_eval_agent_guidance_adoption(
+                wf, session_id=session_id, limit=limit
+            ),
+            "eval_agent_guidance_adoption_trend": lambda: memory_eval_agent_guidance_adoption_trend(
+                wf, session_id=session_id, limit=limit
+            ),
+            "eval_agent_guidance_replay": lambda: memory_eval_agent_guidance_replay(
+                wf, session_id=session_id, limit=limit
+            ),
+            "eval_agent_guidance_replay_campaign": lambda: memory_eval_agent_guidance_replay_campaign(
+                wf, min_events=20, limit=max(limit, 500)
+            ),
+            "eval_agent_guidance_replay_trend": lambda: memory_eval_agent_guidance_replay_trend(
+                wf, session_id=session_id, limit=limit
+            ),
+            "eval_agent_guidance_trend": lambda: memory_eval_agent_guidance_trend(wf, intent=intent, limit=limit),
+            "eval_workflow_orchestration": lambda: memory_eval_workflow_orchestration(
+                wf, task_id=task_id, session_id=session_id, intent=intent, limit=limit
+            ),
+            "eval_token_gain": lambda: memory_eval_token_gain(
+                wf, tool_name=tool_name, budget=budget, model=model, limit=limit
+            ),
+            "eval_parser_benchmark": lambda: memory_eval_parser_benchmark(wf, limit=limit),
+            "eval_java_call_resolution": lambda: eval_java_call_resolution_action(wf, name, strict=strict),
+            "eval_java_call_resolution_metrics": lambda: eval_java_call_resolution_metrics_action(wf),
+            "eval_java_call_resolution_review": lambda: eval_java_call_resolution_review_action(wf, name, limit=limit),
+            "eval_java_call_resolution_unresolved": lambda: eval_java_call_resolution_unresolved_action(
+                wf, limit=limit
+            ),
+            "eval_golden": lambda: eval_golden_action(wf, name),
+            "eval_token_benchmark": lambda: memory_eval_token_benchmark(wf, intent=intent, limit=limit),
+            "eval_token_benchmark_trend": lambda: benchmark_trend_report(wf, name),
+            "audit": lambda: run_audit(wf, intent),
+            "drill_ref": lambda: drill_ref(wf, ref_path),
+            "drill_timeline": lambda: drill_timeline(wf, session_id, task_id, limit),
+            "drill_task": lambda: drill_task(wf, task_id),
+            "backend_consistency": lambda: backend_consistency(wf),
+            "discover": lambda: memory_discover(wf, limit=limit),
+            "constraint": lambda: constraint_action(text, name),
+            "tool_usage_report": lambda: memory_tool_usage_report(wf, limit=limit),
+            "generate_wiki": lambda: generate_wiki(wf, output_dir or None),
+            "generate_skills": lambda: generate_skills(wf, output_dir or None),
+            "group_status": lambda: group_status(group),
+            "group_query": lambda: group_query(group, query=text, limit=limit),
+            "group_impact": lambda: group_impact(
+                group, target=intent or text, direction=direction, max_depth=max_depth
+            ),
+            "group_chain": lambda: group_chain(
+                group, symbol=name or text, direction=direction, depth=max_depth, limit=limit
+            ),
+            "method_walkthrough": lambda: memory_method_walkthrough(
+                wf,
+                name or text or intent,
+                depth=max_depth,
+                limit=limit,
+                project=project,
+                view=view,
+                budget=budget,
+                report_level=model or "standard",
+            ),
+            "walkthrough_health": lambda: memory_walkthrough_health(
+                wf, symbol=name or text or intent, project=project, report_level=model or "standard"
+            ),
+            "walkthrough_export": lambda: memory_export_walkthrough_artifact(
+                wf, symbol=name or text or intent, project=project, report_level=model or "deep", title=title
+            ),
+            "eval_walkthrough_quality": lambda: memory_eval_walkthrough_quality(
+                wf, symbol=name or text or intent, project=project, report_level=model or "standard"
+            ),
+            "verification_loop": lambda: verification_loop_action(wf, intent, task_id),
+            "pattern_promotion_propose": lambda: pattern_promote_action(wf, "propose", text),
+            "pattern_promotion_list": lambda: pattern_promote_action(wf, "list", ""),
+            "pattern_promotion_promote": lambda: pattern_promote_action(wf, "promote", text),
+            "heuristics_query": lambda: heuristics_action(wf, "query", text),
+            "heuristics_record": lambda: heuristics_action(wf, "record", text),
+            "heuristics_feedback": lambda: heuristics_action(wf, "feedback", text),
+            "heuristics_explain": lambda: heuristics_action(wf, "explain", text),
+            "workflow_profile": lambda: get_workflow_profile(intent or "quick-fix"),
+            "workflow_recommend": lambda: recommend_workflow_with_learning(wf, text or intent or ""),
+            "bundle_export": lambda: generate_agent_bundle(wf, agent=name or "codex"),
+            "runtime_audit": lambda: audit_agent_runtime(wf, fix=bool(force)),
+            "runtime_inspect": lambda: inspect_runtime(wf, thread_id=payload or session_id),
+            "explanation": lambda: explanation_action(text, persona=intent or "developer"),
+            "business_flow": lambda: business_flow_action(wf, name, max_depth),
+            "business_flow_impact": lambda: business_flow_impact_action(wf, intent or text, max_depth),
+            "metrics_summary": lambda: metrics_summary_action(wf, name),
+            "regression_alerts": lambda: regression_alerts_action(wf, name),
+        }
+    )
     return registry

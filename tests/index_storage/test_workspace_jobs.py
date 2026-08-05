@@ -28,6 +28,9 @@ def test_background_job_persists_completed_result(tmp_path: Path) -> None:
         time.sleep(0.02)
     assert status["status"] == "completed"
     assert status["result"] == {"ok": True}
+    assert status["progress_percent"] == 100
+    assert status["can_cancel"] is False
+    assert status["recovery_action"]["action"] == "none"
 
 
 def test_background_job_persists_structured_progress_events(tmp_path: Path) -> None:
@@ -126,20 +129,29 @@ def test_reindex_reports_all_main_stages(tmp_path: Path) -> None:
 def test_current_process_long_running_job_is_not_marked_interrupted(tmp_path: Path) -> None:
     from memory_center.core.storage.workspace import WorkspaceStore
     from tests.fixtures import copy_demo_workspace
+
     workspace = copy_demo_workspace(tmp_path)
     store = WorkspaceStore(workspace)
-    store.write_json(JOBS_FILE, [{
-        "job_id": "job-long",
-        "kind": "reindex",
-        "status": "running",
-        "runner_pid": os.getpid(),
-        "updated_at": time.time() - 3600,
-        "progress": {"stage": "parsing", "percent": 30},
-    }])
+    store.write_json(
+        JOBS_FILE,
+        [
+            {
+                "job_id": "job-long",
+                "kind": "reindex",
+                "status": "running",
+                "runner_pid": os.getpid(),
+                "updated_at": time.time() - 3600,
+                "progress": {"stage": "parsing", "percent": 30},
+            }
+        ],
+    )
 
     status = workspace_job_status(str(workspace), "job-long")
 
     assert status["status"] == "running"
+    assert status["can_cancel"] is True
+    assert status["progress_percent"] == 30
+    assert status["estimated_remaining_ms"] is not None
 
 
 def test_cancellation_is_persisted_and_observed_at_progress_boundary(tmp_path: Path) -> None:

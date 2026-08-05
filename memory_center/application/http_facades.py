@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from memory_center.application.jobs import analysis_job_status
+from memory_center.application.performance import record_workspace_performance_snapshot
 from memory_center.application.presentation import (
     export_continuity_dashboard_html,
     export_focus_task_html,
@@ -106,6 +107,9 @@ from memory_center.core.orchestrator import (
     workspace_write_receipts,
 )
 from memory_center.core.presentation.evidence_subgraph import export_evidence_subgraph
+from memory_center.core.retrieval.planner import (
+    workspace_performance_snapshot_status,
+)
 from memory_center.core.storage.workspace import WorkspaceStore
 from memory_center.core.tasks.artifacts import (
     append_change_log,
@@ -148,11 +152,21 @@ from memory_center.core.tasks.delivery import (
     update_delivery_skill_contract,
     update_delivery_subtask_status,
 )
+from memory_center.core.workspace.jobs import cancel_workspace_job
 
 
 def workspace_background_job_status(workspace_file: str, job_id: str = "", *, limit: int = 20) -> dict[str, Any]:
     """通过 application 边界读取持久化后台任务状态。"""
     return analysis_job_status(workspace_file, job_id, limit=limit)
+
+
+def workspace_background_job_cancel(workspace_file: str, job_id: str) -> dict[str, Any]:
+    """通过 application 边界取消一个可协作的后台任务。"""
+    return cancel_workspace_job(workspace_file, job_id)
+
+
+def workspace_performance_snapshot(workspace_file: str, *, samples: int = 5, tier: str = "fast") -> dict[str, Any]:
+    return record_workspace_performance_snapshot(workspace_file, samples=samples, tier=tier)
 
 
 def workspace_asset_status(workspace_file: str, *, limit: int = 100, max_chars: int = 0) -> dict[str, Any]:
@@ -167,27 +181,52 @@ def workspace_asset_sync(workspace_file: str, *, owner: str = "") -> dict[str, A
     return sync_workspace_collaboration_assets(workspace_file, owner=owner)
 
 
-def workspace_asset_share(workspace_file: str, asset_id: str, *, visibility: str, actor: str, allowed_agents: list[str] | None = None, allowed_roles: list[str] | None = None) -> dict[str, Any]:
-    return submit_asset_for_sharing(workspace_file, asset_id, visibility=visibility, actor=actor, allowed_agents=allowed_agents, allowed_roles=allowed_roles)
+def workspace_asset_share(
+    workspace_file: str,
+    asset_id: str,
+    *,
+    visibility: str,
+    actor: str,
+    allowed_agents: list[str] | None = None,
+    allowed_roles: list[str] | None = None,
+) -> dict[str, Any]:
+    return submit_asset_for_sharing(
+        workspace_file,
+        asset_id,
+        visibility=visibility,
+        actor=actor,
+        allowed_agents=allowed_agents,
+        allowed_roles=allowed_roles,
+    )
 
 
-def workspace_asset_approve(workspace_file: str, asset_id: str, *, approved: bool, actor: str, note: str = "") -> dict[str, Any]:
+def workspace_asset_approve(
+    workspace_file: str, asset_id: str, *, approved: bool, actor: str, note: str = ""
+) -> dict[str, Any]:
     return approve_collaboration_asset(workspace_file, asset_id, approved=approved, actor=actor, note=note)
 
 
-def workspace_asset_bind(workspace_file: str, asset_id: str, *, actor: str, agents: list[str] | None = None, roles: list[str] | None = None) -> dict[str, Any]:
+def workspace_asset_bind(
+    workspace_file: str, asset_id: str, *, actor: str, agents: list[str] | None = None, roles: list[str] | None = None
+) -> dict[str, Any]:
     return bind_collaboration_asset(workspace_file, asset_id, actor=actor, agents=agents, roles=roles)
 
 
-def workspace_asset_loadout(workspace_file: str, *, agent_id: str = "", role: str = "", limit: int = 12, max_chars: int = 0) -> dict[str, Any]:
+def workspace_asset_loadout(
+    workspace_file: str, *, agent_id: str = "", role: str = "", limit: int = 12, max_chars: int = 0
+) -> dict[str, Any]:
     return collaboration_asset_loadout(workspace_file, agent_id=agent_id, role=role, limit=limit, max_chars=max_chars)
 
 
-def workspace_wiki_document_ingest(workspace_file: str, document_path: str, *, owner: str, visibility: str = "private", tags: list[str] | None = None) -> dict[str, Any]:
+def workspace_wiki_document_ingest(
+    workspace_file: str, document_path: str, *, owner: str, visibility: str = "private", tags: list[str] | None = None
+) -> dict[str, Any]:
     return ingest_wiki_document_asset(workspace_file, document_path, owner=owner, visibility=visibility, tags=tags)
 
 
-def workspace_change_impact_reports(workspace_file: str, *, limit: int = 20, pending_only: bool = False) -> dict[str, Any]:
+def workspace_change_impact_reports(
+    workspace_file: str, *, limit: int = 20, pending_only: bool = False
+) -> dict[str, Any]:
     """通过 application 边界读取 watcher 的轻量变更影响报告。"""
     return recent_change_impact_reports(workspace_file, limit=limit, pending_only=pending_only)
 
@@ -255,7 +294,13 @@ def workspace_assertion_status(
 ) -> dict[str, Any]:
     """HTTP facade for an explicit, auditable assertion status transition."""
     return update_assertion_status(
-        WorkspaceStore(workspace_file), assertion_id, status=status, verification_ref=verification_ref, actor=actor, task_id=task_id, session_id=session_id
+        WorkspaceStore(workspace_file),
+        assertion_id,
+        status=status,
+        verification_ref=verification_ref,
+        actor=actor,
+        task_id=task_id,
+        session_id=session_id,
     )
 
 
@@ -263,8 +308,18 @@ def workspace_assertion_inspect(workspace_file: str, assertion_id: str) -> dict[
     return inspect_assertion(WorkspaceStore(workspace_file), assertion_id)
 
 
-def workspace_assertion_query(workspace_file: str, *, as_of_generation: str = "", as_of_time: str = "", time_axis: str = "valid", limit: int = 20) -> dict[str, Any]:
-    return {"assertions": query_assertions(WorkspaceStore(workspace_file), as_of_generation=as_of_generation, as_of_time=as_of_time, time_axis=time_axis, limit=limit)}
+def workspace_assertion_query(
+    workspace_file: str, *, as_of_generation: str = "", as_of_time: str = "", time_axis: str = "valid", limit: int = 20
+) -> dict[str, Any]:
+    return {
+        "assertions": query_assertions(
+            WorkspaceStore(workspace_file),
+            as_of_generation=as_of_generation,
+            as_of_time=as_of_time,
+            time_axis=time_axis,
+            limit=limit,
+        )
+    }
 
 
 def workspace_delivery_status(workspace_file: str, task_id: str) -> dict[str, Any]:
@@ -275,35 +330,74 @@ def workspace_delivery_init(workspace_file: str, task_id: str, *, actor: str = "
     return initialize_delivery_workflow(workspace_file, task_id, actor=actor)
 
 
-def workspace_delivery_contract(workspace_file: str, task_id: str, *, kind: str, items: list[dict[str, Any]], actor: str = "") -> dict[str, Any]:
+def workspace_delivery_contract(
+    workspace_file: str, task_id: str, *, kind: str, items: list[dict[str, Any]], actor: str = ""
+) -> dict[str, Any]:
     return update_delivery_contract(workspace_file, task_id, kind=kind, items=items, actor=actor)
 
 
-def workspace_delivery_subtask_status(workspace_file: str, task_id: str, *, subtask_id: str, status: str, actor: str = "") -> dict[str, Any]:
+def workspace_delivery_subtask_status(
+    workspace_file: str, task_id: str, *, subtask_id: str, status: str, actor: str = ""
+) -> dict[str, Any]:
     return update_delivery_subtask_status(workspace_file, task_id, subtask_id, status, actor=actor)
 
 
-def workspace_delivery_validation(workspace_file: str, task_id: str, *, status: str, summary: str = "", command: str = "", exit_code: int | None = None, acceptance_ids: list[str] | None = None, evidence_refs: list[str] | None = None, actor: str = "") -> dict[str, Any]:
-    return record_delivery_validation(workspace_file, task_id, status=status, summary=summary, command=command, exit_code=exit_code, acceptance_ids=acceptance_ids, evidence_refs=evidence_refs, actor=actor)
+def workspace_delivery_validation(
+    workspace_file: str,
+    task_id: str,
+    *,
+    status: str,
+    summary: str = "",
+    command: str = "",
+    exit_code: int | None = None,
+    acceptance_ids: list[str] | None = None,
+    evidence_refs: list[str] | None = None,
+    actor: str = "",
+) -> dict[str, Any]:
+    return record_delivery_validation(
+        workspace_file,
+        task_id,
+        status=status,
+        summary=summary,
+        command=command,
+        exit_code=exit_code,
+        acceptance_ids=acceptance_ids,
+        evidence_refs=evidence_refs,
+        actor=actor,
+    )
 
 
-def workspace_delivery_breakdown(workspace_file: str, task_id: str, *, source_refs: list[str], summary: str = "") -> dict[str, Any]:
+def workspace_delivery_breakdown(
+    workspace_file: str, task_id: str, *, source_refs: list[str], summary: str = ""
+) -> dict[str, Any]:
     return propose_delivery_breakdown(workspace_file, task_id, source_refs=source_refs, summary=summary)
 
 
-def workspace_delivery_policy(workspace_file: str, *, policy: dict[str, Any] | None = None, actor: str = "") -> dict[str, Any]:
-    return update_delivery_policy(workspace_file, policy, actor=actor) if policy is not None else delivery_policy_status(workspace_file)
+def workspace_delivery_policy(
+    workspace_file: str, *, policy: dict[str, Any] | None = None, actor: str = ""
+) -> dict[str, Any]:
+    return (
+        update_delivery_policy(workspace_file, policy, actor=actor)
+        if policy is not None
+        else delivery_policy_status(workspace_file)
+    )
 
 
-def workspace_delivery_execute_validation(workspace_file: str, task_id: str, *, profile_id: str, acceptance_ids: list[str] | None = None, actor: str = "") -> dict[str, Any]:
-    return execute_delivery_validation(workspace_file, task_id, profile_id=profile_id, acceptance_ids=acceptance_ids, actor=actor)
+def workspace_delivery_execute_validation(
+    workspace_file: str, task_id: str, *, profile_id: str, acceptance_ids: list[str] | None = None, actor: str = ""
+) -> dict[str, Any]:
+    return execute_delivery_validation(
+        workspace_file, task_id, profile_id=profile_id, acceptance_ids=acceptance_ids, actor=actor
+    )
 
 
 def workspace_delivery_matrix(workspace_file: str, task_id: str, *, write: bool = True) -> dict[str, Any]:
     return delivery_matrix(workspace_file, task_id, write=write)
 
 
-def workspace_delivery_transition(workspace_file: str, task_id: str, *, stage: str, actor: str = "", force: bool = False) -> dict[str, Any]:
+def workspace_delivery_transition(
+    workspace_file: str, task_id: str, *, stage: str, actor: str = "", force: bool = False
+) -> dict[str, Any]:
     return transition_delivery_stage(workspace_file, task_id, stage, actor=actor, force=force)
 
 
@@ -311,15 +405,34 @@ def workspace_delivery_skill_canary(workspace_file: str, task_id: str, *, actor:
     return start_delivery_skill_canary(workspace_file, task_id, actor=actor)
 
 
-def workspace_delivery_skill_observe(workspace_file: str, *, skill_id: str, outcome: str, evidence_refs: list[str] | None = None, latency_ms: int | None = None, token_count: int | None = None, actor: str = "") -> dict[str, Any]:
-    return record_delivery_skill_observation(workspace_file, skill_id, outcome=outcome, evidence_refs=evidence_refs, latency_ms=latency_ms, token_count=token_count, actor=actor)
+def workspace_delivery_skill_observe(
+    workspace_file: str,
+    *,
+    skill_id: str,
+    outcome: str,
+    evidence_refs: list[str] | None = None,
+    latency_ms: int | None = None,
+    token_count: int | None = None,
+    actor: str = "",
+) -> dict[str, Any]:
+    return record_delivery_skill_observation(
+        workspace_file,
+        skill_id,
+        outcome=outcome,
+        evidence_refs=evidence_refs,
+        latency_ms=latency_ms,
+        token_count=token_count,
+        actor=actor,
+    )
 
 
 def workspace_delivery_skill_evaluate(workspace_file: str, *, skill_id: str = "") -> dict[str, Any]:
     return evaluate_delivery_skill(workspace_file, skill_id=skill_id)
 
 
-def workspace_delivery_skill_contract_update(workspace_file: str, task_id: str, *, contract: dict[str, Any], actor: str = "") -> dict[str, Any]:
+def workspace_delivery_skill_contract_update(
+    workspace_file: str, task_id: str, *, contract: dict[str, Any], actor: str = ""
+) -> dict[str, Any]:
     return update_delivery_skill_contract(workspace_file, task_id, contract=contract, actor=actor)
 
 
@@ -327,11 +440,15 @@ def workspace_delivery_skill_replay(workspace_file: str, *, skill_id: str, limit
     return delivery_skill_replay_set(workspace_file, skill_id=skill_id, limit=limit)
 
 
-def workspace_delivery_skill_rollback(workspace_file: str, *, skill_id: str, reason: str, actor: str = "") -> dict[str, Any]:
+def workspace_delivery_skill_rollback(
+    workspace_file: str, *, skill_id: str, reason: str, actor: str = ""
+) -> dict[str, Any]:
     return rollback_delivery_skill(workspace_file, skill_id, reason=reason, actor=actor)
 
 
-def workspace_delivery_skill_recommend(workspace_file: str, *, intent: str, language: str = "", limit: int = 5) -> dict[str, Any]:
+def workspace_delivery_skill_recommend(
+    workspace_file: str, *, intent: str, language: str = "", limit: int = 5
+) -> dict[str, Any]:
     return recommend_delivery_skills(workspace_file, intent, language=language, limit=limit)
 
 
@@ -398,6 +515,9 @@ __all__ = [
     "memory_write_judge",
     "workspace_end_session",
     "workspace_background_job_status",
+    "workspace_background_job_cancel",
+    "workspace_performance_snapshot",
+    "workspace_performance_snapshot_status",
     "workspace_asset_approve",
     "workspace_asset_bind",
     "workspace_asset_loadout",

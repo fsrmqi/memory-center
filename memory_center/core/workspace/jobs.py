@@ -1,4 +1,5 @@
 """Small local job registry for deep, interruptible analysis requests."""
+
 from __future__ import annotations
 
 import os
@@ -47,7 +48,7 @@ def submit_workspace_job(
     job_id = f"job-{uuid4().hex[:12]}"
     now = time.time()
     record = {
-        "schema_version": 2,
+        "schema_version": 3,
         "job_id": job_id,
         "kind": kind,
         "status": "queued",
@@ -63,7 +64,17 @@ def submit_workspace_job(
         # SQLite connections are thread-affine. The worker must own its store
         # instead of reusing the caller's connection created on the submit thread.
         worker_store = WorkspaceStore(workspace_file)
-        _upsert(worker_store, {**record, "status": "running", "runner_pid": os.getpid(), "updated_at": time.time()})
+        started_at = time.time()
+        _upsert(
+            worker_store,
+            {
+                **record,
+                "status": "running",
+                "runner_pid": os.getpid(),
+                "started_at": started_at,
+                "updated_at": started_at,
+            },
+        )
         _update_progress(worker_store, job_id, "scanning", 5, "正在准备任务输入")
         stopped = threading.Event()
 
@@ -78,6 +89,7 @@ def submit_workspace_job(
             if _is_cancel_requested(worker_store, job_id):
                 raise WorkspaceJobCancelled("任务已取消")
             _update_progress(worker_store, job_id, stage, percent, message)
+
         try:
             report("scanning", 5, "正在准备任务输入")
             result = progress_work(report) if progress_work else work()
@@ -85,13 +97,22 @@ def submit_workspace_job(
                 _finish_job(worker_store, job_id, "cancelled", progress_stage="cancelled", message="任务已取消")
             else:
                 _update_progress(worker_store, job_id, "finalizing", 95, "正在整理任务结果")
-                _finish_job(worker_store, job_id, "completed", result=result, progress_stage="completed", message="任务已完成")
+                _finish_job(
+                    worker_store, job_id, "completed", result=result, progress_stage="completed", message="任务已完成"
+                )
         except WorkspaceJobCancelled:
             _finish_job(worker_store, job_id, "cancelled", progress_stage="cancelled", message="任务已取消")
         except Exception as exc:  # pragma: no cover - error boundary is exposed via status
             from memory_center.core.observability.diagnostics import safe_reason
 
-            _finish_job(worker_store, job_id, "failed", error=safe_reason(reason=str(exc)), progress_stage="failed", message="任务执行失败")
+            _finish_job(
+                worker_store,
+                job_id,
+                "failed",
+                error=safe_reason(reason=str(exc)),
+                progress_stage="failed",
+                message="任务执行失败",
+            )
         finally:
             stopped.set()
 
@@ -104,20 +125,35 @@ def workspace_job_status(workspace_file: str, job_id: str = "", limit: int = 20)
     recover_interrupted_workspace_jobs(store)
     rows = store.read_json_prefer_backend(JOBS_FILE, []) or []
     if job_id:
-        return next((row for row in rows if row.get("job_id") == job_id), {"job_id": job_id, "found": False})
-    return {"jobs": sorted(rows, key=lambda row: float(row.get("updated_at", 0)), reverse=True)[:limit]}
+        row = next((row for row in rows if row.get("job_id") == job_id), None)
+        return _job_view(row) if isinstance(row, dict) else {"job_id": job_id, "found": False}
+    selected = sorted(rows, key=lambda row: float(row.get("updated_at", 0)), reverse=True)[:limit]
+    return {"jobs": [_job_view(row) for row in selected]}
 
 
-def submit_reindex_workspace_job(workspace_file: str, *, projects: list[str] | None = None, paths: list[str] | None = None) -> dict[str, Any]:
+def submit_reindex_workspace_job(
+    workspace_file: str, *, projects: list[str] | None = None, paths: list[str] | None = None
+) -> dict[str, Any]:
     """Schedule a resumable-status reindex without blocking an Agent request."""
     existing = workspace_job_status(workspace_file, limit=100).get("jobs", [])
-    active = next((row for row in existing if row.get("kind") == "reindex" and row.get("status") in {"queued", "running", "cancel_requested"}), None)
+    active = next(
+        (
+            row
+            for row in existing
+            if row.get("kind") == "reindex" and row.get("status") in {"queued", "running", "cancel_requested"}
+        ),
+        None,
+    )
     if active:
         return {**active, "coalesced": True}
+
     def work() -> dict[str, Any]:
         from memory_center.core.indexing.reindex import reindex_workspace
         from memory_center.core.workspace.config import load_workspace_config
-        return reindex_workspace(load_workspace_config(workspace_file), WorkspaceStore(workspace_file), projects=projects, paths=paths)
+
+        return reindex_workspace(
+            load_workspace_config(workspace_file), WorkspaceStore(workspace_file), projects=projects, paths=paths
+        )
 
     def progress_work(report: Callable[[str, int, str], None]) -> dict[str, Any]:
         from memory_center.core.indexing.reindex import reindex_workspace
@@ -144,7 +180,18 @@ def recover_interrupted_workspace_jobs(store: WorkspaceStore) -> int:
         runner_pid = row.get("runner_pid")
         if row.get("status") == "running" and runner_pid and not _pid_is_alive(int(runner_pid)):
             progress = _progress("interrupted", int((row.get("progress") or {}).get("percent", 0)), "宿主进程中断", now)
-            recovered.append({**row, "status": "interrupted", "updated_at": now, "progress": progress, "progress_events": [*(row.get("progress_events", []) or [])[-(MAX_PROGRESS_EVENTS - 1):], progress]})
+            recovered.append(
+                {
+                    **row,
+                    "status": "interrupted",
+                    "updated_at": now,
+                    "progress": progress,
+                    "progress_events": [
+                        *(row.get("progress_events", []) or [])[-(MAX_PROGRESS_EVENTS - 1) :],
+                        progress,
+                    ],
+                }
+            )
             changed += 1
         else:
             recovered.append(row)
@@ -158,7 +205,13 @@ def cancel_workspace_job(workspace_file: str, job_id: str) -> dict[str, Any]:
     current = workspace_job_status(workspace_file, job_id)
     if not current.get("job_id") or current.get("found") is False:
         return {"job_id": job_id, "cancelled": False, "reason": "not_found"}
-    _update_progress(store, job_id, str((current.get("progress") or {}).get("stage", "queued")), int((current.get("progress") or {}).get("percent", 0)), "已请求取消")
+    _update_progress(
+        store,
+        job_id,
+        str((current.get("progress") or {}).get("stage", "queued")),
+        int((current.get("progress") or {}).get("percent", 0)),
+        "已请求取消",
+    )
     current = workspace_job_status(workspace_file, job_id)
     _upsert(store, {**current, "status": "cancel_requested", "updated_at": time.time()})
     return {"job_id": job_id, "cancelled": True, "status": "cancel_requested"}
@@ -209,7 +262,7 @@ def _update_progress(store: WorkspaceStore, job_id: str, stage: str, percent: in
     bounded_percent = max(int(existing.get("percent", 0) or 0), min(100, max(0, int(percent))))
     now = time.time()
     progress = _progress(stage, bounded_percent, message, now)
-    events = [*(current.get("progress_events", []) or [])[-(MAX_PROGRESS_EVENTS - 1):], progress]
+    events = [*(current.get("progress_events", []) or [])[-(MAX_PROGRESS_EVENTS - 1) :], progress]
     _upsert(store, {**current, "status": "running", "updated_at": now, "progress": progress, "progress_events": events})
 
 
@@ -236,7 +289,7 @@ def _finish_job(
         "status": status,
         "updated_at": now,
         "progress": progress,
-        "progress_events": [*(current.get("progress_events", []) or [])[-(MAX_PROGRESS_EVENTS - 1):], progress],
+        "progress_events": [*(current.get("progress_events", []) or [])[-(MAX_PROGRESS_EVENTS - 1) :], progress],
     }
     if result is not None:
         record["result"] = result
@@ -247,3 +300,34 @@ def _finish_job(
 
 def _progress(stage: str, percent: int, message: str, now: float) -> dict[str, Any]:
     return {"stage": stage, "percent": max(0, min(100, int(percent))), "message": message[:160], "updated_at": now}
+
+
+def _job_view(record: dict[str, Any]) -> dict[str, Any]:
+    """Add presentation-safe long-task guidance without changing stored history."""
+    now = time.time()
+    updated_at = float(record.get("updated_at") or now)
+    started_at = float(record.get("started_at") or record.get("created_at") or updated_at)
+    elapsed_ms = max(0, round((now - started_at) * 1000))
+    progress = record.get("progress") or {}
+    percent = min(100, max(0, int(progress.get("percent", 0) or 0)))
+    status = str(record.get("status", "queued") or "queued")
+    estimated_remaining_ms: int | None = None
+    if status in {"running", "cancel_requested"} and 0 < percent < 100 and elapsed_ms > 0:
+        estimated_remaining_ms = max(0, round(elapsed_ms * (100 - percent) / percent))
+    if status in {"queued", "running", "cancel_requested"}:
+        recovery_action = {"action": "poll_job_status", "job_id": record.get("job_id", ""), "after_seconds": 3}
+    elif status in {"failed", "interrupted"} and record.get("kind") == "reindex":
+        recovery_action = {"action": "job_reindex", "reason": "重新提交索引任务；不会删除现有 generation。"}
+    elif status == "cancelled":
+        recovery_action = {"action": "job_reindex", "reason": "按需重新提交取消前的目标范围。"}
+    else:
+        recovery_action = {"action": "none"}
+    return {
+        **record,
+        "progress_percent": percent,
+        "elapsed_ms": elapsed_ms,
+        "last_update_age_ms": max(0, round((now - updated_at) * 1000)),
+        "estimated_remaining_ms": estimated_remaining_ms,
+        "can_cancel": status in {"queued", "running", "cancel_requested"},
+        "recovery_action": recovery_action,
+    }

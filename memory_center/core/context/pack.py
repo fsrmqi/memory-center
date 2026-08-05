@@ -91,16 +91,11 @@ class ContextPackBuilder:
         results = retrieval.get("results", [])
 
         # 3. Expand relationships for top entrypoints
-        relationships = []
-        for item in results[:5]:
-            node = item.get("node", {})
-            node_id = node.get("id", "")
-            if node_id:
-                with RuntimeStore(self._store.graph_db_path) as graph:
-                    incoming = graph.traverse_edges(node_id, direction="upstream", max_depth=1, limit=10)
-                    outgoing = graph.traverse_edges(node_id, direction="downstream", max_depth=1, limit=10)
-                relationships.extend(incoming[:5])
-                relationships.extend(outgoing[:5])
+        node_ids = [item.get("node", {}).get("id", "") for item in results[:5]]
+        with RuntimeStore(self._store.graph_db_path) as graph:
+            edge_batches = graph.traverse_edges_batch(node_ids, direction="both", limit_per_node=10)
+        relationships = [edge for node_id in node_ids for edge in edge_batches.get(node_id, [])[:10]]
+        relationships = list({str(edge.get("id", "")): edge for edge in relationships}.values())[:50]
 
         # 4. Match risk patterns / rules
         files = list({item.get("node", {}).get("file_path", "") for item in results[:5] if item.get("node", {}).get("file_path")})

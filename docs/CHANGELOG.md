@@ -1,5 +1,29 @@
 # Changelog / 更新日志
 
+## 4.3.62 真实 P95 闭环、路由契约审计与长任务体验 / Real P95 Loop, Route Contract Audit, and Long-Task UX
+
+- 新增显式 `performance-snapshot` / `performance-status`、HTTP 性能快照接口和 MCP Admin action。快照只保存 generation 与聚合 P50/P95/P99/结果计数，不保存查询、路径或源码，且永不进入普通查询热路径。
+- HTTP 注册表现在自动为全部已注册路径建立读写契约，并提供 `http-route-contract-audit`。审计会识别未分类、孤立声明、非法方法和名称表现为写入却被误声明为 GET 的路由。
+- 后台任务状态新增进度百分比、已耗时、ETA、可取消性与恢复动作；`/ui/jobs` 只轮询紧凑任务状态，不读取索引正文。
+
+## 4.3.62 Real P95 Loop, Route Contract Audit, and Long-Task UX
+
+- Added explicit `performance-snapshot` / `performance-status`, HTTP snapshot routes, and MCP Admin actions. Snapshots retain generation and aggregate P50/P95/P99/outcome counts only, never queries, paths, or source, and never run on the normal query hot path.
+- The HTTP registry now establishes read/write contracts for every registered path and exposes `http-route-contract-audit`. It detects unclassified routes, orphan declarations, invalid methods, and mutation-like paths accidentally declared as GET.
+- Background job status now includes progress percentage, elapsed time, ETA, cancel availability, and recovery action; `/ui/jobs` polls only compact job state rather than index content.
+
+## 4.3.61 本地热路径、空间预算与协作体验 / Local Hot Paths, Storage Budget, and Collaboration Experience
+
+- Context Pack 改为批量读取 top-K 节点的一跳关系，减少 SQLite 往返；workspace 的 index、artifact、audit 写入使用分域锁，降低 watcher、任务同步和审计追加的相互阻塞。
+- 新增 `artifact storage-budget`，按 graph、index、artifacts、memory 输出空间、预算状态和只读维护建议；增量 generation 持续以文件内容哈希识别未变化输入，不额外落盘冗余 AST 缓存。
+- 本地 HTTP/MCP 资产登记在未传 actor 时自动采用声明 owner 或 `local-agent`；协作治理仍只在显式共享时生效。
+
+## 4.3.61 Local Hot Paths, Storage Budget, and Collaboration Experience
+
+- Context Pack now batch-reads one-hop edges for top-K nodes, reducing SQLite round trips. Workspace index, artifact, and audit writes use scoped locks to reduce watcher, task-sync, and audit contention.
+- Added `artifact storage-budget`, reporting graph, index, artifacts, and memory usage with read-only maintenance guidance. Incremental generations continue to use file content hashes without persisting a redundant AST cache.
+- Local HTTP/MCP asset registration derives a missing actor from the declared owner or `local-agent`; governance remains opt-in through explicit sharing.
+
 ## 4.3.60 HTTP 安全、资产可靠性与 Context Pack 硬预算 / HTTP Security, Asset Reliability, and Context-Pack Hard Budgets
 
 - HTTP GET 现在严格只读；所有会改变工作区状态的路由必须 POST。非回环地址绑定必须提供 `--access-token` 或 `MEMORY_CENTER_HTTP_TOKEN`。

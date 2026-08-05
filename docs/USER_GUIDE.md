@@ -616,7 +616,19 @@ record_design_decision(workspace_file, topic="...", decision="...", rationale=".
 
 ## 12. Troubleshooting / 故障排除
 
-### 12.1 检索结果不理想
+### 12.1 真实工作区性能与后台任务
+
+性能快照是显式、低频的运维动作，不会在普通查询中自动执行：
+
+```bash
+memory-center performance-snapshot --workspace /abs/path/.memory-center/workspace.yaml --samples 5 --tier fast
+memory-center performance-status --workspace /abs/path/.memory-center/workspace.yaml
+memory-center http-route-contract-audit
+```
+
+快照仅保留 generation、P50/P95/P99、最大耗时和成功/失败计数。它不保留探针查询、路径或源码。长任务可通过 `memory-center job-status --workspace <workspace.yaml> --job-id <job-id>` 查看 `progress_percent`、ETA、是否可取消和恢复动作；HTTP Workbench 使用 `/ui/jobs?workspace=<workspace.yaml>` 轮询同一份紧凑状态。
+
+### 12.2 检索结果不理想
 
 **问题**: 查询返回太多/太少结果。
 
@@ -625,7 +637,7 @@ record_design_decision(workspace_file, topic="...", decision="...", rationale=".
 2. 使用更具体的查询词
 3. 检查意图检测是否正确
 
-### 12.2 回归检测误报
+### 12.3 回归检测误报
 
 **问题**: 检测到假回归。
 
@@ -634,7 +646,7 @@ record_design_decision(workspace_file, topic="...", decision="...", rationale=".
 2. 增加历史数据点
 3. 手动标记为已知变化
 
-### 12.3 审计分数低
+### 12.4 审计分数低
 
 **问题**: 审计分数低于预期。
 
@@ -643,7 +655,7 @@ record_design_decision(workspace_file, topic="...", decision="...", rationale=".
 2. 按优先级修复（high → medium → low）
 3. 补充缺失的文档/测试
 
-### 12.4 导航找不到数据
+### 12.5 导航找不到数据
 
 **问题**: `expand_ref` 或 `drill_timeline` 返回空。
 
@@ -652,7 +664,7 @@ record_design_decision(workspace_file, topic="...", decision="...", rationale=".
 2. 确认数据已写入 backend
 3. 使用 `check_health()` 检查后端状态
 
-### 12.5 `mc_analyze` 返回错误或部分结果
+### 12.6 `mc_analyze` 返回错误或部分结果
 
 **问题**：MCP 返回 `error=true`，或 `analysis_status="partial"`。
 

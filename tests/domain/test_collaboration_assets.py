@@ -136,6 +136,13 @@ def test_context_pack_enforces_effective_token_budget(demo_workspace) -> None:
     assert pack["token_estimate"] <= pack["budget_tokens"]
 
 
+def test_storage_budget_report_is_bounded_and_actionable(demo_workspace) -> None:
+    report = WorkspaceStore(demo_workspace).storage_budget_report(warning_bytes=1)
+    assert set(report["categories"]) == {"graph", "index", "artifacts", "memory"}
+    assert report["status"] == "warning"
+    assert report["next_action"]
+
+
 def test_asset_sync_and_admin_actions_share_the_same_domain_service(demo_workspace) -> None:
     from memory_center.http.server import _route_request
 
