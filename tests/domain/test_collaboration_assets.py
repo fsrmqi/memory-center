@@ -1,0 +1,104 @@
+from __future__ import annotations
+
+from memory_center.application.admin import build_admin_registry
+from memory_center.application.analysis import build_context_pack
+from memory_center.core.knowledge.assets import (
+    approve_collaboration_asset,
+    bind_collaboration_asset,
+    collaboration_asset_loadout,
+    ingest_wiki_document_asset,
+    register_collaboration_asset,
+    submit_asset_for_sharing,
+    sync_workspace_collaboration_assets,
+)
+from memory_center.core.tasks.artifacts import create_task_space
+
+
+def test_collaboration_asset_sharing_is_approved_before_role_loadout(demo_workspace) -> None:
+    registered = register_collaboration_asset(
+        demo_workspace,
+        kind="skill",
+        title="发布检查",
+        owner="alice",
+        source_ref="skill:release-check",
+        context_excerpt="先检查契约兼容性。",
+        actor="alice",
+    )
+    asset_id = registered["asset"]["asset_id"]
+    assert collaboration_asset_loadout(demo_workspace, agent_id="alice")["count"] == 1
+    submitted = submit_asset_for_sharing(demo_workspace, asset_id, visibility="restricted", actor="alice", allowed_roles=["reviewer"])
+    assert submitted["submitted"] is True
+    assert not collaboration_asset_loadout(demo_workspace, role="reviewer")["assets"]
+    assert approve_collaboration_asset(demo_workspace, asset_id, approved=True, actor="maintainer")["approved"] is True
+    assert bind_collaboration_asset(demo_workspace, asset_id, actor="alice", roles=["reviewer"])["bound"] is True
+    assert collaboration_asset_loadout(demo_workspace, role="reviewer")["assets"][0]["asset_id"] == asset_id
+    assert not collaboration_asset_loadout(demo_workspace, role="developer")["assets"]
+
+
+def test_asset_owner_cannot_be_overwritten_or_self_approve(demo_workspace) -> None:
+    try:
+        register_collaboration_asset(demo_workspace, kind="wiki", title="伪造身份", owner="alice", source_ref="wiki:forged", actor="mallory")
+    except PermissionError:
+        pass
+    else:
+        raise AssertionError("asset actor must match the declared owner")
+    asset = register_collaboration_asset(demo_workspace, kind="wiki", title="设计", owner="alice", source_ref="wiki:design", actor="alice")["asset"]
+    try:
+        register_collaboration_asset(demo_workspace, kind="wiki", title="夺取", owner="mallory", source_ref="wiki:design", asset_id=asset["asset_id"], actor="mallory")
+    except PermissionError:
+        pass
+    else:
+        raise AssertionError("non-owner must not overwrite an existing asset")
+    assert submit_asset_for_sharing(demo_workspace, asset["asset_id"], visibility="team", actor="alice")["submitted"] is True
+    try:
+        approve_collaboration_asset(demo_workspace, asset["asset_id"], approved=True, actor="alice")
+    except PermissionError:
+        pass
+    else:
+        raise AssertionError("owner must not approve its own sharing request")
+
+
+def test_private_binding_and_asset_budget_are_honored(demo_workspace) -> None:
+    asset = register_collaboration_asset(demo_workspace, kind="skill", title="私有 Skill", owner="alice", source_ref="skill:private", context_excerpt="x" * 800, metadata={"details": "y" * 800}, actor="alice")["asset"]
+    assert bind_collaboration_asset(demo_workspace, asset["asset_id"], actor="alice", agents=["codex"])["bound"] is True
+    loadout = collaboration_asset_loadout(demo_workspace, agent_id="codex", max_chars=500)
+    assert loadout["count"] == 1
+    assert len(str(loadout["assets"])) <= 700
+    assert approve_collaboration_asset(demo_workspace, asset["asset_id"], approved=False, actor="maintainer")["reason"] == "asset_not_pending_review"
+
+
+def test_asset_sync_preserves_approved_team_asset(demo_workspace) -> None:
+    synced = sync_workspace_collaboration_assets(demo_workspace, owner="alice")
+    graph_asset = next(asset_id for asset_id in synced["asset_ids"] if asset_id == "asset-code-graph-active")
+    assert approve_collaboration_asset(demo_workspace, graph_asset, approved=True, actor="maintainer")["approved"] is True
+    assert collaboration_asset_loadout(demo_workspace, agent_id="codex")["count"] == 1
+    sync_workspace_collaboration_assets(demo_workspace, owner="alice")
+    assert collaboration_asset_loadout(demo_workspace, agent_id="codex")["count"] == 1
+
+
+def test_wiki_document_asset_links_code_evidence_and_context_pack(demo_workspace) -> None:
+    workspace_root = demo_workspace.parent.parent
+    document = workspace_root / "architecture-note.md"
+    document.write_text("# 发布架构\n\n使用 `ArticleFeignClient`。详见 [流程](docs/flow.md)。\n", encoding="utf-8")
+    ingested = ingest_wiki_document_asset(demo_workspace, document, owner="alice")
+    assert ingested["ingested"] is True
+    asset_id = ingested["asset"]["asset_id"]
+    assert submit_asset_for_sharing(demo_workspace, asset_id, visibility="team", actor="alice")["submitted"] is True
+    assert approve_collaboration_asset(demo_workspace, asset_id, approved=True, actor="maintainer")["approved"] is True
+    pack = build_context_pack(str(demo_workspace), "发布", "auto", 1000, 4, agent_id="reviewer")
+    assert any(item["asset_id"] == asset_id for item in pack["collaboration_assets"]["assets"])
+    assert ingested["document_graph"]["links"] == ["docs/flow.md"]
+
+
+def test_asset_sync_and_admin_actions_share_the_same_domain_service(demo_workspace) -> None:
+    from memory_center.http.server import _route_request
+
+    create_task_space(demo_workspace, title="协作任务", intent="验证资产同步", owner="alice")
+    synced = sync_workspace_collaboration_assets(demo_workspace, owner="alice")
+    assert synced["synced"] is True
+    admin = build_admin_registry(workspace_file=str(demo_workspace), source="alice", payload='{"kind":"wiki","title":"运行手册","owner":"alice","source_ref":"wiki:runbook"}')
+    registered = admin.dispatch("asset_register")
+    assert registered["registered"] is True
+    assert build_admin_registry(workspace_file=str(demo_workspace), source="alice").dispatch("asset_status")["counts"]["task"] >= 1
+    http = _route_request("/workspace/asset/loadout", {"agent_id": ["alice"]}, str(demo_workspace))
+    assert http["count"] >= 1

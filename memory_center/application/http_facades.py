@@ -19,6 +19,16 @@ from memory_center.application.presentation import (
 )
 from memory_center.core.freshness.change_reports import recent_change_impact_reports, record_change_impact_feedback
 from memory_center.core.knowledge.assertions import inspect_assertion, query_assertions, update_assertion_status
+from memory_center.core.knowledge.assets import (
+    approve_collaboration_asset,
+    bind_collaboration_asset,
+    collaboration_asset_loadout,
+    collaboration_asset_status,
+    ingest_wiki_document_asset,
+    register_collaboration_asset,
+    submit_asset_for_sharing,
+    sync_workspace_collaboration_assets,
+)
 from memory_center.core.knowledge.communities import analyze_architecture_communities
 from memory_center.core.orchestrator import (
     bootstrap_workspace_context,  # noqa: F401 - re-exported for HTTP route modules
@@ -143,6 +153,38 @@ from memory_center.core.tasks.delivery import (
 def workspace_background_job_status(workspace_file: str, job_id: str = "", *, limit: int = 20) -> dict[str, Any]:
     """通过 application 边界读取持久化后台任务状态。"""
     return analysis_job_status(workspace_file, job_id, limit=limit)
+
+
+def workspace_asset_status(workspace_file: str, *, limit: int = 100) -> dict[str, Any]:
+    return collaboration_asset_status(workspace_file, limit=limit)
+
+
+def workspace_asset_register(workspace_file: str, payload: dict[str, Any], *, actor: str = "") -> dict[str, Any]:
+    return register_collaboration_asset(workspace_file, **{**payload, "actor": actor})
+
+
+def workspace_asset_sync(workspace_file: str, *, owner: str = "") -> dict[str, Any]:
+    return sync_workspace_collaboration_assets(workspace_file, owner=owner)
+
+
+def workspace_asset_share(workspace_file: str, asset_id: str, *, visibility: str, actor: str, allowed_agents: list[str] | None = None, allowed_roles: list[str] | None = None) -> dict[str, Any]:
+    return submit_asset_for_sharing(workspace_file, asset_id, visibility=visibility, actor=actor, allowed_agents=allowed_agents, allowed_roles=allowed_roles)
+
+
+def workspace_asset_approve(workspace_file: str, asset_id: str, *, approved: bool, actor: str, note: str = "") -> dict[str, Any]:
+    return approve_collaboration_asset(workspace_file, asset_id, approved=approved, actor=actor, note=note)
+
+
+def workspace_asset_bind(workspace_file: str, asset_id: str, *, actor: str, agents: list[str] | None = None, roles: list[str] | None = None) -> dict[str, Any]:
+    return bind_collaboration_asset(workspace_file, asset_id, actor=actor, agents=agents, roles=roles)
+
+
+def workspace_asset_loadout(workspace_file: str, *, agent_id: str = "", role: str = "", limit: int = 12) -> dict[str, Any]:
+    return collaboration_asset_loadout(workspace_file, agent_id=agent_id, role=role, limit=limit)
+
+
+def workspace_wiki_document_ingest(workspace_file: str, document_path: str, *, owner: str, visibility: str = "private", tags: list[str] | None = None) -> dict[str, Any]:
+    return ingest_wiki_document_asset(workspace_file, document_path, owner=owner, visibility=visibility, tags=tags)
 
 
 def workspace_change_impact_reports(workspace_file: str, *, limit: int = 20, pending_only: bool = False) -> dict[str, Any]:
@@ -356,6 +398,13 @@ __all__ = [
     "memory_write_judge",
     "workspace_end_session",
     "workspace_background_job_status",
+    "workspace_asset_approve",
+    "workspace_asset_bind",
+    "workspace_asset_loadout",
+    "workspace_asset_register",
+    "workspace_asset_share",
+    "workspace_asset_status",
+    "workspace_asset_sync",
     "workspace_change_impact_reports",
     "workspace_change_impact_confirm",
     "workspace_evidence_subgraph",
@@ -407,6 +456,7 @@ __all__ = [
     "workspace_unresolved_items",
     "workspace_replay_write_chain",
     "workspace_write_receipts",
+    "workspace_wiki_document_ingest",
     "memory_discover",
     "append_change_log",
     "append_task_change_log",

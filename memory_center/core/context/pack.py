@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from memory_center.core.governance.rules import match_rules
+from memory_center.core.knowledge.assets import collaboration_asset_loadout
 from memory_center.core.observability.diagnostics import DIAG, diag_entry
 from memory_center.core.storage.runtime import RuntimeStore
 
@@ -46,6 +47,7 @@ class ContextPack:
     freshness: dict[str, Any] = field(default_factory=dict)
     token_estimate: int = 0
     progressive: dict[str, Any] = field(default_factory=dict)
+    collaboration_assets: dict[str, Any] = field(default_factory=dict)
 
 
 class ContextPackBuilder:
@@ -63,6 +65,8 @@ class ContextPackBuilder:
         intent: str = "auto",
         budget_tokens: int = 8000,
         limit: int = 10,
+        agent_id: str = "",
+        role: str = "",
     ) -> ContextPack:
         """Build a context pack for the given query."""
         # 1. Detect intent
@@ -116,14 +120,23 @@ class ContextPackBuilder:
 
         # 8. Estimate token usage (include snippets)
         snippet_text = "".join(s.get("content", "") for s in snippets)
+        # 9. Load collaboration assets from a fixed 10% context budget.
+        collaboration_assets = collaboration_asset_loadout(
+            self._workspace_file,
+            agent_id=agent_id,
+            role=role,
+            limit=min(12, max(1, limit)),
+            max_chars=max(256, budget_tokens * 4 // 10),
+        )
         total_text = (
             json.dumps(results[:5], ensure_ascii=False)
             + json.dumps(relationships, ensure_ascii=False)
             + snippet_text
+            + json.dumps(collaboration_assets, ensure_ascii=False)
         )
         token_estimate = len(total_text) // 4  # rough estimate
 
-        # 9. Build progressive disclosure
+        # 10. Build progressive disclosure
         progressive = {
             "level_1_quick": {
                 "entrypoint_count": len(results),
@@ -153,6 +166,7 @@ class ContextPackBuilder:
             freshness=freshness_info,
             token_estimate=token_estimate,
             progressive=progressive,
+            collaboration_assets=collaboration_assets,
         )
 
     def _get_graph(self) -> RuntimeStore:

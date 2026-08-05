@@ -74,9 +74,9 @@ def register_insight_surface(mcp: Any, workspace_context: Any) -> None:
         return base + (f"Diff summary: {diff_summary}" if diff_summary else "Analyze the current working tree changes.")
 
     @safe_mcp_tool(mcp, workspace_context)
-    def mc_context_pack(query: str, intent: str = "auto", budget_tokens: int = 8000, limit: int = 10):
+    def mc_context_pack(query: str, intent: str = "auto", budget_tokens: int = 8000, limit: int = 10, agent_id: str = "", role: str = ""):
         """返回面向编码 Agent 的紧凑、带证据上下文包。"""
-        pack = build_context_pack(workspace_context.workspace_file, query, intent, budget_tokens, limit)
+        pack = build_context_pack(workspace_context.workspace_file, query, intent, budget_tokens, limit, agent_id=agent_id, role=role)
         return {"workflow": "mc-context-pack", **pack, "relationships": pack["relationships"][:20]}
 
     @safe_mcp_tool(mcp, workspace_context)

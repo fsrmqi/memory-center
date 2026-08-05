@@ -375,7 +375,20 @@ def publish_delivery_skill(workspace_file: str | Path, task_id: str) -> dict[str
     manifest_path.write_text(json.dumps({"schema_version": 3, "skill_id": skill["skill_id"], "task_id": candidate["task_id"], "candidate_id": candidate["candidate_id"], "quality_score": candidate["quality_score"], "version": skill["version"], "published_at": published_at, "evidence_refs": skill.get("evidence_refs", []), "contract": contract, "replay_set": _skill_replay_path(store, str(skill["skill_id"])).name}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     skill.update({"lifecycle": "published", "contract": contract, "published_at": published_at, "updated_at": published_at, "published_path": str(path)})
     _write_skill_registry(store, registry)
-    return {"published": True, "skill_id": skill["skill_id"], "task_id": candidate["task_id"], "quality_score": candidate["quality_score"], "path": str(path), "metrics": metrics, "next_action": "已进入默认检索范围；持续记录效果，失败时执行 delivery-skill-rollback。"}
+    from memory_center.core.knowledge.assets import register_collaboration_asset
+
+    asset = register_collaboration_asset(
+        workspace_file,
+        kind="skill",
+        title=str(skill.get("title", "Delivery Skill")),
+        owner=str(skill.get("actor", "")) or "workspace-owner",
+        source_ref=f"skill:{skill['skill_id']}",
+        metadata={"skill_id": skill["skill_id"], "contract": contract, "evidence_refs": skill.get("evidence_refs", [])[:30]},
+        context_excerpt="已发布交付 Skill：读取其契约、停止条件和验证证据后再使用。",
+        asset_id=f"asset-skill-{_skill_slug(str(skill['skill_id']))}",
+        actor=str(skill.get("actor", "")) or "workspace-owner",
+    )
+    return {"published": True, "skill_id": skill["skill_id"], "task_id": candidate["task_id"], "quality_score": candidate["quality_score"], "path": str(path), "metrics": metrics, "asset": asset["asset"], "next_action": "已进入默认检索范围；持续记录效果，失败时执行 delivery-skill-rollback。"}
 
 
 def delivery_skill_status(workspace_file: str | Path, task_id: str) -> dict[str, Any]:

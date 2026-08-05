@@ -44,6 +44,16 @@ from memory_center.core.freshness.change_reports import (
 from memory_center.core.freshness.daemon import start_watcher_daemon, stop_watcher_daemon, watcher_daemon_status
 from memory_center.core.indexing.control_plane import index_control_status, rollback_generation
 from memory_center.core.indexing.shards import cleanup_generations
+from memory_center.core.knowledge.assets import (
+    approve_collaboration_asset,
+    bind_collaboration_asset,
+    collaboration_asset_loadout,
+    collaboration_asset_status,
+    ingest_wiki_document_asset,
+    register_collaboration_asset,
+    submit_asset_for_sharing,
+    sync_workspace_collaboration_assets,
+)
 from memory_center.core.knowledge.communities import analyze_architecture_communities
 from memory_center.core.knowledge.wiki import generate_skills, generate_wiki
 from memory_center.core.observability.metrics import MetricsCollector
@@ -536,6 +546,14 @@ def build_admin_registry(
         "artifact_get": lambda: get_artifact(wf, name),
         "artifact_outline": lambda: artifact_outline(wf, name),
         "artifact_context": lambda: artifact_context(wf, intent, limit=limit),
+        "asset_status": lambda: collaboration_asset_status(wf, limit=limit),
+        "asset_register": lambda: register_collaboration_asset(wf, **{**(parse_payload(payload) or {}), "actor": source}),
+        "asset_sync": lambda: sync_workspace_collaboration_assets(wf, owner=owner or source),
+        "asset_share": lambda: submit_asset_for_sharing(wf, str((parse_payload(payload) or {}).get("asset_id", "")), visibility=str((parse_payload(payload) or {}).get("visibility", "team")), actor=source, allowed_agents=list((parse_payload(payload) or {}).get("allowed_agents", [])), allowed_roles=list((parse_payload(payload) or {}).get("allowed_roles", []))),
+        "asset_approve": lambda: approve_collaboration_asset(wf, str((parse_payload(payload) or {}).get("asset_id", "")), approved=bool((parse_payload(payload) or {}).get("approved", False)), actor=source, note=str((parse_payload(payload) or {}).get("note", ""))),
+        "asset_bind": lambda: bind_collaboration_asset(wf, str((parse_payload(payload) or {}).get("asset_id", "")), actor=source, agents=list((parse_payload(payload) or {}).get("agents", [])), roles=list((parse_payload(payload) or {}).get("roles", []))),
+        "asset_loadout": lambda: collaboration_asset_loadout(wf, agent_id=str((parse_payload(payload) or {}).get("agent_id", "")), role=str((parse_payload(payload) or {}).get("role", "")), limit=limit),
+        "wiki_document_ingest": lambda: ingest_wiki_document_asset(wf, str((parse_payload(payload) or {}).get("document_path", "")), owner=owner or source, visibility=str((parse_payload(payload) or {}).get("visibility", "private")), tags=list((parse_payload(payload) or {}).get("tags", []))),
         "artifact_update": lambda: update_artifact(wf, name, content),
         "change_log_append": lambda: append_change_log(wf, entry),
         "change_log_compact": lambda: compact_change_log(wf, keep_recent),

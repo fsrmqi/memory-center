@@ -1,5 +1,27 @@
 # Changelog / 更新日志
 
+## 4.3.59 协作资产权限与预算修复 / Collaboration Asset Authorization and Budget Fixes
+
+- 既有协作资产只允许 owner 更新或绑定；审批禁止 owner 自审，registry 的读改写在同一文件锁内完成，避免并发丢写。
+- 资产同步保留已审批状态；私有资产可装载到 owner 显式绑定的 Agent/角色；协作资产摘要纳入 context pack 的独立预算与 Token 估算。
+
+## 4.3.59 Collaboration Asset Authorization and Budget Fixes
+
+- Existing collaboration assets can only be updated or bound by their owner; owners cannot self-approve, and registry read-modify-write operations share one file lock to prevent concurrent lost updates.
+- Asset synchronization preserves approved state; private assets may load for owner-bound Agents/roles; collaboration summaries now consume a dedicated context-pack budget and token estimate.
+
+## 4.3.58 本地协作资产与角色装载 / Local Collaboration Assets and Role Loadouts
+
+- 新增统一协作资产 registry，覆盖 Task、已发布 Delivery Skill、Wiki 文档与活跃 CodeGraph。资产带 owner、版本、状态、可见性、来源与 Agent/角色绑定；私有为默认值，团队/受限共享须提交并审批。
+- `mc_context_pack`、HTTP、CLI 与 `mc_admin` 接入有界资产 loadout。上下文只附带授权资产摘要、来源引用和代码证据，不复制源码、文档正文或会话内容。
+- 新增工作区内文档 Wiki 资产登记，派生 Markdown 链接和有界代码节点证据；已发布 Delivery Skill 自动登记为私有资产。
+
+## 4.3.58 Local Collaboration Assets and Role Loadouts
+
+- Added a unified local collaboration asset registry for Tasks, published Delivery Skills, Wiki documents, and the active CodeGraph. Assets carry owner, version, state, visibility, provenance, and Agent/role bindings; private is the default and team/restricted sharing requires submission plus approval.
+- Added bounded asset loadouts to `mc_context_pack`, HTTP, CLI, and `mc_admin`. Context includes only authorized metadata, excerpts, provenance, and code evidence, never source, document bodies, or conversations.
+- Added workspace-document Wiki registration with bounded Markdown links and graph-backed code evidence; published Delivery Skills register automatically as private assets.
+
 ## 4.3.57 架构门禁修复 / Architecture Gate Fixes
 
 - 补齐 `core/providers` 模块边界说明，并修正 targeted refresh 测试导入顺序，恢复全量 Ruff 与架构回归门禁。

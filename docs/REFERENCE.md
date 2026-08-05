@@ -256,6 +256,7 @@
 - `artifact delivery-transition --stage breakdown|locate|implement|verify|close`：按门禁推进；验收未被执行器或人工验证证据覆盖时不能关闭。
 - `artifact delivery-record-validation`：仅记录外部验证摘要；默认 `recorded_external` 不可用于关闭门禁。
 - `artifact delivery-skill-candidate|delivery-skill-contract-update|delivery-skill-canary|delivery-skill-observe|delivery-skill-evaluate|delivery-skill-publish|delivery-skill-rollback|delivery-skill-recommend|delivery-skill-replay`：候选先通过 `delivery-skill-contract-update --contract '<JSON>'` 声明语言、前置条件、停止条件、输入输出字段和 `replay_policy.redacted=true`，才可进入隔离灰度。`minimum_verified_passed`（默认 3）决定当前 `contract_sha256` 下发布所需的带证据成功观测和自动脱敏 replay 数量；失败会阻断发布。修订 canary 契约后旧 replay 不再计入，已发布 Skill 契约不可原地更新。`delivery-skill-recommend --language java` 可按语言过滤；默认检索仅返回 `published`，回滚不删除证据。
+- `artifact asset-status|asset-sync|asset-register|asset-share|asset-approve|asset-bind|asset-loadout|wiki-document-ingest`：管理本地任务、Skill、Wiki、CodeGraph 协作资产。`asset-register` 必须提供与 `owner` 一致的 `actor`；既有资产的更新和绑定也只允许 owner。团队/受限共享必须先由 owner 提交、再由另一维护者审批，只有 active 且绑定匹配的资产会进入 Agent/角色 loadout。HTTP 对应 `/workspace/assets`、`/workspace/asset/*` 和 `/workspace/wiki/document-ingest`；MCP 使用同名 `mc_admin` action。
 - HTTP：`GET /workspace/delivery/skill/contract?task_id=<id>&payload=<JSON>` 更新契约；`GET /workspace/delivery/skill/replay?skill_id=<id>&limit=100` 读取 replay。MCP 使用 `mc_admin(action="delivery_skill_contract_update"|"delivery_skill_replay", ...)`。
 - `artifact delivery-failure-candidates|delivery-skill-synthesize`：显式、离线地聚类跨任务失败和多个已验证交付的共同结构；只保存脱敏元数据和证据引用，不在查询热路径运行。
 

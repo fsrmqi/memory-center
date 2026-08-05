@@ -66,6 +66,13 @@ from memory_center.application.http_facades import (
     workspace_assertion_inspect,
     workspace_assertion_query,
     workspace_assertion_status,
+    workspace_asset_approve,
+    workspace_asset_bind,
+    workspace_asset_loadout,
+    workspace_asset_register,
+    workspace_asset_share,
+    workspace_asset_status,
+    workspace_asset_sync,
     workspace_background_job_status,
     workspace_change_impact_confirm,
     workspace_change_impact_reports,
@@ -99,6 +106,7 @@ from memory_center.application.http_facades import (
     workspace_status,
     workspace_sync_case_to_artifacts,
     workspace_sync_sniff_to_artifacts,
+    workspace_wiki_document_ingest,
     workspace_write_receipts,
 )
 from memory_center.core.foundation.dispatch import CommandRegistry
@@ -231,6 +239,30 @@ def _workspace_delivery_skill_contract_update(rp):
     )
 
 
+def _workspace_asset_register(rp):
+    return workspace_asset_register(rp.workspace(), _delivery_payload(rp), actor=rp.require("actor"))
+
+
+def _workspace_asset_share(rp):
+    payload = _delivery_payload(rp)
+    return workspace_asset_share(rp.workspace(), str(payload.get("asset_id", "")), visibility=str(payload.get("visibility", "team")), actor=rp.require("actor"), allowed_agents=list(payload.get("allowed_agents", [])), allowed_roles=list(payload.get("allowed_roles", [])))
+
+
+def _workspace_asset_approve(rp):
+    payload = _delivery_payload(rp)
+    return workspace_asset_approve(rp.workspace(), str(payload.get("asset_id", "")), approved=bool(payload.get("approved", False)), actor=rp.require("actor"), note=str(payload.get("note", "")))
+
+
+def _workspace_asset_bind(rp):
+    payload = _delivery_payload(rp)
+    return workspace_asset_bind(rp.workspace(), str(payload.get("asset_id", "")), actor=rp.require("actor"), agents=list(payload.get("agents", [])), roles=list(payload.get("roles", [])))
+
+
+def _workspace_wiki_document_ingest(rp):
+    payload = _delivery_payload(rp)
+    return workspace_wiki_document_ingest(rp.workspace(), str(payload.get("document_path", "")), owner=rp.require("owner"), visibility=str(payload.get("visibility", "private")), tags=list(payload.get("tags", [])))
+
+
 def register_workspace_routes(registry: CommandRegistry) -> None:
     # --- workspace status / sniff / artifacts ---------------------------------
     registry.register("/workspace/status", lambda rp: workspace_status(
@@ -346,6 +378,14 @@ def register_workspace_routes(registry: CommandRegistry) -> None:
         rp.require('intent'),
         limit=_parse_int(rp.params, "limit", 6),
     ))
+    registry.register("/workspace/assets", lambda rp: workspace_asset_status(rp.workspace(), limit=rp.int_param("limit", 100, max_val=200)))
+    registry.register("/workspace/asset/register", _workspace_asset_register)
+    registry.register("/workspace/asset/sync", lambda rp: workspace_asset_sync(rp.workspace(), owner=rp.get("owner", "")))
+    registry.register("/workspace/asset/share", _workspace_asset_share)
+    registry.register("/workspace/asset/approve", _workspace_asset_approve)
+    registry.register("/workspace/asset/bind", _workspace_asset_bind)
+    registry.register("/workspace/asset/loadout", lambda rp: workspace_asset_loadout(rp.workspace(), agent_id=rp.get("agent_id", ""), role=rp.get("role", ""), limit=rp.int_param("limit", 12, max_val=50)))
+    registry.register("/workspace/wiki/document-ingest", _workspace_wiki_document_ingest)
     registry.register("/workspace/artifact/update", lambda rp: update_artifact(
         rp.workspace(),
         rp.require('name'),

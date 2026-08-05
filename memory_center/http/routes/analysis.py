@@ -108,7 +108,7 @@ def register_analysis_routes(registry: CommandRegistry) -> None:
     registry.register("/workspace/onboard", _onboard)
 
     def _context_pack(rp: RouteParams) -> dict[str, Any]:
-        return build_context_pack(rp.workspace(), rp.require('query'), rp.intent(), _parse_int(rp.params, "budget_tokens", 8000), rp.limit(10))
+        return build_context_pack(rp.workspace(), rp.require('query'), rp.intent(), _parse_int(rp.params, "budget_tokens", 8000), rp.limit(10), agent_id=rp.get("agent_id", ""), role=rp.get("role", ""))
 
     registry.register("/workspace/context-pack", _context_pack)
 

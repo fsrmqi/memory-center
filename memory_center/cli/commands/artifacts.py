@@ -12,6 +12,16 @@ from rich import print
 from memory_center.application.tasks import execute_task_repair
 from memory_center.core.indexing.control_plane import index_control_status
 from memory_center.core.indexing.shards import cleanup_generations
+from memory_center.core.knowledge.assets import (
+    approve_collaboration_asset,
+    bind_collaboration_asset,
+    collaboration_asset_loadout,
+    collaboration_asset_status,
+    ingest_wiki_document_asset,
+    register_collaboration_asset,
+    submit_asset_for_sharing,
+    sync_workspace_collaboration_assets,
+)
 from memory_center.core.storage.maintenance import (
     cleanup_legacy_memory_store,
     compact_semantic_runtime_state,
@@ -76,6 +86,46 @@ def register_artifact_commands(app: typer.Typer) -> None:
     def artifact_list_cmd(workspace: str = typer.Option(...)):
         """列出共享工作区工件。"""
         print(list_artifacts(workspace))
+
+    @app.command("asset-status")
+    def artifact_asset_status_cmd(workspace: str = typer.Option(...), limit: int = typer.Option(100)):
+        """查看任务、Skill、Wiki、CodeGraph 协作资产及审批状态。"""
+        print(collaboration_asset_status(workspace, limit=limit))
+
+    @app.command("asset-sync")
+    def artifact_asset_sync_cmd(workspace: str = typer.Option(...), owner: str = typer.Option("")):
+        """将当前任务、已发布 Skill 和活跃代码图谱登记为协作资产。"""
+        print(sync_workspace_collaboration_assets(workspace, owner=owner))
+
+    @app.command("asset-register")
+    def artifact_asset_register_cmd(workspace: str = typer.Option(...), payload: str = typer.Option(..., help="JSON asset payload"), actor: str = typer.Option(..., help="Must match payload owner")):
+        """显式登记一个本地协作资产。"""
+        print(register_collaboration_asset(workspace, **{**json.loads(payload), "actor": actor}))
+
+    @app.command("asset-share")
+    def artifact_asset_share_cmd(workspace: str = typer.Option(...), asset_id: str = typer.Option(...), visibility: str = typer.Option("team"), actor: str = typer.Option(...), agents: str = typer.Option("[]"), roles: str = typer.Option("[]")):
+        """提交资产共享申请；共享资产不会自动进入 Agent 上下文。"""
+        print(submit_asset_for_sharing(workspace, asset_id, visibility=visibility, actor=actor, allowed_agents=json.loads(agents), allowed_roles=json.loads(roles)))
+
+    @app.command("asset-approve")
+    def artifact_asset_approve_cmd(workspace: str = typer.Option(...), asset_id: str = typer.Option(...), approved: bool = typer.Option(...), actor: str = typer.Option(...), note: str = typer.Option("")):
+        """审批或拒绝已提交的团队协作资产。"""
+        print(approve_collaboration_asset(workspace, asset_id, approved=approved, actor=actor, note=note))
+
+    @app.command("asset-bind")
+    def artifact_asset_bind_cmd(workspace: str = typer.Option(...), asset_id: str = typer.Option(...), actor: str = typer.Option(...), agents: str = typer.Option("[]"), roles: str = typer.Option("[]")):
+        """将已激活资产绑定到指定 Agent 或角色。"""
+        print(bind_collaboration_asset(workspace, asset_id, actor=actor, agents=json.loads(agents), roles=json.loads(roles)))
+
+    @app.command("asset-loadout")
+    def artifact_asset_loadout_cmd(workspace: str = typer.Option(...), agent_id: str = typer.Option(""), role: str = typer.Option(""), limit: int = typer.Option(12)):
+        """查看指定 Agent 或角色会装载的有界资产。"""
+        print(collaboration_asset_loadout(workspace, agent_id=agent_id, role=role, limit=limit))
+
+    @app.command("wiki-document-ingest")
+    def artifact_wiki_document_ingest_cmd(workspace: str = typer.Option(...), document_path: str = typer.Option(...), owner: str = typer.Option(...), visibility: str = typer.Option("private"), tags: str = typer.Option("[]")):
+        """登记工作区内文档的 Wiki 节点、链接与代码证据。"""
+        print(ingest_wiki_document_asset(workspace, document_path, owner=owner, visibility=visibility, tags=json.loads(tags)))
 
     @app.command("get")
     def artifact_get_cmd(workspace: str = typer.Option(...), name: str = typer.Option(...)):
