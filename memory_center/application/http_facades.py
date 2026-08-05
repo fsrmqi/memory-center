@@ -18,6 +18,7 @@ from memory_center.application.presentation import (
     export_workbench_index_html,
     export_workspace_dashboard_html,
 )
+from memory_center.application.runtime_governance import workspace_runtime_governance
 from memory_center.core.freshness.change_reports import recent_change_impact_reports, record_change_impact_feedback
 from memory_center.core.knowledge.assertions import inspect_assertion, query_assertions, update_assertion_status
 from memory_center.core.knowledge.assets import (
@@ -518,6 +519,7 @@ __all__ = [
     "workspace_background_job_cancel",
     "workspace_performance_snapshot",
     "workspace_performance_snapshot_status",
+    "workspace_runtime_governance",
     "workspace_asset_approve",
     "workspace_asset_bind",
     "workspace_asset_loadout",

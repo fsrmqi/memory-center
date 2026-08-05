@@ -21,6 +21,7 @@ import json
 from typing import Any
 
 from memory_center.application.performance import record_workspace_performance_snapshot
+from memory_center.application.runtime_governance import workspace_runtime_governance
 from memory_center.application.tasks import execute_task_repair
 from memory_center.core.audit.inspect import inspect_runtime
 from memory_center.core.audit.interactions import build_effect_summary, record_host_interaction, refresh_effect_summary
@@ -826,6 +827,7 @@ def build_admin_registry(
                 wf, samples=max(1, min(limit, 20)), tier=budget if budget in {"fast", "standard", "deep"} else "fast"
             ),
             "performance_snapshot_status": lambda: workspace_performance_snapshot_status(wf, limit=max(limit, 20)),
+            "runtime_governance": lambda: workspace_runtime_governance(wf),
             "http_route_contract_audit": lambda: __import__(
                 "memory_center.http.route_dispatch", fromlist=["audit_http_route_contract"]
             ).audit_http_route_contract(),

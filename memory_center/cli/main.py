@@ -19,6 +19,7 @@ from memory_center.application.presentation import (
     export_workspace_dashboard_html,
     export_workspace_dashboard_markdown,
 )
+from memory_center.application.runtime_governance import workspace_runtime_governance
 from memory_center.cli.commands.artifacts import register_artifact_commands
 from memory_center.cli.commands.workspaces import (
     register_group_commands,
@@ -396,6 +397,17 @@ def performance_status(
 ):
     """查看真实工作区 P95 快照趋势与下一步动作。"""
     typer.echo(json.dumps(workspace_performance_snapshot_status(workspace, limit=limit), ensure_ascii=False, indent=2))
+
+
+@app.command("runtime-governance")
+def runtime_governance(
+    workspace: str = typer.Option(..., help="Path to .memory-center/workspace.yaml"),
+    warning_gib: int = typer.Option(8, min=1, max=1024),
+):
+    """汇总真实工作区性能、空间、ANN、generation 与后台任务，不执行维护。"""
+    typer.echo(
+        json.dumps(workspace_runtime_governance(workspace, warning_gib=warning_gib), ensure_ascii=False, indent=2)
+    )
 
 
 @app.command("http-route-contract-audit")

@@ -902,6 +902,8 @@ Use `memory-center performance-snapshot --workspace <workspace.yaml> --samples 5
 
 在显式 reindex 或依赖升级后，可运行 `memory-center performance-snapshot --workspace <workspace.yaml> --samples 5` 建立真实工作区 P95 趋势。它只保存 generation、聚合耗时和结果计数，不保存探针查询、源码或路径，普通 lookup 也不会自动触发。可通过 `performance-status`、`GET /workspace/performance-status` 或 `mc_admin(action="performance_snapshot_status")` 查看结果。`memory-center http-route-contract-audit` 会在发布前校验每个已注册 HTTP 路由都有明确的 GET/POST 契约。后台任务响应和 `/ui/jobs` 会提供 `progress_percent`、已耗时、预计剩余时间、是否可取消和安全恢复动作。
 
+`memory-center runtime-governance --workspace <workspace.yaml>` 将性能趋势、存储预算、index generation、ANN 就绪度与活跃后台任务汇总为只读巡检报告。它不创建索引、不扫描源码、不执行清理；任何 rebuild、vacuum 或 generation GC 仍必须由报告建议后显式执行。HTTP 为 `GET /workspace/runtime-governance`，MCP 为 `mc_admin(action="runtime_governance")`。
+
 ### Physical Index Shards / 物理索引分片
 
 Each active generation now contains immutable service JSON shards, service-local SQLite graph shards, a shared contract shard, and a topology shard. Explicit project-scoped code and hybrid graph queries read the service shard first, then fall back to legacy global indexes only when the shard is absent or scope expansion is required. File watcher changes create a bounded invalidation plan and coalesce an asynchronous partial reindex job. `mc_admin(action="index_rollback", record_id="<generation>")` restores a retained generation; `index_generation_gc` previews cleanup unless `force=true` is supplied.

@@ -1,5 +1,13 @@
 # Changelog / 更新日志
 
+## 4.3.64 真实工作区运行治理 / Real Workspace Runtime Governance
+
+- 新增只读 `runtime-governance` CLI、HTTP 与 MCP Admin 入口，统一汇总 P95 趋势、空间预算、索引 generation、ANN 与活跃后台任务。未初始化工作区不会为巡检创建 SQLite，任何 reindex、ANN rebuild、vacuum 或 GC 仍必须显式执行。
+
+## 4.3.64 Real Workspace Runtime Governance
+
+- Added read-only `runtime-governance` through CLI, HTTP, and MCP Admin. It aggregates P95 trends, storage budget, index generation, ANN, and active jobs. Inspection never creates SQLite in an uninitialized workspace; reindex, ANN rebuild, vacuum, and GC remain explicit actions.
+
 ## 4.3.63 评测可信化与 Java 精度 Campaign / Evaluation Trust and Java Precision Campaign
 
 - `skill-up` 初始化新增本地评测 policy，默认禁用未隔离的 `without_skill` 对比并要求 3 到 5 个脱敏可观察 case；执行结果区分 `pass`、`skill_failure`、`evaluation_failure` 与 `environment_error`，环境故障不计入 Skill 失败率。

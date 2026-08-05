@@ -104,6 +104,7 @@ from memory_center.application.http_facades import (
     workspace_recent_sessions,
     workspace_record_agent_guidance,
     workspace_replay_write_chain,
+    workspace_runtime_governance,
     workspace_session_summary,
     workspace_sniff,
     workspace_status,
@@ -412,6 +413,12 @@ def register_workspace_routes(registry: CommandRegistry) -> None:
             rp.workspace(),
             samples=rp.int_param("samples", 5, min_val=1, max_val=20),
             tier=rp.get("tier", "fast"),
+        ),
+    )
+    registry.register(
+        "/workspace/runtime-governance",
+        lambda rp: workspace_runtime_governance(
+            rp.workspace(), warning_gib=rp.int_param("warning_gib", 8, min_val=1, max_val=1024)
         ),
     )
     registry.register(
