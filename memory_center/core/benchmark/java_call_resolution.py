@@ -24,6 +24,15 @@ JAVA_CALL_CASE_FIELDS = {
     "forbidden_targets",
 }
 
+# These categories describe gaps that can be proven with a small private
+# logical-anchor suite. Dependency and scope gaps must be handled as coverage
+# decisions, not by widening the resolver until unresolved counts look better.
+_ACTIONABLE_CAMPAIGN_CATEGORIES = (
+    "missing_method_or_polymorphism",
+    "receiver_type_missing",
+    "dynamic_or_unqualified",
+)
+
 
 @dataclass(frozen=True)
 class JavaCallResolutionCase:
@@ -282,6 +291,7 @@ def summarize_unresolved_java_calls(
     reason_counts: Counter[str] = Counter()
     receiver_shape_counts: Counter[str] = Counter()
     samples: list[dict[str, Any]] = []
+    samples_by_category: dict[str, list[dict[str, Any]]] = {}
     total_call_edges = 0
     unresolved_call_edges = 0
     max_samples = max(0, sample_limit)
@@ -311,17 +321,19 @@ def summarize_unresolved_java_calls(
             reason_counts[reason] += 1
             category_counts[category] += 1
             receiver_shape_counts[receiver_shape] += 1
+            sample = {
+                "source": _anchor_from_method_name(row["source_name"]),
+                "target": _anchor_from_method_name(row["target_name"]),
+                "category": category,
+                "reason": reason,
+                "receiver_shape": receiver_shape,
+                "confidence": round(float(row["confidence"] or 0.0), 4),
+            }
             if len(samples) < max_samples:
-                samples.append(
-                    {
-                        "source": _anchor_from_method_name(row["source_name"]),
-                        "target": _anchor_from_method_name(row["target_name"]),
-                        "category": category,
-                        "reason": reason,
-                        "receiver_shape": receiver_shape,
-                        "confidence": round(float(row["confidence"] or 0.0), 4),
-                    }
-                )
+                samples.append(sample)
+            category_samples = samples_by_category.setdefault(category, [])
+            if len(category_samples) < max_samples:
+                category_samples.append(sample)
 
     categories = [
         {
@@ -332,11 +344,23 @@ def summarize_unresolved_java_calls(
         }
         for category, count in sorted(category_counts.items(), key=lambda item: (-item[1], item[0]))
     ]
-    top_category = categories[0] if categories else {}
+    actionable_categories = [
+        category
+        for category in categories
+        if category["category"] in _ACTIONABLE_CAMPAIGN_CATEGORIES
+    ]
+    campaign_category = actionable_categories[0] if actionable_categories else {}
+    campaign_samples = samples_by_category.get(str(campaign_category.get("category", "")), [])
     campaign = {
-        "status": "ready_for_case_design" if top_category else "no_unresolved_calls",
-        "target_category": top_category.get("category", ""),
-        "target_count": top_category.get("count", 0),
+        "status": (
+            "ready_for_case_design"
+            if campaign_category
+            else "requires_scope_or_dependency_review"
+            if categories
+            else "no_unresolved_calls"
+        ),
+        "target_category": campaign_category.get("category", ""),
+        "target_count": campaign_category.get("count", 0),
         "case_contract": {
             "minimum_cases": 3,
             "maximum_cases": 5,
@@ -344,9 +368,17 @@ def summarize_unresolved_java_calls(
             "rule_change_allowed": False,
             "unlock_condition": "至少 3 个新逻辑锚点 case 通过 expected/allowed/forbidden 门禁。",
         },
-        "next_action": "先为最大本地可证明类别补 3 到 5 个逻辑锚点 case；通过 precision/forbidden-hit 门禁后才修改 parser 或 resolver。"
-        if top_category
-        else "当前没有未解析调用；继续在真实工作区采样，不添加猜测性 fallback。",
+        "candidate_samples": campaign_samples,
+        "excluded_categories": [
+            category["category"]
+            for category in categories
+            if category["category"] not in _ACTIONABLE_CAMPAIGN_CATEGORIES
+        ],
+        "next_action": (
+            "先为最大本地可证明类别补 3 到 5 个逻辑锚点 case；通过 precision/forbidden-hit 门禁后才修改 parser 或 resolver。"
+            if campaign_category
+            else "未发现可由 resolver 安全处理的本地类别；先核对工作区范围或依赖源码覆盖，不添加猜测性 fallback。"
+        ),
     }
     return {
         "schema_version": 1,
@@ -363,7 +395,11 @@ def summarize_unresolved_java_calls(
         "categories": categories,
         "campaign": campaign,
         "samples": samples,
-        "next_action": "Prioritize the largest category, add logical-anchor cases, then improve only the responsible parser or resolver layer.",
+        "next_action": (
+            "Prioritize the largest locally provable category, add logical-anchor cases, then improve only the responsible parser or resolver layer."
+            if campaign_category
+            else "Review dependency and workspace scope coverage; do not change the resolver for external or out-of-scope calls."
+        ),
     }
 
 

@@ -904,6 +904,8 @@ Use `memory-center performance-snapshot --workspace <workspace.yaml> --samples 5
 
 `memory-center runtime-governance --workspace <workspace.yaml>` 将性能趋势、存储预算、index generation、ANN 就绪度与活跃后台任务汇总为只读巡检报告。它不创建索引、不扫描源码、不执行清理；任何 rebuild、vacuum 或 generation GC 仍必须由报告建议后显式执行。HTTP 为 `GET /workspace/runtime-governance`，MCP 为 `mc_admin(action="runtime_governance")`。
 
+`external-capability-audit` 只读盘点 Codex/Claude Code 已发现的 Skill、插件和 MCP 配置元数据，并以来源、作用域、安装方式、内容哈希和入口 Token 估算报告漂移；不会读取或输出正文、不会执行任何 Skill 命令。显式运行 `external-capability-snapshot` 才会保存基线；后续安装、启用、归档或删除仍必须单独授权。
+
 ### Physical Index Shards / 物理索引分片
 
 Each active generation now contains immutable service JSON shards, service-local SQLite graph shards, a shared contract shard, and a topology shard. Explicit project-scoped code and hybrid graph queries read the service shard first, then fall back to legacy global indexes only when the shard is absent or scope expansion is required. File watcher changes create a bounded invalidation plan and coalesce an asynchronous partial reindex job. `mc_admin(action="index_rollback", record_id="<generation>")` restores a retained generation; `index_generation_gc` previews cleanup unless `force=true` is supplied.

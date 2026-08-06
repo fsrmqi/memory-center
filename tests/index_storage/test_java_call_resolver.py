@@ -110,6 +110,26 @@ public class CaptchaPayload {
     assert result.resolution_level == "same_package"
 
 
+def test_nested_argument_chain_does_not_create_false_receiver_chain() -> None:
+    caller = """package com.example.order;
+public class OrderFacade {
+    private SmsCodeApi smsCodeApi;
+    void send(Request request) {
+        smsCodeApi.sendSmsCode(AuthConvert.INSTANCE.convert(request).setCreateIp(getClientIP()));
+    }
+}
+"""
+
+    symbol = _symbol("svc", "OrderFacade.java", caller)
+
+    assert not any(
+        call.get("receiver") == "smsCodeApi"
+        and call.get("method_name") == "setCreateIp"
+        and call.get("chain_receiver_method") == "sendSmsCode"
+        for call in symbol["method_calls"]
+    )
+
+
 def test_resolves_explicit_import_receiver_type() -> None:
     caller = """package com.example.order;
 import com.example.billing.InvoiceService;

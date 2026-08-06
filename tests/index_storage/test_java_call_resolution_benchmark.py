@@ -415,7 +415,19 @@ def test_unresolved_java_call_report_groups_reasons_without_paths(tmp_path: Path
             "confidence": 0.3,
         },
     ]
-    assert result["campaign"]["target_category"] == "external_or_missing_source"
+    assert result["campaign"]["target_category"] == "missing_method_or_polymorphism"
+    assert result["campaign"]["status"] == "ready_for_case_design"
+    assert result["campaign"]["candidate_samples"] == [
+        {
+            "source": "OrderController#submit",
+            "target": "OrderHandler#handle",
+            "category": "missing_method_or_polymorphism",
+            "reason": "target_method_not_indexed",
+            "receiver_shape": "unqualified_or_dynamic",
+            "confidence": 0.3,
+        }
+    ]
+    assert result["campaign"]["excluded_categories"] == ["external_or_missing_source"]
     assert result["campaign"]["case_contract"]["minimum_cases"] == 3
     assert result["campaign"]["case_contract"]["rule_change_allowed"] is False
     assert "src/" not in str(result)
@@ -455,6 +467,9 @@ def test_unresolved_java_call_report_reclassifies_legacy_static_receivers(tmp_pa
     assert result["summary"]["reason_counts"] == {"static_receiver_not_indexed": 1}
     assert result["summary"]["receiver_shape_counts"] == {"static_class_receiver": 1}
     assert result["samples"][0]["reason"] == "static_receiver_not_indexed"
+    assert result["campaign"]["status"] == "requires_scope_or_dependency_review"
+    assert result["campaign"]["target_category"] == ""
+    assert result["campaign"]["candidate_samples"] == []
 
 
 def test_unresolved_java_call_report_is_available_from_cli_and_http(tmp_path: Path) -> None:

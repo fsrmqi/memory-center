@@ -20,6 +20,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from memory_center.application.external_capabilities import audit_external_capabilities, snapshot_external_capabilities
 from memory_center.application.performance import record_workspace_performance_snapshot
 from memory_center.application.runtime_governance import workspace_runtime_governance
 from memory_center.application.tasks import execute_task_repair
@@ -828,6 +829,8 @@ def build_admin_registry(
             ),
             "performance_snapshot_status": lambda: workspace_performance_snapshot_status(wf, limit=max(limit, 20)),
             "runtime_governance": lambda: workspace_runtime_governance(wf),
+            "external_capability_audit": lambda: audit_external_capabilities(wf),
+            "external_capability_snapshot": lambda: snapshot_external_capabilities(wf),
             "http_route_contract_audit": lambda: __import__(
                 "memory_center.http.route_dispatch", fromlist=["audit_http_route_contract"]
             ).audit_http_route_contract(),

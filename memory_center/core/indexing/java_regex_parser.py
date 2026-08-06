@@ -607,6 +607,13 @@ def _parse_method_calls(
         body = text[body_start:body_end]
         owner_method = str(span.get("name") or "")
         for m in chained_pattern.finditer(body):
+            # ``foo.bar(convert(value).setFlag(flag))`` is not a chain on
+            # ``foo``. The regex cannot balance nested invocation arguments,
+            # so accepting it would manufacture ``foo.setFlag``. Leave the
+            # nested expression unexpanded until a syntax-aware parser can
+            # prove its receiver type.
+            if "(" in (m.group("first_args") or ""):
+                continue
             receiver = m.group("receiver")
             calls.append({"receiver": receiver, "receiver_type": method_variable_types.get(owner_method, {}).get(receiver) or field_types.get(receiver), "method_name": m.group("method"), "owner_method": owner_method, "line": _line_of(text, body_start + m.start()), "arg_count": len(_split_top_level(m.group("args") or "")), "chain_receiver_method": m.group("first")})
         for m in qualified_pattern.finditer(body):

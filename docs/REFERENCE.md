@@ -394,7 +394,7 @@ Golden performance baseline / compare 会继续保存并比较这些字段；当
 memory-center eval-java-call-resolution-unresolved --workspace <workspace.yaml> --limit 30
 ```
 
-输出中的 `receiver_shape_counts` 用于区分 `static_class_receiver`、`typed_receiver`、`untyped_instance_receiver` 与无接收者调用。静态类或缺失依赖源码的调用属于 `external_or_missing_source`，不能为了降低未解析率而合成为项目内调用边。只对 `receiver_type_missing`、`missing_method_or_polymorphism` 等可复现类别建立 3-5 个私有 case，并运行：
+输出中的 `receiver_shape_counts` 用于区分 `static_class_receiver`、`typed_receiver`、`untyped_instance_receiver` 与无接收者调用。`campaign` 会自动跳过 `external_or_missing_source` 和 `out_of_scope_target`，只在 `receiver_type_missing`、`missing_method_or_polymorphism`、`dynamic_or_unqualified` 中选择最大可证明类别，并在 `candidate_samples` 中给出脱敏逻辑锚点。静态类或缺失依赖源码的调用属于 `external_or_missing_source`，不能为了降低未解析率而合成为项目内调用边。仅对 campaign 选中的可复现类别建立 3-5 个私有 case，并运行：
 
 ```bash
 memory-center eval-java-call-resolution --workspace <workspace.yaml> --cases <private-logical-cases.yaml>
@@ -409,6 +409,8 @@ memory-center eval-java-call-resolution-metrics --workspace <workspace.yaml>
 Run the read-only diagnostic before creating private logical-anchor cases. `receiver_shape_counts` separates static/dependency calls from missing local receiver types. Never synthesize workspace call edges just to lower the unresolved rate; only promote reproducible local categories into a 3-5 case private suite and release gate.
 
 When a case declares `expected_resolution_levels`, that level is gated too. For example, a chain case should declare `chain_return_type`; a generic fallback fails even if the target still matches. `eval-java-call-resolution-metrics` reports only aggregate resolution-level distribution, chain edge/source counts, mean confidence, and unresolved rate. Use it to observe real-workspace edge changes, not as a replacement for private cases with `forbidden_targets`.
+
+The `campaign` skips `external_or_missing_source` and `out_of_scope_target`, selecting the largest locally provable category from `receiver_type_missing`, `missing_method_or_polymorphism`, and `dynamic_or_unqualified`. Its `candidate_samples` are redacted logical anchors for the 3-5 private cases; they are not evidence to synthesize a target edge. If no actionable category exists, review dependency or workspace-scope coverage instead of changing the resolver.
 
 ### 检索热路径性能 / Retrieval Hot Path Performance
 

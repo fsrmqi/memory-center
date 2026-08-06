@@ -1,5 +1,25 @@
 # Changelog / 更新日志
 
+## 4.3.67 Java 嵌套参数伪链路修复 / Java Nested-Argument False Chain Fix
+
+- 正则 Java 解析器不再把 `foo.bar(convert(x).setY(y))` 误判为 `foo.setY(...)` 链式调用。嵌套实参尚不能证明接收者类型时保持未展开，避免向图谱写入错误的低置信调用边；受影响文件可通过局部 reindex 清理旧边。
+
+## 4.3.67 Java Nested-Argument False Chain Fix
+
+- The regex Java parser no longer misclassifies `foo.bar(convert(x).setY(y))` as a `foo.setY(...)` chain. Nested arguments remain unexpanded until their receiver type can be proven, avoiding false low-confidence graph edges; a scoped reindex removes affected legacy edges.
+
+## 4.3.66 Java 调用解析 Campaign 选择修复 / Java Call Resolution Campaign Selection Fix
+
+- 未解析调用报告的 `campaign` 不再按全量最大类别错误地选择外部依赖或范围外调用；它仅在可通过私有逻辑锚点验证的本地类别中选择目标，并返回 `candidate_samples`、排除类别与明确的范围治理动作。这样不会为降低未解析率而诱导不安全的 resolver fallback。
+
+## 4.3.66 Java Call Resolution Campaign Selection Fix
+
+- The unresolved-call report no longer picks external or out-of-scope calls merely because they are the largest category. Its `campaign` selects only locally provable categories, returns `candidate_samples` and excluded categories, and gives an explicit scope-governance action when no safe resolver campaign exists.
+
+## 4.3.65 外部能力目录与漂移审计 / External Capability Registry and Drift Audit
+
+- 新增 `external-capability-audit` 与显式 `external-capability-snapshot`，以及 MCP Admin 对应 action。只采集 Codex/Claude Code Skill、插件和 MCP 配置的元数据、哈希与作用域，不读取正文、不执行安装或宿主配置变更。
+
 ## 4.3.64 真实工作区运行治理 / Real Workspace Runtime Governance
 
 - 新增只读 `runtime-governance` CLI、HTTP 与 MCP Admin 入口，统一汇总 P95 趋势、空间预算、索引 generation、ANN 与活跃后台任务。未初始化工作区不会为巡检创建 SQLite，任何 reindex、ANN rebuild、vacuum 或 GC 仍必须显式执行。

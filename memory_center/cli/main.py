@@ -13,6 +13,7 @@ import typer
 from rich import print
 
 from memory_center import __version__
+from memory_center.application.external_capabilities import audit_external_capabilities, snapshot_external_capabilities
 from memory_center.application.performance import record_workspace_performance_snapshot
 from memory_center.application.presentation import (
     export_mermaid,
@@ -408,6 +409,18 @@ def runtime_governance(
     typer.echo(
         json.dumps(workspace_runtime_governance(workspace, warning_gib=warning_gib), ensure_ascii=False, indent=2)
     )
+
+
+@app.command("external-capability-audit")
+def external_capability_audit(workspace: str = typer.Option(...)):
+    """只读盘点宿主 Skill、插件和 MCP 配置元数据，并比较已保存基线。"""
+    typer.echo(json.dumps(audit_external_capabilities(workspace), ensure_ascii=False, indent=2))
+
+
+@app.command("external-capability-snapshot")
+def external_capability_snapshot(workspace: str = typer.Option(...)):
+    """显式保存外部能力元数据基线，不安装、启用或删除任何能力。"""
+    typer.echo(json.dumps(snapshot_external_capabilities(workspace), ensure_ascii=False, indent=2))
 
 
 @app.command("http-route-contract-audit")
