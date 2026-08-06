@@ -1,5 +1,17 @@
 # Changelog / 更新日志
 
+## 4.3.71 可执行经验边界契约 / Executable Experience-Boundary Contract
+
+- 交付 Skill 契约升级为 v2：新增适用条件、禁止条件、验收证据和回滚方式；候选、灰度、发布、推荐和生成的 `SKILL.md` 共享同一份契约。
+- 进入灰度和发布前必须有至少一条与 `acceptance_evidence` 匹配的真实验证回执。默认只接受 `executor` 或 `manual_verified`，并要求 `acceptance_ids` 与 `evidence_refs`，阻止无来源的模型自评沉淀为团队经验。
+- 推荐结果现在明确返回禁止条件、停止条件和回滚动作；CLI、README、用户指南、参考文档、规格与 MCP 指南均同步了完整 JSON 契约。
+
+## 4.3.71 Executable Experience-Boundary Contract
+
+- Delivery Skill contracts are now v2 and add applicability conditions, prohibited conditions, acceptance evidence, and rollback behavior. Candidates, canaries, publication, recommendations, and generated `SKILL.md` files share this contract.
+- Canary and publication require at least one real validation receipt matching `acceptance_evidence`. The default accepts only `executor` or `manual_verified` with both `acceptance_ids` and `evidence_refs`, preventing unsourced model self-assessments from becoming team experience.
+- Recommendations now expose prohibited conditions, stop conditions, and rollback actions. The CLI, README, user guide, reference, specification, and MCP guide document the complete JSON contract.
+
 ## 4.3.70 AST 重载返回类型消歧 / AST Overload Return-Type Disambiguation
 
 - 嵌套调用 AST 现在携带内层参数标识与参数数量；resolver 仅在参数的静态类型与重载声明完全一致时选择返回类型。该规则可解析转换器 `convert(req)` 后的 DTO 链式 accessor，同时在变量类型缺失、重载不匹配或仍不唯一时维持 unresolved。

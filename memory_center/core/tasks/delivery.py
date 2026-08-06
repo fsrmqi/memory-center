@@ -312,7 +312,7 @@ def delivery_skill_candidate(workspace_file: str | Path, task_id: str) -> dict[s
     registry = _read_skill_registry(store)
     similar = _similar_skills(signature, registry.get("skills", []))
     candidate = {
-        "schema_version": 2,
+        "schema_version": 3,
         "candidate_id": f"delivery-skill-{meta['task_id']}",
         "skill_id": _skill_id(meta["task_id"]),
         "task_id": meta["task_id"],
@@ -331,7 +331,16 @@ def delivery_skill_candidate(workspace_file: str | Path, task_id: str) -> dict[s
         "requirements": [{"id": item["id"], "title": item["title"], "scope": item.get("scope", "")} for item in requirements[:30]],
         "code_targets": [target for item in located for target in item.get("code_targets", [])][:80],
         "acceptance": [{"id": item["id"], "title": item["title"], "verification_type": item.get("verification_type", "test")} for item in acceptance[:30]],
-        "validation": [{"receipt_id": row.get("receipt_id", ""), "summary": str(row.get("summary", ""))[:500], "acceptance_ids": row.get("acceptance_ids", [])[:30]} for row in passed[-20:]],
+        "validation": [
+            {
+                "receipt_id": row.get("receipt_id", ""),
+                "evidence_kind": row.get("evidence_kind", ""),
+                "evidence_refs": _bounded_refs(row.get("evidence_refs", [])),
+                "summary": str(row.get("summary", ""))[:500],
+                "acceptance_ids": row.get("acceptance_ids", [])[:30],
+            }
+            for row in passed[-20:]
+        ],
     }
     path = store.artifacts_dir / DELIVERY_SKILL_CANDIDATES_DIR / f"{meta['task_id']}.json"
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -350,7 +359,9 @@ def publish_delivery_skill(workspace_file: str | Path, task_id: str) -> dict[str
         return {"published": False, "reason": "candidate_not_eligible", "missing": candidate.get("missing", []), "next_action": "补齐交付门禁后重新生成候选。"}
     contract = _normalize_skill_contract(candidate.get("contract"))
     if not _skill_contract_valid(contract):
-        return {"published": False, "reason": "skill_contract_invalid", "contract": contract, "next_action": "通过 delivery-skill-contract-update 声明语言、前置条件、停止条件和输入输出契约。"}
+        return {"published": False, "reason": "skill_contract_invalid", "contract": contract, "next_action": "通过 delivery-skill-contract-update 声明适用、禁止、验收证据、停止、回滚和输入输出契约。"}
+    if not _candidate_acceptance_evidence_matches(candidate, contract):
+        return {"published": False, "reason": "candidate_acceptance_evidence_missing", "acceptance_evidence": contract["acceptance_evidence"], "next_action": "补充与契约匹配的真实验证回执和证据引用后重新生成候选。"}
     registry = _read_skill_registry(store)
     skill = _registry_skill(registry, str(candidate.get("skill_id", "")))
     if not skill or skill.get("lifecycle") != "canary":
@@ -420,7 +431,7 @@ def update_delivery_skill_contract(workspace_file: str | Path, task_id: str, *, 
         }
     normalized = _normalize_skill_contract(contract)
     if not _skill_contract_valid(normalized):
-        return {"updated": False, "reason": "skill_contract_invalid", "contract": normalized, "next_action": "至少声明一种语言，以及非空前置条件、停止条件、输入字段和输出字段。"}
+        return {"updated": False, "reason": "skill_contract_invalid", "contract": normalized, "next_action": "至少声明适用条件、禁止条件、验收证据、停止条件、回滚方式和输入输出字段。"}
     contract_changed = _normalize_skill_contract(candidate.get("contract")) != normalized
     candidate["contract"] = normalized
     candidate["updated_at"] = _now()
@@ -482,7 +493,9 @@ def start_delivery_skill_canary(workspace_file: str | Path, task_id: str, *, act
     contract = _normalize_skill_contract(candidate.get("contract"))
     if not _skill_contract_valid(contract):
         return {"started": False, "reason": "skill_contract_invalid", "contract": contract, "next_action": "先通过 delivery-skill-contract-update 补齐 Skill 契约。"}
-    skill = {"schema_version": 2, "skill_id": skill_id, "task_id": task_id, "candidate_id": candidate.get("candidate_id", ""), "title": _bounded(str(candidate.get("title", "")), 160), "lifecycle": "canary", "version": 1, "signature": candidate.get("signature", {}), "contract": contract, "contract_revision": 1, "evidence_refs": _bounded_refs(candidate.get("evidence_refs", [])), "created_at": now, "updated_at": now, "canary_started_at": now, "actor": _bounded(actor)}
+    if not _candidate_acceptance_evidence_matches(candidate, contract):
+        return {"started": False, "reason": "candidate_acceptance_evidence_missing", "acceptance_evidence": contract["acceptance_evidence"], "next_action": "补充与验收证据契约匹配的真实回执后再进入 canary。"}
+    skill = {"schema_version": 3, "skill_id": skill_id, "task_id": task_id, "candidate_id": candidate.get("candidate_id", ""), "title": _bounded(str(candidate.get("title", "")), 160), "lifecycle": "canary", "version": 1, "signature": candidate.get("signature", {}), "contract": contract, "contract_revision": 1, "evidence_refs": _bounded_refs(candidate.get("evidence_refs", [])), "created_at": now, "updated_at": now, "canary_started_at": now, "actor": _bounded(actor)}
     registry.setdefault("skills", []).append(skill)
     canary_path = store.artifacts_dir / DELIVERY_SKILL_CANARY_DIR / _skill_slug(skill_id) / "SKILL.md"
     canary_path.parent.mkdir(parents=True, exist_ok=True)
@@ -557,7 +570,7 @@ def recommend_delivery_skills(workspace_file: str | Path, intent: str, *, langua
         terms = set(skill.get("signature", {}).get("terms", []))
         overlap = len(query_terms & terms) / max(1, len(query_terms | terms))
         if overlap:
-            matches.append({"skill_id": skill.get("skill_id", ""), "title": skill.get("title", ""), "version": skill.get("version", 1), "score": round(overlap, 4), "path": skill.get("published_path", ""), "languages": contract["languages"], "preconditions": contract["preconditions"], "stop_conditions": contract["stop_conditions"], "evidence_refs": skill.get("evidence_refs", [])[:10]})
+            matches.append({"skill_id": skill.get("skill_id", ""), "title": skill.get("title", ""), "version": skill.get("version", 1), "score": round(overlap, 4), "path": skill.get("published_path", ""), "languages": contract["languages"], "applicability_conditions": contract["applicability_conditions"], "prohibited_conditions": contract["prohibited_conditions"], "preconditions": contract["preconditions"], "acceptance_evidence": contract["acceptance_evidence"], "stop_conditions": contract["stop_conditions"], "rollback": contract["rollback"], "evidence_refs": skill.get("evidence_refs", [])[:10]})
     matches.sort(key=lambda item: (-item["score"], item["skill_id"]))
     return {"intent_terms": sorted(query_terms)[:20], "language": _bounded(language, 80), "skills": matches[:max(1, min(limit, 20))], "next_action": "读取命中的 published Skill；没有命中时按正常交付流程处理，不得把空结果理解为不存在经验。"}
 
@@ -663,9 +676,25 @@ def _default_skill_contract(
             "需求、范围和验收标准已明确。",
             "代码目标已定位且索引未标记为 STALE。",
         ],
+        "applicability_conditions": [
+            "任务语言、目标范围和验收模式与已验证交付相符。",
+            "该流程已在至少三次带证据的真实使用中稳定通过后才可发布。",
+        ],
+        "prohibited_conditions": [
+            "一次性探索、未定位代码目标或需求边界不清时不得使用。",
+            "禁止把源码、密钥、外部工具正文或未验证结论作为输入输出。",
+        ],
+        "acceptance_evidence": {
+            "accepted_kinds": ["executor", "manual_verified"],
+            "required_fields": ["acceptance_ids", "evidence_refs"],
+        },
         "stop_conditions": stop_conditions or [
             "出现未决歧义、索引陈旧、越出声明语言范围或缺少验证证据时停止并重新分析。",
         ],
+        "rollback": {
+            "triggers": ["出现失败观测", "验收证据失效", "适用边界被违反"],
+            "action": "立即执行 delivery-skill-rollback，并回退到常规交付流程。",
+        },
         "input_contract": {
             "required_fields": ["intent", "task_id", "acceptance_ids"],
             "optional_fields": ["target", "project", "evidence_refs"],
@@ -690,13 +719,25 @@ def _normalize_skill_contract(value: Any) -> dict[str, Any]:
     input_raw = raw.get("input_contract", {}) if isinstance(raw.get("input_contract"), dict) else {}
     output_raw = raw.get("output_contract", {}) if isinstance(raw.get("output_contract"), dict) else {}
     replay_raw = raw.get("replay_policy", {}) if isinstance(raw.get("replay_policy"), dict) else {}
+    evidence_raw = raw.get("acceptance_evidence", {}) if isinstance(raw.get("acceptance_evidence"), dict) else {}
+    rollback_raw = raw.get("rollback", {}) if isinstance(raw.get("rollback"), dict) else {}
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "languages": _bounded_string_list(raw.get("languages"), 20, 40),
+        "applicability_conditions": _bounded_string_list(raw.get("applicability_conditions"), 20, 300),
+        "prohibited_conditions": _bounded_string_list(raw.get("prohibited_conditions"), 20, 300),
         "preconditions": _bounded_string_list(raw.get("preconditions"), 20, 300),
         "stop_conditions": _bounded_string_list(raw.get("stop_conditions"), 20, 300),
         "input_contract": _normalize_io_contract(input_raw),
         "output_contract": _normalize_io_contract(output_raw),
+        "acceptance_evidence": {
+            "accepted_kinds": [item.lower() for item in _bounded_string_list(evidence_raw.get("accepted_kinds"), 10, 80)],
+            "required_fields": _bounded_string_list(evidence_raw.get("required_fields"), 10, 80),
+        },
+        "rollback": {
+            "triggers": _bounded_string_list(rollback_raw.get("triggers"), 20, 300),
+            "action": _bounded(str(rollback_raw.get("action", "")), 300),
+        },
         "replay_policy": {
             "redacted": bool(replay_raw.get("redacted", True)),
             "max_samples": min(500, max(1, _safe_int(replay_raw.get("max_samples"), 200))),
@@ -714,15 +755,39 @@ def _normalize_io_contract(value: dict[str, Any]) -> dict[str, list[str]]:
 
 
 def _skill_contract_valid(contract: dict[str, Any]) -> bool:
+    evidence_policy = contract.get("acceptance_evidence", {})
+    allowed_receipt_fields = {"receipt_id", "evidence_kind", "evidence_refs", "summary", "acceptance_ids"}
     return bool(
         contract.get("languages")
         and "unknown" not in {str(item).lower() for item in contract.get("languages", [])}
+        and contract.get("applicability_conditions")
+        and contract.get("prohibited_conditions")
         and contract.get("preconditions")
         and contract.get("stop_conditions")
         and contract.get("input_contract", {}).get("required_fields")
         and contract.get("output_contract", {}).get("required_fields")
+        and evidence_policy.get("accepted_kinds")
+        and set(evidence_policy["accepted_kinds"]) <= {"executor", "manual_verified"}
+        and evidence_policy.get("required_fields")
+        and set(evidence_policy["required_fields"]) <= allowed_receipt_fields
+        and contract.get("rollback", {}).get("triggers")
+        and contract.get("rollback", {}).get("action")
         and bool(contract.get("replay_policy", {}).get("redacted"))
     )
+
+
+def _candidate_acceptance_evidence_matches(candidate: dict[str, Any], contract: dict[str, Any]) -> bool:
+    """Require a real candidate receipt compatible with the declared evidence policy."""
+
+    accepted_kinds = set(contract.get("acceptance_evidence", {}).get("accepted_kinds", []))
+    required_fields = set(contract.get("acceptance_evidence", {}).get("required_fields", []))
+    for receipt in candidate.get("validation", []) or []:
+        if str(receipt.get("evidence_kind", "")) not in accepted_kinds:
+            continue
+        present_fields = {name for name, value in receipt.items() if value}
+        if required_fields <= present_fields:
+            return True
+    return False
 
 
 def _append_skill_replay(store: WorkspaceStore, skill: dict[str, Any], observation: dict[str, Any]) -> None:
@@ -1011,9 +1076,14 @@ def _delivery_skill_markdown(candidate: dict[str, Any]) -> str:
     contract = _normalize_skill_contract(candidate.get("contract"))
     languages = ", ".join(contract["languages"]) or "未声明"
     preconditions = "\n".join(f"- {item}" for item in contract["preconditions"]) or "- 未声明"
+    applicability = "\n".join(f"- {item}" for item in contract["applicability_conditions"]) or "- 未声明"
+    prohibited = "\n".join(f"- {item}" for item in contract["prohibited_conditions"]) or "- 未声明"
     stop_conditions = "\n".join(f"- {item}" for item in contract["stop_conditions"]) or "- 未声明"
     input_fields = ", ".join(contract["input_contract"]["required_fields"]) or "未声明"
     output_fields = ", ".join(contract["output_contract"]["required_fields"]) or "未声明"
+    evidence_kinds = ", ".join(contract["acceptance_evidence"]["accepted_kinds"]) or "未声明"
+    evidence_fields = ", ".join(contract["acceptance_evidence"]["required_fields"]) or "未声明"
+    rollback_triggers = "\n".join(f"- {item}" for item in contract["rollback"]["triggers"]) or "- 未声明"
     return f"""# {candidate.get('title', '已验证需求交付')} / Verified Delivery Skill
 
 ## 适用场景 / When to use
@@ -1030,9 +1100,29 @@ def _delivery_skill_markdown(candidate: dict[str, Any]) -> str:
 
 {preconditions}
 
+### 适用条件
+
+{applicability}
+
+### 禁止条件
+
+{prohibited}
+
+### 验收证据
+
+- 可接受证据类型：`{evidence_kinds}`
+- 必须包含：`{evidence_fields}`
+
 ### 停止条件
 
 {stop_conditions}
+
+### 回滚方式
+
+触发信号：
+{rollback_triggers}
+
+处置动作：{contract["rollback"]["action"] or "未声明"}
 
 Skill 观测会自动形成仅含契约哈希、语言、结果、证据引用、时延和 Token 指标的脱敏 replay；不得将源码、需求正文、日志、外部工具正文或密钥写入 replay。
 

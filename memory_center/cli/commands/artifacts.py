@@ -321,8 +321,8 @@ def register_artifact_commands(app: typer.Typer) -> None:
         print(delivery_skill_status(workspace, task_id))
 
     @app.command("delivery-skill-contract-update")
-    def artifact_delivery_skill_contract_update_cmd(workspace: str = typer.Option(...), task_id: str = typer.Option(...), contract: str = typer.Option(..., help="JSON object: languages, preconditions, stop_conditions, input_contract, output_contract, replay_policy"), actor: str = typer.Option("")):
-        """为已生成候选声明适用范围、停止条件和输入输出契约。"""
+    def artifact_delivery_skill_contract_update_cmd(workspace: str = typer.Option(...), task_id: str = typer.Option(...), contract: str = typer.Option(..., help="JSON: languages, applicability_conditions, prohibited_conditions, preconditions, acceptance_evidence, stop_conditions, rollback, input_contract, output_contract, replay_policy"), actor: str = typer.Option("")):
+        """为候选声明适用/禁止条件、验收证据、停止、回滚和 I/O 契约。"""
         try:
             payload = json.loads(contract)
         except json.JSONDecodeError as exc:

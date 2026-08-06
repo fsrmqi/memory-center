@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from memory_center.application.admin import build_admin_registry
 from memory_center.core.tasks.artifacts import (
     compact_task_artifacts,
@@ -26,6 +28,29 @@ from memory_center.core.tasks.delivery import (
     update_delivery_skill_contract,
     update_delivery_subtask_status,
 )
+
+
+def _skill_contract(*, stop_condition: str = "索引陈旧时停止", languages: list[str] | None = None) -> dict[str, object]:
+    """Build the complete, reviewable contract required for a delivery Skill."""
+
+    return {
+        "languages": languages or ["java"],
+        "applicability_conditions": ["目标范围与已验证交付一致"],
+        "prohibited_conditions": ["需求边界不清时禁止使用"],
+        "preconditions": ["已完成影响分析"],
+        "acceptance_evidence": {
+            "accepted_kinds": ["manual_verified"],
+            "required_fields": ["acceptance_ids", "evidence_refs"],
+        },
+        "stop_conditions": [stop_condition],
+        "rollback": {
+            "triggers": ["出现失败观测"],
+            "action": "执行 delivery-skill-rollback 并回退到常规交付流程",
+        },
+        "input_contract": {"required_fields": ["intent", "task_id"]},
+        "output_contract": {"required_fields": ["next_action", "validation_evidence"]},
+        "replay_policy": {"redacted": True},
+    }
 
 
 def test_delivery_workflow_requires_contracts_and_validation(demo_workspace) -> None:
@@ -83,7 +108,7 @@ def test_delivery_skill_contract_is_available_through_admin_and_http(demo_worksp
     task = create_task_space(demo_workspace, title="Skill 契约", intent="声明 Skill 范围")
     task_id = task["task_id"]
     delivery_skill_candidate(demo_workspace, task_id)
-    payload = '{"languages":["java"],"preconditions":["已定位"],"stop_conditions":["索引陈旧"],"input_contract":{"required_fields":["intent"]},"output_contract":{"required_fields":["next_action"]},"replay_policy":{"redacted":true}}'
+    payload = json.dumps(_skill_contract(), ensure_ascii=False)
 
     admin = build_admin_registry(workspace_file=str(demo_workspace), task_id=task_id, source="mcp", payload=payload)
     assert admin.dispatch("delivery_skill_contract_update")["updated"] is True
@@ -107,22 +132,24 @@ def test_closed_verified_delivery_canary_requires_objective_evidence_before_publ
     transition_delivery_stage(demo_workspace, task_id, "implement")
     update_delivery_subtask_status(demo_workspace, task_id, "SUB-1", "implemented")
     transition_delivery_stage(demo_workspace, task_id, "verify")
-    record_delivery_validation(demo_workspace, task_id, status="passed", acceptance_ids=["AC-1"], evidence_kind="manual_verified")
+    record_delivery_validation(demo_workspace, task_id, status="passed", acceptance_ids=["AC-1"], evidence_refs=["validation:task-close"], evidence_kind="manual_verified")
     transition_delivery_stage(demo_workspace, task_id, "close")
 
     candidate = delivery_skill_candidate(demo_workspace, task_id)
     assert candidate["candidate"]["eligible"] is True
     assert candidate["candidate"]["contract"]["languages"] == ["java"]
     assert update_delivery_skill_contract(demo_workspace, task_id, contract={})["reason"] == "skill_contract_invalid"
-    contract = update_delivery_skill_contract(demo_workspace, task_id, contract={
-        "languages": ["java"],
-        "preconditions": ["已完成影响分析"],
-        "stop_conditions": ["索引陈旧时停止"],
-        "input_contract": {"required_fields": ["intent", "task_id"]},
-        "output_contract": {"required_fields": ["next_action", "validation_evidence"]},
-        "replay_policy": {"redacted": True},
-    })
+    mismatched_evidence = _skill_contract()
+    mismatched_evidence["acceptance_evidence"] = {
+        "accepted_kinds": ["executor"],
+        "required_fields": ["acceptance_ids", "evidence_refs"],
+    }
+    assert update_delivery_skill_contract(demo_workspace, task_id, contract=mismatched_evidence)["updated"] is True
+    assert start_delivery_skill_canary(demo_workspace, task_id)["reason"] == "candidate_acceptance_evidence_missing"
+    contract = update_delivery_skill_contract(demo_workspace, task_id, contract=_skill_contract())
     assert contract["updated"] is True
+    assert contract["contract"]["rollback"]["action"]
+    assert contract["contract"]["acceptance_evidence"]["required_fields"] == ["acceptance_ids", "evidence_refs"]
     assert publish_delivery_skill(demo_workspace, task_id)["reason"] == "canary_required"
     canary = start_delivery_skill_canary(demo_workspace, task_id, actor="test")
     assert canary["started"] is True
@@ -135,14 +162,11 @@ def test_closed_verified_delivery_canary_requires_objective_evidence_before_publ
     replay = delivery_skill_replay_set(demo_workspace, skill_id=skill_id)
     assert replay["count"] == 3
     assert "发布接口" not in str(replay)
-    revised = update_delivery_skill_contract(demo_workspace, task_id, contract={
-        "languages": ["java"],
-        "preconditions": ["已完成影响分析"],
-        "stop_conditions": ["索引陈旧或验收变化时停止"],
-        "input_contract": {"required_fields": ["intent", "task_id"]},
-        "output_contract": {"required_fields": ["next_action", "validation_evidence"]},
-        "replay_policy": {"redacted": True},
-    })
+    revised = update_delivery_skill_contract(
+        demo_workspace,
+        task_id,
+        contract=_skill_contract(stop_condition="索引陈旧或验收变化时停止"),
+    )
     assert revised["updated"] is True
     assert evaluate_delivery_skill(demo_workspace, skill_id=skill_id)["metrics"]["verified_passed"] == 0
     assert delivery_skill_replay_set(demo_workspace, skill_id=skill_id)["count"] == 0
@@ -150,15 +174,11 @@ def test_closed_verified_delivery_canary_requires_objective_evidence_before_publ
         assert record_delivery_skill_observation(demo_workspace, skill_id, outcome="passed", evidence_refs=[f"validation:{index}"])["recorded"] is True
     published = publish_delivery_skill(demo_workspace, task_id)
     assert published["published"] is True
-    assert update_delivery_skill_contract(demo_workspace, task_id, contract={
-        "languages": ["python"],
-        "preconditions": ["已定位"],
-        "stop_conditions": ["停止"],
-        "input_contract": {"required_fields": ["intent"]},
-        "output_contract": {"required_fields": ["next_action"]},
-        "replay_policy": {"redacted": True},
-    })["reason"] == "published_skill_contract_immutable"
-    assert recommend_delivery_skills(demo_workspace, "发布接口")["skills"][0]["skill_id"] == skill_id
+    assert update_delivery_skill_contract(demo_workspace, task_id, contract=_skill_contract(languages=["python"]))["reason"] == "published_skill_contract_immutable"
+    recommendation = recommend_delivery_skills(demo_workspace, "发布接口")["skills"][0]
+    assert recommendation["skill_id"] == skill_id
+    assert recommendation["prohibited_conditions"] == ["需求边界不清时禁止使用"]
+    assert recommendation["rollback"]["action"]
     assert not recommend_delivery_skills(demo_workspace, "发布接口", language="python")["skills"]
     assert rollback_delivery_skill(demo_workspace, skill_id, reason="发现回归")["rolled_back"] is True
     assert not recommend_delivery_skills(demo_workspace, "发布接口")["skills"]
@@ -188,7 +208,7 @@ def test_delivery_offline_failure_and_trajectory_synthesis_are_bounded(demo_work
         update_delivery_contract(demo_workspace, task_id, kind="acceptance", items=[{"id": "AC-1", "title": "测试", "required": True}])
         update_delivery_contract(demo_workspace, task_id, kind="subtasks", items=[{"id": "SUB-1", "title": "实现", "code_targets": ["SharedController#run"]}])
         update_delivery_subtask_status(demo_workspace, task_id, "SUB-1", "implemented")
-        record_delivery_validation(demo_workspace, task_id, status="passed", acceptance_ids=["AC-1"], evidence_kind="manual_verified")
+        record_delivery_validation(demo_workspace, task_id, status="passed", acceptance_ids=["AC-1"], evidence_refs=[f"validation:{task_id}"], evidence_kind="manual_verified")
         transition_delivery_stage(demo_workspace, task_id, "close")
         delivery_skill_candidate(demo_workspace, task_id)
     synthesis = synthesize_delivery_skill_trajectories(demo_workspace)
