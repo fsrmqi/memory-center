@@ -138,8 +138,15 @@ class JavaCallResolver:
 
         chain_method = str(call.get("chain_receiver_method") or "")
         if chain_method:
+            chain_arg_count = _safe_int_or_none(call.get("chain_arg_count"))
+            chain_argument_types = _chain_argument_types(owner_symbol, call)
             for info, _level, _confidence in candidates:
-                return_type = _method_return_type(info.method_signatures, chain_method)
+                return_type = _method_return_type(
+                    info.method_signatures,
+                    chain_method,
+                    arg_count=chain_arg_count,
+                    argument_types=chain_argument_types,
+                )
                 resolution_level = "chain_return_type"
                 confidence = 0.78
                 if not return_type:
@@ -148,8 +155,23 @@ class JavaCallResolver:
                     resolution_level = "chain_lombok_accessor_return_type"
                     confidence = 0.8
                 return_candidates = self.class_index.by_simple.get(return_type, []) if return_type else []
-                if len(return_candidates) == 1 and target_method in return_candidates[0].methods:
-                    return self._resolved(owner_symbol, owner, call, return_candidates[0], resolution_level, confidence, arg_count)
+                if len(return_candidates) == 1:
+                    return_info = return_candidates[0]
+                    if target_method in return_info.methods:
+                        return self._resolved(owner_symbol, owner, call, return_info, resolution_level, confidence, arg_count)
+                    lombok_field = _lombok_accessor_field(return_info, target_method)
+                    if lombok_field:
+                        return self._resolved(
+                            owner_symbol,
+                            owner,
+                            call,
+                            return_info,
+                            f"{resolution_level}_lombok_accessor",
+                            confidence,
+                            arg_count,
+                            inferred_target=True,
+                            matched_signature=f"lombok_accessor:{lombok_field}",
+                        )
 
         for info, level, confidence in candidates:
             if target_method in info.methods:
@@ -491,10 +513,54 @@ def _match_signature(signatures: list[dict[str, Any]], method_name: str, arg_cou
     return ""
 
 
-def _method_return_type(signatures: list[dict[str, Any]], method_name: str) -> str:
-    matches = {str(item.get("return_type") or "") for item in signatures if item.get("name") == method_name}
+def _method_return_type(
+    signatures: list[dict[str, Any]],
+    method_name: str,
+    *,
+    arg_count: int | None = None,
+    argument_types: tuple[str, ...] = (),
+) -> str:
+    candidates = [item for item in signatures if item.get("name") == method_name]
+    if arg_count is not None:
+        candidates = [item for item in candidates if len(item.get("parameter_types", []) or []) == arg_count]
+    if argument_types:
+        typed_candidates = [
+            item
+            for item in candidates
+            if _parameter_types_match(item.get("parameter_types", []) or [], argument_types)
+        ]
+        if typed_candidates:
+            candidates = typed_candidates
+    matches = {
+        _normalize_type_name(str(item.get("return_type") or "").split()[-1])
+        for item in candidates
+        if str(item.get("return_type") or "").strip()
+    }
     matches.discard("")
-    return _normalize_type_name(matches.pop().split()[-1]) if len(matches) == 1 else ""
+    return matches.pop() if len(matches) == 1 else ""
+
+
+def _chain_argument_types(owner_symbol: dict[str, Any], call: dict[str, Any]) -> tuple[str, ...]:
+    owner_method = str(call.get("owner_method") or "")
+    variables = (owner_symbol.get("method_variable_types", {}) or {}).get(owner_method, {}) or {}
+    fields = owner_symbol.get("field_types", {}) or {}
+    types: list[str] = []
+    for name in call.get("chain_argument_names", []) or []:
+        value = str(name or "")
+        resolved = str(variables.get(value) or fields.get(value) or "")
+        if not resolved:
+            return ()
+        types.append(_normalize_type_name(resolved))
+    return tuple(types)
+
+
+def _parameter_types_match(parameter_types: list[Any], argument_types: tuple[str, ...]) -> bool:
+    if len(parameter_types) != len(argument_types):
+        return False
+    return all(
+        _normalize_type_name(str(parameter_type)) == _normalize_type_name(argument_type)
+        for parameter_type, argument_type in zip(parameter_types, argument_types, strict=True)
+    )
 
 
 def _lombok_accessor_field(info: ClassInfo, method_name: str) -> str:

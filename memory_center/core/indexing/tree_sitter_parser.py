@@ -180,8 +180,9 @@ class TreeSitterJavaParser:
         method_lines: dict[str, int] = {}
         field_lines: dict[str, int] = {}
         field_types: dict[str, str] = {}
+        method_calls: list[dict[str, Any]] = []
 
-        def _walk(node, depth=0):
+        def _walk(node, depth=0, owner_method: str = ""):
             nonlocal package
             if node.type == "package_declaration":
                 # Extract package name
@@ -284,6 +285,11 @@ class TreeSitterJavaParser:
                             "line": _node_line(name_node),
                         }
                     )
+                    owner_method = method_name
+            elif node.type == "method_invocation" and owner_method:
+                chain_call = _tree_sitter_chain_call(node, owner_method)
+                if chain_call:
+                    method_calls.append(chain_call)
             elif node.type == "field_declaration":
                 type_node = node.child_by_field_name("type")
                 type_text = _node_text(type_node) if type_node else ""
@@ -315,7 +321,7 @@ class TreeSitterJavaParser:
                                 field_types[fname] = type_text
 
             for child in node.children:
-                _walk(child, depth + 1)
+                _walk(child, depth + 1, owner_method)
 
         _walk(root)
 
@@ -336,7 +342,7 @@ class TreeSitterJavaParser:
             constants={},
             method_variable_types={},
             bean_injections=[],
-            method_calls=[],
+            method_calls=_merge_unique_dicts(method_calls, []),
             dto_field_usages=[],
             config_usages=[],
             data_resources=[],
@@ -363,6 +369,59 @@ def _node_line(node: Any) -> int:
         except Exception:
             return 0
     return 0
+
+
+def _tree_sitter_chain_call(node: Any, owner_method: str) -> dict[str, Any] | None:
+    """Extract one statically provable call-result chain from an AST node.
+
+    Only ``receiver.first(...).second(...)`` is emitted. Longer chains are
+    represented by their first resolvable transition, because advancing beyond
+    it would require guessing an intermediate return type. This deliberately
+    complements the regex supplement, which cannot balance nested arguments.
+    """
+
+    outer_object = node.child_by_field_name("object")
+    outer_name = node.child_by_field_name("name")
+    if outer_object is None or outer_object.type != "method_invocation" or outer_name is None:
+        return None
+
+    inner_object = outer_object.child_by_field_name("object")
+    inner_name = outer_object.child_by_field_name("name")
+    if inner_object is None or inner_name is None or inner_object.type == "method_invocation":
+        return None
+
+    receiver = _tree_sitter_chain_receiver(inner_object)
+    if not receiver:
+        return None
+    arguments = node.child_by_field_name("arguments")
+    inner_arguments = outer_object.child_by_field_name("arguments")
+    return {
+        "receiver": receiver,
+        "receiver_type": receiver if receiver[:1].isupper() else "",
+        "method_name": _node_text(outer_name),
+        "owner_method": owner_method,
+        "line": _node_line(node),
+        "arg_count": len(getattr(arguments, "named_children", []) or []),
+        "chain_receiver_method": _node_text(inner_name),
+        "chain_arg_count": len(getattr(inner_arguments, "named_children", []) or []),
+        "chain_argument_names": [
+            _node_text(argument)
+            for argument in getattr(inner_arguments, "named_children", []) or []
+            if argument.type == "identifier" and _node_text(argument)
+        ],
+        "extraction": "tree_sitter_chain",
+    }
+
+
+def _tree_sitter_chain_receiver(node: Any) -> str:
+    """Return the root receiver without inferring an unknown member type."""
+
+    if node.type == "identifier":
+        return _node_text(node)
+    if node.type == "field_access":
+        named = list(getattr(node, "named_children", []) or [])
+        return _node_text(named[0]) if named else ""
+    return ""
 
 
 def _simple_name(value: str) -> str:
@@ -512,7 +571,9 @@ def _merge_supplements(tree_result: JavaParseResult, supplements: JavaParseResul
         constants=dict(supplements.constants),
         method_variable_types=method_variable_types,
         bean_injections=_merge_unique_dicts([], list(supplements.bean_injections)),
-        method_calls=_merge_unique_dicts([], list(supplements.method_calls)),
+        # Tree-sitter adds only AST-proven nested call chains. Regex remains
+        # responsible for direct calls and variable-type extraction.
+        method_calls=_merge_unique_dicts(list(tree_result.method_calls), list(supplements.method_calls)),
         dto_field_usages=_merge_unique_dicts([], list(supplements.dto_field_usages)),
         config_usages=_merge_unique_dicts([], list(supplements.config_usages)),
         data_resources=_merge_unique_dicts([], list(supplements.data_resources)),

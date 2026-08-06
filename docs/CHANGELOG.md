@@ -1,5 +1,29 @@
 # Changelog / 更新日志
 
+## 4.3.70 AST 重载返回类型消歧 / AST Overload Return-Type Disambiguation
+
+- 嵌套调用 AST 现在携带内层参数标识与参数数量；resolver 仅在参数的静态类型与重载声明完全一致时选择返回类型。该规则可解析转换器 `convert(req)` 后的 DTO 链式 accessor，同时在变量类型缺失、重载不匹配或仍不唯一时维持 unresolved。
+
+## 4.3.70 AST Overload Return-Type Disambiguation
+
+- Nested-call AST facts now retain inner argument names and arity. The resolver chooses an overload return type only when static argument types exactly match its declared parameters. This resolves DTO accessors after converters such as `convert(req)` while keeping missing, mismatched, or ambiguous overloads unresolved.
+
+## 4.3.69 局部刷新跨文件解析修复 / Scoped Refresh Cross-File Resolution Fix
+
+- 路径或项目定向 reindex 现在使用完整持久化符号表进行只读调用解析，但仅重写变更范围的图切片。修复了局部刷新后跨文件接口、DTO、转换器调用被错误降级为 unresolved 的问题，同时避免向未变更文件写入图数据。
+
+## 4.3.69 Scoped Refresh Cross-File Resolution Fix
+
+- Path- and project-scoped reindex now resolves calls against the full persisted symbol index while rewriting only the changed graph slice. This prevents cross-file interface, DTO, and converter calls from being incorrectly downgraded to unresolved after a local refresh, without rewriting unchanged graph data.
+
+## 4.3.68 AST 嵌套调用解析 / AST Nested Call Resolution
+
+- Tree-sitter Java 现在补充一段可证明的嵌套调用链，并将唯一返回类型上的显式方法或 Lombok accessor 解析为 `chain_return_type` / `chain_return_type_lombok_accessor`。返回类型会在 tree-sitter 与补充解析合并处统一规范化，避免 `public Type` 与 `Type` 被误判为多个类型；Tree-sitter 不可用时仍保守降级。
+
+## 4.3.68 AST Nested Call Resolution
+
+- Tree-sitter Java now supplements a single provable nested call transition and resolves explicit methods or Lombok accessors on a unique return type as `chain_return_type` / `chain_return_type_lombok_accessor`. Return types are normalized across tree-sitter and supplement facts so `public Type` and `Type` do not look ambiguous; the unavailable-parser path remains conservative.
+
 ## 4.3.67 Java 嵌套参数伪链路修复 / Java Nested-Argument False Chain Fix
 
 - 正则 Java 解析器不再把 `foo.bar(convert(x).setY(y))` 误判为 `foo.setY(...)` 链式调用。嵌套实参尚不能证明接收者类型时保持未展开，避免向图谱写入错误的低置信调用边；受影响文件可通过局部 reindex 清理旧边。

@@ -3,11 +3,13 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
 import yaml
 
 from memory_center.core.indexing.java_call_resolver import JavaCallResolver, build_java_class_index
 from memory_center.core.indexing.java_regex_parser import RegexJavaParser
 from memory_center.core.indexing.reindex import reindex_workspace
+from memory_center.core.indexing.tree_sitter_parser import TreeSitterJavaParser
 from memory_center.core.orchestrator.query import memory_callees
 from memory_center.core.storage.graph import node_id
 from memory_center.core.storage.runtime import RuntimeStore
@@ -128,6 +130,119 @@ public class OrderFacade {
         and call.get("chain_receiver_method") == "sendSmsCode"
         for call in symbol["method_calls"]
     )
+
+
+def test_tree_sitter_recovers_nested_chain_with_unique_return_type() -> None:
+    parser = TreeSitterJavaParser()
+    if not parser.available:
+        pytest.skip("tree-sitter Java dependency is optional")
+    caller = """package com.example.order;
+import com.example.api.AuthConvert;
+import com.example.api.SmsCodeApi;
+public class OrderFacade {
+    private SmsCodeApi smsCodeApi;
+    void send(Request request) {
+        smsCodeApi.sendSmsCode(AuthConvert.INSTANCE.convert(request).setCreateIp(getClientIP()));
+    }
+}
+"""
+    convert = """package com.example.api;
+public class AuthConvert {
+    public static final AuthConvert INSTANCE = new AuthConvert();
+    public SmsCodeSendReqDTO convert(Request request) { return null; }
+    public OtherDto convert(OtherRequest request) { return null; }
+}
+"""
+    dto = """package com.example.api;
+import lombok.Data;
+@Data public class SmsCodeSendReqDTO { private String createIp; }
+"""
+    api = """package com.example.api;
+public interface SmsCodeApi { void sendSmsCode(SmsCodeSendReqDTO request); }
+"""
+
+    def tree_symbol(file: str, source: str) -> dict:
+        parsed = parser.parse(source, file)
+        return {
+            "project": "svc",
+            "file": file,
+            "package": parsed.package,
+            "classes": parsed.classes,
+            "interfaces": parsed.interfaces,
+            "type_supertypes": parsed.type_supertypes,
+            "methods": parsed.methods,
+            "method_signatures": parsed.method_signatures,
+            "fields": parsed.fields,
+            "annotations": parsed.annotations,
+            "imports": parsed.imports,
+            "field_types": parsed.field_types,
+            "method_variable_types": parsed.method_variable_types,
+            "method_calls": parsed.method_calls,
+        }
+
+    symbols = [
+        tree_symbol("OrderFacade.java", caller),
+        tree_symbol("AuthConvert.java", convert),
+        tree_symbol("SmsCodeSendReqDTO.java", dto),
+        tree_symbol("SmsCodeApi.java", api),
+    ]
+    owner = symbols[0]
+    call = next(item for item in owner["method_calls"] if item.get("extraction") == "tree_sitter_chain")
+    result = JavaCallResolver(build_java_class_index(symbols)).resolve_call(owner, call)
+
+    assert call["receiver"] == "AuthConvert"
+    assert call["chain_receiver_method"] == "convert"
+    assert call["chain_argument_names"] == ["request"]
+    assert result.target_class == "SmsCodeSendReqDTO"
+    assert result.target_method == "setCreateIp"
+    assert result.resolution_level == "chain_return_type_lombok_accessor"
+    assert result.matched_signature == "lombok_accessor:createIp"
+
+
+def test_path_scoped_reindex_preserves_cross_file_call_resolution(tmp_path: Path) -> None:
+    service = tmp_path / "svc" / "src" / "main" / "java" / "com" / "example"
+    service.mkdir(parents=True)
+    caller = service / "OrderFacade.java"
+    target = service / "OrderService.java"
+    caller.write_text(
+        """package com.example;
+public class OrderFacade {
+    private OrderService orderService;
+    public void submit() { orderService.create(); }
+}
+""",
+        encoding="utf-8",
+    )
+    target.write_text(
+        """package com.example;
+public class OrderService { public void create() {} }
+""",
+        encoding="utf-8",
+    )
+    workspace = tmp_path / ".memory-center" / "workspace.yaml"
+    workspace.parent.mkdir()
+    workspace.write_text(
+        yaml.safe_dump({"workspace": "partial-resolution", "root": str(tmp_path), "services": [{"name": "svc", "path": "svc"}]}),
+        encoding="utf-8",
+    )
+    store = WorkspaceStore(workspace)
+    config = load_workspace_config(workspace)
+    reindex_workspace(config, store)
+    caller_path = next(row["file"] for row in store.read_json("java-symbol-index.json", []) if row["file"].endswith("OrderFacade.java"))
+
+    result = reindex_workspace(config, store, paths=[caller_path])
+
+    source_id = node_id("Method", "svc", "OrderFacade", "submit")
+    target_id = node_id("Method", "svc", "OrderService", "create")
+    with RuntimeStore(store.graph_db_path) as graph:
+        edge = graph.connect().execute(
+            "SELECT confidence, metadata_json FROM edges WHERE source_id=? AND target_id=? AND type='CALLS_METHOD'",
+            (source_id, target_id),
+        ).fetchone()
+    assert result["mode"] == "partial"
+    assert edge is not None
+    assert edge["confidence"] == 0.9
+    assert json.loads(edge["metadata_json"])["resolution_level"] == "same_package"
 
 
 def test_resolves_explicit_import_receiver_type() -> None:

@@ -404,6 +404,8 @@ memory-center eval-java-call-resolution-metrics --workspace <workspace.yaml>
 
 `private-logical-cases.yaml` 仅保存 `Class#method` 逻辑锚点和预期关系，不得保存路径、源码片段、请求正文或密钥。
 
+当 Tree-sitter Java 可用时，索引器会从 AST 补充 `receiver.first(...).second(...)` 的一段嵌套调用链，并且只在第一个调用的返回类型在当前工作区唯一、第二个方法显式存在或可由 Lombok 确定时创建边。正则解析无法平衡嵌套实参，因此不会猜测这类链路；Tree-sitter 不可用时仍保持保守未解析。
+
 当 case 指定 `expected_resolution_levels` 时，该解析等级也是门禁条件。例如链式调用应填写 `chain_return_type`；即使目标方法仍能命中，解析等级退化也会失败。`eval-java-call-resolution-metrics` 只输出解析等级分布、`chain_return_type` 边/源数量、平均置信度和未解析率，适合在真实工作空间记录边增量，但不代替含 `forbidden_targets` 的私有精度 case。
 
 Run the read-only diagnostic before creating private logical-anchor cases. `receiver_shape_counts` separates static/dependency calls from missing local receiver types. Never synthesize workspace call edges just to lower the unresolved rate; only promote reproducible local categories into a 3-5 case private suite and release gate.
@@ -411,6 +413,8 @@ Run the read-only diagnostic before creating private logical-anchor cases. `rece
 When a case declares `expected_resolution_levels`, that level is gated too. For example, a chain case should declare `chain_return_type`; a generic fallback fails even if the target still matches. `eval-java-call-resolution-metrics` reports only aggregate resolution-level distribution, chain edge/source counts, mean confidence, and unresolved rate. Use it to observe real-workspace edge changes, not as a replacement for private cases with `forbidden_targets`.
 
 The `campaign` skips `external_or_missing_source` and `out_of_scope_target`, selecting the largest locally provable category from `receiver_type_missing`, `missing_method_or_polymorphism`, and `dynamic_or_unqualified`. Its `candidate_samples` are redacted logical anchors for the 3-5 private cases; they are not evidence to synthesize a target edge. If no actionable category exists, review dependency or workspace-scope coverage instead of changing the resolver.
+
+When Tree-sitter Java is available, the indexer supplements AST-proven one-hop nested chains such as `receiver.first(...).second(...)`. It creates a graph edge only when the first return type is unique in the workspace and the second method is explicit or a deterministic Lombok accessor. The regex fallback never guesses a nested-argument chain and remains conservatively unresolved when Tree-sitter is unavailable.
 
 ### 检索热路径性能 / Retrieval Hot Path Performance
 

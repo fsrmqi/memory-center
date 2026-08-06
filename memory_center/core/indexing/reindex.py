@@ -1021,6 +1021,12 @@ def build_graph_store(config: WorkspaceConfig, store: WorkspaceStore, *, project
         if pfs:
             pfs = _graph_scope_path_filters(file_index, pfs)
         symbols = store.read_json_prefer_backend("java-symbol-index.json", [])
+        # A scoped refresh must write only the changed graph slice, while
+        # resolving calls against the complete persisted workspace symbol
+        # index. Restricting the resolver to changed files turns every
+        # cross-file call into an unresolved edge on an otherwise harmless
+        # local refresh.
+        resolver_symbols = list(symbols)
         apis_full = store.read_json_prefer_backend("api-index.json", [])
         feigns = store.read_json_prefer_backend("feign-index.json", [])
         mq = store.read_json_prefer_backend("mq-index.json", [])
@@ -1048,11 +1054,16 @@ def build_graph_store(config: WorkspaceConfig, store: WorkspaceStore, *, project
         api_lookup = _build_api_lookup(feign_match_pool)
 
         class_locations: dict[str, list[dict[str, Any]]] = {}
-        declared_method_ids: set[str] = set()
+        declared_method_ids: set[str] = {
+            node_id("Method", sym["project"], cls, method)
+            for sym in resolver_symbols
+            for cls in sym.get("classes", []) + sym.get("interfaces", [])
+            for method in sym.get("methods", [])
+        }
         field_locations: dict[str, list[str]] = {}
         field_locations_by_class: dict[tuple[str, str], list[str]] = {}
         field_type_by_file: dict[str, dict[str, str]] = {}
-        call_resolver = JavaCallResolver(build_java_class_index(symbols))
+        call_resolver = JavaCallResolver(build_java_class_index(resolver_symbols))
 
         for svc in config.services:
             if pf and svc.name not in pf:
