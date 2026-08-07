@@ -102,12 +102,14 @@
 
 - `languages`：至少一个适用编程语言；`unknown` 不能进入 canary 或发布。
 - `applicability_conditions`、`prohibited_conditions`、`preconditions`、`stop_conditions`：各至少一条，分别声明适用范围、明确禁用范围、何时可用，以及必须停止并重新分析的边界。
-- `acceptance_evidence`：必须声明可接受 `accepted_kinds` 与回执 `required_fields`。候选和 canary 至少要有一条真实验证回执同时匹配两者；默认要求 `executor|manual_verified`、`acceptance_ids` 和 `evidence_refs`，不接受无引用的模型自评。
+- `acceptance_evidence`：必须声明可接受 `accepted_kinds` 与回执 `required_fields`。人工验证必须带明确 `actor` 并自动生成 `delivery-validation:<task-ref>:<receipt-id>`；关闭、候选和成功观测只接受工作区内可解析且状态为 `passed` 的回执，同一回执在同一 activation 只能计数一次。回执按任务流式读取，不以最近条数窗口决定证据有效性。
 - `rollback`：必须声明触发信号和确定的处置动作；推荐结果与生成的 `SKILL.md` 必须返回该信息，方便 Agent 在边界被违反时退出 Skill。
 - `input_contract`、`output_contract`：分别包含 `required_fields`、可选 `optional_fields` 和 `forbidden_fields`；输入输出不得承载源码、密钥或工具正文。
 - `replay_policy`：固定 `redacted=true`、`max_samples=1..500`、`minimum_verified_passed=1..10`。发布门禁按 `minimum_verified_passed` 统计当前契约下带验证引用的成功观测和 replay，默认值为三条。
 - replay 位于任务工件 `skills/delivery-replays/<skill-id>.jsonl`，只含契约哈希、语言、结果、证据引用、时延、Token 与时间；不保存需求、源码、日志、外部正文、操作人或模型原始输出。
 - 每条观测和 replay 都绑定生成时的 `contract_sha256`。canary 修订契约后，评测和发布只统计当前哈希的证据；`published` Skill 契约不可原地修改，必须生成新的候选并重新灰度。
+- 每次进入 canary 都生成独立 `activation_id`。回滚后重新灰度复用稳定 `skill_id`、增加版本并开启新 activation；旧 activation 的观测和 replay 仅作历史审计，不进入当前发布门禁。
+- Skill registry 使用原子替换和有效备份恢复；独立陈旧快照按变更 Skill 合并，生命周期写入执行完整读改写事务。主副本同时损坏时中断读写，禁止用空 registry 覆盖历史。
 
 当前正式 `timeline_item.kind`：
 

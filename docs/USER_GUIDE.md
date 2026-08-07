@@ -280,15 +280,16 @@ memory-center eval-golden --workspace /abs/path/.memory-center/workspace.yaml --
 
 ```bash
 memory-center artifact delivery-skill-candidate --workspace /abs/path/.memory-center/workspace.yaml --task-id <task_id>
+memory-center artifact delivery-record-validation --workspace /abs/path/.memory-center/workspace.yaml --task-id <task_id> --status passed --acceptance-ids '["AC-1"]' --evidence-kind manual_verified --actor <reviewer>
 memory-center artifact delivery-skill-contract-update --workspace /abs/path/.memory-center/workspace.yaml --task-id <task_id> --contract '{"languages":["java"],"applicability_conditions":["目标范围与已验证交付一致"],"prohibited_conditions":["需求边界不清时禁止使用"],"preconditions":["已完成定位"],"acceptance_evidence":{"accepted_kinds":["executor","manual_verified"],"required_fields":["acceptance_ids","evidence_refs"]},"stop_conditions":["索引陈旧时停止"],"rollback":{"triggers":["出现失败观测"],"action":"执行 delivery-skill-rollback 并回退到常规交付流程"},"input_contract":{"required_fields":["intent","task_id"]},"output_contract":{"required_fields":["next_action","validation_evidence"]},"replay_policy":{"redacted":true,"minimum_verified_passed":3}}'
 memory-center artifact delivery-skill-canary --workspace /abs/path/.memory-center/workspace.yaml --task-id <task_id>
-memory-center artifact delivery-skill-observe --workspace /abs/path/.memory-center/workspace.yaml --skill-id <skill_id> --outcome passed --evidence-refs '["validation:<ref>"]'
+memory-center artifact delivery-skill-observe --workspace /abs/path/.memory-center/workspace.yaml --skill-id <skill_id> --outcome passed --evidence-refs '["delivery-validation:<task-ref>:<receipt-id>"]'
 memory-center artifact delivery-skill-evaluate --workspace /abs/path/.memory-center/workspace.yaml --skill-id <skill_id>
 memory-center artifact delivery-skill-replay --workspace /abs/path/.memory-center/workspace.yaml --skill-id <skill_id>
 memory-center artifact delivery-skill-publish --workspace /abs/path/.memory-center/workspace.yaml --task-id <task_id>
 ```
 
-契约必须含至少一种明确语言、适用条件、禁止条件、前置条件、验收证据、停止条件、回滚方式、输入字段、输出字段及 `replay_policy.redacted=true`；`unknown` 不能进入灰度。`acceptance_evidence` 声明的证据类型和字段必须命中候选任务的真实验证回执，默认要求 `acceptance_ids` 与 `evidence_refs`，因此模型自评或无来源结论不能进入 canary。`minimum_verified_passed` 默认是 3，发布要求当前契约哈希下达到该数量的带证据成功观测和自动脱敏 replay，且没有失败。修订 canary 契约会使旧契约证据退出当前评测；已发布 Skill 不能原地修改契约，需生成新候选后重新灰度。默认检索只使用 `published` Skill，并同时返回禁止条件、停止条件与回滚动作；发现回归时使用 `delivery-skill-rollback` 撤出默认推荐，历史证据不会删除。`delivery-failure-candidates` 与 `delivery-skill-synthesize` 是显式离线维护命令，不在日常查询中自动运行。
+契约必须含至少一种明确语言、适用条件、禁止条件、前置条件、验收证据、停止条件、回滚方式、输入字段、输出字段及 `replay_policy.redacted=true`；`unknown` 不能进入灰度。人工验证必须显式传入 `actor`，并会自动生成脱敏、可解析的 `delivery-validation` 引用；成功观测必须引用实际存在的 `passed` 回执，同一回执不能重复计数。回执按任务流式读取，早期有效证据不会因新增记录而失效。每次 canary 使用独立 `activation_id`，契约修订、回滚重启后的旧观测和 replay 不会进入当前评估。`minimum_verified_passed` 默认是 3，评估和发布使用完全相同的阈值。默认检索只使用契约完整的 `published` Skill，并同时返回禁止条件、停止条件与回滚动作；发现回归时使用 `delivery-skill-rollback`，历史证据仍保留。`delivery-failure-candidates` 与 `delivery-skill-synthesize` 是显式离线维护命令，不在日常查询中自动运行。
 
 ### 选择交付画像并约束任务范围
 

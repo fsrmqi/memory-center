@@ -1,5 +1,31 @@
 # Changelog / 更新日志
 
+## 4.3.73 交付证据并发与长期一致性 / Delivery Evidence Concurrency and Long-Term Consistency
+
+- 验证回执不再只读取最后 100 条；任务级流式读取保证早期通过证据持续可解析，同时避免全工作区扫描。人工验证现在必须提供明确操作人，数组字段在 CLI、HTTP、MCP 统一校验。
+- Skill 观测在同一事务中完成活跃状态复核、证据去重、观测与 replay 追加；Registry 对独立陈旧快照做按 Skill 合并，并将 canary、契约更新、发布和回滚收敛到完整读改写事务。
+- 子任务状态、阶段门禁、历史和交付矩阵采用锁内原子写入；需求、子任务和验收文件更新后保持 schema v2。验证命令不存在、权限或编码异常返回结构化 `environment_error`，不再暴露内部异常。
+
+## 4.3.73 Delivery Evidence Concurrency and Long-Term Consistency
+
+- Validation receipts are no longer limited to the latest 100 entries. Task-local streaming keeps older passed evidence resolvable without scanning the workspace. Manual verification now requires an explicit actor, and CLI, HTTP, and MCP consistently validate array fields.
+- Skill observations atomically recheck lifecycle, deduplicate evidence, and append both observation and replay. The registry merges independent stale snapshots by Skill, while canary, contract update, publication, and rollback use complete read-modify-write transactions.
+- Subtask state, stage gates, history, and delivery matrices use locked atomic writes. Requirement, subtask, and acceptance files remain schema v2 after updates. Missing commands, permission failures, and encoding errors now return structured `environment_error` results instead of internal exceptions.
+
+## 4.3.72 Skill 证据与生命周期闭环修复 / Skill Evidence and Lifecycle Closure Fixes
+
+- CLI、HTTP、MCP 现在均可显式记录 `manual_verified`，并自动生成不泄露任务标题的 `delivery-validation:<task-ref>:<receipt-id>` 引用。关闭、候选、观测和发布只接受可解析的已通过回执；伪造引用及同一回执重复计数会被拒绝。
+- Skill 每次进入 canary 都生成独立 `activation_id`。回滚后复用稳定 Skill 记录开启新 activation，旧观测与 replay 不进入新评估；状态、契约文件和阈值建议保持一致。
+- 残缺旧契约不再进入默认推荐；Skill registry 使用原子替换、有效备份恢复、双损坏拒写和稳定 ID 去重。协作资产注册失败不会把已完成发布误报为失败，而是返回可执行的 `artifact asset-sync` 修复动作。
+- 修复真实工作区性能脚本的导入结构，恢复仓库级 Ruff 门禁。
+
+## 4.3.72 Skill Evidence and Lifecycle Closure Fixes
+
+- CLI, HTTP, and MCP can now explicitly record `manual_verified` receipts and automatically emit privacy-safe `delivery-validation:<task-ref>:<receipt-id>` references. Close, candidate, observation, and publication gates accept only resolvable passed receipts; forged references and duplicate receipt counting are rejected.
+- Every canary run has an independent `activation_id`. Restarting after rollback reuses the stable Skill record while excluding prior observations and replays; status, generated contract files, and threshold recommendations stay aligned.
+- Incomplete legacy contracts no longer enter default recommendation. The Skill registry now uses atomic replacement, valid-backup recovery, double-corruption refusal, and stable-ID deduplication. Collaboration-asset failures return an actionable `artifact asset-sync` repair without misreporting an already completed publication as failed.
+- Fixed the real-workspace benchmark import structure and restored the repository-wide Ruff gate.
+
 ## 4.3.71 可执行经验边界契约 / Executable Experience-Boundary Contract
 
 - 交付 Skill 契约升级为 v2：新增适用条件、禁止条件、验收证据和回滚方式；候选、灰度、发布、推荐和生成的 `SKILL.md` 共享同一份契约。

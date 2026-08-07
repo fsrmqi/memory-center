@@ -47,6 +47,7 @@ def _pragma_snapshot(db_path: Path) -> dict[str, Any]:
         return {"missing": True}
     try:
         from memory_center.core.graph import GraphStore  # noqa: PLC0415
+
         from memory_center.core.storage.pragmas import read_pragma_state  # noqa: PLC0415
     except ImportError:
         # baseline 分支可能还没有 pragmas 模块;退回到裸读 + 标记。

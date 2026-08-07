@@ -1,8 +1,16 @@
 from __future__ import annotations
 
 import json
+import threading
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 
+import pytest
+from typer.testing import CliRunner
+
+import memory_center.core.tasks.delivery as delivery_module
 from memory_center.application.admin import build_admin_registry
+from memory_center.cli.main import app
 from memory_center.core.tasks.artifacts import (
     compact_task_artifacts,
     create_task_space,
@@ -10,8 +18,10 @@ from memory_center.core.tasks.artifacts import (
     update_task_artifact,
 )
 from memory_center.core.tasks.delivery import (
+    DeliverySkillRegistryCorruptionError,
     delivery_skill_candidate,
     delivery_skill_replay_set,
+    delivery_skill_status,
     delivery_workflow_status,
     derive_delivery_failure_candidates,
     evaluate_delivery_skill,
@@ -30,7 +40,7 @@ from memory_center.core.tasks.delivery import (
 )
 
 
-def _skill_contract(*, stop_condition: str = "索引陈旧时停止", languages: list[str] | None = None) -> dict[str, object]:
+def _skill_contract(*, stop_condition: str = "索引陈旧时停止", languages: list[str] | None = None, minimum_verified_passed: int = 3) -> dict[str, object]:
     """Build the complete, reviewable contract required for a delivery Skill."""
 
     return {
@@ -49,7 +59,7 @@ def _skill_contract(*, stop_condition: str = "索引陈旧时停止", languages:
         },
         "input_contract": {"required_fields": ["intent", "task_id"]},
         "output_contract": {"required_fields": ["next_action", "validation_evidence"]},
-        "replay_policy": {"redacted": True},
+        "replay_policy": {"redacted": True, "minimum_verified_passed": minimum_verified_passed},
     }
 
 
@@ -82,7 +92,7 @@ def test_delivery_workflow_requires_contracts_and_validation(demo_workspace) -> 
 
     blocked_close = transition_delivery_stage(demo_workspace, task_id, "close")
     assert blocked_close["transitioned"] is False
-    receipt = record_delivery_validation(demo_workspace, task_id, status="passed", summary="1 passed", exit_code=0, acceptance_ids=["AC-1"], evidence_kind="manual_verified")
+    receipt = record_delivery_validation(demo_workspace, task_id, status="passed", summary="1 passed", exit_code=0, acceptance_ids=["AC-1"], evidence_kind="manual_verified", actor="reviewer")
     assert receipt["receipt"]["command"] == ""
     closed = transition_delivery_stage(demo_workspace, task_id, "close")
     assert closed["transitioned"] is True
@@ -100,6 +110,79 @@ def test_delivery_admin_contract_actions_use_existing_facade(demo_workspace) -> 
     result = registry.dispatch("delivery_contract_update")
     assert result["updated"] is True
     assert result["items"][0]["id"] == "REQ-1"
+
+
+def test_manual_validation_is_available_through_cli_http_and_mcp(demo_workspace) -> None:
+    from memory_center.http.server import _route_request
+
+    task_id = create_task_space(demo_workspace, title="人工验证", intent="验证公共入口")["task_id"]
+    cli = CliRunner().invoke(
+        app,
+        [
+            "artifact",
+            "delivery-record-validation",
+            "--workspace",
+            str(demo_workspace),
+            "--task-id",
+            task_id,
+            "--status",
+            "passed",
+            "--acceptance-ids",
+            '["AC-1"]',
+            "--evidence-kind",
+            "manual_verified",
+            "--actor",
+            "alice",
+        ],
+    )
+    assert cli.exit_code == 0
+    assert "manual_verified" in cli.stdout
+    assert "delivery-validation:" in cli.stdout
+
+    payload = json.dumps({
+        "status": "passed",
+        "acceptance_ids": ["AC-1"],
+        "evidence_kind": "manual_verified",
+        "actor": "carol",
+    })
+    http = _route_request(
+        "/workspace/delivery/validation",
+        {"task_id": [task_id], "payload": [payload], "actor": ["bob"]},
+        str(demo_workspace),
+    )
+    assert http["receipt"]["evidence_kind"] == "manual_verified"
+    assert http["receipt"]["evidence_refs"][0].startswith("delivery-validation:")
+
+    admin = build_admin_registry(
+        workspace_file=str(demo_workspace),
+        task_id=task_id,
+        source="mcp",
+        payload=payload,
+    )
+    mcp = admin.dispatch("delivery_validation_record")
+    assert mcp["receipt"]["evidence_kind"] == "manual_verified"
+    assert mcp["receipt"]["evidence_refs"][0].startswith("delivery-validation:")
+    assert mcp["receipt"]["actor"] == "carol"
+
+    with pytest.raises(ValueError, match="actor is required"):
+        record_delivery_validation(
+            demo_workspace,
+            task_id,
+            status="passed",
+            evidence_kind="manual_verified",
+        )
+    malformed = json.dumps({
+        "status": "passed",
+        "acceptance_ids": "AC-1",
+        "evidence_kind": "manual_verified",
+        "actor": "dave",
+    })
+    with pytest.raises(ValueError, match="acceptance_ids must be a JSON array"):
+        _route_request(
+            "/workspace/delivery/validation",
+            {"task_id": [task_id], "payload": [malformed], "actor": ["dave"]},
+            str(demo_workspace),
+        )
 
 
 def test_delivery_skill_contract_is_available_through_admin_and_http(demo_workspace) -> None:
@@ -120,7 +203,7 @@ def test_delivery_skill_contract_is_available_through_admin_and_http(demo_worksp
     assert http["updated"] is True
 
 
-def test_closed_verified_delivery_canary_requires_objective_evidence_before_publish(demo_workspace) -> None:
+def test_closed_verified_delivery_canary_requires_objective_evidence_before_publish(demo_workspace, monkeypatch) -> None:
     task = create_task_space(demo_workspace, title="发布接口", intent="新增发布接口")
     task_id = task["task_id"]
     initialize_delivery_workflow(demo_workspace, task_id)
@@ -132,7 +215,7 @@ def test_closed_verified_delivery_canary_requires_objective_evidence_before_publ
     transition_delivery_stage(demo_workspace, task_id, "implement")
     update_delivery_subtask_status(demo_workspace, task_id, "SUB-1", "implemented")
     transition_delivery_stage(demo_workspace, task_id, "verify")
-    record_delivery_validation(demo_workspace, task_id, status="passed", acceptance_ids=["AC-1"], evidence_refs=["validation:task-close"], evidence_kind="manual_verified")
+    record_delivery_validation(demo_workspace, task_id, status="passed", acceptance_ids=["AC-1"], evidence_kind="manual_verified", actor="reviewer")
     transition_delivery_stage(demo_workspace, task_id, "close")
 
     candidate = delivery_skill_candidate(demo_workspace, task_id)
@@ -146,7 +229,7 @@ def test_closed_verified_delivery_canary_requires_objective_evidence_before_publ
     }
     assert update_delivery_skill_contract(demo_workspace, task_id, contract=mismatched_evidence)["updated"] is True
     assert start_delivery_skill_canary(demo_workspace, task_id)["reason"] == "candidate_acceptance_evidence_missing"
-    contract = update_delivery_skill_contract(demo_workspace, task_id, contract=_skill_contract())
+    contract = update_delivery_skill_contract(demo_workspace, task_id, contract=_skill_contract(minimum_verified_passed=5))
     assert contract["updated"] is True
     assert contract["contract"]["rollback"]["action"]
     assert contract["contract"]["acceptance_evidence"]["required_fields"] == ["acceptance_ids", "evidence_refs"]
@@ -155,10 +238,35 @@ def test_closed_verified_delivery_canary_requires_objective_evidence_before_publ
     assert canary["started"] is True
     skill_id = canary["skill"]["skill_id"]
     assert record_delivery_skill_observation(demo_workspace, skill_id, outcome="passed")["reason"] == "evidence_required"
+    assert record_delivery_skill_observation(
+        demo_workspace,
+        skill_id,
+        outcome="passed",
+        evidence_refs=["validation:not-real"],
+    )["reason"] == "evidence_not_resolvable"
     for index in range(3):
-        result = record_delivery_skill_observation(demo_workspace, skill_id, outcome="passed", evidence_refs=[f"validation:{index}"], latency_ms=100, token_count=20)
+        receipt = record_delivery_validation(
+            demo_workspace,
+            task_id,
+            status="passed",
+            acceptance_ids=["AC-1"],
+            evidence_kind="manual_verified",
+            actor=f"reviewer-{index}",
+        )["receipt"]
+        result = record_delivery_skill_observation(demo_workspace, skill_id, outcome="passed", evidence_refs=[receipt["evidence_refs"][-1]], latency_ms=100, token_count=20)
         assert result["recorded"] is True
-    assert evaluate_delivery_skill(demo_workspace, skill_id=skill_id)["metrics"]["verified_passed"] == 3
+        assert record_delivery_skill_observation(
+            demo_workspace,
+            skill_id,
+            outcome="passed",
+            evidence_refs=[receipt["evidence_refs"][-1]],
+        )["reason"] == "evidence_already_used"
+    evaluation = evaluate_delivery_skill(demo_workspace, skill_id=skill_id)
+    assert evaluation["metrics"]["verified_passed"] == 3
+    assert evaluation["minimum_verified_passed"] == 5
+    assert evaluation["publishable"] is False
+    assert evaluation["recommendation"] == "继续灰度并记录真实验证证据"
+    assert publish_delivery_skill(demo_workspace, task_id)["reason"] == "canary_evidence_insufficient"
     replay = delivery_skill_replay_set(demo_workspace, skill_id=skill_id)
     assert replay["count"] == 3
     assert "发布接口" not in str(replay)
@@ -168,12 +276,33 @@ def test_closed_verified_delivery_canary_requires_objective_evidence_before_publ
         contract=_skill_contract(stop_condition="索引陈旧或验收变化时停止"),
     )
     assert revised["updated"] is True
+    assert "索引陈旧或验收变化时停止" in Path(canary["path"]).read_text(encoding="utf-8")
     assert evaluate_delivery_skill(demo_workspace, skill_id=skill_id)["metrics"]["verified_passed"] == 0
     assert delivery_skill_replay_set(demo_workspace, skill_id=skill_id)["count"] == 0
     for index in range(3, 6):
-        assert record_delivery_skill_observation(demo_workspace, skill_id, outcome="passed", evidence_refs=[f"validation:{index}"])["recorded"] is True
+        receipt = record_delivery_validation(
+            demo_workspace,
+            task_id,
+            status="passed",
+            acceptance_ids=["AC-1"],
+            evidence_kind="manual_verified",
+            actor=f"reviewer-{index}",
+        )["receipt"]
+        assert record_delivery_skill_observation(
+            demo_workspace,
+            skill_id,
+            outcome="passed",
+            evidence_refs=[receipt["evidence_refs"][-1]],
+        )["recorded"] is True
+    def fail_asset_registration(*_args, **_kwargs):
+        raise OSError("asset registry unavailable")
+
+    monkeypatch.setattr("memory_center.core.knowledge.assets.register_collaboration_asset", fail_asset_registration)
     published = publish_delivery_skill(demo_workspace, task_id)
     assert published["published"] is True
+    assert published["asset_registered"] is False
+    assert published["asset_diagnostic"]["error_type"] == "OSError"
+    assert published["next_action"] == "Skill 已发布；执行 artifact asset-sync 补齐协作资产，并持续记录效果。"
     assert update_delivery_skill_contract(demo_workspace, task_id, contract=_skill_contract(languages=["python"]))["reason"] == "published_skill_contract_immutable"
     recommendation = recommend_delivery_skills(demo_workspace, "发布接口")["skills"][0]
     assert recommendation["skill_id"] == skill_id
@@ -182,6 +311,53 @@ def test_closed_verified_delivery_canary_requires_objective_evidence_before_publ
     assert not recommend_delivery_skills(demo_workspace, "发布接口", language="python")["skills"]
     assert rollback_delivery_skill(demo_workspace, skill_id, reason="发现回归")["rolled_back"] is True
     assert not recommend_delivery_skills(demo_workspace, "发布接口")["skills"]
+    rolled_back_status = delivery_skill_status(demo_workspace, task_id)
+    assert rolled_back_status["lifecycle"] == "rolled_back"
+    assert rolled_back_status["next_action"] == "delivery-skill-canary"
+    restarted = start_delivery_skill_canary(demo_workspace, task_id, actor="test-restart")
+    assert restarted["started"] is True
+    assert restarted["skill"]["skill_id"] == skill_id
+    assert restarted["skill"]["activation_id"] != canary["skill"]["activation_id"]
+    assert delivery_skill_status(demo_workspace, task_id)["lifecycle"] == "canary"
+    assert evaluate_delivery_skill(demo_workspace, skill_id=skill_id)["metrics"]["verified_passed"] == 0
+
+    receipt = record_delivery_validation(
+        demo_workspace,
+        task_id,
+        status="passed",
+        acceptance_ids=["AC-1"],
+        evidence_kind="manual_verified",
+        actor="parallel-reviewer",
+    )["receipt"]
+    evidence_ref = receipt["evidence_refs"][-1]
+    original_resolver = delivery_module._resolved_delivery_evidence_refs
+    barrier = threading.Barrier(2)
+    call_lock = threading.Lock()
+    call_count = 0
+
+    def synchronize_first_two_resolutions(*args, **kwargs):
+        nonlocal call_count
+        resolved = original_resolver(*args, **kwargs)
+        with call_lock:
+            call_count += 1
+            should_wait = call_count <= 2
+        if should_wait:
+            barrier.wait(timeout=5)
+        return resolved
+
+    monkeypatch.setattr(delivery_module, "_resolved_delivery_evidence_refs", synchronize_first_two_resolutions)
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(executor.map(
+            lambda _: record_delivery_skill_observation(
+                demo_workspace,
+                skill_id,
+                outcome="passed",
+                evidence_refs=[evidence_ref],
+            ),
+            range(2),
+        ))
+    assert sum(bool(result.get("recorded")) for result in results) == 1
+    assert {result.get("reason", "recorded") for result in results} == {"recorded", "evidence_already_used"}
 
 
 def test_delivery_offline_failure_and_trajectory_synthesis_are_bounded(demo_workspace) -> None:
@@ -208,12 +384,86 @@ def test_delivery_offline_failure_and_trajectory_synthesis_are_bounded(demo_work
         update_delivery_contract(demo_workspace, task_id, kind="acceptance", items=[{"id": "AC-1", "title": "测试", "required": True}])
         update_delivery_contract(demo_workspace, task_id, kind="subtasks", items=[{"id": "SUB-1", "title": "实现", "code_targets": ["SharedController#run"]}])
         update_delivery_subtask_status(demo_workspace, task_id, "SUB-1", "implemented")
-        record_delivery_validation(demo_workspace, task_id, status="passed", acceptance_ids=["AC-1"], evidence_refs=[f"validation:{task_id}"], evidence_kind="manual_verified")
+        record_delivery_validation(demo_workspace, task_id, status="passed", acceptance_ids=["AC-1"], evidence_kind="manual_verified", actor="reviewer")
         transition_delivery_stage(demo_workspace, task_id, "close")
         delivery_skill_candidate(demo_workspace, task_id)
     synthesis = synthesize_delivery_skill_trajectories(demo_workspace)
     assert synthesis["syntheses"]
 
+
+def test_recommendation_skips_published_skills_with_invalid_legacy_contract(demo_workspace) -> None:
+    from memory_center.core.storage.workspace import WorkspaceStore
+
+    store = WorkspaceStore(demo_workspace)
+    registry = store.artifacts_dir / "skills" / "delivery-skill-registry.json"
+    registry.parent.mkdir(parents=True, exist_ok=True)
+    registry.write_text(
+        json.dumps({
+            "schema_version": 1,
+            "skills": [{
+                "skill_id": "legacy-skill",
+                "title": "发布接口",
+                "lifecycle": "published",
+                "signature": {"terms": ["发布", "接口"]},
+                "contract": {"languages": ["java"]},
+            }],
+        }, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    result = recommend_delivery_skills(demo_workspace, "发布接口")
+
+    assert result["skills"] == []
+    assert result["skipped_invalid_contract"] == 1
+    assert result["next_action"] == "先迁移或重新生成无完整边界契约的已发布 Skill；有效 Skill 可继续使用。"
+
+
+def test_delivery_skill_registry_recovers_backup_and_refuses_double_corruption(demo_workspace) -> None:
+    from memory_center.core.storage.workspace import WorkspaceStore
+
+    store = WorkspaceStore(demo_workspace)
+    path = store.artifacts_dir / "skills" / "delivery-skill-registry.json"
+    backup = path.with_name(f"{path.name}.bak")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    valid = {
+        "schema_version": 2,
+        "skills": [{
+            "skill_id": "recoverable-skill",
+            "title": "发布接口",
+            "lifecycle": "published",
+            "signature": {"terms": ["发布", "接口"]},
+            "contract": _skill_contract(),
+        }],
+    }
+    path.write_text("{broken", encoding="utf-8")
+    backup.write_text(json.dumps(valid, ensure_ascii=False), encoding="utf-8")
+
+    recovered = recommend_delivery_skills(demo_workspace, "发布接口")
+
+    assert recovered["skills"][0]["skill_id"] == "recoverable-skill"
+    assert json.loads(path.read_text(encoding="utf-8"))["skills"][0]["skill_id"] == "recoverable-skill"
+
+    path.write_text("{broken-again", encoding="utf-8")
+    backup.write_text("{also-broken", encoding="utf-8")
+    with pytest.raises(DeliverySkillRegistryCorruptionError):
+        recommend_delivery_skills(demo_workspace, "发布接口")
+    assert path.read_text(encoding="utf-8") == "{broken-again"
+
+
+def test_delivery_skill_registry_preserves_independent_stale_updates(demo_workspace) -> None:
+    from memory_center.core.storage.workspace import WorkspaceStore
+    from memory_center.core.tasks.delivery import _read_skill_registry, _write_skill_registry
+
+    store = WorkspaceStore(demo_workspace)
+    first_snapshot = _read_skill_registry(store)
+    second_snapshot = _read_skill_registry(store)
+    first_snapshot["skills"].append({"skill_id": "skill-a", "lifecycle": "canary"})
+    second_snapshot["skills"].append({"skill_id": "skill-b", "lifecycle": "canary"})
+
+    _write_skill_registry(store, first_snapshot, changed_skill_ids={"skill-a"})
+    _write_skill_registry(store, second_snapshot, changed_skill_ids={"skill-b"})
+
+    assert {row["skill_id"] for row in _read_skill_registry(store)["skills"]} == {"skill-a", "skill-b"}
 
 def test_delivery_matrix_and_policy_control_executor(demo_workspace) -> None:
     from memory_center.core.tasks.delivery import (
@@ -229,15 +479,53 @@ def test_delivery_matrix_and_policy_control_executor(demo_workspace) -> None:
     assert candidate["candidate"]["source_refs"] == ["req:1"]
     update_delivery_contract(demo_workspace, task_id, kind="requirements", items=[{"id": "REQ-1", "title": "发布", "scope": "接口", "source_refs": ["req:1"], "acceptance_ids": ["AC-1"]}])
     update_delivery_contract(demo_workspace, task_id, kind="acceptance", items=[{"id": "AC-1", "title": "解释器可用"}])
+    task_dir = demo_workspace.parent / "artifacts" / "tasks" / task_id
+    assert json.loads((task_dir / "requirements.json").read_text(encoding="utf-8"))["schema_version"] == 2
+    assert json.loads((task_dir / "acceptance.json").read_text(encoding="utf-8"))["schema_version"] == 2
     matrix = delivery_matrix(demo_workspace, task_id)
     assert matrix["matrix"]["coverage"]["requirements"] == 1
     assert (demo_workspace.parent / "artifacts" / "tasks" / task_id / "TECH_SPEC.md").exists()
     blocked = execute_delivery_validation(demo_workspace, task_id, profile_id="missing")
     assert blocked["reason"] == "profile_not_allowed"
+    update_delivery_policy(demo_workspace, {"validation_profiles": [{"id": "missing-command", "argv": ["memory-center-command-that-does-not-exist"], "timeout_sec": 10}]})
+    environment_failure = execute_delivery_validation(demo_workspace, task_id, profile_id="missing-command")
+    assert environment_failure["executed"] is False
+    assert environment_failure["reason"] == "environment_error"
+    assert environment_failure["error_type"] == "FileNotFoundError"
     update_delivery_policy(demo_workspace, {"validation_profiles": [{"id": "python-version", "argv": ["python3", "--version"], "timeout_sec": 10}]})
     executed = execute_delivery_validation(demo_workspace, task_id, profile_id="python-version", acceptance_ids=["AC-1"])
     assert executed["executed"] is True
     assert executed["receipt"]["evidence_kind"] == "executor"
+
+
+def test_delivery_gate_keeps_older_verified_receipts_resolvable(demo_workspace) -> None:
+    task_id = create_task_space(demo_workspace, title="长期验证", intent="保留早期验证证据")["task_id"]
+    initialize_delivery_workflow(demo_workspace, task_id)
+    update_delivery_contract(
+        demo_workspace,
+        task_id,
+        kind="acceptance",
+        items=[{"id": "AC-1", "title": "长期有效", "required": True}],
+    )
+    record_delivery_validation(
+        demo_workspace,
+        task_id,
+        status="passed",
+        acceptance_ids=["AC-1"],
+        evidence_kind="manual_verified",
+        actor="reviewer",
+    )
+    for _ in range(101):
+        record_delivery_validation(
+            demo_workspace,
+            task_id,
+            status="recorded",
+            evidence_kind="recorded_external",
+        )
+
+    status = delivery_workflow_status(demo_workspace, task_id)
+
+    assert status["counts"]["verified_acceptance"] == 1
 
 
 def test_delivery_scope_contract_is_visible_and_can_be_enforced(demo_workspace) -> None:

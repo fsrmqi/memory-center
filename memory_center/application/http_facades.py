@@ -353,6 +353,7 @@ def workspace_delivery_validation(
     exit_code: int | None = None,
     acceptance_ids: list[str] | None = None,
     evidence_refs: list[str] | None = None,
+    evidence_kind: str = "recorded_external",
     actor: str = "",
 ) -> dict[str, Any]:
     return record_delivery_validation(
@@ -364,6 +365,7 @@ def workspace_delivery_validation(
         exit_code=exit_code,
         acceptance_ids=acceptance_ids,
         evidence_refs=evidence_refs,
+        evidence_kind=evidence_kind,
         actor=actor,
     )
 

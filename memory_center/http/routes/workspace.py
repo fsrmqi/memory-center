@@ -198,8 +198,9 @@ def _workspace_delivery_validation(rp):
         summary=str(payload.get("summary", "")),
         command=str(payload.get("command", "")),
         exit_code=payload.get("exit_code"),
-        acceptance_ids=[str(item) for item in payload.get("acceptance_ids", []) if str(item).strip()],
-        evidence_refs=[str(item) for item in payload.get("evidence_refs", []) if str(item).strip()],
+        acceptance_ids=payload.get("acceptance_ids", []),
+        evidence_refs=payload.get("evidence_refs", []),
+        evidence_kind=str(payload.get("evidence_kind", "recorded_external")),
         actor=rp.get("actor", ""),
     )
 
@@ -236,7 +237,7 @@ def _workspace_delivery_execute_validation(rp):
         rp.workspace(),
         rp.require("task_id"),
         profile_id=str(payload.get("profile_id", "")),
-        acceptance_ids=[str(item) for item in payload.get("acceptance_ids", []) if str(item).strip()],
+        acceptance_ids=payload.get("acceptance_ids", []),
         actor=rp.get("actor", ""),
     )
 
