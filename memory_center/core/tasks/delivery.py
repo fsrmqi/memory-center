@@ -19,6 +19,7 @@ from uuid import uuid4
 
 from filelock import FileLock
 
+from memory_center.core.storage.memory_backend import DELIVERY_RECEIPT_PROJECTION_VERSION
 from memory_center.core.storage.workspace import WorkspaceStore
 from memory_center.core.workspace.config import load_workspace_config
 
@@ -54,7 +55,18 @@ class DeliverySkillRegistryCorruptionError(RuntimeError):
     """Skill registry cannot be recovered without risking historical data loss."""
 
 
-def initialize_delivery_workflow(workspace_file: str | Path, task_id: str, *, actor: str = "") -> dict[str, Any]:
+class DeliveryArtifactCorruptionError(RuntimeError):
+    """A delivery artifact is present but cannot be decoded safely."""
+
+
+def initialize_delivery_workflow(
+    workspace_file: str | Path,
+    task_id: str,
+    *,
+    actor: str = "",
+    include_status: bool = True,
+    touch_activity: bool = True,
+) -> dict[str, Any]:
     """Create the delivery contract for one existing task space, idempotently."""
     store = WorkspaceStore(workspace_file)
     task_dir, meta = _resolve_task_dir(store, task_id)
@@ -81,16 +93,22 @@ def initialize_delivery_workflow(workspace_file: str | Path, task_id: str, *, ac
             if not path.exists():
                 _write_json(path, payload)
                 created.append(filename)
-        (task_dir / VALIDATION_RECEIPTS_FILE).touch(exist_ok=True)
-    touch_task_activity(workspace_file, meta["task_id"], "delivery_initialize")
-    return {"initialized": True, "task_id": meta["task_id"], "created": created, **delivery_workflow_status(workspace_file, meta["task_id"])}
+            else:
+                _read_json(path, {})
+        receipts_path = task_dir / VALIDATION_RECEIPTS_FILE
+        if not receipts_path.exists():
+            receipts_path.touch()
+    if touch_activity:
+        touch_task_activity(workspace_file, meta["task_id"], "delivery_initialize")
+    result = {"initialized": True, "task_id": meta["task_id"], "created": created}
+    return {**result, **delivery_workflow_status(workspace_file, meta["task_id"])} if include_status else result
 
 
 def update_delivery_contract(workspace_file: str | Path, task_id: str, *, kind: str, items: list[dict[str, Any]], actor: str = "") -> dict[str, Any]:
     """Replace one small, schema-checked contract collection by stable IDs."""
     if kind not in {"requirements", "subtasks", "acceptance"}:
         raise ValueError("kind must be requirements, subtasks, or acceptance")
-    initialize_delivery_workflow(workspace_file, task_id, actor=actor)
+    initialize_delivery_workflow(workspace_file, task_id, actor=actor, include_status=False, touch_activity=False)
     store = WorkspaceStore(workspace_file)
     task_dir, meta = _resolve_task_dir(store, task_id)
     normalized = [_normalize_item(kind, item, index) for index, item in enumerate(items, start=1)]
@@ -109,7 +127,7 @@ def update_delivery_subtask_status(workspace_file: str | Path, task_id: str, sub
     normalized_status = status.strip().lower()
     if normalized_status not in SUBTASK_STATUSES:
         raise ValueError(f"unknown subtask status: {status}")
-    initialize_delivery_workflow(workspace_file, task_id, actor=actor)
+    initialize_delivery_workflow(workspace_file, task_id, actor=actor, include_status=False, touch_activity=False)
     store = WorkspaceStore(workspace_file)
     task_dir, meta = _resolve_task_dir(store, task_id)
     with FileLock(str(store.lock_file)):
@@ -129,7 +147,7 @@ def update_delivery_subtask_status(workspace_file: str | Path, task_id: str, sub
     return {"updated": True, "task_id": meta["task_id"], "subtask_id": subtask_id, "status": normalized_status, "delivery": delivery_workflow_status(workspace_file, meta["task_id"])}
 
 
-def record_delivery_validation(workspace_file: str | Path, task_id: str, *, status: str, summary: str = "", command: str = "", exit_code: int | None = None, acceptance_ids: list[str] | None = None, evidence_refs: list[str] | None = None, actor: str = "", evidence_kind: str = "recorded_external") -> dict[str, Any]:
+def record_delivery_validation(workspace_file: str | Path, task_id: str, *, status: str, summary: str = "", command: str = "", exit_code: int | None = None, acceptance_ids: list[str] | None = None, evidence_refs: list[str] | None = None, actor: str = "", actor_source: str = "core", evidence_kind: str = "recorded_external") -> dict[str, Any]:
     """Record bounded external evidence; supplied commands are never executed."""
     normalized_status = status.strip().lower()
     if normalized_status not in VALIDATION_STATUSES:
@@ -142,7 +160,7 @@ def record_delivery_validation(workspace_file: str | Path, task_id: str, *, stat
         raise ValueError("actor is required for manual_verified evidence")
     normalized_acceptance_ids = _require_string_list(acceptance_ids, "acceptance_ids")
     normalized_evidence_refs = _require_string_list(evidence_refs, "evidence_refs")
-    initialize_delivery_workflow(workspace_file, task_id, actor=actor)
+    initialize_delivery_workflow(workspace_file, task_id, actor=actor, include_status=False, touch_activity=False)
     store = WorkspaceStore(workspace_file)
     task_dir, meta = _resolve_task_dir(store, task_id)
     receipt = {
@@ -156,15 +174,23 @@ def record_delivery_validation(workspace_file: str | Path, task_id: str, *, stat
         "acceptance_ids": _bounded_refs(normalized_acceptance_ids),
         "evidence_refs": _bounded_refs(normalized_evidence_refs),
         "actor": normalized_actor,
+        "reported_actor": normalized_actor,
+        "actor_source": _bounded(actor_source, 80) or "core",
+        "identity_assurance": "self_asserted",
     }
     if normalized_kind == "manual_verified":
+        canonical_ref = f"delivery-validation:{_task_evidence_ref(meta['task_id'])}:{receipt['receipt_id']}"
         receipt["evidence_refs"] = _bounded_refs([
+            canonical_ref,
             *receipt["evidence_refs"],
-            f"delivery-validation:{_task_evidence_ref(meta['task_id'])}:{receipt['receipt_id']}",
         ])
     with FileLock(str(store.lock_file)):
+        _ensure_delivery_receipt_index(store, task_dir, acquire_lock=False)
         with (task_dir / VALIDATION_RECEIPTS_FILE).open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(receipt, ensure_ascii=False) + "\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        _index_delivery_receipts(store, task_dir, [receipt])
     _append_history(store, task_dir, event="validation_recorded", actor=actor, details={"receipt_id": receipt["receipt_id"], "status": normalized_status, "evidence_kind": normalized_kind})
     touch_task_activity(workspace_file, meta["task_id"], "delivery_validation")
     return {"recorded": True, "task_id": meta["task_id"], "receipt": receipt, "delivery": delivery_workflow_status(workspace_file, meta["task_id"])}
@@ -223,8 +249,12 @@ def execute_delivery_validation(workspace_file: str | Path, task_id: str, *, pro
     _write_json(evidence_path, evidence)
     receipt = {"receipt_id": receipt_id, "recorded_at": evidence["recorded_at"], "status": status, "command": profile_id, "exit_code": evidence["exit_code"], "summary": _bounded(output, 2000), "evidence_kind": "executor", "acceptance_ids": _bounded_refs(normalized_acceptance_ids), "evidence_refs": [f"delivery-evidence:{receipt_id}"], "actor": _bounded(actor), "profile_id": profile_id, "output_sha256": digest, "timed_out": timed_out}
     with FileLock(str(store.lock_file)):
+        _ensure_delivery_receipt_index(store, task_dir, acquire_lock=False)
         with (task_dir / VALIDATION_RECEIPTS_FILE).open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(receipt, ensure_ascii=False) + "\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        _index_delivery_receipts(store, task_dir, [receipt])
     _append_history(store, task_dir, event="validation_executed", actor=actor, details={"receipt_id": receipt_id, "profile_id": profile_id, "status": status, "timed_out": timed_out})
     touch_task_activity(workspace_file, meta["task_id"], "delivery_validation_execute")
     return {"executed": True, "task_id": meta["task_id"], "receipt": receipt, "evidence_path": str(evidence_path), "delivery": delivery_workflow_status(workspace_file, meta["task_id"])}
@@ -243,7 +273,7 @@ def delivery_matrix(workspace_file: str | Path, task_id: str, *, write: bool = T
     """Derive the requirement-to-evidence matrix and human-readable TECH_SPEC from task contracts."""
     store = WorkspaceStore(workspace_file)
     task_dir, meta = _resolve_task_dir(store, task_id)
-    requirements, subtasks, acceptance, receipts = (_items(task_dir / REQUIREMENTS_FILE), _items(task_dir / SUBTASKS_FILE), _items(task_dir / ACCEPTANCE_FILE), _recent_receipts(task_dir))
+    requirements, subtasks, acceptance, receipts = (_items(task_dir / REQUIREMENTS_FILE), _items(task_dir / SUBTASKS_FILE), _items(task_dir / ACCEPTANCE_FILE), _recent_receipts(store, task_dir, trusted_passed_only=True))
     verified = _verified_acceptance_ids(receipts, task_dir)
     rows = []
     for requirement in requirements:
@@ -265,7 +295,7 @@ def transition_delivery_stage(workspace_file: str | Path, task_id: str, stage: s
     target = stage.strip().lower()
     if target not in STAGES:
         raise ValueError(f"unknown delivery stage: {stage}")
-    initialize_delivery_workflow(workspace_file, task_id, actor=actor)
+    initialize_delivery_workflow(workspace_file, task_id, actor=actor, include_status=False, touch_activity=False)
     store = WorkspaceStore(workspace_file)
     task_dir, meta = _resolve_task_dir(store, task_id)
     with FileLock(str(store.lock_file)):
@@ -273,7 +303,7 @@ def transition_delivery_stage(workspace_file: str | Path, task_id: str, stage: s
         current = str(delivery.get("stage", "intake"))
         if STAGES.index(target) < STAGES.index(current):
             raise ValueError("delivery stage cannot move backwards")
-        gate = _gate_for_target(task_dir, target)
+        gate = _gate_for_target(store, task_dir, target, task_id=str(meta["task_id"]), sync_lock=False)
         _record_gate_result(task_dir, task_id=meta["task_id"], target=target, gate=gate, actor=actor, forced=force)
         if not gate["passed"] and not force:
             return {"transitioned": False, "task_id": meta["task_id"], "from_stage": current, "target_stage": target, "gate": gate, "next_action": gate["next_action"]}
@@ -282,6 +312,7 @@ def transition_delivery_stage(workspace_file: str | Path, task_id: str, stage: s
             delivery["state"] = "done" if target == "close" else "active"
             delivery["updated_at"] = _now()
             delivery.setdefault("history", []).append({"stage": target, "event": "transitioned" if gate["passed"] else "forced_transition", "at": _now(), "actor": _bounded(actor), "gate": gate["code"]})
+            delivery["history"] = delivery["history"][-200:]
             _atomic_write_json(task_dir / DELIVERY_FILE, delivery)
     if target == "close" and target != current:
         update_task_status(workspace_file, meta["task_id"], "done", source="delivery_transition")
@@ -297,11 +328,12 @@ def delivery_workflow_status(workspace_file: str | Path, task_id: str) -> dict[s
     delivery = _read_json(task_dir / DELIVERY_FILE, {})
     stage = str(delivery.get("stage", "intake"))
     next_stage = STAGES[min(STAGES.index(stage) + 1, len(STAGES) - 1)]
-    gate = _gate_for_target(task_dir, next_stage) if stage != "close" else {"passed": True, "code": "complete", "next_action": "任务已完成。", "missing": []}
     requirements = _items(task_dir / REQUIREMENTS_FILE)
     subtasks = _items(task_dir / SUBTASKS_FILE)
     acceptance = _items(task_dir / ACCEPTANCE_FILE)
-    receipts = _recent_receipts(task_dir)
+    gate = _gate_for_target(store, task_dir, next_stage, task_id=str(meta["task_id"])) if stage != "close" else {"passed": True, "code": "complete", "next_action": "任务已完成。", "missing": []}
+    receipts = _recent_receipts(store, task_dir, limit=100)
+    verified_acceptance = _indexed_verified_acceptance_ids(store, task_dir, str(meta["task_id"]))
     return {
         "initialized": True,
         "profile": delivery.get("profile", WORKFLOW_PROFILE),
@@ -310,7 +342,7 @@ def delivery_workflow_status(workspace_file: str | Path, task_id: str) -> dict[s
         "state": delivery.get("state", "active"),
         "next_stage": next_stage if stage != "close" else "",
         "gate": gate,
-        "counts": {"requirements": len(requirements), "subtasks": len(subtasks), "acceptance": len(acceptance), "validation_receipts": len(receipts), "verified_acceptance": len(_verified_acceptance_ids(receipts, task_dir))},
+        "counts": {"requirements": len(requirements), "subtasks": len(subtasks), "acceptance": len(acceptance), "validation_receipts": store.memory_backend().delivery_receipt_count(task_dir.name), "verified_acceptance": len(verified_acceptance)},
         "stage_history": list(delivery.get("history", []))[-12:],
         "recent_validation_receipts": receipts[-5:],
         "next_action": gate["next_action"],
@@ -325,7 +357,7 @@ def delivery_skill_candidate(workspace_file: str | Path, task_id: str) -> dict[s
     requirements = _items(task_dir / REQUIREMENTS_FILE)
     subtasks = _items(task_dir / SUBTASKS_FILE)
     acceptance = _items(task_dir / ACCEPTANCE_FILE)
-    receipts = _recent_receipts(task_dir)
+    receipts = _recent_receipts(store, task_dir, trusted_passed_only=True)
     passed = [
         row
         for row in receipts
@@ -520,12 +552,14 @@ def delivery_skill_replay_set(workspace_file: str | Path, *, skill_id: str, limi
     store = WorkspaceStore(workspace_file)
     skill = _registry_skill(_read_skill_registry(store), skill_id)
     contract_hash = _skill_contract_hash(_normalize_skill_contract(skill.get("contract"))) if skill else ""
-    rows = _recent_skill_replays(store, skill_id=skill_id, limit=limit)
-    if contract_hash:
-        rows = [row for row in rows if row.get("contract_sha256") == contract_hash]
     activation_id = str((skill or {}).get("activation_id", ""))
-    if activation_id:
-        rows = [row for row in rows if row.get("activation_id", "") == activation_id]
+    rows = _recent_skill_replays(
+        store,
+        skill_id=skill_id,
+        contract_hash=contract_hash,
+        activation_id=activation_id,
+        limit=limit,
+    )
     return {
         "skill_id": skill_id,
         "contract_sha256": contract_hash,
@@ -613,10 +647,12 @@ def record_delivery_skill_observation(workspace_file: str | Path, skill_id: str,
         }
         if normalized == "passed" and used_refs.intersection(resolved_refs):
             return {"recorded": False, "reason": "evidence_already_used", "next_action": "每条成功观测必须引用新的真实验证回执。"}
-        row = {"schema_version": 2, "observation_id": f"sobs-{uuid4().hex[:12]}", "skill_id": skill_id, "activation_id": activation_id, "contract_sha256": contract_hash, "outcome": normalized, "evidence_refs": resolved_refs if normalized == "passed" else refs, "latency_ms": _bounded_metric(latency_ms), "token_count": _bounded_metric(token_count), "actor": _bounded(actor), "observed_at": _now()}
+        row = {"schema_version": 3, "observation_id": f"sobs-{uuid4().hex[:12]}", "skill_id": skill_id, "activation_id": activation_id, "contract_sha256": contract_hash, "outcome": normalized, "evidence_refs": resolved_refs if normalized == "passed" else refs, "latency_ms": _bounded_metric(latency_ms), "token_count": _bounded_metric(token_count), "actor": _bounded(actor), "observed_at": _now()}
+        row["replay"] = _skill_replay_row(skill, row)
         with (store.artifacts_dir / DELIVERY_SKILL_OBSERVATIONS_FILE).open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(row, ensure_ascii=False) + "\n")
-        _append_skill_replay(store, skill, row, lock=False)
+            handle.flush()
+            os.fsync(handle.fileno())
     return {"recorded": True, "observation": row, "metrics": evaluate_delivery_skill(workspace_file, skill_id=skill_id)["metrics"]}
 
 
@@ -648,11 +684,12 @@ def evaluate_delivery_skill(workspace_file: str | Path, *, skill_id: str = "") -
     )
     measured_latency = [int(row["latency_ms"]) for row in rows if isinstance(row.get("latency_ms"), int)]
     measured_tokens = [int(row["token_count"]) for row in rows if isinstance(row.get("token_count"), int)]
-    replay_rows = _recent_skill_replays(store, skill_id=skill_id)
-    if contract_hash:
-        replay_rows = [row for row in replay_rows if row.get("contract_sha256") == contract_hash]
-    if activation_id:
-        replay_rows = [row for row in replay_rows if row.get("activation_id", "") == activation_id]
+    replay_rows = _recent_skill_replays(
+        store,
+        skill_id=skill_id,
+        contract_hash=contract_hash,
+        activation_id=activation_id,
+    )
     metrics = {"observations": len(rows), **outcomes, "verified_passed": verified_passed, "redacted_replays": len(replay_rows), "success_rate": round(outcomes["passed"] / max(1, outcomes["passed"] + outcomes["failed"]), 4), "bypass_rate": round(outcomes["bypassed"] / max(1, len(rows)), 4), "avg_latency_ms": round(sum(measured_latency) / len(measured_latency), 2) if measured_latency else None, "avg_token_count": round(sum(measured_tokens) / len(measured_tokens), 2) if measured_tokens else None}
     contract = _normalize_skill_contract((skill or {}).get("contract"))
     minimum_verified = int(contract["replay_policy"]["minimum_verified_passed"])
@@ -722,7 +759,7 @@ def derive_delivery_failure_candidates(workspace_file: str | Path, *, limit_task
     groups: dict[str, dict[str, Any]] = {}
     task_root = store.artifacts_dir / "tasks"
     for task_dir in sorted((path for path in task_root.glob("*") if path.is_dir()), key=lambda path: path.name)[-max(1, min(limit_tasks, 500)):]:
-        for receipt in _recent_receipts(task_dir):
+        for receipt in _recent_receipts(store, task_dir):
             if receipt.get("status") != "failed":
                 continue
             profile = _bounded(str(receipt.get("profile_id") or receipt.get("command") or "external"), 80)
@@ -858,11 +895,11 @@ def _recent_skill_observations(store: WorkspaceStore) -> list[dict[str, Any]]:
     if not path.exists():
         return []
     rows: list[dict[str, Any]] = []
-    for line in path.read_text(encoding="utf-8").splitlines()[-10_000:]:
+    for line in _read_jsonl_tail(path, 10_000):
         try:
             row = json.loads(line)
-        except json.JSONDecodeError:
-            continue
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise DeliveryArtifactCorruptionError(f"delivery observation log is invalid: {path.name}") from exc
         if isinstance(row, dict):
             rows.append(row)
     return rows
@@ -1013,7 +1050,7 @@ def _resolved_delivery_evidence_refs(store: WorkspaceStore, refs: Any, *, source
         for path in task_root.iterdir()
         if path.is_dir()
     } if task_root.is_dir() else {}
-    receipt_cache: dict[str, list[dict[str, Any]]] = {}
+    receipt_cache: dict[tuple[str, str], dict[str, Any] | None] = {}
     values = refs if isinstance(refs, list) else []
     normalized_refs = list(dict.fromkeys(str(ref).strip()[:240] for ref in values if str(ref).strip()))[:10_000]
     for ref in normalized_refs:
@@ -1032,11 +1069,25 @@ def _resolved_delivery_evidence_refs(store: WorkspaceStore, refs: Any, *, source
         task_dir = (task_root / task_id).resolve()
         if task_dir.parent != task_root or not task_dir.is_dir():
             continue
-        receipts = receipt_cache.setdefault(task_id, _recent_receipts(task_dir))
-        receipt = next((row for row in receipts if row.get("receipt_id") == receipt_id and row.get("status") == "passed"), None)
+        cache_key = (task_id, receipt_id)
+        if cache_key not in receipt_cache:
+            rows = _recent_receipts(store, task_dir, receipt_ids=[receipt_id])
+            receipt_cache[cache_key] = next(
+                (row for row in rows if row.get("receipt_id") == receipt_id and row.get("status") == "passed"),
+                None,
+            )
+        receipt = receipt_cache[cache_key]
         if receipt is None:
             continue
-        if ref.startswith("delivery-evidence:") and not (task_dir / "verification-evidence" / f"{receipt_id}.json").is_file():
+        receipt_refs = _bounded_refs(receipt.get("evidence_refs", []))
+        if ref.startswith("delivery-validation:"):
+            if receipt.get("evidence_kind") != "manual_verified" or ref not in receipt_refs:
+                continue
+        elif (
+            receipt.get("evidence_kind") != "executor"
+            or ref not in receipt_refs
+            or not (task_dir / "verification-evidence" / f"{receipt_id}.json").is_file()
+        ):
             continue
         resolved.append(ref)
     return resolved
@@ -1046,15 +1097,16 @@ def _task_evidence_ref(task_id: str) -> str:
     return hashlib.sha256(task_id.encode("utf-8")).hexdigest()[:16]
 
 
-def _append_skill_replay(store: WorkspaceStore, skill: dict[str, Any], observation: dict[str, Any], *, lock: bool = True) -> None:
+def _skill_replay_row(skill: dict[str, Any], observation: dict[str, Any]) -> dict[str, Any]:
     contract = _normalize_skill_contract(skill.get("contract"))
     if not _skill_contract_valid(contract):
-        return
+        return {}
     skill_id = str(skill.get("skill_id", ""))
     contract_hash = _skill_contract_hash(contract)
-    row = {
-        "schema_version": 2,
+    return {
+        "schema_version": 3,
         "replay_id": f"sreplay-{uuid4().hex[:12]}",
+        "observation_id": str(observation.get("observation_id", "")),
         "skill_id": skill_id,
         "activation_id": str(skill.get("activation_id", "")),
         "contract_sha256": contract_hash,
@@ -1066,33 +1118,76 @@ def _append_skill_replay(store: WorkspaceStore, skill: dict[str, Any], observati
         "observed_at": observation.get("observed_at", ""),
         "privacy": "redacted_contract_metrics_only",
     }
-    path = _skill_replay_path(store, skill_id)
-    if lock:
-        with FileLock(str(store.lock_file)):
-            path.parent.mkdir(parents=True, exist_ok=True)
-            with path.open("a", encoding="utf-8") as handle:
-                handle.write(json.dumps(row, ensure_ascii=False) + "\n")
-    else:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps(row, ensure_ascii=False) + "\n")
 
 
-def _recent_skill_replays(store: WorkspaceStore, *, skill_id: str, limit: int = 10_000) -> list[dict[str, Any]]:
+def _recent_skill_replays(
+    store: WorkspaceStore,
+    *,
+    skill_id: str,
+    contract_hash: str = "",
+    activation_id: str = "",
+    limit: int = 10_000,
+) -> list[dict[str, Any]]:
     if not skill_id:
         return []
+    bounded_limit = max(1, min(limit, 10_000))
+
+    def matches(row: dict[str, Any]) -> bool:
+        return bool(
+            row.get("privacy") == "redacted_contract_metrics_only"
+            and (not contract_hash or row.get("contract_sha256") == contract_hash)
+            and (not activation_id or row.get("activation_id", "") == activation_id)
+        )
+
+    rows = [
+        replay
+        for observation in _recent_skill_observations(store)
+        if observation.get("skill_id") == skill_id
+        and isinstance((replay := observation.get("replay")), dict)
+        and matches(replay)
+    ]
+    observation_ids = {str(row.get("observation_id", "")) for row in rows if row.get("observation_id")}
     path = _skill_replay_path(store, skill_id)
-    if not path.exists():
+    if path.exists():
+        for line in _read_jsonl_tail(path, 10_000):
+            try:
+                row = json.loads(line)
+            except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                raise DeliveryArtifactCorruptionError(f"delivery replay log is invalid: {path.name}") from exc
+            if (
+                isinstance(row, dict)
+                and matches(row)
+                and str(row.get("observation_id", "")) not in observation_ids
+            ):
+                rows.append(row)
+    return rows[-bounded_limit:]
+
+
+def _read_jsonl_tail(path: Path, limit: int) -> list[str]:
+    if limit <= 0 or not path.exists():
         return []
-    rows: list[dict[str, Any]] = []
-    for line in path.read_text(encoding="utf-8").splitlines()[-max(1, min(limit, 10_000)):]:
-        try:
-            row = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(row, dict) and row.get("privacy") == "redacted_contract_metrics_only":
-            rows.append(row)
-    return rows
+    block_size = 64 * 1024
+    with path.open("rb") as handle:
+        handle.seek(0, 2)
+        position = handle.tell()
+        blocks: list[bytes] = []
+        newlines = 0
+        while position > 0 and newlines <= limit:
+            read_size = min(block_size, position)
+            position -= read_size
+            handle.seek(position)
+            block = handle.read(read_size)
+            blocks.append(block)
+            newlines += block.count(b"\n")
+    data = b"".join(reversed(blocks))
+    if position > 0:
+        _, separator, data = data.partition(b"\n")
+        if not separator:
+            return []
+    try:
+        return data.decode("utf-8").splitlines()[-limit:]
+    except UnicodeDecodeError as exc:
+        raise DeliveryArtifactCorruptionError(f"delivery JSONL is not UTF-8: {path.name}") from exc
 
 
 def _skill_replay_path(store: WorkspaceStore, skill_id: str) -> Path:
@@ -1151,8 +1246,17 @@ def _bounded_metric(value: int | None) -> int | None:
         return None
 
 
-def _gate_for_target(task_dir: Path, target: str) -> dict[str, Any]:
-    requirements, subtasks, acceptance, receipts = (_items(task_dir / REQUIREMENTS_FILE), _items(task_dir / SUBTASKS_FILE), _items(task_dir / ACCEPTANCE_FILE), _recent_receipts(task_dir))
+def _gate_for_target(
+    store: WorkspaceStore,
+    task_dir: Path,
+    target: str,
+    *,
+    task_id: str,
+    sync_lock: bool = True,
+) -> dict[str, Any]:
+    requirements = _items(task_dir / REQUIREMENTS_FILE)
+    subtasks = _items(task_dir / SUBTASKS_FILE)
+    acceptance = _items(task_dir / ACCEPTANCE_FILE)
     if target == "intake":
         return _gate("ready", [], "补充任务目标后进入需求拆解。")
     if target == "breakdown":
@@ -1180,7 +1284,7 @@ def _gate_for_target(task_dir: Path, target: str) -> dict[str, Any]:
         missing = [str(item.get("id", "")) for item in subtasks if item.get("status") not in {"implemented", "skipped"}]
         return _gate("implementation_required", missing, "将所有子任务标记为已实现或跳过，并记录原因。")
     required_ids = {str(item.get("id", "")) for item in acceptance if bool(item.get("required", True))}
-    passed_ids = _verified_acceptance_ids(receipts, task_dir)
+    passed_ids = _indexed_verified_acceptance_ids(store, task_dir, task_id, acquire_lock=sync_lock)
     return _gate("verified_evidence_required", sorted(required_ids - passed_ids), "执行已注册验证 profile，或记录带证据引用的人工验证，并关联每一项必需验收标准。")
 
 
@@ -1212,6 +1316,7 @@ def _append_history(store: WorkspaceStore, task_dir: Path, *, event: str, actor:
         delivery = _read_json(task_dir / DELIVERY_FILE, {})
         delivery["updated_at"] = _now()
         delivery.setdefault("history", []).append({"stage": delivery.get("stage", "intake"), "event": event, "at": _now(), "actor": _bounded(actor), "details": details})
+        delivery["history"] = delivery["history"][-200:]
         _atomic_write_json(task_dir / DELIVERY_FILE, delivery)
 
 
@@ -1229,6 +1334,26 @@ def _verified_acceptance_ids(receipts: list[dict[str, Any]], task_dir: Path) -> 
         and row.get("evidence_kind") in {"executor", "manual_verified"}
         and _receipt_has_resolvable_evidence(task_dir, row)
         for identifier in row.get("acceptance_ids", [])
+    }
+
+
+def _indexed_verified_acceptance_ids(
+    store: WorkspaceStore,
+    task_dir: Path,
+    task_id: str,
+    *,
+    acquire_lock: bool = True,
+) -> set[str]:
+    _ensure_delivery_receipt_index(store, task_dir, acquire_lock=acquire_lock)
+    rows = store.memory_backend().delivery_verified_acceptance_candidates(
+        task_dir.name,
+        _task_evidence_ref(task_id),
+    )
+    return {
+        row["acceptance_id"]
+        for row in rows
+        if row["evidence_kind"] == "manual_verified"
+        or (task_dir / "verification-evidence" / f"{row['receipt_id']}.json").is_file()
     }
 
 
@@ -1300,16 +1425,19 @@ def _tech_spec_markdown(meta: dict[str, Any], matrix: dict[str, Any]) -> str:
 
 
 def _read_json(path: Path, default: dict[str, Any]) -> dict[str, Any]:
+    if not path.exists():
+        return default
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
-        return value if isinstance(value, dict) else default
-    except (OSError, json.JSONDecodeError):
-        return default
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise DeliveryArtifactCorruptionError(f"delivery artifact is invalid: {path.name}") from exc
+    if not isinstance(value, dict):
+        raise DeliveryArtifactCorruptionError(f"delivery artifact must be a JSON object: {path.name}")
+    return value
 
 
 def _write_json(path: Path, value: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    _atomic_write_json(path, value)
 
 
 def _items(path: Path) -> list[dict[str, Any]]:
@@ -1317,20 +1445,98 @@ def _items(path: Path) -> list[dict[str, Any]]:
     return [item for item in value if isinstance(item, dict)]
 
 
-def _recent_receipts(task_dir: Path) -> list[dict[str, Any]]:
+def _ensure_delivery_receipt_index(store: WorkspaceStore, task_dir: Path, *, acquire_lock: bool = True) -> None:
     path = task_dir / VALIDATION_RECEIPTS_FILE
+    if acquire_lock:
+        if _delivery_receipt_index_current(store, task_dir, path):
+            return
+        with FileLock(str(store.lock_file)):
+            _ensure_delivery_receipt_index(store, task_dir, acquire_lock=False)
+        return
     if not path.exists():
-        return []
-    rows: list[dict[str, Any]] = []
-    with path.open("r", encoding="utf-8") as handle:
-        for line in handle:
-            try:
-                value = json.loads(line)
-                if isinstance(value, dict):
-                    rows.append(value)
-            except json.JSONDecodeError:
-                continue
-    return rows
+        store.memory_backend().upsert_delivery_receipts(
+            task_dir.name,
+            [],
+            source_size=0,
+            source_mtime_ns=0,
+            synced_at=_now(),
+        )
+        return
+    stat = path.stat()
+    state = store.memory_backend().delivery_receipt_sync_state(task_dir.name)
+    if (
+        state["source_size"] == stat.st_size
+        and state["source_mtime_ns"] == stat.st_mtime_ns
+        and state["projection_version"] == DELIVERY_RECEIPT_PROJECTION_VERSION
+    ):
+        return
+
+    def rows() -> Any:
+        with path.open("r", encoding="utf-8") as handle:
+            for line in handle:
+                if not line.strip():
+                    continue
+                try:
+                    value = json.loads(line)
+                except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                    raise DeliveryArtifactCorruptionError(f"delivery receipt log is invalid: {path.name}") from exc
+                if not isinstance(value, dict):
+                    raise DeliveryArtifactCorruptionError(f"delivery receipt log contains an invalid row: {path.name}")
+                if not str(value.get("receipt_id", "")):
+                    value["receipt_id"] = f"legacy-{hashlib.sha256(line.encode('utf-8')).hexdigest()[:16]}"
+                    value.setdefault("evidence_kind", "recorded_external")
+                yield value
+
+    # Register the snapshot observed before reading. If an uncooperative writer
+    # appends concurrently, the next query sees a size/mtime mismatch and repairs it.
+    store.memory_backend().replace_delivery_receipts(
+        task_dir.name,
+        rows(),
+        source_size=stat.st_size,
+        source_mtime_ns=stat.st_mtime_ns,
+        synced_at=_now(),
+    )
+
+
+def _delivery_receipt_index_current(store: WorkspaceStore, task_dir: Path, path: Path) -> bool:
+    if not path.exists():
+        return False
+    stat = path.stat()
+    state = store.memory_backend().delivery_receipt_sync_state(task_dir.name)
+    return bool(
+        state["source_size"] == stat.st_size
+        and state["source_mtime_ns"] == stat.st_mtime_ns
+        and state["projection_version"] == DELIVERY_RECEIPT_PROJECTION_VERSION
+    )
+
+
+def _index_delivery_receipts(store: WorkspaceStore, task_dir: Path, receipts: list[dict[str, Any]]) -> None:
+    path = task_dir / VALIDATION_RECEIPTS_FILE
+    stat = path.stat()
+    store.memory_backend().upsert_delivery_receipts(
+        task_dir.name,
+        receipts,
+        source_size=stat.st_size,
+        source_mtime_ns=stat.st_mtime_ns,
+        synced_at=_now(),
+    )
+
+
+def _recent_receipts(
+    store: WorkspaceStore,
+    task_dir: Path,
+    *,
+    receipt_ids: list[str] | None = None,
+    trusted_passed_only: bool = False,
+    limit: int = 0,
+) -> list[dict[str, Any]]:
+    _ensure_delivery_receipt_index(store, task_dir)
+    return store.memory_backend().query_delivery_receipts(
+        task_dir.name,
+        receipt_ids=receipt_ids,
+        trusted_passed_only=trusted_passed_only,
+        limit=limit,
+    )
 
 
 def _bounded_refs(value: Any) -> list[str]:
@@ -1343,7 +1549,9 @@ def _require_string_list(value: Any, field: str) -> list[str]:
         return []
     if not isinstance(value, list):
         raise ValueError(f"{field} must be a JSON array")
-    return [str(item) for item in value]
+    if not all(isinstance(item, str) for item in value):
+        raise ValueError(f"{field} must contain only strings")
+    return value
 
 
 def _bounded(value: str, limit: int = 120) -> str:

@@ -568,7 +568,7 @@ Memory Center 当前有三类存储角色。
 
 融合阶段在固定候选预算内执行 relation-weighted personalized graph ranking；可选 Cross-Encoder 只重排前 12 个候选，并且仅使用当前 MCP 进程已显式预热的模型。磁盘缓存不触发查询期加载；预热中并发查询立即保留基础排序，不等待模型锁。模型档案可选择 MiniLM 平衡档或 BGE-M3 多语言档，档案切换必须通过显式完整 reindex 创建新 generation。LTR 只接受候选级人工验证标签，不能从 agent guidance 采纳率推断。
 
-交付 Skill 使用稳定 `skill_id` 和逐次 canary `activation_id`：回滚后复用同一 registry 记录但开启新 activation，旧观测不进入新发布门禁。验证回执使用任务标识哈希与随机 receipt ID，不把任务标题写入 replay；人工验证要求明确 actor，回执按任务流式解析，成功观测在工作区事务内完成证据去重、观测与 replay 追加。Skill registry 与协作资产 registry 一样采用临时文件原子替换、有效备份恢复和双损坏拒写，并按 Skill 合并独立陈旧快照；canary、契约更新、发布和回滚使用完整读改写事务。外部评测采用可选 `skill-up` 适配器：Memory Center 仍是 Skill ID、发布状态、证据和回滚的唯一事实源；外部失败不能自动改变 Skill 发布状态。
+交付 Skill 使用稳定 `skill_id` 和逐次 canary `activation_id`：回滚后复用同一 registry 记录但开启新 activation，旧观测不进入新发布门禁。验证回执使用任务标识哈希与随机 receipt ID，不把任务标题写入 replay；人工验证要求明确 actor，但以 `self_asserted` 标记身份可信等级。回执 JSONL 是审计源，统一 `graph.db` 的 `delivery_receipts` 是查询投影，验收项和证据引用另存为稀疏关系索引。旧日志在工作区锁内按 500 条分批惰性回填，`projection_version` 负责 schema 演进；同步水位登记读取前的尺寸和 mtime，因此锁外追加最多触发下一次补读，不会被永久越过。状态和关闭门禁直接查询验收覆盖，只有最近回执展示读取最多 100 条 payload。新增回执以 JSONL 先落盘、SQLite 后提交的顺序写入，中断后由尺寸和 mtime 差异自动补齐。成功观测在工作区事务内完成证据去重，并把 replay 作为 observation 内的派生投影一次落盘；旧 replay 只在按当前契约和 activation 过滤后参与数量限制。Skill registry 与协作资产 registry 一样采用临时文件原子替换、有效备份恢复和双损坏拒写，并按 Skill 合并独立陈旧快照；canary、契约更新、发布和回滚使用完整读改写事务。外部评测采用可选 `skill-up` 适配器：Memory Center 仍是 Skill ID、发布状态、证据和回滚的唯一事实源；外部失败不能自动改变 Skill 发布状态。
 
 检索融合权重不从“是否执行建议”推断。`retrieval/calibration.py` 只读取带 evidence 的人工验证 `retrieval-source` 回放，使用平滑后验与样本收缩生成提案，并仅由显式 `--apply` 写入当前工作区的校准快照。
 

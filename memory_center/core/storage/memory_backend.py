@@ -3,8 +3,12 @@ from __future__ import annotations
 import json
 import sqlite3
 import threading
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
+
+DELIVERY_RECEIPT_PROJECTION_VERSION = 2
+_DELIVERY_RECEIPT_BATCH_SIZE = 500
 
 
 class _MemoryRecordOperations:
@@ -139,6 +143,49 @@ class _MemoryRecordOperations:
             );
             """
         )
+        conn.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS delivery_receipts (
+              task_id TEXT NOT NULL,
+              receipt_id TEXT NOT NULL,
+              recorded_at TEXT DEFAULT '',
+              status TEXT DEFAULT '',
+              evidence_kind TEXT DEFAULT '',
+              payload_json TEXT NOT NULL,
+              PRIMARY KEY(task_id, receipt_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_delivery_receipts_task_status_kind
+              ON delivery_receipts(task_id, status, evidence_kind, recorded_at);
+            CREATE INDEX IF NOT EXISTS idx_delivery_receipts_task_recent
+              ON delivery_receipts(task_id, recorded_at DESC, receipt_id DESC);
+            CREATE TABLE IF NOT EXISTS delivery_receipt_sync (
+              task_id TEXT PRIMARY KEY,
+              source_size INTEGER NOT NULL DEFAULT 0,
+              source_mtime_ns INTEGER NOT NULL DEFAULT 0,
+              projection_version INTEGER NOT NULL DEFAULT 0,
+              synced_at TEXT DEFAULT ''
+            );
+            CREATE TABLE IF NOT EXISTS delivery_receipt_acceptance (
+              task_id TEXT NOT NULL,
+              receipt_id TEXT NOT NULL,
+              acceptance_id TEXT NOT NULL,
+              PRIMARY KEY(task_id, receipt_id, acceptance_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_delivery_receipt_acceptance_lookup
+              ON delivery_receipt_acceptance(task_id, acceptance_id, receipt_id);
+            CREATE TABLE IF NOT EXISTS delivery_receipt_evidence_refs (
+              task_id TEXT NOT NULL,
+              receipt_id TEXT NOT NULL,
+              evidence_ref TEXT NOT NULL,
+              PRIMARY KEY(task_id, receipt_id, evidence_ref)
+            );
+            CREATE INDEX IF NOT EXISTS idx_delivery_receipt_evidence_lookup
+              ON delivery_receipt_evidence_refs(task_id, receipt_id, evidence_ref);
+            """
+        )
+        sync_columns = {str(row["name"]) for row in conn.execute("PRAGMA table_info(delivery_receipt_sync)")}
+        if "projection_version" not in sync_columns:
+            conn.execute("ALTER TABLE delivery_receipt_sync ADD COLUMN projection_version INTEGER NOT NULL DEFAULT 0")
         conn.commit()
 
     def append_record(self, collection: str, payload: dict[str, Any], record_id: str = "") -> None:
@@ -191,6 +238,225 @@ class _MemoryRecordOperations:
                 """,
                 rows,
             )
+
+    def upsert_delivery_receipts(
+        self,
+        task_id: str,
+        receipts: list[dict[str, Any]],
+        *,
+        source_size: int,
+        source_mtime_ns: int,
+        synced_at: str,
+        replace_task: bool = False,
+    ) -> None:
+        self._write_delivery_receipts(
+            task_id,
+            receipts,
+            source_size=source_size,
+            source_mtime_ns=source_mtime_ns,
+            synced_at=synced_at,
+            replace_task=replace_task,
+        )
+
+    def replace_delivery_receipts(
+        self,
+        task_id: str,
+        receipts: Iterable[dict[str, Any]],
+        *,
+        source_size: int,
+        source_mtime_ns: int,
+        synced_at: str,
+    ) -> None:
+        """Replace one task projection while consuming legacy JSONL in bounded batches."""
+        self._write_delivery_receipts(
+            task_id,
+            receipts,
+            source_size=source_size,
+            source_mtime_ns=source_mtime_ns,
+            synced_at=synced_at,
+            replace_task=True,
+        )
+
+    def _write_delivery_receipts(
+        self,
+        task_id: str,
+        receipts: Iterable[dict[str, Any]],
+        *,
+        source_size: int,
+        source_mtime_ns: int,
+        synced_at: str,
+        replace_task: bool,
+    ) -> None:
+        with self.connect() as conn:
+            if replace_task:
+                conn.execute("DELETE FROM delivery_receipts WHERE task_id=?", (task_id,))
+                conn.execute("DELETE FROM delivery_receipt_acceptance WHERE task_id=?", (task_id,))
+                conn.execute("DELETE FROM delivery_receipt_evidence_refs WHERE task_id=?", (task_id,))
+            batch: list[dict[str, Any]] = []
+            for receipt in receipts:
+                if str(receipt.get("receipt_id", "")):
+                    batch.append(receipt)
+                if len(batch) >= _DELIVERY_RECEIPT_BATCH_SIZE:
+                    self._upsert_delivery_receipt_batch(conn, task_id, batch)
+                    batch.clear()
+            if batch:
+                self._upsert_delivery_receipt_batch(conn, task_id, batch)
+            conn.execute(
+                """
+                INSERT INTO delivery_receipt_sync(task_id, source_size, source_mtime_ns, projection_version, synced_at)
+                VALUES(?, ?, ?, ?, ?)
+                ON CONFLICT(task_id) DO UPDATE SET
+                  source_size=excluded.source_size,
+                  source_mtime_ns=excluded.source_mtime_ns,
+                  projection_version=excluded.projection_version,
+                  synced_at=excluded.synced_at
+                """,
+                (task_id, max(0, source_size), max(0, source_mtime_ns), DELIVERY_RECEIPT_PROJECTION_VERSION, synced_at),
+            )
+
+    @staticmethod
+    def _upsert_delivery_receipt_batch(conn: Any, task_id: str, receipts: list[dict[str, Any]]) -> None:
+        receipt_ids = [str(receipt["receipt_id"]) for receipt in receipts]
+        placeholders = ",".join("?" for _ in receipt_ids)
+        delete_args = [task_id, *receipt_ids]
+        conn.execute(
+            f"DELETE FROM delivery_receipt_acceptance WHERE task_id=? AND receipt_id IN ({placeholders})",
+            delete_args,
+        )
+        conn.execute(
+            f"DELETE FROM delivery_receipt_evidence_refs WHERE task_id=? AND receipt_id IN ({placeholders})",
+            delete_args,
+        )
+        conn.executemany(
+            """
+            INSERT INTO delivery_receipts(
+              task_id, receipt_id, recorded_at, status, evidence_kind, payload_json
+            ) VALUES(?, ?, ?, ?, ?, ?)
+            ON CONFLICT(task_id, receipt_id) DO UPDATE SET
+              recorded_at=excluded.recorded_at,
+              status=excluded.status,
+              evidence_kind=excluded.evidence_kind,
+              payload_json=excluded.payload_json
+            """,
+            [
+                (
+                    task_id,
+                    str(receipt["receipt_id"]),
+                    str(receipt.get("recorded_at", "")),
+                    str(receipt.get("status", "")),
+                    str(receipt.get("evidence_kind", "")),
+                    json.dumps(receipt, ensure_ascii=False),
+                )
+                for receipt in receipts
+            ],
+        )
+        acceptance_rows = [
+            (task_id, str(receipt["receipt_id"]), str(acceptance_id))
+            for receipt in receipts
+            for acceptance_id in receipt.get("acceptance_ids", [])
+            if str(acceptance_id)
+        ]
+        evidence_rows = [
+            (task_id, str(receipt["receipt_id"]), str(evidence_ref))
+            for receipt in receipts
+            for evidence_ref in receipt.get("evidence_refs", [])
+            if str(evidence_ref)
+        ]
+        if acceptance_rows:
+            conn.executemany(
+                "INSERT OR IGNORE INTO delivery_receipt_acceptance(task_id, receipt_id, acceptance_id) VALUES(?, ?, ?)",
+                acceptance_rows,
+            )
+        if evidence_rows:
+            conn.executemany(
+                "INSERT OR IGNORE INTO delivery_receipt_evidence_refs(task_id, receipt_id, evidence_ref) VALUES(?, ?, ?)",
+                evidence_rows,
+            )
+
+    def delivery_receipt_sync_state(self, task_id: str) -> dict[str, int]:
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT source_size, source_mtime_ns, projection_version FROM delivery_receipt_sync WHERE task_id=?",
+                (task_id,),
+            ).fetchone()
+        return {
+            "source_size": int(row["source_size"]) if row is not None else -1,
+            "source_mtime_ns": int(row["source_mtime_ns"]) if row is not None else -1,
+            "projection_version": int(row["projection_version"]) if row is not None else 0,
+        }
+
+    def delivery_verified_acceptance_candidates(self, task_id: str, task_ref: str) -> list[dict[str, str]]:
+        """Return compact trusted acceptance candidates without decoding receipt payloads."""
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT DISTINCT a.acceptance_id, '' AS receipt_id, 'manual_verified' AS evidence_kind
+                FROM delivery_receipts r
+                JOIN delivery_receipt_acceptance a
+                  ON a.task_id=r.task_id AND a.receipt_id=r.receipt_id
+                WHERE r.task_id=? AND r.status='passed' AND r.evidence_kind='manual_verified'
+                  AND EXISTS (
+                    SELECT 1 FROM delivery_receipt_evidence_refs e
+                    WHERE e.task_id=r.task_id AND e.receipt_id=r.receipt_id
+                      AND e.evidence_ref=? || r.receipt_id
+                  )
+                UNION ALL
+                SELECT DISTINCT a.acceptance_id, r.receipt_id, 'executor' AS evidence_kind
+                FROM delivery_receipts r
+                JOIN delivery_receipt_acceptance a
+                  ON a.task_id=r.task_id AND a.receipt_id=r.receipt_id
+                WHERE r.task_id=? AND r.status='passed' AND r.evidence_kind='executor'
+                  AND EXISTS (
+                    SELECT 1 FROM delivery_receipt_evidence_refs e
+                    WHERE e.task_id=r.task_id AND e.receipt_id=r.receipt_id
+                      AND e.evidence_ref=? || r.receipt_id
+                  )
+                ORDER BY acceptance_id, receipt_id
+                """,
+                (task_id, f"delivery-validation:{task_ref}:", task_id, "delivery-evidence:"),
+            ).fetchall()
+        return [
+            {
+                "acceptance_id": str(row["acceptance_id"]),
+                "receipt_id": str(row["receipt_id"]),
+                "evidence_kind": str(row["evidence_kind"]),
+            }
+            for row in rows
+        ]
+
+    def query_delivery_receipts(
+        self,
+        task_id: str,
+        *,
+        receipt_ids: list[str] | None = None,
+        trusted_passed_only: bool = False,
+        limit: int = 0,
+    ) -> list[dict[str, Any]]:
+        clauses = ["task_id=?"]
+        args: list[Any] = [task_id]
+        ids = list(dict.fromkeys(str(item) for item in receipt_ids or [] if str(item)))[:500]
+        if ids:
+            placeholders = ",".join("?" for _ in ids)
+            clauses.append(f"receipt_id IN ({placeholders})")
+            args.extend(ids)
+        if trusted_passed_only:
+            clauses.extend(["status='passed'", "evidence_kind IN ('executor','manual_verified')"])
+        order = "DESC" if limit > 0 else "ASC"
+        sql = f"SELECT payload_json FROM delivery_receipts WHERE {' AND '.join(clauses)} ORDER BY recorded_at {order}, receipt_id {order}"
+        if limit > 0:
+            sql += " LIMIT ?"
+            args.append(min(limit, 10_000))
+        with self.connect() as conn:
+            rows = conn.execute(sql, args).fetchall()
+        payloads = [json.loads(str(row["payload_json"])) for row in rows]
+        return list(reversed(payloads)) if limit > 0 else payloads
+
+    def delivery_receipt_count(self, task_id: str) -> int:
+        with self.connect() as conn:
+            return int(conn.execute(
+                "SELECT COUNT(*) FROM delivery_receipts WHERE task_id=?",
+                (task_id,),
+            ).fetchone()[0])
 
     def upsert_assertions(self, assertions: list[dict[str, Any]]) -> int:
         """Publish a batch of static assertions without loading historical rows."""

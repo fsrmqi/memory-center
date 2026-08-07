@@ -1,5 +1,33 @@
 # Changelog / 更新日志
 
+## 4.3.75 交付读模型一致性与有界查询 / Delivery Projection Consistency and Bounded Queries
+
+- 回执惰性同步改为锁内快照，并登记读取前的尺寸与 mtime；并发追加不再被错误标记为已同步，下一次读取会自动补齐。旧读模型通过 `projection_version` 惰性升级，JSONL 回填在单个 SQLite 事务中按 500 条分批消费。
+- 新增验收项与证据引用稀疏关系索引。状态和关闭门禁直接查询可信验收覆盖，不再加载、传输和反序列化全部可信回执；早期阶段也不再执行无关回执查询。
+- JSONL 尾读会丢弃任意字节起点产生的不完整首行，合法中文 UTF-8 不再误报损坏。新旧 replay 在按 `contract_sha256` 和 `activation_id` 过滤后才应用数量上限，旧数据不会挤掉当前发布证据。
+- 内部幂等初始化不再重复更新任务活动时间；新增并发水位、多字节尾读、混合 replay、有界查询、流式回填和旧 schema 升级回归测试。
+
+## 4.3.75 Delivery Projection Consistency and Bounded Queries
+
+- Receipt lazy synchronization now uses a locked snapshot and records the size and mtime observed before reading. Concurrent appends can no longer be marked as already synchronized and are repaired on the next read. Existing projections upgrade lazily through `projection_version`, with JSONL consumed in 500-row batches inside one SQLite transaction.
+- Added sparse acceptance and evidence-reference indexes. Status and close gates query trusted acceptance coverage directly instead of loading, transferring, and decoding every trusted receipt; early stages no longer issue unrelated receipt queries.
+- JSONL tail reads discard an incomplete first line created by an arbitrary byte offset, preserving valid multibyte UTF-8. Mixed replay sources are filtered by `contract_sha256` and `activation_id` before limits are applied, so legacy rows cannot evict current publication evidence.
+- Internal idempotent initialization no longer writes task activity twice. Regression coverage now includes synchronization races, multibyte tails, mixed replays, bounded queries, streaming backfill, and old-schema upgrades.
+
+## 4.3.74 可信回执与增量读模型 / Trusted Receipts and Incremental Read Model
+
+- 修复外部回执伪造成 `manual_verified` 的可信漏洞：解析同时校验状态、证据种类、原始引用归属和执行器证据文件。系统规范引用始终优先保留，不会被 50 条用户引用截断。
+- 验证回执 JSONL 继续作为审计源，统一 `graph.db` 新增轻量 `delivery_receipts` 查询读模型。旧 JSONL 首次访问时按任务惰性回填，后续用尺寸和 mtime 增量同步；任务 history 固定保留最近 200 条，千条连续写入不再反复扫描全部历史。
+- `manual_verified` 保存 `reported_actor`、`actor_source` 与 `identity_assurance=self_asserted`，明确区分调用方声明和认证身份。字符串数组拒绝对象或嵌套数组；损坏 JSON/JSONL 中断操作并保留原文件。
+- replay 改为 observation 内的派生投影，一次原子追加同时保存观测事实和脱敏 replay；旧 replay 文件仍可读取，但新观测不再依赖第二次文件写入。
+
+## 4.3.74 Trusted Receipts and Incremental Read Model
+
+- Fixed a trust bug that allowed external receipts to masquerade as `manual_verified`. Resolution now checks status, evidence kind, original reference ownership, and executor evidence files. The canonical reference is reserved ahead of user references and cannot be truncated at the 50-reference boundary.
+- Receipt JSONL remains the audit source while the unified `graph.db` gains a lightweight `delivery_receipts` query model. Existing JSONL is lazily backfilled per task and then synchronized by size and mtime. Task history retains the latest 200 entries, avoiding repeated full-history scans during long write sequences.
+- `manual_verified` stores `reported_actor`, `actor_source`, and `identity_assurance=self_asserted`, distinguishing caller claims from authenticated identity. String arrays reject objects and nested arrays; corrupt JSON or JSONL stops the operation without overwriting the source.
+- Replay is now a derived projection embedded in each observation, so one atomic append stores both the outcome fact and redacted replay. Legacy replay files remain readable, while new observations no longer depend on a second file write.
+
 ## 4.3.73 交付证据并发与长期一致性 / Delivery Evidence Concurrency and Long-Term Consistency
 
 - 验证回执不再只读取最后 100 条；任务级流式读取保证早期通过证据持续可解析，同时避免全工作区扫描。人工验证现在必须提供明确操作人，数组字段在 CLI、HTTP、MCP 统一校验。

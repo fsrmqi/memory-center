@@ -18,6 +18,7 @@ from memory_center.core.tasks.artifacts import (
     update_task_artifact,
 )
 from memory_center.core.tasks.delivery import (
+    DeliveryArtifactCorruptionError,
     DeliverySkillRegistryCorruptionError,
     delivery_skill_candidate,
     delivery_skill_replay_set,
@@ -163,6 +164,9 @@ def test_manual_validation_is_available_through_cli_http_and_mcp(demo_workspace)
     assert mcp["receipt"]["evidence_kind"] == "manual_verified"
     assert mcp["receipt"]["evidence_refs"][0].startswith("delivery-validation:")
     assert mcp["receipt"]["actor"] == "carol"
+    assert mcp["receipt"]["reported_actor"] == "carol"
+    assert mcp["receipt"]["actor_source"] == "mcp"
+    assert mcp["receipt"]["identity_assurance"] == "self_asserted"
 
     with pytest.raises(ValueError, match="actor is required"):
         record_delivery_validation(
@@ -183,6 +187,25 @@ def test_manual_validation_is_available_through_cli_http_and_mcp(demo_workspace)
             {"task_id": [task_id], "payload": [malformed], "actor": ["dave"]},
             str(demo_workspace),
         )
+    with pytest.raises(ValueError, match="evidence_refs must contain only strings"):
+        record_delivery_validation(
+            demo_workspace,
+            task_id,
+            status="passed",
+            evidence_kind="manual_verified",
+            actor="dave",
+            evidence_refs=[{"invalid": True}],
+        )
+    crowded = record_delivery_validation(
+        demo_workspace,
+        task_id,
+        status="passed",
+        evidence_kind="manual_verified",
+        actor="erin",
+        evidence_refs=[f"external:{index}" for index in range(50)],
+    )["receipt"]
+    assert crowded["evidence_refs"][0].startswith("delivery-validation:")
+    assert len(crowded["evidence_refs"]) == 50
 
 
 def test_delivery_skill_contract_is_available_through_admin_and_http(demo_workspace) -> None:
@@ -330,6 +353,20 @@ def test_closed_verified_delivery_canary_requires_objective_evidence_before_publ
         actor="parallel-reviewer",
     )["receipt"]
     evidence_ref = receipt["evidence_refs"][-1]
+    task_ref = evidence_ref.split(":", 2)[1]
+    external_receipt = record_delivery_validation(
+        demo_workspace,
+        task_id,
+        status="passed",
+        evidence_kind="recorded_external",
+    )["receipt"]
+    forged_ref = f"delivery-validation:{task_ref}:{external_receipt['receipt_id']}"
+    assert record_delivery_skill_observation(
+        demo_workspace,
+        skill_id,
+        outcome="passed",
+        evidence_refs=[forged_ref],
+    )["reason"] == "evidence_not_resolvable"
     original_resolver = delivery_module._resolved_delivery_evidence_refs
     barrier = threading.Barrier(2)
     call_lock = threading.Lock()
@@ -358,6 +395,24 @@ def test_closed_verified_delivery_canary_requires_objective_evidence_before_publ
         ))
     assert sum(bool(result.get("recorded")) for result in results) == 1
     assert {result.get("reason", "recorded") for result in results} == {"recorded", "evidence_already_used"}
+    replay_path = demo_workspace.parent / "artifacts" / "skills" / "delivery-replays" / f"{skill_id}.jsonl"
+    replay_path.unlink(missing_ok=True)
+    replay_path.parent.mkdir(parents=True, exist_ok=True)
+    replay_path.write_text(
+        "".join(
+            json.dumps({
+                "privacy": "redacted_contract_metrics_only",
+                "observation_id": f"legacy-{index}",
+                "skill_id": skill_id,
+                "activation_id": "superseded-activation",
+                "contract_sha256": "superseded-contract",
+            }) + "\n"
+            for index in range(20)
+        ),
+        encoding="utf-8",
+    )
+    assert delivery_skill_replay_set(demo_workspace, skill_id=skill_id)["count"] == 1
+    assert evaluate_delivery_skill(demo_workspace, skill_id=skill_id)["metrics"]["redacted_replays"] == 1
 
 
 def test_delivery_offline_failure_and_trajectory_synthesis_are_bounded(demo_workspace) -> None:
@@ -515,7 +570,11 @@ def test_delivery_gate_keeps_older_verified_receipts_resolvable(demo_workspace) 
         evidence_kind="manual_verified",
         actor="reviewer",
     )
-    for _ in range(101):
+    receipts_path = demo_workspace.parent / "artifacts" / "tasks" / task_id / "verification-receipts.jsonl"
+    initial_mtime_ns = receipts_path.stat().st_mtime_ns
+    initialize_delivery_workflow(demo_workspace, task_id, include_status=False)
+    assert receipts_path.stat().st_mtime_ns == initial_mtime_ns
+    for _ in range(250):
         record_delivery_validation(
             demo_workspace,
             task_id,
@@ -526,6 +585,107 @@ def test_delivery_gate_keeps_older_verified_receipts_resolvable(demo_workspace) 
     status = delivery_workflow_status(demo_workspace, task_id)
 
     assert status["counts"]["verified_acceptance"] == 1
+    assert status["counts"]["validation_receipts"] == 251
+    delivery_file = demo_workspace.parent / "artifacts" / "tasks" / task_id / "delivery.json"
+    assert len(json.loads(delivery_file.read_text(encoding="utf-8"))["history"]) == 200
+
+
+def test_delivery_corruption_is_reported_without_overwriting_source(demo_workspace) -> None:
+    task_id = create_task_space(demo_workspace, title="损坏保护", intent="保留原始任务状态")["task_id"]
+    initialize_delivery_workflow(demo_workspace, task_id)
+    delivery_file = demo_workspace.parent / "artifacts" / "tasks" / task_id / "delivery.json"
+    corrupted = b"{broken-delivery"
+    delivery_file.write_bytes(corrupted)
+
+    with pytest.raises(DeliveryArtifactCorruptionError, match="delivery.json"):
+        record_delivery_validation(demo_workspace, task_id, status="recorded")
+
+    assert delivery_file.read_bytes() == corrupted
+
+
+def test_delivery_jsonl_tail_preserves_valid_multibyte_rows(tmp_path) -> None:
+    path = tmp_path / "valid.jsonl"
+    line = json.dumps({"text": "中" * 18}, ensure_ascii=False) + "\n"
+    path.write_text(line * 1000, encoding="utf-8")
+
+    rows = delivery_module._read_jsonl_tail(path, 20)
+
+    assert len(rows) == 20
+    assert all(json.loads(row)["text"] == "中" * 18 for row in rows)
+
+
+def test_delivery_receipt_sync_does_not_advance_past_concurrent_append(demo_workspace, monkeypatch) -> None:
+    from memory_center.core.storage.workspace import WorkspaceStore
+
+    task_id = create_task_space(demo_workspace, title="并发回执", intent="验证同步水位")['task_id']
+    initialize_delivery_workflow(demo_workspace, task_id, include_status=False)
+    store = WorkspaceStore(demo_workspace)
+    task_dir = store.artifacts_dir / "tasks" / task_id
+    path = task_dir / delivery_module.VALIDATION_RECEIPTS_FILE
+
+    def receipt(index: int) -> dict[str, object]:
+        return {
+            "receipt_id": f"race-{index}",
+            "recorded_at": f"2026-01-01T00:00:0{index}+00:00",
+            "status": "recorded",
+            "evidence_kind": "recorded_external",
+        }
+
+    path.write_text(json.dumps(receipt(1)) + "\n", encoding="utf-8")
+    delivery_module._recent_receipts(store, task_dir)
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(receipt(2)) + "\n")
+
+    backend = store.memory_backend()
+    original_replace = backend.replace_delivery_receipts
+
+    def append_after_snapshot(task_key, receipts, **kwargs):
+        snapshot = list(receipts)
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(receipt(3)) + "\n")
+        return original_replace(task_key, snapshot, **kwargs)
+
+    monkeypatch.setattr(backend, "replace_delivery_receipts", append_after_snapshot)
+    first = delivery_module._recent_receipts(store, task_dir)
+    monkeypatch.setattr(backend, "replace_delivery_receipts", original_replace)
+    second = delivery_module._recent_receipts(store, task_dir)
+
+    assert [row["receipt_id"] for row in first] == ["race-1", "race-2"]
+    assert [row["receipt_id"] for row in second] == ["race-1", "race-2", "race-3"]
+
+
+def test_delivery_status_uses_bounded_receipt_queries(demo_workspace, monkeypatch) -> None:
+    from memory_center.core.storage.runtime import RuntimeStore
+
+    task_id = create_task_space(demo_workspace, title="有界查询", intent="禁止全量解码")['task_id']
+    initialize_delivery_workflow(demo_workspace, task_id, include_status=False)
+    original_query = RuntimeStore.query_delivery_receipts
+    calls: list[dict[str, object]] = []
+
+    def bounded_query(self, task_key, **kwargs):
+        calls.append(kwargs)
+        assert kwargs.get("limit", 0) or kwargs.get("receipt_ids")
+        return original_query(self, task_key, **kwargs)
+
+    monkeypatch.setattr(RuntimeStore, "query_delivery_receipts", bounded_query)
+
+    assert delivery_workflow_status(demo_workspace, task_id)["initialized"] is True
+    assert calls == [{"receipt_ids": None, "trusted_passed_only": False, "limit": 100}]
+
+
+def test_delivery_write_touches_task_activity_once(demo_workspace, monkeypatch) -> None:
+    task_id = create_task_space(demo_workspace, title="活动时间", intent="避免重复写入")['task_id']
+    initialize_delivery_workflow(demo_workspace, task_id, include_status=False)
+    calls: list[str] = []
+    monkeypatch.setattr(
+        delivery_module,
+        "touch_task_activity",
+        lambda workspace_file, current_task_id, source: calls.append(source),
+    )
+
+    record_delivery_validation(demo_workspace, task_id, status="recorded")
+
+    assert calls == ["delivery_validation"]
 
 
 def test_delivery_scope_contract_is_visible_and_can_be_enforced(demo_workspace) -> None:

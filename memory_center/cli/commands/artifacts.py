@@ -278,7 +278,7 @@ def register_artifact_commands(app: typer.Typer) -> None:
     @app.command("delivery-record-validation")
     def artifact_delivery_validation_cmd(workspace: str = typer.Option(...), task_id: str = typer.Option(...), status: str = typer.Option(...), summary: str = typer.Option(""), command: str = typer.Option(""), exit_code: typing.Optional[int] = typer.Option(None), acceptance_ids: str = typer.Option("[]", help="JSON 数组"), evidence_refs: str = typer.Option("[]", help="JSON 数组"), evidence_kind: str = typer.Option("recorded_external", help="recorded_external|manual_verified"), actor: str = typer.Option("")):
         """记录已执行的验证结果，不会执行传入命令。"""
-        print(record_delivery_validation(workspace, task_id, status=status, summary=summary, command=command, exit_code=exit_code, acceptance_ids=json.loads(acceptance_ids), evidence_refs=json.loads(evidence_refs), actor=actor, evidence_kind=evidence_kind))
+        print(record_delivery_validation(workspace, task_id, status=status, summary=summary, command=command, exit_code=exit_code, acceptance_ids=json.loads(acceptance_ids), evidence_refs=json.loads(evidence_refs), actor=actor, actor_source="cli", evidence_kind=evidence_kind))
 
     @app.command("delivery-breakdown")
     def artifact_delivery_breakdown_cmd(workspace: str = typer.Option(...), task_id: str = typer.Option(...), source_refs: str = typer.Option("[]", help="JSON 数组"), summary: str = typer.Option("")):

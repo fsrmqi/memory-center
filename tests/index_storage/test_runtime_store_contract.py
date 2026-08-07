@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import sqlite3
+
 import pytest
 
 from memory_center.core.storage.graph import GraphEdge, GraphNode
@@ -10,6 +12,53 @@ from memory_center.core.storage.maintenance import (
 )
 from memory_center.core.storage.runtime import RuntimeStore
 from memory_center.core.storage.workspace import WorkspaceStore
+
+
+def test_delivery_receipt_projection_upgrades_and_streams_legacy_rows(tmp_path) -> None:
+    db_path = tmp_path / "graph.db"
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            CREATE TABLE delivery_receipt_sync(
+              task_id TEXT PRIMARY KEY,
+              source_size INTEGER NOT NULL DEFAULT 0,
+              source_mtime_ns INTEGER NOT NULL DEFAULT 0,
+              synced_at TEXT DEFAULT ''
+            )
+            """
+        )
+        conn.execute("INSERT INTO delivery_receipt_sync VALUES('legacy-task', 12, 34, 'old')")
+
+    consumed = 0
+
+    def receipts():
+        nonlocal consumed
+        for index in range(1201):
+            consumed += 1
+            receipt_id = f"receipt-{index}"
+            yield {
+                "receipt_id": receipt_id,
+                "status": "passed",
+                "evidence_kind": "manual_verified",
+                "acceptance_ids": ["AC-1"],
+                "evidence_refs": [f"delivery-validation:task-ref:{receipt_id}"],
+            }
+
+    with RuntimeStore(db_path) as store:
+        assert store.delivery_receipt_sync_state("legacy-task")["projection_version"] == 0
+        store.replace_delivery_receipts(
+            "task",
+            receipts(),
+            source_size=100,
+            source_mtime_ns=200,
+            synced_at="now",
+        )
+        state = store.delivery_receipt_sync_state("task")
+        candidates = store.delivery_verified_acceptance_candidates("task", "task-ref")
+
+    assert consumed == 1201
+    assert state == {"source_size": 100, "source_mtime_ns": 200, "projection_version": 2}
+    assert candidates == [{"acceptance_id": "AC-1", "receipt_id": "", "evidence_kind": "manual_verified"}]
 
 
 def test_runtime_store_unifies_graph_and_runtime_records(tmp_path) -> None:

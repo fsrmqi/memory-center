@@ -1,4 +1,4 @@
-0# Memory Center / 记忆中心
+# Memory Center / 记忆中心
 
 > **MCP-native project memory and knowledge graph service for AI coding agents.**
 >
@@ -162,7 +162,7 @@ For core task-memory artifacts such as `context.md`, `requirement.md`, `design.m
 
 对于可持续的需求开发任务，可在任务空间初始化 `feature_delivery_v2`：它将需求来源、范围边界、代码定位、验收、策略门禁和验证证据关联为 `intake -> breakdown -> locate -> implement -> verify -> close` 的有界状态机。普通回执仅标为外部记录；关闭任务需要执行器证据或带引用的人工验证。执行器只运行 workspace policy 中预注册的 argv profile，绝不执行模型或需求正文传入的 shell 字符串；CLI、MCP、HTTP 的具体用法见 [docs/REFERENCE.md](./docs/REFERENCE.md) 与 [docs/MCP_GUIDE.md](./docs/MCP_GUIDE.md)。
 
-已关闭且验证完整的交付可以生成 Skill 候选，但候选不会直接进入默认检索。它必须声明完整边界契约并匹配真实验证回执。人工验证要求明确操作人，并自动生成不含任务标题的 `delivery-validation` 引用；成功观测必须解析到实际 `passed` 回执，同一回执在并发请求中也只能计数一次。回执按任务流式读取，早期证据不会被后续记录挤出。每次 canary 使用独立 `activation_id`，契约修订和回滚重启后的旧观测不会进入当前发布门禁。评估与发布共同使用 `minimum_verified_passed`；残缺旧契约不进入默认推荐。出现回归可立即回滚，历史证据仍保留。Skill registry 使用事务化原子替换与备份恢复，协作资产同步失败则返回显式修复动作，不会误报发布状态。
+已关闭且验证完整的交付可以生成 Skill 候选，但候选不会直接进入默认检索。它必须声明完整边界契约并匹配真实验证回执。人工验证要求明确操作人，并自动生成不含任务标题的 `delivery-validation` 引用；记录同时声明 `reported_actor`、入口 `actor_source` 和 `identity_assurance=self_asserted`，不把调用方填写的名字误称为认证身份。成功观测必须解析到实际 `passed` 回执，并核对证据种类及原始引用归属；同一回执在并发请求中也只能计数一次。JSONL 保留完整审计，SQLite 读模型在锁内分批增量同步，并通过稀疏验收索引执行门禁，早期证据不会被后续记录挤出或在热路径反复全量扫描。每次 canary 使用独立 `activation_id`；新旧 replay 先按当前契约和 activation 过滤，再应用数量上限。评估与发布共同使用 `minimum_verified_passed`；残缺旧契约不进入默认推荐。出现回归可立即回滚，历史证据仍保留。Skill registry 使用事务化原子替换与备份恢复，协作资产同步失败则返回显式修复动作，不会误报发布状态。
 
 任务、已发布 Skill、Wiki 文档和活跃 CodeGraph 可登记为统一协作资产。资产默认 `private`；既有资产只能由 owner 更新，`team` 或 `restricted` 共享必须由 owner 提交并由另一维护者审批，随后才可绑定给指定 Agent 或角色。`mc_context_pack(agent_id=..., role=...)` 只装载授权资产的有界摘要、来源引用和代码证据，并为资产预留独立 Token 预算，不复制文档正文、源码或对话内容。
 

@@ -355,6 +355,7 @@ def workspace_delivery_validation(
     evidence_refs: list[str] | None = None,
     evidence_kind: str = "recorded_external",
     actor: str = "",
+    actor_source: str = "http",
 ) -> dict[str, Any]:
     return record_delivery_validation(
         workspace_file,
@@ -367,6 +368,7 @@ def workspace_delivery_validation(
         evidence_refs=evidence_refs,
         evidence_kind=evidence_kind,
         actor=actor,
+        actor_source=actor_source,
     )
 
 

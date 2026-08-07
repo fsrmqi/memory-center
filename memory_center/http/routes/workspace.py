@@ -202,6 +202,7 @@ def _workspace_delivery_validation(rp):
         evidence_refs=payload.get("evidence_refs", []),
         evidence_kind=str(payload.get("evidence_kind", "recorded_external")),
         actor=rp.get("actor", ""),
+        actor_source="http",
     )
 
 

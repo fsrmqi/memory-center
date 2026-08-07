@@ -289,7 +289,7 @@ memory-center artifact delivery-skill-replay --workspace /abs/path/.memory-cente
 memory-center artifact delivery-skill-publish --workspace /abs/path/.memory-center/workspace.yaml --task-id <task_id>
 ```
 
-契约必须含至少一种明确语言、适用条件、禁止条件、前置条件、验收证据、停止条件、回滚方式、输入字段、输出字段及 `replay_policy.redacted=true`；`unknown` 不能进入灰度。人工验证必须显式传入 `actor`，并会自动生成脱敏、可解析的 `delivery-validation` 引用；成功观测必须引用实际存在的 `passed` 回执，同一回执不能重复计数。回执按任务流式读取，早期有效证据不会因新增记录而失效。每次 canary 使用独立 `activation_id`，契约修订、回滚重启后的旧观测和 replay 不会进入当前评估。`minimum_verified_passed` 默认是 3，评估和发布使用完全相同的阈值。默认检索只使用契约完整的 `published` Skill，并同时返回禁止条件、停止条件与回滚动作；发现回归时使用 `delivery-skill-rollback`，历史证据仍保留。`delivery-failure-candidates` 与 `delivery-skill-synthesize` 是显式离线维护命令，不在日常查询中自动运行。
+契约必须含至少一种明确语言、适用条件、禁止条件、前置条件、验收证据、停止条件、回滚方式、输入字段、输出字段及 `replay_policy.redacted=true`；`unknown` 不能进入灰度。人工验证必须显式传入 `actor`，并会自动生成脱敏、可解析的 `delivery-validation` 引用；返回的 `identity_assurance=self_asserted` 表示该身份由调用方声明。成功观测必须引用实际存在的 `passed` 回执，并核对证据种类和原始引用归属，同一回执不能重复计数。JSONL 保留完整审计，SQLite 读模型按任务锁内分批回填，并通过稀疏验收关系查询门禁；早期有效证据不会因新增记录而失效，也不会每次扫描或反序列化全部历史。每次 canary 使用独立 `activation_id`，契约修订、回滚重启后的旧观测和 replay 会在应用数量上限前被过滤，不会挤掉当前评估证据。`minimum_verified_passed` 默认是 3，评估和发布使用完全相同的阈值。默认检索只使用契约完整的 `published` Skill，并同时返回禁止条件、停止条件与回滚动作；发现回归时使用 `delivery-skill-rollback`，历史证据仍保留。`delivery-failure-candidates` 与 `delivery-skill-synthesize` 是显式离线维护命令，不在日常查询中自动运行。
 
 ### 选择交付画像并约束任务范围
 

@@ -695,6 +695,7 @@ def build_admin_registry(
                 evidence_refs=(parse_payload(payload) or {}).get("evidence_refs", []),
                 evidence_kind=str((parse_payload(payload) or {}).get("evidence_kind", "recorded_external")),
                 actor=str((parse_payload(payload) or {}).get("actor", "")),
+                actor_source=source or "mcp",
             ),
             "delivery_validation_execute": lambda: execute_delivery_validation(
                 wf,

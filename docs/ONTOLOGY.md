@@ -54,6 +54,7 @@
 |------|------|------|------|
 | **SessionEvent** | session-events.jsonl | L0 | 会话事件（工具调用、读写、错误） |
 | **WriteReceipt** | write-receipts.jsonl | L0 | 写入回执（记忆层写入审计） |
+| **ValidationReceipt** | 任务 `verification-receipts.jsonl` + SQLite `delivery_receipts` | L0 | 验证审计事实；人工身份标记为调用方自声明，SQLite 仅作按任务增量查询读模型 |
 | **Ref** | refs/ 目录 | L0 | 大 payload 外置引用 |
 | **Task** | tasks/ 目录 | L2 | 任务空间（含工件） |
 | **Handoff** | handoff-history.jsonl | L1 | 模型交接记录 |
@@ -62,7 +63,7 @@
 | **BenchmarkTrend** | benchmark-trends.jsonl | L0 | 基准趋势数据点 |
 | **DeliverySkill** | `artifacts/skills/delivery-skill-registry.json` | L2 | 从已验证交付派生的可复用经验，带稳定 ID、activation、适用/禁止边界、验收证据、停止/回滚及 I/O 契约 |
 | **SkillObservation** | delivery-skill-observations.jsonl | L0 | 对 canary/published Skill 的有界效果观测，绑定 `activation_id`、`contract_sha256` 和可解析验证回执 |
-| **SkillReplay** | `artifacts/skills/delivery-replays/<skill-id>.jsonl` | L0 | 自动派生的脱敏回放，仅含契约哈希、语言、结果、证据引用和性能指标 |
+| **SkillReplay** | SkillObservation 内嵌派生投影 | L0 | 自动派生的脱敏回放，仅含契约哈希、语言、结果、证据引用和性能指标；旧独立 JSONL 仅作历史读取 |
 | **FailureCandidate** | delivery-failure-candidates.json | L2 | 仅含哈希任务引用、验证 profile、验收标识和证据引用的离线失败模式候选 |
 
 ### 2.3 运行/治理实体
