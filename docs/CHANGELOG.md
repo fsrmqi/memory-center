@@ -1,5 +1,15 @@
 # Changelog / 更新日志
 
+## 4.3.76 MCP 装载状态防误判 / MCP Loading-State Diagnostics
+
+- Agent 协议将 MCP 状态改为三态：已发现、装载中或未知、已确认不可用。首轮工具快照缺少 `mc_*` 时先延迟发现并调用 `mc_freshness`，配置 enabled 但会话未注入工具时明确提示刷新会话，不再误报“未加载”或“不可用”。
+- 生成的 Memory Center MCP 绑定新增 30 秒启动预算；`runtime-audit` 会把该字段纳入一致性检查。示例 Agent 指令、MCP 指南和用户指南同步更新。
+
+## 4.3.76 MCP Loading-State Diagnostics
+
+- Agent instructions now model MCP availability as three states: discovered, loading or unknown, and confirmed unavailable. A missing `mc_*` entry in the initial tool snapshot triggers lazy discovery and an `mc_freshness` probe; an enabled binding without session tools now asks for a session refresh instead of falsely reporting the server as unloaded or unavailable.
+- Generated Memory Center MCP bindings now include a 30-second startup budget, and `runtime-audit` validates it. Example agent instructions and MCP/user guides have been updated.
+
 ## 4.3.75 交付读模型一致性与有界查询 / Delivery Projection Consistency and Bounded Queries
 
 - 回执惰性同步改为锁内快照，并登记读取前的尺寸与 mtime；并发追加不再被错误标记为已同步，下一次读取会自动补齐。旧读模型通过 `projection_version` 惰性升级，JSONL 回填在单个 SQLite 事务中按 500 条分批消费。

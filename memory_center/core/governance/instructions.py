@@ -45,12 +45,13 @@ AGENT_PROTOCOL_TEMPLATE = """# Memory Center Agent Protocol
 8. 任务结束后，调用 `mc_close(session_id=..., outcome=..., record_case=True)` 结束并沉淀案例。
 9. 完成验证后，`mc_close` 已自动包含 record_case，无需额外操作。
 10. `context.md`、`requirement.md`、`design.md`、`plan.md`、`test-plan.md`、`change-log.md`、`current-summary.md` 属于追加保护工件，只允许尾部追加或去重，不允许整篇覆盖。
-11. 只有在确认当前会话工具列表里确实没有 `mc_*` 工具后，才说明：`Memory Center MCP 当前不可用，以下基于本地代码搜索完成。`
-12. 若当前目录是子项目且 `mc_*` 工具缺失，先运行 `memory-center runtime-audit --workspace {workspace_config_path} --fix` 刷新 `.codex/mcp.json`、`.cursor/mcp.json`、`.mcp.json` 中的 `memory-center` server 绑定，再提示用户重开或刷新宿主会话。
-13. 当 `mc_lookup` 的 `agent_next_steps` 返回 `rebuild_vector_ann` 时，必须依次调用 `mc_admin(action="vector_ann_rebuild")` 和 `mc_admin(action="vector_ann_tune")`，再重试原查询；不得对大型向量库使用 Python 全量扫描。
-14. 对概念型、中文需求与代码混合查询，优先调用 `mc_admin(action="advanced_query", text="原查询")`，它会启用 ANN 和有界 Cross-Encoder 重排；重排器只使用当前 MCP 进程已预热模型，返回 `reranker_not_prewarmed` 时保留基础排序，不得在请求链路加载或下载模型。只有用户明确同意时，管理员才可在当前 MCP 进程调用 `mc_admin(action="retrieval_reranker_prewarm")`；普通符号查找仍使用 `mc_lookup`。
-15. `mc_admin(action="retrieval_model_profile", text="multilingual", force=true)` 会选择 BGE-M3 档案，但随后必须显式完整 reindex；Agent 不得自行切换模型档案或触发全量 reindex，除非用户明确要求。
-16. 定期调用 `mc_admin(action="eval_retrieval_replay")` 检查带 evidence 的人工验证样本；只有返回 `ready` 才可使用 `force=true` 应用融合权重提案。
+11. 首轮工具列表没有 `mc_*` 不等于 Memory Center 不可用。先执行延迟工具发现并查找 `mcp__memory_center__mc_freshness`；发现后调用一次 `mc_freshness(scope="workspace")` 完成端到端验证。
+12. 延迟发现后仍缺少工具时，先检查宿主绑定：Codex 使用 `codex mcp get memory-center`，其他宿主检查对应 MCP 配置。若配置存在且 enabled，状态应表达为“Memory Center 已配置，当前宿主工具快照尚未刷新”，提示刷新或新建会话，禁止表述为“未加载”或“不可用”。
+13. 只有绑定不存在、命令不存在，或 MCP initialize / 轻量调用明确失败时，才说明：`Memory Center MCP 当前不可用，以下基于本地代码搜索完成。` 若当前目录是子项目，先运行 `memory-center runtime-audit --workspace {workspace_config_path} --fix` 修复绑定。
+14. 当 `mc_lookup` 的 `agent_next_steps` 返回 `rebuild_vector_ann` 时，必须依次调用 `mc_admin(action="vector_ann_rebuild")` 和 `mc_admin(action="vector_ann_tune")`，再重试原查询；不得对大型向量库使用 Python 全量扫描。
+15. 对概念型、中文需求与代码混合查询，优先调用 `mc_admin(action="advanced_query", text="原查询")`，它会启用 ANN 和有界 Cross-Encoder 重排；重排器只使用当前 MCP 进程已预热模型，返回 `reranker_not_prewarmed` 时保留基础排序，不得在请求链路加载或下载模型。只有用户明确同意时，管理员才可在当前 MCP 进程调用 `mc_admin(action="retrieval_reranker_prewarm")`；普通符号查找仍使用 `mc_lookup`。
+16. `mc_admin(action="retrieval_model_profile", text="multilingual", force=true)` 会选择 BGE-M3 档案，但随后必须显式完整 reindex；Agent 不得自行切换模型档案或触发全量 reindex，除非用户明确要求。
+17. 定期调用 `mc_admin(action="eval_retrieval_replay")` 检查带 evidence 的人工验证样本；只有返回 `ready` 才可使用 `force=true` 应用融合权重提案。
 
 ## 推荐任务链路
 
@@ -71,7 +72,7 @@ AGENT_PROTOCOL_TEMPLATE = """# Memory Center Agent Protocol
 - `mc_admin(action="write_plan")` 不直接写入，而是返回执行计划。
 - `mc_close` 包含：结束 session + 同步案例到任务空间 + 记录到 cross-service memory，一步到位。
 - L3 级别信息优先进入 `workspace_profile`、`team_rules`、`architecture_invariants`、`active_migration_policy` 等核心记忆块。
-- 若在子项目中看不到 `mc_*` 工具，优先运行 `memory-center runtime-audit --workspace {workspace_config_path} --fix` 自动补齐本目录和兄弟 service 的 MCP 绑定。
+- 若首轮看不到 `mc_*` 工具，先做延迟工具发现；配置已启用但工具仍不可见时刷新宿主会话。只有绑定缺失时才运行 `memory-center runtime-audit --workspace {workspace_config_path} --fix`，避免把工具快照延迟误诊为服务不可用。
 - `vector_ann_status`、`vector_ann_rebuild`、`vector_ann_tune`、`advanced_query`、`retrieval_reranker_status`、`retrieval_reranker_prewarm`、`retrieval_model_profile` 和 `eval_retrieval_replay` 都通过 `mc_admin(action=...)` 调用；先遵守返回的 stop_condition 和 next_action，再进入宽泛搜索。
 
 ## Spring Cloud 重点风险
@@ -125,6 +126,7 @@ def _memory_center_mcp_server_config(workspace_file: Path) -> dict[str, object]:
         "type": "stdio",
         "command": shutil.which("memory-center-mcp") or "memory-center-mcp",
         "args": ["--workspace", str(workspace_file.resolve())],
+        "startup_timeout_sec": 30,
     }
 
 
@@ -184,6 +186,7 @@ def inspect_agent_mcp_bindings(store: WorkspaceStore, workspace_root: str | Path
                 bool(server)
                 and str(server.get("command", "")) == str(expected_server["command"])
                 and list(server.get("args", []) or []) == expected_args
+                and int(server.get("startup_timeout_sec", 0) or 0) == int(expected_server["startup_timeout_sec"])
             )
             bindings.append(
                 {
@@ -197,6 +200,8 @@ def inspect_agent_mcp_bindings(store: WorkspaceStore, workspace_root: str | Path
                     "args": server.get("args", []) if server else [],
                     "expected_command": expected_server["command"],
                     "expected_args": expected_args,
+                    "startup_timeout_sec": int(server.get("startup_timeout_sec", 0) or 0),
+                    "expected_startup_timeout_sec": expected_server["startup_timeout_sec"],
                     "parse_error": parse_error,
                     "ok": ok,
                 }

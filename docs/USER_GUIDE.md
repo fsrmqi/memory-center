@@ -229,6 +229,8 @@ memory-center setup-agent --workspace /abs/path/.memory-center/workspace.yaml
 
 `setup-agent` refreshes instructions, hooks, MCP bindings, and reports whether the host session should be restarted. Use `memory-center runtime-audit --workspace ...` when you only need diagnostics.
 
+如果 Agent 首轮没有看到 `mc_*`，先把状态视为“装载中或未知”：执行延迟工具发现，并用 `mc_freshness` 做轻量验证。Codex 中可运行 `codex mcp get memory-center`；若显示 `enabled: true`，但当前会话仍无工具，应刷新或新建会话，不要误报“Memory Center 未加载”。只有绑定缺失、命令不存在或 MCP 调用明确失败时才执行降级流程。
+
 ### HTTP + Workbench
 
 ```bash

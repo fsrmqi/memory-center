@@ -717,6 +717,9 @@ def test_write_agent_instructions_includes_sync_workflow(tmp_path: Path):
         assert "write_judge" in content
         assert "write_plan" in content
         assert "只允许尾部追加" in content
+        assert "首轮工具列表没有 `mc_*` 不等于 Memory Center 不可用" in content
+        assert "当前宿主工具快照尚未刷新" in content
+        assert "禁止表述为“未加载”或“不可用”" in content
 
 
 def test_write_agent_instructions_are_mirrored_to_service_roots(tmp_path: Path):
@@ -757,6 +760,7 @@ def test_write_agent_instructions_write_mcp_configs_to_service_roots(tmp_path: P
         server = config["mcpServers"]["memory-center"]
         assert server["command"].endswith("memory-center-mcp")
         assert server["args"] == ["--workspace", str(workspace.resolve())]
+        assert server["startup_timeout_sec"] == 30
 
 
 def test_write_agent_instructions_merge_existing_mcp_configs(tmp_path: Path):
@@ -788,6 +792,7 @@ def test_write_agent_instructions_merge_existing_mcp_configs(tmp_path: Path):
     assert "idea" in merged["mcpServers"]
     assert "memory-center" in merged["mcpServers"]
     assert merged["mcpServers"]["memory-center"]["args"] == ["--workspace", str(workspace.resolve())]
+    assert merged["mcpServers"]["memory-center"]["startup_timeout_sec"] == 30
 
 
 def test_mcp_workspace_context_exposes_startup_diagnostics_for_service_root(tmp_path: Path):

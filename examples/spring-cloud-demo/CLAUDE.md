@@ -15,7 +15,7 @@
 8. 任务结束后，先调用 `workspace_end_session(session_id, ...)`，再调用 `workspace_sync_case_artifacts(session_id, ...)`，把本次任务结论、设计和变更摘要同步回任务空间。
 9. 完成验证后，再调用 `workspace_record_case(task, projects, files, flow, risk_points, verified_by)` 沉淀长期经验。
 10. `context.md`、`requirement.md`、`design.md`、`plan.md`、`test-plan.md`、`change-log.md`、`current-summary.md` 属于追加保护工件，只允许尾部追加或去重，不允许整篇覆盖。
-11. 如果 MCP 不可用，必须明确说明：Memory Center MCP 当前不可用，以下基于本地代码搜索完成。
+11. 首轮工具列表没有 Memory Center 工具不等于服务不可用。先做延迟工具发现并轻量调用；配置已启用但工具仍不可见时说明“宿主工具快照尚未刷新”，提示刷新或新建会话。只有绑定、命令或 MCP 调用明确失败时，才说明不可用并降级为本地搜索。
 
 ## 推荐任务链路
 
@@ -51,5 +51,4 @@
 - 核心链路日志必须包含 chainId、siteCode、uid、业务主键和阶段码。
 - 跨时间分表/索引迁移必须支持重复执行和失败补偿。
 <!-- memory-center:end -->
-
 

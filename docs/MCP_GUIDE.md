@@ -155,6 +155,7 @@ MCP 当前公开的是 15 个 task-level tools：
 - `memory-center init` / `memory-center reindex` 写入的受管说明块和 MCP 绑定现在会镜像到各个已配置 service root，明确提示并实际绑定上层 `.memory-center/workspace.yaml`；这能减少 Agent 在子项目里“没连上父级 workspace 就不调用 MCP”的情况。
 - `memory-center setup-agent --workspace <workspace.yaml>` 是推荐的一键接入口，会刷新说明、Hooks、MCP 绑定并返回是否需要重启宿主会话。
 - `memory-center runtime-audit --workspace <workspace.yaml> --fix` 会检查并刷新根目录和子项目目录下的 `.codex/mcp.json`、`.cursor/mcp.json`、`.mcp.json`，用于自动修复看不到 `mc_*` 工具的宿主接入问题。
+- 首轮工具快照没有 `mc_*` 只表示“未知或装载中”，不能直接判定 MCP 不可用。Agent 应先执行延迟工具发现并调用 `mc_freshness`；Codex 可用 `codex mcp get memory-center` 检查全局绑定。配置为 enabled 但当前会话仍无工具时，应提示刷新或新建会话；只有绑定、命令或实际 MCP 调用失败时才降级。
 - MCP server 暴露 `memory-center://startup-diagnostics` resource，用于查看启动时解析到的 workspace、MCP 绑定状态和下一步修复建议。
 - 每次 MCP 工具调用都会自动记录到 `.memory-center/memory/mcp-invocations.jsonl`，仅保留工具名、脱敏参数摘要、耗时、状态、结果规模与可选 session/task 关联，不保存完整请求或响应。`mc_start` 创建的 session 会自动关联同一 MCP 进程后的调用，并同步为 `tool_call` session event，供 replay、采纳分析和后续验证使用。
 - Every MCP tool call is automatically recorded in `.memory-center/memory/mcp-invocations.jsonl`. The audit log keeps only tool name, redacted input summary, duration, status, result size, and optional session/task linkage. Calls following `mc_start` reuse its session in the same MCP process and are mirrored as `tool_call` session events for replay and verification.
