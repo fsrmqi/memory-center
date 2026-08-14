@@ -1037,6 +1037,8 @@ memory-center release-gate \
 
 `--cochange-commits N` 显式启用 Git co-change 独立评测：以同一提交中除种子外的文件为真值，报告 precision、recall 和候选规模。4.3.78 默认预测 8 个文件，按关系权重与边置信度对最多 1,600 条相邻边做确定性聚合；不会扫描完整文件子图。它只持久化哈希引用与聚合指标，执行失败单独标记为 `environment_error`，不会被计为零分样本。也可单独运行 `memory-center eval-cochange --workspace <workspace.yaml> --max-commits 20`。
 
+4.3.80 起，co-change 主指标改为严格 walk-forward：先用至少 5 个旧提交预热，再逐提交预测下一批真实共变文件，评估提交在打分后才进入训练历史。当前图只输出诊断指标，不参与校准。`memory-center eval-cochange --workspace <workspace.yaml> --max-commits 20 --warmup-commits 5 --apply` 只有在时间前向结果不低于过去热门文件基线且样本达标时才写入哈希先验；先验只调整已有图候选排序。
+
 Use `--query-samples N` (default `1`) to execute each query N times: the first sample records cold-query latency and the remaining samples produce hot-query P95. Release baselines prefer hot P95; N=1 preserves the existing single-query cost.
 
 `release-gate` 默认要求热查询 P95 不超过 `2000ms`，并返回 `stage_p95_ms` 帮助定位精确检索、BM25、语义、图排序或邻居扩展的瓶颈。维护窗口可通过 `--max-hot-query-p95-ms 0` 显式关闭绝对预算，但仍会保留基线退化检查。

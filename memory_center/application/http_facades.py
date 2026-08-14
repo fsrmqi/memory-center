@@ -183,8 +183,15 @@ def workspace_change_review(
     )
 
 
-def workspace_eval_cochange(workspace_file: str, *, max_commits: int = 20) -> dict[str, Any]:
-    return evaluate_git_cochange(workspace_file, max_commits=max_commits)
+def workspace_eval_cochange(
+    workspace_file: str, *, max_commits: int = 20, warmup_commits: int = 5, apply: bool = False
+) -> dict[str, Any]:
+    return evaluate_git_cochange(
+        workspace_file,
+        max_commits=max_commits,
+        warmup_commits=warmup_commits,
+        apply=apply,
+    )
 
 
 def workspace_background_job_cancel(workspace_file: str, job_id: str) -> dict[str, Any]:

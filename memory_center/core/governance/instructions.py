@@ -78,7 +78,7 @@ AGENT_PROTOCOL_TEMPLATE = """# Memory Center Agent Protocol
 - L3 级别信息优先进入 `workspace_profile`、`team_rules`、`architecture_invariants`、`active_migration_policy` 等核心记忆块。
 - 若首轮看不到 `mc_*` 工具，先做延迟工具发现；配置已启用但工具仍不可见时刷新宿主会话。只有绑定缺失时才运行 `memory-center runtime-audit --workspace {workspace_config_path} --fix`，避免把工具快照延迟误诊为服务不可用。
 - `vector_ann_status`、`vector_ann_rebuild`、`vector_ann_tune`、`advanced_query`、`retrieval_reranker_status`、`retrieval_reranker_prewarm`、`retrieval_model_profile` 和 `eval_retrieval_replay` 都通过 `mc_admin(action=...)` 调用；先遵守返回的 stop_condition 和 next_action，再进入宽泛搜索。
-- `change_review` 是变更审查默认入口；同一 fingerprint 命中缓存时直接复用，不再追加等价搜索。`eval_cochange` 是显式离线评测，不得放入普通查询链路。
+- `change_review` 是变更审查默认入口；同一 fingerprint 命中缓存时直接复用，不再追加等价搜索。`eval_cochange` 是显式离线 walk-forward 评测，不得放入普通查询链路；只有 `calibration.eligible=true` 时才允许用户通过 CLI `--apply` 或 MCP `force=true` 写入哈希先验。
 
 ## Spring Cloud 重点风险
 

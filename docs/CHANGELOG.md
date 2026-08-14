@@ -1,5 +1,21 @@
 # Changelog / 更新日志
 
+## 4.3.80 时间前向共变与 Replay 校准 / Walk-Forward Co-change and Replay Calibration
+
+- Git co-change v3 按仓库提交时间从旧到新执行：每个评估提交只能读取更早提交形成的文件对，当前图仅作为诊断对照，不参与校准，消除未来提交与当前图快照泄漏。
+- 新增过去热门文件基线和应用门禁；至少 5 个评估提交、20 个 case，且 Precision/Recall 均不低于基线时，才允许 CLI `--apply` 或 MCP `force=true` 写入共变先验。
+- 共变先验只保存 24 位路径哈希、支持度和归一化分数；查询只对现有图候选增加最多 0.12 的有界排序增益，不引入无图证据文件。真实工作区应用 546 条先验，100 次候选排序平均增加后的总耗时约 `0.266ms/次`。
+- 检索 replay 按任务或证据指纹去重，按时间切分训练集和后 25% 留出集；提案只使用更早样本，只有留出集 Brier score 不退化且训练/验证样本门槛满足时才允许应用。
+- 真实共变 66 个 walk-forward case 上 Precision `0.2284`、Recall `0.4539`，高于过去热门文件基线 `0.1742 / 0.4261`；真实检索 replay 当前为 0 条验证样本，因此保持 `insufficient_replay`，未写入权重。
+
+## 4.3.80 Walk-Forward Co-change and Replay Calibration
+
+- Git co-change v3 evaluates commits from oldest to newest. Each evaluation commit can use only older file pairs; the current graph is diagnostic-only and excluded from calibration, preventing future-commit and current-snapshot leakage.
+- Added a past-only popularity baseline and an application gate. Hashed priors can be applied only with at least five evaluated commits, twenty cases, and non-regressing precision and recall.
+- Persisted priors contain only 24-character path hashes, support, and normalized scores. They add at most a bounded 0.12 ranking boost to existing graph candidates and never introduce files without graph evidence.
+- Retrieval replay now deduplicates by task or evidence fingerprint, then uses a chronological training split plus a final 25% holdout. A proposal is applicable only when holdout Brier score does not regress and both training and validation sample requirements pass.
+- Across 66 real walk-forward cases, precision reached `0.2284` and recall `0.4539`, above the past-only popularity baseline of `0.1742 / 0.4261`. The real retrieval replay currently has zero verified samples, so no weight was applied.
+
 ## 4.3.79 局部刷新性能治理 / Scoped Refresh Performance Governance
 
 - 局部刷新在同一 `WorkspaceStore` 事务内复用大型运行时索引对象，并使用 SQLite `updated_at` 轻量校验跨实例新鲜度；避免重复解码 Java 符号索引，同时不会让长期 Store 读取旧 generation。

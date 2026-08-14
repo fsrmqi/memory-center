@@ -135,6 +135,16 @@ class _GraphOperations:
                   confidence REAL DEFAULT 1.0,
                   metadata_json TEXT DEFAULT '{}'
                 );
+                CREATE TABLE IF NOT EXISTS cochange_priors (
+                  seed_ref TEXT NOT NULL,
+                  candidate_ref TEXT NOT NULL,
+                  support INTEGER NOT NULL DEFAULT 0,
+                  score REAL NOT NULL DEFAULT 0,
+                  trained_at TEXT DEFAULT '',
+                  PRIMARY KEY(seed_ref, candidate_ref)
+                );
+                CREATE INDEX IF NOT EXISTS idx_cochange_priors_seed_score
+                  ON cochange_priors(seed_ref, score DESC, support DESC);
                 CREATE INDEX IF NOT EXISTS idx_nodes_type_name ON nodes(type, name);
                 CREATE INDEX IF NOT EXISTS idx_nodes_project ON nodes(project);
                 CREATE INDEX IF NOT EXISTS idx_nodes_file_path ON nodes(file_path);
@@ -793,10 +803,24 @@ class _GraphOperations:
             item["strongest_score"] = max(float(item["strongest_score"]), score)
             item["aggregate_score"] += score
             item["relation_types"].add(edge_type)
+        if ranked:
+            seed_ref = _path_ref(file_path)
+            candidate_by_ref = {_path_ref(path): path for path in ranked}
+            placeholders = ",".join("?" for _ in candidate_by_ref)
+            with self.connect() as conn:
+                prior_rows = conn.execute(
+                    f"SELECT candidate_ref, support, score FROM cochange_priors WHERE seed_ref=? AND candidate_ref IN ({placeholders})",
+                    [seed_ref, *candidate_by_ref],
+                ).fetchall()
+            for prior in prior_rows:
+                path = candidate_by_ref.get(str(prior["candidate_ref"] or ""))
+                if path and path in ranked:
+                    ranked[path]["cochange_support"] = int(prior["support"] or 0)
+                    ranked[path]["cochange_score"] = float(prior["score"] or 0.0)
         ordered = sorted(
             ranked.values(),
             key=lambda item: (
-                -float(item["strongest_score"]),
+                -(float(item["strongest_score"]) + 0.12 * float(item.get("cochange_score", 0.0))),
                 -int(item["evidence_count"]),
                 -float(item["aggregate_score"]),
                 str(item["file_path"]),
@@ -807,6 +831,26 @@ class _GraphOperations:
             item["aggregate_score"] = round(float(item["aggregate_score"]), 6)
             item["relation_types"] = sorted(item["relation_types"])
         return ordered
+
+    def replace_cochange_priors(self, rows: list[dict[str, Any]], *, trained_at: str) -> int:
+        """Atomically replace hashed walk-forward priors."""
+        with self.connect() as conn:
+            conn.execute("DELETE FROM cochange_priors")
+            conn.executemany(
+                "INSERT INTO cochange_priors(seed_ref,candidate_ref,support,score,trained_at) VALUES(?,?,?,?,?)",
+                [
+                    (
+                        str(row.get("seed_ref", "")),
+                        str(row.get("candidate_ref", "")),
+                        int(row.get("support", 0) or 0),
+                        float(row.get("score", 0.0) or 0.0),
+                        trained_at,
+                    )
+                    for row in rows
+                    if row.get("seed_ref") and row.get("candidate_ref")
+                ],
+            )
+        return len(rows)
 
     def nodes_for_files(
         self,
@@ -1084,6 +1128,12 @@ def node_id(kind: str, *parts: str) -> str:
 
 def edge_id(edge_type: str, source_id: str, target_id: str) -> str:
     return f"{edge_type}:{source_id}->{target_id}"
+
+
+def _path_ref(path: str) -> str:
+    import hashlib
+
+    return hashlib.sha256(path.encode("utf-8", errors="replace")).hexdigest()[:24]
 
 
 def _sanitize_fts_term(term: str) -> str:

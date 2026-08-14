@@ -164,6 +164,15 @@ memory-center scoped-refresh-performance --workspace /abs/path/.memory-center/wo
 
 `status=healthy` 时停止重复刷新；`warning` 时根据 `latest.dominant_stage` 定位瓶颈，不要改为隐式全量重建。
 
+显式校准共变先验时先预检，再应用：
+
+```bash
+memory-center eval-cochange --workspace /abs/path/.memory-center/workspace.yaml --max-commits 20 --warmup-commits 5
+memory-center eval-cochange --workspace /abs/path/.memory-center/workspace.yaml --max-commits 20 --warmup-commits 5 --apply
+```
+
+只有第一条返回 `calibration.eligible=true` 才执行第二条。检索 replay 使用 `eval-retrieval-replay`，样本不足或留出集退化时不要使用 `--apply`。
+
 增量：
 
 ```bash

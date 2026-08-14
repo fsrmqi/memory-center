@@ -146,15 +146,24 @@ def run_release_gate(
         cochange_started = time.perf_counter()
         cochange = evaluate_git_cochange(workspace_file, max_commits=cochange_commits)
         cochange_summary = cochange.get("summary", {}) or {}
-        cochange_ready = cochange.get("status") == "ready" and int(cochange_summary.get("case_count", 0) or 0) > 0
+        cochange_calibration = cochange.get("calibration", {}) or {}
+        cochange_ready = (
+            cochange.get("status") == "ready"
+            and int(cochange_summary.get("case_count", 0) or 0) > 0
+            and cochange.get("temporal_integrity") == "train_commits_strictly_precede_each_evaluation_commit"
+            and bool(cochange_calibration.get("eligible"))
+        )
         components["cochange_impact"] = _component(
             passed=cochange_ready,
             duration_ms=(time.perf_counter() - cochange_started) * 1000,
             result_count=int(cochange_summary.get("case_count", 0) or 0),
             quality_score=float(cochange_summary.get("mean_recall", 0.0) or 0.0),
-            reason="cochange_ground_truth_unavailable" if not cochange_ready else "",
+            reason="cochange_walk_forward_gate_failed" if not cochange_ready else "",
             extra_metrics={
                 "mean_precision": float(cochange_summary.get("mean_precision", 0.0) or 0.0),
+                "baseline_mean_precision": float(cochange_summary.get("baseline_mean_precision", 0.0) or 0.0),
+                "baseline_mean_recall": float(cochange_summary.get("baseline_mean_recall", 0.0) or 0.0),
+                "evaluated_commit_count": int(cochange_summary.get("evaluated_commit_count", 0) or 0),
                 "environment_error_count": int(cochange_summary.get("environment_error_count", 0) or 0),
             },
         )

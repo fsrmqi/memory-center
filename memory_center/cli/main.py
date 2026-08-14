@@ -690,11 +690,13 @@ def change_review_cmd(
 def eval_cochange_cmd(
     workspace: str = typer.Option(...),
     max_commits: int = typer.Option(20, min=1, max=100),
+    warmup_commits: int = typer.Option(5, min=1, max=50),
+    apply: bool = typer.Option(False, help="Apply hashed priors only when the walk-forward gate passes."),
 ):
-    """Evaluate graph file-impact predictions against bounded Git co-change history."""
+    """Evaluate and optionally apply leakage-free Git co-change priors."""
     from memory_center.core.benchmark.cochange import evaluate_git_cochange
 
-    print(evaluate_git_cochange(workspace, max_commits=max_commits))
+    print(evaluate_git_cochange(workspace, max_commits=max_commits, warmup_commits=warmup_commits, apply=apply))
 
 
 @app.command()

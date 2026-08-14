@@ -479,7 +479,7 @@ Governance batches, semantic vectors, and ANN label/distance pairs validate thei
 
 `release-gate --query-samples 5` 会记录首查冷查询 P95、其余样本的热查询 P95 和 `stage_p95_ms`。热查询 P95 默认预算为 `2000ms`；超出时 `retrieval.reason=hot_query_p95_budget_exceeded`。仅在明确维护窗口可使用 `--max-hot-query-p95-ms 0` 关闭绝对预算。
 
-`release-gate --cochange-commits 20` 增加独立 `cochange_impact` 组件。4.3.78 使用 `git_cochange_weighted_file_neighbors_v2`：默认预测 8 个文件，最多聚合 1,600 条相邻边，并以关系权重和边置信度确定性排序。可执行 case 数为零、Git 环境错误或相对 baseline 的召回退化都会阻止该可选组件被视为通过；未传参数时保持 `skipped`。
+`release-gate --cochange-commits 20` 增加独立 `cochange_impact` 组件。4.3.80 使用 `git_cochange_walk_forward_v3`：默认 5 个预热提交，训练事实严格早于评估提交；当前图指标只作诊断。可执行 case 不足、Git 环境错误、时间约束缺失，或 Precision/Recall 低于过去热门文件基线都会阻断该可选组件；未传参数时保持 `skipped`。
 
 Regular query responses expose stage timings and cache status under `retrieval_diagnostics.timing_ms`. The cache applies only to the same published graph generation, query, configuration, policy, and freshness for 20 seconds; cache hits do not bypass freshness, governance, or response wrapping.
 

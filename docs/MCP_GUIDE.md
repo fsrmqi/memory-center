@@ -107,7 +107,9 @@ MCP 当前公开的是 15 个 task-level tools：
 
 统一变更审查使用 `mc_admin(action="change_review", scope="all", view="minimal")`，HTTP 为 `GET /workspace/change-review?scope=all&detail_level=minimal`，CLI 为 `change-review`。它最多定向刷新 12 个相关文件，禁止退化为全量 reindex；返回加权最佳影响路径、测试缺口、契约风险、验证 Action、停止条件和调用预算。同一源码签名与 index generation 的等价请求直接复用结果；只有证据不足或用户显式请求时才升级 `standard` / `deep`。
 
-Git co-change 独立评测使用 `mc_admin(action="eval_cochange", limit=20)`、`GET /workspace/eval-cochange?max_commits=20` 或 CLI `eval-cochange`。4.3.78 的预测器使用默认 8 个候选的有界加权文件邻居，最多读取 1,600 条相邻边；它是显式离线评测，不进入查询热路径，提交、路径和消息不会写入报告，环境错误也不会计入准确率。
+Git co-change 独立评测使用 `mc_admin(action="eval_cochange", limit=20, payload='{"warmup_commits":5}')`、`GET /workspace/eval-cochange?max_commits=20&warmup_commits=5` 或 CLI `eval-cochange`。4.3.80 默认执行 walk-forward，当前图只作诊断；只有 `calibration.eligible=true` 时才允许 CLI `--apply` 或 MCP `force=true` 写入哈希先验。HTTP 保持只读预检。该能力不进入查询热路径，提交、路径和消息不会写入报告。
+
+`eval_retrieval_replay` 使用按时间切分的训练/留出集，并按 task/evidence 指纹去重。`status=ready` 仍不等于自动应用；必须同时确认具体 source 的 `validated=true`、Brier score 不退化，再通过 CLI `--apply` 或 MCP `force=true` 显式写入。样本不足时保持现有权重。
 
 架构社区分析使用 `mc_admin(action="architecture_communities")`，HTTP 为 `GET /workspace/architecture-communities`，CLI 为 `architecture-communities`。它读取有界 SQL 投影，优先使用固定种子的 Leiden，缺少可选依赖时使用确定性加权标签传播，并返回社区、桥接点、异常跨社区连接与未测试高中心性节点；仅在显式调用时执行，Workbench/status 仅读取已缓存摘要，异常结论始终标记为 `INFERRED`。
 

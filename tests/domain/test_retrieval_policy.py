@@ -338,13 +338,15 @@ def test_verified_replay_calibration_requires_evidence_and_applies_only_after_th
     )
 
     workspace = _workspace(tmp_path)
-    for _ in range(4):
+    for index in range(8):
         record_retrieval_source_feedback(
             workspace,
             intent="general",
             source="semantic",
             outcome="confirmed",
             evidence=[{"type": "human-review"}],
+            task_id=f"task-{index}",
+            weight_before=0.5,
         )
     # 无证据样本不会成为校准数据。
     record_retrieval_source_feedback(
@@ -358,11 +360,52 @@ def test_verified_replay_calibration_requires_evidence_and_applies_only_after_th
     preview = evaluate_retrieval_replay_calibration(workspace, min_samples=4)
     assert preview["status"] == "ready"
     assert preview["applied"] is False
-    assert preview["proposals"]["general"]["semantic"]["sample_count"] == 4
+    assert preview["proposals"]["general"]["semantic"]["sample_count"] == 8
+    assert preview["proposals"]["general"]["semantic"]["validation_count"] == 2
+    assert preview["proposals"]["general"]["semantic"]["validated"] is True
 
     applied = evaluate_retrieval_replay_calibration(workspace, min_samples=4, apply=True)
     assert applied["applied"] is True
     assert load_retrieval_source_weights(workspace, intent="general")["semantic"] == applied["applied_weights"]["general"]["semantic"]
+
+
+def test_replay_calibration_deduplicates_task_and_blocks_holdout_regression(tmp_path: Path) -> None:
+    from datetime import datetime, timedelta, timezone
+
+    from memory_center.core.retrieval.calibration import evaluate_retrieval_replay_calibration
+    from memory_center.core.verification.heuristics import HeuristicsRegister
+
+    workspace = _workspace(tmp_path)
+    register = HeuristicsRegister(workspace)
+    started = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    outcomes = ["confirmed"] * 6 + ["rejected"] * 2
+    for index, outcome in enumerate(outcomes):
+        register.record_candidate_path_feedback(
+            candidate_type="retrieval-source",
+            target="general:semantic",
+            outcome=outcome,
+            evidence=[{"ref": f"e-{index}"}],
+            task_id=f"task-{index}",
+            recorded_at=(started + timedelta(minutes=index)).isoformat(),
+            weight_before=0.5,
+            category="retrieval-source",
+        )
+    register.record_candidate_path_feedback(
+        candidate_type="retrieval-source",
+        target="general:semantic",
+        outcome="confirmed",
+        evidence=[{"ref": "duplicate"}],
+        task_id="task-0",
+        recorded_at=(started + timedelta(minutes=9)).isoformat(),
+        weight_before=0.5,
+        category="retrieval-source",
+    )
+
+    result = evaluate_retrieval_replay_calibration(workspace, lookback_days=3650, min_samples=8, apply=True)
+
+    assert result["discarded"]["duplicate"] == 1
+    assert result["proposals"]["general"]["semantic"]["validated"] is False
+    assert result["applied"] is False
 
 
 def test_verified_replay_calibration_does_not_use_guidance_adoption_as_evidence(tmp_path: Path) -> None:

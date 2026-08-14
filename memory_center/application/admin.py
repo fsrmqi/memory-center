@@ -909,7 +909,12 @@ def build_admin_registry(
                 refresh=not strict,
                 max_depth=max_depth,
             ),
-            "eval_cochange": lambda: evaluate_git_cochange(wf, max_commits=min(max(1, limit), 100)),
+            "eval_cochange": lambda: evaluate_git_cochange(
+                wf,
+                max_commits=min(max(1, limit), 100),
+                warmup_commits=max(1, min(50, int((parse_payload(payload) or {}).get("warmup_commits", 5) or 5))),
+                apply=force,
+            ),
             "eval_write_quality": lambda: memory_eval_write_quality(
                 wf, task_id=task_id, session_id=session_id, intent=intent, limit=limit
             ),

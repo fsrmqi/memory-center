@@ -483,7 +483,9 @@ def register_workspace_routes(registry: CommandRegistry) -> None:
     registry.register(
         "/workspace/eval-cochange",
         lambda rp: workspace_eval_cochange(
-            rp.workspace(), max_commits=rp.int_param("max_commits", 20, max_val=100)
+            rp.workspace(),
+            max_commits=rp.int_param("max_commits", 20, max_val=100),
+            warmup_commits=rp.int_param("warmup_commits", 5, max_val=50),
         ),
     )
     registry.register(

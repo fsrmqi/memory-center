@@ -152,6 +152,10 @@ def test_git_cochange_is_independent_and_excludes_environment_errors(tmp_path: P
     (repo / "src" / "B.java").write_text("class B {}\n", encoding="utf-8")
     subprocess.run(["git", "add", "."], cwd=repo, check=True)
     subprocess.run(["git", "commit", "-qm", "initial"], cwd=repo, check=True)
+    (repo / "src" / "A.java").write_text("class A { int v = 1; }\n", encoding="utf-8")
+    (repo / "src" / "B.java").write_text("class B { int v = 1; }\n", encoding="utf-8")
+    subprocess.run(["git", "add", "."], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-qm", "second"], cwd=repo, check=True)
     workspace = _workspace(
         tmp_path,
         "services:\n  - name: svc\n    path: svc\n    type: spring-boot-service",
@@ -166,14 +170,64 @@ def test_git_cochange_is_independent_and_excludes_environment_errors(tmp_path: P
             [GraphEdge("a-b", "a", "b", "CALLS_METHOD", 1.0)],
         )
 
-    result = evaluate_git_cochange(workspace, max_commits=5)
+    result = evaluate_git_cochange(workspace, max_commits=5, warmup_commits=1)
 
     assert result["status"] == "ready"
-    assert result["ground_truth_mode"] == "co_change_same_commit_seed_excluded"
+    assert result["ground_truth_mode"] == "walk_forward_same_commit_seed_excluded"
     assert result["summary"]["case_count"] == 2
     assert result["summary"]["mean_recall"] == 1.0
     assert result["summary"]["environment_error_count"] == 0
     assert all("src/" not in row["case_ref"] for row in result["cases"])
+
+
+def test_walk_forward_cochange_never_trains_on_evaluation_commit() -> None:
+    from memory_center.core.benchmark.cochange import _historical_predictions, _update_history
+
+    history = {}
+    popularity = {}
+    _update_history(history, popularity, ["A.java", "B.java"], 0)
+
+    assert _historical_predictions(history, "A.java", 8) == ["B.java"]
+    assert "C.java" not in _historical_predictions(history, "A.java", 8)
+    _update_history(history, popularity, ["A.java", "C.java"], 1)
+    assert "C.java" in _historical_predictions(history, "A.java", 8)
+
+
+def test_hashed_cochange_prior_only_reorders_existing_graph_candidates(tmp_path: Path) -> None:
+    workspace = _workspace(tmp_path)
+    store = WorkspaceStore(workspace)
+    with RuntimeStore(store.graph_db_path) as graph:
+        graph.rebuild(
+            [
+                GraphNode("a", "Class", "A", "svc", "svc/A.java"),
+                GraphNode("b", "Class", "B", "svc", "svc/B.java"),
+                GraphNode("c", "Class", "C", "svc", "svc/C.java"),
+            ],
+            [
+                GraphEdge("a-b", "a", "b", "CALLS_METHOD", 1.0),
+                GraphEdge("a-c", "a", "c", "CALLS_METHOD", 1.0),
+            ],
+        )
+        from memory_center.core.benchmark.cochange import _path_ref
+
+        graph.replace_cochange_priors(
+            [
+                {
+                    "seed_ref": _path_ref("svc/A.java"),
+                    "candidate_ref": _path_ref("svc/C.java"),
+                    "support": 5,
+                    "score": 1.0,
+                }
+            ],
+            trained_at="2026-01-01T00:00:00Z",
+        )
+        ranked = graph.ranked_file_neighbors("svc/A.java", limit=5)
+        with graph.connect() as conn:
+            persisted = conn.execute("SELECT seed_ref,candidate_ref FROM cochange_priors").fetchone()
+
+    assert ranked[0]["file_path"] == "svc/C.java"
+    assert ranked[0]["cochange_support"] == 5
+    assert "svc/" not in persisted["seed_ref"] + persisted["candidate_ref"]
 
 
 def test_architecture_health_is_offline_inferred_projection(tmp_path: Path) -> None:
