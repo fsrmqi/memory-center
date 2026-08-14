@@ -356,6 +356,7 @@ def reindex_workspace(
                         [item.strip() for item in (paths or []) if item and item.strip()],
                 ) if (projects or paths) else None,
             )
+            generation_timing_ms = dict(physical_shards.get("timing_ms", {}))
             manifest["physical_shards"] = physical_shards
             activate_generation(store, generation, counts=counts, shard_manifest=manifest)
             control = index_control_status(store)
@@ -387,6 +388,7 @@ def reindex_workspace(
                     finished = time.perf_counter()
                     timing_ms = dict(counts.get("timing_ms", {}))
                     timing_ms["generation_publish"] = round((publication_finished - publication_started) * 1000, 2)
+                    _merge_generation_stage_timings(timing_ms, generation_timing_ms)
                     timing_ms["assertion_projection"] = round((finished - publication_finished) * 1000, 2)
                     timing_ms["total"] = round((finished - reindex_started) * 1000, 2)
                     counts["timing_ms"] = timing_ms
@@ -398,6 +400,7 @@ def reindex_workspace(
             finished = time.perf_counter()
             timing_ms = dict(counts.get("timing_ms", {}))
             timing_ms["generation_publish"] = round((publication_finished - publication_started) * 1000, 2)
+            _merge_generation_stage_timings(timing_ms, generation_timing_ms)
             timing_ms["assertion_projection"] = round((finished - publication_finished) * 1000, 2)
             timing_ms["total"] = round((finished - reindex_started) * 1000, 2)
             counts["timing_ms"] = timing_ms
@@ -419,6 +422,11 @@ def reindex_workspace(
         except BaseException as exc:
             fail_generation(store, generation, str(exc) or type(exc).__name__)
             raise
+
+
+def _merge_generation_stage_timings(timing_ms: dict[str, Any], generation_timing_ms: dict[str, Any]) -> None:
+    for stage in ("inherit", "service_payloads", "graph_shards", "shared_shards"):
+        timing_ms[f"generation_{stage}"] = round(float(generation_timing_ms.get(stage, 0.0) or 0.0), 2)
 
 
 def _report_progress(

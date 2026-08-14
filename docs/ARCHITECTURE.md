@@ -291,9 +291,13 @@ Every reindex builds a staging generation and publishes it as the active generat
 
 局部 reindex 使用 copy-on-write：它从前一 generation 继承未受影响的服务分片，只重建失效计划命中的服务分片，再发布新的 generation。这样增量更新不需要复制或解析全部服务，同时保持 generation 级一致性。
 
+4.3.84 将该语义落实为按 manifest 的物理发布：继承阶段只硬链接未受影响服务的两个产物，不遍历复制完整 generation；受影响项目通过 SQLite `ATTACH + INSERT SELECT` 从全局读模型流式导出。临时分片关闭可恢复写入所不需要的 journal，先装载节点和内部边，再统一创建二级索引与 FTS。局部多项目最多 3 个 worker 并行，全量构建保持串行。整个过程不在 Python 中保存项目级节点/边列表，峰值内存由 SQLite 页缓存约束。
+
 The generation directory also contains physical `services/<project>.json`, `services/<project>.graph.db`, `contracts.json`, and `topology.json` artifacts. Service shards are immutable snapshots; project-scoped code/hybrid queries prefer them, while cross-service routing starts from topology/contracts and can fall back to the compatible global read model. Watcher invalidation plans submit coalesced background partial reindex work, and the control plane supports rollback plus explicit generation GC.
 
 Partial reindex uses copy-on-write: unchanged service shards are inherited from the preceding generation, only invalidated services are rebuilt, and the new generation is then published atomically.
+
+Since 4.3.84, physical publication follows the manifest directly: unchanged service artifacts are hard-linked, while affected graphs stream from the global read model through SQLite `ATTACH + INSERT SELECT`. Secondary indexes and FTS are built after data loading. Partial multi-project builds use at most three workers; full builds remain sequential, and no project-sized Python node/edge list is created.
 
 ### 3.1.2 跨服务分片编排 / Cross-Service Shard Orchestration
 
@@ -463,6 +467,10 @@ Git co-change v2 不再对文件邻居执行无序 `DISTINCT LIMIT`。它最多�
 4.3.80 的 co-change v3 将评测与应用拆开：评测按每个 Git 仓库从旧到新推进，提交事实只有在该提交完成预测后才进入历史；当前图快照仅用于诊断。通过 past-only popularity 基线后，可显式写入 `cochange_priors` 稀疏表，表中只有路径哈希、支持度和分数。查询时先完成原有有界图候选，再对命中的哈希先验增加有上限的排序增益，因此不会用历史共变绕过代码证据。
 
 4.3.81 将 Java 变量类型证据分为两层：调用与 DTO 字段访问保存所在重载方法体的词法作用域类型，`method_variable_types` 仅作为兼容聚合视图。不同重载中同名变量类型冲突时，聚合视图删除该项而不是采用最后写入值；resolver 优先读取调用自身的确定证据。该设计不增加图查询热路径开销，也不引入编译器级全仓分析。
+
+4.3.82 在方法体作用域内增加第二层 Lambda 词法区间。显式参数类型直接形成证据；标准 `java.util.function` 目标类型只映射其输入泛型位置。解析器通过括号深度确定块 Lambda 和表达式 Lambda 的结束位置，并选择包含调用的最内层作用域。该过程仅在索引时扫描当前方法体，不进入查询热路径；无法证明契约的第三方回调不会形成目标边。
+
+4.3.83 在同一索引期作用域模型上增加 JDK 集合泛型输入层。参数、局部变量和显式可见字段中的 `List/Set/Collection/Iterable/Stream<T>` 只向紧邻的直接集合或 Stream 操作提供单个输入类型，`Map<K,V>.forEach` 提供键值双输入。嵌套调用采用零宽重叠扫描，外层高阶调用不会吞掉回调内方法调用。通配符、裸类型、类型变量和经过 `map/flatMap` 类型变换的后续链不传播类型，从而保持索引复杂度与方法体长度线性相关，查询热路径开销为零。
 
 ### 5.3 多语言结构化索引
 

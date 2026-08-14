@@ -95,9 +95,15 @@ MCP 当前公开的是 15 个 task-level tools：
 
 局部刷新性能通过 `mc_admin(action="scoped_refresh_performance", limit=20)`、`GET /workspace/scoped-refresh-performance` 或 `memory-center scoped-refresh-performance` 读取。Agent 应先查看 `status`、P95 和 `latest.dominant_stage`；预算内不重复刷新，超预算时只 profile 建议阶段，禁止自动升级为全量 reindex。
 
+4.3.84 的局部刷新结果会额外返回 `generation_inherit`、`generation_service_payloads`、`generation_graph_shards`、`generation_shared_shards`。Agent 应按最大子阶段行动：图分片高时检查受影响项目数量和分片规模，payload 高时检查服务 JSON 体积；不得因某个子阶段超预算自动触发全量 reindex。局部多项目导出已内置最多 3 个 worker，无需 Agent 自行并发调用 reindex。
+
 外部 `skill-up` 评测必须使用 3 到 5 个脱敏、可观察的 case；隔离运行环境未建立前，`without_skill` 基线固定为不可比较。执行结果会返回 `pass`、`skill_failure`、`evaluation_failure` 或 `environment_error`，其中认证、网络、MCP、进程和超时问题绝不计入 Skill 失败率。Java 调用解析的 `eval_java_call_resolution_unresolved` 返回 `campaign`，要求先增加 3 到 5 个 `expected_target`、`allowed_targets`、`forbidden_targets` 逻辑锚点 case，再允许变更 resolver/parser。enum 生成方法、外部返回类型链和最终继承外部框架接口的方法会作为索引边界单独分类，不参与本地修复 campaign。
 
 Java 同名重载从 4.3.81 起按各自方法体绑定接收者类型。由于公开逻辑锚点仍采用 `Class#method` 并汇总该方法的所有重载，私有 case 的 `allowed_targets` 必须列出其他重载产生的合法高置信边；`forbidden_targets` 只填写对所有重载都不合法的目标。
+
+4.3.82 的 Lambda 类型推导只接受显式参数类型和标准 `java.util.function` 泛型目标。MCP 返回的第三方无类型回调仍应解释为“证据不足”，Agent 不应据此请求宽泛 fallback；应先补私有逻辑锚点或外部 Provider 证据，再决定是否扩展契约。
+
+4.3.83 进一步接受可证明的 JDK 集合泛型：参数、局部变量或显式可见字段上的 `List/Set/Collection/Iterable/Stream<T>` 仅用于直接 Lambda，`Map<K,V>.forEach` 映射两个输入。Agent 看到通配符、裸类型、第三方容器或类型变换后的链时，仍应保留 `UNKNOWN/receiver_type_missing`，不得要求全局猜测或自动全量重建；先用 3-5 个私有逻辑锚点和定向刷新验证。
 
 常驻索引更新通过 `memory-center watcher-start --workspace <workspace.yaml>` 启动；它对去抖后的源码、配置变更创建有界局部重建任务，不在查询链路执行全量重建。使用 `watcher-status` / `watcher-stop` 查看或停止。MCP 对应 `mc_admin(action="watcher_start|watcher_status|watcher_stop")`；Workbench 的 `hot_refresh.watcher` 同步显示相同状态。
 

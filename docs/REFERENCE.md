@@ -431,9 +431,19 @@ memory-center eval-java-call-resolution-metrics --workspace <workspace.yaml>
 
 4.3.81 起，调用接收者类型按具体重载的方法体提取；同名重载的参数和局部变量不会相互覆盖。case 的 `source` 仍是 `Class#method`，因此会聚合同名重载的边：其他重载的合法目标应放入 `allowed_targets`，禁止目标必须对该方法的全部重载都不成立。
 
+4.3.82 支持显式 `(Type value) -> ...` Lambda，以及标准 `Consumer / Function / Predicate / Bi* / *Operator` 变量赋值中的输入泛型映射。作用域严格限制在 Lambda 块或表达式内。第三方方法的无类型 Lambda、仅凭 `Type.class` 的回调和无法唯一映射的泛型保持 `receiver_type_missing`。
+
+4.3.83 支持从方法参数、局部变量和显式可见字段读取 `List<T>`、`Set<T>`、`Collection<T>`、`Iterable<T>`、`Stream<T>`，为紧邻的直接 `map/filter/forEach/...` Lambda 提供输入类型；`Map<K,V>.forEach((k,v) -> ...)` 映射键和值。通配符、裸类型、单字母类型变量、第三方容器，以及类型变换 `map/flatMap` 后的后续 Lambda 不参与推导。该能力只影响索引期调用事实，不改变 CLI、HTTP 或 MCP 查询 schema。
+
+4.3.84 的 partial reindex 在既有 `timing_ms` 中增加四个字段：`generation_inherit`、`generation_service_payloads`、`generation_graph_shards`、`generation_shared_shards`，单位均为毫秒。物理 generation 的 `manifest.json` 还包含 `graph_export_mode=sqlite_attach_select`、`graph_export_workers` 和同一组子阶段耗时。字段只增不删；全量 reindex 的 worker 固定为 1，局部多项目最多为 3。
+
 Run the read-only diagnostic before creating private logical-anchor cases. `receiver_shape_counts` separates static/dependency calls from missing local receiver types. Never synthesize workspace call edges just to lower the unresolved rate; only promote reproducible local categories into a 3-5 case private suite and release gate.
 
 When a case declares `expected_resolution_levels`, that level is gated too. For example, a chain case should declare `chain_return_type`; a generic fallback fails even if the target still matches. `eval-java-call-resolution-metrics` reports only aggregate resolution-level distribution, chain edge/source counts, mean confidence, and unresolved rate. Use it to observe real-workspace edge changes, not as a replacement for private cases with `forbidden_targets`.
+
+Since 4.3.83, direct JDK collection Lambdas may receive deterministic input types from generic method parameters, locals, and explicitly visible fields. Wildcards, raw and third-party containers, type variables, and downstream Lambdas after a type-changing operation remain unresolved by design.
+
+Since 4.3.84, partial reindex reports four additive generation timing fields for inheritance, service payloads, graph shards, and shared shards. Physical manifests expose the SQLite streaming export mode and bounded worker count; full reindex remains single-worker.
 
 The `campaign` skips `external_or_missing_source` and `out_of_scope_target`, selecting the largest locally provable category from `receiver_type_missing`, `missing_method_or_polymorphism`, and `dynamic_or_unqualified`. Its `candidate_samples` are redacted logical anchors for the 3-5 private cases; they are not evidence to synthesize a target edge. If no actionable category exists, review dependency or workspace-scope coverage instead of changing the resolver.
 

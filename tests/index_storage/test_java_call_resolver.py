@@ -104,7 +104,10 @@ public class CaptchaPayload {
     }
     supplements = RegexJavaParser().parse_supplements(caller, "CaptchaHandler.java")
     assert supplements.method_variable_types["validate"] == owner["method_variable_types"]["validate"]
-    assert next(call for call in supplements.method_calls if call["method_name"] == "setCode")["owner_method"] == "validate"
+    assert (
+        next(call for call in supplements.method_calls if call["method_name"] == "setCode")["owner_method"]
+        == "validate"
+    )
 
     result = _resolve(symbols, "CaptchaHandler.java", "setCode")
 
@@ -223,23 +226,31 @@ public class OrderService { public void create() {} }
     workspace = tmp_path / ".memory-center" / "workspace.yaml"
     workspace.parent.mkdir()
     workspace.write_text(
-        yaml.safe_dump({"workspace": "partial-resolution", "root": str(tmp_path), "services": [{"name": "svc", "path": "svc"}]}),
+        yaml.safe_dump(
+            {"workspace": "partial-resolution", "root": str(tmp_path), "services": [{"name": "svc", "path": "svc"}]}
+        ),
         encoding="utf-8",
     )
     store = WorkspaceStore(workspace)
     config = load_workspace_config(workspace)
     reindex_workspace(config, store)
-    caller_path = next(row["file"] for row in store.read_json("java-symbol-index.json", []) if row["file"].endswith("OrderFacade.java"))
+    caller_path = next(
+        row["file"] for row in store.read_json("java-symbol-index.json", []) if row["file"].endswith("OrderFacade.java")
+    )
 
     result = reindex_workspace(config, store, paths=[caller_path])
 
     source_id = node_id("Method", "svc", "OrderFacade", "submit")
     target_id = node_id("Method", "svc", "OrderService", "create")
     with RuntimeStore(store.graph_db_path) as graph:
-        edge = graph.connect().execute(
-            "SELECT confidence, metadata_json FROM edges WHERE source_id=? AND target_id=? AND type='CALLS_METHOD'",
-            (source_id, target_id),
-        ).fetchone()
+        edge = (
+            graph.connect()
+            .execute(
+                "SELECT confidence, metadata_json FROM edges WHERE source_id=? AND target_id=? AND type='CALLS_METHOD'",
+                (source_id, target_id),
+            )
+            .fetchone()
+        )
     assert result["mode"] == "partial"
     assert edge is not None
     assert edge["confidence"] == 0.9
@@ -329,7 +340,11 @@ public class OrderController {
 
 
 def test_this_call_without_workspace_declaration_is_inherited_scope_not_missing_type() -> None:
-    symbol = _symbol("api", "OrderController.java", "package com.example; public class OrderController { void run() { this.list(); } }")
+    symbol = _symbol(
+        "api",
+        "OrderController.java",
+        "package com.example; public class OrderController { void run() { this.list(); } }",
+    )
     result = _resolve([symbol], "OrderController.java", "list")
     assert result.unresolved_reason == "inherited_method_out_of_scope"
 
@@ -538,9 +553,7 @@ public class ResultFactory {
 """
     symbol = _symbol("api", "ResultFactory.java", caller)
     calls = {
-        call["method_name"]: call["receiver_type"]
-        for call in symbol["method_calls"]
-        if call["receiver"] == "errorCode"
+        call["method_name"]: call["receiver_type"] for call in symbol["method_calls"] if call["receiver"] == "errorCode"
     }
 
     assert calls == {"getCode": "ErrorCode", "getMessage": "ServiceError"}
@@ -556,13 +569,153 @@ public class ResultFactory {
 """
     parsed = RegexJavaParser().parse(caller, "ResultFactory.java")
     usages = {
-        usage["field"]: usage["receiver_type"]
-        for usage in parsed.dto_field_usages
-        if usage["receiver"] == "request"
+        usage["field"]: usage["receiver_type"] for usage in parsed.dto_field_usages if usage["receiver"] == "request"
     }
 
     assert usages == {"orderId": "OrderRequest", "userId": "UserRequest"}
     assert "request" not in parsed.method_variable_types["copy"]
+
+
+def test_explicit_lambda_parameter_type_is_scoped_to_lambda_body() -> None:
+    caller = """package com.example;
+import java.util.function.Consumer;
+public class OrderFacade {
+    private Payment item;
+    void run() {
+        Consumer<Order> consumer = (Order item) -> item.submit();
+        item.pay();
+    }
+}
+"""
+    symbol = _symbol("api", "OrderFacade.java", caller)
+    calls = {
+        call["method_name"]: call["receiver_type"] for call in symbol["method_calls"] if call["receiver"] == "item"
+    }
+
+    assert calls == {"submit": "Order", "pay": "Payment"}
+
+
+def test_standard_functional_interface_generics_type_untyped_lambda_parameters() -> None:
+    caller = """package com.example;
+import java.util.function.BiFunction;
+public class OrderFacade {
+    void run() {
+        BiFunction<OldOrder, NewOrder, Boolean> matcher =
+            (oldOrder, newOrder) -> {
+                newOrder.getId();
+                return oldOrder.same(newOrder);
+            };
+    }
+}
+"""
+    symbol = _symbol("api", "OrderFacade.java", caller)
+    calls = {
+        (call["receiver"], call["method_name"]): call["receiver_type"]
+        for call in symbol["method_calls"]
+        if call["receiver"] in {"oldOrder", "newOrder"}
+    }
+
+    assert calls == {("oldOrder", "same"): "OldOrder", ("newOrder", "getId"): "NewOrder"}
+
+
+def test_untyped_third_party_callback_remains_unresolved() -> None:
+    caller = """package com.example;
+public class OrderFacade {
+    void run() { thirdParty(value -> value.submit()); }
+    void thirdParty(Object callback) {}
+}
+"""
+    symbol = _symbol("api", "OrderFacade.java", caller)
+    call = next(item for item in symbol["method_calls"] if item["method_name"] == "submit")
+
+    assert call["receiver_type"] is None
+
+
+def test_local_list_generic_types_stream_lambda_parameter() -> None:
+    caller = """package com.example;
+import java.util.List;
+public class OrderFacade {
+    void run() {
+        List<Order> orders = load();
+        orders.stream().map(order -> order.getId());
+    }
+    List<Order> load() { return null; }
+}
+"""
+    symbol = _symbol("api", "OrderFacade.java", caller)
+    call = next(item for item in symbol["method_calls"] if item["method_name"] == "getId")
+
+    assert call["receiver_type"] == "Order"
+
+
+def test_map_parameter_generics_type_for_each_key_and_value() -> None:
+    caller = """package com.example;
+import java.util.Map;
+public class OrderFacade {
+    void run(Map<String, User> users) {
+        users.forEach((name, user) -> {
+            name.trim();
+            user.getId();
+        });
+    }
+}
+"""
+    symbol = _symbol("api", "OrderFacade.java", caller)
+    calls = {
+        (call["receiver"], call["method_name"]): call["receiver_type"]
+        for call in symbol["method_calls"]
+        if call["receiver"] in {"name", "user"}
+    }
+
+    assert calls == {("name", "trim"): "String", ("user", "getId"): "User"}
+
+
+def test_generic_collection_field_types_direct_for_each_lambda() -> None:
+    caller = """package com.example;
+import java.util.Set;
+public class OrderFacade {
+    private final Set<User> users = null;
+    void run() { users.forEach(user -> user.getId()); }
+}
+"""
+    symbol = _symbol("api", "OrderFacade.java", caller)
+    call = next(item for item in symbol["method_calls"] if item["method_name"] == "getId")
+
+    assert call["receiver_type"] == "User"
+
+
+def test_type_changing_intermediate_map_does_not_leak_source_element_type() -> None:
+    caller = """package com.example;
+import java.util.List;
+public class OrderFacade {
+    void run(List<Order> orders) {
+        orders.stream().map(order -> order.getCustomer()).map(customer -> customer.getId());
+    }
+}
+"""
+    symbol = _symbol("api", "OrderFacade.java", caller)
+    calls = {
+        call["method_name"]: call["receiver_type"]
+        for call in symbol["method_calls"]
+        if call["receiver"] in {"order", "customer"}
+    }
+
+    assert calls == {"getCustomer": "Order", "getId": None}
+
+
+def test_wildcard_collection_element_type_remains_unresolved() -> None:
+    caller = """package com.example;
+import java.util.List;
+public class OrderFacade {
+    void run(List<? extends Order> orders) {
+        orders.forEach(order -> order.getId());
+    }
+}
+"""
+    symbol = _symbol("api", "OrderFacade.java", caller)
+    call = next(item for item in symbol["method_calls"] if item["method_name"] == "getId")
+
+    assert call["receiver_type"] is None
 
 
 def test_resolves_inherited_lombok_accessor_to_workspace_parent() -> None:
@@ -578,7 +731,11 @@ import lombok.Data;
 @Data public class BaseRequest { private Long tenantId; }
 """
     result = _resolve(
-        [_symbol("api", "OrderFacade.java", caller), _symbol("api", "OrderRequest.java", child), _symbol("api", "BaseRequest.java", parent)],
+        [
+            _symbol("api", "OrderFacade.java", caller),
+            _symbol("api", "OrderRequest.java", child),
+            _symbol("api", "BaseRequest.java", parent),
+        ],
         "OrderFacade.java",
         "getTenantId",
     )
@@ -609,23 +766,41 @@ import lombok.Data;
 
 
 def test_extracts_generic_enhanced_for_variable_type() -> None:
-    symbol = _symbol("api", "Demo.java", """package com.example;
+    symbol = _symbol(
+        "api",
+        "Demo.java",
+        """package com.example;
 import java.util.Map;
 public class Demo { void run(Map<String, Long> values) { for (Map.Entry<String, Long> entry : values.entrySet()) { entry.getValue(); } } }
-""")
+""",
+    )
     assert symbol["method_variable_types"]["run"]["entry"] == "Entry"
 
 
 def test_extracts_try_with_resources_variable_type() -> None:
-    symbol = _symbol("api", "Demo.java", "package com.example; public class Demo { void run() { try (InputStream stream = open()) { stream.read(); } } }")
+    symbol = _symbol(
+        "api",
+        "Demo.java",
+        "package com.example; public class Demo { void run() { try (InputStream stream = open()) { stream.read(); } } }",
+    )
     assert symbol["method_variable_types"]["run"]["stream"] == "InputStream"
 
 
 def test_resolves_chain_when_return_type_is_unique() -> None:
-    caller = """package com.example; public class Caller { void run(Factory factory) { factory.create().execute(); } }"""
+    caller = (
+        """package com.example; public class Caller { void run(Factory factory) { factory.create().execute(); } }"""
+    )
     factory = """package com.example; public class Factory { public Result create() { return null; } }"""
     result = """package com.example; public class Result { public void execute() {} }"""
-    resolved = _resolve([_symbol("api", "Caller.java", caller), _symbol("api", "Factory.java", factory), _symbol("api", "Result.java", result)], "Caller.java", "execute")
+    resolved = _resolve(
+        [
+            _symbol("api", "Caller.java", caller),
+            _symbol("api", "Factory.java", factory),
+            _symbol("api", "Result.java", result),
+        ],
+        "Caller.java",
+        "execute",
+    )
     assert resolved.target_class == "Result"
     assert resolved.resolution_level == "chain_return_type"
 
@@ -636,7 +811,11 @@ def test_resolves_chain_when_lombok_accessor_field_type_is_unique() -> None:
     payload = """package com.example; public class Payload { public void execute() {} }"""
 
     resolved = _resolve(
-        [_symbol("api", "Caller.java", caller), _symbol("api", "Envelope.java", envelope), _symbol("api", "Payload.java", payload)],
+        [
+            _symbol("api", "Caller.java", caller),
+            _symbol("api", "Envelope.java", envelope),
+            _symbol("api", "Payload.java", payload),
+        ],
         "Caller.java",
         "execute",
     )

@@ -11,6 +11,7 @@ from memory_center.core.retrieval.cross_service import (
     route_cross_service_shards,
 )
 from memory_center.core.retrieval.cross_service_fusion import evaluate_cross_shard_fusion, fuse_cross_shard_result
+from memory_center.core.storage.runtime import RuntimeStore
 from memory_center.core.storage.workspace import WorkspaceStore
 from memory_center.core.workspace.config import load_workspace_config
 
@@ -49,7 +50,7 @@ def test_project_queries_prefer_physical_service_shards(tmp_path: Path) -> None:
     assert query["index_source"] == "service_graph_shard"
 
 
-def test_partial_reindex_uses_copy_on_write_service_shards(tmp_path: Path) -> None:
+def test_partial_reindex_uses_copy_on_write_service_shards(tmp_path: Path, monkeypatch) -> None:
     from tests.fixtures import copy_demo_workspace
 
     workspace = copy_demo_workspace(tmp_path)
@@ -57,6 +58,11 @@ def test_partial_reindex_uses_copy_on_write_service_shards(tmp_path: Path) -> No
     reindex_workspace(load_workspace_config(workspace), store, parallel=False)
     first_generation = index_control_status(store)["active_generation"]
     project = next(iter(store.read_json_prefer_backend("shard-manifest.json", {})["service_shards"]))
+
+    def forbidden_python_materialization(*_args, **_kwargs):
+        raise AssertionError("partial generation export must stay inside SQLite")
+
+    monkeypatch.setattr(RuntimeStore, "project_subgraph", forbidden_python_materialization)
     reindex_workspace(load_workspace_config(workspace), store, projects=[project], parallel=False)
     generation = index_control_status(store)["active_generation"]
     manifest_path = store.index_dir / "generations" / generation / "manifest.json"
@@ -64,6 +70,8 @@ def test_partial_reindex_uses_copy_on_write_service_shards(tmp_path: Path) -> No
 
     assert manifest["copy_on_write"] is True
     assert manifest["rebuilt_services"] == [project]
+    assert manifest["graph_export_mode"] == "sqlite_attach_select"
+    assert manifest["timing_ms"]["graph_shards"] >= 0
     rebuilt = service_shard_graph_path(store, generation, project)
     previous_rebuilt = service_shard_graph_path(store, first_generation, project)
     assert rebuilt and previous_rebuilt
@@ -73,6 +81,51 @@ def test_partial_reindex_uses_copy_on_write_service_shards(tmp_path: Path) -> No
     previous_unchanged = service_shard_graph_path(store, first_generation, unchanged)
     assert current_unchanged and previous_unchanged
     assert current_unchanged.stat().st_ino == previous_unchanged.stat().st_ino
+
+
+def test_partial_multi_project_export_is_parallel_and_lossless(tmp_path: Path) -> None:
+    from tests.fixtures import copy_demo_workspace
+
+    workspace = copy_demo_workspace(tmp_path)
+    store = WorkspaceStore(workspace)
+    config = load_workspace_config(workspace)
+    reindex_workspace(config, store, parallel=False)
+    projects = sorted(store.read_json_prefer_backend("shard-manifest.json", {})["service_shards"])[:2]
+
+    reindex_workspace(config, store, projects=projects, parallel=False)
+
+    generation = index_control_status(store)["active_generation"]
+    manifest = json.loads(
+        (store.index_dir / "generations" / generation / "manifest.json").read_text(encoding="utf-8")
+    )
+    assert manifest["rebuilt_services"] == projects
+    assert manifest["graph_export_workers"] == 2
+    with RuntimeStore(store.graph_db_path) as global_graph:
+        global_conn = global_graph.connect()
+        for project in projects:
+            shard_path = service_shard_graph_path(store, generation, project)
+            assert shard_path
+            expected_nodes = global_conn.execute(
+                "SELECT COUNT(*) FROM nodes WHERE project=?", (project,)
+            ).fetchone()[0]
+            expected_edges = global_conn.execute(
+                """
+                SELECT COUNT(*)
+                FROM edges AS edge
+                JOIN nodes AS source_node ON source_node.id=edge.source_id
+                JOIN nodes AS target_node ON target_node.id=edge.target_id
+                WHERE source_node.project=? AND target_node.project=?
+                """,
+                (project, project),
+            ).fetchone()[0]
+            with RuntimeStore(shard_path) as shard:
+                counts = shard.counts()
+                plan = shard.connect().execute(
+                    "EXPLAIN QUERY PLAN SELECT id FROM nodes WHERE project=?", (project,)
+                ).fetchall()
+            assert counts["nodes"] == expected_nodes
+            assert counts["edges"] == expected_edges
+            assert any("idx_nodes_project" in str(row[3]) for row in plan)
 
 
 def test_reindex_automatically_keeps_only_active_and_previous_generations(tmp_path: Path) -> None:

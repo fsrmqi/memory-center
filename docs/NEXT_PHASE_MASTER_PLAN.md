@@ -54,6 +54,18 @@ This file consolidates and replaces the older execution plan, superpowers evolut
 
 4.3.81 已修复同名重载变量表覆盖问题：调用和 DTO accessor 直接绑定各自方法体的参数与局部变量，冲突聚合项保持歧义。真实空间 3 个私有逻辑锚点严格门禁全部通过，3 文件局部刷新在 10 秒预算内完成。该缺口不再作为后续任务。
 
+### 已交付：Java Lambda 词法类型推导首批闭环（4.3.82）
+
+4.3.82 已支持显式类型 Lambda 和标准 `java.util.function` 泛型输入映射，并用最小词法区间隔离同名字段。真实空间 3 个新增私有 case 与上一版 3 个重载 case 均严格通过。第三方无类型回调和 `Type.class` 提示仍保持未知；该首批工作包不再列入待办。
+
+### 已交付：JDK 集合泛型 Lambda 推导（4.3.83）
+
+4.3.83 已支持参数、局部变量和显式可见字段上的 `List/Set/Collection/Iterable/Stream<T>` 直接 Lambda，以及 `Map<K,V>.forEach` 双输入映射；嵌套调用可重叠扫描。通配符、裸类型、第三方容器与类型变换后的链保持未知。真实空间新增、4.3.82 Lambda 和 4.3.81 重载三套私有门禁均 3/3 严格通过。单文件刷新 `4.96s` 健康，3 文件刷新 `10.63s` 警告；该精度工作包不再列入待办。
+
+### 已交付：局部 Generation 流式发布（4.3.84）
+
+4.3.84 已将受影响项目图从 Python 全量物化改为 SQLite 内部流式导出，按 manifest 硬链接未影响分片，并在临时库装载完成后统一创建二级索引与 FTS。局部 2-3 项目最多使用 3 个 worker，全量构建保持串行；四个发布子阶段均可观测。相同真实 3 文件负载连续两次约 `8.22s`，较 `10.63s` 基线下降约 `22.6%`，恢复健康预算。该性能工作包不再列入待办。
+
 ### P1：Java Parser / Call Resolver 真实精度深化
 
 目标：让 method walkthrough 和跨项目链路在真实 Spring Cloud 场景下更稳。
@@ -61,7 +73,7 @@ This file consolidates and replaces the older execution plan, superpowers evolut
 任务：
 
 1. 先运行 `eval-java-call-resolution-unresolved`；报告会把静态类/外部依赖、基础继承方法与实例接收者缺少类型分开，不能把外部 API 或 `Object` 基础方法误当作本地解析缺陷。
-2. 从剩余 `receiver_type_missing` 中选择 lambda 参数、模式变量或泛型推导等下一类最高频且可复现缺口，补充 3-5 个只含逻辑锚点的私有 case；不要重复处理已完成的重载作用域问题。
+2. 从剩余 `receiver_type_missing` 中选择下一类最高频且可复现缺口，补充 3-5 个只含逻辑锚点的私有 case；不要重复处理已完成的重载作用域、显式/函数接口 Lambda 和 JDK 集合泛型问题。
 3. 每次仅修复一个明确的 parser 或 resolver 缺口，不以宽泛 fallback 换取表面召回率。
 4. 将每个误判转成可复跑 case，并在 CLI、MCP、HTTP 中保留失败原因和缺失锚点。`expected_resolution_levels` 必须作为门禁条件；用聚合 metrics 观察解析等级与链式边变化，用私有 case 判定正确/错误边。
 
@@ -371,4 +383,4 @@ scripts/verify_real_ucap.sh
 
 4.3.78 已完成首轮 Java 调用解析真实精度闭环和 co-change v2 校准：3 个私有链式锚点严格门禁全部通过；66 个真实共变 case 的 precision 从 0.0438 提升到 0.0706，recall 从 0.2191 提升到 0.2229。后续 Java 解析只由新增真实失败样本驱动，不再把可解释的外部边界当作缺陷。
 
-4.3.80 已完成 walk-forward 共变/replay 校准，4.3.81 已完成首批真实 Java 重载失败样本闭环。检索 replay 仍保持时间留出和 Brier 门禁，真实验证样本不足时不调整权重。下一优先级调整为 **lambda/模式变量等下一类真实 Java 失败样本 -> 持续积累并观察检索 replay**。4.3.77 的图感知审查能力继续作为唯一稳定入口，不建设平行图存储或第二套审查服务。
+4.3.80 已完成 walk-forward 共变/replay 校准，4.3.81 至 4.3.84 已完成重载、Lambda、JDK 集合泛型与局部 generation 发布闭环。检索 replay 仍保持时间留出和 Brier 门禁，真实验证样本不足时不调整权重。下一优先级调整为 **服务 JSON 分片的增量/SQLite 读模型收敛评估 -> 持续观察检索 replay -> 仅由新私有失败 case 驱动解析增强**。当前真实发布中服务 payload 约 `0.75s`、图分片约 `2.5s`，总刷新稳定约 `8.22s`，均已在预算内；只有数据证明新的明确瓶颈时才继续改造。4.3.77 的图感知审查能力继续作为唯一稳定入口，不建设平行图存储或第二套审查服务。

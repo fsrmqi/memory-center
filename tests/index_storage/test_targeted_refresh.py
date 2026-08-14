@@ -72,6 +72,10 @@ def test_partial_reindex_reports_stage_timings_and_aggregate_governance(tmp_path
         "semantic_update",
         "retrieval_update",
         "generation_publish",
+        "generation_inherit",
+        "generation_service_payloads",
+        "generation_graph_shards",
+        "generation_shared_shards",
         "assertion_projection",
     }.issubset(result["timing_ms"])
     assert result["refresh_performance"]["status"] in {"healthy", "warning"}

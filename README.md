@@ -918,6 +918,10 @@ Each active generation now contains immutable service JSON shards, service-local
 
 每个 active generation 包含不可变的服务 JSON 分片、服务本地 SQLite 图分片、共享契约分片和拓扑分片。已解析 `project` 的代码搜索与混合图查询只读取对应服务分片；分片未发布时返回 `NOT_INDEXED`，不会悄悄退回全局扫描。file watcher 的变更会生成有界失效计划并合并异步局部 reindex job。`mc_admin(action="index_rollback", record_id="<generation>")` 可恢复保留的 generation；`index_generation_gc` 默认只预览清理，传 `force=true` 才会执行。
 
+4.3.84 起，局部 generation 只硬链接 manifest 中未受影响的服务文件；受影响项目图通过 SQLite `ATTACH + INSERT SELECT` 在数据库内部流式导出，不再把项目全图物化为 Python 对象。临时分片先装载数据、再创建二级索引与 FTS，并对 2-3 个受影响项目使用最多 3 个 worker。返回的 `timing_ms` 增加 `generation_inherit`、`generation_service_payloads`、`generation_graph_shards`、`generation_shared_shards`，可直接定位发布瓶颈。
+
+Since 4.3.84, partial generations hard-link only unchanged service artifacts declared by the manifest. Affected project graphs stream inside SQLite through `ATTACH + INSERT SELECT` rather than becoming Python object graphs. Temporary shards load data before building secondary indexes and FTS, with at most three workers for two or three affected projects. Four additive generation stage timings make publication bottlenecks directly observable.
+
 When `mc_lookup` has no explicit `project`, it now routes through the active topology and contract shards, selects a bounded set of service shards by request tier, and queries them in parallel. Responses include `shard_route` and `shard_evidence`, each tied to the active generation. Use `mc_admin(action="eval_cross_shard_replay", text="one intent per line")` to verify cross-service shard P95 and evidence coverage without persisting the raw replay text.
 
 当 `mc_lookup` 未传 `project` 时，现在会先通过 active topology 与 contract 分片路由，按请求档位选择有界服务分片集合，再并行查询。响应包含与 active generation 绑定的 `shard_route` 和 `shard_evidence`。可使用 `mc_admin(action="eval_cross_shard_replay", text="每行一个意图")` 验证跨服务分片 P95 与证据覆盖率，原始 replay 文本不会被持久化。
@@ -1042,6 +1046,14 @@ memory-center release-gate \
 4.3.81 起，Java 调用证据按具体重载的方法体绑定参数和局部变量类型。同名重载不再共享最后一次解析得到的变量表；聚合视图中的冲突变量会保持歧义，而确定类型直接保存在调用证据上。真实工作区验证仍使用 3-5 个私有逻辑锚点与定向刷新，不需要全量重建。
 
 Since 4.3.81, Java call evidence binds parameter and local-variable types to the lexical body of the specific overload. Same-named overloads no longer share a last-write-wins variable map; conflicting aggregate entries remain ambiguous while deterministic types stay attached to each call. Real-workspace validation continues to use 3-5 private logical anchors and scoped refresh rather than a full rebuild.
+
+4.3.82 起，显式类型 Lambda 和标准 `java.util.function` 泛型参数可生成有词法边界的接收者类型证据。类型仅在对应 Lambda 块或表达式内有效；第三方无类型回调和仅出现 `Type.class` 的场景仍保持未解析，避免用不受控猜测换取召回率。
+
+Since 4.3.82, explicitly typed Lambdas and standard `java.util.function` generic inputs produce lexically bounded receiver-type evidence. The type is valid only inside the matching Lambda block or expression. Untyped third-party callbacks and `Type.class`-only hints remain unresolved instead of trading precision for guessed recall.
+
+4.3.83 起，解析器还会从参数、局部变量和显式可见字段的 JDK 集合泛型中推导直接 Lambda 输入：支持 `List/Set/Collection/Iterable/Stream<T>` 的直接 Stream 操作，以及 `Map<K,V>.forEach`。嵌套调用采用重叠扫描，外层 `forEach` 不再遮蔽回调内调用。通配符、裸类型、类型变量、第三方契约和类型变换后的后续 Lambda 仍保持未解析。
+
+Since 4.3.83, the parser also derives direct Lambda inputs from JDK collection generics on parameters, locals, and explicitly visible fields. It supports direct Stream operations on `List/Set/Collection/Iterable/Stream<T>` and `Map<K,V>.forEach`. Overlapping call scanning keeps callback calls visible inside an outer `forEach`; wildcards, raw types, type variables, third-party contracts, and downstream Lambdas after type transformations remain unresolved.
 
 Use `--query-samples N` (default `1`) to execute each query N times: the first sample records cold-query latency and the remaining samples produce hot-query P95. Release baselines prefer hot P95; N=1 preserves the existing single-query cost.
 

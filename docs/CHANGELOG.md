@@ -1,5 +1,51 @@
 # Changelog / 更新日志
 
+## 4.3.84 局部 Generation 流式发布 / Scoped Generation Streaming Publication
+
+- 局部 generation 不再递归复制上一代完整目录，只按当前 manifest 硬链接未受影响服务的 JSON 与 SQLite 分片；受影响分片保持新 inode，旧 generation 仍不可变且可回滚。
+- 项目图导出从 `project_subgraph()` 的 Python 全量物化、JSON 反序列化和二次序列化，改为 SQLite `ATTACH + INSERT SELECT` 流式导出。临时可重建数据库先装载数据，再批量创建二级索引和 FTS，最后原子替换。
+- 2-3 个受影响项目使用最多 3 个有界 worker 并行构建独立分片；全量 reindex 继续串行，避免大工作区形成无界 I/O 峰值。
+- 新增继承、服务 payload、图分片和共享分片四段耗时；增加禁止 Python 图物化、双项目并行、节点/边无损对比、索引存在性和 inode 隔离测试。
+- 同一真实 3 文件负载连续两次完成于 `8.23s` 和 `8.21s`，较 `10.63s` 基线下降约 `22.6%`；generation 发布从 `4.99s` 降至约 `3.5s`，恢复到 `10s` 健康预算。4.3.81-4.3.83 三套严格 Java 门禁保持全部通过。
+
+## 4.3.84 Scoped Generation Streaming Publication
+
+- Partial generations no longer copy the complete parent directory recursively. Only JSON and SQLite artifacts for unchanged services are hard-linked from the current manifest; rebuilt shards receive new inodes while retained generations remain immutable and rollback-safe.
+- Project graph export now uses SQLite `ATTACH + INSERT SELECT` instead of materializing the complete project subgraph in Python and decoding/re-encoding every metadata payload. Rebuildable temporary databases load data before secondary indexes and FTS are created, then publish through an atomic replace.
+- Two or three affected projects use at most three bounded workers to build independent shards. Full reindex remains sequential to avoid unbounded I/O bursts on large workspaces.
+- Added stage timings for inheritance, service payloads, graph shards, and shared shards, plus regression tests for zero Python graph materialization, two-project parallelism, lossless node/edge counts, query indexes, and inode isolation.
+- The same real three-file workload completed twice at `8.23s` and `8.21s`, about `22.6%` below the `10.63s` baseline. Generation publication dropped from `4.99s` to about `3.5s`, restoring the `10s` healthy budget; all strict Java suites from 4.3.81 through 4.3.83 remain passing.
+
+## 4.3.83 JDK 集合泛型 Lambda 推导 / JDK Collection Generic Lambda Inference
+
+- Java regex supplement 可从方法参数、局部变量和显式可见字段的 `List<T>`、`Set<T>`、`Collection<T>`、`Iterable<T>`、`Stream<T>` 中推导直接集合/Stream 操作的 Lambda 输入类型，并支持 `Map<K,V>.forEach((k,v) -> ...)`。
+- 嵌套调用改为重叠扫描，`items.forEach(item -> item.submit())` 不再因外层调用吞掉内层接收者调用。类型证据仍限制在对应 Lambda 词法区间内。
+- 通配符、裸集合、类型变量、第三方回调及经过类型变换 `map/flatMap` 后的后续 Lambda 保持 unresolved；不跨越无法证明的泛型变换传播类型。
+- 新增集合字段/参数/局部变量、Map 双参数、类型变换隔离和通配符负例。真实空间 3 个新增私有 case、上一版 Lambda case 和重载 case 均严格 3/3 通过，意外与禁止高置信边均为 `0`。
+- 真实空间单文件刷新 `4.96s`，在 `10s` 预算内；3 文件批量刷新 `10.63s`，其中 generation 发布 `4.99s` 并触发 warning。下一性能优先级是批量 generation 的受影响分片 copy-on-write 发布。
+
+## 4.3.83 JDK Collection Generic Lambda Inference
+
+- Java regex supplements now infer direct collection/Stream Lambda inputs from `List<T>`, `Set<T>`, `Collection<T>`, `Iterable<T>`, and `Stream<T>` method parameters, locals, and explicitly visible fields. `Map<K,V>.forEach((k,v) -> ...)` is supported as well.
+- Qualified calls are scanned with overlap, so an outer `items.forEach(...)` no longer hides an inner `item.submit()` call. Inferred evidence remains bounded to the matching Lambda scope.
+- Wildcards, raw collections, type variables, third-party callbacks, and downstream Lambdas after type-changing `map/flatMap` operations remain unresolved. Types never propagate across an unproven generic transformation.
+- Added positive and negative coverage for collection fields/parameters/locals, bi-arity maps, transformation isolation, and wildcards. Three new private real-workspace cases, the previous Lambda suite, and the overload suite all pass strict 3/3 gates with zero unexpected or forbidden high-confidence edges.
+- A real single-file refresh completed in `4.96s` within the `10s` budget. A three-file batch took `10.63s`, including `4.99s` in generation publication, and remains a warning; affected-shard copy-on-write publication is the next performance priority.
+
+## 4.3.82 Java Lambda 词法类型推导 / Java Lambda Lexical Type Inference
+
+- Java regex supplement 新增 Lambda 词法作用域：显式 `(Type value) -> ...` 参数类型仅作用于对应块或表达式，不会污染同名字段及 Lambda 外代码。
+- 支持标准 `java.util.function` 的 `Consumer`、`Function`、`Predicate`、双参数和 Operator 泛型输入映射；第三方无类型回调和仅凭 `Type.class` 的回调保持 unresolved，不猜测调用契约。
+- 新增显式 Lambda、标准函数接口、同名字段隔离和第三方回调负例测试。真实空间 3 个私有 case 严格门禁全部通过，召回、置信率和解析等级均为 `1.0`，意外与禁止高置信边均为 `0`；上一版重载门禁保持 3/3 通过。
+- 3 个大文件合并刷新为 `11.42s`，明确标记 warning；其中最重单文件刷新为 `7.77s` 并通过 `10s` 预算。批量大文件 generation 发布继续作为性能观察项，不把合并超预算表述为已解决。
+
+## 4.3.82 Java Lambda Lexical Type Inference
+
+- Added lexical Lambda scopes to Java regex supplements. Explicit `(Type value) -> ...` parameter types apply only to the matching block or expression and cannot leak into same-named fields or code outside the Lambda.
+- Added generic input mapping for standard `java.util.function` consumers, functions, predicates, bi-arity interfaces, and operators. Untyped third-party callbacks and callbacks inferred only from a `Type.class` argument remain unresolved because their contracts are not proven.
+- Added explicit-Lambda, standard-functional-interface, field-isolation, and third-party negative tests. Three private real-workspace cases pass strict recall, confidence, and resolution-level gates at `1.0`, with zero unexpected or forbidden high-confidence edges; the previous overload suite remains 3/3 passing.
+- A combined refresh of three large files took `11.42s` and remains a warning. The largest file alone refreshed in `7.77s`, passing the `10s` budget; large-batch generation publication remains an explicit performance observation rather than a claimed fix.
+
 ## 4.3.81 Java 重载作用域隔离 / Java Overload Scope Isolation
 
 - 修复 Java regex supplement 将同名重载方法的参数与局部变量表按方法名相互覆盖的问题。每条调用和 DTO 字段访问现在直接绑定所在重载的变量作用域，不再从其他重载猜测接收者类型。
