@@ -1,5 +1,17 @@
 # Changelog / 更新日志
 
+## 4.3.81 Java 重载作用域隔离 / Java Overload Scope Isolation
+
+- 修复 Java regex supplement 将同名重载方法的参数与局部变量表按方法名相互覆盖的问题。每条调用和 DTO 字段访问现在直接绑定所在重载的变量作用域，不再从其他重载猜测接收者类型。
+- 兼容的 `method_variable_types` 聚合视图改为保守合并：同名变量在不同重载中类型冲突时删除该歧义项；解析器仍保留每条调用上的确定类型证据。
+- 新增重载调用与 DTO accessor 回归测试，并在真实工作区建立 3 个私有 expected/allowed/forbidden 逻辑锚点。3 文件局部刷新耗时 `6.70s`，严格门禁 3/3 通过，召回率与高置信命中率均为 `1.0`，禁止目标命中为 `0`。
+
+## 4.3.81 Java Overload Scope Isolation
+
+- Fixed Java regex supplements leaking parameter and local-variable types across same-named overloads. Each call and DTO field access now binds directly to the lexical scope of its own overload instead of borrowing a sibling overload's receiver type.
+- The compatible `method_variable_types` aggregate is now conservative: a variable with conflicting types across overloads is removed as ambiguous, while deterministic type evidence remains attached to each call.
+- Added overload call and DTO-accessor regression coverage plus three private expected/allowed/forbidden anchors on a real workspace. A three-file scoped refresh completed in `6.70s`; all 3 strict cases passed with `1.0` recall and confidence rate and zero forbidden hits.
+
 ## 4.3.80 时间前向共变与 Replay 校准 / Walk-Forward Co-change and Replay Calibration
 
 - Git co-change v3 按仓库提交时间从旧到新执行：每个评估提交只能读取更早提交形成的文件对，当前图仅作为诊断对照，不参与校准，消除未来提交与当前图快照泄漏。

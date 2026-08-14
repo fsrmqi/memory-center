@@ -529,6 +529,42 @@ public class OrderController {
     assert "e" not in symbol["method_variable_types"]["submit"]
 
 
+def test_overloaded_method_calls_keep_their_own_parameter_types() -> None:
+    caller = """package com.example;
+public class ResultFactory {
+    static void error(ErrorCode errorCode) { errorCode.getCode(); }
+    static void error(ServiceError errorCode) { errorCode.getMessage(); }
+}
+"""
+    symbol = _symbol("api", "ResultFactory.java", caller)
+    calls = {
+        call["method_name"]: call["receiver_type"]
+        for call in symbol["method_calls"]
+        if call["receiver"] == "errorCode"
+    }
+
+    assert calls == {"getCode": "ErrorCode", "getMessage": "ServiceError"}
+    assert "errorCode" not in symbol["method_variable_types"]["error"]
+
+
+def test_overloaded_method_dto_usages_keep_their_own_parameter_types() -> None:
+    caller = """package com.example;
+public class ResultFactory {
+    static void copy(OrderRequest request) { request.getOrderId(); }
+    static void copy(UserRequest request) { request.getUserId(); }
+}
+"""
+    parsed = RegexJavaParser().parse(caller, "ResultFactory.java")
+    usages = {
+        usage["field"]: usage["receiver_type"]
+        for usage in parsed.dto_field_usages
+        if usage["receiver"] == "request"
+    }
+
+    assert usages == {"orderId": "OrderRequest", "userId": "UserRequest"}
+    assert "request" not in parsed.method_variable_types["copy"]
+
+
 def test_resolves_inherited_lombok_accessor_to_workspace_parent() -> None:
     caller = """package com.example.order;
 public class OrderFacade { void submit(OrderRequest request) { request.getTenantId(); } }

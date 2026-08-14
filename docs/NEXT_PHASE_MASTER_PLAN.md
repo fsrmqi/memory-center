@@ -50,6 +50,10 @@ This file consolidates and replaces the older execution plan, superpowers evolut
 
 4.3.77 已完成加权最佳路径、统一 Change Review Plan、渐进上下文与调用预算、离线架构健康算法、Git co-change 独立评测及发布门禁。实现复用现有 `graph.db`、generation、EvidenceRef 和 Action，不建立第二套长期图存储；高成本社区与中心性算法仅显式离线执行。该工作包不再列入后续待办，使用与算法边界见架构、MCP、参考文档及更新日志。
 
+### 已交付：Java 重载方法作用域隔离（4.3.81）
+
+4.3.81 已修复同名重载变量表覆盖问题：调用和 DTO accessor 直接绑定各自方法体的参数与局部变量，冲突聚合项保持歧义。真实空间 3 个私有逻辑锚点严格门禁全部通过，3 文件局部刷新在 10 秒预算内完成。该缺口不再作为后续任务。
+
 ### P1：Java Parser / Call Resolver 真实精度深化
 
 目标：让 method walkthrough 和跨项目链路在真实 Spring Cloud 场景下更稳。
@@ -57,7 +61,7 @@ This file consolidates and replaces the older execution plan, superpowers evolut
 任务：
 
 1. 先运行 `eval-java-call-resolution-unresolved`；报告会把静态类/外部依赖、基础继承方法与实例接收者缺少类型分开，不能把外部 API 或 `Object` 基础方法误当作本地解析缺陷。
-2. 从真实未解析分类中选择最高频且可复现的一类，补充 3-5 个只含逻辑锚点的私有 case。
+2. 从剩余 `receiver_type_missing` 中选择 lambda 参数、模式变量或泛型推导等下一类最高频且可复现缺口，补充 3-5 个只含逻辑锚点的私有 case；不要重复处理已完成的重载作用域问题。
 3. 每次仅修复一个明确的 parser 或 resolver 缺口，不以宽泛 fallback 换取表面召回率。
 4. 将每个误判转成可复跑 case，并在 CLI、MCP、HTTP 中保留失败原因和缺失锚点。`expected_resolution_levels` 必须作为门禁条件；用聚合 metrics 观察解析等级与链式边变化，用私有 case 判定正确/错误边。
 
@@ -367,4 +371,4 @@ scripts/verify_real_ucap.sh
 
 4.3.78 已完成首轮 Java 调用解析真实精度闭环和 co-change v2 校准：3 个私有链式锚点严格门禁全部通过；66 个真实共变 case 的 precision 从 0.0438 提升到 0.0706，recall 从 0.2191 提升到 0.2229。后续 Java 解析只由新增真实失败样本驱动，不再把可解释的外部边界当作缺陷。
 
-4.3.80 已完成 walk-forward 共变/replay 校准：真实共变 66 个 case 超过过去热门文件基线并显式应用 546 条哈希先验；检索 replay 已具备任务去重、时间留出和 Brier 门禁，但真实验证样本仍为 0，因此保持原权重。下一优先级调整为 **新增真实 Java 失败样本 -> 持续积累并观察检索 replay**。4.3.77 的图感知审查能力继续作为唯一稳定入口，不建设平行图存储或第二套审查服务。
+4.3.80 已完成 walk-forward 共变/replay 校准，4.3.81 已完成首批真实 Java 重载失败样本闭环。检索 replay 仍保持时间留出和 Brier 门禁，真实验证样本不足时不调整权重。下一优先级调整为 **lambda/模式变量等下一类真实 Java 失败样本 -> 持续积累并观察检索 replay**。4.3.77 的图感知审查能力继续作为唯一稳定入口，不建设平行图存储或第二套审查服务。

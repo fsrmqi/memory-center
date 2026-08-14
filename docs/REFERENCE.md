@@ -429,6 +429,8 @@ memory-center eval-java-call-resolution-metrics --workspace <workspace.yaml>
 
 当 case 指定 `expected_resolution_levels` 时，该解析等级也是门禁条件。例如链式调用应填写 `chain_return_type`；即使目标方法仍能命中，解析等级退化也会失败。`eval-java-call-resolution-metrics` 只输出解析等级分布、`chain_return_type` 边/源数量、平均置信度和未解析率，适合在真实工作空间记录边增量，但不代替含 `forbidden_targets` 的私有精度 case。
 
+4.3.81 起，调用接收者类型按具体重载的方法体提取；同名重载的参数和局部变量不会相互覆盖。case 的 `source` 仍是 `Class#method`，因此会聚合同名重载的边：其他重载的合法目标应放入 `allowed_targets`，禁止目标必须对该方法的全部重载都不成立。
+
 Run the read-only diagnostic before creating private logical-anchor cases. `receiver_shape_counts` separates static/dependency calls from missing local receiver types. Never synthesize workspace call edges just to lower the unresolved rate; only promote reproducible local categories into a 3-5 case private suite and release gate.
 
 When a case declares `expected_resolution_levels`, that level is gated too. For example, a chain case should declare `chain_return_type`; a generic fallback fails even if the target still matches. `eval-java-call-resolution-metrics` reports only aggregate resolution-level distribution, chain edge/source counts, mean confidence, and unresolved rate. Use it to observe real-workspace edge changes, not as a replacement for private cases with `forbidden_targets`.

@@ -45,8 +45,8 @@ class RegexJavaParser:
         }
         method_variable_types = _parse_method_variable_types(cleaned, method_spans)
         bean_injections = _parse_bean_injections(cleaned, classes, field_types)
-        method_calls = _parse_method_calls(cleaned, method_spans, method_variable_types, field_types)
-        dto_field_usages = _parse_dto_field_usages(cleaned, method_spans, method_variable_types, field_types)
+        method_calls = _parse_method_calls(cleaned, method_spans, field_types)
+        dto_field_usages = _parse_dto_field_usages(cleaned, method_spans, field_types)
         config_usages = _parse_config_usages(cleaned)
         data_resources = _parse_data_resources(cleaned)
 
@@ -131,8 +131,8 @@ class RegexJavaParser:
         method_signatures = _build_method_signatures(method_spans)
         method_variable_types = _parse_method_variable_types(cleaned, method_spans)
         bean_injections = _parse_bean_injections(cleaned, list(classes or []), seed_field_types)
-        method_calls = _parse_method_calls(cleaned, method_spans, method_variable_types, seed_field_types)
-        dto_field_usages = _parse_dto_field_usages(cleaned, method_spans, method_variable_types, seed_field_types)
+        method_calls = _parse_method_calls(cleaned, method_spans, seed_field_types)
+        dto_field_usages = _parse_dto_field_usages(cleaned, method_spans, seed_field_types)
         config_usages = _parse_config_usages(cleaned)
         data_resources = _parse_data_resources(cleaned)
         return JavaParseResult(
@@ -483,13 +483,6 @@ def _matching_brace_end(text: str, open_pos: int) -> int:
     return n
 
 
-def _owner_method(method_spans: list[dict[str, Any]], pos: int) -> str | None:
-    for span in method_spans:
-        if span["start"] <= pos < span["end"]:
-            return span["name"]
-    return None
-
-
 def _line_of(text: str, pos: int) -> int:
     return text.count("\n", 0, pos) + 1
 
@@ -555,6 +548,28 @@ def _parse_params(params: str) -> dict[str, str]:
 
 def _parse_method_variable_types(text: str, method_spans: list[dict[str, Any]]) -> dict[str, dict[str, str]]:
     out: dict[str, dict[str, str]] = {}
+    ambiguous: dict[str, set[str]] = {}
+    for span in method_spans:
+        method_name = str(span.get("name") or "")
+        if not method_name:
+            continue
+        merged = out.setdefault(method_name, {})
+        conflicts = ambiguous.setdefault(method_name, set())
+        for variable, variable_type in _method_span_variable_types(text, span).items():
+            if variable in conflicts:
+                continue
+            previous = merged.get(variable)
+            if previous and previous != variable_type:
+                merged.pop(variable, None)
+                conflicts.add(variable)
+                continue
+            merged[variable] = variable_type
+    return out
+
+
+def _method_span_variable_types(text: str, span: dict[str, Any]) -> dict[str, str]:
+    """Extract variables for one overload without leaking sibling scopes."""
+
     local_decl = re.compile(
         r"(?:^|[;{]\s*|\n\s*)"
         r"(?:final\s+)?(?P<type>[\w<>, ?\.\[\]]+)\s+"
@@ -569,30 +584,27 @@ def _parse_method_variable_types(text: str, method_spans: list[dict[str, Any]]) 
         r"(?P<name>[a-zA-Z_]\w*)\s*\)",
         re.M,
     )
-    for span in method_spans:
-        vars_for_method = _parse_params(span.get("params", ""))
-        body = text[span["start"]:span["end"]]
-        for match in local_decl.finditer(body):
-            vars_for_method.setdefault(match.group("name"), _simple_type(match.group("type")))
-        for match in foreach_decl.finditer(body):
-            vars_for_method.setdefault(match.group("name"), _simple_type(match.group("type")))
-        for match in resource_decl.finditer(body):
-            vars_for_method.setdefault(match.group("name"), _simple_type(match.group("type")))
-        for match in catch_decl.finditer(body):
-            catch_type = match.group("type")
-            # Multi-catch has more than one possible runtime type. Keeping it
-            # unresolved is safer than selecting the first arm and emitting a
-            # potentially false workspace call edge.
-            if "|" not in catch_type:
-                vars_for_method.setdefault(match.group("name"), _simple_type(catch_type))
-        out[span["name"]] = vars_for_method
-    return out
+    variables = _parse_params(span.get("params", ""))
+    body = text[int(span["start"]):int(span["end"])]
+    for match in local_decl.finditer(body):
+        variables.setdefault(match.group("name"), _simple_type(match.group("type")))
+    for match in foreach_decl.finditer(body):
+        variables.setdefault(match.group("name"), _simple_type(match.group("type")))
+    for match in resource_decl.finditer(body):
+        variables.setdefault(match.group("name"), _simple_type(match.group("type")))
+    for match in catch_decl.finditer(body):
+        catch_type = match.group("type")
+        # Multi-catch has more than one possible runtime type. Keeping it
+        # unresolved is safer than selecting the first arm and emitting a
+        # potentially false workspace call edge.
+        if "|" not in catch_type:
+            variables.setdefault(match.group("name"), _simple_type(catch_type))
+    return variables
 
 
 def _parse_method_calls(
     text: str,
     method_spans: list[dict[str, Any]],
-    method_variable_types: dict[str, dict[str, str]],
     field_types: dict[str, str],
 ) -> list[dict[str, Any]]:
     calls: list[dict[str, Any]] = []
@@ -615,6 +627,7 @@ def _parse_method_calls(
         body_end = max(body_start, int(span.get("end") or body_start))
         body = text[body_start:body_end]
         owner_method = str(span.get("name") or "")
+        span_variable_types = _method_span_variable_types(text, span)
         for m in chained_pattern.finditer(body):
             # ``foo.bar(convert(value).setFlag(flag))`` is not a chain on
             # ``foo``. The regex cannot balance nested invocation arguments,
@@ -624,14 +637,14 @@ def _parse_method_calls(
             if "(" in (m.group("first_args") or ""):
                 continue
             receiver = m.group("receiver")
-            calls.append({"receiver": receiver, "receiver_type": method_variable_types.get(owner_method, {}).get(receiver) or field_types.get(receiver), "method_name": m.group("method"), "owner_method": owner_method, "line": _line_of(text, body_start + m.start()), "arg_count": len(_split_top_level(m.group("args") or "")), "chain_receiver_method": m.group("first")})
+            calls.append({"receiver": receiver, "receiver_type": span_variable_types.get(receiver) or field_types.get(receiver), "method_name": m.group("method"), "owner_method": owner_method, "line": _line_of(text, body_start + m.start()), "arg_count": len(_split_top_level(m.group("args") or "")), "chain_receiver_method": m.group("first")})
         for m in qualified_pattern.finditer(body):
             receiver = m.group("receiver")
             method = m.group("method")
             if receiver in ignored or method in ignored_methods:
                 continue
             absolute_method_pos = body_start + m.start("method")
-            receiver_type = method_variable_types.get(owner_method, {}).get(receiver) or field_types.get(receiver)
+            receiver_type = span_variable_types.get(receiver) or field_types.get(receiver)
             seen.add((absolute_method_pos, receiver, method))
             calls.append(
                 {
@@ -670,23 +683,30 @@ def _preceded_by_new_keyword(text: str, pos: int) -> bool:
 def _parse_dto_field_usages(
     text: str,
     method_spans: list[dict[str, Any]],
-    method_variable_types: dict[str, dict[str, str]],
     field_types: dict[str, str],
 ) -> list[dict[str, Any]]:
     usages: list[dict[str, Any]] = []
     pattern = re.compile(r"(?P<receiver>\b[a-zA-Z_]\w*)\s*\.\s*(?P<accessor>get|set|is)(?P<field>[A-Z]\w*)\s*\(", re.M)
-    for m in pattern.finditer(text):
-        field = m.group("field")
-        field_name = field[:1].lower() + field[1:]
-        owner_method = _owner_method(method_spans, m.start())
-        usages.append({
-            "receiver": m.group("receiver"),
-            "receiver_type": (method_variable_types.get(owner_method or "", {}).get(m.group("receiver")) or field_types.get(m.group("receiver"))),
-            "accessor": m.group("accessor"),
-            "field": field_name,
-            "owner_method": owner_method,
-            "line": _line_of(text, m.start()),
-        })
+    for span in method_spans:
+        if span.get("is_declaration"):
+            continue
+        body_start = int(span.get("body_start") or span.get("start") or 0)
+        body_end = max(body_start, int(span.get("end") or body_start))
+        body = text[body_start:body_end]
+        owner_method = str(span.get("name") or "")
+        span_variable_types = _method_span_variable_types(text, span)
+        for m in pattern.finditer(body):
+            receiver = m.group("receiver")
+            field = m.group("field")
+            field_name = field[:1].lower() + field[1:]
+            usages.append({
+                "receiver": receiver,
+                "receiver_type": span_variable_types.get(receiver) or field_types.get(receiver),
+                "accessor": m.group("accessor"),
+                "field": field_name,
+                "owner_method": owner_method,
+                "line": _line_of(text, body_start + m.start()),
+            })
     return usages
 
 

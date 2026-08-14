@@ -1039,6 +1039,10 @@ memory-center release-gate \
 
 4.3.80 起，co-change 主指标改为严格 walk-forward：先用至少 5 个旧提交预热，再逐提交预测下一批真实共变文件，评估提交在打分后才进入训练历史。当前图只输出诊断指标，不参与校准。`memory-center eval-cochange --workspace <workspace.yaml> --max-commits 20 --warmup-commits 5 --apply` 只有在时间前向结果不低于过去热门文件基线且样本达标时才写入哈希先验；先验只调整已有图候选排序。
 
+4.3.81 起，Java 调用证据按具体重载的方法体绑定参数和局部变量类型。同名重载不再共享最后一次解析得到的变量表；聚合视图中的冲突变量会保持歧义，而确定类型直接保存在调用证据上。真实工作区验证仍使用 3-5 个私有逻辑锚点与定向刷新，不需要全量重建。
+
+Since 4.3.81, Java call evidence binds parameter and local-variable types to the lexical body of the specific overload. Same-named overloads no longer share a last-write-wins variable map; conflicting aggregate entries remain ambiguous while deterministic types stay attached to each call. Real-workspace validation continues to use 3-5 private logical anchors and scoped refresh rather than a full rebuild.
+
 Use `--query-samples N` (default `1`) to execute each query N times: the first sample records cold-query latency and the remaining samples produce hot-query P95. Release baselines prefer hot P95; N=1 preserves the existing single-query cost.
 
 `release-gate` 默认要求热查询 P95 不超过 `2000ms`，并返回 `stage_p95_ms` 帮助定位精确检索、BM25、语义、图排序或邻居扩展的瓶颈。维护窗口可通过 `--max-hot-query-p95-ms 0` 显式关闭绝对预算，但仍会保留基线退化检查。
