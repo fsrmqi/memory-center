@@ -20,7 +20,7 @@ def test_runtime_governance_is_read_only_and_available_from_all_entrypoints(tmp_
     after = sorted(path.relative_to(workspace.parent).as_posix() for path in workspace.parent.rglob("*"))
 
     assert report["mode"] == "read_only"
-    assert {"performance", "storage", "index", "vector_ann", "active_jobs"}.issubset(report)
+    assert {"performance", "scoped_refresh", "storage", "index", "vector_ann", "active_jobs"}.issubset(report)
     assert route["mode"] == "read_only"
     assert admin["mode"] == "read_only"
     assert is_mutating_http_route("/workspace/runtime-governance") is False

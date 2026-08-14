@@ -80,6 +80,7 @@ class JavaSymbol:
     package: str | None = None
     classes: list[str] = field(default_factory=list)
     interfaces: list[str] = field(default_factory=list)
+    type_kinds: dict[str, str] = field(default_factory=dict)
     type_supertypes: dict[str, list[str]] = field(default_factory=dict)
     methods: list[str] = field(default_factory=list)
     method_signatures: list[dict[str, Any]] = field(default_factory=list)
@@ -116,6 +117,7 @@ class JavaSymbol:
             "package": self.package,
             "classes": list(self.classes),
             "interfaces": list(self.interfaces),
+            "type_kinds": dict(self.type_kinds),
             "type_supertypes": {name: list(values) for name, values in self.type_supertypes.items()},
             "methods": list(self.methods),
             "method_signatures": list(self.method_signatures),

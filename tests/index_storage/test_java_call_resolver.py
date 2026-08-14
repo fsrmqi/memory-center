@@ -8,7 +8,7 @@ import yaml
 
 from memory_center.core.indexing.java_call_resolver import JavaCallResolver, build_java_class_index
 from memory_center.core.indexing.java_regex_parser import RegexJavaParser
-from memory_center.core.indexing.reindex import reindex_workspace
+from memory_center.core.indexing.reindex import parse_java_symbols, reindex_workspace
 from memory_center.core.indexing.tree_sitter_parser import TreeSitterJavaParser
 from memory_center.core.orchestrator.query import memory_callees
 from memory_center.core.storage.graph import node_id
@@ -25,6 +25,7 @@ def _symbol(project: str, file: str, source: str) -> dict:
         "package": parsed.package,
         "classes": parsed.classes,
         "interfaces": parsed.interfaces,
+        "type_kinds": parsed.type_kinds,
         "type_supertypes": parsed.type_supertypes,
         "methods": parsed.methods,
         "method_signatures": parsed.method_signatures,
@@ -374,6 +375,103 @@ public class Order { private String id; }
     assert result.unresolved_reason == "target_method_not_indexed"
 
 
+def test_enum_generated_values_is_not_a_local_polymorphism_gap() -> None:
+    caller = """package com.example;
+public class OrderFacade { void run() { Status.values(); } }
+"""
+    enum_source = """package com.example;
+public enum Status { READY, DONE }
+"""
+
+    result = _resolve(
+        [_symbol("api", "OrderFacade.java", caller), _symbol("api", "Status.java", enum_source)],
+        "OrderFacade.java",
+        "values",
+    )
+
+    assert result.unresolved_reason == "generated_enum_method_out_of_scope"
+
+
+def test_java_symbol_serialization_preserves_type_kind() -> None:
+    source = "package com.example; public enum Status { READY }"
+    parsed = RegexJavaParser().parse(source, "Status.java")
+    symbol = parse_java_symbols("api", "Status.java", source).to_dict()
+
+    assert parsed.type_kinds == {"Status": "enum"}
+    assert symbol["type_kinds"] == {"Status": "enum"}
+
+
+def test_missing_method_on_external_parent_is_inherited_scope() -> None:
+    caller = """package com.example;
+public class OrderFacade {
+    private OrderMapper mapper;
+    void run() { mapper.insert(new Object()); }
+}
+"""
+    mapper = """package com.example;
+import com.framework.BaseMapper;
+public interface OrderMapper extends BaseMapper<Order> {}
+"""
+
+    result = _resolve(
+        [_symbol("api", "OrderFacade.java", caller), _symbol("api", "OrderMapper.java", mapper)],
+        "OrderFacade.java",
+        "insert",
+    )
+
+    assert result.unresolved_reason == "inherited_method_out_of_scope"
+
+
+def test_missing_method_on_transitive_external_parent_is_inherited_scope() -> None:
+    caller = """package com.example;
+public class OrderFacade {
+    private OrderMapper mapper;
+    void run() { mapper.insert(new Object()); }
+}
+"""
+    mapper = """package com.example;
+public interface OrderMapper extends BaseMapperX<Order> {}
+"""
+    local_base = """package com.example;
+import com.framework.BaseMapper;
+public interface BaseMapperX<T> extends BaseMapper<T> {}
+"""
+
+    result = _resolve(
+        [
+            _symbol("api", "OrderFacade.java", caller),
+            _symbol("api", "OrderMapper.java", mapper),
+            _symbol("api", "BaseMapperX.java", local_base),
+        ],
+        "OrderFacade.java",
+        "insert",
+    )
+
+    assert result.unresolved_reason == "inherited_method_out_of_scope"
+
+
+def test_chain_to_external_return_type_is_not_local_polymorphism() -> None:
+    caller = """package com.example;
+public class OrderFacade {
+    private OrderPage page;
+    void run() { page.getItems().size(); }
+}
+"""
+    page = """package com.example;
+import lombok.Data;
+import java.util.List;
+@Data public class OrderPage { private List<String> items; }
+"""
+
+    result = _resolve(
+        [_symbol("api", "OrderFacade.java", caller), _symbol("api", "OrderPage.java", page)],
+        "OrderFacade.java",
+        "size",
+    )
+
+    assert result.unresolved_reason == "chain_return_type_not_indexed"
+
+
 def test_external_static_import_is_not_confused_with_same_named_workspace_type() -> None:
     caller = """package com.example.order;
 import com.thirdparty.DateUtil;
@@ -524,7 +622,7 @@ def test_lombok_chain_does_not_resolve_field_type_outside_workspace() -> None:
     )
 
     assert resolved.resolution_level == "unresolved"
-    assert resolved.unresolved_reason == "target_method_not_indexed"
+    assert resolved.unresolved_reason == "chain_return_type_not_indexed"
 
 
 def test_overload_keeps_matching_signature_evidence() -> None:

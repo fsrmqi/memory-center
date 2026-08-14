@@ -93,7 +93,9 @@ MCP 当前公开的是 15 个 task-level tools：
 
 真实工作区运行治理使用 `mc_admin(action="runtime_governance")`、`GET /workspace/runtime-governance` 或 `memory-center runtime-governance`。它只汇总性能快照、空间预算、generation、ANN 和活跃任务；未初始化 workspace 不创建 SQLite，任何维护动作仍需 Agent 根据 `next_action` 显式发起。
 
-外部 `skill-up` 评测必须使用 3 到 5 个脱敏、可观察的 case；隔离运行环境未建立前，`without_skill` 基线固定为不可比较。执行结果会返回 `pass`、`skill_failure`、`evaluation_failure` 或 `environment_error`，其中认证、网络、MCP、进程和超时问题绝不计入 Skill 失败率。Java 调用解析的 `eval_java_call_resolution_unresolved` 返回 `campaign`，要求先增加 3 到 5 个 `expected_target`、`allowed_targets`、`forbidden_targets` 逻辑锚点 case，再允许变更 resolver/parser。
+局部刷新性能通过 `mc_admin(action="scoped_refresh_performance", limit=20)`、`GET /workspace/scoped-refresh-performance` 或 `memory-center scoped-refresh-performance` 读取。Agent 应先查看 `status`、P95 和 `latest.dominant_stage`；预算内不重复刷新，超预算时只 profile 建议阶段，禁止自动升级为全量 reindex。
+
+外部 `skill-up` 评测必须使用 3 到 5 个脱敏、可观察的 case；隔离运行环境未建立前，`without_skill` 基线固定为不可比较。执行结果会返回 `pass`、`skill_failure`、`evaluation_failure` 或 `environment_error`，其中认证、网络、MCP、进程和超时问题绝不计入 Skill 失败率。Java 调用解析的 `eval_java_call_resolution_unresolved` 返回 `campaign`，要求先增加 3 到 5 个 `expected_target`、`allowed_targets`、`forbidden_targets` 逻辑锚点 case，再允许变更 resolver/parser。enum 生成方法、外部返回类型链和最终继承外部框架接口的方法会作为索引边界单独分类，不参与本地修复 campaign。
 
 常驻索引更新通过 `memory-center watcher-start --workspace <workspace.yaml>` 启动；它对去抖后的源码、配置变更创建有界局部重建任务，不在查询链路执行全量重建。使用 `watcher-status` / `watcher-stop` 查看或停止。MCP 对应 `mc_admin(action="watcher_start|watcher_status|watcher_stop")`；Workbench 的 `hot_refresh.watcher` 同步显示相同状态。
 
@@ -105,7 +107,7 @@ MCP 当前公开的是 15 个 task-level tools：
 
 统一变更审查使用 `mc_admin(action="change_review", scope="all", view="minimal")`，HTTP 为 `GET /workspace/change-review?scope=all&detail_level=minimal`，CLI 为 `change-review`。它最多定向刷新 12 个相关文件，禁止退化为全量 reindex；返回加权最佳影响路径、测试缺口、契约风险、验证 Action、停止条件和调用预算。同一源码签名与 index generation 的等价请求直接复用结果；只有证据不足或用户显式请求时才升级 `standard` / `deep`。
 
-Git co-change 独立评测使用 `mc_admin(action="eval_cochange", limit=20)`、`GET /workspace/eval-cochange?max_commits=20` 或 CLI `eval-cochange`。它是显式离线评测，不进入查询热路径；提交、路径和消息不会写入报告，环境错误也不会计入准确率。
+Git co-change 独立评测使用 `mc_admin(action="eval_cochange", limit=20)`、`GET /workspace/eval-cochange?max_commits=20` 或 CLI `eval-cochange`。4.3.78 的预测器使用默认 8 个候选的有界加权文件邻居，最多读取 1,600 条相邻边；它是显式离线评测，不进入查询热路径，提交、路径和消息不会写入报告，环境错误也不会计入准确率。
 
 架构社区分析使用 `mc_admin(action="architecture_communities")`，HTTP 为 `GET /workspace/architecture-communities`，CLI 为 `architecture-communities`。它读取有界 SQL 投影，优先使用固定种子的 Leiden，缺少可选依赖时使用确定性加权标签传播，并返回社区、桥接点、异常跨社区连接与未测试高中心性节点；仅在显式调用时执行，Workbench/status 仅读取已缓存摘要，异常结论始终标记为 `INFERRED`。
 

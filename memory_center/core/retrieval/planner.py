@@ -15,6 +15,108 @@ from ..indexing.control_plane import index_control_status
 
 PERFORMANCE_LEDGER_FILE = "query-performance.jsonl"
 WORKSPACE_PERFORMANCE_SNAPSHOTS_FILE = "workspace-performance-snapshots.jsonl"
+SCOPED_REFRESH_PERFORMANCE_FILE = "scoped-refresh-performance.jsonl"
+DEFAULT_SCOPED_REFRESH_BUDGET_MS = 10_000.0
+
+
+def record_scoped_refresh_performance(
+    workspace_file: str | Path,
+    *,
+    timing_ms: dict[str, float],
+    path_count: int,
+    project_count: int,
+    scanned_files: int,
+    generation: str,
+) -> dict[str, Any]:
+    """Persist one aggregate-only scoped-refresh observation."""
+    store = WorkspaceStore(workspace_file)
+    normalized_timings = {
+        str(key): round(max(0.0, float(value or 0)), 2)
+        for key, value in timing_ms.items()
+        if key
+    }
+    total_ms = float(normalized_timings.get("total", 0.0) or 0.0)
+    stage_timings = {
+        key: value
+        for key, value in normalized_timings.items()
+        if key not in {"total", "pipeline_total"}
+    }
+    dominant_stage = max(stage_timings, key=stage_timings.get) if stage_timings else "unknown"
+    budget_ms = max(
+        100.0,
+        float(os.getenv("MEMORY_CENTER_SCOPED_REFRESH_BUDGET_MS", str(DEFAULT_SCOPED_REFRESH_BUDGET_MS))),
+    )
+    observation = {
+        "schema_version": 1,
+        "recorded_at": time.time(),
+        "generation": generation,
+        "scope": {
+            "path_count": max(0, int(path_count)),
+            "project_count": max(0, int(project_count)),
+            "scanned_files": max(0, int(scanned_files)),
+        },
+        "timing_ms": normalized_timings,
+        "dominant_stage": dominant_stage,
+        "budget_ms": budget_ms,
+        "status": "healthy" if total_ms <= budget_ms else "warning",
+    }
+    store.append_jsonl(SCOPED_REFRESH_PERFORMANCE_FILE, observation)
+    return {
+        "status": observation["status"],
+        "total_ms": total_ms,
+        "budget_ms": budget_ms,
+        "dominant_stage": dominant_stage,
+        "next_action": _scoped_refresh_next_action(observation),
+    }
+
+
+def scoped_refresh_performance_status(workspace_file: str | Path, limit: int = 20) -> dict[str, Any]:
+    """Read a bounded scoped-refresh trend without source/path disclosure."""
+    store = WorkspaceStore(workspace_file)
+    rows = store.read_jsonl(
+        SCOPED_REFRESH_PERFORMANCE_FILE,
+        limit=min(100, max(1, int(limit))),
+    )
+    if not rows:
+        return {
+            "samples": 0,
+            "status": "baseline_missing",
+            "p50_ms": 0.0,
+            "p95_ms": 0.0,
+            "next_action": "执行一次显式局部刷新以建立性能基线。",
+            "recent": [],
+        }
+    totals = [float((row.get("timing_ms") or {}).get("total", 0) or 0) for row in rows]
+    latest = rows[-1]
+    budget_ms = float(latest.get("budget_ms", DEFAULT_SCOPED_REFRESH_BUDGET_MS) or DEFAULT_SCOPED_REFRESH_BUDGET_MS)
+    p95_ms = percentile(totals, 0.95)
+    status = "healthy" if p95_ms <= budget_ms and latest.get("status") == "healthy" else "warning"
+    return {
+        "samples": len(rows),
+        "status": status,
+        "p50_ms": percentile(totals, 0.50),
+        "p95_ms": p95_ms,
+        "max_ms": round(max(totals), 2),
+        "budget_ms": budget_ms,
+        "latest": latest,
+        "next_action": _scoped_refresh_next_action(latest),
+        "recent": rows[-min(20, max(1, int(limit))) :],
+    }
+
+
+def _scoped_refresh_next_action(observation: dict[str, Any]) -> str:
+    if observation.get("status") == "healthy":
+        return "局部刷新在预算内；继续使用当前有界刷新策略。"
+    stage = str(observation.get("dominant_stage", "unknown") or "unknown")
+    actions = {
+        "load_indexes": "优先检查大型运行时索引反序列化与事务内缓存。",
+        "persist_indexes": "优先检查局部刷新是否仍在重写完整索引载荷。",
+        "graph_update": "优先分析局部图替换、调用解析与 FTS 更新。",
+        "retrieval_update": "优先分析 BM25、dense vector 与 ANN 的增量同步。",
+        "generation_publish": "优先分析受影响服务分片的 copy-on-write 发布。",
+        "assertion_projection": "优先分析稀疏断言投影，禁止复制静态图边。",
+    }
+    return actions.get(stage, "按 timing_ms 中耗时最高阶段继续做有界 profile。")
 
 
 @dataclass(frozen=True)

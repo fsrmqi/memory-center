@@ -171,6 +171,7 @@ class TreeSitterJavaParser:
         imports: list[str] = []
         classes: list[str] = []
         interfaces: list[str] = []
+        type_kinds: dict[str, str] = {}
         annotations: list[str] = []
         methods: list[str] = []
         method_signatures: list[dict[str, Any]] = []
@@ -229,12 +230,18 @@ class TreeSitterJavaParser:
                 if name_node:
                     class_name = _node_text(name_node)
                     classes.append(class_name)
+                    type_kinds[class_name] = {
+                        "class_declaration": "class",
+                        "enum_declaration": "enum",
+                        "record_declaration": "record",
+                    }[node.type]
                     class_lines.setdefault(class_name, _node_line(name_node))
             elif node.type == "interface_declaration":
                 name_node = node.child_by_field_name("name")
                 if name_node:
                     interface_name = _node_text(name_node)
                     interfaces.append(interface_name)
+                    type_kinds[interface_name] = "interface"
                     interface_lines.setdefault(interface_name, _node_line(name_node))
             elif node.type == "annotation_type_declaration":
                 # ``public @interface XXX { ... }`` -- modelled as an
@@ -247,6 +254,7 @@ class TreeSitterJavaParser:
                 if name_node:
                     interface_name = _node_text(name_node)
                     interfaces.append(interface_name)
+                    type_kinds[interface_name] = "annotation"
                     interface_lines.setdefault(interface_name, _node_line(name_node))
                 annotations.append("interface")
             elif node.type == "annotation_type_element_declaration":
@@ -330,6 +338,7 @@ class TreeSitterJavaParser:
             imports=imports,
             classes=classes,
             interfaces=interfaces,
+            type_kinds=type_kinds,
             methods=methods,
             method_signatures=_merge_unique_dicts(method_signatures, []),
             fields=fields,
@@ -500,6 +509,7 @@ def _merge_parse_results(tree_result: JavaParseResult, regex_result: JavaParseRe
         imports=_merge_unique_strings(tree_result.imports, regex_result.imports),
         classes=_merge_unique_strings(tree_result.classes, regex_result.classes),
         interfaces=_merge_unique_strings(tree_result.interfaces, regex_result.interfaces),
+        type_kinds={**regex_result.type_kinds, **tree_result.type_kinds},
         type_supertypes={**regex_result.type_supertypes, **tree_result.type_supertypes},
         methods=_merge_unique_strings(tree_result.methods, regex_result.methods),
         method_signatures=_merge_unique_dicts(tree_result.method_signatures, regex_result.method_signatures),
@@ -555,6 +565,7 @@ def _merge_supplements(tree_result: JavaParseResult, supplements: JavaParseResul
         imports=_merge_unique_strings(list(tree_result.imports), []),
         classes=_merge_unique_strings(list(tree_result.classes), []),
         interfaces=_merge_unique_strings(list(tree_result.interfaces), []),
+        type_kinds={**supplements.type_kinds, **tree_result.type_kinds},
         type_supertypes=dict(supplements.type_supertypes),
         methods=_merge_unique_strings(list(tree_result.methods), []),
         method_signatures=_merge_unique_dicts(

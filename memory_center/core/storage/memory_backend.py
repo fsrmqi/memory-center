@@ -799,7 +799,7 @@ class _MemoryRecordOperations:
         ]
         return {"records": records, "count": len(records), "total_count": total_count}
 
-    def upsert_index(self, name: str, payload: Any) -> None:
+    def upsert_index(self, name: str, payload: Any) -> str:
         from datetime import datetime, timezone
         updated_at = datetime.now(timezone.utc).isoformat()
         with self.connect() as conn:
@@ -811,6 +811,13 @@ class _MemoryRecordOperations:
                 """,
                 (name, json.dumps(payload, ensure_ascii=False), updated_at),
             )
+        return updated_at
+
+    def index_updated_at(self, name: str) -> str:
+        """Return a small cache token without decoding the index payload."""
+        with self.connect() as conn:
+            row = conn.execute("SELECT updated_at FROM index_mirror WHERE name=?", (name,)).fetchone()
+        return str(row["updated_at"] or "") if row is not None else ""
 
     def read_index(self, name: str, default: Any = None) -> Any:
         entry = self.read_index_entry(name)

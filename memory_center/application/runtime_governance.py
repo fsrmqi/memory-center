@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from memory_center.core.retrieval.planner import scoped_refresh_performance_status
 from memory_center.core.storage.workspace import WorkspaceStore
 
 
@@ -22,6 +23,7 @@ def workspace_runtime_governance(workspace_file: str | Path, *, warning_gib: int
             "latest": latest,
             "next_action": "保持当前采样节奏。" if snapshots else "运行 performance-snapshot 建立 P95 基线。",
         }
+        scoped_refresh = scoped_refresh_performance_status(workspace_file, limit=20)
         hnsw_path = store.graph_db_path.with_suffix(".hnsw")
         vector_ann = {"ann_ready": hnsw_path.exists(), "hnsw_index_present": hnsw_path.exists(), "status": "file_probe"}
         index = store.read_json("index-control.json", {}) or {}
@@ -32,6 +34,12 @@ def workspace_runtime_governance(workspace_file: str | Path, *, warning_gib: int
             "status": "not_indexed",
             "next_action": "完成显式 reindex 后再建立性能快照。",
             "snapshots": [],
+        }
+        scoped_refresh = {
+            "samples": 0,
+            "status": "not_indexed",
+            "next_action": "完成显式局部刷新后再建立刷新性能基线。",
+            "recent": [],
         }
         vector_ann = {"ann_ready": False, "dense_doc_count": 0, "status": "not_indexed"}
         index = {
@@ -49,6 +57,14 @@ def workspace_runtime_governance(workspace_file: str | Path, *, warning_gib: int
                 "area": "performance",
                 "severity": "warning",
                 "action": str(performance.get("next_action", "运行 performance-snapshot。")),
+            }
+        )
+    if scoped_refresh.get("status") not in {"healthy", "baseline_missing"}:
+        findings.append(
+            {
+                "area": "scoped_refresh",
+                "severity": "warning",
+                "action": str(scoped_refresh.get("next_action", "检查局部刷新阶段耗时。")),
             }
         )
     if storage.get("status") != "healthy":
@@ -71,6 +87,7 @@ def workspace_runtime_governance(workspace_file: str | Path, *, warning_gib: int
         "schema_version": 1,
         "mode": "read_only",
         "performance": performance,
+        "scoped_refresh": scoped_refresh,
         "storage": storage,
         "index": {
             key: index.get(key)

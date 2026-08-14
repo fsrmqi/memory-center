@@ -111,6 +111,7 @@ from memory_center.core.orchestrator import (
 from memory_center.core.orchestrator.change_review import build_change_review_plan
 from memory_center.core.presentation.evidence_subgraph import export_evidence_subgraph
 from memory_center.core.retrieval.planner import (
+    scoped_refresh_performance_status,
     workspace_performance_snapshot_status,
 )
 from memory_center.core.storage.workspace import WorkspaceStore
@@ -193,6 +194,10 @@ def workspace_background_job_cancel(workspace_file: str, job_id: str) -> dict[st
 
 def workspace_performance_snapshot(workspace_file: str, *, samples: int = 5, tier: str = "fast") -> dict[str, Any]:
     return record_workspace_performance_snapshot(workspace_file, samples=samples, tier=tier)
+
+
+def workspace_scoped_refresh_performance(workspace_file: str, *, limit: int = 20) -> dict[str, Any]:
+    return scoped_refresh_performance_status(workspace_file, limit=limit)
 
 
 def workspace_asset_status(workspace_file: str, *, limit: int = 100, max_chars: int = 0) -> dict[str, Any]:
@@ -548,6 +553,7 @@ __all__ = [
     "workspace_background_job_cancel",
     "workspace_performance_snapshot",
     "workspace_performance_snapshot_status",
+    "workspace_scoped_refresh_performance",
     "workspace_runtime_governance",
     "workspace_asset_approve",
     "workspace_asset_bind",

@@ -752,18 +752,61 @@ class _GraphOperations:
         return {"removed_node_count": len(removed), "refreshed_node_count": len(node_list), "refreshed_edge_count": len(edge_list)}
 
     def file_neighbors(self, file_path: str, limit: int = 24) -> list[str]:
-        """Return distinct source files connected to a file's graph nodes."""
+        """Return deterministic weighted file neighbors."""
+        return [row["file_path"] for row in self.ranked_file_neighbors(file_path, limit=limit)]
+
+    def ranked_file_neighbors(self, file_path: str, *, limit: int = 24) -> list[dict[str, Any]]:
+        """Rank a bounded connected-edge projection without scanning a large file subgraph."""
+        bounded_limit = min(max(1, int(limit)), 100)
+        candidate_limit = min(1600, max(128, bounded_limit * 16))
         sql = """
-            SELECT DISTINCT other.file_path
+            SELECT other.file_path, e.type AS edge_type, e.confidence
             FROM edges e
             JOIN nodes current ON current.id = e.source_id OR current.id = e.target_id
-            JOIN nodes other ON other.id = CASE WHEN e.source_id = current.id THEN e.target_id ELSE e.source_id END
+            JOIN nodes other ON other.id = CASE
+                WHEN e.source_id = current.id THEN e.target_id ELSE e.source_id END
             WHERE current.file_path = ? AND other.file_path != '' AND other.file_path != ?
             LIMIT ?
         """
         with self.connect() as conn:
-            rows = conn.execute(sql, (file_path, file_path, limit)).fetchall()
-        return [str(row[0]) for row in rows if row[0]]
+            rows = conn.execute(sql, (file_path, file_path, candidate_limit)).fetchall()
+        ranked: dict[str, dict[str, Any]] = {}
+        for row in rows:
+            path = str(row["file_path"] or "")
+            if not path:
+                continue
+            edge_type = str(row["edge_type"] or "")
+            score = float(row["confidence"] or 0.0) * float(
+                IMPACT_EDGE_WEIGHTS.get(edge_type, IMPACT_DEFAULT_EDGE_WEIGHT)
+            )
+            item = ranked.setdefault(
+                path,
+                {
+                    "file_path": path,
+                    "evidence_count": 0,
+                    "strongest_score": 0.0,
+                    "aggregate_score": 0.0,
+                    "relation_types": set(),
+                },
+            )
+            item["evidence_count"] += 1
+            item["strongest_score"] = max(float(item["strongest_score"]), score)
+            item["aggregate_score"] += score
+            item["relation_types"].add(edge_type)
+        ordered = sorted(
+            ranked.values(),
+            key=lambda item: (
+                -float(item["strongest_score"]),
+                -int(item["evidence_count"]),
+                -float(item["aggregate_score"]),
+                str(item["file_path"]),
+            ),
+        )[:bounded_limit]
+        for item in ordered:
+            item["strongest_score"] = round(float(item["strongest_score"]), 6)
+            item["aggregate_score"] = round(float(item["aggregate_score"]), 6)
+            item["relation_types"] = sorted(item["relation_types"])
+        return ordered
 
     def nodes_for_files(
         self,

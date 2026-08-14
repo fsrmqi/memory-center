@@ -117,6 +117,7 @@ from memory_center.core.orchestrator import (
 )
 from memory_center.core.presentation.evidence_subgraph import export_evidence_subgraph
 from memory_center.core.retrieval.planner import (
+    scoped_refresh_performance_status,
     workspace_performance_snapshot_status,
 )
 from memory_center.core.storage.workspace import WorkspaceStore
@@ -398,6 +399,15 @@ def performance_status(
 ):
     """查看真实工作区 P95 快照趋势与下一步动作。"""
     typer.echo(json.dumps(workspace_performance_snapshot_status(workspace, limit=limit), ensure_ascii=False, indent=2))
+
+
+@app.command("scoped-refresh-performance")
+def scoped_refresh_performance(
+    workspace: str = typer.Option(..., help="Path to .memory-center/workspace.yaml"),
+    limit: int = typer.Option(20, min=1, max=100),
+):
+    """查看局部刷新 P50/P95、最慢阶段和预算状态。"""
+    typer.echo(json.dumps(scoped_refresh_performance_status(workspace, limit=limit), ensure_ascii=False, indent=2))
 
 
 @app.command("runtime-governance")

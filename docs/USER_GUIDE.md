@@ -143,8 +143,10 @@ resolver is already active for Java and rewrites resolvable calls with
 higher-confidence targets; other languages remain structural evidence until
 their language-specific resolver is added.
 
-结构 pass 的调用边初始 `confidence=0.3` 且标记 `resolution_level=unresolved`,
-P1-1 的 Java 调用解析器上线后会就地改写为更高置信度的目标。
+结构 pass 的调用边初始 `confidence=0.3` 且标记 `resolution_level=unresolved`；
+Java 调用解析器会将可证明的本地调用改写为更高置信度目标。4.3.78 起，enum
+生成方法、外部返回类型链和最终继承外部框架接口的方法会保留为明确的索引边界，
+不会为了提高表面解析率而绑定到工作区内同名方法。
 
 ## 3. Reindex / 重建索引
 
@@ -153,6 +155,14 @@ P1-1 的 Java 调用解析器上线后会就地改写为更高置信度的目标
 ```bash
 memory-center reindex --workspace /abs/path/.memory-center/workspace.yaml
 ```
+
+只刷新明确文件时使用 `--path`；4.3.79 会直接定位该文件，不再遍历完整服务目录。刷新后查看性能：
+
+```bash
+memory-center scoped-refresh-performance --workspace /abs/path/.memory-center/workspace.yaml
+```
+
+`status=healthy` 时停止重复刷新；`warning` 时根据 `latest.dominant_stage` 定位瓶颈，不要改为隐式全量重建。
 
 增量：
 

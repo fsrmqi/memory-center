@@ -11,7 +11,7 @@ from memory_center.core.storage.runtime import RuntimeStore
 from memory_center.core.storage.workspace import WorkspaceStore
 from memory_center.core.workspace.config import load_workspace_config
 
-ALGORITHM_VERSION = "git_cochange_v1"
+ALGORITHM_VERSION = "git_cochange_weighted_file_neighbors_v2"
 
 
 def evaluate_git_cochange(
@@ -19,7 +19,7 @@ def evaluate_git_cochange(
     *,
     max_commits: int = 20,
     max_files_per_commit: int = 20,
-    prediction_limit: int = 24,
+    prediction_limit: int = 8,
 ) -> dict[str, Any]:
     """Measure graph file-neighbor predictions against actual same-commit files.
 

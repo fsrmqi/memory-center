@@ -124,6 +124,8 @@ def refresh_explicit_paths(
                 "graph_nodes": int(counts.get("graph_nodes", 0) or 0),
                 "graph_edges": int(counts.get("graph_edges", 0) or 0),
             },
+            "timing_ms": dict(counts.get("timing_ms", {})),
+            "refresh_performance": dict(counts.get("refresh_performance", {})),
         }
 
     return coordinator.run(

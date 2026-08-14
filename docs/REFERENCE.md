@@ -418,7 +418,7 @@ memory-center eval-java-call-resolution-unresolved --workspace <workspace.yaml> 
 输出中的 `receiver_shape_counts` 用于区分 `static_class_receiver`、`typed_receiver`、`untyped_instance_receiver` 与无接收者调用。`campaign` 会自动跳过 `external_or_missing_source` 和 `out_of_scope_target`，只在 `receiver_type_missing`、`missing_method_or_polymorphism`、`dynamic_or_unqualified` 中选择最大可证明类别，并在 `candidate_samples` 中给出脱敏逻辑锚点。静态类或缺失依赖源码的调用属于 `external_or_missing_source`，不能为了降低未解析率而合成为项目内调用边。仅对 campaign 选中的可复现类别建立 3-5 个私有 case，并运行：
 
 ```bash
-memory-center eval-java-call-resolution --workspace <workspace.yaml> --cases <private-logical-cases.yaml>
+memory-center eval-java-call-resolution --workspace <workspace.yaml> --cases <private-logical-cases.yaml> --fail-on-unexpected-high-confidence --fail-on-forbidden-high-confidence
 memory-center release-gate --workspace <workspace.yaml> --java-call-cases <private-logical-cases.yaml> --cochange-commits 20
 memory-center eval-java-call-resolution-metrics --workspace <workspace.yaml>
 ```
@@ -437,6 +437,8 @@ The `campaign` skips `external_or_missing_source` and `out_of_scope_target`, sel
 
 When Tree-sitter Java is available, the indexer supplements AST-proven one-hop nested chains such as `receiver.first(...).second(...)`. It creates a graph edge only when the first return type is unique in the workspace and the second method is explicit or a deterministic Lombok accessor. The regex fallback never guesses a nested-argument chain and remains conservatively unresolved when Tree-sitter is unavailable.
 
+4.3.78 将 enum 编译器方法、外部返回类型链和间接继承外部框架方法拆分为独立未解析原因。它们是可解释的索引边界，不属于本地目标缺失；campaign 不会再把这些样本推荐为 resolver 修复对象。真实 case 应同时声明 allowed/forbidden target，并启用两个严格失败参数。
+
 ### 检索热路径性能 / Retrieval Hot Path Performance
 
 定向 `reindex --path ...` 会返回 `bm25_sync_mode` 与 `bm25_changed_docs`。正常局部刷新为 `partial`，只替换受影响节点的 BM25 posting；旧格式索引首次升级可能返回 `full-legacy-fallback`，用于一次性迁移持久化词频，之后恢复局部更新。BM25 查询使用持久化词频和全局统计动态计分，局部刷新结果与完整重建一致。
@@ -448,6 +450,14 @@ Path-scoped `reindex --path ...` returns `bm25_sync_mode` and `bm25_changed_docs
 定向 `reindex --path ...` 还会返回 `fts_sync_mode`、`fts_changed_nodes` 与 `fts_elapsed_ms`。局部刷新仅替换变更节点的 FTS 行；完整重建由 SQLite 内部 `INSERT ... SELECT` 写入 FTS，不会把全量节点先加载到 Python 内存。`fts_elapsed_ms` 是真实 workspace 重建性能门禁与排障的优先指标。
 
 Path-scoped `reindex --path ...` also returns `fts_sync_mode`, `fts_changed_nodes`, and `fts_elapsed_ms`. Scoped refresh replaces only FTS rows for changed nodes; full rebuild uses SQLite-internal `INSERT ... SELECT` and never materializes all graph nodes in Python first. `fts_elapsed_ms` is a primary metric for real-workspace rebuild gates and diagnosis.
+
+4.3.79 的局部刷新还返回 `timing_ms` 与 `refresh_performance`。查看聚合趋势：
+
+```bash
+memory-center scoped-refresh-performance --workspace <workspace.yaml> --limit 20
+```
+
+HTTP 使用 `GET /workspace/scoped-refresh-performance`，MCP 使用 `mc_admin(action="scoped_refresh_performance", limit=20)`。记录只包含 scope 数量、generation 和阶段耗时；默认总耗时预算为 `10000ms`，可用 `MEMORY_CENTER_SCOPED_REFRESH_BUDGET_MS` 显式调整。
 
 After an application upgrade but before reindex, queries continue to use the legacy persisted BM25 scores rather than returning empty results. Migration occurs only on the next explicit reindex.
 
@@ -469,7 +479,7 @@ Governance batches, semantic vectors, and ANN label/distance pairs validate thei
 
 `release-gate --query-samples 5` 会记录首查冷查询 P95、其余样本的热查询 P95 和 `stage_p95_ms`。热查询 P95 默认预算为 `2000ms`；超出时 `retrieval.reason=hot_query_p95_budget_exceeded`。仅在明确维护窗口可使用 `--max-hot-query-p95-ms 0` 关闭绝对预算。
 
-`release-gate --cochange-commits 20` 增加独立 `cochange_impact` 组件。可执行 case 数为零、Git 环境错误或相对 baseline 的召回退化都会阻止该可选组件被视为通过；未传参数时保持 `skipped`。
+`release-gate --cochange-commits 20` 增加独立 `cochange_impact` 组件。4.3.78 使用 `git_cochange_weighted_file_neighbors_v2`：默认预测 8 个文件，最多聚合 1,600 条相邻边，并以关系权重和边置信度确定性排序。可执行 case 数为零、Git 环境错误或相对 baseline 的召回退化都会阻止该可选组件被视为通过；未传参数时保持 `skipped`。
 
 Regular query responses expose stage timings and cache status under `retrieval_diagnostics.timing_ms`. The cache applies only to the same published graph generation, query, configuration, policy, and freshness for 20 seconds; cache hits do not bypass freshness, governance, or response wrapping.
 

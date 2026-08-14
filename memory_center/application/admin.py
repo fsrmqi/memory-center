@@ -122,6 +122,7 @@ from memory_center.core.retrieval.cross_service import evaluate_cross_shard_repl
 from memory_center.core.retrieval.cross_service_fusion import evaluate_cross_shard_fusion
 from memory_center.core.retrieval.model_profiles import retrieval_model_profile
 from memory_center.core.retrieval.planner import (
+    scoped_refresh_performance_status,
     workspace_performance_snapshot_status,
     workspace_performance_summary,
 )
@@ -832,6 +833,7 @@ def build_admin_registry(
                 wf, samples=max(1, min(limit, 20)), tier=budget if budget in {"fast", "standard", "deep"} else "fast"
             ),
             "performance_snapshot_status": lambda: workspace_performance_snapshot_status(wf, limit=max(limit, 20)),
+            "scoped_refresh_performance": lambda: scoped_refresh_performance_status(wf, limit=max(limit, 20)),
             "runtime_governance": lambda: workspace_runtime_governance(wf),
             "external_capability_audit": lambda: audit_external_capabilities(wf),
             "external_capability_snapshot": lambda: snapshot_external_capabilities(wf),

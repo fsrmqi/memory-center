@@ -26,6 +26,7 @@ class RegexJavaParser:
         ]
         classes, class_lines = _parse_type_declarations(cleaned, ("class", "enum", "record"))
         interfaces, interface_lines = _parse_type_declarations(cleaned, ("interface",))
+        type_kinds = _parse_type_kinds(cleaned)
         type_supertypes = _parse_type_supertypes(cleaned)
         annotations = sorted(set(re.findall(r"@(\w+)(?:\(|\s|\n)", cleaned)))
 
@@ -54,6 +55,7 @@ class RegexJavaParser:
             imports=imports,
             classes=classes,
             interfaces=interfaces,
+            type_kinds=type_kinds,
             type_supertypes=type_supertypes,
             methods=methods,
             method_signatures=method_signatures,
@@ -218,6 +220,13 @@ def _parse_type_declarations(text: str, keywords: tuple[str, ...]) -> tuple[list
         names.append(name)
         lines.setdefault(name, _line_of(text, match.start(2)))
     return sorted(set(names)), lines
+
+
+def _parse_type_kinds(text: str) -> dict[str, str]:
+    return {
+        match.group(2): match.group(1)
+        for match in re.finditer(r"\b(class|interface|enum|record)\s+(\w+)", text, re.M)
+    }
 
 
 def _parse_type_supertypes(text: str) -> dict[str, list[str]]:

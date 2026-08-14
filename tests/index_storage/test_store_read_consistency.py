@@ -52,6 +52,30 @@ def test_runtime_only_index_is_not_exported_but_remains_readable(tmp_path: Path)
     assert store.read_json("semantic-node-index.json", {}) == {"docs": [{"node_id": "Method:demo"}]}
 
 
+def test_runtime_only_index_is_decoded_once_per_store_transaction(tmp_path: Path, monkeypatch) -> None:
+    writer = _store(tmp_path)
+    writer.write_json("java-symbol-index.json", [{"file": "Demo.java", "methods": ["run"]}])
+    store = WorkspaceStore(writer.workspace_file)
+    backend = store.memory_backend()
+    original = backend.read_index_entry
+    calls = 0
+
+    def counted(name: str):
+        nonlocal calls
+        calls += 1
+        return original(name)
+
+    monkeypatch.setattr(backend, "read_index_entry", counted)
+    first = store.read_json_prefer_backend("java-symbol-index.json", [])
+    second = store.read_json_prefer_backend("java-symbol-index.json", [])
+
+    assert calls == 1
+    assert first is second
+    store.write_json("java-symbol-index.json", [{"file": "Demo.java", "methods": ["run", "stop"]}])
+    assert store.read_json_prefer_backend("java-symbol-index.json", [])[0]["methods"] == ["run", "stop"]
+    assert calls == 1
+
+
 def test_runtime_only_export_cleanup_requires_canonical_sqlite_payload(tmp_path: Path) -> None:
     store = _store(tmp_path)
     path = store.index_dir / "java-symbol-index.json"

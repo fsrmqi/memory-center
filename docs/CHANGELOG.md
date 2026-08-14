@@ -1,5 +1,37 @@
 # Changelog / 更新日志
 
+## 4.3.79 局部刷新性能治理 / Scoped Refresh Performance Governance
+
+- 局部刷新在同一 `WorkspaceStore` 事务内复用大型运行时索引对象，并使用 SQLite `updated_at` 轻量校验跨实例新鲜度；避免重复解码 Java 符号索引，同时不会让长期 Store 读取旧 generation。
+- 精确文件/目录 scope 直接定位源码，不再先遍历完整服务目录；多语言结构 pass 复用相同有界 walker，无法解析的 scope 才保持保守回退。
+- reindex 新增 `timing_ms`，覆盖索引载入、scope 扫描、解析合并、索引持久化、图更新、语义、检索、generation 发布和断言投影。局部刷新仅持久化 generation、数量和聚合耗时，不记录路径或源码。
+- 新增 `scoped-refresh-performance` CLI、`/workspace/scoped-refresh-performance` HTTP、`mc_admin(action="scoped_refresh_performance")` MCP admin，并接入只读 `runtime-governance`。
+- 真实单文件刷新由 `12.58s` 降至 `5.81s`，下降约 `53.8%`；scope 扫描由 `1.65s` 降至约 `1.71ms`，默认 `10s` 预算通过。
+
+## 4.3.79 Scoped Refresh Performance Governance
+
+- Reused large runtime-index objects within one `WorkspaceStore` transaction while validating cross-instance freshness through the SQLite `updated_at` token. This removes repeated Java-symbol decoding without serving a stale generation from a long-lived store.
+- Exact file and directory scopes now resolve directly instead of walking an entire service tree. The multi-language structural pass shares the same bounded walker and retains conservative fallback semantics for unresolvable scopes.
+- Reindex responses now expose stage-level `timing_ms` for index loading, scoped scanning, parsing/merge, index persistence, graph, semantic and retrieval updates, generation publication, and assertion projection. Persisted refresh observations contain only generation, counts, and aggregate timings.
+- Added CLI, HTTP, and MCP-admin scoped-refresh performance status and integrated it into read-only runtime governance.
+- A real one-file refresh improved from `12.58s` to `5.81s` (about `53.8%`), with scoped scanning reduced from `1.65s` to roughly `1.71ms`, passing the default `10s` budget.
+
+## 4.3.78 Java 调用分类与共变排序 / Java Call Classification and Co-change Ranking
+
+- Java 结构事实新增 `type_kinds`，保留 `class / interface / enum / record / annotation`，并写入 Class 节点；手写 `JavaSymbol.to_dict()` 同步输出该字段，避免高性能序列化路径丢失新事实。
+- resolver 新增 `generated_enum_method_out_of_scope`、`chain_return_type_not_indexed`，并递归识别“本地父接口继续继承外部框架接口”的方法。Enum 编译器方法、外部集合链式方法、MyBatis 继承方法不再污染本地多态修复 campaign，也不会生成猜测边。
+- UCAP 真实空间建立 3 个私有链式逻辑锚点并定向刷新 14 个相关文件；edge recall、置信率、resolution-level rate 均为 `1.0`，unexpected/forbidden 高置信边均为 `0`。
+- co-change 文件候选从无序 `DISTINCT LIMIT` 升级为有界边投影上的确定性加权排序，默认候选从 24 收敛为 8。UCAP 66 个 case 上 Precision 从 `0.0438` 提升到 `0.0706`，Recall 从 `0.2191` 提升到 `0.2229`，评测约 `37ms`。
+- 大图原型曾使用全量 SQL 聚合，但真实 17GB 图超过 30 秒，已移除；正式实现最多读取 1600 条邻接边后在内存聚合，不扫描完整文件子图。
+
+## 4.3.78 Java Call Classification and Co-change Ranking
+
+- Added `type_kinds` to Java structural facts and Class-node metadata, preserving class, interface, enum, record, and annotation semantics through the optimized `JavaSymbol.to_dict()` path.
+- Added explicit unresolved reasons for generated enum methods and external chain return types, plus cycle-safe recursive detection of local parents that ultimately inherit external framework APIs. These calls no longer pollute local polymorphism campaigns or create guessed edges.
+- Added three private UCAP chain anchors and refreshed only 14 related files. Edge recall, confidence rate, and resolution-level rate are all `1.0`, with zero unexpected or forbidden high-confidence edges.
+- Replaced unordered co-change file candidates with deterministic weighted ranking over a bounded edge projection and reduced the default candidate set from 24 to 8. Across 66 UCAP cases, precision improved from `0.0438` to `0.0706`, recall from `0.2191` to `0.2229`, with evaluation around `37ms`.
+- Removed a full SQL aggregation prototype after it exceeded 30 seconds on the real 17GB graph. The shipped path reads at most 1,600 adjacent edges and aggregates only that bounded slice.
+
 ## 4.3.77 图感知变更审查闭环 / Graph-Aware Change Review
 
 - 新增有界加权最佳路径影响传播，按关系权重、边置信度、证据强度、新鲜度和深度衰减计算影响分数；SQLite frontier 逐层查询且每个节点只保留最佳路径，不在查询热路径物化全图。

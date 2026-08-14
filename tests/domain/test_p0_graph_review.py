@@ -86,6 +86,26 @@ def test_weighted_impact_exposes_but_does_not_expand_alternative_relations(tmp_p
     assert len([row for row in impacts if row["best_path"]["node_ids"][-1] == "next"]) == 1
 
 
+def test_file_neighbors_use_deterministic_relation_weighted_ranking(tmp_path: Path) -> None:
+    with RuntimeStore(tmp_path / "graph.db") as graph:
+        graph.rebuild(
+            [
+                GraphNode("seed", "Method", "seed", file_path="src/Seed.java"),
+                GraphNode("strong", "Method", "strong", file_path="src/Strong.java"),
+                GraphNode("weak", "File", "weak", file_path="src/Weak.java"),
+            ],
+            [
+                GraphEdge("weak-edge", "seed", "weak", "CONTAINS", 1.0),
+                GraphEdge("strong-edge", "seed", "strong", "CALLS_METHOD", 0.9),
+            ],
+        )
+        ranked = graph.ranked_file_neighbors("src/Seed.java", limit=10)
+
+    assert [row["file_path"] for row in ranked] == ["src/Strong.java", "src/Weak.java"]
+    assert ranked[0]["strongest_score"] > ranked[1]["strongest_score"]
+    assert ranked[0]["relation_types"] == ["CALLS_METHOD"]
+
+
 def test_change_review_plan_is_progressive_and_deduplicated(tmp_path: Path) -> None:
     workspace = _workspace(tmp_path)
     store = WorkspaceStore(workspace)

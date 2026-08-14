@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import time
 from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
 from typing import Any
@@ -76,6 +77,16 @@ def _reindex_workspace_unlocked(
     progress: Callable[[str, int, str], None] | None = None,
 ) -> dict[str, Any]:
     """Rebuild deterministic indexes and the local evidence graph."""
+    pipeline_started = time.perf_counter()
+    checkpoint = pipeline_started
+    timing_ms: dict[str, float] = {}
+
+    def mark(stage: str) -> None:
+        nonlocal checkpoint
+        now = time.perf_counter()
+        timing_ms[stage] = round((now - checkpoint) * 1000, 2)
+        checkpoint = now
+
     project_filter = {item.strip() for item in (projects or []) if item and item.strip()}
     path_filters = [item.strip() for item in (paths or []) if item and item.strip()]
     partial = bool(project_filter or path_filters)
@@ -87,6 +98,7 @@ def _reindex_workspace_unlocked(
     old_mq_index: list[dict[str, Any]] = store.read_json_prefer_backend("mq-index.json", [])
     old_config_index: list[dict[str, Any]] = store.read_json_prefer_backend("config-index.json", [])
     old_contract_snapshot = store.read_json_prefer_backend(CONTRACT_SNAPSHOT_FILE, {})
+    mark("load_indexes")
 
     file_index: list[dict[str, Any]] = []
     symbol_index: list[dict[str, Any]] = []
@@ -109,9 +121,7 @@ def _reindex_workspace_unlocked(
         service_root = config.resolve_service_path(svc)
         if not service_root.exists():
             continue
-        for path in walk_project(service_root):
-            if path_filters and not _path_matches_filters(config, svc, path, path_filters):
-                continue
+        for path in _walk_scoped_project(config, svc, service_root, path_filters):
             rel = config.service_logical_file_path(svc, path)
             file_index.append(
                 {
@@ -129,6 +139,7 @@ def _reindex_workspace_unlocked(
                 java_tasks.append((svc.name, rel, path))
             elif path.name in CONFIG_NAMES:
                 config_index.append({"project": svc.name, "path": rel, **parse_yaml_config(path)})
+    mark("scan_scope")
 
     _report_progress(progress, "parsing", 30, f"正在解析 {len(java_tasks)} 个 Java 文件")
     # Parse Java files (sequential or parallel)
@@ -165,6 +176,7 @@ def _reindex_workspace_unlocked(
     constant_map = _build_constant_map(merged_symbol_index)
     for project, rel, text, symbol in pending_feigns:
         feign_index.extend(to_dict(x) for x in parse_feign_clients(project, rel, text, symbol, constant_map))
+    mark("parse_and_merge")
 
     if partial:
         merged_file_index = _merge_index_rows(old_file_index, file_index, project_filter, path_filters)
@@ -192,7 +204,9 @@ def _reindex_workspace_unlocked(
     contract_diff = diff_contract_snapshots(old_contract_snapshot, contract_snapshot)
     store.write_json(CONTRACT_SNAPSHOT_FILE, contract_snapshot)
     store.write_json(CONTRACT_DIFF_FILE, contract_diff)
+    mark("persist_indexes")
     graph_counts = build_graph_store(config, store, project_filter=project_filter, path_filters=path_filters)
+    mark("graph_update")
     changed_ids: set[str] = set()
     _report_progress(progress, "semantic", 68, "正在构建语义索引")
     if partial:
@@ -204,12 +218,14 @@ def _reindex_workspace_unlocked(
         }
     else:
         semantic_counts = build_workspace_semantic_index(store.workspace_file)
+    mark("semantic_update")
     _report_progress(progress, "retrieval", 82, "正在同步检索索引")
     retrieval_counts = _sync_retrieval_indexes(
         store,
         semantic_counts,
         changed_node_ids=changed_ids if partial else None,
     )
+    mark("retrieval_update")
     parser_diagnostics = _parser_diagnostics(len(java_tasks))
     parser_precision = parser_precision_from_diagnostics(parser_diagnostics)
     graph_summary = {
@@ -270,6 +286,9 @@ def _reindex_workspace_unlocked(
             "vector_status": counts["vector_status"],
         },
     )
+    mark("write_summary")
+    timing_ms["pipeline_total"] = round((time.perf_counter() - pipeline_started) * 1000, 2)
+    counts["timing_ms"] = timing_ms
     return counts
 
 
@@ -285,6 +304,7 @@ def reindex_workspace(
     materialize_assertions: bool = True,
 ) -> dict[str, Any]:
     """Rebuild workspace indexes with one writer per workspace."""
+    reindex_started = time.perf_counter()
     with workspace_reindex_lock(
         store,
         projects=projects,
@@ -309,6 +329,7 @@ def reindex_workspace(
                 reindex_kwargs["progress"] = progress
             counts = _reindex_workspace_unlocked(config, store, **reindex_kwargs)
             _report_progress(progress, "finalizing", 94, "正在发布索引代际")
+            publication_started = time.perf_counter()
             manifest = build_shard_manifest(
                 generation,
                 store.read_json_prefer_backend("file-index.json", []),
@@ -345,6 +366,7 @@ def reindex_workspace(
                 keep=2,
                 apply=True,
             )
+            publication_finished = time.perf_counter()
             # The assertion sidecar is auxiliary: the graph generation is
             # already visible, so an assertion write failure must never roll
             # back or delay the usable index.
@@ -362,10 +384,33 @@ def reindex_workspace(
             except Exception as exc:
                 if not materialize_assertions:
                     _report_progress(progress, "finalizing", 98, "索引代际已发布（断言侧车基准已跳过）")
+                    finished = time.perf_counter()
+                    timing_ms = dict(counts.get("timing_ms", {}))
+                    timing_ms["generation_publish"] = round((publication_finished - publication_started) * 1000, 2)
+                    timing_ms["assertion_projection"] = round((finished - publication_finished) * 1000, 2)
+                    timing_ms["total"] = round((finished - reindex_started) * 1000, 2)
+                    counts["timing_ms"] = timing_ms
                     return counts
                 store.write_json(
                     "assertion-index.json",
                     {"schema_version": 1, "generation": generation, "status": "unavailable", "reason": str(exc)[:200]},
+                )
+            finished = time.perf_counter()
+            timing_ms = dict(counts.get("timing_ms", {}))
+            timing_ms["generation_publish"] = round((publication_finished - publication_started) * 1000, 2)
+            timing_ms["assertion_projection"] = round((finished - publication_finished) * 1000, 2)
+            timing_ms["total"] = round((finished - reindex_started) * 1000, 2)
+            counts["timing_ms"] = timing_ms
+            if projects or paths:
+                from memory_center.core.retrieval.planner import record_scoped_refresh_performance
+
+                counts["refresh_performance"] = record_scoped_refresh_performance(
+                    store.workspace_file,
+                    timing_ms=timing_ms,
+                    path_count=len(paths or []),
+                    project_count=len(projects or []),
+                    scanned_files=int(counts.get("scanned_files", 0) or 0),
+                    generation=generation,
                 )
             _report_progress(progress, "finalizing", 98, "索引代际已发布")
             # Preserve the historical reindex return schema. Generation and
@@ -515,6 +560,54 @@ def walk_project(root: Path) -> Iterable[Path]:
             yield path
 
 
+def _walk_scoped_project(
+    config: WorkspaceConfig,
+    service: Any,
+    service_root: Path,
+    path_filters: Sequence[str],
+) -> Iterable[Path]:
+    """Resolve exact scoped paths directly and scan only scoped directories."""
+    if not path_filters:
+        yield from walk_project(service_root)
+        return
+
+    prefix = config.service_logical_prefix(service).replace("\\", "/").strip("/")
+    resolved_root = service_root.resolve()
+    candidates: list[Path] = []
+    for raw_filter in path_filters:
+        raw_text = str(raw_filter or "").replace("\\", "/")
+        raw_path = Path(raw_filter).expanduser()
+        candidate: Path | None = None
+        if raw_path.is_absolute():
+            try:
+                raw_path.resolve().relative_to(resolved_root)
+            except ValueError:
+                continue
+            candidate = raw_path.resolve()
+        else:
+            normalized = raw_text.strip("/")
+            if normalized == prefix:
+                candidate = resolved_root
+            elif normalized.startswith(prefix + "/"):
+                candidate = resolved_root / normalized[len(prefix) + 1 :]
+        if candidate is not None:
+            candidates.append(candidate)
+
+    seen: set[str] = set()
+    for candidate in candidates:
+        if candidate.is_file():
+            key = str(candidate)
+            if key not in seen:
+                seen.add(key)
+                yield candidate
+        elif candidate.is_dir():
+            for path in walk_project(candidate):
+                key = str(path)
+                if key not in seen:
+                    seen.add(key)
+                    yield path
+
+
 def safe_read(path: Path, limit: int = 600_000) -> str:
     try:
         return path.read_text(encoding="utf-8", errors="ignore")[:limit]
@@ -642,6 +735,7 @@ def parse_java_symbols(project: str, rel: str, text: str) -> JavaSymbol:
         package=parsed.package,
         classes=parsed.classes,
         interfaces=parsed.interfaces,
+        type_kinds=parsed.type_kinds,
         type_supertypes=parsed.type_supertypes,
         methods=parsed.methods,
         method_signatures=parsed.method_signatures,
@@ -1107,6 +1201,8 @@ def build_graph_store(config: WorkspaceConfig, store: WorkspaceStore, *, project
                         metadata={
                             "package": sym.get("package"),
                             "annotations": sym.get("annotations", []),
+                            "type_kind": (sym.get("type_kinds", {}) or {}).get(cls, "class"),
+                            "supertypes": (sym.get("type_supertypes", {}) or {}).get(cls, []),
                             "parser": sym.get("parser") or "regex",
                         },
                     )
@@ -1295,10 +1391,22 @@ def build_graph_store(config: WorkspaceConfig, store: WorkspaceStore, *, project
                 return False
             return True
 
+        service_by_root = {
+            str(config.resolve_service_path(service).resolve()): service
+            for service in config.services
+            if not project_filter or service.name in project_filter
+        }
+
+        def _multilang_scope_walker(root: Path) -> Iterable[Path]:
+            service = service_by_root.get(str(root.resolve()))
+            if service is None:
+                return ()
+            return _walk_scoped_project(config, service, root, path_filters or [])
+
         multilang_tasks = multilang_indexer.collect_multilang_files(
             (s for s in config.services if not project_filter or s.name in project_filter),
             config,
-            walk_project,
+            _multilang_scope_walker,
             _multilang_filter,
         )
         for ml_project, ml_rel, ml_path in multilang_tasks:

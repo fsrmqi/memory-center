@@ -107,6 +107,7 @@ from memory_center.application.http_facades import (
     workspace_record_agent_guidance,
     workspace_replay_write_chain,
     workspace_runtime_governance,
+    workspace_scoped_refresh_performance,
     workspace_session_summary,
     workspace_sniff,
     workspace_status,
@@ -417,6 +418,12 @@ def register_workspace_routes(registry: CommandRegistry) -> None:
             rp.workspace(),
             samples=rp.int_param("samples", 5, min_val=1, max_val=20),
             tier=rp.get("tier", "fast"),
+        ),
+    )
+    registry.register(
+        "/workspace/scoped-refresh-performance",
+        lambda rp: workspace_scoped_refresh_performance(
+            rp.workspace(), limit=rp.int_param("limit", 20, max_val=100)
         ),
     )
     registry.register(

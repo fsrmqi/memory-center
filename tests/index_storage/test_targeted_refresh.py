@@ -53,6 +53,50 @@ def test_query_refresh_is_scheduled_without_waiting_for_reindex(tmp_path: Path) 
     assert result["mode"] == "targeted_overlay_async"
 
 
+def test_partial_reindex_reports_stage_timings_and_aggregate_governance(tmp_path: Path) -> None:
+    from memory_center.core.retrieval.planner import scoped_refresh_performance_status
+    from tests.fixtures import setup_demo_workspace
+
+    workspace = setup_demo_workspace(tmp_path)
+    store = WorkspaceStore(workspace)
+    row = store.read_json_prefer_backend("file-index.json", [])[0]
+    result = reindex_workspace(load_workspace_config(workspace), store, paths=[row["path"]], parallel=False)
+
+    assert result["timing_ms"]["total"] >= result["timing_ms"]["pipeline_total"]
+    assert {
+        "load_indexes",
+        "scan_scope",
+        "parse_and_merge",
+        "persist_indexes",
+        "graph_update",
+        "semantic_update",
+        "retrieval_update",
+        "generation_publish",
+        "assertion_projection",
+    }.issubset(result["timing_ms"])
+    assert result["refresh_performance"]["status"] in {"healthy", "warning"}
+    status = scoped_refresh_performance_status(workspace)
+    assert status["samples"] == 1
+    assert "paths" not in status["latest"]
+
+
+def test_exact_path_refresh_does_not_walk_whole_service(tmp_path: Path, monkeypatch) -> None:
+    import memory_center.core.indexing.reindex as reindex_module
+    from tests.fixtures import setup_demo_workspace
+
+    workspace = setup_demo_workspace(tmp_path)
+    store = WorkspaceStore(workspace)
+    row = store.read_json_prefer_backend("file-index.json", [])[0]
+
+    def forbidden_walk(_root: Path):
+        raise AssertionError("exact path refresh must not scan the whole service")
+
+    monkeypatch.setattr(reindex_module, "walk_project", forbidden_walk)
+    result = reindex_workspace(load_workspace_config(workspace), store, paths=[row["path"]], parallel=False)
+
+    assert result["scanned_files"] == 1
+
+
 def test_async_refresh_processes_requests_queued_while_worker_is_active(tmp_path: Path, monkeypatch) -> None:
     import memory_center.core.freshness.targeted_refresh as refresh_module
     from tests.fixtures import setup_demo_workspace

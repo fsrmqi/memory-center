@@ -415,6 +415,8 @@ Workspace shape analysis lives in `memory_center/core/workspace/shape.py`。它�
 
 索引主入口是 `memory_center/core/indexing/reindex.py::reindex_workspace()`。它支持全量和按 project/path 的部分重建，默认并行解析 Java 文件。
 
+局部刷新使用精确 scope walker：文件直接读取，目录只遍历该子树，无法映射到服务根的 scope 保守返回空匹配而不扫描其他服务；Java 与多语言结构 pass 共享该边界。大型 runtime index 在单次 Store 生命周期内按 SQLite `updated_at` 缓存，跨 Store 更新会立即失效。刷新性能记录只保存 generation、scope 数量、分阶段耗时和预算状态，不保存文件路径或源码。
+
 完整 reindex 生命周期由 `reindex.lock` 串行化；`index/reindex-state.json` 仅记录运行状态、时间、范围计数和脱敏失败原因，供 CLI、HTTP status 与 Workbench Health 判断是否等待或重试。它不记录源码路径或 payload。
 
 ### 5.1 确定性索引产物
@@ -453,6 +455,10 @@ Java 解析是 Spring-aware 主路径：
 | `unresolved` | 0.3 | 保留调用证据，但不绑定到随机同名方法 |
 
 默认 caller/callee 查询优先使用高置信边；高置信为空但低置信存在时会标注 fallback。
+
+4.3.78 起，Java 类型事实同时保存 `type_kind`（class、interface、enum、record、annotation）和父类型。未解析调用不再使用一个笼统原因：编译器生成的 enum 方法标记为 `generated_enum_method_out_of_scope`，链式调用返回外部类型标记为 `chain_return_type_not_indexed`，本地接口间接继承外部框架接口时标记为 `inherited_method_out_of_scope`。这些类别会从本地 resolver 修复 campaign 中排除，避免为了降低未解析率而伪造调用边。
+
+Git co-change v2 不再对文件邻居执行无序 `DISTINCT LIMIT`。它最多读取 1,600 条相邻边，使用关系权重与边置信度聚合，再按最强证据、证据数量、总分和路径确定性排序；默认只返回 8 个候选。该路径保持有界，不在 17GB 级图数据库上执行全图 SQL 聚合。
 
 ### 5.3 多语言结构化索引
 

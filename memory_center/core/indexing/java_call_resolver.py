@@ -24,6 +24,7 @@ class ClassInfo:
     package: str
     name: str
     fqcn: str
+    type_kind: str = "class"
     methods: set[str] = field(default_factory=set)
     method_signatures: list[dict[str, Any]] = field(default_factory=list)
     fields: set[str] = field(default_factory=set)
@@ -89,6 +90,7 @@ def build_java_class_index(symbols: list[dict[str, Any]]) -> JavaClassIndex:
                 package=package,
                 name=class_name,
                 fqcn=fqcn,
+                type_kind=str((sym.get("type_kinds", {}) or {}).get(class_name, "class") or "class"),
                 methods=methods,
                 method_signatures=signatures,
                 fields=fields,
@@ -217,7 +219,13 @@ class JavaCallResolver:
             line=int(call.get("line") or 0),
             arg_count=arg_count,
             inferred_target=True,
-            unresolved_reason=self._unresolved_reason(owner_symbol, receiver, receiver_type, target_method),
+            unresolved_reason=self._unresolved_reason(
+                owner_symbol,
+                receiver,
+                receiver_type,
+                target_method,
+                call=call,
+            ),
             evidence=dict(call),
         )
 
@@ -262,6 +270,8 @@ class JavaCallResolver:
         receiver: str,
         receiver_type: str,
         target_method: str,
+        *,
+        call: dict[str, Any] | None = None,
     ) -> str:
         if not receiver_type:
             if receiver in {"this", "super"}:
@@ -278,6 +288,8 @@ class JavaCallResolver:
                     return "static_receiver_not_indexed"
                 if any(target_method in info.methods for info in candidates):
                     return "static_receiver_without_visible_import"
+                if any(info.type_kind == "enum" for info in candidates) and target_method in {"values", "valueOf"}:
+                    return "generated_enum_method_out_of_scope"
                 return "target_method_not_indexed"
             return "receiver_type_missing"
         candidates = self.class_index.by_simple.get(receiver_type, [])
@@ -287,12 +299,55 @@ class JavaCallResolver:
             return "target_out_of_scope"
         if any(_lombok_accessor_field(info, target_method) for info in candidates):
             return "lombok_target_out_of_scope"
+        chain_reason = self._chain_unresolved_reason(candidates, owner_symbol, call or {})
+        if chain_reason:
+            return chain_reason
         # ``Object`` methods are inherited by every workspace class but are
         # normally absent from the source-defined method index. They are not
         # a local polymorphism gap and must not produce a synthetic edge.
         if target_method in _JAVA_OBJECT_METHODS:
             return "inherited_method_out_of_scope"
+        if any(self._has_unindexed_parent(info) for info in candidates):
+            return "inherited_method_out_of_scope"
         return "target_method_not_indexed"
+
+    def _chain_unresolved_reason(
+        self,
+        candidates: list[ClassInfo],
+        owner_symbol: dict[str, Any],
+        call: dict[str, Any],
+    ) -> str:
+        chain_method = str(call.get("chain_receiver_method") or "")
+        if not chain_method:
+            return ""
+        chain_arg_count = _safe_int_or_none(call.get("chain_arg_count"))
+        argument_types = _chain_argument_types(owner_symbol, call)
+        for info in candidates:
+            return_type = _method_return_type(
+                info.method_signatures,
+                chain_method,
+                arg_count=chain_arg_count,
+                argument_types=argument_types,
+            )
+            if not return_type:
+                lombok_field = _lombok_accessor_field(info, chain_method)
+                return_type = _normalize_type_name(info.field_types.get(lombok_field, "")) if lombok_field else ""
+            if return_type and not self.class_index.by_simple.get(return_type):
+                return "chain_return_type_not_indexed"
+        return ""
+
+    def _has_unindexed_parent(self, info: ClassInfo, visited: set[str] | None = None) -> bool:
+        if not info.supertypes:
+            return False
+        seen = set(visited or ())
+        if info.fqcn in seen:
+            return False
+        seen.add(info.fqcn)
+        ancestors = self._ancestor_candidates(info)
+        indexed = {candidate.name for candidate in ancestors}
+        if any(parent not in indexed for parent in info.supertypes):
+            return True
+        return any(self._has_unindexed_parent(ancestor, seen) for ancestor in ancestors)
 
     def _visible_type_candidates(self, owner_symbol: dict[str, Any], class_name: str) -> list[ClassInfo]:
         """Return only workspace classes visible to this source file.
@@ -348,7 +403,14 @@ class JavaCallResolver:
         class_name = (owner_symbol.get("classes") or owner_symbol.get("interfaces") or [Path(file).stem or "unknown"])[0]
         package = str(owner_symbol.get("package") or "")
         fqcn = f"{package}.{class_name}" if package else str(class_name)
-        return ClassInfo(project=project, file=file, package=package, name=str(class_name), fqcn=fqcn)
+        return ClassInfo(
+            project=project,
+            file=file,
+            package=package,
+            name=str(class_name),
+            fqcn=fqcn,
+            type_kind=str((owner_symbol.get("type_kinds", {}) or {}).get(str(class_name), "class") or "class"),
+        )
 
     def _receiver_type(self, owner_symbol: dict[str, Any], call: dict[str, Any]) -> str:
         receiver = str(call.get("receiver") or "")

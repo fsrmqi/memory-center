@@ -11,6 +11,7 @@ from .tree_sitter_parser import TreeSitterJavaParser
 _ENTITY_FIELDS = (
     "classes",
     "interfaces",
+    "type_kinds",
     "method_signatures",
     "fields",
     "bean_injections",

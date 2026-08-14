@@ -10,6 +10,7 @@ class JavaParseResult:
     imports: list[str] = field(default_factory=list)
     classes: list[str] = field(default_factory=list)
     interfaces: list[str] = field(default_factory=list)
+    type_kinds: dict[str, str] = field(default_factory=dict)
     type_supertypes: dict[str, list[str]] = field(default_factory=dict)
     methods: list[str] = field(default_factory=list)
     method_signatures: list[dict[str, Any]] = field(default_factory=list)

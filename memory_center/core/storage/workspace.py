@@ -111,17 +111,25 @@ class WorkspaceStore:
         self.audit_lock_file = self.base_dir / "audit.lock"
         self.reindex_lock_file = self.base_dir / "reindex.lock"
         self._memory_backend: RuntimeStore | None = None
+        # A scoped reindex reads the same large deterministic indexes while
+        # merging, rebuilding the graph, and publishing generation shards.
+        # Keep one Store-local object copy instead of decoding the Java symbol
+        # payload repeatedly. Reads compare SQLite ``updated_at`` first, so a
+        # long-lived Store observes publications made by another instance.
+        self._runtime_index_cache: dict[str, tuple[str, Any]] = {}
         for p in [self.index_dir, self.rules_dir, self.memory_dir, self.refs_dir, self.artifacts_dir, self.instructions_dir, self.graph_dir]:
             p.mkdir(parents=True, exist_ok=True)
 
     def write_json(self, name: str, data: Any) -> None:
         path = self.index_dir / name
         with FileLock(str(self.index_lock_file)):
-            self.memory_backend().upsert_index(name, data)
+            updated_at = self.memory_backend().upsert_index(name, data)
             if name in RUNTIME_ONLY_INDEXES:
                 path.unlink(missing_ok=True)
             else:
                 path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+            if name in RUNTIME_ONLY_INDEXES:
+                self._runtime_index_cache[name] = (updated_at, data)
             _drop_json_cache(path)
 
     def read_json(self, name: str, default: Any) -> Any:
@@ -338,11 +346,19 @@ class WorkspaceStore:
         earlier release therefore needs one explicit reindex before use.
         """
         try:
-            backend_entry = self.memory_backend().read_index_entry(name)
+            backend = self.memory_backend()
+            updated_at = backend.index_updated_at(name)
+            cached = self._runtime_index_cache.get(name)
+            if cached is not None and cached[0] == updated_at:
+                return cached[1]
+            backend_entry = backend.read_index_entry(name)
         except (OSError, ValueError):
             return default
         if backend_entry.get("found"):
-            return backend_entry.get("value")
+            value = backend_entry.get("value")
+            if name in RUNTIME_ONLY_INDEXES:
+                self._runtime_index_cache[name] = (str(backend_entry.get("updated_at", "") or ""), value)
+            return value
         return default
 
     def cleanup_runtime_only_index_exports(self, *, apply: bool = False) -> dict[str, Any]:

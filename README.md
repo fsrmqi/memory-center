@@ -463,6 +463,8 @@ For incremental / path-scoped reindex, BM25 and dense vector sync are incrementa
 
 对于增量 / 指定路径 reindex，BM25 和 dense vector 同步都是增量的：只有变更且可向量化的节点会在 `VectorIndex` 中 delete + upsert，未变化的 embedding 与 BM25 posting 会保留。一次 sparse-only reindex 不会再清空之前本地 embedding backend 生成的 dense embeddings。旧格式 BM25 索引会为迁移持久化词频完整重建一次，之后的局部刷新保持增量。
 
+4.3.79 起，精确 `--path` 直接定位文件或目录，Java 与多语言 pass 不再遍历完整服务树。返回的 `timing_ms` 会分解索引载入、scope 扫描、解析、持久化、图、语义、检索和 generation 发布耗时；局部刷新会写入不含路径与源码的聚合性能样本。使用 `memory-center scoped-refresh-performance --workspace <workspace.yaml>` 查看 P50/P95、预算和最慢阶段，默认预算可通过 `MEMORY_CENTER_SCOPED_REFRESH_BUDGET_MS` 调整。
+
 Reindex output also includes parser diagnostics: selected parser, parse count, fallback count/reasons, native disagreement count, and final critical disagreement count. Public parser parity is gated by `examples/parser-corpus/` and `tests/test_parser_differential.py`.
 
 reindex 输出还会包含 parser diagnostics：实际 parser、解析次数、fallback 次数/原因、原生差异数和最终 critical disagreement 数。公开 parser 一致性由 `examples/parser-corpus/` 与 `tests/test_parser_differential.py` 守护。
@@ -1033,7 +1035,7 @@ memory-center release-gate \
 
 `--query-samples N`（默认 `1`）可让同一查询执行 N 次：首轮记录冷查询，后续样本计算热查询 P95。发布 baseline 优先比较热查询 P95；N=1 时保持现有的单次查询开销。
 
-`--cochange-commits N` 显式启用 Git co-change 独立评测：以同一提交中除种子外的文件为真值，报告 precision、recall 和候选规模。它只持久化哈希引用与聚合指标，执行失败单独标记为 `environment_error`，不会被计为零分样本。也可单独运行 `memory-center eval-cochange --workspace <workspace.yaml> --max-commits 20`。
+`--cochange-commits N` 显式启用 Git co-change 独立评测：以同一提交中除种子外的文件为真值，报告 precision、recall 和候选规模。4.3.78 默认预测 8 个文件，按关系权重与边置信度对最多 1,600 条相邻边做确定性聚合；不会扫描完整文件子图。它只持久化哈希引用与聚合指标，执行失败单独标记为 `environment_error`，不会被计为零分样本。也可单独运行 `memory-center eval-cochange --workspace <workspace.yaml> --max-commits 20`。
 
 Use `--query-samples N` (default `1`) to execute each query N times: the first sample records cold-query latency and the remaining samples produce hot-query P95. Release baselines prefer hot P95; N=1 preserves the existing single-query cost.
 
