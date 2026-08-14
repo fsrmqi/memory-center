@@ -19,6 +19,7 @@ from memory_center.application.presentation import (
     export_workspace_dashboard_html,
 )
 from memory_center.application.runtime_governance import workspace_runtime_governance
+from memory_center.core.benchmark.cochange import evaluate_git_cochange
 from memory_center.core.freshness.change_reports import recent_change_impact_reports, record_change_impact_feedback
 from memory_center.core.knowledge.assertions import inspect_assertion, query_assertions, update_assertion_status
 from memory_center.core.knowledge.assets import (
@@ -107,6 +108,7 @@ from memory_center.core.orchestrator import (
     workspace_unresolved_items,
     workspace_write_receipts,
 )
+from memory_center.core.orchestrator.change_review import build_change_review_plan
 from memory_center.core.presentation.evidence_subgraph import export_evidence_subgraph
 from memory_center.core.retrieval.planner import (
     workspace_performance_snapshot_status,
@@ -159,6 +161,29 @@ from memory_center.core.workspace.jobs import cancel_workspace_job
 def workspace_background_job_status(workspace_file: str, job_id: str = "", *, limit: int = 20) -> dict[str, Any]:
     """通过 application 边界读取持久化后台任务状态。"""
     return analysis_job_status(workspace_file, job_id, limit=limit)
+
+
+def workspace_change_review(
+    workspace_file: str,
+    *,
+    scope: str = "all",
+    files: list[str] | None = None,
+    detail_level: str = "minimal",
+    refresh: bool = True,
+    max_depth: int = 3,
+) -> dict[str, Any]:
+    return build_change_review_plan(
+        workspace_file,
+        scope=scope,
+        files=files,
+        detail_level=detail_level,
+        refresh=refresh,
+        max_depth=max_depth,
+    )
+
+
+def workspace_eval_cochange(workspace_file: str, *, max_commits: int = 20) -> dict[str, Any]:
+    return evaluate_git_cochange(workspace_file, max_commits=max_commits)
 
 
 def workspace_background_job_cancel(workspace_file: str, job_id: str) -> dict[str, Any]:
@@ -533,6 +558,8 @@ __all__ = [
     "workspace_asset_sync",
     "workspace_change_impact_reports",
     "workspace_change_impact_confirm",
+    "workspace_change_review",
+    "workspace_eval_cochange",
     "workspace_evidence_subgraph",
     "workspace_delivery_breakdown",
     "workspace_delivery_contract",

@@ -1,5 +1,23 @@
 # Changelog / 更新日志
 
+## 4.3.77 图感知变更审查闭环 / Graph-Aware Change Review
+
+- 新增有界加权最佳路径影响传播，按关系权重、边置信度、证据强度、新鲜度和深度衰减计算影响分数；SQLite frontier 逐层查询且每个节点只保留最佳路径，不在查询热路径物化全图。
+- 新增统一 `change-review` 应用服务及 CLI、HTTP、MCP admin 入口。它一次完成变更识别、最多 12 个相关文件的定向刷新、影响链、契约风险、测试缺口和验证 Action；禁止自动退化为全量 reindex。
+- 新增 `minimal -> standard -> deep` 渐进上下文、调用次数/输出/耗时预算、generation-aware 指纹缓存与重复调用停止条件，Agent 协议默认使用最小结果并复用等价审查。
+- `architecture-communities` 升级为显式离线架构健康分析：可选固定种子的 Leiden 社区发现，缺少 `igraph` 时使用确定性加权标签传播；同时返回有界 Brandes 桥接点、异常跨社区连接和未测试高中心性节点。所有异常均标记为 `INFERRED`。
+- 新增 Git co-change 独立评测和 `release-gate --cochange-commits`。同一提交中除种子外的文件作为真值，执行错误独立记为 `environment_error`，报告只保存哈希引用和聚合指标，不保存路径、提交消息或源码。
+- 真实多仓库变更检测由每仓库最多四次串行 Git 调用改为单次 `name-status` 解析与最多 8 路有界并发；图证据定位从逐文件模糊检索改为 `file_path` 索引批量查询。UCAP 真实工作区只读测量由约 9.6 秒降至约 0.18 秒，完整 minimal Change Review 约 0.22 秒。
+
+## 4.3.77 Graph-Aware Change Review
+
+- Added bounded weighted best-path impact propagation using relation weight, edge confidence, evidence strength, freshness, and depth decay. SQLite frontier expansion keeps one best path per node and never materializes the full graph on the query hot path.
+- Added a unified `change-review` application service across CLI, HTTP, and MCP admin. It combines change detection, scoped refresh of at most 12 relevant files, impact paths, contract risks, test gaps, and verification actions without falling back to a full reindex.
+- Added progressive `minimal -> standard -> deep` context, invocation/output/time budgets, generation-aware fingerprint caching, and duplicate-call stop conditions. Generated Agent guidance now starts with the minimal review and reuses equivalent results.
+- Upgraded `architecture-communities` to explicit offline architecture-health analysis with seeded Leiden when optional `igraph` is installed and deterministic weighted label propagation otherwise, plus bounded Brandes bridges, surprising cross-community links, and untested central hotspots. Findings remain `INFERRED`.
+- Added independent Git co-change evaluation and `release-gate --cochange-commits`. Same-commit files excluding the seed form the ground truth; execution failures are isolated as `environment_error`, and only hashed references and aggregate metrics are retained.
+- Reworked multi-repository change detection from up to four serial Git calls per repository to one `name-status` parse per scope with at most eight workers. Graph evidence now uses indexed batched `file_path` lookup instead of per-file fuzzy search. A read-only UCAP measurement dropped from about 9.6 seconds to 0.18 seconds, with the complete minimal Change Review around 0.22 seconds.
+
 ## 4.3.76 MCP 装载状态防误判 / MCP Loading-State Diagnostics
 
 - Agent 协议将 MCP 状态改为三态：已发现、装载中或未知、已确认不可用。首轮工具快照缺少 `mc_*` 时先延迟发现并调用 `mc_freshness`，配置 enabled 但会话未注入工具时明确提示刷新会话，不再误报“未加载”或“不可用”。

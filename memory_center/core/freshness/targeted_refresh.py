@@ -85,6 +85,61 @@ def refresh_query_targets(
     return _scheduled_refresh_result(coalesced=False)
 
 
+def refresh_explicit_paths(
+    workspace_file: str | Path,
+    paths: list[str],
+    *,
+    limit: int = MAX_REFRESH_FILES,
+) -> dict[str, Any]:
+    """Synchronously refresh an explicit bounded change set for review actions."""
+    selected = list(dict.fromkeys(path.replace("\\", "/").lstrip("/") for path in paths if path))
+    bounded_limit = min(MAX_REFRESH_FILES, max(1, int(limit)))
+    selected = selected[:bounded_limit]
+    if not selected:
+        return {
+            "checked": 0,
+            "refreshed": False,
+            "files": [],
+            "elapsed_ms": 0.0,
+            "mode": "explicit_scoped_refresh",
+            "truncated": False,
+        }
+    store = WorkspaceStore(workspace_file)
+    coordinator = RefreshCoordinator(store.memory_dir)
+
+    def run() -> dict[str, Any]:
+        started = time.perf_counter()
+        config = load_workspace_config(store.workspace_file)
+        counts = reindex_workspace(config, store, paths=selected)
+        return {
+            "checked": len(selected),
+            "refreshed": True,
+            "files": selected,
+            "elapsed_ms": round((time.perf_counter() - started) * 1000, 2),
+            "mode": "explicit_scoped_refresh",
+            "truncated": len(paths) > len(selected),
+            "counts": {
+                "files": int(counts.get("files", 0) or 0),
+                "symbols": int(counts.get("symbols", 0) or 0),
+                "graph_nodes": int(counts.get("graph_nodes", 0) or 0),
+                "graph_edges": int(counts.get("graph_edges", 0) or 0),
+            },
+        }
+
+    return coordinator.run(
+        run,
+        lambda: {
+            "checked": 0,
+            "refreshed": False,
+            "files": [],
+            "elapsed_ms": 0.0,
+            "mode": "explicit_scoped_refresh",
+            "coalesced": True,
+            "truncated": len(paths) > bounded_limit,
+        },
+    )
+
+
 def _scheduled_refresh_result(*, coalesced: bool) -> dict[str, Any]:
     return {
         "checked": 0,

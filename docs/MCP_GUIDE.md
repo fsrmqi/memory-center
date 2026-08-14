@@ -103,7 +103,11 @@ MCP 当前公开的是 15 个 task-level tools：
 
 证据子图导出使用 `mc_admin(action="evidence_subgraph_export", text="<node-id-or-symbol>")`；可选 `direction`、`max_depth`、`limit` 与 `action_filter="json|markdown|html"`。HTTP 为 `GET /workspace/evidence-subgraph?target=...`，CLI 为 `export-evidence-subgraph`。该能力仅做显式、有界邻接读取，限制为最多 3 跳、120 条边、80 个节点，不读取源码、不扫描全图。
 
-架构社区分析使用 `mc_admin(action="architecture_communities")`，HTTP 为 `GET /workspace/architecture-communities`，CLI 为 `architecture-communities`。它只聚合跨项目边和节点度数，返回项目社区、跨项目耦合与高中心性节点；仅在显式调用时执行，Workbench/status 仅读取已缓存摘要。
+统一变更审查使用 `mc_admin(action="change_review", scope="all", view="minimal")`，HTTP 为 `GET /workspace/change-review?scope=all&detail_level=minimal`，CLI 为 `change-review`。它最多定向刷新 12 个相关文件，禁止退化为全量 reindex；返回加权最佳影响路径、测试缺口、契约风险、验证 Action、停止条件和调用预算。同一源码签名与 index generation 的等价请求直接复用结果；只有证据不足或用户显式请求时才升级 `standard` / `deep`。
+
+Git co-change 独立评测使用 `mc_admin(action="eval_cochange", limit=20)`、`GET /workspace/eval-cochange?max_commits=20` 或 CLI `eval-cochange`。它是显式离线评测，不进入查询热路径；提交、路径和消息不会写入报告，环境错误也不会计入准确率。
+
+架构社区分析使用 `mc_admin(action="architecture_communities")`，HTTP 为 `GET /workspace/architecture-communities`，CLI 为 `architecture-communities`。它读取有界 SQL 投影，优先使用固定种子的 Leiden，缺少可选依赖时使用确定性加权标签传播，并返回社区、桥接点、异常跨社区连接与未测试高中心性节点；仅在显式调用时执行，Workbench/status 仅读取已缓存摘要，异常结论始终标记为 `INFERRED`。
 
 契约语义校验使用 `mc_admin(action="contract_gate", name="SomeRequestDto.java")`，返回 `semantic_compatibility.status`：`pass`、`attention` 或 `block`。`mc_analyze(depth="full", target="...", task_id="...")` 自动执行同一校验并可将完整报告写为任务 evidence。guard 模式 pre-edit hook 遇到 `block` 会拒绝编辑；release gate 在索引存在契约快照时失败。
 

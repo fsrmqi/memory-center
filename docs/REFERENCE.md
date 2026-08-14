@@ -23,9 +23,11 @@
 - `plan-change`
 - `verify-checklist`
 - `detect-changes`
+- `change-review`：统一执行有界定向刷新、加权影响路径、测试/契约风险和验证 Action。
 - `trace`
 - `export-evidence-subgraph`：显式导出 JSON / Markdown / HTML 证据子图；`--max-depth<=3`、`--max-edges<=120`，不扫描全图。
 - `architecture-communities`：显式聚合项目社区、跨项目关系与高中心性节点；只传输 SQL 聚合结果。
+- `eval-cochange`：用有界 Git 共变历史独立评测图影响预测，只返回哈希引用和聚合指标。
 
 ### Workflow / Session
 
@@ -175,7 +177,26 @@
 - CLI：`architecture-communities --workspace <workspace.yaml> --limit 20`
 - HTTP：`GET /workspace/architecture-communities?limit=20`
 - MCP：`mc_admin(action="architecture_communities")`
-- 边界：仅显式执行 SQL 聚合，最多返回 50 个关键节点；普通查询和 status 只读取已有摘要。
+- 边界：仅显式读取有界 SQL 投影，最多返回 50 个关键节点；优先使用固定种子的 Leiden，缺少可选依赖时确定性降级；普通查询和 status 只读取已有摘要。
+- 可选依赖：`pip install 'memory-center[architecture]'`；pipx 安装使用 `pipx inject memory-center 'igraph>=0.11,<2'`。
+
+### Change Review / 统一变更审查
+
+- CLI：`change-review --workspace <workspace.yaml> --scope all --detail-level minimal`
+- HTTP：`GET /workspace/change-review?scope=all&detail_level=minimal&refresh=true`
+- MCP：`mc_admin(action="change_review", scope="all", view="minimal")`
+- `detail_level`：`minimal | standard | deep`；默认 `minimal`。
+- 边界：定向刷新最多 12 个相关文件，绝不隐式全量 reindex；同一源码签名与 generation 的等价调用复用短期缓存。
+- 返回：`risk`、`changed_nodes`、`impact_paths`、`test_gaps`、`contract_risks`、`actions`、`invocation_budget`、`stop_conditions`、`cache`。
+
+### Git Co-change Evaluation / Git 共变独立评测
+
+- CLI：`eval-cochange --workspace <workspace.yaml> --max-commits 20`
+- HTTP：`GET /workspace/eval-cochange?max_commits=20`
+- MCP：`mc_admin(action="eval_cochange", limit=20)`
+- 发布门禁：`release-gate --workspace <workspace.yaml> --cochange-commits 20`
+- 真值：同一 Git 提交中除种子外的其他变更文件；图邻居只作为预测，不作为自证真值。
+- 隐私：只返回哈希引用与聚合指标，不保存路径、提交消息或源码；执行错误使用 `environment_error`，不计入 precision/recall。
 
 ### `mc_lookup`
 
@@ -398,7 +419,7 @@ memory-center eval-java-call-resolution-unresolved --workspace <workspace.yaml> 
 
 ```bash
 memory-center eval-java-call-resolution --workspace <workspace.yaml> --cases <private-logical-cases.yaml>
-memory-center release-gate --workspace <workspace.yaml> --java-call-cases <private-logical-cases.yaml>
+memory-center release-gate --workspace <workspace.yaml> --java-call-cases <private-logical-cases.yaml> --cochange-commits 20
 memory-center eval-java-call-resolution-metrics --workspace <workspace.yaml>
 ```
 
@@ -447,6 +468,8 @@ Governance batches, semantic vectors, and ANN label/distance pairs validate thei
 同一 query 派生的 `agent_actions` 使用稳定 ID 去重：首次出现才写入治理 JSONL 与读模型，后续相同建议直接复用 ID，避免把普通读取变成重复写入负载。
 
 `release-gate --query-samples 5` 会记录首查冷查询 P95、其余样本的热查询 P95 和 `stage_p95_ms`。热查询 P95 默认预算为 `2000ms`；超出时 `retrieval.reason=hot_query_p95_budget_exceeded`。仅在明确维护窗口可使用 `--max-hot-query-p95-ms 0` 关闭绝对预算。
+
+`release-gate --cochange-commits 20` 增加独立 `cochange_impact` 组件。可执行 case 数为零、Git 环境错误或相对 baseline 的召回退化都会阻止该可选组件被视为通过；未传参数时保持 `skipped`。
 
 Regular query responses expose stage timings and cache status under `retrieval_diagnostics.timing_ms`. The cache applies only to the same published graph generation, query, configuration, policy, and freshness for 20 seconds; cache hits do not bypass freshness, governance, or response wrapping.
 

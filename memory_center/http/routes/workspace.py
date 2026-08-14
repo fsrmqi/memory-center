@@ -77,6 +77,7 @@ from memory_center.application.http_facades import (
     workspace_background_job_status,
     workspace_change_impact_confirm,
     workspace_change_impact_reports,
+    workspace_change_review,
     workspace_delivery_breakdown,
     workspace_delivery_contract,
     workspace_delivery_execute_validation,
@@ -96,6 +97,7 @@ from memory_center.application.http_facades import (
     workspace_delivery_subtask_status,
     workspace_delivery_transition,
     workspace_delivery_validation,
+    workspace_eval_cochange,
     workspace_evidence_subgraph,
     workspace_lookup_hint,
     workspace_performance_snapshot,
@@ -459,6 +461,23 @@ def register_workspace_routes(registry: CommandRegistry) -> None:
     registry.register(
         "/workspace/architecture-communities",
         lambda rp: workspace_architecture_communities(rp.workspace(), limit=rp.int_param("limit", 20, max_val=50)),
+    )
+    registry.register(
+        "/workspace/change-review",
+        lambda rp: workspace_change_review(
+            rp.workspace(),
+            scope=rp.get("scope", "all"),
+            files=rp.list_param("file") or None,
+            detail_level=rp.get("detail_level", "minimal"),
+            refresh=not rp.bool_param("no_refresh"),
+            max_depth=rp.int_param("max_depth", 3, max_val=5),
+        ),
+    )
+    registry.register(
+        "/workspace/eval-cochange",
+        lambda rp: workspace_eval_cochange(
+            rp.workspace(), max_commits=rp.int_param("max_commits", 20, max_val=100)
+        ),
     )
     registry.register(
         "/workspace/assertion-status",

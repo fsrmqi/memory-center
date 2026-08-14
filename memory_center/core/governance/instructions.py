@@ -52,6 +52,9 @@ AGENT_PROTOCOL_TEMPLATE = """# Memory Center Agent Protocol
 15. 对概念型、中文需求与代码混合查询，优先调用 `mc_admin(action="advanced_query", text="原查询")`，它会启用 ANN 和有界 Cross-Encoder 重排；重排器只使用当前 MCP 进程已预热模型，返回 `reranker_not_prewarmed` 时保留基础排序，不得在请求链路加载或下载模型。只有用户明确同意时，管理员才可在当前 MCP 进程调用 `mc_admin(action="retrieval_reranker_prewarm")`；普通符号查找仍使用 `mc_lookup`。
 16. `mc_admin(action="retrieval_model_profile", text="multilingual", force=true)` 会选择 BGE-M3 档案，但随后必须显式完整 reindex；Agent 不得自行切换模型档案或触发全量 reindex，除非用户明确要求。
 17. 定期调用 `mc_admin(action="eval_retrieval_replay")` 检查带 evidence 的人工验证样本；只有返回 `ready` 才可使用 `force=true` 应用融合权重提案。
+18. 代码审查、提交前检查或用户要求“看下变更影响”时，优先调用 `mc_admin(action="change_review", scope="all", view="minimal")`。它会定向刷新相关文件并一次返回加权影响链、契约风险、测试缺口和验证 Action；不要手工重复串联全局搜索。
+19. 遵守 `invocation_budget`：默认按 `minimal -> standard -> deep` 渐进展开；只有 `knowledge_state` 证据不足、结果被截断或用户明确要求时才升级。达到 `stop_condition`、预算耗尽或出现 `user_confirmation_required` 后必须停止工具调用。
+20. 相同 `fingerprint` 和 generation 的审查结果视为等价证据；短时间内不得重复调用 `lookup/analyze/change_review/provider` 获取同一范围。需要重试时必须先有 generation 变化、范围变化或新的验证证据。
 
 ## 推荐任务链路
 
@@ -62,7 +65,8 @@ AGENT_PROTOCOL_TEMPLATE = """# Memory Center Agent Protocol
 5. `mc_sync(intent="任务描述", auto_sync_mode="balanced")` — 同步上下文
 6. 开发过程中：`mc_admin(action="session_log", session_id="...", event_type="分析", payload="{...}")`
 7. 变更前：`mc_analyze(target="文件或符号", depth="standard/full")`
-8. 任务完成：`mc_close(session_id="...", outcome="完成描述", record_case=True)`
+8. 提交或审查前：`mc_admin(action="change_review", scope="all", view="minimal")`
+9. 任务完成：`mc_close(session_id="...", outcome="完成描述", record_case=True)`
 
 ## 重要说明
 
@@ -74,6 +78,7 @@ AGENT_PROTOCOL_TEMPLATE = """# Memory Center Agent Protocol
 - L3 级别信息优先进入 `workspace_profile`、`team_rules`、`architecture_invariants`、`active_migration_policy` 等核心记忆块。
 - 若首轮看不到 `mc_*` 工具，先做延迟工具发现；配置已启用但工具仍不可见时刷新宿主会话。只有绑定缺失时才运行 `memory-center runtime-audit --workspace {workspace_config_path} --fix`，避免把工具快照延迟误诊为服务不可用。
 - `vector_ann_status`、`vector_ann_rebuild`、`vector_ann_tune`、`advanced_query`、`retrieval_reranker_status`、`retrieval_reranker_prewarm`、`retrieval_model_profile` 和 `eval_retrieval_replay` 都通过 `mc_admin(action=...)` 调用；先遵守返回的 stop_condition 和 next_action，再进入宽泛搜索。
+- `change_review` 是变更审查默认入口；同一 fingerprint 命中缓存时直接复用，不再追加等价搜索。`eval_cochange` 是显式离线评测，不得放入普通查询链路。
 
 ## Spring Cloud 重点风险
 

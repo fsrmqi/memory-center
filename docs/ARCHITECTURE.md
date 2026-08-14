@@ -226,6 +226,24 @@ docs/                       # 面向用户和维护者的说明文档
 
 Memory Center 的数据流分为四个阶段：索引期建立工程事实，任务期提供上下文和影响分析，写入期沉淀任务证据，恢复/交接期把历史上下文重新组织给模型。
 
+### 图感知变更审查 / Graph-Aware Change Review
+
+统一 Change Review Plan 将变更检测、新鲜度、定向刷新、影响传播、测试与契约风险、验证 Action 收敛在同一个应用服务。刷新范围硬限制为最多 12 个可证明相关文件；失败时保留旧 generation 并显式报告，不允许回退为全量 reindex。
+
+多仓库变更检测按仓库执行一次 `git diff --name-status -z`，最多 8 路并发，并在内存中同时解析修改、删除和重命名；不再为“变更”和“删除”重复启动 Git 进程。随后用 `nodes.file_path` 索引批量定位图节点，禁止逐文件模糊搜索大图。
+
+影响传播在 SQLite 中按 frontier 分层读取，只为每个端点保留当前最佳路径。路径分数为：
+
+```text
+impact = relation_weight * edge_confidence * evidence_factor * freshness * depth_decay
+```
+
+固定关系权重和确定性排序保证同一 generation 可复现；节点、边、深度和耗时预算阻止环路枚举和全图 Python 物化。结果返回最佳路径与分数构成，供结论卡解释，而非只返回无法审计的邻居集合。
+
+交互层默认 `minimal`，证据不足时才升级 `standard` / `deep`。源码签名、请求参数和 generation 构成调用指纹；短期缓存抑制 Agent 重复调用，调用次数、输出和总耗时预算提供明确停止条件。
+
+架构健康分析与 Git co-change 评测属于显式离线路径。前者读取有界项目投影，使用固定种子 Leiden 或确定性加权标签传播，并以有界 Brandes 估算桥接点；后者使用同一提交中除种子外的文件作为独立真值。两者都不进入 lookup/impact 热路径，也不复制源码正文或私有路径到长期报告。
+
 ```text
 workspace.yaml
   + source repositories

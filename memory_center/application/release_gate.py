@@ -130,6 +130,7 @@ def run_release_gate(
     max_hot_query_p95_ms: float = 2000.0,
     ontology_paths: list[str] | None = None,
     ontology_full: bool = False,
+    cochange_commits: int = 0,
 ) -> dict[str, Any]:
     """Run a publish-ready index and retrieval gate with optional private suites.
 
@@ -139,6 +140,24 @@ def run_release_gate(
     config = load_workspace_config(workspace_file)
     store = WorkspaceStore(workspace_file)
     components: dict[str, dict[str, Any]] = {}
+    if cochange_commits > 0:
+        from memory_center.core.benchmark.cochange import evaluate_git_cochange
+
+        cochange_started = time.perf_counter()
+        cochange = evaluate_git_cochange(workspace_file, max_commits=cochange_commits)
+        cochange_summary = cochange.get("summary", {}) or {}
+        cochange_ready = cochange.get("status") == "ready" and int(cochange_summary.get("case_count", 0) or 0) > 0
+        components["cochange_impact"] = _component(
+            passed=cochange_ready,
+            duration_ms=(time.perf_counter() - cochange_started) * 1000,
+            result_count=int(cochange_summary.get("case_count", 0) or 0),
+            quality_score=float(cochange_summary.get("mean_recall", 0.0) or 0.0),
+            reason="cochange_ground_truth_unavailable" if not cochange_ready else "",
+            extra_metrics={
+                "mean_precision": float(cochange_summary.get("mean_precision", 0.0) or 0.0),
+                "environment_error_count": int(cochange_summary.get("environment_error_count", 0) or 0),
+            },
+        )
     assertion_index = store.read_json_prefer_backend("assertion-index.json", {}) or {}
     if assertion_index:
         diagnostics = store.memory_backend().assertion_diagnostics(str(assertion_index.get("generation", "") or ""))

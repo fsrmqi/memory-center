@@ -46,6 +46,26 @@ def _mcp_admin(action: str) -> EntryPoint:
 
 CAPABILITIES: list[Capability] = [
     Capability(
+        name="change-review",
+        core_fields=["workflow", "status", "scope_checked", "refresh", "summary", "actions", "invocation_budget"],
+        error_semantics="no changes -> no_changes; refresh failure -> stale/unknown evidence with fallback",
+        entries=[
+            _cli("change-review"),
+            _http("/workspace/change-review"),
+            _mcp_admin("change_review"),
+        ],
+    ),
+    Capability(
+        name="cochange-evaluation",
+        core_fields=["benchmark", "ground_truth_mode", "algorithm_version", "status", "summary"],
+        error_semantics="git execution failures -> environment_error and excluded from aggregates",
+        entries=[
+            _cli("eval-cochange"),
+            _http("/workspace/eval-cochange"),
+            _mcp_admin("eval_cochange"),
+        ],
+    ),
+    Capability(
         name="context-pack",
         core_fields=["workflow", "query", "intent", "entrypoints", "relationships",
                       "snippets", "risks", "checklist", "freshness", "token_estimate"],

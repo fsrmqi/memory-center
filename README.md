@@ -878,7 +878,11 @@ Before `mc_start` and `mc_lookup` return indexed evidence, Memory Center schedul
 
 需要为一次链路分析生成可交接的证据视图时，使用 `memory-center export-evidence-subgraph --workspace <workspace.yaml> --target <node-id-or-symbol> --format markdown`。也可通过 `GET /workspace/evidence-subgraph` 或 `mc_admin(action="evidence_subgraph_export")` 获取 JSON、Markdown、HTML。导出严格限制为最多 3 跳、120 条边、80 个节点，不读取源码、不扫描全图，也不会进入普通查询热路径。
 
-需要理解模块边界和共享核心节点时，显式运行 `memory-center architecture-communities --workspace <workspace.yaml>`。它仅在 SQLite 中聚合跨项目边与节点度数，输出项目社区、跨项目关系和高中心性节点；结果缓存到轻量摘要供 Workbench/status 读取，不会在查询热路径计算。
+需要理解模块边界和共享核心节点时，显式运行 `memory-center architecture-communities --workspace <workspace.yaml>`。它从 SQLite 读取有界项目投影：安装 `architecture` extra 时使用固定随机种子的加权 Leiden，否则使用确定性加权标签传播；同时计算有界 Brandes 桥接点、异常跨社区连接和未测试高中心性节点。普通环境可安装 `memory-center[architecture]`，pipx 环境可执行 `pipx inject memory-center 'igraph>=0.11,<2'`。结果缓存到轻量摘要供 Workbench/status 读取，所有异常均为 `INFERRED`，不会进入查询热路径。
+
+日常改动优先执行 `memory-center change-review --workspace <workspace.yaml> --scope all --detail-level minimal`，或调用 `mc_admin(action="change_review", scope="all", view="minimal")`。统一审查服务只对检测到的相关文件做最多 12 个文件的定向刷新，不会隐式全量重建；随后返回加权最佳影响路径、契约风险、测试缺口、验证 Action、停止条件和调用预算。同一源码签名与 index generation 的等价请求会复用短期结果，只有证据不足或显式请求时才从 `minimal` 升级到 `standard` / `deep`。
+
+Use `change-review` as the default change-analysis workflow. It performs a bounded scoped refresh, computes weighted best impact paths, reports contract and test risks, and returns verification actions with explicit stop conditions. Equivalent requests reuse a generation-aware short-lived result; a review never falls back to an implicit full reindex.
 
 Hot refresh is coordinated per workspace across local Agents. Each replacement commits a content hash and file generation in the same SQLite transaction, then expands at most one graph hop to related API/Feign/DTO/MQ/config files. `mc_start` and `mc_lookup` support `request_tier="fast"|"standard"|"deep"`; `fast` has bounded retrieval. For costly impact analysis, use `mc_analyze(execution_mode="background")`, then poll or cancel with `job_action="status"|"cancel"` and `job_id`.
 
@@ -1021,12 +1025,15 @@ memory-center release-gate \
   --query "another stable query" \
   --golden-cases /path/to/.memory-center/golden/cases.yaml \
   --java-call-cases /path/to/.memory-center/golden/java-call-resolution.yaml \
+  --cochange-commits 20 \
   --parser-limit 200 \
   --save-baseline /path/to/.memory-center/golden/release-gate-baseline.json \
   --label vNext
 ```
 
 `--query-samples N`（默认 `1`）可让同一查询执行 N 次：首轮记录冷查询，后续样本计算热查询 P95。发布 baseline 优先比较热查询 P95；N=1 时保持现有的单次查询开销。
+
+`--cochange-commits N` 显式启用 Git co-change 独立评测：以同一提交中除种子外的文件为真值，报告 precision、recall 和候选规模。它只持久化哈希引用与聚合指标，执行失败单独标记为 `environment_error`，不会被计为零分样本。也可单独运行 `memory-center eval-cochange --workspace <workspace.yaml> --max-commits 20`。
 
 Use `--query-samples N` (default `1`) to execute each query N times: the first sample records cold-query latency and the remaining samples produce hot-query P95. Release baselines prefer hot P95; N=1 preserves the existing single-query cost.
 

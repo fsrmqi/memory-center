@@ -1,13 +1,17 @@
 from __future__ import annotations
 
+import hashlib
 import subprocess
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+from time import perf_counter
 from typing import Any
 
 from memory_center.core.governance.rules import match_rules
 from memory_center.core.knowledge.ontology import edge_strength
 from memory_center.core.observability.diagnostics import DIAG, diag_entry
 from memory_center.core.observability.tracking import log_token_gain
+from memory_center.core.storage.graph import IMPACT_DEFAULT_EDGE_WEIGHT, IMPACT_EDGE_WEIGHTS
 from memory_center.core.storage.runtime import RuntimeStore
 
 from ..explanation import explanation_entry, merge_explanations
@@ -82,10 +86,17 @@ def memory_impact(
                 return compact
             return result
         node = symbol_info.get("best_match", {}) or {}
-        impacts = graph.traverse_edges(node["id"], direction=direction, max_depth=max_depth, limit=300)
-        confirmed = [x for x in impacts if float(x.get("confidence", 0)) >= 0.80]
-        probable = [x for x in impacts if 0.55 <= float(x.get("confidence", 0)) < 0.80]
-        possible = [x for x in impacts if float(x.get("confidence", 0)) < 0.55]
+        impacts = graph.weighted_impact_paths(
+            node["id"], direction=direction, max_depth=max_depth, limit=300
+        )
+        impacts = _include_alternative_direct_evidence(graph, node["id"], direction, impacts)
+        confirmed = [x for x in impacts if _impact_band_score(x) >= 0.80]
+        probable = [
+            x
+            for x in impacts
+            if 0.55 <= _impact_band_score(x) < 0.80
+        ]
+        possible = [x for x in impacts if _impact_band_score(x) < 0.55]
         impacted_projects = sorted(
             {x.get("source", {}).get("project") for x in impacts if x.get("source", {}).get("project")}
             | {x.get("target", {}).get("project") for x in impacts if x.get("target", {}).get("project")}
@@ -120,6 +131,12 @@ def memory_impact(
             "confirmed_impacts": confirmed,
             "probable_impacts": probable,
             "possible_impacts": possible,
+            "impact_algorithm": {
+                "name": "bounded_weighted_best_path_v1",
+                "score_formula": "relation_weight * edge_confidence * evidence_factor * freshness_factor * depth_decay",
+                "bounded": True,
+                "truncated": bool((impacts[0].get("traversal", {}) if impacts else {}).get("truncated", False)),
+            },
             "candidate_paths": candidate_paths,
             "recommended_path": dict(candidate_paths[0]) if candidate_paths else {},
             "lookup": _build_augmented_lookup_payload(
@@ -133,9 +150,9 @@ def memory_impact(
             "review_checklist": _impact_checklist(node, risk_level),
             "unknown_risks": _unknown_static_analysis_risks(),
             "explanation": {
-                "confirmed": "confidence >= 0.80, usually direct declarations, annotations, config, or contract edges",
-                "probable": "0.55 <= confidence < 0.80, usually import, Feign endpoint match, inferred method/field usage",
-                "possible": "confidence < 0.55, weak hints only; verify manually",
+                "confirmed": "impact_score >= 0.80 after relation, confidence, evidence, freshness, and depth weighting",
+                "probable": "0.55 <= impact_score < 0.80; inspect the returned best evidence path",
+                "possible": "impact_score < 0.55; weak or distant propagation that requires verification",
             },
             "_explanation_entries": _build_impact_explanation_entries(confirmed, probable, possible, node),
             "freshness": freshness,
@@ -147,6 +164,53 @@ def memory_impact(
             log_token_gain(workspace_file, "memory_impact", budget=budget, model="", raw_tokens=gain["raw_tokens"], compact_tokens=gain["compact_tokens"], view=view)
             return compact
         return result
+
+
+def _impact_band_score(impact: dict[str, Any]) -> float:
+    """Keep direct extracted edges in their prior evidence band while ranking by weighted score."""
+    weighted = float(impact.get("impact_score", impact.get("confidence", 0)) or 0.0)
+    if int(impact.get("depth", 0) or 0) == 1 or impact.get("alternative_path_evidence"):
+        return max(weighted, float(impact.get("confidence", 0) or 0.0))
+    return weighted
+
+
+def _include_alternative_direct_evidence(
+    graph: RuntimeStore,
+    node_id: str,
+    direction: str,
+    impacts: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Expose distinct direct relations without expanding them as competing paths."""
+    known_edge_ids = {str(item.get("id", "")) for item in impacts}
+    direct_edges = graph.neighbors(node_id, direction=direction, max_depth=1, limit=100)
+    alternatives: list[dict[str, Any]] = []
+    for edge in direct_edges:
+        if str(edge.get("id", "")) in known_edge_ids:
+            continue
+        confidence = float(edge.get("confidence", 0.0) or 0.0)
+        weight = float(IMPACT_EDGE_WEIGHTS.get(str(edge.get("type", "")), IMPACT_DEFAULT_EDGE_WEIGHT))
+        endpoint = edge.get("source_id") if edge.get("target_id") == node_id else edge.get("target_id")
+        alternatives.append(
+            {
+                **edge,
+                "depth": 1,
+                "impact_score": round(confidence * weight, 6),
+                "best_path": {"node_ids": [node_id, endpoint], "edge_ids": [edge.get("id", "")], "hop_count": 1},
+                "score_breakdown": {
+                    "relation_weight": round(weight, 4),
+                    "edge_confidence": round(confidence, 4),
+                    "evidence_factor": 1.0,
+                    "freshness_factor": 1.0,
+                    "depth_factor": 1.0,
+                },
+                "alternative_direct_evidence": True,
+                "propagated": False,
+            }
+        )
+    return sorted(
+        [*impacts, *alternatives],
+        key=lambda item: (-float(item.get("impact_score", 0.0)), int(item.get("depth", 0)), str(item.get("id", ""))),
+    )
 
 
 def _compact_impact_result(result: dict[str, Any], budget: str = "medium") -> dict[str, Any]:
@@ -305,47 +369,38 @@ def memory_verify_checklist(workspace_file: str | Path, target: str) -> dict[str
 
 def memory_detect_changes(workspace_file: str | Path, scope: str = "staged") -> dict[str, Any]:
     config, store = load_context(workspace_file)
+    started = perf_counter()
+    repositories = [
+        (config.resolve_service_path(service), config.service_logical_prefix(service).strip("/"))
+        for service in config.services
+        if (config.resolve_service_path(service) / ".git").exists()
+    ]
+    changed: list[str] = []
+    deleted: list[str] = []
+    git_errors: list[dict[str, str]] = []
+    if repositories:
+        with ThreadPoolExecutor(max_workers=min(8, len(repositories))) as executor:
+            futures = {
+                executor.submit(_git_changes_for_repository, repo, prefix, scope): prefix
+                for repo, prefix in repositories
+            }
+            for future in as_completed(futures):
+                prefix = futures[future]
+                try:
+                    repo_changed, repo_deleted = future.result()
+                    changed.extend(repo_changed)
+                    deleted.extend(repo_deleted)
+                except (OSError, subprocess.SubprocessError) as exc:
+                    git_errors.append({"repository_ref": _change_repository_ref(prefix), "reason": type(exc).__name__})
+    changed = sorted(dict.fromkeys(changed))
+    deleted = sorted(dict.fromkeys(deleted))
     with RuntimeStore(store.graph_db_path) as graph:
-        changed: list[str] = []
-        deleted: list[str] = []
-        for svc in config.services:
-            repo = config.resolve_service_path(svc)
-            if not (repo / ".git").exists():
-                continue
-            commands = [["git", "diff", "--name-only"]]
-            delete_commands = [["git", "diff", "--diff-filter=D", "--name-only"]]
-            if scope == "staged":
-                commands = [["git", "diff", "--name-only", "--cached"]]
-                delete_commands = [["git", "diff", "--diff-filter=D", "--name-only", "--cached"]]
-            elif scope == "head":
-                commands = [["git", "diff", "--name-only", "HEAD~1..HEAD"]]
-                delete_commands = [["git", "diff", "--diff-filter=D", "--name-only", "HEAD~1..HEAD"]]
-            elif scope == "all":
-                commands = [["git", "diff", "--name-only"], ["git", "diff", "--name-only", "--cached"]]
-                delete_commands = [["git", "diff", "--diff-filter=D", "--name-only"], ["git", "diff", "--diff-filter=D", "--name-only", "--cached"]]
-            try:
-                for cmd in commands:
-                    out = subprocess.check_output(cmd, cwd=repo, text=True, stderr=subprocess.DEVNULL)
-                    changed.extend(
-                        [f"{config.service_logical_prefix(svc)}/{line.strip()}".strip("/") for line in out.splitlines() if line.strip()]
-                    )
-                for cmd in delete_commands:
-                    out = subprocess.check_output(cmd, cwd=repo, text=True, stderr=subprocess.DEVNULL)
-                    deleted.extend(
-                        [f"{config.service_logical_prefix(svc)}/{line.strip()}".strip("/") for line in out.splitlines() if line.strip()]
-                    )
-            except Exception:
-                continue
-        changed = sorted(dict.fromkeys(changed))
-        deleted = sorted(dict.fromkeys(deleted))
         file_index = store.read_json_prefer_backend("file-index.json", [])
         matched_files = [f for f in file_index if f.get("path") in changed]
         changed_text = " ".join(changed)
         rules = match_rules(store, intent=f"git changes {changed_text}", files=changed)[:20]
         affected_projects = sorted({f.get("project") for f in matched_files})
-        graph_hits = []
-        for file in changed[:50]:
-            graph_hits.extend(graph.find_nodes(file, types=["File"], limit=5))
+        graph_hits = graph.nodes_for_files(changed[:50], types=["File"], limit=100)
         confirmed_edges = []
         for hit in graph_hits[:20]:
             confirmed_edges.extend(graph.traverse_edges(hit["id"], direction="both", max_depth=1, limit=20))
@@ -353,6 +408,9 @@ def memory_detect_changes(workspace_file: str | Path, scope: str = "staged") -> 
         risk_level = "high" if any(m in changed_text for m in high_markers) or any(e.get("type") in {"IMPLEMENTS_FEIGN", "CONSUMES_TOPIC", "READS_FIELD"} for e in confirmed_edges) else "medium" if changed else "low"
         return {
             "scope": scope,
+            "timing_ms": {"total": round((perf_counter() - started) * 1000, 3)},
+            "git_repository_count": len(repositories),
+            "git_errors": git_errors,
             "changed_files": changed,
             "deleted_files": deleted,
             "matched_index_files": matched_files,
@@ -369,6 +427,58 @@ def memory_detect_changes(workspace_file: str | Path, scope: str = "staged") -> 
             ],
             "unknown_risks": _unknown_static_analysis_risks(),
         }
+
+
+def _git_changes_for_repository(repo: Path, prefix: str, scope: str) -> tuple[list[str], list[str]]:
+    commands = [["git", "diff", "--name-status", "-z"]]
+    if scope == "staged":
+        commands = [["git", "diff", "--cached", "--name-status", "-z"]]
+    elif scope == "head":
+        commands = [["git", "diff", "--name-status", "-z", "HEAD~1..HEAD"]]
+    elif scope == "all":
+        commands.append(["git", "diff", "--cached", "--name-status", "-z"])
+    changed: list[str] = []
+    deleted: list[str] = []
+    for command in commands:
+        output = subprocess.check_output(
+            command,
+            cwd=repo,
+            stderr=subprocess.DEVNULL,
+            timeout=10,
+        ).decode("utf-8", errors="replace")
+        command_changed, command_deleted = _parse_git_name_status(output, prefix)
+        changed.extend(command_changed)
+        deleted.extend(command_deleted)
+    return changed, deleted
+
+
+def _parse_git_name_status(output: str, prefix: str) -> tuple[list[str], list[str]]:
+    fields = [field for field in output.split("\0") if field]
+    changed: list[str] = []
+    deleted: list[str] = []
+    index = 0
+    while index < len(fields):
+        status = fields[index]
+        index += 1
+        if index >= len(fields):
+            break
+        old_path = fields[index]
+        index += 1
+        path = old_path
+        if status.startswith(("R", "C")) and index < len(fields):
+            path = fields[index]
+            index += 1
+            if status.startswith("R"):
+                deleted.append(f"{prefix}/{old_path}".strip("/"))
+        logical_path = f"{prefix}/{path}".strip("/")
+        changed.append(logical_path)
+        if status.startswith("D"):
+            deleted.append(logical_path)
+    return changed, deleted
+
+
+def _change_repository_ref(prefix: str) -> str:
+    return hashlib.sha256(prefix.encode("utf-8", errors="replace")).hexdigest()[:12]
 
 
 def _build_impact_progressive_view(
@@ -508,6 +618,9 @@ def _build_impact_candidate_paths(
                 "why": f"还有 {probable_count} 个 probable 和 {possible_count} 个 possible 路径，适合在确认高置信影响后再扩展验证。",
                 "next_action": "确认 confirmed 后，再按 probable -> possible 的顺序补做抽样验证",
                 "verification_cost": "high" if possible_count > probable_count else "medium",
+                "_learning_aliases": [
+                    {"candidate_type": "impact_analysis", "target": target_name},
+                ],
             }
         )
 

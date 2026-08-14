@@ -1,6 +1,6 @@
 [project]
 name = "memory-center"
-version = "4.3.76"
+version = "4.3.77"
 description = "Memory Center is an MCP-native project memory service and multi-agent shared context center for coding agents"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -39,6 +39,7 @@ semantic = ["litellm>=1.40.0"]
 semantic-local = ["sentence-transformers>=3.0.0"]
 semantic-ann = ["hnswlib>=0.8.0", "numpy>=1.24.0"]
 ast = ["tree-sitter>=0.25,<0.26", "tree-sitter-java>=0.23,<0.24"]
+architecture = ["igraph>=0.11,<2"]
 multilang = [
   "tree-sitter>=0.25,<0.26",
   "tree-sitter-java>=0.23,<0.24",
@@ -46,6 +47,7 @@ multilang = [
   "tree-sitter-typescript>=0.23,<0.24",
   "tree-sitter-go>=0.25,<0.26",
   "tree-sitter-kotlin>=1.1,<2.0",
+  "igraph>=0.11,<2",
 ]
 dev = [
   "pytest>=8.0.0",

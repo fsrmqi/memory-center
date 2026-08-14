@@ -27,6 +27,7 @@ from memory_center.application.tasks import execute_task_repair
 from memory_center.core.audit.inspect import inspect_runtime
 from memory_center.core.audit.interactions import build_effect_summary, record_host_interaction, refresh_effect_summary
 from memory_center.core.audit.runtime import audit_agent_runtime
+from memory_center.core.benchmark.cochange import evaluate_git_cochange
 from memory_center.core.benchmark.trending import check_regression_alerts
 from memory_center.core.contracting.runtime import (
     ingest_runtime_contract_samples,
@@ -114,6 +115,7 @@ from memory_center.core.orchestrator import (
     workspace_task_resume_check,
     workspace_write_receipts,
 )
+from memory_center.core.orchestrator.change_review import build_change_review_plan
 from memory_center.core.presentation.evidence_subgraph import export_evidence_subgraph
 from memory_center.core.retrieval.calibration import evaluate_retrieval_replay_calibration
 from memory_center.core.retrieval.cross_service import evaluate_cross_shard_replay
@@ -897,6 +899,15 @@ def build_admin_registry(
                 output_format=action_filter or "json",
             ),
             "architecture_communities": lambda: analyze_architecture_communities(wf, limit=min(max(1, limit), 50)),
+            "change_review": lambda: build_change_review_plan(
+                wf,
+                scope=scope,
+                files=files,
+                detail_level=view if view in {"minimal", "standard", "deep"} else "minimal",
+                refresh=not strict,
+                max_depth=max_depth,
+            ),
+            "eval_cochange": lambda: evaluate_git_cochange(wf, max_commits=min(max(1, limit), 100)),
             "eval_write_quality": lambda: memory_eval_write_quality(
                 wf, task_id=task_id, session_id=session_id, intent=intent, limit=limit
             ),

@@ -652,6 +652,41 @@ def architecture_communities_cmd(
     print(analyze_architecture_communities(workspace, limit=limit))
 
 
+@app.command("change-review")
+def change_review_cmd(
+    workspace: str = typer.Option(...),
+    scope: str = typer.Option("all", help="Git change scope: staged, head, or all."),
+    file: List[str] = typer.Option([], "--file", help="Explicit logical changed path; repeatable."),  # noqa: B008
+    detail_level: str = typer.Option("minimal", help="minimal, standard, or deep."),
+    no_refresh: bool = typer.Option(False, help="Read the published generation without scoped refresh."),
+    max_depth: int = typer.Option(3, min=1, max=5),
+):
+    """Build one bounded graph-aware change review plan."""
+    from memory_center.core.orchestrator.change_review import build_change_review_plan
+
+    print(
+        build_change_review_plan(
+            workspace,
+            scope=scope,
+            files=list(file) or None,
+            detail_level=detail_level,
+            refresh=not no_refresh,
+            max_depth=max_depth,
+        )
+    )
+
+
+@app.command("eval-cochange")
+def eval_cochange_cmd(
+    workspace: str = typer.Option(...),
+    max_commits: int = typer.Option(20, min=1, max=100),
+):
+    """Evaluate graph file-impact predictions against bounded Git co-change history."""
+    from memory_center.core.benchmark.cochange import evaluate_git_cochange
+
+    print(evaluate_git_cochange(workspace, max_commits=max_commits))
+
+
 @app.command()
 def doctor(
     workspace: str = typer.Option(...), self_test: bool = typer.Option(False, help="Run lightweight query smoke tests.")
@@ -1505,6 +1540,9 @@ def release_gate_cmd(
     ontology_path: List[str] = typer.Option([], help="Optional logical paths for isolated ontology performance gate."),  # noqa: B008
     ontology_full: bool = typer.Option(False, help="Run the isolated full ontology reindex gate."),
     max_quality_drop: float = typer.Option(0.02, min=0.0, max=1.0, help="Maximum component quality-score drop."),
+    cochange_commits: int = typer.Option(
+        0, min=0, max=100, help="Independent Git co-change cases; 0 disables the gate component."
+    ),
 ):
     """Run index, retrieval and optional precision checks as one release gate."""
 
@@ -1523,6 +1561,7 @@ def release_gate_cmd(
         ontology_paths=ontology_path,
         ontology_full=ontology_full,
         max_quality_drop=max_quality_drop,
+        cochange_commits=cochange_commits,
     )
     response: dict[str, object] = {"result": result}
     if save_baseline and result["passed"]:

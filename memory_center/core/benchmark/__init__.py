@@ -6,6 +6,7 @@ from .baseline import (
     record_baseline_sample,
 )
 from .cases import GoldenCase
+from .cochange import evaluate_git_cochange
 from .golden import load_golden_cases, run_golden_suite, save_golden_performance_baseline, score_golden_case
 from .java_call_resolution import (
     JavaCallResolutionCase,
@@ -35,6 +36,7 @@ from .trending import (
 
 __all__ = [
     "GoldenCase",
+    "evaluate_git_cochange",
     "JavaCallResolutionCase",
     "load_golden_cases",
     "load_java_call_resolution_cases",

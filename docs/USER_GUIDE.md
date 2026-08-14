@@ -197,7 +197,10 @@ memory-center callees --workspace /abs/path/.memory-center/workspace.yaml --symb
 ```bash
 memory-center impact --workspace /abs/path/.memory-center/workspace.yaml --target ArticleDTO
 memory-center detect-changes --workspace /abs/path/.memory-center/workspace.yaml --scope all
+memory-center change-review --workspace /abs/path/.memory-center/workspace.yaml --scope all --detail-level minimal
 ```
+
+`change-review` 是日常改动的默认入口：它自动识别变更，对最多 12 个相关文件执行定向刷新，再一次返回加权影响链、契约风险、测试缺口、验证动作和停止条件，不会触发全量重建。默认先看 `minimal`；只有证据不足或需要更完整说明时再使用 `--detail-level standard|deep`。MCP 对应 `mc_admin(action="change_review", scope="all", view="minimal")`。
 
 ### 影响分析的结果与降级
 

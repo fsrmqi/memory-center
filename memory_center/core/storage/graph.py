@@ -18,6 +18,40 @@ from .metadata import metadata_json as _metadata_json
 # Pre-compiled regex for _sanitize_fts_term (P1 performance)
 _RE_SANITIZE_FTS = re.compile(r"[^\w㐀-䶿一-鿿豈-﫿]")
 
+# Impact propagation is deliberately separate from edge confidence. Confidence
+# says how trustworthy one extracted relation is; this table says how strongly
+# that relation should carry a code-change impact to its next endpoint.
+IMPACT_EDGE_WEIGHTS: dict[str, float] = {
+    "CALLS_METHOD": 0.98,
+    "CALLS_SERVICE": 1.0,
+    "IMPLEMENTS_FEIGN": 0.96,
+    "EXPOSES_ENDPOINT": 0.96,
+    "HANDLES_ENDPOINT": 0.94,
+    "CONSUMES_TOPIC": 0.96,
+    "PRODUCES_TOPIC": 0.96,
+    "ROUTES_TO": 0.95,
+    "DATA_FLOWS_TO": 0.90,
+    "CONFIG_PROPAGATES": 0.86,
+    "READS_CONFIG": 0.82,
+    "USES_DATA_RESOURCE": 0.82,
+    "INJECTS_BEAN": 0.82,
+    "INJECTS": 0.82,
+    "READS_FIELD": 0.78,
+    "IMPORTS": 0.62,
+    "IMPLEMENTS_FLOW_STEP": 0.75,
+    "TRANSITIVELY_CALLS": 0.68,
+    "DECLARES": 0.45,
+    "DECLARES_CONFIG": 0.45,
+    "CONTAINS": 0.35,
+}
+IMPACT_DEFAULT_EDGE_WEIGHT = 0.55
+IMPACT_EVIDENCE_FACTORS = {
+    "VERIFIED": 1.0,
+    "EXTRACTED": 1.0,
+    "INFERRED": 0.86,
+    "AMBIGUOUS": 0.65,
+}
+
 
 @dataclass(frozen=True)
 class GraphNode:
@@ -444,6 +478,166 @@ class _GraphOperations:
             frontier = next_frontier
         return results[:limit]
 
+    def weighted_impact_paths(
+        self,
+        node_id: str,
+        *,
+        direction: str = "upstream",
+        max_depth: int = 3,
+        limit: int = 300,
+        minimum_score: float = 0.05,
+        edge_weights: dict[str, float] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Return bounded best-path impact records without materializing the graph.
+
+        Each frontier expansion uses indexed SQLite lookups. Cycles and dense
+        graphs remain bounded because only the highest-scoring path per endpoint
+        is retained and expanded at the next depth.
+        """
+        if not node_id or max_depth <= 0 or limit <= 0:
+            return []
+        normalized = {"incoming": "upstream", "outgoing": "downstream"}.get(direction, direction)
+        directions = ("upstream", "downstream") if normalized == "both" else (normalized,)
+        if not set(directions).issubset({"upstream", "downstream"}):
+            directions = ("upstream",)
+
+        weights = {**IMPACT_EDGE_WEIGHTS, **(edge_weights or {})}
+        best: dict[str, dict[str, Any]] = {
+            node_id: {"score": 1.0, "node_path": [node_id], "edge_path": []}
+        }
+        frontier = [node_id]
+        output_by_node: dict[str, dict[str, Any]] = {}
+        alternative_by_relation: dict[tuple[str, str], dict[str, Any]] = {}
+        truncated = False
+
+        with self.connect() as conn:
+            for depth in range(1, min(int(max_depth), 8) + 1):
+                if not frontier or len(output_by_node) >= limit:
+                    truncated = len(output_by_node) >= limit
+                    break
+                next_candidates: dict[str, dict[str, Any]] = {}
+                for start in range(0, len(frontier), 400):
+                    batch = frontier[start : start + 400]
+                    placeholders = ",".join("?" for _ in batch)
+                    for traversal_direction in directions:
+                        source_column, target_column = (
+                            ("target_id", "source_id")
+                            if traversal_direction == "upstream"
+                            else ("source_id", "target_id")
+                        )
+                        rows = conn.execute(
+                            f"""
+                            SELECT e.*, ns.type AS source_type, ns.name AS source_name,
+                                   ns.project AS source_project, ns.file_path AS source_file,
+                                   ns.line AS source_line, nt.type AS target_type,
+                                   nt.name AS target_name, nt.project AS target_project,
+                                   nt.file_path AS target_file, nt.line AS target_line,
+                                   e.{source_column} AS frontier_id,
+                                   e.{target_column} AS neighbor_id
+                            FROM edges e
+                            LEFT JOIN nodes ns ON ns.id=e.source_id
+                            LEFT JOIN nodes nt ON nt.id=e.target_id
+                            WHERE e.{source_column} IN ({placeholders})
+                            ORDER BY e.{source_column}, e.id
+                            LIMIT ?
+                            """,
+                            [*batch, min(4096, max(256, limit * 12))],
+                        ).fetchall()
+                        for row in rows:
+                            current_id = str(row["frontier_id"] or "")
+                            neighbor_id = str(row["neighbor_id"] or "")
+                            if not neighbor_id or neighbor_id == node_id:
+                                continue
+                            parent = best.get(current_id)
+                            if not parent:
+                                continue
+                            edge = _row_edge(row)
+                            edge_weight = min(1.0, max(0.0, float(weights.get(edge["type"], IMPACT_DEFAULT_EDGE_WEIGHT))))
+                            edge_confidence = min(1.0, max(0.0, float(edge.get("confidence", 0.0) or 0.0)))
+                            evidence_factor = IMPACT_EVIDENCE_FACTORS.get(str(edge.get("evidence_level", "AMBIGUOUS")), 0.65)
+                            freshness_status = str((edge.get("metadata", {}) or {}).get("freshness_status", "fresh")).lower()
+                            freshness_factor = 0.70 if freshness_status in {"stale", "outdated"} else 0.85 if freshness_status == "unknown" else 1.0
+                            depth_factor = 1.0 if depth == 1 else 0.90
+                            score = float(parent["score"]) * edge_weight * edge_confidence * evidence_factor * freshness_factor * depth_factor
+                            if score < max(0.0, float(minimum_score)):
+                                continue
+                            candidate_path = [*parent["node_path"], neighbor_id]
+                            candidate_edges = [*parent["edge_path"], edge["id"]]
+                            record = {
+                                **edge,
+                                "depth": depth,
+                                "impact_score": round(score, 6),
+                                "best_path": {
+                                    "node_ids": candidate_path,
+                                    "edge_ids": candidate_edges,
+                                    "hop_count": depth,
+                                },
+                                "score_breakdown": {
+                                    "relation_weight": round(edge_weight, 4),
+                                    "edge_confidence": round(edge_confidence, 4),
+                                    "evidence_factor": round(evidence_factor, 4),
+                                    "freshness_factor": round(freshness_factor, 4),
+                                    "depth_factor": round(depth_factor, 4),
+                                },
+                            }
+                            previous = next_candidates.get(neighbor_id) or best.get(neighbor_id)
+                            if previous and (
+                                score < float(previous["score"])
+                                or (score == float(previous["score"]) and candidate_path >= previous["node_path"])
+                            ):
+                                previous_type = str((previous.get("record", {}) or {}).get("type", ""))
+                                edge_type = str(edge.get("type", ""))
+                                if edge_type and edge_type != previous_type:
+                                    alternative_by_relation[(neighbor_id, edge_type)] = {
+                                        **record,
+                                        "alternative_path_evidence": True,
+                                        "propagated": False,
+                                    }
+                                continue
+                            pending = next_candidates.get(neighbor_id)
+                            if pending:
+                                pending_record = dict(pending["record"])
+                                pending_type = str(pending_record.get("type", ""))
+                                if pending_type and pending_type != str(edge.get("type", "")):
+                                    alternative_by_relation[(neighbor_id, pending_type)] = {
+                                        **pending_record,
+                                        "alternative_path_evidence": True,
+                                        "propagated": False,
+                                    }
+                            next_candidates[neighbor_id] = {
+                                "score": score,
+                                "node_path": candidate_path,
+                                "edge_path": candidate_edges,
+                                "record": record,
+                            }
+                frontier = []
+                for neighbor_id, candidate in sorted(
+                    next_candidates.items(), key=lambda item: (-float(item[1]["score"]), item[0])
+                ):
+                    previous = best.get(neighbor_id)
+                    if previous and float(previous["score"]) >= float(candidate["score"]):
+                        continue
+                    best[neighbor_id] = candidate
+                    output_by_node[neighbor_id] = candidate["record"]
+                    frontier.append(neighbor_id)
+                    if len(output_by_node) >= limit:
+                        truncated = True
+                        break
+
+        ordered = sorted(
+            [*output_by_node.values(), *alternative_by_relation.values()],
+            key=lambda item: (-float(item.get("impact_score", 0.0)), int(item.get("depth", 0)), str(item.get("id", ""))),
+        )[:limit]
+        if ordered:
+            ordered[0]["traversal"] = {
+                "algorithm": "bounded_weighted_best_path_v1",
+                "truncated": truncated,
+                "max_depth": min(int(max_depth), 8),
+                "limit": limit,
+                "minimum_score": minimum_score,
+            }
+        return ordered
+
     def remove_by_scope(self, project_filter: set[str], path_filters: list[str], *, preserve_incoming: bool = False) -> set[str]:
         """Remove nodes/edges matching project or path scope. Returns removed node IDs."""
         with self.connect() as conn:
@@ -571,6 +765,48 @@ class _GraphOperations:
             rows = conn.execute(sql, (file_path, file_path, limit)).fetchall()
         return [str(row[0]) for row in rows if row[0]]
 
+    def nodes_for_files(
+        self,
+        file_paths: list[str],
+        *,
+        limit: int = 200,
+        types: list[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Return a bounded deterministic node slice for explicit logical paths."""
+        paths = list(dict.fromkeys(str(path) for path in file_paths if path))[:100]
+        node_types = sorted({str(node_type) for node_type in (types or []) if node_type})
+        if not paths or limit <= 0:
+            return []
+        rows: list[sqlite3.Row] = []
+        with self.connect() as conn:
+            for start in range(0, len(paths), 400):
+                batch = paths[start : start + 400]
+                placeholders = ",".join("?" for _ in batch)
+                type_clause = ""
+                query_args: list[Any] = [*batch]
+                if node_types:
+                    type_placeholders = ",".join("?" for _ in node_types)
+                    type_clause = f" AND type IN ({type_placeholders})"
+                    query_args.extend(node_types)
+                rows.extend(
+                    conn.execute(
+                        f"""
+                        SELECT * FROM nodes
+                        WHERE file_path IN ({placeholders}){type_clause}
+                        ORDER BY CASE type
+                            WHEN 'Method' THEN 0 WHEN 'Endpoint' THEN 1
+                            WHEN 'FeignMethod' THEN 2 WHEN 'Class' THEN 3
+                            WHEN 'File' THEN 9 ELSE 5 END,
+                            file_path, line, id
+                        LIMIT ?
+                        """,
+                        [*query_args, max(1, limit - len(rows))],
+                    ).fetchall()
+                )
+                if len(rows) >= limit:
+                    break
+        return [_row_node(row) for row in rows[:limit]]
+
     def file_generation(self, file_path: str) -> dict[str, Any] | None:
         with self.connect() as conn:
             row = conn.execute("SELECT file_path,generation,content_hash,updated_at FROM file_generations WHERE file_path=?", (file_path,)).fetchone()
@@ -657,6 +893,11 @@ class _GraphOperations:
                        COUNT(edge.id) AS degree,
                        COUNT(DISTINCT CASE
                            WHEN source.project = node.project THEN target.project ELSE source.project END) AS connected_projects
+                       ,SUM(CASE WHEN lower(source.file_path) LIKE '%/test/%'
+                                      OR lower(target.file_path) LIKE '%/test/%'
+                                      OR lower(source.file_path) LIKE '%test.java'
+                                      OR lower(target.file_path) LIKE '%test.java'
+                                 THEN 1 ELSE 0 END) AS test_edge_count
                 FROM nodes node
                 JOIN edges edge ON edge.source_id=node.id OR edge.target_id=node.id
                 LEFT JOIN nodes source ON source.id=edge.source_id
@@ -668,9 +909,25 @@ class _GraphOperations:
                 """,
                 (bounded_limit,),
             ).fetchall()
+            typed_relationships = conn.execute(
+                """
+                SELECT source.project AS source_project, target.project AS target_project,
+                       edge.type AS edge_type, COUNT(*) AS edge_count,
+                       AVG(edge.confidence) AS average_confidence
+                FROM edges edge
+                JOIN nodes source ON source.id=edge.source_id
+                JOIN nodes target ON target.id=edge.target_id
+                WHERE source.project <> '' AND target.project <> '' AND source.project <> target.project
+                GROUP BY source.project, target.project, edge.type
+                ORDER BY edge_count DESC, source.project, target.project, edge.type
+                LIMIT ?
+                """,
+                (bounded_limit * 8,),
+            ).fetchall()
         return {
             "relationships": [dict(row) for row in relationships],
             "central_nodes": [dict(row) for row in central_nodes],
+            "typed_relationships": [dict(row) for row in typed_relationships],
         }
 
     def all_nodes(self) -> list[dict[str, Any]]:
