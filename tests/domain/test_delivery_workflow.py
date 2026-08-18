@@ -738,3 +738,152 @@ def test_compact_task_artifacts_keeps_bounded_live_content(demo_workspace) -> No
     assert compacted["compacted"]
     item = compacted["compacted"][0]
     assert item["before_bytes"] > item["after_bytes"]
+
+
+def test_waiver_lifecycle_and_gate_bypass(demo_workspace) -> None:
+    """Waiver create -> approve -> bypass gate flow."""
+    from memory_center.core.tasks.delivery import (
+        approve_delivery_waiver,
+        create_delivery_waiver,
+        list_delivery_waivers,
+        revoke_delivery_waiver,
+        transition_delivery_stage,
+    )
+    task = create_task_space(demo_workspace, title="Waiver测试", intent="测试门禁豁免")
+    task_id = task["task_id"]
+    initialize_delivery_workflow(demo_workspace, task_id, actor="test")
+
+    # Gate should fail (no requirements)
+    blocked = transition_delivery_stage(demo_workspace, task_id, "breakdown")
+    assert blocked["transitioned"] is False
+    gate_code = blocked["gate"]["code"]
+
+    # Create waiver
+    waiver_result = create_delivery_waiver(demo_workspace, task_id, gate_code=gate_code, reason="测试豁免", actor="reviewer")
+    assert waiver_result["created"] is True
+    waiver_id = waiver_result["waiver_id"]
+
+    # Pending waiver should NOT bypass gate
+    still_blocked = transition_delivery_stage(demo_workspace, task_id, "breakdown")
+    assert still_blocked["transitioned"] is False
+
+    # Approve waiver
+    approved = approve_delivery_waiver(demo_workspace, task_id, waiver_id=waiver_id, actor="admin")
+    assert approved["approved"] is True
+
+    # Now gate should pass via waiver
+    passed = transition_delivery_stage(demo_workspace, task_id, "breakdown")
+    assert passed["transitioned"] is True
+    assert passed["gate"]["passed"] is False  # gate itself still reports not passed
+    # History should show waived_transition
+    history = passed["delivery"]["stage_history"]
+    assert any(entry.get("event") == "waived_transition" for entry in history)
+
+    # Revoke should work
+    revoked = revoke_delivery_waiver(demo_workspace, task_id, waiver_id=waiver_id, reason="不再需要", actor="admin")
+    assert revoked["revoked"] is True
+
+    # List waivers should show revoked status
+    waivers = list_delivery_waivers(demo_workspace, task_id)
+    assert waivers["total"] == 1
+    assert waivers["all"][0]["status"] == "revoked"
+
+
+def test_failure_classification(demo_workspace) -> None:
+    """Four-category failure classification."""
+    from memory_center.core.tasks.delivery import classify_delivery_failure
+    task = create_task_space(demo_workspace, title="失败分类测试", intent="测试分类")
+    task_id = task["task_id"]
+    initialize_delivery_workflow(demo_workspace, task_id, actor="test")
+
+    # Timeout should be auto_repairable
+    result = classify_delivery_failure(demo_workspace, task_id, failure_type="timeout", context="网络超时", actor="test")
+    assert result["classified"] is True
+    assert result["classification"]["category"] == "auto_repairable"
+    assert result["classification"]["retry_allowed"] is True
+
+    # Permission should be environment_blocked
+    result = classify_delivery_failure(demo_workspace, task_id, failure_type="permission", context="无写入权限", actor="test")
+    assert result["classification"]["category"] == "environment_blocked"
+    assert result["classification"]["retry_allowed"] is False
+
+    # Not found should be requirement_path_error
+    result = classify_delivery_failure(demo_workspace, task_id, failure_type="not_found", context="目标不存在", actor="test")
+    assert result["classification"]["category"] == "requirement_path_error"
+
+    # Unknown defaults to human_decision_required
+    result = classify_delivery_failure(demo_workspace, task_id, failure_type="unknown_error", context="", actor="test")
+    assert result["classification"]["category"] == "human_decision_required"
+
+
+def test_delivery_task_metrics(demo_workspace) -> None:
+    """Task-level effectiveness metrics."""
+    from memory_center.core.tasks.delivery import delivery_task_metrics
+    task = create_task_space(demo_workspace, title="度量测试", intent="测试度量")
+    task_id = task["task_id"]
+    initialize_delivery_workflow(demo_workspace, task_id, actor="test")
+
+    # Empty metrics should have zero coverage
+    metrics = delivery_task_metrics(demo_workspace, task_id)
+    assert metrics["coverage"]["requirements"] == 0
+    assert metrics["verification"]["total_receipts"] == 0
+
+    # Add requirements and subtasks
+    update_delivery_contract(demo_workspace, task_id, kind="requirements", items=[
+        {"id": "REQ-1", "title": "功能A", "scope": "模块A", "acceptance_ids": ["AC-1"]},
+    ])
+    update_delivery_contract(demo_workspace, task_id, kind="subtasks", items=[
+        {"id": "SUB-1", "title": "实现A", "requirement_ids": ["REQ-1"], "code_targets": ["ServiceA#method"]},
+    ])
+    update_delivery_contract(demo_workspace, task_id, kind="acceptance", items=[
+        {"id": "AC-1", "title": "测试通过"},
+    ])
+
+    metrics = delivery_task_metrics(demo_workspace, task_id)
+    assert metrics["coverage"]["requirements"] == 1
+    assert metrics["coverage"]["located_requirements"] == 1
+    assert metrics["coverage"]["requirement_coverage"] == 1.0
+    assert metrics["verification"]["total_receipts"] == 0
+    assert metrics["coverage"]["verified_acceptance"] == 0
+
+
+def test_enhanced_propose_breakdown_with_freshness(demo_workspace) -> None:
+    """Enhanced breakdown includes freshness hint."""
+    from memory_center.core.tasks.delivery import propose_delivery_breakdown
+    task = create_task_space(demo_workspace, title="拆解测试", intent="增强拆解")
+    task_id = task["task_id"]
+    initialize_delivery_workflow(demo_workspace, task_id, actor="test")
+
+    # Without source_refs, should have ambiguity
+    result = propose_delivery_breakdown(demo_workspace, task_id, source_refs=[], summary="添加新接口")
+    assert result["applied"] is False
+    assert result["candidate"]["decision_required"] is True
+    assert len(result["candidate"]["ambiguities"]) >= 1
+    assert "freshness" in result
+
+    # With source_refs, fewer ambiguities
+    result = propose_delivery_breakdown(demo_workspace, task_id, source_refs=["ref-1"], summary="添加新接口")
+    assert result["candidate"]["source_refs"] == ["ref-1"]
+
+
+def test_resume_check_delivery_hints(demo_workspace) -> None:
+    """Resume check includes delivery matrix hints."""
+    from memory_center.core.orchestrator.resume_check import _delivery_matrix_hints
+    matrix = {
+        "rows": [
+            {"requirement_id": "REQ-1", "title": "功能A", "ambiguities": ["范围不清"], "acceptance": [{"id": "AC-1", "title": "测试", "verified": False}]},
+            {"requirement_id": "REQ-2", "title": "功能B", "ambiguities": [], "acceptance": [{"id": "AC-2", "title": "回归", "verified": True}]},
+        ],
+    }
+    metrics = {
+        "coverage": {"requirement_coverage": 0.5, "acceptance_coverage": 0.5},
+        "verification": {"success_rate": 0.5},
+        "failure_classification": {"auto_repairable": 1, "environment_blocked": 0},
+    }
+    hints = _delivery_matrix_hints(matrix, metrics)
+    assert len(hints["unresolved_ambiguities"]) == 1
+    assert hints["unresolved_ambiguities"][0]["requirement_id"] == "REQ-1"
+    assert len(hints["failed_validations"]) == 1
+    assert hints["failed_validations"][0]["acceptance_id"] == "AC-1"
+    assert hints["has_critical_gaps"] is True
+    assert hints["requirement_coverage"] == 0.5

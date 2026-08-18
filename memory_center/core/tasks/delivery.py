@@ -42,6 +42,9 @@ DELIVERY_SKILL_OBSERVATIONS_FILE = "skills/delivery-skill-observations.jsonl"
 DELIVERY_SKILL_REPLAYS_DIR = "skills/delivery-replays"
 DELIVERY_SKILL_FAILURES_FILE = "skills/delivery-failure-candidates.json"
 DELIVERY_SKILL_SYNTHESIS_FILE = "skills/delivery-skill-synthesis.json"
+WAIVER_FILE = "delivery-waivers.jsonl"
+FAILURE_CLASSIFICATION_FILE = "delivery-failure-classifications.jsonl"
+DELIVERY_METRICS_FILE = "delivery-metrics.json"
 WORKFLOW_PROFILE = "feature_delivery_v2"
 STAGES = ("intake", "breakdown", "locate", "implement", "verify", "close")
 SUBTASK_STATUSES = {"pending", "located", "implemented", "blocked", "skipped"}
@@ -49,6 +52,13 @@ VALIDATION_STATUSES = {"passed", "failed", "skipped", "not_run", "recorded"}
 EVIDENCE_KINDS = {"recorded_external", "manual_verified", "executor"}
 SKILL_OUTCOMES = {"passed", "failed", "bypassed", "unobservable"}
 SKILL_LIFECYCLES = {"candidate", "canary", "published", "superseded", "rejected", "rolled_back"}
+FAILURE_CATEGORIES = {
+    "auto_repairable": "可自动修复：重试或回滚后继续。",
+    "environment_blocked": "配置/环境阻塞：检查运行环境、依赖或权限后重试。",
+    "requirement_path_error": "需求/路径错误：需求范围或代码目标有误，需重新定位。",
+    "human_decision_required": "人工决策：超出自动处理范围，需人工判断。",
+}
+WAIVER_STATUSES = {"pending", "approved", "expired", "revoked"}
 
 
 class DeliverySkillRegistryCorruptionError(RuntimeError):
@@ -261,12 +271,40 @@ def execute_delivery_validation(workspace_file: str | Path, task_id: str, *, pro
 
 
 def propose_delivery_breakdown(workspace_file: str | Path, task_id: str, *, source_refs: list[str], summary: str = "") -> dict[str, Any]:
-    """Produce a deterministic, non-writing breakdown candidate from bounded input."""
+    """Produce a deterministic, non-writing breakdown candidate from bounded input.
+
+    Enhanced to check index freshness and suggest targeted refresh when stale.
+    """
     store = WorkspaceStore(workspace_file)
     _, meta = _resolve_task_dir(store, task_id)
     terms = _search_terms(summary)
-    modules = [service.name for service in load_workspace_config(workspace_file).services]
-    return {"task_id": meta["task_id"], "applied": False, "source_refs": _bounded_refs(source_refs), "candidate": {"id": "REQ-1", "title": _bounded(summary, 160) or "待确认需求", "scope": "待人工确认", "out_of_scope": [], "source_refs": _bounded_refs(source_refs), "evidence_refs": _bounded_refs(source_refs), "search_terms": terms, "candidate_modules": modules[:20], "ambiguities": ["请确认需求范围和验收标准。"] if not source_refs else [], "decision_required": not bool(source_refs)}, "next_action": "确认候选后通过 delivery-contract 写入 requirements，并补齐 acceptance。"}
+    config = load_workspace_config(workspace_file)
+    modules = [service.name for service in config.services]
+    freshness_hint = _breakdown_freshness_hint(workspace_file)
+    ambiguities: list[str] = []
+    if not source_refs:
+        ambiguities.append("请确认需求范围和验收标准。")
+    if freshness_hint.get("stale"):
+        ambiguities.append(f"索引可能过期（{freshness_hint.get('stale_count', 0)} 个文件），建议先执行定向刷新再定位代码目标。")
+    return {
+        "task_id": meta["task_id"],
+        "applied": False,
+        "source_refs": _bounded_refs(source_refs),
+        "freshness": freshness_hint,
+        "candidate": {
+            "id": "REQ-1",
+            "title": _bounded(summary, 160) or "待确认需求",
+            "scope": "待人工确认",
+            "out_of_scope": [],
+            "source_refs": _bounded_refs(source_refs),
+            "evidence_refs": _bounded_refs(source_refs),
+            "search_terms": terms,
+            "candidate_modules": modules[:20],
+            "ambiguities": ambiguities,
+            "decision_required": not bool(source_refs) or bool(freshness_hint.get("stale")),
+        },
+        "next_action": "确认候选后通过 delivery-contract 写入 requirements，并补齐 acceptance。" + (" 索引较旧，建议先执行 reindex 或定向刷新。" if freshness_hint.get("stale") else ""),
+    }
 
 
 def delivery_matrix(workspace_file: str | Path, task_id: str, *, write: bool = True) -> dict[str, Any]:
@@ -304,14 +342,16 @@ def transition_delivery_stage(workspace_file: str | Path, task_id: str, stage: s
         if STAGES.index(target) < STAGES.index(current):
             raise ValueError("delivery stage cannot move backwards")
         gate = _gate_for_target(store, task_dir, target, task_id=str(meta["task_id"]), sync_lock=False)
-        _record_gate_result(task_dir, task_id=meta["task_id"], target=target, gate=gate, actor=actor, forced=force)
-        if not gate["passed"] and not force:
-            return {"transitioned": False, "task_id": meta["task_id"], "from_stage": current, "target_stage": target, "gate": gate, "next_action": gate["next_action"]}
+        waived = not gate["passed"] and _has_approved_waiver_for_gate(task_dir, gate["code"])
+        _record_gate_result(task_dir, task_id=meta["task_id"], target=target, gate=gate, actor=actor, forced=force or waived)
+        if not gate["passed"] and not force and not waived:
+            return {"transitioned": False, "task_id": meta["task_id"], "from_stage": current, "target_stage": target, "gate": gate, "next_action": gate["next_action"] + (" 已有生效 waiver 可跳过此门禁。" if waived and not force else "")}
         if target != current:
+            event_kind = "transitioned" if gate["passed"] else ("waived_transition" if waived else "forced_transition")
             delivery["stage"] = target
             delivery["state"] = "done" if target == "close" else "active"
             delivery["updated_at"] = _now()
-            delivery.setdefault("history", []).append({"stage": target, "event": "transitioned" if gate["passed"] else "forced_transition", "at": _now(), "actor": _bounded(actor), "gate": gate["code"]})
+            delivery.setdefault("history", []).append({"stage": target, "event": event_kind, "at": _now(), "actor": _bounded(actor), "gate": gate["code"]})
             delivery["history"] = delivery["history"][-200:]
             _atomic_write_json(task_dir / DELIVERY_FILE, delivery)
     if target == "close" and target != current:
@@ -801,6 +841,308 @@ def synthesize_delivery_skill_trajectories(workspace_file: str | Path, *, min_su
     payload = {"schema_version": 1, "generated_at": _now(), "min_support": max(2, min_support), "syntheses": sorted(syntheses, key=lambda row: (-row["support"], row["synthesis_id"]))[:100], "execution": "offline_only"}
     _write_json(store.artifacts_dir / DELIVERY_SKILL_SYNTHESIS_FILE, payload)
     return {"generated": True, "path": str(store.artifacts_dir / DELIVERY_SKILL_SYNTHESIS_FILE), **payload}
+
+
+def create_delivery_waiver(workspace_file: str | Path, task_id: str, *, gate_code: str, reason: str, expires_at: str = "", actor: str = "") -> dict[str, Any]:
+    """Create a pending waiver for one gate failure; requires explicit approval before it takes effect."""
+    normalized_gate = _bounded(gate_code, 80)
+    if not normalized_gate:
+        raise ValueError("gate_code is required")
+    normalized_reason = _bounded(reason, 500)
+    if not normalized_reason:
+        raise ValueError("reason is required")
+    initialize_delivery_workflow(workspace_file, task_id, actor=actor, include_status=False, touch_activity=False)
+    store = WorkspaceStore(workspace_file)
+    task_dir, meta = _resolve_task_dir(store, task_id)
+    waiver_id = f"waiver-{uuid4().hex[:12]}"
+    now = _now()
+    waiver = {
+        "waiver_id": waiver_id,
+        "task_id": meta["task_id"],
+        "gate_code": normalized_gate,
+        "status": "pending",
+        "reason": normalized_reason,
+        "expires_at": _bounded(expires_at, 80) if expires_at else "",
+        "created_at": now,
+        "approved_at": "",
+        "revoked_at": "",
+        "actor": _bounded(actor),
+    }
+    with FileLock(str(store.lock_file)):
+        with (task_dir / WAIVER_FILE).open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(waiver, ensure_ascii=False) + "\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+    _append_history(store, task_dir, event="waiver_created", actor=actor, details={"waiver_id": waiver_id, "gate_code": normalized_gate})
+    touch_task_activity(workspace_file, meta["task_id"], "delivery_waiver")
+    return {"created": True, "waiver_id": waiver_id, "waiver": waiver, "next_action": "Waiver 已创建，状态为 pending；通过 approve-delivery-waiver 审批后才可生效。"}
+
+
+def approve_delivery_waiver(workspace_file: str | Path, task_id: str, *, waiver_id: str, actor: str = "") -> dict[str, Any]:
+    """Approve one pending waiver so the associated gate can be bypassed."""
+    store = WorkspaceStore(workspace_file)
+    task_dir, meta = _resolve_task_dir(store, task_id)
+    waivers = _read_waivers(task_dir)
+    target = next((w for w in waivers if w.get("waiver_id") == waiver_id), None)
+    if target is None:
+        return {"approved": False, "reason": "waiver_not_found", "next_action": "确认 waiver_id 是否正确。"}
+    if target.get("status") != "pending":
+        return {"approved": False, "reason": f"waiver_already_{target['status']}", "next_action": f"Waiver 已为 {target['status']} 状态，不可重复审批。"}
+    if _waiver_expired(target):
+        target["status"] = "expired"
+        return {"approved": False, "reason": "waiver_expired", "waiver": target, "next_action": "Waiver 已过期，需创建新的。"}
+    target["status"] = "approved"
+    target["approved_at"] = _now()
+    target["approver"] = _bounded(actor)
+    _write_waivers(task_dir, waivers)
+    _append_history(store, task_dir, event="waiver_approved", actor=actor, details={"waiver_id": waiver_id})
+    return {"approved": True, "waiver_id": waiver_id, "waiver": target, "next_action": "Waiver 已生效；可尝试重新推进被豁免的门禁阶段。"}
+
+
+def revoke_delivery_waiver(workspace_file: str | Path, task_id: str, *, waiver_id: str, reason: str = "", actor: str = "") -> dict[str, Any]:
+    """Revoke an approved or pending waiver."""
+    store = WorkspaceStore(workspace_file)
+    task_dir, meta = _resolve_task_dir(store, task_id)
+    waivers = _read_waivers(task_dir)
+    target = next((w for w in waivers if w.get("waiver_id") == waiver_id), None)
+    if target is None:
+        return {"revoked": False, "reason": "waiver_not_found"}
+    if target.get("status") in {"expired", "revoked"}:
+        return {"revoked": False, "reason": f"waiver_already_{target['status']}"}
+    target["status"] = "revoked"
+    target["revoked_at"] = _now()
+    target["revoke_reason"] = _bounded(reason, 300)
+    target["revoker"] = _bounded(actor)
+    _write_waivers(task_dir, waivers)
+    _append_history(store, task_dir, event="waiver_revoked", actor=actor, details={"waiver_id": waiver_id})
+    return {"revoked": True, "waiver_id": waiver_id, "waiver": target, "next_action": "Waiver 已撤销；相关门禁需重新满足。"}
+
+
+def list_delivery_waivers(workspace_file: str | Path, task_id: str) -> dict[str, Any]:
+    """List all waivers for one task, with expired ones auto-marked."""
+    store = WorkspaceStore(workspace_file)
+    task_dir, meta = _resolve_task_dir(store, task_id)
+    waivers = _read_waivers(task_dir)
+    changed = False
+    for waiver in waivers:
+        if waiver.get("status") == "approved" and _waiver_expired(waiver):
+            waiver["status"] = "expired"
+            changed = True
+    if changed:
+        _write_waivers(task_dir, waivers)
+    active = [w for w in waivers if w.get("status") in {"pending", "approved"}]
+    return {"task_id": meta["task_id"], "total": len(waivers), "active": active, "all": waivers[-50:]}
+
+
+def classify_delivery_failure(workspace_file: str | Path, task_id: str, *, receipt_id: str = "", failure_type: str = "", context: str = "", actor: str = "") -> dict[str, Any]:
+    """Classify one delivery failure into one of four actionable categories.
+
+    Categories:
+    - auto_repairable: retry or rollback then continue
+    - environment_blocked: environment/dependency/permission issue
+    - requirement_path_error: requirement scope or code target is wrong
+    - human_decision_required: beyond automatic handling
+    """
+    normalized_type = _bounded(failure_type, 80).lower()
+    category = _classify_failure_category(normalized_type, context)
+    store = WorkspaceStore(workspace_file)
+    task_dir, meta = _resolve_task_dir(store, task_id)
+    classification = {
+        "classification_id": f"fc-{uuid4().hex[:12]}",
+        "task_id": meta["task_id"],
+        "receipt_id": _bounded(receipt_id, 80),
+        "category": category,
+        "description": FAILURE_CATEGORIES[category],
+        "input_type": normalized_type,
+        "context": _bounded(context, 500),
+        "classified_at": _now(),
+        "actor": _bounded(actor),
+        "retry_allowed": category == "auto_repairable",
+        "max_retries": delivery_policy_status(workspace_file).get("retry_limits", {}).get("auto_repair", 2) if category == "auto_repairable" else 0,
+    }
+    with FileLock(str(store.lock_file)):
+        with (task_dir / FAILURE_CLASSIFICATION_FILE).open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(classification, ensure_ascii=False) + "\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+    _append_history(store, task_dir, event="failure_classified", actor=actor, details={"category": category, "receipt_id": _bounded(receipt_id, 80)})
+    return {"classified": True, "classification": classification, "next_action": classification["description"]}
+
+
+def delivery_task_metrics(workspace_file: str | Path, task_id: str) -> dict[str, Any]:
+    """Compute task-level effectiveness metrics from delivery artifacts.
+
+    Metrics: requirement coverage, location coverage, acceptance coverage,
+    verification success rate, human block rate, stage duration, suggestion bypass rate.
+    """
+    store = WorkspaceStore(workspace_file)
+    task_dir, meta = _resolve_task_dir(store, task_id)
+    requirements = _items(task_dir / REQUIREMENTS_FILE)
+    subtasks = _items(task_dir / SUBTASKS_FILE)
+    acceptance = _items(task_dir / ACCEPTANCE_FILE)
+    receipts = _recent_receipts(store, task_dir, limit=500)
+    gate_results = _read_gate_results(task_dir)
+    waivers = _read_waivers(task_dir)
+    classifications = _read_classifications(task_dir)
+    requirements_count = len(requirements)
+    located_requirements = sum(1 for req in requirements if any(
+        str(req.get("id", "")) in sub.get("requirement_ids", [])
+        for sub in subtasks if sub.get("code_targets")
+    ))
+    acceptance_count = sum(1 for item in acceptance if item.get("required", True))
+    verified_acceptance = len(_indexed_verified_acceptance_ids(store, task_dir, str(meta["task_id"])))
+    passed_receipts = sum(1 for r in receipts if r.get("status") == "passed")
+    failed_receipts = sum(1 for r in receipts if r.get("status") == "failed")
+    total_receipts = passed_receipts + failed_receipts
+    forced_gates = sum(1 for g in gate_results if g.get("forced"))
+    total_gates = len(gate_results)
+    approved_waivers = sum(1 for w in waivers if w.get("status") == "approved")
+    auto_repair_count = sum(1 for c in classifications if c.get("category") == "auto_repairable")
+    env_blocked_count = sum(1 for c in classifications if c.get("category") == "environment_blocked")
+    requirement_error_count = sum(1 for c in classifications if c.get("category") == "requirement_path_error")
+    human_decision_count = sum(1 for c in classifications if c.get("category") == "human_decision_required")
+    stage_history = []
+    delivery = _read_json(task_dir / DELIVERY_FILE, {})
+    for entry in delivery.get("history", []):
+        if entry.get("event") == "transitioned":
+            stage_history.append({"stage": entry.get("stage", ""), "at": entry.get("at", "")})
+    return {
+        "task_id": meta["task_id"],
+        "generated_at": _now(),
+        "coverage": {
+            "requirements": requirements_count,
+            "located_requirements": located_requirements,
+            "requirement_coverage": round(located_requirements / max(1, requirements_count), 4),
+            "acceptance": acceptance_count,
+            "verified_acceptance": verified_acceptance,
+            "acceptance_coverage": round(verified_acceptance / max(1, acceptance_count), 4),
+        },
+        "verification": {
+            "total_receipts": total_receipts,
+            "passed": passed_receipts,
+            "failed": failed_receipts,
+            "success_rate": round(passed_receipts / max(1, total_receipts), 4),
+        },
+        "gates": {
+            "total_gates": total_gates,
+            "forced_transitions": forced_gates,
+            "approved_waivers": approved_waivers,
+            "force_rate": round(forced_gates / max(1, total_gates), 4),
+        },
+        "failure_classification": {
+            "auto_repairable": auto_repair_count,
+            "environment_blocked": env_blocked_count,
+            "requirement_path_error": requirement_error_count,
+            "human_decision_required": human_decision_count,
+        },
+        "stage_timeline": stage_history[-20:],
+    }
+
+
+def _breakdown_freshness_hint(workspace_file: str | Path) -> dict[str, Any]:
+    """Return a bounded freshness hint for the breakdown candidate."""
+    try:
+        from .freshness.targeted_refresh import hot_refresh_status
+        status = hot_refresh_status(workspace_file)
+        dirty_count = len(status.get("dirty_paths", []))
+        return {"stale": dirty_count > 0, "stale_count": dirty_count, "detail": "hot_refresh" if dirty_count else "fresh"}
+    except Exception:
+        return {"stale": False, "stale_count": 0, "detail": "unknown"}
+
+
+def _classify_failure_category(failure_type: str, context: str) -> str:
+    """Map a failure type string to one of the four actionable categories."""
+    lower_type = failure_type.lower()
+    lower_context = context.lower()
+    combined = lower_type + " " + lower_context
+    if any(keyword in combined for keyword in ("timeout", "retry", "transient", "flaky", "network")):
+        return "auto_repairable"
+    if any(keyword in combined for keyword in ("permission", "dependency", "environment", "config", "missing_binary", "os_error")):
+        return "environment_blocked"
+    if any(keyword in combined for keyword in ("wrong_target", "scope_mismatch", "not_found", "stale_index", "requirement_error")):
+        return "requirement_path_error"
+    return "human_decision_required"
+
+
+def _read_waivers(task_dir: Path) -> list[dict[str, Any]]:
+    path = task_dir / WAIVER_FILE
+    if not path.exists():
+        return []
+    rows: list[dict[str, Any]] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            value = json.loads(line)
+            if isinstance(value, dict) and value.get("waiver_id"):
+                rows.append(value)
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            continue
+    return rows
+
+
+def _write_waivers(task_dir: Path, waivers: list[dict[str, Any]]) -> None:
+    path = task_dir / WAIVER_FILE
+    content = "\n".join(json.dumps(w, ensure_ascii=False) for w in waivers) + "\n" if waivers else ""
+    _atomic_write_text(path, content)
+
+
+def _waiver_expired(waiver: dict[str, Any]) -> bool:
+    expires_at = waiver.get("expires_at", "")
+    if not expires_at:
+        return False
+    try:
+        return datetime.fromisoformat(expires_at) < datetime.now(timezone.utc)
+    except (ValueError, TypeError):
+        return False
+
+
+def _read_gate_results(task_dir: Path) -> list[dict[str, Any]]:
+    path = task_dir / GATE_RESULTS_FILE
+    if not path.exists():
+        return []
+    rows: list[dict[str, Any]] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            value = json.loads(line)
+            if isinstance(value, dict):
+                rows.append(value)
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            continue
+    return rows
+
+
+def _read_classifications(task_dir: Path) -> list[dict[str, Any]]:
+    path = task_dir / FAILURE_CLASSIFICATION_FILE
+    if not path.exists():
+        return []
+    rows: list[dict[str, Any]] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            value = json.loads(line)
+            if isinstance(value, dict):
+                rows.append(value)
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            continue
+    return rows
+
+
+def _has_approved_waiver_for_gate(task_dir: Path, gate_code: str) -> bool:
+    """Check if there is an approved, non-expired waiver for the given gate code."""
+    waivers = _read_waivers(task_dir)
+    return any(
+        w.get("gate_code") == gate_code
+        and w.get("status") == "approved"
+        and not _waiver_expired(w)
+        for w in waivers
+    )
 
 
 def _read_skill_registry(store: WorkspaceStore) -> dict[str, Any]:

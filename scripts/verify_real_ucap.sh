@@ -20,9 +20,10 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from memory_center.core.benchmark.golden import build_golden_performance_baseline, run_golden_suite, summarize_golden_case_coverage
+from memory_center.application.golden import run_golden_suite
+from memory_center.core.benchmark.golden import build_golden_performance_baseline, summarize_golden_case_coverage
 from memory_center.core.orchestrator import memory_query_hybrid
-from memory_center.core.validators import doctor
+from memory_center.core.workspace.doctor import doctor
 
 
 workspace = Path(os.environ["MEMORY_CENTER_REAL_WORKSPACE"]).expanduser()
