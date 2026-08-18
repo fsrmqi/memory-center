@@ -4,6 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from ..knowledge.wiki import get_l1_context
 from ..tasks.artifacts import task_space_repair_plan
 from ..tasks.delivery import delivery_matrix, delivery_task_metrics, delivery_workflow_status
 from .resume import workspace_next_actions, workspace_resume_packet, workspace_unresolved_items
@@ -41,12 +42,14 @@ def workspace_task_resume_check(
     matrix = delivery_matrix(workspace_file, resolved_task_id, write=False).get("matrix", {}) if delivery.get("initialized") else {}
     metrics = delivery_task_metrics(workspace_file, resolved_task_id) if delivery.get("initialized") else {}
     delivery_hints = _delivery_matrix_hints(matrix, metrics)
+    l1_context = _safe_l1_context(workspace_file, budget)
     status = _resume_check_status(resume_packet, health, repair_plan, unresolved)
     return {
         "workflow": "task-resume-check", "workspace": resume_packet.get("workspace", ""), "task_id": resolved_task_id,
         "session_id": session_id, "can_resume": status in {"ready", "needs_repair"}, "status": status,
         "summary": _resume_check_summary(status, health, repair_plan, unresolved), "resume_packet": resume_packet,
         "health": health, "repair_plan": repair_plan.get("repair_plan", []),
+        "l1_context": l1_context,
         "delivery": delivery, "delivery_matrix": matrix, "delivery_metrics": metrics,
         "delivery_hints": delivery_hints,
         "repair_plan_summary": {"available": bool(repair_hint.get("available")), "issue_count": repair_plan.get("issue_count", health.get("issue_count", 0)), "apply_supported": repair_plan.get("apply_supported", False)},
@@ -99,6 +102,14 @@ def _resume_check_next_step(status: str, task_id: str, delivery_hints: dict[str,
             "requires_write": True,
         }
     return {"action": "resolve_blocker", "command": "先处理 unresolved_items 或补齐 current_summary/write_receipts", "requires_write": False}
+
+
+def _safe_l1_context(workspace_file: str | Path, budget: str) -> dict[str, Any]:
+    """Return bounded L1 overview as default lightweight context; never raises."""
+    try:
+        return get_l1_context(workspace_file, budget=budget)
+    except Exception:
+        return {"level": "L1", "available": False, "usage": "L1 上下文不可用（未索引或配置缺失），不影响恢复判断。"}
 
 
 def _delivery_matrix_hints(matrix: dict[str, Any], metrics: dict[str, Any]) -> dict[str, Any]:

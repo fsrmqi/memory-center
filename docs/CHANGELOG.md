@@ -2,6 +2,24 @@
 
 ## Unreleased 未发布
 
+### P3 交付闭环收尾 / Delivery loop wrap-up
+
+- `propose_delivery_breakdown` 增强：检查索引新鲜度，stale 时标记歧义并建议定向刷新。
+- Waiver 运行时管理：`create/approve/revoke/list_delivery_waiver`，门禁检查生效 waiver 并区分 `transitioned/waived_transition/forced_transition`。
+- 失败四类显式分类：`classify_delivery_failure`（auto_repairable / environment_blocked / requirement_path_error / human_decision_required）。
+- 任务级效果度量：`delivery_task_metrics`（需求覆盖率、验收覆盖率、验证成功率、门禁强制率）。
+- `task_resume_check` 消费 delivery-matrix，提取未决歧义与失败验证并给出下一步建议。
+
+### 项目地图三层上下文与语义桥 / Three-level project map and semantic bridge
+
+- `generate-wiki` 升级为三层项目地图：L1 总览（始终重建、有界）、L2 模块地图（按 dirty path 增量）、L3 语义桥（接口契约/消息契约/配置键/自定义术语 → 代码实体）。
+- manifest 引入 generation 追踪与 stale 标记；`wiki-status` 报告过期模块。
+- 新增 `mark_wiki_modules_stale`（脏路径→受影响模块，支持嵌套路径与绝对路径段匹配）。
+- 新增 workspace wiki profile：`update_wiki_profile` 支持自定义语义桥规则与业务术语映射。
+- 新增只读上下文入口：`get_l1_context` / `get_l2_context` / `get_l3_bridge`，CLI 命令 `wiki-status`、`wiki-context`，admin action `wiki_status`、`wiki_context`、`wiki_mark_stale`、`wiki_profile_update`。
+- `task_resume_check` 集成 L1 作为默认轻量上下文（失败时降级，不影响恢复判断）。
+- 真实工作空间验证：36 模块、702 条语义桥；增量刷新只更新受影响模块。
+
 ### 文档进一步精简 / Docs further consolidation
 
 - 将 `PRODUCT_TECHNICAL_OVERVIEW.md` 的核心内容整合入 ARCHITECTURE 新增附录：

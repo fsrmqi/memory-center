@@ -95,14 +95,9 @@ This file consolidates and replaces the older execution plan, superpowers evolut
 
 验收：需求项可回溯来源和范围；未关联验收、未定位代码目标、存在未决歧义时不能进入相应后续阶段；CLI、MCP、HTTP、Workbench 返回同一交付状态与下一步 Action。
 
-#### P3-2：按需三级项目地图与语义桥
+#### P3-2：按需三级项目地图与语义桥（已交付）
 
-1. 将现有 `generate-wiki` 升级为派生读模型，而非新的人工事实源：L1 为受限大小的 workspace/module 总览，L2 为模块内文件与符号职责地图，L3 为业务术语、接口契约、配置键、设计规范到代码实体的语义桥。
-2. 每个地图条目保存来源 generation、输入 hash、最后刷新时间和 stale 状态；只对 dirty path 涉及的模块重建，禁止为了生成 Wiki 触发全量 reindex 或读取全库源码。
-3. L1 作为任务定位的默认轻量上下文；L2 仅在模块候选确定后读取；L3 仅由需求类型或命中的语义桥触发。生成结果必须能在没有 LLM 的情况下被人和 Agent 阅读。
-4. 语义桥采用 workspace profile 扩展。Spring Cloud、Web、移动端和设计系统规则不得硬编码到核心；没有对应 profile 时返回 `UNKNOWN` 与配置建议。
-
-验收：同一 dirty path 的地图刷新只写受影响模块；地图命中可减少无关文件读取；索引新鲜度和地图新鲜度不一致时明确提示，不能伪装为最新。
+> 已交付：`generate-wiki` 升级为 L1/L2/L3 三层项目地图与语义桥，含增量刷新、generation/stale 追踪、workspace profile 和 L1 默认轻量上下文集成。详见 CHANGELOG。
 
 #### P3-3：策略化门禁与真实验证回执
 

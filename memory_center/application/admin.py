@@ -59,7 +59,16 @@ from memory_center.core.knowledge.assets import (
     sync_workspace_collaboration_assets,
 )
 from memory_center.core.knowledge.communities import analyze_architecture_communities
-from memory_center.core.knowledge.wiki import generate_skills, generate_wiki
+from memory_center.core.knowledge.wiki import (
+    generate_skills,
+    generate_wiki,
+    get_l1_context,
+    get_l2_context,
+    get_l3_bridge,
+    mark_wiki_modules_stale,
+    update_wiki_profile,
+    wiki_status,
+)
 from memory_center.core.observability.metrics import MetricsCollector
 from memory_center.core.orchestrator import (
     group_chain,
@@ -438,6 +447,18 @@ def business_flow_impact_action(workspace_file: str, node_id: str, max_depth: in
     result = business_flow_impact_for_workspace(workspace_file, node_id or "", max_depth=max_depth or 3)
     result["workflow"] = "mc-business-flow-impact"
     return result
+
+
+def _wiki_context_action(workspace_file: str, level: str = "l1", module: str = "", query: str = "", budget: str = "medium") -> dict[str, Any]:
+    """Return bounded wiki context at the requested level (l1/l2/l3)."""
+    normalized = (level or "l1").lower()
+    if normalized == "l2":
+        if not module:
+            return {"error": "wiki_context l2 requires project or name as module"}
+        return get_l2_context(workspace_file, module, budget=budget)
+    if normalized == "l3":
+        return get_l3_bridge(workspace_file, query=query)
+    return get_l1_context(workspace_file, budget=budget)
 
 
 def metrics_summary_action(workspace_file: str = "", metric_name: str = "") -> dict[str, Any]:
@@ -971,8 +992,17 @@ def build_admin_registry(
             "discover": lambda: memory_discover(wf, limit=limit),
             "constraint": lambda: constraint_action(text, name),
             "tool_usage_report": lambda: memory_tool_usage_report(wf, limit=limit),
-            "generate_wiki": lambda: generate_wiki(wf, output_dir or None),
+            "generate_wiki": lambda: generate_wiki(
+                wf,
+                output_dir or None,
+                dirty_paths=[p.strip() for p in text.split(",") if p.strip()] or None,
+                force=force,
+            ),
             "generate_skills": lambda: generate_skills(wf, output_dir or None),
+            "wiki_status": lambda: wiki_status(wf),
+            "wiki_context": lambda: _wiki_context_action(wf, level=view, module=project or name, query=text, budget=budget),
+            "wiki_mark_stale": lambda: mark_wiki_modules_stale(wf, [p.strip() for p in text.split(",") if p.strip()]),
+            "wiki_profile_update": lambda: update_wiki_profile(wf, parse_payload(payload) or {}, actor=source),
             "group_status": lambda: group_status(group),
             "group_query": lambda: group_query(group, query=text, limit=limit),
             "group_impact": lambda: group_impact(
