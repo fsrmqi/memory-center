@@ -2,6 +2,25 @@
 
 ## Unreleased 未发布
 
+### Java 调用解析：Lombok @Builder 支持 / Java call resolution: Lombok @Builder support
+
+- resolver 新增 Lombok `@Builder` 解析：`X.builder()` 静态工厂解析为 `*_lombok_builder`（0.85）；`X.builder().field(...)` 链式 setter 解析为 `chain_lombok_builder_setter`（0.78），`X.builder().build()` 解析为 `chain_lombok_builder_build`（0.80），均标记 `inferred_target`。
+- 仅当类带 `@Builder` 注解且 setter 名与声明字段一致时推断，无注解类不误报（新增 4 个单元测试覆盖正/负场景）。
+- 真实工作空间验证（ucap，36 模块）：未解析率 52.26% → 48.34%；`missing_method_or_polymorphism` 类别 10,671 → 2,768。
+- 新增 3 个私有锚点 case（`java-call-resolution-lombok-builder-v4390.yaml`），门禁 3/3 通过（recall 1.0、resolution_level 全命中）。
+
+### Session replay 匹配器校准 / Session replay matcher calibration
+
+- 修复 agent guidance replay 匹配器：补齐 MCP server 已发出的 `inspect_symbol_anchor/inspect_code_hits/inspect_chain_summary/inspect_context_summary/inspect_trace_overview/inspect_route_result` 动作分支，并识别 `mc_*` CLI 工具别名（与 bypass 判定对齐）。
+- 修复前真实工作空间 38 条事件全部误判为 missed（adoption 0.0）；修复后 adoption_rate 0.947，剩余 2 条为真实 `guidance_missing_target_hint` 缺口。
+- `eval-retrieval-replay` 校准保持仅消费带证据的人工验证记录（当前 `insufficient_replay` 为设计内状态，guidance adoption 不作为权重学习证据）。
+
+### 向量检索默认开启评估（真实基线对比）/ Vector default-on evaluation against real baseline
+
+- 真实 ucap 工作空间完成 dense 向量链路验证：`sentence-transformers`（all-MiniLM-L6-v2）selective scope 构建 49,897 embeddings；安装 `semantic-ann` 可选依赖（hnswlib）后 `vector_ann_rebuild` + `vector_ann_tune` 就绪（self_recall 1.0，ANN 查询 p95 0.12ms）。
+- 对比结论（retrieval-quality 私有套件，sparse 基线 5/5 通过）：vector-on 下 config 语义查询保持 recall 1.0（延迟 188→440ms），但 MQ 契约查询 anchor recall 1.0 → 0.0——向量泛化匹配把大量 Consumer 方法推入前排，稀释契约锚点。
+- 决策：**维持 `enable_vector=False` 默认**（MCP/CLI 行为不变）。默认开启的前置条件：带证据人工验证样本完成融合权重校准（当前 `insufficient_replay`），使契约类锚点在 vector-on 下不掉出 top-N。
+
 ### P3 交付闭环收尾 / Delivery loop wrap-up
 
 - `propose_delivery_breakdown` 增强：检查索引新鲜度，stale 时标记歧义并建议定向刷新。

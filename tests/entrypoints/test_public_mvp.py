@@ -1375,6 +1375,33 @@ def test_agent_guidance_replay_prioritizes_earlier_bypass_over_later_match(tmp_p
     assert evaluation["replay_records"][0]["matched_tool"] == "rg"
 
 
+def test_agent_guidance_replay_adopts_inspect_actions_with_memory_cli_aliases(tmp_path: Path):
+    workspace = _copy_demo_workspace(tmp_path, "agent-guidance-replay-inspect")
+    session = workspace_start_session(workspace, "按建议继续消费检索证据")
+    session_id = session["session_id"]
+    workspace_log_session_event(
+        workspace,
+        session_id,
+        "agent_guidance",
+        {
+            "query": "SnapshotServiceImpl",
+            "agent_next_steps": [
+                {
+                    "action": "inspect_code_hits",
+                    "command": "read the top hit path/snippet, then rerun mc_lookup with a concrete symbol if needed",
+                }
+            ],
+        },
+    )
+    workspace_log_session_event(workspace, session_id, "tool_call", {"tool_name": "mc_lookup", "query": "SnapshotServiceImpl"})
+
+    evaluation = memory_eval_agent_guidance_replay(workspace, session_id=session_id)
+
+    assert evaluation["summary"]["adopted_count"] == 1
+    assert evaluation["summary"]["missed_count"] == 0
+    assert evaluation["replay_records"][0]["matched_tool"] == "mc_lookup"
+
+
 def test_agent_guidance_replay_does_not_match_search_tokens_inside_payload_text(tmp_path: Path):
     workspace = _copy_demo_workspace(tmp_path, "agent-guidance-replay-token")
     session = workspace_start_session(workspace, "普通工具调用")

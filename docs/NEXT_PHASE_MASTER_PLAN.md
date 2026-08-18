@@ -63,6 +63,12 @@ This file consolidates and replaces the older execution plan, superpowers evolut
 - 新增 case 不得降低既有真实 case 的 anchor recall、edge recall 或 forbidden hit 指标。
 - 每个失败 case 都能定位到 parser、resolver、graph 或 retrieval 中的具体一层。
 
+已交付（Lombok @Builder 轮次）：
+
+- 真实 ucap 工作空间 unresolved 分析确认本地可证明缺口为 Lombok `@Builder` 静态工厂与链式 setter（736 + 350 未解析调用）；外部依赖类（external_or_missing_source 176k）按 campaign 契约不作为 resolver 修复目标。
+- resolver 新增 `*_lombok_builder`（0.85）、`chain_lombok_builder_setter`（0.78）、`chain_lombok_builder_build`（0.80）三个解析级别；未解析率 52.26% → 48.34%，`missing_method_or_polymorphism` 10,671 → 2,768。
+- 私有锚点 case（v4390，3 个）门禁 3/3 通过；下一轮候选缺口：`receiver_type_missing`（5,655，多为 lambda 参数与 `@Slf4j log`）与 `chain_return_type_not_indexed`（5,572）。
+
 ### P2：Retrieval / Reasoning 质量闭环
 
 目标：让 `mc_lookup(auto)`、walkthrough、impact、context pack 在真实任务中更少误判、更少重复搜索。
@@ -79,6 +85,13 @@ This file consolidates and replaces the older execution plan, superpowers evolut
 - partial / stale case 明确指出缺失层或 stale 文件
 - same input 产生确定性 retrieval policy
 - token 和 latency 不低于真实基线
+
+已交付（replay 校准轮次）：
+
+- 修复 agent guidance replay 匹配器（`inspect_*` 动作分支 + `mc_*` CLI 别名），真实 ucap 数据 adoption 0.0 → 0.947；剩余 missed 均为真实 `guidance_missing_target_hint` 缺口。
+- replay trend 已用真实数据记录趋势点；campaign 覆盖缺口（walkthrough/impact/config intent）需真实任务 session 补齐，属数据采集而非代码缺口。
+- `eval-retrieval-replay` 校准在无带证据人工验证记录时正确返回 `insufficient_replay`，不产生无证据权重变更。
+- 向量检索默认开启评估完成：ucap 真实链路（49,897 dense embeddings + hnswlib ANN，self_recall 1.0）对比显示 vector-on 使 MQ 契约查询 anchor recall 1.0 → 0.0（泛化匹配稀释契约锚点）；决策维持 `enable_vector=False` 默认，默认开启前置条件为融合权重校准后契约锚点不掉出 top-N。
 
 ### P3：证据优先的需求交付闭环 / Evidence-First Delivery Loop
 

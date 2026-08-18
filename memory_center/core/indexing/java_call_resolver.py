@@ -156,6 +156,13 @@ class JavaCallResolver:
                     return_type = _normalize_type_name(info.field_types.get(lombok_field, "")) if lombok_field else ""
                     resolution_level = "chain_lombok_accessor_return_type"
                     confidence = 0.8
+                if not return_type and chain_method in {"builder", "toBuilder"} and _has_lombok_builder(info):
+                    # Lombok @Builder: ``X.builder()`` returns the generated
+                    # builder whose setters mirror the class fields and whose
+                    # ``build()`` returns the annotated class itself.
+                    return_type = info.name
+                    resolution_level = "chain_lombok_builder"
+                    confidence = 0.78
                 return_candidates = self.class_index.by_simple.get(return_type, []) if return_type else []
                 if len(return_candidates) == 1:
                     return_info = return_candidates[0]
@@ -174,10 +181,30 @@ class JavaCallResolver:
                             inferred_target=True,
                             matched_signature=f"lombok_accessor:{lombok_field}",
                         )
+                    if resolution_level == "chain_lombok_builder":
+                        builder_field = _lombok_builder_field(return_info, target_method)
+                        if builder_field:
+                            return self._resolved(
+                                owner_symbol, owner, call, return_info,
+                                f"{resolution_level}_setter", confidence, arg_count,
+                                inferred_target=True, matched_signature=f"lombok_builder_setter:{builder_field}",
+                            )
+                        if target_method == "build":
+                            return self._resolved(
+                                owner_symbol, owner, call, return_info,
+                                f"{resolution_level}_build", 0.8, arg_count,
+                                inferred_target=True, matched_signature="lombok_builder_build",
+                            )
 
         for info, level, confidence in candidates:
             if target_method in info.methods:
                 return self._resolved(owner_symbol, owner, call, info, level, confidence, arg_count)
+            if target_method in {"builder", "toBuilder"} and _has_lombok_builder(info):
+                return self._resolved(
+                    owner_symbol, owner, call, info,
+                    f"{level}_lombok_builder", 0.85, arg_count,
+                    inferred_target=True, matched_signature="lombok_builder",
+                )
             lombok_field = _lombok_accessor_field(info, target_method)
             if lombok_field:
                 return self._resolved(
@@ -646,3 +673,17 @@ def _lombok_accessor_field(info: ClassInfo, method_name: str) -> str:
             if candidate in info.fields:
                 return candidate
     return ""
+
+
+def _has_lombok_builder(info: ClassInfo) -> bool:
+    """Return True when the class is annotated with Lombok ``@Builder``."""
+
+    return any(str(item).split(".")[-1].lower() == "builder" for item in info.annotations)
+
+
+def _lombok_builder_field(info: ClassInfo, method_name: str) -> str:
+    """Return the field name when a builder setter mirrors a class field."""
+
+    if not method_name or not _has_lombok_builder(info):
+        return ""
+    return method_name if method_name in info.fields else ""

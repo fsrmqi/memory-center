@@ -840,6 +840,102 @@ def test_lombok_chain_does_not_resolve_field_type_outside_workspace() -> None:
     assert resolved.unresolved_reason == "chain_return_type_not_indexed"
 
 
+def test_resolves_static_builder_factory_for_lombok_builder_class() -> None:
+    caller = """package com.example.order;
+import com.example.vo.UserImportRespVO;
+public class OrderFacade {
+    void run() { UserImportRespVO.builder(); }
+}
+"""
+    target = """package com.example.vo;
+import lombok.Builder;
+import lombok.Data;
+@Data @Builder public class UserImportRespVO { private Integer createUsernames; }
+"""
+
+    resolved = _resolve(
+        [_symbol("svc", "OrderFacade.java", caller), _symbol("svc", "UserImportRespVO.java", target)],
+        "OrderFacade.java",
+        "builder",
+    )
+
+    assert resolved.target_class == "UserImportRespVO"
+    assert resolved.resolution_level == "import_lombok_builder"
+    assert resolved.confidence == 0.85
+    assert resolved.inferred_target is True
+    assert resolved.matched_signature == "lombok_builder"
+
+
+def test_resolves_lombok_builder_chain_setter() -> None:
+    caller = """package com.example.order;
+import com.example.vo.UserImportRespVO;
+public class OrderFacade {
+    void run(java.util.List<String> names) { UserImportRespVO.builder().createUsernames(names); }
+}
+"""
+    target = """package com.example.vo;
+import lombok.Builder;
+import lombok.Data;
+@Data @Builder public class UserImportRespVO { private java.util.List<String> createUsernames; }
+"""
+
+    resolved = _resolve(
+        [_symbol("svc", "OrderFacade.java", caller), _symbol("svc", "UserImportRespVO.java", target)],
+        "OrderFacade.java",
+        "createUsernames",
+    )
+
+    assert resolved.target_class == "UserImportRespVO"
+    assert resolved.resolution_level == "chain_lombok_builder_setter"
+    assert resolved.confidence == 0.78
+    assert resolved.matched_signature == "lombok_builder_setter:createUsernames"
+
+
+def test_resolves_lombok_builder_chain_build() -> None:
+    caller = """package com.example.order;
+import com.example.vo.UserImportRespVO;
+public class OrderFacade {
+    void run() { UserImportRespVO.builder().build(); }
+}
+"""
+    target = """package com.example.vo;
+import lombok.Builder;
+import lombok.Data;
+@Data @Builder public class UserImportRespVO { private String username; }
+"""
+
+    resolved = _resolve(
+        [_symbol("svc", "OrderFacade.java", caller), _symbol("svc", "UserImportRespVO.java", target)],
+        "OrderFacade.java",
+        "build",
+    )
+
+    assert resolved.target_class == "UserImportRespVO"
+    assert resolved.resolution_level == "chain_lombok_builder_build"
+    assert resolved.confidence == 0.8
+    assert resolved.matched_signature == "lombok_builder_build"
+
+
+def test_builder_call_without_lombok_annotation_stays_unresolved() -> None:
+    caller = """package com.example.order;
+import com.example.vo.PlainVO;
+public class OrderFacade {
+    void run() { PlainVO.builder(); }
+}
+"""
+    target = """package com.example.vo;
+public class PlainVO { private String username; }
+"""
+
+    resolved = _resolve(
+        [_symbol("svc", "OrderFacade.java", caller), _symbol("svc", "PlainVO.java", target)],
+        "OrderFacade.java",
+        "builder",
+    )
+
+    assert resolved.resolution_level == "unresolved"
+
+
 def test_overload_keeps_matching_signature_evidence() -> None:
     caller = """package com.example.order;
 import com.example.billing.InvoiceService;

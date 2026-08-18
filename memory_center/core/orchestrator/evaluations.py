@@ -656,7 +656,26 @@ def _tool_matches_agent_guidance_action(action: str, tool_name: str, mode: str, 
         return any(token in normalized_tool for token in ["read", "open", "memory_ref", "workspace_trace", "memory_context", "memory_search_code"])
     if action == "refine_query":
         return any(token in normalized_tool for token in ["memory_query_hybrid", "mc_lookup", "memory_symbol", "memory_search_code"])
-    return normalized_tool.startswith("memory_") or normalized_tool.startswith("workspace_")
+    if action in {
+        "inspect_symbol_anchor",
+        "inspect_code_hits",
+        "inspect_chain_summary",
+        "inspect_context_summary",
+        "inspect_trace_overview",
+        "inspect_route_result",
+    }:
+        # Inspect actions ask the agent to consume already-returned memory
+        # evidence. Continuing with memory retrieval/analysis tools (either
+        # MCP names or ``mc_`` CLI aliases) or reading the referenced hits
+        # both count as adopting the guidance.
+        return (
+            normalized_tool.startswith(("memory_", "workspace_", "mc_"))
+            or any(
+                token in normalized_tool
+                for token in ["read", "open", "memory_ref", "workspace_trace", "memory_context", "memory_search_code"]
+            )
+        )
+    return normalized_tool.startswith(("memory_", "workspace_", "mc_"))
 
 
 def memory_eval_index_freshness(
