@@ -13,7 +13,7 @@
 | 规范 | 什么不能被违反？ | ADR、SPECS、公开 schema 与测试 |
 | 操作 | 当前任务怎样完成？ | USER_GUIDE、MCP_GUIDE |
 | 事实 | 现在有哪些入口和字段？ | 代码、`--help`、路由注册、REFERENCE |
-| 对外介绍 | 价值、能力边界和技术路线如何被非维护者理解？ | PRODUCT_TECHNICAL_OVERVIEW、README、ARCHITECTURE |
+| 对外介绍 | 价值、能力边界和技术路线如何被非维护者理解？ | README、ARCHITECTURE |
 | 决策 | 为什么这样设计，何时推翻？ | ADR、decisions、主计划 |
 | 历史 | 过去发生过什么？ | archive、CHANGELOG |
 
@@ -55,13 +55,10 @@
 - [ARCHITECTURE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/ARCHITECTURE.md) — 当前系统架构、分层边界、运行模型（含设计决策附录）
 - [MCP_GUIDE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/MCP_GUIDE.md) — MCP facade、宿主接入、推荐调用顺序
 - [USER_GUIDE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/USER_GUIDE.md) — 用户操作路径、CLI/HTTP/MCP 常见工作流
-- [REFERENCE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/REFERENCE.md) — 命令、接口、参数、返回结构参考
-- [PRODUCT_TECHNICAL_OVERVIEW.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/PRODUCT_TECHNICAL_OVERVIEW.md) — 对外产品技术介绍
-- [SPECS.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/SPECS.md) — 公开 schema、workspace 结构、关键约束
+- [REFERENCE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/REFERENCE.md) — 命令、接口、参数、schema 与约束参考
 - [CHANGELOG.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/CHANGELOG.md) — 已发布和未发布变更记录
 - [NEXT_PHASE_MASTER_PLAN.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/NEXT_PHASE_MASTER_PLAN.md) — 当前唯一活跃的开发路线
-- [RELEASE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/RELEASE.md) — 发布时的最小检查清单
-- [ONTOLOGY_EVOLUTION_PLAN.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/ONTOLOGY_EVOLUTION_PLAN.md) — 本体演进决策与实施计划
+- [ONTOLOGY.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/ONTOLOGY.md) — 轻量本体：领域实体、关系与演进计划
 
 ## Historical Docs / 历史文档
 
@@ -75,30 +72,55 @@
 - `docs/archive/TECHNICAL_GUIDE.md` — 已合并入 ARCHITECTURE 附录
 - `docs/archive/UNIFIED_BACKEND_READ_PATHS.md` — 已合并入 ARCHITECTURE §6
 - `docs/archive/DOCS_STATUS.md` — 已合并入本文档
+- `docs/archive/PRODUCT_TECHNICAL_OVERVIEW.md` — 已合并入 ARCHITECTURE
+- `docs/archive/SPECIAL_NOTES.md` — 设计决策说明，已吸收进 ARCHITECTURE 附录
+- `docs/archive/EXTERNAL_ABSORPTION_ISSUES.md` — 外部能力吸收归档
+- `docs/archive/RELEASE.md` — 已合并入本文档
+- `docs/archive/SPECS.md` — 已合并入 REFERENCE §6
+- `docs/archive/ONTOLOGY_EVOLUTION_PLAN.md` — 已合并入 ONTOLOGY Part II
+- `docs/archive/DOCS_README.md` — 已合并入根 README
 
 ## 更新规则
 
 当实现发生变化时，默认更新顺序：
 
 1. `README.md`
-2. `docs/PRODUCT_TECHNICAL_OVERVIEW.md`（影响产品定位、技术边界或对外能力时）
-3. `docs/ARCHITECTURE.md`
-4. `docs/MCP_GUIDE.md`
-5. `docs/REFERENCE.md` 或 `docs/SPECS.md`
-6. `docs/CHANGELOG.md`
+2. `docs/ARCHITECTURE.md`
+3. `docs/MCP_GUIDE.md`
+4. `docs/REFERENCE.md`
+5. `docs/CHANGELOG.md`
 
 只有在该变更确实影响开发路线或发布流程时，再更新：
 
 - `docs/NEXT_PHASE_MASTER_PLAN.md`
-- `docs/RELEASE.md`
+
+## Release / 发布清单
+
+### 发布原则
+
+发布时优先保证：MCP facade 兼容性、文档与实现一致、本地安装可用、关键 smoke 可通过。
+
+### 最小发布清单
+
+1. 更新版本号
+2. `python3.11 -m compileall memory_center`
+3. 关键 smoke：`status`、`work-start`、`mc_analyze` 的 `quick` 与 `full`（确认 `complete` 或可解释的 `partial`）、`mc_admin(action="health")`、Hook 生成
+4. README / docs 是否同步
+5. 本地安装验证：`pipx reinstall --python "$(command -v python3.11)" memory-center`，再运行 `memory-center --version`
+
+### 对外说明重点
+
+- 这版新增了什么
+- 修了哪些真实 bug
+- 有哪些行为变更
+- 是否需要重新安装 / 重生成 hooks / 重启 MCP
 
 ## 推荐阅读顺序
 
-如果你只想快速判断“现在该信哪份文档”，按下面顺序读：
+如果你只想快速判断"现在该信哪份文档"，按下面顺序读：
 
 1. [README.md](/Users/cuijiaqi/Ai-common-skills/memory-center/README.md)
-2. [PRODUCT_TECHNICAL_OVERVIEW.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/PRODUCT_TECHNICAL_OVERVIEW.md)
-3. [docs/README.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/README.md)
-4. [ARCHITECTURE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/ARCHITECTURE.md)
-5. [MCP_GUIDE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/MCP_GUIDE.md)
-6. [CHANGELOG.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/CHANGELOG.md)
+2. [ARCHITECTURE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/ARCHITECTURE.md)
+3. [MCP_GUIDE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/MCP_GUIDE.md)
+4. [USER_GUIDE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/USER_GUIDE.md)
+5. [CHANGELOG.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/CHANGELOG.md)

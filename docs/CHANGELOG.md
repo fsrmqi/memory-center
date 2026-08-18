@@ -2,6 +2,17 @@
 
 ## Unreleased 未发布
 
+### 文档进一步精简 / Docs further consolidation
+
+- 将 `PRODUCT_TECHNICAL_OVERVIEW.md` 归档（内容已被 ARCHITECTURE 覆盖）。
+- 将 `SPECS.md` 合并入 `REFERENCE.md` §6（schema、workspace、规则、hooks、记忆目录、Bridge 策略、兼容性）。
+- 将 `ONTOLOGY_EVOLUTION_PLAN.md` 合并入 `ONTOLOGY.md` Part II（演进目标、设计原则、目标本体、交付里程碑、非目标）。
+- 将 `RELEASE.md` 合并入 `DOCUMENT_CONSTITUTION.md`（发布原则、最小清单、对外说明重点）。
+- 将 `docs/README.md` 合并入根 `README.md` 文档导航。
+- 归档 `SPECIAL_NOTES.md`（设计决策已吸收进 ARCHITECTURE 附录）和 `EXTERNAL_ABSORPTION_ISSUES.md`（已完成吸收）。
+- 活跃文档从 12 份降至 8 份：README、ARCHITECTURE、MCP_GUIDE、USER_GUIDE、REFERENCE、ONTOLOGY、CHANGELOG、NEXT_PHASE_MASTER_PLAN、DOCUMENT_CONSTITUTION。
+- 同步更新所有活跃文档中对已归档文档的引用。
+
 ### 文档合并与同步更新 / Docs consolidation and sync update
 
 - 将 `TECHNICAL_ARCHITECTURE_AND_EVOLUTION.md` 和 `TECHNICAL_GUIDE.md` 的独有内容合并入 `ARCHITECTURE.md` 附录 A（设计决策与选型）和附录 B（代码导航与主链路）；原文件归档至 `docs/archive/`。

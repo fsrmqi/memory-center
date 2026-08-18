@@ -32,7 +32,7 @@ def test_active_plan_has_no_stale_completed_execution_sequence() -> None:
 
 
 def test_ontology_evolution_plan_is_discoverable_and_actionable() -> None:
-    content = _read("docs/ONTOLOGY_EVOLUTION_PLAN.md")
-    for required in ("Assertion", "provenance_kind", "assertion_status", "开放世界假设", "双时间模型", "Action", "可信结论卡", "Phase A", "性能预算", "发布阻断条件"):
+    content = _read("docs/ONTOLOGY.md")
+    for required in ("Assertion", "开放世界假设", "NOT_FOUND", "UNKNOWN", "STALE", "REJECTED", "generation", "实体稳定", "断言可变", "O1", "O5"):
         assert required in content
-    assert "ONTOLOGY_EVOLUTION_PLAN.md" in _read("docs/README.md")
+    assert "ONTOLOGY.md" in _read("README.md")

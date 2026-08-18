@@ -553,10 +553,49 @@ Replay 检查会进一步把每条建议分类为 `adopted`、`missed`、`bypass
 - token benchmark：7 个高频函数
 - evidence top-K：`small=3` / `medium=5` / `large=10`
 
-## 6. Main Reading Order / 主阅读顺序
+## 6. Specs / 规格说明
+
+### 6.1 workspace.yaml
+
+核心字段：`workspace`、`root`、`services`、`registry`、`embedding_backend`。每个 service 典型字段：`path`、`type`、`service_name`、`language`、`stack`。
+
+### 6.2 rules
+
+规则文件位于 `.memory-center/rules/`。高频规则：`global-rules.yaml`、`auto-sync-rules.yaml`、`resume-rules.yaml`、`handoff-rules.yaml`、`write-policy-rules.yaml`、`eval-rules.yaml`。规则应至少包含 `id`、`title`、`severity`、`when`、`message`。
+
+### 6.3 hooks.yaml
+
+支持事件：`session_start`、`pre_edit`、`session_stop`、`user_prompt_submit`。支持 mode：`soft`、`guard`、`suggest`、`off`。推荐默认：`session_start: soft`、`pre_edit: guard`、`session_stop: soft`、`user_prompt_submit: enabled: false`。
+
+### 6.4 Memory Layout / 记忆目录
+
+```text
+.memory-center/
+  workspace.yaml
+  hooks.yaml
+  rules/
+  index/
+  graph/
+  memory/
+  artifacts/
+  instructions/
+```
+
+### 6.5 provider-mcp-policy.json / 外部 MCP Bridge 策略
+
+可选策略文件位于 `.memory-center/provider-mcp-policy.json`，声明 Memory Center 可以作为 Client 直接调用的外部 HTTP MCP Server。顶层 `schema_version: 1`、`providers: []`。Provider 字段：`id`、`server`、`url`（只能为不含用户名/密码/查询串的 `http(s)` URL）、`transport`（`sse|streamable_http`）、`timeout_seconds`（1..60）、`priority`、`tools`。Tool 字段：`action`、`tool`、`mode`（`read_only|controlled_write|destructive`）、`arguments`（仅常量及 `{query}`/`{target}` 占位符）。
+
+### 6.6 Timeline / Ref / Receipt
+
+正式 `timeline_item.kind`：`session_event`、`write_receipt`、`handoff`。短引用体系：`ref_id`、`summary`、`payload_ref`/`receipt_ref`。
+
+### 6.7 兼容性原则
+
+MCP facade schema兼容优先；破坏性变更必须同步 README/docs/changelog；原子 CLI/HTTP 能力可继续保留，默认公开面以 facade 为主。
+
+## 7. Main Reading Order / 主阅读顺序
 
 主线使用请优先看：
 
 - [USER_GUIDE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/USER_GUIDE.md)
 - [MCP_GUIDE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/MCP_GUIDE.md)
-- [SPECIAL_NOTES.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/SPECIAL_NOTES.md)

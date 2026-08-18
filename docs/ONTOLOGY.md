@@ -292,3 +292,78 @@
 新增或修改语义强度时，必须同步更新 ontology registry、本文档和覆盖全部 edge type 的测试。
 
 本体 registry 已覆盖索引器实际产出的 `HANDLES_ENDPOINT`、`IMPLEMENTS_FEIGN`、`INJECTS_BEAN`、`READS_FIELD`、`USES_DATA_RESOURCE`、`DECLARES_CONFIG` 等边；CI 会校验索引器字面量边类型均已注册。新增关系必须先在 registry 声明 endpoint、来源和关系模式，再进入索引器。
+
+---
+
+# Part II: 本体演进计划
+
+## 演进目标
+
+将 Memory Center 从"索引、检索、任务记忆的组合"升级为**可版本化、可证伪、可追溯的工程知识系统**。不追求学术化的全量语义网，而是解决真实工程问题：同一条结论从何而来、何时有效、是否验证、被谁否定、会影响哪些任务。
+
+### 成功标准
+
+1. 一个查询结论能定位到实体、关系断言、来源、generation、验证状态和失效原因。
+2. `confidence` 不再承担"事实性""来源""人工确认"的混合职责。
+3. 代码图、变更报告、任务、验证和证据子图可通过同一关系语言关联。
+4. 默认 `mc_lookup`、`workspace_status` 不增加全图扫描或明显延迟。
+5. CLI、HTTP、MCP 的公开命令和关键字段保持稳定。
+
+### 设计原则
+
+| 原则 | 实施约束 |
+|---|---|
+| 实体稳定 | `Method`、`Endpoint`、`Task` 等身份不因一次索引或验证而改变。 |
+| 断言可变 | "A 调用 B""任务影响 C"都是带来源和有效期的 Assertion。 |
+| 来源先于置信度 | 先说明 AST、规则、运行时还是人工；`confidence` 仅用于排序。 |
+| 验证可证伪 | 人工确认可以 `VERIFY`，也可以 `REJECT`，不能只追加正向记录。 |
+| 时间是一级事实 | 所有可变结论必须关联 generation 或观测时间。 |
+| 默认有界 | 任何查询仅读取目标断言与有界邻接；历史和全局聚合必须显式执行。 |
+| 隐私优先 | Assertion 只存稳定标识、脱敏摘要、hash/ref，不保存源码正文、原始对话和工具 payload。 |
+
+## 目标本体模型
+
+### 认识论与否定性结论
+
+采用开放世界假设：图中没有关系不等于关系不存在。所有否定性或不完整结论必须使用下列状态：
+
+| 状态 | 含义 | 用户体验 |
+|---|---|---|
+| `NOT_FOUND` | 在当前查询范围内未发现目标 | 显示检索范围与细化入口。 |
+| `UNKNOWN` | 证据不足，无法判断 | 显示缺失证据和推荐验证动作。 |
+| `NOT_INDEXED` | 文件、项目或语言尚未索引 | 显示局部 reindex 命令。 |
+| `STALE` | 结论可能被源码或 generation 变化影响 | 显示受影响文件与刷新入口。 |
+| `REJECTED` | 有人工或运行时反证 | 显示否定决策和原因摘要。 |
+
+### 目标实体层
+
+实体代表可稳定识别的对象，至少包括：
+- 代码：`Workspace`、`Service`、`File`、`Class`、`Method`、`Field`、`Endpoint`、`FeignClient`、`MQTopic`、`ConfigKey`。
+- 工程活动：`ChangeSet`、`Analysis`、`EvidenceSubgraph`、`ArchitectureCommunity`。
+- 协作与治理：`Task`、`Session`、`Validation`、`Decision`、`ChangeImpactReport`、`Artifact`。
+
+### 交付顺序与里程碑
+
+| 版本 | 交付 | 完成定义 |
+|---|---|---|
+| O1 | Registry 对齐 | 文档/代码/索引类型一致。 |
+| O2 | Assertion Sidecar | V2 读模型统一，查询可返回 ref。 |
+| O3 | 时间与失效 | generation、stale、历史读取可解释。 |
+| O4 | 验证与决策闭环 | confirmation、validation、task 跨域关联。 |
+| O5 | 体验与门禁 | 结论卡、Action、inspect、真实 benchmark 全部可用。 |
+
+任何阶段若真实指标退化，停止推进下一阶段，保留 sidecar 并回滚默认读取。
+
+### 非目标
+
+- 不引入远程图数据库或 RDF/OWL 运行时。
+- 不把所有 JSONL/Markdown 迁移为图节点。
+- 不因本体重构破坏 MCP facade 或既有 dict schema。
+- 不在普通查询中推理全量跨域关系。
+- 不将 LLM 输出自动升级为 VERIFIED。
+
+### 当前实现状态（4.2.0+）
+
+- 查询与状态入口已提供兼容的 `knowledge_state`，避免以空结果表达不存在；断言支持有效期、事件时间与观测时间查询。
+- 治理实体、关系、Action 读模型、验证别名和全入口断言确认已接入；本体侧只保留 V2，旧 sidecar 必须完整 reindex 重建。
+- `eval-ontology-gate`、`eval-assertion-scope-gate` 与 `eval-assertion-reindex-gate` 覆盖默认查询、局部范围和隔离 reindex 开销门禁；真实 workspace 局部基线已验证通过。

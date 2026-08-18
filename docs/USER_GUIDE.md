@@ -355,8 +355,7 @@ memory-center artifact delivery-skill-publish --workspace /abs/path/.memory-cent
 - [ARCHITECTURE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/ARCHITECTURE.md)
 - [MCP_GUIDE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/MCP_GUIDE.md)
 - [REFERENCE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/REFERENCE.md)
-- [SPECS.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/SPECS.md)
-- [PRODUCT_TECHNICAL_OVERVIEW.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/PRODUCT_TECHNICAL_OVERVIEW.md)
+- [ONTOLOGY.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/ONTOLOGY.md)
 
 ## 11. Implemented Features (3.x / V3 Foundation) / 已实现功能（3.x / V3 基础版）
 
@@ -610,7 +609,7 @@ report = generate_audit_report(workspace_file)
 - `overall_health`: 整体健康评估
 
 **审计维度**:
-- 文档: 关键文档存在性、SPECIAL_NOTES 完整性
+- 文档: 关键文档存在性、ARCHITECTURE 完整性
 - 测试: 测试文件、pytest 配置
 - 实现: 模块完整性
 - 设计: 冲突决策检测

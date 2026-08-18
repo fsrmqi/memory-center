@@ -376,17 +376,19 @@ class TestI01Documentation:
         doc = Path("docs/NEXT_PHASE_MASTER_PLAN.md")
         assert doc.exists()
 
-    def test_special_notes_exists(self):
-        doc = Path("docs/SPECIAL_NOTES.md")
+    def test_document_constitution_exists(self):
+        doc = Path("docs/DOCUMENT_CONSTITUTION.md")
         assert doc.exists()
 
     def test_delegated_execution_log_exists(self):
         doc = Path("docs/archive/DELEGATED_EXECUTION_LOG.md")
         assert doc.exists()
 
-    def test_release_doc_exists(self):
-        doc = Path("docs/RELEASE.md")
-        assert doc.exists()
+    def test_document_constitution_has_release_checklist(self):
+        doc = Path("docs/DOCUMENT_CONSTITUTION.md")
+        if doc.exists():
+            content = doc.read_text(encoding="utf-8")
+            assert "发布清单" in content or "Release" in content
 
     def test_ontology_doc_exists(self):
         doc = Path("docs/ONTOLOGY.md")
@@ -555,8 +557,8 @@ class TestI05VersionRelease:
         if license_file.exists():
             assert license_file.stat().st_size > 0
 
-    def test_release_doc_has_content(self):
-        release = Path("docs/RELEASE.md")
-        if release.exists():
-            content = release.read_text(encoding="utf-8")
+    def test_document_constitution_has_content(self):
+        doc = Path("docs/DOCUMENT_CONSTITUTION.md")
+        if doc.exists():
+            content = doc.read_text(encoding="utf-8")
             assert len(content) > 100
