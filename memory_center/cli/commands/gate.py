@@ -99,13 +99,13 @@ def register_gate_commands(app: typer.Typer) -> None:
     ):
         """Profile a full reindex with cProfile and print the hot functions.
 
-        The raw ``.prof`` file is saved under
-        ``$workspace/.memory-center/perf-profiles/`` so it can be re-analysed
-        with ``snakeviz`` / ``pyprof2calltree``. Use this command before
-        designing a perf optimisation so the proposed work targets the
-        actual dominant cost (see ``docs/benchmarks/`` for the original P0
-        motivation).
-        """
+    The raw ``.prof`` file is saved under
+    ``$workspace/.memory-center/perf-profiles/`` so it can be re-analysed
+    with ``snakeviz`` / ``pyprof2calltree``. Use this command before
+    designing a perf optimisation so the proposed work targets the
+    actual dominant cost (see ``docs/benchmarks/`` for the original P0
+    motivation).
+    """
         from memory_center.core.perf import aggregate_by_module, profile_reindex
 
         workspace_path = Path(workspace).expanduser().resolve()

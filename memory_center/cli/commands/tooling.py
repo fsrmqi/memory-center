@@ -78,10 +78,10 @@ def register_tooling_commands(app: typer.Typer) -> None:
     ):
         """Execute a hook defined in hooks.yaml. Host-agnostic lifecycle event runner.
 
-        Reads stdin JSON from the host, resolves parameters, dispatches to
-        the appropriate Memory Center facade, and outputs a structured result.
-        Process exit code: 0=allow, 2=block (guard mode), 1=error.
-        """
+    Reads stdin JSON from the host, resolves parameters, dispatches to
+    the appropriate Memory Center facade, and outputs a structured result.
+    Process exit code: 0=allow, 2=block (guard mode), 1=error.
+    """
         exit_code = run_hook_cli(workspace, hook)
         raise typer.Exit(code=exit_code)
 
@@ -93,10 +93,10 @@ def register_tooling_commands(app: typer.Typer) -> None:
     ):
         """Generate host-specific hook configuration from hooks.yaml.
 
-        For claude-code: writes .claude/settings.local.json with hooks section.
-        For codex: generates shell wrapper scripts in .codex-hooks/.
-        For cursor: generates .cursorrules additions.
-        """
+    For claude-code: writes .claude/settings.local.json with hooks section.
+    For codex: generates shell wrapper scripts in .codex-hooks/.
+    For cursor: generates .cursorrules additions.
+    """
         config = load_hooks_config(workspace)
         if host == "claude-code":
             result = write_claude_code_settings(workspace, output_path=output or None, hooks_config=config)
