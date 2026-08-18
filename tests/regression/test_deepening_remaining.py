@@ -1184,7 +1184,7 @@ class TestH06ChangeBundles:
     """Test change bundle dataclass and structure."""
 
     def test_graph_view_dataclass_exists(self):
-        """GraphView dataclass is importable and has expected fields."""
+        """Change bundle export is importable and callable."""
         from memory_center.core.verification.bundle_export import generate_agent_bundle
         # The change bundle structure is tested through the bundle export
         assert callable(generate_agent_bundle)

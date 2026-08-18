@@ -2,6 +2,16 @@
 
 ## Unreleased 未发布
 
+### 移除 core/views 图谱视图模块 / Remove core/views graph view module
+
+- 删除无任何生产调用方的 `core/views/builder.py`（`GraphView` / `GraphViewBuilder`）；能力面已被 `mc_onboard` / `mc_domain` / `mc_context_pack` 覆盖，详见 ADR-0003。
+- 同步移除 3 个回归测试文件中仅测试该模块的测试类与 pipeline 中的 view building 步骤；其余测试保持不变。
+
+### Remove core/views graph view module
+
+- Removed `core/views/builder.py` (`GraphView` / `GraphViewBuilder`) which had zero production consumers; the capability is already covered by `mc_onboard` / `mc_domain` / `mc_context_pack`. See ADR-0003.
+- Removed the test classes that only exercised this module across three regression test files plus the view-building step inside the V3 pipeline test; all other tests are unchanged.
+
 ### 清理 query.py 死转发 / Remove dead walkthrough forwarding shims
 
 - 删除 `core/orchestrator/query.py` 中 59 个仅委托 `core/walkthrough/*` 且无任何调用者的私有转发函数，文件从 2944 行降至 2715 行；纯删除、零行为变更。同步移除失效的 `_wt_continuations` / `_wt_risks` / `_wt_symbols` 别名 import。

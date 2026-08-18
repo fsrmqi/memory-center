@@ -4,7 +4,6 @@ Covers:
 - VectorIndex (storage/vector_index.py)
 - BusinessDomainExtractor (domain/extractor.py)
 - ArchitectureTourGenerator (onboarding/tour.py)
-- GraphViewBuilder (views/builder.py)
 - Parallel indexing (indexing/parallel.py)
 - IncrementalIndexer (indexing/incremental.py)
 - FileWatcher (freshness/watcher.py)
@@ -42,7 +41,6 @@ from memory_center.core.onboarding.tour import (
 )
 from memory_center.core.storage.runtime import RuntimeStore
 from memory_center.core.storage.vector_index import VectorIndex, VectorIndexBusyError
-from memory_center.core.views.builder import GraphView, GraphViewBuilder
 
 # ── Fixtures ─────────────────────────────────────────────────────────────────
 
@@ -411,76 +409,6 @@ class TestArchitectureTourGenerator:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# GraphViewBuilder tests
-# ═══════════════════════════════════════════════════════════════════════════════
-
-class TestGraphViewBuilder:
-    """Tests for GraphViewBuilder (§20.3-20.4 views/)."""
-
-    def test_architecture_view(self, populated_store):
-        builder = GraphViewBuilder(populated_store)
-        view = builder.build(mode="architecture")
-        assert isinstance(view, GraphView)
-        assert view.mode == "architecture"
-        assert len(view.nodes) > 0
-        assert len(view.groups) > 0
-
-    def test_business_view(self, populated_store):
-        builder = GraphViewBuilder(populated_store)
-        view = builder.build(mode="business")
-        assert view.mode == "business"
-        assert "domain_count" in view.metadata
-
-    def test_change_view_with_target(self, populated_store):
-        builder = GraphViewBuilder(populated_store)
-        view = builder.build(mode="change", target="Class:user-svc:UserService")
-        assert view.mode == "change"
-        assert "finding_count" in view.metadata
-
-    def test_change_view_without_target(self, populated_store):
-        builder = GraphViewBuilder(populated_store)
-        view = builder.build(mode="change")
-        assert view.mode == "change"
-
-    def test_view_to_dict(self, populated_store):
-        builder = GraphViewBuilder(populated_store)
-        view = builder.build(mode="architecture")
-        d = view.to_dict()
-        assert "mode" in d
-        assert "nodes" in d
-        assert "groups" in d
-
-    def test_invalid_mode_raises(self, populated_store):
-        builder = GraphViewBuilder(populated_store)
-        with pytest.raises(ValueError, match="Unknown graph view mode"):
-            builder.build(mode="invalid")
-
-    def test_architecture_view_empty_store(self, store):
-        builder = GraphViewBuilder(store)
-        view = builder.build(mode="architecture")
-        assert view.mode == "architecture"
-        assert len(view.nodes) == 0
-
-    def test_business_view_empty_store(self, store):
-        builder = GraphViewBuilder(store)
-        view = builder.build(mode="business")
-        assert view.mode == "business"
-
-    def test_architecture_view_has_groups(self, populated_store):
-        builder = GraphViewBuilder(populated_store)
-        view = builder.build(mode="architecture", persona="architect")
-        assert view.persona == "architect"
-        group_labels = {g["label"] for g in view.groups}
-        assert "Service" in group_labels or "Class" in group_labels
-
-    def test_change_view_has_checklist(self, populated_store):
-        builder = GraphViewBuilder(populated_store)
-        view = builder.build(mode="change", target="Endpoint:user-svc:POST:/api/users")
-        # Should have at least some risk-related metadata
-        assert isinstance(view.metadata, dict)
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
 # Parallel indexing tests
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -805,17 +733,13 @@ class TestV3Integration:
             tour = ArchitectureTourGenerator(store).generate_tour(persona="developer")
             assert len(tour.steps) >= 1
 
-            # 4. View building
-            view = GraphViewBuilder(store).build(mode="architecture")
-            assert len(view.nodes) >= 4
-
-            # 5. Vector search
+            # 4. Vector search
             vi = VectorIndex(store, dimension=4)
             vi.upsert_embedding("Class:user-svc:UserService", [1.0, 0.0, 0.0, 0.0])
             results = vi.query([0.9, 0.1, 0.0, 0.0])
             assert len(results) >= 1
 
-            # 6. Incremental indexer
+            # 5. Incremental indexer
             indexer = IncrementalIndexer(store, repo_root=tmp_path)
             removed = indexer.remove_by_file_path("UserService.java")
             assert "Class:user-svc:UserService" in removed
@@ -836,13 +760,3 @@ class TestV3Integration:
         # At least some overlap
         assert len(domain_services) >= 1
         assert len(tour_node_ids) >= 1
-
-    def test_view_to_risk_pipeline(self, populated_store):
-        """Build change view, then verify risk findings are included."""
-        builder = GraphViewBuilder(populated_store)
-        view = builder.build(
-            mode="change",
-            target="FeignClient:order-svc:UserServiceClient",
-        )
-        assert view.mode == "change"
-        assert view.metadata["finding_count"] >= 1

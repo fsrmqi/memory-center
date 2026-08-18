@@ -45,7 +45,6 @@ from memory_center.core.knowledge.ontology import (
 )
 from memory_center.core.onboarding.tour import ArchitectureTourGenerator
 from memory_center.core.storage.runtime import RuntimeStore
-from memory_center.core.views.builder import GraphViewBuilder
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Ontology tests
@@ -248,25 +247,6 @@ class TestOnboardAsTool:
         for persona in ("developer", "architect", "product", "tester"):
             tour = gen.generate_tour(persona=persona)
             assert isinstance(tour.to_dict(), dict)
-
-
-class TestViewAsTool:
-    def test_architecture_view(self, populated_store):
-        builder = GraphViewBuilder(populated_store)
-        view = builder.build(mode="architecture")
-        assert len(view.nodes) >= 8
-        d = view.to_dict()
-        assert d["mode"] == "architecture"
-
-    def test_business_view(self, populated_store):
-        builder = GraphViewBuilder(populated_store)
-        view = builder.build(mode="business")
-        assert view.mode == "business"
-
-    def test_change_view(self, populated_store):
-        builder = GraphViewBuilder(populated_store)
-        view = builder.build(mode="change", target="Class:user-svc:UserService")
-        assert view.mode == "change"
 
 
 class TestFreshnessAsTool:

@@ -188,39 +188,6 @@ class TestH05DiffScope:
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# H-06: Graph-aware change bundles (view builder)
-# ═════════════════════════════════════════════════════════════════════════════
-
-class TestH06ChangeBundles:
-    def test_graph_view_dataclass(self):
-        from memory_center.core.views.builder import GraphView
-        view = GraphView(mode="change", title="Test Change", description="Test")
-        assert view.mode == "change"
-        d = view.to_dict()
-        assert d["mode"] == "change"
-        assert d["title"] == "Test Change"
-
-    def test_graph_view_builder_modes(self):
-        from memory_center.core.views.builder import GraphViewBuilder
-        assert callable(GraphViewBuilder)
-
-    def test_graph_view_has_required_structure(self):
-        from memory_center.core.views.builder import GraphView
-        view = GraphView(mode="architecture", title="Arch View")
-        d = view.to_dict()
-        assert "nodes" in d
-        assert "edges" in d
-        assert "groups" in d
-        assert "metadata" in d
-        assert "persona" in d
-
-    def test_graph_view_persona_default(self):
-        from memory_center.core.views.builder import GraphView
-        view = GraphView(mode="business", title="Biz")
-        assert view.persona == "developer"
-
-
-# ═════════════════════════════════════════════════════════════════════════════
 # H-07: Layered rule matching
 # ═════════════════════════════════════════════════════════════════════════════
 
