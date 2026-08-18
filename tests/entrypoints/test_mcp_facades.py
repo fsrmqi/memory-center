@@ -355,7 +355,7 @@ def test_method_walkthrough_report_level_and_glossary(tmp_path: Path):
 
 
 def test_walkthrough_risk_helpers_detect_performance_and_scope(tmp_path: Path):
-    from memory_center.core.orchestrator.query import _build_data_scope_guards, _build_walkthrough_performance_risks
+    from memory_center.core.walkthrough.risks import build_data_scope_guards, build_walkthrough_performance_risks
 
     source = tmp_path / "Demo.java"
     source.write_text(
@@ -393,8 +393,8 @@ def test_walkthrough_risk_helpers_detect_performance_and_scope(tmp_path: Path):
             }
         ],
     }
-    risks = _build_walkthrough_performance_risks(result)
-    guards = _build_data_scope_guards(result)
+    risks = build_walkthrough_performance_risks(result)
+    guards = build_data_scope_guards(result)
     assert {item["code"] for item in risks} >= {"es_script_query", "es_wildcard_query", "track_total_hits"}
     assert {item["code"]: item["status"] for item in guards}["custom_info_enrichment"] == "present"
     assert {item["code"]: item["status"] for item in guards}["cust_code_cleared"] == "present"

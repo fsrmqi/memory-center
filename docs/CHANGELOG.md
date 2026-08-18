@@ -1,5 +1,19 @@
 # Changelog / 更新日志
 
+## Unreleased 未发布
+
+### 清理 query.py 死转发 / Remove dead walkthrough forwarding shims
+
+- 删除 `core/orchestrator/query.py` 中 59 个仅委托 `core/walkthrough/*` 且无任何调用者的私有转发函数，文件从 2944 行降至 2715 行；纯删除、零行为变更。同步移除失效的 `_wt_continuations` / `_wt_risks` / `_wt_symbols` 别名 import。
+- `tests/entrypoints/test_mcp_facades.py` 的两个 walkthrough 风险辅助函数改为直接从真实实现 `core/walkthrough/risks.py` 导入，测试语义不变且更贴近真实接缝。
+- 保留 3 个仍有内部调用者的薄适配：`_compact_method_walkthrough_result`、`_render_method_walkthrough_answer`、`_walkthrough_index_signature`。
+
+### Remove dead walkthrough forwarding shims in query.py
+
+- Removed 59 private forwarding functions in `core/orchestrator/query.py` that only delegated to `core/walkthrough/*` with zero callers anywhere; the file drops from 2944 to 2715 lines as a pure, behavior-preserving deletion, along with the now-unused `_wt_continuations` / `_wt_risks` / `_wt_symbols` alias imports.
+- The two walkthrough risk helpers referenced by `tests/entrypoints/test_mcp_facades.py` now import directly from their real implementation in `core/walkthrough/risks.py`; test semantics are unchanged and sit closer to the real seam.
+- Kept the 3 thin adapters that still have internal callers: `_compact_method_walkthrough_result`, `_render_method_walkthrough_answer`, `_walkthrough_index_signature`.
+
 ## 4.3.84 局部 Generation 流式发布 / Scoped Generation Streaming Publication
 
 - 局部 generation 不再递归复制上一代完整目录，只按当前 manifest 硬链接未受影响服务的 JSON 与 SQLite 分片；受影响分片保持新 inode，旧 generation 仍不可变且可回滚。

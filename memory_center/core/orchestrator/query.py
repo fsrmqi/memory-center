@@ -21,11 +21,8 @@ from memory_center.core.storage.workspace import WorkspaceStore
 from ..verification.heuristics import apply_candidate_path_learning
 from ..walkthrough import analysis as _walkthrough_analysis
 from ..walkthrough import answer as _wt_answer
-from ..walkthrough import continuations as _wt_continuations
 from ..walkthrough import escalation as _wt_escalation
 from ..walkthrough import operations as _walkthrough_operations
-from ..walkthrough import risks as _wt_risks
-from ..walkthrough import symbols as _wt_symbols
 from .compact import _measure_compact_gain
 from .shared import (
     SESSION_EVENTS_FILE,
@@ -1628,15 +1625,6 @@ def memory_export_walkthrough_artifact(
     )
 
 
-
-def _walkthrough_recent_bypass_feedback(store: Any, limit: int = 200) -> dict[str, Any]:
-    return _wt_escalation.walkthrough_recent_bypass_feedback(store, SESSION_EVENTS_FILE, limit=limit)
-
-
-def _resolve_walkthrough_workspace_input(workspace_file: str | Path) -> Path:
-    return _wt_escalation.resolve_walkthrough_workspace_input(workspace_file)
-
-
 def _walkthrough_index_signature(store: Any) -> dict[str, float]:
     return _wt_escalation.walkthrough_index_signature(store)
 
@@ -1667,10 +1655,6 @@ def _method_walkthrough_cache_key(
         sort_keys=True,
         ensure_ascii=False,
     )
-
-
-def _method_walkthrough_fields_contract() -> dict[str, Any]:
-    return _wt_answer.method_walkthrough_fields_contract()
 
 
 def _try_escalated_method_walkthrough(
@@ -1734,107 +1718,6 @@ def _try_escalated_method_walkthrough(
     return escalated
 
 
-def _find_parent_or_covering_workspace(workspace_file: str | Path) -> Path | None:
-    return _wt_escalation.find_parent_or_covering_workspace(workspace_file)
-
-
-def _registry_covering_workspaces(current_ws: Path, current_root: Path) -> list[Path]:
-    return _wt_escalation.registry_covering_workspaces(current_ws, current_root)
-
-
-def _registry_group_sibling_workspaces(current_ws: Path) -> list[Path]:
-    return _wt_escalation.registry_group_sibling_workspaces(current_ws)
-
-
-def _path_is_within(path: Path, maybe_parent: Path) -> bool:
-    return _wt_escalation.path_is_within(path, maybe_parent)
-
-
-def _walkthrough_quality_score(result: dict[str, Any]) -> int:
-    return _wt_escalation.walkthrough_quality_score(result)
-
-
-def _build_workspace_escalation_status(
-    workspace_file: str | Path,
-    status: str,
-    candidate_workspace: str = "",
-    reason: str = "",
-) -> dict[str, Any]:
-    return _wt_escalation.build_workspace_escalation_status(workspace_file, status, candidate_workspace=candidate_workspace, reason=reason)
-
-
-def _parse_method_walkthrough_symbol(symbol: str) -> dict[str, str]:
-    return _wt_symbols.parse_method_walkthrough_symbol(symbol)
-
-
-def _find_method_symbol_entry(symbols: list[dict[str, Any]], parsed: dict[str, str], project: str = "") -> dict[str, Any]:
-    return _wt_symbols.find_method_symbol_entry(symbols, parsed, project=project)
-
-
-def _build_file_abs_path_map(config: Any, store: Any) -> dict[tuple[str, str], str]:
-    return _wt_symbols.build_file_abs_path_map(config, store)
-
-
-def _resolve_indexed_abs_path(file_abs_map: dict[tuple[str, str], str], project: str, file_path: str) -> str:
-    return _wt_symbols.resolve_indexed_abs_path(file_abs_map, project, file_path)
-
-
-def _build_method_local_steps(method_calls, dto_field_usages, feigns):
-    return _wt_continuations.build_method_local_steps(method_calls, dto_field_usages, feigns)
-
-
-def _build_method_feign_continuations(entry, method_name, method_calls, feigns, apis, symbols, file_abs_map):
-    return _wt_continuations.build_method_feign_continuations(entry, method_name, method_calls, feigns, apis, symbols, file_abs_map)
-
-
-def _build_service_impl_continuations(symbols, entry, method_calls, file_abs_map=None, feigns=None, apis=None):
-    return _wt_continuations.build_service_impl_continuations(symbols, entry, method_calls, file_abs_map=file_abs_map, feigns=feigns, apis=apis)
-
-
-def _build_same_class_method_continuations(symbols, entry, method_name, file_abs_map, feigns, apis):
-    return _wt_continuations.build_same_class_method_continuations(symbols, entry, method_name, file_abs_map, feigns, apis)
-
-
-def _detect_unqualified_same_class_calls(abs_path: str, owner_method: str, class_methods: set[str]) -> list[str]:
-    return _wt_symbols.detect_unqualified_same_class_calls(abs_path, owner_method, class_methods)
-
-
-def _extract_java_method_body(text: str, method_name: str) -> str:
-    return _wt_symbols.extract_java_method_body(text, method_name)
-
-
-def _matching_brace_end_runtime(text: str, open_pos: int) -> int:
-    return _wt_symbols.matching_brace_end_runtime(text, open_pos)
-
-
-def _summarize_dto_field_filters(dto_usages: list[dict[str, Any]]) -> dict[str, Any]:
-    return _wt_continuations.summarize_dto_field_filters(dto_usages)
-
-
-def _classify_dto_field_rule_groups(dto_usages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return _wt_continuations.classify_dto_field_rule_groups(dto_usages)
-
-
-def _find_method_span_lines(abs_path: str, method_name: str) -> dict[str, int]:
-    return _wt_symbols.find_method_span_lines(abs_path, method_name)
-
-
-def _line_number_at_offset(text: str, offset: int) -> int:
-    return _wt_symbols.line_number_at_offset(text, offset)
-
-
-def _find_receiver_impl_method(symbols, receiver_type, method_name, project):
-    return _wt_symbols.find_receiver_impl_method(symbols, receiver_type, method_name, project)
-
-
-def _dedupe_feign_continuations(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return _wt_continuations.dedupe_feign_continuations(items)
-
-
-def _build_method_walkthrough_next_actions(feign_continuations, downstream_summary, local_service_continuations=None, same_class_continuations=None):
-    return _wt_continuations.build_method_walkthrough_next_actions(feign_continuations, downstream_summary, local_service_continuations=local_service_continuations, same_class_continuations=same_class_continuations)
-
-
 def _compact_method_walkthrough_result(result: dict[str, Any], budget: str = "medium") -> dict[str, Any]:
     return _wt_answer.compact_method_walkthrough_result(result, budget=budget, cache_ttl_seconds=_METHOD_WALKTHROUGH_CACHE_TTL_SECONDS)
 
@@ -1843,120 +1726,8 @@ def _render_method_walkthrough_answer(result, workspace_file, report_level: str 
     return _wt_answer.render_method_walkthrough_answer(result, workspace_file, report_level=report_level)
 
 
-def _load_method_walkthrough_template(workspace_file):
-    return _wt_answer.load_method_walkthrough_template(workspace_file)
-
-
-def _method_walkthrough_template_context(result: dict[str, Any], report_level: str = "standard") -> dict[str, str]:
-    return _wt_answer.method_walkthrough_template_context(result, report_level=report_level)
-
-
-def _method_walkthrough_read_targets_text(result: dict[str, Any]) -> str:
-    return _wt_answer.method_walkthrough_read_targets_text(result)
-
-
-def _method_walkthrough_rule_groups_text(result: dict[str, Any]) -> str:
-    return _wt_answer.method_walkthrough_rule_groups_text(result)
-
-
-def _format_rule_group_lines(continuation: dict[str, Any]) -> list[str]:
-    return _wt_answer.format_rule_group_lines(continuation)
-
-
-def _build_glossary_hits(workspace_file, result: dict[str, Any]) -> list[dict[str, Any]]:
-    return _wt_answer.build_glossary_hits(workspace_file, result)
-
-
-def _load_walkthrough_glossary(workspace_file) -> dict[str, Any]:
-    return _wt_answer.load_walkthrough_glossary(workspace_file)
-
-
-def _collect_walkthrough_terms(result: dict[str, Any]) -> set[str]:
-    return _wt_answer.collect_walkthrough_terms(result)
-
-
-def _build_walkthrough_performance_risks(result: dict[str, Any]) -> list[dict[str, Any]]:
-    return _wt_risks.build_walkthrough_performance_risks(result)
-
-
 def _steps_to_calls(steps: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [step for step in steps if step.get("kind") == "method_call"]
-
-
-def _build_data_scope_guards(result: dict[str, Any]) -> list[dict[str, Any]]:
-    return _wt_risks.build_data_scope_guards(result)
-
-
-def _extract_java_method_body_from_path(abs_path: str, method_name: str) -> str:
-    return _wt_symbols.extract_java_method_body_from_path(abs_path, method_name)
-
-
-def _build_walkthrough_diff_context(config: Any, result: dict[str, Any]) -> dict[str, Any]:
-    return _wt_risks.build_walkthrough_diff_context(config, result)
-
-
-def _build_walkthrough_index_freshness(store: Any, result: dict[str, Any]) -> dict[str, Any]:
-    return _wt_risks.build_walkthrough_index_freshness(_wt_escalation.walkthrough_index_signature(store), result)
-
-
-def _git_changed_abs_paths(root: Path) -> set[str]:
-    return _wt_risks.git_changed_abs_paths(root)
-
-
-def _collect_result_abs_paths(result: dict[str, Any]) -> list[str]:
-    return _wt_risks.collect_result_abs_paths(result)
-
-
-def _build_walkthrough_branch_outline(result: dict[str, Any]) -> list[dict[str, Any]]:
-    return _wt_risks.build_walkthrough_branch_outline(result)
-
-
-def _extract_java_case_labels(abs_path: str, method_name: str) -> list[str]:
-    return _wt_symbols.extract_java_case_labels(abs_path, method_name)
-
-
-def _build_method_walkthrough_mermaid(result: dict[str, Any]) -> str:
-    return _wt_risks.build_method_walkthrough_mermaid(result)
-
-
-def _format_glossary_hits(items): return _wt_answer.format_glossary_hits(items)
-def _format_risk_items(items): return _wt_answer.format_risk_items(items)
-def _format_diff_context(diff): return _wt_answer.format_diff_context(diff)
-def _format_index_freshness(freshness): return _wt_answer.format_index_freshness(freshness)
-def _format_branch_outline(outlines): return _wt_answer.format_branch_outline(outlines)
-def _format_anti_patterns(items): return _wt_answer.format_anti_patterns(items)
-
-
-def _dedupe_risk_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return _wt_risks.dedupe_risk_items(items)
-
-
-def _default_method_walkthrough_template(report_level: str = "standard") -> str:
-    return _wt_answer.default_method_walkthrough_template(report_level)
-
-
-def _normalize_report_level(report_level: str) -> str:
-    return _wt_answer.normalize_report_level(report_level)
-
-
-def _build_method_walkthrough_agent_policy() -> dict[str, Any]:
-    return _wt_answer.build_method_walkthrough_agent_policy()
-
-
-def _build_method_walkthrough_anti_patterns() -> list[dict[str, str]]:
-    return _wt_answer.build_method_walkthrough_anti_patterns()
-
-
-def _select_compact_method_steps(local_steps, limits):
-    return _wt_answer.select_compact_method_steps(local_steps, limits)
-
-
-def _build_method_walkthrough_summary_lines(target, local_steps, local_service_continuations, same_class_continuations, feigns, downstream, limits):
-    return _wt_answer.build_method_walkthrough_summary_lines(target, local_steps, local_service_continuations, same_class_continuations, feigns, downstream, limits)
-
-
-def _display_method_path(item: dict[str, Any]) -> str:
-    return _wt_answer.display_method_path(item)
 
 
 # === End walkthrough helper shims =========================================
