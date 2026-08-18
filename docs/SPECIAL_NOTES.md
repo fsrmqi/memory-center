@@ -320,7 +320,7 @@ Hook 配置里：
 
 运行记录、断言、引用与图数据统一写入 `.memory-center/graph/graph.db`，所有运行时读取都以它为准。JSON、JSONL 和 Markdown 仍会保留，但它们分别是可检查导出、审计投影或人工工件，不能在查询中作为静默回退来源。
 
-导出与 SQLite 出现差异时，系统返回结构化诊断并要求修复或显式重建，而不是以旧文件覆盖当前运行时状态。完整边界见 [UNIFIED_BACKEND_READ_PATHS.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/UNIFIED_BACKEND_READ_PATHS.md)。
+导出与 SQLite 出现差异时，系统返回结构化诊断并要求修复或显式重建，而不是以旧文件覆盖当前运行时状态。完整边界见 [ARCHITECTURE.md §6](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/ARCHITECTURE.md)。
 
 ## 9. 文档与实现冲突时怎么判断
 

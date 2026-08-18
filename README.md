@@ -39,8 +39,6 @@ Memory Center precomputes these relationships before the agent starts editing.
 
 - [docs/README.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/README.md)
 - [docs/PRODUCT_TECHNICAL_OVERVIEW.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/PRODUCT_TECHNICAL_OVERVIEW.md)
-- [docs/TECHNICAL_ARCHITECTURE_AND_EVOLUTION.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/TECHNICAL_ARCHITECTURE_AND_EVOLUTION.md)
-- [docs/DOCS_STATUS.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/DOCS_STATUS.md)
 - [docs/ARCHITECTURE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/ARCHITECTURE.md)
 - [docs/USER_GUIDE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/USER_GUIDE.md)
 - [docs/MCP_GUIDE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/MCP_GUIDE.md)
@@ -49,8 +47,9 @@ Memory Center precomputes these relationships before the agent starts editing.
 - [docs/CHANGELOG.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/CHANGELOG.md)
 - [docs/RELEASE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/RELEASE.md)
 - [docs/NEXT_PHASE_MASTER_PLAN.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/NEXT_PHASE_MASTER_PLAN.md)
+- [docs/DOCUMENT_CONSTITUTION.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/DOCUMENT_CONSTITUTION.md)
 
-历史规划、执行日志和外部参考演进文档仍保留在 `docs/archive/` 下，但不再作为默认阅读入口；具体见 [docs/README.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/README.md) 和 [docs/DOCS_STATUS.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/DOCS_STATUS.md)。
+历史规划、执行日志和外部参考演进文档仍保留在 `docs/archive/` 下，但不再作为默认阅读入口；具体见 [docs/README.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/README.md) 和 [docs/DOCUMENT_CONSTITUTION.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/DOCUMENT_CONSTITUTION.md)。
 
 ---
 
@@ -185,7 +184,7 @@ Detailed local setup and multi-project workflow / 详细本地初始化与多项
 - [docs/USER_GUIDE.md](./docs/USER_GUIDE.md)
 - [docs/MCP_GUIDE.md](./docs/MCP_GUIDE.md)
 - [docs/SPECS.md](./docs/SPECS.md)
-- [docs/TECHNICAL_GUIDE.md](./docs/TECHNICAL_GUIDE.md)
+- [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)
 - [docs/NEXT_PHASE_MASTER_PLAN.md](./docs/NEXT_PHASE_MASTER_PLAN.md)
 - [docs/archive/ROADMAP.md](./docs/archive/ROADMAP.md)（historical / 历史）
 
@@ -1529,7 +1528,7 @@ Mutation examples: `POST /workspace/asset/register`, `POST /workspace/artifact/u
 ## Documentation Status / 文档状态
 
 - `docs/` 的目录导航首页是 [docs/README.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/README.md)。
-- 当前对外说明以 [docs/DOCS_STATUS.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/DOCS_STATUS.md) 为准。
+- 当前对外说明以 [docs/DOCUMENT_CONSTITUTION.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/DOCUMENT_CONSTITUTION.md) 为准。
 - 当前实现状态、最近改动和版本变化以 [docs/CHANGELOG.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/CHANGELOG.md) 为准。
 - 当前唯一活跃开发路线以 [docs/NEXT_PHASE_MASTER_PLAN.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/NEXT_PHASE_MASTER_PLAN.md) 为准。
 - `docs/archive/ROADMAP.md`、`docs/archive/DELEGATED_EXECUTION_PLAN.md`、`docs/archive/DELEGATED_EXECUTION_LOG.md`、`docs/archive/CBM_INSPIRED_EVOLUTION_PLAN.md` 仅保留为历史背景，不再作为当前版本状态说明。

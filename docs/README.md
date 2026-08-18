@@ -12,12 +12,11 @@ This page is the main entrypoint for the `docs/` directory.
 
 1. [README.md](/Users/cuijiaqi/Ai-common-skills/memory-center/README.md)
 2. [PRODUCT_TECHNICAL_OVERVIEW.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/PRODUCT_TECHNICAL_OVERVIEW.md)
-3. [TECHNICAL_ARCHITECTURE_AND_EVOLUTION.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/TECHNICAL_ARCHITECTURE_AND_EVOLUTION.md)
-4. [ARCHITECTURE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/ARCHITECTURE.md)
-5. [MCP_GUIDE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/MCP_GUIDE.md)
-6. [REFERENCE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/REFERENCE.md)
-7. [CHANGELOG.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/CHANGELOG.md)
-8. [DOCUMENT_CONSTITUTION.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/DOCUMENT_CONSTITUTION.md)
+3. [ARCHITECTURE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/ARCHITECTURE.md)
+4. [MCP_GUIDE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/MCP_GUIDE.md)
+5. [REFERENCE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/REFERENCE.md)
+6. [CHANGELOG.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/CHANGELOG.md)
+7. [DOCUMENT_CONSTITUTION.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/DOCUMENT_CONSTITUTION.md)
 
 ---
 
@@ -35,20 +34,14 @@ This page is the main entrypoint for the `docs/` directory.
   - 命令、路由、参数、字段参考。
 - [PRODUCT_TECHNICAL_OVERVIEW.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/PRODUCT_TECHNICAL_OVERVIEW.md)
   - 面向面试、技术分享和客户沟通的产品定位、技术架构、价值、边界与演示脚本。
-- [TECHNICAL_ARCHITECTURE_AND_EVOLUTION.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/TECHNICAL_ARCHITECTURE_AND_EVOLUTION.md)
-  - 完整技术架构与演进路线，覆盖问题定义、架构、算法、工程治理、性能、安全、生态协同和研究路线。
 ### Architecture And Internals / 架构与内部设计
 
 - [ARCHITECTURE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/ARCHITECTURE.md)
-  - 当前系统分层、数据流、模块边界。
+  - 当前系统分层、数据流、模块边界、设计决策附录和代码导航附录。
 - [SPECS.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/SPECS.md)
   - workspace、schema、公开约束。
 - [ONTOLOGY.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/ONTOLOGY.md)
   - 领域对象与关系语义。
-- [TECHNICAL_GUIDE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/TECHNICAL_GUIDE.md)
-  - 面向维护者的技术实现说明。
-- [UNIFIED_BACKEND_READ_PATHS.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/UNIFIED_BACKEND_READ_PATHS.md)
-  - backend 读路径一致性说明。
 
 ### Delivery And Governance / 发布与治理
 
@@ -58,10 +51,8 @@ This page is the main entrypoint for the `docs/` directory.
   - 发布最小检查清单。
 - [NEXT_PHASE_MASTER_PLAN.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/NEXT_PHASE_MASTER_PLAN.md)
   - 当前唯一活跃开发路线。
-- [DOCS_STATUS.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/DOCS_STATUS.md)
-  - active docs / historical docs 边界与更新规则。
 - [DOCUMENT_CONSTITUTION.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/DOCUMENT_CONSTITUTION.md)
-  - 文档真相层级、生命周期和不可变量。
+  - 文档真相层级、生命周期、不可变量、active/historical 分类和更新规则。
 - [ONTOLOGY_EVOLUTION_PLAN.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/ONTOLOGY_EVOLUTION_PLAN.md)
   - 本体实体、断言、时间、验证和迁移的独立实施计划。
 

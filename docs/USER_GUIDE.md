@@ -711,4 +711,4 @@ memory-center http-route-contract-audit
 - **Audit**: `memory_center.core.audit`
   - `run_completion_audit()`, `record_design_decision()`, `generate_audit_report()`
 
-详见各模块的 docstring 和 [TECHNICAL_GUIDE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/TECHNICAL_GUIDE.md)。
+详见各模块的 docstring 和 [ARCHITECTURE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/ARCHITECTURE.md) 附录 B。

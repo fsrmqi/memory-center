@@ -4,9 +4,9 @@
 >
 > This is the single active development roadmap for Memory Center.
 
-> 文档入口与 active/historical 状态请同时参考 [DOCS_STATUS.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/DOCS_STATUS.md)。
+> 文档入口与 active/historical 状态请同时参考 [DOCUMENT_CONSTITUTION.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/DOCUMENT_CONSTITUTION.md)。
 >
-> Also see [DOCS_STATUS.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/DOCS_STATUS.md) for the current documentation entrypoints and active-vs-historical status.
+> Also see [DOCUMENT_CONSTITUTION.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/DOCUMENT_CONSTITUTION.md) for the current documentation entrypoints and active-vs-historical status.
 
 ---
 
@@ -24,7 +24,6 @@ This file consolidates and replaces the older execution plan, superpowers evolut
 - [docs/ARCHITECTURE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/ARCHITECTURE.md)
 - [docs/MCP_GUIDE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/MCP_GUIDE.md)
 - [docs/REFERENCE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/REFERENCE.md)
-- [docs/TECHNICAL_GUIDE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/TECHNICAL_GUIDE.md)
 - [docs/references/codebase-memory-mcp.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/references/codebase-memory-mcp.md)
 
 ---
@@ -65,6 +64,16 @@ This file consolidates and replaces the older execution plan, superpowers evolut
 ### 已交付：局部 Generation 流式发布（4.3.84）
 
 4.3.84 已将受影响项目图从 Python 全量物化改为 SQLite 内部流式导出，按 manifest 硬链接未影响分片，并在临时库装载完成后统一创建二级索引与 FTS。局部 2-3 项目最多使用 3 个 worker，全量构建保持串行；四个发布子阶段均可观测。相同真实 3 文件负载连续两次约 `8.22s`，较 `10.63s` 基线下降约 `22.6%`，恢复健康预算。该性能工作包不再列入待办。
+
+### 已交付：ADR-0002 内部重构与模块拆分
+
+按 ADR-0002 完成三批内部重构，提升代码可维护性而不改变外部行为：
+
+- `query.py` 拆出 `symbol_ranking.py`（符号排序/去重/噪音抑制）、`guidance.py`（agent 下一步建议）、`contract_filter.py`（契约过滤）；`query.py` 从 2715 行降至 2057 行，只保留公共查询编排。
+- `shared.py` 拆出 `ranking.py`（排序/文本原语）、`session_payloads.py`（事件载荷压缩与 ref 摘要）、`rules.py`（规则加载）；`shared.py` 从 1036 行降至 628 行。
+- CLI 155 个根命令拆至 16 个 `cli/commands/<family>.py` 家族模块；`main.py` 从 2892 行降至约 220 行纯根装配。命令名与调用路径零变更，新增命令面快照测试锚定 159 个命令集合。
+- 发现并统一 `_project_matches` 双实现分叉（以 query 版为准）；删除零消费者的 `core/views` 图谱视图模块（ADR-0003）和 59 个零调用者的 walkthrough 死转发。
+- 全量测试通过，MCP tool schema 无变化。
 
 ### P1：Java Parser / Call Resolver 真实精度深化
 

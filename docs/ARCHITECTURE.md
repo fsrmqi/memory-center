@@ -659,10 +659,16 @@ Each evidence item may additionally expose `evidence_level`: `EXTRACTED`, `INFER
 
 | 模块 | 主要职责 |
 |---|---|
-| `shared.py` | 上下文加载、token/budget、ref offload、排序、共享常量 |
+| `shared.py` | 上下文加载、token/budget、ref offload、共享常量 |
+| `ranking.py` | 排序与文本原语 |
+| `session_payloads.py` | 事件载荷压缩与 ref 摘要 |
+| `rules.py` | 规则加载 |
+| `symbol_ranking.py` | 符号排序、去重与噪音抑制（含 `_project_matches` 唯一实现） |
+| `guidance.py` | agent 下一步建议与 adoption/replay 反馈 |
+| `contract_filter.py` | 契约按查询过滤 |
 | `compact.py` | compact/full 输出裁剪 |
 | `workspace_ops.py` | status、sniff、trace、lookup hint、dashboard、规则/契约检查 |
-| `query.py` | query、symbol、code search、callers/callees、context、contracts、walkthrough |
+| `query.py` | 公共查询编排（辅助簇已拆至上述模块） |
 | `impact.py` | detect changes、impact、plan change、verification checklist |
 | `session.py` | session start/log/end、recent sessions/evidence、case suggestion、close feedback |
 | `resume.py` | resume packet、handoff packet/history、model profile、next actions |
@@ -725,16 +731,16 @@ MCP 还暴露 resources：
 
 ### 9.2 CLI
 
-CLI 命令集中在 `memory_center/cli/main.py`，覆盖：
+CLI 命令按业务域拆至 16 个 `memory_center/cli/commands/<family>.py` 家族模块（setup/retrieval/ops/watcher/change/lookup/walkthrough/write/eval/gate/session/resume/work/audit/bridge/tooling），每个模块暴露 `register_<family>_commands(app)`；`main.py` 只保留根装配。覆盖：
 
-- workspace init / service maintenance
-- reindex / status / sniff / trace
-- query / search-code / symbol / callers / callees / walkthrough
-- impact / contracts / plan / checklist
-- memory write pipeline
-- eval / benchmark / parser / golden / java call resolution
-- session / work-* / handoff / dashboard
-- HTTP serving / hook generation / runtime audit / business flow / metrics
+- workspace init / service maintenance（setup 族）
+- reindex / status / sniff / trace（ops 族）
+- query / search-code / symbol / callers / callees / walkthrough（lookup/walkthrough 族）
+- impact / contracts / plan / checklist（change 族）
+- memory write pipeline（write 族）
+- eval / benchmark / parser / golden / java call resolution（eval 族）
+- session / work-* / handoff / dashboard（session/work/resume 族）
+- HTTP serving / hook generation / runtime audit / business flow / metrics（bridge/tooling/audit 族）
 
 CLI 是维护者和本地脚本最完整的操作面，但核心语义应复用 orchestrator。
 
@@ -874,3 +880,110 @@ Memory Center 默认不改业务源码。写入范围主要限于：
 - 新增测试如果会写 graph / memory / index / benchmark，必须复制 demo workspace 到 `tmp_path` 后操作。
 - `tests/conftest.py` 会在每个测试前后校验受跟踪 demo workspace 的摘要；测试不得绕过该门禁直接写入 `examples/spring-cloud-demo/.memory-center`。
 - MCP tool schema 变化默认 additive；破坏兼容时必须同步 README、CHANGELOG、docs 和测试。
+
+---
+
+## 附录 A：设计决策与选型 / Appendix A: Design Decisions and Selection Rationale
+
+> 本节合并自原 `TECHNICAL_ARCHITECTURE_AND_EVOLUTION.md` 和 `TECHNICAL_GUIDE.md` 的独有内容。原文件已归档至 `docs/archive/`。
+
+### A.1 数据面、控制面与经验面分离
+
+- **数据面**：图节点、图边、倒排/BM25、向量索引。来源可重建，服务查询。
+- **控制面**：索引 generation、暂存发布、刷新任务、策略、断言覆盖、门禁和审计。决定什么数据可以被读取、什么结论可以被提升。
+- **经验面**：任务工件、验证回执、Skill 候选。不能反向篡改静态事实，只能提供有证据的操作建议。
+
+### A.2 自研核心 vs 复用能力
+
+| 自研核心 | 解决的问题 |
+|---|---|
+| Generation 控制面 | 索引失败或刷新中不污染查询结果 |
+| 工程事实图建模 | 让“调用链”和“影响面”可计算、可解释 |
+| 查询规划与证据预算 | 不让语义检索淹没确定事实 |
+| 负向结论契约 | 防止“没有结果”被误解为“绝对不存在” |
+| 证据与治理本体 | 模型建议不会直接升级为工程事实 |
+| Provider Registry 与 EvidenceRef | 外部工具可接入而不破坏边界 |
+| Skill 生命周期 | 经验沉淀从提示词复制升级为可评测能力 |
+
+### A.3 静态分析算法选型
+
+| 问题 | 当前适合的技术 | 何时不该使用 |
+|---|---|---|
+| 文件、类、方法提取 | Tree-sitter AST | 不能用正则替代核心语法事实 |
+| Spring Endpoint/Feign/MQ | 框架语义规则 + AST | 不应把命名相似当作确定调用 |
+| 虚方法和接口调用 | 保守候选集 | 不应在普通查询中跑全仓 points-to |
+| 跨服务调用链 | 端点、Feign、消息、配置图连接 | 缺运行时证据时不能标记为 VERIFIED |
+
+### A.4 检索算法选型矩阵
+
+| 层级 | 当前优选 | 不采用或不作为默认 |
+|---|---|---|
+| 查询意图识别 | 规则优先的轻量分类 | 直接让大模型为每次查询规划 |
+| 精确召回 | 倒排、符号索引、前缀匹配 | 仅依赖 embedding |
+| 文本召回 | SQLite FTS / BM25 | 单纯 n-gram 扫描 |
+| 语义召回 | 选择性 dense + HNSW | 全节点 embedding 和 Python 暴力余弦 |
+| 融合排序 | 硬约束保留 + 可解释权重 | 黑盒学习排序直接覆盖所有结果 |
+| 有限候选精排 | Cross-encoder reranker | 对全库重排 |
+
+### A.5 架构哲学
+
+| 思想 | 工程化落实 |
+|---|---|
+| 本体论 | 显式区分代码实体、任务、会话、断言、验证、决策、策略与行动 |
+| 认识论 | `EXTRACTED / INFERRED / AMBIGUOUS / VERIFIED` 与 `knowledge_state` |
+| 控制论 | 检测/查询 -> 决策 -> 执行 -> 验证 -> 反馈 -> 回滚 闭环 |
+| 有界理性 | 查询预算、候选上限、图深度、热路径隔离、部分成功 |
+| 最小知情 | 脱敏审计、引用而非正文、保留期、受控 argv 执行 |
+
+### A.6 技术选型总表
+
+| 领域 | 首选技术 | 替代条件 |
+|---|---|---|
+| 语法解析 | Tree-sitter | 需要语义级引用时接入 SCIP/LSP |
+| 代码事实 | SQLite 图 + generation | 跨团队高并发和超大图规模 |
+| 文本检索 | FTS / BM25 | 语义表达差异显著时叠加 dense |
+| 语义检索 | 选择性 embedding + HNSW | 候选量很小时可省略 ANN |
+| 图路径 | 有界 BFS | 结构洞和影响传播研究可补充 PPR |
+| 任务编排 | 显式状态机 | 简单只读查询不进入状态机 |
+| 外部协同 | Provider Registry + EvidenceRef | 高成熟生态后接入受限 MCP Client |
+| 评测 | Replay + 真实验证回执 | 没有样本前不做学习排序和自动发布 |
+
+---
+
+## 附录 B：代码导航与主链路 / Appendix B: Code Navigation and Main Chains
+
+### B.1 主链路概览
+
+| 链路 | 步骤 |
+|---|---|
+| 索引链路 | `workspace.yaml` → `reindex_workspace()` → index JSON → `graph.db` → semantic index → SQLite BM25 → optional vectors → instructions/hooks/rules |
+| 任务上下文链路 | `workspace_sniff` → `lookup_hint` → `resolved_task` → `auto_sync_recommendation` → `mc_start` |
+| 连续性链路 | session events → write receipts → recent evidence → resume packet → handoff packet → dashboard |
+| 写入治理链路 | `memory_write_judge` → `memory_plan_write` → `memory_execute_write` → write receipt |
+| Golden Benchmark | `cases.yaml` → `run_golden_suite` → walkthrough/hybrid → anchor/edge extraction → recall/forbidden-hit/latency |
+| 统一后端链路 | 运行记录统一写入 `graph.db` → JSONL/Markdown 按需生成可审查导出 → 高频和低频运行时读取均走 SQLite |
+
+### B.2 实现热点
+
+如果后续优化，最容易碰到的热点：
+
+- `core/indexing/reindex.py`
+- `core/orchestrator/*`（特别是 `query.py`、`shared.py`、`impact.py`）
+- `core/storage/workspace.py`、`core/storage/memory_backend.py`
+- `mcp/server.py`
+- `http/server.py`
+- `hooks/*`
+
+### B.3 高频追问
+
+**“为什么不用纯向量 RAG？”**
+纯向量检索擅长语义相近，但对方法名、接口路径、配置键、消息 topic 和调用方向等工程事实不稳定。Memory Center 用图谱和精确匹配作为确定性底座，向量只是自然语言召回的补充。
+
+**“为什么不用 Neo4j 或云向量数据库？”**
+系统的目标是本地优先、零额外服务、每个 workspace 可独立携带和重建。SQLite 在当前规模下能统一承载关系、全文、运行记录与治理元数据。若未来出现跨团队集中图分析或超大规模并发需求，可以通过稳定的读写契约演进存储实现。
+
+**“如何处理索引不准？”**
+不把静态分析说成绝对真相。每条结论带 evidence level、confidence、generation 和 scope；歧义明确返回 `AMBIGUOUS`；索引过期返回 `STALE`，不会默默掩盖。
+
+**“索引几十 GB 是否合理？”**
+先拆解占用：图边、倒排、向量、历史工件和重复物化的占比不同。静态事实应只保留一个可重建主来源，其他读模型按需派生；向量应选择性覆盖；历史数据要有保留窗口；维护后执行 compact/vacuum。

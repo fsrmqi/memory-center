@@ -2,6 +2,16 @@
 
 ## Unreleased 未发布
 
+### 文档合并与同步更新 / Docs consolidation and sync update
+
+- 将 `TECHNICAL_ARCHITECTURE_AND_EVOLUTION.md` 和 `TECHNICAL_GUIDE.md` 的独有内容合并入 `ARCHITECTURE.md` 附录 A（设计决策与选型）和附录 B（代码导航与主链路）；原文件归档至 `docs/archive/`。
+- 将 `DOCS_STATUS.md` 合并入 `DOCUMENT_CONSTITUTION.md`（新增 active/historical 文档分类、更新规则和推荐阅读顺序）；原文件归档。
+- 删除 `UNIFIED_BACKEND_READ_PATHS.md`（已被 ARCHITECTURE §6 完整覆盖）；原文件归档。
+- 更新 ARCHITECTURE §8 编排层模块表，反映 ADR-0002 拆分后的新模块（`ranking.py`、`session_payloads.py`、`rules.py`、`symbol_ranking.py`、`guidance.py`、`contract_filter.py`）。
+- 更新 ARCHITECTURE §9.2 CLI 章节，反映 155 个命令拆至 16 个 `cli/commands/<family>.py` 家族模块。
+- 更新 NEXT_PHASE_MASTER_PLAN 补充 ADR-0002 内部重构为已交付。
+- 同步更新 README、USER_GUIDE、SPECIAL_NOTES、PRODUCT_TECHNICAL_OVERVIEW 中对已归档文档的引用。
+
 ### 按 ADR-0002 拆分 cli/main.py 命令族 / Split cli/main.py command families per ADR-0002
 
 - 将 155 个根 `app` 命令按业务域拆至 16 个 `cli/commands/<family>.py` 模块（setup/retrieval/ops/watcher/change/lookup/walkthrough/write/eval/gate/session/resume/work/audit/bridge/tooling），每个模块提供 `register_<family>_commands(app)` 保持命令名与路径不变；`main.py` 从 2892 行降至约 220 行，只保留根装配。
