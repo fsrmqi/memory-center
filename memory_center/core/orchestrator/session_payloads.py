@@ -214,4 +214,3 @@ def _classify_case_evidence_ref(ref: dict[str, Any]) -> str:
 
 
 EVENT_PAYLOAD_INLINE_LIMIT = 4000
-LAYER_L0 = "L0_session_events"

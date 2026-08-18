@@ -7,14 +7,14 @@
 - 将 155 个根 `app` 命令按业务域拆至 16 个 `cli/commands/<family>.py` 模块（setup/retrieval/ops/watcher/change/lookup/walkthrough/write/eval/gate/session/resume/work/audit/bridge/tooling），每个模块提供 `register_<family>_commands(app)` 保持命令名与路径不变；`main.py` 从 2892 行降至约 220 行，只保留根装配。
 - 11 个共享 typer.Option 单例拆至 `cli/commands/_options.py`；`_dispatch_walkthrough_cli` 随 walkthrough 族、`_parse_event_payload` 随 session 族迁移；跨族依赖（work 族用 `_parse_event_payload`）以显式 import 处理。
 - 更新 3 个测试文件的 monkeypatch 目标（`cli.main.X` → `cli.commands.setup.X` / `cli.commands.lookup.X`）与后端函数共享断言（改为聚合 `cli.main` + 全部命令族源码）；`python -m memory_center.cli.main` 与 `watcher-run` 子进程入口保持不变。
-- 全量测试通过，CLI 行为零变更（155 根命令 + 4 子组与迁移前完全一致）。
+- 全量测试通过，CLI 行为零变更（155 根命令 + 4 子组的命令名与调用路径与迁移前完全一致；唯一差异：`--help` 中命令的列出顺序按命令族重组）。
 
 ### Split cli/main.py command families per ADR-0002
 
 - Moved all 155 root-`app` commands into 16 `cli/commands/<family>.py` modules (setup/retrieval/ops/watcher/change/lookup/walkthrough/write/eval/gate/session/resume/work/audit/bridge/tooling), each exposing `register_<family>_commands(app)` with command names and paths unchanged; `main.py` drops from 2892 to ~220 lines of pure root assembly.
 - Moved the 11 shared `typer.Option` singletons to `cli/commands/_options.py`; `_dispatch_walkthrough_cli` travels with the walkthrough family and `_parse_event_payload` with the session family; cross-family use (work uses `_parse_event_payload`) is an explicit import.
 - Updated monkeypatch targets in 3 test files (`cli.main.X` → `cli.commands.setup.X` / `cli.commands.lookup.X`) and the backend-function-sharing assertion (now aggregates `cli.main` plus every command-family module); `python -m memory_center.cli.main` and the `watcher-run` subprocess entry point are unchanged.
-- Full suite passing; zero CLI behavior change (155 root commands + 4 sub-groups identical to before).
+- Full suite passing; zero CLI behavior change (command names and invocation paths for the 155 root commands + 4 sub-groups are identical to before; the only difference: the order commands are listed in `--help` is regrouped by command family).
 
 ### 按 ADR-0002 拆分 shared.py / Split shared.py per ADR-0002
 

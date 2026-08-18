@@ -1,8 +1,7 @@
 """符号锚点选择与相似命中的重排、去重、噪音抑制。
 
 从 query.py 按独立职责拆出的检索排序辅助(ADR-0002):纯函数,不持有 workspace 状态。
-注意: shared.py 中存在同名的旧版 _project_matches(缺少连字符查询匹配),行为有差异,
-以本模块版本为准,后续再统一。
+本模块持有 _project_matches 的唯一实现(含连字符查询匹配);shared.py 旧版已在拆分 shared.py 时删除。
 """
 from __future__ import annotations
 
