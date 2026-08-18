@@ -101,7 +101,7 @@ def test_reindex_cli_reports_lock_conflict_without_traceback(tmp_path: Path, mon
     def fake_reindex(*_args, **_kwargs):
         raise ReindexBusyError({"status": "running", "started_at": "2026-01-01T00:00:00Z"}, 15.0)
 
-    monkeypatch.setattr("memory_center.cli.main.reindex_workspace", fake_reindex)
+    monkeypatch.setattr("memory_center.cli.commands.setup.reindex_workspace", fake_reindex)
 
     result = CliRunner().invoke(app, ["reindex", "--workspace", str(workspace), "--lock-timeout", "15"])
 

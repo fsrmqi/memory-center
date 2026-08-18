@@ -749,9 +749,21 @@ class TestBackendFunctionSharing:
     }
 
     def test_cli_uses_shared_backend(self):
+        import importlib
+        import os
+        import pkgutil
+
+        import memory_center.cli.commands as cli_commands
         import memory_center.cli.main as cli_mod
 
         cli_src = inspect.getsource(cli_mod)
+        pkg_dir = os.path.dirname(cli_commands.__file__)
+        for module_info in pkgutil.iter_modules([pkg_dir]):
+            if module_info.name.startswith("_"):
+                continue
+            cli_src += inspect.getsource(
+                importlib.import_module(f"memory_center.cli.commands.{module_info.name}")
+            )
         for cap_name, func_name in self.BACKEND_FUNCTIONS.items():
             assert func_name in cli_src, (
                 f"CLI module does not reference backend function '{func_name}' "

@@ -369,8 +369,8 @@ def test_reindex_cli_defaults_to_parallel(monkeypatch, tmp_path: Path):
     class _FakeConfig:
         root_path = Path(workspace).parent.parent
 
-    monkeypatch.setattr("memory_center.cli.main.load_workspace_config", lambda wf: _FakeConfig())
-    monkeypatch.setattr("memory_center.cli.main.WorkspaceStore", lambda wf: object())
+    monkeypatch.setattr("memory_center.cli.commands.setup.load_workspace_config", lambda wf: _FakeConfig())
+    monkeypatch.setattr("memory_center.cli.commands.setup.WorkspaceStore", lambda wf: object())
 
     def _fake_reindex(config, store, *, projects=None, paths=None, parallel=False):
         observed["projects"] = projects
@@ -378,11 +378,11 @@ def test_reindex_cli_defaults_to_parallel(monkeypatch, tmp_path: Path):
         observed["parallel"] = parallel
         return {"mode": "full"}
 
-    monkeypatch.setattr("memory_center.cli.main.reindex_workspace", _fake_reindex)
-    monkeypatch.setattr("memory_center.cli.main.ensure_default_rules", lambda store: None)
-    monkeypatch.setattr("memory_center.cli.main.ensure_default_hooks", lambda store: None)
-    monkeypatch.setattr("memory_center.cli.main.ensure_default_artifacts", lambda wf: None)
-    monkeypatch.setattr("memory_center.cli.main.write_agent_instructions", lambda store, root: None)
+    monkeypatch.setattr("memory_center.cli.commands.setup.reindex_workspace", _fake_reindex)
+    monkeypatch.setattr("memory_center.cli.commands.setup.ensure_default_rules", lambda store: None)
+    monkeypatch.setattr("memory_center.cli.commands.setup.ensure_default_hooks", lambda store: None)
+    monkeypatch.setattr("memory_center.cli.commands.setup.ensure_default_artifacts", lambda wf: None)
+    monkeypatch.setattr("memory_center.cli.commands.setup.write_agent_instructions", lambda store, root: None)
 
     runner = CliRunner()
     result = runner.invoke(app, ["reindex", "--workspace", workspace])
@@ -398,18 +398,18 @@ def test_reindex_cli_can_disable_parallel(monkeypatch, tmp_path: Path):
     class _FakeConfig:
         root_path = Path(workspace).parent.parent
 
-    monkeypatch.setattr("memory_center.cli.main.load_workspace_config", lambda wf: _FakeConfig())
-    monkeypatch.setattr("memory_center.cli.main.WorkspaceStore", lambda wf: object())
+    monkeypatch.setattr("memory_center.cli.commands.setup.load_workspace_config", lambda wf: _FakeConfig())
+    monkeypatch.setattr("memory_center.cli.commands.setup.WorkspaceStore", lambda wf: object())
 
     def _fake_reindex(config, store, *, projects=None, paths=None, parallel=False):
         observed["parallel"] = parallel
         return {"mode": "full"}
 
-    monkeypatch.setattr("memory_center.cli.main.reindex_workspace", _fake_reindex)
-    monkeypatch.setattr("memory_center.cli.main.ensure_default_rules", lambda store: None)
-    monkeypatch.setattr("memory_center.cli.main.ensure_default_hooks", lambda store: None)
-    monkeypatch.setattr("memory_center.cli.main.ensure_default_artifacts", lambda wf: None)
-    monkeypatch.setattr("memory_center.cli.main.write_agent_instructions", lambda store, root: None)
+    monkeypatch.setattr("memory_center.cli.commands.setup.reindex_workspace", _fake_reindex)
+    monkeypatch.setattr("memory_center.cli.commands.setup.ensure_default_rules", lambda store: None)
+    monkeypatch.setattr("memory_center.cli.commands.setup.ensure_default_hooks", lambda store: None)
+    monkeypatch.setattr("memory_center.cli.commands.setup.ensure_default_artifacts", lambda wf: None)
+    monkeypatch.setattr("memory_center.cli.commands.setup.write_agent_instructions", lambda store, root: None)
 
     runner = CliRunner()
     result = runner.invoke(app, ["reindex", "--workspace", workspace, "--no-parallel"])
@@ -429,7 +429,7 @@ def test_query_cli_forwards_vector_options(monkeypatch, tmp_path: Path):
         observed["project"] = project
         return {"query": query, "matches": [], "retrieval_summary": {}}
 
-    monkeypatch.setattr("memory_center.cli.main.memory_query_hybrid", _fake_query)
+    monkeypatch.setattr("memory_center.cli.commands.lookup.memory_query_hybrid", _fake_query)
     runner = CliRunner()
     result = runner.invoke(
         app,
