@@ -81,7 +81,37 @@ workspace = target / ".memory-center" / "workspace.yaml"
 workspace = "examples/spring-cloud-demo/.memory-center/workspace.yaml"
 ```
 
-### 3.3 修改代码后
+### 3.3 项目运行
+
+```bash
+# 安装（开发环境，可编辑模式）
+pip install -e .
+
+# 或通过安装脚本（pipx 隔离）
+bash install.sh
+```
+
+项目提供 3 个入口：
+
+| 入口 | 命令 | 说明 |
+|---|---|---|
+| CLI | `memory-center <command> --workspace <path>` | 命令行操作（索引、查询、审计等） |
+| MCP | `memory-center-mcp --workspace <path>` | MCP Server，供 AI 宿主调用 |
+| HTTP | `memory-center-http --workspace <path> --port 8765` | HTTP API 服务 |
+
+```bash
+# 常用 CLI 命令
+memory-center doctor --workspace <path>/workspace.yaml --self-test   # 健康检查
+memory-center reindex --workspace <path>/workspace.yaml               # 重建索引
+memory-center query --workspace <path>/workspace.yaml "<keyword>"     # 检索
+
+# Workbench（Web UI）
+cd web && pnpm install && pnpm dev
+```
+
+> 功能验证请使用真实工作空间 `/Users/cuijiaqi/javaworkspace/ucap`，不要用 demo。
+
+### 3.4 修改代码后
 
 ```bash
 # 必须运行
@@ -91,6 +121,8 @@ pytest -q
 # 涉及索引/检索时额外运行
 scripts/verify_real_ucap.sh
 ```
+
+> **验证必须使用真实工作空间**（`/Users/cuijiaqi/javaworkspace/ucap`），不要仅依赖 `examples/spring-cloud-demo` 做功能验证。demo 数据量过小、结构过于简单，无法暴露真实场景下的边界问题（多模块交叉依赖、大量文件、复杂继承链等）。单元测试可用 `tmp_path` 隔离，但功能验证和性能验证必须在真实项目上执行。
 
 ## 4. 测试要求
 
@@ -107,6 +139,7 @@ scripts/verify_real_ucap.sh
 - 所有写入型测试必须使用 `tmp_path`
 - 不要直接引用 `examples/spring-cloud-demo/.memory-center` 做写入
 - 使用 `tests/fixtures.py` 中的 `copy_demo_workspace()` helper
+- **功能验证不要用 demo**：`examples/spring-cloud-demo` 仅用于单元测试 fixture，功能验证和性能验证必须使用真实工作空间 `/Users/cuijiaqi/javaworkspace/ucap`
 
 ### 4.3 命令面快照测试
 
@@ -279,12 +312,12 @@ git diff --check
 
 ### 决策原则
 
-| 情况 | 决策策略 |
-|---|---|
-| 可逆决策 | 快速选择，执行后观察 |
-| 不可逆决策 | 保守选择，符合项目约定 |
+| 情况 | 决策策略                     |
+|---|------------------------------|
+| 可逆决策 | 快速选择，执行后观察         |
+| 不可逆决策 | 保守选择，符合项目约定       |
 | 信息不足 | 选择风险最低的路径，记录假设 |
-| 多个合理选项 | 选择最简单、最易理解的实现 |
+| 多个合理选项 | 选择最合适的实现             |
 
 ---
 
