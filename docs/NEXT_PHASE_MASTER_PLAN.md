@@ -142,6 +142,7 @@ This file consolidates and replaces the older execution plan, superpowers evolut
 ### 外部方案参考边界
 
 - 所有吸收项必须先经过真实工作空间基准和兼容性验证，再进入默认行为或发布门禁。
+- Archify（tt-a1i/archify v2.15）深度调研已完成，见 `docs/ARCHIFY_ABSORPTION_RESEARCH.md`。经代码复核后仅保留两项候选，均由需求证据触发、不预排期：A) wiki 生成的 candidate → validate → atomic replace → keep last-good（触发条件：复现混合 generation 状态）；B) 失败分类附加 code / subject / evidence / supported_fixes 与轮次停止条件（触发条件：真实任务出现乱重试证据）。初版的 delta 回执（无消费方，同 ADR-0003 教训）与 commit SHA 钉住（freshness 的 content_hash 已覆盖且更精确）已撤下。均只做 additive 扩展，不引入 Archify 依赖或渲染器。
 
 ---
 
