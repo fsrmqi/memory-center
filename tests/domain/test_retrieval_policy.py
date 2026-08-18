@@ -538,7 +538,7 @@ def test_hybrid_query_returns_structured_agent_next_steps(demo_workspace_indexed
 
 
 def test_agent_next_steps_prioritize_stale_evidence_before_search() -> None:
-    from memory_center.core.orchestrator.query import _build_agent_next_steps_for_query
+    from memory_center.core.orchestrator.guidance import _build_agent_next_steps_for_query
 
     steps = _build_agent_next_steps_for_query(
         {
@@ -554,7 +554,7 @@ def test_agent_next_steps_prioritize_stale_evidence_before_search() -> None:
 
 
 def test_agent_next_steps_refine_when_query_has_no_evidence() -> None:
-    from memory_center.core.orchestrator.query import _build_agent_next_steps_for_query
+    from memory_center.core.orchestrator.guidance import _build_agent_next_steps_for_query
 
     steps = _build_agent_next_steps_for_query(
         {
@@ -569,7 +569,7 @@ def test_agent_next_steps_refine_when_query_has_no_evidence() -> None:
 
 
 def test_agent_next_steps_validate_semantic_general_hits() -> None:
-    from memory_center.core.orchestrator.query import _build_agent_next_steps_for_query
+    from memory_center.core.orchestrator.guidance import _build_agent_next_steps_for_query
 
     steps = _build_agent_next_steps_for_query(
         {
@@ -586,7 +586,7 @@ def test_agent_next_steps_validate_semantic_general_hits() -> None:
 
 
 def test_agent_next_steps_switch_to_walkthrough_for_method_hits() -> None:
-    from memory_center.core.orchestrator.query import _build_agent_next_steps_for_query
+    from memory_center.core.orchestrator.guidance import _build_agent_next_steps_for_query
 
     steps = _build_agent_next_steps_for_query(
         {
@@ -602,7 +602,7 @@ def test_agent_next_steps_switch_to_walkthrough_for_method_hits() -> None:
 
 def test_agent_next_steps_reinforce_actions_with_low_adoption(tmp_path: Path) -> None:
     from memory_center.core.benchmark.trending import record_agent_guidance_adoption_trend
-    from memory_center.core.orchestrator.query import _build_agent_next_steps_for_query
+    from memory_center.core.orchestrator.guidance import _build_agent_next_steps_for_query
 
     workspace = tmp_path / ".memory-center" / "workspace.yaml"
     workspace.parent.mkdir(parents=True)
@@ -647,7 +647,7 @@ def test_agent_next_steps_reinforce_actions_with_low_adoption(tmp_path: Path) ->
 
 def test_agent_next_steps_reinforce_actions_with_replay_feedback(tmp_path: Path) -> None:
     from memory_center.core.benchmark.trending import record_agent_guidance_replay_trend
-    from memory_center.core.orchestrator.query import _build_agent_next_steps_for_query
+    from memory_center.core.orchestrator.guidance import _build_agent_next_steps_for_query
 
     workspace = tmp_path / ".memory-center" / "workspace.yaml"
     workspace.parent.mkdir(parents=True)
@@ -702,7 +702,7 @@ def test_agent_next_steps_reinforce_actions_with_replay_feedback(tmp_path: Path)
 
 def test_agent_next_steps_replay_feedback_for_unobservable_sessions(tmp_path: Path) -> None:
     from memory_center.core.benchmark.trending import record_agent_guidance_replay_trend
-    from memory_center.core.orchestrator.query import _build_agent_next_steps_for_query
+    from memory_center.core.orchestrator.guidance import _build_agent_next_steps_for_query
 
     workspace = tmp_path / ".memory-center" / "workspace.yaml"
     workspace.parent.mkdir(parents=True)
@@ -753,7 +753,7 @@ def test_agent_next_steps_replay_feedback_for_unobservable_sessions(tmp_path: Pa
 
 def test_agent_next_steps_replay_feedback_for_missing_target_hint(tmp_path: Path) -> None:
     from memory_center.core.benchmark.trending import record_agent_guidance_replay_trend
-    from memory_center.core.orchestrator.query import _build_agent_next_steps_for_query
+    from memory_center.core.orchestrator.guidance import _build_agent_next_steps_for_query
 
     workspace = tmp_path / ".memory-center" / "workspace.yaml"
     workspace.parent.mkdir(parents=True)
@@ -807,7 +807,7 @@ def test_agent_next_steps_replay_feedback_for_missing_target_hint(tmp_path: Path
 
 def test_agent_next_steps_replay_feedback_for_action_mismatch(tmp_path: Path) -> None:
     from memory_center.core.benchmark.trending import record_agent_guidance_replay_trend
-    from memory_center.core.orchestrator.query import _build_agent_next_steps_for_query
+    from memory_center.core.orchestrator.guidance import _build_agent_next_steps_for_query
 
     workspace = tmp_path / ".memory-center" / "workspace.yaml"
     workspace.parent.mkdir(parents=True)
@@ -857,7 +857,7 @@ def test_agent_next_steps_replay_feedback_for_action_mismatch(tmp_path: Path) ->
 
 
 def test_method_level_agent_next_step_keeps_resolved_target_hint() -> None:
-    from memory_center.core.orchestrator.query import _build_agent_next_steps_for_query
+    from memory_center.core.orchestrator.guidance import _build_agent_next_steps_for_query
 
     steps = _build_agent_next_steps_for_query(
         {

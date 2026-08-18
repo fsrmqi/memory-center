@@ -230,7 +230,7 @@ public class DemoService {
         assert intent["prefer_class_symbol"] is True
 
     def test_symbol_rerank_prefers_same_file_contract_and_methods_before_remote_fields(self):
-        from memory_center.core.orchestrator.query import _rerank_symbol_like_matches
+        from memory_center.core.orchestrator.symbol_ranking import _rerank_symbol_like_matches
 
         items = [
             {
@@ -319,7 +319,7 @@ public class DemoService {
         assert [item["node"]["type"] for item in result["matches"][:2]] == ["Class", "FeignClient"]
 
     def test_symbol_display_dedupes_feign_method_and_method_by_same_name(self):
-        from memory_center.core.orchestrator.query import _dedupe_symbol_display_matches
+        from memory_center.core.orchestrator.symbol_ranking import _dedupe_symbol_display_matches
 
         items = [
             {

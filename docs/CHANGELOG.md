@@ -2,6 +2,18 @@
 
 ## Unreleased 未发布
 
+### 按 ADR-0002 拆分 query.py 辅助簇 / Split query.py helper clusters per ADR-0002
+
+- 将符号排序簇（11 个函数 + `_normalize_symbol_name`）拆至 `core/orchestrator/symbol_ranking.py`，agent 下一步建议簇（9 个函数）拆至 `core/orchestrator/guidance.py`，契约过滤簇（3 个函数）拆至 `core/orchestrator/contract_filter.py`；`query.py` 从 2715 行降至 2057 行，只保留公共查询编排。
+- 发现并记录 `_project_matches` 双实现分叉：query.py 版含连字符查询匹配（'open-api' 匹配 'open_api'），shared.py 旧版没有；本次以 query.py 版为准移入 symbol_ranking，shared.py 版暂不动，待后续统一。
+- 5 个测试文件的私有 helper import 改为指向新模块真实位置；行为零变更，全量测试通过。
+
+### Split query.py helper clusters per ADR-0002
+
+- Moved the symbol-ranking cluster (11 functions plus `_normalize_symbol_name`) into `core/orchestrator/symbol_ranking.py`, the agent next-steps cluster (9 functions) into `core/orchestrator/guidance.py`, and the contract-filter cluster (3 functions) into `core/orchestrator/contract_filter.py`; `query.py` drops from 2715 to 2057 lines and keeps only public query orchestration.
+- Discovered and documented a `_project_matches` divergence: the query.py copy supports hyphenated query matching ('open-api' matching 'open_api') while the older shared.py copy does not; this change standardizes on the query.py copy in symbol_ranking and leaves the shared.py copy for a later consolidation.
+- Five test files now import the private helpers from their new homes; zero behavior change, full suite passing.
+
 ### 移除 core/views 图谱视图模块 / Remove core/views graph view module
 
 - 删除无任何生产调用方的 `core/views/builder.py`（`GraphView` / `GraphViewBuilder`）；能力面已被 `mc_onboard` / `mc_domain` / `mc_context_pack` 覆盖，详见 ADR-0003。

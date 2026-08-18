@@ -5,7 +5,7 @@ match type recording, and Feign boost behavior per ONTOLOGY.md §5.6.
 """
 from __future__ import annotations
 
-from memory_center.core.orchestrator.query import _filter_contracts_by_query
+from memory_center.core.orchestrator.contract_filter import _filter_contracts_by_query
 
 # Sample contracts for testing
 FEIGN_CONTRACTS = [

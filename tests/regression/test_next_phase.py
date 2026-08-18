@@ -129,7 +129,7 @@ class TestContracts:
     """Test contract filtering and association logic with confidence scoring."""
 
     def test_filter_contracts_by_query_feign_exact_match(self):
-        from memory_center.core.orchestrator.query import _filter_contracts_by_query
+        from memory_center.core.orchestrator.contract_filter import _filter_contracts_by_query
         contracts = [
             {"interface": "ArticleFeignClient", "project": "svc-a", "methods": []},
             {"interface": "OrderFeignClient", "project": "svc-b", "methods": []},
@@ -142,7 +142,7 @@ class TestContracts:
         assert article[0]["_match_type"] == "interface_exact"
 
     def test_filter_contracts_by_query_feign_method_match(self):
-        from memory_center.core.orchestrator.query import _filter_contracts_by_query
+        from memory_center.core.orchestrator.contract_filter import _filter_contracts_by_query
         contracts = [
             {
                 "interface": "ArticleFeignClient", "project": "svc-a",
@@ -155,7 +155,7 @@ class TestContracts:
         assert result[0]["_match_type"] == "method_exact"
 
     def test_filter_contracts_by_query_feign_token_match(self):
-        from memory_center.core.orchestrator.query import _filter_contracts_by_query
+        from memory_center.core.orchestrator.contract_filter import _filter_contracts_by_query
         contracts = [
             {"interface": "ArticleService", "project": "svc-a", "methods": []},
         ]
@@ -167,7 +167,7 @@ class TestContracts:
         assert result[0]["_match_type"] == "token_match"
 
     def test_filter_contracts_by_query_endpoint(self):
-        from memory_center.core.orchestrator.query import _filter_contracts_by_query
+        from memory_center.core.orchestrator.contract_filter import _filter_contracts_by_query
         contracts = [
             {"path": "/api/users", "controller": "UserController"},
             {"path": "/api/orders", "controller": "OrderController"},
@@ -180,12 +180,12 @@ class TestContracts:
         assert users[0]["_match_type"] == "path_exact"
 
     def test_filter_contracts_by_query_empty(self):
-        from memory_center.core.orchestrator.query import _filter_contracts_by_query
+        from memory_center.core.orchestrator.contract_filter import _filter_contracts_by_query
         result = _filter_contracts_by_query([], "anything", "feign")
         assert result == []
 
     def test_filter_contracts_confidence_ordering(self):
-        from memory_center.core.orchestrator.query import _filter_contracts_by_query
+        from memory_center.core.orchestrator.contract_filter import _filter_contracts_by_query
         contracts = [
             {"interface": "ArticleService", "project": "svc-a", "methods": [
                 {"method_name": "getArticle", "path": "/api/articles"},

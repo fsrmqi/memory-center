@@ -398,7 +398,7 @@ class TestC04_Contracts:
 
     def test_filter_contracts_confidence_scoring(self):
         """_filter_contracts_by_query assigns correct confidence levels."""
-        from memory_center.core.orchestrator.query import _filter_contracts_by_query
+        from memory_center.core.orchestrator.contract_filter import _filter_contracts_by_query
         contracts = [
             {"interface": "OrderFeignClient", "methods": [{"method_name": "getOrder"}], "project": "order"},
             {"interface": "UserFeignClient", "methods": [{"method_name": "getUser"}], "project": "user"},
