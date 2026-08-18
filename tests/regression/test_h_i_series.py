@@ -368,20 +368,12 @@ class TestI01Documentation:
         doc = Path("docs/MCP_GUIDE.md")
         assert doc.exists()
 
-    def test_delegated_execution_plan_exists(self):
-        doc = Path("docs/archive/DELEGATED_EXECUTION_PLAN.md")
-        assert doc.exists()
-
     def test_next_phase_master_plan_exists(self):
         doc = Path("docs/NEXT_PHASE_MASTER_PLAN.md")
         assert doc.exists()
 
     def test_document_constitution_exists(self):
         doc = Path("docs/DOCUMENT_CONSTITUTION.md")
-        assert doc.exists()
-
-    def test_delegated_execution_log_exists(self):
-        doc = Path("docs/archive/DELEGATED_EXECUTION_LOG.md")
         assert doc.exists()
 
     def test_document_constitution_has_release_checklist(self):

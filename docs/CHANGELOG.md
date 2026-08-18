@@ -4,13 +4,20 @@
 
 ### 文档进一步精简 / Docs further consolidation
 
-- 将 `PRODUCT_TECHNICAL_OVERVIEW.md` 归档（内容已被 ARCHITECTURE 覆盖）。
+- 将 `PRODUCT_TECHNICAL_OVERVIEW.md` 的核心内容整合入 ARCHITECTURE 新增附录：
+  - 附录 C：产品定位与核心问题（一句话介绍、五类真实问题、核心思想）
+  - 附录 D：技术选型理由（SQLite、混合检索、generation、部分成功、不训练权重）
+  - 附录 E：用户可感知能力（日常定位、影响分析、长任务、新鲜度、质量治理）
+  - 附录 F：性能设计原则（热路径规则、风险处理策略表）
+  - 附录 G：三种讲法与面试结构（客户/面试/内部分享 + 15 分钟面试结构）
+  - 附录 I：常见问题（8 个 FAQ）
+- 将 `SPECIAL_NOTES.md` 的关键设计决策整合入 ARCHITECTURE 附录 H（10 条常见设计误解）。
 - 将 `SPECS.md` 合并入 `REFERENCE.md` §6（schema、workspace、规则、hooks、记忆目录、Bridge 策略、兼容性）。
 - 将 `ONTOLOGY_EVOLUTION_PLAN.md` 合并入 `ONTOLOGY.md` Part II（演进目标、设计原则、目标本体、交付里程碑、非目标）。
 - 将 `RELEASE.md` 合并入 `DOCUMENT_CONSTITUTION.md`（发布原则、最小清单、对外说明重点）。
 - 将 `docs/README.md` 合并入根 `README.md` 文档导航。
-- 归档 `SPECIAL_NOTES.md`（设计决策已吸收进 ARCHITECTURE 附录）和 `EXTERNAL_ABSORPTION_ISSUES.md`（已完成吸收）。
-- 活跃文档从 12 份降至 8 份：README、ARCHITECTURE、MCP_GUIDE、USER_GUIDE、REFERENCE、ONTOLOGY、CHANGELOG、NEXT_PHASE_MASTER_PLAN、DOCUMENT_CONSTITUTION。
+- 归档 `PRODUCT_TECHNICAL_OVERVIEW.md`、`SPECIAL_NOTES.md`、`EXTERNAL_ABSORPTION_ISSUES.md`、`SPECS.md`、`ONTOLOGY_EVOLUTION_PLAN.md`、`RELEASE.md`、`docs/README.md`。
+- 活跃文档从 12 份降至 8 份；ARCHITECTURE 从 990 行增至 1150 行，内容完整。
 - 同步更新所有活跃文档中对已归档文档的引用。
 
 ### 文档合并与同步更新 / Docs consolidation and sync update

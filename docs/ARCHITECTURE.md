@@ -987,3 +987,164 @@ Memory Center 默认不改业务源码。写入范围主要限于：
 
 **“索引几十 GB 是否合理？”**
 先拆解占用：图边、倒排、向量、历史工件和重复物化的占比不同。静态事实应只保留一个可重建主来源，其他读模型按需派生；向量应选择性覆盖；历史数据要有保留窗口；维护后执行 compact/vacuum。
+
+---
+
+## 附录 C：产品定位与核心问题
+
+### C.1 一句话介绍
+
+Memory Center 是一个面向 AI 编程助手的本地优先项目记忆与代码知识图谱系统。它把多仓、多服务工程中的代码结构、接口契约、调用关系、配置、任务过程和验证证据转成可检索、可解释、可恢复的本地工程上下文，并通过 CLI、MCP、HTTP 和 Workbench 提供给人和 Agent 使用。
+
+它解决的不是“再做一个聊天机器人”，而是让 AI 在复杂工程里不必每次从零阅读代码，也不会把猜测、空结果或未验证经验当成事实。
+
+### C.2 五类真实问题
+
+| 问题 | 常见后果 | Memory Center 的处理方式 |
+|---|---|---|
+| 上下文无法持续 | 每个新会话重复搜索、理解不一致 | Session、Task、Handoff、Resume 构成有界工作记忆 |
+| 跨服务影响不透明 | 改 DTO、Feign、MQ、配置时漏改调用方 | 静态索引把服务、接口、消息和配置关系写入图谱 |
+| 检索不可信 | “没找到”被误读为“没有” | `knowledge_state` 明确 FOUND、NOT_FOUND、UNKNOWN、STALE 等状态 |
+| Agent 行为不可审查 | 无法说明为什么改、是否验证过 | Evidence、Ref、Validation、GateResult、审计事件形成证据链 |
+| 经验会污染 | 模型自评成功后把错误做法固化 | Skill 必须经过候选、灰度、证据观测、发布或回滚 |
+
+### C.3 核心思想
+
+**本地优先**：源码、索引、图谱、任务工件和审计默认落在工作区 `.memory-center/`。系统不要求把业务代码或原始对话上传到中心服务。
+
+**图谱优先**：系统把 `Service`、`File`、`Class`、`Method`、`Endpoint`、`FeignClient`、`MQTopic`、`ConfigKey` 等实体及关系写入 SQLite 图谱。检索既可以按文本召回，也可以沿调用、契约、配置和消息关系展开。
+
+**证据优先**：回答和结论显式区分 `EXTRACTED`、`INFERRED`、`AMBIGUOUS`、`VERIFIED`。空结果只表示当前范围未发现或证据不足，不能自动推导为“工程中不存在”。
+
+**面向 Agent 的任务级接口**：MCP 不暴露几十个底层原子能力，而是聚合为 `mc_start`、`mc_lookup`、`mc_analyze`、`mc_sync`、`mc_resume`、`mc_handoff`、`mc_close` 与 `mc_admin` 等任务级入口。
+
+**可验证的经验演进**：经验不是自动写进知识库。已验证交付先形成候选 Skill，声明适用语言、前置条件、停止条件、输入输出契约和脱敏 replay 策略，再进入 `canary`；发布只统计当前契约下满足 `minimum_verified_passed`（默认 3）的带证据成功观测，且不能有失败。
+
+**外部工具协同**：Memory Center 可以通过受限 MCP Client Bridge 协同已配置的 IDEA MCP、GitNexus MCP 等 HTTP 工具。工作区维护者必须显式白名单 Provider、URL、transport、工具和参数模板；写入操作必须确认。
+
+---
+
+## 附录 D：技术选型理由
+
+**为什么使用 SQLite 图谱？** 本地部署零额外基础设施；图结构、全文检索、运行时记录和治理侧车统一在一个可备份、可迁移的本地事实库中；静态断言从图边按需派生，避免复制大量边到多份存储。
+
+**为什么采用混合检索？** 精确图查询适合符号、接口、消息、配置等确定性问题；BM25 对类名、方法名、配置键、技术术语稳定可靠；可选语义检索弥补自然语言表达差异；排序不会让语义召回覆盖精确事实。
+
+**为什么索引采用 generation 与定向刷新？** 重建先在 staging generation 完成，成功后才原子激活，避免半成品索引被查询到；代码变化时优先定位受影响项目和路径，不把全量扫描放进查询热路径。
+
+**为什么影响分析允许部分成功？** `mc_analyze` 先计算图谱影响，再补充计划、规则、契约和验证清单。后续辅助阶段不可用时，系统保留已成功的证据，返回 `analysis_status="partial"`、安全诊断和下一步动作，而不是用笼统内部异常覆盖全部结果。
+
+**为什么经验演进不训练模型权重？** Memory Center 的定位是外置、可审计、可回滚的工程经验系统，不是训练平台。它不对用户模型做强化学习或无约束自博弈，避免成本、隐私、数据分布和验证不可控的问题。
+
+---
+
+## 附录 E：用户可感知能力
+
+**日常定位**：查符号、代码、调用方、被调用方、方法链路、接口契约和上下文包。对于长链路，可从方法体、Feign、Controller、Service Impl 继续展开。
+
+**变更影响分析**：修改重要 API、DTO、Feign、MQ、配置前调用 `mc_analyze`。它按 `quick`、`standard`、`full` 分层返回影响关系、变更计划、规则、契约检查和验证清单。
+
+**长任务协作与恢复**：通过 `mc_start -> mc_lookup -> mc_analyze -> mc_sync -> mc_close` 建立任务过程。会话中断后，`mc_resume` 和 `mc_handoff` 返回有界恢复包。
+
+**新鲜度与持续索引**：watcher 对源码和配置变更做去抖、定向刷新，生成轻量变化摘要。深度影响分析仍需显式触发。
+
+**质量与治理**：parser 对比、Golden Benchmark、Java 调用解析门禁、检索回放、Token 与延迟趋势、发布门禁。真实工作区缺少样本时会明确标记为缺失。
+
+---
+
+## 附录 F：性能设计原则
+
+1. 查询热路径只读取已发布 generation，不隐式重建索引或下载模型。
+2. 采用有限深度、有限边数、有限候选数和紧凑输出预算，防止大图遍历失控。
+3. 局部刷新、向量维护、社区分析、失败归纳和多轨迹归纳均是显式或后台工作，不阻塞普通 MCP 查询。
+4. 任何优化以真实工作区的 P50/P95、召回、误命中、Token 和验证结果为准，不以宣传指标替代基准。
+
+| 风险 | 处理策略 |
+|---|---|
+| 大图多跳爆炸 | 跳数、边数、节点数、候选数和输出 token 全部受限 |
+| 向量暴力扫描 | 大索引仅允许 sqlite-vec / HNSW；无 ANN 时显式 unavailable |
+| 模型冷启动 | 只用已预热模型；预热中保留基础排序，不等待锁 |
+| 全量重建影响查询 | staging generation + active 原子切换 |
+| 文件变更导致全仓扫描 | watcher 去抖 + project/path scoped partial rebuild |
+| SQLite 写读互相阻塞 | WAL、连接池、短事务、索引锁超时与后台维护 |
+| 大型审计 JSONL 扫描 | 时间/条数保留窗口，超阈值物理压缩移到后台 |
+
+---
+
+## 附录 G：三种讲法与面试结构
+
+### G.1 三种讲法
+
+**面向客户**：“它把企业现有代码仓变成 AI 可安全使用的本地工程知识底座。AI 不再只靠临时搜索，而是基于服务调用、接口、消息、配置和验证证据工作。系统保留在客户环境内，支持追溯、灰度和回滚。”
+
+**面向技术面试**：“这是一个把 RAG、代码图谱、任务记忆和治理闭环结合的本地 Agent 基础设施。难点不在于一次检索，而在于索引新鲜度、事实与推断边界、跨入口一致性、性能热路径和错误经验不污染知识库。”
+
+**面向内部技术分享**：“我们把 Agent 的工程上下文拆成可重建事实、可审查任务工件和可验证经验三层。对所有自动化结论强制附带范围、generation、证据等级和下一步动作，避免‘模型说已经理解了’成为唯一依据。”
+
+### G.2 面试 15 分钟结构
+
+**前两分钟（问题与定位）**：复杂工程里的 Agent 不是缺少大模型能力，而是缺少可持续、可信、低延迟的工程上下文。Memory Center 把代码解析成可重建图谱，把检索限制在已发布索引，把任务过程收敛为证据和门禁。
+
+**第三到第六分钟（核心架构）**：讲四层——索引层负责把源码变成确定性事实；`graph.db`、BM25 和 ANN 负责本地读取；编排层负责 context pack、影响分析、任务恢复和交付状态机；MCP/CLI/HTTP/Workbench 只做适配。强调关键不变量：查询只读 active generation；空结果不等于不存在；Skill 不等于事实；模型命令不等于可执行命令。
+
+**第七到第十分钟（三个最难的技术问题）**：
+
+1. **静态代码图如何避免“边越多越不准”？** Java 调用边保存解析来源和置信度，默认优先高置信边；无法解析时保留 unresolved 证据而非猜测。
+2. **语义检索如何在大索引下保持 P95？** 查询规划控制检索源；精确图和 BM25 优先；dense 只对 selective candidates 建索引；大索引必须走 sqlite-vec 或 HNSW，禁止 Python 暴力余弦扫描。
+3. **索引实时更新如何不拖慢 Agent？** watcher 在后台去抖并做 scoped partial reindex；generation staging 完成后原子激活；查询读 active generation。
+
+**第十一到第十五分钟（可控 Agent 与质量闭环）**：讲任务状态机、argv 验证执行器、`knowledge_state`、`partial` 分析结果和 Skill canary。
+
+---
+
+## 附录 H：常见设计误解
+
+以下行为容易被误解为 bug，但其实是有意的设计取舍。
+
+**H.1 测试必须隔离 workspace**：`examples/spring-cloud-demo/.memory-center` 适合作为 demo 和 fixture 来源，但不适合作为测试写入目标。新增测试必须复制 demo 到 `tmp_path` 后操作，避免 `git status` 变脏和测试间互相污染。
+
+**H.2 CLI/MCP/HTTP 入口必须统一解析 workspace.yaml**：入口接收的是 `workspace.yaml` 路径，但底层图谱存储打开的是 `graph.db`。入口层必须先解析 workspace（`WorkspaceStore(workspace)`），再用 `workspace_store.graph_db_path` 打开图谱，不能直接传 `workspace.yaml` 给 `GraphStore`。
+
+**H.3 `user_prompt_submit` 默认禁用**：这不是 bug，而是产品策略。`UserPromptSubmit` 挂在自然语言输入入口，suggest 型 prompt hook 容易被宿主解释成前置拦截器，导致“继续”“下一步”等普通输入被打断。因此保留 `suggest` 类型定义但默认 `enabled: false`。推荐把自动调用放在生命周期明确的节点（`SessionStart -> mc_start`、`PreToolUse -> mc_analyze`、`Stop -> mc_close`）。
+
+**H.4 `mode` 与 `enabled` 的关系**：`mode` 表示“如果启用，这条 hook 应该怎么执行”；`enabled` 表示“这条 hook 当前是否参与执行”。`enabled: false` + `mode: suggest` 不冲突，表示类型定义是 suggest 但当前不启用。
+
+**H.5 facade 与原子能力并存**：MCP 默认对模型暴露 8 个 facade 工具，CLI/HTTP/core 内部仍保留很多原子能力。这不是重复设计——模型面对 facade 降低工具选择成本，人类维护者和内部实现仍需原子能力做细粒度控制。
+
+**H.6 `async` 标记是宿主配置**：`hooks.yaml` 中 `async: true` 的消费方是宿主（Claude Code / Codex），不是 runner。宿主决定是否在后台运行该 hook；runner 只是一个一次性执行器。
+
+**H.7 影响分析的 `partial` 不等于失败**：`mc_analyze` 返回 `analysis_status="partial"` 时，`impact`、`candidate_paths` 和 `recommended_path` 仍可用。应先验证高置信影响，或用 `depth="quick"` 获取最小影响面；只有 `error=true` 才表示入口级失败。
+
+**H.8 BM25 与 Vector 是两条不同的检索路径**：BM25 默认开启；Vector ANN 默认关闭，需显式启用。VectorIndex 存在不代表当前 workspace 已生成可用 embedding，默认关闭避免在模型、维度和数据质量未确认时增加查询成本。
+
+**H.9 Audit 是语言自适应的**：`run_completion_audit()` 检测测试文件和框架配置时是多语言自适应的（Python/Java/JS/TS/Go/Rust），不会因为项目不是 Python 就扣分。
+
+**H.10 统一错误模型位于公开入口边界**：core 层现有 `ValueError`、`FileNotFoundError` 等调用合同保持兼容；HTTP 映射到状态码和结构化 body；MCP 返回 Agent 可判断的结构化错误；CLI 输出安全错误信息和退出码，不暴露 traceback。
+
+---
+
+## 附录 I：常见问题
+
+**它是否替代 IDE、代码搜索或代码评审？**
+不替代。它为 Agent 和开发者提供结构化上下文、影响面和证据链；逐行阅读、设计决策和代码评审仍由人和现有研发流程负责。
+
+**它是否保证分析结论绝对正确？**
+不保证。系统通过 evidence level、confidence、knowledge state、验证清单和真实基准降低误判，并明确哪些结论仍需要人工验证。
+
+**是否依赖外部向量数据库或云端模型？**
+不依赖。默认可在本地运行；可选启用本地语义模型与 ANN 索引，但它们不改变本地优先和显式降级原则。
+
+**最适合什么场景？**
+多模块 Java/Spring Cloud 工程是当前最成熟场景；系统也支持多语言结构索引。需要跨服务变更、长任务协作、私有部署或高审计要求的团队收益最大。
+
+**为什么不是 Neo4j、Milvus、Kafka 一套分布式架构？**
+目标部署单位是一个本地 workspace，不是中心化在线图服务。SQLite 将图、FTS、运行记录、倒排和向量元数据放入单个可备份事实库，运维成本和数据出域风险更低。
+
+**为什么不只用 ripgrep 和 LLM？**
+`rg` 擅长实时文本定位，但无法稳定表达 Feign 到服务端、MQ 生产消费、配置引用、方法调用置信度和任务验证状态。Memory Center 补的是跨文件、跨服务、跨会话的结构化关系与审计。
+
+**如何评估准确率？**
+针对不同层分别测：parser differential 与 Java call resolution 测抽取正确性；Golden anchor/edge recall 与 forbidden hit 测检索；真实 replay 测任务建议是否被验证；P50/P95、token、partial refresh 成本测性能。
+
+**为什么只允许预注册验证命令？**
+因为模型生成的命令属于不可信输入。允许任意 shell 会把提示注入、误删、环境污染和不可复现都带进交付闭环。argv profile 提供可审查 allowlist。

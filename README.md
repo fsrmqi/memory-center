@@ -46,8 +46,6 @@ Memory Center precomputes these relationships before the agent starts editing.
 - [docs/NEXT_PHASE_MASTER_PLAN.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/NEXT_PHASE_MASTER_PLAN.md) — 开发路线
 - [docs/DOCUMENT_CONSTITUTION.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/DOCUMENT_CONSTITUTION.md) — 文档治理与发布清单
 
-历史文档保留在 `docs/archive/`，不作为默认阅读入口。
-
 ---
 
 ## Core ideas / 核心思想
@@ -182,7 +180,6 @@ Detailed local setup and multi-project workflow / 详细本地初始化与多项
 - [docs/MCP_GUIDE.md](./docs/MCP_GUIDE.md)
 - [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)
 - [docs/NEXT_PHASE_MASTER_PLAN.md](./docs/NEXT_PHASE_MASTER_PLAN.md)
-- [docs/archive/ROADMAP.md](./docs/archive/ROADMAP.md)（historical / 历史）
 
 ---
 
@@ -1526,7 +1523,6 @@ Mutation examples: `POST /workspace/asset/register`, `POST /workspace/artifact/u
 - 当前对外说明以 [docs/DOCUMENT_CONSTITUTION.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/DOCUMENT_CONSTITUTION.md) 为准。
 - 当前实现状态、最近改动和版本变化以 [docs/CHANGELOG.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/CHANGELOG.md) 为准。
 - 当前唯一活跃开发路线以 [docs/NEXT_PHASE_MASTER_PLAN.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/NEXT_PHASE_MASTER_PLAN.md) 为准。
-- `docs/archive/ROADMAP.md`、`docs/archive/DELEGATED_EXECUTION_PLAN.md`、`docs/archive/DELEGATED_EXECUTION_LOG.md`、`docs/archive/CBM_INSPIRED_EVOLUTION_PLAN.md` 仅保留为历史背景，不再作为当前版本状态说明。
 
 ---
 

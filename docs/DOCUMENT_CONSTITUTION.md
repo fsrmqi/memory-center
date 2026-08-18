@@ -60,26 +60,6 @@
 - [NEXT_PHASE_MASTER_PLAN.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/NEXT_PHASE_MASTER_PLAN.md) — 当前唯一活跃的开发路线
 - [ONTOLOGY.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/ONTOLOGY.md) — 轻量本体：领域实体、关系与演进计划
 
-## Historical Docs / 历史文档
-
-这些文档保留是为了追溯背景、设计演进或执行痕迹，不应再被当成“当前主路线”：
-
-- `docs/archive/ROADMAP.md` — 早期路线图摘要
-- `docs/archive/DELEGATED_EXECUTION_PLAN.md` — 阶段性外部协作执行手册
-- `docs/archive/DELEGATED_EXECUTION_LOG.md` — 大体量执行日志
-- `docs/archive/CBM_INSPIRED_EVOLUTION_PLAN.md` — 基于外部项目参考形成的演进草案
-- `docs/archive/TECHNICAL_ARCHITECTURE_AND_EVOLUTION.md` — 已合并入 ARCHITECTURE 附录
-- `docs/archive/TECHNICAL_GUIDE.md` — 已合并入 ARCHITECTURE 附录
-- `docs/archive/UNIFIED_BACKEND_READ_PATHS.md` — 已合并入 ARCHITECTURE §6
-- `docs/archive/DOCS_STATUS.md` — 已合并入本文档
-- `docs/archive/PRODUCT_TECHNICAL_OVERVIEW.md` — 已合并入 ARCHITECTURE
-- `docs/archive/SPECIAL_NOTES.md` — 设计决策说明，已吸收进 ARCHITECTURE 附录
-- `docs/archive/EXTERNAL_ABSORPTION_ISSUES.md` — 外部能力吸收归档
-- `docs/archive/RELEASE.md` — 已合并入本文档
-- `docs/archive/SPECS.md` — 已合并入 REFERENCE §6
-- `docs/archive/ONTOLOGY_EVOLUTION_PLAN.md` — 已合并入 ONTOLOGY Part II
-- `docs/archive/DOCS_README.md` — 已合并入根 README
-
 ## 更新规则
 
 当实现发生变化时，默认更新顺序：
