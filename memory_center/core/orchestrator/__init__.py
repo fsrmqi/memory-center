@@ -79,6 +79,13 @@ from .query import (
     memory_walkthrough_health,
 )
 
+# --- common utilities (re-exported for convenience) ---
+# --- private helpers needed by tests ---
+from .ranking import (
+    rank_files,
+    tokenize,
+)
+
 # --- resume and handoff ---
 from .resume import (
     workspace_handoff_history,
@@ -90,6 +97,7 @@ from .resume import (
     workspace_unresolved_items,
 )
 from .resume_check import workspace_task_resume_check
+from .rules import _score_threshold_for_sync_mode
 
 # --- session lifecycle ---
 from .session import (
@@ -103,11 +111,8 @@ from .session import (
     workspace_start_session,
     workspace_suggest_case,
 )
-
-# --- common utilities (re-exported for convenience) ---
-# --- private helpers needed by tests ---
+from .session_payloads import EVENT_PAYLOAD_INLINE_LIMIT
 from .shared import (
-    EVENT_PAYLOAD_INLINE_LIMIT,
     LAYER_L0,
     LAYER_L1,
     LAYER_L2,
@@ -124,12 +129,9 @@ from .shared import (
     TOOL_WORKSPACE_SYNC_SNIFF_ARTIFACTS,
     _build_sniff_auto_sync_recommendation,
     _case_risk_level,
-    _score_threshold_for_sync_mode,
     _sniff_risk_level,
     load_context,
     preferred_edge_types,
-    rank_files,
-    tokenize,
 )
 
 # --- artifact sync ---

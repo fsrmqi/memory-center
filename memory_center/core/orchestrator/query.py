@@ -26,21 +26,23 @@ from ..walkthrough import operations as _walkthrough_operations
 from .compact import _measure_compact_gain
 from .contract_filter import _filter_contracts_by_query
 from .guidance import _build_agent_next_steps_for_query, _build_agent_next_steps_for_walkthrough
+from .ranking import (
+    _best_match,
+    _rrf,
+    _symbol_search_text,
+    tokenize,
+)
+from .session_payloads import _event_payload
 from .shared import (
     SESSION_EVENTS_FILE,
-    _best_match,
     _budget_limits,
     _build_progressive_levels,
-    _event_payload,
     _filter_call_edges,
     _is_compact_view,
     _resolve_memory_ref,
-    _rrf,
-    _symbol_search_text,
     load_context,
     preferred_edge_types,
     summarize_chain_edges,
-    tokenize,
 )
 from .symbol_ranking import (
     _dedupe_symbol_display_matches,

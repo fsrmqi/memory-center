@@ -36,6 +36,10 @@ from .compact import (
     _measure_compact_gain,
 )
 from .query import memory_callees, memory_callers, memory_tool_usage_report
+from .ranking import (
+    rank_files,
+    tokenize,
+)
 from .session import workspace_recent_evidence
 from .shared import (
     LAYER_L0,
@@ -51,8 +55,6 @@ from .shared import (
     _sniff_risk_level,
     _trim_summary,
     load_context,
-    rank_files,
-    tokenize,
 )
 from .write import memory_write_judge, workspace_write_receipts
 

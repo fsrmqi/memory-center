@@ -9,6 +9,10 @@ from memory_center.core.foundation.schemas import with_schema
 from ..tasks.artifacts import update_artifact
 from ..tasks.receipts import build_write_receipt, persist_write_receipt, query_write_receipts
 from ..tasks.timeline import timeline_query
+from .rules import (
+    _choose_l3_artifact_name,
+    _load_write_policy_rules,
+)
 from .session import (
     workspace_log_session_event,
     workspace_suggest_case,
@@ -26,8 +30,6 @@ from .shared import (
     TOOL_WORKSPACE_SUGGEST_CASE,
     TOOL_WORKSPACE_SYNC_CASE_ARTIFACTS,
     TOOL_WORKSPACE_SYNC_SNIFF_ARTIFACTS,
-    _choose_l3_artifact_name,
-    _load_write_policy_rules,
     load_context,
 )
 

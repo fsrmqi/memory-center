@@ -2,25 +2,21 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
 from memory_center.core.governance.rules import (
     DEFAULT_AUTO_SYNC_RULES,
-    DEFAULT_EVAL_RULES,
-    DEFAULT_HANDOFF_RULES,
-    DEFAULT_RESUME_RULES,
-    DEFAULT_WRITE_POLICY_RULES,
-    load_yaml_rule_config,
 )
 from memory_center.core.storage.workspace import WorkspaceStore
 from memory_center.core.workspace.config import load_workspace_config
 
+from .rules import _load_auto_sync_rules
+from .session_payloads import _classify_case_evidence_ref, _event_payload, _summarize_ref
+
 SESSION_EVENTS_FILE = "session-events.jsonl"
 SESSION_SUMMARIES_FILE = "session-summaries.jsonl"
-EVENT_PAYLOAD_INLINE_LIMIT = 4000
 LAYER_L0 = "L0_session_events"
 LAYER_L1 = "L1_case_atoms"
 LAYER_L2 = "L2_task_spaces"
@@ -141,19 +137,6 @@ def _normalize_model_name(model_name: str) -> str:
     return "generic-mcp-agent"
 
 
-def _summarize_ref(ref: dict[str, Any]) -> str:
-    parts = [
-        str(ref.get("tool_name", "") or ""),
-        str(ref.get("query", "") or ref.get("target", "") or ref.get("name", "") or ref.get("task", "") or ""),
-        str(ref.get("file_path", "") or ref.get("path", "") or ""),
-        str(ref.get("payload_ref", "") or ref.get("receipt_ref", "") or ""),
-    ]
-    text = " | ".join(part for part in parts if part).strip()
-    if not text:
-        text = str(ref.get("type", "") or ref.get("event_type", "") or ref.get("source", "") or "ref")
-    return text[:140]
-
-
 def _trim_summary(text: str, limit: int = 220) -> str:
     normalized = " ".join(text.split())
     if len(normalized) <= limit:
@@ -166,239 +149,6 @@ def _render_ref_label(ref: dict[str, Any]) -> str:
         str(ref.get("summary", "") or "")
         or str(ref.get("name", "") or ref.get("task", "") or ref.get("query", "") or ref.get("target", "") or ref.get("file_path", "") or ref.get("path", "") or ref.get("payload_ref", "") or ref.get("ref_id", "") or "ref")
     )
-
-
-def _choose_l3_artifact_name(text: str) -> str:
-    normalized = (text or "").lower()
-    if any(k in normalized for k in ["团队", "协作", "code review", "评审", "规范", "rules", "约定"]):
-        return "team_rules"
-    if any(k in normalized for k in ["架构", "invariant", "分层", "模块边界", "边界", "design principle"]):
-        return "architecture_invariants"
-    if any(k in normalized for k in ["迁移", "migration", "cutover", "灰度", "兼容期"]):
-        return "active_migration_policy"
-    return "workspace_profile"
-
-
-def _score_threshold_for_sync_mode(auto_sync_mode: str) -> int:
-    mode = (auto_sync_mode or "balanced").strip().lower()
-    if mode == "safe":
-        mode = "strict"
-    if mode == "strict":
-        return 4
-    if mode == "aggressive":
-        return 1
-    return 3
-
-
-def _load_resume_rules(store: WorkspaceStore, text: str) -> dict[str, Any]:
-    data = load_yaml_rule_config(store, "resume-rules.yaml", DEFAULT_RESUME_RULES)
-    default = dict(DEFAULT_RESUME_RULES.get("default", {}))
-    default.update(data.get("default", {}))
-    normalized = (text or "").lower()
-    for profile_name, profile in (data.get("profiles", {}) or {}).items():
-        triggers = [str(item).lower() for item in profile.get("trigger_keywords", [])]
-        if triggers and any(re.search(rf'\b{re.escape(token)}\b', normalized) for token in triggers):
-            merged = dict(default)
-            merged.update(profile)
-            merged["profile_name"] = profile_name
-            return merged
-    default["profile_name"] = "default"
-    return default
-
-
-def _load_handoff_rules(store: WorkspaceStore, normalized_model: str) -> dict[str, Any]:
-    data = load_yaml_rule_config(store, "handoff-rules.yaml", DEFAULT_HANDOFF_RULES)
-    default = dict(DEFAULT_HANDOFF_RULES.get("default", {}))
-    default.update(data.get("default", {}))
-    for profile_name, profile in (data.get("profiles", {}) or {}).items():
-        trigger_models = [str(item).lower() for item in profile.get("trigger_models", [])]
-        if trigger_models and normalized_model in trigger_models:
-            merged = dict(default)
-            merged.update(profile)
-            merged["profile_name"] = profile_name
-            return merged
-    default["profile_name"] = "default"
-    return default
-
-
-def _load_write_policy_rules(store: WorkspaceStore) -> dict[str, Any]:
-    return load_yaml_rule_config(store, "write-policy-rules.yaml", DEFAULT_WRITE_POLICY_RULES).get("default", {})
-
-
-def _load_auto_sync_rules(store: WorkspaceStore) -> dict[str, Any]:
-    return load_yaml_rule_config(store, "auto-sync-rules.yaml", DEFAULT_AUTO_SYNC_RULES).get("default", {})
-
-
-def _load_eval_rules(store: WorkspaceStore) -> dict[str, Any]:
-    return load_yaml_rule_config(store, "eval-rules.yaml", DEFAULT_EVAL_RULES)
-
-
-def _event_payload(event: dict[str, Any]) -> dict[str, Any]:
-    payload = event.get("payload", {})
-    return payload if isinstance(payload, dict) else {}
-
-
-def _prepare_session_event_payload(
-    store: WorkspaceStore,
-    session_id: str,
-    event_type: str,
-    payload: dict[str, Any],
-) -> tuple[dict[str, Any], str, int]:
-    safe_payload = payload if isinstance(payload, dict) else {}
-    payload_bytes = len(json.dumps(safe_payload, ensure_ascii=False).encode("utf-8"))
-    if payload_bytes <= EVENT_PAYLOAD_INLINE_LIMIT:
-        return safe_payload, "", payload_bytes
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
-    ref_name = f"refs/sessions/{session_id}/{timestamp}-{event_type}.json"
-    payload_ref = store.write_memory_ref_json(ref_name, safe_payload)
-    compact = _compact_session_payload(safe_payload)
-    compact["_payload_offloaded"] = True
-    compact["_payload_ref"] = payload_ref
-    compact["_payload_keys"] = sorted(safe_payload.keys())[:20]
-    compact["_payload_bytes"] = payload_bytes
-    return compact, payload_ref, payload_bytes
-
-
-def _compact_session_payload(payload: dict[str, Any]) -> dict[str, Any]:
-    # Try tool-specific compressor first; fall back to generic extraction
-    tool_name = str(payload.get("tool_name", "") or "").lower()
-    compressed = _compact_tool_payload(payload, tool_name)
-    if compressed:
-        return compressed
-    # Generic fallback: extract preferred keys
-    compact: dict[str, Any] = {}
-    preferred_keys = [
-        "tool_name", "query", "target", "name", "project", "file", "file_path", "path",
-        "intent", "outcome", "text", "summary", "note",
-    ]
-    for key in preferred_keys:
-        value = payload.get(key)
-        if isinstance(value, str) and value:
-            compact[key] = value[:300]
-        elif isinstance(value, (int, float, bool)):
-            compact[key] = value
-    if "verified_by" in payload and isinstance(payload.get("verified_by"), list):
-        compact["verified_by"] = payload.get("verified_by", [])[:10]
-    return compact
-
-
-def _compact_tool_payload(payload: dict[str, Any], tool_name: str) -> dict[str, Any] | None:
-    """Tool-specific payload compressor, inspired by rtk's per-command compression strategies.
-
-    Returns None if no specialized compressor matches, causing fallback to generic extraction.
-    """
-    text = json.dumps(payload, ensure_ascii=False).lower()
-
-    # Strategy: Stats Extraction — git status / git diff
-    if tool_name in {"git", "bash"} and ("git status" in text or "git diff" in text):
-        return _compact_git_stats(payload)
-
-    # Strategy: Failure Focus — pytest / cargo test / go test
-    if any(marker in tool_name for marker in ["pytest", "test", "vitest", "cargo"]):
-        return _compact_test_result(payload)
-
-    # Strategy: Grouping by Pattern — grep / rg / search
-    if any(marker in tool_name for marker in ["grep", "rg", "search", "find"]):
-        return _compact_search_result(payload)
-
-    return None
-
-
-def _compact_git_stats(payload: dict[str, Any]) -> dict[str, Any]:
-    """Stats Extraction for git commands: keep only summary counts."""
-    compact = {"tool_name": payload.get("tool_name", ""), "command": "git"}
-    # Try to extract common git fields
-    for key in ["branch", "ahead", "behind", "staged", "unstaged", "untracked", "insertions", "deletions", "files_changed", "conflicts"]:
-        value = payload.get(key)
-        if value is not None:
-            compact[key] = value
-    # If raw output exists, try to extract a short summary
-    output = str(payload.get("output", "") or payload.get("stdout", "") or "")
-    if output and len(output) > 200:
-        compact["output_summary"] = output[:200]
-    return compact
-
-
-def _compact_test_result(payload: dict[str, Any]) -> dict[str, Any]:
-    """Failure Focus for test commands: keep only failures + totals."""
-    compact = {"tool_name": payload.get("tool_name", "")}
-    # Extract test result summary fields
-    for key in ["passed", "failed", "errors", "skipped", "total", "test_count", "failure_count", "duration", "exit_code", "status"]:
-        value = payload.get(key)
-        if value is not None:
-            compact[key] = value
-    # Keep failed test names only (truncate list)
-    failed_names = payload.get("failed_tests", payload.get("failures", []))
-    if isinstance(failed_names, list) and failed_names:
-        compact["failed_tests"] = [str(n)[:80] for n in failed_names[:8]]
-    return compact
-
-
-def _compact_search_result(payload: dict[str, Any]) -> dict[str, Any]:
-    """Grouping by Pattern for search commands: keep counts + top matches."""
-    compact = {"tool_name": payload.get("tool_name", ""), "query": str(payload.get("query", "") or payload.get("pattern", "") or "")[:120]}
-    # Extract count fields
-    for key in ["total_matches", "match_count", "file_count", "count"]:
-        value = payload.get(key)
-        if value is not None:
-            compact[key] = value
-    # Keep top matches grouped by file
-    matches = payload.get("matches", payload.get("results", []))
-    if isinstance(matches, list) and matches:
-        files: dict[str, int] = {}
-        for m in matches[:20]:
-            f = str(m.get("file", m.get("path", "")) or "")[:60]
-            if f:
-                files[f] = files.get(f, 0) + 1
-        if files:
-            compact["files_with_matches"] = dict(sorted(files.items(), key=lambda kv: -kv[1])[:5])
-    return compact
-
-
-def _build_case_evidence_refs(events: list[dict[str, Any]], limit: int = 12) -> list[dict[str, Any]]:
-    refs: list[dict[str, Any]] = []
-    for idx, event in enumerate(events[-limit:], start=max(len(events) - limit, 0) + 1):
-        payload = _event_payload(event)
-        ref = {
-            "ref_id": f"ev:{event.get('session_id', '')}:{event.get('event_type', '')}:{idx}",
-            "event_index": idx,
-            "event_type": event.get("event_type", ""),
-            "created_at": event.get("created_at", ""),
-        }
-        payload_ref = event.get("payload_ref", "")
-        if isinstance(payload_ref, str) and payload_ref:
-            ref["payload_ref"] = payload_ref
-        for key in ["tool_name", "query", "target", "name", "project", "file_path", "path"]:
-            value = payload.get(key)
-            if isinstance(value, str) and value:
-                ref[key] = value
-        ref["summary"] = _summarize_ref(ref)
-        refs.append(ref)
-    return refs
-
-
-def _build_event_source_refs(events: list[dict[str, Any]], limit: int = 20) -> list[dict[str, Any]]:
-    refs: list[dict[str, Any]] = []
-    for idx, event in enumerate(events[-limit:], start=max(len(events) - limit, 0) + 1):
-        payload = _event_payload(event)
-        event_type = str(event.get("event_type", "") or "")
-        payload_ref = str(event.get("payload_ref", "") or "")
-        entry = {
-            "ref_id": f"src:{event.get('session_id', '')}:{event_type}:{idx}",
-            "type": "session_event",
-            "event_type": event_type,
-            "created_at": event.get("created_at", ""),
-        }
-        for key in ["tool_name", "query", "target", "project", "file_path", "path"]:
-            value = payload.get(key)
-            if isinstance(value, str) and value:
-                entry[key] = value
-        if payload_ref:
-            entry["payload_ref"] = payload_ref
-        if len(entry) > 3:
-            entry["summary"] = _summarize_ref(entry)
-            refs.append(entry)
-    return refs
 
 
 def _build_sniff_source_refs(
@@ -541,67 +291,6 @@ def _build_sniff_auto_sync_recommendation(
     if candidates:
         recommendation["fallback"] = "可优先检查 task_candidates[0] 的 match_reasons，再决定是否同步。"
     return recommendation
-
-
-def _best_match(matches: list[dict[str, Any]], query: str = "") -> dict[str, Any]:
-    if not matches:
-        return {}
-    q = (query or "").lower()
-
-    def key(item: dict[str, Any]):
-        name = (item.get("name") or "").lower()
-        exact = 0 if name == q or name.endswith("." + q) else 1
-        return (exact, _node_type_priority(item.get("type")), len(item.get("id", "")))
-
-    return sorted(matches, key=key)[0]
-
-
-def _project_matches(query_project: str, item_project: str) -> bool:
-    """Check if a project query matches an item's project name.
-
-    Uses normalized matching: splits on '-' and '_', then checks if the
-    query matches the full name, any component (>=4 chars), or a concatenation
-    of adjacent components.  Short components like ``api``/``back``/``web`` are
-    too generic to match alone — they must match the full name or a
-    concatenated segment.
-    """
-    if not query_project or not item_project:
-        return False
-    q = query_project.lower().strip()
-    p = item_project.lower().strip()
-    if q == p:
-        return True
-    generic = {
-        "api", "app", "web", "back", "front", "open", "cloud", "core",
-        "base", "common", "service", "biz", "lib", "sdk", "data",
-        "test", "main", "src", "res", "config", "util", "utils",
-    }
-    p_parts = p.replace("-", "_").split("_")
-    if q in p_parts and q not in generic:
-        return True
-    for i in range(len(p_parts)):
-        for j in range(i + 2, min(i + 5, len(p_parts) + 1)):
-            if "".join(p_parts[i:j]) == q:
-                return True
-    if "-" in q:
-        q_parts = q.replace("-", "_").split("_")
-        for i in range(len(p_parts)):
-            if p_parts[i:i + len(q_parts)] == q_parts:
-                return True
-    return False
-
-
-def _node_type_priority(node_type: str = "") -> int:
-    priority = {
-        "Class": 0, "FeignClient": 1, "FeignMethod": 2, "Method": 3,
-        "Field": 4, "Endpoint": 5, "MQTopic": 6, "MQConsumer": 7,
-        "ConfigKey": 8, "File": 20,
-    }
-    return priority.get(node_type, 10)
-
-
-def _rrf(rank: int, k: int = 60) -> float:
-    return 1.0 / (k + rank)
 
 
 _INBOUND_PREFERRED = {"CALLS_METHOD", "CALLS_SERVICE", "IMPLEMENTS_FEIGN", "CONSUMES_TOPIC", "READS_FIELD", "READS_CONFIG", "INJECTS_BEAN", "IMPORTS"}
@@ -873,27 +562,6 @@ def _case_risk_profile(case: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _classify_case_evidence_ref(ref: dict[str, Any]) -> str:
-    haystack = json.dumps(ref, ensure_ascii=False).lower()
-    tool_name = str(ref.get("tool_name", "")).lower()
-    event_type = str(ref.get("event_type", "")).lower()
-    if any(mark in tool_name for mark in ["check_contract", "contract"]) or any(mark in haystack for mark in ["feign", "contract", "endpoint"]):
-        return "contract"
-    if any(mark in haystack for mark in ["kafka", "rocketmq", "mq", "topic", "consumer"]):
-        return "mq"
-    if any(mark in haystack for mark in ["dto", "request", "response", "field"]):
-        return "dto"
-    if any(mark in haystack for mark in ["application.yml", "bootstrap.yml", "config", "nacos"]):
-        return "config"
-    if any(mark in tool_name for mark in ["impact", "plan_change"]):
-        return "impact"
-    if "tool_call" in event_type and any(mark in haystack for mark in ["service", "client"]):
-        return "cross_service"
-    if any(mark in tool_name for mark in ["symbol", "query", "context", "callers", "callees"]):
-        return "symbol"
-    return "other"
-
-
 def _merge_artifact_section(existing: str, section_title: str, body: str) -> str:
     marker = f"## {section_title}"
     replacement = f"{marker}\n\n{body.strip()}\n"
@@ -958,79 +626,3 @@ def _sniff_risk_level(
     return "low"
 
 
-def tokenize(text: str) -> list[str]:
-    from memory_center.core.foundation.text import base_tokenize
-
-    words = base_tokenize(text)
-    for token in ["kafka", "rocketmq", "feign", "controller", "oldpubtime", "newpubtime", "es", "mongo", "redis", "nacos"]:
-        if token in text.lower() and token not in words:
-            words.append(token)
-    return sorted(set(words))
-
-
-def rank_files(file_index: list[dict], symbols: list[dict], keywords: list[str]) -> list[dict]:
-    symbol_entries = {}
-    for s in symbols:
-        symbol_entries.setdefault(s["file"], []).append(s)
-    ranked = []
-    for item in file_index:
-        path = item.get("path", "")
-        file_syms = symbol_entries.get(path, [])
-        haystack = f"{path} {_symbol_search_text(file_syms)}".lower()
-        score = sum(1 for k in keywords if k in haystack)
-        if any(mark in path for mark in ["Consumer", "Listener", "Feign", "Controller", "Service", "Repository", "Mapper"]):
-            score += 1
-        if score > 0:
-            ranked.append({**item, "score": score, "symbols": file_syms})
-    ranked.sort(key=lambda x: x["score"], reverse=True)
-    return ranked
-
-
-def _symbol_search_text(symbols: list[dict[str, Any]]) -> str:
-    """Return the bounded, query-relevant surface of one file's symbols.
-
-    Sniff and code search used to serialize every symbol payload for every file.
-    On a large Java workspace that repeatedly encoded method-call and DTO detail
-    that neither route returns, multiplying CPU and peak memory for each MCP
-    process. Keep structural and callable names, which are the searchable
-    contract for these routes, and leave detailed evidence to symbol/context
-    lookup after a file is selected.
-    """
-    parts: list[str] = []
-    for symbol in symbols:
-        for field in ("project", "file", "package"):
-            value = str(symbol.get(field, "") or "")
-            if value:
-                parts.append(value)
-        for field in ("classes", "interfaces", "methods", "fields", "annotations", "imports", "config_usages", "data_resources"):
-            value = symbol.get(field, []) or []
-            if isinstance(value, dict):
-                parts.extend(_searchable_symbol_value(key, item) for key, item in value.items())
-            elif isinstance(value, list):
-                parts.extend(_searchable_symbol_value(item) for item in value)
-        for call in (symbol.get("method_calls", []) or []):
-            if not isinstance(call, dict):
-                continue
-            parts.extend(
-                str(call.get(field, "") or "")
-                for field in ("owner_method", "method_name", "receiver", "receiver_type")
-            )
-    return " ".join(parts)
-
-
-def _searchable_symbol_value(key: object, value: object = "") -> str:
-    """Extract names from structured symbol fields without serializing payloads."""
-    if isinstance(value, dict):
-        parts = [str(key)]
-        for field in ("name", "class_name", "method_name", "field_name", "type", "owner", "package", "path"):
-            item = value.get(field, "")
-            if isinstance(item, (str, int, float)) and item:
-                parts.append(str(item))
-        return " ".join(parts)
-    if isinstance(key, dict):
-        return _searchable_symbol_value("", key)
-    if isinstance(value, (str, int, float)):
-        return f"{key} {value}".strip()
-    if isinstance(key, (str, int, float)):
-        return str(key)
-    return ""

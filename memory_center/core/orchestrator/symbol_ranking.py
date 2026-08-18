@@ -9,7 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from .shared import _node_type_priority
+from .ranking import _node_type_priority
 
 
 def _normalize_symbol_name(name: str) -> str:

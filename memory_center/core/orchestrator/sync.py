@@ -12,6 +12,10 @@ from ..tasks.artifacts import (
     update_task_current_summary_snapshot,
 )
 from ..tasks.receipts import build_write_receipt
+from .rules import (
+    _load_auto_sync_rules,
+    _score_threshold_for_sync_mode,
+)
 from .shared import (
     LAYER_L2,
     TOOL_WORKSPACE_SYNC_CASE_ARTIFACTS,
@@ -19,10 +23,8 @@ from .shared import (
     _build_sniff_auto_sync_recommendation,
     _case_risk_level,
     _case_risk_profile,
-    _load_auto_sync_rules,
     _merge_artifact_section,
     _render_ref_label,
-    _score_threshold_for_sync_mode,
     load_context,
 )
 

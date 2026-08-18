@@ -9,7 +9,7 @@ import json
 from memory_center.core.assessment.quality import evidence_level_for
 from memory_center.core.knowledge.ontology import EntityValidator
 
-from .shared import tokenize
+from .ranking import tokenize
 
 
 def _filter_contracts_by_query(contracts: list, query: str, intent: str) -> list:

@@ -17,12 +17,14 @@ from .query import (
     memory_query_hybrid,
     memory_symbol,
 )
+from .ranking import (
+    _rrf,
+    tokenize,
+)
 from .shared import (
     _build_progressive_levels,
-    _rrf,
     _unknown_static_analysis_risks,
     load_context,
-    tokenize,
 )
 
 

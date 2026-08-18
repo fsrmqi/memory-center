@@ -16,6 +16,11 @@ from ..tasks.artifacts import get_task_artifact, list_task_spaces
 from ..tasks.timeline import timeline_query
 from .compact import _compact_handoff_packet, _compact_resume_packet, _measure_compact_gain
 from .query import memory_query_hybrid
+from .ranking import tokenize
+from .rules import (
+    _load_handoff_rules,
+    _load_resume_rules,
+)
 from .session import workspace_recent_evidence
 from .shared import (
     LAYER_L0,
@@ -27,12 +32,9 @@ from .shared import (
     TOOL_WORKSPACE_SYNC_CASE_ARTIFACTS,
     TOOL_WORKSPACE_SYNC_SNIFF_ARTIFACTS,
     _is_compact_view,
-    _load_handoff_rules,
-    _load_resume_rules,
     _normalize_model_name,
     _suggest_resume_context,
     load_context,
-    tokenize,
 )
 
 

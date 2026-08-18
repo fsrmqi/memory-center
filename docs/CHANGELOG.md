@@ -2,6 +2,20 @@
 
 ## Unreleased 未发布
 
+### 按 ADR-0002 拆分 shared.py / Split shared.py per ADR-0002
+
+- 将排序/文本原语（7 个函数）拆至 `core/orchestrator/ranking.py`，会话事件载荷压缩与 ref 摘要（12 个符号）拆至 `core/orchestrator/session_payloads.py`，规则加载（7 个函数）拆至 `core/orchestrator/rules.py`；`shared.py` 从 1036 行降至 628 行。
+- 删除 phase-A 后已零消费者的 shared 版 `_project_matches`（保留 query 版在 symbol_ranking）。
+- 依赖单向化：shared 回导 `_event_payload` / `_classify_case_evidence_ref` / `_load_auto_sync_rules` / `_summarize_ref`，无循环 import；12 个 importer 的 import 语句同步更新。
+- 全量测试通过，行为零变更。
+
+### Split shared.py per ADR-0002
+
+- Moved ranking/text primitives (7 functions) to `core/orchestrator/ranking.py`, session-event payload compaction and ref summarization (12 symbols) to `core/orchestrator/session_payloads.py`, and rule loading (7 functions) to `core/orchestrator/rules.py`; `shared.py` drops from 1036 to 628 lines.
+- Deleted the shared.py copy of `_project_matches` that had zero consumers after phase A (the query.py copy lives in symbol_ranking).
+- Dependencies are one-directional: shared back-imports `_event_payload` / `_classify_case_evidence_ref` / `_load_auto_sync_rules` / `_summarize_ref` with no import cycles; all 12 importers updated.
+- Full suite passing, zero behavior change.
+
 ### 按 ADR-0002 拆分 query.py 辅助簇 / Split query.py helper clusters per ADR-0002
 
 - 将符号排序簇（11 个函数 + `_normalize_symbol_name`）拆至 `core/orchestrator/symbol_ranking.py`，agent 下一步建议簇（9 个函数）拆至 `core/orchestrator/guidance.py`，契约过滤簇（3 个函数）拆至 `core/orchestrator/contract_filter.py`；`query.py` 从 2715 行降至 2057 行，只保留公共查询编排。
