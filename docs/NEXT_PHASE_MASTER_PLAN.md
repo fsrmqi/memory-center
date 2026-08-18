@@ -12,7 +12,7 @@
 
 ## 1. 文档定位 / Scope
 
-本文件整合并替代旧版执行计划、superpowers 演进计划和旧版 master plan；这些历史来源已归档到 `docs/archive/`，不再作为独立活跃文档维护。
+本文件整合并替代旧版执行计划、superpowers 演进计划和旧版 master plan；这些历史来源已合并入本文档，不再作为独立活跃文档维护。
 
 This file consolidates and replaces the older execution plan, superpowers evolution plans, and the previous master plan. Those historical sources have been folded into this document and are no longer maintained as separate files.
 

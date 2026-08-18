@@ -121,7 +121,7 @@ P0 前 `GraphStore.connect()` 和 `MemoryBackendStore.connect()` **完全没
 
 ## 推翻的预测
 
-`docs/archive/CBM_INSPIRED_EVOLUTION_PLAN.md` 之前 P0-3 段落里写过:
+旧版演进计划（已删除）之前 P0-3 段落里写过:
 
 > 对中等(10w 文件)及大型(75K 文件)Java/多语言仓,reindex 总耗时下降
 > 5~10×。

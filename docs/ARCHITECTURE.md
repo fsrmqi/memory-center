@@ -885,7 +885,7 @@ Memory Center 默认不改业务源码。写入范围主要限于：
 
 ## 附录 A：设计决策与选型 / Appendix A: Design Decisions and Selection Rationale
 
-> 本节合并自原 `TECHNICAL_ARCHITECTURE_AND_EVOLUTION.md` 和 `TECHNICAL_GUIDE.md` 的独有内容。原文件已归档至 `docs/archive/`。
+> 本节合并自原 `TECHNICAL_ARCHITECTURE_AND_EVOLUTION.md` 和 `TECHNICAL_GUIDE.md` 的独有内容。
 
 ### A.1 数据面、控制面与经验面分离
 
