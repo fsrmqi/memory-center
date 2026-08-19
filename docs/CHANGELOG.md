@@ -2,6 +2,10 @@
 
 ## Unreleased 未发布
 
+- 暂无。
+
+## 4.3.85 累积功能与质量更新 / Cumulative Feature and Quality Update
+
 ### Java 调用解析：Lombok @Builder 支持 / Java call resolution: Lombok @Builder support
 
 - resolver 新增 Lombok `@Builder` 解析：`X.builder()` 静态工厂解析为 `*_lombok_builder`（0.85）；`X.builder().field(...)` 链式 setter 解析为 `chain_lombok_builder_setter`（0.78），`X.builder().build()` 解析为 `chain_lombok_builder_build`（0.80），均标记 `inferred_target`。
