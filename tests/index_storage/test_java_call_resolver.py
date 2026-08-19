@@ -684,6 +684,103 @@ public class OrderFacade {
     assert call["receiver_type"] == "User"
 
 
+def test_remove_if_lambda_parameter_typed_from_collection_generic() -> None:
+    caller = """package com.example;
+import java.util.List;
+public class OrderFacade {
+    void run(List<Order> orders) {
+        orders.removeIf(order -> order.isStale());
+    }
+}
+"""
+    symbol = _symbol("api", "OrderFacade.java", caller)
+    call = next(item for item in symbol["method_calls"] if item["method_name"] == "isStale")
+
+    assert call["receiver_type"] == "Order"
+    assert call["receiver_type_origin"] == "lambda_param"
+
+
+def test_lambda_param_receiver_resolves_lombok_accessor_level() -> None:
+    caller = """package com.example;
+import java.util.List;
+public class UserApi {
+    void prune(List<UserDO> users) {
+        users.removeIf(user -> user.getStatus().equals(0));
+    }
+}
+"""
+    target = """package com.example;
+import lombok.Data;
+@Data public class UserDO { private Integer status; }
+"""
+
+    result = _resolve(
+        [_symbol("api", "UserApi.java", caller), _symbol("api", "UserDO.java", target)],
+        "UserApi.java",
+        "getStatus",
+    )
+
+    assert result.target_class == "UserDO"
+    assert result.resolution_level == "lambda_param_lombok_accessor"
+    assert result.matched_signature == "lombok_accessor:status"
+
+
+def test_class_literal_neighbor_types_lambda_parameter() -> None:
+    caller = """package com.example;
+public class UserApiTest {
+    void build() {
+        UserDO user = randomPojo(UserDO.class, o -> o.setStatus(1));
+    }
+    UserDO randomPojo(Class<UserDO> clazz, Object consumer) { return null; }
+}
+"""
+    symbol = _symbol("api", "UserApiTest.java", caller)
+    call = next(item for item in symbol["method_calls"] if item["method_name"] == "setStatus")
+
+    assert call["receiver_type"] == "UserDO"
+    assert call["receiver_type_origin"] == "class_literal_lambda"
+
+
+def test_class_literal_neighbor_requires_class_literal_argument() -> None:
+    caller = """package com.example;
+public class UserApiTest {
+    void build() {
+        doAnswer(o -> o.toString());
+    }
+    void doAnswer(Object consumer) {}
+}
+"""
+    symbol = _symbol("api", "UserApiTest.java", caller)
+    call = next(item for item in symbol["method_calls"] if item["method_name"] == "toString")
+
+    assert call["receiver_type"] is None
+
+
+def test_class_literal_lambda_resolves_with_capped_confidence() -> None:
+    caller = """package com.example;
+public class UserApiTest {
+    void build() {
+        UserDO user = randomPojo(UserDO.class, o -> o.setStatus(1));
+    }
+    UserDO randomPojo(Class<UserDO> clazz, Object consumer) { return null; }
+}
+"""
+    target = """package com.example;
+import lombok.Data;
+@Data public class UserDO { private Integer status; }
+"""
+
+    result = _resolve(
+        [_symbol("api", "UserApiTest.java", caller), _symbol("api", "UserDO.java", target)],
+        "UserApiTest.java",
+        "setStatus",
+    )
+
+    assert result.target_class == "UserDO"
+    assert result.resolution_level == "class_literal_lambda_lombok_accessor"
+    assert result.confidence == 0.7
+
+
 def test_type_changing_intermediate_map_does_not_leak_source_element_type() -> None:
     caller = """package com.example;
 import java.util.List;

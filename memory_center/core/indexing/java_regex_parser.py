@@ -22,6 +22,9 @@ _FUNCTIONAL_TARGET_PATTERN = re.compile(
     re.S,
 )
 _JDK_COLLECTION_TYPES = frozenset({"Collection", "Iterable", "List", "Set", "Stream"})
+# Collection operations invoked directly (no ``stream()``) whose lambda takes a
+# single element parameter typed by the collection's element generic.
+_JDK_COLLECTION_ELEMENT_OPERATIONS = frozenset({"forEach", "removeIf", "replaceAll"})
 _JDK_STREAM_INPUT_OPERATIONS = frozenset(
     {"allMatch", "anyMatch", "filter", "flatMap", "forEach", "forEachOrdered", "map", "noneMatch", "peek"}
 )
@@ -716,6 +719,10 @@ def _parse_lambda_scopes(body: str, generic_variable_types: dict[str, str]) -> l
         params_text = match.group("params").strip()
         inner_params = params_text[1:-1] if params_text.startswith("(") else params_text
         variables = _parse_params(inner_params)
+        origin = ""
+        if variables:
+            # Explicitly typed lambda parameters are declared in source.
+            origin = "lambda_param"
         if not variables:
             prefix = body[max(0, match.start() - 500) : match.start()]
             target = _FUNCTIONAL_TARGET_PATTERN.search(prefix)
@@ -727,8 +734,20 @@ def _parse_lambda_scopes(body: str, generic_variable_types: dict[str, str]) -> l
                     for name, type_index in zip(parameter_names, input_indexes, strict=True):
                         if type_index < len(generic_types) and generic_types[type_index]:
                             variables[name] = generic_types[type_index]
+                    if variables:
+                        origin = "lambda_param"
             if not variables:
                 variables.update(_jdk_collection_lambda_types(prefix, inner_params, generic_variable_types))
+                if variables:
+                    origin = "lambda_param"
+            if not variables:
+                class_literal_type = _class_literal_lambda_type(prefix, inner_params)
+                if class_literal_type:
+                    # Heuristic: the callee signature is not visible here, so
+                    # keep this origin distinct from the provable lambda_param.
+                    origin = "class_literal_lambda"
+                    for name in _split_top_level(inner_params):
+                        variables[name.strip()] = class_literal_type
         if not variables:
             continue
         expression_start = match.end()
@@ -738,8 +757,41 @@ def _parse_lambda_scopes(body: str, generic_variable_types: dict[str, str]) -> l
             expression_end = _matching_brace_end(body, expression_start)
         else:
             expression_end = _lambda_expression_end(body, expression_start)
-        scopes.append({"start": expression_start, "end": expression_end, "variables": variables})
+        scopes.append({"start": expression_start, "end": expression_end, "variables": variables, "origin": origin})
     return scopes
+
+
+def _class_literal_lambda_type(prefix: str, inner_params: str) -> str:
+    """Infer a single lambda parameter type from an adjacent ``X.class`` argument.
+
+    Covers generic factory idioms such as
+    ``randomPojo(UserDO.class, o -> o.setStatus(...))`` where the callee
+    declares ``<T> T randomPojo(Class<T>, Consumer<T>...)``. The callee
+    signature is not visible to the regex parser, so this stays a heuristic:
+    it only fires for exactly one untyped parameter whose invocation argument
+    list contains a class literal.
+    """
+    parameter_names = [item.strip() for item in _split_top_level(inner_params)]
+    if len(parameter_names) != 1 or not parameter_names[0].isidentifier():
+        return ""
+    open_match = None
+    depth = 0
+    for index in range(len(prefix) - 1, -1, -1):
+        char = prefix[index]
+        if char == ")":
+            depth += 1
+        elif char == "(":
+            if depth == 0:
+                open_match = index
+                break
+            depth -= 1
+    if open_match is None:
+        return ""
+    invocation_name = prefix[:open_match].rstrip()
+    if not re.search(r"[A-Za-z_$][\w$]*$", invocation_name):
+        return ""
+    literal = re.search(r"(?P<type>[A-Z][\w$]*)\.class\b", prefix[open_match + 1 :])
+    return _simple_type(literal.group("type")) if literal else ""
 
 
 def _jdk_collection_lambda_types(
@@ -752,7 +804,8 @@ def _jdk_collection_lambda_types(
         return {}
 
     direct = re.search(
-        r"(?P<source>[A-Za-z_$][\w$]*)\s*\.\s*(?P<operation>forEach)\s*\(\s*$",
+        rf"(?P<source>[A-Za-z_$][\w$]*)\s*\.\s*"
+        rf"(?P<operation>{'|'.join(sorted(_JDK_COLLECTION_ELEMENT_OPERATIONS))})\s*\(\s*$",
         prefix,
         re.S,
     )
@@ -776,7 +829,7 @@ def _jdk_collection_lambda_types(
     if not raw_type or not generic_arguments:
         return {}
 
-    if direct and raw_type == "Map" and len(parameter_names) == 2 and len(generic_arguments) == 2:
+    if direct and invocation.group("operation") == "forEach" and raw_type == "Map" and len(parameter_names) == 2 and len(generic_arguments) == 2:
         inferred = generic_arguments
     elif len(parameter_names) == 1 and (
         raw_type in _JDK_COLLECTION_TYPES or (stream_variable and raw_type == "Stream")
@@ -832,16 +885,16 @@ def _lambda_expression_end(text: str, start: int) -> int:
     return len(text)
 
 
-def _lambda_receiver_type(scopes: list[dict[str, Any]], position: int, receiver: str) -> str:
+def _lambda_receiver_type(scopes: list[dict[str, Any]], position: int, receiver: str) -> tuple[str, str]:
     candidates = [
         scope
         for scope in scopes
         if int(scope["start"]) <= position < int(scope["end"]) and receiver in scope["variables"]
     ]
     if not candidates:
-        return ""
+        return "", ""
     scope = min(candidates, key=lambda item: int(item["end"]) - int(item["start"]))
-    return str(scope["variables"].get(receiver) or "")
+    return str(scope["variables"].get(receiver) or ""), str(scope.get("origin") or "")
 
 
 def _parse_method_calls(
@@ -918,12 +971,14 @@ def _parse_method_calls(
             if "(" in (m.group("first_args") or ""):
                 continue
             receiver = m.group("receiver")
+            chained_lambda_type, chained_lambda_origin = _lambda_receiver_type(lambda_scopes, m.start(), receiver)
             calls.append(
                 {
                     "receiver": receiver,
-                    "receiver_type": _lambda_receiver_type(lambda_scopes, m.start(), receiver)
+                    "receiver_type": chained_lambda_type
                     or span_variable_types.get(receiver)
                     or field_types.get(receiver),
+                    "receiver_type_origin": chained_lambda_origin if chained_lambda_type else "",
                     "method_name": m.group("method"),
                     "owner_method": owner_method,
                     "line": _line_of(text, body_start + m.start()),
@@ -937,16 +992,19 @@ def _parse_method_calls(
             if receiver in ignored or method in ignored_methods:
                 continue
             absolute_method_pos = body_start + m.start("method")
+            qualified_lambda_type, qualified_lambda_origin = _lambda_receiver_type(lambda_scopes, m.start(), receiver)
             receiver_type = (
-                _lambda_receiver_type(lambda_scopes, m.start(), receiver)
+                qualified_lambda_type
                 or span_variable_types.get(receiver)
                 or field_types.get(receiver)
             )
+            receiver_type_origin = qualified_lambda_origin if qualified_lambda_type else ""
             seen.add((absolute_method_pos, receiver, method))
             calls.append(
                 {
                     "receiver": receiver,
                     "receiver_type": receiver_type,
+                    "receiver_type_origin": receiver_type_origin,
                     "method_name": method,
                     "owner_method": owner_method,
                     "line": _line_of(text, body_start + m.start()),
@@ -1004,7 +1062,7 @@ def _parse_dto_field_usages(
                 {
                     "receiver": receiver,
                     "receiver_type": (
-                        _lambda_receiver_type(lambda_scopes, m.start(), receiver)
+                        _lambda_receiver_type(lambda_scopes, m.start(), receiver)[0]
                         or span_variable_types.get(receiver)
                         or field_types.get(receiver)
                     ),

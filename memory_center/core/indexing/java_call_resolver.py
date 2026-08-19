@@ -196,13 +196,26 @@ class JavaCallResolver:
                                 inferred_target=True, matched_signature="lombok_builder_build",
                             )
 
+        # Receiver types proven from a lambda parameter (collection element
+        # generics, functional-interface generics) are locally provable but one
+        # inference step further than a declared variable; surface that origin
+        # in the resolution level instead of the lookup path that found the
+        # class (import / same_package / ...). The class-literal-neighbor
+        # shape is a heuristic (the callee signature is invisible), so it gets
+        # its own origin and conservative confidence.
+        receiver_origin = str(call.get("receiver_type_origin") or "")
+        lambda_origin = receiver_origin in {"lambda_param", "class_literal_lambda"}
+        heuristic_cap = 0.7 if receiver_origin == "class_literal_lambda" else 1.0
+
         for info, level, confidence in candidates:
+            effective_level = receiver_origin if lambda_origin else level
+            confidence = min(confidence, heuristic_cap)
             if target_method in info.methods:
-                return self._resolved(owner_symbol, owner, call, info, level, confidence, arg_count)
+                return self._resolved(owner_symbol, owner, call, info, effective_level, confidence, arg_count)
             if target_method in {"builder", "toBuilder"} and _has_lombok_builder(info):
                 return self._resolved(
                     owner_symbol, owner, call, info,
-                    f"{level}_lombok_builder", 0.85, arg_count,
+                    f"{effective_level}_lombok_builder", min(0.85, heuristic_cap), arg_count,
                     inferred_target=True, matched_signature="lombok_builder",
                 )
             lombok_field = _lombok_accessor_field(info, target_method)
@@ -212,7 +225,7 @@ class JavaCallResolver:
                     owner,
                     call,
                     info,
-                    f"{level}_lombok_accessor",
+                    f"{effective_level}_lombok_accessor",
                     confidence,
                     arg_count,
                     inferred_target=True,
@@ -220,11 +233,15 @@ class JavaCallResolver:
                 )
             for ancestor in self._ancestor_candidates(info):
                 if target_method in ancestor.methods:
-                    return self._resolved(owner_symbol, owner, call, ancestor, f"{level}_inherited", 0.8, arg_count)
+                    return self._resolved(
+                        owner_symbol, owner, call, ancestor,
+                        f"{effective_level}_inherited", min(0.8, heuristic_cap), arg_count,
+                    )
                 lombok_field = _lombok_accessor_field(ancestor, target_method)
                 if lombok_field:
                     return self._resolved(
-                        owner_symbol, owner, call, ancestor, f"{level}_inherited_lombok_accessor", 0.82, arg_count,
+                        owner_symbol, owner, call, ancestor,
+                        f"{effective_level}_inherited_lombok_accessor", min(0.82, heuristic_cap), arg_count,
                         inferred_target=True, matched_signature=f"lombok_accessor:{lombok_field}",
                     )
 
