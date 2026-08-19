@@ -1231,6 +1231,29 @@ def build_graph_store(config: WorkspaceConfig, store: WorkspaceStore, *, project
                     nodes.append(GraphNode(field_id, "Field", f"{cls}.{fld}", sym["project"], sym["file"], field_line, metadata={"type": sym.get("field_types", {}).get(fld)}))
                     edges.append(GraphEdge(edge_id("DECLARES", cid, field_id), cid, field_id, "DECLARES", 1.0, {"evidence": "field declaration"}))
 
+        # Dispatch edges: call resolution lands on the declared (often
+        # interface) method, which leaves downstream traversals stranded.
+        # For every visible override emit DISPATCHES_TO from the parent
+        # method into the child method so walks/impacts cross into impls.
+        methods_by_class: dict[tuple[str, str], set[str]] = {}
+        for sym in resolver_symbols:
+            for cls in sym.get("classes", []) + sym.get("interfaces", []):
+                methods_by_class.setdefault((sym.get("project", ""), cls), set()).update(sym.get("methods", []))
+        for sym in symbols:
+            supertypes = sym.get("type_supertypes") or {}
+            for cls in sym.get("classes", []) + sym.get("interfaces", []):
+                for parent in supertypes.get(cls, []):
+                    locations = class_locations.get(parent, [])
+                    same_project = [loc for loc in locations if loc["project"] == sym["project"]]
+                    for loc in same_project or locations:
+                        parent_methods = methods_by_class.get((loc["project"], parent), set())
+                        for m in sym.get("methods", []):
+                            if m not in parent_methods:
+                                continue
+                            parent_mid = node_id("Method", loc["project"], parent, m)
+                            child_mid = node_id("Method", sym["project"], cls, m)
+                            edges.append(GraphEdge(edge_id("DISPATCHES_TO", parent_mid, child_mid), parent_mid, child_mid, "DISPATCHES_TO", 0.9, {"evidence": f"{cls} overrides {parent}.{m}"}))
+
         # Import edges are file-level probable dependencies.
         for sym in symbols:
             for imp in sym.get("imports", []):

@@ -257,6 +257,84 @@ public class OrderService { public void create() {} }
     assert json.loads(edge["metadata_json"])["resolution_level"] == "same_package"
 
 
+def test_dispatch_edges_connect_interface_methods_to_impl(tmp_path: Path) -> None:
+    service = tmp_path / "svc" / "src" / "main" / "java" / "com" / "example"
+    service.mkdir(parents=True)
+    (service / "TransportTaskService.java").write_text(
+        """package com.example;
+public interface TransportTaskService {
+    void execute(Long id);
+    void reExecute(Long id);
+}
+""",
+        encoding="utf-8",
+    )
+    (service / "TransportTaskServiceImpl.java").write_text(
+        """package com.example;
+public class TransportTaskServiceImpl implements TransportTaskService {
+    public void execute(Long id) {}
+    public void reExecute(Long id) {}
+    public void helper() {}
+}
+""",
+        encoding="utf-8",
+    )
+    workspace = tmp_path / ".memory-center" / "workspace.yaml"
+    workspace.parent.mkdir()
+    workspace.write_text(
+        yaml.safe_dump(
+            {"workspace": "dispatch-edges", "root": str(tmp_path), "services": [{"name": "svc", "path": "svc"}]}
+        ),
+        encoding="utf-8",
+    )
+    store = WorkspaceStore(workspace)
+    config = load_workspace_config(workspace)
+    reindex_workspace(config, store)
+
+    with RuntimeStore(store.graph_db_path) as graph:
+        rows = graph.connect().execute(
+            "SELECT source_id, target_id, confidence FROM edges WHERE type='DISPATCHES_TO'"
+        ).fetchall()
+    dispatch = {(row["source_id"], row["target_id"]): row["confidence"] for row in rows}
+    assert dispatch.get(
+        (node_id("Method", "svc", "TransportTaskService", "execute"), node_id("Method", "svc", "TransportTaskServiceImpl", "execute"))
+    ) == 0.9
+    assert dispatch.get(
+        (node_id("Method", "svc", "TransportTaskService", "reExecute"), node_id("Method", "svc", "TransportTaskServiceImpl", "reExecute"))
+    ) == 0.9
+    # Methods absent from the parent contract never get a dispatch edge.
+    helper_id = node_id("Method", "svc", "TransportTaskServiceImpl", "helper")
+    assert all(target != helper_id for _, target in dispatch)
+
+
+def test_dispatch_edges_skip_parents_outside_the_index(tmp_path: Path) -> None:
+    service = tmp_path / "svc" / "src" / "main" / "java" / "com" / "example"
+    service.mkdir(parents=True)
+    (service / "LocalConsumer.java").write_text(
+        """package com.example;
+public class LocalConsumer extends ExternalKafkaBase {
+    public void onMessage(String record) {}
+}
+""",
+        encoding="utf-8",
+    )
+    workspace = tmp_path / ".memory-center" / "workspace.yaml"
+    workspace.parent.mkdir()
+    workspace.write_text(
+        yaml.safe_dump(
+            {"workspace": "dispatch-external", "root": str(tmp_path), "services": [{"name": "svc", "path": "svc"}]}
+        ),
+        encoding="utf-8",
+    )
+    store = WorkspaceStore(workspace)
+    config = load_workspace_config(workspace)
+    reindex_workspace(config, store)
+
+    with RuntimeStore(store.graph_db_path) as graph:
+        count = graph.connect().execute("SELECT count(*) AS c FROM edges WHERE type='DISPATCHES_TO'").fetchone()["c"]
+    assert count == 0
+
+
 def test_resolves_explicit_import_receiver_type() -> None:
     caller = """package com.example.order;
 import com.example.billing.InvoiceService;

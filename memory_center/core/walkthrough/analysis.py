@@ -39,7 +39,7 @@ from .cache import WalkthroughCache
 
 
 def _filter_walkthrough_edges(edges: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    preferred = {"HANDLES_ENDPOINT", "CALLS_METHOD", "CALLS_SERVICE", "IMPLEMENTS_FEIGN", "PRODUCES_TOPIC", "INJECTS_BEAN", "IMPORTS"}
+    preferred = {"HANDLES_ENDPOINT", "CALLS_METHOD", "CALLS_SERVICE", "IMPLEMENTS_FEIGN", "DISPATCHES_TO", "PRODUCES_TOPIC", "INJECTS_BEAN", "IMPORTS"}
     filtered = [edge for edge in edges if edge.get("type") in preferred]
     if any(edge.get("type") != "IMPORTS" for edge in filtered):
         filtered = [edge for edge in filtered if edge.get("type") != "IMPORTS"]
@@ -277,7 +277,7 @@ def build_walkthrough_result(
             direction="downstream",
             max_depth=depth,
             limit=limit,
-            edge_types={"HANDLES_ENDPOINT", "PRODUCES_TOPIC", "CALLS_METHOD", "CALLS_SERVICE", "IMPLEMENTS_FEIGN", "INJECTS_BEAN"},
+            edge_types={"HANDLES_ENDPOINT", "PRODUCES_TOPIC", "CALLS_METHOD", "CALLS_SERVICE", "IMPLEMENTS_FEIGN", "DISPATCHES_TO", "INJECTS_BEAN"},
         )
     downstream_edges = _filter_walkthrough_edges(downstream_edges)[:limit]
     downstream_summary = _summarize_walkthrough_edges(downstream_edges)
