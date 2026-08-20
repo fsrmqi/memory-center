@@ -4,11 +4,13 @@
 
 - 暂无。
 
-## 4.3.86 图谱与 Wiki 正确性修复 / Graph and Wiki Correctness Fixes
+## 4.3.86 图谱正确性与生成式 Wiki 移除 / Graph Correctness and Generated Wiki Removal
 
-- 修复 Wiki 定向刷新错误清除未刷新模块 `stale` 标记的问题；L3 查询现在只读取当前 manifest 发布的语义桥文件，已从 profile 移除的旧映射不会继续召回。
+- 移除生成式 Wiki 设计及其 L1/L2/L3 项目地图、semantic bridge、profile、manifest、CLI、Hook 和 `mc_admin` 入口；任务恢复不再隐式注入 Wiki L1 上下文。
+- `generate-skills` 迁至独立 `knowledge/skill_generation.py`，不再依赖 Wiki 模块；用户提供文档的协作资产登记能力保持不变。
 - `DISPATCHES_TO` 现在要求父子方法签名一致，并排除 `private` / `static` 方法；Java parser 以 additive `modifiers` 字段保留分派所需证据。Lombok `@Builder` 不再无依据推断默认不存在的 `toBuilder()`。
-- Fixed targeted Wiki refreshes incorrectly clearing `stale` on modules that were not regenerated. L3 queries now read only semantic-bridge files published by the current manifest, so removed profile mappings are not returned.
+- Removed the generated Wiki design and its L1/L2/L3 project maps, semantic bridge, profile, manifest, CLI, Hook, and `mc_admin` entries. Task resume no longer injects Wiki L1 context implicitly.
+- Moved `generate-skills` to the standalone `knowledge/skill_generation.py` module. User-provided document collaboration assets remain unchanged.
 - `DISPATCHES_TO` now requires matching parent/child signatures and excludes `private` and `static` methods. Java parser signatures retain additive `modifiers` evidence, and Lombok `@Builder` no longer implies `toBuilder()` without proof.
 
 ## 4.3.85 累积功能与质量更新 / Cumulative Feature and Quality Update
@@ -41,6 +43,8 @@
 - `task_resume_check` 消费 delivery-matrix，提取未决歧义与失败验证并给出下一步建议。
 
 ### 项目地图三层上下文与语义桥 / Three-level project map and semantic bridge
+
+> 历史说明：本节记录 4.3.85 当时引入的能力；整套生成式 Wiki 设计已在 4.3.86 移除。
 
 - `generate-wiki` 升级为三层项目地图：L1 总览（始终重建、有界）、L2 模块地图（按 dirty path 增量）、L3 语义桥（接口契约/消息契约/配置键/自定义术语 → 代码实体）。
 - manifest 引入 generation 追踪与 stale 标记；`wiki-status` 报告过期模块。

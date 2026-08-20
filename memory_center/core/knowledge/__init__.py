@@ -1,1 +1,1 @@
-"""Knowledge ontology and generated wiki/skill artifacts."""
+"""Knowledge ontology, collaboration assets, and generated Skill artifacts."""

@@ -108,11 +108,7 @@ This file consolidates and replaces the older execution plan, superpowers evolut
 
 验收：需求项可回溯来源和范围；未关联验收、未定位代码目标、存在未决歧义时不能进入相应后续阶段；CLI、MCP、HTTP、Workbench 返回同一交付状态与下一步 Action。
 
-#### P3-2：按需三级项目地图与语义桥（已交付）
-
-> 已交付：`generate-wiki` 升级为 L1/L2/L3 三层项目地图与语义桥，含增量刷新、generation/stale 追踪、workspace profile 和 L1 默认轻量上下文集成。详见 CHANGELOG。
-
-#### P3-3：策略化门禁与真实验证回执
+#### P3-2：策略化门禁与真实验证回执
 
 1. 复用统一本体中的 `Policy`、`Constraint`、`GateResult`、`Waiver` 和 `Validation`，为 intake、breakdown、locate、implement、verify、close 定义版本化门禁；禁止再建一套未关联治理读模型的红线 YAML。
 2. 增加受 workspace policy 限制的验证执行适配器：仅允许运行预注册命令/profile，记录命令 ID、参数摘要、超时、退出码、受限输出摘要、产物路径及 hash；不执行来自需求正文、模型输出或外部材料的任意 shell 字符串。
@@ -121,7 +117,7 @@ This file consolidates and replaces the older execution plan, superpowers evolut
 
 验收：任务关闭的每项必需验收都能追溯到有效验证证据；伪造 `passed`、越权命令、缺失豁免或超过重试上限必须阻断门禁；所有阻断都返回可行动的下一步，而不是笼统错误。
 
-#### P3-4：交付矩阵、恢复说明与已验证 Skill 提炼
+#### P3-3：交付矩阵、恢复说明与已验证 Skill 提炼
 
 1. 从既有 JSON 工件和时间线派生 `delivery-matrix.json` 与可读的 `TECH_SPEC.md`，作为只读投影，不引入第二套真源。矩阵展示需求、范围、代码目标、验收、验证、决策、豁免、当前阶段和缺口。
 2. `task_resume_check` 直接消费该投影，优先展示未决歧义、失败验证、stale 目标和下一条最小 Action；长任务归档继续使用有界摘要与压缩归档，不恢复巨型原始上下文。
@@ -132,17 +128,17 @@ This file consolidates and replaces the older execution plan, superpowers evolut
 
 #### P3 性能、迁移与测试约束
 
-- 需求拆解、地图读取、阶段状态和门禁判断必须使用有界 JSON、索引和派生视图，禁止在 MCP/HTTP 热路径全量扫描 workspace、重建图或加载完整需求附件。
-- 只有显式维护动作可以生成地图、执行验证、刷新索引或提炼 Skill；普通查询只返回已发布 generation 和排队状态。任何新增默认读取的 P95 延迟不得超过当前同类入口真实基线的 10%。
+- 需求拆解、阶段状态和门禁判断必须使用有界 JSON、索引和派生视图，禁止在 MCP/HTTP 热路径全量扫描 workspace、重建图或加载完整需求附件。
+- 只有显式维护动作可以执行验证、刷新索引或提炼 Skill；普通查询只返回已发布 generation 和排队状态。任何新增默认读取的 P95 延迟不得超过当前同类入口真实基线的 10%。
 - 新字段只做 additive 扩展；已有任务空间采用惰性创建和只读投影。旧的人工回执继续可读，但必须显式标为外部记录，不能被误认为执行器证据。
-- 新增单元与系统测试覆盖：需求范围/歧义、需求到验收完整性、定向地图刷新、policy/waiver、命令白名单与超时、失败分类/停止条件、矩阵投影、Skill 提炼资格、CLI/MCP/HTTP/Workbench 一致性及真实 workspace 指标格式。
+- 新增单元与系统测试覆盖：需求范围/歧义、需求到验收完整性、policy/waiver、命令白名单与超时、失败分类/停止条件、矩阵投影、Skill 提炼资格、CLI/MCP/HTTP/Workbench 一致性及真实 workspace 指标格式。
 
 非目标：不将移动端设计稿、Figma、模拟器、Bazel 或任何单一技术栈规则放入核心；不强制所有任务使用交付流程；不让 Agent 自动执行不可逆操作、下载模型或全量重建索引。
 
 ### 外部方案参考边界
 
 - 所有吸收项必须先经过真实工作空间基准和兼容性验证，再进入默认行为或发布门禁。
-- Archify（tt-a1i/archify v2.15）深度调研已完成，见 `docs/ARCHIFY_ABSORPTION_RESEARCH.md`。经代码复核后仅保留两项候选，均由需求证据触发、不预排期：A) wiki 生成的 candidate → validate → atomic replace → keep last-good（触发条件：复现混合 generation 状态）；B) 失败分类附加 code / subject / evidence / supported_fixes 与轮次停止条件（触发条件：真实任务出现乱重试证据）。初版的 delta 回执（无消费方，同 ADR-0003 教训）与 commit SHA 钉住（freshness 的 content_hash 已覆盖且更精确）已撤下。均只做 additive 扩展，不引入 Archify 依赖或渲染器。
+- Archify（tt-a1i/archify v2.15）深度调研已完成，见 `docs/ARCHIFY_ABSORPTION_RESEARCH.md`。生成式 Wiki 方案已整体移除，不再吸收其原子发布候选；仅保留“失败分类附加 code / subject / evidence / supported_fixes 与轮次停止条件”这一证据触发候选。初版的 delta 回执（无消费方，同 ADR-0003 教训）与 commit SHA 钉住（freshness 的 content_hash 已覆盖且更精确）也已撤下。
 
 ---
 
@@ -295,7 +291,7 @@ scripts/verify_real_ucap.sh
 目标：使一次需求从范围、定位、实现、验证到恢复都可审查，且 Agent 不会把自评当成完成。
 
 1. 以现有 `Requirement -> Subtask -> CodeTarget -> Acceptance -> Validation` 为唯一交付主线，补齐真实任务中暴露的缺口。
-2. 将项目地图与语义桥保持为按需派生视图，优先减少定位阶段无关文件读取。
+2. 定位阶段直接使用已发布索引、图证据和有界检索结果，避免引入第二套项目地图或语义桥真源。
 3. 将通过校准的 `skill-up` 结果作为外部评测证据接入 canary 观测，但仍要求现有人工或执行器证据门禁。
 4. 用真实关闭任务衡量范围覆盖、验收覆盖、验证成功率、阻断率、阶段时延与建议绕过率；样本不足时只观测不自动调权。
 

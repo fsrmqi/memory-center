@@ -2,7 +2,7 @@
 
 日期：2026-08-18（同日复核修订）
 调研对象：[tt-a1i/archify](https://github.com/tt-a1i/archify) v2.15（本地副本 `/Users/cuijiaqi/Ai-common-skills/archify`，源码位于 `archify/` 子目录）
-状态：调研完成。初版提案 4 项，经代码复核后收敛为 2 项候选 + 2 项明确不吸收（见 §3 复核后明确不吸收），待评审（未排期）。
+状态：调研完成。生成式 Wiki 设计移除后，初版提案仅保留 1 项证据触发候选，其余明确不吸收（见 §3），未排期。
 
 ## 1. 调研背景 / Background
 
@@ -76,15 +76,12 @@ Archify 是一个 agent skill：输入自然语言或 Mermaid，产出**带类�
 
 ## 3. 吸收提案 / Absorption Proposal
 
-以下映射均已核对 memory-center 现状，并遵守 ADR-0003（不恢复 persona 化图谱视图；新增呈现必须从既有输出派生且有需求证据）。初版曾列 4 项候选；同日复核发现 C/D 两项或无消费方、或与既有机制重复，已降级为明确不吸收（见本节末尾"复核后明确不吸收"），仅保留 A/B 两项候选。
+以下映射均已核对 memory-center 现状，并遵守 ADR-0003（不恢复 persona 化图谱视图；新增呈现必须从既有输出派生且有需求证据）。初版曾列 4 项候选；C/D 在代码复核后撤下，A 随生成式 Wiki 设计整体移除，当前仅保留 B 这一项证据触发候选。
 
-### A. Wiki 原子交付（candidate → validate → atomic replace → keep last-good）
+### A. Wiki 原子交付（不再吸收）
 
-- 落点：[wiki.py](../memory_center/core/knowledge/wiki.py) `generate_wiki`。现有 generation 追踪是现成地基。
-- 真实缺口（已核实）：当前逐文件直写（overview → service 页 → module 页 → bridge），manifest 最后才写；中途失败会留下"文件已是新内容、manifest 仍描述旧状态"的混合态，增量刷新场景下难排查。
-- 内容：三层地图与语义桥先写入候选目录，做完整性校验（bridge 引用闭合、L1/L2 预算一致、manifest 与产物 hash 一致），通过后才原子替换发布目录并更新 manifest；失败保留上一个已发布 generation，并把失败阶段写入 manifest 状态。
-- 严重度与优先级：中。wiki 是可完全再生的产物，最坏情况是重跑 `generate_wiki`，不会损坏索引或记忆数据；值得做，不排 P0。
-- 触发条件：在真实工作空间复现一次混合 generation 状态（或增量刷新读到不一致 manifest）即实施。
+- 原落点 `core/knowledge/wiki.py` 与整套生成式 Wiki 流程已在 4.3.86 移除。
+- 结论：不吸收。项目上下文直接使用已发布索引、图证据和有界检索结果，不再维护第二套生成式项目地图。
 
 ### B. 结构化失败回执（code / subject / evidence / supported_fixes + 轮次上限）
 
@@ -110,7 +107,7 @@ Archify 是一个 agent skill：输入自然语言或 Mermaid，产出**带类�
 
 ### 建议顺序
 
-A 与 B 均由各自的触发条件（§3 各条）驱动，不预排期；两者互相独立、均为 additive，可并行。两项均属工程卫生级改进，不挤占 P1（Java 解析精度）与 P2（检索质量）的优先级。
+仅 B 由真实失败回放触发，不预排期；它属于工程卫生级改进，不挤占 P1（Java 解析精度）与 P2（检索质量）的优先级。
 
 ### 最大启示（非功能项）
 

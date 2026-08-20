@@ -61,6 +61,9 @@ def test_build_admin_registry_lists_known_actions() -> None:
     }
     missing = expected - names
     assert not missing, f"missing actions: {missing}"
+    assert names.isdisjoint(
+        {"generate_wiki", "wiki_status", "wiki_context", "wiki_mark_stale", "wiki_profile_update"}
+    )
 
 
 def test_unknown_action_raises_with_valid_names() -> None:
@@ -127,6 +130,7 @@ def test_task_health_actions_dispatch_through_registry(tmp_path: Path) -> None:
     resume_check = reg.dispatch("task_resume_check")
     assert resume_check["workflow"] == "task-resume-check"
     assert resume_check["task_id"] == task["task_id"]
+    assert "l1_context" not in resume_check
     assert "recommended_next_step" in resume_check
 
 

@@ -118,9 +118,9 @@ Memory Center exposes tools, resources and prompts through MCP so coding agents 
 
 ### 4. Experience memory / 经验沉淀
 
-Solved tasks can be recorded as JSONL task memory and later used for search, wiki generation and agent skills.
+Solved tasks can be recorded as JSONL task memory and later used for search and agent skills.
 
-已解决任务会沉淀为任务记忆，可用于后续召回、Wiki 生成和 Agent Skill 生成。
+已解决任务会沉淀为任务记忆，可用于后续召回和 Agent Skill 生成。
 
 ### 5. Layered memory model / 分层记忆模型
 
@@ -736,10 +736,9 @@ memory-center detect-changes \
   --scope staged
 ```
 
-### 8. Generate wiki and skills / 生成 Wiki 和 Agent Skills
+### 8. Generate Agent Skills / 生成 Agent Skills
 
 ```bash
-memory-center generate-wiki --workspace examples/spring-cloud-demo/.memory-center/workspace.yaml
 memory-center generate-skills --workspace examples/spring-cloud-demo/.memory-center/workspace.yaml
 ```
 
@@ -1328,7 +1327,6 @@ Timeline consumers should treat `session_event`, `write_receipt`, and `handoff` 
 | `workspace_session_summary_tool` | Read one session summary / 查看单次会话摘要 |
 | `workspace_resume_context_tool` | Resume context by intent / 按意图恢复会话上下文 |
 | `workspace_suggest_case_tool` | Suggest case draft from session / 从会话生成经验草稿 |
-| `memory_generate_wiki_tool` | Generate bilingual wiki / 生成双语 Wiki |
 | `memory_generate_skills_tool` | Generate Agent skills / 生成 Agent Skills |
 | `workspace_status_tool` | Index status / 索引状态 |
 | `group_query_tool` | Merged query across a registered group / 逻辑分组聚合查询 |
@@ -1528,9 +1526,9 @@ Mutation examples: `POST /workspace/asset/register`, `POST /workspace/artifact/u
 
 ## Security model / 安全模型
 
-Memory Center is local-first and read-only by default. Query/context/impact/contract tools do not modify business source code. Write tools are limited to Memory Center artifacts such as task memory, wiki, and generated skills. See `docs/MCP_GUIDE.md`.
+Memory Center is local-first and read-only by default. Query/context/impact/contract tools do not modify business source code. Write tools are limited to Memory Center artifacts such as task memory and generated skills. See `docs/MCP_GUIDE.md`.
 
-记忆中心默认本地优先、只读优先。查询、上下文、影响分析、契约查看不会修改业务源码；写入类工具只写记忆、Wiki、Skill 等 Memory Center 产物。详见 `docs/MCP_GUIDE.md`。
+记忆中心默认本地优先、只读优先。查询、上下文、影响分析、契约查看不会修改业务源码；写入类工具只写记忆、Skill 等 Memory Center 产物。详见 `docs/MCP_GUIDE.md`。
 
 ## License / 许可证
 

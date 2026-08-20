@@ -534,7 +534,7 @@ def run_hook(
             system_message = "[Memory Center] Handoff completed"
 
         elif facade == "mc_admin":
-            from ..core.knowledge.wiki import generate_skills, generate_wiki
+            from ..core.knowledge.skill_generation import generate_skills
             from ..core.orchestrator import (
                 memory_tool_usage_report,
                 memory_write_judge,
@@ -574,7 +574,6 @@ def run_hook(
                 "model_profile": lambda: workspace_model_profile(params_spec.get("target_model", "codex")),
                 "write_judge": lambda: memory_write_judge(wf, text=params_spec.get("text", ""), source=params_spec.get("source", ""), intent=intent, prefer_layer=params_spec.get("prefer_layer", ""), projects=params_spec.get("projects"), files=params_spec.get("files")),
                 "tool_usage_report": lambda: memory_tool_usage_report(wf, limit=int(params_spec.get("limit", 50))),
-                "generate_wiki": lambda: generate_wiki(wf, params_spec.get("output_dir", "") or None),
                 "generate_skills": lambda: generate_skills(wf, params_spec.get("output_dir", "") or None),
                 "group_status": lambda: group_status(params_spec.get("group", "")),
                 "group_query": lambda: group_query(params_spec.get("group", ""), query=params_spec.get("text", ""), limit=int(params_spec.get("limit", 10))),

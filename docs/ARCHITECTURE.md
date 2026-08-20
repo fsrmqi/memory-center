@@ -112,9 +112,9 @@ Memory Center 不要求中心化服务。默认形态是每个 workspace 自带�
 
 ### 1.5 Core 领域布局 / Core Domain Layout
 
-`core/` 根目录只保留 `__init__.py`，不承载实现或兼容转发。共享模型、错误、schema、分发和纯工具位于 `foundation/`；workspace 配置、健康检查、工作区形态、服务类型和后台 job 位于 `workspace/`；workspace、图和 memory SQLite 存储位于 `storage/`；规则和宿主协议位于 `governance/`；诊断、指标和操作事件位于 `observability/`；质量/完成度位于 `assessment/`；本体与 Wiki 位于 `knowledge/`。索引、检索、契约、任务、编排和展示各自只使用自己的领域包。
+`core/` 根目录只保留 `__init__.py`，不承载实现或兼容转发。共享模型、错误、schema、分发和纯工具位于 `foundation/`；workspace 配置、健康检查、工作区形态、服务类型和后台 job 位于 `workspace/`；workspace、图和 memory SQLite 存储位于 `storage/`；规则和宿主协议位于 `governance/`；诊断、指标和操作事件位于 `observability/`；质量/完成度位于 `assessment/`；本体、协作资产与 Skill 生成位于 `knowledge/`。索引、检索、契约、任务、编排和展示各自只使用自己的领域包。
 
-The `core/` root contains only `__init__.py`; it has no implementation or compatibility shims. Shared models, errors, schemas, dispatch, and pure utilities live in `foundation/`; workspace configuration, health checks, shape, service kinds, and jobs live in `workspace/`; workspace, graph, and memory SQLite storage live in `storage/`; rules and host protocol live in `governance/`; diagnostics, metrics, and operation events live in `observability/`; quality/completion live in `assessment/`; ontology and wiki generation live in `knowledge/`. Each domain has one canonical import path.
+The `core/` root contains only `__init__.py`; it has no implementation or compatibility shims. Shared models, errors, schemas, dispatch, and pure utilities live in `foundation/`; workspace configuration, health checks, shape, service kinds, and jobs live in `workspace/`; workspace, graph, and memory SQLite storage live in `storage/`; rules and host protocol live in `governance/`; diagnostics, metrics, and operation events live in `observability/`; quality/completion live in `assessment/`; ontology, collaboration assets, and Skill generation live in `knowledge/`. Each domain has one canonical import path.
 
 核心依赖方向由 `docs/adr/0001-core-dependency-direction.md` 约束：底层事实与存储不依赖编排或入口；`application/` 负责组合跨领域任务用例；编排层只负责核心任务组合；CLI、MCP、HTTP、hooks 均为入口适配层。
 

@@ -2,12 +2,12 @@
 
 cli/main.py 按 ADR-0002 拆至 cli/commands/ 家族模块后,命令注册顺序按家族重组,
 `--help` 列出顺序与拆分前不同;命令名与调用路径必须保持不变。
-本测试锚定完整命令面(155 根命令 + 4 子组),防止未来家族拆分/迁移时静默丢失或新增命令。
+本测试锚定完整命令面(152 根命令 + 4 子组),防止未来家族拆分/迁移时静默丢失或新增命令。
 
 After cli/main.py was split into cli/commands/ family modules per ADR-0002, command
 registration order is regrouped by family so `--help` listing order changed; command
 names and invocation paths must stay unchanged. This test anchors the full surface
-(155 root commands + 4 sub-groups) so future family splits cannot silently drop or
+(152 root commands + 4 sub-groups) so future family splits cannot silently drop or
 add commands.
 """
 
@@ -40,7 +40,7 @@ EXPECTED_ROOT_COMMANDS = frozenset({
     "explanation", "export-evidence-subgraph", "export-mermaid",
     "export-workspace-dashboard", "external-capability-audit",
     "external-capability-snapshot", "generate-hooks", "generate-skills",
-    "generate-wiki", "group", "handoff-history", "handoff-packet", "heuristics",
+    "group", "handoff-history", "handoff-packet", "heuristics",
     "http-route-contract-audit", "impact", "init", "inspect", "job-status",
     "log-session-event", "lookup-hint", "mcp-bridge-action", "mcp-bridge-status",
     "memory-backend-query", "memory-execute-write", "memory-plan-write",
@@ -58,7 +58,7 @@ EXPECTED_ROOT_COMMANDS = frozenset({
     "unresolved-items", "vector-ann-rebuild", "vector-ann-status",
     "vector-ann-tune", "verification-loop", "verify-checklist", "walkthrough-eval",
     "walkthrough-export", "walkthrough-health", "watcher-run", "watcher-start",
-    "watcher-status", "watcher-stop", "wiki-context", "wiki-status",
+    "watcher-status", "watcher-stop",
     "work-close", "work-handoff", "work-health",
     "work-log", "work-resume", "work-resume-check", "work-start", "work-sync",
     "workflow-profile", "workflow-recommend", "workspace", "workspace-dashboard",

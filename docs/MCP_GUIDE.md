@@ -371,7 +371,7 @@ Memory Center 默认是：
 
 - `.memory-center/memory`
 - `.memory-center/artifacts`
-- 生成的 wiki / skills / dashboard
+- 生成的 skills / dashboard
 
 ## 9. Unified Error Model / 统一错误模型
 

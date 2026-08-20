@@ -12,14 +12,7 @@ from rich import print
 
 from memory_center.application.presentation import export_mermaid
 from memory_center.core.knowledge.communities import analyze_architecture_communities
-from memory_center.core.knowledge.wiki import (
-    generate_skills,
-    generate_wiki,
-    get_l1_context,
-    get_l2_context,
-    get_l3_bridge,
-    wiki_status,
-)
+from memory_center.core.knowledge.skill_generation import generate_skills
 from memory_center.core.presentation.evidence_subgraph import export_evidence_subgraph
 from memory_center.hooks.adapters.claude_code import generate_claude_code_hooks, write_claude_code_settings
 from memory_center.hooks.adapters.codex import generate_codex_scripts
@@ -67,43 +60,6 @@ def register_tooling_commands(app: typer.Typer) -> None:
     ):
         """Explicitly aggregate project communities and central graph nodes."""
         print(analyze_architecture_communities(workspace, limit=limit))
-
-    @app.command("generate-wiki")
-    def generate_wiki_cmd(
-        workspace: str = typer.Option(...),
-        output: Optional[str] = typer.Option(None),
-        dirty_paths: str = typer.Option("", help="逗号分隔的变更路径；只刷新受影响模块"),
-        force: bool = typer.Option(False, help="忽略 manifest 强制全量重建"),
-    ):
-        """Generate bilingual Markdown architecture wiki from indexes and memory."""
-        paths = [p.strip() for p in dirty_paths.split(",") if p.strip()] or None
-        print(generate_wiki(workspace, output, dirty_paths=paths, force=force))
-
-    @app.command("wiki-status")
-    def wiki_status_cmd(workspace: str = typer.Option(...)):
-        """Report wiki manifest staleness and generation info."""
-        print(json.dumps(wiki_status(workspace), indent=2, default=str, ensure_ascii=False))
-
-    @app.command("wiki-context")
-    def wiki_context_cmd(
-        workspace: str = typer.Option(...),
-        level: str = typer.Option("l1", help="上下文层级: l1, l2, l3"),
-        module: str = typer.Option("", help="L2 所需模块名"),
-        query: str = typer.Option("", help="L3 检索关键词"),
-        budget: str = typer.Option("medium", help="输出预算: small, medium, large"),
-    ):
-        """Read bounded project map context at L1/L2/L3."""
-        normalized = level.lower()
-        if normalized == "l2":
-            if not module:
-                print({"error": "L2 需要 --module 参数"})
-                raise typer.Exit(code=1)
-            result = get_l2_context(workspace, module, budget=budget)
-        elif normalized == "l3":
-            result = get_l3_bridge(workspace, query=query)
-        else:
-            result = get_l1_context(workspace, budget=budget)
-        print(json.dumps(result, indent=2, default=str, ensure_ascii=False))
 
     @app.command("generate-skills")
     def generate_skills_cmd(workspace: str = typer.Option(...), output: Optional[str] = typer.Option(None)):
@@ -326,4 +282,3 @@ def register_tooling_commands(app: typer.Typer) -> None:
 
         result = business_flow_impact_for_workspace(workspace, node_id, max_depth=max_depth)
         print(json.dumps(result, indent=2, default=str))
-
