@@ -2,6 +2,10 @@
 
 ## Unreleased 未发布
 
+- 暂无。
+
+## 4.3.86 图谱与 Wiki 正确性修复 / Graph and Wiki Correctness Fixes
+
 - 修复 Wiki 定向刷新错误清除未刷新模块 `stale` 标记的问题；L3 查询现在只读取当前 manifest 发布的语义桥文件，已从 profile 移除的旧映射不会继续召回。
 - `DISPATCHES_TO` 现在要求父子方法签名一致，并排除 `private` / `static` 方法；Java parser 以 additive `modifiers` 字段保留分派所需证据。Lombok `@Builder` 不再无依据推断默认不存在的 `toBuilder()`。
 - Fixed targeted Wiki refreshes incorrectly clearing `stale` on modules that were not regenerated. L3 queries now read only semantic-bridge files published by the current manifest, so removed profile mappings are not returned.
