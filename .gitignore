@@ -40,3 +40,4 @@ examples/golden-benchmark/memory/*.db
 examples/golden-benchmark/memory/*-log.jsonl
 examples/golden-benchmark/memory/operation-events.jsonl
 examples/golden-benchmark/metrics.jsonl
+/tmp/**
