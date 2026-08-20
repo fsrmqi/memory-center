@@ -62,6 +62,19 @@ def test_mark_stale_and_wiki_status(demo_workspace_indexed: Path) -> None:
     assert wiki_status(demo_workspace_indexed)["has_stale"] is False
 
 
+def test_refreshing_another_module_does_not_clear_existing_stale_marker(
+    demo_workspace_indexed: Path,
+) -> None:
+    generate_wiki(demo_workspace_indexed)
+    mark_wiki_modules_stale(demo_workspace_indexed, ["task-service/src/main/java/Bar.java"])
+
+    generate_wiki(demo_workspace_indexed, dirty_paths=["article-service/src/main/java/Foo.java"])
+
+    status = wiki_status(demo_workspace_indexed)
+    assert status["has_stale"] is True
+    assert "task-service" in status["stale_modules"]
+
+
 def test_l1_l2_context_are_bounded(demo_workspace_indexed: Path) -> None:
     l1 = get_l1_context(demo_workspace_indexed, budget="small")
     assert l1["level"] == "L1"
@@ -91,6 +104,31 @@ def test_l3_bridge_query_and_profile_custom_mapping(demo_workspace_indexed: Path
     assert bridge["bridges"][0]["bridge_type"] == "business_term"
     typed = get_l3_bridge(demo_workspace_indexed, bridge_type="business_term")
     assert typed["found"] is True
+
+
+def test_l3_bridge_ignores_files_removed_from_the_published_profile(demo_workspace_indexed: Path) -> None:
+    update_wiki_profile(
+        demo_workspace_indexed,
+        {
+            "profile_id": "custom",
+            "custom_mappings": [
+                {"term": "临时业务词", "targets": ["ExampleService.run"], "bridge_type": "business_term"}
+            ],
+        },
+        actor="tester",
+    )
+    first = generate_wiki(demo_workspace_indexed)
+    stale_file = Path(first["output_dir"]) / "semantic-bridge" / "business_term.json"
+    assert stale_file.exists()
+    assert get_l3_bridge(demo_workspace_indexed, query="临时业务词")["found"] is True
+
+    update_wiki_profile(demo_workspace_indexed, {"profile_id": "default"}, actor="tester")
+    generate_wiki(demo_workspace_indexed)
+
+    # Old generated files may remain on disk for recovery, but only files in
+    # the current manifest are part of the published generation.
+    assert stale_file.exists()
+    assert get_l3_bridge(demo_workspace_indexed, query="临时业务词")["found"] is False
 
 
 def test_resume_check_contains_l1_context(demo_workspace_indexed: Path) -> None:

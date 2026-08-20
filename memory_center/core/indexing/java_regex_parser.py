@@ -319,8 +319,9 @@ _NON_METHOD_KEYWORDS = frozenset(
 def _parse_method_spans(text: str, *, type_names: list[str] | None = None) -> list[dict[str, Any]]:
     pattern = re.compile(
         r"(?:@\w+(?:\([^)]*\))?\s*)*"
-        r"(?:(?:public|private|protected)\s+)?"
-        r"(?:static\s+)?(?P<return_type>[\w<>, ?\.\[\]]+)\s+"
+        r"(?:(?P<access>public|private|protected)\s+)?"
+        r"(?:(?P<static>static)\s+)?"
+        r"(?P<return_type>(?!(?:public|private|protected|static)\b)[\w<>, ?\.\[\]]+)\s+"
         r"(?P<name>\w+)\s*\((?P<params>[^;{}]*)\)\s*(?:throws\s+[\w, ]+\s*)?\{",
         re.M,
     )
@@ -341,6 +342,7 @@ def _parse_method_spans(text: str, *, type_names: list[str] | None = None) -> li
                 "name": name,
                 "params": match.group("params"),
                 "return_type": _normalize_type_identity(match.group("return_type")),
+                "modifiers": [value for value in (match.group("access"), match.group("static")) if value],
                 "start": match.start(),
                 "body_start": body_start,
                 "end": end,
@@ -368,23 +370,33 @@ def _parse_interface_methods(text: str) -> list[dict[str, Any]]:
         # 1) Abstract methods ending with ;
         abstract_pattern = re.compile(
             r"(?:@\w+(?:\([^)]*\))?\s*)*"
-            r"(?:public\s+|private\s+|protected\s+)?"
-            r"(?:default\s+)?"
-            r"(?:static\s+)?"
-            r"([\w<>, ?\.\[\]]+)\s+"
-            r"(\w+)\s*\(([^;{}]*)\)\s*"
+            r"(?:(?P<access>public|private|protected)\s+)?"
+            r"(?:(?P<default>default)\s+)?"
+            r"(?:(?P<static>static)\s+)?"
+            r"(?P<return_type>[\w<>, ?\.\[\]]+)\s+"
+            r"(?P<name>\w+)\s*\((?P<params>[^;{}]*)\)\s*"
             r"(?:throws\s+[\w, ]+\s*)?;",
             re.M,
         )
         for method_m in abstract_pattern.finditer(body):
-            method_name = method_m.group(2)
-            params = method_m.group(3)
+            method_name = method_m.group("name")
+            params = method_m.group("params")
             abs_start = body_start + method_m.start()
             abs_end = body_start + method_m.end()
             spans.append(
                 {
                     "name": method_name,
                     "params": params,
+                    "return_type": _normalize_type_identity(method_m.group("return_type")),
+                    "modifiers": [
+                        value
+                        for value in (
+                            method_m.group("access"),
+                            method_m.group("default"),
+                            method_m.group("static"),
+                        )
+                        if value
+                    ],
                     "start": abs_start,
                     "end": abs_end,
                     "line": _line_of(text, abs_start),
@@ -401,15 +413,15 @@ def _parse_interface_methods(text: str) -> list[dict[str, Any]]:
         # 2) default / static methods with a body (ending with {)
         body_method_pattern = re.compile(
             r"(?:@\w+(?:\([^)]*\))?\s*)*"
-            r"(?:default|static)\s+"
-            r"[\w<>, ?\.\[\]]+\s+"
-            r"(\w+)\s*\(([^)]*)\)\s*"
+            r"(?P<kind>default|static)\s+"
+            r"(?P<return_type>[\w<>, ?\.\[\]]+)\s+"
+            r"(?P<name>\w+)\s*\((?P<params>[^)]*)\)\s*"
             r"(?:throws\s+[\w, ]+\s*)?\{",
             re.M,
         )
         for method_m in body_method_pattern.finditer(body):
-            method_name = method_m.group(1)
-            params = method_m.group(2)
+            method_name = method_m.group("name")
+            params = method_m.group("params")
             abs_start = body_start + method_m.start()
             brace_end = _matching_brace_end(body, method_m.end() - 1)
             abs_end = body_start + brace_end
@@ -417,6 +429,8 @@ def _parse_interface_methods(text: str) -> list[dict[str, Any]]:
                 {
                     "name": method_name,
                     "params": params,
+                    "return_type": _normalize_type_identity(method_m.group("return_type")),
+                    "modifiers": [method_m.group("kind")],
                     "start": abs_start,
                     "end": abs_end,
                     "line": _line_of(text, abs_start),
@@ -432,6 +446,14 @@ def _build_method_signatures(method_spans: list[dict[str, Any]]) -> list[dict[st
     for span in method_spans:
         name = str(span.get("name", "") or "")
         parameter_types = _parameter_types(str(span.get("params", "") or ""))
+        return_type = str(span.get("return_type", "") or "").strip()
+        modifiers = set(span.get("modifiers", []) or [])
+        while True:
+            embedded = re.match(r"^(public|private|protected|static|default|final)\s+", return_type)
+            if not embedded:
+                break
+            modifiers.add(embedded.group(1))
+            return_type = return_type[embedded.end() :].strip()
         identity = f"{name}({','.join(parameter_types)})"
         if not name or identity in seen:
             continue
@@ -441,7 +463,8 @@ def _build_method_signatures(method_spans: list[dict[str, Any]]) -> list[dict[st
                 "identity": identity,
                 "name": name,
                 "parameter_types": parameter_types,
-                "return_type": str(span.get("return_type", "") or ""),
+                "return_type": return_type,
+                "modifiers": sorted(modifiers),
                 "line": int(span.get("line", 0) or 0),
             }
         )

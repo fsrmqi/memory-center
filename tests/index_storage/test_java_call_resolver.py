@@ -335,6 +335,48 @@ public class LocalConsumer extends ExternalKafkaBase {
     assert count == 0
 
 
+def test_dispatch_edges_require_matching_dispatchable_signatures(tmp_path: Path) -> None:
+    service = tmp_path / "svc" / "src" / "main" / "java" / "com" / "example"
+    service.mkdir(parents=True)
+    (service / "ParentService.java").write_text(
+        """package com.example;
+public class ParentService {
+    public void execute(Long id) {}
+    public static void helper(Long id) {}
+    private void secret(Long id) {}
+}
+""",
+        encoding="utf-8",
+    )
+    (service / "ChildService.java").write_text(
+        """package com.example;
+public class ChildService extends ParentService {
+    public void execute(String id) {}
+    public static void helper(Long id) {}
+    public void secret(Long id) {}
+}
+""",
+        encoding="utf-8",
+    )
+    workspace = tmp_path / ".memory-center" / "workspace.yaml"
+    workspace.parent.mkdir()
+    workspace.write_text(
+        yaml.safe_dump(
+            {"workspace": "dispatch-signatures", "root": str(tmp_path), "services": [{"name": "svc", "path": "svc"}]}
+        ),
+        encoding="utf-8",
+    )
+    store = WorkspaceStore(workspace)
+    reindex_workspace(load_workspace_config(workspace), store)
+
+    with RuntimeStore(store.graph_db_path) as graph:
+        rows = graph.connect().execute(
+            "SELECT source_id, target_id FROM edges WHERE type='DISPATCHES_TO'"
+        ).fetchall()
+
+    assert rows == []
+
+
 def test_resolves_explicit_import_receiver_type() -> None:
     caller = """package com.example.order;
 import com.example.billing.InvoiceService;
@@ -1109,6 +1151,28 @@ public class PlainVO { private String username; }
     )
 
     assert resolved.resolution_level == "unresolved"
+
+
+def test_lombok_builder_does_not_imply_to_builder() -> None:
+    caller = """package com.example.order;
+import com.example.vo.UserImportRespVO;
+public class OrderFacade {
+    void run(UserImportRespVO value) { value.toBuilder(); }
+}
+"""
+    target = """package com.example.vo;
+import lombok.Builder;
+@Builder public class UserImportRespVO { private String username; }
+"""
+
+    resolved = _resolve(
+        [_symbol("svc", "OrderFacade.java", caller), _symbol("svc", "UserImportRespVO.java", target)],
+        "OrderFacade.java",
+        "toBuilder",
+    )
+
+    assert resolved.resolution_level == "unresolved"
+    assert resolved.target_class == "UserImportRespVO"
 
 
 def test_overload_keeps_matching_signature_evidence() -> None:

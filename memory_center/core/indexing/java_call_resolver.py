@@ -156,7 +156,7 @@ class JavaCallResolver:
                     return_type = _normalize_type_name(info.field_types.get(lombok_field, "")) if lombok_field else ""
                     resolution_level = "chain_lombok_accessor_return_type"
                     confidence = 0.8
-                if not return_type and chain_method in {"builder", "toBuilder"} and _has_lombok_builder(info):
+                if not return_type and chain_method == "builder" and _has_lombok_builder(info):
                     # Lombok @Builder: ``X.builder()`` returns the generated
                     # builder whose setters mirror the class fields and whose
                     # ``build()`` returns the annotated class itself.
@@ -212,7 +212,7 @@ class JavaCallResolver:
             confidence = min(confidence, heuristic_cap)
             if target_method in info.methods:
                 return self._resolved(owner_symbol, owner, call, info, effective_level, confidence, arg_count)
-            if target_method in {"builder", "toBuilder"} and _has_lombok_builder(info):
+            if target_method == "builder" and _has_lombok_builder(info):
                 return self._resolved(
                     owner_symbol, owner, call, info,
                     f"{effective_level}_lombok_builder", min(0.85, heuristic_cap), arg_count,

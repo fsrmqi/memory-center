@@ -62,8 +62,10 @@ def generate_wiki(
         existing_entry = next((m for m in manifest.get("modules", []) if m.get("module") == name), None)
 
         if not should_refresh and existing_entry:
-            # Reuse existing entry, mark as not stale
-            module_manifest.append({**existing_entry, "last_checked_at": now, "stale": False})
+            # Reuse the published entry without claiming that an unrefreshed
+            # stale module became fresh. Only a successful regeneration below
+            # is allowed to clear the stale marker.
+            module_manifest.append({**existing_entry, "last_checked_at": now})
             skipped_modules.append(name)
             continue
 
@@ -215,8 +217,17 @@ def get_l3_bridge(workspace_file: str | Path, *, query: str = "", bridge_type: s
     out = store.base_dir / "wiki" / L3_BRIDGE_DIR
     if not out.exists():
         return {"level": "L3", "found": False, "next_action": "语义桥未生成；先执行 generate-wiki。"}
+    manifest = _load_wiki_manifest(store)
+    semantic_manifest = manifest.get("semantic_bridge", {}) or {}
+    published_files = semantic_manifest.get("files")
+    if isinstance(published_files, list):
+        bridge_files = [out / str(name) for name in published_files]
+    else:
+        # Backward-compatible read path for schema-v2 manifests written before
+        # the published bridge file list was introduced.
+        bridge_files = list(out.glob("*.json"))
     bridges: list[dict[str, Any]] = []
-    for bridge_file in out.glob("*.json"):
+    for bridge_file in bridge_files:
         try:
             data = json.loads(bridge_file.read_text(encoding="utf-8"))
             if isinstance(data, list):
@@ -385,6 +396,7 @@ def _generate_semantic_bridge(
         "generated": True,
         "bridge_count": len(bridges),
         "bridge_types": {k: len(v) for k, v in bridge_types.items()},
+        "files": [f"{bridge_type}.json" for bridge_type in sorted(bridge_types)],
         "generation_id": generation_id,
         "generated_at": now,
     }

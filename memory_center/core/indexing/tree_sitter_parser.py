@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import threading
 from typing import Any
 
@@ -290,6 +291,7 @@ class TreeSitterJavaParser:
                             "name": method_name,
                             "parameter_types": parameter_types,
                             "return_type": _normalize_type_identity(_node_text(node.child_by_field_name("type"))),
+                            "modifiers": _tree_method_modifiers(node),
                             "line": _node_line(name_node),
                         }
                     )
@@ -489,6 +491,18 @@ def _merge_unique_dicts(primary: list[dict[str, Any]], secondary: list[dict[str,
         seen.add(key)
         merged.append(item)
     return merged
+
+
+def _tree_method_modifiers(node: Any) -> list[str]:
+    """Return dispatch-relevant Java method modifiers from one AST node."""
+
+    values: set[str] = set()
+    for child in node.children:
+        if child.type != "modifiers":
+            continue
+        text = _node_text(child)
+        values.update(re.findall(r"\b(public|private|protected|static|default|final)\b", text))
+    return sorted(values)
 
 
 def _merge_line_maps(primary: dict[str, int], secondary: dict[str, int]) -> dict[str, int]:

@@ -1236,9 +1236,11 @@ def build_graph_store(config: WorkspaceConfig, store: WorkspaceStore, *, project
         # For every visible override emit DISPATCHES_TO from the parent
         # method into the child method so walks/impacts cross into impls.
         methods_by_class: dict[tuple[str, str], set[str]] = {}
+        symbols_by_class_location: dict[tuple[str, str, str], dict[str, Any]] = {}
         for sym in resolver_symbols:
             for cls in sym.get("classes", []) + sym.get("interfaces", []):
                 methods_by_class.setdefault((sym.get("project", ""), cls), set()).update(sym.get("methods", []))
+                symbols_by_class_location[(sym.get("project", ""), cls, sym.get("file", ""))] = sym
         for sym in symbols:
             supertypes = sym.get("type_supertypes") or {}
             for cls in sym.get("classes", []) + sym.get("interfaces", []):
@@ -1247,8 +1249,19 @@ def build_graph_store(config: WorkspaceConfig, store: WorkspaceStore, *, project
                     same_project = [loc for loc in locations if loc["project"] == sym["project"]]
                     for loc in same_project or locations:
                         parent_methods = methods_by_class.get((loc["project"], parent), set())
+                        parent_symbol = symbols_by_class_location.get((loc["project"], parent, loc["file"]), {})
                         for m in sym.get("methods", []):
                             if m not in parent_methods:
+                                continue
+                            parent_signatures = _dispatchable_method_identities(parent_symbol, m)
+                            child_signatures = _dispatchable_method_identities(sym, m)
+                            if parent_signatures == set() or child_signatures == set():
+                                continue
+                            if (
+                                parent_signatures is not None
+                                and child_signatures is not None
+                                and parent_signatures.isdisjoint(child_signatures)
+                            ):
                                 continue
                             parent_mid = node_id("Method", loc["project"], parent, m)
                             child_mid = node_id("Method", sym["project"], cls, m)
@@ -1561,6 +1574,30 @@ def _source_method_id(sym: dict[str, Any], owner_class: str, fact: dict[str, Any
     if not owner_method:
         return None
     return node_id("Method", sym["project"], owner_class, owner_method)
+
+
+def _dispatchable_method_identities(sym: dict[str, Any], method_name: str) -> set[str] | None:
+    """Return provably dispatchable signatures, or None for legacy unknown data."""
+
+    signatures = [
+        item
+        for item in (sym.get("method_signatures", []) or [])
+        if str(item.get("name") or "") == method_name
+    ]
+    if not signatures:
+        return None
+    modifiers_by_identity: dict[str, set[str]] = {}
+    for signature in signatures:
+        identity = str(signature.get("identity") or "")
+        if identity:
+            modifiers_by_identity.setdefault(identity, set()).update(
+                str(value) for value in (signature.get("modifiers", []) or [])
+            )
+    return {
+        identity
+        for identity, modifiers in modifiers_by_identity.items()
+        if not modifiers & {"private", "static"}
+    }
 
 
 def topology_service_project(topology: dict[str, Any], service_name: str | None) -> str | None:
