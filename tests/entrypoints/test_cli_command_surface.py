@@ -2,7 +2,7 @@
 
 cli/main.py 按 ADR-0002 拆至 cli/commands/ 家族模块后,命令注册顺序按家族重组,
 `--help` 列出顺序与拆分前不同;命令名与调用路径必须保持不变。
-本测试锚定完整命令面(152 根命令 + 4 子组),防止未来家族拆分/迁移时静默丢失或新增命令。
+本测试锚定完整命令面(153 根命令 + 4 子组),防止未来家族拆分/迁移时静默丢失或新增命令。
 
 After cli/main.py was split into cli/commands/ family modules per ADR-0002, command
 registration order is regrouped by family so `--help` listing order changed; command
@@ -33,7 +33,7 @@ EXPECTED_ROOT_COMMANDS = frozenset({
     "eval-index-freshness", "eval-java-call-resolution",
     "eval-java-call-resolution-metrics", "eval-java-call-resolution-review",
     "eval-java-call-resolution-unresolved", "eval-ontology-gate",
-    "eval-parser-benchmark", "eval-regression-suite", "eval-resume",
+    "eval-parser-benchmark", "eval-reasoning-prompts", "eval-regression-suite", "eval-resume",
     "eval-retrieval-replay", "eval-token-benchmark", "eval-token-benchmark-compare",
     "eval-token-benchmark-save", "eval-token-benchmark-trend", "eval-token-gain",
     "eval-tool-adoption", "eval-workflow-orchestration", "eval-write-quality",

@@ -727,7 +727,15 @@ MCP 还暴露 resources：
 - `memory-center://contracts`
 - `memory-center://topology`
 
-以及 prompts：impact、Spring Cloud safe change、onboarding、MQ safety、DTO impact、cross-service trace、freshness、domain overview、diff impact 等。
+以及 prompts：impact、Spring Cloud safe change、onboarding、MQ safety、DTO impact、cross-service trace、freshness、domain overview、diff impact，以及四个证据约束的推理协议：`clarify_change_request`、`audit_project_claim`、`design_minimal_validation`、`compare_change_options`。
+
+这四个协议保持为 MCP Prompt 编排层，不创建第二套事实或任务状态：需求澄清复用 `mc_start` / `mc_lookup` 与 `ambiguities` 语义；工程断言核查复用 `knowledge_state` 和 `evidence_level`；最小验证复用 acceptance、预注册 argv profile 与真实回执；方案比较只在用户接受后才建议通过 `task_decision_record` 持久化。Prompt 输出中的判断仍受 `EXTRACTED / INFERRED / AMBIGUOUS / VERIFIED` 约束，不能凭角色扮演或模型置信度升级证据。
+
+These four protocols remain an MCP prompt-orchestration layer rather than a second fact or task store. They reuse the existing retrieval, epistemic, acceptance, approved-executor, receipt, and task-decision semantics; model confidence and role play never upgrade evidence.
+
+`core/benchmark/reasoning_prompts.py` 提供独立于 workspace 的可重复验收：内置 case 只检查 Prompt 渲染合同，结果位于 `static_contract`；本地 YAML 可将脱敏任务标为 `real_case`，并用只含四项布尔检查、逻辑 case ID 和 evidence refs 的人工观测补充 `real_behavior`。报告从不回显 args、reviewer 或 evidence refs。只有四种 Prompt 均有真实观测且检查通过时才返回 `release_ready=true`；公开模板始终只是 smoke，不会冒充真实效果。
+
+The reasoning-prompt benchmark separates deterministic static contract checks from local, self-asserted real behavior observations. Public examples never satisfy the real-case gate, and reports omit prompt inputs and observation identities.
 
 ### 9.2 CLI
 
@@ -779,6 +787,10 @@ Vue Workbench 位于 `web/src/`，主要页面包括 dashboard、query、impact�
 工作流画像是推荐层，不是第二套编排器。`quick-fix`、`contract-change`、`long-task`、`architecture` 与 `maintenance` 只描述任务应加载的上下文层和推荐工具顺序；真正的状态、门禁、验证回执与审计仍归属 `feature_delivery_v2`。
 
 交付子任务可附带 `read_targets`、`write_targets`、`stop_conditions`。它们作为任务级范围契约写入现有 delivery 工件，并在 `delivery-matrix`、`TECH_SPEC.md` 中派生展示。默认只提供透明度；工作区策略启用 `enforce_scope_contract` 后，范围不完整的子任务不能进入 `implement`，从而避免高风险任务在上下文不足时扩大修改面。
+
+交付 acceptance 可附加 `critical_hypothesis`、`continue_if`、`stop_if`、`rollback` 与 `evidence_required`，全部继续写入既有 schema v2 `acceptance.json`，不创建第二套实验模型。可信的 executor 或 manual_verified 通过回执可附加有界 `evidence_types`；executor profile 也可预声明该字段，并始终自动提供 `executor-receipt`。`delivery-matrix`、`TECH_SPEC.md`、任务指标和 resume hints 从同一真源派生验证设计完整度，以及 `evidence_observed`、`evidence_missing`、`evidence_complete`。默认只观测覆盖率；维护者可分别启用 `enforce_validation_design_contract` 和 `enforce_evidence_contract`，前者在 `locate` 阶段要求设计完整，后者在 `close` 阶段要求证据类型全部匹配。旧回执可由 `executor` / `manual_verified` 推导兼容类型，旧任务和默认策略保持兼容。
+
+Acceptance items may add falsifiable validation-design fields without changing the schema version or creating a second source of truth. Coverage is observational by default; strict gating is opt-in and backward-compatible.
 
 Memory Center 的记忆模型分为四层：
 

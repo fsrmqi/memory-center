@@ -29,6 +29,22 @@ from memory_center.core.orchestrator import (
 
 
 def register_eval_commands(app: typer.Typer) -> None:
+    @app.command("eval-reasoning-prompts")
+    def eval_reasoning_prompts_cmd(
+        cases: str = typer.Option("", help="Optional local reasoning prompt cases YAML."),
+        observations: str = typer.Option("", help="Optional local redacted manual observations YAML."),
+    ):
+        """Evaluate static reasoning-prompt contracts and separate real behavior evidence."""
+        from memory_center.core.benchmark.reasoning_prompts import evaluate_reasoning_prompts
+
+        typer.echo(
+            json.dumps(
+                evaluate_reasoning_prompts(cases or None, observations or None),
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+
     @app.command("eval-cochange")
     def eval_cochange_cmd(
         workspace: str = typer.Option(...),
@@ -447,4 +463,3 @@ def register_eval_commands(app: typer.Typer) -> None:
         from memory_center.core.benchmark.trending import generate_benchmark_report
 
         print(generate_benchmark_report(workspace, function_name=function_name))
-

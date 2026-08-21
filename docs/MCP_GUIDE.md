@@ -11,14 +11,16 @@
 `feature_delivery_v2` 将需求交付收敛为 `intake -> breakdown -> locate -> implement -> verify -> close`。需求项必须包含来源、范围和验收关联；模型只能提出候选，范围决策必须有引用证据。`mc_start` 的 workflow 推荐会根据任务意图选择修复、契约、长期、架构或 `maintenance` 画像，并返回稳定规则、架构证据、变更契约和任务范围的分层上下文建议。
 
 - `mc_admin(action="delivery_init", task_id="...")` 初始化任务工作流。
-- `mc_admin(action="delivery_contract_update", task_id="...", payload='{"kind":"requirements|subtasks|acceptance","items":[...]}')` 更新需求、子任务或验收标准。子任务可附加 `read_targets`、`write_targets` 与 `stop_conditions`，分别约束实现前核实范围、允许修改范围和必须停止并重新分析的条件。
+- `mc_admin(action="delivery_contract_update", task_id="...", payload='{"kind":"requirements|subtasks|acceptance","items":[...]}')` 更新需求、子任务或验收标准。子任务可附加 `read_targets`、`write_targets` 与 `stop_conditions`；acceptance 可附加 `critical_hypothesis`、`continue_if`、`stop_if`、`rollback`、`evidence_required`，形成可证伪验证设计。
 - `mc_admin(action="delivery_breakdown"|"delivery_matrix" ...)` 生成不写入的需求候选，以及 `Requirement -> Subtask -> CodeTarget -> Acceptance -> Evidence` 派生矩阵与 `TECH_SPEC.md`。
-- `mc_admin(action="delivery_policy"|"delivery_validation_execute" ...)` 分别读取/更新预注册验证 profile，或执行其中一个 profile。只接受 policy 中的 argv，不能传入 shell 命令。工作区可设置 `enforce_scope_contract=true`，要求所有子任务在进入 `implement` 前具备完整范围契约；默认关闭以保持既有任务可用。
+- `mc_admin(action="delivery_policy"|"delivery_validation_execute" ...)` 分别读取/更新预注册验证 profile，或执行其中一个 profile。只接受 policy 中的 argv，不能传入 shell 命令。profile 可声明 `evidence_types`，执行回执还会自动带上 `executor-receipt`；`delivery_validation_record` 也可接收人工确认的 `evidence_types`。工作区可设置 `enforce_scope_contract=true`、`enforce_validation_design_contract=true` 或 `enforce_evidence_contract=true`，分别约束实现范围、定位前的验证设计和关闭前的证据闭环。三者默认关闭以保持既有任务可用。
 - `mc_admin(action="delivery_subtask_status"|"delivery_validation_record"|"delivery_transition" ...)` 分别更新子任务、记录外部/人工验证、推进阶段。人工验证 payload 必须显式传 `evidence_kind="manual_verified"` 与声明的 `actor`，系统返回 `reported_actor`、`actor_source`、`identity_assurance=self_asserted` 以及不含任务标题的 `delivery-validation` 引用；`acceptance_ids`、`evidence_refs` 必须是只含字符串的 JSON 数组。所有动作返回门禁、缺失项与确定的下一步。
 - 关闭阶段要求每项 `required=true` 的验收标准都关联 `executor` 或 `manual_verified` 的 `passed` 证据。普通外部回执标记为 `recorded_external`，不能伪装成执行器验证。
 - `mc_admin(action="delivery_skill_candidate"|"delivery_skill_contract_update"|"delivery_skill_canary"|"delivery_skill_observe"|"delivery_skill_evaluate"|"delivery_skill_publish"|"delivery_skill_rollback"|"delivery_skill_recommend"|"delivery_skill_replay", task_id="...", payload="...")` 管理可验证 Skill 生命周期。候选必须声明完整边界契约并匹配真实回执。成功观测只能引用工作区中可解析的已通过验证，重复引用会返回 `evidence_already_used`；并发观测在同一事务中去重并同步生成 replay。观测和 replay 同时按 `activation_id` 与 `contract_sha256` 隔离，并在数量截断前完成过滤；评估和发布共同使用 `minimum_verified_passed`。回执审计按任务锁内分批同步到 SQLite，状态与关闭门禁读取稀疏验收覆盖，不全量解码历史。回滚重启创建新 activation；残缺旧契约不进入默认推荐。发布后的协作资产同步失败会返回 `asset_registered=false` 和 `artifact asset-sync` 修复动作，不会把已经完成的发布误报为失败。
 - `mc_admin(action="delivery_failure_candidates"|"delivery_skill_synthesize")` 仅显式执行离线失败归纳和多轨迹归纳，不会读取原始代码、需求正文或验证日志，也不会影响普通查询延迟。
 - `mc_admin(action="asset_status|asset_register|asset_sync|asset_share|asset_approve|asset_bind|asset_loadout|wiki_document_ingest", source="...", payload="...")` 管理本地协作资产。`asset_register` 的 `source` 必须与 payload 的 owner 相同；既有资产更新与绑定只接受 owner 身份。共享资产默认 `pending_review`，仅该状态的 team/restricted 资产可由非 owner 审批，owner 不能自审，审批前不会进入任何 Agent 装载。metadata 最大 16 KiB，`asset_status` / `asset_loadout` 可通过 payload `max_chars` 控制有界输出并返回 `truncated`；`mc_context_pack(agent_id="...", role="...")` 还返回 `budget_tokens` 与 `truncated_sections`。
+- 与外部 Personal Assistant Wiki 协作时，推荐由宿主加载 `wiki` Skill：当前工程事实和任务证据保留在 Memory Center，长期知识由 Wiki 的两阶段确认流程治理。Wiki 晋升成功后，用 `asset_register` 登记 `kind=wiki`、`source_ref=pawiki:<path>` 的反向链接，并在 metadata 中保存 `knowledge_id`、`content_sha256`、`source_task_id` 和有界 `evidence_refs`；不要复制外部 Wiki 正文。The host Agent should orchestrate both MCP servers and retain only a governed reverse link in Memory Center.
+- 跨宿主部署可使用 Personal Assistant Wiki MCP 2.4+ 提供的 `personal-assistant-wiki-integrations`：它把同一份 `wiki` Skill 安装到共享 `~/.agents` 目录，并为需要独立目录的 Codex、Claude、WorkBuddy 补充兼容副本，同时生成通用 stdio MCP 清单与 DeepSeek Harness patch。各宿主仍应通过自己的配置入口显式启用 MCP，不假设存在全局统一配置文件。Cross-host setup installs one shared Skill source with only the compatibility copies required by each host, then renders host-specific MCP configuration without weakening approval gates.
 - `mc_analyze` 的 `depth` 仅支持 `quick|standard|full`，`direction` 仅支持 `upstream|downstream|both`，`max_depth` 为 `1..6`。标准和完整分析若计划、规则、契约等辅助阶段不可用，会保留已成功的影响图并返回 `analysis_status="partial"`、`diagnostics` 与下一步动作；MCP 错误响应的 `diagnostics.trace_id` 可对应本地调用审计。
 - 当任务工件或索引代际空间异常时，Agent 先建议 `artifact compact-task`、`artifact generation-gc --dry-run`、`artifact index-export-cleanup --dry-run` 或 `artifact semantic-index-compact --dry-run`；涉及删除必须由显式 `--apply` 或 `mc_admin(action="index_generation_gc", force=true)` 确认。语义镜像清理后，Agent 应在无写入任务时建议 `artifact storage-vacuum --apply` 回收 SQLite 页。
 - Skill 外部评测不属于 MCP 查询热路径。Agent 只有在用户要求评测已发布 Skill 时，才可建议 CLI 依次执行 `artifact delivery-skill-eval-status`、`delivery-skill-eval-init`、`delivery-skill-eval-run --dry-run`；运行外部引擎必须获得明确 `--apply` 授权，结果只能作为待审核的外部证据。
@@ -139,6 +141,29 @@ Git co-change 独立评测使用 `mc_admin(action="eval_cochange", limit=20, pay
 8. 新人或跨角色理解：`mc_onboard` / `mc_domain`
 9. 改动前确认索引状态：`mc_freshness`
 10. 收尾：`mc_close`
+
+### Evidence-bounded reasoning prompts / 证据约束推理 Prompt
+
+以下 Prompt 是对现有 facade 的只读编排，不增加新的 tool schema：
+
+| Prompt | 使用场景 | 停止或升级条件 |
+|---|---|---|
+| `clarify_change_request(request)` | 需求仍有范围、兼容性、目标或验收歧义 | 每次只问一个会改变结论的问题；信息足够立即停止，确认后才实现 |
+| `audit_project_claim(claim, scope="workspace")` | 核查“某调用一定存在”“所有消费者都兼容”等工程断言 | 明确 facts / inferences / judgments；证据 stale 或不足时保持 `AMBIGUOUS` / `UNKNOWN` |
+| `design_minimal_validation(change, task_id="")` | 为变更设计最低成本的可证伪验证 | 必须给出可观察的 `continue_if` / `stop_if`；只有真实回执才能标为 `VERIFIED` |
+| `compare_change_options(problem, option_a, option_b, constraints="", task_id="")` | 架构、兼容或迁移方案二选一 | 用相同维度钢人化双方；只在用户接受后记录 task decision |
+
+`clarify_change_request` 应先使用 `mc_start` / `mc_lookup` 回答可从工作区发现的问题，不能把已有新鲜证据重新问给用户。`audit_project_claim` 必须保留 `NOT_FOUND` 的开放世界边界。`design_minimal_validation` 不执行来自需求正文的 shell 字符串，只能建议动作或使用 workspace policy 中预注册的 argv profile。`compare_change_options` 使用专业视角但不虚构专家人物或真实人物观点。
+
+These prompts reuse existing facades and evidence semantics. They do not persist a second reasoning state, execute arbitrary commands, or promote confidence to verification.
+
+回归 Prompt 合同时运行：
+
+```bash
+memory-center eval-reasoning-prompts
+```
+
+该命令默认只返回 `static_contract=pass|fail`，真实行为仍为 `real_case_missing`。需要真实验收时，从 `examples/reasoning-prompt-eval/` 复制模板到本地私有评测目录，再传入 `--cases` 和 `--observations`。四类 Prompt 均有真实 case、脱敏 evidence refs 和四项人工检查后，`real_behavior.status=pass`、`release_ready=true`。人工 reviewer 仅标为 `identity_assurance=self_asserted`，报告不会返回姓名、输入正文或 evidence ref 内容。
 
 补充说明：
 - 回到已知任务空间时，优先调用 `mc_admin(action="task_resume_check", task_id="...")`。它会合并 resume packet、task health、repair plan、next actions、unresolved items 和 recent evidence，返回 `ready`、`needs_repair` 或 `blocked`。

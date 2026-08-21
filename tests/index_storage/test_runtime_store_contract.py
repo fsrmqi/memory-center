@@ -10,6 +10,7 @@ from memory_center.core.storage.maintenance import (
     compact_semantic_runtime_state,
     sparsify_static_assertions,
 )
+from memory_center.core.storage.memory_backend import DELIVERY_RECEIPT_PROJECTION_VERSION
 from memory_center.core.storage.runtime import RuntimeStore
 from memory_center.core.storage.workspace import WorkspaceStore
 
@@ -55,10 +56,13 @@ def test_delivery_receipt_projection_upgrades_and_streams_legacy_rows(tmp_path) 
         )
         state = store.delivery_receipt_sync_state("task")
         candidates = store.delivery_verified_acceptance_candidates("task", "task-ref")
+        evidence_candidates = store.delivery_acceptance_evidence_candidates("task", "task-ref")
 
     assert consumed == 1201
-    assert state == {"source_size": 100, "source_mtime_ns": 200, "projection_version": 2}
+    assert state == {"source_size": 100, "source_mtime_ns": 200, "projection_version": DELIVERY_RECEIPT_PROJECTION_VERSION}
     assert candidates == [{"acceptance_id": "AC-1", "receipt_id": "", "evidence_kind": "manual_verified"}]
+    assert len(evidence_candidates) == 1201
+    assert {row["evidence_type"] for row in evidence_candidates} == {"manual-verification"}
 
 
 def test_runtime_store_unifies_graph_and_runtime_records(tmp_path) -> None:

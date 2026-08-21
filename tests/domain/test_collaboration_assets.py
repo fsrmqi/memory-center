@@ -155,3 +155,27 @@ def test_asset_sync_and_admin_actions_share_the_same_domain_service(demo_workspa
     assert build_admin_registry(workspace_file=str(demo_workspace), source="alice").dispatch("asset_status")["counts"]["task"] >= 1
     http = _route_request("/workspace/asset/loadout", {"agent_id": ["alice"]}, str(demo_workspace))
     assert http["count"] >= 1
+
+
+def test_personal_wiki_promotion_can_be_registered_as_traceable_reverse_link(demo_workspace) -> None:
+    admin = build_admin_registry(
+        workspace_file=str(demo_workspace),
+        source="local-agent",
+        payload=(
+            '{"kind":"wiki","title":"稳定发布规则","owner":"local-agent",'
+            '"source_ref":"pawiki:知识沉淀/长期知识/稳定发布规则.md",'
+            '"metadata":{"knowledge_id":"pawiki-0123456789abcdef",'
+            '"content_sha256":"0123456789abcdef",'
+            '"source_task_id":"task-demo",'
+            '"evidence_refs":["delivery-evidence:receipt-demo"]}}'
+        ),
+    )
+    registered = admin.dispatch("asset_register")
+    asset = registered["asset"]
+    assert registered["registered"] is True
+    assert asset["kind"] == "wiki"
+    assert asset["source_ref"].startswith("pawiki:")
+    assert asset["metadata"]["knowledge_id"] == "pawiki-0123456789abcdef"
+    assert asset["metadata"]["source_task_id"] == "task-demo"
+    loaded = collaboration_asset_loadout(demo_workspace, agent_id="local-agent")
+    assert any(item["asset_id"] == asset["asset_id"] for item in loaded["assets"])

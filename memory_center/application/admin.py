@@ -696,6 +696,7 @@ def build_admin_registry(
                 exit_code=(parse_payload(payload) or {}).get("exit_code"),
                 acceptance_ids=(parse_payload(payload) or {}).get("acceptance_ids", []),
                 evidence_refs=(parse_payload(payload) or {}).get("evidence_refs", []),
+                evidence_types=(parse_payload(payload) or {}).get("evidence_types", []),
                 evidence_kind=str((parse_payload(payload) or {}).get("evidence_kind", "recorded_external")),
                 actor=str((parse_payload(payload) or {}).get("actor", "")),
                 actor_source=source or "mcp",

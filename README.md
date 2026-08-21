@@ -154,7 +154,7 @@ For core task-memory artifacts such as `context.md`, `requirement.md`, `design.m
 
 对于 `context.md`、`requirement.md`、`design.md`、`plan.md`、`test-plan.md`、`change-log.md` 以及任务空间里的 `current-summary.md` 这类核心记忆工件，记忆中心现在默认强制“只能尾部追加，不能整篇覆盖”。
 
-对于可持续的需求开发任务，可在任务空间初始化 `feature_delivery_v2`：它将需求来源、范围边界、代码定位、验收、策略门禁和验证证据关联为 `intake -> breakdown -> locate -> implement -> verify -> close` 的有界状态机。普通回执仅标为外部记录；关闭任务需要执行器证据或带引用的人工验证。执行器只运行 workspace policy 中预注册的 argv profile，绝不执行模型或需求正文传入的 shell 字符串；CLI、MCP、HTTP 的具体用法见 [docs/REFERENCE.md](./docs/REFERENCE.md) 与 [docs/MCP_GUIDE.md](./docs/MCP_GUIDE.md)。
+对于可持续的需求开发任务，可在任务空间初始化 `feature_delivery_v2`：它将需求来源、范围边界、代码定位、验收、策略门禁和验证证据关联为 `intake -> breakdown -> locate -> implement -> verify -> close` 的有界状态机。acceptance 可兼容性附加 `critical_hypothesis`、`continue_if`、`stop_if`、`rollback`、`evidence_required`，把验收从“要测什么”扩展为可证伪验证设计；可信通过回执可附加结构化 `evidence_types`，矩阵会自动派生已观测、缺失和闭环状态。默认不阻断旧任务；`enforce_validation_design_contract=true` 在进入 `locate` 前强制设计完整，`enforce_evidence_contract=true` 在关闭前强制所需证据全部匹配。普通回执仅标为外部记录；关闭任务需要执行器证据或带引用的人工验证。执行器只运行 workspace policy 中预注册的 argv profile，绝不执行模型或需求正文传入的 shell 字符串；CLI、MCP、HTTP 的具体用法见 [docs/REFERENCE.md](./docs/REFERENCE.md) 与 [docs/MCP_GUIDE.md](./docs/MCP_GUIDE.md)。
 
 已关闭且验证完整的交付可以生成 Skill 候选，但候选不会直接进入默认检索。它必须声明完整边界契约并匹配真实验证回执。人工验证要求明确操作人，并自动生成不含任务标题的 `delivery-validation` 引用；记录同时声明 `reported_actor`、入口 `actor_source` 和 `identity_assurance=self_asserted`，不把调用方填写的名字误称为认证身份。成功观测必须解析到实际 `passed` 回执，并核对证据种类及原始引用归属；同一回执在并发请求中也只能计数一次。JSONL 保留完整审计，SQLite 读模型在锁内分批增量同步，并通过稀疏验收索引执行门禁，早期证据不会被后续记录挤出或在热路径反复全量扫描。每次 canary 使用独立 `activation_id`；新旧 replay 先按当前契约和 activation 过滤，再应用数量上限。评估与发布共同使用 `minimum_verified_passed`；残缺旧契约不进入默认推荐。出现回归可立即回滚，历史证据仍保留。Skill registry 使用事务化原子替换与备份恢复，协作资产同步失败则返回显式修复动作，不会误报发布状态。
 
@@ -1343,6 +1343,26 @@ Available MCP prompts / MCP 提示词：
 
 - `detect_impact(target)`
 - `spring_cloud_safe_change(task)`
+- `onboard_new_dev(scope="workspace")`
+- `check_mq_safety(topic="")`
+- `analyze_dto_impact(dto_class="")`
+- `cross_service_trace(service="")`
+- `config_propagation_check(key="")`
+- `freshness_check()`
+- `domain_overview()`
+- `diff_impact_analysis(diff_summary="")`
+- `clarify_change_request(request)`：逐问澄清会改变范围、兼容性或验收的关键歧义 / Clarify decision-changing ambiguities one question at a time
+- `audit_project_claim(claim, scope="workspace")`：区分事实、推断、判断并核查证据边界 / Audit facts, inferences, judgments, and evidence boundaries
+- `design_minimal_validation(change, task_id="")`：设计低成本、可逆、可证伪的工程验证 / Design a low-cost, reversible, falsifiable validation
+- `compare_change_options(problem, option_a, option_b, constraints="", task_id="")`：对两个变更方案做证据约束的双向钢人论证 / Steelman two change options with project evidence
+
+后四个 Prompt 只编排现有 `mc_*` 能力，不新增写入入口、不改变 tool schema。它们不会把高置信推断提升为 `VERIFIED`；最小验证只允许建议或使用工作区预注册的 argv profile。
+
+The final four prompts orchestrate existing `mc_*` capabilities without adding a write surface or changing tool schemas. They never upgrade confidence to `VERIFIED`; minimal validation may only propose actions or use workspace-approved argv profiles.
+
+可用 `memory-center eval-reasoning-prompts` 运行内置静态合同 smoke。要验收真实效果，复制 `examples/reasoning-prompt-eval/` 模板，传入本地 `--cases` 与 `--observations`；只有四类 Prompt 都具备 real case 和脱敏人工观测时，统一报告才返回 `release_ready=true`。报告不回显 Prompt 参数、reviewer 或 evidence refs。
+
+Run `memory-center eval-reasoning-prompts` for the built-in static contract smoke. Real acceptance requires local `--cases` and `--observations` based on `examples/reasoning-prompt-eval/`; public examples never count as real evidence.
 
 ---
 

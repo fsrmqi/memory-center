@@ -7,7 +7,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
-DELIVERY_RECEIPT_PROJECTION_VERSION = 2
+DELIVERY_RECEIPT_PROJECTION_VERSION = 3
 _DELIVERY_RECEIPT_BATCH_SIZE = 500
 
 
@@ -181,6 +181,14 @@ class _MemoryRecordOperations:
             );
             CREATE INDEX IF NOT EXISTS idx_delivery_receipt_evidence_lookup
               ON delivery_receipt_evidence_refs(task_id, receipt_id, evidence_ref);
+            CREATE TABLE IF NOT EXISTS delivery_receipt_evidence_types (
+              task_id TEXT NOT NULL,
+              receipt_id TEXT NOT NULL,
+              evidence_type TEXT NOT NULL,
+              PRIMARY KEY(task_id, receipt_id, evidence_type)
+            );
+            CREATE INDEX IF NOT EXISTS idx_delivery_receipt_evidence_type_lookup
+              ON delivery_receipt_evidence_types(task_id, evidence_type, receipt_id);
             """
         )
         sync_columns = {str(row["name"]) for row in conn.execute("PRAGMA table_info(delivery_receipt_sync)")}
@@ -292,6 +300,7 @@ class _MemoryRecordOperations:
                 conn.execute("DELETE FROM delivery_receipts WHERE task_id=?", (task_id,))
                 conn.execute("DELETE FROM delivery_receipt_acceptance WHERE task_id=?", (task_id,))
                 conn.execute("DELETE FROM delivery_receipt_evidence_refs WHERE task_id=?", (task_id,))
+                conn.execute("DELETE FROM delivery_receipt_evidence_types WHERE task_id=?", (task_id,))
             batch: list[dict[str, Any]] = []
             for receipt in receipts:
                 if str(receipt.get("receipt_id", "")):
@@ -325,6 +334,10 @@ class _MemoryRecordOperations:
         )
         conn.execute(
             f"DELETE FROM delivery_receipt_evidence_refs WHERE task_id=? AND receipt_id IN ({placeholders})",
+            delete_args,
+        )
+        conn.execute(
+            f"DELETE FROM delivery_receipt_evidence_types WHERE task_id=? AND receipt_id IN ({placeholders})",
             delete_args,
         )
         conn.executemany(
@@ -362,6 +375,17 @@ class _MemoryRecordOperations:
             for evidence_ref in receipt.get("evidence_refs", [])
             if str(evidence_ref)
         ]
+        evidence_type_rows = [
+            (task_id, str(receipt["receipt_id"]), str(evidence_type).strip().lower()[:80])
+            for receipt in receipts
+            for evidence_type in [
+                *receipt.get("evidence_types", []),
+                "executor-receipt" if receipt.get("evidence_kind") == "executor" else "",
+                "manual-verification" if receipt.get("evidence_kind") == "manual_verified" else "",
+                f"profile:{receipt.get('profile_id')}" if receipt.get("evidence_kind") == "executor" and receipt.get("profile_id") else "",
+            ]
+            if str(evidence_type).strip()
+        ]
         if acceptance_rows:
             conn.executemany(
                 "INSERT OR IGNORE INTO delivery_receipt_acceptance(task_id, receipt_id, acceptance_id) VALUES(?, ?, ?)",
@@ -371,6 +395,11 @@ class _MemoryRecordOperations:
             conn.executemany(
                 "INSERT OR IGNORE INTO delivery_receipt_evidence_refs(task_id, receipt_id, evidence_ref) VALUES(?, ?, ?)",
                 evidence_rows,
+            )
+        if evidence_type_rows:
+            conn.executemany(
+                "INSERT OR IGNORE INTO delivery_receipt_evidence_types(task_id, receipt_id, evidence_type) VALUES(?, ?, ?)",
+                evidence_type_rows,
             )
 
     def delivery_receipt_sync_state(self, task_id: str) -> dict[str, int]:
@@ -420,6 +449,45 @@ class _MemoryRecordOperations:
                 "acceptance_id": str(row["acceptance_id"]),
                 "receipt_id": str(row["receipt_id"]),
                 "evidence_kind": str(row["evidence_kind"]),
+            }
+            for row in rows
+        ]
+
+    def delivery_acceptance_evidence_candidates(self, task_id: str, task_ref: str) -> list[dict[str, str]]:
+        """Return sparse trusted evidence types without scanning receipt payloads."""
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT DISTINCT a.acceptance_id, r.receipt_id, r.evidence_kind, t.evidence_type
+                FROM delivery_receipts r
+                JOIN delivery_receipt_acceptance a
+                  ON a.task_id=r.task_id AND a.receipt_id=r.receipt_id
+                JOIN delivery_receipt_evidence_types t
+                  ON t.task_id=r.task_id AND t.receipt_id=r.receipt_id
+                WHERE r.task_id=? AND r.status='passed'
+                  AND (
+                    (r.evidence_kind='manual_verified' AND EXISTS (
+                      SELECT 1 FROM delivery_receipt_evidence_refs e
+                      WHERE e.task_id=r.task_id AND e.receipt_id=r.receipt_id
+                        AND e.evidence_ref=? || r.receipt_id
+                    ))
+                    OR
+                    (r.evidence_kind='executor' AND EXISTS (
+                      SELECT 1 FROM delivery_receipt_evidence_refs e
+                      WHERE e.task_id=r.task_id AND e.receipt_id=r.receipt_id
+                        AND e.evidence_ref='delivery-evidence:' || r.receipt_id
+                    ))
+                  )
+                ORDER BY a.acceptance_id, t.evidence_type, r.receipt_id
+                """,
+                (task_id, f"delivery-validation:{task_ref}:"),
+            ).fetchall()
+        return [
+            {
+                "acceptance_id": str(row["acceptance_id"]),
+                "receipt_id": str(row["receipt_id"]),
+                "evidence_kind": str(row["evidence_kind"]),
+                "evidence_type": str(row["evidence_type"]),
             }
             for row in rows
         ]

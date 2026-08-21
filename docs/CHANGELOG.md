@@ -2,7 +2,19 @@
 
 ## Unreleased 未发布
 
-- 暂无。
+## 4.3.87 推理 Prompt 与证据闭环 / Reasoning Prompts and Evidence Closure
+
+- 新增 `clarify_change_request`、`audit_project_claim`、`design_minimal_validation`、`compare_change_options` 四个 additive MCP Prompt，分别覆盖逐问式需求澄清、工程断言核查、最小可证伪验证和双向钢人决策。
+- 四个 Prompt 仅编排现有 `mc_*` facade，保持 tool schema 不变；继续遵守 `knowledge_state` / `evidence_level`、预注册 argv profile、真实验证回执和用户接受后再记录决策的边界。
+- Added four additive MCP prompts for bounded clarification, project-claim auditing, falsifiable validation design, and evidence-backed option comparison without changing tool schemas or creating a second state store.
+- 新增 `eval-reasoning-prompts`：内置四类静态合同 smoke，并支持本地 `real_case` 与脱敏人工 observation 生成统一验收报告；公开示例、缺少证据引用或覆盖不完整时不会返回 `release_ready=true`。
+- 推理 Prompt 评测报告不回显参数正文、reviewer 或 evidence refs，只保留逻辑 case ID、聚合检查、渲染长度与 SHA-256；人工身份明确标记为 `self_asserted`。
+- Added a privacy-bounded reasoning-prompt acceptance report that separates static contract smoke from local real behavior observations and never treats public examples as real evidence.
+- `feature_delivery_v2` acceptance 新增兼容字段 `critical_hypothesis`、`continue_if`、`stop_if`、`rollback`、`evidence_required`；delivery matrix、TECH_SPEC、任务指标和恢复提示展示验证设计及覆盖率。
+- 新增默认关闭的 `enforce_validation_design_contract` workspace policy；启用后，必需验收缺少完整可证伪设计会在进入 `locate` 前返回 `validation_design_required`，旧任务和默认流程保持兼容。
+- 验证回执与预注册 profile 新增兼容型 `evidence_types`；delivery matrix、TECH_SPEC、任务指标和恢复提示会计算每项验收的已观测、缺失与闭环证据。新增默认关闭的 `enforce_evidence_contract`，启用后只在 `close` 阶段阻止缺少所需证据类型的任务。
+- CLI、HTTP、MCP 的既有 delivery contract 入口复用同一 additive items 结构，无需修改 MCP tool schema。
+- Added backward-compatible acceptance validation-design fields and an opt-in locate-stage gate without changing the MCP tool schema.
 
 ## 4.3.86 图谱正确性与生成式 Wiki 移除 / Graph Correctness and Generated Wiki Removal
 

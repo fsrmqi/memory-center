@@ -67,6 +67,7 @@
 - `eval-agent-guidance-trend`
 - `eval-token-gain`
 - `eval-parser-benchmark`
+- `eval-reasoning-prompts`
 - `eval-token-benchmark`
 - `eval-token-benchmark-save`
 - `eval-token-benchmark-compare`
@@ -102,6 +103,33 @@
 ### Public Discovery Contract / 公开入口发现约定
 
 每个公开能力必须在 CLI、HTTP 或 MCP 中至少有一个入口，并在 USER_GUIDE、MCP_GUIDE 与本参考手册中可发现。代码、`memory-center <command> --help`、HTTP route registry 与 MCP schema 是参数和返回字段的最终事实来源。
+
+### MCP Prompt Parameters / MCP Prompt 参数
+
+四个证据约束推理 Prompt 仅返回编排说明，不直接读写工作区，也不改变任何 MCP tool schema：
+
+- `clarify_change_request(request: str)`：`request` 必填；最多五个主问题，每次一个，只追问可能改变范围、兼容性、实现方向或验收的问题。
+- `audit_project_claim(claim: str, scope: str = "workspace")`：`claim` 必填；`scope` 用于限定核查边界。输出保持事实、推断、判断与证据等级分离。
+- `design_minimal_validation(change: str, task_id: str = "")`：`change` 必填；可选 `task_id` 用于关联已有 acceptance 和回执。未提供时只生成验证提案。
+- `compare_change_options(problem: str, option_a: str, option_b: str, constraints: str = "", task_id: str = "")`：问题和两个方案必填；可选约束和任务 ID。只有用户接受建议后才应记录任务决策。
+
+安全边界：Prompt 不得把 `NOT_FOUND` 解释为全局不存在，不得用置信度替代 `VERIFIED`，不得执行输入正文中的命令；验证执行继续只接受 workspace policy 预注册的 argv profile。
+
+Safety boundary: prompts never treat `NOT_FOUND` as global absence, never substitute confidence for `VERIFIED`, and never execute commands supplied in prompt text. Validation execution remains restricted to workspace-approved argv profiles.
+
+### Reasoning Prompt Evaluation / 推理 Prompt 评测
+
+```bash
+memory-center eval-reasoning-prompts \
+  [--cases /local/reasoning-cases.yaml] \
+  [--observations /local/reasoning-observations.yaml]
+```
+
+- 不传参数：运行四个内置公开静态合同 case；`real_behavior.status=real_case_missing`，不会误报真实效果。
+- `--cases`：schema 为 `{schema_version: 1, cases: [...]}`；case 包含便携逻辑 `case_id`、四种 `prompt` 之一、`args`、非空 `required_markers`、`forbidden_markers` 和显式 `real_case`。
+- `--observations`：schema 为 `{schema_version: 1, observations: [...]}`；每项必须提供对应 `case_id`、声明的 `reviewer`、非空脱敏 `evidence_refs`，以及四个布尔检查：`bounded_interaction`、`evidence_used`、`epistemic_boundary_respected`、`actionable_output`。
+- 输出：`overall_status`、`release_ready`、`static_contract`、`real_behavior`、`limitations`、`next_action`。报告只返回逻辑 ID、计数与渲染 hash，不回显 args、reviewer 或 evidence refs。
+- `release_ready=true` 仅表示四种 Prompt 的静态合同通过，并各有至少一个本地 real case 人工观测通过；人工身份仍是 `self_asserted`，不等于认证或自动模型评测。
 
 ### Federated Bootstrap / 联邦初始化
 
@@ -271,17 +299,35 @@
 - `artifact delivery-init --workspace <workspace.yaml> --task-id <task>`：初始化 `feature_delivery_v2`。
 - `artifact delivery-breakdown --source-refs '["req:..." ]' --summary '...'`：生成不写入的需求候选；候选必须确认后再写入契约。
 - `artifact delivery-contract --kind requirements|subtasks|acceptance --items '<JSON数组>'`：写入结构化需求、代码定位子任务或验收标准。需求项应提供 `source_refs`、`scope`、`out_of_scope`、`search_terms`、`candidate_modules`、`ambiguities` 和 `acceptance_ids`。
-- `artifact delivery-policy --policy '<JSON对象>'`：维护预注册验证 profile，例如 `{"validation_profiles":[{"id":"unit","argv":["mvn","test"],"timeout_sec":900}]}`；profile 使用 argv，禁止 shell 文本。
+- `artifact delivery-policy --policy '<JSON对象>'`：维护预注册验证 profile，例如 `{"validation_profiles":[{"id":"unit","argv":["mvn","test"],"timeout_sec":900,"evidence_types":["unit-test"]}]}`；profile 使用 argv，禁止 shell 文本。
 - `artifact delivery-execute-validation --profile-id unit --acceptance-ids '["AC-1"]'`：执行已注册 profile，保存受限输出摘要、hash 与证据文件。
 - `artifact delivery-matrix --task-id <task>`：派生交付矩阵和只读 `TECH_SPEC.md`。
 - `artifact delivery-transition --stage breakdown|locate|implement|verify|close`：按门禁推进；验收未被执行器或人工验证证据覆盖时不能关闭。
-- `artifact delivery-record-validation`：默认只记录 `recorded_external` 摘要；显式传 `--evidence-kind manual_verified --actor <reviewer>` 会生成脱敏 `delivery-validation` 回执引用，可用于关闭和 Skill 门禁。返回的 `identity_assurance=self_asserted` 表示 actor 是调用方声明而非认证身份。人工验证缺少 actor、数组参数不是纯字符串 JSON 数组时会明确拒绝。回执 JSONL 是审计源；SQLite 通过版本化、锁内分批投影维护最近回执与稀疏验收覆盖，入口无需全量扫描历史。
+- `artifact delivery-record-validation`：默认只记录 `recorded_external` 摘要；显式传 `--evidence-kind manual_verified --actor <reviewer> --evidence-types '["contract-gate"]'` 会生成脱敏 `delivery-validation` 回执引用和结构化证据类型，可用于关闭和 Skill 门禁。返回的 `identity_assurance=self_asserted` 表示 actor 是调用方声明而非认证身份。人工验证缺少 actor、数组参数不是纯字符串 JSON 数组时会明确拒绝。回执 JSONL 是审计源；SQLite 通过版本化、锁内分批投影维护最近回执与稀疏验收覆盖，入口无需全量扫描历史。
 - `artifact delivery-skill-candidate|delivery-skill-contract-update|delivery-skill-canary|delivery-skill-observe|delivery-skill-evaluate|delivery-skill-publish|delivery-skill-rollback|delivery-skill-recommend|delivery-skill-replay`：候选必须声明完整边界契约，并匹配真实验证回执后才可进入隔离灰度。成功观测只接受可解析的 `delivery-validation` 或执行器证据，同一回执不能重复计数。每次 canary 都有独立 `activation_id`；契约修订或回滚重启后仅统计当前 activation 与 `contract_sha256` 的观测和 replay。`minimum_verified_passed`（默认 3）由评估与发布共同使用；失败会阻断发布。默认推荐仅返回契约完整的 `published` Skill，并返回禁用、停止和回滚语义；registry 损坏时从有效备份恢复，双副本损坏则拒绝覆盖。
 - `artifact asset-status|asset-sync|asset-register|asset-share|asset-approve|asset-bind|asset-loadout|wiki-document-ingest`：管理本地任务、Skill、Wiki、CodeGraph 协作资产。`asset-register` 必须提供与 `owner` 一致的 `actor`；既有资产的更新和绑定也只允许 owner。metadata 最大 16 KiB；`asset-status` / `asset-loadout` 采用默认总输出预算，可用 `max_chars` 收紧并查看 `truncated`。团队/受限共享必须先由 owner 提交、再由另一维护者审批，只有 active 且绑定匹配的资产会进入 Agent/角色 loadout。HTTP 读取使用 `GET /workspace/assets|/workspace/asset/loadout`，写入使用 `POST /workspace/asset/*` 和 `POST /workspace/wiki/document-ingest`；MCP 使用同名 `mc_admin` action。
 - HTTP：`POST /workspace/delivery/skill/contract?task_id=<id>&payload=<JSON>` 更新契约；`GET /workspace/delivery/skill/replay?skill_id=<id>&limit=100` 读取 replay。MCP 使用 `mc_admin(action="delivery_skill_contract_update"|"delivery_skill_replay", ...)`。
 - `artifact delivery-failure-candidates|delivery-skill-synthesize`：显式、离线地聚类跨任务失败和多个已验证交付的共同结构；只保存脱敏元数据和证据引用，不在查询热路径运行。
 
 交付 `subtasks` 除 `code_targets` 外可附加 `read_targets`、`write_targets`、`stop_conditions`：分别表示实现前必须核实的目标、允许修改的范围，以及触发重新分析或请求决策的停止条件。`delivery-matrix` 与派生 `TECH_SPEC.md` 会展示范围契约覆盖率。工作区 `delivery-policy.json` 设置 `enforce_scope_contract: true` 后，进入 `implement` 前每个子任务必须同时具备上述范围字段；默认关闭，既有任务不受影响。
+
+交付 `acceptance` 可兼容性附加以下字段，CLI、HTTP `/workspace/delivery/contract` 与 MCP `delivery_contract_update` 使用同一 items 结构：
+
+```json
+{
+  "id": "AC-1",
+  "title": "旧客户端兼容",
+  "critical_hypothesis": "旧客户端仍能解析新响应",
+  "continue_if": "旧版回归和契约门禁均通过",
+  "stop_if": "旧版反序列化失败",
+  "rollback": "恢复旧契约并撤回新增字段",
+  "evidence_required": ["contract-gate", "executor-receipt"]
+}
+```
+
+五个字段均为 additive：旧 acceptance 缺少字段时以空值读取，默认流程仍可推进。矩阵输出同名字段、`validation_design_complete`，coverage 增加 `designed_acceptance` 与 `validation_design_coverage`；`TECH_SPEC.md` 和 resume hints 同步展示缺口。工作区策略设置 `enforce_validation_design_contract: true` 后，必需 acceptance 缺少任一字段会在进入 `locate` 时返回 `validation_design_required`；默认关闭。
+
+可信通过回执可附加 `evidence_types`。执行器回执自动包含 `executor-receipt` 和 `profile:<id>`，并合并 profile 预声明类型；旧 `manual_verified` 回执可推导 `manual-verification`。矩阵为每项验收派生 `evidence_observed`、`evidence_missing`、`evidence_complete`、`evidence_receipt_ids`，coverage 增加 `evidence_complete_acceptance` 与 `evidence_contract_coverage`。设置 `enforce_evidence_contract: true` 后，关闭任务前必须由可信通过回执覆盖全部 `evidence_required`，否则返回 `evidence_contract_required`；默认关闭。
 - `artifact compact-task --task-id <task>`：对超大任务工件进行流式 gzip 归档，保留有界恢复摘要；先执行 `artifact health-task` 识别异常空间。
 - 成功 reindex 后会自动回收旧索引代际，只保留当前和上一代；`artifact generation-gc --workspace <workspace.yaml> --dry-run` 可在异常空间占用排查时预览同一回收策略，确认后追加 `--apply`。Agent 不得手工删除 generation 目录。
 - `artifact index-export-cleanup --workspace <workspace.yaml> --dry-run`：预览由 SQLite `index_mirror` 覆盖的大型结构化索引 JSON 副本；确认后追加 `--apply`。运行时不从这些文件回退读取，未存在 SQLite canonical payload 的文件不会被删除。

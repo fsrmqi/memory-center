@@ -1,0 +1,13 @@
+schema_version: 1
+observations:
+  - case_id: local-clarify-case
+    reviewer: "local-reviewer"
+    evidence_refs: ["session:replace-with-local-redacted-ref"]
+    checks:
+      bounded_interaction: true
+      evidence_used: true
+      epistemic_boundary_respected: true
+      actionable_output: true
+
+  # 为其余三个 real case 各增加一条同结构记录。
+  # Add one observation with the same four checks for each remaining real case.

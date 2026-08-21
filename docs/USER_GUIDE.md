@@ -253,6 +253,19 @@ memory-center setup-agent --workspace /abs/path/.memory-center/workspace.yaml
 
 如果 Agent 首轮没有看到 `mc_*`，先把状态视为“装载中或未知”：执行延迟工具发现，并用 `mc_freshness` 做轻量验证。Codex 中可运行 `codex mcp get memory-center`；若显示 `enabled: true`，但当前会话仍无工具，应刷新或新建会话，不要误报“Memory Center 未加载”。只有绑定缺失、命令不存在或 MCP 调用明确失败时才执行降级流程。
 
+当问题不只是“查什么”，还涉及需求澄清、断言核查、验证设计或方案选择时，可以使用以下 MCP Prompt：
+
+- `clarify_change_request`：需求还不够可执行时逐问澄清。
+- `audit_project_claim`：核查工程说法并区分事实、推断和判断。
+- `design_minimal_validation`：为改动设计低成本、可逆、可证伪的验证。
+- `compare_change_options`：用统一维度比较两个架构或迁移方案。
+
+这些 Prompt 会引导 Agent 调用现有 `mc_*` facade，但自身不创建任务、不执行命令、不写验证回执。需要持久化或执行时，仍使用现有 task、acceptance、预注册验证 profile 和 decision 入口。
+
+These prompts guide the Agent through existing `mc_*` facades. They do not create tasks, execute commands, or write validation receipts by themselves; persistence and execution continue through the existing task, acceptance, approved-profile, and decision surfaces.
+
+先运行 `memory-center eval-reasoning-prompts` 可确认四个 Prompt 的静态合同仍完整，但此结果只代表 smoke。真实验收请复制 [examples/reasoning-prompt-eval](../examples/reasoning-prompt-eval/README.md) 模板，在本地填写脱敏 real cases 和人工 observations，再用 `--cases`、`--observations` 生成统一报告。若只有示例或缺少任一类真实观测，报告会保持 `release_ready=false`。
+
 ### HTTP + Workbench
 
 ```bash
@@ -332,15 +345,36 @@ memory-center artifact delivery-skill-publish --workspace /abs/path/.memory-cent
 }
 ```
 
+对高风险验收建议同时记录可证伪验证设计：
+
+```json
+{
+  "id": "AC-1",
+  "title": "旧客户端兼容",
+  "critical_hypothesis": "旧客户端仍能解析新响应",
+  "continue_if": "旧版回归和契约门禁均通过",
+  "stop_if": "旧版反序列化失败",
+  "rollback": "恢复旧契约",
+  "evidence_required": ["contract-gate", "executor-receipt"]
+}
+```
+
 需要严格控制 Agent 修改边界时，由工作区维护者在 `delivery-policy.json` 中设置：
 
 ```json
 {
-  "enforce_scope_contract": true
+  "enforce_scope_contract": true,
+  "enforce_validation_design_contract": true,
+  "enforce_evidence_contract": true,
+  "validation_profiles": [{
+    "id": "contract-gate",
+    "argv": ["python3", "-m", "pytest", "tests/contracts"],
+    "evidence_types": ["contract-gate"]
+  }]
 }
 ```
 
-该策略会阻止范围不完整的子任务进入实现阶段；它不会执行模型传入的命令，也不会修改源码。
+前三项分别阻止范围不完整的子任务进入实现阶段、验证设计不完整的验收进入代码定位阶段，以及所需证据未闭环的任务关闭。执行器回执自动提供 `executor-receipt`，并合并 profile 的 `evidence_types`；人工确认可通过 `delivery-record-validation --evidence-types` 声明证据类型。三项门禁默认均关闭，因此旧任务仍可继续；策略不会执行模型传入的命令，也不会修改源码。
 
 ## 9. Keep It Small / 如何避免用法膨胀
 

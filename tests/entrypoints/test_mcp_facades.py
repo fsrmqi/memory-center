@@ -146,6 +146,13 @@ def test_mcp_server_exposes_workflow_facades_and_insight_tools(tmp_path: Path):
     }
     assert len(tool_names) == len(expected)
     assert set(tool_names) == expected
+    prompt_names = set(server._prompt_manager._prompts)
+    assert {
+        "clarify_change_request",
+        "audit_project_claim",
+        "design_minimal_validation",
+        "compare_change_options",
+    }.issubset(prompt_names)
 
 
 @pytest.mark.skipif(not HAS_MCP, reason="mcp package not installed")

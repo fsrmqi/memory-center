@@ -91,6 +91,20 @@ def _resume_check_next_step(status: str, task_id: str, delivery_hints: dict[str,
             "details": hints["unresolved_ambiguities"][:5],
             "requires_write": False,
         }
+    if hints.get("validation_design_enforced") and hints.get("validation_design_gaps"):
+        return {
+            "action": "complete_validation_design",
+            "command": "先为必需验收补齐关键假设、继续/停止条件、回滚方式和所需证据",
+            "details": hints["validation_design_gaps"][:5],
+            "requires_write": True,
+        }
+    if hints.get("evidence_contract_enforced") and hints.get("evidence_contract_gaps"):
+        return {
+            "action": "complete_evidence_contract",
+            "command": "先为必需验收补充与 evidence_required 匹配的可信通过回执",
+            "details": hints["evidence_contract_gaps"][:5],
+            "requires_write": True,
+        }
     if hints.get("failed_validations"):
         return {
             "action": "fix_failed_validation",
@@ -106,21 +120,35 @@ def _delivery_matrix_hints(matrix: dict[str, Any], metrics: dict[str, Any]) -> d
     rows = matrix.get("rows", [])
     ambiguities = []
     failed_validations = []
+    validation_design_gaps = []
+    evidence_contract_gaps = []
     for row in rows:
         if row.get("ambiguities"):
             ambiguities.append({"requirement_id": row.get("requirement_id"), "title": row.get("title"), "ambiguities": row["ambiguities"]})
         for acceptance in row.get("acceptance", []):
+            if not acceptance.get("validation_design_complete"):
+                validation_design_gaps.append({"acceptance_id": acceptance.get("id"), "title": acceptance.get("title")})
+            if not acceptance.get("evidence_complete"):
+                evidence_contract_gaps.append({"acceptance_id": acceptance.get("id"), "title": acceptance.get("title"), "missing": acceptance.get("evidence_missing", [])})
             if not acceptance.get("verified"):
                 failed_validations.append({"acceptance_id": acceptance.get("id"), "title": acceptance.get("title")})
     coverage = metrics.get("coverage", {})
     verification = metrics.get("verification", {})
     failure_classification = metrics.get("failure_classification", {})
+    validation_design_enforced = bool((matrix.get("policy", {}) or {}).get("enforce_validation_design_contract"))
+    evidence_contract_enforced = bool((matrix.get("policy", {}) or {}).get("enforce_evidence_contract"))
     return {
         "unresolved_ambiguities": ambiguities,
         "failed_validations": failed_validations,
+        "validation_design_gaps": validation_design_gaps,
+        "validation_design_enforced": validation_design_enforced,
+        "evidence_contract_gaps": evidence_contract_gaps,
+        "evidence_contract_enforced": evidence_contract_enforced,
         "requirement_coverage": coverage.get("requirement_coverage", 0),
         "acceptance_coverage": coverage.get("acceptance_coverage", 0),
+        "validation_design_coverage": coverage.get("validation_design_coverage", 0),
+        "evidence_contract_coverage": coverage.get("evidence_contract_coverage", 0),
         "verification_success_rate": verification.get("success_rate", 0),
         "failure_categories": failure_classification,
-        "has_critical_gaps": bool(ambiguities or failed_validations),
+        "has_critical_gaps": bool(ambiguities or failed_validations or (validation_design_enforced and validation_design_gaps) or (evidence_contract_enforced and evidence_contract_gaps)),
     }

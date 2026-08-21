@@ -203,6 +203,7 @@ def _workspace_delivery_validation(rp):
         exit_code=payload.get("exit_code"),
         acceptance_ids=payload.get("acceptance_ids", []),
         evidence_refs=payload.get("evidence_refs", []),
+        evidence_types=payload.get("evidence_types", []),
         evidence_kind=str(payload.get("evidence_kind", "recorded_external")),
         actor=rp.get("actor", ""),
         actor_source="http",

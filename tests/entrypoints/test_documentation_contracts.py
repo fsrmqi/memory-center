@@ -25,6 +25,37 @@ def test_architecture_communities_is_discoverable_from_all_public_document_layer
         assert "architecture-communities" in _read(relative_path) or "architecture_communities" in _read(relative_path)
 
 
+def test_evidence_bounded_reasoning_prompts_are_discoverable() -> None:
+    prompts = (
+        "clarify_change_request",
+        "audit_project_claim",
+        "design_minimal_validation",
+        "compare_change_options",
+    )
+    for relative_path in ("README.md", "docs/USER_GUIDE.md", "docs/REFERENCE.md", "docs/MCP_GUIDE.md"):
+        content = _read(relative_path)
+        for prompt in prompts:
+            assert prompt in content, f"{prompt} missing from {relative_path}"
+
+
+def test_reasoning_prompt_evaluation_is_discoverable() -> None:
+    for relative_path in ("README.md", "docs/USER_GUIDE.md", "docs/REFERENCE.md", "docs/MCP_GUIDE.md"):
+        assert "eval-reasoning-prompts" in _read(relative_path)
+
+
+def test_acceptance_validation_design_is_discoverable() -> None:
+    fields = ("critical_hypothesis", "continue_if", "stop_if", "rollback", "evidence_required")
+    for relative_path in ("README.md", "docs/USER_GUIDE.md", "docs/REFERENCE.md", "docs/MCP_GUIDE.md"):
+        content = _read(relative_path)
+        for field in fields:
+            assert field in content, f"{field} missing from {relative_path}"
+    assert "enforce_validation_design_contract" in _read("docs/ARCHITECTURE.md")
+    reference = _read("docs/REFERENCE.md")
+    for field in ("evidence_types", "evidence_observed", "evidence_missing", "evidence_complete"):
+        assert field in reference
+    assert "enforce_evidence_contract" in _read("docs/ARCHITECTURE.md")
+
+
 def test_active_plan_has_no_stale_completed_execution_sequence() -> None:
     content = _read("docs/NEXT_PHASE_MASTER_PLAN.md")
     assert "建议实施顺序" not in content

@@ -157,7 +157,7 @@ def update_delivery_subtask_status(workspace_file: str | Path, task_id: str, sub
     return {"updated": True, "task_id": meta["task_id"], "subtask_id": subtask_id, "status": normalized_status, "delivery": delivery_workflow_status(workspace_file, meta["task_id"])}
 
 
-def record_delivery_validation(workspace_file: str | Path, task_id: str, *, status: str, summary: str = "", command: str = "", exit_code: int | None = None, acceptance_ids: list[str] | None = None, evidence_refs: list[str] | None = None, actor: str = "", actor_source: str = "core", evidence_kind: str = "recorded_external") -> dict[str, Any]:
+def record_delivery_validation(workspace_file: str | Path, task_id: str, *, status: str, summary: str = "", command: str = "", exit_code: int | None = None, acceptance_ids: list[str] | None = None, evidence_refs: list[str] | None = None, evidence_types: list[str] | None = None, actor: str = "", actor_source: str = "core", evidence_kind: str = "recorded_external") -> dict[str, Any]:
     """Record bounded external evidence; supplied commands are never executed."""
     normalized_status = status.strip().lower()
     if normalized_status not in VALIDATION_STATUSES:
@@ -170,6 +170,9 @@ def record_delivery_validation(workspace_file: str | Path, task_id: str, *, stat
         raise ValueError("actor is required for manual_verified evidence")
     normalized_acceptance_ids = _require_string_list(acceptance_ids, "acceptance_ids")
     normalized_evidence_refs = _require_string_list(evidence_refs, "evidence_refs")
+    normalized_evidence_types = _normalize_evidence_types(
+        _require_string_list(evidence_types, "evidence_types")
+    )
     initialize_delivery_workflow(workspace_file, task_id, actor=actor, include_status=False, touch_activity=False)
     store = WorkspaceStore(workspace_file)
     task_dir, meta = _resolve_task_dir(store, task_id)
@@ -183,6 +186,7 @@ def record_delivery_validation(workspace_file: str | Path, task_id: str, *, stat
         "evidence_kind": normalized_kind,
         "acceptance_ids": _bounded_refs(normalized_acceptance_ids),
         "evidence_refs": _bounded_refs(normalized_evidence_refs),
+        "evidence_types": normalized_evidence_types,
         "actor": normalized_actor,
         "reported_actor": normalized_actor,
         "actor_source": _bounded(actor_source, 80) or "core",
@@ -257,7 +261,7 @@ def execute_delivery_validation(workspace_file: str | Path, task_id: str, *, pro
     evidence_path.parent.mkdir(exist_ok=True)
     evidence = {"schema_version": 1, "receipt_id": receipt_id, "profile_id": profile_id, "argv": profile["argv"], "timeout_sec": timeout, "status": status, "exit_code": None if timed_out else completed.returncode, "timed_out": timed_out, "output_sha256": digest, "output_excerpt": output, "recorded_at": _now()}
     _write_json(evidence_path, evidence)
-    receipt = {"receipt_id": receipt_id, "recorded_at": evidence["recorded_at"], "status": status, "command": profile_id, "exit_code": evidence["exit_code"], "summary": _bounded(output, 2000), "evidence_kind": "executor", "acceptance_ids": _bounded_refs(normalized_acceptance_ids), "evidence_refs": [f"delivery-evidence:{receipt_id}"], "actor": _bounded(actor), "profile_id": profile_id, "output_sha256": digest, "timed_out": timed_out}
+    receipt = {"receipt_id": receipt_id, "recorded_at": evidence["recorded_at"], "status": status, "command": profile_id, "exit_code": evidence["exit_code"], "summary": _bounded(output, 2000), "evidence_kind": "executor", "acceptance_ids": _bounded_refs(normalized_acceptance_ids), "evidence_refs": [f"delivery-evidence:{receipt_id}"], "evidence_types": _normalize_evidence_types(["executor-receipt", f"profile:{profile_id}", *profile.get("evidence_types", [])]), "actor": _bounded(actor), "profile_id": profile_id, "output_sha256": digest, "timed_out": timed_out}
     with FileLock(str(store.lock_file)):
         _ensure_delivery_receipt_index(store, task_dir, acquire_lock=False)
         with (task_dir / VALIDATION_RECEIPTS_FILE).open("a", encoding="utf-8") as handle:
@@ -313,14 +317,25 @@ def delivery_matrix(workspace_file: str | Path, task_id: str, *, write: bool = T
     task_dir, meta = _resolve_task_dir(store, task_id)
     requirements, subtasks, acceptance, receipts = (_items(task_dir / REQUIREMENTS_FILE), _items(task_dir / SUBTASKS_FILE), _items(task_dir / ACCEPTANCE_FILE), _recent_receipts(store, task_dir, trusted_passed_only=True))
     verified = _verified_acceptance_ids(receipts, task_dir)
+    evidence_closure = {
+        str(item.get("id", "")): _acceptance_evidence_closure(item, receipts, task_dir)
+        for item in acceptance
+    }
     rows = []
     for requirement in requirements:
         requirement_id = str(requirement.get("id", ""))
         linked_subtasks = [item for item in subtasks if requirement_id in item.get("requirement_ids", [])]
         required_acceptance = [item for item in acceptance if str(item.get("id", "")) in requirement.get("acceptance_ids", [])]
-        rows.append({"requirement_id": requirement_id, "title": requirement.get("title", ""), "scope": requirement.get("scope", ""), "out_of_scope": requirement.get("out_of_scope", []), "source_refs": requirement.get("source_refs", []), "ambiguities": requirement.get("ambiguities", []), "subtasks": [{"id": item.get("id", ""), "status": item.get("status", ""), "code_targets": item.get("code_targets", []), "read_targets": item.get("read_targets", []), "write_targets": item.get("write_targets", []), "stop_conditions": item.get("stop_conditions", [])} for item in linked_subtasks], "acceptance": [{"id": item.get("id", ""), "title": item.get("title", ""), "verified": str(item.get("id", "")) in verified} for item in required_acceptance]})
+        rows.append({"requirement_id": requirement_id, "title": requirement.get("title", ""), "scope": requirement.get("scope", ""), "out_of_scope": requirement.get("out_of_scope", []), "source_refs": requirement.get("source_refs", []), "ambiguities": requirement.get("ambiguities", []), "subtasks": [{"id": item.get("id", ""), "status": item.get("status", ""), "code_targets": item.get("code_targets", []), "read_targets": item.get("read_targets", []), "write_targets": item.get("write_targets", []), "stop_conditions": item.get("stop_conditions", [])} for item in linked_subtasks], "acceptance": [{"id": item.get("id", ""), "title": item.get("title", ""), "verified": str(item.get("id", "")) in verified, "critical_hypothesis": item.get("critical_hypothesis", ""), "continue_if": item.get("continue_if", ""), "stop_if": item.get("stop_if", ""), "rollback": item.get("rollback", ""), "evidence_required": item.get("evidence_required", []), "validation_design_complete": _acceptance_validation_design_complete(item), **evidence_closure.get(str(item.get("id", "")), {})} for item in required_acceptance]})
     scoped_subtasks = [item for item in subtasks if item.get("read_targets") and item.get("write_targets") and item.get("stop_conditions")]
-    payload = {"schema_version": 2, "task_id": meta["task_id"], "generated_at": _now(), "rows": rows, "coverage": {"requirements": len(requirements), "located_requirements": sum(bool(row["subtasks"]) for row in rows), "scoped_subtasks": len(scoped_subtasks), "total_subtasks": len(subtasks), "verified_acceptance": len(verified), "required_acceptance": sum(bool(item.get("required", True)) for item in acceptance)}}
+    required_acceptance_items = [item for item in acceptance if bool(item.get("required", True))]
+    designed_acceptance = sum(_acceptance_validation_design_complete(item) for item in required_acceptance_items)
+    evidence_complete_acceptance = sum(
+        evidence_closure.get(str(item.get("id", "")), {}).get("evidence_complete", False)
+        for item in required_acceptance_items
+    )
+    policy = _delivery_scope_policy(task_dir)
+    payload = {"schema_version": 2, "task_id": meta["task_id"], "generated_at": _now(), "rows": rows, "policy": {"enforce_scope_contract": policy["enforce_scope_contract"], "enforce_validation_design_contract": policy["enforce_validation_design_contract"], "enforce_evidence_contract": policy["enforce_evidence_contract"]}, "coverage": {"requirements": len(requirements), "located_requirements": sum(bool(row["subtasks"]) for row in rows), "scoped_subtasks": len(scoped_subtasks), "total_subtasks": len(subtasks), "verified_acceptance": len(verified), "required_acceptance": len(required_acceptance_items), "designed_acceptance": designed_acceptance, "validation_design_coverage": round(designed_acceptance / max(1, len(required_acceptance_items)), 4), "evidence_complete_acceptance": evidence_complete_acceptance, "evidence_contract_coverage": round(evidence_complete_acceptance / max(1, len(required_acceptance_items)), 4)}}
     if write:
         with FileLock(str(store.lock_file)):
             _atomic_write_json(task_dir / DELIVERY_MATRIX_FILE, payload)
@@ -374,6 +389,12 @@ def delivery_workflow_status(workspace_file: str | Path, task_id: str) -> dict[s
     gate = _gate_for_target(store, task_dir, next_stage, task_id=str(meta["task_id"])) if stage != "close" else {"passed": True, "code": "complete", "next_action": "任务已完成。", "missing": []}
     receipts = _recent_receipts(store, task_dir, limit=100)
     verified_acceptance = _indexed_verified_acceptance_ids(store, task_dir, str(meta["task_id"]))
+    indexed_evidence = _indexed_acceptance_evidence(store, task_dir, str(meta["task_id"]))
+    evidence_complete_acceptance = sum(
+        _acceptance_evidence_complete_from_index(item, indexed_evidence)
+        for item in acceptance
+        if bool(item.get("required", True))
+    )
     return {
         "initialized": True,
         "profile": delivery.get("profile", WORKFLOW_PROFILE),
@@ -382,7 +403,7 @@ def delivery_workflow_status(workspace_file: str | Path, task_id: str) -> dict[s
         "state": delivery.get("state", "active"),
         "next_stage": next_stage if stage != "close" else "",
         "gate": gate,
-        "counts": {"requirements": len(requirements), "subtasks": len(subtasks), "acceptance": len(acceptance), "validation_receipts": store.memory_backend().delivery_receipt_count(task_dir.name), "verified_acceptance": len(verified_acceptance)},
+        "counts": {"requirements": len(requirements), "subtasks": len(subtasks), "acceptance": len(acceptance), "designed_acceptance": sum(_acceptance_validation_design_complete(item) for item in acceptance if bool(item.get("required", True))), "evidence_complete_acceptance": evidence_complete_acceptance, "validation_receipts": store.memory_backend().delivery_receipt_count(task_dir.name), "verified_acceptance": len(verified_acceptance)},
         "stage_history": list(delivery.get("history", []))[-12:],
         "recent_validation_receipts": receipts[-5:],
         "next_action": gate["next_action"],
@@ -990,6 +1011,13 @@ def delivery_task_metrics(workspace_file: str | Path, task_id: str) -> dict[str,
         for sub in subtasks if sub.get("code_targets")
     ))
     acceptance_count = sum(1 for item in acceptance if item.get("required", True))
+    designed_acceptance = sum(1 for item in acceptance if item.get("required", True) and _acceptance_validation_design_complete(item))
+    indexed_evidence = _indexed_acceptance_evidence(store, task_dir, str(meta["task_id"]))
+    evidence_complete_acceptance = sum(
+        1 for item in acceptance
+        if item.get("required", True)
+        and _acceptance_evidence_complete_from_index(item, indexed_evidence)
+    )
     verified_acceptance = len(_indexed_verified_acceptance_ids(store, task_dir, str(meta["task_id"])))
     passed_receipts = sum(1 for r in receipts if r.get("status") == "passed")
     failed_receipts = sum(1 for r in receipts if r.get("status") == "failed")
@@ -1014,6 +1042,10 @@ def delivery_task_metrics(workspace_file: str | Path, task_id: str) -> dict[str,
             "located_requirements": located_requirements,
             "requirement_coverage": round(located_requirements / max(1, requirements_count), 4),
             "acceptance": acceptance_count,
+            "designed_acceptance": designed_acceptance,
+            "validation_design_coverage": round(designed_acceptance / max(1, acceptance_count), 4),
+            "evidence_complete_acceptance": evidence_complete_acceptance,
+            "evidence_contract_coverage": round(evidence_complete_acceptance / max(1, acceptance_count), 4),
             "verified_acceptance": verified_acceptance,
             "acceptance_coverage": round(verified_acceptance / max(1, acceptance_count), 4),
         },
@@ -1612,6 +1644,10 @@ def _gate_for_target(
             missing.append("requirements")
         if not acceptance:
             missing.append("acceptance")
+        policy = _delivery_scope_policy(task_dir)
+        if policy["enforce_validation_design_contract"]:
+            missing.extend(str(item.get("id", "")) for item in acceptance if bool(item.get("required", True)) and not _acceptance_validation_design_complete(item))
+            return _gate("validation_design_required", sorted(set(missing)), "为每项必需验收补齐关键假设、继续条件、停止条件、回滚方式和所需证据后再定位代码。")
         return _gate("breakdown_contract_required", missing, "补齐需求项与可验证验收标准，再做代码定位。")
     if target == "implement":
         missing = [str(item.get("id", "")) for item in subtasks if not item.get("code_targets")]
@@ -1627,6 +1663,26 @@ def _gate_for_target(
         return _gate("implementation_required", missing, "将所有子任务标记为已实现或跳过，并记录原因。")
     required_ids = {str(item.get("id", "")) for item in acceptance if bool(item.get("required", True))}
     passed_ids = _indexed_verified_acceptance_ids(store, task_dir, task_id, acquire_lock=sync_lock)
+    policy = _delivery_scope_policy(task_dir)
+    if policy["enforce_evidence_contract"]:
+        indexed_evidence = _indexed_acceptance_evidence(
+            store,
+            task_dir,
+            task_id,
+            acquire_lock=sync_lock,
+        )
+        missing_evidence = [
+            f"{item.get('id', '')}:{evidence_type}"
+            for item in acceptance
+            if bool(item.get("required", True))
+            for evidence_type in _acceptance_evidence_missing_from_index(item, indexed_evidence)
+        ]
+        if missing_evidence:
+            return _gate(
+                "evidence_contract_required",
+                missing_evidence,
+                "为每项必需验收补充匹配 evidence_required 的可信通过回执后再关闭任务。",
+            )
     return _gate("verified_evidence_required", sorted(required_ids - passed_ids), "执行已注册验证 profile，或记录带证据引用的人工验证，并关联每一项必需验收标准。")
 
 
@@ -1650,7 +1706,83 @@ def _normalize_item(kind: str, raw: dict[str, Any], index: int) -> dict[str, Any
         if status not in SUBTASK_STATUSES:
             raise ValueError(f"unknown subtask status: {status}")
         return {**base, "requirement_ids": _bounded_refs(raw.get("requirement_ids", [])), "code_targets": _bounded_refs(raw.get("code_targets", [])), "read_targets": _bounded_refs(raw.get("read_targets", raw.get("code_targets", []))), "write_targets": _bounded_refs(raw.get("write_targets", [])), "stop_conditions": _bounded_refs(raw.get("stop_conditions", [])), "status": status}
-    return {**base, "required": bool(raw.get("required", True)), "verification_type": str(raw.get("verification_type", "test")), "status": str(raw.get("status", "pending"))}
+    return {
+        **base,
+        "required": bool(raw.get("required", True)),
+        "verification_type": _bounded(str(raw.get("verification_type", "test")), 80) or "test",
+        "status": _bounded(str(raw.get("status", "pending")), 80) or "pending",
+        "critical_hypothesis": _bounded(str(raw.get("critical_hypothesis", "")), 1000),
+        "continue_if": _bounded(str(raw.get("continue_if", "")), 1000),
+        "stop_if": _bounded(str(raw.get("stop_if", "")), 1000),
+        "rollback": _bounded(str(raw.get("rollback", "")), 1000),
+        "evidence_required": _bounded_refs(raw.get("evidence_required", [])),
+    }
+
+
+def _acceptance_validation_design_complete(item: dict[str, Any]) -> bool:
+    evidence_required = item.get("evidence_required")
+    return bool(
+        str(item.get("critical_hypothesis", "")).strip()
+        and str(item.get("continue_if", "")).strip()
+        and str(item.get("stop_if", "")).strip()
+        and str(item.get("rollback", "")).strip()
+        and isinstance(evidence_required, list)
+        and any(str(evidence).strip() for evidence in evidence_required)
+    )
+
+
+def _normalize_evidence_types(value: Any) -> list[str]:
+    values = value if isinstance(value, list) else []
+    return list(dict.fromkeys(
+        str(item).strip().lower()[:80]
+        for item in values
+        if str(item).strip()
+    ))[:50]
+
+
+def _receipt_evidence_types(receipt: dict[str, Any]) -> list[str]:
+    evidence_types = _normalize_evidence_types(receipt.get("evidence_types", []))
+    evidence_kind = str(receipt.get("evidence_kind", ""))
+    if evidence_kind == "executor":
+        evidence_types = _normalize_evidence_types([*evidence_types, "executor-receipt"])
+        profile_id = str(receipt.get("profile_id", "")).strip()
+        if profile_id:
+            evidence_types = _normalize_evidence_types([*evidence_types, f"profile:{profile_id}"])
+    elif evidence_kind == "manual_verified":
+        evidence_types = _normalize_evidence_types([*evidence_types, "manual-verification"])
+    return evidence_types
+
+
+def _acceptance_evidence_closure(
+    acceptance: dict[str, Any],
+    receipts: list[dict[str, Any]],
+    task_dir: Path,
+) -> dict[str, Any]:
+    acceptance_id = str(acceptance.get("id", ""))
+    required = _normalize_evidence_types(acceptance.get("evidence_required", []))
+    matched_receipts = [
+        receipt for receipt in receipts
+        if acceptance_id in receipt.get("acceptance_ids", [])
+        and receipt.get("status") == "passed"
+        and receipt.get("evidence_kind") in {"executor", "manual_verified"}
+        and _receipt_has_resolvable_evidence(task_dir, receipt)
+    ]
+    observed = _normalize_evidence_types([
+        evidence_type
+        for receipt in matched_receipts
+        for evidence_type in _receipt_evidence_types(receipt)
+    ])
+    missing = [item for item in required if item not in set(observed)]
+    return {
+        "evidence_observed": observed,
+        "evidence_missing": missing,
+        "evidence_complete": bool(required) and not missing,
+        "evidence_receipt_ids": [
+            str(receipt.get("receipt_id", ""))
+            for receipt in matched_receipts
+            if str(receipt.get("receipt_id", ""))
+        ][:50],
+    }
 
 
 def _append_history(store: WorkspaceStore, task_dir: Path, *, event: str, actor: str, details: dict[str, Any]) -> None:
@@ -1699,6 +1831,49 @@ def _indexed_verified_acceptance_ids(
     }
 
 
+def _indexed_acceptance_evidence(
+    store: WorkspaceStore,
+    task_dir: Path,
+    task_id: str,
+    *,
+    acquire_lock: bool = True,
+) -> dict[str, dict[str, set[str]]]:
+    _ensure_delivery_receipt_index(store, task_dir, acquire_lock=acquire_lock)
+    indexed: dict[str, dict[str, set[str]]] = {}
+    for row in store.memory_backend().delivery_acceptance_evidence_candidates(
+        task_dir.name,
+        _task_evidence_ref(task_id),
+    ):
+        if row["evidence_kind"] == "executor" and not (
+            task_dir / "verification-evidence" / f"{row['receipt_id']}.json"
+        ).is_file():
+            continue
+        acceptance = indexed.setdefault(
+            row["acceptance_id"],
+            {"evidence_types": set(), "receipt_ids": set()},
+        )
+        acceptance["evidence_types"].add(row["evidence_type"])
+        acceptance["receipt_ids"].add(row["receipt_id"])
+    return indexed
+
+
+def _acceptance_evidence_missing_from_index(
+    acceptance: dict[str, Any],
+    indexed: dict[str, dict[str, set[str]]],
+) -> list[str]:
+    required = _normalize_evidence_types(acceptance.get("evidence_required", []))
+    observed = indexed.get(str(acceptance.get("id", "")), {}).get("evidence_types", set())
+    return [item for item in required if item not in observed]
+
+
+def _acceptance_evidence_complete_from_index(
+    acceptance: dict[str, Any],
+    indexed: dict[str, dict[str, set[str]]],
+) -> bool:
+    required = _normalize_evidence_types(acceptance.get("evidence_required", []))
+    return bool(required) and not _acceptance_evidence_missing_from_index(acceptance, indexed)
+
+
 def _receipt_has_resolvable_evidence(task_dir: Path, receipt: dict[str, Any]) -> bool:
     receipt_id = str(receipt.get("receipt_id", ""))
     refs = _bounded_refs(receipt.get("evidence_refs", []))
@@ -1709,7 +1884,7 @@ def _receipt_has_resolvable_evidence(task_dir: Path, receipt: dict[str, Any]) ->
 
 
 def _default_policy() -> dict[str, Any]:
-    return {"schema_version": 2, "policy_id": "feature_delivery_v2", "validation_profiles": [], "retry_limits": {"auto_repair": 2}, "enforce_scope_contract": False, "updated_at": ""}
+    return {"schema_version": 2, "policy_id": "feature_delivery_v2", "validation_profiles": [], "retry_limits": {"auto_repair": 2}, "enforce_scope_contract": False, "enforce_validation_design_contract": False, "enforce_evidence_contract": False, "updated_at": ""}
 
 
 def _normalize_policy(value: dict[str, Any]) -> dict[str, Any]:
@@ -1722,12 +1897,12 @@ def _normalize_policy(value: dict[str, Any]) -> dict[str, Any]:
         argv = item.get("argv", [])
         if not profile_id or not isinstance(argv, list) or not argv or not all(isinstance(part, str) and part.strip() for part in argv):
             continue
-        profiles.append({"id": profile_id, "argv": [part.strip()[:500] for part in argv][:30], "timeout_sec": min(3600, max(1, int(item.get("timeout_sec", 900)))), "description": _bounded(str(item.get("description", "")), 300)})
+        profiles.append({"id": profile_id, "argv": [part.strip()[:500] for part in argv][:30], "timeout_sec": min(3600, max(1, int(item.get("timeout_sec", 900)))), "description": _bounded(str(item.get("description", "")), 300), "evidence_types": _normalize_evidence_types(item.get("evidence_types", []))})
     ids = [item["id"] for item in profiles]
     if len(ids) != len(set(ids)):
         raise ValueError("validation profile ids must be unique")
     retries = raw.get("retry_limits", {}) if isinstance(raw.get("retry_limits", {}), dict) else {}
-    return {"schema_version": 2, "policy_id": _bounded(str(raw.get("policy_id", "feature_delivery_v2")), 80) or "feature_delivery_v2", "validation_profiles": profiles, "retry_limits": {"auto_repair": min(10, max(0, int(retries.get("auto_repair", 2))))}, "enforce_scope_contract": bool(raw.get("enforce_scope_contract", False)), "updated_at": _bounded(str(raw.get("updated_at", "")), 80), "actor": _bounded(str(raw.get("actor", "")), 120)}
+    return {"schema_version": 2, "policy_id": _bounded(str(raw.get("policy_id", "feature_delivery_v2")), 80) or "feature_delivery_v2", "validation_profiles": profiles, "retry_limits": {"auto_repair": min(10, max(0, int(retries.get("auto_repair", 2))))}, "enforce_scope_contract": bool(raw.get("enforce_scope_contract", False)), "enforce_validation_design_contract": bool(raw.get("enforce_validation_design_contract", False)), "enforce_evidence_contract": bool(raw.get("enforce_evidence_contract", False)), "updated_at": _bounded(str(raw.get("updated_at", "")), 80), "actor": _bounded(str(raw.get("actor", "")), 120)}
 
 
 def _delivery_scope_policy(task_dir: Path) -> dict[str, Any]:
@@ -1758,11 +1933,26 @@ def _tech_spec_markdown(meta: dict[str, Any], matrix: dict[str, Any]) -> str:
             write_targets = ", ".join(subtask.get("write_targets", [])) or "未声明"
             stop_conditions = "; ".join(subtask.get("stop_conditions", [])) or "未声明"
             body.append(f"- 子任务 {subtask.get('id')}: 读范围={read_targets}; 写范围={write_targets}; 停止条件={stop_conditions}")
+        for acceptance in row.get("acceptance", []):
+            evidence_required = ", ".join(acceptance.get("evidence_required", [])) or "未声明"
+            evidence_observed = ", ".join(acceptance.get("evidence_observed", [])) or "尚无"
+            evidence_missing = ", ".join(acceptance.get("evidence_missing", [])) or "无"
+            body.extend([
+                f"- 验收 {acceptance.get('id')} 验证设计：{'完整' if acceptance.get('validation_design_complete') else '待补充'}",
+                f"  - 关键假设：{acceptance.get('critical_hypothesis') or '未声明'}",
+                f"  - 继续条件：{acceptance.get('continue_if') or '未声明'}",
+                f"  - 停止条件：{acceptance.get('stop_if') or '未声明'}",
+                f"  - 回滚：{acceptance.get('rollback') or '未声明'}",
+                f"  - 所需证据：{evidence_required}",
+                f"  - 已观测证据：{evidence_observed}",
+                f"  - 缺失证据：{evidence_missing}",
+                f"  - 证据闭环：{'完整' if acceptance.get('evidence_complete') else '待补充'}",
+            ])
         if row.get("ambiguities"):
             body.append(f"- 未决事项：{'; '.join(row['ambiguities'])}")
         body.append("")
     coverage = matrix.get("coverage", {})
-    body.extend(["## 覆盖率", "", f"- 需求：{coverage.get('requirements', 0)}", f"- 已定位需求：{coverage.get('located_requirements', 0)}", f"- 已声明范围的子任务：{coverage.get('scoped_subtasks', 0)}/{coverage.get('total_subtasks', 0)}", f"- 已验证验收：{coverage.get('verified_acceptance', 0)}/{coverage.get('required_acceptance', 0)}", ""])
+    body.extend(["## 覆盖率", "", f"- 需求：{coverage.get('requirements', 0)}", f"- 已定位需求：{coverage.get('located_requirements', 0)}", f"- 已声明范围的子任务：{coverage.get('scoped_subtasks', 0)}/{coverage.get('total_subtasks', 0)}", f"- 已设计验证的验收：{coverage.get('designed_acceptance', 0)}/{coverage.get('required_acceptance', 0)}", f"- 证据已闭环验收：{coverage.get('evidence_complete_acceptance', 0)}/{coverage.get('required_acceptance', 0)}", f"- 已验证验收：{coverage.get('verified_acceptance', 0)}/{coverage.get('required_acceptance', 0)}", ""])
     return "\n".join(body)
 
 

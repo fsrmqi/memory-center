@@ -112,6 +112,66 @@ def test_delivery_admin_contract_actions_use_existing_facade(demo_workspace) -> 
     assert result["updated"] is True
     assert result["items"][0]["id"] == "REQ-1"
 
+    acceptance_payload = json.dumps({
+        "kind": "acceptance",
+        "items": [{
+            "id": "AC-1",
+            "title": "兼容性验证",
+            "critical_hypothesis": "旧客户端仍能解析响应",
+            "continue_if": "旧版回归与契约门禁通过",
+            "stop_if": "旧版反序列化失败",
+            "rollback": "撤回新增字段并恢复旧契约",
+            "evidence_required": ["contract-gate", "executor-receipt"],
+        }],
+    }, ensure_ascii=False)
+    registry = build_admin_registry(workspace_file=str(demo_workspace), task_id=task["task_id"], source="mcp", payload=acceptance_payload)
+    acceptance = registry.dispatch("delivery_contract_update")["items"][0]
+    assert acceptance["critical_hypothesis"] == "旧客户端仍能解析响应"
+    assert acceptance["evidence_required"] == ["contract-gate", "executor-receipt"]
+
+
+def test_acceptance_validation_design_is_available_through_cli_http_and_mcp(demo_workspace) -> None:
+    from memory_center.http.server import _route_request
+
+    fields = {
+        "id": "AC-1",
+        "title": "兼容性验证",
+        "critical_hypothesis": "旧客户端仍兼容",
+        "continue_if": "兼容门禁通过",
+        "stop_if": "旧客户端失败",
+        "rollback": "恢复旧契约",
+        "evidence_required": ["contract-gate", "executor-receipt"],
+    }
+    cli_task = create_task_space(demo_workspace, title="CLI 验收设计", intent="三入口")['task_id']
+    initialize_delivery_workflow(demo_workspace, cli_task)
+    cli = CliRunner().invoke(app, [
+        "artifact", "delivery-contract", "--workspace", str(demo_workspace), "--task-id", cli_task,
+        "--kind", "acceptance", "--items", json.dumps([fields], ensure_ascii=False),
+    ])
+    assert cli.exit_code == 0
+    cli_acceptance = json.loads((demo_workspace.parent / "artifacts" / "tasks" / cli_task / "acceptance.json").read_text(encoding="utf-8"))["items"][0]
+    assert cli_acceptance["stop_if"] == "旧客户端失败"
+
+    http_task = create_task_space(demo_workspace, title="HTTP 验收设计", intent="三入口")['task_id']
+    initialize_delivery_workflow(demo_workspace, http_task)
+    http = _route_request(
+        "/workspace/delivery/contract",
+        {"task_id": [http_task], "payload": [json.dumps({"kind": "acceptance", "items": [fields]}, ensure_ascii=False)]},
+        str(demo_workspace),
+    )
+    assert http["items"][0]["rollback"] == "恢复旧契约"
+
+    mcp_task = create_task_space(demo_workspace, title="MCP 验收设计", intent="三入口")['task_id']
+    initialize_delivery_workflow(demo_workspace, mcp_task)
+    registry = build_admin_registry(
+        workspace_file=str(demo_workspace),
+        task_id=mcp_task,
+        source="mcp",
+        payload=json.dumps({"kind": "acceptance", "items": [fields]}, ensure_ascii=False),
+    )
+    mcp = registry.dispatch("delivery_contract_update")
+    assert mcp["items"][0]["continue_if"] == "兼容门禁通过"
+
 
 def test_manual_validation_is_available_through_cli_http_and_mcp(demo_workspace) -> None:
     from memory_center.http.server import _route_request
@@ -132,6 +192,8 @@ def test_manual_validation_is_available_through_cli_http_and_mcp(demo_workspace)
             '["AC-1"]',
             "--evidence-kind",
             "manual_verified",
+            "--evidence-types",
+            '["contract-gate"]',
             "--actor",
             "alice",
         ],
@@ -139,11 +201,13 @@ def test_manual_validation_is_available_through_cli_http_and_mcp(demo_workspace)
     assert cli.exit_code == 0
     assert "manual_verified" in cli.stdout
     assert "delivery-validation:" in cli.stdout
+    assert "contract-gate" in cli.stdout
 
     payload = json.dumps({
         "status": "passed",
         "acceptance_ids": ["AC-1"],
         "evidence_kind": "manual_verified",
+        "evidence_types": ["contract-gate"],
         "actor": "carol",
     })
     http = _route_request(
@@ -153,6 +217,7 @@ def test_manual_validation_is_available_through_cli_http_and_mcp(demo_workspace)
     )
     assert http["receipt"]["evidence_kind"] == "manual_verified"
     assert http["receipt"]["evidence_refs"][0].startswith("delivery-validation:")
+    assert http["receipt"]["evidence_types"] == ["contract-gate"]
 
     admin = build_admin_registry(
         workspace_file=str(demo_workspace),
@@ -163,6 +228,7 @@ def test_manual_validation_is_available_through_cli_http_and_mcp(demo_workspace)
     mcp = admin.dispatch("delivery_validation_record")
     assert mcp["receipt"]["evidence_kind"] == "manual_verified"
     assert mcp["receipt"]["evidence_refs"][0].startswith("delivery-validation:")
+    assert mcp["receipt"]["evidence_types"] == ["contract-gate"]
     assert mcp["receipt"]["actor"] == "carol"
     assert mcp["receipt"]["reported_actor"] == "carol"
     assert mcp["receipt"]["actor_source"] == "mcp"
@@ -533,13 +599,29 @@ def test_delivery_matrix_and_policy_control_executor(demo_workspace) -> None:
     candidate = propose_delivery_breakdown(demo_workspace, task_id, source_refs=["req:1"], summary="发布接口")
     assert candidate["candidate"]["source_refs"] == ["req:1"]
     update_delivery_contract(demo_workspace, task_id, kind="requirements", items=[{"id": "REQ-1", "title": "发布", "scope": "接口", "source_refs": ["req:1"], "acceptance_ids": ["AC-1"]}])
-    update_delivery_contract(demo_workspace, task_id, kind="acceptance", items=[{"id": "AC-1", "title": "解释器可用"}])
+    update_delivery_contract(demo_workspace, task_id, kind="acceptance", items=[{
+        "id": "AC-1",
+        "title": "解释器可用",
+        "critical_hypothesis": "预注册解释器可执行",
+        "continue_if": "命令退出码为 0",
+        "stop_if": "命令不存在或超时",
+        "rollback": "移除验证 profile",
+        "evidence_required": ["executor-receipt"],
+    }])
     task_dir = demo_workspace.parent / "artifacts" / "tasks" / task_id
     assert json.loads((task_dir / "requirements.json").read_text(encoding="utf-8"))["schema_version"] == 2
     assert json.loads((task_dir / "acceptance.json").read_text(encoding="utf-8"))["schema_version"] == 2
     matrix = delivery_matrix(demo_workspace, task_id)
     assert matrix["matrix"]["coverage"]["requirements"] == 1
-    assert (demo_workspace.parent / "artifacts" / "tasks" / task_id / "TECH_SPEC.md").exists()
+    assert matrix["matrix"]["coverage"]["designed_acceptance"] == 1
+    assert matrix["matrix"]["coverage"]["validation_design_coverage"] == 1.0
+    acceptance = matrix["matrix"]["rows"][0]["acceptance"][0]
+    assert acceptance["validation_design_complete"] is True
+    assert acceptance["evidence_required"] == ["executor-receipt"]
+    assert delivery_workflow_status(demo_workspace, task_id)["counts"]["designed_acceptance"] == 1
+    tech_spec = (demo_workspace.parent / "artifacts" / "tasks" / task_id / "TECH_SPEC.md").read_text(encoding="utf-8")
+    assert "关键假设：预注册解释器可执行" in tech_spec
+    assert "已设计验证的验收：1/1" in tech_spec
     blocked = execute_delivery_validation(demo_workspace, task_id, profile_id="missing")
     assert blocked["reason"] == "profile_not_allowed"
     update_delivery_policy(demo_workspace, {"validation_profiles": [{"id": "missing-command", "argv": ["memory-center-command-that-does-not-exist"], "timeout_sec": 10}]})
@@ -560,13 +642,14 @@ def test_delivery_gate_keeps_older_verified_receipts_resolvable(demo_workspace) 
         demo_workspace,
         task_id,
         kind="acceptance",
-        items=[{"id": "AC-1", "title": "长期有效", "required": True}],
+        items=[{"id": "AC-1", "title": "长期有效", "required": True, "evidence_required": ["contract-gate"]}],
     )
     record_delivery_validation(
         demo_workspace,
         task_id,
         status="passed",
         acceptance_ids=["AC-1"],
+        evidence_types=["contract-gate"],
         evidence_kind="manual_verified",
         actor="reviewer",
     )
@@ -585,6 +668,7 @@ def test_delivery_gate_keeps_older_verified_receipts_resolvable(demo_workspace) 
     status = delivery_workflow_status(demo_workspace, task_id)
 
     assert status["counts"]["verified_acceptance"] == 1
+    assert status["counts"]["evidence_complete_acceptance"] == 1
     assert status["counts"]["validation_receipts"] == 251
     delivery_file = demo_workspace.parent / "artifacts" / "tasks" / task_id / "delivery.json"
     assert len(json.loads(delivery_file.read_text(encoding="utf-8"))["history"]) == 200
@@ -729,6 +813,118 @@ def test_delivery_scope_contract_is_visible_and_can_be_enforced(demo_workspace) 
     assert blocked["gate"]["code"] == "scoped_subtasks_required"
 
 
+def test_acceptance_validation_design_is_optional_but_can_be_enforced(demo_workspace) -> None:
+    from memory_center.core.tasks.delivery import delivery_matrix, update_delivery_policy
+
+    legacy_task = create_task_space(demo_workspace, title="兼容旧验收", intent="默认兼容")['task_id']
+    initialize_delivery_workflow(demo_workspace, legacy_task)
+    update_delivery_contract(demo_workspace, legacy_task, kind="requirements", items=[{
+        "id": "REQ-1", "title": "兼容需求", "scope": "接口", "source_refs": ["req:legacy"], "acceptance_ids": ["AC-1"],
+    }])
+    update_delivery_contract(demo_workspace, legacy_task, kind="acceptance", items=[{
+        "id": "AC-1", "title": "旧版回归",
+    }])
+    assert transition_delivery_stage(demo_workspace, legacy_task, "breakdown")["transitioned"] is True
+    assert transition_delivery_stage(demo_workspace, legacy_task, "locate")["transitioned"] is True
+    legacy_matrix = delivery_matrix(demo_workspace, legacy_task, write=False)["matrix"]
+    assert legacy_matrix["coverage"]["designed_acceptance"] == 0
+    assert legacy_matrix["coverage"]["validation_design_coverage"] == 0.0
+
+    update_delivery_policy(demo_workspace, {"enforce_validation_design_contract": True})
+    strict_task = create_task_space(demo_workspace, title="严格验收设计", intent="强制可证伪")['task_id']
+    initialize_delivery_workflow(demo_workspace, strict_task)
+    update_delivery_contract(demo_workspace, strict_task, kind="requirements", items=[{
+        "id": "REQ-1", "title": "严格需求", "scope": "接口", "source_refs": ["req:strict"], "acceptance_ids": ["AC-1"],
+    }])
+    update_delivery_contract(demo_workspace, strict_task, kind="acceptance", items=[{
+        "id": "AC-1", "title": "兼容性验证",
+    }])
+    assert transition_delivery_stage(demo_workspace, strict_task, "breakdown")["transitioned"] is True
+    blocked = transition_delivery_stage(demo_workspace, strict_task, "locate")
+    assert blocked["transitioned"] is False
+    assert blocked["gate"]["code"] == "validation_design_required"
+    assert blocked["gate"]["missing"] == ["AC-1"]
+
+    update_delivery_contract(demo_workspace, strict_task, kind="acceptance", items=[{
+        "id": "AC-1",
+        "title": "兼容性验证",
+        "critical_hypothesis": "旧客户端仍兼容",
+        "continue_if": "旧版回归通过",
+        "stop_if": "旧版反序列化失败",
+        "rollback": "恢复旧契约",
+        "evidence_required": ["contract-gate", "executor-receipt"],
+    }])
+    assert transition_delivery_stage(demo_workspace, strict_task, "locate")["transitioned"] is True
+    strict_matrix = delivery_matrix(demo_workspace, strict_task, write=False)["matrix"]
+    assert strict_matrix["policy"]["enforce_validation_design_contract"] is True
+    assert strict_matrix["coverage"]["validation_design_coverage"] == 1.0
+
+
+def test_acceptance_evidence_contract_closes_from_structured_receipts(demo_workspace) -> None:
+    from memory_center.core.tasks.delivery import (
+        delivery_matrix,
+        execute_delivery_validation,
+        update_delivery_policy,
+    )
+
+    update_delivery_policy(demo_workspace, {
+        "enforce_evidence_contract": True,
+        "validation_profiles": [{
+            "id": "contract-gate",
+            "argv": ["python3", "--version"],
+            "timeout_sec": 10,
+            "evidence_types": ["contract-gate"],
+        }],
+    })
+    task_id = create_task_space(demo_workspace, title="证据闭环", intent="自动核对证据")['task_id']
+    initialize_delivery_workflow(demo_workspace, task_id)
+    update_delivery_contract(demo_workspace, task_id, kind="requirements", items=[{
+        "id": "REQ-1", "title": "证据闭环", "scope": "接口", "source_refs": ["req:1"], "acceptance_ids": ["AC-1"],
+    }])
+    update_delivery_contract(demo_workspace, task_id, kind="acceptance", items=[{
+        "id": "AC-1",
+        "title": "契约与执行验证",
+        "critical_hypothesis": "契约兼容且测试可执行",
+        "continue_if": "两类证据均通过",
+        "stop_if": "任一证据缺失",
+        "rollback": "恢复旧契约",
+        "evidence_required": ["contract-gate", "executor-receipt"],
+    }])
+    record_delivery_validation(
+        demo_workspace,
+        task_id,
+        status="passed",
+        acceptance_ids=["AC-1"],
+        evidence_types=["contract-gate"],
+        evidence_kind="manual_verified",
+        actor="reviewer",
+    )
+
+    partial = delivery_matrix(demo_workspace, task_id, write=False)["matrix"]
+    acceptance = partial["rows"][0]["acceptance"][0]
+    assert acceptance["evidence_observed"] == ["contract-gate", "manual-verification"]
+    assert acceptance["evidence_missing"] == ["executor-receipt"]
+    assert acceptance["evidence_complete"] is False
+    assert partial["coverage"]["evidence_complete_acceptance"] == 0
+    blocked = transition_delivery_stage(demo_workspace, task_id, "close")
+    assert blocked["transitioned"] is False
+    assert blocked["gate"]["code"] == "evidence_contract_required"
+    assert blocked["gate"]["missing"] == ["AC-1:executor-receipt"]
+
+    executed = execute_delivery_validation(
+        demo_workspace,
+        task_id,
+        profile_id="contract-gate",
+        acceptance_ids=["AC-1"],
+    )
+    assert executed["receipt"]["evidence_types"] == ["executor-receipt", "profile:contract-gate", "contract-gate"]
+    complete = delivery_matrix(demo_workspace, task_id, write=False)["matrix"]
+    assert complete["policy"]["enforce_evidence_contract"] is True
+    assert complete["coverage"]["evidence_complete_acceptance"] == 1
+    assert complete["coverage"]["evidence_contract_coverage"] == 1.0
+    assert transition_delivery_stage(demo_workspace, task_id, "close")["transitioned"] is True
+
+
 def test_compact_task_artifacts_keeps_bounded_live_content(demo_workspace) -> None:
     task = create_task_space(demo_workspace, title="大工件", intent="压缩")
     task_id = task["task_id"]
@@ -871,12 +1067,13 @@ def test_resume_check_delivery_hints(demo_workspace) -> None:
     from memory_center.core.orchestrator.resume_check import _delivery_matrix_hints
     matrix = {
         "rows": [
-            {"requirement_id": "REQ-1", "title": "功能A", "ambiguities": ["范围不清"], "acceptance": [{"id": "AC-1", "title": "测试", "verified": False}]},
-            {"requirement_id": "REQ-2", "title": "功能B", "ambiguities": [], "acceptance": [{"id": "AC-2", "title": "回归", "verified": True}]},
+            {"requirement_id": "REQ-1", "title": "功能A", "ambiguities": ["范围不清"], "acceptance": [{"id": "AC-1", "title": "测试", "verified": False, "validation_design_complete": False, "evidence_complete": False, "evidence_missing": ["contract-gate"]}]},
+            {"requirement_id": "REQ-2", "title": "功能B", "ambiguities": [], "acceptance": [{"id": "AC-2", "title": "回归", "verified": True, "validation_design_complete": True, "evidence_complete": True, "evidence_missing": []}]},
         ],
+        "policy": {"enforce_validation_design_contract": True, "enforce_evidence_contract": True},
     }
     metrics = {
-        "coverage": {"requirement_coverage": 0.5, "acceptance_coverage": 0.5},
+        "coverage": {"requirement_coverage": 0.5, "acceptance_coverage": 0.5, "validation_design_coverage": 0.5, "evidence_contract_coverage": 0.5},
         "verification": {"success_rate": 0.5},
         "failure_classification": {"auto_repairable": 1, "environment_blocked": 0},
     }
@@ -885,5 +1082,11 @@ def test_resume_check_delivery_hints(demo_workspace) -> None:
     assert hints["unresolved_ambiguities"][0]["requirement_id"] == "REQ-1"
     assert len(hints["failed_validations"]) == 1
     assert hints["failed_validations"][0]["acceptance_id"] == "AC-1"
+    assert len(hints["validation_design_gaps"]) == 1
+    assert hints["validation_design_enforced"] is True
+    assert hints["validation_design_coverage"] == 0.5
+    assert hints["evidence_contract_enforced"] is True
+    assert hints["evidence_contract_gaps"][0]["missing"] == ["contract-gate"]
+    assert hints["evidence_contract_coverage"] == 0.5
     assert hints["has_critical_gaps"] is True
     assert hints["requirement_coverage"] == 0.5

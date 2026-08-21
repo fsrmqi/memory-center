@@ -5,6 +5,12 @@ from typing import Any
 
 from memory_center.application.analysis import build_context_pack, freshness_banner, onboarding_tour
 from memory_center.application.analysis import domain_overview as build_domain_overview
+from memory_center.core.governance.reasoning_prompts import (
+    build_audit_project_claim_prompt,
+    build_clarify_change_request_prompt,
+    build_compare_change_options_prompt,
+    build_design_minimal_validation_prompt,
+)
 from memory_center.core.orchestrator import memory_contracts, workspace_status
 from memory_center.mcp.runtime import safe_mcp_tool
 
@@ -72,6 +78,22 @@ def register_insight_surface(mcp: Any, workspace_context: Any) -> None:
     def diff_impact_analysis(diff_summary: str = "") -> str:
         base = "Analyze the impact of a git diff. Call mc_context_pack to get a compact context package. Then call mc_analyze for detailed impact analysis. Generate a change checklist with risk assessment. "
         return base + (f"Diff summary: {diff_summary}" if diff_summary else "Analyze the current working tree changes.")
+
+    @mcp.prompt()
+    def clarify_change_request(request: str) -> str:
+        return build_clarify_change_request_prompt(request)
+
+    @mcp.prompt()
+    def audit_project_claim(claim: str, scope: str = "workspace") -> str:
+        return build_audit_project_claim_prompt(claim, scope)
+
+    @mcp.prompt()
+    def design_minimal_validation(change: str, task_id: str = "") -> str:
+        return build_design_minimal_validation_prompt(change, task_id)
+
+    @mcp.prompt()
+    def compare_change_options(problem: str, option_a: str, option_b: str, constraints: str = "", task_id: str = "") -> str:
+        return build_compare_change_options_prompt(problem, option_a, option_b, constraints, task_id)
 
     @safe_mcp_tool(mcp, workspace_context)
     def mc_context_pack(query: str, intent: str = "auto", budget_tokens: int = 8000, limit: int = 10, agent_id: str = "", role: str = ""):

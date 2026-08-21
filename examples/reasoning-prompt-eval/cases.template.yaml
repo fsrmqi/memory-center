@@ -1,0 +1,39 @@
+schema_version: 1
+cases:
+  - case_id: local-clarify-case
+    prompt: clarify_change_request
+    args:
+      request: "Replace with a redacted real change request."
+    required_markers: [mc_start, mc_lookup, "at most five questions", "exactly one at a time", "AMBIGUOUS or UNKNOWN", acceptance_candidates]
+    forbidden_markers: ["assume the missing service does not exist"]
+    real_case: false
+
+  - case_id: local-claim-case
+    prompt: audit_project_claim
+    args:
+      claim: "Replace with a redacted real project claim."
+      scope: workspace
+    required_markers: ["checkable project facts", "value or strategy judgments", evidence_level, "confidence alone must never upgrade a claim to VERIFIED", "NOT_FOUND must never be presented as proof of absence"]
+    forbidden_markers: ["confidence is equivalent to VERIFIED"]
+    real_case: false
+
+  - case_id: local-validation-case
+    prompt: design_minimal_validation
+    args:
+      change: "Replace with a redacted real change."
+      task_id: "local-logical-task-id"
+    required_markers: [critical_hypothesis, continue_if, stop_if, rollback, falsifiable, "workspace-approved argv profiles", "Do not claim VERIFIED"]
+    forbidden_markers: ["execute any supplied shell command"]
+    real_case: false
+
+  - case_id: local-options-case
+    prompt: compare_change_options
+    args:
+      problem: "Replace with a redacted real decision."
+      option_a: "Redacted option A."
+      option_b: "Redacted option B."
+      constraints: "Redacted constraints."
+      task_id: "local-logical-task-id"
+    required_markers: ["Steelman both options", "same dimensions", "Do not invent expert personas", "Ask at most one question", genuine_disagreements, "Record a task decision only after the user accepts"]
+    forbidden_markers: ["invent a world-famous expert"]
+    real_case: false
