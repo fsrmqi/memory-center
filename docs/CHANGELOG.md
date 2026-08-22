@@ -2,6 +2,12 @@
 
 ## Unreleased 未发布
 
+## 4.3.88 会话候选审批闭环 / Session Candidate Approval Loop
+
+- 新增 staged 多会话候选的 append-only 审批闭环：`consolidate-session --stage`、`consolidation-candidates` 与 `decide-consolidation-candidate`。逐条 approve 会在写入 L1 前重新检查 current-truth 冲突；REVIEW 候选只能人工处理或拒绝。
+- 当前会话整合只支持无冲突 `ADD` 与人工 `REVIEW`；L3 仍仅产出草稿，`UPDATE / SUPERSEDE / NOOP` 保持为后续经真实数据验证的候选能力。
+- Added append-only staging and per-item approval for multi-session consolidation. Approval rechecks current-truth conflicts before L1 writes; REVIEW candidates cannot be written automatically. L3 remains draft-only.
+
 ### 多会话记忆整合 / Multi-session memory consolidation
 
 - 新增 `consolidate-session` CLI 命令（core: `workspace_consolidate_sessions`）：把一组已结束会话的 `suggest-case` 草稿整合为 L1 case / L3 记忆块候选。
