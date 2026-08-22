@@ -47,6 +47,9 @@
 
 - `record-case`
 - `suggest-case`
+- `consolidate-session`：把多个已结束会话整合为 L1 case / L3 记忆块候选。默认 dry-run；`--stage` 将候选写入 append-only 待审核池，随后用 `decide-consolidation-candidate` 逐条审批或拒绝。`--apply` 保留为直接显式写入无冲突 ADD 的模式，不能与 `--stage` 同用。既有 current-truth case 或同批重复会话返回 REVIEW、不会写入；已失效 case 不阻止新的 ADD。`--include-l3` 额外产出 L3 memory-block 追加草稿（不自动写入）。
+- `consolidation-candidates`：列出 staged 的 `pending|applied|rejected` 多会话整合候选；空 `--status` 返回全部。
+- `decide-consolidation-candidate`：维护者以 `approve|reject` 逐条处理候选。approve 只允许无冲突 ADD，写入前会重新检查 current-truth case，避免暂存期间状态变化导致重复写入。
 - `sync-sniff-artifacts`
 - `sync-case-artifacts`
 - `ref-get`

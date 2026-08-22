@@ -162,6 +162,13 @@ from .write import (
     workspace_write_receipts,
 )
 
+# --- multi-session consolidation (offline, dry-run by default) ---
+from .consolidate import (
+    workspace_consolidate_sessions,
+    workspace_decide_consolidation_candidate,
+    workspace_list_consolidation_candidates,
+)
+
 __all__ = [
     # constants
     "SESSION_EVENTS_FILE", "SESSION_SUMMARIES_FILE", "EVENT_PAYLOAD_INLINE_LIMIT",
@@ -187,6 +194,8 @@ __all__ = [
     # write
     "memory_write_judge", "memory_plan_write", "memory_execute_write",
     "workspace_record_case", "workspace_write_receipts", "workspace_replay_write_chain",
+    "workspace_consolidate_sessions", "workspace_decide_consolidation_candidate",
+    "workspace_list_consolidation_candidates",
     # workspace
     "workspace_check_contract", "workspace_check_rules",
     "workspace_status", "workspace_sniff", "workspace_trace", "workspace_lookup_hint", "bootstrap_workspace_context", "execute_provider_action", "mcp_bridge_status", "execute_mcp_bridge_action", "fuse_provider_evidence",

@@ -12,6 +12,9 @@ from memory_center.core.orchestrator import (
     memory_execute_write,
     memory_plan_write,
     memory_write_judge,
+    workspace_consolidate_sessions,
+    workspace_decide_consolidation_candidate,
+    workspace_list_consolidation_candidates,
     workspace_record_case,
     workspace_replay_write_chain,
     workspace_suggest_case,
@@ -24,6 +27,7 @@ from ._options import (
     OPTIONAL_FILES,
     OPTIONAL_PROJECTS,
     OPTIONAL_RISK_POINTS,
+    OPTIONAL_SESSION_IDS,
     OPTIONAL_VERIFIED_BY,
     REQUIRED_FILES,
     REQUIRED_PROJECTS,
@@ -188,6 +192,51 @@ def register_write_commands(app: typer.Typer) -> None:
         """Suggest one record-case draft from a finished session."""
         print(workspace_suggest_case(workspace, session_id))
 
+    @app.command("consolidate-session")
+    def consolidate_session_cmd(
+        workspace: str = typer.Option(...),
+        session_id: Optional[List[str]] = OPTIONAL_SESSION_IDS,
+        limit: int = typer.Option(10, help="Max sessions to consider."),
+        include_l3: bool = typer.Option(False, help="Also emit L3 memory-block draft candidates."),
+        stage: bool = typer.Option(False, help="Persist candidates for explicit per-item review."),
+        apply: bool = typer.Option(False, help="Write ADD/SUPERSEDE candidates into L1. Default is dry-run only."),
+    ):
+        """Consolidate multiple finished sessions into L1 case / L3 memory-block candidates.
+
+        Dry-run by default: only produces candidates with source refs, conflict reasons,
+        and expected write operations. Use --apply to write via record-case (conservative).
+        """
+        print(
+            workspace_consolidate_sessions(
+                workspace,
+                list(session_id) if session_id else None,
+                limit=limit,
+                include_l3=include_l3,
+                stage=stage,
+                apply=apply,
+            )
+        )
+
+    @app.command("consolidation-candidates")
+    def consolidation_candidates_cmd(
+        workspace: str = typer.Option(...),
+        status: str = typer.Option("pending", help="pending, applied, rejected, or empty for all."),
+        limit: int = typer.Option(50, help="Maximum candidates to return."),
+    ):
+        """List staged multi-session consolidation candidates."""
+        print(workspace_list_consolidation_candidates(workspace, status=status, limit=limit))
+
+    @app.command("decide-consolidation-candidate")
+    def decide_consolidation_candidate_cmd(
+        workspace: str = typer.Option(...),
+        candidate_id: str = typer.Option(...),
+        decision: str = typer.Option(..., help="approve or reject"),
+        actor: str = typer.Option(...),
+        note: str = typer.Option(""),
+    ):
+        """Apply or reject one staged candidate after human review."""
+        print(workspace_decide_consolidation_candidate(workspace, candidate_id, decision=decision, actor=actor, note=note))
+
     @app.command("sync-sniff-artifacts")
     def sync_sniff_artifacts_cmd(
         workspace: str = typer.Option(...),
@@ -227,4 +276,3 @@ def register_write_commands(app: typer.Typer) -> None:
                 auto_sync_mode=auto_sync_mode,
             )
         )
-

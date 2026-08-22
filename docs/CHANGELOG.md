@@ -2,6 +2,15 @@
 
 ## Unreleased 未发布
 
+### 多会话记忆整合 / Multi-session memory consolidation
+
+- 新增 `consolidate-session` CLI 命令（core: `workspace_consolidate_sessions`）：把一组已结束会话的 `suggest-case` 草稿整合为 L1 case / L3 记忆块候选。
+- 每条候选都带来源 event/evidence ref、冲突理由与预期写操作；既有 current-truth case 或同批重复会话返回 `REVIEW`，不基于文本相似度自动覆盖；已失效 case 不阻止新的 `ADD`。
+- 默认 dry-run 只产出草稿；新增 `--stage`、`consolidation-candidates` 与 `decide-consolidation-candidate`，以 append-only 候选/决策记录支持逐条审批或拒绝；approve 只写入重新校验仍无 current-truth 冲突的 ADD。`--apply` 保留为直接显式模式且不能与 `--stage` 同用；`--include-l3` 额外产出 L3 memory-block 追加草稿（即使 apply 也不自动写入）。
+- 设计依据 `docs/MEMORY_LANDSCAPE_RESEARCH.md` §3.2/§4：显式离线维护、不改变 MCP tool schema、不进入查询热路径。
+
+- Added `consolidate-session` CLI (core `workspace_consolidate_sessions`) that folds multiple finished sessions into L1 case / L3 memory-block candidates with source refs, conflict reasons, and expected write operations. It is dry-run by default; `--stage` persists append-only candidates for per-item approval or rejection, and approval rechecks current-truth conflicts before writing. `--apply` writes only conflict-free ADD candidates, while current cases and batch duplicates require review. L3 drafts are never auto-written.
+
 ## 4.3.87 推理 Prompt 与证据闭环 / Reasoning Prompts and Evidence Closure
 
 - 新增 `clarify_change_request`、`audit_project_claim`、`design_minimal_validation`、`compare_change_options` 四个 additive MCP Prompt，分别覆盖逐问式需求澄清、工程断言核查、最小可证伪验证和双向钢人决策。
