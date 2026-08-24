@@ -34,7 +34,7 @@ EXPECTED_ROOT_COMMANDS = frozenset({
     "eval-index-freshness", "eval-java-call-resolution",
     "eval-java-call-resolution-metrics", "eval-java-call-resolution-review",
     "eval-java-call-resolution-unresolved", "eval-ontology-gate",
-    "eval-parser-benchmark", "eval-reasoning-prompts", "eval-regression-suite", "eval-resume",
+    "eval-parser-benchmark", "eval-reasoning-prompts", "eval-regression-suite", "eval-resume", "eval-session-recall",
     "eval-retrieval-replay", "eval-token-benchmark", "eval-token-benchmark-compare",
     "eval-token-benchmark-save", "eval-token-benchmark-trend", "eval-token-gain",
     "eval-tool-adoption", "eval-workflow-orchestration", "eval-write-quality",

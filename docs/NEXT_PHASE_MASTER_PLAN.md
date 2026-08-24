@@ -139,7 +139,7 @@ This file consolidates and replaces the older execution plan, superpowers evolut
 
 - 所有吸收项必须先经过真实工作空间基准和兼容性验证，再进入默认行为或发布门禁。
 - Archify（tt-a1i/archify v2.15）深度调研已完成，见 `docs/ARCHIFY_ABSORPTION_RESEARCH.md`。生成式 Wiki 方案已整体移除，不再吸收其原子发布候选；仅保留“失败分类附加 code / subject / evidence / supported_fixes 与轮次停止条件”这一证据触发候选。初版的 delta 回执（无消费方，同 ADR-0003 教训）与 commit SHA 钉住（freshness 的 content_hash 已覆盖且更精确）也已撤下。
-- AI 记忆项目全景调研已完成，见 `docs/MEMORY_LANDSCAPE_RESEARCH.md`。结论是不新增 P0 项：会话→知识候选整合已落地为 P1 人工切片（stage → 逐条 approve|reject → L1），当前只支持 ADD/REVIEW；`UPDATE / SUPERSEDE / NOOP` 仍须 stable case ID、旧 case 状态回写和真实数据验证。历史图 / as-of impact、Skill 装载量化与跨会话召回评测均为 P2 观察项。Graphiti 式时间语义必须同时具备历史来源与可复放 case，不能只给现有图边加时间字段；Mem0 当前 ADD-only 路径不作为操作算子依据。
+- AI 记忆项目全景调研已完成，见 `docs/MEMORY_LANDSCAPE_RESEARCH.md`。结论是不新增 P0 项：会话→知识候选整合已落地为 P1 人工切片（stage → 逐条 approve|reject → L1），当前只支持 ADD/REVIEW；`UPDATE / SUPERSEDE / NOOP` 仍须 stable case ID、旧 case 状态回写和真实数据验证。跨会话召回已落地为 P2 只读评测切片（`eval-session-recall`），在多轮真实 case 稳定复现前不改变默认检索；历史图 / as-of impact 与 Skill 装载量化仍为 P2 观察项。Graphiti 式时间语义必须同时具备历史来源与可复放 case，不能只给现有图边加时间字段；Mem0 当前 ADD-only 路径不作为操作算子依据。
 
 ---
 

@@ -29,6 +29,17 @@ from memory_center.core.orchestrator import (
 
 
 def register_eval_commands(app: typer.Typer) -> None:
+    @app.command("eval-session-recall")
+    def eval_session_recall_cmd(
+        workspace: str = typer.Option(..., help="Path to .memory-center/workspace.yaml"),
+        cases: str = typer.Option(..., help="Local private session-recall cases YAML."),
+        limit: int = typer.Option(5, min=1, max=20, help="Maximum related cases returned per replay."),
+    ):
+        """Replay private cases through resume and classify L1 recall misses without changing retrieval."""
+        from memory_center.core.benchmark.session_recall import evaluate_session_recall
+
+        print(evaluate_session_recall(workspace, cases, limit=limit))
+
     @app.command("eval-reasoning-prompts")
     def eval_reasoning_prompts_cmd(
         cases: str = typer.Option("", help="Optional local reasoning prompt cases YAML."),

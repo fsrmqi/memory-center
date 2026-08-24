@@ -1,0 +1,10 @@
+# Keep real cases outside git. Values below are synthetic placeholders only.
+schema_version: 1
+cases:
+  - id: resume-case-001
+    query: "中文业务意图示例"
+    expected_source_session_id: "session-example-001"
+    # 可选：列出人工确认同样相关的 session。省略时不计算 precision。
+    allowed_source_session_ids:
+      - "session-example-001"
+    expected_case_hint: "仅供人工定位，不会出现在评测报告中"

@@ -2,6 +2,33 @@
 
 ## Unreleased 未发布
 
+## 4.3.93 会话召回精度行动提示 / Session Recall Precision Guidance
+
+- 当私有精度标签发现额外返回项时，`eval-session-recall` 现在优先提示人工审核与补充 allowed 集合；只有确认无关候选过多时才建议收紧 CJK fallback。
+- When precision labels surface extra candidates, session recall evaluation now prioritizes human review and allowed-set refinement before recommending a stricter CJK fallback.
+
+## 4.3.92 会话召回精度审查 / Session Recall Precision Review
+
+- 私有 session-recall case 可选声明 `allowed_source_session_ids`；报告只统计待人工审核的额外返回项，不将其自动判定为误报，并返回有标签 case 的 precision 聚合。
+- Private session-recall cases can optionally declare allowed source sessions; the report surfaces extra returned candidates for human review without auto-labeling false positives.
+
+## 4.3.91 会话召回模式可观测性 / Session Recall Match-Mode Observability
+
+- `eval-session-recall` 新增脱敏 `related_case_match_modes` 聚合与单 case `related_case_match_mode`，区分 existing exact、CJK fallback 与无命中，避免只凭 recall 判断 fallback 质量。
+- Added privacy-safe exact/CJK-fallback/none match-mode telemetry to session recall evaluation so fallback quality is not inferred from recall alone.
+
+## 4.3.90 Resume 中文长意图召回 / CJK Resume Recall
+
+- 当 L1 case 的既有 exact token 匹配为空时，`workspace_resume_context` 仅对中文连续片段启用至少两个二元片段的有界 scored fallback；精确匹配路径保持不变，避免单字泛化噪声。
+- Added a bounded scored CJK-bigram fallback for L1 resume only when legacy exact-token matching is empty; exact matching remains unchanged and one-character noise is avoided.
+
+## 4.3.89 会话召回评测 / Session Recall Evaluation
+
+### 会话召回评测 / Session recall evaluation
+
+- 新增只读 `eval-session-recall`：使用工作区外的私有 YAML case 复放实际 resume 链路，区分 L1 未索引、token 检索遗漏、结果窗口截断和证据不足；输出不回显 query、任务正文或 session ID。
+- Added read-only `eval-session-recall` using private local cases to classify L1 indexing, retrieval, window-selection, and evidence failures without exposing query or session text.
+
 ## 4.3.88 会话候选审批闭环 / Session Candidate Approval Loop
 
 - 新增 staged 多会话候选的 append-only 审批闭环：`consolidate-session --stage`、`consolidation-candidates` 与 `decide-consolidation-candidate`。逐条 approve 会在写入 L1 前重新检查 current-truth 冲突；REVIEW 候选只能人工处理或拒绝。

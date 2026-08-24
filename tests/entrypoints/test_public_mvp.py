@@ -1639,6 +1639,26 @@ def test_session_memory_flow(tmp_path: Path):
     assert draft["draft_case"]["source_refs"]
 
 
+def test_resume_context_uses_cjk_bigram_fallback_for_long_intent(tmp_path: Path):
+    from memory_center.core.orchestrator.resume import workspace_resume_context
+    from memory_center.core.orchestrator.write import workspace_record_case
+    from tests.fixtures import copy_demo_workspace
+
+    workspace = copy_demo_workspace(tmp_path)
+    workspace_record_case(
+        workspace,
+        "实现多次接单任务的数据自动隔离",
+        ["task-service"],
+        ["TaskIsolation.java"],
+        source_session_id="session-cjk-fallback",
+    )
+
+    resume = workspace_resume_context(workspace, "任务自动隔离", limit=5)
+
+    assert resume["related_case_match_mode"] == "cjk_bigram"
+    assert [item["source_session_id"] for item in resume["related_cases"]] == ["session-cjk-fallback"]
+
+
 def test_graph_query_context_and_impact(tmp_path):
     from memory_center.core.governance.rules import ensure_default_rules
     from memory_center.core.indexing.reindex import reindex_workspace

@@ -65,7 +65,7 @@ LangMem 区分热路径即时形成与后台形成；后者可在不增加交互
 | Case memory operation candidates（ADD / UPDATE / SUPERSEDE / NOOP） | **P1 部分实现** | `workspace_suggest_case` 的草稿出现重复、过期或需批量筛选的真实证据。 | 当前仅有 `ADD / REVIEW`：无冲突 ADD 可审批，current-truth 或批内重复必须 REVIEW。`UPDATE / SUPERSEDE / NOOP` 必须先定义 stable case ID、比较维度、旧 case 状态回写与审批回执，不能由文本相似度推断。 |
 | 历史图 / as-of impact analysis | **P2 观察项** | 同一影响链在不同历史时间窗结论不同，且至少有 3 个可复放的 Git 或 generation case。 | 先以 Git commit/generation 构建只读实验；仅当历史 precision、来源覆盖和查询预算均通过，才考虑持久化边时间。不能用 observed time 伪造 valid time。 |
 | Skill / asset loadout 收益量化 | **P2 观察项** | `eval_retrieval_replay` 与交付 Skill replay 有足够的、带证据的验证样本。 | 对同意图、同角色样本比较采纳、验证通过和 token/延迟；不可比较或 Brier score 退化则不调默认 loadout。 |
-| 跨会话召回评测 | **P2 观察项** | `mc_resume` 或 `mc_handoff` 出现可复现的关键事实遗漏。 | 建立脱敏、时间切分的 session-recall case；区分“索引缺失、检索遗漏、证据不足”，不把模型猜测当作召回成功。 |
+| 跨会话召回评测 | **P2 已实现：只读诊断切片** | `mc_resume` 或 `mc_handoff` 出现可复现的关键事实遗漏。 | `eval-session-recall` 通过私有 YAML 复放实际 resume，区分 `case_not_indexed`、`retrieval_miss`、`ranking_miss` 与 `evidence_insufficient`；不改权重或默认检索。只有多轮真实 case 稳定复现才进入检索设计。 |
 | 记忆策展 UI | **明确延后** | 上述候选至少一项已发布且稳定产生待审批数据。 | UI 只消费已有候选与审批回执；不新增第二套真源。 |
 
 ### 4.1 已实现的会话候选生命周期 / Implemented Session-Candidate Lifecycle

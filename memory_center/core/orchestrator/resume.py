@@ -38,6 +38,45 @@ from .shared import (
 )
 
 
+def _is_cjk(ch: str) -> bool:
+    return "一" <= ch <= "鿿" or "㐀" <= ch <= "䶿" or "豈" <= ch <= "﫿"
+
+
+def _cjk_bigrams(text: str) -> list[str]:
+    """Return bounded two-character fallbacks for contiguous CJK query spans."""
+    spans: list[str] = []
+    current = ""
+    for ch in str(text or ""):
+        if _is_cjk(ch):
+            current += ch.lower()
+        elif current:
+            spans.append(current)
+            current = ""
+    if current:
+        spans.append(current)
+    return sorted({span[index:index + 2] for span in spans for index in range(max(0, len(span) - 1))})
+
+
+def _resume_related_cases(store: WorkspaceStore, intent: str, *, limit: int) -> tuple[list[dict[str, Any]], str]:
+    """Keep legacy exact matching, then use a scored CJK fallback only when empty."""
+    cases = store.read_jsonl_prefer_backend("cross-service-task-memory.jsonl", limit=300)
+    tokens = tokenize(intent)
+    exact = [item for item in cases if any(token in json.dumps(item, ensure_ascii=False).lower() for token in tokens)]
+    if exact:
+        return exact[-limit:], "exact"
+    bigrams = _cjk_bigrams(intent)
+    if len(bigrams) < 2:
+        return [], "none"
+    scored: list[tuple[int, int, dict[str, Any]]] = []
+    for index, item in enumerate(cases):
+        haystack = json.dumps(item, ensure_ascii=False).lower()
+        score = sum(1 for token in bigrams if token in haystack)
+        if score >= 2:
+            scored.append((score, index, item))
+    scored.sort(key=lambda item: (-item[0], -item[1]))
+    return [item[2] for item in scored[:limit]], "cjk_bigram" if scored else "none"
+
+
 def workspace_resume_packet(
     workspace_file: str | Path,
     task_id: str = "",
@@ -144,17 +183,14 @@ def workspace_resume_context(workspace_file: str | Path, intent: str, limit: int
         if score > 0:
             related_sessions.append({**item, "match_score": score})
     related_sessions.sort(key=lambda item: (-int(item.get("match_score", 0)), item.get("created_at", "")))
-    related_cases = [
-        item
-        for item in store.read_jsonl_prefer_backend("cross-service-task-memory.jsonl", limit=300)
-        if any(token in json.dumps(item, ensure_ascii=False).lower() for token in tokens)
-    ][-limit:]
+    related_cases, related_case_match_mode = _resume_related_cases(store, intent, limit=limit)
     return {
         "workspace": config.workspace,
         "intent": intent,
         "retrieval_summary": query_result.get("retrieval_summary", {}),
         "related_sessions": related_sessions[:limit],
         "related_cases": related_cases,
+        "related_case_match_mode": related_case_match_mode,
         "entrypoints": query_result.get("results", [])[:limit],
         "suggested_context": _suggest_resume_context(
             intent,
