@@ -59,7 +59,7 @@ EXPECTED_ROOT_COMMANDS = frozenset({
     "unresolved-items", "vector-ann-rebuild", "vector-ann-status",
     "vector-ann-tune", "verification-loop", "verify-checklist", "walkthrough-eval",
     "walkthrough-export", "walkthrough-health", "watcher-run", "watcher-start",
-    "watcher-status", "watcher-stop", "wiki-assets-sync",
+    "watcher-status", "watcher-stop", "wiki-assets-sync", "wiki-promotion-confirm", "wiki-promotion-preview",
     "work-close", "work-handoff", "work-health",
     "work-log", "work-resume", "work-resume-check", "work-start", "work-sync",
     "workflow-profile", "workflow-recommend", "workspace", "workspace-dashboard",

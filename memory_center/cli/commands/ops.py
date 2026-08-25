@@ -18,11 +18,26 @@ from memory_center.core.retrieval.planner import (
 )
 from memory_center.core.workspace.jobs import workspace_job_status
 from memory_center.core.knowledge.wiki_bridge import sync_personal_wiki_assets
+from memory_center.core.knowledge.wiki_promotion import confirm_wiki_promotion, wiki_promotion_preview
 from memory_center.http.route_dispatch import audit_http_route_contract
 from memory_center.http.server import serve_http, validate_http_binding
 
 
 def register_ops_commands(app: typer.Typer) -> None:
+    @app.command("wiki-promotion-preview")
+    def wiki_promotion_preview_cmd(
+        workspace: str = typer.Option(...), session_id: str = typer.Option(...), wiki_root: str = typer.Option(...),
+    ):
+        """Preview a DSH delivery-summary promotion; does not write Personal Wiki."""
+        print(wiki_promotion_preview(workspace, session_id, wiki_root=wiki_root))
+
+    @app.command("wiki-promotion-confirm")
+    def wiki_promotion_confirm_cmd(
+        workspace: str = typer.Option(...), session_id: str = typer.Option(...), wiki_root: str = typer.Option(...), owner: str = typer.Option(...),
+    ):
+        """Explicitly promote one previewed DSH delivery summary into Personal Wiki."""
+        print(confirm_wiki_promotion(workspace, session_id, wiki_root=wiki_root, owner=owner))
+
     @app.command("wiki-assets-sync")
     def wiki_assets_sync(
         workspace: str = typer.Option(..., help="Path to .memory-center/workspace.yaml"),

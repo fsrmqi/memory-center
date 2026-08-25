@@ -2,6 +2,11 @@
 
 ## Unreleased 未发布
 
+## 4.3.99 Task-Aware Wiki Knowledge / 任务感知 Wiki 知识
+
+- 新增 `/workspace/knowledge-summary`：按当前焦点任务与 scope 对私有 Wiki 反向资产排序，返回关联原因，不读取或复制 Wiki 正文。
+- 新增 `wiki-promotion-preview` 与 `wiki-promotion-confirm`：从已捕获的 DSH 交付摘要生成长期知识预览；确认后调用 Personal Wiki 受控晋升，并登记新 Wiki 的反向资产链接。
+
 ## 4.3.98 Personal Wiki Asset Bridge / 个人 Wiki 资产桥接
 
 - 新增 `wiki-assets-sync`：将明确选定的 Personal Assistant Wiki 文档登记为私有 `kind=wiki` 协作资产，只保存 `pawiki:` 来源引用、知识 ID、内容哈希和范围，不复制正文。

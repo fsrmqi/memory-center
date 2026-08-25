@@ -9,6 +9,7 @@ from memory_center.core.orchestrator.session import (
     workspace_session_summary,
     workspace_start_session,
 )
+from memory_center.core.knowledge.wiki_promotion import wiki_promotion_preview
 
 
 def _init_git_repo(root: Path) -> None:
@@ -100,3 +101,7 @@ def test_dsh_delivery_capture_writes_a_bounded_closed_l0_session(tmp_path: Path)
     assert any(item["event_type"] == "dsh_delivery_summary" for item in session["events"])
     duplicate = workspace_capture_dsh_delivery_summary(str(workspace), "dsh-source-1", "修改完成。", turn=3, step=2)
     assert duplicate == {"captured": False, "duplicate": True, "session_id": captured["session_id"], "source_session_id": "dsh-source-1"}
+    preview = wiki_promotion_preview(str(workspace), captured["session_id"], wiki_root=tmp_path / "wiki")
+    assert preview["ready"] is True
+    assert preview["module"] == "kaipuyun"
+    assert preview["content"].startswith("修改完成")
