@@ -2,6 +2,11 @@
 
 ## Unreleased 未发布
 
+## 4.3.94 本地 Agent 执行观测 / Local Agent Execution Observability
+
+- 新增 DSH 脱敏 execution-event inbox 的幂等导入与本地汇总 CLI，关联 turn、step、model、tool、Token、耗时和失败；不复制 prompt、工具参数/结果、cwd 或消息正文。
+- Added idempotent local DSH execution-event ingestion and bounded turn/model/tool/token/failure summaries without retaining prompts, tool payloads, cwd, or message bodies.
+
 ## 4.3.93 会话召回精度行动提示 / Session Recall Precision Guidance
 
 - 当私有精度标签发现额外返回项时，`eval-session-recall` 现在优先提示人工审核与补充 allowed 集合；只有确认无关候选过多时才建议收紧 CJK fallback。

@@ -44,6 +44,7 @@ Memory Center precomputes these relationships before the agent starts editing.
 - [docs/ONTOLOGY.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/ONTOLOGY.md) — 轻量本体与演进计划
 - [docs/CHANGELOG.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/CHANGELOG.md) — 变更记录
 - [docs/NEXT_PHASE_MASTER_PLAN.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/NEXT_PHASE_MASTER_PLAN.md) — 开发路线
+- [docs/DSH_LOCAL_TELEMETRY.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/DSH_LOCAL_TELEMETRY.md) — DSH 本地执行观测接入
 - [docs/DOCUMENT_CONSTITUTION.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/DOCUMENT_CONSTITUTION.md) — 文档治理与发布清单
 
 ---

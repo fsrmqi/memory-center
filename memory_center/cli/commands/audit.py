@@ -11,6 +11,29 @@ from memory_center.application.presentation import export_workspace_dashboard_ht
 
 
 def register_audit_commands(app: typer.Typer) -> None:
+    @app.command("agent-execution-import")
+    def agent_execution_import_cmd(
+        workspace: str = typer.Option(..., help="Path to .memory-center/workspace.yaml"),
+        inbox: str = typer.Option("", help="Optional local DSH inbox directory."),
+        max_files: int = typer.Option(50, min=1, max=500),
+        max_events: int = typer.Option(20_000, min=1, max=100_000),
+    ):
+        """Import sanitized local DSH execution events with idempotent event IDs."""
+        from memory_center.core.observability.agent_execution import import_agent_execution_inbox
+
+        print(import_agent_execution_inbox(workspace, inbox_dir=inbox, max_files=max_files, max_events=max_events))
+
+    @app.command("agent-execution-summary")
+    def agent_execution_summary_cmd(
+        workspace: str = typer.Option(..., help="Path to .memory-center/workspace.yaml"),
+        limit_events: int = typer.Option(20_000, min=1, max=100_000),
+        limit_sessions: int = typer.Option(20, min=1, max=200),
+    ):
+        """Summarize local DSH turn, model, tool, token, and failure metadata."""
+        from memory_center.core.observability.agent_execution import summarize_agent_execution
+
+        print(summarize_agent_execution(workspace, limit_events=limit_events, limit_sessions=limit_sessions))
+
     @app.command("audit")
     def audit_cmd(
         workspace: str = typer.Option(...),
@@ -116,4 +139,3 @@ def register_audit_commands(app: typer.Typer) -> None:
 
         result = check_regression_alerts(workspace, threshold_pct=threshold_pct)
         print(json.dumps(result, indent=2, default=str))
-

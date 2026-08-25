@@ -51,6 +51,8 @@
 - `consolidation-candidates`：列出 staged 的 `pending|applied|rejected` 多会话整合候选；空 `--status` 返回全部。
 - `decide-consolidation-candidate`：维护者以 `approve|reject` 逐条处理候选。approve 只允许无冲突 ADD，写入前会重新检查 current-truth case，避免暂存期间状态变化导致重复写入。
 - `eval-session-recall`：读取工作区外的私有 YAML case，通过实际 resume 链路评测 L1 case 召回；仅输出 case ID 与 query/session 哈希，分类为 `hit`、`case_not_indexed`、`retrieval_miss`、`ranking_miss` 或 `evidence_insufficient`，不修改检索策略或工作区状态。
+- `agent-execution-import`：显式、幂等导入 DSH 本地插件写入的脱敏 NDJSON inbox；不读取 prompt、工具参数/结果或 cwd。
+- `agent-execution-summary`：按 DSH session 聚合 turn/step/model/tool 耗时、首 Token、Token 数与失败；session ID 仅返回哈希。
 - `sync-sniff-artifacts`
 - `sync-case-artifacts`
 - `ref-get`
