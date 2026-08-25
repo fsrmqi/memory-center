@@ -176,6 +176,9 @@ def workspace_capture_dsh_delivery_summary(
         raise ValueError("delivery summary must not be empty")
     suffix = f"{turn if turn is not None else 'x'}:{step if step is not None else 'x'}"
     session_id = f"dsh-delivery:{source_session_id}:{suffix}"
+    from .workspace_ops import workspace_status
+    focus_task = workspace_status(workspace_file, view="compact", budget="small").get("current_focus_task") or {}
+    task_id = str(focus_task.get("task_id", "") or "")
     _, store = load_context(workspace_file)
     existing = store.find_jsonl_via_backend(
         SESSION_EVENTS_FILE,
@@ -193,7 +196,7 @@ def workspace_capture_dsh_delivery_summary(
         workspace_file,
         intent=normalized[:240],
         session_id=session_id,
-        metadata={"source": "dsh_delivery_capture", "source_session_id": source_session_id},
+        metadata={"source": "dsh_delivery_capture", "source_session_id": source_session_id, "task_id": task_id},
     )
     workspace_log_session_event(
         workspace_file,
@@ -202,6 +205,7 @@ def workspace_capture_dsh_delivery_summary(
         {
             "summary": normalized,
             "source_session_id": source_session_id,
+            "task_id": task_id,
             **({"turn": turn} if turn is not None else {}),
             **({"step": step} if step is not None else {}),
             "capture_boundary": "completion_summary_only",
@@ -219,6 +223,7 @@ def workspace_capture_dsh_delivery_summary(
         "captured": True,
         "session_id": session_id,
         "source_session_id": source_session_id,
+        "task_id": task_id,
         "summary_chars": len(normalized),
         "validation_status": validation_status,
         "ended": ended,
@@ -543,9 +548,11 @@ def _build_session_summary(
     verified_by: list[str],
 ) -> dict[str, Any]:
     intent = ""
+    task_id = ""
     for item in events:
         if item.get("event_type") == "session_start":
             intent = item.get("intent", "")
+            task_id = str(_event_payload(item).get("task_id", "") or "")
             break
     event_types = [item.get("event_type", "") for item in events if item.get("event_type")]
     tool_calls = []
@@ -576,6 +583,7 @@ def _build_session_summary(
         "session_id": session_id,
         "workspace": workspace,
         "intent": intent,
+        "task_id": task_id,
         "event_count": len(events),
         "event_types": sorted(set(event_types)),
         "tool_calls": unique_tools,

@@ -21,6 +21,7 @@ def wiki_promotion_preview(workspace_file: str | Path, session_id: str, *, wiki_
         "title": content.split("。", 1)[0][:100] or "DSH 交付经验",
         "content": content,
         "source": f"memory-center:{Path(workspace_file).name}:session:{session_id}",
+        "source_session_id": session_id,
         "module": "kaipuyun",
         "knowledge_type": "事实",
         "source_refs": [f"session:{session_id}"],

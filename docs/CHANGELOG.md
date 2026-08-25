@@ -2,6 +2,14 @@
 
 ## Unreleased 未发布
 
+## 4.4.1 DSH Focus-Task Binding / DSH 焦点任务绑定
+
+- DSH 交付摘要捕获现在自动解析当前 focus task 并写入 `task_id`；任务页只展示归属该任务的交付摘要和 Wiki 晋升候选，Case/Wiki 来源链保留 session 与 task 归属。
+
+## 4.4.0 DSH Delivery Panel / DSH 任务交付面板
+
+- DSH 任务页新增交付摘要、Wiki 晋升预览与显式确认入口；浏览 workspace 切换不会改变当前 session 的交付写入目标。
+
 ## 4.3.99 Task-Aware Wiki Knowledge / 任务感知 Wiki 知识
 
 - 新增 `/workspace/knowledge-summary`：按当前焦点任务与 scope 对私有 Wiki 反向资产排序，返回关联原因，不读取或复制 Wiki 正文。
