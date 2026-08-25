@@ -53,6 +53,7 @@
 - `eval-session-recall`：读取工作区外的私有 YAML case，通过实际 resume 链路评测 L1 case 召回；仅输出 case ID 与 query/session 哈希，分类为 `hit`、`case_not_indexed`、`retrieval_miss`、`ranking_miss` 或 `evidence_insufficient`，不修改检索策略或工作区状态。
 - `agent-execution-import`：显式、幂等导入 DSH 本地插件写入的脱敏 NDJSON inbox；不读取 prompt、工具参数/结果或 cwd。
 - `agent-execution-summary`：按 DSH session 聚合 turn/step/model/tool 耗时、首 Token、Token 数与失败；session ID 仅返回哈希。
+- `dsh-delivery-capture`：写入一条 completion-signalled DSH 最终摘要为独立 L0 会话；输入为 `workspace`、`source-session-id`、`summary` 与可选 `turn/step`，最多保存 1400 字符，不写入完整 transcript 或自动发布 Case。
 - `sync-sniff-artifacts`
 - `sync-case-artifacts`
 - `ref-get`
@@ -393,6 +394,7 @@ HTTP 方法规则：GET 只读；会修改 workspace、记录会话、执行受�
 - `/workspace/resume-packet`
 - `/workspace/continuity-dashboard`
 - `/workspace/dashboard`
+- `/workspace/workbench-summary`
 - `/workspace/impact`
 - `/workspace/consolidation-candidates`
 - `/workspace/agent-execution-summary`

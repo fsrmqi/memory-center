@@ -46,6 +46,16 @@ _NEGATIVE_OUTCOME_HINTS = (
     "阻塞",
 )
 
+_DELIVERY_VALIDATION_HINTS = (
+    "验证通过",
+    "测试通过",
+    "已确认",
+    "确认修改生效",
+    "verified",
+    "validation passed",
+    "tests passed",
+)
+
 
 def workspace_start_session(
     workspace_file: str | Path,
@@ -144,6 +154,74 @@ def workspace_log_session_event(
         "payload_bytes": payload_bytes,
         "created_at": item.get("created_at"),
         "write_receipt": receipt,
+    }
+
+
+def workspace_capture_dsh_delivery_summary(
+    workspace_file: str | Path,
+    source_session_id: str,
+    summary: str,
+    turn: int | None = None,
+    step: int | None = None,
+) -> dict[str, Any]:
+    """Persist one bounded DSH completion summary as an independent L0 session.
+
+    This is deliberately not a transcript importer: callers supply only a
+    completion-signalled assistant summary, which is capped before persistence.
+    A capture has its own deterministic ID so retries are idempotent at the
+    plugin boundary and no capture can silently become a reusable L1 case.
+    """
+    normalized = " ".join(str(summary).split())[:1400]
+    if not normalized:
+        raise ValueError("delivery summary must not be empty")
+    suffix = f"{turn if turn is not None else 'x'}:{step if step is not None else 'x'}"
+    session_id = f"dsh-delivery:{source_session_id}:{suffix}"
+    _, store = load_context(workspace_file)
+    existing = store.find_jsonl_via_backend(
+        SESSION_EVENTS_FILE,
+        lambda item: item.get("session_id") == session_id and item.get("event_type") == "dsh_delivery_summary",
+        limit=1,
+    )
+    if existing:
+        return {
+            "captured": False,
+            "duplicate": True,
+            "session_id": session_id,
+            "source_session_id": source_session_id,
+        }
+    workspace_start_session(
+        workspace_file,
+        intent=normalized[:240],
+        session_id=session_id,
+        metadata={"source": "dsh_delivery_capture", "source_session_id": source_session_id},
+    )
+    workspace_log_session_event(
+        workspace_file,
+        session_id,
+        "dsh_delivery_summary",
+        {
+            "summary": normalized,
+            "source_session_id": source_session_id,
+            **({"turn": turn} if turn is not None else {}),
+            **({"step": step} if step is not None else {}),
+            "capture_boundary": "completion_summary_only",
+        },
+    )
+    validation_status = "passed" if any(hint in normalized.lower() for hint in _DELIVERY_VALIDATION_HINTS) else "recorded"
+    ended = workspace_end_session(
+        workspace_file,
+        session_id,
+        outcome="completed",
+        validation_summary="DSH completion-summary capture; not an independent test execution receipt.",
+        validation_status=validation_status,
+    )
+    return {
+        "captured": True,
+        "session_id": session_id,
+        "source_session_id": source_session_id,
+        "summary_chars": len(normalized),
+        "validation_status": validation_status,
+        "ended": ended,
     }
 
 

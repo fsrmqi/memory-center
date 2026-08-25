@@ -24,7 +24,7 @@ EXPECTED_ROOT_COMMANDS = frozenset({
     "change-review", "check-contract", "check-rules", "consolidate-session", "consolidation-candidates", "constraint", "context",
     "decide-consolidation-candidate",
     "continuity-dashboard", "contracts", "detect-changes", "discover", "doctor",
-    "drill-ref", "drill-task", "drill-timeline", "end-session",
+    "drill-ref", "drill-task", "drill-timeline", "dsh-delivery-capture", "end-session",
     "eval-agent-guidance", "eval-agent-guidance-adoption",
     "eval-agent-guidance-adoption-trend", "eval-agent-guidance-replay",
     "eval-agent-guidance-replay-campaign", "eval-agent-guidance-replay-trend",

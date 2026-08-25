@@ -630,6 +630,46 @@ def workspace_dashboard(
     return result
 
 
+def workspace_workbench_summary(
+    workspace_file: str | Path,
+    limit: int = 5,
+) -> dict[str, Any]:
+    """Return the bounded, latency-sensitive DSH workbench landing projection.
+
+    This deliberately avoids dashboard-only quality/replay calculations and the
+    full continuity packet. Those remain explicit secondary-view reads.
+    """
+    from .resume import workspace_next_actions
+    from .session import workspace_recent_sessions
+
+    status = workspace_status(workspace_file, view="compact", budget="small")
+    focus_task = status.get("current_focus_task") or {}
+    active_tasks = list(status.get("active_task_spaces") or [])[:limit]
+    task_id = str(focus_task.get("task_id", "") or "")
+    actions = workspace_next_actions(workspace_file, task_id=task_id, limit=limit).get("actions", []) if task_id else []
+    receipts = workspace_write_receipts(workspace_file, task_id=task_id, limit=limit).get("receipts", [])
+    sessions = workspace_recent_sessions(workspace_file, limit=limit).get("recent_sessions", [])
+    continuity = status.get("continuity_overview") or {}
+    return {
+        "schema_version": 1,
+        "kind": "workspace_workbench_summary",
+        "workspace": status.get("workspace", ""),
+        "focus_task": focus_task,
+        "active_tasks": active_tasks,
+        "blocked_tasks": [task for task in active_tasks if task.get("status") == "blocked"],
+        "continuity_overview": continuity,
+        "next_actions": actions[:limit],
+        "recent_receipts": receipts[-limit:],
+        "recent_sessions": sessions[:limit],
+        "health": {
+            "index_summary_status": status.get("index_summary_status", "unknown"),
+            "hot_refresh": status.get("hot_refresh", {}),
+            "workspace_warnings": status.get("workspace_warnings", [])[:3],
+        },
+        "performance_boundary": "landing_summary_only",
+    }
+
+
 def workspace_continuity_dashboard(
     workspace_file: str | Path,
     intent: str = "",

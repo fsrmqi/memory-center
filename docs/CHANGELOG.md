@@ -2,6 +2,17 @@
 
 ## Unreleased 未发布
 
+## 4.3.97 DSH Workbench Landing Performance / DSH 工作台首屏性能
+
+- 新增只读 `/workspace/workbench-summary`：首页只读取焦点任务、活跃/阻塞任务、下一步、近期回执/会话和轻量 health，避免 `workspace_dashboard` 的质量评测与完整恢复聚合。
+- DSH plugin 对该首页投影使用 5 秒本地缓存；任务、影响、记忆、质量等重型数据仍按用户切换标签后才加载。
+
+## 4.3.96 DSH 交付摘要捕获 / DSH Delivery Summary Capture
+
+- 新增 `memory-center dsh-delivery-capture`：将 completion-signalled DSH 最终摘要以独立、已关闭的 L0 会话与写入回执记录；摘要最多 1400 字符，代码块会由插件侧省略，不导入完整 transcript，也不自动生成或发布 L1 Case。
+- 交付捕获按 `source_session_id + turn + step` 去重；带“验证通过 / 测试通过 / 已确认”等信号的摘要仅标记为 captured/recorded evidence，不伪造独立测试执行。
+- Added bounded, idempotent DSH completion-summary capture into closed L0 sessions without importing full transcripts or auto-publishing cases.
+
 ## 4.3.95 DSH Memory Center Workbench / DSH 记忆中心工作台
 
 - DSH 独立插件新增 `Memory Center` 会话视图：工作台、任务连续性、影响分析、记忆与质量五个只读子页；原“执行观测”继续保留为当前 DSH 会话诊断页。

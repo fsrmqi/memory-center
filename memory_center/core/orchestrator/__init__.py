@@ -102,6 +102,7 @@ from .rules import _score_threshold_for_sync_mode
 # --- session lifecycle ---
 from .session import (
     workspace_end_session,
+    workspace_capture_dsh_delivery_summary,
     workspace_log_session_event,
     workspace_recent_evidence,
     workspace_recent_sessions,
@@ -149,6 +150,7 @@ from .workspace_ops import (
     workspace_lookup_hint,
     workspace_sniff,
     workspace_status,
+    workspace_workbench_summary,
     workspace_trace,
 )
 
@@ -182,7 +184,7 @@ __all__ = [
     # session
     "workspace_start_session", "workspace_log_session_event", "workspace_end_session",
     "workspace_record_agent_guidance", "workspace_record_close_feedback",
-    "workspace_recent_sessions", "workspace_session_summary", "workspace_suggest_case",
+    "workspace_recent_sessions", "workspace_session_summary", "workspace_suggest_case", "workspace_capture_dsh_delivery_summary",
     "workspace_recent_evidence",
     # query
     "memory_query_hybrid", "memory_context", "memory_symbol", "memory_callers", "memory_callees", "memory_method_walkthrough",
@@ -198,7 +200,7 @@ __all__ = [
     "workspace_list_consolidation_candidates",
     # workspace
     "workspace_check_contract", "workspace_check_rules",
-    "workspace_status", "workspace_sniff", "workspace_trace", "workspace_lookup_hint", "bootstrap_workspace_context", "execute_provider_action", "mcp_bridge_status", "execute_mcp_bridge_action", "fuse_provider_evidence",
+    "workspace_status", "workspace_workbench_summary", "workspace_sniff", "workspace_trace", "workspace_lookup_hint", "bootstrap_workspace_context", "execute_provider_action", "mcp_bridge_status", "execute_mcp_bridge_action", "fuse_provider_evidence",
     "workspace_dashboard", "workspace_continuity_dashboard", "workspace_task_resume_check",
     # resume
     "workspace_resume_packet", "workspace_resume_context",

@@ -5,6 +5,7 @@ from pathlib import Path
 
 from memory_center.core.orchestrator.session import (
     workspace_end_session,
+    workspace_capture_dsh_delivery_summary,
     workspace_session_summary,
     workspace_start_session,
 )
@@ -77,3 +78,25 @@ def test_explicit_human_confirmation_verifies_without_a_command(tmp_path: Path) 
     assert ended["evidence_chain"]["validation"]["status"] == "passed"
     assert ended["evidence_chain"]["validation"]["verification_source"] == "human_confirmation"
     assert ended["evidence_chain"]["state"] == "verified"
+
+
+def test_dsh_delivery_capture_writes_a_bounded_closed_l0_session(tmp_path: Path) -> None:
+    from tests.fixtures import setup_demo_workspace
+
+    workspace = setup_demo_workspace(tmp_path)
+    captured = workspace_capture_dsh_delivery_summary(
+        str(workspace),
+        "dsh-source-1",
+        "修改完成。已确认修改生效。" + "x" * 2_000,
+        turn=3,
+        step=2,
+    )
+
+    assert captured["captured"] is True
+    assert captured["validation_status"] == "passed"
+    assert captured["summary_chars"] == 1400
+    session = workspace_session_summary(str(workspace), captured["session_id"])
+    assert session["found"] is True
+    assert any(item["event_type"] == "dsh_delivery_summary" for item in session["events"])
+    duplicate = workspace_capture_dsh_delivery_summary(str(workspace), "dsh-source-1", "修改完成。", turn=3, step=2)
+    assert duplicate == {"captured": False, "duplicate": True, "session_id": captured["session_id"], "source_session_id": "dsh-source-1"}

@@ -10,6 +10,7 @@ from rich import print
 
 from memory_center.core.orchestrator import (
     workspace_end_session,
+    workspace_capture_dsh_delivery_summary,
     workspace_log_session_event,
     workspace_recent_sessions,
     workspace_session_summary,
@@ -30,6 +31,17 @@ def _parse_event_payload(payload: str):
 
 
 def register_session_commands(app: typer.Typer) -> None:
+    @app.command("dsh-delivery-capture")
+    def dsh_delivery_capture_cmd(
+        workspace: str = typer.Option(..., help="Path to .memory-center/workspace.yaml"),
+        source_session_id: str = typer.Option(..., help="DSH source session ID."),
+        summary: str = typer.Option(..., help="Bounded DSH assistant completion summary."),
+        turn: Optional[int] = typer.Option(None),
+        step: Optional[int] = typer.Option(None),
+    ):
+        """Persist one completion-signalled DSH delivery summary, never a full transcript."""
+        print(workspace_capture_dsh_delivery_summary(workspace, source_session_id, summary, turn=turn, step=step))
+
     @app.command("start-session")
     def start_session_cmd(
         workspace: str = typer.Option(...),
@@ -90,4 +102,3 @@ def register_session_commands(app: typer.Typer) -> None:
     ):
         """Show one session summary with raw recorded events."""
         print(workspace_session_summary(workspace, session_id))
-

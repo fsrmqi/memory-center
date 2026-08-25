@@ -41,7 +41,7 @@ from memory_center.application.http_facades import (
 )
 from memory_center.application.quality_gates import quality_gates_summary
 from memory_center.core.observability.agent_execution import summarize_agent_execution
-from memory_center.core.orchestrator import workspace_list_consolidation_candidates
+from memory_center.core.orchestrator import workspace_list_consolidation_candidates, workspace_workbench_summary
 from memory_center.core.foundation.dispatch import CommandRegistry
 
 from .params import RouteParams, _parse_int
@@ -257,6 +257,10 @@ def register_workflow_routes(registry: CommandRegistry) -> None:
         limit=_parse_int(rp.params, "limit", 10),
         view=rp.view(),
         budget=rp.budget(),
+    ))
+    registry.register("/workspace/workbench-summary", lambda rp: workspace_workbench_summary(
+        rp.workspace(),
+        limit=_parse_int(rp.params, "limit", 5),
     ))
     registry.register("/workspace/resume-context", lambda rp: workspace_resume_context(
         rp.workspace(),
