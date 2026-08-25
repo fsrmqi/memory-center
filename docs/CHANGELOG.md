@@ -2,6 +2,11 @@
 
 ## Unreleased 未发布
 
+## 4.3.98 Personal Wiki Asset Bridge / 个人 Wiki 资产桥接
+
+- 新增 `wiki-assets-sync`：将明确选定的 Personal Assistant Wiki 文档登记为私有 `kind=wiki` 协作资产，只保存 `pawiki:` 来源引用、知识 ID、内容哈希和范围，不复制正文。
+- DSH 的“知识”页读取 workspace 资产并展示关联的个人 Wiki 条目；UCAP 默认 scope 使用 `kaipuyun`。
+
 ## 4.3.97 DSH Workbench Landing Performance / DSH 工作台首屏性能
 
 - 新增只读 `/workspace/workbench-summary`：首页只读取焦点任务、活跃/阻塞任务、下一步、近期回执/会话和轻量 health，避免 `workspace_dashboard` 的质量评测与完整恢复聚合。

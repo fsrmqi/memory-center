@@ -54,6 +54,7 @@
 - `agent-execution-import`：显式、幂等导入 DSH 本地插件写入的脱敏 NDJSON inbox；不读取 prompt、工具参数/结果或 cwd。
 - `agent-execution-summary`：按 DSH session 聚合 turn/step/model/tool 耗时、首 Token、Token 数与失败；session ID 仅返回哈希。
 - `dsh-delivery-capture`：写入一条 completion-signalled DSH 最终摘要为独立 L0 会话；输入为 `workspace`、`source-session-id`、`summary` 与可选 `turn/step`，最多保存 1400 字符，不写入完整 transcript 或自动发布 Case。
+- `wiki-assets-sync`：将指定 Personal Assistant Wiki 根目录中的明确入口登记为私有 Wiki 资产；输入 `workspace`、`wiki-root`、`owner` 与可选 `scope`，只持久化 `pawiki:` 反向引用、内容哈希和范围。
 - `sync-sniff-artifacts`
 - `sync-case-artifacts`
 - `ref-get`

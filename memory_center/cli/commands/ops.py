@@ -17,11 +17,22 @@ from memory_center.core.retrieval.planner import (
     workspace_performance_snapshot_status,
 )
 from memory_center.core.workspace.jobs import workspace_job_status
+from memory_center.core.knowledge.wiki_bridge import sync_personal_wiki_assets
 from memory_center.http.route_dispatch import audit_http_route_contract
 from memory_center.http.server import serve_http, validate_http_binding
 
 
 def register_ops_commands(app: typer.Typer) -> None:
+    @app.command("wiki-assets-sync")
+    def wiki_assets_sync(
+        workspace: str = typer.Option(..., help="Path to .memory-center/workspace.yaml"),
+        wiki_root: str = typer.Option(..., help="Personal Assistant Wiki root directory."),
+        owner: str = typer.Option(..., help="Owner recorded on private Wiki assets."),
+        scope: str = typer.Option("kaipuyun", help="Bounded business scope tag."),
+    ):
+        """Register selected Personal Wiki entries as governed reverse links."""
+        print(sync_personal_wiki_assets(workspace, wiki_root=wiki_root, owner=owner, scope=scope))
+
     @app.command("job-status")
     def job_status(
         workspace: str = typer.Option(..., help="Path to .memory-center/workspace.yaml"),
@@ -101,4 +112,3 @@ def register_ops_commands(app: typer.Typer) -> None:
             {"http": "starting", "host": host, "port": port, "workspace": workspace, "authentication": bool(access_token)}
         )
         serve_http(workspace, host=host, port=port, access_token=access_token)
-
