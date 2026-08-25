@@ -2,6 +2,10 @@
 
 ## Unreleased 未发布
 
+## 4.4.2 Task Delivery Command Center / 任务交付中心
+
+- 新增只读 `/workspace/task-delivery-overview`，聚合 focus task 的 DSH 交付摘要、验证状态、回执和有界时间线，供 DSH 任务页展示交付中心。
+
 ## 4.4.1 DSH Focus-Task Binding / DSH 焦点任务绑定
 
 - DSH 交付摘要捕获现在自动解析当前 focus task 并写入 `task_id`；任务页只展示归属该任务的交付摘要和 Wiki 晋升候选，Case/Wiki 来源链保留 session 与 task 归属。

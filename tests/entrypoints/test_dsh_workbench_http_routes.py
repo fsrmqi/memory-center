@@ -10,5 +10,6 @@ def test_dsh_workbench_read_routes_are_registered() -> None:
         "/workspace/agent-execution-summary",
         "/workspace/workbench-summary",
         "/workspace/knowledge-summary",
+        "/workspace/task-delivery-overview",
     ):
         assert registry.has(path), path

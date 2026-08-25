@@ -109,6 +109,7 @@ from .session import (
     workspace_record_agent_guidance,
     workspace_record_close_feedback,
     workspace_session_summary,
+    workspace_task_delivery_overview,
     workspace_start_session,
     workspace_suggest_case,
 )
@@ -184,7 +185,7 @@ __all__ = [
     # session
     "workspace_start_session", "workspace_log_session_event", "workspace_end_session",
     "workspace_record_agent_guidance", "workspace_record_close_feedback",
-    "workspace_recent_sessions", "workspace_session_summary", "workspace_suggest_case", "workspace_capture_dsh_delivery_summary",
+    "workspace_recent_sessions", "workspace_session_summary", "workspace_task_delivery_overview", "workspace_suggest_case", "workspace_capture_dsh_delivery_summary",
     "workspace_recent_evidence",
     # query
     "memory_query_hybrid", "memory_context", "memory_symbol", "memory_callers", "memory_callees", "memory_method_walkthrough",

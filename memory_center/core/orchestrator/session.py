@@ -338,6 +338,41 @@ def workspace_recent_sessions(workspace_file: str | Path, limit: int = 10) -> di
     }
 
 
+def workspace_task_delivery_overview(workspace_file: str | Path, task_id: str = "", limit: int = 20) -> dict[str, Any]:
+    """Bounded task-level delivery projection for the DSH command center."""
+    from .workspace_ops import workspace_status
+    from .write import workspace_write_receipts
+
+    status = workspace_status(workspace_file, view="compact", budget="small")
+    resolved_task_id = task_id or str((status.get("current_focus_task") or {}).get("task_id", "") or "")
+    sessions = workspace_recent_sessions(workspace_file, limit=200).get("recent_sessions", [])
+    deliveries = [item for item in sessions if item.get("task_id") == resolved_task_id and str(item.get("session_id", "")).startswith("dsh-delivery:")][:limit]
+    receipts = workspace_write_receipts(workspace_file, task_id=resolved_task_id, limit=limit).get("receipts", [])
+    verified = [item for item in deliveries if ((item.get("evidence_chain") or {}).get("validation") or {}).get("verified")]
+    stage = "in_progress"
+    if deliveries and not verified:
+        stage = "awaiting_validation"
+    if verified:
+        stage = "delivery_recorded"
+    timeline = [
+        {"kind": "task", "label": "任务已绑定", "time": str((status.get("current_focus_task") or {}).get("updated_at", "") or "")},
+        *[{"kind": "delivery", "label": str(item.get("intent", "交付摘要") or "交付摘要")[:140], "time": str(item.get("created_at", "") or ""), "verified": item in verified} for item in reversed(deliveries[-5:])],
+        *[{"kind": "receipt", "label": str(item.get("summary", "") or item.get("action", "写入回执"))[:140], "time": str(item.get("created_at", "") or "")} for item in receipts[-5:]],
+    ]
+    return {
+        "schema_version": 1,
+        "kind": "task_delivery_overview",
+        "task_id": resolved_task_id,
+        "task": status.get("current_focus_task") or {},
+        "stage": stage,
+        "delivery_count": len(deliveries),
+        "verified_delivery_count": len(verified),
+        "receipt_count": len(receipts),
+        "timeline": timeline,
+        "next_action": "先验证当前交付。" if stage == "awaiting_validation" else "继续当前任务或生成交接包。",
+    }
+
+
 def workspace_session_summary(workspace_file: str | Path, session_id: str) -> dict[str, Any]:
     config, store = load_context(workspace_file)
     summaries = store.find_jsonl_via_backend(SESSION_SUMMARIES_FILE, lambda row: row.get("session_id") == session_id, limit=1)
