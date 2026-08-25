@@ -393,6 +393,9 @@ HTTP 方法规则：GET 只读；会修改 workspace、记录会话、执行受�
 - `/workspace/resume-packet`
 - `/workspace/continuity-dashboard`
 - `/workspace/dashboard`
+- `/workspace/impact`
+- `/workspace/consolidation-candidates`
+- `/workspace/agent-execution-summary`
 - `/workspace/ref-get`
 - `/workspace/ref-batch`
 - `/workspace/memory-backend-query`

@@ -27,6 +27,7 @@ from memory_center.application.groups import (
 )
 from memory_center.application.http_facades import Any
 from memory_center.core.foundation.dispatch import CommandRegistry
+from memory_center.core.orchestrator import memory_impact
 
 from .params import RouteParams, _parse_int
 
@@ -95,6 +96,15 @@ def register_analysis_routes(registry: CommandRegistry) -> None:
         return business_flow_impact_action(rp.workspace(), rp.require('node_id'), _parse_int(rp.params, "max_depth", 3))
 
     registry.register("/workspace/business-flow-impact", _business_flow_impact)
+
+    registry.register("/workspace/impact", lambda rp: memory_impact(
+        rp.workspace(),
+        rp.require('target'),
+        direction=rp.get('direction', 'upstream'),
+        max_depth=_parse_int(rp.params, 'max_depth', 3),
+        view=rp.view(),
+        budget=rp.budget(),
+    ))
 
     def _metrics_summary(rp: RouteParams) -> dict[str, Any]:
         ws = rp.params.get("workspace", [rp.default_workspace])[0]

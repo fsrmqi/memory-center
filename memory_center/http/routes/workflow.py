@@ -40,6 +40,8 @@ from memory_center.application.http_facades import (
     workspace_unresolved_items,
 )
 from memory_center.application.quality_gates import quality_gates_summary
+from memory_center.core.observability.agent_execution import summarize_agent_execution
+from memory_center.core.orchestrator import workspace_list_consolidation_candidates
 from memory_center.core.foundation.dispatch import CommandRegistry
 
 from .params import RouteParams, _parse_int
@@ -264,6 +266,16 @@ def register_workflow_routes(registry: CommandRegistry) -> None:
     registry.register("/workspace/suggest-case", lambda rp: workspace_suggest_case(
         rp.workspace(),
         rp.require('session_id'),
+    ))
+    registry.register("/workspace/consolidation-candidates", lambda rp: workspace_list_consolidation_candidates(
+        rp.workspace(),
+        status=rp.get("status", "pending"),
+        limit=_parse_int(rp.params, "limit", 20),
+    ))
+    registry.register("/workspace/agent-execution-summary", lambda rp: summarize_agent_execution(
+        rp.workspace(),
+        limit_events=_parse_int(rp.params, "limit_events", 20_000),
+        limit_sessions=_parse_int(rp.params, "limit_sessions", 20),
     ))
 
     # --- group-level (registry-name based) ------------------------------------

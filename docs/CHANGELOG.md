@@ -2,6 +2,14 @@
 
 ## Unreleased 未发布
 
+## 4.3.95 DSH Memory Center Workbench / DSH 记忆中心工作台
+
+- DSH 独立插件新增 `Memory Center` 会话视图：工作台、任务连续性、影响分析、记忆与质量五个只读子页；原“执行观测”继续保留为当前 DSH 会话诊断页。
+- 插件新增 DSH 同源的本地只读 bridge：按 session cwd 自动发现 workspace，按需启动和复用 loopback Memory Center 查询进程；关闭 DSH 会清理 bridge，不影响 Memory Center 独立 CLI、MCP、HTTP 使用。
+- HTTP 新增只读 `/workspace/impact`、`/workspace/consolidation-candidates`、`/workspace/agent-execution-summary`，供本地工作台复用既有影响、候选与脱敏执行汇总读模型。
+- 影响子页增加基于 `/workspace/evidence-subgraph` 的有界证据图、focus 选择和节点详情；图只展示已导出的图谱关系，并明确标记推断级证据。
+- Added a local DSH workbench view and same-origin read-only bridge, plus read-only HTTP routes for impact, consolidation candidates, and sanitized execution summaries.
+
 ## 4.3.94 本地 Agent 执行观测 / Local Agent Execution Observability
 
 - 新增 DSH 脱敏 execution-event inbox 的幂等导入与本地汇总 CLI，关联 turn、step、model、tool、Token、耗时和失败；不复制 prompt、工具参数/结果、cwd 或消息正文。

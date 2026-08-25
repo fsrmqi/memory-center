@@ -47,6 +47,75 @@ This file consolidates and replaces the older execution plan, superpowers evolut
 
 > 已交付内容（4.3.77 图感知审查、4.3.81-4.3.84 Java 解析与性能闭环、ADR-0002 内部重构）详见 CHANGELOG。
 
+### P0：DSH Memory Center Workbench / DSH 记忆中心工作台
+
+目标：将 DSH Web 定位为单个 Memory Center workspace 的主力**展示与操作入口**，而不是仅显示 DSH 本次会话的模型、工具和 Token 统计。现有“执行观测”保留为会话级子页；新的工作台优先展示已有 Memory Center 的项目、任务、记忆和质量读模型。
+
+实现状态：P0-0 至 P0-4 的代码与本地 smoke 已完成；尚待真实私有 workspace 覆盖空 workspace、无焦点任务、blocked task、stale 索引和可恢复任务五类验收后，才能从主计划移入 CHANGELOG。
+
+这是一项产品呈现与集成收敛工作，**不新建第二套图谱、任务、Case 或评测真源**。Memory Center core 继续拥有查询、影响分析、治理和持久化语义；DSH 插件只负责工作区自动发现、本地只读访问、渲染和有限的显式跳转/操作入口。
+
+#### P0-0：访问边界与数据合同（先做）
+
+1. 固定 DSH 插件的 workspace 发现规则：优先 session cwd 向上寻找 `.memory-center/workspace.yaml`，显式 `MEMORY_CENTER_WORKSPACE` 仅作为覆盖；未发现 workspace 时显示空态，不影响 DSH。
+2. 为插件定义单一只读数据边界：浏览器端只访问 DSH 同源的 host bridge；host bridge 再调用 Memory Center 已有 `workspace_dashboard`、`workspace_continuity_dashboard`、`workspace_status`、`workspace_recent_sessions`、`workspace_session_summary`、`impact` 等 core/HTTP facade。浏览器不得读取 SQLite、JSONL 或 `.memory-center` 文件。
+3. DSH host 负责按需启动、复用和停止该本地只读查询通道；用户启动 DSH 后不需要再手工运行 `memory-center serve-http`。通道只绑定 loopback、按 workspace 隔离，并随 DSH plugin 生命周期清理；Memory Center 不启动 DSH 时仍可独立通过 CLI、MCP、HTTP 使用。
+4. bridge 必须使用短 TTL 缓存、fail-open；缺少 `memory-center` 命令、工作区未初始化、索引 stale 或读取失败时返回结构化状态与下一步，而不是让 DSH 页面白屏或阻断 Agent。
+5. 统一 DSH 插件与 Memory Center 的隐私投影：默认不向浏览器返回 prompt、消息正文、工具参数/结果、完整源码、私有绝对路径或原始 session payload。详情页只按现有 evidence/ref 的有界摘要与授权规则展开。
+6. 同步修正 `docs/DSH_LOCAL_TELEMETRY.md` 与插件实际行为的陈旧描述，尤其是“安装即启用、自动导入、无 OFF/METADATA 开关”的当前语义。
+
+验收：一个真实私有 workspace 中，启动 DSH 后无需额外填写 workspace 路径或启动 Memory Center HTTP 服务即可取得只读工作台数据；缺少 workspace 或 bridge 失败时，DSH 原对话和执行观测均保持可用；关闭 DSH 不影响独立运行的 Memory Center。
+
+#### P0-1：工作台首页（当前最合适的第一个实现）
+
+新增 DSH 会话视图 `Memory Center`，默认落在“工作台”页，使用 `workspace_dashboard(view="compact")` 与 `workspace_status(view="compact")` 的既有投影。首版只放能指导下一步工作的信息：
+
+- 当前焦点任务：状态、优先级、可恢复性、最近更新时间；
+- 下一步行动与未解决项：最多 3–5 条，保留来源/状态而非展示正文；
+- 活跃、阻塞和低质量任务概览；
+- 最近回执、交接与证据摘要；
+- 索引新鲜度与可解释的 health 状态；
+- 一条明确的“下一步建议”，例如恢复任务、定向刷新或执行影响分析。
+
+不要在首页展示大图、全量时间线、所有 Case 或纯装饰性指标；首页的判断标准是“打开后能知道接下来该做什么”。
+
+验收：工作台在空 workspace、无焦点任务、存在 blocked task、索引 stale、存在可恢复任务五类状态下都有明确空态/风险态/下一步；不复制 `workspace_dashboard` 的决策逻辑。
+
+#### P0-2：任务连续性页
+
+新增“任务”页，复用 `workspace_continuity_dashboard` 与 `task_resume_check`：展示当前任务的 resume packet、下一步、未解决项、最近回执、交接和有限 recent evidence。支持从工作台选择其他 active task，但不在浏览器中直接编辑任务工件。
+
+验收：用户从 DSH 切回一个中断任务时，可在一屏内区分“可直接继续 / 需要修复 / 被阻断”，并能定位到最小下一动作；大 payload 仍保持在 Memory Center 的渐进披露与 budget 约束内。
+
+#### P0-3：影响分析与记忆浏览（工作台稳定后）
+
+1. 新增“影响”页：输入一个明确 target（类、接口、Feign、MQ、配置键），调用既有 `mc_analyze` / impact facade，按 confirmed / probable / possible / unknown risks 分层展示；证据图采用 focus + 节点详情的交互，只使用已有的有界 subgraph/export 结果，并明确区分 EXTRACTED 与 INFERRED，不能把可达关系表述为运行时影响。
+2. 新增“记忆”页：浏览最近 Case、待审批 consolidation candidate、决策与来源摘要；审批、写入和 Case 生命周期仍走 Memory Center 已有显式命令/API，前端不绕过人工门禁。
+3. 新增“质量”页：索引新鲜度、resume/retrieval/guidance 的已有评测摘要。没有真实 case 的指标必须显示 `real_case_missing`，不得用样例伪装质量结论。
+
+验收：影响页不因模糊输入触发无界全局搜索；记忆页不直接自动 approve / merge / supersede；质量页不把缺样本解释为通过。
+
+#### P0-4：会话执行观测的定位
+
+保留当前“执行观测”页作为 **DSH 当前会话** 的诊断面板，仅负责模型、工具、耗时、Token、失败和本地脱敏事件。它不承担项目记忆、跨任务恢复或跨 Agent 总览职责；工作台可链接到它，但不把两类数据混为同一口径。
+
+验收：页面显式标记数据范围（`当前 DSH 会话` 或 `当前 Memory Center workspace`）和采集覆盖度，避免将局部 DSH 数据误读为项目全量数据。
+
+#### P0 非目标与后续门槛
+
+- 本阶段不采集或展示 Codex、Claude Code、Cursor 等外部 Agent 的执行轨迹；它们是后续“跨 Agent 活动适配器”专题，不能通过解析私有日志临时接入。
+- 本阶段不把 DSH 变成 Memory Center 的第二个后端，不复制索引、SQLite、JSONL、Case 决策或任务状态机。
+- 本阶段不默认展示 prompt、正文、工具参数、工具结果、源码全文或完整 session payload。
+- 只有 P0-1 / P0-2 在真实 workspace 中稳定使用后，才评估 P0-3；只有存在稳定、公开、可脱敏的事件入口后，才设计外部 Agent adapter。
+
+#### P0 测试与发布要求
+
+- 插件单元测试：workspace 自动发现、bridge 正常/缺失/超时、脱敏字段、空态与错误态、视图 tab 注册；
+- Memory Center 测试：既有 dashboard/continuity/impact 的 HTTP 或 core 输出兼容性不退化；
+- DSH smoke：独立插件安装、Web 启动清单含浏览器模块、无 workspace 的 DSH 会话仍正常；
+- 真实私有 workspace：验证焦点任务、blocked task、stale 索引和恢复任务至少各一例；不提交生成的 `.memory-center` 内容、私有路径或原始 payload；
+- 每个切片完成后更新插件使用说明与 CHANGELOG；若涉及公开 Memory Center CLI/HTTP/MCP schema，再按文档宪章同步 README、ARCHITECTURE、MCP_GUIDE、REFERENCE。
+
 ### P1：Java Parser / Call Resolver 真实精度深化
 
 目标：让 method walkthrough 和跨项目链路在真实 Spring Cloud 场景下更稳。
