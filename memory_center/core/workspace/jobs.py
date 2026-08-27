@@ -124,11 +124,42 @@ def workspace_job_status(workspace_file: str, job_id: str = "", limit: int = 20)
     store = WorkspaceStore(workspace_file)
     recover_interrupted_workspace_jobs(store)
     rows = store.read_json_prefer_backend(JOBS_FILE, []) or []
+    # Additive Phase C view: active jobs from the SQLite coordinator ledger
+    # (authoritative for reindex) ride along so one status surface shows both.
+    coordinator_active: list[dict[str, Any]] = []
+    try:
+        from memory_center.core.indexing.job_coordinator import ACTIVE_STATES, ensure_tables
+
+        ensure_tables(store)
+        import sqlite3 as _sqlite3
+
+        conn = _sqlite3.connect(str(store.graph_db_path))
+        conn.row_factory = _sqlite3.Row
+        crows = conn.execute(
+            f"SELECT job_id, kind, status, staging_generation, owner_process_id FROM workspace_jobs"
+            f" WHERE status IN ({','.join('?' * len(ACTIVE_STATES))}) ORDER BY created_at DESC LIMIT 10",
+            tuple(sorted(ACTIVE_STATES)),
+        ).fetchall()
+        conn.close()
+        coordinator_active = [dict(row) for row in crows]
+    except Exception:
+        coordinator_active = []
     if job_id:
         row = next((row for row in rows if row.get("job_id") == job_id), None)
-        return _job_view(row) if isinstance(row, dict) else {"job_id": job_id, "found": False}
-    selected = sorted(rows, key=lambda row: float(row.get("updated_at", 0)), reverse=True)[:limit]
-    return {"jobs": [_job_view(row) for row in selected]}
+        view = _job_view(row) if isinstance(row, dict) else {"job_id": job_id, "found": False}
+        matched = next((c for c in coordinator_active if c.get("job_id") == job_id), None)
+        if matched is not None:
+            view["coordinator"] = matched
+        elif isinstance(view, dict) and view.get("found") is False:
+            found_coord = next((c for c in coordinator_active if c.get("job_id") == job_id), None)
+            if found_coord is not None:
+                view = {"job_id": job_id, "found": True, "coordinator": found_coord}
+        return view
+    return {"jobs": [_job_view(row) for row in selected_rows(rows, limit)], "coordinator_active": coordinator_active}
+
+
+def selected_rows(rows: list[dict[str, Any]], limit: int) -> list[dict[str, Any]]:
+    return sorted(rows, key=lambda row: float(row.get("updated_at", 0)), reverse=True)[:limit]
 
 
 def submit_reindex_workspace_job(
@@ -204,7 +235,23 @@ def cancel_workspace_job(workspace_file: str, job_id: str) -> dict[str, Any]:
     store = WorkspaceStore(workspace_file)
     current = workspace_job_status(workspace_file, job_id)
     if not current.get("job_id") or current.get("found") is False:
+        # Not in the JSON registry: it may be a Phase C coordinator job.
+        try:
+            from memory_center.core.indexing.job_coordinator import request_cancel
+
+            if request_cancel(store, job_id):
+                return {"job_id": job_id, "cancelled": True, "status": "cancel_requested", "coordinator": True}
+        except Exception:
+            pass
         return {"job_id": job_id, "cancelled": False, "reason": "not_found"}
+    coordinator_flagged = False
+    try:
+        from memory_center.core.indexing.job_coordinator import request_cancel
+
+        if request_cancel(store, job_id):
+            coordinator_flagged = True
+    except Exception:
+        pass
     _update_progress(
         store,
         job_id,
@@ -214,7 +261,7 @@ def cancel_workspace_job(workspace_file: str, job_id: str) -> dict[str, Any]:
     )
     current = workspace_job_status(workspace_file, job_id)
     _upsert(store, {**current, "status": "cancel_requested", "updated_at": time.time()})
-    return {"job_id": job_id, "cancelled": True, "status": "cancel_requested"}
+    return {"job_id": job_id, "cancelled": True, "status": "cancel_requested", "coordinator": coordinator_flagged}
 
 
 def _is_cancelled(job_id: str) -> bool:

@@ -427,8 +427,17 @@ CLI、MCP、HTTP 的真实入口统一使用以下错误类型：
 | `invalid_input` | 400 | 参数缺失、格式错误或不支持的操作 |
 | `not_found` | 404 | workspace、route 或资源不存在 |
 | `unavailable` | 503 | backend、连接或能力暂时不可用 |
-| `conflict` | 409 | 与当前状态冲突 |
+| `conflict` | 409 | 与当前状态冲突（含 `reindex_conflict`：scope 重叠的不同刷新请求被拒绝） |
 | `internal_error` | 500 | 未预期内部错误 |
+
+### Reindex Runtime Governance / Reindex 运行治理（Phase C）
+
+reindex job 的权威状态位于 SQLite `workspace_jobs` 账本：
+
+- 相同请求指纹的重复提交返回 `coalesced=true` 并指向执行中的 job；scope 重叠且请求不同返回 `reindex_conflict` 与 owner job id；非重叠项目允许并行。
+- generation 发布是原子的：manifest + active 指针 + 审计行单事务提交，发布后执行只读 smoke；smoke 失败自动回滚到 previous generation 并记录 `publish_smoke_failed`。
+- 取消是协作式的：CLI `memory-center job-cancel` 或 registry cancel 在阶段边界生效，publish 事务内只能完成或回滚。
+- lease 过期且 owner PID 消失的 job 被标记 `interrupted`（`failure_code=lease_interrupted`）；PID 仍存活时上报 `suspected_stalled` 等待显式处理，不会误杀。
 
 入口行为：
 

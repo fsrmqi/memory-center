@@ -42,7 +42,7 @@ EXPECTED_ROOT_COMMANDS = frozenset({
     "export-workspace-dashboard", "external-capability-audit",
     "external-capability-snapshot", "generate-hooks", "generate-skills",
     "group", "handoff-history", "handoff-packet", "heuristics",
-    "http-route-contract-audit", "impact", "init", "inspect", "job-status",
+    "http-route-contract-audit", "impact", "init", "inspect", "job-cancel", "job-status",
     "log-session-event", "lookup-hint", "mcp-bridge-action", "mcp-bridge-status",
     "memory-backend-query", "memory-execute-write", "memory-plan-write",
     "memory-write-judge", "method-walkthrough", "metrics-summary", "model-profile",

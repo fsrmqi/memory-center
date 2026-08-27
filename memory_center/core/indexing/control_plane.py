@@ -35,7 +35,14 @@ def begin_generation(store: WorkspaceStore, *, mode: str, projects: set[str], pa
     return state
 
 
-def activate_generation(store: WorkspaceStore, generation: str, *, counts: dict[str, Any], shard_manifest: dict[str, Any]) -> dict[str, Any]:
+def activate_generation(
+    store: WorkspaceStore,
+    generation: str,
+    *,
+    counts: dict[str, Any],
+    shard_manifest: dict[str, Any],
+    publishing_job_id: str = "",
+) -> dict[str, Any]:
     current = index_control_status(store)
     if current.get("staging_generation") != generation:
         raise ValueError("staging generation does not match active writer")
@@ -62,6 +69,20 @@ def activate_generation(store: WorkspaceStore, generation: str, *, counts: dict[
         state["coverage_summary"] = coverage_summary
         if counts.get("coverage_reasons"):
             state["coverage_reasons"] = counts["coverage_reasons"]
+    # Phase C atomic publish: manifest + control pointer + audit row commit
+    # in one BEGIN IMMEDIATE transaction. A failure here rolls back both
+    # rows and leaves the previous active generation serving.
+    store.publish_generation_payloads(
+        [(SHARD_MANIFEST_FILE, shard_manifest), (CONTROL_FILE, state)],
+        publication={
+            "published_generation": generation,
+            "previous_generation": str(state["previous_generation"]),
+            "publishing_job_id": publishing_job_id,
+            "mode": str(state["mode"]),
+            "outcome": "published",
+        },
+    )
+    # Keep the inspectable JSON exports aligned after the critical section.
     store.write_json(SHARD_MANIFEST_FILE, shard_manifest)
     store.write_json(CONTROL_FILE, state)
     return state

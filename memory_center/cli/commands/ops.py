@@ -57,6 +57,16 @@ def register_ops_commands(app: typer.Typer) -> None:
         """Show persisted background-job progress."""
         typer.echo(json.dumps(workspace_job_status(workspace, job_id, limit=limit), ensure_ascii=False, indent=2))
 
+    @app.command("job-cancel")
+    def job_cancel(
+        workspace: str = typer.Option(..., help="Path to .memory-center/workspace.yaml"),
+        job_id: str = typer.Option(..., help="Background or reindex coordinator job id."),
+    ):
+        """Request cooperative cancellation; the worker stops at the next stage boundary and publishing cannot be interrupted mid-way."""
+        from memory_center.core.workspace.jobs import cancel_workspace_job
+
+        typer.echo(json.dumps(cancel_workspace_job(workspace, job_id), ensure_ascii=False, indent=2))
+
     @app.command("performance-snapshot")
     def performance_snapshot(
         workspace: str = typer.Option(..., help="Path to .memory-center/workspace.yaml"),

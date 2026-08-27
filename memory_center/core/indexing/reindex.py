@@ -37,14 +37,14 @@ try:
 except Exception:
     from . import RegexJavaParser
     _JAVA_PARSER = RegexJavaParser()
-from memory_center.core.foundation.models import (
-    ApiEndpoint,
+from memory_center.core.foundation.models import (    ApiEndpoint,
     FeignClient,
     JavaSymbol,
     MqEndpoint,
     WorkspaceConfig,
     to_dict,
 )
+from memory_center.core.indexing import job_coordinator
 from memory_center.core.indexing.precision import parser_precision_from_diagnostics
 from memory_center.core.observability.operations import observe_operation
 from memory_center.core.retrieval.semantic import (
@@ -327,6 +327,35 @@ def _reindex_workspace_unlocked(
     return counts
 
 
+def _publish_smoke(store: WorkspaceStore, generation: str) -> dict[str, Any]:
+    """Post-publish read-only smoke check (design doc §8.5).
+
+    Only anonymous metadata and internal counters are read back; no project
+    facts or source content. Failure means the published pointer must be
+    rolled back rather than served.
+    """
+    try:
+        control = store.read_json_prefer_backend("index-control.json", {})
+        if not isinstance(control, dict) or control.get("active_generation") != generation:
+            return {"ok": False, "reason": "control_pointer_mismatch"}
+        manifest = store.read_json_prefer_backend("shard-manifest.json", {})
+        if not isinstance(manifest, dict) or str(manifest.get("generation", "")) != generation:
+            return {"ok": False, "reason": "manifest_generation_mismatch"}
+        counts = control.get("counts")
+        if not isinstance(counts, dict):
+            return {"ok": False, "reason": "missing_publication_counts"}
+        # Structural read-back of the summary, when the pipeline produced
+        # one: stubbed/benchmark paths may legitimately skip it.
+        summary = store.read_json_prefer_backend("graph-summary.json", None)
+        if summary is not None and not isinstance(summary, dict):
+            return {"ok": False, "reason": "graph_summary_unreadable"}
+        return {"ok": True}
+    except Exception as exc:
+        from memory_center.core.observability.diagnostics import safe_reason
+
+        return {"ok": False, "reason": safe_reason(reason=str(exc))[:120]}
+
+
 def reindex_workspace(
     config: WorkspaceConfig,
     store: WorkspaceStore,
@@ -338,8 +367,38 @@ def reindex_workspace(
     progress: Callable[[str, int, str], None] | None = None,
     materialize_assertions: bool = True,
 ) -> dict[str, Any]:
-    """Rebuild workspace indexes with one writer per workspace."""
+    """Rebuild workspace indexes with one writer per workspace.
+
+    Phase C coordination: requests are admitted through the job
+    coordinator before the writer lock is taken. An identical in-flight
+    request coalesces onto the active job (nothing runs twice); an
+    overlapping scope with a different request is refused as a conflict.
+    The publication is atomic with a post-commit smoke check that rolls
+    back to the previous generation on failure.
+    """
     reindex_started = time.perf_counter()
+
+    filtered_projects = [item for item in (projects or []) if item and item.strip()]
+    filtered_paths = [item for item in (paths or []) if item and item.strip()]
+    admission = job_coordinator.admit_reindex_job(
+        store,
+        projects=filtered_projects,
+        paths=filtered_paths,
+        parallel=parallel,
+    )
+    if admission.get("coalesced"):
+        return {
+            "coalesced": True,
+            "reason_code": "reindex_coalesced",
+            "job_id": admission.get("job_id", ""),
+            "owner_staging_generation": admission.get("staging_generation", ""),
+            "next_action": "相同刷新正在由该 job 执行，直接读取其状态或等待其完成。",
+        }
+    if admission.get("conflict"):
+        raise job_coordinator.JobCoordinatorError(admission)
+    job_id = str(admission["job_id"])
+    previous_active_for_rollback = ""
+
     with workspace_reindex_lock(
         store,
         projects=projects,
@@ -353,16 +412,23 @@ def reindex_workspace(
             paths=list(paths or []),
         )
         generation = str(control["staging_generation"])
+        previous_active_for_rollback = str(control.get("active_generation", "") or "")
         try:
-            _report_progress(progress, "scanning", 8, "已获取工作区写锁，开始构建索引")
+            job_coordinator.mark_stage(store, job_id, "running")
+
+            def _coordinated_progress(stage: str, percent: int, message: str) -> None:
+                job_coordinator.record_heartbeat(store, job_id)
+                if progress is not None:
+                    progress(stage, percent, message)
+
+            _report_progress(_coordinated_progress, "scanning", 8, "已获取工作区写锁，开始构建索引")
             reindex_kwargs: dict[str, Any] = {
                 "projects": projects,
                 "paths": paths,
                 "parallel": parallel,
                 "generation": generation,
+                "progress": _coordinated_progress,
             }
-            if progress is not None:
-                reindex_kwargs["progress"] = progress
             counts = _reindex_workspace_unlocked(config, store, **reindex_kwargs)
             _report_progress(progress, "finalizing", 94, "正在发布索引代际")
             publication_started = time.perf_counter()
@@ -394,8 +460,37 @@ def reindex_workspace(
             )
             generation_timing_ms = dict(physical_shards.get("timing_ms", {}))
             manifest["physical_shards"] = physical_shards
-            activate_generation(store, generation, counts=counts, shard_manifest=manifest)
+            # Stage boundary: cooperative cancellation stops here. Once the
+            # publish transaction starts it may only complete or roll back.
+            job_coordinator.mark_stage(store, job_id, "validating")
+            if job_coordinator.cancel_requested(store, job_id):
+                from memory_center.core.workspace.jobs import WorkspaceJobCancelled
+
+                raise WorkspaceJobCancelled("publishing 前确认到取消请求")
+            job_coordinator.mark_stage(store, job_id, "publishing")
+            activate_generation(
+                store,
+                generation,
+                counts=counts,
+                shard_manifest=manifest,
+                publishing_job_id=job_id,
+            )
             control = index_control_status(store)
+            smoke = _publish_smoke(store, generation)
+            if not smoke["ok"]:
+                from memory_center.core.indexing.control_plane import rollback_generation
+
+                store.record_publication_outcome({
+                    "published_generation": generation,
+                    "previous_generation": previous_active_for_rollback,
+                    "publishing_job_id": job_id,
+                    "mode": str(control.get("mode", "")),
+                    "outcome": "publish_smoke_failed",
+                })
+                rollback_generation(store, previous_active_for_rollback)
+                raise RuntimeError(f"publish_smoke_failed: {smoke['reason']}")
+            job_coordinator.finish_job(store, job_id, "completed")
+            counts["job_id"] = job_id
             counts["generation_gc"] = cleanup_generations(
                 store,
                 active_generation=str(control.get("active_generation", "") or ""),
@@ -457,6 +552,14 @@ def reindex_workspace(
             return counts
         except BaseException as exc:
             fail_generation(store, generation, str(exc) or type(exc).__name__)
+            from memory_center.core.workspace.jobs import WorkspaceJobCancelled
+
+            if isinstance(exc, WorkspaceJobCancelled):
+                job_coordinator.finish_job(store, job_id, "cancelled")
+            else:
+                from memory_center.core.observability.diagnostics import safe_reason as _safe_reason
+
+                job_coordinator.finish_job(store, job_id, "failed", failure_code=_safe_reason(reason=str(exc) or type(exc).__name__))
             raise
 
 

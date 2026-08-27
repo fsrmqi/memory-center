@@ -2,6 +2,15 @@
 
 ## Unreleased 未发布
 
+### Code Graph Foundation Phase C / 代码图谱基础设施 Phase C（运行治理与原子发布）
+
+- 新增 `memory_center/core/indexing/job_coordinator.py`：reindex job 权威状态迁入 SQLite（`workspace_jobs` 表），记录 scope/request 指纹、owner（session/PID/actor）、lease 与 heartbeat、`retry_of` 血缘；终态不可改写，重试创建新 job。
+- admission 协调语义：相同请求指纹合并到活动 job（`coalesced`）；scope 重叠且请求不同返回 `reindex_conflict` 及 owner job；非重叠项目可并行至锁层。
+- lease 规则：heartbeat 5s、lease 15s；lease 过期且 PID 不存在时 CAS 标记 `interrupted`；PID 存活仅上报 `suspected_stalled`，不自动终止。
+- 原子发布：shard manifest + active generation 指针 + 发布审计行在同一 `BEGIN IMMEDIATE` 事务提交；发布后执行只读 smoke（控制指针/manifest/计数回读），失败自动回滚到 previous generation 并记录 `publish_smoke_failed`。取消为协作式，仅在 publish 事务前的阶段边界生效。
+- CLI 新增 `job-cancel`；`job-status` 附带 coordinator 活动任务视图（additive）。
+- Added Phase C runtime governance: SQLite job ledger with fingerprints, owner/lease semantics, coalescing/conflict admission, atomic generation publication with post-commit smoke and automatic rollback, cooperative cancellation at stage boundaries, and a new `job-cancel` CLI command.
+
 ### Code Graph Foundation Phase B / 代码图谱基础设施 Phase B（有界图查询模板）
 
 - 新增内部查询模板服务 `memory_center/core/retrieval/templates.py`：`find_symbols`、`trace_call_paths`、`find_contract_consumers`；统一 fast/standard/deep 三档硬预算（深度/节点/边/deadline），显式参数钳制到档位上限，deep 档同样有硬上限。

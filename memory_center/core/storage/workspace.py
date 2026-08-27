@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from collections import deque
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -320,6 +321,105 @@ class WorkspaceStore:
     def runtime_db_path(self) -> Path:
         """Return the single SQLite fact store for graph, index and memory data."""
         return self.graph_db_path
+
+    def publish_generation_payloads(
+        self,
+        payloads: list[tuple[str, Any]],
+        *,
+        publication: dict[str, str] | None = None,
+    ) -> None:
+        """Atomically publish generation control payloads into the backend.
+
+        All ``index_mirror`` rows in ``payloads`` plus one audit row in
+        ``generation_publications`` commit inside a single
+        ``BEGIN IMMEDIATE`` transaction (Phase C atomic publish, design doc
+        §8.5). On any failure the transaction rolls back and the previous
+        active generation pointer stays untouched. The caller is expected
+        to already hold the workspace reindex lock.
+
+        The JSON file exports are intentionally NOT written here: keep them
+        out of the transaction so a slow disk write can never widen the
+        critical section. Callers refresh exports after commit.
+        """
+        from datetime import datetime, timezone
+
+        conn = sqlite3.connect(str(self.graph_db_path), timeout=30.0)
+        try:
+            conn.execute("PRAGMA busy_timeout=30000")
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                updated_at = datetime.now(timezone.utc).isoformat()
+                for name, payload in payloads:
+                    conn.execute(
+                        """
+                        INSERT INTO index_mirror(name, payload_json, updated_at)
+                        VALUES(?, ?, ?)
+                        ON CONFLICT(name) DO UPDATE SET payload_json=excluded.payload_json, updated_at=excluded.updated_at
+                        """,
+                        (name, json.dumps(payload, ensure_ascii=False), updated_at),
+                    )
+                if publication:
+                    # Table created lazily so legacy databases need no migration.
+                    conn.execute(
+                        "CREATE TABLE IF NOT EXISTS generation_publications ("
+                        " id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                        " published_generation TEXT NOT NULL,"
+                        " previous_generation TEXT NOT NULL DEFAULT '',"
+                        " publishing_job_id TEXT NOT NULL DEFAULT '',"
+                        " mode TEXT NOT NULL DEFAULT '',"
+                        " outcome TEXT NOT NULL DEFAULT 'published',"
+                        " published_at TEXT NOT NULL DEFAULT '')"
+                    )
+                    conn.execute(
+                        "INSERT INTO generation_publications(published_generation, previous_generation, publishing_job_id, mode, outcome, published_at)"
+                        " VALUES(?,?,?,?,?,?)",
+                        (
+                            str(publication.get("published_generation", "")),
+                            str(publication.get("previous_generation", "")),
+                            str(publication.get("publishing_job_id", "")),
+                            str(publication.get("mode", "")),
+                            str(publication.get("outcome", "published")),
+                            updated_at,
+                        ),
+                    )
+                conn.commit()
+            except BaseException:
+                conn.rollback()
+                raise
+        finally:
+            conn.close()
+
+    def record_publication_outcome(self, publication: dict[str, str]) -> None:
+        """Append a non-published outcome row (e.g. publish_smoke_failed)."""
+        from datetime import datetime, timezone
+
+        conn = sqlite3.connect(str(self.graph_db_path), timeout=30.0)
+        try:
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS generation_publications ("
+                " id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                " published_generation TEXT NOT NULL,"
+                " previous_generation TEXT NOT NULL DEFAULT '',"
+                " publishing_job_id TEXT NOT NULL DEFAULT '',"
+                " mode TEXT NOT NULL DEFAULT '',"
+                " outcome TEXT NOT NULL DEFAULT 'published',"
+                " published_at TEXT NOT NULL DEFAULT '')"
+            )
+            conn.execute(
+                "INSERT INTO generation_publications(published_generation, previous_generation, publishing_job_id, mode, outcome, published_at)"
+                " VALUES(?,?,?,?,?,?)",
+                (
+                    str(publication.get("published_generation", "")),
+                    str(publication.get("previous_generation", "")),
+                    str(publication.get("publishing_job_id", "")),
+                    str(publication.get("mode", "")),
+                    str(publication.get("outcome", "")),
+                    datetime.now(timezone.utc).isoformat(),
+                ),
+            )
+            conn.commit()
+        finally:
+            conn.close()
 
     def memory_backend(self) -> RuntimeStore:
         if self._memory_backend is None:
