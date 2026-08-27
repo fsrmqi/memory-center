@@ -329,7 +329,16 @@ class JavaCallResolver:
             if static_type:
                 candidates = self._visible_type_candidates(owner_symbol, static_type)
                 if not candidates:
-                    return "static_receiver_not_indexed"
+                    if "." in receiver:
+                        return "nested_type_static_call"
+                    if self.class_index.by_simple.get(static_type):
+                        # The workspace defines this simple name elsewhere,
+                        # so the source resolved it to an unindexed type with
+                        # the same name (self-written DateUtil vs Hutool's).
+                        return "same_name_class_not_visible"
+                    # No workspace definition at all: a dependency-source
+                    # static call that local resolution can never prove.
+                    return "external_static_call"
                 if any(target_method in info.methods for info in candidates):
                     return "static_receiver_without_visible_import"
                 if any(info.type_kind == "enum" for info in candidates) and target_method in {"values", "valueOf"}:

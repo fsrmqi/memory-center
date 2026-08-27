@@ -456,7 +456,26 @@ public class OrderController {
     result = _resolve(symbols, "OrderController.java", "notNull")
 
     assert result.resolution_level == "unresolved"
-    assert result.unresolved_reason == "static_receiver_not_indexed"
+    # Assert has no workspace definition: classified as a dependency-source
+    # static call rather than a local resolution gap.
+    assert result.unresolved_reason == "external_static_call"
+
+
+def test_static_receiver_same_name_in_workspace_is_collision_not_external() -> None:
+    source = """package com.example.order;
+import cn.hutool.core.date.DateUtil;
+public class TaskService {
+    void run() { DateUtil.now(); }
+}
+"""
+    symbols = [
+        _symbol("api", "TaskService.java", source),
+        # A self-written DateUtil exists elsewhere in the workspace.
+        _symbol("common", "DateUtil.java", "package com.example.common; public class DateUtil { public static java.time.LocalDate now() { return null; } }"),
+    ]
+    result = _resolve(symbols, "TaskService.java", "now")
+    assert result.resolution_level == "unresolved"
+    assert result.unresolved_reason == "same_name_class_not_visible"
 
 
 def test_this_call_without_workspace_declaration_is_inherited_scope_not_missing_type() -> None:
@@ -626,7 +645,10 @@ public class DateUtil {
     )
 
     assert result.resolution_level == "unresolved"
-    assert result.unresolved_reason == "static_receiver_not_indexed"
+    # DateUtil exists inside the workspace under another package while the
+    # source explicitly imports the third-party one: an external collision,
+    # not a resolver gap.
+    assert result.unresolved_reason == "same_name_class_not_visible"
 
 
 def test_catch_parameter_type_is_available_to_call_resolution() -> None:

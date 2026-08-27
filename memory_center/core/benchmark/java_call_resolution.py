@@ -583,6 +583,11 @@ def _unresolved_category(reason: str) -> str:
         "inherited_method_out_of_scope": "external_or_missing_source",
         "chain_return_type_not_indexed": "external_or_missing_source",
         "static_receiver_not_indexed": "external_or_missing_source",
+        # Phase D refinement splits the legacy static bucket by whether the
+        # receiver type exists in the workspace at all.
+        "external_static_call": "external_or_missing_source",
+        "same_name_class_not_visible": "external_or_missing_source",
+        "nested_type_static_call": "external_or_missing_source",
         "generated_enum_method_out_of_scope": "generated_or_inherited",
         "static_receiver_without_visible_import": "out_of_scope_target",
         "target_out_of_scope": "out_of_scope_target",

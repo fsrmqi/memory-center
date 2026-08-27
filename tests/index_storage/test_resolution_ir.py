@@ -168,6 +168,7 @@ def test_reindex_publishes_resolution_diagnostics(demo_workspace_indexed):
         "unresolved", "receiver_type_missing", "receiver_type_not_indexed",
         "target_method_not_indexed", "target_out_of_scope",
         "static_receiver_not_indexed", "static_receiver_without_visible_import",
+        "external_static_call", "same_name_class_not_visible", "nested_type_static_call",
         "inherited_method_out_of_scope", "generated_enum_method_out_of_scope",
         "lombok_target_out_of_scope", "unqualified_or_dynamic",
     }
