@@ -93,6 +93,24 @@ def test_duplicate_edges_are_deduplicated():
     assert len(candidates) == 1
 
 
+def test_resolved_call_without_reason_is_not_counted_unresolved():
+    """A resolved edge (resolution_level != unresolved) that simply lacks an
+    unresolved_reason must never be tallied as unresolved."""
+    edges = [
+        # successful resolutions: same_class / import_lombok_accessor carry no reason
+        {"source_id": "S1", "target_id": "T1", "confidence": 0.95, "metadata": {"resolution_level": "same_class"}},
+        {"source_id": "S2", "target_id": "T2", "confidence": 0.9, "metadata": {"resolution_level": "import_lombok_accessor"}},
+        # genuinely unresolved
+        {"source_id": "S3", "target_id": "T3", "confidence": 0.3, "metadata_json": '{"resolution_level": "unresolved", "unresolved_reason": "receiver_type_not_indexed"}'},
+    ]
+    candidates = call_edges_to_relation_candidates(edges)
+    summary = summarize_unresolved(candidates)
+    assert summary["total_calls"] == 3
+    assert summary["resolved"] == 2
+    assert summary["unresolved"] == 1
+    assert summary["unresolved_reasons"] == [{"code": "receiver_type_not_indexed", "count": 1}]
+
+
 # ---------------------------------------------------------------------------
 # Unit: aggregation helpers
 # ---------------------------------------------------------------------------
