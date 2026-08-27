@@ -360,6 +360,12 @@ The claim boundary is a logical gate, not prompt wording: responses carry machin
 - 模板结果缓存键包含 active generation：generation 变化立即失效。
 - `mc_analyze(depth="standard"|"full")` 追加有界 `contract_consumers`（DTO/Feign/MQ 消费者），命中失败不影响其他分析阶段。
 
+### Resolution Diagnostics / 解析诊断边界（Phase D）
+
+- 所有 parser 与图投影之间通过显式 IR 边界通信；`stable_id` 由工作区事实确定性派生，不依赖 SQLite rowid。
+- 无法证明的调用目标保持 AMBIGUOUS（`target_ref=None`），按 reason code 和文件聚合到索引目录 `index-resolution.json`；摘要附在 `graph-summary.json` 的 `resolution_summary`。诊断只含计数、短 reason code 和已持久化的逻辑路径，不含源码片段或 prompt。
+- 差分报告携带 `symbol_category_counts`，regex 与 AST 分歧可定位到文件与符号类别。
+
 ### Next Phase 入口一致性 / Entry Consistency
 
 以下能力必须保持 CLI / MCP / HTTP 对 `workspace.yaml` 的解析语义一致：

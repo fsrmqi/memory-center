@@ -235,6 +235,10 @@ def _reindex_workspace_unlocked(
     coverage_aggregate = write_coverage(store, generation, ledger, mode="partial" if partial else "full")
     graph_counts = build_graph_store(config, store, project_filter=project_filter, path_filters=path_filters)
     mark("graph_update")
+    # Phase D: project stored call edges through the explicit IR boundary
+    # and publish unified resolution diagnostics for failure-category work.
+    resolution_summary = _resolution_diagnostics(store)
+    mark("graph_update")
     changed_ids: set[str] = set()
     _report_progress(progress, "semantic", 68, "正在构建语义索引")
     if partial:
@@ -263,6 +267,7 @@ def _reindex_workspace_unlocked(
         "parser_precision": parser_precision,
     }
     attach_coverage_summary(graph_summary, coverage_aggregate)
+    graph_summary["resolution_summary"] = resolution_summary
     store.write_json("graph-summary.json", graph_summary)
     counts = {
         "mode": "partial" if partial else "full",
@@ -299,6 +304,7 @@ def _reindex_workspace_unlocked(
             if key in coverage_aggregate
         } if coverage_aggregate else {},
         "coverage_reasons": coverage_aggregate.get("reasons", []) if coverage_aggregate else [],
+        "resolution_summary": resolution_summary,
         **retrieval_counts,
     }
     _report_progress(progress, "finalizing", 92, "正在写入索引摘要")
@@ -325,6 +331,49 @@ def _reindex_workspace_unlocked(
     timing_ms["pipeline_total"] = round((time.perf_counter() - pipeline_started) * 1000, 2)
     counts["timing_ms"] = timing_ms
     return counts
+
+
+def _resolution_diagnostics(store: WorkspaceStore) -> dict[str, Any]:
+    """Phase D: collect unified resolution/unresolved diagnostics (bounded).
+
+    Reads stored CALLS_METHOD edges back through the explicit IR boundary,
+    aggregates unproven targets by reason code and file, and persists the
+    reviewable ``index-resolution.json`` export. Only counts, short reason
+    codes, and already-persisted workspace-relative paths are retained.
+    """
+    from memory_center.core.indexing.ir import (
+        call_edges_to_relation_candidates,
+        summarize_unresolved,
+        unresolved_by_file,
+    )
+
+    edges: list[dict[str, Any]] = []
+    with RuntimeStore(store.graph_db_path) as graph:
+        conn = graph.connect()
+        try:
+            rows = conn.execute(
+                "SELECT source_id, target_id, confidence, metadata_json FROM edges"
+                " WHERE type='CALLS_METHOD' ORDER BY id LIMIT 20000"
+            ).fetchall()
+            keys = ("source_id", "target_id", "confidence", "metadata_json")
+            edges = [dict(zip(keys, row)) for row in rows]
+        finally:
+            pass
+    candidates = call_edges_to_relation_candidates(edges)
+    summary = summarize_unresolved(candidates)
+    payload = {
+        "schema_version": 1,
+        **summary,
+        "unresolved_by_file": unresolved_by_file(candidates),
+    }
+    store.write_json("index-resolution.json", payload)
+    return {
+        "calls_total": summary["total_calls"],
+        "calls_resolved": summary["resolved"],
+        "calls_unresolved": summary["unresolved"],
+        "evidence_levels": summary["evidence_levels"],
+        "top_unresolved_reasons": summary["unresolved_reasons"][:8],
+    }
 
 
 def _publish_smoke(store: WorkspaceStore, generation: str) -> dict[str, Any]:

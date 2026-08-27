@@ -36,6 +36,7 @@ def compare_parsers(source_file: str | Path) -> dict[str, Any]:
             "critical_disagreements": [],
             "native_gaps": [],
             "method_identities": [],
+            "symbol_category_counts": [],
             "metrics": {"entity_recall": 0.0, "max_line_delta": 0},
         }
 
@@ -65,6 +66,7 @@ def compare_parsers(source_file: str | Path) -> dict[str, Any]:
         "method_identities": method_identities,
         "controller_mappings": final_controllers,
         "feign_mappings": final_feigns,
+        "symbol_category_counts": _symbol_category_counts(missing),
         "metrics": {
             "entity_recall": round(recall, 4),
             "max_line_delta": max_line_delta,
@@ -97,6 +99,23 @@ def _missing_entities(expected: JavaParseResult, actual: JavaParseResult) -> lis
         for identity in sorted(expected_keys - actual_keys):
             missing.append({"field": field, "identity": identity})
     return missing
+
+
+def _symbol_category_counts(missing: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Aggregate disagreement items by symbol category (entity field).
+
+    Phase D acceptance requires regex-vs-AST differences to be locatable by
+    file and symbol category; this groups the per-file missing list into a
+    bounded, count-only category breakdown (no identities).
+    """
+    counts: dict[str, int] = {}
+    for item in missing:
+        category = str(item.get("field") or "unknown")
+        counts[category] = counts.get(category, 0) + 1
+    return [
+        {"category": category, "count": count}
+        for category, count in sorted(counts.items(), key=lambda pair: (-pair[1], pair[0]))
+    ]
 
 
 def _entity_keys(value: Any) -> set[str]:

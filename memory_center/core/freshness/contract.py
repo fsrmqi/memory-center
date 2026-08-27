@@ -43,22 +43,28 @@ def _coverage_from_control(control: dict[str, Any]) -> dict[str, Any]:
     total = int(summary.get("total_files", 0) or 0)
     parsed = int(summary.get("parsed", 0) or 0)
     unclean = total - parsed if total else 0
-    coverage: dict[str, Any] = {
+    # Workspaces indexed before the Phase A pipeline carry no per-file
+    # ledger. Their true coverage is unknown and must never qualify for a
+    # negative claim, even when they happen to be fresh.
+    unknown_files = max(0, unclean - (
+        int(summary.get("partial", 0) or 0)
+        + int(summary.get("skipped", 0) or 0)
+        + int(summary.get("failed", 0) or 0)
+    ))
+    coverage_known = bool(summary) and total > 0
+    if not coverage_known:
+        unknown_files = 1
+    return {
         "scope_kind": "workspace",
         "requested_files": total,
         "indexed_files": parsed,
         "partial_files": int(summary.get("partial", 0) or 0),
         "skipped_files": int(summary.get("skipped", 0) or 0),
         "failed_files": int(summary.get("failed", 0) or 0),
-        "unknown_files": max(0, unclean - (
-            int(summary.get("partial", 0) or 0)
-            + int(summary.get("skipped", 0) or 0)
-            + int(summary.get("failed", 0) or 0)
-        )),
-        "reasons": list(reasons),
+        "unknown_files": unknown_files,
+        "reasons": [] if coverage_known else [{"code": "coverage_unknown", "count": 1}],
         "truncated": False,
     }
-    return coverage
 
 
 def assemble_index_context(

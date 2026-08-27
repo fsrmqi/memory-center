@@ -2,6 +2,13 @@
 
 ## Unreleased 未发布
 
+### Code Graph Foundation Phase D / 代码图谱基础设施 Phase D（解析 IR 与差分收口）
+
+- 新增显式 IR 边界 `memory_center/core/indexing/ir.py`：`FileRecord` / `SymbolRecord` / `RelationCandidate`；`stable_id` 由 project+path+kind+qualified_name+signature 确定性派生，不依赖 SQLite rowid。
+- 不可证明的调用目标不再被静默丢弃或伪造成边：统一映射为 `target_ref=None` 的 AMBIGUOUS 候选，并按 reason code / 文件聚合为 `index-resolution.json` 诊断导出；聚合摘要以 additive 方式写入 `graph-summary.json` 与 reindex counts（calls_total/resolved/unresolved、evidence_levels、top_unresolved_reasons）。
+- 差分报告新增 `symbol_category_counts`：regex 与 AST 解析分歧可按文件和符号类别定位，且仅含计数不含私有内容。
+- Added Phase D: an explicit internal IR boundary with deterministic stable ids, preservation of unproven call targets as aggregated AMBIGUOUS diagnostics, per-file/per-reason resolution diagnostics exports, and symbol-category breakdowns for parser differentials.
+
 ### Code Graph Foundation Phase C / 代码图谱基础设施 Phase C（运行治理与原子发布）
 
 - 新增 `memory_center/core/indexing/job_coordinator.py`：reindex job 权威状态迁入 SQLite（`workspace_jobs` 表），记录 scope/request 指纹、owner（session/PID/actor）、lease 与 heartbeat、`retry_of` 血缘；终态不可改写，重试创建新 job。
