@@ -2,6 +2,13 @@
 
 ## Unreleased 未发布
 
+### Code Graph Foundation Phase B / 代码图谱基础设施 Phase B（有界图查询模板）
+
+- 新增内部查询模板服务 `memory_center/core/retrieval/templates.py`：`find_symbols`、`trace_call_paths`、`find_contract_consumers`；统一 fast/standard/deep 三档硬预算（深度/节点/边/deadline），显式参数钳制到档位上限，deep 档同样有硬上限。
+- `mc_lookup` 的 symbol 与 chain 路径改由模板层路由（不新增 MCP tool）；`mc_analyze` 在 standard/full 深度追加有界 `contract_consumers` 消费者分析。
+- 模板结果按同一 generation 与参数确定性排序，并携带 `query_budget`（tier、截断、超时）；缓存键为 `source_signature + active_generation + 归一化参数 + tier`，generation 变化即失效。
+- Added Phase B bounded query templates with per-tier hard budgets, deterministic ordering, truncation visibility, and generation-keyed caching; routed through existing mc_lookup/mc_analyze facades without adding MCP tools.
+
 ### Code Graph Foundation Phase A / 代码图谱基础设施 Phase A（可信查询合同）
 
 - `mc_lookup`、`mc_analyze`（impact 路径）、`mc_freshness` 与 change review 响应新增 additive 字段 `index_context`（active generation、freshness FRESH/STALE/PARTIAL/NOT_INDEXED、coverage 覆盖计数与原因、query_budget）和 `claim_boundary`（negative_claim_allowed、reason_codes、evidence_level）；旧客户端忽略即可，未新增/删除任何 MCP tool 或既有字段。

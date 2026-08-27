@@ -351,6 +351,15 @@ memory-center eval-reasoning-prompts
 
 The claim boundary is a logical gate, not prompt wording: responses carry machine-readable reason codes (`index_not_published`, `generation_stale`, `coverage_partial`, `query_truncated`, `query_timed_out`) and agents must phrase empty results accordingly.
 
+### Bounded Query Templates / 有界图查询模板（Phase B）
+
+内部模板 `find_symbols` / `trace_call_paths` / `find_contract_consumers` / `plan_change_risk` 通过既有 facade 提供服务，不新增 MCP tool：
+
+- fast/standard/deep 三档硬预算：fast=depth 1/nodes 20/edges 30，standard=depth 3/nodes 80/edges 120，deep=depth 5/nodes 300/edges 500；显式传入的 depth/limit 会钳制到档位上限，deep 同样有硬预算和 deadline。
+- 同一 generation 与参数下结果排序确定；任何截断都通过 `query_budget.truncated` 可见。
+- 模板结果缓存键包含 active generation：generation 变化立即失效。
+- `mc_analyze(depth="standard"|"full")` 追加有界 `contract_consumers`（DTO/Feign/MQ 消费者），命中失败不影响其他分析阶段。
+
 ### Next Phase 入口一致性 / Entry Consistency
 
 以下能力必须保持 CLI / MCP / HTTP 对 `workspace.yaml` 的解析语义一致：

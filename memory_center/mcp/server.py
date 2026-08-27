@@ -393,7 +393,9 @@ def create_server(workspace_file: str):
                     return emit(_lookup_payload_with_agent_steps("mode_used", "chain-callees", result, matching_groups=matching_groups, _hint=f"Workspace 属于多个 group ({', '.join(matching_groups)})，请用 mc_admin(action='group_chain', group=...) 显式指定。", **decision_fields), "chain-callees")
                 return emit(_lookup_payload_with_agent_steps("mode_used", "chain-callees", result, **decision_fields), "chain-callees")
             if "memory_symbol" in preferred_bare and (name or resolved_symbol or query):
-                result = memory_symbol(wf, name or resolved_symbol or query, limit, project=project, view="compact", budget="small")
+                from memory_center.core.retrieval.templates import find_symbols
+
+                result = find_symbols(wf, name or resolved_symbol or query, tier=plan.tier, limit=limit, project=project)
                 result["agent_next_steps"] = _agent_next_steps_for_lookup_route("symbol", result, query)
                 return emit(_lookup_payload_with_agent_steps("mode_used", "symbol", result, **decision_fields), "symbol")
             if "memory_search_code" in preferred_bare:
@@ -418,7 +420,9 @@ def create_server(workspace_file: str):
                 )
             return emit(_lookup_payload_with_agent_steps("mode_used", "query", query_result, **decision_fields), "query")
         if mode == "symbol":
-            result = memory_symbol(wf, name or query, limit, project=project, view="compact", budget="small")
+            from memory_center.core.retrieval.templates import find_symbols
+
+            result = find_symbols(wf, name or query, tier=plan.tier, limit=limit, project=project)
             result["agent_next_steps"] = _agent_next_steps_for_lookup_route("symbol", result, query)
             return emit(_lookup_payload_with_agent_steps("mode", "symbol", result), "symbol")
         if mode == "code":
@@ -440,6 +444,8 @@ def create_server(workspace_file: str):
             result["agent_next_steps"] = _agent_next_steps_for_lookup_route("trace", result, query)
             return emit(_lookup_payload_with_agent_steps("mode", "trace", result), "trace")
         if mode == "chain":
+            from memory_center.core.retrieval.templates import trace_call_paths
+
             cross_types = ["CALLS_SERVICE", "IMPLEMENTS_FEIGN"] if scope == "cross-service" else None
             matching_groups = find_groups_for_workspace(wf)
             if len(matching_groups) == 1:
@@ -448,17 +454,21 @@ def create_server(workspace_file: str):
                 result["agent_next_steps"] = _agent_next_steps_for_lookup_route("chain-group", result, query)
                 return emit(_lookup_payload_with_agent_steps("mode", "chain-group", result), "chain-group")
             if len(matching_groups) > 1:
+                result = trace_call_paths(wf, symbol or query, direction=chain_direction, tier=plan.tier, depth=depth, limit=limit, project=project)
+                if cross_types:
+                    if chain_direction == "callees":
+                        result = memory_callees(wf, symbol or query, depth, limit, edge_type_filter=cross_types, project=project, view="compact", budget="small")
+                    else:
+                        result = memory_callers(wf, symbol or query, depth, limit, edge_type_filter=cross_types, project=project, view="compact", budget="small")
+                _annotate_phantom_nodes(result, wf)
+                result["agent_next_steps"] = _agent_next_steps_for_lookup_route(f"chain-{chain_direction}", result, query)
+                return emit(_lookup_payload_with_agent_steps("mode", f"chain-{chain_direction}", result, matching_groups=matching_groups, _hint=f"Workspace 属于多个 group ({', '.join(matching_groups)})，请用 mc_admin(action='group_chain', group=...) 显式指定。"), f"chain-{chain_direction}")
+            result = trace_call_paths(wf, symbol or query, direction=chain_direction, tier=plan.tier, depth=depth, limit=limit, project=project)
+            if cross_types:
                 if chain_direction == "callees":
                     result = memory_callees(wf, symbol or query, depth, limit, edge_type_filter=cross_types, project=project, view="compact", budget="small")
                 else:
                     result = memory_callers(wf, symbol or query, depth, limit, edge_type_filter=cross_types, project=project, view="compact", budget="small")
-                _annotate_phantom_nodes(result, wf)
-                result["agent_next_steps"] = _agent_next_steps_for_lookup_route(f"chain-{chain_direction}", result, query)
-                return emit(_lookup_payload_with_agent_steps("mode", f"chain-{chain_direction}", result, matching_groups=matching_groups, _hint=f"Workspace 属于多个 group ({', '.join(matching_groups)})，请用 mc_admin(action='group_chain', group=...) 显式指定。"), f"chain-{chain_direction}")
-            if chain_direction == "callees":
-                result = memory_callees(wf, symbol or query, depth, limit, edge_type_filter=cross_types, project=project, view="compact", budget="small")
-            else:
-                result = memory_callers(wf, symbol or query, depth, limit, edge_type_filter=cross_types, project=project, view="compact", budget="small")
             _annotate_phantom_nodes(result, wf)
             result["agent_next_steps"] = _agent_next_steps_for_lookup_route(f"chain-{chain_direction}", result, query)
             return emit(_lookup_payload_with_agent_steps("mode", f"chain-{chain_direction}", result), f"chain-{chain_direction}")
@@ -528,16 +538,27 @@ def create_server(workspace_file: str):
                 result["candidate_paths"] = impact_result.get("candidate_paths", [])
                 result["recommended_path"] = impact_result.get("recommended_path", {})
             if depth in ("standard", "full") and target:
+                from memory_center.core.retrieval.templates import find_contract_consumers
+
                 plan, plan_diagnostic = degraded_analysis_step("plan", lambda: memory_plan_change(wf, target, direction, max_depth))
                 rules, rules_diagnostic = degraded_analysis_step("rules", lambda: workspace_check_rules(wf, projects, change_type, files))
+                consumers, consumers_diagnostic = degraded_analysis_step("contract_consumers", lambda: find_contract_consumers(wf, target, tier="standard", project=project_filter))
                 if plan is not None:
                     result["plan"] = plan
                 if rules is not None:
                     result["rules"] = rules
+                if consumers is not None:
+                    result["contract_consumers"] = {
+                        "found": consumers.get("found", False),
+                        "consumers": consumers.get("consumers", []),
+                        "query_budget": consumers.get("query_budget", {}),
+                    }
                 if plan_diagnostic:
                     result["diagnostics"]["plan"] = plan_diagnostic
                 if rules_diagnostic:
                     result["diagnostics"]["rules"] = rules_diagnostic
+                if consumers_diagnostic:
+                    result["diagnostics"]["contract_consumers"] = consumers_diagnostic
             if depth == "full" and target:
                 contract, contract_diagnostic = degraded_analysis_step("contract", lambda: workspace_check_contract(wf, contract_file or target, change_type))
                 checklist, checklist_diagnostic = degraded_analysis_step("checklist", lambda: memory_verify_checklist(wf, target))
