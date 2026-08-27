@@ -1,36 +1,15 @@
 # Changelog / 更新日志
 
-## Unreleased 未发布
+## 4.5.0 Code Graph Foundation / 代码图谱基础设施
 
-### Code Graph Foundation Phase D / 代码图谱基础设施 Phase D（解析 IR 与差分收口）
+实现 [CODE_GRAPH_FOUNDATION_IMPLEMENTATION.md](decisions/CODE_GRAPH_FOUNDATION_IMPLEMENTATION.md) 的 Phase A–D；经真实大规模工作区（ucap，约 2 万文件）验证。
 
-- 新增显式 IR 边界 `memory_center/core/indexing/ir.py`：`FileRecord` / `SymbolRecord` / `RelationCandidate`；`stable_id` 由 project+path+kind+qualified_name+signature 确定性派生，不依赖 SQLite rowid。
-- 不可证明的调用目标不再被静默丢弃或伪造成边：统一映射为 `target_ref=None` 的 AMBIGUOUS 候选，并按 reason code / 文件聚合为 `index-resolution.json` 诊断导出；聚合摘要以 additive 方式写入 `graph-summary.json` 与 reindex counts（calls_total/resolved/unresolved、evidence_levels、top_unresolved_reasons）。
-- 差分报告新增 `symbol_category_counts`：regex 与 AST 解析分歧可按文件和符号类别定位，且仅含计数不含私有内容。
-- Added Phase D: an explicit internal IR boundary with deterministic stable ids, preservation of unproven call targets as aggregated AMBIGUOUS diagnostics, per-file/per-reason resolution diagnostics exports, and symbol-category breakdowns for parser differentials.
-
-### Code Graph Foundation Phase C / 代码图谱基础设施 Phase C（运行治理与原子发布）
-
-- 新增 `memory_center/core/indexing/job_coordinator.py`：reindex job 权威状态迁入 SQLite（`workspace_jobs` 表），记录 scope/request 指纹、owner（session/PID/actor）、lease 与 heartbeat、`retry_of` 血缘；终态不可改写，重试创建新 job。
-- admission 协调语义：相同请求指纹合并到活动 job（`coalesced`）；scope 重叠且请求不同返回 `reindex_conflict` 及 owner job；非重叠项目可并行至锁层。
-- lease 规则：heartbeat 5s、lease 15s；lease 过期且 PID 不存在时 CAS 标记 `interrupted`；PID 存活仅上报 `suspected_stalled`，不自动终止。
-- 原子发布：shard manifest + active generation 指针 + 发布审计行在同一 `BEGIN IMMEDIATE` 事务提交；发布后执行只读 smoke（控制指针/manifest/计数回读），失败自动回滚到 previous generation 并记录 `publish_smoke_failed`。取消为协作式，仅在 publish 事务前的阶段边界生效。
-- CLI 新增 `job-cancel`；`job-status` 附带 coordinator 活动任务视图（additive）。
-- Added Phase C runtime governance: SQLite job ledger with fingerprints, owner/lease semantics, coalescing/conflict admission, atomic generation publication with post-commit smoke and automatic rollback, cooperative cancellation at stage boundaries, and a new `job-cancel` CLI command.
-
-### Code Graph Foundation Phase B / 代码图谱基础设施 Phase B（有界图查询模板）
-
-- 新增内部查询模板服务 `memory_center/core/retrieval/templates.py`：`find_symbols`、`trace_call_paths`、`find_contract_consumers`；统一 fast/standard/deep 三档硬预算（深度/节点/边/deadline），显式参数钳制到档位上限，deep 档同样有硬上限。
-- `mc_lookup` 的 symbol 与 chain 路径改由模板层路由（不新增 MCP tool）；`mc_analyze` 在 standard/full 深度追加有界 `contract_consumers` 消费者分析。
-- 模板结果按同一 generation 与参数确定性排序，并携带 `query_budget`（tier、截断、超时）；缓存键为 `source_signature + active_generation + 归一化参数 + tier`，generation 变化即失效。
-- Added Phase B bounded query templates with per-tier hard budgets, deterministic ordering, truncation visibility, and generation-keyed caching; routed through existing mc_lookup/mc_analyze facades without adding MCP tools.
-
-### Code Graph Foundation Phase A / 代码图谱基础设施 Phase A（可信查询合同）
-
-- `mc_lookup`、`mc_analyze`（impact 路径）、`mc_freshness` 与 change review 响应新增 additive 字段 `index_context`（active generation、freshness FRESH/STALE/PARTIAL/NOT_INDEXED、coverage 覆盖计数与原因、query_budget）和 `claim_boundary`（negative_claim_allowed、reason_codes、evidence_level）；旧客户端忽略即可，未新增/删除任何 MCP tool 或既有字段。
-- 索引管线在 reindex 时记录每个文件的 parse_status/skip_reason 到 `index-coverage.json`；generation 发布时聚合 `coverage_summary` 写入 `index-control.json` 与 `graph-summary.json`。
-- 否定性结论门禁：只有 active generation 存在、freshness=FRESH、覆盖完整且查询未截断/超时时，空结果才允许 `negative_claim_allowed=true`；其余情况证据级降级为 `AMBIGUOUS` 或 `NOT_INDEXED`。
-- Added the Phase A trustworthy query contract: additive `index_context`/`claim_boundary` blocks on task-level responses, per-file coverage ledger in the index pipeline, and a logical gate that downgrades negative conclusions unless freshness and coverage gates pass.
+- **Phase A 可信查询合同**：`mc_lookup` / `mc_analyze` / `mc_freshness` / change review 响应新增 additive 字段 `index_context` 与 `claim_boundary`（否定性结论门禁）；索引管线记录每文件 parse_status/skip_reason，发布时聚合 `coverage_summary`。旧代工作区无 coverage 时标 `coverage_unknown` 并强制拒绝否定性结论。
+- **Phase B 有界图查询模板**：新增 `find_symbols` / `trace_call_paths` / `find_contract_consumers` 内部模板，fast/standard/deep 三档硬预算、确定性排序、generation 键控缓存；经既有 mc_lookup/mc_analyze 路由，不新增 MCP tool。
+- **Phase C 运行治理**：reindex job 权威状态迁入 SQLite（fingerprint 合并/冲突、owner/lease 15s/heartbeat 5s、retry 血缘）；generation 发布在单 `BEGIN IMMEDIATE` 事务内原子完成 + 只读 smoke + 失败自动回滚；CLI 新增 `job-cancel`。
+- **Phase D 解析 IR 边界**：显式 `FileRecord`/`SymbolRecord`/`RelationCandidate` 与确定性 `stable_id`；不可证明目标保留为 AMBIGUOUS 诊断并导出 `index-resolution.json`；差分报告新增 `symbol_category_counts`。
+- **性能基线**：`performance-snapshot` 纳入模板路径（schema v2）。ucap 实测（standard tier）：`memory_query_hybrid` P95 94ms，`find_symbols` P95 3.5ms、`trace_call_paths` P95 3.9ms。
+- Added the Code Graph Foundation Phase A–D: trustworthy query contract with a negative-claim gate, bounded query templates with per-tier budgets, SQLite job-ledger governance with atomic publication and automatic rollback, an explicit parser IR boundary with aggregated unresolved diagnostics, and a template-inclusive performance baseline.
 
 ## 4.4.2 Task Delivery Command Center / 任务交付中心
 

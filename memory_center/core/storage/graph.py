@@ -347,6 +347,26 @@ class _GraphOperations:
             row = conn.execute("SELECT * FROM nodes WHERE id=?", (node_id,)).fetchone()
         return _row_node(row) if row else None
 
+    def node_by_name_exact(self, name: str, *, types: list[str] | None = None) -> dict[str, Any] | None:
+        """Exact node-name lookup, bypassing FTS tokenization.
+
+        Needed for dotted names (Spring Cloud Stream bindings,
+        ``spring.cloud.stream.bindings.x-in-0.destination``) that FTS splits
+        on ``.`` and can never match verbatim.
+        """
+        name = (name or "").strip()
+        if not name:
+            return None
+        sql = "SELECT * FROM nodes WHERE name=? LIMIT 1"
+        params: list[Any] = [name]
+        if types:
+            placeholders = ",".join("?" for _ in types)
+            sql = f"SELECT * FROM nodes WHERE name=? AND type IN ({placeholders}) LIMIT 1"
+            params.extend(types)
+        with self.connect() as conn:
+            row = conn.execute(sql, params).fetchone()
+        return _row_node(row) if row else None
+
     def find_nodes(self, query: str, types: list[str] | None = None, limit: int = 20) -> list[dict[str, Any]]:
         query = (query or "").strip()
         if not query:

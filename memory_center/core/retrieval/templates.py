@@ -283,15 +283,25 @@ def _consumer_edges_for_target(
     info = memory_symbol(workspace_file, target, limit=5, project=project)
     anchor = info["best_match"] if info.get("found") else None
     anchor_types: tuple[str, ...] = _CONTRACT_NODE_TYPES
-    if anchor is None or str(anchor.get("type", "")) not in anchor_types:
-        # The generic resolver often prefers a Class/Method with the same
-        # name. Contract consumers must anchor on the contract node itself,
-        # so probe contract node types before giving up.
-        with RuntimeStore(load_context(workspace_file)[1].graph_db_path) as graph:
+    # Contract consumers must anchor on the contract node itself (FeignClient,
+    # MQTopic, Endpoint, ConfigKey). The generic resolver often prefers a
+    # Class/Method with the same name, so contract node types win over the
+    # generic best-match. Dotted binding names (MQ/Spring) defeat FTS token
+    # matching, so an exact node-name lookup runs first before any fuzzy path.
+    with RuntimeStore(load_context(workspace_file)[1].graph_db_path) as graph:
+        exact = graph.node_by_name_exact(target, types=list(anchor_types))
+        if exact is not None:
+            anchor = exact
+        else:
             for candidate in graph.find_nodes(target, types=list(anchor_types), limit=8):
-                if str(candidate.get("name", "")) == target:
+                candidate_name = str(candidate.get("name", ""))
+                if candidate_name == target:
                     anchor = candidate
                     break
+        if anchor is None or str(anchor.get("type", "")) not in anchor_types:
+            # No matching contract node: keep the generic best-match only if
+            # it is already a contract type; otherwise there is no anchor.
+            anchor = anchor if anchor is not None and str(anchor.get("type", "")) in anchor_types else None
     if anchor is None:
         return [], None
     anchor_id = str(anchor.get("id", ""))
