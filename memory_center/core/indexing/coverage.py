@@ -99,3 +99,48 @@ def attach_coverage_summary(target: dict[str, Any], aggregate: dict[str, Any] | 
         }
         target["coverage_reasons"] = aggregate.get("reasons", [])
     return target
+
+
+def coverage_for_scope(store, *, project: str = "", paths: list[str] | None = None) -> dict[str, Any]:
+    """Return a conservative coverage view for a project/path query scope.
+
+    The persisted ledger is workspace-wide, while task queries commonly name
+    one project or a bounded path set.  Selecting the matching rows keeps the
+    negative-claim gate precise; an unresolvable requested scope is treated as
+    unknown rather than as an empty, fully-covered scope.
+    """
+    snapshot = store.read_json_prefer_backend(COVERAGE_FILE, {})
+    rows = snapshot.get("files", []) if isinstance(snapshot, dict) else []
+    requested_paths = [str(path).strip() for path in (paths or []) if str(path).strip()]
+    file_rows = store.read_json_prefer_backend("file-index.json", [])
+    project_by_path = {
+        str(row.get("path", "")): str(row.get("project", ""))
+        for row in file_rows if isinstance(row, dict) and row.get("path")
+    }
+
+    def matches(path: str) -> bool:
+        if requested_paths and not any(path == wanted or path.startswith(wanted.rstrip("/") + "/") for wanted in requested_paths):
+            return False
+        return not project or project_by_path.get(path) == project
+
+    selected = [row for row in rows if isinstance(row, dict) and matches(str(row.get("path", "")))]
+    # A supplied project/path with no ledger row is evidence insufficiency,
+    # never evidence that the requested scope contains no files.
+    unresolved_scope = bool((project or requested_paths) and not selected)
+    ledger = CoverageLedger()
+    for row in selected:
+        ledger.record(str(row.get("path", "")), str(row.get("status", STATUS_FAILED)), str(row.get("reason", "")))
+    result = ledger.summary()
+    known = bool(rows) and not unresolved_scope
+    unknown = 0 if known else 1
+    return {
+        "scope_kind": "paths" if requested_paths else ("project" if project else "workspace"),
+        "requested_files": result["total_files"],
+        "indexed_files": result["parsed"],
+        "partial_files": result["partial"],
+        "skipped_files": result["skipped"],
+        "failed_files": result["failed"],
+        "unknown_files": unknown,
+        "reasons": result["reasons"] if known else [{"code": "coverage_scope_unknown", "count": 1}],
+        "truncated": False,
+    }

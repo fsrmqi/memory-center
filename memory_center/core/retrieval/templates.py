@@ -369,3 +369,26 @@ def find_contract_consumers(
     args = {"target": target, "project": project, "tier": budget.tier}
     key = template_cache_key(workspace_file, "find_contract_consumers", args)
     return cached_template(key, _run)
+
+
+def plan_change_risk(workspace_file: str | Path, *, scope: str = "all", files: list[str] | None = None,
+                     detail_level: str = "minimal", refresh: bool = True, max_depth: int = 3) -> dict[str, Any]:
+    """Generation-keyed bounded template behind the existing change-review facade."""
+    normalized_files = sorted({str(item).strip() for item in (files or []) if str(item).strip()})
+    tier = "deep" if detail_level == "deep" else ("standard" if detail_level == "standard" else "fast")
+    budget = resolve_query_budget(tier, depth=max_depth)
+
+    def _run() -> dict[str, Any]:
+        from memory_center.core.orchestrator.change_review import build_change_review_plan
+        result = build_change_review_plan(workspace_file, scope=scope, files=normalized_files or None,
+                                          detail_level=detail_level, refresh=refresh, max_depth=budget.depth)
+        current = result.get("query_budget") if isinstance(result.get("query_budget"), dict) else {}
+        elapsed_ms, timed_out = _budget_outcome(budget)
+        result["query_budget"] = {**budget.report(elapsed_ms=elapsed_ms,
+            timed_out=bool(current.get("timed_out", False) or timed_out),
+            truncated=bool(current.get("truncated", False))), "template": "plan_change_risk"}
+        return result
+
+    args = {"scope": scope, "files": normalized_files, "detail_level": detail_level,
+            "refresh": refresh, "max_depth": budget.depth}
+    return cached_template(template_cache_key(workspace_file, "plan_change_risk", args), _run)

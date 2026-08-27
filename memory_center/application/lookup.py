@@ -40,7 +40,14 @@ def finalize_lookup(workspace_file: str, target: str, payload: dict[str, Any], p
         payload["cross_shard_fusion"] = {"generation": {"consistent": False, "status": "fusion_unavailable"}, "conclusions": [], "next_actions": []}
     from memory_center.core.freshness.contract import attach_contract
 
-    attach_contract(payload, workspace_file, request_tier=plan.tier)
+    template_budget = payload.get("query_budget") if isinstance(payload.get("query_budget"), dict) else None
+    attach_contract(
+        payload,
+        workspace_file,
+        request_tier=plan.tier,
+        query_budget=template_budget,
+        project=str(getattr(plan, "project", "") or ""),
+    )
     from memory_center.core.knowledge.governance import record_actions
     from memory_center.core.knowledge.state import attach_knowledge_state
     from memory_center.core.storage.workspace import WorkspaceStore

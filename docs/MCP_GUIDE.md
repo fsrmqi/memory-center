@@ -345,7 +345,7 @@ memory-center eval-reasoning-prompts
 
 `mc_lookup`、`mc_analyze`（impact 路径）与 change review 响应均附带 additive 字段 `index_context` 与 `claim_boundary`；不会删除或改变既有字段，也未新增 MCP tool。
 
-- `index_context.coverage` 给出 requested/indexed/partial/skipped/failed/unknown 文件计数、脱敏原因码和 `truncated` 标记。
+- `index_context.coverage` 按 workspace、已指定 project 或 logical path 给出 requested/indexed/partial/skipped/failed/unknown 文件计数、脱敏原因码和 `truncated` 标记。
 - `claim_boundary.negative_claim_allowed=true` 仅当：存在 active generation、freshness=FRESH、覆盖完整且查询未截断/未超时。此时空结果可表述为"已覆盖范围内不存在"。
 - 其余情况下 Agent 必须使用"在已覆盖范围内未发现"，不得声称"工程中不存在"；`evidence_level` 会相应降级为 `AMBIGUOUS` 或 `NOT_INDEXED`。
 
@@ -362,7 +362,7 @@ The claim boundary is a logical gate, not prompt wording: responses carry machin
 
 ### Resolution Diagnostics / 解析诊断边界（Phase D）
 
-- 所有 parser 与图投影之间通过显式 IR 边界通信；`stable_id` 由工作区事实确定性派生，不依赖 SQLite rowid。
+- Java 调用解析诊断通过显式 IR 记录通信；`stable_id` 由工作区事实确定性派生，不依赖 SQLite rowid。通用 parser adapter 的完整 IR 投影仍按真实需求分阶段推进。
 - 无法证明的调用目标保持 AMBIGUOUS（`target_ref=None`），按 reason code 和文件聚合到索引目录 `index-resolution.json`；摘要附在 `graph-summary.json` 的 `resolution_summary`。诊断只含计数、短 reason code 和已持久化的逻辑路径，不含源码片段或 prompt。
 - 差分报告携带 `symbol_category_counts`，regex 与 AST 分歧可定位到文件与符号类别。
 

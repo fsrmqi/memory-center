@@ -163,7 +163,8 @@ def selected_rows(rows: list[dict[str, Any]], limit: int) -> list[dict[str, Any]
 
 
 def submit_reindex_workspace_job(
-    workspace_file: str, *, projects: list[str] | None = None, paths: list[str] | None = None
+    workspace_file: str, *, projects: list[str] | None = None, paths: list[str] | None = None,
+    owner_actor: str = "local", owner_session_id: str = ""
 ) -> dict[str, Any]:
     """Schedule a resumable-status reindex without blocking an Agent request."""
     existing = workspace_job_status(workspace_file, limit=100).get("jobs", [])
@@ -183,7 +184,8 @@ def submit_reindex_workspace_job(
         from memory_center.core.workspace.config import load_workspace_config
 
         return reindex_workspace(
-            load_workspace_config(workspace_file), WorkspaceStore(workspace_file), projects=projects, paths=paths
+            load_workspace_config(workspace_file), WorkspaceStore(workspace_file), projects=projects, paths=paths,
+            owner_actor=owner_actor, owner_session_id=owner_session_id
         )
 
     def progress_work(report: Callable[[str, int, str], None]) -> dict[str, Any]:
@@ -196,6 +198,8 @@ def submit_reindex_workspace_job(
             projects=projects,
             paths=paths,
             progress=report,
+            owner_actor=owner_actor,
+            owner_session_id=owner_session_id,
         )
 
     return submit_workspace_job(workspace_file, "reindex", work, progress_work=progress_work)

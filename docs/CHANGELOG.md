@@ -1,5 +1,17 @@
 # Changelog / 更新日志
 
+## 4.5.2 Code Graph Contract Completion / 代码图谱合同收口
+
+- `index_context` 现在按 project/path 收窄 coverage；模板的 timeout/truncation 预算会进入 `claim_boundary`，截断结果不能生成否定性结论。
+- `plan_change_risk` 成为实际的 generation-keyed 内部模板，CLI、HTTP 与 MCP 的 change review 均经此模板执行。
+- reindex 接口可传递声明性的 `owner_actor` 与 `owner_session_id` 到 SQLite job ledger；未提供认证上下文时仍只表示调用方声明身份。
+- Narrowed coverage by project/path, propagated template timeout/truncation into the negative-claim gate, wired the real change-risk template through every existing facade, and propagated declared reindex ownership into the SQLite job ledger.
+
+## 4.5.1 Local Package Refresh / 本地包刷新
+
+- 将本地包元数据和 CLI 版本递增至 `4.5.1`，用于重新安装当前工作区构建。
+- Bumped the local package metadata and CLI version to `4.5.1` for reinstalling the current workspace build.
+
 ## 4.5.0 Code Graph Foundation / 代码图谱基础设施
 
 实现 [CODE_GRAPH_FOUNDATION_IMPLEMENTATION.md](decisions/CODE_GRAPH_FOUNDATION_IMPLEMENTATION.md) 的 Phase A–D；经真实大规模工作区（ucap，约 2 万文件）验证。

@@ -115,7 +115,7 @@ from memory_center.core.orchestrator import (
     workspace_task_resume_check,
     workspace_write_receipts,
 )
-from memory_center.core.orchestrator.change_review import build_change_review_plan
+from memory_center.core.retrieval.templates import plan_change_risk
 from memory_center.core.presentation.evidence_subgraph import export_evidence_subgraph
 from memory_center.core.retrieval.calibration import evaluate_retrieval_replay_calibration
 from memory_center.core.retrieval.cross_service import evaluate_cross_shard_replay
@@ -902,7 +902,7 @@ def build_admin_registry(
                 output_format=action_filter or "json",
             ),
             "architecture_communities": lambda: analyze_architecture_communities(wf, limit=min(max(1, limit), 50)),
-            "change_review": lambda: build_change_review_plan(
+            "change_review": lambda: plan_change_risk(
                 wf,
                 scope=scope,
                 files=files,

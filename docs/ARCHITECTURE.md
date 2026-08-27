@@ -530,7 +530,7 @@ Java 仍保留 Spring-aware 专用解析；多语言 structural pass 避免重�
 - **可信查询合同（Phase A）**：`core/freshness/contract.py` 为 `mc_lookup` / `mc_analyze` / `mc_freshness` / change review 响应附加 `index_context`（generation、freshness、coverage、query_budget）与 `claim_boundary`（否定性结论门禁）。`core/indexing/coverage.py` 在 reindex 时记录每文件 parse_status/skip_reason 到 `index-coverage.json`，发布时聚合到 `index-control.json` 与 `graph-summary.json`。旧代工作区无 coverage 时标 `coverage_unknown` 并拒绝否定性结论。
 - **有界图查询模板（Phase B）**：`core/retrieval/templates.py` 提供 `find_symbols` / `trace_call_paths` / `find_contract_consumers` 内部模板，统一 fast/standard/deep 三档硬预算与 generation 键控缓存，经既有 facade 路由，不新增 MCP tool。
 - **运行治理与原子发布（Phase C）**：`core/indexing/job_coordinator.py` 把 reindex job 权威状态迁入 SQLite `workspace_jobs` 表（scope/request 指纹、owner、lease/heartbeat、retry 血缘）；generation 发布由 `WorkspaceStore.publish_generation_payloads` 在单个 `BEGIN IMMEDIATE` 事务内原子完成，`_publish_smoke` 做只读 smoke，失败自动回滚到 previous generation。
-- **解析 IR 边界（Phase D）**：`core/indexing/ir.py` 定义 `FileRecord` / `SymbolRecord` / `RelationCandidate` 与确定性 `stable_id`；未证明目标保留为 AMBIGUOUS 诊断并聚合导出 `index-resolution.json`；`core/indexing/differential.py` 差分报告含 `symbol_category_counts`。
+- **解析 IR 诊断边界（Phase D）**：`core/indexing/ir.py` 定义 `FileRecord` / `SymbolRecord` / `RelationCandidate` 与确定性 `stable_id`；当前 Java 调用诊断经 `RelationCandidate` 聚合导出 `index-resolution.json`，未证明目标保持 AMBIGUOUS；`core/indexing/differential.py` 差分报告含 `symbol_category_counts`。全 parser adapter 的统一 IR 投影仍是后续按真实需求推进的内部演进。
 
 详见验证回执 [docs/implementation-receipts/code-graph-foundation.md](implementation-receipts/code-graph-foundation.md)。
 

@@ -19,6 +19,7 @@ from typing import Any
 
 from memory_center.core.freshness.status import IndexFreshnessService
 from memory_center.core.indexing.control_plane import index_control_status
+from memory_center.core.indexing.coverage import coverage_for_scope
 from memory_center.core.storage.workspace import WorkspaceStore
 
 FRESH = "FRESH"
@@ -72,6 +73,8 @@ def assemble_index_context(
     *,
     request_tier: str = "standard",
     query_budget: dict[str, Any] | None = None,
+    project: str = "",
+    paths: list[str] | None = None,
 ) -> dict[str, Any]:
     """Build the additive ``index_context`` block for a task-level response."""
     store = WorkspaceStore(workspace_file)
@@ -92,7 +95,7 @@ def assemble_index_context(
     else:
         freshness = STALE
 
-    coverage = _coverage_from_control(control) if generation else {
+    coverage = coverage_for_scope(store, project=project, paths=paths) if generation else {
         "scope_kind": "workspace",
         "requested_files": 0,
         "indexed_files": 0,
@@ -109,10 +112,12 @@ def assemble_index_context(
         "nodes": 0,
         "edges": 0,
         "timed_out": False,
+        "truncated": False,
     }
     if isinstance(query_budget, dict):
         budget.update({key: query_budget[key] for key in budget if key in query_budget})
         budget["timed_out"] = bool(query_budget.get("timed_out", False))
+        budget["truncated"] = bool(query_budget.get("truncated", False))
 
     return {
         "generation": generation,
@@ -151,9 +156,9 @@ def evaluate_claim_boundary(
     )
     if unclean:
         reason_codes.append("coverage_partial")
-    if coverage.get("truncated"):
-        reason_codes.append("query_truncated")
     budget = index_context.get("query_budget") if isinstance(index_context.get("query_budget"), dict) else {}
+    if coverage.get("truncated") or budget.get("truncated"):
+        reason_codes.append("query_truncated")
     if budget.get("timed_out"):
         reason_codes.append("query_timed_out")
 
@@ -178,9 +183,9 @@ def evaluate_claim_boundary(
     }
 
 
-def attach_contract(payload: dict[str, Any], workspace_file: str | Any, *, query_budget: dict[str, Any] | None = None, result_count: int = 0, request_tier: str = "standard") -> dict[str, Any]:
+def attach_contract(payload: dict[str, Any], workspace_file: str | Any, *, query_budget: dict[str, Any] | None = None, result_count: int = 0, request_tier: str = "standard", project: str = "", paths: list[str] | None = None) -> dict[str, Any]:
     """Convenience: attach both additive blocks onto a response payload."""
-    index_context = assemble_index_context(workspace_file, request_tier=request_tier, query_budget=query_budget)
+    index_context = assemble_index_context(workspace_file, request_tier=request_tier, query_budget=query_budget, project=project, paths=paths)
     payload["index_context"] = index_context
     payload["claim_boundary"] = evaluate_claim_boundary(index_context, result_count=result_count)
     return payload

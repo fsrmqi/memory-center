@@ -108,7 +108,7 @@ from memory_center.core.orchestrator import (
     workspace_unresolved_items,
     workspace_write_receipts,
 )
-from memory_center.core.orchestrator.change_review import build_change_review_plan
+from memory_center.core.retrieval.templates import plan_change_risk
 from memory_center.core.presentation.evidence_subgraph import export_evidence_subgraph
 from memory_center.core.retrieval.planner import (
     scoped_refresh_performance_status,
@@ -173,7 +173,7 @@ def workspace_change_review(
     refresh: bool = True,
     max_depth: int = 3,
 ) -> dict[str, Any]:
-    return build_change_review_plan(
+    return plan_change_risk(
         workspace_file,
         scope=scope,
         files=files,

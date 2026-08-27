@@ -429,6 +429,8 @@ def reindex_workspace(
     lock_timeout: float = 0.0,
     progress: Callable[[str, int, str], None] | None = None,
     materialize_assertions: bool = True,
+    owner_actor: str = "local",
+    owner_session_id: str = "",
 ) -> dict[str, Any]:
     """Rebuild workspace indexes with one writer per workspace.
 
@@ -448,6 +450,8 @@ def reindex_workspace(
         projects=filtered_projects,
         paths=filtered_paths,
         parallel=parallel,
+        owner_actor=owner_actor,
+        owner_session_id=owner_session_id,
     )
     if admission.get("coalesced"):
         return {
