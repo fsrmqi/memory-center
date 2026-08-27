@@ -180,6 +180,31 @@ def build_change_review_plan(
         "cache": {"status": "miss", "ttl_seconds": _CACHE_TTL_SECONDS},
     }
     result = _apply_detail_level(result, detail)
+    # Additive Phase A contract: index_context + claim_boundary so consumers
+    # know which generation the review ran against and whether an empty
+    # impact result may be read as "no impact".
+    try:
+        from memory_center.core.freshness.contract import attach_contract
+
+        refresh_truncated = bool(refresh_result.get("truncated"))
+        attach_contract(
+            result,
+            workspace_file,
+            request_tier="deep" if detail == "deep" else ("standard" if detail == "standard" else "fast"),
+            query_budget={"depth": max_depth, "nodes": len(result.get("impacts", []) or []), "edges": 0, "timed_out": False},
+            # A truncated refresh means not every changed file was analyzed,
+            # so an empty impact list must not count as a covered negative.
+            result_count=0 if refresh_truncated else len(impacts),
+        )
+        if refresh_truncated:
+            coverage = result["index_context"]["coverage"]
+            coverage["truncated"] = True
+            reason_codes = result["claim_boundary"]["reason_codes"]
+            if "query_truncated" not in reason_codes:
+                reason_codes.append("query_truncated")
+            result["claim_boundary"]["negative_claim_allowed"] = False
+    except Exception:
+        pass
     _cache_put(fingerprint, result)
     return result
 

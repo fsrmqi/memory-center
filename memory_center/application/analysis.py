@@ -56,7 +56,16 @@ def build_context_pack(workspace_file: str, query: str, intent: str, budget_toke
 
 
 def freshness_banner(workspace_file: str) -> dict[str, Any]:
-    return IndexFreshnessService(workspace_file).banner()
+    banner = IndexFreshnessService(workspace_file).banner()
+    try:
+        from memory_center.core.freshness.contract import assemble_index_context, evaluate_claim_boundary
+
+        index_context = assemble_index_context(workspace_file)
+        banner["index_context"] = index_context
+        banner["claim_boundary"] = evaluate_claim_boundary(index_context)
+    except Exception:
+        pass
+    return banner
 
 
 def domain_overview(workspace_file: str, include_flows: bool = True) -> dict[str, Any]:

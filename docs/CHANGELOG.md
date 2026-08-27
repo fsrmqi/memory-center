@@ -2,6 +2,13 @@
 
 ## Unreleased 未发布
 
+### Code Graph Foundation Phase A / 代码图谱基础设施 Phase A（可信查询合同）
+
+- `mc_lookup`、`mc_analyze`（impact 路径）、`mc_freshness` 与 change review 响应新增 additive 字段 `index_context`（active generation、freshness FRESH/STALE/PARTIAL/NOT_INDEXED、coverage 覆盖计数与原因、query_budget）和 `claim_boundary`（negative_claim_allowed、reason_codes、evidence_level）；旧客户端忽略即可，未新增/删除任何 MCP tool 或既有字段。
+- 索引管线在 reindex 时记录每个文件的 parse_status/skip_reason 到 `index-coverage.json`；generation 发布时聚合 `coverage_summary` 写入 `index-control.json` 与 `graph-summary.json`。
+- 否定性结论门禁：只有 active generation 存在、freshness=FRESH、覆盖完整且查询未截断/超时时，空结果才允许 `negative_claim_allowed=true`；其余情况证据级降级为 `AMBIGUOUS` 或 `NOT_INDEXED`。
+- Added the Phase A trustworthy query contract: additive `index_context`/`claim_boundary` blocks on task-level responses, per-file coverage ledger in the index pipeline, and a logical gate that downgrades negative conclusions unless freshness and coverage gates pass.
+
 ## 4.4.2 Task Delivery Command Center / 任务交付中心
 
 - 新增只读 `/workspace/task-delivery-overview`，聚合 focus task 的 DSH 交付摘要、验证状态、回执和有界时间线，供 DSH 任务页展示交付中心。

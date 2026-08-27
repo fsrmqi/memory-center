@@ -517,6 +517,13 @@ def create_server(workspace_file: str):
             else:
                 impact_result = memory_detect_changes(wf, scope)
             result = {"workflow": "mc-analyze", "depth": depth, "impact": impact_result, "analysis_status": "complete", "diagnostics": {}}
+            from memory_center.core.freshness.contract import attach_contract
+
+            result_count = len(impact_result.get("candidate_paths", []) or []) if isinstance(impact_result, dict) else 0
+            try:
+                attach_contract(result, wf, request_tier="standard", result_count=result_count)
+            except Exception:
+                pass
             if target:
                 result["candidate_paths"] = impact_result.get("candidate_paths", [])
                 result["recommended_path"] = impact_result.get("recommended_path", {})

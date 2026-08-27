@@ -54,6 +54,14 @@ def activate_generation(store: WorkspaceStore, generation: str, *, counts: dict[
         "last_completed_at": now,
         "counts": {key: counts.get(key, 0) for key in ("files", "symbols", "apis", "feigns", "mq", "configs", "graph_nodes", "graph_edges", "semantic_docs")},
     }
+    # Additive coverage snapshot: the published aggregate rides with the
+    # control state so readers never need to open the per-file ledger to
+    # answer "is this index complete enough for a negative claim".
+    coverage_summary = counts.get("coverage_summary")
+    if isinstance(coverage_summary, dict) and coverage_summary:
+        state["coverage_summary"] = coverage_summary
+        if counts.get("coverage_reasons"):
+            state["coverage_reasons"] = counts["coverage_reasons"]
     store.write_json(SHARD_MANIFEST_FILE, shard_manifest)
     store.write_json(CONTROL_FILE, state)
     return state

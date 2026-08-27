@@ -339,6 +339,17 @@ memory-center eval-reasoning-prompts
 - 适合场景：
   - 改动前确认图谱是否可信
   - 提醒是否应先读 live file 或触发增量索引
+- Phase A 合同：响应额外携带 `index_context`（active generation、freshness FRESH/STALE/PARTIAL/NOT_INDEXED、coverage 计数与原因、query_budget）与 `claim_boundary`。
+
+### Index Claim Contract / 索引结论边界合同
+
+`mc_lookup`、`mc_analyze`（impact 路径）与 change review 响应均附带 additive 字段 `index_context` 与 `claim_boundary`；不会删除或改变既有字段，也未新增 MCP tool。
+
+- `index_context.coverage` 给出 requested/indexed/partial/skipped/failed/unknown 文件计数、脱敏原因码和 `truncated` 标记。
+- `claim_boundary.negative_claim_allowed=true` 仅当：存在 active generation、freshness=FRESH、覆盖完整且查询未截断/未超时。此时空结果可表述为"已覆盖范围内不存在"。
+- 其余情况下 Agent 必须使用"在已覆盖范围内未发现"，不得声称"工程中不存在"；`evidence_level` 会相应降级为 `AMBIGUOUS` 或 `NOT_INDEXED`。
+
+The claim boundary is a logical gate, not prompt wording: responses carry machine-readable reason codes (`index_not_published`, `generation_stale`, `coverage_partial`, `query_truncated`, `query_timed_out`) and agents must phrase empty results accordingly.
 
 ### Next Phase 入口一致性 / Entry Consistency
 

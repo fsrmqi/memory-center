@@ -27,7 +27,7 @@ def test_reindex_lock_records_lifecycle_and_workspace_status(tmp_path: Path, mon
     workspace = _workspace(tmp_path)
     store = WorkspaceStore(workspace)
 
-    def fake_reindex(_config, _store, *, projects=None, paths=None, parallel=True):
+    def fake_reindex(_config, _store, *, projects=None, paths=None, parallel=True, generation=""):
         assert projects == ["api"]
         assert paths == []
         assert parallel is False

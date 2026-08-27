@@ -75,6 +75,7 @@ def _reindex_workspace_unlocked(
     paths: Sequence[str] | None = None,
     parallel: bool = True,
     progress: Callable[[str, int, str], None] | None = None,
+    generation: str = "",
 ) -> dict[str, Any]:
     """Rebuild deterministic indexes and the local evidence graph."""
     pipeline_started = time.perf_counter()
@@ -99,6 +100,22 @@ def _reindex_workspace_unlocked(
     old_config_index: list[dict[str, Any]] = store.read_json_prefer_backend("config-index.json", [])
     old_contract_snapshot = store.read_json_prefer_backend(CONTRACT_SNAPSHOT_FILE, {})
     mark("load_indexes")
+
+    # Coverage ledger: one row per discovered file (parsed/partial/skipped/
+    # failed + bounded reason). Partial refreshes inherit the previous
+    # generation's rows so coverage always describes the full merged index.
+    from memory_center.core.indexing.coverage import (
+        STATUS_PARSED,
+        STATUS_SKIPPED,
+        CoverageLedger,
+        attach_coverage_summary,
+        write_coverage,
+    )
+
+    ledger = CoverageLedger()
+    if partial:
+        for row in store.read_json_prefer_backend("index-coverage.json", {}).get("files", []):
+            ledger.record(str(row.get("path", "")), str(row.get("status", "parsed")), str(row.get("reason", "")))
 
     file_index: list[dict[str, Any]] = []
     symbol_index: list[dict[str, Any]] = []
@@ -139,6 +156,9 @@ def _reindex_workspace_unlocked(
                 java_tasks.append((svc.name, rel, path))
             elif path.name in CONFIG_NAMES:
                 config_index.append({"project": svc.name, "path": rel, **parse_yaml_config(path)})
+                ledger.record(rel, STATUS_PARSED)
+            else:
+                ledger.record(rel, STATUS_SKIPPED, "unsupported_syntax")
     mark("scan_scope")
 
     _report_progress(progress, "parsing", 30, f"正在解析 {len(java_tasks)} 个 Java 文件")
@@ -151,9 +171,13 @@ def _reindex_workspace_unlocked(
         with ThreadPoolExecutor(max_workers=workers) as pool:
             futures = {pool.submit(_parse_java_file, s, r, p): (s, r) for s, r, p in java_tasks}
             for future in as_completed(futures):
+                svc_name, rel = futures[future]
                 result = future.result()
                 if result["symbol"]:
                     symbol_index.append(result["symbol"])
+                    ledger.record(rel, STATUS_PARSED)
+                else:
+                    ledger.record(rel, "failed", "parse_error")
                 api_index.extend(result["apis"])
                 if result["pending_feign"]:
                     pending_feigns.append(result["pending_feign"])
@@ -163,6 +187,9 @@ def _reindex_workspace_unlocked(
             result = _parse_java_file(svc_name, rel, path)
             if result["symbol"]:
                 symbol_index.append(result["symbol"])
+                ledger.record(rel, STATUS_PARSED)
+            else:
+                ledger.record(rel, "failed", "parse_error")
             api_index.extend(result["apis"])
             if result["pending_feign"]:
                 pending_feigns.append(result["pending_feign"])
@@ -205,6 +232,7 @@ def _reindex_workspace_unlocked(
     store.write_json(CONTRACT_SNAPSHOT_FILE, contract_snapshot)
     store.write_json(CONTRACT_DIFF_FILE, contract_diff)
     mark("persist_indexes")
+    coverage_aggregate = write_coverage(store, generation, ledger, mode="partial" if partial else "full")
     graph_counts = build_graph_store(config, store, project_filter=project_filter, path_filters=path_filters)
     mark("graph_update")
     changed_ids: set[str] = set()
@@ -234,6 +262,7 @@ def _reindex_workspace_unlocked(
         "parser_diagnostics": parser_diagnostics,
         "parser_precision": parser_precision,
     }
+    attach_coverage_summary(graph_summary, coverage_aggregate)
     store.write_json("graph-summary.json", graph_summary)
     counts = {
         "mode": "partial" if partial else "full",
@@ -264,6 +293,12 @@ def _reindex_workspace_unlocked(
         "parser_critical_disagreement_count": parser_diagnostics["critical_disagreement_count"],
         "parser_diagnostics": parser_diagnostics,
         "parser_precision": parser_precision,
+        "coverage_summary": {
+            key: coverage_aggregate[key]
+            for key in ("parsed", "partial", "skipped", "failed", "total_files")
+            if key in coverage_aggregate
+        } if coverage_aggregate else {},
+        "coverage_reasons": coverage_aggregate.get("reasons", []) if coverage_aggregate else [],
         **retrieval_counts,
     }
     _report_progress(progress, "finalizing", 92, "正在写入索引摘要")
@@ -324,6 +359,7 @@ def reindex_workspace(
                 "projects": projects,
                 "paths": paths,
                 "parallel": parallel,
+                "generation": generation,
             }
             if progress is not None:
                 reindex_kwargs["progress"] = progress
