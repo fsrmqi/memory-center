@@ -523,6 +523,17 @@ Java 仍保留 Spring-aware 专用解析；多语言 structural pass 避免重�
 
 `GraphStore` 提供节点/边写入、FTS5 搜索、LIKE fallback、BFS neighbors、partial rebuild。全量 rebuild 使用 `executemany` 和 `fast_write_mode()`；FTS 使用 SQLite 内部 `INSERT ... SELECT` 构建，不向 Python 物化全量节点。部分 rebuild 按 project/path 删除并 upsert scope 内节点边，只批量替换变更节点的 FTS 行，并输出同步模式、节点数与耗时。
 
+### 5.4.1 代码图谱基础设施（Phase A–D，4.5.0）
+
+自 4.5.0 起，图索引在既有 `SQLite + active/staging generation + task-level MCP facade` 之上建立一层可信、增量、可协调的代码图谱基础设施（见 [CODE_GRAPH_FOUNDATION_IMPLEMENTATION.md](decisions/CODE_GRAPH_FOUNDATION_IMPLEMENTATION.md)）：
+
+- **可信查询合同（Phase A）**：`core/freshness/contract.py` 为 `mc_lookup` / `mc_analyze` / `mc_freshness` / change review 响应附加 `index_context`（generation、freshness、coverage、query_budget）与 `claim_boundary`（否定性结论门禁）。`core/indexing/coverage.py` 在 reindex 时记录每文件 parse_status/skip_reason 到 `index-coverage.json`，发布时聚合到 `index-control.json` 与 `graph-summary.json`。旧代工作区无 coverage 时标 `coverage_unknown` 并拒绝否定性结论。
+- **有界图查询模板（Phase B）**：`core/retrieval/templates.py` 提供 `find_symbols` / `trace_call_paths` / `find_contract_consumers` 内部模板，统一 fast/standard/deep 三档硬预算与 generation 键控缓存，经既有 facade 路由，不新增 MCP tool。
+- **运行治理与原子发布（Phase C）**：`core/indexing/job_coordinator.py` 把 reindex job 权威状态迁入 SQLite `workspace_jobs` 表（scope/request 指纹、owner、lease/heartbeat、retry 血缘）；generation 发布由 `WorkspaceStore.publish_generation_payloads` 在单个 `BEGIN IMMEDIATE` 事务内原子完成，`_publish_smoke` 做只读 smoke，失败自动回滚到 previous generation。
+- **解析 IR 边界（Phase D）**：`core/indexing/ir.py` 定义 `FileRecord` / `SymbolRecord` / `RelationCandidate` 与确定性 `stable_id`；未证明目标保留为 AMBIGUOUS 诊断并聚合导出 `index-resolution.json`；`core/indexing/differential.py` 差分报告含 `symbol_category_counts`。
+
+详见验证回执 [docs/implementation-receipts/code-graph-foundation.md](implementation-receipts/code-graph-foundation.md)。
+
 ---
 
 ## 6. Storage Layer / 存储层

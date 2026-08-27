@@ -1,10 +1,11 @@
 # 代码图谱基础设施实施决策 / Code Graph Foundation Implementation Decision
 
-> **状态 / Status**：提议（Proposed）  
+> **状态 / Status**：Phase A–D 已实施（Implemented），Phase E 挂起待真实需求触发  
 > **文档类型 / Type**：决策 + 实施规格（Decision + implementation specification）  
 > **适用范围 / Scope**：Memory Center 的索引、图查询、局部刷新和本地运行治理  
 > **不替代 / Does not replace**：[NEXT_PHASE_MASTER_PLAN.md](../NEXT_PHASE_MASTER_PLAN.md) 仍是唯一活跃开发路线；本文件给出其中相关工作在获准后应如何实现、验证和回滚。  
-> **参考 / Reference**：[codebase-memory-mcp.md](../references/codebase-memory-mcp.md)；该参考只提供设计启发，不构成运行时依赖或兼容目标。
+> **参考 / Reference**：[codebase-memory-mcp.md](../references/codebase-memory-mcp.md)；该参考只提供设计启发，不构成运行时依赖或兼容目标。  
+> **实施记录 / Implementation**：Phase A–D 于 4.5.0 完成并通过真实大规模工作区（约 2 万文件）验证，见 [验证回执](../implementation-receipts/code-graph-foundation.md)。Phase E（通用语言 adapter 试点）维持 P2 并等待真实非 Java workspace 需求与可脱敏评测集。
 
 ---
 
