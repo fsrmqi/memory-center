@@ -489,6 +489,14 @@ def reindex_workspace(
                     progress(stage, percent, message)
 
             _report_progress(_coordinated_progress, "scanning", 8, "已获取工作区写锁，开始构建索引")
+            # Generation-local staging: this run's merged intermediate
+            # indexes are buffered in an overlay and only committed to the
+            # canonical index_mirror atomically at publish time. Parallel
+            # non-overlapping refreshes can build their own staging without
+            # clobbering each other; a failed/cancelled run discards it.
+            from memory_center.core.indexing.staging import with_staging
+
+            staging_store = with_staging(store)
             reindex_kwargs: dict[str, Any] = {
                 "projects": projects,
                 "paths": paths,
@@ -496,31 +504,31 @@ def reindex_workspace(
                 "generation": generation,
                 "progress": _coordinated_progress,
             }
-            counts = _reindex_workspace_unlocked(config, store, **reindex_kwargs)
+            counts = _reindex_workspace_unlocked(config, staging_store, **reindex_kwargs)
             _report_progress(progress, "finalizing", 94, "正在发布索引代际")
             publication_started = time.perf_counter()
             manifest = build_shard_manifest(
                 generation,
-                store.read_json_prefer_backend("file-index.json", []),
-                store.read_json_prefer_backend("api-index.json", []),
-                store.read_json_prefer_backend("feign-index.json", []),
-                store.read_json_prefer_backend("mq-index.json", []),
-                store.read_json_prefer_backend("config-index.json", []),
-                store.read_json_prefer_backend("service-topology.json", {}),
+                staging_store.read_json_prefer_backend("file-index.json", []),
+                staging_store.read_json_prefer_backend("api-index.json", []),
+                staging_store.read_json_prefer_backend("feign-index.json", []),
+                staging_store.read_json_prefer_backend("mq-index.json", []),
+                staging_store.read_json_prefer_backend("config-index.json", []),
+                staging_store.read_json_prefer_backend("service-topology.json", {}),
             )
             physical_shards = write_generation_shards(
-                store,
+                staging_store,
                 generation,
-                file_index=store.read_json_prefer_backend("file-index.json", []),
-                symbol_index=store.read_json_prefer_backend("java-symbol-index.json", []),
-                api_index=store.read_json_prefer_backend("api-index.json", []),
-                feign_index=store.read_json_prefer_backend("feign-index.json", []),
-                mq_index=store.read_json_prefer_backend("mq-index.json", []),
-                config_index=store.read_json_prefer_backend("config-index.json", []),
-                topology=store.read_json_prefer_backend("service-topology.json", {}),
+                file_index=staging_store.read_json_prefer_backend("file-index.json", []),
+                symbol_index=staging_store.read_json_prefer_backend("java-symbol-index.json", []),
+                api_index=staging_store.read_json_prefer_backend("api-index.json", []),
+                feign_index=staging_store.read_json_prefer_backend("feign-index.json", []),
+                mq_index=staging_store.read_json_prefer_backend("mq-index.json", []),
+                config_index=staging_store.read_json_prefer_backend("config-index.json", []),
+                topology=staging_store.read_json_prefer_backend("service-topology.json", {}),
                 reuse_generation=str(control.get("active_generation", "") or "") if (projects or paths) else "",
                     affected_projects=_affected_shard_projects(
-                        store.read_json_prefer_backend("file-index.json", []),
+                        staging_store.read_json_prefer_backend("file-index.json", []),
                         {item.strip() for item in (projects or []) if item and item.strip()},
                         [item.strip() for item in (paths or []) if item and item.strip()],
                 ) if (projects or paths) else None,
@@ -535,6 +543,17 @@ def reindex_workspace(
 
                 raise WorkspaceJobCancelled("publishing 前确认到取消请求")
             job_coordinator.mark_stage(store, job_id, "publishing")
+            # Commit the generation-local staging overlay atomically with the
+            # pointer flip. publish_generation_payloads runs inside a single
+            # BEGIN IMMEDIATE transaction; a failure rolls everything back and
+            # the previous active generation keeps serving.
+            staging_store.publish(publication={
+                "published_generation": generation,
+                "previous_generation": previous_active_for_rollback,
+                "publishing_job_id": job_id,
+                "mode": str(control.get("mode", "full")),
+                "outcome": "published",
+            })
             activate_generation(
                 store,
                 generation,

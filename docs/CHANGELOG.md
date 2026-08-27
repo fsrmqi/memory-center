@@ -1,5 +1,11 @@
 # Changelog / 更新日志
 
+## 4.5.3 Generation-Local Staging / 代际本地暂存与发布合并
+
+- 新增 `memory_center/core/indexing/staging.py`：每次 reindex 的合并中间产物（`file-index.json`、`java-symbol-index.json`、`api/feign/mq/config-index`、topology、契约快照/差异）先进入代际本地 overlay，不再直接写 canonical `index_mirror`；读取优先命中 staging，发布时通过 `publish_generation_payloads` 在单个 `BEGIN IMMEDIATE` 事务内原子提交全部 staging + 指针翻转。
+- 失败或取消的 run 直接丢弃 overlay，canonical 中间产物与上一 active generation 完全不受影响；非重叠项目刷新各自维护 staging，不会互相覆盖，publish 串行合并。
+- Added generation-local staging: merged intermediates are buffered per-run and committed atomically at publish, so failed/cancelled runs never half-publish and parallel non-overlapping refreshes keep their own staging.
+
 ## 4.5.2 Code Graph Contract Completion / 代码图谱合同收口
 
 - `index_context` 现在按 project/path 收窄 coverage；模板的 timeout/truncation 预算会进入 `claim_boundary`，截断结果不能生成否定性结论。
