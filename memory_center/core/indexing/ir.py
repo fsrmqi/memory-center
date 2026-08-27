@@ -75,14 +75,21 @@ def _evidence_for_resolution(resolution_level: str, inferred_target: bool) -> st
     return EVIDENCE_EXTRACTED
 
 
-def call_edges_to_relation_candidates(edges: list[dict[str, Any]]) -> list[RelationCandidate]:
+def call_edges_to_relation_candidates(
+    edges: list[dict[str, Any]],
+    *,
+    source_file_by_id: dict[str, str] | None = None,
+) -> list[RelationCandidate]:
     """Project stored CALLS_METHOD edge rows (with metadata) into IR candidates.
 
     Accepts either raw ``RuntimeStore.traverse_edges``/SQL rows (dicts with
     ``source_id``/``target_id``/``confidence``/``metadata``) or plain graph
     projections where those fields are top-level. Unresolvable calls map to
     ``target_ref=None`` diagnostics instead of being silently dropped.
+    ``source_file_by_id`` optionally supplies node-id -> logical-path facts
+    for per-file diagnostic breakdowns.
     """
+    file_map = source_file_by_id or {}
     candidates: list[RelationCandidate] = []
     seen: set[tuple[str, str]] = set()
     for edge in edges:
@@ -112,6 +119,7 @@ def call_edges_to_relation_candidates(edges: list[dict[str, Any]]) -> list[Relat
                 confidence=float(edge.get("confidence", meta.get("confidence", 0.0)) or 0.0),
                 resolution_reason=str(meta.get("unresolved_reason") or resolution_level),
                 evidence_level=_evidence_for_resolution(resolution_level, bool(meta.get("inferred_target"))),
+                source_file=file_map.get(source_key, ""),
             )
         )
     return candidates

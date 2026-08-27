@@ -62,7 +62,7 @@ def _coverage_from_control(control: dict[str, Any]) -> dict[str, Any]:
         "skipped_files": int(summary.get("skipped", 0) or 0),
         "failed_files": int(summary.get("failed", 0) or 0),
         "unknown_files": unknown_files,
-        "reasons": [] if coverage_known else [{"code": "coverage_unknown", "count": 1}],
+        "reasons": list(reasons) if coverage_known else [{"code": "coverage_unknown", "count": 1}],
         "truncated": False,
     }
 

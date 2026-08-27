@@ -348,6 +348,7 @@ def _resolution_diagnostics(store: WorkspaceStore) -> dict[str, Any]:
     )
 
     edges: list[dict[str, Any]] = []
+    source_files: dict[str, str] = {}
     with RuntimeStore(store.graph_db_path) as graph:
         conn = graph.connect()
         try:
@@ -357,12 +358,25 @@ def _resolution_diagnostics(store: WorkspaceStore) -> dict[str, Any]:
             ).fetchall()
             keys = ("source_id", "target_id", "confidence", "metadata_json")
             edges = [dict(zip(keys, row)) for row in rows]
+            # Resolve node-id -> logical path in bounded chunks so per-file
+            # breakdowns can locate failure categories.
+            source_ids = sorted({str(row["source_id"]) for row in edges if row["source_id"]})
+            for start in range(0, len(source_ids), 500):
+                chunk = source_ids[start : start + 500]
+                placeholders = ",".join("?" for _ in chunk)
+                n_rows = conn.execute(
+                    f"SELECT id, file_path FROM nodes WHERE id IN ({placeholders})",
+                    tuple(chunk),
+                ).fetchall()
+                for node_id_value, file_path in n_rows:
+                    source_files[str(node_id_value)] = str(file_path or "")
         finally:
             pass
-    candidates = call_edges_to_relation_candidates(edges)
+    candidates = call_edges_to_relation_candidates(edges, source_file_by_id=source_files)
     summary = summarize_unresolved(candidates)
     payload = {
         "schema_version": 1,
+        "truncated": len(edges) >= 20000,
         **summary,
         "unresolved_by_file": unresolved_by_file(candidates),
     }
