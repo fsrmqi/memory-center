@@ -238,6 +238,13 @@ def _reindex_workspace_unlocked(
     # Phase D: project stored call edges through the explicit IR boundary
     # and publish unified resolution diagnostics for failure-category work.
     resolution_summary = _resolution_diagnostics(store)
+    # Task step 3: persist the Java adapter's explicit IR output (additive).
+    # The legacy graph projection stays authoritative; this payload is the
+    # boundary the differential gate (step 4) compares against.
+    from memory_center.core.indexing.java_ir import build_java_ir_index
+
+    ir_payload = build_java_ir_index(merged_symbol_index)
+    store.write_json("java-ir-index.json", ir_payload)
     mark("graph_update")
     changed_ids: set[str] = set()
     _report_progress(progress, "semantic", 68, "正在构建语义索引")
@@ -268,6 +275,11 @@ def _reindex_workspace_unlocked(
     }
     attach_coverage_summary(graph_summary, coverage_aggregate)
     graph_summary["resolution_summary"] = resolution_summary
+    graph_summary["ir_index"] = {
+        "file_count": ir_payload["file_count"],
+        "symbol_count": ir_payload["symbol_count"],
+        "candidate_count": ir_payload["candidate_count"],
+    }
     store.write_json("graph-summary.json", graph_summary)
     counts = {
         "mode": "partial" if partial else "full",

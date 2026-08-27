@@ -1,5 +1,12 @@
 # Changelog / 更新日志
 
+## 4.5.4 Java IR Boundary & Diff Gate / Java 解析 IR 边界与差分门禁
+
+- Java 解析器现在显式输出 IR：新增 `memory_center/core/indexing/java_ir.py`，把 `java-symbol-index.json` 投影为 `FileRecord` / `SymbolRecord` / `RelationCandidate`（复用与图投影同一个 `JavaCallResolver`，保证差分可比），并持久化为 additive 的 `java-ir-index.json`。
+- 新增 `memory_center/core/indexing/diff_gate.py`：把 IR 候选投影成与 legacy 图边同格式的 CALLS_METHOD 边，对比真实图数据。指标：anchor_recall（IR 源方法在图中的存在率）、edge_coverage（legacy 图中被 IR 覆盖的边比例，无回退硬指标）、forbidden_hit（AMBIGUOUS 是否被伪造为确定边，必须为 0）。当前 legacy 图投影保持权威，IR 投影作为显式边界与差分基准。
+- ucap 真实数据（16.9k 符号 / 67.8 万候选）gate 通过：anchor_recall 0.9977（缺失为构造器/方法引用目标，IR 比图更完整）、edge_coverage 1.0、forbidden_hit 0.0、ambiguous 0.55（外部依赖边界）。
+- Added the explicit Java IR boundary with relation candidates projected through the same resolver as the graph, plus a differential gate proving IR does not regress anchor/edge coverage or forbidden-hit before any switch.
+
 ## 4.5.3 Generation-Local Staging / 代际本地暂存与发布合并
 
 - 新增 `memory_center/core/indexing/staging.py`：每次 reindex 的合并中间产物（`file-index.json`、`java-symbol-index.json`、`api/feign/mq/config-index`、topology、契约快照/差异）先进入代际本地 overlay，不再直接写 canonical `index_mirror`；读取优先命中 staging，发布时通过 `publish_generation_payloads` 在单个 `BEGIN IMMEDIATE` 事务内原子提交全部 staging + 指针翻转。
