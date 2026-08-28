@@ -966,6 +966,32 @@ def _parse_method_calls(
         "switch",
         "catch",
         "return",
+        # Java statement keywords that a regex can misread as a call when a
+        # block statement follows a parenthesized header, e.g.
+        # ``synchronized (lock) {``. ``synchronized`` is never a method name,
+        # so every such call row was an unresolvable garbage edge
+        # (observed in real workspaces: DateUtil.getDateFormat -> synchronized).
+        "synchronized",
+        "assert",
+        "throw",
+    }
+    # Receivers produced by non-call syntax: ``Foo.class.getName()`` yields
+    # receiver=``class`` (type literal), which can never resolve to a
+    # workspace type. ``this``/``super`` are meaningful receivers and stay.
+    _ignored_receivers = {
+        "class",
+        "new",
+        "return",
+        "instanceof",
+        "throw",
+        "assert",
+        "synchronized",
+        "else",
+        "try",
+        "finally",
+        "do",
+        "case",
+        "default",
     }
     seen: set[tuple[int, str, str]] = set()
     for span in method_spans:
@@ -994,6 +1020,8 @@ def _parse_method_calls(
             if "(" in (m.group("first_args") or ""):
                 continue
             receiver = m.group("receiver")
+            if receiver in _ignored_receivers or m.group("method") in ignored_methods:
+                continue
             chained_lambda_type, chained_lambda_origin = _lambda_receiver_type(lambda_scopes, m.start(), receiver)
             calls.append(
                 {
@@ -1012,7 +1040,7 @@ def _parse_method_calls(
         for m in qualified_pattern.finditer(body):
             receiver = m.group("receiver")
             method = m.group("method")
-            if receiver in ignored or method in ignored_methods:
+            if receiver in ignored or receiver in _ignored_receivers or method in ignored_methods:
                 continue
             absolute_method_pos = body_start + m.start("method")
             qualified_lambda_type, qualified_lambda_origin = _lambda_receiver_type(lambda_scopes, m.start(), receiver)

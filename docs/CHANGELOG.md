@@ -1,5 +1,12 @@
 # Changelog / 更新日志
 
+## 4.5.5 Keyword Pseudo-Call Filter / 关键字伪调用过滤
+
+- `_parse_method_calls` 关键字黑名单补齐 `synchronized`/`assert`/`throw`，并新增 receiver 侧关键字过滤（`class`/`new`/`instanceof`/`synchronized` 等），消除 regex 把 `synchronized (lock) {}` 语句头与 `Foo.class.getName()` 类型字面量误判为方法调用的垃圾边。
+- 真实驱动：ucap 中 `DateUtil.getDateFormat -> synchronized()`、`X.class.getName()` 落进 `unqualified_or_dynamic` 桶且永远不可解析；修复后这些边在索引中消失，`this`/`super` 等合法 receiver 不受影响。
+- 新增 5 个逻辑锚点测试（synchronized 块、class 字面量、关键字全集、真实调用保留、this/super 保留）；ucap-rap-util 局部刷新验证伪调用边 0，IR diff gate 不回退（edge_coverage 1.0 / forbidden 0）。
+- Added keyword pseudo-call filtering: statement keywords and type-literal receivers are no longer emitted as call rows, removing unresolvable garbage edges driven by real-workspace evidence.
+
 ## 4.5.4 Java IR Boundary & Diff Gate / Java 解析 IR 边界与差分门禁
 
 - Java 解析器现在显式输出 IR：新增 `memory_center/core/indexing/java_ir.py`，把 `java-symbol-index.json` 投影为 `FileRecord` / `SymbolRecord` / `RelationCandidate`（复用与图投影同一个 `JavaCallResolver`，保证差分可比），并持久化为 additive 的 `java-ir-index.json`。
