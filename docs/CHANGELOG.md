@@ -1,5 +1,10 @@
 # Changelog / 更新日志
 
+## 4.6.7 Local Package Refresh / 本地包刷新
+
+- 将包元数据、CLI 与本地安装版本对齐并递增至 `4.6.7`，覆盖已完成的 4.6.0–4.6.6 质量、检索、存储与刷新预算改动。
+- Aligned package metadata, CLI, and local installation to `4.6.7`, covering the completed 4.6.0–4.6.6 quality, retrieval, storage, and refresh-budget changes.
+
 ## 4.6.6 Refresh Budget Tiering / 刷新预算分层
 
 - scoped refresh 按**变更类别/范围分桶**（`classify_refresh_bucket`）：category = plain_java / contract / delete_or_move / unknown；scope = single_file / multi_file_single_service / multi_service / multi_file。每桶独立预算（`BUCKET_BUDGETS_MS`：单文件低风险 8s、单文件契约 15s、多服务契约 60s 等）。
