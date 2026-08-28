@@ -48,6 +48,35 @@ def finalize_lookup(workspace_file: str, target: str, payload: dict[str, Any], p
         query_budget=template_budget,
         project=str(getattr(plan, "project", "") or ""),
     )
+    # Primary cross-service chain (additive): only for a Method anchor from
+    # the symbol path. Never fabricates — status is found/not_found/
+    # insufficient_evidence/truncated and callers must phrase accordingly.
+    result = payload.get("result")
+    best_match = result.get("best_match") if isinstance(result, dict) else None
+    if isinstance(best_match, dict) and str(best_match.get("type", "")).startswith("Method"):
+        try:
+            from memory_center.core.retrieval.primary_chain import find_primary_service_chain
+
+            # fast tier: skip the cross-service search (keeps P95 flat);
+            # standard/deep: bounded cross-service search. Feign chains need
+            # 3 steps (entry -> FeignMethod -> Endpoint), so depth stays 3;
+            # the node budget keeps it cheap.
+            if plan.tier != "fast":
+                payload["primary_chain"] = find_primary_service_chain(
+                    workspace_file,
+                    best_match,
+                    project=str(getattr(plan, "project", "") or ""),
+                    max_depth=3,
+                )
+        except Exception:
+            payload["primary_chain"] = {
+                "status": "insufficient_evidence",
+                "reason_codes": ["primary_chain_unavailable"],
+                "steps": [],
+                "score": 0.0,
+                "evidence_level": "AMBIGUOUS",
+                "generation": "",
+            }
     from memory_center.core.knowledge.governance import record_actions
     from memory_center.core.knowledge.state import attach_knowledge_state
     from memory_center.core.storage.workspace import WorkspaceStore

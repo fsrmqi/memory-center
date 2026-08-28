@@ -360,6 +360,22 @@ The claim boundary is a logical gate, not prompt wording: responses carry machin
 - 模板结果缓存键包含 active generation：generation 变化立即失效。
 - `mc_analyze(depth="standard"|"full")` 追加有界 `contract_consumers`（DTO/Feign/MQ 消费者），命中失败不影响其他分析阶段。
 
+### Primary Cross-Service Chain / 跨服务主链路
+
+`mc_lookup(auto)` 对已解析出 **Method 锚点**的 symbol 查询（非 fast tier）附加 additive 字段 `primary_chain`：
+
+```json
+{"primary_chain": {"status": "found|not_found|insufficient_evidence|truncated",
+  "anchor": {}, "steps": [], "score": 0.0,
+  "evidence_level": "EXTRACTED|INFERRED|AMBIGUOUS",
+  "generation": "gen-...", "reason_codes": []}}
+```
+
+- `status=found`：含至少一个跨服务/契约关系边（CALLS_SERVICE / IMPLEMENTS_FEIGN / HANDLES_ENDPOINT / PRODUCES_TOPIC / CONSUMES_TOPIC），且证据不是 AMBIGUOUS。
+- `not_found` / `insufficient_evidence`：无跨服务图证据或索引不完整。**不得把这种状态表述为"调用了下游服务"**。
+- 结构边（CONTAINS / DECLARES / IMPORTS）永不作链路主体；Feign 接口方法经 retrieval 层桥接到 FeignClient/FeignMethod（桥接步骤标 INFERRED）。
+- fast tier 跳过 primary_chain 以保持 P95；`best_match` / `candidate_paths` 等原有字段不受影响。
+
 ### Resolution Diagnostics / 解析诊断边界（Phase D）
 
 - Java 调用解析诊断通过显式 IR 记录通信；`stable_id` 由工作区事实确定性派生，不依赖 SQLite rowid。通用 parser adapter 的完整 IR 投影仍按真实需求分阶段推进。

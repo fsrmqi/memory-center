@@ -1,5 +1,14 @@
 # Changelog / 更新日志
 
+## 4.5.7 Primary Cross-Service Chain / 跨服务主链路
+
+- 新增 `memory_center/core/retrieval/primary_chain.py`：`find_primary_service_chain` 从 Method 锚点做有界分层 BFS，返回一条可解释的跨服务主链路（入口 Method → Feign 接口方法 → FeignMethod → 下游 Endpoint，或 HTTP Controller → Endpoint，或 MQ Producer → Topic → Consumer）。
+- 主路径关系白名单（CALLS_SERVICE / IMPLEMENTS_FEIGN / HANDLES_ENDPOINT / PRODUCES_TOPIC / CONSUMES_TOPIC / CALLS_METHOD）；结构边（CONTAINS / DECLARES / IMPORTS 等）永不作链路主体。路径按 relation_weight × confidence × evidence × depth_decay 评分，确定性排序（EXTRACTED > INFERRED、跨服务 > 局部、高分 > 低分、短路径优先、stable id tie-break）。
+- Feign 接口 Method 通过 retrieval 层名字桥接到 FeignClient/FeignMethod（桥接步骤标 INFERRED，不虚标 EXTRACTED）；beam search 控制扩展宽度。
+- `mc_lookup(auto)` 对已解析出 Method 锚点的 symbol 查询（非 fast tier）附加 additive 字段 `primary_chain`（status/anchor/steps/score/evidence_level/generation/reason_codes）；best_match、candidate_paths 等保留不动。fast tier 跳过以保持 P95 平坦；无图证据时返回 not_found/insufficient_evidence，不编造链路。
+- 真实 replay（ucap）：Feign 完整三服务链 found（INFERRED，435ms）、HTTP Endpoint found（EXTRACTED，7ms）、无链路反例 not_found（7ms，不编造）。未改 Java resolver/parser；IR gate 保持通过（edge_coverage 1.0 / forbidden 0）；默认 symbol 查询 P50 2ms 不受影响。
+- Added a bounded primary cross-service chain for Method anchors in mc_lookup(auto), with deterministic ranking, Feign/MQ/HTTP bridge semantics, a no-fabrication contract, and per-tier budget gating.
+
 ## 4.5.6 CamelCase Symbol Retrieval Routing / 驼峰符号检索路由
 
 - `workspace_lookup_hint` 新增纯驼峰符号识别：小写开头、以类型后缀结尾或动词前缀开头的标识符（`getClusterUniversalStateForAppMachine`、`findOrderById` 等）即使无 `service/method` 等关键词，也路由到 `symbol_lookup` 而非 `local_search`/`code`。

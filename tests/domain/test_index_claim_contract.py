@@ -204,6 +204,42 @@ def test_finalize_lookup_attaches_contract(demo_workspace_str):
     assert "auto_refresh" in result and "shard_route" in result
 
 
+def test_finalize_lookup_attaches_primary_chain_only_for_method_anchor(demo_workspace_str):
+    """primary_chain is additive and only present when best_match is a Method;
+    never on a Class/DTO anchor, and never a fabricated chain."""
+    from memory_center.application.lookup import finalize_lookup, prepare_lookup
+
+    # Method anchor -> primary_chain attached with a valid contract shape.
+    prepared = prepare_lookup(demo_workspace_str, "ArticleController.list", request_tier="standard", limit=10, depth=2, enable_vector=False, project="")
+    payload = {
+        "mode_used": "symbol",
+        "result": {
+            "found": True,
+            "best_match": {
+                "type": "Method",
+                "id": "Method:article-service:ArticleController:list",
+                "name": "ArticleController.list",
+            },
+            "matches": [],
+        },
+    }
+    result = finalize_lookup(demo_workspace_str, "ArticleController.list", payload, prepared, "mc_lookup")
+    pc = result.get("primary_chain")
+    assert isinstance(pc, dict)
+    assert pc["status"] in ("found", "not_found", "insufficient_evidence", "truncated")
+    for key in ("status", "anchor", "steps", "score", "evidence_level", "generation", "reason_codes"):
+        assert key in pc
+
+    # Class anchor -> no primary_chain (never fabricate a chain from a class).
+    prepared2 = prepare_lookup(demo_workspace_str, "OrderService", request_tier="standard", limit=10, depth=2, enable_vector=False, project="")
+    payload2 = {
+        "mode_used": "symbol",
+        "result": {"found": True, "best_match": {"type": "Class", "id": "Class:api:OrderService", "name": "OrderService"}, "matches": []},
+    }
+    result2 = finalize_lookup(demo_workspace_str, "OrderService", payload2, prepared2, "mc_lookup")
+    assert "primary_chain" not in result2
+
+
 def test_change_review_plan_attaches_contract(demo_workspace):
     from memory_center.core.orchestrator.change_review import build_change_review_plan
 
