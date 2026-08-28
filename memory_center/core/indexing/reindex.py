@@ -241,9 +241,18 @@ def _reindex_workspace_unlocked(
     # Task step 3: persist the Java adapter's explicit IR output (additive).
     # The legacy graph projection stays authoritative; this payload is the
     # boundary the differential gate (step 4) compares against.
+    #
+    # Perf fix (long task: scoped refresh hot path): on a partial refresh we
+    # must NOT rebuild the full 678k-candidate IR index every time (that was
+    # ~13s and dominated graph_update). Only re-resolve the scoped symbols and
+    # inherit unchanged files' candidates from the previous generation, like
+    # the other merged indexes.
     from memory_center.core.indexing.java_ir import build_java_ir_index
 
-    ir_payload = build_java_ir_index(merged_symbol_index)
+    if partial:
+        ir_payload = _merge_ir_partial(store, merged_symbol_index, project_filter, path_filters)
+    else:
+        ir_payload = build_java_ir_index(merged_symbol_index)
     store.write_json("java-ir-index.json", ir_payload)
     mark("graph_update")
     changed_ids: set[str] = set()
@@ -399,6 +408,59 @@ def _resolution_diagnostics(store: WorkspaceStore) -> dict[str, Any]:
         "calls_unresolved": summary["unresolved"],
         "evidence_levels": summary["evidence_levels"],
         "top_unresolved_reasons": summary["unresolved_reasons"][:8],
+    }
+
+
+def _merge_ir_partial(
+    store: WorkspaceStore,
+    merged_symbols: list[dict[str, Any]],
+    project_filter: set[str],
+    path_filters: list[str],
+) -> dict[str, Any]:
+    """Rebuild only the scoped files' IR candidates; inherit unchanged files'
+    candidates from the previous generation's java-ir-index.json.
+
+    Resolving the full 678k-candidate IR index on every partial refresh was
+    the dominant cost of graph_update on real workspaces; this keeps it
+    bounded to the changed scope without lowering evidence or coverage.
+    """
+    from memory_center.core.indexing.java_ir import build_java_ir_index
+
+    old_ir = store.read_json_prefer_backend("java-ir-index.json", {})
+    old_candidates = old_ir.get("relation_candidates", []) or []
+
+    # Determine which files are in scope: any symbol whose file matches the
+    # project/path filters (mirrors _row_matches_scope).
+    scoped_syms: list[dict[str, Any]] = []
+    changed_files: set[str] = set()
+    for sym in merged_symbols:
+        if _row_matches_scope(sym, project_filter, path_filters, path_key="file"):
+            scoped_syms.append(sym)
+            changed_files.add(str(sym.get("file", "")))
+
+    new_payload = build_java_ir_index(scoped_syms)
+    new_candidates = new_payload.get("relation_candidates", []) or []
+
+    # Keep candidates from unchanged files (source_file not in changed set).
+    inherited = [
+        cand
+        for cand in old_candidates
+        if str(cand.get("source_file", "")) not in changed_files
+    ]
+    merged_candidates = inherited + new_candidates
+    # file_records/symbol_records are small metadata lists; inherit all old and
+    # overlay the scoped files' new records (they are not the perf hot path —
+    # the 678k relation_candidates are).
+    merged_file_records = list(old_ir.get("file_records", []) or []) + list(new_payload.get("file_records", []) or [])
+    merged_symbol_records = list(old_ir.get("symbol_records", []) or []) + list(new_payload.get("symbol_records", []) or [])
+    return {
+        "schema_version": 1,
+        "file_count": len(merged_file_records),
+        "symbol_count": len(merged_symbol_records),
+        "candidate_count": len(merged_candidates),
+        "file_records": merged_file_records,
+        "symbol_records": merged_symbol_records,
+        "relation_candidates": merged_candidates,
     }
 
 

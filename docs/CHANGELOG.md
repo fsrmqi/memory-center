@@ -1,5 +1,13 @@
 # Changelog / 更新日志
 
+## 4.6.1 Scoped Refresh Performance / 局部刷新性能
+
+- 真实工作区性能归因：单文件局部刷新 70s，profile 定位 `build_java_ir_index` 每次刷新**全量重算 67.8 万 IR 候选（13s）**且被 `mark("graph_update")` 错误计入 graph_update 阶段，是 graph_update 17-25s 的根因。
+- 修复：partial 刷新改用 `_merge_ir_partial`（新增）——只对 scoped 文件重算 IR 候选 + 继承未变更文件候选（与 file-index 的 merge 一致）。单文件 IR 重算 13s → 1.9s（6.8×），真实 Controller 刷新 70s → 55s，graph_update 25s → 14s；candidates 保持 678023 覆盖不降。
+- 新增 `test_ir_partial_merge.py`（继承未变更候选、全量重建 drop 删除文件候选）；全量回归绿、IR gate 通过（edge_coverage 1.0 / forbidden 0）、coverage 不降。
+- 存储健康（只读）：graph.db 4.1GB 增长风险已记录（未自动清理）；generation 3 个、job 无泄漏、publications 19 条。
+- Added scoped-refresh IR partial-merge: full 678k-candidate IR rebuild per partial refresh was the graph_update hot path; now only the scoped files are re-resolved and unchanged files' candidates are inherited (13s→1.9s, 70s→55s real refresh).
+
 ## 4.6.0 Retrieval Replay Evaluation / 检索回放评测闭环
 
 - 新增显式、脱敏、可复跑的 retrieval replay 评测基础设施 `memory_center/core/benchmark/retrieval_replay.py` + CLI `eval-retrieval-replay-cases`：从 case 文件驱动 `mc_lookup(auto)`，逐条捕获脱敏结构化结果、按 10 类失败分类、聚合 quality/performance 指标；只读，不 refresh/reindex。
