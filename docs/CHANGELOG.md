@@ -1,5 +1,17 @@
 # Changelog / 更新日志
 
+## 4.6.2 Graph.db Space Diagnostic / 存储空间只读诊断
+
+- 只读诊断 4.1GB `graph.db` + 5.8GB `generations/` 空间构成（**未执行任何清理**）：
+  - generation 服务分片 5.76GB（3 gen × 1.9GB，72 个分片/每 gen 物理复制）；含孤立 `gen-perf-test`（1.9GB，profile 测试污染，未注册）
+  - index_mirror 615MB（java-ir-index 342MB 双重占用 + java-symbol-index 247MB）
+  - edges+索引 1.5GB、FTS 520MB、倒排 500MB（必要）
+  - freelist 343MB（可安全回收）
+- 可安全回收约 **2.5GB**（孤立 gen-perf-test 1.9GB + IR 双重 342MB + freelist 343MB），不影响 active/previous generation。
+- dry-run：generation-gc 0 候选、semantic-compact 无候选；VACUUM 未执行（需授权）。
+- 建议（不执行）：删孤立 gen、IR 双重去重、VACUUM、服务分片软链继承。详见 `docs/implementation-receipts/graph-db-space-diagnostic.md`。
+- Added a read-only storage space diagnostic: 4.1GB graph.db + 5.8GB generation shards, ~2.5GB safely reclaimable (orphan test generation, duplicate IR mirror, freelist) with no cleanup executed.
+
 ## 4.6.1 Scoped Refresh Performance / 局部刷新性能
 
 - 真实工作区性能归因：单文件局部刷新 70s，profile 定位 `build_java_ir_index` 每次刷新**全量重算 67.8 万 IR 候选（13s）**且被 `mark("graph_update")` 错误计入 graph_update 阶段，是 graph_update 17-25s 的根因。
