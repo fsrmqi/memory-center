@@ -1,5 +1,14 @@
 # Changelog / 更新日志
 
+## 4.6.6 Refresh Budget Tiering / 刷新预算分层
+
+- scoped refresh 按**变更类别/范围分桶**（`classify_refresh_bucket`）：category = plain_java / contract / delete_or_move / unknown；scope = single_file / multi_file_single_service / multi_service / multi_file。每桶独立预算（`BUCKET_BUDGETS_MS`：单文件低风险 8s、单文件契约 15s、多服务契约 60s 等）。
+- `record_scoped_refresh_performance` 持久化 `bucket`；`scoped_refresh_performance_status` 按桶聚合 P50/P95/dominant/budget，并返回 `over_budget_buckets`；**legacy 无 bucket 样本（unknown/multi_file）不参与判定**；**仅 ≥5 样本且 P95 超本桶预算才标记 over**。
+- quality-gate 用分桶判定（`over_budget_buckets`），不再用全局 P95 混合比较所有刷新。
+- 真实 UCAP 采样：单文件刷新（contract/plain/delete/unknown 各桶）P50 ~37-47s、**dominant 全为 `generation_publish`**（服务分片 JSON 导出），但无桶达 5 样本 → 触发停止条件，**不进入优化**，仅交付分桶基础设施与报告。
+- 新增 12 个分桶测试；全量回归绿、IR gate 通过。
+- Added per-bucket refresh budget tiering (category/scope) so a single low-risk file is never compared against a multi-service contract refresh with one global P95; legacy samples and <5-sample buckets don't gate the decision.
+
 ## 4.6.5 Coverage Semantic Calibration / 覆盖度语义校准
 
 - coverage 原因细分：skipped 按 reason 拆分为 **`irrelevant_excluded`**（`unsupported_syntax`：xml/png/json/md 等明确无关的非源码资源）与 **`relevant_unsupported`**（相关但解析器不支持）。

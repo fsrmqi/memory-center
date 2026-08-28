@@ -58,10 +58,15 @@ def classify_refresh_bucket(
     proj_list = [str(p) for p in (projects or []) if str(p).strip()]
     lower_paths = " ".join(p.lower() for p in path_list)
 
-    if any(token in lower_paths for token in ("delete", "moved", "renamed")) or scanned_files == 0:
+    if any(token in lower_paths for token in ("delete", "renamed", "/deleted/", "_deleted")) or (
+        scanned_files == 0 and not path_list
+    ):
         category = "delete_or_move"
     elif any(hint in lower_paths for hint in _CONTRACT_HINTS):
         category = "contract"
+    elif scanned_files == 0:
+        # paths given but nothing scanned: scope mismatch, not a delete.
+        category = "unknown"
     else:
         category = "plain_java"
 

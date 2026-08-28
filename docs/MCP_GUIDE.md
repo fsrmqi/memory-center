@@ -493,3 +493,5 @@ HTTP GET 只允许无副作用读取；所有写入 route 必须 POST。非回�
 - HTTP `/workspace/quality-overview`：脱敏、有界的质量 + 空间 + generation 健康视图，供 DSH/Workbench 只读展示；不暴露查询正文/源码/绝对路径。
 
 - **coverage 语义校准**：`index_context.coverage` 新增 `irrelevant_excluded`（unsupported_syntax 的非源码资源，如 xml/png/json/md）与 `relevant_unsupported`（相关但解析器不支持）。`claim_boundary` 只在 `relevant_unsupported`/`parse_failed`/`scope_unknown` 时拒绝否定性结论；明确无关的排除资源仅审计、不阻断。
+
+- **刷新预算分层**：`scoped_refresh_performance_status` 按变更类别/范围分桶（plain_java/contract/delete_or_move × single_file/multi_service），每桶独立预算；legacy 无 bucket 样本不参与判定，仅 ≥5 样本且 P95 超本桶预算才标记 `over_budget_buckets`。
