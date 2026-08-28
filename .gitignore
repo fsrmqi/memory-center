@@ -42,3 +42,7 @@ examples/golden-benchmark/memory/operation-events.jsonl
 examples/golden-benchmark/metrics.jsonl
 /tmp/**
 /.workbuddy/
+# Private retrieval replay cases / query mappings (never committed)
+private/
+*.replay-private.yaml
+*.replay-queries.yaml

@@ -241,6 +241,34 @@ def register_eval_commands(app: typer.Typer) -> None:
         )
         typer.echo(json.dumps(result, ensure_ascii=False, indent=2))
 
+    @app.command("eval-retrieval-replay-cases")
+    def eval_retrieval_replay_cases_cmd(
+        workspace: str = typer.Option(..., help="Path to .memory-center/workspace.yaml"),
+        cases: str = typer.Option(..., help="Private replay case YAML file (outside repo)."),
+        queries: str = typer.Option("", help="Optional private query_ref -> real query mapping YAML."),
+        tier: str = typer.Option("standard", help="fast|standard|deep"),
+    ):
+        """Run a sanitized, explicit retrieval replay from a case file.
+
+        The case file (and optional query mapping) must live outside the repo;
+        query text, real ids and paths are never persisted in the report.
+        Read-only: never refreshes or reindexes.
+        """
+        from memory_center.core.benchmark.retrieval_replay import (
+            load_replay_cases,
+            run_retrieval_replay,
+        )
+
+        cases_list = load_replay_cases(cases)
+        mapping: dict[str, Any] = {}
+        if queries:
+            import yaml as _yaml
+            from pathlib import Path as _Path
+
+            mapping = _yaml.safe_load(_Path(queries).read_text(encoding="utf-8")) or {}
+        result = run_retrieval_replay(workspace, cases_list, tier=tier, query_mapping=mapping)
+        typer.echo(json.dumps(result, ensure_ascii=False, indent=2))
+
     @app.command("eval-workflow-orchestration")
     def eval_workflow_orchestration_cmd(
         workspace: str = typer.Option(...),

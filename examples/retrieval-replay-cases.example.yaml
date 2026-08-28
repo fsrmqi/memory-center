@@ -1,0 +1,38 @@
+# Anonymous retrieval-replay case example / 匿名检索回放用例示例
+#
+# This file is a STRUCTURE/SCHEMA example only. Real case files and query
+# mappings must live OUTSIDE the repo (gitignored: private/, *.replay-private.yaml).
+# The queries below use the bundled spring-cloud-demo workspace so the example
+# is runnable and self-contained; no private paths, service names, source
+# snippets, or business payloads.
+schema_version: 1
+dataset_id: demo-retrieval-replay-example
+cases:
+  - id: demo-feign-01
+    intent_class: feign_chain
+    query_ref: "demo-article-feign"
+    request:
+      mode: auto
+      request_tier: standard
+    expected:
+      anchor: {kind: Method}
+      primary_chain: {status: found, minimum_evidence_level: INFERRED}
+    privacy: {contains_source: false, contains_real_path: false, contains_query_text: false}
+  - id: demo-symbol-01
+    intent_class: symbol
+    query_ref: "demo-article-controller"
+    request:
+      mode: auto
+      request_tier: standard
+    expected:
+      anchor: {kind: Method}
+    privacy: {contains_source: false, contains_real_path: false, contains_query_text: false}
+  - id: demo-negative-01
+    intent_class: negative
+    query_ref: "demo-no-such-symbol"
+    request:
+      mode: auto
+      request_tier: standard
+    expected:
+      primary_chain: {status: not_found}
+    privacy: {contains_source: false, contains_real_path: false, contains_query_text: false}

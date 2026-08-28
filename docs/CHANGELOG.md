@@ -1,5 +1,14 @@
 # Changelog / 更新日志
 
+## 4.6.0 Retrieval Replay Evaluation / 检索回放评测闭环
+
+- 新增显式、脱敏、可复跑的 retrieval replay 评测基础设施 `memory_center/core/benchmark/retrieval_replay.py` + CLI `eval-retrieval-replay-cases`：从 case 文件驱动 `mc_lookup(auto)`，逐条捕获脱敏结构化结果、按 10 类失败分类、聚合 quality/performance 指标；只读，不 refresh/reindex。
+- case 文件与查询映射位于仓库外（gitignore `private/`、`*.replay-private.yaml`）；仓库仅含匿名示例 `examples/retrieval-replay-cases.example.yaml`，无真实 query/path/source。
+- 真实 18 条 replay 基线：primary-chain recall 1.0、wrong-chain rate 0、project-scope regression 0、Feign/HTTP 应链路全部 found、负例/MQ/stale 边界正确；`ANCHOR_RANKED_LOW` 仅 1 例（含方法名的 Feign 接口查询被 Class 抢占）。
+- Phase C 修复门禁判定：同类失败 <3，**不改 retrieval**，交付评测报告；唯一代码改动是 `classify_outcome` 尊重 expected.anchor.kind（评测工具自身分类 bug）。
+- 新增 11 个 replay runner 单测；全量回归绿、IR gate 通过。
+- Added an explicit sanitized retrieval-replay evaluation harness and CLI; a 18-case real baseline found no provable retrieval change (single-class failures <3), so no code change was made.
+
 ## 4.5.9 Replay Calibration / Replay 校准（跨服务主链路）
 
 - 新增 18 条脱敏 replay case 集（Feign 4 / HTTP 4 / 同名 3 / 反例 3 / MQ 2 / project 2），在真实多服务工作区跑 `mc_lookup(auto)` 校准。
