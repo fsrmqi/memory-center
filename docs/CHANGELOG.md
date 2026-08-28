@@ -1,5 +1,13 @@
 # Changelog / 更新日志
 
+## 4.5.6 CamelCase Symbol Retrieval Routing / 驼峰符号检索路由
+
+- `workspace_lookup_hint` 新增纯驼峰符号识别：小写开头、以类型后缀结尾或动词前缀开头的标识符（`getClusterUniversalStateForAppMachine`、`findOrderById` 等）即使无 `service/method` 等关键词，也路由到 `symbol_lookup` 而非 `local_search`/`code`。
+- `extract_symbol_like_token` 修复：小写开头的驼峰方法名不再被截断成内部大写片段（原本 `getCluster...` 会被提取成 DTO 名 `ClusterUniversalStateForAppMachine` 导致方法检索不到）；类名/链式/`Class#method` 提取保持兼容。
+- 真实驱动：ucap 检索 replay 发现 `getClusterUniversalStateForAppMachine`（图中有 27 条边的方法节点）默认被路由到 code，返回文件而非方法；修复后 `mc_lookup(auto)` 命中 `Method:ClusterConfigService.getClusterUniversalStateForAppMachine`。
+- 新增 4 个检索锚点/排序回归测试；不改 Java resolver。ucap 检索 replay 确认纯驼峰方法名命中 Method 节点、edge_coverage 保持 1.0。
+- Fixed camelCase method-name routing: pure `getXxx`/`findXxx` queries now go through symbol lookup and extract the full method name (not an inner DTO fragment), surfacing the Method node over file-level code search.
+
 ## 4.5.5 Keyword Pseudo-Call Filter / 关键字伪调用过滤
 
 - `_parse_method_calls` 关键字黑名单补齐 `synchronized`/`assert`/`throw`，并新增 receiver 侧关键字过滤（`class`/`new`/`instanceof`/`synchronized` 等），消除 regex 把 `synchronized (lock) {}` 语句头与 `Foo.class.getName()` 类型字面量误判为方法调用的垃圾边。

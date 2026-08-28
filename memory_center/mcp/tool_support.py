@@ -9,7 +9,15 @@ from memory_center.core.foundation.errors import InvalidInputError
 from memory_center.core.observability.diagnostics import DIAG, diag_entry
 
 _JAVA_CHAIN_SYMBOL_RE = re.compile(
-    r"((?:[a-z_][\w$]*\.)+[A-Z][\w$]*(?:#[a-zA-Z_][\w$]*)?|[A-Z][\w$]*(?:#[a-zA-Z_][\w$]*)?)"
+    r"((?:[a-z_][\w$]*\.)+[A-Z][\w$]*(?:#[a-zA-Z_][\w$]*)?|(?<![a-z_])[A-Z][\w$]*(?:#[a-zA-Z_][\w$]*)?)"
+)
+# Lowercase-starting camelCase method names (getXxx / setXxx / buildXxx / ...)
+# are real symbols too. The class-name pattern above cannot match them, so a
+# pure method query like `getClusterUniversalStateForAppMachine` used to fall
+# back to an inner Capitalized fragment (the DTO name) and surface the wrong
+# anchor. Match the whole verb-prefixed identifier instead.
+_JAVA_CAMEL_METHOD_RE = re.compile(
+    r"\b(?:get|set|is|has|build|create|query|find|submit|send|handle|run|do|apply|check|update|delete|save|parse|convert|to|from)[A-Z][A-Za-z0-9_]*"
 )
 
 
@@ -22,6 +30,14 @@ def extract_symbol_like_token(*values: str) -> str:
         if matches:
             matches.sort(key=len, reverse=True)
             return matches[0]
+        # No class/chain fragment: a lowercase-starting camelCase method name
+        # (e.g. getClusterUniversalStateForAppMachine). Prefer the longest
+        # verb-prefixed identifier over nothing so symbol lookup hits the
+        # Method node instead of an inner Capitalized fragment (a DTO).
+        method_matches = _JAVA_CAMEL_METHOD_RE.findall(text)
+        if method_matches:
+            method_matches.sort(key=len, reverse=True)
+            return method_matches[0]
     return ""
 
 

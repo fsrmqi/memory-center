@@ -457,7 +457,28 @@ def workspace_lookup_hint(
     recommended_path = "local_search"
     should_use_memory_center = False
 
-    if any(token in normalized for token in ["controller", "service", "client", "feign", "dto", "entity", "mapper", "consumer", "producer", "topic", "config", "class", "method", "类", "方法", "配置"]):
+    # A pure CamelCase symbol name (method/class) with no suffix keyword still
+    # means "find this symbol", and symbol lookup hits it precisely, whereas
+    # file-level code search only returns the containing file. Real-workspace
+    # evidence: `getClusterUniversalStateForAppMachine` alone was misrouted to
+    # local_search/code and never surfaced the Method node (27 graph edges).
+    camel_suffix_tokens = [
+        "service", "controller", "client", "facade", "manager", "mapper",
+        "handler", "listener", "consumer", "producer", "config", "util",
+        "helper", "task", "job", "dto", "vo", "entity", "impl",
+    ]
+    camel_verb_prefixes = ("get", "set", "is", "has", "build", "create", "query", "find", "submit", "send", "handle", "run", "do", "apply", "check", "update", "delete", "save")
+    words = re.findall(r"[a-zA-Z][a-zA-Z0-9_]{1,60}", normalized)
+    looks_like_camel_symbol = any(
+        len(word) >= 8
+        and (
+            any(word.lower().endswith(tok) for tok in camel_suffix_tokens)
+            or word.lower().startswith(camel_verb_prefixes)
+        )
+        for word in words
+    )
+
+    if any(token in normalized for token in ["controller", "service", "client", "feign", "dto", "entity", "mapper", "consumer", "producer", "topic", "config", "class", "method", "类", "方法", "配置"]) or looks_like_camel_symbol:
         preferred_tools = ["memory_symbol_tool", "memory_search_code_tool"]
         recommended_path = "symbol_lookup"
         should_use_memory_center = True

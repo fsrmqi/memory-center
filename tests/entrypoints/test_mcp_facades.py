@@ -216,6 +216,60 @@ def test_mcp_lookup_extracts_symbol_from_natural_language_query():
     assert wants_deep_chain(query) is True
 
 
+def test_extract_symbol_keeps_camel_method_names():
+    """A lowercase-starting camelCase method name is itself a symbol; it must
+    not be truncated to an inner Capitalized fragment (a DTO) or dropped.
+
+    Regression from real-workspace retrieval replay: querying
+    `getClusterUniversalStateForAppMachine` used to surface the DTO
+    `ClusterUniversalStateVO` instead of the Method node, because token
+    extraction returned the inner Capitalized fragment.
+    """
+    from memory_center.mcp.tool_support import extract_symbol_like_token
+
+    assert extract_symbol_like_token("", "", "", "getClusterUniversalStateForAppMachine") == "getClusterUniversalStateForAppMachine"
+    assert extract_symbol_like_token("", "", "", "findOrderById") == "findOrderById"
+    assert extract_symbol_like_token("", "", "", "submitArticle") == "submitArticle"
+    assert extract_symbol_like_token("", "", "", "setStatus") == "setStatus"
+    assert extract_symbol_like_token("", "", "", "buildPageQuery") == "buildPageQuery"
+
+
+def test_extract_symbol_still_keeps_class_and_chain():
+    """The camel-method fix must not regress class / chain / Class#method
+    extraction (still-pinned natural-language and explicit forms)."""
+    from memory_center.mcp.tool_support import extract_symbol_like_token
+
+    assert extract_symbol_like_token("", "", "", "OrderService") == "OrderService"
+    assert extract_symbol_like_token("", "", "", "UserServiceImpl.submit") == "UserServiceImpl"
+    assert extract_symbol_like_token("", "", "", "com.example.api.ArticleFeignClient#moveArticle") == "com.example.api.ArticleFeignClient#moveArticle"
+
+
+def test_camel_method_query_hint_prefers_symbol():
+    """A pure camelCase method query must route to symbol_lookup (memory
+    symbol) instead of local_search/code, so the Method node surfaces.
+
+    Uses a small fixture workspace so the hint decision is deterministic.
+    """
+    from memory_center.core.orchestrator.workspace_ops import workspace_lookup_hint
+
+    # demo workspace (spring-cloud-demo) has real methods like getXxx.
+    hint = workspace_lookup_hint("examples/spring-cloud-demo/.memory-center/workspace.yaml", "getArticleList", limit=4)
+    assert hint.get("recommended_path") == "symbol_lookup", (
+        f"camel method query should route to symbol_lookup, got {hint.get('recommended_path')}"
+    )
+    assert "memory_symbol_tool" in hint.get("preferred_tools", [])
+
+
+def test_plain_local_search_phrase_not_rerouted_to_symbol():
+    """Over-filtering guard: a query that is clearly a local keyword phrase
+    (no camel symbol shape) must not be hijacked into symbol_lookup."""
+    from memory_center.core.orchestrator.workspace_ops import workspace_lookup_hint
+
+    hint = workspace_lookup_hint("examples/spring-cloud-demo/.memory-center/workspace.yaml", "where is the file path", limit=4)
+    # multi-word lowercase phrase with no symbol shape -> not symbol_lookup
+    assert hint.get("recommended_path") != "symbol_lookup"
+
+
 def test_mc_lookup_modes_direct(tmp_path: Path):
     wf = _setup_workspace(tmp_path)
     # symbol
