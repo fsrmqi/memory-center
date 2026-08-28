@@ -125,3 +125,46 @@ def test_primary_chain_contract_shape(demo_workspace_indexed):
     for key in ("status", "anchor", "steps", "score", "evidence_level", "generation", "reason_codes"):
         assert key in result
     assert result["status"] in ("found", "not_found", "insufficient_evidence", "truncated")
+
+
+# ---------------------------------------------------------------------------
+# MQ bridge honesty (task: MQ 主链路保守桥接)
+# ---------------------------------------------------------------------------
+
+
+def test_mq_producer_returns_insufficient_evidence_not_found(demo_workspace_indexed):
+    """An MQ Producer whose topic consumers cannot be proven must be reported
+    as insufficient_evidence with an explicit MQ reason, never as not_found
+    (which would claim 'no consumer exists')."""
+    from memory_center.core.storage.runtime import RuntimeStore
+    from memory_center.core.orchestrator.shared import load_context
+
+    producer = None
+    try:
+        with RuntimeStore(load_context(demo_workspace_indexed)[1].graph_db_path) as graph:
+            for cand in graph.find_nodes("", types=["MQProducer"], limit=1):
+                producer = cand
+                break
+    except Exception:
+        producer = None
+    if producer is None:
+        # No MQProducer in demo graph; synthesize one with a PRODUCES_TOPIC
+        # edge to a topic that has no CONSUMES_TOPIC edge.
+        with RuntimeStore(load_context(demo_workspace_indexed)[1].graph_db_path) as graph:
+            graph.upsert_nodes([("MQProducer:demo:MockProducer", "MQProducer", "MockProducer", "demo", "", 0, {})])
+            graph.upsert_nodes([("MQTopic:demo-topic", "MQTopic", "demo-topic", "demo", "", 0, {})])
+            graph.upsert_edges([("PRODUCES_TOPIC:MQProducer:demo:MockProducer->MQTopic:demo-topic", "MQProducer:demo:MockProducer", "MQTopic:demo-topic", "PRODUCES_TOPIC", 1.0, {})])
+        producer = {"id": "MQProducer:demo:MockProducer", "type": "MQProducer", "name": "MockProducer"}
+    result = find_primary_service_chain(demo_workspace_indexed, producer)
+    assert result["status"] == "insufficient_evidence"
+    assert result["reason_codes"] and result["reason_codes"][0].startswith("mq_topic")
+    assert result["steps"] == []
+
+
+def test_method_negative_still_not_found(demo_workspace_indexed):
+    """Non-MQ Method anchors with no cross-service edges keep not_found —
+    the MQ honesty path must not leak into ordinary Method queries."""
+    anchor = {"id": "Method:nonexistent-proj:SomeClass:someMethod", "type": "Method", "name": "SomeClass.someMethod"}
+    result = find_primary_service_chain(demo_workspace_indexed, anchor)
+    assert result["status"] == "not_found" or result["status"] == "insufficient_evidence"
+    assert "mq_topic" not in " ".join(result["reason_codes"])

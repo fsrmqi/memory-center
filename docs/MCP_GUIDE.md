@@ -375,6 +375,7 @@ The claim boundary is a logical gate, not prompt wording: responses carry machin
 - `not_found` / `insufficient_evidence`：无跨服务图证据或索引不完整。**不得把这种状态表述为"调用了下游服务"**。
 - 结构边（CONTAINS / DECLARES / IMPORTS）永不作链路主体；Feign 接口方法经 retrieval 层桥接到 FeignClient/FeignMethod（桥接步骤标 INFERRED）。
 - fast tier 跳过 primary_chain 以保持 P95；`best_match` / `candidate_paths` 等原有字段不受影响。
+- **MQ Producer 锚点**：当 Topic 的消费者无法从本地索引证明（binding→destination 映射在配置中心）时返回 `insufficient_evidence` + `mq_topic_consumer_unprovable` 等 reason，不返回 `not_found`（避免暗示"无消费者"），也不编造消费者。
 
 ### Resolution Diagnostics / 解析诊断边界（Phase D）
 

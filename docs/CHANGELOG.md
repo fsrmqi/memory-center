@@ -1,5 +1,12 @@
 # Changelog / 更新日志
 
+## 4.5.8 MQ Bridge Honesty / MQ 桥接诚实状态
+
+- `find_primary_service_chain` 对 **MQ Producer 锚点**新增诚实状态：当该 Producer 的 Topic 无法在本地索引中证明其消费者（consumer 的 binding→destination 映射在配置中心，本地不可得）时，返回 `insufficient_evidence` + 明确 reason（`mq_topic_consumer_unprovable` / `mq_producer_no_topic_edge`），**绝不**返回误导性的 `not_found`（那会暗示"无消费者存在"），也绝不编造消费者。
+- 真实驱动（ucap 全量 MQ 证据筛选）：producer topic 是业务名（`jiance-website-sensitive-event-detail`），consumer 是 Spring Cloud Stream 绑定名（`spring.cloud.stream.bindings.websiteSensitiveDetailTask`），两者无固定前缀可归一化（剥离 `jiance-<domain>-` 后驼峰匹配一对一数为 **0**），destination 映射不在本地源码/索引。**触发任务停止条件**：不实现 MQ canonical topic 桥接，保留 `insufficient_evidence`。
+- 桥接诚实性不影响既有 Feign/HTTP 主链路：ucap 回归 Feign found / HTTP found / 反例 not_found 不变，IR gate 通过（edge_coverage 1.0 / forbidden 0）。未改 resolver/parser/schema。
+- Added honest MQ status: MQ Producer anchors whose consumers cannot be proven return insufficient_evidence with an explicit MQ reason instead of a misleading not_found, after real-workspace evidence showed no fixed-rule topic normalization exists.
+
 ## 4.5.7 Primary Cross-Service Chain / 跨服务主链路
 
 - 新增 `memory_center/core/retrieval/primary_chain.py`：`find_primary_service_chain` 从 Method 锚点做有界分层 BFS，返回一条可解释的跨服务主链路（入口 Method → Feign 接口方法 → FeignMethod → 下游 Endpoint，或 HTTP Controller → Endpoint，或 MQ Producer → Topic → Consumer）。

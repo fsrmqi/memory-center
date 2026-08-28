@@ -181,7 +181,22 @@ def find_primary_service_chain(
     store = WorkspaceStore(workspace_file)
     generation = str(index_control_status(store).get("active_generation", "") or "")
     anchor_id = str(anchor_method.get("id", ""))
+    # MQ Producer anchor: report why a consumer chain cannot be proven before
+    # the Method-only gate, so the answer is insufficient_evidence with a
+    # specific MQ reason, never a fabricated consumer or a misleading
+    # anchor_not_method.
     if not anchor_id or not str(anchor_method.get("type", "")).startswith("Method"):
+        if str(anchor_method.get("type", "")).startswith("MQProducer"):
+            mq_reason = _detect_mq_producer_without_provable_consumer(workspace_file, anchor_id)
+            return {
+                "status": "insufficient_evidence",
+                "reason_codes": [mq_reason or "mq_topic_bridge_unsupported"],
+                "anchor": anchor_method,
+                "steps": [],
+                "score": 0.0,
+                "evidence_level": "AMBIGUOUS",
+                "generation": generation,
+            }
         return {"status": "insufficient_evidence", "reason_codes": ["anchor_not_method"], "anchor": anchor_method, "steps": [], "score": 0.0, "evidence_level": "AMBIGUOUS", "generation": generation}
 
     started = time.perf_counter()
@@ -274,6 +289,16 @@ def find_primary_service_chain(
         }
 
     status = "not_found" if not reason_codes else "insufficient_evidence"
+    # MQ Producer anchor: a PRODUCES_TOPIC edge to a Topic whose consumers
+    # cannot be proven (binding/destination mapping lives outside the local
+    # index, e.g. a config center) must be reported as insufficient_evidence,
+    # never as not_found — not_found would imply "no consumer exists".
+    mq_marker = _detect_mq_producer_without_provable_consumer(workspace_file, anchor_id)
+    if mq_marker:
+        status = "insufficient_evidence"
+        reason_codes = reason_codes or []
+        if mq_marker not in reason_codes:
+            reason_codes.append(mq_marker)
     return {
         "status": status,
         "anchor": anchor_method,
@@ -283,3 +308,40 @@ def find_primary_service_chain(
         "generation": generation,
         "reason_codes": reason_codes or ["no_cross_service_edge"],
     }
+
+
+def _detect_mq_producer_without_provable_consumer(workspace_file: str, node_id: str) -> str:
+    """Return a reason code when the node is an MQ Producer whose topic has
+    consumers that cannot be proven from local index evidence.
+
+    The MQ topic bridge (canonicalize producer topic == consumer binding) is
+    intentionally NOT implemented: on real workspaces the consumer's
+    destination mapping lives in a config center and the naming spaces do not
+    normalize under fixed prefix rules. This keeps the answer honest instead
+    of fabricating a consumer.
+    """
+    if not str(node_id).startswith("MQProducer:"):
+        return ""
+    from memory_center.core.orchestrator.shared import load_context
+    from memory_center.core.storage.runtime import RuntimeStore
+
+    try:
+        with RuntimeStore(load_context(workspace_file)[1].graph_db_path) as graph:
+            topics = [
+                str(e.get("target_id", ""))
+                for e in graph.edges_for_node(node_id, direction="downstream", limit=20)
+                if str(e.get("type", "")) == "PRODUCES_TOPIC"
+            ]
+            if not topics:
+                return "mq_producer_no_topic_edge"
+            for topic in topics:
+                consumers = [
+                    str(e.get("source_id", ""))
+                    for e in graph.edges_for_node(topic, direction="upstream", limit=20)
+                    if str(e.get("type", "")) == "CONSUMES_TOPIC"
+                ]
+                if not consumers:
+                    return "mq_topic_consumer_unprovable"
+    except Exception:
+        return "mq_topic_bridge_unavailable"
+    return ""
