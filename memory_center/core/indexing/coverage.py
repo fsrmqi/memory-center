@@ -133,6 +133,13 @@ def coverage_for_scope(store, *, project: str = "", paths: list[str] | None = No
     result = ledger.summary()
     known = bool(rows) and not unresolved_scope
     unknown = 0 if known else 1
+    # Semantic calibration: `unsupported_syntax` skipped rows are explicitly
+    # non-source resources (xml/png/json/md/...) irrelevant to any Java query
+    # or change scope. They stay audited but never block a negative claim or
+    # the release gate; only relevant-unsupported and parse-failed rows do.
+    reason_counts = {str(item.get("code", "")): int(item.get("count", 0) or 0) for item in (result["reasons"] or [])}
+    irrelevant_excluded = int(reason_counts.get("unsupported_syntax", 0) or 0)
+    relevant_unsupported = max(0, int(result["skipped"]) - irrelevant_excluded)
     return {
         "scope_kind": "paths" if requested_paths else ("project" if project else "workspace"),
         "requested_files": result["total_files"],
@@ -141,6 +148,8 @@ def coverage_for_scope(store, *, project: str = "", paths: list[str] | None = No
         "skipped_files": result["skipped"],
         "failed_files": result["failed"],
         "unknown_files": unknown,
+        "irrelevant_excluded": irrelevant_excluded,
+        "relevant_unsupported": relevant_unsupported,
         "reasons": result["reasons"] if known else [{"code": "coverage_scope_unknown", "count": 1}],
         "truncated": False,
     }

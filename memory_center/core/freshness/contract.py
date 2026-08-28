@@ -55,6 +55,14 @@ def _coverage_from_control(control: dict[str, Any]) -> dict[str, Any]:
     coverage_known = bool(summary) and total > 0
     if not coverage_known:
         unknown_files = 1
+    # Semantic calibration: `unsupported_syntax` skipped files are explicitly
+    # non-source resources (xml/png/json/md/...) that are irrelevant to any
+    # Java query or change scope. They stay audited but never block a negative
+    # claim or the release gate. Only relevant-unsupported, parse-failed, and
+    # scope-unknown rows do.
+    reason_counts = {str(r.get("code", "")): int(r.get("count", 0) or 0) for r in reasons}
+    irrelevant_excluded = int(reason_counts.get("unsupported_syntax", 0) or 0)
+    relevant_unsupported = max(0, int(summary.get("skipped", 0) or 0) - irrelevant_excluded)
     return {
         "scope_kind": "workspace",
         "requested_files": total,
@@ -63,6 +71,8 @@ def _coverage_from_control(control: dict[str, Any]) -> dict[str, Any]:
         "skipped_files": int(summary.get("skipped", 0) or 0),
         "failed_files": int(summary.get("failed", 0) or 0),
         "unknown_files": unknown_files,
+        "irrelevant_excluded": irrelevant_excluded,
+        "relevant_unsupported": relevant_unsupported,
         "reasons": list(reasons) if coverage_known else [{"code": "coverage_unknown", "count": 1}],
         "truncated": False,
     }
@@ -148,11 +158,14 @@ def evaluate_claim_boundary(
         reason_codes.append("generation_stale")
 
     coverage = index_context.get("coverage", {}) if isinstance(index_context.get("coverage"), dict) else {}
+    # Semantic calibration: explicitly irrelevant excluded resources
+    # (unsupported_syntax: xml/png/json/md/...) never block a negative claim.
+    # Only relevant-unsupported, parse-failed, and scope-unknown rows do.
     unclean = (
         int(coverage.get("partial_files", 0) or 0)
-        + int(coverage.get("skipped_files", 0) or 0)
         + int(coverage.get("failed_files", 0) or 0)
         + int(coverage.get("unknown_files", 0) or 0)
+        + int(coverage.get("relevant_unsupported", 0) or 0)
     )
     if unclean:
         reason_codes.append("coverage_partial")

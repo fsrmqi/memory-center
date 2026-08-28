@@ -84,6 +84,8 @@ def _context(**overrides):
             "skipped_files": 0,
             "failed_files": 0,
             "unknown_files": 0,
+            "irrelevant_excluded": 0,
+            "relevant_unsupported": 0,
             "reasons": [],
             "truncated": False,
         },
@@ -120,7 +122,7 @@ def test_stale_generation_blocks_negative_claim():
     ("field", "value", "expected_code"),
     [
         ("partial_files", 2, "coverage_partial"),
-        ("skipped_files", 1, "coverage_partial"),
+        ("relevant_unsupported", 1, "coverage_partial"),
         ("failed_files", 1, "coverage_partial"),
         ("unknown_files", 3, "coverage_partial"),
         ("truncated", True, "query_truncated"),
@@ -133,6 +135,18 @@ def test_partial_coverage_blocks_negative_claim(field, value, expected_code):
     assert gate["negative_claim_allowed"] is False
     assert expected_code in gate["reason_codes"]
     assert gate["evidence_level"] == "AMBIGUOUS"
+
+
+def test_irrelevant_excluded_does_not_block_negative_claim():
+    """Semantic calibration: explicitly irrelevant excluded resources
+    (unsupported_syntax) never block a negative claim; only relevant
+    unsupported / parse-failed / scope-unknown rows do."""
+    coverage = _context()["coverage"]
+    coverage["irrelevant_excluded"] = 500
+    coverage["relevant_unsupported"] = 0
+    gate = evaluate_claim_boundary(_context(coverage=coverage), result_count=0)
+    assert gate["negative_claim_allowed"] is True
+    assert "coverage_partial" not in gate["reason_codes"]
 
 
 def test_timed_out_query_blocks_negative_claim():
@@ -162,10 +176,12 @@ def test_assemble_index_context_on_indexed_workspace(demo_workspace_str):
     assert coverage["requested_files"] > 0
     assert coverage["indexed_files"] + coverage["skipped_files"] == coverage["requested_files"]
     assert any(row["code"] == "unsupported_syntax" for row in coverage["reasons"])
-    # demo workspace ships non-Java files -> negative claims must degrade
+    # Semantic calibration: demo's skipped files are irrelevant resources
+    # (unsupported_syntax), so they must be audited as irrelevant_excluded and
+    # NOT block a negative claim on coverage grounds.
+    assert coverage["irrelevant_excluded"] >= coverage["skipped_files"] or coverage["relevant_unsupported"] == 0
     gate = evaluate_claim_boundary(context, result_count=0)
-    assert gate["negative_claim_allowed"] is False
-    assert "coverage_partial" in gate["reason_codes"]
+    assert "coverage_partial" not in gate["reason_codes"]
 
 
 def test_assemble_index_context_without_active_generation(demo_workspace):

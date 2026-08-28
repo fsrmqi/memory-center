@@ -1,5 +1,14 @@
 # Changelog / 更新日志
 
+## 4.6.5 Coverage Semantic Calibration / 覆盖度语义校准
+
+- coverage 原因细分：skipped 按 reason 拆分为 **`irrelevant_excluded`**（`unsupported_syntax`：xml/png/json/md 等明确无关的非源码资源）与 **`relevant_unsupported`**（相关但解析器不支持）。
+- `claim_boundary` 语义校准：**明确无关的排除资源不再阻断否定性结论**；只有 `relevant_unsupported` / `parse_failed` / `scope_unknown`（含 partial/failed/unknown）才阻断。legacy 无 reason 时保持保守（skipped 仍阻断）。
+- `quality-gate` 同步：coverage 检查只把 relevant-unsupported/failed/unknown 计为 unclean，irrelevant-excluded 仅审计。ucap 实测 coverage 从 attention → **pass**（2611 个无关资源不再制造永久 attention），claim_boundary 从 `coverage_partial` 阻断 → 仅剩 freshness 信号。
+- **未降低 coverage 标准**：ucap relevant_unsupported=0、failed=0、unknown=0，无任何真实相关未覆盖被放宽；所有跳过仍保留审计。
+- 测试更新：`relevant_unsupported` 阻断、`irrelevant_excluded` 不阻断、demo 集成断言校准；全量回归绿、IR gate 通过。
+- Calibrated coverage semantics: explicitly irrelevant excluded resources no longer block negative claims or the release gate; only relevant-unsupported/parse-failed/scope-unknown do, with no coverage-standard reduction.
+
 ## 4.6.4 Release Quality System / 发布质量体系
 
 四子项目收敛为长期可发布的质量保障能力（均为 additive / 只读，未改 parser/resolver/schema）：

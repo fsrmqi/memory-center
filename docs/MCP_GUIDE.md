@@ -491,3 +491,5 @@ HTTP GET 只允许无副作用读取；所有写入 route 必须 POST。非回�
 - CLI `quality-gate --workspace ...`：只读发布质量门禁，汇总 generation 健康 / coverage / retrieval replay+perf / IR diff gate / 存储 dry-run，输出 `pass|attention|block|real_case_missing`；不执行 reindex/GC/VACUUM/用户命令。
 - `change_review` 响应附带 additive `validation_plan`：最小可证伪验证方案（DTO/Feign/HTTP/MQ/Config/私有方法/删除）；MQ 缺 destination 为 `insufficient_evidence`，contract block 为 `blocked`。
 - HTTP `/workspace/quality-overview`：脱敏、有界的质量 + 空间 + generation 健康视图，供 DSH/Workbench 只读展示；不暴露查询正文/源码/绝对路径。
+
+- **coverage 语义校准**：`index_context.coverage` 新增 `irrelevant_excluded`（unsupported_syntax 的非源码资源，如 xml/png/json/md）与 `relevant_unsupported`（相关但解析器不支持）。`claim_boundary` 只在 `relevant_unsupported`/`parse_failed`/`scope_unknown` 时拒绝否定性结论；明确无关的排除资源仅审计、不阻断。

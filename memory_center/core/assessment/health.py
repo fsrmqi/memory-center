@@ -97,12 +97,20 @@ def run_quality_health_gate(
         attention.append("coverage_missing")
         checks.append(_check("coverage", "attention", "no coverage ledger (legacy index); negative claims refused"))
     else:
-        partial = int(coverage.get("partial_files", 0) or 0) + int(coverage.get("skipped_files", 0) or 0) + int(coverage.get("failed_files", 0) or 0)
+        # Semantic calibration: explicitly irrelevant excluded resources
+        # (unsupported_syntax) don't create a permanent attention; only
+        # relevant-unsupported, parse-failed, and scope-unknown rows do.
+        partial = (
+            int(coverage.get("relevant_unsupported", 0) or 0)
+            + int(coverage.get("failed_files", 0) or 0)
+            + int(coverage.get("unknown_files", 0) or 0)
+        )
+        irrelevant = int(coverage.get("irrelevant_excluded", 0) or 0)
         if partial:
             attention.append("coverage_partial")
         checks.append(_check(
             "coverage", "attention" if partial else "pass",
-            f"{coverage.get('indexed_files')}/{coverage.get('requested_files')} parsed, {partial} unclean",
+            f"{coverage.get('indexed_files')}/{coverage.get('requested_files')} parsed, {partial} unclean, {irrelevant} irrelevant-excluded",
         ))
     gate = evaluate_claim_boundary(ctx)
     if gate["negative_claim_allowed"] and coverage.get("requested_files", 0) > 0 and freshness == "FRESH":
