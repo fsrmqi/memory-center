@@ -9,7 +9,7 @@ from memory_center.core.foundation.errors import InvalidInputError
 from memory_center.core.observability.diagnostics import DIAG, diag_entry
 
 _JAVA_CHAIN_SYMBOL_RE = re.compile(
-    r"((?:[a-z_][\w$]*\.)+[A-Z][\w$]*(?:#[a-zA-Z_][\w$]*)?|(?<![a-z_])[A-Z][\w$]*(?:#[a-zA-Z_][\w$]*)?)"
+    r"((?:[a-z_][\w$]*\.)+[A-Z][\w$]*(?:#[a-zA-Z_][\w$]*)?|(?<![a-z_])[A-Z][\w$]*\.[a-z_][\w$]*(?:#[a-zA-Z_][\w$]*)?|(?<![a-z_])[A-Z][\w$]*(?:#[a-zA-Z_][\w$]*)?)"
 )
 # Lowercase-starting camelCase method names (getXxx / setXxx / buildXxx / ...)
 # are real symbols too. The class-name pattern above cannot match them, so a

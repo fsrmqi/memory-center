@@ -216,6 +216,38 @@ def test_mcp_lookup_extracts_symbol_from_natural_language_query():
     assert wants_deep_chain(query) is True
 
 
+def test_extract_symbol_keeps_class_dot_method():
+    """`Class.method` queries must extract the full dotted symbol (not just
+    the class) so auto routes to a Method anchor instead of a Class.
+
+    Regression from replay: `MediaGraphicServiceImpl.getUserName` used to
+    truncate to `MediaGraphicServiceImpl` -> Class anchor -> no primary_chain.
+    """
+    from memory_center.mcp.tool_support import extract_symbol_like_token
+
+    assert extract_symbol_like_token("", "", "", "MediaGraphicServiceImpl.getUserName") == "MediaGraphicServiceImpl.getUserName"
+    assert extract_symbol_like_token("", "", "", "VersionController.apiGetVersion") == "VersionController.apiGetVersion"
+    # pure class name and Class#method still intact
+    assert extract_symbol_like_token("", "", "", "OrderService") == "OrderService"
+    assert extract_symbol_like_token("", "", "", "com.example.api.ArticleFeignClient#moveArticle") == "com.example.api.ArticleFeignClient#moveArticle"
+
+
+def test_lookup_hint_symbol_wins_over_api_token():
+    """A `Controller.method` query carrying an `api` token must stay on
+    symbol_lookup, not be downgraded to cross_service/context.
+
+    Regression from replay: `VersionController.apiGetVersion` was routed to
+    context because the `api` substring triggered the cross-service rule.
+    """
+    from memory_center.core.orchestrator.workspace_ops import workspace_lookup_hint
+
+    hint = workspace_lookup_hint("examples/spring-cloud-demo/.memory-center/workspace.yaml", "VersionController.apiGetVersion", limit=4)
+    assert hint.get("recommended_path") == "symbol_lookup", (
+        f"Controller.method with api token must route to symbol_lookup, got {hint.get('recommended_path')}"
+    )
+    assert "memory_symbol_tool" in hint.get("preferred_tools", [])
+
+
 def test_extract_symbol_keeps_camel_method_names():
     """A lowercase-starting camelCase method name is itself a symbol; it must
     not be truncated to an inner Capitalized fragment (a DTO) or dropped.
@@ -236,11 +268,12 @@ def test_extract_symbol_keeps_camel_method_names():
 
 def test_extract_symbol_still_keeps_class_and_chain():
     """The camel-method fix must not regress class / chain / Class#method
-    extraction (still-pinned natural-language and explicit forms)."""
+    extraction. Class.method now resolves to the full dotted method (more
+    precise); pure class and Class#method stay intact."""
     from memory_center.mcp.tool_support import extract_symbol_like_token
 
     assert extract_symbol_like_token("", "", "", "OrderService") == "OrderService"
-    assert extract_symbol_like_token("", "", "", "UserServiceImpl.submit") == "UserServiceImpl"
+    assert extract_symbol_like_token("", "", "", "UserServiceImpl.submit") == "UserServiceImpl.submit"
     assert extract_symbol_like_token("", "", "", "com.example.api.ArticleFeignClient#moveArticle") == "com.example.api.ArticleFeignClient#moveArticle"
 
 

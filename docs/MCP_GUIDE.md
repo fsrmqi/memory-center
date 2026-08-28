@@ -372,6 +372,7 @@ The claim boundary is a logical gate, not prompt wording: responses carry machin
 ```
 
 - `status=found`：含至少一个跨服务/契约关系边（CALLS_SERVICE / IMPLEMENTS_FEIGN / HANDLES_ENDPOINT / PRODUCES_TOPIC / CONSUMES_TOPIC），且证据不是 AMBIGUOUS。
+- `Class.method` 形式的查询（如 `Service.getUserName`）会完整提取为方法符号，`mc_lookup(auto)` 直接命中 Method 锚点并触发主链路；含 `Controller`/`Service` 的方法名查询优先走 symbol，不会被 `api` 等 token 降级到 context。
 - `not_found` / `insufficient_evidence`：无跨服务图证据或索引不完整。**不得把这种状态表述为"调用了下游服务"**。
 - 结构边（CONTAINS / DECLARES / IMPORTS）永不作链路主体；Feign 接口方法经 retrieval 层桥接到 FeignClient/FeignMethod（桥接步骤标 INFERRED）。
 - fast tier 跳过 primary_chain 以保持 P95；`best_match` / `candidate_paths` 等原有字段不受影响。

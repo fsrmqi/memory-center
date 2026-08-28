@@ -1,5 +1,17 @@
 # Changelog / 更新日志
 
+## 4.5.9 Replay Calibration / Replay 校准（跨服务主链路）
+
+- 新增 18 条脱敏 replay case 集（Feign 4 / HTTP 4 / 同名 3 / 反例 3 / MQ 2 / project 2），在真实多服务工作区跑 `mc_lookup(auto)` 校准。
+- 修复 3 处 retrieval 问题（均不改 parser/resolver/schema）：
+  1. `extract_symbol_like_token` 支持 `Class.method` 形式，`Service.getUserName` 不再被截断为类名，symbol 命中 Method；
+  2. `find_primary_service_chain` 对缺 node id 的 Method anchor 按 name 精确解析真实 id，BFS 可启动；
+  3. `workspace_lookup_hint` 符号定位优先：含 `Controller`/`Service`/驼峰方法名时不被 `api` token 降级到 context。
+- 修复后 Feign 主链路 0/4 → 3/4 found、HTTP 0/4 → 2/4 found；反例 3/3 not_found 不编造；MQ 2/2 `insufficient_evidence` 正确边界；project 2/2 非 code-only。
+- 失败分类：`CHAIN_WRONG` 0、`CHAIN_MISSING_WITH_GRAPH_EVIDENCE` 0；剩余为同名干扰 `ANCHOR_RANKED_LOW`（证据边界，不模糊匹配修复）。
+- 新增 4 个排序/路由锚点测试（Class.method 提取、hint 符号优先、anchor id 解析、Class.method 完整保留）；IR gate 通过（edge_coverage 1.0 / forbidden 0）；默认 symbol P95 ~2ms。
+- Added replay calibration: 18 sanitized cases, 3 retrieval-only fixes (Class.method token, anchor-id resolution, symbol-over-api hint priority), and Feign/HTTP main-chain hit-rate improvement without parser/resolver/schema changes.
+
 ## 4.5.8 MQ Bridge Honesty / MQ 桥接诚实状态
 
 - `find_primary_service_chain` 对 **MQ Producer 锚点**新增诚实状态：当该 Producer 的 Topic 无法在本地索引中证明其消费者（consumer 的 binding→destination 映射在配置中心，本地不可得）时，返回 `insufficient_evidence` + 明确 reason（`mq_topic_consumer_unprovable` / `mq_producer_no_topic_edge`），**绝不**返回误导性的 `not_found`（那会暗示"无消费者存在"），也绝不编造消费者。

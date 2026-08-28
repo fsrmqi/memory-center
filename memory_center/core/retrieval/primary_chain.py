@@ -181,6 +181,24 @@ def find_primary_service_chain(
     store = WorkspaceStore(workspace_file)
     generation = str(index_control_status(store).get("active_generation", "") or "")
     anchor_id = str(anchor_method.get("id", ""))
+    # find_symbols best_match often carries no node id; when the anchor is a
+    # Method whose name is `Class.method`, resolve the real node id from the
+    # graph by exact name so the chain search can start. Pure retrieval-layer
+    # resolution, never a schema change.
+    if not anchor_id and str(anchor_method.get("type", "")).startswith("Method"):
+        name = str(anchor_method.get("name", ""))
+        if name:
+            from memory_center.core.orchestrator.shared import load_context
+            from memory_center.core.storage.runtime import RuntimeStore
+
+            try:
+                with RuntimeStore(load_context(workspace_file)[1].graph_db_path) as graph:
+                    node = graph.node_by_name_exact(name, types=["Method"])
+                    if node is not None and node.get("id"):
+                        anchor_id = str(node["id"])
+                        anchor_method = {**anchor_method, "id": anchor_id}
+            except Exception:
+                pass
     # MQ Producer anchor: report why a consumer chain cannot be proven before
     # the Method-only gate, so the answer is insufficient_evidence with a
     # specific MQ reason, never a fabricated consumer or a misleading

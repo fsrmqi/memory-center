@@ -490,7 +490,7 @@ def workspace_lookup_hint(
         should_use_memory_center = True
         reasons.append("查询包含调用链或依赖分析语义，适合先走图谱链路工具。")
 
-    if any(token in normalized for token in ["跨服务", "影响", "风险", "契约", "mq", "kafka", "rocketmq", "api", "接口"]):
+    if any(token in normalized for token in ["跨服务", "影响", "风险", "契约", "mq", "kafka", "rocketmq", "api", "接口"]) and recommended_path != "symbol_lookup":
         preferred_tools = ["workspace_sniff_tool", "memory_impact_tool", "memory_context_tool"]
         recommended_path = "cross_service_analysis"
         should_use_memory_center = True

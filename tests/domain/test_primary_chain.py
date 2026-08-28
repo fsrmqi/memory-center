@@ -167,4 +167,33 @@ def test_method_negative_still_not_found(demo_workspace_indexed):
     anchor = {"id": "Method:nonexistent-proj:SomeClass:someMethod", "type": "Method", "name": "SomeClass.someMethod"}
     result = find_primary_service_chain(demo_workspace_indexed, anchor)
     assert result["status"] == "not_found" or result["status"] == "insufficient_evidence"
+
+
+def test_anchor_without_id_resolves_by_name(demo_workspace_indexed):
+    """A Method anchor with only `name` (no id, as find_symbols returns) must
+    resolve its real node id from the graph so the chain search can start.
+    Regression from replay: Class.method anchors had id=None -> anchor_not_method."""
+    from memory_center.core.orchestrator.query import memory_symbol
+
+    info = memory_symbol(demo_workspace_indexed, "ArticleController", limit=3, project="article-service")
+    anchor = None
+    if info.get("found"):
+        anchor = next(
+            (m for m in info.get("matches", []) if m.get("type") == "Method"),
+            None,
+        )
+    if anchor is None:
+        # synthesize a Method anchor that exists by name in the graph
+        from memory_center.core.orchestrator.shared import load_context
+        from memory_center.core.storage.runtime import RuntimeStore
+
+        with RuntimeStore(load_context(demo_workspace_indexed)[1].graph_db_path) as graph:
+            graph.upsert_nodes([("Method:demo:Anchor:run", "Method", "Anchor.run", "demo", "", 0, {})])
+        anchor = {"type": "Method", "name": "Anchor.run"}
+    # drop the id to simulate find_symbols best_match
+    anchor = {k: v for k, v in anchor.items() if k != "id"}
+    result = find_primary_service_chain(demo_workspace_indexed, anchor)
+    # must not be anchor_not_method: id was resolved (or no chain -> clean not_found)
+    assert result["status"] in ("found", "not_found", "insufficient_evidence")
+    assert "anchor_not_method" not in result["reason_codes"]
     assert "mq_topic" not in " ".join(result["reason_codes"])
