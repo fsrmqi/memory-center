@@ -1269,3 +1269,79 @@ def workspace_check_rules(workspace_file: str | Path, projects: list[str] | None
     intent = f"{change_type} {' '.join(projects or [])} {' '.join(files or [])}"
     rules = match_rules(store, intent=intent, files=files or [], scopes=[change_type])
     return {"projects": projects or [], "change_type": change_type, "files": files or [], "rules": rules}
+
+
+def workspace_quality_overview(
+    workspace_file: str | Path,
+    *,
+    limit: int = 10,
+) -> dict[str, Any]:
+    """Read-only quality + storage + generation health view for a workbench.
+
+    Aggregates the unified quality gate (A-E), scoped-refresh performance,
+    IR diff gate, and storage dry-run candidates into one bounded, sanitized
+    projection. Never executes reindex/GC/VACUUM; never exposes source/paths/
+    query text.
+    """
+    from memory_center.core.assessment.health import run_quality_health_gate
+    from memory_center.core.freshness.contract import assemble_index_context
+    from memory_center.core.retrieval.planner import scoped_refresh_performance_status
+
+    ws = str(workspace_file)
+    health = run_quality_health_gate(ws, replay_ok=None)
+    perf = scoped_refresh_performance_status(ws, limit=min(limit, 50))
+    ctx = assemble_index_context(ws)
+    store = WorkspaceStore(ws)
+
+    # Storage dry-run candidates (read-only).
+    try:
+        from memory_center.core.indexing.control_plane import index_control_status
+        from memory_center.core.indexing.shards import cleanup_generations
+
+        ctrl = index_control_status(store)
+        gc = cleanup_generations(
+            store,
+            active_generation=str(ctrl.get("active_generation", "") or ""),
+            previous_generation=str(ctrl.get("previous_generation", "") or ""),
+            keep=2,
+            apply=False,
+        )
+        storage = {
+            "gc_candidates": len(gc.get("candidates", []) or []),
+            "gc_candidate_bytes_mb": round(float(gc.get("candidate_bytes", 0) or 0) / 1e6, 1),
+        }
+    except Exception:
+        storage = {"gc_candidates": 0, "gc_candidate_bytes_mb": 0.0}
+
+    gen = store.index_dir / "generations"
+    from pathlib import Path as _P
+
+    generation_count = len([p for p in _P(gen).iterdir() if p.is_dir()]) if _P(gen).exists() else 0
+    storage["generation_count"] = generation_count
+
+    return {
+        "schema_version": 1,
+        "status": health["status"],
+        "overview": {
+            "active_generation": health["generation"]["active"],
+            "previous_generation": health["generation"]["previous"],
+            "freshness": ctx.get("freshness"),
+            "coverage": {k: ctx.get("coverage", {}).get(k) for k in ("indexed_files", "requested_files")},
+            "release_gate_status": health["status"],
+            "next_actions": health["next_actions"][:3],
+        },
+        "retrieval": {
+            "replay_status": next((c["status"] for c in health["checks"] if c["id"] == "retrieval_replay"), "real_case_missing"),
+            "ir_gate": health.get("quality", {}).get("ir_gate", {}),
+            "anchor_recall": (health.get("quality", {}).get("ir_gate") or {}).get("anchor_recall"),
+        },
+        "refresh_performance": {
+            "p50_ms": perf.get("p50_ms"),
+            "p95_ms": perf.get("p95_ms"),
+            "budget_ms": perf.get("budget_ms"),
+            "status": perf.get("status"),
+        },
+        "storage": storage,
+        "attention_reasons": health["attention_reasons"][:8],
+        "blocking_reasons": health["blocking_reasons"][:8],
+    }

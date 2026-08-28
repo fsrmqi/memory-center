@@ -175,3 +175,22 @@ def register_gate_commands(app: typer.Typer) -> None:
         if not result["passed"]:
             raise typer.Exit(code=1)
 
+    @app.command("quality-gate")
+    def quality_gate_cmd(
+        workspace: str = typer.Option(..., help="Workspace yaml file."),
+        replay_ok: Optional[bool] = typer.Option(None, help="Optional: mark replay cases passed/failed."),
+        replay_summary: str = typer.Option("", help="Optional sanitized replay summary."),
+    ):
+        """Run the unified read-only quality health gate (A-E checks).
+
+        Aggregates generation health, contract, retrieval/perf, IR diff gate
+        and storage into one publish decision. Read-only: never reindexes,
+        never GCs/vacuums, never runs user commands.
+        """
+        from memory_center.core.assessment.health import run_quality_health_gate
+
+        result = run_quality_health_gate(workspace, replay_ok=replay_ok, replay_summary=replay_summary)
+        print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+        if result["status"] == "block":
+            raise typer.Exit(code=1)
+

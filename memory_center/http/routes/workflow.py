@@ -42,6 +42,7 @@ from memory_center.application.http_facades import (
 from memory_center.application.quality_gates import quality_gates_summary
 from memory_center.core.observability.agent_execution import summarize_agent_execution
 from memory_center.core.orchestrator import workspace_list_consolidation_candidates, workspace_workbench_summary
+from memory_center.core.orchestrator import workspace_quality_overview
 from memory_center.core.orchestrator import workspace_task_delivery_overview
 from memory_center.core.knowledge.projection import workspace_knowledge_summary
 from memory_center.core.foundation.dispatch import CommandRegistry
@@ -263,6 +264,10 @@ def register_workflow_routes(registry: CommandRegistry) -> None:
     registry.register("/workspace/workbench-summary", lambda rp: workspace_workbench_summary(
         rp.workspace(),
         limit=_parse_int(rp.params, "limit", 5),
+    ))
+    registry.register("/workspace/quality-overview", lambda rp: workspace_quality_overview(
+        rp.workspace(),
+        limit=_parse_int(rp.params, "limit", 10),
     ))
     registry.register("/workspace/knowledge-summary", lambda rp: workspace_knowledge_summary(
         rp.workspace(),

@@ -180,6 +180,20 @@ def build_change_review_plan(
         "cache": {"status": "miss", "ttl_seconds": _CACHE_TTL_SECONDS},
     }
     result = _apply_detail_level(result, detail)
+    # Additive validation plan (subproject 2): minimal falsifiable, executable
+    # verification design. Never runs commands; MQ without destination stays
+    # insufficient_evidence; a contract breaking change forces blocked.
+    try:
+        contract_diff = store.read_json_prefer_backend("contract-diff.json", {}) or {}
+        contract_block = int(contract_diff.get("breaking_count", 0) or 0) > 0
+        result["validation_plan"] = _build_validation_plan(
+            list(changed),
+            contract_nodes,
+            sorted(deleted),
+            contract_block,
+        )
+    except Exception:
+        result["validation_plan"] = {"status": "blocked", "minimum_actions": [], "critical_hypotheses": [], "continue_if": [], "stop_if": ["validation-plan-unavailable"], "rollback": [], "evidence_required": [], "coverage": {"risk_categories": [], "uncovered_risks": ["validation_plan_unavailable"]}}
     # Additive Phase A contract: index_context + claim_boundary so consumers
     # know which generation the review ran against and whether an empty
     # impact result may be read as "no impact".
@@ -219,6 +233,125 @@ def _impact_endpoint(impact: dict[str, Any], seed_id: str) -> dict[str, Any]:
 
 def _compact_node(node: dict[str, Any]) -> dict[str, Any]:
     return {key: node.get(key, "") for key in ("id", "type", "name", "project", "file_path", "line")}
+
+
+# Risk category -> minimal falsifiable validation plan (subproject 2).
+# Never executes commands; returns the minimum evidence a verifier must obtain.
+_RISK_VALIDATION: dict[str, dict[str, Any]] = {
+    "dto": {
+        "risk_category": "dto_contract",
+        "minimum_actions": ["serialization/deserialization compatibility check", "consumer contract check"],
+        "evidence_required": ["contract-gate", "consumer-validation"],
+    },
+    "feign": {
+        "risk_category": "feign_contract",
+        "minimum_actions": ["request/response compatibility", "caller + endpoint contract check"],
+        "evidence_required": ["contract", "affected-consumer-evidence"],
+    },
+    "http": {
+        "risk_category": "http_route",
+        "minimum_actions": ["route mapping check", "status-code check", "caller path check"],
+        "evidence_required": ["route-contract"],
+    },
+    "mq": {
+        "risk_category": "mq_producer_consumer",
+        "minimum_actions": ["topic/message-type static evidence"],
+        "evidence_required": ["extracted-graph", "insufficient-evidence-if-no-destination"],
+    },
+    "config": {
+        "risk_category": "config_key",
+        "minimum_actions": ["config read-point check", "default-value check", "migration-strategy check"],
+        "evidence_required": ["config-usage-evidence"],
+    },
+    "method": {
+        "risk_category": "private_method",
+        "minimum_actions": ["unit test or direct call-chain verification"],
+        "evidence_required": ["local-call-evidence"],
+    },
+    "delete": {
+        "risk_category": "delete_or_move",
+        "minimum_actions": ["old node/reference cleanup check", "test-association check"],
+        "evidence_required": ["graph-change-evidence"],
+    },
+}
+
+_CONTRACT_NODE_TYPES_FOR_RISK = ("DTO", "FeignClient", "Endpoint", "MQProducer", "MQConsumer", "ConfigKey")
+
+
+def _risk_for_changed(changed: list[str], contract_nodes: list[dict[str, Any]], deleted: list[str]) -> list[dict[str, Any]]:
+    """Classify changed files into risk categories using graph evidence only."""
+    risks: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for node in contract_nodes:
+        ntype = str(node.get("type", ""))
+        for risk_type, mapping in _RISK_VALIDATION.items():
+            if risk_type == "mq" and ntype in ("MQProducer", "MQConsumer"):
+                pass
+            elif risk_type == "dto" and ntype == "DTO":
+                pass
+            elif risk_type == "feign" and ntype == "FeignClient":
+                pass
+            elif risk_type == "http" and ntype == "Endpoint":
+                pass
+            elif risk_type == "config" and ntype == "ConfigKey":
+                pass
+            else:
+                continue
+            key = f"{risk_type}:{node.get('id')}"
+            if key in seen:
+                break
+            seen.add(key)
+            risks.append({"category": risk_type, "node_type": ntype, **mapping})
+            break
+    if not risks and changed:
+        # No contract node evidence: classify by file shape when present, else
+        # treat as private/local change (never fabricate a contract risk).
+        risks.append({"category": "method", "node_type": "Method", **_RISK_VALIDATION["method"]})
+    if deleted:
+        risks.append({"category": "delete", "node_type": "File", **_RISK_VALIDATION["delete"]})
+    return risks
+
+
+def _build_validation_plan(changed: list[str], contract_nodes: list[dict[str, Any]], deleted: list[str], contract_block: bool) -> dict[str, Any]:
+    """Build the additive validation_plan for a change review (subproject 2).
+
+    A plan is a suggestion, never a command. Without graph evidence no test
+    scope is claimed; MQ without a destination stays insufficient_evidence;
+    a contract block forces status=blocked; high-risk changes always carry a
+    stop_if and rollback.
+    """
+    if not changed:
+        return {"status": "not_applicable", "minimum_actions": [], "critical_hypotheses": [], "continue_if": [], "stop_if": [], "rollback": [], "evidence_required": [], "coverage": {"risk_categories": [], "uncovered_risks": []}}
+    risks = _risk_for_changed(changed, contract_nodes, deleted)
+    hypotheses = []
+    for risk in risks:
+        category = risk["category"]
+        hyp_id = f"{category}-compatible"
+        hypotheses.append({
+            "id": hyp_id,
+            "claim": f"{category} change does not break indexed consumers/callers",
+            "continue_if": "contract gate pass and affected consumer checks pass",
+            "stop_if": "contract block or missing required consumer evidence",
+            "rollback": "restore compatible shape or use additive migration",
+            "evidence_required": risk.get("evidence_required", []),
+        })
+    status = "blocked" if contract_block else "ready"
+    if any(r["category"] == "mq" for r in risks):
+        # MQ without provable destination is an evidence gap, not a ready plan.
+        status = "insufficient_evidence" if status != "blocked" else status
+    return {
+        "status": status,
+        "minimum_actions": list({a for r in risks for a in r.get("minimum_actions", [])}),
+        "critical_hypotheses": hypotheses,
+        "continue_if": ["contract gate pass", "affected consumer checks pass"],
+        "stop_if": ["contract block", "missing required consumer evidence"] if any(r["category"] in ("dto", "feign", "http", "mq") for r in risks) else [],
+        "rollback": ["restore compatible shape or use additive migration"],
+        "evidence_required": list({e for r in risks for e in r.get("evidence_required", [])}),
+        "coverage": {
+            "risk_categories": [r["category"] for r in risks],
+            "uncovered_risks": [] if status != "insufficient_evidence" else ["mq_destination_not_provable"],
+        },
+    }
 
 
 def _aggregate_impacted_files(impacts: list[dict[str, Any]]) -> list[dict[str, Any]]:

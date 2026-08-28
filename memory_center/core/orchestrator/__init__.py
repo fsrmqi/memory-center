@@ -152,6 +152,7 @@ from .workspace_ops import (
     workspace_sniff,
     workspace_status,
     workspace_workbench_summary,
+    workspace_quality_overview,
     workspace_trace,
 )
 
@@ -201,7 +202,7 @@ __all__ = [
     "workspace_list_consolidation_candidates",
     # workspace
     "workspace_check_contract", "workspace_check_rules",
-    "workspace_status", "workspace_workbench_summary", "workspace_sniff", "workspace_trace", "workspace_lookup_hint", "bootstrap_workspace_context", "execute_provider_action", "mcp_bridge_status", "execute_mcp_bridge_action", "fuse_provider_evidence",
+    "workspace_status", "workspace_workbench_summary", "workspace_quality_overview", "workspace_sniff", "workspace_trace", "workspace_lookup_hint", "bootstrap_workspace_context", "execute_provider_action", "mcp_bridge_status", "execute_mcp_bridge_action", "fuse_provider_evidence",
     "workspace_dashboard", "workspace_continuity_dashboard", "workspace_task_resume_check",
     # resume
     "workspace_resume_packet", "workspace_resume_context",

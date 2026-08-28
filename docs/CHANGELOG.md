@@ -1,5 +1,16 @@
 # Changelog / 更新日志
 
+## 4.6.4 Release Quality System / 发布质量体系
+
+四子项目收敛为长期可发布的质量保障能力（均为 additive / 只读，未改 parser/resolver/schema）：
+
+1. **统一发布质量门禁** `quality-gate`（`core/assessment/health.py`）：A-E 五组检查（generation 健康 / 契约与 coverage / retrieval replay + perf / IR diff gate / 存储 dry-run），输出 pass|attention|block|real_case_missing 决策；只读，不执行 reindex/GC/VACUUM/用户命令。
+2. **change_review validation_plan**（additive）：按 DTO/Feign/HTTP/MQ/Config/私有方法/删除的风险类别给出最小可证伪验证方案；MQ 缺 destination → `insufficient_evidence`，contract block → `blocked`；不执行命令。
+3. **索引镜像依赖审计**：确认 7 个候选索引均已在 `RUNTIME_ONLY_INDEXES`（SQLite 权威），JSON 文件读取 = 0、无重复导出残留，无需新增清理。
+4. **Workbench 只读质量/空间视图** `workspace_quality_overview` + HTTP `/workspace/quality-overview`：聚合 release gate / refresh P95 / IR gate / storage dry-run，脱敏、有界、不读私有正文。
+- 新增 `test_quality_health_gate.py`（6）+ `test_change_review_validation_plan.py`（7）；CLI snapshot 更新；全量回归绿、IR gate 通过（edge_coverage 1.0 / forbidden 0）。
+- Converged the completed capabilities into a long-running quality system: a read-only release quality gate, change-review validation plans, index-mirror dedup audit, and a sanitized workbench quality/storage overview.
+
 ## 4.6.3 Storage Space Reclaim / 存储空间回收
 
 - 按诊断结论执行安全回收（不影响 active/previous）：
