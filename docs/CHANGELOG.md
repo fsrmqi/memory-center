@@ -1,5 +1,14 @@
 # Changelog / 更新日志
 
+## 4.6.3 Storage Space Reclaim / 存储空间回收
+
+- 按诊断结论执行安全回收（不影响 active/previous）：
+  1. **删除孤立 `gen-perf-test`**（1.9GB，profile 测试污染、未注册）：generations/ 5.75GB → 3.83GB；
+  2. **IR 双重去重**（342MB）：`java-ir-index.json` 加入 `RUNTIME_ONLY_INDEXES`，SQLite index_mirror 权威、删除 index/ 文件副本（与 java-symbol-index 一致）；
+  3. **VACUUM**（588MB）：`storage-vacuum --apply` 回收 freelist + 页重整，graph.db 4.07GB → 3.48GB。
+- 总回收约 **2.8GB**。验证：IR gate 通过（edge_coverage 1.0 / forbidden 0）、coverage 17028/19639 不降、freshness FRESH、查询 smoke 正常、全量测试绿。
+- Reclaimed ~2.8GB safely: removed the orphan test generation (1.9GB), de-duplicated the java-ir-index JSON mirror (342MB), and VACUUMed graph.db (588MB), with IR gate/coverage/query all verified intact.
+
 ## 4.6.2 Graph.db Space Diagnostic / 存储空间只读诊断
 
 - 只读诊断 4.1GB `graph.db` + 5.8GB `generations/` 空间构成（**未执行任何清理**）：

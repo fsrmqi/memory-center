@@ -73,3 +73,14 @@
 - 未做 IR 去重/VACUUM（属代码改动或破坏性操作，需授权）。
 
 > 结论：4.1GB 主要来自**服务分片物理复制**（generations/ 5.8GB）与**必要索引**（edges/FTS/倒排）；**可安全回收约 2.5GB**（孤立 gen-perf-test 1.9GB + IR 双重 342MB + freelist 343MB），不影响 active/previous generation。
+
+## 8. 回收执行结果（2026-08-28，用户授权后）
+
+| 对象 | 释放 | 验证 |
+|---|---|---|
+| 孤立 gen-perf-test | 1.9 GB | control 健康、generations 5.75→3.83GB |
+| IR 文件副本（RUNTIME_ONLY_INDEXES） | 342 MB | SQLite 权威仍 678k 候选、IR gate 通过 |
+| SQLite VACUUM | 588 MB | graph.db 4.07→3.48GB |
+| **合计** | **~2.8 GB** | coverage 17028/19639 不降、freshness FRESH、查询 smoke 正常、全量测试绿 |
+
+未受影响：active/previous generation、节点/边/FTS/倒排、coverage、IR gate。

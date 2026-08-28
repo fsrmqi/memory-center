@@ -31,6 +31,11 @@ RUNTIME_ONLY_INDEXES = frozenset(
         "contract-snapshot.json",
         "contract-diff.json",
         "semantic-node-index.json",
+        # java-ir-index is an additive diff-gate diagnostic (678k candidates on
+        # large workspaces); keeping a second JSON export on disk doubled its
+        # ~342MB footprint. SQLite index_mirror is authoritative, same as
+        # java-symbol-index.
+        "java-ir-index.json",
     }
 )
 
