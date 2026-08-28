@@ -705,6 +705,8 @@ def reindex_workspace(
                     project_count=len(projects or []),
                     scanned_files=int(counts.get("scanned_files", 0) or 0),
                     generation=generation,
+                    paths=list(paths or []),
+                    projects=list(projects or []),
                 )
             _report_progress(progress, "finalizing", 98, "索引代际已发布")
             # Preserve the historical reindex return schema. Generation and

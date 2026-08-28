@@ -18,6 +18,70 @@ WORKSPACE_PERFORMANCE_SNAPSHOTS_FILE = "workspace-performance-snapshots.jsonl"
 SCOPED_REFRESH_PERFORMANCE_FILE = "scoped-refresh-performance.jsonl"
 DEFAULT_SCOPED_REFRESH_BUDGET_MS = 10_000.0
 
+# Per-bucket refresh budgets (refresh-budget tiering). Buckets are derived
+# from the changed scope, so we never compare a single low-risk file against
+# a multi-service contract refresh with one global P95.
+BUCKET_BUDGETS_MS: dict[str, float] = {
+    "plain_java/single_file": 8_000.0,
+    "plain_java/multi_file_single_service": 15_000.0,
+    "plain_java/multi_service": 30_000.0,
+    "contract/single_file": 15_000.0,
+    "contract/multi_file_single_service": 30_000.0,
+    "contract/multi_service": 60_000.0,
+    "delete_or_move/single_file": 8_000.0,
+    "delete_or_move/multi_file": 20_000.0,
+    "unknown/single_file": 8_000.0,
+    "unknown/multi_file_single_service": 15_000.0,
+    "unknown/multi_service": 30_000.0,
+}
+DEFAULT_BUCKET_BUDGET_MS = 15_000.0
+
+# Contract-ish file fragments used to classify a changed path's risk.
+_CONTRACT_HINTS = (
+    "controller", "feign", "dto", "mq", "producer", "consumer", "config",
+    "topic", "endpoint", "api",
+)
+
+
+def classify_refresh_bucket(
+    *,
+    paths: list[str] | None = None,
+    projects: list[str] | None = None,
+    scanned_files: int = 0,
+) -> str:
+    """Classify a scoped refresh into a bucket: category/scope.
+
+    category: plain_java | contract | delete_or_move | unknown
+    scope: single_file | multi_file_single_service | multi_file | multi_service
+    """
+    path_list = [str(p) for p in (paths or []) if str(p).strip()]
+    proj_list = [str(p) for p in (projects or []) if str(p).strip()]
+    lower_paths = " ".join(p.lower() for p in path_list)
+
+    if any(token in lower_paths for token in ("delete", "moved", "renamed")) or scanned_files == 0:
+        category = "delete_or_move"
+    elif any(hint in lower_paths for hint in _CONTRACT_HINTS):
+        category = "contract"
+    else:
+        category = "plain_java"
+
+    n = max(1, int(scanned_files) or len(path_list) or 1)
+    if len(proj_list) > 1:
+        scope = "multi_service"
+    elif n == 1:
+        scope = "single_file"
+    elif len(proj_list) == 1:
+        scope = "multi_file_single_service"
+    else:
+        scope = "multi_file"
+
+    key = f"{category}/{scope}"
+    return key if key in BUCKET_BUDGETS_MS else f"{category}/multi_file"
+
+
+def bucket_budget_ms(bucket: str) -> float:
+    return BUCKET_BUDGETS_MS.get(bucket, DEFAULT_BUCKET_BUDGET_MS)
+
 
 def record_scoped_refresh_performance(
     workspace_file: str | Path,
@@ -27,8 +91,15 @@ def record_scoped_refresh_performance(
     project_count: int,
     scanned_files: int,
     generation: str,
+    paths: list[str] | None = None,
+    projects: list[str] | None = None,
 ) -> dict[str, Any]:
-    """Persist one aggregate-only scoped-refresh observation."""
+    """Persist one aggregate-only scoped-refresh observation, bucketed.
+
+    Buckets (category/scope) get their own budget so a single low-risk file is
+    never compared against a multi-service contract refresh with one global
+    P95.
+    """
     store = WorkspaceStore(workspace_file)
     normalized_timings = {
         str(key): round(max(0.0, float(value or 0)), 2)
@@ -42,14 +113,17 @@ def record_scoped_refresh_performance(
         if key not in {"total", "pipeline_total"}
     }
     dominant_stage = max(stage_timings, key=stage_timings.get) if stage_timings else "unknown"
-    budget_ms = max(
-        100.0,
-        float(os.getenv("MEMORY_CENTER_SCOPED_REFRESH_BUDGET_MS", str(DEFAULT_SCOPED_REFRESH_BUDGET_MS))),
+    bucket = classify_refresh_bucket(
+        paths=paths or [],
+        projects=projects or [],
+        scanned_files=int(scanned_files or 0),
     )
+    budget_ms = bucket_budget_ms(bucket)
     observation = {
         "schema_version": 1,
         "recorded_at": time.time(),
         "generation": generation,
+        "bucket": bucket,
         "scope": {
             "path_count": max(0, int(path_count)),
             "project_count": max(0, int(project_count)),
@@ -65,6 +139,7 @@ def record_scoped_refresh_performance(
         "status": observation["status"],
         "total_ms": total_ms,
         "budget_ms": budget_ms,
+        "bucket": bucket,
         "dominant_stage": dominant_stage,
         "next_action": _scoped_refresh_next_action(observation),
     }
@@ -91,6 +166,48 @@ def scoped_refresh_performance_status(workspace_file: str | Path, limit: int = 2
     budget_ms = float(latest.get("budget_ms", DEFAULT_SCOPED_REFRESH_BUDGET_MS) or DEFAULT_SCOPED_REFRESH_BUDGET_MS)
     p95_ms = percentile(totals, 0.95)
     status = "healthy" if p95_ms <= budget_ms and latest.get("status") == "healthy" else "warning"
+
+    # Per-bucket tiering: aggregate P50/P95/dominant/budget per bucket so a
+    # single-file refresh is never judged against a multi-service budget.
+    from collections import defaultdict
+
+    buckets: dict[str, dict[str, Any]] = defaultdict(lambda: {"samples": 0, "totals": [], "dominants": []})
+    for row in rows:
+        bucket = str(row.get("bucket", "") or "unknown/multi_file")
+        buckets[bucket]["samples"] += 1
+        buckets[bucket]["totals"].append(float((row.get("timing_ms") or {}).get("total", 0) or 0))
+        buckets[bucket]["dominants"].append(str(row.get("dominant_stage", "unknown") or "unknown"))
+    from collections import Counter
+
+    by_bucket: dict[str, dict[str, Any]] = {}
+    for bucket, data in buckets.items():
+        from collections import Counter as _C
+
+        dominant = _C(data["dominants"]).most_common(1)[0][0] if data["dominants"] else "unknown"
+        # `unknown/multi_file` buckets are legacy observations recorded before
+        # per-bucket classification existed (no path/project info to derive a
+        # real bucket). They are not actionable; only real buckets with >=5
+        # samples and P95 over their own budget trigger over_budget.
+        legacy = bucket == "unknown/multi_file"
+        by_bucket[bucket] = {
+            "samples": data["samples"],
+            "p50_ms": percentile(data["totals"], 0.50),
+            "p95_ms": percentile(data["totals"], 0.95),
+            "budget_ms": bucket_budget_ms(bucket),
+            "dominant_stage": dominant,
+            "legacy": legacy,
+            "over_budget": (not legacy) and data["samples"] >= 5 and percentile(data["totals"], 0.95) > bucket_budget_ms(bucket),
+        }
+    # Global status: healthy only if every real bucket with >=5 samples is within
+    # its own budget; legacy unknown buckets and the latest row's legacy status
+    # do not gate the decision (only real, actionable buckets do).
+    any_bucket_over = any(b["over_budget"] for b in by_bucket.values())
+    real_buckets = [b for k, b in by_bucket.items() if not b["legacy"]]
+    latest_is_legacy = str(latest.get("bucket", "") or "") == "unknown/multi_file"
+    status = "warning" if any_bucket_over or (not latest_is_legacy and latest.get("status") != "healthy") else "healthy"
+    over_budget_buckets = sorted(
+        [k for k, b in by_bucket.items() if b["over_budget"]],
+    )
     return {
         "samples": len(rows),
         "status": status,
@@ -98,6 +215,8 @@ def scoped_refresh_performance_status(workspace_file: str | Path, limit: int = 2
         "p95_ms": p95_ms,
         "max_ms": round(max(totals), 2),
         "budget_ms": budget_ms,
+        "by_bucket": by_bucket,
+        "over_budget_buckets": over_budget_buckets,
         "latest": latest,
         "next_action": _scoped_refresh_next_action(latest),
         "recent": rows[-min(20, max(1, int(limit))) :],

@@ -135,14 +135,22 @@ def run_quality_health_gate(
     budget = float(perf.get("budget_ms", 10000) or 10000)
     perf_status = perf.get("status", "baseline_missing")
     if perf_status == "healthy":
-        checks.append(_check("refresh_performance", "pass", f"scoped refresh P95 {p95:.0f}ms within budget {budget:.0f}ms"))
+        checks.append(_check("refresh_performance", "pass", f"scoped refresh within per-bucket budgets"))
     elif perf_status == "baseline_missing":
         attention.append("performance_baseline_missing")
         checks.append(_check("refresh_performance", "real_case_missing", "no scoped refresh samples yet"))
     else:
+        over = perf.get("over_budget_buckets", []) or []
+        detail = ", ".join(over[:4]) if over else f"P95 {p95:.0f}ms over {budget:.0f}ms"
         attention.append("refresh_performance_over_budget")
-        checks.append(_check("refresh_performance", "attention", f"scoped refresh P95 {p95:.0f}ms over budget {budget:.0f}ms"))
-    performance = {"refresh_p50_ms": perf.get("p50_ms"), "refresh_p95_ms": p95, "budget_ms": budget}
+        checks.append(_check("refresh_performance", "attention", f"buckets over budget: {detail}"))
+    performance = {
+        "refresh_p50_ms": perf.get("p50_ms"),
+        "refresh_p95_ms": p95,
+        "budget_ms": budget,
+        "over_budget_buckets": perf.get("over_budget_buckets", []) or [],
+        "by_bucket": perf.get("by_bucket", {}) or {},
+    }
 
     # ---- D. IR diff gate ----
     ir = store.read_json_prefer_backend("java-ir-index.json", {})
