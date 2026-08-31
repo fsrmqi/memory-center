@@ -26,6 +26,8 @@
 - `historical`：只可追溯，不可作为当前实现或计划依据。
 - `generated`：由代码或测试生成/校验，不允许手工猜测接口。
 
+`docs/implementation-receipts/`、`docs/benchmarks/`、`docs/*_RESEARCH.md` 和 `docs/DATA_*.md` 是历史或证据文档：它们保留当时的版本、样本与结论，不重写成当前状态。当前行为只由 Active Docs、代码、`--help`、路由与 schema 定义。
+
 主计划只记录未完成承诺。完成项迁入 CHANGELOG、ADR 或 decision；过期步骤必须删除，而不是留在“下一步”中。
 
 ## 更新与验证
@@ -50,6 +52,8 @@
 ## Active Docs / 当前主文档
 
 这些文档应优先保持和当前实现一致：
+
+- [DOCUMENT_STATUS.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/DOCUMENT_STATUS.md) — 当前、决策与历史文档的状态目录
 
 - [README.md](/Users/cuijiaqi/Ai-common-skills/memory-center/README.md) — 项目总览、安装、快速开始
 - [ARCHITECTURE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/ARCHITECTURE.md) — 当前系统架构、分层边界、运行模型（含设计决策附录）

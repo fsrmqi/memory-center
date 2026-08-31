@@ -107,6 +107,15 @@
 
 `artifact repair-task` 默认 dry-run；传 `--apply` 才写入。刷新 `current-summary` 时建议同时传 `--intent`，修复器不会伪造 write receipt、自动归档相似任务空间或覆盖已有人工内容。
 
+### Quality, replay, and maintenance / 质量、回放与维护（4.6.7）
+
+- `quality-gate --workspace <workspace.yaml>`：只读汇总 generation、coverage、retrieval replay、IR diff、分桶刷新预算与存储 dry-run；状态为 `pass|attention|block|real_case_missing`，绝不执行 reindex/GC/VACUUM/用户命令。
+- `eval-retrieval-replay-cases --workspace <workspace.yaml> --cases <private-cases.yaml> --queries <private-query-map.json>`：运行显式、脱敏的真实 retrieval replay。私有 case 与查询映射必须在仓库外；结果仅保留 case ID、类别、聚合质量与性能指标。
+- `scoped-refresh-performance --workspace <workspace.yaml>`：按 `category + scope` bucket 返回 P50/P95、预算与 dominant stage。少于 5 条真实样本或 legacy 无 bucket 样本不构成超预算门禁。
+- `artifact index-export-cleanup|generation-gc|semantic-index-compact|storage-vacuum`：均先 `--dry-run`，只有显式 `--apply` 才写入或删除。运行时事实以 SQLite 为准；`RUNTIME_ONLY_INDEXES` 的 JSON 副本不是查询回退。
+
+`change-review` 返回 additive `validation_plan`，它描述最小可证伪验证、停止条件、回滚和证据要求，不会执行测试命令。MQ destination 在没有本地可证明映射时必须返回 `insufficient_evidence`。
+
 ## 2. MCP Facade Parameters / MCP Facade 参数
 
 ### Public Discovery Contract / 公开入口发现约定

@@ -302,6 +302,25 @@ memory-center add-to-group ...
 
 ## 8. Maintenance / 维护
 
+### Quality and storage / 质量与存储（4.6.7）
+
+发布或较大改动前可运行只读质量门禁：
+
+```bash
+memory-center quality-gate --workspace .memory-center/workspace.yaml
+```
+
+它汇总 generation、coverage、retrieval replay、IR diff gate、局部刷新与存储健康。`attention` 表示需要阅读原因或积累真实样本；只有 `block` 才代表存在不可发布的事实不一致。该命令不会重建索引、执行清理或运行项目测试。
+
+局部刷新性能会按变更类别和 scope 自动记录；只有同一分桶积累至少 5 个真实样本且 P95 超预算时才建议优化。可用以下只读命令查看：
+
+```bash
+memory-center scoped-refresh-performance --workspace .memory-center/workspace.yaml
+memory-center runtime-governance --workspace .memory-center/workspace.yaml
+```
+
+空间维护始终先 dry-run；确认后才使用 `--apply`。运行时事实已以 SQLite 为准，部分索引 JSON 是可选导出，不应手工恢复为查询回退。
+
 建议周期性执行：
 
 ```bash
@@ -391,7 +410,7 @@ memory-center artifact delivery-skill-publish --workspace /abs/path/.memory-cent
 - [REFERENCE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/REFERENCE.md)
 - [ONTOLOGY.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/ONTOLOGY.md)
 
-## 11. Implemented Features (3.x / V3 Foundation) / 已实现功能（3.x / V3 基础版）
+## 11. Implemented Features / 已实现功能（当前 4.6.7）
 
 这一节是当前可用功能说明，主要帮助使用者理解系统里已经能用什么，不代表这些功能仍处于待实现状态。
 

@@ -1,5 +1,10 @@
 # Changelog / 更新日志
 
+## Unreleased / 未发布
+
+- 全面收敛当前文档至 4.6.7：README、架构、MCP、用户与参考文档现在统一说明 quality-gate、validation_plan、primary_chain、retrieval replay、分桶刷新预算、SQLite-first 索引镜像与 Workbench 质量总览；主计划移除已完成事项，历史研究和实施回执保留其历史状态。
+- Consolidated current documentation around 4.6.7: README, architecture, MCP, user, and reference guides now consistently cover the quality gate, validation plan, primary chain, retrieval replay, bucketed refresh budgets, SQLite-first index mirrors, and the Workbench quality overview. The roadmap no longer treats completed work as pending; historical research and receipts retain their historical status.
+
 ## 4.6.7 Local Package Refresh / 本地包刷新
 
 - 将包元数据、CLI 与本地安装版本对齐并递增至 `4.6.7`，覆盖已完成的 4.6.0–4.6.6 质量、检索、存储与刷新预算改动。

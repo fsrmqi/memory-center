@@ -74,6 +74,9 @@
 - `Resume` — 任务恢复
 - `Close` — 会话收尾
 - `Audit` — 完成审计
+- `QualityGate` — 只读发布质量决策，汇总 generation、coverage、replay、IR、刷新与存储；状态为 `pass|attention|block|real_case_missing`
+- `RefreshBucket` — 局部刷新性能的 `category + scope` 分桶；只有真实样本达到门槛才参与 P95 门禁
+- `PrimaryChain` — 从 Method 锚点到跨服务 Feign/HTTP 证据的有界检索投影；它是 retrieval 结果，不是持久化图事实
 
 ## 3. 关系类型
 
@@ -97,6 +100,7 @@
 | CONSUMES_TOPIC | MQConsumer → MQTopic | 1.0 | fact | 消费者订阅主题 |
 | INJECTS_BEAN | Class → Bean/Class | 0.82 | inferred | Bean 注入 |
 | CALLS_METHOD | Method → Method | 0.58-0.68 | inferred | 方法调用（有/无 receiver_type） |
+| TOPIC_CANONICAL_MATCH | 不持久化 | — | inferred | 禁止作为图边写入；没有可证明 destination 时 MQ 主链只能 `insufficient_evidence` |
 | READS_FIELD | Method → Field | 0.62-0.74 | inferred | 字段读取 |
 | READS_CONFIG | Class → ConfigKey | 0.84 | inferred | 配置使用 |
 | IMPORTS | File → File | 0.55 | derived | 文件导入 |

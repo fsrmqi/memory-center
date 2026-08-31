@@ -58,9 +58,12 @@ Personal Wiki：人工确认后的长期知识正文
 | 分析 | 会影响什么？ | 结论、风险分层、下一步建议 | 直接证据关系、结构化图谱 |
 | 知识 | 有哪些可复用知识？ | 项目记忆、相关 Wiki、关联原因 | 交付记录、待审批候选 |
 | 运行 | 本次 DSH 为什么慢或失败？ | 当前会话状态、耗时、错误 | 模型/工具明细、Token |
+| 质量 | 当前 workspace 能否可信发布？ | quality-gate、generation、refresh P95、IR、存储状态 | 只读 replay/分桶/干预建议 |
 | 方法工坊 | 我该怎样思考或提问？ | 方法选择、问题输入、Prompt 预览 | 对话提取、方法说明、发送状态 |
 
 页面统一规则：首屏只给“结论 + 下一步”；原始事件、长摘要、完整图谱与内部字段一律按需展开。
+
+质量页必须只读取 `workspace_quality_overview` 或同等 application facade；无真实 replay 时显示 `real_case_missing`，存储维护仅展示 dry-run 建议，禁止直接触发 GC/VACUUM。
 
 ## 5. 实施路线 / Delivery Phases
 
