@@ -11,7 +11,6 @@ from memory_center.core.assessment.quality import build_quality_summary
 from memory_center.core.foundation.result_types import attach_facade_metadata
 from memory_center.core.foundation.schemas import with_schema
 from memory_center.core.governance.rules import match_rules
-from memory_center.core.knowledge.ontology import EntityValidator
 from memory_center.core.observability.diagnostics import DIAG, diag_entry
 from memory_center.core.observability.operations import observe_operation
 from memory_center.core.observability.tracking import log_token_gain
@@ -251,78 +250,13 @@ def memory_query_hybrid(
     }
     result["targeted_refresh"] = targeted_refresh
 
-    # 根据意图补充 contracts 索引数据
-    primary_intent = intent.get("primary_intent", "general")
-    if primary_intent in ("feign", "mq", "endpoint", "config"):
-        contracts = memory_contracts(workspace_file, project=effective_project)
-        filtered_feign = _filter_contracts_by_query(contracts.get("feign_contracts", []), query, primary_intent)
-        filtered_mq = _filter_contracts_by_query(contracts.get("mq_contracts", []), query, primary_intent)
-        filtered_api = _filter_contracts_by_query(contracts.get("api_contracts", []), query, primary_intent)
-        filtered_config = _filter_contracts_by_query(contracts.get("config_contracts", []), query, primary_intent)
+    from .lookup_contracts import attach_contract_context
 
-        # Feign 去重（worktree 可能产生重复）
-        if filtered_feign:
-            seen_interfaces = set()
-            deduped_feign = []
-            for fc in filtered_feign:
-                key = (fc.get("interface", ""), fc.get("project", ""))
-                if key not in seen_interfaces:
-                    seen_interfaces.add(key)
-                    deduped_feign.append(fc)
-            filtered_feign = deduped_feign
-
-        # Feign → API 自动关联：只关联查询直接匹配的方法，且路径足够具体
-        linked_api = []
-        if primary_intent == "feign" and filtered_feign:
-            api_by_path = {}
-            for c in contracts.get("api_contracts", []):
-                p = c.get("path", "")
-                # 使用 EntityValidator 验证路径特异性（≥2段）
-                validation = EntityValidator.validate_endpoint_path(p)
-                if validation["is_specific"]:
-                    api_by_path[p] = c
-            query_lower_local = query.lower()
-            for fc in filtered_feign:
-                for m in fc.get("methods", []):
-                    method_name = m.get("method_name", "").lower()
-                    m_path = m.get("path", "")
-                    # 只关联查询直接匹配的方法
-                    if query_lower_local in method_name or method_name in query_lower_local:
-                        if m_path and m_path in api_by_path:
-                            matched_api = dict(api_by_path[m_path])
-                            matched_api["_association"] = "feign_method_path"
-                            matched_api["_association_confidence"] = 0.85
-                            if matched_api not in linked_api:
-                                linked_api.append(matched_api)
-            # feign 意图：只返回关联的 API
-            filtered_api = linked_api
-
-        if effective_project:
-            project_feign = [c for c in filtered_feign if _project_matches(effective_project, c.get("project", ""))]
-            project_mq = [c for c in filtered_mq if _project_matches(effective_project, c.get("project", ""))]
-            project_api = [c for c in filtered_api if _project_matches(effective_project, c.get("project", ""))]
-            project_config = [c for c in filtered_config if _project_matches(effective_project, c.get("project", ""))]
-            filtered_feign = project_feign
-            filtered_mq = project_mq
-            filtered_api = project_api
-            filtered_config = project_config
-
-        result["contracts"] = {
-            "feign_contracts": filtered_feign if primary_intent != "mq" and primary_intent != "config" else [],
-            "mq_contracts": filtered_mq if primary_intent != "config" else [],
-            "api_contracts": filtered_api if primary_intent != "mq" and primary_intent != "config" else [],
-            "config_contracts": filtered_config if primary_intent != "mq" else [],
-        }
-        if primary_intent in {"mq", "config"}:
-            result["contract_routing"] = {
-                "mode": "index_first",
-                "intent": primary_intent,
-                "evidence_count": len(filtered_mq if primary_intent == "mq" else filtered_config),
-            }
-        # 标记 contracts 数据来源
-        if "retrieval_sources" not in result:
-            result["retrieval_sources"] = []
-        result["retrieval_sources"].append("contracts_index")
+    result = attach_contract_context(
+        result, workspace_file=str(workspace_file), query=query, intent=intent,
+        effective_project=effective_project, contract_loader=memory_contracts,
+        filter_contracts=_filter_contracts_by_query, project_matches=_project_matches,
+    )
     timings["scope_and_contracts"] = _elapsed_ms(phase_started)
     phase_started = time.perf_counter()
 

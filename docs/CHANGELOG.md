@@ -2,6 +2,11 @@
 
 ## Unreleased / 未发布
 
+## 4.6.13 Contract Enrichment Split / 契约补充拆分
+
+- 将混合查询中的 Feign/MQ/API/Config 契约筛选、Feign→API path 关联和 contract routing 迁至 `lookup_contracts.py`；兼容门面和响应字段保持不变，并新增独立契约行为测试。
+- Extracted contract enrichment into `lookup_contracts.py` while preserving public response fields and adding independent contract behavior tests.
+
 ## 4.6.12 Lookup Orchestration Split / 查询编排拆分
 
 - `memory_query_hybrid` 保留兼容门面，内部拆分为 `lookup_scope`、`lookup_execution`、`lookup_decorators`、`lookup_response`；范围推断、分片检索、项目后处理及响应/观测边界不再集中在单一函数。
