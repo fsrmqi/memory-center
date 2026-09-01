@@ -97,6 +97,28 @@ def register_artifact_commands(app: typer.Typer) -> None:
         """按 graph、index、artifacts、memory 查看本地空间预算与维护建议。"""
         print(WorkspaceStore(workspace).storage_budget_report(warning_bytes=warning_gib * 1024**3))
 
+    @app.command("jsonl-export-status")
+    def artifact_jsonl_export_status_cmd(
+        workspace: str = typer.Option(...),
+        collection: str = typer.Option(..., help="JSONL collection name, for example session-events.jsonl."),
+    ):
+        """查看 SQLite 权威记录与 JSONL 导出是否需要同步。"""
+        print(WorkspaceStore(workspace).jsonl_export_status(collection))
+
+    @app.command("jsonl-export-sync")
+    def artifact_jsonl_export_sync_cmd(
+        workspace: str = typer.Option(...),
+        collection: str = typer.Option(..., help="JSONL collection name."),
+        apply: bool = typer.Option(False, help="Rewrite or catch up the JSONL export from SQLite."),
+    ):
+        """从 SQLite 修复一个 JSONL 导出；默认只展示状态。"""
+        store = WorkspaceStore(workspace)
+        if not apply:
+            status = store.jsonl_export_status(collection)
+            print({**status, "applied": False, "next_action": "使用 --apply 从 SQLite 同步 JSONL 导出。"})
+            return
+        print({**store.sync_jsonl_export(collection), "applied": True})
+
     @app.command("asset-sync")
     def artifact_asset_sync_cmd(workspace: str = typer.Option(...), owner: str = typer.Option("")):
         """将当前任务、已发布 Skill 和活跃代码图谱登记为协作资产。"""

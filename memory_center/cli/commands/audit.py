@@ -82,14 +82,15 @@ def register_audit_commands(app: typer.Typer) -> None:
     @app.command("backend-consistency")
     def backend_consistency_cmd(
         workspace: str = typer.Option(...),
+        repair_exports: bool = typer.Option(False, help="Inspect recoverable JSONL exports."),
+        apply: bool = typer.Option(False, help="Repair dirty or stale JSONL exports; requires --repair-exports."),
     ):
         """Check consistency between JSONL files and SQLite backend."""
-        from memory_center.core.backend.query import UnifiedBackendQuery
-        from memory_center.core.storage.workspace import WorkspaceStore
+        if apply and not repair_exports:
+            raise typer.BadParameter("--apply requires --repair-exports")
+        from memory_center.application.admin import backend_consistency
 
-        store = WorkspaceStore(workspace)
-        with UnifiedBackendQuery(store.runtime_db_path) as backend:
-            print(backend.check_consistency(store.base_dir))
+        print(backend_consistency(workspace, repair_exports=repair_exports, apply=apply))
 
     @app.command("export-workspace-dashboard")
     def export_workspace_dashboard_cmd(

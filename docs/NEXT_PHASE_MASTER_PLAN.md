@@ -30,7 +30,7 @@ This file consolidates and replaces the older execution plan, superpowers evolut
 
 ## 2. 当前判断 / Current Assessment
 
-### 4.6.9 reconciliation / 4.6.9 现状收敛
+### 4.6.11 reconciliation / 4.6.11 现状收敛
 
 下列能力已完成并移入 CHANGELOG、决策与验证回执，不再作为本计划待办：Java IR 差分门禁、generation-local staging、跨服务 `primary_chain`、MQ `insufficient_evidence` 边界、真实 retrieval replay、局部刷新分桶预算、SQLite-first 索引镜像收敛、只读 `quality-gate`、`change_review.validation_plan` 与 Workbench 质量总览。
 
@@ -379,4 +379,4 @@ scripts/verify_real_ucap.sh
 
 ### 当前建议 / Current Recommendation
 
-当前版本为 **4.6.9**。优先继续真实使用观察：积累 retrieval replay 与 refresh bucket 样本，运行只读 `quality-gate`，只在其返回的可证明问题达到门槛后修改 planner、索引或存储。服务分片物理复制与 `generation_publish` 是已知的长期候选，但在单机样本未达到分桶 P95 门槛前不得提前重构。
+当前版本为 **4.6.11**。优先继续真实使用观察：积累 retrieval replay 与 refresh bucket 样本，运行只读 `quality-gate`，只在其返回的可证明问题达到门槛后修改 planner、索引或存储。服务分片物理复制与 `generation_publish` 是已知的长期候选，但在单机样本未达到分桶 P95 门槛前不得提前重构。

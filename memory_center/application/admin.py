@@ -340,13 +340,27 @@ def drill_task(workspace_file: str, task_id: str = "") -> dict[str, Any]:
         return nav.drill_task(task_id)
 
 
-def backend_consistency(workspace_file: str) -> dict[str, Any]:
+def backend_consistency(workspace_file: str, *, repair_exports: bool = False, apply: bool = False) -> dict[str, Any]:
     from memory_center.core.backend.query import UnifiedBackendQuery
     from memory_center.core.storage.workspace import WorkspaceStore
 
     store = WorkspaceStore(workspace_file)
     with UnifiedBackendQuery(store.runtime_db_path) as backend:
-        return backend.check_consistency(store.base_dir)
+        result = backend.check_consistency(store.base_dir)
+    health = store.jsonl_export_health()
+    repaired: list[dict[str, Any]] = []
+    if repair_exports and apply:
+        for entry in health["collections"]:
+            if entry["needs_sync"]:
+                repaired.append(store.sync_jsonl_export(str(entry["collection"])))
+        health = store.jsonl_export_health()
+    result["jsonl_projection"] = {
+        **health,
+        "repair_requested": repair_exports,
+        "applied": bool(repair_exports and apply),
+        "repaired": repaired,
+    }
+    return result
 
 
 def constraint_action(context: str = "", template: str = "coding_agent") -> dict[str, Any]:

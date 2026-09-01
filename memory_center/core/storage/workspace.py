@@ -154,9 +154,15 @@ class WorkspaceStore:
         item = dict(item)
         item.setdefault("created_at", datetime.now(timezone.utc).isoformat())
         with FileLock(str(self.audit_lock_file)):
-            self.memory_backend().append_record(name, item, record_id=self._infer_record_id(name, item))
-            with path.open("a", encoding="utf-8") as f:
-                f.write(json.dumps(item, ensure_ascii=False) + "\n")
+            self._recover_jsonl_export_locked(name)
+            record_db_id = self.memory_backend().append_record(name, item, record_id=self._infer_record_id(name, item))
+            try:
+                with path.open("a", encoding="utf-8") as f:
+                    f.write(json.dumps(item, ensure_ascii=False) + "\n")
+            except OSError:
+                self._mark_jsonl_export_dirty_locked(name)
+                raise
+            self._set_jsonl_export_state_locked(name, record_db_id, dirty=False)
         return item
 
     def append_jsonl_batch(self, name: str, items: list[dict[str, Any]]) -> int:
@@ -167,14 +173,89 @@ class WorkspaceStore:
         now = datetime.now(timezone.utc).isoformat()
         rows = [dict(item, created_at=item.get("created_at") or now) for item in items]
         with FileLock(str(self.audit_lock_file)):
-            self.memory_backend().append_records(
+            self._recover_jsonl_export_locked(name)
+            last_record_db_id = self.memory_backend().append_records(
                 name,
                 rows,
                 record_ids=[self._infer_record_id(name, row) for row in rows],
             )
-            with path.open("a", encoding="utf-8") as handle:
-                handle.writelines(json.dumps(row, ensure_ascii=False) + "\n" for row in rows)
+            try:
+                with path.open("a", encoding="utf-8") as handle:
+                    handle.writelines(json.dumps(row, ensure_ascii=False) + "\n" for row in rows)
+            except OSError:
+                self._mark_jsonl_export_dirty_locked(name)
+                raise
+            self._set_jsonl_export_state_locked(name, last_record_db_id, dirty=False)
         return len(rows)
+
+    def sync_jsonl_export(self, name: str, *, rebuild: bool = False) -> dict[str, Any]:
+        """从 SQLite 权威记录恢复或增量同步一个 JSONL 导出。"""
+        with FileLock(str(self.audit_lock_file)):
+            return self._sync_jsonl_export_locked(name, rebuild=rebuild)
+
+    def jsonl_export_status(self, name: str) -> dict[str, Any]:
+        state = self.memory_backend().jsonl_export_state(name)
+        latest = self.memory_backend().latest_record_id(name)
+        return {**state, "latest_record_id": latest, "needs_sync": bool(state["dirty"] or state["last_record_id"] != latest)}
+
+    def jsonl_export_health(self, *, limit: int = 100) -> dict[str, Any]:
+        """只读汇总 SQLite→JSONL 投影健康，不暴露记录正文。"""
+        collections = self.memory_backend().jsonl_record_collections()[:max(1, limit)]
+        entries = [self.jsonl_export_status(name) for name in collections]
+        unhealthy = [entry for entry in entries if entry["needs_sync"]]
+        return {
+            "status": "attention" if unhealthy else "pass",
+            "collection_count": len(entries),
+            "needs_sync_count": len(unhealthy),
+            "dirty_count": sum(1 for entry in entries if entry["dirty"]),
+            "collections": entries,
+            "next_action": "artifact jsonl-export-sync --workspace <workspace.yaml> --collection <name> --apply" if unhealthy else "",
+        }
+
+    def _recover_jsonl_export_locked(self, name: str) -> None:
+        state = self.memory_backend().jsonl_export_state(name)
+        if state["dirty"]:
+            self._sync_jsonl_export_locked(name, rebuild=True)
+
+    def _sync_jsonl_export_locked(self, name: str, *, rebuild: bool) -> dict[str, Any]:
+        path = self.memory_dir / name
+        state = self.memory_backend().jsonl_export_state(name)
+        rebuild = rebuild or state["dirty"] or (state["last_record_id"] > 0 and not path.exists()) or (
+            state["last_record_id"] == 0 and path.exists()
+        )
+        after_id = 0 if rebuild else state["last_record_id"]
+        rows = self.memory_backend().records_for_jsonl_export(name, after_id=after_id)
+        if rebuild:
+            temp_path = path.with_suffix(path.suffix + ".tmp")
+            try:
+                temp_path.write_text("".join(json.dumps(row["payload"], ensure_ascii=False) + "\n" for row in rows), encoding="utf-8")
+                temp_path.replace(path)
+            except OSError:
+                temp_path.unlink(missing_ok=True)
+                self._mark_jsonl_export_dirty_locked(name)
+                raise
+        elif rows:
+            try:
+                with path.open("a", encoding="utf-8") as handle:
+                    handle.writelines(json.dumps(row["payload"], ensure_ascii=False) + "\n" for row in rows)
+            except OSError:
+                self._mark_jsonl_export_dirty_locked(name)
+                raise
+        latest = self.memory_backend().latest_record_id(name)
+        self._set_jsonl_export_state_locked(name, latest, dirty=False)
+        return {"collection": name, "rebuild": rebuild, "exported": len(rows), "last_record_id": latest, "dirty": False}
+
+    def _set_jsonl_export_state_locked(self, name: str, last_record_id: int, *, dirty: bool) -> None:
+        self.memory_backend().set_jsonl_export_state(
+            name,
+            last_record_id=last_record_id,
+            dirty=dirty,
+            updated_at=datetime.now(timezone.utc).isoformat(),
+        )
+
+    def _mark_jsonl_export_dirty_locked(self, name: str) -> None:
+        state = self.memory_backend().jsonl_export_state(name)
+        self._set_jsonl_export_state_locked(name, state["last_record_id"], dirty=True)
 
     def move_jsonl_records_exact(
         self,
@@ -211,6 +292,12 @@ class WorkspaceStore:
                 if pending:
                     raise RuntimeError("session archive export is missing source records")
                 source_path.write_text("\n".join(kept) + ("\n" if kept else ""), encoding="utf-8")
+            self._set_jsonl_export_state_locked(
+                source_name, self.memory_backend().latest_record_id(source_name), dirty=False
+            )
+            self._set_jsonl_export_state_locked(
+                archive_name, self.memory_backend().latest_record_id(archive_name), dirty=False
+            )
         return moved
 
     def prune_jsonl(self, name: str, *, created_before: datetime, max_records: int) -> dict[str, int]:
@@ -221,7 +308,9 @@ class WorkspaceStore:
         cutoff = created_before.astimezone(timezone.utc)
         kept_lines: deque[str] = deque(maxlen=max_records)
         total = expired = invalid = overflow = 0
-        with FileLock(str(self.artifact_lock_file)):
+        # JSONL 导出与 SQLite 水位共用 audit 锁，避免 prune 与 append 交叉
+        # 造成导出内容和 projection state 漂移。
+        with FileLock(str(self.audit_lock_file)):
             if path.exists():
                 for line in path.read_text(encoding="utf-8").splitlines():
                     if not line.strip():
@@ -246,6 +335,7 @@ class WorkspaceStore:
                 created_before=cutoff.isoformat(),
                 max_records=max_records,
             )
+            self._mark_jsonl_export_dirty_locked(name)
         return {
             "total": total,
             "expired": expired,

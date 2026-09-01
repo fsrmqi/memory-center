@@ -2,6 +2,19 @@
 
 ## Unreleased / 未发布
 
+## 4.6.11 Projection Health Gate / 投影健康门禁
+
+- `backend-consistency` 新增只读 `jsonl_projection` 摘要，并支持 `--repair-exports --apply` 显式恢复；Workbench quality overview 同步展示 projection 的状态、dirty 数与待同步数。
+- Added JSONL projection health to backend consistency and the Workbench quality overview, with explicit `--repair-exports --apply` recovery.
+
+## 4.6.10 Recoverable JSONL Projections / 可恢复 JSONL 投影
+
+- 本地包、CLI 与 MCP 运行时版本递增至 `4.6.10`；SQLite 成为 JSONL collection 的唯一事实源，导出水位和 dirty 状态可由 artifact 命令审计与恢复。
+- Bumped package, CLI, and MCP runtime metadata to `4.6.10` with SQLite-authoritative, recoverable JSONL projections.
+
+- 新增统一 JSONL projection 水位：所有 `WorkspaceStore.append_jsonl(_batch)` 在 SQLite 提交后记录导出进度；导出失败标为 dirty，下一次写入自动重建，也可通过 `artifact jsonl-export-status|jsonl-export-sync --apply` 显式诊断和恢复。JSONL 不再承担权威状态。
+- Added a uniform JSONL projection watermark: SQLite remains authoritative, export failures become dirty/recoverable, and the artifact CLI provides status plus explicit recovery.
+
 ## 4.6.9 Session-State Architecture / 会话状态架构
 
 - 会话派生状态新增 `SessionStateRepository`：已服务文件账本不再由 foundation 直接维护 JSON 文件或进程缓存，改由 SQLite `session_state` 作为权威库，并沿用工作区审计锁、有界 500 路径/50 会话及失败降级语义。

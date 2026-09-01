@@ -111,7 +111,7 @@
 
 `artifact repair-task` 默认 dry-run；传 `--apply` 才写入。刷新 `current-summary` 时建议同时传 `--intent`，修复器不会伪造 write receipt、自动归档相似任务空间或覆盖已有人工内容。
 
-### Quality, replay, and maintenance / 质量、回放与维护（4.6.9）
+### Quality, replay, and maintenance / 质量、回放与维护（4.6.11）
 
 可选 `rules/retrieval-policy.yaml` 示例：
 
@@ -339,6 +339,8 @@ memory-center eval-reasoning-prompts \
 - `artifact delivery-record-validation`：默认只记录 `recorded_external` 摘要；显式传 `--evidence-kind manual_verified --actor <reviewer> --evidence-types '["contract-gate"]'` 会生成脱敏 `delivery-validation` 回执引用和结构化证据类型，可用于关闭和 Skill 门禁。返回的 `identity_assurance=self_asserted` 表示 actor 是调用方声明而非认证身份。人工验证缺少 actor、数组参数不是纯字符串 JSON 数组时会明确拒绝。回执 JSONL 是审计源；SQLite 通过版本化、锁内分批投影维护最近回执与稀疏验收覆盖，入口无需全量扫描历史。
 - `artifact delivery-skill-candidate|delivery-skill-contract-update|delivery-skill-canary|delivery-skill-observe|delivery-skill-evaluate|delivery-skill-publish|delivery-skill-rollback|delivery-skill-recommend|delivery-skill-replay`：候选必须声明完整边界契约，并匹配真实验证回执后才可进入隔离灰度。成功观测只接受可解析的 `delivery-validation` 或执行器证据，同一回执不能重复计数。每次 canary 都有独立 `activation_id`；契约修订或回滚重启后仅统计当前 activation 与 `contract_sha256` 的观测和 replay。`minimum_verified_passed`（默认 3）由评估与发布共同使用；失败会阻断发布。默认推荐仅返回契约完整的 `published` Skill，并返回禁用、停止和回滚语义；registry 损坏时从有效备份恢复，双副本损坏则拒绝覆盖。
 - `artifact asset-status|asset-sync|asset-register|asset-share|asset-approve|asset-bind|asset-loadout|wiki-document-ingest`：管理本地任务、Skill、Wiki、CodeGraph 协作资产。`asset-register` 必须提供与 `owner` 一致的 `actor`；既有资产的更新和绑定也只允许 owner。metadata 最大 16 KiB；`asset-status` / `asset-loadout` 采用默认总输出预算，可用 `max_chars` 收紧并查看 `truncated`。团队/受限共享必须先由 owner 提交、再由另一维护者审批，只有 active 且绑定匹配的资产会进入 Agent/角色 loadout。HTTP 读取使用 `GET /workspace/assets|/workspace/asset/loadout`，写入使用 `POST /workspace/asset/*` 和 `POST /workspace/wiki/document-ingest`；MCP 使用同名 `mc_admin` action。
+- `artifact jsonl-export-status --collection <name>`：只读比较 SQLite 权威记录与 JSONL 导出水位；`artifact jsonl-export-sync --collection <name> --apply` 从 SQLite 增量同步或在 dirty 时原子重建导出。 / JSONL exports are recoverable projections; SQLite remains authoritative.
+- `backend-consistency --workspace <workspace.yaml>` 会附加 `jsonl_projection` 健康摘要；传 `--repair-exports --apply` 才会逐 collection 从 SQLite 修复 dirty 或落后的导出。 / Repair is explicit and never runs in the default read-only check.
 - HTTP：`POST /workspace/delivery/skill/contract?task_id=<id>&payload=<JSON>` 更新契约；`GET /workspace/delivery/skill/replay?skill_id=<id>&limit=100` 读取 replay。MCP 使用 `mc_admin(action="delivery_skill_contract_update"|"delivery_skill_replay", ...)`。
 - `artifact delivery-failure-candidates|delivery-skill-synthesize`：显式、离线地聚类跨任务失败和多个已验证交付的共同结构；只保存脱敏元数据和证据引用，不在查询热路径运行。
 

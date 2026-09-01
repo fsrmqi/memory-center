@@ -1,6 +1,6 @@
 # Documentation Status / 文档状态目录
 
-> **基准版本 / Baseline**：4.6.9
+> **基准版本 / Baseline**：4.6.11
 > **更新日期 / Updated**：2026-08-30  
 > **规则 / Rule**：当前行为以代码、CLI `--help`、路由、MCP schema 和标记为 `current` 的文档为准。历史文档保留当时的样本与结论，不重写为当前事实。
 
@@ -41,7 +41,7 @@
 | 历史数据闭环 | `docs/DATA_REAL_LOOP_RUN1.md` |
 | 历史记录 | `docs/CHANGELOG.md` 的已发布条目 |
 
-## 4.6.9 capability summary / 4.6.9 能力摘要
+## 4.6.11 capability summary / 4.6.11 能力摘要
 
 - `quality-gate`：只读发布质量决策，汇总 generation、coverage、replay、IR、刷新与存储；不执行维护动作。
 - `change_review.validation_plan`：按风险类别给出最小可证伪验证设计；不执行用户命令。

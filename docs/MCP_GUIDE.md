@@ -491,7 +491,7 @@ HTTP GET 只允许无副作用读取；所有写入 route 必须 POST。非回�
 - CLI `quality-gate --workspace ...`：只读发布质量门禁，汇总 generation 健康 / coverage / retrieval replay+perf / IR diff gate / 存储 dry-run，输出 `pass|attention|block|real_case_missing`；不执行 reindex/GC/VACUUM/用户命令。
 - `change_review` 响应附带 additive `validation_plan`：最小可证伪验证方案（DTO/Feign/HTTP/MQ/Config/私有方法/删除）；MQ 缺 destination 为 `insufficient_evidence`，contract block 为 `blocked`。
 
-### Current quality behavior / 当前质量行为（4.6.9）
+### Current quality behavior / 当前质量行为（4.6.11）
 
 - `mc_lookup(auto)` 在已定位 Method 且 `request_tier != "fast"` 时可返回 additive `primary_chain`；`found` 必须有可解释的图证据，Feign 名称桥接标记为 `INFERRED`，MQ destination 无本地证据时为 `insufficient_evidence`，不得根据 binding 名猜测消费者。
 - `index_context.coverage` 会区分 `irrelevant_excluded` 与 `relevant_unsupported`。明确无关的非源码资源仅审计、不阻断；相关未覆盖、解析失败、范围未知、查询超时或截断仍会阻断否定性结论。

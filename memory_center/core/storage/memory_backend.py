@@ -83,6 +83,12 @@ class _MemoryRecordOperations:
         conn.execute("CREATE INDEX IF NOT EXISTS idx_json_records_project ON json_records(project)")
         conn.executescript(
             """
+            CREATE TABLE IF NOT EXISTS jsonl_export_state (
+              collection TEXT PRIMARY KEY,
+              last_record_id INTEGER NOT NULL DEFAULT 0,
+              dirty INTEGER NOT NULL DEFAULT 0,
+              updated_at TEXT NOT NULL DEFAULT ''
+            );
             CREATE TABLE IF NOT EXISTS assertions (
               assertion_id TEXT PRIMARY KEY,
               subject_id TEXT NOT NULL,
@@ -243,14 +249,14 @@ class _MemoryRecordOperations:
             ).rowcount
         return max(0, deleted)
 
-    def append_record(self, collection: str, payload: dict[str, Any], record_id: str = "") -> None:
+    def append_record(self, collection: str, payload: dict[str, Any], record_id: str = "") -> int:
         payload_type = str(payload.get("type", "") or "")
         # Extract session_id/project: may be at top level or nested inside a "payload" sub-dict
         nested_payload = payload.get("payload", {}) if isinstance(payload.get("payload"), dict) else {}
         payload_session_id = str(payload.get("session_id", "") or nested_payload.get("session_id", "") or "")
         payload_project = str(payload.get("project", "") or nested_payload.get("project", "") or "")
         with self.connect() as conn:
-            conn.execute(
+            cursor = conn.execute(
                 """
                 INSERT INTO json_records(collection, record_id, type, session_id, project, created_at, payload_json)
                 VALUES(?, ?, ?, ?, ?, ?, ?)
@@ -265,11 +271,12 @@ class _MemoryRecordOperations:
                     json.dumps(payload, ensure_ascii=False),
                 ),
             )
+            return int(cursor.lastrowid)
 
-    def append_records(self, collection: str, payloads: list[dict[str, Any]], record_ids: list[str] | None = None) -> None:
+    def append_records(self, collection: str, payloads: list[dict[str, Any]], record_ids: list[str] | None = None) -> int:
         """Batch variant used by high-volume sidecars such as assertions."""
         if not payloads:
-            return
+            return 0
         ids = record_ids or [""] * len(payloads)
         if len(payloads) != len(ids):
             raise ValueError("payloads and record_ids must have the same length")
@@ -293,6 +300,49 @@ class _MemoryRecordOperations:
                 """,
                 rows,
             )
+            return int(conn.execute("SELECT last_insert_rowid()").fetchone()[0])
+
+    def jsonl_export_state(self, collection: str) -> dict[str, Any]:
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT last_record_id, dirty, updated_at FROM jsonl_export_state WHERE collection=?", (collection,)
+            ).fetchone()
+        if row is None:
+            return {"collection": collection, "last_record_id": 0, "dirty": False, "updated_at": ""}
+        return {
+            "collection": collection,
+            "last_record_id": int(row["last_record_id"]),
+            "dirty": bool(row["dirty"]),
+            "updated_at": str(row["updated_at"]),
+        }
+
+    def set_jsonl_export_state(self, collection: str, *, last_record_id: int, dirty: bool, updated_at: str) -> None:
+        with self.connect() as conn:
+            conn.execute(
+                """INSERT INTO jsonl_export_state(collection, last_record_id, dirty, updated_at)
+                   VALUES(?, ?, ?, ?)
+                   ON CONFLICT(collection) DO UPDATE SET last_record_id=excluded.last_record_id,
+                     dirty=excluded.dirty, updated_at=excluded.updated_at""",
+                (collection, max(0, int(last_record_id)), int(bool(dirty)), updated_at),
+            )
+
+    def records_for_jsonl_export(self, collection: str, *, after_id: int = 0) -> list[dict[str, Any]]:
+        with self.connect() as conn:
+            rows = conn.execute(
+                "SELECT id, payload_json FROM json_records WHERE collection=? AND id>? ORDER BY id ASC",
+                (collection, max(0, after_id)),
+            ).fetchall()
+        return [{"id": int(row["id"]), "payload": json.loads(str(row["payload_json"]))} for row in rows]
+
+    def latest_record_id(self, collection: str) -> int:
+        with self.connect() as conn:
+            row = conn.execute("SELECT COALESCE(MAX(id), 0) FROM json_records WHERE collection=?", (collection,)).fetchone()
+        return int(row[0])
+
+    def jsonl_record_collections(self) -> list[str]:
+        with self.connect() as conn:
+            rows = conn.execute("SELECT DISTINCT collection FROM json_records ORDER BY collection ASC").fetchall()
+        return [str(row[0]) for row in rows if str(row[0])]
 
     def upsert_delivery_receipts(
         self,

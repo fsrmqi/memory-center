@@ -1318,6 +1318,15 @@ def workspace_quality_overview(
 
     generation_count = len([p for p in _P(gen).iterdir() if p.is_dir()]) if _P(gen).exists() else 0
     storage["generation_count"] = generation_count
+    try:
+        projection = store.jsonl_export_health(limit=50)
+        storage["jsonl_projection"] = {
+            "status": projection["status"],
+            "needs_sync_count": projection["needs_sync_count"],
+            "dirty_count": projection["dirty_count"],
+        }
+    except Exception:
+        storage["jsonl_projection"] = {"status": "unknown", "needs_sync_count": 0, "dirty_count": 0}
 
     return {
         "schema_version": 1,
