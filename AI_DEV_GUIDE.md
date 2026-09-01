@@ -19,9 +19,9 @@ Memory Center 是一个面向 AI 编程助手的本地优先项目记忆与代�
 memory_center/
 ├── cli/              # CLI 入口适配层
 │   ├── main.py       # 根装配（~220 行）
-│   └── commands/     # 16 个命令族模块
+│   └── commands/     # 18 个命令族模块
 ├── mcp/              # MCP facade 层
-│   └── server.py     # 8 个 facade tool
+│   └── server.py     # 15 个 task-level tool（含 insights.py 注册的 4 个）
 ├── http/             # HTTP 入口层
 ├── application/      # 应用层（跨领域用例）
 ├── core/
@@ -43,7 +43,7 @@ memory_center/
 
 | 模块 | 职责 | 修改时注意 |
 |---|---|---|
-| `cli/commands/*.py` | 16 个命令族 | 新增命令需更新命令面快照测试 |
+| `cli/commands/*.py` | 18 个命令族 | 新增命令需更新命令面快照测试 |
 | `mcp/server.py` | MCP facade | schema 必须向后兼容 |
 | `core/orchestrator/query.py` | 查询编排 | 修改需同步 symbol_ranking/guidance |
 | `core/indexing/reindex.py` | 索引重建 | 修改需运行 Golden benchmark |
@@ -167,13 +167,13 @@ scripts/verify_real_ucap.sh
 
 以下行为容易被误解为 bug，但其实是有意的设计取舍：
 
-### 6.1 `user_prompt_submit` 默认禁用
+### 6.1 `user_prompt_submit` 默认只记录不注入
 
-`hooks.yaml` 中 `user_prompt_submit` 是 `mode: suggest` + `enabled: false`。这不是 bug，而是产品策略——避免普通自然语言输入（"继续"、"下一步"）被 hook 拦截。
+`hooks.yaml` 中 `user_prompt_submit` 是 `mode: suggest` + `enabled: true` + `record_only: true`：只把脱敏 prompt 交互写入交互历史，不注入提示、不阻塞输入；宿主 adapter 也只生成 record_only 版本。这不是 bug，而是产品策略——避免普通自然语言输入（"继续"、"下一步"）被 hook 拦截。
 
-### 6.2 facade 与原子能力并存
+### 6.2 task-level 工具与原子能力并存
 
-MCP 默认暴露 8 个 facade tool，CLI/HTTP/core 内部保留很多原子能力。这是刻意分层：模型面对 facade 降低工具选择成本，人类维护者仍需原子能力。
+MCP 默认暴露 15 个 task-level tool，CLI/HTTP/core 内部保留很多原子能力。这是刻意分层：模型面对任务级接口降低工具选择成本，人类维护者仍需原子能力。
 
 ### 6.3 影响分析的 `partial` 不等于失败
 

@@ -10,11 +10,11 @@ Memory Center 是面向 AI 编程助手的 MCP 项目记忆服务。
 - 面向用户的文档保持中英文双语。
 - 不提交真实私有 workspace 生成数据。
 
-## MCP Facade Tools (8 个任务级工具)
+## MCP Task-level Tools (15 个任务级工具)
 
-MCP tool surface: 8 facade tools only. Do NOT add atomic tools back to MCP — keep facade-only surface. CLI and HTTP keep fine-grained interfaces unchanged.
+MCP tool surface: 15 task-level tools (mc_start/lookup/analyze/sync/resume/handoff/close/admin + mc_bootstrap_context/provider_action/mcp_bridge/context_pack/onboard/domain/freshness). Do NOT add atomic tools back to MCP — keep task-level facade surface. CLI and HTTP keep fine-grained interfaces unchanged.
 
-**何时用哪个 facade — 自动路由规则：**
+**何时用哪个工具 — 自动路由规则：**
 
 | 场景 | 自动调用 | 说明 |
 |------|----------|------|
@@ -26,6 +26,7 @@ MCP tool surface: 8 facade tools only. Do NOT add atomic tools back to MCP — k
 | 切换模型或 session | `mc_handoff` | 提供 target_model |
 | 任务完成 | `mc_close` | Stop hook 已自动 close；这里主动调用确认 |
 | 查状态/工件/评估/生成 | `mc_admin` | action 参数选择子操作 |
+| 未初始化 workspace 的项目 | `mc_bootstrap_context` | 零初始化联邦读取，外部结果不持久化 |
 
 **关键行为：**
 - 编码任务开始时，先调用 `mc_start` 获取 session_id，存到 `/tmp/memory-center-session-id` 供 Stop hook 使用
@@ -49,7 +50,7 @@ Hook 是宿主集成方案，不是 memory-center 核心能力。核心能力是
 | session_start | mc_start | soft | 不阻塞，只注入上下文 |
 | pre_edit | mc_analyze | guard | must-severity 规则匹配时阻塞（exit 2） |
 | session_stop | mc_close | soft | 不阻塞，关闭并同步 |
-| user_prompt_submit | mc_start | suggest | 注入提示，不执行命令 |
+| user_prompt_submit | mc_start | suggest + record_only | 默认只记录脱敏交互，不注入提示、不阻塞 |
 
 **模式说明：**
 - soft: 执行但不阻塞主流程（exit 0）

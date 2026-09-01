@@ -106,7 +106,7 @@ Memory Center 不要求中心化服务。默认形态是每个 workspace 自带�
 | 入口 | 命令 / 路径 | 代码位置 | 职责 |
 |---|---|---|---|
 | CLI | `memory-center` | `memory_center/cli/main.py` | 初始化、索引、查询、影响分析、任务工作流、评测、hook 生成 |
-| MCP | `memory-center-mcp` | `memory_center/mcp/server.py` | 12 个 task-level tools、resources、prompts、`mc_admin` |
+| MCP | `memory-center-mcp` | `memory_center/mcp/server.py` | 15 个 task-level tools、resources、prompts、`mc_admin` |
 | HTTP | `memory-center-http` | `memory_center/http/server.py` | JSON API、本地 HTML UI、Vue Workbench `/app` |
 | Hooks | generated host hooks | `memory_center/hooks/` | SessionStart、PreToolUse、Stop 等宿主生命周期集成 |
 
@@ -744,10 +744,11 @@ Bridge 策略中声明 `capabilities: [code_navigation]` 的 `read_only` tool �
 MCP 还暴露 resources：
 
 - `memory-center://status`
+- `memory-center://startup-diagnostics`
 - `memory-center://contracts`
 - `memory-center://topology`
 
-以及 prompts：impact、Spring Cloud safe change、onboarding、MQ safety、DTO impact、cross-service trace、freshness、domain overview、diff impact，以及四个证据约束的推理协议：`clarify_change_request`、`audit_project_claim`、`design_minimal_validation`、`compare_change_options`。
+以及 14 个 prompts：impact、Spring Cloud safe change、onboarding、MQ safety、DTO impact、cross-service trace、config propagation、freshness、domain overview、diff impact，以及四个证据约束的推理协议：`clarify_change_request`、`audit_project_claim`、`design_minimal_validation`、`compare_change_options`。
 
 这四个协议保持为 MCP Prompt 编排层，不创建第二套事实或任务状态：需求澄清复用 `mc_start` / `mc_lookup` 与 `ambiguities` 语义；工程断言核查复用 `knowledge_state` 和 `evidence_level`；最小验证复用 acceptance、预注册 argv profile 与真实回执；方案比较只在用户接受后才建议通过 `task_decision_record` 持久化。Prompt 输出中的判断仍受 `EXTRACTED / INFERRED / AMBIGUOUS / VERIFIED` 约束，不能凭角色扮演或模型置信度升级证据。
 
@@ -759,7 +760,7 @@ The reasoning-prompt benchmark separates deterministic static contract checks fr
 
 ### 9.2 CLI
 
-CLI 命令按业务域拆至 16 个 `memory_center/cli/commands/<family>.py` 家族模块（setup/retrieval/ops/watcher/change/lookup/walkthrough/write/eval/gate/session/resume/work/audit/bridge/tooling），每个模块暴露 `register_<family>_commands(app)`；`main.py` 只保留根装配。覆盖：
+CLI 命令按业务域拆至 18 个 `memory_center/cli/commands/<family>.py` 家族模块（setup/retrieval/ops/watcher/change/lookup/walkthrough/write/eval/gate/session/resume/work/audit/bridge/tooling/artifacts/workspaces，其中 workspaces 同时承载 registry/group/workspace 三个子命令组），每个模块暴露 `register_<family>_commands(app)`；`main.py` 只保留根装配。覆盖：
 
 - workspace init / service maintenance（setup 族）
 - reindex / status / sniff / trace（ops 族）
@@ -847,7 +848,7 @@ Hook 层在 `memory_center/hooks/`，属于宿主集成，不是核心业务层�
 - `PreToolUse(Edit|Write) -> mc_analyze`
 - `Stop -> mc_close`
 
-`UserPromptSubmit` 默认不启用；它容易打断普通自然语言输入。Claude Code、Codex、Cursor adapter 分别生成适配各宿主的 hook/规则文件。
+`UserPromptSubmit` 默认配置为 `enabled: true` + `record_only: true`：只把脱敏 prompt 交互写入交互历史，不注入提示、不阻塞输入；宿主 adapter 也不会为它生成阻断或注入型配置。它容易打断普通自然语言输入，因此注入/拦截行为被有意排除。Claude Code、Codex、Cursor adapter 分别生成适配各宿主的 hook/规则文件。
 
 ---
 
@@ -1137,11 +1138,11 @@ Memory Center 是一个面向 AI 编程助手的本地优先项目记忆与代�
 
 **H.2 CLI/MCP/HTTP 入口必须统一解析 workspace.yaml**：入口接收的是 `workspace.yaml` 路径，但底层图谱存储打开的是 `graph.db`。入口层必须先解析 workspace（`WorkspaceStore(workspace)`），再用 `workspace_store.graph_db_path` 打开图谱，不能直接传 `workspace.yaml` 给 `GraphStore`。
 
-**H.3 `user_prompt_submit` 默认禁用**：这不是 bug，而是产品策略。`UserPromptSubmit` 挂在自然语言输入入口，suggest 型 prompt hook 容易被宿主解释成前置拦截器，导致“继续”“下一步”等普通输入被打断。因此保留 `suggest` 类型定义但默认 `enabled: false`。推荐把自动调用放在生命周期明确的节点（`SessionStart -> mc_start`、`PreToolUse -> mc_analyze`、`Stop -> mc_close`）。
+**H.3 `user_prompt_submit` 默认只记录不注入**：这不是 bug，而是产品策略。`UserPromptSubmit` 挂在自然语言输入入口，suggest 型 prompt hook 容易被宿主解释成前置拦截器，导致“继续”“下一步”等普通输入被打断。因此默认配置为 `enabled: true` + `record_only: true`：hook 只把脱敏 prompt 交互写入交互历史，不注入提示、不阻塞输入；宿主 adapter 也只生成 record_only 版本（非 record_only 配置会被 adapter 跳过）。需要真正的 suggest 注入时必须由维护者显式改配置。推荐把自动调用放在生命周期明确的节点（`SessionStart -> mc_start`、`PreToolUse -> mc_analyze`、`Stop -> mc_close`）。
 
-**H.4 `mode` 与 `enabled` 的关系**：`mode` 表示“如果启用，这条 hook 应该怎么执行”；`enabled` 表示“这条 hook 当前是否参与执行”。`enabled: false` + `mode: suggest` 不冲突，表示类型定义是 suggest 但当前不启用。
+**H.4 `mode` 与 `enabled` 的关系**：`mode` 表示“如果启用，这条 hook 应该怎么执行”；`enabled` 表示“这条 hook 当前是否参与执行”。`enabled: true` + `record_only: true` 的 `user_prompt_submit` 表示该 hook 参与执行，但只记录事件，不渲染 prompt、不阻塞。
 
-**H.5 facade 与原子能力并存**：MCP 默认对模型暴露 8 个 facade 工具，CLI/HTTP/core 内部仍保留很多原子能力。这不是重复设计——模型面对 facade 降低工具选择成本，人类维护者和内部实现仍需原子能力做细粒度控制。
+**H.5 facade 与原子能力并存**：MCP 默认对模型暴露 15 个 task-level 工具，CLI/HTTP/core 内部仍保留很多原子能力。这不是重复设计——模型面对任务级接口降低工具选择成本，人类维护者和内部实现仍需原子能力做细粒度控制。
 
 **H.6 `async` 标记是宿主配置**：`hooks.yaml` 中 `async: true` 的消费方是宿主（Claude Code / Codex），不是 runner。宿主决定是否在后台运行该 hook；runner 只是一个一次性执行器。
 

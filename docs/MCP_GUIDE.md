@@ -409,11 +409,11 @@ For maintenance, public entrypoints accept `workspace.yaml`; resolve the graph d
 - `PreToolUse(Edit|Write) -> mc_analyze`
 - `Stop -> mc_close`
 
-### 默认不要挂
+### `UserPromptSubmit` 默认只记录不注入
 
-- `UserPromptSubmit`
+`user_prompt_submit` 默认配置为 `enabled: true` + `record_only: true`：只把脱敏 prompt 交互写入交互历史，不注入提示、不阻塞输入；宿主 adapter 也不会为它生成注入/阻断型配置。
 
-原因：普通自然语言请求过于依赖上下文，容易被宿主误处理成拦截步骤。
+原因：普通自然语言请求过于依赖上下文，容易被宿主误处理成拦截步骤。如需 suggest 注入必须由维护者显式修改 `hooks.yaml`。
 
 ## 7. Host Strategy / 宿主策略
 
@@ -422,7 +422,7 @@ For maintenance, public entrypoints accept `workspace.yaml`; resolve the graph d
 默认建议：
 
 - 生成 `SessionStart / PreToolUse / Stop`
-- 不生成 `UserPromptSubmit`
+- `UserPromptSubmit` 只生成 record_only 版本（仅记录，不注入、不阻断）
 
 ### Cursor
 

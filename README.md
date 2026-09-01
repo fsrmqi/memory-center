@@ -836,7 +836,7 @@ memory-center-mcp \
   --workspace /Users/cuijiaqi/javaworkspace/ucap/.memory-center/workspace.yaml
 ```
 
-Available MCP tools (8 facade tools) / MCP 工具（8 个任务级 facade）：
+Available MCP tools (15 task-level tools) / MCP 工具（15 个任务级工具）：
 
 | Tool | Purpose / 用途 |
 |---|---|
@@ -848,6 +848,13 @@ Available MCP tools (8 facade tools) / MCP 工具（8 个任务级 facade）：
 | `mc_handoff` | Build handoff package for another model / 为目标模型生成交接包 |
 | `mc_close` | Close task workflow: end session → sync case → record experience / 关闭任务工作流 |
 | `mc_admin` | Admin router (status/dashboard/eval/artifact/session/group etc.) / 管理路由，action 选择子操作 |
+| `mc_bootstrap_context` | Zero-initialization federated context entry / 零初始化联邦上下文入口，外部结果不持久化 |
+| `mc_provider_action` | Run registered external-provider fixed actions; writes need `confirm=true` / 运行注册 Provider 固定动作，写入需确认 |
+| `mc_mcp_bridge` | Restricted external MCP client behind an explicit workspace policy / 受白名单策略约束的外部 MCP Client |
+| `mc_context_pack` | Compact, evidence-driven context pack / 紧凑、证据驱动的上下文包 |
+| `mc_onboard` | Persona-based architecture onboarding / 按角色生成架构导览 |
+| `mc_domain` | Extract business domains and flows / 提取业务域和业务流 |
+| `mc_freshness` | Check index freshness / 检查索引新鲜度 |
 
 Task-space resume experience is available through `mc_admin` actions: `task_health`, `task_health_all`, `task_repair_plan`, `task_repair_apply`, and `task_resume_check`. `task_resume_check` should be the default first call when an agent returns to a known `task_id`; `task_repair_apply` runs as dry-run unless `force=true` is passed, and current-summary refreshes should include an `intent`.
 
@@ -1112,9 +1119,9 @@ Hook 是宿主集成方案，不是 Memory Center 核心能力。它定义宿主
 | `session_start` | `mc_start` | soft | 不阻塞，注入上下文 |
 | `pre_edit` | `mc_analyze` | guard | must-severity 规则匹配时阻塞编辑 |
 | `session_stop` | `mc_close` | soft | 不阻塞，关闭并同步 |
-| `user_prompt_submit` | `mc_start` | suggest | 注入提示，不执行命令 |
+| `user_prompt_submit` | `mc_start` | suggest + record_only | 默认只记录脱敏交互，不注入提示、不阻塞 |
 
-模式说明：soft（不阻塞），guard（风险规则匹配时阻塞，exit 2），suggest（只注入提示），off（禁用）。
+模式说明：soft（不阻塞），guard（风险规则匹配时阻塞，exit 2），suggest（只注入提示），off（禁用）。`user_prompt_submit` 默认 `record_only: true`，宿主 adapter 只生成记录型配置；需要注入提示必须由维护者显式修改 `hooks.yaml`。
 
 配置文件：每 workspace 的 `.memory-center/hooks.yaml`（声明式，不同 workspace 可有不同策略）。
 
@@ -1394,9 +1401,9 @@ AI 编程助手改代码前推荐按 facade 协议执行：
 7. If another model will continue, call mc_handoff(...)
 ```
 
-Atomic tools are still available through CLI / HTTP / internal orchestrator paths when finer control is needed, but MCP users should treat the 8 facade tools as the default public surface.
+Atomic tools are still available through CLI / HTTP / internal orchestrator paths when finer control is needed, but MCP users should treat these 15 task-level tools as the default public surface.
 
-当需要更细粒度控制时，CLI / HTTP / 内部 orchestrator 仍可使用原子能力；但对 MCP 调用方来说，默认公开接口应视为这 8 个 facade 工具。
+当需要更细粒度控制时，CLI / HTTP / 内部 orchestrator 仍可使用原子能力；但对 MCP 调用方来说，默认公开接口应视为这 15 个任务级工具。
 
 ---
 
@@ -1481,9 +1488,11 @@ You can also open the built-in local workbench pages:
 - `/ui/task?task_id=...`
 - `/ui/timeline`
 - `/ui/receipts`
+- `/ui/assertion`
 - `/ui/usage`
 - `/ui/backend`
 - `/ui/index-freshness`
+- `/ui/jobs`
 - `/ui/ref?ref_id=...`
 
 现在也可以直接打开内置本地工作台页面：
@@ -1495,9 +1504,11 @@ You can also open the built-in local workbench pages:
 - `/ui/task?task_id=...`
 - `/ui/timeline`
 - `/ui/receipts`
+- `/ui/assertion`
 - `/ui/usage`
 - `/ui/backend`
 - `/ui/index-freshness`
+- `/ui/jobs`
 - `/ui/ref?ref_id=...`
 
 Or:

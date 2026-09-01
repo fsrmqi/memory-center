@@ -1,6 +1,9 @@
-"""Memory Center MCP server — 8 facade tools (task-level interface).
+"""Memory Center MCP server — task-level interface (15 tools across server + insights).
 
-Previously exposed 82 atomic tools; now consolidated into 8 task-level facades:
+Previously exposed 82 atomic tools; now consolidated into task-level facades:
+  mc_bootstrap_context — federated context without workspace initialization
+  mc_provider_action   — run registered external-provider fixed actions
+  mc_mcp_bridge        — restricted external MCP client behind a workspace policy
   mc_start   — begin a task workflow (sniff + sync + session)
   mc_lookup  — unified knowledge lookup (auto/symbol/code/query/trace/chain/walkthrough/context/contracts/ref)
   mc_analyze — change impact analysis (quick/standard/full depth)
@@ -9,6 +12,8 @@ Previously exposed 82 atomic tools; now consolidated into 8 task-level facades:
   mc_handoff — build a handoff package for another model
   mc_close   — close a task workflow (end + sync + record)
   mc_admin   — admin/router for status, artifacts, evals, sessions, groups, etc.
+
+insights.py registers four more: mc_context_pack, mc_onboard, mc_domain, mc_freshness.
 
 All underlying orchestrator/artifacts functions remain callable from Python.
 CLI and HTTP server keep their fine-grained interfaces unchanged.

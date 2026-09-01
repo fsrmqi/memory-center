@@ -633,7 +633,7 @@ Replay 检查会进一步把每条建议分类为 `adopted`、`missed`、`bypass
 
 ### 6.3 hooks.yaml
 
-支持事件：`session_start`、`pre_edit`、`session_stop`、`user_prompt_submit`。支持 mode：`soft`、`guard`、`suggest`、`off`。推荐默认：`session_start: soft`、`pre_edit: guard`、`session_stop: soft`、`user_prompt_submit: enabled: false`。
+支持事件：`session_start`、`pre_edit`、`session_stop`、`user_prompt_submit`。支持 mode：`soft`、`guard`、`suggest`、`off`。默认配置：`session_start: soft`、`pre_edit: guard`、`session_stop: soft`、`user_prompt_submit: suggest + enabled: true + record_only: true`（只记录脱敏交互，不注入提示、不阻塞输入）。
 
 ### 6.4 Memory Layout / 记忆目录
 

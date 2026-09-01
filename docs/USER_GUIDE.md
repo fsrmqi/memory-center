@@ -281,8 +281,13 @@ HTTP `GET` 仅用于无副作用读取；写入、会话记录和受控外部动
 - `/ui/continuity`
 - `/ui/task`
 - `/ui/timeline`
-- `/ui/ref`
+- `/ui/receipts`
+- `/ui/assertion`
+- `/ui/usage`
 - `/ui/backend`
+- `/ui/index-freshness`
+- `/ui/jobs`
+- `/ui/ref`
 
 ## 7. Multi-Workspace / 多工作区
 

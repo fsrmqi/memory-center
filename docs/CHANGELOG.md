@@ -2,6 +2,11 @@
 
 ## Unreleased / 未发布
 
+- 基于代码事实校准活跃文档：MCP 公开面统一为 15 个 task-level tools（README/ARCHITECTURE/CLAUDE.md/server.py docstring，含 `insights.py` 注册的 4 个）；MCP resources 补齐 `memory-center://startup-diagnostics`（共 4 个）；CLI 命令族修正为 18 个模块（补 `artifacts`、`workspaces`）。
+- `user_prompt_submit` hook 默认行为按代码事实修正：默认 `enabled: true` + `record_only: true`（只记录脱敏交互，不注入提示、不阻塞输入，宿主 adapter 只生成记录型配置），替换旧的"默认禁用/enabled: false"表述（README、MCP_GUIDE、REFERENCE、ARCHITECTURE H.3/H.4、AI_DEV_GUIDE）。
+- Workbench 页面列表补齐：README 与 USER_GUIDE 现列出 `/ui/assertion`、`/ui/jobs` 等全部 11 个已注册 `/ui` 路由。
+- Aligned active documentation with code facts: MCP surface is consistently documented as 15 task-level tools (including the 4 registered in `insights.py`), resources now include `memory-center://startup-diagnostics`, CLI families corrected to 18 modules, `user_prompt_submit` defaults documented as `record_only` (sanitize-record only, no prompt injection or blocking), and Workbench page lists now cover all registered `/ui` routes.
+
 - 全面收敛当前文档至 4.6.7：README、架构、MCP、用户与参考文档现在统一说明 quality-gate、validation_plan、primary_chain、retrieval replay、分桶刷新预算、SQLite-first 索引镜像与 Workbench 质量总览；主计划移除已完成事项，历史研究和实施回执保留其历史状态。
 - Consolidated current documentation around 4.6.7: README, architecture, MCP, user, and reference guides now consistently cover the quality gate, validation plan, primary chain, retrieval replay, bucketed refresh budgets, SQLite-first index mirrors, and the Workbench quality overview. The roadmap no longer treats completed work as pending; historical research and receipts retain their historical status.
 
