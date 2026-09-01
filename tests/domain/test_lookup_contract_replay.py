@@ -1,0 +1,48 @@
+"""Lookup behavior contract replay remains deterministic and approval-gated."""
+from __future__ import annotations
+
+from pathlib import Path
+
+from memory_center.core.benchmark.lookup_contract import evaluate_lookup_contract, save_lookup_contract_baseline
+
+
+def _write_cases(path: Path) -> None:
+    path.write_text("schema_version: 1\ncases:\n  - case_id: symbol\n    query: ArticleService\n    project: demo\n", encoding="utf-8")
+
+
+def _runner(case):
+    return {
+        "results": [{"node": {"id": "Class:ArticleService", "type": "Class", "project": case["project"]}}],
+        "project_scope": {"requested": case["project"], "effective": case["project"], "source": "explicit"},
+        "intent_analysis": {"primary_intent": "class"}, "contracts": {},
+        "knowledge_state": {"state": "FOUND"}, "agent_next_steps": [{"action": "read_target"}],
+        "served_dedup": {"applied": False},
+    }
+
+
+def test_lookup_contract_baseline_requires_explicit_approval(tmp_path: Path) -> None:
+    cases, baseline = tmp_path / "cases.yaml", tmp_path / "baseline.json"
+    _write_cases(cases)
+    current = evaluate_lookup_contract("workspace.yaml", cases, runner=_runner)
+    assert current["baseline_status"] == "no_baseline"
+    assert current["status"] == "pass"
+    save_lookup_contract_baseline(current, baseline, label="approved")
+    compared = evaluate_lookup_contract("workspace.yaml", cases, baseline_file=baseline, runner=_runner)
+    assert compared["baseline_status"] == "compared"
+    assert compared["status"] == "pass"
+
+
+def test_lookup_contract_reports_semantic_response_drift(tmp_path: Path) -> None:
+    cases, baseline = tmp_path / "cases.yaml", tmp_path / "baseline.json"
+    _write_cases(cases)
+    approved = evaluate_lookup_contract("workspace.yaml", cases, runner=_runner)
+    save_lookup_contract_baseline(approved, baseline)
+
+    def changed(case):
+        payload = _runner(case)
+        payload["intent_analysis"] = {"primary_intent": "feign"}
+        return payload
+
+    result = evaluate_lookup_contract("workspace.yaml", cases, baseline_file=baseline, runner=changed)
+    assert result["status"] == "block"
+    assert result["changed_case_ids"] == ["symbol"]

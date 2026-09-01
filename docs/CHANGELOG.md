@@ -2,6 +2,11 @@
 
 ## Unreleased / 未发布
 
+## 4.6.14 Lookup Behavior Contracts / 查询行为契约
+
+- 新增 `eval-lookup-contract` 与显式 `eval-lookup-contract-baseline-save`：回放脱敏 case，比较结果顺序、project scope、契约计数、knowledge state、guidance 与 served dedup 等规范化字段；无 baseline 不阻断，已批准 baseline 的差异返回 `block`。
+- Added lookup behavior-contract replay and explicit baseline approval commands; approved semantic response drift is reported as `block`.
+
 ## 4.6.13 Contract Enrichment Split / 契约补充拆分
 
 - 将混合查询中的 Feign/MQ/API/Config 契约筛选、Feign→API path 关联和 contract routing 迁至 `lookup_contracts.py`；兼容门面和响应字段保持不变，并新增独立契约行为测试。

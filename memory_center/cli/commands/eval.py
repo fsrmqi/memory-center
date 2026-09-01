@@ -29,6 +29,29 @@ from memory_center.core.orchestrator import (
 
 
 def register_eval_commands(app: typer.Typer) -> None:
+    @app.command("eval-lookup-contract")
+    def eval_lookup_contract_cmd(
+        workspace: str = typer.Option(...),
+        cases: str = typer.Option(..., help="Local sanitized lookup-contract YAML cases."),
+        baseline: str = typer.Option("", help="Optional approved JSON baseline."),
+    ):
+        """Replay public hybrid lookup behavior and compare normalized response contracts."""
+        from memory_center.core.benchmark.lookup_contract import evaluate_lookup_contract
+
+        print(evaluate_lookup_contract(workspace, cases, baseline_file=baseline or None))
+
+    @app.command("eval-lookup-contract-baseline-save")
+    def eval_lookup_contract_baseline_save_cmd(
+        workspace: str = typer.Option(...),
+        cases: str = typer.Option(..., help="Local sanitized lookup-contract YAML cases."),
+        output: str = typer.Option(..., help="Approved baseline JSON output."),
+        label: str = typer.Option("current"),
+    ):
+        """Run lookup contract replay and explicitly save the current approved baseline."""
+        from memory_center.core.benchmark.lookup_contract import evaluate_lookup_contract, save_lookup_contract_baseline
+
+        result = evaluate_lookup_contract(workspace, cases)
+        print({"result": result, "baseline": save_lookup_contract_baseline(result, output, label=label)})
     @app.command("eval-session-recall")
     def eval_session_recall_cmd(
         workspace: str = typer.Option(..., help="Path to .memory-center/workspace.yaml"),
