@@ -58,12 +58,16 @@ def _cjk_bigrams(text: str) -> list[str]:
 
 
 def _resume_related_cases(store: WorkspaceStore, intent: str, *, limit: int) -> tuple[list[dict[str, Any]], str]:
-    """Keep legacy exact matching, then use a scored CJK fallback only when empty."""
+    """Keep legacy exact matching, then use a scored CJK fallback only when empty.
+
+    两组命中都按 case 热度(hotness:命中次数 × 时间衰减)重排,高频且最近
+    命中的 case 排前;热度来自既有 session events,失败降级为原排序。
+    """
     cases = store.read_jsonl_prefer_backend("cross-service-task-memory.jsonl", limit=300)
     tokens = tokenize(intent)
     exact = [item for item in cases if any(token in json.dumps(item, ensure_ascii=False).lower() for token in tokens)]
     if exact:
-        return exact[-limit:], "exact"
+        return _hotness_ranked(store, exact)[:limit], "exact"
     bigrams = _cjk_bigrams(intent)
     if len(bigrams) < 2:
         return [], "none"
@@ -74,7 +78,21 @@ def _resume_related_cases(store: WorkspaceStore, intent: str, *, limit: int) -> 
         if score >= 2:
             scored.append((score, index, item))
     scored.sort(key=lambda item: (-item[0], -item[1]))
-    return [item[2] for item in scored[:limit]], "cjk_bigram" if scored else "none"
+    ranked = _hotness_ranked(store, [item[2] for item in scored[:limit]])
+    return ranked, "cjk_bigram" if scored else "none"
+
+
+def _hotness_ranked(store: WorkspaceStore, cases: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """按热度重排 case;任何异常降级为原顺序(不阻断 resume)。"""
+    if len(cases) <= 1:
+        return cases
+    try:
+        from memory_center.core.foundation.hotness import rank_cases_by_hotness
+
+        events = store.read_jsonl_prefer_backend("session-events.jsonl", limit=2000)
+        return rank_cases_by_hotness(cases, events)
+    except Exception:
+        return cases
 
 
 def workspace_resume_packet(

@@ -9,9 +9,46 @@ _MAX_LEARNED_WEIGHT = 0.75
 _MAX_CANDIDATE_LIMIT = 48
 _MAX_EVIDENCE_BUDGET = 12
 
+# 任务类型 purpose 预算预设(设计参考 OpenViking context_assembler 的
+# PURPOSE_PRESETS):按意图归并把检索预算向任务形态倾斜,而不是只按
+# fast/standard/deep 深度分档。delta 施加在基线预算之上,仍受上下限约束。
+# - contract_change: 契约类改动需要更多候选做影响面对照;
+# - quick_fix: 单点修复收窄候选,避免上下文过宽;
+# - full_chain / general: 保持基线。
+PURPOSE_DELTAS: dict[str, dict[str, int]] = {
+    "contract_change": {"candidate_limit": 6, "evidence_budget": 2, "graph_depth": 0},
+    "quick_fix": {"candidate_limit": -6, "evidence_budget": -1, "graph_depth": 0},
+    "full_chain": {"candidate_limit": 0, "evidence_budget": 0, "graph_depth": 0},
+    "general": {"candidate_limit": 0, "evidence_budget": 0, "graph_depth": 0},
+}
+
+_CONTRACT_INTENTS = frozenset({"feign", "mq", "endpoint", "config"})
+_PURPOSE_INTENT_MARKERS: dict[str, tuple[str, ...]] = {
+    "quick_fix": ("fix", "修复", "bug", "报错", "异常", "失败", "小改", "quick"),
+}
+
+
+def classify_purpose(intent: Mapping[str, Any]) -> str:
+    """把检索意图归并为任务 purpose(纯函数,确定性)。
+
+    优先级:全链路 > 契约类 > 快速修复 > general。契约类与快速修复同时
+    命中时按契约类处理(契约安全优先于预算收窄)。
+    """
+    intent_data = dict(intent or {})
+    primary = str(intent_data.get("primary_intent", "general") or "general").lower()
+    if bool(intent_data.get("is_full_chain")) or primary == "walkthrough":
+        return "full_chain"
+    if primary in _CONTRACT_INTENTS:
+        return "contract_change"
+    text = str(intent_data.get("query", "") or intent_data.get("intent", "") or "").lower()
+    if primary in {"class", "method"} and any(marker in text for marker in _PURPOSE_INTENT_MARKERS["quick_fix"]):
+        return "quick_fix"
+    return "general"
+
 
 @dataclass(frozen=True)
 class RetrievalPolicy:
+    purpose: str
     sources: tuple[str, ...]
     graph_depth: int
     candidate_limit: int
@@ -21,6 +58,7 @@ class RetrievalPolicy:
 
     def to_dict(self) -> dict[str, Any]:
         return {
+            "purpose": self.purpose,
             "sources": list(self.sources),
             "graph_depth": self.graph_depth,
             "candidate_limit": self.candidate_limit,
@@ -86,6 +124,14 @@ def select_retrieval_policy(
         candidate_limit += 8
         evidence_budget += 2
 
+    # 任务 purpose 预算倾斜(additive,确定性):在基线与新鲜度调整之后施加。
+    purpose = classify_purpose(intent_data)
+    deltas = PURPOSE_DELTAS.get(purpose, {})
+    if deltas:
+        candidate_limit += int(deltas.get("candidate_limit", 0))
+        evidence_budget += int(deltas.get("evidence_budget", 0))
+        graph_depth += int(deltas.get("graph_depth", 0))
+
     if weights:
         average = sum(weights.values()) / len(weights)
         if average < 0.45:
@@ -97,6 +143,7 @@ def select_retrieval_policy(
 
     sources = tuple(dict.fromkeys([*hard_sources, *optional_sources]))
     return RetrievalPolicy(
+        purpose=purpose,
         sources=sources,
         graph_depth=max(1, min(6, graph_depth)),
         candidate_limit=max(8, min(_MAX_CANDIDATE_LIMIT, candidate_limit)),

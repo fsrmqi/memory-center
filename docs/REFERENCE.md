@@ -23,6 +23,8 @@
 - `plan-change`
 - `verify-checklist`
 - `detect-changes`
+- `query`：检索预算按任务 purpose（`full_chain` / `contract_change` / `quick_fix` / `general`，由意图确定性归并）倾斜——契约类查询获得更宽的候选与证据预算，快速修复类收窄；`query_plan.purpose` 透出归并结果。传入 `session_id` 时，本会话此前已交付过的文件会被有界降权（`_served_before` 标记，账本失败降级为不去重）。 / retrieval budgets are tilted by deterministic task purpose (contract queries widen, quick fixes narrow) and previously served files are bounded-downweighted when `session_id` is provided; ledger failures degrade to no dedup.
+- `resume` 相关链路（`resume-context` / `work-resume`）：related cases 按**热度**（命中次数 × 7 天半衰期时间衰减，命中信号来自既有 `agent_guidance` 事件）重排；零命中 case 保持原序，统计失败降级为原排序。 / related cases are re-ranked by hotness (hit count × exponential decay) using existing guidance events; zero-hit cases keep their original order and failures degrade gracefully.
 - `change-review`：统一执行有界定向刷新、加权影响路径、测试/契约风险和验证 Action。
 - `trace`
 - `export-evidence-subgraph`：显式导出 JSON / Markdown / HTML 证据子图；`--max-depth<=3`、`--max-edges<=120`，不扫描全图。
@@ -109,7 +111,7 @@
 
 `artifact repair-task` 默认 dry-run；传 `--apply` 才写入。刷新 `current-summary` 时建议同时传 `--intent`，修复器不会伪造 write receipt、自动归档相似任务空间或覆盖已有人工内容。
 
-### Quality, replay, and maintenance / 质量、回放与维护（4.6.7）
+### Quality, replay, and maintenance / 质量、回放与维护（4.6.8）
 
 - `quality-gate --workspace <workspace.yaml>`：只读汇总 generation、coverage、retrieval replay、IR diff、分桶刷新预算与存储 dry-run；状态为 `pass|attention|block|real_case_missing`，绝不执行 reindex/GC/VACUUM/用户命令。
 - `eval-retrieval-replay-cases --workspace <workspace.yaml> --cases <private-cases.yaml> --queries <private-query-map.json>`：运行显式、脱敏的真实 retrieval replay。私有 case 与查询映射必须在仓库外；结果仅保留 case ID、类别、聚合质量与性能指标。

@@ -59,6 +59,7 @@ def register_lookup_commands(app: typer.Typer) -> None:
             "project": project,
             "enable_vector": vector,
             "vector_weight": vector_weight,
+            "session_id": session_id,
         }
         if rerank:
             query_kwargs["enable_reranker"] = True
@@ -259,4 +260,3 @@ def register_lookup_commands(app: typer.Typer) -> None:
                 limit=limit,
             )
         )
-

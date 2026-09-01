@@ -8,6 +8,17 @@
   (1) `core/foundation/merge_ops.py`——`immutable/replace/append/sum/patch` 五算子与 SEARCH/REPLACE 块 handler（行级匹配、失配保守报错、不做模糊猜测）；
   (2) `core/knowledge/case_schema.py`——`engineering_case` 内置 schema（既有 case 字段全部保留，新增三段式 `situation/approach/reflect` 与可累计 `executions/successes`）+ workspace `rules/case-schemas.yaml` 覆盖 + required/类型/段落头校验；
   (3) 三处接入：`record-case` 新增 `extra_fields` 与 `schema_validation` 返回（校验失败不阻断写入，additive 兼容）；`suggest-case` 附带 `case_writing_guide`（三段式写作纪律：互斥/原子/抽象/失败转禁令/可执行）；`decide-consolidation-candidate` approve 时按 append/sum 算子把同主题失效 case 的经验计数并入新 case，返回 `merge_notes` 说明。
+- 新增三项检索与上下文治理增强（设计参考 OpenViking memory_lifecycle / context_assembler ledger / PURPOSE_PRESETS，均为纯函数、失败降级、不新增 MCP tool）：
+  (1) **case 热度排序**：`core/foundation/hotness.py` 提供 `sigmoid(log1p(active_count)) × 指数时间衰减`（半衰期 7 天）的纯函数；`_resume_related_cases` 的 exact/cjk 两组命中按热度重排，命中信号来自既有 `agent_guidance`/`case_hit` 事件，**零命中 case 保持原序**（微秒级创建时间差不引起重排，评估语义不变）；读取失败降级为原排序。
+  (2) **跨调用已服务文件账本**：`core/foundation/served_ledger.py` 按会话记录 `mc_lookup` 响应交付的文件路径（有界 500 条/会话，50 会话）；`memory_query_hybrid` 新增可选 `session_id`，已服务文件得分 ×0.5 并标记 `_served_before`；路径匹配仅接受精确或绝对/相对目录后缀形态，不以 basename 猜测；账本任何失败降级为不去重，不阻断查询。
+  (3) **任务 purpose 预算预设**：`select_retrieval_policy` 按 `classify_purpose`（full_chain / contract_change / quick_fix / general，确定性归并，契约类优先于快速修复）对 candidate_limit/evidence_budget/graph_depth 施加 additive delta（契约类 +6/+2，快速修复 -6/-1），`RetrievalPolicy.to_dict` 新增 `purpose` 字段。
+- Added three retrieval/context governance enhancements adapted from OpenViking (pure functions, degrade-on-failure, no new MCP tools): case hotness ranking with 7-day half-life decay over existing guidance events (zero-hit cases keep original order), a per-session served-file ledger with bounded cross-call dedup downweighting in hybrid query, and purpose-based budget presets (contract_change widens, quick_fix narrows) surfaced additively through `RetrievalPolicy.purpose`.
+
+## 4.6.8 Local Package Refresh / 本地包刷新
+
+- 递增本地包、CLI 和 MCP 运行时版本至 `4.6.8`，发布会话记忆归档/摘要、case schema 合并和检索上下文治理增强；已服务文件去重通过 MCP、CLI 和 HTTP 的 `session_id` 入口生效。
+- Bumped local package, CLI, and MCP runtime metadata to `4.6.8`, covering session retention/synopsis, case-schema merging, and retrieval-context governance; served-file downweighting is active through MCP, CLI, and HTTP session-aware query paths.
+
 - Added typed L1 case schema and field-level merge operators adapted from OpenViking's MemoryTypeSchema/merge_op designs (pure functions, no LLM): five merge ops with a conservative SEARCH/REPLACE handler, a builtin engineering-case schema with workspace YAML overrides and bounded validation, writing-guide output on suggest-case, and append/sum discipline merging superseded same-topic cases into approved consolidation candidates with merge notes.
 - Added rolling session-event archive and deterministic payload synopsis, both adapted from OpenViking designs (pure strategy planners, bounded constants, no model dependency): turn-boundary archive planner with live-anchor protection, session-scoped prune via a new backend delete API, synopsis embedded into offloaded events and surfaced through recent-evidence full/compact views, plus `session-archive-plan` / `session-archive` CLI commands.
 

@@ -532,7 +532,7 @@ Java 仍保留 Spring-aware 专用解析；多语言 structural pass 避免重�
 - **运行治理与原子发布（Phase C）**：`core/indexing/job_coordinator.py` 把 reindex job 权威状态迁入 SQLite `workspace_jobs` 表（scope/request 指纹、owner、lease/heartbeat、retry 血缘）；generation 发布由 `WorkspaceStore.publish_generation_payloads` 在单个 `BEGIN IMMEDIATE` 事务内原子完成，`_publish_smoke` 做只读 smoke，失败自动回滚到 previous generation。
 - **解析 IR 诊断边界（Phase D）**：`core/indexing/ir.py` 定义 `FileRecord` / `SymbolRecord` / `RelationCandidate` 与确定性 `stable_id`；当前 Java 调用诊断经 `RelationCandidate` 聚合导出 `index-resolution.json`，未证明目标保持 AMBIGUOUS；`core/indexing/differential.py` 差分报告含 `symbol_category_counts`。全 parser adapter 的统一 IR 投影仍是后续按真实需求推进的内部演进。
 
-### 5.4.2 质量、检索与存储运行面（4.5.3–4.6.7）
+### 5.4.2 质量、检索与存储运行面（4.5.3–4.6.8）
 
 - **Generation-local staging / 代际本地暂存**：局部刷新在独立 staging 中生成并在发布时合并；active/previous generation 保持可读，失败或取消不污染已发布事实。
 - **Primary service chain / 跨服务主链路**：`mc_lookup(auto)` 对 Method 锚点在非 fast tier 附加 additive `primary_chain`。它只沿允许的 Feign/HTTP 图证据与受限推断桥接展开；MQ destination 无法证明时返回 `insufficient_evidence`，不伪造消费者。
@@ -540,6 +540,7 @@ Java 仍保留 Spring-aware 专用解析；多语言 structural pass 避免重�
 - **Refresh budgets / 刷新预算**：局部刷新按变更类别和 scope 分桶。只有同桶至少五个真实样本且 P95 超预算才形成性能 attention；legacy 样本不参与门禁。
 - **Quality gate / 质量门禁**：`core/assessment/health.py` 汇总 generation、coverage、replay、IR、刷新与存储 dry-run，返回 `pass|attention|block|real_case_missing`。它是发布判断，不是写入或维护执行器。
 - **SQLite-first storage / SQLite 优先存储**：结构化运行时索引以 SQLite 为权威；`RUNTIME_ONLY_INDEXES` 不再保留 JSON 文件镜像。导出清理、generation GC 和 VACUUM 均须显式 dry-run 后 apply。
+- **Retrieval context governance / 检索上下文治理**：resume 的相关 case 仅在存在真实命中时按热度稳定重排；session-aware hybrid query 对已服务文件做有界、无歧义路径降权；purpose 分类以兼容字段解释候选与证据预算，任一辅助状态失败均降级为既有查询行为。
 
 详见验证回执 [docs/implementation-receipts/code-graph-foundation.md](implementation-receipts/code-graph-foundation.md)。
 
