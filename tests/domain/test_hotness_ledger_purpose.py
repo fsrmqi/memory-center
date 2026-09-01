@@ -29,6 +29,7 @@ from memory_center.core.foundation.served_ledger import (
 from memory_center.core.orchestrator.query import memory_query_hybrid
 from memory_center.core.orchestrator.resume import _resume_related_cases
 from memory_center.core.retrieval.policy import classify_purpose, select_retrieval_policy
+from memory_center.core.retrieval.policy_rules import RETRIEVAL_POLICY_RULES_FILE, load_purpose_deltas
 from memory_center.core.storage.workspace import WorkspaceStore
 
 NOW = datetime(2026, 9, 1, tzinfo=timezone.utc)
@@ -157,12 +158,9 @@ def test_ledger_is_bounded() -> None:
     assert f"dir/file-{MAX_SERVED_PATHS + 49}.java" in served
 
 
-def test_ledger_survives_process_cache_loss(demo_workspace: Path) -> None:
-    import memory_center.core.foundation.served_ledger as ledger_module
-
+def test_ledger_survives_repository_reopen(demo_workspace: Path) -> None:
     workspace = str(demo_workspace)
     record_served_files(workspace, "persist", ["x.java"], tier="deep")
-    ledger_module._INPROC_LEDGERS.clear()
     assert served_files(workspace, "persist") == {"x.java"}
 
 
@@ -214,3 +212,14 @@ def test_purpose_deltas_adjust_budgets_against_baseline() -> None:
     # purpose 字段随 to_dict 输出(additive)
     assert baseline.to_dict()["purpose"] == "general"
     assert contract.to_dict()["purpose"] == "contract_change"
+
+
+def test_workspace_purpose_delta_override_is_bounded_and_additive(demo_workspace: Path) -> None:
+    rules = WorkspaceStore(demo_workspace).rules_dir / RETRIEVAL_POLICY_RULES_FILE
+    rules.write_text(
+        "purpose_deltas:\n  contract_change:\n    candidate_limit: 9\n    unknown: 999\n",
+        encoding="utf-8",
+    )
+    deltas = load_purpose_deltas(demo_workspace)
+    assert deltas["contract_change"]["candidate_limit"] == 9
+    assert "unknown" not in deltas["contract_change"]

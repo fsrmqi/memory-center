@@ -320,29 +320,9 @@ def memory_query_hybrid(
     phase_started = time.perf_counter()
 
     # 已服务文件有界降权(跨调用去重):仅当提供 session_id 且账本可读时生效。
-    served_dedup_applied = False
-    if str(session_id or "").strip():
-        try:
-            from memory_center.core.foundation.served_ledger import paths_refer_to_same_file, served_files
+    from .lookup_session import apply_served_file_downweight, record_lookup_delivery
 
-            served = served_files(workspace_file, session_id)
-            if served:
-                # 图节点可能使用相对路径、read_targets 可能使用绝对路径；只做
-                # 精确或目录后缀匹配，禁止 basename 猜测误伤跨模块同名文件。
-                results_all = result.get("results", [])
-                for item in results_all:
-                    node = item.get("node", {}) if isinstance(item.get("node"), dict) else {}
-                    node_path = str(node.get("file_path", "") or node.get("path", "") or "").replace("\\", "/").strip()
-                    if node_path and any(paths_refer_to_same_file(node_path, served_path) for served_path in served):
-                        item["score"] = item.get("score", 0) * 0.5
-                        item["_served_before"] = True
-                        served_dedup_applied = True
-                if served_dedup_applied:
-                    results_all.sort(key=lambda x: x.get("score", 0), reverse=True)
-                    result["results"] = results_all
-        except Exception:
-            served_dedup_applied = False
-    result["served_dedup"] = {"applied": served_dedup_applied, "session_id": str(session_id or "")}
+    result = apply_served_file_downweight(result, workspace_file, session_id)
 
     # Project filtering: explicit project is strict; inferred active-service
     # scope is preferred only when it has evidence, otherwise keep global hits.
@@ -534,6 +514,7 @@ def memory_query_hybrid(
     result = attach_knowledge_state(store, result, query=query, project=effective_project, mode="memory_query_hybrid")
     timings["response_envelope"] = _elapsed_ms(phase_started)
     result["performance"] = {"timing_ms": {**timings, "total": _elapsed_ms(started)}}
+    record_lookup_delivery(workspace_file, session_id, result)
     return result
 
 

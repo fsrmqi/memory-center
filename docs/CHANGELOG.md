@@ -2,6 +2,13 @@
 
 ## Unreleased / 未发布
 
+## 4.6.9 Session-State Architecture / 会话状态架构
+
+- 会话派生状态新增 `SessionStateRepository`：已服务文件账本不再由 foundation 直接维护 JSON 文件或进程缓存，改由 SQLite `session_state` 作为权威库，并沿用工作区审计锁、有界 500 路径/50 会话及失败降级语义。
+- case 记录新增稳定 `case_id`；resume 在提供 session 时写入精确 `case_recalled` 事件。热度优先按 case ID 聚合，保留旧 `agent_guidance` 文本匹配作为历史兼容回退。
+- `select_retrieval_policy` 保持纯函数，新增可选 `purpose_deltas` 参数；`rules/retrieval-policy.yaml` 可覆盖已知 purpose 的候选、证据和图深度 delta，非法字段降级为内置默认。
+- Added a SQLite-backed `SessionStateRepository`, stable `case_id` / `case_recalled` recall events, and workspace-overridable purpose deltas in `rules/retrieval-policy.yaml`; existing public responses and failure-degradation behavior remain compatible.
+
 - 新增**会话事件滚动归档**（设计参考 OpenViking session/retention 的纯策略模式）：`core/orchestrator/retention.py` 提供无 IO/无模型的 planner——把 session events 聚合为逻辑轮次（`user_prompt`/`note`/`session_start` 为边界），在 `keep_recent_turns` + `max_archive_tokens` 预算下选择 archive/live 边界；`session_end` 类锚点事件永不归档。执行器 `archive_session_events` 把归档段迁入 `session-events-archive.jsonl`（SQLite + 文件双写），live 集合按 session 过滤裁剪（新增 `MemoryRecordOperations.delete_session_records`），全程保持 SQLite 权威与文件导出一致。CLI 新增 `session-archive-plan`（dry-run）与 `session-archive`。
 - 新增**外置 payload 确定性摘要**（设计参考 OpenViking tool_result_synopsis）：`core/foundation/synopsis.py` 按 json/csv/tsv/yaml/xml/code/text 分类，每类有界采样常量，纯函数无模型依赖。超过内联上限被 offload 的 session event 现在在事件本体保留 `_payload_synopsis`，`workspace_recent_evidence` full 视图透出 `synopsis`、compact 视图透出 `synopsis_title`/`synopsis_kind`，使 resume/handoff 无需展开 payload 即可判断证据内容。
 - 新增 **L1 case schema 化与字段级合并算子**（设计参考 OpenViking MemoryTypeSchema 与 merge_op 包，均为纯函数无 LLM）：

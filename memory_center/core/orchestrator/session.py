@@ -269,6 +269,24 @@ def workspace_record_agent_guidance(
     )
 
 
+def workspace_record_case_recalled(
+    workspace_file: str | Path,
+    session_id: str,
+    case_id: str,
+    *,
+    case_task: str = "",
+) -> dict[str, Any]:
+    """记录一次已交付 case 的稳定 ID 命中，供后续热度统计精确聚合。"""
+    if not session_id.strip() or not case_id.strip():
+        return {"logged": False, "reason": "missing_session_or_case_id"}
+    return workspace_log_session_event(
+        workspace_file,
+        session_id,
+        "case_recalled",
+        {"case_id": case_id.strip(), "case_task": case_task[:240]},
+    )
+
+
 def _extract_agent_next_steps(payload: dict[str, Any]) -> list[dict[str, Any]]:
     steps = payload.get("agent_next_steps", [])
     if isinstance(steps, list) and steps:

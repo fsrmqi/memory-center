@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from memory_center.core.foundation.schemas import with_schema
 
@@ -400,6 +401,7 @@ def workspace_record_case(
     from memory_center.core.knowledge.case_schema import load_case_registry, validate_case_draft
 
     item = {
+        "case_id": uuid4().hex,
         "task": task,
         "projects": projects,
         "files": files,

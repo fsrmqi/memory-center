@@ -145,6 +145,15 @@ class _MemoryRecordOperations:
         )
         conn.executescript(
             """
+            CREATE TABLE IF NOT EXISTS session_state (
+              state_type TEXT NOT NULL,
+              session_id TEXT NOT NULL,
+              updated_at TEXT NOT NULL,
+              payload_json TEXT NOT NULL,
+              PRIMARY KEY(state_type, session_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_session_state_type_updated
+              ON session_state(state_type, updated_at DESC);
             CREATE TABLE IF NOT EXISTS delivery_receipts (
               task_id TEXT NOT NULL,
               receipt_id TEXT NOT NULL,
@@ -195,6 +204,44 @@ class _MemoryRecordOperations:
         if "projection_version" not in sync_columns:
             conn.execute("ALTER TABLE delivery_receipt_sync ADD COLUMN projection_version INTEGER NOT NULL DEFAULT 0")
         conn.commit()
+
+    def get_session_state(self, state_type: str, session_id: str) -> dict[str, Any] | None:
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT payload_json FROM session_state WHERE state_type = ? AND session_id = ?",
+                (state_type, session_id),
+            ).fetchone()
+        if row is None:
+            return None
+        try:
+            payload = json.loads(str(row["payload_json"]))
+        except (TypeError, ValueError):
+            return None
+        return payload if isinstance(payload, dict) else None
+
+    def upsert_session_state(self, state_type: str, session_id: str, payload: dict[str, Any], *, updated_at: str) -> None:
+        with self.connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO session_state(state_type, session_id, updated_at, payload_json)
+                VALUES(?, ?, ?, ?)
+                ON CONFLICT(state_type, session_id) DO UPDATE SET
+                  updated_at=excluded.updated_at,
+                  payload_json=excluded.payload_json
+                """,
+                (state_type, session_id, updated_at, json.dumps(payload, ensure_ascii=False)),
+            )
+
+    def prune_session_states(self, state_type: str, *, max_sessions: int) -> int:
+        with self.connect() as conn:
+            deleted = conn.execute(
+                """DELETE FROM session_state WHERE state_type = ? AND session_id IN (
+                     SELECT session_id FROM session_state WHERE state_type = ?
+                     ORDER BY updated_at DESC LIMIT -1 OFFSET ?
+                   )""",
+                (state_type, state_type, max_sessions),
+            ).rowcount
+        return max(0, deleted)
 
     def append_record(self, collection: str, payload: dict[str, Any], record_id: str = "") -> None:
         payload_type = str(payload.get("type", "") or "")

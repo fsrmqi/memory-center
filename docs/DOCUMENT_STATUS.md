@@ -1,6 +1,6 @@
 # Documentation Status / 文档状态目录
 
-> **基准版本 / Baseline**：4.6.8
+> **基准版本 / Baseline**：4.6.9
 > **更新日期 / Updated**：2026-08-30  
 > **规则 / Rule**：当前行为以代码、CLI `--help`、路由、MCP schema 和标记为 `current` 的文档为准。历史文档保留当时的样本与结论，不重写为当前事实。
 
@@ -41,7 +41,7 @@
 | 历史数据闭环 | `docs/DATA_REAL_LOOP_RUN1.md` |
 | 历史记录 | `docs/CHANGELOG.md` 的已发布条目 |
 
-## 4.6.8 capability summary / 4.6.8 能力摘要
+## 4.6.9 capability summary / 4.6.9 能力摘要
 
 - `quality-gate`：只读发布质量决策，汇总 generation、coverage、replay、IR、刷新与存储；不执行维护动作。
 - `change_review.validation_plan`：按风险类别给出最小可证伪验证设计；不执行用户命令。
@@ -51,3 +51,4 @@
 - SQLite-first indexes：`RUNTIME_ONLY_INDEXES` 无 JSON 查询回退；清理、GC、compact 和 VACUUM 必须显式 apply。
 - Workbench quality overview：只读展示 quality-gate、generation、刷新、IR 与存储摘要，不展示私有正文或源码。
 - Retrieval context governance：related case 按已有命中热度稳定重排；会话级已服务文件仅以无歧义路径降权；purpose 会以兼容字段解释候选和证据预算。
+- Session-state boundary：已服务账本由 SQLite `session_state` 权威存储；新 case 带稳定 ID，resume 的 `case_recalled` 事件用于精确热度统计。

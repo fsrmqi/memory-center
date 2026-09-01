@@ -278,7 +278,14 @@ def hybrid_retrieve(
         config = HybridRetrievalConfig()
 
     intent = detect_query_intent(query)
-    policy = select_retrieval_policy(intent, freshness or {}, learned_weights or {})
+    from .policy_rules import load_purpose_deltas
+
+    policy = select_retrieval_policy(
+        intent,
+        freshness or {},
+        learned_weights or {},
+        purpose_deltas=load_purpose_deltas(workspace_file),
+    )
     _rrf, _best_match = reciprocal_rank, best_match
     tokens = tokenize(query)
     source_limit = max(limit, policy.candidate_limit)

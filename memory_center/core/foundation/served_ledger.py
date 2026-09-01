@@ -1,25 +1,22 @@
 """跨调用已服务文件账本(设计参考 OpenViking context_assembler/ledger.py)。
 
-记录"本会话已经给模型看过的文件路径集合",供后续检索把重复结果降权,
+兼容门面：记录"本会话已经给模型看过的文件路径集合",供后续检索把重复结果降权,
 避免长会话里 mc_lookup 反复返回同一批文件占用 token。与 OV 的语义一致:
 
-- 账本是 bookkeeping,任何读写失败都降级为"无去重",绝不阻断查询;
+- 账本由 storage.SessionStateRepository 写入 SQLite；任何读写失败都降级为"无去重",绝不阻断查询;
 - 按会话(session_id)隔离;无 session_id 的调用不记录也不降权;
 - 有界:每个会话最多保留 MAX_SERVED_PATHS 条路径,超限丢弃最旧的。
 """
 from __future__ import annotations
 
-import json
-import re
-from collections import OrderedDict
 from pathlib import Path
 from typing import Any
 
+from memory_center.core.storage.session_state import MAX_SERVED_PATHS, SessionStateRepository
+
+# 兼容旧导入；状态已迁移为 SQLite 的 session_state，不再直接写 JSON 文件。
 LEDGER_FILENAME = "served-ledger.json"
 LEDGER_VERSION = 1
-MAX_SERVED_PATHS = 500
-# 进程内缓存,避免每次 lookup 都读盘;键为 (workspace, session_id)。
-_INPROC_LEDGERS: dict[tuple[str, str], OrderedDict[str, str]] = {}
 
 
 def normalize_path(path: str) -> str:
@@ -43,40 +40,6 @@ def paths_refer_to_same_file(left: str, right: str) -> bool:
     return absolute.endswith("/" + relative.lstrip("/"))
 
 
-def _session_key(workspace_file: str | Path, session_id: str) -> tuple[str, str]:
-    return str(workspace_file), session_id.strip()
-
-
-def _ledger_path(workspace_file: str | Path) -> Path:
-    from memory_center.core.storage.workspace import WorkspaceStore
-
-    return WorkspaceStore(workspace_file).memory_dir / LEDGER_FILENAME
-
-
-def _load_all(workspace_file: str | Path) -> dict[str, Any]:
-    try:
-        path = _ledger_path(workspace_file)
-        if not path.exists():
-            return {"version": LEDGER_VERSION, "sessions": {}}
-        data = json.loads(path.read_text(encoding="utf-8"))
-        if not isinstance(data, dict) or int(data.get("version", 0) or 0) != LEDGER_VERSION:
-            return {"version": LEDGER_VERSION, "sessions": {}}
-        if not isinstance(data.get("sessions"), dict):
-            return {"version": LEDGER_VERSION, "sessions": {}}
-        return data
-    except (OSError, json.JSONDecodeError, TypeError, ValueError):
-        return {"version": LEDGER_VERSION, "sessions": {}}
-
-
-def _save_all(workspace_file: str | Path, data: dict[str, Any]) -> None:
-    try:
-        path = _ledger_path(workspace_file)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
-    except OSError:
-        pass  # 账本写失败绝不阻断查询
-
-
 def record_served_files(
     workspace_file: str | Path,
     session_id: str,
@@ -91,47 +54,12 @@ def record_served_files(
     sid = str(session_id or "").strip()
     if not sid:
         return 0
-    normalized = [normalize_path(p) for p in (file_paths or [])]
-    normalized = [p for p in normalized if p]
-    if not normalized:
-        # 空增量不是错误:返回当前账本大小(会话已存在时),便于调用方探测。
-        try:
-            existing = _INPROC_LEDGERS.get(_session_key(workspace_file, sid))
-            if existing is not None:
-                return len(existing)
-            raw = _load_all(workspace_file).get("sessions", {}).get(sid)
-            if isinstance(raw, dict) and isinstance(raw.get("paths"), dict):
-                return len(raw["paths"])
-        except Exception:
-            pass
-        return 0
     try:
-        key = _session_key(workspace_file, sid)
-        ledger = _INPROC_LEDGERS.get(key)
-        if ledger is None:
-            sessions = _load_all(workspace_file).get("sessions", {})
-            raw = sessions.get(sid)
-            if isinstance(raw, dict) and isinstance(raw.get("paths"), dict):
-                ledger = OrderedDict(
-                    sorted(raw["paths"].items(), key=lambda kv: str(kv[1]), reverse=False)
-                )
-                # 值是 tier,排序键用插入序号;这里简化为按 dict 原序保留。
-                ledger = OrderedDict(raw["paths"].items())
-            else:
-                ledger = OrderedDict()
-        for path in normalized:
-            ledger.pop(path, None)
-            ledger[path] = str(tier or "")
-        while len(ledger) > MAX_SERVED_PATHS:
-            ledger.popitem(last=False)
-        _INPROC_LEDGERS[key] = ledger
-        data = _load_all(workspace_file)
-        data.setdefault("sessions", {})[sid] = {"paths": dict(ledger), "tier": str(tier or "")}
-        # 有界:最多保留 50 个会话的账本。
-        while len(data["sessions"]) > 50:
-            data["sessions"].pop(next(iter(data["sessions"])))
-        _save_all(workspace_file, data)
-        return len(ledger)
+        repo = SessionStateRepository(workspace_file)
+        normalized = [normalize_path(path) for path in file_paths]
+        if not any(normalized):
+            return len(repo.served_files(sid))
+        return repo.record_served_files(sid, normalized, tier=tier)
     except Exception:
         return 0
 
@@ -141,16 +69,8 @@ def served_files(workspace_file: str | Path, session_id: str) -> set[str]:
     sid = str(session_id or "").strip()
     if not sid:
         return set()
-    key = _session_key(workspace_file, sid)
-    ledger = _INPROC_LEDGERS.get(key)
-    if ledger is not None:
-        return set(ledger.keys())
     try:
-        raw = _load_all(workspace_file).get("sessions", {}).get(sid)
-        if isinstance(raw, dict) and isinstance(raw.get("paths"), dict):
-            ledger = OrderedDict(raw["paths"].items())
-            _INPROC_LEDGERS[key] = ledger
-            return set(ledger.keys())
+        return SessionStateRepository(workspace_file).served_files(sid)
     except Exception:
         pass
     return set()
@@ -182,6 +102,12 @@ def extract_file_paths_from_payload(payload: dict[str, Any]) -> list[str]:
     matches = result.get("matches")
     if isinstance(matches, list):
         for item in matches[:50]:
+            node = item.get("node") if isinstance(item, dict) else None
+            if isinstance(node, dict):
+                _add(node.get("file_path") or node.get("path"))
+    results = result.get("results")
+    if isinstance(results, list):
+        for item in results[:50]:
             node = item.get("node") if isinstance(item, dict) else None
             if isinstance(node, dict):
                 _add(node.get("file_path") or node.get("path"))

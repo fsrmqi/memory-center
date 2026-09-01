@@ -332,17 +332,9 @@ def create_server(workspace_file: str):
         def emit(payload: dict[str, Any], emitted_mode: str) -> dict[str, Any]:
             payload = finalize_lookup(wf, lookup_target, payload, prepared, "mc_lookup")
             if session_id.strip():
-                # 已服务文件账本:记录本次响应交付的路径,供后续调用降权去重。
-                # 记录失败静默降级,不影响响应。
-                try:
-                    from memory_center.core.foundation.served_ledger import (
-                        extract_file_paths_from_payload,
-                        record_served_files,
-                    )
+                from memory_center.core.orchestrator.lookup_session import record_lookup_delivery
 
-                    record_served_files(wf, session_id, extract_file_paths_from_payload(payload), tier=plan.tier)
-                except Exception:
-                    pass
+                record_lookup_delivery(wf, session_id, payload, tier=plan.tier)
                 workspace_record_agent_guidance(
                     wf,
                     session_id,

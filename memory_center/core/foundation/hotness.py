@@ -58,7 +58,7 @@ def hotness_score(
     return freq * recency
 
 
-def case_last_hit(events: list[dict[str, Any]], case_task: str) -> tuple[int, str]:
+def case_last_hit(events: list[dict[str, Any]], case_task: str, case_id: str = "") -> tuple[int, str]:
     """从 session events 中统计某条 case(按 task 标识)的命中次数与最近命中时间。
 
     命中信号(全部为既有记录,不新增 schema):
@@ -73,11 +73,16 @@ def case_last_hit(events: list[dict[str, Any]], case_task: str) -> tuple[int, st
     last_at = ""
     for event in events:
         event_type = str(event.get("event_type", "") or "")
-        if event_type not in {"agent_guidance", "case_hit"}:
+        if event_type not in {"agent_guidance", "case_hit", "case_recalled"}:
             continue
         payload = event.get("payload", {})
         if not isinstance(payload, dict):
             continue
+        recalled_id = str(payload.get("case_id", "") or "")
+        if case_id and recalled_id:
+            matched = recalled_id == case_id
+        else:
+            matched = False
         haystack = ""
         query = payload.get("query")
         if isinstance(query, str):
@@ -86,7 +91,7 @@ def case_last_hit(events: list[dict[str, Any]], case_task: str) -> tuple[int, st
             import json as _json
 
             haystack = _json.dumps(payload, ensure_ascii=False).lower()
-        if needle in haystack:
+        if matched or (event_type == "agent_guidance" and needle in haystack):
             hits += 1
             created_at = str(event.get("created_at", "") or "")
             if created_at > last_at:
@@ -112,7 +117,7 @@ def rank_cases_by_hotness(
     scored: list[tuple[float, int, dict[str, Any]]] = []
     for index, case in enumerate(cases):
         task = str(case.get("task", "") or "")
-        hits, last_at = case_last_hit(events, task)
+        hits, last_at = case_last_hit(events, task, str(case.get("case_id", "") or ""))
         # 时间锚优先用最近命中时间;无命中时不使用 valid_from——否则微秒级
         # 创建时间差会让同分 case 被"最新创建优先"重排,破坏调用方的原序语义
         # (评估与既有排序都依赖稳定顺序)。无命中 → 热度记 0,保持原位。

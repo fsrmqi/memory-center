@@ -72,6 +72,7 @@ def select_retrieval_policy(
     intent: Mapping[str, Any],
     freshness: Mapping[str, Any],
     learned_weights: Mapping[str, Any],
+    purpose_deltas: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> RetrievalPolicy:
     """Select a deterministic retrieval plan without reading global state."""
     intent_data = dict(intent or {})
@@ -126,7 +127,8 @@ def select_retrieval_policy(
 
     # 任务 purpose 预算倾斜(additive,确定性):在基线与新鲜度调整之后施加。
     purpose = classify_purpose(intent_data)
-    deltas = PURPOSE_DELTAS.get(purpose, {})
+    configured_deltas = purpose_deltas if isinstance(purpose_deltas, Mapping) else PURPOSE_DELTAS
+    deltas = configured_deltas.get(purpose, {})
     if deltas:
         candidate_limit += int(deltas.get("candidate_limit", 0))
         evidence_budget += int(deltas.get("evidence_budget", 0))

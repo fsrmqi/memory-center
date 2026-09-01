@@ -21,7 +21,7 @@ from .rules import (
     _load_handoff_rules,
     _load_resume_rules,
 )
-from .session import workspace_recent_evidence
+from .session import workspace_recent_evidence, workspace_record_case_recalled
 from .shared import (
     LAYER_L0,
     LAYER_L1,
@@ -202,6 +202,17 @@ def workspace_resume_context(workspace_file: str | Path, intent: str, limit: int
             related_sessions.append({**item, "match_score": score})
     related_sessions.sort(key=lambda item: (-int(item.get("match_score", 0)), item.get("created_at", "")))
     related_cases, related_case_match_mode = _resume_related_cases(store, intent, limit=limit)
+    if session_id.strip():
+        for case in related_cases:
+            try:
+                workspace_record_case_recalled(
+                    workspace_file,
+                    session_id,
+                    str(case.get("case_id", "") or ""),
+                    case_task=str(case.get("task", "") or ""),
+                )
+            except Exception:
+                pass
     return {
         "workspace": config.workspace,
         "intent": intent,

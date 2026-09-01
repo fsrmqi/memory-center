@@ -307,7 +307,7 @@ memory-center add-to-group ...
 
 ## 8. Maintenance / 维护
 
-### Quality and storage / 质量与存储（4.6.8）
+### Quality and storage / 质量与存储（4.6.9）
 
 发布或较大改动前可运行只读质量门禁：
 
@@ -415,7 +415,7 @@ memory-center artifact delivery-skill-publish --workspace /abs/path/.memory-cent
 - [REFERENCE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/REFERENCE.md)
 - [ONTOLOGY.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/ONTOLOGY.md)
 
-## 11. Implemented Features / 已实现功能（当前 4.6.8）
+## 11. Implemented Features / 已实现功能（当前 4.6.9）
 
 这一节是当前可用功能说明，主要帮助使用者理解系统里已经能用什么，不代表这些功能仍处于待实现状态。
 

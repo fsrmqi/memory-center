@@ -179,6 +179,7 @@ def test_record_case_accepts_extra_fields_and_returns_validation(demo_workspace:
     assert result["recorded"] is True
     assert result["schema_validation"]["valid"] is True
     stored = WorkspaceStore(demo_workspace).read_jsonl_prefer_backend("cross-service-task-memory.jsonl", limit=5)[-1]
+    assert stored["case_id"]
     assert stored["situation"].startswith("## Situation")
     assert stored["executions"] == 2
 

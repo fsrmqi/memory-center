@@ -111,7 +111,18 @@
 
 `artifact repair-task` 默认 dry-run；传 `--apply` 才写入。刷新 `current-summary` 时建议同时传 `--intent`，修复器不会伪造 write receipt、自动归档相似任务空间或覆盖已有人工内容。
 
-### Quality, replay, and maintenance / 质量、回放与维护（4.6.8）
+### Quality, replay, and maintenance / 质量、回放与维护（4.6.9）
+
+可选 `rules/retrieval-policy.yaml` 示例：
+
+```yaml
+purpose_deltas:
+  contract_change:
+    candidate_limit: 9
+    evidence_budget: 2
+```
+
+仅支持 `candidate_limit`、`evidence_budget`、`graph_depth`；未知 purpose 或字段会被忽略。 / Only those three delta fields are accepted; unknown purposes or fields are ignored.
 
 - `quality-gate --workspace <workspace.yaml>`：只读汇总 generation、coverage、retrieval replay、IR diff、分桶刷新预算与存储 dry-run；状态为 `pass|attention|block|real_case_missing`，绝不执行 reindex/GC/VACUUM/用户命令。
 - `eval-retrieval-replay-cases --workspace <workspace.yaml> --cases <private-cases.yaml> --queries <private-query-map.json>`：运行显式、脱敏的真实 retrieval replay。私有 case 与查询映射必须在仓库外；结果仅保留 case ID、类别、聚合质量与性能指标。
