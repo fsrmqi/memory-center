@@ -532,7 +532,7 @@ Java 仍保留 Spring-aware 专用解析；多语言 structural pass 避免重�
 - **运行治理与原子发布（Phase C）**：`core/indexing/job_coordinator.py` 把 reindex job 权威状态迁入 SQLite `workspace_jobs` 表（scope/request 指纹、owner、lease/heartbeat、retry 血缘）；generation 发布由 `WorkspaceStore.publish_generation_payloads` 在单个 `BEGIN IMMEDIATE` 事务内原子完成，`_publish_smoke` 做只读 smoke，失败自动回滚到 previous generation。
 - **解析 IR 诊断边界（Phase D）**：`core/indexing/ir.py` 定义 `FileRecord` / `SymbolRecord` / `RelationCandidate` 与确定性 `stable_id`；当前 Java 调用诊断经 `RelationCandidate` 聚合导出 `index-resolution.json`，未证明目标保持 AMBIGUOUS；`core/indexing/differential.py` 差分报告含 `symbol_category_counts`。全 parser adapter 的统一 IR 投影仍是后续按真实需求推进的内部演进。
 
-### 5.4.2 质量、检索与存储运行面（4.5.3–4.6.11）
+### 5.4.2 质量、检索与存储运行面（4.5.3–4.6.12）
 
 - **Generation-local staging / 代际本地暂存**：局部刷新在独立 staging 中生成并在发布时合并；active/previous generation 保持可读，失败或取消不污染已发布事实。
 - **Primary service chain / 跨服务主链路**：`mc_lookup(auto)` 对 Method 锚点在非 fast tier 附加 additive `primary_chain`。它只沿允许的 Feign/HTTP 图证据与受限推断桥接展开；MQ destination 无法证明时返回 `insufficient_evidence`，不伪造消费者。
@@ -543,6 +543,7 @@ Java 仍保留 Spring-aware 专用解析；多语言 structural pass 避免重�
 - **Retrieval context governance / 检索上下文治理**：resume 的相关 case 仅在存在真实命中时按热度稳定重排；session-aware hybrid query 对已服务文件做有界、无歧义路径降权；purpose 分类以兼容字段解释候选与证据预算，任一辅助状态失败均降级为既有查询行为。
 - **Session-state boundary / 会话状态边界**：派生会话状态通过 `core/storage/session_state.py` 的 `SessionStateRepository` 落入 SQLite `session_state`，不允许 foundation 直接读写状态文件。JSON/JSONL 仅作为可检查投影；case 使用稳定 ID，`case_recalled` 事件提供精确热度信号。
 - **Recoverable JSONL projections / 可恢复 JSONL 投影**：`WorkspaceStore` 为每个 JSONL collection 维护 SQLite 导出水位与 dirty 标记。append/batch 在数据库提交后推进水位；导出失败或裁剪后标记 dirty，后续写入自动从 SQLite 重建，维护者也可显式同步。JSONL 始终是可再生导出，不参与运行时事实判断。
+- **Lookup orchestration boundary / 查询编排边界**：`memory_query_hybrid` 是兼容门面；scope 推断与刷新、分片执行、项目后处理、响应质量/观测分别由 `lookup_scope`、`lookup_execution`、`lookup_decorators`、`lookup_response` 承担，便于独立测试与策略演进。
 
 详见验证回执 [docs/implementation-receipts/code-graph-foundation.md](implementation-receipts/code-graph-foundation.md)。
 

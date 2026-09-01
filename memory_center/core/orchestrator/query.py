@@ -26,6 +26,11 @@ from ..walkthrough import operations as _walkthrough_operations
 from .compact import _measure_compact_gain
 from .contract_filter import _filter_contracts_by_query
 from .guidance import _build_agent_next_steps_for_query, _build_agent_next_steps_for_walkthrough
+from .lookup_scope import (
+    infer_project_from_workspace_context,
+    refresh_scoped_query_if_stale,
+    resolve_effective_project,
+)
 from .ranking import (
     _best_match,
     _rrf,
@@ -82,65 +87,6 @@ def _walkthrough_symbol_from_query(query: str, intent: dict[str, Any]) -> str:
     return symbol
 
 
-def _infer_project_from_workspace_context(workspace_file: str | Path) -> str:
-    """Prefer the active service when the process is running inside one service root.
-
-    This keeps multi-repo aggregate workspaces ergonomic for auto-routed agent
-    calls: if the current cwd is already inside one configured service root,
-    same-name symbols should resolve to that service first. If no service root
-    matches cwd, or multiple nested roots would match, fall back to no hint.
-    """
-    try:
-        config, _store = load_context(workspace_file)
-    except Exception:
-        return ""
-
-    cwd = Path.cwd().expanduser().resolve()
-    candidates: list[tuple[int, str]] = []
-    for service in getattr(config, "services", []) or []:
-        try:
-            service_root = config.resolve_service_path(service)
-            relative = cwd.relative_to(service_root)
-        except Exception:
-            continue
-        depth = len(relative.parts)
-        candidates.append((depth, str(service.name or "")))
-    if not candidates:
-        return ""
-    candidates.sort(key=lambda item: (-item[0], item[1]))
-    return candidates[0][1]
-
-
-def _resolve_effective_project(workspace_file: str | Path, project: str = "") -> dict[str, Any]:
-    explicit = (project or "").strip()
-    if explicit:
-        return {"project": explicit, "source": "explicit"}
-    inferred = _infer_project_from_workspace_context(workspace_file)
-    if inferred:
-        return {"project": inferred, "source": "active_service_root"}
-    return {"project": "", "source": "none"}
-
-
-def _refresh_scoped_query_if_stale(
-    workspace_file: str | Path,
-    query: str,
-    project: str,
-    *,
-    freshness_status: str = "",
-) -> dict[str, Any]:
-    """Refresh a small relevant scope before a scoped read when freshness requires it."""
-    if not project:
-        return {"attempted": False, "reason": "no_project_scope"}
-    if freshness_status not in {"stale", "pending"}:
-        return {"attempted": False, "reason": "index_current"}
-    try:
-        from ..freshness.targeted_refresh import refresh_query_targets
-
-        return {"attempted": True, **refresh_query_targets(workspace_file, query, limit=4)}
-    except Exception as exc:
-        return {"attempted": True, "refreshed": False, "reason": f"refresh_unavailable:{type(exc).__name__}"}
-
-
 def _assertion_summary(store: WorkspaceStore) -> dict[str, Any]:
     """Return a constant-size assertion view for default query responses."""
     try:
@@ -193,7 +139,9 @@ def memory_query_hybrid(
     去重);账本读取失败降级为不去重,不影响查询。
     """
     # Lazy import to avoid circular dependency
-    from ..retrieval.hybrid import HybridRetrievalConfig, detect_query_intent, hybrid_retrieve
+    from ..retrieval.hybrid import HybridRetrievalConfig, detect_query_intent
+    from .lookup_execution import execute_hybrid_retrieval
+    from .lookup_decorators import apply_project_scope
 
     started = time.perf_counter()
     timings: dict[str, float] = {}
@@ -203,7 +151,7 @@ def memory_query_hybrid(
 
     alias_expansion = expand_verified_alias_query(store, query)
     query = str(alias_expansion["query"])
-    project_scope = _resolve_effective_project(workspace_file, project)
+    project_scope = resolve_effective_project(workspace_file, project)
     effective_project = str(project_scope.get("project", "") or "")
     timings["setup"] = _elapsed_ms(started)
     phase_started = time.perf_counter()
@@ -258,7 +206,7 @@ def memory_query_hybrid(
         if isinstance(freshness_banner, dict)
         else {}
     )
-    targeted_refresh = _refresh_scoped_query_if_stale(
+    targeted_refresh = refresh_scoped_query_if_stale(
         workspace_file,
         query,
         effective_project,
@@ -276,46 +224,10 @@ def memory_query_hybrid(
     timings["freshness_and_policy"] = _elapsed_ms(phase_started)
     phase_started = time.perf_counter()
 
-    graph_path = store.graph_db_path
-    shard_graph_used = False
-    shard_available = True
-    if effective_project:
-        try:
-            from ..indexing.control_plane import index_control_status
-            from ..indexing.shards import service_shard_graph_path
-
-            generation = str(index_control_status(store).get("active_generation", "") or "")
-            shard_path = service_shard_graph_path(store, generation, effective_project) if generation else None
-            if shard_path:
-                graph_path = shard_path
-                shard_graph_used = True
-            else:
-                shard_available = False
-        except Exception:
-            shard_available = False
-    if not shard_available:
-        result = {
-            "results": [],
-            "total_found": 0,
-            "returned": 0,
-            "retrieval_summary": {"total": 0, "reason": "service_shard_not_published"},
-            "progressive": {"summary": [], "details": [], "evidence": []},
-            "index_scope_unavailable": True,
-            "index_source": "service_shard_unavailable",
-        }
-    else:
-        with RuntimeStore(graph_path) as graph:
-            result = hybrid_retrieve(
-                graph=graph,
-                workspace_file=str(workspace_file),
-                query=query,
-                config=config,
-                node_types=node_types,
-                limit=limit,
-                freshness=freshness_input,
-                learned_weights=learned_weights,
-            )
-        result["index_source"] = "service_graph_shard" if shard_graph_used else "global_graph"
+    result, shard_graph_used, shard_available = execute_hybrid_retrieval(
+        store, workspace_file, query, config=config, node_types=node_types, limit=limit,
+        freshness=freshness_input, learned_weights=learned_weights, effective_project=effective_project,
+    )
     timings["core_retrieval"] = _elapsed_ms(phase_started)
     phase_started = time.perf_counter()
 
@@ -324,31 +236,10 @@ def memory_query_hybrid(
 
     result = apply_served_file_downweight(result, workspace_file, session_id)
 
-    # Project filtering: explicit project is strict; inferred active-service
-    # scope is preferred only when it has evidence, otherwise keep global hits.
-    if effective_project and shard_available:
-        results = result.get("results", [])
-        project_results = [r for r in results if _project_matches(effective_project, r.get("node", {}).get("project", ""))]
-        if project_results:
-            for r in project_results:
-                r["score"] = r.get("score", 0) * 2.0
-                r["_project_boost"] = True
-            project_results.sort(key=lambda x: x.get("score", 0), reverse=True)
-            result["results"] = project_results
-            # Rebuild summary fields so they match the filtered result set
-            rebuild = _rebuild_summary_after_filter(project_results, intent)
-            result["total_found"] = rebuild["total_found"]
-            result["returned"] = rebuild["returned"]
-            result["retrieval_summary"] = rebuild["retrieval_summary"]
-            result["progressive"] = rebuild["progressive"]
-        else:
-            # No results match the project filter — return empty but consistent
-            empty_rebuild = _rebuild_summary_after_filter([], intent)
-            result["results"] = []
-            result["total_found"] = 0
-            result["returned"] = 0
-            result["retrieval_summary"] = empty_rebuild["retrieval_summary"]
-            result["progressive"] = empty_rebuild["progressive"]
+    result = apply_project_scope(
+        result, effective_project=effective_project, shard_available=shard_available, intent=intent,
+        project_matches=_project_matches, rebuild_summary=_rebuild_summary_after_filter,
+    )
 
     # Enrich with workspace context
     result["workspace"] = config_obj[0].workspace
@@ -456,65 +347,17 @@ def memory_query_hybrid(
         if "semantic_matches" not in summary:
             summary["semantic_matches"] = summary.get("source_distribution", {}).get("semantic", 0)
 
-    # NEXT_PHASE: integrate freshness warnings into query results
-    try:
-        banner = freshness_banner
-        result["freshness"] = banner
-        # D-01: Stale risk escalation - if freshness is stale/pending, add warning
-        freshness_status = (banner.get("freshness", {}) or {}).get("status", "unknown")
-        if freshness_status in ("stale", "pending"):
-            from ..freshness.integration import freshness_action_hint, freshness_risk_escalation
-            result["_freshness_warning"] = {
-                "status": freshness_status,
-                "hint": freshness_action_hint(freshness_status),
-                "risk_escalation": freshness_risk_escalation(
-                    result.get("intent_analysis", {}).get("risk_level", "low"),
-                    freshness_status,
-                ),
-            }
-    except Exception as exc:
-        result["freshness"] = diag_entry(DIAG.UNKNOWN, exc=exc)
+    from .lookup_response import finalize_hybrid_response
 
-    # F-03: Record query metrics (best-effort)
-    try:
-        from memory_center.core.observability.metrics import MetricsCollector
-        mc = MetricsCollector(workspace_file)
-        mc.record("memory_query_hybrid", len(json.dumps(result, ensure_ascii=False)), unit="chars")
-    except Exception:
-        pass
-
-    freshness_status = str(((result.get("freshness", {}) or {}).get("freshness", {}) or {}).get("status", "unknown"))
-    quality_evidence = []
-    for item in result.get("results", []) or []:
-        sources = set(item.get("sources", []) or item.get("retrieval_sources", []) or [])
-        quality_evidence.append({
-            "confidence": item.get("score", 0.0),
-            "evidence_type": "fact" if sources & {"exact", "graph_exact", "direct_lookup"} else "inferred",
-            "evidence_level": item.get("evidence_level", ""),
-            "_is_fallback": bool(item.get("_is_fallback", False)),
-        })
-    result["_quality"] = build_quality_summary(quality_evidence, freshness_status=freshness_status)
-    result["agent_next_steps"] = _build_agent_next_steps_for_query(result, query=query, workspace_file=workspace_file)
-    try:
-        from memory_center.core.knowledge.governance import record_actions
-
-        result["agent_actions"] = record_actions(store, origin=f"memory_query_hybrid:{query}", actions=list(result["agent_next_steps"]))
-    except Exception:
-        result["agent_actions"] = []
-    timings["quality_and_actions"] = _elapsed_ms(phase_started)
-    phase_started = time.perf_counter()
-    result = attach_facade_metadata(
-        result,
-        operation="memory_query_hybrid",
-        result_kind="lookup",
-        evidence_level="hybrid_indexed",
+    response_started = time.perf_counter()
+    result = finalize_hybrid_response(
+        result, store=store, workspace_file=workspace_file, query=query, effective_project=effective_project,
+        freshness_banner=freshness_banner, session_id=session_id, timings=timings, elapsed=_elapsed_ms,
+        started=started, phase_started=phase_started, guidance_builder=_build_agent_next_steps_for_query,
+        record_delivery=record_lookup_delivery,
     )
-    from memory_center.core.knowledge.state import attach_knowledge_state
-
-    result = attach_knowledge_state(store, result, query=query, project=effective_project, mode="memory_query_hybrid")
-    timings["response_envelope"] = _elapsed_ms(phase_started)
-    result["performance"] = {"timing_ms": {**timings, "total": _elapsed_ms(started)}}
-    record_lookup_delivery(workspace_file, session_id, result)
+    timings["response_envelope"] = _elapsed_ms(response_started)
+    result["performance"]["timing_ms"]["response_envelope"] = timings["response_envelope"]
     return result
 
 
@@ -603,7 +446,7 @@ def memory_symbol(
     segments are used to guess the project.
     """
     # Prefer the active service root for bare symbols, then fall back to FQN inference.
-    inferred_project = project or _infer_project_from_workspace_context(workspace_file)
+    inferred_project = project or infer_project_from_workspace_context(workspace_file)
     if not inferred_project and "." in name and not name.startswith("."):
         inferred_project = _infer_project_from_fqn(name, workspace_file)
     internal_limit = max(limit, min(max(limit * 3, 12), 50))
@@ -895,7 +738,7 @@ def memory_method_walkthrough(
     DTO field reads, config/data-resource hints, and graph downstream edges.
     It does not pretend to execute Java control flow.
     """
-    project_scope = _resolve_effective_project(workspace_file, project)
+    project_scope = resolve_effective_project(workspace_file, project)
     effective_project = str(project_scope.get("project", "") or "")
 
     def _lookup_provider(ws: Path, sym: str, proj: str) -> dict[str, Any]:
@@ -1090,7 +933,7 @@ def _steps_to_calls(steps: list[dict[str, Any]]) -> list[dict[str, Any]]:
 def memory_search_code(workspace_file: str | Path, query: str, scope: str = "", limit: int = 20, project: str = "") -> dict[str, Any]:
     config, store = load_context(workspace_file)
     keywords = tokenize(query)
-    project_scope = _resolve_effective_project(workspace_file, project)
+    project_scope = resolve_effective_project(workspace_file, project)
     effective_project = str(project_scope.get("project", "") or "")
     shard_used = False
     files: list[dict[str, Any]] = []

@@ -2,6 +2,11 @@
 
 ## Unreleased / 未发布
 
+## 4.6.12 Lookup Orchestration Split / 查询编排拆分
+
+- `memory_query_hybrid` 保留兼容门面，内部拆分为 `lookup_scope`、`lookup_execution`、`lookup_decorators`、`lookup_response`；范围推断、分片检索、项目后处理及响应/观测边界不再集中在单一函数。
+- Split hybrid lookup orchestration into scope, execution, decorators, and response components while preserving the existing CLI, HTTP, MCP, and response contracts.
+
 ## 4.6.11 Projection Health Gate / 投影健康门禁
 
 - `backend-consistency` 新增只读 `jsonl_projection` 摘要，并支持 `--repair-exports --apply` 显式恢复；Workbench quality overview 同步展示 projection 的状态、dirty 数与待同步数。

@@ -111,7 +111,7 @@
 
 `artifact repair-task` 默认 dry-run；传 `--apply` 才写入。刷新 `current-summary` 时建议同时传 `--intent`，修复器不会伪造 write receipt、自动归档相似任务空间或覆盖已有人工内容。
 
-### Quality, replay, and maintenance / 质量、回放与维护（4.6.11）
+### Quality, replay, and maintenance / 质量、回放与维护（4.6.12）
 
 可选 `rules/retrieval-policy.yaml` 示例：
 
