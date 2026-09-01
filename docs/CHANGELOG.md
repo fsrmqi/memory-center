@@ -2,6 +2,15 @@
 
 ## Unreleased / 未发布
 
+- 新增**会话事件滚动归档**（设计参考 OpenViking session/retention 的纯策略模式）：`core/orchestrator/retention.py` 提供无 IO/无模型的 planner——把 session events 聚合为逻辑轮次（`user_prompt`/`note`/`session_start` 为边界），在 `keep_recent_turns` + `max_archive_tokens` 预算下选择 archive/live 边界；`session_end` 类锚点事件永不归档。执行器 `archive_session_events` 把归档段迁入 `session-events-archive.jsonl`（SQLite + 文件双写），live 集合按 session 过滤裁剪（新增 `MemoryRecordOperations.delete_session_records`），全程保持 SQLite 权威与文件导出一致。CLI 新增 `session-archive-plan`（dry-run）与 `session-archive`。
+- 新增**外置 payload 确定性摘要**（设计参考 OpenViking tool_result_synopsis）：`core/foundation/synopsis.py` 按 json/csv/tsv/yaml/xml/code/text 分类，每类有界采样常量，纯函数无模型依赖。超过内联上限被 offload 的 session event 现在在事件本体保留 `_payload_synopsis`，`workspace_recent_evidence` full 视图透出 `synopsis`、compact 视图透出 `synopsis_title`/`synopsis_kind`，使 resume/handoff 无需展开 payload 即可判断证据内容。
+- 新增 **L1 case schema 化与字段级合并算子**（设计参考 OpenViking MemoryTypeSchema 与 merge_op 包，均为纯函数无 LLM）：
+  (1) `core/foundation/merge_ops.py`——`immutable/replace/append/sum/patch` 五算子与 SEARCH/REPLACE 块 handler（行级匹配、失配保守报错、不做模糊猜测）；
+  (2) `core/knowledge/case_schema.py`——`engineering_case` 内置 schema（既有 case 字段全部保留，新增三段式 `situation/approach/reflect` 与可累计 `executions/successes`）+ workspace `rules/case-schemas.yaml` 覆盖 + required/类型/段落头校验；
+  (3) 三处接入：`record-case` 新增 `extra_fields` 与 `schema_validation` 返回（校验失败不阻断写入，additive 兼容）；`suggest-case` 附带 `case_writing_guide`（三段式写作纪律：互斥/原子/抽象/失败转禁令/可执行）；`decide-consolidation-candidate` approve 时按 append/sum 算子把同主题失效 case 的经验计数并入新 case，返回 `merge_notes` 说明。
+- Added typed L1 case schema and field-level merge operators adapted from OpenViking's MemoryTypeSchema/merge_op designs (pure functions, no LLM): five merge ops with a conservative SEARCH/REPLACE handler, a builtin engineering-case schema with workspace YAML overrides and bounded validation, writing-guide output on suggest-case, and append/sum discipline merging superseded same-topic cases into approved consolidation candidates with merge notes.
+- Added rolling session-event archive and deterministic payload synopsis, both adapted from OpenViking designs (pure strategy planners, bounded constants, no model dependency): turn-boundary archive planner with live-anchor protection, session-scoped prune via a new backend delete API, synopsis embedded into offloaded events and surfaced through recent-evidence full/compact views, plus `session-archive-plan` / `session-archive` CLI commands.
+
 - 基于代码事实校准活跃文档：MCP 公开面统一为 15 个 task-level tools（README/ARCHITECTURE/CLAUDE.md/server.py docstring，含 `insights.py` 注册的 4 个）；MCP resources 补齐 `memory-center://startup-diagnostics`（共 4 个）；CLI 命令族修正为 18 个模块（补 `artifacts`、`workspaces`）。
 - `user_prompt_submit` hook 默认行为按代码事实修正：默认 `enabled: true` + `record_only: true`（只记录脱敏交互，不注入提示、不阻塞输入，宿主 adapter 只生成记录型配置），替换旧的"默认禁用/enabled: false"表述（README、MCP_GUIDE、REFERENCE、ARCHITECTURE H.3/H.4、AI_DEV_GUIDE）。
 - Workbench 页面列表补齐：README 与 USER_GUIDE 现列出 `/ui/assertion`、`/ui/jobs` 等全部 11 个已注册 `/ui` 路由。

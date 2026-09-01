@@ -9,6 +9,8 @@ import typer
 from rich import print
 
 from memory_center.core.orchestrator import (
+    archive_session_events,
+    plan_session_archive,
     workspace_end_session,
     workspace_capture_dsh_delivery_summary,
     workspace_log_session_event,
@@ -102,3 +104,33 @@ def register_session_commands(app: typer.Typer) -> None:
     ):
         """Show one session summary with raw recorded events."""
         print(workspace_session_summary(workspace, session_id))
+
+    @app.command("session-archive-plan")
+    def session_archive_plan_cmd(
+        workspace: str = typer.Option(...),
+        session_id: str = typer.Option("", help="Plan one session; empty plans all events."),
+        keep_recent_turns: int = typer.Option(None, help="Turns always kept live (default 3)."),
+        max_archive_tokens: int = typer.Option(None, help="Token budget for one archive run (default 20000)."),
+    ):
+        """Plan rolling session-event archive (dry-run): turn layout and archive/live boundary."""
+        kwargs = {}
+        if keep_recent_turns is not None:
+            kwargs["keep_recent_turns"] = keep_recent_turns
+        if max_archive_tokens is not None:
+            kwargs["max_archive_tokens"] = max_archive_tokens
+        print(plan_session_archive(workspace, session_id, **kwargs))
+
+    @app.command("session-archive")
+    def session_archive_cmd(
+        workspace: str = typer.Option(...),
+        session_id: str = typer.Option("", help="Archive one session; empty archives all events."),
+        keep_recent_turns: int = typer.Option(None, help="Turns always kept live (default 3)."),
+        max_archive_tokens: int = typer.Option(None, help="Token budget for one archive run (default 20000)."),
+    ):
+        """Archive old session events beyond the planned boundary into session-events-archive.jsonl."""
+        kwargs = {}
+        if keep_recent_turns is not None:
+            kwargs["keep_recent_turns"] = keep_recent_turns
+        if max_archive_tokens is not None:
+            kwargs["max_archive_tokens"] = max_archive_tokens
+        print(archive_session_events(workspace, session_id, **kwargs))

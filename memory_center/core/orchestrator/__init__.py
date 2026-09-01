@@ -101,6 +101,8 @@ from .rules import _score_threshold_for_sync_mode
 
 # --- session lifecycle ---
 from .session import (
+    archive_session_events,
+    plan_session_archive,
     workspace_end_session,
     workspace_capture_dsh_delivery_summary,
     workspace_log_session_event,
@@ -184,6 +186,7 @@ __all__ = [
     # utilities
     "load_context", "tokenize", "rank_files", "preferred_edge_types",
     # session
+    "archive_session_events", "plan_session_archive",
     "workspace_start_session", "workspace_log_session_event", "workspace_end_session",
     "workspace_record_agent_guidance", "workspace_record_close_feedback",
     "workspace_recent_sessions", "workspace_session_summary", "workspace_task_delivery_overview", "workspace_suggest_case", "workspace_capture_dsh_delivery_summary",

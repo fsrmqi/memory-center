@@ -8,20 +8,26 @@ import json
 from datetime import datetime, timezone
 from typing import Any
 
+from memory_center.core.foundation.synopsis import synopsis_from_payload
 from memory_center.core.storage.workspace import WorkspaceStore
 
 
 def _summarize_ref(ref: dict[str, Any]) -> str:
+    synopsis = ref.get("_payload_synopsis") if isinstance(ref.get("_payload_synopsis"), dict) else None
     parts = [
         str(ref.get("tool_name", "") or ""),
         str(ref.get("query", "") or ref.get("target", "") or ref.get("name", "") or ref.get("task", "") or ""),
         str(ref.get("file_path", "") or ref.get("path", "") or ""),
         str(ref.get("payload_ref", "") or ref.get("receipt_ref", "") or ""),
     ]
+    if synopsis:
+        title = str(synopsis.get("title", "") or "")
+        if title:
+            parts.append(title)
     text = " | ".join(part for part in parts if part).strip()
     if not text:
         text = str(ref.get("type", "") or ref.get("event_type", "") or ref.get("source", "") or "ref")
-    return text[:140]
+    return text[:200]
 
 
 def _event_payload(event: dict[str, Any]) -> dict[str, Any]:
@@ -47,6 +53,9 @@ def _prepare_session_event_payload(
     compact["_payload_ref"] = payload_ref
     compact["_payload_keys"] = sorted(safe_payload.keys())[:20]
     compact["_payload_bytes"] = payload_bytes
+    synopsis = synopsis_from_payload(safe_payload)
+    if synopsis is not None:
+        compact["_payload_synopsis"] = synopsis
     return compact, payload_ref, payload_bytes
 
 

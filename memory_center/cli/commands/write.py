@@ -164,8 +164,17 @@ def register_write_commands(app: typer.Typer) -> None:
         valid_to: str = typer.Option(""),
         superseded_by: str = typer.Option(""),
         current_truth: bool = typer.Option(True),
+        extra_fields: str = typer.Option("{}", help="JSON object for schema extension fields."),
+        case_type: str = typer.Option("engineering_case", help="Case schema type from rules/case-schemas.yaml."),
     ):
         """Record a validated task into workspace historical memory."""
+        try:
+            import json
+            parsed_extra_fields = json.loads(extra_fields)
+        except json.JSONDecodeError as exc:
+            raise typer.BadParameter("extra_fields must be a JSON object") from exc
+        if not isinstance(parsed_extra_fields, dict):
+            raise typer.BadParameter("extra_fields must be a JSON object")
         print(
             workspace_record_case(
                 workspace,
@@ -181,6 +190,8 @@ def register_write_commands(app: typer.Typer) -> None:
                 valid_to=valid_to,
                 superseded_by=superseded_by,
                 current_truth=current_truth,
+                extra_fields=parsed_extra_fields,
+                case_type=case_type,
             )
         )
 

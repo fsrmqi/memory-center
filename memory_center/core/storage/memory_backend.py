@@ -780,6 +780,80 @@ class _MemoryRecordOperations:
                 )
             return {"expired": max(0, expired), "overflow": overflow, "kept": total - overflow}
 
+    def delete_session_records(self, collection: str, *, session_id: str, created_before: str) -> int:
+        """按会话删除集合记录(滚动归档使用);返回删除条数。
+
+        与 prune_records 同锁域执行;created_before 取归档边界后第一条记录的
+        created_at,保证只清理已迁移进 archive 集合的行。
+        """
+        if not session_id:
+            raise ValueError("session_id must not be empty")
+        with self.connect() as conn:
+            deleted = conn.execute(
+                "DELETE FROM json_records WHERE collection = ? AND session_id = ? AND created_at < ?",
+                (collection, session_id, created_before),
+            ).rowcount
+            return max(0, deleted)
+
+    def move_records_exact(
+        self,
+        source_collection: str,
+        archive_collection: str,
+        source_payloads: list[dict[str, Any]],
+        archive_payloads: list[dict[str, Any]],
+    ) -> int:
+        """在一个 SQLite 事务中精确迁移 JSON records。
+
+        不能仅按时间戳裁剪：不同事件可能共享 created_at。迁移时以完整
+        payload JSON、session_id 和 created_at 定位源行，避免误删或留下已
+        归档的同时间戳事件。
+        """
+        if len(source_payloads) != len(archive_payloads):
+            raise ValueError("source_payloads and archive_payloads must have the same length")
+        if not source_payloads:
+            return 0
+        archive_rows = []
+        delete_rows = []
+        for source, archived in zip(source_payloads, archive_payloads):
+            nested = archived.get("payload", {}) if isinstance(archived.get("payload"), dict) else {}
+            archive_rows.append((
+                archive_collection,
+                "",
+                str(archived.get("type", "") or ""),
+                str(archived.get("session_id", "") or nested.get("session_id", "") or ""),
+                str(archived.get("project", "") or nested.get("project", "") or ""),
+                str(archived.get("created_at", "") or ""),
+                json.dumps(archived, ensure_ascii=False),
+            ))
+            delete_rows.append((
+                source_collection,
+                str(source.get("session_id", "") or ""),
+                str(source.get("created_at", "") or ""),
+                json.dumps(source, ensure_ascii=False),
+            ))
+        with self.connect() as conn:
+            conn.executemany(
+                """
+                INSERT INTO json_records(collection, record_id, type, session_id, project, created_at, payload_json)
+                VALUES(?, ?, ?, ?, ?, ?, ?)
+                """,
+                archive_rows,
+            )
+            deleted = 0
+            for row in delete_rows:
+                deleted += conn.execute(
+                    """DELETE FROM json_records
+                       WHERE id IN (
+                         SELECT id FROM json_records
+                         WHERE collection = ? AND session_id = ? AND created_at = ? AND payload_json = ?
+                         ORDER BY id ASC LIMIT 1
+                       )""",
+                    row,
+                ).rowcount
+            if deleted != len(source_payloads):
+                raise RuntimeError("session archive source records changed during transfer")
+            return deleted
+
     def upsert_ref(self, ref_path: str, payload: Any) -> None:
         created_at = ""
         if isinstance(payload, dict):

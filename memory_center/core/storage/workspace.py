@@ -176,6 +176,43 @@ class WorkspaceStore:
                 handle.writelines(json.dumps(row, ensure_ascii=False) + "\n" for row in rows)
         return len(rows)
 
+    def move_jsonl_records_exact(
+        self,
+        source_name: str,
+        archive_name: str,
+        source_items: list[dict[str, Any]],
+        archive_items: list[dict[str, Any]],
+    ) -> int:
+        """原子迁移 SQLite 事实记录，并同步重写 JSONL 导出。"""
+        if len(source_items) != len(archive_items):
+            raise ValueError("source_items and archive_items must have the same length")
+        if not source_items:
+            return 0
+        source_path = self.memory_dir / source_name
+        archive_path = self.memory_dir / archive_name
+        fingerprints = [json.dumps(item, ensure_ascii=False, sort_keys=True) for item in source_items]
+        with FileLock(str(self.audit_lock_file)):
+            moved = self.memory_backend().move_records_exact(source_name, archive_name, source_items, archive_items)
+            with archive_path.open("a", encoding="utf-8") as handle:
+                handle.writelines(json.dumps(item, ensure_ascii=False) + "\n" for item in archive_items)
+            if source_path.exists():
+                pending = list(fingerprints)
+                kept: list[str] = []
+                for line in source_path.read_text(encoding="utf-8").splitlines():
+                    try:
+                        fingerprint = json.dumps(json.loads(line), ensure_ascii=False, sort_keys=True)
+                    except (json.JSONDecodeError, UnicodeDecodeError):
+                        kept.append(line)
+                        continue
+                    if fingerprint in pending:
+                        pending.remove(fingerprint)
+                    else:
+                        kept.append(line)
+                if pending:
+                    raise RuntimeError("session archive export is missing source records")
+                source_path.write_text("\n".join(kept) + ("\n" if kept else ""), encoding="utf-8")
+        return moved
+
     def prune_jsonl(self, name: str, *, created_before: datetime, max_records: int) -> dict[str, int]:
         """删除过期 JSONL 记录并限制条数，同时清理 SQLite 镜像。"""
         if max_records < 1:

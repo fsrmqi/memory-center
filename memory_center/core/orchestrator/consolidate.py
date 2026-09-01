@@ -382,6 +382,10 @@ def workspace_decide_consolidation_candidate(
             "conflicts": conflicts,
             "next_action": "候选暂存后已有 current-truth case 变化，需重新审核。",
         }
+    # merge 纪律:候选里 schema 声明的 append/sum 字段,若与既有已失效(非
+    # current-truth)同主题 case 存在,按字段算子合并进新 case 而不是丢弃历史;
+    # immutable/replace 字段一律以候选为准。合并失败不阻断 approve。
+    merged_extras, merge_notes = _merge_candidate_with_superseded_cases(draft, conflicts, store)
     result = workspace_record_case(
         workspace_file,
         task=str(draft.get("task", "") or ""),
@@ -394,9 +398,87 @@ def workspace_decide_consolidation_candidate(
         source_task_id=str(draft.get("source_task_id", "") or ""),
         source_refs=list(draft.get("source_refs") or []),
         current_truth=True,
+        extra_fields=merged_extras,
     )
+    if merge_notes:
+        result["merge_notes"] = merge_notes
     store.append_jsonl(
         CONSOLIDATION_CANDIDATES_FILE,
         {"record_type": "decision", "candidate_id": candidate_id, "status": "applied", "actor": actor[:120], "note": note[:500], "decided_at": now, "write_receipt": result.get("write_receipt")},
     )
-    return {"workspace": config.workspace, "applied": True, "candidate_id": candidate_id, "write_receipt": result.get("write_receipt")}
+    return {
+        "workspace": config.workspace,
+        "applied": True,
+        "candidate_id": candidate_id,
+        "write_receipt": result.get("write_receipt"),
+        "merge_notes": merge_notes,
+        "schema_validation": result.get("schema_validation"),
+    }
+
+
+def _merge_candidate_with_superseded_cases(
+    draft: dict[str, Any],
+    conflicts: list[dict[str, Any]],
+    store: Any,
+) -> tuple[dict[str, Any], list[str]]:
+    """按 case schema 的字段算子,把已失效同主题 case 的可累计字段并入候选。
+
+    只有 schema 声明为 append/sum 的字段参与合并(经验计数、风险点、验证人);
+    situation/approach/reflect 等 replace 字段以候选为准;immutable 字段不碰。
+    合并过程遇到纪律冲突(理论上 append/sum 不会)时跳过该字段并记录说明。
+    """
+    from memory_center.core.foundation.merge_ops import MergeOpError, merge_case_record
+    from memory_center.core.knowledge.case_schema import (
+        DEFAULT_CASE_TYPE,
+        case_field_ops,
+        load_case_registry,
+    )
+
+    superseded_projections = [
+        row
+        for conflict in conflicts
+        for row in [conflict.get("case", {})]
+        if not row.get("current_truth", False)
+    ]
+    if not superseded_projections:
+        return {}, []
+
+    schema = load_case_registry(store).get(DEFAULT_CASE_TYPE)
+    ops = case_field_ops(schema)
+    mergeable_ops = {"append", "sum"}
+    merged_extras: dict[str, Any] = {}
+    notes: list[str] = []
+    # conflict['case'] 是裁剪投影(不含 verified_by/executions 等可合并字段),
+    # 需要从全量记录中按 task+valid_from 定位原始行再做字段合并。
+    full_rows = _existing_cases(store)
+    for projection in superseded_projections:
+        row = next(
+            (
+                item
+                for item in full_rows
+                if item.get("task") == projection.get("task")
+                and item.get("valid_from") == projection.get("valid_from")
+            ),
+            projection,
+        )
+        updates: dict[str, Any] = {}
+        for field_name, value in row.items():
+            if ops.get(field_name) not in mergeable_ops:
+                continue
+            if value in (None, "", []):
+                continue
+            updates[field_name] = value
+        if not updates:
+            continue
+        try:
+            merged_extras = merge_case_record(merged_extras, updates, ops)
+        except MergeOpError as exc:
+            notes.append(f"跳过与 case(source_session_id={row.get('source_session_id', '')})的字段合并: {exc}")
+            continue
+        notes.append(
+            f"并入失效 case(source_session_id={row.get('source_session_id', '')})的 {sorted(updates)} 字段(append/sum 纪律)。"
+        )
+    candidate_updates = {key: value for key, value in draft.items() if ops.get(key) in mergeable_ops and value not in (None, "", [])}
+    if candidate_updates:
+        merged_extras = merge_case_record(merged_extras, candidate_updates, ops)
+    return merged_extras, notes

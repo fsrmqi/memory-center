@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -12,6 +13,11 @@ from memory_center.core.audit.snapshots import (
 from memory_center.core.storage.workspace import WorkspaceStore
 
 from ..tasks.receipts import build_write_receipt, persist_write_receipt
+from .retention import (
+    DEFAULT_KEEP_RECENT_TURNS as _RETENTION_DEFAULT_KEEP_TURNS,
+    DEFAULT_MAX_ARCHIVE_TOKENS as _RETENTION_DEFAULT_ARCHIVE_TOKENS,
+    plan_retention,
+)
 from .session_payloads import (
     _build_case_evidence_refs,
     _build_event_source_refs,
@@ -434,7 +440,21 @@ def workspace_suggest_case(workspace_file: str | Path, session_id: str) -> dict[
         "found": True,
         "draft_case": draft,
         "hint": "确认后可直接调用 workspace_record_case / record-case 入库。",
+        "case_writing_guide": _case_writing_guide_payload(store),
     }
+
+
+def _case_writing_guide_payload(store: WorkspaceStore) -> dict[str, Any]:
+    """随 suggest_case 返回 case schema 写作指南(无 LLM,纯模板)。"""
+    from memory_center.core.knowledge.case_schema import case_writing_guide, load_case_registry
+
+    try:
+        schema = load_case_registry(store).get()
+    except Exception:  # pragma: no cover - 规则文件损坏时退回内置 schema
+        from memory_center.core.knowledge.case_schema import BUILTIN_CASE_SCHEMA
+
+        schema = BUILTIN_CASE_SCHEMA
+    return case_writing_guide(schema, include_template=True)
 
 
 def workspace_record_close_feedback(
@@ -518,6 +538,7 @@ def workspace_recent_evidence(
         if item.get("kind") == "session_event":
             raw = item.get("raw", {})
             payload = raw.get("payload", {}) if isinstance(raw.get("payload"), dict) else {}
+            synopsis = payload.get("_payload_synopsis") if isinstance(payload.get("_payload_synopsis"), dict) else {}
             entry = {
                 "ref_id": f"ev:{item.get('session_id', '')}:{item.get('action', '')}:{len(evidence) + 1}",
                 "source": "session_event",
@@ -530,6 +551,12 @@ def workspace_recent_evidence(
                 "query": payload.get("query", "") or payload.get("target", ""),
                 "created_at": item.get("created_at", ""),
             }
+            if synopsis.get("title"):
+                entry["synopsis"] = {
+                    "title": str(synopsis.get("title", ""))[:120],
+                    "kind": str(synopsis.get("kind", "")),
+                    "summary": [str(line)[:160] for line in (synopsis.get("summary") or [])[:3]],
+                }
             entry["summary"] = _summarize_ref(entry)
             evidence.append(entry)
         elif item.get("kind") == "write_receipt":
@@ -862,8 +889,9 @@ def _compact_evidence_entries(entries: list[dict[str, Any]], budget: str = "medi
         return _IMPORTANCE_WEIGHTS["regular_event"]
 
     ranked = sorted(entries, key=lambda e: (_importance_score(e), str(e.get("created_at", ""))), reverse=True)
-    return [
-        {
+    compact_entries = []
+    for item in ranked[:k]:
+        entry = {
             "ref_id": item.get("ref_id", ""),
             "source": item.get("source", ""),
             "summary": item.get("summary", ""),
@@ -871,5 +899,136 @@ def _compact_evidence_entries(entries: list[dict[str, Any]], budget: str = "medi
             "payload_ref": item.get("payload_ref", ""),
             "receipt_ref": item.get("receipt_ref", ""),
         }
-        for item in ranked[:k]
-    ]
+        # 外置 payload 的确定性摘要标题并入 compact 摘要,替代整段 synopsis,
+        # 保持 compact 输出的扁平与轻量。
+        synopsis = item.get("synopsis") if isinstance(item.get("synopsis"), dict) else {}
+        if synopsis.get("title"):
+            entry["synopsis_title"] = str(synopsis.get("title", ""))[:120]
+            entry["synopsis_kind"] = str(synopsis.get("kind", ""))
+        compact_entries.append(entry)
+    return compact_entries
+
+
+SESSION_EVENTS_ARCHIVE_FILE = "session-events-archive.jsonl"
+
+
+def plan_session_archive(
+    workspace_file: str | Path,
+    session_id: str = "",
+    *,
+    keep_recent_turns: int = _RETENTION_DEFAULT_KEEP_TURNS,
+    max_archive_tokens: int = _RETENTION_DEFAULT_ARCHIVE_TOKENS,
+    limit: int = 5000,
+) -> dict[str, Any]:
+    """对会话事件做滚动归档规划(dry-run):返回轮次划分与 archive/live 边界,不写盘。"""
+    config, store = load_context(workspace_file)
+    events = _load_session_events_for_archive(store, session_id=session_id, limit=limit)
+    decision = plan_retention(events, keep_recent_turns=keep_recent_turns, max_archive_tokens=max_archive_tokens)
+    return {
+        "workspace": config.workspace,
+        "session_id": session_id,
+        "mode": decision.mode,
+        "reason": decision.reason,
+        "total_events": decision.total_events,
+        "total_turns": decision.total_turns,
+        "total_tokens": decision.total_tokens,
+        "archive_events": decision.archive_events,
+        "archive_turns": decision.archive_turns,
+        "archive_tokens": decision.archive_tokens,
+        "keep_events": decision.keep_events,
+        "keep_turns": decision.keep_turns,
+        "keep_tokens": decision.keep_tokens,
+        "boundary_event_index": decision.boundary_event_index,
+        "turns": [
+            {
+                "turn_index": turn.turn_index,
+                "label": turn.label,
+                "event_count": turn.event_count,
+                "tokens": turn.tokens,
+                "start_event_index": turn.start_event_index,
+                "end_event_index": turn.end_event_index,
+            }
+            for turn in decision.turns
+        ],
+        "dry_run": True,
+    }
+
+
+def archive_session_events(
+    workspace_file: str | Path,
+    session_id: str = "",
+    *,
+    keep_recent_turns: int = _RETENTION_DEFAULT_KEEP_TURNS,
+    max_archive_tokens: int = _RETENTION_DEFAULT_ARCHIVE_TOKENS,
+    limit: int = 5000,
+) -> dict[str, Any]:
+    """执行滚动归档:把归档段事件迁移到 session-events-archive.jsonl 并从 live 集合裁剪。
+
+    与 OV 的 retention 语义一致:边界落在轮次边界,session_end 类锚点永不归档;
+    live 集合按 record 时间戳裁剪,SQLite 镜像同步清理,归档集合双写可查。
+    """
+    config, store = load_context(workspace_file)
+    events = _load_session_events_for_archive(store, session_id=session_id, limit=limit)
+    decision = plan_retention(events, keep_recent_turns=keep_recent_turns, max_archive_tokens=max_archive_tokens)
+    if decision.reason != "planned" or decision.boundary_event_index <= 0:
+        return {
+            "workspace": config.workspace,
+            "session_id": session_id,
+            "archived": False,
+            "reason": decision.reason,
+            "total_events": decision.total_events,
+            "total_turns": decision.total_turns,
+        }
+
+    boundary = decision.boundary_event_index
+    archived_events = events[:boundary]
+    kept_events = events[boundary:]
+
+    archive_payloads = []
+    for event in archived_events:
+        archived = dict(event)
+        archived["archived_from"] = SESSION_EVENTS_FILE
+        archived["archive_boundary_index"] = boundary
+        archive_payloads.append(archived)
+    deleted = store.move_jsonl_records_exact(
+        SESSION_EVENTS_FILE,
+        SESSION_EVENTS_ARCHIVE_FILE,
+        archived_events,
+        archive_payloads,
+    )
+    pruned: dict[str, Any] = {"deleted": deleted, "scope": f"session:{session_id}" if session_id else "all_sessions"}
+
+    receipt = persist_write_receipt(
+        store,
+        build_write_receipt(
+            layer=LAYER_L0,
+            action="workspace_archive_session_events",
+            scope="memory",
+            target=SESSION_EVENTS_ARCHIVE_FILE,
+            target_file=f"memory/{SESSION_EVENTS_ARCHIVE_FILE}",
+            session_id=session_id,
+            bytes_written=sum(len(json.dumps(item, ensure_ascii=False).encode("utf-8")) for item in archive_payloads),
+        ),
+    )
+    return {
+        "workspace": config.workspace,
+        "session_id": session_id,
+        "archived": True,
+        "archived_events": len(archived_events),
+        "archived_turns": decision.archive_turns,
+        "archived_tokens": decision.archive_tokens,
+        "kept_events": decision.keep_events,
+        "kept_turns": decision.keep_turns,
+        "boundary_event_index": boundary,
+        "archive_file": f"memory/{SESSION_EVENTS_ARCHIVE_FILE}",
+        "prune": pruned,
+        "write_receipt": receipt,
+    }
+
+
+def _load_session_events_for_archive(store: WorkspaceStore, *, session_id: str = "", limit: int = 5000) -> list[dict[str, Any]]:
+    if session_id:
+        rows = store.find_jsonl_prefer_backend(SESSION_EVENTS_FILE, lambda row: str(row.get("session_id", "") or "") == session_id, limit=limit)
+    else:
+        rows = store.read_jsonl_prefer_backend(SESSION_EVENTS_FILE, limit=limit)
+    return [row for row in rows if isinstance(row, dict)]

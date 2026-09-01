@@ -386,8 +386,19 @@ def workspace_record_case(
     valid_to: str = "",
     superseded_by: str = "",
     current_truth: bool = True,
+    extra_fields: dict[str, Any] | None = None,
+    case_type: str = "engineering_case",
 ) -> dict[str, Any]:
+    """记录一条已验证的 L1 case 原子。
+
+    extra_fields 可携带 schema 声明的扩展字段(situation/approach/reflect/
+    executions/successes 等);record 前按 `rules/case-schemas.yaml`(缺省用
+    内置 engineering_case schema)做纯函数校验,校验失败不阻断写入,只把
+    schema_validation 作为可读结果返回,保持对既有调用方的兼容。
+    """
     _, store = load_context(workspace_file)
+    from memory_center.core.knowledge.case_schema import load_case_registry, validate_case_draft
+
     item = {
         "task": task,
         "projects": projects,
@@ -404,6 +415,14 @@ def workspace_record_case(
         "superseded_by": superseded_by.strip(),
         "current_truth": bool(current_truth) and not superseded_by.strip() and not valid_to.strip(),
     }
+    extras = extra_fields if isinstance(extra_fields, dict) else {}
+    schema = load_case_registry(store).get(case_type)
+    item["case_type"] = schema.case_type
+    known_extra = {name: value for name, value in extras.items() if schema.field(name) is not None}
+    item.update(known_extra)
+    schema_validation = validate_case_draft(item, schema)
+    if schema_validation.get("warnings"):
+        item["schema_warnings"] = schema_validation["warnings"][:5]
     store.append_jsonl("cross-service-task-memory.jsonl", item)
     receipt = persist_write_receipt(
         store,
@@ -421,6 +440,7 @@ def workspace_record_case(
         "recorded": True,
         "case": item,
         "write_receipt": receipt,
+        "schema_validation": schema_validation,
     }
 
 

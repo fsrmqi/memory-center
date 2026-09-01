@@ -42,10 +42,12 @@
 - `start-session`
 - `log-session-event`
 - `end-session`
+- `session-archive-plan`：仅返回按逻辑轮次计算的归档边界；`session_end` / `session_close` 所在整轮始终保留。 / returns the logical-turn archive boundary only; the complete turn containing `session_end` / `session_close` always stays live.
+- `session-archive`：显式执行同一归档计划，将完整旧轮次迁移至 `memory/session-events-archive.jsonl`；按事件完整内容精确迁移，不依赖时间戳裁剪。 / explicitly executes that plan and moves complete old turns by exact event content rather than timestamp cutoffs.
 
 ### Memory / Eval
 
-- `record-case`
+- `record-case`：可传 `--case-type <type>` 选择 `rules/case-schemas.yaml` 中的 schema，并以 `--extra-fields '{"situation":"## Situation\\n..."}'` 写入 schema 扩展字段。未知字段会被忽略，校验结果随响应的 `schema_validation` 返回而不阻断旧记录。 / use `--case-type <type>` to select a schema and `--extra-fields` for its extension fields; unknown fields are ignored and validation remains additive.
 - `suggest-case`
 - `consolidate-session`：把多个已结束会话整合为 L1 case / L3 记忆块候选。默认 dry-run；`--stage` 将候选写入 append-only 待审核池，随后用 `decide-consolidation-candidate` 逐条审批或拒绝。`--apply` 保留为直接显式写入无冲突 ADD 的模式，不能与 `--stage` 同用。既有 current-truth case 或同批重复会话返回 REVIEW、不会写入；已失效 case 不阻止新的 ADD。`--include-l3` 额外产出 L3 memory-block 追加草稿（不自动写入）。
 - `consolidation-candidates`：列出 staged 的 `pending|applied|rejected` 多会话整合候选；空 `--status` 返回全部。
