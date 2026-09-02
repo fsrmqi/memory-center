@@ -128,6 +128,8 @@ def register_gate_commands(app: typer.Typer) -> None:
         workspace: str = typer.Option(..., help="Workspace yaml file."),
         query: Optional[List[str]] = RELEASE_GATE_QUERY_OPTION,
         golden_cases: str = typer.Option("", help="Optional private Golden cases yaml file."),
+        lookup_contract_cases: str = typer.Option("", help="Optional sanitized lookup behavior-contract YAML cases."),
+        lookup_contract_baseline: str = typer.Option("", help="Optional approved lookup behavior-contract JSON baseline."),
         java_call_cases: str = typer.Option("", help="Optional private Java call resolution cases yaml file."),
         parser_limit: int = typer.Option(0, min=0, help="Parser comparison sample size; 0 disables it."),
         baseline: str = typer.Option("", help="Optional portable release-gate baseline JSON file."),
@@ -155,6 +157,8 @@ def register_gate_commands(app: typer.Typer) -> None:
             workspace,
             queries=list(query or []),
             golden_cases=golden_cases or None,
+            lookup_contract_cases=lookup_contract_cases or None,
+            lookup_contract_baseline=lookup_contract_baseline or None,
             java_call_cases=java_call_cases or None,
             parser_limit=parser_limit,
             baseline=baseline or None,
@@ -193,4 +197,3 @@ def register_gate_commands(app: typer.Typer) -> None:
         print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
         if result["status"] == "block":
             raise typer.Exit(code=1)
-

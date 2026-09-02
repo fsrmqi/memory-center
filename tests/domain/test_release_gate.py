@@ -51,7 +51,8 @@ def test_release_gate_runs_all_configured_checks_without_private_inputs(
     )
 
     assert result["passed"] is True
-    assert set(result["components"]) == {"reindex", "retrieval", "golden", "java_call_resolution", "parser_precision"}
+    assert set(result["components"]) == {"reindex", "retrieval", "golden", "lookup_contract", "java_call_resolution", "parser_precision"}
+    assert result["components"]["lookup_contract"]["status"] == "skipped"
     serialized = json.dumps(result, ensure_ascii=False)
     assert "private query text" not in serialized
     assert "private-golden.yaml" not in serialized
@@ -104,6 +105,36 @@ def test_release_gate_records_and_compares_hot_query_p95(monkeypatch: pytest.Mon
 
 def test_release_gate_percentile_uses_upper_rank_for_small_samples() -> None:
     assert release_gate._percentile([10.0, 20.0], 0.95) == 20.0
+
+
+def test_release_gate_blocks_approved_lookup_contract_drift(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    _patch_successful_components(monkeypatch)
+    import memory_center.core.benchmark.lookup_contract as lookup_contract
+
+    monkeypatch.setattr(
+        lookup_contract,
+        "evaluate_lookup_contract",
+        lambda *_args, **_kwargs: {"baseline_status": "compared", "case_count": 2, "changed_case_ids": ["feign-contract"]},
+    )
+    result = release_gate.run_release_gate(
+        _workspace(tmp_path), lookup_contract_cases=tmp_path / "sanitized.yaml", lookup_contract_baseline=tmp_path / "approved.json"
+    )
+    component = result["components"]["lookup_contract"]
+    assert result["passed"] is False
+    assert component["reason"] == "lookup_contract_drift"
+    assert component["metrics"]["changed_case_ids"] == ["feign-contract"]
+
+
+def test_release_gate_lookup_contract_without_baseline_is_attention(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    _patch_successful_components(monkeypatch)
+    import memory_center.core.benchmark.lookup_contract as lookup_contract
+
+    monkeypatch.setattr(
+        lookup_contract, "evaluate_lookup_contract", lambda *_args, **_kwargs: {"baseline_status": "no_baseline", "case_count": 1, "changed_case_ids": []}
+    )
+    result = release_gate.run_release_gate(_workspace(tmp_path), lookup_contract_cases=tmp_path / "sanitized.yaml")
+    assert result["passed"] is True
+    assert result["components"]["lookup_contract"]["status"] == "attention"
 
 
 def test_release_gate_blocks_hot_query_p95_budget(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

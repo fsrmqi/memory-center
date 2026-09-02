@@ -2,6 +2,11 @@
 
 ## Unreleased / 未发布
 
+## 4.6.15 Lookup Contract Release Gate / 查询契约发布门禁
+
+- `release-gate` 新增可选 `--lookup-contract-cases` 与 `--lookup-contract-baseline`。无 case 时组件 skipped；只有已批准 baseline 的行为漂移会阻断发布；报告仅保留逻辑 case ID 和变化计数。
+- Added optional lookup-contract release-gate inputs. Only drift from an approved baseline blocks release; reports retain logical case IDs and change counts only.
+
 ## 4.6.14 Lookup Behavior Contracts / 查询行为契约
 
 - 新增 `eval-lookup-contract` 与显式 `eval-lookup-contract-baseline-save`：回放脱敏 case，比较结果顺序、project scope、契约计数、knowledge state、guidance 与 served dedup 等规范化字段；无 baseline 不阻断，已批准 baseline 的差异返回 `block`。

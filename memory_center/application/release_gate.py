@@ -121,6 +121,8 @@ def run_release_gate(
     *,
     queries: list[str] | None = None,
     golden_cases: str | Path | None = None,
+    lookup_contract_cases: str | Path | None = None,
+    lookup_contract_baseline: str | Path | None = None,
     java_call_cases: str | Path | None = None,
     parser_limit: int = 0,
     baseline: dict[str, Any] | str | Path | None = None,
@@ -303,6 +305,34 @@ def run_release_gate(
         )
     else:
         components["golden"] = _skipped("no_golden_cases_provided")
+
+    if lookup_contract_cases:
+        from memory_center.core.benchmark.lookup_contract import evaluate_lookup_contract
+
+        lookup_started = time.perf_counter()
+        lookup_contract = evaluate_lookup_contract(
+            workspace_file, lookup_contract_cases, baseline_file=lookup_contract_baseline,
+        )
+        changed_ids = list(lookup_contract.get("changed_case_ids", []) or [])
+        baseline_status = str(lookup_contract.get("baseline_status", "") or "")
+        if baseline_status == "no_baseline":
+            components["lookup_contract"] = {
+                "status": "attention", "passed": None, "reason": "lookup_contract_baseline_missing",
+                "metrics": {"duration_ms": round((time.perf_counter() - lookup_started) * 1000, 3),
+                            "result_count": int(lookup_contract.get("case_count", 0) or 0), "quality_score": 1.0,
+                            "changed_case_count": 0, "changed_case_ids": []},
+            }
+        else:
+            components["lookup_contract"] = _component(
+                passed=not changed_ids,
+                duration_ms=(time.perf_counter() - lookup_started) * 1000,
+                result_count=int(lookup_contract.get("case_count", 0) or 0),
+                quality_score=1.0 if not changed_ids else 0.0,
+                reason="lookup_contract_drift" if changed_ids else "",
+                extra_metrics={"changed_case_count": len(changed_ids), "changed_case_ids": changed_ids},
+            )
+    else:
+        components["lookup_contract"] = _skipped("no_lookup_contract_cases_provided")
 
     if java_call_cases:
         java_started = time.perf_counter()

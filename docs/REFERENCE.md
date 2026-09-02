@@ -342,6 +342,7 @@ memory-center eval-reasoning-prompts \
 - `artifact jsonl-export-status --collection <name>`：只读比较 SQLite 权威记录与 JSONL 导出水位；`artifact jsonl-export-sync --collection <name> --apply` 从 SQLite 增量同步或在 dirty 时原子重建导出。 / JSONL exports are recoverable projections; SQLite remains authoritative.
 - `backend-consistency --workspace <workspace.yaml>` 会附加 `jsonl_projection` 健康摘要；传 `--repair-exports --apply` 才会逐 collection 从 SQLite 修复 dirty 或落后的导出。 / Repair is explicit and never runs in the default read-only check.
 - `eval-lookup-contract --workspace <workspace.yaml> --cases <sanitized.yaml> [--baseline <approved.json>]` 回放公开 hybrid lookup 的规范化行为；用 `eval-lookup-contract-baseline-save` 显式保存经审核的基线。 / No baseline blocks nothing; drift from an approved baseline returns `block`.
+- `release-gate --lookup-contract-cases <sanitized.yaml> --lookup-contract-baseline <approved.json>` 将已批准 lookup 行为基线接入发布判断；未提供 case 时组件为 skipped，未提供 baseline 时为 attention，不自动批准变化。
 - HTTP：`POST /workspace/delivery/skill/contract?task_id=<id>&payload=<JSON>` 更新契约；`GET /workspace/delivery/skill/replay?skill_id=<id>&limit=100` 读取 replay。MCP 使用 `mc_admin(action="delivery_skill_contract_update"|"delivery_skill_replay", ...)`。
 - `artifact delivery-failure-candidates|delivery-skill-synthesize`：显式、离线地聚类跨任务失败和多个已验证交付的共同结构；只保存脱敏元数据和证据引用，不在查询热路径运行。
 
