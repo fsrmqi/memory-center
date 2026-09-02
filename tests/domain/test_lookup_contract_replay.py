@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from memory_center.core.benchmark.lookup_contract import evaluate_lookup_contract, save_lookup_contract_baseline
+from memory_center.core.benchmark.lookup_contract import evaluate_lookup_contract, evaluate_lookup_facade_contract, save_lookup_contract_baseline
 
 
 def _write_cases(path: Path) -> None:
@@ -46,3 +46,12 @@ def test_lookup_contract_reports_semantic_response_drift(tmp_path: Path) -> None
     result = evaluate_lookup_contract("workspace.yaml", cases, baseline_file=baseline, runner=changed)
     assert result["status"] == "block"
     assert result["changed_case_ids"] == ["symbol"]
+
+
+def test_facade_contract_unwraps_wrapper_and_detects_drift() -> None:
+    case = {"case_id": "symbol", "project": "demo"}
+    payload = _runner(case)
+    equal = evaluate_lookup_facade_contract([case], {"http": lambda _: {"result": payload}, "mcp": lambda _: payload})
+    assert equal["status"] == "pass"
+    drift = evaluate_lookup_facade_contract([case], {"http": lambda _: {"result": payload}, "mcp": lambda _: {**payload, "served_dedup": {"applied": True}}})
+    assert drift["status"] == "block"

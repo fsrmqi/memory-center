@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import ast
 from pathlib import Path
 from typing import Any, Callable
 
@@ -51,6 +52,62 @@ def normalize_lookup_contract(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def normalize_facade_lookup_contract(payload: dict[str, Any]) -> dict[str, Any]:
+    """Normalize CLI/HTTP/MCP wrapper shapes to the common lookup contract."""
+    candidate = payload.get("result") if isinstance(payload.get("result"), dict) else payload
+    return normalize_lookup_contract(candidate if isinstance(candidate, dict) else {})
+
+
+def evaluate_lookup_facade_contract(
+    cases: list[dict[str, Any]], runners: dict[str, Callable[[dict[str, Any]], dict[str, Any]]],
+) -> dict[str, Any]:
+    """Compare the semantic contract returned by injected CLI/HTTP/MCP facade runners.
+
+    Transport bootstrapping stays outside this pure evaluator so tests can use
+    real route adapters without opening ports or requiring a live MCP process.
+    """
+    snapshots = {case["case_id"]: {name: normalize_facade_lookup_contract(run(case)) for name, run in runners.items()} for case in cases}
+    mismatches = []
+    for case_id, values in snapshots.items():
+        canonical = next(iter(values.values()), None)
+        if any(value != canonical for value in values.values()):
+            mismatches.append(case_id)
+    return {"case_count": len(cases), "facades": sorted(runners), "snapshots": snapshots,
+            "mismatched_case_ids": mismatches, "status": "block" if mismatches else "pass"}
+
+
+def evaluate_live_lookup_facades(workspace_file: str | Path, cases_file: str | Path) -> dict[str, Any]:
+    """Run the in-process CLI, HTTP and MCP query adapters without opening ports."""
+    from typer.testing import CliRunner
+    from memory_center.cli.main import app
+    from memory_center.http.server import _route_request
+    from memory_center.mcp.server import create_server
+
+    workspace = str(workspace_file)
+    server = create_server(workspace)
+    mcp_lookup = server._tool_manager._tools["mc_lookup"].fn
+
+    def cli(case: dict[str, Any]) -> dict[str, Any]:
+        args = ["query", "--workspace", workspace, "--text", case["query"], "--limit", str(case["limit"])]
+        if case["project"]:
+            args += ["--project", case["project"]]
+        output = CliRunner().invoke(app, args)
+        if output.exit_code != 0:
+            raise RuntimeError(output.output)
+        return ast.literal_eval(output.output.strip())
+
+    def http(case: dict[str, Any]) -> dict[str, Any]:
+        params = {"workspace": [workspace], "text": [case["query"]], "limit": [str(case["limit"])]}
+        if case["project"]:
+            params["project"] = [case["project"]]
+        return _route_request("/workspace/query", params, None)
+
+    def mcp(case: dict[str, Any]) -> dict[str, Any]:
+        return mcp_lookup(query=case["query"], mode="query", limit=case["limit"], project=case["project"])
+
+    return evaluate_lookup_facade_contract(load_lookup_contract_cases(cases_file), {"cli": cli, "http": http, "mcp": mcp})
+
+
 def evaluate_lookup_contract(
     workspace_file: str | Path, cases_file: str | Path, *, baseline_file: str | Path | None = None,
     runner: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
@@ -89,4 +146,4 @@ def _load_baseline(path: str | Path) -> dict[str, Any]:
     return value
 
 
-__all__ = ["evaluate_lookup_contract", "load_lookup_contract_cases", "normalize_lookup_contract", "save_lookup_contract_baseline"]
+__all__ = ["evaluate_live_lookup_facades", "evaluate_lookup_contract", "evaluate_lookup_facade_contract", "load_lookup_contract_cases", "normalize_lookup_contract", "normalize_facade_lookup_contract", "save_lookup_contract_baseline"]
