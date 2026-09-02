@@ -28,7 +28,7 @@ def load_lookup_contract_cases(path: str | Path) -> list[dict[str, Any]]:
         if not case_id or not query or case_id in ids:
             raise ValueError("lookup contract case_id/query must be unique and non-empty")
         ids.add(case_id)
-        normalized.append({"case_id": case_id, "query": query, "project": str(item.get("project", "")).strip(), "limit": int(item.get("limit", 10) or 10)})
+        normalized.append({"case_id": case_id, "query": query, "project": str(item.get("project", "")).strip(), "limit": int(item.get("limit", 10) or 10), "session_steps": max(1, int(item.get("session_steps", 1) or 1))})
     return normalized
 
 
@@ -66,17 +66,27 @@ def evaluate_lookup_facade_contract(
     Transport bootstrapping stays outside this pure evaluator so tests can use
     real route adapters without opening ports or requiring a live MCP process.
     """
-    snapshots = {case["case_id"]: {name: normalize_facade_lookup_contract(run(case)) for name, run in runners.items()} for case in cases}
+    snapshots = {}
+    session_failures = []
+    for case in cases:
+        values = {}
+        for name, run in runners.items():
+            scoped = {**case, "session_id": f"lookup-contract:{case['case_id']}:{name}"}
+            replies = [normalize_facade_lookup_contract(run(scoped)) for _ in range(case.get("session_steps", 1))]
+            values[name] = replies[-1] if len(replies) == 1 else {"first": replies[0], "repeat": replies[-1]}
+            if len(replies) > 1 and not replies[-1]["served_dedup"]:
+                session_failures.append(case["case_id"])
+        snapshots[case["case_id"]] = values
     mismatches = []
     for case_id, values in snapshots.items():
         canonical = next(iter(values.values()), None)
         if any(value != canonical for value in values.values()):
             mismatches.append(case_id)
     return {"case_count": len(cases), "facades": sorted(runners), "snapshots": snapshots,
-            "mismatched_case_ids": mismatches, "status": "block" if mismatches else "pass"}
+            "mismatched_case_ids": mismatches, "session_failure_case_ids": sorted(set(session_failures)), "status": "block" if mismatches or session_failures else "pass"}
 
 
-def evaluate_live_lookup_facades(workspace_file: str | Path, cases_file: str | Path) -> dict[str, Any]:
+def evaluate_live_lookup_facades(workspace_file: str | Path, cases_file: str | Path, *, baseline_file: str | Path | None = None) -> dict[str, Any]:
     """Run the in-process CLI, HTTP and MCP query adapters without opening ports."""
     from typer.testing import CliRunner
     from memory_center.cli.main import app
@@ -91,6 +101,8 @@ def evaluate_live_lookup_facades(workspace_file: str | Path, cases_file: str | P
         args = ["query", "--workspace", workspace, "--text", case["query"], "--limit", str(case["limit"])]
         if case["project"]:
             args += ["--project", case["project"]]
+        if case.get("session_id"):
+            args += ["--session-id", case["session_id"]]
         output = CliRunner().invoke(app, args)
         if output.exit_code != 0:
             raise RuntimeError(output.output)
@@ -100,12 +112,27 @@ def evaluate_live_lookup_facades(workspace_file: str | Path, cases_file: str | P
         params = {"workspace": [workspace], "text": [case["query"]], "limit": [str(case["limit"])]}
         if case["project"]:
             params["project"] = [case["project"]]
+        if case.get("session_id"):
+            params["session_id"] = [case["session_id"]]
         return _route_request("/workspace/query", params, None)
 
     def mcp(case: dict[str, Any]) -> dict[str, Any]:
-        return mcp_lookup(query=case["query"], mode="query", limit=case["limit"], project=case["project"])
+        return mcp_lookup(query=case["query"], mode="query", limit=case["limit"], project=case["project"], session_id=case.get("session_id", ""))
 
-    return evaluate_lookup_facade_contract(load_lookup_contract_cases(cases_file), {"cli": cli, "http": http, "mcp": mcp})
+    result = evaluate_lookup_facade_contract(load_lookup_contract_cases(cases_file), {"cli": cli, "http": http, "mcp": mcp})
+    baseline = _load_facade_baseline(baseline_file) if baseline_file else None
+    changed = [case_id for case_id, value in result["snapshots"].items() if baseline and baseline.get("snapshots", {}).get(case_id) != value]
+    result.update({"baseline_status": "compared" if baseline else "no_baseline", "changed_case_ids": changed})
+    if changed:
+        result["status"] = "block"
+    return result
+
+
+def save_lookup_facade_baseline(result: dict[str, Any], path: str | Path, *, label: str = "current") -> dict[str, Any]:
+    payload = {"schema_version": SCHEMA_VERSION, "label": label, "snapshots": result.get("snapshots", {})}
+    target = Path(path); target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return {"saved": True, "baseline_file": str(target)}
 
 
 def evaluate_lookup_contract(
@@ -146,4 +173,11 @@ def _load_baseline(path: str | Path) -> dict[str, Any]:
     return value
 
 
-__all__ = ["evaluate_live_lookup_facades", "evaluate_lookup_contract", "evaluate_lookup_facade_contract", "load_lookup_contract_cases", "normalize_lookup_contract", "normalize_facade_lookup_contract", "save_lookup_contract_baseline"]
+def _load_facade_baseline(path: str | Path) -> dict[str, Any]:
+    value = json.loads(Path(path).read_text(encoding="utf-8"))
+    if not isinstance(value, dict) or value.get("schema_version") != SCHEMA_VERSION or not isinstance(value.get("snapshots"), dict):
+        raise ValueError("lookup facade baseline must be schema_version=1")
+    return value
+
+
+__all__ = ["evaluate_live_lookup_facades", "evaluate_lookup_contract", "evaluate_lookup_facade_contract", "load_lookup_contract_cases", "normalize_lookup_contract", "normalize_facade_lookup_contract", "save_lookup_contract_baseline", "save_lookup_facade_baseline"]

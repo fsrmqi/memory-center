@@ -30,10 +30,10 @@ from memory_center.core.orchestrator import (
 
 def register_eval_commands(app: typer.Typer) -> None:
     @app.command("eval-lookup-facades")
-    def eval_lookup_facades_cmd(workspace: str = typer.Option(...), cases: str = typer.Option(...)):
+    def eval_lookup_facades_cmd(workspace: str = typer.Option(...), cases: str = typer.Option(...), baseline: str = typer.Option("")):
         """Replay one sanitized query suite through CLI, HTTP and MCP facades."""
         from memory_center.core.benchmark.lookup_contract import evaluate_live_lookup_facades
-        print(evaluate_live_lookup_facades(workspace, cases))
+        print(evaluate_live_lookup_facades(workspace, cases, baseline_file=baseline or None))
     @app.command("eval-lookup-contract")
     def eval_lookup_contract_cmd(
         workspace: str = typer.Option(...),

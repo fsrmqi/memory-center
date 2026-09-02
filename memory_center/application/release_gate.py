@@ -123,6 +123,8 @@ def run_release_gate(
     golden_cases: str | Path | None = None,
     lookup_contract_cases: str | Path | None = None,
     lookup_contract_baseline: str | Path | None = None,
+    lookup_facade_cases: str | Path | None = None,
+    lookup_facade_baseline: str | Path | None = None,
     java_call_cases: str | Path | None = None,
     parser_limit: int = 0,
     baseline: dict[str, Any] | str | Path | None = None,
@@ -333,6 +335,26 @@ def run_release_gate(
             )
     else:
         components["lookup_contract"] = _skipped("no_lookup_contract_cases_provided")
+
+    if lookup_facade_cases:
+        from memory_center.core.benchmark.lookup_contract import evaluate_live_lookup_facades
+
+        facade_started = time.perf_counter()
+        facade = evaluate_live_lookup_facades(workspace_file, lookup_facade_cases, baseline_file=lookup_facade_baseline)
+        mismatches = list(facade.get("mismatched_case_ids", []) or [])
+        session_failures = list(facade.get("session_failure_case_ids", []) or [])
+        baseline_changes = list(facade.get("changed_case_ids", []) or [])
+        components["lookup_facades"] = _component(
+            passed=not mismatches and not session_failures and not baseline_changes,
+            duration_ms=(time.perf_counter() - facade_started) * 1000,
+            result_count=int(facade.get("case_count", 0) or 0),
+            quality_score=1.0 if not mismatches and not session_failures and not baseline_changes else 0.0,
+            reason="lookup_facade_baseline_drift" if baseline_changes else "lookup_session_contract_drift" if session_failures else "lookup_facade_contract_drift" if mismatches else "",
+            extra_metrics={"mismatched_case_count": len(mismatches), "mismatched_case_ids": mismatches,
+                           "facades": list(facade.get("facades", []) or [])},
+        )
+    else:
+        components["lookup_facades"] = _skipped("no_lookup_facade_cases_provided")
 
     if java_call_cases:
         java_started = time.perf_counter()

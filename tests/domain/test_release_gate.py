@@ -51,8 +51,9 @@ def test_release_gate_runs_all_configured_checks_without_private_inputs(
     )
 
     assert result["passed"] is True
-    assert set(result["components"]) == {"reindex", "retrieval", "golden", "lookup_contract", "java_call_resolution", "parser_precision"}
+    assert set(result["components"]) == {"reindex", "retrieval", "golden", "lookup_contract", "lookup_facades", "java_call_resolution", "parser_precision"}
     assert result["components"]["lookup_contract"]["status"] == "skipped"
+    assert result["components"]["lookup_facades"]["status"] == "skipped"
     serialized = json.dumps(result, ensure_ascii=False)
     assert "private query text" not in serialized
     assert "private-golden.yaml" not in serialized

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from memory_center.core.storage.workspace import WorkspaceStore
@@ -54,3 +55,21 @@ def test_backend_consistency_reports_and_repairs_projection(demo_workspace: Path
     repaired = backend_consistency(str(demo_workspace), repair_exports=True, apply=True)
     assert repaired["jsonl_projection"]["applied"] is True
     assert repaired["jsonl_projection"]["status"] == "pass"
+
+
+def test_concurrent_append_batch_prune_and_rebuild_is_idempotent(demo_workspace: Path) -> None:
+    collection = "projection-stress.jsonl"
+    def append(index: int) -> None:
+        WorkspaceStore(demo_workspace).append_jsonl(collection, {"event_type": f"single-{index}"})
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        list(pool.map(append, range(16)))
+    store = WorkspaceStore(demo_workspace)
+    store.append_jsonl_batch(collection, [{"event_type": f"batch-{index}"} for index in range(4)])
+    store.prune_jsonl(collection, created_before=__import__("datetime").datetime(2000, 1, 1, tzinfo=__import__("datetime").timezone.utc), max_records=100)
+    first = store.sync_jsonl_export(collection)
+    second = store.sync_jsonl_export(collection)
+    rows = [json.loads(line) for line in (store.memory_dir / collection).read_text(encoding="utf-8").splitlines()]
+    assert first["rebuild"] is True
+    assert second["exported"] == 0
+    assert len(rows) == 20
+    assert store.jsonl_export_status(collection)["needs_sync"] is False
