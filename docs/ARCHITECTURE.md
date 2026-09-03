@@ -544,6 +544,9 @@ Java 仍保留 Spring-aware 专用解析；多语言 structural pass 避免重�
 - **Session-state boundary / 会话状态边界**：派生会话状态通过 `core/storage/session_state.py` 的 `SessionStateRepository` 落入 SQLite `session_state`，不允许 foundation 直接读写状态文件。JSON/JSONL 仅作为可检查投影；case 使用稳定 ID，`case_recalled` 事件提供精确热度信号。
 - **Recoverable JSONL projections / 可恢复 JSONL 投影**：`WorkspaceStore` 为每个 JSONL collection 维护 SQLite 导出水位与 dirty 标记。append/batch 在数据库提交后推进水位；导出失败或裁剪后标记 dirty，后续写入自动从 SQLite 重建，维护者也可显式同步。JSONL 始终是可再生导出，不参与运行时事实判断。
 - **Lookup orchestration boundary / 查询编排边界**：`memory_query_hybrid` 是兼容门面；scope 推断与刷新、分片执行、项目后处理、响应质量/观测分别由 `lookup_scope`、`lookup_execution`、`lookup_decorators`、`lookup_response` 承担，便于独立测试与策略演进。
+- **Lookup API aggregation boundary / 查询 API 聚合边界**：context、symbol、call graph/search、ref/backend/usage/discover 分别由 `lookup_context`、`lookup_symbols`、`lookup_navigation`、`lookup_diagnostics` 实现；`query.py` 只保留兼容转发与共享低层 helper，避免再次形成全能编排模块。
+- **Lookup dependency direction / 查询依赖方向**：leaf lookup 模块仅依赖 `lookup_shared` 的显式能力 Port；`query.py` 作为 composition root 注入 callback，禁止 leaf module 反向导入 facade，从结构上消除循环依赖。
+- **Feature-scoped lookup Ports / 查询功能 Port**：依赖契约进一步拆为 `SymbolLookupPort`、`ContextLookupPort`、`NavigationLookupPort`、`DiagnosticsLookupPort`。facade 按 API 注入最小 Port，测试限制各 Port 字段规模，防止它们再次演化为 service locator。
 - **Contract enrichment boundary / 契约补充边界**：Feign/MQ/API/Config 的索引筛选、project 过滤、Feign→API path 关联和 index-first routing 位于 `lookup_contracts`，避免将契约语义继续耦合进检索执行器。
 
 详见验证回执 [docs/implementation-receipts/code-graph-foundation.md](implementation-receipts/code-graph-foundation.md)。

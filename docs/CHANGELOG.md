@@ -2,6 +2,26 @@
 
 ## Unreleased / 未发布
 
+## 4.6.19 Shared Lookup Projections / 查询共享投影
+
+- context/search/chain 的纯投影迁入 `lookup_shared`，并从 Context/Navigation Port 移除相应 callback；Port 只保留真正的 facade 或运行时注入能力。
+- Moved pure context/search/chain projections into lookup_shared and removed them from feature Port injection.
+
+## 4.6.18 Feature-Scoped Lookup Ports / 查询功能 Port
+
+- `LookupDependencies` 拆为 `SymbolLookupPort`、`ContextLookupPort`、`NavigationLookupPort`、`DiagnosticsLookupPort`；每个 facade 只注入本能力域 callback，静态测试约束 Port 大小，避免重新形成 service locator。
+- Split the lookup dependency bundle into feature-scoped ports with size guard tests to prevent a new service locator.
+
+## 4.6.17 Lookup Dependency Inversion / 查询依赖反转
+
+- 新增 `lookup_shared.LookupDependencies`：query 兼容门面显式组装共享 callback，`lookup_context`、`lookup_symbols`、`lookup_navigation`、`lookup_diagnostics` 不再反向导入 query；新增静态边界测试防止循环依赖回归。
+- Added explicit lookup dependency injection and a static import-boundary test to prevent leaf lookup modules from importing the query facade.
+
+## 4.6.16 Lookup API Aggregation Split / 查询 API 聚合拆分
+
+- 完成第六步：`memory_context`、`memory_symbol`、callers/callees/search、refs/backend/tool-usage/discover 分别迁入 `lookup_context`、`lookup_symbols`、`lookup_navigation`、`lookup_diagnostics`；`query.py` 仅保留兼容门面、混合查询编排、walkthrough 和共享 payload helper，删除所有 legacy query API 实现。
+- Completed the lookup API aggregation split: context, symbols, navigation, and diagnostics now live in dedicated modules; query.py retains compatibility facades, hybrid orchestration, walkthrough, and shared payload helpers only.
+
 ## 4.6.15 Lookup Contract Release Gate / 查询契约发布门禁
 
 - `release-gate` 新增可选 `--lookup-contract-cases` 与 `--lookup-contract-baseline`。无 case 时组件 skipped；只有已批准 baseline 的行为漂移会阻断发布；报告仅保留逻辑 case ID 和变化计数。

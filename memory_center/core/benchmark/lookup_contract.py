@@ -32,6 +32,19 @@ def load_lookup_contract_cases(path: str | Path) -> list[dict[str, Any]]:
     return normalized
 
 
+def summarize_lookup_contract_coverage(cases_file: str | Path) -> dict[str, Any]:
+    """Return only logical coverage counts; never return query text or paths."""
+    cases = load_lookup_contract_cases(cases_file)
+    categories = {"general": 0, "project": 0, "session": 0, "contract_like": 0}
+    for case in cases:
+        text = case["query"].lower()
+        categories["general"] += 1
+        categories["project"] += int(bool(case["project"]))
+        categories["session"] += int(case["session_steps"] > 1)
+        categories["contract_like"] += int(any(token in text for token in ("feign", "mq", "config", "endpoint")))
+    return {"case_count": len(cases), "categories": categories}
+
+
 def normalize_lookup_contract(payload: dict[str, Any]) -> dict[str, Any]:
     """Keep stable, non-path-bearing response semantics for regression comparison."""
     results = []
@@ -180,4 +193,4 @@ def _load_facade_baseline(path: str | Path) -> dict[str, Any]:
     return value
 
 
-__all__ = ["evaluate_live_lookup_facades", "evaluate_lookup_contract", "evaluate_lookup_facade_contract", "load_lookup_contract_cases", "normalize_lookup_contract", "normalize_facade_lookup_contract", "save_lookup_contract_baseline", "save_lookup_facade_baseline"]
+__all__ = ["evaluate_live_lookup_facades", "evaluate_lookup_contract", "evaluate_lookup_facade_contract", "load_lookup_contract_cases", "normalize_lookup_contract", "normalize_facade_lookup_contract", "save_lookup_contract_baseline", "save_lookup_facade_baseline", "summarize_lookup_contract_coverage"]

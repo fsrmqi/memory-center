@@ -29,6 +29,12 @@ from memory_center.core.orchestrator import (
 
 
 def register_eval_commands(app: typer.Typer) -> None:
+    @app.command("eval-lookup-contract-coverage")
+    def eval_lookup_contract_coverage_cmd(cases: str = typer.Option(..., help="Local sanitized lookup-contract YAML cases.")):
+        """Show logical coverage only; never print case query text or paths."""
+        from memory_center.core.benchmark.lookup_contract import summarize_lookup_contract_coverage
+        print(summarize_lookup_contract_coverage(cases))
+
     @app.command("eval-lookup-facades")
     def eval_lookup_facades_cmd(workspace: str = typer.Option(...), cases: str = typer.Option(...), baseline: str = typer.Option("")):
         """Replay one sanitized query suite through CLI, HTTP and MCP facades."""

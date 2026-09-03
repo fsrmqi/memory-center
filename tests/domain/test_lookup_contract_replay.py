@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from memory_center.core.benchmark.lookup_contract import evaluate_lookup_contract, evaluate_lookup_facade_contract, save_lookup_contract_baseline
+from memory_center.core.benchmark.lookup_contract import evaluate_lookup_contract, evaluate_lookup_facade_contract, save_lookup_contract_baseline, summarize_lookup_contract_coverage
 
 
 def _write_cases(path: Path) -> None:
@@ -55,3 +55,10 @@ def test_facade_contract_unwraps_wrapper_and_detects_drift() -> None:
     assert equal["status"] == "pass"
     drift = evaluate_lookup_facade_contract([case], {"http": lambda _: {"result": payload}, "mcp": lambda _: {**payload, "served_dedup": {"applied": True}}})
     assert drift["status"] == "block"
+
+
+def test_lookup_contract_coverage_never_returns_query_text(tmp_path: Path) -> None:
+    cases = tmp_path / "cases.yaml"; _write_cases(cases)
+    coverage = summarize_lookup_contract_coverage(cases)
+    assert coverage["case_count"] == 1
+    assert "ArticleService" not in str(coverage)
