@@ -2,6 +2,8 @@
 
 ## Unreleased / 未发布
 
+## 4.6.23 Task Shadow: Session-first Continuity / 会话优先任务连续性
+
 ### Task Shadow：Session-first 任务连续性 / Task Shadow: Session-first Continuity
 
 按 [SESSION_FIRST_TASK_CONTINUITY_PROPOSAL.md](SESSION_FIRST_TASK_CONTINUITY_PROPOSAL.md) 实现 L1 Task Shadow 会话影子层；所有字段 additive，不改变既有 MCP tool schema。
@@ -16,11 +18,13 @@
 - **回归**：`tests/domain/test_task_shadow.py`（26 个：幂等水位/merge 确定性/CAS/不污染 L2/allowlist/claim-once）、`tests/entrypoints/test_task_shadow_entrypoints.py`（7 个：CLI/HTTP/admin 三层语义一致）、`tests/domain/test_task_shadow_fixes.py`（10 个：评审修复回归）。
 - **评审加固（review hardening）**：
   - **P0 L2 写入门禁前置**：`mc_sync(session_id=..., sync_target="auto")` 不再先写 L2 后标注——`case_sync_with_shadow` 先检查显式 `task_id` 或已 bound 的 session Shadow，未绑定时走 shadow-only 路径（`task_id_source` 标注来源），杜绝 `workspace_sync_case_to_artifacts` 自行 resolve/create task space 绕过隔离。
+  - **P1 intent 路径同样前置门禁**：`sniff_sync_with_shadow_fallback`（`mc_sync(intent=..., sync_target="auto")`）在调用 `_sniff_sync` 前同样要求显式 `task_id` 或可验证的 bound Shadow；未满足时直接 `shadow_only_sync`，不再先走底层 `create_if_missing=True` 的解析。
   - **source→shadow 统一映射**：新增 `task_shadow_source_map_v1` 注册表，`record_shadow_snapshot` 与 `ensure_shadow_for_session` 都把 `(source_kind, source_session_id)` 登记到确定 shadow_id（同时登记 provider 前缀与 harness kind 两个 key）；Observation 折叠经 `resolve_shadow_for_source` 解析，与 Snapshot 落到同一 Shadow，authority 切换对全部路径生效。`ensure_shadow_for_session` 创建的 MC 内部 Shadow 默认 `shadow_authority=observation`。
+  - **P1 被拒收快照不改映射**：`record_shadow_snapshot` 在 durable 水位/state-version 校验前先查 `bound_shadow_for_source`——同 source 已绑定到不同 Shadow 时直接拒绝（`source_already_bound_to_other_shadow`）；映射只在成功接受后登记，stale/重复/回归快照不会重定向后续 Observation，也不允许未显式迁移的改绑。
   - **原子 CAS**：`RuntimeStore.cas_session_state` 在单个 SQLite 事务内完成 revision 条件检查与写入（`json_extract` WHERE + rowcount 判定），Shadow 绑定、suggest、handoff 的 handed_off/claim/close/expire 全部迁移；两个进程持同一 revision 时只有一个写者成功，claim-once 与绑定 CAS 在并发下成立。
   - **handoff_id 防碰撞**：追加 `uuid4` nonce 后缀，同 session 同秒重复创建不再覆盖已有 draft。
   - **receipt 补齐**：authority 切换、ensure/create、suggest、handoff 过期（claim 与只读路径）均写 L0 write receipt。
-- **回归**：`tests/domain/test_task_shadow.py`（26 个：幂等水位/merge 确定性/CAS/不污染 L2/allowlist/claim-once）、`tests/entrypoints/test_task_shadow_entrypoints.py`（7 个：CLI/HTTP/admin 三层语义一致）、`tests/domain/test_task_shadow_fixes.py`（10 个：评审修复回归）。
+- **回归**：`tests/domain/test_task_shadow.py`（26 个：幂等水位/merge 确定性/CAS/不污染 L2/allowlist/claim-once）、`tests/entrypoints/test_task_shadow_entrypoints.py`（7 个：CLI/HTTP/admin 三层语义一致）、`tests/domain/test_task_shadow_fixes.py`（14 个：评审修复回归）。
 
 Task Shadow (L1 session-first continuity) implemented per the proposal; all additive.
 
@@ -29,8 +33,8 @@ Task Shadow (L1 session-first continuity) implemented per the proposal; all addi
 - **Volatile rejection**: `delivery_mode=volatile` and `observed != durable` snapshots fail closed; unknown snapshot fields are rejected.
 - **Facade changes**: `mc_start` auto-creates/reuses the session shadow (fail-soft, no L2 writes); `mc_sync` gains `sync_target=auto|task|shadow` with shadow fallback on low-confidence resolution; `mc_close` returns `binding_recommendation` and `promotion_options` (default: keep as shadow).
 - **Surfaces**: 10 new `task_shadow_*` mc_admin actions, 16 `task-shadow-*` CLI commands, 8 HTTP routes (mutating ones registered as POST-only).
-- **Review hardening**: L2 write gate moved ahead of case sync (unbound shadows never reach `workspace_sync_case_to_artifacts`); a `task_shadow_source_map_v1` registry routes observations and snapshots into the same shadow so authority switching applies everywhere; `RuntimeStore.cas_session_state` makes revision checks and writes one SQLite transaction (bind/suggest/handoff transitions are concurrency-safe); handoff ids carry a uuid4 nonce; authority switches, ensure/create, suggest, and handoff expiry all write L0 receipts.
-- **Regression**: `tests/domain/test_task_shadow.py` (26 cases), `tests/entrypoints/test_task_shadow_entrypoints.py` (7 cases covering CLI/HTTP/admin parity), `tests/domain/test_task_shadow_fixes.py` (10 review-fix regressions).
+- **Review hardening**: L2 write gate moved ahead of both case sync and sniff sync (unbound shadows never reach `workspace_sync_case_to_artifacts` or `workspace_sync_sniff_to_artifacts`); a `task_shadow_source_map_v1` registry routes observations and snapshots into the same shadow so authority switching applies everywhere, and rejected (stale/duplicate/regression) snapshots no longer rebind the source mapping; `RuntimeStore.cas_session_state` makes revision checks and writes one SQLite transaction (bind/suggest/handoff transitions are concurrency-safe); handoff ids carry a uuid4 nonce; authority switches, ensure/create, suggest, and handoff expiry all write L0 receipts.
+- **Regression**: `tests/domain/test_task_shadow.py` (26 cases), `tests/entrypoints/test_task_shadow_entrypoints.py` (7 cases covering CLI/HTTP/admin parity), `tests/domain/test_task_shadow_fixes.py` (14 review-fix regressions).
 
 ## 4.6.22 Chain Gate Coverage and Fixture Recovery / 调用链门禁覆盖与 Fixture 恢复
 

@@ -3,7 +3,10 @@ from __future__ import annotations
 
 import json
 
-from memory_center.application.task_shadow_flow import case_sync_with_shadow
+from memory_center.application.task_shadow_flow import (
+    case_sync_with_shadow,
+    sniff_sync_with_shadow_fallback,
+)
 from memory_center.core.tasks.shadow import (
     bind_shadow_to_task,
     build_merged_shadow,
@@ -215,3 +218,56 @@ def test_suggest_binding_writes_receipt(demo_workspace):
     ])
     assert result["suggested"] is True
     assert result["write_receipt"]["receipt_id"]
+
+
+# ------------------------------------------------- P1 intent 路径门禁
+
+def test_sniff_sync_blocked_for_unbound(demo_workspace):
+    wf = str(demo_workspace)
+    result = sniff_sync_with_shadow_fallback(wf, "some exploratory intent", session_id="p1-intent")
+    assert result["mode"] == "sniff"
+    assert result["write_target"] == "task_shadow"
+    assert result["synced"] is False
+    # 未绑定且无显式 task_id 时不得创建任何 L2 task space
+    spaces = list_task_spaces(wf)
+    assert all(item["task_id"] != "p1-intent" for item in spaces["active_tasks"])
+
+
+def test_sniff_sync_allows_explicit_task_id(demo_workspace):
+    wf = str(demo_workspace)
+    task = create_task_space(wf, title="explicit sniff target")["task_id"]
+    result = sniff_sync_with_shadow_fallback(wf, "some intent", task_id=task)
+    assert result["task_id_source"] == "explicit"
+    assert result["write_target"] in ("task_space", "none")
+
+
+# ------------------------------------------------- P1 snapshot 映射改绑
+
+def test_stale_snapshot_does_not_rebind_source(demo_workspace):
+    wf = str(demo_workspace)
+    # 首次成功接受，source 绑定 shadow:a
+    first = record_shadow_snapshot(wf, _snapshot(
+        shadow_id="shadow:dsh:rb-a", source_session_id="rb-sess", durable_as_of_seq=5, observed_as_of_seq=5,
+    ))
+    assert first["accepted"] is True
+    # 一个 stale 快照携带不同的 shadow_id：必须返回拒绝，且不改写映射
+    stale = record_shadow_snapshot(wf, _snapshot(
+        shadow_id="shadow:dsh:rb-b", source_session_id="rb-sess",
+        durable_as_of_seq=3, observed_as_of_seq=3,
+    ))
+    assert stale["accepted"] is False
+    assert stale["reason"] == "source_already_bound_to_other_shadow"
+    assert stale["bound_shadow_id"] == "shadow:dsh:rb-a"
+
+
+def test_rebind_requires_explicit_rebind_flag(demo_workspace):
+    wf = str(demo_workspace)
+    record_shadow_snapshot(wf, _snapshot(
+        shadow_id="shadow:dsh:rb-x", source_session_id="rb2", durable_as_of_seq=1, observed_as_of_seq=1,
+    ))
+    # 同一 source 换新 shadow 且更高水位：也拒绝（未显式迁移）
+    rejected = record_shadow_snapshot(wf, _snapshot(
+        shadow_id="shadow:dsh:rb-y", source_session_id="rb2", durable_as_of_seq=9, observed_as_of_seq=9,
+    ))
+    assert rejected["accepted"] is False
+    assert rejected["reason"] == "source_already_bound_to_other_shadow"

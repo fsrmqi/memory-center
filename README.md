@@ -52,9 +52,9 @@ Memory Center precomputes these relationships before the agent starts editing.
 
 ### Current release / 当前版本
 
-当前本地发行版本为 **4.6.22**。4.6 系列已将可信查询、Java IR 差分、跨服务 `primary_chain`、真实 retrieval replay、局部刷新分桶预算、发布质量门禁和只读质量/空间总览收敛为稳定能力；4.6.22 将 chain gate 统一覆盖 trace/group 路径，并修复路由不可用时的负向结论保守性与 demo fixture 污染。`quality-gate` 只读汇总 generation、coverage、replay、IR、刷新性能和存储状态；它不会执行 reindex、GC、VACUUM 或用户命令。
+当前本地发行版本为 **4.6.23**。4.6 系列已将可信查询、Java IR 差分、跨服务 `primary_chain`、真实 retrieval replay、局部刷新分桶预算、发布质量门禁和只读质量/空间总览收敛为稳定能力；4.6.23 新增 Task Shadow（Session-first 任务连续性），并以显式绑定门禁、原子 CAS、确定性跨源映射和 L0 回执保证未绑定工作不会污染 L2。`quality-gate` 只读汇总 generation、coverage、replay、IR、刷新性能和存储状态；它不会执行 reindex、GC、VACUUM 或用户命令。
 
-The current local release is **4.6.22**. The 4.6 series consolidates trustworthy query contracts, Java IR differential checks, cross-service `primary_chain`, real retrieval replay, bucketed refresh budgets, a release quality gate, and a read-only quality/storage overview; 4.6.22 applies chain gates uniformly to trace/group paths, makes unavailable routing conservative for negative claims, and restores the protected demo fixture. `quality-gate` is read-only and never reindexes, GCs, vacuums, or runs user commands.
+The current local release is **4.6.23**. The 4.6 series consolidates trustworthy query contracts, Java IR differential checks, cross-service `primary_chain`, real retrieval replay, bucketed refresh budgets, a release quality gate, and a read-only quality/storage overview; 4.6.23 adds Task Shadow (session-first task continuity), with explicit binding gates, atomic CAS, deterministic cross-source mapping, and L0 receipts so unbound work cannot contaminate L2. `quality-gate` is read-only and never reindexes, GCs, vacuums, or runs user commands.
 
 ---
 
