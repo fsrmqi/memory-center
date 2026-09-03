@@ -322,7 +322,7 @@ def run_release_gate(
                 "status": "attention", "passed": None, "reason": "lookup_contract_baseline_missing",
                 "metrics": {"duration_ms": round((time.perf_counter() - lookup_started) * 1000, 3),
                             "result_count": int(lookup_contract.get("case_count", 0) or 0), "quality_score": 1.0,
-                            "changed_case_count": 0, "changed_case_ids": []},
+                            "changed_case_count": 0},
             }
         else:
             components["lookup_contract"] = _component(
@@ -331,7 +331,7 @@ def run_release_gate(
                 result_count=int(lookup_contract.get("case_count", 0) or 0),
                 quality_score=1.0 if not changed_ids else 0.0,
                 reason="lookup_contract_drift" if changed_ids else "",
-                extra_metrics={"changed_case_count": len(changed_ids), "changed_case_ids": changed_ids},
+                extra_metrics={"changed_case_count": len(changed_ids)},
             )
     else:
         components["lookup_contract"] = _skipped("no_lookup_contract_cases_provided")
@@ -350,7 +350,9 @@ def run_release_gate(
             result_count=int(facade.get("case_count", 0) or 0),
             quality_score=1.0 if not mismatches and not session_failures and not baseline_changes else 0.0,
             reason="lookup_facade_baseline_drift" if baseline_changes else "lookup_session_contract_drift" if session_failures else "lookup_facade_contract_drift" if mismatches else "",
-            extra_metrics={"mismatched_case_count": len(mismatches), "mismatched_case_ids": mismatches,
+            extra_metrics={"mismatched_case_count": len(mismatches),
+                           "session_failure_case_count": len(session_failures),
+                           "facade_baseline_change_count": len(baseline_changes),
                            "facades": list(facade.get("facades", []) or [])},
         )
     else:

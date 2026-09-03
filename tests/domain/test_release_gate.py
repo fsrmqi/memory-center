@@ -123,7 +123,8 @@ def test_release_gate_blocks_approved_lookup_contract_drift(monkeypatch: pytest.
     component = result["components"]["lookup_contract"]
     assert result["passed"] is False
     assert component["reason"] == "lookup_contract_drift"
-    assert component["metrics"]["changed_case_ids"] == ["feign-contract"]
+    assert component["metrics"]["changed_case_count"] == 1
+    assert "feign-contract" not in json.dumps(result)
 
 
 def test_release_gate_lookup_contract_without_baseline_is_attention(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

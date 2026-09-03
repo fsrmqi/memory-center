@@ -4,6 +4,9 @@ from __future__ import annotations
 import hashlib
 import json
 import ast
+import shutil
+import tempfile
+from uuid import uuid4
 from pathlib import Path
 from typing import Any, Callable
 
@@ -72,7 +75,7 @@ def normalize_facade_lookup_contract(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def evaluate_lookup_facade_contract(
-    cases: list[dict[str, Any]], runners: dict[str, Callable[[dict[str, Any]], dict[str, Any]]],
+    cases: list[dict[str, Any]], runners: dict[str, Callable[[dict[str, Any]], dict[str, Any]]], *, session_prefix: str = "",
 ) -> dict[str, Any]:
     """Compare the semantic contract returned by injected CLI/HTTP/MCP facade runners.
 
@@ -84,7 +87,10 @@ def evaluate_lookup_facade_contract(
     for case in cases:
         values = {}
         for name, run in runners.items():
-            scoped = {**case, "session_id": f"lookup-contract:{case['case_id']}:{name}"}
+            # Stateless cases must not create session guidance/ledger records.
+            scoped = dict(case)
+            if case.get("session_steps", 1) > 1:
+                scoped["session_id"] = f"{session_prefix or uuid4().hex}:{case['case_id']}:{name}"
             replies = [normalize_facade_lookup_contract(run(scoped)) for _ in range(case.get("session_steps", 1))]
             values[name] = replies[-1] if len(replies) == 1 else {"first": replies[0], "repeat": replies[-1]}
             if len(replies) > 1 and not replies[-1]["served_dedup"]:
@@ -100,52 +106,53 @@ def evaluate_lookup_facade_contract(
 
 
 def evaluate_live_lookup_facades(workspace_file: str | Path, cases_file: str | Path, *, baseline_file: str | Path | None = None) -> dict[str, Any]:
-    """Run the in-process CLI, HTTP and MCP query adapters without opening ports."""
+    """Run in-process facades against an isolated workspace copy, never the source workspace."""
     from typer.testing import CliRunner
     from memory_center.cli.main import app
     from memory_center.http.server import _route_request
     from memory_center.mcp.server import create_server
 
-    workspace = str(workspace_file)
-    server = create_server(workspace)
-    mcp_lookup = server._tool_manager._tools["mc_lookup"].fn
+    source_workspace = Path(workspace_file).expanduser().resolve()
+    with tempfile.TemporaryDirectory(prefix="memory-center-facade-contract-") as temp_dir:
+        temp_workspace_dir = Path(temp_dir) / ".memory-center"
+        shutil.copytree(source_workspace.parent, temp_workspace_dir)
+        workspace = str(temp_workspace_dir / source_workspace.name)
+        server = create_server(workspace)
+        mcp_lookup = server._tool_manager._tools["mc_lookup"].fn
 
-    def cli(case: dict[str, Any]) -> dict[str, Any]:
-        args = ["query", "--workspace", workspace, "--text", case["query"], "--limit", str(case["limit"])]
-        if case["project"]:
-            args += ["--project", case["project"]]
-        if case.get("session_id"):
-            args += ["--session-id", case["session_id"]]
-        output = CliRunner().invoke(app, args)
-        if output.exit_code != 0:
-            raise RuntimeError(output.output)
-        return ast.literal_eval(output.output.strip())
+        def cli(case: dict[str, Any]) -> dict[str, Any]:
+            args = ["query", "--workspace", workspace, "--text", case["query"], "--limit", str(case["limit"])]
+            if case["project"]: args += ["--project", case["project"]]
+            if case.get("session_id"): args += ["--session-id", case["session_id"]]
+            output = CliRunner().invoke(app, args)
+            if output.exit_code != 0: raise RuntimeError(output.output)
+            return ast.literal_eval(output.output.strip())
 
-    def http(case: dict[str, Any]) -> dict[str, Any]:
-        params = {"workspace": [workspace], "text": [case["query"]], "limit": [str(case["limit"])]}
-        if case["project"]:
-            params["project"] = [case["project"]]
-        if case.get("session_id"):
-            params["session_id"] = [case["session_id"]]
-        return _route_request("/workspace/query", params, None)
+        def http(case: dict[str, Any]) -> dict[str, Any]:
+            params = {"workspace": [workspace], "text": [case["query"]], "limit": [str(case["limit"])]}
+            if case["project"]: params["project"] = [case["project"]]
+            if case.get("session_id"): params["session_id"] = [case["session_id"]]
+            return _route_request("/workspace/query", params, None)
 
-    def mcp(case: dict[str, Any]) -> dict[str, Any]:
-        return mcp_lookup(query=case["query"], mode="query", limit=case["limit"], project=case["project"], session_id=case.get("session_id", ""))
+        def mcp(case: dict[str, Any]) -> dict[str, Any]:
+            return mcp_lookup(query=case["query"], mode="query", limit=case["limit"], project=case["project"], session_id=case.get("session_id", ""))
 
-    result = evaluate_lookup_facade_contract(load_lookup_contract_cases(cases_file), {"cli": cli, "http": http, "mcp": mcp})
-    baseline = _load_facade_baseline(baseline_file) if baseline_file else None
-    changed = [case_id for case_id, value in result["snapshots"].items() if baseline and baseline.get("snapshots", {}).get(case_id) != value]
-    result.update({"baseline_status": "compared" if baseline else "no_baseline", "changed_case_ids": changed})
-    if changed:
-        result["status"] = "block"
-    return result
+        result = evaluate_lookup_facade_contract(load_lookup_contract_cases(cases_file), {"cli": cli, "http": http, "mcp": mcp}, session_prefix=f"facade-contract:{uuid4().hex}")
+        baseline = _load_facade_baseline(baseline_file) if baseline_file else None
+        changed = [case_id for case_id, value in result["snapshots"].items() if baseline and baseline.get("snapshots", {}).get(case_id) != value]
+        result.update({"baseline_status": "compared" if baseline else "no_baseline", "changed_case_ids": changed})
+        if changed: result["status"] = "block"
+        return result
 
 
 def save_lookup_facade_baseline(result: dict[str, Any], path: str | Path, *, label: str = "current") -> dict[str, Any]:
     payload = {"schema_version": SCHEMA_VERSION, "label": label, "snapshots": result.get("snapshots", {})}
+    payload["sha256"] = hashlib.sha256(json.dumps(payload["snapshots"], ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()
     target = Path(path); target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    return {"saved": True, "baseline_file": str(target)}
+    temp = target.with_suffix(target.suffix + ".tmp")
+    temp.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    temp.replace(target)
+    return {"saved": True, "baseline_file": str(target), "sha256": payload["sha256"]}
 
 
 def evaluate_lookup_contract(

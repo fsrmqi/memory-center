@@ -2,6 +2,11 @@
 
 ## Unreleased / 未发布
 
+## 4.6.20 Facade Replay Isolation / 门面回放隔离
+
+- facade 回放使用临时 `.memory-center` 副本；仅 session 序列 case 注入随机 session ID，避免污染原 workspace 或复用旧 ledger。release-gate 仅返回变化计数，不再回显私有 case ID；facade baseline 改为带 SHA-256 的原子写入。
+- Isolated facade replay in a temporary workspace, randomized sequence-only session IDs, removed case IDs from release-gate output, and made facade baselines hashed plus atomically written.
+
 ## 4.6.19 Shared Lookup Projections / 查询共享投影
 
 - context/search/chain 的纯投影迁入 `lookup_shared`，并从 Context/Navigation Port 移除相应 callback；Port 只保留真正的 facade 或运行时注入能力。
