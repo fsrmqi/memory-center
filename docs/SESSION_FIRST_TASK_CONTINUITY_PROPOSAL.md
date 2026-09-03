@@ -58,7 +58,7 @@ Task Shadow 不保存完整 prompt、源码、完整 tool payload 或绝对路�
 
 > 与 11.3 的关系：本节是 Memory Center 内部存储的 Shadow 形态；11.3 是 DSH Adapter 提交的脱敏 Shadow Snapshot 形态。两者的映射：`source_session_id` + `lineage` 折叠后归入 `session_ids`；`evidence_refs` 对应 `recent_evidence_refs`；`as_of_seq`/`state_version` 是同步水位元数据，不进入内部存储；`confidence` 由 Adapter 侧 `binding_status` 与候选分数在 MC 内部推导。
 
-> 多 source 规则：内部 Shadow 不能把多个 session 的 whole-value snapshot 直接做全局 last-write-wins。每个 `source_session_id` 保存独立 contribution 与独立 watermark；对外 Task Shadow 是所有活跃 contribution 的确定性 merge projection。
+> 多 source 规则：内部 Shadow 不能把多个 session 的 whole-value snapshot 直接做全局 last-write-wins。每个 `(source_provider_id, source_session_id)` 保存独立 contribution 与独立 watermark；对外 Task Shadow 是所有活跃 contribution 的确定性 merge projection。
 
 ## 4. 任务绑定状态机 / Binding State Machine
 
@@ -315,7 +315,7 @@ Memory Center 接收的不是完整 prompt、模型回复、工具参数/结果�
   "durable_as_of_seq": 0,
   "durable_event_count": 0,
   "source_revision_hint": "opaque-change-token",
-  "delivery_mode": "durable",
+  "delivery_mode": "durable|volatile",
   "state_version": 1,
   "intent_summary": "bounded summary",
   "candidate_tasks": [],
@@ -339,6 +339,15 @@ Memory Center 接收的不是完整 prompt、模型回复、工具参数/结果�
 8. `state_version` 高于 MC 已知版本时，MC 不做本地重折叠（MC没有源日志，也不应有），而是标记 Shadow `stale/unusable`、写 receipt、并向 adapter 请求新版完整快照；
 9. 快照不包含完整对话、工具正文、绝对路径或私密 payload；
 10. Memory Center 保存 snapshot receipt、source identity、durable watermark 与 binding 审计，但不保存 DSH 原始日志副本。
+
+`delivery_mode` 是封闭枚举：
+
+| 值 | 是否允许到达 MC TaskShadowSource | 用途 |
+|---|---|---|
+| `durable` | 是 | 满足 `observed_as_of_seq == durable_as_of_seq`；可更新 contribution，并可作为 bind/promotion 的事实输入 |
+| `volatile` | 否 | 仅 DSH 内存或 UI 预览；不得发送给 MC TaskShadowSource，也不得写 receipt、L2、case 或 binding |
+
+因此 MC 的同步 API 只接受 `delivery_mode="durable"`；volatile 不是一种可持久化的 MC 输入。
 
 ### 11.3.1 Source Contribution Merge / 多源贡献合并
 
@@ -382,7 +391,7 @@ compaction 可以替换模型上下文中的自然语言消息，但不得遮蔽
 DSH 的单写者模型主要是进程内保证。Memory Center 面向跨 Agent/跨进程协作时，应改用：
 
 ```text
-source_session_id + as_of_seq + revision/lease
+source_provider_id + source_session_id + durable_as_of_seq + MC revision/lease
 ```
 
 - DSH 负责一个 session 内事件顺序和本地单写者；
@@ -409,7 +418,7 @@ source_session_id + as_of_seq + revision/lease
 
 ### 11.6 Shadow 在 DSH 侧的落地形态 / Shadow as a DSH Projection Unit
 
-在 DSH 侧，Task Shadow 不需要新通道：它就是一个 `ProjectionDefinition`——`key: 'task-shadow'`、`stateVersion`、纯 `init/apply` fold、`wire` 输出脱敏 snapshot。消费路径复用现有 `session/projection` 推送帧或 `snapshot()` 读取；持久化 checkpoint 复用 session-projection-cache 的三个强制点（session creation、`turn/end`、session disposal）。折叠输入使用 surface 等效视图（compaction 之后的 current surface），使 Shadow 天然吸收 compaction 的 replace 遮蔽，且 `as_of_seq` 单调性不受影响。
+在 DSH 侧，Task Shadow 不需要新通道：它就是一个 `ProjectionDefinition`——`key: 'task-shadow'`、`stateVersion`、纯 `init/apply` fold、`wire` 输出脱敏 snapshot。消费路径复用现有 `session/projection` 推送帧或 `snapshot()` 读取；持久化 checkpoint 复用 session-projection-cache 的三个强制点（session creation、`turn/end`、session disposal）。`apply` 的事实输入是 durable 结构化事件和 log-only 领域事件；compaction 后的 current surface 仅可为 `intent_summary` / `prose_summary` 提供可选自然语言摘要，不能替代结构化 fold，也不能遮蔽 evidence。
 
 接入契约（`TaskShadowSource`）要求的源侧能力，对应 DSH 现成机制如下：
 
@@ -429,12 +438,12 @@ fork 场景子 Shadow 继承 lineage（`parent_session_id` + `fork_seq` 对齐 `
 #### Phase DSH-1 — Read-only Adapter Prototype
 
 - 定义 `TaskShadowSource` 接入契约（push/pull、watermark 语义、schema 版本协商）与 `TaskShadowSnapshot` schema；
-- DSH 侧实现 `task-shadow` ProjectionDefinition（surface 折叠 + 脱敏 wire view），MC 只保存 receipt/watermark/status，不写正式 task；
+- DSH 侧实现 `task-shadow` ProjectionDefinition（durable 结构化事件 fold + 可选 surface prose summary + 脱敏 wire view），MC 只保存 receipt/watermark/status，不写正式 task；
 - pull 模式基于 `stat.revision` 变更探测；验证无完整会话正文泄露（schema 允许列表 + 有界长度 fail-closed）。
 
 #### Phase DSH-2 — Idempotent Shadow Sync
 
-- 实现 `(shadow_id, source_session_id, as_of_seq)` 幂等去重；
+- 实现 `(shadow_id, source_provider_id, source_session_id, durable_as_of_seq)` 幂等去重；
 - 落实 durable 前缀水位（flush 后 checkpoint）、截断检测与全量重同步路径；
 - 加入 state version 方向性拒绝、stale status 和 retry receipt；
 - 定义跨进程 revision/lease 与绑定记录 CAS 规则；
@@ -504,12 +513,25 @@ capture → consolidate → recall → handoff
 
 `Observation` 是 L0/Shadow 的输入，不直接写 L2。Adapter 必须用 `(source_kind, source_session_id, event_seq)` 幂等去重，并对 schema/大小/字段 allowlist fail-closed。
 
+#### Observation 与 Shadow Snapshot 的关系 / Observation versus Snapshot
+
+两条路径不能同时以“权威 Shadow 写入者”身份处理同一个 source session：
+
+| 场景 | Observation | TaskShadowSnapshot |
+|---|---|---|
+| 不支持 Projection 的普通 Agent | 权威 L0/Shadow 输入 | 不存在 |
+| DSH Adapter 已启用 | 仅 L0 审计/调试事实 | 权威 Shadow contribution 输入 |
+| provider 迁移或降级 | 先关闭旧 contribution，再显式切换 authority | 新 authority 从 durable watermark 开始 |
+
+对同一个 `(source_provider_id, source_session_id)`，MC 必须记录 `shadow_authority=observation|snapshot`。当 authority 为 `snapshot` 时，Observation 不得独立覆盖 `candidate_files`、`unresolved_items`、`next_actions` 等 Shadow 字段；它仅保留 L0 审计证据。这样不会出现 event 级 Observation 与 whole-value snapshot 互相回滚。
+
 #### Handoff Claim / 交接认领
 
-handoff 不是提示词约定，而是有状态协议：
+Shadow binding 与 Handoff 是两个状态域，不能混为一条状态机：
 
 ```text
-suggested → bound → handed_off → claimed → closed
+Shadow binding:  unbound → suggested → bound
+Handoff claim:   draft → handed_off → claimed → closed|expired|cancelled
 ```
 
 建议记录：
@@ -521,7 +543,7 @@ suggested → bound → handed_off → claimed → closed
   "from_session_id": "...",
   "to_agent_hint": "",
   "revision": 1,
-  "status": "handed_off|claimed|expired|closed",
+  "status": "draft|handed_off|claimed|expired|closed|cancelled",
   "claimed_by_session_id": "",
   "expires_at": ""
 }
