@@ -2041,19 +2041,20 @@ def _cjk_subword_in(token: str, text: str) -> bool:
     """CJK containment when token boundaries differ from the stored text.
 
     `继续处理链路分析` 与标题 `链路分析任务` 共享连续子串 `链路分析`，但整串
-    substring 检查会漏掉。要求 token 与某个 CJK 词存在长度 >= 3 的连续公共
-    子串（覆盖该词至少一半），才能算命中；对拉丁 token 恒为 False。
+    substring 检查会漏掉。要求 token 与某个 CJK 词存在长度 >= 4 的连续公共
+    子串（3 字如 `全链路` 属通用高歧义词，真实工作区会跨任务误命中，见
+    ucap 验证：`的全链路观测问题` 误中 `错敏复查全链路`）；对拉丁 token 恒为 False。
     """
-    if len(token) < 3 or not all("\u4e00" <= ch <= "\u9fff" for ch in token):
+    if len(token) < 4 or not all("\u4e00" <= ch <= "\u9fff" for ch in token):
         return False
     text = (text or "").strip().lower()
     if not text:
         return False
     for word in text.split():
-        if not all("\u4e00" <= ch <= "\u9fff" for ch in word) or len(word) < 3:
+        if not all("\u4e00" <= ch <= "\u9fff" for ch in word) or len(word) < 4:
             continue
         # 长词最多要求 4 字连续公共子串，避免对 10+ 字标题要求覆盖一半。
-        required = max(3, min(4, len(word) // 2))
+        required = max(4, min(4, len(word) // 2))
         best = 0
         for i in range(len(token)):
             for j in range(len(word)):
@@ -2061,7 +2062,7 @@ def _cjk_subword_in(token: str, text: str) -> bool:
                 while i + k < len(token) and j + k < len(word) and token[i + k] == word[j + k]:
                     k += 1
                 best = max(best, k)
-        if best >= required and best >= 3:
+        if best >= required and best >= 4:
             return True
     return False
 
