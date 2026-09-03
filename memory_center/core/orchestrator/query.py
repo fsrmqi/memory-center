@@ -418,14 +418,14 @@ def _infer_project_from_fqn(fqn: str, workspace_file: str | Path) -> str:
     return best_proj
 
 
-def memory_callers(workspace_file: str | Path, symbol: str, depth: int = 2, limit: int = 80, edge_type_filter: list[str] | None = None, project: str = "", view: str = "full", budget: str = "medium", min_confidence: float = 0.85) -> dict[str, Any]:
+def memory_callers(workspace_file: str | Path, symbol: str, depth: int = 2, limit: int = 80, edge_type_filter: list[str] | None = None, project: str = "", view: str = "full", budget: str = "medium", min_confidence: float = 0.85, explicit_symbol: str = "") -> dict[str, Any]:
     from .lookup_navigation import traverse
-    return traverse(workspace_file, symbol, direction="upstream", depth=depth, limit=limit, edge_type_filter=edge_type_filter, project=project, view=view, budget=budget, min_confidence=min_confidence, deps=_navigation_port())
+    return traverse(workspace_file, symbol, direction="upstream", depth=depth, limit=limit, edge_type_filter=edge_type_filter, project=project, view=view, budget=budget, min_confidence=min_confidence, explicit_symbol=explicit_symbol, deps=_navigation_port())
 
 
-def memory_callees(workspace_file: str | Path, symbol: str, depth: int = 2, limit: int = 80, edge_type_filter: list[str] | None = None, project: str = "", view: str = "full", budget: str = "medium", min_confidence: float = 0.85) -> dict[str, Any]:
+def memory_callees(workspace_file: str | Path, symbol: str, depth: int = 2, limit: int = 80, edge_type_filter: list[str] | None = None, project: str = "", view: str = "full", budget: str = "medium", min_confidence: float = 0.85, explicit_symbol: str = "") -> dict[str, Any]:
     from .lookup_navigation import traverse
-    return traverse(workspace_file, symbol, direction="downstream", depth=depth, limit=limit, edge_type_filter=edge_type_filter, project=project, view=view, budget=budget, min_confidence=min_confidence, deps=_navigation_port())
+    return traverse(workspace_file, symbol, direction="downstream", depth=depth, limit=limit, edge_type_filter=edge_type_filter, project=project, view=view, budget=budget, min_confidence=min_confidence, explicit_symbol=explicit_symbol, deps=_navigation_port())
 
 
 def memory_method_walkthrough(
@@ -895,7 +895,9 @@ def _compact_chain_result(result: dict[str, Any], direction: str, budget: str = 
     summary_lines.extend(
         _build_edge_summary_lines("Caller" if direction == "callers" else "Callee", items, limits["steps"] + limits["events"])
     )
-    return {
+    # P1-A: anchor/scope validation must survive compaction — the claim
+    # boundary gate reads them from the compact chain payload.
+    compact = {
         "symbol": result.get("symbol", ""),
         "found": result.get("found", False),
         "direction": direction,
@@ -931,6 +933,15 @@ def _compact_chain_result(result: dict[str, Any], direction: str, budget: str = 
             ],
         },
     }
+    if isinstance(result.get("chain_anchor_validation"), dict):
+        compact["chain_anchor_validation"] = result["chain_anchor_validation"]
+    if isinstance(result.get("chain_scope_validation"), dict):
+        compact["chain_scope_validation"] = result["chain_scope_validation"]
+    if isinstance(result.get("fallback_action"), dict):
+        compact["fallback_action"] = result["fallback_action"]
+    if result.get("anchor_candidate_only"):
+        compact["anchor_candidate_only"] = True
+    return compact
 
 
 def _compact_symbol_result(result: dict[str, Any], budget: str = "medium") -> dict[str, Any]:

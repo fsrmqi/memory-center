@@ -27,6 +27,55 @@ def prepare_lookup(workspace_file: str, target: str, *, request_tier: str, limit
     return {"planner": planner, "plan": plan, "started_at": started_at, "auto_refresh": refresh, "shard_route": route, "shard_evidence": evidence}
 
 
+def _chain_gate_from_payload(payload: dict[str, Any]) -> dict[str, Any] | None:
+    """P1-A: extract the chain anchor/scope validation from a chain result.
+
+    ``payload["result"]`` 是 memory_callers/memory_callees/group_chain 的返回。
+    有锚点校验时把 status 与 scope_incomplete 传给 claim boundary；无校验
+    字段（旧结果或非 chain 路由）返回 None，不影响其它模式。
+    """
+    result = payload.get("result")
+    if not isinstance(result, dict):
+        return None
+    anchor_validation = result.get("chain_anchor_validation")
+    if not isinstance(anchor_validation, dict):
+        return None
+    scope = result.get("chain_scope_validation")
+    return {
+        "anchor_status": str(anchor_validation.get("status", "missing")),
+        "scope_incomplete": bool(isinstance(scope, dict) and scope.get("scope_incomplete")),
+    }
+
+
+def _freshness_transition_note(payload: dict[str, Any], session_id: str) -> None:
+    """P2-C: 当查询 generation 与任务启动快照不同，返回 freshness_transition。
+
+    Agent 据此知道旧 stale banner 已被后台刷新取代（stale_to_fresh），
+    不再把启动快照当作当前查询事实。静默失败不影响查询结果。
+    """
+    index_context = payload.get("index_context")
+    if not isinstance(index_context, dict) or not str(session_id or "").strip():
+        return
+    try:
+        from memory_center.core.freshness.contract import freshness_transition
+        from memory_center.core.orchestrator.session import workspace_session_summary
+
+        summary = workspace_session_summary(str(payload.get("_workspace_file", "")), session_id)
+        events = summary.get("events", []) if summary.get("found") else []
+        observed = ""
+        for event in events or []:
+            if event.get("event_type") == "session_start":
+                observed = str((event.get("payload") or {}).get("freshness_generation", "") or "")
+                break
+        if not observed:
+            return
+        transition = freshness_transition(index_context, observed)
+        if transition:
+            payload["freshness_transition"] = transition
+    except Exception:
+        return
+
+
 def finalize_lookup(workspace_file: str, target: str, payload: dict[str, Any], prepared: dict[str, Any], operation: str) -> dict[str, Any]:
     plan = prepared["plan"]
     payload["auto_refresh"] = prepared["auto_refresh"]
@@ -47,6 +96,7 @@ def finalize_lookup(workspace_file: str, target: str, payload: dict[str, Any], p
         request_tier=plan.tier,
         query_budget=template_budget,
         project=str(getattr(plan, "project", "") or ""),
+        chain_gate=_chain_gate_from_payload(payload),
     )
     # Primary cross-service chain (additive): only for a Method anchor from
     # the symbol path. Never fabricates — status is found/not_found/
@@ -92,4 +142,8 @@ def finalize_lookup(workspace_file: str, target: str, payload: dict[str, Any], p
     actions = record_actions(store, origin=f"{operation}:{target}", actions=list(payload.get("agent_next_steps", []) or []))
     if actions:
         payload["agent_actions"] = actions
+    payload["_workspace_file"] = str(workspace_file)
+    _freshness_transition_note(payload, str(payload.get("_lookup_session_id", "")))
+    payload.pop("_workspace_file", None)
+    payload.pop("_lookup_session_id", None)
     return payload

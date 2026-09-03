@@ -2,6 +2,22 @@
 
 ## Unreleased / 未发布
 
+## 4.6.21 Field Fixes: Chain Gate, Task Write Gate, Freshness Snapshot / 实测修复：调用链门禁、任务写入门禁、freshness 快照
+
+来自真实会话复盘（见 [LOOKUP_ARCHITECTURE_HANDOFF_PLAN.md](LOOKUP_ARCHITECTURE_HANDOFF_PLAN.md) §5）的四个高优先级修复；全部为 additive 字段，不改变 MCP tool schema、CLI 或 HTTP 路由。
+
+- **P1-A 调用链锚定负向结论门禁**：新增 `core/orchestrator/chain_anchor_gate.py`。chain 响应携带 `chain_anchor_validation`（锚点与请求符号是否匹配）与 `chain_scope_validation`（shard 路由是否覆盖锚点项目）；锚定失败或范围不完整时空 chain 强制 `AMBIGUOUS`（reason codes `anchor_mismatch`/`scope_incomplete`），并返回 `fallback_action` 有界回退建议，不再产出 `VERIFIED_NEGATIVE`。空 chain 不再自动生成"确认不存在调用方"文案（`agent_next_steps` 改为回退指引）。跨服务路由对 camelCase 查询拆词打分，避免路由漏掉锚点项目。回归：`tests/domain/test_chain_anchor_gate.py`。
+- **P1-B 任务解析保守写入门禁**：任务匹配输出匹配来源分类（`tag_exact`/`title_exact`/`intent_exact`/`signature_overlap`/`fuzzy_token`）与 `resolution_confidence`/`auto_write_allowed`/`required_action`；低置信或歧义解析不再自动绑定 task space，`mc_sync` 的 sniff/case 同步停写并要求显式 `task_id`，显式 `task_id` 直接绑定不走自然语言解析。`mc_start` 把解析出的 task 绑定进会话，`mc_close` 优先复用会话绑定。CJK 匹配新增 anagram（同词不同序）与连续公共子串（LCS≥3）判定；修复 artifact 内容读取使用文件名导致解析失败被静默吞掉的潜伏 bug。回归：`tests/domain/test_task_resolution_write_gate.py`。
+- **P2-C freshness generation 快照**：`mc_start` 的 freshness 标记 `freshness_snapshot=true` 并携带 `observed_generation`/`observed_at`/`refresh_in_flight`；带 `session_id` 的 `mc_lookup` 在 generation 变化时返回 `freshness_transition`（如 `stale_to_fresh`），Agent 不再把启动时的 stale banner 当作当前查询事实。
+- **P2-D AGENTS 协议 chain 失败回退**：Agent 协议中 chain 推荐调用改为显式硬锚（`symbol="符号名"`），并新增规则：锚点不符、空 chain 或 `negative_claim_allowed=false` 时立即回退 `symbol`/`code` 查询，禁止把空结果当"确认不存在调用方"。
+
+Field fixes from a real-session retrospective (see LOOKUP_ARCHITECTURE_HANDOFF_PLAN.md §5); all additive, no MCP tool schema, CLI, or HTTP route changes.
+
+- **P1-A chain anchor negative-claim gate**: chain responses now carry `chain_anchor_validation` and `chain_scope_validation`; an empty chain under anchor mismatch or incomplete shard coverage is forced to `AMBIGUOUS` with a bounded `fallback_action`, never `VERIFIED_NEGATIVE` or "no callers" wording. Cross-service routing splits camelCase queries so the anchor project is not missed. Regression: `tests/domain/test_chain_anchor_gate.py`.
+- **P1-B task resolution write gate**: task matching classifies evidence sources and exposes `resolution_confidence`/`auto_write_allowed`; low-confidence or ambiguous resolutions no longer auto-bind a task space — `mc_sync` stops writing and requires an explicit `task_id`, while `mc_close` reuses the session-bound task from `mc_start`. CJK matching gains anagram and LCS-based subword checks; fixes a latent bug where artifact content reads failed silently on file-name lookups. Regression: `tests/domain/test_task_resolution_write_gate.py`.
+- **P2-C freshness generation snapshot**: `mc_start` marks `freshness_snapshot=true` with `observed_generation`/`observed_at`/`refresh_in_flight`; generation changes surface as `freshness_transition` (e.g. `stale_to_fresh`) on subsequent lookups.
+- **P2-D AGENTS protocol chain fallback**: chain recommendations now use an explicit hard symbol anchor and mandate fallback to `symbol`/`code` lookups when anchoring fails, instead of treating empty chains as verified absence.
+
 ## 4.6.20 Facade Replay Isolation / 门面回放隔离
 
 - facade 回放使用临时 `.memory-center` 副本；仅 session 序列 case 注入随机 session ID，避免污染原 workspace 或复用旧 ledger。release-gate 仅返回变化计数，不再回显私有 case ID；facade baseline 改为带 SHA-256 的原子写入。

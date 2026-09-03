@@ -32,4 +32,21 @@ def start_task(workspace_file: str, intent: str, *, limit: int, auto_sync_mode: 
         freshness = get_freshness_with_actions(workspace_file)
     except Exception:
         freshness = {"status": "unknown", "recommended_actions": [], "semantics": ""}
-    return {"workflow": "mc-start", "request_tier": plan.tier, "query_plan": planner.record("mc_start", plan, started_at, outcome="completed"), "sniff": sniff, "sync_sniff": synced, "session": workspace_start_session(workspace_file, intent), "auto_refresh": auto_refresh, "_workflow_guidance": get_workflow_guidance("work-start", {"risk_level": sniff.get("risk_level", ""), "task_id": resolved_task.get("task_id", "")}), "freshness": freshness}
+    # P2-C: 标记这是启动时快照；后续查询以 index_context.generation 为准。
+    freshness["freshness_snapshot"] = True
+    if str(freshness.get("status", "")) in ("stale", "pending"):
+        freshness["guidance"] = "本状态是任务启动时的快照；后台定向刷新完成后，后续 mc_lookup 的 index_context.generation 才是当前事实，勿把 stale banner 当作最新查询结论。"
+    # P1-B: 绑定本会话解析出的 task，mc_close 优先复用，避免关闭时重新解析
+    # 走向错误 task space 污染追加保护工件。
+    bound_task_id = ""
+    if synced and synced.get("synced"):
+        bound_task_id = str(synced.get("task_id", "") or "")
+    else:
+        bound_task_id = str(resolved_task.get("task_id", "") or "")
+    # P2-C: 记录快照 generation，供后续 lookup 检测 stale_to_fresh 转换。
+    session_metadata: dict[str, Any] = {}
+    if bound_task_id:
+        session_metadata["task_id"] = bound_task_id
+    session_metadata["freshness_generation"] = str(freshness.get("observed_generation", "") or "")
+    session = workspace_start_session(workspace_file, intent, metadata=session_metadata)
+    return {"workflow": "mc-start", "request_tier": plan.tier, "query_plan": planner.record("mc_start", plan, started_at, outcome="completed"), "sniff": sniff, "sync_sniff": synced, "session": session, "auto_refresh": auto_refresh, "_workflow_guidance": get_workflow_guidance("work-start", {"risk_level": sniff.get("risk_level", ""), "task_id": bound_task_id}), "freshness": freshness, "bound_task_id": bound_task_id}

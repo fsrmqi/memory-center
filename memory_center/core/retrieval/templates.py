@@ -213,6 +213,7 @@ def trace_call_paths(
     project: str = "",
     min_confidence: float = 0.85,
     view: str = "compact",
+    explicit_symbol: str = "",
 ) -> dict[str, Any]:
     """Upstream/downstream call paths with tier-clamped bounds.
 
@@ -237,6 +238,7 @@ def trace_call_paths(
             view=view,
             budget="small" if view == "compact" else "medium",
             min_confidence=min_confidence,
+            explicit_symbol=explicit_symbol,
         )
         items_key = "callers" if direction == "callers" else "callees"
         items = result.get(items_key)
@@ -249,7 +251,7 @@ def trace_call_paths(
         result["query_budget"] = budget.report(elapsed_ms=elapsed_ms, timed_out=timed_out, truncated=truncated)
         return result
 
-    args = {"symbol": symbol, "direction": direction, "depth": budget.depth, "limit": budget.nodes, "project": project, "min_confidence": min_confidence, "tier": budget.tier}
+    args = {"symbol": symbol, "direction": direction, "depth": budget.depth, "limit": budget.nodes, "project": project, "min_confidence": min_confidence, "tier": budget.tier, "explicit_symbol": explicit_symbol}
     key = template_cache_key(workspace_file, "trace_call_paths", args)
     return cached_template(key, _run)
 

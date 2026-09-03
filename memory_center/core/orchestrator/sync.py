@@ -44,20 +44,38 @@ def workspace_sync_sniff_to_artifacts(
 
     config, store = load_context(workspace_file)
     sniff = sniff_result if isinstance(sniff_result, dict) else workspace_sniff(workspace_file, intent, limit=limit)
-    auto_sync_rules = _load_auto_sync_rules(store)
-    aliases = (auto_sync_rules or {}).get("mode_aliases", {}) or {}
-    resolved_mode = aliases.get(auto_sync_mode, auto_sync_mode)
-    threshold = _score_threshold_for_sync_mode(resolved_mode)
 
-    resolved = resolve_task_space(
-        workspace_file,
-        intent=intent,
-        title=title or task_id,
-        create_if_missing=True,
-        score_threshold=threshold,
-        related_texts=_task_resolution_hints_from_sniff(sniff),
-    )
-    resolved_task_id = resolved.get("task_id", "")
+    # P1-B: 显式 task_id 直接绑定，不做自然语言解析；仅在未提供时才
+    # resolve，并在低置信/歧义结果上停止写入追加保护工件。
+    if task_id.strip():
+        resolved_task_id = task_id.strip()
+        resolved = {"task_id": resolved_task_id, "resolution_confidence": "explicit", "auto_write_allowed": True}
+    else:
+        auto_sync_rules = _load_auto_sync_rules(store)
+        aliases = (auto_sync_rules or {}).get("mode_aliases", {}) or {}
+        resolved_mode = aliases.get(auto_sync_mode, auto_sync_mode)
+        threshold = _score_threshold_for_sync_mode(resolved_mode)
+
+        resolved = resolve_task_space(
+            workspace_file,
+            intent=intent,
+            title=title or task_id,
+            create_if_missing=True,
+            score_threshold=threshold,
+            related_texts=_task_resolution_hints_from_sniff(sniff),
+        )
+        if not resolved.get("auto_write_allowed", resolved.get("resolved", False)):
+            return {
+                "workspace": config.workspace,
+                "synced": False,
+                "reason": "task_resolution_not_auto_writable",
+                "hint": "提供显式 task_id 重新同步，或先创建/确认目标 task space。",
+                "required_action": resolved.get("required_action", "explicit_task_id"),
+                "resolution_confidence": resolved.get("resolution_confidence", "low"),
+                "resolved": resolved,
+                "sniff": sniff,
+            }
+    resolved_task_id = str(resolved.get("task_id", "") or "")
     if not resolved_task_id:
         return {
             "workspace": config.workspace,
@@ -161,15 +179,32 @@ def workspace_sync_case_to_artifacts(
     threshold = _score_threshold_for_sync_mode(auto_sync_mode)
 
     case_intent = case.get("task", "") or title or f"case from session {session_id}"
-    resolved = resolve_task_space(
-        workspace_file,
-        intent=case_intent,
-        title=title or task_id,
-        create_if_missing=True,
-        score_threshold=threshold,
-        related_texts=_task_resolution_hints_from_case(case),
-    )
-    resolved_task_id = resolved.get("task_id", "")
+    if task_id.strip():
+        # P1-B: 显式 task_id 直接绑定，不做自然语言解析。
+        resolved = {"task_id": task_id.strip(), "resolution_confidence": "explicit", "auto_write_allowed": True}
+    else:
+        resolved = resolve_task_space(
+            workspace_file,
+            intent=case_intent,
+            title=title or task_id,
+            create_if_missing=True,
+            score_threshold=threshold,
+            related_texts=_task_resolution_hints_from_case(case),
+        )
+        if not resolved.get("auto_write_allowed", resolved.get("resolved", False)):
+            # P1-B: 低置信/歧义解析不得自动写入追加保护工件。
+            return {
+                "workspace": config.workspace,
+                "synced": False,
+                "reason": "task_resolution_not_auto_writable",
+                "hint": "提供显式 task_id 重新同步，或先创建/确认目标 task space。",
+                "required_action": resolved.get("required_action", "explicit_task_id"),
+                "resolution_confidence": resolved.get("resolution_confidence", "low"),
+                "resolved": resolved,
+                "session_id": session_id,
+                "case": case,
+            }
+    resolved_task_id = str(resolved.get("task_id", "") or "")
     if not resolved_task_id:
         return {
             "workspace": config.workspace,

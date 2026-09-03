@@ -547,6 +547,9 @@ Java 仍保留 Spring-aware 专用解析；多语言 structural pass 避免重�
 - **Lookup API aggregation boundary / 查询 API 聚合边界**：context、symbol、call graph/search、ref/backend/usage/discover 分别由 `lookup_context`、`lookup_symbols`、`lookup_navigation`、`lookup_diagnostics` 实现；`query.py` 只保留兼容转发与共享低层 helper，避免再次形成全能编排模块。
 - **Lookup dependency direction / 查询依赖方向**：leaf lookup 模块仅依赖 `lookup_shared` 的显式能力 Port；`query.py` 作为 composition root 注入 callback，禁止 leaf module 反向导入 facade，从结构上消除循环依赖。
 - **Feature-scoped lookup Ports / 查询功能 Port**：依赖契约进一步拆为 `SymbolLookupPort`、`ContextLookupPort`、`NavigationLookupPort`、`DiagnosticsLookupPort`。facade 按 API 注入最小 Port，测试限制各 Port 字段规模，防止它们再次演化为 service locator。
+- **Chain anchor negative-claim gate / 调用链锚定负向结论门禁（4.6.21）**：`core/orchestrator/chain_anchor_gate.py` 为 chain 结果构建 `chain_anchor_validation`（matched/mismatch/missing）与 `chain_scope_validation`（shard 路由是否覆盖锚点项目）；`evaluate_claim_boundary` 接受 chain gate 投影，锚定失败或范围不完整时空 chain 强制 `AMBIGUOUS`（`anchor_mismatch`/`scope_incomplete` reason codes），并给出 `fallback_action` 有界回退。跨服务路由对 camelCase 查询拆词打分，避免路由漏掉锚点项目。
+- **Task resolution write gate / 任务解析写入门禁（4.6.21）**：`core/tasks/artifacts.py` 的任务匹配输出来源分类（tag/title/intent exact、signature overlap、fuzzy token）与 `resolution_confidence`/`auto_write_allowed`；仅强证据（含 CJK anagram 与连续公共子串判定）允许自动绑定 task space。sync 入口在低置信时停写并要求显式 `task_id`，`mc_close` 优先复用会话绑定的 task ID。
+- **Freshness generation snapshot / freshness 代际快照（4.6.21）**：`mc_start` 的 freshness 附带 `observed_generation`/`observed_at`/`refresh_in_flight` 并标记 `freshness_snapshot=true`；查询侧比较快照与当前 generation，变化时返回 `freshness_transition`，Agent 不再把启动 stale banner 当作当前事实。
 - **Contract enrichment boundary / 契约补充边界**：Feign/MQ/API/Config 的索引筛选、project 过滤、Feign→API path 关联和 index-first routing 位于 `lookup_contracts`，避免将契约语义继续耦合进检索执行器。
 
 详见验证回执 [docs/implementation-receipts/code-graph-foundation.md](implementation-receipts/code-graph-foundation.md)。

@@ -52,9 +52,9 @@ Memory Center precomputes these relationships before the agent starts editing.
 
 ### Current release / 当前版本
 
-当前本地发行版本为 **4.6.20**。4.6 系列已将可信查询、Java IR 差分、跨服务 `primary_chain`、真实 retrieval replay、局部刷新分桶预算、发布质量门禁和只读质量/空间总览收敛为稳定能力；4.6.20 隔离 facade 回放到临时 workspace，并修复回放副作用与发布报告隐私边界。`quality-gate` 只读汇总 generation、coverage、replay、IR、刷新性能和存储状态；它不会执行 reindex、GC、VACUUM 或用户命令。
+当前本地发行版本为 **4.6.21**。4.6 系列已将可信查询、Java IR 差分、跨服务 `primary_chain`、真实 retrieval replay、局部刷新分桶预算、发布质量门禁和只读质量/空间总览收敛为稳定能力；4.6.21 实施调用链锚定负向结论门禁（`chain_anchor_validation` / `chain_scope_validation`，空 chain 在锚定失败或分片不完整时强制 `AMBIGUOUS`）、任务解析保守写入门禁（`resolution_confidence` / `auto_write_allowed`，低置信不自动绑定 task space）与 freshness generation 快照（`freshness_transition`）。`quality-gate` 只读汇总 generation、coverage、replay、IR、刷新性能和存储状态；它不会执行 reindex、GC、VACUUM 或用户命令。
 
-The current local release is **4.6.20**. The 4.6 series consolidates trustworthy query contracts, Java IR differential checks, cross-service `primary_chain`, real retrieval replay, bucketed refresh budgets, a release quality gate, and a read-only quality/storage overview; 4.6.20 isolates facade replay in a temporary workspace and repairs replay side effects plus release-gate privacy boundaries. `quality-gate` is read-only and never reindexes, GCs, vacuums, or runs user commands.
+The current local release is **4.6.21**. The 4.6 series consolidates trustworthy query contracts, Java IR differential checks, cross-service `primary_chain`, real retrieval replay, bucketed refresh budgets, a release quality gate, and a read-only quality/storage overview; 4.6.21 adds the chain anchor negative-claim gate (`chain_anchor_validation` / `chain_scope_validation`; empty chains under anchor mismatch or incomplete shard coverage are forced to `AMBIGUOUS`), the conservative task-resolution write gate (`resolution_confidence` / `auto_write_allowed`; low-confidence matches no longer auto-bind a task space), and the freshness generation snapshot (`freshness_transition`). `quality-gate` is read-only and never reindexes, GCs, vacuums, or runs user commands.
 
 ---
 

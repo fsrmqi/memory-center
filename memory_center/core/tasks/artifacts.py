@@ -409,6 +409,7 @@ def resolve_task_space(
         for item in scored[: max(limit_candidates, 1)]
     ]
     if scored and int(scored[0]["score"]) >= score_threshold:
+        confidence, auto_write_allowed, required_action = _task_resolution_confidence(scored, score_threshold)
         ambiguous = _is_ambiguous_task_match(scored, score_threshold)
         if ambiguous:
             return {
@@ -425,8 +426,31 @@ def resolve_task_space(
                 "candidates": candidate_rows,
                 "score_threshold": score_threshold,
                 "reason": "multiple_task_spaces_have_similar_scores",
+                "resolution_confidence": confidence,
+                "auto_write_allowed": False,
+                "required_action": "explicit_task_id",
             }
         top = scored[0]
+        if not auto_write_allowed:
+            # P1-B: 低置信命中只返回候选，绝不自动绑定 task space。
+            return {
+                "workspace": config.workspace,
+                "resolved": False,
+                "created": False,
+                "resolution_status": "low_confidence",
+                "task_id": "",
+                "title": "",
+                "score": int(top["score"]),
+                "status": "",
+                "path": "",
+                "task_signature": input_signature,
+                "candidates": candidate_rows,
+                "score_threshold": score_threshold,
+                "reason": "top_candidate_lacks_strong_evidence",
+                "resolution_confidence": confidence,
+                "auto_write_allowed": False,
+                "required_action": required_action or "explicit_task_id",
+            }
         return {
             "workspace": config.workspace,
             "resolved": True,
@@ -446,6 +470,9 @@ def resolve_task_space(
             "signature_overlap": top.get("signature_overlap", {}),
             "candidates": candidate_rows,
             "score_threshold": score_threshold,
+            "resolution_confidence": confidence,
+            "auto_write_allowed": True,
+            "required_action": "",
         }
     if not create_if_missing:
         return {
@@ -1884,6 +1911,9 @@ def _task_match_analysis(
 ) -> dict[str, object]:
     keywords = keywords or []
     hint_keywords = hint_keywords or []
+    title_text = str(task.get("title", "")).lower()
+    intent_text = str(task.get("intent", "")).lower()
+    tags = [str(tag).lower() for tag in task.get("tags", []) if isinstance(task.get("tags"), list)] if isinstance(task.get("tags"), list) else []
     haystack_parts = [
         str(task.get("title", "")),
         str(task.get("intent", "")),
@@ -1893,8 +1923,12 @@ def _task_match_analysis(
         str(task.get("priority", "")),
     ]
     artifact_hits: list[str] = []
+    artifact_text_by_name: dict[str, str] = {}
     try:
-        for artifact_name in ["current-summary.md", "context.md", "requirement.md", "design.md", "plan.md", "test-plan.md"]:
+        # 注意：这里必须用 artifact key（current_summary / plan / ...）而非文件名——
+        # ``get_task_artifact`` 的名字解析不接受 "current-summary.md" 这样的文件名，
+        # 传入会在第一个条目就抛 ValueError，导致所有 artifact 内容静默丢失。
+        for artifact_name in ["current_summary", "context", "requirement", "design", "plan", "test_plan"]:
             artifact = get_task_artifact(
                 workspace_file,
                 str(task.get("task_id", "")),
@@ -1904,14 +1938,57 @@ def _task_match_analysis(
             trimmed = _trim_text(str(artifact.get("content", "")), 800)
             haystack_parts.append(trimmed)
             artifact_text = trimmed.lower()
+            artifact_text_by_name[artifact_name] = artifact_text
             if any(token in artifact_text for token in keywords + hint_keywords):
                 artifact_hits.append(artifact_name)
     except Exception:
         pass
     haystack = " ".join(haystack_parts).lower()
+
+    # P1-B: classify evidence sources. tag/title/intent exact hits and
+    # signature overlap are strong; generic token containment is fuzzy and
+    # must not by itself justify an automatic write into a task space.
+    # CJK 连续串不分词（base_tokenize 保留整串），所以长 CJK token 同时用
+    # 字符多重集比较判断"同词不同序"的精确命中。
+    strong_sources: dict[str, list[str]] = {"tag_exact": [], "title_exact": [], "intent_exact": []}
+    fuzzy_tokens: list[str] = []
+    for token in keywords + hint_keywords:
+        normalized = token.strip().lower()
+        if not normalized or len(normalized) < 2:
+            continue
+        if normalized in tags or _cjk_anagram_in(normalized, tags):
+            strong_sources["tag_exact"].append(token)
+        elif normalized in title_text or _cjk_anagram_in(normalized, [title_text]) or _cjk_subword_in(normalized, title_text):
+            strong_sources["title_exact"].append(token)
+        elif (intent_text and normalized in intent_text) or _cjk_anagram_in(normalized, [intent_text]) or _cjk_subword_in(normalized, intent_text):
+            strong_sources["intent_exact"].append(token)
+        elif any(
+            _cjk_subword_in(normalized, artifact_text_by_name.get(name, ""))
+            for name in ["current_summary", "context", "requirement", "design", "plan", "test_plan"]
+        ):
+            # CJK 长意图与 plan/context 正文有实质 bigram 重叠时算作签名重叠证据。
+            strong_sources.setdefault("signature_overlap", []).append(token)
+        elif token in haystack:
+            fuzzy_tokens.append(token)
     matched_keywords = [token for token in keywords if token in haystack]
     matched_hint_keywords = [token for token in hint_keywords if token in haystack]
-    score = len(matched_keywords) + len(matched_hint_keywords)
+
+    # 通用词、纯数字、拼音式碎片的贡献有上限：它们区分度低，不足以锚定任务。
+    _WEAK_TOKENS = {"v1", "v2", "v3", "test", "demo", "task", "优化", "清理", "修复", "更新", "支持", "问题", "处理"}
+    weak_fuzzy = [token for token in fuzzy_tokens if token in _WEAK_TOKENS or token.isdigit() or len(token) <= 2]
+    capped_fuzzy = fuzzy_tokens[:4]
+    # 弱 token（纯数字/拼音碎片/通用词）即使出现在 tag/title 里，也不构成强证据。
+    def _is_weak(token: str) -> bool:
+        return token in _WEAK_TOKENS or token.isdigit() or len(token) <= 2
+
+    strong_score = (
+        3 * len([t for t in strong_sources["tag_exact"] if not _is_weak(t)])
+        + 3 * len([t for t in strong_sources["title_exact"] if not _is_weak(t)])
+        + 2 * len([t for t in strong_sources["intent_exact"] if not _is_weak(t)])
+        + 1 * len([t for t in strong_sources.get("signature_overlap", []) if not _is_weak(t)])
+    )
+    strong_evidence = strong_score > 0
+    score = strong_score + len(capped_fuzzy)
     status_boost = 0
     if str(task.get("status", "")) == "active":
         status_boost = 2
@@ -1930,8 +2007,63 @@ def _task_match_analysis(
             "artifact_hits": artifact_hits[:6],
             "status_boost": status_boost,
             "priority_boost": priority_boost,
+            "tag_exact": strong_sources["tag_exact"][:8],
+            "title_exact": strong_sources["title_exact"][:8],
+            "intent_exact": strong_sources["intent_exact"][:8],
+            "fuzzy_token": fuzzy_tokens[:8],
+            "weak_token_capped": weak_fuzzy[:8],
+            "signature_overlap": strong_sources.get("signature_overlap", [])[:8],
+            "strong_evidence": strong_evidence,
         },
     }
+
+
+def _cjk_anagram_in(token: str, texts: list[str] | tuple[str, ...]) -> bool:
+    """True when some text is a CJK anagram of the token (same characters).
+
+    中文没有空格分词：`重构订单服务` 与标题 `订单服务重构` 是同一词的不同
+    叙述顺序，字符多重集一致即视为精确命中；对拉丁 token 恒为 False。
+    """
+    if len(token) < 2 or not all("\u4e00" <= ch <= "\u9fff" for ch in token):
+        return False
+    sorted_token = sorted(token)
+    for text in texts:
+        candidate = str(text or "").strip().lower()
+        if not candidate:
+            continue
+        for word in candidate.split():
+            if len(word) == len(token) and sorted(word) == sorted_token:
+                return True
+    return False
+
+
+def _cjk_subword_in(token: str, text: str) -> bool:
+    """CJK containment when token boundaries differ from the stored text.
+
+    `继续处理链路分析` 与标题 `链路分析任务` 共享连续子串 `链路分析`，但整串
+    substring 检查会漏掉。要求 token 与某个 CJK 词存在长度 >= 3 的连续公共
+    子串（覆盖该词至少一半），才能算命中；对拉丁 token 恒为 False。
+    """
+    if len(token) < 3 or not all("\u4e00" <= ch <= "\u9fff" for ch in token):
+        return False
+    text = (text or "").strip().lower()
+    if not text:
+        return False
+    for word in text.split():
+        if not all("\u4e00" <= ch <= "\u9fff" for ch in word) or len(word) < 3:
+            continue
+        # 长词最多要求 4 字连续公共子串，避免对 10+ 字标题要求覆盖一半。
+        required = max(3, min(4, len(word) // 2))
+        best = 0
+        for i in range(len(token)):
+            for j in range(len(word)):
+                k = 0
+                while i + k < len(token) and j + k < len(word) and token[i + k] == word[j + k]:
+                    k += 1
+                best = max(best, k)
+        if best >= required and best >= 3:
+            return True
+    return False
 
 
 def _task_signature_for_existing(workspace_file: str | Path, task: dict[str, object]) -> dict[str, object]:
@@ -1991,17 +2123,63 @@ def _task_signature_overlap(left: dict[str, object], right: dict[str, object]) -
 
 
 def _is_ambiguous_task_match(scored: list[dict[str, object]], score_threshold: int) -> bool:
-    if len(scored) < 2:
+    """P1-B: conservative ambiguity — 完全同分、margin 不足、低置信都算歧义。
+
+    旧逻辑只把"完全同分"当歧义，导致低分相近候选被自动选中。现在：
+    - top1 与 top2 都过阈值但差值 < 最小绝对 margin（2）→ ambiguous；
+    - top1/top2 比值低于 1.25（top2 分数接近 top1）→ ambiguous；
+    - top1 缺少 tag/title/intent 强证据 → ambiguous。
+    """
+    if not scored:
         return False
     first = int(scored[0].get("score", 0))
+    first_reasons = scored[0].get("match_reasons", {}) if isinstance(scored[0].get("match_reasons"), dict) else {}
+    if first < score_threshold:
+        return False
+    if not first_reasons.get("strong_evidence"):
+        return True
+    if len(scored) < 2:
+        return False
     second = int(scored[1].get("score", 0))
-    if first < score_threshold or second < score_threshold:
+    if second < score_threshold:
         return False
-    if first != second:
-        return False
-    first_overlap = int((scored[0].get("signature_overlap", {}) or {}).get("score", 0))
-    second_overlap = int((scored[1].get("signature_overlap", {}) or {}).get("score", 0))
-    return abs(first_overlap - second_overlap) <= 1
+    if first == second:
+        first_overlap = int((scored[0].get("signature_overlap", {}) or {}).get("score", 0))
+        second_overlap = int((scored[1].get("signature_overlap", {}) or {}).get("score", 0))
+        return abs(first_overlap - second_overlap) <= 1
+    if first - second < _TASK_MATCH_MIN_MARGIN:
+        return True
+    if second > 0 and first / second < _TASK_MATCH_MIN_RATIO:
+        return True
+    return False
+
+
+_TASK_MATCH_MIN_MARGIN = 2
+_TASK_MATCH_MIN_RATIO = 1.25
+_TASK_HIGH_CONFIDENCE_MIN_SCORE = 5
+
+
+def _task_resolution_confidence(scored: list[dict[str, object]], score_threshold: int) -> tuple[str, bool, str]:
+    """Return (resolution_confidence, auto_write_allowed, required_action).
+
+    P1-B: high = top1 有强证据（tag/title/intent exact）且分数明显高于阈值与
+    top2；medium = 有强证据但 margin 不足；low = 无强证据或 top1 未达阈值。
+    ``auto_write_allowed=false`` 时调用方必须停止写入并返回候选。
+    """
+    if not scored:
+        return "low", False, "explicit_task_id"
+    first = int(scored[0].get("score", 0))
+    first_reasons = scored[0].get("match_reasons", {}) if isinstance(scored[0].get("match_reasons"), dict) else {}
+    strong = bool(first_reasons.get("strong_evidence"))
+    second = int(scored[1].get("score", 0)) if len(scored) > 1 else 0
+    margin = first - second
+    if first >= score_threshold and strong and margin >= _TASK_MATCH_MIN_MARGIN:
+        return "high", True, ""
+    if first >= score_threshold and strong:
+        return "medium", True, ""
+    if first >= score_threshold:
+        return "low", False, "explicit_task_id"
+    return "low", False, "explicit_task_id"
 
 
 def _parse_dt(value: str):

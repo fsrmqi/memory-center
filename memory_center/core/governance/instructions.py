@@ -34,8 +34,10 @@ AGENT_PROTOCOL_TEMPLATE = """# Memory Center Agent Protocol
    - 找符号：`mc_lookup(query="类名或方法名", mode="symbol")`
    - 搜代码：`mc_lookup(query="关键词", mode="code")`
    - 跨服务追踪：`mc_lookup(query="入口类", mode="trace", entry="类名或Feign名")`
-   - 查调用方：`mc_lookup(query="符号名", mode="chain", symbol="符号名", chain_direction="callers")`
-   - 查被调用方：`mc_lookup(query="符号名", mode="chain", symbol="符号名", chain_direction="callees")`
+   - 查调用方：`mc_lookup(mode="chain", query="符号名", symbol="符号名", chain_direction="callers")`
+   - 查被调用方：`mc_lookup(mode="chain", query="符号名", symbol="符号名", chain_direction="callees")`
+   - 中文意图可放 `query` 或说明文本，但 `symbol` 必须是待验证的类/方法标识（硬锚），否则查询可能锚定到不相关符号。
+   - chain/trace 返回的锚点与请求符号不符（`chain_anchor_validation.status != "matched"`）、`chain_summary` 为空、或 `claim_boundary.negative_claim_allowed=false` 时，视为查询失败或范围不足。立即回退到 `mc_lookup(mode="symbol")`、`mc_lookup(mode="code")` 或有界文件搜索；禁止把空结果当作"确认不存在调用方"。
    - 不确定用哪个：`mc_lookup(query="...", mode="auto")` 让系统自动路由
 3. 在写入任何记忆前，先调用 `mc_admin(action="write_judge", text=..., source=..., intent=...)`；需要可执行步骤时，再调用 `mc_admin(action="write_plan", ...)`。
 4. 如果任务会持续一段时间，在 `mc_start` 之后用 `mc_sync(intent=..., auto_sync_mode="balanced")` 同步上下文到任务空间。

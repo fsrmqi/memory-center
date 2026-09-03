@@ -111,6 +111,8 @@
 
 `artifact repair-task` 默认 dry-run；传 `--apply` 才写入。刷新 `current-summary` 时建议同时传 `--intent`，修复器不会伪造 write receipt、自动归档相似任务空间或覆盖已有人工内容。
 
+`artifact resolve-task`（4.6.21 起）输出保守写入门禁：`resolution_confidence`（high/medium/low）、`auto_write_allowed` 与 `required_action`。低置信（缺 tag/title/intent 强证据、top1-top2 margin 不足或仅 fuzzy token 命中）与歧义解析都不再自动绑定 task space——`mc_sync` 停写并返回候选，需要显式 `task_id`；`match_reasons` 透出 `tag_exact`/`title_exact`/`intent_exact`/`signature_overlap`/`fuzzy_token` 分类。
+
 ### Quality, replay, and maintenance / 质量、回放与维护（4.6.12）
 
 可选 `rules/retrieval-policy.yaml` 示例：
@@ -276,6 +278,13 @@ memory-center eval-reasoning-prompts \
 
 `project` 参数：当同名符号存在于多个模块时，用 `project` 消歧。支持 FQN 自动推断（如 `cn.kaipuyun.cloud.openapi...ServiceImpl` → `ucap-cloud-open-api`）。
 
+chain 模式（`chain_direction=callers|callees`）建议显式传 `symbol` 作为硬锚；响应携带 additive 门禁字段：
+
+- `chain_anchor_validation`：`status=matched|mismatch|missing`；不匹配时空 chain 不得读作"无调用方"。
+- `chain_scope_validation`：`scope_incomplete=true` 表示 shard 路由未覆盖锚点项目。
+- `fallback_action`：空 chain 时的有界回退建议（`symbol` / `code` 查询）。
+- `claim_boundary.reason_codes` 相应出现 `anchor_mismatch` / `scope_incomplete`，`negative_claim_allowed=false`。
+
 ### `mc_analyze`
 
 参数约束：
@@ -406,6 +415,8 @@ memory-center eval-reasoning-prompts \
 常见参数：
 
 - `scope`
+
+freshness 快照（`mc_start` 内部同源）携带 `observed_generation` / `observed_at` / `refresh_in_flight`；`mc_start` 响应的 freshness 额外标记 `freshness_snapshot=true`——它是启动时快照，后续查询以 `index_context.generation` 为准，generation 变化时 `mc_lookup` 返回 `freshness_transition`（如 `stale_to_fresh`）。
 
 ## 3. HTTP Endpoints / HTTP 端点
 

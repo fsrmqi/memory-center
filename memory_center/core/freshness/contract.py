@@ -78,6 +78,24 @@ def _coverage_from_control(control: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def freshness_transition(index_context: dict[str, Any], observed_generation: str) -> str:
+    """P2-C: compare a start-snapshot generation with the query's generation.
+
+    快照 stale → 查询 fresh 时返回 ``stale_to_fresh``；generation 一致或快照
+    为空返回空串。调用方（mc_lookup）据此提示 Agent 快照不是当前事实。
+    """
+    if not observed_generation or not index_context.get("generation"):
+        return ""
+    if str(observed_generation) == str(index_context.get("generation")):
+        return ""
+    if (
+        index_context.get("freshness") == FRESH
+        and str(index_context.get("generation")) != str(observed_generation)
+    ):
+        return "stale_to_fresh"
+    return "generation_advanced"
+
+
 def assemble_index_context(
     workspace_file: str | Any,
     *,
@@ -143,6 +161,7 @@ def evaluate_claim_boundary(
     index_context: dict[str, Any],
     *,
     result_count: int = 0,
+    chain_gate: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Derive ``claim_boundary`` from an assembled ``index_context``.
 
@@ -150,6 +169,11 @@ def evaluate_claim_boundary(
     result set only earns ``negative_claim_allowed=True`` when every gate
     passes; otherwise evidence is degraded to AMBIGUOUS (or the
     NOT_INDEXED fact level when no generation was ever published).
+
+    ``chain_gate`` (P1-A): chain/trace 结果附加的锚点与范围校验投影，
+    ``{"anchor_status": "matched|mismatch|missing", "scope_incomplete": bool}``。
+    锚定失败或路由未覆盖锚点项目时，空结果只是副作用而非负向证据，
+    强制 ``anchor_mismatch`` / ``scope_incomplete`` reason code。
     """
     reason_codes: list[str] = []
     if not index_context.get("generation"):
@@ -174,6 +198,12 @@ def evaluate_claim_boundary(
         reason_codes.append("query_truncated")
     if budget.get("timed_out"):
         reason_codes.append("query_timed_out")
+    try:
+        from memory_center.core.orchestrator.chain_anchor_gate import gate_reasons_from_chain
+
+        reason_codes.extend(gate_reasons_from_chain(chain_gate))
+    except Exception:  # pragma: no cover - gate module always present in-tree
+        pass
 
     gates_passed = not reason_codes
     negative_allowed = gates_passed and result_count == 0
@@ -196,9 +226,9 @@ def evaluate_claim_boundary(
     }
 
 
-def attach_contract(payload: dict[str, Any], workspace_file: str | Any, *, query_budget: dict[str, Any] | None = None, result_count: int = 0, request_tier: str = "standard", project: str = "", paths: list[str] | None = None) -> dict[str, Any]:
+def attach_contract(payload: dict[str, Any], workspace_file: str | Any, *, query_budget: dict[str, Any] | None = None, result_count: int = 0, request_tier: str = "standard", project: str = "", paths: list[str] | None = None, chain_gate: dict[str, Any] | None = None) -> dict[str, Any]:
     """Convenience: attach both additive blocks onto a response payload."""
     index_context = assemble_index_context(workspace_file, request_tier=request_tier, query_budget=query_budget, project=project, paths=paths)
     payload["index_context"] = index_context
-    payload["claim_boundary"] = evaluate_claim_boundary(index_context, result_count=result_count)
+    payload["claim_boundary"] = evaluate_claim_boundary(index_context, result_count=result_count, chain_gate=chain_gate)
     return payload

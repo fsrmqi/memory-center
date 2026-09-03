@@ -60,6 +60,7 @@ from memory_center.core.orchestrator import (
     workspace_record_case,
     workspace_record_close_feedback,
     workspace_resume_packet,
+    workspace_session_summary,
     workspace_suggest_case,
     workspace_sync_case_to_artifacts,
     workspace_sync_sniff_to_artifacts,
@@ -128,6 +129,27 @@ def _agent_next_steps_for_lookup_route(mode: str, result: dict[str, Any], query:
             }
         ]
     if mode.startswith("chain"):
+        anchor = result.get("chain_anchor_validation") if isinstance(result, dict) else None
+        if isinstance(anchor, dict) and str(anchor.get("status", "")) not in ("", "matched"):
+            return [
+                {
+                    "action": "fallback_after_anchor_mismatch",
+                    "priority": "high",
+                    "reason": f"chain anchored to '{anchor.get('resolved_anchor', '')}' which does not match the requested symbol; empty results must not be read as 'no callers'",
+                    "command": "retry mc_lookup(mode='symbol') to confirm the anchor, then mc_lookup(mode='chain', symbol=<confirmed symbol>) or mc_lookup(mode='code')",
+                    "uses_existing_evidence": False,
+                }
+            ]
+        if isinstance(result, dict) and isinstance(result.get("fallback_action"), dict):
+            return [
+                {
+                    "action": "verify_empty_chain_before_negative_claim",
+                    "priority": "high",
+                    "reason": "empty chain may reflect anchoring failure or incomplete shard coverage, not a verified absence",
+                    "command": f"cross-check with {result['fallback_action']['actions'][0]['action']} before concluding 'no callers'",
+                    "uses_existing_evidence": False,
+                }
+            ]
         return [
             {
                 "action": "inspect_chain_summary",
@@ -330,6 +352,7 @@ def create_server(workspace_file: str):
             report_level = "compact"
 
         def emit(payload: dict[str, Any], emitted_mode: str) -> dict[str, Any]:
+            payload["_lookup_session_id"] = session_id
             payload = finalize_lookup(wf, lookup_target, payload, prepared, "mc_lookup")
             if session_id.strip():
                 from memory_center.core.orchestrator.lookup_session import record_lookup_delivery
@@ -464,21 +487,21 @@ def create_server(workspace_file: str):
                 result["agent_next_steps"] = _agent_next_steps_for_lookup_route("chain-group", result, query)
                 return emit(_lookup_payload_with_agent_steps("mode", "chain-group", result), "chain-group")
             if len(matching_groups) > 1:
-                result = trace_call_paths(wf, symbol or query, direction=chain_direction, tier=plan.tier, depth=depth, limit=limit, project=project)
+                result = trace_call_paths(wf, symbol or query, direction=chain_direction, tier=plan.tier, depth=depth, limit=limit, project=project, explicit_symbol=symbol)
                 if cross_types:
                     if chain_direction == "callees":
-                        result = memory_callees(wf, symbol or query, depth, limit, edge_type_filter=cross_types, project=project, view="compact", budget="small")
+                        result = memory_callees(wf, symbol or query, depth, limit, edge_type_filter=cross_types, project=project, view="compact", budget="small", explicit_symbol=symbol)
                     else:
-                        result = memory_callers(wf, symbol or query, depth, limit, edge_type_filter=cross_types, project=project, view="compact", budget="small")
+                        result = memory_callers(wf, symbol or query, depth, limit, edge_type_filter=cross_types, project=project, view="compact", budget="small", explicit_symbol=symbol)
                 _annotate_phantom_nodes(result, wf)
                 result["agent_next_steps"] = _agent_next_steps_for_lookup_route(f"chain-{chain_direction}", result, query)
                 return emit(_lookup_payload_with_agent_steps("mode", f"chain-{chain_direction}", result, matching_groups=matching_groups, _hint=f"Workspace 属于多个 group ({', '.join(matching_groups)})，请用 mc_admin(action='group_chain', group=...) 显式指定。"), f"chain-{chain_direction}")
-            result = trace_call_paths(wf, symbol or query, direction=chain_direction, tier=plan.tier, depth=depth, limit=limit, project=project)
+            result = trace_call_paths(wf, symbol or query, direction=chain_direction, tier=plan.tier, depth=depth, limit=limit, project=project, explicit_symbol=symbol)
             if cross_types:
                 if chain_direction == "callees":
-                    result = memory_callees(wf, symbol or query, depth, limit, edge_type_filter=cross_types, project=project, view="compact", budget="small")
+                    result = memory_callees(wf, symbol or query, depth, limit, edge_type_filter=cross_types, project=project, view="compact", budget="small", explicit_symbol=symbol)
                 else:
-                    result = memory_callers(wf, symbol or query, depth, limit, edge_type_filter=cross_types, project=project, view="compact", budget="small")
+                    result = memory_callers(wf, symbol or query, depth, limit, edge_type_filter=cross_types, project=project, view="compact", budget="small", explicit_symbol=symbol)
             _annotate_phantom_nodes(result, wf)
             result["agent_next_steps"] = _agent_next_steps_for_lookup_route(f"chain-{chain_direction}", result, query)
             return emit(_lookup_payload_with_agent_steps("mode", f"chain-{chain_direction}", result), f"chain-{chain_direction}")
@@ -680,7 +703,19 @@ def create_server(workspace_file: str):
             validation_summary=validation_summary,
             validation_status=validation_status,
         )
-        synced = workspace_sync_case_to_artifacts(wf, session_id, task_id=task_id, title=title, auto_sync_mode=auto_sync_mode)
+        # P1-B: 优先复用同会话 mc_start 已解析/绑定的 task ID，仅显式参数
+        # 或会话绑定不存在时才走重新解析，避免低置信解析写入错误 task space。
+        close_task_id = (task_id or "").strip()
+        close_task_source = "explicit" if close_task_id else ""
+        if not close_task_id:
+            try:
+                session = workspace_session_summary(wf, session_id)
+                close_task_id = str((session.get("summary") or {}).get("task_id", "") or "")
+                if close_task_id:
+                    close_task_source = "session_binding"
+            except Exception:
+                close_task_id = ""
+        synced = workspace_sync_case_to_artifacts(wf, session_id, task_id=close_task_id, title=title, auto_sync_mode=auto_sync_mode)
         draft = workspace_suggest_case(wf, session_id)
         recorded = None
         candidate_feedback = None
@@ -691,17 +726,19 @@ def create_server(workspace_file: str):
                 case.get("projects", []), case.get("files", []),
                 case.get("flow", ""), case.get("risk_points", []),
                 verified_by=case.get("verified_by", []) or verified_by,
-                source_session_id=session_id, source_task_id=task_id,
+                source_session_id=session_id, source_task_id=close_task_id,
             )
         candidate_feedback = workspace_record_close_feedback(
             wf,
             session_id,
-            task_id=task_id,
+            task_id=close_task_id,
             source="mc_close_auto",
         )
         return {
             "workflow": "mc-close",
             "ended": ended,
+            "task_id": close_task_id,
+            "task_source": close_task_source or "resolved",
             "sync_case": synced,
             "suggested_case": draft,
             "record_case": recorded,

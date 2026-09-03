@@ -67,7 +67,7 @@ def get_freshness_with_actions(workspace_file: str) -> dict[str, Any]:
         banner = svc.banner()
         freshness_data = banner.get("freshness", {})
         status = freshness_data.get("status", UNKNOWN)
-        return {
+        result = {
             "status": status,
             "semantics": _FRESHNESS_SEMANTICS.get(status, _FRESHNESS_SEMANTICS[UNKNOWN]),
             "recommended_actions": _RECOMMENDED_ACTIONS.get(status, _RECOMMENDED_ACTIONS[UNKNOWN]),
@@ -76,6 +76,8 @@ def get_freshness_with_actions(workspace_file: str) -> dict[str, Any]:
             "last_indexed_at": freshness_data.get("last_indexed_at", ""),
             "message": freshness_data.get("message", ""),
         }
+        result.update(freshness_generation_snapshot(workspace_file))
+        return result
     except Exception as exc:
         return {
             "status": UNKNOWN,
@@ -87,6 +89,45 @@ def get_freshness_with_actions(workspace_file: str) -> dict[str, Any]:
             "message": "",
             "_diagnostics": diag_entry(DIAG.UNAVAILABLE, exc=exc),
         }
+
+
+def freshness_generation_snapshot(workspace_file: str) -> dict[str, Any]:
+    """P2-C: 关联 freshness 快照与索引 generation。
+
+    ``mc_start`` 的 stale banner 是启动时快照；后台定向刷新完成后，后续
+    ``mc_lookup.index_context`` 可能已 fresh。这里补充 generation 关联字段，
+    让调用方能判断两个状态是否属于同一 generation：
+    - ``observed_generation``: 快照读取时的 active generation；
+    - ``observed_at``: 快照时间戳；
+    - ``refresh_in_flight``: 是否已有定向刷新在后台排队/执行；
+    - ``superseded_by_generation``: 预留——刷新完成并发布新代际后由后续
+      查询响应携带，快照侧恒为空。
+    """
+    snapshot: dict[str, Any] = {
+        "observed_generation": "",
+        "observed_at": "",
+        "refresh_in_flight": False,
+        "superseded_by_generation": "",
+    }
+    try:
+        from datetime import datetime, timezone
+
+        from ..indexing.control_plane import index_control_status
+        from ..storage.workspace import WorkspaceStore
+
+        store = WorkspaceStore(workspace_file)
+        control = index_control_status(store)
+        snapshot["observed_generation"] = str(control.get("active_generation", "") or "")
+        snapshot["observed_at"] = datetime.now(timezone.utc).isoformat()
+        try:
+            from ..freshness.targeted_refresh import refresh_in_flight
+
+            snapshot["refresh_in_flight"] = bool(refresh_in_flight(workspace_file))
+        except Exception:
+            pass
+    except Exception:
+        pass
+    return snapshot
 
 
 def freshness_action_hint(status: str) -> str:

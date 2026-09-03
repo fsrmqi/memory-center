@@ -2225,11 +2225,12 @@ def test_resolve_task_score_threshold(tmp_path: Path):
     task_id = created["task_id"]
     update_task_artifact(workspace, task_id, "plan", "# Plan\n\n处理站点连通性告警")
 
-    # Threshold above actual score (score=2 from status=active) — should NOT match
-    resolved_high = resolve_task_space(workspace, intent="继续处理站点告警连通性问题", create_if_missing=False, score_threshold=3)
+    # Actual score: signature overlap (plan content vs intent) 1 + status(active) 2 = 3.
+    # Threshold above actual score — should NOT match
+    resolved_high = resolve_task_space(workspace, intent="继续处理站点告警连通性问题", create_if_missing=False, score_threshold=5)
     assert resolved_high["resolved"] is False
     assert resolved_high["task_id"] == ""
-    assert resolved_high["score_threshold"] == 3
+    assert resolved_high["score_threshold"] == 5
 
     # Threshold at or below actual score — SHOULD match
     resolved_low = resolve_task_space(workspace, intent="继续处理站点告警连通性问题", create_if_missing=False, score_threshold=1)

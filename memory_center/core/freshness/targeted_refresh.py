@@ -142,6 +142,18 @@ def refresh_explicit_paths(
     )
 
 
+def refresh_in_flight(workspace_file: str | Path) -> bool:
+    """P2-C: 是否已有定向刷新在后台排队/执行（供 freshness 快照标记）。"""
+    store = WorkspaceStore(workspace_file)
+    key = str(store.memory_dir.resolve())
+    with _REFRESH_THREADS_GUARD:
+        active = _REFRESH_THREADS.get(key)
+        if active is not None and active.is_alive():
+            return True
+        pending = _REFRESH_PENDING.get(key)
+        return bool(pending)
+
+
 def _scheduled_refresh_result(*, coalesced: bool) -> dict[str, Any]:
     return {
         "checked": 0,

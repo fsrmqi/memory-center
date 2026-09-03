@@ -17,6 +17,18 @@ from ..indexing.shards import load_contract_shard, load_service_shard, load_topo
 _TIER_LIMITS = {"fast": (2, 1), "standard": (4, 2), "deep": (8, 3)}
 
 
+def _split_camel_fragments(token: str) -> list[str]:
+    """Split a camelCase/PascalCase token into lowercase word fragments.
+
+    Lowercase input keeps the original case boundaries lost by
+    ``token.lower()``, so the caller passes the raw query; plain lowercase
+    or delimited tokens come back unchanged (single fragment).
+    """
+    import re
+
+    return [part.lower() for part in re.findall(r"[a-z0-9]+|[A-Z][a-z0-9]*", token)]
+
+
 def route_cross_service_shards(workspace_file: str | Path, query: str, *, tier: str = "standard", project: str = "") -> dict[str, Any]:
     store = WorkspaceStore(workspace_file)
     control = index_control_status(store)
@@ -28,6 +40,16 @@ def route_cross_service_shards(workspace_file: str | Path, query: str, *, tier: 
     max_projects, max_depth = _TIER_LIMITS.get(tier, _TIER_LIMITS["standard"])
     services = list(topology.get("services", []) or [])
     tokens = [token.lower() for token in base_tokenize(query) if len(token) > 1][:12]
+    # camelCase/PascalCase queries (ArticleMoveService) produce one long
+    # lowercase token that never substring-matches any service name
+    # ("task-service"), so the route misses the anchor project and an empty
+    # shard sweep would look authoritative. Split on the original casing and
+    # merge the word fragments into the token set.
+    camel_parts: list[str] = []
+    for part in _split_camel_fragments(query or ""):
+        if len(part) > 1:
+            camel_parts.append(part)
+    tokens = list(dict.fromkeys(tokens + camel_parts))[:20]
     scores: dict[str, float] = {}
     evidence: list[dict[str, Any]] = []
     service_aliases: dict[str, str] = {}

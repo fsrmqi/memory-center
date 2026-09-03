@@ -57,10 +57,10 @@ MCP 当前公开的是 15 个 task-level tools：
 | `mc_start` | 嗅探任务上下文、可选同步、启动 session |
 | `mc_lookup` | 统一检索入口：symbol / code / query / trace / chain / context / ref / backend |
 | `mc_analyze` | 统一影响分析入口：quick / standard / full |
-| `mc_sync` | 将 sniff / case / task 过程同步到工件与记忆 |
+| `mc_sync` | 将 sniff / case / task 过程同步到工件与记忆；低置信任务解析会停写并要求显式 task_id |
 | `mc_resume` | 恢复任务上下文 |
 | `mc_handoff` | 为其他模型构建交接包 |
-| `mc_close` | 会话收尾、同步 case、记录经验，并自动回写可推断的候选路径反馈 |
+| `mc_close` | 会话收尾、同步 case、记录经验，并自动回写可推断的候选路径反馈；优先复用 `mc_start` 绑定的 task_id |
 | `mc_admin` | 状态、面板、评测、工件、group 等管理入口 |
 | `mc_context_pack` | 生成紧凑、证据驱动的上下文包 |
 | `mc_onboard` | 生成面向不同 persona 的架构导览 |
@@ -346,10 +346,21 @@ memory-center eval-reasoning-prompts
 `mc_lookup`、`mc_analyze`（impact 路径）与 change review 响应均附带 additive 字段 `index_context` 与 `claim_boundary`；不会删除或改变既有字段，也未新增 MCP tool。
 
 - `index_context.coverage` 按 workspace、已指定 project 或 logical path 给出 requested/indexed/partial/skipped/failed/unknown 文件计数、脱敏原因码和 `truncated` 标记。
-- `claim_boundary.negative_claim_allowed=true` 仅当：存在 active generation、freshness=FRESH、覆盖完整且查询未截断/未超时。此时空结果可表述为"已覆盖范围内不存在"。
+- `claim_boundary.negative_claim_allowed=true` 仅当：存在 active generation、freshness=FRESH、覆盖完整、查询未截断/未超时，且 chain 结果的锚点校验匹配（`chain_anchor_validation.status="matched"`）、shard 路由覆盖锚点项目（`chain_scope_validation.scope_incomplete=false`）。此时空结果可表述为"已覆盖范围内不存在"。
 - 其余情况下 Agent 必须使用"在已覆盖范围内未发现"，不得声称"工程中不存在"；`evidence_level` 会相应降级为 `AMBIGUOUS` 或 `NOT_INDEXED`。
 
-The claim boundary is a logical gate, not prompt wording: responses carry machine-readable reason codes (`index_not_published`, `generation_stale`, `coverage_partial`, `query_truncated`, `query_timed_out`) and agents must phrase empty results accordingly.
+The claim boundary is a logical gate, not prompt wording: responses carry machine-readable reason codes (`index_not_published`, `generation_stale`, `coverage_partial`, `query_truncated`, `query_timed_out`, `anchor_mismatch`, `scope_incomplete`) and agents must phrase empty results accordingly.
+
+#### Chain Anchor Gate / 调用链锚点门禁
+
+`memory_callers` / `memory_callees`（`mc_lookup(mode="chain")` 底层）响应新增 additive 字段：
+
+- `chain_anchor_validation`：`{"requested_symbol", "resolved_anchor", "status": "matched|mismatch|missing", "reason"}`。中文意图词混入 query 不影响判定；显式 `symbol` 参数优先作为校验目标（硬锚）。
+- `chain_scope_validation`：`{"anchor_project", "routed_projects", "anchor_project_covered", "scope_incomplete", "reason"}`。用原始查询词模拟 shard 路由，检查锚点项目是否被路由覆盖。
+- `fallback_action`（仅空 chain 时）：给出 `mc_lookup(mode='symbol')`、`mc_lookup(mode='code')` 等有界回退动作，不生成"确认不存在调用方"文案。
+- 锚点不匹配时响应携带 `anchor_candidate_only=true`，该候选仅作参考、不作为精确锚定。
+
+The chain anchor gate prevents a real failure mode: a misspelled or ambiguous query resolves to an unrelated class, the chain returns empty, and the old gate wrongly certified "no callers". Empty chains under anchor mismatch or incomplete shard coverage are now forced to `AMBIGUOUS`.
 
 ### Bounded Query Templates / 有界图查询模板（Phase B）
 
@@ -499,5 +510,11 @@ HTTP GET 只允许无副作用读取；所有写入 route 必须 POST。非回�
 - HTTP `/workspace/quality-overview`：脱敏、有界的质量 + 空间 + generation 健康视图，供 DSH/Workbench 只读展示；不暴露查询正文/源码/绝对路径。
 
 - **coverage 语义校准**：`index_context.coverage` 新增 `irrelevant_excluded`（unsupported_syntax 的非源码资源，如 xml/png/json/md）与 `relevant_unsupported`（相关但解析器不支持）。`claim_boundary` 只在 `relevant_unsupported`/`parse_failed`/`scope_unknown` 时拒绝否定性结论；明确无关的排除资源仅审计、不阻断。
+
+- **调用链锚点门禁**（4.6.21）：chain 响应新增 `chain_anchor_validation` 与 `chain_scope_validation`；锚定失败或分片路由未覆盖锚点项目时，空 chain 结果强制 `AMBIGUOUS`（reason codes `anchor_mismatch`/`scope_incomplete`），并给出 `fallback_action` 回退建议，不再把空结果当作"确认不存在调用方"。
+
+- **任务解析写入门禁**（4.6.21）：`resolve_task_space` 输出 `resolution_confidence`（high/medium/low）、`auto_write_allowed` 与 `required_action`；低置信/歧义解析不再自动绑定 task space。`workspace_sync_sniff_to_artifacts` / `workspace_sync_case_to_artifacts`（`mc_sync`）在低置信时停止写入并返回候选，需要显式 `task_id`。`mc_close` 优先复用同会话 `mc_start` 绑定的 task ID。匹配来源分类（`tag_exact`/`title_exact`/`intent_exact`/`signature_overlap`/`fuzzy_token`）在 `match_reasons` 中可见；中文长意图与任务工件正文用连续公共子串判定语义重叠。
+
+- **freshness generation 快照**（4.6.21）：`mc_start` 的 freshness 标记 `freshness_snapshot=true` 并携带 `observed_generation`/`observed_at`/`refresh_in_flight`；后续 `mc_lookup`（带 session_id）在 generation 变化时返回 `freshness_transition`（如 `stale_to_fresh`），Agent 不应把启动时的 stale banner 当作当前查询事实。
 
 - **刷新预算分层**：`scoped_refresh_performance_status` 按变更类别/范围分桶（plain_java/contract/delete_or_move × single_file/multi_service），每桶独立预算；legacy 无 bucket 样本不参与判定，仅 ≥5 样本且 P95 超本桶预算才标记 `over_budget_buckets`。
