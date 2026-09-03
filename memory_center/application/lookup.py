@@ -47,6 +47,55 @@ def _chain_gate_from_payload(payload: dict[str, Any]) -> dict[str, Any] | None:
     }
 
 
+def _ensure_chain_gate(payload: dict[str, Any], target: str, prepared: dict[str, Any]) -> dict[str, Any] | None:
+    """Attach a conservative gate to every chain variant before claim evaluation.
+
+    trace/group results do not always expose the navigation target. In that
+    case the gate deliberately reports ``missing`` rather than allowing a
+    negative claim from an unverified anchor.
+    """
+    mode = str(payload.get("mode") or payload.get("mode_used") or "")
+    result = payload.get("result")
+    if not isinstance(result, dict) or "chain" not in mode:
+        return _chain_gate_from_payload(payload)
+    from memory_center.core.orchestrator.chain_anchor_gate import (
+        build_chain_anchor_validation,
+        build_chain_scope_validation,
+    )
+
+    anchor_validation = result.get("chain_anchor_validation")
+    scope_validation = result.get("chain_scope_validation")
+    requested = str(payload.get("_chain_requested_symbol") or target)
+    explicit = str(payload.get("_chain_explicit_symbol") or "")
+    anchor = result.get("target") or result.get("best_match")
+    if not isinstance(anchor_validation, dict):
+        anchor_validation = build_chain_anchor_validation(requested, anchor if isinstance(anchor, dict) else None, explicit_symbol=explicit)
+        result["chain_anchor_validation"] = anchor_validation
+    if not isinstance(scope_validation, dict):
+        route = prepared.get("shard_route", {}) if isinstance(prepared.get("shard_route"), dict) else {}
+        scope_validation = build_chain_scope_validation(
+            anchor if isinstance(anchor, dict) else None,
+            routed_projects=list(route.get("selected_projects", []) or []),
+            route_available=bool(route.get("available")),
+        )
+        result["chain_scope_validation"] = scope_validation
+    return {"anchor_status": str(anchor_validation.get("status", "missing")), "scope_incomplete": bool(scope_validation.get("scope_incomplete"))}
+
+
+def _result_count_for_claim(payload: dict[str, Any]) -> int:
+    result = payload.get("result") if isinstance(payload.get("result"), dict) else {}
+    mode = str(payload.get("mode") or payload.get("mode_used") or "")
+    if "chain" in mode:
+        for key in ("callers", "callees", "local_chain", "stitched_chain"):
+            if isinstance(result.get(key), list):
+                return len(result[key])
+        return 0
+    for key in ("results", "matches", "hits"):
+        if isinstance(result.get(key), list):
+            return len(result[key])
+    return 0
+
+
 def _freshness_transition_note(payload: dict[str, Any], session_id: str) -> None:
     """P2-C: 当查询 generation 与任务启动快照不同，返回 freshness_transition。
 
@@ -96,7 +145,8 @@ def finalize_lookup(workspace_file: str, target: str, payload: dict[str, Any], p
         request_tier=plan.tier,
         query_budget=template_budget,
         project=str(getattr(plan, "project", "") or ""),
-        chain_gate=_chain_gate_from_payload(payload),
+        chain_gate=_ensure_chain_gate(payload, target, prepared),
+        result_count=_result_count_for_claim(payload),
     )
     # Primary cross-service chain (additive): only for a Method anchor from
     # the symbol path. Never fabricates — status is found/not_found/

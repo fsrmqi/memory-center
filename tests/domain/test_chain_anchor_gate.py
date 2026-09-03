@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 from memory_center.core.freshness.contract import evaluate_claim_boundary
+from memory_center.application.lookup import _ensure_chain_gate, _result_count_for_claim
 from memory_center.core.orchestrator.chain_anchor_gate import (
     build_chain_anchor_validation,
     build_chain_scope_validation,
@@ -91,6 +92,15 @@ def test_scope_validation_unavailable_route_is_incomplete():
         route_available=False,
     )
     assert validation["scope_incomplete"] is True
+
+
+def test_finalize_gate_is_conservative_for_group_chain_without_target():
+    payload = {"mode": "chain-group", "_chain_requested_symbol": "ArticleMoveService", "result": {"local_chain": [], "chain_summary": {}}}
+    gate = _ensure_chain_gate(payload, "ArticleMoveService", {"shard_route": {"available": True, "selected_projects": ["task-service"]}})
+    assert gate == {"anchor_status": "missing", "scope_incomplete": True}
+    boundary = evaluate_claim_boundary(_fresh_index_context(), result_count=_result_count_for_claim(payload), chain_gate=gate)
+    assert boundary["negative_claim_allowed"] is False
+    assert boundary["evidence_level"] == "AMBIGUOUS"
 
 
 # ---------------------------------------------------------------------------

@@ -56,7 +56,8 @@ def _chain_scope_validation(workspace_file: str | Path, query: str, anchor: dict
             route_available=bool(route.get("available")),
         )
     except Exception:
-        return {"anchor_project": str(anchor.get("project", "") or ""), "routed_projects": [], "anchor_project_covered": False, "scope_incomplete": False, "reason": "route_check_unavailable"}
+        # Route verification failure means coverage is unknown, never complete.
+        return {"anchor_project": str(anchor.get("project", "") or ""), "routed_projects": [], "anchor_project_covered": False, "scope_incomplete": True, "reason": "route_check_unavailable"}
 
 
 def search_code(workspace_file: str | Path, query: str, *, scope: str = "", limit: int = 20, project: str = "", deps: NavigationLookupPort) -> dict[str, Any]:

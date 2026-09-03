@@ -2,6 +2,12 @@
 
 ## Unreleased / 未发布
 
+## 4.6.22 Chain Gate Coverage and Fixture Recovery / 调用链门禁覆盖与 Fixture 恢复
+
+- 所有 `mode="chain"` 分支在 finalize 前统一补齐 chain anchor/scope gate；trace/group 缺少可验证锚点时保守标记 `missing`，路由检查异常一律 `scope_incomplete=true`。claim boundary 使用实际 chain 边数，不再把通用结果数误作调用链证据。
+- 恢复 demo workspace 的受保护 `graph.db` fixture 到 field-fix 提交前版本，移除测试运行时数据库状态。
+- Unified chain-gate coverage across trace/group branches and restored the protected demo graph fixture to its pre-test state.
+
 ## 4.6.21 Field Fixes: Chain Gate, Task Write Gate, Freshness Snapshot / 实测修复：调用链门禁、任务写入门禁、freshness 快照
 
 来自真实会话复盘（见 [LOOKUP_ARCHITECTURE_HANDOFF_PLAN.md](LOOKUP_ARCHITECTURE_HANDOFF_PLAN.md) §5）的四个高优先级修复；全部为 additive 字段，不改变 MCP tool schema、CLI 或 HTTP 路由。

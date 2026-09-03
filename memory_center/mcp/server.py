@@ -352,6 +352,9 @@ def create_server(workspace_file: str):
             report_level = "compact"
 
         def emit(payload: dict[str, Any], emitted_mode: str) -> dict[str, Any]:
+            if "chain" in emitted_mode:
+                payload["_chain_requested_symbol"] = symbol or query
+                payload["_chain_explicit_symbol"] = symbol
             payload["_lookup_session_id"] = session_id
             payload = finalize_lookup(wf, lookup_target, payload, prepared, "mc_lookup")
             if session_id.strip():
