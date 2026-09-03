@@ -304,12 +304,18 @@ Memory Center 接收的不是完整 prompt、模型回复、工具参数/结果�
 ```json
 {
   "shadow_id": "derived-session-id",
+  "source_provider_id": "provider-kind-and-schema",
+  "source_instance_id": "optional-stable-installation-id",
   "source_session_id": "opaque-session-id",
   "lineage": {
     "parent_session_id": "",
     "fork_seq": 0
   },
-  "as_of_seq": 0,
+  "observed_as_of_seq": 0,
+  "durable_as_of_seq": 0,
+  "durable_event_count": 0,
+  "source_revision_hint": "opaque-change-token",
+  "delivery_mode": "durable",
   "state_version": 1,
   "intent_summary": "bounded summary",
   "candidate_tasks": [],
@@ -323,21 +329,24 @@ Memory Center 接收的不是完整 prompt、模型回复、工具参数/结果�
 
 约束：
 
-1. 同一 `source_session_id` 只接受严格递增的 `as_of_seq`；
-2. 相同或较旧水位返回幂等 no-op；
-3. `state_version` 高于 MC 已知版本时，MC 侧不做本地重折叠（MC没有源日志，也不应有），而是方向性拒绝：标记该 Shadow 为 `stale/unusable`、写 receipt、并向 adapter 发出 resync 请求，由源侧用新版 schema 重新折叠并投递完整快照；MC 已知版本为最新而快照版本更旧时，按幂等 no-op 处理并提示 adapter 升级；
-4. 快照必须覆盖源日志的 durable 前缀：adapter 在 `turn/end` 等边界发快照前，须确保对应事件已通过源侧的 durability barrier（DSH 中为 `ctx.sessions.flush(session)`，loop 本身在 turn 边界不等待 flush）；watermark 不得超过该前缀，否则崩溃恢复后 MC 的 Shadow 将领先于源日志，违反 "never wrong" 原则；
-5. 快照附带源日志事件计数或 revision token；MC发现 `as_of_seq` 超过源日志实际长度（源被截断/重建）时，丢弃该 Shadow 状态并请求全量重同步；
-6. 快照不包含完整对话、工具正文、绝对路径或私密 payload；
-7. Memory Center 保存 snapshot receipt、source session、watermark 与 binding 审计，但不保存 DSH 原始日志副本。
+1. 幂等键是 `(shadow_id, source_provider_id, source_session_id, durable_as_of_seq)`；每个 source contribution 只接受严格递增的 durable 水位；
+2. 相同或较旧 durable 水位返回幂等 no-op；
+3. `source_revision_hint` 仅用于 source-local pull 轮询，不能参与跨进程 CAS、顺序比较或 durability 判断；
+4. 正式投递给 MC 的 snapshot 必须满足 `observed_as_of_seq == durable_as_of_seq` 且 `delivery_mode="durable"`。否则 state 内容可能领先 durable 日志，即使 watermark 较旧也会违反 "never wrong" 原则；
+5. `turn/end` 的 volatile/best-effort snapshot 只允许 DSH 内存或 UI 预览使用，MC 不得用它 bind task、写 L2、promote case 或作为长期 evidence；
+6. bind/handoff/close/promote 前，adapter 必须先通过源侧 durability barrier（DSH 中为 `ctx.sessions.flush(session)`）并投递 durable snapshot；
+7. `durable_event_count` 与 `durable_as_of_seq` 是 MC 可验证的 durable 前缀边界；revision token 不等于日志长度。发现 durable 序列不连续、来源重建或 identity 变化时，丢弃 contribution 并请求源侧全量重同步；
+8. `state_version` 高于 MC 已知版本时，MC 不做本地重折叠（MC没有源日志，也不应有），而是标记 Shadow `stale/unusable`、写 receipt、并向 adapter 请求新版完整快照；
+9. 快照不包含完整对话、工具正文、绝对路径或私密 payload；
+10. Memory Center 保存 snapshot receipt、source identity、durable watermark 与 binding 审计，但不保存 DSH 原始日志副本。
 
 ### 11.3.1 Source Contribution Merge / 多源贡献合并
 
 MC 内部应保存 source-local contribution，而不是直接覆盖完整 Shadow：
 
 ```text
-ShadowSourceContribution[source_session_id]
-  ├── as_of_seq
+ShadowSourceContribution[source_provider_id, source_session_id]
+  ├── durable_as_of_seq
   ├── source_revision_hint       # 仅 pull 轮询提示，不参与 CAS
   ├── candidate_files
   ├── unresolved_items
@@ -366,7 +375,7 @@ Task Shadow 不应完全以 compaction 后的模型 surface 为折叠输入。�
 | intent summary、自然语言当前摘要 | 可使用 compaction 后的 surface 等效视图 |
 | source lineage、state version、durability status | SessionHeader / persistence metadata |
 
-compaction 可以替换模型上下文中的自然语言消息，但不得遮蔽已存在的结构化 evidence。Adapter 在生成 snapshot 时必须先折叠结构化事实，再选择性叠加 compacted summary。
+compaction 可以替换模型上下文中的自然语言消息，但不得遮蔽已存在的结构化 evidence。Adapter 的 `ProjectionDefinition.apply()` 必须先折叠 durable 结构化事件；surface 等效视图仅作为 `intent_summary` / `prose_summary` 的可选输入，再选择性叠加到 snapshot。
 
 ### 11.4 所有权与多 Agent / Ownership and Multi-agent
 
@@ -389,7 +398,7 @@ source_session_id + as_of_seq + revision/lease
 | 生命周期事件 | Adapter 行为 |
 |---|---|
 | session create | 初始化 Shadow identity/header |
-| `turn/end` | best-effort 有界 Shadow checkpoint，不强制阻塞主循环 |
+| `turn/end` | 可生成 volatile/best-effort UI checkpoint；若不 flush，不得向 MC 投递正式 durable snapshot |
 | handoff/fork | 先 flush，再保存 lineage 与当前 durable watermark |
 | flush | 显式持久性屏障 |
 | bind / promote | 先 flush，再允许改变正式 task/case 归属 |
@@ -654,3 +663,20 @@ shadow_to_task_promotion_rate  不设下限  # 仅观测，升格应保持低频
 - [ ] Shadow 生命周期、receipt、retention 和恢复路径可审计；
 - [ ] 真实 replay 显示误绑定和人工管理成本下降。
 - [ ] 多项目和多 Agent 不再自动导致 task 分裂或误绑定。
+
+## 16. Implementation Handoff Checklist / 实现交接清单
+
+实现者开始前应确认：
+
+- [ ] 先实现 `TaskShadowSource` 与 `TaskShadowSnapshot` schema，不直接修改 L2 自动写入行为；
+- [ ] source contribution 的主键包含 provider、session 与 durable watermark；
+- [ ] durable snapshot 与 volatile UI checkpoint 是两个明确 delivery mode；
+- [ ] source revision hint 不进入 MC 的 CAS 或顺序逻辑；
+- [ ] Task Shadow 结构化事实来自 durable event fold，不来自 surface-only fold；
+- [ ] 多 source merge 有确定性 union/优先级规则和测试；
+- [ ] bind/handoff/close/promote 前先 source flush，再写 MC receipt；
+- [ ] 所有 adapter 输入均经过 allowlist、schema、大小限制和隐私测试；
+- [ ] 未绑定或低置信 Shadow 不得写 L2 task artifact；
+- [ ] 先交付 DSH read-only adapter prototype，再交付 bind/promotion；
+- [ ] 每阶段提供 CLI/HTTP/MCP 状态读取、receipt 和不污染原 session 的回归测试；
+- [ ] 私有 session、query、路径、baseline 不提交到仓库。
