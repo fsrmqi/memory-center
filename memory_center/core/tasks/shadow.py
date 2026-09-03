@@ -188,29 +188,41 @@ def register_shadow_source(
     source_kind: str,
     source_session_id: str,
     shadow_id: str,
-) -> None:
+    *,
+    allow_rebind: bool = False,
+) -> bool:
     """把 `(source_kind, source_session_id)` 注册到确定的 shadow_id。
 
     Snapshot 投递与 Observation 折叠都经由该映射解析同一个 Shadow，
     保证两条路径落在同一实体上；authority 切换因此对所有路径生效。
     source_kind 可传 provider 前缀（如 `dsh-task-shadow`）或 harness
     种类（`dsh`）；两者都会登记，kind 粒度的 key 供 Observation 查询。
+
+    已存在映射且指向不同 shadow_id 时，默认拒绝改绑（返回 False）；
+    显式迁移需 allow_rebind=True（如 authority 切换时清空旧贡献）。
     """
     now = _now_iso()
+    registered = False
     for kind_key in {str(source_kind or "").strip(), str(source_kind or "").split("-")[0]}:
         if not kind_key:
             continue
+        map_key = f"{kind_key}::{source_session_id}"
+        existing = store.memory_backend().get_session_state(SHADOW_SOURCE_MAP_STATE_TYPE, map_key)
+        existing_shadow = str(existing.get("shadow_id", "") or "") if isinstance(existing, dict) else ""
+        if existing_shadow and existing_shadow != shadow_id and not allow_rebind:
+            continue
         store.memory_backend().upsert_session_state(
             SHADOW_SOURCE_MAP_STATE_TYPE,
-            f"{kind_key}::{source_session_id}",
+            map_key,
             {"shadow_id": shadow_id},
             updated_at=now,
         )
+        registered = True
+    return registered
 
 
 def resolve_shadow_for_source(store: WorkspaceStore, source_kind: str, source_session_id: str) -> str:
     """查显式映射；未注册时回退确定性派生 id（observation provider）。"""
-    now = _now_iso()
     for kind_key in {str(source_kind or "").strip(), str(source_kind or "").split("-")[0]}:
         if not kind_key:
             continue
@@ -218,6 +230,17 @@ def resolve_shadow_for_source(store: WorkspaceStore, source_kind: str, source_se
         if isinstance(payload, dict) and payload.get("shadow_id"):
             return str(payload["shadow_id"])
     return _shadow_id_from_source(f"{source_kind}-observation@1", source_session_id)
+
+
+def bound_shadow_for_source(store: WorkspaceStore, source_kind: str, source_session_id: str) -> str:
+    """查 source 是否已显式绑定到某个 Shadow；未绑定返回空串（不回退）。"""
+    for kind_key in {str(source_kind or "").strip(), str(source_kind or "").split("-")[0]}:
+        if not kind_key:
+            continue
+        payload = store.memory_backend().get_session_state(SHADOW_SOURCE_MAP_STATE_TYPE, f"{kind_key}::{source_session_id}")
+        if isinstance(payload, dict) and payload.get("shadow_id"):
+            return str(payload["shadow_id"])
+    return ""
 
 
 def _shadow_key(shadow_id: str) -> str:
@@ -352,9 +375,19 @@ def record_shadow_snapshot(
     resolved_shadow_id = (shadow_id or "").strip() or normalized["shadow_id"] or _shadow_id_from_source(provider, source_session_id)
 
     _, store = load_workspace_config(workspace_file), WorkspaceStore(workspace_file)
-    # Snapshot 是该 source 的权威 Shadow 写入者：注册映射，让后续 Observation
-    # 折叠到同一 Shadow 并受其 shadow_authority 约束。
-    register_shadow_source(store, provider.split("@")[0], source_session_id, resolved_shadow_id)
+    # 幂等/水位校验之前检查：同一 source 已绑定到不同 Shadow 且非本次目标时，
+    # 直接拒绝，不写入任何状态、不改映射（P1：被拒收的快照不得改写映射）。
+    existing_shadow = bound_shadow_for_source(store, provider.split("@")[0], source_session_id)
+    if existing_shadow and existing_shadow != resolved_shadow_id:
+        return {
+            "accepted": False,
+            "duplicate": False,
+            "reason": "source_already_bound_to_other_shadow",
+            "shadow_id": resolved_shadow_id,
+            "source_provider_id": provider,
+            "source_session_id": source_session_id,
+            "bound_shadow_id": existing_shadow,
+        }
     state = load_shadow_state(store, resolved_shadow_id) or {
         "workspace": "",
         "session_ids": [],
@@ -440,6 +473,11 @@ def record_shadow_snapshot(
     state.pop("shadow_stale", None) if not state.get("shadow_stale") else None
     save_contributions(store, resolved_shadow_id, contributions)
     save_shadow_state(store, resolved_shadow_id, state)
+
+    # Snapshot 是该 source 的权威 Shadow 写入者：仅在成功接受后注册映射，
+    # 让后续 Observation 折叠到同一 Shadow 并受其 shadow_authority 约束。
+    # 改绑已在函数开头用 bound_shadow_for_source 拒绝，这里只登记（含新 source）。
+    register_shadow_source(store, provider.split("@")[0], source_session_id, resolved_shadow_id)
 
     receipt = persist_write_receipt(
         store,

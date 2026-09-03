@@ -89,27 +89,54 @@ def sniff_sync_with_shadow_fallback(
     auto_sync_mode: str = "balanced",
     session_id: str = "",
 ) -> dict[str, Any]:
-    """intent 维度的 sniff sync：低置信解析时更新 Shadow 而不放弃连续性。"""
+    """intent 维度的 sniff sync：低置信解析时更新 Shadow 而不放弃连续性。
+
+    L2 写入门禁（P1）：`auto` 模式同样只在显式 task_id 或可验证的 bound
+    Shadow 时才允许 sniff sync 解析/创建 task space；否则不调用
+    _sniff_sync（其底层以 create_if_missing=True 会自行创建 L2），直接
+    走 shadow_only_sync。
+    """
+    resolved_task_id = (task_id or "").strip()
+    resolved_source = "explicit" if resolved_task_id else ""
+    if not resolved_task_id and session_id.strip():
+        shadow = build_merged_shadow(workspace_file, shadow_id_for_session(session_id))
+        if shadow is not None and shadow.get("binding_status") == "bound":
+            resolved_task_id = str(shadow.get("bound_task_id", "") or "")
+            resolved_source = "shadow_binding"
+    if not resolved_task_id:
+        fallback = shadow_only_sync(
+            workspace_file,
+            session_id or f"anon-{abs(hash(intent)) % 10**10}",
+            intent,
+            "shadow_not_bound: provide explicit task_id or bind the shadow before writing L2",
+        )
+        fallback["mode"] = "sniff"
+        return fallback
     result: dict[str, Any] = {
         "workflow": "mc-sync",
         "mode": "sniff",
-        "result": _sniff_sync(workspace_file, intent, limit=limit, task_id=task_id, title=title, auto_sync_mode=auto_sync_mode),
+        "result": _sniff_sync(
+            workspace_file,
+            intent,
+            limit=limit,
+            task_id=resolved_task_id,
+            title=title,
+            auto_sync_mode=auto_sync_mode,
+        ),
     }
     if result["result"].get("synced"):
         result["write_target"] = "task_space"
     else:
-        result["shadow_fallback"] = shadow_only_sync(
-            workspace_file,
-            session_id or f"anon-{abs(hash(intent)) % 10**10}",
-            intent,
-            str(result["result"].get("reason", "task_resolution_not_auto_writable")),
-        )
-        result["write_target"] = "task_shadow"
+        # 显式 task_id 或 bound Shadow 下 sniff 仍可能因内部契约失败返回
+        # 未同步（不会自行创建 L2）；此时仅记录，不重写为 shadow 模式以免
+        # 掩盖真实的显式意图。
+        result["write_target"] = "none"
     result["binding_status"] = (
         _shadow_binding_for_session(workspace_file, session_id)
         if session_id.strip()
         else str(result["result"].get("resolved", {}).get("resolution_confidence", "") or "")
     )
+    result["task_id_source"] = resolved_source
     return result
 
 
