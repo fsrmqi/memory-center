@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from memory_center.application.admin import (
     backend_consistency,
     benchmark_trend_report,
@@ -277,6 +279,117 @@ def register_workflow_routes(registry: CommandRegistry) -> None:
     registry.register("/workspace/task-delivery-overview", lambda rp: workspace_task_delivery_overview(
         rp.workspace(), task_id=rp.task_id(), limit=_parse_int(rp.params, "limit", 20)
     ))
+
+    # --- Task Shadow (Session-first continuity, L1) ---------------------------
+    def _shadow_payload(rp: RouteParams) -> dict[str, Any]:
+        try:
+            parsed = json.loads(rp.get("payload", "{}") or "{}")
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"payload must be a JSON object: {exc}") from exc
+        return parsed if isinstance(parsed, dict) else {}
+
+    def _task_shadow_record_snapshot(rp: RouteParams) -> dict[str, Any]:
+        from memory_center.core.tasks.shadow import record_shadow_snapshot
+
+        return record_shadow_snapshot(
+            rp.workspace(),
+            _shadow_payload(rp),
+            shadow_id=rp.get("shadow_id", ""),
+        )
+
+    registry.register("/workspace/task-shadow-record-snapshot", _task_shadow_record_snapshot)
+
+    def _task_shadow_status(rp: RouteParams) -> dict[str, Any]:
+        from memory_center.core.tasks.shadow import build_merged_shadow
+
+        shadow = build_merged_shadow(rp.workspace(), rp.get("shadow_id", ""))
+        return shadow or {"found": False, "shadow_id": rp.get("shadow_id", "")}
+
+    registry.register("/workspace/task-shadow-status", _task_shadow_status)
+
+    def _task_shadow_bind(rp: RouteParams) -> dict[str, Any]:
+        from memory_center.core.tasks.shadow import bind_shadow_to_task
+
+        payload = _shadow_payload(rp)
+        expected = payload.get("expected_revision")
+        return bind_shadow_to_task(
+            rp.workspace(),
+            rp.get("shadow_id", ""),
+            rp.task_id(),
+            expected_revision=int(expected) if expected is not None else None,
+            source="http",
+        )
+
+    registry.register("/workspace/task-shadow-bind", _task_shadow_bind)
+
+    def _task_shadow_discard(rp: RouteParams) -> dict[str, Any]:
+        from memory_center.core.tasks.shadow import discard_shadow
+
+        return discard_shadow(rp.workspace(), rp.get("shadow_id", ""), reason=rp.get("reason", "user_requested"))
+
+    registry.register("/workspace/task-shadow-discard", _task_shadow_discard)
+
+    def _task_shadow_promote(rp: RouteParams) -> dict[str, Any]:
+        from memory_center.core.tasks.shadow import promote_shadow_to_task
+
+        return promote_shadow_to_task(rp.workspace(), rp.get("shadow_id", ""), task_id=rp.task_id())
+
+    registry.register("/workspace/task-shadow-promote", _task_shadow_promote)
+
+    def _task_shadow_observation(rp: RouteParams) -> dict[str, Any]:
+        from memory_center.core.tasks.shadow_observations import record_observation
+
+        return record_observation(rp.workspace(), _shadow_payload(rp))
+
+    registry.register("/workspace/task-shadow-observation", _task_shadow_observation)
+
+    def _task_shadow_observation_list(rp: RouteParams) -> dict[str, Any]:
+        from memory_center.core.tasks.shadow_observations import list_observations
+
+        return list_observations(
+            rp.workspace(),
+            source_kind=rp.get("source_kind", ""),
+            source_session_id=rp.session_id(),
+            kind=rp.get("kind", ""),
+            limit=_parse_int(rp.params, "limit", 50),
+        )
+
+    registry.register("/workspace/task-shadow-observation-list", _task_shadow_observation_list)
+
+    def _task_shadow_handoff(rp: RouteParams) -> dict[str, Any]:
+        from memory_center.core.tasks.shadow_handoff import (
+            claim_handoff,
+            close_handoff,
+            create_handoff,
+            get_handoff,
+            list_handoffs,
+            mark_handed_off,
+        )
+
+        ws = rp.workspace()
+        action = rp.get("action", "get")
+        handoff_id = rp.get("handoff_id", "")
+        payload = _shadow_payload(rp)
+        expected = payload.get("expected_revision")
+        if action == "create":
+            return create_handoff(
+                ws,
+                from_session_id=rp.session_id(),
+                shadow_id=rp.get("shadow_id", ""),
+                to_agent_hint=str(payload.get("to_agent_hint", "")),
+            )
+        if action == "hand_off":
+            return mark_handed_off(ws, handoff_id, expected_revision=int(expected or 0))
+        if action == "claim":
+            return claim_handoff(ws, handoff_id, claimed_by_session_id=rp.session_id(), expected_revision=int(expected or 0))
+        if action == "close":
+            return close_handoff(ws, handoff_id, expected_revision=int(expected or 0), outcome=rp.get("outcome", "completed"))
+        if action == "list":
+            return list_handoffs(ws, status=rp.get("status", ""), limit=_parse_int(rp.params, "limit", 20))
+        return get_handoff(ws, handoff_id)
+
+    registry.register("/workspace/task-shadow-handoff", _task_shadow_handoff)
+
     registry.register("/workspace/resume-context", lambda rp: workspace_resume_context(
         rp.workspace(),
         rp.require('text'),

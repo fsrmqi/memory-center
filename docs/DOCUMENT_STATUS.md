@@ -16,7 +16,7 @@
 | `docs/ONTOLOGY.md` | 实体、关系、证据强度和治理语义 |
 | `docs/NEXT_PHASE_MASTER_PLAN.md` | 唯一活跃开发路线；已完成工作不作为待办 |
 | `docs/LOOKUP_ARCHITECTURE_HANDOFF_PLAN.md` | 查询架构收口的专项交接计划、契约与验收矩阵 |
-| `docs/SESSION_FIRST_TASK_CONTINUITY_PROPOSAL.md` | Session-first / Task Shadow 产品与架构提案 |
+| `docs/SESSION_FIRST_TASK_CONTINUITY_PROPOSAL.md` | Session-first / Task Shadow 产品与架构提案；L1 Shadow 核心已实现（shadow/observations/handoff 三模块 + facade/admin/CLI/HTTP 接入，见 CHANGELOG Unreleased） |
 | `docs/DSH_WORKBENCH_PRODUCTIZATION_ROADMAP.md` | DSH/Workbench 产品路线与只读质量视图 |
 | `docs/DOCUMENT_CONSTITUTION.md` | 文档治理、生命周期与发布清单 |
 | `docs/THREE_SYSTEM_KNOWLEDGE_LOOP.md` | Memory Center、DSH 与 Personal Wiki 的协作边界 |

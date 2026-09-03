@@ -238,6 +238,47 @@ class _MemoryRecordOperations:
                 (state_type, session_id, updated_at, json.dumps(payload, ensure_ascii=False)),
             )
 
+    def cas_session_state(
+        self,
+        state_type: str,
+        session_id: str,
+        payload: dict[str, Any],
+        *,
+        expected_revision: int,
+        updated_at: str,
+        revision_key: str = "revision",
+    ) -> bool:
+        """Compare-and-set update over a session_state row's payload revision.
+
+        The revision check and the write commit inside one SQLite transaction,
+        so two processes holding the same revision cannot both succeed — the
+        second writer's WHERE matches zero rows. Returns True on success.
+        """
+        next_payload = dict(payload)
+        next_payload[revision_key] = expected_revision + 1
+        with self.connect() as conn:
+            cursor = conn.execute(
+                """
+                INSERT INTO session_state(state_type, session_id, updated_at, payload_json)
+                VALUES(?, ?, ?, ?)
+                ON CONFLICT(state_type, session_id) DO UPDATE SET
+                  updated_at=excluded.updated_at,
+                  payload_json=excluded.payload_json
+                WHERE CAST(json_extract(session_state.payload_json, '$.' || ?) AS INTEGER) = ?
+                """,
+                (
+                    state_type,
+                    session_id,
+                    updated_at,
+                    json.dumps(next_payload, ensure_ascii=False),
+                    revision_key,
+                    expected_revision,
+                ),
+            )
+            # rowcount for INSERT..ON CONFLICT DO UPDATE is 1 for an insert or
+            # a matched update, 0 when the WHERE rejects the update.
+            return int(cursor.rowcount) == 1
+
     def prune_session_states(self, state_type: str, *, max_sessions: int) -> int:
         with self.connect() as conn:
             deleted = conn.execute(
@@ -248,6 +289,33 @@ class _MemoryRecordOperations:
                 (state_type, state_type, max_sessions),
             ).rowcount
         return max(0, deleted)
+
+    def delete_session_state(self, state_type: str, session_id: str) -> int:
+        with self.connect() as conn:
+            deleted = conn.execute(
+                "DELETE FROM session_state WHERE state_type = ? AND session_id = ?",
+                (state_type, session_id),
+            ).rowcount
+        return max(0, deleted)
+
+    def list_session_states(self, state_type: str, *, limit: int = 100) -> list[dict[str, Any]]:
+        with self.connect() as conn:
+            rows = conn.execute(
+                "SELECT session_id, updated_at, payload_json FROM session_state WHERE state_type = ? ORDER BY updated_at DESC LIMIT ?",
+                (state_type, max(1, limit)),
+            ).fetchall()
+        states: list[dict[str, Any]] = []
+        for row in rows:
+            try:
+                payload = json.loads(str(row["payload_json"]))
+            except (TypeError, ValueError):
+                payload = {}
+            states.append({
+                "session_id": str(row["session_id"]),
+                "updated_at": str(row["updated_at"]),
+                "payload": payload if isinstance(payload, dict) else {},
+            })
+        return states
 
     def append_record(self, collection: str, payload: dict[str, Any], record_id: str = "") -> int:
         payload_type = str(payload.get("type", "") or "")

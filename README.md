@@ -139,9 +139,16 @@ Memory Center separates evidence and reusable structure through four layers:
 记忆中心通过四层模型把“原始证据”和“可复用结构”分开管理：
 
 - `L0_session_events` / `L0 会话事件`：raw prompt/tool/result/note events, plus offloaded large payload refs in `memory/refs/`
+- `L1_task_shadow` / `L1 任务影子`：temporary, discardable work-continuity state created automatically per session; deterministic merge of per-source contributions with durable watermarks, never writing L2 before an explicit bind（详见下文 Task Shadow 与 [docs/MCP_GUIDE.md](./docs/MCP_GUIDE.md) 第 5 节）
 - `L1_case_atoms` / `L1 经验原子`：validated reusable cases written by `workspace_record_case`
 - `L2_task_spaces` / `L2 任务空间`：task-scoped `context/plan/design/change-log/current-summary`
 - `L3_workspace_profile` / `L3 工作区画像`：rules, instructions, topology and team operating protocol
+
+### Task Shadow: session-first continuity / 会话影子：会话优先的任务连续性
+
+Every coding session gets a lightweight Task Shadow automatically — `mc_start` creates or reuses one, `mc_sync` falls back to shadow updates when task resolution is low-confidence (`sync_target=auto|task|shadow`), and `mc_close` returns one-time binding/promotion suggestions with "keep as shadow" as the default. Shadow state is a deterministic merge of per-source contributions (each with its own durable watermark and idempotency key), volatile snapshots are rejected fail-closed, an Observation Inbox records cross-harness facts behind a payload allowlist, and handoffs use claim-once CAS. Unbound shadows never write L2 artifacts, and retention cleanup touches only unbound shadows while L0 receipts, L2 artifacts, and L3 cases stay untouched.
+
+每个编码会话都会自动获得一个轻量 Task Shadow：`mc_start` 创建或续接，`mc_sync` 在任务解析低置信时回退更新影子（`sync_target=auto|task|shadow`），`mc_close` 输出一次绑定/升格建议且默认"保留为临时工作影子"。Shadow 状态是各源 contribution 的确定性 merge（每源独立 durable 水位与幂等键），volatile 快照直接拒收，Observation Inbox 在 payload 允许列表之后记录跨 harness 事实，交接使用 claim-once CAS。未绑定的 Shadow 绝不写 L2 工件，retention 清理只影响未绑定影子，L0 回执、L2 工件与 L3 case 均不受影响。
 
 This makes one task traceable from task-space summaries down to raw session evidence.
 

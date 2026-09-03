@@ -16,6 +16,7 @@ from memory_center.cli.commands.resume import register_resume_commands
 from memory_center.cli.commands.retrieval import register_retrieval_commands
 from memory_center.cli.commands.session import register_session_commands
 from memory_center.cli.commands.setup import register_setup_commands
+from memory_center.cli.commands.task_shadow import register_task_shadow_commands
 from memory_center.cli.commands.tooling import register_tooling_commands
 from memory_center.cli.commands.walkthrough import register_walkthrough_commands
 from memory_center.cli.commands.watcher import register_watcher_commands
@@ -52,6 +53,7 @@ register_write_commands(app)
 register_eval_commands(app)
 register_gate_commands(app)
 register_session_commands(app)
+register_task_shadow_commands(app)
 register_resume_commands(app)
 register_work_commands(app)
 register_audit_commands(app)

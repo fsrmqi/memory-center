@@ -2,6 +2,36 @@
 
 ## Unreleased / 未发布
 
+### Task Shadow：Session-first 任务连续性 / Task Shadow: Session-first Continuity
+
+按 [SESSION_FIRST_TASK_CONTINUITY_PROPOSAL.md](SESSION_FIRST_TASK_CONTINUITY_PROPOSAL.md) 实现 L1 Task Shadow 会话影子层；所有字段 additive，不改变既有 MCP tool schema。
+
+- **核心模块**：新增 `core/tasks/shadow.py`（snapshot 校验、source contribution、确定性 merge、CAS 绑定、discard/promote、retention）、`core/tasks/shadow_observations.py`（Observation Inbox，payload allowlist fail-closed、authority 切换）、`core/tasks/shadow_handoff.py`（Handoff Claim：claim-once + `expected_revision` CAS）、`application/task_shadow_flow.py`（mc_sync/mc_close 的 Shadow 逻辑下沉）。`RuntimeStore` 新增 `delete_session_state`/`list_session_states`。
+- **多源确定性 merge**：Shadow 按 `(source_provider_id, source_session_id)` 保存独立 contribution，各源独立 durable 水位；对外 merge 为排序 union，与到达顺序无关；幂等键 `(shadow_id, source_provider_id, source_session_id, durable_as_of_seq)`，相同/较旧水位为幂等 no-op，水位回退报 `stale_watermark`，schema 版本回退报 `state_version_regression`，版本超前标记 stale 并要求 resync。
+- **volatile 拒收**：`delivery_mode=volatile` 的快照直接拒收（`volatile_rejected`），`observed_as_of_seq != durable_as_of_seq` 拒收（`watermark_not_durable`）；入站快照走字段允许列表 fail-closed，未知字段直接拒收。
+- **facade 改造**：`mc_start` 自动创建/续接 session 所属 Shadow（fail-soft，不写 L2）；`mc_sync` 新增 `sync_target=auto|task|shadow`，低置信解析 fallback 更新 Shadow 而非放弃连续性，返回 `write_target`/`binding_status`；`mc_close` 输出 `binding_recommendation` 与 `promotion_options`（默认"保留为临时工作影子"），未绑定 Shadow 不写 L2。
+- **管理接口**：`mc_admin` 新增 `task_shadow_status`/`task_shadow_bind`/`task_shadow_suggest`/`task_shadow_promote`/`task_shadow_discard`/`task_shadow_retention`/`task_shadow_authority`/`task_shadow_observation_record`/`task_shadow_observation_list`/`task_shadow_handoff_*`。
+- **CLI**：新增 16 个 `task-shadow-*` 根命令（record-snapshot/status/bind/discard/promote/retention/observation/observation-list/authority/handoff 六件套）。
+- **HTTP**：新增 `/workspace/task-shadow-record-snapshot`、`task-shadow-status`、`task-shadow-bind`、`task-shadow-discard`、`task-shadow-promote`、`task-shadow-observation`、`task-shadow-observation-list`、`task-shadow-handoff`（action 路由）；写路由已登记 `_MUTATING_HTTP_PATHS`。
+- **回归**：`tests/domain/test_task_shadow.py`（26 个：幂等水位/merge 确定性/CAS/不污染 L2/allowlist/claim-once）、`tests/entrypoints/test_task_shadow_entrypoints.py`（7 个：CLI/HTTP/admin 三层语义一致）、`tests/domain/test_task_shadow_fixes.py`（10 个：评审修复回归）。
+- **评审加固（review hardening）**：
+  - **P0 L2 写入门禁前置**：`mc_sync(session_id=..., sync_target="auto")` 不再先写 L2 后标注——`case_sync_with_shadow` 先检查显式 `task_id` 或已 bound 的 session Shadow，未绑定时走 shadow-only 路径（`task_id_source` 标注来源），杜绝 `workspace_sync_case_to_artifacts` 自行 resolve/create task space 绕过隔离。
+  - **source→shadow 统一映射**：新增 `task_shadow_source_map_v1` 注册表，`record_shadow_snapshot` 与 `ensure_shadow_for_session` 都把 `(source_kind, source_session_id)` 登记到确定 shadow_id（同时登记 provider 前缀与 harness kind 两个 key）；Observation 折叠经 `resolve_shadow_for_source` 解析，与 Snapshot 落到同一 Shadow，authority 切换对全部路径生效。`ensure_shadow_for_session` 创建的 MC 内部 Shadow 默认 `shadow_authority=observation`。
+  - **原子 CAS**：`RuntimeStore.cas_session_state` 在单个 SQLite 事务内完成 revision 条件检查与写入（`json_extract` WHERE + rowcount 判定），Shadow 绑定、suggest、handoff 的 handed_off/claim/close/expire 全部迁移；两个进程持同一 revision 时只有一个写者成功，claim-once 与绑定 CAS 在并发下成立。
+  - **handoff_id 防碰撞**：追加 `uuid4` nonce 后缀，同 session 同秒重复创建不再覆盖已有 draft。
+  - **receipt 补齐**：authority 切换、ensure/create、suggest、handoff 过期（claim 与只读路径）均写 L0 write receipt。
+- **回归**：`tests/domain/test_task_shadow.py`（26 个：幂等水位/merge 确定性/CAS/不污染 L2/allowlist/claim-once）、`tests/entrypoints/test_task_shadow_entrypoints.py`（7 个：CLI/HTTP/admin 三层语义一致）、`tests/domain/test_task_shadow_fixes.py`（10 个：评审修复回归）。
+
+Task Shadow (L1 session-first continuity) implemented per the proposal; all additive.
+
+- **Core modules**: `core/tasks/shadow.py` (snapshot validation, source contributions, deterministic merge, CAS bind, discard/promote, retention), `shadow_observations.py` (Observation Inbox with fail-closed payload allowlist and authority switching), `shadow_handoff.py` (claim-once handoff with `expected_revision` CAS), and `application/task_shadow_flow.py` (shadow logic for mc_sync/mc_close).
+- **Deterministic multi-source merge**: per-source durable watermarks keyed by `(source_provider_id, source_session_id)`; idempotency key `(shadow_id, source_provider_id, source_session_id, durable_as_of_seq)`; stale watermarks and schema-version regressions are rejected, never forward-applied.
+- **Volatile rejection**: `delivery_mode=volatile` and `observed != durable` snapshots fail closed; unknown snapshot fields are rejected.
+- **Facade changes**: `mc_start` auto-creates/reuses the session shadow (fail-soft, no L2 writes); `mc_sync` gains `sync_target=auto|task|shadow` with shadow fallback on low-confidence resolution; `mc_close` returns `binding_recommendation` and `promotion_options` (default: keep as shadow).
+- **Surfaces**: 10 new `task_shadow_*` mc_admin actions, 16 `task-shadow-*` CLI commands, 8 HTTP routes (mutating ones registered as POST-only).
+- **Review hardening**: L2 write gate moved ahead of case sync (unbound shadows never reach `workspace_sync_case_to_artifacts`); a `task_shadow_source_map_v1` registry routes observations and snapshots into the same shadow so authority switching applies everywhere; `RuntimeStore.cas_session_state` makes revision checks and writes one SQLite transaction (bind/suggest/handoff transitions are concurrency-safe); handoff ids carry a uuid4 nonce; authority switches, ensure/create, suggest, and handoff expiry all write L0 receipts.
+- **Regression**: `tests/domain/test_task_shadow.py` (26 cases), `tests/entrypoints/test_task_shadow_entrypoints.py` (7 cases covering CLI/HTTP/admin parity), `tests/domain/test_task_shadow_fixes.py` (10 review-fix regressions).
+
 ## 4.6.22 Chain Gate Coverage and Fixture Recovery / 调用链门禁覆盖与 Fixture 恢复
 
 - 所有 `mode="chain"` 分支在 finalize 前统一补齐 chain anchor/scope gate；trace/group 缺少可验证锚点时保守标记 `missing`，路由检查异常一律 `scope_incomplete=true`。claim boundary 使用实际 chain 边数，不再把通用结果数误作调用链证据。

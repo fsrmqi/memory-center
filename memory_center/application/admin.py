@@ -120,6 +120,27 @@ from memory_center.core.presentation.evidence_subgraph import export_evidence_su
 from memory_center.core.retrieval.calibration import evaluate_retrieval_replay_calibration
 from memory_center.core.retrieval.cross_service import evaluate_cross_shard_replay
 from memory_center.core.retrieval.cross_service_fusion import evaluate_cross_shard_fusion
+from memory_center.core.tasks.shadow import (
+    bind_shadow_to_task,
+    build_merged_shadow,
+    discard_shadow,
+    promote_shadow_to_task,
+    shadow_retention_cleanup,
+    suggest_shadow_binding,
+)
+from memory_center.core.tasks.shadow_observations import (
+    list_observations,
+    record_observation,
+    set_shadow_authority,
+)
+from memory_center.core.tasks.shadow_handoff import (
+    claim_handoff,
+    close_handoff,
+    create_handoff,
+    get_handoff,
+    list_handoffs,
+    mark_handed_off,
+)
 from memory_center.core.retrieval.model_profiles import retrieval_model_profile
 from memory_center.core.retrieval.planner import (
     scoped_refresh_performance_status,
@@ -506,6 +527,17 @@ def eval_java_call_resolution_unresolved_action(workspace_file: str, *, limit: i
     return memory_eval_java_call_resolution_unresolved(workspace_file, limit=limit)
 
 
+def _record_observation_structured(workspace_file: str, observation: dict[str, Any], *, fold_into_shadow: bool = True) -> dict[str, Any]:
+    """Observation 入口的结构化失败包装：schema 拒收时返回 {recorded: False, reason}，
+    不让 ObservationRejected 直接穿透为异常。"""
+    from memory_center.core.tasks.shadow_observations import ObservationRejected, record_observation
+
+    try:
+        return record_observation(workspace_file, observation, fold_into_shadow=fold_into_shadow)
+    except ObservationRejected as exc:
+        return {"recorded": False, "reason": exc.code, "detail": str(exc)[:200]}
+
+
 def build_admin_registry(
     *,
     workspace_file: str,
@@ -674,6 +706,53 @@ def build_admin_registry(
             "task_auto_archive": lambda: auto_archive_task_spaces(wf, retention_days=keep_recent),
             "task_status": lambda: update_task_status(wf, task_id, status),
             "task_activity_touch": lambda: touch_task_activity(wf, task_id, source),
+            # --- Task Shadow (Session-first continuity, L1) -------------------
+            "task_shadow_status": lambda: (
+                build_merged_shadow(wf, name)
+                or {"found": False, "shadow_id": name, "reason": "shadow_not_found"}
+            ),
+            "task_shadow_bind": lambda: bind_shadow_to_task(
+                wf,
+                name,
+                task_id,
+                expected_revision=int((parse_payload(payload) or {}).get("expected_revision"))
+                if (parse_payload(payload) or {}).get("expected_revision") is not None
+                else None,
+                source=source or "mc_admin",
+            ),
+            "task_shadow_discard": lambda: discard_shadow(wf, name, reason=reason or "user_requested"),
+            "task_shadow_promote": lambda: promote_shadow_to_task(wf, name, task_id=task_id, title=title),
+            "task_shadow_suggest": lambda: suggest_shadow_binding(
+                wf, name, candidate_tasks=list((parse_payload(payload) or {}).get("candidate_tasks", []))
+            ),
+            "task_shadow_retention": lambda: shadow_retention_cleanup(wf, apply=force),
+            "task_shadow_observation_record": lambda: _record_observation_structured(wf, parse_payload(payload) or {}, fold_into_shadow=not force),
+            "task_shadow_observation_list": lambda: list_observations(
+                wf, source_kind=scope if scope in ("dsh", "codex", "claude", "other") else "", source_session_id=session_id, kind=event_type, limit=limit
+            ),
+            "task_shadow_authority": lambda: set_shadow_authority(
+                wf, name, str((parse_payload(payload) or {}).get("authority", "snapshot"))
+            ),
+            "task_shadow_handoff_create": lambda: create_handoff(
+                wf,
+                from_session_id=session_id,
+                shadow_id=name,
+                to_agent_hint=str((parse_payload(payload) or {}).get("to_agent_hint", "")),
+            ),
+            "task_shadow_handoff_handed_off": lambda: mark_handed_off(
+                wf, name, expected_revision=int((parse_payload(payload) or {}).get("expected_revision", 0))
+            ),
+            "task_shadow_handoff_claim": lambda: claim_handoff(
+                wf,
+                name,
+                claimed_by_session_id=session_id,
+                expected_revision=int((parse_payload(payload) or {}).get("expected_revision", 0)),
+            ),
+            "task_shadow_handoff_close": lambda: close_handoff(
+                wf, name, expected_revision=int((parse_payload(payload) or {}).get("expected_revision", 0)), outcome=outcome
+            ),
+            "task_shadow_handoff_get": lambda: get_handoff(wf, name),
+            "task_shadow_handoff_list": lambda: list_handoffs(wf, status=status, limit=limit),
             "delivery_init": lambda: initialize_delivery_workflow(wf, task_id, actor=source),
             "delivery_status": lambda: delivery_workflow_status(wf, task_id),
             "delivery_breakdown": lambda: propose_delivery_breakdown(

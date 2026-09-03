@@ -632,13 +632,30 @@ def create_server(workspace_file: str):
         title: str = "",
         limit: int = 12,
         auto_sync_mode: str = "balanced",
+        sync_target: str = "auto",
     ):
-        """Sync task context to workspace artifacts. Provide intent for sniff-sync, or session_id for case-sync. session_id takes precedence if both provided."""
+        """Sync task context to workspace artifacts. Provide intent for sniff-sync, or session_id for case-sync. session_id takes precedence if both provided. sync_target=auto (default) syncs task when bound else updates the Task Shadow only; sync_target=task requires an explicit task ID or trusted binding; sync_target=shadow never writes L2."""
         wf = ctx.workspace_file
+        normalized_target = (sync_target or "auto").strip().lower()
+        if normalized_target not in ("auto", "task", "shadow"):
+            raise ValueError("sync_target must be one of: auto, task, shadow")
+        from memory_center.application.task_shadow_flow import (
+            case_sync_with_shadow,
+            shadow_only_sync,
+            sniff_sync_with_shadow_fallback,
+        )
+
         if session_id.strip():
-            return {"workflow": "mc-sync", "mode": "case", "result": workspace_sync_case_to_artifacts(wf, session_id, task_id=task_id, title=title, auto_sync_mode=auto_sync_mode)}
+            if normalized_target == "shadow":
+                return shadow_only_sync(wf, session_id, "", "sync_target=shadow never writes L2")
+            return case_sync_with_shadow(wf, session_id, task_id=task_id, title=title, auto_sync_mode=auto_sync_mode)
         if intent.strip():
-            return {"workflow": "mc-sync", "mode": "sniff", "result": workspace_sync_sniff_to_artifacts(wf, intent, limit=limit, task_id=task_id, title=title, auto_sync_mode=auto_sync_mode)}
+            if normalized_target == "shadow":
+                return shadow_only_sync(wf, "", intent, "sync_target=shadow never writes L2")
+            if normalized_target == "task" and not task_id.strip():
+                # sync_target=task 需要显式 task ID 或可信绑定，不基于猜测写入 L2
+                return shadow_only_sync(wf, "", intent, "sync_target=task requires explicit task_id; shadow updated instead")
+            return sniff_sync_with_shadow_fallback(wf, intent, limit=limit, task_id=task_id, title=title, auto_sync_mode=auto_sync_mode)
         raise ValueError("mc_sync requires intent or session_id")
 
     # ===================== FACADE 5: mc_resume =====================
@@ -708,35 +725,30 @@ def create_server(workspace_file: str):
         )
         # P1-B: 优先复用同会话 mc_start 已解析/绑定的 task ID，仅显式参数
         # 或会话绑定不存在时才走重新解析，避免低置信解析写入错误 task space。
-        close_task_id = (task_id or "").strip()
-        close_task_source = "explicit" if close_task_id else ""
-        if not close_task_id:
-            try:
-                session = workspace_session_summary(wf, session_id)
-                close_task_id = str((session.get("summary") or {}).get("task_id", "") or "")
-                if close_task_id:
-                    close_task_source = "session_binding"
-            except Exception:
-                close_task_id = ""
-        synced = workspace_sync_case_to_artifacts(wf, session_id, task_id=close_task_id, title=title, auto_sync_mode=auto_sync_mode)
-        draft = workspace_suggest_case(wf, session_id)
-        recorded = None
-        candidate_feedback = None
-        case = draft.get("draft_case", {}) if draft.get("found") else {}
-        if record_case and case.get("projects") and case.get("files"):
-            recorded = workspace_record_case(
-                wf, case.get("task", outcome or "mc-close"),
-                case.get("projects", []), case.get("files", []),
-                case.get("flow", ""), case.get("risk_points", []),
-                verified_by=case.get("verified_by", []) or verified_by,
-                source_session_id=session_id, source_task_id=close_task_id,
-            )
-        candidate_feedback = workspace_record_close_feedback(
+        from memory_center.application.task_shadow_flow import (
+            build_close_shadow_guidance,
+            close_case_records,
+            resolve_close_task_id,
+        )
+
+        close_task_id, close_task_source = resolve_close_task_id(wf, session_id, task_id)
+        records = close_case_records(
             wf,
             session_id,
-            task_id=close_task_id,
-            source="mc_close_auto",
+            close_task_id=close_task_id,
+            title=title,
+            auto_sync_mode=auto_sync_mode,
+            outcome=outcome,
+            record_case=record_case,
+            verified_by=verified_by,
         )
+        synced = records["synced"]
+        draft = records["draft"]
+        recorded = records["recorded"]
+        candidate_feedback = records["candidate_feedback"]
+        # Session-first: close 时输出一次 binding/promotion 建议，默认不创建
+        # task space（提案第 6、9 节）。
+        guidance = build_close_shadow_guidance(wf, session_id)
         return {
             "workflow": "mc-close",
             "ended": ended,
@@ -746,6 +758,8 @@ def create_server(workspace_file: str):
             "suggested_case": draft,
             "record_case": recorded,
             "candidate_feedback": candidate_feedback,
+            "binding_recommendation": guidance["binding_recommendation"],
+            "promotion_options": guidance["promotion_options"],
         }
 
     # ===================== FACADE 8: mc_admin =====================

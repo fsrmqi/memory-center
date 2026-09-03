@@ -31,6 +31,21 @@ from .shared import (
 TASK_SYNC_EXISTING_ARTIFACT_MAX_BYTES = 512 * 1024
 
 
+def _shadow_binding_for_session(workspace_file: str | Path, session_id: str) -> str:
+    """返回 session 所属 Shadow 的 binding_status；无 Shadow 或故障时返回空串。"""
+    if not str(session_id or "").strip():
+        return ""
+    try:
+        from memory_center.core.storage.workspace import WorkspaceStore
+
+        from ..tasks.shadow import build_merged_shadow
+
+        shadow = build_merged_shadow(workspace_file, f"shadow:memory-center:{session_id}")
+        return str(shadow.get("binding_status", "")) if shadow else ""
+    except Exception:
+        return ""
+
+
 def workspace_sync_sniff_to_artifacts(
     workspace_file: str | Path,
     intent: str,

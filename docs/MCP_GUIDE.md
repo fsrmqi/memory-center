@@ -54,13 +54,13 @@ MCP 当前公开的是 15 个 task-level tools：
 | `mc_bootstrap_context` | 零初始化上下文入口：已有 workspace 用 Memory Center；否则只读调用可选 GitNexus，再降级为有界本地搜索；外部结果不持久化 |
 | `mc_provider_action` | 运行注册的外部 Provider 固定动作；读取动作直接执行，索引或清理必须 `confirm=true`，不接受自由命令 |
 | `mc_mcp_bridge` | 受限外部 MCP Client：无 `action` 时查看项目白名单；有 `provider/action` 时只调用策略登记的 HTTP MCP 工具、固定模板参数，写入必须 `confirm=true` |
-| `mc_start` | 嗅探任务上下文、可选同步、启动 session |
+| `mc_start` | 嗅探任务上下文、可选同步、启动 session；自动创建/续接 Task Shadow（L1），未绑定不写 L2 |
 | `mc_lookup` | 统一检索入口：symbol / code / query / trace / chain / context / ref / backend |
 | `mc_analyze` | 统一影响分析入口：quick / standard / full |
-| `mc_sync` | 将 sniff / case / task 过程同步到工件与记忆；低置信任务解析会停写并要求显式 task_id |
+| `mc_sync` | 将 sniff / case / task 过程同步到工件与记忆；低置信任务解析会停写并要求显式 task_id。新增 `sync_target=auto\|task\|shadow`：低置信解析 fallback 更新 Task Shadow 而不放弃连续性 |
 | `mc_resume` | 恢复任务上下文 |
 | `mc_handoff` | 为其他模型构建交接包 |
-| `mc_close` | 会话收尾、同步 case、记录经验，并自动回写可推断的候选路径反馈；优先复用 `mc_start` 绑定的 task_id |
+| `mc_close` | 会话收尾、同步 case、记录经验，并自动回写可推断的候选路径反馈；优先复用 `mc_start` 绑定的 task_id；输出 `binding_recommendation` 与 `promotion_options`（默认保留为临时工作影子） |
 | `mc_admin` | 状态、面板、评测、工件、group 等管理入口 |
 | `mc_context_pack` | 生成紧凑、证据驱动的上下文包 |
 | `mc_onboard` | 生成面向不同 persona 的架构导览 |
@@ -304,10 +304,52 @@ memory-center eval-reasoning-prompts
 - `task_repair_apply` — 默认 dry-run，`force=true` 时执行保守修复；可带 `intent`
 - `task_resume_check` — 一键恢复门禁，合并恢复包、健康度、修复建议和证据
 - `session_*` — 会话操作
+- `task_shadow_*` — Task Shadow（Session-first 会话影子，L1）操作：`task_shadow_status`（合并投影）、`task_shadow_bind`（CAS 绑定到正式 task）、`task_shadow_suggest`（写入候选）、`task_shadow_promote`（bound 后升格合并进 L2）、`task_shadow_discard`（丢弃，L0/L2 不受影响）、`task_shadow_retention`（未绑定过期清理，默认 dry-run）、`task_shadow_authority`（observation|snapshot 切换）、`task_shadow_observation_record` / `task_shadow_observation_list`（Observation Inbox，allowlist fail-closed）、`task_shadow_handoff_create` / `hand_off` / `claim` / `close` / `get` / `list`（Handoff Claim，claim-once CAS）
 - `group_*` — 跨工作区组操作
 - `walkthrough_health` / `eval_walkthrough_quality` / `walkthrough_export` — method walkthrough 自检、质量评测与 Markdown artifact 导出
 
-## 5. V3 Tools / V3 工具
+## 5. Task Shadow / 会话影子（Session-first Continuity）
+
+Task Shadow 是 L0（会话证据）之上的临时、可丢弃连续性状态层（提案见 `docs/SESSION_FIRST_TASK_CONTINUITY_PROPOSAL.md`）。默认工作流无需手动创建 task：
+
+```text
+mc_start → 自动创建/续接 Shadow（不写 L2）
+mc_sync  → bound 同步 task；否则只更新 Shadow
+mc_close → 输出 binding/promotion 建议，默认"保留为临时工作影子"
+```
+
+核心约束：
+
+- **多源 contribution**：Shadow 按 `(source_provider_id, source_session_id)` 保存独立 contribution，各源独立 durable 水位；对外是确定性 merge（union 去重，与到达顺序无关）。
+- **幂等水位**：快照幂等键 `(shadow_id, source_provider_id, source_session_id, durable_as_of_seq)`；相同/较旧水位是 no-op；`observed_as_of_seq` 必须等于 `durable_as_of_seq`；`delivery_mode=volatile` 直接拒收。
+- **不确定不写**：未绑定 Shadow 不写任何 L2 artifact；`task_shadow_promote` 仅在 `binding_status=bound` 后生效。
+- **CAS 并发**：绑定与 handoff claim 携带 `expected_revision`，stale revision 返回冲突。
+- **Observation Inbox**：跨 harness 最小事实契约，payload 字段 allowlist fail-closed（拒绝完整 prompt、工具正文、绝对路径），`(source_kind, source_session_id, event_seq)` 幂等去重；`shadow_authority=snapshot` 时 Observation 仅保留 L0 审计。
+- **审计**：所有 Shadow 状态变更写 L0 write receipt；retention 清理只影响未绑定 Shadow，L0 receipt / L2 artifact / L3 case 不受影响。
+
+入站快照 schema（adapter 提交，state_version 需与 MC 兼容，版本更新会标记 stale 并要求 resync）：
+
+```json
+{
+  "shadow_id": "shadow:dsh:session-1",
+  "source_provider_id": "dsh-task-shadow@1",
+  "source_session_id": "session-1",
+  "observed_as_of_seq": 5,
+  "durable_as_of_seq": 5,
+  "durable_event_count": 10,
+  "delivery_mode": "durable",
+  "state_version": 1,
+  "intent_summary": "bounded summary",
+  "candidate_tasks": [],
+  "candidate_files": [],
+  "evidence_refs": [],
+  "unresolved_items": [],
+  "next_actions": [],
+  "binding_status": "unbound"
+}
+```
+
+## 6. V3 Tools / V3 工具
 
 ### `mc_context_pack`
 
@@ -412,7 +454,7 @@ The chain anchor gate prevents a real failure mode: a misspelled or ambiguous qu
 
 For maintenance, public entrypoints accept `workspace.yaml`; resolve the graph database path through `WorkspaceStore` or shared core helpers before opening SQLite stores.
 
-## 6. Hooks / Hook 接入
+## 7. Hooks / Hook 接入
 
 ### 推荐自动执行
 
@@ -426,7 +468,7 @@ For maintenance, public entrypoints accept `workspace.yaml`; resolve the graph d
 
 原因：普通自然语言请求过于依赖上下文，容易被宿主误处理成拦截步骤。如需 suggest 注入必须由维护者显式修改 `hooks.yaml`。
 
-## 7. Host Strategy / 宿主策略
+## 8. Host Strategy / 宿主策略
 
 ### Claude Code / Codex
 
@@ -439,7 +481,7 @@ For maintenance, public entrypoints accept `workspace.yaml`; resolve the graph d
 
 更适合作为规则与工作流提示层，而不是强阻断执行层。
 
-## 8. Security Model / 安全模型
+## 9. Security Model / 安全模型
 
 Memory Center 默认是：
 
@@ -453,7 +495,7 @@ Memory Center 默认是：
 - `.memory-center/artifacts`
 - 生成的 skills / dashboard
 
-## 9. Unified Error Model / 统一错误模型
+## 10. Unified Error Model / 统一错误模型
 
 CLI、MCP、HTTP 的真实入口统一使用以下错误类型：
 
@@ -481,7 +523,7 @@ reindex job 的权威状态位于 SQLite `workspace_jobs` 账本：
 - 安装后的 CLI 输出 `[error_type] message` 和可选建议，退出码为 1，不输出 traceback。
 - 成功返回和现有 MCP tool schema 不变。
 
-## 10. HTTP Bridge / HTTP 桥接
+## 11. HTTP Bridge / HTTP 桥接
 
 MCP 之外，还可通过 HTTP bridge 复用同一套能力：
 
@@ -491,7 +533,7 @@ memory-center serve-http --workspace /abs/path/.memory-center/workspace.yaml --h
 
 HTTP GET 只允许无副作用读取；所有写入 route 必须 POST。非回环 `--host` 必须设置 `MEMORY_CENTER_HTTP_TOKEN`，调用方使用 `Authorization: Bearer <token>`；`actor` 仅表示审计归因，不是网络认证。
 
-## 11. Related Docs / 相关文档
+## 12. Related Docs / 相关文档
 
 - [REFERENCE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/REFERENCE.md)
 - [ARCHITECTURE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/ARCHITECTURE.md)

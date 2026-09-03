@@ -49,4 +49,34 @@ def start_task(workspace_file: str, intent: str, *, limit: int, auto_sync_mode: 
         session_metadata["task_id"] = bound_task_id
     session_metadata["freshness_generation"] = str(freshness.get("observed_generation", "") or "")
     session = workspace_start_session(workspace_file, intent, metadata=session_metadata)
-    return {"workflow": "mc-start", "request_tier": plan.tier, "query_plan": planner.record("mc_start", plan, started_at, outcome="completed"), "sniff": sniff, "sync_sniff": synced, "session": session, "auto_refresh": auto_refresh, "_workflow_guidance": get_workflow_guidance("work-start", {"risk_level": sniff.get("risk_level", ""), "task_id": bound_task_id}), "freshness": freshness, "bound_task_id": bound_task_id}
+    # Session-first: mc_start 自动创建/续接 Task Shadow（L1），不写 L2。
+    # 即使 auto_write_allowed=false，Shadow 仍正常更新（提案第 5 节写入分级）。
+    from memory_center.core.tasks.shadow import bind_shadow_to_task, build_merged_shadow, ensure_shadow_for_session
+
+    try:
+        session_id = str(session.get("session_id", "") or "")
+        shadow = ensure_shadow_for_session(workspace_file, session_id, intent=intent)
+        if bound_task_id:
+            # 显式解析成功（synced 或强解析）才落 bound；否则保持 unbound/suggested
+            bind_result = bind_shadow_to_task(
+                workspace_file, str(shadow["shadow_id"]), bound_task_id, source="mc_start"
+            )
+            shadow["binding_status"] = "bound" if bind_result.get("bound") else shadow.get("binding_status", "unbound")
+        else:
+            resolved_task_row = sniff.get("resolved_task", {}) or {}
+            raw_candidates = resolved_task_row.get("candidates") or sniff.get("resolved_candidates") or []
+            candidates = [
+                {
+                    "task_id": str(item.get("task_id", "") or ""),
+                    "title": str(item.get("title", "") or ""),
+                    "score": item.get("score", 0),
+                }
+                for item in list(raw_candidates)[:3]
+                if isinstance(item, dict) and item.get("task_id")
+            ]
+            shadow["candidate_tasks"] = candidates
+        shadow_state = build_merged_shadow(workspace_file, str(shadow["shadow_id"])) or {}
+    except Exception as exc:  # fail-soft: shadow 故障不阻断 start
+        shadow = {"shadow_id": "", "error": str(exc)[:160]}
+        shadow_state = {}
+    return {"workflow": "mc-start", "request_tier": plan.tier, "query_plan": planner.record("mc_start", plan, started_at, outcome="completed"), "sniff": sniff, "sync_sniff": synced, "session": session, "auto_refresh": auto_refresh, "_workflow_guidance": get_workflow_guidance("work-start", {"risk_level": sniff.get("risk_level", ""), "task_id": bound_task_id}), "freshness": freshness, "bound_task_id": bound_task_id, "task_shadow": shadow, "shadow_summary": {"binding_status": shadow_state.get("binding_status", ""), "candidate_tasks": shadow_state.get("merged", {}).get("candidate_tasks", [])[:3], "shadow_id": shadow_state.get("shadow_id", "")}}
