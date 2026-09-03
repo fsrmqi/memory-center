@@ -56,7 +56,7 @@ L3  Verified Case / Workspace Memory
 
 Task Shadow 不保存完整 prompt、源码、完整 tool payload 或绝对路径；这些仍按现有 L0 ref/evidence 规则保存。
 
-> 与 11.3 的关系：本节是 Memory Center 内部存储的 Shadow 形态；11.3 是 DSH Adapter 提交的脱敏 Shadow Snapshot 形态。两者的映射：`source_session_id` + `lineage` 折叠后归入 `session_ids`；`evidence_refs` 对应 `recent_evidence_refs`；`as_of_seq`/`state_version` 是同步水位元数据，不进入内部存储；`confidence` 由 Adapter 侧 `binding_status` 与候选分数在 MC 内部推导。
+> 与 11.3 的关系：本节是 Memory Center 内部存储的 Shadow 形态；11.3 是 DSH Adapter 提交的脱敏 Shadow Snapshot 形态。两者的映射：`source_session_id` + `lineage` 折叠后归入 `session_ids`；`evidence_refs` 对应 `recent_evidence_refs`；durable 水位（`durable_as_of_seq` 等）按 source 保存在 contribution 中（见 11.3.1），仅 `state_version` 不进内部存储；`confidence` 由 Adapter 侧 `binding_status` 与候选分数在 MC 内部推导。
 
 > 多 source 规则：内部 Shadow 不能把多个 session 的 whole-value snapshot 直接做全局 last-write-wins。每个 `(source_provider_id, source_session_id)` 保存独立 contribution 与独立 watermark；对外 Task Shadow 是所有活跃 contribution 的确定性 merge projection。
 
@@ -276,7 +276,7 @@ Cache may be stale, but must never be wrong.
 
 以下不变式与模式值得直接采纳，且不依赖 DSH 进程内前提：
 
-1. **Whole-value + source-local last-wins**：投影状态事件携带完整变更后状态，从不携带裸 delta。MC 快照同样遵循：每个 snapshot 自包含、可独立解释。幂等键为 `(shadow_id, source_session_id, as_of_seq)` 三元组；一个 Shadow 有多个 source session 时，每个 source 只对自己的 contribution 使用 last-write-wins，MC 再将所有 contribution 做确定性 merge，绝不让后到 session 擦除另一 session 的候选文件或未决项。
+1. **Whole-value + source-local last-wins**：投影状态事件携带完整变更后状态，从不携带裸 delta。MC 快照同样遵循：每个 snapshot 自包含、可独立解释。幂等键为 `(shadow_id, source_provider_id, source_session_id, durable_as_of_seq)` 四元组；一个 Shadow 有多个 source session 时，每个 source 只对自己的 contribution 使用 last-write-wins，MC 再将所有 contribution 做确定性 merge，绝不让后到 session 擦除另一 session 的候选文件或未决项。
 2. **Watermark 只读已持久化前缀**：watermark 永远不得超过源日志的 durable 边界（"stale but never wrong"）。
 3. **stateVersion 驱动缓存失效**：schema 或 fold 语义变化时 bump 版本，旧缓存整批丢弃，绝不清 forward-apply。
 4. **Fail-closed schema 校验**：所有跨边界数据先过 schema + 字段允许列表 + 有界长度，不合法即拒收并写 receipt。
@@ -290,7 +290,7 @@ Cache may be stale, but must never be wrong.
 
 DSH 的以下实现细节以"同进程、持有完整 JSONL 日志、模型侧"为前提，Memory Center 不照搬：
 
-1. **不搬运会话日志本身**（11.8 已明确）：MC 不实现 `SessionHandle`/JSONL 后端一类日志存储，MC 侧的"重折叠"不存在——见 11.3 约束 3 的修正。
+1. **不搬运会话日志本身**（11.8 已明确）：MC 不实现 `SessionHandle`/JSONL 后端一类日志存储，MC 侧的"重折叠"不存在——见 11.3 约束 8 的方向性拒绝修正。
 2. **不照搬进程内单写者锁**：`SessionAlreadyOwnedError` 一类互斥对跨进程协作无效，改用 11.4 的 `revision/lease` + CAS。
 3. **不做 surface/compaction 投影**：DSH 的 replace-遮蔽 surface 是模型上下文管理机制，MC 的 Shadow 只需折叠结果，无需复刻 surface 代数。仅在接入契约中要求：折叠输入使用 compaction 之后的等效视图，使 `as_of_seq` 在源侧 compaction 后仍保持单调、水位规则不受影响。
 4. **不复制 token 计量、流式 chunk、provider 路由等模型侧事件词汇**：`SessionEventMap` 是 DSH 的领域词汇，MC 只定义 Shadow snapshot 的目标 schema，不镜像其事件源。
@@ -333,7 +333,7 @@ Memory Center 接收的不是完整 prompt、模型回复、工具参数/结果�
 2. 相同或较旧 durable 水位返回幂等 no-op；
 3. `source_revision_hint` 仅用于 source-local pull 轮询，不能参与跨进程 CAS、顺序比较或 durability 判断；
 4. 正式投递给 MC 的 snapshot 必须满足 `observed_as_of_seq == durable_as_of_seq` 且 `delivery_mode="durable"`。否则 state 内容可能领先 durable 日志，即使 watermark 较旧也会违反 "never wrong" 原则；
-5. `turn/end` 的 volatile/best-effort snapshot 只允许 DSH 内存或 UI 预览使用，MC 不得用它 bind task、写 L2、promote case 或作为长期 evidence；
+5. `delivery_mode="volatile"` 的快照不得发送给 MC（见下方枚举表），仅允许存在于 DSH 内存或 UI 预览。MC 侧不存在"收到 volatile 但不用于治理"的路径；volatile 状态永远不写 receipt、L2、case 或 binding；
 6. bind/handoff/close/promote 前，adapter 必须先通过源侧 durability barrier（DSH 中为 `ctx.sessions.flush(session)`）并投递 durable snapshot；
 7. `durable_event_count` 与 `durable_as_of_seq` 是 MC 可验证的 durable 前缀边界；revision token 不等于日志长度。发现 durable 序列不连续、来源重建或 identity 变化时，丢弃 contribution 并请求源侧全量重同步；
 8. `state_version` 高于 MC 已知版本时，MC 不做本地重折叠（MC没有源日志，也不应有），而是标记 Shadow `stale/unusable`、写 receipt、并向 adapter 请求新版完整快照；
@@ -510,6 +510,8 @@ capture → consolidate → recall → handoff
 ```
 
 允许列表只包含：session/thread 标识、工具名称、脱敏 query 摘要、candidate files、receipt/validation 状态、generation/freshness、结构化风险和下一步。默认拒绝完整 prompt、完整工具 payload、源码正文、完整模型回复、绝对私有路径。
+
+`source_kind` 与 snapshot 的 `source_provider_id` 粒度不同：`source_kind` 是 harness 种类（`dsh|codex|claude|other`），`source_provider_id` 是 provider 种类 + schema 版本（如 `dsh-task-shadow@1`）。同一 harness 升级 Shadow schema 时 kind 不变而 provider_id 变化；不可混用。
 
 `Observation` 是 L0/Shadow 的输入，不直接写 L2。Adapter 必须用 `(source_kind, source_session_id, event_seq)` 幂等去重，并对 schema/大小/字段 allowlist fail-closed。
 
