@@ -285,6 +285,24 @@ chain 模式（`chain_direction=callers|callees`）建议显式传 `symbol` 作�
 - `fallback_action`：空 chain 时的有界回退建议（`symbol` / `code` 查询）。
 - `claim_boundary.reason_codes` 相应出现 `anchor_mismatch` / `scope_incomplete`，`negative_claim_allowed=false`。
 
+`view` 参数（additive，仅 `mode="query"`）：`view="evidence-index"` 返回紧凑有序证据索引（渐进式披露第一跳）：
+
+- `selected`：最多 20 条（上限 50），每条 `{ref_id, created_at, text, source_layer, source_kind, score, approx_tokens, estimated_tokens}`。
+- 文本经绝对路径 fail-closed 过滤；`claim_boundary` / `knowledge_state` / `freshness_status` 以标量保留，空结果门禁语义不变。
+- 第二跳展开：`mc_lookup(mode="ref", ref_ids=[...])`。缺省 `view` 保持既有富输出，向后兼容。
+- CLI `memory-center query --view evidence-index`、HTTP `/workspace/query?...&view=evidence-index` 同义。
+
+### `mc_admin` Session Notes actions / 会话叙事记忆
+
+L0.5 叙事记忆层（Session Notes），存储于 `memory/session-notes.jsonl`：
+
+- `note_record`：`text`（必填）、`event_type`=kind（`decision|fact|preference|rule|next_step`，默认 fact）、`session_id`、`payload.source_refs[]`。同 fingerprint 重复写入为 no-op；绝对路径与密钥形态 fail-closed 拒收；`<private>...</private>` 片段落盘前剥除。
+- `note_list`：`event_type`=kind 过滤、`status`（`active|superseded|forgotten`，默认 active）、`session_id`、`limit`。
+- `note_search`：`text`=query，返回带评分的有界命中（只搜 active）。
+- `note_supersede`：`name`=note_id、`text`=新文本；旧条 `status=superseded`、`superseded_by` 指向新条（不物理删除）。
+- `note_forget`：`name`=note_id、`reason`；只隐藏具名条目。
+- `mc_close` 响应包含 `note_drafts`（会话意图/风险点/验证信号的确定性草稿）与 `note_drafts_hint`；草稿未确认不落盘。
+
 ### `mc_analyze`
 
 参数约束：

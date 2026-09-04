@@ -37,6 +37,37 @@ def finalize_hybrid_response(
     except Exception:
         pass
     freshness_status = str(((result.get("freshness", {}) or {}).get("freshness", {}) or {}).get("status", "unknown"))
+    # L0.5 Session Notes: merge bounded note hits so query/evidence-index see
+    # narrative memory alongside graph evidence (fail-soft on any note error).
+    try:
+        from memory_center.core.tasks.session_notes import search_notes
+
+        note_hits = search_notes(workspace_file, query, limit=5)
+        if note_hits:
+            result["note_matches"] = note_hits
+            merged = [
+                *(result.get("results", []) or []),
+                *[
+                    {
+                        "node_id": hit["note_id"],
+                        "node": {"type": "Note", "name": hit["text"], "project": "", "file_path": ""},
+                        "score": hit["score"],
+                        "sources": ["note"],
+                        "semantic_strength": "fact",
+                        "evidence_level": "EXTRACTED",
+                        "created_at": hit.get("created_at", ""),
+                        "source_layer": "L0.5_session_notes",
+                        "source_kind": "note",
+                    }
+                    for hit in note_hits
+                ],
+            ]
+            result["results"] = merged
+            # matches is a documented alias of results (backward compat).
+            if "matches" in result:
+                result["matches"] = merged
+    except Exception:
+        pass
     evidence = []
     for item in result.get("results", []) or []:
         sources = set(item.get("sources", []) or item.get("retrieval_sources", []) or [])

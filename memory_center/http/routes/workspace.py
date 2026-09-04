@@ -123,6 +123,7 @@ from .params import _parse_float, _parse_int
 
 def _workspace_query_with_guidance(rp):
     session_id = rp.session_id()
+    view = str(rp.get("view", "") or "").strip()
     result = memory_query_hybrid(
         rp.workspace(),
         rp.require("text"),
@@ -131,8 +132,9 @@ def _workspace_query_with_guidance(rp):
         enable_vector=rp.bool_param("enable_vector"),
         vector_weight=_parse_float(rp.params, "vector_weight", 0.15, min_val=0.0, max_val=1.0),
         session_id=session_id,
+        view=view,
     )
-    if session_id:
+    if session_id and view != "evidence-index":
         workspace_record_agent_guidance(
             rp.workspace(),
             session_id,

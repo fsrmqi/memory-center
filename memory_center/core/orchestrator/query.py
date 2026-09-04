@@ -145,6 +145,7 @@ def memory_query_hybrid(
     vector_weight: float | None = None,
     enable_reranker: bool | None = None,
     session_id: str = "",
+    view: str = "",
 ) -> dict[str, Any]:
     """Enhanced query using hybrid retrieval engine.
 
@@ -153,6 +154,10 @@ def memory_query_hybrid(
 
     session_id 可选:提供时,本会话此前已交付过的文件会被有界降权(跨调用
     去重);账本读取失败降级为不去重,不影响查询。
+
+    view="evidence-index" 返回紧凑有序证据索引（渐进式披露第一跳，
+    见 docs/MEMORY_ENRICHMENT_DESIGN.md 能力 A）；其余取值（含缺省）
+    保持既有富输出，向后兼容。
     """
     # Lazy import to avoid circular dependency
     from ..retrieval.hybrid import HybridRetrievalConfig, detect_query_intent
@@ -309,6 +314,10 @@ def memory_query_hybrid(
     )
     timings["response_envelope"] = _elapsed_ms(response_started)
     result["performance"]["timing_ms"]["response_envelope"] = timings["response_envelope"]
+    if str(view or "").strip() == "evidence-index":
+        from .evidence_index import build_evidence_index
+
+        return build_evidence_index(result, store=store, query=query)
     return result
 
 

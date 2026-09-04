@@ -407,6 +407,29 @@ class _MemoryRecordOperations:
             row = conn.execute("SELECT COALESCE(MAX(id), 0) FROM json_records WHERE collection=?", (collection,)).fetchone()
         return int(row[0])
 
+    def update_json_records(self, collection: str, record_id: str, updates: dict[str, Any]) -> int:
+        """Merge fields into one record's payload in the canonical store.
+
+        Returns the number of rows updated (0 or 1). Callers keep the JSONL
+        export consistent via the export-state helpers.
+        """
+        if not record_id or not updates:
+            return 0
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT id, payload_json FROM json_records WHERE collection=? AND record_id=? ORDER BY id DESC LIMIT 1",
+                (collection, record_id),
+            ).fetchone()
+            if row is None:
+                return 0
+            payload = json.loads(str(row["payload_json"]))
+            payload.update(updates)
+            conn.execute(
+                "UPDATE json_records SET payload_json=? WHERE id=?",
+                (json.dumps(payload, ensure_ascii=False), int(row["id"])),
+            )
+        return 1
+
     def jsonl_record_collections(self) -> list[str]:
         with self.connect() as conn:
             rows = conn.execute("SELECT DISTINCT collection FROM json_records ORDER BY collection ASC").fetchall()

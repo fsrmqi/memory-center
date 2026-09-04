@@ -645,6 +645,8 @@ class WorkspaceStore:
             return str(item.get("session_id", "") or "") + ":" + str(item.get("normalized_model", "") or "") + ":" + str(item.get("created_at", "") or "")
         if collection == "cross-service-task-memory.jsonl":
             return str(item.get("task", "") or "")
+        if collection == "session-notes.jsonl":
+            return str(item.get("note_id", "") or "")
         if collection == "artifact-write-audit.jsonl":
             return str(item.get("created_at", "") or "") + ":" + str(item.get("artifact_name", "") or "")
         if collection == "token-gain-log.jsonl":

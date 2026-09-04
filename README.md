@@ -1,16 +1,16 @@
 # Memory Center / 记忆中心
 
-> **MCP-native project memory and knowledge graph service for AI coding agents.**
+> **MCP-native workspace & service memory and knowledge graph service for AI coding agents.**
 >
-> **面向 AI 编程助手的 MCP 项目记忆服务：多 Agent 公共空间、项目上下文、知识图谱、影响分析、经验沉淀。**
+> **面向 AI 编程助手的 MCP 记忆服务：多 Agent 公共空间、workspace/service 上下文、知识图谱、影响分析、经验沉淀。**
 
-Memory Center is designed for teams that use Codex, Claude Code, Cursor, GitHub Copilot, Gemini or other coding agents on large Spring Cloud workspaces. It turns a multi-repository backend system into a local, queryable, graph-first memory center.
+Memory Center is designed for teams that use Codex, Claude Code, Cursor, GitHub Copilot, Gemini or other coding agents on large Spring Cloud workspaces. It turns a multi-service backend system into a local, queryable, graph-first memory center.
 
-记忆中心用于解决大型 Spring Cloud 多项目场景下 AI 编程助手“每次从零理解项目、跨服务影响面不清、历史经验无法沉淀、规则容易忘记”的问题。它会把多个项目索引成一个本地知识图谱，并通过 MCP tools/resources/prompts 提供给 AI Agent 使用。
+记忆中心用于解决大型 Spring Cloud 多服务场景下 AI 编程助手“每次从零理解 workspace、跨服务影响面不清、历史经验无法沉淀、规则容易忘记”的问题。它会把一个 workspace 内的多个 service 索引成一个本地知识图谱，并通过 MCP tools/resources/prompts 提供给 AI Agent 使用。
 
-`services[].path` now supports both relative paths and absolute paths, so one workspace can index projects spread across different parent directories.
+`services[].path` now supports both relative paths and absolute paths, so one workspace can index services spread across different parent directories.
 
-`services[].path` 现在同时支持相对路径和绝对路径，因此一个 workspace 可以索引分散在不同父目录下的多个项目。
+`services[].path` 现在同时支持相对路径和绝对路径，因此一个 workspace 可以索引分散在不同父目录下的多个 service。
 
 ---
 
@@ -18,7 +18,7 @@ Memory Center is designed for teams that use Codex, Claude Code, Cursor, GitHub 
 
 Traditional coding agents often rely on ad-hoc file reads and grep. That works for small repositories, but it is fragile for Spring Cloud systems where one change may cross:
 
-传统 AI 编程助手一般靠临时读文件、grep、搜索关键词。小项目可以，大型 Spring Cloud 项目很容易失效，因为一个改动往往横跨：
+传统 AI 编程助手一般靠临时读文件、grep、搜索关键词。小仓库可以，大型 Spring Cloud workspace 很容易失效，因为一个改动往往横跨：
 
 - Gateway routes / 网关路由
 - Feign clients / Feign 契约
@@ -33,7 +33,7 @@ Memory Center precomputes these relationships before the agent starts editing.
 
 查询结果同时提供可追溯的 `knowledge_state`：它区分当前范围内找到、未索引、未发现、索引过期和证据不足，避免把“未找到”误读为“工程中不存在”。断言详情可按有效期、事件时间或观测时间读取，并通过 CLI、MCP、HTTP 或 Workbench 完成验证与拒绝。
 
-记忆中心的核心思想是：**不要让 AI 每次临时理解项目，而是在索引阶段提前构建服务图、调用图、契约图、消息图、规则图、经验图。**
+记忆中心的核心思想是：**不要让 AI 每次临时理解整个 workspace，而是在索引阶段提前构建服务图、调用图、契约图、消息图、规则图、经验图。**
 
 当前主文档请优先看：
 
@@ -60,11 +60,11 @@ The current local release is **4.6.23**. The 4.6 series consolidates trustworthy
 
 ## Core ideas / 核心思想
 
-### 1. Graph-first project memory / 图优先的项目记忆
+### 1. Graph-first workspace memory / 图优先的 workspace 记忆
 
 Memory Center stores code and service relationships as graph nodes and edges in a local SQLite graph store:
 
-记忆中心把项目关系沉淀为本地 SQLite 图存储：
+记忆中心把 workspace 内的 service 关系沉淀为本地 SQLite 图存储：
 
 - Nodes / 节点：Workspace, Service, File, Class, Method, Field, Endpoint, FeignClient, FeignMethod, MQTopic, MQConsumer, ConfigKey, MongoCollection, EsIndex, Rule, TaskMemory
 - Edges / 边：CONTAINS, DECLARES, EXPOSES_ENDPOINT, HANDLES_ENDPOINT, CALLS_SERVICE, IMPLEMENTS_FEIGN, CONSUMES_TOPIC, IMPORTS, INJECTS_BEAN, CALLS_METHOD, READS_FIELD, READS_CONFIG, USES_DATA_RESOURCE, RELATED_TO_MEMORY
@@ -75,9 +75,14 @@ This makes impact analysis and context retrieval deterministic and explainable.
 
 ### 1.1 Zero-initialization federation / 零初始化联邦上下文
 
-即使当前项目尚未创建 `.memory-center/workspace.yaml`，也可以调用 `mc_bootstrap_context` 或 `memory-center bootstrap-context --path <project-dir>`。它会先探测已有 Memory Center workspace；没有 workspace 时调用 GitNexus 的固定读取能力并返回会话级外部证据；Provider 不可用时才建议有界本地搜索。该流程不初始化目录，也不把外部读取结果写进图谱。
+即使当前 workspace 尚未创建 `.memory-center/workspace.yaml`，也可以调用 `mc_bootstrap_context` 或 `memory-center bootstrap-context --path <project-dir>`。它会先探测已有 Memory Center workspace；没有 workspace 时调用 GitNexus 的固定读取能力并返回会话级外部证据；Provider 不可用时才建议有界本地搜索。该流程不初始化目录，也不把外部读取结果写进图谱。
 
 Even without `.memory-center/workspace.yaml`, `mc_bootstrap_context` or `memory-center bootstrap-context --path <project-dir>` first detects an existing workspace, then optionally uses fixed GitNexus read capabilities, and finally suggests bounded local search. It never initializes or persists external read results into the graph.
+
+> 术语说明：Memory Center 不再把“项目”作为用户可创建的分组实体。用户只创建一个 workspace（`.memory-center/workspace.yaml`）；`services` 由 `init` 自动探测，作为索引/影响分析的分区维度；formal task（L2）只在显式绑定后才存在。
+> Terminology: Memory Center no longer models "project" as a user-created grouping entity. Users create one workspace (`.memory-center/workspace.yaml`); `services` are auto-detected by `init` and act as the partition dimension for indexing and impact analysis; a formal task (L2) exists only after explicit binding.
+
+## External MCP client policy / 外部 MCP 客户端白名单
 
 外部能力通过 Provider Registry 统一选择；联邦结果包含 `provider_selection` 与临时 `evidence_ref`，后者只保存来源、范围和内容哈希，不保存外部正文。通过 `provider-action` 可执行注册的固定动作：读取动作直接运行，索引或清理动作必须显式确认。后续可接入更多 Provider，而不改变 Agent 的上下文入口。
 
@@ -191,7 +196,7 @@ Each protected write also records `write_mode` and an `audit_ref` into `memory/a
 
 每次受保护的工件写入还会把 `write_mode` 和 `audit_ref` 记录到 `memory/artifact-write-audit.jsonl`，这样后续可以追查模型到底是正常追加，还是曾经试图整篇覆盖后被降级成受保护追加。
 
-Detailed local setup and multi-project workflow / 详细本地初始化与多项目使用流程：
+Detailed local setup and multi-service workflow / 详细本地初始化与多服务使用流程：
 
 - [docs/USER_GUIDE.md](./docs/USER_GUIDE.md)
 - [docs/MCP_GUIDE.md](./docs/MCP_GUIDE.md)
@@ -290,9 +295,9 @@ pytest -q
 
 ### Vue Frontend / Vue 前端
 
-The project includes a modern Vue 3 + Node.js frontend workbench. To set up:
+The repository includes a modern Vue 3 + Node.js frontend workbench. To set up:
 
-项目包含 Vue 3 + Node.js 前端工作台。安装步骤：
+仓库包含 Vue 3 + Node.js 前端工作台。安装步骤：
 
 ```bash
 cd web
@@ -705,9 +710,9 @@ Task spaces now also support `owner`, `tags`, and `priority`, and `resolve-task`
 
 任务空间现在还支持 `owner`、`tags`、`priority`，并且 `resolve-task` 会返回前几个候选结果，让匹配过程可解释，而不是完全黑盒。
 
-For long-running projects, do not feed the full artifact documents every time. Use artifact outline/context retrieval and compact old change logs:
+For long-running workspaces, do not feed the full artifact documents every time. Use artifact outline/context retrieval and compact old change logs:
 
-对于长期运行项目，不要每次都整篇读取共享工件。优先使用提纲/相关片段检索，并定期压缩归档旧的 change-log：
+对于长期运行的 workspace，不要每次都整篇读取共享工件。优先使用提纲/相关片段检索，并定期压缩归档旧的 change-log：
 
 ```bash
 memory-center artifact outline \
@@ -867,9 +872,9 @@ Task-space resume experience is available through `mc_admin` actions: `task_heal
 
 任务空间恢复体验通过 `mc_admin` action 暴露：`task_health`、`task_health_all`、`task_repair_plan`、`task_repair_apply`、`task_resume_check`。Agent 回到已知 `task_id` 时，默认应先调用 `task_resume_check`；`task_repair_apply` 在未传 `force=true` 时只做 dry-run，刷新 current-summary 时建议同时传入 `intent`。
 
-`mc_lookup(mode="walkthrough")` targets `Class#method` traces. For local service calls, `local_service_continuations` resolves Service interface calls to Impl methods. For Feign calls, `feign_continuations[].server_walkthroughs` expands matching server-side Controller methods, and `service_impl_continuations` resolves same-project Service interface calls to Impl methods when indexed.
+`mc_lookup(mode="walkthrough")` targets `Class#method` traces. For local service calls, `local_service_continuations` resolves Service interface calls to Impl methods. For Feign calls, `feign_continuations[].server_walkthroughs` expands matching server-side Controller methods, and `service_impl_continuations` resolves same-service Service interface calls to Impl methods when indexed.
 
-`mc_lookup(mode="walkthrough")` 面向 `Class#method` 链路梳理。遇到本地 Service 调用时，`local_service_continuations` 会解析 Service interface 到 Impl 方法。遇到 Feign 调用时，`feign_continuations[].server_walkthroughs` 会展开匹配到的服务端 Controller 方法；如果 Controller 调用同项目 Service interface，`service_impl_continuations` 会继续解析到 Impl 方法。
+`mc_lookup(mode="walkthrough")` 面向 `Class#method` 链路梳理。遇到本地 Service 调用时，`local_service_continuations` 会解析 Service interface 到 Impl 方法。遇到 Feign 调用时，`feign_continuations[].server_walkthroughs` 会展开匹配到的服务端 Controller 方法；如果 Controller 调用同一 service 的 Service interface，`service_impl_continuations` 会继续解析到 Impl 方法。
 
 For a request containing both `Class#method` and a full-chain intent, `mc_lookup(mode="auto")` now enters the indexed walkthrough directly. It skips broad workspace sniffing, keeps the chain depth bounded, and returns compact evidence first. Large-workspace task startup also uses graph FTS for candidate files instead of loading the full Java symbol payload.
 
@@ -895,7 +900,7 @@ Before `mc_start` and `mc_lookup` return indexed evidence, Memory Center schedul
 
 需要为一次链路分析生成可交接的证据视图时，使用 `memory-center export-evidence-subgraph --workspace <workspace.yaml> --target <node-id-or-symbol> --format markdown`。也可通过 `GET /workspace/evidence-subgraph` 或 `mc_admin(action="evidence_subgraph_export")` 获取 JSON、Markdown、HTML。导出严格限制为最多 3 跳、120 条边、80 个节点，不读取源码、不扫描全图，也不会进入普通查询热路径。
 
-需要理解模块边界和共享核心节点时，显式运行 `memory-center architecture-communities --workspace <workspace.yaml>`。它从 SQLite 读取有界项目投影：安装 `architecture` extra 时使用固定随机种子的加权 Leiden，否则使用确定性加权标签传播；同时计算有界 Brandes 桥接点、异常跨社区连接和未测试高中心性节点。普通环境可安装 `memory-center[architecture]`，pipx 环境可执行 `pipx inject memory-center 'igraph>=0.11,<2'`。结果缓存到轻量摘要供 Workbench/status 读取，所有异常均为 `INFERRED`，不会进入查询热路径。
+需要理解模块边界和共享核心节点时，显式运行 `memory-center architecture-communities --workspace <workspace.yaml>`。它从 SQLite 读取有界 service 投影：安装 `architecture` extra 时使用固定随机种子的加权 Leiden，否则使用确定性加权标签传播；同时计算有界 Brandes 桥接点、异常跨社区连接和未测试高中心性节点。普通环境可安装 `memory-center[architecture]`，pipx 环境可执行 `pipx inject memory-center 'igraph>=0.11,<2'`。结果缓存到轻量摘要供 Workbench/status 读取，所有异常均为 `INFERRED`，不会进入查询热路径。
 
 日常改动优先执行 `memory-center change-review --workspace <workspace.yaml> --scope all --detail-level minimal`，或调用 `mc_admin(action="change_review", scope="all", view="minimal")`。统一审查服务只对检测到的相关文件做最多 12 个文件的定向刷新，不会隐式全量重建；随后返回加权最佳影响路径、契约风险、测试缺口、验证 Action、停止条件和调用预算。同一源码签名与 index generation 的等价请求会复用短期结果，只有证据不足或显式请求时才从 `minimal` 升级到 `standard` / `deep`。
 
@@ -929,13 +934,13 @@ Use `memory-center performance-snapshot --workspace <workspace.yaml> --samples 5
 
 ### Physical Index Shards / 物理索引分片
 
-Each active generation now contains immutable service JSON shards, service-local SQLite graph shards, a shared contract shard, and a topology shard. Explicit project-scoped code and hybrid graph queries read the service shard first, then fall back to legacy global indexes only when the shard is absent or scope expansion is required. File watcher changes create a bounded invalidation plan and coalesce an asynchronous partial reindex job. `mc_admin(action="index_rollback", record_id="<generation>")` restores a retained generation; `index_generation_gc` previews cleanup unless `force=true` is supplied.
+Each active generation now contains immutable service JSON shards, service-local SQLite graph shards, a shared contract shard, and a topology shard. Explicit service-scoped code and hybrid graph queries read the service shard first, then fall back to legacy global indexes only when the shard is absent or scope expansion is required. File watcher changes create a bounded invalidation plan and coalesce an asynchronous partial reindex job. `mc_admin(action="index_rollback", record_id="<generation>")` restores a retained generation; `index_generation_gc` previews cleanup unless `force=true` is supplied.
 
-每个 active generation 包含不可变的服务 JSON 分片、服务本地 SQLite 图分片、共享契约分片和拓扑分片。已解析 `project` 的代码搜索与混合图查询只读取对应服务分片；分片未发布时返回 `NOT_INDEXED`，不会悄悄退回全局扫描。file watcher 的变更会生成有界失效计划并合并异步局部 reindex job。`mc_admin(action="index_rollback", record_id="<generation>")` 可恢复保留的 generation；`index_generation_gc` 默认只预览清理，传 `force=true` 才会执行。
+每个 active generation 包含不可变的服务 JSON 分片、服务本地 SQLite 图分片、共享契约分片和拓扑分片。已解析 `project`（service）的代码搜索与混合图查询只读取对应服务分片；分片未发布时返回 `NOT_INDEXED`，不会悄悄退回全局扫描。file watcher 的变更会生成有界失效计划并合并异步局部 reindex job。`mc_admin(action="index_rollback", record_id="<generation>")` 可恢复保留的 generation；`index_generation_gc` 默认只预览清理，传 `force=true` 才会执行。
 
-4.3.84 起，局部 generation 只硬链接 manifest 中未受影响的服务文件；受影响项目图通过 SQLite `ATTACH + INSERT SELECT` 在数据库内部流式导出，不再把项目全图物化为 Python 对象。临时分片先装载数据、再创建二级索引与 FTS，并对 2-3 个受影响项目使用最多 3 个 worker。返回的 `timing_ms` 增加 `generation_inherit`、`generation_service_payloads`、`generation_graph_shards`、`generation_shared_shards`，可直接定位发布瓶颈。
+4.3.84 起，局部 generation 只硬链接 manifest 中未受影响的服务文件；受影响 service 的图通过 SQLite `ATTACH + INSERT SELECT` 在数据库内部流式导出，不再把 service 全图物化为 Python 对象。临时分片先装载数据、再创建二级索引与 FTS，并对 2-3 个受影响 service 使用最多 3 个 worker。返回的 `timing_ms` 增加 `generation_inherit`、`generation_service_payloads`、`generation_graph_shards`、`generation_shared_shards`，可直接定位发布瓶颈。
 
-Since 4.3.84, partial generations hard-link only unchanged service artifacts declared by the manifest. Affected project graphs stream inside SQLite through `ATTACH + INSERT SELECT` rather than becoming Python object graphs. Temporary shards load data before building secondary indexes and FTS, with at most three workers for two or three affected projects. Four additive generation stage timings make publication bottlenecks directly observable.
+Since 4.3.84, partial generations hard-link only unchanged service artifacts declared by the manifest. Affected service graphs stream inside SQLite through `ATTACH + INSERT SELECT` rather than becoming Python object graphs. Temporary shards load data before building secondary indexes and FTS, with at most three workers for two or three affected services. Four additive generation stage timings make publication bottlenecks directly observable.
 
 When `mc_lookup` has no explicit `project`, it now routes through the active topology and contract shards, selects a bounded set of service shards by request tier, and queries them in parallel. Responses include `shard_route` and `shard_evidence`, each tied to the active generation. Use `mc_admin(action="eval_cross_shard_replay", text="one intent per line")` to verify cross-service shard P95 and evidence coverage without persisting the raw replay text.
 
@@ -983,17 +988,17 @@ When replay trend data shows why guidance failed, future query results may also 
 
 当 replay 趋势说明建议为什么失败时，后续 query 结果还可能附加 `replay_feedback`。如果高频原因是绕过本地搜索，会提示先执行 Memory Center 命令再用 `rg` / `grep` / `find`；如果是不可观测，会提示调用方传入 `session_id`；如果缺少目标，会强制使用 `target_ref` / `read_targets`；如果是动作不匹配，会提示使用与建议 action 对应的 Memory Center mode。Replay 会保留事件顺序：先发生本地搜索绕过、之后才调用匹配的 Memory Center 工具，仍会归类为 `bypassed`。绕过检测只检查结构化工具名或 shell 命令字段，不会从 payload 任意文本中猜测；方法级 walkthrough 建议在可用时会保留解析到的 `target_ref` 与 `read_targets`。
 
-When a method walkthrough starts from a sub-project workspace, Memory Center can automatically escalate to a parent or registry-covered aggregate workspace if that workspace produces a more complete cross-service flow. The `workspace_escalation` field records whether this happened; missing parents are safe fallbacks, not errors.
+When a method walkthrough starts from a service sub-directory workspace, Memory Center can automatically escalate to a parent or registry-covered aggregate workspace if that workspace produces a more complete cross-service flow. The `workspace_escalation` field records whether this happened; missing parents are safe fallbacks, not errors.
 
-当 method walkthrough 从子项目 workspace 启动时，Memory Center 会尝试自动升级到父级或 registry 中覆盖当前项目的聚合 workspace，只在聚合结果更完整时切换。`workspace_escalation` 会记录是否切换；找不到父级不是错误。
+当 method walkthrough 从 service 子目录 workspace 启动时，Memory Center 会尝试自动升级到父级或 registry 中覆盖当前 workspace 的聚合 workspace，只在聚合结果更完整时切换。`workspace_escalation` 会记录是否切换；找不到父级不是错误。
 
 Report formatting is configurable via `.memory-center/templates/method_walkthrough.md` or `.memory-center/method_walkthrough_template.md`. If no template exists, Memory Center returns a built-in `answer_markdown` plus top-level `summary_lines`, so agents can still organize the final response themselves.
 
 报告格式可通过 `.memory-center/templates/method_walkthrough.md` 或 `.memory-center/method_walkthrough_template.md` 配置。未配置时会返回内置 `answer_markdown` 和顶层 `summary_lines`，保证 agent 仍可自行组织最终回答。
 
-`mc_lookup(mode="walkthrough", report_level="brief|standard|deep|risk-focused")` controls the built-in report shape when no configured template exists. Workspace inputs may be a `workspace.yaml` file or a project directory; directory inputs are resolved upward to `.memory-center/workspace.yaml` when possible.
+`mc_lookup(mode="walkthrough", report_level="brief|standard|deep|risk-focused")` controls the built-in report shape when no configured template exists. Workspace inputs may be a `workspace.yaml` file or a workspace directory; directory inputs are resolved upward to `.memory-center/workspace.yaml` when possible.
 
-`mc_lookup(mode="walkthrough", report_level="brief|standard|deep|risk-focused")` 可控制未配置模板时的内置报告形态。workspace 入参既可以是 `workspace.yaml` 文件，也可以是项目目录；目录会尽量向上解析到 `.memory-center/workspace.yaml`。
+`mc_lookup(mode="walkthrough", report_level="brief|standard|deep|risk-focused")` 可控制未配置模板时的内置报告形态。workspace 入参既可以是 `workspace.yaml` 文件，也可以是 workspace 目录；目录会尽量向上解析到 `.memory-center/workspace.yaml`。
 
 Golden Benchmark can also run directly against an existing real workspace:
 
@@ -1104,9 +1109,9 @@ Operational walkthrough helpers are available for upgrade checks and team handof
 链路梳理还提供面向验收与协作的辅助能力：
 
 ```bash
-memory-center walkthrough-health --workspace /path/to/project --symbol com.example.Service#method
-memory-center walkthrough-eval --workspace /path/to/project --symbol com.example.Service#method
-memory-center walkthrough-export --workspace /path/to/project --symbol com.example.Service#method
+memory-center walkthrough-health --workspace /path/to/workspace.yaml --symbol com.example.Service#method
+memory-center walkthrough-eval --workspace /path/to/workspace.yaml --symbol com.example.Service#method
+memory-center walkthrough-export --workspace /path/to/workspace.yaml --symbol com.example.Service#method
 ```
 
 The equivalent MCP admin actions are `mc_admin(action="walkthrough_health")`, `mc_admin(action="eval_walkthrough_quality")`, and `mc_admin(action="walkthrough_export")`. Exported Markdown is written under `.memory-center/artifacts/walkthroughs/*.md`.
@@ -1138,17 +1143,17 @@ memory-center run-hook --workspace <workspace.yaml> --hook session_start  # 执�
 memory-center generate-hooks --workspace <workspace.yaml> --host claude-code  # 生成宿主配置
 ```
 
-从当前版本开始，`init` / `reindex` 写入的受管说明块和 MCP 绑定不只落在聚合 workspace 根目录，也会镜像到各个已配置的 service 子项目根目录（如 `service-a/AGENTS.md`、`service-a/.codex/mcp.json`、`service-a/.cursor/mcp.json`、`service-a/.mcp.json`）。这样当你直接在子项目目录里打开 Codex / Claude / Cursor 时，Agent 能复用上层 `.memory-center/workspace.yaml` 并拿到 `mc_*` 工具。
+从当前版本开始，`init` / `reindex` 写入的受管说明块和 MCP 绑定不只落在聚合 workspace 根目录，也会镜像到各个已配置的 service 子目录根（如 `service-a/AGENTS.md`、`service-a/.codex/mcp.json`、`service-a/.cursor/mcp.json`、`service-a/.mcp.json`）。这样当你直接在 service 子目录里打开 Codex / Claude / Cursor 时，Agent 能复用上层 `.memory-center/workspace.yaml` 并拿到 `mc_*` 工具。
 
-Starting from this version, the managed instruction block and MCP bindings written by `init` / `reindex` are mirrored not only to the aggregate workspace root but also to each configured service root (for example `service-a/AGENTS.md`, `service-a/.codex/mcp.json`, `service-a/.cursor/mcp.json`, and `service-a/.mcp.json`). This helps agents launched inside a subproject reuse the parent `.memory-center/workspace.yaml` and receive the `mc_*` tools.
+Starting from this version, the managed instruction block and MCP bindings written by `init` / `reindex` are mirrored not only to the aggregate workspace root but also to each configured service root (for example `service-a/AGENTS.md`, `service-a/.codex/mcp.json`, `service-a/.cursor/mcp.json`, and `service-a/.mcp.json`). This helps agents launched inside a service sub-directory reuse the parent `.memory-center/workspace.yaml` and receive the `mc_*` tools.
 
-如果子项目里仍看不到 `mc_*` 工具，优先运行一键接入命令：
+如果 service 子目录里仍看不到 `mc_*` 工具，优先运行一键接入命令：
 
 ```bash
 memory-center setup-agent --workspace <workspace.yaml>
 ```
 
-If a subproject still does not expose `mc_*` tools, prefer the one-step setup command:
+If a service sub-directory still does not expose `mc_*` tools, prefer the one-step setup command:
 
 ```bash
 memory-center setup-agent --workspace <workspace.yaml>

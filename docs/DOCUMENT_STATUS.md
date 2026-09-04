@@ -1,7 +1,7 @@
 # Documentation Status / 文档状态目录
 
 > **基准版本 / Baseline**：4.6.13
-> **更新日期 / Updated**：2026-08-30  
+> **更新日期 / Updated**：2026-09-03  
 > **规则 / Rule**：当前行为以代码、CLI `--help`、路由、MCP schema 和标记为 `current` 的文档为准。历史文档保留当时的样本与结论，不重写为当前事实。
 
 ## Current / 当前文档
@@ -16,7 +16,8 @@
 | `docs/ONTOLOGY.md` | 实体、关系、证据强度和治理语义 |
 | `docs/NEXT_PHASE_MASTER_PLAN.md` | 唯一活跃开发路线；已完成工作不作为待办 |
 | `docs/LOOKUP_ARCHITECTURE_HANDOFF_PLAN.md` | 查询架构收口的专项交接计划、契约与验收矩阵 |
-| `docs/SESSION_FIRST_TASK_CONTINUITY_PROPOSAL.md` | Session-first / Task Shadow 产品与架构提案；L1 Shadow 核心已实现（shadow/observations/handoff 三模块 + facade/admin/CLI/HTTP 接入，见 CHANGELOG Unreleased） |
+| `docs/SESSION_FIRST_TASK_CONTINUITY_PROPOSAL.md` | Session-first / Task Shadow 产品与架构提案；L1 Shadow 核心已实现（shadow/observations/handoff 三模块 + facade/admin/CLI/HTTP 接入），DSH 侧适配见 `memory-center-dsh-plugin`（Task Shadow L1 投影） |
+| `docs/MEMORY_ENRICHMENT_DESIGN.md` | 记忆增强设计提案：借鉴 MemOS / claude-mem / MemoraX 的四项能力；A（evidence-index 渐进式披露）与 B（Session Notes 叙事层）已实现（见 CHANGELOG Unreleased），C（Memory Cube）为 P2 草案待评审，D（四类记忆用户模型）已落 USER_GUIDE |
 | `docs/DSH_WORKBENCH_PRODUCTIZATION_ROADMAP.md` | DSH/Workbench 产品路线与只读质量视图 |
 | `docs/DOCUMENT_CONSTITUTION.md` | 文档治理、生命周期与发布清单 |
 | `docs/THREE_SYSTEM_KNOWLEDGE_LOOP.md` | Memory Center、DSH 与 Personal Wiki 的协作边界 |

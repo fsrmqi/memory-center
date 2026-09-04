@@ -2,6 +2,18 @@
 
 ## Unreleased / 未发布
 
+### Memory Enrichment：Evidence Index 渐进式披露 + Session Notes 叙事层 / Memory Enrichment: Evidence Index + Session Notes
+
+按 [MEMORY_ENRICHMENT_DESIGN.md](MEMORY_ENRICHMENT_DESIGN.md) 实现 AML 对标调研（MemOS / claude-mem / MemoraX）中的两项 P0/P1 能力；全部 additive，向后兼容。
+
+- **能力 A — Evidence Index 渐进式披露（P0）**：`memory_query_hybrid` 新增 `view="evidence-index"`（MCP `mc_lookup` / CLI `query --view` / HTTP `/workspace/query?view=` 三入口同义）。响应收缩为 `{kind, selected:[{ref_id, created_at, text, source_layer, source_kind, score, approx_tokens, estimated_tokens}], total_candidates, returned, truncated, approx_total_tokens}`；`claim_boundary`/`knowledge_state`/`freshness_status` 以标量保留，空结果负向门禁语义不变。文本绝对路径 fail-closed 过滤；列表默认 20 条、上限 50、`truncated` 诚实标注；第二跳展开复用 `mc_lookup(mode="ref")`。缺省 `view` 与既有富输出逐字节兼容。
+- **能力 B — Session Notes（L0.5 叙事记忆层，P1）**：新增 `core/tasks/session_notes.py`，存储于 `memory/session-notes.jsonl`（SQLite `json_records` 权威、JSONL 投影，`note_id` 作 record_id）。`mc_admin` 新增 5 个 action：`note_record`（同 fingerprint 幂等 no-op）、`note_list`（kind/status/session 过滤）、`note_search`（token 重叠评分，只搜 active）、`note_supersede`（旧条 `superseded_by` 留审计链，不物理删除）、`note_forget`（只隐藏具名条目）。隐私门 fail-closed：绝对路径（Unix/Windows/home）与密钥形态（`sk-`/Bearer/api_key= 等）直接拒收；`<private>...</private>` 片段落盘前剥除并记回执。所有写路径持久化 L0.5 write receipt。
+- **检索并入**：`mode="query"` 结果合并有界 `note_matches`（`source_kind=note`，与图谱证据并列）；evidence-index 视图同时含 note 命中（`ref_id=note:<note_id>`，`source_layer=L0.5_session_notes`）。
+- **mc_close 草稿**：`close_case_records` 返回 `note_drafts`（会话意图 → decision 草稿、risk_points → next_step 草稿、验证通过信号 → fact 草稿，确定性机械抽取、无模型调用）与 `note_drafts_hint`；草稿未确认绝不落盘。
+- **用户模型（能力 D，文档）**：USER_GUIDE 新增"记忆边界"小节，把 Coding/Repo/Personal/Procedure 四类边界映射到 L1 case、图谱+invariants、workspace_profile、team_rules 与 Session Notes。
+- **基础设施**：`MemoryBackend` 新增 `update_json_records(collection, record_id, updates)`（payload 合并更新）；`_infer_record_id` 支持 `session-notes.jsonl` → `note_id`；状态变更经 backend 更新 + `_sync_jsonl_export_locked(rebuild=True)` 重建投影，保证 SQLite 权威与 JSONL 导出一致。
+- **回归**：`tests/domain/test_evidence_index.py`（9 个）、`tests/domain/test_session_notes.py`（11 个）、`tests/entrypoints/test_session_notes_entrypoints.py`（5 个：admin 三层动作、close 草稿不落盘、evidence-index 含 note）、`test_public_mvp.py` 新增 CLI/HTTP view 转发测试；修复 `test_mc_lookup_query_mode_forwards_vector_options` 假桩缺失 `session_id` 参数的既有失败（基线已坏，见 git 历史）。
+
 ## 4.6.23 Task Shadow: Session-first Continuity / 会话优先任务连续性
 
 ### Task Shadow：Session-first 任务连续性 / Task Shadow: Session-first Continuity

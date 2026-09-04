@@ -331,8 +331,9 @@ def create_server(workspace_file: str):
         vector_weight: float = 0.15,
         session_id: str = "",
         request_tier: str = "standard",
+        view: str = "",
     ):
-        """Unified knowledge lookup. Mode selects strategy: auto (system decides via lookup_hint), symbol (resolve name), code (keyword search), query (graph-aware multi-source), trace (cross-service by class/Feign/endpoint/MQ), chain (caller/callee analysis, use chain_direction), walkthrough (method-level indexed walkthrough), context (360-degree context for a service/symbol), contracts (list all Feign/API/MQ contracts), ref (resolve short memory reference IDs). For Class#method requests that say full chain/全链路/到底层, prefer mode='walkthrough' or auto; walkthrough returns summary_lines, local_service_continuations, feign_continuations.server_walkthroughs, service_impl_continuations, and absolute_file_path. If absolute_file_path is present, read that path directly and do not run find/grep/IDEA search to locate the same controller or impl. Use project to disambiguate when multiple modules contain the same symbol name."""
+        """Unified knowledge lookup. Mode selects strategy: auto (system decides via lookup_hint), symbol (resolve name), code (keyword search), query (graph-aware multi-source), trace (cross-service by class/Feign/endpoint/MQ), chain (caller/callee analysis, use chain_direction), walkthrough (method-level indexed walkthrough), context (360-degree context for a service/symbol), contracts (list all Feign/API/MQ contracts), ref (resolve short memory reference IDs). For Class#method requests that say full chain/全链路/到底层, prefer mode='walkthrough' or auto; walkthrough returns summary_lines, local_service_continuations, feign_continuations.server_walkthroughs, service_impl_continuations, and absolute_file_path. If absolute_file_path is present, read that path directly and do not run find/grep/IDEA search to locate the same controller or impl. Use project to disambiguate when multiple modules contain the same symbol name. view="evidence-index" (query mode only) returns a compact ordered evidence index {selected:[{ref_id,created_at,text,approx_tokens}]} for progressive disclosure; expand items via mode='ref'."""
         wf = ctx.workspace_file
         from memory_center.application.lookup import finalize_lookup, prepare_lookup
 
@@ -452,6 +453,7 @@ def create_server(workspace_file: str):
                     enable_vector=enable_vector,
                     vector_weight=vector_weight,
                     session_id=session_id,
+                    view=view,
                 )
             return emit(_lookup_payload_with_agent_steps("mode_used", "query", query_result, **decision_fields), "query")
         if mode == "symbol":
@@ -473,7 +475,12 @@ def create_server(workspace_file: str):
                     enable_vector=enable_vector,
                     vector_weight=vector_weight,
                     session_id=session_id,
+                    view=view,
                 )
+            if str(view or "").strip() == "evidence-index":
+                # 紧凑视图保持 {mode, result} 信封以便路由判定一致，
+                # 但不附加 agent 定向块（渐进式披露的第二跳由 mode="ref" 承担）。
+                return emit({"mode": "query", "result": query_result}, "query")
             return emit(_lookup_payload_with_agent_steps("mode", "query", query_result), "query")
         if mode == "trace":
             result = workspace_trace(wf, entry or query)
@@ -746,6 +753,7 @@ def create_server(workspace_file: str):
         draft = records["draft"]
         recorded = records["recorded"]
         candidate_feedback = records["candidate_feedback"]
+        note_drafts = records.get("note_drafts", [])
         # Session-first: close 时输出一次 binding/promotion 建议，默认不创建
         # task space（提案第 6、9 节）。
         guidance = build_close_shadow_guidance(wf, session_id)
@@ -760,6 +768,8 @@ def create_server(workspace_file: str):
             "candidate_feedback": candidate_feedback,
             "binding_recommendation": guidance["binding_recommendation"],
             "promotion_options": guidance["promotion_options"],
+            "note_drafts": note_drafts,
+            "note_drafts_hint": records.get("note_drafts_hint", ""),
         }
 
     # ===================== FACADE 8: mc_admin =====================

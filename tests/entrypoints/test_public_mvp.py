@@ -421,7 +421,7 @@ def test_query_cli_forwards_vector_options(monkeypatch, tmp_path: Path):
     workspace = _cli_project_workspace(tmp_path)
     observed: dict[str, object] = {}
 
-    def _fake_query(workspace_file, query, limit=20, node_types=None, config=None, project="", *, enable_vector=None, vector_weight=None):
+    def _fake_query(workspace_file, query, limit=20, node_types=None, config=None, project="", *, enable_vector=None, vector_weight=None, session_id="", view=""):
         observed["workspace"] = workspace_file
         observed["query"] = query
         observed["enable_vector"] = enable_vector
@@ -438,6 +438,36 @@ def test_query_cli_forwards_vector_options(monkeypatch, tmp_path: Path):
     assert result.exit_code == 0
     assert observed["enable_vector"] is True
     assert observed["vector_weight"] == 0.35
+
+
+def test_query_cli_forwards_evidence_index_view(monkeypatch, tmp_path: Path):
+    workspace = _cli_project_workspace(tmp_path)
+    observed: dict[str, object] = {}
+
+    def _fake_query(workspace_file, query, limit=20, node_types=None, config=None, project="", *, enable_vector=None, vector_weight=None, session_id="", view=""):
+        observed["view"] = view
+        return {
+            "schema_version": 1,
+            "kind": "evidence_index",
+            "query": query,
+            "selected": [],
+            "total_candidates": 0,
+            "returned": 0,
+            "truncated": False,
+            "claim_boundary": {"negative_claim_allowed": False, "evidence_level": ""},
+            "knowledge_state": "",
+            "freshness_status": "",
+            "expand_hint": "expand",
+        }
+
+    monkeypatch.setattr("memory_center.cli.commands.lookup.memory_query_hybrid", _fake_query)
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        ["query", "--workspace", workspace, "--text", "ArticleFeignClient", "--view", "evidence-index"],
+    )
+    assert result.exit_code == 0
+    assert observed["view"] == "evidence-index"
 
 
 def test_cli_query_project_filter(tmp_path: Path):
@@ -543,6 +573,28 @@ def test_query_with_session_id_records_agent_guidance_for_cli_and_http(tmp_path:
     http_adoption = memory_eval_agent_guidance_adoption(workspace, session_id=http_session["session_id"], limit=20)
     assert http_adoption["summary"]["total_guidance_events"] == 1
     assert http_adoption["adoption_records"][0]["expected_action"] == http["agent_next_steps"][0]["action"]
+
+
+def test_query_http_evidence_index_view(tmp_path: Path):
+    from http.server import ThreadingHTTPServer
+
+    workspace = _copy_demo_workspace(tmp_path, "query-evidence-index-http")
+    server = ThreadingHTTPServer(("127.0.0.1", _free_port()), create_handler(workspace))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        base = f"http://127.0.0.1:{server.server_address[1]}"
+        http = json.loads(urlopen(f"{base}/workspace/query?text=ArticleFeignClient&project=task-service&limit=10&view=evidence-index").read().decode("utf-8"))
+    finally:
+        server.shutdown()
+        thread.join(timeout=2)
+
+    assert http["kind"] == "evidence_index"
+    assert isinstance(http["selected"], list)
+    assert http["returned"] == len(http["selected"])
+    assert "negative_claim_allowed" in http["claim_boundary"]
+    # 紧凑视图不携带 agent 定向块。
+    assert "agent_next_steps" not in http
 
 
 def test_eval_agent_guidance_available_from_cli_and_http(tmp_path: Path):

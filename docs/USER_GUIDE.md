@@ -78,7 +78,7 @@ memory-center init --workspace-root /abs/path/to/repo --dry-run
 | `spring-boot-service` | java | `pom.xml` / `build.gradle` + `spring-boot` | Spring Boot 业务服务 |
 | `spring-boot-task` | java | `pom.xml` + `spring-boot` | Spring Boot 定时/批处理任务 |
 | `shared-library` | java | `pom.xml` / `build.gradle` + `spring-boot` | 共享库 / 契约模块 |
-| `generic-jvm` | java | `pom.xml` / `build.gradle(.kts)` (无 Spring 信号) | 通用 JVM 项目 |
+| `generic-jvm` | java | `pom.xml` / `build.gradle(.kts)` (无 Spring 信号) | 通用 JVM service |
 | `kotlin-module` | kotlin | `build.gradle.kts` / `settings.gradle.kts` | Kotlin 模块 |
 | `python-package` | python | `pyproject.toml` / `setup.py` / `setup.cfg` | Python 包 |
 | `node-app` | typescript | `package.json` | Node.js / TypeScript 应用 |
@@ -194,6 +194,19 @@ memory-center work-close --workspace /abs/path/.memory-center/workspace.yaml --s
 memory-center work-health --workspace /abs/path/.memory-center/workspace.yaml
 ```
 
+### Memory boundaries: what goes where / 记忆边界：什么记到哪
+
+Memory Center 有四类记忆边界。每类回答一个问题，对应真实存在的机制；记不住"该记到哪层"时按这张表决策：
+
+| 边界 / Boundary | 回答的问题 / Question | 对应机制 / Mechanism |
+|---|---|---|
+| Coding Memory（工程教训） | "这个教训下个任务还要用吗？" | L1 case atoms（`memory-center record-case` / `mc_admin(action="write_judge")`） |
+| Repo Memory（仓库该知道什么） | "Agent 应该知道这个仓库的哪些事实？" | 图谱索引 + `architecture_invariants` / `workspace_profile` 记忆块 |
+| Personal Memory（协作偏好） | "Agent 该怎么和我沟通？" | L3 `workspace_profile` 记忆块 |
+| Procedure Memory（流程规范） | "这类任务的标准流程是什么？" | `team_rules` 记忆块 + 交付验证设计契约 |
+
+介于四类之下还有一层 **Session Notes（L0.5 叙事记忆）**：还不够成为 case、但比原始事件可读的"这次决定了什么/下一步做什么"。用 `mc_admin(action="note_record", text=..., event_type=decision|fact|preference|rule|next_step, session_id=...)` 显式记录，`note_list` / `note_search` 查看，`note_supersede` 修正，`note_forget` 遗忘（只隐藏具名条目）。隐私门 fail-closed：绝对路径与密钥形态直接拒收，`<private>...</private>` 片段落盘前剥除。
+
 ## 5. Common Queries / 常见查询
 
 ### 查任务上下文
@@ -239,9 +252,9 @@ The default install includes MCP runtime dependencies, so `memory-center-mcp` sh
 memory-center-mcp --workspace /abs/path/.memory-center/workspace.yaml
 ```
 
-`init` / `reindex` 会把 MCP 绑定写到聚合根目录和每个 service 子项目目录的 `.codex/mcp.json`、`.cursor/mcp.json`、`.mcp.json`。如果子项目里看不到 `mc_*` 工具，优先运行：
+`init` / `reindex` 会把 MCP 绑定写到聚合根目录和每个 service 子目录的 `.codex/mcp.json`、`.cursor/mcp.json`、`.mcp.json`。如果 service 子目录里看不到 `mc_*` 工具，优先运行：
 
-`init` / `reindex` writes MCP bindings to the aggregate root and each service root under `.codex/mcp.json`, `.cursor/mcp.json`, and `.mcp.json`. If a subproject does not expose `mc_*` tools, prefer:
+`init` / `reindex` writes MCP bindings to the aggregate root and each service root under `.codex/mcp.json`, `.cursor/mcp.json`, and `.mcp.json`. If a service sub-directory does not expose `mc_*` tools, prefer:
 
 ```bash
 memory-center setup-agent --workspace /abs/path/.memory-center/workspace.yaml
@@ -315,7 +328,7 @@ memory-center add-to-group ...
 memory-center quality-gate --workspace .memory-center/workspace.yaml
 ```
 
-它汇总 generation、coverage、retrieval replay、IR diff gate、局部刷新与存储健康。`attention` 表示需要阅读原因或积累真实样本；只有 `block` 才代表存在不可发布的事实不一致。该命令不会重建索引、执行清理或运行项目测试。
+它汇总 generation、coverage、retrieval replay、IR diff gate、局部刷新与存储健康。`attention` 表示需要阅读原因或积累真实样本；只有 `block` 才代表存在不可发布的事实不一致。该命令不会重建索引、执行清理或运行外部测试。
 
 局部刷新性能会按变更类别和 scope 自动记录；只有同一分桶积累至少 5 个真实样本且 P95 超预算时才建议优化。可用以下只读命令查看：
 
@@ -498,7 +511,7 @@ memory-center eval-golden \
   --cases /abs/path/private-cases.yaml
 ```
 
-- `--workspace` 可以直接指向真实项目的 `.memory-center/workspace.yaml`
+- `--workspace` 可以直接指向真实 workspace 的 `.memory-center/workspace.yaml`
 - `--cases` 建议使用本地私有文件，不要把真实业务链路直接提交进仓库
 - 公开模板见 [examples/golden-benchmark/cases.template.yaml](/Users/cuijiaqi/Ai-common-skills/memory-center/examples/golden-benchmark/cases.template.yaml)
 ```

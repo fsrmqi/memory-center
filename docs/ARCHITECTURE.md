@@ -27,9 +27,9 @@
 
 ## 1. 系统定位 / System Role
 
-Memory Center 是一个面向 AI 编程助手的本地优先项目记忆与知识图谱系统。它把多仓、多服务、多语言工程里的代码结构、服务关系、配置契约、消息链路、历史任务和团队规则统一沉淀到 `.memory-center/` 工作区，并通过 CLI、MCP、HTTP 和本地 Workbench 暴露给 Codex、Claude Code、Cursor、Copilot、Gemini 等宿主。
+Memory Center 是一个面向 AI 编程助手的本地优先 workspace 记忆与知识图谱系统。它把多仓、多服务、多语言工程里的代码结构、服务关系、配置契约、消息链路、历史任务和团队规则统一沉淀到 `.memory-center/` 工作区，并通过 CLI、MCP、HTTP 和本地 Workbench 暴露给 Codex、Claude Code、Cursor、Copilot、Gemini 等宿主。
 
-Memory Center is a local-first project memory and knowledge graph system for AI coding agents. It turns a multi-repository, multi-service, multi-language workspace into a queryable and traceable local context center.
+Memory Center is a local-first workspace memory and knowledge graph system for AI coding agents. It turns a multi-repository, multi-service, multi-language workspace into a queryable and traceable local context center.
 
 ### 1.1 为什么需要它 / Why It Exists
 
@@ -56,7 +56,7 @@ Memory Center 的核心设计是把这些上下文前置为本地可重建的工
 
 | 能力域 | 说明 | 关键模块 |
 |---|---|---|
-| Workspace Intelligence | 自动识别服务、语言、项目结构和 workspace shape 风险 | `core/workspace/config.py`, `core/workspace/doctor.py`, `core/workspace/shape.py`, `core/workspace/kinds.py` |
+| Workspace Intelligence | 自动识别服务、语言、service 目录结构和 workspace shape 风险 | `core/workspace/config.py`, `core/workspace/doctor.py`, `core/workspace/shape.py`, `core/workspace/kinds.py` |
 | Code and Service Indexing | 提取文件、Java/Spring、Feign、MQ、配置、多语言结构化符号 | `core/indexing/reindex.py`, `core/indexing/*` |
 | Knowledge Graph | 将服务、文件、类、方法、Endpoint、Topic、Config、DataResource 转为节点和边 | `core/storage/runtime.py`, `core/knowledge/ontology.py` |
 | Hybrid Retrieval | 融合 exact graph、neighbors、FTS、BM25、semantic、可选 vector | `core/retrieval/*` |
@@ -242,7 +242,7 @@ impact = relation_weight * edge_confidence * evidence_factor * freshness * depth
 
 交互层默认 `minimal`，证据不足时才升级 `standard` / `deep`。源码签名、请求参数和 generation 构成调用指纹；短期缓存抑制 Agent 重复调用，调用次数、输出和总耗时预算提供明确停止条件。
 
-架构健康分析与 Git co-change 评测属于显式离线路径。前者读取有界项目投影，使用固定种子 Leiden 或确定性加权标签传播，并以有界 Brandes 估算桥接点；后者使用同一提交中除种子外的文件作为独立真值。两者都不进入 lookup/impact 热路径，也不复制源码正文或私有路径到长期报告。
+架构健康分析与 Git co-change 评测属于显式离线路径。前者读取有界 service 投影，使用固定种子 Leiden 或确定性加权标签传播，并以有界 Brandes 估算桥接点；后者使用同一提交中除种子外的文件作为独立真值。两者都不进入 lookup/impact 热路径，也不复制源码正文或私有路径到长期报告。
 
 ```text
 workspace.yaml
@@ -291,7 +291,7 @@ Every reindex builds a staging generation and publishes it as the active generat
 
 局部 reindex 使用 copy-on-write：它从前一 generation 继承未受影响的服务分片，只重建失效计划命中的服务分片，再发布新的 generation。这样增量更新不需要复制或解析全部服务，同时保持 generation 级一致性。
 
-4.3.84 将该语义落实为按 manifest 的物理发布：继承阶段只硬链接未受影响服务的两个产物，不遍历复制完整 generation；受影响项目通过 SQLite `ATTACH + INSERT SELECT` 从全局读模型流式导出。临时分片关闭可恢复写入所不需要的 journal，先装载节点和内部边，再统一创建二级索引与 FTS。局部多项目最多 3 个 worker 并行，全量构建保持串行。整个过程不在 Python 中保存项目级节点/边列表，峰值内存由 SQLite 页缓存约束。
+4.3.84 将该语义落实为按 manifest 的物理发布：继承阶段只硬链接未受影响服务的两个产物，不遍历复制完整 generation；受影响 service 通过 SQLite `ATTACH + INSERT SELECT` 从全局读模型流式导出。临时分片关闭可恢复写入所不需要的 journal，先装载节点和内部边，再统一创建二级索引与 FTS。局部多 service 最多 3 个 worker 并行，全量构建保持串行。整个过程不在 Python 中保存 service 级节点/边列表，峰值内存由 SQLite 页缓存约束。
 
 The generation directory also contains physical `services/<project>.json`, `services/<project>.graph.db`, `contracts.json`, and `topology.json` artifacts. Service shards are immutable snapshots; project-scoped code/hybrid queries prefer them, while cross-service routing starts from topology/contracts and can fall back to the compatible global read model. Watcher invalidation plans submit coalesced background partial reindex work, and the control plane supports rollback plus explicit generation GC.
 
@@ -391,7 +391,7 @@ Memory Center 不把模型临时输出直接当成长期知识。写入链路会
 
 初始化路径：
 
-- `memory-center init` 默认扫描 immediate child directories，识别 Spring、generic JVM、Python、Node/TypeScript、Go、Rust 等项目。
+- `memory-center init` 默认扫描 immediate child directories，识别 Spring、generic JVM、Python、Node/TypeScript、Go、Rust 等 service。
 - 已存在的 `workspace.yaml` 不会被自动覆盖。
 
 工作区结构：
@@ -851,7 +851,7 @@ L2 task spaces 还提供恢复体验相关操作：健康检查、修复计划�
 
 `IndexFreshnessService` 通过 graph/index 时间和 workspace shape 生成 freshness banner。`mc_start`、hybrid retrieval、context pack、walkthrough 等主链路会暴露 freshness 相关信息，提醒 agent 在 stale/pending 时读取 live file 或 reindex。`freshness/daemon.py` 以独立本地进程持有每个 workspace 的 watcher lock，轮询并去抖源码和配置变更，再通过既有失效计划提交有界 partial reindex job；状态持久化在 `watcher-daemon.json`，CLI、MCP 与 Workbench 读取同一状态，不在查询热路径执行全量扫描。job 到达终态后 `change_reports.py` 仅使用失效计划、任务结果、服务路径前缀和 generation 元数据生成有界影响摘要；它不会加载全量图或自动调用深度 impact，契约类高风险变更只返回显式复核建议。报告确认采用追加式审计事件与紧凑索引读模型：`confirmed`、`false_positive`、`resolved` 关闭报告，`deep_analysis_required` 保持待确认。Workbench 仅读取最多 5 条未确认高风险项；报告和确认审计均按 30 天、10 万条做日常裁剪。MCP 审计采用分层维护：所有读取先应用保留窗口，64 KiB 以下的日志同步收口，超过阈值的日志由后台完成物理压缩，避免把十万级 JSONL 扫描置于工具响应链路。
 
-`presentation/evidence_subgraph.py` 是显式导出路径：先以 node id 或受限 symbol 查询定位一个根节点，再执行最多 3 跳、120 条边、80 个节点的邻接遍历。输出只包含节点标识、项目、文件路径、边类型、置信度和证据等级，可渲染为 JSON、Markdown 或 HTML；不读取源码、原始工具载荷或全图，因此不会增加普通查询的延迟与数据暴露面。
+`presentation/evidence_subgraph.py` 是显式导出路径：先以 node id 或受限 symbol 查询定位一个根节点，再执行最多 3 跳、120 条边、80 个节点的邻接遍历。输出只包含节点标识、service、文件路径、边类型、置信度和证据等级，可渲染为 JSON、Markdown 或 HTML；不读取源码、原始工具载荷或全图，因此不会增加普通查询的延迟与数据暴露面。
 
 Hook 层在 `memory_center/hooks/`，属于宿主集成，不是核心业务层。默认建议：
 
@@ -1038,7 +1038,7 @@ Memory Center 默认不改业务源码。写入范围主要限于：
 
 ### C.1 一句话介绍
 
-Memory Center 是一个面向 AI 编程助手的本地优先项目记忆与代码知识图谱系统。它把多仓、多服务工程中的代码结构、接口契约、调用关系、配置、任务过程和验证证据转成可检索、可解释、可恢复的本地工程上下文，并通过 CLI、MCP、HTTP 和 Workbench 提供给人和 Agent 使用。
+Memory Center 是一个面向 AI 编程助手的本地优先 workspace 记忆与代码知识图谱系统。它把多仓、多服务工程中的代码结构、接口契约、调用关系、配置、任务过程和验证证据转成可检索、可解释、可恢复的本地工程上下文，并通过 CLI、MCP、HTTP 和 Workbench 提供给人和 Agent 使用。
 
 它解决的不是“再做一个聊天机器人”，而是让 AI 在复杂工程里不必每次从零阅读代码，也不会把猜测、空结果或未验证经验当成事实。
 
@@ -1074,7 +1074,7 @@ Memory Center 是一个面向 AI 编程助手的本地优先项目记忆与代�
 
 **为什么采用混合检索？** 精确图查询适合符号、接口、消息、配置等确定性问题；BM25 对类名、方法名、配置键、技术术语稳定可靠；可选语义检索弥补自然语言表达差异；排序不会让语义召回覆盖精确事实。
 
-**为什么索引采用 generation 与定向刷新？** 重建先在 staging generation 完成，成功后才原子激活，避免半成品索引被查询到；代码变化时优先定位受影响项目和路径，不把全量扫描放进查询热路径。
+**为什么索引采用 generation 与定向刷新？** 重建先在 staging generation 完成，成功后才原子激活，避免半成品索引被查询到；代码变化时优先定位受影响 service 和路径，不把全量扫描放进查询热路径。
 
 **为什么影响分析允许部分成功？** `mc_analyze` 先计算图谱影响，再补充计划、规则、契约和验证清单。后续辅助阶段不可用时，系统保留已成功的证据，返回 `analysis_status="partial"`、安全诊断和下一步动作，而不是用笼统内部异常覆盖全部结果。
 
@@ -1161,7 +1161,7 @@ Memory Center 是一个面向 AI 编程助手的本地优先项目记忆与代�
 
 **H.8 BM25 与 Vector 是两条不同的检索路径**：BM25 默认开启；Vector ANN 默认关闭，需显式启用。VectorIndex 存在不代表当前 workspace 已生成可用 embedding，默认关闭避免在模型、维度和数据质量未确认时增加查询成本。
 
-**H.9 Audit 是语言自适应的**：`run_completion_audit()` 检测测试文件和框架配置时是多语言自适应的（Python/Java/JS/TS/Go/Rust），不会因为项目不是 Python 就扣分。
+**H.9 Audit 是语言自适应的**：`run_completion_audit()` 检测测试文件和框架配置时是多语言自适应的（Python/Java/JS/TS/Go/Rust），不会因为 service 不是 Python 就扣分。
 
 **H.10 统一错误模型位于公开入口边界**：core 层现有 `ValueError`、`FileNotFoundError` 等调用合同保持兼容；HTTP 映射到状态码和结构化 body；MCP 返回 Agent 可判断的结构化错误；CLI 输出安全错误信息和退出码，不暴露 traceback。
 

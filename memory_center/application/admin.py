@@ -141,6 +141,15 @@ from memory_center.core.tasks.shadow_handoff import (
     list_handoffs,
     mark_handed_off,
 )
+from memory_center.core.tasks.session_notes import (
+    NOTE_KINDS,
+    NOTE_STATUSES,
+    forget_note,
+    list_notes,
+    record_note,
+    search_notes,
+    supersede_note,
+)
 from memory_center.core.retrieval.model_profiles import retrieval_model_profile
 from memory_center.core.retrieval.planner import (
     scoped_refresh_performance_status,
@@ -753,6 +762,30 @@ def build_admin_registry(
             ),
             "task_shadow_handoff_get": lambda: get_handoff(wf, name),
             "task_shadow_handoff_list": lambda: list_handoffs(wf, status=status, limit=limit),
+            # --- Session Notes (L0.5 narrative layer) -------------------------
+            "note_record": lambda: record_note(
+                wf,
+                text or title,
+                kind=event_type if event_type in NOTE_KINDS else "fact",
+                session_id=session_id,
+                origin="user_explicit" if source == "user" else "agent_summary",
+                source_refs=list((parse_payload(payload) or {}).get("source_refs", [])),
+            ),
+            "note_list": lambda: list_notes(
+                wf,
+                kind=event_type if event_type in NOTE_KINDS else "",
+                status=status if status in NOTE_STATUSES else "active",
+                session_id=session_id,
+                limit=limit,
+            ),
+            "note_search": lambda: {"query": text, "hits": search_notes(wf, text, limit=limit)},
+            "note_supersede": lambda: supersede_note(
+                wf,
+                name,
+                text,
+                kind=event_type if event_type in NOTE_KINDS else "",
+            ),
+            "note_forget": lambda: forget_note(wf, name, reason=reason or "user_requested"),
             "delivery_init": lambda: initialize_delivery_workflow(wf, task_id, actor=source),
             "delivery_status": lambda: delivery_workflow_status(wf, task_id),
             "delivery_breakdown": lambda: propose_delivery_breakdown(

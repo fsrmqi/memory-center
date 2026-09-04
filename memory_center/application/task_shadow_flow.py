@@ -244,7 +244,31 @@ def close_case_records(
     candidate_feedback = workspace_record_close_feedback(
         workspace_file, session_id, task_id=close_task_id, source="mc_close_auto"
     )
-    return {"synced": synced, "draft": draft, "recorded": recorded, "candidate_feedback": candidate_feedback}
+    # L0.5 Session Notes: deterministic drafts are always surfaced as
+    # suggestions; nothing is persisted here without explicit confirmation
+    # (mc_admin action="note_record" per draft).
+    note_drafts: list[dict[str, Any]] = []
+    try:
+        from memory_center.core.tasks.session_notes import draft_notes_from_session
+        from memory_center.core.orchestrator.session import workspace_session_summary
+
+        session_detail = workspace_session_summary(workspace_file, session_id)
+        note_drafts = draft_notes_from_session(
+            workspace_file,
+            session_id,
+            summary=session_detail.get("summary") if isinstance(session_detail.get("summary"), dict) else {},
+            events=session_detail.get("events", []) if isinstance(session_detail.get("events"), list) else [],
+        )
+    except Exception:
+        note_drafts = []
+    return {
+        "synced": synced,
+        "draft": draft,
+        "recorded": recorded,
+        "candidate_feedback": candidate_feedback,
+        "note_drafts": note_drafts,
+        "note_drafts_hint": "确认后用 mc_admin(action=\"note_record\", text=..., event_type=kind, session_id=...) 逐条入库；未确认的草稿不会落盘。",
+    }
 
 
 __all__ = [

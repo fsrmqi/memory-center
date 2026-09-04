@@ -855,11 +855,13 @@ def test_mc_lookup_query_mode_forwards_vector_options(monkeypatch, tmp_path: Pat
 
     observed: dict[str, object] = {}
 
-    def _fake_query(workspace_file, query, limit=20, node_types=None, config=None, project="", *, enable_vector=None, vector_weight=None):
+    def _fake_query(workspace_file, query, limit=20, node_types=None, config=None, project="", *, enable_vector=None, vector_weight=None, session_id="", view=""):
         observed["workspace"] = workspace_file
         observed["query"] = query
         observed["enable_vector"] = enable_vector
         observed["vector_weight"] = vector_weight
+        observed["session_id"] = session_id
+        observed["view"] = view
         return {
             "query": query,
             "matches": [],

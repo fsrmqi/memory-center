@@ -53,7 +53,7 @@ MCP 当前公开的是 15 个 task-level tools：
 |---|---|
 | `mc_bootstrap_context` | 零初始化上下文入口：已有 workspace 用 Memory Center；否则只读调用可选 GitNexus，再降级为有界本地搜索；外部结果不持久化 |
 | `mc_provider_action` | 运行注册的外部 Provider 固定动作；读取动作直接执行，索引或清理必须 `confirm=true`，不接受自由命令 |
-| `mc_mcp_bridge` | 受限外部 MCP Client：无 `action` 时查看项目白名单；有 `provider/action` 时只调用策略登记的 HTTP MCP 工具、固定模板参数，写入必须 `confirm=true` |
+| `mc_mcp_bridge` | 受限外部 MCP Client：无 `action` 时查看 Provider 白名单；有 `provider/action` 时只调用策略登记的 HTTP MCP 工具、固定模板参数，写入必须 `confirm=true` |
 | `mc_start` | 嗅探任务上下文、可选同步、启动 session；自动创建/续接 Task Shadow（L1），未绑定不写 L2 |
 | `mc_lookup` | 统一检索入口：symbol / code / query / trace / chain / context / ref / backend |
 | `mc_analyze` | 统一影响分析入口：quick / standard / full |
@@ -172,7 +172,7 @@ memory-center eval-reasoning-prompts
 - `mode="trace"` 适合先看跨服务索引概览，快速知道 Feign / API / MQ 命中了什么。
 - 如果需求是“某个方法一路追到最底层”，优先用 `mode="walkthrough"`；当查询里已经包含 `Class#method` 且明确提到“全链路/到底层”时，`mode="auto"` 现在也会优先转到 walkthrough。
 - `mode="chain"` 适合看图谱 callers / callees；`mode="walkthrough"` 适合看一个方法体内的已索引步骤、下游调用和 Feign 服务端候选。
-- `mode="walkthrough"` 的 Feign 续链会在 `feign_continuations[].server_walkthroughs` 中优先展开目标服务的 Controller 方法；如果 Controller 调用同项目 Service interface，会在 `service_impl_continuations` 中继续给出 Impl 方法落点和已索引本地步骤。
+- `mode="walkthrough"` 的 Feign 续链会在 `feign_continuations[].server_walkthroughs` 中优先展开目标服务的 Controller 方法；如果 Controller 调用同一 service 的 Service interface，会在 `service_impl_continuations` 中继续给出 Impl 方法落点和已索引本地步骤。
 - `mode="walkthrough"` 还会在 `local_service_continuations` 中展开当前方法内的普通 Service interface → Impl 调用；compact 输出会优先保留关键方法调用和 Feign 调用，`downstream_summary` 只作为补充图谱线索。
 - walkthrough 的关键落点均返回 `absolute_file_path`；agent 应直接读取该路径，不需要再用 `find` / `grep -l` 定位文件。
 - walkthrough 返回 `agent_usage_policy.do_not_search_when_absolute_path_present=true` 时，宿主模型应把 `find`、`grep -l`、`rg --files`、IDE 全局搜索视为不必要的重复定位；只有怀疑索引过期或文件不存在时才做 live search。
@@ -192,10 +192,10 @@ memory-center eval-reasoning-prompts
 - 当方法级 `switch_to_walkthrough` 建议对应的索引命中已解析路径时，会保留 `target_ref` 与 `read_targets`。
 - The same field is visible from CLI `memory-center query` and HTTP `/workspace/query`; MCP only adds the top-level lift for non-query route wrappers.
 - CLI `memory-center query` 和 HTTP `/workspace/query` 也会返回同一字段；MCP 只是额外在非 query 路由包装层把它提升到顶层。
-- 如果当前 MCP workspace 是子项目，method walkthrough 会尝试自动升级到父级或 registry 中覆盖当前项目的聚合 workspace。查看 `workspace_escalation.status` 判断是否已切换；`not_needed_or_not_found` 不是错误。
-- `memory-center init` / `memory-center reindex` 写入的受管说明块和 MCP 绑定现在会镜像到各个已配置 service root，明确提示并实际绑定上层 `.memory-center/workspace.yaml`；这能减少 Agent 在子项目里“没连上父级 workspace 就不调用 MCP”的情况。
+- 如果当前 MCP workspace 是 service 子目录，method walkthrough 会尝试自动升级到父级或 registry 中覆盖当前 workspace 的聚合 workspace。查看 `workspace_escalation.status` 判断是否已切换；`not_needed_or_not_found` 不是错误。
+- `memory-center init` / `memory-center reindex` 写入的受管说明块和 MCP 绑定现在会镜像到各个已配置 service root，明确提示并实际绑定上层 `.memory-center/workspace.yaml`；这能减少 Agent 在 service 子目录里“没连上父级 workspace 就不调用 MCP”的情况。
 - `memory-center setup-agent --workspace <workspace.yaml>` 是推荐的一键接入口，会刷新说明、Hooks、MCP 绑定并返回是否需要重启宿主会话。
-- `memory-center runtime-audit --workspace <workspace.yaml> --fix` 会检查并刷新根目录和子项目目录下的 `.codex/mcp.json`、`.cursor/mcp.json`、`.mcp.json`，用于自动修复看不到 `mc_*` 工具的宿主接入问题。
+- `memory-center runtime-audit --workspace <workspace.yaml> --fix` 会检查并刷新根目录和 service 子目录下的 `.codex/mcp.json`、`.cursor/mcp.json`、`.mcp.json`，用于自动修复看不到 `mc_*` 工具的宿主接入问题。
 - 首轮工具快照没有 `mc_*` 只表示“未知或装载中”，不能直接判定 MCP 不可用。Agent 应先执行延迟工具发现并调用 `mc_freshness`；Codex 可用 `codex mcp get memory-center` 检查全局绑定。配置为 enabled 但当前会话仍无工具时，应提示刷新或新建会话；只有绑定、命令或实际 MCP 调用失败时才降级。
 - MCP server 暴露 `memory-center://startup-diagnostics` resource，用于查看启动时解析到的 workspace、MCP 绑定状态和下一步修复建议。
 - 每次 MCP 工具调用都会自动记录到 `.memory-center/memory/mcp-invocations.jsonl`，仅保留工具名、脱敏参数摘要、耗时、状态、结果规模与可选 session/task 关联，不保存完整请求或响应。`mc_start` 创建的 session 会自动关联同一 MCP 进程后的调用，并同步为 `tool_call` session event，供 replay、采纳分析和后续验证使用。
@@ -215,7 +215,7 @@ memory-center eval-reasoning-prompts
 - `mc_admin(action="interaction_effects")` 汇总调用量、状态、P50/P95、session 关联率、宿主交互覆盖和已关闭会话的验证成功率；`interaction_effects_refresh` 会刷新本地快照。
 - `mc_admin(action="interaction_effects")` summarizes call volume, status, P50/P95, session-link rate, host interaction coverage, and verified success for closed sessions; `interaction_effects_refresh` refreshes the local snapshot.
 - 可在 `.memory-center/templates/method_walkthrough.md` 配置报告模板，支持占位符 `{target_label}`、`{summary_lines}`、`{read_targets}`、`{rule_groups}`、`{mermaid_flow}`、`{performance_risks}`、`{data_scope_guards}`、`{diff_context}`、`{glossary}`、`{next_actions}`。未配置时返回内置 `answer_markdown`，可用 `report_level=brief|standard|deep|risk-focused` 控制默认报告形态。
-- MCP server 的 `--workspace` 可以传 `workspace.yaml` 或项目目录；传目录时会向上寻找 `.memory-center/workspace.yaml`，找不到时保持原入参并由后续工具返回正常错误信息。
+- MCP server 的 `--workspace` 可以传 `workspace.yaml` 或 workspace 目录；传目录时会向上寻找 `.memory-center/workspace.yaml`，找不到时保持原入参并由后续工具返回正常错误信息。
 - 可在 `.memory-center/glossary.yaml`、`.memory-center/glossary.yml` 或 `.memory-center/business-glossary.yaml` 配置业务词汇，命中结果会出现在 `glossary_hits`。
 - endpoint 候选会包含 `confidence` / `confidence_reasons`，多候选时优先使用置信度最高的 Controller。
 - `index_freshness.index_stale=true` 表示主链路文件比索引更新，应先 live read 或 reindex；`cache.hit=true` 表示命中短期进程内缓存。
@@ -260,7 +260,7 @@ memory-center eval-reasoning-prompts
 3. 以原 query 重试 `mc_lookup`
 
 该规则只在已有大规模 dense embeddings 且 ANN 不可用时触发；不会在普通查询中隐式全量重建。ANN 正在维护时，查询最多等待 300ms 并返回 `vector_ann_maintenance_in_progress` 与 `retry_after_ms`，向量后端读取失败会返回 `vector_backend_query_failed` 和 `vector-ann-rebuild`，两者都不阻塞 MCP。定向 freshness refresh 只会后台排队，`auto_refresh.scheduled=true` 表示当前响应使用已发布 generation。对复杂概念查询，Agent 应调用 `mc_admin(action="advanced_query", text="原查询")`，而非自行执行无界本地搜索。若结果诊断为 `reranker_not_prewarmed` 或 `reranker_timeout`，基础排序仍可直接使用；只有用户明确同意时才调用当前 MCP 进程中的 `mc_admin(action="retrieval_reranker_prewarm")`。模型档案和全量 reindex 也不会由 Agent 自动发起。
-- `eval_java_call_resolution_unresolved` — 按可行动原因汇总未解析 Java `CALLS_METHOD`，只返回逻辑锚点样本，不返回文件路径或源码；静态类/外部依赖、实例类型缺失、接口多态和范围遗漏会分别计数。Agent 应先用该动作选定一个类别，再要求人工提供 3-5 个私有逻辑锚点 case；不得根据样本臆造项目内目标边
+- `eval_java_call_resolution_unresolved` — 按可行动原因汇总未解析 Java `CALLS_METHOD`，只返回逻辑锚点样本，不返回文件路径或源码；静态类/外部依赖、实例类型缺失、接口多态和范围遗漏会分别计数。Agent 应先用该动作选定一个类别，再要求人工提供 3-5 个私有逻辑锚点 case；不得根据样本臆造 service 内目标边
 - `eval_agent_guidance_trend` — 执行同一检查并追加一条 agent guidance 趋势记录
 - `audit` — 完成审计（文档/测试/实现/设计一致性）
 - `discover` — 热点命令发现与下一步推荐
@@ -305,6 +305,7 @@ memory-center eval-reasoning-prompts
 - `task_resume_check` — 一键恢复门禁，合并恢复包、健康度、修复建议和证据
 - `session_*` — 会话操作
 - `task_shadow_*` — Task Shadow（Session-first 会话影子，L1）操作：`task_shadow_status`（合并投影）、`task_shadow_bind`（CAS 绑定到正式 task）、`task_shadow_suggest`（写入候选）、`task_shadow_promote`（bound 后升格合并进 L2）、`task_shadow_discard`（丢弃，L0/L2 不受影响）、`task_shadow_retention`（未绑定过期清理，默认 dry-run）、`task_shadow_authority`（observation|snapshot 切换）、`task_shadow_observation_record` / `task_shadow_observation_list`（Observation Inbox，allowlist fail-closed）、`task_shadow_handoff_create` / `hand_off` / `claim` / `close` / `get` / `list`（Handoff Claim，claim-once CAS）
+- `note_record` / `note_list` / `note_search` / `note_supersede` / `note_forget` — Session Notes（L0.5 叙事记忆层）：显式记录跨任务叙事事实；同 fingerprint 幂等、supersede 留审计链、forget 只隐藏具名条；隐私门 fail-closed（绝对路径/密钥拒收，`<private>` 片段剥除）。`mc_close` 返回 `note_drafts`（确定性草稿，未确认不落盘）
 - `group_*` — 跨工作区组操作
 - `walkthrough_health` / `eval_walkthrough_quality` / `walkthrough_export` — method walkthrough 自检、质量评测与 Markdown artifact 导出
 
@@ -511,7 +512,7 @@ CLI、MCP、HTTP 的真实入口统一使用以下错误类型：
 
 reindex job 的权威状态位于 SQLite `workspace_jobs` 账本：
 
-- 相同请求指纹的重复提交返回 `coalesced=true` 并指向执行中的 job；scope 重叠且请求不同返回 `reindex_conflict` 与 owner job id；非重叠项目允许并行。
+- 相同请求指纹的重复提交返回 `coalesced=true` 并指向执行中的 job；scope 重叠且请求不同返回 `reindex_conflict` 与 owner job id；非重叠 service 允许并行。
 - generation 发布是原子的：manifest + active 指针 + 审计行单事务提交，发布后执行只读 smoke；smoke 失败自动回滚到 previous generation 并记录 `publish_smoke_failed`。
 - 取消是协作式的：CLI `memory-center job-cancel` 或 registry cancel 在阶段边界生效，publish 事务内只能完成或回滚。
 - lease 过期且 owner PID 消失的 job 被标记 `interrupted`（`failure_code=lease_interrupted`）；PID 仍存活时上报 `suspected_stalled` 等待显式处理，不会误杀。

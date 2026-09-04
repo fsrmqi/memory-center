@@ -46,3 +46,6 @@ examples/golden-benchmark/metrics.jsonl
 private/
 *.replay-private.yaml
 *.replay-queries.yaml
+
+# Mimosa security-scan bookkeeping (never commit)
+/.mimosa/
