@@ -2,6 +2,11 @@
 
 ## Unreleased / 未发布
 
+## 4.6.24 Task Shadow Hardened Release / 任务影子加固发布
+
+- 发布 Task Shadow 加固版本：显式 L2 写入门禁、原子 CAS、确定性 source-to-shadow 映射与完整 write receipt 审计。
+- Released the hardened Task Shadow version with explicit L2 write gates, atomic CAS, deterministic source-to-shadow mapping, and complete write-receipt auditing.
+
 ### Memory Enrichment：Evidence Index 渐进式披露 + Session Notes 叙事层 / Memory Enrichment: Evidence Index + Session Notes
 
 按 [MEMORY_ENRICHMENT_DESIGN.md](MEMORY_ENRICHMENT_DESIGN.md) 实现 AML 对标调研（MemOS / claude-mem / MemoraX）中的两项 P0/P1 能力；全部 additive，向后兼容。
