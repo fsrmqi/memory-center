@@ -220,10 +220,26 @@ def close_case_records(
     record_case: bool,
     verified_by: list[str] | None,
 ) -> dict[str, Any]:
-    """close 的同步与 case 记录聚合（mc_close 复用）。"""
+    """close 的同步与 case 记录聚合（mc_close 复用）。
+
+    P0 自写自匹配修复：无显式 task_id 且解析低置信/歧义时，同步降级为
+    shadow-only（不写 L2），避免无关 intent 被吸进既有 task space 形成轮替。
+    """
     synced = workspace_sync_case_to_artifacts(
         workspace_file, session_id, task_id=close_task_id, title=title, auto_sync_mode=auto_sync_mode
     )
+    # 低置信解析保护：close 自动路径不允许把低分/歧义解析写进 L2。
+    resolved_info = synced.get("resolved") if isinstance(synced.get("resolved"), dict) else {}
+    if (
+        not close_task_id
+        and synced.get("synced") is False
+        and synced.get("reason") in ("task_resolution_not_auto_writable", "failed_to_resolve_task_space")
+    ):
+        synced = {
+            **synced,
+            "fallback": "shadow_only",
+            "hint": "解析低置信或歧义：本次 close 不写 L2，会话证据保留在 Shadow/notes 中；可显式 task_id 重试。",
+        }
     draft = workspace_suggest_case(workspace_file, session_id)
     recorded = None
     case = draft.get("draft_case", {}) if draft.get("found") else {}

@@ -2270,25 +2270,35 @@ def test_local_embedding_backend_is_optional_and_selectable(tmp_path: Path):
 
 
 def test_resolve_task_score_threshold(tmp_path: Path):
-    """Resolve respects score_threshold: below threshold does not auto-match, above does."""
+    """Resolve respects score_threshold AND the strong-evidence gate.
+
+    P0 修复后语义：plan 正文命中只是 fuzzy，status 加分需强证据前置——
+    因此 threshold=1 时 score=1 且 strong=False，不自动写入（更保守）；
+    标题强命中（title_exact）不受影响。
+    """
     workspace = _copy_demo_workspace(tmp_path, "resolve-threshold")
 
     created = create_task_space(workspace, title="站点连通性告警治理")
     task_id = created["task_id"]
     update_task_artifact(workspace, task_id, "plan", "# Plan\n\n处理站点连通性告警")
 
-    # Actual score: signature overlap (plan content vs intent) 1 + status(active) 2 = 3.
-    # Threshold above actual score — should NOT match
-    resolved_high = resolve_task_space(workspace, intent="继续处理站点告警连通性问题", create_if_missing=False, score_threshold=5)
+    # Plan-content signature overlap gives strong evidence — matches above threshold
+    resolved_overlap = resolve_task_space(workspace, intent="继续处理站点告警连通性问题", create_if_missing=False, score_threshold=1)
+    assert resolved_overlap["resolved"] is True
+    assert resolved_overlap["task_id"] == task_id
+    assert resolved_overlap["score_threshold"] == 1
+
+    # Threshold above actual score — must not match even with strong evidence
+    resolved_high = resolve_task_space(workspace, intent="继续处理站点告警连通性问题", create_if_missing=False, score_threshold=8)
     assert resolved_high["resolved"] is False
     assert resolved_high["task_id"] == ""
-    assert resolved_high["score_threshold"] == 5
+    assert resolved_high["score_threshold"] == 8
 
-    # Threshold at or below actual score — SHOULD match
-    resolved_low = resolve_task_space(workspace, intent="继续处理站点告警连通性问题", create_if_missing=False, score_threshold=1)
-    assert resolved_low["resolved"] is True
-    assert resolved_low["task_id"] == task_id
-    assert resolved_low["score_threshold"] == 1
+    # Title exact hit — strong evidence, auto-matches regardless of threshold
+    resolved_title = resolve_task_space(workspace, intent="站点连通性告警治理", create_if_missing=False, score_threshold=5)
+    assert resolved_title["resolved"] is True
+    assert resolved_title["task_id"] == task_id
+    assert resolved_title["resolution_confidence"] == "high"
 
 
 def test_resolve_task_space_returns_ambiguous_for_equal_candidates(tmp_path: Path):

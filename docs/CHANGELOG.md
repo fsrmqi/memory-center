@@ -2,6 +2,16 @@
 
 ## Unreleased / 未发布
 
+### Task Space 误绑定修复：切断自写自匹配轮替 / Task Space Mis-binding Fix
+
+真实工作区（ucap）验证发现：`mc_close` 自动同步在无显式 task_id 时经 `resolve_task_space` 低置信解析，把无关 intent 写进既有 task space；被写入的 current_summary 又成为下次匹配的匹配源，形成自强化轮替（单一任务空间历史中出现 69 种不同任务头）。四项修复：
+
+- **匹配源排除 current_summary**：`_task_match_analysis` 的匹配 haystack 不再包含 current_summary——它是每次 close 被当次 intent 覆盖的输出工件，作为输入即构成自写自匹配。context/requirement/design/plan/test_plan 等相对稳定工件保留为签名重叠强证据。
+- **通名弱化**：workspace 自身名字（含前缀关系，如 ucap-all ↔ ucap）与框架/中间件通名（feign/kafka/redis/dto/controller 等）加入 `_WEAK_TOKENS`——弱 token 即使命中 tag/title/intent 也不计强证据分，只算 fuzzy。
+- **status_boost 需强证据前置**：active(+2)/draft(+1)/high(+1) 加分只在已有 tag/title/intent 强证据时生效；仅凭正文模糊命中的大任务不再白拿状态分稳过阈值。
+- **stale 展示判定**：workspace overview 的任务列表引入 `effective_status`——active 任务超过 14 天（与 shadow retention 默认对齐）无 task-space 活动即展示为 `stale`，排序沉底；不改写 meta.json 的登记状态，另有 `registered_status` 字段保留原值。
+- **端到端验证（ucap 真实工作区）**：3 个曾误绑定的 intent 重放全部归为 new/ambiguous（此前全部误命中"预警发送"）；真绑定 intent 仍 high 置信命中；`mc_start` 全链路不再把误解析 task_id 写进 session metadata，close 时正确走 shadow fallback。
+
 ## 4.6.24 Task Shadow Hardened Release / 任务影子加固发布
 
 - 发布 Task Shadow 加固版本：显式 L2 写入门禁、原子 CAS、确定性 source-to-shadow 映射与完整 write receipt 审计。

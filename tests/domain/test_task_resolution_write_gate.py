@@ -44,7 +44,12 @@ def test_tag_exact_beats_unrelated_token_score(tmp_path: Path):
 
 
 def test_low_score_fuzzy_top1_without_strong_evidence_is_not_auto_written(tmp_path: Path):
-    """top1 只有 fuzzy token 命中（无 tag/title/intent 强证据）：不自动写入。"""
+    """top1 只有 fuzzy token 命中（无 tag/title/intent 强证据）：不自动写入。
+
+    P0 修复后语义收紧：正文命中降级为 fuzzy 且弱 token 不计分，纯 fuzzy 输入
+    连候选都不产生（resolution_status='new'）——比旧的 low_confidence 候选更保守，
+    但同样满足"不自动写入"。
+    """
     workspace = _workspace(tmp_path)
     # 意图词拆出的 token 与两个任务都只是"出现"，不构成任何 title/tag 精确命中
     # （标题词与意图词无连续子串重叠，仅靠 artifact 正文与通用词得分）。
@@ -58,7 +63,8 @@ def test_low_score_fuzzy_top1_without_strong_evidence_is_not_auto_written(tmp_pa
         score_threshold=1,
     )
     assert resolved.get("auto_write_allowed") is not True
-    assert resolved.get("resolution_confidence") in ("low", "medium")
+    assert resolved.get("resolution_status") == "new"
+    assert resolved.get("resolution_confidence") in (None, "low", "medium")
 
 
 def test_high_score_with_tag_title_exact_hit_allows_write(tmp_path: Path):
@@ -94,7 +100,11 @@ def test_close_tie_with_strong_overlap_is_ambiguous(tmp_path: Path):
 
 
 def test_numeric_or_pinyin_fragment_contribution_is_capped(tmp_path: Path):
-    """纯数字/拼音碎片提供边际分但拿不到强证据。"""
+    """纯数字/拼音碎片提供边际分但拿不到强证据。
+
+    P0 修复后语义收紧：'v2' 是弱 token（不计分）且无其他强证据，
+    直接 resolution_status='new'——同样满足"不自动写入"。
+    """
     workspace = _workspace(tmp_path)
     create_task_space(workspace, title="v2 优化", tags=[])
 
@@ -105,4 +115,5 @@ def test_numeric_or_pinyin_fragment_contribution_is_capped(tmp_path: Path):
         score_threshold=1,
     )
     # 一个 2 字符碎片不足以自动写入。
-    assert resolved.get("auto_write_allowed") is False
+    assert resolved.get("auto_write_allowed") is not True
+    assert resolved.get("resolution_status") == "new"

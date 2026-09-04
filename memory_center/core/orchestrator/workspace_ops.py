@@ -740,12 +740,30 @@ def workspace_continuity_dashboard(
     return result
 
 
+_TASK_STALE_AFTER_DAYS = 14
+
+
+def _task_effective_status(status: str, updated_at: str) -> str:
+    """活跃度展示状态（P0 误绑定修复配套）：active 任务超过 14 天无任何
+    task-space 活动即标注 stale。只影响展示与排序，不改写 meta.json。"""
+    normalized = str(status or "").strip().lower()
+    if normalized != "active" or not updated_at:
+        return normalized
+    try:
+        age_days = (datetime.now() - datetime.fromisoformat(updated_at)).days
+    except (TypeError, ValueError):
+        return normalized
+    return "stale" if age_days >= _TASK_STALE_AFTER_DAYS else normalized
+
+
 def _active_task_summaries(workspace_file: str | Path, limit: int = 5) -> list[dict[str, Any]]:
     tasks = list_task_spaces(workspace_file, include_archived=False).get("active_tasks", [])
+    for item in tasks:
+        item["effective_status"] = _task_effective_status(str(item.get("status", "")), str(item.get("updated_at", "")))
     sorted_tasks = sorted(
         tasks,
         key=lambda item: (
-            0 if item.get("status") == "active" else 1,
+            0 if item.get("effective_status") == "active" else 1,
             -(datetime.fromisoformat(item.get("updated_at", datetime.min.isoformat())).timestamp() if item.get("updated_at") else 0),
             item.get("task_id", ""),
         ),
@@ -765,7 +783,8 @@ def _active_task_summaries(workspace_file: str | Path, limit: int = 5) -> list[d
             {
                 "task_id": item.get("task_id", ""),
                 "title": item.get("title", ""),
-                "status": item.get("status", ""),
+                "status": item.get("effective_status", ""),
+                "registered_status": item.get("status", ""),
                 "owner": item.get("owner", ""),
                 "tags": item.get("tags", []),
                 "priority": item.get("priority", "medium"),

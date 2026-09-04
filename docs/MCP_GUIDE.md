@@ -557,6 +557,7 @@ HTTP GET 只允许无副作用读取；所有写入 route 必须 POST。非回�
 - **调用链锚点门禁**（4.6.21）：chain 响应新增 `chain_anchor_validation` 与 `chain_scope_validation`；锚定失败或分片路由未覆盖锚点项目时，空 chain 结果强制 `AMBIGUOUS`（reason codes `anchor_mismatch`/`scope_incomplete`），并给出 `fallback_action` 回退建议，不再把空结果当作"确认不存在调用方"。
 
 - **任务解析写入门禁**（4.6.21）：`resolve_task_space` 输出 `resolution_confidence`（high/medium/low）、`auto_write_allowed` 与 `required_action`；低置信/歧义解析不再自动绑定 task space。`workspace_sync_sniff_to_artifacts` / `workspace_sync_case_to_artifacts`（`mc_sync`）在低置信时停止写入并返回候选，需要显式 `task_id`。`mc_close` 优先复用同会话 `mc_start` 绑定的 task ID。匹配来源分类（`tag_exact`/`title_exact`/`intent_exact`/`signature_overlap`/`fuzzy_token`）在 `match_reasons` 中可见；中文长意图与任务工件正文用连续公共子串判定语义重叠。
+- **匹配源与通名弱化**（误绑定修复）：`current_summary` 不作为匹配源（它每次 close 被当次 intent 覆盖，作为输入会自写自匹配）；workspace 自身名字、框架/中间件通名（feign/kafka/redis 等）计入弱 token，不构成强证据；status/priority 加分仅在已有强证据时生效。workspace overview 的任务列表用 `effective_status` 展示活跃度：active 超 14 天无 task-space 活动展示为 `stale`（排序沉底，`registered_status` 保留原登记值）。
 
 - **freshness generation 快照**（4.6.21）：`mc_start` 的 freshness 标记 `freshness_snapshot=true` 并携带 `observed_generation`/`observed_at`/`refresh_in_flight`；后续 `mc_lookup`（带 session_id）在 generation 变化时返回 `freshness_transition`（如 `stale_to_fresh`），Agent 不应把启动时的 stale banner 当作当前查询事实。
 

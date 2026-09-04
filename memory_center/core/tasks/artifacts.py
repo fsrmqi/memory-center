@@ -1911,6 +1911,10 @@ def _task_match_analysis(
 ) -> dict[str, object]:
     keywords = keywords or []
     hint_keywords = hint_keywords or []
+    try:
+        workspace_name = str(load_workspace_config(workspace_file).workspace or "").strip().lower()
+    except Exception:
+        workspace_name = ""
     title_text = str(task.get("title", "")).lower()
     intent_text = str(task.get("intent", "")).lower()
     tags = [str(tag).lower() for tag in task.get("tags", []) if isinstance(task.get("tags"), list)] if isinstance(task.get("tags"), list) else []
@@ -1925,10 +1929,13 @@ def _task_match_analysis(
     artifact_hits: list[str] = []
     artifact_text_by_name: dict[str, str] = {}
     try:
-        # 注意：这里必须用 artifact key（current_summary / plan / ...）而非文件名——
+        # 注意：这里必须用 artifact key（context / requirement / ...）而非文件名——
         # ``get_task_artifact`` 的名字解析不接受 "current-summary.md" 这样的文件名，
         # 传入会在第一个条目就抛 ValueError，导致所有 artifact 内容静默丢失。
-        for artifact_name in ["current_summary", "context", "requirement", "design", "plan", "test_plan"]:
+        # current_summary 刻意不参与匹配（P0 自写自匹配修复）：它在每次 close 时被
+        # 当次 intent 覆盖，若作为匹配源会形成"上次误写入 → 本次更易命中"的自强化
+        # 轮替（真实工作区曾把 69 种不同 intent 轮替写进同一个 task space）。
+        for artifact_name in ["context", "requirement", "design", "plan", "test_plan"]:
             artifact = get_task_artifact(
                 workspace_file,
                 str(task.get("task_id", "")),
@@ -1952,34 +1959,64 @@ def _task_match_analysis(
     # 字符多重集比较判断"同词不同序"的精确命中。
     strong_sources: dict[str, list[str]] = {"tag_exact": [], "title_exact": [], "intent_exact": []}
     fuzzy_tokens: list[str] = []
+
+    # 通用词、纯数字、拼音式碎片的贡献有上限：它们区分度低，不足以锚定任务。
+    _WEAK_TOKENS = {"v1", "v2", "v3", "test", "demo", "task", "优化", "清理", "修复", "更新", "支持", "问题", "处理"}
+    # P0 补充：框架/中间件/基础设施通名。任何 Spring 任务都可能出现，
+    # 曾让单个 intent_exact(2)+status(2)+priority(1) 稳过阈值。
+    _WEAK_TOKENS.update({"feign", "kafka", "rocketmq", "redis", "elasticsearch", "mysql", "mongo", "mongodb",
+                         "controller", "service", "dto", "api", "http", "rest", "gateway", "spring", "boot",
+                         "java", "config", "consumer", "producer", "topic", "queue", "token", "login"})
+    # P0 补充：workspace 自身名字（含前缀关系，如 workspace=ucap-all 时 "ucap"）
+    # 是每个 intent 都会出现的通名，曾以 intent_exact 身份稳定贡献强证据，
+    # 是低分误绑定的帮凶。
+    if len(workspace_name) >= 2:
+        _WEAK_TOKENS.add(workspace_name)
+
+    def _is_weak(token: str) -> bool:
+        if token in _WEAK_TOKENS or token.isdigit() or len(token) <= 2:
+            return True
+        # workspace 名的前缀方向也算通名：ucap / ucap-all 互为前缀。
+        if workspace_name and (workspace_name.startswith(token) or token.startswith(workspace_name)):
+            return True
+        return False
+
     for token in keywords + hint_keywords:
         normalized = token.strip().lower()
         if not normalized or len(normalized) < 2:
             continue
+        weak = _is_weak(normalized)
         if normalized in tags or _cjk_anagram_in(normalized, tags):
-            strong_sources["tag_exact"].append(token)
+            # 弱 token（通用动词/纯数字/通名）即使出现在 tag 里也不构成强证据。
+            if not weak:
+                strong_sources["tag_exact"].append(token)
+            else:
+                fuzzy_tokens.append(token)
         elif normalized in title_text or _cjk_anagram_in(normalized, [title_text]) or _cjk_subword_in(normalized, title_text):
-            strong_sources["title_exact"].append(token)
+            if not weak:
+                strong_sources["title_exact"].append(token)
+            else:
+                fuzzy_tokens.append(token)
         elif (intent_text and normalized in intent_text) or _cjk_anagram_in(normalized, [intent_text]) or _cjk_subword_in(normalized, intent_text):
-            strong_sources["intent_exact"].append(token)
+            if not weak:
+                strong_sources["intent_exact"].append(token)
+            else:
+                fuzzy_tokens.append(token)
         elif any(
             _cjk_subword_in(normalized, artifact_text_by_name.get(name, ""))
-            for name in ["current_summary", "context", "requirement", "design", "plan", "test_plan"]
+            for name in ["context", "requirement", "design", "plan", "test_plan"]
         ):
             # CJK 长意图与 plan/context 正文有实质 bigram 重叠时算作签名重叠证据。
+            # current_summary 已从匹配源排除（P0 自写自匹配修复），其余工件是
+            # 相对稳定的任务定义文档，其正文命中可作强证据。
             strong_sources.setdefault("signature_overlap", []).append(token)
         elif token in haystack:
             fuzzy_tokens.append(token)
     matched_keywords = [token for token in keywords if token in haystack]
     matched_hint_keywords = [token for token in hint_keywords if token in haystack]
 
-    # 通用词、纯数字、拼音式碎片的贡献有上限：它们区分度低，不足以锚定任务。
-    _WEAK_TOKENS = {"v1", "v2", "v3", "test", "demo", "task", "优化", "清理", "修复", "更新", "支持", "问题", "处理"}
-    weak_fuzzy = [token for token in fuzzy_tokens if token in _WEAK_TOKENS or token.isdigit() or len(token) <= 2]
-    capped_fuzzy = fuzzy_tokens[:4]
-    # 弱 token（纯数字/拼音碎片/通用词）即使出现在 tag/title 里，也不构成强证据。
-    def _is_weak(token: str) -> bool:
-        return token in _WEAK_TOKENS or token.isdigit() or len(token) <= 2
+    weak_fuzzy = [token for token in fuzzy_tokens if _is_weak(token)]
+    capped_fuzzy = [token for token in fuzzy_tokens if not _is_weak(token)][:4]
 
     strong_score = (
         3 * len([t for t in strong_sources["tag_exact"] if not _is_weak(t)])
@@ -1989,14 +2026,17 @@ def _task_match_analysis(
     )
     strong_evidence = strong_score > 0
     score = strong_score + len(capped_fuzzy)
+    # P0：状态/优先级加分只在已有强证据时生效。active 白送 2 分曾让仅凭正文
+    # 模糊命中的大任务稳过阈值（自强化轮替的另一根因）。
     status_boost = 0
-    if str(task.get("status", "")) == "active":
-        status_boost = 2
-    elif str(task.get("status", "")) == "draft":
-        status_boost = 1
+    if strong_evidence:
+        if str(task.get("status", "")) == "active":
+            status_boost = 2
+        elif str(task.get("status", "")) == "draft":
+            status_boost = 1
     score += status_boost
     priority_boost = 0
-    if str(task.get("priority", "")) == "high":
+    if strong_evidence and str(task.get("priority", "")) == "high":
         priority_boost = 1
     score += priority_boost
     return {
