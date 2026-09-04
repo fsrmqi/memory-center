@@ -43,11 +43,13 @@ from .ranking import (
 from .session import workspace_recent_evidence
 from .shared import (
     LAYER_L0,
+    LAYER_L0_5,
     LAYER_L1,
     LAYER_L2,
     LAYER_L3,
     MEMORY_LAYER_ORDER,
     SESSION_EVENTS_FILE,
+    SESSION_NOTES_FILE,
     SESSION_SUMMARIES_FILE,
     _build_sniff_auto_sync_recommendation,
     _build_sniff_source_refs,
@@ -780,6 +782,7 @@ def _build_memory_layers(config, store: WorkspaceStore, active_tasks: list[dict[
     case_rows = store.read_jsonl_prefer_backend("cross-service-task-memory.jsonl", limit=5000)
     current_truth_cases = sum(1 for item in case_rows if item.get("current_truth", True))
     superseded_cases = sum(1 for item in case_rows if item.get("superseded_by"))
+    note_rows = store.read_jsonl_prefer_backend(SESSION_NOTES_FILE, limit=5000)
     instruction_targets = [
         config.root_path / "AGENTS.md",
         config.root_path / "CLAUDE.md",
@@ -793,6 +796,11 @@ def _build_memory_layers(config, store: WorkspaceStore, active_tasks: list[dict[
             "description": "原始会话事件与外置 payload 引用",
             "event_count": len(store.read_jsonl_prefer_backend(SESSION_EVENTS_FILE, limit=5000)),
             "ref_count": refs_count,
+        },
+        LAYER_L0_5: {
+            "description": "Session Notes 叙事记忆（note_record 显式记录，跨任务可检索）",
+            "note_count": len(note_rows),
+            "active_note_count": sum(1 for item in note_rows if item.get("status") == "active"),
         },
         LAYER_L1: {
             "description": "可复用任务经验原子（record-case / suggest-case）",
@@ -814,6 +822,7 @@ def _build_memory_layers(config, store: WorkspaceStore, active_tasks: list[dict[
 
 def _build_memory_overview(memory_layers: dict[str, Any]) -> dict[str, Any]:
     l0 = memory_layers.get(LAYER_L0, {})
+    l05 = memory_layers.get(LAYER_L0_5, {})
     l1 = memory_layers.get(LAYER_L1, {})
     l2 = memory_layers.get(LAYER_L2, {})
     l3 = memory_layers.get(LAYER_L3, {})
@@ -821,12 +830,14 @@ def _build_memory_overview(memory_layers: dict[str, Any]) -> dict[str, Any]:
         "layer_order": MEMORY_LAYER_ORDER,
         "layer_counts": {
             LAYER_L0: int(l0.get("event_count", 0)),
+            LAYER_L0_5: int(l05.get("active_note_count", 0)),
             LAYER_L1: int(l1.get("case_count", 0)),
             LAYER_L2: int(l2.get("active_task_space_count", 0)),
             LAYER_L3: int(l3.get("rule_file_count", 0)),
         },
         "highlights": [
             f"L0 events={int(l0.get('event_count', 0))}, refs={int(l0.get('ref_count', 0))}",
+            f"L0.5 notes={int(l05.get('active_note_count', 0))} active / {int(l05.get('note_count', 0))} total",
             f"L1 cases={int(l1.get('case_count', 0))}, current_truth={int(l1.get('current_truth_count', 0))}, superseded={int(l1.get('superseded_count', 0))}",
             f"L2 active_task_spaces={int(l2.get('active_task_space_count', 0))}",
             f"L3 rules={int(l3.get('rule_file_count', 0))}, instructions={int(l3.get('instruction_files', 0))}",

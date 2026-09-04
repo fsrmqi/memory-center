@@ -56,6 +56,8 @@
 | **WriteReceipt** | write-receipts.jsonl | L0 | 写入回执（记忆层写入审计） |
 | **ValidationReceipt** | 任务 `verification-receipts.jsonl` + SQLite `delivery_receipts` | L0 | 验证审计事实；人工身份标记为调用方自声明，SQLite 仅作按任务增量查询读模型 |
 | **Ref** | refs/ 目录 | L0 | 大 payload 外置引用 |
+| **SessionNote** | session-notes.jsonl | L0.5 | 显式记录的跨任务叙事事实（decision/preference/rule/next_step/fact）；fingerprint 幂等，supersede 留 `superseded_by` 审计链，forget 仅隐藏具名条；隐私门 fail-closed |
+| **TaskShadow** | SQLite `session_state`（`task_shadow_*` 状态族） | L1（临时影子） | Session-first 会话影子；各源 contribution 确定性 merge，未绑定不写 L2 |
 | **Task** | tasks/ 目录 | L2 | 任务空间（含工件） |
 | **Handoff** | handoff-history.jsonl | L1 | 模型交接记录 |
 | **ResumePacket** | 运行时生成 | L1 | 恢复上下文包 |

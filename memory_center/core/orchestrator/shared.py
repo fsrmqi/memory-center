@@ -17,11 +17,13 @@ from .session_payloads import _classify_case_evidence_ref, _event_payload, _summ
 
 SESSION_EVENTS_FILE = "session-events.jsonl"
 SESSION_SUMMARIES_FILE = "session-summaries.jsonl"
+SESSION_NOTES_FILE = "session-notes.jsonl"
 LAYER_L0 = "L0_session_events"
+LAYER_L0_5 = "L0.5_session_notes"
 LAYER_L1 = "L1_case_atoms"
 LAYER_L2 = "L2_task_spaces"
 LAYER_L3 = "L3_workspace_profile"
-MEMORY_LAYER_ORDER = [LAYER_L0, LAYER_L1, LAYER_L2, LAYER_L3]
+MEMORY_LAYER_ORDER = [LAYER_L0, LAYER_L0_5, LAYER_L1, LAYER_L2, LAYER_L3]
 TOOL_WORKSPACE_LOG_SESSION_EVENT = "workspace_log_session_event"
 TOOL_WORKSPACE_START_SESSION = "workspace_start_session"
 TOOL_WORKSPACE_RECORD_CASE = "workspace_record_case"

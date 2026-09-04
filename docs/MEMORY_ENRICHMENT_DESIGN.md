@@ -1,6 +1,6 @@
 # Memory Enrichment Design / 记忆增强设计：借鉴 MemOS / claude-mem / MemoraX
 
-> **状态 / Status**：提案（Proposal），未实现。
+> **状态 / Status**：A（Evidence Index）与 B（Session Notes）**已实现**（2026-09-04，见 [CHANGELOG Unreleased](CHANGELOG.md)），D（四类记忆用户模型）已落入 [USER_GUIDE](USER_GUIDE.md) "Memory boundaries" 小节；C（Memory Cube）仍为 P2 草案待评审。设计与实现差异见文末"实现差异记录"。
 > **日期 / Date**：2026-09-04
 > **来源 / Sources**：对三个 AML 高分记忆系统的调研——
 > - [MemOS 2.0（MemTensor/MemOS，~11k★）](https://github.com/MemTensor/MemOS)：记忆操作系统，图存储、混合检索、L1/L2/L3/Skills 分层、OmniMemEval 评测叙事。
@@ -240,3 +240,22 @@ A evidence-index (P0) ──► B session notes (P1) ──► C memory cubes (P
 - AML Coding track 发布且其检索契约与 `evidence-index` 不兼容 → 重评 A 的输出形状；
 - Session Notes 规模超过 5 万条且 FTS 延迟不可接受 → 评估向量/ANN（届时按 AGENTS.md 规则走 `vector_ann` 管理流程）；
 - 出现真实的跨团队共享需求 → C 从 P2 提级并做完整 ADR。
+
+## 9. 实现差异记录 / Implementation Notes（2026-09-04）
+
+与本文档设计条款的已确认差异（实现为准）：
+
+- **B 存储落点**：设计写"不进 SQLite 图"，实现为 SQLite `json_records`（`RuntimeStore`，`note_id` 作 record_id）权威 + `memory/session-notes.jsonl` 投影——与 L0 事件等其他 memory 集合同构，非图节点。
+- **B 检索**：v1 用 token 重叠评分（`search_notes`），非 FTS5 索引；规模触发条件见第 8 节。
+- **A 展开第二跳**：`mc_lookup(mode="ref")` 现有 ref 机制对 `node:`/`note:` 前缀的解析在后续迭代补齐；当前 `ref_id` 作为稳定标识返回。
+- **L0.5 层常量**：`LAYER_L0_5 = "L0.5_session_notes"` 已加入 `MEMORY_LAYER_ORDER`（展示排序），workspace overview 的 `memory_layers` 输出含 `note_count`/`active_note_count`；写入门禁语义不变。
+
+### 真实工作区验证回执（ucap，~2 万文件级，2026-09-04）
+
+- note 生命周期：record → fingerprint no-op → search 命中 → supersede 审计链 → forget 只隐藏具名条，全部通过。
+- evidence-index（真实图谱混合）：11 条 selected（36 候选），note 命中与真实图谱方法并列，`knowledge_state=FOUND`；默认视图逐字节兼容。
+- `mode="query"` note 合并：命中 note 的查询返回 `note_matches`，已 forget 的词返回空（隐藏语义正确）。
+- 隐私门：绝对路径 `absolute_path_rejected`；密钥形态 `secret_shape_rejected`；`<private>` 片段剥除为 `[已省略私有片段]` 后入库。
+- `mc_close` 草稿：真实 DSH session 的 intent 正确抽出 decision 草稿，未确认 0 条落盘。
+- CLI `query --view evidence-index` 与 HTTP `/workspace/query?view=evidence-index` 冒烟通过。
+- 验证数据已清理：notes 从 JSONL 与 backend 全删，常态内容（session-events 1243 行、case 14 行）零污染；追加式 L0.5 write receipts 按审计语义保留。

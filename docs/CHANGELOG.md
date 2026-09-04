@@ -11,7 +11,9 @@
 - **检索并入**：`mode="query"` 结果合并有界 `note_matches`（`source_kind=note`，与图谱证据并列）；evidence-index 视图同时含 note 命中（`ref_id=note:<note_id>`，`source_layer=L0.5_session_notes`）。
 - **mc_close 草稿**：`close_case_records` 返回 `note_drafts`（会话意图 → decision 草稿、risk_points → next_step 草稿、验证通过信号 → fact 草稿，确定性机械抽取、无模型调用）与 `note_drafts_hint`；草稿未确认绝不落盘。
 - **用户模型（能力 D，文档）**：USER_GUIDE 新增"记忆边界"小节，把 Coding/Repo/Personal/Procedure 四类边界映射到 L1 case、图谱+invariants、workspace_profile、team_rules 与 Session Notes。
-- **基础设施**：`MemoryBackend` 新增 `update_json_records(collection, record_id, updates)`（payload 合并更新）；`_infer_record_id` 支持 `session-notes.jsonl` → `note_id`；状态变更经 backend 更新 + `_sync_jsonl_export_locked(rebuild=True)` 重建投影，保证 SQLite 权威与 JSONL 导出一致。
+- **基础设施**：`MemoryBackend` 新增 `update_json_records(collection, record_id, updates)`（payload 合并更新）；`_infer_record_id` 支持 `session-notes.jsonl` → `note_id`；状态变更经 backend 更新 + `_sync_jsonl_export_locked(rebuild=True)` 重建投影，保证 SQLite 权威与 JSONL 导出一致。分层模型新增 `LAYER_L0_5 = "L0.5_session_notes"` 并加入 `MEMORY_LAYER_ORDER`（展示排序），workspace overview 的 `memory_layers` 输出新增 `note_count`/`active_note_count`。
+- **文档同步**：README（分层模型 + Evidence Index/Session Notes 两小节）、ARCHITECTURE（记忆模型表补 L0.5 层并修正 L1 case 文件名为 `cross-service-task-memory.jsonl`）、ONTOLOGY（记忆实体新增 SessionNote/TaskShadow）、MCP_GUIDE（`mc_lookup` view 参数 + note actions）、REFERENCE（view 契约 + note actions 详细参数）、USER_GUIDE（记忆边界小节）。
+- **真实工作区验证（ucap，~2 万文件级）**：note 生命周期（record → fingerprint no-op → search → supersede 审计链 → forget）、evidence-index 真实图谱混合（note 与图谱方法并列、默认视图逐字节兼容）、`mode="query"` note 合并（已 forget 词返回空）、隐私门（绝对路径/密钥拒收、`<private>` 剥除）、`mc_close` 草稿不落盘、CLI/HTTP 入口冒烟——全部通过；验证数据已从 JSONL 与 backend 清除，常态内容零污染。
 - **回归**：`tests/domain/test_evidence_index.py`（9 个）、`tests/domain/test_session_notes.py`（11 个）、`tests/entrypoints/test_session_notes_entrypoints.py`（5 个：admin 三层动作、close 草稿不落盘、evidence-index 含 note）、`test_public_mvp.py` 新增 CLI/HTTP view 转发测试；修复 `test_mc_lookup_query_mode_forwards_vector_options` 假桩缺失 `session_id` 参数的既有失败（基线已坏，见 git 历史）。
 
 ## 4.6.23 Task Shadow: Session-first Continuity / 会话优先任务连续性

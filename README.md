@@ -139,15 +139,28 @@ Solved tasks can be recorded as JSONL task memory and later used for search and 
 
 ### 5. Layered memory model / 分层记忆模型
 
-Memory Center separates evidence and reusable structure through four layers:
+Memory Center separates evidence and reusable structure through layered stores:
 
-记忆中心通过四层模型把“原始证据”和“可复用结构”分开管理：
+记忆中心通过分层模型把“原始证据”、“可复用结构”和“跨任务叙事”分开管理：
 
 - `L0_session_events` / `L0 会话事件`：raw prompt/tool/result/note events, plus offloaded large payload refs in `memory/refs/`
+- `L0.5_session_notes` / `L0.5 会话叙事`：explicitly recorded cross-task narrative facts ("what we decided, what's next") with fingerprint dedup, supersede chains, explicit forget, and fail-closed privacy guards（见下文 Session Notes）
 - `L1_task_shadow` / `L1 任务影子`：temporary, discardable work-continuity state created automatically per session; deterministic merge of per-source contributions with durable watermarks, never writing L2 before an explicit bind（详见下文 Task Shadow 与 [docs/MCP_GUIDE.md](./docs/MCP_GUIDE.md) 第 5 节）
 - `L1_case_atoms` / `L1 经验原子`：validated reusable cases written by `workspace_record_case`
 - `L2_task_spaces` / `L2 任务空间`：task-scoped `context/plan/design/change-log/current-summary`
 - `L3_workspace_profile` / `L3 工作区画像`：rules, instructions, topology and team operating protocol
+
+### Evidence index: progressive disclosure / 证据索引：渐进式披露
+
+`mc_lookup(mode="query", view="evidence-index")` (also CLI `query --view evidence-index` and HTTP `/workspace/query?view=evidence-index`) returns a compact ordered evidence index instead of the full agent-oriented envelope: `selected` items carry `{ref_id, created_at, text, source_layer, source_kind, score, approx_tokens}`, with `claim_boundary`/`knowledge_state` preserved as scalars so an empty result never reads as a verified absence. Absolute private paths are filtered fail-closed; the second hop expands any item via `mc_lookup(mode="ref")`. The default view is byte-for-byte unchanged.
+
+`mc_lookup(mode="query", view="evidence-index")`（CLI `query --view evidence-index`、HTTP `/workspace/query?view=evidence-index` 同义）返回紧凑有序的证据索引，替代面向 agent 的完整富输出：每条 `selected` 携带 `{ref_id, created_at, text, source_layer, source_kind, score, approx_tokens}`；`claim_boundary`/`knowledge_state` 以标量保留，空结果不会被误读为"确认不存在"。证据文本对绝对私有路径 fail-closed 过滤；第二跳用 `mc_lookup(mode="ref")` 展开任一条目。缺省视图与既有输出逐字节兼容。
+
+### Session Notes: cross-task narrative memory / 会话叙事：跨任务的叙事记忆
+
+`mc_admin` exposes five Session Notes actions over the `L0.5` narrative layer (`memory/session-notes.jsonl`): `note_record` (fingerprint-idempotent), `note_list`, `note_search`, `note_supersede` (old row kept for audit via `superseded_by`), and `note_forget` (hides only the named item). Privacy is fail-closed: absolute paths and secret-shaped content are rejected, and `<private>...</private>` spans are stripped before storage. Narrative facts merge into `mode="query"` results alongside graph evidence and surface in the evidence-index view. `mc_close` returns deterministic `note_drafts` (session intent, risk points, validation signals) that persist only after explicit confirmation.
+
+`mc_admin` 在 L0.5 叙事层（`memory/session-notes.jsonl`）上提供 5 个动作：`note_record`（同 fingerprint 幂等）、`note_list`、`note_search`、`note_supersede`（旧条经 `superseded_by` 保留审计链）、`note_forget`（只隐藏具名条目）。隐私门 fail-closed：绝对路径与密钥形态直接拒收，`<private>...</private>` 片段落盘前剥除。叙事事实与图谱证据一起并入 `mode="query"` 结果，并出现在 evidence-index 视图中。`mc_close` 返回确定性 `note_drafts`（会话意图、风险点、验证信号），确认后才落盘。
 
 ### Task Shadow: session-first continuity / 会话影子：会话优先的任务连续性
 

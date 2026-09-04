@@ -824,12 +824,13 @@ Vue Workbench 位于 `web/src/`，主要页面包括 dashboard、query、impact�
 
 Acceptance items may add falsifiable validation-design fields without changing the schema version or creating a second source of truth. Coverage is observational by default; strict gating is opt-in and backward-compatible.
 
-Memory Center 的记忆模型分为四层：
+Memory Center 的记忆模型分为五层：
 
 | 层 | 位置 | 内容 |
 |---|---|---|
 | L0 session events | `memory/session-events.jsonl`、refs | 原始 prompt/tool/result/note、较大 payload 引用 |
-| L1 case atoms | `memory/cases.jsonl` | 已验证可复用经验 |
+| L0.5 session notes | `memory/session-notes.jsonl` | 显式记录的跨任务叙事事实（决策/规则/偏好/下一步）；fingerprint 幂等、supersede 审计链、fail-closed 隐私门（见 `core/tasks/session_notes.py`） |
+| L1 case atoms | `memory/cross-service-task-memory.jsonl` | 已验证可复用经验 |
 | L2 task spaces | `artifacts/tasks/<task_id>/` | context、plan、design、change-log、current-summary 等任务协作工件 |
 | L3 workspace profile | `artifacts/memory-blocks/` | workspace-profile、team-rules、architecture-invariants、active-migration-policy |
 

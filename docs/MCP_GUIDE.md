@@ -55,7 +55,7 @@ MCP 当前公开的是 15 个 task-level tools：
 | `mc_provider_action` | 运行注册的外部 Provider 固定动作；读取动作直接执行，索引或清理必须 `confirm=true`，不接受自由命令 |
 | `mc_mcp_bridge` | 受限外部 MCP Client：无 `action` 时查看 Provider 白名单；有 `provider/action` 时只调用策略登记的 HTTP MCP 工具、固定模板参数，写入必须 `confirm=true` |
 | `mc_start` | 嗅探任务上下文、可选同步、启动 session；自动创建/续接 Task Shadow（L1），未绑定不写 L2 |
-| `mc_lookup` | 统一检索入口：symbol / code / query / trace / chain / context / ref / backend |
+| `mc_lookup` | 统一检索入口：symbol / code / query / trace / chain / context / ref / backend；`mode="query"` 支持 `view="evidence-index"` 紧凑有序证据索引（渐进式披露第一跳，第二跳用 `mode="ref"` 展开），缺省视图不变 |
 | `mc_analyze` | 统一影响分析入口：quick / standard / full |
 | `mc_sync` | 将 sniff / case / task 过程同步到工件与记忆；低置信任务解析会停写并要求显式 task_id。新增 `sync_target=auto\|task\|shadow`：低置信解析 fallback 更新 Task Shadow 而不放弃连续性 |
 | `mc_resume` | 恢复任务上下文 |
