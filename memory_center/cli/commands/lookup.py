@@ -53,6 +53,9 @@ def register_lookup_commands(app: typer.Typer) -> None:
         rerank: bool = typer.Option(
             False, "--rerank/--no-rerank", help="Rerank a bounded top-K candidate set with the optional cross-encoder."
         ),
+        view: str = typer.Option(
+            "", help='Output view: "evidence-index" returns a compact ordered evidence list instead of the full envelope.'
+        ),
     ):
         """Graph-aware query across services, files, symbols, contracts and memory."""
         query_kwargs = {
@@ -60,11 +63,12 @@ def register_lookup_commands(app: typer.Typer) -> None:
             "enable_vector": vector,
             "vector_weight": vector_weight,
             "session_id": session_id,
+            "view": view,
         }
         if rerank:
             query_kwargs["enable_reranker"] = True
         result = memory_query_hybrid(workspace, text, limit, **query_kwargs)
-        if session_id.strip():
+        if session_id.strip() and str(view or "").strip() != "evidence-index":
             workspace_record_agent_guidance(
                 workspace, session_id, query=text, mode="query", source="cli.query", payload=result
             )
