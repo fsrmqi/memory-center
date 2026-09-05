@@ -17,7 +17,7 @@ import typer
 from memory_center.cli.main import app
 
 EXPECTED_ROOT_COMMANDS = frozenset({
-    "agent-execution-import", "agent-execution-summary", "architecture-communities", "artifact", "assertion-inspect", "assertion-query",
+    "agent-execution-import", "agent-execution-summary", "aml-serve", "architecture-communities", "artifact", "assertion-inspect", "assertion-query",
     "assertion-status", "audit", "backend-consistency", "bench-profile",
     "bootstrap-context", "bundle-export", "business-flow", "business-flow-impact",
     "callees", "callers", "change-impact-confirm", "change-impact-reports",

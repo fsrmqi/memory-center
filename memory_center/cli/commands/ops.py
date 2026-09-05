@@ -137,3 +137,21 @@ def register_ops_commands(app: typer.Typer) -> None:
             {"http": "starting", "host": host, "port": port, "workspace": workspace, "authentication": bool(access_token)}
         )
         serve_http(workspace, host=host, port=port, access_token=access_token)
+
+    @app.command("aml-serve")
+    def aml_serve_cmd(
+        workspace: str = typer.Option(..., help="Path to .memory-center/workspace.yaml."),
+        host: str = typer.Option("0.0.0.0", help="Public host; the surface always requires an AML key."),
+        port: int = typer.Option(8790),
+        aml_key: str = typer.Option("", envvar="AML_KEY", help="Required; issued by the AML platform or self-managed."),
+    ):
+        """Expose AML Add/Search endpoints (POST /aml/add, POST /aml/search).
+
+        评测平台专用面：只有两个路由，无 workspace 路由/UI/文件访问；必须带 key。
+        """
+        from memory_center.http.aml_server import serve_aml
+
+        if not aml_key:
+            raise typer.BadParameter("AML surface requires --aml-key or AML_KEY env (public endpoint)")
+        print({"aml": "starting", "host": host, "port": port, "workspace": workspace, "authentication": True})
+        serve_aml(workspace, host=host, port=port, aml_key=aml_key)
