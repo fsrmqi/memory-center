@@ -114,8 +114,12 @@ def test_root_command_surface_snapshot():
 
 def test_subgroup_command_surface_snapshot():
     cmd = typer.main.get_command(app)
+    # typer 0.27 + click 8.4 下 add_typer 产生 TyperGroup（click.Group 的子类
+    # 之外的独立类型），isinstance(sub, click.Group) 不再成立——按"有子命令表"
+    # 识别（根命令都是单命令 callback，没有 .commands）。
     subgroups = {
-        name for name, sub in cmd.commands.items() if isinstance(sub, click.Group)
+        name for name, sub in cmd.commands.items()
+        if isinstance(sub, click.Group) or getattr(sub, "commands", None)
     }
     assert subgroups == set(EXPECTED_SUBGROUP_COMMANDS), (
         f"子命令组差异: missing={sorted(set(EXPECTED_SUBGROUP_COMMANDS) - subgroups)}, "

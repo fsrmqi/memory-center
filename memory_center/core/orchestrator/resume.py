@@ -62,11 +62,17 @@ def _resume_related_cases(store: WorkspaceStore, intent: str, *, limit: int) -> 
 
     两组命中都按 case 热度(hotness:命中次数 × 时间衰减)重排,高频且最近
     命中的 case 排前;热度来自既有 session events,失败降级为原排序。
+
+    exact 列表在 hotness 之前先按 created_at 倒序（最新写入优先）——
+    恢复旧版 `exact[-limit:]` 的取尾语义（SQLite 重构时改为 `[:limit]`
+    取头导致"最新 case 永远排不上"，session_recall window 用例回归）。
+    无 created_at 的行保持原相对位置。
     """
     cases = store.read_jsonl_prefer_backend("cross-service-task-memory.jsonl", limit=300)
     tokens = tokenize(intent)
     exact = [item for item in cases if any(token in json.dumps(item, ensure_ascii=False).lower() for token in tokens)]
     if exact:
+        exact.sort(key=lambda item: str(item.get("created_at", "") or ""), reverse=True)
         return _hotness_ranked(store, exact)[:limit], "exact"
     bigrams = _cjk_bigrams(intent)
     if len(bigrams) < 2:

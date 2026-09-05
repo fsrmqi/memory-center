@@ -18,7 +18,7 @@ def traverse(workspace_file: str | Path, symbol: str, *, direction: str, depth: 
     info = deps.symbol_resolver(workspace_file, symbol, limit=8, project=project)
     key = "callers" if direction == "upstream" else "callees"
     if not info.get("found"):
-        missing = {"symbol": symbol, "found": False, key: [], "lookup": info.get("lookup", {})}
+        missing = {"symbol": symbol, "found": False, key: [], "lookup": info.get("lookup", {}), "project_scope": deps.build_project_scope(project, {})}
         missing["chain_anchor_validation"] = build_chain_anchor_validation(symbol, None, explicit_symbol=explicit_symbol)
         missing["fallback_action"] = build_empty_chain_fallback(symbol, direction=key, anchor_validation=missing["chain_anchor_validation"])
         return missing

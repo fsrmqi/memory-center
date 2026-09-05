@@ -16,13 +16,19 @@ _PROTECTED_DEMO_MEMORY = Path(__file__).resolve().parents[1] / "examples" / "spr
 
 
 def _protected_demo_snapshot() -> dict[str, str]:
-    """Hash every generated-demo file so tests cannot silently mutate fixtures."""
+    """Hash every generated-demo file so tests cannot silently mutate fixtures.
+
+    graph/ 目录（graph.db + -shm/-wal）是运行时 SQLite 库：读连接正常关闭时的
+    WAL checkpoint 会改变 graph.db 本体字节而不改变任何语义数据，单测串行运行
+    时必然触发哈希漂移——不属于 fixture 篡改，排除在快照外。工件与 memory
+    内容仍在保护内。
+    """
     if not _PROTECTED_DEMO_MEMORY.exists():
         return {}
     return {
         str(path.relative_to(_PROTECTED_DEMO_MEMORY)): hashlib.sha256(path.read_bytes()).hexdigest()
         for path in sorted(_PROTECTED_DEMO_MEMORY.rglob("*"))
-        if path.is_file()
+        if path.is_file() and "graph" not in path.relative_to(_PROTECTED_DEMO_MEMORY).parts
     }
 
 

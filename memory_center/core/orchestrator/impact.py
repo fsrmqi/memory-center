@@ -218,7 +218,9 @@ def _compact_impact_result(result: dict[str, Any], budget: str = "medium") -> di
     from .shared import _budget_limits
 
     limits = _budget_limits(budget)
-    target = result.get("target", {}) or {}
+    # found=False 分支的 target 是原始查询字符串，不是节点 dict。
+    raw_target = result.get("target", {}) or {}
+    target = raw_target if isinstance(raw_target, dict) else {}
     lookup = result.get("lookup", {}) or {}
     confirmed = result.get("confirmed_impacts", []) or []
     probable = result.get("probable_impacts", []) or []
