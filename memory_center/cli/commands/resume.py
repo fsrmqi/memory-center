@@ -24,9 +24,10 @@ def register_resume_commands(app: typer.Typer) -> None:
         workspace: str = typer.Option(...),
         intent: str = typer.Option(...),
         limit: int = typer.Option(5),
+        session_id: str = typer.Option("", help="提供时记录本次召回的 case（case_recalled 审计）。"),
     ):
         """Retrieve related sessions, cases and entrypoints for a new session."""
-        print(workspace_resume_context(workspace, intent, limit=limit))
+        print(workspace_resume_context(workspace, intent, limit=limit, session_id=session_id))
 
     @app.command("recent-evidence")
     def recent_evidence_cmd(

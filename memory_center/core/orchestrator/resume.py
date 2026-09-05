@@ -189,7 +189,7 @@ def workspace_resume_packet(
     return result
 
 
-def workspace_resume_context(workspace_file: str | Path, intent: str, limit: int = 5) -> dict[str, Any]:
+def workspace_resume_context(workspace_file: str | Path, intent: str, limit: int = 5, session_id: str = "") -> dict[str, Any]:
     config, store = load_context(workspace_file)
     query_result = memory_query_hybrid(workspace_file, intent, limit=limit)
     summaries = store.read_jsonl_prefer_backend(SESSION_SUMMARIES_FILE, limit=500)

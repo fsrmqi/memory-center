@@ -1979,6 +1979,12 @@ def _task_match_analysis(
         # workspace 名的前缀方向也算通名：ucap / ucap-all 互为前缀。
         if workspace_name and (workspace_name.startswith(token) or token.startswith(workspace_name)):
             return True
+        # workspace 名内部片段（ucap-all 的 'ucap'/'all'）及服务前缀族
+        # （ucap-cloud-* 的 'cloud'）：同一 workspace 的任意 intent 都可能出现。
+        if workspace_name:
+            for part in workspace_name.split("-"):
+                if len(part) >= 3 and (part.startswith(token) or token.startswith(part)):
+                    return True
         return False
 
     for token in keywords + hint_keywords:
@@ -2025,18 +2031,26 @@ def _task_match_analysis(
         + 1 * len([t for t in strong_sources.get("signature_overlap", []) if not _is_weak(t)])
     )
     strong_evidence = strong_score > 0
+    # P0 二次收紧：单一 intent_exact 命中（2 分）不足以支撑状态/优先级加分。
+    # intent 里 'cloud'/'分析' 一类词在长 meta.intent 中极易蹭到，加成后
+    # runner-up 常以 5 分贴脸 top1 触发 ambiguous。要求 tag/title 级（3 分档）
+    # 或 ≥2 个 intent_exact 才给加分。
+    anchoring_evidence = bool(
+        strong_sources["tag_exact"] or strong_sources["title_exact"]
+        or len([t for t in strong_sources["intent_exact"] if not _is_weak(t)]) >= 2
+    )
     score = strong_score + len(capped_fuzzy)
     # P0：状态/优先级加分只在已有强证据时生效。active 白送 2 分曾让仅凭正文
     # 模糊命中的大任务稳过阈值（自强化轮替的另一根因）。
     status_boost = 0
-    if strong_evidence:
+    if anchoring_evidence:
         if str(task.get("status", "")) == "active":
             status_boost = 2
         elif str(task.get("status", "")) == "draft":
             status_boost = 1
     score += status_boost
     priority_boost = 0
-    if strong_evidence and str(task.get("priority", "")) == "high":
+    if anchoring_evidence and str(task.get("priority", "")) == "high":
         priority_boost = 1
     score += priority_boost
     return {
