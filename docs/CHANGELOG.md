@@ -2,29 +2,18 @@
 
 ## Unreleased / 未发布
 
-### AML 评测面：Add/Search 独立适配器 / AML Surface: Add/Search Adapter
-
-面向 [Agent Memory Leaderboard](https://github.com/AML-memory/agent-memory-leaderboard) 的独立 HTTP 面（`memory-center aml-serve`），对接其"参赛方只暴露 Add/Search"的受控协议：
-
-- **新增 `memory_center/http/aml_adapter.py` + `aml_server.py`**：`POST /aml/add`（messages[]/text → L0.5 Session Notes 管道，fingerprint 幂等、绝对路径/密钥 fail-closed 拒收、单批 ≤200）、`POST /aml/search`（query → AML `selected: [{created_at, text}]` 有序证据契约；来源 = evidence-index 投影 + Session Notes，去重排序，文本 ≤240 字符，检索失败 fail-soft 空返回）、`GET /aml/health`。
-- **安全边界**：必须 `--aml-key`/`AML_KEY`（无 key 拒绝启动，`X-AML-Key` 头 + `hmac.compare_digest` 常量时间比较）；仅 3 个路由，无 workspace 路由/UI/文件访问；输出文本经绝对路径过滤——评测面不出私有路径。
-- **`memory_query_hybrid` 检索异常时 fail-soft**：评测批次不因单次索引问题 500。
-- **CLI**：新增 `aml-serve` 命令（`tests/entrypoints/test_aml_adapter.py` 10 个契约测试 + live 冒烟通过；root command surface 快照更新）。
-
-### 测试基建修复（同一批次）
-
-- `session_recall` window 用例回归根因修复：`_resume_related_cases` exact 匹配恢复"最新写入优先"（SQLite 重构时 `exact[-limit:]` 取尾被误改为 `[:limit]` 取头）。
-- conftest 快照排除 `graph/` 运行时库（WAL checkpoint 使本体哈希漂移的必然误报）。
-- `lookup_navigation` found=False 分支补 `project_scope`（负向门禁同样需要范围声明）。
-- `_compact_impact_result` 容忍 `target` 为查询字符串（found=False 分支不再 AttributeError）。
-- `test_cli_command_surface` 按 `.commands` 识别子命令组（typer 0.27/click 8.4 的 TyperGroup 非 click.Group 实例）。
-- `test_aml_adapter`/`test_public_mvp` 若干断言随新语义更新。
-
-## Unreleased / 未发布（历史批次）
-
 ### Task Space 误绑定修复：切断自写自匹配轮替 / Task Space Mis-binding Fix
 
 真实工作区（ucap）验证发现：`mc_close` 自动同步在无显式 task_id 时经 `resolve_task_space` 低置信解析，把无关 intent 写进既有 task space；被写入的 current_summary 又成为下次匹配的匹配源，形成自强化轮替（单一任务空间历史中出现 69 种不同任务头）。四项修复：
+
+### 测试基建与产品缺陷修复（同一批次）
+
+- **`session_recall` window 用例回归根因修复**：`_resume_related_cases` exact 匹配恢复"最新写入优先"——SQLite 重构时旧代码 `exact[-limit:]`（取尾=最新 case 排前）被误改为 `[:limit]`（取头），导致最新 case 永远排不进窗口。
+- **conftest 快照排除 `graph/` 运行时库**：WAL checkpoint 使 graph.db 本体哈希漂移，串行测试必然误报"测试篡改 fixture"；工件与 memory 内容仍在保护内。
+- **`lookup_navigation` found=False 分支补 `project_scope`**：负向锚定失败结果同样需要范围声明（impact/callers project-filter 断言依赖）。
+- **`_compact_impact_result` 容忍 `target` 为查询字符串**：found=False 分支不再 AttributeError。
+- **`test_cli_command_surface` 子命令组识别**：typer 0.27/click 8.4 的 TyperGroup 非 click.Group 实例，改按 `.commands` 识别。
+- **`workspace_resume_context` 补回 `session_id` 参数**（修复 NameError）+ CLI `resume-context --session-id` 透传。
 
 - **匹配源排除 current_summary**：`_task_match_analysis` 的匹配 haystack 不再包含 current_summary——它是每次 close 被当次 intent 覆盖的输出工件，作为输入即构成自写自匹配。context/requirement/design/plan/test_plan 等相对稳定工件保留为签名重叠强证据。
 - **通名弱化**：workspace 自身名字（含前缀关系，如 ucap-all ↔ ucap）与框架/中间件通名（feign/kafka/redis/dto/controller 等）加入 `_WEAK_TOKENS`——弱 token 即使命中 tag/title/intent 也不计强证据分，只算 fuzzy。

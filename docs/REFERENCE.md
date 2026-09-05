@@ -9,17 +9,6 @@
 - `status`
 - `inspect`
 - `serve-http`
-- `aml-serve`
-
-### AML surface / AML 评测面（`aml-serve`）
-
-面向 Agent Memory Leaderboard 的独立 Add/Search 面（`memory_center/http/aml_adapter.py` + `aml_server.py`）：
-
-- **`aml-serve --workspace <ws> --host <host> --port <port> --aml-key <key>`**：启动独立 HTTP 面。**必须带 key**（`--aml-key` 或 `AML_KEY` env）——该面设计为公网可达，无 key 拒绝启动。只有 3 个路由，无 workspace 路由/UI/文件访问。
-- **`POST /aml/add`**：`{"messages":[{role,content}], "kind": "decision|fact|preference|rule|next_step", "session_id"}` 或 `{"text": ...}`。每条消息走 L0.5 Session Notes 管道落盘（同 fingerprint 幂等；绝对路径/密钥形态拒收并列入 `rejected`）。单批 ≤200 条消息。
-- **`POST /aml/search`**：`{"query", "limit"}` → `{selected: [{created_at, text, source_layer, score}]}`（AML 评测管道直接消费的有序证据契约）。来源 = hybrid 图谱索引（evidence-index 投影）+ Session Notes，按分排序去重；文本 ≤240 字符、绝对路径 fail-closed 过滤。检索失败 fail-soft 返回空 selected（不 500 整批评测）。
-- **`GET /aml/health`**：鉴权后的存活探测。
-- 鉴权：`X-AML-Key` 头（或 `Authorization: Bearer`），`hmac.compare_digest` 常量时间比较；空 key 禁用整个面。
 
 ### Query / Analysis
 
