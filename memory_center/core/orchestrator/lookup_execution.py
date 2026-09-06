@@ -37,7 +37,19 @@ def execute_hybrid_retrieval(
                 graph_path = shard_path
                 shard_graph_used = True
             else:
-                shard_available = False
+                # 后台定向刷新与查询并发时，active_generation 可能已写入而 shard
+                # 文件尚未落盘（发布中间态）。短退避后重读一次 generation 与
+                # shard 路径，跨过中间态；仍缺失才视为 shard 未发布。
+                import time as _time
+
+                _time.sleep(0.05)
+                generation = str(index_control_status(store).get("active_generation", "") or "")
+                shard_path = service_shard_graph_path(store, generation, effective_project) if generation else None
+                if shard_path:
+                    graph_path = shard_path
+                    shard_graph_used = True
+                else:
+                    shard_available = False
         except Exception:
             shard_available = False
     if not shard_available:

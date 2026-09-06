@@ -232,16 +232,19 @@ def test_extract_symbol_keeps_class_dot_method():
     assert extract_symbol_like_token("", "", "", "com.example.api.ArticleFeignClient#moveArticle") == "com.example.api.ArticleFeignClient#moveArticle"
 
 
-def test_lookup_hint_symbol_wins_over_api_token():
+def test_lookup_hint_symbol_wins_over_api_token(tmp_path):
     """A `Controller.method` query carrying an `api` token must stay on
     symbol_lookup, not be downgraded to cross_service/context.
 
     Regression from replay: `VersionController.apiGetVersion` was routed to
     context because the `api` substring triggered the cross-service rule.
     """
+    from tests.fixtures import copy_demo_workspace
+
+    demo_ws = str(copy_demo_workspace(tmp_path / "hint-fixture-api"))
     from memory_center.core.orchestrator.workspace_ops import workspace_lookup_hint
 
-    hint = workspace_lookup_hint("examples/spring-cloud-demo/.memory-center/workspace.yaml", "VersionController.apiGetVersion", limit=4)
+    hint = workspace_lookup_hint(demo_ws, "VersionController.apiGetVersion", limit=4)
     assert hint.get("recommended_path") == "symbol_lookup", (
         f"Controller.method with api token must route to symbol_lookup, got {hint.get('recommended_path')}"
     )
@@ -277,28 +280,35 @@ def test_extract_symbol_still_keeps_class_and_chain():
     assert extract_symbol_like_token("", "", "", "com.example.api.ArticleFeignClient#moveArticle") == "com.example.api.ArticleFeignClient#moveArticle"
 
 
-def test_camel_method_query_hint_prefers_symbol():
+def test_camel_method_query_hint_prefers_symbol(tmp_path):
     """A pure camelCase method query must route to symbol_lookup (memory
     symbol) instead of local_search/code, so the Method node surfaces.
 
     Uses a small fixture workspace so the hint decision is deterministic.
+    直连真实 demo 会打开其 graph.db（WAL checkpoint 污染后续副本），改用副本。
     """
+    from pathlib import Path as _Path
+    from tests.fixtures import copy_demo_workspace
+
+    demo_ws = str(copy_demo_workspace(_Path(tmp_path) / "hint-fixture"))
     from memory_center.core.orchestrator.workspace_ops import workspace_lookup_hint
 
-    # demo workspace (spring-cloud-demo) has real methods like getXxx.
-    hint = workspace_lookup_hint("examples/spring-cloud-demo/.memory-center/workspace.yaml", "getArticleList", limit=4)
+    hint = workspace_lookup_hint(demo_ws, "getArticleList", limit=4)
     assert hint.get("recommended_path") == "symbol_lookup", (
         f"camel method query should route to symbol_lookup, got {hint.get('recommended_path')}"
     )
     assert "memory_symbol_tool" in hint.get("preferred_tools", [])
 
 
-def test_plain_local_search_phrase_not_rerouted_to_symbol():
+def test_plain_local_search_phrase_not_rerouted_to_symbol(tmp_path):
     """Over-filtering guard: a query that is clearly a local keyword phrase
     (no camel symbol shape) must not be hijacked into symbol_lookup."""
+    from tests.fixtures import copy_demo_workspace
+
+    demo_ws = str(copy_demo_workspace(tmp_path / "hint-fixture-plain"))
     from memory_center.core.orchestrator.workspace_ops import workspace_lookup_hint
 
-    hint = workspace_lookup_hint("examples/spring-cloud-demo/.memory-center/workspace.yaml", "where is the file path", limit=4)
+    hint = workspace_lookup_hint(demo_ws, "where is the file path", limit=4)
     # multi-word lowercase phrase with no symbol shape -> not symbol_lookup
     assert hint.get("recommended_path") != "symbol_lookup"
 
