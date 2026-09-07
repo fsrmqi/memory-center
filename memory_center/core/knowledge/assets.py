@@ -207,6 +207,21 @@ def collaboration_asset_status(workspace_file: str | Path, *, limit: int = 100, 
     return {"assets": summaries, "counts": counts, "pending_review": sum(item.get("status") == "pending_review" for item in assets), "max_chars": budget, "truncated": truncated}
 
 
+def get_collaboration_asset(workspace_file: str | Path, asset_id: str) -> dict[str, Any] | None:
+    """Read one asset by id (bounded summary fields); None when absent."""
+    store = WorkspaceStore(workspace_file)
+    asset = _find_asset(_read_registry(store), str(asset_id).strip())
+    return _asset_summary(asset) if asset else None
+
+
+def list_collaboration_assets(workspace_file: str | Path, *, kind: str = "", limit: int = 500) -> list[dict[str, Any]]:
+    """Read-only bounded listing of asset summaries in registry order."""
+    store = WorkspaceStore(workspace_file)
+    assets = _read_registry(store)["assets"]
+    selected = [asset for asset in assets if not kind or asset.get("kind") == kind]
+    return [_asset_summary(asset) for asset in selected[-max(1, min(limit, 2000)):]]
+
+
 def sync_workspace_collaboration_assets(workspace_file: str | Path, *, owner: str = "") -> dict[str, Any]:
     """Register current task, published Skill, and code graph metadata without copying content."""
     store = WorkspaceStore(workspace_file)
@@ -258,7 +273,7 @@ def ingest_wiki_document_asset(workspace_file: str | Path, document_path: str | 
             for node in graph.find_nodes(symbol, limit=3):
                 evidence.append({"node_id": node.get("id", ""), "name": node.get("name", ""), "type": node.get("type", ""), "file_path": node.get("file_path", "")})
     excerpt = " ".join(line.strip() for line in text.splitlines() if line.strip() and not line.startswith("#"))[:800]
-    result = register_collaboration_asset(workspace_file, kind="wiki", title=title, owner=owner, source_ref=f"wiki:{relative}", visibility=visibility, tags=tags, context_excerpt=excerpt, metadata={"path": relative, "content_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest()[:20], "links": links, "code_evidence": _dedupe_evidence(evidence)[:_MAX_EVIDENCE]}, asset_id=_asset_id("wiki", relative), actor=owner)
+    result = register_collaboration_asset(workspace_file, kind="wiki", title=title, owner=owner, source_ref=f"wiki:{relative}", visibility=visibility, tags=tags, context_excerpt=excerpt, metadata={"path": relative, "content_sha256": hashlib.sha256(path.read_bytes()).hexdigest(), "links": links, "code_evidence": _dedupe_evidence(evidence)[:_MAX_EVIDENCE]}, asset_id=_asset_id("wiki", relative), actor=owner)
     return {"ingested": True, "asset": result["asset"], "document_graph": {"path": relative, "links": links, "code_evidence": result["asset"]["metadata"]["code_evidence"]}, "next_action": "需要共享时提交 asset_share 并由维护者审批；上下文包只装载摘要和证据引用。"}
 
 

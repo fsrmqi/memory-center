@@ -2,7 +2,14 @@
 
 ## Unreleased / 未发布
 
+## 4.6.26 Trusted KnowledgeLink / 可信长期知识关联
+
+- 本地包、CLI 与 MCP 运行时版本提升至 `4.6.26`；KnowledgeLink 补齐人工 actor、session 派生绑定授权、只读默认漂移检查与脱敏观测事件。
+- Local package, CLI, and MCP runtime version bumped to `4.6.26`; KnowledgeLink now requires a manual actor, derives task authorization from the session, defaults drift checks to read-only, and redacts observability events.
+
 - **KnowledgeLink integration plan**：新增 `KNOWLEDGE_LINK_INTEGRATION_PLAN.md`，定义 DSH 插件、Memory Center 与 Personal Wiki 的权威边界、只引用的 KnowledgeLink 模型、锚定检索、人工确认晋升、hash 漂移和四阶段验收；禁止复制 Wiki 正文或由完成信号自动写入长期知识。
+- **KnowledgeLink 四阶段实现 / KnowledgeLink four-phase implementation**：按计划实现 Phase 1–4。Phase 1：`core/knowledge/wiki_bridge.py` 重构为 KnowledgeLink 契约——`link_status=active|stale|revoked` + 可回溯状态历史、`content_sha256` 统一为 raw 字节全量 SHA-256（`ingest_wiki_document_asset` 的 20 位截断文本哈希同步迁移）、注册强制非空 `evidence_refs`、`shadow_only` 会话禁止 task-scoped 链接、相同 `(knowledge_id, content_sha256)` 幂等；`wiki_promotion_preview` 产出带证据引用的 delivery candidate。Phase 2：新增 `core/knowledge/candidates.py` 锚定候选 facade——bridge `brief` 子进程传输（可注入、不可用即诚实返回空）、硬上限 3 条、`min_score` 阈值、stale/revoked 一律排除、曝光事件留痕。Phase 3：确认晋升登记 KnowledgeLink 并记录 `promotion_confirmed`；DSH 插件新增 `wikilink.js` 三段式动作模块（attach/preview/confirm，不直接写 Wiki、confirm 前无持久化副作用）。Phase 4：新增 `core/knowledge/wiki_drift.py`——hash/scope/evidence 漂移检测（除 stale 标记外只读，revoked 仅人工）、`knowledge-link-events.jsonl` 可观测事件与聚合指标。新增 CLI 命令：`knowledge-links`、`knowledge-candidates`、`knowledge-link-attach`、`knowledge-link-mark`、`knowledge-link-drift`、`knowledge-link-metrics`。
+- **KnowledgeLink four-phase implementation (EN)**: Phase 1 rebuilds `wiki_bridge.py` as the KnowledgeLink contract (three-state `link_status` with traceable history, full raw-bytes SHA-256 as the only `content_sha256` caliber, evidence-gated registration, shadow_only task-scope gate, idempotent re-registration). Phase 2 adds the anchored candidates facade over the injectable `personal-assistant-wiki-bridge brief` transport with a hard cap of 3, score thresholds, and stale/revoked exclusion. Phase 3 wires confirmed promotions into KnowledgeLink registration plus the DSH plugin `wikilink.js` three-step workbench actions. Phase 4 adds drift detection, bounded observability events, and aggregate metrics. New CLI commands: `knowledge-links`, `knowledge-candidates`, `knowledge-link-attach`, `knowledge-link-mark`, `knowledge-link-drift`, `knowledge-link-metrics`.
 
 ## 4.6.25 Trusted Task Binding / 可信任务绑定
 

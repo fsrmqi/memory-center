@@ -4,7 +4,7 @@ from __future__ import annotations
 # Typer evaluates command annotations at runtime in Python 3.9 environments.
 # ruff: noqa: UP006,UP035,UP045
 import json
-from typing import Optional
+from typing import List, Optional
 
 import typer
 from rich import print
@@ -17,7 +17,14 @@ from memory_center.core.retrieval.planner import (
     workspace_performance_snapshot_status,
 )
 from memory_center.core.workspace.jobs import workspace_job_status
-from memory_center.core.knowledge.wiki_bridge import sync_personal_wiki_assets
+from memory_center.core.knowledge.candidates import wiki_knowledge_candidates
+from memory_center.core.knowledge.wiki_bridge import (
+    attach_knowledge_link_to_task,
+    list_knowledge_links,
+    mark_knowledge_link_status,
+    sync_personal_wiki_assets,
+)
+from memory_center.core.knowledge.wiki_drift import knowledge_link_drift, knowledge_link_metrics
 from memory_center.core.knowledge.wiki_promotion import confirm_wiki_promotion, wiki_promotion_preview
 from memory_center.http.route_dispatch import audit_http_route_contract
 from memory_center.http.server import serve_http, validate_http_binding
@@ -34,9 +41,75 @@ def register_ops_commands(app: typer.Typer) -> None:
     @app.command("wiki-promotion-confirm")
     def wiki_promotion_confirm_cmd(
         workspace: str = typer.Option(...), session_id: str = typer.Option(...), wiki_root: str = typer.Option(...), owner: str = typer.Option(...),
+        binding_mode: str = typer.Option("", help="Session binding mode; shadow_only forbids task-scoped KnowledgeLinks."),
     ):
         """Explicitly promote one previewed DSH delivery summary into Personal Wiki."""
-        typer.echo(json.dumps(confirm_wiki_promotion(workspace, session_id, wiki_root=wiki_root, owner=owner), ensure_ascii=False))
+        typer.echo(json.dumps(confirm_wiki_promotion(workspace, session_id, wiki_root=wiki_root, owner=owner, binding_mode=binding_mode), ensure_ascii=False))
+
+    @app.command("knowledge-links")
+    def knowledge_links_cmd(
+        workspace: str = typer.Option(..., help="Path to .memory-center/workspace.yaml"),
+        task_id: str = typer.Option("", help="Filter by bound task id."),
+        scope: str = typer.Option("", help="Filter by scope tag."),
+        status: str = typer.Option("", help="Filter by link_status: active|stale|revoked."),
+        limit: int = typer.Option(50, min=1, max=500, help="Maximum links to return."),
+    ):
+        """List KnowledgeLinks (kind=wiki reverse links); read-only."""
+        typer.echo(json.dumps(list_knowledge_links(workspace, task_id=task_id, scope=scope, status=status, limit=limit), ensure_ascii=False))
+
+    @app.command("knowledge-candidates")
+    def knowledge_candidates_cmd(
+        workspace: str = typer.Option(..., help="Path to .memory-center/workspace.yaml"),
+        task: str = typer.Option(..., help="Anchored task description; empty anchors are rejected."),
+        wiki_root: str = typer.Option(..., help="Personal Assistant Wiki root directory."),
+        scope: str = typer.Option("", help="Bounded scope label forwarded to the Wiki bridge."),
+        task_id: str = typer.Option("", help="Optional confirmed task id recorded on exposure events."),
+        limit: int = typer.Option(3, min=1, max=3, help="Hard contract cap is 3 candidates."),
+        min_score: float = typer.Option(0.0, help="Minimum Wiki relevance score; lower scores are excluded."),
+    ):
+        """Anchored Wiki candidates (bounded read path); fails closed to empty."""
+        typer.echo(json.dumps(wiki_knowledge_candidates(workspace, task=task, wiki_root=wiki_root, scope=scope, task_id=task_id, limit=limit, min_score=min_score), ensure_ascii=False))
+
+    @app.command("knowledge-link-attach")
+    def knowledge_link_attach_cmd(
+        workspace: str = typer.Option(..., help="Path to .memory-center/workspace.yaml"),
+        knowledge_id: str = typer.Option(..., help="KnowledgeLink knowledge_id."),
+        task_id: str = typer.Option(..., help="Explicitly chosen task id."),
+        evidence_refs: List[str] = typer.Option(..., help="Evidence references; repeat the option."),
+        actor: str = typer.Option(..., help="Operator recorded on the manual attachment event."),
+        reason: str = typer.Option("", help="Optional note kept on the event payload."),
+    ):
+        """Manually attach a KnowledgeLink to an explicitly chosen task."""
+        typer.echo(json.dumps(attach_knowledge_link_to_task(workspace, knowledge_id, task_id=task_id, evidence_refs=list(evidence_refs), actor=actor, reason=reason), ensure_ascii=False))
+
+    @app.command("knowledge-link-mark")
+    def knowledge_link_mark_cmd(
+        workspace: str = typer.Option(..., help="Path to .memory-center/workspace.yaml"),
+        knowledge_id: str = typer.Option(..., help="KnowledgeLink knowledge_id."),
+        status: str = typer.Option(..., help="Target link_status: active|stale|revoked."),
+        reason: str = typer.Option(..., help="Human-readable transition reason kept in status history."),
+        actor: str = typer.Option(..., help="Operator recorded on the transition."),
+    ):
+        """Explicitly transition link_status; the only producer of revoked."""
+        typer.echo(json.dumps(mark_knowledge_link_status(workspace, knowledge_id, status=status, reason=reason, actor=actor), ensure_ascii=False))
+
+    @app.command("knowledge-link-drift")
+    def knowledge_link_drift_cmd(
+        workspace: str = typer.Option(..., help="Path to .memory-center/workspace.yaml"),
+        wiki_root: str = typer.Option("", help="Wiki root override; links without a recorded root need this."),
+        scope: str = typer.Option("", help="Expected scope for mismatch findings."),
+        mark_stale: bool = typer.Option(False, help="Mark drifted active links stale; default is read-only dry-run."),
+        actor: str = typer.Option("workspace-system", help="Operator recorded on stale transitions."),
+    ):
+        """Detect KnowledgeLink drift; repair actions are advisory and read-only."""
+        typer.echo(json.dumps(knowledge_link_drift(workspace, wiki_root=wiki_root, scope=scope, actor=actor, mark_stale=mark_stale), ensure_ascii=False))
+
+    @app.command("knowledge-link-metrics")
+    def knowledge_link_metrics_cmd(
+        workspace: str = typer.Option(..., help="Path to .memory-center/workspace.yaml"),
+    ):
+        """Aggregate KnowledgeLink observability metrics; read-only."""
+        typer.echo(json.dumps(knowledge_link_metrics(workspace), ensure_ascii=False))
 
     @app.command("wiki-assets-sync")
     def wiki_assets_sync(
@@ -137,4 +210,3 @@ def register_ops_commands(app: typer.Typer) -> None:
             {"http": "starting", "host": host, "port": port, "workspace": workspace, "authentication": bool(access_token)}
         )
         serve_http(workspace, host=host, port=port, access_token=access_token)
-
