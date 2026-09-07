@@ -305,8 +305,8 @@ memory-center eval-reasoning-prompts
 - `task_resume_check` — 一键恢复门禁，合并恢复包、健康度、修复建议和证据
 - `session_*` — 会话操作
 - `task_shadow_*` — Task Shadow（Session-first 会话影子，L1）操作：`task_shadow_status`（合并投影）、`task_shadow_bind`（CAS 绑定到正式 task）、`task_shadow_suggest`（写入候选）、`task_shadow_promote`（bound 后升格合并进 L2）、`task_shadow_discard`（丢弃，L0/L2 不受影响）、`task_shadow_retention`（未绑定过期清理，默认 dry-run）、`task_shadow_authority`（observation|snapshot 切换）、`task_shadow_observation_record` / `task_shadow_observation_list`（Observation Inbox，allowlist fail-closed）、`task_shadow_handoff_create` / `hand_off` / `claim` / `close` / `get` / `list`（Handoff Claim，claim-once CAS）
-- `note_record` / `note_list` / `note_search` / `note_supersede` / `note_forget` — Session Notes（L0.5 叙事记忆层）：显式记录跨任务叙事事实；同 fingerprint 幂等、supersede/forget 均为 append-only 决策行（`memory/session-note-decisions.jsonl`，原 note 行永不改写，生效状态由投影计算）、forget 只隐藏具名条；隐私门 fail-closed（绝对路径/密钥拒收，`<private>` 片段剥除）。`mc_close` 返回 `note_drafts`（确定性草稿，未确认不落盘）
-- `case_supersede` / `case_reinstate` / `case_decision_list` — L1 case 治理：以 append-only 决策行（`memory/case-decisions.jsonl`）替代/恢复 case，原 case 行永不改写，current truth 由 `project_case_truth` 投影计算；替代前校验 successor 存在且未被替代，重复操作为结构化 no-op
+- `note_record` / `note_list` / `note_search` / `note_supersede` / `note_forget` — Session Notes（L0.5 叙事记忆层）：显式记录跨任务叙事事实；同 fingerprint 幂等、supersede/forget 均为 append-only 决策行（`memory/session-note-decisions.jsonl`，原 note 行永不改写，生效状态由投影计算，决策行携带 `actor`=`source` 透传）、forget 只隐藏具名条；隐私门 fail-closed（绝对路径/密钥拒收，`<private>` 片段剥除）。`mc_close` 返回 `note_drafts`（确定性草稿，未确认不落盘）
+- `case_supersede` / `case_reinstate` / `case_decision_list` — L1 case 治理：以 append-only 决策行（`memory/case-decisions.jsonl`）替代/恢复 case，原 case 行永不改写，current truth 由 `project_case_truth` 投影计算（读取经 SQLite 权威）；替代前校验 successor 存在且仍为 current truth，自替代被拒（`successor_is_self` / `successor_not_current_truth`），重复操作为结构化 no-op
 - `group_*` — 跨工作区组操作
 - `walkthrough_health` / `eval_walkthrough_quality` / `walkthrough_export` — method walkthrough 自检、质量评测与 Markdown artifact 导出
 

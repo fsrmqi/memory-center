@@ -205,7 +205,7 @@ Memory Center 有四类记忆边界。每类回答一个问题，对应真实存
 | Personal Memory（协作偏好） | "Agent 该怎么和我沟通？" | L3 `workspace_profile` 记忆块 |
 | Procedure Memory（流程规范） | "这类任务的标准流程是什么？" | `team_rules` 记忆块 + 交付验证设计契约 |
 
-介于四类之下还有一层 **Session Notes（L0.5 叙事记忆）**：还不够成为 case、但比原始事件可读的"这次决定了什么/下一步做什么"。用 `mc_admin(action="note_record", text=..., event_type=decision|fact|preference|rule|next_step, session_id=...)` 显式记录，`note_list` / `note_search` 查看，`note_supersede` 修正（追加替代决策行 + 新条，原条永不改写），`note_forget` 遗忘（追加决策行，只隐藏具名条目；被遗忘后同 fingerprint 可重新记录）。隐私门 fail-closed：绝对路径与密钥形态直接拒收，`<private>...</private>` 片段落盘前剥除。
+介于四类之下还有一层 **Session Notes（L0.5 叙事记忆）**：还不够成为 case、但比原始事件可读的"这次决定了什么/下一步做什么"。用 `mc_admin(action="note_record", text=..., event_type=decision|fact|preference|rule|next_step, session_id=...)` 显式记录，`note_list` / `note_search` 查看，`note_supersede` 修正（追加替代决策行 + 新条，原条永不改写），`note_forget` 遗忘（追加决策行，只隐藏具名条目；被遗忘后同 fingerprint 可重新记录）；两类决策行都记录操作者（`source` 作为 actor）。隐私门 fail-closed：绝对路径与密钥形态直接拒收，`<private>...</private>` 片段落盘前剥除。
 
 ## 5. Common Queries / 常见查询
 

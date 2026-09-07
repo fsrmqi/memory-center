@@ -70,7 +70,7 @@
 
 ### G1（P0）补全 L1 案例替代操作
 
-- **状态**：✅ 已完成（2026-09-07）。采用方案 a（决策行 + 投影）；接线点为 `consolidate._existing_cases`（同时覆盖候选分类与 decide 复检两个消费方）；新增 MCP action `case_supersede` / `case_reinstate` / `case_decision_list`；`superseded_cases` 口径 = 存储字段 `superseded_by` 非空 **或** 最新决策为 supersede。
+- **状态**：✅ 已完成（2026-09-07）。采用方案 a（决策行 + 投影）；接线点为 `consolidate._existing_cases`（同时覆盖候选分类与 decide 复检两个消费方）；新增 MCP action `case_supersede` / `case_reinstate` / `case_decision_list`；`superseded_cases` 口径 = 投影为非 current truth 且（存储字段 `superseded_by` 非空或最新决策为 supersede），reinstate 不再双计。评审加固后补齐：HTTP 两路由登记 `_MUTATING_HTTP_PATHS`（GET 不再触发写入）、successor 须为 current truth 校验与自替代拒绝（`successor_is_self` / `successor_not_current_truth`）、台账读取统一 `read_jsonl_prefer_backend`。
 
 - **现状**：F2。替代语义只存在于读取侧。
 - **方案取舍**（append-only 存储上二选一）：
@@ -83,7 +83,7 @@
 
 ### G2（P0）L0.5 note 替代改追加式
 
-- **状态**：✅ 已完成（2026-09-07）。`_update_note_row` 原地改写已删除；决策行落 `memory/session-note-decisions.jsonl`，投影函数 `project_note_statuses` 被 fingerprint 幂等门、`note_list` 行注记、`note_search` 与 overview `active_note_count` 共同消费；被投影遗忘的 note 允许同 fingerprint 重录（失败方向声明得到加强）。stored `status` 保留为兼容基线。
+- **状态**：✅ 已完成（2026-09-07）。`_update_note_row` 原地改写已删除；决策行落 `memory/session-note-decisions.jsonl`，投影函数 `project_note_statuses` 被 fingerprint 幂等门、`note_list` 行注记、`note_search` 与 overview `active_note_count` 共同消费；被投影遗忘的 note 允许同 fingerprint 重录（失败方向声明得到加强）。stored `status` 保留为兼容基线。评审加固后决策行携带 `actor`（G2 验收的"谁"补齐）。
 
 - **现状**：F3。
 - **方案**：note 文件保持 append；`supersede` / `forget` 改为追加决策记录，`NOTE_STATUSES` 变为投影结果（`_note_projection`）。
@@ -94,7 +94,7 @@
 
 ### G3（P0）写入决策事件化
 
-- **状态**：✅ 已完成（2026-09-07）。实现为 additive `decision` 块嵌入 write receipt（schema `write_decision`，必填 `actor`），未新建独立 decision 文件——避免双台账；覆盖三条 L1 路径 + G1 的 supersede/reinstate；`workspace_replay_write_chain` 与 timeline 回放按行透出 `decision`。
+- **状态**：✅ 已完成（2026-09-07）。实现为 additive `decision` 块嵌入 write receipt（schema `write_decision`，必填 `actor`），未新建独立 decision 文件——避免双台账；覆盖三条 L1 路径 + G1 的 supersede/reinstate；`workspace_replay_write_chain` 与 timeline 回放按行透出 `decision`。评审加固后 actor 全路径贯通：显式路径记录调用方（CLI `record-case --actor`、HTTP `work-close` 的 `actor`、decide-apply 的 `actor`），自动路径写稳定标识（`mc_close_agent` / `work_close_agent`），receipt 不再出现空洞空 actor。
 
 - **现状**：write_receipts 记录"写了什么"，不记录"为什么生效、谁决定的"；`mc_close` 自动案例记录没有决定事件（F4 的一部分）。
 - **目标**：所有 L1/L3 生效写入产生统一 **decision 事件**（actor、来源 agent、路由得分与 reasons、触发的候选/规则、refs），复用 `write_receipts` + `timeline_query` 回放（P4：人的态度进事件，不进字段）。
