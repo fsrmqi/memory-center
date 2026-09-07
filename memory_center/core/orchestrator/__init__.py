@@ -177,12 +177,22 @@ from .consolidate import (
     workspace_list_consolidation_candidates,
 )
 
+# --- L1 case supersede decisions (append-only ledger + projection) ---
+from .case_decisions import (
+    CASE_DECISIONS_FILE,
+    project_case_truth,
+    reinstate_case,
+    supersede_case,
+    workspace_case_decisions,
+)
+
 __all__ = [
     # constants
     "SESSION_EVENTS_FILE", "SESSION_SUMMARIES_FILE", "SESSION_NOTES_FILE", "EVENT_PAYLOAD_INLINE_LIMIT",
     "LAYER_L0", "LAYER_L0_5", "LAYER_L1", "LAYER_L2", "LAYER_L3", "MEMORY_LAYER_ORDER",
     "TOOL_WORKSPACE_LOG_SESSION_EVENT", "TOOL_WORKSPACE_START_SESSION",
     "TOOL_WORKSPACE_RECORD_CASE", "TOOL_WORKSPACE_SUGGEST_CASE",
+    "TOOL_WORKSPACE_CASE_SUPERSEDE", "TOOL_WORKSPACE_CASE_REINSTATE",
     "TOOL_WORKSPACE_SYNC_SNIFF_ARTIFACTS", "TOOL_WORKSPACE_SYNC_CASE_ARTIFACTS",
     "TOOL_WORKSPACE_ARTIFACT_UPDATE",
     # utilities
@@ -205,6 +215,7 @@ __all__ = [
     "workspace_record_case", "workspace_write_receipts", "workspace_replay_write_chain",
     "workspace_consolidate_sessions", "workspace_decide_consolidation_candidate",
     "workspace_list_consolidation_candidates",
+    "supersede_case", "reinstate_case", "workspace_case_decisions", "project_case_truth", "CASE_DECISIONS_FILE",
     # workspace
     "workspace_check_contract", "workspace_check_rules",
     "workspace_status", "workspace_workbench_summary", "workspace_quality_overview", "workspace_sniff", "workspace_trace", "workspace_lookup_hint", "bootstrap_workspace_context", "execute_provider_action", "mcp_bridge_status", "execute_mcp_bridge_action", "fuse_provider_evidence",

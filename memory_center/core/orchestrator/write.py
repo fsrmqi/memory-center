@@ -8,7 +8,12 @@ from uuid import uuid4
 from memory_center.core.foundation.schemas import with_schema
 
 from ..tasks.artifacts import update_artifact
-from ..tasks.receipts import build_write_receipt, persist_write_receipt, query_write_receipts
+from ..tasks.receipts import (
+    build_write_decision,
+    build_write_receipt,
+    persist_write_receipt,
+    query_write_receipts,
+)
 from ..tasks.timeline import timeline_query
 from .rules import (
     _choose_l3_artifact_name,
@@ -389,6 +394,8 @@ def workspace_record_case(
     current_truth: bool = True,
     extra_fields: dict[str, Any] | None = None,
     case_type: str = "engineering_case",
+    actor: str = "",
+    decision_reason: str = "",
 ) -> dict[str, Any]:
     """记录一条已验证的 L1 case 原子。
 
@@ -436,6 +443,11 @@ def workspace_record_case(
             target_file="memory/cross-service-task-memory.jsonl",
             source_session_id=item.get("source_session_id", ""),
             task_id=item.get("source_task_id", ""),
+            decision=build_write_decision(
+                actor=actor,
+                reason=decision_reason or "record_case",
+                refs=[item["case_id"]],
+            ),
         ),
     )
     return {
@@ -491,6 +503,7 @@ def workspace_replay_write_chain(
             "receipt_ref": row.get("receipt_ref", ""),
             "kind": row.get("kind", ""),
             "created_at": row.get("created_at", ""),
+            "decision": (row.get("raw") or {}).get("decision") if isinstance(row.get("raw"), dict) else None,
         }
         for idx, row in enumerate(receipts)
     ]

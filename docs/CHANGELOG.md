@@ -2,6 +2,16 @@
 
 ## Unreleased / 未发布
 
+### 写入治理吸收 G1–G3：追加式案例治理与写入决策事件 / Write Governance Absorption G1–G3
+
+按 [WRITE_GOVERNANCE_ABSORPTION_PLAN.md](WRITE_GOVERNANCE_ABSORPTION_PLAN.md) 吸收 Utopia pending_facts 对比结论中的三项 P0：一切治理态度走 append-only 事件 + 投影，永不改写已写入数据；全部 additive、向后兼容。
+
+- **G1 案例替代闭环**：新增 `core/orchestrator/case_decisions.py`——`supersede_case` / `reinstate_case` / `workspace_case_decisions` 与 `project_case_truth` 投影。决策行落 `memory/case-decisions.jsonl`（record_type=case_decision），case 原始行永不改写；current truth = 存储字段基线 + 决策折叠（latest wins）。`consolidate-session` 的 `_existing_cases` 接入投影（分类与 decide 复检共用同一接线点），workspace overview 的 `current_truth_cases` / `superseded_cases` 同样按投影计数。入口三层同义：CLI `case-supersede` / `case-reinstate` / `case-decisions`、MCP `mc_admin` action `case_supersede` / `case_reinstate` / `case_decision_list`、HTTP `/workspace/case-supersede` / `case-reinstate` / `case-decisions`。替代前校验 case 存在、successor 存在且未被替代；重复/未知操作返回结构化 no-op 不写入。
+- **G2 L0.5 note 替代改追加式**：`session_notes.py` 删除 `_update_note_row` 原地改写；`note_supersede` / `note_forget` 改为向 `memory/session-note-decisions.jsonl` 追加决策行，生效状态由 `project_note_statuses` 投影（latest wins）。fingerprint 幂等门、`note_list` 行注记、`note_search`、workspace overview `active_note_count` 全部消费投影；被投影遗忘的 note 允许同 fingerprint 重新记录。stored `status` 保留为向后兼容基线。
+- **G3 写入决策事件化**：`receipts.py` 新增 `build_write_decision`（schema `write_decision`，必填 `actor`，携带 `reason`/可选 `score`/`rules`/`refs`——谁拍板、为什么、凭什么）；`build_write_receipt` 接受 additive `decision` 块。三条 L1 产写入路径（`workspace_record_case` 新增 `actor`/`decision_reason` 参数、整合候选 decide-apply、`work-close` 自动案例）的 receipt 均嵌入决策块；`workspace_replay_write_chain` 回放按行透出 `decision`，形成端到端"谁在什么依据下写了这条记忆"审计链。人的态度进决策事件，不编码进被写数据字段。
+- **回归**：`tests/domain/test_case_supersede.py`（10 个：决策行追加、stored 行不变、投影、legacy 兼容、整合 ADD 判定、overview 计数、CLI/HTTP/MCP 三入口）、`tests/domain/test_session_notes.py` 新增决策行断言（supersede/forget 后原行 status 仍 active、决策文件有行、遗忘后可重录、`active_note_count` 投影）、`tests/domain/test_write_decision_events.py`（6 个：决策块 schema、三条路径 receipt 带 decision、回放透出）。
+- **文档同步**：REFERENCE（`case-*` CLI、mc_admin 案例治理 action、Session Notes 决策行语义、§6.6 write receipt `decision` 块）、MCP_GUIDE（case_*/note_* action 语义）、USER_GUIDE（Session Notes 追加式语义 + 维护章新增"Case 治理：替代与恢复"）、CHANGELOG 本条。
+
 ### Task Space 误绑定修复：切断自写自匹配轮替 / Task Space Mis-binding Fix
 
 真实工作区（ucap）验证发现：`mc_close` 自动同步在无显式 task_id 时经 `resolve_task_space` 低置信解析，把无关 intent 写进既有 task space；被写入的 current_summary 又成为下次匹配的匹配源，形成自强化轮替（单一任务空间历史中出现 69 种不同任务头）。四项修复：

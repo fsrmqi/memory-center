@@ -43,7 +43,13 @@ from memory_center.application.http_facades import (
 )
 from memory_center.application.quality_gates import quality_gates_summary
 from memory_center.core.observability.agent_execution import summarize_agent_execution
-from memory_center.core.orchestrator import workspace_list_consolidation_candidates, workspace_workbench_summary
+from memory_center.core.orchestrator import (
+    reinstate_case,
+    supersede_case,
+    workspace_case_decisions,
+    workspace_list_consolidation_candidates,
+    workspace_workbench_summary,
+)
 from memory_center.core.orchestrator import workspace_quality_overview
 from memory_center.core.orchestrator import workspace_task_delivery_overview
 from memory_center.core.knowledge.projection import workspace_knowledge_summary
@@ -168,6 +174,8 @@ def register_workflow_routes(registry: CommandRegistry) -> None:
                 verified_by=case.get("verified_by", []) or rp.list_param("verified_by") or None,
                 source_session_id=session_id,
                 source_task_id=task_id,
+                actor=rp.get("actor"),
+                decision_reason="work_close_auto_case",
             )
         candidate_feedback = workspace_record_close_feedback(
             ws,
@@ -403,6 +411,24 @@ def register_workflow_routes(registry: CommandRegistry) -> None:
         rp.workspace(),
         status=rp.get("status", "pending"),
         limit=_parse_int(rp.params, "limit", 20),
+    ))
+    registry.register("/workspace/case-supersede", lambda rp: supersede_case(
+        rp.workspace(),
+        rp.require("case_id"),
+        superseded_by=rp.get("superseded_by"),
+        actor=rp.get("actor"),
+        note=rp.get("note"),
+    ))
+    registry.register("/workspace/case-reinstate", lambda rp: reinstate_case(
+        rp.workspace(),
+        rp.require("case_id"),
+        actor=rp.get("actor"),
+        note=rp.get("note"),
+    ))
+    registry.register("/workspace/case-decisions", lambda rp: workspace_case_decisions(
+        rp.workspace(),
+        case_id=rp.get("case_id"),
+        limit=rp.limit(50),
     ))
     registry.register("/workspace/agent-execution-summary", lambda rp: summarize_agent_execution(
         rp.workspace(),

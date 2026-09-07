@@ -12,6 +12,9 @@ from memory_center.core.orchestrator import (
     memory_execute_write,
     memory_plan_write,
     memory_write_judge,
+    reinstate_case,
+    supersede_case,
+    workspace_case_decisions,
     workspace_consolidate_sessions,
     workspace_decide_consolidation_candidate,
     workspace_list_consolidation_candidates,
@@ -247,6 +250,44 @@ def register_write_commands(app: typer.Typer) -> None:
     ):
         """Apply or reject one staged candidate after human review."""
         print(workspace_decide_consolidation_candidate(workspace, candidate_id, decision=decision, actor=actor, note=note))
+
+    @app.command("case-supersede")
+    def case_supersede_cmd(
+        workspace: str = typer.Option(...),
+        case_id: str = typer.Option(...),
+        superseded_by: str = typer.Option("", help="Optional successor case_id."),
+        actor: str = typer.Option(""),
+        note: str = typer.Option(""),
+    ):
+        """Append a supersede decision row so the case leaves current truth."""
+        print(
+            supersede_case(
+                workspace,
+                case_id,
+                superseded_by=superseded_by,
+                actor=actor,
+                note=note,
+            )
+        )
+
+    @app.command("case-reinstate")
+    def case_reinstate_cmd(
+        workspace: str = typer.Option(...),
+        case_id: str = typer.Option(...),
+        actor: str = typer.Option(""),
+        note: str = typer.Option(""),
+    ):
+        """Append a reinstate decision row to restore current truth."""
+        print(reinstate_case(workspace, case_id, actor=actor, note=note))
+
+    @app.command("case-decisions")
+    def case_decisions_cmd(
+        workspace: str = typer.Option(...),
+        case_id: str = typer.Option("", help="Filter by case_id."),
+        limit: int = typer.Option(50),
+    ):
+        """List case supersede/reinstate decision rows (latest first)."""
+        print(workspace_case_decisions(workspace, case_id=case_id, limit=limit))
 
     @app.command("sync-sniff-artifacts")
     def sync_sniff_artifacts_cmd(

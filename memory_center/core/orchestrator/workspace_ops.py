@@ -58,6 +58,8 @@ from .shared import (
     _trim_summary,
     load_context,
 )
+from .case_decisions import CASE_DECISIONS_FILE, project_case_truth
+from ..tasks.session_notes import SESSION_NOTE_DECISIONS_FILE, project_note_statuses
 from .write import memory_write_judge, workspace_write_receipts
 
 _JAVA_CHAIN_SYMBOL_RE = re.compile(
@@ -799,9 +801,40 @@ def _active_task_summaries(workspace_file: str | Path, limit: int = 5) -> list[d
 def _build_memory_layers(config, store: WorkspaceStore, active_tasks: list[dict[str, Any]]) -> dict[str, Any]:
     refs_count = sum(1 for _ in store.refs_dir.rglob("*") if _.is_file()) if store.refs_dir.exists() else 0
     case_rows = store.read_jsonl_prefer_backend("cross-service-task-memory.jsonl", limit=5000)
-    current_truth_cases = sum(1 for item in case_rows if item.get("current_truth", True))
-    superseded_cases = sum(1 for item in case_rows if item.get("superseded_by"))
+    # current truth 以决策行投影为准（G1），不再直接相信存储字段
+    decision_rows = store.read_jsonl_prefer_backend(CASE_DECISIONS_FILE, limit=5000)
+    latest_case_decisions = {
+        str(row.get("case_id", "") or ""): row
+        for row in decision_rows
+        if str(row.get("case_id", "") or "").strip()
+    }
+    case_projection = project_case_truth(case_rows, decision_rows)
+
+    def _projected_truth(item: dict[str, Any]) -> bool:
+        return bool(
+            case_projection.get(
+                str(item.get("case_id", "") or ""),
+                item.get("current_truth", True),
+            )
+        )
+
+    current_truth_cases = sum(1 for item in case_rows if _projected_truth(item))
+    superseded_cases = sum(
+        1
+        for item in case_rows
+        if item.get("superseded_by")
+        or latest_case_decisions.get(str(item.get("case_id", "") or ""), {}).get("decision") == "supersede"
+    )
     note_rows = store.read_jsonl_prefer_backend(SESSION_NOTES_FILE, limit=5000)
+    note_statuses = project_note_statuses(
+        note_rows,
+        store.read_jsonl_prefer_backend(SESSION_NOTE_DECISIONS_FILE, limit=5000),
+    )
+    active_note_count = sum(
+        1
+        for item in note_rows
+        if note_statuses.get(str(item.get("note_id", "")), item.get("status", "active")) == "active"
+    )
     instruction_targets = [
         config.root_path / "AGENTS.md",
         config.root_path / "CLAUDE.md",
@@ -819,7 +852,7 @@ def _build_memory_layers(config, store: WorkspaceStore, active_tasks: list[dict[
         LAYER_L0_5: {
             "description": "Session Notes 叙事记忆（note_record 显式记录，跨任务可检索）",
             "note_count": len(note_rows),
-            "active_note_count": sum(1 for item in note_rows if item.get("status") == "active"),
+            "active_note_count": active_note_count,
         },
         LAYER_L1: {
             "description": "可复用任务经验原子（record-case / suggest-case）",

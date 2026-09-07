@@ -54,6 +54,9 @@
 - `consolidate-session`：把多个已结束会话整合为 L1 case / L3 记忆块候选。默认 dry-run；`--stage` 将候选写入 append-only 待审核池，随后用 `decide-consolidation-candidate` 逐条审批或拒绝。`--apply` 保留为直接显式写入无冲突 ADD 的模式，不能与 `--stage` 同用。既有 current-truth case 或同批重复会话返回 REVIEW、不会写入；已失效 case 不阻止新的 ADD。`--include-l3` 额外产出 L3 memory-block 追加草稿（不自动写入）。
 - `consolidation-candidates`：列出 staged 的 `pending|applied|rejected` 多会话整合候选；空 `--status` 返回全部。
 - `decide-consolidation-candidate`：维护者以 `approve|reject` 逐条处理候选。approve 只允许无冲突 ADD，写入前会重新检查 current-truth case，避免暂存期间状态变化导致重复写入。
+- `case-supersede`：以追加方式替代既有 L1 case（`memory/case-decisions.jsonl` 决策行 + 投影），不改动 case 原始行；`--superseded-by` 指向替代 case、`--actor/--note` 记入决策事件与 write receipt。写入前校验 case 存在、successor 存在且未被替代；重复替代/未知 case 返回结构化 no-op。 / append-only supersede for L1 cases: a decision row is appended and truth is a projection; the stored case row is never mutated.
+- `case-reinstate`：恢复曾被替代的 case 为 current truth；已是 current truth 时返回 no-op。 / reinstate a superseded case as current truth; already-current cases are no-ops.
+- `case-decisions`：按 `--case-id` 过滤列出替代/恢复决策行（最新在前）。 / list supersede/reinstate decision rows, latest first.
 - `eval-session-recall`：读取工作区外的私有 YAML case，通过实际 resume 链路评测 L1 case 召回；仅输出 case ID 与 query/session 哈希，分类为 `hit`、`case_not_indexed`、`retrieval_miss`、`ranking_miss` 或 `evidence_insufficient`，不修改检索策略或工作区状态。
 - `agent-execution-import`：显式、幂等导入 DSH 本地插件写入的脱敏 NDJSON inbox；不读取 prompt、工具参数/结果或 cwd。
 - `agent-execution-summary`：按 DSH session 聚合 turn/step/model/tool 耗时、首 Token、Token 数与失败；session ID 仅返回哈希。
@@ -299,8 +302,9 @@ L0.5 叙事记忆层（Session Notes），存储于 `memory/session-notes.jsonl`
 - `note_record`：`text`（必填）、`event_type`=kind（`decision|fact|preference|rule|next_step`，默认 fact）、`session_id`、`payload.source_refs[]`。同 fingerprint 重复写入为 no-op；绝对路径与密钥形态 fail-closed 拒收；`<private>...</private>` 片段落盘前剥除。
 - `note_list`：`event_type`=kind 过滤、`status`（`active|superseded|forgotten`，默认 active）、`session_id`、`limit`。
 - `note_search`：`text`=query，返回带评分的有界命中（只搜 active）。
-- `note_supersede`：`name`=note_id、`text`=新文本；旧条 `status=superseded`、`superseded_by` 指向新条（不物理删除）。
-- `note_forget`：`name`=note_id、`reason`；只隐藏具名条目。
+- `note_supersede`：`name`=note_id、`text`=新文本；向 `memory/session-note-decisions.jsonl` 追加 `supersede` 决策行并写入新条，原 note 行永不改写（stored `status` 保持 active），生效状态由决策投影计算（latest wins）。
+- `note_forget`：`name`=note_id、`reason`；追加 `forget` 决策行（`superseded_by=forget:<reason>`），只隐藏具名条目；被投影遗忘后同 fingerprint 可重新记录。
+- 两个动作的生效状态（superseded/forgotten/active）均为 append-only 决策行的投影；workspace overview 的 `active_note_count` 同样按投影计数。
 - `mc_close` 响应包含 `note_drafts`（会话意图/风险点/验证信号的确定性草稿）与 `note_drafts_hint`；草稿未确认不落盘。
 
 ### `mc_analyze`
@@ -352,6 +356,12 @@ L0.5 叙事记忆层（Session Notes），存储于 `memory/session-notes.jsonl`
 - `task_repair_plan(task_id=...)`：返回修复计划，不写入。
 - `task_repair_apply(task_id=..., force=false, intent=...)`：默认 dry-run，`force=true` 时执行保守修复。
 - `task_resume_check(task_id=...)`：返回恢复门禁，合并恢复包、健康度、修复建议、下一步动作、未解决事项和证据。
+
+案例治理相关 action（append-only 决策行 + 投影，与 CLI `case-*` / HTTP `/workspace/case-*` 同义）：
+
+- `case_supersede(name=<case_id>, payload={"superseded_by": ...}, source=<actor>, reason=<note>)`：替代 L1 case，写 `memory/case-decisions.jsonl` 决策行；不改 case 原始行。
+- `case_reinstate(name=<case_id>, source=<actor>, reason=<note>)`：恢复被替代 case 为 current truth。
+- `case_decision_list(name=<case_id>, limit=...)`：列出该 case 的决策行（最新在前）。
 
 ### 需求交付工作流 / Delivery workflow
 
@@ -704,6 +714,8 @@ Replay 检查会进一步把每条建议分类为 `adopted`、`missed`、`bypass
 ### 6.6 Timeline / Ref / Receipt
 
 正式 `timeline_item.kind`：`session_event`、`write_receipt`、`handoff`。短引用体系：`ref_id`、`summary`、`payload_ref`/`receipt_ref`。
+
+L1 产写入路径（`record-case`、`decide-consolidation-candidate` apply、`work-close` 自动案例、`case-supersede`/`case-reinstate`）的 write receipt 携带 additive `decision` 块（schema `write_decision`）：`actor`（谁拍板）、`reason`（为什么）、可选 `score`/`rules`/`refs`（凭什么）；人的态度进决策事件，不编码进被写数据字段。`timeline` / `workspace_replay_write_chain` 回放按行透出该 `decision` 块，形成端到端写入决策审计链。
 
 ### 6.7 兼容性原则
 

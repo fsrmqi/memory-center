@@ -21,6 +21,7 @@ from typing import Any
 
 from memory_center.core.tasks.artifacts import CORE_MEMORY_BLOCKS
 
+from .case_decisions import CASE_DECISIONS_FILE, project_case_truth
 from .rules import _choose_l3_artifact_name
 from .session import workspace_session_summary, workspace_suggest_case
 from .shared import (
@@ -57,7 +58,28 @@ def _similarity(a: str, b: str) -> float:
 
 
 def _existing_cases(store) -> list[dict[str, Any]]:
-    return store.read_jsonl_prefer_backend(CASE_MEMORY_FILE, limit=5000)
+    rows = store.read_jsonl_prefer_backend(CASE_MEMORY_FILE, limit=5000)
+    decisions = store.read_jsonl_prefer_backend(CASE_DECISIONS_FILE, limit=5000)
+    if not decisions:
+        return rows
+    # 决策行参与投影：current truth 以"最新决策胜出"为准，不改写既有行
+    latest: dict[str, dict[str, Any]] = {}
+    for decision in decisions:
+        case_id = str(decision.get("case_id", "") or "").strip()
+        if case_id:
+            latest[case_id] = decision
+    projection = project_case_truth(rows, decisions)
+    for row in rows:
+        case_id = str(row.get("case_id", "") or "").strip()
+        decision = latest.get(case_id)
+        if decision is None:
+            continue
+        row["current_truth"] = projection.get(case_id, False)
+        if decision.get("decision") == "supersede" and not str(row.get("superseded_by", "")).strip():
+            row["superseded_by"] = str(decision.get("superseded_by", "")).strip() or str(
+                decision.get("decision_id", "") or "supersede-decision"
+            )
+    return rows
 
 
 def _candidate_id(session_id: str, draft: dict[str, Any]) -> str:
@@ -399,6 +421,8 @@ def workspace_decide_consolidation_candidate(
         source_refs=list(draft.get("source_refs") or []),
         current_truth=True,
         extra_fields=merged_extras,
+        actor=actor,
+        decision_reason=note or "consolidation_candidate_applied",
     )
     if merge_notes:
         result["merge_notes"] = merge_notes

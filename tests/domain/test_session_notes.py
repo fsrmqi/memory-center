@@ -83,6 +83,71 @@ def test_forget_missing_note_is_reported(workspace):
     assert result == {"forgotten": False, "reason": "note_not_found", "note_id": "note:ghost:1"}
 
 
+def _note_rows(workspace):
+    return WorkspaceStore(workspace).read_jsonl_prefer_backend("session-notes.jsonl", limit=100)
+
+
+def _note_decisions(workspace):
+    return WorkspaceStore(workspace).read_jsonl_prefer_backend("session-note-decisions.jsonl", limit=100)
+
+
+def test_supersede_appends_decision_row_and_keeps_original_row_untouched(workspace):
+    created = record_note(workspace, "决定: 用令牌桶", kind="decision", session_id="s1")
+    result = supersede_note(workspace, created["note_id"], "决定: 用令牌桶，每实例 100 QPS")
+    assert result["superseded"] is True
+
+    original = _note_rows(workspace)[0]
+    assert original["status"] == "active", "追加式：原行不允许被改写"
+    assert original["superseded_by"] == ""
+
+    decisions = _note_decisions(workspace)
+    assert len(decisions) == 1
+    assert decisions[0]["record_type"] == "note_decision"
+    assert decisions[0]["note_id"] == created["note_id"]
+    assert decisions[0]["decision"] == "supersede"
+    assert decisions[0]["superseded_by"] == result["new_note_id"]
+
+    superseded = list_notes(workspace, status="superseded")["notes"]
+    assert any(row["note_id"] == created["note_id"] and row["superseded_by"] == result["new_note_id"] for row in superseded)
+
+
+def test_forget_appends_decision_row_and_keeps_original_row_untouched(workspace):
+    created = record_note(workspace, "事实 A", kind="fact")
+    result = forget_note(workspace, created["note_id"], reason="outdated")
+    assert result == {"forgotten": True, "note_id": created["note_id"], "duplicate": False}
+
+    original = _note_rows(workspace)[0]
+    assert original["status"] == "active", "追加式：原行不允许被改写"
+
+    decisions = _note_decisions(workspace)
+    assert len(decisions) == 1
+    assert decisions[0]["decision"] == "forget"
+    assert decisions[0]["reason"] == "outdated"
+
+    forgotten = list_notes(workspace, status="forgotten")["notes"]
+    assert [row["note_id"] for row in forgotten] == [created["note_id"]]
+
+
+def test_forgotten_note_allows_rerecording_same_text(workspace):
+    created = record_note(workspace, "事实: 网关双写开关关闭", kind="fact")
+    forget_note(workspace, created["note_id"])
+    again = record_note(workspace, "事实: 网关双写开关关闭", kind="fact")
+    assert again["recorded"] is True, "投影判定已失效的指纹不应阻止重新记录"
+
+
+def test_workspace_active_note_count_uses_projection(workspace):
+    from memory_center.core.orchestrator.workspace_ops import workspace_status
+
+    created = record_note(workspace, "事实 A", kind="fact")
+    before = workspace_status(workspace)
+    assert before["memory_layers"]["L0.5_session_notes"]["active_note_count"] == 1
+
+    forget_note(workspace, created["note_id"])
+
+    after = workspace_status(workspace)
+    assert after["memory_layers"]["L0.5_session_notes"]["active_note_count"] == 0
+
+
 def test_search_only_returns_active_matches(workspace):
     a = record_note(workspace, "限流使用 Redis 令牌桶", kind="decision")
     record_note(workspace, "日志必须包含 chainId", kind="rule")
@@ -104,5 +169,10 @@ def test_list_filters_by_kind_and_session(workspace):
 def test_backend_and_jsonl_export_stay_consistent(workspace):
     created = record_note(workspace, "事实 C", kind="fact")
     forget_note(workspace, created["note_id"])
-    backend_rows = WorkspaceStore(workspace).read_jsonl_prefer_backend("session-notes.jsonl", limit=100)
-    assert backend_rows[0]["status"] == "forgotten"
+    store = WorkspaceStore(workspace)
+    # 追加式契约：note 原行不再被改写，决策落在独立决策文件里
+    backend_rows = store.read_jsonl_prefer_backend("session-notes.jsonl", limit=100)
+    assert backend_rows[0]["status"] == "active"
+    decision_rows = store.read_jsonl_prefer_backend("session-note-decisions.jsonl", limit=100)
+    assert len(decision_rows) == 1
+    assert decision_rows[0]["note_id"] == created["note_id"]

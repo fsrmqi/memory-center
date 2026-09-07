@@ -17,11 +17,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from filelock import FileLock
-
 from memory_center.core.storage.workspace import WorkspaceStore
 
 SESSION_NOTES_FILE = "session-notes.jsonl"
+SESSION_NOTE_DECISIONS_FILE = "session-note-decisions.jsonl"
 NOTE_KINDS = ("decision", "preference", "rule", "next_step", "fact")
 NOTE_STATUSES = ("active", "superseded", "forgotten")
 NOTE_TEXT_MAX_CHARS = 2000
@@ -69,6 +68,60 @@ def _load_notes(store: WorkspaceStore) -> list[dict[str, Any]]:
     return store.read_jsonl_prefer_backend(SESSION_NOTES_FILE, limit=5000)
 
 
+def project_note_statuses(
+    notes: list[dict[str, Any]],
+    decisions: list[dict[str, Any]],
+) -> dict[str, str]:
+    """按 note_id 计算 status 投影：旧行字段打底，最新决策胜出。"""
+    projection: dict[str, str] = {}
+    for note in notes:
+        note_id = str(note.get("note_id", "")).strip()
+        if note_id:
+            projection[note_id] = str(note.get("status", "active") or "active")
+    for decision in decisions:
+        note_id = str(decision.get("note_id", "")).strip()
+        if note_id not in projection:
+            continue
+        if decision.get("decision") == "supersede":
+            projection[note_id] = "superseded"
+        elif decision.get("decision") == "forget":
+            projection[note_id] = "forgotten"
+    return projection
+
+
+def _load_notes_with_statuses(store: WorkspaceStore) -> tuple[list[dict[str, Any]], dict[str, str], dict[str, dict[str, Any]]]:
+    notes = _load_notes(store)
+    decisions = store.read_jsonl_prefer_backend(SESSION_NOTE_DECISIONS_FILE, limit=5000)
+    latest: dict[str, dict[str, Any]] = {}
+    for decision in decisions:
+        note_id = str(decision.get("note_id", "")).strip()
+        if note_id:
+            latest[note_id] = decision
+    return notes, project_note_statuses(notes, decisions), latest
+
+
+def _append_note_decision(
+    store: WorkspaceStore,
+    *,
+    note_id: str,
+    decision: str,
+    superseded_by: str,
+    reason: str,
+) -> dict[str, Any]:
+    record = {
+        "record_type": "note_decision",
+        "decision_id": "note-decision-"
+        + hashlib.sha256(f"{note_id}|{decision}|{_now_iso()}".encode("utf-8")).hexdigest()[:16],
+        "note_id": note_id,
+        "decision": decision,
+        "superseded_by": superseded_by,
+        "reason": str(reason or "").strip(),
+        "decided_at": _now_iso(),
+    }
+    store.append_jsonl(SESSION_NOTE_DECISIONS_FILE, record)
+    return record
+
+
 def record_note(
     workspace_file: str | Path,
     text: str,
@@ -91,10 +144,10 @@ def record_note(
     _check_privacy(cleaned)
 
     store = WorkspaceStore(workspace_file)
-    notes = _load_notes(store)
+    notes, statuses, _ = _load_notes_with_statuses(store)
     fingerprint = note_fingerprint(kind, cleaned)
     for row in notes:
-        if row.get("status") != "active":
+        if statuses.get(str(row.get("note_id", "")), "active") != "active":
             continue
         if row.get("fingerprint") == fingerprint:
             return {
@@ -137,18 +190,20 @@ def record_note(
 
 
 def supersede_note(workspace_file: str | Path, note_id: str, new_text: str, *, kind: str = "") -> dict[str, Any]:
-    """Replace one active note with refined text; the old row stays for audit."""
+    """Replace one active note with refined text: append the replacement plus a
+    supersede decision row; the original row is never rewritten."""
     cleaned = _redact(new_text)
     if not cleaned:
         raise NoteRejected("empty_text", "note text is required")
     _check_privacy(cleaned)
     store = WorkspaceStore(workspace_file)
-    notes = _load_notes(store)
+    notes, statuses, _ = _load_notes_with_statuses(store)
     target = next((row for row in notes if row.get("note_id") == note_id), None)
     if not target:
         return {"superseded": False, "reason": "note_not_found", "note_id": note_id}
-    if target.get("status") != "active":
-        return {"superseded": False, "reason": f"note_{target.get('status')}", "note_id": note_id}
+    projected_status = statuses.get(str(note_id), "active")
+    if projected_status != "active":
+        return {"superseded": False, "reason": f"note_{projected_status}", "note_id": note_id}
 
     resolved_kind = kind if kind in NOTE_KINDS else str(target.get("kind", "fact"))
     seq = len(notes) + 1
@@ -166,12 +221,14 @@ def supersede_note(workspace_file: str | Path, note_id: str, new_text: str, *, k
         "origin": str(target.get("origin", "agent_summary")),
         "source_refs": list(target.get("source_refs", []) or []),
     }
-    target["status"] = "superseded"
-    target["superseded_by"] = new_id
     store.append_jsonl(SESSION_NOTES_FILE, replacement)
-    # Rewrite the audit-relevant status of the old row (append-only store keeps
-    # history via receipts; the JSONL row update is the documented supersede path).
-    _update_note_row(store, note_id, {"status": "superseded", "superseded_by": new_id})
+    _append_note_decision(
+        store,
+        note_id=note_id,
+        decision="supersede",
+        superseded_by=new_id,
+        reason="superseded_by_refinement",
+    )
     from .receipts import build_write_receipt, persist_write_receipt
 
     persist_write_receipt(
@@ -189,15 +246,22 @@ def supersede_note(workspace_file: str | Path, note_id: str, new_text: str, *, k
 
 
 def forget_note(workspace_file: str | Path, note_id: str, *, reason: str = "user_requested") -> dict[str, Any]:
-    """Hide exactly one named note; nothing else is touched."""
+    """Hide exactly one named note via an appended forget decision row."""
     store = WorkspaceStore(workspace_file)
-    notes = _load_notes(store)
+    notes, statuses, _ = _load_notes_with_statuses(store)
     target = next((row for row in notes if row.get("note_id") == note_id), None)
     if not target:
         return {"forgotten": False, "reason": "note_not_found", "note_id": note_id}
-    if target.get("status") == "forgotten":
+    projected_status = statuses.get(str(note_id), "active")
+    if projected_status == "forgotten":
         return {"forgotten": True, "note_id": note_id, "duplicate": True}
-    _update_note_row(store, note_id, {"status": "forgotten", "superseded_by": f"forget:{reason}"})
+    _append_note_decision(
+        store,
+        note_id=note_id,
+        decision="forget",
+        superseded_by=f"forget:{reason}",
+        reason=reason,
+    )
     from .receipts import build_write_receipt, persist_write_receipt
 
     persist_write_receipt(
@@ -222,20 +286,31 @@ def list_notes(
     session_id: str = "",
     limit: int = NOTES_LIST_DEFAULT_LIMIT,
 ) -> dict[str, Any]:
-    """List notes with optional filters; defaults to active only."""
+    """List notes with optional filters; defaults to active only.
+
+    status 是投影值：决策行（最新胜出）叠加在存储字段之上，返回的行会
+    带上投影后的 status 与 superseded_by，不改写任何存储行。
+    """
     store = WorkspaceStore(workspace_file)
-    notes = _load_notes(store)
+    notes, statuses, latest = _load_notes_with_statuses(store)
     try:
         limit = max(1, min(int(limit), NOTES_LIST_MAX_LIMIT))
     except (TypeError, ValueError):
         limit = NOTES_LIST_DEFAULT_LIMIT
-    matched = [
-        row
-        for row in notes
-        if (not status or row.get("status") == status)
-        and (not kind or row.get("kind") == kind)
-        and (not session_id or row.get("session_id") == session_id)
-    ]
+    matched = []
+    for row in notes:
+        annotated = dict(row)
+        note_id = str(annotated.get("note_id", ""))
+        projected = statuses.get(note_id, str(annotated.get("status", "active") or "active"))
+        annotated["status"] = projected
+        if projected != "active" and not str(annotated.get("superseded_by", "")).strip():
+            annotated["superseded_by"] = str(latest.get(note_id, {}).get("superseded_by", "")).strip()
+        if (
+            (not status or annotated.get("status") == status)
+            and (not kind or annotated.get("kind") == kind)
+            and (not session_id or annotated.get("session_id") == session_id)
+        ):
+            matched.append(annotated)
     matched.sort(key=lambda row: str(row.get("created_at", "") or ""))
     return {
         "workspace": store.base_dir.name,
@@ -256,9 +331,10 @@ def search_notes(
     tokens = {t for t in re.split(r"[\s,，。.;；:：?？!！]+", str(query or "").lower()) if t}
     if not tokens:
         return []
+    notes, statuses, _ = _load_notes_with_statuses(store)
     scored: list[tuple[float, dict[str, Any]]] = []
-    for row in _load_notes(store):
-        if row.get("status") != "active":
+    for row in notes:
+        if statuses.get(str(row.get("note_id", "")), "active") != "active":
             continue
         text = str(row.get("text", "")).lower()
         if not text:
@@ -323,28 +399,18 @@ def draft_notes_from_session(
     return [draft for draft in drafts if not _SECRET_RE.search(draft["text"]) and not _ABSOLUTE_PATH_RE.search(draft["text"])]
 
 
-def _update_note_row(store: WorkspaceStore, note_id: str, updates: dict[str, Any]) -> bool:
-    """Persist a status change in the canonical backend, then rebuild the
-    JSONL export from it (mirrors the append_jsonl invariant: SQLite is
-    authoritative, the JSONL file is a projection)."""
-    updated = store.memory_backend().update_json_records(SESSION_NOTES_FILE, note_id, updates)
-    if not updated:
-        return False
-    with FileLock(str(store.audit_lock_file)):
-        store._sync_jsonl_export_locked(SESSION_NOTES_FILE, rebuild=True)
-    return True
-
-
 __all__ = [
     "NOTE_KINDS",
     "NOTE_STATUSES",
     "NOTE_TEXT_MAX_CHARS",
     "SESSION_NOTES_FILE",
+    "SESSION_NOTE_DECISIONS_FILE",
     "NoteRejected",
     "draft_notes_from_session",
     "forget_note",
     "list_notes",
     "note_fingerprint",
+    "project_note_statuses",
     "record_note",
     "search_notes",
     "supersede_note",

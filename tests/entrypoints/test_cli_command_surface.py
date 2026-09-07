@@ -20,7 +20,7 @@ EXPECTED_ROOT_COMMANDS = frozenset({
     "agent-execution-import", "agent-execution-summary", "architecture-communities", "artifact", "assertion-inspect", "assertion-query",
     "assertion-status", "audit", "backend-consistency", "bench-profile",
     "bootstrap-context", "bundle-export", "business-flow", "business-flow-impact",
-    "callees", "callers", "change-impact-confirm", "change-impact-reports",
+    "callees", "callers", "case-decisions", "case-reinstate", "case-supersede", "change-impact-confirm", "change-impact-reports",
     "change-review", "check-contract", "check-rules", "consolidate-session", "consolidation-candidates", "constraint", "context",
     "decide-consolidation-candidate",
     "continuity-dashboard", "contracts", "detect-changes", "discover", "doctor",

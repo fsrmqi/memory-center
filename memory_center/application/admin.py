@@ -62,6 +62,9 @@ from memory_center.core.knowledge.communities import analyze_architecture_commun
 from memory_center.core.knowledge.skill_generation import generate_skills
 from memory_center.core.observability.metrics import MetricsCollector
 from memory_center.core.orchestrator import (
+    reinstate_case,
+    supersede_case,
+    workspace_case_decisions,
     group_chain,
     group_impact,
     group_query,
@@ -786,6 +789,16 @@ def build_admin_registry(
                 kind=event_type if event_type in NOTE_KINDS else "",
             ),
             "note_forget": lambda: forget_note(wf, name, reason=reason or "user_requested"),
+            # --- L1 case supersede decisions (G1) ------------------------------
+            "case_supersede": lambda: supersede_case(
+                wf,
+                name,
+                superseded_by=str((parse_payload(payload) or {}).get("superseded_by", "")),
+                actor=source,
+                note=reason,
+            ),
+            "case_reinstate": lambda: reinstate_case(wf, name, actor=source, note=reason),
+            "case_decision_list": lambda: workspace_case_decisions(wf, case_id=name, limit=limit),
             "delivery_init": lambda: initialize_delivery_workflow(wf, task_id, actor=source),
             "delivery_status": lambda: delivery_workflow_status(wf, task_id),
             "delivery_breakdown": lambda: propose_delivery_breakdown(

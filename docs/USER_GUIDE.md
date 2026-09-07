@@ -205,7 +205,7 @@ Memory Center 有四类记忆边界。每类回答一个问题，对应真实存
 | Personal Memory（协作偏好） | "Agent 该怎么和我沟通？" | L3 `workspace_profile` 记忆块 |
 | Procedure Memory（流程规范） | "这类任务的标准流程是什么？" | `team_rules` 记忆块 + 交付验证设计契约 |
 
-介于四类之下还有一层 **Session Notes（L0.5 叙事记忆）**：还不够成为 case、但比原始事件可读的"这次决定了什么/下一步做什么"。用 `mc_admin(action="note_record", text=..., event_type=decision|fact|preference|rule|next_step, session_id=...)` 显式记录，`note_list` / `note_search` 查看，`note_supersede` 修正，`note_forget` 遗忘（只隐藏具名条目）。隐私门 fail-closed：绝对路径与密钥形态直接拒收，`<private>...</private>` 片段落盘前剥除。
+介于四类之下还有一层 **Session Notes（L0.5 叙事记忆）**：还不够成为 case、但比原始事件可读的"这次决定了什么/下一步做什么"。用 `mc_admin(action="note_record", text=..., event_type=decision|fact|preference|rule|next_step, session_id=...)` 显式记录，`note_list` / `note_search` 查看，`note_supersede` 修正（追加替代决策行 + 新条，原条永不改写），`note_forget` 遗忘（追加决策行，只隐藏具名条目；被遗忘后同 fingerprint 可重新记录）。隐私门 fail-closed：绝对路径与密钥形态直接拒收，`<private>...</private>` 片段落盘前剥除。
 
 ## 5. Common Queries / 常见查询
 
@@ -338,6 +338,18 @@ memory-center runtime-governance --workspace .memory-center/workspace.yaml
 ```
 
 空间维护始终先 dry-run；确认后才使用 `--apply`。运行时事实已以 SQLite 为准，部分索引 JSON 是可选导出，不应手工恢复为查询回退。
+
+### Case 治理：替代与恢复 / Case supersede and reinstate
+
+L1 case 过时（方案已演进、结论被新实践取代）时不要手工编辑 case 文件，用追加式决策治理：
+
+```bash
+memory-center case-supersede --workspace /abs/path/.memory-center/workspace.yaml \
+  --case-id <old-case-id> --superseded-by <new-case-id> --actor <your-name> --note "方案过时"
+memory-center case-decisions --workspace /abs/path/.memory-center/workspace.yaml --case-id <old-case-id>
+```
+
+决策行写入 `memory/case-decisions.jsonl`，case 原始行永不改写；`status`/workspace overview 计数按投影实时计算（latest wins）。写错时可 `case-reinstate` 恢复，错误决策也保留在审计链里。`mc_admin` 同义 action 为 `case_supersede` / `case_reinstate` / `case_decision_list`，HTTP 入口为 `/workspace/case-supersede` 等。所有 L1 写入路径（record-case、整合候选审批、work-close 自动案例）的 write receipt 均带 additive `decision` 块（actor/reason），可用 timeline 回放完整审计"谁在什么依据下写了这条记忆"。
 
 建议周期性执行：
 

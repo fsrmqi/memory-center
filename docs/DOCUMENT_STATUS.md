@@ -18,6 +18,7 @@
 | `docs/LOOKUP_ARCHITECTURE_HANDOFF_PLAN.md` | 查询架构收口的专项交接计划、契约与验收矩阵 |
 | `docs/SESSION_FIRST_TASK_CONTINUITY_PROPOSAL.md` | Session-first / Task Shadow 产品与架构提案；L1 Shadow 核心已实现（shadow/observations/handoff 三模块 + facade/admin/CLI/HTTP 接入），DSH 侧适配见 `memory-center-dsh-plugin`（Task Shadow L1 投影） |
 | `docs/MEMORY_ENRICHMENT_DESIGN.md` | 记忆增强设计提案：借鉴 MemOS / claude-mem / MemoraX 的四项能力；A（evidence-index 渐进式披露）与 B（Session Notes 叙事层）已实现（见 CHANGELOG Unreleased），C（Memory Cube）为 P2 草案待评审，D（四类记忆用户模型）已落 USER_GUIDE |
+| `docs/WRITE_GOVERNANCE_ABSORPTION_PLAN.md` | 写入治理吸收方案：借鉴 Utopia（deeplethe/utopia）写入判定的七项工作项 G1–G7（P0：案例替代闭环 / L0.5 追加式替代 / 决策事件化）；含已核实现状基线、写入入口矩阵与前置验证清单 V1–V4 |
 | `docs/DSH_WORKBENCH_PRODUCTIZATION_ROADMAP.md` | DSH/Workbench 产品路线与只读质量视图 |
 | `docs/DOCUMENT_CONSTITUTION.md` | 文档治理、生命周期与发布清单 |
 | `docs/THREE_SYSTEM_KNOWLEDGE_LOOP.md` | Memory Center、DSH 与 Personal Wiki 的协作边界 |

@@ -4,6 +4,7 @@ from typing import Any
 
 SCHEMA_VERSIONS = {
     "write_receipt": 1,
+    "write_decision": 1,
     "timeline_item": 1,
     "timeline_result": 1,
     "eval_result": 1,
@@ -32,6 +33,7 @@ SCHEMA_VERSIONS = {
 
 SCHEMA_REQUIRED_FIELDS = {
     "write_receipt": {"receipt_id", "summary", "layer", "action", "scope", "target", "target_file"},
+    "write_decision": {"actor"},
     "timeline_item": {"kind", "ref_id", "summary", "created_at", "task_id", "session_id", "layer", "action", "scope", "target"},
     "timeline_result": {"timeline", "summary", "filters"},
     "eval_result": {"score", "quality", "findings"},

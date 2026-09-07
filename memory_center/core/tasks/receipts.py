@@ -17,6 +17,31 @@ def _receipt_summary(layer: str, action: str, target: str) -> str:
     return text[:140]
 
 
+def build_write_decision(
+    actor: str = "",
+    agent: str = "",
+    reason: str = "",
+    score: float | None = None,
+    rules: list[str] | None = None,
+    refs: list[str] | None = None,
+    candidate_id: str = "",
+) -> dict[str, Any]:
+    """统一 decision 事件（G3）：谁（actor/agent）、为什么（reason/rules）、
+    凭什么（score/refs）让这次写入生效。人的态度进事件，不进被写数据的字段。"""
+    return with_schema(
+        "write_decision",
+        {
+        "actor": str(actor or ""),
+        "agent": str(agent or ""),
+        "reason": str(reason or ""),
+        "score": score,
+        "rules": list(rules or []),
+        "refs": list(refs or []),
+        "candidate_id": str(candidate_id or ""),
+        },
+    )
+
+
 def build_write_receipt(
     layer: str,
     action: str,
@@ -31,10 +56,9 @@ def build_write_receipt(
     bytes_written: int = 0,
     write_mode: str = "",
     audit_ref: str = "",
+    decision: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    return with_schema(
-        "write_receipt",
-        {
+    payload = {
         "receipt_id": _receipt_id(layer, action, target),
         "summary": _receipt_summary(layer, action, target),
         "layer": layer,
@@ -50,8 +74,10 @@ def build_write_receipt(
         "bytes_written": bytes_written,
         "write_mode": write_mode,
         "audit_ref": audit_ref,
-        },
-    )
+    }
+    if decision is not None:
+        payload["decision"] = decision
+    return with_schema("write_receipt", payload)
 
 
 def persist_write_receipt(store: WorkspaceStore, receipt: dict[str, Any]) -> dict[str, Any]:
