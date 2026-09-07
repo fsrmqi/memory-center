@@ -2,6 +2,8 @@
 
 ## Unreleased / 未发布
 
+- **KnowledgeLink integration plan**：新增 `KNOWLEDGE_LINK_INTEGRATION_PLAN.md`，定义 DSH 插件、Memory Center 与 Personal Wiki 的权威边界、只引用的 KnowledgeLink 模型、锚定检索、人工确认晋升、hash 漂移和四阶段验收；禁止复制 Wiki 正文或由完成信号自动写入长期知识。
+
 ## 4.6.25 Trusted Task Binding / 可信任务绑定
 
 - 本地包、CLI 与 MCP 运行时版本提升至 `4.6.25`；TaskBindingDecision 统一收紧 `mc_start`、`mc_sync`、`mc_close` 的 L2 写入授权。

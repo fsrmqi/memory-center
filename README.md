@@ -45,6 +45,7 @@ Memory Center precomputes these relationships before the agent starts editing.
 - [docs/CHANGELOG.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/CHANGELOG.md) — 变更记录
 - [docs/NEXT_PHASE_MASTER_PLAN.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/NEXT_PHASE_MASTER_PLAN.md) — 开发路线
 - [docs/THREE_SYSTEM_KNOWLEDGE_LOOP.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/THREE_SYSTEM_KNOWLEDGE_LOOP.md) — DSH、Memory Center 与 Personal Wiki 协同闭环
+- [docs/KNOWLEDGE_LINK_INTEGRATION_PLAN.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/KNOWLEDGE_LINK_INTEGRATION_PLAN.md) — DSH、Memory Center 与 Personal Wiki 的受控 KnowledgeLink 交互计划
 - [docs/DSH_WORKBENCH_PRODUCTIZATION_ROADMAP.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/DSH_WORKBENCH_PRODUCTIZATION_ROADMAP.md) — DSH 工作台产品化实施路线
 - [docs/DSH_LOCAL_TELEMETRY.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/DSH_LOCAL_TELEMETRY.md) — DSH 本地执行观测接入
 - [docs/DOCUMENT_CONSTITUTION.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/DOCUMENT_CONSTITUTION.md) — 文档治理与发布清单
