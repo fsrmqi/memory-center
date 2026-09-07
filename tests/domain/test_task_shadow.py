@@ -243,6 +243,74 @@ def test_start_task_creates_shadow_without_writing_l2_when_unbound(demo_workspac
     assert shadow["binding_status"] == "unbound"
 
 
+def test_start_task_does_not_treat_fuzzy_resolution_as_explicit_binding(monkeypatch, demo_workspace):
+    """A resolver result without a direct task anchor must remain L1-only.
+
+    This reproduces the former bypass where ``start_task`` forwarded a guessed
+    task id to sync, whose public contract correctly treats supplied ids as
+    explicit user choices.
+    """
+    import memory_center.application.task_start as task_start
+
+    wf = str(demo_workspace)
+    task = create_task_space(wf, title="消息推送架构治理", tags=["消息推送"])["task_id"]
+    original_context = get_task_artifact(wf, task, "context")["content"]
+    monkeypatch.setattr(
+        task_start,
+        "workspace_sniff",
+        lambda *args, **kwargs: {
+            "risk_level": "low",
+            "resolved_task": {
+                "task_id": task,
+                "title": "消息推送架构治理",
+                "match_reasons": {"intent_exact": ["分析"], "tag_exact": [], "title_exact": []},
+            },
+            "auto_sync_recommendation": {"recommended": True},
+        },
+    )
+    monkeypatch.setattr(task_start, "refresh_query_targets", lambda *args, **kwargs: {"checked": 0})
+    monkeypatch.setattr(task_start, "get_freshness_with_actions", lambda *args, **kwargs: {"status": "fresh"})
+
+    result = task_start.start_task(
+        wf,
+        "分析其他项目的架构",
+        limit=6,
+        auto_sync_mode="balanced",
+        sync_task_space=True,
+        budget="small",
+        deadline_ms=3000,
+        request_tier="fast",
+    )
+
+    assert result["sync_sniff"] is None
+    assert result["bound_task_id"] == ""
+    assert result["task_binding"]["mode"] == "shadow_only"
+    assert result["task_shadow"]["binding_status"] == "unbound"
+    assert get_task_artifact(wf, task, "context")["content"] == original_context
+
+
+def test_start_task_syncs_when_title_directly_anchors_task(demo_workspace):
+    from memory_center.application.task_start import start_task
+
+    wf = str(demo_workspace)
+    task = create_task_space(wf, title="订单服务重构", tags=["订单"])["task_id"]
+
+    result = start_task(
+        wf,
+        "订单服务重构",
+        limit=6,
+        auto_sync_mode="balanced",
+        sync_task_space=True,
+        budget="small",
+        deadline_ms=3000,
+        request_tier="fast",
+    )
+
+    assert result["sync_sniff"]["synced"] is True
+    assert result["bound_task_id"] == task
+    assert result["task_binding"]["mode"] == "auto_direct_anchor"
+
+
 # ---------------------------------------------------------- Observation Inbox
 
 def _observation(**overrides):

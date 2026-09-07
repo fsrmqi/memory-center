@@ -2,6 +2,11 @@
 
 ## Unreleased / 未发布
 
+## 4.6.25 Trusted Task Binding / 可信任务绑定
+
+- 本地包、CLI 与 MCP 运行时版本提升至 `4.6.25`；TaskBindingDecision 统一收紧 `mc_start`、`mc_sync`、`mc_close` 的 L2 写入授权。
+- Local package, CLI, and MCP runtime version bumped to `4.6.25`; TaskBindingDecision consistently gates L2 writes across `mc_start`, `mc_sync`, and `mc_close`.
+
 ### 写入治理吸收 G1–G3：追加式案例治理与写入决策事件 / Write Governance Absorption G1–G3
 
 按 [WRITE_GOVERNANCE_ABSORPTION_PLAN.md](WRITE_GOVERNANCE_ABSORPTION_PLAN.md) 吸收 Utopia pending_facts 对比结论中的三项 P0：一切治理态度走 append-only 事件 + 投影，永不改写已写入数据；全部 additive、向后兼容。
@@ -21,6 +26,8 @@
 ### Task Space 误绑定修复：切断自写自匹配轮替 / Task Space Mis-binding Fix
 
 真实工作区（ucap）验证发现：`mc_close` 自动同步在无显式 task_id 时经 `resolve_task_space` 低置信解析，把无关 intent 写进既有 task space；被写入的 current_summary 又成为下次匹配的匹配源，形成自强化轮替（单一任务空间历史中出现 69 种不同任务头）。四项修复：
+
+- **启动入口最终门禁**：补齐 `mc_start` 的遗漏路径。此前它会把嗅探得到的 task ID 直接传给 `workspace_sync_sniff_to_artifacts`，后者按公开契约将非空 ID 视为用户显式选择，因而绕过解析置信度门禁。现在仅当 auto-sync 已推荐且任务标题或标签存在直接精确锚点时，才允许写入/绑定；否则保持 Shadow-only。响应新增 additive `task_binding` 审计块；回归覆盖模糊解析不得写 L2、标题精确命中仍可自动同步。
 
 ### 测试基建与产品缺陷修复（同一批次）
 

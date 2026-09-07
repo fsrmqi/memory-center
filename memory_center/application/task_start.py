@@ -11,6 +11,22 @@ from memory_center.core.orchestrator import workspace_sniff, workspace_start_ses
 from memory_center.core.retrieval.planner import QueryPlanner
 
 
+def _is_auto_bindable_task(resolved_task: dict[str, Any], auto_sync: dict[str, Any]) -> bool:
+    """Return whether a sniff result may write or bind an existing task.
+
+    ``workspace_sync_sniff_to_artifacts`` intentionally treats a supplied
+    ``task_id`` as explicit user direction.  ``mc_start`` must therefore only
+    pass one after proving a direct task anchor; forwarding a fuzzy resolver
+    result would silently bypass the write gate and contaminate L2 artifacts.
+    """
+    if not auto_sync.get("recommended") or not resolved_task.get("task_id"):
+        return False
+    reasons = resolved_task.get("match_reasons", {})
+    if not isinstance(reasons, dict):
+        return False
+    return bool(reasons.get("tag_exact") or reasons.get("title_exact"))
+
+
 def start_task(workspace_file: str, intent: str, *, limit: int, auto_sync_mode: str, sync_task_space: bool, budget: str, deadline_ms: int, request_tier: str) -> dict[str, Any]:
     planner = QueryPlanner(workspace_file)
     plan = planner.plan(tier=request_tier, limit=limit)
@@ -25,8 +41,9 @@ def start_task(workspace_file: str, intent: str, *, limit: int, auto_sync_mode: 
     sniff = workspace_sniff(workspace_file, intent, limit=limit, auto_sync_mode=auto_sync_mode, view="compact", budget=budget, deadline_ms=deadline_ms)
     resolved_task = sniff.get("resolved_task", {}) or {}
     auto_sync = sniff.get("auto_sync_recommendation", {}) or {}
+    auto_bindable = _is_auto_bindable_task(resolved_task, auto_sync)
     synced: dict[str, Any] | None = None
-    if sync_task_space and (auto_sync.get("recommended") or resolved_task.get("task_id")):
+    if sync_task_space and auto_bindable:
         synced = workspace_sync_sniff_to_artifacts(workspace_file, intent, limit=limit, task_id=str(resolved_task.get("task_id", "") or ""), title=str(resolved_task.get("title", "") or ""), auto_sync_mode=auto_sync_mode, sniff_result=sniff)
     try:
         freshness = get_freshness_with_actions(workspace_file)
@@ -41,12 +58,19 @@ def start_task(workspace_file: str, intent: str, *, limit: int, auto_sync_mode: 
     bound_task_id = ""
     if synced and synced.get("synced"):
         bound_task_id = str(synced.get("task_id", "") or "")
-    else:
+    elif auto_bindable:
         bound_task_id = str(resolved_task.get("task_id", "") or "")
+    binding = {
+        "mode": "auto_direct_anchor" if auto_bindable else "shadow_only",
+        "auto_bindable": auto_bindable,
+        "task_id": bound_task_id,
+        "reason": "title_or_tag_exact" if auto_bindable else "explicit_task_id_or_direct_title_tag_anchor_required",
+    }
     # P2-C: 记录快照 generation，供后续 lookup 检测 stale_to_fresh 转换。
     session_metadata: dict[str, Any] = {}
     if bound_task_id:
         session_metadata["task_id"] = bound_task_id
+    session_metadata["task_binding"] = binding
     session_metadata["freshness_generation"] = str(freshness.get("observed_generation", "") or "")
     session = workspace_start_session(workspace_file, intent, metadata=session_metadata)
     # Session-first: mc_start 自动创建/续接 Task Shadow（L1），不写 L2。
@@ -79,4 +103,4 @@ def start_task(workspace_file: str, intent: str, *, limit: int, auto_sync_mode: 
     except Exception as exc:  # fail-soft: shadow 故障不阻断 start
         shadow = {"shadow_id": "", "error": str(exc)[:160]}
         shadow_state = {}
-    return {"workflow": "mc-start", "request_tier": plan.tier, "query_plan": planner.record("mc_start", plan, started_at, outcome="completed"), "sniff": sniff, "sync_sniff": synced, "session": session, "auto_refresh": auto_refresh, "_workflow_guidance": get_workflow_guidance("work-start", {"risk_level": sniff.get("risk_level", ""), "task_id": bound_task_id}), "freshness": freshness, "bound_task_id": bound_task_id, "task_shadow": shadow, "shadow_summary": {"binding_status": shadow_state.get("binding_status", ""), "candidate_tasks": shadow_state.get("merged", {}).get("candidate_tasks", [])[:3], "shadow_id": shadow_state.get("shadow_id", "")}}
+    return {"workflow": "mc-start", "request_tier": plan.tier, "query_plan": planner.record("mc_start", plan, started_at, outcome="completed"), "sniff": sniff, "sync_sniff": synced, "session": session, "auto_refresh": auto_refresh, "_workflow_guidance": get_workflow_guidance("work-start", {"risk_level": sniff.get("risk_level", ""), "task_id": bound_task_id}), "freshness": freshness, "bound_task_id": bound_task_id, "task_binding": binding, "task_shadow": shadow, "shadow_summary": {"binding_status": shadow_state.get("binding_status", ""), "candidate_tasks": shadow_state.get("merged", {}).get("candidate_tasks", [])[:3], "shadow_id": shadow_state.get("shadow_id", "")}}

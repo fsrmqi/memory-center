@@ -5,6 +5,7 @@ import json
 
 from memory_center.application.task_shadow_flow import (
     case_sync_with_shadow,
+    resolve_close_task_id,
     sniff_sync_with_shadow_fallback,
 )
 from memory_center.core.tasks.shadow import (
@@ -93,6 +94,23 @@ def test_case_sync_explicit_task_id_passes(demo_workspace):
     result = case_sync_with_shadow(wf, "p0-exp", task_id=task)
     assert result["task_id_source"] == "explicit"
     assert result["write_target"] in ("task_space", "none")
+
+
+def test_close_uses_only_recorded_binding_decision_or_shadow(demo_workspace):
+    from memory_center.core.orchestrator import workspace_start_session
+
+    wf = str(demo_workspace)
+    task = create_task_space(wf, title="direct target")["task_id"]
+    workspace_start_session(wf, "legacy task id", session_id="legacy", metadata={"task_id": task})
+    assert resolve_close_task_id(wf, "legacy", "") == ("", "")
+
+    workspace_start_session(
+        wf,
+        "directly anchored",
+        session_id="anchored",
+        metadata={"task_binding": {"mode": "auto_direct_anchor", "task_id": task}},
+    )
+    assert resolve_close_task_id(wf, "anchored", "") == (task, "session_binding")
 
 
 # ------------------------------------------------- P1 source→shadow 映射

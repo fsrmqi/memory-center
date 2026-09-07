@@ -19,6 +19,22 @@ def shadow_id_for_session(session_id: str) -> str:
     return f"{SHADOW_ID_PREFIX}{session_id}"
 
 
+def session_task_binding(workspace_file: str | Path, session_id: str) -> dict[str, Any]:
+    """Read the immutable binding decision recorded at session start."""
+    try:
+        session = workspace_session_summary(workspace_file, session_id)
+    except Exception:
+        return {"mode": "shadow_only", "task_id": ""}
+    for event in session.get("events", []):
+        if not isinstance(event, dict) or event.get("event_type") != "session_start":
+            continue
+        payload = event.get("payload", {})
+        decision = payload.get("task_binding", {}) if isinstance(payload, dict) else {}
+        if isinstance(decision, dict) and decision.get("mode") == "auto_direct_anchor" and decision.get("task_id"):
+            return {"mode": "auto_direct_anchor", "task_id": str(decision["task_id"])}
+    return {"mode": "shadow_only", "task_id": ""}
+
+
 def shadow_only_sync(workspace_file: str | Path, session_id: str, intent: str, reason: str) -> dict[str, Any]:
     """sync_target=shadow 或低置信解析时的 fallback：只更新 Shadow，不写 L2。"""
     shadow = ensure_shadow_for_session(workspace_file, session_id, intent=intent)
@@ -52,6 +68,11 @@ def case_sync_with_shadow(
     """
     resolved_task_id = (task_id or "").strip()
     resolved_source = "explicit" if resolved_task_id else ""
+    if not resolved_task_id:
+        decision = session_task_binding(workspace_file, session_id)
+        if decision.get("task_id"):
+            resolved_task_id = str(decision["task_id"])
+            resolved_source = "session_binding"
     if not resolved_task_id:
         shadow = build_merged_shadow(workspace_file, shadow_id_for_session(session_id))
         if shadow is not None and shadow.get("binding_status") == "bound":
@@ -201,12 +222,13 @@ def resolve_close_task_id(workspace_file: str | Path, session_id: str, explicit_
     close_task_id = (explicit_task_id or "").strip()
     if close_task_id:
         return close_task_id, "explicit"
-    try:
-        session = workspace_session_summary(workspace_file, session_id)
-        close_task_id = str((session.get("summary") or {}).get("task_id", "") or "")
-    except Exception:
-        close_task_id = ""
-    return close_task_id, ("session_binding" if close_task_id else "")
+    decision = session_task_binding(workspace_file, session_id)
+    if decision.get("task_id"):
+        return str(decision["task_id"]), "session_binding"
+    shadow = build_merged_shadow(workspace_file, shadow_id_for_session(session_id))
+    if shadow is not None and shadow.get("binding_status") == "bound" and shadow.get("bound_task_id"):
+        return str(shadow["bound_task_id"]), "shadow_binding"
+    return "", ""
 
 
 def close_case_records(
@@ -229,7 +251,6 @@ def close_case_records(
         workspace_file, session_id, task_id=close_task_id, title=title, auto_sync_mode=auto_sync_mode
     )
     # 低置信解析保护：close 自动路径不允许把低分/歧义解析写进 L2。
-    resolved_info = synced.get("resolved") if isinstance(synced.get("resolved"), dict) else {}
     if (
         not close_task_id
         and synced.get("synced") is False
@@ -267,8 +288,8 @@ def close_case_records(
     # (mc_admin action="note_record" per draft).
     note_drafts: list[dict[str, Any]] = []
     try:
-        from memory_center.core.tasks.session_notes import draft_notes_from_session
         from memory_center.core.orchestrator.session import workspace_session_summary
+        from memory_center.core.tasks.session_notes import draft_notes_from_session
 
         session_detail = workspace_session_summary(workspace_file, session_id)
         note_drafts = draft_notes_from_session(
@@ -291,6 +312,7 @@ def close_case_records(
 
 __all__ = [
     "shadow_id_for_session",
+    "session_task_binding",
     "shadow_only_sync",
     "case_sync_with_shadow",
     "sniff_sync_with_shadow_fallback",

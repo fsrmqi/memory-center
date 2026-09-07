@@ -54,7 +54,7 @@ MCP 当前公开的是 15 个 task-level tools：
 | `mc_bootstrap_context` | 零初始化上下文入口：已有 workspace 用 Memory Center；否则只读调用可选 GitNexus，再降级为有界本地搜索；外部结果不持久化 |
 | `mc_provider_action` | 运行注册的外部 Provider 固定动作；读取动作直接执行，索引或清理必须 `confirm=true`，不接受自由命令 |
 | `mc_mcp_bridge` | 受限外部 MCP Client：无 `action` 时查看 Provider 白名单；有 `provider/action` 时只调用策略登记的 HTTP MCP 工具、固定模板参数，写入必须 `confirm=true` |
-| `mc_start` | 嗅探任务上下文、可选同步、启动 session；自动创建/续接 Task Shadow（L1），未绑定不写 L2 |
+| `mc_start` | 嗅探任务上下文、可选同步、启动 session；自动创建/续接 Task Shadow（L1）。仅在自动同步已获推荐且任务标题或标签直接命中时才自动绑定/写 L2；其余情况保持 Shadow-only，并通过 additive `task_binding` 说明决策。 |
 | `mc_lookup` | 统一检索入口：symbol / code / query / trace / chain / context / ref / backend；`mode="query"` 支持 `view="evidence-index"` 紧凑有序证据索引（渐进式披露第一跳，第二跳用 `mode="ref"` 展开），缺省视图不变 |
 | `mc_analyze` | 统一影响分析入口：quick / standard / full |
 | `mc_sync` | 将 sniff / case / task 过程同步到工件与记忆；低置信任务解析会停写并要求显式 task_id。新增 `sync_target=auto\|task\|shadow`：低置信解析 fallback 更新 Task Shadow 而不放弃连续性 |
@@ -558,6 +558,7 @@ HTTP GET 只允许无副作用读取；所有写入 route 必须 POST。非回�
 - **调用链锚点门禁**（4.6.21）：chain 响应新增 `chain_anchor_validation` 与 `chain_scope_validation`；锚定失败或分片路由未覆盖锚点项目时，空 chain 结果强制 `AMBIGUOUS`（reason codes `anchor_mismatch`/`scope_incomplete`），并给出 `fallback_action` 回退建议，不再把空结果当作"确认不存在调用方"。
 
 - **任务解析写入门禁**（4.6.21）：`resolve_task_space` 输出 `resolution_confidence`（high/medium/low）、`auto_write_allowed` 与 `required_action`；低置信/歧义解析不再自动绑定 task space。`workspace_sync_sniff_to_artifacts` / `workspace_sync_case_to_artifacts`（`mc_sync`）在低置信时停止写入并返回候选，需要显式 `task_id`。`mc_close` 优先复用同会话 `mc_start` 绑定的 task ID。匹配来源分类（`tag_exact`/`title_exact`/`intent_exact`/`signature_overlap`/`fuzzy_token`）在 `match_reasons` 中可见；中文长意图与任务工件正文用连续公共子串判定语义重叠。
+- **`mc_start` 最终绑定门禁**：启动入口不会再把自然语言解析出的 `task_id` 伪装成显式选择传给同步层。仅当 auto-sync 已推荐，且 `match_reasons` 含非空 `title_exact` 或 `tag_exact` 时，才允许自动同步和绑定会话；否则不写 L2、也不向 `mc_close` 传递 task 绑定，只保留 Task Shadow。响应新增 additive `task_binding={mode, auto_bindable, task_id, reason}`，用于审计本次选择。
 - **匹配源与通名弱化**（误绑定修复）：`current_summary` 不作为匹配源（它每次 close 被当次 intent 覆盖，作为输入会自写自匹配）；workspace 自身名字、框架/中间件通名（feign/kafka/redis 等）计入弱 token，不构成强证据；status/priority 加分仅在已有强证据时生效。workspace overview 的任务列表用 `effective_status` 展示活跃度：active 超 14 天无 task-space 活动展示为 `stale`（排序沉底，`registered_status` 保留原登记值）。
 
 - **freshness generation 快照**（4.6.21）：`mc_start` 的 freshness 标记 `freshness_snapshot=true` 并携带 `observed_generation`/`observed_at`/`refresh_in_flight`；后续 `mc_lookup`（带 session_id）在 generation 变化时返回 `freshness_transition`（如 `stale_to_fresh`），Agent 不应把启动时的 stale banner 当作当前查询事实。
