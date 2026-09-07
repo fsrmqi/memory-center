@@ -174,7 +174,7 @@ def register_workflow_routes(registry: CommandRegistry) -> None:
                 verified_by=case.get("verified_by", []) or rp.list_param("verified_by") or None,
                 source_session_id=session_id,
                 source_task_id=task_id,
-                actor=rp.get("actor"),
+                actor=rp.get("actor") or "work_close_agent",
                 decision_reason="work_close_auto_case",
             )
         candidate_feedback = workspace_record_close_feedback(

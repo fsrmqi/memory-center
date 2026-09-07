@@ -822,8 +822,11 @@ def _build_memory_layers(config, store: WorkspaceStore, active_tasks: list[dict[
     superseded_cases = sum(
         1
         for item in case_rows
-        if item.get("superseded_by")
-        or latest_case_decisions.get(str(item.get("case_id", "") or ""), {}).get("decision") == "supersede"
+        if not _projected_truth(item)
+        and (
+            item.get("superseded_by")
+            or latest_case_decisions.get(str(item.get("case_id", "") or ""), {}).get("decision") == "supersede"
+        )
     )
     note_rows = store.read_jsonl_prefer_backend(SESSION_NOTES_FILE, limit=5000)
     note_statuses = project_note_statuses(

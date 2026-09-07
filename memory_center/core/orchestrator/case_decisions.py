@@ -53,8 +53,8 @@ def project_case_truth(
 
 
 def _load_cases_and_decisions(store: Any) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    cases = store.read_jsonl(_CASES_FILE, limit=_CASE_SCAN_LIMIT)
-    decisions = store.read_jsonl(CASE_DECISIONS_FILE, limit=_CASE_SCAN_LIMIT)
+    cases = store.read_jsonl_prefer_backend(_CASES_FILE, limit=_CASE_SCAN_LIMIT)
+    decisions = store.read_jsonl_prefer_backend(CASE_DECISIONS_FILE, limit=_CASE_SCAN_LIMIT)
     return cases, decisions
 
 
@@ -111,6 +111,13 @@ def supersede_case(
     if not any(str(c.get("case_id", "")).strip() == case_id for c in cases):
         return {"superseded": False, "reason": "case_not_found", "case_id": case_id}
     successor = str(superseded_by).strip()
+    if successor and successor == case_id:
+        return {
+            "superseded": False,
+            "reason": "successor_is_self",
+            "case_id": case_id,
+            "superseded_by": successor,
+        }
     if successor and not any(str(c.get("case_id", "")).strip() == successor for c in cases):
         return {
             "superseded": False,
@@ -121,6 +128,13 @@ def supersede_case(
     projection = project_case_truth(cases, decisions)
     if not projection.get(case_id, False):
         return {"superseded": False, "reason": "case_not_current_truth", "case_id": case_id}
+    if successor and not projection.get(successor, False):
+        return {
+            "superseded": False,
+            "reason": "successor_not_current_truth",
+            "case_id": case_id,
+            "superseded_by": successor,
+        }
     record, receipt = _append_decision(
         store,
         case_id=case_id,
@@ -181,7 +195,7 @@ def workspace_case_decisions(
     _, store = load_context(workspace_file)
     wanted = str(case_id).strip()
     bounded = max(1, min(int(limit), 500))
-    decisions = store.read_jsonl(CASE_DECISIONS_FILE, limit=5000 if wanted else bounded)
+    decisions = store.read_jsonl_prefer_backend(CASE_DECISIONS_FILE, limit=5000 if wanted else bounded)
     if wanted:
         decisions = [d for d in decisions if str(d.get("case_id", "")).strip() == wanted]
     decisions.reverse()

@@ -90,6 +90,8 @@ _MUTATING_HTTP_PATHS = frozenset(
         "/workspace/task-shadow-handoff",
         "/workspace/artifacts/sync-sniff",
         "/workspace/artifacts/sync-case",
+        "/workspace/case-supersede",
+        "/workspace/case-reinstate",
         "/workspace/walkthrough-export",
         "/workspace/memory-plan-write",
         "/workspace/memory-execute-write",

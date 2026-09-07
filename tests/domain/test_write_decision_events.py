@@ -174,3 +174,54 @@ def _find_case_id(workspace: Path, task: str) -> str:
 
     rows = WorkspaceStore(workspace).read_jsonl("cross-service-task-memory.jsonl", limit=10)
     return str(next(row["case_id"] for row in rows if row["task"] == task))
+
+
+def test_mc_close_auto_case_names_its_agent(tmp_path: Path) -> None:
+    from memory_center.application.task_shadow_flow import close_case_records
+    from tests.fixtures import copy_demo_workspace
+
+    workspace = copy_demo_workspace(tmp_path)
+    sid = _seed_finished_session(workspace, "Feign 调用链修复")
+
+    records = close_case_records(
+        str(workspace),
+        sid,
+        close_task_id="",
+        title="",
+        auto_sync_mode="balanced",
+        outcome="完成定位",
+        record_case=True,
+        verified_by=["maintainer"],
+    )
+
+    recorded = records["recorded"]
+    assert recorded and recorded["recorded"] is True
+    decision = recorded["write_receipt"]["decision"]
+    assert decision["actor"] == "mc_close_agent"
+    assert decision["reason"] == "mc_close_auto_case"
+
+
+def test_cli_record_case_passes_actor_to_decision(tmp_path: Path) -> None:
+    from typer.testing import CliRunner
+
+    from memory_center.cli.main import app
+    from memory_center.core.storage.workspace import WorkspaceStore
+    from tests.fixtures import copy_demo_workspace
+
+    workspace = copy_demo_workspace(tmp_path)
+    out = CliRunner().invoke(
+        app,
+        [
+            "record-case",
+            "--workspace", str(workspace),
+            "--task", "ArticleFeignClient 发布迁移",
+            "--project", "article-service",
+            "--file", "article-service/src/main/java/com/example/article/Feign.java",
+            "--actor", "cli-maintainer",
+        ],
+    )
+    assert out.exit_code == 0, out.output
+
+    receipts = WorkspaceStore(workspace).read_jsonl("write-receipts.jsonl", limit=5)
+    decision = next(r["decision"] for r in receipts if r.get("action") == "workspace_record_case")
+    assert decision["actor"] == "cli-maintainer"

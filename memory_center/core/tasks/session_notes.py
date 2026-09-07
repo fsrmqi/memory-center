@@ -107,6 +107,7 @@ def _append_note_decision(
     decision: str,
     superseded_by: str,
     reason: str,
+    actor: str = "",
 ) -> dict[str, Any]:
     record = {
         "record_type": "note_decision",
@@ -116,6 +117,7 @@ def _append_note_decision(
         "decision": decision,
         "superseded_by": superseded_by,
         "reason": str(reason or "").strip(),
+        "actor": str(actor or "").strip(),
         "decided_at": _now_iso(),
     }
     store.append_jsonl(SESSION_NOTE_DECISIONS_FILE, record)
@@ -189,7 +191,14 @@ def record_note(
     return {"recorded": True, "duplicate": False, "note_id": note_id, "kind": kind}
 
 
-def supersede_note(workspace_file: str | Path, note_id: str, new_text: str, *, kind: str = "") -> dict[str, Any]:
+def supersede_note(
+    workspace_file: str | Path,
+    note_id: str,
+    new_text: str,
+    *,
+    kind: str = "",
+    actor: str = "",
+) -> dict[str, Any]:
     """Replace one active note with refined text: append the replacement plus a
     supersede decision row; the original row is never rewritten."""
     cleaned = _redact(new_text)
@@ -228,6 +237,7 @@ def supersede_note(workspace_file: str | Path, note_id: str, new_text: str, *, k
         decision="supersede",
         superseded_by=new_id,
         reason="superseded_by_refinement",
+        actor=actor,
     )
     from .receipts import build_write_receipt, persist_write_receipt
 
@@ -245,7 +255,13 @@ def supersede_note(workspace_file: str | Path, note_id: str, new_text: str, *, k
     return {"superseded": True, "note_id": note_id, "new_note_id": new_id}
 
 
-def forget_note(workspace_file: str | Path, note_id: str, *, reason: str = "user_requested") -> dict[str, Any]:
+def forget_note(
+    workspace_file: str | Path,
+    note_id: str,
+    *,
+    reason: str = "user_requested",
+    actor: str = "",
+) -> dict[str, Any]:
     """Hide exactly one named note via an appended forget decision row."""
     store = WorkspaceStore(workspace_file)
     notes, statuses, _ = _load_notes_with_statuses(store)
@@ -261,6 +277,7 @@ def forget_note(workspace_file: str | Path, note_id: str, *, reason: str = "user
         decision="forget",
         superseded_by=f"forget:{reason}",
         reason=reason,
+        actor=actor,
     )
     from .receipts import build_write_receipt, persist_write_receipt
 

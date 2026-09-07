@@ -256,6 +256,8 @@ def close_case_records(
             verified_by=case.get("verified_by", []) or verified_by,
             source_session_id=session_id,
             source_task_id=close_task_id,
+            actor="mc_close_agent",
+            decision_reason="mc_close_auto_case",
         )
     candidate_feedback = workspace_record_close_feedback(
         workspace_file, session_id, task_id=close_task_id, source="mc_close_auto"

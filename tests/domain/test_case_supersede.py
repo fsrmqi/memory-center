@@ -259,3 +259,89 @@ def test_cli_case_supersede_and_reinstate_commands(tmp_path: Path) -> None:
     )
     assert back.exit_code == 0, back.output
     assert len(_decisions(workspace)) == 2
+
+
+def test_case_write_http_routes_are_declared_mutating() -> None:
+    from memory_center.http.route_dispatch import http_route_spec, is_mutating_http_route
+
+    for path in ("/workspace/case-supersede", "/workspace/case-reinstate"):
+        spec = http_route_spec(path)
+        assert spec.methods == frozenset({"POST"}), path
+        assert spec.side_effect == "write", path
+        assert is_mutating_http_route(path) is True, path
+    assert http_route_spec("/workspace/case-decisions").methods == frozenset({"GET"})
+
+
+def test_supersede_rejects_self_reference(tmp_path: Path) -> None:
+    from tests.fixtures import copy_demo_workspace
+
+    workspace = copy_demo_workspace(tmp_path)
+    case_id = _seed_case(workspace, "ArticleFeignClient 发布迁移")
+
+    result = supersede_case(str(workspace), case_id, superseded_by=case_id, actor="maintainer")
+
+    assert result["superseded"] is False
+    assert result["reason"] == "successor_is_self"
+    assert _decisions(workspace) == []
+
+
+def test_supersede_requires_successor_current_truth(tmp_path: Path) -> None:
+    from tests.fixtures import copy_demo_workspace
+
+    workspace = copy_demo_workspace(tmp_path)
+    stale_id = _seed_case(workspace, "旧方案：双写过渡")
+    successor_id = _seed_case(workspace, "新方案：直接切换")
+
+    assert supersede_case(str(workspace), successor_id, actor="maintainer")["superseded"] is True
+
+    result = supersede_case(str(workspace), stale_id, superseded_by=successor_id, actor="maintainer")
+
+    assert result["superseded"] is False
+    assert result["reason"] == "successor_not_current_truth"
+    assert len(_decisions(workspace)) == 1
+
+
+def test_case_reads_survive_missing_jsonl_export(tmp_path: Path) -> None:
+    from tests.fixtures import copy_demo_workspace
+
+    workspace = copy_demo_workspace(tmp_path)
+    case_id = _seed_case(workspace, "ArticleFeignClient 发布迁移")
+    assert supersede_case(str(workspace), case_id, actor="maintainer")["superseded"] is True
+
+    # 模拟 JSONL 导出丢失：SQLite 权威，投影判定不受导出文件缺失影响
+    memory_dir = workspace.parent / "memory"
+    (memory_dir / "case-decisions.jsonl").unlink()
+    (memory_dir / "cross-service-task-memory.jsonl").unlink()
+
+    again = supersede_case(str(workspace), case_id, actor="maintainer")
+    assert again["superseded"] is False
+    assert again["reason"] == "case_not_current_truth"
+
+    back = reinstate_case(str(workspace), case_id, actor="reviewer")
+    assert back["reinstated"] is True
+
+
+def test_superseded_count_respects_reinstate_projection(tmp_path: Path) -> None:
+    from memory_center.core.orchestrator.workspace_ops import workspace_status
+    from memory_center.core.storage.workspace import WorkspaceStore
+    from tests.fixtures import copy_demo_workspace
+
+    workspace = copy_demo_workspace(tmp_path)
+    WorkspaceStore(workspace).append_jsonl(
+        "cross-service-task-memory.jsonl",
+        {
+            "case_id": "case-legacy-direct",
+            "task": "Legacy 直接种子",
+            "projects": ["article-service"],
+            "files": ["a.java"],
+            "current_truth": False,
+            "superseded_by": "case-older",
+            "created_at": "2026-01-01T00:00:00+00:00",
+        },
+    )
+
+    assert reinstate_case(str(workspace), "case-legacy-direct", actor="maintainer")["reinstated"] is True
+
+    l1 = workspace_status(str(workspace))["memory_layers"]["L1_case_atoms"]
+    assert l1["current_truth_count"] == 1
+    assert l1["superseded_count"] == 0

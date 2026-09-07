@@ -176,3 +176,15 @@ def test_backend_and_jsonl_export_stay_consistent(workspace):
     decision_rows = store.read_jsonl_prefer_backend("session-note-decisions.jsonl", limit=100)
     assert len(decision_rows) == 1
     assert decision_rows[0]["note_id"] == created["note_id"]
+
+
+def test_note_decision_rows_carry_actor(workspace):
+    first = record_note(workspace, "决策 A：发布走灰度", kind="decision", session_id="s-actor")
+    second = record_note(workspace, "决策 B：回滚走快照", kind="decision", session_id="s-actor")
+
+    supersede_note(workspace, first["note_id"], "决策 A：发布走全量", actor="maintainer-a")
+    forget_note(workspace, second["note_id"], reason="outdated", actor="maintainer-b")
+
+    by_decision = {row["decision"]: row for row in _note_decisions(workspace)}
+    assert by_decision["supersede"]["actor"] == "maintainer-a"
+    assert by_decision["forget"]["actor"] == "maintainer-b"

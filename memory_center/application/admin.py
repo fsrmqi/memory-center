@@ -787,8 +787,9 @@ def build_admin_registry(
                 name,
                 text,
                 kind=event_type if event_type in NOTE_KINDS else "",
+                actor=source,
             ),
-            "note_forget": lambda: forget_note(wf, name, reason=reason or "user_requested"),
+            "note_forget": lambda: forget_note(wf, name, reason=reason or "user_requested", actor=source),
             # --- L1 case supersede decisions (G1) ------------------------------
             "case_supersede": lambda: supersede_case(
                 wf,

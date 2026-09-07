@@ -466,6 +466,9 @@ HTTP 方法规则：GET 只读；会修改 workspace、记录会话、执行受�
 - `/workspace/workbench-summary`
 - `/workspace/impact`
 - `/workspace/consolidation-candidates`
+- `/workspace/case-supersede`
+- `/workspace/case-reinstate`
+- `/workspace/case-decisions`
 - `/workspace/agent-execution-summary`
 - `/workspace/ref-get`
 - `/workspace/ref-batch`
