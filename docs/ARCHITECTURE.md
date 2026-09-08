@@ -27,7 +27,7 @@
 
 ## 1. 系统定位 / System Role
 
-Memory Center 是一个面向 AI 编程助手的本地优先 workspace 记忆与知识图谱系统。它把多仓、多服务、多语言工程里的代码结构、服务关系、配置契约、消息链路、历史任务和团队规则统一沉淀到 `.memory-center/` 工作区，并通过 CLI、MCP、HTTP 和本地 Workbench 暴露给 Codex、Claude Code、Cursor、Copilot、Gemini 等宿主。
+Memory Center 是一个面向 AI 编程助手的本地优先 workspace 记忆与知识图谱系统。它把多仓、多服务、多语言工程里的代码结构、服务关系、配置契约、消息链路、历史任务和团队规则统一沉淀到 `.memory-center/` 工作区，并通过 CLI、MCP、HTTP JSON API 和 DSH 原生工作台暴露给 Codex、Claude Code、Cursor、Copilot、Gemini 等宿主。
 
 Memory Center is a local-first workspace memory and knowledge graph system for AI coding agents. It turns a multi-repository, multi-service, multi-language workspace into a queryable and traceable local context center.
 
@@ -72,7 +72,7 @@ Memory Center 不要求中心化服务。默认形态是每个 workspace 自带�
 
 - **Local CLI**：开发者或脚本直接运行 `memory-center`。
 - **MCP Server**：AI 编程助手通过 `memory-center-mcp` 调用任务级 tools。
-- **HTTP Bridge**：本地 `memory-center-http` 提供 JSON API 和 Workbench。
+- **HTTP Bridge**：本地 `memory-center-http` 提供 JSON API；交互式展示由 DSH Plugin 的原生工作台承担。
 - **Host Hooks**：在 SessionStart、PreToolUse、Stop 等生命周期节点自动触发上下文、影响分析和收尾。
 
 这种部署形态的关键收益是：工程事实不需要上传到远程平台，索引和记忆可以随 workspace 一起复制、清理、重建，也可以被人类直接审查。
@@ -107,7 +107,7 @@ Memory Center 不要求中心化服务。默认形态是每个 workspace 自带�
 |---|---|---|---|
 | CLI | `memory-center` | `memory_center/cli/main.py` | 初始化、索引、查询、影响分析、任务工作流、评测、hook 生成 |
 | MCP | `memory-center-mcp` | `memory_center/mcp/server.py` | 15 个 task-level tools、resources、prompts、`mc_admin` |
-| HTTP | `memory-center-http` | `memory_center/http/server.py` | JSON API、本地 HTML UI、Vue Workbench `/app` |
+| HTTP | `memory-center-http` | `memory_center/http/server.py` | JSON API 与受限读/写路由；不托管 HTML 或 SPA |
 | Hooks | generated host hooks | `memory_center/hooks/` | SessionStart、PreToolUse、Stop 等宿主生命周期集成 |
 
 ### 1.5 Core 领域布局 / Core Domain Layout
@@ -127,7 +127,7 @@ Memory Center 当前是一个本地文件系统 + SQLite 派生索引驱动的�
 ```text
 ┌─────────────────────────────────────────────────────────────┐
 │ Host Agents / 用户入口                                      │
-│ CLI: memory-center   MCP: memory-center-mcp   HTTP: /app    │
+│ CLI: memory-center   MCP: memory-center-mcp   HTTP: JSON API │
 └──────────────────────────────┬──────────────────────────────┘
                                │
 ┌──────────────────────────────▼──────────────────────────────┐
@@ -172,7 +172,7 @@ Memory Center 当前是一个本地文件系统 + SQLite 派生索引驱动的�
 
 ### 2.1 代码目录视图 / Codebase Layout
 
-当前仓库围绕 `memory_center/` Python package 展开，前端 Workbench 和测试分别独立放置：
+当前仓库围绕 `memory_center/` Python package 展开；交互式 Workbench 位于独立的 DSH Plugin，测试仍在本仓库内：
 
 ```text
 memory_center/
@@ -195,19 +195,16 @@ memory_center/
 ├── mcp/                    # memory-center-mcp facade tools/resources/prompts
 │   ├── runtime.py           # workspace 解析、启动诊断、统一 MCP 错误边界
 │   └── insights.py          # resources、prompts、context/onboard/domain/freshness tools
-├── http/                   # HTTP bridge, route registry, local UI serving
+├── http/                   # HTTP bridge and route registry
 ├── hooks/                  # Codex / Claude Code / Cursor 等宿主 hook 生成
 └── templates/              # 内置模板与生成内容骨架
-
-web/
-└── src/                    # Vue Workbench 页面、路由、API client 和共享组件
 
 tests/                      # 单元、集成、回归、性能和 public surface 测试
 examples/                   # 可提交的脱敏示例 workspace / cases
 docs/                       # 面向用户和维护者的说明文档
 ```
 
-从目录职责看，`core/` 是系统内核，`application/` 是入口共享的用例层，`mcp/`、`cli/`、`http/` 是三种入口适配器，`web/` 是本地可视化工作台。测试覆盖按 public surface 和核心引擎组织，避免把私有 workspace 产物提交进仓库。
+从目录职责看，`core/` 是系统内核，`application/` 是入口共享的用例层，`mcp/`、`cli/`、`http/` 是三种入口适配器；DSH Plugin 消费 HTTP 读模型并承担可视化。测试覆盖按 public surface 和核心引擎组织，避免把私有 workspace 产物提交进仓库。
 
 ### 2.2 架构分层契约 / Layer Contracts
 
@@ -714,7 +711,7 @@ Benchmark/observability 趋势数据写在 `.memory-center/memory/*-trends.jsonl
 
 真实工作区 P95 采用显式快照而不是请求内测量：`workspace-performance-snapshots.jsonl` 仅保存 generation、采样次数、P50/P95/P99、最大值和成功/失败计数。它不保存查询、文件路径或正文，且不会在 lookup 热路径运行。快照状态只读取最近有界记录，比较上一条 P95 后给出局部刷新或重新采样建议。HTTP route dispatch 在进程初始化后为每条已注册路由生成读写契约；审计会阻断未分类、无效方法、孤立声明和名称表现为写入却被声明为 GET 的路由。
 
-后台任务仍以 `workspace-jobs.json` 为唯一持久化模型。读取适配层按运行状态派生 `progress_percent`、`elapsed_ms`、`estimated_remaining_ms`、`can_cancel` 和 `recovery_action`，不回写或篡改历史结果；`/ui/jobs` 只轮询该紧凑状态，不读 graph、index 或源码。
+后台任务仍以 `workspace-jobs.json` 为唯一持久化模型。读取适配层按运行状态派生 `progress_percent`、`elapsed_ms`、`estimated_remaining_ms`、`can_cancel` 和 `recovery_action`，不回写或篡改历史结果；DSH 通过 `GET /workspace/job-status` 读取该紧凑状态，不读 graph、index 或源码。
 
 ---
 
@@ -786,15 +783,17 @@ CLI 是维护者和本地脚本最完整的操作面，但核心语义应复用 
 
 任务空间健康检查和修复类 CLI（例如 `artifact health-task`、`artifact repair-plan-task`、`artifact repair-task`、`work-resume-check`）也必须复用 core 中的 artifacts/resume 语义。CLI 只负责参数适配和输出，不应自行复制匹配、健康评分或修复判断。
 
-### 9.3 HTTP Bridge and Workbench
+### 9.3 HTTP Bridge and DSH Workbench
 
 HTTP server 使用标准库 `ThreadingHTTPServer`，不是 FastAPI。它提供：
 
 - `/health`
 - `/workspace/*` JSON routes
 - `/group/*` JSON routes
-- `/ui/*` HTML exporters
-- `/app` Vue SPA 静态托管
+
+`/ui/*` HTML exporters and the `/app` Vue SPA were removed in 4.6.28. They intentionally return `404`; no server-side compatibility redirect is provided. The DSH Plugin is the interactive display surface and consumes the same bounded, sanitized read models.
+
+`/ui/*` HTML 导出器和 `/app` Vue SPA 已在 4.6.28 下线。它们会按设计返回 `404`，服务端不提供兼容跳转。交互式展示由 DSH Plugin 承担，并消费同一组有界、脱敏的读模型。
 
 路由表在 `memory_center/http/routes/`，由 `route_dispatch.py` 组合：
 
@@ -808,7 +807,7 @@ HTTP 的方法语义由 `route_dispatch.is_mutating_http_route` 统一约束：G
 
 Context Pack 将 top-K 节点聚合为一次有界的一跳边读取，再进行预算裁剪；不为每个节点重复建立 SQLite 读取。`WorkspaceStore` 将 index、artifact、audit 写锁拆分，generation 仍由独立 reindex lock 串行化。空间治理只扫描 `.memory-center` 的 graph/index/artifacts/memory 四类目录，并只返回显式 dry-run 维护建议。
 
-Vue Workbench 位于 `web/src/`，主要页面包括 dashboard、query、impact、group、timeline、receipts、freshness、audit、health、onboard、flow、metrics、verification 等。
+DSH Workbench 提供概览、任务、影响、知识、运行与质量等视图。页面只调用 HTTP 的受限读模型，不直接访问 SQLite、JSONL、源码或 Wiki 正文。旧页面与 JSON 读模型的对应关系见 [HTTP_DISPLAY_MIGRATION.md](HTTP_DISPLAY_MIGRATION.md)。
 
 ---
 
@@ -1039,7 +1038,7 @@ Memory Center 默认不改业务源码。写入范围主要限于：
 
 ### C.1 一句话介绍
 
-Memory Center 是一个面向 AI 编程助手的本地优先 workspace 记忆与代码知识图谱系统。它把多仓、多服务工程中的代码结构、接口契约、调用关系、配置、任务过程和验证证据转成可检索、可解释、可恢复的本地工程上下文，并通过 CLI、MCP、HTTP 和 Workbench 提供给人和 Agent 使用。
+Memory Center 是一个面向 AI 编程助手的本地优先 workspace 记忆与代码知识图谱系统。它把多仓、多服务工程中的代码结构、接口契约、调用关系、配置、任务过程和验证证据转成可检索、可解释、可恢复的本地工程上下文，并通过 CLI、MCP、HTTP JSON API 和 DSH Workbench 提供给人和 Agent 使用。
 
 它解决的不是“再做一个聊天机器人”，而是让 AI 在复杂工程里不必每次从零阅读代码，也不会把猜测、空结果或未验证经验当成事实。
 

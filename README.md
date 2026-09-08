@@ -48,14 +48,15 @@ Memory Center precomputes these relationships before the agent starts editing.
 - [docs/KNOWLEDGE_LINK_INTEGRATION_PLAN.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/KNOWLEDGE_LINK_INTEGRATION_PLAN.md) — DSH、Memory Center 与 Personal Wiki 的受控 KnowledgeLink 交互计划
 - [docs/DSH_WORKBENCH_PRODUCTIZATION_ROADMAP.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/DSH_WORKBENCH_PRODUCTIZATION_ROADMAP.md) — DSH 工作台产品化实施路线
 - [docs/DSH_LOCAL_TELEMETRY.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/DSH_LOCAL_TELEMETRY.md) — DSH 本地执行观测接入
+- [docs/HTTP_DISPLAY_MIGRATION.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/HTTP_DISPLAY_MIGRATION.md) — 内置 Workbench 下线与 DSH/JSON 迁移说明
 - [docs/DOCUMENT_CONSTITUTION.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/DOCUMENT_CONSTITUTION.md) — 文档治理与发布清单
 - [docs/DOCUMENT_STATUS.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/DOCUMENT_STATUS.md) — 当前/决策/历史文档状态目录
 
 ### Current release / 当前版本
 
-当前本地发行版本为 **4.6.27**。4.6 系列已将可信查询、Java IR 差分、跨服务 `primary_chain`、真实 retrieval replay、局部刷新分桶预算、发布质量门禁和只读质量/空间总览收敛为稳定能力；4.6.27 修复未绑定会话关闭时的 L2 写入、长期知识绑定的事件窗口丢失、BM25 候选排序与 DSH 知识页接线。`quality-gate` 只读汇总 generation、coverage、replay、IR、刷新性能和存储状态；它不会执行 reindex、GC、VACUUM 或用户命令。
+当前本地发行版本为 **4.6.28**。4.6 系列已将可信查询、Java IR 差分、跨服务 `primary_chain`、真实 retrieval replay、局部刷新分桶预算、发布质量门禁和只读质量/空间总览收敛为稳定能力；4.6.28 将焦点任务锚定收敛到显式 task/session 绑定，并把展示职责迁移到 DSH 原生面板。`quality-gate` 只读汇总 generation、coverage、replay、IR、刷新性能和存储状态；它不会执行 reindex、GC、VACUUM 或用户命令。
 
-The current local release is **4.6.27**. The 4.6 series consolidates trustworthy query contracts, Java IR differential checks, cross-service `primary_chain`, real retrieval replay, bucketed refresh budgets, a release quality gate, and a read-only quality/storage overview; 4.6.27 fixes unbound-close L2 writes, durable KnowledgeLink binding decisions, BM25 candidate ordering, and DSH knowledge-page wiring. `quality-gate` is read-only and never reindexes, GCs, vacuums, or runs user commands.
+The current local release is **4.6.28**. The 4.6 series consolidates trustworthy query contracts, Java IR differential checks, cross-service `primary_chain`, real retrieval replay, bucketed refresh budgets, a release quality gate, and a read-only quality/storage overview; 4.6.28 converges focus-task anchoring on explicit task/session bindings and moves presentation to the native DSH panel. `quality-gate` is read-only and never reindexes, GCs, vacuums, or runs user commands.
 
 ---
 
@@ -307,35 +308,15 @@ pip install -e .[dev,mcp]
 pytest -q
 ```
 
-### Vue Frontend / Vue 前端
+### Display Surface Migration / 展示界面迁移
 
-The repository includes a modern Vue 3 + Node.js frontend workbench. To set up:
+The bundled Vue workbench and the server-rendered `/ui/*` pages were removed. The HTTP service is now a JSON API only; `/app` and `/ui/*` intentionally return `404` and have no compatibility redirect.
 
-仓库包含 Vue 3 + Node.js 前端工作台。安装步骤：
+内置 Vue 工作台和服务端渲染的 `/ui/*` 页面已下线。HTTP 服务现在只提供 JSON API；`/app` 与 `/ui/*` 会按设计返回 `404`，且不提供兼容跳转。
 
-```bash
-cd web
-pnpm install
-pnpm build    # Build production assets to web/dist/
-```
+Use the Memory Center DSH Plugin for the interactive workbench. Integrations that need a custom display should consume the documented `/workspace/*` read models. See [HTTP display migration](docs/HTTP_DISPLAY_MIGRATION.md) for the old-page-to-read-model mapping and migration examples.
 
-The built frontend is automatically served by the HTTP server at `/app`:
-
-构建后的前端由 HTTP 服务器在 `/app` 路径自动托管：
-
-```bash
-memory-center serve-http --workspace /path/to/workspace.yaml
-# Then open http://127.0.0.1:8765/app in your browser
-```
-
-For frontend development with hot reload:
-
-前端开发模式（热更新）：
-
-```bash
-cd web
-pnpm dev      # Starts Vite dev server on port 5173 with API proxy
-```
+交互式工作台请使用 Memory Center DSH Plugin。需要自定义展示的集成应消费已文档化的 `/workspace/*` 只读模型。旧页面到读模型的映射和迁移示例见 [HTTP 展示迁移说明](docs/HTTP_DISPLAY_MIGRATION.md)。
 
 ---
 
@@ -938,9 +919,9 @@ For large asynchronous work, use `mc_admin(action="job_reindex")`, then `job_sta
 
 对于较大的异步工作，可使用 `mc_admin(action="job_reindex")`，再通过 `job_status` 或 `job_cancel` 并传入 `record_id=<job_id>` 查询或取消。任务决策可通过 `task_decision_record` 记录；`task_evidence_gc` 默认只预览，必须传 `force=true` 才会删除未引用证据。
 
-Use `memory-center performance-snapshot --workspace <workspace.yaml> --samples 5` after an explicit reindex or dependency upgrade to establish a real-workspace P95 trend. It stores only generation, aggregate latency, and outcome counts; it never stores the probe query, code, or source paths, and it is never invoked by normal lookup. Read the result with `performance-status`, `GET /workspace/performance-status`, or `mc_admin(action="performance_snapshot_status")`. `memory-center http-route-contract-audit` checks that every registered HTTP route has an explicit GET/POST contract before release. Background job responses and `/ui/jobs` expose `progress_percent`, elapsed time, estimated remaining time, cancellation availability, and a safe recovery action.
+Use `memory-center performance-snapshot --workspace <workspace.yaml> --samples 5` after an explicit reindex or dependency upgrade to establish a real-workspace P95 trend. It stores only generation, aggregate latency, and outcome counts; it never stores the probe query, code, or source paths, and it is never invoked by normal lookup. Read the result with `performance-status`, `GET /workspace/performance-status`, or `mc_admin(action="performance_snapshot_status")`. `memory-center http-route-contract-audit` checks that every registered HTTP route has an explicit GET/POST contract before release. Background job responses and `GET /workspace/job-status` expose `progress_percent`, elapsed time, estimated remaining time, cancellation availability, and a safe recovery action.
 
-在显式 reindex 或依赖升级后，可运行 `memory-center performance-snapshot --workspace <workspace.yaml> --samples 5` 建立真实工作区 P95 趋势。它只保存 generation、聚合耗时和结果计数，不保存探针查询、源码或路径，普通 lookup 也不会自动触发。可通过 `performance-status`、`GET /workspace/performance-status` 或 `mc_admin(action="performance_snapshot_status")` 查看结果。`memory-center http-route-contract-audit` 会在发布前校验每个已注册 HTTP 路由都有明确的 GET/POST 契约。后台任务响应和 `/ui/jobs` 会提供 `progress_percent`、已耗时、预计剩余时间、是否可取消和安全恢复动作。
+在显式 reindex 或依赖升级后，可运行 `memory-center performance-snapshot --workspace <workspace.yaml> --samples 5` 建立真实工作区 P95 趋势。它只保存 generation、聚合耗时和结果计数，不保存探针查询、源码或路径，普通 lookup 也不会自动触发。可通过 `performance-status`、`GET /workspace/performance-status` 或 `mc_admin(action="performance_snapshot_status")` 查看结果。`memory-center http-route-contract-audit` 会在发布前校验每个已注册 HTTP 路由都有明确的 GET/POST 契约。后台任务响应和 `GET /workspace/job-status` 会提供 `progress_percent`、已耗时、预计剩余时间、是否可取消和安全恢复动作。
 
 `memory-center runtime-governance --workspace <workspace.yaml>` 将性能趋势、存储预算、index generation、ANN 就绪度与活跃后台任务汇总为只读巡检报告。它不创建索引、不扫描源码、不执行清理；任何 rebuild、vacuum 或 generation GC 仍必须由报告建议后显式执行。HTTP 为 `GET /workspace/runtime-governance`，MCP 为 `mc_admin(action="runtime_governance")`。
 
@@ -1505,37 +1486,9 @@ memory-center serve-http \
   --port 8765
 ```
 
-You can also open the built-in local workbench pages:
+The built-in local workbench pages were removed in 4.6.28. Use the DSH Plugin for interactive views, or call the JSON read models directly; the complete migration table is in [HTTP display migration](docs/HTTP_DISPLAY_MIGRATION.md).
 
-- `/ui`
-- `/ui/dashboard`
-- `/ui/continuity`
-- `/ui/task`
-- `/ui/task?task_id=...`
-- `/ui/timeline`
-- `/ui/receipts`
-- `/ui/assertion`
-- `/ui/usage`
-- `/ui/backend`
-- `/ui/index-freshness`
-- `/ui/jobs`
-- `/ui/ref?ref_id=...`
-
-现在也可以直接打开内置本地工作台页面：
-
-- `/ui`
-- `/ui/dashboard`
-- `/ui/continuity`
-- `/ui/task`
-- `/ui/task?task_id=...`
-- `/ui/timeline`
-- `/ui/receipts`
-- `/ui/assertion`
-- `/ui/usage`
-- `/ui/backend`
-- `/ui/index-freshness`
-- `/ui/jobs`
-- `/ui/ref?ref_id=...`
+4.6.28 已下线内置本地工作台页面。交互式查看请使用 DSH Plugin，或直接调用 JSON 读模型；完整迁移表见 [HTTP 展示迁移说明](docs/HTTP_DISPLAY_MIGRATION.md)。
 
 Or:
 

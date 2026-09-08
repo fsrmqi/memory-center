@@ -279,7 +279,7 @@ These prompts guide the Agent through existing `mc_*` facades. They do not creat
 
 先运行 `memory-center eval-reasoning-prompts` 可确认四个 Prompt 的静态合同仍完整，但此结果只代表 smoke。真实验收请复制 [examples/reasoning-prompt-eval](../examples/reasoning-prompt-eval/README.md) 模板，在本地填写脱敏 real cases 和人工 observations，再用 `--cases`、`--observations` 生成统一报告。若只有示例或缺少任一类真实观测，报告会保持 `release_ready=false`。
 
-### HTTP + Workbench
+### HTTP JSON API + DSH Workbench
 
 ```bash
 memory-center serve-http --workspace /abs/path/.memory-center/workspace.yaml --host 127.0.0.1 --port 8765
@@ -287,20 +287,19 @@ memory-center serve-http --workspace /abs/path/.memory-center/workspace.yaml --h
 
 HTTP `GET` 仅用于无副作用读取；写入、会话记录和受控外部动作必须使用 `POST`。默认只能绑定 loopback；如需非回环地址，设置 `MEMORY_CENTER_HTTP_TOKEN`，并在请求中携带 `Authorization: Bearer <token>`。
 
-常用页面：
+内置 `/ui/*` 页面和 `/app` Vue SPA 已下线，访问会返回 `404`。请使用 Memory Center DSH Plugin 查看交互式工作台；自建集成则调用 `/workspace/*` JSON 读模型。常用读模型包括：
 
-- `/ui`
-- `/ui/dashboard`
-- `/ui/continuity`
-- `/ui/task`
-- `/ui/timeline`
-- `/ui/receipts`
-- `/ui/assertion`
-- `/ui/usage`
-- `/ui/backend`
-- `/ui/index-freshness`
-- `/ui/jobs`
-- `/ui/ref`
+- `/workspace/workbench-summary`
+- `/workspace/work-resume`
+- `/workspace/impact`
+- `/workspace/receipts`
+- `/workspace/usage-report`
+- `/workspace/memory-backend`
+- `/workspace/freshness`
+- `/workspace/job-status`
+- `/workspace/quality-overview`
+
+旧页面、替代读模型和请求示例见 [HTTP 展示迁移说明](HTTP_DISPLAY_MIGRATION.md)。
 
 ## 7. Multi-Workspace / 多工作区
 
@@ -733,7 +732,7 @@ memory-center performance-status --workspace /abs/path/.memory-center/workspace.
 memory-center http-route-contract-audit
 ```
 
-快照仅保留 generation、P50/P95/P99、最大耗时和成功/失败计数。它不保留探针查询、路径或源码。长任务可通过 `memory-center job-status --workspace <workspace.yaml> --job-id <job-id>` 查看 `progress_percent`、ETA、是否可取消和恢复动作；HTTP Workbench 使用 `/ui/jobs?workspace=<workspace.yaml>` 轮询同一份紧凑状态。
+快照仅保留 generation、P50/P95/P99、最大耗时和成功/失败计数。它不保留探针查询、路径或源码。长任务可通过 `memory-center job-status --workspace <workspace.yaml> --job-id <job-id>` 查看 `progress_percent`、ETA、是否可取消和恢复动作；DSH 或自建集成使用 `GET /workspace/job-status?workspace=<workspace.yaml>` 轮询同一份紧凑状态。
 
 ### 12.2 检索结果不理想
 

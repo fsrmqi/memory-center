@@ -2,6 +2,9 @@
 
 ## Unreleased / 未发布
 
+- **Built-in Workbench removal / 内置工作台下线**：移除服务端 `/ui/*` HTML 页面和 `/app` Vue SPA 静态托管；它们现在按设计返回 `404`，且不提供兼容跳转。交互式展示迁移到 Memory Center DSH Plugin；自定义展示可使用受限的 `/workspace/*` JSON 读模型。README、架构、用户与 MCP 文档新增迁移说明和旧页面映射。
+- **Built-in Workbench removal (EN)**: Removed the server-rendered `/ui/*` pages and `/app` Vue SPA hosting. Both intentionally return `404` with no compatibility redirect. Interactive presentation moves to the Memory Center DSH Plugin, while custom displays can use the bounded `/workspace/*` JSON read models. The README, architecture, user, and MCP guides now include a migration path and old-page mapping.
+
 ## 4.6.28 Session-First Focus Task / Session-first 焦点任务改造
 
 - 本地包、CLI 与 MCP 运行时版本提升至 `4.6.28`；会话焦点计算不再回退 `active_tasks[0]`，焦点任务锚定收敛到显式 task/session 绑定。
