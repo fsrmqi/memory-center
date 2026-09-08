@@ -40,9 +40,10 @@ def register_session_commands(app: typer.Typer) -> None:
         summary: str = typer.Option(..., help="Bounded DSH assistant completion summary."),
         turn: Optional[int] = typer.Option(None),
         step: Optional[int] = typer.Option(None),
+        task_id: str = typer.Option("", help="Bound L2 task ID anchor (required for delivery capture)."),
     ):
         """Persist one completion-signalled DSH delivery summary, never a full transcript."""
-        print(workspace_capture_dsh_delivery_summary(workspace, source_session_id, summary, turn=turn, step=step))
+        print(workspace_capture_dsh_delivery_summary(workspace, source_session_id, summary, turn=turn, step=step, task_id=task_id))
 
     @app.command("start-session")
     def start_session_cmd(

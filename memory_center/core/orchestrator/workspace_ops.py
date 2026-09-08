@@ -130,7 +130,11 @@ def workspace_status(workspace_file: str | Path, view: str = "compact", budget: 
         "continuity_overview": _build_continuity_overview(workspace_file, active_tasks),
         "core_memory_blocks": core_memory_blocks,
         "active_task_spaces": active_tasks,
+        # Session-first（P0-2）：current_focus_task 降级为"最近可恢复候选"排序
+        # 首位；可信焦点必须由 resolve_session_focus（session/显式 task 输入）给出。
         "current_focus_task": current_focus_task,
+        "current_focus_task_semantics": "resumable_head",
+        "focus": {"kind": "none", "task_id": "", "shadow_id": "", "binding_mode": "none", "binding_reason_code": "no_session_context", "is_current_session_bound": False},
         "topology": store.read_json_prefer_backend("service-topology.json", {}),
         "architecture_communities": architecture_communities_status(workspace_file),
     }
@@ -547,6 +551,8 @@ def workspace_dashboard(
     limit: int = 10,
     view: str = "compact",
     budget: str = "medium",
+    session_id: str = "",
+    task_id: str = "",
 ) -> dict[str, Any]:
     # Lazy import to avoid circular dependency with .resume and .eval
     from ..tasks.delivery import delivery_workflow_status
@@ -590,12 +596,15 @@ def workspace_dashboard(
     timeline = timeline_query(str(workspace_file), kinds=["write_receipt", "handoff"], limit=limit * 3).get("timeline", [])
     receipts = [item for item in timeline if item.get("kind") == "write_receipt"][-limit:]
     handoffs = [item.get("raw", item) for item in timeline if item.get("kind") == "handoff"][-limit:]
-    focus_task = status.get("current_focus_task")
+    # Session-first（P0-2）：dashboard 焦点同样只来自显式 task/session 绑定。
+    focus = resolve_session_focus(workspace_file, task_id=task_id, session_id=session_id, active_tasks=active_tasks)
+    focus_task = _project_focus_task(focus, active_tasks)
     focus_dashboard = (
         workspace_continuity_dashboard(
             workspace_file,
             intent=intent,
-            task_id=(focus_task or {}).get("task_id", ""),
+            task_id=str(focus.get("task_id", "") or ""),
+            session_id=session_id,
             limit=min(limit, 5),
             view=view,
             budget=budget,
@@ -605,11 +614,11 @@ def workspace_dashboard(
     )
     focus_resume_eval = memory_eval_resume(
         workspace_file,
-        task_id=(focus_task or {}).get("task_id", ""),
+        task_id=str(focus.get("task_id", "") or ""),
         intent=intent,
         limit=min(limit, 10),
     )
-    focus_delivery = delivery_workflow_status(workspace_file, (focus_task or {}).get("task_id", "")) if focus_task else None
+    focus_delivery = delivery_workflow_status(workspace_file, str(focus.get("task_id", "") or "")) if focus_task else None
     usage_report = memory_tool_usage_report(workspace_file, limit=max(limit * 10, 50))
     agent_guidance_eval = memory_eval_agent_guidance(workspace_file, intent=intent, limit=limit)
     agent_guidance_adoption = memory_eval_agent_guidance_adoption(workspace_file, limit=max(limit * 10, 50))
@@ -617,7 +626,9 @@ def workspace_dashboard(
         "workspace_dashboard",
         {
         "workspace": status.get("workspace", ""),
+        "focus": focus,
         "focus_task": focus_task,
+        "focus_state_note": _focus_state_note(focus),
         "continuity_overview": status.get("continuity_overview", {}),
         "write_receipts_overview": status.get("write_receipts_overview", {}),
         "active_tasks": active_tasks,
@@ -658,29 +669,41 @@ def workspace_dashboard(
 def workspace_workbench_summary(
     workspace_file: str | Path,
     limit: int = 5,
+    session_id: str = "",
+    task_id: str = "",
 ) -> dict[str, Any]:
     """Return the bounded, latency-sensitive DSH workbench landing projection.
 
     This deliberately avoids dashboard-only quality/replay calculations and the
     full continuity packet. Those remain explicit secondary-view reads.
+
+    Session-first（P0-2/P0-3）：焦点来自显式 ``task_id``、当前 ``session_id``
+    的可信绑定或其 Task Shadow；没有可信锚点时 ``focus.kind="none"``，
+    绝不回退 ``active_tasks[0]``。
     """
     from .resume import workspace_next_actions
     from .session import workspace_recent_sessions
 
     status = workspace_status(workspace_file, view="compact", budget="small")
-    focus_task = status.get("current_focus_task") or {}
     active_tasks = list(status.get("active_task_spaces") or [])[:limit]
-    task_id = str(focus_task.get("task_id", "") or "")
-    actions = workspace_next_actions(workspace_file, task_id=task_id, limit=limit).get("actions", []) if task_id else []
-    receipts = workspace_write_receipts(workspace_file, task_id=task_id, limit=limit).get("receipts", [])
+    focus = resolve_session_focus(workspace_file, task_id=task_id, session_id=session_id, active_tasks=active_tasks)
+    focus_task = _project_focus_task(focus, active_tasks)
+    resolved_task_id = str(focus.get("task_id", "") or "")
+    actions = workspace_next_actions(workspace_file, task_id=resolved_task_id, limit=limit).get("actions", []) if resolved_task_id else []
+    receipts = workspace_write_receipts(workspace_file, task_id=resolved_task_id, limit=limit).get("receipts", [])
     sessions = workspace_recent_sessions(workspace_file, limit=limit).get("recent_sessions", [])
     continuity = status.get("continuity_overview") or {}
+    continuity = {**continuity, "focus_task_id": resolved_task_id} if resolved_task_id else continuity
     return {
         "schema_version": 1,
         "kind": "workspace_workbench_summary",
         "workspace": status.get("workspace", ""),
+        "session_id": session_id,
+        "focus": focus,
         "focus_task": focus_task,
+        "focus_state_note": _focus_state_note(focus),
         "active_tasks": active_tasks,
+        "resumable_tasks": active_tasks,
         "blocked_tasks": [task for task in active_tasks if task.get("status") == "blocked"],
         "continuity_overview": continuity,
         "next_actions": actions[:limit],
@@ -711,9 +734,31 @@ def workspace_continuity_dashboard(
         workspace_resume_packet,
         workspace_unresolved_items,
     )
+    # P0-2：task_id 参数语义是"用户显式选择的任务详情"，不再隐式回退全局焦点。
+    if not task_id and not session_id:
+        return with_schema(
+            "workspace_continuity_dashboard",
+            {
+                "workspace": _workspace_name(workspace_file),
+                "session_id": "",
+                "focus": {"kind": "none", "task_id": "", "shadow_id": "", "binding_mode": "none", "binding_reason_code": "no_session_context", "is_current_session_bound": False},
+                "focus_task": None,
+                "focus_state_note": _focus_state_note({"kind": "none"}),
+                "continuity_overview": {},
+                "resume_packet": {},
+                "next_actions": [],
+                "unresolved_items": [],
+                "recent_receipts": [],
+                "recent_handoffs": [],
+                "recent_evidence": [],
+            },
+        )
 
     status = workspace_status(workspace_file, view="compact", budget=budget)
-    focus_task_id = task_id or (status.get("current_focus_task") or {}).get("task_id", "")
+    # Session-first（P0-2）：焦点优先显式 task_id，其次 session 可信绑定；
+    # 未绑定时不从 active_tasks[0] 补焦点。
+    focus = resolve_session_focus(workspace_file, task_id=task_id, session_id=session_id)
+    focus_task_id = str(focus.get("task_id", "") or "")
     resume_packet = workspace_resume_packet(workspace_file, task_id=focus_task_id, session_id=session_id, intent=intent, limit=limit, view=view, budget=budget)
     next_actions = workspace_next_actions(workspace_file, task_id=focus_task_id, session_id=session_id, intent=intent, limit=limit)
     unresolved = workspace_unresolved_items(workspace_file, task_id=focus_task_id, session_id=session_id, intent=intent, limit=limit)
@@ -724,7 +769,10 @@ def workspace_continuity_dashboard(
         "workspace_continuity_dashboard",
         {
         "workspace": status.get("workspace", ""),
-        "focus_task": status.get("current_focus_task"),
+        "session_id": session_id,
+        "focus": focus,
+        "focus_task": _project_focus_task(focus, list(status.get("active_task_spaces") or [])),
+        "focus_state_note": _focus_state_note(focus),
         "continuity_overview": status.get("continuity_overview", {}),
         "resume_packet": resume_packet,
         "next_actions": next_actions.get("actions", []),
@@ -745,6 +793,16 @@ def workspace_continuity_dashboard(
 _TASK_STALE_AFTER_DAYS = 14
 
 
+def _workspace_name(workspace_file: str | Path) -> str:
+    from .shared import load_context
+
+    try:
+        config, _ = load_context(workspace_file)
+        return config.workspace
+    except Exception:
+        return ""
+
+
 def _task_effective_status(status: str, updated_at: str) -> str:
     """活跃度展示状态（P0 误绑定修复配套）：active 任务超过 14 天无任何
     task-space 活动即标注 stale。只影响展示与排序，不改写 meta.json。"""
@@ -756,6 +814,126 @@ def _task_effective_status(status: str, updated_at: str) -> str:
     except (TypeError, ValueError):
         return normalized
     return "stale" if age_days >= _TASK_STALE_AFTER_DAYS else normalized
+
+
+_FOCUS_BINDING_MODES = ("explicit", "auto_direct_anchor", "shadow_only", "none")
+
+
+def resolve_session_focus(
+    workspace_file: str | Path,
+    *,
+    task_id: str = "",
+    session_id: str = "",
+    active_tasks: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Session-aware 焦点解析（P0-2，Session-first 提案）。
+
+    优先级固定为：显式请求的 task_id > 当前 session 已记录且可信的
+    task_binding.task_id > 当前 session 的未绑定 Task Shadow > 无焦点。
+    禁止回退到 ``active_tasks[0]``：工作区排序结果不能冒充会话事实。
+    返回 additive ``focus`` 结构；旧字段由调用方按 ``focus.kind`` 投影。
+    """
+    resolved_task_id = str(task_id or "").strip()
+    binding_mode = "none"
+    binding_reason_code = "no_session_context"
+    kind = "none"
+    shadow_id = ""
+    if resolved_task_id:
+        # 显式请求的 task_id 仅用于用户明确选择的详情页/恢复动作。
+        kind = "task"
+        binding_mode = "explicit"
+        binding_reason_code = "explicit_task_id"
+    elif session_id:
+        session_binding = _load_session_task_binding(workspace_file, session_id)
+        bound_task = str(session_binding.get("task_id", "") or "").strip()
+        binding_mode_raw = str(session_binding.get("mode", "") or "").strip()
+        if bound_task and binding_mode_raw in ("explicit", "auto_direct_anchor"):
+            kind = "task"
+            resolved_task_id = bound_task
+            binding_mode = binding_mode_raw
+            binding_reason_code = "explicit_task_id" if binding_mode_raw == "explicit" else "direct_anchor"
+        else:
+            shadow_id = _resolve_session_shadow(workspace_file, session_id)
+            if shadow_id:
+                kind = "shadow"
+                binding_mode = "shadow_only"
+                binding_reason_code = "auto_binding_disabled" if not bound_task else "ambiguous_candidate"
+    focus = {
+        "kind": kind,
+        "task_id": resolved_task_id if kind == "task" else "",
+        "shadow_id": shadow_id,
+        "binding_mode": binding_mode if kind != "none" else "none",
+        "binding_reason_code": binding_reason_code if kind != "none" else "no_session_context",
+        "is_current_session_bound": kind == "task" and binding_mode in ("explicit", "auto_direct_anchor"),
+    }
+    # active_tasks 仅用于校验显式 task 仍存在；绝不从中挑选焦点。
+    if kind == "task" and active_tasks is not None:
+        known_ids = {str(item.get("task_id", "") or "") for item in active_tasks}
+        if resolved_task_id not in known_ids:
+            focus["task_missing_from_active_list"] = True
+    return focus
+
+
+def _load_session_task_binding(workspace_file: str | Path, session_id: str) -> dict[str, Any]:
+    """读取 session 启动事件里记录的 task_binding 元数据（可信绑定来源）。"""
+    from .session import _session_events
+    from .shared import SESSION_EVENTS_FILE, load_context
+
+    try:
+        _, store = load_context(workspace_file)
+        events = _session_events(store, session_id)
+    except Exception:
+        return {}
+    for event in events:
+        if str(event.get("event_type", "") or "") != "session_start":
+            continue
+        payload = event.get("payload") or {}
+        binding = payload.get("task_binding") if isinstance(payload, dict) else None
+        if isinstance(binding, dict):
+            return binding
+    return {}
+
+
+def _resolve_session_shadow(workspace_file: str | Path, session_id: str) -> str:
+    """解析 session 当前绑定的 Shadow；未注册返回空串（不回退派生）。
+
+    MC 内部 session（source kind=memory-center）与 DSH bridge 透传的
+    session（source kind=dsh）是两条注册路径，都查一遍。
+    """
+    from memory_center.core.tasks.shadow import bound_shadow_for_source
+    from .shared import load_context
+
+    try:
+        _, store = load_context(workspace_file)
+        for source_kind in ("memory-center", "dsh"):
+            shadow_id = str(bound_shadow_for_source(store, source_kind, session_id) or "")
+            if shadow_id:
+                return shadow_id
+        return ""
+    except Exception:
+        return ""
+
+
+def _project_focus_task(focus: dict[str, Any], active_tasks: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """按 focus.kind 投影旧字段 ``focus_task``：仅在 kind=task 时非空。"""
+    if focus.get("kind") != "task":
+        return None
+    task_id = str(focus.get("task_id", "") or "")
+    for item in active_tasks:
+        if str(item.get("task_id", "") or "") == task_id:
+            projected = dict(item)
+            projected["focus_reason"] = _build_focus_reason(projected)
+            return projected
+    return None
+
+
+def _focus_state_note(focus: dict[str, Any]) -> str:
+    kind = str(focus.get("kind", "none") or "none")
+    if kind == "task":
+        return "当前焦点任务来自本 session 的可信绑定。"
+    if kind == "shadow":
+        return "当前工作尚未绑定工程任务；历史任务仅作为可恢复候选展示。"
+    return "未连接当前会话；不展示任何任务为当前焦点。"
 
 
 def _active_task_summaries(workspace_file: str | Path, limit: int = 5) -> list[dict[str, Any]]:
@@ -932,11 +1110,14 @@ def _build_continuity_overview(workspace_file: str | Path, active_tasks: list[di
             resumable += 1
         if task.get("status") == "blocked":
             blocked += 1
+    # Session-first（P0-2）：工作区级视图没有 session 语境，focus_task_id
+    # 只表示"最近可恢复候选"的排序首位，不得被消费方当作当前焦点。
     return {
         "active_task_count": len(active_tasks),
         "resumable_task_count": resumable,
         "blocked_task_count": blocked,
-        "focus_task_id": active_tasks[0].get("task_id", "") if active_tasks else "",
+        "focus_task_id": "",
+        "resumable_head_task_id": active_tasks[0].get("task_id", "") if active_tasks else "",
     }
 
 

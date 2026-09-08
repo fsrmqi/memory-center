@@ -169,6 +169,7 @@ def workspace_capture_dsh_delivery_summary(
     summary: str,
     turn: int | None = None,
     step: int | None = None,
+    task_id: str = "",
 ) -> dict[str, Any]:
     """Persist one bounded DSH completion summary as an independent L0 session.
 
@@ -176,15 +177,25 @@ def workspace_capture_dsh_delivery_summary(
     completion-signalled assistant summary, which is capped before persistence.
     A capture has its own deterministic ID so retries are idempotent at the
     plugin boundary and no capture can silently become a reusable L1 case.
+    Session-first（P0-3）：task_id 必须来自调用方当前绑定的任务，不再回退
+    工作区排序候选（current_focus_task），避免交付摘要写入错误任务空间。
     """
     normalized = " ".join(str(summary).split())[:1400]
     if not normalized:
         raise ValueError("delivery summary must not be empty")
     suffix = f"{turn if turn is not None else 'x'}:{step if step is not None else 'x'}"
     session_id = f"dsh-delivery:{source_session_id}:{suffix}"
-    from .workspace_ops import workspace_status
-    focus_task = workspace_status(workspace_file, view="compact", budget="small").get("current_focus_task") or {}
-    task_id = str(focus_task.get("task_id", "") or "")
+    task_id = str(task_id or "").strip()
+    if not task_id:
+        return {
+            "captured": False,
+            "logged": False,
+            "session_id": "",
+            "workspace": "",
+            "event_type": "dsh_delivery_summary",
+            "reason": "task_id_required",
+            "next_action": "交付摘要必须锚定当前绑定的工程任务；请先绑定任务后重试。",
+        }
     _, store = load_context(workspace_file)
     existing = store.find_jsonl_via_backend(
         SESSION_EVENTS_FILE,
@@ -368,7 +379,24 @@ def workspace_task_delivery_overview(workspace_file: str | Path, task_id: str = 
     from .write import workspace_write_receipts
 
     status = workspace_status(workspace_file, view="compact", budget="small")
-    resolved_task_id = task_id or str((status.get("current_focus_task") or {}).get("task_id", "") or "")
+    # Session-first（P0-2）：delivery overview 必须锚定显式 task_id；
+    # 不再回退 current_focus_task（工作区排序候选），无锚点时返回空投影。
+    if not task_id:
+        active = status.get("active_task_spaces") or []
+        return {
+            "schema_version": 1,
+            "kind": "task_delivery_overview",
+            "task_id": "",
+            "task": None,
+            "stage": "unbound",
+            "delivery_count": 0,
+            "verified_delivery_count": 0,
+            "receipt_count": 0,
+            "timeline": [],
+            "next_action": "先选择或绑定一个工程任务，再查看交付时间线。",
+            "resumable_tasks": active[:limit],
+        }
+    resolved_task_id = task_id
     sessions = workspace_recent_sessions(workspace_file, limit=200).get("recent_sessions", [])
     deliveries = [item for item in sessions if item.get("task_id") == resolved_task_id and str(item.get("session_id", "")).startswith("dsh-delivery:")][:limit]
     receipts = workspace_write_receipts(workspace_file, task_id=resolved_task_id, limit=limit).get("receipts", [])
@@ -378,8 +406,12 @@ def workspace_task_delivery_overview(workspace_file: str | Path, task_id: str = 
         stage = "awaiting_validation"
     if verified:
         stage = "delivery_recorded"
+    task_row = next(
+        (item for item in (status.get("active_task_spaces") or []) if str(item.get("task_id", "")) == resolved_task_id),
+        {},
+    )
     timeline = [
-        {"kind": "task", "label": "任务已绑定", "time": str((status.get("current_focus_task") or {}).get("updated_at", "") or "")},
+        {"kind": "task", "label": "任务已绑定", "time": str(task_row.get("updated_at", "") or "")},
         *[{"kind": "delivery", "label": str(item.get("intent", "交付摘要") or "交付摘要")[:140], "time": str(item.get("created_at", "") or ""), "verified": item in verified} for item in reversed(deliveries[-5:])],
         *[{"kind": "receipt", "label": str(item.get("summary", "") or item.get("action", "写入回执"))[:140], "time": str(item.get("created_at", "") or "")} for item in receipts[-5:]],
     ]
@@ -387,7 +419,7 @@ def workspace_task_delivery_overview(workspace_file: str | Path, task_id: str = 
         "schema_version": 1,
         "kind": "task_delivery_overview",
         "task_id": resolved_task_id,
-        "task": status.get("current_focus_task") or {},
+        "task": task_row,
         "stage": stage,
         "delivery_count": len(deliveries),
         "verified_delivery_count": len(verified),

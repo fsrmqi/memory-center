@@ -270,10 +270,14 @@ def register_workflow_routes(registry: CommandRegistry) -> None:
         limit=_parse_int(rp.params, "limit", 10),
         view=rp.view(),
         budget=rp.budget(),
+        session_id=rp.session_id(),
+        task_id=rp.task_id(),
     ))
     registry.register("/workspace/workbench-summary", lambda rp: workspace_workbench_summary(
         rp.workspace(),
         limit=_parse_int(rp.params, "limit", 5),
+        session_id=rp.session_id(),
+        task_id=rp.task_id(),
     ))
     registry.register("/workspace/quality-overview", lambda rp: workspace_quality_overview(
         rp.workspace(),

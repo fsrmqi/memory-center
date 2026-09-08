@@ -159,6 +159,8 @@ def _compact_workspace_status(result: dict[str, Any], budget: str = "medium") ->
         },
         "active_task_spaces": _compact_task_rows(result.get("active_task_spaces", []), limit=limits["tasks"]),
         "current_focus_task": result.get("current_focus_task", {}),
+        "current_focus_task_semantics": result.get("current_focus_task_semantics", ""),
+        "focus": result.get("focus", {}),
         "knowledge_state": result.get("knowledge_state", {}),
     }
 

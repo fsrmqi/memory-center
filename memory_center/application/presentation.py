@@ -610,7 +610,9 @@ def export_timeline_html(workspace_file: str | Path, intent: str = "", limit: in
 
     workspace_param = str(Path(workspace_file).resolve())
     sidebar = _nav_sidebar_html(workspace_param)
-    focus = workspace_status(workspace_file, view="compact", budget="medium").get("current_focus_task") or {}
+    # Session-first（P0-2）：无 session 语境的工作区级视图不指定焦点 task，
+    # 展示全量写链回放，而非错误锚定 active_tasks[0]。
+    focus = {}
     task_id = str(focus.get("task_id", "") or "")
     timeline = workspace_replay_write_chain(workspace_file, task_id=task_id, limit=limit).get("timeline", [])
     backend = memory_backend_query(workspace_file, collection="write-receipts.jsonl", limit=min(limit, 10))

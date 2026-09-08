@@ -53,18 +53,20 @@ def start_task(workspace_file: str, intent: str, *, limit: int, auto_sync_mode: 
     freshness["freshness_snapshot"] = True
     if str(freshness.get("status", "")) in ("stale", "pending"):
         freshness["guidance"] = "本状态是任务启动时的快照；后台定向刷新完成后，后续 mc_lookup 的 index_context.generation 才是当前事实，勿把 stale banner 当作最新查询结论。"
-    # P1-B: 绑定本会话解析出的 task，mc_close 优先复用，避免关闭时重新解析
-    # 走向错误 task space 污染追加保护工件。
+    # P0-1（Session-first 提案）：auto_bind 必须同时满足 sync_task_space 与直接锚点。
+    # synced 只在 sync_task_space=True 且 auto_bindable 时产生，因此 synced 存在
+    # 本身就是 direct anchor 证明；sync_task_space=False 时绝不读取 resolved_task。
     bound_task_id = ""
     if synced and synced.get("synced"):
         bound_task_id = str(synced.get("task_id", "") or "")
-    elif auto_bindable:
-        bound_task_id = str(resolved_task.get("task_id", "") or "")
+    binding_reason_code = "explicit_task_id" if bound_task_id else "auto_binding_disabled"
     binding = {
-        "mode": "auto_direct_anchor" if auto_bindable else "shadow_only",
-        "auto_bindable": auto_bindable,
+        "mode": "auto_direct_anchor" if bound_task_id else "shadow_only",
+        "auto_bindable": bool(bound_task_id),
         "task_id": bound_task_id,
-        "reason": "title_or_tag_exact" if auto_bindable else "explicit_task_id_or_direct_title_tag_anchor_required",
+        "reason": "title_or_tag_exact" if bound_task_id else "explicit_task_id_or_direct_title_tag_anchor_required",
+        "binding_reason_code": binding_reason_code,
+        "sync_task_space": sync_task_space,
     }
     # P2-C: 记录快照 generation，供后续 lookup 检测 stale_to_fresh 转换。
     session_metadata: dict[str, Any] = {}
@@ -86,6 +88,7 @@ def start_task(workspace_file: str, intent: str, *, limit: int, auto_sync_mode: 
                 workspace_file, str(shadow["shadow_id"]), bound_task_id, source="mc_start"
             )
             shadow["binding_status"] = "bound" if bind_result.get("bound") else shadow.get("binding_status", "unbound")
+            shadow["binding_reason_code"] = binding_reason_code
         else:
             resolved_task_row = sniff.get("resolved_task", {}) or {}
             raw_candidates = resolved_task_row.get("candidates") or sniff.get("resolved_candidates") or []
@@ -99,6 +102,7 @@ def start_task(workspace_file: str, intent: str, *, limit: int, auto_sync_mode: 
                 if isinstance(item, dict) and item.get("task_id")
             ]
             shadow["candidate_tasks"] = candidates
+            shadow["binding_reason_code"] = "ambiguous_candidate" if candidates else "no_session_context"
         shadow_state = build_merged_shadow(workspace_file, str(shadow["shadow_id"])) or {}
     except Exception as exc:  # fail-soft: shadow 故障不阻断 start
         shadow = {"shadow_id": "", "error": str(exc)[:160]}
