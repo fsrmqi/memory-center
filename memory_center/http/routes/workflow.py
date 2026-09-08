@@ -49,6 +49,7 @@ from memory_center.core.orchestrator import (
     workspace_case_decisions,
     workspace_list_consolidation_candidates,
     workspace_workbench_summary,
+    workspace_write_receipts,
 )
 from memory_center.core.orchestrator import workspace_quality_overview
 from memory_center.core.orchestrator import workspace_task_delivery_overview
@@ -485,6 +486,20 @@ def register_workflow_routes(registry: CommandRegistry) -> None:
         return drill_task(rp.workspace(), rp.require('task_id'))
 
     registry.register("/workspace/drill-task", _drill_task)
+
+    # --- 展示数据源（原 /ui/* 页面下线后，由 DSH 面板原生渲染） ---
+    registry.register("/workspace/receipts", lambda rp: workspace_write_receipts(
+        rp.workspace(),
+        layer=rp.get("layer", ""),
+        action=rp.get("action", ""),
+        task_id=rp.task_id(),
+        session_id=rp.session_id(),
+        limit=_parse_int(rp.params, "limit", 50),
+    ))
+    registry.register("/workspace/usage-report", lambda rp: memory_tool_usage_report(
+        rp.workspace(),
+        limit=_parse_int(rp.params, "limit", 200),
+    ))
 
     def _backend_consistency(rp: RouteParams) -> dict[str, Any]:
         return backend_consistency(rp.workspace())

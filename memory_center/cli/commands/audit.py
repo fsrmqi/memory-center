@@ -7,7 +7,7 @@ from pathlib import Path
 import typer
 from rich import print
 
-from memory_center.application.presentation import export_workspace_dashboard_html, export_workspace_dashboard_markdown
+from memory_center.application.presentation import export_workspace_dashboard_markdown
 
 
 def register_audit_commands(app: typer.Typer) -> None:
@@ -96,20 +96,17 @@ def register_audit_commands(app: typer.Typer) -> None:
     def export_workspace_dashboard_cmd(
         workspace: str = typer.Option(...),
         output: str = typer.Option(...),
-        format: str = typer.Option("html", help="html|markdown"),
+        format: str = typer.Option("markdown", help="markdown"),
         intent: str = typer.Option(""),
         limit: int = typer.Option(10),
     ):
-        """Export one workspace dashboard to HTML or Markdown."""
+        """Export one workspace dashboard to Markdown (HTML export removed; UI lives in the DSH plugin)."""
         fmt = format.strip().lower()
-        if fmt == "html":
-            content = export_workspace_dashboard_html(workspace, intent=intent, limit=limit)
-        elif fmt in {"md", "markdown"}:
-            content = export_workspace_dashboard_markdown(workspace, intent=intent, limit=limit)
-        else:
-            raise typer.BadParameter("format must be html or markdown")
+        if fmt not in {"md", "markdown"}:
+            raise typer.BadParameter("format must be markdown (HTML export removed; use the DSH plugin UI)")
+        content = export_workspace_dashboard_markdown(workspace, intent=intent, limit=limit)
         Path(output).write_text(content, encoding="utf-8")
-        print({"exported": True, "format": fmt, "output": output})
+        print({"exported": True, "format": "markdown", "output": output})
 
     @app.command("runtime-audit")
     def runtime_audit_cmd(

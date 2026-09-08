@@ -7,12 +7,13 @@ from urllib.error import HTTPError
 from urllib.parse import quote
 from urllib.request import Request, urlopen
 
+import pytest
+
 from typer.testing import CliRunner
 
 from memory_center import __version__
 from memory_center.application.presentation import (
     export_mermaid,
-    export_workspace_dashboard_html,
     export_workspace_dashboard_markdown,
 )
 from memory_center.application.tasks import execute_task_repair as task_space_repair_execute
@@ -702,22 +703,7 @@ def test_export_workspace_dashboard_cli(tmp_path: Path):
     workspace.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
     runner = CliRunner()
-    html_output = tmp_path / "dashboard.html"
     md_output = tmp_path / "dashboard.md"
-    html_result = runner.invoke(
-        app,
-        [
-            "export-workspace-dashboard",
-            "--workspace",
-            str(workspace),
-            "--output",
-            str(html_output),
-            "--format",
-            "html",
-            "--intent",
-            "更新团队规则",
-        ],
-    )
     md_result = runner.invoke(
         app,
         [
@@ -732,12 +718,9 @@ def test_export_workspace_dashboard_cli(tmp_path: Path):
             "更新团队规则",
         ],
     )
-    assert html_result.exit_code == 0
     assert md_result.exit_code == 0
-    assert html_output.exists()
     assert md_output.exists()
     assert "Workspace Dashboard" in md_output.read_text(encoding="utf-8")
-    assert "<!doctype html>" in html_output.read_text(encoding="utf-8").lower()
 
 
 def test_cli_version_flag():
@@ -1162,9 +1145,7 @@ def test_memory_write_judge_and_plan_write(tmp_path: Path):
     assert lookup_hint["should_use_memory_center"] is True
     assert lookup_hint["preferred_tools"]
     markdown = export_workspace_dashboard_markdown(workspace, intent="更新团队规则", limit=5)
-    html = export_workspace_dashboard_html(workspace, intent="更新团队规则", limit=5)
     assert "Workspace Dashboard" in markdown
-    assert "<!doctype html>" in html.lower()
 
 
 def test_schema_validation_guard():
@@ -2147,27 +2128,17 @@ def test_http_bridge_routes(tmp_path: Path):
             "call_edge_count", "unresolved_call_edge_count", "unresolved_rate", "top_categories",
         }
         assert "task-service" not in json.dumps(quality_gates)
-        ui_index = urlopen(f"{base}/ui?workspace={workspace}").read().decode("utf-8")
-        assert "Memory Center Workbench" in ui_index
-        ui_dashboard = urlopen(f"{base}/ui/dashboard?workspace={workspace}&intent=update%20rule").read().decode("utf-8")
-        assert "Workspace Dashboard" in ui_dashboard
-        ui_task = urlopen(f"{base}/ui/task?workspace={workspace}").read().decode("utf-8")
-        assert "Next Actions" in ui_task
-        ui_task_specific = urlopen(f"{base}/ui/task?workspace={workspace}&task_id={task_id}").read().decode("utf-8")
-        assert task_id in ui_task_specific or "Current Summary" in ui_task_specific
-        ui_timeline = urlopen(f"{base}/ui/timeline?workspace={workspace}").read().decode("utf-8")
-        assert "Timeline" in ui_timeline
-        ui_receipts = urlopen(f"{base}/ui/receipts?workspace={workspace}").read().decode("utf-8")
-        assert "Receipts" in ui_receipts
-        ui_usage = urlopen(f"{base}/ui/usage?workspace={workspace}").read().decode("utf-8")
-        assert "Usage Report" in ui_usage
-        ui_backend = urlopen(f"{base}/ui/backend?workspace={workspace}").read().decode("utf-8")
-        assert "Memory Backend" in ui_backend
-        ui_index_freshness = urlopen(f"{base}/ui/index-freshness?workspace={workspace}").read().decode("utf-8")
-        assert "Index Freshness" in ui_index_freshness
-        first_ref_id = recent_evidence["evidence"][0]["ref_id"]
-        ui_ref = urlopen(f"{base}/ui/ref?workspace={workspace}&ref_id={first_ref_id}").read().decode("utf-8")
-        assert first_ref_id in ui_ref
+        # /ui/* HTML 页面已下线，展示由 DSH 插件原生渲染；JSON 数据源保持可用。
+        receipts = json.loads(urlopen(f"{base}/workspace/receipts?workspace={workspace}&limit=10").read().decode("utf-8"))
+        assert "receipts" in receipts
+        usage_report = json.loads(urlopen(f"{base}/workspace/usage-report?workspace={workspace}&limit=10").read().decode("utf-8"))
+        assert "summary" in usage_report
+        drill_timeline = json.loads(urlopen(f"{base}/workspace/drill-timeline?workspace={workspace}&limit=10").read().decode("utf-8"))
+        assert drill_timeline is not None
+        # /ui/* 已整体下线：请求应得到 404/400 而非 HTML 页面
+        with pytest.raises(HTTPError) as exc_info:
+            urlopen(f"{base}/ui/dashboard?workspace={workspace}")
+        assert exc_info.value.code in {404, 400}
         eval_resume = json.loads(urlopen(f"{base}/workspace/eval-resume?intent=update%20rule&limit=10").read().decode("utf-8"))
         assert "quality" in eval_resume
         eval_handoff = json.loads(urlopen(f"{base}/workspace/eval-handoff?target_model=glm-4&intent=update%20rule&limit=10").read().decode("utf-8"))
@@ -2816,21 +2787,6 @@ def test_backend_query_with_project_and_type(tmp_path: Path):
     assert result_by_project["records"]["count"] >= 1
 
 
-def test_export_html_contains_sidebar(tmp_path: Path):
-    """UI pages contain navigation sidebar with links to all pages."""
-    workspace = _copy_demo_workspace(tmp_path, "ui-sidebar")
-    config = load_workspace_config(workspace)
-    store = WorkspaceStore(workspace)
-    ensure_default_rules(store)
-    reindex_workspace(config, store)
-
-    html_output = export_workspace_dashboard_html(workspace, intent="sidebar test", limit=5)
-    assert "<nav" in html_output
-    assert "/ui/dashboard" in html_output
-    assert "/ui/timeline" in html_output
-    assert "/ui/backend" in html_output
-    assert "工作台" in html_output
-
 
 def test_token_benchmark_save_and_compare(tmp_path: Path):
     workspace = _copy_demo_workspace(tmp_path, "benchmark-baseline")
@@ -3187,21 +3143,6 @@ def test_bm25_scoring_returns_results(tmp_path: Path):
     assert "score" in results[0]
     assert results[0].get("backend") in ("bm25", "sparse")
 
-
-def test_export_dashboard_contains_filters(tmp_path: Path):
-    """Dashboard HTML contains interactive filter form."""
-    workspace = _copy_demo_workspace(tmp_path, "ui-filter")
-    config = load_workspace_config(workspace)
-    store = WorkspaceStore(workspace)
-    ensure_default_rules(store)
-    reindex_workspace(config, store)
-
-    html_output = export_workspace_dashboard_html(workspace, intent="filter test", limit=5, view="compact", budget="medium")
-    assert "<form" in html_output
-    assert "intent" in html_output
-    assert "limit" in html_output
-    assert "view" in html_output
-    assert "budget" in html_output
 
 
 def _copy_demo_workspace(tmp_path: Path, name: str) -> Path:

@@ -2,6 +2,16 @@
 
 ## Unreleased / 未发布
 
+## 4.6.28 Session-First Focus Task / Session-first 焦点任务改造
+
+- 本地包、CLI 与 MCP 运行时版本提升至 `4.6.28`；会话焦点计算不再回退 `active_tasks[0]`，焦点任务锚定收敛到显式 task/session 绑定。
+- Local package, CLI, and MCP runtime version bumped to `4.6.28`; session focus no longer falls back to `active_tasks[0]`, and focus-task anchoring converges on explicit task/session binding.
+
+- **Session-first 焦点任务改造**：新增 `resolve_session_focus` 会话感知焦点计算，`workspace_workbench_summary` 等接口支持 `session_id` 参数；焦点输出改为 `focus` 结构体，区分 `task`、`shadow`、`none` 三种状态，禁止回退到 `active_tasks[0]`；`sync_task_space=false` 时禁止自动绑定；delivery 摘要捕获必须锚定显式任务 ID，并输出 `binding_reason_code` 审计块。
+- **delivery capture Shadow 锚点**：DSH 插件不持有任务状态机、无法传 `--task-id`；服务端在缺省锚点时按 `dsh`/`memory-center` 两种 source kind 解析该会话 Shadow 的显式绑定，仍未绑定则拒绝写入（`task_id_required`）。
+- **侧链路焦点锚点收敛**：`workspace_knowledge_summary` 无 `task_id` 时返回 `anchor_state=unbound` 空状态；`workspace_resume_packet` 只认显式 `task_id` 或 session 可信绑定（explicit/auto_direct_anchor）；`memory_eval_agent_guidance` 缺 intent 时不再拿历史任务标题冒充查询。
+- **wiki 晋升锚点与参数安全**：`confirm_wiki_promotion` 组装参数重构为 `_build_promote_command`，所有会话内容经 `_clean_bridge_arg` 清洗（剥离控制字符、去选项样前缀、限长），subprocess 显式 `shell=False`；delivery 锚点以 `--task-id` 传给 bridge 作审计标注。
+
 ## 4.6.27 KnowledgeLink Safety Fixes / 长期知识关联安全修复
 
 - 本地包、CLI 与 MCP 运行时版本提升至 `4.6.27`；修复未绑定 close 写 L2、长会话绑定决策读取、BM25 候选顺序、任务附着校验与 DSH 知识页接线。
