@@ -187,6 +187,22 @@ def workspace_capture_dsh_delivery_summary(
     session_id = f"dsh-delivery:{source_session_id}:{suffix}"
     task_id = str(task_id or "").strip()
     if not task_id:
+        # Session-first：插件不持有任务状态机，锚点回退到该 DSH 会话 Shadow 的
+        # 可信绑定（bind 时已过显式/直接锚点门禁）；仍未绑定时拒绝写入。
+        from memory_center.core.storage.workspace import WorkspaceStore
+        from memory_center.core.tasks.shadow import bound_shadow_for_source, load_shadow_state
+
+        _, shadow_store = load_context(workspace_file), WorkspaceStore(workspace_file)
+        for source_kind in ("dsh", "memory-center"):
+            shadow_id = str(bound_shadow_for_source(shadow_store, source_kind, source_session_id) or "")
+            if not shadow_id:
+                continue
+            shadow_state = load_shadow_state(shadow_store, shadow_id) or {}
+            bound_task = str(shadow_state.get("bound_task_id", "") or "").strip()
+            if bound_task and str(shadow_state.get("binding_status", "")) == "bound":
+                task_id = bound_task
+                break
+    if not task_id:
         return {
             "captured": False,
             "logged": False,
@@ -194,7 +210,7 @@ def workspace_capture_dsh_delivery_summary(
             "workspace": "",
             "event_type": "dsh_delivery_summary",
             "reason": "task_id_required",
-            "next_action": "交付摘要必须锚定当前绑定的工程任务；请先绑定任务后重试。",
+            "next_action": "交付摘要必须锚定当前绑定的工程任务；请先在任务页绑定后重试。",
         }
     _, store = load_context(workspace_file)
     existing = store.find_jsonl_via_backend(

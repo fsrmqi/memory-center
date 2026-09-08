@@ -189,6 +189,31 @@ def test_resolve_session_shadow_supports_dsh_source_kind(workspace_file: str) ->
     assert _resolve_session_shadow(workspace_file, "unknown-session") == ""
 
 
+def test_delivery_capture_without_anchor_rejected_then_shadow_bound_used(workspace_file: str) -> None:
+    """P0-3：delivery capture 无锚点拒绝；Shadow 已显式绑定时复用其 task。"""
+    from memory_center.core.orchestrator import workspace_capture_dsh_delivery_summary
+    from memory_center.core.storage.workspace import WorkspaceStore
+    from memory_center.core.tasks.artifacts import get_task_artifact
+    from memory_center.core.tasks.shadow import bind_shadow_to_task, ensure_shadow_for_session
+    from memory_center.core.workspace.config import load_workspace_config
+
+    create_task_space(workspace_file, title="delivery anchored task")
+    # 1) 无任何绑定时拒绝写入
+    result = workspace_capture_dsh_delivery_summary(
+        workspace_file, "session-x", "交付摘要：完成 A。", turn=1, step=2
+    )
+    assert result["captured"] is False and result["reason"] == "task_id_required"
+    # 2) Shadow 显式绑定后，同 source 的 capture 复用绑定的 task
+    _, store = load_workspace_config(workspace_file), WorkspaceStore(workspace_file)
+    shadow = ensure_shadow_for_session(workspace_file, "session-x", intent="交付")
+    bind_shadow_to_task(workspace_file, shadow["shadow_id"], "delivery-anchored-task", source="explicit")
+    result2 = workspace_capture_dsh_delivery_summary(
+        workspace_file, "session-x", "交付摘要：完成 A。", turn=1, step=2
+    )
+    assert result2["captured"] is True and result2["task_id"] == "delivery-anchored-task"
+    assert result2["session_id"] == "dsh-delivery:session-x:1:2"
+
+
 def test_delivery_overview_without_task_returns_unbound(workspace_file: str) -> None:
     """task-delivery-overview 无显式 task 时返回空投影而非借用焦点。"""
     from memory_center.core.orchestrator import workspace_task_delivery_overview
