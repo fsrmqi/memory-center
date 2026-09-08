@@ -324,6 +324,11 @@ def attach_knowledge_link_to_task(
         return {"attached": False, "reason": "knowledge_link_not_found", "next_action": "用 knowledge-links 确认 knowledge_id。"}
     metadata = dict(existing.get("metadata", {}) or {})
     merged = list(dict.fromkeys([*[str(item) for item in metadata.get("evidence_refs", [])], *added]))[:_MAX_EVIDENCE]
+    if str(actor).strip() != existing.get("owner"):
+        raise PermissionError("only the existing asset owner can attach a link")
+    from memory_center.core.tasks.artifacts import get_task_artifact
+
+    get_task_artifact(workspace_file, clean_task, "context", max_bytes=1)
     metadata["task_id"] = clean_task[:200]
     metadata["evidence_refs"] = merged
     asset = _reregister_with_metadata(workspace_file, existing, metadata)

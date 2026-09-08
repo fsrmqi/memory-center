@@ -2,6 +2,14 @@
 
 ## Unreleased / 未发布
 
+## 4.6.27 KnowledgeLink Safety Fixes / 长期知识关联安全修复
+
+- 本地包、CLI 与 MCP 运行时版本提升至 `4.6.27`；修复未绑定 close 写 L2、长会话绑定决策读取、BM25 候选顺序、任务附着校验与 DSH 知识页接线。
+- Local package, CLI, and MCP runtime version bumped to `4.6.27`; fixes cover unbound-close L2 writes, long-session binding reads, BM25 candidate ordering, task attachment validation, and DSH knowledge-page wiring.
+
+- 修复未绑定会话 close 自动创建 L2；绑定决策按 session 起始事件独立查询，避免超过 50 条事件后丢失授权。
+- Wiki 候选按 FTS5 BM25 负分排序；文件缺失或登记哈希与当前文件不一致时排除候选。附着要求真实任务与资产 owner；DSH 知识页接入候选接口和等待结果的显式附着操作。
+
 ## 4.6.26 Trusted KnowledgeLink / 可信长期知识关联
 
 - 本地包、CLI 与 MCP 运行时版本提升至 `4.6.26`；KnowledgeLink 补齐人工 actor、session 派生绑定授权、只读默认漂移检查与脱敏观测事件。

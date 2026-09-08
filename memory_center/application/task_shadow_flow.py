@@ -1,12 +1,12 @@
 """mc_sync / mc_close 的 Task Shadow 逻辑（从 MCP server facade 下沉）。"""
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
 from memory_center.core.orchestrator.session import (
     workspace_record_close_feedback,
-    workspace_session_summary,
     workspace_suggest_case,
 )
 from memory_center.core.orchestrator.sync import _shadow_binding_for_session, workspace_sync_case_to_artifacts
@@ -22,7 +22,15 @@ def shadow_id_for_session(session_id: str) -> str:
 def session_task_binding(workspace_file: str | Path, session_id: str) -> dict[str, Any]:
     """Read the immutable binding decision recorded at session start."""
     try:
-        session = workspace_session_summary(workspace_file, session_id)
+        from memory_center.core.storage.workspace import WorkspaceStore
+
+        with WorkspaceStore(workspace_file).memory_backend().connect() as conn:
+            rows = conn.execute(
+                "SELECT payload_json FROM json_records WHERE collection=? AND session_id=? "
+                "AND json_extract(payload_json, '$.event_type')='session_start' ORDER BY id ASC LIMIT 1",
+                ("session-events.jsonl", session_id),
+            ).fetchall()
+        session = {"events": [json.loads(row["payload_json"]) for row in rows]}
     except Exception:
         return {"mode": "shadow_only", "task_id": ""}
     for event in session.get("events", []):
@@ -247,8 +255,12 @@ def close_case_records(
     P0 自写自匹配修复：无显式 task_id 且解析低置信/歧义时，同步降级为
     shadow-only（不写 L2），避免无关 intent 被吸进既有 task space 形成轮替。
     """
-    synced = workspace_sync_case_to_artifacts(
-        workspace_file, session_id, task_id=close_task_id, title=title, auto_sync_mode=auto_sync_mode
+    synced = (
+        workspace_sync_case_to_artifacts(
+            workspace_file, session_id, task_id=close_task_id, title=title, auto_sync_mode=auto_sync_mode
+        )
+        if close_task_id.strip()
+        else {**shadow_only_sync(workspace_file, session_id, "", "explicit_task_id_required"), "fallback": "shadow_only"}
     )
     # 低置信解析保护：close 自动路径不允许把低分/歧义解析写进 L2。
     if (

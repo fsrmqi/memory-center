@@ -1,5 +1,7 @@
 # KnowledgeLink Integration Plan / 长期知识关联集成计划
 
+2026-09-08 回归加固：关闭未绑定 session 必须在任何 L2 同步之前返回 Shadow；绑定读取不依赖事件展示窗口。Wiki bridge 的原始 score 为 FTS5 BM25，越负越相关，候选层转换为 `-score` 后应用正阈值；当前文件与登记 hash 不一致或文件缺失时排除。手工附着校验任务存在和资产 owner。DSH 知识页使用 MC 候选接口，POST 附着固定到会话写 workspace，等待命令结果后才显示成功。
+
 ## Goal / 目标
 
 建立 DSH 插件、Memory Center 与 Personal Wiki 的受控知识闭环。代码事实、任务状态和验证回执仍由 Memory Center 权威保存；Personal Wiki 仍是人类维护的长期知识源；DSH 插件只负责脱敏感知与人工交互。

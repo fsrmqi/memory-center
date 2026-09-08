@@ -60,7 +60,7 @@ def _register(workspace: Path, tmp_path: Path, *, task_id: str = "", evidence=No
 
 
 def _hit(path: str, score: float, snippet: str = "摘要片段", title: str = "标题") -> dict:
-    return {"path": path, "score": score, "snippet": snippet, "title": title}
+    return {"path": path, "score": -score, "snippet": snippet, "title": title}
 
 
 def _transport_of(hits: list[dict]):
@@ -140,10 +140,12 @@ def test_attach_merges_evidence_and_records_event(tmp_path: Path) -> None:
     kid = knowledge_id_for_path(_RELATIVE)
     with pytest.raises(ValueError):
         attach_knowledge_link_to_task(workspace, kid, task_id="task-1", evidence_refs=[], actor="tester")
-    result = attach_knowledge_link_to_task(workspace, kid, task_id="task-1", evidence_refs=["receipt:wr-1"], actor="tester", reason="人工确认")
+    from memory_center.core.tasks.artifacts import create_task_space
+    task_id = create_task_space(workspace, title="task-1")["task_id"]
+    result = attach_knowledge_link_to_task(workspace, kid, task_id=task_id, evidence_refs=["receipt:wr-1"], actor="tester", reason="人工确认")
     assert result["attached"] is True
     metadata = result["asset"]["metadata"]
-    assert metadata["task_id"] == "task-1"
+    assert metadata["task_id"] == task_id
     assert "receipt:wr-1" in metadata["evidence_refs"] and "session:src-1" in metadata["evidence_refs"]
     assert any(event["event_type"] == "manual_attach" for event in read_knowledge_events(workspace))
 

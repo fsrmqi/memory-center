@@ -9,10 +9,12 @@
 from __future__ import annotations
 
 import json
+import math
 import subprocess
+from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from memory_center.core.knowledge.knowledge_events import record_knowledge_event
 from memory_center.core.knowledge.wiki_bridge import (
@@ -98,8 +100,10 @@ def wiki_knowledge_candidates(
     scored: list[dict[str, Any]] = []
     for group, hit in flat:
         path = str(hit.get("path", "")).strip()
-        score = hit.get("score")
-        if not path or not isinstance(score, (int, float)) or isinstance(score, bool) or score <= min_score:
+        raw_score = hit.get("score")
+        # Wiki bridge uses SQLite FTS5 BM25: smaller negative values rank first.
+        score = -raw_score if isinstance(raw_score, (int, float)) and not isinstance(raw_score, bool) else 0.0
+        if not path or not math.isfinite(score) or score <= max(0.0, min_score):
             excluded["low_score_or_unscored"] += 1
             continue
         link = links_by_source.get(f"{BRIDGE_SOURCE_PREFIX}{path}")
@@ -111,11 +115,12 @@ def wiki_knowledge_candidates(
         path_obj = resolve_wiki_file(wiki_root, path)
         freshness = ""
         if path_obj is not None:
-            if len(content_sha256) != 64:
-                content_sha256 = knowledge_link_hash(path_obj.read_bytes())
+            current_hash = knowledge_link_hash(path_obj.read_bytes())
+            if content_sha256 and current_hash != content_sha256:
+                excluded["stale_or_revoked"] += 1
+                continue
+            content_sha256 = current_hash
             freshness = datetime.fromtimestamp(path_obj.stat().st_mtime, tz=timezone.utc).isoformat()
-        elif link:
-            freshness = str(link.get("updated_at", ""))
         else:
             excluded["unhashable"] += 1
             continue
@@ -128,6 +133,7 @@ def wiki_knowledge_candidates(
             reason += f"；已登记链接（{link_status}，{bound}）"
         scored.append({
             "knowledge_id": str((link or {}).get("knowledge_id", "")) or knowledge_id_for_path(path),
+            "attachable": bool(link),
             "title": str(hit.get("title", "")).strip()[:200] or path.rsplit("/", 1)[-1],
             "summary": str(hit.get("snippet", "")).strip()[:_SUMMARY_CHARS],
             "relevance_reason": reason,

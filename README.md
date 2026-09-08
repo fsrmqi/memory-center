@@ -53,9 +53,9 @@ Memory Center precomputes these relationships before the agent starts editing.
 
 ### Current release / 当前版本
 
-当前本地发行版本为 **4.6.26**。4.6 系列已将可信查询、Java IR 差分、跨服务 `primary_chain`、真实 retrieval replay、局部刷新分桶预算、发布质量门禁和只读质量/空间总览收敛为稳定能力；4.6.26 在可信任务绑定基础上补齐 KnowledgeLink 的人工授权、绑定决策来源、只读漂移检查与脱敏事件边界。`quality-gate` 只读汇总 generation、coverage、replay、IR、刷新性能和存储状态；它不会执行 reindex、GC、VACUUM 或用户命令。
+当前本地发行版本为 **4.6.27**。4.6 系列已将可信查询、Java IR 差分、跨服务 `primary_chain`、真实 retrieval replay、局部刷新分桶预算、发布质量门禁和只读质量/空间总览收敛为稳定能力；4.6.27 修复未绑定会话关闭时的 L2 写入、长期知识绑定的事件窗口丢失、BM25 候选排序与 DSH 知识页接线。`quality-gate` 只读汇总 generation、coverage、replay、IR、刷新性能和存储状态；它不会执行 reindex、GC、VACUUM 或用户命令。
 
-The current local release is **4.6.26**. The 4.6 series consolidates trustworthy query contracts, Java IR differential checks, cross-service `primary_chain`, real retrieval replay, bucketed refresh budgets, a release quality gate, and a read-only quality/storage overview; 4.6.26 builds on trusted task binding with manual KnowledgeLink authorization, session-derived binding decisions, read-only-by-default drift checks, and redacted event boundaries. `quality-gate` is read-only and never reindexes, GCs, vacuums, or runs user commands.
+The current local release is **4.6.27**. The 4.6 series consolidates trustworthy query contracts, Java IR differential checks, cross-service `primary_chain`, real retrieval replay, bucketed refresh budgets, a release quality gate, and a read-only quality/storage overview; 4.6.27 fixes unbound-close L2 writes, durable KnowledgeLink binding decisions, BM25 candidate ordering, and DSH knowledge-page wiring. `quality-gate` is read-only and never reindexes, GCs, vacuums, or runs user commands.
 
 ---
 
