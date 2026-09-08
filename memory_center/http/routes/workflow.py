@@ -44,6 +44,7 @@ from memory_center.application.http_facades import (
 from memory_center.application.quality_gates import quality_gates_summary
 from memory_center.core.observability.agent_execution import summarize_agent_execution
 from memory_center.core.orchestrator import (
+    memory_backend_query,
     reinstate_case,
     supersede_case,
     workspace_case_decisions,
@@ -51,6 +52,7 @@ from memory_center.core.orchestrator import (
     workspace_workbench_summary,
     workspace_write_receipts,
 )
+from memory_center.core.workspace.jobs import workspace_job_status
 from memory_center.core.orchestrator import workspace_quality_overview
 from memory_center.core.orchestrator import workspace_task_delivery_overview
 from memory_center.core.knowledge.projection import workspace_knowledge_summary
@@ -499,6 +501,18 @@ def register_workflow_routes(registry: CommandRegistry) -> None:
     registry.register("/workspace/usage-report", lambda rp: memory_tool_usage_report(
         rp.workspace(),
         limit=_parse_int(rp.params, "limit", 200),
+    ))
+    registry.register("/workspace/job-status", lambda rp: workspace_job_status(
+        str(rp.workspace()),
+        job_id=rp.get("job_id", ""),
+        limit=_parse_int(rp.params, "limit", 20),
+    ))
+    registry.register("/workspace/memory-backend", lambda rp: memory_backend_query(
+        rp.workspace(),
+        collection=rp.get("collection", ""),
+        project=rp.get("project", ""),
+        session_id=rp.session_id(),
+        limit=_parse_int(rp.params, "limit", 50),
     ))
 
     def _backend_consistency(rp: RouteParams) -> dict[str, Any]:
