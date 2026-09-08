@@ -110,13 +110,17 @@ def workspace_resume_packet(
     view: str = "compact",
     budget: str = "medium",
 ) -> dict[str, Any]:
-    from .workspace_ops import workspace_status  # lazy import to avoid circular dep
-
     config, store = load_context(workspace_file)
+    # Session-first（P0-2）：恢复包锚点只来自显式 task_id 或 session 可信绑定，
+    # 不再回退 current_focus_task（工作区排序候选）。
     resolved_task_id = task_id.strip()
-    focus_task = workspace_status(workspace_file).get("current_focus_task")
-    if not resolved_task_id and focus_task:
-        resolved_task_id = str(focus_task.get("task_id", "") or "")
+    if not resolved_task_id and session_id:
+        from .workspace_ops import _load_session_task_binding
+
+        binding = _load_session_task_binding(workspace_file, session_id)
+        bound_task = str(binding.get("task_id", "") or "").strip()
+        if bound_task and str(binding.get("mode", "")) in ("explicit", "auto_direct_anchor"):
+            resolved_task_id = bound_task
     task_meta = None
     current_summary = ""
     if resolved_task_id:

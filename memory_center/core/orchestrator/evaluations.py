@@ -207,9 +207,12 @@ def memory_eval_agent_guidance(
     config, _ = load_context(workspace_file)
     query = intent.strip()
     if not query:
+        # Session-first（P0-2）：评估查询不借用工作区排序候选，缺 intent 即
+        # 如实报告 missing_guidance_query，而不是拿历史任务标题冒充当前意图。
         status = workspace_status(workspace_file, view="compact", budget="small")
-        focus = status.get("current_focus_task", {}) or {}
-        query = str(focus.get("title", "") or focus.get("summary_preview", "") or "").strip()
+        focus = status.get("focus", {}) or {}
+        if str(focus.get("kind", "none")) == "task" and str(focus.get("task_id", "") or "").strip():
+            query = str(focus.get("task_id", "") or "").strip()
 
     builder = EvalResultBuilder()
     payload: dict[str, Any] = {}

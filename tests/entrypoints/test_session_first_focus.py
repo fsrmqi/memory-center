@@ -214,6 +214,42 @@ def test_delivery_capture_without_anchor_rejected_then_shadow_bound_used(workspa
     assert result2["session_id"] == "dsh-delivery:session-x:1:2"
 
 
+def test_knowledge_summary_requires_explicit_anchor(workspace_file: str) -> None:
+    """P0-2 侧链路：知识页不再从 current_focus_task 借锚点。"""
+    create_task_space(workspace_file, title="historical knowledge task")
+    from memory_center.core.knowledge.projection import workspace_knowledge_summary
+
+    # 无 task_id：空状态，不检索历史任务关键词
+    unbound = workspace_knowledge_summary(workspace_file, scope="kaipuyun")
+    assert unbound["anchor_state"] == "unbound"
+    assert unbound["related_wiki"] == []
+    assert unbound["focus"]["kind"] == "none"
+    # 显式 task_id：按该任务检索
+    tid = create_task_space(workspace_file, title="anchor knowledge task")["task_id"]
+    bound = workspace_knowledge_summary(workspace_file, scope="kaipuyun", task_id=tid)
+    assert bound["anchor_state"] == "bound"
+    assert bound["focus"]["task_id"] == tid
+
+
+def test_resume_packet_never_falls_back_to_workspace_head(workspace_file: str) -> None:
+    """P0-2 侧链路：恢复包只认显式 task_id 或 session 可信绑定。"""
+    create_task_space(workspace_file, title="head resumable task")
+    from memory_center.core.orchestrator import workspace_resume_packet, workspace_start_session
+
+    # 无 session/task：不锚定任何任务
+    empty = workspace_resume_packet(workspace_file, limit=5)
+    assert not empty.get("task_id")
+    # session 可信绑定：解析到绑定任务而非排序首位
+    tid = create_task_space(workspace_file, title="bound resume task")["task_id"]
+    sess = workspace_start_session(
+        workspace_file,
+        intent="explicit",
+        metadata={"task_id": tid, "task_binding": {"mode": "explicit", "task_id": tid}},
+    )
+    bound = workspace_resume_packet(workspace_file, session_id=str(sess["session_id"]), limit=5)
+    assert bound.get("task_id") == tid
+
+
 def test_delivery_overview_without_task_returns_unbound(workspace_file: str) -> None:
     """task-delivery-overview 无显式 task 时返回空投影而非借用焦点。"""
     from memory_center.core.orchestrator import workspace_task_delivery_overview

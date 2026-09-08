@@ -287,6 +287,7 @@ def register_workflow_routes(registry: CommandRegistry) -> None:
         rp.workspace(),
         scope=rp.get("scope", "kaipuyun"),
         limit=_parse_int(rp.params, "limit", 5),
+        task_id=rp.task_id(),
     ))
     registry.register("/workspace/task-delivery-overview", lambda rp: workspace_task_delivery_overview(
         rp.workspace(), task_id=rp.task_id(), limit=_parse_int(rp.params, "limit", 20)
