@@ -49,6 +49,46 @@ def wiki_promotion_preview(workspace_file: str | Path, session_id: str, *, wiki_
     }
 
 
+def _clean_bridge_arg(value: Any, *, max_len: int = 1600) -> str:
+    """清洗传给 personal-assistant-wiki-bridge 的参数值。
+
+    ``subprocess.run(list, shell=False)`` 不经 shell，但 delivery payload 是
+    会话内容，仍需剥离控制字符并去掉选项样前缀，防止下游 CLI 把内容误当 flag。
+    """
+    text = str(value or "")
+    cleaned = "".join(ch for ch in text if ch.isprintable()).strip()
+    cleaned = cleaned.lstrip("-")[:max_len]
+    return cleaned
+
+
+def _build_promote_command(preview: dict[str, Any], wiki_root: str | Path) -> list[str]:
+    """组装 promote 子命令参数；所有会话内容先经 ``_clean_bridge_arg`` 清洗。
+
+    返回纯参数列表供 ``subprocess.run(..., shell=False)`` 使用，不经 shell。
+    """
+    args: list[str] = [
+        "personal-assistant-wiki-bridge",
+        "--knowledge-root", _clean_bridge_arg(wiki_root, max_len=1024),
+        "promote",
+        "--title", _clean_bridge_arg(preview.get("title", ""), max_len=120),
+        "--content", _clean_bridge_arg(preview.get("content", ""), max_len=1600),
+        "--source", _clean_bridge_arg(preview.get("source", ""), max_len=300),
+        "--module", _clean_bridge_arg(preview.get("module", ""), max_len=60),
+        "--knowledge-type", _clean_bridge_arg(preview.get("knowledge_type", ""), max_len=20),
+        "--confirm",
+    ]
+    for ref in preview.get("source_refs", []):
+        cleaned_ref = _clean_bridge_arg(ref, max_len=300)
+        if cleaned_ref:
+            args += ["--source-ref", cleaned_ref]
+    # Session-first：delivery 锚点经清洗后作为审计标注传给 Wiki bridge；
+    # task-scoped KnowledgeLink 的授权仍由 session 不可变决策决定。
+    anchor_task_id = _clean_bridge_arg(preview.get("task_id", ""), max_len=120)
+    if anchor_task_id:
+        args += ["--task-id", anchor_task_id]
+    return args
+
+
 def confirm_wiki_promotion(
     workspace_file: str | Path,
     session_id: str,
@@ -66,20 +106,8 @@ def confirm_wiki_promotion(
     evidence_refs = [str(item).strip() for item in preview.get("evidence_refs", []) if str(item).strip()]
     if not evidence_refs:
         return {"ready": False, "reason": "evidence_refs_missing", "next_action": "无证据引用的 delivery candidate 不得晋升。"}
-    command = [
-        "personal-assistant-wiki-bridge",
-        "--knowledge-root", str(wiki_root),
-        "promote",
-        "--title", preview["title"],
-        "--content", preview["content"],
-        "--source", preview["source"],
-        "--module", preview["module"],
-        "--knowledge-type", preview["knowledge_type"],
-        "--confirm",
-    ]
-    for ref in preview["source_refs"]:
-        command.extend(["--source-ref", ref])
-    result = subprocess.run(command, check=True, capture_output=True, text=True, timeout=20)
+    command = _build_promote_command(preview, wiki_root)
+    result = subprocess.run(command, check=True, capture_output=True, text=True, timeout=20, shell=False)
     promoted = json.loads(result.stdout)
     from memory_center.application.task_shadow_flow import session_task_binding
 

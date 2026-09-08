@@ -356,23 +356,39 @@ def test_metrics_aggregate_statuses_and_events(tmp_path: Path) -> None:
 def test_preview_carries_evidence_refs(tmp_path: Path) -> None:
     workspace = copy_demo_workspace(tmp_path)
     from memory_center.core.orchestrator.session import workspace_capture_dsh_delivery_summary
+    from memory_center.core.tasks.artifacts import create_task_space
+    from memory_center.core.tasks.shadow import bind_shadow_to_task, ensure_shadow_for_session
 
+    # Session-first：delivery capture 需要可信锚点；先建任务并显式绑定 Shadow。
+    task_id = create_task_space(workspace, title="knowledge link contract")["task_id"]
+    shadow = ensure_shadow_for_session(workspace, "src-session-1", intent="契约")
+    bind_shadow_to_task(workspace, shadow["shadow_id"], task_id, source="explicit")
     captured = workspace_capture_dsh_delivery_summary(workspace, "src-session-1", "完成 KnowledgeLink 契约。细节略。")
+    assert captured["captured"] is True and captured["task_id"] == task_id
     preview = wiki_promotion_preview(workspace, captured["session_id"], wiki_root=tmp_path / "wiki")
     assert preview["ready"] is True
     assert "session:src-session-1" in preview["evidence_refs"]
+    assert f"task:{task_id}" in preview["evidence_refs"]
 
 
 def test_confirm_registers_knowledge_link_and_event(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     workspace = copy_demo_workspace(tmp_path)
     wiki_root = _wiki_entry(tmp_path, body="# 众包平台\n\n人工确认后的晋升正文。")
     from memory_center.core.orchestrator.session import workspace_capture_dsh_delivery_summary
+    from memory_center.core.tasks.artifacts import create_task_space
+    from memory_center.core.tasks.shadow import bind_shadow_to_task, ensure_shadow_for_session
 
+    task_id = create_task_space(workspace, title="knowledge link promotion")["task_id"]
+    shadow = ensure_shadow_for_session(workspace, "src-session-2", intent="晋升")
+    bind_shadow_to_task(workspace, shadow["shadow_id"], task_id, source="explicit")
     captured = workspace_capture_dsh_delivery_summary(workspace, "src-session-2", "完成 KnowledgeLink 晋升链路。")
     promoted_payload = {"path": _RELATIVE, "title": "众包平台"}
 
     def fake_run(command, **_):
         assert "--confirm" in command
+        # Session-first：锚点经清洗后作为审计标注传给 Wiki bridge。
+        assert "--task-id" in command
+        assert task_id in command
         return types.SimpleNamespace(stdout=json.dumps(promoted_payload, ensure_ascii=False))
 
     monkeypatch.setattr(promotion_module.subprocess, "run", fake_run)
@@ -390,7 +406,14 @@ def test_confirm_forces_workspace_scope_for_shadow_only_sessions(tmp_path: Path,
     workspace = copy_demo_workspace(tmp_path)
     wiki_root = _wiki_entry(tmp_path)
     from memory_center.core.orchestrator.session import workspace_capture_dsh_delivery_summary
+    from memory_center.core.tasks.artifacts import create_task_space
+    from memory_center.core.tasks.shadow import bind_shadow_to_task, ensure_shadow_for_session
 
+    # delivery capture 本身需要绑定；但 session 决策是 shadow_only 时，
+    # KnowledgeLink 仍必须降级为 workspace-scoped（task_id 为空）。
+    task_id = create_task_space(workspace, title="shadow scope check")["task_id"]
+    shadow = ensure_shadow_for_session(workspace, "src-session-3", intent="shadow")
+    bind_shadow_to_task(workspace, shadow["shadow_id"], task_id, source="explicit")
     captured = workspace_capture_dsh_delivery_summary(workspace, "src-session-3", "完成 shadow 会话晋升。")
     monkeypatch.setattr(
         promotion_module.subprocess,

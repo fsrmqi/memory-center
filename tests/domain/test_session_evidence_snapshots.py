@@ -85,6 +85,13 @@ def test_dsh_delivery_capture_writes_a_bounded_closed_l0_session(tmp_path: Path)
     from tests.fixtures import setup_demo_workspace
 
     workspace = setup_demo_workspace(tmp_path)
+    # Session-first：delivery capture 需要可信锚点，先显式绑定 Shadow。
+    from memory_center.core.tasks.artifacts import create_task_space
+    from memory_center.core.tasks.shadow import bind_shadow_to_task, ensure_shadow_for_session
+
+    task_id = create_task_space(str(workspace), title="delivery snapshot task")["task_id"]
+    shadow = ensure_shadow_for_session(str(workspace), "dsh-source-1", intent="交付")
+    bind_shadow_to_task(str(workspace), shadow["shadow_id"], task_id, source="explicit")
     captured = workspace_capture_dsh_delivery_summary(
         str(workspace),
         "dsh-source-1",
@@ -94,6 +101,7 @@ def test_dsh_delivery_capture_writes_a_bounded_closed_l0_session(tmp_path: Path)
     )
 
     assert captured["captured"] is True
+    assert captured["task_id"] == task_id
     assert captured["validation_status"] == "passed"
     assert captured["summary_chars"] == 1400
     session = workspace_session_summary(str(workspace), captured["session_id"])
@@ -104,4 +112,5 @@ def test_dsh_delivery_capture_writes_a_bounded_closed_l0_session(tmp_path: Path)
     preview = wiki_promotion_preview(str(workspace), captured["session_id"], wiki_root=tmp_path / "wiki")
     assert preview["ready"] is True
     assert preview["module"] == "kaipuyun"
+    assert preview["task_id"] == task_id
     assert preview["content"].startswith("修改完成")
