@@ -598,7 +598,16 @@ def test_delivery_matrix_and_policy_control_executor(demo_workspace) -> None:
     initialize_delivery_workflow(demo_workspace, task_id)
     candidate = propose_delivery_breakdown(demo_workspace, task_id, source_refs=["req:1"], summary="发布接口")
     assert candidate["candidate"]["source_refs"] == ["req:1"]
-    update_delivery_contract(demo_workspace, task_id, kind="requirements", items=[{"id": "REQ-1", "title": "发布", "scope": "接口", "source_refs": ["req:1"], "acceptance_ids": ["AC-1"]}])
+    update_delivery_contract(demo_workspace, task_id, kind="requirements", items=[{"id": "REQ-1", "title": "发布", "scope": "接口", "out_of_scope": ["不修改认证"], "source_refs": ["req:1"], "acceptance_ids": ["AC-1"]}])
+    update_delivery_contract(demo_workspace, task_id, kind="subtasks", items=[{
+        "id": "SUB-1",
+        "title": "定位发布入口",
+        "requirement_ids": ["REQ-1"],
+        "code_targets": ["app/publish.py"],
+        "read_targets": ["app/publish.py"],
+        "write_targets": ["app/publish.py"],
+        "stop_conditions": ["接口契约未确认"],
+    }])
     update_delivery_contract(demo_workspace, task_id, kind="acceptance", items=[{
         "id": "AC-1",
         "title": "解释器可用",
@@ -620,6 +629,9 @@ def test_delivery_matrix_and_policy_control_executor(demo_workspace) -> None:
     assert acceptance["evidence_required"] == ["executor-receipt"]
     assert delivery_workflow_status(demo_workspace, task_id)["counts"]["designed_acceptance"] == 1
     tech_spec = (demo_workspace.parent / "artifacts" / "tasks" / task_id / "TECH_SPEC.md").read_text(encoding="utf-8")
+    assert "非目标：不修改认证" in tech_spec
+    assert "来源：req:1" in tech_spec
+    assert "子任务 SUB-1: 读范围=app/publish.py; 写范围=app/publish.py; 停止条件=接口契约未确认" in tech_spec
     assert "关键假设：预注册解释器可执行" in tech_spec
     assert "已设计验证的验收：1/1" in tech_spec
     blocked = execute_delivery_validation(demo_workspace, task_id, profile_id="missing")

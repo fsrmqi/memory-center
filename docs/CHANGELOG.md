@@ -2,6 +2,9 @@
 
 ## Unreleased / 未发布
 
+- **4.6.29 Technical-design foundation / 技术方案基础信息**：本地包、CLI 与 MCP 运行时版本提升至 `4.6.29`；派生 `TECH_SPEC.md` 新增需求来源与非目标展示，并继续呈现已有的子任务读/写范围和停止条件。新增技术方案设计 Agent 提案，完整编排与门禁仍为后续工作。
+- **4.6.29 Technical-design foundation (EN)**: Bumped the local package, CLI, and MCP runtime metadata to `4.6.29`. Derived `TECH_SPEC.md` now renders requirement sources and out-of-scope items alongside existing subtask read/write scopes and stop conditions. The Technical Design Agent proposal is added; its full orchestration and gates remain future work.
+
 - **Built-in Workbench removal / 内置工作台下线**：移除服务端 `/ui/*` HTML 页面和 `/app` Vue SPA 静态托管；它们现在按设计返回 `404`，且不提供兼容跳转。交互式展示迁移到 Memory Center DSH Plugin；自定义展示可使用受限的 `/workspace/*` JSON 读模型。README、架构、用户与 MCP 文档新增迁移说明和旧页面映射。
 - **Built-in Workbench removal (EN)**: Removed the server-rendered `/ui/*` pages and `/app` Vue SPA hosting. Both intentionally return `404` with no compatibility redirect. Interactive presentation moves to the Memory Center DSH Plugin, while custom displays can use the bounded `/workspace/*` JSON read models. The README, architecture, user, and MCP guides now include a migration path and old-page mapping.
 

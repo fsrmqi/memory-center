@@ -44,6 +44,7 @@ Memory Center precomputes these relationships before the agent starts editing.
 - [docs/ONTOLOGY.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/ONTOLOGY.md) — 轻量本体与演进计划
 - [docs/CHANGELOG.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/CHANGELOG.md) — 变更记录
 - [docs/NEXT_PHASE_MASTER_PLAN.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/NEXT_PHASE_MASTER_PLAN.md) — 开发路线
+- [docs/TECHNICAL_DESIGN_AGENT_PROPOSAL.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/TECHNICAL_DESIGN_AGENT_PROPOSAL.md) — 技术方案设计 Agent 的证据优先落地提案（部分基础已落地）
 - [docs/THREE_SYSTEM_KNOWLEDGE_LOOP.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/THREE_SYSTEM_KNOWLEDGE_LOOP.md) — DSH、Memory Center 与 Personal Wiki 协同闭环
 - [docs/KNOWLEDGE_LINK_INTEGRATION_PLAN.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/KNOWLEDGE_LINK_INTEGRATION_PLAN.md) — DSH、Memory Center 与 Personal Wiki 的受控 KnowledgeLink 交互计划
 - [docs/DSH_WORKBENCH_PRODUCTIZATION_ROADMAP.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/DSH_WORKBENCH_PRODUCTIZATION_ROADMAP.md) — DSH 工作台产品化实施路线
@@ -54,9 +55,9 @@ Memory Center precomputes these relationships before the agent starts editing.
 
 ### Current release / 当前版本
 
-当前本地发行版本为 **4.6.28**。4.6 系列已将可信查询、Java IR 差分、跨服务 `primary_chain`、真实 retrieval replay、局部刷新分桶预算、发布质量门禁和只读质量/空间总览收敛为稳定能力；4.6.28 将焦点任务锚定收敛到显式 task/session 绑定，并把展示职责迁移到 DSH 原生面板。`quality-gate` 只读汇总 generation、coverage、replay、IR、刷新性能和存储状态；它不会执行 reindex、GC、VACUUM 或用户命令。
+当前本地发行版本为 **4.6.29**。4.6 系列已将可信查询、Java IR 差分、跨服务 `primary_chain`、真实 retrieval replay、局部刷新分桶预算、发布质量门禁和只读质量/空间总览收敛为稳定能力；4.6.29 补充 `TECH_SPEC.md` 的来源与非目标展示，使既有交付工件更适合承载可审查的技术方案基础信息。`quality-gate` 只读汇总 generation、coverage、replay、IR、刷新性能和存储状态；它不会执行 reindex、GC、VACUUM 或用户命令。
 
-The current local release is **4.6.28**. The 4.6 series consolidates trustworthy query contracts, Java IR differential checks, cross-service `primary_chain`, real retrieval replay, bucketed refresh budgets, a release quality gate, and a read-only quality/storage overview; 4.6.28 converges focus-task anchoring on explicit task/session bindings and moves presentation to the native DSH panel. `quality-gate` is read-only and never reindexes, GCs, vacuums, or runs user commands.
+The current local release is **4.6.29**. The 4.6 series consolidates trustworthy query contracts, Java IR differential checks, cross-service `primary_chain`, real retrieval replay, bucketed refresh budgets, a release quality gate, and a read-only quality/storage overview; 4.6.29 adds source and out-of-scope rendering to `TECH_SPEC.md`, making existing delivery artifacts a better foundation for reviewable technical plans. `quality-gate` is read-only and never reindexes, GCs, vacuums, or runs user commands.
 
 ---
 

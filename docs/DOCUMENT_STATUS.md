@@ -15,6 +15,7 @@
 | `docs/REFERENCE.md` | CLI、HTTP、MCP 的事实参考与维护命令 |
 | `docs/ONTOLOGY.md` | 实体、关系、证据强度和治理语义 |
 | `docs/NEXT_PHASE_MASTER_PLAN.md` | 唯一活跃开发路线；已完成工作不作为待办 |
+| `docs/TECHNICAL_DESIGN_AGENT_PROPOSAL.md` | 技术方案设计 Agent 的决策提案：以证据约束的渐进式方案工作流；`TECH_SPEC.md` 的部分基础字段已落地，完整编排与门禁尚未实现 |
 | `docs/LOOKUP_ARCHITECTURE_HANDOFF_PLAN.md` | 查询架构收口的专项交接计划、契约与验收矩阵 |
 | `docs/SESSION_FIRST_TASK_CONTINUITY_PROPOSAL.md` | Session-first / Task Shadow 产品与架构提案；L1 Shadow 核心已实现（shadow/observations/handoff 三模块 + facade/admin/CLI/HTTP 接入），DSH 侧适配见 `memory-center-dsh-plugin`（Task Shadow L1 投影） |
 | `docs/MEMORY_ENRICHMENT_DESIGN.md` | 记忆增强设计提案：借鉴 MemOS / claude-mem / MemoraX 的四项能力；A（evidence-index 渐进式披露）与 B（Session Notes 叙事层）已实现（见 CHANGELOG Unreleased），C（Memory Cube）为 P2 草案待评审，D（四类记忆用户模型）已落 USER_GUIDE |

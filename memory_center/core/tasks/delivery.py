@@ -1927,7 +1927,16 @@ def _tech_spec_markdown(meta: dict[str, Any], matrix: dict[str, Any]) -> str:
     for row in rows:
         targets = ", ".join(target for item in row.get("subtasks", []) for target in item.get("code_targets", [])) or "未定位"
         accepted = ", ".join(f"{item.get('id')}={'已验证' if item.get('verified') else '待验证'}" for item in row.get("acceptance", [])) or "未定义"
-        body.extend([f"### {row.get('requirement_id')} {row.get('title')}", f"- 范围：{row.get('scope') or '未定义'}", f"- 代码目标：{targets}", f"- 验收：{accepted}"])
+        source_refs = ", ".join(row.get("source_refs", [])) or "未声明"
+        out_of_scope = "; ".join(row.get("out_of_scope", [])) or "未声明"
+        body.extend([
+            f"### {row.get('requirement_id')} {row.get('title')}",
+            f"- 范围：{row.get('scope') or '未定义'}",
+            f"- 非目标：{out_of_scope}",
+            f"- 来源：{source_refs}",
+            f"- 代码目标：{targets}",
+            f"- 验收：{accepted}",
+        ])
         for subtask in row.get("subtasks", []):
             read_targets = ", ".join(subtask.get("read_targets", [])) or "未声明"
             write_targets = ", ".join(subtask.get("write_targets", [])) or "未声明"
