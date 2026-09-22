@@ -16,11 +16,11 @@
 | # | 能力 | 来源启发 | 优先级 | 核心改动 | 主要收益 |
 |---|---|---|---|---|---|
 | A | **Evidence Index 渐进式披露** | claude-mem 三层工具 + AML `selected` 契约 | P0 | `mc_lookup` 新增 `view="evidence-index"` 只读输出模式 | 降 token、AML Textual 适配、Workbench 紧凑证据 |
-| B | **叙事记忆层（Session Notes）** | claude-mem observations / MemOS 自演进 | P1 | L0.5 新存储集合 + AI 压缩入口 + 独立检索 | 跨任务"我们决定了什么/下一步"记忆；AML 叙事题 |
+| B | **叙事记忆层（Session Notes）** | claude-mem observations / MemOS 自演进 | P1 | L0.5 新存储集合 + 确定性 draft + 独立检索 | 跨任务"我们决定了什么/下一步"记忆；AML 叙事题 |
 | C | **Memory Cube 隔离与受控共享** | MemOS multi-cube | P2 | workspace 级 cube 注册表 + 读写 ACL + 跨 cube 只读引用 | 多项目/多团队隔离、受控联邦 |
 | D | **四类记忆用户模型（文档层）** | MemoraX 四边界 | P2 | 把现有 L3 块映射为四类边界的用户文档 | 用户可决策"记什么到哪层"；零代码 |
 
-实现顺序即优先级顺序：A 是纯输出层改动、无新存储、风险最低；B 需要新存储与压缩管线、收益最大；C 是多工作区治理演进；D 是纯文档。
+实现顺序即优先级顺序：A 是纯输出层改动、无新存储、风险最低；B 需要新存储与确定性 draft、收益最大；C 是多工作区治理演进；D 是纯文档。B 不引入模型驱动的会话压缩管线，原因见第 3.4 节。
 
 ---
 
@@ -162,7 +162,9 @@ MC 的 L0 是结构化事件（tool 名、turn、耗时），L1 case 是"可复�
 
 ### 3.4 不做什么
 
-- 不做 AI 自动压缩管线（claude-mem 式"全量捕获→模型压缩"）：v1 只做显式记录 + close 时的确定性 draft（从事件/摘要机械抽取），是否引入模型压缩等有真实需求再评；
+- **不做自动会话上下文压缩或 token 预算治理**：这两项由 Agent 宿主负责。宿主拥有完整对话、真实模型 token 计数、压缩后的消息链和最近文件状态；Memory Center 只应接收经脱敏、结构化且 durable 的事实快照。服务端二次压缩会重复宿主工作，并可能产生状态不一致、额外信息丢失与隐私面扩大。
+- **不做 AI 自动压缩管线**（claude-mem 式"全量捕获→模型压缩"）：Session Notes 只来自显式记录和 close 时的确定性 draft（从允许持久化的事件/摘要机械抽取）。这不是延后实现的默认候选能力；除非产品边界发生变化并经新的 ADR 明确批准，否则不重开该方案。
+- **保留服务自身的有界裁剪与归档**：`mc_context_pack` 的输出预算、证据渐进披露、超大任务工件归档、会话事件归档和审计保留仅控制 Memory Center 自己读写或返回的数据量；它们不读取、改写或压缩宿主的完整对话历史。
 - 不做跨 workspace 同步；
 - 不做向量索引（先 FTS）。
 
@@ -233,7 +235,7 @@ A evidence-index (P0) ──► B session notes (P1) ──► C memory cubes (P
 - **云端记忆同步/账号体系**（claude-mem cmem.ai、MemOS Cloud 的产品形态）：违反本地优先与不出私有数据的原则；
 - **自动检索注入**（SessionStart 自动拉记忆进上下文）：削弱显式查询与证据边界的可证伪性；MC 的等价物是 `mc_start` 的 sniff + 上下文包，由 agent 显式调用；
 - **未给方法的 benchmark 分数**：MC 参与外部评测（如 AML）时必须附可复现评测配置；对内继续用 `eval_retrieval_replay` / `eval_golden` 体系；
-- **AI 自动压缩为默认路径**：v1 notes 只做确定性 draft；模型压缩引入前需要真实的 token 成本证据。
+- **AI 自动压缩与宿主 token 预算控制**：宿主是完整会话的唯一权威方；MC 不保存完整对话，也不通过阈值自动触发摘要。即使获得成本证据，也必须先有新的产品决策和 ADR，不能作为既有 Session Notes 的扩展项默认为用户启用。
 
 ## 8. 失效条件 / Revisit Triggers
 

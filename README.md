@@ -38,6 +38,7 @@ Memory Center precomputes these relationships before the agent starts editing.
 当前主文档请优先看：
 
 - [docs/ARCHITECTURE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/ARCHITECTURE.md) — 系统架构、分层边界、设计决策
+- [docs/CONTEXT_ENGINEERING_NARRATIVE_AND_REVIEW.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/CONTEXT_ENGINEERING_NARRATIVE_AND_REVIEW.md) — Context Engineering 产品叙事与设计评审清单
 - [docs/MCP_GUIDE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/MCP_GUIDE.md) — MCP facade、宿主接入
 - [docs/USER_GUIDE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/USER_GUIDE.md) — 用户操作路径、常见工作流
 - [docs/REFERENCE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/REFERENCE.md) — 命令、参数、schema 参考

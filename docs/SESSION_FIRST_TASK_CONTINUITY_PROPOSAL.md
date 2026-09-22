@@ -376,7 +376,7 @@ TaskShadow
 
 ### 11.3.2 Structured Facts versus Compacted Surface / 结构化事实与压缩 Surface
 
-Task Shadow 不应完全以 compaction 后的模型 surface 为折叠输入。规则如下：
+Task Shadow 不应完全以宿主 compaction 后的模型 surface 为折叠输入。Memory Center 不执行该 compaction；它仅接收宿主在自身上下文治理后主动提交的 durable 快照。规则如下：
 
 | 信息类型 | 来源 |
 |---|---|

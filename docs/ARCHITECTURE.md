@@ -357,7 +357,7 @@ Memory Center 不把模型临时输出直接当成长期知识。写入链路会
 当任务跨会话、跨模型或跨 Agent 继续执行时，系统通过 `mc_resume` 和 `mc_handoff` 重新组织上下文：
 
 - 从 recent sessions、task space、case、refs、graph facts 中抽取证据。
-- 根据目标模型和 token budget 生成 compact 或 full 输出。
+- 根据调用方指定的**响应**预算（可结合目标模型能力）生成 compact 或 full 输出；该预算只约束 Memory Center 返回的数据量，不代表宿主剩余上下文，也不触发宿主会话压缩。
 - 保留 next actions、risks、read targets、validation status 和已知约束。
 - 对无法内联的大对象返回 ref，按需 drill-down。
 
@@ -860,6 +860,16 @@ Hook 层在 `memory_center/hooks/`，属于宿主集成，不是核心业务层�
 - `Stop -> mc_close`
 
 `UserPromptSubmit` 默认配置为 `enabled: true` + `record_only: true`：只把脱敏 prompt 交互写入交互历史，不注入提示、不阻塞输入；宿主 adapter 也不会为它生成阻断或注入型配置。它容易打断普通自然语言输入，因此注入/拦截行为被有意排除。Claude Code、Codex、Cursor adapter 分别生成适配各宿主的 hook/规则文件。
+
+### Context Ownership Boundary / 上下文所有权边界
+
+Memory Center does not compact an Agent host's conversation or manage the host's token budget. The host owns the complete transcript, model-specific token accounting, compaction policy, and recent-file state; it may send Memory Center only a redacted, structured, durable snapshot through its adapter. This avoids duplicating a capability now commonly supplied by Agent hosts, prevents divergent post-compaction state, and keeps raw conversation content outside Memory Center's persistence boundary.
+
+Memory Center 不能压缩 Agent 宿主的完整会话，也不管理宿主的 token 预算。完整对话、模型特定的 token 统计、压缩策略和最近文件状态均由宿主负责；宿主最多经 adapter 向 Memory Center 提交脱敏、结构化、可持久化的快照。这样既避免重复实现大多数宿主已提供的能力，也避免压缩后状态分叉，并将原始会话内容排除在 Memory Center 的持久化边界之外。
+
+This boundary does not remove bounded output construction (`mc_context_pack`), progressive evidence disclosure, task-artifact archival, or session/audit retention. Those mechanisms limit only Memory Center's own reads, writes, and responses; they never automatically summarize, replace, or retain a host transcript.
+
+该边界不影响 `mc_context_pack` 的有界输出、证据渐进披露、任务工件归档及会话/审计保留。这些机制只限制 Memory Center 自身的读取、写入和响应体积；不会自动摘要、替换或保存宿主会话正文。
 
 ---
 
