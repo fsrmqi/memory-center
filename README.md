@@ -1156,9 +1156,9 @@ If a service sub-directory still does not expose `mc_*` tools, prefer the one-st
 memory-center setup-agent --workspace <workspace.yaml>
 ```
 
-该命令会刷新说明、Hooks、MCP 绑定并返回是否需要重启宿主会话；`runtime-audit --fix` 仍可作为底层诊断修复入口。
+该命令会刷新说明、Hooks、MCP 绑定并返回是否需要重启宿主会话；`runtime-audit --fix` 仍可作为底层诊断修复入口。在装有 DSH 的机器上，它同时检查并修复每个 DSH profile 的 `cordis.patch.yml` 绑定。
 
-This command refreshes instructions, hooks, MCP bindings, and reports whether the host session should be restarted; `runtime-audit --fix` remains available as the lower-level diagnostic repair entrypoint.
+This command refreshes instructions, hooks, MCP bindings, and reports whether the host session should be restarted; `runtime-audit --fix` remains available as the lower-level diagnostic repair entrypoint. On machines with DSH installed it also inspects and repairs each DSH profile's `cordis.patch.yml` binding.
 
 详见 [docs/MCP_GUIDE.md](./docs/MCP_GUIDE.md)。
 

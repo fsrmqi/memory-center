@@ -9,9 +9,10 @@ Follow the same rules as AGENTS.md. Prefer bilingual documentation updates and k
 
 本 workspace 使用 Memory Center 作为 AI 编程助手的项目记忆 MCP 服务。
 
-- 默认 workspace 配置文件：`/Users/cuijiaqi/Ai-common-skills/memory-center/.memory-center/workspace.yaml`
-- 如果你当前在某个子项目目录中执行任务，也要继续复用这个上层 workspace，而不是假设当前目录必须有独立的 `.memory-center/workspace.yaml`。
-- Default workspace file: `/Users/cuijiaqi/Ai-common-skills/memory-center/.memory-center/workspace.yaml`. Subprojects under this workspace should reuse it instead of assuming each repo needs its own local `.memory-center/workspace.yaml`.
+- 当前宿主绑定的 Memory Center workspace：`/Users/cuijiaqi/javaworkspace/ucap/.memory-center/workspace.yaml`
+- 本仓库（memory-center）没有自己的 `.memory-center/workspace.yaml`；在这里执行任务时，记忆读写命中上面这个 workspace，不要假设存在仓库级 workspace。
+- Bound Memory Center workspace for this host: `/Users/cuijiaqi/javaworkspace/ucap/.memory-center/workspace.yaml`
+- This repository has no `.memory-center/workspace.yaml` of its own. Tasks performed here read and write the bound workspace above; do not assume a repo-local workspace exists.
 
 ## MCP 工具速查
 
@@ -48,7 +49,7 @@ Follow the same rules as AGENTS.md. Prefer bilingual documentation updates and k
 10. `context.md`、`requirement.md`、`design.md`、`plan.md`、`test-plan.md`、`change-log.md`、`current-summary.md` 属于追加保护工件，只允许尾部追加或去重，不允许整篇覆盖。
 11. 首轮工具列表没有 `mc_*` 不等于 Memory Center 不可用。先执行延迟工具发现并查找 `mcp__memory_center__mc_freshness`；发现后调用一次 `mc_freshness(scope="workspace")` 完成端到端验证。
 12. 延迟发现后仍缺少工具时，先检查宿主绑定：Codex 使用 `codex mcp get memory-center`，其他宿主检查对应 MCP 配置。若配置存在且 enabled，状态应表达为“Memory Center 已配置，当前宿主工具快照尚未刷新”，提示刷新或新建会话，禁止表述为“未加载”或“不可用”。
-13. 只有绑定不存在、命令不存在，或 MCP initialize / 轻量调用明确失败时，才说明：`Memory Center MCP 当前不可用，以下基于本地代码搜索完成。` 若当前目录是子项目，先运行 `memory-center runtime-audit --workspace /Users/cuijiaqi/Ai-common-skills/memory-center/.memory-center/workspace.yaml --fix` 修复绑定。
+13. 只有绑定不存在、命令不存在，或 MCP initialize / 轻量调用明确失败时，才说明：`Memory Center MCP 当前不可用，以下基于本地代码搜索完成。` 若当前目录是子项目，先运行 `memory-center runtime-audit --workspace /Users/cuijiaqi/javaworkspace/ucap/.memory-center/workspace.yaml --fix` 修复绑定。
 14. 当 `mc_lookup` 的 `agent_next_steps` 返回 `rebuild_vector_ann` 时，必须依次调用 `mc_admin(action="vector_ann_rebuild")` 和 `mc_admin(action="vector_ann_tune")`，再重试原查询；不得对大型向量库使用 Python 全量扫描。
 15. 对概念型、中文需求与代码混合查询，优先调用 `mc_admin(action="advanced_query", text="原查询")`，它会启用 ANN 和有界 Cross-Encoder 重排；重排器只使用当前 MCP 进程已预热模型，返回 `reranker_not_prewarmed` 时保留基础排序，不得在请求链路加载或下载模型。只有用户明确同意时，管理员才可在当前 MCP 进程调用 `mc_admin(action="retrieval_reranker_prewarm")`；普通符号查找仍使用 `mc_lookup`。
 16. `mc_admin(action="retrieval_model_profile", text="multilingual", force=true)` 会选择 BGE-M3 档案，但随后必须显式完整 reindex；Agent 不得自行切换模型档案或触发全量 reindex，除非用户明确要求。
@@ -77,7 +78,7 @@ Follow the same rules as AGENTS.md. Prefer bilingual documentation updates and k
 - `mc_admin(action="write_plan")` 不直接写入，而是返回执行计划。
 - `mc_close` 包含：结束 session + 同步案例到任务空间 + 记录到 cross-service memory，一步到位。
 - L3 级别信息优先进入 `workspace_profile`、`team_rules`、`architecture_invariants`、`active_migration_policy` 等核心记忆块。
-- 若首轮看不到 `mc_*` 工具，先做延迟工具发现；配置已启用但工具仍不可见时刷新宿主会话。只有绑定缺失时才运行 `memory-center runtime-audit --workspace /Users/cuijiaqi/Ai-common-skills/memory-center/.memory-center/workspace.yaml --fix`，避免把工具快照延迟误诊为服务不可用。
+- 若首轮看不到 `mc_*` 工具，先做延迟工具发现；配置已启用但工具仍不可见时刷新宿主会话。只有绑定缺失时才运行 `memory-center runtime-audit --workspace /Users/cuijiaqi/javaworkspace/ucap/.memory-center/workspace.yaml --fix`，避免把工具快照延迟误诊为服务不可用。
 - `vector_ann_status`、`vector_ann_rebuild`、`vector_ann_tune`、`advanced_query`、`retrieval_reranker_status`、`retrieval_reranker_prewarm`、`retrieval_model_profile` 和 `eval_retrieval_replay` 都通过 `mc_admin(action=...)` 调用；先遵守返回的 stop_condition 和 next_action，再进入宽泛搜索。
 - `change_review` 是变更审查默认入口；同一 fingerprint 命中缓存时直接复用，不再追加等价搜索。`eval_cochange` 是显式离线 walk-forward 评测，不得放入普通查询链路；只有 `calibration.eligible=true` 时才允许用户通过 CLI `--apply` 或 MCP `force=true` 写入哈希先验。
 

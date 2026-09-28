@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 import json
+import os
+import re
 import shutil
+
+import yaml
 from pathlib import Path
 from typing import Any
 
@@ -128,10 +132,55 @@ def managed_block(content: str) -> str:
     return f"<!-- memory-center:start -->\n{content.rstrip()}\n<!-- memory-center:end -->\n"
 
 
+MCP_SERVER_NAME = "memory-center"
+MCP_EXECUTABLE = "memory-center-mcp"
+DSH_PATCH_ENTRY_ID = "mcp-memory-center"
+DSH_PATCH_ENTRY_NAME = "@deepseek-ai/dsh-mcp-client"
+# GUI-launched hosts (the macOS desktop app, IDE integrations) inherit only
+# /usr/bin:/bin:/usr/sbin:/sbin, so `shutil.which` alone cannot decide whether
+# the CLI exists. These are the documented install locations, in search order.
+MCP_EXECUTABLE_DIRS = ("~/.local/bin", "/opt/homebrew/bin", "/usr/local/bin")
+
+
+def mcp_executable_search_dirs() -> list[Path]:
+    dirs: list[Path] = []
+    override = os.environ.get("MEMORY_CENTER_BIN", "").strip()
+    if override:
+        dirs.append(Path(override).expanduser().parent)
+    dirs.extend(Path(raw).expanduser() for raw in MCP_EXECUTABLE_DIRS)
+    return dirs
+
+
+def resolve_mcp_executable() -> str:
+    """Absolute path of the memory-center MCP entry point, or the bare name.
+
+    Falls back to the documented install locations when PATH cannot see the CLI,
+    mirroring the DSH plugin's PATH repair so generated bindings never point at a
+    command the host cannot execute.
+    """
+    found = shutil.which(MCP_EXECUTABLE)
+    if found:
+        return found
+    for directory in mcp_executable_search_dirs():
+        candidate = directory / MCP_EXECUTABLE
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            return str(candidate)
+    return MCP_EXECUTABLE
+
+
+def command_available(command: str) -> bool:
+    """True when `command` can actually be executed by the current process."""
+    if not command:
+        return False
+    if os.sep in command:
+        return os.path.isfile(command) and os.access(command, os.X_OK)
+    return shutil.which(command) is not None
+
+
 def _memory_center_mcp_server_config(workspace_file: Path) -> dict[str, object]:
     return {
         "type": "stdio",
-        "command": shutil.which("memory-center-mcp") or "memory-center-mcp",
+        "command": resolve_mcp_executable(),
         "args": ["--workspace", str(workspace_file.resolve())],
         "startup_timeout_sec": 30,
     }
@@ -149,7 +198,7 @@ def _merge_mcp_server_config(config_path: Path, workspace_file: Path) -> None:
     servers = current.get("mcpServers")
     if not isinstance(servers, dict):
         servers = {}
-    servers["memory-center"] = _memory_center_mcp_server_config(workspace_file)
+    servers[MCP_SERVER_NAME] = _memory_center_mcp_server_config(workspace_file)
     current["mcpServers"] = servers
     config_path.parent.mkdir(parents=True, exist_ok=True)
     config_path.write_text(json.dumps(current, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
@@ -162,63 +211,259 @@ def _write_mcp_configs(instruction_root: Path, workspace_file: Path) -> None:
 
 def _mcp_config_targets(instruction_root: Path) -> list[dict[str, Any]]:
     return [
-        {"host": "codex", "path": instruction_root / ".codex" / "mcp.json"},
-        {"host": "cursor", "path": instruction_root / ".cursor" / "mcp.json"},
-        {"host": "generic", "path": instruction_root / ".mcp.json"},
+        {"host": "codex", "format": "json", "path": instruction_root / ".codex" / "mcp.json"},
+        {"host": "cursor", "format": "json", "path": instruction_root / ".cursor" / "mcp.json"},
+        {"host": "generic", "format": "json", "path": instruction_root / ".mcp.json"},
     ]
 
 
+def dsh_home() -> Path:
+    """DSH state root; `DSH_HOME` wins over the `~/.dsh` default."""
+    override = (os.environ.get("DSH_HOME") or os.environ.get("MEMORY_CENTER_DSH_HOME") or "").strip()
+    return Path(override).expanduser() if override else Path.home() / ".dsh"
+
+
+def dsh_mcp_config_targets() -> list[dict[str, Any]]:
+    """DSH profiles that declare a plugin manifest, as YAML patch targets.
+
+    DSH keeps MCP servers in each profile's `cordis.patch.yml`, a patch layer
+    that also carries `!!js` expressions and comments. It is therefore edited
+    textually and never re-serialised. Every profile with a `package.json` is
+    returned, including ones without a patch file yet, so a repair can create
+    the binding. Hosts without a `profiles` directory yield no targets.
+    """
+    profiles = dsh_home() / "profiles"
+    if not profiles.is_dir():
+        return []
+    targets: list[dict[str, Any]] = []
+    for profile_dir in sorted(path for path in profiles.iterdir() if path.is_dir()):
+        if not (profile_dir / "package.json").is_file():
+            continue
+        targets.append(
+            {
+                "host": "dsh",
+                "format": "yaml-patch",
+                "profile": profile_dir.name,
+                "path": profile_dir / "cordis.patch.yml",
+            }
+        )
+    return targets
+
+
+def _dsh_patch_entry_span(lines: list[str], entry_id: str = DSH_PATCH_ENTRY_ID) -> tuple[int, int, str]:
+    """Locate the `- id: <entry_id>` line and its block as (start, end, indent)."""
+    pattern = re.compile(r"^(\s*)- id:\s*" + re.escape(entry_id) + r"\s*$")
+    for index, line in enumerate(lines):
+        match = pattern.match(line.rstrip())
+        if not match:
+            continue
+        indent = match.group(1)
+        end = index + 1
+        while end < len(lines):
+            candidate = lines[end]
+            stripped = candidate.strip()
+            if not stripped:
+                end += 1
+                continue
+            current_indent = len(candidate) - len(candidate.lstrip(" "))
+            if current_indent < len(indent) or (current_indent == len(indent) and stripped.startswith("- ")):
+                break
+            end += 1
+        return index, end, indent
+    return -1, -1, ""
+
+
+def _render_dsh_patch_entry(server: dict[str, object], indent: str) -> list[str]:
+    args = [str(value) for value in server["args"]]  # type: ignore[index]
+    lines = [
+        f"{indent}- id: {DSH_PATCH_ENTRY_ID}",
+        f"{indent}  name: '{DSH_PATCH_ENTRY_NAME}'",
+        f"{indent}  config:",
+        f"{indent}    serverName: {MCP_SERVER_NAME}",
+        f"{indent}    transport: stdio",
+        f'{indent}    command: "{server["command"]}"',
+        f"{indent}    args:",
+        f"{indent}      [",
+    ]
+    lines.extend(
+        f'{indent}        "{value}",' if index < len(args) - 1 else f'{indent}        "{value}"'
+        for index, value in enumerate(args)
+    )
+    lines.extend(
+        [
+            f"{indent}      ]",
+            f"{indent}    env: {{}}",
+            f"{indent}    toolCallTimeoutMs: 60000",
+            f"{indent}    failOnStartupError: false",
+        ]
+    )
+    return lines
+
+
+class _PatchLayerLoader(yaml.SafeLoader):
+    """SafeLoader that tolerates the `!!js` tag DSH patch layers carry."""
+
+
+_PatchLayerLoader.add_multi_constructor("tag:yaml.org,2002:js", lambda loader, suffix, node: None)
+
+
+def _dsh_patch_parse_error(text: str) -> str:
+    """Return why a patch layer is not loadable YAML, or an empty string.
+
+    A text-spliced entry can be perfectly present yet sit in a file the loader
+    would reject, so structural validity is reported separately from the
+    binding's own fields.
+    """
+    try:
+        yaml.load(text, Loader=_PatchLayerLoader)
+    except yaml.YAMLError as exc:
+        return f"{type(exc).__name__}: {str(exc).splitlines()[0]}"
+    return ""
+
+
+def _read_dsh_patch_binding(config_path: Path, expected_args: list[str]) -> dict[str, Any]:
+    """Extract binding facts from a DSH patch layer without re-serialising it."""
+    facts: dict[str, Any] = {"present": False, "command": "", "workspace_bound": False, "parse_error": ""}
+    if not config_path.is_file():
+        return facts
+    try:
+        text = config_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return facts
+    facts["parse_error"] = _dsh_patch_parse_error(text)
+    lines = text.splitlines()
+    start, end, _ = _dsh_patch_entry_span(lines)
+    if start < 0:
+        return facts
+    block = "\n".join(lines[start:end])
+    facts["present"] = True
+    match = re.search(r'^\s*command:\s*"?([^"\n]+?)"?\s*$', block, re.MULTILINE)
+    if match:
+        facts["command"] = match.group(1).strip()
+    facts["workspace_bound"] = len(expected_args) > 1 and expected_args[1] in block
+    return facts
+
+
+def _upsert_dsh_patch_binding(config_path: Path, server: dict[str, object]) -> None:
+    """Insert or replace only the memory-center entry, preserving every other byte."""
+    text = config_path.read_text(encoding="utf-8") if config_path.is_file() else ""
+    lines = text.splitlines()
+    start, end, indent = _dsh_patch_entry_span(lines)
+    if start >= 0:
+        replacement = _render_dsh_patch_entry(server, indent)
+        next_lines = lines[:start] + replacement + lines[end:]
+    else:
+        block = ["- insert:"] + _render_dsh_patch_entry(server, "    ")
+        next_lines = lines + ([""] if lines and lines[-1].strip() else []) + block
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text("\n".join(next_lines).rstrip("\n") + "\n", encoding="utf-8")
+
+
+def _inspect_json_binding(
+    target: dict[str, Any],
+    service_name: str,
+    instruction_root: str,
+    expected_server: dict[str, object],
+    expected_args: list[str],
+    expected_command: str,
+) -> dict[str, Any]:
+    config_path: Path = target["path"]
+    server: dict[str, Any] = {}
+    parse_error = ""
+    if config_path.exists():
+        try:
+            loaded = json.loads(config_path.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                servers = loaded.get("mcpServers", {})
+                if isinstance(servers, dict) and isinstance(servers.get(MCP_SERVER_NAME), dict):
+                    server = servers[MCP_SERVER_NAME]
+        except (json.JSONDecodeError, OSError, UnicodeDecodeError) as exc:
+            parse_error = str(exc)
+    command = str(server.get("command", "")) if server else ""
+    command_exists = command_available(command)
+    ok = (
+        bool(server)
+        and command == expected_command
+        and list(server.get("args", []) or []) == expected_args
+        and int(server.get("startup_timeout_sec", 0) or 0) == int(expected_server["startup_timeout_sec"])  # type: ignore[arg-type]
+        and command_exists
+    )
+    return {
+        "host": target["host"],
+        "format": "json",
+        "root": instruction_root,
+        "service": service_name,
+        "config_path": str(config_path),
+        "exists": config_path.exists(),
+        "has_memory_center": bool(server),
+        "command": command,
+        "args": list(server.get("args", []) or []) if server else [],
+        "expected_command": expected_command,
+        "expected_args": expected_args,
+        "startup_timeout_sec": int(server.get("startup_timeout_sec", 0) or 0),
+        "expected_startup_timeout_sec": int(expected_server["startup_timeout_sec"]),  # type: ignore[arg-type]
+        "command_exists": command_exists,
+        "parse_error": parse_error,
+        "ok": ok,
+    }
+
+
+def _inspect_dsh_binding(target: dict[str, Any], expected_args: list[str], expected_command: str) -> dict[str, Any]:
+    config_path: Path = target["path"]
+    facts = _read_dsh_patch_binding(config_path, expected_args)
+    command = str(facts["command"])
+    command_exists = command_available(command)
+    ok = (
+        bool(facts["present"])
+        and command == expected_command
+        and bool(facts["workspace_bound"])
+        and command_exists
+        and not facts["parse_error"]
+    )
+    return {
+        "host": target["host"],
+        "format": "yaml-patch",
+        "profile": target["profile"],
+        "root": str(dsh_home()),
+        "service": "",
+        "config_path": str(config_path),
+        "exists": config_path.exists(),
+        "has_memory_center": bool(facts["present"]),
+        "command": command,
+        "args": list(expected_args) if facts["workspace_bound"] else [],
+        "expected_command": expected_command,
+        "expected_args": expected_args,
+        "startup_timeout_sec": 0,
+        "expected_startup_timeout_sec": 0,
+        "command_exists": command_exists,
+        "workspace_bound": bool(facts["workspace_bound"]),
+        "parse_error": str(facts["parse_error"]),
+        "ok": ok,
+    }
+
+
 def inspect_agent_mcp_bindings(store: WorkspaceStore, workspace_root: str | Path) -> dict[str, Any]:
-    """Inspect generated MCP bindings in the aggregate root and service roots."""
+    """Inspect Memory Center MCP bindings in the workspace, service roots and DSH profiles."""
     root = Path(workspace_root).expanduser().resolve()
     workspace_file = store.workspace_file.resolve()
     expected_server = _memory_center_mcp_server_config(workspace_file)
+    expected_args = [str(value) for value in expected_server["args"]]  # type: ignore[index]
+    expected_command = str(expected_server["command"])
     bindings: list[dict[str, Any]] = []
     for instruction_root, service_name in _instruction_roots(store, root):
         for target in _mcp_config_targets(instruction_root):
-            config_path = target["path"]
-            server: dict[str, Any] = {}
-            parse_error = ""
-            if config_path.exists():
-                try:
-                    loaded = json.loads(config_path.read_text(encoding="utf-8"))
-                    if isinstance(loaded, dict):
-                        servers = loaded.get("mcpServers", {})
-                        if isinstance(servers, dict) and isinstance(servers.get("memory-center"), dict):
-                            server = servers["memory-center"]
-                except (json.JSONDecodeError, OSError, UnicodeDecodeError) as exc:
-                    parse_error = str(exc)
-            expected_args = expected_server["args"]
-            ok = (
-                bool(server)
-                and str(server.get("command", "")) == str(expected_server["command"])
-                and list(server.get("args", []) or []) == expected_args
-                and int(server.get("startup_timeout_sec", 0) or 0) == int(expected_server["startup_timeout_sec"])
-            )
             bindings.append(
-                {
-                    "host": target["host"],
-                    "root": str(instruction_root),
-                    "service": service_name,
-                    "config_path": str(config_path),
-                    "exists": config_path.exists(),
-                    "has_memory_center": bool(server),
-                    "command": server.get("command", "") if server else "",
-                    "args": server.get("args", []) if server else [],
-                    "expected_command": expected_server["command"],
-                    "expected_args": expected_args,
-                    "startup_timeout_sec": int(server.get("startup_timeout_sec", 0) or 0),
-                    "expected_startup_timeout_sec": expected_server["startup_timeout_sec"],
-                    "parse_error": parse_error,
-                    "ok": ok,
-                }
+                _inspect_json_binding(target, service_name, str(instruction_root), expected_server, expected_args, expected_command)
             )
+    for target in dsh_mcp_config_targets():
+        bindings.append(_inspect_dsh_binding(target, expected_args, expected_command))
     missing = [item for item in bindings if not item["ok"]]
     return {
         "ok": not missing,
         "workspace_file": str(workspace_file),
-        "command_available": bool(shutil.which("memory-center-mcp")),
+        "command_available": command_available(expected_command),
         "expected_server": expected_server,
+        "dsh_home": str(dsh_home()),
         "bindings": bindings,
         "missing_or_stale": missing,
     }
@@ -228,6 +473,20 @@ def repair_agent_mcp_bindings(store: WorkspaceStore, workspace_root: str | Path)
     """Write or refresh Memory Center MCP bindings for all known agent roots."""
     root = Path(workspace_root).expanduser().resolve()
     write_agent_instructions(store, root)
+    server = _memory_center_mcp_server_config(store.workspace_file.resolve())
+    expected_args = [str(value) for value in server["args"]]  # type: ignore[index]
+    expected_command = str(server["command"])
+    for target in dsh_mcp_config_targets():
+        facts = _read_dsh_patch_binding(target["path"], expected_args)
+        current = (
+            bool(facts["present"])
+            and str(facts["command"]) == expected_command
+            and bool(facts["workspace_bound"])
+            and command_available(expected_command)
+            and not facts["parse_error"]
+        )
+        if not current:
+            _upsert_dsh_patch_binding(target["path"], server)
     return inspect_agent_mcp_bindings(store, root)
 
 

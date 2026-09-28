@@ -260,9 +260,9 @@ memory-center-mcp --workspace /abs/path/.memory-center/workspace.yaml
 memory-center setup-agent --workspace /abs/path/.memory-center/workspace.yaml
 ```
 
-`setup-agent` 会刷新说明、Hooks、MCP 绑定并输出是否需要重启宿主会话；需要只做诊断时可用 `memory-center runtime-audit --workspace ...`。
+`setup-agent` 会刷新说明、Hooks、MCP 绑定并输出是否需要重启宿主会话；需要只做诊断时可用 `memory-center runtime-audit --workspace ...`。装有 DSH 时，绑定检查还覆盖每个 profile 的 `cordis.patch.yml`：条目是否缺失、`command` 是否真实可执行、`--workspace` 是否指向当前 workspace、patch 层是否仍是合法 YAML；`--fix` 只就地替换或追加该条目。
 
-`setup-agent` refreshes instructions, hooks, MCP bindings, and reports whether the host session should be restarted. Use `memory-center runtime-audit --workspace ...` when you only need diagnostics.
+`setup-agent` refreshes instructions, hooks, MCP bindings, and reports whether the host session should be restarted. Use `memory-center runtime-audit --workspace ...` when you only need diagnostics. With DSH installed the binding check also covers each profile's `cordis.patch.yml`: whether the entry is missing, whether its `command` is actually executable, whether `--workspace` targets the current workspace, and whether the patch layer is still valid YAML; `--fix` only replaces or appends that entry.
 
 如果 Agent 首轮没有看到 `mc_*`，先把状态视为“装载中或未知”：执行延迟工具发现，并用 `mc_freshness` 做轻量验证。Codex 中可运行 `codex mcp get memory-center`；若显示 `enabled: true`，但当前会话仍无工具，应刷新或新建会话，不要误报“Memory Center 未加载”。只有绑定缺失、命令不存在或 MCP 调用明确失败时才执行降级流程。
 

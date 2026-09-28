@@ -41,6 +41,18 @@ def protected_demo_workspace_unchanged():
     assert after == before, "测试不得修改 examples/spring-cloud-demo/.memory-center；请使用 tmp_path 副本。"
 
 
+@pytest.fixture(autouse=True)
+def isolated_dsh_home(tmp_path_factory, monkeypatch):
+    """Keep host-integration writes inside the test sandbox.
+
+    MCP binding repair also covers DSH profile patch layers under ``$DSH_HOME``
+    (default ``~/.dsh``). Tests run against throwaway workspaces, so without
+    this isolation a ``runtime-audit --fix`` test would rewrite the developer's
+    real DSH profiles with a pytest temp path.
+    """
+    monkeypatch.setenv("DSH_HOME", str(tmp_path_factory.mktemp("dsh-home")))
+
+
 @pytest.fixture()
 def demo_workspace(tmp_path: Path) -> Path:
     """Copy spring-cloud-demo into tmp_path, rewrite workspace.yaml root.
