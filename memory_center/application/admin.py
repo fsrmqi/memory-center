@@ -55,6 +55,7 @@ from memory_center.core.knowledge.assets import (
     collaboration_asset_status,
     ingest_wiki_document_asset,
     register_collaboration_asset,
+    register_external_published_skill,
     submit_asset_for_sharing,
     sync_workspace_collaboration_assets,
 )
@@ -640,6 +641,15 @@ def build_admin_registry(
                     **(parse_payload(payload) or {}),
                     "actor": source or str((parse_payload(payload) or {}).get("owner", "")) or "local-agent",
                 },
+            ),
+            "external_skill_register": lambda: register_external_published_skill(
+                wf,
+                publication=dict((parse_payload(payload) or {}).get("publication", {}) or {}),
+                owner=str((parse_payload(payload) or {}).get("owner", "")),
+                source_tag=str((parse_payload(payload) or {}).get("source_tag", "")),
+                visibility=str((parse_payload(payload) or {}).get("visibility", "private")),
+                tags=list((parse_payload(payload) or {}).get("tags", [])),
+                actor=source or str((parse_payload(payload) or {}).get("owner", "")),
             ),
             "asset_sync": lambda: sync_workspace_collaboration_assets(wf, owner=owner or source),
             "asset_share": lambda: submit_asset_for_sharing(

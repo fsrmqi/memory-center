@@ -29,6 +29,8 @@ _DEFAULT_LOADOUT_CHARS = 12 * 1024
 _MAX_LOADOUT_CHARS = 24 * 1024
 _DEFAULT_STATUS_CHARS = 24 * 1024
 SYSTEM_ASSET_OWNER = "workspace-system"
+_EXTERNAL_SKILL_SOURCE_PREFIX = "external-skill:"
+_SHA256_RE = re.compile(r"^[a-f0-9]{64}$")
 
 
 class AssetRegistryCorruptionError(RuntimeError):
@@ -104,6 +106,92 @@ def register_collaboration_asset(
 
     asset = _mutate_registry(store, mutate)
     return {"registered": True, "asset": asset, "next_action": "私有资产可直接绑定；团队或受限资产需 asset_approve 后才可装载。"}
+
+
+def register_external_published_skill(
+    workspace_file: str | Path,
+    *,
+    publication: dict[str, Any],
+    owner: str,
+    source_tag: str,
+    visibility: str = "private",
+    tags: list[str] | None = None,
+    actor: str = "",
+) -> dict[str, Any]:
+    """Register a published external Skill by its bounded publication manifest.
+
+    The external publisher remains authoritative.  This registry stores only
+    identifiers, hashes, release evidence references, and a recommendation
+    gate; it never reads or copies a Skill body or external publication path.
+    """
+    manifest = publication if isinstance(publication, dict) else {}
+    asset = manifest.get("asset") if isinstance(manifest.get("asset"), dict) else {}
+    release = manifest.get("release") if isinstance(manifest.get("release"), dict) else {}
+    source = _external_source_tag(source_tag)
+    name = _bounded(str(asset.get("name", "")), 160)
+    version = _bounded(str(asset.get("version", "")), 80)
+    content_sha256 = _normalize_sha256(asset.get("content_sha256") or asset.get("sha256"))
+    if not source:
+        raise ValueError("source_tag is required and must use letters, digits, dot, underscore, or hyphen")
+    if str(asset.get("kind", "")) not in {"agent_skill", "skill"}:
+        raise ValueError("publication.asset.kind must be agent_skill or skill")
+    if not name or not version:
+        raise ValueError("publication.asset.name and publication.asset.version are required")
+    if not content_sha256:
+        raise ValueError("publication.asset.content_sha256 must be a SHA-256 hex digest")
+    if str(release.get("status", "")).strip().lower() != "published":
+        raise ValueError("publication.release.status must be published")
+
+    validation_refs = _references(release.get("validation_refs"))
+    snapshot_refs = _references(release.get("snapshot_refs"))
+    verification_status = _bounded(str(release.get("verification_status", "")), 80) or "unknown"
+    evidence_complete = bool(validation_refs)
+    recommendation_status = "eligible" if evidence_complete else "blocked"
+    recommendation_reason = "validation_refs_verified" if evidence_complete else "validation_refs_required"
+    source_manifest_sha256 = _normalize_sha256(asset.get("source_manifest_sha256"))
+    metadata = {
+        "external_publication": {
+            "schema_version": int(manifest.get("schema_version", 0) or 0),
+            "source_tag": source,
+            "asset_kind": "agent_skill",
+            "name": name,
+            "version": version,
+            "content_sha256": content_sha256,
+            "source_manifest_sha256": source_manifest_sha256,
+            "release_status": "published",
+            "verification_status": verification_status,
+            "validation_refs": validation_refs,
+            "snapshot_refs": snapshot_refs,
+            "recommendation_status": recommendation_status,
+            "recommendation_reason": recommendation_reason,
+        }
+    }
+    result = register_collaboration_asset(
+        workspace_file,
+        kind="skill",
+        title=name,
+        owner=owner,
+        source_ref=f"{_EXTERNAL_SKILL_SOURCE_PREFIX}{source}:{name}@{version}",
+        visibility=visibility,
+        tags=["external-published-skill", source, *(tags or [])],
+        context_excerpt=(
+            f"外部已发布 Skill（{source}）；仅登记内容哈希与验证引用，正文仍由外部发布方管理。"
+        ),
+        metadata=metadata,
+        asset_id=_asset_id("skill", f"{source}:{name}@{version}"),
+        actor=actor or owner,
+    )
+    return {
+        "registered": True,
+        "asset": result["asset"],
+        "recommendable": evidence_complete,
+        "recommendation": {"status": recommendation_status, "reason": recommendation_reason},
+        "next_action": (
+            "外部已发布 Skill 已登记，可按可见性规则绑定。"
+            if evidence_complete
+            else "已登记但未进入推荐：补充至少一条真实 validation_refs 后重新登记同一 publication。"
+        ),
+    }
 
 
 def submit_asset_for_sharing(workspace_file: str | Path, asset_id: str, *, visibility: str, actor: str, allowed_agents: list[str] | None = None, allowed_roles: list[str] | None = None) -> dict[str, Any]:
@@ -366,6 +454,8 @@ def _bounded_summaries(assets: list[dict[str, Any]], budget: int) -> tuple[list[
 def _asset_visible(asset: dict[str, Any], agent_id: str, role: str) -> bool:
     if asset.get("status") != "active":
         return False
+    if _is_external_skill_blocked(asset):
+        return False
     visibility = asset.get("visibility")
     if visibility == "team":
         agents, roles = asset.get("allowed_agents", []), asset.get("allowed_roles", [])
@@ -381,6 +471,29 @@ def _asset_summary(asset: dict[str, Any]) -> dict[str, Any]:
 
 def _asset_id(kind: str, source: str) -> str:
     return f"asset-{kind}-{hashlib.sha256(source.encode('utf-8')).hexdigest()[:16]}"
+
+
+def _is_external_skill_blocked(asset: dict[str, Any]) -> bool:
+    if asset.get("kind") != "skill" or not str(asset.get("source_ref", "")).startswith(_EXTERNAL_SKILL_SOURCE_PREFIX):
+        return False
+    publication = (asset.get("metadata") or {}).get("external_publication", {})
+    return not isinstance(publication, dict) or publication.get("recommendation_status") != "eligible"
+
+
+def _external_source_tag(value: str) -> str:
+    source = _bounded(value, 80).lower()
+    return source if re.fullmatch(r"[a-z0-9][a-z0-9._-]*", source) else ""
+
+
+def _normalize_sha256(value: Any) -> str:
+    digest = str(value or "").strip().lower()
+    if digest.startswith("sha256:"):
+        digest = digest[7:]
+    return digest if _SHA256_RE.fullmatch(digest) else ""
+
+
+def _references(value: Any) -> list[str]:
+    return _strings(value, _MAX_EVIDENCE, 200)
 
 
 def _choice(value: str, allowed: set[str], field: str) -> str:

@@ -11,6 +11,7 @@ from memory_center.core.knowledge.assets import (
     collaboration_asset_status,
     ingest_wiki_document_asset,
     register_collaboration_asset,
+    register_external_published_skill,
     submit_asset_for_sharing,
     sync_workspace_collaboration_assets,
 )
@@ -179,3 +180,66 @@ def test_personal_wiki_promotion_can_be_registered_as_traceable_reverse_link(dem
     assert asset["metadata"]["source_task_id"] == "task-demo"
     loaded = collaboration_asset_loadout(demo_workspace, agent_id="local-agent")
     assert any(item["asset_id"] == asset["asset_id"] for item in loaded["assets"])
+
+
+def test_external_published_skill_keeps_only_manifest_evidence_and_requires_validation_for_loadout(demo_workspace) -> None:
+    content_hash = "a" * 64
+    snapshot_only = register_external_published_skill(
+        demo_workspace,
+        owner="alice",
+        actor="alice",
+        source_tag="personal-assistant-wiki",
+        publication={
+            "schema_version": 2,
+            "asset": {"kind": "agent_skill", "name": "release-check", "version": "1.0.0", "content_sha256": content_hash},
+            "release": {"status": "published", "verification_status": "snapshot_exported", "snapshot_refs": ["dsh-research-kit:run:demo:passport:abc"]},
+            "skill_body": "must never be persisted",
+            "candidate_path": "/private/external/SKILL.md",
+        },
+    )
+    assert snapshot_only["recommendable"] is False
+    asset = snapshot_only["asset"]
+    publication = asset["metadata"]["external_publication"]
+    assert publication["snapshot_refs"] == ["dsh-research-kit:run:demo:passport:abc"]
+    assert publication["validation_refs"] == []
+    assert "skill_body" not in str(asset)
+    assert "candidate_path" not in str(asset)
+    assert not collaboration_asset_loadout(demo_workspace, agent_id="alice")["assets"]
+
+    registered = register_external_published_skill(
+        demo_workspace,
+        owner="alice",
+        actor="alice",
+        source_tag="personal-assistant-wiki",
+        publication={
+            "schema_version": 2,
+            "asset": {"kind": "agent_skill", "name": "release-check", "version": "1.0.0", "content_sha256": content_hash},
+            "release": {
+                "status": "published",
+                "verification_status": "validation_referenced",
+                "validation_refs": ["memory-center:delivery-validation:receipt-01"],
+                "snapshot_refs": ["dsh-research-kit:run:demo:passport:abc"],
+            },
+        },
+    )
+    assert registered["recommendable"] is True
+    loaded = collaboration_asset_loadout(demo_workspace, agent_id="alice")
+    loaded_asset = next(item for item in loaded["assets"] if item["asset_id"] == registered["asset"]["asset_id"])
+    assert loaded_asset["metadata"]["external_publication"]["content_sha256"] == content_hash
+    assert loaded_asset["metadata"]["external_publication"]["recommendation_status"] == "eligible"
+
+
+def test_external_skill_register_admin_action_uses_the_same_evidence_gate(demo_workspace) -> None:
+    admin = build_admin_registry(
+        workspace_file=str(demo_workspace),
+        source="alice",
+        payload=(
+            '{"owner":"alice","source_tag":"personal-assistant-wiki","publication":{"schema_version":2,'
+            '"asset":{"kind":"agent_skill","name":"contract-review","version":"1.0.0","content_sha256":"'
+            + "b" * 64
+            + '"},"release":{"status":"published","validation_refs":["memory-center:delivery-validation:receipt-02"]}}}'
+        ),
+    )
+    result = admin.dispatch("external_skill_register")
+    assert result["recommendable"] is True
+    assert result["asset"]["source_ref"].startswith("external-skill:personal-assistant-wiki:")
