@@ -859,6 +859,15 @@ class TestRetrievalBehavior:
         assert "mode" not in sync_progress
         assert sync_progress.get("required_one_of") == ["intent", "session_id"]
 
+    def test_memory_discover_compression_matrix_keeps_admin_aliases(self):
+        from memory_center.core.orchestrator.query import memory_discover
+        matrix = memory_discover(self.workspace, limit=20).get("compression_matrix", {})
+        # 重构 lookup 模块时这三个 key 曾被连同 sync_progress 一起整块丢失
+        assert matrix.get("resume_work") == {"command": "mc_resume"}
+        assert matrix.get("handoff_model") == {"command": "mc_handoff"}
+        assert matrix.get("health_check") == {"command": "mc_admin", "action": "health"}
+        assert matrix.get("audit_check") == {"command": "mc_admin", "action": "audit"}
+
     def test_type_boosting_keys_match_graph_types(self):
         from memory_center.core.retrieval.hybrid import RetrievalResult, _apply_type_boosting
         # Verify boost map keys are valid node type names

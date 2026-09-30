@@ -1,8 +1,11 @@
 """Reference and backend diagnostic lookup APIs separated from query facade."""
 from __future__ import annotations
+
 from pathlib import Path
 from typing import Any
+
 from .lookup_shared import DiagnosticsLookupPort
+
 
 def get_ref(workspace_file: str | Path, ref_id: str, *, deps: DiagnosticsLookupPort) -> dict[str, Any]:
     config, store = deps.load_context(workspace_file); resolved = deps.resolve_ref(store, ref_id)
@@ -25,6 +28,7 @@ def backend_query(workspace_file: str | Path, *, deps: DiagnosticsLookupPort, **
 
 def tool_usage_report(workspace_file: str | Path, limit: int = 200, *, deps: DiagnosticsLookupPort) -> dict[str, Any]:
     import json
+
     from .shared import SESSION_EVENTS_FILE
     config, store = deps.load_context(workspace_file); events = store.read_jsonl_prefer_backend(SESSION_EVENTS_FILE, limit=max(limit, 1))
     counts: dict[str, int] = {}; lookup: dict[str, int] = {}; mc = external = 0; bypass = []
@@ -55,13 +59,28 @@ def discover(workspace_file: str | Path, limit: int = 50, *, deps: DiagnosticsLo
         if text := payload.get("query", "") or payload.get("target", "") or payload.get("text", ""): queries.append(text)
     paths = [{"candidate_type": "runtime_governance", "target": "continue-current-workflow", "status": "possible", "weight": .62, "why": "当前工作区状态整体正常，可继续沿现有工作流推进。", "next_action": "继续当前任务；必要时用 `mc_lookup` / `mc_analyze` 深挖", "verification_cost": "low"}]
     try:
-        from .workspace_ops import workspace_status
         from ..verification.heuristics import apply_candidate_path_learning
+        from .workspace_ops import workspace_status
         layers = workspace_status(workspace_file, view="compact", budget="medium").get("memory_layers", {})
         if layers.get("L0", {}).get("count", 0) == 0: paths.insert(0, {"candidate_type": "session_bootstrap", "target": "work-start", "status": "probable", "weight": .76, "why": "当前还没有会话事件，先启动工作流能尽快建立上下文轨迹。", "next_action": "先运行 `work-start` 或 `mc_start` 启动任务", "verification_cost": "low"})
         if layers.get("L1", {}).get("count", 0) == 0: paths.append({"candidate_type": "memory_write", "target": "L1_case_atom", "status": "possible", "weight": .7, "why": "当前缺少案例记忆，补齐 case 沉淀可以提升后续复用价值。", "next_action": "在关键阶段后运行 `work-sync` 或 `mc_sync`", "verification_cost": "low"})
         if layers.get("L2", {}).get("count", 0) == 0: paths.append({"candidate_type": "task_sync", "target": "new-task-space", "status": "probable", "weight": .78, "why": "当前缺少任务空间，先创建 task 能让长任务协作更稳定。", "next_action": "运行 `artifact create-task` 或 `mc_sync(intent=...)`", "verification_cost": "low", "_learning_aliases": [{"candidate_type": "task_sync", "target": "new-task-space"}]})
         paths = apply_candidate_path_learning(workspace_file, paths)
     except Exception: pass
-    matrix = {"quick_context": {"command": "mc_lookup", "mode": "auto", "view": "compact", "budget": "small"}, "full_chain": {"command": "mc_lookup", "mode": "chain", "scope": "cross-service"}, "impact_check": {"command": "mc_analyze", "depth": "quick"}, "resume_work": {"command": "mc_resume"}, "handoff_model": {"command": "mc_handoff"}}
+    # 常用查询的压缩别名。sync_progress 必须是可直接执行的无 mode 形态：Agent 只需
+    # 从 intent / session_id 中二选一，不需要先决定 mc_sync 的模式。
+    matrix = {
+        "quick_context": {"command": "mc_lookup", "mode": "auto", "view": "compact", "budget": "small"},
+        "full_chain": {"command": "mc_lookup", "mode": "chain", "scope": "cross-service"},
+        "impact_check": {"command": "mc_analyze", "depth": "quick"},
+        "sync_progress": {
+            "command": "mc_sync",
+            "usage": "Provide `intent` for sniff sync, or `session_id` for case sync.",
+            "required_one_of": ["intent", "session_id"],
+        },
+        "resume_work": {"command": "mc_resume"},
+        "handoff_model": {"command": "mc_handoff"},
+        "health_check": {"command": "mc_admin", "action": "health"},
+        "audit_check": {"command": "mc_admin", "action": "audit"},
+    }
     return {"workspace": config.workspace, "hot_commands": [{"tool": name, "count": count} for name, count in sorted(counts.items(), key=lambda item: -item[1])[:10]], "recent_queries": queries[:10], "recommendations": [path["why"] for path in paths], "candidate_paths": paths, "recommended_path": dict(paths[0]), "compression_matrix": matrix}
