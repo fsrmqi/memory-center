@@ -1,8 +1,7 @@
 """Tests for hook runner — parameter resolution, mode enforcement, facade dispatch."""
 from pathlib import Path
 
-from memory_center.hooks.runner import run_hook
-from memory_center.hooks.runner import _get_workspace_file
+from memory_center.hooks.runner import _get_workspace_file, run_hook
 from memory_center.hooks.spec import session_id_file
 
 

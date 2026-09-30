@@ -1040,7 +1040,11 @@ def test_approving_an_expired_waiver_persists_the_expired_status(demo_workspace)
 
 def test_listing_waivers_auto_expires_pending_ones(demo_workspace) -> None:
     """pending 也会过期：过期后本就无法审批，列表不得继续把它算作 active。"""
-    from memory_center.core.tasks.delivery import create_delivery_waiver, list_delivery_waivers, transition_delivery_stage
+    from memory_center.core.tasks.delivery import (
+        create_delivery_waiver,
+        list_delivery_waivers,
+        transition_delivery_stage,
+    )
 
     task = create_task_space(demo_workspace, title="过期Pending", intent="测试 pending 过期")
     task_id = task["task_id"]

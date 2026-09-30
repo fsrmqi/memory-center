@@ -282,8 +282,9 @@ def _consumer_edges_for_target(
     rows touching the anchor; each row becomes a consumer record pointing
     at the opposite endpoint of the anchor.
     """
-    from .query import memory_symbol
     from memory_center.core.storage.runtime import RuntimeStore
+
+    from .query import memory_symbol
 
     info = memory_symbol(workspace_file, target, limit=5, project=project)
     anchor = info["best_match"] if info.get("found") else None

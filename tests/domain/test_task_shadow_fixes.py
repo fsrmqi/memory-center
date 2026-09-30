@@ -289,3 +289,120 @@ def test_rebind_requires_explicit_rebind_flag(demo_workspace):
     ))
     assert rejected["accepted"] is False
     assert rejected["reason"] == "source_already_bound_to_other_shadow"
+
+
+# ------------------------------------------------- 并发写入不得丢失 contribution
+
+def test_concurrent_shadow_snapshots_do_not_lose_contributions(demo_workspace, monkeypatch):
+    """两个 source 的快照并发写入同一 Shadow：两边都必须保留。
+
+    此前 record_shadow_snapshot 是 read → merge → write 且无锁：A 读到空表后 B 也
+    读到空表，后写者用自己的旧快照整表覆盖，先写者的 contribution 静默丢失（L2 案例
+    会缺一个 source 的候选文件/意图）。这里在 save_contributions 内插入延时，把竞态
+    窗口固定下来：无锁实现下 B 会在 A 写入之前读到旧表，因此必然丢一条。
+    """
+    import threading
+    import time
+
+    from memory_center.core.storage.workspace import WorkspaceStore
+    from memory_center.core.tasks import shadow as shadow_mod
+    from memory_center.core.tasks.shadow import load_contributions, load_shadow_state
+
+    wf = str(demo_workspace)
+    real_save = shadow_mod.save_contributions
+
+    def slow_save(store, shadow_id, contributions):
+        time.sleep(0.2)
+        return real_save(store, shadow_id, contributions)
+
+    monkeypatch.setattr(shadow_mod, "save_contributions", slow_save)
+
+    results: dict[str, dict] = {}
+    failures: list[BaseException] = []
+
+    def record(source: str) -> None:
+        try:
+            results[source] = record_shadow_snapshot(
+                wf,
+                _snapshot(shadow_id="shadow:dsh:conc", source_session_id=source, durable_as_of_seq=5),
+            )
+        except BaseException as exc:  # noqa: BLE001 - 线程内异常必须带回主线程
+            failures.append(exc)
+
+    first = threading.Thread(target=record, args=("conc-a",))
+    second = threading.Thread(target=record, args=("conc-b",))
+    first.start()
+    time.sleep(0.05)  # 让第二个线程落在第一个线程的读-写窗口内
+    second.start()
+    first.join(timeout=30)
+    second.join(timeout=30)
+
+    assert not failures, failures
+    assert results["conc-a"]["accepted"] is True
+    assert results["conc-b"]["accepted"] is True
+
+    store = WorkspaceStore(wf)
+    contributions = load_contributions(store, "shadow:dsh:conc")
+    assert sorted(contributions) == [
+        "dsh-task-shadow@1::conc-a",
+        "dsh-task-shadow@1::conc-b",
+    ], sorted(contributions)
+    # 两次成功的 RMW 必须各推进一次 revision（无锁实现下第二次写入基于旧 revision）
+    assert int(load_shadow_state(store, "shadow:dsh:conc")["revision"]) == 2
+
+
+def test_concurrent_observation_folds_do_not_lose_contributions(demo_workspace, monkeypatch):
+    """两个 source 的 Observation 并发折叠进同一 Shadow：两边都必须保留。"""
+    import threading
+    import time
+
+    from memory_center.core.storage.workspace import WorkspaceStore
+    from memory_center.core.tasks import shadow as shadow_mod
+    from memory_center.core.tasks.shadow import load_contributions, register_shadow_source
+
+    wf = str(demo_workspace)
+    for source in ("fold-a", "fold-b"):
+        register_shadow_source(WorkspaceStore(wf), "dsh", source, "shadow:dsh:fold")
+
+    real_save = shadow_mod.save_contributions
+
+    def slow_save(target_store, shadow_id, contributions):
+        time.sleep(0.2)
+        return real_save(target_store, shadow_id, contributions)
+
+    monkeypatch.setattr(shadow_mod, "save_contributions", slow_save)
+
+    results: dict[str, dict] = {}
+    failures: list[BaseException] = []
+
+    def record(source: str) -> None:
+        try:
+            results[source] = record_observation(
+                wf,
+                {
+                    "source_kind": "dsh",
+                    "source_session_id": source,
+                    "event_seq": 1,
+                    "kind": "candidate_file",
+                    "payload": {"candidate_files": [f"{source}.java"]},
+                },
+            )
+        except BaseException as exc:  # noqa: BLE001 - 线程内异常必须带回主线程
+            failures.append(exc)
+
+    first = threading.Thread(target=record, args=("fold-a",))
+    second = threading.Thread(target=record, args=("fold-b",))
+    first.start()
+    time.sleep(0.05)
+    second.start()
+    first.join(timeout=30)
+    second.join(timeout=30)
+
+    assert not failures, failures
+    assert results["fold-a"]["folded_into_shadow"] is True
+    assert results["fold-b"]["folded_into_shadow"] is True
+    contributions = load_contributions(WorkspaceStore(wf), "shadow:dsh:fold")
+    assert sorted(contributions) == [
+        "dsh-observation@1::fold-a",
+        "dsh-observation@1::fold-b",
+    ], sorted(contributions)
