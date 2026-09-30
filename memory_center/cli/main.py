@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import typer
-from rich import print
 
 from memory_center import __version__
 from memory_center.cli.commands.artifacts import register_artifact_commands
@@ -27,6 +26,7 @@ from memory_center.cli.commands.workspaces import (
     register_workspace_commands,
 )
 from memory_center.cli.commands.write import register_write_commands
+from memory_center.cli.output import print_data as print
 from memory_center.core.foundation.errors import normalize_exception
 
 app = typer.Typer(help="Memory Center CLI")

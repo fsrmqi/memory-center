@@ -872,6 +872,15 @@ def create_delivery_waiver(workspace_file: str | Path, task_id: str, *, gate_cod
     normalized_reason = _bounded(reason, 500)
     if not normalized_reason:
         raise ValueError("reason is required")
+    # 创建时即校验：无法解析的 expires_at 会让 waiver 变成永不过期的门禁旁路。
+    normalized_expires_at = _bounded(expires_at, 80).strip() if expires_at else ""
+    if normalized_expires_at:
+        try:
+            datetime.fromisoformat(normalized_expires_at)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                "expires_at must be an ISO-8601 timestamp, e.g. 2026-01-01T00:00:00+00:00"
+            ) from exc
     initialize_delivery_workflow(workspace_file, task_id, actor=actor, include_status=False, touch_activity=False)
     store = WorkspaceStore(workspace_file)
     task_dir, meta = _resolve_task_dir(store, task_id)
@@ -883,7 +892,7 @@ def create_delivery_waiver(workspace_file: str | Path, task_id: str, *, gate_cod
         "gate_code": normalized_gate,
         "status": "pending",
         "reason": normalized_reason,
-        "expires_at": _bounded(expires_at, 80) if expires_at else "",
+        "expires_at": normalized_expires_at,
         "created_at": now,
         "approved_at": "",
         "revoked_at": "",
@@ -1121,13 +1130,21 @@ def _write_waivers(task_dir: Path, waivers: list[dict[str, Any]]) -> None:
 
 
 def _waiver_expired(waiver: dict[str, Any]) -> bool:
-    expires_at = waiver.get("expires_at", "")
+    """判断 waiver 是否已过期（fail-closed）。
+
+    时区缺失的时间戳按 UTC 解释；无法解析的时间戳一律视为已过期——waiver 是
+    门禁旁路，不能因为格式问题变成永不过期的长期豁免。
+    """
+    expires_at = str(waiver.get("expires_at", "") or "").strip()
     if not expires_at:
         return False
     try:
-        return datetime.fromisoformat(expires_at) < datetime.now(timezone.utc)
+        parsed = datetime.fromisoformat(expires_at)
     except (ValueError, TypeError):
-        return False
+        return True
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed < datetime.now(timezone.utc)
 
 
 def _read_gate_results(task_dir: Path) -> list[dict[str, Any]]:

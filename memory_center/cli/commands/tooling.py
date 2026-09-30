@@ -8,9 +8,9 @@ from pathlib import Path
 from typing import Optional
 
 import typer
-from rich import print
 
 from memory_center.application.presentation import export_mermaid
+from memory_center.cli.output import print_data as print
 from memory_center.core.knowledge.communities import analyze_architecture_communities
 from memory_center.core.knowledge.skill_generation import generate_skills
 from memory_center.core.presentation.evidence_subgraph import export_evidence_subgraph

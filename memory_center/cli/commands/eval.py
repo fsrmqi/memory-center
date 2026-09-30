@@ -7,8 +7,8 @@ import json
 from typing import List
 
 import typer
-from rich import print
 
+from memory_center.cli.output import print_data as print
 from memory_center.core.orchestrator import (
     memory_eval_agent_guidance,
     memory_eval_agent_guidance_adoption,
@@ -296,8 +296,9 @@ def register_eval_commands(app: typer.Typer) -> None:
         cases_list = load_replay_cases(cases)
         mapping: dict[str, Any] = {}
         if queries:
-            import yaml as _yaml
             from pathlib import Path as _Path
+
+            import yaml as _yaml
 
             mapping = _yaml.safe_load(_Path(queries).read_text(encoding="utf-8")) or {}
         result = run_retrieval_replay(workspace, cases_list, tier=tier, query_mapping=mapping)

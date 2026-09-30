@@ -2,8 +2,8 @@
 from __future__ import annotations
 
 import typer
-from rich import print
 
+from memory_center.cli.output import print_data as print
 from memory_center.core.orchestrator import (
     workspace_continuity_dashboard,
     workspace_dashboard,

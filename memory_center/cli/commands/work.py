@@ -7,8 +7,8 @@ import json
 from typing import List, Optional
 
 import typer
-from rich import print
 
+from memory_center.cli.output import print_data as print
 from memory_center.core.orchestrator import (
     memory_eval_regression_suite,
     memory_tool_usage_report,

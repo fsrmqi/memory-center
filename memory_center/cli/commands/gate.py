@@ -8,7 +8,8 @@ from pathlib import Path
 from typing import List, Optional
 
 import typer
-from rich import print
+
+from memory_center.cli.output import print_data as print
 
 from ._options import RELEASE_GATE_QUERY_OPTION
 

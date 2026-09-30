@@ -5,9 +5,9 @@ import json
 from pathlib import Path
 
 import typer
-from rich import print
 
 from memory_center.application.presentation import export_workspace_dashboard_markdown
+from memory_center.cli.output import print_data as print
 
 
 def register_audit_commands(app: typer.Typer) -> None:

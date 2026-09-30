@@ -7,8 +7,8 @@ import typing
 from pathlib import Path
 
 import typer
-from rich import print
 
+from memory_center.cli.output import print_data as print
 from memory_center.core.governance.registry import add_to_group, create_group, list_workspaces, register_workspace
 from memory_center.core.orchestrator import group_impact, group_query, group_status
 from memory_center.core.workspace.config import add_workspace_service, load_workspace_config, remove_workspace_service

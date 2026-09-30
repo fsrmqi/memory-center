@@ -6,13 +6,13 @@ from __future__ import annotations
 from typing import List, Optional
 
 import typer
-from rich import print
 
+from memory_center.cli.output import print_data as print
 from memory_center.core.orchestrator import (
     archive_session_events,
     plan_session_archive,
-    workspace_end_session,
     workspace_capture_dsh_delivery_summary,
+    workspace_end_session,
     workspace_log_session_event,
     workspace_recent_sessions,
     workspace_session_summary,

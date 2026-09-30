@@ -7,8 +7,8 @@ import json
 from typing import List, Optional
 
 import typer
-from rich import print
 
+from memory_center.cli.output import print_data as print
 from memory_center.core.freshness.change_reports import recent_change_impact_reports, record_change_impact_feedback
 
 from ._options import OPTIONAL_VERIFIED_BY

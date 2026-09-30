@@ -122,12 +122,23 @@ def _parser_benchmark_keys(demo_workspace: Path) -> set:
 
 @pytest.fixture()
 def _backend_consistency_keys(demo_workspace: Path) -> set:
+    """纯 backend 结果 keys（MCP 测试直连 backend）。"""
     from memory_center.core.backend.query import UnifiedBackendQuery
     from memory_center.core.storage.workspace import WorkspaceStore
 
     store = WorkspaceStore(str(demo_workspace))
     with UnifiedBackendQuery(store.runtime_db_path) as backend:
         return set(backend.check_consistency(store.base_dir).keys())
+
+
+@pytest.fixture()
+def _backend_consistency_facade_keys(_backend_consistency_keys: set) -> set:
+    """CLI/HTTP facade keys：backend 结果之上追加 jsonl_projection。
+
+    application.admin.backend_consistency 会附加 JSONL 导出投影健康度
+    （``jsonl_projection``），这是 facade 与 backend 唯一的有意差异。
+    """
+    return _backend_consistency_keys | {"jsonl_projection"}
 
 
 @pytest.fixture()
@@ -246,21 +257,21 @@ class TestThreeEntryPointExecution:
     # ---- backend-consistency (needs workspace with db) ----
 
     def test_backend_consistency_cli(
-        self, demo_workspace: Path, _backend_consistency_keys
+        self, demo_workspace: Path, _backend_consistency_facade_keys
     ):
         ws = str(demo_workspace)
         result = _cli_json(["backend-consistency", "--workspace", ws])
         _assert_no_database_error(result)
-        assert set(result.keys()) == _backend_consistency_keys
+        assert set(result.keys()) == _backend_consistency_facade_keys
 
     def test_backend_consistency_http(
-        self, demo_workspace: Path, _backend_consistency_keys
+        self, demo_workspace: Path, _backend_consistency_facade_keys
     ):
         ws = str(demo_workspace)
         result = _http("/workspace/backend-consistency", ws=ws)
         assert isinstance(result, dict)
         _assert_no_database_error(result)
-        assert set(result.keys()) == _backend_consistency_keys
+        assert set(result.keys()) == _backend_consistency_facade_keys
 
     def test_backend_consistency_mcp(
         self, demo_workspace: Path, _backend_consistency_keys

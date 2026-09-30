@@ -8,9 +8,11 @@ from memory_center.core.retrieval.planner import QueryPlanner
 from memory_center.core.storage.workspace import WorkspaceStore
 from memory_center.core.tasks.artifacts import (
     create_task_space,
+    get_task_evidence_chunk,
     record_task_decision,
     task_evidence_gc,
     update_task_artifact,
+    write_task_evidence_chunk,
 )
 from memory_center.core.workspace.config import load_workspace_config
 
@@ -60,3 +62,25 @@ def test_watcher_schedules_coalesced_partial_reindex_and_generation_can_rollback
     assert index_control_status(store)["active_generation"] == first
     queued = trigger_incremental_reindex(workspace, ["api/src/main/java/example/OrderDto.java"])
     assert queued["reindex_job"]["kind"] == "reindex"
+
+
+def test_task_evidence_gc_keeps_evidence_referenced_only_by_decisions(tmp_path: Path) -> None:
+    """decisions.jsonl 里的 evidence_refs 也算引用，GC 不得删除只被决策引用的证据。"""
+    workspace = _workspace(tmp_path)
+    task = create_task_space(workspace, title="决策专用证据")
+    chunk = write_task_evidence_chunk(workspace, task["task_id"], "决策专用证据" * 500)
+    decision = record_task_decision(
+        workspace,
+        task["task_id"],
+        "索引",
+        "使用 generation",
+        "保证一致性",
+        evidence_refs=[chunk["ref"]],
+    )
+
+    gc = task_evidence_gc(workspace, task["task_id"], apply=True)
+
+    assert decision["recorded"] is True
+    assert gc["candidates"] == []
+    assert gc["removed"] == 0
+    assert get_task_evidence_chunk(workspace, task["task_id"], chunk["ref"])["found"] is True

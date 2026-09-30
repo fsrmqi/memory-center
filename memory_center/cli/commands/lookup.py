@@ -7,8 +7,8 @@ import pprint
 from typing import List
 
 import typer
-from rich import print
 
+from memory_center.cli.output import print_data as print
 from memory_center.core.orchestrator import (
     memory_backend_query,
     memory_callees,

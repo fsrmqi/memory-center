@@ -8,8 +8,8 @@ from inspect import signature
 from typing import List, Optional
 
 import typer
-from rich import print
 
+from memory_center.cli.output import print_data as print
 from memory_center.core.governance.instructions import write_agent_instructions
 from memory_center.core.governance.rules import ensure_default_rules
 from memory_center.core.indexing.reindex import reindex_workspace

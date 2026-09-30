@@ -7,19 +7,14 @@ import json
 from typing import Optional
 
 import typer
-from rich import print
 
+from memory_center.cli.output import print_data as print
 from memory_center.core.tasks.shadow import (
     bind_shadow_to_task,
     build_merged_shadow,
     discard_shadow,
     promote_shadow_to_task,
     shadow_retention_cleanup,
-)
-from memory_center.core.tasks.shadow_observations import (
-    list_observations,
-    record_observation,
-    set_shadow_authority,
 )
 from memory_center.core.tasks.shadow_handoff import (
     claim_handoff,
@@ -28,6 +23,11 @@ from memory_center.core.tasks.shadow_handoff import (
     get_handoff,
     list_handoffs,
     mark_handed_off,
+)
+from memory_center.core.tasks.shadow_observations import (
+    list_observations,
+    record_observation,
+    set_shadow_authority,
 )
 
 

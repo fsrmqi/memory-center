@@ -7,16 +7,11 @@ import json
 from typing import List, Optional
 
 import typer
-from rich import print
 
 from memory_center.application.external_capabilities import audit_external_capabilities, snapshot_external_capabilities
 from memory_center.application.performance import record_workspace_performance_snapshot
 from memory_center.application.runtime_governance import workspace_runtime_governance
-from memory_center.core.retrieval.planner import (
-    scoped_refresh_performance_status,
-    workspace_performance_snapshot_status,
-)
-from memory_center.core.workspace.jobs import workspace_job_status
+from memory_center.cli.output import print_data as print
 from memory_center.core.knowledge.candidates import wiki_knowledge_candidates
 from memory_center.core.knowledge.wiki_bridge import (
     attach_knowledge_link_to_task,
@@ -26,6 +21,11 @@ from memory_center.core.knowledge.wiki_bridge import (
 )
 from memory_center.core.knowledge.wiki_drift import knowledge_link_drift, knowledge_link_metrics
 from memory_center.core.knowledge.wiki_promotion import confirm_wiki_promotion, wiki_promotion_preview
+from memory_center.core.retrieval.planner import (
+    scoped_refresh_performance_status,
+    workspace_performance_snapshot_status,
+)
+from memory_center.core.workspace.jobs import workspace_job_status
 from memory_center.http.route_dispatch import audit_http_route_contract
 from memory_center.http.server import serve_http, validate_http_binding
 

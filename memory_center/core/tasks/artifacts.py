@@ -50,6 +50,9 @@ APPEND_ONLY_ARTIFACT_KEYS = {
 
 TASKS_DIR = "tasks"
 ARCHIVE_DIR = "archive/tasks"
+# task_id 是标题 slug，同名任务重建后会复用同一个归档路径。命名冲突时旧归档
+# 会被移到这个目录，而不是被删除。
+ARCHIVE_SUPERSEDED_DIR = "archive/superseded/tasks"
 TASK_STATUSES = {"draft", "active", "blocked", "done", "archived"}
 DEFAULT_RESOLVE_SCORE_THRESHOLD = 3
 TASK_ARTIFACT_EXCERPT_BYTES = 16 * 1024
@@ -137,14 +140,30 @@ def get_artifact(workspace_file: str | Path, name: str) -> dict[str, object]:
     }
 
 
+def _write_artifact_locked(store: WorkspaceStore, name: str, content: str) -> Path:
+    """写 workspace 工件；调用方必须已持有 ``store.artifact_lock_file``。
+
+    与 ``WorkspaceStore.write_artifact`` 的区别是它不再自行加锁，避免在已持锁的
+    读-改-写事务里嵌套获取同一把锁。所有 workspace 工件写入都应经由本函数或
+    ``write_artifact``，二者共用 ``artifact_lock_file``。
+    """
+    path = _safe_path(store.artifacts_dir, name)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
+    return path
+
+
 def update_artifact(workspace_file: str | Path, name: str, content: str) -> dict[str, object]:
     config = load_workspace_config(workspace_file)
     store = WorkspaceStore(workspace_file)
     ensure_default_artifacts(workspace_file)
     key, filename = _resolve_artifact_name(name)
-    existing = store.read_artifact(filename, "")
-    next_content, mode = _merge_append_only_artifact(existing, content, key)
-    path = store.write_artifact(filename, next_content)
+    # 读-改-写必须整体持 artifacts.lock：只锁写回会让并发追加都基于同一份旧内容
+    # 合并，后写者静默覆盖先写者，append-only 保护形同虚设。
+    with FileLock(str(store.artifact_lock_file)):
+        existing = store.read_artifact(filename, "")
+        next_content, mode = _merge_append_only_artifact(existing, content, key)
+        path = _write_artifact_locked(store, filename, next_content)
     audit = _record_artifact_write_audit(
         store,
         scope="workspace",
@@ -190,7 +209,9 @@ def append_change_log(workspace_file: str | Path, entry: str) -> dict[str, objec
     content = f"\n## {stamp}\n\n{entry.strip()}\n"
     path = _safe_path(store.artifacts_dir, filename)
     archive_path = _safe_path(store.artifacts_dir, archive_name)
-    with FileLock(str(store.lock_file)):
+    # change-log 也是 workspace 工件：必须与 update_artifact 共用 artifact_lock_file，
+    # 否则两条路径用两把不同的锁，追加的条目会被并发压缩/覆盖悄悄丢掉。
+    with FileLock(str(store.artifact_lock_file)):
         with path.open("a", encoding="utf-8") as f:
             f.write(content)
         raw = path.read_text(encoding="utf-8")
@@ -281,26 +302,30 @@ def compact_change_log(workspace_file: str | Path, keep_recent: int = 30) -> dic
     ensure_default_artifacts(workspace_file)
     filename = DEFAULT_ARTIFACTS["change_log"]
     archive_name = "change-log.archive.md"
-    content = store.read_artifact(filename, "")
-    prefix, entries = _split_change_log_entries(content)
-    if len(entries) <= keep_recent:
-        return {
-            "workspace": config.workspace,
-            "compacted": False,
-            "kept_recent": len(entries),
-            "archived": 0,
-        }
-    archived_entries = entries[:-keep_recent]
-    kept_entries = entries[-keep_recent:]
-    archive_content = store.read_artifact(archive_name, "")
-    archive_prefix, archive_existing = _split_change_log_entries(archive_content)
-    if not archive_prefix.strip():
-        archive_prefix = "# Change Log Archive / 历史归档\n"
-    merged_archive = archive_prefix.rstrip() + "\n\n" + "\n\n".join(archive_existing + archived_entries).strip() + "\n"
-    store.write_artifact(archive_name, merged_archive)
-    note = "\n> Older entries were archived to `change-log.archive.md` / 较早记录已归档到 `change-log.archive.md`\n"
-    compacted = prefix.rstrip() + note + "\n" + "\n\n".join(kept_entries).strip() + "\n"
-    store.write_artifact(filename, compacted)
+    # 压缩是跨 live + archive 两个文件的读-改-写，必须整体持 artifact_lock_file；
+    # 原先它走 store.write_artifact（同一把锁但加锁两次、中间可被插入），
+    # 期间 append_change_log 追加的条目会被这次重写覆盖。
+    with FileLock(str(store.artifact_lock_file)):
+        content = store.read_artifact(filename, "")
+        prefix, entries = _split_change_log_entries(content)
+        if len(entries) <= keep_recent:
+            return {
+                "workspace": config.workspace,
+                "compacted": False,
+                "kept_recent": len(entries),
+                "archived": 0,
+            }
+        archived_entries = entries[:-keep_recent]
+        kept_entries = entries[-keep_recent:]
+        archive_content = store.read_artifact(archive_name, "")
+        archive_prefix, archive_existing = _split_change_log_entries(archive_content)
+        if not archive_prefix.strip():
+            archive_prefix = "# Change Log Archive / 历史归档\n"
+        merged_archive = archive_prefix.rstrip() + "\n\n" + "\n\n".join(archive_existing + archived_entries).strip() + "\n"
+        _write_artifact_locked(store, archive_name, merged_archive)
+        note = "\n> Older entries were archived to `change-log.archive.md` / 较早记录已归档到 `change-log.archive.md`\n"
+        compacted = prefix.rstrip() + note + "\n" + "\n\n".join(kept_entries).strip() + "\n"
+        _write_artifact_locked(store, filename, compacted)
     return {
         "workspace": config.workspace,
         "compacted": True,
@@ -747,24 +772,26 @@ def update_task_artifact(workspace_file: str | Path, task_id: str, name: str, co
             f"Large evidence was stored by content hash: `{evidence['ref']}`. "
             "Use task evidence retrieval when full detail is needed.\n"
         )
-    existing_bytes = path.stat().st_size if path.exists() else 0
-    if existing_bytes > TASK_ARTIFACT_WRITE_MAX_BYTES:
-        return {
-            "workspace": config.workspace,
-            "updated": False,
-            "reason": "artifact_too_large_for_merge",
-            "task_id": meta["task_id"],
-            "title": meta["title"],
-            "name": key,
-            "file": filename,
-            "path": str(path),
-            "existing_bytes": existing_bytes,
-            "max_merge_bytes": TASK_ARTIFACT_WRITE_MAX_BYTES,
-            "recommended_action": "archive_or_split_artifact_then_retry; keep a concise current_summary",
-        }
-    existing = path.read_text(encoding="utf-8") if path.exists() else ""
-    next_content, mode = _merge_append_only_artifact(existing, content, key)
+    # 尺寸判断、读取、合并、写回必须整体持 store.lock_file：原先只有写回加锁，
+    # 两个并发 append 会各自基于同一份旧内容合并，后写者覆盖先写者，且双方都返回 updated=True。
     with FileLock(str(store.lock_file)):
+        existing_bytes = path.stat().st_size if path.exists() else 0
+        if existing_bytes > TASK_ARTIFACT_WRITE_MAX_BYTES:
+            return {
+                "workspace": config.workspace,
+                "updated": False,
+                "reason": "artifact_too_large_for_merge",
+                "task_id": meta["task_id"],
+                "title": meta["title"],
+                "name": key,
+                "file": filename,
+                "path": str(path),
+                "existing_bytes": existing_bytes,
+                "max_merge_bytes": TASK_ARTIFACT_WRITE_MAX_BYTES,
+                "recommended_action": "archive_or_split_artifact_then_retry; keep a concise current_summary",
+            }
+        existing = path.read_text(encoding="utf-8") if path.exists() else ""
+        next_content, mode = _merge_append_only_artifact(existing, content, key)
         path.write_text(next_content, encoding="utf-8")
     _touch_task_meta(store, task_dir, meta, source=source)
     audit = _record_artifact_write_audit(
@@ -898,16 +925,26 @@ def list_task_decisions(workspace_file: str | Path, task_id: str, limit: int = 3
     return {"task_id": meta["task_id"], "decisions": rows, "total": len(rows)}
 
 
+_EVIDENCE_REFERENCE_SUFFIXES = {".md", ".jsonl", ".json"}
+
+
 def task_evidence_gc(workspace_file: str | Path, task_id: str, *, apply: bool = False) -> dict[str, object]:
-    """Report or remove unreferenced evidence chunks; deletion is opt-in."""
+    """Report or remove unreferenced evidence chunks; deletion is opt-in.
+
+    引用扫描覆盖 ``.md`` 与 ``.jsonl``/``.json``：``record_task_decision`` 会把
+    ``evidence_refs`` 写进 ``decisions.jsonl``，只扫 markdown 会把仅被决策引用的
+    证据误判为无引用并在 ``apply=True`` 时删除。
+    """
     store = WorkspaceStore(workspace_file)
     task_dir, meta = _resolve_task_dir(store, task_id)
     evidence_dir = task_dir / "evidence"
     references: set[str] = set()
-    for markdown in task_dir.rglob("*.md"):
+    for source in task_dir.rglob("*"):
+        if not source.is_file() or source.suffix not in _EVIDENCE_REFERENCE_SUFFIXES:
+            continue
         try:
-            references.update(re.findall(r"evidence:([0-9a-f]{64})", markdown.read_text(encoding="utf-8")))
-        except OSError:
+            references.update(re.findall(r"evidence:([0-9a-f]{64})", source.read_text(encoding="utf-8")))
+        except (OSError, UnicodeDecodeError):
             continue
     candidates = [path for path in evidence_dir.glob("*.md") if path.stem not in references] if evidence_dir.exists() else []
     if apply:
@@ -1044,6 +1081,30 @@ def compact_task_change_log(workspace_file: str | Path, task_id: str, keep_recen
     return {"workspace": config.workspace, "task_id": meta["task_id"], "compacted": True, "kept_recent": len(kept_entries), "archived": len(archived_entries)}
 
 
+def _preserve_conflicting_archive(store: WorkspaceStore, target: Path) -> Path:
+    """把已存在的同名归档整体移到 superseded 备份目录，绝不删除已有归档内容。
+
+    ``task_id`` 是标题 slug，同名任务重建后归档路径会再次指向 ``<slug>``；此前
+    这里直接 ``rmtree`` 掉了旧归档，等于静默销毁历史任务空间。旧归档现在整体
+    移到 ``archive/superseded/tasks/<slug>-<stamp>[-N]``，并在 meta 里标注原因。
+    """
+    meta = _read_task_meta(target)
+    stamp = re.sub(r"[^0-9A-Za-z]+", "", str(meta.get("archived_at") or meta.get("created_at") or ""))[:15] or "legacy"
+    backup_root = _safe_path(store.artifacts_dir, ARCHIVE_SUPERSEDED_DIR)
+    backup_root.mkdir(parents=True, exist_ok=True)
+    backup = backup_root / f"{target.name}-{stamp}"
+    index = 2
+    while backup.exists():
+        backup = backup_root / f"{target.name}-{stamp}-{index}"
+        index += 1
+    shutil.move(str(target), str(backup))
+    backup_meta = dict(meta)
+    backup_meta["superseded_at"] = datetime.now(timezone.utc).isoformat()
+    backup_meta["superseded_reason"] = "archive_slug_collision"
+    _write_task_meta_unlocked(backup, backup_meta)
+    return backup
+
+
 def archive_task_space(workspace_file: str | Path, task_id: str, reason: str = "") -> dict[str, object]:
     config = load_workspace_config(workspace_file)
     store = WorkspaceStore(workspace_file)
@@ -1051,10 +1112,13 @@ def archive_task_space(workspace_file: str | Path, task_id: str, reason: str = "
     archive_root = store.artifacts_dir / ARCHIVE_DIR
     archive_root.mkdir(parents=True, exist_ok=True)
     target = archive_root / task_dir.name
+    preserved: list[dict[str, str]] = []
     with FileLock(str(store.lock_file)):
         if target.exists():
-            # Remove existing archive directory completely so shutil.move replaces it
-            shutil.rmtree(target)
+            # 同名归档已存在：保留旧归档（移到 superseded/），再把当前任务放到
+            # canonical 路径。直接 shutil.move 到已存在目录会把源目录嵌套进去，
+            # 所以必须先移走旧归档。
+            preserved.append({"task_id": task_dir.name, "path": str(_preserve_conflicting_archive(store, target))})
         shutil.move(str(task_dir), str(target))
         meta["status"] = "archived"
         meta["archived"] = True
@@ -1068,6 +1132,8 @@ def archive_task_space(workspace_file: str | Path, task_id: str, reason: str = "
         "task_id": meta["task_id"],
         "title": meta["title"],
         "path": str(target),
+        # 仅在同名归档冲突时非空：被保留的旧归档位置，便于人工追溯。
+        "preserved_archives": preserved,
     }
 
 

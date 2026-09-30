@@ -7,9 +7,9 @@ import json
 import typing
 
 import typer
-from rich import print
 
 from memory_center.application.tasks import execute_task_repair
+from memory_center.cli.output import print_data as print
 from memory_center.core.indexing.control_plane import index_control_status
 from memory_center.core.indexing.shards import cleanup_generations
 from memory_center.core.knowledge.assets import (

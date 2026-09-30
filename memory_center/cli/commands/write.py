@@ -6,8 +6,8 @@ from __future__ import annotations
 from typing import List, Optional
 
 import typer
-from rich import print
 
+from memory_center.cli.output import print_data as print
 from memory_center.core.orchestrator import (
     memory_execute_write,
     memory_plan_write,

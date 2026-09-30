@@ -4,8 +4,8 @@ from __future__ import annotations
 import json
 
 import typer
-from rich import print
 
+from memory_center.cli.output import print_data as print
 from memory_center.core.orchestrator import (
     bootstrap_workspace_context,
     execute_mcp_bridge_action,

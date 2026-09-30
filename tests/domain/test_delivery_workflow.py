@@ -997,6 +997,58 @@ def test_waiver_lifecycle_and_gate_bypass(demo_workspace) -> None:
     assert waivers["all"][0]["status"] == "revoked"
 
 
+def test_waiver_expiry_is_fail_closed_for_unparseable_and_naive_values() -> None:
+    """无时区时间戳按 UTC 解释；无法解析的过期时间不得变成永久豁免。"""
+    from memory_center.core.tasks.delivery import _waiver_expired
+
+    assert _waiver_expired({}) is False
+    assert _waiver_expired({"expires_at": ""}) is False
+    assert _waiver_expired({"expires_at": "2020-01-01T00:00:00"}) is True
+    assert _waiver_expired({"expires_at": "2020-01-01T00:00:00+00:00"}) is True
+    assert _waiver_expired({"expires_at": "2999-01-01T00:00:00"}) is False
+    assert _waiver_expired({"expires_at": "next week"}) is True
+
+
+def test_expired_waiver_cannot_bypass_gate(demo_workspace) -> None:
+    from memory_center.core.tasks.delivery import (
+        approve_delivery_waiver,
+        create_delivery_waiver,
+        transition_delivery_stage,
+    )
+    task = create_task_space(demo_workspace, title="过期豁免门禁", intent="测试过期豁免")
+    task_id = task["task_id"]
+    initialize_delivery_workflow(demo_workspace, task_id, actor="test")
+    blocked = transition_delivery_stage(demo_workspace, task_id, "breakdown")
+    gate_code = blocked["gate"]["code"]
+
+    created = create_delivery_waiver(
+        demo_workspace, task_id, gate_code=gate_code, reason="已过期豁免", expires_at="2020-01-01T00:00:00"
+    )
+    approved = approve_delivery_waiver(demo_workspace, task_id, waiver_id=created["waiver_id"], actor="admin")
+    still_blocked = transition_delivery_stage(demo_workspace, task_id, "breakdown")
+
+    assert approved["approved"] is False
+    assert approved["reason"] == "waiver_expired"
+    assert still_blocked["transitioned"] is False
+
+
+def test_create_waiver_rejects_unparseable_expiry(demo_workspace) -> None:
+    from memory_center.core.tasks.delivery import create_delivery_waiver, transition_delivery_stage
+    task = create_task_space(demo_workspace, title="非法过期时间", intent="测试校验")
+    task_id = task["task_id"]
+    initialize_delivery_workflow(demo_workspace, task_id, actor="test")
+    blocked = transition_delivery_stage(demo_workspace, task_id, "breakdown")
+
+    with pytest.raises(ValueError, match="ISO-8601"):
+        create_delivery_waiver(
+            demo_workspace,
+            task_id,
+            gate_code=blocked["gate"]["code"],
+            reason="非法过期",
+            expires_at="next week",
+        )
+
+
 def test_failure_classification(demo_workspace) -> None:
     """Four-category failure classification."""
     from memory_center.core.tasks.delivery import classify_delivery_failure
