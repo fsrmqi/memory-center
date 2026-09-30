@@ -920,6 +920,10 @@ def approve_delivery_waiver(workspace_file: str | Path, task_id: str, *, waiver_
         return {"approved": False, "reason": f"waiver_already_{target['status']}", "next_action": f"Waiver 已为 {target['status']} 状态，不可重复审批。"}
     if _waiver_expired(target):
         target["status"] = "expired"
+        # 过期是状态转换，必须落盘：此前只改内存副本就返回，调用方看到一次
+        # "expired"，waiver 文件里仍是 pending，list 又会把它当 pending 列出来。
+        _write_waivers(task_dir, waivers)
+        _append_history(store, task_dir, event="waiver_expired", actor=actor, details={"waiver_id": waiver_id})
         return {"approved": False, "reason": "waiver_expired", "waiver": target, "next_action": "Waiver 已过期，需创建新的。"}
     target["status"] = "approved"
     target["approved_at"] = _now()
@@ -955,7 +959,9 @@ def list_delivery_waivers(workspace_file: str | Path, task_id: str) -> dict[str,
     waivers = _read_waivers(task_dir)
     changed = False
     for waiver in waivers:
-        if waiver.get("status") == "approved" and _waiver_expired(waiver):
+        # pending 也要过期：过期后本就无法审批（approve 会拒绝），若列表仍显示
+        # pending，运维会反复尝试审批一个永远不会生效的 waiver。
+        if waiver.get("status") in {"pending", "approved"} and _waiver_expired(waiver):
             waiver["status"] = "expired"
             changed = True
     if changed:

@@ -17,6 +17,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from filelock import FileLock
+
 from memory_center.core.foundation.schemas import with_schema
 from memory_center.core.storage.workspace import WorkspaceStore
 from memory_center.core.tasks.receipts import build_write_receipt, persist_write_receipt
@@ -388,91 +390,92 @@ def record_shadow_snapshot(
             "source_session_id": source_session_id,
             "bound_shadow_id": existing_shadow,
         }
-    state = load_shadow_state(store, resolved_shadow_id) or {
-        "workspace": "",
-        "session_ids": [],
-        "binding_status": "unbound",
-        "bound_task_id": "",
-        "confidence": "low",
-        "shadow_authority": "snapshot",
-        "created_at": _now_iso(),
-        "updated_at": _now_iso(),
-        "revision": 0,
-    }
-    state["workspace"] = state.get("workspace") or ""
-    if source_session_id not in state["session_ids"]:
-        state["session_ids"] = [*state["session_ids"], source_session_id][-20:]
+    with FileLock(str(store.shadow_lock_file)):
+        state = load_shadow_state(store, resolved_shadow_id) or {
+            "workspace": "",
+            "session_ids": [],
+            "binding_status": "unbound",
+            "bound_task_id": "",
+            "confidence": "low",
+            "shadow_authority": "snapshot",
+            "created_at": _now_iso(),
+            "updated_at": _now_iso(),
+            "revision": 0,
+        }
+        state["workspace"] = state.get("workspace") or ""
+        if source_session_id not in state["session_ids"]:
+            state["session_ids"] = [*state["session_ids"], source_session_id][-20:]
 
-    contributions = load_contributions(store, resolved_shadow_id)
-    key = _contrib_key(provider, source_session_id)
-    current = contributions.get(key)
-    incoming_seq = normalized["durable_as_of_seq"]
-    if current is not None:
-        current_seq = int(current.get("durable_as_of_seq", 0) or 0)
-        if incoming_seq < current_seq:
-            return {
-                "accepted": False,
-                "duplicate": True,
-                "reason": "stale_watermark",
-                "shadow_id": resolved_shadow_id,
-                "source_provider_id": provider,
-                "source_session_id": source_session_id,
-                "durable_as_of_seq": current_seq,
-                "rejected_seq": incoming_seq,
-            }
-        if incoming_seq == current_seq:
-            # 同水位重复投递：幂等 no-op（提案 11.3 约束 2）
-            return {
-                "accepted": False,
-                "duplicate": True,
-                "reason": "idempotent_noop",
-                "shadow_id": resolved_shadow_id,
-                "source_provider_id": provider,
-                "source_session_id": source_session_id,
-                "durable_as_of_seq": current_seq,
-            }
-        current_state_version = int(current.get("state_version", 1) or 1)
-        incoming_state_version = int(normalized["state_version"] or 1)
-        if incoming_state_version < current_state_version:
-            # 提案 11.3 约束 8 方向性：旧 schema 快照不能覆盖新 schema 折叠结果
-            return {
-                "accepted": False,
-                "duplicate": False,
-                "reason": "state_version_regression",
-                "shadow_id": resolved_shadow_id,
-                "required_action": "adapter_resync_with_current_schema",
-                "shadow_stale": False,
-            }
-        if incoming_state_version > current_state_version:
-            # 新 schema：MC 无源日志不可重折叠，标记 stale 并要求 adapter 重投
-            state["confidence"] = "low"
-            state["shadow_stale"] = True
-            state["stale_reason"] = "state_version_ahead_of_mc"
-    else:
-        if int(normalized["state_version"] or 1) > SHADOW_STATE_SCHEMA_VERSION:
-            state["shadow_stale"] = True
-            state["stale_reason"] = "state_version_ahead_of_mc"
+        contributions = load_contributions(store, resolved_shadow_id)
+        key = _contrib_key(provider, source_session_id)
+        current = contributions.get(key)
+        incoming_seq = normalized["durable_as_of_seq"]
+        if current is not None:
+            current_seq = int(current.get("durable_as_of_seq", 0) or 0)
+            if incoming_seq < current_seq:
+                return {
+                    "accepted": False,
+                    "duplicate": True,
+                    "reason": "stale_watermark",
+                    "shadow_id": resolved_shadow_id,
+                    "source_provider_id": provider,
+                    "source_session_id": source_session_id,
+                    "durable_as_of_seq": current_seq,
+                    "rejected_seq": incoming_seq,
+                }
+            if incoming_seq == current_seq:
+                # 同水位重复投递：幂等 no-op（提案 11.3 约束 2）
+                return {
+                    "accepted": False,
+                    "duplicate": True,
+                    "reason": "idempotent_noop",
+                    "shadow_id": resolved_shadow_id,
+                    "source_provider_id": provider,
+                    "source_session_id": source_session_id,
+                    "durable_as_of_seq": current_seq,
+                }
+            current_state_version = int(current.get("state_version", 1) or 1)
+            incoming_state_version = int(normalized["state_version"] or 1)
+            if incoming_state_version < current_state_version:
+                # 提案 11.3 约束 8 方向性：旧 schema 快照不能覆盖新 schema 折叠结果
+                return {
+                    "accepted": False,
+                    "duplicate": False,
+                    "reason": "state_version_regression",
+                    "shadow_id": resolved_shadow_id,
+                    "required_action": "adapter_resync_with_current_schema",
+                    "shadow_stale": False,
+                }
+            if incoming_state_version > current_state_version:
+                # 新 schema：MC 无源日志不可重折叠，标记 stale 并要求 adapter 重投
+                state["confidence"] = "low"
+                state["shadow_stale"] = True
+                state["stale_reason"] = "state_version_ahead_of_mc"
+        else:
+            if int(normalized["state_version"] or 1) > SHADOW_STATE_SCHEMA_VERSION:
+                state["shadow_stale"] = True
+                state["stale_reason"] = "state_version_ahead_of_mc"
 
-    contributions[key] = {
-        "source_provider_id": provider,
-        "source_session_id": source_session_id,
-        "source_instance_id": normalized["source_instance_id"],
-        "lineage": normalized["lineage"],
-        "durable_as_of_seq": incoming_seq,
-        "durable_event_count": normalized["durable_event_count"],
-        "source_revision_hint": normalized["source_revision_hint"],
-        "state_version": normalized["state_version"],
-        "intent_summary": normalized["intent_summary"],
-        **{field: normalized[field] for field in CONTRIBUTION_LIST_LIMITS},
-        "updated_at": _now_iso(),
-        "disposed": False,
-    }
+        contributions[key] = {
+            "source_provider_id": provider,
+            "source_session_id": source_session_id,
+            "source_instance_id": normalized["source_instance_id"],
+            "lineage": normalized["lineage"],
+            "durable_as_of_seq": incoming_seq,
+            "durable_event_count": normalized["durable_event_count"],
+            "source_revision_hint": normalized["source_revision_hint"],
+            "state_version": normalized["state_version"],
+            "intent_summary": normalized["intent_summary"],
+            **{field: normalized[field] for field in CONTRIBUTION_LIST_LIMITS},
+            "updated_at": _now_iso(),
+            "disposed": False,
+        }
 
-    state["revision"] = int(state.get("revision", 0) or 0) + 1
-    state["updated_at"] = _now_iso()
-    state.pop("shadow_stale", None) if not state.get("shadow_stale") else None
-    save_contributions(store, resolved_shadow_id, contributions)
-    save_shadow_state(store, resolved_shadow_id, state)
+        state["revision"] = int(state.get("revision", 0) or 0) + 1
+        state["updated_at"] = _now_iso()
+        state.pop("shadow_stale", None) if not state.get("shadow_stale") else None
+        save_contributions(store, resolved_shadow_id, contributions)
+        save_shadow_state(store, resolved_shadow_id, state)
 
     # Snapshot 是该 source 的权威 Shadow 写入者：仅在成功接受后注册映射，
     # 让后续 Observation 折叠到同一 Shadow 并受其 shadow_authority 约束。

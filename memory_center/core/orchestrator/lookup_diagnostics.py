@@ -50,7 +50,7 @@ def tool_usage_report(workspace_file: str | Path, limit: int = 200, *, deps: Dia
     return deps.with_schema("tool_usage_report", {"workspace": config.workspace, "summary": summary, "tool_counts": dict(sorted(counts.items(), key=lambda item: (-item[1], item[0]))[:20]), "lookup_tool_counts": dict(sorted(lookup.items(), key=lambda item: (-item[1], item[0]))), "suspected_bypass": bypass[:20], "adoption_hints": hints})
 
 def discover(workspace_file: str | Path, limit: int = 50, *, deps: DiagnosticsLookupPort) -> dict[str, Any]:
-    from .shared import SESSION_EVENTS_FILE
+    from .shared import LAYER_L0, LAYER_L1, LAYER_L2, SESSION_EVENTS_FILE
     config, store = deps.load_context(workspace_file); events = store.read_jsonl_prefer_backend(SESSION_EVENTS_FILE, limit=max(limit, 200)); counts = {}; queries = []
     for event in events:
         if event.get("event_type") != "tool_call": continue
@@ -62,9 +62,13 @@ def discover(workspace_file: str | Path, limit: int = 50, *, deps: DiagnosticsLo
         from ..verification.heuristics import apply_candidate_path_learning
         from .workspace_ops import workspace_status
         layers = workspace_status(workspace_file, view="compact", budget="medium").get("memory_layers", {})
-        if layers.get("L0", {}).get("count", 0) == 0: paths.insert(0, {"candidate_type": "session_bootstrap", "target": "work-start", "status": "probable", "weight": .76, "why": "当前还没有会话事件，先启动工作流能尽快建立上下文轨迹。", "next_action": "先运行 `work-start` 或 `mc_start` 启动任务", "verification_cost": "low"})
-        if layers.get("L1", {}).get("count", 0) == 0: paths.append({"candidate_type": "memory_write", "target": "L1_case_atom", "status": "possible", "weight": .7, "why": "当前缺少案例记忆，补齐 case 沉淀可以提升后续复用价值。", "next_action": "在关键阶段后运行 `work-sync` 或 `mc_sync`", "verification_cost": "low"})
-        if layers.get("L2", {}).get("count", 0) == 0: paths.append({"candidate_type": "task_sync", "target": "new-task-space", "status": "probable", "weight": .78, "why": "当前缺少任务空间，先创建 task 能让长任务协作更稳定。", "next_action": "运行 `artifact create-task` 或 `mc_sync(intent=...)`", "verification_cost": "low", "_learning_aliases": [{"candidate_type": "task_sync", "target": "new-task-space"}]})
+        # 层计数键必须与 _build_memory_overview 的 layer_counts 保持一致（LAYER_* 常量
+        # + event_count / case_count / active_task_space_count）。此前读的是
+        # layers["L0"]["count"] 这类并不存在的键，三个条件恒为真，导致无论工作区是否
+        # 已建立记忆，都会推荐 bootstrap / 补写 case / 新建任务空间。
+        if int(layers.get(LAYER_L0, {}).get("event_count", 0) or 0) == 0: paths.insert(0, {"candidate_type": "session_bootstrap", "target": "work-start", "status": "probable", "weight": .76, "why": "当前还没有会话事件，先启动工作流能尽快建立上下文轨迹。", "next_action": "先运行 `work-start` 或 `mc_start` 启动任务", "verification_cost": "low"})
+        if int(layers.get(LAYER_L1, {}).get("case_count", 0) or 0) == 0: paths.append({"candidate_type": "memory_write", "target": "L1_case_atom", "status": "possible", "weight": .7, "why": "当前缺少案例记忆，补齐 case 沉淀可以提升后续复用价值。", "next_action": "在关键阶段后运行 `work-sync` 或 `mc_sync`", "verification_cost": "low"})
+        if int(layers.get(LAYER_L2, {}).get("active_task_space_count", 0) or 0) == 0: paths.append({"candidate_type": "task_sync", "target": "new-task-space", "status": "probable", "weight": .78, "why": "当前缺少任务空间，先创建 task 能让长任务协作更稳定。", "next_action": "运行 `artifact create-task` 或 `mc_sync(intent=...)`", "verification_cost": "low", "_learning_aliases": [{"candidate_type": "task_sync", "target": "new-task-space"}]})
         paths = apply_candidate_path_learning(workspace_file, paths)
     except Exception: pass
     # 常用查询的压缩别名。sync_progress 必须是可直接执行的无 mode 形态：Agent 只需

@@ -2,7 +2,8 @@
 from pathlib import Path
 
 from memory_center.hooks.runner import run_hook
-from memory_center.hooks.spec import _SESSION_ID_FILE
+from memory_center.hooks.runner import _get_workspace_file
+from memory_center.hooks.spec import session_id_file
 
 
 def _setup_workspace(tmp_path: Path) -> str:
@@ -21,15 +22,15 @@ def test_run_hook_session_start_soft_mode(tmp_path: Path):
 def test_run_hook_session_start_creates_session_id_file(tmp_path: Path):
     ws = _setup_workspace(tmp_path)
     # Clean up any existing session-id file
-    _SESSION_ID_FILE.unlink(missing_ok=True)
+    session_id_file(_get_workspace_file(ws)).unlink(missing_ok=True)
     try:
         result = run_hook(ws, "session_start", {"prompt": "test task"})
         assert result["mode"] == "soft"
-        assert _SESSION_ID_FILE.exists()
-        session_id = _SESSION_ID_FILE.read_text(encoding="utf-8").strip()
+        assert session_id_file(_get_workspace_file(ws)).exists()
+        session_id = session_id_file(_get_workspace_file(ws)).read_text(encoding="utf-8").strip()
         assert session_id  # session_id should not be empty
     finally:
-        _SESSION_ID_FILE.unlink(missing_ok=True)
+        session_id_file(_get_workspace_file(ws)).unlink(missing_ok=True)
 
 
 def test_run_hook_session_stop_soft_mode(tmp_path: Path):
@@ -37,19 +38,19 @@ def test_run_hook_session_stop_soft_mode(tmp_path: Path):
     # First start a session to create the session-id file
     start_result = run_hook(ws, "session_start", {"prompt": "test task"})
     assert start_result["mode"] == "soft"
-    session_id = _SESSION_ID_FILE.read_text(encoding="utf-8").strip()
+    session_id = session_id_file(_get_workspace_file(ws)).read_text(encoding="utf-8").strip()
     assert session_id
     # Then stop it
     result = run_hook(ws, "session_stop", stdin_json=None)
     assert result["mode"] == "soft"
     assert result["exit_code"] == 0
     # Cleanup should have deleted the session-id file
-    assert not _SESSION_ID_FILE.exists()
+    assert not session_id_file(_get_workspace_file(ws)).exists()
 
 
 def test_run_hook_session_stop_no_session_id(tmp_path: Path):
     ws = _setup_workspace(tmp_path)
-    _SESSION_ID_FILE.unlink(missing_ok=True)
+    session_id_file(_get_workspace_file(ws)).unlink(missing_ok=True)
     result = run_hook(ws, "session_stop", stdin_json=None)
     assert result["exit_code"] == 0
     assert "No session_id" in result["system_message"]
@@ -244,14 +245,62 @@ def test_param_resolution_tool_input_file():
 
 def test_param_resolution_file(tmp_path: Path):
     from memory_center.hooks.runner import _resolve_param
-    _SESSION_ID_FILE.unlink(missing_ok=True)
-    _SESSION_ID_FILE.write_text("test-session-123", encoding="utf-8")
-    result = _resolve_param("file", None, "session_id")
-    assert result == "test-session-123"
-    _SESSION_ID_FILE.unlink(missing_ok=True)
+    path = session_id_file()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("test-session-123", encoding="utf-8")
+    try:
+        assert _resolve_param("file", None, "session_id") == "test-session-123"
+    finally:
+        path.unlink(missing_ok=True)
 
 
 def test_param_resolution_static():
     from memory_center.hooks.runner import _resolve_param
     result = _resolve_param("static", None, "intent", "hello world")
     assert result == "hello world"
+
+
+def test_session_id_file_is_workspace_scoped_and_overridable(tmp_path: Path, monkeypatch):
+    """交接文件必须按 workspace 隔离且可注入（此前是全局单例、写死 ~/.cache）。"""
+    from memory_center.hooks.spec import session_id_file
+
+    # 先关掉 conftest 的注入，验证默认的按 workspace 隔离逻辑
+    monkeypatch.delenv("MEMORY_CENTER_SESSION_ID_FILE", raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+
+    ws_a = tmp_path / "a" / ".memory-center" / "workspace.yaml"
+    ws_b = tmp_path / "b" / ".memory-center" / "workspace.yaml"
+    scoped_a = session_id_file(ws_a)
+    assert scoped_a != session_id_file(ws_b)
+    assert scoped_a == session_id_file(ws_a)
+    assert scoped_a.is_relative_to(tmp_path / "home" / ".cache" / "memory-center" / "sessions")
+    # 未提供 workspace 时保留旧的全局路径（向后兼容）
+    assert session_id_file() == Path.home() / ".cache" / "memory-center" / "session-id"
+
+    override = tmp_path / "custom" / "session-id"
+    monkeypatch.setenv("MEMORY_CENTER_SESSION_ID_FILE", str(override))
+    assert session_id_file(ws_a) == override
+    assert session_id_file() == override
+
+
+def test_two_workspaces_do_not_clobber_each_others_session_id(tmp_path: Path, monkeypatch):
+    """并行处理两个项目时，后启动的 session 不得覆盖前一个项目的交接文件。"""
+    monkeypatch.delenv("MEMORY_CENTER_SESSION_ID_FILE", raising=False)
+    (tmp_path / "home").mkdir()
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    (tmp_path / "a").mkdir()
+    (tmp_path / "b").mkdir()
+    ws_a = _setup_workspace(tmp_path / "a")
+    ws_b = _setup_workspace(tmp_path / "b")
+
+    assert run_hook(ws_a, "session_start", {"prompt": "task a"})["mode"] == "soft"
+    path_a = session_id_file(_get_workspace_file(ws_a))
+    session_a = path_a.read_text(encoding="utf-8").strip()
+    assert session_a
+
+    assert run_hook(ws_b, "session_start", {"prompt": "task b"})["mode"] == "soft"
+    session_b = session_id_file(_get_workspace_file(ws_b)).read_text(encoding="utf-8").strip()
+
+    assert session_b and session_b != session_a
+    # 全局单例实现下这里会读到 B 的 session_id，A 的 Stop hook 会关掉 B 的 session
+    assert path_a.read_text(encoding="utf-8").strip() == session_a

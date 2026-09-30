@@ -44,8 +44,8 @@ from ..core.orchestrator import (
     workspace_unresolved_items,
 )
 from .spec import (
-    _SESSION_ID_FILE,
     load_hooks_config,
+    session_id_file,
     validate_hooks_config,
 )
 
@@ -59,6 +59,7 @@ def _resolve_param(
     stdin_json: dict | None,
     param_name: str,
     static_value: str = "",
+    workspace_file: str = "",
 ) -> str:
     """Resolve a parameter value from its *_from declaration."""
     stdin_json = stdin_json or {}
@@ -68,9 +69,10 @@ def _resolve_param(
         tool_input = stdin_json.get("tool_input", {})
         return tool_input.get("file_path", "") or tool_input.get("path", "")
     if from_spec == "file":
-        _SESSION_ID_FILE.parent.mkdir(parents=True, exist_ok=True)
+        target_file = session_id_file(workspace_file or None)
+        target_file.parent.mkdir(parents=True, exist_ok=True)
         try:
-            return _SESSION_ID_FILE.read_text(encoding="utf-8").strip()
+            return target_file.read_text(encoding="utf-8").strip()
         except FileNotFoundError:
             return ""
     if from_spec == "static":
@@ -140,22 +142,23 @@ def _glob_to_regex(pattern: str) -> str:
     return "^" + "".join(regex_parts) + "$"
 
 
-def _run_cleanup(cleanup_actions: list[str]) -> None:
+def _run_cleanup(cleanup_actions: list[str], workspace_file: str = "") -> None:
     """Execute cleanup actions after hook completion."""
     for action in cleanup_actions:
         if action == "delete_session_id_file":
             try:
-                _SESSION_ID_FILE.unlink(missing_ok=True)
+                session_id_file(workspace_file or None).unlink(missing_ok=True)
             except Exception:
                 pass
 
 
-def _write_session_id(session_id: str) -> None:
-    """Write session_id to the session-id file."""
+def _write_session_id(session_id: str, workspace_file: str = "") -> None:
+    """Write session_id to the workspace-scoped session-id file."""
     import logging
     try:
-        _SESSION_ID_FILE.parent.mkdir(parents=True, exist_ok=True)
-        _SESSION_ID_FILE.write_text(session_id, encoding="utf-8")
+        target_file = session_id_file(workspace_file or None)
+        target_file.parent.mkdir(parents=True, exist_ok=True)
+        target_file.write_text(session_id, encoding="utf-8")
     except Exception as exc:
         logging.getLogger("memory_center.hooks").warning("Failed to write session_id file: %s", exc)
 
@@ -265,17 +268,19 @@ def run_hook(
         }
 
     # Modes: soft / guard — resolve params and dispatch to facade
+    # workspace_file 必须先解析：session_id_from=file 需要同一份交接文件路径
+    workspace_file = _get_workspace_file(workspace)
     # Resolve intent
     intent_from = params_spec.get("intent_from", "static")
-    intent = _resolve_param(intent_from, stdin_json, "intent", params_spec.get("intent", "session start"))
+    intent = _resolve_param(intent_from, stdin_json, "intent", params_spec.get("intent", "session start"), workspace_file)
 
     # Resolve target (file path for pre_edit)
     target_from = params_spec.get("target_from", "static")
-    target = _resolve_param(target_from, stdin_json, "target", params_spec.get("target", ""))
+    target = _resolve_param(target_from, stdin_json, "target", params_spec.get("target", ""), workspace_file)
 
     # Resolve session_id
     session_id_from = params_spec.get("session_id_from", "static")
-    session_id = _resolve_param(session_id_from, stdin_json, "session_id", params_spec.get("session_id", ""))
+    session_id = _resolve_param(session_id_from, stdin_json, "session_id", params_spec.get("session_id", ""), workspace_file)
 
     # Resolve other static params
     budget = params_spec.get("budget", "small")
@@ -286,7 +291,7 @@ def run_hook(
     # Resolve outcome if outcome_from is specified
     outcome_from = params_spec.get("outcome_from", "static")
     if outcome_from != "static":
-        outcome = _resolve_param(outcome_from, stdin_json, "outcome", params_spec.get("outcome", "session ended"))
+        outcome = _resolve_param(outcome_from, stdin_json, "outcome", params_spec.get("outcome", "session ended"), workspace_file)
     else:
         outcome = params_spec.get("outcome", "session ended")
 
@@ -304,7 +309,6 @@ def run_hook(
     # Dispatch to facade
     hook_result: Any = None
     system_message = ""
-    workspace_file = _get_workspace_file(workspace)
     host_tool_name = str(
         (stdin_json or {}).get("tool_name", "")
         or ((stdin_json or {}).get("tool_input", {}) or {}).get("tool_name", "")
@@ -348,7 +352,7 @@ def run_hook(
             # Write session_id to file for later hooks
             sid = session.get("session_id", "")
             if sid:
-                _write_session_id(sid)
+                _write_session_id(sid, workspace_file=workspace_file)
             hook_result = {
                 "workflow": "mc-start",
                 "sniff": sniff_result,
@@ -416,7 +420,7 @@ def run_hook(
                         system_message += (
                             f" | BLOCKED: must-severity rules: {must_rules}; contract_status={contract_status}"
                         )
-                        _run_cleanup(cleanup_actions)
+                        _run_cleanup(cleanup_actions, workspace_file=workspace_file)
                         return {
                             "exit_code": 2,
                             "system_message": system_message,
@@ -629,7 +633,7 @@ def run_hook(
         }
 
     # Run cleanup actions
-    _run_cleanup(cleanup_actions)
+    _run_cleanup(cleanup_actions, workspace_file=workspace_file)
 
     return {
         "exit_code": 0,

@@ -53,6 +53,19 @@ def isolated_dsh_home(tmp_path_factory, monkeypatch):
     monkeypatch.setenv("DSH_HOME", str(tmp_path_factory.mktemp("dsh-home")))
 
 
+@pytest.fixture(autouse=True)
+def isolated_session_id_file(tmp_path_factory, monkeypatch):
+    """Hook 的 session-id 交接文件默认写在 ``~/.cache/memory-center``。
+
+    它必须可注入：否则每个跑 hook 的测试都会写开发者真实 home，在没有权限的
+    沙箱里更是直接 PermissionError。
+    """
+    monkeypatch.setenv(
+        "MEMORY_CENTER_SESSION_ID_FILE",
+        str(tmp_path_factory.mktemp("session-id") / "session-id"),
+    )
+
+
 @pytest.fixture()
 def demo_workspace(tmp_path: Path) -> Path:
     """Copy spring-cloud-demo into tmp_path, rewrite workspace.yaml root.

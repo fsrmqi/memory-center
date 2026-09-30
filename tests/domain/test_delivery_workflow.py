@@ -1009,6 +1009,57 @@ def test_waiver_expiry_is_fail_closed_for_unparseable_and_naive_values() -> None
     assert _waiver_expired({"expires_at": "next week"}) is True
 
 
+def test_approving_an_expired_waiver_persists_the_expired_status(demo_workspace) -> None:
+    """过期审批必须落盘：此前只改内存副本，磁盘上仍是 pending，列表又会当 pending 列出。"""
+    from memory_center.core.tasks.delivery import (
+        approve_delivery_waiver,
+        create_delivery_waiver,
+        list_delivery_waivers,
+        transition_delivery_stage,
+    )
+
+    task = create_task_space(demo_workspace, title="过期豁免落盘", intent="测试过期豁免")
+    task_id = task["task_id"]
+    initialize_delivery_workflow(demo_workspace, task_id, actor="test")
+    gate_code = transition_delivery_stage(demo_workspace, task_id, "breakdown")["gate"]["code"]
+    waiver_id = create_delivery_waiver(
+        demo_workspace, task_id, gate_code=gate_code, reason="已过期",
+        expires_at="2020-01-01T00:00:00+00:00", actor="reviewer",
+    )["waiver_id"]
+
+    rejected = approve_delivery_waiver(demo_workspace, task_id, waiver_id=waiver_id, actor="admin")
+    assert rejected["approved"] is False
+    assert rejected["reason"] == "waiver_expired"
+    # 重新从磁盘读取也必须看到 expired（此前会回退成 pending）
+    assert list_delivery_waivers(demo_workspace, task_id)["all"][0]["status"] == "expired"
+    # 状态已持久化，后续审批不再走「过期」分支而是拒绝重复审批
+    assert approve_delivery_waiver(demo_workspace, task_id, waiver_id=waiver_id, actor="admin")["reason"] == "waiver_already_expired"
+    # 过期 waiver 不得绕过门禁
+    assert transition_delivery_stage(demo_workspace, task_id, "breakdown")["transitioned"] is False
+
+
+def test_listing_waivers_auto_expires_pending_ones(demo_workspace) -> None:
+    """pending 也会过期：过期后本就无法审批，列表不得继续把它算作 active。"""
+    from memory_center.core.tasks.delivery import create_delivery_waiver, list_delivery_waivers, transition_delivery_stage
+
+    task = create_task_space(demo_workspace, title="过期Pending", intent="测试 pending 过期")
+    task_id = task["task_id"]
+    initialize_delivery_workflow(demo_workspace, task_id, actor="test")
+    gate_code = transition_delivery_stage(demo_workspace, task_id, "breakdown")["gate"]["code"]
+    create_delivery_waiver(
+        demo_workspace, task_id, gate_code=gate_code, reason="已过期",
+        expires_at="2020-01-01T00:00:00+00:00", actor="reviewer",
+    )
+    listed = list_delivery_waivers(demo_workspace, task_id)
+    assert listed["all"][0]["status"] == "expired"
+    assert listed["active"] == []
+
+    # 未设置 expires_at 的 waiver 永不过期，必须仍为 pending/active
+    create_delivery_waiver(demo_workspace, task_id, gate_code=gate_code, reason="无期限", actor="reviewer")
+    active = list_delivery_waivers(demo_workspace, task_id)["active"]
+    assert [item["status"] for item in active] == ["pending"]
+
+
 def test_expired_waiver_cannot_bypass_gate(demo_workspace) -> None:
     from memory_center.core.tasks.delivery import (
         approve_delivery_waiver,

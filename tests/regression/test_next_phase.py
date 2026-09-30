@@ -868,6 +868,32 @@ class TestRetrievalBehavior:
         assert matrix.get("health_check") == {"command": "mc_admin", "action": "health"}
         assert matrix.get("audit_check") == {"command": "mc_admin", "action": "audit"}
 
+    def test_memory_discover_reads_real_memory_layer_keys(self, monkeypatch):
+        """层计数键必须与 _build_memory_overview 的 layer_counts 一致。
+
+        discover 曾读 layers["L0"]["count"] 这类不存在的键（真实键是
+        L0_session_events + event_count），三个条件恒为真：工作区记忆再充实，
+        也会推荐 session_bootstrap / 补 case / 新建任务空间。
+        """
+        from memory_center.core.orchestrator import workspace_ops
+        from memory_center.core.orchestrator.query import memory_discover
+
+        populated = {
+            "L0_session_events": {"event_count": 9, "ref_count": 2},
+            "L0.5_session_notes": {"note_count": 1, "active_note_count": 1},
+            "L1_case_atoms": {"case_count": 2, "current_truth_count": 2, "superseded_count": 0},
+            "L2_task_spaces": {"active_task_space_count": 1},
+            "L3_workspace_profile": {"rule_file_count": 1, "instruction_files": 1},
+        }
+        monkeypatch.setattr(workspace_ops, "workspace_status", lambda *a, **k: {"memory_layers": populated})
+        types = {path["candidate_type"] for path in memory_discover(self.workspace, limit=20)["candidate_paths"]}
+        assert types.isdisjoint({"session_bootstrap", "memory_write", "task_sync"}), types
+
+        empty = {key: {} for key in populated}
+        monkeypatch.setattr(workspace_ops, "workspace_status", lambda *a, **k: {"memory_layers": empty})
+        types = {path["candidate_type"] for path in memory_discover(self.workspace, limit=20)["candidate_paths"]}
+        assert {"session_bootstrap", "memory_write", "task_sync"} <= types, types
+
     def test_type_boosting_keys_match_graph_types(self):
         from memory_center.core.retrieval.hybrid import RetrievalResult, _apply_type_boosting
         # Verify boost map keys are valid node type names

@@ -4,7 +4,7 @@ from __future__ import annotations
 # Typer evaluates command annotations at runtime in Python 3.9 environments.
 # ruff: noqa: UP006,UP035,UP045
 import json
-from typing import List
+from typing import Any, List
 
 import typer
 

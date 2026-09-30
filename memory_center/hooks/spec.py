@@ -4,6 +4,8 @@ Follows the same pattern as core/rules.py (DEFAULT_* constants + ensure_default_
 """
 from __future__ import annotations
 
+import hashlib
+import os
 from pathlib import Path
 from typing import Any
 
@@ -18,7 +20,33 @@ _VALID_FACADES = (
 )
 _VALID_PARAM_FROM = ("event", "tool_input_file", "file", "static")
 _HOOK_EVENT_NAMES = ("session_start", "pre_edit", "session_stop", "user_prompt_submit")
-_SESSION_ID_FILE = Path.home() / ".cache" / "memory-center" / "session-id"
+_SESSION_ID_FILE_ENV = "MEMORY_CENTER_SESSION_ID_FILE"
+
+
+def session_id_file(workspace_file: str | Path | None = None) -> Path:
+    """解析 SessionStart → Stop/pre_edit 之间传递 session_id 的交接文件。
+
+    优先级：
+    1. ``MEMORY_CENTER_SESSION_ID_FILE``：显式覆盖，供宿主与测试注入；
+    2. 按 workspace 隔离的 ``~/.cache/memory-center/sessions/<digest>/session-id``；
+    3. 未提供 workspace 时的旧全局路径 ``~/.cache/memory-center/session-id``。
+
+    此前只有一个全局文件：同一台机器并行处理两个项目时，后写入的 session 会覆盖
+    前一个，任一项目的 Stop hook 都可能关掉另一个项目刚启动的 session。
+    调用方（hook runner）传已归一化的 workspace 文件路径，保证 start/stop 两侧
+    解析到同一份文件。
+    """
+    override = os.environ.get(_SESSION_ID_FILE_ENV, "").strip()
+    if override:
+        return Path(override).expanduser()
+    if workspace_file:
+        try:
+            key = str(Path(workspace_file).expanduser().resolve())
+        except OSError:
+            key = str(workspace_file)
+        digest = hashlib.sha256(key.encode("utf-8")).hexdigest()[:16]
+        return Path.home() / ".cache" / "memory-center" / "sessions" / digest / "session-id"
+    return Path.home() / ".cache" / "memory-center" / "session-id"
 
 DEFAULT_HOOKS = {
     "version": "1.0",

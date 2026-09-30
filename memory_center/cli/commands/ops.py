@@ -75,7 +75,7 @@ def register_ops_commands(app: typer.Typer) -> None:
         workspace: str = typer.Option(..., help="Path to .memory-center/workspace.yaml"),
         knowledge_id: str = typer.Option(..., help="KnowledgeLink knowledge_id."),
         task_id: str = typer.Option(..., help="Explicitly chosen task id."),
-        evidence_refs: List[str] = typer.Option(..., help="Evidence references; repeat the option."),
+        evidence_refs: List[str] = typer.Option(..., help="Evidence references; repeat the option."),  # noqa: B008
         actor: str = typer.Option(..., help="Operator recorded on the manual attachment event."),
         reason: str = typer.Option("", help="Optional note kept on the event payload."),
     ):

@@ -116,6 +116,7 @@ class WorkspaceStore:
         self.artifact_lock_file = self.base_dir / "artifacts.lock"
         self.audit_lock_file = self.base_dir / "audit.lock"
         self.reindex_lock_file = self.base_dir / "reindex.lock"
+        self.shadow_lock_file = self.base_dir / "shadow.lock"
         self._memory_backend: RuntimeStore | None = None
         # A scoped reindex reads the same large deterministic indexes while
         # merging, rebuilding the graph, and publishing generation shards.

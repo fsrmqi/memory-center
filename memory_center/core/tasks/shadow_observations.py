@@ -16,6 +16,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from filelock import FileLock
+
 from memory_center.core.tasks.receipts import build_write_receipt, persist_write_receipt
 from memory_center.core.storage.workspace import WorkspaceStore
 from memory_center.core.workspace.config import load_workspace_config
@@ -240,77 +242,78 @@ def _fold_observation_into_shadow(
     # 经 source→shadow 映射解析：Snapshot/MC session 已注册的 Shadow 会在此
     # 命中，Observation 与 Snapshot 因此落在同一实体上；authority 检查对该
     # Shadow 生效。
-    shadow_id = resolve_shadow_for_source(store, normalized["source_kind"], source_session_id)
-    state = load_shadow_state(store, shadow_id)
-    if state is not None and state.get("shadow_authority") == "snapshot":
-        return {"folded": False, "reason": "shadow_authority_is_snapshot", "shadow_id": shadow_id}
+    with FileLock(str(store.shadow_lock_file)):
+        shadow_id = resolve_shadow_for_source(store, normalized["source_kind"], source_session_id)
+        state = load_shadow_state(store, shadow_id)
+        if state is not None and state.get("shadow_authority") == "snapshot":
+            return {"folded": False, "reason": "shadow_authority_is_snapshot", "shadow_id": shadow_id}
 
-    payload = normalized["payload"]
-    contributions = load_contributions(store, shadow_id)
-    key = _contrib_key(provider, source_session_id)
-    current = contributions.get(key) or {
-        "source_provider_id": provider,
-        "source_session_id": source_session_id,
-        "source_instance_id": "",
-        "lineage": {"parent_session_id": "", "fork_seq": 0},
-        "durable_as_of_seq": 0,
-        "durable_event_count": 0,
-        "source_revision_hint": "",
-        "state_version": 1,
-        "intent_summary": "",
-        "candidate_tasks": [],
-        "candidate_files": [],
-        "evidence_refs": [],
-        "unresolved_items": [],
-        "next_actions": [],
-    }
-    seq = normalized["event_seq"]
-    if seq <= int(current.get("durable_as_of_seq", 0) or 0):
-        return {"folded": False, "reason": "stale_observation_seq", "shadow_id": shadow_id}
-
-    kind = normalized["kind"]
-    if payload.get("tool_name"):
-        current["evidence_refs"] = (current.get("evidence_refs") or [])[-39:] + [
-            f"{kind}:{payload['tool_name']}@seq{seq}"
-        ]
-    if kind == "candidate_file":
-        for item in payload.get("candidate_files", []) or []:
-            if item and item not in (current.get("candidate_files") or []):
-                current["candidate_files"] = (current.get("candidate_files") or [])[-59:] + [item]
-    if kind == "task_hint" and payload.get("task_hint"):
-        hint = payload["task_hint"]
-        if hint not in (current.get("candidate_tasks") or []):
-            current["candidate_tasks"] = (current.get("candidate_tasks") or [])[-19:] + [hint]
-    if payload.get("next_action_summary"):
-        action = payload["next_action_summary"]
-        if action not in (current.get("next_actions") or []):
-            current["next_actions"] = (current.get("next_actions") or [])[-29:] + [action]
-    if payload.get("validation_status"):
-        marker = f"validation:{payload['validation_status']}@seq{seq}"
-        current["evidence_refs"] = (current.get("evidence_refs") or [])[-39:] + [marker]
-    current["durable_as_of_seq"] = seq
-    current["durable_event_count"] = seq + 1
-    current["updated_at"] = _now_iso()
-    contributions[key] = current
-
-    if state is None:
-        state = {
-            "workspace": "",
-            "session_ids": [source_session_id],
-            "binding_status": "unbound",
-            "bound_task_id": "",
-            "confidence": "low",
-            "shadow_authority": "observation",
-            "created_at": _now_iso(),
-            "updated_at": _now_iso(),
-            "revision": 0,
+        payload = normalized["payload"]
+        contributions = load_contributions(store, shadow_id)
+        key = _contrib_key(provider, source_session_id)
+        current = contributions.get(key) or {
+            "source_provider_id": provider,
+            "source_session_id": source_session_id,
+            "source_instance_id": "",
+            "lineage": {"parent_session_id": "", "fork_seq": 0},
+            "durable_as_of_seq": 0,
+            "durable_event_count": 0,
+            "source_revision_hint": "",
+            "state_version": 1,
+            "intent_summary": "",
+            "candidate_tasks": [],
+            "candidate_files": [],
+            "evidence_refs": [],
+            "unresolved_items": [],
+            "next_actions": [],
         }
-    if source_session_id not in state["session_ids"]:
-        state["session_ids"] = [*state["session_ids"], source_session_id][-20:]
-    state["revision"] = int(state.get("revision", 0) or 0) + 1
-    state["updated_at"] = _now_iso()
-    save_contributions(store, shadow_id, contributions)
-    save_shadow_state(store, shadow_id, state)
+        seq = normalized["event_seq"]
+        if seq <= int(current.get("durable_as_of_seq", 0) or 0):
+            return {"folded": False, "reason": "stale_observation_seq", "shadow_id": shadow_id}
+
+        kind = normalized["kind"]
+        if payload.get("tool_name"):
+            current["evidence_refs"] = (current.get("evidence_refs") or [])[-39:] + [
+                f"{kind}:{payload['tool_name']}@seq{seq}"
+            ]
+        if kind == "candidate_file":
+            for item in payload.get("candidate_files", []) or []:
+                if item and item not in (current.get("candidate_files") or []):
+                    current["candidate_files"] = (current.get("candidate_files") or [])[-59:] + [item]
+        if kind == "task_hint" and payload.get("task_hint"):
+            hint = payload["task_hint"]
+            if hint not in (current.get("candidate_tasks") or []):
+                current["candidate_tasks"] = (current.get("candidate_tasks") or [])[-19:] + [hint]
+        if payload.get("next_action_summary"):
+            action = payload["next_action_summary"]
+            if action not in (current.get("next_actions") or []):
+                current["next_actions"] = (current.get("next_actions") or [])[-29:] + [action]
+        if payload.get("validation_status"):
+            marker = f"validation:{payload['validation_status']}@seq{seq}"
+            current["evidence_refs"] = (current.get("evidence_refs") or [])[-39:] + [marker]
+        current["durable_as_of_seq"] = seq
+        current["durable_event_count"] = seq + 1
+        current["updated_at"] = _now_iso()
+        contributions[key] = current
+
+        if state is None:
+            state = {
+                "workspace": "",
+                "session_ids": [source_session_id],
+                "binding_status": "unbound",
+                "bound_task_id": "",
+                "confidence": "low",
+                "shadow_authority": "observation",
+                "created_at": _now_iso(),
+                "updated_at": _now_iso(),
+                "revision": 0,
+            }
+        if source_session_id not in state["session_ids"]:
+            state["session_ids"] = [*state["session_ids"], source_session_id][-20:]
+        state["revision"] = int(state.get("revision", 0) or 0) + 1
+        state["updated_at"] = _now_iso()
+        save_contributions(store, shadow_id, contributions)
+        save_shadow_state(store, shadow_id, state)
     return {"folded": True, "shadow_id": shadow_id, "durable_as_of_seq": seq}
 
 
@@ -356,21 +359,22 @@ def set_shadow_authority(
     if authority not in ("observation", "snapshot"):
         raise ValueError("authority must be observation or snapshot")
     store = WorkspaceStore(workspace_file)
-    state = load_shadow_state(store, shadow_id)
-    if state is None:
-        raise ValueError(f"unknown task shadow: {shadow_id}")
-    previous = str(state.get("shadow_authority", "snapshot") or "snapshot")
-    state["shadow_authority"] = authority
-    state["revision"] = int(state.get("revision", 0) or 0) + 1
-    state["updated_at"] = _now_iso()
-    if authority == "snapshot" and previous == "observation":
-        # 迁移：关闭 observation contribution（dispose，保留 receipt 审计）
-        contributions = load_contributions(store, shadow_id)
-        for value in contributions.values():
-            if str(value.get("source_provider_id", "")).endswith("-observation@1"):
-                value["disposed"] = True
-        save_contributions(store, shadow_id, contributions)
-    save_shadow_state(store, shadow_id, state)
+    with FileLock(str(store.shadow_lock_file)):
+        state = load_shadow_state(store, shadow_id)
+        if state is None:
+            raise ValueError(f"unknown task shadow: {shadow_id}")
+        previous = str(state.get("shadow_authority", "snapshot") or "snapshot")
+        state["shadow_authority"] = authority
+        state["revision"] = int(state.get("revision", 0) or 0) + 1
+        state["updated_at"] = _now_iso()
+        if authority == "snapshot" and previous == "observation":
+            # 迁移：关闭 observation contribution（dispose，保留 receipt 审计）
+            contributions = load_contributions(store, shadow_id)
+            for value in contributions.values():
+                if str(value.get("source_provider_id", "")).endswith("-observation@1"):
+                    value["disposed"] = True
+            save_contributions(store, shadow_id, contributions)
+        save_shadow_state(store, shadow_id, state)
     receipt = persist_write_receipt(
         store,
         build_write_receipt(
