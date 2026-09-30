@@ -199,7 +199,7 @@ def evaluate_claim_boundary(
     if budget.get("timed_out"):
         reason_codes.append("query_timed_out")
     try:
-        from memory_center.core.orchestrator.chain_anchor_gate import gate_reasons_from_chain
+        from memory_center.core.foundation.claim_boundary import gate_reasons_from_chain
 
         reason_codes.extend(gate_reasons_from_chain(chain_gate))
     except Exception:  # pragma: no cover - gate module always present in-tree

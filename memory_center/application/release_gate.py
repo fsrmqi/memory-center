@@ -314,6 +314,7 @@ def run_release_gate(
         lookup_started = time.perf_counter()
         lookup_contract = evaluate_lookup_contract(
             workspace_file, lookup_contract_cases, baseline_file=lookup_contract_baseline,
+            runner=lambda case: memory_query_hybrid(workspace_file, case["query"], limit=case["limit"], project=case["project"]),
         )
         changed_ids = list(lookup_contract.get("changed_case_ids", []) or [])
         baseline_status = str(lookup_contract.get("baseline_status", "") or "")

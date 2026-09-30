@@ -428,7 +428,7 @@ def create_server(workspace_file: str):
                     return emit(_lookup_payload_with_agent_steps("mode_used", "chain-callees", result, matching_groups=matching_groups, _hint=f"Workspace 属于多个 group ({', '.join(matching_groups)})，请用 mc_admin(action='group_chain', group=...) 显式指定。", **decision_fields), "chain-callees")
                 return emit(_lookup_payload_with_agent_steps("mode_used", "chain-callees", result, **decision_fields), "chain-callees")
             if "memory_symbol" in preferred_bare and (name or resolved_symbol or query):
-                from memory_center.core.retrieval.templates import find_symbols
+                from memory_center.core.orchestrator.templates import find_symbols
 
                 result = find_symbols(wf, name or resolved_symbol or query, tier=plan.tier, limit=limit, project=project)
                 result["agent_next_steps"] = _agent_next_steps_for_lookup_route("symbol", result, query)
@@ -457,7 +457,7 @@ def create_server(workspace_file: str):
                 )
             return emit(_lookup_payload_with_agent_steps("mode_used", "query", query_result, **decision_fields), "query")
         if mode == "symbol":
-            from memory_center.core.retrieval.templates import find_symbols
+            from memory_center.core.orchestrator.templates import find_symbols
 
             result = find_symbols(wf, name or query, tier=plan.tier, limit=limit, project=project)
             result["agent_next_steps"] = _agent_next_steps_for_lookup_route("symbol", result, query)
@@ -487,7 +487,7 @@ def create_server(workspace_file: str):
             result["agent_next_steps"] = _agent_next_steps_for_lookup_route("trace", result, query)
             return emit(_lookup_payload_with_agent_steps("mode", "trace", result), "trace")
         if mode == "chain":
-            from memory_center.core.retrieval.templates import trace_call_paths
+            from memory_center.core.orchestrator.templates import trace_call_paths
 
             cross_types = ["CALLS_SERVICE", "IMPLEMENTS_FEIGN"] if scope == "cross-service" else None
             matching_groups = find_groups_for_workspace(wf)
@@ -581,7 +581,7 @@ def create_server(workspace_file: str):
                 result["candidate_paths"] = impact_result.get("candidate_paths", [])
                 result["recommended_path"] = impact_result.get("recommended_path", {})
             if depth in ("standard", "full") and target:
-                from memory_center.core.retrieval.templates import find_contract_consumers
+                from memory_center.core.orchestrator.templates import find_contract_consumers
 
                 plan, plan_diagnostic = degraded_analysis_step("plan", lambda: memory_plan_change(wf, target, direction, max_depth))
                 rules, rules_diagnostic = degraded_analysis_step("rules", lambda: workspace_check_rules(wf, projects, change_type, files))

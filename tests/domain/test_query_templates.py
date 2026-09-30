@@ -10,7 +10,7 @@ import time
 
 import pytest
 
-from memory_center.core.retrieval.templates import (
+from memory_center.core.orchestrator.templates import (
     TIER_BUDGETS,
     cached_template,
     find_contract_consumers,
@@ -65,7 +65,7 @@ def test_budget_report_carries_truncation_and_timeout():
 def test_cache_key_changes_with_generation(demo_workspace_str):
     from memory_center.core.indexing.control_plane import index_control_status
     from memory_center.core.storage.workspace import WorkspaceStore
-    from memory_center.core.retrieval import templates as templates_module
+    from memory_center.core.orchestrator import templates as templates_module
 
     key_before = template_cache_key(demo_workspace_str, "find_symbols", {"target": "OrderService"})
     store = WorkspaceStore(demo_workspace_str)
@@ -100,7 +100,7 @@ def test_cached_template_hit_then_generation_change_misses():
 
 
 def test_cached_template_ttl_expiry(monkeypatch):
-    from memory_center.core.retrieval import templates as templates_module
+    from memory_center.core.orchestrator import templates as templates_module
 
     monkeypatch.setattr(templates_module, "_CACHE_TTL_SECONDS", 0.05)
     calls = {"n": 0}

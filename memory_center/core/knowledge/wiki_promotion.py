@@ -13,14 +13,24 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from memory_center.core.storage.workspace import WorkspaceStore
+
+SESSION_EVENTS_FILE = "session-events.jsonl"
+
 
 def wiki_promotion_preview(workspace_file: str | Path, session_id: str, *, wiki_root: str | Path) -> dict[str, Any]:
-    from memory_center.core.orchestrator.session import workspace_session_summary
-
-    session = workspace_session_summary(workspace_file, session_id)
+    # 直接读 session-events（与 workspace_session_summary 同源、同 50 条窗口）：
+    # knowledge 属 core 引擎层，不得反向依赖 orchestrator（ADR-0002 §4.4）。
+    store = WorkspaceStore(workspace_file)
+    events = store.find_jsonl_via_backend(
+        SESSION_EVENTS_FILE,
+        lambda row: row.get("session_id") == session_id,
+        limit=1000,
+        session_id=session_id,
+    )[-50:]
     payloads = [
         event.get("payload", {})
-        for event in session.get("events", [])
+        for event in events
         if event.get("event_type") == "dsh_delivery_summary" and isinstance(event.get("payload", {}), dict)
     ]
     payload = next((item for item in reversed(payloads) if str(item.get("summary", "")).strip()), {})

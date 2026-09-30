@@ -21,6 +21,8 @@ from memory_center.core.knowledge.assets import (
     sync_workspace_collaboration_assets,
 )
 from memory_center.core.knowledge.communities import analyze_architecture_communities
+from memory_center.core.knowledge.projection import workspace_knowledge_summary
+from memory_center.core.observability.agent_execution import summarize_agent_execution
 from memory_center.core.orchestrator import (
     bootstrap_workspace_context,  # noqa: F401 - re-exported for HTTP route modules
     execute_mcp_bridge_action,  # noqa: F401 - re-exported for HTTP route modules
@@ -57,6 +59,7 @@ from memory_center.core.orchestrator import (
     memory_eval_write_quality,
     memory_execute_write,
     memory_export_walkthrough_artifact,
+    memory_impact,
     memory_method_walkthrough,
     memory_plan_change,
     memory_plan_write,
@@ -69,14 +72,19 @@ from memory_center.core.orchestrator import (
     memory_verify_checklist,
     memory_walkthrough_health,
     memory_write_judge,
+    reinstate_case,
+    supersede_case,
+    workspace_case_decisions,
     workspace_continuity_dashboard,
     workspace_dashboard,
     workspace_end_session,
     workspace_handoff_history,
     workspace_handoff_packet,
+    workspace_list_consolidation_candidates,
     workspace_lookup_hint,
     workspace_model_profile,
     workspace_next_actions,
+    workspace_quality_overview,
     workspace_recent_evidence,
     workspace_recent_sessions,
     workspace_record_agent_guidance,
@@ -92,16 +100,18 @@ from memory_center.core.orchestrator import (
     workspace_suggest_case,
     workspace_sync_case_to_artifacts,
     workspace_sync_sniff_to_artifacts,
+    workspace_task_delivery_overview,
     workspace_task_resume_check,
     workspace_unresolved_items,
+    workspace_workbench_summary,
     workspace_write_receipts,
 )
-from memory_center.core.retrieval.templates import plan_change_risk
 from memory_center.core.presentation.evidence_subgraph import export_evidence_subgraph
 from memory_center.core.retrieval.planner import (
     scoped_refresh_performance_status,
     workspace_performance_snapshot_status,
 )
+from memory_center.core.orchestrator.templates import plan_change_risk
 from memory_center.core.storage.workspace import WorkspaceStore
 from memory_center.core.tasks.artifacts import (
     append_change_log,
@@ -144,7 +154,23 @@ from memory_center.core.tasks.delivery import (
     update_delivery_skill_contract,
     update_delivery_subtask_status,
 )
-from memory_center.core.workspace.jobs import cancel_workspace_job
+from memory_center.core.tasks.shadow import (
+    bind_shadow_to_task,
+    build_merged_shadow,
+    discard_shadow,
+    promote_shadow_to_task,
+    record_shadow_snapshot,
+)
+from memory_center.core.tasks.shadow_handoff import (
+    claim_handoff,
+    close_handoff,
+    create_handoff,
+    get_handoff,
+    list_handoffs,
+    mark_handed_off,
+)
+from memory_center.core.tasks.shadow_observations import list_observations, record_observation
+from memory_center.core.workspace.jobs import cancel_workspace_job, workspace_job_status
 
 
 def workspace_background_job_status(workspace_file: str, job_id: str = "", *, limit: int = 20) -> dict[str, Any]:
@@ -621,4 +647,30 @@ __all__ = [
     "update_task_status",
     "update_artifact",
     "update_task_artifact",
+    # Re-exported for HTTP route modules (ADR-0002 §4.1: routes depend only on
+    # application/foundation, never on non-foundation core packages directly).
+    "memory_impact",
+    "reinstate_case",
+    "supersede_case",
+    "workspace_case_decisions",
+    "workspace_list_consolidation_candidates",
+    "workspace_quality_overview",
+    "workspace_task_delivery_overview",
+    "workspace_workbench_summary",
+    "workspace_knowledge_summary",
+    "summarize_agent_execution",
+    "workspace_job_status",
+    "record_shadow_snapshot",
+    "build_merged_shadow",
+    "bind_shadow_to_task",
+    "discard_shadow",
+    "promote_shadow_to_task",
+    "record_observation",
+    "list_observations",
+    "create_handoff",
+    "get_handoff",
+    "list_handoffs",
+    "claim_handoff",
+    "close_handoff",
+    "mark_handed_off",
 ]

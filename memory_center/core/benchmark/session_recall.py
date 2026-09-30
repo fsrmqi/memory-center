@@ -4,13 +4,13 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import yaml
 
-from memory_center.core.orchestrator.ranking import tokenize
-from memory_center.core.orchestrator.resume import workspace_resume_context
-from memory_center.core.orchestrator.shared import load_context
+from memory_center.core.retrieval.scoring import tokenize_with_domain_terms
+from memory_center.core.storage.workspace import WorkspaceStore
+from memory_center.core.workspace.config import load_workspace_config
 
 CASE_MEMORY_FILE = "cross-service-task-memory.jsonl"
 SCHEMA_VERSION = 1
@@ -46,7 +46,7 @@ def _classify_case(
         return "case_not_indexed", returned_source_ids
     if expected_source_session_id in returned_source_ids:
         return "hit", returned_source_ids
-    tokens = tokenize(query)
+    tokens = tokenize_with_domain_terms(query)
     raw_matches = [
         item
         for item in all_cases
@@ -62,13 +62,18 @@ def evaluate_session_recall(
     cases_file: str | Path,
     *,
     limit: int = 5,
+    resume_runner: Callable[..., dict[str, Any]],
 ) -> dict[str, Any]:
-    """Replay private cases through ``workspace_resume_context`` without writing state.
+    """Replay private cases through an injected resume runner without writing state.
+
+    ``resume_runner`` 由调用方注入（CLI / 测试等适配层负责传入编排层的
+    ``workspace_resume_context``）：benchmark 属 core 引擎层，不得反向依赖
+    orchestrator（ADR-0002 §4.4）。
 
     Results deliberately contain only case IDs and hashes, never query text, task
     text, source-session IDs, or case bodies. Keep the YAML input outside git.
     """
-    config, store = load_context(workspace_file)
+    config, store = load_workspace_config(workspace_file), WorkspaceStore(workspace_file)
     input_cases = _load_cases(cases_file)
     bounded_limit = max(1, min(limit, 20))
     all_cases = store.read_jsonl_prefer_backend(CASE_MEMORY_FILE, limit=300)
@@ -90,7 +95,7 @@ def evaluate_session_recall(
             if str(value).strip()
         }
         if query:
-            resume = workspace_resume_context(workspace_file, query, limit=bounded_limit)
+            resume = resume_runner(workspace_file, query, limit=bounded_limit)
             returned_cases = list(resume.get("related_cases", []) or [])
             match_mode = str(resume.get("related_case_match_mode", "none") or "none")
         else:

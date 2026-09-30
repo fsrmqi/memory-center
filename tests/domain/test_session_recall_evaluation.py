@@ -5,6 +5,7 @@ from pathlib import Path
 import yaml
 
 from memory_center.core.benchmark.session_recall import evaluate_session_recall
+from memory_center.core.orchestrator.resume import workspace_resume_context
 from memory_center.core.orchestrator.write import workspace_record_case
 
 
@@ -32,7 +33,7 @@ def test_session_recall_classifies_hit_index_retrieval_and_window_misses(tmp_pat
         ],
     )
 
-    result = evaluate_session_recall(str(workspace), cases, limit=1)
+    result = evaluate_session_recall(str(workspace), cases, limit=1, resume_runner=workspace_resume_context)
 
     assert result["status"] == "ready"
     assert result["classifications"] == {
@@ -53,7 +54,7 @@ def test_session_recall_marks_missing_expectation_as_insufficient(tmp_path: Path
     workspace = copy_demo_workspace(tmp_path)
     cases = _write_cases(tmp_path, [{"id": "incomplete", "query": "订单隔离"}])
 
-    result = evaluate_session_recall(str(workspace), cases)
+    result = evaluate_session_recall(str(workspace), cases, resume_runner=workspace_resume_context)
 
     assert result["status"] == "insufficient_cases"
     assert result["classifications"]["evidence_insufficient"] == 1
@@ -71,7 +72,7 @@ def test_session_recall_reports_review_candidates_only_for_labeled_precision(tmp
         [{"id": "precision", "query": "任务隔离", "expected_source_session_id": "session-allowed", "allowed_source_session_ids": ["session-allowed"]}],
     )
 
-    result = evaluate_session_recall(str(workspace), cases, limit=5)
+    result = evaluate_session_recall(str(workspace), cases, limit=5, resume_runner=workspace_resume_context)
 
     assert result["precision_review"] == {
         "labeled_case_count": 1,

@@ -17,16 +17,25 @@ from memory_center.application.http_facades import (
     group_impact,
     group_query,
     group_status,
+    memory_backend_query,
     memory_discover,
     memory_eval_regression_suite,
     memory_tool_usage_report,
+    reinstate_case,
+    summarize_agent_execution,
+    supersede_case,
+    workspace_case_decisions,
     workspace_continuity_dashboard,
     workspace_dashboard,
     workspace_end_session,
     workspace_handoff_history,
     workspace_handoff_packet,
+    workspace_job_status,
+    workspace_knowledge_summary,
+    workspace_list_consolidation_candidates,
     workspace_model_profile,
     workspace_next_actions,
+    workspace_quality_overview,
     workspace_recent_evidence,
     workspace_record_case,
     workspace_record_close_feedback,
@@ -38,24 +47,13 @@ from memory_center.application.http_facades import (
     workspace_suggest_case,
     workspace_sync_case_to_artifacts,
     workspace_sync_sniff_to_artifacts,
+    workspace_task_delivery_overview,
     workspace_task_resume_check,
     workspace_unresolved_items,
-)
-from memory_center.application.quality_gates import quality_gates_summary
-from memory_center.core.observability.agent_execution import summarize_agent_execution
-from memory_center.core.orchestrator import (
-    memory_backend_query,
-    reinstate_case,
-    supersede_case,
-    workspace_case_decisions,
-    workspace_list_consolidation_candidates,
     workspace_workbench_summary,
     workspace_write_receipts,
 )
-from memory_center.core.workspace.jobs import workspace_job_status
-from memory_center.core.orchestrator import workspace_quality_overview
-from memory_center.core.orchestrator import workspace_task_delivery_overview
-from memory_center.core.knowledge.projection import workspace_knowledge_summary
+from memory_center.application.quality_gates import quality_gates_summary
 from memory_center.core.foundation.dispatch import CommandRegistry
 
 from .params import RouteParams, _parse_int
@@ -305,7 +303,7 @@ def register_workflow_routes(registry: CommandRegistry) -> None:
         return parsed if isinstance(parsed, dict) else {}
 
     def _task_shadow_record_snapshot(rp: RouteParams) -> dict[str, Any]:
-        from memory_center.core.tasks.shadow import record_shadow_snapshot
+        from memory_center.application.http_facades import record_shadow_snapshot
 
         return record_shadow_snapshot(
             rp.workspace(),
@@ -316,7 +314,7 @@ def register_workflow_routes(registry: CommandRegistry) -> None:
     registry.register("/workspace/task-shadow-record-snapshot", _task_shadow_record_snapshot)
 
     def _task_shadow_status(rp: RouteParams) -> dict[str, Any]:
-        from memory_center.core.tasks.shadow import build_merged_shadow
+        from memory_center.application.http_facades import build_merged_shadow
 
         shadow = build_merged_shadow(rp.workspace(), rp.get("shadow_id", ""))
         return shadow or {"found": False, "shadow_id": rp.get("shadow_id", "")}
@@ -324,7 +322,7 @@ def register_workflow_routes(registry: CommandRegistry) -> None:
     registry.register("/workspace/task-shadow-status", _task_shadow_status)
 
     def _task_shadow_bind(rp: RouteParams) -> dict[str, Any]:
-        from memory_center.core.tasks.shadow import bind_shadow_to_task
+        from memory_center.application.http_facades import bind_shadow_to_task
 
         payload = _shadow_payload(rp)
         expected = payload.get("expected_revision")
@@ -339,28 +337,28 @@ def register_workflow_routes(registry: CommandRegistry) -> None:
     registry.register("/workspace/task-shadow-bind", _task_shadow_bind)
 
     def _task_shadow_discard(rp: RouteParams) -> dict[str, Any]:
-        from memory_center.core.tasks.shadow import discard_shadow
+        from memory_center.application.http_facades import discard_shadow
 
         return discard_shadow(rp.workspace(), rp.get("shadow_id", ""), reason=rp.get("reason", "user_requested"))
 
     registry.register("/workspace/task-shadow-discard", _task_shadow_discard)
 
     def _task_shadow_promote(rp: RouteParams) -> dict[str, Any]:
-        from memory_center.core.tasks.shadow import promote_shadow_to_task
+        from memory_center.application.http_facades import promote_shadow_to_task
 
         return promote_shadow_to_task(rp.workspace(), rp.get("shadow_id", ""), task_id=rp.task_id())
 
     registry.register("/workspace/task-shadow-promote", _task_shadow_promote)
 
     def _task_shadow_observation(rp: RouteParams) -> dict[str, Any]:
-        from memory_center.core.tasks.shadow_observations import record_observation
+        from memory_center.application.http_facades import record_observation
 
         return record_observation(rp.workspace(), _shadow_payload(rp))
 
     registry.register("/workspace/task-shadow-observation", _task_shadow_observation)
 
     def _task_shadow_observation_list(rp: RouteParams) -> dict[str, Any]:
-        from memory_center.core.tasks.shadow_observations import list_observations
+        from memory_center.application.http_facades import list_observations
 
         return list_observations(
             rp.workspace(),
@@ -373,7 +371,7 @@ def register_workflow_routes(registry: CommandRegistry) -> None:
     registry.register("/workspace/task-shadow-observation-list", _task_shadow_observation_list)
 
     def _task_shadow_handoff(rp: RouteParams) -> dict[str, Any]:
-        from memory_center.core.tasks.shadow_handoff import (
+        from memory_center.application.http_facades import (
             claim_handoff,
             close_handoff,
             create_handoff,

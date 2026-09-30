@@ -157,13 +157,11 @@ def save_lookup_facade_baseline(result: dict[str, Any], path: str | Path, *, lab
 
 def evaluate_lookup_contract(
     workspace_file: str | Path, cases_file: str | Path, *, baseline_file: str | Path | None = None,
-    runner: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
+    runner: Callable[[dict[str, Any]], dict[str, Any]],
 ) -> dict[str, Any]:
+    """``runner`` 由调用方注入：benchmark 属 core 引擎层，不得反向依赖 orchestrator
+    （ADR-0002 §4.4）。CLI / release gate 等适配层负责传入具体查询实现。"""
     cases = load_lookup_contract_cases(cases_file)
-    if runner is None:
-        from memory_center.core.orchestrator.query import memory_query_hybrid
-
-        runner = lambda case: memory_query_hybrid(workspace_file, case["query"], limit=case["limit"], project=case["project"])
     current = {case["case_id"]: normalize_lookup_contract(runner(case)) for case in cases}
     baseline = _load_baseline(baseline_file) if baseline_file else None
     changed = []

@@ -175,7 +175,6 @@ def find_primary_service_chain(
     without provable cross-service edges the status is ``not_found`` or
     ``insufficient_evidence``.
     """
-    from memory_center.core.orchestrator.shared import load_context
     from memory_center.core.storage.runtime import RuntimeStore
 
     store = WorkspaceStore(workspace_file)
@@ -188,11 +187,10 @@ def find_primary_service_chain(
     if not anchor_id and str(anchor_method.get("type", "")).startswith("Method"):
         name = str(anchor_method.get("name", ""))
         if name:
-            from memory_center.core.orchestrator.shared import load_context
             from memory_center.core.storage.runtime import RuntimeStore
 
             try:
-                with RuntimeStore(load_context(workspace_file)[1].graph_db_path) as graph:
+                with RuntimeStore(WorkspaceStore(workspace_file).graph_db_path) as graph:
                     node = graph.node_by_name_exact(name, types=["Method"])
                     if node is not None and node.get("id"):
                         anchor_id = str(node["id"])
@@ -228,7 +226,7 @@ def find_primary_service_chain(
     def timed_out() -> bool:
         return (time.perf_counter() - started) * 1000 > max(1, int(deadline_ms))
 
-    with RuntimeStore(load_context(workspace_file)[1].graph_db_path) as graph:
+    with RuntimeStore(WorkspaceStore(workspace_file).graph_db_path) as graph:
         while frontier and not timed_out() and len(seen_nodes) <= max_nodes:
             node_id, steps, depth = frontier.popleft()
             if depth >= max_depth:
@@ -340,11 +338,10 @@ def _detect_mq_producer_without_provable_consumer(workspace_file: str, node_id: 
     """
     if not str(node_id).startswith("MQProducer:"):
         return ""
-    from memory_center.core.orchestrator.shared import load_context
     from memory_center.core.storage.runtime import RuntimeStore
 
     try:
-        with RuntimeStore(load_context(workspace_file)[1].graph_db_path) as graph:
+        with RuntimeStore(WorkspaceStore(workspace_file).graph_db_path) as graph:
             topics = [
                 str(e.get("target_id", ""))
                 for e in graph.edges_for_node(node_id, direction="downstream", limit=20)

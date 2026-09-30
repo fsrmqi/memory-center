@@ -48,8 +48,12 @@ def register_eval_commands(app: typer.Typer) -> None:
     ):
         """Replay public hybrid lookup behavior and compare normalized response contracts."""
         from memory_center.core.benchmark.lookup_contract import evaluate_lookup_contract
+        from memory_center.core.orchestrator.query import memory_query_hybrid
 
-        print(evaluate_lookup_contract(workspace, cases, baseline_file=baseline or None))
+        print(evaluate_lookup_contract(
+            workspace, cases, baseline_file=baseline or None,
+            runner=lambda case: memory_query_hybrid(workspace, case["query"], limit=case["limit"], project=case["project"]),
+        ))
 
     @app.command("eval-lookup-contract-baseline-save")
     def eval_lookup_contract_baseline_save_cmd(
@@ -60,8 +64,12 @@ def register_eval_commands(app: typer.Typer) -> None:
     ):
         """Run lookup contract replay and explicitly save the current approved baseline."""
         from memory_center.core.benchmark.lookup_contract import evaluate_lookup_contract, save_lookup_contract_baseline
+        from memory_center.core.orchestrator.query import memory_query_hybrid
 
-        result = evaluate_lookup_contract(workspace, cases)
+        result = evaluate_lookup_contract(
+            workspace, cases,
+            runner=lambda case: memory_query_hybrid(workspace, case["query"], limit=case["limit"], project=case["project"]),
+        )
         print({"result": result, "baseline": save_lookup_contract_baseline(result, output, label=label)})
     @app.command("eval-session-recall")
     def eval_session_recall_cmd(
@@ -71,8 +79,9 @@ def register_eval_commands(app: typer.Typer) -> None:
     ):
         """Replay private cases through resume and classify L1 recall misses without changing retrieval."""
         from memory_center.core.benchmark.session_recall import evaluate_session_recall
+        from memory_center.core.orchestrator.resume import workspace_resume_context
 
-        print(evaluate_session_recall(workspace, cases, limit=limit))
+        print(evaluate_session_recall(workspace, cases, limit=limit, resume_runner=workspace_resume_context))
 
     @app.command("eval-reasoning-prompts")
     def eval_reasoning_prompts_cmd(

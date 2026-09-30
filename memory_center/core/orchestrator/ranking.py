@@ -8,13 +8,10 @@ from typing import Any
 
 
 def tokenize(text: str) -> list[str]:
-    from memory_center.core.foundation.text import base_tokenize
+    """领域词增强分词；实现位于检索层，编排层只保留兼容入口。"""
+    from memory_center.core.retrieval.scoring import tokenize_with_domain_terms
 
-    words = base_tokenize(text)
-    for token in ["kafka", "rocketmq", "feign", "controller", "oldpubtime", "newpubtime", "es", "mongo", "redis", "nacos"]:
-        if token in text.lower() and token not in words:
-            words.append(token)
-    return sorted(set(words))
+    return tokenize_with_domain_terms(text)
 
 
 def _rrf(rank: int, k: int = 60) -> float:

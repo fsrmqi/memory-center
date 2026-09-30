@@ -52,7 +52,7 @@ def record_workspace_performance_snapshot(
             outcomes["error"] += 1
         durations.append(round((time.perf_counter() - started_at) * 1000, 2))
 
-        from memory_center.core.retrieval.templates import find_symbols, trace_call_paths
+        from memory_center.core.orchestrator.templates import find_symbols, trace_call_paths
 
         for template, target in zip(("find_symbols", "trace_call_paths"), template_targets):
             t0 = time.perf_counter()

@@ -1,5 +1,9 @@
 """Bounded internal query templates (Phase B).
 
+本模块位于 orchestrator 层：模板组合的是 ``mc_lookup`` / ``mc_analyze`` 级别的任务级
+查询用例。ADR-0002 §4.4 要求 core 非 orchestrator 包不得反向依赖编排层，而模板正是
+这样的组合者，因此归属编排层而不是检索引擎层。
+
 The design doc (docs/decisions/CODE_GRAPH_FOUNDATION_IMPLEMENTATION.md §7)
 requires graph capability to be productized as a fixed set of internal
 templates routed through the task-level facade instead of scattered direct
@@ -179,7 +183,7 @@ def find_symbols(
     project: str = "",
 ) -> dict[str, Any]:
     """Locate symbols/endpoints/config keys with a bounded candidate list."""
-    from memory_center.core.orchestrator.query import memory_symbol
+    from .query import memory_symbol
 
     budget = resolve_query_budget(tier, nodes=limit)
     effective_limit = min(int(limit) if limit else budget.nodes, budget.nodes, TIER_BUDGETS[budget.tier]["limit"] * 2)
@@ -222,7 +226,7 @@ def trace_call_paths(
     deterministic ordering is applied before compaction so both views
     inherit it.
     """
-    from memory_center.core.orchestrator.query import memory_callers, memory_callees
+    from .query import memory_callees, memory_callers
 
     requested_depth = depth or TIER_BUDGETS[normalize_tier(tier)]["depth"]
     budget = resolve_query_budget(tier, depth=requested_depth, nodes=limit)
@@ -278,8 +282,7 @@ def _consumer_edges_for_target(
     rows touching the anchor; each row becomes a consumer record pointing
     at the opposite endpoint of the anchor.
     """
-    from memory_center.core.orchestrator.query import memory_symbol
-    from memory_center.core.orchestrator.shared import load_context
+    from .query import memory_symbol
     from memory_center.core.storage.runtime import RuntimeStore
 
     info = memory_symbol(workspace_file, target, limit=5, project=project)
@@ -290,7 +293,7 @@ def _consumer_edges_for_target(
     # Class/Method with the same name, so contract node types win over the
     # generic best-match. Dotted binding names (MQ/Spring) defeat FTS token
     # matching, so an exact node-name lookup runs first before any fuzzy path.
-    with RuntimeStore(load_context(workspace_file)[1].graph_db_path) as graph:
+    with RuntimeStore(WorkspaceStore(workspace_file).graph_db_path) as graph:
         exact = graph.node_by_name_exact(target, types=list(anchor_types))
         if exact is not None:
             anchor = exact
@@ -308,7 +311,7 @@ def _consumer_edges_for_target(
         return [], None
     anchor_id = str(anchor.get("id", ""))
     category_list = [str(item) for item in categories]
-    with RuntimeStore(load_context(workspace_file)[1].graph_db_path) as graph:
+    with RuntimeStore(WorkspaceStore(workspace_file).graph_db_path) as graph:
         edge_rows = graph.traverse_edges(anchor_id, direction="both", max_depth=1, limit=edge_cap, edge_types=category_list)
         if not edge_rows:
             return [], anchor
@@ -381,7 +384,7 @@ def plan_change_risk(workspace_file: str | Path, *, scope: str = "all", files: l
     budget = resolve_query_budget(tier, depth=max_depth)
 
     def _run() -> dict[str, Any]:
-        from memory_center.core.orchestrator.change_review import build_change_review_plan
+        from .change_review import build_change_review_plan
         result = build_change_review_plan(workspace_file, scope=scope, files=normalized_files or None,
                                           detail_level=detail_level, refresh=refresh, max_depth=budget.depth)
         current = result.get("query_budget") if isinstance(result.get("query_budget"), dict) else {}

@@ -24,3 +24,18 @@ def best_match(matches: list[dict[str, Any]], query: str = "") -> dict[str, Any]
 
 def tokenize(text: str) -> list[str]:
     return base_tokenize(text)
+
+
+# Memory Center 领域词表：检索/重排时这些技术名词必须作为独立 token 参与匹配。
+_DOMAIN_TOKENS = (
+    "kafka", "rocketmq", "feign", "controller", "oldpubtime", "newpubtime", "es", "mongo", "redis", "nacos",
+)
+
+
+def tokenize_with_domain_terms(text: str) -> list[str]:
+    """``base_tokenize`` plus Memory Center domain vocabulary."""
+    words = base_tokenize(text)
+    for token in _DOMAIN_TOKENS:
+        if token in text.lower() and token not in words:
+            words.append(token)
+    return sorted(set(words))

@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import json
-import re
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+# 实现已下沉到 foundation/text.py（core 非 orchestrator 包不得反向依赖编排层）；
+# 这里保留旧名字作为兼容再导出，orchestrator/sync.py 与既有测试仍从本模块导入。
+from memory_center.core.foundation.text import (  # noqa: F401 - re-exported
+    merge_markdown_section as _merge_artifact_section,
+)
 from memory_center.core.governance.rules import (
     DEFAULT_AUTO_SYNC_RULES,
 )
@@ -566,50 +570,6 @@ def _case_risk_profile(case: dict[str, Any]) -> dict[str, Any]:
         "signals": matched_signals[:20],
         "evidence_type_counts": counted_ref_types,
     }
-
-
-def _merge_artifact_section(existing: str, section_title: str, body: str) -> str:
-    marker = f"## {section_title}"
-    replacement = f"{marker}\n\n{body.strip()}\n"
-    if not existing.strip():
-        return replacement
-
-    lines = existing.splitlines()
-    target_start = None
-    target_end = None
-
-    for idx, line in enumerate(lines):
-        match = re.match(r"^(#{1,6})\s+(.*)$", line)
-        if not match:
-            continue
-        level = len(match.group(1))
-        title = match.group(2).strip()
-        if target_start is None:
-            if level == 2 and title == section_title:
-                target_start = idx
-            continue
-        if level <= 2:
-            target_end = idx
-            break
-
-    if target_start is None:
-        return existing.rstrip() + f"\n\n{replacement}"
-
-    if target_end is None:
-        target_end = len(lines)
-
-    prefix = "\n".join(lines[:target_start]).rstrip()
-    suffix = "\n".join(lines[target_end:]).lstrip()
-
-    parts = []
-    if prefix:
-        parts.append(prefix)
-    parts.append(replacement.rstrip())
-    if suffix:
-        parts.append(suffix)
-    return "\n\n".join(parts).rstrip() + "\n"
-
-
 def _sniff_risk_level(
     intent: str,
     matched_files: list[dict[str, Any]],

@@ -14,12 +14,12 @@ from __future__ import annotations
 
 from typing import Any
 
+from memory_center.core.foundation.claim_boundary import gate_reasons_from_chain  # noqa: F401 - re-exported
+
 ANCHOR_MATCHED = "matched"
 ANCHOR_MISMATCH = "mismatch"
 ANCHOR_MISSING = "missing"
 
-_SCOPE_INCOMPLETE = "scope_incomplete"
-_ANCHOR_MISMATCH = "anchor_mismatch"
 
 
 def _normalise_symbol(name: str) -> str:
@@ -120,18 +120,6 @@ def build_chain_scope_validation(
 
 def _project_same(left: str, right: str) -> bool:
     return bool(left) and bool(right) and left.strip().lower() == right.strip().lower()
-
-
-def gate_reasons_from_chain(chain_gate: dict[str, Any] | None) -> list[str]:
-    """Map chain anchor/scope validation onto claim-boundary reason codes."""
-    if not isinstance(chain_gate, dict):
-        return []
-    reasons: list[str] = []
-    if str(chain_gate.get("anchor_status", "")) != ANCHOR_MATCHED:
-        reasons.append(_ANCHOR_MISMATCH)
-    if chain_gate.get("scope_incomplete"):
-        reasons.append(_SCOPE_INCOMPLETE)
-    return reasons
 
 
 def build_empty_chain_fallback(

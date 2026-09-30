@@ -119,7 +119,7 @@ from memory_center.core.orchestrator import (
     workspace_task_resume_check,
     workspace_write_receipts,
 )
-from memory_center.core.retrieval.templates import plan_change_risk
+from memory_center.core.orchestrator.templates import plan_change_risk
 from memory_center.core.presentation.evidence_subgraph import export_evidence_subgraph
 from memory_center.core.retrieval.calibration import evaluate_retrieval_replay_calibration
 from memory_center.core.retrieval.cross_service import evaluate_cross_shard_replay

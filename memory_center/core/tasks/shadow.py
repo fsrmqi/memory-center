@@ -18,8 +18,8 @@ from pathlib import Path
 from typing import Any
 
 from memory_center.core.foundation.schemas import with_schema
-from memory_center.core.tasks.receipts import build_write_receipt, persist_write_receipt
 from memory_center.core.storage.workspace import WorkspaceStore
+from memory_center.core.tasks.receipts import build_write_receipt, persist_write_receipt
 from memory_center.core.workspace.config import load_workspace_config
 
 SHADOW_STATE_TYPE = "task_shadow_v1"
@@ -752,13 +752,13 @@ def promote_shadow_to_task(
     title: str = "",
 ) -> dict[str, Any]:
     """显式升格：把 Shadow 摘要/evidence 合并进 L2 task（仅 bound 后允许）。"""
+    from memory_center.core.foundation.text import merge_markdown_section as _merge_artifact_section
     from memory_center.core.tasks.artifacts import (
         append_task_change_log,
         create_task_space,
         get_task_artifact,
         update_task_artifact,
     )
-    from memory_center.core.orchestrator.shared import _merge_artifact_section
 
     _, store = load_workspace_config(workspace_file), WorkspaceStore(workspace_file)
     state = load_shadow_state(store, shadow_id)

@@ -71,7 +71,7 @@ def register_change_commands(app: typer.Typer) -> None:
         max_depth: int = typer.Option(3, min=1, max=5),
     ):
         """Build one bounded graph-aware change review plan."""
-        from memory_center.core.retrieval.templates import plan_change_risk
+        from memory_center.core.orchestrator.templates import plan_change_risk
 
         print(
             plan_change_risk(

@@ -25,9 +25,8 @@ from memory_center.application.groups import (
     workspace_group_query,
     workspace_group_status,
 )
-from memory_center.application.http_facades import Any
+from memory_center.application.http_facades import Any, memory_impact
 from memory_center.core.foundation.dispatch import CommandRegistry
-from memory_center.core.orchestrator import memory_impact
 
 from .params import RouteParams, _parse_int
 
