@@ -56,9 +56,9 @@ Memory Center precomputes these relationships before the agent starts editing.
 
 ### Current release / 当前版本
 
-当前本地发行版本为 **4.6.29**。4.6 系列已将可信查询、Java IR 差分、跨服务 `primary_chain`、真实 retrieval replay、局部刷新分桶预算、发布质量门禁和只读质量/空间总览收敛为稳定能力；4.6.29 补充 `TECH_SPEC.md` 的来源与非目标展示，使既有交付工件更适合承载可审查的技术方案基础信息。`quality-gate` 只读汇总 generation、coverage、replay、IR、刷新性能和存储状态；它不会执行 reindex、GC、VACUUM 或用户命令。
+当前本地发行版本为 **4.6.30**。4.6 系列已将可信查询、Java IR 差分、跨服务 `primary_chain`、真实 retrieval replay、局部刷新分桶预算、发布质量门禁和只读质量/空间总览收敛为稳定能力；4.6.30 集中加固记忆写入与宿主集成的可靠性——Shadow 快照、Observation 折叠与 authority 切换统一在专用 `shadow.lock` 内完成读-改-写（消除并发覆盖导致 L2 案例缺源），Hook 的 session-id 交接文件按 workspace 隔离并支持 `MEMORY_CENTER_SESSION_ID_FILE` 注入（消除同机多项目互相关闭 session），`memory_discover` 改读真实 memory layer key，delivery waiver 过期状态在审批与列表中一致落盘。`quality-gate` 只读汇总 generation、coverage、replay、IR、刷新性能和存储状态；它不会执行 reindex、GC、VACUUM 或用户命令。
 
-The current local release is **4.6.29**. The 4.6 series consolidates trustworthy query contracts, Java IR differential checks, cross-service `primary_chain`, real retrieval replay, bucketed refresh budgets, a release quality gate, and a read-only quality/storage overview; 4.6.29 adds source and out-of-scope rendering to `TECH_SPEC.md`, making existing delivery artifacts a better foundation for reviewable technical plans. `quality-gate` is read-only and never reindexes, GCs, vacuums, or runs user commands.
+The current local release is **4.6.30**. The 4.6 series consolidates trustworthy query contracts, Java IR differential checks, cross-service `primary_chain`, real retrieval replay, bucketed refresh budgets, a release quality gate, and a read-only quality/storage overview; 4.6.30 hardens memory-write and host-integration reliability — Shadow snapshots, observation folding, and authority switching now read-modify-write under a dedicated `shadow.lock` (no more concurrent overwrites leaving L2 cases short a source), the hook session-id handoff file is workspace-scoped and injectable via `MEMORY_CENTER_SESSION_ID_FILE` (no more cross-project session clobbering on one machine), `memory_discover` reads the real memory-layer keys, and delivery-waiver expiry is persisted consistently between approval and listing. `quality-gate` is read-only and never reindexes, GCs, vacuums, or runs user commands.
 
 ---
 
