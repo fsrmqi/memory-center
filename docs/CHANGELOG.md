@@ -1,5 +1,14 @@
 # Changelog / 更新日志
 
+## 5.0.0a1 — S0 开发预览（2026-10-09，未正式发布）
+
+- 新增独立 `memory-center-service`：FastAPI/Uvicorn 与官方 MCP SDK 共用生命周期，不读取旧 workspace/registry。
+- 新增 `/health/live`、`/health/ready`、状态 API、`/admin/` Vue 空态和 `/mcp` 的只读 `mc_service_status`；支持传输取消和正常关闭。
+- wheel 分发页面产物；新增非 root Docker 镜像与 Compose/OrbStack 部署，运行时无需 Node.js。
+- 5.0 为全新安装、不兼容旧接口或旧数据。项目目录、授权、Worker 和完整管理页面仍待 S1–S4；旧入口按切片移除，不进行兼容转发。
+- 实际操作与验收边界见 [服务指南](V5_SERVICE_GUIDE.md) 和 [S0 回执](implementation-receipts/V5_S0_SERVICE.md)。
+
+
 ## Unreleased / 未发布
 
 - **5.0 方案决策（尚未实现）**：独立服务与管理页面按全新安装设计，源码项目重新登记、索引与记忆重新建立；不提供 4.x workspace/registry/历史数据导入、旧 CLI/MCP/HTTP/DSH 兼容层或跨版本降级。架构采用 FastAPI/Uvicorn、官方 Python MCP SDK、Vue 3、SQLite 与有界进程 Worker。当前仅修订设计文档，软件版本仍为 4.6.30，未删除历史数据。实施流程见 [5.0 改造流程方案](V5_IMPLEMENTATION_PLAN.md)。

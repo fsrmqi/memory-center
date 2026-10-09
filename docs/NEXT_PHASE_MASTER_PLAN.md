@@ -4,7 +4,7 @@
 >
 > This is the single active development roadmap for Memory Center.
 
-> **2026-10-09 分支路线调整**：`codex/service-platform` 的目标发行版正式确定为 **5.0.0**，主线是“独立服务 + 多 workspace + 管理页面”，依次实施 S0 服务骨架、S1 空间目录、S2 请求隔离、S3 后台任务、S4 管理页面、S5 接入与发行。详细流程、WeKnora 参考映射与全新安装验收见 [5.0 改造流程方案](V5_IMPLEMENTATION_PLAN.md)，技术合同见 [SERVICE_PLATFORM_TECHNICAL_PLAN.md](SERVICE_PLATFORM_TECHNICAL_PLAN.md)，产品决策见 [ADR-0004](adr/0004-service-platform-and-admin.md)。当前仅完成方案，尚未实现新服务。下文旧 P0 的“DSH 为主要展示入口”不再决定本开发分支的优先级；5.0 不维护旧 workspace、接口或 DSH 兼容层，Parser/Retrieval 等未完成事项在服务化基线稳定后重新排序。版本保留分支 `codex/release-4.6.30` 不受本分支路线调整影响。
+> **2026-10-09 分支路线调整**：`codex/service-platform` 的目标发行版正式确定为 **5.0.0**，主线是“独立服务 + 多 workspace + 管理页面”，依次实施 S0 服务骨架、S1 空间目录、S2 请求隔离、S3 后台任务、S4 管理页面、S5 接入与发行。详细流程、WeKnora 参考映射与全新安装验收见 [5.0 改造流程方案](V5_IMPLEMENTATION_PLAN.md)，技术合同见 [SERVICE_PLATFORM_TECHNICAL_PLAN.md](SERVICE_PLATFORM_TECHNICAL_PLAN.md)，产品决策见 [ADR-0004](adr/0004-service-platform-and-admin.md)。S0 已完成服务与打包验证（5.0.0a1），证据见 [S0 回执](implementation-receipts/V5_S0_SERVICE.md)；下一步为 S1 空间目录，等待用户确认，不自动进入。下文旧 P0 的“DSH 为主要展示入口”不再决定本开发分支的优先级；5.0 不维护旧 workspace、接口或 DSH 兼容层，Parser/Retrieval 等未完成事项在服务化基线稳定后重新排序。版本保留分支 `codex/release-4.6.30` 不受本分支路线调整影响。
 
 > 文档入口与 active/historical 状态请同时参考 [DOCUMENT_CONSTITUTION.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/DOCUMENT_CONSTITUTION.md)。
 

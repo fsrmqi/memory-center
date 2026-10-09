@@ -1,0 +1,11 @@
+.git
+.gitnexus
+.venv
+frontend/node_modules
+build
+dist
+tmp
+private
+**/.memory-center
+**/__pycache__
+.pytest_cache

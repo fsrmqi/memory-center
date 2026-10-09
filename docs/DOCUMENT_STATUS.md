@@ -1,13 +1,14 @@
 # Documentation Status / 文档状态目录
 
-> **基准版本 / Baseline**：4.6.13
-> **更新日期 / Updated**：2026-09-03  
+> **基准版本**：5.0.0a1 / S0；原引擎文档以 4.x 保留版本为来源
+> **更新日期**：2026-10-09
 > **规则 / Rule**：当前行为以代码、CLI `--help`、路由、MCP schema 和标记为 `current` 的文档为准。历史文档保留当时的样本与结论，不重写为当前事实。
 
 ## Current / 当前文档
 
 | 文档 | 权威范围 |
 |---|---|
+| `docs/V5_SERVICE_GUIDE.md` | 5.0.0a1 服务入口、接口合同与 wheel/OrbStack 操作 |
 | `README.md` | 产品定位、安装、快速开始与当前版本概览 |
 | `docs/ARCHITECTURE.md` | 当前分层、运行模型、质量/检索/存储架构 |
 | `docs/MCP_GUIDE.md` | MCP facade、Agent 行为、质量与证据边界 |

@@ -1,0 +1,13 @@
+services:
+  memory-center:
+    build: .
+    image: memory-center:5.0.0a1
+    ports:
+      - "127.0.0.1:8765:8765"
+    volumes:
+      - memory-center-data:/data
+    restart: unless-stopped
+    stop_grace_period: 15s
+    init: true
+volumes:
+  memory-center-data:

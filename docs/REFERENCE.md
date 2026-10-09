@@ -1,5 +1,7 @@
 # Reference / 参考手册
 
+> **5.0.0a1 / S0 当前入口**：`memory-center-service` 独立服务，管理页 `/admin/`、MCP `/mcp`，当前只提供 `mc_service_status`。FastAPI 外层生命周期管理官方 SDK；项目能力、授权和 Worker 尚待 S1–S3。实际参数、状态/错误合同、安装与关闭见 [5.0 服务运行指南](V5_SERVICE_GUIDE.md)。下文旧入口说明属于尚未接入的新服务底层能力，不构成 5.0 兼容承诺。
+
 ## 1. CLI Command Groups / CLI 命令分组
 
 ### Workspace / Index

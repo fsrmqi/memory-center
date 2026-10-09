@@ -2,7 +2,7 @@
 
 > 类型：决策与实施流程（decision）。日期：2026-10-09。
 > 目标发行版：5.0.0；当前实现基线：4.6.30。当前开发分支：`codex/service-platform`。
-> 状态：方案阶段，尚未实施新服务、管理页面与新增 MCP 路由。软件版本号在实施/发行切片中更新，本轮不标记为已发布 5.0。
+> 状态：S0 已实施，包版本 5.0.0a1；尚未发布正式 5.0。S1 等待用户确认后开始。实施证据见 [S0 回执](implementation-receipts/V5_S0_SERVICE.md)。
 > 2026-10-09 决策修订：5.0 全新安装、重新登记项目并从源码重建；不导入 4.x workspace/registry/索引/记忆，不保留旧 CLI/MCP/HTTP/DSH 兼容层。历史数据由用户自行清理，本方案不执行删除。
 > 本文件细化 [服务化技术方案](SERVICE_PLATFORM_TECHNICAL_PLAN.md) 的 S0–S5；[主计划](NEXT_PHASE_MASTER_PLAN.md) 仍是唯一开发优先级入口。
 

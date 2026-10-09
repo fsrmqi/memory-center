@@ -49,3 +49,6 @@ private/
 
 # Mimosa security-scan bookkeeping (never commit)
 /.mimosa/
+
+# Frontend dependencies
+frontend/node_modules/

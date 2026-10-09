@@ -1,6 +1,6 @@
 [project]
 name = "memory-center"
-version = "4.6.30"
+version = "5.0.0a1"
 description = "Memory Center is an MCP-native project memory service and multi-agent shared context center for coding agents"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -25,16 +25,18 @@ classifiers = [
   "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 dependencies = [
+  "fastapi==0.143.0",
+  "uvicorn==0.47.0",
   "click>=8.1.7",
   "pyyaml>=6.0.1",
   "filelock>=3.13.1",
   "typer>=0.12.3",
   "rich>=13.7.1",
-  "mcp>=1.2.0,<2.0.0",
+  "mcp==1.27.1",
 ]
 
 [project.optional-dependencies]
-mcp = ["mcp>=1.2.0,<2.0.0"]
+mcp = ["mcp==1.27.1"]
 semantic = ["litellm>=1.40.0"]
 semantic-local = ["sentence-transformers>=3.0.0"]
 semantic-ann = ["hnswlib>=0.8.0", "numpy>=1.24.0"]
@@ -59,7 +61,7 @@ dev = [
   "tomli>=2.0.1; python_version < '3.11'",
 ]
 all = [
-  "mcp>=1.2.0,<2.0.0",
+  "mcp==1.27.1",
   "litellm>=1.40.0",
   "sentence-transformers>=3.0.0",
   "hnswlib>=0.8.0",
@@ -79,6 +81,7 @@ Issues = "https://github.com/fsrmqi/memory-center/issues"
 Source = "https://github.com/fsrmqi/memory-center"
 
 [project.scripts]
+memory-center-service = "memory_center.service.main:main"
 memory-center = "memory_center.cli.main:main"
 memory-center-mcp = "memory_center.mcp.server:main"
 memory-center-http = "memory_center.http.server:main"
@@ -91,7 +94,7 @@ build-backend = "setuptools.build_meta"
 include = ["memory_center*"]
 
 [tool.setuptools.package-data]
-memory_center = ["hooks/*.yaml", "templates/**/*.md", "templates/**/*.txt"]
+memory_center = ["service/static/index.html", "service/static/assets/*", "hooks/*.yaml", "templates/**/*.md", "templates/**/*.txt"]
 
 [tool.ruff]
 line-length = 120
