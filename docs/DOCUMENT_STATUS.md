@@ -29,6 +29,7 @@
 
 2026-10-09 服务化分支新增决策文档：
 
+- `docs/V5_MIGRATION_ROADMAP.md`：decision；5.0.0 分阶段改造流程、WeKnora 固定版本参考、迁移/回滚与发布门禁；5.x 文档/Wiki/长期记忆为后续专题。
 - `docs/SERVICE_PLATFORM_TECHNICAL_PLAN.md`：decision；4.6.30 基线上的独立服务、多空间和管理页面技术方案，包含现状证据、兼容边界、开发切片与验收；描述的新增能力尚未实现。
 - `docs/adr/0004-service-platform-and-admin.md`：方向已接受，实施待完成；调整未来展示的产品边界，保留现有核心依赖与单空间接口兼容性。
 - 唯一开发路线入口仍为 `docs/NEXT_PHASE_MASTER_PLAN.md`；其服务化分支说明优先于旧 DSH P0 展示路线。
