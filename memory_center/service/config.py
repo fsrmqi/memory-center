@@ -10,6 +10,8 @@ class ServiceConfig:
     port: int = 8765
     allowed_hosts: tuple[str, ...] = ("127.0.0.1", "localhost", "[::1]", "127.0.0.1:*", "localhost:*", "[::1]:*")
 
+    database_url: str = ""
+
     def __post_init__(self):
         if not 1 <= self.port <= 65535:
             raise ValueError("端口必须介于 1 和 65535 之间")

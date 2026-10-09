@@ -20,7 +20,8 @@ def main() -> int:
     args = parser.parse_args()
     try:
         config = ServiceConfig(args.data_dir.expanduser().resolve(), args.host, args.port,
-                               ServiceConfig.default().allowed_hosts + tuple(args.allowed_host or ()))
+                               ServiceConfig.default().allowed_hosts + tuple(args.allowed_host or ()),
+                               os.environ.get("MEMORY_CENTER_DATABASE_URL", ""))
     except ValueError as exc:
         parser.error(str(exc))
     try:

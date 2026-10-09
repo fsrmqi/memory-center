@@ -11,3 +11,6 @@ include Dockerfile
 include compose.yaml
 include .dockerignore
 include compose.projects.yaml
+
+include compose.postgres.yaml
+recursive-include scripts/service *.sh

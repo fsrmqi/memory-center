@@ -1,7 +1,7 @@
 services:
   memory-center:
     build: .
-    image: memory-center:5.0.0a2
+    image: memory-center:5.0.0b1
     ports:
       - "127.0.0.1:8765:8765"
     volumes:

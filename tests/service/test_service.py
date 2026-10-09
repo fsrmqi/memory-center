@@ -28,13 +28,13 @@ def test_lifespan_and_fresh_data(tmp_path, monkeypatch):
         assert client.get("/health/live").json() == {"status": "alive"}
         assert client.get("/health/ready").json() == {"ready": True}
         status = client.get("/api/v1/service/status").json()
-        assert status["capabilities"] == ["service_status", "workspace_catalog"]
+        assert {"service_status", "workspace_catalog", "scoped_mcp", "background_index", "knowledge"} <= set(status["capabilities"])
         assert str(tmp_path) not in str(status)
         assert client.get("/admin/").status_code == 200
         assert client.get("/mcp").status_code != 307
     assert TestClient(app).get("/health/ready").status_code == 503
     assert legacy.read_text() == "invalid legacy configuration"
-    assert {p.name for p in (tmp_path / "v5").iterdir()} == {"catalog.db", "admin-token"}
+    assert {p.name for p in (tmp_path / "v5").iterdir()} == {"catalog.db", "admin-token", "platform.db", "service.lock"}
 
 
 def test_missing_assets_fail_startup(tmp_path):
@@ -120,6 +120,8 @@ def test_mcp_cancellation_and_host_guard(tmp_path, monkeypatch):
 
     def test_server(*args, **kwargs):
         server = original(*args, **kwargs)
+        from memory_center.platform.security import Principal
+        server.actor = lambda: Principal("anonymous", (), frozenset({"mc_service_status", "slow_probe"}))
 
         @server.tool()
         async def slow_probe() -> str:

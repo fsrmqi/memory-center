@@ -1,5 +1,8 @@
 # Memory Center / 记忆中心
 
+> 2026-10-09 当前实施更新：5.0.0b1 已接入多项目授权 MCP、后台索引、知识库/Wiki/记忆管理与 PG/向量后端，已完成本地测试版验收；正式发行仍需真实模型语义与规模评测。用户已授权连续实施。本轮证据见 [实施回执](docs/implementation-receipts/V5_PLATFORM.md)，当前入口与合同见 [5.0 平台指南](docs/V5_PLATFORM_GUIDE.md)。下方较早的 S1/S2 等待确认记录仅保留决策演进背景。
+
+
 > **5.0 开发预览：5.0.0a2，已完成 S1 多项目目录。** 独立启动、Vue 空态管理页、Streamable HTTP 状态工具及 wheel/Docker 打包已实现；项目预览、登记、改名、暂停/恢复和移除接入通过受控管理 API 使用，尚不是正式 5.0.0。
 > 运行：`memory-center-service`，或 `docker compose up -d --build`；页面 `/admin/`，MCP `/mcp`（当前仅 `mc_service_status`）。安装、关闭及 OrbStack 操作见 [5.0 服务运行指南](docs/V5_SERVICE_GUIDE.md)。项目 API 合同见 [项目目录管理指南](docs/V5_CATALOG_GUIDE.md)。以下原有项目能力说明仍描述待接入的 4.x 引擎。
 

@@ -1,5 +1,8 @@
 # Memory Center 5.0 改造流程方案
 
+> 2026-10-09 当前实施更新：5.0.0b1 已接入多项目授权 MCP、后台索引、知识库/Wiki/记忆管理与 PG/向量后端，已完成本地测试版验收；正式发行仍需真实模型语义与规模评测。用户已授权连续实施。本轮证据见 [实施回执](implementation-receipts/V5_PLATFORM.md)，当前入口与合同见 [5.0 平台指南](V5_PLATFORM_GUIDE.md)。下方较早的 S1/S2 等待确认记录仅保留决策演进背景。
+
+
 > 类型：决策与实施流程（decision）。日期：2026-10-09。
 > 目标发行版：5.0.0；当前实现基线：4.6.30。当前开发分支：`codex/service-platform`。
 > 状态：S0 已实施，包版本 5.0.0a1；尚未发布正式 5.0。S1 已实施（5.0.0a2），S2 等待用户确认后开始。实施证据见 [S0 回执](implementation-receipts/V5_S0_SERVICE.md) 与 [S1 回执](implementation-receipts/V5_S1_CATALOG.md)。

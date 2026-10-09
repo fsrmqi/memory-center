@@ -1,5 +1,8 @@
 # User Guide / 使用指南
 
+> 2026-10-09 当前实施更新：5.0.0b1 已接入多项目授权 MCP、后台索引、知识库/Wiki/记忆管理与 PG/向量后端，已完成本地测试版验收；正式发行仍需真实模型语义与规模评测。用户已授权连续实施。本轮证据见 [实施回执](implementation-receipts/V5_PLATFORM.md)，当前入口与合同见 [5.0 平台指南](V5_PLATFORM_GUIDE.md)。下方较早的 S1/S2 等待确认记录仅保留决策演进背景。
+
+
 > **5.0.0a2 / S1 当前入口**：`memory-center-service` 独立服务，管理页 `/admin/`、MCP `/mcp`，当前只提供 `mc_service_status`。FastAPI 外层生命周期管理官方 SDK；项目目录 API 已完成（含管理员令牌），见 [项目目录管理指南](V5_CATALOG_GUIDE.md)；项目 MCP 授权与 Worker 尚待 S2–S3。实际参数、状态/错误合同、安装与关闭见 [5.0 服务运行指南](V5_SERVICE_GUIDE.md)。下文旧入口说明属于尚未接入的新服务底层能力，不构成 5.0 兼容承诺。
 
 ## Who This Is For / 适用对象

@@ -1,36 +1,17 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-type Status = { version: string; ready: boolean; stage: string }
-const status = ref<Status | null>(null)
-const error = ref('')
-const loading = ref(true)
-async function refresh() {
-  loading.value = true
-  error.value = ''
-  try {
-    const response = await fetch('/api/v1/service/status', { signal: AbortSignal.timeout(5000) })
-    if (!response.ok) throw new Error('服务暂时无法响应')
-    status.value = await response.json()
-  } catch { error.value = '无法连接服务，请检查服务状态后重试。' }
-  finally { loading.value = false }
-}
-onMounted(refresh)
+import Projects from './components/Projects.vue'
+import Jobs from './components/Jobs.vue'
+import Knowledge from './components/Knowledge.vue'
+import Settings from './components/Settings.vue'
+import { token, api, action, failure, notice, type Workspace } from './api'
+import './style.css'
+const navigation=[{id:'projects',label:'项目'},{id:'jobs',label:'后台任务'},{id:'document',label:'知识库'},{id:'wiki',label:'Wiki'},{id:'memory',label:'长期记忆'},{id:'models',label:'模型设置'},{id:'credentials',label:'MCP 接入'}] as const
+const section=ref<string>('projects'),workspaces=ref<Workspace[]>([]),selected=ref(''),authenticated=ref(false),status=ref<any>(null),pending=ref(''),busy=ref(false)
+async function refresh(){const collected:Workspace[]=[];let cursor='';do{const value=await api('/workspaces?limit=100'+(cursor?'&after='+cursor:''));collected.push(...value.items);cursor=value.next_cursor||''}while(cursor);workspaces.value=collected;if(!workspaces.value.find(w=>w.workspace_id===selected.value))selected.value=workspaces.value[0]?.workspace_id||''}
+async function navigate(id:string){section.value=id;if(id==='projects')await action(refresh,'项目状态已更新')}
+async function login(){busy.value=true;token.value=pending.value;await action(async()=>{await refresh();authenticated.value=true;pending.value=''},'已连接管理服务');if(!authenticated.value)token.value='';busy.value=false}
+function logout(){token.value='';pending.value='';authenticated.value=false;workspaces.value=[];notice.value='';failure.value=''}
+onMounted(async()=>{try{status.value=await(await fetch('/api/v1/service/status')).json()}catch{failure.value='服务连接失败，请检查服务状态'}})
 </script>
-<template>
-  <div class="shell">
-    <aside><div class="brand">M<span>Memory Center</span></div><div class="nav">服务概览</div><p>项目上下文 · 知识 · 长期记忆</p></aside>
-    <main>
-      <header><div class="eyebrow">MEMORY CENTER / 5.0</div><span class="badge">{{ status?.stage || "服务" }} · 开发预览</span></header>
-      <h1>你的项目记忆，从这里开始</h1><p class="intro">一个独立运行的服务，为不同项目提供持续的上下文。</p>
-      <section class="status" aria-live="polite">
-        <div><h2>服务状态</h2><p v-if="loading">正在连接服务…</p><p v-else-if="error" class="error">{{ error }}</p><p v-else>{{ status?.ready ? '服务已就绪' : '服务尚未就绪' }} <span class="version">{{ status?.version }}</span></p></div>
-        <button @click="refresh" :disabled="loading">{{ loading ? '连接中' : '刷新状态' }}</button>
-      </section>
-      <section class="empty"><div class="icon">◇</div><h2>多项目登记接口已就绪</h2><p>已支持项目预览、登记、改名、暂停与恢复。<br>当前通过管理 API 使用，完整管理页面将在后续阶段开放。</p><span class="next">下一步：项目授权与 MCP 隔离</span></section>
-      <footer>MCP 入口 <code>/mcp</code><span>全新 5.0 数据空间</span></footer>
-    </main>
-  </div>
-</template>
-<style>
-*{box-sizing:border-box}body{margin:0;background:#f5f6f8;color:#263149;font-family:system-ui,-apple-system,sans-serif}.shell{display:flex;min-height:100vh}aside{width:250px;background:#fff;border-right:1px solid #e4e8ee;padding:32px 24px}.brand{display:flex;align-items:center;gap:12px;color:#4757b8;font-size:24px;font-weight:700}.brand span{color:#263149;font-size:17px}.nav{margin-top:48px;background:#eef0fc;border-radius:8px;padding:13px 16px;color:#4656b4}aside p{font-size:12px;color:#778198;margin-top:24px;line-height:1.8}main{width:min(1060px,100%);padding:48px 56px}header{display:flex;justify-content:space-between;align-items:center;gap:12px}.eyebrow{font-size:11px;letter-spacing:2px;color:#78839c}.badge{font-size:12px;background:#e9ecf4;padding:7px 12px;border-radius:20px}h1{font-size:30px;margin:36px 0 12px;letter-spacing:-1px}.intro{color:#768095;line-height:1.8;margin-bottom:32px}.status{display:flex;justify-content:space-between;align-items:center;background:#fff;padding:24px 28px;border:1px solid #e2e6ee;border-radius:12px}.status h2{font-size:14px;margin:0 0 12px}.status p{font-size:14px;margin:0;color:#357a61}.version{margin-left:12px;color:#8490a5;font-size:12px}button{background:#fff;border:1px solid #d7ddea;padding:10px 16px;border-radius:7px;color:#45516a;cursor:pointer}button:disabled{opacity:.5}.empty{text-align:center;margin-top:24px;padding:58px 24px;background:#fff;border:1px dashed #d8dfeb;border-radius:12px}.icon{font-size:40px;color:#7887cf}.empty h2{font-size:20px;margin:22px 0 12px}.empty p{color:#7a8497;line-height:1.9;font-size:14px}.next{display:inline-block;margin-top:16px;font-size:12px;color:#5d6caf;background:#f0f2fb;border-radius:6px;padding:9px 14px}footer{display:flex;gap:12px;margin-top:24px;color:#7d889c;font-size:12px}footer span{margin-left:auto}.error{color:#b44646!important}@media(max-width:760px){aside{display:none}main{padding:28px 20px}h1{font-size:25px}header{flex-wrap:wrap}.status{padding:20px;gap:12px}footer{flex-wrap:wrap}}
-</style>
+<template><div class="shell"><aside><div class="brand"><span class="logo">M</span>Memory Center</div><nav><button v-for="item in navigation" :key="item.id" :class="{current:section===item.id}" @click="navigate(item.id)" :disabled="!authenticated"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="M8 10h8M8 14h5"/></svg>{{item.label}}</button></nav><div class="sidebar-bottom"><span :class="['state',status?.ready?'active':'paused']">{{status?.ready?'服务就绪':'连接中'}}</span><small>{{status?.version}}</small><button v-if="authenticated" @click="logout">退出管理</button></div></aside><main><template v-if="!authenticated"><div class="page-title"><div><h1>连接管理服务</h1><p>输入本机服务的管理员令牌，管理项目与知识空间。</p></div></div><form class="form-panel login" @submit.prevent="login"><label>管理员令牌<input type="password" v-model="pending" autocomplete="off" required aria-label="管理员令牌"></label><p class="muted">令牌位于服务数据目录的 admin-token 文件。仅保存在当前页面内存中，刷新后需重新输入。</p><button class="primary" :disabled="busy">{{busy?'正在连接…':'连接'}}</button></form></template><template v-else><div class="workspace-bar"><label>当前项目<select v-model="selected"><option v-for="workspace in workspaces" :key="workspace.workspace_id" :value="workspace.workspace_id">{{workspace.name}}{{workspace.status==='paused'?'（已暂停）':''}}</option><option v-if="!workspaces.length" value="">尚无项目</option></select></label><span>MCP <code>/mcp</code></span></div><Projects v-if="section==='projects'" :workspaces="workspaces" :selected="selected" @select="selected=$event" @refresh="action(refresh,'项目已更新')"/><Jobs v-else-if="section==='jobs'"/><Knowledge v-else-if="section==='document'||section==='wiki'||section==='memory'" :workspace="selected" :kind="section as 'document'|'wiki'|'memory'"/><Settings v-else-if="section==='models'||section==='credentials'" :key="section" :section="section as 'models'|'credentials'" :workspaces="workspaces"/></template><div v-if="failure||notice" role="status" :class="['message',failure?'error':'success']">{{failure||notice}}<button @click="failure='';notice=''" aria-label="关闭消息">关闭</button></div></main></div></template>

@@ -1,0 +1,22 @@
+<script setup lang="ts">
+import { ref } from 'vue'
+import { action, api, states, type Workspace } from '../api'
+const props = defineProps<{ workspaces: Workspace[]; selected: string }>()
+const emit = defineEmits<{ refresh: []; select: [id:string] }>()
+const filter = ref(''), status = ref(''), editing = ref<Workspace|null>(null), form = ref(false)
+const name = ref(''), root = ref(''), preview = ref<any>(null), busy = ref(false)
+function open(item?:Workspace) { editing.value=item||null; name.value=item?.name||''; root.value=item?.root||''; preview.value=null; form.value=true }
+async function inspect() { busy.value=true; await action(async()=>{ preview.value=await api('/workspaces/preview','POST',{root:root.value,...(editing.value?{workspace_id:editing.value.workspace_id}:{})}) },'目录识别完成'); busy.value=false }
+async function save() { busy.value=true; await action(async()=>{ const item=editing.value; const result=await api(item?'/workspaces/'+item.workspace_id:'/workspaces',item?'PATCH':'POST',item?{name:name.value,revision:item.revision,...(root.value!==item.root?{root:root.value}:{})}:{name:name.value,root:root.value});form.value=false;emit('select',result.workspace_id);emit('refresh') },'项目已保存');busy.value=false }
+async function toggle(item:Workspace) { await action(async()=>{await api(`/workspaces/${item.workspace_id}/${item.status==='paused'?'resume':'pause'}`,'POST',{revision:item.revision});emit('refresh')}) }
+async function remove(item:Workspace) { if(!window.confirm(`移除 ${item.name} 的接入？源码与服务数据会保留。`))return;await action(async()=>{await api(`/workspaces/${item.workspace_id}?revision=${item.revision}`,'DELETE');emit('refresh')},'已移除项目接入') }
+async function index(item:Workspace) { await action(async()=>{await api(`/workspaces/${item.workspace_id}/index`,'POST');emit('refresh')},'索引任务已进入队列') }
+</script>
+<template>
+  <div class="page-title"><div><h1>项目管理</h1><p>管理接入的项目、服务划分与源码索引。</p></div><button class="primary" @click="open()">添加项目</button></div>
+  <div class="toolbar"><input v-model="filter" aria-label="搜索项目" placeholder="搜索项目名称或目录"><select v-model="status" aria-label="项目状态"><option value="">全部状态</option><option value="active">已接入</option><option value="paused">已暂停</option></select></div>
+  <div class="table-wrap"><table><thead><tr><th>项目</th><th>源码目录</th><th>服务数</th><th>状态</th><th>索引</th><th>操作</th></tr></thead><tbody><tr v-for="item in props.workspaces.filter(w=>(!status||w.status===status)&&(w.name+w.root).toLowerCase().includes(filter.toLowerCase()))" :key="item.workspace_id" :class="{selected:item.workspace_id===selected}"><td><button class="link" @click="emit('select',item.workspace_id)">{{item.name}}</button></td><td class="path">{{item.root}}</td><td>{{item.services.length}}</td><td><span :class="['state',item.status]">{{states[item.status]}}</span></td><td>{{states[item.index_status||'not_indexed']||item.index_status}}</td><td class="actions"><button @click="index(item)" :disabled="item.status!=='active'">索引</button><button @click="toggle(item)">{{item.status==='paused'?'恢复':'暂停'}}</button><button @click="open(item)">编辑</button><button class="danger" @click="remove(item)">移除</button></td></tr></tbody></table></div>
+  <p v-if="!workspaces.length" class="empty">还没有项目。添加服务端可访问的源码目录开始使用。</p>
+  <section v-if="workspaces.find(w=>w.workspace_id===selected)" class="detail"><h2>服务划分</h2><p class="muted">索引代际：{{workspaces.find(w=>w.workspace_id===selected)?.generation||'尚未建立'}}</p><table><thead><tr><th>服务 ID</th><th>类型</th><th>相对路径</th></tr></thead><tbody><tr v-for="service in workspaces.find(w=>w.workspace_id===selected)!.services" :key="service.service_id"><td class="mono">{{service.service_id}}</td><td>{{service.type}}</td><td>{{service.path}}</td></tr></tbody></table><p class="muted">首次登记后请启动索引。源码只读，索引和记忆保存在服务数据目录。</p></section>
+  <dialog :open="form" v-if="form"><form @submit.prevent="save"><h2>{{editing?'编辑项目':'添加项目'}}</h2><label>项目名称<input v-model="name" required maxlength="120"></label><label>源码目录<input v-model="root" required placeholder="/projects/demo" :disabled="!!editing&&editing.status!=='paused'"></label><p v-if="editing&&editing.status!=='paused'" class="muted">修改目录前先暂停项目。</p><button type="button" @click="inspect" :disabled="busy">识别预览</button><pre v-if="preview">{{JSON.stringify(preview.services,null,2)}}</pre><div class="dialog-actions"><button type="button" @click="form=false">取消</button><button class="primary" :disabled="busy||!name||!root">保存项目</button></div></form></dialog>
+</template>

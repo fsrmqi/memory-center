@@ -64,12 +64,17 @@ def test_two_projects_preview_and_restart(tmp_path, admin):
     token = (data / "admin-token").read_text()
     for root in (first, second):
         assert snapshot(root) == before[str(root)]
-    # A distinct app/lifespan reads only the persisted 5.0 directory.
-    with TestClient(create_service_app(ServiceConfig(data)), base_url="http://localhost") as restarted:
-        restarted.headers["Authorization"] = "Bearer " + token
-        assert restarted.get(f"/api/v1/workspaces/{a['workspace_id']}").json() == a
-        assert restarted.get(f"/api/v1/workspaces/{b['workspace_id']}").json() == b
-        assert (data / "admin-token").read_text() == token
+    # 持久目录可独立读取；第二个服务实例必须被同目录独占锁拒绝。
+    from filelock import Timeout
+
+    from memory_center.core.storage.catalog import CatalogStore
+    persisted = CatalogStore(data)
+    assert persisted.get(a['workspace_id']) == a
+    assert persisted.get(b['workspace_id']) == b
+    with pytest.raises(Timeout):
+        with TestClient(create_service_app(ServiceConfig(data)), base_url="http://localhost"):
+            pass
+    assert (data / "admin-token").read_text() == token
     assert not (data / "workspaces").exists()  # No index/worker initialization in S1.
 
 

@@ -1,5 +1,17 @@
 # Changelog / 更新日志
 
+## 5.0.0b1 — 多项目知识服务开发版 / 2026-10-09
+
+- 新增独立 PostgreSQL + pgvector 控制面/知识存储，保留 SQLite 轻量模式；中文词项 BM25 与向量 RRF 融合。
+- 新增项目与工具授权凭据、撤销、速率预算、MCP 目录过滤和调用复核；主体/项目隔离 session/ref/job。
+- 新增最多两个子进程的持久索引队列、取消/重试/中断恢复、预算与原子 generation 发布。
+- 新增 Vue 项目、任务、文档、Wiki 修订回滚、记忆审核、模型与 MCP 接入管理页面。
+- 新增文本/PDF/DOCX 导入、Ollama/兼容协议嵌入、模型档案隔离、来源删除/修订失效。
+- 新增同目录服务独占锁、停机备份/全新目录恢复、Compose PG 部署和 stdio 代理。
+- **破坏性变更**：`memory-center` 启动 5.0 服务；`memory-center-mcp` 改为 HTTP stdio 代理；移除旧 `memory-center-http` 发行入口。5.0 MCP 新 schema 不兼容旧工具/参数，不读取或迁移 4.x workspace/registry/记忆。
+- 该版本仍为开发测试版。真实模型语义质量、大规模性能与正式灾备矩阵详见平台指南和实施回执，不作已通过声明。
+
+
 ## 5.0.0a2 — S1 项目目录（2026-10-09，未正式发布）
 
 - 新增 SQLite catalog，稳定 workspace/service ID、名称与规范化根目录、配置版本和 revision 并发控制。
