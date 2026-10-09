@@ -1544,7 +1544,9 @@ Mutation examples: `POST /workspace/asset/register`, `POST /workspace/artifact/u
 
 ## Documentation Status / 文档状态
 
-`codex/service-platform` 分支以 **5.0.0** 为目标发行版，从 4.6.30 改造为独立常驻服务、多项目接入与管理页面，后续扩展文档知识库、Wiki 和长期记忆。当前仅完成方案，既有安装、CLI、MCP 与 HTTP 行为保持 4.6.30 基线。改造流程、WeKnora 参考映射与迁移门禁见 [5.0 改造流程方案](docs/V5_MIGRATION_ROADMAP.md)，技术设计见 [服务化技术方案](docs/SERVICE_PLATFORM_TECHNICAL_PLAN.md) 和 [ADR-0004](docs/adr/0004-service-platform-and-admin.md)；开发优先级由主计划的分支说明统一维护。
+5.0 采用全新安装策略：重新登记源码项目、重新建立索引和记忆，不导入旧 workspace 或保留 4.x 接口兼容层。软件尚未实施该改造，当前代码行为仍为 4.6.30；历史数据清理由用户自行处理。运行架构确定为 FastAPI/Uvicorn 模块化单体、官方 Python MCP SDK、Vue 管理页面、SQLite 与有界进程 Worker，依赖版本在 S0 验证后锁定。
+
+`codex/service-platform` 分支以 **5.0.0** 为目标发行版，从 4.6.30 改造为独立常驻服务、多项目接入与管理页面，后续扩展文档知识库、Wiki 和长期记忆。当前仅完成方案，既有安装、CLI、MCP 与 HTTP 行为保持 4.6.30 基线。改造流程、WeKnora 参考映射与全新安装验收见 [5.0 改造流程方案](docs/V5_IMPLEMENTATION_PLAN.md)，技术设计见 [服务化技术方案](docs/SERVICE_PLATFORM_TECHNICAL_PLAN.md) 和 [ADR-0004](docs/adr/0004-service-platform-and-admin.md)；开发优先级由主计划的分支说明统一维护。
 
 - 当前对外说明以 [docs/DOCUMENT_CONSTITUTION.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/DOCUMENT_CONSTITUTION.md) 为准。
 - 当前实现状态、最近改动和版本变化以 [docs/CHANGELOG.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/CHANGELOG.md) 为准。

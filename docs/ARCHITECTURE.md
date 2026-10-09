@@ -1,5 +1,7 @@
 # Memory Center 当前系统架构 / Current System Architecture
 
+> 5.0 设计范围说明：下文仍描述 4.6.30 实现。5.0 已决定按全新安装重构为 FastAPI/Uvicorn 服务、统一 MCP 与独立管理页面；不导入旧 workspace 或保持历史接口/存储兼容。新的空间配置与数据全部归服务管理，核心能力和证据治理可复用。尚未实施的设计以 [技术方案](SERVICE_PLATFORM_TECHNICAL_PLAN.md) 和 [改造流程](V5_IMPLEMENTATION_PLAN.md) 为准。
+
 > 本文基于当前全量代码实现整理，作为一份独立的系统架构说明。它面向外部评审者、集成方和维护者，说明 Memory Center 的设计目标、核心能力、运行模型、模块边界和数据安全边界。
 >
 > This is a standalone architecture document for the current implementation. It is written for external reviewers, integrators, and maintainers, and describes Memory Center's goals, core capabilities, runtime model, module boundaries, and data-safety boundaries.

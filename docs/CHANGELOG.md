@@ -2,6 +2,8 @@
 
 ## Unreleased / 未发布
 
+- **5.0 方案决策（尚未实现）**：独立服务与管理页面按全新安装设计，源码项目重新登记、索引与记忆重新建立；不提供 4.x workspace/registry/历史数据导入、旧 CLI/MCP/HTTP/DSH 兼容层或跨版本降级。架构采用 FastAPI/Uvicorn、官方 Python MCP SDK、Vue 3、SQLite 与有界进程 Worker。当前仅修订设计文档，软件版本仍为 4.6.30，未删除历史数据。实施流程见 [5.0 改造流程方案](V5_IMPLEMENTATION_PLAN.md)。
+
 - **4.6.30 Shadow/Task Memory Reliability / 影子与任务记忆可靠性**：本地包、CLI 与 MCP 运行时版本提升至 `4.6.30`。本版集中加固记忆写入与宿主集成的可靠性：Shadow 快照、Observation 折叠与 authority 切换的读-改-写统一在专用 `shadow.lock` 内完成，避免并发写入互相覆盖导致 L2 案例缺源；Hook 的 session-id 交接文件改为按 workspace 隔离并支持 `MEMORY_CENTER_SESSION_ID_FILE` 注入，消除同机多项目互相关闭 session；`memory_discover` 压缩矩阵改读真实 memory layer key；delivery waiver 过期状态在审批与列表中一致持久化。逐条细节见下方各条。
 - **4.6.30 Shadow/Task Memory Reliability (EN)**: Local package, CLI, and MCP runtime metadata bumped to `4.6.30`. This release hardens memory-write and host-integration reliability: Shadow snapshot recording, observation folding, and authority switching now perform their read-modify-write under a dedicated `shadow.lock` so concurrent writers can no longer overwrite each other and leave L2 cases short a source; the hook session-id handoff file is workspace-scoped and injectable via `MEMORY_CENTER_SESSION_ID_FILE`, removing cross-project session clobbering on one machine; `memory_discover` reads the real memory-layer keys from its compression matrix; and delivery-waiver expiry is persisted consistently between approval and listing. See the individual entries below for details.
 

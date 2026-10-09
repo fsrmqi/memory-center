@@ -2,8 +2,9 @@
 
 > 类型：决策与开发方案（decision）。日期：2026-10-09。
 > 基线：4.6.30，提交 `a97f384`；版本保留分支 `codex/release-4.6.30`，后续开发分支 `codex/service-platform`。
-> 目标版本：5.0.0；具体改造流程、WeKnora 参考映射及升级/回滚门禁见 [5.0 改造流程方案](V5_MIGRATION_ROADMAP.md)。文档目标版本不代表软件已升级或发布。
+> 目标版本：5.0.0；具体改造流程、WeKnora 参考映射及全新安装验收见 [5.0 改造流程方案](V5_IMPLEMENTATION_PLAN.md)。文档目标版本不代表软件已升级或发布。
 > 状态：产品方向已确认；本文件描述目标设计，服务入口、管理页面及新增接口尚未实现。
+> 安装策略：5.0 全新安装、重新登记项目和重建数据；不兼容 4.x 接口，不接入旧 workspace。复用核心能力不等于保留旧协议和存储约束。
 > 本方案遵守现有核心依赖方向和证据治理约束；公开接口事实仍以代码、schema 和当前操作文档为准。
 
 ## 1. 产品目标与第一阶段范围
@@ -34,15 +35,14 @@ Memory Center 演进为面向 AI 助手的上下文与记忆服务：一次安�
 
 ## 3. 领域与标识
 
-首版界面的“项目”对应一个 workspace；不新增与 workspace 平行的项目事实库。现有 `project` 参数通常表示 workspace 内的服务分区，不得将它静默改成全局项目 ID。
+5.0 界面的“项目”对应一个 workspace，不新增与 workspace 平行的项目事实库。新协议明确使用 `workspace_id` 标识项目空间，`service_id` 标识内部服务；旧参数、schema 和返回格式不作为兼容约束。
 
 | 标识 | 语义 |
 |---|---|
 | `workspace_id` | 服务登记时生成的稳定 ID，独立于名称与路径 |
 | `display_name` | 可修改的界面名称，不作为授权锚点 |
 | `source_roots` | 服务器能访问的源码根目录；首版可先从既有 workspace 配置推导 |
-| `workspace_file` | 既有引擎执行所需的配置位置，只在服务内部解析 |
-| `storage_mode` | 复用仓库内配置的 `external`，或服务数据目录中的 `managed` |
+| `workspace_file` | 服务数据目录中的新配置位置，只在服务内部解析；不指向旧仓库配置 |
 | `group_id` | 显式联合查询的空间集合；成员关系不授予访问权限 |
 | `principal_id` | 调用主体，首版本地管理员与 MCP 令牌主体；不提前构造团队组织体系 |
 | `session_id` / `task_id` / `ref_id` | 必须在对应 workspace 下解析，不能单凭字符串跨空间读取 |
@@ -55,7 +55,7 @@ Memory Center 演进为面向 AI 助手的上下文与记忆服务：一次安�
 flowchart TD
     UI[独立管理页面] --> API[管理 API]
     AI[AI 助手] --> MCP[统一 MCP 入口]
-    OLD[既有 CLI / 单空间 MCP / DSH] --> APP[应用用例]
+    CLI[5.0 CLI / 可选客户端适配器] --> APP[应用用例]
     API --> AUTH[身份与范围校验]
     MCP --> AUTH
     AUTH --> ROUTER[空间解析与请求上下文]
@@ -76,36 +76,38 @@ flowchart TD
 - `memory_center/core/`：目录/授权基础模型与已有引擎，保持 ADR-0001 的依赖方向。
 - `frontend/`：独立管理页面源代码，构建产物通过明确的包资源策略分发。
 
-技术基线保留 Python 和 SQLite。新增服务需要 ASGI 传输适配；先验证当前 MCP SDK 的 Streamable HTTP 挂载、生命周期与取消行为，再锁定 Web 框架和依赖范围。前端候选 Vue 3 + TypeScript + Vite；正式引入前验证构建与 Python wheel 打包，不在本轮添加依赖或锁文件。
+采用 Python 模块化单体：FastAPI + Uvicorn 承载 ASGI 管理 API、官方 Python MCP SDK 的 Streamable HTTP 与静态页面；前端 Vue 3 + TypeScript + Vite。保留 SQLite，每个空间独立存储。S0 验证挂载、生命周期与取消行为后锁定依赖版本；本轮不添加依赖或锁文件。
 
-首版由一个服务进程承载 API/MCP/静态页面，长时间索引通过有界 worker 执行。CPU 密集索引优先验证进程隔离；worker 创建自己的 Store/连接，不能跨线程或进程复用 SQLite 连接。扩展多实例前必须重新设计租约和共享存储，不能靠增加 HTTP worker 数量获得可靠性。
+首版由一个 Uvicorn 服务进程承载 API/MCP/静态页面，长时间索引通过有界进程 Worker 执行；Worker 创建自己的 Store/连接，不能跨线程或进程复用 SQLite 连接。S0 验证正常启动、就绪和退出，S3 验证 Worker 的预算、排空与恢复。扩展多实例前必须重新设计租约和共享存储。
 
-## 5. 存储布局与兼容迁移
+发行以 Python wheel 为主，推荐 pipx 安装，前端构建产物作为包资源分发，用户运行时不依赖 Node.js；Docker 与 macOS launchd / Linux systemd 自启动配置在安装切片验证后交付。
 
-目标服务数据目录由安装配置指定，默认候选 `~/.memory-center/service/`：
+## 5. 存储布局与全新初始化
+
+目标服务数据目录由安装配置指定，默认候选 `~/.memory-center/v5/`，与旧全局 registry 和仓库 `.memory-center` 分开：
 
 ```text
-service/
+v5/
   service.yaml                 # 监听、预算、受管根目录等
   catalog.db                   # 空间登记、令牌哈希、授权、管理操作记录
   workspaces/
     <workspace_id>/
-      workspace.yaml           # managed 空间配置，root 指向源码位置
+      workspace.yaml           # 5.0 新空间配置，root 指向源码位置
       graph/graph.db           # 按现有 Store 布局保存空间事实
       rules/ memory/ artifacts/
 ```
 
-`catalog.db` 只管理服务控制面，空间 `graph.db` 继续是索引、任务和工程记忆的运行时真源。跨项目查询联合授权后的结果，不把全部源码图混写进全局数据库。具体 managed 配置与路径规则必须由验证切片确认后固化。
+`catalog.db` 只管理服务控制面，空间 `graph.db` 是索引、任务和工程记忆的运行时真源。跨项目查询联合授权后的结果，不把全部源码图混写进全局数据库。新存储 schema 可以重新设计；不读取旧数据库或旧 JSON 导出作为回退。
 
-既有 workspace 首版登记为 `external`：保存稳定 ID 与配置引用，原目录、图和工件不搬迁。新项目可走 `managed`，配置与数据放服务目录；管理操作不得隐式改写仓库 AGENTS 或安装 Hook。
+所有项目从源码根目录重新登记：只读识别预览 → 生成新空间 ID 与配置 → 事务登记 → 显式首次索引。配置、规则、索引、记忆与工件统一放服务数据目录，不保留 external/managed 双模式。
 
-旧 registry 导入流程：读取并预览 → 规范化真实路径与重复检查 → 事务写入稳定 ID → 验证逐项可读取 → 输出迁移回执。保留旧文件作为原始输入；失败不覆盖它，也不产生第二个可并行更新的登记真源。旧 CLI registry 操作在服务模式下须委托统一应用用例；独立模式兼容策略在切片 S1 中实现并测试。
+不提供旧 workspace.yaml、registry、图谱、记忆和任务的导入，也不自动清理这些历史内容。扫描应排除旧 `.memory-center` 生成内容，防止把历史索引与记忆误作新知识来源。管理操作不得隐式改写仓库 AGENTS 或安装 Hook。
 
 仓库移动只更新映射并重新验证源码身份；分支切换不能混用旧索引，须报告提交/代际不匹配。备份必须采用一致性快照，覆盖控制面和各空间事实库，不能只复制正在写入的 SQLite 主文件而忽略 WAL。
 
 ## 6. MCP 路由与请求隔离
 
-服务模式优先 Streamable HTTP；保留现有 `memory-center-mcp --workspace ...` 单空间 stdio 用法。仅支持 stdio 的客户端后续可通过薄代理连接同一服务；代理可以传递本机 cwd，不能在代理内再建索引与记忆引擎。
+5.0 服务采用 Streamable HTTP，不保留旧 `memory-center-mcp --workspace ...` 独立模式。仅支持 stdio 的目标客户端可按需要通过新的薄代理连接同一服务；这属于传输适配，代理不承担独立索引与记忆引擎。
 
 客户端的本地 cwd 不会自动到达远端 MCP 服务。统一接入必须有明确的解析合同：显式 `workspace_id`、session 已绑定空间，或本机代理提供且经过服务器登记校验的目录提示。MCP roots 仅为提示，不是授权证据。
 
@@ -119,7 +121,7 @@ service/
 
 每次调用构造不可变请求上下文：`principal_id / workspace_id / workspace_file / session_id / trace_id`。禁止在共享服务实例上更改 `ctx.workspace_file` 来切换项目。审计、连接、模型缓存、查询缓存、ref、取消令牌和资源锁需要逐项核查空间键；缓存至少区分空间、generation 与实际授权范围。
 
-现有 MCP 工具保持兼容；新增空间选择/发现工具及可选 `workspace_id` 的具体 schema 在实现切片中确定。旧参数 `project`、`scope` 与工具返回语义不被重定义。服务模式缺少空间时给出操作指引；旧单空间模式仍使用启动绑定。
+5.0 MCP 工具基于新空间、授权和任务模型重新定义，具体 schema 在 S0/S2 固化，不承担旧工具参数与返回结构兼容。缺少空间时返回发现/选择指引，不能回退到旧启动绑定。
 
 group 查询仅覆盖显式选择且已授权的成员，逐项保留来源 workspace、generation、coverage 与证据等级。首版跨空间操作只读，不做跨库事务性记忆写入。
 
@@ -129,7 +131,7 @@ group 查询仅覆盖显式选择且已授权的成员，逐项保留来源 work
 |---|---|
 | 概览 | 服务就绪、已接入空间、索引健康、正在运行与失败任务 |
 | 项目列表 | 添加、编辑名称、暂停、恢复、移除接入；空态可直接开始登记 |
-| 添加项目 | 服务端路径或已有配置 → 只读识别预览 → 确认登记 → 显式启动首次索引 |
+| 添加项目 | 服务端源码目录 → 只读识别预览 → 确认登记 → 显式启动首次索引 |
 | 项目详情 | 仓库/服务、索引覆盖率、generation、规则与有界记忆摘要 |
 | 索引任务 | 按空间查看进度、阶段、冲突、失败原因、取消与重试 |
 | MCP 接入 | 生成连接配置，创建、撤销、轮换令牌，选择可访问空间与读写权限 |
@@ -163,16 +165,16 @@ API 返回有界摘要；分页、预算、错误码、重复请求幂等键和�
 
 | 切片 | 内容与依赖 | 必须通过的验收 |
 |---|---|---|
-| S0：服务骨架验证 | SDK/ASGI 传输、生命周期、静态资源与 wheel 打包验证；设计隔离合同 | 安装产物可启动、就绪与退出；无项目也可打开空态；不改变旧 stdio schema |
-| S1：空间目录 | 稳定 ID、catalog、已有 registry 导入、external/managed 路径验证 | 两空间登记、改名不换 ID、重复路径/目录重叠可解释、重启保留；原 workspace 不改写 |
+| S0：服务骨架验证 | FastAPI/Uvicorn、SDK/ASGI 传输、生命周期、静态资源与 wheel 打包；5.0 新合同 | 空目录安装可启动、就绪与退出；无项目也可打开空态；不读取旧配置 |
+| S1：空间目录 | 稳定 ID、catalog、新项目识别、统一服务数据目录 | 两空间登记、改名不换 ID、重复路径/目录重叠可解释、重启保留；新数据不依赖旧 workspace |
 | S2：请求隔离 | 授权与不可变上下文、session/ref/cache 作用域、管理 API | 并发 A/B 查询写入不串空间；错 session/ref/无权访问失败且无副作用；管理与 AI 凭据隔离 |
 | S3：任务接入 | 复用账本与协调器、全局预算、退出/恢复 | 重复任务合并、冲突可见、跨空间并发有上限、取消/发布失败保留 active generation、重启状态准确 |
 | S4：管理页面 | 在 S1–S3 合同基础上实现列表、登记、详情、任务、接入和设置 | 页面完成两个项目全流程；空态、stale、失败和重试明确；刷新后可恢复管理状态 |
-| S5：接入与发行 | 单空间兼容、客户端配置/必要的 stdio 代理、升级与备份说明 | 两 AI 会话使用同一服务；旧 CLI/MCP/DSH 回归通过；安装包资源齐全、迁移可回滚 |
+| S5：接入与发行 | 全新安装、项目首次索引、5.0 客户端配置/必要的薄代理、同版本备份恢复 | 两 AI 会话使用同一服务；5.0 契约和核心能力验证通过；安装包资源齐全，不依赖4.x数据 |
 
 开发顺序为 S0 → S1 → S2 → S3 → S4 → S5。S0 只验证骨架与页面空态，完整页面以 API 与隔离测试稳定为前提。
 
-测试重点复用 [MCP facade](../tests/entrypoints/test_mcp_facades.py)、[MCP runtime](../tests/entrypoints/test_mcp_runtime_audit.py)、[空间污染](../tests/index_storage/test_workspace_pollution.py)、[后台任务](../tests/index_storage/test_workspace_jobs.py)、[索引协调器](../tests/index_storage/test_job_coordinator.py) 的基线。新增跨空间并发、授权、迁移、服务退出与安装产物测试，不用只检查界面元素存在替代业务验收。
+测试复用 [空间污染](../tests/index_storage/test_workspace_pollution.py)、[后台任务](../tests/index_storage/test_workspace_jobs.py)、[索引协调器](../tests/index_storage/test_job_coordinator.py) 中有效的机制验证；旧 facade/schema 测试改为 5.0 合同测试，不要求所有历史测试原样通过。新增跨空间并发、授权、全新初始化、服务退出与安装产物测试。
 
 ## 10. 后续能力与现有系统协作
 
@@ -183,12 +185,12 @@ API 返回有界摘要；分页、预算、错误码、重复请求幂等键和�
 
 WeKnora 作为检索融合、引用编解码和记忆治理参考；不引入其整套 Agent/IM/沙箱平台。Memory Center 保留代码图谱、契约影响与可验证工程记忆的专长。
 
-## 11. 分支、迁移与决策边界
+## 11. 分支、全新安装与决策边界
 
 - `codex/release-4.6.30` 保留 `a97f384`，不承接服务化开发；本轮不创建额外 tag 或发布包。
 - `codex/service-platform` 从同一基线开始，按上述切片开发与提交；本轮仅提交技术梳理文档。
-- 旧的 DSH 展示迁移描述仍是 4.6.30 事实。新服务拥有管理页面，DSH 继续作为客户端；不恢复旧工作台路由和图构建器。
-- 服务模式上线前继续保留既有单 workspace 工作流；接口变更同步 README、MCP_GUIDE、REFERENCE、CHANGELOG 及契约测试。
-- 具体框架/SDK 版本、安装自启动机制、managed 多根目录兼容性、凭据初始化和迁移回滚实现由相应切片验证后记录 ADR；不得把本方案草案当作已发布能力。
+- 旧展示迁移描述仅是 4.6.30 事实；5.0 拥有独立管理页面，DSH 若后续接入须使用新合同，不维护旧客户端兼容层。
+- 5.0 公开接口可重新设计；破坏性变化同步 README、MCP_GUIDE、REFERENCE、CHANGELOG 及新契约测试。旧版本由保留分支追溯，不提供跨版本数据降级。
+- 依赖版本、安装自启动机制、多源码根目录、凭据初始化和同版本故障恢复由对应切片验证后记录 ADR；当前方案调整不等于已经实施。
 
 本轮验证边界：源码与文档核对，无运行时代码变更。GitNexus 查询发现本地索引存储版本 43 与当前引擎版本 42 不匹配；不据此声称调用图验证通过，不自动重建外部索引。

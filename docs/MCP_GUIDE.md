@@ -1,5 +1,7 @@
 # MCP Guide / MCP 接入指南
 
+> 5.0 接入决策（尚未实现）：采用统一 Streamable HTTP 服务，新工具合同围绕 workspace_id、授权与请求级隔离设计，不兼容 4.x 工具参数、返回结构和旧单 workspace 启动模式。客户端需重新配置；如需 stdio，使用新的服务转发适配器。下文仍为 4.6.30 的当前调用指南，不能作为 5.0 兼容要求。实施流程见 [5.0 改造流程方案](V5_IMPLEMENTATION_PLAN.md)。
+
 ## Ontology / 本体状态与断言
 
 `mc_lookup` 会附加 `knowledge_state`，其中 `state`、`absence_reason`、`scope_checked` 与 `next_action` 说明当前范围内的知识状态。不要将 `NOT_FOUND` 当作不存在的事实结论。

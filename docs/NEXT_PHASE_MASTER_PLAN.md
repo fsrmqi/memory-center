@@ -4,9 +4,11 @@
 >
 > This is the single active development roadmap for Memory Center.
 
-> **2026-10-09 分支路线调整**：`codex/service-platform` 的目标发行版正式确定为 **5.0.0**，主线是“独立服务 + 多 workspace + 管理页面”，依次实施 S0 服务骨架、S1 空间目录、S2 请求隔离、S3 后台任务、S4 管理页面、S5 接入与发行。详细流程、WeKnora 参考映射与升级/回滚门禁见 [5.0 改造流程方案](V5_MIGRATION_ROADMAP.md)，技术合同见 [SERVICE_PLATFORM_TECHNICAL_PLAN.md](SERVICE_PLATFORM_TECHNICAL_PLAN.md)，产品决策见 [ADR-0004](adr/0004-service-platform-and-admin.md)。当前仅完成方案，尚未实现新服务。下文旧 P0 的“DSH 为主要展示入口”不再决定本开发分支的优先级；既有 DSH 能力继续兼容，Parser/Retrieval 等未完成事项在服务化基线稳定后重新排序。版本保留分支 `codex/release-4.6.30` 不受本分支路线调整影响。
+> **2026-10-09 分支路线调整**：`codex/service-platform` 的目标发行版正式确定为 **5.0.0**，主线是“独立服务 + 多 workspace + 管理页面”，依次实施 S0 服务骨架、S1 空间目录、S2 请求隔离、S3 后台任务、S4 管理页面、S5 接入与发行。详细流程、WeKnora 参考映射与全新安装验收见 [5.0 改造流程方案](V5_IMPLEMENTATION_PLAN.md)，技术合同见 [SERVICE_PLATFORM_TECHNICAL_PLAN.md](SERVICE_PLATFORM_TECHNICAL_PLAN.md)，产品决策见 [ADR-0004](adr/0004-service-platform-and-admin.md)。当前仅完成方案，尚未实现新服务。下文旧 P0 的“DSH 为主要展示入口”不再决定本开发分支的优先级；5.0 不维护旧 workspace、接口或 DSH 兼容层，Parser/Retrieval 等未完成事项在服务化基线稳定后重新排序。版本保留分支 `codex/release-4.6.30` 不受本分支路线调整影响。
 
 > 文档入口与 active/historical 状态请同时参考 [DOCUMENT_CONSTITUTION.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/DOCUMENT_CONSTITUTION.md)。
+
+> **5.0 全新安装约束**：采用 FastAPI + Uvicorn、官方 Python MCP SDK、Vue 3 + TypeScript + Vite、SQLite 和有界进程 Worker。项目从源码目录重新登记、重建；不导入旧 workspace/registry/记忆，不维护旧 CLI/MCP/HTTP/DSH 兼容层。下文属于 4.x 的 additive schema、旧数据迁移与旧入口兼容要求不约束 5.0；核心准确性、证据治理、空间隔离与故障恢复要求继续有效。旧数据由用户自行清理，不自动删除。
 >
 > Also see [DOCUMENT_CONSTITUTION.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/DOCUMENT_CONSTITUTION.md) for the current documentation entrypoints and active-vs-historical status.
 
