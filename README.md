@@ -1,7 +1,7 @@
 # Memory Center / 记忆中心
 
-> **5.0 开发预览：5.0.0a1，已完成 S0 服务骨架。** 独立启动、Vue 空态管理页、Streamable HTTP 状态工具及 wheel/Docker 打包已实现；项目接入从 S1 开始，尚不是正式 5.0.0。
-> 运行：`memory-center-service`，或 `docker compose up -d --build`；页面 `/admin/`，MCP `/mcp`（当前仅 `mc_service_status`）。安装、关闭及 OrbStack 操作见 [5.0 服务运行指南](docs/V5_SERVICE_GUIDE.md)。以下原有项目能力说明仍描述待接入的 4.x 引擎。
+> **5.0 开发预览：5.0.0a2，已完成 S1 多项目目录。** 独立启动、Vue 空态管理页、Streamable HTTP 状态工具及 wheel/Docker 打包已实现；项目预览、登记、改名、暂停/恢复和移除接入通过受控管理 API 使用，尚不是正式 5.0.0。
+> 运行：`memory-center-service`，或 `docker compose up -d --build`；页面 `/admin/`，MCP `/mcp`（当前仅 `mc_service_status`）。安装、关闭及 OrbStack 操作见 [5.0 服务运行指南](docs/V5_SERVICE_GUIDE.md)。项目 API 合同见 [项目目录管理指南](docs/V5_CATALOG_GUIDE.md)。以下原有项目能力说明仍描述待接入的 4.x 引擎。
 
 
 > **MCP-native workspace & service memory and knowledge graph service for AI coding agents.**
@@ -60,9 +60,9 @@ Memory Center precomputes these relationships before the agent starts editing.
 
 ### Current release / 当前版本
 
-4.x 保留版本为 **4.6.30**，本分支包版本为 **5.0.0a1**（S0 开发预览）。4.6 系列已将可信查询、Java IR 差分、跨服务 `primary_chain`、真实 retrieval replay、局部刷新分桶预算、发布质量门禁和只读质量/空间总览收敛为稳定能力；4.6.30 集中加固记忆写入与宿主集成的可靠性——Shadow 快照、Observation 折叠与 authority 切换统一在专用 `shadow.lock` 内完成读-改-写（消除并发覆盖导致 L2 案例缺源），Hook 的 session-id 交接文件按 workspace 隔离并支持 `MEMORY_CENTER_SESSION_ID_FILE` 注入（消除同机多项目互相关闭 session），`memory_discover` 改读真实 memory layer key，delivery waiver 过期状态在审批与列表中一致落盘。`quality-gate` 只读汇总 generation、coverage、replay、IR、刷新性能和存储状态；它不会执行 reindex、GC、VACUUM 或用户命令。
+4.x 保留版本为 **4.6.30**，本分支包版本为 **5.0.0a2**（S1 开发预览）。4.6 系列已将可信查询、Java IR 差分、跨服务 `primary_chain`、真实 retrieval replay、局部刷新分桶预算、发布质量门禁和只读质量/空间总览收敛为稳定能力；4.6.30 集中加固记忆写入与宿主集成的可靠性——Shadow 快照、Observation 折叠与 authority 切换统一在专用 `shadow.lock` 内完成读-改-写（消除并发覆盖导致 L2 案例缺源），Hook 的 session-id 交接文件按 workspace 隔离并支持 `MEMORY_CENTER_SESSION_ID_FILE` 注入（消除同机多项目互相关闭 session），`memory_discover` 改读真实 memory layer key，delivery waiver 过期状态在审批与列表中一致落盘。`quality-gate` 只读汇总 generation、coverage、replay、IR、刷新性能和存储状态；它不会执行 reindex、GC、VACUUM 或用户命令。
 
-4.x 历史保留版本为 4.6.30；当前分支为 5.0.0a1 开发预览。 The 4.6 series consolidates trustworthy query contracts, Java IR differential checks, cross-service `primary_chain`, real retrieval replay, bucketed refresh budgets, a release quality gate, and a read-only quality/storage overview; 4.6.30 hardens memory-write and host-integration reliability — Shadow snapshots, observation folding, and authority switching now read-modify-write under a dedicated `shadow.lock` (no more concurrent overwrites leaving L2 cases short a source), the hook session-id handoff file is workspace-scoped and injectable via `MEMORY_CENTER_SESSION_ID_FILE` (no more cross-project session clobbering on one machine), `memory_discover` reads the real memory-layer keys, and delivery-waiver expiry is persisted consistently between approval and listing. `quality-gate` is read-only and never reindexes, GCs, vacuums, or runs user commands.
+4.x 历史保留版本为 4.6.30；当前分支为 5.0.0a2 开发预览。 The 4.6 series consolidates trustworthy query contracts, Java IR differential checks, cross-service `primary_chain`, real retrieval replay, bucketed refresh budgets, a release quality gate, and a read-only quality/storage overview; 4.6.30 hardens memory-write and host-integration reliability — Shadow snapshots, observation folding, and authority switching now read-modify-write under a dedicated `shadow.lock` (no more concurrent overwrites leaving L2 cases short a source), the hook session-id handoff file is workspace-scoped and injectable via `MEMORY_CENTER_SESSION_ID_FILE` (no more cross-project session clobbering on one machine), `memory_discover` reads the real memory-layer keys, and delivery-waiver expiry is persisted consistently between approval and listing. `quality-gate` is read-only and never reindexes, GCs, vacuums, or runs user commands.
 
 ---
 
@@ -1548,9 +1548,9 @@ Mutation examples: `POST /workspace/asset/register`, `POST /workspace/artifact/u
 
 ## Documentation Status / 文档状态
 
-5.0 采用全新安装策略：重新登记源码项目、重新建立索引和记忆，不导入旧 workspace 或保留 4.x 接口兼容层。当前已经实现 S0 服务入口、空态管理页和安装包，包版本为 5.0.0a1，项目能力仍待后续切片接入；历史数据清理由用户自行处理。运行架构确定为 FastAPI/Uvicorn 模块化单体、官方 Python MCP SDK、Vue 管理页面、SQLite 与有界进程 Worker，服务依赖已按 S0 验证版本锁定。
+5.0 采用全新安装策略：重新登记源码项目、重新建立索引和记忆，不导入旧 workspace 或保留 4.x 接口兼容层。当前已经实现 S0 服务运行与 S1 项目目录 API、状态管理页和安装包，包版本为 5.0.0a2，项目 MCP、后台索引与完整页面仍待后续切片接入；历史数据清理由用户自行处理。运行架构确定为 FastAPI/Uvicorn 模块化单体、官方 Python MCP SDK、Vue 管理页面、SQLite 与有界进程 Worker，服务依赖已按 S0 验证版本锁定。
 
-`codex/service-platform` 分支以 **5.0.0** 为目标发行版，从 4.6.30 改造为独立常驻服务、多项目接入与管理页面，后续扩展文档知识库、Wiki 和长期记忆。S0 已实施，运行事实见 [5.0 服务运行指南](docs/V5_SERVICE_GUIDE.md)。原有 CLI/MCP/HTTP 源码暂留用于后续能力拆分，不提供兼容承诺。改造流程、WeKnora 参考映射与全新安装验收见 [5.0 改造流程方案](docs/V5_IMPLEMENTATION_PLAN.md)，技术设计见 [服务化技术方案](docs/SERVICE_PLATFORM_TECHNICAL_PLAN.md) 和 [ADR-0004](docs/adr/0004-service-platform-and-admin.md)；开发优先级由主计划的分支说明统一维护。
+`codex/service-platform` 分支以 **5.0.0** 为目标发行版，从 4.6.30 改造为独立常驻服务、多项目接入与管理页面，后续扩展文档知识库、Wiki 和长期记忆。S1 已实施，项目操作见 [项目目录管理指南](docs/V5_CATALOG_GUIDE.md)，运行事实见 [5.0 服务运行指南](docs/V5_SERVICE_GUIDE.md)。原有 CLI/MCP/HTTP 源码暂留用于后续能力拆分，不提供兼容承诺。改造流程、WeKnora 参考映射与全新安装验收见 [5.0 改造流程方案](docs/V5_IMPLEMENTATION_PLAN.md)，技术设计见 [服务化技术方案](docs/SERVICE_PLATFORM_TECHNICAL_PLAN.md) 和 [ADR-0004](docs/adr/0004-service-platform-and-admin.md)；开发优先级由主计划的分支说明统一维护。
 
 - 当前对外说明以 [docs/DOCUMENT_CONSTITUTION.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/DOCUMENT_CONSTITUTION.md) 为准。
 - 当前实现状态、最近改动和版本变化以 [docs/CHANGELOG.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/CHANGELOG.md) 为准。

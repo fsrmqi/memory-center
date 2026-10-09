@@ -28,13 +28,13 @@ def test_lifespan_and_fresh_data(tmp_path, monkeypatch):
         assert client.get("/health/live").json() == {"status": "alive"}
         assert client.get("/health/ready").json() == {"ready": True}
         status = client.get("/api/v1/service/status").json()
-        assert status["capabilities"] == ["service_status"]
+        assert status["capabilities"] == ["service_status", "workspace_catalog"]
         assert str(tmp_path) not in str(status)
         assert client.get("/admin/").status_code == 200
         assert client.get("/mcp").status_code != 307
     assert TestClient(app).get("/health/ready").status_code == 503
     assert legacy.read_text() == "invalid legacy configuration"
-    assert list((tmp_path / "v5").iterdir()) == []
+    assert {p.name for p in (tmp_path / "v5").iterdir()} == {"catalog.db", "admin-token"}
 
 
 def test_missing_assets_fail_startup(tmp_path):

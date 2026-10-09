@@ -3,7 +3,7 @@
 > 类型：决策与开发方案（decision）。日期：2026-10-09。
 > 基线：4.6.30，提交 `a97f384`；版本保留分支 `codex/release-4.6.30`，后续开发分支 `codex/service-platform`。
 > 目标版本：5.0.0；具体改造流程、WeKnora 参考映射及全新安装验收见 [5.0 改造流程方案](V5_IMPLEMENTATION_PLAN.md)。文档目标版本不代表软件已升级或发布。
-> 状态：S0 已实现独立服务、空态管理页与状态接口，包版本 5.0.0a1；其余章节仍描述目标设计。实际运行见 [服务指南](V5_SERVICE_GUIDE.md)。
+> 状态：S0 已实现独立服务、空态管理页与状态接口，S1 目录 API 与管理员访问边界也已完成，包版本 5.0.0a2；其余能力仍描述目标设计。实际运行见 [服务指南](V5_SERVICE_GUIDE.md)。
 > 安装策略：5.0 全新安装、重新登记项目和重建数据；不兼容 4.x 接口，不接入旧 workspace。复用核心能力不等于保留旧协议和存储约束。
 > 本方案遵守现有核心依赖方向和证据治理约束；公开接口事实仍以代码、schema 和当前操作文档为准。
 
@@ -76,7 +76,7 @@ flowchart TD
 - `memory_center/core/`：目录/授权基础模型与已有引擎，保持 ADR-0001 的依赖方向。
 - `frontend/`：独立管理页面源代码，构建产物通过明确的包资源策略分发。
 
-采用 Python 模块化单体：FastAPI + Uvicorn 承载 ASGI 管理 API、官方 Python MCP SDK 的 Streamable HTTP 与静态页面；前端 Vue 3 + TypeScript + Vite。保留 SQLite，每个空间独立存储。S0 验证挂载、生命周期与取消行为后锁定依赖版本；本轮不添加依赖或锁文件。
+采用 Python 模块化单体：FastAPI + Uvicorn 承载 ASGI 管理 API、官方 Python MCP SDK 的 Streamable HTTP 与静态页面；前端 Vue 3 + TypeScript + Vite。保留 SQLite，每个空间独立存储。S0 已验证挂载、生命周期与取消行为并锁定依赖，S1 已实现 catalog 与受控目录 API。
 
 首版由一个 Uvicorn 服务进程承载 API/MCP/静态页面，长时间索引通过有界进程 Worker 执行；Worker 创建自己的 Store/连接，不能跨线程或进程复用 SQLite 连接。S0 验证正常启动、就绪和退出，S3 验证 Worker 的预算、排空与恢复。扩展多实例前必须重新设计租约和共享存储。
 
@@ -88,14 +88,17 @@ flowchart TD
 
 ```text
 v5/
-  service.yaml                 # 监听、预算、受管根目录等
-  catalog.db                   # 空间登记、令牌哈希、授权、管理操作记录
+  service.yaml                 # 后续服务配置；当前使用 CLI/环境变量
+  catalog.db                   # S1：空间与服务登记配置；S2 扩展授权
+  admin-token                  # S1：本机管理员令牌，权限 0600
   workspaces/
     <workspace_id>/
-      workspace.yaml           # 5.0 新空间配置，root 指向源码位置
+      workspace.yaml           # 可选派生导出；登记配置权威来源为 catalog
       graph/graph.db           # 按现有 Store 布局保存空间事实
       rules/ memory/ artifacts/
 ```
+
+S1 登记配置和服务划分全部保存在 catalog，不建立第二份可独立改写的 YAML 真源；workspace 数据目录到 S2–S3 使用时再创建。详见 [项目目录指南](V5_CATALOG_GUIDE.md)。
 
 `catalog.db` 只管理服务控制面，空间 `graph.db` 是索引、任务和工程记忆的运行时真源。跨项目查询联合授权后的结果，不把全部源码图混写进全局数据库。新存储 schema 可以重新设计；不读取旧数据库或旧 JSON 导出作为回退。
 

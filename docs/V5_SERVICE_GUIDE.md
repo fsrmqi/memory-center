@@ -1,6 +1,6 @@
 # 5.0 服务运行指南
 
-> 类型：操作与接口事实（current）。适用版本：5.0.0a1 / S0，尚未发布正式 5.0.0。
+> 类型：操作与接口事实（current）。适用版本：5.0.0a2 / S1，尚未发布正式 5.0.0。
 
 ## 安装、启动与关闭
 
@@ -10,7 +10,7 @@
 npm ci --prefix frontend
 npm run build --prefix frontend
 python -m build
-pipx install --python python3.11 dist/memory_center-5.0.0a1-py3-none-any.whl
+pipx install --python python3.11 dist/memory_center-5.0.0a2-py3-none-any.whl
 memory-center-service
 ```
 
@@ -28,7 +28,7 @@ Uvicorn 在退出时关闭 MCP session manager，最多等待 10 秒处理已有
 | `--data-dir` | `~/.memory-center/v5`；也可用 `MEMORY_CENTER_DATA_DIR` |
 | `--allowed-host` | 可重复；为 MCP 添加允许的 Host，如 `memory.local:*` |
 
-CLI 参数优先于环境变量。服务仅检测新数据目录可写，不查找 cwd 中的 `.memory-center/workspace.yaml`，不读取旧 registry 或绑定。缺页面资源/数据目录不可写则启动失败；监听冲突给出明确诊断，不自动换端口。5.0 的项目能力不通过旧入口转发；旧入口暂留源码，按后续切片替换或移除，不构成兼容承诺。
+CLI 参数优先于环境变量。服务检测新数据目录可写，启动会初始化新的 catalog 与管理员令牌，不查找 cwd 中的 `.memory-center/workspace.yaml`，不读取旧 registry 或绑定。缺页面资源/数据目录不可写则启动失败；监听冲突给出明确诊断，不自动换端口。5.0 的项目能力不通过旧入口转发；旧入口暂留源码，按后续切片替换或移除，不构成兼容承诺。
 
 ## Docker、Compose 与 OrbStack
 
@@ -54,7 +54,7 @@ docker compose up -d --no-build
 ```
 
 Dockerfile 不固定 CPU 平台，可为 Linux arm64/amd64 构建。本步实测 OrbStack arm64；amd64 构建与运行作为 S5 发行矩阵验收项，尚未验证。
-S0 不挂载项目源码。S1 开始接入项目时，将源码只读挂载 `/projects` 并登记容器内路径；配置、索引和记忆写入服务卷。
+默认不挂载源码；S1 提供 `compose.projects.yaml` 只读挂载 `/projects`，登记容器内路径。详见 [项目目录管理指南](V5_CATALOG_GUIDE.md)。配置、索引和记忆写入服务卷。
 
 自启动策略：容器采用 `restart: unless-stopped`，在 OrbStack/Docker 启动后恢复未被手动停止的服务。OrbStack 的登录启动由用户设置；S0 不修改宿主登录项。wheel 前台运行不提供自动启动，S5 再提供可选系统服务安装说明。
 
@@ -69,9 +69,9 @@ S0 不挂载项目源码。S1 开始接入项目时，将源码只读挂载 `/pr
 | `/mcp` | 官方 SDK Streamable HTTP；支持 initialize、tools/list、tools/call、取消通知与 session 关闭 |
 | MCP `mc_service_status` | 无参数，只读；返回与状态 API 相同的结构化对象 |
 
-状态字段固定为 `schema_version="5.0"`、`version="5.0.0a1"`、`stage="S0"`、`ready`、`capabilities=["service_status"]`、`project_management="pending"`。不返回服务目录或私有项目路径，不将未实现的项目列表伪装为已登记项目。
+状态字段固定为 `schema_version="5.0"`、`version="5.0.0a2"`、`stage="S1"`、`ready`、`capabilities=["service_status","workspace_catalog"]`、`project_management="api_ready"`。不返回服务目录或私有项目路径，不将未实现的项目列表伪装为已登记项目。
 
 MCP 采用有状态传输以支持同一传输 session 的请求取消；传输 session 不代表 workspace、任务 session 或访问授权。SDK 子应用挂载在最后，FastAPI 外层 lifespan 显式管理 SDK session manager，避免子应用 lifespan 未执行。
 MCP Host/Origin 默认只允许 localhost、127.0.0.1、IPv6 回环及其端口形式，其他 Host 被拒绝（421）；无效 JSON-RPC、未知工具和协议错误使用 SDK 的错误合同。readiness 只说明服务可接收请求，不说明项目索引健康。
 
-S0 只有只读服务状态能力，没有项目查询、目录登记、管理写入或凭据。身份与项目隔离在 S1–S2 实施；当前部署按本机访问运行。
+S1 已实现独立管理员令牌和受控目录登记 API，见 [项目目录管理指南](V5_CATALOG_GUIDE.md)。MCP 仍仅提供只读状态；项目工具与凭据隔离在 S2 实施，完整管理页面在 S4。

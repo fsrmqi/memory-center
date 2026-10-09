@@ -11,7 +11,12 @@ from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 
 from memory_center import __version__
+from memory_center.application.workspaces import WorkspaceCatalog
+from memory_center.core.storage.catalog import CatalogStore
+from memory_center.service.admin import load_admin_token
 from memory_center.service.config import ServiceConfig
+from memory_center.service.errors import register_catalog_errors
+from memory_center.service.workspace_routes import workspace_router
 
 
 class ServiceStatus(TypedDict):
@@ -42,10 +47,10 @@ def create_service_app(config: ServiceConfig, *, static_dir: Path | None = None)
         return {
             "schema_version": "5.0",
             "version": __version__,
-            "stage": "S0",
+            "stage": "S1",
             "ready": ready,
-            "capabilities": ["service_status"],
-            "project_management": "pending",
+            "capabilities": ["service_status", "workspace_catalog"],
+            "project_management": "api_ready",
         }
 
     @mcp.tool()
@@ -65,14 +70,25 @@ def create_service_app(config: ServiceConfig, *, static_dir: Path | None = None)
         with TemporaryFile(dir=config.data_dir) as probe:
             probe.write(b"ready")
             probe.flush()
+        catalog = CatalogStore(config.data_dir)
+        catalog.initialize()
+        app.state.admin_token = load_admin_token(config.data_dir)
+        app.state.workspace_catalog = WorkspaceCatalog(catalog)
         async with mcp.session_manager.run():
+            app.state.catalog_ready = True
             ready = True
             try:
                 yield
             finally:
                 ready = False
+                app.state.catalog_ready = False
+                app.state.admin_token = ""
 
     app = FastAPI(title="Memory Center", version=__version__, lifespan=lifespan)
+
+    app.state.service_config = config
+    register_catalog_errors(app)
+    app.include_router(workspace_router())
 
     @app.get("/health/live")
     def live():

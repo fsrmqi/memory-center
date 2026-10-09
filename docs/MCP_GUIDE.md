@@ -1,8 +1,8 @@
 # MCP Guide / MCP 接入指南
 
-> **5.0.0a1 / S0 当前入口**：`memory-center-service` 独立服务，管理页 `/admin/`、MCP `/mcp`，当前只提供 `mc_service_status`。FastAPI 外层生命周期管理官方 SDK；项目能力、授权和 Worker 尚待 S1–S3。实际参数、状态/错误合同、安装与关闭见 [5.0 服务运行指南](V5_SERVICE_GUIDE.md)。下文旧入口说明属于尚未接入的新服务底层能力，不构成 5.0 兼容承诺。
+> **5.0.0a2 / S1 当前入口**：`memory-center-service` 独立服务，管理页 `/admin/`、MCP `/mcp`，当前只提供 `mc_service_status`。FastAPI 外层生命周期管理官方 SDK；项目目录 API 已完成（含管理员令牌），见 [项目目录管理指南](V5_CATALOG_GUIDE.md)；项目 MCP 授权与 Worker 尚待 S2–S3。实际参数、状态/错误合同、安装与关闭见 [5.0 服务运行指南](V5_SERVICE_GUIDE.md)。下文旧入口说明属于尚未接入的新服务底层能力，不构成 5.0 兼容承诺。
 
-> 5.0 接入决策（S0 状态入口已实现，项目能力待 S1–S2）：采用统一 Streamable HTTP 服务，新工具合同围绕 workspace_id、授权与请求级隔离设计，不兼容 4.x 工具参数、返回结构和旧单 workspace 启动模式。客户端需重新配置；如需 stdio，使用新的服务转发适配器。下文仍为 4.6.30 的当前调用指南，不能作为 5.0 兼容要求。实施流程见 [5.0 改造流程方案](V5_IMPLEMENTATION_PLAN.md)。
+> 5.0 接入决策（S1 目录 API 已实现，项目 MCP 待 S2）：采用统一 Streamable HTTP 服务，新工具合同围绕 workspace_id、授权与请求级隔离设计，不兼容 4.x 工具参数、返回结构和旧单 workspace 启动模式。客户端需重新配置；如需 stdio，使用新的服务转发适配器。下文仍为 4.6.30 的当前调用指南，不能作为 5.0 兼容要求。实施流程见 [5.0 改造流程方案](V5_IMPLEMENTATION_PLAN.md)。
 
 ## Ontology / 本体状态与断言
 

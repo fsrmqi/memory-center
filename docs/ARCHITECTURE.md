@@ -1,6 +1,6 @@
 # Memory Center 当前系统架构 / Current System Architecture
 
-> **5.0.0a1 / S0 当前入口**：`memory-center-service` 独立服务，管理页 `/admin/`、MCP `/mcp`，当前只提供 `mc_service_status`。FastAPI 外层生命周期管理官方 SDK；项目能力、授权和 Worker 尚待 S1–S3。实际参数、状态/错误合同、安装与关闭见 [5.0 服务运行指南](V5_SERVICE_GUIDE.md)。下文旧入口说明属于尚未接入的新服务底层能力，不构成 5.0 兼容承诺。
+> **5.0.0a2 / S1 当前入口**：`memory-center-service` 独立服务，管理页 `/admin/`、MCP `/mcp`，当前只提供 `mc_service_status`。FastAPI 外层生命周期管理官方 SDK；项目目录 API 已完成（含管理员令牌），见 [项目目录管理指南](V5_CATALOG_GUIDE.md)；项目 MCP 授权与 Worker 尚待 S2–S3。实际参数、状态/错误合同、安装与关闭见 [5.0 服务运行指南](V5_SERVICE_GUIDE.md)。下文旧入口说明属于尚未接入的新服务底层能力，不构成 5.0 兼容承诺。
 
 > 5.0 设计范围说明：下文仍描述 4.6.30 实现。5.0 已决定按全新安装重构为 FastAPI/Uvicorn 服务、统一 MCP 与独立管理页面；不导入旧 workspace 或保持历史接口/存储兼容。新的空间配置与数据全部归服务管理，核心能力和证据治理可复用。尚未实施的设计以 [技术方案](SERVICE_PLATFORM_TECHNICAL_PLAN.md) 和 [改造流程](V5_IMPLEMENTATION_PLAN.md) 为准。
 

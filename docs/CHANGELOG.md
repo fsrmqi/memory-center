@@ -1,5 +1,15 @@
 # Changelog / 更新日志
 
+## 5.0.0a2 — S1 项目目录（2026-10-09，未正式发布）
+
+- 新增 SQLite catalog，稳定 workspace/service ID、名称与规范化根目录、配置版本和 revision 并发控制。
+- 新增受管理员令牌保护的预览、登记、分页列表、详情、改名、暂停/恢复、暂停后改路径、移除接入 API；原子登记，拒绝软链接重复和父子重叠。
+- 源码只读识别，复用服务类型注册表；预览不写源码、不读取旧 workspace 或 registry，不触发索引。
+- 移除仅取消接入并保留数据；重登记分配新 ID。catalog 与管理员令牌权限 0600，非法结构/文件阻止就绪。
+- 提供 OrbStack 源码只读挂载配置。完整管理页面仍待 S4，项目 MCP 与授权仍待 S2，不提供 4.x 兼容转发。
+- 详见 [项目目录指南](V5_CATALOG_GUIDE.md) 和 [S1 回执](implementation-receipts/V5_S1_CATALOG.md)。
+
+
 ## 5.0.0a1 — S0 开发预览（2026-10-09，未正式发布）
 
 - 新增独立 `memory-center-service`：FastAPI/Uvicorn 与官方 MCP SDK 共用生命周期，不读取旧 workspace/registry。

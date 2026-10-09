@@ -2,7 +2,7 @@
 
 > 类型：决策与实施流程（decision）。日期：2026-10-09。
 > 目标发行版：5.0.0；当前实现基线：4.6.30。当前开发分支：`codex/service-platform`。
-> 状态：S0 已实施，包版本 5.0.0a1；尚未发布正式 5.0。S1 等待用户确认后开始。实施证据见 [S0 回执](implementation-receipts/V5_S0_SERVICE.md)。
+> 状态：S0 已实施，包版本 5.0.0a1；尚未发布正式 5.0。S1 已实施（5.0.0a2），S2 等待用户确认后开始。实施证据见 [S0 回执](implementation-receipts/V5_S0_SERVICE.md) 与 [S1 回执](implementation-receipts/V5_S1_CATALOG.md)。
 > 2026-10-09 决策修订：5.0 全新安装、重新登记项目并从源码重建；不导入 4.x workspace/registry/索引/记忆，不保留旧 CLI/MCP/HTTP/DSH 兼容层。历史数据由用户自行清理，本方案不执行删除。
 > 本文件细化 [服务化技术方案](SERVICE_PLATFORM_TECHNICAL_PLAN.md) 的 S0–S5；[主计划](NEXT_PHASE_MASTER_PLAN.md) 仍是唯一开发优先级入口。
 
@@ -184,3 +184,7 @@ flowchart LR
 每阶段实施回执记录：起始/结束提交、改动模块、5.0 schema、实际验证命令和结果、安装/重建/故障恢复证据、未解决问题。样例或合成测试能验证机制，但不能替代真实工程的解析精度和检索效果证据。
 
 当前文档仅完成流程设计。WeKnora 的参考机制未经本项目性能/运行验证；后续按切片测试后才能称为已吸收能力。本轮不变更核心代码、模型档案或索引，不执行实际升级与发布。
+
+## 2026-10-09 补充：知识流水线与存储参考
+
+根据用户提供的 WeKnora 架构图，进一步核对固定版本的 SQLite/PG 检索、批量嵌入、分块与融合源码。新增 [知识流水线与存储参考方案](V5_KNOWLEDGE_STORAGE_REFERENCE.md)。当前 S1 SQLite catalog 保持已实施状态；后续标准部署建议优先评估 PostgreSQL + pgvector，BM25 作为独立能力选型。若正式 5.0 改为 PG 默认，须先增加独立存储验证切片并获得用户确认。

@@ -20,13 +20,13 @@ onMounted(refresh)
   <div class="shell">
     <aside><div class="brand">M<span>Memory Center</span></div><div class="nav">服务概览</div><p>项目上下文 · 知识 · 长期记忆</p></aside>
     <main>
-      <header><div class="eyebrow">MEMORY CENTER / 5.0</div><span class="badge">S0 · 服务骨架</span></header>
+      <header><div class="eyebrow">MEMORY CENTER / 5.0</div><span class="badge">{{ status?.stage || "服务" }} · 开发预览</span></header>
       <h1>你的项目记忆，从这里开始</h1><p class="intro">一个独立运行的服务，为不同项目提供持续的上下文。</p>
       <section class="status" aria-live="polite">
         <div><h2>服务状态</h2><p v-if="loading">正在连接服务…</p><p v-else-if="error" class="error">{{ error }}</p><p v-else>{{ status?.ready ? '服务已就绪' : '服务尚未就绪' }} <span class="version">{{ status?.version }}</span></p></div>
         <button @click="refresh" :disabled="loading">{{ loading ? '连接中' : '刷新状态' }}</button>
       </section>
-      <section class="empty"><div class="icon">◇</div><h2>准备接入你的第一个项目</h2><p>本阶段已提供服务启动、管理页面和 MCP 状态接口。<br>项目登记与管理将在下一阶段开放。</p><span class="next">下一步：多项目登记</span></section>
+      <section class="empty"><div class="icon">◇</div><h2>多项目登记接口已就绪</h2><p>已支持项目预览、登记、改名、暂停与恢复。<br>当前通过管理 API 使用，完整管理页面将在后续阶段开放。</p><span class="next">下一步：项目授权与 MCP 隔离</span></section>
       <footer>MCP 入口 <code>/mcp</code><span>全新 5.0 数据空间</span></footer>
     </main>
   </div>

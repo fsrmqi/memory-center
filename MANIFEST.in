@@ -10,3 +10,4 @@ include requirements-service.lock
 include Dockerfile
 include compose.yaml
 include .dockerignore
+include compose.projects.yaml
