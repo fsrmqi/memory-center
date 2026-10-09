@@ -27,6 +27,12 @@
 
 ## Current decisions and references / 当前决策与参考
 
+2026-10-09 服务化分支新增决策文档：
+
+- `docs/SERVICE_PLATFORM_TECHNICAL_PLAN.md`：decision；4.6.30 基线上的独立服务、多空间和管理页面技术方案，包含现状证据、兼容边界、开发切片与验收；描述的新增能力尚未实现。
+- `docs/adr/0004-service-platform-and-admin.md`：方向已接受，实施待完成；调整未来展示的产品边界，保留现有核心依赖与单空间接口兼容性。
+- 唯一开发路线入口仍为 `docs/NEXT_PHASE_MASTER_PLAN.md`；其服务化分支说明优先于旧 DSH P0 展示路线。
+
 | 文档 | 状态 |
 |---|---|
 | `docs/decisions/CODE_GRAPH_FOUNDATION_IMPLEMENTATION.md` | Phase A–D 已实施；Phase E 仅在真实非 Java 需求出现后评估 |
