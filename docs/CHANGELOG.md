@@ -1,5 +1,12 @@
 # Changelog / 更新日志
 
+## 5.0.0b7 — 2026-10-10
+
+- 取消源码单文件 1 MiB、总量 64 MiB、10000 文件、30000 分块及代码图符号/调用点规模硬限制。
+- Java 事实索引不再默认截取前 600000 字符，完整解析大文件。
+- 取消索引默认 10 分钟超时；保留手动取消、并发调度和失败保留上一代索引。
+- Source indexing now accepts large files and projects without fixed size/count/time limits. Explicit cancellation and atomic generation publication remain.
+
 ## 5.0.0b6 — 2026-10-10
 
 - 迁入独立 Wiki MCP 的知识简报、读取、全文检索、晋升、归档、治理校验与多格式 Skill 来源处理。

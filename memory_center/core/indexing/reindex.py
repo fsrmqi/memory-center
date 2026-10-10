@@ -917,7 +917,7 @@ def _walk_scoped_project(
                     yield path
 
 
-def safe_read(path: Path, limit: int = 600_000) -> str:
+def safe_read(path: Path, limit: int | None = None) -> str:
     try:
         return path.read_text(encoding="utf-8", errors="ignore")[:limit]
     except Exception:

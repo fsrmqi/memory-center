@@ -6,7 +6,6 @@ from collections import defaultdict
 from functools import lru_cache
 from pathlib import Path
 
-from memory_center.core.foundation.catalog import CatalogError
 from memory_center.core.indexing.language_registry import get_language_spec_for_extension
 from memory_center.core.indexing.structural_parser import TreeSitterStructuralParser
 
@@ -34,8 +33,6 @@ def build_code_graph(root, files):
                                 'parent': declaration.qualified_name.rpartition('.')[0] if result.language == 'go' and declaration.kind == 'method' else declaration.parent_qualified_name, 'path': relative,
                                 'line': declaration.line, 'end_line': declaration.end_line,
                                 'language': spec.name, 'module': result.module or '', 'hash': coverage[relative]['hash']})
-    if len(symbols) > 50000:
-        raise CatalogError('INDEX_BUDGET', '通用代码图最多 50000 个符号，请缩小项目范围')
     by_file = {path: [] for path in units}
     for symbol in symbols:
         by_file[symbol['path']].append(symbol)
@@ -165,8 +162,6 @@ def build_code_graph(root, files):
             else:
                 unresolved.append({'caller': call.caller_qualified_name, 'callee': text, 'path': path,
                                    'line': call.line, 'reason': 'ambiguous' if len(candidates) > 1 or len(callers) > 1 else 'unresolved'})
-            if len(edges) + len(unresolved) > 100000:
-                raise CatalogError('INDEX_BUDGET', '通用代码图最多 100000 个调用点')
     return {'schema': 1, 'symbols': symbols, 'edges': edges, 'unresolved': unresolved, 'coverage': coverage}
 
 

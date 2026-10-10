@@ -1,4 +1,4 @@
-"""持久任务目录与有界子进程；取消/超时不发布 generation。"""
+"""持久任务目录与有界子进程；取消不发布 generation。"""
 import asyncio
 import hashlib
 import multiprocessing
@@ -22,19 +22,12 @@ _EXTENSIONS = {'.java', '.py', '.go', '.ts', '.tsx', '.js', '.jsx', '.vue', '.kt
 
 
 def source_files(root):
-    count, total = 0, 0
     for parent, dirs, files in os.walk(root, followlinks=False):
         dirs[:] = sorted(d for d in dirs if d not in _SKIP and not d.startswith('.') and not (Path(parent) / d).is_symlink())
         for name in sorted(files):
             path = Path(parent) / name
             if name.startswith('.') or path.suffix.lower() not in _EXTENSIONS or path.is_symlink():
                 continue
-            size = path.stat().st_size
-            if size > 1024 * 1024:
-                raise CatalogError('INDEX_BUDGET', '存在超过 1 MiB 的源码文件，请缩小项目范围')
-            count, total = count + 1, total + size
-            if count > 10000 or total > 64 * 1024 * 1024:
-                raise CatalogError('INDEX_BUDGET', '索引上限 10000 文件/64 MiB，请缩小项目范围')
             resolved = path.resolve()
             if not resolved.is_relative_to(root):
                 continue
@@ -76,7 +69,7 @@ def run_index(data_dir, database_url, workspace, job_id):
         if root.resolve() != root or not root.is_dir():
             raise CatalogError('ROOT_CHANGED', '源码目录已移动，请暂停后重新登记路径')
         chunks = []
-        # 所有预算先在新平台扫描验证；不会直接把无限项目交给事实引擎。
+        # 完整扫描已登记源码范围，不以文件大小或项目规模拒绝索引。
         files = list(source_files(root))
         for path in files:
             text = path.read_text(encoding='utf-8', errors='replace')
@@ -116,8 +109,6 @@ def run_index(data_dir, database_url, workspace, job_id):
                           'source_revision': item['revision'], 'title': item['title'], 'owner': item.get('owner', ''),
                           **({k: item[k] for k in ['wiki_source_id', 'relative_path', 'hash', 'source_name']} |
                              {'path': item['source_name'] + '/' + item['relative_path']} if item.get('wiki_source_id') else {})}))
-        if len(chunks) > 30000:
-            raise CatalogError('INDEX_BUDGET', '分块上限 30000，请缩小索引范围')
         settings = store.list('model', limit=1)
         embedder = Embedder(settings[0] if settings else {})
         # 嵌入分批执行并检查取消，模型故障保留上一代索引。
@@ -219,11 +210,9 @@ class Jobs:
         while not self.stopping:
             for job_id, process in list(self.processes.items()):
                 job = self.store.get('job', job_id)
-                if job['status'] == 'cancelled' or time.monotonic() - self.started[job_id] > 600:
+                if job['status'] == 'cancelled':
                     if process.is_alive():
                         process.terminate()
-                    if job['status'] != 'cancelled':
-                        self.store.update('job', job_id, {'status': 'failed', 'error': 'JOB_TIMEOUT', 'finished_at': now()})
                 if not process.is_alive():
                     process.join(timeout=.1)
                     if self.store.get('job', job_id)['status'] == 'running':

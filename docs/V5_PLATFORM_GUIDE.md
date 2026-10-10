@@ -1,13 +1,13 @@
 # 5.0 多项目知识服务使用指南
 
-> 当前：5.0.0b6，开发测试版本；不兼容 4.x 接入或导入历史数据。
+> 当前：5.0.0b7，开发测试版本；不兼容 4.x 接入或导入历史数据。
 > 用户已授权连续完成方案，无需每个切片再次确认。此指南描述当前服务入口；旧版文档仅作为核心算法背景。
 
 ## 安装与运行
 
 ```sh
 python3 -m venv .venv
-.venv/bin/python -m pip install /path/to/memory_center-5.0.0b6-py3-none-any.whl
+.venv/bin/python -m pip install /path/to/memory_center-5.0.0b7-py3-none-any.whl
 .venv/bin/memory-center-service --data-dir /path/to/new-service-data
 ```
 
@@ -47,7 +47,7 @@ docker compose -f compose.yaml -f compose.postgres.yaml up -d
 4. 项目改名保留身份；调整目录需先暂停，恢复检查实际目录；配置改变后旧索引标为 stale，需重建。
 5. 在知识页面检索，选择混合、关键词、向量或代码符号/调用方/被调用方。结果有文件行范围、来源修订和索引 generation。源码命中实时核对哈希，变化会标记 STALE。
 
-资源预算：最多 2 个索引子进程、32 个排队/运行任务；单任务 10 分钟；源码最多 10000 文件/64 MiB、单文件 1 MiB、最多 30000 分块。超限明确失败，不发布缩减后索引。轻量向量精确召回最多 5000 块，超过需 PG 部署；PG 使用向量距离查询，维度不超过 2000 的档案建立 HNSW，较高维度使用精确检索。
+资源预算：最多 2 个索引子进程、32 个排队/运行任务；源码索引不设置单文件体积、文件总量、总字节数、分块数量硬上限，也不设置默认任务超时；可手动取消。项目规模由实际机器资源决定，失败或取消不发布缩减后索引。轻量向量精确召回最多 5000 块，超过需 PG 部署；PG 使用向量距离查询，维度不超过 2000 的档案建立 HNSW，较高维度使用精确检索。
 
 代码事实引擎直接接收 catalog 派生的配置；派生 YAML 与工程事实库位于新服务的 generation 目录，catalog 始终是登记真源。父服务排除已归属更具体子服务的文件。代码查询保留原解析与影响分析能力，向量相似度不能证明调用关系。默认包与容器内置 Java、Python、Go、TypeScript/TSX、JavaScript/JSX 和 Vue 的 Tree-sitter 语法库；无需额外安装 multilang 扩展。Kotlin 仍是可选扩展。
 
@@ -118,7 +118,7 @@ docker compose -f compose.yaml -f compose.postgres.yaml exec -T postgres pg_dump
 
 协议夹具只验证嵌入数量/维度、模型档案隔离、数据库向量距离、HNSW 与融合，不代表真实语义质量。当前网络的 Ollama registry 证书校验失败，未关闭 TLS 验证；真实模型语义评测未完成。没有宣称图片中的 IM、浏览器沙箱、联网搜索、Neo4j、所有外部模型厂商等已实现，它们不属于此次 Memory Center 服务化核心闭环。
 
-## 多语言代码查询（5.0.0b6）
+## 多语言代码查询（5.0.0b7）
 
 借鉴 GitNexus 的语言注册、Vue 脚本块提取和分阶段引用解析。每次索引先提取声明与导入绑定，再连接调用，写入 generation 的 `code-graph.json`；文件路径、符号类型、限定名和声明行组成符号身份，避免多个文件的同名函数覆盖。Java 的 Spring/Feign/MQ 专用分析继续保留。
 
@@ -133,7 +133,7 @@ docker compose -f compose.yaml -f compose.postgres.yaml exec -T postgres pg_dump
 
 `mc_lookup` 的 symbol/callers/callees 使用新图；非 Java context 返回符号及直接调用，Java context 保留专用上下文。`mc_analyze` 对非 Java 返回直接静态调用方，Java 继续使用专用影响分析。MCP 参数未改变，新图结果提供 symbols、chain、coverage、truncated 与 negative_claim_allowed；升级前后的结果不能假设完全同形。同名锚点必须使用返回的 symbol id 或 `path:qualified_name` 精确选择，重载方法需使用 id。
 
-索引任务和索引记录的 `code_coverage` 提供语言文件数、解析状态、符号数、已解析与未解析调用数。解析器缺失、语法错误、未知 Vue 脚本语言与外部脚本不算完整解析；未解析调用保留诊断，不能凭空结果断言无调用方。图预算为 50000 个符号、100000 个调用点，超限任务失败，旧 generation 不替换。代码与引用读取时核对来源哈希，变更后请重新索引。
+索引任务和索引记录的 `code_coverage` 提供语言文件数、解析状态、符号数、已解析与未解析调用数。解析器缺失、语法错误、未知 Vue 脚本语言与外部脚本不算完整解析；未解析调用保留诊断，不能凭空结果断言无调用方。代码图不设置符号和调用点数量硬上限，完整构建登记范围的事实；失败或取消保留旧 generation。代码与引用读取时核对来源哈希，变更后请重新索引。
 
 当前不实现完整编译器类型推断：跨语言业务调用、继承/接口动态分派、匿名回调内部调用、外部依赖、TS 路径别名与 re-export 链、匿名默认导出、Python 动态导入等保留未解析。Go 依赖替换和 build tags 不作为已验证语义。向量检索不作为调用关系证据。原 generation 没有通用图时保留旧入口；在管理页对需要新能力的项目点击“索引”，不自动扫描或迁移所有项目。
 

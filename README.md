@@ -1,5 +1,7 @@
 # Memory Center / 记忆中心
 
+> 2026-10-10 / 5.0.0b7：取消源码索引的文件体积、项目总量、分块及代码图规模硬限制，取消默认索引超时。大文件完整读取，保留手动取消和失败保留上一代索引。Large source files and projects are indexed without fixed size/count/time limits.
+
 > 2026-10-10 / 5.0.0b6：统一 Wiki 治理、知识晋升/归档和 Skill 管理，管理页与 MCP 共用数据；旧独立 Wiki MCP 和 DSH 管理插件退出。安装和迁移见 [平台指南](docs/V5_PLATFORM_GUIDE.md)。Unified Wiki governance and Skill lifecycle are now built into the service.
 
 > 2026-10-10 / 5.0.0b5：多模块预览服务候选上限调整为 256，保留扫描预算；登记错误明确区分服务数、目录项超限和读取失败。
