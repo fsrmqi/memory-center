@@ -33,6 +33,8 @@ class ProjectEmbedding:
             current = self.settings(workspace_id)
             if current['revision'] != revision:
                 raise CatalogError('REVISION_CONFLICT', '向量设置已改变，请刷新后重试')
+            if current['mode'] == mode:
+                return current
             value = {'id': 'embedding_' + workspace_id, 'workspace_id': workspace_id, 'mode': mode}
             result = (self.store.update('embedding_settings', value['id'], value, revision) if revision
                       else self.store.create('embedding_settings', value))

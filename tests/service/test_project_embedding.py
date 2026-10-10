@@ -45,6 +45,8 @@ def test_project_settings_scope_revision_and_validation(service):
     assert client.get(path, headers=headers).json()['mode'] == 'inherit'
     value = client.put(path, headers=headers, json={'mode': 'off', 'revision': 0})
     assert value.status_code == 200
+    unchanged = client.put(path, headers=headers, json={'mode': 'off', 'revision': value.json()['revision']})
+    assert unchanged.json()['revision'] == value.json()['revision']
     assert ProjectEmbedding(platform).settings(b)['mode'] == 'inherit'
     assert client.put(path, headers=headers, json={'mode': 'all', 'revision': 0}).json()['error']['code'] == 'REVISION_CONFLICT'
     assert client.put(path, headers=headers, json={'mode': 'invalid', 'revision': 1}).status_code == 422

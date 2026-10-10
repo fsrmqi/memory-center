@@ -6,6 +6,11 @@
 - Wiki 自动调度在项目索引失败、取消或中断后停止；状态持久化，重启或删除任务记录不触发自动重试，手动重试恢复。关闭自动同步或暂停来源后不再自动提交该来源关联的项目索引。
 - Large graph cleanup uses temporary scope tables and subqueries without growing expression trees or parameter lists. Wiki indexing stops after failed, cancelled or interrupted attempts across restarts and history deletion; manual retries resume scheduling. Disabled or paused sources do not automatically schedule project indexing.
 
+## 5.0.0b19 — 向量设置幂等保存 / Idempotent embedding settings
+
+- 保存相同的项目向量范围时保持修订不变，避免仅编辑项目名称却使在途向量索引发布失败；过期修订仍报冲突。SQLite／PostgreSQL 专项验证通过。
+- Saving an unchanged embedding mode preserves its revision; stale revisions still conflict. Index publication remains protected against actual settings changes.
+
 ## 5.0.0b18 — 项目向量化范围 / Per-project embeddings
 
 - 项目级“跟随全局／全部内容／仅 Wiki 与记忆／关闭”范围，代码图与关键词索引继续独立工作。关闭后索引与混合查询不调用嵌入模型，独立知识刷新也遵守项目设置；其它项目沿用各自配置。
