@@ -1,6 +1,6 @@
 # Memory Center 当前系统架构 / Current System Architecture
 
-> **当前实现：5.0.0b13（开发测试版）。** 服务化架构为单进程 FastAPI/Uvicorn，同时承载管理 API、统一 MCP（Streamable HTTP，挂载于 `/mcp`）与 Vue 管理页；空间控制面独立存储，索引由有界子进程执行，发布走原子 generation。分层方向为 `service/`（生命周期、路由、MCP 边界）→ `platform/`（控制面、授权、任务、知识、检索）→ `application/` + `core/`（被复用的引擎）。
+> **当前实现：5.0.0b14（开发测试版）。** 服务化架构为单进程 FastAPI/Uvicorn，同时承载管理 API、统一 MCP（Streamable HTTP，挂载于 `/mcp`）与 Vue 管理页；空间控制面独立存储，索引由有界子进程执行，发布走原子 generation。分层方向为 `service/`（生命周期、路由、MCP 边界）→ `platform/`（控制面、授权、任务、知识、检索）→ `application/` + `core/`（被复用的引擎）。
 >
 > **5.0 为全新安装**：不导入 4.x workspace / registry / 索引 / 记忆，不保留旧 MCP/HTTP 工具合同。当前入口、工具 schema 与能力边界见 [5.0 平台指南](V5_PLATFORM_GUIDE.md)；运行事实见 [服务运行指南](V5_SERVICE_GUIDE.md)；项目登记与授权合同见 [项目目录指南](V5_CATALOG_GUIDE.md)；逐版本变更见 [CHANGELOG](CHANGELOG.md)；服务化决策见 [ADR-0004](adr/0004-service-platform-and-admin.md) 与 [ADR-0005](adr/0005-v5-workspace-catalog.md)。
 >

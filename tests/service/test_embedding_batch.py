@@ -71,6 +71,11 @@ class _Handler(BaseHTTPRequestHandler):
             if mode == 'dimension_mismatch':
                 self._reply(200, {'embeddings': [[0.0]] * len(texts)})
                 return
+            if mode == 'integer_components':
+                # 真实模型会把恰好为整数的分量序列化成 JSON 整数（`0` 而非 `0.0`），
+                # json.loads 于是给出 int——这正是「缓存改变产物」那个缺陷的触发条件。
+                self._reply(200, {'embeddings': [[0, 1, 2, 3, 4, 5, 6, 7] for _ in texts]})
+                return
             self._reply(200, {'embeddings': [vector_for(text) for text in texts]})
         finally:
             with state['lock']:
@@ -265,3 +270,28 @@ def test_configured_batch_size_and_concurrency_are_clamped():
     assert configured_concurrency({CONCURRENCY_ENV: '0'}) == 1
     assert configured_concurrency({CONCURRENCY_ENV: '999'}) == MAX_CONCURRENCY
     assert configured_concurrency({CONCURRENCY_ENV: 'nonsense'}) == 8
+
+
+def test_integer_components_are_normalized_to_float(embedding_server):
+    """整数型分量必须归一化成 float，否则两条路径产出不同类型。"""
+    embedding_server['mode'] = 'integer_components'
+    vectors = Embedder(embedding_server['settings']).embed_many(['x', 'y'], concurrency=1)
+    assert all(isinstance(value, float) for vector in vectors for value in vector)
+    assert vectors == [[0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0]] * 2
+
+
+def test_cache_hit_matches_miss_down_to_repr(embedding_server, tmp_path):
+    """等价性门槛必须细到 ``repr``：``int`` 与 ``float`` 虽然 ``==`` 相等，却是不同的产出。
+
+    回归用例：缓存把元素归一化成 ``float``，而请求路径曾原样保留 ``int``，
+    于是「命中」与「未命中」返回形状不同——缓存在悄悄改变产物。
+    """
+    embedding_server['mode'] = 'integer_components'
+    settings = embedding_server['settings']
+    cache = EmbeddingCache(tmp_path)
+    miss = Embedder(settings).embed_many(['x'], cache=cache, concurrency=1)
+    cache.flush()
+    requests_before = embedding_server['requests']
+    hit = Embedder(settings).embed_many(['x'], cache=EmbeddingCache(tmp_path), concurrency=1)
+    assert embedding_server['requests'] == requests_before     # 第二次确实是命中
+    assert repr(hit) == repr(miss)

@@ -130,10 +130,19 @@ class Embedder:
             item['embedding'] for item in sorted(payload['data'], key=lambda item: item['index'])]
         if not isinstance(vectors, list) or len(vectors) != len(batch):
             raise CatalogError('EMBEDDING_INVALID', '模型返回数量不匹配')
+        normalized = []
         for vector in vectors:
-            if len(vector) != self.dimensions or any(not isinstance(v, (float, int)) or isinstance(v, bool) or not math.isfinite(v) for v in vector):
+            if len(vector) != self.dimensions:
                 raise CatalogError('EMBEDDING_INVALID', '模型维度或向量数值无效')
-        return vectors
+            for value in vector:
+                if isinstance(value, bool) or not isinstance(value, (float, int)) or not math.isfinite(value):
+                    raise CatalogError('EMBEDDING_INVALID', '模型维度或向量数值无效')
+            # 统一成 float：模型会把恰好为整数的分量序列化成 JSON 整数（`0` 而非 `0.0`），
+            # ``json.loads`` 于是给出 ``int``，而缓存把元素归一化后给出 ``float``。
+            # 两者 ``==`` 相等却是**不同的产出**（``repr(0) == '0'`` vs ``repr(0.0) == '0.0'``），
+            # 会让「命中」与「未命中」返回形状不一致。归一化放在这里，两条路径就都只产出 float。
+            normalized.append([float(value) for value in vector])
+        return normalized
 
     @staticmethod
     def _translate(action):

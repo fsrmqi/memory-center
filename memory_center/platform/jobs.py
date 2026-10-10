@@ -16,11 +16,15 @@ from memory_center.core.indexing.language_registry import get_language_spec_for_
 from memory_center.platform.database import Database, PostgresCatalog
 from memory_center.platform.embedding_cache import (
     EmbeddingCache,
+)
+from memory_center.platform.embedding_cache import (
     configured_budget_bytes as configured_embedding_budget_bytes,
 )
 from memory_center.platform.embeddings import (
     Embedder,
     EmbeddingCancelled,
+)
+from memory_center.platform.embeddings import (
     configured_concurrency as configured_embedding_concurrency,
 )
 from memory_center.platform.knowledge import Knowledge
@@ -313,6 +317,10 @@ def run_index(data_dir, database_url, workspace, job_id, limits=None, file_worke
                                           on_batch=embedding_progress)
         except EmbeddingCancelled:
             return
+        if embedding_cache is not None:
+            # 一轮的上万次 put 在这里合并成几百次分片写；新建文件是毫秒级固定开销，
+            # 合并落盘是把热缓存的写入代价从「分钟」压到「秒」的关键（见 embedding_cache）。
+            embedding_cache.flush()
         for chunk, vector in zip(chunks, vectors, strict=True):
             chunk.update(profile=embedder.profile, embedding=vector)
         current = catalog.get(workspace['workspace_id'])
