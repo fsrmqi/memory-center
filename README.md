@@ -1,6 +1,6 @@
 # Memory Center / 记忆中心
 
-> **当前版本 5.0.0b7（开发测试版）** — 一次安装、常驻运行的多项目上下文与记忆服务。
+> **当前版本 5.0.0b8（开发测试版）** — 一次安装、常驻运行的多项目上下文与记忆服务。
 >
 > 入口：服务 `memory-center-service`（`memory-center` 现指向同一服务）、stdio 代理 `memory-center-mcp`、维护 `memory-center-maintenance`、宿主集成 `memory-center-integrations`。地址：管理页 `/admin/`、就绪 `/health/ready`、MCP `/mcp`。
 >

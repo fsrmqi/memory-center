@@ -87,22 +87,65 @@ class Platform:
         self.store.audit(actor.id, 'lookup', workspace_id)
         return result
 
+    def analysis_settings(self, actor, workspace_id):
+        if actor.id == 'admin':
+            self.catalog.get(workspace_id)
+        else:
+            self.access.scope(actor, workspace_id)
+        try:
+            return self.store.get('analysis_settings', 'analysis_' + workspace_id)
+        except CatalogError as exc:
+            if exc.code != 'RECORD_NOT_FOUND':
+                raise
+            return {'id': workspace_id, 'workspace_id': workspace_id, 'engine': 'auto', 'revision': 0}
+
+    def configure_analysis(self, actor, workspace_id, engine, revision):
+        if actor.id == 'admin':
+            self.catalog.get(workspace_id)
+        else:
+            self.access.scope(actor, workspace_id, write=True)
+        if engine not in {'auto', 'generic', 'java'}:
+            raise CatalogError('ANALYSIS_ENGINE_INVALID', '请选择自动、通用或 Java/Spring 专用分析')
+        # 与设置保存共享锁，避免首次创建时两个 revision=0 请求互相覆盖。
+        with self.store.generation_lock(workspace_id):
+            current = self.analysis_settings(actor, workspace_id)
+            if current['revision'] != revision:
+                raise CatalogError('REVISION_CONFLICT', '分析设置已改变，请刷新后重试')
+            value = {'workspace_id': workspace_id, 'engine': engine}
+            result = (self.store.update('analysis_settings', 'analysis_' + workspace_id, value, revision) if revision
+                      else self.store.create('analysis_settings', dict(value, id='analysis_' + workspace_id)))
+            self.store.audit(actor.id, 'analysis.configure', workspace_id)
+            return result
+
     def analyze(self, actor, workspace_id, target):
         from memory_center.core.orchestrator.impact import memory_impact
         _, index = self.indexed(actor, workspace_id)
+        engine = self.analysis_settings(actor, workspace_id)['engine']
         generic = query_code_graph(index['workspace_file'], target, 'analyze', 50)
-        # 通用图存在且索引覆盖含非 Java 语言时，以通用图结论为准；非 Java 未命中不再
-        # 静默回落到 Java 专用影响分析，避免把“未解析/未命中”表述成“无调用方”。
-        languages = set((generic or {}).get('coverage', {}).get('languages', {}))
-        if generic is not None and languages - {'java'}:
+        symbols = (generic or {}).get('symbols', [])
+        java_anchor = len(symbols) == 1 and symbols[0]['language'] == 'java' and not generic.get('truncated')
+        use_java = engine == 'java' or (engine == 'auto' and (java_anchor or generic is None))
+        if use_java and generic is not None and (not java_anchor):
+            # 显式专用配置也不得把非 Java、未命中或歧义锚点转成否定结论。
             result = generic
+            result['negative_claim_allowed'] = False
+            result['message'] = 'Java/Spring 专用分析需要唯一 Java 锚点，请确认符号或切换分析引擎'
+            result['analysis_engine'] = 'java'
+        elif use_java:
+            result = memory_impact(index['workspace_file'], target, view='minimal', budget='low')
+            result['analysis_engine'] = 'java'
+        else:
+            result = generic if generic is not None else {
+                'state': 'INSUFFICIENT_EVIDENCE', 'symbols': [], 'chain': [],
+                'negative_claim_allowed': False, 'message': '当前索引没有通用代码图，请重新索引',
+            }
+            result['analysis_engine'] = 'generic'
             result['impact_scope'] = {
                 'FOUND': 'direct_static_callers',
                 'INSUFFICIENT_EVIDENCE': 'no_static_callers_in_scope',
                 'AMBIGUOUS': 'ambiguous_anchor',
             }.get(result['state'], 'anchor_not_found')
-        else:
-            result = memory_impact(index['workspace_file'], target, view='minimal', budget='low')
+        result['configured_engine'] = engine
         result['workspace_id'], result['generation'] = workspace_id, index['generation']
         result['ref_id'] = self.access.reference(actor, workspace_id, result)
         return result

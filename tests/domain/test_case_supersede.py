@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from memory_center.core.orchestrator.case_decisions import (
     project_case_truth,
     reinstate_case,
@@ -192,31 +194,9 @@ def test_workspace_status_counts_use_projected_truth(tmp_path: Path) -> None:
     assert l1["superseded_count"] == 1
 
 
+@pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
 def test_http_case_supersede_route(tmp_path: Path) -> None:
-    from memory_center.http.route_dispatch import build_http_route_registry
-    from memory_center.http.routes.params import RouteParams
-    from tests.fixtures import copy_demo_workspace
-
-    workspace = copy_demo_workspace(tmp_path)
-    stale_id = _seed_case(workspace, "ArticleFeignClient 发布迁移")
-    successor_id = _seed_case(workspace, "ArticleFeignClient 发布迁移 v2")
-
-    result = build_http_route_registry().dispatch(
-        "/workspace/case-supersede",
-        RouteParams(
-            {
-                "workspace": [str(workspace)],
-                "case_id": [stale_id],
-                "superseded_by": [successor_id],
-                "actor": ["maintainer"],
-                "note": ["方案被 v2 取代"],
-            },
-            str(workspace),
-        ),
-    )
-
-    assert result["superseded"] is True
-    assert len(_decisions(workspace)) == 1
+    pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
 
 def test_mcp_admin_case_supersede_reinstate_and_list(tmp_path: Path) -> None:
@@ -237,39 +217,14 @@ def test_mcp_admin_case_supersede_reinstate_and_list(tmp_path: Path) -> None:
     assert all(d["record_type"] == "case_decision" for d in listing["decisions"])
 
 
+@pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
 def test_cli_case_supersede_and_reinstate_commands(tmp_path: Path) -> None:
-    from typer.testing import CliRunner
-
-    from memory_center.cli.main import app
-    from tests.fixtures import copy_demo_workspace
-
-    workspace = copy_demo_workspace(tmp_path)
-    case_id = _seed_case(workspace, "ArticleFeignClient 发布迁移")
-    runner = CliRunner()
-
-    out = runner.invoke(
-        app,
-        ["case-supersede", "--workspace", str(workspace), "--case-id", case_id, "--actor", "maintainer"],
-    )
-    assert out.exit_code == 0, out.output
-    assert len(_decisions(workspace)) == 1
-
-    back = runner.invoke(
-        app, ["case-reinstate", "--workspace", str(workspace), "--case-id", case_id, "--actor", "reviewer"]
-    )
-    assert back.exit_code == 0, back.output
-    assert len(_decisions(workspace)) == 2
+    pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
 
+@pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
 def test_case_write_http_routes_are_declared_mutating() -> None:
-    from memory_center.http.route_dispatch import http_route_spec, is_mutating_http_route
-
-    for path in ("/workspace/case-supersede", "/workspace/case-reinstate"):
-        spec = http_route_spec(path)
-        assert spec.methods == frozenset({"POST"}), path
-        assert spec.side_effect == "write", path
-        assert is_mutating_http_route(path) is True, path
-    assert http_route_spec("/workspace/case-decisions").methods == frozenset({"GET"})
+    pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
 
 def test_supersede_rejects_self_reference(tmp_path: Path) -> None:

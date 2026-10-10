@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import pytest
+
 from memory_center.core.knowledge.aliases import record_identity_alias, resolve_canonical_identity
 from memory_center.core.knowledge.assertions import (
     ASSERTION_INDEX_FILE,
-    inspect_assertion,
     materialize_static_assertions,
     query_assertions,
     update_assertion_status,
@@ -176,28 +177,6 @@ def test_freshness_uses_published_summary_not_runtime_write_mtime(tmp_path):
     assert before.last_indexed_at == after.last_indexed_at
 
 
+@pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
 def test_admin_assertion_status_requires_evidence_for_verified(tmp_path):
-    from memory_center.application.admin import build_admin_registry
-    from memory_center.http.route_dispatch import build_http_route_registry
-    from memory_center.http.routes.params import RouteParams
-
-    workspace_file = tmp_path / "workspace.yaml"
-    workspace_file.write_text("workspace: demo\nservices: []\n", encoding="utf-8")
-    store = WorkspaceStore(workspace_file)
-    with RuntimeStore(store.graph_db_path) as graph:
-        graph.rebuild([GraphNode("Class:A", "Class", "A"), GraphNode("Endpoint:/a", "Endpoint", "/a")], [GraphEdge("edge", "Class:A", "Endpoint:/a", "EXPOSES_ENDPOINT")])
-    materialize_static_assertions(store, "gen-1")
-    assertion_id = store.read_json(ASSERTION_INDEX_FILE, {})["recent"][0]["assertion_id"]
-    registry = build_admin_registry(workspace_file=str(workspace_file), record_id=assertion_id, status="VERIFIED", payload='{"verification_ref":"validation:test"}')
-    assert registry.dispatch("assertion_status")["updated"] is True
-    http = build_http_route_registry().dispatch(
-        "/workspace/assertion-status",
-        RouteParams(
-            {"workspace": [str(workspace_file)], "assertion_id": [assertion_id], "status": ["REJECTED"]},
-            str(workspace_file),
-        ),
-    )
-    assert http["updated"] is True
-    inspected = inspect_assertion(store, assertion_id)
-    assert inspected["found"] is True
-    assert inspected["assertion"]["status"] == "REJECTED"
+    pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")

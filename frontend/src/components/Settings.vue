@@ -70,7 +70,7 @@ function connection() { return JSON.stringify({ mcpServers: { 'memory-center': {
       <h2>运行环境</h2>
       <p class="muted">版本 {{ runtime.version }}（{{ runtime.stage === 'stable' ? '正式版' : '开发测试版' }}）。同一数据目录同时只允许一个服务实例，重复启动会在就绪前被拒绝。</p>
       <p class="muted">存储后端：{{ runtime.storage.backend === 'postgresql' ? 'PostgreSQL + pgvector' : 'SQLite 轻量模式' }}。{{ runtime.storage.note }}</p>
-      <p class="muted">索引软上限：文件 {{ runtime.index_limits.max_files }} 个 / 累计 {{ runtime.index_limits.max_total_mib }} MiB / 单文件 {{ runtime.index_limits.max_file_mib }} MiB。{{ runtime.index_limits.allow_large_index ? '当前已允许超限索引。' : '超过上限时索引有序失败，需设置 MEMORY_CENTER_ALLOW_LARGE_INDEX=1 后重新索引。' }}</p>
+      <p class="muted">索引软上限：文件 {{ runtime.index_limits.max_files || '不限' }} 个 / 累计 {{ runtime.index_limits.max_total_mib || '不限' }} MiB / 单文件 {{ runtime.index_limits.max_file_mib || '不限' }} MiB。{{ runtime.index_limits.allow_large_index ? '当前已允许超限索引。' : '默认不限制；显式配置上限后超限会失败，可设置 MEMORY_CENTER_ALLOW_LARGE_INDEX=1 后重新索引。' }}</p>
       <p class="muted">索引内存上限 {{ runtime.index_limits.memory_limit_mib ? runtime.index_limits.memory_limit_mib + ' MiB' : '未设置' }}；索引超时 {{ runtime.index_limits.timeout_seconds ? runtime.index_limits.timeout_seconds + ' 秒' : '未设置' }}。</p>
     </section>
   </template>

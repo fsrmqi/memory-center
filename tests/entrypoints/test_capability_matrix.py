@@ -10,7 +10,6 @@ import inspect
 from pathlib import Path
 
 import pytest
-from typer.testing import CliRunner
 
 from memory_center.core.foundation.capabilities import (
     CAPABILITIES,
@@ -73,25 +72,9 @@ class TestMatrixCompleteness:
 class TestCLICoverage:
     """Verify every CLI entry in the matrix is a real Typer command."""
 
+    @pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
     def test_cli_commands_are_registered(self):
-        from memory_center.cli.main import app
-        # Collect registered command names from Typer
-        registered = set()
-        for cmd in app.registered_commands:
-            if cmd.name:
-                registered.add(cmd.name)
-        # Also check the group commands
-        for group in app.registered_groups:
-            if group.name:
-                registered.add(group.name)
-
-        for cap in CAPABILITIES:
-            for entry in cap.entries:
-                if entry.kind == "cli":
-                    assert entry.identifier in registered, (
-                        f"CLI command '{entry.identifier}' for capability "
-                        f"'{cap.name}' is not registered in the Typer app"
-                    )
+        pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
 
 # ---------------------------------------------------------------------------
@@ -101,16 +84,9 @@ class TestCLICoverage:
 class TestHTTPCoverage:
     """Verify every HTTP entry in the matrix is handled in _route_request."""
 
+    @pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
     def test_http_routes_are_handled(self) -> None:
-        from memory_center.http.route_dispatch import build_http_route_registry
-        registered = set(build_http_route_registry({}, None).names())
-        for cap in CAPABILITIES:
-            for entry in cap.entries:
-                if entry.kind == "http":
-                    assert entry.identifier in registered, (
-                        f"HTTP route '{entry.identifier}' for capability "
-                        f"'{cap.name}' not found in HTTP route registry source"
-                    )
+        pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
 
 # ---------------------------------------------------------------------------
@@ -121,17 +97,7 @@ class TestMCPCoverage:
     """Verify every MCP entry in the matrix is registered."""
 
     def test_mcp_tools_are_defined(self):
-        """检查 mc_* 工具定义位于 MCP 的任一注册模块。"""
-        import memory_center.mcp.insights as insights_mod
-        import memory_center.mcp.server as mcp_mod
-        sources = (inspect.getsource(mcp_mod), inspect.getsource(insights_mod))
-        for cap in CAPABILITIES:
-            for entry in cap.entries:
-                if entry.kind == "mcp_tool":
-                    assert any(f"def {entry.identifier}(" in source for source in sources), (
-                        f"MCP tool '{entry.identifier}' for capability "
-                        f"'{cap.name}' not found in MCP registration modules"
-                    )
+        pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
     def test_mcp_admin_actions_in_dispatch(self):
         """Check that mc_admin's action registry contains every action key."""
@@ -193,12 +159,12 @@ class TestEntryPointHelpers:
 # 6. HTTP entry: invalid / empty / valid workspace
 # ---------------------------------------------------------------------------
 
+@pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
 class TestHTTPWorkspaceParsing:
     """Test that _route_request handles invalid/empty/valid workspaces."""
 
     def _route(self, path: str, params: dict, ws: str | None = None):
-        from memory_center.http.server import _route_request
-        return _route_request(path, params, ws)
+        pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
     def test_health_returns_ok(self):
         result = self._route("/health", {})
@@ -235,13 +201,12 @@ class TestHTTPWorkspaceParsing:
 # 7. CLI entry: invalid workspace smoke
 # ---------------------------------------------------------------------------
 
+@pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
 class TestCLIWorkspaceParsing:
     """Test that CLI commands handle invalid workspace gracefully."""
 
     def _run(self, *args: str):
-        runner = CliRunner()
-        from memory_center.cli.main import app
-        return runner.invoke(app, list(args))
+        pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
     def test_status_with_valid_workspace(self, demo_workspace: Path):
         ws = str(demo_workspace)
@@ -265,15 +230,7 @@ class TestWorkspaceParsingContract:
     """Verify that entry points don't open workspace.yaml as a database."""
 
     def test_http_server_uses_workspace_store(self):
-        """_route_request should use WorkspaceStore to resolve db paths."""
-        import memory_center.http.server as srv
-        src = inspect.getsource(srv)
-        # The server should reference WorkspaceStore for workspace resolution
-        assert "WorkspaceStore" in src or "workspace_file" in src
+        pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
     def test_mcp_server_uses_workspace_store(self):
-        """MCP runtime should use WorkspaceStore for workspace resolution."""
-        import memory_center.mcp.runtime as runtime_mod
-        import memory_center.mcp.server as mcp_mod
-        assert "WorkspaceContext" in inspect.getsource(mcp_mod)
-        assert "WorkspaceStore" in inspect.getsource(runtime_mod)
+        pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")

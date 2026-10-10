@@ -1,5 +1,13 @@
 # Changelog / 更新日志
 
+## 5.0.0b8 — 2026-10-10
+
+- 旧索引清理与发布使用共享代际锁；取消任务删除前先终止并回收进程，删除失败保留任务记录。
+- 项目级影响分析引擎可选择 `auto`（默认）、`generic`、`java`。自动模式按唯一锚点语言选择，混合项目保留 Java/Spring 专用分析；配置保存不使索引失效。
+- 文件数、总大小、单文件大小、内存与超时限制默认全部关闭，只在配置正数后生效。
+- 将保留引擎依赖的 Hook 配置移至内部模块；恢复混合测试的引擎场景，退役 4.x 入口场景明确标记，不再全模块临时忽略；新增真实 5.0 MCP schema 基线。
+- Cleanup and publication share a generation lock; cancelled workers are reaped before removal. Analysis engines are configurable per project, resource limits are opt-in, and retained engine tests are collected independently of retired 4.x entrypoints.
+
 ## 5.0.0b7 — 2026-10-10
 
 - 取消源码单文件 1 MiB、总量 64 MiB、10000 文件、30000 分块及代码图符号/调用点规模硬限制。

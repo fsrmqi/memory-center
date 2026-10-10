@@ -16,7 +16,6 @@ Rules:
 """
 from __future__ import annotations
 
-import ast
 import json
 from pathlib import Path
 from typing import Any
@@ -31,29 +30,25 @@ def _load_snapshot() -> dict[str, Any]:
 
 
 def _extract_current_tools() -> dict[str, Any]:
-    """通过 AST 提取公开 MCP 工具 schema，避免格式变化影响兼容性检查。"""
-    import importlib
+    """通过真实 5.0 MCP tools/list 读取公开 schema，不依赖退役入口源码。"""
+    from tempfile import TemporaryDirectory
 
-    modules = (
-        importlib.import_module("memory_center.mcp.server"),
-        importlib.import_module("memory_center.mcp.insights"),
-    )
-    tools: dict[str, Any] = {}
-    for module in modules:
-        source = Path(module.__file__).read_text(encoding="utf-8")
-        for node in ast.walk(ast.parse(source)):
-            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) or not node.name.startswith("mc_"):
-                continue
-            positional = [*node.args.posonlyargs, *node.args.args]
-            required_count = len(positional) - len(node.args.defaults)
-            required = [argument.arg for argument in positional[:required_count] if argument.arg != "ctx"]
-            optional = [argument.arg for argument in positional[required_count:] if argument.arg != "ctx"]
-            assert len(node.args.kwonlyargs) == len(node.args.kw_defaults)
-            for index, argument in enumerate(node.args.kwonlyargs):
-                default = node.args.kw_defaults[index]
-                (required if default is None else optional).append(argument.arg)
-            tools[node.name] = {"required": sorted(required), "optional": sorted(optional)}
-    return tools
+    from fastapi.testclient import TestClient
+
+    from memory_center.service.app import create_service_app
+    from memory_center.service.config import ServiceConfig
+    from tests.service.test_platform import mcp_connect
+
+    with TemporaryDirectory() as directory:
+        with TestClient(create_service_app(ServiceConfig(Path(directory))), base_url='http://localhost') as client:
+            headers = mcp_connect(client)
+            result = client.post('/mcp', headers=headers, json={
+                'jsonrpc': '2.0', 'id': 3, 'method': 'tools/list',
+            }).json()['result']
+    return {tool['name']: {
+        'required': sorted(tool['inputSchema'].get('required', [])),
+        'optional': sorted(set(tool['inputSchema'].get('properties', {})) - set(tool['inputSchema'].get('required', []))),
+    } for tool in result['tools']}
 
 
 def _extract_current_facade_schemas() -> dict[str, dict[str, Any]]:
@@ -77,7 +72,7 @@ class TestToolSchemaCompatibility:
 
     @pytest.fixture(autouse=True)
     def load_data(self):
-        self.snapshot = _load_snapshot()
+        self.snapshot = json.loads((SNAPSHOT_PATH.parent / 'mcp_tool_schemas_v5.json').read_text())
         self.current = _extract_current_tools()
         self.snapshot_tools = self.snapshot["tools"]
 

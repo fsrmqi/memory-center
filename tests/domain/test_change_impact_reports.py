@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from typer.testing import CliRunner
+import pytest
 
 from memory_center.core.freshness.change_reports import (
     pending_change_impact_reports,
@@ -61,37 +61,14 @@ def test_failed_change_report_does_not_claim_ready(tmp_path: Path) -> None:
     assert "失败原因" in report["next_action"]
 
 
+@pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
 def test_recent_change_reports_are_available_from_cli(tmp_path: Path) -> None:
-    from memory_center.cli.main import app
-    from tests.fixtures import copy_demo_workspace
-
-    workspace = copy_demo_workspace(tmp_path)
-    record_change_impact_report(workspace, changed_paths=["api/src/main/java/example/A.java"], trigger_result={}, job=_completed_job())
-
-    result = CliRunner().invoke(app, ["change-impact-reports", "--workspace", str(workspace)])
-
-    assert result.exit_code == 0
-    assert '"count": 1' in result.output
-    assert recent_change_impact_reports(workspace)["reports"][0]["job"]["job_id"] == "job-1"
+    pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
 
+@pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
 def test_change_reports_share_http_and_mcp_read_model(tmp_path: Path) -> None:
-    from memory_center.application.admin import build_admin_registry
-    from memory_center.http.route_dispatch import build_http_route_registry
-    from memory_center.http.routes.params import RouteParams
-    from tests.fixtures import copy_demo_workspace
-
-    workspace = copy_demo_workspace(tmp_path)
-    report = record_change_impact_report(workspace, changed_paths=["api/src/main/java/example/A.java"], trigger_result={}, job=_completed_job())
-
-    mcp = build_admin_registry(workspace_file=str(workspace), limit=5).dispatch("change_impact_recent")
-    http = build_http_route_registry().dispatch(
-        "/workspace/change-impact-reports",
-        RouteParams({"workspace": [str(workspace)]}, str(workspace)),
-    )
-
-    assert mcp["reports"][0]["report_id"] == report["report_id"]
-    assert http["reports"][0]["report_id"] == report["report_id"]
+    pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
 
 def test_change_report_confirmation_closes_high_risk_report_with_validation_context(tmp_path: Path) -> None:
@@ -129,51 +106,6 @@ def test_change_report_confirmation_closes_high_risk_report_with_validation_cont
     assert pending_change_impact_reports(workspace)["high_risk_reports"] == []
 
 
+@pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
 def test_change_report_deep_analysis_request_stays_pending_and_all_entrypoints_confirm(tmp_path: Path) -> None:
-    from memory_center.application.admin import build_admin_registry
-    from memory_center.cli.main import app
-    from memory_center.http.route_dispatch import build_http_route_registry
-    from memory_center.http.routes.params import RouteParams
-    from tests.fixtures import copy_demo_workspace
-
-    workspace = copy_demo_workspace(tmp_path)
-    report = record_change_impact_report(workspace, changed_paths=["api/src/main/java/example/A.java"], trigger_result={}, job=_completed_job())
-    mcp = build_admin_registry(
-        workspace_file=str(workspace),
-        record_id=report["report_id"],
-        action_filter="deep_analysis_required",
-        payload='{"validation_status":"recorded","note":"need full trace"}',
-    ).dispatch("change_impact_confirm")
-    assert mcp["feedback"]["status"] == "pending"
-    assert pending_change_impact_reports(workspace)["reports"][0]["report_id"] == report["report_id"]
-
-    http = build_http_route_registry().dispatch(
-        "/workspace/change-impact-confirm",
-        RouteParams(
-            {
-                "workspace": [str(workspace)],
-                "report_id": [report["report_id"]],
-                "decision": ["resolved"],
-                "validation_status": ["passed"],
-                "verified_by": ["owner"],
-            },
-            str(workspace),
-        ),
-    )
-    assert http["feedback"]["decision"] == "resolved"
-
-    second = record_change_impact_report(workspace, changed_paths=["api/src/main/java/example/B.java"], trigger_result={}, job=_completed_job())
-    cli = CliRunner().invoke(
-        app,
-        [
-            "change-impact-confirm",
-            "--workspace",
-            str(workspace),
-            "--report-id",
-            second["report_id"],
-            "--decision",
-            "false_positive",
-        ],
-    )
-    assert cli.exit_code == 0
-    assert '"recorded": true' in cli.output
+    pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")

@@ -4,7 +4,6 @@ import json
 from pathlib import Path
 
 import pytest
-from typer.testing import CliRunner
 
 from memory_center.application.admin import build_admin_registry
 from memory_center.application.golden import run_golden_suite
@@ -539,25 +538,9 @@ def test_extract_logical_evidence_includes_mq_topics_and_config_keys() -> None:
     assert "ConfigKey#spring.application.name" in evidence["anchors"]
 
 
+@pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
 def test_eval_golden_cli_command_dispatches_suite(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    from memory_center.cli.main import app
-    from memory_center.core import benchmark as benchmark_module
-
-    workspace = _workspace(tmp_path)
-    cases = tmp_path / "cases.yaml"
-    cases.write_text("cases:\n  - case_id: c1\n    query: Entry#run\n    mode: walkthrough\n    expected_anchors: []\n    expected_edges: []\n", encoding="utf-8")
-
-    def fake_run(workspace_file: str | Path, cases_file: str | Path, performance_baseline=None) -> dict:
-        assert Path(workspace_file) == workspace
-        assert Path(cases_file) == cases
-        assert performance_baseline is None
-        return {"summary": {"passed": True}, "cases": []}
-
-    monkeypatch.setattr(benchmark_module, "run_golden_suite", fake_run)
-    result = CliRunner().invoke(app, ["eval-golden", "--workspace", str(workspace), "--cases", str(cases)])
-
-    assert result.exit_code == 0
-    assert json.loads(result.stdout)["summary"]["passed"] is True
+    pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
 
 def test_eval_golden_admin_action_dispatches_suite(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -581,28 +564,9 @@ def test_eval_golden_admin_action_dispatches_suite(monkeypatch: pytest.MonkeyPat
     assert payload["summary"]["passed"] is True
 
 
+@pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
 def test_eval_golden_http_route_dispatches_suite(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    from memory_center.core import benchmark as benchmark_module
-    from memory_center.http.server import _route_request
-
-    workspace = _workspace(tmp_path)
-    cases = tmp_path / "cases.yaml"
-    cases.write_text("cases:\n  - case_id: c1\n    query: Entry#run\n    mode: walkthrough\n    expected_anchors: []\n    expected_edges: []\n", encoding="utf-8")
-
-    def fake_run(workspace_file: str | Path, cases_file: str | Path, performance_baseline=None) -> dict:
-        assert Path(workspace_file) == workspace
-        assert Path(cases_file) == cases
-        assert performance_baseline is None
-        return {"summary": {"passed": True}, "cases": []}
-
-    monkeypatch.setattr(benchmark_module, "run_golden_suite", fake_run)
-    payload = _route_request(
-        "/workspace/eval-golden",
-        {"workspace": [str(workspace)], "cases": [str(cases)]},
-        None,
-    )
-
-    assert payload["summary"]["passed"] is True
+    pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
 
 def test_public_golden_benchmark_suite_runs_on_demo_workspace(demo_workspace_indexed: Path) -> None:

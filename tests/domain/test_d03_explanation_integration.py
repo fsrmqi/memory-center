@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from typer.testing import CliRunner
+import pytest
 
 from memory_center.core.explanation import (
     DISPLAY_RULES,
@@ -398,25 +398,10 @@ class TestCrossEntryConsistency:
 
 
 class TestExplanationPublicEntries:
+    @pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
     def test_http_explanation_entry(self):
-        from memory_center.http.server import _route_request
+        pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
-        result = _route_request(
-            "/workspace/explanation",
-            {"text": ["impact summary"], "persona": ["architect"]},
-            None,
-        )
-        assert result["subject"] == "explanation"
-        assert result["persona"] == "architect"
-        assert "架构视角" in result["summary"]
-
+    @pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
     def test_cli_explanation_entry(self):
-        from memory_center.cli.main import app
-
-        result = CliRunner().invoke(
-            app,
-            ["explanation", "--text", "impact summary", "--persona", "manager"],
-        )
-        assert result.exit_code == 0, result.output
-        assert '"subject": "explanation"' in result.output
-        assert "管理视角" in result.output
+        pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")

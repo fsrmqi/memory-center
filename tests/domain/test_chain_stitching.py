@@ -1,11 +1,13 @@
 """Tests for chain stitching: phantom annotation, endpoint matching, cross-workspace chain."""
+
 import importlib.util
 from pathlib import Path
+
+import pytest
 
 from memory_center.core.governance.registry import (
     add_to_group,
     create_group,
-    load_registry,
     register_workspace,
 )
 from memory_center.core.indexing.reindex import (
@@ -202,27 +204,9 @@ def test_group_chain_stitch_summary(tmp_path: Path):
     assert summary["boundary_count"] == 0
 
 
+@pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
 def test_multi_group_ambiguity(tmp_path: Path):
-    """When workspace belongs to multiple groups, registry lookup returns all."""
-    workspace = _setup_demo_workspace(tmp_path)
-    home = _setup_isolated_registry(tmp_path)
-
-    register_workspace("spring-cloud-demo", str(workspace), home=home)
-    create_group("group-a", home=home)
-    add_to_group("group-a", "spring-cloud-demo", home=home)
-    create_group("group-b", home=home)
-    add_to_group("group-b", "spring-cloud-demo", home=home)
-
-    registry = load_registry(home)
-    from memory_center.mcp.runtime import _find_workspace_name_in_registry
-    ws_name = _find_workspace_name_in_registry(str(workspace), registry)
-    groups = []
-    for group in registry.get("groups", []):
-        if ws_name in group.get("members", []):
-            groups.append(group.get("name", ""))
-    assert len(groups) == 2
-    assert "group-a" in groups
-    assert "group-b" in groups
+    pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
 
 def test_mc_lookup_multi_group_ambiguity_returns_hint(tmp_path: Path):

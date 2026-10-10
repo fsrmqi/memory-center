@@ -1,7 +1,7 @@
 services:
   memory-center:
     build: .
-    image: memory-center:5.0.0b7
+    image: memory-center:5.0.0b8
     environment:
       MEMORY_CENTER_AUTH_MODE: ${MEMORY_CENTER_AUTH_MODE:-local}
     ports:

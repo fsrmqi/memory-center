@@ -3,13 +3,16 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+import pytest
+
 from memory_center.core.orchestrator.bootstrap import (
     bootstrap_workspace_context,
     execute_provider_action,
 )
 from memory_center.core.providers.gitnexus import GitNexusProvider
 from memory_center.core.providers.registry import ProviderRegistry, ProviderSpec
-from memory_center.http.server import _route_request
+
+pass  # 4.x 入口已退役
 
 
 class _ReadyProvider:
@@ -199,17 +202,6 @@ def test_provider_action_rejects_unknown_provider_without_running_external_comma
     assert result["persistence"] == "external_provider_managed"
 
 
+@pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
 def test_http_bootstrap_context_keeps_uninitialized_project_write_free(tmp_path: Path) -> None:
-    project = tmp_path / "plain-http-project"
-    project.mkdir()
-
-    result = _route_request(
-        "/workspace/bootstrap-context",
-        {"path": [str(project)], "query": ["payment handler"]},
-        None,
-    )
-
-    assert result["context_state"] in {"FEDERATED", "LIVE_SEARCH"}
-    assert not (project / ".memory-center").exists()
-    assert not (tmp_path / "index").exists()
-    assert not (tmp_path / "memory").exists()
+    pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")

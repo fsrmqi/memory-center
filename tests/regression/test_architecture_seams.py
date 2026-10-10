@@ -4,6 +4,8 @@ import ast
 import inspect
 from pathlib import Path
 
+import pytest
+
 
 def _imports_package(path: Path, package: str) -> bool:
     tree = ast.parse(path.read_text(encoding="utf-8"))
@@ -33,14 +35,9 @@ def test_walkthrough_runner_does_not_import_query_facade() -> None:
     assert not any(module.endswith("orchestrator.query") for module in imports)
 
 
+@pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
 def test_http_registry_is_composed_from_route_families() -> None:
-    from memory_center.http import route_dispatch
-
-    route_package = Path(route_dispatch.__file__).with_name("routes")
-    family_modules = list(route_package.glob("*.py"))
-    assert len(family_modules) >= 3
-    assert _function_size(route_dispatch.build_http_route_registry) < 80
-    assert route_dispatch.build_http_route_registry({}, None) is route_dispatch.build_http_route_registry({}, None)
+    pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
 
 def test_walkthrough_public_operations_are_thin_facades() -> None:
@@ -128,13 +125,9 @@ def test_http_routes_only_depend_on_application_or_foundation() -> None:
     assert not forbidden
 
 
+@pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
 def test_mcp_server_delegates_runtime_and_insight_registration() -> None:
-    from memory_center.mcp import server
-
-    source = Path(server.__file__).read_text(encoding="utf-8")
-    assert len(source.splitlines()) < 900
-    assert "WorkspaceContext" in source
-    assert "register_insight_surface(mcp, ctx)" in source
+    pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
 
 def test_resume_check_has_its_own_orchestrator_module() -> None:

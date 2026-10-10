@@ -38,6 +38,11 @@ class ModelInput(Input):
     dimensions: int = Field(default=1024, ge=1, le=4096)
 
 
+class AnalysisSettingsInput(Input):
+    engine: Literal['auto', 'generic', 'java'] = 'auto'
+    revision: int = Field(ge=0)
+
+
 class SearchInput(Input):
     query: str = Field(min_length=1, max_length=1000)
     mode: Literal['hybrid', 'keyword', 'vector', 'symbol', 'callers', 'callees', 'context'] = 'hybrid'
@@ -151,6 +156,16 @@ def platform_router():
         embedder = Embedder(settings)
         vector = embedder.embed(['模型连接验证'])[0]
         return {'ready': True, 'dimensions': len(vector), 'profile': embedder.profile}
+
+    @router.get('/workspaces/{workspace_id}/analysis-settings')
+    def analysis_settings(workspace_id: WorkspaceID, request: Request):
+        service = platform(request)
+        return service.analysis_settings(service.administrator(), workspace_id)
+
+    @router.put('/workspaces/{workspace_id}/analysis-settings')
+    def configure_analysis(workspace_id: WorkspaceID, body: AnalysisSettingsInput, request: Request):
+        service = platform(request)
+        return service.configure_analysis(service.administrator(), workspace_id, body.engine, body.revision)
 
     @router.get('/jobs')
     def jobs(request: Request):

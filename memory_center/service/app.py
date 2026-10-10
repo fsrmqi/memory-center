@@ -69,7 +69,7 @@ def storage_status(config: ServiceConfig) -> dict[str, Any]:
 
 
 def index_limits_status() -> dict[str, Any]:
-    """当前生效的索引资源约束；默认值远高于正常项目，超限需显式批准。"""
+    """当前生效的索引资源约束；默认关闭；显式配置正数才生效。"""
     limits = IndexLimits.from_env()
     return {
         'max_files': limits.max_files,
@@ -78,7 +78,7 @@ def index_limits_status() -> dict[str, Any]:
         'allow_large_index': limits.allow_large,
         'memory_limit_mib': limits.memory_limit_bytes // (1024 ** 2),
         'timeout_seconds': limits.timeout_seconds,
-        'note': '超过软上限时索引有序失败且不发布，设置 MEMORY_CENTER_ALLOW_LARGE_INDEX=1 后重新索引；'
+        'note': '所有限制默认 0（关闭）；显式配置正数后超限会失败且不发布，设置 MEMORY_CENTER_ALLOW_LARGE_INDEX=1 后重新索引；'
                 'memory_limit_mib 与 timeout_seconds 为 0 表示不施加额外约束。',
     }
 

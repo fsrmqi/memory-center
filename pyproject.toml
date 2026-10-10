@@ -1,6 +1,6 @@
 [project]
 name = "memory-center"
-version = "5.0.0b7"
+version = "5.0.0b8"
 description = "Memory Center is an MCP-native project memory service and multi-agent shared context center for coding agents"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -121,57 +121,4 @@ ignore = ["E501"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
-# 批次1 待迁移，见 R2，清单见 tmp/mixed_tests.txt。
-# 下列测试文件引用了本轮整包删除的 cli/http/hooks/mcp 死包，采集期/运行期会 ImportError，故本批临时排除采集；
-# 判定脚本见 tmp/transitive_ignore_scan.py（口径 A=模块级 import 闭包触及被删包(collect)；
-# 口径 B=任意位置（含函数体/importlib 字符串）引用被删包(runtime)），结果清单见 tmp/ignore_tests_batch1.txt。
-# 其中 test_mcp_admin_actions / test_session_notes_entrypoints / test_workspace_shape_status 属于「采集期传递」情形：
-# 测试在模块级 import 了 application/core 死模块，而死模块在模块级 import 了被删包（如 core.audit.runtime → hooks.spec）。
-# 另有 test_jsonl_export_projection / test_deepening_c_to_i / test_deepening_remaining 属于「运行期传递」情形：
-# 测试在函数体内 import 死模块，同样经 core.audit.runtime / application.admin → hooks.spec 触发
-# ModuleNotFoundError（已实测 4 例失败），故一并排除。
-# 其余混合测试本批保持采集不变（它们引用的 application/core 死模块本批仍在）。
-addopts = """
--q
---ignore=tests/domain/test_architecture_communities.py
---ignore=tests/domain/test_assertions.py
---ignore=tests/domain/test_case_supersede.py
---ignore=tests/domain/test_chain_stitching.py
---ignore=tests/domain/test_change_impact_reports.py
---ignore=tests/domain/test_collaboration_assets.py
---ignore=tests/domain/test_d03_explanation_integration.py
---ignore=tests/domain/test_delivery_workflow.py
---ignore=tests/domain/test_evidence_subgraph.py
---ignore=tests/domain/test_federated_context.py
---ignore=tests/domain/test_golden_benchmark.py
---ignore=tests/domain/test_interaction_history.py
---ignore=tests/domain/test_jsonl_export_projection.py
---ignore=tests/domain/test_performance_snapshot.py
---ignore=tests/domain/test_release_gate.py
---ignore=tests/domain/test_write_decision_events.py
---ignore=tests/entrypoints/test_capability_matrix.py
---ignore=tests/entrypoints/test_entrypoint_errors.py
---ignore=tests/entrypoints/test_facade_schemas.py
---ignore=tests/entrypoints/test_hooks_runner.py
---ignore=tests/entrypoints/test_hooks_spec.py
---ignore=tests/entrypoints/test_mcp_admin_actions.py
---ignore=tests/entrypoints/test_mcp_facades.py
---ignore=tests/entrypoints/test_mcp_runtime_audit.py
---ignore=tests/entrypoints/test_public_mvp.py
---ignore=tests/entrypoints/test_runtime_inspect.py
---ignore=tests/entrypoints/test_session_notes_entrypoints.py
---ignore=tests/entrypoints/test_task_shadow_entrypoints.py
---ignore=tests/index_storage/test_java_call_resolution_benchmark.py
---ignore=tests/index_storage/test_parser_activation_next_actions.py
---ignore=tests/index_storage/test_reindex_coordination.py
---ignore=tests/index_storage/test_watcher_daemon.py
---ignore=tests/index_storage/test_workspace_jobs.py
---ignore=tests/index_storage/test_workspace_shape_status.py
---ignore=tests/regression/test_architecture_seams.py
---ignore=tests/regression/test_b01_behavior_matrix.py
---ignore=tests/regression/test_deepening_c_to_i.py
---ignore=tests/regression/test_deepening_remaining.py
---ignore=tests/regression/test_f_g_series.py
---ignore=tests/regression/test_h_i_series.py
---ignore=tests/regression/test_schema_compatibility.py
-"""
+addopts = "-q"

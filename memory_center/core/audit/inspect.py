@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from memory_center import __version__
+from memory_center.core.audit.hook_config import load_hooks_config, validate_hooks_config
 from memory_center.core.audit.interactions import (
     ACTIVE_SESSION_BINDINGS_FILE,
     EFFECT_SUMMARY_FILE,
@@ -20,7 +21,6 @@ from memory_center.core.knowledge.ontology import ALL_EDGE_TYPES, ALL_NODE_TYPES
 from memory_center.core.storage.runtime import RuntimeStore
 from memory_center.core.storage.workspace import WorkspaceStore
 from memory_center.core.workspace.config import load_workspace_config
-from memory_center.hooks.spec import load_hooks_config, validate_hooks_config
 
 
 def inspect_runtime(workspace_file: str | Path, *, thread_id: str = "") -> dict[str, Any]:

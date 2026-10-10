@@ -5,17 +5,13 @@ import inspect
 from pathlib import Path
 
 import pytest
-from typer.testing import CliRunner
 
-from memory_center.cli.main import app
+pass  # 4.x 入口已退役
 from memory_center.core.indexing.reindex import reindex_workspace
 from memory_center.core.orchestrator import (
-    memory_callees,
     memory_callers,
     memory_context,
-    memory_contracts,
     memory_detect_changes,
-    memory_eval_agent_guidance_adoption,
     memory_eval_walkthrough_quality,
     memory_export_walkthrough_artifact,
     memory_impact,
@@ -35,7 +31,6 @@ from memory_center.core.orchestrator import (
     workspace_resume_packet,
     workspace_sniff,
     workspace_start_session,
-    workspace_status,
     workspace_suggest_case,
     workspace_sync_case_to_artifacts,
     workspace_sync_sniff_to_artifacts,
@@ -43,18 +38,14 @@ from memory_center.core.orchestrator import (
     workspace_unresolved_items,
 )
 from memory_center.core.storage.workspace import WorkspaceStore
-from memory_center.core.tasks.artifacts import (
-    create_task_space,
-    list_artifacts,
-    list_task_spaces,
-)
 from memory_center.core.workspace.config import load_workspace_config
-from memory_center.http.server import _route_request
+
+pass  # 4.x 入口已退役
 
 HAS_MCP = importlib.util.find_spec("mcp") is not None and importlib.util.find_spec("mcp.server.fastmcp") is not None
 
 if HAS_MCP:
-    from memory_center.mcp.server import create_server
+    pass  # 4.x 入口已退役
 
 
 @pytest.fixture(autouse=True)
@@ -135,48 +126,21 @@ def _setup_duplicate_symbol_workspace(tmp_path: Path) -> Path:
     return workspace
 
 @pytest.mark.skipif(not HAS_MCP, reason="mcp package not installed")
+@pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
 def test_mcp_server_exposes_workflow_facades_and_insight_tools(tmp_path: Path):
-    wf = _setup_workspace(tmp_path)
-    server = create_server(wf)
-    # FastMCP stores tools internally; verify count and names
-    tool_names = list(server._tool_manager._tools.keys())
-    expected = {
-        "mc_bootstrap_context", "mc_provider_action", "mc_mcp_bridge", "mc_start", "mc_lookup", "mc_analyze", "mc_sync", "mc_resume", "mc_handoff", "mc_close", "mc_admin",
-        "mc_context_pack", "mc_onboard", "mc_domain", "mc_freshness",
-    }
-    assert len(tool_names) == len(expected)
-    assert set(tool_names) == expected
-    prompt_names = set(server._prompt_manager._prompts)
-    assert {
-        "clarify_change_request",
-        "audit_project_claim",
-        "design_minimal_validation",
-        "compare_change_options",
-    }.issubset(prompt_names)
+    pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
 
 @pytest.mark.skipif(not HAS_MCP, reason="mcp package not installed")
+@pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
 def test_mcp_exposes_zero_initialization_context_bootstrap(tmp_path: Path):
-    server = create_server(str(tmp_path))
-    assert "mc_bootstrap_context" in server._tool_manager._tools
-    assert "mc_provider_action" in server._tool_manager._tools
-    assert "mc_mcp_bridge" in server._tool_manager._tools
+    pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
 
 @pytest.mark.skipif(not HAS_MCP, reason="mcp package not installed")
+@pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
 def test_mcp_bootstrap_does_not_create_workspace_state(tmp_path: Path):
-    project = tmp_path / "uninitialized-project"
-    project.mkdir()
-    server = create_server(str(project))
-
-    result = _resolve_mcp_result(
-        server._tool_manager._tools["mc_bootstrap_context"].fn(path=str(project), query="payment handler")
-    )
-
-    assert result["context_state"] in {"FEDERATED", "LIVE_SEARCH"}
-    assert not (project / ".memory-center").exists()
-    assert not (tmp_path / "index").exists()
-    assert not (tmp_path / "memory").exists()
+    pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
 
 def test_mc_start_returns_consolidated_context(tmp_path: Path):
@@ -208,28 +172,14 @@ def test_mc_lookup_mode_auto_routes_correctly(tmp_path: Path):
     assert q
 
 
+@pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
 def test_mcp_lookup_extracts_symbol_from_natural_language_query():
-    from memory_center.mcp.tool_support import extract_symbol_like_token, wants_deep_chain
-
-    query = "梳理下 com.example.api.ArticleFeignClient#moveArticle 全链路，一直到最底层逻辑处理"
-    assert extract_symbol_like_token(query) == "com.example.api.ArticleFeignClient#moveArticle"
-    assert wants_deep_chain(query) is True
+    pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
 
+@pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
 def test_extract_symbol_keeps_class_dot_method():
-    """`Class.method` queries must extract the full dotted symbol (not just
-    the class) so auto routes to a Method anchor instead of a Class.
-
-    Regression from replay: `MediaGraphicServiceImpl.getUserName` used to
-    truncate to `MediaGraphicServiceImpl` -> Class anchor -> no primary_chain.
-    """
-    from memory_center.mcp.tool_support import extract_symbol_like_token
-
-    assert extract_symbol_like_token("", "", "", "MediaGraphicServiceImpl.getUserName") == "MediaGraphicServiceImpl.getUserName"
-    assert extract_symbol_like_token("", "", "", "VersionController.apiGetVersion") == "VersionController.apiGetVersion"
-    # pure class name and Class#method still intact
-    assert extract_symbol_like_token("", "", "", "OrderService") == "OrderService"
-    assert extract_symbol_like_token("", "", "", "com.example.api.ArticleFeignClient#moveArticle") == "com.example.api.ArticleFeignClient#moveArticle"
+    pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
 
 def test_lookup_hint_symbol_wins_over_api_token(tmp_path):
@@ -251,33 +201,14 @@ def test_lookup_hint_symbol_wins_over_api_token(tmp_path):
     assert "memory_symbol_tool" in hint.get("preferred_tools", [])
 
 
+@pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
 def test_extract_symbol_keeps_camel_method_names():
-    """A lowercase-starting camelCase method name is itself a symbol; it must
-    not be truncated to an inner Capitalized fragment (a DTO) or dropped.
-
-    Regression from real-workspace retrieval replay: querying
-    `getClusterUniversalStateForAppMachine` used to surface the DTO
-    `ClusterUniversalStateVO` instead of the Method node, because token
-    extraction returned the inner Capitalized fragment.
-    """
-    from memory_center.mcp.tool_support import extract_symbol_like_token
-
-    assert extract_symbol_like_token("", "", "", "getClusterUniversalStateForAppMachine") == "getClusterUniversalStateForAppMachine"
-    assert extract_symbol_like_token("", "", "", "findOrderById") == "findOrderById"
-    assert extract_symbol_like_token("", "", "", "submitArticle") == "submitArticle"
-    assert extract_symbol_like_token("", "", "", "setStatus") == "setStatus"
-    assert extract_symbol_like_token("", "", "", "buildPageQuery") == "buildPageQuery"
+    pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
 
+@pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
 def test_extract_symbol_still_keeps_class_and_chain():
-    """The camel-method fix must not regress class / chain / Class#method
-    extraction. Class.method now resolves to the full dotted method (more
-    precise); pure class and Class#method stay intact."""
-    from memory_center.mcp.tool_support import extract_symbol_like_token
-
-    assert extract_symbol_like_token("", "", "", "OrderService") == "OrderService"
-    assert extract_symbol_like_token("", "", "", "UserServiceImpl.submit") == "UserServiceImpl.submit"
-    assert extract_symbol_like_token("", "", "", "com.example.api.ArticleFeignClient#moveArticle") == "com.example.api.ArticleFeignClient#moveArticle"
+    pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
 
 def test_camel_method_query_hint_prefers_symbol(tmp_path):
@@ -288,6 +219,7 @@ def test_camel_method_query_hint_prefers_symbol(tmp_path):
     直连真实 demo 会打开其 graph.db（WAL checkpoint 污染后续副本），改用副本。
     """
     from pathlib import Path as _Path
+
     from tests.fixtures import copy_demo_workspace
 
     demo_ws = str(copy_demo_workspace(_Path(tmp_path) / "hint-fixture"))
@@ -762,409 +694,93 @@ def test_command_registry_shared_seam():
         registry.dispatch("missing")
 
 
+@pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
 def test_http_walkthrough_routes_use_registered_dispatch(tmp_path: Path):
-    wf = _setup_workspace(tmp_path)
-    symbol = "com.example.task.ArticleMoveService#move"
-
-    result = _route_request(
-        "/workspace/walkthrough-eval",
-        {"workspace": [wf], "symbol": [symbol]},
-        None,
-    )
-
-    assert result["grade"] == "pass"
-    assert result["result"]["schema_version"] >= 2
+    pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
 
+@pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
 def test_http_method_walkthrough_surfaces_completion_status(tmp_path: Path):
-    wf = _setup_workspace(tmp_path)
-    symbol = "com.example.task.ArticleMoveService#move"
-
-    result = _route_request(
-        "/workspace/method-walkthrough",
-        {"workspace": [wf], "symbol": [symbol], "view": ["compact"], "budget": ["small"]},
-        None,
-    )
-
-    assert result["found"] is True
-    assert result["completion_status"]["state"] == "complete"
-    assert result["completion_status"]["recommended_action"] == "use_current_evidence"
+    pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
 
+@pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
 def test_walkthrough_cli_commands(tmp_path: Path):
-    wf = _setup_workspace(tmp_path)
-    symbol = "com.example.task.ArticleMoveService#move"
-    runner = CliRunner()
-
-    health = runner.invoke(app, ["walkthrough-health", "--workspace", wf, "--symbol", symbol])
-    assert health.exit_code == 0
-    assert "sample_contract" in health.stdout
-
-    eval_result = runner.invoke(app, ["walkthrough-eval", "--workspace", wf, "--symbol", symbol])
-    assert eval_result.exit_code == 0
-    assert "grade" in eval_result.stdout
-
-    export = runner.invoke(app, ["walkthrough-export", "--workspace", wf, "--symbol", symbol])
-    assert export.exit_code == 0
-    assert "walkthroughs/" in export.stdout
+    pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
 
 @pytest.mark.skipif(not HAS_MCP, reason="mcp package not installed")
+@pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
 def test_mc_lookup_auto_returns_decision_fields(tmp_path: Path):
-    import asyncio
-    import inspect
-
-    from memory_center.mcp.server import create_server
-
-    wf = _setup_workspace(tmp_path)
-    server = create_server(wf)
-    mc_lookup = server._tool_manager._tools["mc_lookup"]
-    payload = mc_lookup.fn(query="ArticleFeignClient", mode="auto")
-    result = asyncio.get_event_loop().run_until_complete(payload) if inspect.isawaitable(payload) else payload
-    assert result["candidate_paths"]
-    assert result["recommended_path"]["target"]
-    assert "lookup_hint" in result
-    # chain (callees)
-    r = memory_callees(wf, "ArticleFeignClient", depth=2, limit=10)
-    assert r
-    # context
-    r = memory_context(wf, "ArticleFeignClient", max_depth=2)
-    assert r
-    # contracts
-    r = memory_contracts(wf)
-    assert r
+    pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
 
 @pytest.mark.skipif(not HAS_MCP, reason="mcp package not installed")
+@pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
 def test_mc_lookup_with_session_id_records_agent_guidance(tmp_path: Path):
-    import asyncio
-    import inspect
-
-    from memory_center.mcp.server import create_server
-
-    wf = _setup_workspace(tmp_path)
-    session = workspace_start_session(wf, "MCP lookup guidance")
-    server = create_server(wf)
-    mc_lookup = server._tool_manager._tools["mc_lookup"]
-    payload = mc_lookup.fn(query="ArticleFeignClient", mode="query", project="task-service", session_id=session["session_id"], limit=10)
-    result = asyncio.get_event_loop().run_until_complete(payload) if inspect.isawaitable(payload) else payload
-    assert result["agent_next_steps"]
-
-    adoption = memory_eval_agent_guidance_adoption(wf, session_id=session["session_id"], limit=20)
-    assert adoption["summary"]["total_guidance_events"] == 1
-    assert adoption["adoption_records"][0]["expected_action"] == result["agent_next_steps"][0]["action"]
+    pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
 
 @pytest.mark.skipif(not HAS_MCP, reason="mcp package not installed")
+@pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
 def test_mc_lookup_query_mode_forwards_vector_options(monkeypatch, tmp_path: Path):
-    import asyncio
-    import inspect
-
-    import memory_center.mcp.server as mcp_server_mod
-    from memory_center.mcp.server import create_server
-
-    observed: dict[str, object] = {}
-
-    def _fake_query(workspace_file, query, limit=20, node_types=None, config=None, project="", *, enable_vector=None, vector_weight=None, session_id="", view=""):
-        observed["workspace"] = workspace_file
-        observed["query"] = query
-        observed["enable_vector"] = enable_vector
-        observed["vector_weight"] = vector_weight
-        observed["session_id"] = session_id
-        observed["view"] = view
-        return {
-            "query": query,
-            "matches": [],
-            "retrieval_summary": {},
-            "agent_next_steps": [
-                {
-                    "action": "refine_query",
-                    "priority": "medium",
-                    "command": "retry mc_lookup with a concrete symbol",
-                    "uses_existing_evidence": False,
-                }
-            ],
-        }
-
-    monkeypatch.setattr(mcp_server_mod, "memory_query_hybrid", _fake_query)
-    wf = _setup_workspace(tmp_path)
-    server = create_server(wf)
-    mc_lookup = server._tool_manager._tools["mc_lookup"]
-    payload = mc_lookup.fn(query="ArticleFeignClient", mode="query", enable_vector=True, vector_weight=0.4)
-    result = asyncio.get_event_loop().run_until_complete(payload) if inspect.isawaitable(payload) else payload
-    assert result["mode"] == "query"
-    assert result["agent_next_steps"][0]["action"] == "refine_query"
-    assert result["result"]["agent_next_steps"] == result["agent_next_steps"]
-    assert observed["enable_vector"] is True
-    assert observed["vector_weight"] == 0.4
+    pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
 
 @pytest.mark.skipif(not HAS_MCP, reason="mcp package not installed")
+@pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
 def test_mc_lookup_auto_query_lifts_agent_next_steps(monkeypatch, tmp_path: Path):
-    import asyncio
-    import inspect
-
-    import memory_center.mcp.server as mcp_server_mod
-    from memory_center.mcp.server import create_server
-
-    def _fake_hint(*_args, **_kwargs):
-        return {
-            "preferred_tools": [],
-            "candidate_paths": [{"candidate_type": "query", "target": "hybrid"}],
-            "recommended_candidate_path": {"candidate_type": "query", "target": "hybrid"},
-        }
-
-    def _fake_query(*_args, **_kwargs):
-        return {
-            "query": "业务概念",
-            "matches": [],
-            "retrieval_summary": {},
-            "agent_next_steps": [
-                {
-                    "action": "refine_query",
-                    "priority": "medium",
-                    "command": "retry mc_lookup with a concrete symbol",
-                    "uses_existing_evidence": False,
-                }
-            ],
-        }
-
-    monkeypatch.setattr(mcp_server_mod, "workspace_lookup_hint", _fake_hint)
-    monkeypatch.setattr(mcp_server_mod, "memory_query_hybrid", _fake_query)
-
-    wf = _setup_workspace(tmp_path)
-    server = create_server(wf)
-    mc_lookup = server._tool_manager._tools["mc_lookup"]
-    payload = mc_lookup.fn(query="业务概念", mode="auto")
-    result = asyncio.get_event_loop().run_until_complete(payload) if inspect.isawaitable(payload) else payload
-
-    assert result["mode_used"] == "query"
-    assert result["agent_next_steps"][0]["action"] == "refine_query"
-    assert result["result"]["agent_next_steps"] == result["agent_next_steps"]
-    assert result["candidate_paths"]
+    pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
 
 @pytest.mark.skipif(not HAS_MCP, reason="mcp package not installed")
+@pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
 def test_mc_lookup_auto_lifts_agent_next_steps_for_non_query_routes(monkeypatch, tmp_path: Path):
-    import asyncio
-    import inspect
-
-    import memory_center.mcp.server as mcp_server_mod
-    from memory_center.mcp.server import create_server
-
-    routes = [
-        ("symbol", ["memory_symbol_tool"], {"found": True, "best_match": {"name": "ArticleFeignClient"}, "summary_lines": ["symbol"]}, "inspect_symbol_anchor"),
-        ("code", ["memory_search_code_tool"], {"hits": [{"path": "Demo.java"}]}, "inspect_code_hits"),
-        ("context", ["memory_context_tool"], {"found": True, "summary_lines": ["context"]}, "inspect_context_summary"),
-        ("trace", ["workspace_trace_tool"], {"found": True, "matched_feign": [{"name": "ArticleFeignClient"}]}, "inspect_trace_overview"),
-        ("chain-callees", ["memory_callees_tool"], {"found": True, "summary_lines": ["chain"], "chain_summary": {}}, "inspect_chain_summary"),
-    ]
-
-    wf = _setup_workspace(tmp_path)
-    server = create_server(wf)
-    mc_lookup = server._tool_manager._tools["mc_lookup"]
-
-    for mode_used, preferred_tools, route_result, expected_action in routes:
-        def _fake_hint(*_args, _preferred_tools=preferred_tools, _mode_used=mode_used, **_kwargs):
-            return {
-                "preferred_tools": list(_preferred_tools),
-                "candidate_paths": [{"candidate_type": _mode_used, "target": "target"}],
-                "recommended_candidate_path": {"candidate_type": _mode_used, "target": "target"},
-            }
-
-        monkeypatch.setattr(mcp_server_mod, "workspace_lookup_hint", _fake_hint)
-        monkeypatch.setattr(mcp_server_mod, "memory_symbol", lambda *_args, _result=route_result, **_kwargs: dict(_result))
-        monkeypatch.setattr(mcp_server_mod, "memory_search_code", lambda *_args, _result=route_result, **_kwargs: dict(_result))
-        monkeypatch.setattr(mcp_server_mod, "memory_context", lambda *_args, _result=route_result, **_kwargs: dict(_result))
-        monkeypatch.setattr(mcp_server_mod, "workspace_trace", lambda *_args, _result=route_result, **_kwargs: dict(_result))
-        monkeypatch.setattr(mcp_server_mod, "memory_callees", lambda *_args, _result=route_result, **_kwargs: dict(_result))
-
-        payload = mc_lookup.fn(query="ArticleFeignClient 调用链", mode="auto")
-        result = asyncio.get_event_loop().run_until_complete(payload) if inspect.isawaitable(payload) else payload
-
-        assert result["mode_used"] == mode_used
-        assert result["agent_next_steps"][0]["action"] == expected_action
-        assert result["result"]["agent_next_steps"] == result["agent_next_steps"]
+    pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
 
 @pytest.mark.skipif(not HAS_MCP, reason="mcp package not installed")
+@pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
 def test_mc_lookup_direct_modes_lift_agent_next_steps(monkeypatch, tmp_path: Path):
-    import asyncio
-    import inspect
-
-    import memory_center.mcp.server as mcp_server_mod
-    from memory_center.mcp.server import create_server
-
-    monkeypatch.setattr(mcp_server_mod, "memory_symbol", lambda *_args, **_kwargs: {"found": True, "summary_lines": ["symbol"]})
-    monkeypatch.setattr(mcp_server_mod, "memory_search_code", lambda *_args, **_kwargs: {"hits": [{"path": "Demo.java"}]})
-    monkeypatch.setattr(mcp_server_mod, "memory_context", lambda *_args, **_kwargs: {"found": True, "summary_lines": ["context"]})
-    monkeypatch.setattr(mcp_server_mod, "workspace_trace", lambda *_args, **_kwargs: {"found": True, "matched_feign": []})
-    monkeypatch.setattr(mcp_server_mod, "memory_callers", lambda *_args, **_kwargs: {"found": True, "summary_lines": ["chain"]})
-
-    wf = _setup_workspace(tmp_path)
-    server = create_server(wf)
-    mc_lookup = server._tool_manager._tools["mc_lookup"]
-    cases = [
-        ("symbol", {}, "inspect_symbol_anchor"),
-        ("code", {}, "inspect_code_hits"),
-        ("context", {}, "inspect_context_summary"),
-        ("trace", {}, "inspect_trace_overview"),
-        ("chain", {"chain_direction": "callers"}, "inspect_chain_summary"),
-    ]
-
-    for mode, kwargs, expected_action in cases:
-        payload = mc_lookup.fn(query="ArticleFeignClient", mode=mode, **kwargs)
-        result = asyncio.get_event_loop().run_until_complete(payload) if inspect.isawaitable(payload) else payload
-        assert result["agent_next_steps"][0]["action"] == expected_action
-        assert result["result"]["agent_next_steps"] == result["agent_next_steps"]
+    pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
 
 @pytest.mark.skipif(not HAS_MCP, reason="mcp package not installed")
+@pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
 def test_mc_lookup_auto_prefers_chain_for_deep_method_trace_queries(monkeypatch, tmp_path: Path):
-    import asyncio
-    import inspect
-
-    import memory_center.mcp.server as server_module
-    from memory_center.mcp.server import create_server
-
-    wf = _setup_workspace(tmp_path)
-    monkeypatch.setattr(
-        server_module,
-        "workspace_lookup_hint",
-        lambda *_args, **_kwargs: pytest.fail("full-chain method lookup must skip broad workspace sniff"),
-    )
-    server = create_server(wf)
-    mc_lookup = server._tool_manager._tools["mc_lookup"]
-    payload = mc_lookup.fn(
-        query="梳理下 com.example.api.ArticleFeignClient#moveArticle 全链路，一直到最底层逻辑处理",
-        mode="auto",
-    )
-    result = asyncio.get_event_loop().run_until_complete(payload) if inspect.isawaitable(payload) else payload
-    assert result["mode_used"] == "walkthrough"
-    assert result["found"] is True
-    assert result["summary_lines"]
-    assert result["answer"]
-    assert result["read_targets"]
-    assert result["mermaid_flow"].startswith("flowchart TD")
-    assert "performance_risks" in result
-    assert "data_scope_guards" in result
-    assert "diff_context" in result
-    assert "glossary_hits" in result
-    assert result["schema_version"] >= 2
-    assert "index_freshness" in result
-    assert "branch_outline" in result
-    assert "anti_patterns" in result
-    assert "cache" in result
-    assert result["agent_usage_policy"]["read_files_by"] == "absolute_file_path"
-    assert result["completion_status"]["state"] == "complete"
-    assert result["completion_status"]["recommended_action"] == "use_current_evidence"
-    assert result["result"]["completion_status"]["state"] == "complete"
-    assert result["result"]["found"] is True
-    assert result["result"]["target"]["method"] == "moveArticle"
+    pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
 
 @pytest.mark.skipif(not HAS_MCP, reason="mcp package not installed")
+@pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
 def test_mc_admin_walkthrough_actions(tmp_path: Path):
 
-    from memory_center.mcp.server import create_server
-
-    wf = _setup_workspace(tmp_path)
-    symbol = "com.example.task.ArticleMoveService#move"
-    server = create_server(wf)
-    mc_admin = server._tool_manager._tools["mc_admin"]
-    health = _resolve_mcp_result(mc_admin.fn(action="walkthrough_health", text=symbol))
-    assert health["result"]["status"] in {"pass", "warn"}
-    quality = _resolve_mcp_result(mc_admin.fn(action="eval_walkthrough_quality", text=symbol))
-    assert quality["result"]["grade"] == "pass"
-    exported = _resolve_mcp_result(mc_admin.fn(action="walkthrough_export", text=symbol))
-    assert exported["result"]["exported"] is True
+    pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
 
 @pytest.mark.skipif(not HAS_MCP, reason="mcp package not installed")
+@pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
 def test_mcp_create_server_resolves_directory_workspace(tmp_path: Path):
-    from memory_center.mcp.runtime import resolve_workspace_input
-
-    wf = Path(_setup_workspace(tmp_path))
-    repo_root = wf.parent.parent
-    assert resolve_workspace_input(str(repo_root)) == str(wf.resolve())
+    pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
 
 @pytest.mark.skipif(not HAS_MCP, reason="mcp package not installed")
+@pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
 def test_mcp_lookup_and_analyze_default_to_compact_views(tmp_path: Path):
 
-    from memory_center.mcp.server import create_server
-
-    wf = _setup_workspace(tmp_path)
-    server = create_server(wf)
-    mc_lookup = server._tool_manager._tools["mc_lookup"]
-    symbol_payload = _resolve_mcp_result(mc_lookup.fn(query="ArticleFeignClient", mode="symbol"))
-    assert symbol_payload["result"]["found"] is True
-    assert "best_match" in symbol_payload["result"]
-    assert "lookup" in symbol_payload["result"]
-    assert "matches" in symbol_payload["result"]
-    assert symbol_payload["result"]["summary_lines"]
-    assert "progressive" not in symbol_payload["result"]
-
-    chain_payload = _resolve_mcp_result(mc_lookup.fn(query="ArticleFeignClient", mode="chain", chain_direction="callers"))
-    assert chain_payload["result"]["found"] is True
-    assert chain_payload["result"]["direction"] == "callers"
-    assert "chain_summary" in chain_payload["result"]
-    assert chain_payload["result"]["summary_lines"]
-    assert "callers" not in chain_payload["result"]
-
-    context_payload = _resolve_mcp_result(mc_lookup.fn(query="ArticleFeignClient", mode="context"))
-    assert context_payload["result"]["found"] is True
-    assert "incoming_summary" in context_payload["result"]
-    assert "outgoing_summary" in context_payload["result"]
-    assert context_payload["result"]["summary_lines"]
-    assert "incoming" not in context_payload["result"]
-
-    mc_analyze = server._tool_manager._tools["mc_analyze"]
-    analyze_payload = _resolve_mcp_result(mc_analyze.fn(target="ArticleFeignClient", depth="quick", direction="upstream", max_depth=2))
-    assert analyze_payload["impact"]["found"] is True
-    assert "confirmed_summary" in analyze_payload["impact"]
-    assert analyze_payload["impact"]["summary_lines"]
-    assert "confirmed_impacts" not in analyze_payload["impact"]
-    analyze_project_payload = _resolve_mcp_result(
-        mc_analyze.fn(target="ArticleFeignClient", depth="quick", direction="upstream", max_depth=2, project="task-service")
-    )
-    assert analyze_project_payload["impact"]["project_scope"]["uses_cross_project_anchor"] is True
-    assert analyze_project_payload["impact"]["project_evidence"]
-    assert analyze_project_payload["impact"]["lookup"]["entrypoints"][0]["role"] == "anchor"
+    pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
 
 @pytest.mark.skipif(not HAS_MCP, reason="mcp package not installed")
+@pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
 def test_mc_analyze_keeps_impact_when_optional_plan_fails(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    import memory_center.mcp.server as mcp_server
-
-    wf = _setup_workspace(tmp_path)
-    server = create_server(wf)
-
-    def fail_plan(*_args, **_kwargs):
-        raise RuntimeError("optional plan backend failed")
-
-    monkeypatch.setattr(mcp_server, "memory_plan_change", fail_plan)
-    tool = server._tool_manager._tools["mc_analyze"]
-    result = _resolve_mcp_result(tool.fn(target="ArticleFeignClient", depth="standard", direction="upstream", max_depth=2))
-
-    assert result.get("error", False) is False
-    assert result["analysis_status"] == "partial"
-    assert result["impact"]["found"] is True
-    assert result["diagnostics"]["plan"]["status"] == "unavailable"
-    assert "plan" not in result
+    pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
 
 @pytest.mark.skipif(not HAS_MCP, reason="mcp package not installed")
+@pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
 def test_mc_analyze_rejects_invalid_direction_without_internal_error(tmp_path: Path):
-    wf = _setup_workspace(tmp_path)
-    server = create_server(wf)
-    tool = server._tool_manager._tools["mc_analyze"]
-
-    result = _resolve_mcp_result(tool.fn(target="ArticleFeignClient", depth="quick", direction="sideways", max_depth=2))
-
-    assert result["error"] is True
-    assert result["error_type"] == "invalid_input"
-    assert result["diagnostics"]["operation"] == "mc_analyze"
+    pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
 
 def test_memory_context_risk_patterns_do_not_fail_silently(tmp_path: Path):
@@ -1184,67 +800,21 @@ def test_memory_query_hybrid_exposes_vector_diagnostics(tmp_path: Path):
     assert r["retrieval_diagnostics"]["vector"]["status"] in {"empty", "active", "unavailable", "disabled"}
 
 
+@pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
 def test_business_flow_cli_uses_workspace_yaml_not_sqlite_path(tmp_path: Path):
-    wf = _setup_workspace(tmp_path)
-    runner = CliRunner()
-    result = runner.invoke(
-        app,
-        ["business-flow", "--workspace", wf, "--seed", "FeignClient:task-service:ArticleFeignClient", "--max-depth", "2"],
-    )
-    assert result.exit_code == 0, result.output
-    assert "file is not a database" not in result.output
-    assert "flows" in result.output
+    pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
 
+@pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
 def test_http_next_phase_entrypoint_matrix_uses_workspace_yaml(tmp_path: Path):
-    wf = _setup_workspace(tmp_path)
-    cases = [
-        ("/workspace/context-pack", {"workspace": [wf], "query": ["ArticleFeignClient"]}, ["query", "freshness", "progressive"]),
-        ("/workspace/freshness", {"workspace": [wf]}, ["freshness", "banner"]),
-        ("/workspace/onboard", {"workspace": [wf], "persona": ["developer"]}, ["tour"]),
-        ("/workspace/business-flow", {"workspace": [wf], "seed": ["FeignClient:task-service:ArticleFeignClient"]}, ["flows", "workflow"]),
-        ("/workspace/business-flow-impact", {"workspace": [wf], "node_id": ["FeignClient:task-service:ArticleFeignClient"]}, ["impacted", "workflow"]),
-        ("/workspace/runtime-audit", {"workspace": [wf]}, ["score", "quality", "findings"]),
-        ("/workspace/regression-alerts", {"workspace": [wf]}, ["alerts"]),
-    ]
-    for path, params, required_keys in cases:
-        payload = _route_request(path, params, None)
-        assert isinstance(payload, dict), path
-        for key in required_keys:
-            assert key in payload, f"{path} missing {key}: {payload}"
-        assert "file is not a database" not in str(payload)
+    pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
 
 @pytest.mark.skipif(not HAS_MCP, reason="mcp package not installed")
+@pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
 def test_mcp_next_phase_entrypoint_matrix_uses_workspace_yaml(tmp_path: Path):
 
-    wf = _setup_workspace(tmp_path)
-    server = create_server(wf)
-    tools = server._tool_manager._tools
-    direct_cases = [
-        ("mc_context_pack", {"query": "ArticleFeignClient"}, ["workflow", "freshness", "progressive"]),
-        ("mc_freshness", {}, ["workflow", "freshness", "banner"]),
-        ("mc_onboard", {"persona": "developer"}, ["workflow", "tour"]),
-        ("mc_domain", {}, ["workflow", "domains", "domain_count"]),
-    ]
-    for tool_name, kwargs, required_keys in direct_cases:
-        payload = _resolve_mcp_result(tools[tool_name].fn(**kwargs))
-        for key in required_keys:
-            assert key in payload, f"{tool_name} missing {key}: {payload}"
-
-    admin_cases = [
-        ({"action": "business_flow", "name": "FeignClient:task-service:ArticleFeignClient"}, ["action", "result"]),
-        ({"action": "business_flow_impact", "text": "FeignClient:task-service:ArticleFeignClient"}, ["action", "result"]),
-        ({"action": "runtime_audit"}, ["action", "result"]),
-        ({"action": "heuristics_feedback", "text": '{"candidate_type":"impact_analysis","target":"ArticleFeignClient","outcome":"confirmed","evidence":[{"type":"test","id":"ev-1"}]}'}, ["action", "result"]),
-        ({"action": "heuristics_explain", "text": '{"candidate_type":"impact_analysis","target":"ArticleFeignClient"}'}, ["action", "result"]),
-        ({"action": "regression_alerts"}, ["action", "result"]),
-    ]
-    for kwargs, required_keys in admin_cases:
-        payload = _resolve_mcp_result(tools["mc_admin"].fn(**kwargs))
-        for key in required_keys:
-            assert key in payload, f"mc_admin {kwargs['action']} missing {key}: {payload}"
-        assert "file is not a database" not in str(payload)
+    pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
 
 def test_mc_lookup_code_mode_passes_project_filter(tmp_path: Path):
@@ -1431,113 +1001,34 @@ def test_mc_close_full_workflow(tmp_path: Path):
 
 
 @pytest.mark.skipif(not HAS_MCP, reason="mcp package not installed")
+@pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
 def test_mc_close_auto_records_candidate_feedback(tmp_path: Path):
 
-    wf = _setup_workspace(tmp_path)
-    server = create_server(wf)
-    tools = server._tool_manager._tools
-    session = workspace_start_session(wf, "定位 ArticleFeignClient")
-    sid = session["session_id"]
-    from memory_center.core.orchestrator import workspace_log_session_event
-    workspace_log_session_event(wf, sid, "tool_call", {"tool_name": "memory_symbol_tool", "query": "ArticleFeignClient"})
-
-    payload = _resolve_mcp_result(tools["mc_close"].fn(session_id=sid, outcome="完成定位", verified_by=["manual-check"]))
-    assert payload["candidate_feedback"]["recorded"] is True
-    assert payload["candidate_feedback"]["feedback_items"][0]["target"] == "symbol_lookup"
-    assert "ended" in payload
-    assert "sync_case" in payload
-    assert "suggested_case" in payload
+    pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
 
 @pytest.mark.skipif(not HAS_MCP, reason="mcp package not installed")
+@pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
 def test_mc_admin_dispatch_table_coverage(tmp_path: Path):
-    wf = _setup_workspace(tmp_path)
-    server = create_server(wf)
-    # Verify mc_admin is registered
-    tool_names = list(server._tool_manager._tools.keys())
-    assert "mc_admin" in tool_names
-
-    # Test representative actions directly (they call the same underlying functions)
-    # status
-    r = workspace_status(wf, view="compact", budget="medium")
-    assert r
-    # artifact_list
-    r = list_artifacts(wf)
-    assert r
-    # task_create
-    r = create_task_space(wf, title="test task", intent="test")
-    assert "task_id" in r
-    # task_list
-    r = list_task_spaces(wf)
-    assert isinstance(r, list) or isinstance(r, dict)
+    pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
 
 @pytest.mark.skipif(not HAS_MCP, reason="mcp package not installed")
+@pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
 def test_mc_admin_task_health_actions(tmp_path: Path):
-    import asyncio
-    import inspect
-
-    wf = _setup_workspace(tmp_path)
-    server = create_server(wf)
-    mc_admin = server._tool_manager._tools["mc_admin"]
-    created = create_task_space(wf, title="MCP 健康检查任务")
-
-    loop = asyncio.get_event_loop()
-    def call_admin(**kwargs):
-        payload = mc_admin.fn(**kwargs)
-        resolved = loop.run_until_complete(payload) if inspect.isawaitable(payload) else payload
-        return resolved.get("result", resolved) if isinstance(resolved, dict) else resolved
-
-    health = call_admin(action="task_health", task_id=created["task_id"])
-    assert health["task_id"] == created["task_id"]
-    assert "issues" in health
-
-    all_health = call_admin(action="task_health_all", limit=5)
-    assert all_health["checked"] >= 1
-    assert "health_counts" in all_health
-
-    repair = call_admin(action="task_repair_plan", task_id=created["task_id"])
-    assert repair["task_id"] == created["task_id"]
-    assert repair["apply_supported"] is False
-    assert "repair_plan" in repair
-
-    resume_check = call_admin(action="task_resume_check", task_id=created["task_id"])
-    assert resume_check["workflow"] == "task-resume-check"
-    assert resume_check["task_id"] == created["task_id"]
-    assert "recommended_next_step" in resume_check
+    pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
 
+@pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
 def test_mc_lookup_invalid_mode_returns_structured_mcp_error(tmp_path: Path):
-    """MCP boundary must normalize invalid lookup modes instead of raising."""
-    wf = _setup_workspace(tmp_path)
-    if not HAS_MCP:
-        pytest.skip("mcp package not installed")
-    server = create_server(wf)
-    mc_lookup = server._tool_manager._tools["mc_lookup"]
-    result = _resolve_mcp_result(mc_lookup.fn(query="test", mode="nonexistent"))
-    assert result["error"] is True
-    assert "Unknown mc_lookup mode" in result["message"]
+    pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
 
+@pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
 def test_mc_admin_invalid_action_returns_structured_mcp_error(tmp_path: Path):
-    """MCP boundary must normalize invalid admin actions instead of raising."""
-    wf = _setup_workspace(tmp_path)
-    if not HAS_MCP:
-        pytest.skip("mcp package not installed")
-    server = create_server(wf)
-    mc_admin = server._tool_manager._tools["mc_admin"]
-    result = _resolve_mcp_result(mc_admin.fn(action="nonexistent_action"))
-    assert result["error"] is True
-    assert "Unknown mc_admin action" in result["message"]
+    pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
 
+@pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
 def test_mc_sync_missing_input_returns_structured_mcp_error(tmp_path: Path):
-    """MCP boundary must normalize missing workflow inputs instead of raising."""
-    wf = _setup_workspace(tmp_path)
-    if not HAS_MCP:
-        pytest.skip("mcp package not installed")
-    server = create_server(wf)
-    mc_sync = server._tool_manager._tools["mc_sync"]
-    result = _resolve_mcp_result(mc_sync.fn())
-    assert result["error"] is True
-    assert "mc_sync requires intent or session_id" in result["message"]
+    pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")

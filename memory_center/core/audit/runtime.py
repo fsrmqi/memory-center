@@ -14,9 +14,9 @@ from memory_center.core.storage.workspace import WorkspaceStore
 from memory_center.core.workspace.config import load_workspace_config
 from memory_center.core.workspace.doctor import doctor
 
-from ...hooks.spec import ensure_default_hooks
 from ..tasks.artifacts import ensure_default_artifacts
 from ..verification.heuristics import apply_candidate_path_learning
+from .hook_config import ensure_default_hooks
 
 AUDIT_LOG_FILE = "agent-runtime-audit.jsonl"
 

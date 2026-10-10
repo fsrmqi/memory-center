@@ -4,6 +4,7 @@ import hashlib
 import multiprocessing
 import os
 import shutil
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -27,15 +28,15 @@ _EXTENSIONS = {'.java', '.py', '.go', '.ts', '.tsx', '.js', '.jsx', '.vue', '.kt
 class IndexLimits:
     """索引资源软上限。
 
-    默认值远高于正常项目规模，正常项目不受影响；一旦超过软上限，任务以
+    默认所有限制为 0（关闭）；显式设置正数后，超过配置上限的任务以
     ``INDEX_BUDGET_EXCEEDED`` 有序失败并给出批准方式，而不是静默截断索引范围。
     设置 ``MEMORY_CENTER_ALLOW_LARGE_INDEX=1`` 表示已确认机器资源充足，完整索引。
     ``memory_limit_bytes`` 与 ``timeout_seconds`` 默认 0，表示不施加额外约束。
     """
 
-    max_files: int = 200_000
-    max_total_bytes: int = 8 * 1024 ** 3
-    max_file_bytes: int = 64 * 1024 ** 2
+    max_files: int = 0
+    max_total_bytes: int = 0
+    max_file_bytes: int = 0
     allow_large: bool = False
     memory_limit_bytes: int = 0
     timeout_seconds: int = 0
@@ -53,9 +54,9 @@ class IndexLimits:
             return value if value > 0 else default
 
         return cls(
-            max_files=integer('MEMORY_CENTER_INDEX_MAX_FILES', 200_000),
-            max_total_bytes=integer('MEMORY_CENTER_INDEX_MAX_TOTAL_MB', 8192) * 1024 ** 2,
-            max_file_bytes=integer('MEMORY_CENTER_INDEX_MAX_FILE_MB', 64) * 1024 ** 2,
+            max_files=integer('MEMORY_CENTER_INDEX_MAX_FILES', 0),
+            max_total_bytes=integer('MEMORY_CENTER_INDEX_MAX_TOTAL_MB', 0) * 1024 ** 2,
+            max_file_bytes=integer('MEMORY_CENTER_INDEX_MAX_FILE_MB', 0) * 1024 ** 2,
             allow_large=str(source.get('MEMORY_CENTER_ALLOW_LARGE_INDEX', '') or '').strip() == '1',
             memory_limit_bytes=integer('MEMORY_CENTER_INDEX_MEMORY_LIMIT_MB', 0) * 1024 ** 2,
             timeout_seconds=integer('MEMORY_CENTER_INDEX_TIMEOUT_SECONDS', 0),
@@ -79,11 +80,12 @@ def scan_source_files(root, limits: IndexLimits):
             continue
         files.append(path)
         total += size
-        if not oversized and size > limits.max_file_bytes:
+        if not oversized and limits.max_file_bytes and size > limits.max_file_bytes:
             oversized = path.relative_to(root).as_posix()
         if limits.allow_large:
             continue
-        if oversized or len(files) > limits.max_files or total > limits.max_total_bytes:
+        if (oversized or (limits.max_files and len(files) > limits.max_files)
+                or (limits.max_total_bytes and total > limits.max_total_bytes)):
             detail = limits.describe(len(files), total)
             if oversized:
                 detail += f'，单文件超过 {limits.max_file_bytes // (1024 ** 2)} MiB：{oversized}'
@@ -230,6 +232,7 @@ class Jobs:
         self.data_dir, self.database_url = data_dir, database_url
         self.processes, self.started = {}, {}
         self.limits = IndexLimits.from_env()
+        self.lifecycle_lock = threading.RLock()
         self.stopping = False
         self.task = None
         self.wiki_task = None
@@ -292,26 +295,38 @@ class Jobs:
         if resolved == base or not resolved.is_relative_to(base):
             return 0, False
         freed = Jobs.directory_bytes(target)
-        shutil.rmtree(target, ignore_errors=True)
+        shutil.rmtree(target)
         return freed, True
 
     def remove(self, job_id):
-        """删除终态任务及其垃圾 generation；活跃索引所属代际受保护，绝不误删。"""
-        job = self.store.get('job', job_id)
-        if job['status'] in {'queued', 'running'}:
-            raise CatalogError('JOB_STATE', '请先取消任务再删除')
-        workspace_id = job['workspace_id']
-        try:
-            active = self.store.get('index', workspace_id)['generation']
-        except CatalogError:
-            active = None
-        if active == job_id:
-            raise CatalogError('JOB_ACTIVE', '该任务是当前生效索引，请先重新索引后再删除')
-        generations = self.data_dir / 'workspaces' / workspace_id / 'generations'
-        freed, removed = self.drop_generation(generations, job_id)
-        self.store.delete('job', job_id)
-        self.store.audit('admin', 'job.remove', workspace_id, job_id)
-        return {'id': job_id, 'deleted': True, 'removed_generation': removed, 'freed_bytes': freed}
+        """等待取消进程退出后，保护当前代际并删除终态任务。"""
+        with self.lifecycle_lock:
+            job = self.store.get('job', job_id)
+            if job['status'] in {'queued', 'running'}:
+                raise CatalogError('JOB_STATE', '请先取消任务再删除')
+            process = self.processes.get(job_id)
+            if process is not None:
+                if process.is_alive():
+                    process.terminate()
+                process.join(timeout=5)
+                if process.is_alive():
+                    raise CatalogError('JOB_BUSY', '任务进程尚未退出，请稍后重试')
+                self.processes.pop(job_id, None)
+                self.started.pop(job_id, None)
+                process.close()
+            workspace_id = job['workspace_id']
+            with self.store.generation_lock(workspace_id):
+                try:
+                    active = self.store.get('index', workspace_id)['generation']
+                except CatalogError:
+                    active = None
+                if active == job_id:
+                    raise CatalogError('JOB_ACTIVE', '该任务是当前生效索引，请先重新索引后再删除')
+                generations = self.data_dir / 'workspaces' / workspace_id / 'generations'
+                freed, removed = self.drop_generation(generations, job_id)
+                self.store.delete('job', job_id)
+                self.store.audit('admin', 'job.remove', workspace_id, job_id)
+                return {'id': job_id, 'deleted': True, 'removed_generation': removed, 'freed_bytes': freed}
 
     def prune(self, workspace_id=None):
         """清理非活跃 generation 目录：保留活跃索引与排队/运行中任务的代际，删除其余垃圾。
@@ -321,34 +336,37 @@ class Jobs:
         删除会破坏查询；``queued``/``running`` 任务的目录正被子进程写入，删除会损坏
         在途索引，因此二者都始终保留。
         """
-        workspace_ids = ([item['workspace_id'] for item in self.catalog.list(1000)['items']]
-                         if workspace_id is None else [workspace_id])
-        removed, freed, kept, workspaces = 0, 0, [], 0
-        for wid in workspace_ids:
-            generations = self.data_dir / 'workspaces' / wid / 'generations'
-            if generations.is_symlink() or not generations.is_dir():
-                continue
-            try:
-                active = self.store.get('index', wid)['generation']
-            except CatalogError:
-                active = None
-            # 除活跃索引外，还必须保留排队/运行中任务的代际目录：索引子进程正在其中写入，
-            # 删除会损坏在途索引，随后成功发布还会指向一个已不存在的 generation。
-            protected = {job['id'] for job in self.store.list('job', workspace_id=wid, limit=1000)
-                         if job['status'] in {'queued', 'running'}}
-            if active:
-                protected.add(active)
-            workspaces += 1
-            for entry in sorted(generations.iterdir()):
-                if entry.name in protected:
-                    kept.append(entry.name)
-                    continue
-                count, deleted = self.drop_generation(generations, entry.name)
-                if deleted:
-                    removed += 1
-                    freed += count
-        self.store.audit('admin', 'job.prune', workspace_id or '')
-        return {'removed': removed, 'freed_bytes': freed, 'kept': kept, 'workspaces': workspaces}
+        with self.lifecycle_lock:
+            workspace_ids = ([item['workspace_id'] for item in self.catalog.list(1000)['items']]
+                             if workspace_id is None else [workspace_id])
+            removed, freed, kept, workspaces = 0, 0, [], 0
+            for wid in workspace_ids:
+                with self.store.generation_lock(wid):
+                    generations = self.data_dir / 'workspaces' / wid / 'generations'
+                    if generations.is_symlink() or not generations.is_dir():
+                        continue
+                    try:
+                        active = self.store.get('index', wid)['generation']
+                    except CatalogError:
+                        active = None
+                    # 除活跃索引外，还必须保留排队/运行中任务的代际目录：索引子进程正在其中写入，
+                    # 删除会损坏在途索引，随后成功发布还会指向一个已不存在的 generation。
+                    protected = {job['id'] for job in self.store.list('job', workspace_id=wid, limit=1000)
+                                 if job['status'] in {'queued', 'running'}}
+                    protected.update(self.processes)
+                    if active:
+                        protected.add(active)
+                    workspaces += 1
+                    for entry in sorted(generations.iterdir()):
+                        if entry.name in protected:
+                            kept.append(entry.name)
+                            continue
+                        count, deleted = self.drop_generation(generations, entry.name)
+                        if deleted:
+                            removed += 1
+                            freed += count
+            self.store.audit('admin', 'job.prune', workspace_id or '')
+            return {'removed': removed, 'freed_bytes': freed, 'kept': kept, 'workspaces': workspaces}
 
     async def start(self):
         for job in self.store.list('job', limit=1000):
@@ -392,40 +410,41 @@ class Jobs:
     async def loop(self):
         context = multiprocessing.get_context('spawn')
         while not self.stopping:
-            for job_id, process in list(self.processes.items()):
-                job = self.store.get('job', job_id)
-                if job['status'] == 'cancelled':
-                    if process.is_alive():
+            with self.lifecycle_lock:
+                for job_id, process in list(self.processes.items()):
+                    job = self.store.get('job', job_id)
+                    if job['status'] == 'cancelled':
+                        if process.is_alive():
+                            process.terminate()
+                    if (self.limits.timeout_seconds and process.is_alive()
+                            and time.monotonic() - self.started.get(job_id, 0) > self.limits.timeout_seconds):
+                        # 可选看门狗：默认关闭（timeout_seconds=0），开启后超时有序失败并保留上一代索引。
                         process.terminate()
-                if (self.limits.timeout_seconds and process.is_alive()
-                        and time.monotonic() - self.started.get(job_id, 0) > self.limits.timeout_seconds):
-                    # 可选看门狗：默认关闭（timeout_seconds=0），开启后超时有序失败并保留上一代索引。
-                    process.terminate()
-                    self.store.update('job', job_id, {'status': 'failed', 'error': 'INDEX_TIMEOUT',
-                                                      'message': f'索引超过 {self.limits.timeout_seconds} 秒未完成，已终止；上一代索引仍可读取。',
-                                                      'finished_at': now()})
-                if not process.is_alive():
-                    process.join(timeout=.1)
-                    if self.store.get('job', job_id)['status'] == 'running':
-                        self.store.update('job', job_id, {'status': 'failed', 'error': 'WORKER_EXITED', 'finished_at': now()})
-                    self.processes.pop(job_id)
-                    self.started.pop(job_id)
-                    process.close()
-            for job in reversed(self.store.list('job', limit=1000)):
-                if len(self.processes) >= 2:
-                    break
-                if job['status'] != 'queued':
-                    continue
-                try:
-                    workspace = self.catalog.get(job['workspace_id'])
-                    if workspace['status'] != 'active' or workspace['config_version'] != job['config_version']:
-                        raise CatalogError('WORKSPACE_CHANGED', '项目配置已改变')
-                    self.store.update('job', job['id'], {'status': 'running', 'started_at': now()})
-                    process = context.Process(target=run_index, args=(self.data_dir, self.database_url, workspace, job['id'], self.limits))
-                    process.start()
-                    self.processes[job['id']], self.started[job['id']] = process, time.monotonic()
-                except Exception:
-                    self.store.update('job', job['id'], {'status': 'failed', 'error': 'WORKSPACE_CHANGED', 'finished_at': now()})
+                        self.store.update('job', job_id, {'status': 'failed', 'error': 'INDEX_TIMEOUT',
+                                                          'message': f'索引超过 {self.limits.timeout_seconds} 秒未完成，已终止；上一代索引仍可读取。',
+                                                          'finished_at': now()})
+                    if not process.is_alive():
+                        process.join(timeout=.1)
+                        if self.store.get('job', job_id)['status'] == 'running':
+                            self.store.update('job', job_id, {'status': 'failed', 'error': 'WORKER_EXITED', 'finished_at': now()})
+                        self.processes.pop(job_id)
+                        self.started.pop(job_id)
+                        process.close()
+                for job in reversed(self.store.list('job', limit=1000)):
+                    if len(self.processes) >= 2:
+                        break
+                    if job['status'] != 'queued':
+                        continue
+                    try:
+                        workspace = self.catalog.get(job['workspace_id'])
+                        if workspace['status'] != 'active' or workspace['config_version'] != job['config_version']:
+                            raise CatalogError('WORKSPACE_CHANGED', '项目配置已改变')
+                        self.store.update('job', job['id'], {'status': 'running', 'started_at': now()})
+                        process = context.Process(target=run_index, args=(self.data_dir, self.database_url, workspace, job['id'], self.limits))
+                        process.start()
+                        self.processes[job['id']], self.started[job['id']] = process, time.monotonic()
+                    except Exception:
+                        self.store.update('job', job['id'], {'status': 'failed', 'error': 'WORKSPACE_CHANGED', 'finished_at': now()})
             await asyncio.sleep(.3)
 
     async def close(self):

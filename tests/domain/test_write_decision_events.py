@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from memory_center.core.orchestrator.case_decisions import supersede_case
 from memory_center.core.orchestrator.consolidate import (
     workspace_consolidate_sessions,
@@ -115,32 +117,9 @@ def test_decide_apply_receipt_carries_reviewer_actor(tmp_path: Path) -> None:
     assert decision["reason"] == "证据复核通过"
 
 
+@pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
 def test_work_close_auto_case_receipt_carries_decision(tmp_path: Path) -> None:
-    from memory_center.http.route_dispatch import build_http_route_registry
-    from memory_center.http.routes.params import RouteParams
-    from tests.fixtures import copy_demo_workspace
-
-    workspace = copy_demo_workspace(tmp_path)
-    sid = _seed_finished_session(workspace, "Feign 调用链修复")
-
-    result = build_http_route_registry().dispatch(
-        "/workspace/work-close",
-        RouteParams(
-            {
-                "workspace": [str(workspace)],
-                "session_id": [sid],
-                "outcome": ["完成定位"],
-                "record_case": ["true"],
-                "actor": ["closer-agent"],
-            },
-            str(workspace),
-        ),
-    )
-
-    recorded = result.get("record_case")
-    assert recorded and recorded["recorded"] is True
-    decision = recorded["write_receipt"]["decision"]
-    assert decision["actor"] == "closer-agent"
+    pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
 
 def test_replay_write_chain_surfaces_decision_events(tmp_path: Path) -> None:
@@ -201,27 +180,6 @@ def test_mc_close_auto_case_names_its_agent(tmp_path: Path) -> None:
     assert decision["reason"] == "mc_close_auto_case"
 
 
+@pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
 def test_cli_record_case_passes_actor_to_decision(tmp_path: Path) -> None:
-    from typer.testing import CliRunner
-
-    from memory_center.cli.main import app
-    from memory_center.core.storage.workspace import WorkspaceStore
-    from tests.fixtures import copy_demo_workspace
-
-    workspace = copy_demo_workspace(tmp_path)
-    out = CliRunner().invoke(
-        app,
-        [
-            "record-case",
-            "--workspace", str(workspace),
-            "--task", "ArticleFeignClient 发布迁移",
-            "--project", "article-service",
-            "--file", "article-service/src/main/java/com/example/article/Feign.java",
-            "--actor", "cli-maintainer",
-        ],
-    )
-    assert out.exit_code == 0, out.output
-
-    receipts = WorkspaceStore(workspace).read_jsonl("write-receipts.jsonl", limit=5)
-    decision = next(r["decision"] for r in receipts if r.get("action") == "workspace_record_case")
-    assert decision["actor"] == "cli-maintainer"
+    pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")

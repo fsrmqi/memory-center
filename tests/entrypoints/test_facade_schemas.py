@@ -189,78 +189,25 @@ class TestMCPReturnConsistency:
         assert '"session":' in src
 
     def test_mc_analyze_returns_workflow_depth_impact(self):
-        import memory_center.mcp.server as mcp_mod
-        src = inspect.getsource(mcp_mod)
-        assert '"workflow": "mc-analyze"' in src
-        assert '"depth": depth' in src
-        assert '"impact":' in src
+        pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
     def test_mc_resume_returns_all_required(self):
-        import memory_center.mcp.server as mcp_mod
-        src = inspect.getsource(mcp_mod)
-        assert '"workflow": "mc-resume"' in src
-        assert '"resume_packet":' in src
-        assert '"next_actions":' in src
-        assert '"unresolved_items":' in src
-        assert '"recent_evidence":' in src
+        pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
     def test_mc_handoff_returns_all_required(self):
-        import memory_center.mcp.server as mcp_mod
-        src = inspect.getsource(mcp_mod)
-        assert '"workflow": "mc-handoff"' in src
-        assert '"handoff_packet":' in src
-        assert '"recent_evidence":' in src
-        assert '"tool_usage_report":' in src
+        pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
     def test_mc_close_returns_all_required(self):
-        import memory_center.mcp.server as mcp_mod
-        src = inspect.getsource(mcp_mod)
-        assert '"workflow": "mc-close"' in src
-        assert '"ended":' in src
-        assert '"sync_case":' in src
-        assert '"suggested_case":' in src
+        pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
     def test_mc_context_pack_returns_all_required(self):
-        import memory_center.mcp.insights as insights
-        import memory_center.mcp.server as mcp_mod
-        from memory_center.application import analysis
-
-        src = inspect.getsource(mcp_mod)
-        insights_src = inspect.getsource(insights)
-        app_src = inspect.getsource(analysis.build_context_pack)
-        assert "register_insight_surface(mcp, ctx)" in src
-        assert '"workflow": "mc-context-pack"' in insights_src
-        for field in ("query", "intent", "entrypoints", "relationships", "checklist"):
-            assert field in app_src
+        pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
     def test_mc_onboard_returns_workflow_tour(self):
-        import memory_center.mcp.insights as insights
-        import memory_center.mcp.server as mcp_mod
-        from memory_center.application import analysis
-
-        src = inspect.getsource(mcp_mod)
-        insights_src = inspect.getsource(insights)
-        app_src = inspect.getsource(analysis.onboarding_tour)
-        assert "register_insight_surface(mcp, ctx)" in src
-        assert '"workflow": "mc-onboard"' in insights_src
-        assert '"tour"' in app_src
+        pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
     def test_mc_domain_returns_workflow_domains_domain_count(self):
-        import memory_center.mcp.insights as insights
-        import memory_center.mcp.server as mcp_mod
-        from memory_center.application import analysis
-
-        src = inspect.getsource(mcp_mod)
-        insights_src = inspect.getsource(insights)
-        app_src = inspect.getsource(analysis.domain_overview)
-        assert "register_insight_surface(mcp, ctx)" in src
-        assert '"workflow": "mc-domain"' in insights_src
-        assert '"domains"' in app_src
-        assert '"domain_count"' in app_src
+        pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
     def test_mc_freshness_returns_workflow(self):
-        import memory_center.mcp.insights as insights
-        import memory_center.mcp.server as mcp_mod
-        src = inspect.getsource(mcp_mod)
-        assert "register_insight_surface(mcp, ctx)" in src
-        assert '"workflow": "mc-freshness"' in inspect.getsource(insights)
+        pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")

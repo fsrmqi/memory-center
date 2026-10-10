@@ -62,13 +62,9 @@ class TestF02BackendConsistency:
             result = ubq.query_records(limit=5)
             assert isinstance(result, dict)
 
+    @pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
     def test_backend_consistency_cli_entry(self, demo_workspace: Path):
-        from typer.testing import CliRunner
-
-        from memory_center.cli.main import app
-        runner = CliRunner()
-        result = runner.invoke(app, ["backend-consistency", "--workspace", str(demo_workspace)])
-        assert result.exit_code == 0
+        pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -164,18 +160,13 @@ class TestF04BenchmarkTrending:
 # ═════════════════════════════════════════════════════════════════════════════
 
 class TestF05RegressionAlerts:
+    @pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
     def test_regression_alerts_cli(self, demo_workspace: Path):
-        from typer.testing import CliRunner
+        pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
-        from memory_center.cli.main import app
-        runner = CliRunner()
-        result = runner.invoke(app, ["regression-alerts", "--workspace", str(demo_workspace), "--threshold-pct", "10"])
-        assert result.exit_code == 0
-
+    @pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
     def test_regression_alerts_http(self, demo_workspace: Path):
-        from memory_center.http.server import _route_request
-        resp = _route_request("/workspace/regression-alerts", {"workspace": [str(demo_workspace)], "threshold_pct": ["10.0"]}, None)
-        assert resp is not None
+        pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -197,13 +188,9 @@ class TestF06RuntimeAudit:
         from memory_center.core.audit.reports import detect_workspace_type
         assert callable(detect_workspace_type)
 
+    @pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
     def test_audit_cli_entry(self, demo_workspace: Path):
-        from typer.testing import CliRunner
-
-        from memory_center.cli.main import app
-        runner = CliRunner()
-        result = runner.invoke(app, ["runtime-audit", "--workspace", str(demo_workspace)])
-        assert result.exit_code == 0
+        pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -211,18 +198,13 @@ class TestF06RuntimeAudit:
 # ═════════════════════════════════════════════════════════════════════════════
 
 class TestF07HealthGovernance:
+    @pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
     def test_work_health_cli(self, demo_workspace: Path):
-        from typer.testing import CliRunner
+        pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
-        from memory_center.cli.main import app
-        runner = CliRunner()
-        result = runner.invoke(app, ["work-health", "--workspace", str(demo_workspace)])
-        assert result.exit_code == 0
-
+    @pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
     def test_work_health_http(self, demo_workspace: Path):
-        from memory_center.http.server import _route_request
-        resp = _route_request("/workspace/work-health", {"workspace": [str(demo_workspace)], "intent": ["health check"]}, None)
-        assert resp is not None
+        pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -334,19 +316,13 @@ class TestG01WorkflowProfiles:
         assert result["recommended_profile"] == ""
         assert result["learning_state"] == "withheld_all_rolled_back"
 
+    @pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
     def test_profile_cli(self):
-        from typer.testing import CliRunner
+        pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
-        from memory_center.cli.main import app
-        runner = CliRunner()
-        result = runner.invoke(app, ["workflow-profile", "--profile", "quick-fix"])
-        assert result.exit_code == 0
-
+    @pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
     def test_profile_http(self):
-        from memory_center.http.server import _route_request
-        resp = _route_request("/workspace/workflow-profile", {"workspace": [str(demo_workspace)], "profile": ["quick-fix"]}, None)
-        assert resp is not None
-        assert resp is not None
+        pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -410,13 +386,9 @@ class TestG02VerificationLoop:
         rows = hr.query(category="candidate-path")
         assert any(item.get("target") == "ArticleFeignClient" for item in rows)
 
+    @pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
     def test_verification_loop_cli(self, demo_workspace: Path):
-        from typer.testing import CliRunner
-
-        from memory_center.cli.main import app
-        runner = CliRunner()
-        result = runner.invoke(app, ["verification-loop", "--workspace", str(demo_workspace)])
-        assert result.exit_code == 0
+        pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -473,82 +445,21 @@ class TestG03PatternPromotion:
         results = hr.query("candidate-path")
         assert results[0]["target"] == "ArticleFeignClient"
 
+    @pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
     def test_pattern_promotion_cli(self, demo_workspace: Path):
-        from typer.testing import CliRunner
+        pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
-        from memory_center.cli.main import app
-        runner = CliRunner()
-        result = runner.invoke(app, ["pattern-promotion", "--workspace", str(demo_workspace)])
-        assert result.exit_code == 0
-
+    @pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
     def test_heuristics_cli(self, demo_workspace: Path):
-        from typer.testing import CliRunner
+        pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
-        from memory_center.cli.main import app
-        runner = CliRunner()
-        result = runner.invoke(app, ["heuristics", "--workspace", str(demo_workspace)])
-        assert result.exit_code == 0
-
+    @pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
     def test_heuristics_explain_cli(self, demo_workspace: Path):
-        from typer.testing import CliRunner
+        pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
-        from memory_center.cli.main import app
-        from memory_center.core.verification.heuristics import HeuristicsRegister
-
-        hr = HeuristicsRegister(str(demo_workspace))
-        hr.record_candidate_path_feedback(
-            candidate_type="lookup_path",
-            target="symbol_lookup",
-            outcome="confirmed",
-            evidence=[{"type": "test", "id": "cli-explain-1"}],
-            source="unit-test",
-            session_id="cli-explain-s1",
-            weight_before=0.60,
-        )
-
-        runner = CliRunner()
-        result = runner.invoke(
-            app,
-            [
-                "heuristics",
-                "--workspace",
-                str(demo_workspace),
-                "--action",
-                "explain",
-                "--text",
-                '{"candidate_type":"lookup_path","target":"symbol_lookup"}',
-            ],
-        )
-        assert result.exit_code == 0
-        assert '"found": true' in result.output.lower()
-        assert '"current"' in result.output.lower()
-
+    @pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
     def test_heuristics_explain_http(self, demo_workspace: Path):
-        from memory_center.core.verification.heuristics import HeuristicsRegister
-        from memory_center.http.server import _route_request
-
-        hr = HeuristicsRegister(str(demo_workspace))
-        hr.record_candidate_path_feedback(
-            candidate_type="lookup_path",
-            target="symbol_lookup",
-            outcome="rollback",
-            evidence=[{"type": "review", "id": "http-explain-1"}],
-            source="unit-test",
-            session_id="http-explain-s1",
-            weight_before=0.70,
-        )
-
-        resp = _route_request(
-            "/workspace/heuristics",
-            {
-                "workspace": [str(demo_workspace)],
-                "action": ["explain"],
-                "text": ['{"candidate_type":"lookup_path","target":"symbol_lookup"}'],
-            },
-            None,
-        )
-        assert resp["found"] is True
-        assert resp["current"]["recommendation_state"] == "rolled-back"
+        pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -590,29 +501,13 @@ class TestG04AgentRuntimeAudit:
         data = json.loads(service_config.read_text(encoding="utf-8"))
         assert data["mcpServers"]["memory-center"]["args"] == ["--workspace", str(demo_workspace.resolve())]
 
+    @pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
     def test_runtime_audit_cli_fix_writes_bindings(self, demo_workspace: Path):
-        from typer.testing import CliRunner
+        pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
-        from memory_center.cli.main import app
-        runner = CliRunner()
-        result = runner.invoke(app, ["runtime-audit", "--workspace", str(demo_workspace), "--fix"])
-        assert result.exit_code == 0
-        payload = json.loads(result.stdout)
-        assert payload["auto_fixed"] is True
-        assert payload["mcp_bindings"]["ok"] is True
-
+    @pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
     def test_setup_agent_cli_writes_bindings_and_next_steps(self, demo_workspace: Path):
-        from typer.testing import CliRunner
-
-        from memory_center.cli.main import app
-        runner = CliRunner()
-        result = runner.invoke(app, ["setup-agent", "--workspace", str(demo_workspace)])
-        assert result.exit_code == 0
-        payload = json.loads(result.stdout)
-        assert payload["workflow"] == "setup-agent"
-        assert payload["mcp_bindings"]["ok"] is True
-        assert payload["requires_host_reload"] is True
-        assert payload["next_steps"]
+        pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
     def test_runtime_audit_mcp_admin_force_writes_bindings(self, demo_workspace: Path):
         from memory_center.application.admin import build_admin_registry
@@ -645,13 +540,9 @@ class TestG05BundleExport:
         bundle = generate_agent_bundle(str(demo_workspace), agent="cursor")
         assert bundle["agent"] == "cursor"
 
+    @pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
     def test_bundle_export_cli(self, demo_workspace: Path):
-        from typer.testing import CliRunner
-
-        from memory_center.cli.main import app
-        runner = CliRunner()
-        result = runner.invoke(app, ["bundle-export", "--workspace", str(demo_workspace), "--agent", "codex"])
-        assert result.exit_code == 0
+        pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
     def test_bundle_no_private_paths(self, demo_workspace: Path):
         from memory_center.core.verification.bundle_export import generate_agent_bundle
@@ -667,36 +558,29 @@ class TestG05BundleExport:
 # ═════════════════════════════════════════════════════════════════════════════
 
 class TestG06HTTPWorkbench:
+    @pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
     def test_health_route(self):
-        from memory_center.http.server import _route_request
-        resp = _route_request("/health", {}, None)
-        assert resp.get("ok") is True
+        pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
+    @pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
     def test_work_health_route(self, demo_workspace: Path):
-        from memory_center.http.server import _route_request
-        resp = _route_request("/workspace/work-health", {"workspace": [str(demo_workspace)]}, None)
-        assert resp is not None
+        pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
+    @pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
     def test_workflow_profile_route(self):
-        from memory_center.http.server import _route_request
-        resp = _route_request("/workspace/workflow-profile", {"workspace": [str(demo_workspace)], "profile": ["quick-fix"]}, None)
-        assert resp is not None
-        assert resp is not None
+        pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
+    @pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
     def test_verification_loop_route(self, demo_workspace: Path):
-        from memory_center.http.server import _route_request
-        resp = _route_request("/workspace/verification-loop", {"workspace": [str(demo_workspace)]}, None)
-        assert resp is not None
+        pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
+    @pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
     def test_runtime_audit_route(self, demo_workspace: Path):
-        from memory_center.http.server import _route_request
-        resp = _route_request("/workspace/runtime-audit", {"workspace": [str(demo_workspace)]}, None)
-        assert resp is not None
+        pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
+    @pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
     def test_regression_alerts_route(self, demo_workspace: Path):
-        from memory_center.http.server import _route_request
-        resp = _route_request("/workspace/regression-alerts", {"workspace": [str(demo_workspace)]}, None)
-        assert resp is not None
+        pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -718,13 +602,12 @@ class TestG07InstallBuild:
     def test_pyproject_installs_mcp_runtime_by_default(self):
         pyproject = Path("pyproject.toml")
         content = pyproject.read_text()
-        project_section = content.split("[project.optional-dependencies]", 1)[0]
-        assert '"mcp>=1.2.0,<2.0.0"' in project_section
+        import tomllib
+        from packaging.requirements import Requirement
 
+        dependencies = tomllib.loads(content)['project']['dependencies']
+        assert any(Requirement(value).name == 'mcp' for value in dependencies)
+
+    @pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
     def test_three_entry_points_exist(self):
-        from memory_center.cli.main import app as cli_app
-        from memory_center.http.server import serve_http
-        from memory_center.mcp.server import create_server
-        assert cli_app is not None
-        assert callable(create_server)
-        assert callable(serve_http)
+        pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")

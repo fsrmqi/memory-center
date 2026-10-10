@@ -45,7 +45,7 @@ from memory_center.core.freshness.change_reports import (
     recent_change_impact_reports,
     record_change_impact_feedback,
 )
-from memory_center.core.freshness.daemon import start_watcher_daemon, stop_watcher_daemon, watcher_daemon_status
+from memory_center.core.freshness.daemon import watcher_daemon_status
 from memory_center.core.indexing.control_plane import index_control_status, rollback_generation
 from memory_center.core.indexing.shards import cleanup_generations
 from memory_center.core.knowledge.assets import (
@@ -1016,9 +1016,9 @@ def build_admin_registry(
             "job_status": lambda: workspace_job_status(wf, record_id, limit=limit),
             "job_cancel": lambda: cancel_workspace_job(wf, record_id),
             "job_reindex": lambda: submit_reindex_workspace_job(wf, projects=projects, paths=files),
-            "watcher_start": lambda: start_watcher_daemon(wf),
+            "watcher_start": lambda: {"status": "retired", "next_action": "使用 5.0 常驻服务管理后台任务"},
             "watcher_status": lambda: watcher_daemon_status(wf),
-            "watcher_stop": lambda: stop_watcher_daemon(wf),
+            "watcher_stop": lambda: {"status": "retired", "next_action": "使用 5.0 常驻服务管理后台任务"},
             "change_impact_recent": lambda: recent_change_impact_reports(wf, limit=limit),
             "change_impact_pending": lambda: pending_change_impact_reports(wf, limit=limit),
             "change_impact_confirm": lambda: record_change_impact_feedback(

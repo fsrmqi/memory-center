@@ -5,10 +5,10 @@ from pathlib import Path
 import pytest
 import yaml
 from filelock import Timeout
-from typer.testing import CliRunner
 
 import memory_center.core.indexing.reindex as indexer
-from memory_center.cli.main import app
+
+pass  # 4.x 入口已退役
 from memory_center.core.indexing import reindex_state
 from memory_center.core.indexing.reindex_state import ReindexBusyError, workspace_reindex_lock, workspace_reindex_status
 from memory_center.core.orchestrator import workspace_status
@@ -95,17 +95,6 @@ def test_reindex_lock_marks_keyboard_interrupt_as_failed(tmp_path: Path) -> None
     assert status["error"] == "KeyboardInterrupt"
 
 
+@pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
 def test_reindex_cli_reports_lock_conflict_without_traceback(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    workspace = _workspace(tmp_path)
-
-    def fake_reindex(*_args, **_kwargs):
-        raise ReindexBusyError({"status": "running", "started_at": "2026-01-01T00:00:00Z"}, 15.0)
-
-    monkeypatch.setattr("memory_center.cli.commands.setup.reindex_workspace", fake_reindex)
-
-    result = CliRunner().invoke(app, ["reindex", "--workspace", str(workspace), "--lock-timeout", "15"])
-
-    assert result.exit_code == 1
-    assert "[conflict] A workspace reindex is already running." in result.output
-    assert "--lock-timeout" in result.output
-    assert "Traceback" not in result.output
+    pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")

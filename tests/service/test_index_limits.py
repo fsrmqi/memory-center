@@ -26,10 +26,10 @@ def test_index_limits_defaults_are_generous(monkeypatch):
                  'MEMORY_CENTER_INDEX_MEMORY_LIMIT_MB', 'MEMORY_CENTER_INDEX_TIMEOUT_SECONDS']:
         monkeypatch.delenv(name, raising=False)
     limits = IndexLimits.from_env()
-    # 默认必须远高于正常项目，且不施加内存与超时约束（保留 5.0.0b7 的放开策略）。
-    assert limits.max_files == 200_000
-    assert limits.max_total_bytes == 8 * 1024 ** 3
-    assert limits.max_file_bytes == 64 * 1024 ** 2
+    # 默认大小限制必须关闭，且不施加内存与超时约束（保留 5.0.0b7 的放开策略）。
+    assert limits.max_files == 0
+    assert limits.max_total_bytes == 0
+    assert limits.max_file_bytes == 0
     assert limits.allow_large is False
     assert limits.memory_limit_bytes == 0 and limits.timeout_seconds == 0
 
@@ -44,9 +44,9 @@ def test_index_limits_env_overrides_and_invalid_values(monkeypatch):
     assert limits.allow_large is True
     # 非法值回退默认，不静默变成 0 或负数。
     monkeypatch.setenv('MEMORY_CENTER_INDEX_MAX_FILES', 'not-a-number')
-    assert IndexLimits.from_env().max_files == 200_000
+    assert IndexLimits.from_env().max_files == 0
     monkeypatch.setenv('MEMORY_CENTER_INDEX_MAX_FILES', '-3')
-    assert IndexLimits.from_env().max_files == 200_000
+    assert IndexLimits.from_env().max_files == 0
 
 
 def test_scan_source_files_enforces_file_budget(tmp_path):

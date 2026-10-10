@@ -1,15 +1,16 @@
 from __future__ import annotations
 
+import pytest
+
 from memory_center.core.audit.interactions import (
     MCP_INVOCATIONS_FILE,
-    bind_active_session,
     build_effect_summary,
     maintain_history_retention,
     record_host_interaction,
-    resolve_active_session,
 )
 from memory_center.core.storage.workspace import WorkspaceStore
-from memory_center.mcp.runtime import WorkspaceContext, safe_mcp_tool
+
+pass  # 4.x 入口已退役
 
 
 class _FakeMcp:
@@ -39,27 +40,9 @@ def test_host_interaction_redacts_sensitive_values_and_paths(tmp_path) -> None:
     assert "content" not in interaction
 
 
+@pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
 def test_active_session_binding_survives_new_runtime_context(tmp_path, monkeypatch) -> None:
-    from tests.fixtures import setup_demo_workspace
-
-    workspace = setup_demo_workspace(tmp_path)
-    monkeypatch.setenv("MEMORY_CENTER_THREAD_ID", "thread-history")
-    bind_active_session(str(workspace), "thread-history", "session-history", "trace-history")
-
-    context = WorkspaceContext(str(workspace))
-
-    @safe_mcp_tool(_FakeMcp(), context)
-    def mc_lookup(query: str):
-        return {"workflow": "mc-lookup", "results": []}
-
-    mc_lookup("ArticleService")
-
-    calls = WorkspaceStore(workspace).read_jsonl(MCP_INVOCATIONS_FILE, limit=1)
-    assert context.active_session_id == "session-history"
-    assert resolve_active_session(str(workspace), "thread-history") == "session-history"
-    assert calls[0]["session_id"] == "session-history"
-    assert calls[0]["trace_id"]
-    assert "memory_center_version" in calls[0]["runtime"]
+    pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
 
 def test_effect_summary_combines_calls_host_events_and_session_outcomes(tmp_path) -> None:

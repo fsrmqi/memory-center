@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from typer.testing import CliRunner
+import pytest
 
-from memory_center.cli.main import app
+pass  # 4.x 入口已退役
 from memory_center.core.indexing.precision import tree_sitter_activation_status
 from memory_center.core.orchestrator.resume import workspace_next_actions
 
@@ -39,9 +39,6 @@ def test_workspace_next_actions_include_evidence_backed_action_items(demo_worksp
     assert first["evidence"]
 
 
+@pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
 def test_parser_status_cli_reports_activation_status() -> None:
-    result = CliRunner().invoke(app, ["parser-status"])
-
-    assert result.exit_code == 0
-    assert "recommended_action" in result.stdout
-    assert "install_commands" in result.stdout
+    pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")

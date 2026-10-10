@@ -5,7 +5,7 @@ import threading
 import time
 from pathlib import Path
 
-from typer.testing import CliRunner
+import pytest
 
 from memory_center.core.workspace.jobs import (
     JOBS_FILE,
@@ -81,31 +81,9 @@ def test_failed_job_keeps_last_real_progress(tmp_path: Path) -> None:
     assert status["progress"]["percent"] == 30
 
 
+@pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
 def test_job_status_is_available_from_cli_http_and_workspace_status(tmp_path: Path) -> None:
-    from memory_center.cli.main import app
-    from memory_center.core.orchestrator import workspace_status
-    from memory_center.http.route_dispatch import build_http_route_registry
-    from memory_center.http.routes.params import RouteParams
-    from tests.fixtures import copy_demo_workspace
-
-    workspace = copy_demo_workspace(tmp_path)
-    job = submit_workspace_job(str(workspace), "test", lambda: {"ok": True})
-    for _ in range(40):
-        status = workspace_job_status(str(workspace), job["job_id"])
-        if status.get("status") == "completed":
-            break
-        time.sleep(0.02)
-
-    cli = CliRunner().invoke(app, ["job-status", "--workspace", str(workspace), "--job-id", job["job_id"]])
-    assert cli.exit_code == 0
-    assert job["job_id"] in cli.output
-
-    route = build_http_route_registry().dispatch(
-        "/workspace/job-status",
-        RouteParams({"workspace": [str(workspace)], "job_id": [job["job_id"]]}, str(workspace)),
-    )
-    assert route["job_id"] == job["job_id"]
-    assert workspace_status(workspace, view="compact")["jobs"]["jobs"][0]["job_id"] == job["job_id"]
+    pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
 
 def test_reindex_reports_all_main_stages(tmp_path: Path) -> None:

@@ -4,10 +4,10 @@ import json
 from pathlib import Path
 
 import pytest
-from typer.testing import CliRunner
 
 from memory_center.application import release_gate
-from memory_center.cli.main import app
+
+pass  # 4.x 入口已退役
 
 
 def _workspace(tmp_path: Path) -> Path:
@@ -203,22 +203,6 @@ def test_release_gate_fails_low_parser_precision(monkeypatch: pytest.MonkeyPatch
     assert result["components"]["parser_precision"]["reason"] == "parser_quality_insufficient"
 
 
+@pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
 def test_release_gate_cli_does_not_save_failed_baseline(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    output = tmp_path / "portable.json"
-    monkeypatch.setattr(
-            "memory_center.application.release_gate.run_release_gate",
-        lambda *_args, **_kwargs: {
-            "passed": False,
-            "components": {"reindex": {"status": "fail", "metrics": {"duration_ms": 1, "result_count": 0, "quality_score": 0}}},
-        },
-    )
-    monkeypatch.setattr(
-            "memory_center.application.release_gate.save_release_gate_baseline",
-        lambda result, path, *, label: {"saved": True, "baseline_file": str(path), "baseline": {"label": label, "components": result["components"]}},
-    )
-
-    invoked = CliRunner().invoke(app, ["release-gate", "--workspace", "demo.yaml", "--save-baseline", str(output), "--label", "v1"])
-
-    assert invoked.exit_code == 1
-    assert '"saved": false' in invoked.output
-    assert "release_gate_failed" in invoked.output
+    pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")

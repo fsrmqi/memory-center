@@ -1,13 +1,13 @@
 """Tests for hooks.yaml spec module — schema, validation, loading, defaults."""
 from pathlib import Path
 
-from memory_center.core.storage.workspace import WorkspaceStore
-from memory_center.hooks.spec import (
+from memory_center.core.audit.hook_config import (
     ensure_default_hooks,
     load_default_hooks,
     load_hooks_config,
     validate_hooks_config,
 )
+from memory_center.core.storage.workspace import WorkspaceStore
 
 
 def _setup_workspace(tmp_path: Path) -> str:

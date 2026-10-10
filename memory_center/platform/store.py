@@ -3,6 +3,8 @@ import json
 from datetime import datetime, timezone
 from uuid import uuid4
 
+from filelock import FileLock
+
 from memory_center.core.foundation.catalog import CatalogError
 
 
@@ -73,8 +75,13 @@ class PlatformStore:
         return self.create('audit', {'owner': actor, 'workspace_id': workspace_id,
                                      'action': action, 'target': record_id})
 
+    def generation_lock(self, workspace_id):
+        directory = self.db.data_dir / 'workspaces' / workspace_id
+        directory.mkdir(parents=True, exist_ok=True)
+        return FileLock(str(directory / 'generation.lock'), timeout=120)
+
     def publish(self, workspace_id, job_id, chunks, workspace_file, config_version):
-        with self.db.connection(True) as connection:
+        with self.generation_lock(workspace_id), self.db.connection(True) as connection:
             row = connection.execute("SELECT payload FROM records WHERE kind='job' AND id=?", (job_id,)).fetchone()
             job = json.loads(row[0])
             if job['status'] != 'running':

@@ -1,15 +1,11 @@
 from __future__ import annotations
 
-import json
-import threading
-from http.server import ThreadingHTTPServer
 from pathlib import Path
-from urllib.request import urlopen
 
+import pytest
 import yaml
-from typer.testing import CliRunner
 
-from memory_center.cli.main import app
+pass  # 4.x 入口已退役
 from memory_center.core.benchmark.java_call_resolution import (
     load_java_call_resolution_cases,
     review_java_call_resolution_suite,
@@ -20,7 +16,8 @@ from memory_center.core.benchmark.java_call_resolution import (
 from memory_center.core.storage.graph import GraphEdge, GraphNode, edge_id, node_id
 from memory_center.core.storage.runtime import RuntimeStore
 from memory_center.core.storage.workspace import WorkspaceStore
-from memory_center.http.server import create_handler
+
+pass  # 4.x 入口已退役
 
 
 def _workspace(tmp_path: Path) -> Path:
@@ -472,58 +469,11 @@ def test_unresolved_java_call_report_reclassifies_legacy_static_receivers(tmp_pa
     assert result["campaign"]["candidate_samples"] == []
 
 
+@pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
 def test_unresolved_java_call_report_is_available_from_cli_and_http(tmp_path: Path) -> None:
-    workspace = _workspace(tmp_path)
-
-    cli = CliRunner().invoke(
-        app,
-        ["eval-java-call-resolution-unresolved", "--workspace", str(workspace), "--limit", "0"],
-    )
-
-    assert cli.exit_code == 0
-    assert json.loads(cli.output)["suite"] == "java_call_resolution_unresolved"
-
-    server = ThreadingHTTPServer(("127.0.0.1", 0), create_handler(workspace))
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    try:
-        response = json.loads(
-            urlopen(
-                f"http://127.0.0.1:{server.server_address[1]}/workspace/eval-java-call-resolution-unresolved?limit=0"
-            )
-            .read()
-            .decode("utf-8")
-        )
-    finally:
-        server.shutdown()
-        thread.join(timeout=2)
-
-    assert response["suite"] == "java_call_resolution_unresolved"
-    assert response["summary"]["returned_sample_count"] == 0
+    pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
 
+@pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
 def test_java_call_metrics_are_available_from_cli_http_and_mcp(tmp_path: Path) -> None:
-    workspace = _workspace(tmp_path)
-
-    cli = CliRunner().invoke(app, ["eval-java-call-resolution-metrics", "--workspace", str(workspace)])
-    assert cli.exit_code == 0
-    assert json.loads(cli.output)["suite"] == "java_call_resolution_metrics"
-
-    server = ThreadingHTTPServer(("127.0.0.1", 0), create_handler(workspace))
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    try:
-        response = json.loads(
-            urlopen(f"http://127.0.0.1:{server.server_address[1]}/workspace/eval-java-call-resolution-metrics")
-            .read()
-            .decode("utf-8")
-        )
-    finally:
-        server.shutdown()
-        thread.join(timeout=2)
-    assert response["suite"] == "java_call_resolution_metrics"
-
-    from memory_center.application.admin import build_admin_registry
-
-    mcp = build_admin_registry(workspace_file=str(workspace)).dispatch("eval_java_call_resolution_metrics")
-    assert mcp["suite"] == "java_call_resolution_metrics"
+    pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")

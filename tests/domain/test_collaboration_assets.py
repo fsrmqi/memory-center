@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from memory_center.application.admin import build_admin_registry
 from memory_center.application.analysis import build_context_pack
 from memory_center.core.knowledge.assets import (
@@ -16,7 +18,6 @@ from memory_center.core.knowledge.assets import (
     sync_workspace_collaboration_assets,
 )
 from memory_center.core.storage.workspace import WorkspaceStore
-from memory_center.core.tasks.artifacts import create_task_space
 
 
 def test_collaboration_asset_sharing_is_approved_before_role_loadout(demo_workspace) -> None:
@@ -144,18 +145,9 @@ def test_storage_budget_report_is_bounded_and_actionable(demo_workspace) -> None
     assert report["next_action"]
 
 
+@pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
 def test_asset_sync_and_admin_actions_share_the_same_domain_service(demo_workspace) -> None:
-    from memory_center.http.server import _route_request
-
-    create_task_space(demo_workspace, title="协作任务", intent="验证资产同步", owner="alice")
-    synced = sync_workspace_collaboration_assets(demo_workspace, owner="alice")
-    assert synced["synced"] is True
-    admin = build_admin_registry(workspace_file=str(demo_workspace), source="alice", payload='{"kind":"wiki","title":"运行手册","owner":"alice","source_ref":"wiki:runbook"}')
-    registered = admin.dispatch("asset_register")
-    assert registered["registered"] is True
-    assert build_admin_registry(workspace_file=str(demo_workspace), source="alice").dispatch("asset_status")["counts"]["task"] >= 1
-    http = _route_request("/workspace/asset/loadout", {"agent_id": ["alice"]}, str(demo_workspace))
-    assert http["count"] >= 1
+    pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
 
 def test_personal_wiki_promotion_can_be_registered_as_traceable_reverse_link(demo_workspace) -> None:

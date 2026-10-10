@@ -1,0 +1,159 @@
+{
+  "_version": "5.0",
+  "_comment": "5.0 单一 MCP 服务基线；4.x 基线独立保留。",
+  "tools": {
+    "mc_service_status": {
+      "required": [],
+      "optional": []
+    },
+    "assistant_admin": {
+      "required": [
+        "action"
+      ],
+      "optional": [
+        "force",
+        "scope"
+      ]
+    },
+    "assistant_knowledge": {
+      "required": [
+        "action"
+      ],
+      "optional": [
+        "force",
+        "limit",
+        "max_chars",
+        "path",
+        "query",
+        "scope",
+        "start_line"
+      ]
+    },
+    "assistant_memory": {
+      "required": [
+        "action"
+      ],
+      "optional": [
+        "category",
+        "company",
+        "confirm",
+        "content",
+        "destination",
+        "knowledge_type",
+        "module",
+        "source",
+        "source_path",
+        "source_refs",
+        "task_id",
+        "title"
+      ]
+    },
+    "assistant_skill": {
+      "required": [
+        "action"
+      ],
+      "optional": [
+        "body",
+        "chapters",
+        "cheatsheet",
+        "confirm",
+        "description",
+        "evidence_refs",
+        "glossary",
+        "mode",
+        "name",
+        "patterns",
+        "published",
+        "source_paths",
+        "workdir"
+      ]
+    },
+    "mc_workspaces": {
+      "required": [],
+      "optional": []
+    },
+    "mc_lookup": {
+      "required": [
+        "query",
+        "workspace_id"
+      ],
+      "optional": [
+        "limit",
+        "mode",
+        "session_id"
+      ]
+    },
+    "mc_analyze": {
+      "required": [
+        "target",
+        "workspace_id"
+      ],
+      "optional": []
+    },
+    "mc_start": {
+      "required": [
+        "intent",
+        "workspace_id"
+      ],
+      "optional": []
+    },
+    "mc_resume": {
+      "required": [
+        "session_id"
+      ],
+      "optional": []
+    },
+    "mc_close": {
+      "required": [
+        "outcome",
+        "session_id"
+      ],
+      "optional": []
+    },
+    "mc_ref": {
+      "required": [
+        "ref_id"
+      ],
+      "optional": []
+    },
+    "mc_memory_write": {
+      "required": [
+        "content",
+        "workspace_id"
+      ],
+      "optional": [
+        "confirmed"
+      ]
+    },
+    "mc_wiki_write": {
+      "required": [
+        "content",
+        "title",
+        "workspace_id"
+      ],
+      "optional": [
+        "record_id",
+        "revision"
+      ]
+    },
+    "mc_index": {
+      "required": [
+        "workspace_id"
+      ],
+      "optional": []
+    },
+    "mc_job_status": {
+      "required": [
+        "job_id"
+      ],
+      "optional": []
+    },
+    "mc_job_cancel": {
+      "required": [
+        "job_id"
+      ],
+      "optional": []
+    }
+  },
+  "facade_schemas": {}
+}

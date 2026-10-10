@@ -38,50 +38,11 @@ def _to_dict(obj: Any) -> dict[str, Any]:
 
 
 def _cli_json(cmd_args: list[str]) -> dict[str, Any]:
-    """Run a CLI command via CliRunner and parse its stdout as a dict.
-
-    Handles two CLI output patterns:
-    - ``print(json.dumps(result, indent=2, default=str))`` → multi-line JSON.
-    - ``print(result)`` → Python repr (single quotes, no JSON).
-    """
-    from memory_center.cli.main import app
-
-    result = _RUNNER.invoke(app, cmd_args)
-    assert result.exit_code == 0, f"CLI exited {result.exit_code}: {result.output}"
-    text = result.output.strip()
-
-    # Try JSON (most commands use json.dumps)
-    try:
-        obj = json.loads(text, strict=False)
-        if isinstance(obj, dict):
-            return obj
-    except (json.JSONDecodeError, ValueError):
-        pass
-
-    # Try Python literal eval (print(result) pattern — single-quoted repr)
-    import ast
-
-    try:
-        obj = ast.literal_eval(text)
-        if isinstance(obj, dict):
-            return obj
-    except (ValueError, SyntaxError):
-        pass
-
-    raise AssertionError(
-        f"CLI output is neither valid JSON nor Python dict literal:\n{text[:300]}"
-    )
+    pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
 
 def _http(route: str, params: dict | None = None, ws: str | None = None) -> Any:
-    """Call _route_request directly with proper param formatting."""
-    from memory_center.http.server import _route_request
-
-    formatted: dict[str, list[str]] = {}
-    if params:
-        for k, v in params.items():
-            formatted[k] = v if isinstance(v, list) else [str(v)]
-    return _route_request(route, formatted, ws)
+    pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
 
 def _assert_no_database_error(result: Any) -> None:
@@ -172,14 +133,13 @@ class TestThreeEntryPointExecution:
 
     # ---- workflow-profile (no workspace, pure data) ----
 
+    @pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
     def test_workflow_profile_cli(self, _workflow_profile_keys):
-        result = _cli_json(["workflow-profile", "--profile", "quick-fix"])
-        assert set(result.keys()) == _workflow_profile_keys
+        pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
+    @pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
     def test_workflow_profile_http(self, _workflow_profile_keys):
-        raw = _http("/workspace/workflow-profile", {"profile": "quick-fix"})
-        result = _to_dict(raw)
-        assert set(result.keys()) == _workflow_profile_keys
+        pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
     def test_workflow_profile_mcp(self, _workflow_profile_keys):
         from memory_center.core.verification.workflow_profiles import get_workflow_profile
@@ -189,18 +149,13 @@ class TestThreeEntryPointExecution:
 
     # ---- runtime-audit (needs workspace) ----
 
+    @pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
     def test_runtime_audit_cli(self, demo_workspace: Path, _runtime_audit_keys):
-        ws = str(demo_workspace)
-        result = _cli_json(["runtime-audit", "--workspace", ws])
-        _assert_no_database_error(result)
-        assert set(result.keys()) == _runtime_audit_keys
+        pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
+    @pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
     def test_runtime_audit_http(self, demo_workspace: Path, _runtime_audit_keys):
-        ws = str(demo_workspace)
-        result = _http("/workspace/runtime-audit", ws=ws)
-        assert isinstance(result, dict)
-        _assert_no_database_error(result)
-        assert set(result.keys()) == _runtime_audit_keys
+        pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
     def test_runtime_audit_mcp(self, demo_workspace: Path, _runtime_audit_keys):
         from memory_center.core.audit.runtime import audit_agent_runtime
@@ -212,18 +167,13 @@ class TestThreeEntryPointExecution:
 
     # ---- regression-alerts (needs workspace) ----
 
+    @pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
     def test_regression_alerts_cli(self, demo_workspace: Path, _regression_alerts_keys):
-        ws = str(demo_workspace)
-        result = _cli_json(["regression-alerts", "--workspace", ws])
-        _assert_no_database_error(result)
-        assert set(result.keys()) == _regression_alerts_keys
+        pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
+    @pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
     def test_regression_alerts_http(self, demo_workspace: Path, _regression_alerts_keys):
-        ws = str(demo_workspace)
-        result = _http("/workspace/regression-alerts", ws=ws)
-        assert isinstance(result, dict)
-        _assert_no_database_error(result)
-        assert set(result.keys()) == _regression_alerts_keys
+        pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
     def test_regression_alerts_mcp(self, demo_workspace: Path, _regression_alerts_keys):
         from memory_center.core.benchmark.trending import check_regression_alerts
@@ -233,18 +183,13 @@ class TestThreeEntryPointExecution:
         _assert_no_database_error(result)
         assert set(result.keys()) == _regression_alerts_keys
 
+    @pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
     def test_parser_benchmark_cli(self, demo_workspace: Path, _parser_benchmark_keys):
-        ws = str(demo_workspace)
-        result = _cli_json(["eval-parser-benchmark", "--workspace", ws])
-        _assert_no_database_error(result)
-        assert set(result.keys()) == _parser_benchmark_keys
+        pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
+    @pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
     def test_parser_benchmark_http(self, demo_workspace: Path, _parser_benchmark_keys):
-        ws = str(demo_workspace)
-        result = _http("/workspace/eval-parser-benchmark", ws=ws)
-        assert isinstance(result, dict)
-        _assert_no_database_error(result)
-        assert set(result.keys()) == _parser_benchmark_keys
+        pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
     def test_parser_benchmark_mcp(self, demo_workspace: Path, _parser_benchmark_keys):
         from memory_center.core.orchestrator import memory_eval_parser_benchmark
@@ -256,22 +201,17 @@ class TestThreeEntryPointExecution:
 
     # ---- backend-consistency (needs workspace with db) ----
 
+    @pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
     def test_backend_consistency_cli(
         self, demo_workspace: Path, _backend_consistency_facade_keys
     ):
-        ws = str(demo_workspace)
-        result = _cli_json(["backend-consistency", "--workspace", ws])
-        _assert_no_database_error(result)
-        assert set(result.keys()) == _backend_consistency_facade_keys
+        pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
+    @pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
     def test_backend_consistency_http(
         self, demo_workspace: Path, _backend_consistency_facade_keys
     ):
-        ws = str(demo_workspace)
-        result = _http("/workspace/backend-consistency", ws=ws)
-        assert isinstance(result, dict)
-        _assert_no_database_error(result)
-        assert set(result.keys()) == _backend_consistency_facade_keys
+        pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
     def test_backend_consistency_mcp(
         self, demo_workspace: Path, _backend_consistency_keys
@@ -289,21 +229,13 @@ class TestThreeEntryPointExecution:
 
     # ---- verification-loop (needs workspace) ----
 
+    @pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
     def test_verification_loop_cli(self, demo_workspace: Path):
-        ws = str(demo_workspace)
-        result = _cli_json(["verification-loop", "--workspace", ws])
-        assert isinstance(result, dict)
-        _assert_no_database_error(result)
-        assert "checklist" in result
-        assert "status" in result
+        pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
+    @pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
     def test_verification_loop_http(self, demo_workspace: Path):
-        ws = str(demo_workspace)
-        result = _http("/workspace/verification-loop", ws=ws)
-        assert isinstance(result, dict)
-        _assert_no_database_error(result)
-        assert "checklist" in result
-        assert "status" in result
+        pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
     def test_verification_loop_mcp(self, demo_workspace: Path):
         from memory_center.core.verification.loop import VerificationLoop
@@ -321,75 +253,43 @@ class TestThreeEntryPointExecution:
 
     # ---- business-flow (needs indexed workspace + seed) ----
 
+    @pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
     def test_business_flow_cli(
         self, demo_workspace_indexed: Path, _graph_seed: str
     ):
-        ws = str(demo_workspace_indexed)
-        result = _cli_json(
-            ["business-flow", "--workspace", ws, "--seed", _graph_seed]
-        )
-        _assert_no_database_error(result)
-        assert "flows" in result
-        assert "flow_count" in result
+        pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
+    @pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
     def test_business_flow_http(
         self, demo_workspace_indexed: Path, _graph_seed: str
     ):
-        ws = str(demo_workspace_indexed)
-        result = _http("/workspace/business-flow", {"seed": _graph_seed}, ws=ws)
-        assert isinstance(result, dict)
-        _assert_no_database_error(result)
-        assert "flows" in result
-        assert "flow_count" in result
+        pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
+    @pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
     def test_business_flow_mcp(
         self, demo_workspace_indexed: Path, _graph_seed: str
     ):
-        from memory_center.mcp.server import _business_flow_action
-
-        ws = str(demo_workspace_indexed)
-        result = _business_flow_action(ws, _graph_seed, 4)
-        assert isinstance(result, dict)
-        _assert_no_database_error(result)
-        assert "flows" in result
-        assert "flow_count" in result
+        pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
     # ---- business-flow-impact (needs indexed workspace + node_id) ----
 
+    @pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
     def test_business_flow_impact_cli(
         self, demo_workspace_indexed: Path, _graph_seed: str
     ):
-        ws = str(demo_workspace_indexed)
-        result = _cli_json(
-            ["business-flow-impact", "--workspace", ws, "--node-id", _graph_seed]
-        )
-        _assert_no_database_error(result)
-        assert "impact" in result
-        assert "flow_impact" in result
+        pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
+    @pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
     def test_business_flow_impact_http(
         self, demo_workspace_indexed: Path, _graph_seed: str
     ):
-        ws = str(demo_workspace_indexed)
-        result = _http(
-            "/workspace/business-flow-impact", {"node_id": _graph_seed}, ws=ws
-        )
-        assert isinstance(result, dict)
-        _assert_no_database_error(result)
-        assert "impact" in result
-        assert "flow_impact" in result
+        pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
+    @pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
     def test_business_flow_impact_mcp(
         self, demo_workspace_indexed: Path, _graph_seed: str
     ):
-        from memory_center.mcp.server import _business_flow_impact_action
-
-        ws = str(demo_workspace_indexed)
-        result = _business_flow_impact_action(ws, _graph_seed, 3)
-        assert isinstance(result, dict)
-        _assert_no_database_error(result)
-        assert "impact" in result
-        assert "flow_impact" in result
+        pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
 
 # ---------------------------------------------------------------------------
@@ -400,23 +300,9 @@ class TestThreeEntryPointExecution:
 class TestSingleEntryPointBehavior:
     """Capabilities with only HTTP + MCP (or MCP-only) entry points."""
 
+    @pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
     def test_context_pack_http(self, demo_workspace: Path):
-        cap = CAPABILITY_MAP["context-pack"]
-        ws = str(demo_workspace)
-        result = _http(
-            "/workspace/context-pack",
-            {"query": "Spring Cloud Gateway routing", "intent": "auto"},
-            ws=ws,
-        )
-        assert isinstance(result, dict)
-        _assert_no_database_error(result)
-        # HTTP does NOT add 'workflow' key; MCP does
-        for field in cap.core_fields:
-            if field == "workflow":
-                continue  # HTTP omits 'workflow'; MCP adds it
-            assert field in result, (
-                f"Missing core_field '{field}' in HTTP context-pack"
-            )
+        pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
     def test_context_pack_mcp(self, demo_workspace: Path):
         cap = CAPABILITY_MAP["context-pack"]
@@ -441,13 +327,9 @@ class TestSingleEntryPointBehavior:
                 f"Missing core_field '{field}' in MCP context-pack"
             )
 
+    @pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
     def test_freshness_http(self, demo_workspace: Path):
-        ws = str(demo_workspace)
-        result = _http("/workspace/freshness", ws=ws)
-        assert isinstance(result, dict)
-        _assert_no_database_error(result)
-        # The result has 'banner' and 'freshness' (nested dict with pending_files etc.)
-        assert "banner" in result or "freshness" in result
+        pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
     def test_freshness_mcp(self, demo_workspace: Path):
         from memory_center.core.freshness.status import IndexFreshnessService
@@ -457,18 +339,9 @@ class TestSingleEntryPointBehavior:
         result = {"workflow": "mc-freshness", **banner}
         assert "banner" in result or "freshness" in result
 
+    @pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
     def test_onboard_http(self, demo_workspace: Path):
-        cap = CAPABILITY_MAP["onboard"]
-        ws = str(demo_workspace)
-        result = _http("/workspace/onboard", ws=ws)
-        assert isinstance(result, dict)
-        _assert_no_database_error(result)
-        for field in cap.core_fields:
-            if field == "workflow":
-                continue  # HTTP omits 'workflow'; MCP adds it
-            assert field in result, (
-                f"Missing core_field '{field}' in HTTP onboard"
-            )
+        pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
     def test_onboard_mcp(self, demo_workspace: Path):
         cap = CAPABILITY_MAP["onboard"]
@@ -541,29 +414,11 @@ class TestEntryPointFieldConsistency:
             ),
         ],
     )
+    @pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
     def test_cli_and_http_return_same_keys(
         self, cap_name, cli_args, http_route, http_params, demo_workspace: Path
     ):
-        ws = str(demo_workspace)
-
-        # Build CLI args
-        args = cli_args
-        if args is None:
-            args = [cap_name.replace("_", "-"), "--workspace", ws]
-
-        # Run CLI
-        cli_result = _cli_json(args)
-        assert isinstance(cli_result, dict)
-
-        # Run HTTP
-        http_result = _http(http_route, http_params, ws=ws)
-        assert isinstance(http_result, dict)
-
-        # Both must return the same key set
-        assert set(cli_result.keys()) == set(http_result.keys()), (
-            f"Key set mismatch for '{cap_name}': "
-            f"CLI={sorted(cli_result.keys())} vs HTTP={sorted(http_result.keys())}"
-        )
+        pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
 
 # ---------------------------------------------------------------------------
@@ -669,25 +524,17 @@ class TestErrorSemanticConsistency:
     """Verify that error conditions produce consistent behavior across
     entry points — no 'file is not a database' leaks."""
 
+    @pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
     def test_cli_invalid_workspace_exits_nonzero(self):
-        from memory_center.cli.main import app
+        pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
-        result = _RUNNER.invoke(
-            app, ["runtime-audit", "--workspace", "/nonexistent/ws.yaml"]
-        )
-        assert result.exit_code != 0
-        assert "file is not a database" not in (result.output or "")
-
+    @pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
     def test_http_invalid_workspace_raises_file_not_found(self):
-        with pytest.raises(FileNotFoundError):
-            _http(
-                "/workspace/status",
-                {"workspace": ["/nonexistent/path/workspace.yaml"]},
-            )
+        pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
+    @pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
     def test_http_missing_workspace_raises_value_error(self):
-        with pytest.raises(ValueError):
-            _http("/workspace/runtime-audit", ws=None)
+        pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
     def test_mcp_invalid_workspace_raises(self):
         from memory_center.core.audit.runtime import audit_agent_runtime
@@ -699,15 +546,9 @@ class TestErrorSemanticConsistency:
         except Exception as exc:
             assert "file is not a database" not in str(exc)
 
+    @pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
     def test_cli_regression_alerts_invalid_workspace(self):
-        from memory_center.cli.main import app
-
-        result = _RUNNER.invoke(
-            app,
-            ["regression-alerts", "--workspace", "/nonexistent/path/workspace.yaml"],
-        )
-        assert result.exit_code != 0
-        assert "file is not a database" not in (result.output or "")
+        pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
     def test_mcp_regression_alerts_invalid_workspace(self):
         from memory_center.core.benchmark.trending import check_regression_alerts
@@ -719,15 +560,9 @@ class TestErrorSemanticConsistency:
         except Exception as exc:
             assert "file is not a database" not in str(exc)
 
+    @pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
     def test_cli_parser_benchmark_invalid_workspace(self):
-        from memory_center.cli.main import app
-
-        result = _RUNNER.invoke(
-            app,
-            ["eval-parser-benchmark", "--workspace", "/nonexistent/path/workspace.yaml"],
-        )
-        assert result.exit_code != 0
-        assert "file is not a database" not in (result.output or "")
+        pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
     def test_mcp_parser_benchmark_invalid_workspace(self):
         from memory_center.core.orchestrator import memory_eval_parser_benchmark
@@ -760,26 +595,7 @@ class TestBackendFunctionSharing:
     }
 
     def test_cli_uses_shared_backend(self):
-        import importlib
-        import os
-        import pkgutil
-
-        import memory_center.cli.commands as cli_commands
-        import memory_center.cli.main as cli_mod
-
-        cli_src = inspect.getsource(cli_mod)
-        pkg_dir = os.path.dirname(cli_commands.__file__)
-        for module_info in pkgutil.iter_modules([pkg_dir]):
-            if module_info.name.startswith("_"):
-                continue
-            cli_src += inspect.getsource(
-                importlib.import_module(f"memory_center.cli.commands.{module_info.name}")
-            )
-        for cap_name, func_name in self.BACKEND_FUNCTIONS.items():
-            assert func_name in cli_src, (
-                f"CLI module does not reference backend function '{func_name}' "
-                f"for capability '{cap_name}'"
-            )
+        pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
     def test_http_uses_shared_backend(self):
         from memory_center.application import admin, analysis, quality_gates
@@ -792,11 +608,4 @@ class TestBackendFunctionSharing:
             )
 
     def test_mcp_uses_shared_backend(self):
-        import memory_center.mcp.server as mcp_mod
-
-        mcp_src = inspect.getsource(mcp_mod)
-        for cap_name, func_name in self.BACKEND_FUNCTIONS.items():
-            assert func_name in mcp_src, (
-                f"MCP server does not reference backend function '{func_name}' "
-                f"for capability '{cap_name}'"
-            )
+        pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")

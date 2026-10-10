@@ -1,13 +1,13 @@
 # 5.0 多项目知识服务使用指南
 
-> 当前：5.0.0b7，开发测试版本；不兼容 4.x 接入或导入历史数据。
+> 当前：5.0.0b8，开发测试版本；不兼容 4.x 接入或导入历史数据。
 > 用户已授权连续完成方案，无需每个切片再次确认。此指南描述当前服务入口；旧版文档仅作为核心算法背景。
 
 ## 安装与运行
 
 ```sh
 python3 -m venv .venv
-.venv/bin/python -m pip install /path/to/memory_center-5.0.0b7-py3-none-any.whl
+.venv/bin/python -m pip install /path/to/memory_center-5.0.0b8-py3-none-any.whl
 .venv/bin/memory-center-service --data-dir /path/to/new-service-data
 ```
 
@@ -118,7 +118,7 @@ docker compose -f compose.yaml -f compose.postgres.yaml exec -T postgres pg_dump
 
 协议夹具只验证嵌入数量/维度、模型档案隔离、数据库向量距离、HNSW 与融合，不代表真实语义质量。当前网络的 Ollama registry 证书校验失败，未关闭 TLS 验证；真实模型语义评测未完成。没有宣称图片中的 IM、浏览器沙箱、联网搜索、Neo4j、所有外部模型厂商等已实现，它们不属于此次 Memory Center 服务化核心闭环。
 
-## 多语言代码查询（5.0.0b7）
+## 多语言代码查询（5.0.0b8）
 
 借鉴 GitNexus 的语言注册、Vue 脚本块提取和分阶段引用解析。每次索引先提取声明与导入绑定，再连接调用，写入 generation 的 `code-graph.json`；文件路径、符号类型、限定名和声明行组成符号身份，避免多个文件的同名函数覆盖。Java 的 Spring/Feign/MQ 专用分析继续保留。
 
@@ -159,3 +159,20 @@ memory-center-integrations --target agents --target codex --force
 宿主只保留一个 `memory-center` MCP 接入；支持 HTTP 的宿主直接连接 `http://127.0.0.1:8765/mcp`，其余使用上面的代理。移除旧 `personal-assistant-wiki` MCP 配置及 Memory Center DSH 管理插件后，需要刷新宿主会话/重启 DSH 才会重新发现工具。其它 DSH 插件源码不随此次迁移改动；仍调用旧 Memory 工具合同的插件需另行适配。
 
 English: b6 integrates Wiki governance and Skill lifecycle into the single Memory Center service. The four assistant tools are additive to the 5.0 schema. Managed Wiki data, candidate Skills and recoverable removals live in the service data directory; source Wiki documents are retained. Skill publication can target a dedicated writable host mount. Replace the separate Wiki MCP connection with the unified endpoint and refresh host sessions. Other DSH components are outside this migration.
+
+
+## 项目分析引擎与可选资源限制（b8）
+
+管理页“项目管理 → 编辑项目 → 影响分析引擎”可选择：
+
+- `auto`（默认）：唯一 Java 锚点使用 Java/Spring 专用分析，其他语言使用通用分析；未命中或歧义锚点不回落为 Java 否定结论。
+- `generic`：使用通用多语言代码图，只报告有证据的静态关系。
+- `java`：使用 Java/Spring 专用分析；非 Java 或不明确的锚点返回边界说明。
+
+设置按项目独立保存，不需要重建索引。管理员 API 为 `GET/PUT /api/v1/workspaces/{workspace_id}/analysis-settings`；PUT 传 `engine` 与 `revision`（未配置时为 0），过期修订返回 409。
+
+索引资源限制默认均为 0（关闭）；设置以下环境变量的正数可启用对应上限：`MEMORY_CENTER_INDEX_MAX_FILES`、`MEMORY_CENTER_INDEX_MAX_TOTAL_MB`、`MEMORY_CENTER_INDEX_MAX_FILE_MB`、`MEMORY_CENTER_INDEX_MEMORY_LIMIT_MB`、`MEMORY_CENTER_INDEX_TIMEOUT_SECONDS`。`MEMORY_CENTER_ALLOW_LARGE_INDEX=1` 可绕过文件数/体积限制，但不绕过显式内存或超时限制。限制在服务启动时读取，修改后需要重启。
+
+清理旧索引会保留当前生效代际和尚未退出的索引进程。删除取消任务时先等待进程退出，失败时保留记录可重试；文件系统删除失败不会计为成功释放空间。
+
+English: Choose Auto, Generic or Java/Spring analysis per project. Auto routes by a unique anchor's language. Settings do not invalidate the index. All resource limits default to zero and become active only when explicitly configured. Generation cleanup is serialized with publication and worker lifecycle management.
