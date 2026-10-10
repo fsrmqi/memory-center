@@ -35,7 +35,7 @@ English: Select a project in Project Management to view its storage accounting a
 
 ```sh
 python3 -m venv .venv
-.venv/bin/python -m pip install /path/to/memory_center-5.0.0b10-py3-none-any.whl
+.venv/bin/python -m pip install /path/to/memory_center-5.0.0b18-py3-none-any.whl
 .venv/bin/memory-center-service --data-dir /path/to/new-service-data
 ```
 

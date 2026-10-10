@@ -1585,3 +1585,5 @@ Apache-2.0
 b16 在项目管理中新增项目空间占用明细，支持当前／其他索引代际、解析／向量缓存及项目数据库载荷统计。共享数据库物理空间不分摊；统计口径与入口见 [平台指南](docs/V5_PLATFORM_GUIDE.md)。Project Management now reports per-project file and database payload accounting with explicit shared-storage limitations.
 
 b17 在项目空间面板新增按项目的存储治理，保留策略、分页清理预览和确认执行；SQLite 向量检索使用流式 Top-K 并支持可选扫描上限。Project storage governance and bounded-memory exact vector scanning are available; details are in the platform guide.
+
+项目管理中的“向量化范围”可按项目选择跟随全局、全部内容、仅 Wiki／记忆或关闭；代码图与关键词索引独立运行。设置保存不自动重建，范围扩大后需手动索引，见 [项目向量化指南](docs/V5_PLATFORM_GUIDE.md)。

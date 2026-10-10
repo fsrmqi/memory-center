@@ -6,6 +6,8 @@
 
 > b17 已追加存储治理、分块修复与流式向量检索，并更新本地 OrbStack。当前验收结果与限制见 [b17 实施回执](implementation-receipts/V5_STORAGE_GOVERNANCE.md)。Local OrbStack is updated; validation scope is documented in the b17 receipt.
 
+> b18 已增加项目级向量范围与无向量图／关键词索引，部署与验证见 [项目向量范围回执](implementation-receipts/V5_PROJECT_EMBEDDING.md)。Per-project vector scope is added in b18.
+
 
 > 2026-10-09 当前实施更新：5.0.0b1 已接入多项目授权 MCP、后台索引、知识库/Wiki/记忆管理与 PG/向量后端，已完成本地测试版验收；正式发行仍需真实模型语义与规模评测。用户已授权连续实施。本轮证据见 [实施回执](implementation-receipts/V5_PLATFORM.md)，当前入口与合同见 [5.0 平台指南](V5_PLATFORM_GUIDE.md)。下方较早的 S1/S2 等待确认记录仅保留决策演进背景。
 

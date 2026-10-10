@@ -1225,3 +1225,7 @@ Memory Center 是一个面向 AI 编程助手的本地优先 workspace 记忆与
 `platform/knowledge_tasks.py` 使用独立持久队列和单个后台线程执行知识刷新、全库整理。知识刷新在同一检索 generation 内原子替换非代码分块与词项，保留源码图；全库整理只创建有来源修订门禁的待审预览。会话候选接入默认关闭。检索授权过滤后可调用可选 `/rerank` 模型，失败显式回退。实际边界与未验证环境见 [b15 回执](implementation-receipts/V5_REFERENCE_ADOPTION.md)。
 
 English: A separate durable knowledge queue refreshes non-code retrieval rows atomically while retaining the code graph, or generates review-only organization previews. Session candidates are opt-in. Optional reranking runs after authorization filtering and explicitly falls back on failure.
+
+### 项目向量范围 / Project embedding scope
+
+`platform/project_embedding.py` 独立保存项目范围与修订。索引只向量化所选分块，发布事务校验修订；关闭时跳过模型及向量缓存维护，仍发布代码图与关键词分块。知识刷新遵守同一范围。检索在数据库 Top-K／SQLite 扫描预算前过滤知识范围；关闭立即退回关键词，启用或扩大范围检测实际发布覆盖并提示重建。全局嵌入模型、聊天模型和重排模型仍独立维护。
