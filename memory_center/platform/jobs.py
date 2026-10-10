@@ -12,6 +12,7 @@ from pathlib import Path
 import yaml
 
 from memory_center.core.foundation.catalog import CatalogError
+from memory_center.core.indexing.language_registry import get_language_spec_for_extension
 from memory_center.platform.database import Database, PostgresCatalog
 from memory_center.platform.embeddings import Embedder
 from memory_center.platform.knowledge import Knowledge
@@ -206,26 +207,41 @@ def run_index(data_dir, database_url, workspace, job_id, limits=None, file_worke
     pool = WorkPool(file_workers, kind='parse')
     # 解析缓存落在**工作区级**目录，不在 generation 内：generation 会被 prune 清理，
     # 而缓存必须跨代际存活，「只改了几个文件的再次索引」才能跳过其余文件的解析。
-    # 预算为 0（MEMORY_CENTER_PARSE_CACHE_MB=0）时完全不读不写，退回全量解析。
-    cache_budget = configured_budget_bytes()
     cache_root = data_dir / 'workspaces' / workspace['workspace_id'] / 'parse-cache'
-    structural_cache = ParseCache(cache_root, STRUCTURAL_NAMESPACE) if cache_budget else None
-    java_cache = ParseCache(cache_root, JAVA_NAMESPACE) if cache_budget else None
     try:
         root = Path(workspace['root'])
         if root.resolve() != root or not root.is_dir():
             raise CatalogError('ROOT_CHANGED', '源码目录已移动，请暂停后重新登记路径')
         chunks = []
+        source_digests: dict[str, str] = {}
         _apply_memory_limit(limits.memory_limit_bytes)
         # 默认完整扫描；仅当超过软上限且未显式批准时才拒绝，且不发布任何索引。
         report('scanning')
         files = scan_source_files(root, limits, report)
+        # 缓存预算按**可解析源码规模**自适应：载荷约为源码的 6 倍，固定 512 MiB 会让
+        # 大工作区每轮都淘汰刚写下的条目。显式设置 MEMORY_CENTER_PARSE_CACHE_MB 时
+        # （含 0 关闭）以它为准，故这里只在未设置 env 时受益。
+        parseable_bytes = 0
+        for path in files:
+            if get_language_spec_for_extension(path.suffix) is None:
+                continue
+            try:
+                parseable_bytes += path.stat().st_size
+            except OSError:
+                continue
+        cache_budget = configured_budget_bytes(source_bytes=parseable_bytes)
+        structural_cache = ParseCache(cache_root, STRUCTURAL_NAMESPACE) if cache_budget else None
+        java_cache = ParseCache(cache_root, JAVA_NAMESPACE) if cache_budget else None
         report('chunking', 0, len(files))
         for number, path in enumerate(files, 1):
             text = path.read_text(encoding='utf-8', errors='replace')
             relative = path.relative_to(root).as_posix()
+            # 内容 sha256 在这里算一次就够：解析阶段（通用结构 + Java 专用）直接复用，
+            # 同一份源码不再被「切块」与「解析」各读一遍、各算一次哈希。
+            digest = hashlib.sha256(text.encode()).hexdigest()
+            source_digests[str(path)] = digest
             chunks.extend(split_text(text, {'kind': 'code', 'source_id': 'code:' + relative,
-                                           'path': relative, 'hash': hashlib.sha256(text.encode()).hexdigest()}))
+                                           'path': relative, 'hash': digest}))
             report('chunking', number, len(files))
         directory = data_dir / 'workspaces' / workspace['workspace_id'] / 'generations' / job_id
         directory.mkdir(parents=True, exist_ok=True)
@@ -233,7 +249,7 @@ def run_index(data_dir, database_url, workspace, job_id, limits=None, file_worke
 
         from memory_center.platform.code_graph import build_code_graph, coverage_summary
         report('parsing', 0, None)
-        code_graph = build_code_graph(root, files, report, pool, structural_cache)
+        code_graph = build_code_graph(root, files, report, pool, structural_cache, source_digests)
         (directory / 'code-graph.json').write_text(json.dumps(code_graph, ensure_ascii=False), encoding='utf-8')
         store.update('job', job_id, {'code_coverage': coverage_summary(code_graph)})
         workspace_file = directory / 'workspace.yaml'
@@ -250,7 +266,7 @@ def run_index(data_dir, database_url, workspace, job_id, limits=None, file_worke
                 report('services', number - 1, len(services), 'services', f'{service.name} · {stage} · {message}')
             reindex_workspace(config, WorkspaceStore(workspace_file), projects=[service.name],
                               paths=owned or [str(directory / 'empty-scope')], parallel=False,
-                              pool=pool, cache=java_cache,
+                              pool=pool, cache=java_cache, source_digests=source_digests,
                               materialize_assertions=False, progress=service_progress)
             report('services', number, len(services), 'services', service.name)
         report('knowledge', 0, None, 'items')

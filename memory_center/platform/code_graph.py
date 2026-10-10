@@ -15,36 +15,51 @@ from memory_center.platform.parse_cache import ParseCache, decode_structural, en
 _CHILD_PARSERS: dict[str, TreeSitterStructuralParser] = {}
 
 
-def parse_file_unit(item: tuple[str, str, ParseCache | None]):
+def _structural_cache_hit(cache, parser, language_name, digest):
+    """按内容键取结构性解析结果；无缓存、解析器不可用或键为空时返回 ``None``。"""
+    if cache is None or not parser.available or not digest:
+        return None
+    cached = cache.get(language_name, digest)
+    return decode_structural(cached) if cached is not None else None
+
+
+def parse_file_unit(item: tuple[str, str, str, ParseCache | None]):
     """解析单个文件——工作池任务，故必须是模块级函数（spawn 按引用 pickle）。
 
-    ``item`` 为 ``(relative, abspath, cache)``。返回
-    ``(relative, language, status, content_hash, result)``。
+    ``item`` 为 ``(relative, abspath, digest, cache)``。``digest`` 是调用方
+    （扫描/切块阶段）已经算好的内容 sha256；为空串时本函数自行读文件并计算。
+    返回 ``(relative, language, status, content_hash, result)``。
     单文件异常在此兜住并返回 ``status='failed:<ExcType>'`` + ``result=None``，
     使一个坏文件只影响自己的覆盖状态，不牵连同批其余文件。
     串行与池化两条路径调用的是同一个函数，这是等价性门槛的落点。
 
-    ``cache`` 非空时按（语言, 内容 sha256）取用解析结果，命中即跳过 tree-sitter；
-    命中与未命中返回**逐值相等**的对象，故缓存只影响速度（见 parse_cache 模块）。
-    解析器不可用（未装 tree-sitter、语言无绑定）时**不落缓存**——否则「缺绑定」
-    会被固化成持久结果，装上绑定后仍读回空解析。
+    读取尽量不发生：``digest`` 由调用方提供且缓存命中时直接解码返回，完全不碰文件
+    系统——同一份源码因此不再被「切块」与「解析」各读一遍。``digest`` 的提供方保证
+    该文件在本次索引内已被成功读取，故命中路径不必再确认文件是否仍在。未提供
+    ``digest`` 时退回旧行为：读文件、算哈希，再查一次缓存（命中则跳过 tree-sitter）。
+
+    ``cache`` 非空时按（语言, 内容 sha256）取用解析结果；命中与未命中返回**逐值相等**
+    的对象，故缓存只影响速度（见 parse_cache 模块）。解析器不可用（未装 tree-sitter、
+    语言无绑定）时**不落缓存**——否则「缺绑定」会被固化成持久结果，装上绑定后仍读回空解析。
     """
-    relative, abspath, cache = item
+    relative, abspath, digest, cache = item
     spec = get_language_spec_for_extension(Path(abspath).suffix)
     if spec is None:
         return relative, '', 'unsupported', '', None
     try:
-        text = Path(abspath).read_text(encoding='utf-8', errors='replace')
-        digest = hashlib.sha256(text.encode()).hexdigest()
         parser = _CHILD_PARSERS.get(spec.name)
         if parser is None:
             parser = TreeSitterStructuralParser(spec.name)
             _CHILD_PARSERS[spec.name] = parser
-        if cache is not None and parser.available:
-            cached = cache.get(spec.name, digest)
-            if cached is not None:
-                result = decode_structural(cached)
-                return relative, spec.name, result.raw.get('parse_status', 'unavailable'), digest, result
+        hit = _structural_cache_hit(cache, parser, spec.name, digest)
+        if hit is not None:
+            return relative, spec.name, hit.raw.get('parse_status', 'unavailable'), digest, hit
+        text = Path(abspath).read_text(encoding='utf-8', errors='replace')
+        if not digest:
+            digest = hashlib.sha256(text.encode()).hexdigest()
+            hit = _structural_cache_hit(cache, parser, spec.name, digest)
+            if hit is not None:
+                return relative, spec.name, hit.raw.get('parse_status', 'unavailable'), digest, hit
         result = parser.parse(text, relative)
         status = result.raw.get('parse_status', 'unavailable') if parser.available else 'unavailable'
         if cache is not None and parser.available:
@@ -54,7 +69,7 @@ def parse_file_unit(item: tuple[str, str, ParseCache | None]):
         return relative, spec.name, f'failed:{type(exc).__name__}', '', None
 
 
-def build_code_graph(root, files, progress=None, pool=None, cache=None):
+def build_code_graph(root, files, progress=None, pool=None, cache=None, digests=None):
     """构建通用代码图。
 
     ``pool`` 为 :class:`memory_center.platform.work_pool.WorkPool`；为 ``None``
@@ -65,10 +80,15 @@ def build_code_graph(root, files, progress=None, pool=None, cache=None):
     ``cache`` 为 :class:`memory_center.platform.parse_cache.ParseCache`；只缓存
     文件级结构事实。跨文件关系（导入绑定落到哪个文件、调用边）留在下面的归并
     阶段每次重算，因此改动文件的影响不会被缓存掩盖。
+
+    ``digests`` 为 ``{绝对路径字符串: 内容 sha256}``，由调用方在扫描/切块阶段
+    顺带算好（那里本来就要读全文切块）。提供时解析侧不再重复读文件、不重复算哈希，
+    缓存命中即完全不碰盘；缺失的路径回退为解析侧自行读取并计算。
     """
     units, symbols, coverage = {}, [], {}
+    digests = digests or {}
     parse_files = [p for p in files if get_language_spec_for_extension(p.suffix) is not None]
-    units_input = [(p.relative_to(root).as_posix(), str(p), cache) for p in parse_files]
+    units_input = [(p.relative_to(root).as_posix(), str(p), digests.get(str(p), ''), cache) for p in parse_files]
     if pool is not None and pool.parallel:
         outcomes = pool.map(parse_file_unit, units_input)
     else:

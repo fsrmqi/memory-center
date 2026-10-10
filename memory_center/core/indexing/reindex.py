@@ -77,6 +77,7 @@ def _reindex_workspace_unlocked(
     parallel: bool = True,
     pool: Any = None,
     cache: Any = None,
+    source_digests: dict[str, str] | None = None,
     progress: Callable[[str, int, str], None] | None = None,
     generation: str = "",
 ) -> dict[str, Any]:
@@ -129,6 +130,9 @@ def _reindex_workspace_unlocked(
     # Collect feign files for deferred parsing (need complete constant_map first)
     pending_feigns: list[tuple] = []
     java_tasks: list[tuple] = []
+    # 扫描/切块阶段已算好的内容 sha256（键为绝对路径字符串）。有值时 Java 解析不再
+    # 重复读文件、不重复哈希，缓存命中即完全不碰盘；缺失的路径回退为解析侧自读。
+    source_digests = source_digests or {}
 
     reset_parser_diagnostics = getattr(_JAVA_PARSER, "reset_diagnostics", None)
     if callable(reset_parser_diagnostics):
@@ -156,7 +160,7 @@ def _reindex_workspace_unlocked(
                 }
             )
             if path.suffix in JAVA_EXTENSIONS:
-                java_tasks.append((svc.name, rel, path, cache))
+                java_tasks.append((svc.name, rel, path, cache, source_digests.get(str(path), "")))
             elif path.name in CONFIG_NAMES:
                 config_index.append({"project": svc.name, "path": rel, **parse_yaml_config(path)})
                 ledger.record(rel, STATUS_PARSED)
@@ -182,7 +186,7 @@ def _reindex_workspace_unlocked(
     else:
         parsed = [_parse_java_task(task) for task in java_tasks]
 
-    for (_svc_name, rel, _path, _cache), result in zip(java_tasks, parsed, strict=True):
+    for (_svc_name, rel, _path, _cache, _digest), result in zip(java_tasks, parsed, strict=True):
         if result["symbol"]:
             symbol_index.append(result["symbol"])
             ledger.record(rel, STATUS_PARSED)
@@ -199,8 +203,10 @@ def _reindex_workspace_unlocked(
     else:
         merged_symbol_index = symbol_index
     constant_map = _build_constant_map(merged_symbol_index)
-    for project, rel, text, symbol in pending_feigns:
-        feign_index.extend(to_dict(x) for x in parse_feign_clients(project, rel, text, symbol, constant_map))
+    for project, rel, path, symbol in pending_feigns:
+        # Feign 目标解析确实需要源码文本，但只有 Feign 接口自身需要——其数量远小于
+        # 全部 Java 文件，故在此按需读取，避免解析产物跨阶段驻留整份源码。
+        feign_index.extend(to_dict(x) for x in parse_feign_clients(project, rel, safe_read(path), symbol, constant_map))
     mark("parse_and_merge")
 
     if partial:
@@ -503,6 +509,7 @@ def reindex_workspace(
     materialize_assertions: bool = True,
     pool: Any = None,
     cache: Any = None,
+    source_digests: dict[str, str] | None = None,
     owner_actor: str = "local",
     owner_session_id: str = "",
 ) -> dict[str, Any]:
@@ -577,6 +584,7 @@ def reindex_workspace(
                 "parallel": parallel,
                 "pool": pool,
                 "cache": cache,
+                "source_digests": source_digests,
                 "generation": generation,
                 "progress": _coordinated_progress,
             }
@@ -926,7 +934,7 @@ def safe_read(path: Path, limit: int | None = None) -> str:
         return ""
 
 
-def _parse_java_task(task: tuple[str, str, Path, Any]) -> dict[str, Any]:
+def _parse_java_task(task: tuple[str, str, Path, Any, str]) -> dict[str, Any]:
     """单参数适配层，供 ``WorkPool.map`` 与 ``ThreadPoolExecutor.map`` 共用。
 
     工作池按引用 pickle 任务函数，故这里必须是模块级函数而非 lambda。
@@ -934,12 +942,12 @@ def _parse_java_task(task: tuple[str, str, Path, Any]) -> dict[str, Any]:
     return _parse_java_file(*task)
 
 
-def _decode_java_result(payload: dict[str, Any], project: str, rel: str, text: str) -> dict[str, Any]:
+def _decode_java_result(payload: dict[str, Any], project: str, rel: str, path: Path) -> dict[str, Any]:
     """把缓存载荷还原成 ``_parse_java_file`` 的返回形状。
 
     ``pending_feign`` 里的 ``JavaSymbol`` 不入缓存（避免把源码再存一份），
-    改为从缓存下来的 ``symbol`` 字典重建——调用方本来就有 ``text``，
-    延迟解析的 Feign 阶段需要的四元组因此能与未命中路径逐值一致。
+    改为从缓存下来的 ``symbol`` 字典重建。延迟解析的 Feign 阶段改按 ``path``
+    读取文本，因此命中路径不必为 Feign 先读一遍源码，四元组仍与未命中路径逐值一致。
     """
     symbol_payload = payload.get("symbol")
     if not symbol_payload:
@@ -947,25 +955,32 @@ def _decode_java_result(payload: dict[str, Any], project: str, rel: str, text: s
     symbol = JavaSymbol(**symbol_payload)
     return {"symbol": symbol_payload,
             "apis": list(payload.get("apis") or []),
-            "pending_feign": (project, rel, text, symbol) if payload.get("feign") else None,
+            "pending_feign": (project, rel, path, symbol) if payload.get("feign") else None,
             "mq": list(payload.get("mq") or [])}
 
 
-def _parse_java_file(project: str, rel: str, path: Path, cache: Any = None) -> dict[str, Any]:
+def _parse_java_file(project: str, rel: str, path: Path, cache: Any = None, digest: str = "") -> dict[str, Any]:
     """Parse a single Java file for deferred assembly into indexes.
 
     ``cache`` 为 :class:`memory_center.platform.parse_cache.ParseCache`。产物依赖
     （项目, 相对路径, 源码）三项，三者都进缓存键——只按内容寻址会让内容相同但分属
     不同项目的文件互相顶掉，产物里的 ``project``/``file`` 字段就会错位。
     跨文件的 Feign 目标服务解析不在此缓存（它依赖 ``constant_map``）。
+
+    ``digest`` 为调用方（扫描/切块阶段）已算好的内容 sha256；有值时本函数不再重复
+    读取与哈希，**缓存命中即完全不碰盘**。为空串时自行读取并计算，行为与旧版一致。
     """
     try:
-        text = safe_read(path)
-        digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
+        text = None
+        if not digest:
+            text = safe_read(path)
+            digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
         if cache is not None:
             cached = cache.get(project, rel, digest)
             if cached is not None:
-                return _decode_java_result(cached, project, rel, text)
+                return _decode_java_result(cached, project, rel, path)
+        if text is None:
+            text = safe_read(path)
         symbol = parse_java_symbols(project, rel, text)
         apis = [to_dict(x) for x in parse_controllers(project, rel, text, symbol)]
         mq = [to_dict(x) for x in parse_mq_endpoints(project, rel, text, symbol)]
@@ -977,7 +992,7 @@ def _parse_java_file(project: str, rel: str, path: Path, cache: Any = None) -> d
             cache.put(project, rel, digest,
                       value={"symbol": symbol_payload, "apis": apis, "mq": mq, "feign": has_feign})
         return {"symbol": symbol_payload, "apis": apis,
-                "pending_feign": (project, rel, text, symbol) if has_feign else None, "mq": mq}
+                "pending_feign": (project, rel, path, symbol) if has_feign else None, "mq": mq}
     except Exception:
         return {"symbol": None, "apis": [], "pending_feign": None, "mq": []}
 

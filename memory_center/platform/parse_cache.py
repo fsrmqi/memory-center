@@ -37,8 +37,18 @@ CACHE_SCHEMA = 1
 STRUCTURAL_NAMESPACE = "structural"
 JAVA_NAMESPACE = "java"
 
-# 缓存目录的默认字节上限；超出后按最近解析时间淘汰到预算内。
+# 载荷体积与可解析源码字节数的比例。实测为 4.8×（见
+# `docs/benchmarks/V5_PARSE_CACHE_BENCHMARK.md`），取 6× 留余量。
+CACHE_BYTES_PER_SOURCE_BYTE = 6
+
+# 缓存目录的字节预算下限；也是「工作区规模未知」时的默认值。
+# 旧版本把默认固定为 512 MiB，导致 175 MiB 源码的工作区（需约 840 MiB）
+# 必然触发淘汰，热跑收益打折。现在默认预算随工作区规模增长：
+# ``max(DEFAULT_MAX_BYTES, 可解析源码字节 × CACHE_BYTES_PER_SOURCE_BYTE)``。
 DEFAULT_MAX_BYTES = 512 * 1024 * 1024
+
+# 预算上限，防止异常大的工作区把预算推到不受控的量级。
+MAX_BUDGET_BYTES = 4 * 1024 ** 3
 
 # 预算开关：``MEMORY_CENTER_PARSE_CACHE_MB=0`` 关闭解析缓存，未设置或无法解析时用默认值。
 BUDGET_ENV = "MEMORY_CENTER_PARSE_CACHE_MB"
@@ -50,16 +60,37 @@ def cache_key(namespace: str, *parts: str) -> str:
     return hashlib.sha256(material.encode("utf-8")).hexdigest()
 
 
-def configured_budget_bytes(env: Mapping[str, str] | None = None) -> int:
-    """解析缓存字节预算；0 表示关闭解析缓存。"""
+def adaptive_budget_bytes(source_bytes: int | None) -> int:
+    """按可解析源码规模估算缓存预算；规模未知时退回默认下限。
+
+    载荷约为源码的 6 倍（实测 4.8×，留余量），故预算取
+    ``可解析源码字节 × 6`` 并夹在 ``[DEFAULT_MAX_BYTES, MAX_BUDGET_BYTES]``。
+    这样大工作区一次建满即可长期命中，而不是每轮都淘汰掉刚写下的条目。
+    """
+    try:
+        size = max(0, int(source_bytes or 0))
+    except (TypeError, ValueError):
+        size = 0
+    if size <= 0:
+        return DEFAULT_MAX_BYTES
+    return max(DEFAULT_MAX_BYTES, min(size * CACHE_BYTES_PER_SOURCE_BYTE, MAX_BUDGET_BYTES))
+
+
+def configured_budget_bytes(env: Mapping[str, str] | None = None, source_bytes: int | None = None) -> int:
+    """解析缓存字节预算；0 表示关闭解析缓存。
+
+    显式设置 ``MEMORY_CENTER_PARSE_CACHE_MB`` 时以它为准（含 ``0`` 关闭、非法值退回自适应）；
+    未设置时按 ``source_bytes``（本次索引扫描到的**可解析**源码字节数）自适应。
+    传入 ``source_bytes`` 的调用方（服务侧索引）因此不必再手工调大预算，小工作区也不受影响。
+    """
     source = os.environ if env is None else env
     raw = str(source.get(BUDGET_ENV, "") or "").strip()
     if not raw:
-        return DEFAULT_MAX_BYTES
+        return adaptive_budget_bytes(source_bytes)
     try:
         megabytes = int(raw)
     except ValueError:
-        return DEFAULT_MAX_BYTES
+        return adaptive_budget_bytes(source_bytes)
     return max(0, megabytes) * 1024 ** 2
 
 
@@ -239,11 +270,14 @@ def decode_structural(payload: dict[str, Any]) -> StructuralParseResult:
 
 __all__: Sequence[str] = (
     "BUDGET_ENV",
+    "CACHE_BYTES_PER_SOURCE_BYTE",
     "CACHE_SCHEMA",
     "DEFAULT_MAX_BYTES",
     "JAVA_NAMESPACE",
+    "MAX_BUDGET_BYTES",
     "STRUCTURAL_NAMESPACE",
     "ParseCache",
+    "adaptive_budget_bytes",
     "cache_key",
     "configured_budget_bytes",
     "decode_structural",

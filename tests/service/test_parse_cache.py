@@ -7,18 +7,22 @@
 核心不变量：**缓存只影响速度，不影响产物**。因此最重要的断言是
 「冷跑产物 == 热跑产物」，而不是缓存命中率。
 """
+import hashlib
 import os
+from pathlib import Path
 
 import pytest
 
 from memory_center.core.foundation.models import JavaSymbol, to_dict
 from memory_center.core.indexing.language_registry import get_language_spec_for_extension
 from memory_center.core.indexing.parse_result import CallSite, StructuralParseResult, SymbolSpan
+from memory_center.core.indexing.reindex import _decode_java_result, _parse_java_file
 from memory_center.platform import code_graph as code_graph_module
 from memory_center.platform.code_graph import build_code_graph
 from memory_center.platform.parse_cache import (
     CACHE_SCHEMA,
     JAVA_NAMESPACE,
+    MAX_BUDGET_BYTES,
     STRUCTURAL_NAMESPACE,
     ParseCache,
     cache_key,
@@ -28,7 +32,6 @@ from memory_center.platform.parse_cache import (
     enforce_budget,
 )
 from memory_center.platform.work_pool import WorkPool
-from memory_center.core.indexing.reindex import _decode_java_result, _parse_java_file
 
 SOURCES = {
     'pkg/helpers.py': 'def assist():\n    return 1\n',
@@ -326,14 +329,15 @@ def test_java_pending_feign_is_rebuilt_from_cached_symbol():
     symbol = JavaSymbol(project='order', file='UserClient.java', package='demo.order',
                         interfaces=['UserClient'], annotations=['FeignClient'])
     payload = {'symbol': to_dict(symbol), 'apis': [], 'mq': [], 'feign': True}
-    result = _decode_java_result(payload, 'order', 'UserClient.java', 'SOURCE')
+    path = Path('UserClient.java')
+    result = _decode_java_result(payload, 'order', 'UserClient.java', path)
     assert result['symbol'] == to_dict(symbol)
-    # 延迟 Feign 解析需要的四元组必须与未命中路径逐值一致。
-    assert result['pending_feign'] == ('order', 'UserClient.java', 'SOURCE', symbol)
+    # 延迟 Feign 解析需要的四元组必须与未命中路径逐值一致：存路径，不再内嵌源码文本。
+    assert result['pending_feign'] == ('order', 'UserClient.java', path, symbol)
 
 
 def test_java_payload_without_symbol_returns_empty_shape():
-    result = _decode_java_result({'symbol': None, 'apis': [], 'mq': [], 'feign': False}, 'p', 'f.java', '')
+    result = _decode_java_result({'symbol': None, 'apis': [], 'mq': [], 'feign': False}, 'p', 'f.java', Path('f.java'))
     assert result == {'symbol': None, 'apis': [], 'pending_feign': None, 'mq': []}
 
 
@@ -348,3 +352,97 @@ def test_java_cache_identity_separates_projects(tmp_path):
     assert second['symbol']['project'] == 'beta'
     assert second['symbol']['file'] == 'beta/Shared.java'
     assert cache.snapshot()['hits'] == 0
+
+
+# ── 单遍读取：digest 跨阶段传递 ──────────────────────────────────────────────
+
+
+def test_parse_file_unit_hit_with_supplied_digest_does_not_read_source(tmp_path):
+    """提供 digest 且命中缓存时不得碰文件系统——这是「重复读取已消除」的可执行证据。"""
+    path = tmp_path / 'sample.py'
+    path.write_text('def sample():\n    return 1\n', encoding='utf-8')
+    cache = ParseCache(tmp_path / 'cache')
+    digest = hashlib.sha256(path.read_text(encoding='utf-8').encode()).hexdigest()
+
+    first = code_graph_module.parse_file_unit(('sample.py', str(path), digest, cache))
+    assert first[2] == 'parsed'
+    path.unlink()  # 源文件消失：命中路径若仍去读文件就会失败
+    second = code_graph_module.parse_file_unit(('sample.py', str(path), digest, cache))
+    assert second == first
+    assert cache.snapshot()['hits'] == 1
+
+
+def test_parse_file_unit_miss_with_supplied_digest_reads_and_parses(tmp_path):
+    """未命中时仍会读取并解析，且回传的 hash 就是调用方给的 digest。"""
+    path = tmp_path / 'x.py'
+    path.write_text('def x():\n    return 1\n', encoding='utf-8')
+    cache = ParseCache(tmp_path / 'cache')
+    digest = hashlib.sha256(path.read_text(encoding='utf-8').encode()).hexdigest()
+
+    relative, language, status, out_digest, result = code_graph_module.parse_file_unit(
+        ('x.py', str(path), digest, cache))
+    assert (relative, language, status, out_digest) == ('x.py', 'python', 'parsed', digest)
+    assert result is not None
+    assert cache.snapshot()['misses'] == 1
+
+
+def test_foreign_digest_never_reuses_another_entry(tmp_path):
+    """外部 digest 就是缓存键：与内容不符时不得读到别的条目。"""
+    path = tmp_path / 'y.py'
+    path.write_text('def y():\n    return 1\n', encoding='utf-8')
+    cache = ParseCache(tmp_path / 'cache')
+    real = hashlib.sha256(path.read_text(encoding='utf-8').encode()).hexdigest()
+    code_graph_module.parse_file_unit(('y.py', str(path), real, cache))
+
+    stale = hashlib.sha256(b'other content').hexdigest()
+    outcome = code_graph_module.parse_file_unit(('y.py', str(path), stale, cache))
+    assert outcome[3] == stale          # 用外部 digest，不被真实内容改写
+    assert outcome[4] is not None       # 重新解析，而不是复用旧条目
+
+
+def test_build_code_graph_uses_supplied_digests(tmp_path):
+    """传入 digests 时产物与自读自算完全一致，且 coverage 的 hash 取自外部 digest。"""
+    paths = write_tree(tmp_path)
+    digests = {str(path): hashlib.sha256(path.read_text(encoding='utf-8').encode()).hexdigest()
+               for path in paths}
+    cache = ParseCache(tmp_path / 'cache')
+    pooled = build_code_graph(tmp_path, paths, None, None, cache, digests)
+    reference = build_code_graph(tmp_path, paths, None)
+    assert pooled == reference
+    for symbol in pooled['symbols']:
+        assert symbol['hash'] == digests[str(tmp_path / symbol['path'])]
+
+
+# ── 自适应预算 ──────────────────────────────────────────────────────────────
+
+
+def test_configured_budget_adapts_to_source_size():
+    """未设置 env 时预算随可解析源码规模增长；下限保持 512 MiB，上限 4 GiB。"""
+    assert configured_budget_bytes({}, source_bytes=0) == 512 * 1024 * 1024
+    assert configured_budget_bytes({}, source_bytes=10 * 1024 * 1024) == 512 * 1024 * 1024
+    # 175 MiB 源码 ≈ 1050 MiB 预算，足以容纳实测约 840 MiB 的载荷，不再必然淘汰。
+    big = configured_budget_bytes({}, source_bytes=175 * 1024 * 1024)
+    assert big == 175 * 1024 * 1024 * 6
+    assert big > 840 * 1024 * 1024
+    assert configured_budget_bytes({}, source_bytes=100 * 1024 ** 3) == MAX_BUDGET_BYTES
+    # 显式 env 仍然优先：0 关闭、正数固定。
+    assert configured_budget_bytes({'MEMORY_CENTER_PARSE_CACHE_MB': '0'}, source_bytes=175 * 1024 * 1024) == 0
+    explicit = configured_budget_bytes({'MEMORY_CENTER_PARSE_CACHE_MB': '64'}, source_bytes=175 * 1024 * 1024)
+    assert explicit == 64 * 1024 ** 2
+
+
+# ── Java 专用解析：外部 digest 命中不读盘 ────────────────────────────────────
+
+
+def test_java_parse_hit_with_supplied_digest_does_not_read_source(tmp_path):
+    path = tmp_path / 'UserClient.java'
+    path.write_text(JAVA_SOURCE, encoding='utf-8')
+    cache = ParseCache(tmp_path / 'cache', JAVA_NAMESPACE)
+    digest = hashlib.sha256(JAVA_SOURCE.encode()).hexdigest()
+
+    cold = _parse_java_file('order-service', 'UserClient.java', path, cache, digest)
+    assert cold['symbol']
+    path.unlink()  # 命中路径不得再读源码
+    warm = _parse_java_file('order-service', 'UserClient.java', path, cache, digest)
+    assert warm == cold
+    assert cache.snapshot()['hits'] == 1
