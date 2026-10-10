@@ -61,6 +61,14 @@ class PlatformStore:
             self._put(connection, kind, result)
             return result
 
+    def delete(self, kind, record_id):
+        """删除单条记录；不存在时以 RECORD_NOT_FOUND 明确失败，绝不静默忽略。"""
+        with self.db.connection(True) as connection:
+            cursor = connection.execute('DELETE FROM records WHERE kind=? AND id=?', (kind, record_id))
+            if cursor.rowcount == 0:
+                raise CatalogError('RECORD_NOT_FOUND', '记录不存在')
+        return {'id': record_id, 'kind': kind, 'deleted': True}
+
     def audit(self, actor, action, workspace_id='', record_id=''):
         return self.create('audit', {'owner': actor, 'workspace_id': workspace_id,
                                      'action': action, 'target': record_id})

@@ -3,6 +3,7 @@ import asyncio
 import hashlib
 import multiprocessing
 import os
+import shutil
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -254,6 +255,100 @@ class Jobs:
         if job['status'] in {'queued', 'running'}:
             return self.store.update('job', job_id, {'status': 'cancelled', 'finished_at': now()})
         return job
+
+    @staticmethod
+    def directory_bytes(root):
+        """统计目录内普通文件字节数；跳过符号链接，避免顺着链接统计越界内容。"""
+        total = 0
+        for parent, _dirs, files in os.walk(root, followlinks=False):
+            for name in files:
+                path = Path(parent) / name
+                if path.is_symlink():
+                    continue
+                try:
+                    total += path.stat().st_size
+                except OSError:
+                    continue
+        return total
+
+    @staticmethod
+    def drop_generation(generations, name):
+        """删除 generations 内单个代号目录；仅接受非符号链接、解析后仍在其内的目录。
+
+        返回 ``(释放字节数, 是否真正删除)``。删除前先解析真实路径并校验归属，防止
+        拼接出的名称或目录内的符号链接把删除操作引向 generations 目录之外的路径。
+        """
+        try:
+            base = generations.resolve()
+        except OSError:
+            return 0, False
+        target = generations / name
+        if target.is_symlink() or not target.is_dir():
+            return 0, False
+        try:
+            resolved = target.resolve()
+        except OSError:
+            return 0, False
+        if resolved == base or not resolved.is_relative_to(base):
+            return 0, False
+        freed = Jobs.directory_bytes(target)
+        shutil.rmtree(target, ignore_errors=True)
+        return freed, True
+
+    def remove(self, job_id):
+        """删除终态任务及其垃圾 generation；活跃索引所属代际受保护，绝不误删。"""
+        job = self.store.get('job', job_id)
+        if job['status'] in {'queued', 'running'}:
+            raise CatalogError('JOB_STATE', '请先取消任务再删除')
+        workspace_id = job['workspace_id']
+        try:
+            active = self.store.get('index', workspace_id)['generation']
+        except CatalogError:
+            active = None
+        if active == job_id:
+            raise CatalogError('JOB_ACTIVE', '该任务是当前生效索引，请先重新索引后再删除')
+        generations = self.data_dir / 'workspaces' / workspace_id / 'generations'
+        freed, removed = self.drop_generation(generations, job_id)
+        self.store.delete('job', job_id)
+        self.store.audit('admin', 'job.remove', workspace_id, job_id)
+        return {'id': job_id, 'deleted': True, 'removed_generation': removed, 'freed_bytes': freed}
+
+    def prune(self, workspace_id=None):
+        """清理非活跃 generation 目录：保留活跃索引与排队/运行中任务的代际，删除其余垃圾。
+
+        ``workspace_id`` 为空时对所有已登记项目执行；返回删除数量、释放字节、保留的
+        代号与处理的项目数。活跃 generation 的目录被 ``index.workspace_file`` 引用，
+        删除会破坏查询；``queued``/``running`` 任务的目录正被子进程写入，删除会损坏
+        在途索引，因此二者都始终保留。
+        """
+        workspace_ids = ([item['workspace_id'] for item in self.catalog.list(1000)['items']]
+                         if workspace_id is None else [workspace_id])
+        removed, freed, kept, workspaces = 0, 0, [], 0
+        for wid in workspace_ids:
+            generations = self.data_dir / 'workspaces' / wid / 'generations'
+            if generations.is_symlink() or not generations.is_dir():
+                continue
+            try:
+                active = self.store.get('index', wid)['generation']
+            except CatalogError:
+                active = None
+            # 除活跃索引外，还必须保留排队/运行中任务的代际目录：索引子进程正在其中写入，
+            # 删除会损坏在途索引，随后成功发布还会指向一个已不存在的 generation。
+            protected = {job['id'] for job in self.store.list('job', workspace_id=wid, limit=1000)
+                         if job['status'] in {'queued', 'running'}}
+            if active:
+                protected.add(active)
+            workspaces += 1
+            for entry in sorted(generations.iterdir()):
+                if entry.name in protected:
+                    kept.append(entry.name)
+                    continue
+                count, deleted = self.drop_generation(generations, entry.name)
+                if deleted:
+                    removed += 1
+                    freed += count
+        self.store.audit('admin', 'job.prune', workspace_id or '')
+        return {'removed': removed, 'freed_bytes': freed, 'kept': kept, 'workspaces': workspaces}
 
     async def start(self):
         for job in self.store.list('job', limit=1000):

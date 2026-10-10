@@ -46,7 +46,7 @@ class Governance:
             raise CatalogError('FORBIDDEN', '全局知识与 Skill 管理仅供管理员使用')
         if tool not in ASSISTANT_TOOLS or len(json.dumps(parameters, ensure_ascii=False)) > 1_000_000:
             raise CatalogError('GOVERNANCE_INVALID', '工具或参数预算无效')
-        if tool == 'assistant_skill' and parameters.get('action') in {'remove', 'published', 'export'}:
+        if tool == 'assistant_skill' and parameters.get('action') in {'remove', 'published', 'export', 'read'}:
             try:
                 return self.skill_lifecycle(parameters)
             except (core.WikiError, TypeError, ValueError, OSError) as exc:
@@ -89,6 +89,38 @@ class Governance:
                     items.append({'name': p.parent.name, 'status': '已启用',
                                   'publication': json.loads(manifest.read_text()) if manifest.exists() else None})
                 return {'items': items}
+            if action == 'read':
+                # 读取候选或已发布 Skill 的正文与文件清单；名称经 _safe_name 校验防路径穿越，
+                # 目录/文件一律拒绝符号链接，正文总量设上限并以显式错误失败而非静默截断。
+                published = bool(parameters.get('published'))
+                target_root = self.published if published else self.candidates
+                path = target_root / skill_catalog._safe_name(name)
+                if not path.is_dir() or path.is_symlink():
+                    raise CatalogError('SKILL_NOT_FOUND', 'Skill 不存在')
+                body_path = path / 'SKILL.md'
+                if not body_path.is_file() or body_path.is_symlink():
+                    raise CatalogError('SKILL_NOT_FOUND', 'Skill 不存在')
+                files, total = {}, 0
+                for item in sorted(path.rglob('*')):
+                    if not item.is_file() or item.is_symlink():
+                        continue
+                    try:
+                        text = item.read_text(encoding='utf-8')
+                    except (OSError, UnicodeDecodeError):
+                        continue
+                    total += len(text)
+                    if total > 200_000:
+                        raise CatalogError('SKILL_READ_TOO_LARGE', 'Skill 内容超过 200000 字符上限')
+                    files[item.relative_to(path).as_posix()] = text
+                manifest = path / 'publication.json'
+                publication = None
+                if manifest.is_file() and not manifest.is_symlink():
+                    try:
+                        publication = json.loads(manifest.read_text(encoding='utf-8'))
+                    except (OSError, ValueError):
+                        publication = None
+                return {'name': name, 'published': published, 'body': files.get('SKILL.md', ''),
+                        'files': files, 'publication': publication}
             path = self.candidates / skill_catalog._safe_name(name)
             if action == 'export':
                 skill_catalog.inspect_candidate(self.candidates, name)

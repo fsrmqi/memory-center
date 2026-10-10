@@ -1,1 +1,0 @@
-"""Host-agnostic hook adapters package."""

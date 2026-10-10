@@ -181,6 +181,19 @@ def platform_router():
             raise CatalogError('JOB_STATE', '仅失败、取消或中断任务可重试')
         return service.jobs.enqueue(job['workspace_id'], 'admin')
 
+    @router.delete('/jobs/{job_id}')
+    def remove_job(job_id: str, request: Request):
+        return platform(request).jobs.remove(job_id)
+
+    @router.post('/jobs/prune')
+    def prune_jobs(request: Request):
+        return platform(request).jobs.prune()
+
+    @router.post('/workspaces/{workspace_id}/prune-index')
+    def prune_workspace_index(workspace_id: WorkspaceID, request: Request):
+        service = scoped(request, workspace_id, True)
+        return service.jobs.prune(workspace_id)
+
     @router.post('/workspaces/{workspace_id}/search')
     def search(workspace_id: WorkspaceID, body: SearchInput, request: Request):
         service = scoped(request, workspace_id)

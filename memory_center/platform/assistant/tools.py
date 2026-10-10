@@ -178,9 +178,9 @@ def create_server(
             不得将自动生成内容直接视为长期事实或跳过人工审阅。
 
             Args:
-                action: analyze、extract、create、list、inspect、validate、publish、published、export 或 remove
+                action: analyze、extract、create、list、inspect、validate、publish、published、export、read 或 remove
                 source_paths: analyze/extract/create 的受授权文件、目录路径列表
-                name: create/inspect/validate 的小写 Skill 名称
+                name: create/inspect/validate/read 的小写 Skill 名称
                 description: create 的 Agent Skills 描述
                 body: create 的正文，应提供 frameworks、decision_rules、anti_patterns 和按需 references
                 chapters: create 的章节参考，每项包含 title 和 content，生成到 references/ 并按需加载
@@ -188,6 +188,7 @@ def create_server(
                 mode: extract 时的 text 或 technical 提取模式
                 workdir: extract 的空工作目录；留空则创建独立临时目录
                 evidence_refs: publish 的任务验证证据引用，至少一条；Research Kit 护照快照仅可作为关联来源，仍需真实任务验证引用。发布产物会将二者分开固化为可移植 release manifest，但不会把它误标为普遍验证通过
+                published: read/remove 时是否作用于已发布 Skill；默认 false 指候选目录
                 confirm: create 时二次确认，默认仅预检
             """
             if action == "analyze":
