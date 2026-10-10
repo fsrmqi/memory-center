@@ -27,7 +27,16 @@ class WorkspaceCatalog:
     def _detected(self, root: str) -> dict:
         result = preview_sources(canonical_root(root, self.store.data_dir))
         if not result["scan"]["complete"]:
-            raise CatalogError("PREVIEW_INCOMPLETE", "预览达到扫描上限或无法读取，请缩小源码范围后重试")
+            scan = result['scan']
+            reasons = []
+            if 'service_limit' in scan['warnings']:
+                reasons.append(f"识别到的服务超过 {scan['service_limit']} 个")
+            if 'entry_limit' in scan['warnings']:
+                reasons.append(f"扫描目录项超过 {scan['entry_limit']} 个")
+            if 'unreadable_directory' in scan['warnings']:
+                reasons.append("部分目录或构建标记无法读取")
+            message = '；'.join(reasons) or '预览扫描不完整'
+            raise CatalogError("PREVIEW_INCOMPLETE", message + "，请缩小源码范围后重试")
         return result
 
     def register(self, name: str, root: str) -> dict:

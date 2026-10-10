@@ -8,7 +8,7 @@ from memory_center.core.workspace.kinds import SERVICE_KIND_REGISTRY
 _SKIP = {"node_modules", "target", "build", "dist", "out", "venv", "__pycache__",
          "src", "test", "tests", "docs", "vendor"}
 _MAX_ENTRIES = 2048
-_MAX_SERVICES = 64
+_MAX_SERVICES = 256
 _SCAN_DEPTH = 2
 
 
@@ -108,5 +108,5 @@ def preview_sources(root: Path) -> dict:
         service["exclude_paths"] = [other["path"] for other in candidates
                                    if other is not service and Path(other["path"]).is_relative_to(path)]
     return {"root": str(root), "suggested_name": root.name, "services": candidates,
-            "scan": {"depth": _SCAN_DEPTH, "entry_limit": _MAX_ENTRIES,
+            "scan": {"depth": _SCAN_DEPTH, "entry_limit": _MAX_ENTRIES, "service_limit": _MAX_SERVICES,
                      "complete": complete, "warnings": sorted(warnings)}}

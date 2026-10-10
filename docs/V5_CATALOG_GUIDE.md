@@ -69,7 +69,7 @@ unset ADMIN_TOKEN
 
 ## 识别范围与错误
 
-预览扫描根目录及最多两层子目录，总共最多检查 2048 个目录项、返回 64 个服务候选；单个 JVM 构建标记只读取前 16 KiB。
+预览扫描根目录及最多两层子目录，总共最多检查 2048 个目录项、返回 256 个服务候选；单个 JVM 构建标记只读取前 16 KiB。
 复用已有服务类型注册表，识别 Spring/JVM/Python/Node/Go 等构建标记；不执行脚本、不遍历文件正文、不解析构建模块依赖。
 跳过隐藏目录、构建产物、依赖目录、src/test/tests/docs/vendor 和子目录软链接。识别到根服务与子服务时，为根服务记录子服务排除路径，后续索引必须遵守这个划分。
 `scan.complete` 只表示上述有界范围内完成，不能推断深层模块都已识别。深层模块需要选择更具体的源码根目录。
@@ -100,3 +100,5 @@ MEMORY_CENTER_PROJECTS_DIR=/path/to/source-parent \
 宿主目录必须已存在，Compose 不自动创建；挂载为只读 `/projects`。登记 `/projects/project-a` 等容器内路径，不能直接填宿主路径。
 源码分散时可在自己的 Compose override 中添加多个只读挂载。catalog、索引与记忆始终写入 `/data` 命名卷。
 没有旧 workspace 接入或 external/managed 双模式。旧 registry API 源码暂留在旧入口中，5.0 服务装配与应用用例不导入这些路径。
+
+5.0.0b5 增加 `scan.service_limit`；达到服务数量或目录项预算时仍返回 `complete=false`，登记拒绝截断结果，错误信息区分数量超限与读取失败。该预算只影响预览，索引预算独立。

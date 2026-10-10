@@ -1,13 +1,13 @@
 # 5.0 多项目知识服务使用指南
 
-> 当前：5.0.0b4，开发测试版本；不兼容 4.x 接入或导入历史数据。
+> 当前：5.0.0b5，开发测试版本；不兼容 4.x 接入或导入历史数据。
 > 用户已授权连续完成方案，无需每个切片再次确认。此指南描述当前服务入口；旧版文档仅作为核心算法背景。
 
 ## 安装与运行
 
 ```sh
 python3 -m venv .venv
-.venv/bin/python -m pip install /path/to/memory_center-5.0.0b4-py3-none-any.whl
+.venv/bin/python -m pip install /path/to/memory_center-5.0.0b5-py3-none-any.whl
 .venv/bin/memory-center-service --data-dir /path/to/new-service-data
 ```
 
@@ -118,7 +118,7 @@ docker compose -f compose.yaml -f compose.postgres.yaml exec -T postgres pg_dump
 
 协议夹具只验证嵌入数量/维度、模型档案隔离、数据库向量距离、HNSW 与融合，不代表真实语义质量。当前网络的 Ollama registry 证书校验失败，未关闭 TLS 验证；真实模型语义评测未完成。没有宣称图片中的 IM、浏览器沙箱、联网搜索、Neo4j、所有外部模型厂商等已实现，它们不属于此次 Memory Center 服务化核心闭环。
 
-## 多语言代码查询（5.0.0b4）
+## 多语言代码查询（5.0.0b5）
 
 借鉴 GitNexus 的语言注册、Vue 脚本块提取和分阶段引用解析。每次索引先提取声明与导入绑定，再连接调用，写入 generation 的 `code-graph.json`；文件路径、符号类型、限定名和声明行组成符号身份，避免多个文件的同名函数覆盖。Java 的 Spring/Feign/MQ 专用分析继续保留。
 
