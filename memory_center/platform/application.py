@@ -10,12 +10,14 @@ from memory_center.platform.knowledge import Knowledge
 from memory_center.platform.retrieval import Retrieval, initialize_terms
 from memory_center.platform.security import WRITE_TOOLS, Access, Principal
 from memory_center.platform.store import PlatformStore
+from memory_center.platform.wiki_sources import WikiSources
 
 
 class Platform:
     def __init__(self, database, catalog):
         self.store, self.catalog = PlatformStore(database), catalog
         self.knowledge = Knowledge(self.store, database.data_dir)
+        self.wiki_sources = WikiSources(self.store, catalog)
         self.access = Access(self.store, catalog)
         self.retrieval = Retrieval(self.store, self.knowledge)
         self.jobs = Jobs(self.store, catalog, database.data_dir, database.url)
@@ -67,6 +69,8 @@ class Platform:
                         item['freshness'] = 'CURRENT' if valid and hashlib.sha256(content.encode()).hexdigest() == source['hash'] else 'STALE'
                     except OSError:
                         item['freshness'] = 'STALE'
+                elif source.get('wiki_source_id'):
+                    item['freshness'] = 'CURRENT' if self.wiki_sources.fresh(source) else 'STALE'
                 else:
                     item['freshness'] = 'CURRENT'
         result['ref_id'] = self.access.reference(actor, workspace_id, result)
@@ -121,6 +125,8 @@ class Platform:
                     raise CatalogError('REF_STALE', '引用源码已变化或失效，请重新查询') from None
             elif source['source_id'] in replaced or source['source_id'] not in active or active[source['source_id']]['revision'] != source['source_revision']:
                 raise CatalogError('REF_STALE', '引用来源已删除或修订，请重新查询')
+            elif source.get('wiki_source_id') and not self.wiki_sources.fresh(source):
+                raise CatalogError('REF_STALE', '引用 Wiki 文件已变化或目录失效，请同步后重新查询')
             elif active[source['source_id']].get('expires_at') and datetime.fromisoformat(active[source['source_id']]['expires_at']) < datetime.now(timezone.utc):
                 raise CatalogError('REF_STALE', '引用记忆已过期，请重新查询')
         return record

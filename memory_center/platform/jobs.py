@@ -13,6 +13,7 @@ from memory_center.platform.database import Database, PostgresCatalog
 from memory_center.platform.embeddings import Embedder
 from memory_center.platform.knowledge import Knowledge
 from memory_center.platform.store import PlatformStore, identity, now
+from memory_center.platform.wiki_sources import WikiSources
 
 _SKIP = {'.git', '.memory-center', '.project-ai', '.claude', '.codex', '.idea', 'node_modules', 'target',
          'build', 'dist', '__pycache__', '.venv', 'venv', 'vendor'}
@@ -102,9 +103,13 @@ def run_index(data_dir, database_url, workspace, job_id):
                               paths=owned or [str(directory / 'empty-scope')], parallel=False,
                               materialize_assertions=False)
         store.update('job', job_id, {'progress': 55})
+        wiki_signature = WikiSources(store).signature(workspace['workspace_id'])
+        store.update('job', job_id, {'wiki_signature': wiki_signature})
         for kind, item in knowledge.active(workspace['workspace_id']):
             chunks.extend(split_text(item['content'], {'kind': kind, 'source_id': item['id'],
-                          'source_revision': item['revision'], 'title': item['title'], 'owner': item.get('owner', '')}))
+                          'source_revision': item['revision'], 'title': item['title'], 'owner': item.get('owner', ''),
+                          **({k: item[k] for k in ['wiki_source_id', 'relative_path', 'hash', 'source_name']} |
+                             {'path': item['source_name'] + '/' + item['relative_path']} if item.get('wiki_source_id') else {})}))
         if len(chunks) > 30000:
             raise CatalogError('INDEX_BUDGET', '分块上限 30000，请缩小索引范围')
         settings = store.list('model', limit=1)
@@ -120,6 +125,8 @@ def run_index(data_dir, database_url, workspace, job_id):
         current = catalog.get(workspace['workspace_id'])
         if current['status'] != 'active' or current['config_version'] != workspace['config_version']:
             raise CatalogError('WORKSPACE_CHANGED', '项目配置已改变，未发布索引')
+        if wiki_signature != WikiSources(store).signature(workspace['workspace_id']):
+            raise CatalogError('WIKI_CHANGED', 'Wiki 来源已变化，等待下一轮自动索引')
         store.publish(workspace['workspace_id'], job_id, chunks, str(workspace_file), workspace['config_version'])
     except Exception as exc:
         current = store.get('job', job_id)
@@ -138,6 +145,7 @@ class Jobs:
         self.processes, self.started = {}, {}
         self.stopping = False
         self.task = None
+        self.wiki_task = None
 
     def enqueue(self, workspace_id, owner):
         workspace = self.catalog.get(workspace_id)
@@ -166,6 +174,39 @@ class Jobs:
             if job['status'] == 'running':
                 self.store.update('job', job['id'], {'status': 'interrupted', 'finished_at': now()})
         self.task = asyncio.create_task(self.loop())
+        self.wiki_task = asyncio.create_task(self.wiki_loop())
+
+    def sync_wikis(self):
+        sources = WikiSources(self.store, self.catalog)
+        for source in sources.sources():
+            if source['status'] == 'active' and source['auto_sync']:
+                try:
+                    sources.sync(source['id'])
+                except CatalogError:
+                    pass  # 单来源失败记录在来源状态中，不中断其它来源。
+        # 比较持久快照标识，避免同步与正在运行的索引重叠时丢失更新。
+        associated = {w for s in sources.sources() for w in s['workspace_ids']}
+        for workspace_id in associated:
+            try:
+                index = self.store.get('index', workspace_id)
+            except CatalogError:
+                index = {}
+            if index.get('wiki_signature') != sources.signature(workspace_id):
+                try:
+                    self.enqueue(workspace_id, 'admin')
+                except CatalogError:
+                    pass
+
+    async def wiki_loop(self):
+        while not self.stopping:
+            await asyncio.sleep(1)
+            if self.stopping:
+                break
+            await asyncio.to_thread(self.sync_wikis)
+            for _ in range(59):
+                if self.stopping:
+                    return
+                await asyncio.sleep(1)
 
     async def loop(self):
         context = multiprocessing.get_context('spawn')
@@ -203,6 +244,8 @@ class Jobs:
 
     async def close(self):
         self.stopping = True
+        if self.wiki_task:
+            await asyncio.gather(self.wiki_task, return_exceptions=True)
         if self.task:
             # DB 故障可能结束调度任务；关闭时仍需收割全部子进程。
             await asyncio.gather(self.task, return_exceptions=True)

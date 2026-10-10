@@ -22,6 +22,15 @@ class CredentialInput(Input):
     rate: int = Field(default=60, ge=1, le=600)
 
 
+class WikiSourceInput(Input):
+    name: str = Field(min_length=1, max_length=120)
+    root: str = Field(min_length=1, max_length=2000)
+    workspace_ids: list[WorkspaceID] = Field(default_factory=list, max_length=100)
+    status: Literal['active', 'paused'] = 'active'
+    auto_sync: bool = True
+    revision: int | None = Field(default=None, ge=1)
+
+
 class ModelInput(Input):
     url: str = Field(default='', max_length=2000)
     model: str = Field(default='', max_length=200)
@@ -80,6 +89,34 @@ def platform_router():
         service = platform(request)
         service.access.scope(service.administrator(), workspace_id, write)
         return service
+
+    @router.get('/wiki-sources')
+    def wiki_sources(request: Request):
+        return {'items': [s for s in platform(request).wiki_sources.sources() if s['status'] != 'deleted']}
+
+    @router.post('/wiki-sources', status_code=201)
+    def create_wiki_source(body: WikiSourceInput, request: Request):
+        return platform(request).wiki_sources.save(**body.model_dump(exclude={'revision'}))
+
+    @router.patch('/wiki-sources/{record_id}')
+    def edit_wiki_source(record_id: str, body: WikiSourceInput, request: Request):
+        if body.revision is None:
+            raise CatalogError('REVISION_REQUIRED', '修改 Wiki 来源必须提供 revision')
+        return platform(request).wiki_sources.save(record_id=record_id, **body.model_dump())
+
+    @router.delete('/wiki-sources/{record_id}')
+    def remove_wiki_source(record_id: str, request: Request):
+        return platform(request).wiki_sources.remove(record_id)
+
+    @router.post('/wiki-sources/{record_id}/sync')
+    def sync_wiki_source(record_id: str, request: Request):
+        service = platform(request)
+        result = service.wiki_sources.sync(record_id)
+        jobs = []
+        for workspace_id in result['workspace_ids']:
+            if service.catalog.get(workspace_id)['status'] == 'active':
+                jobs.append(service.jobs.enqueue(workspace_id, 'admin'))
+        return dict(result, jobs=jobs)
 
     @router.get('/credentials')
     def credentials(request: Request):
@@ -156,7 +193,11 @@ def platform_router():
 
     @router.get('/workspaces/{workspace_id}/knowledge/{kind}')
     def items(workspace_id: WorkspaceID, kind: Literal['document', 'wiki', 'memory'], request: Request):
-        return {'items': scoped(request, workspace_id).store.list(kind, workspace_id, limit=1000)}
+        service = scoped(request, workspace_id)
+        values = service.store.list(kind, workspace_id, limit=1000)
+        if kind == 'wiki':
+            values.extend(service.wiki_sources.pages(workspace_id))
+        return {'items': values}
 
     @router.post('/workspaces/{workspace_id}/documents', status_code=201)
     def document(workspace_id: WorkspaceID, body: DocumentInput, request: Request):
@@ -199,6 +240,8 @@ def platform_router():
               body: StateInput, request: Request):
         service = scoped(request, workspace_id, True)
         item = service.store.get(kind, record_id)
+        if item.get('readonly'):
+            raise CatalogError('WIKI_READ_ONLY', '目录接入页面只读，请管理对应 Wiki 来源')
         if item['workspace_id'] != workspace_id or (kind != 'memory' and body.status != 'deleted'):
             raise CatalogError('FORBIDDEN', '记录范围或状态变更不合法')
         result = service.store.update(kind, record_id, {'status': body.status}, body.revision)

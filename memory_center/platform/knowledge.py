@@ -60,6 +60,8 @@ class Knowledge:
     def wiki(self, actor, workspace_id, title, content, record_id='', revision=None, refs=None):
         if record_id:
             current = self.store.get('wiki', record_id)
+            if current.get('readonly'):
+                raise CatalogError('WIKI_READ_ONLY', '目录接入页面只读，请修改来源文件后同步')
             if current['workspace_id'] != workspace_id:
                 raise CatalogError('FORBIDDEN', '页面不属于当前空间')
             histories = [*current.get('versions', []), {'revision': current['revision'], 'title': current['title'],
@@ -95,7 +97,8 @@ class Knowledge:
                           'replaces': replaces, 'expires_at': expires_at})
 
     def active(self, workspace_id):
-        result = []
+        from memory_center.platform.wiki_sources import WikiSources
+        result = [('wiki', page) for page in WikiSources(self.store).pages(workspace_id)]
         for kind in ['document', 'wiki', 'memory']:
             for item in self.store.list(kind, workspace_id, limit=1000):
                 if item['status'] == 'active' or (kind == 'memory' and item['status'] == 'confirmed'):

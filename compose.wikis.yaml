@@ -1,0 +1,9 @@
+services:
+  memory-center:
+    volumes:
+      - type: bind
+        source: ${MEMORY_CENTER_WIKIS_DIR:?请在私有 .env 设置 Wiki 目录的宿主父目录}
+        target: /wikis
+        read_only: true
+        bind:
+          create_host_path: false

@@ -1,13 +1,13 @@
 # 5.0 多项目知识服务使用指南
 
-> 当前：5.0.0b2，开发测试版本；不兼容 4.x 接入或导入历史数据。
+> 当前：5.0.0b3，开发测试版本；不兼容 4.x 接入或导入历史数据。
 > 用户已授权连续完成方案，无需每个切片再次确认。此指南描述当前服务入口；旧版文档仅作为核心算法背景。
 
 ## 安装与运行
 
 ```sh
 python3 -m venv .venv
-.venv/bin/python -m pip install /path/to/memory_center-5.0.0b2-py3-none-any.whl
+.venv/bin/python -m pip install /path/to/memory_center-5.0.0b3-py3-none-any.whl
 .venv/bin/memory-center-service --data-dir /path/to/new-service-data
 ```
 
@@ -65,6 +65,23 @@ docker compose -f compose.yaml -f compose.postgres.yaml up -d
 - Wiki：人工创建、修订、保留最近 100 个历史版本、回滚形成新修订。来源草稿由当前检索证据摘录生成，人工审阅后保存；没有伪装成 LLM 自动推理。保存引用身份，来源修订或删除后旧引用拒绝继续使用。
 - 记忆：推断默认 pending，管理员确认/拒绝。只有 confirmed 参与检索。支持替代和含时区的过期时间。记忆隔离到项目及主体，管理员确认的空间记忆可共享给该空间授权客户端；其他主体的私有记忆不会召回。
 - 删除/修订来源后立即从查询中失效，重新索引后清理派生块。每次变更后按页面提示重新索引。
+
+### 本地 Wiki 目录
+
+管理页“Wiki 目录”支持登记多个绝对路径，递归读取 `.md` / `.markdown`，忽略隐藏目录和符号链接。来源独立登记，可先同步，再关联一个或多个项目；关联项目的 Wiki 列表显示这些只读页面，MCP 沿用项目范围检索，无新增工具 schema。原始目录是正文真源，数据库保存派生快照和索引，不改写、移动或删除原文件。
+
+“立即同步”更新新增、修改及删除的页面，然后提交关联项目索引任务。自动同步约每分钟扫描一次；只有内容变化才增加页面修订。索引仍使用现有完整项目 generation 发布流程；若同步与索引重叠，下轮快照检查会补交索引任务。自动同步关闭时只读取上次手动同步的快照，来源配置变化仍会更新项目索引。
+
+每个目录最多 2000 页 / 32 MiB，单页 1 MiB，UTF-8 编码；最多登记 100 个来源。读取、编码或预算失败时整轮不发布部分快照，也不会当作文件被删除，页面显示失败原因。原文件变更会使查询命中标记 STALE，旧引用拒绝继续使用。暂停、解除项目关联或移除来源会立即退出该项目召回，不删除原文件；目录挂载失效时仍可暂停或移除来源。
+
+OrbStack / Docker：在私有 `.env` 设置 `MEMORY_CENTER_WIKIS_DIR=/path/to/wiki-parent`，该目录下可放多个 Wiki，叠加只读挂载：
+
+```sh
+docker compose -f compose.yaml -f compose.wikis.yaml up -d --build
+# 管理页填写 /wikis/personal、/wikis/engineering 等容器内路径。
+```
+
+若已有 PG 或项目挂载，在原组合上追加 `-f compose.wikis.yaml`，停止/重启保持相同组合。分散在不同父目录的 Wiki 可在私有 Compose override 增加多个只读 bind，每个使用不同 target，`bind.create_host_path: false`；管理页登记对应容器路径。不存在的宿主目录不会自动创建。容器用户需具备目录遍历和文件读取权限。Wiki 原始目录需单独备份，服务备份仅含来源配置及派生快照。
 
 ## MCP 接入
 
