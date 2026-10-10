@@ -18,7 +18,7 @@
 | 冷跑额外成本（写缓存） | 与无缓存持平（−2% ~ +5%，在噪声内） |
 | 缓存体积 | 61.3 MiB（通用 26.5 + Java 34.8）/ 12.7 MiB 可解析源码 = **4.8×** |
 
-一句话：**冷跑几乎不额外付费，热跑省掉绝大部分解析**。
+一句话：**冷跑几乎不额外付费，热跑省掉绝大部分解析与全部重复读取**（重复读取的消除见 §7、§9）。
 
 ---
 
@@ -138,12 +138,17 @@
 | `java`（Java 专用事实） | 3,552 | 34.8 MiB | 2.7× |
 | 合计 | 7,104 | **61.3 MiB** | **4.8×** |
 
-按 4.8× 线性外推，全工作区（175.0 MiB 源码）的缓存约 **840 MiB**，**超过 512 MiB
-默认预算**，会触发淘汰。两种处理都正确，只是取舍不同：
+按 4.8× 线性外推，全工作区（175.0 MiB 源码）的缓存约 **840 MiB**。b12 的默认预算是
+固定的 512 MiB，这类工作区**必然触发淘汰**；b13 起默认预算按工作区规模自适应：
 
-- 调高预算（如 `MEMORY_CENTER_PARSE_CACHE_MB=1024`）→ 全部命中，占盘约 840 MiB；
-- 保持默认 → 超出的部分按「最近使用」淘汰，被淘汰的文件下次重新解析，
-  **产物不受影响**，只是收益打折。
+```
+默认预算 = clamp(可解析源码字节 × 6, 512 MiB, 4 GiB)      # 显式 env 仍然优先
+```
+
+175 MiB 源码 → 1050 MiB，足以容纳约 840 MiB 载荷，一次建满即可长期命中；小工作区
+仍保底 512 MiB，不受影响。仍可通过 `MEMORY_CENTER_PARSE_CACHE_MB` 显式覆盖
+（`0` 关闭、正数固定、非法值退回自适应）。若预算仍小于实际载荷，超出的部分按
+「最近使用」淘汰，被淘汰的文件下次重新解析，**产物不受影响**，只是收益打折。
 
 淘汰顺序按「最近使用」排序：一轮索引结束后，仍在用的条目时间都是新的，
 源码已改过或已删除的旧内容条目时间停在最后一次被读到的时刻，**先于在用条目被淘汰**。
@@ -169,11 +174,25 @@
 
 ---
 
-## 9. 未验证与已知边界
+## 9. 已修复的边界与未验证项
 
-1. **未合并三遍读取。** 缓存的键仍要求「读文件 + 算 sha256」，所以同一份源码在
-   `chunking` / `build_code_graph` / Java 解析三处各自读一遍的问题**依旧存在**。
-   缓存只消除了重复**解析**，未消除重复读取。
+1. **~~未合并三遍读取~~（b13 已消除）。** b12 时缓存的键仍要求「读文件 + 算 sha256」，
+   同一份源码在 `chunking` / `build_code_graph` / Java 解析三处各自读一遍、各自算一次
+   哈希。b13 把扫描/切块阶段顺带算出的内容 sha256 传给两条解析路径（`build_code_graph`
+   的 `digests`、`reindex_workspace` 的 `source_digests`），解析先按键查缓存，**命中即不读源码**。
+   逐文件读取次数：
+
+   | 场景 | 修复前 | 修复后 |
+   |---|---|---|
+   | 热跑（缓存命中） | 3 次读 + 3 次哈希 | **1 次读 + 1 次哈希**（解析阶段零读取） |
+   | 冷跑（缓存未命中） | 3 次读 + 3 次哈希 | 3 次读 + **1 次哈希** |
+
+   热跑不再重复读取，可用「删除源文件后仍命中」直接验证（
+   `tests/service/test_parse_cache.py::test_parse_file_unit_hit_with_supplied_digest_does_not_read_source`）。
+   冷跑为何仍读：结构性解析与 Java 专用解析消费不同产物，两者都需要源码文本，缓存能省掉
+   其中一次「解析」，省不掉它们各自的「读取」。此外 b13 起 Java 延迟 Feign 解析不再把源码
+   文本内嵌进 `pending_feign`，改为在 Feign 阶段按绝对路径读取（只有 Feign 接口自身需要）。
+   未提供 digest 的调用方（如直接调用 `build_code_graph` 的测试）退回旧行为，产物逐值不变。
 2. **未测多项目并发下的缓存争用。** 不同工作区写各自的缓存目录，理论上无冲突；
    同一工作区由代际锁串行，故不会并发写同一目录。但未实测。
 3. **未测向量化阶段。** 本次未配置嵌入模型。
@@ -194,10 +213,11 @@ the generic structural parse from 1.64 s to 0.86 s (1.9×) and the Java-specific
 5.02 s to 0.45 s (11×) — **5.0× across both parse stages** — while a cold run pays no
 measurable extra cost for writing the cache. Cold and warm outputs are deep-equal to each
 other and to the uncached serial reference in every measured run. The cache occupies 4.8×
-the parseable source size (61.3 MiB here), so the full 175 MiB workspace would exceed the
-512 MiB default budget and evict by least-recently-*used* — which is correct, just less
-rewarding. Three source reads are *not* collapsed by this change: the cache key still
-requires reading and hashing each file.
+the parseable source size (61.3 MiB here). The b13 follow-up removes the duplicate reads and
+scales the default budget with the workspace (`max(512 MiB, parseable source × 6)`, capped at
+4 GiB, so a 175 MiB workspace gets about 1050 MiB instead of a fixed 512 MiB): the sha256
+computed during scanning/chunking is handed to both parse paths, which probe the cache by that
+key first, so a warm run reads each file once and performs no read at parse time.
 
 ---
 

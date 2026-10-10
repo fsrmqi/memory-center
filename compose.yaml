@@ -1,7 +1,7 @@
 services:
   memory-center:
     build: .
-    image: memory-center:5.0.0b12
+    image: memory-center:5.0.0b13
     environment:
       MEMORY_CENTER_CHAT_API_KEY: ${MEMORY_CENTER_CHAT_API_KEY:-}
       MEMORY_CENTER_AUTH_MODE: ${MEMORY_CENTER_AUTH_MODE:-local}

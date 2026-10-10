@@ -6,6 +6,15 @@
 - Wiki 自动调度在项目索引失败、取消或中断后停止；状态持久化，重启或删除任务记录不触发自动重试，手动重试恢复。关闭自动同步或暂停来源后不再自动提交该来源关联的项目索引。
 - Large graph cleanup uses temporary scope tables and subqueries without growing expression trees or parameter lists. Wiki indexing stops after failed, cancelled or interrupted attempts across restarts and history deletion; manual retries resume scheduling. Disabled or paused sources do not automatically schedule project indexing.
 
+## 5.0.0b13 — 2026-10-10
+
+- **消除解析侧的重复读取**。此前同一份源码在「切块」「通用结构解析」「Java 专用解析」三处各自读一遍、各自算一次 sha256。现在扫描/切块阶段顺带算出的内容 sha256 会传给两条解析路径（`build_code_graph` 的 `digests` 与 `reindex_workspace` 的 `source_digests`）：解析先按该键查缓存，**命中即完全不碰文件系统**。热跑（缓存命中）下每个文件只读 1 次、只算 1 次哈希，解析阶段零读取；冷跑仍需为解析读取文本，但哈希同样只算 1 次。未提供 digest 的调用方退回旧行为（读文件、算哈希、再查一次缓存），产物逐值不变。
+- **Java 延迟 Feign 解析不再内嵌源码文本**。`pending_feign` 由 `(项目, 相对路径, 源码文本, 符号)` 改为 `(项目, 相对路径, 绝对路径, 符号)`，Feign 目标解析阶段按需读取——只有 Feign 接口自身需要文本，其数量远小于全部 Java 文件。串行／池化／冷／热四条路径的产物形状因此完全一致，且解析产物不再跨阶段驻留整份源码。
+- **解析缓存默认预算按工作区规模自适应**。载荷实测约为可解析源码的 4.8×，固定 512 MiB 会让 175 MiB 源码的工作区（需约 840 MiB）每轮都淘汰刚写下的条目。默认预算改为 `max(512 MiB, 可解析源码字节 × 6)`，上限 4 GiB；显式设置 `MEMORY_CENTER_PARSE_CACHE_MB`（含 `0` 关闭）时仍以它为准，小工作区不受影响。
+- 新增用例覆盖「命中路径不读盘」（删除源文件后仍能命中）、「外部 digest 与内容不符时不复用旧条目」、「digest 传递后产物与自读自算逐值相等」与「预算随源码规模自适应」。MCP tool schema、取消与原子发布合同、`StructuralParseResult` 形状不变。
+
+English: The duplicate source reads around parsing are gone. The content sha256 computed during scanning/chunking is now handed to both parse paths (`digests` on `build_code_graph`, `source_digests` on `reindex_workspace`); a parse probes the cache by that key first, so a warm hit never touches the filesystem. A warm run therefore reads each file once, hashes it once and performs zero reads at parse time; a cold run still reads text to parse but hashes each file only once. Callers that pass no digests keep the old read-hash-probe behaviour, and outputs stay value-identical. Deferred Feign parsing no longer embeds source text in `pending_feign` — it carries the absolute path and reads on demand, so all four paths (serial/pooled, cold/warm) share one output shape and the parse product no longer carries whole sources across stages. The default cache budget now scales with the parseable source size (`max(512 MiB, source × 6)`, capped at 4 GiB) so large workspaces stop evicting what they just wrote; an explicit `MEMORY_CENTER_PARSE_CACHE_MB` (0 disables) still wins. MCP schemas, cancellation and atomic publishing are unchanged.
+
 ## 5.0.0b12 — 2026-10-10
 
 - **新增内容寻址的文件级解析缓存**（`platform/parse_cache.py`）：键 = 缓存契约版本 ‖ 命名空间 ‖ 文件身份 ‖ 语言 ‖ 内容 sha256。文件改名而内容不变仍命中，内容一变必然未命中。缓存只存**文件级 IR**；跨文件关系（导入绑定落到哪个文件、调用边、Feign 目标服务）留在归并阶段每次重算，因此改动文件的影响不会被缓存掩盖。
