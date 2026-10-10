@@ -167,10 +167,31 @@ def build_code_graph(root, files):
 
 def coverage_summary(graph):
     from collections import Counter
-    return {'languages': dict(Counter(v['language'] for v in graph['coverage'].values())),
-            'statuses': dict(Counter(v['status'] for v in graph['coverage'].values())),
+
+    statuses = Counter(value['status'] for value in graph['coverage'].values())
+    languages = Counter(value['language'] for value in graph['coverage'].values())
+    incomplete = sum(count for status, count in statuses.items() if status != 'parsed')
+    return {'languages': dict(languages), 'statuses': dict(statuses), 'files': len(graph['coverage']),
+            'complete': incomplete == 0, 'incomplete_files': incomplete,
             'symbol_count': len(graph['symbols']), 'resolved_calls': len(graph['edges']),
             'unresolved_calls': len(graph['unresolved'])}
+
+
+def claim_boundary(graph, scope_unresolved=(), *, require_no_unresolved=False):
+    """判断空结果能否作为否定结论，返回 (是否允许, 原因)。
+
+    只有在覆盖完整、且相关范围内没有未解析调用时，才允许断言“不存在”。动态分派、
+    继承/接口分派、匿名回调、外部依赖与跨语言调用都不会进入代码图，因此默认不放行，
+    否则调用方会把“未解析”误读成“无调用方”并据此删除代码。
+    """
+    incomplete = sorted(path for path, value in graph['coverage'].items() if value['status'] != 'parsed')
+    if incomplete:
+        return False, f'{len(incomplete)} 个文件未完整解析（例如 {incomplete[0]}），覆盖不完整'
+    if scope_unresolved:
+        return False, f'锚点仍有 {len(scope_unresolved)} 个未解析调用（动态分派或外部依赖等）'
+    if require_no_unresolved and graph['unresolved']:
+        return False, f'索引范围内仍有 {len(graph["unresolved"])} 个未解析调用，可能隐藏调用方'
+    return True, ''
 
 
 def symbol_fresh(root, symbol):
@@ -194,14 +215,21 @@ def query_code_graph(workspace_file, query, mode, limit=10):
     matches = [s for s in symbols if query in {s['id'], s['name'], s['qualified_name'], s['path'] + ':' + s['qualified_name']}]
     if not matches and mode == 'symbol':
         matches = [s for s in symbols if query.lower() in s['qualified_name'].lower()]
+    # 锚点缺失时只能主张“符号不存在”，不受未解析调用影响，但仍要求覆盖完整。
+    allowed, reason = claim_boundary(graph, (), require_no_unresolved=False)
     result = {'state': 'FOUND' if matches else 'NOT_FOUND', 'symbols': matches[:limit],
-              'negative_claim_allowed': False, 'truncated': len(matches) > limit, 'coverage': coverage_summary(graph)}
+              'negative_claim_allowed': False, 'negative_claim_reason': '',
+              'truncated': len(matches) > limit, 'coverage': coverage_summary(graph)}
     if mode == 'symbol':
+        result['negative_claim_allowed'] = (not matches) and allowed
+        result['negative_claim_reason'] = '' if matches else reason
         return result
     if len(matches) != 1:
         result['state'] = 'AMBIGUOUS' if matches else 'NOT_FOUND'
         result['chain'] = []
         result['message'] = '请使用 path:qualified_name 或 symbol id 精确定位' if matches else '当前范围未找到锚点'
+        result['negative_claim_allowed'] = (not matches) and allowed
+        result['negative_claim_reason'] = '' if matches else reason
         return result
     anchor = matches[0]
     result['anchor'] = anchor
@@ -218,4 +246,9 @@ def query_code_graph(workspace_file, query, mode, limit=10):
     result['truncated'] |= len(links) > limit
     result['state'] = 'FOUND' if links else 'INSUFFICIENT_EVIDENCE'
     result['evidence_level'] = ('INFERRED' if any(e['evidence_level'] == 'INFERRED' for e in links) else 'EXTRACTED') if links else 'AMBIGUOUS'
+    # 只有在没有任何直接调用方、且锚点与整个索引范围都没有未解析调用时，才允许否定结论。
+    allowed, reason = claim_boundary(graph, result['unresolved_calls'], require_no_unresolved=True)
+    result['negative_claim_allowed'] = (not links) and allowed
+    result['negative_claim_reason'] = '' if links else reason
     return result
+

@@ -2,29 +2,33 @@
 
 ## 中文
 
-本仓库实现 **Memory Center（记忆中心）**：面向 AI 编程助手的 MCP 项目记忆服务，用于多 Agent 公共空间、项目上下文、跨服务影响分析和经验沉淀。
+本仓库实现 **Memory Center（记忆中心）**：面向 AI 编程助手的 MCP 项目记忆服务，用于多 Agent 公共空间、项目上下文、跨语言影响分析和经验沉淀。5.0 起以独立常驻服务（`memory_center.service`）为唯一入口，管理页与统一 MCP 共用同一应用层。
 
 修改代码前必须遵守：
 
 1. 优先阅读 `README.md`、`docs/ARCHITECTURE.md`、`docs/MCP_GUIDE.md`。
-2. 变更 MCP tool schema 时必须保持兼容，若不兼容必须在 README、CHANGELOG、docs 中明确说明。
-3. 修改 Spring Cloud 索引器、规则匹配、CLI、MCP Server 时必须补充或更新测试。
+2. 变更 MCP tool schema 时必须保持兼容，若不兼容必须在 `README.md`、`docs/CHANGELOG.md` 或 `docs/` 中明确说明。
+3. 修改索引器、规则匹配、服务层、CLI 或 MCP Server 时必须补充或更新测试。
 4. 所有面向用户的说明尽量保持中英文双语。
-5. 不要提交真实私有项目生成的 `.memory-center/index` 或 `.memory-center/memory` 内容。
+5. 不要提交真实私有项目生成的数据（如 `memory_center/service/static/` 构建产物与私有 workspace 的索引/记忆）。
 6. 不要把私有路径、公司内部服务名、真实密钥写进示例。
+
+> `CLAUDE.md` 等其它宿主说明文件只保留宿主自动管理的说明块，正文以本文件为准，避免重复维护。
 
 ## English
 
-This repository implements **Memory Center**, an MCP-native project memory service and shared context center for AI coding agents.
+This repository implements **Memory Center**, an MCP-native project memory service and shared context center for AI coding agents. Since 5.0 a single long-running service (`memory_center.service`) is the only entry point; the admin UI and unified MCP share one application layer.
 
 Before making broad changes:
 
 1. Read `README.md`, `docs/ARCHITECTURE.md`, and `docs/MCP_GUIDE.md`.
-2. Keep MCP tool schemas backward-compatible unless a breaking change is explicitly documented.
-3. Add or update tests when changing the Spring Cloud indexer, rule matching, CLI, or MCP server.
+2. Keep MCP tool schemas backward-compatible unless a breaking change is explicitly documented in `README.md`, `docs/CHANGELOG.md`, or `docs/`.
+3. Add or update tests when changing the indexer, rule matching, service layer, CLI, or MCP server.
 4. Keep public-facing documentation bilingual when possible.
-5. Do not commit generated `.memory-center/index` or `.memory-center/memory` content from private workspaces.
+5. Do not commit generated data from private workspaces (e.g. `memory_center/service/static/` build output, private workspace index/memory).
 6. Do not include private paths, internal service names, or secrets in examples.
+
+> `CLAUDE.md` and other host instruction files keep only the host-managed blocks; the canonical text is maintained here to avoid divergent duplicates.
 
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence

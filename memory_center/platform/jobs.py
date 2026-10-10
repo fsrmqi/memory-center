@@ -4,6 +4,7 @@ import hashlib
 import multiprocessing
 import os
 import time
+from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
@@ -19,6 +20,90 @@ _SKIP = {'.git', '.memory-center', '.project-ai', '.claude', '.codex', '.idea', 
          'build', 'dist', '__pycache__', '.venv', 'venv', 'vendor'}
 _EXTENSIONS = {'.java', '.py', '.go', '.ts', '.tsx', '.js', '.jsx', '.vue', '.kt', '.rs', '.c', '.h',
                '.cpp', '.cs', '.mjs', '.cjs', '.pyi', '.md', '.txt', '.yaml', '.yml', '.json', '.toml', '.xml', '.properties', '.sql'}
+
+
+@dataclass(frozen=True)
+class IndexLimits:
+    """索引资源软上限。
+
+    默认值远高于正常项目规模，正常项目不受影响；一旦超过软上限，任务以
+    ``INDEX_BUDGET_EXCEEDED`` 有序失败并给出批准方式，而不是静默截断索引范围。
+    设置 ``MEMORY_CENTER_ALLOW_LARGE_INDEX=1`` 表示已确认机器资源充足，完整索引。
+    ``memory_limit_bytes`` 与 ``timeout_seconds`` 默认 0，表示不施加额外约束。
+    """
+
+    max_files: int = 200_000
+    max_total_bytes: int = 8 * 1024 ** 3
+    max_file_bytes: int = 64 * 1024 ** 2
+    allow_large: bool = False
+    memory_limit_bytes: int = 0
+    timeout_seconds: int = 0
+
+    @classmethod
+    def from_env(cls, env=None) -> 'IndexLimits':
+        source = os.environ if env is None else env
+
+        def integer(name: str, default: int) -> int:
+            raw = str(source.get(name, '') or '').strip()
+            try:
+                value = int(raw)
+            except ValueError:
+                return default
+            return value if value > 0 else default
+
+        return cls(
+            max_files=integer('MEMORY_CENTER_INDEX_MAX_FILES', 200_000),
+            max_total_bytes=integer('MEMORY_CENTER_INDEX_MAX_TOTAL_MB', 8192) * 1024 ** 2,
+            max_file_bytes=integer('MEMORY_CENTER_INDEX_MAX_FILE_MB', 64) * 1024 ** 2,
+            allow_large=str(source.get('MEMORY_CENTER_ALLOW_LARGE_INDEX', '') or '').strip() == '1',
+            memory_limit_bytes=integer('MEMORY_CENTER_INDEX_MEMORY_LIMIT_MB', 0) * 1024 ** 2,
+            timeout_seconds=integer('MEMORY_CENTER_INDEX_TIMEOUT_SECONDS', 0),
+        )
+
+    def describe(self, files: int, total_bytes: int) -> str:
+        return (f'文件 {files}/{self.max_files}，累计 {total_bytes // (1024 ** 2)} MiB/'
+                f'{self.max_total_bytes // (1024 ** 2)} MiB')
+
+
+def scan_source_files(root, limits: IndexLimits):
+    """扫描已登记源码范围，超过软上限且未显式批准时失败。
+
+    ``source_files`` 本身保持无限制，便于被其它调用方直接复用；预算只在此处施加。
+    """
+    files, total, oversized = [], 0, ''
+    for path in source_files(root):
+        try:
+            size = path.stat().st_size
+        except OSError:
+            continue
+        files.append(path)
+        total += size
+        if not oversized and size > limits.max_file_bytes:
+            oversized = path.relative_to(root).as_posix()
+        if limits.allow_large:
+            continue
+        if oversized or len(files) > limits.max_files or total > limits.max_total_bytes:
+            detail = limits.describe(len(files), total)
+            if oversized:
+                detail += f'，单文件超过 {limits.max_file_bytes // (1024 ** 2)} MiB：{oversized}'
+            raise CatalogError(
+                'INDEX_BUDGET_EXCEEDED',
+                f'源码规模超过索引软上限（{detail}）。确认机器资源充足后设置 '
+                'MEMORY_CENTER_ALLOW_LARGE_INDEX=1 重新索引；未发布任何索引，上一代索引仍可读取。',
+            )
+    return files
+
+
+def _apply_memory_limit(limit_bytes: int) -> None:
+    """尽力为索引子进程设置地址空间上限；平台不支持时不阻塞索引。"""
+    if limit_bytes <= 0:
+        return
+    try:
+        import resource
+
+        resource.setrlimit(resource.RLIMIT_AS, (limit_bytes, limit_bytes))
+    except (ImportError, AttributeError, ValueError, OSError):
+        pass
 
 
 def source_files(root):
@@ -53,12 +138,14 @@ def split_text(text, metadata):
     return chunks
 
 
-def run_index(data_dir, database_url, workspace, job_id):
+def run_index(data_dir, database_url, workspace, job_id, limits=None):
     """子进程内装配旧事实引擎；派生 YAML 位于新服务 generation，绝不读源码旧配置。"""
     from memory_center.core.foundation.models import ServiceConfig, WorkspaceConfig
     from memory_center.core.indexing.reindex import reindex_workspace
     from memory_center.core.storage.catalog import CatalogStore
     from memory_center.core.storage.workspace import WorkspaceStore
+
+    limits = limits or IndexLimits.from_env()
 
     data_dir = Path(data_dir)
     db = Database(data_dir, database_url)
@@ -69,8 +156,9 @@ def run_index(data_dir, database_url, workspace, job_id):
         if root.resolve() != root or not root.is_dir():
             raise CatalogError('ROOT_CHANGED', '源码目录已移动，请暂停后重新登记路径')
         chunks = []
-        # 完整扫描已登记源码范围，不以文件大小或项目规模拒绝索引。
-        files = list(source_files(root))
+        _apply_memory_limit(limits.memory_limit_bytes)
+        # 默认完整扫描；仅当超过软上限且未显式批准时才拒绝，且不发布任何索引。
+        files = scan_source_files(root, limits)
         for path in files:
             text = path.read_text(encoding='utf-8', errors='replace')
             relative = path.relative_to(root).as_posix()
@@ -140,6 +228,7 @@ class Jobs:
         self.store, self.catalog = store, catalog
         self.data_dir, self.database_url = data_dir, database_url
         self.processes, self.started = {}, {}
+        self.limits = IndexLimits.from_env()
         self.stopping = False
         self.task = None
         self.wiki_task = None
@@ -213,6 +302,13 @@ class Jobs:
                 if job['status'] == 'cancelled':
                     if process.is_alive():
                         process.terminate()
+                if (self.limits.timeout_seconds and process.is_alive()
+                        and time.monotonic() - self.started.get(job_id, 0) > self.limits.timeout_seconds):
+                    # 可选看门狗：默认关闭（timeout_seconds=0），开启后超时有序失败并保留上一代索引。
+                    process.terminate()
+                    self.store.update('job', job_id, {'status': 'failed', 'error': 'INDEX_TIMEOUT',
+                                                      'message': f'索引超过 {self.limits.timeout_seconds} 秒未完成，已终止；上一代索引仍可读取。',
+                                                      'finished_at': now()})
                 if not process.is_alive():
                     process.join(timeout=.1)
                     if self.store.get('job', job_id)['status'] == 'running':
@@ -230,7 +326,7 @@ class Jobs:
                     if workspace['status'] != 'active' or workspace['config_version'] != job['config_version']:
                         raise CatalogError('WORKSPACE_CHANGED', '项目配置已改变')
                     self.store.update('job', job['id'], {'status': 'running', 'started_at': now()})
-                    process = context.Process(target=run_index, args=(self.data_dir, self.database_url, workspace, job['id']))
+                    process = context.Process(target=run_index, args=(self.data_dir, self.database_url, workspace, job['id'], self.limits))
                     process.start()
                     self.processes[job['id']], self.started[job['id']] = process, time.monotonic()
                 except Exception:

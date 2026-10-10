@@ -1,22 +1,16 @@
 # Memory Center / 记忆中心
 
-> 2026-10-10 / 5.0.0b7：取消源码索引的文件体积、项目总量、分块及代码图规模硬限制，取消默认索引超时。大文件完整读取，保留手动取消和失败保留上一代索引。Large source files and projects are indexed without fixed size/count/time limits.
-
-> 2026-10-10 / 5.0.0b6：统一 Wiki 治理、知识晋升/归档和 Skill 管理，管理页与 MCP 共用数据；旧独立 Wiki MCP 和 DSH 管理插件退出。安装和迁移见 [平台指南](docs/V5_PLATFORM_GUIDE.md)。Unified Wiki governance and Skill lifecycle are now built into the service.
-
-> 2026-10-10 / 5.0.0b5：多模块预览服务候选上限调整为 256，保留扫描预算；登记错误明确区分服务数、目录项超限和读取失败。
-
-> 2026-10-10 / 5.0.0b4：默认安装包与容器内置 Java、TypeScript/TSX、JavaScript/JSX、Vue、Python、Go 结构解析；支持明确导入与作用域下的调用查询。旧索引需在管理页重新索引。能力边界见 [多语言实施记录](docs/implementation-receipts/V5_MULTILANGUAGE.md)。
-
-> 2026-10-10 / 5.0.0b3：新增多个本地 Wiki 目录只读接入，可关联多个项目、增量同步 Markdown 并更新检索。管理入口为“Wiki 目录”，容器挂载及预算见 [平台指南](docs/V5_PLATFORM_GUIDE.md)。
-
-> 2026-10-10 / 5.0.0b2：默认本机免认证，管理页直接进入，MCP 开放所有接入项目与全部工具。显式 `--auth-mode token` 保留凭据模式；项目隔离及 Host/Origin 校验保持启用。当前行为见 [平台指南](docs/V5_PLATFORM_GUIDE.md)。
-
-> 2026-10-09 当前实施更新：5.0.0b1 已接入多项目授权 MCP、后台索引、知识库/Wiki/记忆管理与 PG/向量后端，已完成本地测试版验收；正式发行仍需真实模型语义与规模评测。用户已授权连续实施。本轮证据见 [实施回执](docs/implementation-receipts/V5_PLATFORM.md)，当前入口与合同见 [5.0 平台指南](docs/V5_PLATFORM_GUIDE.md)。下方较早的 S1/S2 等待确认记录仅保留决策演进背景。
-
-
-> **5.0 开发预览：5.0.0a2，已完成 S1 多项目目录。** 独立启动、Vue 空态管理页、Streamable HTTP 状态工具及 wheel/Docker 打包已实现；项目预览、登记、改名、暂停/恢复和移除接入通过受控管理 API 使用，尚不是正式 5.0.0。
-> 运行：`memory-center-service`，或 `docker compose up -d --build`；页面 `/admin/`，MCP `/mcp`（当前仅 `mc_service_status`）。安装、关闭及 OrbStack 操作见 [5.0 服务运行指南](docs/V5_SERVICE_GUIDE.md)。项目 API 合同见 [项目目录管理指南](docs/V5_CATALOG_GUIDE.md)。以下原有项目能力说明仍描述待接入的 4.x 引擎。
+> **当前版本 5.0.0b7（开发测试版）** — 一次安装、常驻运行的多项目上下文与记忆服务。
+>
+> 入口：服务 `memory-center-service`（`memory-center` 现指向同一服务）、stdio 代理 `memory-center-mcp`、维护 `memory-center-maintenance`、宿主集成 `memory-center-integrations`。地址：管理页 `/admin/`、就绪 `/health/ready`、MCP `/mcp`。
+>
+> MCP 工具：`mc_service_status`、`mc_workspaces`、`mc_lookup`、`mc_analyze`、`mc_ref`、`mc_start`、`mc_resume`、`mc_close`、`mc_memory_write`、`mc_wiki_write`、`mc_index`、`mc_job_status`、`mc_job_cancel`，以及 `assistant_knowledge` / `assistant_memory` / `assistant_skill` / `assistant_admin`。
+>
+> **5.0 为全新安装**：不导入 4.x workspace / registry / 索引 / 记忆，不保留旧 MCP/HTTP 工具合同，不提供降级路径；历史数据需自行处置。
+>
+> 逐版本变更见 [CHANGELOG](docs/CHANGELOG.md)；当前入口与合同见 [5.0 平台指南](docs/V5_PLATFORM_GUIDE.md)、[服务运行指南](docs/V5_SERVICE_GUIDE.md)、[项目目录指南](docs/V5_CATALOG_GUIDE.md)。
+>
+> 下文原有项目能力说明描述 4.x 引擎，作为核心算法背景保留，不代表当前接口。
 
 
 > **MCP-native workspace & service memory and knowledge graph service for AI coding agents.**
@@ -75,9 +69,11 @@ Memory Center precomputes these relationships before the agent starts editing.
 
 ### Current release / 当前版本
 
-4.x 保留版本为 **4.6.30**，本分支包版本为 **5.0.0a2**（S1 开发预览）。4.6 系列已将可信查询、Java IR 差分、跨服务 `primary_chain`、真实 retrieval replay、局部刷新分桶预算、发布质量门禁和只读质量/空间总览收敛为稳定能力；4.6.30 集中加固记忆写入与宿主集成的可靠性——Shadow 快照、Observation 折叠与 authority 切换统一在专用 `shadow.lock` 内完成读-改-写（消除并发覆盖导致 L2 案例缺源），Hook 的 session-id 交接文件按 workspace 隔离并支持 `MEMORY_CENTER_SESSION_ID_FILE` 注入（消除同机多项目互相关闭 session），`memory_discover` 改读真实 memory layer key，delivery waiver 过期状态在审批与列表中一致落盘。`quality-gate` 只读汇总 generation、coverage、replay、IR、刷新性能和存储状态；它不会执行 reindex、GC、VACUUM 或用户命令。
+当前包版本为 **5.0.0b7**（开发测试版）。Memory Center 已重构为常驻服务：多项目登记、统一 MCP 入口、后台索引、知识库 / Wiki / 长期记忆与知识治理 / Skill 管理全部由同一服务承载，入口与能力边界以 [5.0 平台指南](docs/V5_PLATFORM_GUIDE.md) 为准。
 
-4.x 历史保留版本为 4.6.30；当前分支为 5.0.0a2 开发预览。 The 4.6 series consolidates trustworthy query contracts, Java IR differential checks, cross-service `primary_chain`, real retrieval replay, bucketed refresh budgets, a release quality gate, and a read-only quality/storage overview; 4.6.30 hardens memory-write and host-integration reliability — Shadow snapshots, observation folding, and authority switching now read-modify-write under a dedicated `shadow.lock` (no more concurrent overwrites leaving L2 cases short a source), the hook session-id handoff file is workspace-scoped and injectable via `MEMORY_CENTER_SESSION_ID_FILE` (no more cross-project session clobbering on one machine), `memory_discover` reads the real memory-layer keys, and delivery-waiver expiry is persisted consistently between approval and listing. `quality-gate` is read-only and never reindexes, GCs, vacuums, or runs user commands.
+4.x 的稳定能力（可信查询、Java IR 差分、跨服务调用链、检索回放、发布质量门禁）作为核心算法背景保留；5.0 实际复用其中哪些部分，由平台指南与代码事实定义，不以本文的历史叙述为准。4.6.30 保留在 `codex/release-4.6.30` 分支供源码追溯，5.0 不读取其 workspace、registry、索引与记忆。
+
+The current package version is **5.0.0b7** (development beta). Memory Center now runs as a standalone always-on service hosting multi-project registration, a unified MCP endpoint, background indexing, knowledge/Wiki/long-term memory, and knowledge/skill governance. The 4.x engine capabilities are retained as algorithmic background; which parts the 5.0 service actually reuses is defined by the platform guide and the code, not by this historical narrative.
 
 ---
 

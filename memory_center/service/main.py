@@ -6,6 +6,7 @@ from pathlib import Path
 
 import uvicorn
 
+from memory_center import __version__
 from memory_center.service.app import create_service_app
 from memory_center.service.config import ServiceConfig
 
@@ -40,6 +41,9 @@ def main() -> int:
                 create_service_app(config), host=config.host, port=config.port,
                 workers=1, timeout_graceful_shutdown=10, proxy_headers=False,
             ))
+            print(f'Memory Center {__version__}：管理页 http://{config.host}:{config.port}/admin/'
+                  f'，MCP /mcp，认证模式 {config.auth_mode}', flush=True)
+            print('同一数据目录同时只允许一个服务实例（service.lock），重复启动会在就绪前被拒绝。', flush=True)
             server.run(sockets=[listener])
             return 0 if server.started else 1
     except OSError as exc:

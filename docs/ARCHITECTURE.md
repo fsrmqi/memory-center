@@ -1,21 +1,11 @@
-> 5.0.0b6：统一知识治理与 Skill 管理已实现，四个 assistant 工具、受管存储和接入合同见 [平台指南](V5_PLATFORM_GUIDE.md#统一知识治理与-skill-管理b6)。Unified Wiki and Skill management now use one service. 下文旧引擎说明保留作背景。
-
 # Memory Center 当前系统架构 / Current System Architecture
 
-> 2026-10-10 / 5.0.0b5：多模块预览服务候选上限调整为 256，保留扫描预算；登记错误明确区分服务数、目录项超限和读取失败。
+> **当前实现：5.0.0b7（开发测试版）。** 服务化架构为单进程 FastAPI/Uvicorn，同时承载管理 API、统一 MCP（Streamable HTTP，挂载于 `/mcp`）与 Vue 管理页；空间控制面独立存储，索引由有界子进程执行，发布走原子 generation。分层方向为 `service/`（生命周期、路由、MCP 边界）→ `platform/`（控制面、授权、任务、知识、检索）→ `application/` + `core/`（被复用的引擎）。
+>
+> **5.0 为全新安装**：不导入 4.x workspace / registry / 索引 / 记忆，不保留旧 MCP/HTTP 工具合同。当前入口、工具 schema 与能力边界见 [5.0 平台指南](V5_PLATFORM_GUIDE.md)；运行事实见 [服务运行指南](V5_SERVICE_GUIDE.md)；项目登记与授权合同见 [项目目录指南](V5_CATALOG_GUIDE.md)；逐版本变更见 [CHANGELOG](CHANGELOG.md)；服务化决策见 [ADR-0004](adr/0004-service-platform-and-admin.md) 与 [ADR-0005](adr/0005-v5-workspace-catalog.md)。
+>
+> 下文自“设计目标”起描述 4.6.30 时代实现的引擎能力，作为核心算法背景保留。其在 5.0 中被复用与否，以代码事实与平台指南为准，本页下文不构成当前接口承诺。
 
-> 2026-10-10 / 5.0.0b4：默认安装包与容器内置 Java、TypeScript/TSX、JavaScript/JSX、Vue、Python、Go 结构解析；支持明确导入与作用域下的调用查询。旧索引需在管理页重新索引。能力边界见 [多语言实施记录](implementation-receipts/V5_MULTILANGUAGE.md)。
-
-> 2026-10-10 / 5.0.0b3：新增多个本地 Wiki 目录只读接入，可关联多个项目、增量同步 Markdown 并更新检索。管理入口为“Wiki 目录”，容器挂载及预算见 [平台指南](V5_PLATFORM_GUIDE.md)。
-
-> 2026-10-10 / 5.0.0b2：默认本机免认证，管理页直接进入，MCP 开放所有接入项目与全部工具。显式 `--auth-mode token` 保留凭据模式；项目隔离及 Host/Origin 校验保持启用。当前行为见 [平台指南](V5_PLATFORM_GUIDE.md)。
-
-> 2026-10-09 当前实施更新：5.0.0b1 已接入多项目授权 MCP、后台索引、知识库/Wiki/记忆管理与 PG/向量后端，已完成本地测试版验收；正式发行仍需真实模型语义与规模评测。用户已授权连续实施。本轮证据见 [实施回执](implementation-receipts/V5_PLATFORM.md)，当前入口与合同见 [5.0 平台指南](V5_PLATFORM_GUIDE.md)。下方较早的 S1/S2 等待确认记录仅保留决策演进背景。
-
-
-> **5.0.0a2 / S1 当前入口**：`memory-center-service` 独立服务，管理页 `/admin/`、MCP `/mcp`，当前只提供 `mc_service_status`。FastAPI 外层生命周期管理官方 SDK；项目目录 API 已完成（含管理员令牌），见 [项目目录管理指南](V5_CATALOG_GUIDE.md)；项目 MCP 授权与 Worker 尚待 S2–S3。实际参数、状态/错误合同、安装与关闭见 [5.0 服务运行指南](V5_SERVICE_GUIDE.md)。下文旧入口说明属于尚未接入的新服务底层能力，不构成 5.0 兼容承诺。
-
-> 5.0 设计范围说明：下文仍描述 4.6.30 实现。5.0 已决定按全新安装重构为 FastAPI/Uvicorn 服务、统一 MCP 与独立管理页面；不导入旧 workspace 或保持历史接口/存储兼容。新的空间配置与数据全部归服务管理，核心能力和证据治理可复用。尚未实施的设计以 [技术方案](SERVICE_PLATFORM_TECHNICAL_PLAN.md) 和 [改造流程](V5_IMPLEMENTATION_PLAN.md) 为准。
 
 > 本文基于当前全量代码实现整理，作为一份独立的系统架构说明。它面向外部评审者、集成方和维护者，说明 Memory Center 的设计目标、核心能力、运行模型、模块边界和数据安全边界。
 >

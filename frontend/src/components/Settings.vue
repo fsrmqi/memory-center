@@ -1,16 +1,137 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { action, api, type Workspace, type Item } from '../api'
-const serverOrigin=location.origin
-const localHttp=JSON.stringify({mcpServers:{'memory-center':{url:serverOrigin+'/mcp'}}},null,2)
-const localStdio=JSON.stringify({mcpServers:{'memory-center':{command:'memory-center-mcp',env:{MEMORY_CENTER_URL:serverOrigin+'/mcp'}}}},null,2)
-const props=defineProps<{section:'models'|'credentials';workspaces:Workspace[];local?:boolean}>()
-const settings=ref({url:'',model:'',protocol:'ollama',dimensions:1024}),backend=ref(''),items=ref<Item[]>([]),selected=ref<string[]>([]),name=ref(''),writable=ref(false),issued=ref<any>(null),busy=ref(false)
-onMounted(()=>action(async()=>{const value=await api('/models');backend.value=value.backend;if(value.items[0]){const m=value.items[0];settings.value={url:m.url,model:m.model,protocol:m.protocol,dimensions:m.dimensions}}if(!props.local)items.value=(await api('/credentials')).items},'设置已加载'))
-async function save(){await action(async()=>{await api('/models','PUT',settings.value)},'模型已保存，已有项目需重新索引')}
-async function test(){busy.value=true;await action(async()=>{await api('/models/test','POST',settings.value)},'模型连接与向量维度验证通过');busy.value=false}
-async function issue(){await action(async()=>{issued.value=await api('/credentials','POST',{name:name.value,workspace_ids:selected.value,writable:writable.value});items.value=(await api('/credentials')).items},'凭据已创建，请保存一次性令牌')}
-async function revoke(item:Item){await action(async()=>{await api('/credentials/'+item.id,'DELETE');items.value=(await api('/credentials')).items},'凭据已撤销')}
-function connection(){return JSON.stringify({mcpServers:{'memory-center':{url:serverOrigin+'/mcp',headers:{Authorization:'Bearer '+issued.value.token}}}},null,2)}
+
+const serverOrigin = location.origin
+const localHttp = JSON.stringify({ mcpServers: { 'memory-center': { url: serverOrigin + '/mcp' } } }, null, 2)
+const localStdio = JSON.stringify({ mcpServers: { 'memory-center': { command: 'memory-center-mcp', env: { MEMORY_CENTER_URL: serverOrigin + '/mcp' } } } }, null, 2)
+
+const props = defineProps<{ section: 'models' | 'credentials'; workspaces: Workspace[]; local?: boolean }>()
+
+const settings = ref({ url: '', model: '', protocol: 'ollama', dimensions: 1024 })
+const backend = ref('')
+const runtime = ref<any>(null)
+const items = ref<Item[]>([])
+const selected = ref<string[]>([])
+const name = ref('')
+const writable = ref(false)
+const issued = ref<any>(null)
+const busy = ref(false)
+
+onMounted(() => action(async () => {
+  const value = await api('/models')
+  backend.value = value.backend
+  if (value.items[0]) {
+    const m = value.items[0]
+    settings.value = { url: m.url, model: m.model, protocol: m.protocol, dimensions: m.dimensions }
+  }
+  // 后端能力边界与索引上限必须显式可见，避免切换部署形态时能力静默降级。
+  try { runtime.value = await api('/service/status') } catch { runtime.value = null }
+  if (!props.local) items.value = (await api('/credentials')).items
+}, '设置已加载'))
+
+async function save() { await action(async () => { await api('/models', 'PUT', settings.value) }, '模型已保存，已有项目需重新索引') }
+async function test() { busy.value = true; await action(async () => { await api('/models/test', 'POST', settings.value) }, '模型连接与向量维度验证通过'); busy.value = false }
+async function issue() { await action(async () => { issued.value = await api('/credentials', 'POST', { name: name.value, workspace_ids: selected.value, writable: writable.value }); items.value = (await api('/credentials')).items }, '凭据已创建，请保存一次性令牌') }
+async function revoke(item: Item) { await action(async () => { await api('/credentials/' + item.id, 'DELETE'); items.value = (await api('/credentials')).items }, '凭据已撤销') }
+function connection() { return JSON.stringify({ mcpServers: { 'memory-center': { url: serverOrigin + '/mcp', headers: { Authorization: 'Bearer ' + issued.value.token } } } }, null, 2) }
 </script>
-<template><template v-if="section==='models'"><div class="page-title"><div><h1>模型设置</h1><p>配置批量嵌入。修改模型后需要重新索引。</p></div><span class="state">{{backend==='postgresql'?'PostgreSQL + pgvector':'SQLite 轻量存储'}}</span></div><section class="form-panel"><form @submit.prevent="save"><label>嵌入协议<select v-model="settings.protocol"><option value="ollama">Ollama</option><option value="openai">OpenAI-compatible</option></select></label><label>服务地址<input v-model="settings.url" placeholder="例如 http://host.docker.internal:11434"></label><label>模型名称<input v-model="settings.model" placeholder="填写已安装模型的名称"></label><label>向量维度<input type="number" v-model.number="settings.dimensions" min="1" max="4096"></label><p class="muted">不填写模型时只启用关键词与代码事实检索。模型需预先安装；远程模型会接收待嵌入文本。密钥由服务环境变量 MEMORY_CENTER_MODEL_API_KEY 提供，不在页面保存。</p><div class="actions"><button type="button" @click="test" :disabled="busy">{{busy?'正在验证…':'验证连接'}}</button><button class="primary">保存模型</button></div></form></section></template><template v-else-if="local"><div class="page-title"><div><h1>MCP 接入</h1><p>本机免认证：所有已接入项目与全部工具均可使用。</p></div></div><section class="form-panel"><h2>HTTP 连接配置</h2><textarea readonly rows="7" aria-label="MCP 连接配置" :value="localHttp"></textarea><p class="muted">无需令牌、项目授权或读写权限配置。调用时通过 workspace_id 指定项目，避免记忆混用。</p><h2>stdio 客户端</h2><pre>{{localStdio}}</pre></section></template><template v-else><div class="page-title"><div><h1>MCP 接入</h1><p>分配项目范围与读写权限，凭据可随时撤销。</p></div></div><section class="form-panel"><form @submit.prevent="issue"><label>凭据名称<input v-model="name" required maxlength="120"></label><fieldset><legend>允许访问的项目</legend><label v-for="workspace in workspaces" :key="workspace.workspace_id" class="check"><input v-model="selected" :value="workspace.workspace_id" type="checkbox">{{workspace.name}}</label></fieldset><label class="check"><input type="checkbox" v-model="writable">允许会话、记忆、Wiki 写入与索引任务</label><button class="primary" :disabled="!selected.length">创建凭据</button></form><section v-if="issued" class="issued"><h2>一次性连接配置</h2><p>关闭页面前保存到客户端私有配置。</p><textarea readonly rows="9" :value="connection()" aria-label="MCP 连接配置"></textarea><button @click="issued=null">隐藏令牌</button></section></section><div class="table-wrap"><table><thead><tr><th>名称</th><th>项目范围</th><th>权限</th><th>状态</th><th>操作</th></tr></thead><tbody><tr v-for="item in items" :key="item.id"><td>{{item.name}}</td><td>{{item.workspace_ids.map((id:string)=>workspaces.find(w=>w.workspace_id===id)?.name||id).join('、')}}</td><td>{{item.writable?'读写':'只读'}}</td><td>{{item.revoked?'已撤销':'有效'}}</td><td><button class="danger" v-if="!item.revoked" @click="revoke(item)">撤销</button></td></tr></tbody></table></div></template></template>
+
+<template>
+  <template v-if="section === 'models'">
+    <div class="page-title">
+      <div>
+        <h1>模型设置</h1>
+        <p>配置批量嵌入。修改模型后需要重新索引。</p>
+      </div>
+      <span class="state">{{ backend === 'postgresql' ? 'PostgreSQL + pgvector' : 'SQLite 轻量存储' }}</span>
+    </div>
+
+    <section class="form-panel">
+      <form @submit.prevent="save">
+        <label>嵌入协议
+          <select v-model="settings.protocol">
+            <option value="ollama">Ollama</option>
+            <option value="openai">OpenAI-compatible</option>
+          </select>
+        </label>
+        <label>服务地址<input v-model="settings.url" placeholder="例如 http://host.docker.internal:11434"></label>
+        <label>模型名称<input v-model="settings.model" placeholder="填写已安装模型的名称"></label>
+        <label>向量维度<input type="number" v-model.number="settings.dimensions" min="1" max="4096"></label>
+        <p class="muted">不填写模型时只启用关键词与代码事实检索。模型需预先安装；远程模型会接收待嵌入文本。密钥由服务环境变量 MEMORY_CENTER_MODEL_API_KEY 提供，不在页面保存。</p>
+        <div class="actions">
+          <button type="button" @click="test" :disabled="busy">{{ busy ? '正在验证…' : '验证连接' }}</button>
+          <button class="primary">保存模型</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="form-panel" v-if="runtime">
+      <h2>运行环境</h2>
+      <p class="muted">版本 {{ runtime.version }}（{{ runtime.stage === 'stable' ? '正式版' : '开发测试版' }}）。同一数据目录同时只允许一个服务实例，重复启动会在就绪前被拒绝。</p>
+      <p class="muted">存储后端：{{ runtime.storage.backend === 'postgresql' ? 'PostgreSQL + pgvector' : 'SQLite 轻量模式' }}。{{ runtime.storage.note }}</p>
+      <p class="muted">索引软上限：文件 {{ runtime.index_limits.max_files }} 个 / 累计 {{ runtime.index_limits.max_total_mib }} MiB / 单文件 {{ runtime.index_limits.max_file_mib }} MiB。{{ runtime.index_limits.allow_large_index ? '当前已允许超限索引。' : '超过上限时索引有序失败，需设置 MEMORY_CENTER_ALLOW_LARGE_INDEX=1 后重新索引。' }}</p>
+      <p class="muted">索引内存上限 {{ runtime.index_limits.memory_limit_mib ? runtime.index_limits.memory_limit_mib + ' MiB' : '未设置' }}；索引超时 {{ runtime.index_limits.timeout_seconds ? runtime.index_limits.timeout_seconds + ' 秒' : '未设置' }}。</p>
+    </section>
+  </template>
+
+  <template v-else-if="local">
+    <div class="page-title">
+      <div>
+        <h1>MCP 接入</h1>
+        <p>本机免认证：所有已接入项目与全部工具均可使用。</p>
+      </div>
+    </div>
+    <section class="form-panel">
+      <h2>HTTP 连接配置</h2>
+      <textarea readonly rows="7" aria-label="MCP 连接配置" :value="localHttp"></textarea>
+      <p class="muted">无需令牌、项目授权或读写权限配置。调用时通过 workspace_id 指定项目，避免记忆混用。</p>
+      <h2>stdio 客户端</h2>
+      <pre>{{ localStdio }}</pre>
+    </section>
+  </template>
+
+  <template v-else>
+    <div class="page-title">
+      <div>
+        <h1>MCP 接入</h1>
+        <p>分配项目范围与读写权限，凭据可随时撤销。</p>
+      </div>
+    </div>
+    <section class="form-panel">
+      <form @submit.prevent="issue">
+        <label>凭据名称<input v-model="name" required maxlength="120"></label>
+        <fieldset>
+          <legend>允许访问的项目</legend>
+          <label v-for="workspace in workspaces" :key="workspace.workspace_id" class="check">
+            <input v-model="selected" :value="workspace.workspace_id" type="checkbox">{{ workspace.name }}
+          </label>
+        </fieldset>
+        <label class="check"><input type="checkbox" v-model="writable">允许会话、记忆、Wiki 写入与索引任务</label>
+        <button class="primary" :disabled="!selected.length">创建凭据</button>
+      </form>
+      <section v-if="issued" class="issued">
+        <h2>一次性连接配置</h2>
+        <p>关闭页面前保存到客户端私有配置。</p>
+        <textarea readonly rows="9" :value="connection()" aria-label="MCP 连接配置"></textarea>
+        <button @click="issued = null">隐藏令牌</button>
+      </section>
+    </section>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>名称</th><th>项目范围</th><th>权限</th><th>状态</th><th>操作</th></tr>
+        </thead>
+        <tbody>
+          <tr v-for="item in items" :key="item.id">
+            <td>{{ item.name }}</td>
+            <td>{{ item.workspace_ids.map((id: string) => workspaces.find(w => w.workspace_id === id)?.name || id).join('、') }}</td>
+            <td>{{ item.writable ? '读写' : '只读' }}</td>
+            <td>{{ item.revoked ? '已撤销' : '有效' }}</td>
+            <td><button class="danger" v-if="!item.revoked" @click="revoke(item)">撤销</button></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </template>
+</template>

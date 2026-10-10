@@ -91,9 +91,16 @@ class Platform:
         from memory_center.core.orchestrator.impact import memory_impact
         _, index = self.indexed(actor, workspace_id)
         generic = query_code_graph(index['workspace_file'], target, 'analyze', 50)
-        if generic and any(s['language'] != 'java' for s in generic['symbols']):
+        # 通用图存在且索引覆盖含非 Java 语言时，以通用图结论为准；非 Java 未命中不再
+        # 静默回落到 Java 专用影响分析，避免把“未解析/未命中”表述成“无调用方”。
+        languages = set((generic or {}).get('coverage', {}).get('languages', {}))
+        if generic is not None and languages - {'java'}:
             result = generic
-            result['impact_scope'] = 'direct_static_callers'
+            result['impact_scope'] = {
+                'FOUND': 'direct_static_callers',
+                'INSUFFICIENT_EVIDENCE': 'no_static_callers_in_scope',
+                'AMBIGUOUS': 'ambiguous_anchor',
+            }.get(result['state'], 'anchor_not_found')
         else:
             result = memory_impact(index['workspace_file'], target, view='minimal', budget='low')
         result['workspace_id'], result['generation'] = workspace_id, index['generation']

@@ -1,8 +1,9 @@
 """FastAPI and MCP share a single, explicitly managed ASGI lifespan."""
+import re
 from contextlib import asynccontextmanager
 from pathlib import Path
 from tempfile import TemporaryFile
-from typing import TypedDict
+from typing import Any, TypedDict
 
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse, RedirectResponse
@@ -14,6 +15,7 @@ from memory_center import __version__
 from memory_center.application.workspaces import WorkspaceCatalog
 from memory_center.platform.application import Platform
 from memory_center.platform.database import Database, ManagedCatalog, PostgresCatalog
+from memory_center.platform.jobs import IndexLimits
 from memory_center.service.admin import load_admin_token
 from memory_center.service.body_limit import BodyLimit
 from memory_center.service.config import ServiceConfig
@@ -22,6 +24,14 @@ from memory_center.service.platform_mcp import MCPBoundary, register_tools
 from memory_center.service.platform_mcp import ScopedMCP as FastMCP
 from memory_center.service.platform_routes import platform_router
 from memory_center.service.workspace_routes import workspace_router
+
+_PRE_RELEASE = re.compile(r'(?:a|b|rc)\d+$', re.IGNORECASE)
+
+
+def release_stage(version: str) -> str:
+    """从版本号派生发布通道，避免手写的迁移切片标签（如 "S4"）随版本漂移。"""
+    return 'development' if _PRE_RELEASE.search(version.split('+', 1)[0]) else 'stable'
+
 
 
 class ServiceStatus(TypedDict):
@@ -32,6 +42,45 @@ class ServiceStatus(TypedDict):
     capabilities: list[str]
     project_management: str
     auth_mode: str
+    single_instance: bool
+    storage: dict[str, Any]
+    index_limits: dict[str, Any]
+
+
+def storage_status(config: ServiceConfig) -> dict[str, Any]:
+    """后端能力边界；SQLite 与 PostgreSQL 并不等价，必须对调用方与页面显式可见。"""
+    if config.database_url:
+        return {
+            'backend': 'postgresql',
+            'persistence': 'postgres+pgvector',
+            'vector_recall': 'distance_index',
+            'hnsw_max_dimension': 2000,
+            'exact_scan_chunk_limit': 0,
+            'note': '向量按距离查询；维度不超过 2000 的模型档案建立 HNSW 索引，更高维度退回精确检索。',
+        }
+    return {
+        'backend': 'sqlite',
+        'persistence': 'sqlite',
+        'vector_recall': 'exact_scan',
+        'hnsw_max_dimension': 0,
+        'exact_scan_chunk_limit': 5000,
+        'note': '轻量模式向量为精确召回，最多 5000 块；超过该规模会以 VECTOR_BUDGET 拒绝，需改用 PostgreSQL + pgvector 部署。',
+    }
+
+
+def index_limits_status() -> dict[str, Any]:
+    """当前生效的索引资源约束；默认值远高于正常项目，超限需显式批准。"""
+    limits = IndexLimits.from_env()
+    return {
+        'max_files': limits.max_files,
+        'max_total_mib': limits.max_total_bytes // (1024 ** 2),
+        'max_file_mib': limits.max_file_bytes // (1024 ** 2),
+        'allow_large_index': limits.allow_large,
+        'memory_limit_mib': limits.memory_limit_bytes // (1024 ** 2),
+        'timeout_seconds': limits.timeout_seconds,
+        'note': '超过软上限时索引有序失败且不发布，设置 MEMORY_CENTER_ALLOW_LARGE_INDEX=1 后重新索引；'
+                'memory_limit_mib 与 timeout_seconds 为 0 表示不施加额外约束。',
+    }
 
 
 def create_service_app(config: ServiceConfig, *, static_dir: Path | None = None) -> FastAPI:
@@ -55,11 +104,14 @@ def create_service_app(config: ServiceConfig, *, static_dir: Path | None = None)
         return {
             "schema_version": "5.0",
             "version": __version__,
-            "stage": "S4",
+            "stage": release_stage(__version__),
             "ready": ready,
             "capabilities": ["service_status", "workspace_catalog", "scoped_mcp", "background_index", "knowledge", "wiki", "memory", "knowledge_governance", "skill_management"],
             "project_management": "ready",
             "auth_mode": config.auth_mode,
+            "single_instance": True,
+            "storage": storage_status(config),
+            "index_limits": index_limits_status(),
         }
 
     @mcp.tool()

@@ -3,8 +3,6 @@ from __future__ import annotations
 
 import os
 import signal
-import subprocess
-import sys
 import threading
 import time
 from pathlib import Path
@@ -34,55 +32,6 @@ def watcher_daemon_status(workspace_file: str | Path) -> dict[str, Any]:
     active = state.get("status") == "running" and _pid_alive(pid)
     status = "running" if active else ("stale" if state.get("status") == "running" else str(state.get("status", "stopped")))
     return {**state, "status": status, "active": active, "configured": True}
-
-
-def start_watcher_daemon(
-    workspace_file: str | Path,
-    *,
-    poll_interval: float = 5.0,
-    debounce_seconds: float = 2.0,
-) -> dict[str, Any]:
-    """Launch one detached watcher process for a workspace."""
-    workspace = str(Path(workspace_file).expanduser().resolve())
-    load_workspace_config(workspace)
-    existing = watcher_daemon_status(workspace)
-    if existing.get("active"):
-        return {**existing, "started": False, "reason": "already_running"}
-    if poll_interval < 0.2 or debounce_seconds < 0.0:
-        raise ValueError("poll_interval must be at least 0.2 seconds and debounce_seconds must be non-negative")
-    command = [
-        sys.executable,
-        "-m",
-        "memory_center.cli.main",
-        "watcher-run",
-        "--workspace",
-        workspace,
-        "--poll-interval",
-        str(poll_interval),
-        "--debounce-seconds",
-        str(debounce_seconds),
-    ]
-    with open(os.devnull, "wb") as sink:
-        process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=sink, stderr=sink, start_new_session=True)
-    return {
-        "status": "starting",
-        "active": True,
-        "started": True,
-        "pid": process.pid,
-        "workspace_file": workspace,
-        "poll_interval": poll_interval,
-        "debounce_seconds": debounce_seconds,
-    }
-
-
-def stop_watcher_daemon(workspace_file: str | Path) -> dict[str, Any]:
-    """Request graceful watcher shutdown through SIGTERM."""
-    current = watcher_daemon_status(workspace_file)
-    if not current.get("active"):
-        return {**current, "stopped": False, "reason": "not_running"}
-    pid = int(current["pid"])
-    os.kill(pid, signal.SIGTERM)
-    return {**current, "status": "stopping", "active": True, "stopped": True}
 
 
 def run_watcher_daemon(
