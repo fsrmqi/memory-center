@@ -1,3 +1,5 @@
+> 5.0.0b6：统一知识治理与 Skill 管理已实现，四个 assistant 工具、受管存储和接入合同见 [平台指南](V5_PLATFORM_GUIDE.md#统一知识治理与-skill-管理b6)。Unified Wiki and Skill management now use one service. 下文旧引擎说明保留作背景。
+
 # Memory Center 当前系统架构 / Current System Architecture
 
 > 2026-10-10 / 5.0.0b5：多模块预览服务候选上限调整为 256，保留扫描预算；登记错误明确区分服务数、目录项超限和读取失败。

@@ -1,13 +1,13 @@
 # 5.0 多项目知识服务使用指南
 
-> 当前：5.0.0b5，开发测试版本；不兼容 4.x 接入或导入历史数据。
+> 当前：5.0.0b6，开发测试版本；不兼容 4.x 接入或导入历史数据。
 > 用户已授权连续完成方案，无需每个切片再次确认。此指南描述当前服务入口；旧版文档仅作为核心算法背景。
 
 ## 安装与运行
 
 ```sh
 python3 -m venv .venv
-.venv/bin/python -m pip install /path/to/memory_center-5.0.0b5-py3-none-any.whl
+.venv/bin/python -m pip install /path/to/memory_center-5.0.0b6-py3-none-any.whl
 .venv/bin/memory-center-service --data-dir /path/to/new-service-data
 ```
 
@@ -118,7 +118,7 @@ docker compose -f compose.yaml -f compose.postgres.yaml exec -T postgres pg_dump
 
 协议夹具只验证嵌入数量/维度、模型档案隔离、数据库向量距离、HNSW 与融合，不代表真实语义质量。当前网络的 Ollama registry 证书校验失败，未关闭 TLS 验证；真实模型语义评测未完成。没有宣称图片中的 IM、浏览器沙箱、联网搜索、Neo4j、所有外部模型厂商等已实现，它们不属于此次 Memory Center 服务化核心闭环。
 
-## 多语言代码查询（5.0.0b5）
+## 多语言代码查询（5.0.0b6）
 
 借鉴 GitNexus 的语言注册、Vue 脚本块提取和分阶段引用解析。每次索引先提取声明与导入绑定，再连接调用，写入 generation 的 `code-graph.json`；文件路径、符号类型、限定名和声明行组成符号身份，避免多个文件的同名函数覆盖。Java 的 Spring/Feign/MQ 专用分析继续保留。
 
@@ -136,3 +136,26 @@ docker compose -f compose.yaml -f compose.postgres.yaml exec -T postgres pg_dump
 索引任务和索引记录的 `code_coverage` 提供语言文件数、解析状态、符号数、已解析与未解析调用数。解析器缺失、语法错误、未知 Vue 脚本语言与外部脚本不算完整解析；未解析调用保留诊断，不能凭空结果断言无调用方。图预算为 50000 个符号、100000 个调用点，超限任务失败，旧 generation 不替换。代码与引用读取时核对来源哈希，变更后请重新索引。
 
 当前不实现完整编译器类型推断：跨语言业务调用、继承/接口动态分派、匿名回调内部调用、外部依赖、TS 路径别名与 re-export 链、匿名默认导出、Python 动态导入等保留未解析。Go 依赖替换和 build tags 不作为已验证语义。向量检索不作为调用关系证据。原 generation 没有通用图时保留旧入口；在管理页对需要新能力的项目点击“索引”，不自动扫描或迁移所有项目。
+
+## 统一知识治理与 Skill 管理（b6）
+
+旧 Wiki MCP 的治理与多格式资料处理已迁入本仓库。统一 `/mcp` 新增四个入口：`assistant_knowledge`（search/read/brief/analyze/initialize/status）、`assistant_memory`（promote/archive）、`assistant_skill`（analyze/extract/create/list/inspect/validate/publish/published/export/remove）、`assistant_admin`（validate/scan/index）。这是 5.0 的增量合同；旧 4.x workspace 和独立 Wiki MCP 配置不兼容，不再启动旧服务。
+
+管理页新增“知识治理”和“Skill 管理”。写入先生成完整预览，再确认；Skill 发布必须携带任务验证引用。引用会进入发布清单，但系统不自动核验外部引用的真实性，不可表述为普遍验证通过。候选支持正文审阅、来源/哈希校验、导出；删除或停用移入服务回收目录，保留可恢复副本。已有全局 Skill 也可以列表管理。
+
+已登记 Wiki 来源可完整迁入 `/data/governance/wiki`（本机部署为指定 data-dir 下的同名目录）。仅复制支持的文档，不修改原目录；最多 20000 个文档、5 GiB，完整导入仅允许一次且受管库不能已有新内容。此后晋升和归档写入受管库。外部 Wiki 的只读目录同步与受管知识分别维护，来源变动不会自动覆盖受管知识。查询自动增量刷新 FTS 索引；没有独立后台 Wiki watcher；完整迁入先索引文本和附件元数据，再由服务管理的子进程解析附件，停止时终止、重启后继续。未完成时查询携带 indexing 状态，空结果不可作为不存在的结论。`assistant_admin(action="scan")` 返回扫描报告，不自动删除文件。
+
+Skill 默认发布到服务数据目录 `governance/skills`。要供宿主 Agent 实际使用，可私有 Compose override 将专用宿主 Skill 目录挂载为可写 `/agent-skills`，并设置 `MEMORY_CENTER_SKILLS_DIR=/agent-skills`。仅将需要管理的 Skill 目录挂载为可写，源码和原 Wiki 仍可只读。候选和回收目录留在服务数据卷中。备份应同时包括数据卷和宿主 Skill 目录；停用的 Skill 可以从 `governance/trash` 恢复。
+
+默认 local 模式统一管理身份开放全部四个入口。显式 token 模式下，它们只供管理 API 的管理员使用；项目 MCP 凭据不获得全局私有 Wiki 和 Skill 管理权限。
+
+```sh
+# 新安装包包含统一的 Wiki Skill，更新现有文件需明确使用 --force（自动保留 .before-v5 副本）。
+memory-center-integrations --target agents --target codex --force
+# 仅支持 stdio 的宿主使用 memory-center-mcp，无 --workspace、无独立 Wiki MCP。
+# MEMORY_CENTER_URL 默认为 http://127.0.0.1:8765/mcp
+```
+
+宿主只保留一个 `memory-center` MCP 接入；支持 HTTP 的宿主直接连接 `http://127.0.0.1:8765/mcp`，其余使用上面的代理。移除旧 `personal-assistant-wiki` MCP 配置及 Memory Center DSH 管理插件后，需要刷新宿主会话/重启 DSH 才会重新发现工具。其它 DSH 插件源码不随此次迁移改动；仍调用旧 Memory 工具合同的插件需另行适配。
+
+English: b6 integrates Wiki governance and Skill lifecycle into the single Memory Center service. The four assistant tools are additive to the 5.0 schema. Managed Wiki data, candidate Skills and recoverable removals live in the service data directory; source Wiki documents are retained. Skill publication can target a dedicated writable host mount. Replace the separate Wiki MCP connection with the unified endpoint and refresh host sessions. Other DSH components are outside this migration.

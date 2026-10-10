@@ -34,7 +34,7 @@ def test_lifespan_and_fresh_data(tmp_path, monkeypatch):
         assert client.get("/mcp").status_code != 307
     assert TestClient(app).get("/health/ready").status_code == 503
     assert legacy.read_text() == "invalid legacy configuration"
-    assert {p.name for p in (tmp_path / "v5").iterdir()} == {"catalog.db", "admin-token", "platform.db", "service.lock"}
+    assert {p.name for p in (tmp_path / "v5").iterdir()} == {"catalog.db", "admin-token", "platform.db", "service.lock", "governance"}
 
 
 def test_missing_assets_fail_startup(tmp_path):

@@ -57,7 +57,7 @@ def create_service_app(config: ServiceConfig, *, static_dir: Path | None = None)
             "version": __version__,
             "stage": "S4",
             "ready": ready,
-            "capabilities": ["service_status", "workspace_catalog", "scoped_mcp", "background_index", "knowledge", "wiki", "memory"],
+            "capabilities": ["service_status", "workspace_catalog", "scoped_mcp", "background_index", "knowledge", "wiki", "memory", "knowledge_governance", "skill_management"],
             "project_management": "ready",
             "auth_mode": config.auth_mode,
         }
@@ -91,6 +91,7 @@ def create_service_app(config: ServiceConfig, *, static_dir: Path | None = None)
             catalog.index_store = platform.store
             app.state.platform = mcp.platform = platform
             await platform.jobs.start()
+            await platform.governance.start()
             try:
                 async with mcp.session_manager.run():
                     app.state.catalog_ready = True
@@ -100,6 +101,7 @@ def create_service_app(config: ServiceConfig, *, static_dir: Path | None = None)
                 ready = False
                 app.state.catalog_ready = False
                 app.state.admin_token = ""
+                await platform.governance.close()
                 await platform.jobs.close()
     app = FastAPI(title="Memory Center", version=__version__, lifespan=lifespan)
 
@@ -108,6 +110,8 @@ def create_service_app(config: ServiceConfig, *, static_dir: Path | None = None)
     register_catalog_errors(app)
     app.include_router(workspace_router())
     app.include_router(platform_router())
+    from memory_center.service.governance_routes import governance_router
+    app.include_router(governance_router())
 
     @app.get("/health/live")
     def live():

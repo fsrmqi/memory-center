@@ -1,5 +1,13 @@
 # Changelog / 更新日志
 
+## 5.0.0b6 — 2026-10-10
+
+- 迁入独立 Wiki MCP 的知识简报、读取、全文检索、晋升、归档、治理校验与多格式 Skill 来源处理。
+- 新增四个 assistant MCP 工具与知识治理/Skill 管理页面，原 5.0 工具参数保持不变。旧独立服务及 4.x workspace 接入不兼容，需切换统一 MCP。
+- Skill 候选创建、审阅、来源校验、发布、导出和可恢复移除；发布支持指定宿主 Skill 目录。
+- 支持已登记 Wiki 一次性复制迁入受管知识库，原内容保留；统一 Wiki Skill 随发行包安装。
+- Integrated Wiki governance and Skill lifecycle into one service, with managed storage and recoverable removal. Separate Wiki MCP configuration is retired.
+
 ## 5.0.0b5 — 2026-10-10
 
 - 多模块项目预览候选上限从 64 调整为 256，扫描深度与目录项预算保持不变。

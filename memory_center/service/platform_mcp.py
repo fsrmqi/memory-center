@@ -40,6 +40,9 @@ class ScopedMCP(FastMCP):
 
 
 def register_tools(mcp):
+    from memory_center.service.governance_mcp import register_governance
+    register_governance(mcp)
+
     def service():
         return mcp.platform
 

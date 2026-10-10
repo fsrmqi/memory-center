@@ -1,5 +1,7 @@
 # Memory Center / 记忆中心
 
+> 2026-10-10 / 5.0.0b6：统一 Wiki 治理、知识晋升/归档和 Skill 管理，管理页与 MCP 共用数据；旧独立 Wiki MCP 和 DSH 管理插件退出。安装和迁移见 [平台指南](docs/V5_PLATFORM_GUIDE.md)。Unified Wiki governance and Skill lifecycle are now built into the service.
+
 > 2026-10-10 / 5.0.0b5：多模块预览服务候选上限调整为 256，保留扫描预算；登记错误明确区分服务数、目录项超限和读取失败。
 
 > 2026-10-10 / 5.0.0b4：默认安装包与容器内置 Java、TypeScript/TSX、JavaScript/JSX、Vue、Python、Go 结构解析；支持明确导入与作用域下的调用查询。旧索引需在管理页重新索引。能力边界见 [多语言实施记录](docs/implementation-receipts/V5_MULTILANGUAGE.md)。

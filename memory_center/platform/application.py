@@ -6,6 +6,7 @@ from pathlib import Path
 from memory_center.core.foundation.catalog import CatalogError
 from memory_center.platform.code_graph import query_code_graph, symbol_fresh
 from memory_center.platform.embeddings import Embedder
+from memory_center.platform.governance import ASSISTANT_TOOLS, Governance
 from memory_center.platform.jobs import Jobs
 from memory_center.platform.knowledge import Knowledge
 from memory_center.platform.retrieval import Retrieval, initialize_terms
@@ -19,6 +20,7 @@ class Platform:
         self.store, self.catalog = PlatformStore(database), catalog
         self.knowledge = Knowledge(self.store, database.data_dir)
         self.wiki_sources = WikiSources(self.store, catalog)
+        self.governance = Governance(self.store, catalog, self.wiki_sources, database.data_dir)
         self.access = Access(self.store, catalog)
         self.retrieval = Retrieval(self.store, self.knowledge)
         self.jobs = Jobs(self.store, catalog, database.data_dir, database.url)
@@ -26,7 +28,7 @@ class Platform:
 
     def administrator(self):
         workspaces = self.catalog.list(1000)['items']
-        return Principal('admin', tuple(w['workspace_id'] for w in workspaces), frozenset(WRITE_TOOLS), True)
+        return Principal('admin', tuple(w['workspace_id'] for w in workspaces), frozenset(WRITE_TOOLS | ASSISTANT_TOOLS), True)
 
     def indexed(self, actor, workspace_id):
         workspace = self.access.scope(actor, workspace_id)

@@ -5,6 +5,7 @@ import sys
 import pytest
 from fastapi.testclient import TestClient
 
+from memory_center.platform.governance import ASSISTANT_TOOLS
 from memory_center.platform.security import WRITE_TOOLS
 from memory_center.service.app import create_service_app
 from memory_center.service.config import ServiceConfig
@@ -17,7 +18,7 @@ def test_local_management_and_dynamic_mcp_scope(tmp_path):
         assert client.get('/api/v1/workspaces').status_code == 200
         headers = mcp_connect(client)
         listing = client.post('/mcp', headers=headers, json={'jsonrpc': '2.0', 'id': 1, 'method': 'tools/list'}).json()
-        assert {tool['name'] for tool in listing['result']['tools']} == WRITE_TOOLS
+        assert {tool['name'] for tool in listing['result']['tools']} == WRITE_TOOLS | ASSISTANT_TOOLS
         assert call(client, headers, 'mc_workspaces', {})['structuredContent']['items'] == []
         spaces = []
         for name in ['a', 'b']:
