@@ -14,7 +14,15 @@ import yaml
 from memory_center.core.foundation.catalog import CatalogError
 from memory_center.core.indexing.language_registry import get_language_spec_for_extension
 from memory_center.platform.database import Database, PostgresCatalog
-from memory_center.platform.embeddings import Embedder
+from memory_center.platform.embedding_cache import (
+    EmbeddingCache,
+    configured_budget_bytes as configured_embedding_budget_bytes,
+)
+from memory_center.platform.embeddings import (
+    Embedder,
+    EmbeddingCancelled,
+    configured_concurrency as configured_embedding_concurrency,
+)
 from memory_center.platform.knowledge import Knowledge
 from memory_center.platform.parse_cache import (
     JAVA_NAMESPACE,
@@ -208,6 +216,9 @@ def run_index(data_dir, database_url, workspace, job_id, limits=None, file_worke
     # 解析缓存落在**工作区级**目录，不在 generation 内：generation 会被 prune 清理，
     # 而缓存必须跨代际存活，「只改了几个文件的再次索引」才能跳过其余文件的解析。
     cache_root = data_dir / 'workspaces' / workspace['workspace_id'] / 'parse-cache'
+    # 向量缓存同样放在工作区目录下、跨代际存活：热跑时块内容不变，命中的块直接复用
+    # 上一代算出的向量，一次模型请求都不发。
+    embedding_cache_root = data_dir / 'workspaces' / workspace['workspace_id'] / 'embedding-cache'
     try:
         root = Path(workspace['root'])
         if root.resolve() != root or not root.is_dir():
@@ -279,15 +290,31 @@ def run_index(data_dir, database_url, workspace, job_id, limits=None, file_worke
                              {'path': item['source_name'] + '/' + item['relative_path']} if item.get('wiki_source_id') else {})}))
         settings = store.list('model', limit=1)
         embedder = Embedder(settings[0] if settings else {})
+        # 向量缓存与解析缓存同级（工作区目录、跨代际存活）；预算 0 表示关闭，
+        # 此时既不读也不写，退回「每轮全部重新向量化」。
+        embedding_budget = configured_embedding_budget_bytes()
+        embedding_cache = EmbeddingCache(embedding_cache_root) if embedding_budget else None
         report('embedding', 0, len(chunks), 'chunks')
-        # 嵌入分批执行并检查取消，模型故障保留上一代索引。
-        for offset in range(0, len(chunks), 16):
-            if store.get('job', job_id)['status'] != 'running':
-                return
-            batch = chunks[offset:offset + 16]
-            for chunk, vector in zip(batch, embedder.embed([c['content'] for c in batch]), strict=False):
-                chunk.update(profile=embedder.profile, embedding=vector)
-            report('embedding', offset + len(batch), len(chunks), 'chunks')
+        completed = 0
+
+        def embedding_progress(count):
+            nonlocal completed
+            completed += count
+            report('embedding', completed, len(chunks), 'chunks')
+
+        # 缓存命中与新算的向量在 Embedder 内合并，返回顺序与 chunks 严格一致，
+        # 因此这里可以直接 zip。取消在此就地停下（不发布任何索引）；模型故障仍以
+        # CatalogError 上抛，由外层把 job 记成失败并保留上一代索引。
+        try:
+            vectors = embedder.embed_many([chunk['content'] for chunk in chunks],
+                                          cache=embedding_cache,
+                                          concurrency=configured_embedding_concurrency(),
+                                          should_stop=lambda: store.get('job', job_id)['status'] != 'running',
+                                          on_batch=embedding_progress)
+        except EmbeddingCancelled:
+            return
+        for chunk, vector in zip(chunks, vectors, strict=True):
+            chunk.update(profile=embedder.profile, embedding=vector)
         current = catalog.get(workspace['workspace_id'])
         if current['status'] != 'active' or current['config_version'] != workspace['config_version']:
             raise CatalogError('WORKSPACE_CHANGED', '项目配置已改变，未发布索引')
@@ -299,6 +326,9 @@ def run_index(data_dir, database_url, workspace, job_id, limits=None, file_worke
         if cache_budget:
             store.update('job', job_id, {'parse_cache': {'budget_bytes': cache_budget,
                                                          **enforce_budget(cache_root, cache_budget)}})
+        if embedding_budget:
+            store.update('job', job_id, {'embedding_cache': {'budget_bytes': embedding_budget,
+                                                             **enforce_budget(embedding_cache_root, embedding_budget)}})
     except Exception as exc:
         current = store.get('job', job_id)
         if current['status'] == 'running':
