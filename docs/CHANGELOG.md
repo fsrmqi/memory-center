@@ -1,5 +1,15 @@
 # Changelog / 更新日志
 
+## 5.0.0b10 — 2026-10-10
+
+- 后台任务报告真实阶段、完成量、总量、单位和耗时；未知总量不伪造百分比。`progress` 现在代表当前阶段，新增 `progress_scope=phase`；旧任务仍保留旧记录。
+- 项目并发默认按运行环境 CPU 自动选取 1–4，可在管理页配置 1–64；排队上限默认 0（不限），同项目任务去重，取消与原子发布合同不变。文件归属一次分配，减少重复遍历。
+- 普通模型与向量模型分别配置，支持 Ollama 和 OpenAI-compatible；Wiki 和记忆可单篇整理或当前页汇总，预览可编辑，确认才保存。来源修订冲突、模型故障不会覆盖原文。
+- 项目 Wiki 保存新修订并保留历史；目录 Wiki 整理为受管副本，保留原文件；记忆整理后进入待确认状态。保存内容与消费预览使用同一事务。
+- MCP tool schema 不变；管理 API 增加普通模型、任务配置与整理预览端点。
+
+English: Real per-phase counters replace fixed progress percentages. Configurable project processes and optional queue limits retain cancellation and atomic publishing. Separate chat models support reviewable Wiki/memory organization, revision checks, transactional application, and read-only source copies. MCP schemas remain unchanged.
+
 ## 5.0.0b9 — 2026-10-10
 
 - 项目列表、服务划分、后台任务、Wiki 目录、候选/已发布 Skill、全局 Skill 发现和 MCP 凭据支持分页。后台任务与发现记录在服务端分页，受限元数据列表在页面内分页。

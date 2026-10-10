@@ -11,6 +11,8 @@ const localStdio = JSON.stringify({ mcpServers: { 'memory-center': { command: 'm
 const props = defineProps<{ section: 'models' | 'credentials'; workspaces: Workspace[]; local?: boolean }>()
 
 const settings = ref({ url: '', model: '', protocol: 'ollama', dimensions: 1024 })
+const chat = ref({url:'',model:'',protocol:'ollama',max_tokens:4096})
+const jobSettings = ref({max_projects:1,max_queued:0})
 const backend = ref('')
 const runtime = ref<any>(null)
 const items = ref<Item[]>([])
@@ -24,6 +26,9 @@ const busy = ref(false)
 onMounted(() => action(async () => {
   const value = await api('/models')
   backend.value = value.backend
+  const [c,j] = await Promise.all([api('/chat-model'),api('/job-settings')])
+  if(c.items[0])chat.value={url:c.items[0].url,model:c.items[0].model,protocol:c.items[0].protocol,max_tokens:c.items[0].max_tokens}
+  jobSettings.value={max_projects:j.max_projects,max_queued:j.max_queued}
   if (value.items[0]) {
     const m = value.items[0]
     settings.value = { url: m.url, model: m.model, protocol: m.protocol, dimensions: m.dimensions }
@@ -35,6 +40,9 @@ onMounted(() => action(async () => {
 
 async function save() { await action(async () => { await api('/models', 'PUT', settings.value) }, '模型已保存，已有项目需重新索引') }
 async function test() { busy.value = true; await action(async () => { await api('/models/test', 'POST', settings.value) }, '模型连接与向量维度验证通过'); busy.value = false }
+async function saveChat(){await action(async()=>{await api('/chat-model','PUT',chat.value)},'普通模型已保存，无需重新索引')}
+async function testChat(){busy.value=true;await action(async()=>{await api('/chat-model/test','POST',chat.value)},'普通模型连接验证通过');busy.value=false}
+async function saveJobs(){await action(async()=>{await api('/job-settings','PUT',jobSettings.value)},'并发设置已生效；已有任务继续执行')}
 async function issue() { await action(async () => { issued.value = await api('/credentials', 'POST', { name: name.value, workspace_ids: selected.value, writable: writable.value }); items.value = (await api('/credentials')).items }, '凭据已创建，请保存一次性令牌') }
 async function revoke(item: Item) { await action(async () => { await api('/credentials/' + item.id, 'DELETE'); items.value = (await api('/credentials')).items }, '凭据已撤销') }
 function connection() { return JSON.stringify({ mcpServers: { 'memory-center': { url: serverOrigin + '/mcp', headers: { Authorization: 'Bearer ' + issued.value.token } } } }, null, 2) }
@@ -45,13 +53,14 @@ function connection() { return JSON.stringify({ mcpServers: { 'memory-center': {
     <div class="page-title">
       <div>
         <h1>模型设置</h1>
-        <p>配置批量嵌入。修改模型后需要重新索引。</p>
+        <p>分别配置检索向量模型与用于整理 Wiki、记忆的普通模型。</p>
       </div>
       <span class="state">{{ backend === 'postgresql' ? 'PostgreSQL + pgvector' : 'SQLite 轻量存储' }}</span>
     </div>
 
     <section class="form-panel">
       <form @submit.prevent="save">
+        <h2>向量模型</h2>
         <label>嵌入协议
           <select v-model="settings.protocol">
             <option value="ollama">Ollama</option>
@@ -69,6 +78,20 @@ function connection() { return JSON.stringify({ mcpServers: { 'memory-center': {
       </form>
     </section>
 
+    <section class="form-panel"><form @submit.prevent="saveChat"><h2>普通模型 · 智能整理</h2>
+      <label>模型协议<select v-model="chat.protocol"><option value="ollama">Ollama</option><option value="openai">OpenAI-compatible</option></select></label>
+      <label>服务地址<input v-model="chat.url" placeholder="Ollama 根地址，或 OpenAI-compatible 的 /v1 地址"></label>
+      <label>模型名称<input v-model="chat.model" placeholder="填写可用于对话的模型名称"></label>
+      <label>最大输出 Token<input type="number" v-model.number="chat.max_tokens" min="256" max="32768"></label>
+      <p class="muted">用于整理已保存的 Wiki 和记忆；结果先预览，再确认保存。远程模型会收到你选中的正文。密钥通过服务环境变量 MEMORY_CENTER_CHAT_API_KEY 提供。</p>
+      <div class="actions"><button type="button" @click="testChat" :disabled="busy">{{busy?'正在验证…':'验证普通模型'}}</button><button class="primary" :disabled="busy">保存普通模型</button></div>
+    </form></section>
+    <section class="form-panel"><form @submit.prevent="saveJobs"><h2>后台任务并发</h2>
+      <label>同时索引的项目数<input type="number" v-model.number="jobSettings.max_projects" min="1" max="64"></label>
+      <label>排队任务上限<input type="number" v-model.number="jobSettings.max_queued" min="0" max="100000"></label>
+      <p class="muted">默认按运行环境 CPU 自动选择项目并发，排队上限 0 表示不限。降低并发不终止现有任务，新任务按新配置调度。每个项目占用独立进程。</p>
+      <button class="primary">保存并发设置</button>
+    </form></section>
     <section class="form-panel" v-if="runtime">
       <h2>运行环境</h2>
       <p class="muted">版本 {{ runtime.version }}（{{ runtime.stage === 'stable' ? '正式版' : '开发测试版' }}）。同一数据目录同时只允许一个服务实例，重复启动会在就绪前被拒绝。</p>

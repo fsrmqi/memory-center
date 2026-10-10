@@ -67,7 +67,7 @@ class IndexLimits:
                 f'{self.max_total_bytes // (1024 ** 2)} MiB')
 
 
-def scan_source_files(root, limits: IndexLimits):
+def scan_source_files(root, limits: IndexLimits, progress=None):
     """扫描已登记源码范围，超过软上限且未显式批准时失败。
 
     ``source_files`` 本身保持无限制，便于被其它调用方直接复用；预算只在此处施加。
@@ -80,6 +80,8 @@ def scan_source_files(root, limits: IndexLimits):
             continue
         files.append(path)
         total += size
+        if progress:
+            progress('scanning', len(files), None, 'files')
         if not oversized and limits.max_file_bytes and size > limits.max_file_bytes:
             oversized = path.relative_to(root).as_posix()
         if limits.allow_large:
@@ -141,6 +143,40 @@ def split_text(text, metadata):
     return chunks
 
 
+class JobProgress:
+    """按真实完成量报告当前阶段；未知总量不伪造百分比。"""
+    def __init__(self, store, job_id):
+        self.store, self.job_id = store, job_id
+        self.last, self.phase, self.started = 0, '', time.monotonic()
+
+    def __call__(self, phase, completed=0, total=None, unit='files', detail=''):
+        stamp = time.monotonic()
+        if phase == self.phase and stamp - self.last < 1 and completed != total:
+            return
+        job = self.store.get('job', self.job_id)
+        if job['status'] != 'running':
+            raise CatalogError('JOB_CANCELLED', '任务已取消')
+        self.store.update('job', self.job_id, {
+            'phase': phase, 'completed': completed, 'total': total, 'unit': unit, 'detail': detail,
+            'progress_scope': 'phase', 'progress': int(100 * completed / total) if total else 0,
+            'elapsed_seconds': round(stamp - self.started), 'heartbeat_at': now(),
+        })
+        self.last, self.phase = stamp, phase
+
+
+def assign_services(config, files):
+    """预先解析服务路径，按最具体范围一次分配文件。"""
+    scopes = sorted(((s.name, config.resolve_service_path(s)) for s in config.services),
+                    key=lambda pair: len(pair[1].parts), reverse=True)
+    owned = {s.name: [] for s in config.services}
+    for path in files:
+        for name, scope in scopes:
+            if path.is_relative_to(scope):
+                owned[name].append(str(path))
+                break
+    return owned
+
+
 def run_index(data_dir, database_url, workspace, job_id, limits=None):
     """子进程内装配旧事实引擎；派生 YAML 位于新服务 generation，绝不读源码旧配置。"""
     from memory_center.core.foundation.models import ServiceConfig, WorkspaceConfig
@@ -154,6 +190,7 @@ def run_index(data_dir, database_url, workspace, job_id, limits=None):
     db = Database(data_dir, database_url)
     store, knowledge = PlatformStore(db), Knowledge(PlatformStore(db), data_dir)
     catalog = PostgresCatalog(data_dir, database_url) if database_url else CatalogStore(data_dir)
+    report = JobProgress(store, job_id)
     try:
         root = Path(workspace['root'])
         if root.resolve() != root or not root.is_dir():
@@ -161,19 +198,22 @@ def run_index(data_dir, database_url, workspace, job_id, limits=None):
         chunks = []
         _apply_memory_limit(limits.memory_limit_bytes)
         # 默认完整扫描；仅当超过软上限且未显式批准时才拒绝，且不发布任何索引。
-        files = scan_source_files(root, limits)
-        for path in files:
+        report('scanning')
+        files = scan_source_files(root, limits, report)
+        report('chunking', 0, len(files))
+        for number, path in enumerate(files, 1):
             text = path.read_text(encoding='utf-8', errors='replace')
             relative = path.relative_to(root).as_posix()
             chunks.extend(split_text(text, {'kind': 'code', 'source_id': 'code:' + relative,
                                            'path': relative, 'hash': hashlib.sha256(text.encode()).hexdigest()}))
-        store.update('job', job_id, {'progress': 20})
+            report('chunking', number, len(files))
         directory = data_dir / 'workspaces' / workspace['workspace_id'] / 'generations' / job_id
         directory.mkdir(parents=True, exist_ok=True)
         import json
 
         from memory_center.platform.code_graph import build_code_graph, coverage_summary
-        code_graph = build_code_graph(root, files)
+        report('parsing', 0, None)
+        code_graph = build_code_graph(root, files, report)
         (directory / 'code-graph.json').write_text(json.dumps(code_graph, ensure_ascii=False), encoding='utf-8')
         store.update('job', job_id, {'code_coverage': coverage_summary(code_graph)})
         workspace_file = directory / 'workspace.yaml'
@@ -182,17 +222,17 @@ def run_index(data_dir, database_url, workspace, job_id, limits=None):
         workspace_file.write_text(yaml.safe_dump({'workspace': config.workspace, 'root': config.root,
                                    'services': [{'name': s.name, 'path': s.path, 'type': s.type} for s in services]}), encoding='utf-8')
         # 每个文件归属最具体的服务，父服务不重复吞入子服务。
-        for service in services:
-            owned = []
-            for path in files:
-                matches = [s for s in services if path.is_relative_to(config.resolve_service_path(s))]
-                best = max(matches, key=lambda s: len(config.resolve_service_path(s).parts)) if matches else None
-                if best and best.name == service.name:
-                    owned.append(str(path))
+        owned_by_service = assign_services(config, files)
+        report('services', 0, len(services), 'services')
+        for number, service in enumerate(services, 1):
+            owned = owned_by_service[service.name]
+            def service_progress(stage, _percent, message):
+                report('services', number - 1, len(services), 'services', f'{service.name} · {stage} · {message}')
             reindex_workspace(config, WorkspaceStore(workspace_file), projects=[service.name],
                               paths=owned or [str(directory / 'empty-scope')], parallel=False,
-                              materialize_assertions=False)
-        store.update('job', job_id, {'progress': 55})
+                              materialize_assertions=False, progress=service_progress)
+            report('services', number, len(services), 'services', service.name)
+        report('knowledge', 0, None, 'items')
         wiki_signature = WikiSources(store).signature(workspace['workspace_id'])
         store.update('job', job_id, {'wiki_signature': wiki_signature})
         for kind, item in knowledge.active(workspace['workspace_id']):
@@ -202,6 +242,7 @@ def run_index(data_dir, database_url, workspace, job_id, limits=None):
                              {'path': item['source_name'] + '/' + item['relative_path']} if item.get('wiki_source_id') else {})}))
         settings = store.list('model', limit=1)
         embedder = Embedder(settings[0] if settings else {})
+        report('embedding', 0, len(chunks), 'chunks')
         # 嵌入分批执行并检查取消，模型故障保留上一代索引。
         for offset in range(0, len(chunks), 16):
             if store.get('job', job_id)['status'] != 'running':
@@ -209,12 +250,13 @@ def run_index(data_dir, database_url, workspace, job_id, limits=None):
             batch = chunks[offset:offset + 16]
             for chunk, vector in zip(batch, embedder.embed([c['content'] for c in batch]), strict=False):
                 chunk.update(profile=embedder.profile, embedding=vector)
-            store.update('job', job_id, {'progress': min(95, 55 + int(40 * (offset + len(batch)) / max(1, len(chunks))))})
+            report('embedding', offset + len(batch), len(chunks), 'chunks')
         current = catalog.get(workspace['workspace_id'])
         if current['status'] != 'active' or current['config_version'] != workspace['config_version']:
             raise CatalogError('WORKSPACE_CHANGED', '项目配置已改变，未发布索引')
         if wiki_signature != WikiSources(store).signature(workspace['workspace_id']):
             raise CatalogError('WIKI_CHANGED', 'Wiki 来源已变化，等待下一轮自动索引')
+        report('publishing', 0, None, 'chunks')
         store.publish(workspace['workspace_id'], job_id, chunks, str(workspace_file), workspace['config_version'])
     except Exception as exc:
         current = store.get('job', job_id)
@@ -237,21 +279,51 @@ class Jobs:
         self.task = None
         self.wiki_task = None
 
+    def settings(self):
+        current = self.store.list('job_settings', limit=1)
+        if current:
+            return current[0]
+        cpus = len(os.sched_getaffinity(0)) if hasattr(os, 'sched_getaffinity') else (os.cpu_count() or 1)
+        try:
+            quota, period = Path('/sys/fs/cgroup/cpu.max').read_text().split()
+            if quota != 'max':
+                cpus = min(cpus, max(1, int(quota) // int(period)))
+        except (OSError, ValueError):
+            pass
+        return {'max_projects': max(1, min(4, cpus - 1)), 'max_queued': 0, 'automatic': True}
+
+    def configure(self, value):
+        with self.lifecycle_lock:
+            current = self.store.list('job_settings', limit=1)
+            result = (self.store.update('job_settings', current[0]['id'], value, current[0]['revision']) if current else
+                      self.store.create('job_settings', value))
+            self.store.audit('admin', 'jobs.configure')
+            return result
+
+    def pending(self):
+        """只查询待处理任务，历史任务数量不会挤掉排队任务。"""
+        import json
+        field = "payload::jsonb->>'status'" if self.store.db.url else "json_extract(payload,'$.status')"
+        with self.store.db.connection() as connection:
+            rows = connection.execute(f"SELECT payload FROM records WHERE kind='job' AND {field} IN ('queued','running') ORDER BY updated_at,id").fetchall()
+        return [json.loads(r[0]) for r in rows]
+
     def enqueue(self, workspace_id, owner):
         workspace = self.catalog.get(workspace_id)
         if workspace['status'] != 'active':
             raise CatalogError('WORKSPACE_PAUSED', '项目已暂停')
         from filelock import FileLock
         with FileLock(str(self.data_dir / 'jobs.lock'), timeout=5):
-            jobs = self.store.list('job', limit=1000)
-            pending = [job for job in jobs if job['status'] in {'queued', 'running'}]
-            if len(pending) >= 32:
-                raise CatalogError('QUEUE_FULL', '后台队列已满，请等待现有任务完成')
+            pending = self.pending()
             existing = next((job for job in pending if job['workspace_id'] == workspace_id), None)
             if existing:
                 return existing
+            maximum = self.settings()['max_queued']
+            if maximum and sum(j['status'] == 'queued' for j in pending) >= maximum:
+                raise CatalogError('QUEUE_FULL', '后台队列达到已配置上限，请等待现有任务完成')
             return self.store.create('job', {'workspace_id': workspace_id, 'owner': owner, 'status': 'queued',
-                                            'progress': 0, 'config_version': workspace['config_version']})
+                                            'progress': 0, 'phase': 'queued', 'progress_scope': 'phase',
+                                            'completed': 0, 'total': None, 'config_version': workspace['config_version']})
 
     def cancel(self, job_id):
         job = self.store.get('job', job_id)
@@ -369,7 +441,7 @@ class Jobs:
             return {'removed': removed, 'freed_bytes': freed, 'kept': kept, 'workspaces': workspaces}
 
     async def start(self):
-        for job in self.store.list('job', limit=1000):
+        for job in self.pending():
             if job['status'] == 'running':
                 self.store.update('job', job['id'], {'status': 'interrupted', 'finished_at': now()})
         self.task = asyncio.create_task(self.loop())
@@ -430,8 +502,8 @@ class Jobs:
                         self.processes.pop(job_id)
                         self.started.pop(job_id)
                         process.close()
-                for job in reversed(self.store.list('job', limit=1000)):
-                    if len(self.processes) >= 2:
+                for job in self.pending():
+                    if len(self.processes) >= self.settings()['max_projects']:
                         break
                     if job['status'] != 'queued':
                         continue

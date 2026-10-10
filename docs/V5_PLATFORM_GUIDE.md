@@ -1,13 +1,13 @@
 # 5.0 多项目知识服务使用指南
 
-> 当前：5.0.0b9，开发测试版本；不兼容 4.x 接入或导入历史数据。
+> 当前：5.0.0b10，开发测试版本；不兼容 4.x 接入或导入历史数据。
 > 用户已授权连续完成方案，无需每个切片再次确认。此指南描述当前服务入口；旧版文档仅作为核心算法背景。
 
 ## 安装与运行
 
 ```sh
 python3 -m venv .venv
-.venv/bin/python -m pip install /path/to/memory_center-5.0.0b9-py3-none-any.whl
+.venv/bin/python -m pip install /path/to/memory_center-5.0.0b10-py3-none-any.whl
 .venv/bin/memory-center-service --data-dir /path/to/new-service-data
 ```
 
@@ -118,7 +118,7 @@ docker compose -f compose.yaml -f compose.postgres.yaml exec -T postgres pg_dump
 
 协议夹具只验证嵌入数量/维度、模型档案隔离、数据库向量距离、HNSW 与融合，不代表真实语义质量。当前网络的 Ollama registry 证书校验失败，未关闭 TLS 验证；真实模型语义评测未完成。没有宣称图片中的 IM、浏览器沙箱、联网搜索、Neo4j、所有外部模型厂商等已实现，它们不属于此次 Memory Center 服务化核心闭环。
 
-## 多语言代码查询（5.0.0b9）
+## 多语言代码查询（5.0.0b10）
 
 借鉴 GitNexus 的语言注册、Vue 脚本块提取和分阶段引用解析。每次索引先提取声明与导入绑定，再连接调用，写入 generation 的 `code-graph.json`；文件路径、符号类型、限定名和声明行组成符号身份，避免多个文件的同名函数覆盖。Java 的 Spring/Feign/MQ 专用分析继续保留。
 
@@ -196,3 +196,22 @@ Project selection appears only in document, Wiki and long-term memory views. Sav
 Global discovery is opt-in and read-only. Administrators register directories, explicitly scan, review and enable individual Skills. New or changed items default to disabled; paused sources and stale files are excluded from MCP reads. Controls affect only Memory Center. Published lifecycle actions now apply only to managed publications; external global files use discovery and are never moved or deleted.
 
 分页覆盖项目、服务划分、后台任务、知识内容、Wiki 目录、扫描目录、发现 Skill、候选/发布 Skill 及凭据。后台任务与发现结果在数据库分页；已有限额的元数据集合在客户端分页，正文只按知识页或单份 Skill 读取。筛选发生在分页之前，切换筛选/项目/每页条数后回到第一页；删除后页码自动收敛。
+
+
+## 普通模型与智能整理 / Chat models and organization（b10）
+
+管理页“模型设置”分别保存向量模型与普通模型。普通模型 Ollama 填根地址；OpenAI-compatible 填 API 基础地址（通常以 `/v1` 结尾），服务追加 `/chat/completions`。普通模型密钥用 `MEMORY_CENTER_CHAT_API_KEY` 环境变量，不在页面或数据库保存。调用远程模型会发送本次所选正文；验证连接只发送测试文字。
+
+Wiki 或长期记忆选择一条内容后点击“智能整理”，或点击“整理当前页”汇总本页有效内容；这不是整个知识库的整理。一次最多 50 条、12 万字符，超过时显式提示分批。模型返回正文可编辑，点击“确认保存整理结果”才写入。单篇项目 Wiki 生成新修订并保留历史；只读目录来源及多条汇总生成新内容，原文保留；记忆保存为待确认。预览 30 分钟有效，来源修订或目录文件改变必须重新整理。
+
+API：`GET/PUT /api/v1/chat-model`、`POST /api/v1/chat-model/test`；`POST /api/v1/workspaces/{workspace_id}/organize` 请求 `{kind:"wiki"|"memory",record_ids:[...]}`；返回预览 id/revision/content/sources/copy。`POST .../organize/{preview_id}/apply` 请求 `{revision,title,content}`，对相同预览重复确认返回已保存结果。
+
+English: Separate chat and embedding configurations. Remote chat models receive selected content only. Review and edit previews before applying. Read-only directory sources and multi-item summaries are copied; single project Wiki edits preserve history, and organized memories require confirmation. Previews expire after 30 minutes and enforce source revision/freshness checks.
+
+## 任务进度与并发 / Task progress and concurrency（b10）
+
+`GET/PUT /api/v1/job-settings` 配置 `max_projects`（1–64）与 `max_queued`（0–100000，0 表示不限）。默认基于可用 CPU（含 cgroup v2 配额）选择 1–4 个项目进程。设置立即影响新任务，降低并发不终止已运行任务。此版本单项目专用分析仍按服务串行；文件级进程池与持久解析缓存属于下一步，不声称已实现。
+
+任务新增 `phase/completed/total/unit/detail/progress_scope/elapsed_seconds/heartbeat_at`；`progress_scope=phase` 时 `progress` 仅为当前阶段完成比例，并非总体耗时比例。`total=null` 表示尚无法确定总量；扫描、解析、关系、服务、向量等阶段分别计数。专用分析显示已完成服务数及当前内部阶段；发布阶段为不确定进度。成功仍为 100%。资源上限继续为可选配置，默认关闭。
+
+English: Job progress is explicitly per-phase, with real counters and indeterminate totals where necessary. Project concurrency is configurable and running jobs are retained when reducing capacity. Service-level analysis remains sequential in this release; file process pools and durable parse caches are future work.

@@ -7,6 +7,8 @@ let sequence=0
 async function load(target=page.value){const request=++sequence;loading.value=true;try{const data=await api('/jobs?'+new URLSearchParams({page:String(target),page_size:String(pageSize.value),q:appliedFilter.value,status:appliedStatus.value}));if(request!==sequence)return;items.value=data.items;page.value=data.page;pages.value=data.pages;total.value=data.total}finally{if(request===sequence)loading.value=false}}
 async function applyFilter(){appliedFilter.value=filter.value;appliedStatus.value=status.value;await action(()=>load(1),'')}
 const items = ref<Item[]>([])
+const phases:Record<string,string>={queued:'等待调度',scanning:'扫描源码',chunking:'源码分块',parsing:'解析代码',relations:'解析调用关系',services:'服务专用分析',knowledge:'读取知识',embedding:'向量化',publishing:'发布索引'}
+const units:Record<string,string>={files:'文件',services:'服务',chunks:'分块',items:'条目'}
 async function refresh() {
   await action(async () => { await load() }, '任务状态已更新')
 }
@@ -43,7 +45,7 @@ onUnmounted(() => {sequence++;clearInterval(timer)})
 </script>
 <template>
   <div class="page-title">
-    <div><h1>后台任务</h1><p>最多两个索引进程并行，取消和失败保留上一代可用索引。</p></div>
+    <div><h1>后台任务</h1><p>显示当前阶段的真实完成量；项目并发可在模型设置中调整。取消和失败保留上一代可用索引。</p></div>
     <div class="actions">
       <button @click="refresh">刷新</button>
       <button @click="prune">清理旧索引</button>
@@ -60,7 +62,7 @@ onUnmounted(() => {sequence++;clearInterval(timer)})
           <td class="mono">{{item.id}}<small class="error" v-if="item.error">{{item.error}} {{item.message}}</small></td>
           <td class="mono">{{item.workspace_id}}</td>
           <td><span class="state">{{states[item.status||'']}}</span></td>
-          <td><progress max="100" :value="item.progress"></progress> {{item.progress}}%</td>
+          <td><template v-if="item.status==='succeeded'">已完成 · 100%</template><template v-else-if="item.progress_scope==='phase'"><strong>{{phases[item.phase]||item.phase}}</strong><div><progress v-if="item.total" max="100" :value="item.progress"></progress><progress v-else-if="item.status==='running'" max="100"></progress> {{item.total ? `${item.completed} / ${item.total} ${units[item.unit]||''} · 阶段 ${item.progress}%` : `${item.completed||0} ${units[item.unit]||''} · 总量待确定`}}</div><small>{{item.detail}}</small><small v-if="item.started_at">已用时 {{Math.max(0,Math.round((Date.parse(item.finished_at||new Date().toISOString())-Date.parse(item.started_at))/1000))}} 秒</small></template><template v-else>旧任务阶段记录 · {{item.progress}}%</template></td>
           <td class="actions">
             <button v-if="['queued','running'].includes(item.status||'')" @click="operation(item,'cancel')">取消</button>
             <button v-if="['failed','cancelled','interrupted'].includes(item.status||'')" @click="operation(item,'retry')">重试</button>

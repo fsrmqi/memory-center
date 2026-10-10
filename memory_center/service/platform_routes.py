@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from memory_center.core.foundation.catalog import CatalogError
 from memory_center.platform.embeddings import Embedder
+from memory_center.platform.intelligence import ChatModel, Intelligence
 from memory_center.service.admin import require_admin
 from memory_center.service.workspace_routes import WorkspaceID
 
@@ -36,6 +37,29 @@ class ModelInput(Input):
     model: str = Field(default='', max_length=200)
     protocol: Literal['ollama', 'openai'] = 'ollama'
     dimensions: int = Field(default=1024, ge=1, le=4096)
+
+
+class ChatModelInput(Input):
+    url: str = Field(default='', max_length=2000)
+    model: str = Field(default='', max_length=200)
+    protocol: Literal['ollama', 'openai'] = 'ollama'
+    max_tokens: int = Field(default=4096, ge=256, le=32768)
+
+
+class OrganizeInput(Input):
+    kind: Literal['wiki', 'memory']
+    record_ids: list[str] = Field(min_length=1, max_length=50)
+
+
+class ApplyOrganizeInput(Input):
+    revision: int = Field(ge=1)
+    title: str = Field(min_length=1, max_length=200)
+    content: str = Field(min_length=1, max_length=200000)
+
+
+class JobSettingsInput(Input):
+    max_projects: int = Field(ge=1, le=64)
+    max_queued: int = Field(default=0, ge=0, le=100000)
 
 
 class AnalysisSettingsInput(Input):
@@ -144,6 +168,33 @@ def platform_router():
         service = platform(request)
         return {'items': service.store.list('model', limit=1), 'backend': 'postgresql' if service.store.db.url else 'sqlite'}
 
+    @router.get('/chat-model')
+    def chat_model(request: Request):
+        return {'items': platform(request).store.list('chat_model', limit=1)}
+
+    @router.put('/chat-model')
+    def configure_chat(body: ChatModelInput, request: Request):
+        service = platform(request)
+        value = ChatModel.validate(body.model_dump())
+        current = service.store.list('chat_model', limit=1)
+        result = (service.store.update('chat_model', current[0]['id'], value, current[0]['revision']) if current else
+                  service.store.create('chat_model', value))
+        service.store.audit('admin', 'chat_model.update')
+        return result
+
+    @router.post('/chat-model/test')
+    def test_chat(body: ChatModelInput):
+        text = ChatModel(body.model_dump()).generate('仅返回：连接成功')
+        return {'ready': True, 'response': text[:200]}
+
+    @router.get('/job-settings')
+    def job_settings(request: Request):
+        return platform(request).jobs.settings()
+
+    @router.put('/job-settings')
+    def configure_jobs(body: JobSettingsInput, request: Request):
+        return platform(request).jobs.configure(body.model_dump())
+
     @router.put('/models')
     def model(body: ModelInput, request: Request):
         return platform(request).model(body.model_dump())
@@ -244,6 +295,19 @@ def platform_router():
         item = service.knowledge.document(workspace_id, body.filename, body.content, body.encoding)
         service.store.audit('admin', 'document.create', workspace_id, item['id'])
         return item
+
+    @router.post('/workspaces/{workspace_id}/organize')
+    def organize(workspace_id: WorkspaceID, body: OrganizeInput, request: Request):
+        service = scoped(request, workspace_id)
+        return Intelligence(service).preview(workspace_id, body.kind, body.record_ids)
+
+    @router.post('/workspaces/{workspace_id}/organize/{preview_id}/apply')
+    def apply_organize(workspace_id: WorkspaceID, preview_id: str, body: ApplyOrganizeInput, request: Request):
+        service = scoped(request, workspace_id, True)
+        draft = service.store.get('intelligence_preview', preview_id)
+        if draft['kind'] == 'memory' and len(body.content) > 10000:
+            raise CatalogError('MEMORY_LIMIT', '长期记忆最多 10000 字符，请拆分或保存为 Wiki')
+        return Intelligence(service).apply(workspace_id, preview_id, body.revision, body.title, body.content)
 
     @router.post('/workspaces/{workspace_id}/wiki', status_code=201)
     def wiki(workspace_id: WorkspaceID, body: WikiInput, request: Request):

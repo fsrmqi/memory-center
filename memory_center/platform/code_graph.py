@@ -10,9 +10,10 @@ from memory_center.core.indexing.language_registry import get_language_spec_for_
 from memory_center.core.indexing.structural_parser import TreeSitterStructuralParser
 
 
-def build_code_graph(root, files):
+def build_code_graph(root, files, progress=None):
     parsers, units, symbols, coverage = {}, {}, [], {}
-    for path in files:
+    parse_files = [p for p in files if get_language_spec_for_extension(p.suffix) is not None]
+    for number, path in enumerate(parse_files, 1):
         spec = get_language_spec_for_extension(path.suffix)
         if spec is None:
             continue
@@ -33,6 +34,8 @@ def build_code_graph(root, files):
                                 'parent': declaration.qualified_name.rpartition('.')[0] if result.language == 'go' and declaration.kind == 'method' else declaration.parent_qualified_name, 'path': relative,
                                 'line': declaration.line, 'end_line': declaration.end_line,
                                 'language': spec.name, 'module': result.module or '', 'hash': coverage[relative]['hash']})
+        if progress:
+            progress('parsing', number, len(parse_files), 'files')
     by_file = {path: [] for path in units}
     for symbol in symbols:
         by_file[symbol['path']].append(symbol)
@@ -88,7 +91,9 @@ def build_code_graph(root, files):
         return []
 
     edges, unresolved = [], []
-    for path, result in units.items():
+    if progress:
+        progress('relations', 0, len(units), 'files')
+    for number, (path, result) in enumerate(units.items(), 1):
         for call in result.calls:
             callers = by_qualified[(path, call.caller_qualified_name)]
             text = call.callee_text
@@ -162,6 +167,8 @@ def build_code_graph(root, files):
             else:
                 unresolved.append({'caller': call.caller_qualified_name, 'callee': text, 'path': path,
                                    'line': call.line, 'reason': 'ambiguous' if len(candidates) > 1 or len(callers) > 1 else 'unresolved'})
+        if progress:
+            progress('relations', number, len(units), 'files')
     return {'schema': 1, 'symbols': symbols, 'edges': edges, 'unresolved': unresolved, 'coverage': coverage}
 
 
