@@ -1,5 +1,12 @@
 # Next Phase Master Plan / 下一阶段唯一开发路线
 
+> **2026-10-10 状态收口**：b15 的已实现参考能力与当前验收边界以 [参考能力实施回执](implementation-receipts/V5_REFERENCE_ADOPTION.md) 为准。下方旧阶段、等待确认和兼容计划仅作历史背景；不重启 DSH 插件工作，不要求迁移 4.x。b15 当轮未发版、未部署；后续部署状态见下方 b17 更新。
+
+> b16 已追加项目空间统计，入口、口径和验证范围见 [项目空间统计回执](implementation-receipts/V5_PROJECT_STORAGE.md)。Project storage accounting is added in b16.
+
+> b17 已追加存储治理、分块修复与流式向量检索，并更新本地 OrbStack。当前验收结果与限制见 [b17 实施回执](implementation-receipts/V5_STORAGE_GOVERNANCE.md)。Local OrbStack is updated; validation scope is documented in the b17 receipt.
+
+
 > 2026-10-09 当前实施更新：5.0.0b1 已接入多项目授权 MCP、后台索引、知识库/Wiki/记忆管理与 PG/向量后端，已完成本地测试版验收；正式发行仍需真实模型语义与规模评测。用户已授权连续实施。本轮证据见 [实施回执](implementation-receipts/V5_PLATFORM.md)，当前入口与合同见 [5.0 平台指南](V5_PLATFORM_GUIDE.md)。下方较早的 S1/S2 等待确认记录仅保留决策演进背景。
 
 

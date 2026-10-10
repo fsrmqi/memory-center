@@ -1,6 +1,6 @@
 # Memory Center / 记忆中心
 
-> **当前版本 5.0.0b14（开发测试版）** — 一次安装、常驻运行的多项目上下文与记忆服务。
+> **当前版本 5.0.0b18（开发测试版）** — 一次安装、常驻运行的多项目上下文与记忆服务。
 >
 > 入口：服务 `memory-center-service`（`memory-center` 现指向同一服务）、stdio 代理 `memory-center-mcp`、维护 `memory-center-maintenance`、宿主集成 `memory-center-integrations`。地址：管理页 `/admin/`、就绪 `/health/ready`、MCP `/mcp`。
 >
@@ -69,11 +69,11 @@ Memory Center precomputes these relationships before the agent starts editing.
 
 ### Current release / 当前版本
 
-当前包版本为 **5.0.0b14**（开发测试版）。Memory Center 已重构为常驻服务：多项目登记、统一 MCP 入口、后台索引、知识库 / Wiki / 长期记忆与知识治理 / Skill 管理全部由同一服务承载，入口与能力边界以 [5.0 平台指南](docs/V5_PLATFORM_GUIDE.md) 为准。
+当前包版本为 **5.0.0b18**（开发测试版）。Memory Center 已重构为常驻服务：多项目登记、统一 MCP 入口、后台索引、知识库 / Wiki / 长期记忆与知识治理 / Skill 管理全部由同一服务承载，入口与能力边界以 [5.0 平台指南](docs/V5_PLATFORM_GUIDE.md) 为准。
 
 4.x 的稳定能力（可信查询、Java IR 差分、跨服务调用链、检索回放、发布质量门禁）作为核心算法背景保留；5.0 实际复用其中哪些部分，由平台指南与代码事实定义，不以本文的历史叙述为准。4.6.30 保留在 `codex/release-4.6.30` 分支供源码追溯，5.0 不读取其 workspace、registry、索引与记忆。
 
-The current package version is **5.0.0b14** (development beta). Memory Center now runs as a standalone always-on service hosting multi-project registration, a unified MCP endpoint, background indexing, knowledge/Wiki/long-term memory, and knowledge/skill governance. The 4.x engine capabilities are retained as algorithmic background; which parts the 5.0 service actually reuses is defined by the platform guide and the code, not by this historical narrative.
+The current package version is **5.0.0b18** (development beta). Memory Center now runs as a standalone always-on service hosting multi-project registration, a unified MCP endpoint, background indexing, knowledge/Wiki/long-term memory, and knowledge/skill governance. The 4.x engine capabilities are retained as algorithmic background; which parts the 5.0 service actually reuses is defined by the platform guide and the code, not by this historical narrative.
 
 ---
 
@@ -1579,3 +1579,9 @@ Memory Center is local-first and read-only by default. Query/context/impact/cont
 ## License / 许可证
 
 Apache-2.0
+
+开发更新 b15 的参考吸收清单、管理页操作和验证边界见 [实施回执](docs/implementation-receipts/V5_REFERENCE_ADOPTION.md)。未发版、未部署。
+
+b16 在项目管理中新增项目空间占用明细，支持当前／其他索引代际、解析／向量缓存及项目数据库载荷统计。共享数据库物理空间不分摊；统计口径与入口见 [平台指南](docs/V5_PLATFORM_GUIDE.md)。Project Management now reports per-project file and database payload accounting with explicit shared-storage limitations.
+
+b17 在项目空间面板新增按项目的存储治理，保留策略、分页清理预览和确认执行；SQLite 向量检索使用流式 Top-K 并支持可选扫描上限。Project storage governance and bounded-memory exact vector scanning are available; details are in the platform guide.

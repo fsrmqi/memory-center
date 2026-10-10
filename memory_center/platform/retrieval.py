@@ -1,12 +1,26 @@
 """有界 BM25 候选召回、PG 向量检索与 RRF；证据按主体过滤。"""
 import collections
+import heapq
 import json
 import math
+import os
 import re
 from datetime import datetime, timezone
 
 from memory_center.core.foundation.catalog import CatalogError
 from memory_center.platform.embeddings import Embedder
+from memory_center.platform.reranking import Reranker
+from memory_center.platform.project_embedding import embedding_settings, effective_embedding_mode
+
+
+def sqlite_vector_limit():
+    try:
+        value = int(os.environ.get('MEMORY_CENTER_SQLITE_VECTOR_SCAN_LIMIT', '5000'))
+        if value < 0:
+            raise ValueError()
+        return value
+    except ValueError as error:
+        raise CatalogError('VECTOR_CONFIG_INVALID', 'SQLite 向量扫描上限须为非负整数，0 表示不限制') from error
 
 
 def tokens(text):
@@ -88,30 +102,43 @@ class Retrieval:
                     keyword_rows = sorted(candidates.values(), key=lambda row: (-scores[row['id']], row['id']))[:100]
             settings = self.store.list('model', limit=1)
             embedder = Embedder(settings[0] if settings else {})
-            vector_enabled = embedder.enabled
-            profile_stale = embedder.enabled and index.get('embedding_profile') != embedder.profile
+            project_settings = embedding_settings(self.store, workspace_id)
+            embedding_mode = effective_embedding_mode(project_settings, embedder.enabled)
+            vector_enabled = embedding_mode != 'off'
+            indexed_mode = index.get('embedding_mode', 'all' if index.get('embedding_profile') else 'off')
+            profile_stale = vector_enabled and (index.get('embedding_profile') != embedder.profile or
+                indexed_mode == 'off' or (embedding_mode == 'all' and indexed_mode != 'all'))
+            kind_field = "metadata::jsonb->>'kind'" if self.store.db.url else "json_extract(metadata,'$.kind')"
+            vector_scope = f" AND {kind_field}!='code'" if embedding_mode == 'knowledge' else ''
             if mode != 'keyword' and vector_enabled and not profile_stale:
                 vector = embedder.embed([query])[0]
                 if self.store.db.url:
                     dimension = len(vector)
                     rows = connection.execute(f'''SELECT * FROM chunks WHERE workspace_id=? AND generation=?
-                        AND profile=? AND vector_value IS NOT NULL ORDER BY vector_value::vector({dimension}) <=> ?::vector({dimension}) LIMIT 200''',
+                        AND profile=? AND vector_value IS NOT NULL{vector_scope} ORDER BY vector_value::vector({dimension}) <=> ?::vector({dimension}) LIMIT 200''',
                                               (workspace_id, generation, embedder.profile, str(vector))).fetchall()
                     vector_rows = [row for row in rows if visible(row)][:100]
                 else:
-                    rows = connection.execute('''SELECT * FROM chunks WHERE workspace_id=? AND generation=? AND profile=? LIMIT 5001''',
-                                              (workspace_id, generation, embedder.profile)).fetchall()
-                    if len(rows) > 5000:
-                        raise CatalogError('VECTOR_BUDGET', '轻量向量召回上限 5000 块，请使用 PostgreSQL 部署')
+                    budget = sqlite_vector_limit()
+                    count = connection.execute(f'''SELECT count(*) FROM chunks WHERE workspace_id=? AND generation=? AND profile=?{vector_scope}''',
+                                               (workspace_id, generation, embedder.profile)).fetchone()[0]
+                    if budget and count > budget:
+                        raise CatalogError('VECTOR_BUDGET', '向量分块超过可选 SQLite 扫描上限；可调整 MEMORY_CENTER_SQLITE_VECTOR_SCAN_LIMIT（0 为不限制）或使用 PostgreSQL')
+                    rows = connection.execute(f'''SELECT * FROM chunks WHERE workspace_id=? AND generation=? AND profile=?{vector_scope}''',
+                                              (workspace_id, generation, embedder.profile))
                     norm = math.sqrt(sum(v * v for v in vector)) or 1
-                    scored = []
-                    for row in rows:
-                        other = json.loads(row['embedding'])
-                        if visible(row) and len(other) == len(vector):
-                            denom = norm * (math.sqrt(sum(v * v for v in other)) or 1)
-                            scored.append((sum(a * b for a, b in zip(vector, other, strict=False)) / denom, row))
-                    vector_rows = [r for _, r in sorted(scored, key=lambda value: (-value[0], value[1]['id']))[:100]]
+
+                    def scored_rows():
+                        for row in rows:
+                            other = json.loads(row['embedding'])
+                            if visible(row) and len(other) == len(vector):
+                                denom = norm * (math.sqrt(sum(v * v for v in other)) or 1)
+                                yield sum(a * b for a, b in zip(vector, other, strict=False)) / denom, row
+
+                    vector_rows = [r for _, r in heapq.nsmallest(100, scored_rows(), key=lambda value: (-value[0], value[1]['id']))]
         if mode == 'vector' and not vector_enabled:
+            if project_settings['mode'] == 'off':
+                raise CatalogError('VECTOR_DISABLED', '该项目已关闭向量，请使用关键词、符号或调用图查询')
             raise CatalogError('MODEL_NOT_CONFIGURED', '尚未配置嵌入模型')
         fused, rows = collections.defaultdict(float), {}
         for ranked in [keyword_rows, vector_rows]:
@@ -119,10 +146,13 @@ class Retrieval:
                 fused[row['id']] += 1 / (60 + position + 1)
                 rows[row['id']] = row
         items = []
-        for chunk_id in sorted(rows, key=lambda key: (-fused[key], key))[:limit]:
+        for chunk_id in sorted(rows, key=lambda key: (-fused[key], key))[:min(100, max(limit, limit * 3))]:
             row = rows[chunk_id]
             items.append({'chunk_id': chunk_id, 'content': row['content'][:6000],
                           'source': json.loads(row['metadata']), 'score': round(fused[chunk_id], 6),
                           'generation': generation, 'workspace_id': workspace_id})
-        return {'state': 'FOUND' if items else 'NOT_FOUND', 'items': items,
-                'vector_enabled': vector_enabled and not profile_stale, 'vector_reindex_required': profile_stale, 'generation': generation, 'negative_claim_allowed': False}
+        rerank_settings = self.store.list('rerank_model', limit=1)
+        items, reranking = Reranker(rerank_settings[0] if rerank_settings else {}).rank(query, items)
+        return {'state': 'FOUND' if items else 'NOT_FOUND', 'items': items[:limit], 'reranking': reranking,
+                'vector_enabled': vector_enabled and not profile_stale, 'vector_reindex_required': profile_stale,
+                'embedding_mode': embedding_mode, 'generation': generation, 'negative_claim_allowed': False}

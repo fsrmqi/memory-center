@@ -98,7 +98,9 @@ class SkillDiscovery:
                     found[record_id] = {'id': record_id, 'workspace_id': source_id, 'source_id': source_id,
                                         'name': str(metadata.get('name') or folder.name)[:200],
                                         'description': str(metadata.get('description') or '')[:2000],
-                                        'relative_path': relative, 'sha256': hashlib.sha256(raw).hexdigest()}
+                                        'relative_path': relative, 'sha256': hashlib.sha256(raw).hexdigest(),
+                                        'footprint': {'bytes': len(raw), 'characters': len(text),
+                                                      'estimated_tokens': (len(text) + 3) // 4, 'method': 'chars_div_4_estimate'}}
             except (OSError, UnicodeError, yaml.YAMLError) as exc:
                 raise CatalogError('SKILL_SCAN_FAILED', '扫描失败，请检查权限、UTF-8 和 Skill 元数据；原快照保留') from exc
             timestamp = now()

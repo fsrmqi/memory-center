@@ -9,6 +9,7 @@ from memory_center.platform.embeddings import Embedder
 from memory_center.platform.governance import ASSISTANT_TOOLS, Governance
 from memory_center.platform.jobs import Jobs
 from memory_center.platform.knowledge import Knowledge
+from memory_center.platform.knowledge_tasks import KnowledgeTasks
 from memory_center.platform.retrieval import Retrieval, initialize_terms
 from memory_center.platform.security import WRITE_TOOLS, Access, Principal
 from memory_center.platform.store import PlatformStore
@@ -24,6 +25,8 @@ class Platform:
         self.access = Access(self.store, catalog)
         self.retrieval = Retrieval(self.store, self.knowledge)
         self.jobs = Jobs(self.store, catalog, database.data_dir, database.url)
+        self.knowledge_tasks = KnowledgeTasks(self)
+        self.jobs.knowledge_tasks = self.knowledge_tasks
         initialize_terms(database)
 
     def administrator(self):

@@ -1,10 +1,13 @@
 services:
   memory-center:
     build: .
-    image: memory-center:5.0.0b14
+    image: memory-center:5.0.0b18
     environment:
       MEMORY_CENTER_CHAT_API_KEY: ${MEMORY_CENTER_CHAT_API_KEY:-}
+      MEMORY_CENTER_MODEL_API_KEY: ${MEMORY_CENTER_MODEL_API_KEY:-}
+      MEMORY_CENTER_RERANK_API_KEY: ${MEMORY_CENTER_RERANK_API_KEY:-}
       MEMORY_CENTER_AUTH_MODE: ${MEMORY_CENTER_AUTH_MODE:-local}
+      MEMORY_CENTER_SQLITE_VECTOR_SCAN_LIMIT: ${MEMORY_CENTER_SQLITE_VECTOR_SCAN_LIMIT:-5000}
     ports:
       - "127.0.0.1:8765:8765"
     volumes:

@@ -234,6 +234,11 @@ def _walk_java(root: Any, source: str) -> StructuralParseResult:
                     kind="interface" if kind == "interface_declaration" else "class",
                 )
                 result.classes.append(span)
+                superclass = _named_child(node, 'superclass')
+                if superclass is not None:
+                    bases = re.findall(r'[A-Za-z_$][\w.$]*', _node_text(superclass, source))
+                    if len(bases) == 2 and bases[0] == 'extends':
+                        result.raw.setdefault('inheritance', {})[parent] = [bases[1]]
                 qual_stack.append(name)
                 for child in node.children:
                     visit(child)
@@ -343,6 +348,11 @@ def _walk_python(root: Any, source: str) -> StructuralParseResult:
                         kind="class",
                     )
                 )
+                superclass = _named_child(node, 'superclasses')
+                if superclass is not None:
+                    bases = [_node_text(c, source) for c in superclass.named_children
+                             if c.type in {'identifier', 'attribute'}]
+                    result.raw.setdefault('inheritance', {})[qual(name)] = bases
                 qual_stack.append(name)
                 body = _named_child(node, "body")
                 if body is not None:
@@ -867,6 +877,17 @@ def _import_bindings(root: Any, source: str, result: StructuralParseResult) -> N
                         exports['default'] = names[0]
                 else:
                     exports.update({name: name for name in names})
+            module = _node_text(_named_child(node, 'source'), source).strip("'\"")
+            if module:
+                forwards = result.raw.setdefault('reexports', [])
+                for clause in node.named_children:
+                    if clause.type == 'export_clause':
+                        for spec in clause.named_children:
+                            name = _node_text(_named_child(spec, 'name'), source)
+                            alias = _node_text(_named_child(spec, 'alias'), source) or name
+                            forwards.append({'module': module, 'symbol': name, 'exported': alias})
+                if re.match(r'^export\s+\*\s+from\b', _node_text(node, source)):
+                    forwards.append({'module': module, 'symbol': '*', 'exported': '*'})
             if _named_child(node, 'source') is None:
                 for clause in node.named_children:
                     if clause.type == 'export_clause':
@@ -946,6 +967,8 @@ def _parse_vue(source: str, file_path: str) -> StructuralParseResult:
         result.raw['import_bindings'].extend(parsed.raw.get('import_bindings', []))
         result.raw.setdefault('local_bindings', {}).update(parsed.raw.get('local_bindings', {}))
         result.raw.setdefault('exports', {}).update(parsed.raw.get('exports', {}))
+        result.raw.setdefault('reexports', []).extend(parsed.raw.get('reexports', []))
+        result.raw.setdefault('inheritance', {}).update(parsed.raw.get('inheritance', {}))
         result.raw['script_languages'].append(language)
         if parsed.raw.get('parse_status') != 'parsed':
             result.raw['parse_status'] = 'partial'

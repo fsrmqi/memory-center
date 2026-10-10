@@ -141,7 +141,11 @@ class Knowledge:
         from memory_center.platform.wiki_sources import WikiSources
         result = [('wiki', page) for page in WikiSources(self.store).pages(workspace_id)]
         for kind in ['document', 'wiki', 'memory']:
-            for item in self.store.list(kind, workspace_id, limit=1000):
+            with self.store.db.connection() as connection:
+                rows = connection.execute('SELECT payload FROM records WHERE kind=? AND workspace_id=? ORDER BY id',
+                                          (kind, workspace_id)).fetchall()
+            for row in rows:
+                item = json.loads(row[0])
                 if item['status'] == 'active' or (kind == 'memory' and item['status'] == 'confirmed'):
                     result.append((kind, item))
         return result

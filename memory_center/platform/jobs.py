@@ -4,6 +4,7 @@ import hashlib
 import multiprocessing
 import os
 import shutil
+import signal
 import threading
 import time
 from dataclasses import dataclass
@@ -14,6 +15,7 @@ import yaml
 from memory_center.core.foundation.catalog import CatalogError
 from memory_center.core.indexing.language_registry import get_language_spec_for_extension
 from memory_center.platform.database import Database, PostgresCatalog
+from memory_center.platform.diagnostics import failure_receipt
 from memory_center.platform.embedding_cache import (
     EmbeddingCache,
 )
@@ -149,18 +151,28 @@ def split_text(text, metadata):
     lines = text.splitlines()
     chunks = []
     buffer, start, size, fenced = [], 1, 0, False
+
+    def append_chunk(content, first, last, **position):
+        if content.strip():
+            chunks.append({'id': identity('chunk'), 'source_id': metadata['source_id'],
+                           'content': content, 'metadata': dict(metadata, line=first, end_line=last, **position)})
+
     for number, line in enumerate(lines, 1):
         if line.lstrip().startswith('```'):
             fenced = not fenced
-        if buffer and (size > 1800 and not fenced or size > 6000):
-            chunks.append({'id': identity('chunk'), 'source_id': metadata['source_id'],
-                           'content': '\n'.join(buffer), 'metadata': dict(metadata, line=start, end_line=number - 1)})
+        if buffer and (size > 1800 and not fenced or size + len(line) > 6000):
+            append_chunk('\n'.join(buffer), start, number - 1)
             buffer, size, start = [], 0, number
+        if len(line) > 6000:
+            for offset in range(0, len(line), 1800):
+                piece = line[offset:offset + 1800]
+                append_chunk(piece, number, number, column=offset + 1, end_column=offset + len(piece))
+            buffer, size, start = [], 0, number + 1
+            continue
         buffer.append(line)
         size += len(line) + 1
     if buffer:
-        chunks.append({'id': identity('chunk'), 'source_id': metadata['source_id'],
-                       'content': '\n'.join(buffer), 'metadata': dict(metadata, line=start, end_line=len(lines))})
+        append_chunk('\n'.join(buffer), start, len(lines))
     return chunks
 
 
@@ -177,7 +189,11 @@ class JobProgress:
         job = self.store.get('job', self.job_id)
         if job['status'] != 'running':
             raise CatalogError('JOB_CANCELLED', '任务已取消')
+        events = list(job.get('events', []))
+        if job.get('phase') != phase:
+            events.append({'phase': phase, 'started_at': now(), 'elapsed_seconds': round(stamp - self.started)})
         self.store.update('job', self.job_id, {
+            'events': events[-100:],
             'phase': phase, 'completed': completed, 'total': total, 'unit': unit, 'detail': detail,
             'progress_scope': 'phase', 'progress': int(100 * completed / total) if total else 0,
             'elapsed_seconds': round(stamp - self.started), 'heartbeat_at': now(),
@@ -198,6 +214,21 @@ def assign_services(config, files):
     return owned
 
 
+def stop_process(process, force=False):
+    """索引子进程拥有独立进程组时，同时终止它的解析 worker。"""
+    pid = getattr(process, 'pid', None)
+    if os.name == 'posix' and pid:
+        try:
+            if os.getpgid(pid) == pid:
+                os.killpg(pid, signal.SIGKILL if force else signal.SIGTERM)
+                return
+        except ProcessLookupError:
+            return
+        except OSError:
+            pass
+    process.kill() if force else process.terminate()
+
+
 def run_index(data_dir, database_url, workspace, job_id, limits=None, file_workers=0):
     """子进程内装配旧事实引擎；派生 YAML 位于新服务 generation，绝不读源码旧配置。
 
@@ -209,6 +240,8 @@ def run_index(data_dir, database_url, workspace, job_id, limits=None, file_worke
     from memory_center.core.storage.catalog import CatalogStore
     from memory_center.core.storage.workspace import WorkspaceStore
 
+    if os.name == 'posix' and multiprocessing.current_process().name != 'MainProcess':
+        os.setsid()
     limits = limits or IndexLimits.from_env()
 
     data_dir = Path(data_dir)
@@ -294,34 +327,44 @@ def run_index(data_dir, database_url, workspace, job_id, limits=None, file_worke
                              {'path': item['source_name'] + '/' + item['relative_path']} if item.get('wiki_source_id') else {})}))
         settings = store.list('model', limit=1)
         embedder = Embedder(settings[0] if settings else {})
+        from memory_center.platform.project_embedding import embedding_settings, effective_embedding_mode
+        project_settings = embedding_settings(store, workspace['workspace_id'])
+        embedding_mode = effective_embedding_mode(project_settings, embedder.enabled)
+        store.update('job', job_id, {'embedding_mode': embedding_mode,
+                                    'embedding_settings_revision': project_settings['revision'],
+                                    'embedding_profile': embedder.profile if embedding_mode != 'off' else ''})
+        selected = [chunk for chunk in chunks if embedding_mode == 'all' or
+                    (embedding_mode == 'knowledge' and chunk['metadata']['kind'] != 'code')]
         # 向量缓存与解析缓存同级（工作区目录、跨代际存活）；预算 0 表示关闭，
         # 此时既不读也不写，退回「每轮全部重新向量化」。
-        embedding_budget = configured_embedding_budget_bytes()
+        embedding_budget = configured_embedding_budget_bytes() if selected else 0
         embedding_cache = EmbeddingCache(embedding_cache_root) if embedding_budget else None
-        report('embedding', 0, len(chunks), 'chunks')
+        if selected:
+            report('embedding', 0, len(selected), 'chunks')
         completed = 0
 
         def embedding_progress(count):
             nonlocal completed
             completed += count
-            report('embedding', completed, len(chunks), 'chunks')
+            report('embedding', completed, len(selected), 'chunks')
 
         # 缓存命中与新算的向量在 Embedder 内合并，返回顺序与 chunks 严格一致，
         # 因此这里可以直接 zip。取消在此就地停下（不发布任何索引）；模型故障仍以
         # CatalogError 上抛，由外层把 job 记成失败并保留上一代索引。
         try:
-            vectors = embedder.embed_many([chunk['content'] for chunk in chunks],
+            vectors = embedder.embed_many([chunk['content'] for chunk in selected],
                                           cache=embedding_cache,
                                           concurrency=configured_embedding_concurrency(),
                                           should_stop=lambda: store.get('job', job_id)['status'] != 'running',
-                                          on_batch=embedding_progress)
+                                          on_batch=embedding_progress) if selected else []
         except EmbeddingCancelled:
             return
+        store.update('job', job_id, {'model_metrics': dict(embedder.metrics)})
         if embedding_cache is not None:
             # 一轮的上万次 put 在这里合并成几百次分片写；新建文件是毫秒级固定开销，
             # 合并落盘是把热缓存的写入代价从「分钟」压到「秒」的关键（见 embedding_cache）。
             embedding_cache.flush()
-        for chunk, vector in zip(chunks, vectors, strict=True):
+        for chunk, vector in zip(selected, vectors, strict=True):
             chunk.update(profile=embedder.profile, embedding=vector)
         current = catalog.get(workspace['workspace_id'])
         if current['status'] != 'active' or current['config_version'] != workspace['config_version']:
@@ -340,10 +383,9 @@ def run_index(data_dir, database_url, workspace, job_id, limits=None, file_worke
     except Exception as exc:
         current = store.get('job', job_id)
         if current['status'] == 'running':
-            code = exc.code if isinstance(exc, CatalogError) else 'INDEX_FAILED'
-            store.update('job', job_id, {'status': 'failed', 'error': code,
-                          'message': exc.message if isinstance(exc, CatalogError) else '索引失败，请检查文件、模型连接与服务日志',
-                          'finished_at': now()})
+            store.update('job', job_id, {'status': 'failed',
+                         **failure_receipt(exc, phase=current.get('phase', ''), subject=job_id),
+                         'finished_at': now()})
         # 不打印底层连接串、文档或模型响应。
     finally:
         pool.close()
@@ -354,6 +396,7 @@ class Jobs:
         self.store, self.catalog = store, catalog
         self.data_dir, self.database_url = data_dir, database_url
         self.processes, self.started = {}, {}
+        self.allocations = {}
         self.limits = IndexLimits.from_env()
         self.lifecycle_lock = threading.RLock()
         self.stopping = False
@@ -371,15 +414,15 @@ class Jobs:
     def file_workers_for(self, concurrent_jobs):
         """本项目可用的文件级 worker 数；0 表示项目内串行。
 
-        ``max_file_workers`` 为 0（默认）时按 CPU 预算在**同时运行的项目**之间切分：
+        ``max_file_workers`` 为 0（默认）时按 CPU 预算在**配置的项目并发槽位**之间预留切分：
         项目进程本身也占一个槽位，故 ``worker = 份额 - 1``。这一个函数就是
         「项目并发与文件并发共用资源预算」的落点——任何一侧都不能单独把机器开满。
-        显式配置正数时视为「每项目固定宽度」，由配置者自担项目数相乘后的总量。
+        显式配置正数时也是上限，受全局预算与已分配 worker 数约束。
         """
         configured = int(self.settings().get('max_file_workers') or 0)
-        if configured > 0:
-            return configured
-        return max(0, share_budget(cpu_budget(), max(1, concurrent_jobs)) - 1)
+        slots = min(self.settings()['max_projects'], cpu_budget())
+        fair = max(0, share_budget(cpu_budget(), max(slots, concurrent_jobs)) - 1)
+        return min(configured, fair) if configured > 0 else fair
 
     def configure(self, value):
         with self.lifecycle_lock:
@@ -502,7 +545,7 @@ class Jobs:
             process = self.processes.get(job_id)
             if process is not None:
                 if process.is_alive():
-                    process.terminate()
+                    stop_process(process)
                 process.join(timeout=5)
                 if process.is_alive():
                     raise CatalogError('JOB_BUSY', '任务进程尚未退出，请稍后重试')
@@ -588,7 +631,10 @@ class Jobs:
                 index = {}
             if index.get('wiki_signature') != sources.signature(workspace_id):
                 try:
-                    self.enqueue(workspace_id, 'admin', automatic=True)
+                    if index and getattr(self, 'knowledge_tasks', None):
+                        self.knowledge_tasks.enqueue_refresh(workspace_id, automatic=True)
+                    else:
+                        self.enqueue(workspace_id, 'admin', automatic=True)
                 except CatalogError:
                     pass
 
@@ -611,23 +657,24 @@ class Jobs:
                     job = self.store.get('job', job_id)
                     if job['status'] == 'cancelled':
                         if process.is_alive():
-                            process.terminate()
+                            stop_process(process)
                     if (self.limits.timeout_seconds and process.is_alive()
                             and time.monotonic() - self.started.get(job_id, 0) > self.limits.timeout_seconds):
                         # 可选看门狗：默认关闭（timeout_seconds=0），开启后超时有序失败并保留上一代索引。
-                        process.terminate()
-                        self.store.update('job', job_id, {'status': 'failed', 'error': 'INDEX_TIMEOUT',
-                                                          'message': f'索引超过 {self.limits.timeout_seconds} 秒未完成，已终止；上一代索引仍可读取。',
-                                                          'finished_at': now()})
+                        stop_process(process)
+                        self.store.update('job', job_id, {'status': 'failed',
+                            **failure_receipt(CatalogError('INDEX_TIMEOUT', f'索引超过 {self.limits.timeout_seconds} 秒未完成，已终止；上一代索引仍可读取。'), phase=job.get('phase', ''), subject=job_id),
+                            'finished_at': now()})
                     if not process.is_alive():
                         process.join(timeout=.1)
                         if self.store.get('job', job_id)['status'] == 'running':
-                            self.store.update('job', job_id, {'status': 'failed', 'error': 'WORKER_EXITED', 'finished_at': now()})
+                            self.store.update('job', job_id, {'status': 'failed', **failure_receipt(CatalogError('WORKER_EXITED', '索引进程提前退出，请检查资源后手动重试'), phase=job.get('phase', ''), subject=job_id), 'finished_at': now()})
                         self.processes.pop(job_id)
                         self.started.pop(job_id)
+                        self.allocations.pop(job_id, None)
                         process.close()
                 for job in self.pending():
-                    if len(self.processes) >= self.settings()['max_projects']:
+                    if len(self.processes) >= min(self.settings()['max_projects'], cpu_budget()):
                         break
                     if job['status'] != 'queued':
                         continue
@@ -636,14 +683,17 @@ class Jobs:
                         if workspace['status'] != 'active' or workspace['config_version'] != job['config_version']:
                             raise CatalogError('WORKSPACE_CHANGED', '项目配置已改变')
                         self.store.update('job', job['id'], {'status': 'running', 'started_at': now()})
-                        # 准入时一次性切分文件级预算：含本任务在内的并发项目数。
-                        workers = self.file_workers_for(len(self.processes) + 1)
+                        # 准入时预留后续项目容量，并扣除仍运行的文件 worker。
+                        available = max(0, cpu_budget() - len(self.processes) - 1 - sum(self.allocations.values()))
+                        workers = min(self.file_workers_for(len(self.processes) + 1), available)
+                        workers = workers if workers > 1 else 0
                         process = context.Process(target=run_index, args=(
                             self.data_dir, self.database_url, workspace, job['id'], self.limits, workers))
                         process.start()
                         self.processes[job['id']], self.started[job['id']] = process, time.monotonic()
-                    except Exception:
-                        self.store.update('job', job['id'], {'status': 'failed', 'error': 'WORKSPACE_CHANGED', 'finished_at': now()})
+                        self.allocations[job['id']] = workers
+                    except Exception as exc:
+                        self.store.update('job', job['id'], {'status': 'failed', **failure_receipt(exc, phase='scheduling', subject=job['id']), 'finished_at': now()})
             await asyncio.sleep(.3)
 
     async def close(self):
@@ -655,10 +705,10 @@ class Jobs:
             await asyncio.gather(self.task, return_exceptions=True)
         for job_id, process in self.processes.items():
             if process.is_alive():
-                process.terminate()
+                stop_process(process)
             await asyncio.to_thread(process.join, 3)
             if process.is_alive():
-                process.kill()
+                stop_process(process, force=True)
                 await asyncio.to_thread(process.join, 1)
             process.close()
             try:

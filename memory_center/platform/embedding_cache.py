@@ -120,6 +120,10 @@ class EmbeddingCache:
         self._shards[bucket] = entries
         try:
             raw = (self.root / bucket / f"{bucket}.json").read_text(encoding="utf-8")
+        except UnicodeError:
+            with self._lock:
+                self.corrupt += 1
+            return entries
         except OSError:
             return entries
         try:

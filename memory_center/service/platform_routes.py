@@ -7,12 +7,32 @@ from pydantic import BaseModel, ConfigDict, Field
 from memory_center.core.foundation.catalog import CatalogError
 from memory_center.platform.embeddings import Embedder
 from memory_center.platform.intelligence import ChatModel, Intelligence
+from memory_center.platform.reranking import Reranker
+from memory_center.platform.storage_usage import workspace_storage
+from memory_center.platform.storage_maintenance import StorageMaintenance
+from memory_center.platform.project_embedding import ProjectEmbedding
 from memory_center.service.admin import require_admin
 from memory_center.service.workspace_routes import WorkspaceID
 
 
 class Input(BaseModel):
     model_config = ConfigDict(extra='forbid')
+
+
+class StoragePolicyInput(Input):
+    keep_history: int = Field(ge=0, le=100, strict=True)
+    revision: int = Field(ge=0)
+
+
+class StoragePreviewInput(Input):
+    clear_parse_cache: bool = False
+    clear_embedding_cache: bool = False
+
+
+class StorageApplyInput(Input):
+    preview_id: str = Field(min_length=1, max_length=100)
+    revision: int = Field(ge=1)
+    confirm: bool = False
 
 
 class CredentialInput(Input):
@@ -46,6 +66,25 @@ class ChatModelInput(Input):
     max_tokens: int = Field(default=4096, ge=256, le=32768)
 
 
+class RerankInput(Input):
+    enabled: bool = False
+    url: str = Field(default='', max_length=2000)
+    model: str = Field(default='', max_length=200)
+
+
+class CaptureSettingsInput(Input):
+    enabled: bool = False
+
+
+class CaptureInput(Input):
+    source_id: str = Field(min_length=1, max_length=200)
+    content: str = Field(min_length=1, max_length=10000)
+
+
+class KnowledgeTaskInput(Input):
+    kind: Literal['wiki', 'memory', 'refresh']
+
+
 class OrganizeInput(Input):
     kind: Literal['wiki', 'memory']
     record_ids: list[str] = Field(min_length=1, max_length=50)
@@ -69,9 +108,25 @@ class AnalysisSettingsInput(Input):
     revision: int = Field(ge=0)
 
 
+class EmbeddingSettingsInput(Input):
+    mode: Literal['inherit', 'all', 'knowledge', 'off'] = 'inherit'
+    revision: int = Field(ge=0)
+
+
 class SearchInput(Input):
     query: str = Field(min_length=1, max_length=1000)
     mode: Literal['hybrid', 'keyword', 'vector', 'symbol', 'callers', 'callees', 'context'] = 'hybrid'
+    limit: int = Field(default=10, ge=1, le=50)
+
+
+class EvaluationCase(Input):
+    query: str = Field(min_length=1, max_length=1000)
+    expected_sources: list[str] = Field(min_length=1, max_length=100)
+    mode: Literal['keyword', 'vector', 'hybrid'] = 'hybrid'
+
+
+class EvaluationInput(Input):
+    cases: list[EvaluationCase] = Field(min_length=1, max_length=100)
     limit: int = Field(default=10, ge=1, le=50)
 
 
@@ -121,6 +176,26 @@ def platform_router():
         service.access.scope(service.administrator(), workspace_id, write)
         return service
 
+    @router.get('/workspaces/{workspace_id}/storage')
+    def storage_usage(workspace_id: WorkspaceID, request: Request):
+        return workspace_storage(scoped(request, workspace_id).store, workspace_id)
+
+    @router.get('/workspaces/{workspace_id}/storage-policy')
+    def storage_policy(workspace_id: WorkspaceID, request: Request):
+        return StorageMaintenance(scoped(request, workspace_id)).settings(workspace_id)
+
+    @router.put('/workspaces/{workspace_id}/storage-policy')
+    def configure_storage(workspace_id: WorkspaceID, body: StoragePolicyInput, request: Request):
+        return StorageMaintenance(scoped(request, workspace_id, True)).configure(workspace_id, body.keep_history, body.revision)
+
+    @router.post('/workspaces/{workspace_id}/storage-cleanup/preview')
+    def preview_storage(workspace_id: WorkspaceID, body: StoragePreviewInput, request: Request):
+        return StorageMaintenance(scoped(request, workspace_id, True)).preview(workspace_id, **body.model_dump())
+
+    @router.post('/workspaces/{workspace_id}/storage-cleanup/apply')
+    def apply_storage(workspace_id: WorkspaceID, body: StorageApplyInput, request: Request):
+        return StorageMaintenance(scoped(request, workspace_id, True)).apply(workspace_id, **body.model_dump())
+
     @router.get('/wiki-sources')
     def wiki_sources(request: Request):
         return {'items': [s for s in platform(request).wiki_sources.sources() if s['status'] != 'deleted']}
@@ -164,6 +239,72 @@ def platform_router():
         item = service.store.update('credential', record_id, {'revoked': True})
         service.store.audit('admin', 'credential.revoke', record_id=record_id)
         return service.access.public(item)
+
+    @router.get('/rerank-model')
+    def rerank_model(request: Request):
+        return {'items': platform(request).store.list('rerank_model', limit=1)}
+
+    @router.put('/rerank-model')
+    def configure_rerank(body: RerankInput, request: Request):
+        service = platform(request)
+        value = Reranker.validate(body.model_dump())
+        with service.store.generation_lock('rerank_model'):
+            current = service.store.list('rerank_model', limit=1)
+            return (service.store.update('rerank_model', current[0]['id'], value) if current else
+                    service.store.create('rerank_model', value))
+
+    @router.get('/knowledge-tasks')
+    def knowledge_tasks(request: Request, page: int = Query(default=1, ge=1),
+                        page_size: int = Query(default=10, ge=1, le=50), q: str = Query(default='', max_length=200), status: str = Query(default='', max_length=30),
+                        workspace_id: str = Query(default='', max_length=100)):
+        return platform(request).store.list_page('knowledge_task', page, page_size, q, status,
+                                                 ('id', 'workspace_id'), workspace_id or None)
+
+    @router.post('/workspaces/{workspace_id}/knowledge-tasks')
+    def enqueue_knowledge(workspace_id: WorkspaceID, body: KnowledgeTaskInput, request: Request):
+        return scoped(request, workspace_id, True).knowledge_tasks.enqueue(workspace_id, body.kind)
+
+    @router.post('/knowledge-tasks/{task_id}/cancel')
+    def cancel_knowledge(task_id: str, request: Request):
+        return platform(request).knowledge_tasks.cancel(task_id)
+
+    @router.post('/knowledge-tasks/{task_id}/retry')
+    def retry_knowledge(task_id: str, request: Request):
+        service = platform(request)
+        task = service.store.get('knowledge_task', task_id)
+        if task['status'] not in {'failed', 'cancelled', 'interrupted'}:
+            raise CatalogError('JOB_STATE', '仅停止的任务可手动重试')
+        return service.knowledge_tasks.enqueue(task['workspace_id'], task['kind'])
+
+    @router.get('/knowledge-tasks/{task_id}')
+    def knowledge_task(task_id: str, request: Request):
+        return platform(request).store.get('knowledge_task', task_id)
+
+    @router.get('/workspaces/{workspace_id}/organize/{preview_id}')
+    def organize_preview(workspace_id: WorkspaceID, preview_id: str, request: Request):
+        service = scoped(request, workspace_id)
+        preview = service.store.get('intelligence_preview', preview_id)
+        if preview['workspace_id'] != workspace_id:
+            raise CatalogError('FORBIDDEN', '预览不属于当前项目')
+        return preview
+
+    @router.get('/workspaces/{workspace_id}/capture-settings')
+    def capture_settings(workspace_id: WorkspaceID, request: Request):
+        service = scoped(request, workspace_id)
+        values = service.store.list('capture_settings', workspace_id, limit=1)
+        return values[0] if values else {'enabled': False}
+
+    @router.put('/workspaces/{workspace_id}/capture-settings')
+    def configure_capture(workspace_id: WorkspaceID, body: CaptureSettingsInput, request: Request):
+        service = scoped(request, workspace_id, True)
+        with service.store.generation_lock(workspace_id):
+            values = service.store.list('capture_settings', workspace_id, limit=1)
+            return (service.store.update('capture_settings', values[0]['id'], body.model_dump()) if values else
+                    service.store.create('capture_settings', {'workspace_id': workspace_id, **body.model_dump()}))
+
+    @router.post('/workspaces/{workspace_id}/session-candidates')
+    def capture_candidate(workspace_id: WorkspaceID, body: CaptureInput, request: Request):
+        return scoped(request, workspace_id, True).knowledge_tasks.capture(workspace_id, body.source_id, body.content)
 
     @router.get('/models')
     def models(request: Request):
@@ -214,6 +355,14 @@ def platform_router():
     def analysis_settings(workspace_id: WorkspaceID, request: Request):
         service = platform(request)
         return service.analysis_settings(service.administrator(), workspace_id)
+
+    @router.get('/workspaces/{workspace_id}/embedding-settings')
+    def embedding_settings(workspace_id: WorkspaceID, request: Request):
+        return ProjectEmbedding(scoped(request, workspace_id)).settings(workspace_id)
+
+    @router.put('/workspaces/{workspace_id}/embedding-settings')
+    def configure_embedding(workspace_id: WorkspaceID, body: EmbeddingSettingsInput, request: Request):
+        return ProjectEmbedding(scoped(request, workspace_id, True)).configure(workspace_id, body.mode, body.revision)
 
     @router.put('/workspaces/{workspace_id}/analysis-settings')
     def configure_analysis(workspace_id: WorkspaceID, body: AnalysisSettingsInput, request: Request):
@@ -272,6 +421,13 @@ def platform_router():
     def search(workspace_id: WorkspaceID, body: SearchInput, request: Request):
         service = scoped(request, workspace_id)
         return service.lookup(service.administrator(), workspace_id, body.query, body.mode, body.limit)
+
+    @router.post('/workspaces/{workspace_id}/retrieval-evaluation')
+    def evaluate_retrieval(workspace_id: WorkspaceID, body: EvaluationInput, request: Request):
+        from memory_center.platform.evaluation import evaluate
+        service = scoped(request, workspace_id)
+        return evaluate(service, service.administrator(), workspace_id,
+                        [c.model_dump() for c in body.cases], body.limit)
 
     @router.post('/workspaces/{workspace_id}/analyze')
     def analyze(workspace_id: WorkspaceID, body: SearchInput, request: Request):

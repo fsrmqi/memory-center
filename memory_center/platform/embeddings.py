@@ -7,13 +7,16 @@
 - **内容寻址缓存**（``embed_many(cache=...)``）：热跑命中即不发请求，省的是**请求数**；
 - **保序并发**（``embed_many(concurrency=...)``）：冷跑把批摊开到多个连接，省的是**墙钟**。
 
-两者都必须保住产物的逐值相等：``Executor.map`` 保序，命中与未命中返回同一形状的
+两者都必须保住产物的逐值相等：有界请求窗口保序，命中与未命中返回同一形状的
 向量，因此「并发 + 缓存」路径与「串行逐批」路径的结果可以直接深度比较。
 """
 import hashlib
 import json
 import math
 import os
+import threading
+import time
+from collections import deque
 from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
@@ -58,7 +61,7 @@ def configured_batch_size(env: Mapping[str, str] | None = None) -> int:
 def configured_concurrency(env: Mapping[str, str] | None = None) -> int:
     """并发请求数，1 表示就地串行，上限 32。
 
-    并发只改变「同时有多少请求在途」，不改变产物——``Executor.map`` 保序，
+    并发只改变「同时有多少请求在途」，不改变产物——有界请求窗口保序，
     返回的向量与输入文本一一对应。
     """
     return _configured_int(env, CONCURRENCY_ENV, DEFAULT_CONCURRENCY, 1, MAX_CONCURRENCY)
@@ -81,6 +84,9 @@ class Embedder:
         # 调用方注入的连接：索引路径传一个长生命周期 client 进来复用 keep-alive，
         # 验证与检索路径不传，走 :meth:`_connection` 的自建分支。
         self._client = client
+        self._metrics_lock = threading.Lock()
+        self.metrics = {'model': settings.get('model', ''), 'requests': 0, 'request_seconds': 0.0,
+                        'input_tokens': 0, 'usage_missing': 0}
 
     @staticmethod
     def validate(settings):
@@ -116,37 +122,52 @@ class Embedder:
 
     def _request(self, client, batch) -> list[list[float]]:
         """一次请求取回一批向量；数量或维度不合法即抛 ``EMBEDDING_INVALID``。"""
-        settings = self.settings
-        endpoint = '/api/embed' if settings.get('protocol', 'ollama') == 'ollama' else '/embeddings'
-        headers = {}
-        key = os.environ.get('MEMORY_CENTER_MODEL_API_KEY', '')
-        if key:
-            headers['Authorization'] = 'Bearer ' + key
-        response = client.post(settings['url'].rstrip('/') + endpoint,
-                               json={'model': settings['model'], 'input': list(batch)}, headers=headers)
-        response.raise_for_status()
-        payload = response.json()
-        vectors = payload.get('embeddings') if endpoint == '/api/embed' else [
-            item['embedding'] for item in sorted(payload['data'], key=lambda item: item['index'])]
-        if not isinstance(vectors, list) or len(vectors) != len(batch):
-            raise CatalogError('EMBEDDING_INVALID', '模型返回数量不匹配')
-        normalized = []
-        for vector in vectors:
-            if len(vector) != self.dimensions:
-                raise CatalogError('EMBEDDING_INVALID', '模型维度或向量数值无效')
-            for value in vector:
-                if isinstance(value, bool) or not isinstance(value, (float, int)) or not math.isfinite(value):
+        started = time.monotonic()
+        input_tokens = None
+        try:
+            settings = self.settings
+            endpoint = '/api/embed' if settings.get('protocol', 'ollama') == 'ollama' else '/embeddings'
+            headers = {}
+            key = os.environ.get('MEMORY_CENTER_MODEL_API_KEY', '')
+            if key:
+                headers['Authorization'] = 'Bearer ' + key
+            response = client.post(settings['url'].rstrip('/') + endpoint,
+                                   json={'model': settings['model'], 'input': list(batch)}, headers=headers)
+            response.raise_for_status()
+            payload = response.json()
+            vectors = payload.get('embeddings') if endpoint == '/api/embed' else [
+                item['embedding'] for item in sorted(payload['data'], key=lambda item: item['index'])]
+            if not isinstance(vectors, list) or len(vectors) != len(batch):
+                raise CatalogError('EMBEDDING_INVALID', '模型返回数量不匹配')
+            normalized = []
+            for vector in vectors:
+                if len(vector) != self.dimensions:
                     raise CatalogError('EMBEDDING_INVALID', '模型维度或向量数值无效')
-            # 统一成 float：模型会把恰好为整数的分量序列化成 JSON 整数（`0` 而非 `0.0`），
-            # ``json.loads`` 于是给出 ``int``，而缓存把元素归一化后给出 ``float``。
-            # 两者 ``==`` 相等却是**不同的产出**（``repr(0) == '0'`` vs ``repr(0.0) == '0.0'``），
-            # 会让「命中」与「未命中」返回形状不一致。归一化放在这里，两条路径就都只产出 float。
-            normalized.append([float(value) for value in vector])
-        return normalized
+                for value in vector:
+                    if isinstance(value, bool) or not isinstance(value, (float, int)) or not math.isfinite(value):
+                        raise CatalogError('EMBEDDING_INVALID', '模型维度或向量数值无效')
+                # 统一成 float：模型会把恰好为整数的分量序列化成 JSON 整数（`0` 而非 `0.0`），
+                # ``json.loads`` 于是给出 ``int``，而缓存把元素归一化后给出 ``float``。
+                # 两者 ``==`` 相等却是**不同的产出**（``repr(0) == '0'`` vs ``repr(0.0) == '0.0'``），
+                # 会让「命中」与「未命中」返回形状不一致。归一化放在这里，两条路径就都只产出 float。
+                normalized.append([float(value) for value in vector])
+            usage = payload.get('usage') if isinstance(payload.get('usage'), dict) else {}
+            input_tokens = payload.get('prompt_eval_count', usage.get('prompt_tokens', usage.get('total_tokens')))
+            return normalized
+        finally:
+            with self._metrics_lock:
+                self.metrics['requests'] += 1
+                self.metrics['request_seconds'] += time.monotonic() - started
+                if type(input_tokens) is int and input_tokens >= 0:
+                    if self.metrics['input_tokens'] is not None:
+                        self.metrics['input_tokens'] += input_tokens
+                else:
+                    self.metrics['usage_missing'] += 1
+                    self.metrics['input_tokens'] = None
 
     @staticmethod
     def _translate(action):
-        """把传输层异常统一成 ``MODEL_CONNECTION_FAILED``；``CatalogError`` 原样上抛。
+        """区分 HTTP 拒绝、请求超时与连接异常；不暴露供应商响应正文。
 
         ``EmbeddingCancelled`` 不在捕获列表里，故取消语义不受影响。
         """
@@ -154,6 +175,10 @@ class Embedder:
             return action()
         except CatalogError:
             raise
+        except httpx.HTTPStatusError as exc:
+            raise CatalogError('MODEL_HTTP_ERROR', f'模型接口返回 HTTP {exc.response.status_code}，请检查输入内容、模型与服务配置') from exc
+        except httpx.TimeoutException as exc:
+            raise CatalogError('MODEL_TIMEOUT', '模型请求超时，请检查服务负载与请求并发') from exc
         except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
             raise CatalogError('MODEL_CONNECTION_FAILED', '模型连接或响应无效，请检查服务、协议与模型配置') from exc
 
@@ -181,17 +206,19 @@ class Embedder:
                    on_batch: Callable[[int], None] | None = None) -> list[list[float]]:
         """批量向量化：内容寻址缓存 + 保序并发；返回与 ``texts`` 等长的向量列表。
 
-        返回顺序与 ``texts`` 严格一致（``Executor.map`` 保序），调用方可以直接与输入
+        返回顺序与 ``texts`` 严格一致（有界请求窗口保序），调用方可以直接与输入
         ``zip``。四条语义：
 
         - **缓存只影响速度**：命中与未命中的向量逐值相等；``cache=None`` 时完全不读写。
         - **取消是「尽快停下」**：``should_stop`` 在每批开始前求值，为真即抛
-          :class:`EmbeddingCancelled`。已被线程池接走的批次仍会跑完（Python 3.11 的
-          ``map`` 一次性提交全部任务），但结果不会再写缓存、也不会进入返回值。
+          :class:`EmbeddingCancelled`。最多保留 concurrency 个在途批次；每批返回后再次检查取消，未开始的请求取消，
+          已在途 HTTP 请求等待返回，但结果不会写缓存或进入返回值。
         - **模型故障照常上抛**：``CatalogError`` 不在此吞掉，由索引层保留上一代索引。
         - **缓存写入与进度回调都只在主线程发生**：既避免多线程写同一键，也让进度
           计数天然有序。
         """
+        if should_stop is not None and should_stop():
+            raise EmbeddingCancelled()
         if not self.enabled:
             return [[] for _ in texts]
         total = len(texts)
@@ -224,6 +251,7 @@ class Embedder:
                 raise EmbeddingCancelled()
 
         def consume(batch: list[int], obtained: list[list[float]]) -> None:
+            guard()
             for index, vector in zip(batch, obtained, strict=True):
                 vectors[index] = vector
                 if cache is not None:
@@ -246,8 +274,23 @@ class Embedder:
                     return batch, self._request(client, [texts[index] for index in batch])
 
                 with ThreadPoolExecutor(max_workers=workers, thread_name_prefix='embed') as pool:
-                    for batch, obtained in pool.map(fetch, batches):
-                        consume(batch, obtained)
+                    remaining = iter(batches)
+                    window = deque()
+                    try:
+                        for _ in range(workers):
+                            batch = next(remaining, None)
+                            if batch is not None:
+                                window.append(pool.submit(fetch, batch))
+                        while window:
+                            guard()
+                            batch, obtained = window.popleft().result()
+                            consume(batch, obtained)
+                            batch = next(remaining, None)
+                            if batch is not None:
+                                window.append(pool.submit(fetch, batch))
+                    finally:
+                        for future in window:
+                            future.cancel()
 
         self._translate(run)
         return [vector if vector is not None else [] for vector in vectors]

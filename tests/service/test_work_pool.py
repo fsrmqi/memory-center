@@ -142,17 +142,17 @@ class _StubJobs:
         self._configured = configured
 
     def settings(self):
-        return {'max_file_workers': self._configured}
+        return {'max_file_workers': self._configured, 'max_projects': 4}
 
 
 def test_file_workers_default_splits_cpu_budget_across_projects():
     stub = _StubJobs(0)
-    assert Jobs.file_workers_for(stub, 1) == max(0, share_budget(cpu_budget(), 1) - 1)
+    assert Jobs.file_workers_for(stub, 1) == max(0, share_budget(cpu_budget(), min(4, cpu_budget())) - 1)
     assert Jobs.file_workers_for(stub, 4) == max(0, share_budget(cpu_budget(), 4) - 1)
     # 并发项目数超过预算时，项目内退化为串行而不是超卖。
     assert Jobs.file_workers_for(stub, 64) == 0
 
 
 def test_file_workers_explicit_setting_is_per_project_width():
-    assert Jobs.file_workers_for(_StubJobs(6), 1) == 6
-    assert Jobs.file_workers_for(_StubJobs(6), 4) == 6
+    assert Jobs.file_workers_for(_StubJobs(6), 1) == min(6, max(0, share_budget(cpu_budget(), min(4, cpu_budget())) - 1))
+    assert Jobs.file_workers_for(_StubJobs(6), 4) == min(6, max(0, share_budget(cpu_budget(), 4) - 1))

@@ -1,6 +1,16 @@
 # Memory Center 当前系统架构 / Current System Architecture
 
-> **当前实现：5.0.0b14（开发测试版）。** 服务化架构为单进程 FastAPI/Uvicorn，同时承载管理 API、统一 MCP（Streamable HTTP，挂载于 `/mcp`）与 Vue 管理页；空间控制面独立存储，索引由有界子进程执行，发布走原子 generation。分层方向为 `service/`（生命周期、路由、MCP 边界）→ `platform/`（控制面、授权、任务、知识、检索）→ `application/` + `core/`（被复用的引擎）。
+> **当前实现：5.0.0b18（开发测试版）。** 服务化架构为单进程 FastAPI/Uvicorn，同时承载管理 API、统一 MCP（Streamable HTTP，挂载于 `/mcp`）与 Vue 管理页；空间控制面独立存储，索引由有界子进程执行，发布走原子 generation。分层方向为 `service/`（生命周期、路由、MCP 边界）→ `platform/`（控制面、授权、任务、知识、检索）→ `application/` + `core/`（被复用的引擎）。
+
+项目空间统计由 `platform/storage_usage.py` 在只读数据库快照中聚合项目行载荷，再扫描 `workspaces/{workspace_id}` 内的普通文件，区分当前／其他索引代际和两类缓存。管理 API 使用同步端点，由 FastAPI 线程池处理文件扫描；管理页按项目选择或手动刷新请求，不随列表轮询反复扫描。共享数据库文件与物理页不作项目归属，口径见平台指南。
+
+English: Project storage accounting combines scoped database payload aggregates with logical sizes of regular project data files. Shared database storage is excluded from project totals; the UI requests accounting on selection or explicit refresh.
+
+b17 的 `platform/storage_maintenance.py` 持久化项目保留策略和 15 分钟有效的清理预览。执行与任务生命周期、入队及 generation 发布共用锁；执行前复核当前代际、在途任务、策略修订与候选目录文件指纹。缓存仅在项目无在途任务时允许清理，部分失败不可重放。管理页旧清理入口统一进入项目治理，兼容旧 API 保留原语义。
+
+SQLite 向量精确召回使用游标逐行扫描和至多 100 个候选的堆，默认可选预算 5,000，环境变量可调为正数或 0 关闭；结果先过滤可见性，仍按原同分规则排序。源码分块跳过空白，超长单行完整分片并记录列范围，避免空输入或巨型分块交给模型。
+
+English: Storage maintenance serializes confirmed cleanup against enqueue and generation publication, validates preview freshness and retains current/in-flight generations. SQLite vector recall keeps bounded Top-K candidates while scanning scoped vectors. Source chunks exclude whitespace and split long lines with column provenance.
 >
 > **5.0 为全新安装**：不导入 4.x workspace / registry / 索引 / 记忆，不保留旧 MCP/HTTP 工具合同。当前入口、工具 schema 与能力边界见 [5.0 平台指南](V5_PLATFORM_GUIDE.md)；运行事实见 [服务运行指南](V5_SERVICE_GUIDE.md)；项目登记与授权合同见 [项目目录指南](V5_CATALOG_GUIDE.md)；逐版本变更见 [CHANGELOG](CHANGELOG.md)；服务化决策见 [ADR-0004](adr/0004-service-platform-and-admin.md) 与 [ADR-0005](adr/0005-v5-workspace-catalog.md)。
 >
@@ -1209,3 +1219,9 @@ Memory Center 是一个面向 AI 编程助手的本地优先 workspace 记忆与
 
 **为什么只允许预注册验证命令？**
 因为模型生成的命令属于不可信输入。允许任意 shell 会把提示注入、误删、环境污染和不可复现都带进交付闭环。argv profile 提供可审查 allowlist。
+
+### b15 知识任务与重排 / Knowledge tasks and reranking
+
+`platform/knowledge_tasks.py` 使用独立持久队列和单个后台线程执行知识刷新、全库整理。知识刷新在同一检索 generation 内原子替换非代码分块与词项，保留源码图；全库整理只创建有来源修订门禁的待审预览。会话候选接入默认关闭。检索授权过滤后可调用可选 `/rerank` 模型，失败显式回退。实际边界与未验证环境见 [b15 回执](implementation-receipts/V5_REFERENCE_ADOPTION.md)。
+
+English: A separate durable knowledge queue refreshes non-code retrieval rows atomically while retaining the code graph, or generates review-only organization previews. Session candidates are opt-in. Optional reranking runs after authorization filtering and explicitly falls back on failure.

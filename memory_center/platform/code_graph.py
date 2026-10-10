@@ -9,6 +9,7 @@ from pathlib import Path
 from memory_center.core.indexing.language_registry import get_language_spec_for_extension
 from memory_center.core.indexing.structural_parser import TreeSitterStructuralParser
 from memory_center.platform.parse_cache import ParseCache, decode_structural, encode_structural
+from memory_center.platform.module_resolution import alias_stems
 
 # 子进程内按语言缓存解析器；tree-sitter 解析器构造相对昂贵，
 # 每个文件重建会让池化收益被构造开销吃掉。
@@ -125,11 +126,11 @@ def build_code_graph(root, files, progress=None, pool=None, cache=None, digests=
     @lru_cache(maxsize=10000)
     def module_files(path, module, language):
         if language in {'typescript', 'tsx', 'javascript', 'vue'}:
-            if not module.startswith('.'):
-                return []  # 外部包、别名及 re-export 链尚未确认，不做文件名后缀猜测。
-            base = posixpath.normpath(posixpath.join(posixpath.dirname(path), module))
-            stems = [base, *[base + ext for ext in ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.vue']],
-                     *[base + '/index' + ext for ext in ['.ts', '.tsx', '.js', '.jsx']]]
+            bases = ([posixpath.normpath(posixpath.join(posixpath.dirname(path), module))]
+                     if module.startswith('.') else alias_stems(root, path, module))
+            stems = [candidate for base in bases for candidate in
+                     [base, *[base + ext for ext in ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.vue']],
+                      *[base + '/index' + ext for ext in ['.ts', '.tsx', '.js', '.jsx']]]]
             # 多个候选文件也是歧义，不选择第一个。
             return [p for p in stems if p in units]
         if language == 'python':
@@ -161,6 +162,52 @@ def build_code_graph(root, files, progress=None, pool=None, cache=None, digests=
                 directory = directory.parent
         return []
 
+    def exported_targets(path, name, seen=frozenset()):
+        key = (path, name)
+        if key in seen or len(seen) >= 32:
+            return []
+        result = units[path]
+        actual = result.raw.get('exports', {}).get(name, '')
+        targets = functions(path, actual) if actual else []
+        if actual and not targets:
+            for binding in result.raw.get('import_bindings', []):
+                if binding['local'] == actual and binding['symbol'] != '*':
+                    for destination in module_files(path, binding['module'], result.language):
+                        targets.extend(exported_targets(destination, binding['symbol'], seen | {key}))
+        for forward in result.raw.get('reexports', []):
+            if forward['exported'] not in {name, '*'} or (name == 'default' and forward['exported'] == '*'):
+                continue
+            symbol = name if forward['symbol'] == '*' else forward['symbol']
+            for target in module_files(path, forward['module'], result.language):
+                targets.extend(exported_targets(target, symbol, seen | {key}))
+        return list({s['id']: s for s in targets}.values())
+
+    def inherited_methods(path, owner, name, seen=frozenset()):
+        key = (path, owner)
+        if key in seen or len(seen) >= 16:
+            return []
+        result = units[path]
+        targets = []
+        for base in result.raw.get('inheritance', {}).get(owner, []):
+            classes = [s for s in symbols if s['type'] == 'Class' and s['language'] == result.language and
+                       ((s['path'] == path and (s['name'] == base or s['qualified_name'] == base)) or
+                        (result.language == 'java' and s['qualified_name'] == base) or
+                        (result.language == 'java' and s['name'] == base and
+                         (s['qualified_name'] in result.imports or s['qualified_name'].rpartition('.')[0] == owner.rpartition('.')[0])))]
+            if result.language == 'python' and not classes:
+                for binding in result.raw.get('import_bindings', []):
+                    if binding['local'] != base:
+                        continue
+                    paths = module_files(path, binding['module'], 'python')
+                    classes.extend(s for s in symbols if s['type'] == 'Class' and s['path'] in paths and
+                                   s['name'] == binding['symbol'])
+            if len(classes) != 1:
+                continue
+            parent = classes[0]
+            direct = functions(parent['path'], parent['qualified_name'] + '.' + name)
+            targets.extend(direct or inherited_methods(parent['path'], parent['qualified_name'], name, seen | {key}))
+        return list({s['id']: s for s in targets}.values())
+
     edges, unresolved = [], []
     if progress:
         progress('relations', 0, len(units), 'files')
@@ -185,6 +232,9 @@ def build_code_graph(root, files, progress=None, pool=None, cache=None, digests=
                 if receiver in {'self', 'cls', 'this', bound_receiver} and receiver:
                     candidates = functions(path, owner + '.' + name)
                     reason = 'same_owner'
+                    if not candidates:
+                        candidates = inherited_methods(path, owner, name)
+                        reason = 'inherited_method'
                 elif not receiver:
                     scope = call.caller_qualified_name
                     while True:
@@ -197,6 +247,9 @@ def build_code_graph(root, files, progress=None, pool=None, cache=None, digests=
                         candidates = [s for s in functions(path, name) if not s['parent'] or
                                       (result.language == 'go' and s['parent'] == result.module)]
                     reason = 'lexical_scope'
+                    if not candidates and result.language == 'java':
+                        candidates = inherited_methods(path, owner, name)
+                        reason = 'inherited_method'
                     if result.language == 'go' and not candidates:
                         candidates = [s for s in by_language_name[('go', name)] if s['parent'] == result.module and
                                       posixpath.dirname(s['path']) == posixpath.dirname(path)]
@@ -205,7 +258,7 @@ def build_code_graph(root, files, progress=None, pool=None, cache=None, digests=
                 binding_scopes = call.caller_qualified_name.split('.')
                 shadowed = any(key in result.raw.get('local_bindings', {}).get('.'.join(binding_scopes[:i]), [])
                                for i in range(1, len(binding_scopes) + 1))
-                if shadowed and reason != 'same_owner':
+                if shadowed and reason not in {'same_owner', 'inherited_method'}:
                     candidates = [c for c in candidates if c['qualified_name'].startswith(call.caller_qualified_name + '.')]
                 if not candidates and not shadowed:
                     bindings = [b for b in result.raw.get('import_bindings', []) if b['local'] == key]
@@ -216,7 +269,8 @@ def build_code_graph(root, files, progress=None, pool=None, cache=None, digests=
                         for target_path in target_paths:
                             actual_name = target_name
                             if result.language in {'typescript', 'tsx', 'javascript', 'vue'}:
-                                actual_name = units[target_path].raw.get('exports', {}).get(target_name, '')
+                                candidates.extend(exported_targets(target_path, target_name))
+                                continue
                             if result.language == 'go' and not target_name[:1].isupper():
                                 continue
                             if actual_name:
@@ -234,7 +288,7 @@ def build_code_graph(root, files, progress=None, pool=None, cache=None, digests=
             candidates = [c for c in candidates if coverage[c['path']]['status'] == 'parsed']
             if len(callers) == len(candidates) == 1:
                 edges.append({'source': callers[0]['id'], 'target': candidates[0]['id'], 'line': call.line,
-                              'path': path, 'type': 'CALLS', 'resolution': reason, 'evidence_level': 'INFERRED' if reason == 'qualified_type' else 'EXTRACTED'})
+                              'path': path, 'type': 'CALLS', 'resolution': reason, 'evidence_level': 'INFERRED' if reason in {'qualified_type', 'inherited_method'} else 'EXTRACTED'})
             else:
                 unresolved.append({'caller': call.caller_qualified_name, 'callee': text, 'path': path,
                                    'line': call.line, 'reason': 'ambiguous' if len(candidates) > 1 or len(callers) > 1 else 'unresolved'})

@@ -219,7 +219,7 @@ def test_http_error_becomes_model_connection_failed(embedding_server):
     embedding_server['mode'] = 'http_error'
     with pytest.raises(CatalogError) as info:
         Embedder(embedding_server['settings']).embed_many(['x'], concurrency=1)
-    assert info.value.code == 'MODEL_CONNECTION_FAILED'
+    assert info.value.code == 'MODEL_HTTP_ERROR'
 
 
 def test_count_mismatch_is_invalid(embedding_server):

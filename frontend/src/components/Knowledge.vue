@@ -6,18 +6,25 @@ const props=defineProps<{workspace:string;kind:'document'|'wiki'|'memory'}>()
 const items=ref<Item[]>([]), title=ref(''), content=ref(''), query=ref(''), mode=ref('hybrid'), results=ref<any>(null), editing=ref<Item|null>(null), confirmed=ref(false), refs=ref<string[]>([]), busy=ref(false)
 const selectedItem=ref<Item|null>(null), filter=ref(''), appliedFilter=ref(''), status=ref(''), page=ref(1), pageSize=ref(10), total=ref(0), pages=ref(1), loading=ref(false), formOpen=ref(false), dialog=ref<HTMLDialogElement|null>(null)
 const organized=ref<any>(null), organizing=ref(false), organizeTitle=ref(''), organizeContent=ref('')
+const captureEnabled=ref(false),captureSource=ref(''),captureContent=ref('')
+async function bulkOrganize(){await action(async()=>{await api(`/workspaces/${props.workspace}/knowledge-tasks`,'POST',{kind:props.kind})},'已提交全库整理，请在后台任务的知识整理中审阅结果')}
+async function captureSettings(){await action(async()=>{await api(`/workspaces/${props.workspace}/capture-settings`,'PUT',{enabled:captureEnabled.value})},'会话采集设置已保存')}
+async function capture(){await action(async()=>{await api(`/workspaces/${props.workspace}/session-candidates`,'POST',{source_id:captureSource.value,content:captureContent.value});captureContent.value='';await load()},'会话资料已保存为待确认候选')}
+const evaluationInput=ref(''),evaluationResult=ref<any>(null)
+async function evaluateRetrieval(){await action(async()=>{evaluationResult.value=await api(`/workspaces/${props.workspace}/retrieval-evaluation`,'POST',{cases:JSON.parse(evaluationInput.value),limit:10})},'检索评测已完成')}
 const labels={document:'知识库',wiki:'Wiki',memory:'长期记忆'}
 let request=0
 async function load(targetPage=page.value){
  if(!props.workspace)return
- const sequence=++request;loading.value=true
- try{const params=new URLSearchParams({page:String(targetPage),page_size:String(pageSize.value),q:appliedFilter.value,status:status.value});const data=await api(`/workspaces/${props.workspace}/knowledge/${props.kind}?${params}`)
+ const sequence=++request,workspace=props.workspace,kind=props.kind;loading.value=true
+ try{if(kind==='memory'){const controls=await api(`/workspaces/${workspace}/capture-settings`);if(sequence!==request)return;captureEnabled.value=controls.enabled}
+ const params=new URLSearchParams({page:String(targetPage),page_size:String(pageSize.value),q:appliedFilter.value,status:status.value});const data=await api(`/workspaces/${workspace}/knowledge/${kind}?${params}`)
  if(sequence!==request)return
  items.value=data.items;total.value=data.total;pages.value=data.pages;page.value=data.page
  if(selectedItem.value)selectedItem.value=items.value.find(i=>i.id===selectedItem.value?.id)||null
  }finally{if(sequence===request)loading.value=false}
 }
-watch(()=>[props.workspace,props.kind],()=>{request++;items.value=[];selectedItem.value=null;formOpen.value=false;results.value=null;organized.value=null;filter.value='';appliedFilter.value='';status.value='';page.value=1;total.value=0;action(load,'')},{immediate:true})
+watch(()=>[props.workspace,props.kind],()=>{request++;items.value=[];selectedItem.value=null;formOpen.value=false;results.value=null;evaluationResult.value=null;organized.value=null;filter.value='';appliedFilter.value='';status.value='';page.value=1;total.value=0;action(load,'')},{immediate:true})
 async function applyFilter(){appliedFilter.value=filter.value;page.value=1;selectedItem.value=null;await action(load,'')}
 async function turn(value:number){selectedItem.value=null;await action(()=>load(value),'')}
 async function openEditor(item?:Item){editing.value=item||null;title.value=item?.title||'';content.value=item?.content||'';refs.value=[...(item?.refs||[])];confirmed.value=false;formOpen.value=true;await nextTick();dialog.value?.showModal()}
@@ -39,15 +46,19 @@ async function applyOrganized(){if(!organized.value)return;busy.value=true;const
  await action(async()=>{await api(`/workspaces/${props.workspace}/organize/${draft.id}/apply`,'POST',{revision:draft.revision,title:organizeTitle.value,content:organizeContent.value});organized.value=null;await load()},'整理结果已保存；模型整理后的记忆需重新确认，重新索引后可检索')
  busy.value=false
 }
+async function refreshKnowledge(){await action(async()=>{await api(`/workspaces/${props.workspace}/knowledge-tasks`,'POST',{kind:'refresh'})},'知识刷新已排队，不重新解析源码')}
 async function index(){busy.value=true;await action(async()=>{await api(`/workspaces/${props.workspace}/index`,'POST')},'索引任务已提交');busy.value=false}
 </script>
 <template>
- <div class="page-title"><div><div class="eyebrow">项目知识空间</div><h1>{{labels[kind]}}</h1><p>{{kind==='wiki'?'把项目经验整理为可阅读、可修订的知识页面。':'集中保存项目资料与经过确认的长期记忆。'}}</p></div><div class="actions"><button @click="index" :disabled="!workspace||busy">重新索引</button><button class="primary" @click="openEditor()" :disabled="!workspace||busy">＋ {{kind==='wiki'?'新建页面':'添加内容'}}</button></div></div>
+ <section class="form-panel" v-if="kind==='memory'"><h2>受控会话资料</h2><label class="check"><input type="checkbox" v-model="captureEnabled" :disabled="!workspace" @change="captureSettings">允许向本项目提交会话资料</label><form v-if="captureEnabled" @submit.prevent="capture"><label>来源标识<input v-model="captureSource" required maxlength="200" placeholder="会话或资料的标识"></label><label>待提炼资料<textarea v-model="captureContent" required maxlength="10000" rows="4"></textarea></label><p class="muted">相同来源与内容不会重复保存；资料默认待确认，可通过全库整理提炼后审阅。</p><button>保存候选</button></form></section>
+ <button v-if="kind!=='document'" @click="bulkOrganize" :disabled="!workspace||busy">后台整理全部 {{kind==='wiki'?'Wiki':'记忆'}} 内容</button>
+ <div class="page-title"><div><div class="eyebrow">项目知识空间</div><h1>{{labels[kind]}}</h1><p>{{kind==='wiki'?'把项目经验整理为可阅读、可修订的知识页面。':'集中保存项目资料与经过确认的长期记忆。'}}</p></div><div class="actions"><button @click="refreshKnowledge" :disabled="!workspace||busy">刷新知识索引</button><button @click="index" :disabled="!workspace||busy">重新索引</button><button class="primary" @click="openEditor()" :disabled="!workspace||busy">＋ {{kind==='wiki'?'新建页面':'添加内容'}}</button></div></div>
  <p v-if="!workspace" class="empty">请先在项目管理中添加项目。</p>
  <template v-else>
   <section class="search-panel compact-search"><form class="toolbar" @submit.prevent="search"><span class="search-label">检索项目知识</span><input v-model="query" required placeholder="输入问题、关键词或代码符号" aria-label="检索内容"><select v-model="mode" aria-label="检索模式"><option value="hybrid">混合检索</option><option value="keyword">关键词</option><option value="vector">向量</option><option value="symbol">代码符号</option><option value="callers">调用方</option><option value="callees">被调用方</option></select><button class="primary" :disabled="busy">检索</button><button v-if="kind==='wiki'" type="button" @click="draft" :disabled="!query||busy">生成来源草稿</button></form>
-   <div v-if="results" class="search-results"><div class="panel-heading"><h2>检索结果</h2><button @click="results=null">收起结果</button></div><p class="muted">{{results.state||'代码事实结果'}} · {{results.vector_enabled?'向量已启用':'关键词 / 代码检索'}} · 引用 {{results.ref_id}}</p><p v-if="results.vector_reindex_required" class="muted">模型配置已变化，请重新索引。</p><article v-for="hit in results.items" :key="hit.chunk_id" class="hit"><h3>{{hit.source.path||hit.source.title}}</h3><p class="muted">行 {{hit.source.line}}–{{hit.source.end_line}} · {{hit.freshness==='STALE'?'来源已变化':'当前来源'}}</p><pre>{{hit.content}}</pre></article><pre v-if="!results.items">{{JSON.stringify(results,null,2)}}</pre><p v-if="results.items?.length===0" class="empty">当前范围没有命中；这不代表源码或资料中不存在。</p></div>
+   <div v-if="results" class="search-results"><div class="panel-heading"><h2>检索结果</h2><button @click="results=null">收起结果</button></div><p class="muted">{{results.state||'代码事实结果'}} · {{results.vector_enabled?'向量已启用':'关键词 / 代码检索'}} · 引用 {{results.ref_id}}</p><p v-if="results.reranking?.enabled" class="muted">{{results.reranking.state==='applied'?'模型重排已应用':'模型重排失败，已使用原排序'}}</p><p v-if="results.vector_reindex_required" class="muted">模型配置已变化，请重新索引。</p><article v-for="hit in results.items" :key="hit.chunk_id" class="hit"><h3>{{hit.source.path||hit.source.title}}</h3><p class="muted">来源标识 {{hit.source.source_id}}</p><p class="muted">行 {{hit.source.line}}–{{hit.source.end_line}} · {{hit.freshness==='STALE'?'来源已变化':'当前来源'}}</p><pre>{{hit.content}}</pre></article><pre v-if="!results.items">{{JSON.stringify(results,null,2)}}</pre><p v-if="results.items?.length===0" class="empty">当前范围没有命中；这不代表源码或资料中不存在。</p></div>
   </section>
+  <details class="form-panel"><summary>检索评测</summary><p class="muted">提供已人工核对的查询与期望来源标识，回放真实检索结果；不会自动调参。</p><form @submit.prevent="evaluateRetrieval"><label>评测样例 JSON<textarea v-model="evaluationInput" required rows="5" placeholder='[{"query":"问题","expected_sources":["来源标识"],"mode":"hybrid"}]'></textarea></label><button>运行评测</button></form><div v-if="evaluationResult"><p>平均召回率 {{(evaluationResult.mean_recall*100).toFixed(1)}}% · 平均准确率 {{(evaluationResult.mean_precision*100).toFixed(1)}}%</p><pre>{{JSON.stringify(evaluationResult.cases,null,2)}}</pre></div></details>
   <section v-if="organized" class="form-panel">
     <div class="panel-heading"><div><h2>智能整理预览</h2><p class="muted">{{organized.copy?'将保存为新内容，保留来源。':'确认后保存为新修订，保留原文历史。'}} · 模型 {{organized.model}}</p></div><button @click="organized=null" :disabled="busy">放弃预览</button></div>
     <p class="muted">来源：{{organized.sources.map((s:any)=>s.title).join('、')}}。请检查事实、遗漏和冲突；预览有效期 30 分钟。</p>

@@ -11,6 +11,8 @@ const localStdio = JSON.stringify({ mcpServers: { 'memory-center': { command: 'm
 const props = defineProps<{ section: 'models' | 'credentials'; workspaces: Workspace[]; local?: boolean }>()
 
 const settings = ref({ url: '', model: '', protocol: 'ollama', dimensions: 1024 })
+const rerank = ref({enabled:false,url:'',model:''})
+async function saveRerank(){await action(async()=>{await api('/rerank-model','PUT',rerank.value)},'重排设置已保存')}
 const chat = ref({url:'',model:'',protocol:'ollama',max_tokens:4096})
 const jobSettings = ref({max_projects:1,max_queued:0,max_file_workers:0})
 const backend = ref('')
@@ -26,6 +28,7 @@ const busy = ref(false)
 onMounted(() => action(async () => {
   const value = await api('/models')
   backend.value = value.backend
+  const r=await api('/rerank-model');if(r.items[0])rerank.value={enabled:r.items[0].enabled,url:r.items[0].url,model:r.items[0].model}
   const [c,j] = await Promise.all([api('/chat-model'),api('/job-settings')])
   if(c.items[0])chat.value={url:c.items[0].url,model:c.items[0].model,protocol:c.items[0].protocol,max_tokens:c.items[0].max_tokens}
   jobSettings.value={max_projects:j.max_projects,max_queued:j.max_queued,max_file_workers:j.max_file_workers??0}
@@ -86,11 +89,12 @@ function connection() { return JSON.stringify({ mcpServers: { 'memory-center': {
       <p class="muted">用于整理已保存的 Wiki 和记忆；结果先预览，再确认保存。远程模型会收到你选中的正文。密钥通过服务环境变量 MEMORY_CENTER_CHAT_API_KEY 提供。</p>
       <div class="actions"><button type="button" @click="testChat" :disabled="busy">{{busy?'正在验证…':'验证普通模型'}}</button><button class="primary" :disabled="busy">保存普通模型</button></div>
     </form></section>
+    <section class="form-panel"><form @submit.prevent="saveRerank"><h2>检索模型重排</h2><label class="check"><input type="checkbox" v-model="rerank.enabled">启用重排</label><label>服务地址<input v-model="rerank.url" placeholder="提供 /rerank 的服务根地址"></label><label>重排模型<input v-model="rerank.model"></label><p class="muted">对已授权的召回候选重排；失败会注明降级并保留原排序。密钥由 MEMORY_CENTER_RERANK_API_KEY 提供。</p><button class="primary">保存重排配置</button></form></section>
     <section class="form-panel"><form @submit.prevent="saveJobs"><h2>后台任务并发</h2>
       <label>同时索引的项目数<input type="number" v-model.number="jobSettings.max_projects" min="1" max="64"></label>
       <label>排队任务上限<input type="number" v-model.number="jobSettings.max_queued" min="0" max="100000"></label>
       <label>每项目解析进程数<input type="number" v-model.number="jobSettings.max_file_workers" min="0" max="64"></label>
-      <p class="muted">默认按运行环境 CPU 自动选择项目并发，排队上限 0 表示不限。每项目解析进程数 0 表示在同时运行的项目之间自动切分同一份 CPU 预算（项目进程本身占一个槽位），填正数则按每项目固定宽度执行。降低并发不终止现有任务，新任务按新配置调度。</p>
+      <p class="muted">默认按运行环境 CPU 自动选择项目并发，排队上限 0 表示不限。每项目解析进程数 0 表示按配置的并发项目数预留同一份 CPU 预算（项目进程本身占一个槽位），填正数作为每项目上限，实际分配仍受全局 CPU 预算约束。降低并发不终止现有任务，新任务按新配置调度。</p>
       <button class="primary">保存并发设置</button>
     </form></section>
     <section class="form-panel" v-if="runtime">

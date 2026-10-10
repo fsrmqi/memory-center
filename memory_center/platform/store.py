@@ -113,6 +113,10 @@ class PlatformStore:
             job = json.loads(row[0])
             if job['status'] != 'running':
                 raise CatalogError('JOB_CANCELLED', '任务已取消，未发布索引')
+            if 'embedding_settings_revision' in job:
+                from memory_center.platform.project_embedding import embedding_settings
+                if embedding_settings(self, workspace_id)['revision'] != job['embedding_settings_revision']:
+                    raise CatalogError('EMBEDDING_SETTINGS_CHANGED', '项目向量设置已改变，未发布索引，请重新提交任务')
             from memory_center.platform.retrieval import index_terms
             index_terms(connection, workspace_id, job_id, chunks)
             for chunk in chunks:
@@ -136,7 +140,10 @@ class PlatformStore:
                      'workspace_file': workspace_file, 'config_version': config_version, 'revision': 1,
                      'wiki_signature': job.get('wiki_signature', ''),
                      'code_coverage': job.get('code_coverage', {}),
-                     'embedding_profile': chunks[0].get('profile', '') if chunks else '', 'chunk_count': len(chunks), 'avg_length': sum(c['metadata']['length'] for c in chunks) / max(1, len(chunks)), 'updated_at': now()}
+                     'embedding_profile': job.get('embedding_profile', next((c.get('profile', '') for c in chunks if c.get('profile')), '')),
+                     'embedding_mode': job.get('embedding_mode', 'all' if any(c.get('profile') for c in chunks) else 'off'),
+                     'embedding_settings_revision': job.get('embedding_settings_revision', 0),
+                     'chunk_count': len(chunks), 'avg_length': sum(c['metadata']['length'] for c in chunks) / max(1, len(chunks)), 'updated_at': now()}
             self._put(connection, 'index', index)
             job.update(status='succeeded', progress=100, finished_at=now(), revision=job['revision'] + 1)
             self._put(connection, 'job', job)

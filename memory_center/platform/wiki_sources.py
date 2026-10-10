@@ -138,7 +138,7 @@ class WikiSources:
             if source['status'] == 'active' and workspace_id in source['workspace_ids']:
                 predicate = "payload::jsonb->>'status'='active'" if self.store.db.url else "json_extract(payload,'$.status')='active'"
                 with self.store.db.connection() as connection:
-                    rows = connection.execute(f"SELECT payload FROM records WHERE kind='wiki' AND workspace_id=? AND {predicate} ORDER BY id LIMIT 2000",
+                    rows = connection.execute(f"SELECT payload FROM records WHERE kind='wiki' AND workspace_id=? AND {predicate} ORDER BY id",
                                               (source['id'],)).fetchall()
                 for row in rows:
                     yield dict(json.loads(row[0]), workspace_id=workspace_id, source_name=source['name'])

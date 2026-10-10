@@ -32,7 +32,7 @@ from memory_center.core.indexing.parse_result import CallSite, StructuralParseRe
 
 # 载荷结构与解析语义的契约版本。改动结构性结果的编码方式、或任何会改变解析输出的
 # 实现时**必须**递增，否则旧载荷会被当成新结果复用。
-CACHE_SCHEMA = 1
+CACHE_SCHEMA = 2
 
 STRUCTURAL_NAMESPACE = "structural"
 JAVA_NAMESPACE = "java"
@@ -173,6 +173,10 @@ class ParseCache:
         target = self.path_for(*parts)
         try:
             raw = target.read_text(encoding="utf-8")
+        except UnicodeError:
+            self.corrupt += 1
+            self.misses += 1
+            return None
         except OSError:
             self.misses += 1
             return None

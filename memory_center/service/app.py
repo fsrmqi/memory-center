@@ -16,6 +16,7 @@ from memory_center.application.workspaces import WorkspaceCatalog
 from memory_center.platform.application import Platform
 from memory_center.platform.database import Database, ManagedCatalog, PostgresCatalog
 from memory_center.platform.jobs import IndexLimits
+from memory_center.platform.retrieval import sqlite_vector_limit
 from memory_center.service.admin import load_admin_token
 from memory_center.service.body_limit import BodyLimit
 from memory_center.service.config import ServiceConfig
@@ -58,13 +59,14 @@ def storage_status(config: ServiceConfig) -> dict[str, Any]:
             'exact_scan_chunk_limit': 0,
             'note': '向量按距离查询；维度不超过 2000 的模型档案建立 HNSW 索引，更高维度退回精确检索。',
         }
+    budget = sqlite_vector_limit()
     return {
         'backend': 'sqlite',
         'persistence': 'sqlite',
         'vector_recall': 'exact_scan',
         'hnsw_max_dimension': 0,
-        'exact_scan_chunk_limit': 5000,
-        'note': '轻量模式向量为精确召回，最多 5000 块；超过该规模会以 VECTOR_BUDGET 拒绝，需改用 PostgreSQL + pgvector 部署。',
+        'exact_scan_chunk_limit': budget,
+        'note': f'SQLite 向量使用流式精确召回，只保留 Top-K 候选；扫描上限 {budget}（0 为不限制）。耗时随分块数量增长，大规模或高并发建议 PostgreSQL + pgvector。',
     }
 
 
@@ -144,6 +146,7 @@ def create_service_app(config: ServiceConfig, *, static_dir: Path | None = None)
             app.state.platform = mcp.platform = platform
             await platform.jobs.start()
             await platform.governance.start()
+            await platform.knowledge_tasks.start()
             try:
                 async with mcp.session_manager.run():
                     app.state.catalog_ready = True
@@ -153,6 +156,7 @@ def create_service_app(config: ServiceConfig, *, static_dir: Path | None = None)
                 ready = False
                 app.state.catalog_ready = False
                 app.state.admin_token = ""
+                await platform.knowledge_tasks.close()
                 await platform.governance.close()
                 await platform.jobs.close()
     app = FastAPI(title="Memory Center", version=__version__, lifespan=lifespan)

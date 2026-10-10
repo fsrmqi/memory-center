@@ -6,6 +6,40 @@
 - Wiki 自动调度在项目索引失败、取消或中断后停止；状态持久化，重启或删除任务记录不触发自动重试，手动重试恢复。关闭自动同步或暂停来源后不再自动提交该来源关联的项目索引。
 - Large graph cleanup uses temporary scope tables and subqueries without growing expression trees or parameter lists. Wiki indexing stops after failed, cancelled or interrupted attempts across restarts and history deletion; manual retries resume scheduling. Disabled or paused sources do not automatically schedule project indexing.
 
+## 5.0.0b18 — 项目向量化范围 / Per-project embeddings
+
+- 项目级“跟随全局／全部内容／仅 Wiki 与记忆／关闭”范围，代码图与关键词索引继续独立工作。关闭后索引与混合查询不调用嵌入模型，独立知识刷新也遵守项目设置；其它项目沿用各自配置。
+- 保存不自动重建；关闭立即停止查询侧向量调用，已有向量通过重新索引移除。扩大范围前明确显示需要重建；发布事务检查设置修订，变化后拒绝发布并保留上一代索引。MCP 参数兼容，新增结果字段与 `VECTOR_DISABLED`／`EMBEDDING_SETTINGS_CHANGED` 错误码。
+- Per-project vector scope preserves graph/keyword indexing independently, applies to knowledge refresh, and rejects publication after settings change. Existing projects inherit global behavior; expanded vector coverage requires explicit reindexing.
+
+## 5.0.0b17 — 本地部署，未发行 / Locally deployed beta
+
+- 项目存储治理：历史成功代际保留数量、分页清理预览、显式确认执行、15 分钟有效期、执行前状态与文件指纹复核。当前／在途索引与保留历史代际受保护；缓存按需选择且禁止在途清理，部分失败保留结果并禁止旧预览重放。源码、Wiki、记忆与任务历史不删除。
+- SQLite 精确向量检索改为流式 Top-K，扫描上限保留默认 5,000，并支持环境变量配置／0 关闭；过滤与确定性排序保持兼容，避免全量向量候选驻留内存。
+- 真实模型验收复现空白源码分块导致 HTTP 400：过滤空白分块，单行压缩源码按片段完整分块并保留行／列位置，防止巨型分块被模型截断。模型错误新增 `MODEL_HTTP_ERROR`、`MODEL_TIMEOUT` 分类，不再把 HTTP 拒绝或超时统一报告为连接失败；工具参数保持兼容。
+- Project storage governance adds scoped retention, paginated previews and confirmed cleanup with expiry/stale-plan safeguards. SQLite vector recall streams Top-K with a configurable optional scan budget.
+- 部署与真实验收结果见 [b17 实施回执](implementation-receipts/V5_STORAGE_GOVERNANCE.md)。
+
+## 5.0.0b16 — 开发中，未发版 / Unreleased
+
+- 项目管理新增空间占用面板与只读 `GET /api/v1/workspaces/{workspace_id}/storage`：按项目统计当前／其他索引代际、解析缓存、向量缓存、分块与向量载荷、关键词索引文本及项目记录；切换项目与手动刷新按需读取，异常或符号链接跳过明确显示为部分统计。
+- 文件逻辑大小与数据库载荷分别展示；向量是数据库载荷子项，共享 SQLite 文件与 PostgreSQL 物理页不分摊、不重复计入。源码与外部 Wiki 挂载不计入服务项目数据。同步 Python、前端、锁文件、Compose 与当前文档版本，不发布、不部署。
+- Project management now exposes per-project storage accounting with refresh and scope isolation. Logical file sizes and database payloads are distinct from shared physical storage; vector payload is a subset, and incomplete scans are visible. Source trees and external Wiki mounts are excluded.
+- 验证与环境边界见 [b16 项目空间统计回执](implementation-receipts/V5_PROJECT_STORAGE.md)：272 项通过、49 项环境跳过，桌面交互及前端／wheel 构建通过；PostgreSQL 未配置隔离库，未部署生产容器。
+
+## 5.0.0b15 — 开发中，未发版 / Unreleased
+
+- 修复并发项目陆续进入时文件 worker 超卖、缓存 UTF-8 损坏导致任务失败，以及取消后消费模型结果的问题；嵌入请求使用有界窗口。POSIX 索引进程使用独立进程组，取消时覆盖派生解析进程。
+- 添加独立知识刷新与全库 Wiki／记忆后台整理；来源修订检查、取消保护、精确重复分组、待审预览与人工确认保存。来源文件更新／删除触发知识刷新，失败后需手动重试。
+- 可选模型重排与人工答案键检索评测；受控会话资料接入默认关闭，只生成待确认候选。
+- TS 项目内路径别名与 re-export 链，Java／Python 可确定继承调用；解析缓存 schema 升级为 2，旧缓存安全失效并重算。
+- 后台任务详情添加安全错误分类、诊断标识、人工处理建议和阶段事件；整理模型展示真实耗时与供应商返回的 Token 数，Skill 成本明确标为估算。
+- 同步 Python／前端／锁文件／Compose 开发版本；本轮不发布、不部署，不变更其他 DSH 插件。
+
+本轮使用方法、参考吸收清单和验收边界见 [b15 实施回执](implementation-receipts/V5_REFERENCE_ADOPTION.md)。
+
+English: Reserves the global CPU budget, treats corrupt cache encoding as a miss, bounds embedding requests and guards cancellation after responses. Adds independent knowledge refresh, review-only bulk organization, optional reranking, answer-key retrieval evaluation, opt-in session candidates, TS aliases/re-exports and conservative inherited calls. Diagnostic receipts and model usage are exposed without raw exception secrets; skill token estimates are explicitly estimates. Development changes only; no release or deployment.
+
 ## 5.0.0b14 — 2026-10-10
 
 - **新增内容寻址的向量缓存**（`platform/embedding_cache.py`）：键 = 契约版本 ‖ 命名空间 ‖ 模型指纹（`url`/`model`/`protocol`/`dimensions` 的哈希）‖ 文本 sha256。换模型或改维度必然整体未命中，不会把别的模型算出的向量喂回索引；命中与未命中返回**逐值相等**的向量，缓存只影响速度。

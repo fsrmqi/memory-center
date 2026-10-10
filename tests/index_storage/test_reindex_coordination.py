@@ -27,10 +27,11 @@ def test_reindex_lock_records_lifecycle_and_workspace_status(tmp_path: Path, mon
     workspace = _workspace(tmp_path)
     store = WorkspaceStore(workspace)
 
-    def fake_reindex(_config, _store, *, projects=None, paths=None, parallel=True, generation="", progress=None):
+    def fake_reindex(_config, _store, *, projects=None, paths=None, parallel=True, generation="", progress=None, pool=None, cache=None, source_digests=None):
         assert projects == ["api"]
         assert paths == []
         assert parallel is False
+        assert pool is None and cache is None and source_digests is None
         active = workspace_reindex_status(store)
         assert active["status"] == "running"
         return {"mode": "partial", "files": 1}
