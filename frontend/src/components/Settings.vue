@@ -12,7 +12,7 @@ const props = defineProps<{ section: 'models' | 'credentials'; workspaces: Works
 
 const settings = ref({ url: '', model: '', protocol: 'ollama', dimensions: 1024 })
 const chat = ref({url:'',model:'',protocol:'ollama',max_tokens:4096})
-const jobSettings = ref({max_projects:1,max_queued:0})
+const jobSettings = ref({max_projects:1,max_queued:0,max_file_workers:0})
 const backend = ref('')
 const runtime = ref<any>(null)
 const items = ref<Item[]>([])
@@ -28,7 +28,7 @@ onMounted(() => action(async () => {
   backend.value = value.backend
   const [c,j] = await Promise.all([api('/chat-model'),api('/job-settings')])
   if(c.items[0])chat.value={url:c.items[0].url,model:c.items[0].model,protocol:c.items[0].protocol,max_tokens:c.items[0].max_tokens}
-  jobSettings.value={max_projects:j.max_projects,max_queued:j.max_queued}
+  jobSettings.value={max_projects:j.max_projects,max_queued:j.max_queued,max_file_workers:j.max_file_workers??0}
   if (value.items[0]) {
     const m = value.items[0]
     settings.value = { url: m.url, model: m.model, protocol: m.protocol, dimensions: m.dimensions }
@@ -89,7 +89,8 @@ function connection() { return JSON.stringify({ mcpServers: { 'memory-center': {
     <section class="form-panel"><form @submit.prevent="saveJobs"><h2>后台任务并发</h2>
       <label>同时索引的项目数<input type="number" v-model.number="jobSettings.max_projects" min="1" max="64"></label>
       <label>排队任务上限<input type="number" v-model.number="jobSettings.max_queued" min="0" max="100000"></label>
-      <p class="muted">默认按运行环境 CPU 自动选择项目并发，排队上限 0 表示不限。降低并发不终止现有任务，新任务按新配置调度。每个项目占用独立进程。</p>
+      <label>每项目解析进程数<input type="number" v-model.number="jobSettings.max_file_workers" min="0" max="64"></label>
+      <p class="muted">默认按运行环境 CPU 自动选择项目并发，排队上限 0 表示不限。每项目解析进程数 0 表示在同时运行的项目之间自动切分同一份 CPU 预算（项目进程本身占一个槽位），填正数则按每项目固定宽度执行。降低并发不终止现有任务，新任务按新配置调度。</p>
       <button class="primary">保存并发设置</button>
     </form></section>
     <section class="form-panel" v-if="runtime">

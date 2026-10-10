@@ -15,8 +15,16 @@ from memory_center.core.foundation.catalog import CatalogError
 from memory_center.platform.database import Database, PostgresCatalog
 from memory_center.platform.embeddings import Embedder
 from memory_center.platform.knowledge import Knowledge
+from memory_center.platform.parse_cache import (
+    JAVA_NAMESPACE,
+    STRUCTURAL_NAMESPACE,
+    ParseCache,
+    configured_budget_bytes,
+    enforce_budget,
+)
 from memory_center.platform.store import PlatformStore, identity, now
 from memory_center.platform.wiki_sources import WikiSources
+from memory_center.platform.work_pool import WorkPool, cpu_budget, share_budget
 
 _SKIP = {'.git', '.memory-center', '.project-ai', '.claude', '.codex', '.idea', 'node_modules', 'target',
          'build', 'dist', '__pycache__', '.venv', 'venv', 'vendor'}
@@ -177,8 +185,12 @@ def assign_services(config, files):
     return owned
 
 
-def run_index(data_dir, database_url, workspace, job_id, limits=None):
-    """子进程内装配旧事实引擎；派生 YAML 位于新服务 generation，绝不读源码旧配置。"""
+def run_index(data_dir, database_url, workspace, job_id, limits=None, file_workers=0):
+    """子进程内装配旧事实引擎；派生 YAML 位于新服务 generation，绝不读源码旧配置。
+
+    ``file_workers`` 是父进程按并发项目数切分后的文件级 worker 数
+    （0 表示项目内串行）。池在本进程生命周期内常驻，只服务本次索引。
+    """
     from memory_center.core.foundation.models import ServiceConfig, WorkspaceConfig
     from memory_center.core.indexing.reindex import reindex_workspace
     from memory_center.core.storage.catalog import CatalogStore
@@ -191,6 +203,14 @@ def run_index(data_dir, database_url, workspace, job_id, limits=None):
     store, knowledge = PlatformStore(db), Knowledge(PlatformStore(db), data_dir)
     catalog = PostgresCatalog(data_dir, database_url) if database_url else CatalogStore(data_dir)
     report = JobProgress(store, job_id)
+    pool = WorkPool(file_workers, kind='parse')
+    # 解析缓存落在**工作区级**目录，不在 generation 内：generation 会被 prune 清理，
+    # 而缓存必须跨代际存活，「只改了几个文件的再次索引」才能跳过其余文件的解析。
+    # 预算为 0（MEMORY_CENTER_PARSE_CACHE_MB=0）时完全不读不写，退回全量解析。
+    cache_budget = configured_budget_bytes()
+    cache_root = data_dir / 'workspaces' / workspace['workspace_id'] / 'parse-cache'
+    structural_cache = ParseCache(cache_root, STRUCTURAL_NAMESPACE) if cache_budget else None
+    java_cache = ParseCache(cache_root, JAVA_NAMESPACE) if cache_budget else None
     try:
         root = Path(workspace['root'])
         if root.resolve() != root or not root.is_dir():
@@ -213,7 +233,7 @@ def run_index(data_dir, database_url, workspace, job_id, limits=None):
 
         from memory_center.platform.code_graph import build_code_graph, coverage_summary
         report('parsing', 0, None)
-        code_graph = build_code_graph(root, files, report)
+        code_graph = build_code_graph(root, files, report, pool, structural_cache)
         (directory / 'code-graph.json').write_text(json.dumps(code_graph, ensure_ascii=False), encoding='utf-8')
         store.update('job', job_id, {'code_coverage': coverage_summary(code_graph)})
         workspace_file = directory / 'workspace.yaml'
@@ -230,6 +250,7 @@ def run_index(data_dir, database_url, workspace, job_id, limits=None):
                 report('services', number - 1, len(services), 'services', f'{service.name} · {stage} · {message}')
             reindex_workspace(config, WorkspaceStore(workspace_file), projects=[service.name],
                               paths=owned or [str(directory / 'empty-scope')], parallel=False,
+                              pool=pool, cache=java_cache,
                               materialize_assertions=False, progress=service_progress)
             report('services', number, len(services), 'services', service.name)
         report('knowledge', 0, None, 'items')
@@ -258,6 +279,10 @@ def run_index(data_dir, database_url, workspace, job_id, limits=None):
             raise CatalogError('WIKI_CHANGED', 'Wiki 来源已变化，等待下一轮自动索引')
         report('publishing', 0, None, 'chunks')
         store.publish(workspace['workspace_id'], job_id, chunks, str(workspace_file), workspace['config_version'])
+        # 只在发布成功后维护缓存：失败或取消的索引不应改动跨代际的缓存目录。
+        if cache_budget:
+            store.update('job', job_id, {'parse_cache': {'budget_bytes': cache_budget,
+                                                         **enforce_budget(cache_root, cache_budget)}})
     except Exception as exc:
         current = store.get('job', job_id)
         if current['status'] == 'running':
@@ -266,6 +291,8 @@ def run_index(data_dir, database_url, workspace, job_id, limits=None):
                           'message': exc.message if isinstance(exc, CatalogError) else '索引失败，请检查文件、模型连接与服务日志',
                           'finished_at': now()})
         # 不打印底层连接串、文档或模型响应。
+    finally:
+        pool.close()
 
 
 class Jobs:
@@ -283,14 +310,22 @@ class Jobs:
         current = self.store.list('job_settings', limit=1)
         if current:
             return current[0]
-        cpus = len(os.sched_getaffinity(0)) if hasattr(os, 'sched_getaffinity') else (os.cpu_count() or 1)
-        try:
-            quota, period = Path('/sys/fs/cgroup/cpu.max').read_text().split()
-            if quota != 'max':
-                cpus = min(cpus, max(1, int(quota) // int(period)))
-        except (OSError, ValueError):
-            pass
-        return {'max_projects': max(1, min(4, cpus - 1)), 'max_queued': 0, 'automatic': True}
+        budget = cpu_budget()
+        return {'max_projects': max(1, min(4, budget - 1)), 'max_queued': 0,
+                'max_file_workers': 0, 'automatic': True}
+
+    def file_workers_for(self, concurrent_jobs):
+        """本项目可用的文件级 worker 数；0 表示项目内串行。
+
+        ``max_file_workers`` 为 0（默认）时按 CPU 预算在**同时运行的项目**之间切分：
+        项目进程本身也占一个槽位，故 ``worker = 份额 - 1``。这一个函数就是
+        「项目并发与文件并发共用资源预算」的落点——任何一侧都不能单独把机器开满。
+        显式配置正数时视为「每项目固定宽度」，由配置者自担项目数相乘后的总量。
+        """
+        configured = int(self.settings().get('max_file_workers') or 0)
+        if configured > 0:
+            return configured
+        return max(0, share_budget(cpu_budget(), max(1, concurrent_jobs)) - 1)
 
     def configure(self, value):
         with self.lifecycle_lock:
@@ -308,7 +343,7 @@ class Jobs:
             rows = connection.execute(f"SELECT payload FROM records WHERE kind='job' AND {field} IN ('queued','running') ORDER BY updated_at,id").fetchall()
         return [json.loads(r[0]) for r in rows]
 
-    def enqueue(self, workspace_id, owner):
+    def enqueue(self, workspace_id, owner, *, automatic=False):
         workspace = self.catalog.get(workspace_id)
         if workspace['status'] != 'active':
             raise CatalogError('WORKSPACE_PAUSED', '项目已暂停')
@@ -318,12 +353,46 @@ class Jobs:
             existing = next((job for job in pending if job['workspace_id'] == workspace_id), None)
             if existing:
                 return existing
+            # Persist the last attempt independently of removable job history.
+            # Manual retries replace it; automatic polls never revive a failed,
+            # cancelled, interrupted or deleted attempt (including after restart).
+            state_id = 'wiki_index_attempt_' + workspace_id
+            try:
+                attempt = self.store.get('wiki_index_attempt', state_id)
+            except CatalogError:
+                attempt = None
+            if automatic:
+                if attempt:
+                    try:
+                        last = self.store.get('job', attempt['job_id'])
+                    except CatalogError:
+                        return None
+                else:
+                    import json
+                    created = ("payload::jsonb->>'created_at'" if self.store.db.url
+                               else "json_extract(payload,'$.created_at')")
+                    with self.store.db.connection() as connection:
+                        row = connection.execute(
+                            f"SELECT payload FROM records WHERE kind='job' AND workspace_id=? "
+                            f"ORDER BY {created} DESC,id DESC LIMIT 1", (workspace_id,)).fetchone()
+                    last = json.loads(row[0]) if row else None
+                    if last:
+                        attempt = self.store.create('wiki_index_attempt',
+                            {'id': state_id, 'workspace_id': workspace_id, 'job_id': last['id']})
+                if last and last['status'] != 'succeeded':
+                    return None
             maximum = self.settings()['max_queued']
             if maximum and sum(j['status'] == 'queued' for j in pending) >= maximum:
                 raise CatalogError('QUEUE_FULL', '后台队列达到已配置上限，请等待现有任务完成')
-            return self.store.create('job', {'workspace_id': workspace_id, 'owner': owner, 'status': 'queued',
+            job = self.store.create('job', {'workspace_id': workspace_id, 'owner': owner, 'status': 'queued',
                                             'progress': 0, 'phase': 'queued', 'progress_scope': 'phase',
                                             'completed': 0, 'total': None, 'config_version': workspace['config_version']})
+            if attempt:
+                self.store.update('wiki_index_attempt', state_id, {'job_id': job['id']})
+            else:
+                self.store.create('wiki_index_attempt',
+                    {'id': state_id, 'workspace_id': workspace_id, 'job_id': job['id']})
+            return job
 
     def cancel(self, job_id):
         job = self.store.get('job', job_id)
@@ -456,7 +525,8 @@ class Jobs:
                 except CatalogError:
                     pass  # 单来源失败记录在来源状态中，不中断其它来源。
         # 比较持久快照标识，避免同步与正在运行的索引重叠时丢失更新。
-        associated = {w for s in sources.sources() for w in s['workspace_ids']}
+        associated = {w for s in sources.sources() if s['status'] == 'active' and s['auto_sync']
+                      for w in s['workspace_ids']}
         for workspace_id in associated:
             try:
                 index = self.store.get('index', workspace_id)
@@ -464,7 +534,7 @@ class Jobs:
                 index = {}
             if index.get('wiki_signature') != sources.signature(workspace_id):
                 try:
-                    self.enqueue(workspace_id, 'admin')
+                    self.enqueue(workspace_id, 'admin', automatic=True)
                 except CatalogError:
                     pass
 
@@ -512,7 +582,10 @@ class Jobs:
                         if workspace['status'] != 'active' or workspace['config_version'] != job['config_version']:
                             raise CatalogError('WORKSPACE_CHANGED', '项目配置已改变')
                         self.store.update('job', job['id'], {'status': 'running', 'started_at': now()})
-                        process = context.Process(target=run_index, args=(self.data_dir, self.database_url, workspace, job['id'], self.limits))
+                        # 准入时一次性切分文件级预算：含本任务在内的并发项目数。
+                        workers = self.file_workers_for(len(self.processes) + 1)
+                        process = context.Process(target=run_index, args=(
+                            self.data_dir, self.database_url, workspace, job['id'], self.limits, workers))
                         process.start()
                         self.processes[job['id']], self.started[job['id']] = process, time.monotonic()
                     except Exception:

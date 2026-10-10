@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import re
 import time
 from collections.abc import Callable, Iterable, Sequence
@@ -74,6 +75,8 @@ def _reindex_workspace_unlocked(
     projects: Sequence[str] | None = None,
     paths: Sequence[str] | None = None,
     parallel: bool = True,
+    pool: Any = None,
+    cache: Any = None,
     progress: Callable[[str, int, str], None] | None = None,
     generation: str = "",
 ) -> dict[str, Any]:
@@ -153,7 +156,7 @@ def _reindex_workspace_unlocked(
                 }
             )
             if path.suffix in JAVA_EXTENSIONS:
-                java_tasks.append((svc.name, rel, path))
+                java_tasks.append((svc.name, rel, path, cache))
             elif path.name in CONFIG_NAMES:
                 config_index.append({"project": svc.name, "path": rel, **parse_yaml_config(path)})
                 ledger.record(rel, STATUS_PARSED)
@@ -162,38 +165,33 @@ def _reindex_workspace_unlocked(
     mark("scan_scope")
 
     _report_progress(progress, "parsing", 30, f"正在解析 {len(java_tasks)} 个 Java 文件")
-    # Parse Java files (sequential or parallel)
-    if parallel and len(java_tasks) > 10:
-        from concurrent.futures import ThreadPoolExecutor, as_completed
+    # 解析 Java 文件。三级优先：显式工作池 > 遗留线程池 > 串行。
+    # 工作池走进程，是真正能提速 tree-sitter 的方式（该绑定不释放 GIL，
+    # 实测 8 线程比串行慢 24%，见 docs/benchmarks/V5_SERVICE_INDEX_STAGE_BASELINE.md）；
+    # 线程池只为尚未接入服务排程的调用方保留。两条并行路径都按任务顺序收敛结果，
+    # 使 symbol_index 顺序与串行一致——原地按完成顺序追加会让产物不可复现。
+    # 传入 cache 时逐文件按内容取用解析结果；命中与未命中的返回形状完全一致。
+    if pool is not None and pool.parallel and len(java_tasks) > 1:
+        parsed = pool.map(_parse_java_task, java_tasks)
+    elif parallel and len(java_tasks) > 10:
+        from concurrent.futures import ThreadPoolExecutor
 
         from .parallel import estimate_optimal_workers
-        workers = estimate_optimal_workers(len(java_tasks))
-        with ThreadPoolExecutor(max_workers=workers) as pool:
-            futures = {pool.submit(_parse_java_file, s, r, p): (s, r) for s, r, p in java_tasks}
-            for future in as_completed(futures):
-                svc_name, rel = futures[future]
-                result = future.result()
-                if result["symbol"]:
-                    symbol_index.append(result["symbol"])
-                    ledger.record(rel, STATUS_PARSED)
-                else:
-                    ledger.record(rel, "failed", "parse_error")
-                api_index.extend(result["apis"])
-                if result["pending_feign"]:
-                    pending_feigns.append(result["pending_feign"])
-                mq_index.extend(result["mq"])
+        with ThreadPoolExecutor(max_workers=estimate_optimal_workers(len(java_tasks))) as executor:
+            parsed = list(executor.map(_parse_java_task, java_tasks))
     else:
-        for svc_name, rel, path in java_tasks:
-            result = _parse_java_file(svc_name, rel, path)
-            if result["symbol"]:
-                symbol_index.append(result["symbol"])
-                ledger.record(rel, STATUS_PARSED)
-            else:
-                ledger.record(rel, "failed", "parse_error")
-            api_index.extend(result["apis"])
-            if result["pending_feign"]:
-                pending_feigns.append(result["pending_feign"])
-            mq_index.extend(result["mq"])
+        parsed = [_parse_java_task(task) for task in java_tasks]
+
+    for (_svc_name, rel, _path, _cache), result in zip(java_tasks, parsed, strict=True):
+        if result["symbol"]:
+            symbol_index.append(result["symbol"])
+            ledger.record(rel, STATUS_PARSED)
+        else:
+            ledger.record(rel, "failed", "parse_error")
+        api_index.extend(result["apis"])
+        if result["pending_feign"]:
+            pending_feigns.append(result["pending_feign"])
+        mq_index.extend(result["mq"])
 
     # Build constant map from completed symbol scan, then resolve feign target_service
     if partial:
@@ -503,6 +501,8 @@ def reindex_workspace(
     lock_timeout: float = 0.0,
     progress: Callable[[str, int, str], None] | None = None,
     materialize_assertions: bool = True,
+    pool: Any = None,
+    cache: Any = None,
     owner_actor: str = "local",
     owner_session_id: str = "",
 ) -> dict[str, Any]:
@@ -575,6 +575,8 @@ def reindex_workspace(
                 "projects": projects,
                 "paths": paths,
                 "parallel": parallel,
+                "pool": pool,
+                "cache": cache,
                 "generation": generation,
                 "progress": _coordinated_progress,
             }
@@ -924,18 +926,58 @@ def safe_read(path: Path, limit: int | None = None) -> str:
         return ""
 
 
-def _parse_java_file(project: str, rel: str, path: Path) -> dict[str, Any]:
-    """Parse a single Java file for deferred assembly into indexes."""
+def _parse_java_task(task: tuple[str, str, Path, Any]) -> dict[str, Any]:
+    """单参数适配层，供 ``WorkPool.map`` 与 ``ThreadPoolExecutor.map`` 共用。
+
+    工作池按引用 pickle 任务函数，故这里必须是模块级函数而非 lambda。
+    """
+    return _parse_java_file(*task)
+
+
+def _decode_java_result(payload: dict[str, Any], project: str, rel: str, text: str) -> dict[str, Any]:
+    """把缓存载荷还原成 ``_parse_java_file`` 的返回形状。
+
+    ``pending_feign`` 里的 ``JavaSymbol`` 不入缓存（避免把源码再存一份），
+    改为从缓存下来的 ``symbol`` 字典重建——调用方本来就有 ``text``，
+    延迟解析的 Feign 阶段需要的四元组因此能与未命中路径逐值一致。
+    """
+    symbol_payload = payload.get("symbol")
+    if not symbol_payload:
+        return {"symbol": None, "apis": [], "pending_feign": None, "mq": []}
+    symbol = JavaSymbol(**symbol_payload)
+    return {"symbol": symbol_payload,
+            "apis": list(payload.get("apis") or []),
+            "pending_feign": (project, rel, text, symbol) if payload.get("feign") else None,
+            "mq": list(payload.get("mq") or [])}
+
+
+def _parse_java_file(project: str, rel: str, path: Path, cache: Any = None) -> dict[str, Any]:
+    """Parse a single Java file for deferred assembly into indexes.
+
+    ``cache`` 为 :class:`memory_center.platform.parse_cache.ParseCache`。产物依赖
+    （项目, 相对路径, 源码）三项，三者都进缓存键——只按内容寻址会让内容相同但分属
+    不同项目的文件互相顶掉，产物里的 ``project``/``file`` 字段就会错位。
+    跨文件的 Feign 目标服务解析不在此缓存（它依赖 ``constant_map``）。
+    """
     try:
         text = safe_read(path)
+        digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
+        if cache is not None:
+            cached = cache.get(project, rel, digest)
+            if cached is not None:
+                return _decode_java_result(cached, project, rel, text)
         symbol = parse_java_symbols(project, rel, text)
         apis = [to_dict(x) for x in parse_controllers(project, rel, text, symbol)]
-        pending_feign = None
-        if "FeignClient" in symbol.annotations:
-            pending_feign = (project, rel, text, symbol)
         mq = [to_dict(x) for x in parse_mq_endpoints(project, rel, text, symbol)]
         mq.extend(to_dict(x) for x in parse_mq_producers(project, rel, text))
-        return {"symbol": to_dict(symbol), "apis": apis, "pending_feign": pending_feign, "mq": mq}
+        # 与原实现保持同一求值顺序：上面的解析器可能补齐 symbol，故产物在全部解析之后生成。
+        symbol_payload = to_dict(symbol)
+        has_feign = "FeignClient" in symbol.annotations
+        if cache is not None:
+            cache.put(project, rel, digest,
+                      value={"symbol": symbol_payload, "apis": apis, "mq": mq, "feign": has_feign})
+        return {"symbol": symbol_payload, "apis": apis,
+                "pending_feign": (project, rel, text, symbol) if has_feign else None, "mq": mq}
     except Exception:
         return {"symbol": None, "apis": [], "pending_feign": None, "mq": []}
 

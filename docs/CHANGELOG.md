@@ -1,5 +1,16 @@
 # Changelog / 更新日志
 
+## 5.0.0b11 — 2026-10-10
+
+- **文件级并行改为进程池**。tree-sitter 的 Python 绑定不释放 GIL：实测 4 线程仅 1.41×、8 线程比串行**慢 24%**，同规模 8 进程为 2.56×。`core/indexing/reindex.py` 的 Java 解析新增进程池通道（原线程池保留给未接入服务排程的调用方），并按任务顺序收敛结果，使 `symbol_index` 产物可复现——此前线程分支按完成顺序追加，产物不可复现。
+- **新增全局工作池 `platform/work_pool.py`**：项目并发与文件级并发共用同一份 CPU 预算。`max_file_workers` 默认 0 表示按预算在同时运行的项目之间切分（项目进程本身占一个槽位），显式正数表示每项目固定宽度；并发项目数超过预算时项目内退化为串行，而不是超卖。
+- **通用代码图解析入池**：`build_code_graph` 新增可选 `pool` 参数，传 `None` 时行为与既有串行实现逐值相同。
+- **单文件解析失败不再中止整次索引**：失败文件以 `failed:<异常类型>` 记入覆盖台账，其余文件照常发布，覆盖缺口可查；池级崩溃仍向上抛出，任务有序失败并保留上一代索引。
+- 实测（真实项目 3,552 文件 / 14.3 MiB）：`build_code_graph` 17.52s → 7.15s（2.45×），池化产物与串行产物深度相等。基线方法、阶段耗时与验收阈值见 [V5_SERVICE_INDEX_STAGE_BASELINE.md](benchmarks/V5_SERVICE_INDEX_STAGE_BASELINE.md)。
+- 管理 API `PUT /api/v1/job-settings` 新增 `max_file_workers`（0–64）；MCP tool schema 不变，取消与原子发布合同不变。
+
+English: File-level parallelism moves to a process pool because tree-sitter's Python binding does not release the GIL (measured: 4 threads 1.41×, 8 threads 24% slower than serial, 8 processes 2.56×). A new global `platform/work_pool.py` makes project concurrency and file-level concurrency share one CPU budget; `max_file_workers` defaults to 0 (split across concurrently running projects) and degrades to in-project serial rather than oversubscribing. `build_code_graph` takes an optional pool and remains value-identical to the serial path when omitted. A file that fails to parse is recorded in the coverage ledger instead of aborting the index, while a pool-level crash still fails the job and keeps the previous generation readable. Measured on a real 3,552-file / 14.3 MiB module: 17.52 s → 7.15 s (2.45×) with deep-equal output. `PUT /api/v1/job-settings` gains `max_file_workers` (0–64); MCP schemas, cancellation and atomic publishing are unchanged.
+
 ## 5.0.0b10 — 2026-10-10
 
 - 后台任务报告真实阶段、完成量、总量、单位和耗时；未知总量不伪造百分比。`progress` 现在代表当前阶段，新增 `progress_scope=phase`；旧任务仍保留旧记录。

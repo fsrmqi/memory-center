@@ -671,38 +671,40 @@ class _GraphOperations:
 
     def remove_by_scope(self, project_filter: set[str], path_filters: list[str], *, preserve_incoming: bool = False) -> set[str]:
         """Remove nodes/edges matching project or path scope. Returns removed node IDs."""
+        if not project_filter and not path_filters:
+            return set()
         with self.connect() as conn:
-            conditions: list[str] = []
-            args: list[Any] = []
-            if project_filter:
-                placeholders = ",".join("?" for _ in project_filter)
-                conditions.append(f"project IN ({placeholders})")
-                args.extend(sorted(project_filter))
-            for pf in path_filters:
-                normalized = pf.replace("\\", "/").strip("/")
-                # build_graph_store expands directory filters against the
-                # file index before reaching this low-level operation. The
-                # graph therefore receives canonical file paths and can use
-                # an index-only exact lookup instead of a LIKE table scan.
-                conditions.append("file_path = ?")
-                args.append(normalized)
-            if not conditions:
-                return set()
-            where = " OR ".join(conditions)
-            removed_ids = [row["id"] for row in conn.execute(f"SELECT id FROM nodes WHERE {where}", args).fetchall()]
+            # Temporary scope tables keep expression depth and parameter count
+            # constant regardless of the number of files or removed nodes.
+            for table in ("scope_projects", "scope_paths", "scope_nodes"):
+                conn.execute(f"CREATE TEMP TABLE IF NOT EXISTS {table} (value TEXT PRIMARY KEY)")
+                conn.execute(f"DELETE FROM {table}")
+            conn.executemany("INSERT OR IGNORE INTO scope_projects VALUES (?)",
+                             ((project,) for project in project_filter))
+            conn.executemany("INSERT OR IGNORE INTO scope_paths VALUES (?)",
+                             ((path.replace("\\", "/").strip("/"),) for path in path_filters))
+            # Preserve the existing project OR exact-file scope contract.
+            conn.execute("""INSERT OR IGNORE INTO scope_nodes
+                SELECT nodes.id FROM nodes JOIN scope_projects ON nodes.project=scope_projects.value
+                UNION
+                SELECT nodes.id FROM nodes JOIN scope_paths ON nodes.file_path=scope_paths.value""")
+            removed_ids = {row[0] for row in conn.execute("SELECT value FROM scope_nodes")}
             if not removed_ids:
                 return set()
-            placeholders = ",".join("?" for _ in removed_ids)
-            if preserve_incoming:
-                conn.execute(f"DELETE FROM edges WHERE source_id IN ({placeholders})", removed_ids)
-            else:
-                conn.execute(f"DELETE FROM edges WHERE source_id IN ({placeholders}) OR target_id IN ({placeholders})", removed_ids * 2)
-            conn.execute(f"DELETE FROM nodes WHERE id IN ({placeholders})", removed_ids)
+            predicate = "source_id IN (SELECT value FROM scope_nodes)"
+            if not preserve_incoming:
+                predicate += " OR target_id IN (SELECT value FROM scope_nodes)"
+            conn.execute(f"DELETE FROM edges WHERE {predicate}")
+            conn.execute("DELETE FROM nodes WHERE id IN (SELECT value FROM scope_nodes)")
             try:
-                conn.execute(f"DELETE FROM node_search WHERE id IN ({placeholders})", removed_ids)
-            except sqlite3.OperationalError:
-                pass
-            return set(removed_ids)
+                conn.execute("DELETE FROM node_search WHERE id IN (SELECT value FROM scope_nodes)")
+            except sqlite3.OperationalError as exc:
+                # FTS is optional; other errors must roll back the whole cleanup.
+                if "no such table: node_search" not in str(exc):
+                    raise
+            for table in ("scope_projects", "scope_paths", "scope_nodes"):
+                conn.execute(f"DELETE FROM {table}")
+            return removed_ids
 
     def partial_rebuild(
         self,

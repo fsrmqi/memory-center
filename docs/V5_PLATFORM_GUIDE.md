@@ -1,6 +1,6 @@
 # 5.0 多项目知识服务使用指南
 
-> 当前：5.0.0b10，开发测试版本；不兼容 4.x 接入或导入历史数据。
+> 当前：5.0.0b11，开发测试版本；不兼容 4.x 接入或导入历史数据。
 > 用户已授权连续完成方案，无需每个切片再次确认。此指南描述当前服务入口；旧版文档仅作为核心算法背景。
 
 ## 安装与运行
@@ -210,8 +210,8 @@ English: Separate chat and embedding configurations. Remote chat models receive 
 
 ## 任务进度与并发 / Task progress and concurrency（b10）
 
-`GET/PUT /api/v1/job-settings` 配置 `max_projects`（1–64）与 `max_queued`（0–100000，0 表示不限）。默认基于可用 CPU（含 cgroup v2 配额）选择 1–4 个项目进程。设置立即影响新任务，降低并发不终止已运行任务。此版本单项目专用分析仍按服务串行；文件级进程池与持久解析缓存属于下一步，不声称已实现。
+`GET/PUT /api/v1/job-settings` 配置 `max_projects`（1–64）、`max_queued`（0–100000，0 表示不限）与 `max_file_workers`（0–64）。默认基于可用 CPU（含 cgroup v2 配额）选择 1–4 个项目进程。设置立即影响新任务，降低并发不终止已运行任务。自 b11 起单项目内的文件解析走进程池：`max_file_workers=0` 表示把同一份 CPU 预算在同时运行的项目之间切分（项目进程本身占一个槽位），填正数表示每项目固定宽度。并行的只能是进程——tree-sitter 的 Python 绑定不释放 GIL，实测 8 线程比串行慢 24%。持久解析缓存仍属下一步。
 
 任务新增 `phase/completed/total/unit/detail/progress_scope/elapsed_seconds/heartbeat_at`；`progress_scope=phase` 时 `progress` 仅为当前阶段完成比例，并非总体耗时比例。`total=null` 表示尚无法确定总量；扫描、解析、关系、服务、向量等阶段分别计数。专用分析显示已完成服务数及当前内部阶段；发布阶段为不确定进度。成功仍为 100%。资源上限继续为可选配置，默认关闭。
 
-English: Job progress is explicitly per-phase, with real counters and indeterminate totals where necessary. Project concurrency is configurable and running jobs are retained when reducing capacity. Service-level analysis remains sequential in this release; file process pools and durable parse caches are future work.
+English: Job progress is explicitly per-phase, with real counters and indeterminate totals where necessary. Project concurrency is configurable and running jobs are retained when reducing capacity. Since b11, file parsing inside one project runs on a process pool (threads cannot help — tree-sitter does not release the GIL); `max_file_workers=0` splits one CPU budget across concurrently running projects, while a positive value pins a per-project width. Durable parse caches remain future work.

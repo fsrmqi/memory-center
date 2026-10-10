@@ -8,32 +8,83 @@ from pathlib import Path
 
 from memory_center.core.indexing.language_registry import get_language_spec_for_extension
 from memory_center.core.indexing.structural_parser import TreeSitterStructuralParser
+from memory_center.platform.parse_cache import ParseCache, decode_structural, encode_structural
+
+# 子进程内按语言缓存解析器；tree-sitter 解析器构造相对昂贵，
+# 每个文件重建会让池化收益被构造开销吃掉。
+_CHILD_PARSERS: dict[str, TreeSitterStructuralParser] = {}
 
 
-def build_code_graph(root, files, progress=None):
-    parsers, units, symbols, coverage = {}, {}, [], {}
-    parse_files = [p for p in files if get_language_spec_for_extension(p.suffix) is not None]
-    for number, path in enumerate(parse_files, 1):
-        spec = get_language_spec_for_extension(path.suffix)
-        if spec is None:
-            continue
-        if spec.name not in parsers:
-            parsers[spec.name] = TreeSitterStructuralParser(spec.name)
-        parser = parsers[spec.name]
-        relative = path.relative_to(root).as_posix()
-        text = path.read_text(encoding='utf-8', errors='replace')
+def parse_file_unit(item: tuple[str, str, ParseCache | None]):
+    """解析单个文件——工作池任务，故必须是模块级函数（spawn 按引用 pickle）。
+
+    ``item`` 为 ``(relative, abspath, cache)``。返回
+    ``(relative, language, status, content_hash, result)``。
+    单文件异常在此兜住并返回 ``status='failed:<ExcType>'`` + ``result=None``，
+    使一个坏文件只影响自己的覆盖状态，不牵连同批其余文件。
+    串行与池化两条路径调用的是同一个函数，这是等价性门槛的落点。
+
+    ``cache`` 非空时按（语言, 内容 sha256）取用解析结果，命中即跳过 tree-sitter；
+    命中与未命中返回**逐值相等**的对象，故缓存只影响速度（见 parse_cache 模块）。
+    解析器不可用（未装 tree-sitter、语言无绑定）时**不落缓存**——否则「缺绑定」
+    会被固化成持久结果，装上绑定后仍读回空解析。
+    """
+    relative, abspath, cache = item
+    spec = get_language_spec_for_extension(Path(abspath).suffix)
+    if spec is None:
+        return relative, '', 'unsupported', '', None
+    try:
+        text = Path(abspath).read_text(encoding='utf-8', errors='replace')
+        digest = hashlib.sha256(text.encode()).hexdigest()
+        parser = _CHILD_PARSERS.get(spec.name)
+        if parser is None:
+            parser = TreeSitterStructuralParser(spec.name)
+            _CHILD_PARSERS[spec.name] = parser
+        if cache is not None and parser.available:
+            cached = cache.get(spec.name, digest)
+            if cached is not None:
+                result = decode_structural(cached)
+                return relative, spec.name, result.raw.get('parse_status', 'unavailable'), digest, result
         result = parser.parse(text, relative)
         status = result.raw.get('parse_status', 'unavailable') if parser.available else 'unavailable'
-        coverage[relative] = {'language': spec.name, 'status': status, 'hash': hashlib.sha256(text.encode()).hexdigest()}
-        units[relative] = result
-        for kind, declarations in [('Class', result.classes), ('Function', result.functions)]:
-            for declaration in declarations:
-                key = f'{relative}:{kind}:{declaration.qualified_name}:{declaration.line}'
-                symbols.append({'id': 'symbol_' + hashlib.sha256(key.encode()).hexdigest(), 'type': kind,
-                                'name': declaration.name, 'qualified_name': declaration.qualified_name,
-                                'parent': declaration.qualified_name.rpartition('.')[0] if result.language == 'go' and declaration.kind == 'method' else declaration.parent_qualified_name, 'path': relative,
-                                'line': declaration.line, 'end_line': declaration.end_line,
-                                'language': spec.name, 'module': result.module or '', 'hash': coverage[relative]['hash']})
+        if cache is not None and parser.available:
+            cache.put(spec.name, digest, value=encode_structural(result))
+        return relative, spec.name, status, digest, result
+    except Exception as exc:
+        return relative, spec.name, f'failed:{type(exc).__name__}', '', None
+
+
+def build_code_graph(root, files, progress=None, pool=None, cache=None):
+    """构建通用代码图。
+
+    ``pool`` 为 :class:`memory_center.platform.work_pool.WorkPool`；为 ``None``
+    或宽度为 1 时就地串行。两条路径产出的 ``units``/``symbols``/``coverage``
+    必须逐值相等——``WorkPool.map`` 保持输入顺序，故 ``units`` 的插入顺序也一致，
+    下游关系解析的边顺序因此不变。
+
+    ``cache`` 为 :class:`memory_center.platform.parse_cache.ParseCache`；只缓存
+    文件级结构事实。跨文件关系（导入绑定落到哪个文件、调用边）留在下面的归并
+    阶段每次重算，因此改动文件的影响不会被缓存掩盖。
+    """
+    units, symbols, coverage = {}, [], {}
+    parse_files = [p for p in files if get_language_spec_for_extension(p.suffix) is not None]
+    units_input = [(p.relative_to(root).as_posix(), str(p), cache) for p in parse_files]
+    if pool is not None and pool.parallel:
+        outcomes = pool.map(parse_file_unit, units_input)
+    else:
+        outcomes = [parse_file_unit(item) for item in units_input]
+    for number, (relative, language, status, digest, result) in enumerate(outcomes, 1):
+        coverage[relative] = {'language': language, 'status': status, 'hash': digest}
+        if result is not None:
+            units[relative] = result
+            for kind, declarations in [('Class', result.classes), ('Function', result.functions)]:
+                for declaration in declarations:
+                    key = f'{relative}:{kind}:{declaration.qualified_name}:{declaration.line}'
+                    symbols.append({'id': 'symbol_' + hashlib.sha256(key.encode()).hexdigest(), 'type': kind,
+                                    'name': declaration.name, 'qualified_name': declaration.qualified_name,
+                                    'parent': declaration.qualified_name.rpartition('.')[0] if result.language == 'go' and declaration.kind == 'method' else declaration.parent_qualified_name, 'path': relative,
+                                    'line': declaration.line, 'end_line': declaration.end_line,
+                                    'language': language, 'module': result.module or '', 'hash': digest})
         if progress:
             progress('parsing', number, len(parse_files), 'files')
     by_file = {path: [] for path in units}

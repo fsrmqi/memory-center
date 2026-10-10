@@ -60,6 +60,8 @@ class ApplyOrganizeInput(Input):
 class JobSettingsInput(Input):
     max_projects: int = Field(ge=1, le=64)
     max_queued: int = Field(default=0, ge=0, le=100000)
+    # 0 = 按 CPU 预算在并发项目间自动切分；正数 = 每项目固定文件级 worker 数。
+    max_file_workers: int = Field(default=0, ge=0, le=64)
 
 
 class AnalysisSettingsInput(Input):
