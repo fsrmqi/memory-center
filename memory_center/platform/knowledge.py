@@ -2,6 +2,8 @@
 import base64
 import hashlib
 import io
+import json
+import math
 import zipfile
 from datetime import datetime
 from pathlib import Path
@@ -43,6 +45,45 @@ def parse_document(filename, content, encoding='text'):
 class Knowledge:
     def __init__(self, store, data_dir):
         self.store, self.data_dir = store, data_dir
+
+    def list_page(self, workspace_id, kind, page=1, page_size=20, query='', status=''):
+        """对项目内容和已关联目录统一分页，不提前加载全部正文。"""
+        from memory_center.platform.wiki_sources import WikiSources
+        sources = {s['id']: s['name'] for s in WikiSources(self.store).sources()
+                   if kind == 'wiki' and s['status'] == 'active' and workspace_id in s['workspace_ids']}
+        def field(name):
+            return f"payload::jsonb->>'{name}'" if self.store.db.url else f"json_extract(payload,'$.{name}')"
+        scope = 'workspace_id=?'
+        args = [kind, workspace_id]
+        if sources:
+            scope += f" OR (workspace_id IN ({','.join('?' for _ in sources)}) AND {field('status')}='active')"
+            args.extend(sources)
+        predicate = f'kind=? AND ({scope})'
+        if status:
+            predicate += f" AND {field('status')}=?"
+            args.append(status)
+        else:
+            predicate += f" AND COALESCE({field('status')},'active')!='deleted'"
+        if query.strip():
+            # LIKE 中的用户通配符按文字匹配，参数绑定防止 SQL 注入。
+            pattern = '%' + query.strip().lower().replace('!', '!!').replace('%', '!%').replace('_', '!_') + '%'
+            predicate += f" AND (LOWER(COALESCE({field('title')},'')) LIKE ? ESCAPE '!' OR LOWER(COALESCE({field('relative_path')},'')) LIKE ? ESCAPE '!')"
+            args.extend([pattern, pattern])
+        with self.store.db.connection() as connection:
+            if self.store.db.url:
+                connection.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
+            total = connection.execute(f'SELECT COUNT(*) FROM records WHERE {predicate}', args).fetchone()[0]
+            pages = max(1, math.ceil(total / page_size))
+            page = min(page, pages)
+            rows = connection.execute(f'SELECT payload FROM records WHERE {predicate} ORDER BY updated_at DESC,id DESC LIMIT ? OFFSET ?',
+                                      (*args, page_size, (page - 1) * page_size)).fetchall()
+        items = []
+        for row in rows:
+            item = json.loads(row[0])
+            if item['workspace_id'] in sources:
+                item.update(workspace_id=workspace_id, source_name=sources[item['workspace_id']])
+            items.append(item)
+        return {'items': items, 'total': total, 'page': page, 'page_size': page_size, 'pages': pages}
 
     def document(self, workspace_id, filename, content, encoding='text'):
         try:

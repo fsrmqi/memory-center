@@ -1,5 +1,6 @@
 """服务记录、修订与索引发布的事务边界。"""
 import json
+import math
 from datetime import datetime, timezone
 from uuid import uuid4
 
@@ -37,6 +38,32 @@ class PlatformStore:
         sql += ' ORDER BY updated_at DESC LIMIT ?'
         with self.db.connection() as connection:
             return [json.loads(row[0]) for row in connection.execute(sql, (*args, limit)).fetchall()]
+
+    def list_page(self, kind, page=1, page_size=20, query='', status='', fields=('name',), workspace_id=None):
+        def field(name):
+            if name not in {'name', 'id', 'workspace_id', 'description', 'relative_path', 'status'}:
+                raise ValueError('Unsupported record field')
+            return f"payload::jsonb->>'{name}'" if self.db.url else f"json_extract(payload,'$.{name}')"
+        where, args = 'kind=?', [kind]
+        if workspace_id is not None:
+            where += ' AND workspace_id=?'
+            args.append(workspace_id)
+        if status:
+            where += f" AND {field('status')}=?"
+            args.append(status)
+        if query.strip():
+            pattern = '%' + query.lower().strip().replace('!', '!!').replace('%', '!%').replace('_', '!_') + '%'
+            where += ' AND (' + ' OR '.join(f"LOWER(COALESCE({field(f)},'')) LIKE ? ESCAPE '!'" for f in fields) + ')'
+            args.extend([pattern] * len(fields))
+        with self.db.connection() as connection:
+            if self.db.url:
+                connection.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
+            total = connection.execute(f'SELECT COUNT(*) FROM records WHERE {where}', args).fetchone()[0]
+            pages = max(1, math.ceil(total / page_size))
+            page = min(page, pages)
+            rows = connection.execute(f'SELECT payload FROM records WHERE {where} ORDER BY updated_at DESC,id DESC LIMIT ? OFFSET ?',
+                                      (*args, page_size, (page - 1) * page_size)).fetchall()
+        return {'items': [json.loads(r[0]) for r in rows], 'page': page, 'page_size': page_size, 'pages': pages, 'total': total}
 
     def _put(self, connection, kind, item):
         connection.execute('''INSERT INTO records VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET

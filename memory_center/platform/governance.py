@@ -46,6 +46,16 @@ class Governance:
             raise CatalogError('FORBIDDEN', '全局知识与 Skill 管理仅供管理员使用')
         if tool not in ASSISTANT_TOOLS or len(json.dumps(parameters, ensure_ascii=False)) > 1_000_000:
             raise CatalogError('GOVERNANCE_INVALID', '工具或参数预算无效')
+        if tool == 'assistant_skill' and parameters.get('action') in {'discovered', 'discovered_read'}:
+            from memory_center.platform.skill_discovery import SkillDiscovery
+            discovery = SkillDiscovery(self.store, self.base)
+            if parameters['action'] == 'discovered_read':
+                return discovery.read(parameters.get('name', ''), allow_disabled=False)
+            # MCP 只暴露已启用且扫描目录启用的条目；管理页面仍可查看停用条目。
+            sources = {s['id'] for s in discovery.sources() if s['enabled']}
+            rows = self.store.list('discovered_skill', limit=20001)
+            return {'items': [i for i in rows[:20000] if i['status'] == 'enabled' and i['source_id'] in sources],
+                    'truncated': len(rows) > 20000}
         if tool == 'assistant_skill' and parameters.get('action') in {'remove', 'published', 'export', 'read'}:
             try:
                 return self.skill_lifecycle(parameters)
@@ -86,6 +96,8 @@ class Governance:
                     if p.is_symlink() or p.parent.is_symlink():
                         continue
                     manifest = p.parent / 'publication.json'
+                    if not manifest.is_file() or manifest.is_symlink():
+                        continue  # 已有全局 Skill 通过显式发现目录控制，不自动视为受管发布。
                     items.append({'name': p.parent.name, 'status': '已启用',
                                   'publication': json.loads(manifest.read_text()) if manifest.exists() else None})
                 return {'items': items}
@@ -97,6 +109,8 @@ class Governance:
                 path = target_root / skill_catalog._safe_name(name)
                 if not path.is_dir() or path.is_symlink():
                     raise CatalogError('SKILL_NOT_FOUND', 'Skill 不存在')
+                if published and (not (path / 'publication.json').is_file() or (path / 'publication.json').is_symlink()):
+                    raise CatalogError('SKILL_NOT_MANAGED', '已有全局 Skill 请通过发现目录审阅与启用')
                 body_path = path / 'SKILL.md'
                 if not body_path.is_file() or body_path.is_symlink():
                     raise CatalogError('SKILL_NOT_FOUND', 'Skill 不存在')
@@ -129,6 +143,8 @@ class Governance:
             if action == 'remove':
                 if parameters.get('published'):
                     path = self.published / skill_catalog._safe_name(name)
+                    if not (path / 'publication.json').is_file() or (path / 'publication.json').is_symlink():
+                        raise CatalogError('SKILL_NOT_MANAGED', '发现的全局 Skill 只能在本服务停用，不能移除原文件')
                 if not path.is_dir() or path.is_symlink():
                     raise CatalogError('SKILL_NOT_FOUND', 'Skill 不存在')
                 if not parameters.get('confirm'):

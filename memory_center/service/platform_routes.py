@@ -1,7 +1,7 @@
 """5.0 管理页面 API：全部沿用本机管理员认证。"""
 from typing import Literal
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
 
 from memory_center.core.foundation.catalog import CatalogError
@@ -168,7 +168,13 @@ def platform_router():
         return service.configure_analysis(service.administrator(), workspace_id, body.engine, body.revision)
 
     @router.get('/jobs')
-    def jobs(request: Request):
+    def jobs(request: Request, page: int | None = Query(default=None, ge=1),
+             page_size: int = Query(default=20, ge=1, le=50), q: str = Query(default='', max_length=200),
+             status: Literal['', 'queued', 'running', 'succeeded', 'failed', 'cancelled', 'interrupted'] = '',
+             workspace_id: str = Query(default='', max_length=100)):
+        if page is not None:
+            return platform(request).store.list_page('job', page, page_size, q, status,
+                                                     ('id', 'workspace_id'), workspace_id or None)
         return {'items': platform(request).store.list('job', limit=1000)}
 
     @router.post('/workspaces/{workspace_id}/index')
@@ -220,8 +226,13 @@ def platform_router():
         return service.analyze(service.administrator(), workspace_id, body.query)
 
     @router.get('/workspaces/{workspace_id}/knowledge/{kind}')
-    def items(workspace_id: WorkspaceID, kind: Literal['document', 'wiki', 'memory'], request: Request):
+    def items(workspace_id: WorkspaceID, kind: Literal['document', 'wiki', 'memory'], request: Request,
+              page: int | None = Query(default=None, ge=1), page_size: int = Query(default=20, ge=1, le=50),
+              q: str = Query(default='', max_length=200),
+              status: Literal['', 'active', 'pending', 'confirmed', 'rejected', 'deleted'] = ''):
         service = scoped(request, workspace_id)
+        if page is not None:
+            return service.knowledge.list_page(workspace_id, kind, page, page_size, q, status)
         values = service.store.list(kind, workspace_id, limit=1000)
         if kind == 'wiki':
             values.extend(service.wiki_sources.pages(workspace_id))

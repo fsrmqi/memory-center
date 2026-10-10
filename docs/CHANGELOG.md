@@ -1,5 +1,18 @@
 # Changelog / 更新日志
 
+## 5.0.0b9 — 2026-10-10
+
+- 项目列表、服务划分、后台任务、Wiki 目录、候选/已发布 Skill、全局 Skill 发现和 MCP 凭据支持分页。后台任务与发现记录在服务端分页，受限元数据列表在页面内分页。
+- 新增可控全局 Skill 发现：登记多个扫描目录，目录启停、手动扫描、内容预览、单条启停；不修改宿主文件。新发现或内容变更的条目默认停用，来源暂停时 MCP 不提供这些 Skill。
+- `published` / 已发布读取与移除只管理带 `publication.json` 的受管发布内容；已有全局目录内容改由发现流程启停，避免修改原文件。MCP 参数 schema 不变。
+- 每轮交付递增 beta 小版本；本轮 5.0.0b9，仅进行桌面界面验收。
+- Added pagination across admin lists and opt-in global Skill discovery. Source and item controls affect only Memory Center; host files are read-only. New or changed items require explicit enabling. Desktop QA is the target.
+
+- 管理导航分组并区分全局和项目页面；项目切换仅出现在知识库、Wiki、长期记忆。
+- 内容库改为服务端分页、标题/路径与状态筛选、独立 Markdown 阅读区及编辑弹窗；每页可选择 10/20/50 条。
+- 分页读取覆盖项目记录与关联的活动 Wiki 来源，稳定排序，不受旧列表 1000 条展示上限影响；原不带分页参数的管理 API 和 MCP schema 保持不变。
+- Admin navigation separates global and project views. Knowledge libraries provide server-side pagination, filters, a Markdown reader and modal editing; existing unpaged API and MCP contracts remain unchanged.
+
 ## 5.0.0b8 — 2026-10-10
 
 - 旧索引清理与发布使用共享代际锁；取消任务删除前先终止并回收进程，删除失败保留任务记录。

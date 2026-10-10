@@ -10,8 +10,9 @@
 2. 变更 MCP tool schema 时必须保持兼容，若不兼容必须在 `README.md`、`docs/CHANGELOG.md` 或 `docs/` 中明确说明。
 3. 修改索引器、规则匹配、服务层、CLI 或 MCP Server 时必须补充或更新测试。
 4. 所有面向用户的说明尽量保持中英文双语。
-5. 不要提交真实私有项目生成的数据（如 `memory_center/service/static/` 构建产物与私有 workspace 的索引/记忆）。
-6. 不要把私有路径、公司内部服务名、真实密钥写进示例。
+5. 每次交付更新递增当前小版本（beta 阶段递增 bN），同步包、前端、Compose 与当前版本文档；前端验收以桌面为目标，不要求手机尺寸。
+6. 不要提交真实私有项目生成的数据（如 `memory_center/service/static/` 构建产物与私有 workspace 的索引/记忆）。
+7. 不要把私有路径、公司内部服务名、真实密钥写进示例。
 
 > `CLAUDE.md` 等其它宿主说明文件只保留宿主自动管理的说明块，正文以本文件为准，避免重复维护。
 
@@ -25,8 +26,9 @@ Before making broad changes:
 2. Keep MCP tool schemas backward-compatible unless a breaking change is explicitly documented in `README.md`, `docs/CHANGELOG.md`, or `docs/`.
 3. Add or update tests when changing the indexer, rule matching, service layer, CLI, or MCP server.
 4. Keep public-facing documentation bilingual when possible.
-5. Do not commit generated data from private workspaces (e.g. `memory_center/service/static/` build output, private workspace index/memory).
-6. Do not include private paths, internal service names, or secrets in examples.
+5. Increment the current small version for every delivery (bN during beta), synchronize package/frontend/Compose/current docs, and target desktop frontend QA.
+6. Do not commit generated data from private workspaces (e.g. `memory_center/service/static/` build output, private workspace index/memory).
+7. Do not include private paths, internal service names, or secrets in examples.
 
 > `CLAUDE.md` and other host instruction files keep only the host-managed blocks; the canonical text is maintained here to avoid divergent duplicates.
 

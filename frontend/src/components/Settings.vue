@@ -2,6 +2,8 @@
 import { onMounted, ref } from 'vue'
 import { action, api, type Workspace, type Item } from '../api'
 
+import Pagination from './Pagination.vue'
+import { usePagination } from '../pagination'
 const serverOrigin = location.origin
 const localHttp = JSON.stringify({ mcpServers: { 'memory-center': { url: serverOrigin + '/mcp' } } }, null, 2)
 const localStdio = JSON.stringify({ mcpServers: { 'memory-center': { command: 'memory-center-mcp', env: { MEMORY_CENTER_URL: serverOrigin + '/mcp' } } } }, null, 2)
@@ -12,6 +14,7 @@ const settings = ref({ url: '', model: '', protocol: 'ollama', dimensions: 1024 
 const backend = ref('')
 const runtime = ref<any>(null)
 const items = ref<Item[]>([])
+const pager=usePagination(()=>items.value)
 const selected = ref<string[]>([])
 const name = ref('')
 const writable = ref(false)
@@ -123,7 +126,7 @@ function connection() { return JSON.stringify({ mcpServers: { 'memory-center': {
           <tr><th>名称</th><th>项目范围</th><th>权限</th><th>状态</th><th>操作</th></tr>
         </thead>
         <tbody>
-          <tr v-for="item in items" :key="item.id">
+          <tr v-for="item in pager.rows.value" :key="item.id">
             <td>{{ item.name }}</td>
             <td>{{ item.workspace_ids.map((id: string) => workspaces.find(w => w.workspace_id === id)?.name || id).join('、') }}</td>
             <td>{{ item.writable ? '读写' : '只读' }}</td>
@@ -133,5 +136,6 @@ function connection() { return JSON.stringify({ mcpServers: { 'memory-center': {
         </tbody>
       </table>
     </div>
+    <Pagination :page="pager.page.value" :page-size="pager.pageSize.value" :total="pager.total.value" :pages="pager.pages.value" label="MCP 凭据" @change="pager.page.value=$event" @size="pager.pageSize.value=$event;pager.reset()"/>
   </template>
 </template>

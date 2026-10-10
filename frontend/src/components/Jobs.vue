@@ -1,27 +1,32 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref } from 'vue'
 import { api, action, failure, notice, states, type Item } from '../api'
+import Pagination from './Pagination.vue'
+const page=ref(1),pageSize=ref(10),pages=ref(1),total=ref(0),filter=ref(''),status=ref(''),appliedFilter=ref(''),appliedStatus=ref(''),loading=ref(false)
+let sequence=0
+async function load(target=page.value){const request=++sequence;loading.value=true;try{const data=await api('/jobs?'+new URLSearchParams({page:String(target),page_size:String(pageSize.value),q:appliedFilter.value,status:appliedStatus.value}));if(request!==sequence)return;items.value=data.items;page.value=data.page;pages.value=data.pages;total.value=data.total}finally{if(request===sequence)loading.value=false}}
+async function applyFilter(){appliedFilter.value=filter.value;appliedStatus.value=status.value;await action(()=>load(1),'')}
 const items = ref<Item[]>([])
 async function refresh() {
-  await action(async () => { items.value = (await api('/jobs')).items }, '任务状态已更新')
+  await action(async () => { await load() }, '任务状态已更新')
 }
 async function operation(item: Item, op: string) {
   await action(async () => {
     await api(`/jobs/${item.id}/${op}`, 'POST')
-    items.value = (await api('/jobs')).items
+    await load()
   })
 }
 async function remove(item: Item) {
   await action(async () => {
     await api(`/jobs/${item.id}`, 'DELETE')
-    items.value = (await api('/jobs')).items
+    await load()
   }, '任务已删除；若其索引已过期，可用“清理旧索引”回收空间')
 }
 async function prune() {
   let message = '旧索引已清理'
   await action(async () => {
     const result = await api('/jobs/prune', 'POST')
-    items.value = (await api('/jobs')).items
+    await load()
     message = `已清理 ${result.removed} 个旧索引目录，释放 ${(result.freed_bytes / 1048576).toFixed(1)} MiB`
   })
   // action() 的固定消息在调用时求值，这里在任务完成后回填含释放空间的消息。
@@ -31,10 +36,10 @@ let timer: ReturnType<typeof setInterval>
 onMounted(() => {
   refresh()
   timer = setInterval(async () => {
-    try { items.value = (await api('/jobs')).items } catch { /* 轮询失败不打断页面 */ }
+    try { if(!loading.value)await load() } catch { /* 轮询失败不打断页面 */ }
   }, 3000)
 })
-onUnmounted(() => clearInterval(timer))
+onUnmounted(() => {sequence++;clearInterval(timer)})
 </script>
 <template>
   <div class="page-title">
@@ -44,6 +49,7 @@ onUnmounted(() => clearInterval(timer))
       <button @click="prune">清理旧索引</button>
     </div>
   </div>
+  <form class="toolbar" @submit.prevent="applyFilter"><input v-model="filter" aria-label="筛选任务" placeholder="搜索任务或项目 ID"><select v-model="status" aria-label="任务状态" @change="applyFilter"><option value="">全部状态</option><option v-for="s in ['queued','running','succeeded','failed','cancelled','interrupted']" :key="s" :value="s">{{states[s]}}</option></select><button>筛选</button></form>
   <div class="table-wrap">
     <table>
       <thead>
@@ -64,5 +70,6 @@ onUnmounted(() => clearInterval(timer))
       </tbody>
     </table>
   </div>
+  <Pagination :page="page" :page-size="pageSize" :total="total" :pages="pages" label="后台任务" :busy="loading" @change="action(()=>load($event),'')" @size="pageSize=$event;action(()=>load(1),'')"/>
   <p v-if="!items.length" class="empty">没有后台任务。在项目页面启动索引。</p>
 </template>

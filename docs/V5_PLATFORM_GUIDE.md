@@ -1,13 +1,13 @@
 # 5.0 多项目知识服务使用指南
 
-> 当前：5.0.0b8，开发测试版本；不兼容 4.x 接入或导入历史数据。
+> 当前：5.0.0b9，开发测试版本；不兼容 4.x 接入或导入历史数据。
 > 用户已授权连续完成方案，无需每个切片再次确认。此指南描述当前服务入口；旧版文档仅作为核心算法背景。
 
 ## 安装与运行
 
 ```sh
 python3 -m venv .venv
-.venv/bin/python -m pip install /path/to/memory_center-5.0.0b8-py3-none-any.whl
+.venv/bin/python -m pip install /path/to/memory_center-5.0.0b9-py3-none-any.whl
 .venv/bin/memory-center-service --data-dir /path/to/new-service-data
 ```
 
@@ -118,7 +118,7 @@ docker compose -f compose.yaml -f compose.postgres.yaml exec -T postgres pg_dump
 
 协议夹具只验证嵌入数量/维度、模型档案隔离、数据库向量距离、HNSW 与融合，不代表真实语义质量。当前网络的 Ollama registry 证书校验失败，未关闭 TLS 验证；真实模型语义评测未完成。没有宣称图片中的 IM、浏览器沙箱、联网搜索、Neo4j、所有外部模型厂商等已实现，它们不属于此次 Memory Center 服务化核心闭环。
 
-## 多语言代码查询（5.0.0b8）
+## 多语言代码查询（5.0.0b9）
 
 借鉴 GitNexus 的语言注册、Vue 脚本块提取和分阶段引用解析。每次索引先提取声明与导入绑定，再连接调用，写入 generation 的 `code-graph.json`；文件路径、符号类型、限定名和声明行组成符号身份，避免多个文件的同名函数覆盖。Java 的 Spring/Feign/MQ 专用分析继续保留。
 
@@ -176,3 +176,23 @@ English: b6 integrates Wiki governance and Skill lifecycle into the single Memor
 清理旧索引会保留当前生效代际和尚未退出的索引进程。删除取消任务时先等待进程退出，失败时保留记录可重试；文件系统删除失败不会计为成功释放空间。
 
 English: Choose Auto, Generic or Java/Spring analysis per project. Auto routes by a unique anchor's language. Settings do not invalidate the index. All resource limits default to zero and become active only when explicitly configured. Generation cleanup is serialized with publication and worker lifecycle management.
+
+## 管理页阅读与分页 / Admin reading and pagination
+
+顶部项目切换仅在知识库、Wiki、长期记忆中显示；项目管理、后台任务、Wiki 目录、知识治理、Skill 与服务设置使用各自页面的范围。已保存内容默认每页 10 条，可切换 20/50 条，按最近更新时间及记录 ID 稳定排序；标题/相对路径和状态筛选作用于全部匹配记录。默认隐藏已移除内容，仍可通过状态筛选查看。正文在独立阅读区展示，编辑使用弹窗；目录来源保持只读。
+
+管理接口 `GET /api/v1/workspaces/{workspace_id}/knowledge/{kind}` 可选参数 `page>=1`、`page_size=1..50`、`q`（最多 200 字符）、`status`。指定 `page` 时返回 `items,total,page,page_size,pages`，页码超出末页时自动回到末页，空结果为第 1/1 页。项目 Wiki 与关联的活动目录来源合并分页；不带 `page` 保留原响应合同。
+
+Project selection appears only in document, Wiki and long-term memory views. Saved content uses server-side pagination, title/path and status filters, a separate Markdown reader and modal editing. Linked directory pages remain read-only. The optional paged API returns items, total, page, page_size and pages; the existing unpaged contract is unchanged.
+
+## 全局 Skill 发现与控制 / Global Skill discovery
+
+在“Skill 管理 → 全局 Skill 发现”登记服务可访问的一个或多个目录；默认扫描关闭，手动启用后点击扫描。Docker 使用挂载后的容器路径。扫描寻找 `SKILL.md`，支持深度 0–8（默认 4），不跟随符号链接、不执行内容或脚本，最多 20000 个目录项，单文档最多 1 MiB；失败保留上次完整快照并明确报错。发现元数据保存在服务数据库，原目录只读。
+
+新发现的 Skill 默认停用；查看正文后可单条启用或停用。来源暂停后不通过 MCP 提供其 Skill；内容发生变化后，读取会报告陈旧，重新扫描会将变更条目停用，需要重新审阅。文件缺失显示为缺失，移除扫描目录只删除服务元数据。此控制不影响 Codex/Claude 等宿主的原有启用状态。
+
+`assistant_skill(action="discovered")` 只列出目录与条目均启用的发现结果，最多检查 20000 条元数据并报告 `truncated`；完整翻页使用管理页面。`assistant_skill(action="discovered_read", name="discovered_<id>")` 读取已启用条目并核对内容哈希，参数 schema 不变。`published` / `read(published=true)` / `remove(published=true)` 现在只作用于带 `publication.json` 的受管发布内容；既有全局目录内容改由发现流程控制，不能通过发布移除动作移动原文件。
+
+Global discovery is opt-in and read-only. Administrators register directories, explicitly scan, review and enable individual Skills. New or changed items default to disabled; paused sources and stale files are excluded from MCP reads. Controls affect only Memory Center. Published lifecycle actions now apply only to managed publications; external global files use discovery and are never moved or deleted.
+
+分页覆盖项目、服务划分、后台任务、知识内容、Wiki 目录、扫描目录、发现 Skill、候选/发布 Skill 及凭据。后台任务与发现结果在数据库分页；已有限额的元数据集合在客户端分页，正文只按知识页或单份 Skill 读取。筛选发生在分页之前，切换筛选/项目/每页条数后回到第一页；删除后页码自动收敛。
