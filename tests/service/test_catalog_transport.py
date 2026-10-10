@@ -27,6 +27,7 @@ def test_live_catalog_restart_and_source_readonly(tmp_path):
     executable = os.environ.get("MEMORY_CENTER_TEST_SERVICE_BIN")
     command = [executable] if executable else [sys.executable, "-m", "memory_center.service.main"]
     command += ["--port", str(port), "--data-dir", str(data)]
+    command += ["--auth-mode", "token"]
     env = dict(os.environ)
     env.pop("PYTHONPATH", None)
     if not executable:

@@ -27,7 +27,7 @@ def service(request, tmp_path):
         base_url = url
         url += ('&' if '?' in url else '?') + urlencode({'options': '-csearch_path=' + schema + ',public'})
     data = tmp_path / 'data'
-    app = create_service_app(ServiceConfig(data, database_url=url))
+    app = create_service_app(ServiceConfig(data, database_url=url, auth_mode="token"))
     a, b = tmp_path / 'a', tmp_path / 'b'
     for root, text in [(a, 'alpha only'), (b, 'beta only')]:
         root.mkdir()
@@ -255,7 +255,7 @@ def test_backup_restore_and_traversal(tmp_path):
 
     from memory_center.service.maintenance import backup, restore
     data = tmp_path / 'data'
-    with TestClient(create_service_app(ServiceConfig(data)), base_url='http://localhost'):
+    with TestClient(create_service_app(ServiceConfig(data, auth_mode="token")), base_url='http://localhost'):
         from filelock import Timeout
         with pytest.raises(Timeout):
             backup(data, tmp_path / 'active.tar.gz')
@@ -265,7 +265,7 @@ def test_backup_restore_and_traversal(tmp_path):
     restore(archive, restored)
     assert (restored / 'admin-token').read_text() == (data / 'admin-token').read_text()
     assert archive.stat().st_mode & 0o077 == 0
-    with TestClient(create_service_app(ServiceConfig(restored)), base_url='http://localhost') as client:
+    with TestClient(create_service_app(ServiceConfig(restored, auth_mode="token")), base_url='http://localhost') as client:
         assert client.get('/health/ready').status_code == 200
     with pytest.raises(ValueError):
         restore(archive, restored)

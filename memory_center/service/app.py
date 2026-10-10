@@ -31,6 +31,7 @@ class ServiceStatus(TypedDict):
     ready: bool
     capabilities: list[str]
     project_management: str
+    auth_mode: str
 
 
 def create_service_app(config: ServiceConfig, *, static_dir: Path | None = None) -> FastAPI:
@@ -48,6 +49,8 @@ def create_service_app(config: ServiceConfig, *, static_dir: Path | None = None)
         ),
     )
 
+    mcp.service_config = config
+
     def status() -> ServiceStatus:
         return {
             "schema_version": "5.0",
@@ -56,6 +59,7 @@ def create_service_app(config: ServiceConfig, *, static_dir: Path | None = None)
             "ready": ready,
             "capabilities": ["service_status", "workspace_catalog", "scoped_mcp", "background_index", "knowledge", "wiki", "memory"],
             "project_management": "ready",
+            "auth_mode": config.auth_mode,
         }
 
     @mcp.tool()

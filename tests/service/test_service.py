@@ -22,7 +22,7 @@ def test_lifespan_and_fresh_data(tmp_path, monkeypatch):
     legacy.parent.mkdir()
     legacy.write_text("invalid legacy configuration")
     monkeypatch.chdir(tmp_path)
-    app = create_service_app(ServiceConfig(tmp_path / "v5"))
+    app = create_service_app(ServiceConfig(tmp_path / "v5", auth_mode="token"))
     assert TestClient(app).get("/health/ready").status_code == 503
     with TestClient(app) as client:
         assert client.get("/health/live").json() == {"status": "alive"}
@@ -39,7 +39,7 @@ def test_lifespan_and_fresh_data(tmp_path, monkeypatch):
 
 def test_missing_assets_fail_startup(tmp_path):
     with pytest.raises(RuntimeError, match="管理页面资源缺失"):
-        with TestClient(create_service_app(ServiceConfig(tmp_path / "v5"), static_dir=tmp_path)):
+        with TestClient(create_service_app(ServiceConfig(tmp_path / "v5", auth_mode="token"), static_dir=tmp_path)):
             pass
 
 
@@ -54,7 +54,7 @@ def test_tcp_mcp_shutdown_and_port_conflict(tmp_path):
         port = probe.getsockname()[1]
     root = Path(__file__).resolve().parents[2]
     command = [sys.executable, "-m", "memory_center.service.main", "--port", str(port),
-               "--data-dir", str(tmp_path / "data")]
+               "--data-dir", str(tmp_path / "data"), "--auth-mode", "token"]
     env = dict(os.environ, PYTHONPATH=str(root))
     with (tmp_path / "server.log").open("w+") as log:
         process = subprocess.Popen(command, cwd=tmp_path, env=env, stdout=log, stderr=log)
@@ -135,7 +135,7 @@ def test_mcp_cancellation_and_host_guard(tmp_path, monkeypatch):
         return server
 
     monkeypatch.setattr(app_module, "FastMCP", test_server)
-    app = create_service_app(ServiceConfig(tmp_path / "data"))
+    app = create_service_app(ServiceConfig(tmp_path / "data", auth_mode="token"))
     with TestClient(app, base_url="http://localhost") as client:
         headers = {"Accept": "application/json, text/event-stream"}
         body = {"jsonrpc": "2.0", "id": 0, "method": "initialize", "params": {

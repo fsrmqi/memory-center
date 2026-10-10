@@ -5,6 +5,7 @@ from typing import Any
 import anyio
 from mcp.server.fastmcp import FastMCP
 from mcp.server.fastmcp.exceptions import ToolError
+from mcp.server.transport_security import TransportSecurityMiddleware, TransportSecuritySettings
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
@@ -15,6 +16,8 @@ class ScopedMCP(FastMCP):
     platform = None
 
     def actor(self):
+        if self.service_config.auth_mode == 'local':
+            return self.platform.administrator()
         request = self.get_context().request_context.request
         header = request.headers.get('authorization', '') if request else ''
         token = header[7:] if header.startswith('Bearer ') else ''
@@ -138,10 +141,21 @@ class MCPBoundary:
             return await self.app(scope, receive, send)
         request = Request(scope)
         try:
+            config = self.mcp.service_config
+            security = TransportSecurityMiddleware(TransportSecuritySettings(
+                enable_dns_rebinding_protection=True,
+                allowed_hosts=list(config.allowed_hosts),
+                allowed_origins=[f'http://{host}' for host in config.allowed_hosts],
+            ))
+            rejection = await security.validate_request(request, is_post=request.method == 'POST')
+            if rejection:
+                return await rejection(scope, receive, send)
+            if request.headers.get('origin') and request.headers['origin'] != f"{request.url.scheme}://{request.headers.get('host')}":
+                return await JSONResponse({'error': {'code': 'REQUEST_ORIGIN_REJECTED'}}, 403)(scope, receive, send)
             header = request.headers.get('authorization', '')
-            if header and not header.startswith('Bearer '):
+            if config.auth_mode == 'token' and header and not header.startswith('Bearer '):
                 raise CatalogError('UNAUTHORIZED', '需要 Bearer 凭据')
-            actor = self.mcp.platform.access.authenticate(header[7:] if header else '')
+            actor = self.mcp.platform.administrator() if config.auth_mode == 'local' else self.mcp.platform.access.authenticate(header[7:] if header else '')
             session_id = request.headers.get('mcp-session-id')
             if session_id and self.bindings.get(session_id) != actor.id:
                 raise CatalogError('FORBIDDEN', '传输会话不属于当前主体或已失效')
@@ -151,7 +165,9 @@ class MCPBoundary:
                 self.rates = {k: v for k, v in self.rates.items() if v[0] == window}
             old_window, count = self.rates.get(key, (window, 0))
             count = count + 1 if old_window == window else 1
-            if actor.id == 'anonymous':
+            if config.auth_mode == 'local':
+                rate = float('inf')
+            elif actor.id == 'anonymous':
                 rate = 120
             else:
                 rate = self.mcp.platform.store.get('credential', actor.id)['rate']

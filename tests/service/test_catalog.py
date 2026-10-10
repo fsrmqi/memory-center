@@ -31,7 +31,7 @@ def snapshot(root):
 @pytest.fixture
 def admin(tmp_path):
     data = tmp_path / "data"
-    with TestClient(create_service_app(ServiceConfig(data)), base_url="http://localhost") as client:
+    with TestClient(create_service_app(ServiceConfig(data, auth_mode="token")), base_url="http://localhost") as client:
         client.headers["Authorization"] = "Bearer " + (data / "admin-token").read_text()
         yield client, data
 
@@ -72,7 +72,7 @@ def test_two_projects_preview_and_restart(tmp_path, admin):
     assert persisted.get(a['workspace_id']) == a
     assert persisted.get(b['workspace_id']) == b
     with pytest.raises(Timeout):
-        with TestClient(create_service_app(ServiceConfig(data)), base_url="http://localhost"):
+        with TestClient(create_service_app(ServiceConfig(data, auth_mode="token")), base_url="http://localhost"):
             pass
     assert (data / "admin-token").read_text() == token
     assert not (data / "workspaces").exists()  # No index/worker initialization in S1.
@@ -230,7 +230,7 @@ def test_unsupported_catalog_and_invalid_token_fail_startup(tmp_path):
     with sqlite3.connect(data / "catalog.db") as connection:
         connection.execute("PRAGMA user_version=99")
     with pytest.raises(CatalogError, match="版本不受"):
-        with TestClient(create_service_app(ServiceConfig(data))):
+        with TestClient(create_service_app(ServiceConfig(data, auth_mode="token"))):
             pass
     with sqlite3.connect(data / "catalog.db") as connection:
         assert connection.execute("PRAGMA user_version").fetchone()[0] == 99
@@ -240,7 +240,7 @@ def test_unsupported_catalog_and_invalid_token_fail_startup(tmp_path):
     token.write_text("invalid")
     token.chmod(0o600)
     with pytest.raises(RuntimeError, match="格式无效"):
-        with TestClient(create_service_app(ServiceConfig(other))):
+        with TestClient(create_service_app(ServiceConfig(other, auth_mode="token"))):
             pass
     assert token.read_text() == "invalid"
 
@@ -300,7 +300,7 @@ def test_invalid_source_text_and_unprotected_token(tmp_path, admin):
     token.write_text("a" * 64)
     token.chmod(0o644)
     with pytest.raises(RuntimeError, match="0600"):
-        with TestClient(create_service_app(ServiceConfig(data))):
+        with TestClient(create_service_app(ServiceConfig(data, auth_mode="token"))):
             pass
 
 
@@ -334,5 +334,5 @@ def test_special_admin_token_file_fails_without_blocking(tmp_path):
     data.mkdir()
     os.mkfifo(data / "admin-token")
     with pytest.raises(RuntimeError, match="普通文件"):
-        with TestClient(create_service_app(ServiceConfig(data))):
+        with TestClient(create_service_app(ServiceConfig(data, auth_mode="token"))):
             pass

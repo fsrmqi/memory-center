@@ -18,7 +18,7 @@ def test_stdio_proxy_real_transport(tmp_path):
     url = f'http://127.0.0.1:{port}'
     with (tmp_path / 'server.log').open('w') as log:
         process = subprocess.Popen([sys.executable, '-m', 'memory_center.service.main', '--port', str(port),
-                                    '--data-dir', str(tmp_path / 'data')], stdout=log, stderr=log)
+                                    '--data-dir', str(tmp_path / 'data'), '--auth-mode', 'token'], stdout=log, stderr=log)
         try:
             for _ in range(100):
                 try:

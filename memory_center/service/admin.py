@@ -42,12 +42,14 @@ async def require_admin(request: Request):
         allowed_hosts=list(state.service_config.allowed_hosts),
         allowed_origins=[f"http://{host}" for host in state.service_config.allowed_hosts],
     ))
-    rejection = await security.validate_request(request, is_post=request.method in {"POST", "PATCH"})
+    rejection = await security.validate_request(request, is_post=request.method in {"POST", "PUT", "PATCH"})
     if rejection:
         raise HTTPException(rejection.status_code, detail={"code": "REQUEST_ORIGIN_REJECTED", "message": "请求来源、Host 或内容类型不符合管理接口要求"})
     origin = request.headers.get("origin")
     if origin and origin != f"{request.url.scheme}://{request.headers.get('host')}":
         raise HTTPException(403, detail={"code": "REQUEST_ORIGIN_REJECTED", "message": "管理接口写入要求同源请求"})
+    if state.service_config.auth_mode == "local":
+        return state.workspace_catalog
     authorization = request.headers.get("authorization", "")
     if not authorization.startswith("Bearer ") or not hmac.compare_digest(
         authorization[7:].encode(), state.admin_token.encode()

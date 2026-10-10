@@ -1,5 +1,14 @@
 # Changelog / 更新日志
 
+## 5.0.0b2 — 本机免认证 / 2026-10-10
+
+- 默认本机管理页免登录，刷新后直接加载项目；MCP 全项目、全工具，无凭据范围与速率限制。
+- MCP 接入页提供无令牌 HTTP/stdio 配置；新增项目对已连接客户端动态可见。
+- 增加 `--auth-mode token` / `MEMORY_CENTER_AUTH_MODE=token` 显式认证模式，保留原有凭据、撤销与权限隔离。
+- 本机模式默认拒绝非回环监听；容器显式 `--container-local`，Compose 宿主端口保持回环发布。保留 Host/Origin/JSON 校验。
+- **访问策略变更**：默认认证策略改为个人本机全权限，本机客户端共用管理身份。MCP schema 兼容；状态接口新增 `auth_mode` 标识。数据与已有凭据保留。
+
+
 ## 5.0.0b1 — 多项目知识服务开发版 / 2026-10-09
 
 - 新增独立 PostgreSQL + pgvector 控制面/知识存储，保留 SQLite 轻量模式；中文词项 BM25 与向量 RRF 融合。

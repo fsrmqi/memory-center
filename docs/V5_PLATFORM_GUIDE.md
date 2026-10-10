@@ -1,19 +1,19 @@
 # 5.0 多项目知识服务使用指南
 
-> 当前：5.0.0b1，开发测试版本；不兼容 4.x 接入或导入历史数据。
+> 当前：5.0.0b2，开发测试版本；不兼容 4.x 接入或导入历史数据。
 > 用户已授权连续完成方案，无需每个切片再次确认。此指南描述当前服务入口；旧版文档仅作为核心算法背景。
 
 ## 安装与运行
 
 ```sh
 python3 -m venv .venv
-.venv/bin/python -m pip install /path/to/memory_center-5.0.0b1-py3-none-any.whl
+.venv/bin/python -m pip install /path/to/memory_center-5.0.0b2-py3-none-any.whl
 .venv/bin/memory-center-service --data-dir /path/to/new-service-data
 ```
 
 也可使用 `scripts/service/install.sh` 独立安装。`memory-center` 现在启动同一个 5.0 服务；`memory-center-mcp` 是 HTTP 服务的 stdio 代理，不读取旧 workspace；旧 `memory-center-http` 发行入口已移除。
 
-服务前台运行，Ctrl+C 正常停止。后台常驻由 Docker Compose 的 `restart: unless-stopped` 管理。管理页 `/admin/`，就绪 `/health/ready`，MCP `/mcp`。管理员令牌位于数据目录 `admin-token`，0600，页面只放在当前内存中，刷新后需重新输入。一个数据目录同时只允许一个服务实例。
+服务前台运行，Ctrl+C 正常停止。后台常驻由 Docker Compose 的 `restart: unless-stopped` 管理。管理页 `/admin/`，就绪 `/health/ready`，MCP `/mcp`。默认 local 模式：管理页直接打开，MCP 无需令牌并开放所有已接入项目与全部工具。本机客户端共用管理身份；项目暂停与会话项目绑定继续有效。一个数据目录同时只允许一个服务实例。
 
 ### OrbStack
 
@@ -41,7 +41,7 @@ docker compose -f compose.yaml -f compose.postgres.yaml up -d
 
 ## 项目、后台任务与检索
 
-1. 输入管理员令牌，添加项目，识别预览并保存。
+1. 直接打开管理页，添加项目，识别预览并保存。
 2. 在项目列表启动索引，后台任务页面查看状态、进度、失败原因、取消或重试。
 3. 索引成功才发布 generation；取消、失败、超时与进程中断保留上一份索引。重启将遗留 running 标记为 interrupted，queued 继续执行。
 4. 项目改名保留身份；调整目录需先暂停，恢复检查实际目录；配置改变后旧索引标为 stale，需重建。
@@ -68,13 +68,15 @@ docker compose -f compose.yaml -f compose.postgres.yaml up -d
 
 ## MCP 接入
 
-管理页创建凭据，明确项目范围与读写权限；原始令牌只显示一次，数据库只保存 SHA-256 摘要。页面生成客户端私有连接配置；不把它提交到 Git。
+默认本机模式直接连接 `http://127.0.0.1:8765/mcp`，不需要 Authorization；MCP 接入页提供无令牌 HTTP/stdio 配置。所有已登记项目与工具动态可见，新接入项目无需重发凭据。现有凭据在本机模式不施加权限限制。任务 session/ref/job 使用本机共享管理身份，不提供客户端之间的私有隔离；显式项目范围和会话绑定仍防止项目混用。索引资源预算仍有效。
 
-匿名只允许 `mc_service_status`；项目查询与写入需要 Bearer 凭据。`tools/list` 隐藏未授权工具，直接 `tools/call` 再次验证。传输 session 固定凭据，任务 session/ref/job 绑定主体和项目；撤销凭据立即拒绝已有连接。cwd 与客户端 roots 不授予权限。
+本机模式原生只允许回环监听，Host/Origin/JSON 校验保持启用。容器内部使用 `--container-local` 监听 0.0.0.0，Compose 仅将端口发布到宿主 `127.0.0.1`；该参数不能保证容器网络隔离，不要把本机模式端口公开到 LAN/公网。
+
+需要认证时使用 `memory-center-service --auth-mode token`，或 Compose 设置 `MEMORY_CENTER_AUTH_MODE=token`。此时管理员令牌位于数据目录 `admin-token`（0600）；页面需要输入令牌，MCP 接入页恢复项目/工具/读写授权与一次性凭据配置。匿名仅可查看服务状态，撤销后已有连接立即拒绝。身份模式属于启动配置，切换后需要重新连接；不会删除现有凭据、项目或记忆。
 
 工具：`mc_workspaces`、`mc_lookup`、`mc_analyze`、`mc_ref`、`mc_start`、`mc_resume`、`mc_close`、`mc_memory_write`、`mc_wiki_write`、`mc_index`、`mc_job_status`、`mc_job_cancel`。这是 5.0 新 schema，不承担 4.x `mc_admin` 等合同兼容。
 
-需要 stdio 的客户端：执行 `memory-center-mcp`，用私有环境配置 `MEMORY_CENTER_URL` 与 `MEMORY_CENTER_TOKEN`。代理只转发官方 HTTP 协议，服务需先启动。
+需要 stdio 的客户端：执行 `memory-center-mcp`，配置 `MEMORY_CENTER_URL`；仅 token 模式需要 `MEMORY_CENTER_TOKEN`。代理只转发官方 HTTP 协议，服务需先启动。
 
 ## 备份与恢复
 

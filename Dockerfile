@@ -25,4 +25,4 @@ EXPOSE 8765
 STOPSIGNAL SIGTERM
 HEALTHCHECK --interval=15s --timeout=3s --start-period=10s CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8765/health/ready', timeout=2)"
 ENTRYPOINT ["memory-center-service"]
-CMD ["--host", "0.0.0.0", "--data-dir", "/data"]
+CMD ["--host", "0.0.0.0", "--container-local", "--data-dir", "/data"]

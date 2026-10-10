@@ -17,11 +17,16 @@ def main() -> int:
     parser.add_argument("--data-dir", type=Path, default=Path(os.environ.get(
         "MEMORY_CENTER_DATA_DIR", str(ServiceConfig.default().data_dir))))
     parser.add_argument("--allowed-host", action="append", help="附加允许的 HTTP Host（例如 memory.local:*）")
+    parser.add_argument("--auth-mode", choices=["local", "token"],
+                        default=os.environ.get("MEMORY_CENTER_AUTH_MODE", "local"),
+                        help="local：本机免认证全权限（默认）；token：显式凭据认证")
+    parser.add_argument("--container-local", action="store_true",
+                        help="允许容器内部监听非回环地址；宿主端口必须仅发布到 127.0.0.1")
     args = parser.parse_args()
     try:
         config = ServiceConfig(args.data_dir.expanduser().resolve(), args.host, args.port,
                                ServiceConfig.default().allowed_hosts + tuple(args.allowed_host or ()),
-                               os.environ.get("MEMORY_CENTER_DATABASE_URL", ""))
+                               os.environ.get("MEMORY_CENTER_DATABASE_URL", ""), args.auth_mode, args.container_local)
     except ValueError as exc:
         parser.error(str(exc))
     try:
@@ -33,7 +38,7 @@ def main() -> int:
             listener.listen(128)
             server = uvicorn.Server(uvicorn.Config(
                 create_service_app(config), host=config.host, port=config.port,
-                workers=1, timeout_graceful_shutdown=10,
+                workers=1, timeout_graceful_shutdown=10, proxy_headers=False,
             ))
             server.run(sockets=[listener])
             return 0 if server.started else 1
