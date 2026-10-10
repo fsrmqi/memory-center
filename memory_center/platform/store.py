@@ -93,6 +93,7 @@ class PlatformStore:
             index = {'id': workspace_id, 'workspace_id': workspace_id, 'generation': job_id,
                      'workspace_file': workspace_file, 'config_version': config_version, 'revision': 1,
                      'wiki_signature': job.get('wiki_signature', ''),
+                     'code_coverage': job.get('code_coverage', {}),
                      'embedding_profile': chunks[0].get('profile', '') if chunks else '', 'chunk_count': len(chunks), 'avg_length': sum(c['metadata']['length'] for c in chunks) / max(1, len(chunks)), 'updated_at': now()}
             self._put(connection, 'index', index)
             job.update(status='succeeded', progress=100, finished_at=now(), revision=job['revision'] + 1)

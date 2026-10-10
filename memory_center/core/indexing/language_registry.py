@@ -102,16 +102,14 @@ _REGISTRY: dict[str, LanguageSpec] = {
         language_attr="language_tsx",
     ),
     "javascript": LanguageSpec(
-        # JavaScript reuses the TS-without-types grammar via the JSX
-        # variant; in practice tree_sitter_typescript handles ``.js``
-        # files well enough for the structural facts we collect. A
-        # dedicated tree-sitter-javascript binding can replace this in
-        # the future without changing the registry interface.
         name="javascript",
         extensions=(".js", ".mjs", ".cjs", ".jsx"),
-        module="tree_sitter_typescript",
-        language_attr="language_tsx",
+        module="tree_sitter_javascript",
         aliases=("js",),
+    ),
+    "vue": LanguageSpec(
+        name="vue", extensions=(".vue",), module="tree_sitter_typescript",
+        language_attr="language_typescript",
     ),
     "go": LanguageSpec(
         name="go",

@@ -1,5 +1,7 @@
 # MCP Guide / MCP 接入指南
 
+> 2026-10-10 / 5.0.0b4：默认安装包与容器内置 Java、TypeScript/TSX、JavaScript/JSX、Vue、Python、Go 结构解析；支持明确导入与作用域下的调用查询。旧索引需在管理页重新索引。能力边界见 [多语言实施记录](implementation-receipts/V5_MULTILANGUAGE.md)。
+
 > 2026-10-10 / 5.0.0b3：新增多个本地 Wiki 目录只读接入，可关联多个项目、增量同步 Markdown 并更新检索。管理入口为“Wiki 目录”，容器挂载及预算见 [平台指南](V5_PLATFORM_GUIDE.md)。
 
 > 2026-10-10 / 5.0.0b2：默认本机免认证，管理页直接进入，MCP 开放所有接入项目与全部工具。显式 `--auth-mode token` 保留凭据模式；项目隔离及 Host/Origin 校验保持启用。当前行为见 [平台指南](V5_PLATFORM_GUIDE.md)。

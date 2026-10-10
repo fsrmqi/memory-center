@@ -18,7 +18,7 @@ from memory_center.platform.wiki_sources import WikiSources
 _SKIP = {'.git', '.memory-center', '.project-ai', '.claude', '.codex', '.idea', 'node_modules', 'target',
          'build', 'dist', '__pycache__', '.venv', 'venv', 'vendor'}
 _EXTENSIONS = {'.java', '.py', '.go', '.ts', '.tsx', '.js', '.jsx', '.vue', '.kt', '.rs', '.c', '.h',
-               '.cpp', '.cs', '.md', '.txt', '.yaml', '.yml', '.json', '.toml', '.xml', '.properties', '.sql'}
+               '.cpp', '.cs', '.mjs', '.cjs', '.pyi', '.md', '.txt', '.yaml', '.yml', '.json', '.toml', '.xml', '.properties', '.sql'}
 
 
 def source_files(root):
@@ -86,6 +86,12 @@ def run_index(data_dir, database_url, workspace, job_id):
         store.update('job', job_id, {'progress': 20})
         directory = data_dir / 'workspaces' / workspace['workspace_id'] / 'generations' / job_id
         directory.mkdir(parents=True, exist_ok=True)
+        import json
+
+        from memory_center.platform.code_graph import build_code_graph, coverage_summary
+        code_graph = build_code_graph(root, files)
+        (directory / 'code-graph.json').write_text(json.dumps(code_graph, ensure_ascii=False), encoding='utf-8')
+        store.update('job', job_id, {'code_coverage': coverage_summary(code_graph)})
         workspace_file = directory / 'workspace.yaml'
         services = [ServiceConfig(name=s['service_id'], path=s['path'], type=s['type']) for s in workspace['services']]
         config = WorkspaceConfig(workspace=workspace['workspace_id'], root=str(root), services=services)

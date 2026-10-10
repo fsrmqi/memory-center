@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from memory_center.core.foundation.catalog import CatalogError
+from memory_center.platform.code_graph import query_code_graph, symbol_fresh
 from memory_center.platform.embeddings import Embedder
 from memory_center.platform.jobs import Jobs
 from memory_center.platform.knowledge import Knowledge
@@ -49,7 +50,14 @@ class Platform:
             )
             _, index = self.indexed(actor, workspace_id)
             methods = {'symbol': memory_symbol, 'callers': memory_callers, 'callees': memory_callees, 'context': memory_context}
-            if mode in {'symbol', 'callers', 'callees'}:
+            generic = query_code_graph(index['workspace_file'], query, mode, limit)
+            if mode == 'context' and generic and any(s['language'] == 'java' for s in generic['symbols']):
+                generic = None
+            if generic is not None:
+                result = generic
+                for symbol in [*result.get('symbols', []), *[e['symbol'] for e in result.get('chain', [])]]:
+                    symbol['freshness'] = 'CURRENT' if symbol_fresh(workspace['root'], symbol) else 'STALE'
+            elif mode in {'symbol', 'callers', 'callees'}:
                 result = methods[mode](index['workspace_file'], query, limit=min(limit, 50), view='minimal')
             else:
                 result = memory_context(index['workspace_file'], query, view='minimal')
@@ -80,7 +88,12 @@ class Platform:
     def analyze(self, actor, workspace_id, target):
         from memory_center.core.orchestrator.impact import memory_impact
         _, index = self.indexed(actor, workspace_id)
-        result = memory_impact(index['workspace_file'], target, view='minimal', budget='low')
+        generic = query_code_graph(index['workspace_file'], target, 'analyze', 50)
+        if generic and any(s['language'] != 'java' for s in generic['symbols']):
+            result = generic
+            result['impact_scope'] = 'direct_static_callers'
+        else:
+            result = memory_impact(index['workspace_file'], target, view='minimal', budget='low')
         result['workspace_id'], result['generation'] = workspace_id, index['generation']
         result['ref_id'] = self.access.reference(actor, workspace_id, result)
         return result
@@ -109,6 +122,9 @@ class Platform:
         evidence = record['evidence']
         if evidence.get('generation') != index['generation']:
             raise CatalogError('REF_STALE', '引用所属索引已更新，请重新查询')
+        for symbol in [*evidence.get('symbols', []), *[e['symbol'] for e in evidence.get('chain', [])]]:
+            if symbol.get('hash') and not symbol_fresh(workspace['root'], symbol):
+                raise CatalogError('REF_STALE', '代码符号来源已变化，请重新索引后查询')
         active = {item['id']: item for _, item in self.knowledge.active(record['workspace_id'])}
         replaced = {item.get('replaces') for item in active.values() if item.get('replaces')}
         for item in evidence.get('items', []):

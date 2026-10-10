@@ -24,6 +24,7 @@ The walker design follows three rules:
 """
 from __future__ import annotations
 
+import re
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -63,6 +64,7 @@ class TreeSitterStructuralParser:
         self._language = None
         self._init_error: str | None = None
         self._diagnostics_lock = threading.Lock()
+        self._parse_lock = threading.Lock()
         self._parse_count = 0
         self._fail_count = 0
 
@@ -114,8 +116,11 @@ class TreeSitterStructuralParser:
         empty = StructuralParseResult(language=self.language_name)
         if not self._parser:
             return empty
+        if self.language_name == "vue":
+            return _parse_vue(source, file_path)
         try:
-            tree = self._parser.parse(source.encode("utf-8"))
+            with self._parse_lock:
+                tree = self._parser.parse(source.encode("utf-8"))
         except Exception:
             with self._diagnostics_lock:
                 self._fail_count += 1
@@ -124,6 +129,9 @@ class TreeSitterStructuralParser:
         if walker is None:
             return empty
         result = walker(tree.root_node, source)
+        result.raw['parse_status'] = 'partial' if tree.root_node.has_error else 'parsed'
+        result.raw['syntax_errors'] = bool(tree.root_node.has_error)
+        _import_bindings(tree.root_node, source, result)
         with self._diagnostics_lock:
             self._parse_count += 1
         return result
@@ -231,7 +239,7 @@ def _walk_java(root: Any, source: str) -> StructuralParseResult:
                     visit(child)
                 qual_stack.pop()
                 return
-        elif kind == "method_declaration":
+        elif kind in {"method_declaration", "constructor_declaration"}:
             name_node = _named_child(node, "name")
             if name_node is not None:
                 name = _node_text(name_node, source)
@@ -245,7 +253,8 @@ def _walk_java(root: Any, source: str) -> StructuralParseResult:
                 )
                 result.functions.append(span)
                 qual_stack.append(name)
-                _collect_calls(node, source, qual_stack[-1] if qual_stack else "", result)
+                _local_bindings(node, source, ".".join(qual_stack), result)
+                _collect_calls(node, source, ".".join(qual_stack), result)
                 qual_stack.pop()
                 return
         for child in node.children:
@@ -357,7 +366,14 @@ def _walk_python(root: Any, source: str) -> StructuralParseResult:
                         kind="method" if inside_class else "function",
                     )
                 )
+                _local_bindings(node, source, fn_qual, result)
                 _collect_python_calls(node, source, fn_qual, result)
+                qual_stack.append(name)
+                body = _named_child(node, "body")
+                if body is not None:
+                    for child in body.children:
+                        visit(child)
+                qual_stack.pop()
                 return
         for child in node.children:
             visit(child)
@@ -372,6 +388,8 @@ def _collect_python_calls(fn_node: Any, source: str, caller_qual: str, result: S
 
     def visit(node: Any) -> None:
         if node is None:
+            return
+        if node != fn_node and node.type in {"function_definition", "class_definition"}:
             return
         if node.type == "call":
             fn_field = _named_child(node, "function")
@@ -445,6 +463,7 @@ def _walk_go(root: Any, source: str) -> StructuralParseResult:
                         kind="function",
                     )
                 )
+                _local_bindings(node, source, qual, result)
                 _collect_go_calls(node, source, qual, result)
                 return
         elif kind == "method_declaration":
@@ -475,6 +494,12 @@ def _walk_go(root: Any, source: str) -> StructuralParseResult:
                         kind="method",
                     )
                 )
+                if recv_node is not None:
+                    for parameter in recv_node.named_children:
+                        receiver_name = _named_child(parameter, "name")
+                        if receiver_name is not None:
+                            result.raw.setdefault('receivers', {})[qual_base] = _node_text(receiver_name, source)
+                _local_bindings(node, source, qual_base, result)
                 _collect_go_calls(node, source, qual_base, result)
                 return
         for child in node.children:
@@ -573,7 +598,7 @@ def _walk_ts_like(root: Any, source: str, language_name: str) -> StructuralParse
                         kind="interface",
                     )
                 )
-        elif kind in {"function_declaration", "method_definition", "function_signature"}:
+        elif kind in {"function_declaration", "generator_function_declaration", "method_definition", "function_signature"}:
             name_node = _named_child(node, "name")
             if name_node is not None:
                 name = _node_text(name_node, source)
@@ -589,7 +614,31 @@ def _walk_ts_like(root: Any, source: str, language_name: str) -> StructuralParse
                         kind="method" if inside_class else "function",
                     )
                 )
+                _local_bindings(node, source, fn_qual, result)
                 _collect_ts_calls(node, source, fn_qual, result)
+                qual_stack.append(name)
+                body = _named_child(node, "body")
+                if body is not None:
+                    for child in body.children:
+                        visit(child)
+                qual_stack.pop()
+                return
+        elif kind in {"variable_declarator", "pair"}:
+            name_node = _named_child(node, "name") or _named_child(node, "key")
+            value = _named_child(node, "value")
+            if name_node is not None and value is not None and value.type in {"arrow_function", "function_expression", "function"}:
+                name = _node_text(name_node, source)
+                fn_qual = qual(name)
+                result.functions.append(SymbolSpan(name, fn_qual, _node_line(name_node),
+                                                   _node_end_line(value), ".".join(qual_stack), "function"))
+                _local_bindings(value, source, fn_qual, result)
+                _collect_ts_calls(value, source, fn_qual, result)
+                qual_stack.append(name)
+                body = _named_child(value, "body")
+                if body is not None:
+                    for child in body.children:
+                        visit(child)
+                qual_stack.pop()
                 return
         for child in node.children:
             visit(child)
@@ -604,6 +653,8 @@ def _collect_ts_calls(fn_node: Any, source: str, caller_qual: str, result: Struc
 
     def visit(node: Any) -> None:
         if node is None:
+            return
+        if node != fn_node and node.type in {"function_declaration", "method_definition", "arrow_function", "function_expression", "function"}:
             return
         if node.type == "call_expression":
             fn_field = _named_child(node, "function")
@@ -749,6 +800,156 @@ def _collect_kotlin_calls(fn_node: Any, source: str, caller_qual: str, result: S
 
 
 # ── Walker dispatch ─────────────────────────────────────────────────────────
+
+
+def _local_bindings(node: Any, source: str, qualified: str, result: StructuralParseResult) -> None:
+    names = set()
+
+    def identifiers(part):
+        if part is None or part.type in {'type_annotation', 'type_identifier', 'predefined_type'}:
+            return
+        if part.type == 'identifier':
+            names.add(_node_text(part, source))
+            return
+        name = _named_child(part, 'name') or _named_child(part, 'pattern')
+        if name is not None:
+            identifiers(name)
+        else:
+            for child in part.named_children:
+                identifiers(child)
+
+    identifiers(_named_child(node, 'parameters') or _named_child(node, 'parameter'))
+
+    def visit(part):
+        if part != node and part.type in {'function_definition', 'function_declaration', 'arrow_function', 'function_expression'}:
+            return
+        if part.type in {'import_statement', 'import_from_statement'}:
+            for child in part.named_children:
+                if child == _named_child(part, 'module_name'):
+                    continue
+                if child.type == 'aliased_import':
+                    identifiers(_named_child(child, 'alias'))
+                elif child.type == 'dotted_name':
+                    names.add(_node_text(child, source).split('.')[0])
+        if part.type in {'variable_declarator', 'assignment', 'short_var_declaration'}:
+            identifiers(_named_child(part, 'name') or _named_child(part, 'left'))
+        for child in part.named_children:
+            visit(child)
+
+    visit(node)
+    result.raw.setdefault('local_bindings', {})[qualified] = sorted(names)
+
+
+def _import_bindings(root: Any, source: str, result: StructuralParseResult) -> None:
+    """保存 AST 导入绑定；解析阶段不猜测目标项目文件。"""
+    bindings = result.raw.setdefault('import_bindings', [])
+
+    def add(local, module, symbol='', namespace=False):
+        if local and module:
+            bindings.append({'local': local, 'module': module, 'symbol': symbol, 'namespace': namespace})
+
+    def visit(node):
+        if node.type in {'function_definition', 'class_definition'}:
+            return  # 函数或类内部导入不作为模块级绑定。
+        if result.language in {'typescript', 'tsx', 'javascript'} and node.type == 'export_statement':
+            exports = result.raw.setdefault('exports', {})
+            declaration = _named_child(node, 'declaration') or _named_child(node, 'value')
+            if declaration is not None:
+                name = _named_child(declaration, 'name')
+                names = [_node_text(name, source)] if name is not None else []
+                if declaration.type in {'lexical_declaration', 'variable_declaration'}:
+                    names = [_node_text(_named_child(c, 'name'), source) for c in declaration.named_children
+                             if c.type == 'variable_declarator']
+                if declaration.type == 'identifier':
+                    names = [_node_text(declaration, source)]
+                if re.search(r'^export\s+default\b', _node_text(node, source)):
+                    if len(names) == 1:
+                        exports['default'] = names[0]
+                else:
+                    exports.update({name: name for name in names})
+            if _named_child(node, 'source') is None:
+                for clause in node.named_children:
+                    if clause.type == 'export_clause':
+                        for spec in clause.named_children:
+                            name = _node_text(_named_child(spec, 'name'), source)
+                            alias = _node_text(_named_child(spec, 'alias'), source) or name
+                            exports[alias] = name
+        if result.language in {'typescript', 'tsx', 'javascript'} and node.type == 'import_statement':
+            module = _node_text(_named_child(node, 'source'), source).strip("'\"")
+            for clause in node.named_children:
+                if clause.type != 'import_clause':
+                    continue
+                for child in clause.named_children:
+                    if child.type == 'identifier':
+                        add(_node_text(child, source), module, 'default')
+                    elif child.type == 'namespace_import':
+                        add(_node_text(child.named_children[-1], source), module, namespace=True)
+                    elif child.type == 'named_imports':
+                        for spec in child.named_children:
+                            name = _named_child(spec, 'name')
+                            alias = _named_child(spec, 'alias') or name
+                            add(_node_text(alias, source), module, _node_text(name, source))
+        elif result.language == 'python' and node.type in {'import_statement', 'import_from_statement'}:
+            module_node = _named_child(node, 'module_name')
+            module = _node_text(module_node, source)
+            for child in node.named_children:
+                if child == module_node:
+                    continue
+                if child.type == 'aliased_import':
+                    name = _node_text(_named_child(child, 'name'), source)
+                    alias = _node_text(_named_child(child, 'alias'), source)
+                elif child.type == 'dotted_name':
+                    name = alias = _node_text(child, source)
+                else:
+                    continue
+                if node.type == 'import_from_statement':
+                    add(alias, module, name)
+                else:
+                    add(alias, name, namespace=True)
+        elif result.language == 'go' and node.type == 'import_spec':
+            module = _node_text(_named_child(node, 'path'), source).strip('"`')
+            name = _node_text(_named_child(node, 'name'), source) or module.rsplit('/', 1)[-1]
+            if name not in {'_', '.'}:
+                add(name, module, namespace=True)
+        for child in node.named_children:
+            visit(child)
+
+    visit(root)
+
+
+def _parse_vue(source: str, file_path: str) -> StructuralParseResult:
+    """分别解析 SFC 脚本块，空白占位保留原始行号，模板不作为 JS 解析。"""
+    result = StructuralParseResult(language='vue')
+    result.raw.update(parse_status='parsed', import_bindings=[], script_languages=[])
+    visible = re.sub(r'<!--.*?-->', lambda m: ''.join('\n' if c == '\n' else ' ' for c in m[0]), source, flags=re.S)
+    for match in re.finditer(r'<script\b([^>]*)>(.*?)</script[^>]*>', visible, re.I | re.S):
+        attrs = match[1]
+        if re.search(r'\bsrc\s*=', attrs):
+            result.raw['parse_status'] = 'partial'
+            continue
+        lang_match = re.search(r'\blang\s*=\s*[\"\']([^\"\']+)', attrs, re.I)
+        lang = lang_match[1].lower() if lang_match else 'js'
+        language = {'ts': 'typescript', 'tsx': 'tsx', 'js': 'javascript', 'jsx': 'javascript'}.get(lang)
+        if language is None:
+            result.raw['parse_status'] = 'partial'
+            continue
+        parser = TreeSitterStructuralParser(language)
+        if not parser.available:
+            result.raw['parse_status'] = 'unavailable'
+            continue
+        prefix = ''.join('\n' if c == '\n' else ' ' for c in source[:match.start(2)])
+        parsed = parser.parse(prefix + match[2], file_path)
+        result.classes.extend(parsed.classes)
+        result.functions.extend(parsed.functions)
+        result.calls.extend(parsed.calls)
+        result.imports.extend(parsed.imports)
+        result.raw['import_bindings'].extend(parsed.raw.get('import_bindings', []))
+        result.raw.setdefault('local_bindings', {}).update(parsed.raw.get('local_bindings', {}))
+        result.raw.setdefault('exports', {}).update(parsed.raw.get('exports', {}))
+        result.raw['script_languages'].append(language)
+        if parsed.raw.get('parse_status') != 'parsed':
+            result.raw['parse_status'] = 'partial'
+    return result
 
 
 _WALKERS: dict[str, Callable[[Any, str], StructuralParseResult]] = {
