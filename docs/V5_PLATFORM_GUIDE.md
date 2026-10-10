@@ -1,6 +1,6 @@
 # 5.0 多项目知识服务使用指南
 
-> 当前：5.0.0b11，开发测试版本；不兼容 4.x 接入或导入历史数据。
+> 当前：5.0.0b12，开发测试版本；不兼容 4.x 接入或导入历史数据。
 > 用户已授权连续完成方案，无需每个切片再次确认。此指南描述当前服务入口；旧版文档仅作为核心算法背景。
 
 ## 安装与运行
@@ -70,7 +70,9 @@ docker compose -f compose.yaml -f compose.postgres.yaml up -d
 
 管理页“Wiki 目录”支持登记多个绝对路径，递归读取 `.md` / `.markdown`，忽略隐藏目录和符号链接。来源独立登记，可先同步，再关联一个或多个项目；关联项目的 Wiki 列表显示这些只读页面，MCP 沿用项目范围检索，无新增工具 schema。原始目录是正文真源，数据库保存派生快照和索引，不改写、移动或删除原文件。
 
-“立即同步”更新新增、修改及删除的页面，然后提交关联项目索引任务。自动同步约每分钟扫描一次；只有内容变化才增加页面修订。索引仍使用现有完整项目 generation 发布流程；若同步与索引重叠，下轮快照检查会补交索引任务。自动同步关闭时只读取上次手动同步的快照，来源配置变化仍会更新项目索引。
+“立即同步”更新新增、修改及删除的页面，然后提交关联项目索引任务。自动同步约每分钟扫描一次；只有内容变化才增加页面修订。索引仍使用现有完整项目 generation 发布流程；若同步与索引重叠，下轮快照检查会补交索引任务。自动同步关闭或来源暂停时，只读取上次手动同步的快照，不自动提交项目索引；需要更新时使用“立即同步”或手动重新索引。索引失败、取消或中断后，自动调度停止，Wiki 目录仍可同步；服务重启或删除失败记录不会重新触发，手动“重试”或“重新索引”才恢复。
+
+Automatic project indexing is enabled only for active sources with auto-sync enabled. Failed, cancelled or interrupted indexing attempts stop automatic scheduling while directory synchronization continues. This state survives restart and job-history deletion; an explicit manual retry or reindex resumes scheduling.
 
 每个目录最多 2000 页 / 32 MiB，单页 1 MiB，UTF-8 编码；最多登记 100 个来源。读取、编码或预算失败时整轮不发布部分快照，也不会当作文件被删除，页面显示失败原因。原文件变更会使查询命中标记 STALE，旧引用拒绝继续使用。暂停、解除项目关联或移除来源会立即退出该项目召回，不删除原文件；目录挂载失效时仍可暂停或移除来源。
 
@@ -210,7 +212,7 @@ English: Separate chat and embedding configurations. Remote chat models receive 
 
 ## 任务进度与并发 / Task progress and concurrency（b10）
 
-`GET/PUT /api/v1/job-settings` 配置 `max_projects`（1–64）、`max_queued`（0–100000，0 表示不限）与 `max_file_workers`（0–64）。默认基于可用 CPU（含 cgroup v2 配额）选择 1–4 个项目进程。设置立即影响新任务，降低并发不终止已运行任务。自 b11 起单项目内的文件解析走进程池：`max_file_workers=0` 表示把同一份 CPU 预算在同时运行的项目之间切分（项目进程本身占一个槽位），填正数表示每项目固定宽度。并行的只能是进程——tree-sitter 的 Python 绑定不释放 GIL，实测 8 线程比串行慢 24%。持久解析缓存仍属下一步。
+`GET/PUT /api/v1/job-settings` 配置 `max_projects`（1–64）、`max_queued`（0–100000，0 表示不限）与 `max_file_workers`（0–64）。默认基于可用 CPU（含 cgroup v2 配额）选择 1–4 个项目进程。设置立即影响新任务，降低并发不终止已运行任务。自 b11 起单项目内的文件解析走进程池：`max_file_workers=0` 表示把同一份 CPU 预算在同时运行的项目之间切分（项目进程本身占一个槽位），填正数表示每项目固定宽度。并行的只能是进程——tree-sitter 的 Python 绑定不释放 GIL，实测 8 线程比串行慢 24%。自 b12 起解析结果按内容缓存：缓存键含内容 sha256 与文件身份，文件内容不变即跳过 tree-sitter 解析，命中与未命中产出逐值相等的对象；缓存只存文件级事实，跨文件关系每次重算，因此改动文件的影响不会被掩盖。缓存位于工作区目录下（不在可被清理的代际目录内），字节预算由 `MEMORY_CENTER_PARSE_CACHE_MB` 配置（默认 512 MiB，0 表示关闭缓存），超出后按最近使用淘汰。同一份源码仍会被读取多次——缓存消除了重复解析，未消除重复读取。
 
 任务新增 `phase/completed/total/unit/detail/progress_scope/elapsed_seconds/heartbeat_at`；`progress_scope=phase` 时 `progress` 仅为当前阶段完成比例，并非总体耗时比例。`total=null` 表示尚无法确定总量；扫描、解析、关系、服务、向量等阶段分别计数。专用分析显示已完成服务数及当前内部阶段；发布阶段为不确定进度。成功仍为 100%。资源上限继续为可选配置，默认关闭。
 

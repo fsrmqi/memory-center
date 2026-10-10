@@ -176,6 +176,24 @@ def test_enforce_budget_is_noop_within_budget(tmp_path):
     assert enforce_budget(tmp_path, 0)['evicted'] == 0
 
 
+def test_hit_refreshes_timestamp_so_stale_entries_evict_first(tmp_path):
+    """淘汰必须按「最近使用」而非「最近解析」：长期未变的条目要留下来。"""
+    cache = ParseCache(tmp_path)
+    cache.put('python', 'stale', value={'blob': 'y' * 512})
+    cache.put('python', 'live', value={'blob': 'x' * 512})
+    stale_path, live_path = cache.path_for('python', 'stale'), cache.path_for('python', 'live')
+    os.utime(stale_path, (1_000, 1_000))
+
+    assert cache.get('python', 'live') == {'blob': 'x' * 512}
+    assert live_path.stat().st_mtime > stale_path.stat().st_mtime
+
+    size = stale_path.stat().st_size + live_path.stat().st_size
+    outcome = enforce_budget(tmp_path, size - 1)
+    assert outcome['evicted'] == 1
+    assert not stale_path.exists()
+    assert live_path.exists()
+
+
 # ── 结构结果编解码 ──────────────────────────────────────────────────────────
 
 

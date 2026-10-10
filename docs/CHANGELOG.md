@@ -1,5 +1,23 @@
 # Changelog / 更新日志
 
+## 未发布 / Unreleased
+
+- 大范围图清理使用临时范围表与子查询，移除文件路径 `OR` 链和节点 ID 大量绑定参数；保留原有项目／精确文件范围及入边处理语义，清理失败事务回滚。
+- Wiki 自动调度在项目索引失败、取消或中断后停止；状态持久化，重启或删除任务记录不触发自动重试，手动重试恢复。关闭自动同步或暂停来源后不再自动提交该来源关联的项目索引。
+- Large graph cleanup uses temporary scope tables and subqueries without growing expression trees or parameter lists. Wiki indexing stops after failed, cancelled or interrupted attempts across restarts and history deletion; manual retries resume scheduling. Disabled or paused sources do not automatically schedule project indexing.
+
+## 5.0.0b12 — 2026-10-10
+
+- **新增内容寻址的文件级解析缓存**（`platform/parse_cache.py`）：键 = 缓存契约版本 ‖ 命名空间 ‖ 文件身份 ‖ 语言 ‖ 内容 sha256。文件改名而内容不变仍命中，内容一变必然未命中。缓存只存**文件级 IR**；跨文件关系（导入绑定落到哪个文件、调用边、Feign 目标服务）留在归并阶段每次重算，因此改动文件的影响不会被缓存掩盖。
+- **通用结构解析与 Java 专用解析同时接入**：`build_code_graph` 与 `reindex_workspace` / `_parse_java_file` 新增可选 `cache` 参数，不传时行为与既有实现逐值相同。命中与未命中返回**逐值相等**的对象——缓存只影响速度，不影响索引结果。
+- **三条降级保证**：解析器不可用（未装 tree-sitter 或语言无绑定）时**不落缓存**，避免把「缺绑定」固化成持久结果；缓存文件损坏、截断、契约版本不符一律按未命中处理并允许覆写；载荷不可序列化或目录不可写时跳过写入。缓存故障绝不中止索引。
+- **缓存落在工作区级目录**（`<data_dir>/workspaces/<id>/parse-cache`），不在 generation 内——generation 会被 `prune` 清理，缓存必须跨代际存活。只在**发布成功后**维护缓存，失败或取消的索引不改动它。
+- **预算淘汰按「最近使用」而非「最近解析」排序**：命中时刷新时间戳，使一轮索引后仍在用的条目时间最新，而源码已改过或已删除的旧内容条目先被淘汰。`MEMORY_CENTER_PARSE_CACHE_MB` 配置字节预算（默认 512 MiB，0 表示关闭缓存）；命中与未命中的维护结果在任务记录中以 `parse_cache` 字段回报。
+- 实测（真实项目 3,552 文件 / 12.7 MiB 源码，同进程受控对比）：通用结构解析 1.64 s → 0.86 s（1.9×），Java 专用解析 5.02 s → 0.45 s（11×），**两段合计 6.54 s → 1.31 s（5.0×）**；冷跑写缓存的开销在噪声内。方法与数值复核见 [V5_PARSE_CACHE_BENCHMARK.md](benchmarks/V5_PARSE_CACHE_BENCHMARK.md)。
+- MCP tool schema 不变，取消与原子发布合同不变，`StructuralParseResult` 形状不变。**遗留**：同一份源码被读三遍的问题依旧存在——缓存键仍需读文件算哈希，本次只消除了重复**解析**。
+
+English: Adds a content-addressed file-level parse cache keyed by (schema, namespace, file identity, language, content sha256). Only file-level IR is cached; cross-file relations are recomputed at merge time so a changed file's influence is never masked. Both the generic structural parse and the Java-specific parse take an optional `cache` and return value-identical objects whether they hit or miss, so the cache changes speed only. Unavailable parsers are never cached, corrupt entries degrade to a miss, and unwritable or unserializable payloads are skipped — a cache fault never aborts an index. The cache lives at workspace level (outside prunable generations) and is only maintained after a successful publish. Eviction is least-recently-*used* so long-unchanged files survive; `MEMORY_CENTER_PARSE_CACHE_MB` sets the byte budget (default 512 MiB, 0 disables). Measured on a real 3,552-file / 12.7 MiB module in one process: 1.64 s → 0.86 s (structural) and 5.02 s → 0.45 s (Java), 5.0× across both stages, with cold-run cache writing inside noise. MCP schemas, cancellation and atomic publishing are unchanged. Known gap: the three source reads are not collapsed — the cache key still requires hashing each file.
+
 ## 5.0.0b11 — 2026-10-10
 
 - **文件级并行改为进程池**。tree-sitter 的 Python 绑定不释放 GIL：实测 4 线程仅 1.41×、8 线程比串行**慢 24%**，同规模 8 进程为 2.56×。`core/indexing/reindex.py` 的 Java 解析新增进程池通道（原线程池保留给未接入服务排程的调用方），并按任务顺序收敛结果，使 `symbol_index` 产物可复现——此前线程分支按完成顺序追加，产物不可复现。

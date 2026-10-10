@@ -64,13 +64,13 @@ def configured_budget_bytes(env: Mapping[str, str] | None = None) -> int:
 
 
 def enforce_budget(directory: str | Path, max_bytes: int = DEFAULT_MAX_BYTES) -> dict[str, int]:
-        """按最近使用时间淘汰，把缓存目录压回字节预算内。
+    """按最近使用时间淘汰，把缓存目录压回字节预算内。
 
-        命中会刷新时间戳（见 :meth:`ParseCache.get`），所以一轮索引结束后，
-        **仍在用的**条目时间都是新的、**已不再被任何文件引用的**条目（源码改过或
-        删掉的旧内容）时间停在最后一次被读到的时刻，先于在用条目被淘汰。预算足够时
-        不做任何删除。
-        """
+    命中会刷新时间戳（见 :meth:`ParseCache.get`），所以一轮索引结束后，
+    **仍在用的**条目时间都是新的、**已不再被任何文件引用的**条目（源码改过或
+    删掉的旧内容）时间停在最后一次被读到的时刻，先于在用条目被淘汰。预算足够时
+    不做任何删除。
+    """
     root = Path(directory)
     outcome = {"evicted": 0, "freed_bytes": 0, "remaining_bytes": 0, "kept": 0}
     if max_bytes <= 0 or not root.is_dir():
