@@ -80,6 +80,7 @@ def _reindex_workspace_unlocked(
     source_digests: dict[str, str] | None = None,
     progress: Callable[[str, int, str], None] | None = None,
     generation: str = "",
+    resolve_all_relations: bool = False,
 ) -> dict[str, Any]:
     """Rebuild deterministic indexes and the local evidence graph."""
     pipeline_started = time.perf_counter()
@@ -198,8 +199,9 @@ def _reindex_workspace_unlocked(
         mq_index.extend(result["mq"])
 
     # Build constant map from completed symbol scan, then resolve feign target_service
+    merge_paths = [] if resolve_all_relations and project_filter else path_filters
     if partial:
-        merged_symbol_index = _merge_index_rows(old_symbol_index, symbol_index, project_filter, path_filters, path_key="file")
+        merged_symbol_index = _merge_index_rows(old_symbol_index, symbol_index, project_filter, merge_paths, path_key="file")
     else:
         merged_symbol_index = symbol_index
     constant_map = _build_constant_map(merged_symbol_index)
@@ -210,11 +212,11 @@ def _reindex_workspace_unlocked(
     mark("parse_and_merge")
 
     if partial:
-        merged_file_index = _merge_index_rows(old_file_index, file_index, project_filter, path_filters)
-        merged_api_index = _merge_index_rows(old_api_index, api_index, project_filter, path_filters, path_key="file")
-        merged_feign_index = _merge_index_rows(old_feign_index, feign_index, project_filter, path_filters, path_key="file")
-        merged_mq_index = _merge_index_rows(old_mq_index, mq_index, project_filter, path_filters, path_key="file")
-        merged_config_index = _merge_index_rows(old_config_index, config_index, project_filter, path_filters)
+        merged_file_index = _merge_index_rows(old_file_index, file_index, project_filter, merge_paths)
+        merged_api_index = _merge_index_rows(old_api_index, api_index, project_filter, merge_paths, path_key="file")
+        merged_feign_index = _merge_index_rows(old_feign_index, feign_index, project_filter, merge_paths, path_key="file")
+        merged_mq_index = _merge_index_rows(old_mq_index, mq_index, project_filter, merge_paths, path_key="file")
+        merged_config_index = _merge_index_rows(old_config_index, config_index, project_filter, merge_paths)
     else:
         merged_file_index = file_index
         merged_api_index = api_index
@@ -236,8 +238,18 @@ def _reindex_workspace_unlocked(
     store.write_json(CONTRACT_SNAPSHOT_FILE, contract_snapshot)
     store.write_json(CONTRACT_DIFF_FILE, contract_diff)
     mark("persist_indexes")
+    if resolve_all_relations:
+        current_paths = {str(row.get("path", "")) for row in merged_file_index}
+        current_ledger = CoverageLedger()
+        for row in ledger.to_rows():
+            if row["path"] in current_paths:
+                current_ledger.record(row["path"], row["status"], row.get("reason", ""))
+        ledger = current_ledger
     coverage_aggregate = write_coverage(store, generation, ledger, mode="partial" if partial else "full")
-    graph_counts = build_graph_store(config, store, project_filter=project_filter, path_filters=path_filters)
+    # 服务平台的增量刷新只重读变化服务，但跨文件关系必须在完整合并事实上重算，
+    # 否则被删／改的目标会留下未变化调用方的旧边。
+    graph_counts = build_graph_store(config, store, project_filter=set() if resolve_all_relations else project_filter,
+                                     path_filters=[] if resolve_all_relations else path_filters)
     mark("graph_update")
     # Phase D: project stored call edges through the explicit IR boundary
     # and publish unified resolution diagnostics for failure-category work.
@@ -253,7 +265,7 @@ def _reindex_workspace_unlocked(
     # the other merged indexes.
     from memory_center.core.indexing.java_ir import build_java_ir_index
 
-    if partial:
+    if partial and not resolve_all_relations:
         ir_payload = _merge_ir_partial(store, merged_symbol_index, project_filter, path_filters)
     else:
         ir_payload = build_java_ir_index(merged_symbol_index)
@@ -261,7 +273,7 @@ def _reindex_workspace_unlocked(
     mark("graph_update")
     changed_ids: set[str] = set()
     _report_progress(progress, "semantic", 68, "正在构建语义索引")
-    if partial:
+    if partial and not resolve_all_relations:
         changed_ids = set(graph_counts.get("changed_node_ids", []))
         semantic_counts = build_workspace_semantic_index_partial(store.workspace_file, changed_ids) if changed_ids else {
             **semantic_index_stats(store.workspace_file),
@@ -275,7 +287,7 @@ def _reindex_workspace_unlocked(
     retrieval_counts = _sync_retrieval_indexes(
         store,
         semantic_counts,
-        changed_node_ids=changed_ids if partial else None,
+        changed_node_ids=changed_ids if partial and not resolve_all_relations else None,
     )
     mark("retrieval_update")
     parser_diagnostics = _parser_diagnostics(len(java_tasks))
@@ -512,6 +524,7 @@ def reindex_workspace(
     source_digests: dict[str, str] | None = None,
     owner_actor: str = "local",
     owner_session_id: str = "",
+    resolve_all_relations: bool = False,
 ) -> dict[str, Any]:
     """Rebuild workspace indexes with one writer per workspace.
 
@@ -588,6 +601,8 @@ def reindex_workspace(
                 "generation": generation,
                 "progress": _coordinated_progress,
             }
+            if resolve_all_relations:
+                reindex_kwargs['resolve_all_relations'] = True
             counts = _reindex_workspace_unlocked(config, staging_store, **reindex_kwargs)
             _report_progress(progress, "finalizing", 94, "正在发布索引代际")
             publication_started = time.perf_counter()
@@ -611,7 +626,7 @@ def reindex_workspace(
                 config_index=staging_store.read_json_prefer_backend("config-index.json", []),
                 topology=staging_store.read_json_prefer_backend("service-topology.json", {}),
                 reuse_generation=str(control.get("active_generation", "") or "") if (projects or paths) else "",
-                    affected_projects=_affected_shard_projects(
+                    affected_projects={s.name for s in config.services} if resolve_all_relations else _affected_shard_projects(
                         staging_store.read_json_prefer_backend("file-index.json", []),
                         {item.strip() for item in (projects or []) if item and item.strip()},
                         [item.strip() for item in (paths or []) if item and item.strip()],

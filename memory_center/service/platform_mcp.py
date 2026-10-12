@@ -10,6 +10,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from memory_center.core.foundation.catalog import CatalogError
+from memory_center.platform.call_traces import observe_mcp_call, observe_transport, current_trace, span
 
 
 class ScopedMCP(FastMCP):
@@ -27,16 +28,42 @@ class ScopedMCP(FastMCP):
         actor = self.actor()
         return [tool for tool in await super().list_tools() if tool.name in actor.tools]
 
+    def caller_metadata(self):
+        context=self.get_context().request_context
+        request=context.request if context else None
+        params=context.session.client_params if context else None
+        info=params.clientInfo if params else None
+        import hashlib
+        session=request.headers.get('mcp-session-id','') if request else ''
+        return {'actor':'unverified', 'auth_mode':self.service_config.auth_mode,
+                'identity_assurance':'local_unverified' if self.service_config.auth_mode=='local' else 'unverified',
+                'client':str(info.name)[:200] if info else 'unknown', 'client_version':str(info.version)[:100] if info else '',
+                'client_identity':'self_reported', 'peer':request.client.host if request and request.client else '',
+                'transport_session_hash':hashlib.sha256(session.encode()).hexdigest()[:24] if session else ''}
+
+    @observe_mcp_call
     async def call_tool(self, name, arguments):
         try:
-            if name not in self.actor().tools:
-                raise CatalogError('FORBIDDEN', '工具不在当前凭据授权范围内')
-            result = await super().call_tool(name, arguments)
-            self.platform.store.audit(self.actor().id, name, arguments.get('workspace_id', ''),
-                                      arguments.get('session_id', arguments.get('job_id', '')))
+            with span('authorize'):
+                actor=self.actor()
+                record=current_trace.get()
+                if record:
+                    record['actor']=actor.id;record['caller']['actor']=actor.id
+                    record['caller']['identity_assurance']='local_unverified' if self.service_config.auth_mode=='local' else 'anonymous' if actor.id=='anonymous' else 'credential'
+                if name not in actor.tools:
+                    raise CatalogError('FORBIDDEN','工具不在当前凭据授权范围内')
+            with span('tool.execute'):
+                await anyio.to_thread.run_sync(lambda:self.platform.call_traces.checkpoint(record))
+                result=await super().call_tool(name,arguments)
+            # 兼容既有审计，记录故障不改变已经成功的业务结果。
+            try:
+                with span('audit'):
+                    await anyio.to_thread.run_sync(lambda:self.platform.store.audit(actor.id,name,arguments.get('workspace_id',''),arguments.get('session_id',arguments.get('job_id',''))))
+            except Exception:
+                self.platform.call_traces.dropped+=1
             return result
         except CatalogError as exc:
-            raise ToolError(exc.code + '：' + exc.message) from None
+            raise ToolError(exc.code+'：'+exc.message) from None
 
 
 def register_tools(mcp):
@@ -139,6 +166,7 @@ class MCPBoundary:
         self.app, self.mcp = app, mcp
         self.bindings, self.rates = {}, {}
 
+    @observe_transport
     async def __call__(self, scope, receive, send):
         if scope['type'] != 'http':
             return await self.app(scope, receive, send)

@@ -18,15 +18,17 @@ class KnowledgeTasks:
         self.runner = None
         self.lock = threading.RLock()
 
-    def enqueue(self, workspace_id, kind):
+    def enqueue(self, workspace_id, kind, operation='organize', pair_limit=500):
         self.platform.catalog.get(workspace_id)
         if kind == 'refresh':
+            if operation != 'organize':
+                raise CatalogError('CONTENT_KIND_INVALID', '知识刷新不支持智能治理')
             return self.enqueue_refresh(workspace_id)
         if kind not in {'wiki', 'memory'}:
             raise CatalogError('CONTENT_KIND_INVALID', '请选择 Wiki 或记忆')
         with self.lock:
             for task in self.store.list_page('knowledge_task', page_size=50, status='running', workspace_id=workspace_id)['items'] + self.store.list_page('knowledge_task', page_size=50, status='queued', workspace_id=workspace_id)['items']:
-                if task['kind'] == kind and task['status'] in {'queued', 'running'}:
+                if task['kind'] == kind and task.get('operation', 'organize') == operation and task['status'] in {'queued', 'running'}:
                     return task
             scopes = [workspace_id]
             if kind == 'wiki':
@@ -35,13 +37,14 @@ class KnowledgeTasks:
             def field(name):
                 return f"payload::jsonb->>'{name}'" if self.store.db.url else f"json_extract(payload,'$.{name}')"
             with self.store.db.connection() as connection:
-                rows = connection.execute(f"SELECT id,{field('revision')},{field('status')} FROM records WHERE kind=? AND workspace_id IN ({','.join('?' for _ in scopes)}) ORDER BY id",
+                rows = connection.execute(f"SELECT id,{field('revision')} AS source_revision,{field('status')} AS source_status FROM records WHERE kind=? AND workspace_id IN ({','.join('?' for _ in scopes)}) ORDER BY id",
                                           (kind, *scopes)).fetchall()
             snapshots = [{'id': r[0], 'revision': int(r[1])} for r in rows if r[2] not in {'deleted', 'rejected'}]
             if not snapshots:
                 raise CatalogError('CONTENT_EMPTY', '没有可整理的内容')
             return self.store.create('knowledge_task', {'workspace_id': workspace_id, 'kind': kind,
                 'status': 'queued', 'sources': snapshots, 'completed': 0, 'total': len(snapshots),
+                'operation': operation, 'pair_limit': pair_limit,
                 'preview_ids': [], 'duplicate_groups': [], 'requires_review': True})
 
     def cancel(self, task_id):
@@ -171,6 +174,9 @@ class KnowledgeTasks:
         task = self.store.get('knowledge_task', task_id)
         if task['kind'] == 'refresh':
             return self.run_refresh(task_id)
+        if task.get('operation') == 'governance':
+            from memory_center.platform.knowledge_governance import KnowledgeGovernance
+            return KnowledgeGovernance(self.platform).run(task_id)
         with self.lock:
             task = self.store.get('knowledge_task', task_id)
             if task['status'] != 'queued':

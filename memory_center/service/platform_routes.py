@@ -1,4 +1,5 @@
 """5.0 管理页面 API：全部沿用本机管理员认证。"""
+import json
 from typing import Literal
 
 from fastapi import APIRouter, Depends, Query, Request
@@ -33,6 +34,13 @@ class StorageApplyInput(Input):
     preview_id: str = Field(min_length=1, max_length=100)
     revision: int = Field(ge=1)
     confirm: bool = False
+
+
+class SourceSyncInput(Input):
+    enabled: bool
+    interval_seconds: int = Field(default=120, ge=10, le=86400)
+    debounce_seconds: int = Field(default=10, ge=1, le=3600)
+    revision: int = Field(ge=0)
 
 
 class CredentialInput(Input):
@@ -83,6 +91,18 @@ class CaptureInput(Input):
 
 class KnowledgeTaskInput(Input):
     kind: Literal['wiki', 'memory', 'refresh']
+    operation: Literal['organize', 'governance'] = 'organize'
+    pair_limit: int = Field(default=500, ge=1, le=5000)
+
+
+class GovernanceDecisionInput(Input):
+    revision: int = Field(ge=1)
+    decision: Literal['merge', 'keep_both', 'dismiss']
+    confirm: bool = False
+    title: str = Field(default='', max_length=200)
+    content: str = Field(default='', max_length=200000)
+    retire_source_ids: list[str] = Field(default_factory=list, max_length=2)
+    confirm_memory: bool = False
 
 
 class OrganizeInput(Input):
@@ -176,6 +196,34 @@ def platform_router():
         service.access.scope(service.administrator(), workspace_id, write)
         return service
 
+    @router.get('/workspaces/{workspace_id}/sync-settings')
+    def source_sync_settings(workspace_id: WorkspaceID, request: Request):
+        service = scoped(request, workspace_id)
+        return service.jobs.source_sync.settings(workspace_id)
+
+    @router.put('/workspaces/{workspace_id}/sync-settings')
+    def configure_source_sync(workspace_id: WorkspaceID, value: SourceSyncInput, request: Request):
+        service = scoped(request, workspace_id, True)
+        return service.jobs.source_sync.configure(workspace_id, value.model_dump(exclude={'revision'}), value.revision)
+
+    @router.get('/workspaces/{workspace_id}/sync-status')
+    def source_sync_status(workspace_id: WorkspaceID, request: Request):
+        service = scoped(request, workspace_id)
+        return service.jobs.source_sync.state(workspace_id)
+
+    @router.post('/workspaces/{workspace_id}/sync-check')
+    def source_sync_check(workspace_id: WorkspaceID, request: Request):
+        service = scoped(request, workspace_id, True)
+        return service.jobs.source_sync.check(workspace_id, manual=True)
+
+    @router.get('/workspaces/{workspace_id}/knowledge-index-status')
+    def knowledge_freshness(workspace_id: WorkspaceID, request: Request,
+                            kind: Literal['wiki','memory','document',''] = '',
+                            page: int = Query(1, ge=1), page_size: int = Query(10, ge=1, le=50)):
+        service = scoped(request, workspace_id)
+        from memory_center.platform.project_sync import knowledge_index_status
+        return knowledge_index_status(service, workspace_id, kind, page, page_size)
+
     @router.get('/workspaces/{workspace_id}/storage')
     def storage_usage(workspace_id: WorkspaceID, request: Request):
         return workspace_storage(scoped(request, workspace_id).store, workspace_id)
@@ -262,7 +310,7 @@ def platform_router():
 
     @router.post('/workspaces/{workspace_id}/knowledge-tasks')
     def enqueue_knowledge(workspace_id: WorkspaceID, body: KnowledgeTaskInput, request: Request):
-        return scoped(request, workspace_id, True).knowledge_tasks.enqueue(workspace_id, body.kind)
+        return scoped(request, workspace_id, True).knowledge_tasks.enqueue(workspace_id, body.kind, body.operation, body.pair_limit)
 
     @router.post('/knowledge-tasks/{task_id}/cancel')
     def cancel_knowledge(task_id: str, request: Request):
@@ -274,7 +322,34 @@ def platform_router():
         task = service.store.get('knowledge_task', task_id)
         if task['status'] not in {'failed', 'cancelled', 'interrupted'}:
             raise CatalogError('JOB_STATE', '仅停止的任务可手动重试')
-        return service.knowledge_tasks.enqueue(task['workspace_id'], task['kind'])
+        return service.knowledge_tasks.enqueue(task['workspace_id'], task['kind'], task.get('operation', 'organize'), task.get('pair_limit', 500))
+
+    @router.get('/workspaces/{workspace_id}/knowledge-governance')
+    def governance_suggestions(workspace_id: WorkspaceID, request: Request,
+                               page: int = Query(default=1, ge=1), page_size: int = Query(default=10, ge=1, le=50),
+                               kind: Literal['wiki', 'memory'] = 'wiki', status: Literal['', 'pending', 'merged', 'kept', 'dismissed'] = 'pending',
+                               category: Literal['', 'duplicate', 'conflict'] = ''):
+        from memory_center.platform.knowledge_governance import KnowledgeGovernance
+        return KnowledgeGovernance(scoped(request, workspace_id)).list_page(workspace_id, kind, page, page_size, status, category)
+
+    @router.get('/workspaces/{workspace_id}/knowledge-governance/latest')
+    def governance_latest(workspace_id: WorkspaceID, request: Request, kind: Literal['wiki', 'memory'] = 'wiki'):
+        service = scoped(request, workspace_id)
+        field = lambda n: f"payload::jsonb->>'{n}'" if service.store.db.url else f"json_extract(payload,'$.{n}')"
+        with service.store.db.connection() as connection:
+            row = connection.execute(f"SELECT payload FROM records WHERE kind='knowledge_task' AND workspace_id=? AND {field('operation')}='governance' AND {field('kind')}=? ORDER BY {field('created_at')} DESC,id DESC LIMIT 1",
+                                     (workspace_id, kind)).fetchone()
+        return {'task': json.loads(row[0]) if row else None}
+
+    @router.post('/workspaces/{workspace_id}/knowledge-governance/{preview_id}/decision')
+    def governance_decision(workspace_id: WorkspaceID, preview_id: str, body: GovernanceDecisionInput, request: Request):
+        from memory_center.platform.knowledge_governance import KnowledgeGovernance
+        return KnowledgeGovernance(scoped(request, workspace_id, True)).decide(workspace_id, preview_id, **body.model_dump())
+
+    @router.get('/workspaces/{workspace_id}/knowledge-governance/{preview_id}')
+    def governance_preview(workspace_id: WorkspaceID, preview_id: str, request: Request):
+        from memory_center.platform.knowledge_governance import KnowledgeGovernance
+        return KnowledgeGovernance(scoped(request, workspace_id)).read(workspace_id, preview_id)
 
     @router.get('/knowledge-tasks/{task_id}')
     def knowledge_task(task_id: str, request: Request):
@@ -508,6 +583,39 @@ def platform_router():
         result = service.store.update(kind, record_id, {'status': body.status}, body.revision)
         service.store.audit('admin', kind + '.state', workspace_id, record_id)
         return result
+
+    @router.get('/call-traces')
+    def call_traces(request: Request, page: int = Query(1,ge=1), page_size: int = Query(20,ge=1,le=50),
+                    tool: str = Query('',max_length=200), status: Literal['','running','succeeded','failed','rejected','cancelled','interrupted'] = '',
+                    workspace_id: str = Query('',max_length=100), actor: str = Query('',max_length=200), client: str = Query('',max_length=200),
+                    start: str = Query('',max_length=40), end: str = Query('',max_length=40), trace_id: str = Query('',max_length=100)):
+        filters=trace_filters(tool,status,workspace_id,actor,client,start,end,trace_id)
+        return platform(request).call_traces.list_page(page,page_size,**filters)
+
+    def trace_filters(tool,status,workspace_id,actor,client,start,end,trace_id):
+        from datetime import datetime,timezone
+        result=dict(tool=tool,status=status,workspace_id=workspace_id,actor=actor,client=client,trace_id=trace_id)
+        for key,value in [('start',start),('end',end)]:
+            if value:
+                try:
+                    stamp=datetime.fromisoformat(value.replace('Z','+00:00'))
+                    if stamp.tzinfo is None:raise ValueError()
+                    result[key]=stamp.astimezone(timezone.utc).isoformat()
+                except ValueError:raise CatalogError('TIME_INVALID','时间筛选须包含时区')
+        if result.get('start') and result.get('end') and result['start']>result['end']:
+            raise CatalogError('TIME_INVALID','结束时间不能早于开始时间')
+        return result
+
+    @router.get('/call-traces/statistics')
+    def trace_statistics(request: Request, tool: str = Query('',max_length=200),
+                         status: Literal['','running','succeeded','failed','rejected','cancelled','interrupted'] = '',
+                         workspace_id: str = Query('',max_length=100), actor: str = Query('',max_length=200), client: str = Query('',max_length=200),
+                         start: str = Query('',max_length=40), end: str = Query('',max_length=40), trace_id: str = Query('',max_length=100)):
+        return platform(request).call_traces.statistics(**trace_filters(tool,status,workspace_id,actor,client,start,end,trace_id))
+
+    @router.get('/call-traces/{trace_id}')
+    def trace_detail(trace_id: str, request: Request):
+        return platform(request).call_traces.detail(trace_id)
 
     @router.get('/audit')
     def audit(request: Request):

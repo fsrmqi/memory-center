@@ -28,6 +28,8 @@ class Platform:
         self.knowledge_tasks = KnowledgeTasks(self)
         self.jobs.knowledge_tasks = self.knowledge_tasks
         initialize_terms(database)
+        from memory_center.platform.call_traces import CallTraces
+        self.call_traces = CallTraces(self.store)
 
     def administrator(self):
         workspaces = self.catalog.list(1000)['items']

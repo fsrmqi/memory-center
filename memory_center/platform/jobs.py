@@ -307,16 +307,26 @@ def run_index(data_dir, database_url, workspace, job_id, limits=None, file_worke
                                    'services': [{'name': s.name, 'path': s.path, 'type': s.type} for s in services]}), encoding='utf-8')
         # 每个文件归属最具体的服务，父服务不重复吞入子服务。
         owned_by_service = assign_services(config, files)
-        report('services', 0, len(services), 'services')
-        for number, service in enumerate(services, 1):
-            owned = owned_by_service[service.name]
+        from memory_center.platform.incremental_index import source_manifest, load_baseline
+        manifest = source_manifest(root, workspace, source_digests, owned_by_service)
+        incremental, previous_manifest = load_baseline(store, workspace['workspace_id'], directory, manifest,
+                                                       [s.name for s in services])
+        store.update('job', job_id, {'incremental': {k: v for k, v in incremental.items() if k != 'changed_paths'}})
+        affected = incremental['changed_services']
+        report('services', 0, None, 'services', f'复用 {len(incremental["reused_services"])} 个服务，分析 {len(affected)} 个服务')
+        if incremental['mode'] != 'unchanged':
+            # 一次合并变化服务，跨文件关系全量重算一次；不再为每个服务反复重建全图。
+            paths = [p for key in affected for p in owned_by_service[key]]
+            if previous_manifest:
+                paths.extend(str(root / p) for p, row in previous_manifest['files'].items() if row['service'] in affected)
             def service_progress(stage, _percent, message):
-                report('services', number - 1, len(services), 'services', f'{service.name} · {stage} · {message}')
-            reindex_workspace(config, WorkspaceStore(workspace_file), projects=[service.name],
-                              paths=owned or [str(directory / 'empty-scope')], parallel=False,
+                report('services', 0, None, 'services', f'{stage} · {message} · 变化服务 {len(affected)}')
+            reindex_workspace(config, WorkspaceStore(workspace_file), projects=affected,
+                              paths=sorted(set(paths)) or [str(directory / 'empty-scope')], parallel=False,
                               pool=pool, cache=java_cache, source_digests=source_digests,
-                              materialize_assertions=False, progress=service_progress)
-            report('services', number, len(services), 'services', service.name)
+                              materialize_assertions=False, progress=service_progress, resolve_all_relations=True)
+        report('services', len(services), len(services), 'services', '服务事实已就绪，跨文件关系已核对')
+        (directory / 'source-manifest.json').write_text(json.dumps(manifest, ensure_ascii=False), encoding='utf-8')
         report('knowledge', 0, None, 'items')
         wiki_signature = WikiSources(store).signature(workspace['workspace_id'])
         store.update('job', job_id, {'wiki_signature': wiki_signature})
@@ -366,6 +376,10 @@ def run_index(data_dir, database_url, workspace, job_id, limits=None, file_worke
             embedding_cache.flush()
         for chunk, vector in zip(selected, vectors, strict=True):
             chunk.update(profile=embedder.profile, embedding=vector)
+        fresh_files = scan_source_files(root, limits)
+        fresh_digests = {str(path): hashlib.sha256(path.read_text(encoding='utf-8', errors='replace').encode()).hexdigest() for path in fresh_files}
+        if fresh_digests != source_digests:
+            raise CatalogError('SOURCE_CHANGED', '源码在索引期间发生变化，未发布索引；请手动重试')
         current = catalog.get(workspace['workspace_id'])
         if current['status'] != 'active' or current['config_version'] != workspace['config_version']:
             raise CatalogError('WORKSPACE_CHANGED', '项目配置已改变，未发布索引')
@@ -402,6 +416,8 @@ class Jobs:
         self.stopping = False
         self.task = None
         self.wiki_task = None
+        from memory_center.platform.project_sync import ProjectSync
+        self.source_sync = ProjectSync(self)
 
     def settings(self):
         current = self.store.list('job_settings', limit=1)
@@ -440,7 +456,7 @@ class Jobs:
             rows = connection.execute(f"SELECT payload FROM records WHERE kind='job' AND {field} IN ('queued','running') ORDER BY updated_at,id").fetchall()
         return [json.loads(r[0]) for r in rows]
 
-    def enqueue(self, workspace_id, owner, *, automatic=False):
+    def enqueue(self, workspace_id, owner, *, automatic=False, trigger="manual"):
         workspace = self.catalog.get(workspace_id)
         if workspace['status'] != 'active':
             raise CatalogError('WORKSPACE_PAUSED', '项目已暂停')
@@ -483,7 +499,8 @@ class Jobs:
                 raise CatalogError('QUEUE_FULL', '后台队列达到已配置上限，请等待现有任务完成')
             job = self.store.create('job', {'workspace_id': workspace_id, 'owner': owner, 'status': 'queued',
                                             'progress': 0, 'phase': 'queued', 'progress_scope': 'phase',
-                                            'completed': 0, 'total': None, 'config_version': workspace['config_version']})
+                                            'completed': 0, 'total': None, 'config_version': workspace['config_version'],
+                                            'trigger': 'wiki_sync' if automatic and trigger=='manual' else trigger})
             if attempt:
                 self.store.update('wiki_index_attempt', state_id, {'job_id': job['id']})
             else:
@@ -612,6 +629,7 @@ class Jobs:
                 self.store.update('job', job['id'], {'status': 'interrupted', 'finished_at': now()})
         self.task = asyncio.create_task(self.loop())
         self.wiki_task = asyncio.create_task(self.wiki_loop())
+        self.source_sync.task = asyncio.create_task(self.source_sync.loop())
 
     def sync_wikis(self):
         sources = WikiSources(self.store, self.catalog)
@@ -698,6 +716,9 @@ class Jobs:
 
     async def close(self):
         self.stopping = True
+        self.source_sync.closing = True
+        if self.source_sync.task:
+            await asyncio.gather(self.source_sync.task, return_exceptions=True)
         if self.wiki_task:
             await asyncio.gather(self.wiki_task, return_exceptions=True)
         if self.task:

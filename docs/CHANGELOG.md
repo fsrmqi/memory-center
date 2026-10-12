@@ -6,6 +6,38 @@
 - Wiki 自动调度在项目索引失败、取消或中断后停止；状态持久化，重启或删除任务记录不触发自动重试，手动重试恢复。关闭自动同步或暂停来源后不再自动提交该来源关联的项目索引。
 - Large graph cleanup uses temporary scope tables and subqueries without growing expression trees or parameter lists. Wiki indexing stops after failed, cancelled or interrupted attempts across restarts and history deletion; manual retries resume scheduling. Disabled or paused sources do not automatically schedule project indexing.
 
+## 5.0.0b23 — 知识阅读与任务交互 / Knowledge and task interaction
+
+- 页面与项目使用地址状态，知识列表与任务列表恢复分页、筛选和详情；支持刷新、前进后退以及任务深链。
+- 编辑草稿与模型整理稿仅在本标签页 sessionStorage 保留最多 24 小时；显式恢复／丢弃，离开和关闭编辑器提醒未保存内容。浏览器配额不足时明确提示。模型预览恢复不绕过来源修订和有效期校验。
+- 索引／知识任务提交后显示后台状态卡，可直接查看进度或审阅结果；Wiki 将索引、治理与评测折叠至工具区，优先展示列表与阅读区。
+- URL-backed navigation and task links restore page context. Tab-scoped drafts require explicit recovery; saved knowledge and model validation contracts remain unchanged.
+
+## 5.0.0b22 — MCP 调用切面与链路监控 / MCP call tracing aspect
+
+- 统一 MCP 调用切面自动记录工具、调用时间、调用方、项目、状态、执行耗时、错误码及链路 ID；授权、工具执行和审计分阶段计量，传输拒绝独立记录。
+- 新增调用监控：时间／主体／客户端／项目／工具／状态筛选、分页、成功率、耗时、工具与错误分布、阶段详情及实时后台任务关联。
+- 不保存参数值、响应正文、令牌、原始异常或堆栈；本地调用身份与客户端自报名称明确区分。记录写入故障不改变业务结果，并显示统计缺口；重启将未完成记录标为中断。
+- Centralized MCP tracing keeps existing tool schemas and results compatible. Caller claims are distinguished from authenticated credentials; structured metadata, phase timing and background task links support diagnosis without storing payload bodies.
+
+## 5.0.0b21 — 自动增量同步与知识刷新闭环 / Automatic source sync and knowledge freshness
+
+- 项目可单独启停源码自动检查，默认关闭；可配置检查间隔和稳定等待，连续修改去抖、复用在途任务。失败、取消、中断及删除任务历史后仍阻止自动重试，手动索引成功恢复。
+- 项目列表及详情显示源码新鲜度、变化文件数、上次成功和检查时间；旧版本或损坏清单提示需更新基线。
+- Wiki、记忆和文档显示待刷新来源及修订变化，分页查看，知识刷新不重新解析源码；待确认记忆单独提示，治理保存后立即更新状态。
+- Default-off per-project source polling with debounce and durable failure blocking. Project freshness and paginated knowledge changes make the save-to-search workflow explicit; knowledge refresh preserves code facts.
+
+## 5.0.0b20 — Wiki／记忆智能治理 / Semantic knowledge governance
+
+- 后台任务补充开始、结束与总处理时间，完善详情、筛选空状态和重复操作保护。
+- 服务事实按内容哈希增量复用，变化服务一次合并并统一重算跨文件关系，支持删除清理与无变化复用；旧基线首次回退完整构建。
+- Task timing and interaction improvements; hash-based incremental service facts with complete relation reconciliation.
+
+- 普通模型辅助识别语义重复与潜在冲突，完整来源核对、逐字引文验证、比较预算和明确覆盖；后台只生成建议，取消／失败不发布半套结果、不自动重试。
+- 新增项目 Wiki／记忆治理界面：状态与类型筛选、分页、完整原文对照、合并稿编辑、审阅确认、保留双方与忽略。事务保存来源链、审计和可选软删除；目录 Wiki 文件只读，记忆默认待确认并保留最早过期时间。过期或来源已变的建议可忽略，不能合并覆盖。
+- PostgreSQL 知识任务入队的 JSON 表达式增加独立列别名，避免字典行合并同名列丢失修订。
+- Chat-model governance adds evidence-backed duplicate/conflict suggestions with explicit comparison coverage. Human review precedes atomic merges and optional soft retirement; source revisions, memory confirmation, expiry and idempotency are enforced. Existing organization and MCP schemas remain compatible.
+
 ## 5.0.0b19 — 向量设置幂等保存 / Idempotent embedding settings
 
 - 保存相同的项目向量范围时保持修订不变，避免仅编辑项目名称却使在途向量索引发布失败；过期修订仍报冲突。SQLite／PostgreSQL 专项验证通过。

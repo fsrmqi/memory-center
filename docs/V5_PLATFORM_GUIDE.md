@@ -1,6 +1,6 @@
 # 5.0 多项目知识服务使用指南
 
-> 当前：5.0.0b19，开发测试版本；不兼容 4.x 接入或导入历史数据。
+> 当前：5.0.0b23，开发测试版本；不兼容 4.x 接入或导入历史数据。
 
 ## 项目向量化范围 / Per-project vector scope
 
@@ -35,7 +35,7 @@ English: Select a project in Project Management to view its storage accounting a
 
 ```sh
 python3 -m venv .venv
-.venv/bin/python -m pip install /path/to/memory_center-5.0.0b19-py3-none-any.whl
+.venv/bin/python -m pip install /path/to/memory_center-5.0.0b23-py3-none-any.whl
 .venv/bin/memory-center-service --data-dir /path/to/new-service-data
 ```
 
@@ -249,3 +249,73 @@ English: Job progress is explicitly per-phase, with real counters and indetermin
 ## b15 新能力 / b15 additions
 
 独立知识刷新、全库整理、可选重排、受控会话候选、人工答案键评测、任务诊断和 Skill 成本估算的入口与限制，见 [参考能力实施回执](implementation-receipts/V5_REFERENCE_ADOPTION.md)。本轮为未发版开发更新。
+
+## 智能治理：语义重复与潜在冲突 / Semantic governance
+
+在项目 **Wiki／长期记忆 → 智能治理 → 分析全部内容** 提交后台分析，使用“模型设置”的普通模型，独立于项目向量范围。任务失败、取消或重启中断后不会自动重试；可手动重新分析。原有全文整理入口保持原行为。
+
+分析先提取主题摘要，再用完整来源核对候选对。32 条以内按全部来源对比较；大库按模型摘要词项召回每条最多 8 个邻居。本次比较预算默认 500 对，可在页面设置 1–5,000 对。任务显示实际比较量、可能来源对、预算及是否全配对；候选召回不保证语义重复／冲突全部被发现，即使全配对也不代表模型判断正确。
+
+建议区分“语义重复”和“潜在冲突”，附来源标识、修订、逐字引文及模型理由／置信度；引文必须可在原文中找到，否则整个任务失败且不发布半套建议。模型置信度不是事实真实性或经过校准的准确率。资料中的指令仅当数据处理。模型输出不符合 JSON 合同或被截断时明确失败，需要检查模型和输出预算后手动重试。
+
+建议按状态／类型筛选并分页。逐组打开后可查看完整原文、修改合并稿，再勾选已审阅，选择：
+
+- **确认保存合并稿**：新增受管内容，保留来源链和模型信息；默认保留双方原记录。
+- **保留双方**：记录审阅决定，不修改内容。
+- **忽略建议**：记录忽略决定，不修改内容；过期或来源已变化的建议也可忽略。
+
+合并时可选择软删除可编辑的来源；原文保留在已移除记录中。目录 Wiki 原文件只读，不能通过治理删除或覆盖。记忆默认保存为 pending；只有明确勾选已核实为事实才 confirmed，未确认的合并记忆不能用于移除原记忆。记忆保留来源中最早的过期时间。
+
+建议有效期 7 天，保存合并／保留双方前检查来源修订、文件新鲜度、建议修订与项目范围。来源变化阻止保存；事务包含新内容、软删除、建议消费与审计，失败整体回滚；相同确认请求幂等，不同内容的重复确认冲突。确认保存后可点击“刷新知识索引”，不需要重新解析源码。不会因提交分析自动写入知识或删除来源。
+
+新增管理 API（管理员权限，无 MCP schema 变更）：
+
+- `POST /workspaces/{id}/knowledge-tasks`，新增可选 `operation="governance"`、`pair_limit`，`kind="wiki"|"memory"`。
+- `GET /workspaces/{id}/knowledge-governance`，`kind/status/category/page/page_size`；`GET .../latest?kind=...`；`GET .../{preview_id}`。
+- `POST .../{preview_id}/decision`，`revision/decision/confirm/title/content/retire_source_ids/confirm_memory`；decision 为 `merge|keep_both|dismiss`，confirm 须为 true。
+
+English: Semantic governance uses the chat model independently of embeddings. Small collections compare all pairs; larger collections use summary-based candidate recall with explicit coverage and budgets. Verbatim evidence is checked, but semantic decisions remain model suggestions. Reviewed merges create governed records with provenance; optional source retirement is soft deletion and never changes read-only Wiki files. Memory confirmation, expiry, revision checks, atomic publication and idempotency remain explicit. Unreviewed analysis never publishes knowledge automatically.
+
+### 服务事实增量与任务时间 / Incremental facts and task timing
+
+索引按源码内容 SHA-256、文件归属和项目分析配置比较上一代清单。未变化服务复用事实；变化服务统一解析一次，再在完整合并事实上统一重建跨文件关系。无变化时跳过服务事实构建。删除文件会移除旧事实与覆盖记录。基线缺失、损坏、项目配置或分析器版本变化时完整构建；因此升级后的首次索引仍是完整构建。源码在构建期间变化会阻止发布，需要手动重试。
+
+这是参考 GitNexus 哈希增量思路的本地实现，不调用 GitNexus CLI，也不要求源码目录存在 Git 仓库。通用代码图复用已有文件解析缓存，关系解析、关键词和知识发布仍会运行；不承诺整项任务仅处理变化文件。
+
+后台任务列表与详情显示开始、结束、总处理时间，排队显示未开始，运行显示未结束，终态缺失结束时间明确标注未记录。处理耗时不包含排队时间。任务操作防止重复点击，删除记录需确认；失败不会自动重试。详情可查看本轮复用／变化服务数量和新增／修改／删除文件数。
+
+English: Content hashes and service ownership select changed services. Unchanged facts are reused; cross-file relations are rebuilt once from the complete merged facts. Missing, invalid or version-incompatible baselines trigger a full build. Source changes before publication prevent replacement of the previous index. Task start/end timestamps and processing durations are shown for both indexing and knowledge tasks. Failed tasks require manual retry.
+
+### 自动源码同步与知识刷新闭环 / Automatic source sync and knowledge refresh
+
+项目管理选中项目后，可在“源码同步与索引状态”开启自动同步（默认关闭）。检查间隔默认为 120 秒，可设 10–86400 秒；修改稳定等待默认 10 秒，可设 1–3600 秒。按内容哈希检查源码，变化稳定后使用已有队列与增量引擎，短时间内的连续修改合并为一个任务，在途任务不重复提交。只有显式开启的项目参与后台检查；暂停项目不自动调度。关闭同步停止后续调度，已经排队或运行的任务需在后台任务页面取消。
+
+失败、取消、中断或上次任务记录被删除后，自动调度保持阻止，重启或重新开启开关不会解除；处理原因后手动索引成功恢复。源码检查失败也停止自动检查，修复目录或资源配置后点击“检查源码变化”恢复检查。源码变化发生在索引期间时原发布保护仍有效，不自动重试失败构建。
+
+“索引最新”仅表示上次检查时的哈希与基线一致，检查时间同时显示，不表示实时文件监听。未检查、待建立索引、待更新基线、源码变化和检查失败分别显示；旧版本首次索引需建立当前版本基线，不能伪称已扫描完成。
+
+Wiki、长期记忆及文档页面显示未进入索引、修订未刷新和旧索引待清理的来源，支持分页。治理保存、编辑、删除或确认记忆后刷新该状态；点击“刷新知识索引”只替换知识分块、关键词及适用向量，不重新解析源码。未确认记忆不进入检索，单独显示数量。首次使用须先建立项目索引。刷新失败须手动重试。
+
+新增管理员 API：GET/PUT `/api/v1/workspaces/{id}/sync-settings`，GET `sync-status`，POST `sync-check`，GET `knowledge-index-status`。设置写入携带 revision；这些接口不改变现有 MCP 合同。
+
+English: Per-project automatic source polling is disabled by default. Content hashes, configurable intervals and debounce feed the existing bounded incremental queue. Failure blocking persists across restarts and history deletion; a successful manual index restores scheduling. Freshness describes the last check, not real-time filesystem observation. Knowledge changes are paginated and can be refreshed without rebuilding source facts; pending memories require confirmation first.
+
+### MCP 调用切面与监控 / MCP tracing aspect
+
+“调用监控”自动记录升级后的 MCP 工具请求，支持按时间、工具、项目、主体、客户端、状态和链路 ID 筛选及分页。统计包括请求数、已结束请求成功率、平均／最长耗时、工具调用、错误及调用方分布（各前 20 项）。取消计入已结束请求但不计为失败；拒绝和中断计入失败。执行中的请求不参与耗时与成功率分母。
+
+实现采用统一 `observe_mcp_call` 切面，不逐工具添加日志，不改变参数 schema 或业务返回值。当前阶段为权限检查、工具执行、操作审计；传输层 HTTP 拒绝由独立切面记录，正常 HTTP 不重复统计。NOT_FOUND 是业务查询结果，不作为执行失败。MCP 索引调用的成功表示提交成功，链路详情另行读取关联后台任务的当前状态、阶段及诊断 ID。
+
+调用方信息包含 MCP clientInfo 自报名称／版本、凭据主体、来源地址及传输会话哈希。本地免认证模式无法确认真实人员身份；客户端名称不能证明调用来自某个人或真实宿主。stdio 代理默认可能被识别为代理客户端，不推断上游宿主。记录不保存工具参数值、查询、Wiki／记忆正文、响应正文、令牌、原始异常或堆栈。只有参数字段名、有限枚举及经过格式校验的服务对象 ID 被记录。
+
+记录在开始时持久化、结束时补充结果；服务重启将未完成记录标记为中断，不能据此判断被中断业务是否已经产生副作用。记录写入故障不会改写业务结果；页面显示当前进程的写入失败计数。历史记录不会补造，当前持久保留记录，不自动删除，不包含宿主整段会话或模型思考过程。
+
+管理员接口：GET `/api/v1/call-traces`（分页／筛选）、`/call-traces/statistics`、`/call-traces/{id}`。凭据模式下普通 MCP 凭据不能读取全局监控。
+
+设计参考 dsh-context 对实际计量／未知计量的区分，以及工具来源归属，不把未观测的宿主时间补造成模型耗时。English: One MCP aspect records structured timing and identity metadata. Request and background-task outcomes are distinct. Client claims are unverified in local mode, raw payloads are excluded, and interrupted or missing telemetry is reported explicitly.
+
+### b23 知识交互 / Knowledge interaction
+
+页面地址保存当前栏目、项目以及知识／任务列表分页筛选状态。提交后台任务后可通过状态卡跳转进度和结果。编辑与模型整理草稿仅在当前浏览器标签页保留最多 24 小时，显式恢复或丢弃；关闭标签页后不保证保留，不能替代正式保存。来源修订冲突与模型预览有效期仍由服务验证。
+
+Navigation and task links preserve context; tab-local drafts expire after 24 hours and never replace an explicit save. Source revision and preview expiry checks still apply.
