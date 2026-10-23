@@ -1,6 +1,6 @@
 # Memory Center / 记忆中心
 
-> **当前版本 5.0.0b23（开发测试版）** — 一次安装、常驻运行的多项目上下文与记忆服务。
+> **当前版本 5.0.0b24（开发测试版）** — 一次安装、常驻运行的多项目上下文与记忆服务。
 >
 > 入口：服务 `memory-center-service`（`memory-center` 现指向同一服务）、stdio 代理 `memory-center-mcp`、维护 `memory-center-maintenance`、宿主集成 `memory-center-integrations`。地址：管理页 `/admin/`、就绪 `/health/ready`、MCP `/mcp`。
 >
@@ -69,11 +69,11 @@ Memory Center precomputes these relationships before the agent starts editing.
 
 ### Current release / 当前版本
 
-当前包版本为 **5.0.0b23**（开发测试版）。Memory Center 已重构为常驻服务：多项目登记、统一 MCP 入口、后台索引、知识库 / Wiki / 长期记忆与知识治理 / Skill 管理全部由同一服务承载，入口与能力边界以 [5.0 平台指南](docs/V5_PLATFORM_GUIDE.md) 为准。
+当前包版本为 **5.0.0b24**（开发测试版）。Memory Center 已重构为常驻服务：多项目登记、统一 MCP 入口、后台索引、知识库 / Wiki / 长期记忆与知识治理 / Skill 管理全部由同一服务承载，入口与能力边界以 [5.0 平台指南](docs/V5_PLATFORM_GUIDE.md) 为准。
 
 4.x 的稳定能力（可信查询、Java IR 差分、跨服务调用链、检索回放、发布质量门禁）作为核心算法背景保留；5.0 实际复用其中哪些部分，由平台指南与代码事实定义，不以本文的历史叙述为准。4.6.30 保留在 `codex/release-4.6.30` 分支供源码追溯，5.0 不读取其 workspace、registry、索引与记忆。
 
-The current package version is **5.0.0b23** (development beta). Memory Center now runs as a standalone always-on service hosting multi-project registration, a unified MCP endpoint, background indexing, knowledge/Wiki/long-term memory, and knowledge/skill governance. The 4.x engine capabilities are retained as algorithmic background; which parts the 5.0 service actually reuses is defined by the platform guide and the code, not by this historical narrative.
+The current package version is **5.0.0b24** (development beta). Memory Center now runs as a standalone always-on service hosting multi-project registration, a unified MCP endpoint, background indexing, knowledge/Wiki/long-term memory, and knowledge/skill governance. The 4.x engine capabilities are retained as algorithmic background; which parts the 5.0 service actually reuses is defined by the platform guide and the code, not by this historical narrative.
 
 ---
 
@@ -268,7 +268,6 @@ The installer uses `pipx` by default and exposes:
 
 - `memory-center`
 - `memory-center-mcp`
-- `memory-center-http`
 
 The install script selects an available Python 3.10+ interpreter automatically. For a manual `pipx` refresh, explicitly select a Python 3.10+ interpreter as well:
 
@@ -857,32 +856,26 @@ memory-center resume-context \
 
 ---
 
-## MCP server / MCP 服务
+## Unified MCP / 统一 MCP
 
-```bash
-memory-center-mcp \
-  --workspace /Users/cuijiaqi/javaworkspace/ucap/.memory-center/workspace.yaml
+5.0 的 MCP 入口是常驻服务本身，地址固定为 `http://127.0.0.1:8765/mcp`（Streamable HTTP，本地模式无需令牌）。Codex、Cursor、Claude Code、DSH 等宿主把该地址写进自己的配置即可，不再按子项目传 `--workspace`：
+
+Since 5.0 the MCP endpoint is the always-on service itself at `http://127.0.0.1:8765/mcp` (Streamable HTTP; no token in local mode). Hosts such as Codex, Cursor, Claude Code and DSH point at that URL instead of passing a per-project `--workspace` file:
+
+```json
+{ "mcpServers": { "memory-center": { "type": "http", "url": "http://127.0.0.1:8765/mcp" } } }
 ```
 
-Available MCP tools (15 task-level tools) / MCP 工具（15 个任务级工具）：
+只支持 stdio 的宿主仍可用无状态代理 `memory-center-mcp`（转发到 `MEMORY_CENTER_URL`，不接受旧 `--workspace`）。`runtime-audit --fix` 与 `setup-agent` 生成的也是这套 5.0 绑定。
+Stdio-only hosts can still use the stateless `memory-center-mcp` adapter, which forwards to `MEMORY_CENTER_URL` and no longer accepts the legacy `--workspace` flag. `runtime-audit --fix` and `setup-agent` now generate exactly this 5.0 binding set.
 
-| Tool | Purpose / 用途 |
-|---|---|
-| `mc_start` | Start task workflow: sniff → sync → start session / 开始任务：上下文召回 → 同步 → 启动会话 |
-| `mc_lookup` | Unified knowledge lookup (auto/symbol/code/query/trace/chain/walkthrough/context/contracts/ref/backend) / 统一知识检索，mode 自动路由到最佳策略 |
-| `mc_analyze` | Change impact analysis (quick/standard/full depth) / 变更影响面分析，按 depth 逐层深入 |
-| `mc_sync` | Sync context to workspace artifacts (sniff or case) / 同步上下文到工件 |
-| `mc_resume` | Resume task with consolidated context / 恢复任务上下文 |
-| `mc_handoff` | Build handoff package for another model / 为目标模型生成交接包 |
-| `mc_close` | Close task workflow: end session → sync case → record experience / 关闭任务工作流 |
-| `mc_admin` | Admin router (status/dashboard/eval/artifact/session/group etc.) / 管理路由，action 选择子操作 |
-| `mc_bootstrap_context` | Zero-initialization federated context entry / 零初始化联邦上下文入口，外部结果不持久化 |
-| `mc_provider_action` | Run registered external-provider fixed actions; writes need `confirm=true` / 运行注册 Provider 固定动作，写入需确认 |
-| `mc_mcp_bridge` | Restricted external MCP client behind an explicit workspace policy / 受白名单策略约束的外部 MCP Client |
-| `mc_context_pack` | Compact, evidence-driven context pack / 紧凑、证据驱动的上下文包 |
-| `mc_onboard` | Persona-based architecture onboarding / 按角色生成架构导览 |
-| `mc_domain` | Extract business domains and flows / 提取业务域和业务流 |
-| `mc_freshness` | Check index freshness / 检查索引新鲜度 |
+当前暴露 17 个工具，签名以服务实际返回的 `tools/list` 为准：`mc_service_status`、`mc_workspaces`、`mc_lookup`、`mc_analyze`、`mc_start`、`mc_resume`、`mc_close`、`mc_ref`、`mc_memory_write`、`mc_wiki_write`、`mc_index`、`mc_job_status`、`mc_job_cancel`、`assistant_admin`、`assistant_knowledge`、`assistant_memory`、`assistant_skill`。逐项说明见 [5.0 平台指南](docs/V5_PLATFORM_GUIDE.md)。
+
+Seventeen tools are exposed; the live `tools/list` response is the contract. See the [5.0 platform guide](docs/V5_PLATFORM_GUIDE.md) for field-level details.
+
+> 下文的引擎细节（`mc_admin` action、`mc_sync` 等）描述的是服务内部保留的 4.x 引擎能力，5.0 的对外工具名以上表为准。
+> The engine notes below describe retained 4.x engine capabilities behind the service; the 5.0 tool surface is the list above.
+
 
 Task-space resume experience is available through `mc_admin` actions: `task_health`, `task_health_all`, `task_repair_plan`, `task_repair_apply`, and `task_resume_check`. `task_resume_check` should be the default first call when an agent returns to a known `task_id`; `task_repair_apply` runs as dry-run unless `force=true` is passed, and current-summary refreshes should include an `intent`.
 
@@ -1494,28 +1487,12 @@ This enables group-level querying and organization-level memory.
 
 `group query` 除了聚合搜索结果，还会返回 `related_bridges`，例如 Feign → 服务、Feign → 接口、MQ Topic ↔ 配置、共享配置键等跨工作区线索。
 
-## HTTP bridge / HTTP 桥接
+## HTTP 服务 / HTTP service
 
-Use the local HTTP bridge when you want Web UI, IDE integrations, or lightweight automation to reuse the same query backend:
+5.0 的 HTTP API、管理页与 MCP 由同一个常驻服务提供：`memory-center-service` 默认监听 `127.0.0.1:8765`，管理页在 `/admin/`，就绪探针在 `/health/ready`，统一 MCP 在 `/mcp`。旧的独立 `memory-center-http` 桥与 `serve-http` 命令已下线。
 
-当你希望 Web UI、IDE 集成或轻量自动化复用同一套查询后端时，可以使用本地 HTTP bridge：
+Since 5.0 the HTTP API, admin UI and MCP are served by the same always-on service (`memory-center-service`, default `127.0.0.1:8765`; `/admin/`, `/health/ready`, `/mcp`). The standalone `memory-center-http` bridge and the `serve-http` command are retired.
 
-```bash
-memory-center serve-http \
-  --workspace /path/to/.memory-center/workspace.yaml \
-  --host 127.0.0.1 \
-  --port 8765
-```
-
-The built-in local workbench pages were removed in 4.6.28. Use the DSH Plugin for interactive views, or call the JSON read models directly; the complete migration table is in [HTTP display migration](docs/HTTP_DISPLAY_MIGRATION.md).
-
-4.6.28 已下线内置本地工作台页面。交互式查看请使用 DSH Plugin，或直接调用 JSON 读模型；完整迁移表见 [HTTP 展示迁移说明](docs/HTTP_DISPLAY_MIGRATION.md)。
-
-Or:
-
-```bash
-memory-center-http --workspace /path/to/.memory-center/workspace.yaml
-```
 
 `GET` 只用于无副作用读取；所有会修改 workspace 的 HTTP 路由必须使用 `POST`。默认仅允许回环地址；如需绑定局域网或其他非回环地址，必须显式设置强随机令牌：
 

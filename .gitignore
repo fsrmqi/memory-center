@@ -57,3 +57,4 @@ frontend/node_modules/
 # the wheel/sdist at packaging time. Use scripts/service/build-release.sh so a
 # local build never ships a wheel without the admin page.
 memory_center/service/static/
+/.dsh-tmp/

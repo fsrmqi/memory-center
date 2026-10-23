@@ -1,6 +1,6 @@
 # Memory Center 当前系统架构 / Current System Architecture
 
-> **当前实现：5.0.0b23（开发测试版）。** 服务化架构为单进程 FastAPI/Uvicorn，同时承载管理 API、统一 MCP（Streamable HTTP，挂载于 `/mcp`）与 Vue 管理页；空间控制面独立存储，索引由有界子进程执行，发布走原子 generation。分层方向为 `service/`（生命周期、路由、MCP 边界）→ `platform/`（控制面、授权、任务、知识、检索）→ `application/` + `core/`（被复用的引擎）。
+> **当前实现：5.0.0b24（开发测试版）。** 服务化架构为单进程 FastAPI/Uvicorn，同时承载管理 API、统一 MCP（Streamable HTTP，挂载于 `/mcp`）与 Vue 管理页；空间控制面独立存储，索引由有界子进程执行，发布走原子 generation。分层方向为 `service/`（生命周期、路由、MCP 边界）→ `platform/`（控制面、授权、任务、知识、检索）→ `application/` + `core/`（被复用的引擎）。
 
 项目空间统计由 `platform/storage_usage.py` 在只读数据库快照中聚合项目行载荷，再扫描 `workspaces/{workspace_id}` 内的普通文件，区分当前／其他索引代际和两类缓存。管理 API 使用同步端点，由 FastAPI 线程池处理文件扫描；管理页按项目选择或手动刷新请求，不随列表轮询反复扫描。共享数据库文件与物理页不作项目归属，口径见平台指南。
 
@@ -87,9 +87,9 @@ Memory Center 的核心设计是把这些上下文前置为本地可重建的工
 
 Memory Center 不要求中心化服务。默认形态是每个 workspace 自带一个 `.memory-center/` 本地目录：
 
-- **Local CLI**：开发者或脚本直接运行 `memory-center`。
-- **MCP Server**：AI 编程助手通过 `memory-center-mcp` 调用任务级 tools。
-- **HTTP Bridge**：本地 `memory-center-http` 提供 JSON API；交互式展示由 DSH Plugin 的原生工作台承担。
+- **常驻服务**：`memory-center-service`（`memory-center` 默认入口）提供管理页、统一 MCP 与 HTTP API。
+- **MCP 客户端**：宿主直接连 `http://127.0.0.1:8765/mcp`（Streamable HTTP）；只支持 stdio 的宿主用无状态 `memory-center-mcp` 代理转发。
+- **CLI / 维护**：`memory-center`、`memory-center-maintenance`、`memory-center-integrations` 负责初始化、索引、诊断与宿主接入。
 - **Host Hooks**：在 SessionStart、PreToolUse、Stop 等生命周期节点自动触发上下文、影响分析和收尾。
 
 这种部署形态的关键收益是：工程事实不需要上传到远程平台，索引和记忆可以随 workspace 一起复制、清理、重建，也可以被人类直接审查。
@@ -123,8 +123,9 @@ Memory Center 不要求中心化服务。默认形态是每个 workspace 自带�
 | 入口 | 命令 / 路径 | 代码位置 | 职责 |
 |---|---|---|---|
 | CLI | `memory-center` | `memory_center/cli/main.py` | 初始化、索引、查询、影响分析、任务工作流、评测、hook 生成 |
-| MCP | `memory-center-mcp` | `memory_center/mcp/server.py` | 15 个 task-level tools、resources、prompts、`mc_admin` |
-| HTTP | `memory-center-http` | `memory_center/http/server.py` | JSON API 与受限读/写路由；不托管 HTML 或 SPA |
+| Service | `memory-center-service`（`:8765`） | `memory_center/service/` | 管理页 `/admin/`、统一 MCP `/mcp`、HTTP API、后台任务 |
+| MCP | `POST /mcp`（stdio 代理 `memory-center-mcp`） | `memory_center/mcp/` | 17 个统一 tools（`mc_*` 与 `assistant_*`），Streamable HTTP |
+| HTTP | `/workspace/*` 等 | `memory_center/service/` | 管理 API 与 JSON 读模型；不托管 SPA 构建产物 |
 | Hooks | generated host hooks | `memory_center/hooks/` | SessionStart、PreToolUse、Stop 等宿主生命周期集成 |
 
 ### 1.5 Core 领域布局 / Core Domain Layout
@@ -144,7 +145,7 @@ Memory Center 当前是一个本地文件系统 + SQLite 派生索引驱动的�
 ```text
 ┌─────────────────────────────────────────────────────────────┐
 │ Host Agents / 用户入口                                      │
-│ CLI: memory-center   MCP: memory-center-mcp   HTTP: JSON API │
+│ CLI: memory-center   Service: 127.0.0.1:8765   MCP: /mcp    │
 └──────────────────────────────┬──────────────────────────────┘
                                │
 ┌──────────────────────────────▼──────────────────────────────┐

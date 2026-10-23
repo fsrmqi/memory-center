@@ -404,18 +404,23 @@ def test_write_agent_instructions_includes_sync_workflow(tmp_path: Path):
 
     for content in [agents, claude]:
         assert "<!-- memory-center:start -->" in content
-        assert "mc_start" in content
-        assert "mc_lookup" in content
-        assert "mc_analyze" in content
-        assert "mc_sync" in content
-        assert "mc_close" in content
-        assert "mc_admin" in content
-        assert "write_judge" in content
-        assert "write_plan" in content
-        assert "只允许尾部追加" in content
-        assert "首轮工具列表没有 `mc_*` 不等于 Memory Center 不可用" in content
-        assert "当前宿主工具快照尚未刷新" in content
-        assert "禁止表述为“未加载”或“不可用”" in content
+        assert "Memory Center 5.0 Agent Protocol" in content
+        assert "mc_workspaces()" in content
+        assert "mc_start(workspace_id=" in content
+        assert "mc_lookup(workspace_id=" in content
+        assert "mc_analyze(workspace_id=" in content
+        assert "mc_close(session_id=" in content
+        assert "mc_memory_write(workspace_id=" in content
+        assert "assistant_knowledge(" in content
+        assert "assistant_admin(" in content
+        assert "http://127.0.0.1:8765/mcp" in content
+        assert "English:" in content
+        # 4.x 工具只能以“不要调用”的形式出现
+        assert "不要调用旧 `mc_admin`" in content
+        assert "--workspace" in content  # 仅用于说明 stdio 代理不带旧参数
+        assert "mc_sync(intent=" not in content
+        assert "mc_handoff(" not in content
+        assert "mc_freshness(" not in content
 
 
 def test_write_agent_instructions_are_mirrored_to_service_roots(tmp_path: Path):
@@ -430,11 +435,12 @@ def test_write_agent_instructions_are_mirrored_to_service_roots(tmp_path: Path):
     service_agents = (workspace_root / "task-service" / "AGENTS.md").read_text(encoding="utf-8")
     cursor_rules = (workspace_root / "task-service" / ".cursor" / "rules" / "memory-center.mdc").read_text(encoding="utf-8")
 
-    assert "当前目录是聚合 workspace 下的子项目" in service_agents
+    assert "当前目录是聚合工作区下的子项目" in service_agents
     assert str(workspace.resolve()) in service_agents
-    assert "复用上层 workspace" in service_agents
-    assert "Current directory is a service root under the aggregate workspace." in service_agents
-    assert "mc_start" in service_agents
+    assert "mc_workspaces()" in service_agents
+    assert "5.0 不读取旧 workspace 文件" in service_agents
+    assert "Current directory is a service root under the aggregate workspace" in service_agents
+    assert "mc_start(workspace_id=" in service_agents
     assert str(workspace.resolve()) in cursor_rules
 
 
@@ -454,9 +460,10 @@ def test_write_agent_instructions_write_mcp_configs_to_service_roots(tmp_path: P
 
     for config in (codex_config, claude_config, cursor_config):
         server = config["mcpServers"]["memory-center"]
-        assert server["command"].endswith("memory-center-mcp")
-        assert server["args"] == ["--workspace", str(workspace.resolve())]
-        assert server["startup_timeout_sec"] == 30
+        assert server["type"] == "http"
+        assert server["url"] == "http://127.0.0.1:8765/mcp"
+        assert "command" not in server
+        assert "--workspace" not in json.dumps(config)
 
 
 def test_write_agent_instructions_merge_existing_mcp_configs(tmp_path: Path):
@@ -487,8 +494,8 @@ def test_write_agent_instructions_merge_existing_mcp_configs(tmp_path: Path):
     merged = json.loads(codex_config_path.read_text(encoding="utf-8"))
     assert "idea" in merged["mcpServers"]
     assert "memory-center" in merged["mcpServers"]
-    assert merged["mcpServers"]["memory-center"]["args"] == ["--workspace", str(workspace.resolve())]
-    assert merged["mcpServers"]["memory-center"]["startup_timeout_sec"] == 30
+    assert merged["mcpServers"]["memory-center"]["url"] == "http://127.0.0.1:8765/mcp"
+    assert merged["mcpServers"]["memory-center"]["type"] == "http"
 
 
 @pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")

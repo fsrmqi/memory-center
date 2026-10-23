@@ -31,11 +31,11 @@ def setup_agent_runtime(workspace_file: str | Path) -> dict[str, Any]:
     audit = audit_agent_runtime(workspace_file, fix=True)
     mcp_bindings = audit.get("mcp_bindings", {}) or {}
     next_steps = [
-        "如果当前 Codex / Cursor / Claude Code 会话已经启动，请重启或刷新宿主会话，让新的 MCP 配置生效。",
-        "在子项目目录里直接使用 MCP 时，传项目目录或父级 workspace.yaml 均可；Memory Center 会自动解析父级 workspace。",
+        "如果当前 Codex / Cursor / Claude Code / DSH 会话已经启动，请重启或刷新宿主会话，让新的 MCP 配置生效。",
+        "5.0 的 MCP 入口是常驻服务的统一端点，不再按子项目绑定 workspace 文件；项目匹配在 mc_workspaces() 的返回结果里选择。",
     ]
-    if not mcp_bindings.get("command_available", False):
-        next_steps.insert(0, "当前 PATH 未发现 memory-center-mcp，请先确认本地安装或 pipx PATH。")
+    if not mcp_bindings.get("ok", False):
+        next_steps.insert(0, f"请确认 Memory Center 服务在 {mcp_bindings.get('mcp_url', '')} 可达，再重启宿主会话。")
     return {
         "workflow": "setup-agent",
         "workspace": config.workspace,
@@ -85,17 +85,9 @@ def audit_agent_runtime(
             "category": "mcp",
             "severity": "high",
             "code": "mcp_binding_missing_or_stale",
-            "message": f"发现 {missing_count} 个 agent MCP 绑定缺失或未指向当前 workspace。",
+            "message": f"发现 {missing_count} 个 agent MCP 绑定缺失或未指向当前服务端点 {mcp_bindings.get('mcp_url', '')}。",
         })
         score -= 20
-    if not mcp_bindings.get("command_available", False):
-        findings.append({
-            "category": "mcp",
-            "severity": "high",
-            "code": "memory_center_mcp_not_on_path",
-            "message": "`memory-center-mcp` 不在当前 PATH 中，宿主可能无法启动 MCP server。",
-        })
-        score -= 15
 
     # Check agent profile
     agent_profile = store.read_json_prefer_backend("agent-profile.json", {})
