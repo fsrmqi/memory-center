@@ -342,7 +342,9 @@ Use the Memory Center DSH Plugin for the interactive workbench. Integrations tha
 
 ## Quick start / 快速开始
 
-Workspace maintenance helpers / 工作区配置维护命令：
+> **4.x 历史内容 / Legacy 4.x content**：本节及以下的命令行示例属于 4.x，`memory-center <command>` 子命令 CLI 在 5.0 已下线。5.0 的使用方式是：启动服务后进管理页 `/admin/` 登记项目并索引，Agent 侧通过统一 MCP `/mcp`（见 [统一 MCP](#unified-mcp--统一-mcp) 与 [MCP 接入指南](docs/MCP_GUIDE.md)）。保留这些示例是为了理解既有配置与参数语义，不代表 5.0 可用。
+
+Workspace maintenance helpers / 工作区配置维护命令（4.x）：
 
 - `memory-center workspace list-services`
 - `memory-center workspace add-service`
@@ -869,9 +871,9 @@ Since 5.0 the MCP endpoint is the always-on service itself at `http://127.0.0.1:
 只支持 stdio 的宿主仍可用无状态代理 `memory-center-mcp`（转发到 `MEMORY_CENTER_URL`，不接受旧 `--workspace`）。`runtime-audit --fix` 与 `setup-agent` 生成的也是这套 5.0 绑定。
 Stdio-only hosts can still use the stateless `memory-center-mcp` adapter, which forwards to `MEMORY_CENTER_URL` and no longer accepts the legacy `--workspace` flag. `runtime-audit --fix` and `setup-agent` now generate exactly this 5.0 binding set.
 
-当前暴露 17 个工具，签名以服务实际返回的 `tools/list` 为准：`mc_service_status`、`mc_workspaces`、`mc_lookup`、`mc_analyze`、`mc_start`、`mc_resume`、`mc_close`、`mc_ref`、`mc_memory_write`、`mc_wiki_write`、`mc_index`、`mc_job_status`、`mc_job_cancel`、`assistant_admin`、`assistant_knowledge`、`assistant_memory`、`assistant_skill`。逐项说明见 [5.0 平台指南](docs/V5_PLATFORM_GUIDE.md)。
+当前暴露 17 个工具，签名以服务实际返回的 `tools/list` 为准：`mc_service_status`、`mc_workspaces`、`mc_lookup`、`mc_analyze`、`mc_start`、`mc_resume`、`mc_close`、`mc_ref`、`mc_memory_write`、`mc_wiki_write`、`mc_index`、`mc_job_status`、`mc_job_cancel`、`assistant_admin`、`assistant_knowledge`、`assistant_memory`、`assistant_skill`。逐项说明见 [MCP 接入指南](docs/MCP_GUIDE.md)。
 
-Seventeen tools are exposed; the live `tools/list` response is the contract. See the [5.0 platform guide](docs/V5_PLATFORM_GUIDE.md) for field-level details.
+Seventeen tools are exposed; the live `tools/list` response is the contract. See the [MCP guide](docs/MCP_GUIDE.md) for field-level details.
 
 > 下文的引擎细节（`mc_admin` action、`mc_sync` 等）描述的是服务内部保留的 4.x 引擎能力，5.0 的对外工具名以上表为准。
 > The engine notes below describe retained 4.x engine capabilities behind the service; the 5.0 tool surface is the list above.

@@ -91,14 +91,15 @@ pip install -e .
 bash install.sh
 ```
 
-项目提供 4 个入口：
+项目提供 5 个入口（5.0 起 4.x 的 `memory-center <command>` 子命令 CLI 已下线，`memory-center` 指向服务本体）：
 
 | 入口 | 命令 | 说明 |
 |---|---|---|
-| 服务 | `memory-center-service`（`memory-center` 同入口，默认 `127.0.0.1:8765`） | 管理页 `/admin/`、统一 MCP `/mcp`、HTTP API 与后台任务 |
-| CLI | `memory-center <command> --workspace <path>` | 命令行操作（索引、查询、审计等） |
+| 服务 | `memory-center-service` / `memory-center`（默认 `127.0.0.1:8765`） | 管理页 `/admin/`、统一 MCP `/mcp`、HTTP API 与后台任务；参数见 `--help` |
+| 统一 MCP | `POST /mcp`（Streamable HTTP） | 17 个工具；宿主直接连 `http://127.0.0.1:8765/mcp` |
 | MCP 代理 | `memory-center-mcp` | 仅 stdio 宿主；转发到 `MEMORY_CENTER_URL`，不接受旧 `--workspace` |
-| 维护 | `memory-center-maintenance` | 备份、清理、迁移与诊断 |
+| 维护 | `memory-center-maintenance` | 备份、恢复、迁移 |
+| 宿主接入 | `memory-center-integrations` | 生成 AGENTS/CLAUDE/GEMINI/copilot/cursor 指令块与宿主 MCP 配置 |
 
 ```bash
 # 常用 CLI 命令

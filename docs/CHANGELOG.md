@@ -5,8 +5,10 @@
 - 宿主接入生成器不再输出 4.x 合同：`AGENTS.md`、`CLAUDE.md`、`GEMINI.md`、`.github/copilot-instructions.md`、`.cursor/rules/memory-center.mdc` 的受管块改为 5.0 协议，按 `mc_workspaces()` 选择已登记工作区，并明确说明 5.0 不读取旧 workspace 文件。
 - `.mcp.json`、`.cursor/mcp.json`、`.codex/mcp.json` 改为 `{"type":"http","url":"http://127.0.0.1:8765/mcp"}`，不再写 `memory-center-mcp --workspace`；DSH profile 的 `cordis.patch.yml` 写入 `transport: streamable-http` 条目并只在地址不一致时重写。
 - `runtime-audit --fix` 不再把宿主绑定回退成 stdio `--workspace`；`inspect-agent-mcp-bindings` 改为按服务端点 URL 判定，新增 4.x stdio 条目与过期 URL 两个回归用例。
+- `docs/MCP_GUIDE.md` 重写为 5.0 合同：一个 `/mcp` 入口、17 个工具参考（参数与真实返回示例）、推荐工作流、证据边界、宿主配置片段（Claude Code / Codex / Cursor / DSH）、4.x→5.0 迁移对照与故障排查；README、ARCHITECTURE、AI_DEV_GUIDE 的入口描述同步到服务化形态。
 - 大范围图清理使用临时范围表与子查询，移除文件路径 `OR` 链和节点 ID 大量绑定参数；保留原有项目／精确文件范围及入边处理语义，清理失败事务回滚。
 - Wiki 自动调度在项目索引失败、取消或中断后停止；状态持久化，重启或删除任务记录不触发自动重试，手动重试恢复。关闭自动同步或暂停来源后不再自动提交该来源关联的项目索引。
+- `docs/MCP_GUIDE.md` is rewritten for the 5.0 contract: one `/mcp` endpoint, a 17-tool reference with real response samples, recommended flows, evidence boundaries, host wiring for Claude Code/Codex/Cursor/DSH, a 4.x→5.0 migration map and troubleshooting; README/ARCHITECTURE/AI_DEV_GUIDE entry points follow the service shape.
 - The host-binding generator is 5.0-native: managed instruction blocks select a registered workspace through `mc_workspaces()`, JSON host configs point at the unified Streamable HTTP endpoint instead of the legacy stdio `--workspace` adapter, and DSH profile patches are written as `transport: streamable-http`. `runtime-audit --fix` no longer downgrades bindings back to 4.x, and binding inspection now compares the service URL (regressions cover both a retired stdio entry and a stale URL). Large graph cleanup and Wiki auto-scheduling changes from the previous unreleased batch ship here as well.
 
 ## 5.0.0b23 — 知识阅读与任务交互 / Knowledge and task interaction

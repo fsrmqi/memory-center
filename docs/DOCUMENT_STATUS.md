@@ -15,7 +15,7 @@
 | `docs/V5_SERVICE_GUIDE.md` | 5.0.0a2 服务入口、接口合同与 wheel/OrbStack 操作 |
 | `README.md` | 产品定位、安装、快速开始与当前版本概览 |
 | `docs/ARCHITECTURE.md` | 当前分层、运行模型、质量/检索/存储架构 |
-| `docs/MCP_GUIDE.md` | MCP facade、Agent 行为、质量与证据边界 |
+| `docs/MCP_GUIDE.md` | 5.0 统一 MCP 合同：接入方式、17 个工具参考、证据边界与 4.x 迁移对照 |
 | `docs/USER_GUIDE.md` | 用户工作流、维护、质量门禁与故障处理 |
 | `docs/REFERENCE.md` | CLI、HTTP、MCP 的事实参考与维护命令 |
 | `docs/ONTOLOGY.md` | 实体、关系、证据强度和治理语义 |

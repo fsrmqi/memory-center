@@ -122,11 +122,12 @@ Memory Center 不要求中心化服务。默认形态是每个 workspace 自带�
 
 | 入口 | 命令 / 路径 | 代码位置 | 职责 |
 |---|---|---|---|
-| CLI | `memory-center` | `memory_center/cli/main.py` | 初始化、索引、查询、影响分析、任务工作流、评测、hook 生成 |
-| Service | `memory-center-service`（`:8765`） | `memory_center/service/` | 管理页 `/admin/`、统一 MCP `/mcp`、HTTP API、后台任务 |
-| MCP | `POST /mcp`（stdio 代理 `memory-center-mcp`） | `memory_center/mcp/` | 17 个统一 tools（`mc_*` 与 `assistant_*`），Streamable HTTP |
-| HTTP | `/workspace/*` 等 | `memory_center/service/` | 管理 API 与 JSON 读模型；不托管 SPA 构建产物 |
-| Hooks | generated host hooks | `memory_center/hooks/` | SessionStart、PreToolUse、Stop 等宿主生命周期集成 |
+| Service | `memory-center-service`（`memory-center` 同入口，`127.0.0.1:8765`） | `memory_center/service/main.py`、`app.py` | 进程生命周期、管理页 `/admin/`、统一 MCP `/mcp`、HTTP API |
+| 统一 MCP | `POST /mcp`（Streamable HTTP） | `memory_center/service/platform_mcp.py`、`governance_mcp.py` | 17 个工具（`mc_*` / `assistant_*`），按凭据过滤并在调用时再授权 |
+| stdio 代理 | `memory-center-mcp` | `memory_center/service/proxy.py` | 无状态转发到 `MEMORY_CENTER_URL`，供只支持 stdio 的宿主使用 |
+| HTTP API | workspace / platform / governance 路由 | `memory_center/service/*_routes.py` | 管理 API 与 JSON 读模型；不托管 SPA 构建产物 |
+| 维护 | `memory-center-maintenance` | `memory_center/service/maintenance.py` | 备份、恢复、迁移 |
+| 宿主接入 | `memory-center-integrations` | `memory_center/service/integrations.py` | 生成宿主指令文件与 MCP 配置（AGENTS/CLAUDE/GEMINI/copilot/cursor、DSH patch） |
 
 ### 1.5 Core 领域布局 / Core Domain Layout
 
