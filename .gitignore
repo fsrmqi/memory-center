@@ -80,3 +80,6 @@ examples/**/*.db
 examples/**/*.db-shm
 examples/**/*.db-wal
 examples/**/store.lock
+
+# 内部资料（内部路线／回执／真实工作区基准／第三方调研），不入库、不发布
+/docs-internal/

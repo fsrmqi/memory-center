@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
-# 公开发布流水线 / Public release pipeline
+# 干净导出工具 / Clean export tool（可选，非日常发布必需）
 #
-# 从某个 commit 导出"公开仓库快照"：`git archive` 按 .gitattributes 的
-# export-ignore 剔除内部资料（docs-internal/、.dsh-tmp/、示例生成物等），
-# 然后在干净目录里新建独立 git 历史（首个 commit 即公开历史，不带私有历史）。
+# 本仓库是单一仓库且已公开，日常发布就是普通 `git push`，不需要本脚本。
+# 本脚本用于两种场景：
+#   1) 给某次发布导出一棵不含内部资料的源码树（tarball / 只读快照）；
+#   2) 需要"再次从零起步"时，用干净树新建独立 git 历史（首个 commit 即公开历史）。
+# 导出时 `git archive` 按 .gitattributes 的 export-ignore 剔除内部资料
+# （docs-internal/、.dsh-tmp/、示例生成物等）、构建产物与本地配置。
 #
 # 用法 / Usage:
 #   scripts/public_release.sh                     # 导出到临时目录并跑校验门禁（默认不落盘）

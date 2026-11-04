@@ -1,5 +1,24 @@
 # Changelog / 更新日志
 
+## 5.0.0b28 — 单仓库开源：历史重写与内部资料出库 / Single-repository open source
+
+### 变更 / Changed
+
+- **发布模型简化**：不再采用"私有仓 + 公开快照仓"双仓模型。本项目转为**单一仓库**（同时作为公开仓库），开发历史在开源时一次性重写为干净的起始提交，此后提交即公开内容。
+- **内部资料出库**：内部路线、实施回执、真实工作区基准与第三方调研目录改为仓库外本地资料，`/docs-internal/` 加入 `.gitignore`，不再随仓库分发；旧历史与内部资料以本地 git bundle 与压缩包形式备份（见 `docs/PUBLISHING.md`）。
+- **发布文档改写**：`docs/PUBLISHING.md` 说明单仓模型、日常提交自查规则、测试前置（先构建管理页）与公开仓首次后台设置清单（可见性、About、历史 dependabot PR、必要时联系 GitHub Support 清理不可达对象）。
+- **导出工具定位调整**：`scripts/public_release.sh` 从"日常发布流水线"改为可选的干净导出工具，用于导出不含内部资料的源码树或需要再次从零起步时重建历史；日常发布不再需要它。
+- **版本同步**：包、前端、Compose 与当前版本文档同步至 5.0.0b28。
+
+The project moves from a two-repository model (private repo + exported public snapshot) to a
+**single repository** that is also the public one: the pre-open-source history was rewritten
+once into a clean initial commit, and every subsequent commit is publishable content. Internal
+roadmaps, receipts, benchmarks and third-party research now live outside the repository
+(`/docs-internal/` is git-ignored) with a local bundle backup of the old history. `docs
+/PUBLISHING.md` documents the single-repository model, the pre-commit self-check, the admin-page
+build prerequisite for tests, and the one-time GitHub settings; `scripts/public_release.sh`
+becomes an optional clean-export tool instead of the daily release path.
+
 ## 5.0.0b27 — 开源就绪：仓库卫生与发布面 / Open-source readiness: repository hygiene and public surface
 
 ### 新增 / Added
