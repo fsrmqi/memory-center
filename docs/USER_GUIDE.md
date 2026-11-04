@@ -1,8 +1,8 @@
 # User Guide / 使用指南
 
-> **适用版本 / Version**：5.0.0b28。5.0 以独立常驻服务为唯一入口：管理页、统一 MCP 与 CLI 共用同一应用层。当前入口与合同见 [5.0 平台指南](V5_PLATFORM_GUIDE.md)，用户可感知的变化见 [CHANGELOG](CHANGELOG.md)。下方较早的版本记录保留作决策演进背景，不代表当前入口。
+> **适用版本 / Version**：5.0.0b29。5.0 以独立常驻服务为唯一入口：管理页、统一 MCP 与 CLI 共用同一应用层。当前入口与合同见 [5.0 平台指南](V5_PLATFORM_GUIDE.md)，用户可感知的变化见 [CHANGELOG](CHANGELOG.md)。下方较早的版本记录保留作决策演进背景，不代表当前入口。
 >
-> **Version**: 5.0.0b28. The resident service is the single entry point of 5.0: admin UI, unified MCP and CLI share one application layer. See the [platform guide](V5_PLATFORM_GUIDE.md) for current contracts and the [CHANGELOG](CHANGELOG.md) for user-visible changes; older sections below are historical background only.
+> **Version**: 5.0.0b29. The resident service is the single entry point of 5.0: admin UI, unified MCP and CLI share one application layer. See the [platform guide](V5_PLATFORM_GUIDE.md) for current contracts and the [CHANGELOG](CHANGELOG.md) for user-visible changes; older sections below are historical background only.
 
 
 > **当前入口 / Current entry**：`memory-center-service` 独立常驻服务，管理页 `/admin/`、MCP `/mcp`、项目目录 API `/api/v1/workspaces`。服务生命周期、状态与错误合同、安装与关闭见 [5.0 服务运行指南](V5_SERVICE_GUIDE.md)；项目登记与管理见 [项目目录管理指南](V5_CATALOG_GUIDE.md)。下文 4.x CLI/HTTP 说明属于保留的引擎能力，不构成 5.0 兼容承诺。

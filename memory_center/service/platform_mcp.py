@@ -9,12 +9,19 @@ from mcp.server.transport_security import TransportSecurityMiddleware, Transport
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
+from memory_center import __version__
 from memory_center.core.foundation.catalog import CatalogError
 from memory_center.platform.call_traces import observe_mcp_call, observe_transport, current_trace, span
 
 
 class ScopedMCP(FastMCP):
     platform = None
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # MCP SDK 默认把 mcp 包版本写进 serverInfo.version；改成本服务版本，
+        # 让宿主握手/诊断看到的版本与安装版本一致。
+        self._mcp_server.version = __version__
 
     def actor(self):
         if self.service_config.auth_mode == 'local':

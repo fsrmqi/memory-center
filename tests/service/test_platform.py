@@ -70,6 +70,23 @@ def call(client, headers, tool, arguments):
     return response.json()['result']
 
 
+def test_mcp_initialize_reports_service_version(service):
+    """握手 serverInfo.version 必须是本服务版本，而不是 MCP SDK 版本。"""
+    from memory_center import __version__
+
+    client, admin, _platform, spaces = service
+    read = credential(client, admin, [spaces[0]['workspace_id']], False)
+    response = client.post('/mcp', headers={'Accept': 'application/json, text/event-stream',
+                                            'Authorization': 'Bearer ' + read['token']},
+                           json={'jsonrpc': '2.0', 'id': 0, 'method': 'initialize', 'params': {
+                               'protocolVersion': '2025-06-18', 'capabilities': {},
+                               'clientInfo': {'name': 'test', 'version': '1'}}})
+    assert response.status_code == 200, response.text
+    info = response.json()['result']['serverInfo']
+    assert info['version'] == __version__
+    assert info['name'] == 'Memory Center 5.0'
+
+
 def test_credential_scope_session_revoke(service):
     client, admin, platform, spaces = service
     a, b = [s['workspace_id'] for s in spaces]

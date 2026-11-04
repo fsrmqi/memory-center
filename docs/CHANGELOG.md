@@ -1,5 +1,18 @@
 # Changelog / 更新日志
 
+## 5.0.0b29 — MCP 握手版本修正 / Correct MCP handshake version
+
+### 修复 / Fixed
+
+- **`serverInfo.version` 不再是 MCP SDK 版本**：`FastMCP` 默认把 `mcp` 包版本写进 `initialize` 响应的 `serverInfo.version`，导致宿主与诊断看到的是 `1.27.1` 而不是本服务版本。`ScopedMCP` 现在在初始化时覆盖为 `memory_center.__version__`，`serverInfo.name` 保持 `Memory Center 5.0`。
+- 新增回归测试 `test_mcp_initialize_reports_service_version`：按凭据握手并断言 `serverInfo.version == __version__`。
+- 版本同步：包、前端、Compose 与当前版本文档同步至 5.0.0b29。
+
+`initialize` responses used to report the MCP SDK version (`1.27.1`) in `serverInfo.version`
+because that is `FastMCP`'s default; `ScopedMCP` now overrides it with
+`memory_center.__version__`, with a regression test asserting the handshake reports the
+service version. Package, frontend, Compose and current version docs move to 5.0.0b29.
+
 ## 5.0.0b28 — 单仓库开源：历史重写与内部资料出库 / Single-repository open source
 
 ### 变更 / Changed
