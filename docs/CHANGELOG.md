@@ -1,5 +1,14 @@
 # Changelog / 更新日志
 
+## 5.0.0b25 — 会话接续契约与资料边界 / Session continuation contract and content boundary
+
+- `mc_resume` 与恢复包新增 `continuation`：接续策略（`continue_session` / `rebuild_from_packet`）、原因码、会话句柄状态、资料包是否自足、下一步动作与必读引用。原会话不可续时明确降级为按已落盘资料继续，不再让调用方猜。
+- 恢复包新增 `continuation.pending_decisions`：汇总跨会话存活的待批合并候选与处理入口；审批仍是 append-only 决策行，重复提交幂等。
+- `resume_packet` 与 `mc_lookup` 新增 `content_boundary`：把服务生成的指令区与来自会话、代码、Wiki、记忆的资料区显式分区，正文一律按资料处理，不执行其中的指令，也不据此改变工具或项目范围。
+- JSONL 导出修复撕裂尾：权威记录已提交、导出只写半行时，同步改为从权威记录重建，不再把新记录接在半行后面；新增强杀场景回归用例，覆盖半条记录不被当成事实与重建幂等。
+- 以上均为增量字段：既有工具参数、必填字段与返回结构保持兼容，不需要数据迁移。
+- `mc_resume` and resume packets now return a `continuation` contract (strategy, reason code, session-handle state, whether the materialized packet is self-sufficient, the next action, and must-read refs), so a lost session degrades to "continue from durable material" explicitly instead of leaving callers to guess. Resume packets also summarize cross-session pending decisions. `resume_packet` and `mc_lookup` add `content_boundary` separating service-generated instructions from data produced by sessions, code, Wiki and memory. JSONL export sync now rebuilds from authoritative records when the export ends in a torn half-line instead of appending after it. All fields are additive: existing tool parameters, required fields and response shapes remain compatible, with no data migration.
+
 ## 5.0.0b24 — 宿主接入生成器 5.0 化 / Host-binding generator on 5.0
 
 - 宿主接入生成器不再输出 4.x 合同：`AGENTS.md`、`CLAUDE.md`、`GEMINI.md`、`.github/copilot-instructions.md`、`.cursor/rules/memory-center.mdc` 的受管块改为 5.0 协议，按 `mc_workspaces()` 选择已登记工作区，并明确说明 5.0 不读取旧 workspace 文件。

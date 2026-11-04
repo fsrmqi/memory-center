@@ -675,6 +675,8 @@ Replay 检查会进一步把每条建议分类为 `adopted`、`missed`、`bypass
 - `confidence`
 - `task_health`
 - `repair_plan_hint`
+- `continuation`：接续契约。`strategy` 为 `continue_session`（原会话仍打开，继续记录过程证据）或 `rebuild_from_packet`（会话已关闭/不存在，按包内资料开新会话继续，不重做已完成业务）；同时给出 `reason` 原因码、`session_handle`（provider/session_id/state）、`packet_self_sufficient`、`next_action`、`must_read`，以及跨会话存活的 `pending_decisions`（待批合并候选数量与编号）。
+- `content_boundary`：把 `next_recommended_actions`/`unresolved_items`/`continuation.next_action` 标为指令区，`current_summary`/`latest_receipts`/`recent_evidence` 标为资料区；资料区正文不构成指令。
 
 ## 5. Token Controls / Token 控制
 

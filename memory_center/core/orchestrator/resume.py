@@ -4,6 +4,13 @@ import json
 from pathlib import Path
 from typing import Any
 
+from memory_center.core.foundation.continuation import (
+    CONTINUE_SESSION,
+    REBUILD_FROM_PACKET,
+    content_boundary,
+    continuation_contract,
+    session_handle,
+)
 from memory_center.core.foundation.schemas import with_schema
 from memory_center.core.governance.rules import (
     DEFAULT_HANDOFF_PROFILES,
@@ -27,6 +34,7 @@ from .shared import (
     LAYER_L1,
     LAYER_L2,
     LAYER_L3,
+    SESSION_EVENTS_FILE,
     SESSION_SUMMARIES_FILE,
     TOOL_WORKSPACE_LOG_SESSION_EVENT,
     TOOL_WORKSPACE_SYNC_CASE_ARTIFACTS,
@@ -182,13 +190,21 @@ def workspace_resume_packet(
     }
     packet.update(_build_resume_readiness(packet, task_meta or {}, replay.get("timeline", [])))
     packet.update(_build_resume_task_health(workspace_file, resolved_task_id))
+    packet["continuation"] = _build_resume_continuation(
+        workspace_file=workspace_file,
+        store=store,
+        workspace=config.workspace,
+        session_id=session_id,
+        packet=packet,
+    )
+    packet["content_boundary"] = _resume_content_boundary()
     fields = resume_rules.get("fields", list(packet.keys()))
     filtered = {"workspace": config.workspace}
     for key in fields:
         if key in packet:
             filtered[key] = packet[key]
     filtered["resume_rule_profile"] = packet.get("resume_rule_profile", "default")
-    for key in ("resume_readiness", "missing_context", "stale_artifacts", "must_read_refs", "confidence", "task_health", "repair_plan_hint"):
+    for key in ("resume_readiness", "missing_context", "stale_artifacts", "must_read_refs", "confidence", "task_health", "repair_plan_hint", "continuation", "content_boundary"):
         filtered[key] = packet.get(key)
     result = with_schema("resume_packet", filtered)
     if (view or "").strip().lower() == "compact":
@@ -627,6 +643,105 @@ def _build_resume_task_health(workspace_file: str | Path, task_id: str) -> dict[
             "reason": "health_issues_detected" if has_issues else "no_health_issues",
         },
     }
+
+
+def _session_continuation_state(store: WorkspaceStore, session_id: str) -> tuple[str, str]:
+    """判定原会话还能不能接着用：open / closed / missing / unknown。
+
+    会话句柄只是优化：拿不到状态时按 missing 处理并给出原因码，恢复流程
+    仍从包内资料继续，不因为查不到状态而中断。
+    """
+    sid = (session_id or "").strip()
+    if not sid:
+        return "missing", "no_session_id"
+    try:
+        closed = store.find_jsonl_via_backend(
+            SESSION_SUMMARIES_FILE, lambda row: str(row.get("session_id", "")) == sid, limit=1, session_id=sid
+        )
+        if closed:
+            return "closed", "session_closed"
+        events = store.find_jsonl_via_backend(
+            SESSION_EVENTS_FILE, lambda row: str(row.get("session_id", "")) == sid, limit=1, session_id=sid
+        )
+        if events:
+            return "open", "session_open"
+    except Exception:
+        return "unknown", "session_state_unavailable"
+    return "missing", "session_not_found"
+
+
+def _build_resume_continuation(*, workspace_file: str | Path, store: WorkspaceStore, workspace: str, session_id: str, packet: dict[str, Any]) -> dict[str, Any]:
+    """把"接着哪段会话、接不上怎么办"写成契约，而不是隐含前提。"""
+    state, reason = _session_continuation_state(store, session_id)
+    self_sufficient = str(packet.get("resume_readiness", "") or "") == "ready" and not packet.get("missing_context")
+    handle = session_handle("memory-center", (session_id or "").strip(), state)
+    must_read = packet.get("must_read_refs", []) or []
+    if state == "open":
+        contract = continuation_contract(
+            strategy=CONTINUE_SESSION,
+            reason=reason,
+            workspace_id=workspace,
+            session_handle=handle,
+            packet_self_sufficient=self_sufficient,
+            next_action={
+                "tool": "workspace_log_session_event",
+                "why": "原会话仍打开；继续在同一会话记录过程证据，避免把它当成新任务重做。",
+            },
+            must_read=must_read,
+        )
+    elif not self_sufficient:
+        contract = continuation_contract(
+            strategy=REBUILD_FROM_PACKET,
+            reason=reason,
+            workspace_id=workspace,
+            session_handle=handle,
+            packet_self_sufficient=False,
+            next_action={
+                "tool": "workspace_task_resume_check",
+                "why": "原会话不可续且资料未齐；先按 missing_context 补齐，再开新会话接手。",
+                "missing_context": list(packet.get("missing_context", []) or [])[:8],
+            },
+            must_read=must_read,
+        )
+    else:
+        contract = continuation_contract(
+            strategy=REBUILD_FROM_PACKET,
+            reason=reason,
+            workspace_id=workspace,
+            session_handle=handle,
+            packet_self_sufficient=True,
+            next_action={
+                "tool": "workspace_start_session",
+                "why": "原会话不可续；已完成的回执与证据在本包内，按 next_recommended_actions 开新会话继续，不重做已完成业务。",
+            },
+            must_read=must_read,
+        )
+    contract["pending_decisions"] = _pending_decision_summary(workspace_file)
+    return contract
+
+
+def _pending_decision_summary(workspace_file: str | Path) -> dict[str, Any]:
+    """跨会话存活的待批事项：人离开再回来时第一眼能看到，且审批仍然幂等。"""
+    try:
+        from .consolidate import workspace_list_consolidation_candidates
+
+        listed = workspace_list_consolidation_candidates(workspace_file, status="pending", limit=5)
+        candidates = listed.get("candidates", []) or []
+        return {
+            "count": int(listed.get("candidate_count", 0) or 0),
+            "candidate_ids": [str(item.get("candidate_id", "")) for item in candidates][:5],
+            "next_action": "审核后运行 decide-consolidation-candidate（append-only 决策行，重复提交幂等）。" if candidates else "",
+        }
+    except Exception:
+        return {"count": 0, "candidate_ids": [], "next_action": "candidate_store_unavailable"}
+
+
+def _resume_content_boundary() -> dict[str, Any]:
+    return content_boundary(
+        instruction=["next_recommended_actions", "unresolved_items", "continuation.next_action"],
+        data=["current_summary", "latest_receipts", "recent_evidence"],
+        metadata=["resume_readiness", "missing_context", "stale_artifacts", "must_read_refs", "confidence", "task_health", "continuation"],
+    )
 
 
 def _days_since(value: str) -> int | None:

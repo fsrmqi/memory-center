@@ -73,3 +73,28 @@ def test_concurrent_append_batch_prune_and_rebuild_is_idempotent(demo_workspace:
     assert second["exported"] == 0
     assert len(rows) == 20
     assert store.jsonl_export_status(collection)["needs_sync"] is False
+
+
+def test_torn_tail_rebuilds_instead_of_appending_after_half_line(demo_workspace: Path) -> None:
+    """进程在"SQLite 已提交、JSONL 只写了一半"时被杀：同步必须重建，不能接在半行后面。"""
+    store = WorkspaceStore(demo_workspace)
+    collection = "projection-torn.jsonl"
+    store.append_jsonl(collection, {"event_type": "first"})
+    store.append_jsonl(collection, {"event_type": "second"})
+    # 模拟强杀：权威记录已提交，导出只落了半行，水位仍停在上一笔。
+    store.memory_backend().append_record(collection, {"event_type": "third"})
+    path = store.memory_dir / collection
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write('{"event_type": "thi')
+    assert store.jsonl_export_status(collection)["needs_sync"] is True
+    # 半条记录不能被读取方当成事实。
+    assert [row.get("event_type") for row in store.read_jsonl(collection, limit=10)] == ["first", "second"]
+
+    first = store.sync_jsonl_export(collection)
+    second = store.sync_jsonl_export(collection)
+    rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+    assert first["rebuild"] is True
+    assert second["exported"] == 0
+    assert [row["event_type"] for row in rows] == ["first", "second", "third"]
+    assert path.read_text(encoding="utf-8").endswith("\n")
+    assert store.jsonl_export_status(collection)["needs_sync"] is False

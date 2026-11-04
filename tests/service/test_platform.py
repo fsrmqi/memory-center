@@ -95,6 +95,38 @@ def test_credential_scope_session_revoke(service):
     assert call(client, hb, 'mc_resume', {'session_id': started['id']})['isError']
 
 
+def test_mc_resume_returns_continuation_contract(service):
+    client, admin, platform, spaces = service
+    a = spaces[0]['workspace_id']
+    credential_a = credential(client, admin, [a])
+    headers = mcp_connect(client, credential_a['token'])
+    started = call(client, headers, 'mc_start', {'workspace_id': a, 'intent': '接续契约'})['structuredContent']
+    resumed = call(client, headers, 'mc_resume', {'session_id': started['id']})['structuredContent']
+    assert resumed['id'] == started['id']
+    continuation = resumed['continuation']
+    assert continuation['strategy'] == 'continue_session'
+    assert continuation['session_handle'] == {'provider': 'memory-center', 'session_id': started['id'], 'state': 'open'}
+    assert continuation['next_action']['tool'] in {'mc_lookup', 'mc_index'}
+    assert resumed['content_boundary']['instruction'] == ['continuation.next_action']
+
+    call(client, headers, 'mc_close', {'session_id': started['id'], 'outcome': 'done'})
+    closed = call(client, headers, 'mc_resume', {'session_id': started['id']})['structuredContent']
+    assert closed['continuation']['strategy'] == 'rebuild_from_packet'
+    assert closed['continuation']['reason'].startswith('session_closed')
+    assert closed['continuation']['session_handle']['state'] == 'closed'
+
+
+def test_mc_lookup_marks_instruction_and_data_boundary(service):
+    client, admin, platform, spaces = service
+    a = spaces[0]['workspace_id']
+    result = platform.lookup(platform.administrator(), a, 'alpha', 'hybrid', 5)
+    boundary = result['content_boundary']
+    assert boundary['data'] == ['items', 'symbols', 'chain']
+    assert boundary['instruction'] == []
+    assert 'generation' in boundary['metadata']
+    assert boundary['policy']
+
+
 def test_knowledge_generation_and_cancellation(service):
     client, admin, platform, spaces = service
     a, b = [s['workspace_id'] for s in spaces]

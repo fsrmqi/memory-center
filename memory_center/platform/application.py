@@ -4,6 +4,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from memory_center.core.foundation.catalog import CatalogError
+from memory_center.core.foundation.continuation import (
+    CONTINUE_SESSION,
+    REBUILD_FROM_PACKET,
+    content_boundary,
+    continuation_contract,
+    session_handle,
+)
 from memory_center.platform.code_graph import query_code_graph, symbol_fresh
 from memory_center.platform.embeddings import Embedder
 from memory_center.platform.governance import ASSISTANT_TOOLS, Governance
@@ -88,9 +95,68 @@ class Platform:
                     item['freshness'] = 'CURRENT' if self.wiki_sources.fresh(source) else 'STALE'
                 else:
                     item['freshness'] = 'CURRENT'
+        result['content_boundary'] = content_boundary(
+            data=['items', 'symbols', 'chain'],
+            metadata=['generation', 'coverage', 'state', 'freshness', 'ref_id'],
+        )
         result['ref_id'] = self.access.reference(actor, workspace_id, result)
         self.store.audit(actor.id, 'lookup', workspace_id)
         return result
+
+    def resume(self, actor, session_id):
+        """恢复会话；同时给出接续契约：原会话能不能续、续不上从哪继续。"""
+        session = self.access.owned(actor, 'session', session_id)
+        state = 'open' if session.get('status') == 'active' else 'closed'
+        index_state = self.index_state(session['workspace_id'])
+        context_ready = index_state == 'fresh'
+        workspace_id = session['workspace_id']
+        intent = str(session.get('intent', ''))[:200]
+        if state == 'open':
+            reason = 'session_active' if context_ready else 'session_active_index_' + index_state
+            strategy = CONTINUE_SESSION
+            next_action = (
+                {'tool': 'mc_lookup', 'argument': {'workspace_id': workspace_id, 'query': intent},
+                 'why': '会话仍开启且索引新鲜；继续按 intent 查询项目事实。'}
+                if context_ready else
+                {'tool': 'mc_index', 'argument': {'workspace_id': workspace_id},
+                 'why': '会话仍开启但索引缺失或过期；先重建索引再继续，避免读到旧事实。'}
+            )
+        else:
+            reason = 'session_closed' if context_ready else 'session_closed_index_' + index_state
+            strategy = REBUILD_FROM_PACKET
+            next_action = (
+                {'tool': 'mc_start', 'argument': {'workspace_id': workspace_id, 'intent': intent},
+                 'why': '原会话已关闭；按上次 intent 与 outcome 开新会话接手，不重做已完成部分。'}
+                if context_ready else
+                {'tool': 'mc_index', 'argument': {'workspace_id': workspace_id},
+                 'why': '原会话已关闭且索引不可用；先重建索引，再开新会话接手。'}
+            )
+        continuation = continuation_contract(
+            strategy=strategy,
+            reason=reason,
+            workspace_id=workspace_id,
+            session_handle=session_handle('memory-center', session_id, state),
+            packet_self_sufficient=context_ready,
+            next_action=next_action,
+            must_read=[session_id],
+        )
+        boundary = content_boundary(
+            data=['session.intent', 'session.outcome'],
+            instruction=['continuation.next_action'],
+            metadata=['session.id', 'session.status', 'continuation'],
+        )
+        return {**session, 'continuation': continuation, 'content_boundary': boundary}
+
+    def index_state(self, workspace_id):
+        """索引可用性：fresh / stale / missing；不抛错，交给调用方决定下一步。"""
+        try:
+            index = self.store.get('index', workspace_id)
+        except CatalogError as exc:
+            if exc.code == 'RECORD_NOT_FOUND':
+                return 'missing'
+            raise
+        workspace = self.catalog.get(workspace_id)
+        return 'fresh' if index.get('config_version') == workspace.get('config_version') else 'stale'
 
     def analysis_settings(self, actor, workspace_id):
         if actor.id == 'admin':

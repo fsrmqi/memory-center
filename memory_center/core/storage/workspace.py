@@ -80,6 +80,21 @@ def _mcp_audit_cutoff() -> str:
     return (datetime.now(timezone.utc) - timedelta(days=_MCP_AUDIT_RETENTION_DAYS)).isoformat()
 
 
+def _jsonl_export_has_torn_tail(path: Path) -> bool:
+    """导出末尾是否缺换行：进程在"权威记录已提交、JSONL 只写了一半"时被杀会留下这种尾巴。
+
+    撕裂时不能按水位增量追加，否则新记录会接在半行后面；调用方应改为从权威记录重建。
+    """
+    try:
+        if path.stat().st_size == 0:
+            return True
+        with path.open("rb") as handle:
+            handle.seek(-1, 2)
+            return handle.read(1) != b"\n"
+    except OSError:
+        return True
+
+
 def _read_tail_lines(path: Path, limit: int) -> list[str]:
     """读取 JSONL 末尾有限行，避免审计读取扫描完整大文件。"""
     if limit <= 0:
@@ -223,7 +238,7 @@ class WorkspaceStore:
         state = self.memory_backend().jsonl_export_state(name)
         rebuild = rebuild or state["dirty"] or (state["last_record_id"] > 0 and not path.exists()) or (
             state["last_record_id"] == 0 and path.exists()
-        )
+        ) or (state["last_record_id"] > 0 and _jsonl_export_has_torn_tail(path))
         after_id = 0 if rebuild else state["last_record_id"]
         rows = self.memory_backend().records_for_jsonl_export(name, after_id=after_id)
         if rebuild:

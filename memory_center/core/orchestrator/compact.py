@@ -187,6 +187,8 @@ def _compact_resume_packet(result: dict[str, Any], budget: str = "medium") -> di
             "confidence": result.get("confidence", 0),
             "task_health": result.get("task_health", {}),
             "repair_plan_hint": result.get("repair_plan_hint", {}),
+            "continuation": result.get("continuation", {}),
+            "content_boundary": result.get("content_boundary", {}),
         },
     )
 
@@ -211,6 +213,8 @@ def _compact_continuity_dashboard(result: dict[str, Any], budget: str = "medium"
                 "resume_rule_profile": resume_packet.get("resume_rule_profile", ""),
                 "next_recommended_actions": resume_packet.get("next_recommended_actions", [])[: limits["steps"]],
                 "unresolved_items": resume_packet.get("unresolved_items", [])[: limits["findings"]],
+                "continuation": resume_packet.get("continuation", {}),
+                "content_boundary": resume_packet.get("content_boundary", {}),
             },
             "next_actions": result.get("next_actions", [])[: limits["steps"]],
             "unresolved_items": result.get("unresolved_items", [])[: limits["findings"]],

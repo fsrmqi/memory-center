@@ -108,8 +108,8 @@ def register_tools(mcp):
 
     @mcp.tool()
     def mc_resume(session_id: str) -> dict[str, Any]:
-        """恢复当前凭据拥有的任务会话，不能跨主体或跨项目使用。"""
-        return service().access.owned(mcp.actor(), 'session', session_id)
+        """恢复当前凭据拥有的任务会话，并返回接续契约（能否续、续不上从哪继续）。"""
+        return service().resume(mcp.actor(), session_id)
 
     @mcp.tool()
     def mc_close(session_id: str, outcome: str) -> dict[str, Any]:
