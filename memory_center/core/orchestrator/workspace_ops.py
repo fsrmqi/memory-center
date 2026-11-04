@@ -468,8 +468,9 @@ def workspace_lookup_hint(
     # A pure CamelCase symbol name (method/class) with no suffix keyword still
     # means "find this symbol", and symbol lookup hits it precisely, whereas
     # file-level code search only returns the containing file. Real-workspace
-    # evidence: `getClusterUniversalStateForAppMachine` alone was misrouted to
-    # local_search/code and never surfaced the Method node (27 graph edges).
+    # evidence: a bare method name such as `getOrderStateForApp` was misrouted
+    # to local_search/code and never surfaced the Method node, although 20+
+    # graph edges hang off that symbol.
     camel_suffix_tokens = [
         "service", "controller", "client", "facade", "manager", "mapper",
         "handler", "listener", "consumer", "producer", "config", "util",

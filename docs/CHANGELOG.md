@@ -1,5 +1,62 @@
 # Changelog / 更新日志
 
+## 5.0.0b26 — 工程约定 profile 化 / Pluggable workspace profiles
+
+### 新增 / Added
+
+- 新增 **Workspace profile（工作区约定）**：`workspace.yaml` 可选顶层 `profile:`，或使用环境变量 `MEMORY_CENTER_PROFILE`。profile 是 YAML **数据**而不是代码插件，承载团队自己的模块别名、默认 scope、Wiki 拓扑、声明式配置抽取规则与弱信号词；空 profile 为中性默认，全部功能按中性默认运行，不抛错、不需要迁移。
+- profile 的三种来源与优先级（先命中者生效）：**显式参数 > `workspace.yaml` 的 `profile:` > 环境变量 `MEMORY_CENTER_PROFILE` > 中性默认**。新增 `profile_for_workspace(workspace_file)` 按工作区声明解析；workspace 文件不存在或无声明时回退到环境变量／默认。显式参数与 `MEMORY_CENTER_PROFILE` 的值可以是 profile 名（在 `$MEMORY_CENTER_PROFILE_DIR` 或 `~/.memory-center/profile.d/` 下查找 `<name>.yaml|.yml`），也可以是文件路径；显式声明的名字找不到时抛 `ProfileError`，明确失败而不是静默回退到默认。
+- 新增 `examples/profile/profile.example.yaml`（中性示例）与 `tests/domain/test_profiles.py`（profile 解析、文件缓存、来源优先级与声明式配置抽取的单元测试）；README 增加中英双语 profile 说明，包、前端、Compose 与当前版本文档同步至 5.0.0b26。
+
+Added workspace profiles: `workspace.yaml` may declare an optional top-level `profile:`, or `MEMORY_CENTER_PROFILE` may be used. A profile is YAML data, not a code plugin, and carries team-owned module aliases, a default scope, Wiki topology, declarative config extraction rules and weak tokens; an empty profile is a neutral default under which every feature keeps running, without errors or migration. Sources resolve in this order (first match wins): explicit argument > `profile:` in `workspace.yaml` > `MEMORY_CENTER_PROFILE` > neutral default. The new `profile_for_workspace(workspace_file)` resolves a workspace declaration and falls back to the env/default when the file or the declaration is absent; explicit and env values may be a profile name (looked up as `<name>.yaml|.yml` under `$MEMORY_CENTER_PROFILE_DIR` or `~/.memory-center/profile.d/`) or a file path, and an explicitly declared name that cannot be found raises `ProfileError` instead of silently falling back. `examples/profile/profile.example.yaml` and `tests/domain/test_profiles.py` are added, README documents the profile contract in Chinese and English, and the package, frontend, Compose and current version docs move to 5.0.0b26.
+
+### 兼容性与行为变更 / Compatibility and behavior changes
+
+- **[Breaking] `module_routing.reason`**：`assistant_memory` promote 的原因码由 `company_module_alias` 改为 `module_alias`；`valid_until` 在 profile 未设置过期时为空串；开源版不再内置任何公司别名与兜底提示，改由 profile 的 `module_aliases` / `module_alias_until` / `module_alias_hint` 提供。
+- **[Breaking] promote 未登记 module** 的错误信息不再附带内置公司兜底文案，仅追加 profile 的 `module_alias_hint`。
+- **[Breaking] `assistant_admin` validate** 不再默认要求某个治理文件；必填治理文件改由 `wiki.governance_paths` 提供，空 profile 表示没有必填项。
+- **[Behavior] `assistant_admin` analyze** 的 `structure.missing_top_level` / `unexpected_top_level` 改由 `wiki.top_level_dirs` 计算；未配置时两者均为空（跳过拓扑校验），不再使用内置顶层目录清单。
+- **[Breaking] 知识页投影与 wiki-assets-sync**：`workspace_knowledge_summary` 与 wiki-assets-sync 不再默认 scope 为某公司；未配置 scope 时返回结构化 `not_configured`（`scope=null`、`scope_state` / `binding_reason_code=not_configured`、`related_wiki=[]`），不抛错。wiki-assets-sync 在空 profile 下返回 `synced=true` 但 `assets=[]`，并新增 `scope_state` / `documents_state`。
+- **[Breaking] Wiki 晋升 confirm** 在未配置 `default_scope` 时直接抛 `WikiError`（提示配置 `default_scope`），不再回退到公司 scope；preview 不受影响（`module` 为空串）。
+- **[Behavior] 索引器 `parse_yaml_config`** 的 `custom_kafka_consumers` 不再内置私有命名空间，改由 profile 的 `config_extractors` 驱动；默认空 profile 下该字段为空。行结构 `values` / `stream_bindings` / `custom_kafka_consumers` 三键不变，Spring stream bindings 不受影响。该条为行为变更但仍保持兼容。
+- **[Behavior] `parse_feign_clients(..., service_names=...)`**：服务名判定改为以 `workspace.yaml` 登记的服务名为准；未登记的小写驼峰 `@FeignClient(name=...)` 仍按 `url` 回退为 `external:<url>`；不传 `service_names` 的旧调用行为不变（该参数为 keyword-only 可选）。
+- **[Behavior] 索引阶段配置抽取**现在同时遵循 `workspace.yaml` 的 `profile:`（此前只有进程级 `MEMORY_CENTER_PROFILE` 生效），即“workspace 声明 > 环境变量 > 默认”在所有层保持一致。
+- **[Additive] 可选 `profile=` 参数**：上述函数新增可选 `profile=` 关键字参数；返回结构只新增键，未删除或改名既有键。
+
+- **[Breaking] `module_routing.reason`**: `assistant_memory` promote now reports `module_alias` instead of `company_module_alias`; `valid_until` is an empty string when the profile has no expiry; the open-source build ships no company aliases or fallback hints, which come from the profile's `module_aliases` / `module_alias_until` / `module_alias_hint` instead.
+- **[Breaking] Unregistered-module errors on promote** no longer append a built-in company fallback message; only the profile's `module_alias_hint` is appended.
+- **[Breaking] `assistant_admin` validate** no longer requires a default governance file; required governance files come from `wiki.governance_paths`, and an empty profile means no required file.
+- **[Behavior] `assistant_admin` analyze** computes `structure.missing_top_level` / `unexpected_top_level` from `wiki.top_level_dirs`; when unset both are empty (topology check skipped) and the built-in top-level directory list is no longer used.
+- **[Breaking] Knowledge-page projection and wiki-assets-sync**: `workspace_knowledge_summary` and wiki-assets-sync no longer default to a company scope; without a configured scope they return a structured `not_configured` state (`scope=null`, `scope_state` / `binding_reason_code=not_configured`, `related_wiki=[]`) instead of raising. With an empty profile wiki-assets-sync returns `synced=true` with `assets=[]` and adds `scope_state` / `documents_state`.
+- **[Breaking] Wiki promotion confirm** raises `WikiError` when `default_scope` is unset (asking to configure it) instead of falling back to a company scope; preview is unchanged (`module` is an empty string).
+- **[Behavior] Indexer `parse_yaml_config`** no longer contains a private namespace for `custom_kafka_consumers`; extraction is driven by the profile's `config_extractors` and the field is empty with the default empty profile. The row shape (`values` / `stream_bindings` / `custom_kafka_consumers`) is unchanged and Spring stream bindings are unaffected; this is a behavior change that stays compatible.
+- **[Behavior] `parse_feign_clients(..., service_names=...)`**: service-name matching now follows the services registered in `workspace.yaml`; unregistered lower-camel `@FeignClient(name=...)` still falls back to `external:<url>` via `url`; old calls without `service_names` keep their behavior (keyword-only optional parameter).
+- **[Behavior] Config extraction during indexing** now also honors the `profile:` declared in `workspace.yaml` (previously only the process-level `MEMORY_CENTER_PROFILE` was effective), so "workspace declaration > env > default" is consistent across all layers.
+- **[Additive] Optional `profile=` argument**: the functions above accept a new optional `profile=` keyword argument; response shapes only add keys — no existing keys are removed or renamed.
+
+### 升级指引 / Upgrade notes
+
+如果旧版本依赖内置的 MQ 配置命名空间，请把它迁移为 profile：把下面的文件放到 `~/.memory-center/profile.d/<name>.yaml`，或让 `workspace.yaml` 的 `profile:` 指向它，即可恢复 `custom_kafka_consumers` 的既有数据。
+
+```yaml
+name: acme
+config_extractors:
+  - id: acme-mq-consumers
+    root: ["acme", "mq", "consumers"]   # 换成你自己的配置命名空间
+    value_key: topic
+    output: custom_kafka_consumers
+```
+
+If the previous version relied on the built-in MQ config namespace, migrate it into a profile: place the document shown above under `~/.memory-center/profile.d/<name>.yaml`, or point `workspace.yaml`'s `profile:` at it, to restore the existing `custom_kafka_consumers` data.
+
+### 其它 / Other
+
+- 脚本中性化：以私有项目名命名的验证/基准脚本更名为 `scripts/verify_real_workspace.sh` 与 `scripts/bench_p0_real.py`；前者现必填 `MEMORY_CENTER_REAL_WORKSPACE`、`MEMORY_CENTER_REAL_CASES`（缺失时打印用法并 `exit 2`），后者通过 `--workspace` 或同名环境变量指定工作区；旧默认私有路径已删除。
+- 工程默认值中性化：移除内置公司别名、默认 scope 与个人 Wiki 路径；真实工作区路径必须由环境变量 `MEMORY_CENTER_REAL_WORKSPACE` 提供。
+- README 示例路径与真实工程标识改为中性占位。
+
+The verification/benchmark scripts that were named after a private project are now `scripts/verify_real_workspace.sh` and `scripts/bench_p0_real.py`; the former requires `MEMORY_CENTER_REAL_WORKSPACE` and `MEMORY_CENTER_REAL_CASES` (missing values print usage and exit 2), the latter takes the workspace via `--workspace` or the same environment variable, and the old default private paths are removed. Built-in company aliases, default scope and personal Wiki paths are removed; a real workspace path must now be supplied through `MEMORY_CENTER_REAL_WORKSPACE`. README example paths and real project identifiers are replaced with neutral placeholders.
+
 ## 5.0.0b25 — 会话接续契约与资料边界 / Session continuation contract and content boundary
 
 - `mc_resume` 与恢复包新增 `continuation`：接续策略（`continue_session` / `rebuild_from_packet`）、原因码、会话句柄状态、资料包是否自足、下一步动作与必读引用。原会话不可续时明确降级为按已落盘资料继续，不再让调用方猜。
@@ -328,7 +385,7 @@ English: Real per-phase counters replace fixed progress percentages. Configurabl
 
 ### Task Space 误绑定修复：切断自写自匹配轮替 / Task Space Mis-binding Fix
 
-真实工作区（ucap）验证发现：`mc_close` 自动同步在无显式 task_id 时经 `resolve_task_space` 低置信解析，把无关 intent 写进既有 task space；被写入的 current_summary 又成为下次匹配的匹配源，形成自强化轮替（单一任务空间历史中出现 69 种不同任务头）。四项修复：
+真实工作区验证发现：`mc_close` 自动同步在无显式 task_id 时经 `resolve_task_space` 低置信解析，把无关 intent 写进既有 task space；被写入的 current_summary 又成为下次匹配的匹配源，形成自强化轮替（单一任务空间历史中出现 69 种不同任务头）。四项修复：
 
 - **启动入口最终门禁**：补齐 `mc_start` 的遗漏路径。此前它会把嗅探得到的 task ID 直接传给 `workspace_sync_sniff_to_artifacts`，后者按公开契约将非空 ID 视为用户显式选择，因而绕过解析置信度门禁。现在仅当 auto-sync 已推荐且任务标题或标签存在直接精确锚点时，才允许写入/绑定；否则保持 Shadow-only。响应新增 additive `task_binding` 审计块；回归覆盖模糊解析不得写 L2、标题精确命中仍可自动同步。
 
@@ -342,10 +399,10 @@ English: Real per-phase counters replace fixed progress percentages. Configurabl
 - **`workspace_resume_context` 补回 `session_id` 参数**（修复 NameError）+ CLI `resume-context --session-id` 透传。
 
 - **匹配源排除 current_summary**：`_task_match_analysis` 的匹配 haystack 不再包含 current_summary——它是每次 close 被当次 intent 覆盖的输出工件，作为输入即构成自写自匹配。context/requirement/design/plan/test_plan 等相对稳定工件保留为签名重叠强证据。
-- **通名弱化**：workspace 自身名字（含前缀关系，如 ucap-all ↔ ucap）与框架/中间件通名（feign/kafka/redis/dto/controller 等）加入 `_WEAK_TOKENS`——弱 token 即使命中 tag/title/intent 也不计强证据分，只算 fuzzy。
+- **通名弱化**：workspace 自身名字（含前缀关系，如 acme-all ↔ acme）与框架/中间件通名（feign/kafka/redis/dto/controller 等）加入 `_WEAK_TOKENS`——弱 token 即使命中 tag/title/intent 也不计强证据分，只算 fuzzy。
 - **status_boost 需强证据前置**：active(+2)/draft(+1)/high(+1) 加分只在已有 tag/title/intent 强证据时生效；仅凭正文模糊命中的大任务不再白拿状态分稳过阈值。
 - **stale 展示判定**：workspace overview 的任务列表引入 `effective_status`——active 任务超过 14 天（与 shadow retention 默认对齐）无 task-space 活动即展示为 `stale`，排序沉底；不改写 meta.json 的登记状态，另有 `registered_status` 字段保留原值。
-- **端到端验证（ucap 真实工作区）**：3 个曾误绑定的 intent 重放全部归为 new/ambiguous（此前全部误命中"预警发送"）；真绑定 intent 仍 high 置信命中；`mc_start` 全链路不再把误解析 task_id 写进 session metadata，close 时正确走 shadow fallback。
+- **端到端验证（真实工作区）**：3 个曾误绑定的 intent 重放全部归为 new/ambiguous（此前全部误命中"预警发送"）；真绑定 intent 仍 high 置信命中；`mc_start` 全链路不再把误解析 task_id 写进 session metadata，close 时正确走 shadow fallback。
 
 ## 4.6.24 Task Shadow Hardened Release / 任务影子加固发布
 
@@ -363,7 +420,7 @@ English: Real per-phase counters replace fixed progress percentages. Configurabl
 - **用户模型（能力 D，文档）**：USER_GUIDE 新增"记忆边界"小节，把 Coding/Repo/Personal/Procedure 四类边界映射到 L1 case、图谱+invariants、workspace_profile、team_rules 与 Session Notes。
 - **基础设施**：`MemoryBackend` 新增 `update_json_records(collection, record_id, updates)`（payload 合并更新）；`_infer_record_id` 支持 `session-notes.jsonl` → `note_id`；状态变更经 backend 更新 + `_sync_jsonl_export_locked(rebuild=True)` 重建投影，保证 SQLite 权威与 JSONL 导出一致。分层模型新增 `LAYER_L0_5 = "L0.5_session_notes"` 并加入 `MEMORY_LAYER_ORDER`（展示排序），workspace overview 的 `memory_layers` 输出新增 `note_count`/`active_note_count`。
 - **文档同步**：README（分层模型 + Evidence Index/Session Notes 两小节）、ARCHITECTURE（记忆模型表补 L0.5 层并修正 L1 case 文件名为 `cross-service-task-memory.jsonl`）、ONTOLOGY（记忆实体新增 SessionNote/TaskShadow）、MCP_GUIDE（`mc_lookup` view 参数 + note actions）、REFERENCE（view 契约 + note actions 详细参数）、USER_GUIDE（记忆边界小节）。
-- **真实工作区验证（ucap，~2 万文件级）**：note 生命周期（record → fingerprint no-op → search → supersede 审计链 → forget）、evidence-index 真实图谱混合（note 与图谱方法并列、默认视图逐字节兼容）、`mode="query"` note 合并（已 forget 词返回空）、隐私门（绝对路径/密钥拒收、`<private>` 剥除）、`mc_close` 草稿不落盘、CLI/HTTP 入口冒烟——全部通过；验证数据已从 JSONL 与 backend 清除，常态内容零污染。
+- **真实工作区验证**：note 生命周期（record → fingerprint no-op → search → supersede 审计链 → forget）、evidence-index 真实图谱混合（note 与图谱方法并列、默认视图逐字节兼容）、`mode="query"` note 合并（已 forget 词返回空）、隐私门（绝对路径/密钥拒收、`<private>` 剥除）、`mc_close` 草稿不落盘、CLI/HTTP 入口冒烟——全部通过；验证数据已从 JSONL 与 backend 清除，常态内容零污染。
 - **回归**：`tests/domain/test_evidence_index.py`（9 个）、`tests/domain/test_session_notes.py`（11 个）、`tests/entrypoints/test_session_notes_entrypoints.py`（5 个：admin 三层动作、close 草稿不落盘、evidence-index 含 note）、`test_public_mvp.py` 新增 CLI/HTTP view 转发测试；修复 `test_mc_lookup_query_mode_forwards_vector_options` 假桩缺失 `session_id` 参数的既有失败（基线已坏，见 git 历史）。
 
 ## 4.6.23 Task Shadow: Session-first Continuity / 会话优先任务连续性
@@ -525,7 +582,7 @@ Field fixes from a real-session retrospective (see LOOKUP_ARCHITECTURE_HANDOFF_P
 - scoped refresh 按**变更类别/范围分桶**（`classify_refresh_bucket`）：category = plain_java / contract / delete_or_move / unknown；scope = single_file / multi_file_single_service / multi_service / multi_file。每桶独立预算（`BUCKET_BUDGETS_MS`：单文件低风险 8s、单文件契约 15s、多服务契约 60s 等）。
 - `record_scoped_refresh_performance` 持久化 `bucket`；`scoped_refresh_performance_status` 按桶聚合 P50/P95/dominant/budget，并返回 `over_budget_buckets`；**legacy 无 bucket 样本（unknown/multi_file）不参与判定**；**仅 ≥5 样本且 P95 超本桶预算才标记 over**。
 - quality-gate 用分桶判定（`over_budget_buckets`），不再用全局 P95 混合比较所有刷新。
-- 真实 UCAP 采样：单文件刷新（contract/plain/delete/unknown 各桶）P50 ~37-47s、**dominant 全为 `generation_publish`**（服务分片 JSON 导出），但无桶达 5 样本 → 触发停止条件，**不进入优化**，仅交付分桶基础设施与报告。
+- 真实工作区采样：单文件刷新（contract/plain/delete/unknown 各桶）P50 ~37-47s、**dominant 全为 `generation_publish`**（服务分片 JSON 导出），但无桶达 5 样本 → 触发停止条件，**不进入优化**，仅交付分桶基础设施与报告。
 - 新增 12 个分桶测试；全量回归绿、IR gate 通过。
 - Added per-bucket refresh budget tiering (category/scope) so a single low-risk file is never compared against a multi-service contract refresh with one global P95; legacy samples and <5-sample buckets don't gate the decision.
 
@@ -533,8 +590,8 @@ Field fixes from a real-session retrospective (see LOOKUP_ARCHITECTURE_HANDOFF_P
 
 - coverage 原因细分：skipped 按 reason 拆分为 **`irrelevant_excluded`**（`unsupported_syntax`：xml/png/json/md 等明确无关的非源码资源）与 **`relevant_unsupported`**（相关但解析器不支持）。
 - `claim_boundary` 语义校准：**明确无关的排除资源不再阻断否定性结论**；只有 `relevant_unsupported` / `parse_failed` / `scope_unknown`（含 partial/failed/unknown）才阻断。legacy 无 reason 时保持保守（skipped 仍阻断）。
-- `quality-gate` 同步：coverage 检查只把 relevant-unsupported/failed/unknown 计为 unclean，irrelevant-excluded 仅审计。ucap 实测 coverage 从 attention → **pass**（2611 个无关资源不再制造永久 attention），claim_boundary 从 `coverage_partial` 阻断 → 仅剩 freshness 信号。
-- **未降低 coverage 标准**：ucap relevant_unsupported=0、failed=0、unknown=0，无任何真实相关未覆盖被放宽；所有跳过仍保留审计。
+- `quality-gate` 同步：coverage 检查只把 relevant-unsupported/failed/unknown 计为 unclean，irrelevant-excluded 仅审计。真实工作区实测 coverage 从 attention → **pass**（2611 个无关资源不再制造永久 attention），claim_boundary 从 `coverage_partial` 阻断 → 仅剩 freshness 信号。
+- **未降低 coverage 标准**：真实工作区 relevant_unsupported=0、failed=0、unknown=0，无任何真实相关未覆盖被放宽；所有跳过仍保留审计。
 - 测试更新：`relevant_unsupported` 阻断、`irrelevant_excluded` 不阻断、demo 集成断言校准；全量回归绿、IR gate 通过。
 - Calibrated coverage semantics: explicitly irrelevant excluded resources no longer block negative claims or the release gate; only relevant-unsupported/parse-failed/scope-unknown do, with no coverage-standard reduction.
 
@@ -602,8 +659,8 @@ Field fixes from a real-session retrospective (see LOOKUP_ARCHITECTURE_HANDOFF_P
 ## 4.5.8 MQ Bridge Honesty / MQ 桥接诚实状态
 
 - `find_primary_service_chain` 对 **MQ Producer 锚点**新增诚实状态：当该 Producer 的 Topic 无法在本地索引中证明其消费者（consumer 的 binding→destination 映射在配置中心，本地不可得）时，返回 `insufficient_evidence` + 明确 reason（`mq_topic_consumer_unprovable` / `mq_producer_no_topic_edge`），**绝不**返回误导性的 `not_found`（那会暗示"无消费者存在"），也绝不编造消费者。
-- 真实驱动（ucap 全量 MQ 证据筛选）：producer topic 是业务名（`jiance-website-sensitive-event-detail`），consumer 是 Spring Cloud Stream 绑定名（`spring.cloud.stream.bindings.websiteSensitiveDetailTask`），两者无固定前缀可归一化（剥离 `jiance-<domain>-` 后驼峰匹配一对一数为 **0**），destination 映射不在本地源码/索引。**触发任务停止条件**：不实现 MQ canonical topic 桥接，保留 `insufficient_evidence`。
-- 桥接诚实性不影响既有 Feign/HTTP 主链路：ucap 回归 Feign found / HTTP found / 反例 not_found 不变，IR gate 通过（edge_coverage 1.0 / forbidden 0）。未改 resolver/parser/schema。
+- 真实驱动（真实工作区全量 MQ 证据筛选）：producer topic 是业务名（`acme-order-created`），consumer 是 Spring Cloud Stream 绑定名（`spring.cloud.stream.bindings.acmeOrderCreatedTask`），两者无固定前缀可归一化（剥离 `acme-<domain>-` 后驼峰匹配一对一数为 **0**），destination 映射不在本地源码/索引。**触发任务停止条件**：不实现 MQ canonical topic 桥接，保留 `insufficient_evidence`。
+- 桥接诚实性不影响既有 Feign/HTTP 主链路：真实工作区回归 Feign found / HTTP found / 反例 not_found 不变，IR gate 通过（edge_coverage 1.0 / forbidden 0）。未改 resolver/parser/schema。
 - Added honest MQ status: MQ Producer anchors whose consumers cannot be proven return insufficient_evidence with an explicit MQ reason instead of a misleading not_found, after real-workspace evidence showed no fixed-rule topic normalization exists.
 
 ## 4.5.7 Primary Cross-Service Chain / 跨服务主链路
@@ -612,29 +669,29 @@ Field fixes from a real-session retrospective (see LOOKUP_ARCHITECTURE_HANDOFF_P
 - 主路径关系白名单（CALLS_SERVICE / IMPLEMENTS_FEIGN / HANDLES_ENDPOINT / PRODUCES_TOPIC / CONSUMES_TOPIC / CALLS_METHOD）；结构边（CONTAINS / DECLARES / IMPORTS 等）永不作链路主体。路径按 relation_weight × confidence × evidence × depth_decay 评分，确定性排序（EXTRACTED > INFERRED、跨服务 > 局部、高分 > 低分、短路径优先、stable id tie-break）。
 - Feign 接口 Method 通过 retrieval 层名字桥接到 FeignClient/FeignMethod（桥接步骤标 INFERRED，不虚标 EXTRACTED）；beam search 控制扩展宽度。
 - `mc_lookup(auto)` 对已解析出 Method 锚点的 symbol 查询（非 fast tier）附加 additive 字段 `primary_chain`（status/anchor/steps/score/evidence_level/generation/reason_codes）；best_match、candidate_paths 等保留不动。fast tier 跳过以保持 P95 平坦；无图证据时返回 not_found/insufficient_evidence，不编造链路。
-- 真实 replay（ucap）：Feign 完整三服务链 found（INFERRED，435ms）、HTTP Endpoint found（EXTRACTED，7ms）、无链路反例 not_found（7ms，不编造）。未改 Java resolver/parser；IR gate 保持通过（edge_coverage 1.0 / forbidden 0）；默认 symbol 查询 P50 2ms 不受影响。
+- 真实 replay（真实工作区）：Feign 完整三服务链 found（INFERRED，435ms）、HTTP Endpoint found（EXTRACTED，7ms）、无链路反例 not_found（7ms，不编造）。未改 Java resolver/parser；IR gate 保持通过（edge_coverage 1.0 / forbidden 0）；默认 symbol 查询 P50 2ms 不受影响。
 - Added a bounded primary cross-service chain for Method anchors in mc_lookup(auto), with deterministic ranking, Feign/MQ/HTTP bridge semantics, a no-fabrication contract, and per-tier budget gating.
 
 ## 4.5.6 CamelCase Symbol Retrieval Routing / 驼峰符号检索路由
 
 - `workspace_lookup_hint` 新增纯驼峰符号识别：小写开头、以类型后缀结尾或动词前缀开头的标识符（`getClusterUniversalStateForAppMachine`、`findOrderById` 等）即使无 `service/method` 等关键词，也路由到 `symbol_lookup` 而非 `local_search`/`code`。
 - `extract_symbol_like_token` 修复：小写开头的驼峰方法名不再被截断成内部大写片段（原本 `getCluster...` 会被提取成 DTO 名 `ClusterUniversalStateForAppMachine` 导致方法检索不到）；类名/链式/`Class#method` 提取保持兼容。
-- 真实驱动：ucap 检索 replay 发现 `getClusterUniversalStateForAppMachine`（图中有 27 条边的方法节点）默认被路由到 code，返回文件而非方法；修复后 `mc_lookup(auto)` 命中 `Method:ClusterConfigService.getClusterUniversalStateForAppMachine`。
-- 新增 4 个检索锚点/排序回归测试；不改 Java resolver。ucap 检索 replay 确认纯驼峰方法名命中 Method 节点、edge_coverage 保持 1.0。
+- 真实驱动：真实工作区检索 replay 发现 `getClusterUniversalStateForAppMachine`（图中有 27 条边的方法节点）默认被路由到 code，返回文件而非方法；修复后 `mc_lookup(auto)` 命中 `Method:ClusterConfigService.getClusterUniversalStateForAppMachine`。
+- 新增 4 个检索锚点/排序回归测试；不改 Java resolver。真实工作区检索 replay 确认纯驼峰方法名命中 Method 节点、edge_coverage 保持 1.0。
 - Fixed camelCase method-name routing: pure `getXxx`/`findXxx` queries now go through symbol lookup and extract the full method name (not an inner DTO fragment), surfacing the Method node over file-level code search.
 
 ## 4.5.5 Keyword Pseudo-Call Filter / 关键字伪调用过滤
 
 - `_parse_method_calls` 关键字黑名单补齐 `synchronized`/`assert`/`throw`，并新增 receiver 侧关键字过滤（`class`/`new`/`instanceof`/`synchronized` 等），消除 regex 把 `synchronized (lock) {}` 语句头与 `Foo.class.getName()` 类型字面量误判为方法调用的垃圾边。
-- 真实驱动：ucap 中 `DateUtil.getDateFormat -> synchronized()`、`X.class.getName()` 落进 `unqualified_or_dynamic` 桶且永远不可解析；修复后这些边在索引中消失，`this`/`super` 等合法 receiver 不受影响。
-- 新增 5 个逻辑锚点测试（synchronized 块、class 字面量、关键字全集、真实调用保留、this/super 保留）；ucap-rap-util 局部刷新验证伪调用边 0，IR diff gate 不回退（edge_coverage 1.0 / forbidden 0）。
+- 真实驱动：真实工作区中 `DateUtil.getDateFormat -> synchronized()`、`X.class.getName()` 落进 `unqualified_or_dynamic` 桶且永远不可解析；修复后这些边在索引中消失，`this`/`super` 等合法 receiver 不受影响。
+- 新增 5 个逻辑锚点测试（synchronized 块、class 字面量、关键字全集、真实调用保留、this/super 保留）；acme-rap-util 局部刷新验证伪调用边 0，IR diff gate 不回退（edge_coverage 1.0 / forbidden 0）。
 - Added keyword pseudo-call filtering: statement keywords and type-literal receivers are no longer emitted as call rows, removing unresolvable garbage edges driven by real-workspace evidence.
 
 ## 4.5.4 Java IR Boundary & Diff Gate / Java 解析 IR 边界与差分门禁
 
 - Java 解析器现在显式输出 IR：新增 `memory_center/core/indexing/java_ir.py`，把 `java-symbol-index.json` 投影为 `FileRecord` / `SymbolRecord` / `RelationCandidate`（复用与图投影同一个 `JavaCallResolver`，保证差分可比），并持久化为 additive 的 `java-ir-index.json`。
 - 新增 `memory_center/core/indexing/diff_gate.py`：把 IR 候选投影成与 legacy 图边同格式的 CALLS_METHOD 边，对比真实图数据。指标：anchor_recall（IR 源方法在图中的存在率）、edge_coverage（legacy 图中被 IR 覆盖的边比例，无回退硬指标）、forbidden_hit（AMBIGUOUS 是否被伪造为确定边，必须为 0）。当前 legacy 图投影保持权威，IR 投影作为显式边界与差分基准。
-- ucap 真实数据（16.9k 符号 / 67.8 万候选）gate 通过：anchor_recall 0.9977（缺失为构造器/方法引用目标，IR 比图更完整）、edge_coverage 1.0、forbidden_hit 0.0、ambiguous 0.55（外部依赖边界）。
+- 真实工作区数据（16.9k 符号 / 67.8 万候选）gate 通过：anchor_recall 0.9977（缺失为构造器/方法引用目标，IR 比图更完整）、edge_coverage 1.0、forbidden_hit 0.0、ambiguous 0.55（外部依赖边界）。
 - Added the explicit Java IR boundary with relation candidates projected through the same resolver as the graph, plus a differential gate proving IR does not regress anchor/edge coverage or forbidden-hit before any switch.
 
 ## 4.5.3 Generation-Local Staging / 代际本地暂存与发布合并
@@ -657,13 +714,13 @@ Field fixes from a real-session retrospective (see LOOKUP_ARCHITECTURE_HANDOFF_P
 
 ## 4.5.0 Code Graph Foundation / 代码图谱基础设施
 
-实现 [CODE_GRAPH_FOUNDATION_IMPLEMENTATION.md](decisions/CODE_GRAPH_FOUNDATION_IMPLEMENTATION.md) 的 Phase A–D；经真实大规模工作区（ucap，约 2 万文件）验证。
+实现 [CODE_GRAPH_FOUNDATION_IMPLEMENTATION.md](decisions/CODE_GRAPH_FOUNDATION_IMPLEMENTATION.md) 的 Phase A–D；经真实大规模工作区验证。
 
 - **Phase A 可信查询合同**：`mc_lookup` / `mc_analyze` / `mc_freshness` / change review 响应新增 additive 字段 `index_context` 与 `claim_boundary`（否定性结论门禁）；索引管线记录每文件 parse_status/skip_reason，发布时聚合 `coverage_summary`。旧代工作区无 coverage 时标 `coverage_unknown` 并强制拒绝否定性结论。
 - **Phase B 有界图查询模板**：新增 `find_symbols` / `trace_call_paths` / `find_contract_consumers` 内部模板，fast/standard/deep 三档硬预算、确定性排序、generation 键控缓存；经既有 mc_lookup/mc_analyze 路由，不新增 MCP tool。
 - **Phase C 运行治理**：reindex job 权威状态迁入 SQLite（fingerprint 合并/冲突、owner/lease 15s/heartbeat 5s、retry 血缘）；generation 发布在单 `BEGIN IMMEDIATE` 事务内原子完成 + 只读 smoke + 失败自动回滚；CLI 新增 `job-cancel`。
 - **Phase D 解析 IR 边界**：显式 `FileRecord`/`SymbolRecord`/`RelationCandidate` 与确定性 `stable_id`；不可证明目标保留为 AMBIGUOUS 诊断并导出 `index-resolution.json`；差分报告新增 `symbol_category_counts`。
-- **性能基线**：`performance-snapshot` 纳入模板路径（schema v2）。ucap 实测（standard tier）：`memory_query_hybrid` P95 94ms，`find_symbols` P95 3.5ms、`trace_call_paths` P95 3.9ms。
+- **性能基线**：`performance-snapshot` 纳入模板路径（schema v2）。真实工作区实测（standard tier）：`memory_query_hybrid` P95 94ms，`find_symbols` P95 3.5ms、`trace_call_paths` P95 3.9ms。
 - Added the Code Graph Foundation Phase A–D: trustworthy query contract with a negative-claim gate, bounded query templates with per-tier budgets, SQLite job-ledger governance with atomic publication and automatic rollback, an explicit parser IR boundary with aggregated unresolved diagnostics, and a template-inclusive performance baseline.
 
 ## 4.4.2 Task Delivery Command Center / 任务交付中心
@@ -686,7 +743,7 @@ Field fixes from a real-session retrospective (see LOOKUP_ARCHITECTURE_HANDOFF_P
 ## 4.3.98 Personal Wiki Asset Bridge / 个人 Wiki 资产桥接
 
 - 新增 `wiki-assets-sync`：将明确选定的 Personal Assistant Wiki 文档登记为私有 `kind=wiki` 协作资产，只保存 `pawiki:` 来源引用、知识 ID、内容哈希和范围，不复制正文。
-- DSH 的“知识”页读取 workspace 资产并展示关联的个人 Wiki 条目；UCAP 默认 scope 使用 `kaipuyun`。
+- DSH 的“知识”页读取 workspace 资产并展示关联的个人 Wiki 条目；默认 scope 由 workspace profile 提供。
 
 ## 4.3.97 DSH Workbench Landing Performance / DSH 工作台首屏性能
 
@@ -783,7 +840,7 @@ Field fixes from a real-session retrospective (see LOOKUP_ARCHITECTURE_HANDOFF_P
 
 - resolver 新增 Lombok `@Builder` 解析：`X.builder()` 静态工厂解析为 `*_lombok_builder`（0.85）；`X.builder().field(...)` 链式 setter 解析为 `chain_lombok_builder_setter`（0.78），`X.builder().build()` 解析为 `chain_lombok_builder_build`（0.80），均标记 `inferred_target`。
 - 仅当类带 `@Builder` 注解且 setter 名与声明字段一致时推断，无注解类不误报（新增 4 个单元测试覆盖正/负场景）。
-- 真实工作空间验证（ucap，36 模块）：未解析率 52.26% → 48.34%；`missing_method_or_polymorphism` 类别 10,671 → 2,768。
+- 真实工作空间验证：未解析率 52.26% → 48.34%；`missing_method_or_polymorphism` 类别 10,671 → 2,768。
 - 新增 3 个私有锚点 case（`java-call-resolution-lombok-builder-v4390.yaml`），门禁 3/3 通过（recall 1.0、resolution_level 全命中）。
 
 ### Session replay 匹配器校准 / Session replay matcher calibration
@@ -794,7 +851,7 @@ Field fixes from a real-session retrospective (see LOOKUP_ARCHITECTURE_HANDOFF_P
 
 ### 向量检索默认开启评估（真实基线对比）/ Vector default-on evaluation against real baseline
 
-- 真实 ucap 工作空间完成 dense 向量链路验证：`sentence-transformers`（all-MiniLM-L6-v2）selective scope 构建 49,897 embeddings；安装 `semantic-ann` 可选依赖（hnswlib）后 `vector_ann_rebuild` + `vector_ann_tune` 就绪（self_recall 1.0，ANN 查询 p95 0.12ms）。
+- 真实工作区完成 dense 向量链路验证：`sentence-transformers`（all-MiniLM-L6-v2）selective scope 构建 49,897 embeddings；安装 `semantic-ann` 可选依赖（hnswlib）后 `vector_ann_rebuild` + `vector_ann_tune` 就绪（self_recall 1.0，ANN 查询 p95 0.12ms）。
 - 对比结论（retrieval-quality 私有套件，sparse 基线 5/5 通过）：vector-on 下 config 语义查询保持 recall 1.0（延迟 188→440ms），但 MQ 契约查询 anchor recall 1.0 → 0.0——向量泛化匹配把大量 Consumer 方法推入前排，稀释契约锚点。
 - 决策：**维持 `enable_vector=False` 默认**（MCP/CLI 行为不变）。默认开启的前置条件：带证据人工验证样本完成融合权重校准（当前 `insufficient_replay`），使契约类锚点在 vector-on 下不掉出 top-N。
 
@@ -1002,16 +1059,16 @@ Field fixes from a real-session retrospective (see LOOKUP_ARCHITECTURE_HANDOFF_P
 
 - Java 结构事实新增 `type_kinds`，保留 `class / interface / enum / record / annotation`，并写入 Class 节点；手写 `JavaSymbol.to_dict()` 同步输出该字段，避免高性能序列化路径丢失新事实。
 - resolver 新增 `generated_enum_method_out_of_scope`、`chain_return_type_not_indexed`，并递归识别“本地父接口继续继承外部框架接口”的方法。Enum 编译器方法、外部集合链式方法、MyBatis 继承方法不再污染本地多态修复 campaign，也不会生成猜测边。
-- UCAP 真实空间建立 3 个私有链式逻辑锚点并定向刷新 14 个相关文件；edge recall、置信率、resolution-level rate 均为 `1.0`，unexpected/forbidden 高置信边均为 `0`。
-- co-change 文件候选从无序 `DISTINCT LIMIT` 升级为有界边投影上的确定性加权排序，默认候选从 24 收敛为 8。UCAP 66 个 case 上 Precision 从 `0.0438` 提升到 `0.0706`，Recall 从 `0.2191` 提升到 `0.2229`，评测约 `37ms`。
+- 真实工作区建立 3 个私有链式逻辑锚点并定向刷新 14 个相关文件；edge recall、置信率、resolution-level rate 均为 `1.0`，unexpected/forbidden 高置信边均为 `0`。
+- co-change 文件候选从无序 `DISTINCT LIMIT` 升级为有界边投影上的确定性加权排序，默认候选从 24 收敛为 8。真实工作区 66 个 case 上 Precision 从 `0.0438` 提升到 `0.0706`，Recall 从 `0.2191` 提升到 `0.2229`，评测约 `37ms`。
 - 大图原型曾使用全量 SQL 聚合，但真实 17GB 图超过 30 秒，已移除；正式实现最多读取 1600 条邻接边后在内存聚合，不扫描完整文件子图。
 
 ## 4.3.78 Java Call Classification and Co-change Ranking
 
 - Added `type_kinds` to Java structural facts and Class-node metadata, preserving class, interface, enum, record, and annotation semantics through the optimized `JavaSymbol.to_dict()` path.
 - Added explicit unresolved reasons for generated enum methods and external chain return types, plus cycle-safe recursive detection of local parents that ultimately inherit external framework APIs. These calls no longer pollute local polymorphism campaigns or create guessed edges.
-- Added three private UCAP chain anchors and refreshed only 14 related files. Edge recall, confidence rate, and resolution-level rate are all `1.0`, with zero unexpected or forbidden high-confidence edges.
-- Replaced unordered co-change file candidates with deterministic weighted ranking over a bounded edge projection and reduced the default candidate set from 24 to 8. Across 66 UCAP cases, precision improved from `0.0438` to `0.0706`, recall from `0.2191` to `0.2229`, with evaluation around `37ms`.
+- Added three private real-workspace chain anchors and refreshed only 14 related files. Edge recall, confidence rate, and resolution-level rate are all `1.0`, with zero unexpected or forbidden high-confidence edges.
+- Replaced unordered co-change file candidates with deterministic weighted ranking over a bounded edge projection and reduced the default candidate set from 24 to 8. Across 66 real-workspace cases, precision improved from `0.0438` to `0.0706`, recall from `0.2191` to `0.2229`, with evaluation around `37ms`.
 - Removed a full SQL aggregation prototype after it exceeded 30 seconds on the real 17GB graph. The shipped path reads at most 1,600 adjacent edges and aggregates only that bounded slice.
 
 ## 4.3.77 图感知变更审查闭环 / Graph-Aware Change Review
@@ -1021,7 +1078,7 @@ Field fixes from a real-session retrospective (see LOOKUP_ARCHITECTURE_HANDOFF_P
 - 新增 `minimal -> standard -> deep` 渐进上下文、调用次数/输出/耗时预算、generation-aware 指纹缓存与重复调用停止条件，Agent 协议默认使用最小结果并复用等价审查。
 - `architecture-communities` 升级为显式离线架构健康分析：可选固定种子的 Leiden 社区发现，缺少 `igraph` 时使用确定性加权标签传播；同时返回有界 Brandes 桥接点、异常跨社区连接和未测试高中心性节点。所有异常均标记为 `INFERRED`。
 - 新增 Git co-change 独立评测和 `release-gate --cochange-commits`。同一提交中除种子外的文件作为真值，执行错误独立记为 `environment_error`，报告只保存哈希引用和聚合指标，不保存路径、提交消息或源码。
-- 真实多仓库变更检测由每仓库最多四次串行 Git 调用改为单次 `name-status` 解析与最多 8 路有界并发；图证据定位从逐文件模糊检索改为 `file_path` 索引批量查询。UCAP 真实工作区只读测量由约 9.6 秒降至约 0.18 秒，完整 minimal Change Review 约 0.22 秒。
+- 真实多仓库变更检测由每仓库最多四次串行 Git 调用改为单次 `name-status` 解析与最多 8 路有界并发；图证据定位从逐文件模糊检索改为 `file_path` 索引批量查询。真实工作区只读测量由约 9.6 秒降至约 0.18 秒，完整 minimal Change Review 约 0.22 秒。
 
 ## 4.3.77 Graph-Aware Change Review
 
@@ -1030,7 +1087,7 @@ Field fixes from a real-session retrospective (see LOOKUP_ARCHITECTURE_HANDOFF_P
 - Added progressive `minimal -> standard -> deep` context, invocation/output/time budgets, generation-aware fingerprint caching, and duplicate-call stop conditions. Generated Agent guidance now starts with the minimal review and reuses equivalent results.
 - Upgraded `architecture-communities` to explicit offline architecture-health analysis with seeded Leiden when optional `igraph` is installed and deterministic weighted label propagation otherwise, plus bounded Brandes bridges, surprising cross-community links, and untested central hotspots. Findings remain `INFERRED`.
 - Added independent Git co-change evaluation and `release-gate --cochange-commits`. Same-commit files excluding the seed form the ground truth; execution failures are isolated as `environment_error`, and only hashed references and aggregate metrics are retained.
-- Reworked multi-repository change detection from up to four serial Git calls per repository to one `name-status` parse per scope with at most eight workers. Graph evidence now uses indexed batched `file_path` lookup instead of per-file fuzzy search. A read-only UCAP measurement dropped from about 9.6 seconds to 0.18 seconds, with the complete minimal Change Review around 0.22 seconds.
+- Reworked multi-repository change detection from up to four serial Git calls per repository to one `name-status` parse per scope with at most eight workers. Graph evidence now uses indexed batched `file_path` lookup instead of per-file fuzzy search. A read-only real-workspace measurement dropped from about 9.6 seconds to 0.18 seconds, with the complete minimal Change Review around 0.22 seconds.
 
 ## 4.3.76 MCP 装载状态防误判 / MCP Loading-State Diagnostics
 
@@ -2084,13 +2141,13 @@ Field fixes from a real-session retrospective (see LOOKUP_ARCHITECTURE_HANDOFF_P
 
 ### P1 Java Call Resolver Self-Loop Fix / Java 调用解析自环修复
 
-- 真实 UCAP 工作区上发现 ~13K `CALLS_METHOD` self-loop 假边
+- 真实工作区上发现 ~13K `CALLS_METHOD` self-loop 假边
   (`Service:m -> Service:m`),根因是 `RegexJavaParser` 把抽象 interface
   方法声明也当成 method body。bare-call 正则在 `start..end` 内匹配到方法
   自身签名,被 `_same_class_candidates` 解析成 self-call。
 - 修复:`_parse_interface_methods` 给抽象方法 span 加 `is_declaration=True`
   标记;`_parse_method_calls` 跳过 declaration-only span。
-- 真实 UCAP 效果:self-loop CALLS_METHOD 12,812 -> 795
+- 真实工作区效果:self-loop CALLS_METHOD 12,812 -> 795
   (-94%,残留 795 条是真实递归调用如 `RedisServiceImpl:hSet` 重载 dispatch);
   CALLS_METHOD 总量 294,230 -> 279,542(-14,688 条假边消除);
   same_class resolution_level 边 30,578 -> 18,558(全部去掉的都是 self-loop)。
@@ -2125,7 +2182,7 @@ Field fixes from a real-session retrospective (see LOOKUP_ARCHITECTURE_HANDOFF_P
     `FeignConfig#feignDecoder` + `FeignSpringFormConfiguration#feignContract` + ...)
   - `vector-kafka-consumer-handler`("Kafka 消费者解析消息" ->
     `KafkaOneConfig#kafkaOneContainerFactory` + `KafkaTwoConfig#kafkaTwoContainerFactory`)
-- 真实 UCAP 效果:golden anchor_recall 0.6444 -> 0.8667(vector 命中
+- 真实工作区效果:golden anchor_recall 0.6444 -> 0.8667(vector 命中
   方法级 anchor 提升 recall)。
 - `_sync_retrieval_indexes` 修复:reindex 在 sparse backend 下不再清空
   之前 ST run 留下的 `VectorIndex` 嵌入。原行为会导致任意一次
@@ -2139,7 +2196,7 @@ Field fixes from a real-session retrospective (see LOOKUP_ARCHITECTURE_HANDOFF_P
 ### Vector Retrieval Real Validation / 向量检索真实场景验证
 
 - 新增 [docs/benchmarks/P0_5_VECTOR_VALIDATION.md](./benchmarks/P0_5_VECTOR_VALIDATION.md):
-  在真实 UCAP workspace (316,696 nodes / 47,633 vector candidates)
+  在真实工作区 (316,696 nodes / 47,633 vector candidates)
   上端到端验证 `MEMORY_CENTER_SEMANTIC_BACKEND=sentence-transformers`
   + `selective` scope + ANN retrieval 全流程。`vector_status: ready`,
   query "Feign 鉴权拦截器" elapsed 13.2s -> 2.8s(-78%),top1 命中从
@@ -2170,7 +2227,7 @@ Field fixes from a real-session retrospective (see LOOKUP_ARCHITECTURE_HANDOFF_P
 - 新增 [docs/benchmarks/P0_INDEX_HOT_PATH_DESIGN.md](./benchmarks/P0_INDEX_HOT_PATH_DESIGN.md):
   P0-0 CBM 参考对齐后的索引热路径设计,锁定三个修复的共享契约(MCP /
   CLI / HTTP schema 零变化、parser 行为可观测可回滚、`RegexJavaParser`
-  保留为 fallback / differential oracle、真实 UCAP reindex 不慢于基线)。
+  保留为 fallback / differential oracle、真实工作区 reindex 不慢于基线)。
 - `JavaSymbol.to_dict()` 手写浅拷贝;`core.models.to_dict` 优先调用
   对象自带 `to_dict`,回退 `dataclasses.asdict`。输出键集合、键序、
   值与 `asdict` 完全一致;本地微基准 22K JavaSymbol 实例提速 ~97x。
@@ -2195,7 +2252,7 @@ Field fixes from a real-session retrospective (see LOOKUP_ARCHITECTURE_HANDOFF_P
   (`annotation_type_declaration` / `annotation_type_element_declaration`)、
   interface 内常量(`constant_declaration`)、wildcard / static imports,
   使 tree-sitter 节点覆盖与 legacy regex 一致或更准。
-- 真实 UCAP workspace(20,516 Java files / 27 GB)验收(2026-06-24):
+- 真实工作区验收(2026-06-24):
   Java call resolution gate edge_recall/high_confidence_rate/resolution_level
   全部 1.0、unresolved 0.0;Golden suite edge_recall=1.0、forbidden_hit=0.0、
   performance_gate=pass、anchor_recall 0.8286 与 legacy 持平;Doctor 53
@@ -2219,7 +2276,7 @@ Field fixes from a real-session retrospective (see LOOKUP_ARCHITECTURE_HANDOFF_P
 - 新增 HTTP `/workspace/eval-java-call-resolution` 与 MCP
   `mc_admin(action="eval_java_call_resolution", name="<cases.yaml>")` 入口。
 - cases 文件只允许 `Class#method` 这类逻辑锚点，不允许文件系统路径；
-  真实私有 UCAP 样例保存在本地 workspace `.memory-center/golden/`，不提交。
+  真实私有工作区样例保存在本地 workspace `.memory-center/golden/`，不提交。
 - English summary: adds a real-workspace Java CALLS_METHOD precision gate with
   logical anchors only, so resolver improvements can be compared against
   private scenarios without committing private paths or generated indexes.
@@ -2260,7 +2317,7 @@ Field fixes from a real-session retrospective (see LOOKUP_ARCHITECTURE_HANDOFF_P
 - 新增 CLI `memory-center bench-profile --workspace <yaml>`,默认 top 50
   按 cumulative 排序,支持 `--by-module` 滚动 / `--label` 给 `.prof`
   文件起名 / `--sort-by` 切换排序键。
-- 在真实 UCAP 工作区(20,516 Java 文件)上跑出第一份诊断报告:
+- 在真实工作区上跑出第一份诊断报告:
   [`docs/benchmarks/P1_0_JAVA_PARSING_PROFILE.md`](./benchmarks/P1_0_JAVA_PARSING_PROFILE.md)
   。原始 pstats 由 `bench-profile` 本地生成到工作区 `.memory-center/perf-profiles/`,
   不提交到仓库。识别出三个真实瓶颈:
@@ -2330,10 +2387,9 @@ Field fixes from a real-session retrospective (see LOOKUP_ARCHITECTURE_HANDOFF_P
   现在三处全部走 `apply_pragmas`,确保 reindex 主写库路径也走 WAL +
   大缓存 + 内存 temp store + mmap。
 - `GraphStore.rebuild` / `rebuild_search_index` 从"逐条 INSERT 循环"
-  改为 `executemany` + `fast_write_mode` 包裹。⚠️ **实测校准**:在真实
-  UCAP Java 大仓(20,516 文件)上 reindex wall-clock **无显著变化**
+  改为 `executemany` + `fast_write_mode` 包裹。⚠️ **实测校准**:在真实工作区上 reindex wall-clock **无显著变化**
   (`graph.rebuild` 仅占总耗时 18.7%,Java 解析占 ~71%);完整数据见
-  [`docs/benchmarks/P0_UCAP_REAL_BENCHMARK.md`](./benchmarks/P0_UCAP_REAL_BENCHMARK.md)。
+  docs/benchmarks 下的真实工作区基准报告。
 - `estimate_optimal_workers` 重新调参以适配 IO-bound 文件读取:上限
   从 8 → 32,小批量(≤4 文件)走 serial,中等批量按 `min(cpu*2, max, n)`
   并保底 2 worker。修正了"<10 文件返回 0 workers 导致悄悄退化为单线程"
@@ -2381,10 +2437,10 @@ Field fixes from a real-session retrospective (see LOOKUP_ARCHITECTURE_HANDOFF_P
 - 新增 `parser-status` CLI，直接输出 tree-sitter Java 启用状态、pipx/local/editable 安装命令和 parser benchmark 验证命令。
 - Golden Benchmark 新增 portable coverage summary；真实场景脚本现在输出 case mode 分布、anchor/edge 覆盖和建议补齐方向。
 - `workspace_next_actions` 保留兼容的字符串 `actions`，同时新增证据化 `action_items`，每条包含 action、reason、evidence、command、priority。
-- 热路径索引读取改为文件快读 + backend fallback，并保留 `read_json_observed()` 做显式一致性双读；真实 UCAP walkthrough latency 从 3.5.7 基线 `2433.243ms` 降到本次验收 `313.382ms`。
-- 真实 UCAP 回归通过：tree-sitter active reindex `native_success_count=16304`、`fallback_count=0`、`critical_disagreement_count=0`；私有 Golden 扩展到 7 条，覆盖 walkthrough / hybrid / MQ / config，anchor recall `1.0`、edge recall `1.0`、forbidden hit rate `0.0`，完整链路 `completion_status=complete`。
+- 热路径索引读取改为文件快读 + backend fallback，并保留 `read_json_observed()` 做显式一致性双读；真实工作区 walkthrough latency 从 3.5.7 基线 `2433.243ms` 降到本次验收 `313.382ms`。
+- 真实工作区回归通过：tree-sitter active reindex `native_success_count=16304`、`fallback_count=0`、`critical_disagreement_count=0`；私有 Golden 扩展到 7 条，覆盖 walkthrough / hybrid / MQ / config，anchor recall `1.0`、edge recall `1.0`、forbidden hit rate `0.0`，完整链路 `completion_status=complete`。
 
-English summary: the next release continues Ruff modernization, makes parser precision visible across indexing/retrieval/reasoning, preserves Typer compatibility on Python 3.9, and improves real UCAP walkthrough latency while passing the no-regression Golden gate.
+English summary: the next release continues Ruff modernization, makes parser precision visible across indexing/retrieval/reasoning, preserves Typer compatibility on Python 3.9, and improves real-workspace walkthrough latency while passing the no-regression Golden gate.
 
 ### 3.5.9: Ruff Governance Baseline / Ruff 治理基线
 
@@ -2399,27 +2455,27 @@ English summary: 3.5.9 establishes a practical Ruff governance baseline (`F/E9/I
 ### 3.5.8: Real Baseline No-Regression Gate / 真实基线不回归门禁
 
 - Golden `performance_gate` 默认语义调整为“不低于当前真实基线”：token 默认不允许增加，latency 默认允许 `10%` 运行抖动；可通过参数继续设置更严格改善要求。
-- `scripts/verify_real_ucap.sh` 支持 `MEMORY_CENTER_REAL_BASELINE` 和 `MEMORY_CENTER_SAVE_REAL_BASELINE=1`，可把当前已验收真实 UCAP 指标保存为后续性能基线。
-- 文档明确当前 `3.5.7` 真实 UCAP Golden 可作为后续 baseline，后续版本不得低于该基线；基线保存在真实 workspace 本地，不提交私有指标文件。
+- `scripts/verify_real_workspace.sh` 支持 `MEMORY_CENTER_REAL_BASELINE` 和 `MEMORY_CENTER_SAVE_REAL_BASELINE=1`，可把当前已验收真实工作区指标保存为后续性能基线。
+- 文档明确当前 `3.5.7` 真实工作区 Golden 可作为后续 baseline，后续版本不得低于该基线；基线保存在真实 workspace 本地，不提交私有指标文件。
 
-English summary: real UCAP Golden performance now uses a no-regression baseline by default, with an opt-in path to save the current validated run as the private baseline.
+English summary: real-workspace Golden performance now uses a no-regression baseline by default, with an opt-in path to save the current validated run as the private baseline.
 
 ### 3.5.7: Walkthrough Report Levels / 全链路输出视图分级
 
 - Method walkthrough `report_level` 新增正式三档视图：`summary`、`standard`、`deep`。
 - `summary` 只保留快速结论、主链路、证据文件编号、关键风险和下一步；`standard` 保持默认详细可读视图；`deep` 展开 glossary、rule groups、branch outline、anti-patterns 等深度诊断区块。
 - 旧 `brief` 保留为兼容别名并归一到 `summary`；结构化字段不删减，三档只改变 `answer_markdown` 展示详略。
-- 真实 UCAP 场景验证三档共享同一 `summary_lines` 主链路，`completion_status=complete`。
+- 真实工作区场景验证三档共享同一 `summary_lines` 主链路，`completion_status=complete`。
 
 English summary: method walkthrough now supports summary, standard, and deep report levels without changing structured fields.
 
-### 3.5.6: Real UCAP Verification Script / 真实 UCAP 验证脚本
+### 3.5.6: Real-workspace Verification Script / 真实工作区验证脚本
 
-- 新增 `scripts/verify_real_ucap.sh`，作为后续本地验收默认入口，固定验证用户提供的真实 UCAP workspace、私有 Golden cases 和关键全链路查询。
+- 新增 `scripts/verify_real_workspace.sh`，作为后续本地验收默认入口，固定验证用户提供的真实工作区、私有 Golden cases 和关键全链路查询。
 - 脚本只输出 doctor、Golden summary/performance gate、walkthrough completion status 等摘要字段，不打印完整 payload、源码片段或完整文件路径。
 - 支持通过 `MEMORY_CENTER_REAL_WORKSPACE`、`MEMORY_CENTER_REAL_CASES`、`MEMORY_CENTER_REAL_QUERY`、`MEMORY_CENTER_REAL_PROJECT` 覆盖默认真实场景。
 
-English summary: a real-scenario verification script now runs doctor, Golden, and the key full-chain query against the user-provided UCAP workspace without dumping private payloads.
+English summary: a real-scenario verification script now runs doctor, Golden, and the key full-chain query against the user-provided workspace without dumping private payloads.
 
 ### 3.5.5: Golden Performance Gate / Golden 性能门禁
 

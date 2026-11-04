@@ -1,7 +1,7 @@
 """Keyword pseudo-call regression anchors (real-workspace-driven).
 
 Each case pins one provable rule from sampling real unresolved calls in
-the ucap workspace: Java statement keywords and type literals can never
+a real workspace: Java statement keywords and type literals can never
 be method names or call receivers, so the regex extractor must not emit
 call rows for them — while real calls in the same body stay intact.
 """

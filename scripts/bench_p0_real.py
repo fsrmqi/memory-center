@@ -1,11 +1,11 @@
 """P0 真实场景 benchmark.
 
 衡量 P0(service kind registry / SQLite PRAGMA + executemany /
-多语言 parser registry)在真实 UCAP 工作区上的 reindex 收益。
+多语言 parser registry)在真实工作区上的 reindex 收益。
 
 用法:
-    .venv/bin/python scripts/bench_p0_ucap.py \\
-        --workspace /Users/cuijiaqi/javaworkspace/ucap/.memory-center/workspace.yaml \\
+    .venv/bin/python scripts/bench_p0_real.py \\
+        --workspace /path/to/workspace/.memory-center/workspace.yaml \\
         --runs 1
 
 输出:
@@ -15,12 +15,13 @@
 - multilang 节点统计(Module/Class/Function + DEFINES/IMPORTS/CALLS)
 - 单次 reindex 前后 db 文件大小
 
-脚本本身不切 git 分支;切分支由调用方控制(见 bench_p0_ucap.sh)。
+脚本本身不切 git 分支;切分支由调用方控制(例如在独立 worktree / clone 里跑)。
 """
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import sqlite3
 import time
@@ -105,15 +106,31 @@ def _cleanup_index(workspace_file: Path) -> None:
             shutil.rmtree(p, ignore_errors=True)
 
 
+def _workspace_from_env() -> Path | None:
+    """工作区路径只从环境变量取，脚本不内置私有默认值。"""
+    raw = os.environ.get("MEMORY_CENTER_REAL_WORKSPACE", "").strip()
+    return Path(raw) if raw else None
+
+
 def main() -> None:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--workspace", required=True, type=Path)
+    parser = argparse.ArgumentParser(
+        description="P0 reindex benchmark on a real workspace.",
+        epilog="工作区路径必须显式提供（--workspace 或 MEMORY_CENTER_REAL_WORKSPACE），"
+               "脚本不内置任何私有路径，例如 /path/to/workspace/.memory-center/workspace.yaml。",
+    )
+    parser.add_argument("--workspace", type=Path, help="workspace.yaml 路径（默认取 MEMORY_CENTER_REAL_WORKSPACE）")
     parser.add_argument("--runs", type=int, default=1)
     parser.add_argument("--out", type=Path, default=Path("/tmp/mc-p0-bench.json"))
     parser.add_argument("--label", default="HEAD", help="给本次跑加一个标签,例如 baseline / after-p0")
     args = parser.parse_args()
 
-    workspace_file = args.workspace.expanduser().resolve()
+    workspace_arg = args.workspace or _workspace_from_env()
+    if workspace_arg is None:
+        parser.error(
+            "必须提供工作区：--workspace /path/to/workspace/.memory-center/workspace.yaml "
+            "或环境变量 MEMORY_CENTER_REAL_WORKSPACE=/path/to/workspace/.memory-center/workspace.yaml"
+        )
+    workspace_file = workspace_arg.expanduser().resolve()
     assert workspace_file.exists(), workspace_file
     ctx_dir = workspace_file.parent
 

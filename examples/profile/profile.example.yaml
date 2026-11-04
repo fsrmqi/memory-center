@@ -1,0 +1,75 @@
+# Memory Center workspace profile example / 工作区约定示例
+#
+# A profile is a YAML document (data, not a code plugin) that captures your
+# team's conventions: module aliases, a default scope, Wiki layout and
+# declarative config-extraction rules. It lives outside the repository — in
+# `workspace.yaml` via `profile:` or under `~/.memory-center/profile.d/`.
+#
+# profile 是 YAML 数据（不是代码插件），用来承载团队自己的约定：模块别名、
+# 默认 scope、Wiki 布局和声明式配置抽取规则。它放在仓库之外：在
+# `workspace.yaml` 里用 `profile:` 引用，或放到 `~/.memory-center/profile.d/`。
+#
+# Everything below uses the fictional `acme` placeholder. Replace it with your
+# own names; never copy real internal service names or absolute paths into the
+# public repository. 下面全部使用虚构的 `acme` 占位，请替换成你自己的命名；
+# 不要把真实内部服务名或绝对路径写进公开仓库。
+#
+# Resolution order / 解析优先级：
+#   explicit argument > workspace.yaml `profile:` > MEMORY_CENTER_PROFILE > default
+#   （显式参数 > workspace.yaml 的 profile: > 环境变量 > 中性默认）
+
+# Display name shown in diagnostics. / 诊断信息中显示的 profile 名称。
+name: acme
+
+# Profile schema version; bumping this requires a code change. / profile 协议版本。
+version: 1
+
+# Scope used when a caller does not pass one explicitly. / 未显式传 scope 时使用。
+default_scope: acme-platform
+
+# Alias -> canonical module/target. Lookup tries the exact key, then lower-case.
+# 别名 -> 规范模块/目标；先精确匹配，再按小写匹配。
+module_aliases:
+  order: acme-order-service
+  pay: acme-payment-service
+
+# Optional ISO date (YYYY-MM-DD) after which aliases stop applying, so a
+# temporary migration window can expire without a code change.
+# 可选 ISO 日期；过期后别名自动失效，临时迁移窗口无需改代码即可关闭。
+module_alias_until: 2026-12-31
+
+# Free-form hint appended to "module not registered" errors. / 模块未登记错误中的提示。
+module_alias_hint: >-
+  Use a registered acme-* module name (see the project list in the admin UI).
+
+# Personal knowledge-base layout conventions (all optional).
+# 个人知识库布局约定（全部可选）。
+wiki:
+  documents: [docs]
+  governance_paths: [docs/governance]
+  top_level_dirs: [services, docs]
+  skip_names: [node_modules, dist, target]
+
+# Declarative config extraction: descend `root`, read `value_key` from each
+# entry, and expose the resulting name -> value map under `output`. This is how
+# a custom MQ namespace is supported without code: one YAML rule is enough.
+# 声明式配置抽取：沿 root 下钻，取每项的 value_key，把“名称 -> 值”映射写入
+# output；自定义 MQ 命名空间因此只需一条 YAML 规则，不用改代码。
+#
+# Given / 例如：
+#   acme:
+#     kafka:
+#       consumers:
+#         orderCreated: {topic: order-created}
+#
+# extract() returns / extract() 返回：{"orderCreated": "order-created"}
+config_extractors:
+  - id: acme-kafka-consumers      # unique rule id / 规则唯一标识
+    root: [acme, kafka, consumers]  # key path from the config root / 配置根下的键路径
+    value_key: topic                # value to read from each entry / 每项取哪个值
+    output: custom_kafka_consumers  # result field / 抽取结果写入的字段
+
+# Extra low-signal tokens used for task-title matching (additive only).
+# 任务标题匹配的额外弱信号词（只做增量，不会替换默认词表）。
+weak_tokens:
+  - acme

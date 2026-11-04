@@ -3,7 +3,7 @@
 Memory Center writes graph metadata as a JSON string in many hot paths
 (``RuntimeStore.rebuild``, ``RuntimeStore.bulk_write``,
 ``RuntimeStore.partial_rebuild``, ``RuntimeStore._upsert_search_rows``,
-``retrieval/inverted.py``, ``semantic.py``). On real UCAP workspaces
+``retrieval/inverted.py``, ``semantic.py``). On a large Java workspace
 ``json.dumps`` is called ~4.6M times during one reindex; ``{}`` itself is
 by far the most common payload (most nodes carry no extra metadata).
 

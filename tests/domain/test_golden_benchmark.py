@@ -341,7 +341,7 @@ def test_golden_performance_gate_accepts_no_regression_against_current_baseline(
     }
     baseline = {
         "schema_version": 1,
-        "label": "v3.5.7-real-ucap",
+        "label": "v3.5.7-real-workspace",
         "performance": {"median_latency_ms": 100.0, "token_estimate": 1000},
     }
 
@@ -356,7 +356,7 @@ def test_golden_performance_gate_accepts_no_regression_against_current_baseline(
 def test_golden_performance_gate_allows_latency_jitter_but_not_token_growth() -> None:
     baseline = {
         "schema_version": 1,
-        "label": "v3.5.7-real-ucap",
+        "label": "v3.5.7-real-workspace",
         "performance": {"median_latency_ms": 100.0, "token_estimate": 1000},
     }
     current = {
@@ -375,7 +375,7 @@ def test_golden_performance_gate_allows_latency_jitter_but_not_token_growth() ->
 def test_golden_performance_gate_normalizes_tokens_when_case_coverage_expands() -> None:
     baseline = {
         "schema_version": 1,
-        "label": "v3.5.7-real-ucap",
+        "label": "v3.5.7-real-workspace",
         "summary": {"case_count": 1},
         "performance": {"median_latency_ms": 100.0, "token_estimate": 1000},
     }
@@ -400,7 +400,7 @@ def test_golden_performance_gate_rejects_regression_against_current_baseline() -
     }
     baseline = {
         "schema_version": 1,
-        "label": "v3.5.7-real-ucap",
+        "label": "v3.5.7-real-workspace",
         "performance": {"median_latency_ms": 100.0, "token_estimate": 1000},
     }
 

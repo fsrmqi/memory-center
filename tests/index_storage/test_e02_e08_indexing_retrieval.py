@@ -428,12 +428,12 @@ public class DemoService {
                 "depth": 1,
                 "source": {
                     "name": "MediaReportQuestionServiceImpl",
-                    "project": "ucap-newmedia-back",
+                    "project": "acme-newmedia-back",
                     "file_path": "a/MediaReportQuestionServiceImpl.java",
                 },
                 "target": {
                     "name": "RemoteBizIdService",
-                    "project": "ucap-rap-id-app",
+                    "project": "acme-rap-id-app",
                     "file_path": "b/RemoteBizIdService.java",
                 },
             },
@@ -443,12 +443,12 @@ public class DemoService {
                 "depth": 2,
                 "source": {
                     "name": "MediaReportQuestionServiceImpl.java",
-                    "project": "ucap-newmedia-back",
+                    "project": "acme-newmedia-back",
                     "file_path": "a/MediaReportQuestionServiceImpl.java",
                 },
                 "target": {
                     "name": "RemoteBizIdService.java",
-                    "project": "ucap-rap-id-app",
+                    "project": "acme-rap-id-app",
                     "file_path": "b/RemoteBizIdService.java",
                 },
             },
@@ -581,7 +581,7 @@ public class DemoService {
                     "type": "CALLS_SERVICE",
                     "depth": 2,
                     "source": {"name": "RemoteBizIdService", "line": 24, "project": "b"},
-                    "target": {"name": "ucap-rap-id-app", "line": 0, "project": "b"},
+                    "target": {"name": "acme-rap-id-app", "line": 0, "project": "b"},
                 },
             ]
         )
@@ -590,7 +590,7 @@ public class DemoService {
         assert summary["depth_reached"] == 2
         assert summary["type_counts"]["INJECTS_BEAN"] == 1
         assert summary["items"][0]["text"] == "MediaReportQuestionServiceImpl:58 --INJECTS_BEAN--> RemoteBizIdService:24"
-        assert summary["items"][1]["text"] == "RemoteBizIdService:24 --CALLS_SERVICE--> ucap-rap-id-app"
+        assert summary["items"][1]["text"] == "RemoteBizIdService:24 --CALLS_SERVICE--> acme-rap-id-app"
 
     def test_parser_benchmark_returns_diagnostics_when_tree_sitter_unavailable(self, demo_workspace, monkeypatch):
         from memory_center.core.indexing import benchmark as benchmark_mod

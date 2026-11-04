@@ -1,6 +1,6 @@
 # Memory Center / 记忆中心
 
-> **当前版本 5.0.0b25（开发测试版）** — 一次安装、常驻运行的多项目上下文与记忆服务。
+> **当前版本 5.0.0b26（开发测试版）** — 一次安装、常驻运行的多项目上下文与记忆服务。
 >
 > 入口：服务 `memory-center-service`（`memory-center` 现指向同一服务）、stdio 代理 `memory-center-mcp`、维护 `memory-center-maintenance`、宿主集成 `memory-center-integrations`。地址：管理页 `/admin/`、就绪 `/health/ready`、MCP `/mcp`。
 >
@@ -50,30 +50,30 @@ Memory Center precomputes these relationships before the agent starts editing.
 
 当前主文档请优先看：
 
-- [docs/ARCHITECTURE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/ARCHITECTURE.md) — 系统架构、分层边界、设计决策
-- [docs/CONTEXT_ENGINEERING_NARRATIVE_AND_REVIEW.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/CONTEXT_ENGINEERING_NARRATIVE_AND_REVIEW.md) — Context Engineering 产品叙事与设计评审清单
-- [docs/MCP_GUIDE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/MCP_GUIDE.md) — MCP facade、宿主接入
-- [docs/USER_GUIDE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/USER_GUIDE.md) — 用户操作路径、常见工作流
-- [docs/REFERENCE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/REFERENCE.md) — 命令、参数、schema 参考
-- [docs/ONTOLOGY.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/ONTOLOGY.md) — 轻量本体与演进计划
-- [docs/CHANGELOG.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/CHANGELOG.md) — 变更记录
-- [docs/NEXT_PHASE_MASTER_PLAN.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/NEXT_PHASE_MASTER_PLAN.md) — 开发路线
-- [docs/TECHNICAL_DESIGN_AGENT_PROPOSAL.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/TECHNICAL_DESIGN_AGENT_PROPOSAL.md) — 技术方案设计 Agent 的证据优先落地提案（部分基础已落地）
-- [docs/THREE_SYSTEM_KNOWLEDGE_LOOP.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/THREE_SYSTEM_KNOWLEDGE_LOOP.md) — DSH、Memory Center 与 Personal Wiki 协同闭环
-- [docs/KNOWLEDGE_LINK_INTEGRATION_PLAN.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/KNOWLEDGE_LINK_INTEGRATION_PLAN.md) — DSH、Memory Center 与 Personal Wiki 的受控 KnowledgeLink 交互计划
-- [docs/DSH_WORKBENCH_PRODUCTIZATION_ROADMAP.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/DSH_WORKBENCH_PRODUCTIZATION_ROADMAP.md) — DSH 工作台产品化实施路线
-- [docs/DSH_LOCAL_TELEMETRY.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/DSH_LOCAL_TELEMETRY.md) — DSH 本地执行观测接入
-- [docs/HTTP_DISPLAY_MIGRATION.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/HTTP_DISPLAY_MIGRATION.md) — 内置 Workbench 下线与 DSH/JSON 迁移说明
-- [docs/DOCUMENT_CONSTITUTION.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/DOCUMENT_CONSTITUTION.md) — 文档治理与发布清单
-- [docs/DOCUMENT_STATUS.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/DOCUMENT_STATUS.md) — 当前/决策/历史文档状态目录
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — 系统架构、分层边界、设计决策
+- [docs/CONTEXT_ENGINEERING_NARRATIVE_AND_REVIEW.md](docs/CONTEXT_ENGINEERING_NARRATIVE_AND_REVIEW.md) — Context Engineering 产品叙事与设计评审清单
+- [docs/MCP_GUIDE.md](docs/MCP_GUIDE.md) — MCP facade、宿主接入
+- [docs/USER_GUIDE.md](docs/USER_GUIDE.md) — 用户操作路径、常见工作流
+- [docs/REFERENCE.md](docs/REFERENCE.md) — 命令、参数、schema 参考
+- [docs/ONTOLOGY.md](docs/ONTOLOGY.md) — 轻量本体与演进计划
+- [docs/CHANGELOG.md](docs/CHANGELOG.md) — 变更记录
+- [docs/NEXT_PHASE_MASTER_PLAN.md](docs/NEXT_PHASE_MASTER_PLAN.md) — 开发路线
+- [docs/TECHNICAL_DESIGN_AGENT_PROPOSAL.md](docs/TECHNICAL_DESIGN_AGENT_PROPOSAL.md) — 技术方案设计 Agent 的证据优先落地提案（部分基础已落地）
+- [docs/THREE_SYSTEM_KNOWLEDGE_LOOP.md](docs/THREE_SYSTEM_KNOWLEDGE_LOOP.md) — DSH、Memory Center 与 Personal Wiki 协同闭环
+- [docs/KNOWLEDGE_LINK_INTEGRATION_PLAN.md](docs/KNOWLEDGE_LINK_INTEGRATION_PLAN.md) — DSH、Memory Center 与 Personal Wiki 的受控 KnowledgeLink 交互计划
+- [docs/DSH_WORKBENCH_PRODUCTIZATION_ROADMAP.md](docs/DSH_WORKBENCH_PRODUCTIZATION_ROADMAP.md) — DSH 工作台产品化实施路线
+- [docs/DSH_LOCAL_TELEMETRY.md](docs/DSH_LOCAL_TELEMETRY.md) — DSH 本地执行观测接入
+- [docs/HTTP_DISPLAY_MIGRATION.md](docs/HTTP_DISPLAY_MIGRATION.md) — 内置 Workbench 下线与 DSH/JSON 迁移说明
+- [docs/DOCUMENT_CONSTITUTION.md](docs/DOCUMENT_CONSTITUTION.md) — 文档治理与发布清单
+- [docs/DOCUMENT_STATUS.md](docs/DOCUMENT_STATUS.md) — 当前/决策/历史文档状态目录
 
 ### Current release / 当前版本
 
-当前包版本为 **5.0.0b25**（开发测试版）。Memory Center 已重构为常驻服务：多项目登记、统一 MCP 入口、后台索引、知识库 / Wiki / 长期记忆与知识治理 / Skill 管理全部由同一服务承载，入口与能力边界以 [5.0 平台指南](docs/V5_PLATFORM_GUIDE.md) 为准。
+当前包版本为 **5.0.0b26**（开发测试版）。Memory Center 已重构为常驻服务：多项目登记、统一 MCP 入口、后台索引、知识库 / Wiki / 长期记忆与知识治理 / Skill 管理全部由同一服务承载，入口与能力边界以 [5.0 平台指南](docs/V5_PLATFORM_GUIDE.md) 为准。
 
 4.x 的稳定能力（可信查询、Java IR 差分、跨服务调用链、检索回放、发布质量门禁）作为核心算法背景保留；5.0 实际复用其中哪些部分，由平台指南与代码事实定义，不以本文的历史叙述为准。4.6.30 保留在 `codex/release-4.6.30` 分支供源码追溯，5.0 不读取其 workspace、registry、索引与记忆。
 
-The current package version is **5.0.0b25** (development beta). Memory Center now runs as a standalone always-on service hosting multi-project registration, a unified MCP endpoint, background indexing, knowledge/Wiki/long-term memory, and knowledge/skill governance. The 4.x engine capabilities are retained as algorithmic background; which parts the 5.0 service actually reuses is defined by the platform guide and the code, not by this historical narrative.
+The current package version is **5.0.0b26** (development beta). Memory Center now runs as a standalone always-on service hosting multi-project registration, a unified MCP endpoint, background indexing, knowledge/Wiki/long-term memory, and knowledge/skill governance. The 4.x engine capabilities are retained as algorithmic background; which parts the 5.0 service actually reuses is defined by the platform guide and the code, not by this historical narrative.
 
 ---
 
@@ -656,12 +656,12 @@ You can also sync task outputs back into shared artifacts:
 
 ```bash
 memory-center sync-sniff-artifacts \
-  --workspace /Users/cuijiaqi/javaworkspace/ucap/.memory-center/workspace.yaml \
+  --workspace /path/to/workspace/.memory-center/workspace.yaml \
   --intent "修改 Feign DTO 并评估 MQ 影响" \
   --auto-sync-mode balanced
 
 memory-center sync-case-artifacts \
-  --workspace /Users/cuijiaqi/javaworkspace/ucap/.memory-center/workspace.yaml \
+  --workspace /path/to/workspace/.memory-center/workspace.yaml \
   --session-id session-xxxx \
   --auto-sync-mode balanced
 ```
@@ -686,32 +686,32 @@ Published delivery Skills can optionally use the external `skill-up` evaluator. 
 
 ```bash
 memory-center artifact create-task \
-  --workspace /Users/cuijiaqi/javaworkspace/ucap/.memory-center/workspace.yaml \
+  --workspace /path/to/workspace/.memory-center/workspace.yaml \
   --title "Feign DTO 兼容改造"
 
 memory-center artifact list-tasks \
-  --workspace /Users/cuijiaqi/javaworkspace/ucap/.memory-center/workspace.yaml
+  --workspace /path/to/workspace/.memory-center/workspace.yaml
 
 memory-center artifact health-task \
-  --workspace /Users/cuijiaqi/javaworkspace/ucap/.memory-center/workspace.yaml \
+  --workspace /path/to/workspace/.memory-center/workspace.yaml \
   --task-id feign-dto-compat
 
 memory-center artifact repair-plan-task \
-  --workspace /Users/cuijiaqi/javaworkspace/ucap/.memory-center/workspace.yaml \
+  --workspace /path/to/workspace/.memory-center/workspace.yaml \
   --task-id feign-dto-compat
 
 memory-center artifact repair-task \
-  --workspace /Users/cuijiaqi/javaworkspace/ucap/.memory-center/workspace.yaml \
+  --workspace /path/to/workspace/.memory-center/workspace.yaml \
   --task-id feign-dto-compat
 
 memory-center artifact repair-task \
-  --workspace /Users/cuijiaqi/javaworkspace/ucap/.memory-center/workspace.yaml \
+  --workspace /path/to/workspace/.memory-center/workspace.yaml \
   --task-id feign-dto-compat \
   --apply \
   --intent "继续 Feign DTO 兼容改造"
 
 memory-center artifact auto-archive-tasks \
-  --workspace /Users/cuijiaqi/javaworkspace/ucap/.memory-center/workspace.yaml \
+  --workspace /path/to/workspace/.memory-center/workspace.yaml \
   --retention-days 30
 ```
 
@@ -733,16 +733,16 @@ For long-running workspaces, do not feed the full artifact documents every time.
 
 ```bash
 memory-center artifact outline \
-  --workspace /Users/cuijiaqi/javaworkspace/ucap/.memory-center/workspace.yaml \
+  --workspace /path/to/workspace/.memory-center/workspace.yaml \
   --name context
 
 memory-center artifact context \
-  --workspace /Users/cuijiaqi/javaworkspace/ucap/.memory-center/workspace.yaml \
+  --workspace /path/to/workspace/.memory-center/workspace.yaml \
   --intent "Feign DTO 兼容改动" \
   --limit 6
 
 memory-center artifact compact-change-log \
-  --workspace /Users/cuijiaqi/javaworkspace/ucap/.memory-center/workspace.yaml \
+  --workspace /path/to/workspace/.memory-center/workspace.yaml \
   --keep-recent 30
 ```
 
@@ -824,36 +824,36 @@ memory-center work-health \
 
 `work-resume-check` 是恢复前的一键门禁：它会把恢复包、任务健康、修复计划、下一步动作、未解决事项和证据合并成 `ready`、`needs_repair` 或 `blocked`。
 
-### 9. Real-world `ucap-all` examples / `ucap-all` 真实路径示例
+### 9. Real-world workspace example / 真实工作区示例
 
-If you are using the shared UCAP workspace discussed in the docs, you can copy these commands directly:
+If you have registered your own workspace, you can copy these commands directly and replace the path and module name with your own:
 
-如果你正在使用文档中那套 `ucap-all` 公共空间，下面这些命令可以直接复制：
+如果你已经登记了自己的真实工作区，下面这些命令可以直接复制，并把路径和模块名替换成你自己的：
 
 ```bash
 memory-center status \
-  --workspace /Users/cuijiaqi/javaworkspace/ucap/.memory-center/workspace.yaml
+  --workspace /path/to/workspace/.memory-center/workspace.yaml
 
 memory-center query \
-  --workspace /Users/cuijiaqi/javaworkspace/ucap/.memory-center/workspace.yaml \
-  --text "ucap-cloud-back"
+  --workspace /path/to/workspace/.memory-center/workspace.yaml \
+  --text "acme-cloud-back"
 
 memory-center context \
-  --workspace /Users/cuijiaqi/javaworkspace/ucap/.memory-center/workspace.yaml \
-  --name ucap-cloud-back
+  --workspace /path/to/workspace/.memory-center/workspace.yaml \
+  --name acme-cloud-back
 
 memory-center impact \
-  --workspace /Users/cuijiaqi/javaworkspace/ucap/.memory-center/workspace.yaml \
-  --target ucap-cloud-back \
+  --workspace /path/to/workspace/.memory-center/workspace.yaml \
+  --target acme-cloud-back \
   --direction upstream
 
 memory-center start-session \
-  --workspace /Users/cuijiaqi/javaworkspace/ucap/.memory-center/workspace.yaml \
-  --intent "继续处理 ucap-cloud-back Feign 调用链"
+  --workspace /path/to/workspace/.memory-center/workspace.yaml \
+  --intent "继续处理 acme-cloud-back Feign 调用链"
 
 memory-center resume-context \
-  --workspace /Users/cuijiaqi/javaworkspace/ucap/.memory-center/workspace.yaml \
-  --intent "继续处理 ucap-cloud-back Feign 调用链"
+  --workspace /path/to/workspace/.memory-center/workspace.yaml \
+  --intent "继续处理 acme-cloud-back Feign 调用链"
 ```
 
 ---
@@ -1045,9 +1045,9 @@ memory-center eval-golden \
   --cases /path/to/private-cases.yaml
 ```
 
-Use [examples/golden-benchmark/cases.template.yaml](/Users/cuijiaqi/Ai-common-skills/memory-center/examples/golden-benchmark/cases.template.yaml) as the public template, then keep real cases in a private local file.
+Use [examples/golden-benchmark/cases.template.yaml](examples/golden-benchmark/cases.template.yaml) as the public template, then keep real cases in a private local file.
 
-可先用 [examples/golden-benchmark/cases.template.yaml](/Users/cuijiaqi/Ai-common-skills/memory-center/examples/golden-benchmark/cases.template.yaml) 作为公开模板，再把真实 case 维护在你本地私有文件里。
+可先用 [examples/golden-benchmark/cases.template.yaml](examples/golden-benchmark/cases.template.yaml) 作为公开模板，再把真实 case 维护在你本地私有文件里。
 
 ### Release Gate / 发布门禁
 
@@ -1332,6 +1332,57 @@ For agentmemory-style regression checks, `memory_eval_token_benchmark` now compa
 
 `workspace_recent_evidence` also now uses an explicit top-K evidence strategy in compact mode: `small=3`、`medium=5`、`large=10`。排序优先级为 `ref_id + summary + payload_ref/receipt_ref` 的信号丰富度，再按时间倒序，避免 evidence 数量跟通用 event 限额一起漂移。
 
+## 工作区约定（Profile） / Workspace profiles
+
+不同团队对模块命名、Wiki 布局与 MQ 配置命名空间有自己的约定。Memory Center 把这些约定抽成 **profile**：一份 YAML 数据，而不是代码插件。公开仓库因此不内置任何公司别名、默认 scope 或个人 Wiki 路径；团队把自己的约定写进 workspace 或机器上的 profile 文件，即可获得与内部发行一致的行为。
+
+Teams have their own conventions for module naming, Wiki layouts and the namespaces where MQ settings live. Memory Center captures them as a **profile**: a YAML document, not a code plugin. The public repository therefore ships no company aliases, default scope or personal Wiki paths; a team writes its own conventions into a workspace or a machine-local profile file and gets the same behavior an internal build would have.
+
+优先级（先命中者生效）/ Precedence (first match wins):
+
+| 优先级 / Priority | 来源 / Source | 说明 / Notes |
+|---|---|---|
+| 1 | 显式参数 / Explicit argument | API 调用方直接传入 `Profile` 对象、profile 文件路径或 profile 名 / a `Profile` object, a file path, or a profile name |
+| 2 | `workspace.yaml` 的 `profile:` | 项目自身声明，`profile_for_workspace()` 按此解析 / declared by the workspace and resolved by `profile_for_workspace()` |
+| 3 | 环境变量 `MEMORY_CENTER_PROFILE` | profile 名或文件路径 / a profile name or a file path |
+| 4 | 中性默认 / Neutral default | 空 profile / empty profile |
+
+profile 名在 `$MEMORY_CENTER_PROFILE_DIR` 与 `~/.memory-center/profile.d/` 下按 `<name>.yaml|.yml` 查找；显式声明的名字找不到时抛 `ProfileError`，不会静默回退到默认。工作区侧可用 `profile_for_workspace(workspace_file)` 按 `workspace.yaml` 声明解析；文件不存在或无声明时回退到环境变量／默认。Profile names are looked up as `<name>.yaml|.yml` under `$MEMORY_CENTER_PROFILE_DIR` and `~/.memory-center/profile.d/`; an explicitly declared name that cannot be found raises `ProfileError` instead of silently falling back to the default. `profile_for_workspace(workspace_file)` resolves a workspace declaration and falls back to the env/default when the file or the declaration is absent.
+
+`workspace.yaml` 片段 / workspace.yaml snippet:
+
+```yaml
+profile: acme                    # profile 名，或 ./profiles/acme.yaml 路径 / a name or a file path
+```
+
+`~/.memory-center/profile.d/acme.yaml` 片段 / profile snippet:
+
+```yaml
+name: acme                       # 显示名 / display name
+version: 1                       # profile schema 版本 / profile schema version
+default_scope: acme-platform     # 未显式传 scope 时使用 / scope used when none is passed
+module_aliases:                  # 别名 -> 目标 / alias -> target
+  order: acme-order-service
+  pay: acme-payment-service
+module_alias_until: 2026-12-31   # 可选：过期后别名自动失效 / optional: aliases expire after this date
+module_alias_hint: "Use registered acme-* module names."
+wiki:                            # 个人知识库布局约定 / personal wiki layout
+  documents: [docs]
+  governance_paths: [docs/governance]
+  top_level_dirs: [services, docs]
+  skip_names: [node_modules, dist]
+config_extractors:               # 声明式配置抽取规则 / declarative extraction rules
+  - id: acme-kafka-consumers
+    root: [acme, kafka, consumers]   # 从配置根下钻的键路径 / key path to descend from the config root
+    value_key: topic                  # 每项取哪个值 / the value to read from each entry
+    output: custom_kafka_consumers    # 抽取结果写入的结果字段 / result field receiving the map
+weak_tokens: [acme]              # 任务标题匹配的额外弱信号词 / extra low-signal tokens
+```
+
+`config_extractors` 是声明式配置抽取规则：沿 `root` 指定的键路径下钻到配置节点，把每一项的 `value_key` 抽成 `output` 映射，因此“某个工程用自定义命名空间配置 MQ”不需要写代码，改 YAML 即可。`ConfigExtractor.extract()` 对正常结构返回 `条目名 -> 值`，节点缺失或不是映射时返回空字典（不抛错）。`config_extractors` is the declarative extraction contract: it descends through `root`, reads `value_key` from each entry and exposes the result under `output`, so a custom MQ namespace needs a YAML rule rather than code. `ConfigExtractor.extract()` returns `entry -> value` for the normal shape and an empty dict (instead of raising) when a node is missing or not a mapping.
+
+空 profile 时全部功能按中性默认运行：没有别名路由、Wiki 拓扑为空、`custom_kafka_consumers` 为空，不需要迁移即可使用。With an empty profile all features run on neutral defaults: no alias routing, an empty Wiki topology and an empty `custom_kafka_consumers`, with no migration required.
+
 ## Stable Schemas / 稳定协议
 
 The following response families now carry explicit schema metadata through `schema.name` and `schema.version`, so external CLI wrappers, MCP clients, HTTP consumers, exporters and future UI layers can bind to stable contracts instead of loose dictionaries.
@@ -1542,10 +1593,10 @@ Mutation examples: `POST /workspace/asset/register`, `POST /workspace/artifact/u
 
 `codex/service-platform` 分支以 **5.0.0** 为目标发行版，从 4.6.30 改造为独立常驻服务、多项目接入与管理页面，后续扩展文档知识库、Wiki 和长期记忆。S1 已实施，项目操作见 [项目目录管理指南](docs/V5_CATALOG_GUIDE.md)，运行事实见 [5.0 服务运行指南](docs/V5_SERVICE_GUIDE.md)。原有 CLI/MCP/HTTP 源码暂留用于后续能力拆分，不提供兼容承诺。改造流程、WeKnora 参考映射与全新安装验收见 [5.0 改造流程方案](docs/V5_IMPLEMENTATION_PLAN.md)，技术设计见 [服务化技术方案](docs/SERVICE_PLATFORM_TECHNICAL_PLAN.md) 和 [ADR-0004](docs/adr/0004-service-platform-and-admin.md)；开发优先级由主计划的分支说明统一维护。
 
-- 当前对外说明以 [docs/DOCUMENT_CONSTITUTION.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/DOCUMENT_CONSTITUTION.md) 为准。
-- 当前实现状态、最近改动和版本变化以 [docs/CHANGELOG.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/CHANGELOG.md) 为准。
-- 当前唯一活跃开发路线以 [docs/NEXT_PHASE_MASTER_PLAN.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/NEXT_PHASE_MASTER_PLAN.md) 为准。
-- 每份文档的 current / decision / historical 状态以 [docs/DOCUMENT_STATUS.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/DOCUMENT_STATUS.md) 为准。
+- 当前对外说明以 [docs/DOCUMENT_CONSTITUTION.md](docs/DOCUMENT_CONSTITUTION.md) 为准。
+- 当前实现状态、最近改动和版本变化以 [docs/CHANGELOG.md](docs/CHANGELOG.md) 为准。
+- 当前唯一活跃开发路线以 [docs/NEXT_PHASE_MASTER_PLAN.md](docs/NEXT_PHASE_MASTER_PLAN.md) 为准。
+- 每份文档的 current / decision / historical 状态以 [docs/DOCUMENT_STATUS.md](docs/DOCUMENT_STATUS.md) 为准。
 
 ---
 

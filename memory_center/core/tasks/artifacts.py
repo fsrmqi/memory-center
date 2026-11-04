@@ -15,6 +15,7 @@ from uuid import uuid4
 from filelock import FileLock
 
 from memory_center.core.foundation.text import base_tokenize
+from memory_center.core.profiles import ProfileError, active_profile
 from memory_center.core.storage.workspace import WorkspaceStore, _safe_path
 from memory_center.core.workspace.config import load_workspace_config
 
@@ -2033,20 +2034,26 @@ def _task_match_analysis(
     _WEAK_TOKENS.update({"feign", "kafka", "rocketmq", "redis", "elasticsearch", "mysql", "mongo", "mongodb",
                          "controller", "service", "dto", "api", "http", "rest", "gateway", "spring", "boot",
                          "java", "config", "consumer", "producer", "topic", "queue", "token", "login"})
-    # P0 补充：workspace 自身名字（含前缀关系，如 workspace=ucap-all 时 "ucap"）
+    # P0 补充：workspace 自身名字（含前缀关系，如 workspace=acme-all 时 "acme"）
     # 是每个 intent 都会出现的通名，曾以 intent_exact 身份稳定贡献强证据，
     # 是低分误绑定的帮凶。
     if len(workspace_name) >= 2:
         _WEAK_TOKENS.add(workspace_name)
+    # 额外低信号词由 profile 声明（additive）：开源默认 profile 为空集，
+    # 因此没有 profile 时行为与内置词表完全一致。
+    try:
+        _WEAK_TOKENS.update(active_profile().weak_tokens)
+    except ProfileError:
+        pass
 
     def _is_weak(token: str) -> bool:
         if token in _WEAK_TOKENS or token.isdigit() or len(token) <= 2:
             return True
-        # workspace 名的前缀方向也算通名：ucap / ucap-all 互为前缀。
+        # workspace 名的前缀方向也算通名：acme / acme-all 互为前缀。
         if workspace_name and (workspace_name.startswith(token) or token.startswith(workspace_name)):
             return True
-        # workspace 名内部片段（ucap-all 的 'ucap'/'all'）及服务前缀族
-        # （ucap-cloud-* 的 'cloud'）：同一 workspace 的任意 intent 都可能出现。
+        # workspace 名内部片段（acme-all 的 'acme'/'all'）及服务前缀族
+        # （acme-cloud-* 的 'cloud'）：同一 workspace 的任意 intent 都可能出现。
         if workspace_name:
             for part in workspace_name.split("-"):
                 if len(part) >= 3 and (part.startswith(token) or token.startswith(part)):
@@ -2162,8 +2169,8 @@ def _cjk_subword_in(token: str, text: str) -> bool:
 
     `继续处理链路分析` 与标题 `链路分析任务` 共享连续子串 `链路分析`，但整串
     substring 检查会漏掉。要求 token 与某个 CJK 词存在长度 >= 4 的连续公共
-    子串（3 字如 `全链路` 属通用高歧义词，真实工作区会跨任务误命中，见
-    ucap 验证：`的全链路观测问题` 误中 `错敏复查全链路`）；对拉丁 token 恒为 False。
+    子串（3 字如 `全链路` 属通用高歧义词，真实工作区会跨任务误命中，例如
+    `的全链路观测问题` 误中 `订单复查全链路`）；对拉丁 token 恒为 False。
     """
     if len(token) < 4 or not all("\u4e00" <= ch <= "\u9fff" for ch in token):
         return False

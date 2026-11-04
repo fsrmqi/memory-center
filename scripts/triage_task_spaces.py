@@ -62,8 +62,8 @@ def _bigrams(text: str) -> set[str]:
 def related(topic: str, anchor_tokens: set[str], anchor_bigrams: set[str], min_score: int, workspace_name: str = "") -> bool:
     """相关性：非通名 token 精确交集达标，或字符 bigram 重叠率达标。
 
-    标题常是实体名（如"众包平台"）而 topic 是长句（分词后无整串重叠），
-    因此补充字符 bigram 重叠判定——长句与短实体名共享"众包/平台"等
+    标题常是实体名（如"订单服务"）而 topic 是长句（分词后无整串重叠），
+    因此补充字符 bigram 重叠判定——长句与短实体名共享"订单/服务"等
     二字片段即视为相关；纯泛词长句 bigram 命中率极低，不会误判。
     """
     topic_tokens = discriminative_tokens(topic, workspace_name)

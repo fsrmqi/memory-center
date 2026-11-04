@@ -557,8 +557,8 @@ class TestProjectMatching:
 
     def test_component_match(self):
         from memory_center.core.matching.project import project_matches
-        # "openapi" is a specific component in "ucap-cloud-openapi"
-        assert project_matches("openapi", "ucap-cloud-openapi") is True
+        # "openapi" is a specific component in "acme-cloud-openapi"
+        assert project_matches("openapi", "acme-cloud-openapi") is True
 
     def test_concatenated_match(self):
         from memory_center.core.matching.project import project_matches
@@ -572,7 +572,7 @@ class TestProjectMatching:
     def test_generic_component_no_match(self):
         from memory_center.core.matching.project import project_matches
         # "api" is too generic to match alone
-        assert project_matches("api", "ucap-cloud-api") is False
+        assert project_matches("api", "acme-cloud-api") is False
 
     def test_empty_inputs(self):
         from memory_center.core.matching.project import project_matches
@@ -583,7 +583,7 @@ class TestProjectMatching:
     def test_fqn_inference_exact(self):
         from memory_center.core.matching.project import infer_project_from_fqn
         result = infer_project_from_fqn(
-            "cn.kaipuyun.cloud.openapi.biz.service.FooService",
+            "cn.example.cloud.openapi.biz.service.FooService",
             ["openapi", "user-svc", "order-svc"],
         )
         assert result == "openapi"

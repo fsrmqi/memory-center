@@ -350,13 +350,13 @@ def memory_symbol(
 def _infer_project_from_fqn(fqn: str, workspace_file: str | Path) -> str:
     """Try to infer the project name from a fully-qualified class name.
 
-    E.g.  cn.kaipuyun.cloud.openapi.biz.service.impl.website.safe.FooServiceImpl
-    → segments = [cn, kaipuyun, cloud, openapi, biz, service, impl, ...]
-    → try matching 'openapi' against known project names in the workspace.
+    E.g.  com.example.billing.api.service.impl.order.FooServiceImpl
+    → segments = [com, example, billing, api, service, impl, ...]
+    → try matching 'billing' against known project names in the workspace.
 
     Scoring: prefer segments that appear as a distinct word-boundary in the
-    project name (e.g. 'openapi' in 'ucap-cloud-open-api' splits on '-'
-    and 'openapi' matches the concatenation of adjacent parts 'open'+'api').
+    project name (e.g. 'billing' in 'acme-cloud-billing-api' splits on '-'
+    and 'billing' matches the concatenation of adjacent parts 'bill'+'ing').
     """
     parts = fqn.replace("#", ".").split(".")
     segments = [p for p in parts[:-1] if p and p[0].islower()]

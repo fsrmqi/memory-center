@@ -7,7 +7,7 @@ from memory_center.platform.assistant import core
 
 
 def make_wiki(root: Path) -> None:
-    (root / "工作/开普云/项目资料").mkdir(parents=True)
+    (root / "工作/acme/项目资料").mkdir(parents=True)
     (root / "技术/项目").mkdir(parents=True)
     (root / "模块注册表.md").write_text(
         """---
@@ -23,11 +23,11 @@ status: 生效
 | module 短码 | 领域 |
 |---|---|
 | `system` | 系统 |
-| `kaipuyun` | 开普云公司级业务 |
+| `acme` | acme 公司级业务 |
 
 | 公司 | 目录 |
 |---|---|
-| 开普云 | `工作/开普云/` |
+| acme | `工作/acme/` |
 """,
         encoding="utf-8",
     )
@@ -76,17 +76,17 @@ def test_archive_requires_preview_confirmation_and_allowlist(tmp_path: Path) -> 
     preview = core.archive(
         wiki,
         str(source),
-        company="开普云",
+        company="acme",
         allowed_source_roots=(source_root,),
     )
-    target = wiki / "工作/开普云/项目资料/资料.md"
+    target = wiki / "工作/acme/项目资料/资料.md"
     assert preview["status"] == "需要确认"
     assert not target.exists()
 
     result = core.archive(
         wiki,
         str(source),
-        company="开普云",
+        company="acme",
         confirm=True,
         allowed_source_roots=(source_root,),
     )
@@ -176,56 +176,74 @@ def test_promote_requires_confirmation_and_writes_governed_knowledge(tmp_path: P
     assert result["content_sha256"] == hashlib.sha256(target.read_bytes()).hexdigest()
 
 
-def test_promote_unknown_module_returns_bounded_company_fallback_hint(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    class PolicyDate(core.date):
-        @classmethod
-        def today(cls) -> "PolicyDate":
-            return cls(2026, 8, 21)
+@pytest.fixture(autouse=True)
+def _neutral_profile_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """默认使用中性（空）profile；需要 profile 的用例显式 setenv 覆盖。"""
+    monkeypatch.delenv("MEMORY_CENTER_PROFILE", raising=False)
+    monkeypatch.delenv("MEMORY_CENTER_PROFILE_DIR", raising=False)
 
-    monkeypatch.setattr(core, "date", PolicyDate)
+
+def _profile_file(tmp_path: Path, body: str) -> Path:
+    path = tmp_path / "profile.yaml"
+    path.write_text(body, encoding="utf-8")
+    return path
+
+
+def test_promote_empty_profile_does_not_rewrite_alias_like_modules(tmp_path: Path) -> None:
+    """空 profile：没有任何公司别名机制，模块保持原样且错误提示无兜底文案。"""
     make_wiki(tmp_path)
+    preview = core.promote(tmp_path, title="系统结论", content="已验证。", source="task:1", module="system")
+    assert preview["module"] == "system"
+    assert "module_routing" not in preview
     with pytest.raises(core.WikiError) as exc_info:
-        core.promote(tmp_path, title="公司业务", content="待归类。", source="task:1", module="unknown-business")
+        core.promote(tmp_path, title="别名模块", content="待归类。", source="task:1", module="website")
     message = str(exc_info.value)
-    assert "module 未在 模块注册表.md 登记：unknown-business" in message
-    assert "可改用 kaipuyun" in message
-    assert "个人事项禁止使用" in message
-    assert "2026-12-31" in message
-
-    class ExpiredDate(core.date):
-        @classmethod
-        def today(cls) -> "ExpiredDate":
-            return cls(2027, 1, 1)
-
-    monkeypatch.setattr(core, "date", ExpiredDate)
-    with pytest.raises(core.WikiError) as expired_info:
-        core.promote(tmp_path, title="公司业务", content="待归类。", source="task:1", module="unknown-business")
-    assert "可改用 kaipuyun" not in str(expired_info.value)
+    assert "module 未在 模块注册表.md 登记：website" in message
+    assert "acme" not in message
+    assert "兜底" not in message
 
 
-def test_promote_resolves_known_company_aliases_to_kaipuyun(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    class PolicyDate(core.date):
-        @classmethod
-        def today(cls) -> "PolicyDate":
-            return cls(2026, 8, 21)
-
-    monkeypatch.setattr(core, "date", PolicyDate)
+def test_promote_uses_profile_module_aliases(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """有 profile：别名生效，routing 使用中性 reason ``module_alias``。"""
     make_wiki(tmp_path)
-    for alias in ("website", "media", "newmedia", "ucap"):
+    profile = _profile_file(
+        tmp_path,
+        "default_scope: acme\n"
+        "module_aliases:\n"
+        "  website: acme\n"
+        "  media: acme\n"
+        "module_alias_until: 2099-12-31\n",
+    )
+    monkeypatch.setenv("MEMORY_CENTER_PROFILE", str(profile))
+    for alias in ("website", "media"):
         preview = core.promote(
             tmp_path, title=f"{alias} 公司业务", content="已确认归属。", source="task:alias", module=alias,
         )
-        assert preview["module"] == "kaipuyun"
+        assert preview["module"] == "acme"
         assert preview["module_routing"] == {
             "requested": alias,
-            "resolved": "kaipuyun",
-            "reason": "company_module_alias",
-            "valid_until": "2026-12-31",
+            "resolved": "acme",
+            "reason": "module_alias",
+            "valid_until": "2099-12-31",
         }
+
+
+def test_promote_profile_alias_expires_after_valid_until(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """``module_alias_until`` 过期后别名失效；profile 的 hint 仍可追加到错误提示。"""
+    make_wiki(tmp_path)
+    profile = _profile_file(
+        tmp_path,
+        "module_aliases:\n"
+        "  website: acme\n"
+        "module_alias_until: 2000-01-01\n"
+        "module_alias_hint: 请在 workspace profile 中补登记该 module\n",
+    )
+    monkeypatch.setenv("MEMORY_CENTER_PROFILE", str(profile))
+    with pytest.raises(core.WikiError) as exc_info:
+        core.promote(tmp_path, title="过期别名", content="待归类。", source="task:1", module="website")
+    message = str(exc_info.value)
+    assert "module 未在 模块注册表.md 登记：website" in message
+    assert "请在 workspace profile 中补登记该 module" in message
 
 
 def test_incremental_index_and_brief(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -270,7 +288,7 @@ def test_initialize_builds_index_and_analyzes_structure(tmp_path: Path, monkeypa
     (tmp_path / "研究/技术研究/说明.md").write_text("# 技术研究\n", encoding="utf-8")
     external = tmp_path / ".external"
     external.mkdir()
-    (tmp_path / "工作/开普云/项目资料/源文档").symlink_to(external, target_is_directory=True)
+    (tmp_path / "工作/acme/项目资料/源文档").symlink_to(external, target_is_directory=True)
 
     result = core.initialize(tmp_path)
 
@@ -288,18 +306,41 @@ def test_validate_checks_governed_docs_but_not_imported_docs(tmp_path: Path) -> 
     governed = tmp_path / "个人档案/索引.md"
     governed.parent.mkdir()
     governed.write_text("# missing frontmatter\n", encoding="utf-8")
-    imported = tmp_path / "工作/开普云/项目资料/历史.md"
+    imported = tmp_path / "工作/acme/项目资料/历史.md"
     imported.write_text("# imported without frontmatter\n", encoding="utf-8")
 
     result = core.validate(tmp_path)
 
     paths = {item["path"] for item in result["frontmatter_issues"]}
     assert "个人档案/索引.md" in paths
-    assert "工作/开普云/项目资料/历史.md" not in paths
+    assert "工作/acme/项目资料/历史.md" not in paths
 
 
-def test_validate_requires_highest_constitution(tmp_path: Path) -> None:
+def test_validate_neutral_when_profile_has_no_governance_paths(tmp_path: Path) -> None:
+    """空 profile：没有必填治理文件，不得把「未配置」误报成缺失。"""
     make_wiki(tmp_path)
+
+    result = core.validate(tmp_path)
+
+    assert result["governance_issue_count"] == 0
+    assert result["governance_issues"] == []
+
+
+def test_validate_and_analyze_follow_profile_wiki_topology(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """有 profile：治理文件与顶层目录校验都按 profile 声明执行。"""
+    make_wiki(tmp_path)
+    profile = _profile_file(
+        tmp_path,
+        "wiki:\n"
+        "  governance_paths:\n"
+        "    - 助手规则/最高宪法.md\n"
+        "  top_level_dirs:\n"
+        "    - 工作\n"
+        "    - 研究\n",
+    )
+    monkeypatch.setenv("MEMORY_CENTER_PROFILE", str(profile))
 
     missing = core.validate(tmp_path)
     assert missing["governance_issue_count"] == 1
@@ -312,8 +353,23 @@ def test_validate_requires_highest_constitution(tmp_path: Path) -> None:
         "updated: 2026-08-21\nversion: v1.0\nstatus: 生效\n---\n",
         encoding="utf-8",
     )
-    present = core.validate(tmp_path)
-    assert present["governance_issue_count"] == 0
+    assert core.validate(tmp_path)["governance_issue_count"] == 0
+
+    analysis = core.analyze(tmp_path)
+    assert analysis["structure"]["missing_top_level"] == ["研究"]
+    assert set(analysis["structure"]["unexpected_top_level"]) == {"技术", "助手规则"}
+
+
+def test_analyze_skips_topology_checks_without_profile(tmp_path: Path) -> None:
+    """空 profile：不得把全部顶层目录报成 unexpected，也不报 missing。"""
+    make_wiki(tmp_path)
+    (tmp_path / "研究").mkdir()
+
+    analysis = core.analyze(tmp_path)
+
+    assert analysis["structure"]["missing_top_level"] == []
+    assert analysis["structure"]["unexpected_top_level"] == []
+    assert not any("顶层目录" in warning for warning in analysis["warnings"])
 
 
 def test_clean_rejects_unknown_scope(tmp_path: Path) -> None:
@@ -341,13 +397,13 @@ def test_promote_task_id_anchor_recorded_and_brief_protocol_updated(tmp_path: Pa
     brief 协议含"无可信锚点仅作背景浏览"条款。"""
     make_wiki(tmp_path)
     preview = core.promote(
-        tmp_path, title="锚点结论", content="已验证。", source="memory-center:ucap:task:t1",
+        tmp_path, title="锚点结论", content="已验证。", source="memory-center:acme:task:t1",
         confirm=False, task_id="task-anchor-1",
     )
     assert preview["task_id"] == "task-anchor-1"
     assert "task_id" not in preview or preview.get("confirmed") is False
     result = core.promote(
-        tmp_path, title="锚点结论", content="已验证。", source="memory-center:ucap:task:t1",
+        tmp_path, title="锚点结论", content="已验证。", source="memory-center:acme:task:t1",
         confirm=True, task_id="task-anchor-1",
     )
     text = (tmp_path / result["target"]).read_text(encoding="utf-8")
@@ -355,7 +411,7 @@ def test_promote_task_id_anchor_recorded_and_brief_protocol_updated(tmp_path: Pa
     assert result["task_id"] == "task-anchor-1"
     # 不传 task_id 时 frontmatter 不含该字段（additive 兼容）
     result2 = core.promote(
-        tmp_path, title="无锚点结论", content="已验证。", source="memory-center:ucap:task:t2",
+        tmp_path, title="无锚点结论", content="已验证。", source="memory-center:acme:task:t2",
         confirm=True,
     )
     text2 = (tmp_path / result2["target"]).read_text(encoding="utf-8")

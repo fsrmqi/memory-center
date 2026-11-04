@@ -41,6 +41,10 @@ class WorkspaceConfig:
     workspace: str
     root: str
     services: list[ServiceConfig]
+    #: Optional profile reference (name or file path) declared in
+    #: ``workspace.yaml`` as ``profile:``. ``None`` keeps the neutral default
+    #: profile, so existing workspace files are unaffected.
+    profile: str | None = None
 
     @property
     def root_path(self) -> Path:
@@ -105,7 +109,7 @@ class JavaSymbol:
 
     # Hand-written shallow ``to_dict`` to avoid ``dataclasses.asdict`` recursion.
     # P1-0 profile showed 22K JavaSymbol instances produced ~13.5M
-    # ``_asdict_inner`` calls and ~20s of total time on a real UCAP workspace.
+    # ``_asdict_inner`` calls and ~20s of total time on a real Java workspace.
     # The output schema, key set, key order, and value types must match what
     # ``dataclasses.asdict(self)`` returned, so downstream graph rebuild,
     # benchmarks, and reports do not need any change.

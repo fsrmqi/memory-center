@@ -9,6 +9,7 @@ from typing import Any
 
 import yaml
 
+from memory_center.core.profiles import ConfigExtractor, Profile, ProfileError, active_profile, resolve_profile
 from memory_center.core.storage.graph import GraphEdge, GraphNode, edge_id, node_id
 from memory_center.core.storage.runtime import RuntimeStore
 
@@ -139,6 +140,14 @@ def _reindex_workspace_unlocked(
     if callable(reset_parser_diagnostics):
         reset_parser_diagnostics()
 
+    # 配置抽取规则来自 profile：workspace.yaml 的 profile: 优先，其次
+    # MEMORY_CENTER_PROFILE，最后中性默认。解析失败只降级本工作区的规则，
+    # 不允许一个坏 profile 阻断整次索引（Spring 通用抽取不受影响）。
+    try:
+        config_profile = resolve_profile(None, workspace_profile=config.profile)
+    except ProfileError:
+        config_profile = None
+
     _report_progress(progress, "scanning", 10, "正在扫描工作区文件")
     for svc in config.services:
         if project_filter and svc.name not in project_filter:
@@ -163,7 +172,7 @@ def _reindex_workspace_unlocked(
             if path.suffix in JAVA_EXTENSIONS:
                 java_tasks.append((svc.name, rel, path, cache, source_digests.get(str(path), "")))
             elif path.name in CONFIG_NAMES:
-                config_index.append({"project": svc.name, "path": rel, **parse_yaml_config(path)})
+                config_index.append({"project": svc.name, "path": rel, **parse_yaml_config(path, profile=config_profile)})
                 ledger.record(rel, STATUS_PARSED)
             else:
                 ledger.record(rel, STATUS_SKIPPED, "unsupported_syntax")
@@ -205,10 +214,24 @@ def _reindex_workspace_unlocked(
     else:
         merged_symbol_index = symbol_index
     constant_map = _build_constant_map(merged_symbol_index)
+    # 服务名以 workspace.yaml 登记为准（name + service_name），用于区分
+    # "@FeignClient(name=...) 写的是服务名还是类名"，避免把私有前缀写进代码。
+    registered_service_names = frozenset(
+        value
+        for svc in config.services
+        for value in (svc.name, svc.service_name)
+        if value
+    )
     for project, rel, path, symbol in pending_feigns:
         # Feign 目标解析确实需要源码文本，但只有 Feign 接口自身需要——其数量远小于
         # 全部 Java 文件，故在此按需读取，避免解析产物跨阶段驻留整份源码。
-        feign_index.extend(to_dict(x) for x in parse_feign_clients(project, rel, safe_read(path), symbol, constant_map))
+        feign_index.extend(
+            to_dict(x)
+            for x in parse_feign_clients(
+                project, rel, safe_read(path), symbol, constant_map,
+                service_names=registered_service_names,
+            )
+        )
     mark("parse_and_merge")
 
     if partial:
@@ -1162,7 +1185,24 @@ def parse_controllers(project: str, rel: str, text: str, symbol: JavaSymbol) -> 
     return endpoints
 
 
-def parse_feign_clients(project: str, rel: str, text: str, symbol: JavaSymbol, constant_map: dict[str, str] | None = None) -> list[FeignClient]:
+def parse_feign_clients(
+    project: str,
+    rel: str,
+    text: str,
+    symbol: JavaSymbol,
+    constant_map: dict[str, str] | None = None,
+    *,
+    service_names: frozenset[str] | None = None,
+) -> list[FeignClient]:
+    """Parse ``@FeignClient`` interfaces into edge rows.
+
+    ``service_names`` carries the service names registered in ``workspace.yaml``
+    (``name`` + ``service_name``). When provided, a target that matches one of
+    them is kept as a service name even if it looks like a camelCase class name;
+    anything else that looks like a class name still falls back to its ``url``.
+    ``None`` keeps the historical behaviour (no registry to consult), so existing
+    callers do not change.
+    """
     if "FeignClient" not in symbol.annotations:
         return []
     interface = (
@@ -1180,8 +1220,15 @@ def parse_feign_clients(project: str, rel: str, text: str, symbol: JavaSymbol, c
             target = resolved_constants.get(ref) or resolved_constants.get(ref.split(".")[-1])
     if not target:
         target = "unknown-service"
-    # 优化 4: 当 target 是类名格式（驼峰、小写开头）而非服务名时，尝试从 url 获取外部地址
-    if target and target[0].islower() and not target.startswith("ucap-") and "-" not in target:
+    # 优化 4: 当 target 是类名格式（驼峰、小写开头）而非服务名时，尝试从 url 获取外部地址。
+    # 是否算服务名由 workspace.yaml 登记的服务名决定（不再写死任何私有前缀）：
+    # 命中登记名就保留原名，否则按类名走 url 回退。
+    if (
+        target
+        and target[0].islower()
+        and "-" not in target
+        and not (service_names and target in service_names)
+    ):
         url = extract_named_value(ann_args, "url") or ""
         if url:
             target = f"external:{url}"
@@ -1229,12 +1276,25 @@ def parse_mq_endpoints(project: str, rel: str, text: str, symbol: JavaSymbol) ->
     return endpoints
 
 
-def parse_yaml_config(path: Path) -> dict[str, Any]:
+def parse_yaml_config(path: Path, *, profile: Profile | None = None) -> dict[str, Any]:
+    """Parse one Spring config file into the config-index row payload.
+
+    Return shape is fixed (``values`` / ``stream_bindings`` /
+    ``custom_kafka_consumers``) because the config index, topology and service
+    layer all read these keys positionally-by-name. ``custom_kafka_consumers``
+    is populated from the *resolved profile*'s declarative
+    :class:`~memory_center.core.profiles.ConfigExtractor` rules, so a project
+    with a bespoke MQ namespace only needs data (a profile YAML), never a code
+    change. ``profile`` defaults to the process-level profile
+    (``MEMORY_CENTER_PROFILE``); the reindex entry point passes the profile
+    declared by the workspace itself. With no profile configured the mapping
+    stays ``{}``.
+    """
     try:
         data = yaml.safe_load(path.read_text(encoding="utf-8", errors="ignore")) or {}
         values = flatten_dict(data)
         stream_bindings = _extract_stream_bindings(data)
-        custom_kafka = _extract_custom_kafka_consumers(data)
+        custom_kafka = _extract_profile_configs(data, profile)
         return {"values": values, "stream_bindings": stream_bindings, "custom_kafka_consumers": custom_kafka}
     except Exception:
         return {"values": {}, "stream_bindings": {}, "custom_kafka_consumers": {}}
@@ -1254,17 +1314,43 @@ def _extract_stream_bindings(data: dict[str, Any]) -> dict[str, str]:
     return result
 
 
-def _extract_custom_kafka_consumers(data: dict[str, Any]) -> dict[str, str]:
-    """Extract ucap.kafka.consumers.<name>.topic → topic mapping."""
-    result: dict[str, str] = {}
-    ucap = data.get("ucap", {})
-    kafka = ucap.get("kafka", {}) if isinstance(ucap, dict) else {}
-    consumers = kafka.get("consumers", {}) if isinstance(kafka, dict) else {}
-    if isinstance(consumers, dict):
-        for consumer_name, config in consumers.items():
-            if isinstance(config, dict) and "topic" in config:
-                result[consumer_name] = str(config["topic"])
-    return result
+def _profile_config_extractors(profile: Profile | None = None) -> tuple[ConfigExtractor, ...]:
+    """Extractors of the resolved profile; empty when no profile applies.
+
+    A broken/unresolvable profile must not blank out the neutral Spring
+    extraction, so profile errors degrade to "no extractors" instead of
+    propagating into the caller's ``except`` branch.
+    """
+    if profile is not None:
+        return profile.config_extractors
+    try:
+        return active_profile().config_extractors
+    except ProfileError:
+        return ()
+
+
+def _extract_profile_config_buckets(data: dict[str, Any], profile: Profile | None = None) -> dict[str, dict[str, str]]:
+    """Run every profile extractor and bucket results by its ``output`` name.
+
+    Extractors sharing one ``output`` are merged later-wins on key collisions,
+    so a profile can compose e.g. two namespaces into the same bucket. No
+    profile ⇒ no buckets at all.
+    """
+    buckets: dict[str, dict[str, str]] = {}
+    for extractor in _profile_config_extractors(profile):
+        buckets.setdefault(extractor.output, {}).update(extractor.extract(data))
+    return buckets
+
+
+def _extract_profile_configs(data: dict[str, Any], profile: Profile | None = None) -> dict[str, str]:
+    """Bucketed profile extraction surfaced as the ``custom_kafka_consumers`` value.
+
+    Only the ``custom_kafka_consumers`` bucket is published today: the config
+    index row shape is a closed contract (``values`` / ``stream_bindings`` /
+    ``custom_kafka_consumers``), so other buckets stay reserved until a caller
+    needs them. No profile ⇒ ``{}``.
+    """
+    return _extract_profile_config_buckets(data, profile).get("custom_kafka_consumers", {})
 
 
 def build_topology(config: WorkspaceConfig, feigns: list[dict], apis: list[dict], mq: list[dict], config_index: list[dict]) -> dict[str, Any]:

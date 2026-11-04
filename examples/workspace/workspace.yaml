@@ -1,5 +1,5 @@
 workspace: content-risk-platform
-root: /Users/you/javaworkspace/workspace/origin
+root: /Users/you/workspace/demo-origin
 services:
   - name: gateway
     path: gateway

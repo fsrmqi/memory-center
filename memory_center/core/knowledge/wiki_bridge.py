@@ -21,6 +21,7 @@ from memory_center.core.knowledge.assets import (
     register_collaboration_asset,
 )
 from memory_center.core.knowledge.knowledge_events import record_knowledge_event
+from memory_center.core.profiles import Profile, profile_for_workspace, resolve_profile
 from memory_center.core.workspace.config import load_workspace_config
 
 LINK_STATUSES = ("active", "stale", "revoked")
@@ -28,13 +29,6 @@ BRIDGE_SOURCE_PREFIX = "pawiki:"
 _BRIDGE_TAG = "personal-wiki"
 _MAX_EVIDENCE = 30
 _MAX_STATUS_HISTORY = 20
-
-_DEFAULT_DOCUMENTS = (
-    "工作/开普云/索引.md",
-    "工作/开普云/项目/众包平台.md",
-    "技术/项目/MemoryCenter.md",
-    "技术/项目/PersonalAssistantWikiMCP.md",
-)
 
 
 def knowledge_id_for_path(relative: str) -> str:
@@ -221,13 +215,17 @@ def sync_personal_wiki_assets(
     *,
     wiki_root: str | Path,
     owner: str,
-    scope: str = "kaipuyun",
+    scope: str | None = None,
     documents: list[str] | None = None,
     evidence_refs: list[str] | None = None,
+    profile: Profile | str | Path | None = None,
 ) -> dict[str, Any]:
     """Register selected Personal Wiki entries as KnowledgeLinks; never copied bodies.
 
     显式刷新入口：仅重建反向链接并更新哈希到当前口径，不触发晋升（计划 Phase 3）。
+
+    ``scope`` / ``documents`` 未显式传入时取 profile 的 ``default_scope`` 与
+    ``wiki.documents``；profile 为空时不预设任何 scope/文档（返回空结果而非报错）。
     """
     evidence = [str(item).strip()[:200] for item in (evidence_refs or []) if str(item).strip()]
     if not evidence:
@@ -235,7 +233,10 @@ def sync_personal_wiki_assets(
     root = Path(wiki_root).expanduser().resolve()
     if not root.is_dir():
         raise ValueError("wiki_root must be an existing directory")
-    selected = documents or list(_DEFAULT_DOCUMENTS)
+    prof = resolve_profile(profile) if profile is not None else profile_for_workspace(workspace_file)
+    explicit_scope = str(scope).strip() if scope is not None else ""
+    resolved_scope = explicit_scope or (prof.default_scope or "").strip()
+    selected = list(documents) if documents else list(prof.wiki.documents)
     assets: list[dict[str, Any]] = []
     skipped: list[str] = []
     for relative in selected[:20]:
@@ -252,7 +253,7 @@ def sync_personal_wiki_assets(
             title=title,
             owner=owner,
             wiki_root=root,
-            scope=scope,
+            scope=resolved_scope,
             relation_reason="个人 Wiki 长期知识入口；经 wiki-assets-sync 显式刷新。",
             evidence_refs=evidence,
             content_sha256=knowledge_link_hash(raw),
@@ -261,10 +262,16 @@ def sync_personal_wiki_assets(
         assets.append(result["asset"])
     return {
         "synced": True,
-        "scope": scope,
+        "scope": resolved_scope or None,
+        "scope_state": "configured" if resolved_scope else "not_configured",
+        "documents_state": "configured" if selected else "not_configured",
         "assets": assets,
         "skipped": skipped,
-        "next_action": "DSH 的知识页可展示这些 Wiki 反向链接；Wiki 正文仍留在 Personal Assistant Wiki。",
+        "next_action": (
+            "DSH 的知识页可展示这些 Wiki 反向链接；Wiki 正文仍留在 Personal Assistant Wiki。"
+            if selected
+            else "未配置 Wiki 文档清单：请在 workspace profile 设置 wiki.documents，或显式传入 documents 后重试。"
+        ),
     }
 
 

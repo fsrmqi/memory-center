@@ -38,7 +38,7 @@ def test_whitespace_normalization_shares_fingerprint(workspace):
 
 def test_absolute_path_rejected(workspace):
     with pytest.raises(NoteRejected) as excinfo:
-        record_note(workspace, "配置在 /Users/cuijiaqi/secret/app.yaml", kind="fact")
+        record_note(workspace, "配置在 /Users/example/secret/app.yaml", kind="fact")
     assert excinfo.value.code == "absolute_path_rejected"
 
 

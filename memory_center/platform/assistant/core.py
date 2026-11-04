@@ -31,6 +31,7 @@ from itertools import islice
 from pathlib import Path
 from typing import Any
 
+from memory_center.core.profiles import active_profile
 from memory_center.platform.assistant import indexer
 
 # 公司清单从模块注册表读取，避免注册表与代码双重维护。
@@ -61,9 +62,6 @@ ARCHIVE_JUNK_NAMES = {".ds_store", "thumbs.db"}
 MAX_ARCHIVE_FILES = 5_000
 MAX_ARCHIVE_BYTES = 500 * 1024 * 1024
 KNOWLEDGE_TYPES = {"事实", "决策", "规则", "验证结果", "风险", "下一步"}
-COMPANY_MODULE_ALIASES = {"website", "media", "newmedia", "ucap"}
-COMPANY_MODULE_ALIAS_TARGET = "kaipuyun"
-COMPANY_MODULE_ALIAS_UNTIL = date(2026, 12, 31)
 SENSITIVE_CONTENT_RULES = (
     ("private_key", re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----")),
     ("aws_access_key", re.compile(r"\bAKIA[0-9A-Z]{16}\b")),
@@ -76,11 +74,7 @@ SENSITIVE_CONTENT_PATTERNS = tuple(pattern for _, pattern in SENSITIVE_CONTENT_R
 REQUIRED_FRONTMATTER_FIELDS = (
     "title", "module", "owner", "created", "updated", "version", "status",
 )
-REQUIRED_GOVERNANCE_PATHS = ("助手规则/最高宪法.md",)
 DOCUMENT_STATUSES = {"草稿", "生效", "归档", "待确认"}
-EXPECTED_TOP_LEVEL_DIRS = (
-    "个人档案", "工作", "研究", "技术", "方法", "助手能力", "收件箱", "知识沉淀", "助手规则", "模板",
-)
 
 _INDEX_NAME = "索引.md"
 _AUTO_INDEX_LOCK = threading.Lock()
@@ -300,8 +294,8 @@ def lookup(root: Path, query: str, scope: str = "", limit: int = 10, _refresh: b
 
     ql = query.lower()
 
-    # 回退检索跳过大型项目资料树；完整内容由增量全文索引提供。
-    skip = ("docs_crms", "workspaces2016", "项目资料", "收件箱", ".workbuddy", ".git", ".obsidian")
+    # 回退检索跳过大型项目资料树与 profile 声明的目录；完整内容由增量全文索引提供。
+    skip = ("项目资料", "收件箱", ".workbuddy", ".git", ".obsidian", *active_profile().wiki.skip_names)
     docs: list[dict[str, Any]] = []
     for p in _walk_md(root, skip_dirs=skip):
         title = _title_of(p)
@@ -665,26 +659,23 @@ def promote(
     content = (content or "").strip()
     source = (source or "").strip()
     requested_module = (module or "").strip()
+    prof = active_profile()
+    module = prof.alias_target(requested_module)
     module_routing: dict[str, str] | None = None
-    if date.today() <= COMPANY_MODULE_ALIAS_UNTIL and requested_module.lower() in COMPANY_MODULE_ALIASES:
-        module = COMPANY_MODULE_ALIAS_TARGET
+    if module != requested_module:
         module_routing = {
             "requested": requested_module,
             "resolved": module,
-            "reason": "company_module_alias",
-            "valid_until": COMPANY_MODULE_ALIAS_UNTIL.isoformat(),
+            "reason": "module_alias",
+            "valid_until": prof.module_alias_until.isoformat() if prof.module_alias_until else "",
         }
-    else:
-        module = requested_module
     if not title or not content or not source:
         raise WikiError("title、content、source 均不能为空")
     if knowledge_type not in KNOWLEDGE_TYPES:
         raise WikiError(f"knowledge_type 需为 {tuple(sorted(KNOWLEDGE_TYPES))} 之一")
     if module not in _registered_modules(root):
-        fallback = ""
-        if date.today() <= date(2026, 12, 31):
-            fallback = "；若明显属于开普云公司业务但项目不明确，可改用 kaipuyun，个人事项禁止使用此兜底（有效至 2026-12-31）"
-        raise WikiError(f"module 未在 模块注册表.md 登记：{module}{fallback}")
+        hint = f"；{prof.module_alias_hint.strip()}" if prof.module_alias_hint.strip() else ""
+        raise WikiError(f"module 未在 模块注册表.md 登记：{module}{hint}")
     slug = re.sub(r"[^\w\u4e00-\u9fff-]+", "-", title, flags=re.UNICODE).strip("-")[:80]
     if not slug:
         raise WikiError("title 无法生成合法文件名")
@@ -847,11 +838,15 @@ def _scan_body_file_refs(p: Path, root: Path) -> list[dict[str, str]]:
 
 
 def validate(root: Path) -> dict[str, Any]:
-    """校验：最高治理文件、索引断链、正文 phantom 引用、frontmatter 与 module 注册。"""
+    """校验：最高治理文件、索引断链、正文 phantom 引用、frontmatter 与 module 注册。
+
+    治理文件清单来自 profile（``wiki.governance_paths``）；空 profile 时没有必填项，
+    不会把「未配置」误报为缺失。
+    """
     root = _resolve(root)
     governance_issues = [
         {"path": rel, "issue": "缺少最高治理文件"}
-        for rel in REQUIRED_GOVERNANCE_PATHS
+        for rel in active_profile().wiki.governance_paths
         if not (root / rel).is_file()
     ]
     broken: list[dict[str, str]] = []
@@ -999,8 +994,13 @@ def analyze(root: Path) -> dict[str, Any]:
         path.name for path in root.iterdir()
         if path.is_dir() and not path.is_symlink() and not path.name.startswith(".")
     )
-    missing_top_level = [name for name in EXPECTED_TOP_LEVEL_DIRS if name not in top_level]
-    unexpected_top_level = [name for name in top_level if name not in EXPECTED_TOP_LEVEL_DIRS]
+    expected_top_level = active_profile().wiki.top_level_dirs
+    if expected_top_level:
+        missing_top_level = [name for name in expected_top_level if name not in top_level]
+        unexpected_top_level = [name for name in top_level if name not in expected_top_level]
+    else:
+        # 空 profile 不做拓扑约束：既不报告缺失，也不把全部目录报成非标准。
+        missing_top_level, unexpected_top_level = [], []
     research_root = root / "研究"
     research_directions = sorted(
         path.name for path in research_root.iterdir()

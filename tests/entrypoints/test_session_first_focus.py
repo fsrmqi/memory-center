@@ -22,6 +22,13 @@ from memory_center.core.tasks.artifacts import create_task_space
 from tests.fixtures import setup_demo_workspace
 
 
+@pytest.fixture(autouse=True)
+def _neutral_profile_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """默认使用中性（空）profile；需要 profile 的用例显式 setenv 覆盖。"""
+    monkeypatch.delenv("MEMORY_CENTER_PROFILE", raising=False)
+    monkeypatch.delenv("MEMORY_CENTER_PROFILE_DIR", raising=False)
+
+
 @pytest.fixture()
 def workspace_file(tmp_path: Path) -> str:
     return str(setup_demo_workspace(tmp_path))
@@ -219,14 +226,20 @@ def test_knowledge_summary_requires_explicit_anchor(workspace_file: str) -> None
     create_task_space(workspace_file, title="historical knowledge task")
     from memory_center.core.knowledge.projection import workspace_knowledge_summary
 
+    # 既未显式传 scope、profile 也未配置 default_scope：结构化 not_configured，不抛错。
+    unconfigured = workspace_knowledge_summary(workspace_file)
+    assert unconfigured["scope_state"] == "not_configured"
+    assert unconfigured["scope"] is None
+    assert unconfigured["anchor_state"] == "unbound"
+    assert unconfigured["related_wiki"] == []
     # 无 task_id：空状态，不检索历史任务关键词
-    unbound = workspace_knowledge_summary(workspace_file, scope="kaipuyun")
+    unbound = workspace_knowledge_summary(workspace_file, scope="acme")
     assert unbound["anchor_state"] == "unbound"
     assert unbound["related_wiki"] == []
     assert unbound["focus"]["kind"] == "none"
     # 显式 task_id：按该任务检索
     tid = create_task_space(workspace_file, title="anchor knowledge task")["task_id"]
-    bound = workspace_knowledge_summary(workspace_file, scope="kaipuyun", task_id=tid)
+    bound = workspace_knowledge_summary(workspace_file, scope="acme", task_id=tid)
     assert bound["anchor_state"] == "bound"
     assert bound["focus"]["task_id"] == tid
 

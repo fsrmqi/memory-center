@@ -62,9 +62,9 @@ def project_matches(query_project: str, item_project: str) -> bool:
 def infer_project_from_fqn(fqn: str, known_projects: list[str]) -> str:
     """Try to infer the project name from a fully-qualified class name.
 
-    E.g.  cn.kaipuyun.cloud.openapi.biz.service.impl.website.safe.FooServiceImpl
-    → segments = [cn, kaipuyun, cloud, openapi, biz, service, impl, ...]
-    → try matching 'openapi' against known project names.
+    E.g.  com.example.billing.api.service.impl.order.FooServiceImpl
+    → segments = [com, example, billing, api, service, impl, ...]
+    → try matching 'billing' against known project names.
     """
     parts = fqn.replace("#", ".").split(".")
     segments = [p for p in parts[:-1] if p and p[0].islower()]

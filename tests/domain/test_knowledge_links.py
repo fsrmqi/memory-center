@@ -30,12 +30,34 @@ from memory_center.core.knowledge.wiki_bridge import (
 )
 from memory_center.core.knowledge.wiki_drift import knowledge_link_drift, knowledge_link_metrics
 from memory_center.core.knowledge.wiki_promotion import confirm_wiki_promotion, wiki_promotion_preview
+from memory_center.platform.assistant.core import WikiError
 from tests.fixtures import copy_demo_workspace
 
-_RELATIVE = "工作/开普云/项目/众包平台.md"
+_RELATIVE = "工作/acme/项目/demo.md"
 
 
-def _wiki_entry(tmp_path: Path, relative: str = _RELATIVE, body: str = "# 众包平台\n\n长期知识正文，不应复制。") -> Path:
+@pytest.fixture(autouse=True)
+def _neutral_profile_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """默认使用中性（空）profile；需要 profile 的用例显式声明或 setenv。"""
+    monkeypatch.delenv("MEMORY_CENTER_PROFILE", raising=False)
+    monkeypatch.delenv("MEMORY_CENTER_PROFILE_DIR", raising=False)
+
+
+def _profile_file(tmp_path: Path, body: str, *, name: str = "profile.yaml") -> Path:
+    path = tmp_path / name
+    path.write_text(body, encoding="utf-8")
+    return path
+
+
+def _declare_workspace_profile(workspace: Path, profile_path: Path) -> None:
+    """在 workspace.yaml 里声明 profile（profile 的唯一持久消费入口）。"""
+    workspace.write_text(
+        workspace.read_text(encoding="utf-8").rstrip("\n") + f"\nprofile: {profile_path}\n",
+        encoding="utf-8",
+    )
+
+
+def _wiki_entry(tmp_path: Path, relative: str = _RELATIVE, body: str = "# 示例条目\n\n长期知识正文，不应复制。") -> Path:
     wiki_root = tmp_path / "wiki"
     document = wiki_root / relative
     document.parent.mkdir(parents=True, exist_ok=True)
@@ -47,10 +69,10 @@ def _register(workspace: Path, tmp_path: Path, *, task_id: str = "", evidence=No
     return register_knowledge_link(
         workspace,
         relative_path=relative,
-        title="众包平台",
+        title="示例条目",
         owner="tester",
         wiki_root=tmp_path / "wiki",
-        scope="kaipuyun",
+        scope="acme",
         task_id=task_id,
         binding_mode=binding_mode,
         relation_reason="测试登记。",
@@ -103,7 +125,7 @@ def test_reregister_after_content_change_reactivates_with_history(tmp_path: Path
     _register(workspace, tmp_path)
     kid = knowledge_id_for_path(_RELATIVE)
     mark_knowledge_link_status(workspace, kid, status="stale", reason="手动模拟漂移", actor="tester")
-    (wiki_root / _RELATIVE).write_text("# 众包平台 v2\n\n更新后的长期知识。", encoding="utf-8")
+    (wiki_root / _RELATIVE).write_text("# 示例条目 v2\n\n更新后的长期知识。", encoding="utf-8")
     result = _register(workspace, tmp_path)
     assert result["registered"] is True
     metadata = result["asset"]["metadata"]
@@ -178,7 +200,7 @@ def test_list_filters_by_task_scope_and_status(tmp_path: Path) -> None:
     assert list_knowledge_links(workspace, task_id="task-1")["count"] == 1
     assert list_knowledge_links(workspace, task_id="other")["count"] == 0
     assert list_knowledge_links(workspace, status="stale")["count"] == 0
-    assert list_knowledge_links(workspace, scope="kaipuyun")["count"] == 1
+    assert list_knowledge_links(workspace, scope="acme")["count"] == 1
     with pytest.raises(ValueError):
         list_knowledge_links(workspace, status="gone")
 
@@ -206,7 +228,7 @@ def test_candidates_reject_missing_anchor(tmp_path: Path) -> None:
 
 def test_candidates_fail_closed_when_transport_unavailable(tmp_path: Path) -> None:
     workspace = copy_demo_workspace(tmp_path)
-    result = wiki_knowledge_candidates(workspace, task="众包平台", wiki_root=tmp_path / "wiki", transport=lambda **_: None)
+    result = wiki_knowledge_candidates(workspace, task="示例条目", wiki_root=tmp_path / "wiki", transport=lambda **_: None)
     assert result["ready"] is False and result["reason"] == "wiki_transport_unavailable" and result["candidates"] == []
 
 
@@ -224,14 +246,14 @@ def test_candidates_exclude_low_scores_and_stale_links(tmp_path: Path) -> None:
     mark_knowledge_link_status(workspace, kid, status="stale", reason="内容漂移", actor="tester")
     transport = _transport_of([
         _hit(other, 9.0, title="MemoryCenter"),
-        _hit(_RELATIVE, 5.0, title="众包平台"),
+        _hit(_RELATIVE, 5.0, title="示例条目"),
         _hit("工作/低分.md", -1.0),
         {"path": "工作/无分.md", "snippet": "没有分数"},
         {"score": 3.0, "snippet": "没有路径"},
     ])
-    result = wiki_knowledge_candidates(workspace, task="众包平台", wiki_root=wiki_root, transport=transport)
+    result = wiki_knowledge_candidates(workspace, task="示例条目", wiki_root=wiki_root, transport=transport)
     assert result["ready"] is True
-    assert [candidate["title"] for candidate in result["candidates"]] == ["众包平台"]
+    assert [candidate["title"] for candidate in result["candidates"]] == ["示例条目"]
     assert result["excluded"]["stale_or_revoked"] == 1
     assert result["excluded"]["low_score_or_unscored"] == 3
 
@@ -243,10 +265,10 @@ def test_candidates_enrich_from_registry_and_file(tmp_path: Path) -> None:
     (wiki_root / other).parent.mkdir(parents=True, exist_ok=True)
     (wiki_root / other).write_text("# PA Wiki MCP\n", encoding="utf-8")
     _register(workspace, tmp_path)
-    transport = _transport_of([_hit(_RELATIVE, 4.0, title="众包平台"), _hit(other, 2.0, title="PA Wiki MCP")])
-    result = wiki_knowledge_candidates(workspace, task="众包平台", wiki_root=wiki_root, transport=transport)
+    transport = _transport_of([_hit(_RELATIVE, 4.0, title="示例条目"), _hit(other, 2.0, title="PA Wiki MCP")])
+    result = wiki_knowledge_candidates(workspace, task="示例条目", wiki_root=wiki_root, transport=transport)
     by_title = {candidate["title"]: candidate for candidate in result["candidates"]}
-    assert by_title["众包平台"]["knowledge_id"] == knowledge_id_for_path(_RELATIVE)
+    assert by_title["示例条目"]["knowledge_id"] == knowledge_id_for_path(_RELATIVE)
     assert by_title["PA Wiki MCP"]["knowledge_id"] == knowledge_id_for_path(other)
     assert by_title["PA Wiki MCP"]["content_sha256"] == knowledge_link_hash((wiki_root / other).read_bytes())
     assert all(len(candidate["content_sha256"]) == 64 for candidate in result["candidates"])
@@ -274,7 +296,7 @@ def test_drift_marks_stale_and_reports_readonly_repair(tmp_path: Path) -> None:
     workspace = copy_demo_workspace(tmp_path)
     wiki_root = _wiki_entry(tmp_path)
     _register(workspace, tmp_path)
-    (wiki_root / _RELATIVE).write_text("# 众包平台 v2\n\n正文已更新。", encoding="utf-8")
+    (wiki_root / _RELATIVE).write_text("# 示例条目 v2\n\n正文已更新。", encoding="utf-8")
     result = knowledge_link_drift(workspace, wiki_root=str(wiki_root), actor="tester", mark_stale=True)
     kid = knowledge_id_for_path(_RELATIVE)
     assert result["stale_marked"] == [kid]
@@ -312,7 +334,7 @@ def test_drift_flags_task_scoped_links_without_evidence(tmp_path: Path) -> None:
             "task_id": "task-1",
             "evidence_refs": [],
             "wiki_root": str(wiki_root),
-            "scope": "kaipuyun",
+            "scope": "acme",
         },
         asset_id=f"asset-wiki-{kid}",
         actor="tester",
@@ -355,6 +377,7 @@ def test_metrics_aggregate_statuses_and_events(tmp_path: Path) -> None:
 
 def test_preview_carries_evidence_refs(tmp_path: Path) -> None:
     workspace = copy_demo_workspace(tmp_path)
+    _declare_workspace_profile(workspace, _profile_file(tmp_path, "default_scope: acme\n"))
     from memory_center.core.orchestrator.session import workspace_capture_dsh_delivery_summary
     from memory_center.core.tasks.artifacts import create_task_space
     from memory_center.core.tasks.shadow import bind_shadow_to_task, ensure_shadow_for_session
@@ -369,11 +392,14 @@ def test_preview_carries_evidence_refs(tmp_path: Path) -> None:
     assert preview["ready"] is True
     assert "session:src-session-1" in preview["evidence_refs"]
     assert f"task:{task_id}" in preview["evidence_refs"]
+    # 晋升预览的 module 来自 workspace profile，而不是写死公司名。
+    assert preview["module"] == "acme"
 
 
 def test_confirm_registers_knowledge_link_and_event(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     workspace = copy_demo_workspace(tmp_path)
-    wiki_root = _wiki_entry(tmp_path, body="# 众包平台\n\n人工确认后的晋升正文。")
+    _declare_workspace_profile(workspace, _profile_file(tmp_path, "default_scope: acme\n"))
+    wiki_root = _wiki_entry(tmp_path, body="# 示例条目\n\n人工确认后的晋升正文。")
     from memory_center.core.orchestrator.session import workspace_capture_dsh_delivery_summary
     from memory_center.core.tasks.artifacts import create_task_space
     from memory_center.core.tasks.shadow import bind_shadow_to_task, ensure_shadow_for_session
@@ -382,7 +408,7 @@ def test_confirm_registers_knowledge_link_and_event(tmp_path: Path, monkeypatch:
     shadow = ensure_shadow_for_session(workspace, "src-session-2", intent="晋升")
     bind_shadow_to_task(workspace, shadow["shadow_id"], task_id, source="explicit")
     captured = workspace_capture_dsh_delivery_summary(workspace, "src-session-2", "完成 KnowledgeLink 晋升链路。")
-    promoted_payload = {"path": _RELATIVE, "title": "众包平台"}
+    promoted_payload = {"path": _RELATIVE, "title": "示例条目"}
 
     def fake_run(command, **_):
         assert "--confirm" in command
@@ -397,6 +423,7 @@ def test_confirm_registers_knowledge_link_and_event(tmp_path: Path, monkeypatch:
     link = result["knowledge_link"]
     assert link["registered"] is True
     assert link["asset"]["metadata"]["link_status"] == "active"
+    assert link["asset"]["metadata"]["scope"] == "acme"
     assert "session:src-session-2" in link["asset"]["metadata"]["evidence_refs"]
     events = read_knowledge_events(workspace)
     assert any(event["event_type"] == "promotion_confirmed" for event in events)
@@ -404,6 +431,7 @@ def test_confirm_registers_knowledge_link_and_event(tmp_path: Path, monkeypatch:
 
 def test_confirm_forces_workspace_scope_for_shadow_only_sessions(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     workspace = copy_demo_workspace(tmp_path)
+    _declare_workspace_profile(workspace, _profile_file(tmp_path, "default_scope: acme\n"))
     wiki_root = _wiki_entry(tmp_path)
     from memory_center.core.orchestrator.session import workspace_capture_dsh_delivery_summary
     from memory_center.core.tasks.artifacts import create_task_space
@@ -423,3 +451,83 @@ def test_confirm_forces_workspace_scope_for_shadow_only_sessions(tmp_path: Path,
     result = confirm_wiki_promotion(workspace, captured["session_id"], wiki_root=wiki_root, owner="tester", binding_mode="shadow_only")
     assert result["promoted"] is True
     assert result["knowledge_link"]["asset"]["metadata"]["task_id"] == ""
+
+
+# ---- Profile-driven consumers (open-source neutral defaults) ----
+
+def test_sync_follows_workspace_profile_documents_and_scope(tmp_path: Path) -> None:
+    workspace = copy_demo_workspace(tmp_path)
+    wiki_root = _wiki_entry(tmp_path)
+    profile = _profile_file(
+        tmp_path,
+        "default_scope: acme\n"
+        "wiki:\n"
+        "  documents:\n"
+        f"    - {_RELATIVE}\n",
+    )
+    _declare_workspace_profile(workspace, profile)
+
+    result = sync_personal_wiki_assets(workspace, wiki_root=wiki_root, owner="tester")
+
+    assert result["scope"] == "acme"
+    assert result["scope_state"] == "configured"
+    assert result["documents_state"] == "configured"
+    assert [asset["source_ref"] for asset in result["assets"]] == [f"pawiki:{_RELATIVE}"]
+    assert result["assets"][0]["metadata"]["scope"] == "acme"
+
+
+def test_workspace_profile_declaration_beats_environment_profile(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """优先级：workspace.yaml 的 profile 声明 > MEMORY_CENTER_PROFILE。"""
+    workspace = copy_demo_workspace(tmp_path)
+    wiki_root = _wiki_entry(tmp_path)
+    _declare_workspace_profile(workspace, _profile_file(tmp_path, "default_scope: workspace-scope\n"))
+    monkeypatch.setenv(
+        "MEMORY_CENTER_PROFILE",
+        str(_profile_file(tmp_path, "default_scope: env-scope\n", name="env-profile.yaml")),
+    )
+
+    result = sync_personal_wiki_assets(
+        workspace, wiki_root=wiki_root, owner="tester", documents=[_RELATIVE],
+    )
+
+    assert result["scope"] == "workspace-scope"
+    assert result["assets"][0]["metadata"]["scope"] == "workspace-scope"
+
+
+def test_sync_without_profile_degrades_to_no_documents(tmp_path: Path) -> None:
+    """空 profile：不选中任何文档、不预设 scope，也不得抛错。"""
+    workspace = copy_demo_workspace(tmp_path)
+    wiki_root = _wiki_entry(tmp_path)
+
+    result = sync_personal_wiki_assets(workspace, wiki_root=wiki_root, owner="tester")
+
+    assert result["synced"] is True
+    assert result["assets"] == []
+    assert result["scope"] is None
+    assert result["scope_state"] == "not_configured"
+    assert result["documents_state"] == "not_configured"
+    assert "wiki.documents" in result["next_action"]
+
+
+def test_confirm_requires_configured_default_scope(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """空 profile：confirm 必须给出可操作的 WikiError，而不是写入无归属链接。"""
+    workspace = copy_demo_workspace(tmp_path)
+    wiki_root = _wiki_entry(tmp_path)
+    from memory_center.core.orchestrator.session import workspace_capture_dsh_delivery_summary
+    from memory_center.core.tasks.artifacts import create_task_space
+    from memory_center.core.tasks.shadow import bind_shadow_to_task, ensure_shadow_for_session
+
+    task_id = create_task_space(workspace, title="profile scope guard")["task_id"]
+    shadow = ensure_shadow_for_session(workspace, "src-session-4", intent="guard")
+    bind_shadow_to_task(workspace, shadow["shadow_id"], task_id, source="explicit")
+    captured = workspace_capture_dsh_delivery_summary(workspace, "src-session-4", "完成空 profile 晋升守卫。")
+    monkeypatch.setattr(
+        promotion_module.subprocess,
+        "run",
+        lambda command, **_: types.SimpleNamespace(stdout=json.dumps({"path": _RELATIVE}, ensure_ascii=False)),
+    )
+
+    with pytest.raises(WikiError, match="未配置默认 scope"):
+        confirm_wiki_promotion(workspace, captured["session_id"], wiki_root=wiki_root, owner="tester")

@@ -1,9 +1,9 @@
 """cProfile-based performance profiler for reindex_workspace.
 
-P1-0 baseline tool. The P0 UCAP benchmark showed that ~71% of reindex
-wall-clock on Java-heavy monorepos lives outside SQLite write — in
-the Java parsing + IO + Python assembly pipeline. To know which sub-
-layer to attack next, we need a real-flame profile, not more guesses.
+P1-0 baseline tool. The P0 benchmark on a Java-heavy monorepo showed that
+~71% of reindex wall-clock lives outside SQLite write — in the Java
+parsing + IO + Python assembly pipeline. To know which sub-layer to
+attack next, we need a real-flame profile, not more guesses.
 
 This module wraps :func:`memory_center.core.indexing.reindex.reindex_workspace`
 in :mod:`cProfile` and emits both the raw ``pstats`` file (for
@@ -22,13 +22,13 @@ Design notes:
 - ``top_n`` defaults to 50 — enough to see every meaningful frame in
   one screen without drowning the terminal in vendor code.
 - Cleanup of pre-existing indexes (so each profile run starts cold)
-  is delegated to the caller, matching the bench_p0_ucap.py contract.
+  is delegated to the caller, matching the bench_p0_real.py contract.
   That keeps this module unopinionated about hot-vs-cold semantics.
 
-Not a replacement for the bench_p0_ucap.py wall-clock benchmark —
+Not a replacement for the bench_p0_real.py wall-clock benchmark —
 they answer different questions:
-- bench_p0_ucap.py: "did P0 change end-to-end reindex time?"
-- this module:     "where inside reindex is the time actually spent?"
+- bench_p0_real.py: "did P0 change end-to-end reindex time?"
+- this module:      "where inside reindex is the time actually spent?"
 """
 from __future__ import annotations
 

@@ -111,7 +111,7 @@ memory-center query --workspace <path>/workspace.yaml "<keyword>"     # 检索
 cd web && pnpm install && pnpm dev
 ```
 
-> 功能验证请使用真实工作空间 `/Users/cuijiaqi/javaworkspace/ucap`，不要用 demo。
+> 功能验证请使用你自己登记的真实工作区（通过 `MEMORY_CENTER_REAL_WORKSPACE` 指定）；`examples/spring-cloud-demo` 仅作单元测试 fixture。
 
 ### 3.4 修改代码后
 
@@ -121,10 +121,10 @@ python -m compileall -q memory_center tests
 pytest -q
 
 # 涉及索引/检索时额外运行
-scripts/verify_real_ucap.sh
+scripts/verify_real_workspace.sh
 ```
 
-> **验证必须使用真实工作空间**（`/Users/cuijiaqi/javaworkspace/ucap`），不要仅依赖 `examples/spring-cloud-demo` 做功能验证。demo 数据量过小、结构过于简单，无法暴露真实场景下的边界问题（多模块交叉依赖、大量文件、复杂继承链等）。单元测试可用 `tmp_path` 隔离，但功能验证和性能验证必须在真实项目上执行。
+> **验证必须使用真实工作区**（通过 `MEMORY_CENTER_REAL_WORKSPACE` 指定），不要仅依赖 `examples/spring-cloud-demo` 做功能验证。demo 数据量过小、结构过于简单，无法暴露真实场景下的边界问题（多模块交叉依赖、大量文件、复杂继承链等）。单元测试可用 `tmp_path` 隔离，但功能验证和性能验证必须在真实项目上执行。
 
 ## 4. 测试要求
 
@@ -141,7 +141,7 @@ scripts/verify_real_ucap.sh
 - 所有写入型测试必须使用 `tmp_path`
 - 不要直接引用 `examples/spring-cloud-demo/.memory-center` 做写入
 - 使用 `tests/fixtures.py` 中的 `copy_demo_workspace()` helper
-- **功能验证不要用 demo**：`examples/spring-cloud-demo` 仅用于单元测试 fixture，功能验证和性能验证必须使用真实工作空间 `/Users/cuijiaqi/javaworkspace/ucap`
+- **功能验证不要用 demo**：`examples/spring-cloud-demo` 仅用于单元测试 fixture；功能验证和性能验证请使用你自己登记的真实工作区（通过 `MEMORY_CENTER_REAL_WORKSPACE` 指定）
 
 ### 4.3 命令面快照测试
 

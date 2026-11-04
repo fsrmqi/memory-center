@@ -13,12 +13,27 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from memory_center.core.profiles import Profile, profile_for_workspace, resolve_profile
 from memory_center.core.storage.workspace import WorkspaceStore
 
 SESSION_EVENTS_FILE = "session-events.jsonl"
 
 
-def wiki_promotion_preview(workspace_file: str | Path, session_id: str, *, wiki_root: str | Path) -> dict[str, Any]:
+def _resolve_profile(
+    workspace_file: str | Path,
+    profile: Profile | str | Path | None,
+) -> Profile:
+    """Explicit ``profile`` wins; otherwise honour the workspace ``profile:`` then env."""
+    return resolve_profile(profile) if profile is not None else profile_for_workspace(workspace_file)
+
+
+def wiki_promotion_preview(
+    workspace_file: str | Path,
+    session_id: str,
+    *,
+    wiki_root: str | Path,
+    profile: Profile | str | Path | None = None,
+) -> dict[str, Any]:
     # 直接读 session-events（与 workspace_session_summary 同源、同 50 条窗口）：
     # knowledge 属 core 引擎层，不得反向依赖 orchestrator（ADR-0002 §4.4）。
     store = WorkspaceStore(workspace_file)
@@ -43,6 +58,7 @@ def wiki_promotion_preview(workspace_file: str | Path, session_id: str, *, wiki_
     if task_id:
         evidence_refs.append(f"task:{task_id}")
     content = summary[:1400]
+    prof = _resolve_profile(workspace_file, profile)
     return {
         "ready": True,
         "title": content.split("。", 1)[0][:100] or "DSH 交付经验",
@@ -51,7 +67,7 @@ def wiki_promotion_preview(workspace_file: str | Path, session_id: str, *, wiki_
         "source_session_id": session_id,
         "task_id": task_id,
         "evidence_refs": evidence_refs,
-        "module": "kaipuyun",
+        "module": prof.default_scope or "",
         "knowledge_type": "事实",
         "source_refs": [f"session:{session_id}"],
         "wiki_root": str(Path(wiki_root)),
@@ -106,16 +122,24 @@ def confirm_wiki_promotion(
     wiki_root: str | Path,
     owner: str,
     binding_mode: str = "",
+    profile: Profile | str | Path | None = None,
 ) -> dict[str, Any]:
     from memory_center.core.knowledge.knowledge_events import record_knowledge_event
     from memory_center.core.knowledge.wiki_bridge import register_knowledge_link
 
-    preview = wiki_promotion_preview(workspace_file, session_id, wiki_root=wiki_root)
+    preview = wiki_promotion_preview(workspace_file, session_id, wiki_root=wiki_root, profile=profile)
     if not preview.get("ready"):
         return preview
     evidence_refs = [str(item).strip() for item in preview.get("evidence_refs", []) if str(item).strip()]
     if not evidence_refs:
         return {"ready": False, "reason": "evidence_refs_missing", "next_action": "无证据引用的 delivery candidate 不得晋升。"}
+    prof = _resolve_profile(workspace_file, profile)
+    scope = str(preview.get("module") or prof.default_scope or "").strip()
+    if not scope:
+        # 预览可以中立展示，但写入必须有归属范围；给出可操作的配置指引。
+        from memory_center.platform.assistant.core import WikiError
+
+        raise WikiError("未配置默认 scope：请先在 workspace profile 设置 default_scope（或携带 profile）再确认 Wiki 晋升。")
     command = _build_promote_command(preview, wiki_root)
     result = subprocess.run(command, check=True, capture_output=True, text=True, timeout=20, shell=False)
     promoted = json.loads(result.stdout)
@@ -132,7 +156,7 @@ def confirm_wiki_promotion(
         title=str(preview.get("title", "")),
         owner=owner,
         wiki_root=wiki_root,
-        scope=str(preview.get("module", "kaipuyun")),
+        scope=scope,
         task_id=task_id,
         binding_mode=str(binding_mode).strip(),
         relation_reason=f"DSH 交付摘要经人工确认晋升（session {session_id}）。",

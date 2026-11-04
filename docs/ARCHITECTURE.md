@@ -1,6 +1,6 @@
 # Memory Center 当前系统架构 / Current System Architecture
 
-> **当前实现：5.0.0b25（开发测试版）。** 服务化架构为单进程 FastAPI/Uvicorn，同时承载管理 API、统一 MCP（Streamable HTTP，挂载于 `/mcp`）与 Vue 管理页；空间控制面独立存储，索引由有界子进程执行，发布走原子 generation。分层方向为 `service/`（生命周期、路由、MCP 边界）→ `platform/`（控制面、授权、任务、知识、检索）→ `application/` + `core/`（被复用的引擎）。
+> **当前实现：5.0.0b26（开发测试版）。** 服务化架构为单进程 FastAPI/Uvicorn，同时承载管理 API、统一 MCP（Streamable HTTP，挂载于 `/mcp`）与 Vue 管理页；空间控制面独立存储，索引由有界子进程执行，发布走原子 generation。分层方向为 `service/`（生命周期、路由、MCP 边界）→ `platform/`（控制面、授权、任务、知识、检索）→ `application/` + `core/`（被复用的引擎）。
 
 项目空间统计由 `platform/storage_usage.py` 在只读数据库快照中聚合项目行载荷，再扫描 `workspaces/{workspace_id}` 内的普通文件，区分当前／其他索引代际和两类缓存。管理 API 使用同步端点，由 FastAPI 线程池处理文件扫描；管理页按项目选择或手动刷新请求，不随列表轮询反复扫描。共享数据库文件与物理页不作项目归属，口径见平台指南。
 

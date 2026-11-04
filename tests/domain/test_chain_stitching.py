@@ -43,8 +43,8 @@ def test_annotate_phantom_on_external_service(tmp_path: Path):
         "callees": [{
             "type": "CALLS_SERVICE",
             "source": {"name": "SomeFeignClient", "id": "FeignClient:proj:SomeFeignClient"},
-            "target": {"name": "ucap-cloud-datainterface", "type": "Service", "id": "Service:ucap-cloud-datainterface"},
-            "metadata": {"target_service": "ucap-cloud-datainterface"},
+            "target": {"name": "acme-cloud-datainterface", "type": "Service", "id": "Service:acme-cloud-datainterface"},
+            "metadata": {"target_service": "acme-cloud-datainterface"},
             "confidence": 0.9,
         }],
     }
@@ -54,7 +54,7 @@ def test_annotate_phantom_on_external_service(tmp_path: Path):
     edge = chain_result["callees"][0]
     target_node = edge["target"]
     assert target_node["_is_external_service"] is True
-    assert target_node["_external_service_hint"] == "ucap-cloud-datainterface"
+    assert target_node["_external_service_hint"] == "acme-cloud-datainterface"
     assert edge["_is_external_service"] is True
     assert edge["_boundary_type"] == "feign-service-phantom"
 

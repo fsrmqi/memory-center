@@ -3,13 +3,31 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+import pytest
+
+from memory_center.core.knowledge.wiki_promotion import wiki_promotion_preview
 from memory_center.core.orchestrator.session import (
-    workspace_end_session,
     workspace_capture_dsh_delivery_summary,
+    workspace_end_session,
     workspace_session_summary,
     workspace_start_session,
 )
-from memory_center.core.knowledge.wiki_promotion import wiki_promotion_preview
+
+
+@pytest.fixture(autouse=True)
+def _neutral_profile_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """默认使用中性（空）profile；需要 profile 的用例显式声明或 setenv。"""
+    monkeypatch.delenv("MEMORY_CENTER_PROFILE", raising=False)
+    monkeypatch.delenv("MEMORY_CENTER_PROFILE_DIR", raising=False)
+
+
+def _declare_workspace_profile(workspace: Path, default_scope: str) -> None:
+    profile = workspace.parent / "profile.yaml"
+    profile.write_text(f"default_scope: {default_scope}\n", encoding="utf-8")
+    workspace.write_text(
+        workspace.read_text(encoding="utf-8").rstrip("\n") + f"\nprofile: {profile}\n",
+        encoding="utf-8",
+    )
 
 
 def _init_git_repo(root: Path) -> None:
@@ -111,6 +129,26 @@ def test_dsh_delivery_capture_writes_a_bounded_closed_l0_session(tmp_path: Path)
     assert duplicate == {"captured": False, "duplicate": True, "session_id": captured["session_id"], "source_session_id": "dsh-source-1"}
     preview = wiki_promotion_preview(str(workspace), captured["session_id"], wiki_root=tmp_path / "wiki")
     assert preview["ready"] is True
-    assert preview["module"] == "kaipuyun"
+    # 空 profile：预览不预设任何公司/scope，但仍可正常生成（中性降级）。
+    assert preview["module"] == ""
     assert preview["task_id"] == task_id
     assert preview["content"].startswith("修改完成")
+
+
+def test_wiki_promotion_preview_uses_workspace_profile_default_scope(tmp_path: Path) -> None:
+    from tests.fixtures import setup_demo_workspace
+
+    workspace = setup_demo_workspace(tmp_path)
+    _declare_workspace_profile(workspace, "acme")
+    from memory_center.core.tasks.artifacts import create_task_space
+    from memory_center.core.tasks.shadow import bind_shadow_to_task, ensure_shadow_for_session
+
+    task_id = create_task_space(str(workspace), title="profile preview task")["task_id"]
+    shadow = ensure_shadow_for_session(str(workspace), "dsh-source-2", intent="预览")
+    bind_shadow_to_task(str(workspace), shadow["shadow_id"], task_id, source="explicit")
+    captured = workspace_capture_dsh_delivery_summary(str(workspace), "dsh-source-2", "完成 profile 预览。")
+
+    preview = wiki_promotion_preview(str(workspace), captured["session_id"], wiki_root=tmp_path / "wiki")
+
+    assert preview["ready"] is True
+    assert preview["module"] == "acme"

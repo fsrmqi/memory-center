@@ -938,14 +938,14 @@ class TestI01_I05_FinalVerification:
         import re
         mc_dir = Path(__file__).parent.parent / "memory_center"
         private_path_pattern = re.compile(r'/Users/[a-zA-Z][a-zA-Z0-9_-]+/[a-zA-Z]')
+        # Documented placeholder home directories are allowed in docs/examples.
+        allowed_placeholders = ("/Users/you/", "/Users/example/")
         violations = []
         for py_file in mc_dir.rglob("*.py"):
             content = py_file.read_text(encoding="utf-8", errors="ignore")
-            # Skip if it's clearly a test/example path pattern
             for match in private_path_pattern.finditer(content):
                 path = match.group(0)
-                # Allow common system paths
-                if "/Users/cuijiaqi" not in path:
+                if path.startswith(allowed_placeholders):
                     continue
                 violations.append(f"{py_file}: {path}")
         assert violations == [], f"Private paths found: {violations}"

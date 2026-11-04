@@ -25,10 +25,13 @@ def load_workspace_config(path: str | Path) -> WorkspaceConfig:
     else:
         root_path = config_path.parent.parent.resolve()
     services = [ServiceConfig(**item) for item in data.get("services", [])]
+    raw_profile = data.get("profile")
+    profile = str(raw_profile).strip() if raw_profile else None
     return WorkspaceConfig(
         workspace=data.get("workspace", config_path.parent.name),
         root=str(root_path),
         services=services,
+        profile=profile or None,
     )
 
 
