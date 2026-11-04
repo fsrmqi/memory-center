@@ -35,7 +35,7 @@ jobs:
       - name: "Lint (advisory: full ruff)"
         continue-on-error: true
         run: ruff check . --output-format=concise
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: "22"
       # 管理页是构建产物，不入库（见 AGENTS.md：不提交构建产物）。服务测试要求
