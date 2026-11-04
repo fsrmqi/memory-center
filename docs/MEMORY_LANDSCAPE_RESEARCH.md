@@ -1,7 +1,7 @@
-# AI 记忆项目全景：对 Memory Center 的最终吸收结论 / AI Memory Landscape: Final Adoption Decision for Memory Center
+# AI 记忆项目全景：机制借鉴与决策边界 / AI Memory Landscape: Mechanism Lessons and Decision Boundaries
 
 日期 / Date：2026-08-22
-状态 / Status：已完成调研与项目内核对；会话候选生命周期已落地为 P1 的人工审批实现，其余结论仍是决策边界，不构成自动化开发排期。
+状态 / Status：机制调研与项目内核对已完成；会话候选生命周期已落地为人工审批实现，其余结论仍是决策边界，不构成开发排期。
 
 ## 1. 结论摘要 / Executive Decision
 
@@ -13,7 +13,7 @@ Memory Center 不应演变为通用的“聊天记忆平台”。它的核心定
 2. **时序结论必须同时有来源和历史证据。** “某关系曾经成立”不能由一次重新索引时写入的时间戳推断。
 3. **记忆是否有价值，要看它是否改善下一个 Agent 的工作。** 资产装载、会话恢复和检索质量都应以真实 replay 或验证回执衡量。
 
-因此，当前**不新增外部依赖、不改变既有 MCP tool schema、不新开 P0 实现项**。会话候选的“暂存 → 逐条审批 → L1 写入”已作为人工门禁的 P1 切片实现；自动合并、自动 L3 晋升、默认 Skill 装载仍须满足下列触发和验证条件。
+因此，当前**不新增外部依赖、不改变既有 MCP tool schema**。会话候选的“暂存 → 逐条审批 → L1 写入”已作为人工门禁实现；自动合并、自动 L3 晋升、默认 Skill 装载仍须满足下列触发和验证条件。
 
 ## 2. 项目现状与约束 / Current Evidence and Constraints
 
@@ -25,13 +25,13 @@ Memory Center 不应演变为通用的“聊天记忆平台”。它的核心定
 | 协作资产具备 owner、审批、绑定与有界 loadout；Context Pack 按预算装载。 | `core/knowledge/assets.py`、`core/context/pack.py` | 资产治理与定向注入已具备，缺的是收益归因而不是更多资产类型。 |
 | `eval_retrieval_replay` 按时间切分训练/验证；样本不足不会调权。 | `core/retrieval/calibration.py` | 所有自动化建议应延续“样本不足只观测、不改变默认行为”的原则。 |
 
-所有后续设计必须保持下列不变量：additive 扩展、evidence-first、显式离线维护不进入查询热路径、查询使用有界已发布 generation、破坏性写入需确认。详见 [ARCHITECTURE.md](./ARCHITECTURE.md) 与 [NEXT_PHASE_MASTER_PLAN.md](./NEXT_PHASE_MASTER_PLAN.md)。
+所有后续设计必须保持下列不变量：additive 扩展、evidence-first、显式离线维护不进入查询热路径、查询使用有界已发布 generation、破坏性写入需确认。详见 [ARCHITECTURE.md](./ARCHITECTURE.md) 与 [docs/adr/](./adr/)。
 
 ## 3. 外部机制：哪些值得借鉴 / What the Landscape Actually Teaches
 
 ### 3.1 Graphiti / Zep：时间、来源与历史查询必须是一个整体
 
-Graphiti 将关系表示为带有效窗口的事实，并让派生事实回溯到输入 episode；其价值在于可回答“现在为真还是过去曾为真”，而不是为图边增加几个日期字段。Graphiti 同时需要专门的图数据库和 ingestion 管线，这与 Memory Center 的 local-first SQLite 选择不同。
+Graphiti 将关系表示为带有效窗口的事实，并让派生事实回溯到输入 episode；其价值在于可回答“现在为真还是过去曾为真”，而不是为图边增加几个日期字段。Graphiti 的实现依赖专门的图数据库与 ingestion 管线，因此本项目只借鉴其时间与来源模型，不引入其技术栈。
 
 对本项目的启发：当真实任务需要按历史版本判断 Feign、MQ 或 API 契约时，应设计“**历史来源（Git commit / 已发布 generation / 人工验证）→ 关系断言 → as-of 查询**”的完整链路。没有可回放来源时，不得返回历史事实结论。
 
@@ -43,13 +43,13 @@ LangMem 区分热路径即时形成与后台形成；后者可在不增加交互
 
 ### 3.3 Mem0：反例同样有价值
 
-截至本次核验，Mem0 的 README 将其一条路径描述为 “[ADD-only extraction](https://github.com/mem0ai/mem0)”，即记忆累积而不做 UPDATE/DELETE。它证明追加写入实现简单，但不能解决经验过期、重复或相互矛盾的问题。
+截至本次核验，Mem0 的 README 将其一条路径描述为 “[ADD-only extraction](https://github.com/mem0ai/mem0)”，即记忆累积而不做 UPDATE/DELETE。该路径只提供追加，不解决经验过期、重复或相互矛盾的问题，这些需要由使用方自行设计。
 
 对本项目的启发：不要把 `ADD/UPDATE/DELETE/NOOP` 错称为 Mem0 的现成能力；Memory Center 若引入操作语义，应以自身的证据、审批和可逆性要求独立设计。
 
 ### 3.4 TencentDB Agent Memory：资产装载应服务角色，而非堆叠上下文
 
-其资产、审批、版本与按 Agent 装载的思路，与 Memory Center 现有协作资产模型高度同构。可借鉴的是“不同角色有不同 loadout”，不可照搬的是云端产品形态或其完整平台。
+其资产、审批、版本与按 Agent 装载的思路，与 Memory Center 现有协作资产模型高度同构。可借鉴的是“不同角色有不同 loadout”；其云端产品形态与完整平台不在本项目的借鉴范围内。
 
 对本项目的启发：先统计已发布 Skill / Wiki / CodeGraph 在指定 Agent、角色与任务意图下是否被采纳、是否帮助通过验证，再调整默认装载。没有可比较的基线时，不能声称某个 Skill 带来收益。
 
@@ -57,15 +57,15 @@ LangMem 区分热路径即时形成与后台形成；后者可在不增加交互
 
 自动策展 UI、分层记忆和长期对话召回基准提示了未来方向，但当前不是缺口的直接证据。Memory Center 已有有界 Context Pack、任务恢复、retrieval replay 与交付 Skill 生命周期；在缺少真实 session 召回失败或候选积压数据前，不应先建 UI、引入新存储或构造通用协议层。
 
-## 4. 最终吸收决策 / Final Adoption Matrix
+## 4. 吸收决策矩阵 / Adoption Matrix
 
 | 候选机制 | 决策 | 进入设计的触发条件 | 最小验证与停止条件 |
 |---|---|---|---|
-| 会话 → L1/L3 候选整合 | **P1 已实现：人工审批切片** | 已结束会话具有可脱敏 event/evidence refs。自动化升级仍要求真实积压或人工记录成本证据。 | `--stage` 只持久化候选；逐条 approve 前重查 current-truth 冲突。L3 仍只产出草稿。来源不足、冲突或 REVIEW 均不得写入。 |
-| Case memory operation candidates（ADD / UPDATE / SUPERSEDE / NOOP） | **P1 部分实现** | `workspace_suggest_case` 的草稿出现重复、过期或需批量筛选的真实证据。 | 当前仅有 `ADD / REVIEW`：无冲突 ADD 可审批，current-truth 或批内重复必须 REVIEW。`UPDATE / SUPERSEDE / NOOP` 必须先定义 stable case ID、比较维度、旧 case 状态回写与审批回执，不能由文本相似度推断。 |
-| 历史图 / as-of impact analysis | **P2 观察项** | 同一影响链在不同历史时间窗结论不同，且至少有 3 个可复放的 Git 或 generation case。 | 先以 Git commit/generation 构建只读实验；仅当历史 precision、来源覆盖和查询预算均通过，才考虑持久化边时间。不能用 observed time 伪造 valid time。 |
-| Skill / asset loadout 收益量化 | **P2 观察项** | `eval_retrieval_replay` 与交付 Skill replay 有足够的、带证据的验证样本。 | 对同意图、同角色样本比较采纳、验证通过和 token/延迟；不可比较或 Brier score 退化则不调默认 loadout。 |
-| 跨会话召回评测 | **P2 已实现：只读诊断切片** | `mc_resume` 或 `mc_handoff` 出现可复现的关键事实遗漏。 | `eval-session-recall` 通过私有 YAML 复放实际 resume，区分 `case_not_indexed`、`retrieval_miss`、`ranking_miss` 与 `evidence_insufficient`；不改权重或默认检索。只有多轮真实 case 稳定复现才进入检索设计。 |
+| 会话 → L1/L3 候选整合 | **已实现（人工审批）** | 已结束会话具有可脱敏 event/evidence refs。自动化升级仍要求真实积压或人工记录成本证据。 | `--stage` 只持久化候选；逐条 approve 前重查 current-truth 冲突。L3 仍只产出草稿。来源不足、冲突或 REVIEW 均不得写入。 |
+| Case memory operation candidates（ADD / UPDATE / SUPERSEDE / NOOP） | **部分实现** | `workspace_suggest_case` 的草稿出现重复、过期或需批量筛选的真实证据。 | 当前仅有 `ADD / REVIEW`：无冲突 ADD 可审批，current-truth 或批内重复必须 REVIEW。`UPDATE / SUPERSEDE / NOOP` 必须先定义 stable case ID、比较维度、旧 case 状态回写与审批回执，不能由文本相似度推断。 |
+| 历史图 / as-of impact analysis | **观察项** | 同一影响链在不同历史时间窗结论不同，且至少有 3 个可复放的 Git 或 generation case。 | 先以 Git commit/generation 构建只读实验；仅当历史 precision、来源覆盖和查询预算均通过，才考虑持久化边时间。不能用 observed time 伪造 valid time。 |
+| Skill / asset loadout 收益量化 | **观察项** | `eval_retrieval_replay` 与交付 Skill replay 有足够的、带证据的验证样本。 | 对同意图、同角色样本比较采纳、验证通过和 token/延迟；不可比较或 Brier score 退化则不调默认 loadout。 |
+| 跨会话召回评测 | **已实现（只读诊断）** | `mc_resume` 或 `mc_handoff` 出现可复现的关键事实遗漏。 | `eval-session-recall` 通过私有 YAML 复放实际 resume，区分 `case_not_indexed`、`retrieval_miss`、`ranking_miss` 与 `evidence_insufficient`；不改权重或默认检索。只有多轮真实 case 稳定复现才进入检索设计。 |
 | 记忆策展 UI | **明确延后** | 上述候选至少一项已发布且稳定产生待审批数据。 | UI 只消费已有候选与审批回执；不新增第二套真源。 |
 
 ### 4.1 已实现的会话候选生命周期 / Implemented Session-Candidate Lifecycle
@@ -106,7 +106,7 @@ LangMem 区分热路径即时形成与后台形成；后者可在不增加交互
 - 不引入“自然遗忘”或无证据衰退模型；过期、拒绝与替代必须保留可追溯记录。
 - 不将聊天记忆、云端托管平台或通用互操作协议作为当前产品目标。
 - 不让 LLM 直接自动写入、删除或认证 L1/L3 记忆；模型只能提出带证据的候选。
-- 不因本调研调整现有 P1 Java 解析精度、P2 检索质量与 P3 交付闭环的优先级。
+- 本调研不改变既有工程路线的工作顺序。
 
 ## 6. 实施门槛 / Implementation Gate
 

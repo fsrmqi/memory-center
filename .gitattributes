@@ -1,0 +1,37 @@
+# 公开发布面控制 / Public release surface
+#
+# `git archive` 会按 export-ignore 剔除下列路径，`scripts/public_release.sh`
+# 用 `git archive` 生成公开仓库快照，因此这里的规则就是"公开仓库包含什么"的
+# 唯一事实来源。私有仓保持完整内容，公开仓只发布脱敏后的产物。
+
+# 内部资料与本地状态 / Internal notes and local state
+/.dsh-tmp export-ignore
+/docs-internal export-ignore
+/.gitnexus export-ignore
+/.worktrees export-ignore
+/.venv export-ignore
+/.idea export-ignore
+/.claude export-ignore
+/.cursor export-ignore
+/.mimosa export-ignore
+/.workbuddy export-ignore
+/.DS_Store export-ignore
+/.env export-ignore
+/compose.override.yaml export-ignore
+
+# 构建产物 / Build output
+/build export-ignore
+/dist export-ignore
+/*.egg-info export-ignore
+/frontend/node_modules export-ignore
+/frontend/dist export-ignore
+/memory_center/service/static export-ignore
+
+# 示例目录里的生成物（可用 reindex 重建）/ Generated example artifacts
+examples/**/.memory-center export-ignore
+examples/**/graph export-ignore
+examples/**/index export-ignore
+examples/**/store.lock export-ignore
+examples/**/*.db export-ignore
+examples/**/*.db-shm export-ignore
+examples/**/*.db-wal export-ignore

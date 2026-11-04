@@ -1,43 +1,33 @@
 # 5.0 知识流水线、向量化与存储参考方案
 
-> **2026-10-10 状态收口**：b15 的已实现参考能力与当前验收边界以 [参考能力实施回执](implementation-receipts/V5_REFERENCE_ADOPTION.md) 为准。下方旧阶段、等待确认和兼容计划仅作历史背景；不重启 DSH 插件工作，不要求迁移 4.x。b15 当轮未发版、未部署；后续部署状态见下方 b17 更新。
+> **类型 / Type**：设计建议（decision）。**适用版本 / Version**：5.0.0b27。
+> 本文描述知识库与向量检索的目标形态与存储职责划分；当前入口与已发布能力见 [5.0 平台指南](V5_PLATFORM_GUIDE.md)，用户可感知的变化见 [CHANGELOG](CHANGELOG.md)。
 
-> b16 已追加项目空间统计，入口、口径和验证范围见 [项目空间统计回执](implementation-receipts/V5_PROJECT_STORAGE.md)。Project storage accounting is added in b16.
+## 架构参考
 
-> b17 已追加存储治理、分块修复与流式向量检索，并更新本地 OrbStack。当前验收结果与限制见 [b17 实施回执](implementation-receipts/V5_STORAGE_GOVERNANCE.md)。Local OrbStack is updated; validation scope is documented in the b17 receipt.
+本文的机制对比对象是 [WeKnora](https://github.com/Tencent/WeKnora)（上游公开仓库，许可与版本以上游为准）。我们只比较公开的架构与数据处理机制，不复制其代码，也不对其运行性能作任何断言。
 
-> b18 已增加项目级向量范围与无向量图／关键词索引，部署与验证见 [项目向量范围回执](implementation-receipts/V5_PROJECT_EMBEDDING.md)。Per-project vector scope is added in b18.
-
-
-> 2026-10-09 当前实施更新：5.0.0b1 已接入多项目授权 MCP、后台索引、知识库/Wiki/记忆管理与 PG/向量后端，已完成本地测试版验收；正式发行仍需真实模型语义与规模评测。用户已授权连续实施。本轮证据见 [实施回执](implementation-receipts/V5_PLATFORM.md)，当前入口与合同见 [5.0 平台指南](V5_PLATFORM_GUIDE.md)。下方较早的 S1/S2 等待确认记录仅保留决策演进背景。
-
-
-> 类型：设计建议。日期：2026-10-09。参考 WeKnora 本地提交 `602d0c388bf17d894f467fe0cd65d1d62c73d303`。
-> 当前 S1 使用 SQLite catalog；本文不改变已实施存储、不启动知识库改造。标准部署选型与实施时点待用户确认，按切片推进。
-
-## 架构吸收
-
-用户提供的 WeKnora 架构图有参考价值：多个接入渠道共享授权和业务用例，RAG、Wiki、记忆共享来源与知识处理流水线，耗时操作异步执行，模型与存储通过适配器接入。
+其公开架构中值得借鉴的部分：多个接入渠道共享授权与业务用例；RAG、Wiki、记忆共享来源与知识处理流水线；耗时操作异步执行；模型与存储通过适配器接入。
 
 Memory Center 保留 Python 模块化单体、FastAPI、官方 MCP SDK 和 Vue 管理页面。代码事实与文档知识采用不同来源处理器：代码保留符号、调用边和契约解析；文档采用解析、分块和引用定位。两者共享空间身份、权限、任务状态、检索接口和证据投影。自动 Wiki 和记忆归纳不能覆盖源码事实。
 
 IM、沙箱、联网搜索、Neo4j、Langfuse 为后续独立能力，不作为 5.0 启动必需组件。
 
-## 本地源码证据
+## 机制对照
 
-以下路径相对 WeKnora 仓库，结论来自固定版本源码阅读，未对 WeKnora 运行性能作验证。
+下表只记录"机制 → 本项目结论"，不引用上游内部文件路径，也不逐文件复述其实现。结论来自上游公开文档与源码阅读，未对上游运行性能作验证。
 
-| 证据 | 已核对设计 | 吸收方式 |
+| 机制 | 已核对的公开设计 | 本项目的吸收方式 |
 |---|---|---|
-| `docs/LITE.md` | Lite：SQLite、内存队列、单空间；标准版：多空间、多服务部署 | 借鉴部署分档，不复制 Lite 的单空间限制；本项目轻量版仍需多项目 |
-| `internal/infrastructure/chunker/heading_splitter.go`、`fenced_code.go` | 标题与代码块相关分块处理 | 文档按结构切块，代码按符号切块；保留源位置与父块 |
-| `internal/models/embedding/batch.go` | 批量嵌入、池并发、结果数量校验 | 有界任务、超时、取消、重试和失败状态，避免请求内同步全量嵌入 |
-| `internal/application/repository/retriever/postgres/repository.go` | pgvector halfvec、维度过滤、知识库/文档范围；关键词使用 ParadeDB 操作符与评分 | 候选召回前限定空间/来源；独立评估关键词扩展与向量精度 |
-| `internal/application/repository/retriever/sqlite/repository.go` | FTS5、中文 bigram、按维度 vec0 表、索引写入错误处理 | 中文与代码标识符分别评测；关键词/向量状态不能伪装成功 |
-| `internal/application/service/knowledgebase_search_fusion.go` | 按召回列表归一化、去重、加权 RRF | 各后端分数不能直接混加；权重须由本项目回放评测确定 |
-| `internal/application/repository/memory_vector.go` | 长期记忆独立向量检索；PG 距离查询与有界回退 | 记忆有独立主体、生命周期、确认状态，不能只当文档块保存 |
+| 部署分档 | 轻量档（单机 SQLite、内存队列、单空间）与标准档（多空间、多服务部署） | 借鉴分档思路，不继承单空间限制；轻量档仍需支持多项目 |
+| 文档分块 | 标题层级与代码围栏相关切块 | 文档按结构切块，代码按符号切块；保留源位置与父块 |
+| 批量嵌入 | 批量请求、池并发、结果数量校验 | 有界任务、超时、取消、重试和失败状态，避免请求内同步全量嵌入 |
+| PostgreSQL 检索 | pgvector 距离查询、维度过滤、知识库/文档范围；关键词使用 ParadeDB 操作符与评分 | 候选召回前限定空间/来源；独立评估关键词扩展与向量精度 |
+| SQLite 检索 | FTS5、中文 bigram、按维度 vec0 表、索引写入错误处理 | 中文与代码标识符分别评测；关键词/向量状态不能伪装成功 |
+| 检索融合 | 按召回列表归一化、去重、加权 RRF | 各后端分数不能直接混加；权重须由本项目回放评测确定 |
+| 长期记忆向量 | 记忆条目独立向量检索；PG 距离查询与有界回退 | 记忆有独立主体、生命周期、确认状态，不能只当文档块保存 |
 
-注意：图中“PostgreSQL：BM25、pgvector”是能力组合。pgvector 提供向量检索；该版本 WeKnora 的 PostgreSQL 关键词检索使用 ParadeDB，不能把普通 PostgreSQL + pgvector 当成已有相同 BM25 能力。官方说明见 [pgvector](https://github.com/pgvector/pgvector) 与 [ParadeDB 索引](https://www.paradedb.com/docs/reference/indexing/create-index)。
+注意：“PostgreSQL：BM25、pgvector”是能力组合。pgvector 提供向量检索；关键词 BM25 需要额外索引方案（如 ParadeDB）。不能把普通 PostgreSQL + pgvector 当成天然具备 BM25 能力。官方说明见 [pgvector](https://github.com/pgvector/pgvector) 与 [ParadeDB 索引](https://www.paradedb.com/docs/reference/indexing/create-index)。
 
 ## 存储职责与部署建议
 
@@ -48,11 +38,11 @@ IM、沙箱、联网搜索、Neo4j、Langfuse 为后续独立能力，不作为 
 | 文档块、Wiki 版本、记忆条目及来源 | 知识阶段再定义领域表 | 优先 PostgreSQL，主体/空间/来源/版本为显式字段 |
 | 向量与关键词派生索引 | 复用现有检索能力，后续接适配器 | 优先 pgvector；BM25 独立选择实现并评测中文效果 |
 | 原始文档、附件、导出 | 服务数据目录的本地文件存储 | 先 Docker 持久卷，再按需增加 S3/MinIO 适配器 |
-| 后台任务 | S3 有界进程 Worker，持久任务状态 | 单机先保留；多实例再评估 Redis/独立队列 |
+| 后台任务 | 有界进程 Worker，持久任务状态 | 单机先保留；多实例再评估 Redis/独立队列 |
 
-对于用户计划的 OrbStack 常驻知识服务，推荐标准部署的第一组外部依赖为 PostgreSQL + pgvector；暂不同时引入 Qdrant/Milvus、Redis、MinIO 和 Neo4j。这个建议是后续选型，不代表当前 5.0.0a2 已具备 PostgreSQL 后端。
+如果希望以常驻知识服务方式部署，推荐的第一组外部依赖为 PostgreSQL + pgvector；暂不同时引入 Qdrant/Milvus、Redis、MinIO 和 Neo4j。该建议属于后续选型，SQLite catalog 仍是当前默认。
 
-如果决定正式 5.0 就以 PostgreSQL 为默认，先在 S2 前增加独立的“存储合同与 PG 可行性”切片，验证 arm64 镜像、中文关键词、事务、空间隔离、备份与重启，再修订 S1 catalog 和后续计划；不能仅换连接串。用户不要求历史兼容，但本次新服务数据是否丢弃仍须明确，不自动清理。
+若正式 5.0 决定以 PostgreSQL 为默认，应先增加独立的“存储合同与 PG 可行性”切片，验证 arm64 镜像、中文关键词、事务、空间隔离、备份与重启，再修订目录与后续计划；不能仅更换连接串。
 
 ## 向量化合同
 
@@ -66,7 +56,7 @@ IM、沙箱、联网搜索、Neo4j、Langfuse 为后续独立能力，不作为 
 
 ## 分阶段落地
 
-1. S2：固定授权范围与请求上下文，为查询适配器保留空间和来源参数；不提前实现文档知识库。
-2. S3：后台任务状态、取消、重试、预算与索引 generation 发布合同。
-3. 5.0 服务闭环完成后：知识库第一切片验证一份中文文档的解析、引用、关键词/向量混合检索与删除失效；独立确认 PG 部署。
+1. 固定授权范围与请求上下文，为查询适配器保留空间和来源参数；不提前实现文档知识库。
+2. 后台任务状态、取消、重试、预算与索引 generation 发布合同。
+3. 服务闭环完成后：知识库第一切片验证一份中文文档的解析、引用、关键词/向量混合检索与删除失效；独立确认 PG 部署。
 4. 后续：管理页面配置模型与来源，再加入 Wiki 版本和长期记忆治理；按测量结果增加外部队列或专用向量库。

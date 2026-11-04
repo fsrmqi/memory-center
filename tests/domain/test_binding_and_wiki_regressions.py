@@ -42,8 +42,8 @@ def test_real_bm25_and_changed_hash(tmp_path):
     root = _wiki_entry(tmp_path)
     _register(w, tmp_path)
     transport = _transport_of([{'path': _RELATIVE, 'score': -9.0, 'snippet': '摘要'}])
-    assert wiki_knowledge_candidates(w, task='众包', wiki_root=root, transport=transport)['candidates']
+    assert wiki_knowledge_candidates(w, task='订单中心', wiki_root=root, transport=transport)['candidates']
     (root / _RELATIVE).write_text('changed', encoding='utf-8')
-    assert not wiki_knowledge_candidates(w, task='众包', wiki_root=root, transport=transport)['candidates']
+    assert not wiki_knowledge_candidates(w, task='订单中心', wiki_root=root, transport=transport)['candidates']
     (root / _RELATIVE).unlink()
-    assert not wiki_knowledge_candidates(w, task='众包', wiki_root=root, transport=transport)['candidates']
+    assert not wiki_knowledge_candidates(w, task='订单中心', wiki_root=root, transport=transport)['candidates']

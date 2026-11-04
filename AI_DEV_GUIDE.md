@@ -136,6 +136,17 @@ scripts/verify_real_workspace.sh
 - 修改 MCP tool schema
 - 修改 CLI/MCP/HTTP 入口（三入口一致性）
 
+### 4.1.1 首次跑测试前先构建管理页
+
+管理页是构建产物、不入库（见 `AGENTS.md`）。`tests/service/**` 依赖 `memory_center/service/static` 存在，未构建时服务会以「管理页面资源缺失」拒绝启动、相关测试报 ERROR：
+
+```bash
+cd frontend && npm ci --ignore-scripts && npm run build && cd ..
+pytest -q
+```
+
+CI 同样先构建管理页再跑测试（见 `.github/workflows/ci.yml`）。
+
 ### 4.2 测试隔离原则
 
 - 所有写入型测试必须使用 `tmp_path`
@@ -333,5 +344,5 @@ git diff --check
 | `docs/REFERENCE.md` | 命令、参数、schema 参考 |
 | `docs/ONTOLOGY.md` | 轻量本体与演进计划 |
 | `docs/CHANGELOG.md` | 变更记录 |
-| `docs/NEXT_PHASE_MASTER_PLAN.md` | 开发路线 |
+| `docs/PUBLISHING.md` | 公开发布流程（私有仓 → 公开快照） |
 | `docs/DOCUMENT_CONSTITUTION.md` | 文档治理与发布清单 |

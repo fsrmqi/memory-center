@@ -20,7 +20,6 @@ docs/benchmarks/*.prof
 
 # IDE / AI editor configs
 /.idea/
-/.github/
 /.claude/
 
 # Generated index data (rebuild with `memory-center reindex`)
@@ -58,3 +57,26 @@ frontend/node_modules/
 # local build never ships a wheel without the admin page.
 memory_center/service/static/
 /.dsh-tmp/
+
+# Local-only env / compose overrides / AI tool caches. These used to live only
+# in .git/info/exclude, which is private to one clone; keep them here so every
+# contributor is protected by default.
+/.env
+/.env.*
+!/.env.example
+/compose.override.yaml
+/.worktrees/
+/.gitnexus/
+
+# Generated example artifacts (regenerable with `memory-center reindex`).
+# Anchored per-directory patterns above only match the repository root, so the
+# nested example workspaces need explicit coverage here.
+examples/**/.memory-center/index/
+examples/**/.memory-center/graph/
+examples/**/.memory-center/store.lock
+examples/**/graph/
+examples/**/index/
+examples/**/*.db
+examples/**/*.db-shm
+examples/**/*.db-wal
+examples/**/store.lock

@@ -1,9 +1,15 @@
 # User Guide / 使用指南
 
-> 2026-10-09 当前实施更新：5.0.0b1 已接入多项目授权 MCP、后台索引、知识库/Wiki/记忆管理与 PG/向量后端，已完成本地测试版验收；正式发行仍需真实模型语义与规模评测。用户已授权连续实施。本轮证据见 [实施回执](implementation-receipts/V5_PLATFORM.md)，当前入口与合同见 [5.0 平台指南](V5_PLATFORM_GUIDE.md)。下方较早的 S1/S2 等待确认记录仅保留决策演进背景。
+> **适用版本 / Version**：5.0.0b27。5.0 以独立常驻服务为唯一入口：管理页、统一 MCP 与 CLI 共用同一应用层。当前入口与合同见 [5.0 平台指南](V5_PLATFORM_GUIDE.md)，用户可感知的变化见 [CHANGELOG](CHANGELOG.md)。下方较早的版本记录保留作决策演进背景，不代表当前入口。
+>
+> **Version**: 5.0.0b27. The resident service is the single entry point of 5.0: admin UI, unified MCP and CLI share one application layer. See the [platform guide](V5_PLATFORM_GUIDE.md) for current contracts and the [CHANGELOG](CHANGELOG.md) for user-visible changes; older sections below are historical background only.
 
 
-> **5.0.0a2 / S1 当前入口**：`memory-center-service` 独立服务，管理页 `/admin/`、MCP `/mcp`，当前只提供 `mc_service_status`。FastAPI 外层生命周期管理官方 SDK；项目目录 API 已完成（含管理员令牌），见 [项目目录管理指南](V5_CATALOG_GUIDE.md)；项目 MCP 授权与 Worker 尚待 S2–S3。实际参数、状态/错误合同、安装与关闭见 [5.0 服务运行指南](V5_SERVICE_GUIDE.md)。下文旧入口说明属于尚未接入的新服务底层能力，不构成 5.0 兼容承诺。
+> **当前入口 / Current entry**：`memory-center-service` 独立常驻服务，管理页 `/admin/`、MCP `/mcp`、项目目录 API `/api/v1/workspaces`。服务生命周期、状态与错误合同、安装与关闭见 [5.0 服务运行指南](V5_SERVICE_GUIDE.md)；项目登记与管理见 [项目目录管理指南](V5_CATALOG_GUIDE.md)。下文 4.x CLI/HTTP 说明属于保留的引擎能力，不构成 5.0 兼容承诺。
+
+> **只读状态 / Read-only status**：MCP 的 `mc_service_status` 无参数、只读，返回服务就绪状态、版本、能力、存储与索引预算；也可用 `GET /health/live`、`GET /health/ready` 与状态 API。完整 tool 合同见 [MCP 接入指南](MCP_GUIDE.md)。
+>
+> `mc_service_status` is the parameterless, read-only MCP tool returning readiness, version, capabilities, storage and index budgets; `GET /health/live`, `GET /health/ready` and the status API expose the same facts. See the [MCP guide](MCP_GUIDE.md) for the full contract.
 
 ## Who This Is For / 适用对象
 
@@ -439,10 +445,10 @@ memory-center artifact delivery-skill-publish --workspace /abs/path/.memory-cent
 
 ## 10. Related Docs / 相关文档
 
-- [ARCHITECTURE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/ARCHITECTURE.md)
-- [MCP_GUIDE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/MCP_GUIDE.md)
-- [REFERENCE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/REFERENCE.md)
-- [ONTOLOGY.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/ONTOLOGY.md)
+- [ARCHITECTURE.md](./ARCHITECTURE.md)
+- [MCP_GUIDE.md](./MCP_GUIDE.md)
+- [REFERENCE.md](./REFERENCE.md)
+- [ONTOLOGY.md](./ONTOLOGY.md)
 
 ## 11. Implemented Features / 已实现功能（当前 4.6.12）
 
@@ -529,7 +535,7 @@ memory-center eval-golden \
 
 - `--workspace` 可以直接指向真实 workspace 的 `.memory-center/workspace.yaml`
 - `--cases` 建议使用本地私有文件，不要把真实业务链路直接提交进仓库
-- 公开模板见 [examples/golden-benchmark/cases.template.yaml](/Users/cuijiaqi/Ai-common-skills/memory-center/examples/golden-benchmark/cases.template.yaml)
+- 公开模板见 [examples/golden-benchmark/cases.template.yaml](../examples/golden-benchmark/cases.template.yaml)
 ```
 
 **使用方式**:
@@ -797,4 +803,4 @@ memory-center http-route-contract-audit
 - **Audit**: `memory_center.core.audit`
   - `run_completion_audit()`, `record_design_decision()`, `generate_audit_report()`
 
-详见各模块的 docstring 和 [ARCHITECTURE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/ARCHITECTURE.md) 附录 B。
+详见各模块的 docstring 和 [ARCHITECTURE.md](./ARCHITECTURE.md) 附录 B。

@@ -1,6 +1,6 @@
 [project]
 name = "memory-center"
-version = "5.0.0b26"
+version = "5.0.0b27"
 description = "Memory Center is an MCP-native project memory service and multi-agent shared context center for coding agents"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -121,13 +121,10 @@ ignore = ["E501"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
-# 批次1 待迁移，见 R2，清单见 tmp/mixed_tests.txt。
-# 下列 41 个测试文件引用了本轮整包删除的 cli/http/hooks/mcp 死包（直接或传递），采集期/运行期会 ImportError，
-# 故本批临时排除采集（--ignore，文件未删除，待后续批次迁移）。
-# 判定脚本：tmp/full_closure_scan.py（全 import 闭包，含函数体内嵌套 import 与 importlib 字面量），
-# 结果清单：tmp/ignore_tests_batch1.txt（41 行）。
-# 传递情形示例：测试 import 了 application/core 死模块，而死模块在模块级 import 了被删包（core.audit.runtime → hooks.spec）。
-# 其余混合测试本批保持采集不变（它们引用的 application/core 死模块本批仍在）。
+# 5.0 重构移除了 cli/http/hooks/mcp 等旧入口，部分测试仍直接或间接引用它们，采集期会 ImportError。
+# 这些文件保留待迁移，暂以 --ignore 排除采集（不是删除测试）。
+# Some tests still import entry points removed in the 5.0 refactor and would fail at
+# collection time; they are kept for migration and temporarily excluded here.
 addopts = """
 -q
 --ignore=tests/domain/test_architecture_communities.py

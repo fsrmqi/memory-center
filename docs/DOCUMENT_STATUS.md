@@ -1,9 +1,6 @@
 # Documentation Status / 文档状态目录
 
-> 2026-10-09 当前实施更新：5.0.0b1 已接入多项目授权 MCP、后台索引、知识库/Wiki/记忆管理与 PG/向量后端，已完成本地测试版验收；正式发行仍需真实模型语义与规模评测。用户已授权连续实施。本轮证据见 [实施回执](implementation-receipts/V5_PLATFORM.md)，当前入口与合同见 [5.0 平台指南](V5_PLATFORM_GUIDE.md)。下方较早的 S1/S2 等待确认记录仅保留决策演进背景。
-
-
-> **基准版本**：5.0.0a2 / S1；原引擎文档以 4.x 保留版本为来源
+> **基准版本**：5.0.0b27；原引擎文档以 4.x 保留版本为来源
 > **更新日期**：2026-10-09
 > **规则 / Rule**：当前行为以代码、CLI `--help`、路由、MCP schema 和标记为 `current` 的文档为准。历史文档保留当时的样本与结论，不重写为当前事实。
 
@@ -11,33 +8,25 @@
 
 | 文档 | 权威范围 |
 |---|---|
-| `docs/V5_CATALOG_GUIDE.md` | S1 稳定项目身份、受控登记接口、预览范围与错误合同 |
-| `docs/V5_SERVICE_GUIDE.md` | 5.0.0a2 服务入口、接口合同与 wheel/OrbStack 操作 |
+| `docs/V5_CATALOG_GUIDE.md` | 项目身份、受控登记接口、预览范围与错误合同 |
+| `docs/V5_SERVICE_GUIDE.md` | 5.0 服务入口、接口合同与 wheel/Compose 操作 |
 | `README.md` | 产品定位、安装、快速开始与当前版本概览 |
 | `docs/ARCHITECTURE.md` | 当前分层、运行模型、质量/检索/存储架构 |
 | `docs/MCP_GUIDE.md` | 5.0 统一 MCP 合同：接入方式、17 个工具参考、证据边界与 4.x 迁移对照 |
 | `docs/USER_GUIDE.md` | 用户工作流、维护、质量门禁与故障处理 |
 | `docs/REFERENCE.md` | CLI、HTTP、MCP 的事实参考与维护命令 |
 | `docs/ONTOLOGY.md` | 实体、关系、证据强度和治理语义 |
-| `docs/NEXT_PHASE_MASTER_PLAN.md` | 唯一活跃开发路线；已完成工作不作为待办 |
 | `docs/TECHNICAL_DESIGN_AGENT_PROPOSAL.md` | 技术方案设计 Agent 的决策提案：以证据约束的渐进式方案工作流；`TECH_SPEC.md` 的部分基础字段已落地，完整编排与门禁尚未实现 |
-| `docs/LOOKUP_ARCHITECTURE_HANDOFF_PLAN.md` | 查询架构收口的专项交接计划、契约与验收矩阵 |
-| `docs/SESSION_FIRST_TASK_CONTINUITY_PROPOSAL.md` | Session-first / Task Shadow 产品与架构提案；L1 Shadow 核心已实现（shadow/observations/handoff 三模块 + facade/admin/CLI/HTTP 接入），DSH 侧适配见 `memory-center-dsh-plugin`（Task Shadow L1 投影） |
-| `docs/MEMORY_ENRICHMENT_DESIGN.md` | 记忆增强设计提案：借鉴 MemOS / claude-mem / MemoraX 的四项能力；A（evidence-index 渐进式披露）与 B（Session Notes 叙事层）已实现（见 CHANGELOG Unreleased），C（Memory Cube）为 P2 草案待评审，D（四类记忆用户模型）已落 USER_GUIDE |
-| `docs/WRITE_GOVERNANCE_ABSORPTION_PLAN.md` | 写入治理吸收方案：借鉴 Utopia（deeplethe/utopia）写入判定的七项工作项 G1–G7（P0：案例替代闭环 / L0.5 追加式替代 / 决策事件化）；含已核实现状基线、写入入口矩阵与前置验证清单 V1–V4 |
-| `docs/DSH_WORKBENCH_PRODUCTIZATION_ROADMAP.md` | DSH/Workbench 产品路线与只读质量视图 |
-| `docs/HTTP_DISPLAY_MIGRATION.md` | 内置 Workbench 下线后的 DSH 与 HTTP JSON 读模型迁移说明 |
+| `docs/LOOKUP_ARCHITECTURE_HANDOFF_PLAN.md` | 查询架构的契约、门禁与验收矩阵 |
+| `docs/MEMORY_ENRICHMENT_DESIGN.md` | 记忆增强设计提案：四项能力设计与证据边界；A（evidence-index 渐进式披露）与 B（Session Notes 叙事层）已实现（见 CHANGELOG），C（Memory Cube）为草案，D（四类记忆用户模型）已落 USER_GUIDE |
+| `docs/HTTP_DISPLAY_MIGRATION.md` | 内置工作台下线后的 HTTP JSON 读模型与管理页迁移说明 |
+| `docs/DSH_LOCAL_TELEMETRY.md` | 可选的宿主执行元数据接入与本地观测边界 |
 | `docs/DOCUMENT_CONSTITUTION.md` | 文档治理、生命周期与发布清单 |
-| `docs/THREE_SYSTEM_KNOWLEDGE_LOOP.md` | Memory Center、DSH 与 Personal Wiki 的协作边界 |
+| `docs/THREE_SYSTEM_KNOWLEDGE_LOOP.md` | Memory Center 与外部长期知识库、宿主插件的协作边界 |
 
 ## Current decisions and references / 当前决策与参考
 
-2026-10-09 服务化分支新增决策文档：
-
-- `docs/V5_IMPLEMENTATION_PLAN.md`：decision；5.0.0 全新安装改造流程、WeKnora 固定版本参考、项目重建与发布验收；5.x 文档/Wiki/长期记忆为后续专题。
-- `docs/SERVICE_PLATFORM_TECHNICAL_PLAN.md`：decision；4.6.30 基线上的独立服务、多空间和管理页面技术方案，包含现状证据、新协议与存储边界、开发切片与验收；描述的新增能力尚未实现。
-- `docs/adr/0004-service-platform-and-admin.md`：方向已接受，实施待完成；调整未来展示的产品边界，保留核心依赖方向，按全新安装重建，不保留历史数据与接口兼容层。
-- 唯一开发路线入口仍为 `docs/NEXT_PHASE_MASTER_PLAN.md`；其服务化分支说明优先于旧 DSH P0 展示路线。
+- `docs/adr/0004-service-platform-and-admin.md`：方向已接受；调整未来展示的产品边界，保留核心依赖方向，按全新安装重建，不保留历史数据与接口兼容层。
 
 | 文档 | 状态 |
 |---|---|
@@ -45,19 +34,16 @@
 | `docs/adr/0001-core-dependency-direction.md` | 有效 |
 | `docs/adr/0002-module-boundaries-and-completion.md` | 有效 |
 | `docs/adr/0003-remove-graph-view-builder.md` | 有效 |
-| `docs/references/codebase-memory-mcp.md` | 设计参考，不是运行时依赖或兼容目标 |
+| `docs/adr/0005-v5-workspace-catalog.md` | 有效 |
 
 ## Historical evidence / 历史证据
 
-以下文档用于追溯当时的实验、样本、实现或研究。它们可能包含旧版本号、旧基线、已完成的“下一步”或已替代的设计；不得据此判断当前接口或待办。
+公开仓库只保留用户可感知的历史记录：`docs/CHANGELOG.md` 的已发布条目与 `docs/adr/`、`docs/decisions/` 中的决策记录。实验样本、内部实施回执与性能取证属内部证据，不进公开仓库；它们可能包含旧版本号、旧基线或已替代的设计，也不得据此判断当前接口或待办。
 
 | 分类 | 文档 |
 |---|---|
-| 实施回执 | `docs/implementation-receipts/*.md` |
-| 性能/验证基准 | `docs/benchmarks/*.md` |
-| 研究与吸收材料 | `docs/ARCHIFY_ABSORPTION_RESEARCH.md`、`docs/MEMORY_LANDSCAPE_RESEARCH.md` |
-| 历史数据闭环 | `docs/DATA_REAL_LOOP_RUN1.md` |
 | 历史记录 | `docs/CHANGELOG.md` 的已发布条目 |
+| 决策记录 | `docs/adr/`、`docs/decisions/` |
 
 ## 4.6.13 capability summary / 4.6.13 能力摘要
 

@@ -73,7 +73,7 @@ def related(topic: str, anchor_tokens: set[str], anchor_bigrams: set[str], min_s
     if not topic_bigrams or not anchor_bigrams:
         return False
     hit = len(topic_bigrams & anchor_bigrams)
-    # CJK 片段锚是高区分度实体词（外链/预警/众包…）。命中 max(2, 锚的1/3) 个
+    # CJK 片段锚是高区分度实体词（如订单/告警/工单…）。命中 max(2, 锚的1/3) 个
     # 不同片段即视为相关；泛词长句几乎不可能与实体标题共享 3 个连续二字片段。
     return hit >= max(2, len(anchor_bigrams) // 3)
 

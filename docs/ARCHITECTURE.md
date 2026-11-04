@@ -1,6 +1,6 @@
 # Memory Center 当前系统架构 / Current System Architecture
 
-> **当前实现：5.0.0b26（开发测试版）。** 服务化架构为单进程 FastAPI/Uvicorn，同时承载管理 API、统一 MCP（Streamable HTTP，挂载于 `/mcp`）与 Vue 管理页；空间控制面独立存储，索引由有界子进程执行，发布走原子 generation。分层方向为 `service/`（生命周期、路由、MCP 边界）→ `platform/`（控制面、授权、任务、知识、检索）→ `application/` + `core/`（被复用的引擎）。
+> **当前实现：5.0.0b27（开发测试版）。** 服务化架构为单进程 FastAPI/Uvicorn，同时承载管理 API、统一 MCP（Streamable HTTP，挂载于 `/mcp`）与 Vue 管理页；空间控制面独立存储，索引由有界子进程执行，发布走原子 generation。分层方向为 `service/`（生命周期、路由、MCP 边界）→ `platform/`（控制面、授权、任务、知识、检索）→ `application/` + `core/`（被复用的引擎）。
 
 项目空间统计由 `platform/storage_usage.py` 在只读数据库快照中聚合项目行载荷，再扫描 `workspaces/{workspace_id}` 内的普通文件，区分当前／其他索引代际和两类缓存。管理 API 使用同步端点，由 FastAPI 线程池处理文件扫描；管理页按项目选择或手动刷新请求，不随列表轮询反复扫描。共享数据库文件与物理页不作项目归属，口径见平台指南。
 
@@ -568,7 +568,7 @@ Java 仍保留 Spring-aware 专用解析；多语言 structural pass 避免重�
 - **Freshness generation snapshot / freshness 代际快照（4.6.21）**：`mc_start` 的 freshness 附带 `observed_generation`/`observed_at`/`refresh_in_flight` 并标记 `freshness_snapshot=true`；查询侧比较快照与当前 generation，变化时返回 `freshness_transition`，Agent 不再把启动 stale banner 当作当前事实。
 - **Contract enrichment boundary / 契约补充边界**：Feign/MQ/API/Config 的索引筛选、project 过滤、Feign→API path 关联和 index-first routing 位于 `lookup_contracts`，避免将契约语义继续耦合进检索执行器。
 
-详见验证回执 [docs/implementation-receipts/code-graph-foundation.md](implementation-receipts/code-graph-foundation.md)。
+代码图基础设施的实现规格与验收口径见 [docs/decisions/CODE_GRAPH_FOUNDATION_IMPLEMENTATION.md](decisions/CODE_GRAPH_FOUNDATION_IMPLEMENTATION.md)。
 
 ---
 
@@ -1144,59 +1144,33 @@ Memory Center 是一个面向 AI 编程助手的本地优先 workspace 记忆与
 
 ---
 
-## 附录 G：三种讲法与面试结构
-
-### G.1 三种讲法
-
-**面向客户**：“它把企业现有代码仓变成 AI 可安全使用的本地工程知识底座。AI 不再只靠临时搜索，而是基于服务调用、接口、消息、配置和验证证据工作。系统保留在客户环境内，支持追溯、灰度和回滚。”
-
-**面向技术面试**：“这是一个把 RAG、代码图谱、任务记忆和治理闭环结合的本地 Agent 基础设施。难点不在于一次检索，而在于索引新鲜度、事实与推断边界、跨入口一致性、性能热路径和错误经验不污染知识库。”
-
-**面向内部技术分享**：“我们把 Agent 的工程上下文拆成可重建事实、可审查任务工件和可验证经验三层。对所有自动化结论强制附带范围、generation、证据等级和下一步动作，避免‘模型说已经理解了’成为唯一依据。”
-
-### G.2 面试 15 分钟结构
-
-**前两分钟（问题与定位）**：复杂工程里的 Agent 不是缺少大模型能力，而是缺少可持续、可信、低延迟的工程上下文。Memory Center 把代码解析成可重建图谱，把检索限制在已发布索引，把任务过程收敛为证据和门禁。
-
-**第三到第六分钟（核心架构）**：讲四层——索引层负责把源码变成确定性事实；`graph.db`、BM25 和 ANN 负责本地读取；编排层负责 context pack、影响分析、任务恢复和交付状态机；MCP/CLI/HTTP/Workbench 只做适配。强调关键不变量：查询只读 active generation；空结果不等于不存在；Skill 不等于事实；模型命令不等于可执行命令。
-
-**第七到第十分钟（三个最难的技术问题）**：
-
-1. **静态代码图如何避免“边越多越不准”？** Java 调用边保存解析来源和置信度，默认优先高置信边；无法解析时保留 unresolved 证据而非猜测。
-2. **语义检索如何在大索引下保持 P95？** 查询规划控制检索源；精确图和 BM25 优先；dense 只对 selective candidates 建索引；大索引必须走 sqlite-vec 或 HNSW，禁止 Python 暴力余弦扫描。
-3. **索引实时更新如何不拖慢 Agent？** watcher 在后台去抖并做 scoped partial reindex；generation staging 完成后原子激活；查询读 active generation。
-
-**第十一到第十五分钟（可控 Agent 与质量闭环）**：讲任务状态机、argv 验证执行器、`knowledge_state`、`partial` 分析结果和 Skill canary。
-
----
-
-## 附录 H：常见设计误解
+## 附录 G：常见设计误解
 
 以下行为容易被误解为 bug，但其实是有意的设计取舍。
 
-**H.1 测试必须隔离 workspace**：`examples/spring-cloud-demo/.memory-center` 适合作为 demo 和 fixture 来源，但不适合作为测试写入目标。新增测试必须复制 demo 到 `tmp_path` 后操作，避免 `git status` 变脏和测试间互相污染。
+**G.1 测试必须隔离 workspace**：`examples/spring-cloud-demo/.memory-center` 适合作为 demo 和 fixture 来源，但不适合作为测试写入目标。新增测试必须复制 demo 到 `tmp_path` 后操作，避免 `git status` 变脏和测试间互相污染。
 
-**H.2 CLI/MCP/HTTP 入口必须统一解析 workspace.yaml**：入口接收的是 `workspace.yaml` 路径，但底层图谱存储打开的是 `graph.db`。入口层必须先解析 workspace（`WorkspaceStore(workspace)`），再用 `workspace_store.graph_db_path` 打开图谱，不能直接传 `workspace.yaml` 给 `GraphStore`。
+**G.2 CLI/MCP/HTTP 入口必须统一解析 workspace.yaml**：入口接收的是 `workspace.yaml` 路径，但底层图谱存储打开的是 `graph.db`。入口层必须先解析 workspace（`WorkspaceStore(workspace)`），再用 `workspace_store.graph_db_path` 打开图谱，不能直接传 `workspace.yaml` 给 `GraphStore`。
 
-**H.3 `user_prompt_submit` 默认只记录不注入**：这不是 bug，而是产品策略。`UserPromptSubmit` 挂在自然语言输入入口，suggest 型 prompt hook 容易被宿主解释成前置拦截器，导致“继续”“下一步”等普通输入被打断。因此默认配置为 `enabled: true` + `record_only: true`：hook 只把脱敏 prompt 交互写入交互历史，不注入提示、不阻塞输入；宿主 adapter 也只生成 record_only 版本（非 record_only 配置会被 adapter 跳过）。需要真正的 suggest 注入时必须由维护者显式改配置。推荐把自动调用放在生命周期明确的节点（`SessionStart -> mc_start`、`PreToolUse -> mc_analyze`、`Stop -> mc_close`）。
+**G.3 `user_prompt_submit` 默认只记录不注入**：这不是 bug，而是产品策略。`UserPromptSubmit` 挂在自然语言输入入口，suggest 型 prompt hook 容易被宿主解释成前置拦截器，导致“继续”“下一步”等普通输入被打断。因此默认配置为 `enabled: true` + `record_only: true`：hook 只把脱敏 prompt 交互写入交互历史，不注入提示、不阻塞输入；宿主 adapter 也只生成 record_only 版本（非 record_only 配置会被 adapter 跳过）。需要真正的 suggest 注入时必须由维护者显式改配置。推荐把自动调用放在生命周期明确的节点（`SessionStart -> mc_start`、`PreToolUse -> mc_analyze`、`Stop -> mc_close`）。
 
-**H.4 `mode` 与 `enabled` 的关系**：`mode` 表示“如果启用，这条 hook 应该怎么执行”；`enabled` 表示“这条 hook 当前是否参与执行”。`enabled: true` + `record_only: true` 的 `user_prompt_submit` 表示该 hook 参与执行，但只记录事件，不渲染 prompt、不阻塞。
+**G.4 `mode` 与 `enabled` 的关系**：`mode` 表示“如果启用，这条 hook 应该怎么执行”；`enabled` 表示“这条 hook 当前是否参与执行”。`enabled: true` + `record_only: true` 的 `user_prompt_submit` 表示该 hook 参与执行，但只记录事件，不渲染 prompt、不阻塞。
 
-**H.5 facade 与原子能力并存**：MCP 默认对模型暴露 15 个 task-level 工具，CLI/HTTP/core 内部仍保留很多原子能力。这不是重复设计——模型面对任务级接口降低工具选择成本，人类维护者和内部实现仍需原子能力做细粒度控制。
+**G.5 facade 与原子能力并存**：MCP 默认对模型暴露 15 个 task-level 工具，CLI/HTTP/core 内部仍保留很多原子能力。这不是重复设计——模型面对任务级接口降低工具选择成本，人类维护者和内部实现仍需原子能力做细粒度控制。
 
-**H.6 `async` 标记是宿主配置**：`hooks.yaml` 中 `async: true` 的消费方是宿主（Claude Code / Codex），不是 runner。宿主决定是否在后台运行该 hook；runner 只是一个一次性执行器。
+**G.6 `async` 标记是宿主配置**：`hooks.yaml` 中 `async: true` 的消费方是宿主（Claude Code / Codex），不是 runner。宿主决定是否在后台运行该 hook；runner 只是一个一次性执行器。
 
-**H.7 影响分析的 `partial` 不等于失败**：`mc_analyze` 返回 `analysis_status="partial"` 时，`impact`、`candidate_paths` 和 `recommended_path` 仍可用。应先验证高置信影响，或用 `depth="quick"` 获取最小影响面；只有 `error=true` 才表示入口级失败。
+**G.7 影响分析的 `partial` 不等于失败**：`mc_analyze` 返回 `analysis_status="partial"` 时，`impact`、`candidate_paths` 和 `recommended_path` 仍可用。应先验证高置信影响，或用 `depth="quick"` 获取最小影响面；只有 `error=true` 才表示入口级失败。
 
-**H.8 BM25 与 Vector 是两条不同的检索路径**：BM25 默认开启；Vector ANN 默认关闭，需显式启用。VectorIndex 存在不代表当前 workspace 已生成可用 embedding，默认关闭避免在模型、维度和数据质量未确认时增加查询成本。
+**G.8 BM25 与 Vector 是两条不同的检索路径**：BM25 默认开启；Vector ANN 默认关闭，需显式启用。VectorIndex 存在不代表当前 workspace 已生成可用 embedding，默认关闭避免在模型、维度和数据质量未确认时增加查询成本。
 
-**H.9 Audit 是语言自适应的**：`run_completion_audit()` 检测测试文件和框架配置时是多语言自适应的（Python/Java/JS/TS/Go/Rust），不会因为 service 不是 Python 就扣分。
+**G.9 Audit 是语言自适应的**：`run_completion_audit()` 检测测试文件和框架配置时是多语言自适应的（Python/Java/JS/TS/Go/Rust），不会因为 service 不是 Python 就扣分。
 
-**H.10 统一错误模型位于公开入口边界**：core 层现有 `ValueError`、`FileNotFoundError` 等调用合同保持兼容；HTTP 映射到状态码和结构化 body；MCP 返回 Agent 可判断的结构化错误；CLI 输出安全错误信息和退出码，不暴露 traceback。
+**G.10 统一错误模型位于公开入口边界**：core 层现有 `ValueError`、`FileNotFoundError` 等调用合同保持兼容；HTTP 映射到状态码和结构化 body；MCP 返回 Agent 可判断的结构化错误；CLI 输出安全错误信息和退出码，不暴露 traceback。
 
 ---
 
-## 附录 I：常见问题
+## 附录 H：常见问题
 
 **它是否替代 IDE、代码搜索或代码评审？**
 不替代。它为 Agent 和开发者提供结构化上下文、影响面和证据链；逐行阅读、设计决策和代码评审仍由人和现有研发流程负责。
@@ -1224,7 +1198,7 @@ Memory Center 是一个面向 AI 编程助手的本地优先 workspace 记忆与
 
 ### b15 知识任务与重排 / Knowledge tasks and reranking
 
-`platform/knowledge_tasks.py` 使用独立持久队列和单个后台线程执行知识刷新、全库整理。知识刷新在同一检索 generation 内原子替换非代码分块与词项，保留源码图；全库整理只创建有来源修订门禁的待审预览。会话候选接入默认关闭。检索授权过滤后可调用可选 `/rerank` 模型，失败显式回退。实际边界与未验证环境见 [b15 回执](implementation-receipts/V5_REFERENCE_ADOPTION.md)。
+`platform/knowledge_tasks.py` 使用独立持久队列和单个后台线程执行知识刷新、全库整理。知识刷新在同一检索 generation 内原子替换非代码分块与词项，保留源码图；全库整理只创建有来源修订门禁的待审预览。会话候选接入默认关闭。检索授权过滤后可调用可选 `/rerank` 模型，失败显式回退。实际边界与未验证环境随版本变化，以 [CHANGELOG](./CHANGELOG.md) 与 [5.0 平台指南](./V5_PLATFORM_GUIDE.md) 为准。
 
 English: A separate durable knowledge queue refreshes non-code retrieval rows atomically while retaining the code graph, or generates review-only organization previews. Session candidates are opt-in. Optional reranking runs after authorization filtering and explicitly falls back on failure.
 

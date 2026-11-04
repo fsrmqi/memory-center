@@ -1,58 +1,43 @@
-# DSH 本地执行观测 / Local DSH Execution Observability
+# 本地执行观测边界 / Local Execution Observability Boundary
 
-Memory Center can ingest sanitized execution metadata from the optional [Memory Center DSH Plugin](../memory-center-dsh-plugin/README.zh.md). The integration is local-only: DSH writes an inbox file and the plugin automatically triggers local import after flush or shutdown. The same plugin also provides a DSH-local, read-only workbench bridge for Memory Center workspace views. Neither component requires a cloud service.
+> 文档类型：设计边界（decision）。**本仓库不发布宿主插件**：执行元数据由外部宿主适配器采集，Memory Center 只定义接收与聚合边界。
 
-Memory Center 可从可选的 [Memory Center DSH 插件](../memory-center-dsh-plugin/README.zh.md)导入脱敏执行元数据。该集成仅在本地运行：DSH 写入 inbox，插件会在 flush 或 shutdown 后自动触发本地导入；同一插件还为 Memory Center 工作台提供 DSH 管理的只读本地 bridge。两个组件都不依赖云服务。
+Memory Center 可以接收宿主侧脱敏后的执行元数据，用于回答"这次任务花了多少时间、模型与工具各占多少、哪一步失败"。采集器是可选的，由宿主侧集成提供，不属于本仓库的发布物；Memory Center 本体不依赖云服务，也不因为没有采集器而降低能力。
 
-## Install / 安装
+Memory Center can ingest sanitized execution metadata produced by a host-side adapter to answer how long a task took, how much of it was model versus tool time, and where it failed. The collector is optional and ships outside this repository; Memory Center itself never requires a cloud service and loses no capability when no collector is installed.
 
-Install the bundle into one DSH profile. Other profiles are unchanged.
+## 设计边界 / Design Boundary
 
-将 bundle 安装到一个 DSH profile；其他 profile 不受影响。
+- Memory Center 只定义**接收格式**与**聚合口径**；宿主的采集实现、安装方式与 UI 呈现由对应宿主集成决定，不在本文档承诺。
+- 采集器把事件写入 `.memory-center/memory/agent-execution-inbox/` 下的追加式 NDJSON；导入按 event ID 幂等。
+- 没有采集器时服务正常运行；该能力不能成为任何主链路的必需前置。
 
-```sh
-dsh plugin --profile web add /absolute/path/to/memory-center-dsh-plugin
-dsh --profile web --dump-config
-```
+- Memory Center defines only the **ingest format** and **aggregation semantics**; install instructions and UI live with the host integration, not here.
+- The collector appends NDJSON events under `.memory-center/memory/agent-execution-inbox/`; imports are idempotent by event ID.
+- Without a collector the service runs normally; this capability is never a prerequisite of any primary path.
 
-Remove the bundle to restore that profile's prior composition.
+## 字段与隐私 / Fields and Privacy
 
-删除 bundle 即可恢复该 profile 之前的组合。
+采集元数据只包含标识、时间、模型/工具名称、Token 数、状态与错误类别。它不写入 prompt、消息正文、工具参数/结果、request header 或工作目录。可选的正文哈希只写 SHA-256，不写正文。
 
-```sh
-dsh plugin --profile web remove memory-center-dsh-plugin
-```
+Captured metadata contains only identifiers, time, model/tool names, token counts, statuses, and error classes. It never writes prompts, message bodies, tool arguments/results, request headers, or the working directory. The optional body mode writes a SHA-256 digest only.
 
-## Enable and workbench / 启用与工作台
+聚合结果返回的是**哈希化会话标识**、turn/step 数量、模型与工具耗时、首 Token 延迟、Token 统计与失败分类。哈希化不可逆推原始会话或路径。
 
-Installation enables the plugin for that profile. For every DSH session, it discovers `.memory-center/workspace.yaml` from the session cwd; sessions outside a Memory Center workspace are skipped and DSH remains unaffected. `MEMORY_CENTER_WORKSPACE` may override discovery with one explicit workspace file, but is not an enable switch.
+The summary reports hashed session identifiers, turn/step counts, model and tool duration, first-token latency, token accounting, and failure classes. Hashing is not reversible into raw sessions or paths.
 
-安装即为该 profile 启用插件。每个 DSH session 会从 cwd 向上发现 `.memory-center/workspace.yaml`；不属于 Memory Center workspace 的 session 会被跳过，DSH 不受影响。`MEMORY_CENTER_WORKSPACE` 可覆盖为一个固定 workspace 文件，但不是启用开关。
+## 失败行为 / Failure Behavior
 
-After DSH starts, the plugin lazily starts and manages a loopback-only, read-only Memory Center query bridge for the detected workspace. The DSH Web `Memory Center` tab therefore does not require a separate `memory-center serve-http` command. Closing DSH stops the bridge; Memory Center itself remains independently usable through CLI, MCP, or HTTP.
+采集器必须 fail-open：队列溢出、本地写入失败与关闭超时最多丢失观测记录，绝不能让 Agent 主循环失败。导入失败不修改宿主会话数据，也不修改 Memory Center 的代码或任务记忆。
 
-DSH 启动后，插件会按需启动并管理已发现 workspace 的、仅绑定 loopback 的只读 Memory Center 查询 bridge。因此 DSH Web 的 `Memory Center` 标签不需要另行运行 `memory-center serve-http`。关闭 DSH 会停止 bridge；Memory Center 本体仍可独立通过 CLI、MCP 或 HTTP 使用。
+The collector must be fail-open: queue overflow, local write failure, and shutdown timeout may drop observability records but must never fail the agent loop. Import failures modify neither host session data nor Memory Center code/task memory.
 
-Captured metadata contains identifiers, time, model/tool names, token counts, statuses, and error classes. It never writes prompts, message bodies, tool arguments/results, request headers, or cwd. `diagnosticHash: true` additionally writes only a SHA-256 body hash.
+## 非目标 / Non-goals
 
-采集元数据包含标识、时间、模型/工具名称、Token 数、状态与错误类别，不写入 prompt、消息正文、工具参数/结果、request header 或 cwd。`diagnosticHash: true` 只额外写入 body 的 SHA-256。
+- 不做跨机器的遥测汇聚，不上传任何执行元数据。
+- 不把观测数据写入知识库或长期记忆；它只作为本机运行诊断。
+- 不承诺具体采集器的安装路径、命令或宿主页面入口。
 
-## Import and inspect / 导入与查看
-
-```sh
-memory-center agent-execution-import \
-  --workspace /absolute/path/to/.memory-center/workspace.yaml
-
-memory-center agent-execution-summary \
-  --workspace /absolute/path/to/.memory-center/workspace.yaml
-```
-
-The summary reports hashed DSH session IDs, turn/step counts, model/tool duration, first-token latency, token accounting, and failures. The inbox is append-only and imports are idempotent by event ID. Manual import remains only a troubleshooting path.
-
-摘要返回哈希化的 DSH session ID、turn/step 数量、模型/工具耗时、首 Token 延迟、Token 统计和失败。inbox 仅追加，导入按 event ID 幂等。手工导入仅用于排障。
-
-## Failure behavior / 失败行为
-
-The plugin is fail-open. Queue overflow, local write failure, and shutdown timeout may drop observability records, but never fail the DSH agent loop. Import failures do not modify DSH session data or Memory Center code/task memory.
-
-插件为 fail-open。队列溢出、本地写入失败和 shutdown 超时最多丢失观测记录，绝不会让 DSH agent loop 失败。导入失败不会修改 DSH session 数据，也不会修改 Memory Center 的代码/任务记忆。
+- No cross-machine telemetry aggregation and no upload of execution metadata.
+- Observability data is never promoted into the knowledge base or long-term memory; it stays local diagnostics.
+- No install paths, commands, or host UI entry points are promised for any specific collector.

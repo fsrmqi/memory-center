@@ -1,0 +1,88 @@
+Memory Center
+Copyright 2026 Memory Center Contributors
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+It includes third-party software as described below. When you redistribute this
+product or any derivative work in source or object form, keep this NOTICE file
+and the third-party notices it contains, as required by Apache License 2.0,
+Section 4(d).
+
+================================================================================
+1. Frontend components bundled into the built admin page
+================================================================================
+
+The admin web UI is built from frontend/ with Vite and shipped inside the
+distribution at memory_center/service/static/. The resulting bundle contains
+the following MIT-licensed code:
+
+  Vue.js 3.5.22 and the @vue/* runtime packages 3.5.22
+  (@vue/shared, @vue/reactivity, @vue/runtime-core, @vue/runtime-dom,
+   @vue/compiler-dom, @vue/compiler-sfc, @vue/compiler-core,
+   @vue/compiler-ssr, @vue/server-renderer)
+  License: MIT
+  Copyright (c) 2018-present, Yuxi (Evan) You
+  Upstream: https://github.com/vuejs/core
+
+The MIT license text that applies to the components above is reproduced at the
+end of this file.
+
+================================================================================
+2. Build-time frontend tooling (not redistributed in the runtime artifact)
+================================================================================
+
+  Vite 7.1.9                  MIT    https://github.com/vitejs/vite
+  @vitejs/plugin-vue 6.0.1    MIT    https://github.com/vitejs/vite-plugin-vue
+  vue-tsc 3.1.0               MIT    https://github.com/vuejs/language-tools
+  TypeScript 5.9.3            Apache-2.0  https://github.com/microsoft/TypeScript
+
+These packages are used only to build the admin page. They are not vendored in
+this repository and are not part of the files produced by the build; each
+remains governed by its own license. Exact versions are pinned in
+frontend/package.json and frontend/package-lock.json.
+
+================================================================================
+3. Python dependencies (resolved, not vendored)
+================================================================================
+
+Runtime and optional Python dependencies are declared in pyproject.toml and
+pinned in requirements-service.lock. They are installed from the Python Package
+Index at install time and are not copied into this repository, so each is
+distributed under its own license by its own project:
+
+  fastapi, starlette, uvicorn, httpx, sse-starlette, anyio   MIT
+  mcp, tree-sitter and the tree-sitter-* grammars           MIT
+  pydantic, pydantic-core                                   MIT
+  psycopg / psycopg-binary, python-docx, python-pptx,
+  openpyxl, pypdf, filelock, pyyaml, typer, click, rich     MIT / BSD / Apache-2.0
+                                                            as declared upstream
+
+No third-party source code is vendored into this repository; the entries above
+are external dependencies only. Refer to each upstream project for the full
+license text and copyright notices. If you bundle these dependencies into your
+own distribution, carry their notices with it.
+
+================================================================================
+4. MIT License text (applies to the Vue.js / @vue/* components in section 1)
+================================================================================
+
+The MIT License (MIT)
+
+Copyright (c) 2018-present, Yuxi (Evan) You
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.

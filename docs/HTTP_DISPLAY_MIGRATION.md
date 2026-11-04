@@ -1,7 +1,6 @@
 # HTTP 展示迁移说明 / HTTP Display Migration
 
-> 文档类型：迁移指南（current）
-> 适用版本：4.6.28 及之后。
+> 文档类型：迁移参考（historical）。适用 4.6.28 起的展示面下线；5.0 的服务入口与接口合同以 [5.0 平台指南](./V5_PLATFORM_GUIDE.md) 与 [REFERENCE](./REFERENCE.md) 为准。
 
 ## 结论 / Summary
 
@@ -9,23 +8,27 @@ Memory Center 不再托管内置 HTML 工作台或 Vue SPA。`/ui/*` 和 `/app` 
 
 Memory Center no longer hosts the bundled HTML workbench or Vue SPA. `/ui/*` and `/app` were removed and return `404`; the server provides no redirect, HTML fallback, or legacy frontend assets.
 
-交互式展示请使用 Memory Center DSH Plugin。自建集成应直接消费 `/workspace/*` JSON 读模型，并仅把响应中的脱敏、有界字段展示给用户。
+交互式展示请使用服务自带的管理页 `/admin/`。自建集成应直接消费 `/workspace/*` 的 JSON 读模型，并仅把响应中的脱敏、有界字段展示给用户。第三方宿主前端（如有）属于可选的独立集成，不在本仓库发布范围内。
 
-Use the Memory Center DSH Plugin for interactive presentation. Custom integrations should consume `/workspace/*` JSON read models directly and display only their bounded, sanitized fields.
+Use the bundled management page at `/admin/` for interactive presentation. Custom integrations should consume the `/workspace/*` JSON read models directly and display only their bounded, sanitized fields. Any third-party host frontend is an optional, separately distributed integration and is not part of this repository.
 
 ## 旧入口映射 / Legacy Endpoint Mapping
 
-| 已下线入口 | DSH 对应视图 | JSON 读模型 |
+| 已下线入口 | 现在的替代 | JSON 读模型 |
 |---|---|---|
-| `/ui`、`/ui/dashboard` | 概览 | `GET /workspace/workbench-summary`、`GET /workspace/status` |
-| `/ui/continuity`、`/ui/task` | 任务 | `GET /workspace/work-resume`、`GET /workspace/task-delivery-overview` |
-| `/ui/timeline`、`/ui/ref` | 任务时间线与证据 | `GET /workspace/drill-timeline`、`GET /workspace/receipts` |
-| `/ui/impact`、`/ui/group` | 影响 | `GET /workspace/impact`、`GET /workspace/group-impact` |
-| `/ui/usage` | 运行 | `GET /workspace/usage-report` |
-| `/ui/backend` | 知识与存储诊断 | `GET /workspace/memory-backend`、`GET /workspace/backend-consistency` |
-| `/ui/index-freshness` | 质量 | `GET /workspace/freshness`、`GET /workspace/quality-overview` |
-| `/ui/jobs` | 运行 | `GET /workspace/job-status` |
-| `/app` | DSH 原生工作台 | 不适用；选择所需 JSON 读模型 |
+| `/ui`、`/ui/dashboard` | 管理页概览 | `GET /workspace/workbench-summary`、`GET /workspace/status` |
+| `/ui/continuity`、`/ui/task` | 管理页任务视图 | `GET /workspace/work-resume`、`GET /workspace/work-resume-check` |
+| `/ui/timeline`、`/ui/ref` | 管理页证据视图 | `GET /workspace/drill-timeline`、`GET /workspace/drill-ref` |
+| `/ui/impact`、`/ui/group` | 管理页影响视图 | `GET /workspace/impact` |
+| `/ui/usage` | 管理页运行视图 | `GET /workspace/dashboard` |
+| `/ui/backend` | 管理页知识与存储诊断 | `GET /workspace/memory-backend-query`、`GET /workspace/backend-consistency` |
+| `/ui/index-freshness` | 管理页质量视图 | `GET /workspace/freshness` |
+| `/ui/jobs` | 管理页运行视图 | 任务终态见 `GET /workspace/status` 与 [REFERENCE](./REFERENCE.md) |
+| `/app` | 管理页 `/admin/` | 不适用；选择所需 JSON 读模型 |
+
+完整端点列表以 [REFERENCE](./REFERENCE.md) 的 HTTP 端点章节与服务实际的 OpenAPI schema 为准。
+
+The complete endpoint list lives in [REFERENCE](./REFERENCE.md) and the live OpenAPI schema.
 
 ## 集成迁移 / Integration Migration
 
@@ -35,13 +38,11 @@ All HTTP requests continue to use the existing `workspace` query parameter. Writ
 
 ```text
 # 旧：浏览器打开 /ui/jobs?workspace=/path/to/workspace.yaml
-# 新：DSH 运行视图，或由自建前端读取：
-GET /workspace/job-status?workspace=/path/to/workspace.yaml&limit=20
-```
+# 新：管理页任务视图，或由自建前端读取：
+GET /workspace/status?workspace=/path/to/workspace.yaml
 
-```text
 # 旧：浏览器打开 /ui/dashboard?workspace=/path/to/workspace.yaml
-# 新：DSH 概览，或由自建前端读取：
+# 新：管理页概览，或由自建前端读取：
 GET /workspace/workbench-summary?workspace=/path/to/workspace.yaml
 ```
 
@@ -54,7 +55,8 @@ GET /workspace/workbench-summary?workspace=/path/to/workspace.yaml
 
 ## 边界 / Boundaries
 
-- DSH Plugin 是交互式展示层，不保存第二套项目事实。
+- 管理页是展示层，不保存第二套项目事实。
 - Memory Center HTTP 仍是本地 JSON API；不恢复内置静态文件托管。
 - 迁移不改变 MCP、CLI 或 `/workspace/*` 既有 JSON 契约。
 - 自定义前端不得直接读取 `.memory-center` 下的 SQLite、JSONL、源码或 Wiki 正文。
+- 服务按 `workspace_id` 登记项目；登记与预览接口见 [项目目录管理指南](./V5_CATALOG_GUIDE.md)。

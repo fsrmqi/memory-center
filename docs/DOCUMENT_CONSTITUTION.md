@@ -14,7 +14,7 @@
 | 操作 | 当前任务怎样完成？ | USER_GUIDE、MCP_GUIDE |
 | 事实 | 现在有哪些入口和字段？ | 代码、`--help`、路由注册、REFERENCE |
 | 对外介绍 | 价值、能力边界和技术路线如何被非维护者理解？ | README、ARCHITECTURE |
-| 决策 | 为什么这样设计，何时推翻？ | ADR、decisions、主计划 |
+| 决策 | 为什么这样设计，何时推翻？ | ADR、decisions |
 | 历史 | 过去发生过什么？ | archive、CHANGELOG |
 
 同一事实只能有一个权威来源；其他文档必须链接或概述，不能复制出独立版本。
@@ -26,9 +26,9 @@
 - `historical`：只可追溯，不可作为当前实现或计划依据。
 - `generated`：由代码或测试生成/校验，不允许手工猜测接口。
 
-`docs/implementation-receipts/`、`docs/benchmarks/`、`docs/*_RESEARCH.md` 和 `docs/DATA_*.md` 是历史或证据文档：它们保留当时的版本、样本与结论，不重写成当前状态。当前行为只由 Active Docs、代码、`--help`、路由与 schema 定义。
+内部证据不进公开仓库：实施回执、基准取证、研究材料与运行样本保存在维护者内部文档库，公开仓库只保留 CHANGELOG 与 ADR/decisions。公开的历史条目保留当时的版本、样本与结论，不重写成当前状态。当前行为只由 Active Docs、代码、`--help`、路由与 schema 定义。
 
-主计划只记录未完成承诺。完成项迁入 CHANGELOG、ADR 或 decision；过期步骤必须删除，而不是留在“下一步”中。
+完成项迁入 CHANGELOG、ADR 或 decision；过期步骤必须删除，而不是留在“下一步”中。
 
 ## 更新与验证
 
@@ -53,16 +53,16 @@
 
 这些文档应优先保持和当前实现一致：
 
-- [DOCUMENT_STATUS.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/DOCUMENT_STATUS.md) — 当前、决策与历史文档的状态目录
+- [DOCUMENT_STATUS.md](./DOCUMENT_STATUS.md) — 当前、决策与历史文档的状态目录
 
-- [README.md](/Users/cuijiaqi/Ai-common-skills/memory-center/README.md) — 项目总览、安装、快速开始
-- [ARCHITECTURE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/ARCHITECTURE.md) — 当前系统架构、分层边界、运行模型（含设计决策附录）
-- [MCP_GUIDE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/MCP_GUIDE.md) — MCP facade、宿主接入、推荐调用顺序
-- [USER_GUIDE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/USER_GUIDE.md) — 用户操作路径、CLI/HTTP/MCP 常见工作流
-- [REFERENCE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/REFERENCE.md) — 命令、接口、参数、schema 与约束参考
-- [CHANGELOG.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/CHANGELOG.md) — 已发布和未发布变更记录
-- [NEXT_PHASE_MASTER_PLAN.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/NEXT_PHASE_MASTER_PLAN.md) — 当前唯一活跃的开发路线
-- [ONTOLOGY.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/ONTOLOGY.md) — 轻量本体：领域实体、关系与演进计划
+- [README.md](../README.md) — 项目总览、安装、快速开始
+- [ARCHITECTURE.md](./ARCHITECTURE.md) — 当前系统架构、分层边界、运行模型（含设计决策附录）
+- [MCP_GUIDE.md](./MCP_GUIDE.md) — MCP facade、宿主接入、推荐调用顺序
+- [USER_GUIDE.md](./USER_GUIDE.md) — 用户操作路径、CLI/HTTP/MCP 常见工作流
+- [REFERENCE.md](./REFERENCE.md) — 命令、接口、参数、schema 与约束参考
+- [CHANGELOG.md](./CHANGELOG.md) — 已发布和未发布变更记录
+- [ADR-0004：服务化平台与管理页](./adr/0004-service-platform-and-admin.md) — 服务化方向与展示面边界的决策入口
+- [ONTOLOGY.md](./ONTOLOGY.md) — 轻量本体：领域实体、关系与演进计划
 
 ## 更新规则
 
@@ -74,9 +74,9 @@
 4. `docs/REFERENCE.md`
 5. `docs/CHANGELOG.md`
 
-只有在该变更确实影响开发路线或发布流程时，再更新：
+只有在该变更确实影响决策边界或发布流程时，再更新：
 
-- `docs/NEXT_PHASE_MASTER_PLAN.md`
+- `docs/adr/`（新增或修订决策）与 `docs/CHANGELOG.md`
 
 ## Release / 发布清单
 
@@ -103,8 +103,8 @@
 
 如果你只想快速判断"现在该信哪份文档"，按下面顺序读：
 
-1. [README.md](/Users/cuijiaqi/Ai-common-skills/memory-center/README.md)
-2. [ARCHITECTURE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/ARCHITECTURE.md)
-3. [MCP_GUIDE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/MCP_GUIDE.md)
-4. [USER_GUIDE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/USER_GUIDE.md)
-5. [CHANGELOG.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/CHANGELOG.md)
+1. [README.md](../README.md)
+2. [ARCHITECTURE.md](./ARCHITECTURE.md)
+3. [MCP_GUIDE.md](./MCP_GUIDE.md)
+4. [USER_GUIDE.md](./USER_GUIDE.md)
+5. [CHANGELOG.md](./CHANGELOG.md)

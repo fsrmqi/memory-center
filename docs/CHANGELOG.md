@@ -1,5 +1,25 @@
 # Changelog / 更新日志
 
+## 5.0.0b27 — 开源就绪：仓库卫生与发布面 / Open-source readiness: repository hygiene and public surface
+
+### 新增 / Added
+
+- **公开快照发布流程**：新增 `scripts/public_release.sh`、仓库根 `.gitattributes`（`export-ignore` 规则）与 `docs/PUBLISHING.md`。私有仓保留完整历史与内部资料，公开发布时用 `git archive` 导出脱敏后的树并作为独立首个提交发布，公开仓库因此不含任何私有提交；发布前的门禁检查私有标识、真实家目录、凭证模式、内部路径、必备文件与 Markdown 断链，任一不过即失败且不影响私有仓。
+- **许可证与第三方声明**：`LICENSE` 替换为 Apache License 2.0 官方全文（含附录与版权行），新增 `NOTICE` 声明前端 bundle 内含的 MIT 依赖；`MANIFEST.in` 随包分发 `NOTICE`。
+- **CI 与协作模板入库**：`.github/` 不再被忽略，纳入 CI（Python 3.11 必过、3.12 实验性）、issue/PR 模板、dependabot 与 Python 编码约定；CI 的 lint 分为「阻断语法/未定义名」与「全量 ruff 建议性」两步。
+- **贡献与许可入口**：README 末尾新增贡献指引与标准 Apache-2.0 许可段（链接 `LICENSE`/`NOTICE` 与发布文档）。
+
+Added a public-snapshot release flow (`scripts/public_release.sh`, root `.gitattributes` `export-ignore` rules, `docs/PUBLISHING.md`), the full Apache-2.0 `LICENSE` text plus a `NOTICE` for bundled MIT frontend dependencies, version-controlled `.github/` CI and collaboration templates, and README contributing/license sections. The public repository is produced by exporting a sanitized tree and publishing it as its own first commit, so no private commit ever reaches it.
+
+### 变更 / Changed
+
+- **仓库卫生**：示例目录中的 24 个生成物（`graph.db`、`index/*.json`、`store.lock`）与第三方 awesome 清单不再入库，改为可由 `memory-center reindex` 重建；`.gitignore` 补齐示例生成物、`.env`、`compose.override.yaml`、`.worktrees/`、`.gitnexus/` 等缺口。
+- **公开文档脱敏**：移除公司/工程标识、个人绝对路径、真实业务 FQN 与示例、真实工作区规模指标、内部排期与协作记录、售前/面试话术附录；内部路线、实现回执、真实工作区基准与竞品调研移出公开文档集合，不再随仓库发布（公开面只保留使用与贡献文档、CHANGELOG 与 ADR）。README、CHANGELOG、架构、用户指南、参考、平台/目录/服务指南均按此口径改写，历史条目中的死链改为纯文字引用。
+- **测试与配置清理**：`memory_center/core/indexing/java_ir.py` 修正 `FileRecord`/`SymbolRecord` 的前向引用（F821）；文档契约测试与回归测试不再断言已移出公开面的内部计划文档；`pyproject.toml` 中测试排除项的内部分批说明改为中性表述。
+- **版本同步**：包、前端、Compose 与当前版本文档同步至 5.0.0b27。
+
+Repository hygiene (generated example artifacts and unrelated third-party lists are no longer tracked and can be rebuilt with `memory-center reindex`; `.gitignore` gaps closed), public-document desensitization (company/project identifiers, personal paths, real business examples and scale metrics, internal schedules and sales/interview appendices removed; internal plans, receipts and benchmarks are no longer part of the published document set), a forward-reference lint fix in `java_ir.py`, and version synchronization to 5.0.0b27.
+
 ## 5.0.0b26 — 工程约定 profile 化 / Pluggable workspace profiles
 
 ### 新增 / Added
@@ -126,14 +146,14 @@ The verification/benchmark scripts that were named after a private project are n
 - SQLite 精确向量检索改为流式 Top-K，扫描上限保留默认 5,000，并支持环境变量配置／0 关闭；过滤与确定性排序保持兼容，避免全量向量候选驻留内存。
 - 真实模型验收复现空白源码分块导致 HTTP 400：过滤空白分块，单行压缩源码按片段完整分块并保留行／列位置，防止巨型分块被模型截断。模型错误新增 `MODEL_HTTP_ERROR`、`MODEL_TIMEOUT` 分类，不再把 HTTP 拒绝或超时统一报告为连接失败；工具参数保持兼容。
 - Project storage governance adds scoped retention, paginated previews and confirmed cleanup with expiry/stale-plan safeguards. SQLite vector recall streams Top-K with a configurable optional scan budget.
-- 部署与真实验收结果见 [b17 实施回执](implementation-receipts/V5_STORAGE_GOVERNANCE.md)。
+- 部署与真实验收结果见本轮实施回执（内部资料，不随公开仓库发布）。
 
 ## 5.0.0b16 — 开发中，未发版 / Unreleased
 
 - 项目管理新增空间占用面板与只读 `GET /api/v1/workspaces/{workspace_id}/storage`：按项目统计当前／其他索引代际、解析缓存、向量缓存、分块与向量载荷、关键词索引文本及项目记录；切换项目与手动刷新按需读取，异常或符号链接跳过明确显示为部分统计。
 - 文件逻辑大小与数据库载荷分别展示；向量是数据库载荷子项，共享 SQLite 文件与 PostgreSQL 物理页不分摊、不重复计入。源码与外部 Wiki 挂载不计入服务项目数据。同步 Python、前端、锁文件、Compose 与当前文档版本，不发布、不部署。
 - Project management now exposes per-project storage accounting with refresh and scope isolation. Logical file sizes and database payloads are distinct from shared physical storage; vector payload is a subset, and incomplete scans are visible. Source trees and external Wiki mounts are excluded.
-- 验证与环境边界见 [b16 项目空间统计回执](implementation-receipts/V5_PROJECT_STORAGE.md)：272 项通过、49 项环境跳过，桌面交互及前端／wheel 构建通过；PostgreSQL 未配置隔离库，未部署生产容器。
+- 验证与环境边界见 b16 项目空间统计回执（内部资料，不随公开仓库发布）：272 项通过、49 项环境跳过，桌面交互及前端／wheel 构建通过；PostgreSQL 未配置隔离库，未部署生产容器。
 
 ## 5.0.0b15 — 开发中，未发版 / Unreleased
 
@@ -144,26 +164,26 @@ The verification/benchmark scripts that were named after a private project are n
 - 后台任务详情添加安全错误分类、诊断标识、人工处理建议和阶段事件；整理模型展示真实耗时与供应商返回的 Token 数，Skill 成本明确标为估算。
 - 同步 Python／前端／锁文件／Compose 开发版本；本轮不发布、不部署，不变更其他 DSH 插件。
 
-本轮使用方法、参考吸收清单和验收边界见 [b15 实施回执](implementation-receipts/V5_REFERENCE_ADOPTION.md)。
+本轮使用方法、参考吸收清单和验收边界见 b15 实施回执（内部资料，不随公开仓库发布）。
 
 English: Reserves the global CPU budget, treats corrupt cache encoding as a miss, bounds embedding requests and guards cancellation after responses. Adds independent knowledge refresh, review-only bulk organization, optional reranking, answer-key retrieval evaluation, opt-in session candidates, TS aliases/re-exports and conservative inherited calls. Diagnostic receipts and model usage are exposed without raw exception secrets; skill token estimates are explicitly estimates. Development changes only; no release or deployment.
 
 ## 5.0.0b14 — 2026-10-10
 
 - **新增内容寻址的向量缓存**（`platform/embedding_cache.py`）：键 = 契约版本 ‖ 命名空间 ‖ 模型指纹（`url`/`model`/`protocol`/`dimensions` 的哈希）‖ 文本 sha256。换模型或改维度必然整体未命中，不会把别的模型算出的向量喂回索引；命中与未命中返回**逐值相等**的向量，缓存只影响速度。
-- **缓存按分片打包，而不是一条一个文件**。实测本机新建一个文件是约 4–15 ms 的**固定**开销（1 KiB 与 1.5 MiB 都约 14.5 ms/文件）：9,459 条向量若一条一个文件，单轮写缓存要约 250 s。改为 2 位哈希前缀分片（256 个分片）、`put` 只改内存并标记脏、由新增的 `flush()` 整片原子重写，单轮写缓存降到约 1 s；`flush()` 结束即释放分片内存，不会把整个工作区的向量常驻在进程里。缓存位于工作区目录（`<data_dir>/workspaces/<id>/embedding-cache`），跨代际存活，只在发布成功后按 `MEMORY_CENTER_EMBEDDING_CACHE_MB`（默认 1 GiB，0 关闭）淘汰。
+- **缓存按分片打包，而不是一条一个文件**。实测本机新建一个文件是约 4–15 ms 的**固定**开销（1 KiB 与 1.5 MiB 都约 14.5 ms/文件）：一批向量若一条一个文件，单轮写缓存要约 250 s。改为 2 位哈希前缀分片（256 个分片）、`put` 只改内存并标记脏、由新增的 `flush()` 整片原子重写，单轮写缓存降到约 1 s；`flush()` 结束即释放分片内存，不会把整个工作区的向量常驻在进程里。缓存位于工作区目录（`<data_dir>/workspaces/<id>/embedding-cache`），跨代际存活，只在发布成功后按 `MEMORY_CENTER_EMBEDDING_CACHE_MB`（默认 1 GiB，0 关闭）淘汰。
 - **嵌入批处理改为保序并发 + 连接复用**。`Embedder` 拆出单批请求 `_request`，`_connection` 支持调用方注入 `httpx.Client`——索引路径注入一个长生命周期 client，不再像原先那样**每批新建/销毁一个 client**；新增 `embed_many(texts, cache=, concurrency=, should_stop=, on_batch=)`，用 `ThreadPoolExecutor.map` 保序并发，缓存命中短路，取消抛 `EmbeddingCancelled`（索引就地停止、不发布），模型故障照常抛 `CatalogError`（保留上一代索引）。批大小与并发度由 `MEMORY_CENTER_EMBEDDING_BATCH`（默认 16）与 `MEMORY_CENTER_EMBEDDING_CONCURRENCY`（默认 8，上限 32）配置。模型连接验证与查询向量化两条路径**刻意不接缓存**：前者要反映「此刻服务是否可用」，后者要反映「此刻这条查询」。
 - **修掉一个「缓存改变产物」的真实缺陷**。模型会把恰好为整数的分量序列化成 JSON 整数（`0` 而非 `0.0`），`json.loads` 于是给出 `int`，而缓存写入把元素归一化成 `float`——未命中产出 `int`、命中产出 `float`，`0 == 0.0` 为真却 `repr` 不同。修复：`_request` 校验后统一归一化为 `float`。**教训**：等价性门槛必须细到 `repr`，`==` 判不出 `int`/`float`、`-0.0`/`0.0` 这类差异。
-- 实测（真实项目 3,552 个可解析文件 / 9,459 块 / 592 批 / 768 维，EmbeddingGemma-2 740m @ 本机 ollama，单进程内依次执行）：**热缓存 426.64 s → 1.65 s（258×）且请求数归零**；写缓存代价 +2%；**并发 8 路只有 1.03×**——本地单实例 ollama 服务端推理串行，HTTP 并发只是排队（同一切片改用可控端点、服务端可并行时为 6.30×）；连接复用在受控端点 L=0 档为 1.48×。四场景（冷跑/并发/写缓存/热跑）产物指纹一致（`2acf817a0d96ba5c`），即缓存与并发只改速度不改产物。方法与数值复核见 [V5_EMBEDDING_STAGE_BASELINE.md](benchmarks/V5_EMBEDDING_STAGE_BASELINE.md)。
+- 实测（真实项目，EmbeddingGemma-2 740m @ 本机 ollama，单进程内依次执行）：**热缓存 426.64 s → 1.65 s（258×）且请求数归零**；写缓存代价 +2%；**并发 8 路只有 1.03×**——本地单实例 ollama 服务端推理串行，HTTP 并发只是排队（同一切片改用可控端点、服务端可并行时为 6.30×）；连接复用在受控端点 L=0 档为 1.48×。四场景（冷跑/并发/写缓存/热跑）产物指纹一致（`2acf817a0d96ba5c`），即缓存与并发只改速度不改产物。方法与数值复核记录见内部基准文档。
 - MCP tool schema、取消与原子发布合同不变；`StructuralParseResult` 与各 API 形状不变。
 
-English: Adds a content-addressed vector cache (`platform/embedding_cache.py`) keyed by (schema, namespace, model fingerprint, text sha256), so switching model or dimensions invalidates everything and hits and misses return value-identical vectors. Entries are **sharded** rather than one-file-per-key: creating a file costs a ~4–15 ms *fixed* penalty on this machine regardless of size (1 KiB and 1.5 MiB both ≈14.5 ms), so 9,459 vectors as individual files took ~250 s to write, while 256 hash-prefix shards with an in-memory `put` plus a batched atomic `flush()` bring that to ~1 s and release shard memory afterwards. The cache lives under the workspace directory (survives generations) and evicts by `MEMORY_CENTER_EMBEDDING_CACHE_MB` (default 1 GiB, 0 disables) after a successful publish. Embedding reuses one `httpx.Client` for a whole index instead of creating one per batch, and `embed_many(..., cache=, concurrency=, should_stop=, on_batch=)` runs batches on a GIL-friendly thread pool while preserving input order; cancellation raises `EmbeddingCancelled` (the index stops without publishing) and model failures still raise `CatalogError` (the previous generation stays readable). Batch size and concurrency come from `MEMORY_CENTER_EMBEDDING_BATCH` (16) and `MEMORY_CENTER_EMBEDDING_CONCURRENCY` (8, cap 32), and the connection-verification and query-vector paths deliberately stay uncached. Also fixes a real "cache changes the artifact" defect: the model serializes integral components as JSON integers, so misses yielded `int` while the cache normalized to `float` — equal under `==` but different under `repr`. Measured on a real 3,552-file / 9,459-chunk / 768-dim slice with EmbeddingGemma-2 740m locally: warm cache 426.64 s → **1.65 s (258×) with zero requests**, writing the cache costs +2%, and 8-way concurrency yields only 1.03× because a single local ollama instance serializes inference (6.30× against a parallel-capable endpoint). All four scenarios (cold/concurrent/write-cache/warm) produce the same vector fingerprint, confirming cache and concurrency change speed only. MCP schemas, cancellation and atomic publishing are unchanged.
+English: Adds a content-addressed vector cache (`platform/embedding_cache.py`) keyed by (schema, namespace, model fingerprint, text sha256), so switching model or dimensions invalidates everything and hits and misses return value-identical vectors. Entries are **sharded** rather than one-file-per-key: creating a file costs a ~4–15 ms *fixed* penalty on this machine regardless of size (1 KiB and 1.5 MiB both ≈14.5 ms), so writing vectors one file per key took ~250 s to write, while 256 hash-prefix shards with an in-memory `put` plus a batched atomic `flush()` bring that to ~1 s and release shard memory afterwards. The cache lives under the workspace directory (survives generations) and evicts by `MEMORY_CENTER_EMBEDDING_CACHE_MB` (default 1 GiB, 0 disables) after a successful publish. Embedding reuses one `httpx.Client` for a whole index instead of creating one per batch, and `embed_many(..., cache=, concurrency=, should_stop=, on_batch=)` runs batches on a GIL-friendly thread pool while preserving input order; cancellation raises `EmbeddingCancelled` (the index stops without publishing) and model failures still raise `CatalogError` (the previous generation stays readable). Batch size and concurrency come from `MEMORY_CENTER_EMBEDDING_BATCH` (16) and `MEMORY_CENTER_EMBEDDING_CONCURRENCY` (8, cap 32), and the connection-verification and query-vector paths deliberately stay uncached. Also fixes a real "cache changes the artifact" defect: the model serializes integral components as JSON integers, so misses yielded `int` while the cache normalized to `float` — equal under `==` but different under `repr`. Measured on a real slice with the EmbeddingGemma-2 740m model locally: warm cache 426.64 s → **1.65 s (258×) with zero requests**, writing the cache costs +2%, and 8-way concurrency yields only 1.03× because a single local ollama instance serializes inference (6.30× against a parallel-capable endpoint). All four scenarios (cold/concurrent/write-cache/warm) produce the same vector fingerprint, confirming cache and concurrency change speed only. MCP schemas, cancellation and atomic publishing are unchanged.
 
 ## 5.0.0b13 — 2026-10-10
 
 - **消除解析侧的重复读取**。此前同一份源码在「切块」「通用结构解析」「Java 专用解析」三处各自读一遍、各自算一次 sha256。现在扫描/切块阶段顺带算出的内容 sha256 会传给两条解析路径（`build_code_graph` 的 `digests` 与 `reindex_workspace` 的 `source_digests`）：解析先按该键查缓存，**命中即完全不碰文件系统**。热跑（缓存命中）下每个文件只读 1 次、只算 1 次哈希，解析阶段零读取；冷跑仍需为解析读取文本，但哈希同样只算 1 次。未提供 digest 的调用方退回旧行为（读文件、算哈希、再查一次缓存），产物逐值不变。
 - **Java 延迟 Feign 解析不再内嵌源码文本**。`pending_feign` 由 `(项目, 相对路径, 源码文本, 符号)` 改为 `(项目, 相对路径, 绝对路径, 符号)`，Feign 目标解析阶段按需读取——只有 Feign 接口自身需要文本，其数量远小于全部 Java 文件。串行／池化／冷／热四条路径的产物形状因此完全一致，且解析产物不再跨阶段驻留整份源码。
-- **解析缓存默认预算按工作区规模自适应**。载荷实测约为可解析源码的 4.8×，固定 512 MiB 会让 175 MiB 源码的工作区（需约 840 MiB）每轮都淘汰刚写下的条目。默认预算改为 `max(512 MiB, 可解析源码字节 × 6)`，上限 4 GiB；显式设置 `MEMORY_CENTER_PARSE_CACHE_MB`（含 `0` 关闭）时仍以它为准，小工作区不受影响。
+- **解析缓存默认预算按工作区规模自适应**。载荷实测约为可解析源码的 4.8×，固定 512 MiB 会让较大的源码工作区每轮都淘汰刚写下的条目。默认预算改为 `max(512 MiB, 可解析源码字节 × 6)`，上限 4 GiB；显式设置 `MEMORY_CENTER_PARSE_CACHE_MB`（含 `0` 关闭）时仍以它为准，小工作区不受影响。
 - 新增用例覆盖「命中路径不读盘」（删除源文件后仍能命中）、「外部 digest 与内容不符时不复用旧条目」、「digest 传递后产物与自读自算逐值相等」与「预算随源码规模自适应」。MCP tool schema、取消与原子发布合同、`StructuralParseResult` 形状不变。
 
 English: The duplicate source reads around parsing are gone. The content sha256 computed during scanning/chunking is now handed to both parse paths (`digests` on `build_code_graph`, `source_digests` on `reindex_workspace`); a parse probes the cache by that key first, so a warm hit never touches the filesystem. A warm run therefore reads each file once, hashes it once and performs zero reads at parse time; a cold run still reads text to parse but hashes each file only once. Callers that pass no digests keep the old read-hash-probe behaviour, and outputs stay value-identical. Deferred Feign parsing no longer embeds source text in `pending_feign` — it carries the absolute path and reads on demand, so all four paths (serial/pooled, cold/warm) share one output shape and the parse product no longer carries whole sources across stages. The default cache budget now scales with the parseable source size (`max(512 MiB, source × 6)`, capped at 4 GiB) so large workspaces stop evicting what they just wrote; an explicit `MEMORY_CENTER_PARSE_CACHE_MB` (0 disables) still wins. MCP schemas, cancellation and atomic publishing are unchanged.
@@ -175,10 +195,10 @@ English: The duplicate source reads around parsing are gone. The content sha256 
 - **三条降级保证**：解析器不可用（未装 tree-sitter 或语言无绑定）时**不落缓存**，避免把「缺绑定」固化成持久结果；缓存文件损坏、截断、契约版本不符一律按未命中处理并允许覆写；载荷不可序列化或目录不可写时跳过写入。缓存故障绝不中止索引。
 - **缓存落在工作区级目录**（`<data_dir>/workspaces/<id>/parse-cache`），不在 generation 内——generation 会被 `prune` 清理，缓存必须跨代际存活。只在**发布成功后**维护缓存，失败或取消的索引不改动它。
 - **预算淘汰按「最近使用」而非「最近解析」排序**：命中时刷新时间戳，使一轮索引后仍在用的条目时间最新，而源码已改过或已删除的旧内容条目先被淘汰。`MEMORY_CENTER_PARSE_CACHE_MB` 配置字节预算（默认 512 MiB，0 表示关闭缓存）；命中与未命中的维护结果在任务记录中以 `parse_cache` 字段回报。
-- 实测（真实项目 3,552 文件 / 12.7 MiB 源码，同进程受控对比）：通用结构解析 1.64 s → 0.86 s（1.9×），Java 专用解析 5.02 s → 0.45 s（11×），**两段合计 6.54 s → 1.31 s（5.0×）**；冷跑写缓存的开销在噪声内。方法与数值复核见 [V5_PARSE_CACHE_BENCHMARK.md](benchmarks/V5_PARSE_CACHE_BENCHMARK.md)。
+- 实测（真实项目，同进程受控对比）：通用结构解析 1.64 s → 0.86 s（1.9×），Java 专用解析 5.02 s → 0.45 s（11×），**两段合计 6.54 s → 1.31 s（5.0×）**；冷跑写缓存的开销在噪声内。方法与数值复核记录见内部基准文档。
 - MCP tool schema 不变，取消与原子发布合同不变，`StructuralParseResult` 形状不变。**遗留**：同一份源码被读三遍的问题依旧存在——缓存键仍需读文件算哈希，本次只消除了重复**解析**。
 
-English: Adds a content-addressed file-level parse cache keyed by (schema, namespace, file identity, language, content sha256). Only file-level IR is cached; cross-file relations are recomputed at merge time so a changed file's influence is never masked. Both the generic structural parse and the Java-specific parse take an optional `cache` and return value-identical objects whether they hit or miss, so the cache changes speed only. Unavailable parsers are never cached, corrupt entries degrade to a miss, and unwritable or unserializable payloads are skipped — a cache fault never aborts an index. The cache lives at workspace level (outside prunable generations) and is only maintained after a successful publish. Eviction is least-recently-*used* so long-unchanged files survive; `MEMORY_CENTER_PARSE_CACHE_MB` sets the byte budget (default 512 MiB, 0 disables). Measured on a real 3,552-file / 12.7 MiB module in one process: 1.64 s → 0.86 s (structural) and 5.02 s → 0.45 s (Java), 5.0× across both stages, with cold-run cache writing inside noise. MCP schemas, cancellation and atomic publishing are unchanged. Known gap: the three source reads are not collapsed — the cache key still requires hashing each file.
+English: Adds a content-addressed file-level parse cache keyed by (schema, namespace, file identity, language, content sha256). Only file-level IR is cached; cross-file relations are recomputed at merge time so a changed file's influence is never masked. Both the generic structural parse and the Java-specific parse take an optional `cache` and return value-identical objects whether they hit or miss, so the cache changes speed only. Unavailable parsers are never cached, corrupt entries degrade to a miss, and unwritable or unserializable payloads are skipped — a cache fault never aborts an index. The cache lives at workspace level (outside prunable generations) and is only maintained after a successful publish. Eviction is least-recently-*used* so long-unchanged files survive; `MEMORY_CENTER_PARSE_CACHE_MB` sets the byte budget (default 512 MiB, 0 disables). Measured on a real module in one process: 1.64 s → 0.86 s (structural) and 5.02 s → 0.45 s (Java), 5.0× across both stages, with cold-run cache writing inside noise. MCP schemas, cancellation and atomic publishing are unchanged. Known gap: the three source reads are not collapsed — the cache key still requires hashing each file.
 
 ## 5.0.0b11 — 2026-10-10
 
@@ -186,10 +206,10 @@ English: Adds a content-addressed file-level parse cache keyed by (schema, names
 - **新增全局工作池 `platform/work_pool.py`**：项目并发与文件级并发共用同一份 CPU 预算。`max_file_workers` 默认 0 表示按预算在同时运行的项目之间切分（项目进程本身占一个槽位），显式正数表示每项目固定宽度；并发项目数超过预算时项目内退化为串行，而不是超卖。
 - **通用代码图解析入池**：`build_code_graph` 新增可选 `pool` 参数，传 `None` 时行为与既有串行实现逐值相同。
 - **单文件解析失败不再中止整次索引**：失败文件以 `failed:<异常类型>` 记入覆盖台账，其余文件照常发布，覆盖缺口可查；池级崩溃仍向上抛出，任务有序失败并保留上一代索引。
-- 实测（真实项目 3,552 文件 / 14.3 MiB）：`build_code_graph` 17.52s → 7.15s（2.45×），池化产物与串行产物深度相等。基线方法、阶段耗时与验收阈值见 [V5_SERVICE_INDEX_STAGE_BASELINE.md](benchmarks/V5_SERVICE_INDEX_STAGE_BASELINE.md)。
+- 实测（真实项目）：`build_code_graph` 17.52s → 7.15s（2.45×），池化产物与串行产物深度相等。基线方法、阶段耗时与验收阈值见内部基准文档。
 - 管理 API `PUT /api/v1/job-settings` 新增 `max_file_workers`（0–64）；MCP tool schema 不变，取消与原子发布合同不变。
 
-English: File-level parallelism moves to a process pool because tree-sitter's Python binding does not release the GIL (measured: 4 threads 1.41×, 8 threads 24% slower than serial, 8 processes 2.56×). A new global `platform/work_pool.py` makes project concurrency and file-level concurrency share one CPU budget; `max_file_workers` defaults to 0 (split across concurrently running projects) and degrades to in-project serial rather than oversubscribing. `build_code_graph` takes an optional pool and remains value-identical to the serial path when omitted. A file that fails to parse is recorded in the coverage ledger instead of aborting the index, while a pool-level crash still fails the job and keeps the previous generation readable. Measured on a real 3,552-file / 14.3 MiB module: 17.52 s → 7.15 s (2.45×) with deep-equal output. `PUT /api/v1/job-settings` gains `max_file_workers` (0–64); MCP schemas, cancellation and atomic publishing are unchanged.
+English: File-level parallelism moves to a process pool because tree-sitter's Python binding does not release the GIL (measured: 4 threads 1.41×, 8 threads 24% slower than serial, 8 processes 2.56×). A new global `platform/work_pool.py` makes project concurrency and file-level concurrency share one CPU budget; `max_file_workers` defaults to 0 (split across concurrently running projects) and degrades to in-project serial rather than oversubscribing. `build_code_graph` takes an optional pool and remains value-identical to the serial path when omitted. A file that fails to parse is recorded in the coverage ledger instead of aborting the index, while a pool-level crash still fails the job and keeps the previous generation readable. Measured on a real module: 17.52 s → 7.15 s (2.45×) with deep-equal output. `PUT /api/v1/job-settings` gains `max_file_workers` (0–64); MCP schemas, cancellation and atomic publishing are unchanged.
 
 ## 5.0.0b10 — 2026-10-10
 
@@ -286,7 +306,7 @@ English: Real per-phase counters replace fixed progress percentages. Configurabl
 - 源码只读识别，复用服务类型注册表；预览不写源码、不读取旧 workspace 或 registry，不触发索引。
 - 移除仅取消接入并保留数据；重登记分配新 ID。catalog 与管理员令牌权限 0600，非法结构/文件阻止就绪。
 - 提供 OrbStack 源码只读挂载配置。完整管理页面仍待 S4，项目 MCP 与授权仍待 S2，不提供 4.x 兼容转发。
-- 详见 [项目目录指南](V5_CATALOG_GUIDE.md) 和 [S1 回执](implementation-receipts/V5_S1_CATALOG.md)。
+- 详见 [项目目录指南](V5_CATALOG_GUIDE.md) 和 S1 实施回执（内部资料，不随公开仓库发布）。
 
 
 ## 5.0.0a1 — S0 开发预览（2026-10-09，未正式发布）
@@ -295,12 +315,12 @@ English: Real per-phase counters replace fixed progress percentages. Configurabl
 - 新增 `/health/live`、`/health/ready`、状态 API、`/admin/` Vue 空态和 `/mcp` 的只读 `mc_service_status`；支持传输取消和正常关闭。
 - wheel 分发页面产物；新增非 root Docker 镜像与 Compose/OrbStack 部署，运行时无需 Node.js。
 - 5.0 为全新安装、不兼容旧接口或旧数据。项目目录、授权、Worker 和完整管理页面仍待 S1–S4；旧入口按切片移除，不进行兼容转发。
-- 实际操作与验收边界见 [服务指南](V5_SERVICE_GUIDE.md) 和 [S0 回执](implementation-receipts/V5_S0_SERVICE.md)。
+- 实际操作与验收边界见 [服务指南](V5_SERVICE_GUIDE.md) 和 S0 实施回执（内部资料，不随公开仓库发布）。
 
 
 ## Unreleased / 未发布
 
-- **5.0 方案决策（尚未实现）**：独立服务与管理页面按全新安装设计，源码项目重新登记、索引与记忆重新建立；不提供 4.x workspace/registry/历史数据导入、旧 CLI/MCP/HTTP/DSH 兼容层或跨版本降级。架构采用 FastAPI/Uvicorn、官方 Python MCP SDK、Vue 3、SQLite 与有界进程 Worker。当前仅修订设计文档，软件版本仍为 4.6.30，未删除历史数据。实施流程见 [5.0 改造流程方案](V5_IMPLEMENTATION_PLAN.md)。
+- **5.0 方案决策（尚未实现）**：独立服务与管理页面按全新安装设计，源码项目重新登记、索引与记忆重新建立；不提供 4.x workspace/registry/历史数据导入、旧 CLI/MCP/HTTP/DSH 兼容层或跨版本降级。架构采用 FastAPI/Uvicorn、官方 Python MCP SDK、Vue 3、SQLite 与有界进程 Worker。当前仅修订设计文档，软件版本仍为 4.6.30，未删除历史数据。实施流程见内部 5.0 改造流程方案（内部资料，不随公开仓库发布）。
 
 - **4.6.30 Shadow/Task Memory Reliability / 影子与任务记忆可靠性**：本地包、CLI 与 MCP 运行时版本提升至 `4.6.30`。本版集中加固记忆写入与宿主集成的可靠性：Shadow 快照、Observation 折叠与 authority 切换的读-改-写统一在专用 `shadow.lock` 内完成，避免并发写入互相覆盖导致 L2 案例缺源；Hook 的 session-id 交接文件改为按 workspace 隔离并支持 `MEMORY_CENTER_SESSION_ID_FILE` 注入，消除同机多项目互相关闭 session；`memory_discover` 压缩矩阵改读真实 memory layer key；delivery waiver 过期状态在审批与列表中一致持久化。逐条细节见下方各条。
 - **4.6.30 Shadow/Task Memory Reliability (EN)**: Local package, CLI, and MCP runtime metadata bumped to `4.6.30`. This release hardens memory-write and host-integration reliability: Shadow snapshot recording, observation folding, and authority switching now perform their read-modify-write under a dedicated `shadow.lock` so concurrent writers can no longer overwrite each other and leave L2 cases short a source; the hook session-id handoff file is workspace-scoped and injectable via `MEMORY_CENTER_SESSION_ID_FILE`, removing cross-project session clobbering on one machine; `memory_discover` reads the real memory-layer keys from its compression matrix; and delivery-waiver expiry is persisted consistently between approval and listing. See the individual entries below for details.
@@ -369,7 +389,7 @@ English: Real per-phase counters replace fixed progress percentages. Configurabl
 
 ### 写入治理吸收 G1–G3：追加式案例治理与写入决策事件 / Write Governance Absorption G1–G3
 
-按 [WRITE_GOVERNANCE_ABSORPTION_PLAN.md](WRITE_GOVERNANCE_ABSORPTION_PLAN.md) 吸收 Utopia pending_facts 对比结论中的三项 P0：一切治理态度走 append-only 事件 + 投影，永不改写已写入数据；全部 additive、向后兼容。
+按内部写入治理吸收方案吸收 Utopia pending_facts 对比结论中的三项 P0：一切治理态度走 append-only 事件 + 投影，永不改写已写入数据；全部 additive、向后兼容。
 
 - **G1 案例替代闭环**：新增 `core/orchestrator/case_decisions.py`——`supersede_case` / `reinstate_case` / `workspace_case_decisions` 与 `project_case_truth` 投影。决策行落 `memory/case-decisions.jsonl`（record_type=case_decision），case 原始行永不改写；current truth = 存储字段基线 + 决策折叠（latest wins）。`consolidate-session` 的 `_existing_cases` 接入投影（分类与 decide 复检共用同一接线点），workspace overview 的 `current_truth_cases` / `superseded_cases` 同样按投影计数。入口三层同义：CLI `case-supersede` / `case-reinstate` / `case-decisions`、MCP `mc_admin` action `case_supersede` / `case_reinstate` / `case_decision_list`、HTTP `/workspace/case-supersede` / `case-reinstate` / `case-decisions`。替代前校验 case 存在、successor 存在且未被替代；重复/未知操作返回结构化 no-op 不写入。
 - **G2 L0.5 note 替代改追加式**：`session_notes.py` 删除 `_update_note_row` 原地改写；`note_supersede` / `note_forget` 改为向 `memory/session-note-decisions.jsonl` 追加决策行，生效状态由 `project_note_statuses` 投影（latest wins）。fingerprint 幂等门、`note_list` 行注记、`note_search`、workspace overview `active_note_count` 全部消费投影；被投影遗忘的 note 允许同 fingerprint 重新记录。stored `status` 保留为向后兼容基线。
@@ -402,7 +422,7 @@ English: Real per-phase counters replace fixed progress percentages. Configurabl
 - **通名弱化**：workspace 自身名字（含前缀关系，如 acme-all ↔ acme）与框架/中间件通名（feign/kafka/redis/dto/controller 等）加入 `_WEAK_TOKENS`——弱 token 即使命中 tag/title/intent 也不计强证据分，只算 fuzzy。
 - **status_boost 需强证据前置**：active(+2)/draft(+1)/high(+1) 加分只在已有 tag/title/intent 强证据时生效；仅凭正文模糊命中的大任务不再白拿状态分稳过阈值。
 - **stale 展示判定**：workspace overview 的任务列表引入 `effective_status`——active 任务超过 14 天（与 shadow retention 默认对齐）无 task-space 活动即展示为 `stale`，排序沉底；不改写 meta.json 的登记状态，另有 `registered_status` 字段保留原值。
-- **端到端验证（真实工作区）**：3 个曾误绑定的 intent 重放全部归为 new/ambiguous（此前全部误命中"预警发送"）；真绑定 intent 仍 high 置信命中；`mc_start` 全链路不再把误解析 task_id 写进 session metadata，close 时正确走 shadow fallback。
+- **端到端验证（真实工作区）**：3 个曾误绑定的 intent 重放全部归为 new/ambiguous（此前全部误命中同一历史任务标题）；真绑定 intent 仍 high 置信命中；`mc_start` 全链路不再把误解析 task_id 写进 session metadata，close 时正确走 shadow fallback。
 
 ## 4.6.24 Task Shadow Hardened Release / 任务影子加固发布
 
@@ -427,7 +447,7 @@ English: Real per-phase counters replace fixed progress percentages. Configurabl
 
 ### Task Shadow：Session-first 任务连续性 / Task Shadow: Session-first Continuity
 
-按 [SESSION_FIRST_TASK_CONTINUITY_PROPOSAL.md](SESSION_FIRST_TASK_CONTINUITY_PROPOSAL.md) 实现 L1 Task Shadow 会话影子层；所有字段 additive，不改变既有 MCP tool schema。
+按内部会话优先任务连续性方案实现 L1 Task Shadow 会话影子层；所有字段 additive，不改变既有 MCP tool schema。
 
 - **核心模块**：新增 `core/tasks/shadow.py`（snapshot 校验、source contribution、确定性 merge、CAS 绑定、discard/promote、retention）、`core/tasks/shadow_observations.py`（Observation Inbox，payload allowlist fail-closed、authority 切换）、`core/tasks/shadow_handoff.py`（Handoff Claim：claim-once + `expected_revision` CAS）、`application/task_shadow_flow.py`（mc_sync/mc_close 的 Shadow 逻辑下沉）。`RuntimeStore` 新增 `delete_session_state`/`list_session_states`。
 - **多源确定性 merge**：Shadow 按 `(source_provider_id, source_session_id)` 保存独立 contribution，各源独立 durable 水位；对外 merge 为排序 union，与到达顺序无关；幂等键 `(shadow_id, source_provider_id, source_session_id, durable_as_of_seq)`，相同/较旧水位为幂等 no-op，水位回退报 `stale_watermark`，schema 版本回退报 `state_version_regression`，版本超前标记 stale 并要求 resync。
@@ -590,7 +610,7 @@ Field fixes from a real-session retrospective (see LOOKUP_ARCHITECTURE_HANDOFF_P
 
 - coverage 原因细分：skipped 按 reason 拆分为 **`irrelevant_excluded`**（`unsupported_syntax`：xml/png/json/md 等明确无关的非源码资源）与 **`relevant_unsupported`**（相关但解析器不支持）。
 - `claim_boundary` 语义校准：**明确无关的排除资源不再阻断否定性结论**；只有 `relevant_unsupported` / `parse_failed` / `scope_unknown`（含 partial/failed/unknown）才阻断。legacy 无 reason 时保持保守（skipped 仍阻断）。
-- `quality-gate` 同步：coverage 检查只把 relevant-unsupported/failed/unknown 计为 unclean，irrelevant-excluded 仅审计。真实工作区实测 coverage 从 attention → **pass**（2611 个无关资源不再制造永久 attention），claim_boundary 从 `coverage_partial` 阻断 → 仅剩 freshness 信号。
+- `quality-gate` 同步：coverage 检查只把 relevant-unsupported/failed/unknown 计为 unclean，irrelevant-excluded 仅审计。真实工作区实测 coverage 从 attention → **pass**（批量无关资源不再制造永久 attention），claim_boundary 从 `coverage_partial` 阻断 → 仅剩 freshness 信号。
 - **未降低 coverage 标准**：真实工作区 relevant_unsupported=0、failed=0、unknown=0，无任何真实相关未覆盖被放宽；所有跳过仍保留审计。
 - 测试更新：`relevant_unsupported` 阻断、`irrelevant_excluded` 不阻断、demo 集成断言校准；全量回归绿、IR gate 通过。
 - Calibrated coverage semantics: explicitly irrelevant excluded resources no longer block negative claims or the release gate; only relevant-unsupported/parse-failed/scope-unknown do, with no coverage-standard reduction.
@@ -609,31 +629,31 @@ Field fixes from a real-session retrospective (see LOOKUP_ARCHITECTURE_HANDOFF_P
 ## 4.6.3 Storage Space Reclaim / 存储空间回收
 
 - 按诊断结论执行安全回收（不影响 active/previous）：
-  1. **删除孤立 `gen-perf-test`**（1.9GB，profile 测试污染、未注册）：generations/ 5.75GB → 3.83GB；
-  2. **IR 双重去重**（342MB）：`java-ir-index.json` 加入 `RUNTIME_ONLY_INDEXES`，SQLite index_mirror 权威、删除 index/ 文件副本（与 java-symbol-index 一致）；
-  3. **VACUUM**（588MB）：`storage-vacuum --apply` 回收 freelist + 页重整，graph.db 4.07GB → 3.48GB。
-- 总回收约 **2.8GB**。验证：IR gate 通过（edge_coverage 1.0 / forbidden 0）、coverage 17028/19639 不降、freshness FRESH、查询 smoke 正常、全量测试绿。
-- Reclaimed ~2.8GB safely: removed the orphan test generation (1.9GB), de-duplicated the java-ir-index JSON mirror (342MB), and VACUUMed graph.db (588MB), with IR gate/coverage/query all verified intact.
+  1. **删除孤立 `gen-perf-test`**（profile 测试污染、未注册）：generations/ 体积减少约三分之一；
+  2. **IR 双重去重**：`java-ir-index.json` 加入 `RUNTIME_ONLY_INDEXES`，SQLite index_mirror 权威、删除 index/ 文件副本（与 java-symbol-index 一致）；
+  3. **VACUUM**：`storage-vacuum --apply` 回收 freelist + 页重整，graph.db 体积减少约 15%。
+- 空间回收约四分之一。验证：IR gate 通过（edge_coverage 1.0 / forbidden 0）、coverage 不降、freshness FRESH、查询 smoke 正常、全量测试绿。
+- Reclaimed roughly a quarter of the space safely: removed the orphan test generation, de-duplicated the java-ir-index JSON mirror, and VACUUMed graph.db, with IR gate/coverage/query all verified intact.
 
 ## 4.6.2 Graph.db Space Diagnostic / 存储空间只读诊断
 
-- 只读诊断 4.1GB `graph.db` + 5.8GB `generations/` 空间构成（**未执行任何清理**）：
-  - generation 服务分片 5.76GB（3 gen × 1.9GB，72 个分片/每 gen 物理复制）；含孤立 `gen-perf-test`（1.9GB，profile 测试污染，未注册）
-  - index_mirror 615MB（java-ir-index 342MB 双重占用 + java-symbol-index 247MB）
-  - edges+索引 1.5GB、FTS 520MB、倒排 500MB（必要）
-  - freelist 343MB（可安全回收）
-- 可安全回收约 **2.5GB**（孤立 gen-perf-test 1.9GB + IR 双重 342MB + freelist 343MB），不影响 active/previous generation。
+- 只读诊断 `graph.db` 与 `generations/` 的空间构成（**未执行任何清理**）：
+  - generation 服务分片（3 gen，每 gen 多分片物理复制）；含孤立 `gen-perf-test`（profile 测试污染，未注册）
+  - index_mirror（java-ir-index 双重占用 + java-symbol-index）
+  - edges+索引、FTS、倒排（必要）
+  - freelist（可安全回收）
+- 可安全回收约四分之一（孤立 gen-perf-test + IR 双重 + freelist），不影响 active/previous generation。
 - dry-run：generation-gc 0 候选、semantic-compact 无候选；VACUUM 未执行（需授权）。
-- 建议（不执行）：删孤立 gen、IR 双重去重、VACUUM、服务分片软链继承。详见 `docs/implementation-receipts/graph-db-space-diagnostic.md`。
-- Added a read-only storage space diagnostic: 4.1GB graph.db + 5.8GB generation shards, ~2.5GB safely reclaimable (orphan test generation, duplicate IR mirror, freelist) with no cleanup executed.
+- 建议（不执行）：删孤立 gen、IR 双重去重、VACUUM、服务分片软链继承。详见本轮的图数据库空间诊断回执（内部资料，不随公开仓库发布）。
+- Added a read-only storage space diagnostic covering graph.db and generation shards, with roughly a quarter safely reclaimable (orphan test generation, duplicate IR mirror, freelist) and no cleanup executed.
 
 ## 4.6.1 Scoped Refresh Performance / 局部刷新性能
 
-- 真实工作区性能归因：单文件局部刷新 70s，profile 定位 `build_java_ir_index` 每次刷新**全量重算 67.8 万 IR 候选（13s）**且被 `mark("graph_update")` 错误计入 graph_update 阶段，是 graph_update 17-25s 的根因。
-- 修复：partial 刷新改用 `_merge_ir_partial`（新增）——只对 scoped 文件重算 IR 候选 + 继承未变更文件候选（与 file-index 的 merge 一致）。单文件 IR 重算 13s → 1.9s（6.8×），真实 Controller 刷新 70s → 55s，graph_update 25s → 14s；candidates 保持 678023 覆盖不降。
+- 真实工作区性能归因：单文件局部刷新 70s，profile 定位 `build_java_ir_index` 每次刷新**全量重算 IR 候选（13s）**且被 `mark("graph_update")` 错误计入 graph_update 阶段，是 graph_update 17-25s 的根因。
+- 修复：partial 刷新改用 `_merge_ir_partial`（新增）——只对 scoped 文件重算 IR 候选 + 继承未变更文件候选（与 file-index 的 merge 一致）。单文件 IR 重算 13s → 1.9s（6.8×），真实 Controller 刷新 70s → 55s，graph_update 25s → 14s；candidates 覆盖不降。
 - 新增 `test_ir_partial_merge.py`（继承未变更候选、全量重建 drop 删除文件候选）；全量回归绿、IR gate 通过（edge_coverage 1.0 / forbidden 0）、coverage 不降。
-- 存储健康（只读）：graph.db 4.1GB 增长风险已记录（未自动清理）；generation 3 个、job 无泄漏、publications 19 条。
-- Added scoped-refresh IR partial-merge: full 678k-candidate IR rebuild per partial refresh was the graph_update hot path; now only the scoped files are re-resolved and unchanged files' candidates are inherited (13s→1.9s, 70s→55s real refresh).
+- 存储健康（只读）：graph.db 增长风险已记录（未自动清理）；generation 3 个、job 无泄漏、publications 19 条。
+- Added scoped-refresh IR partial-merge: a full-candidate IR rebuild per partial refresh was the graph_update hot path; now only the scoped files are re-resolved and unchanged files' candidates are inherited (13s→1.9s, 70s→55s real refresh).
 
 ## 4.6.0 Retrieval Replay Evaluation / 检索回放评测闭环
 
@@ -691,7 +711,7 @@ Field fixes from a real-session retrospective (see LOOKUP_ARCHITECTURE_HANDOFF_P
 
 - Java 解析器现在显式输出 IR：新增 `memory_center/core/indexing/java_ir.py`，把 `java-symbol-index.json` 投影为 `FileRecord` / `SymbolRecord` / `RelationCandidate`（复用与图投影同一个 `JavaCallResolver`，保证差分可比），并持久化为 additive 的 `java-ir-index.json`。
 - 新增 `memory_center/core/indexing/diff_gate.py`：把 IR 候选投影成与 legacy 图边同格式的 CALLS_METHOD 边，对比真实图数据。指标：anchor_recall（IR 源方法在图中的存在率）、edge_coverage（legacy 图中被 IR 覆盖的边比例，无回退硬指标）、forbidden_hit（AMBIGUOUS 是否被伪造为确定边，必须为 0）。当前 legacy 图投影保持权威，IR 投影作为显式边界与差分基准。
-- 真实工作区数据（16.9k 符号 / 67.8 万候选）gate 通过：anchor_recall 0.9977（缺失为构造器/方法引用目标，IR 比图更完整）、edge_coverage 1.0、forbidden_hit 0.0、ambiguous 0.55（外部依赖边界）。
+- 真实工作区数据 gate 通过：anchor_recall 0.9977（缺失为构造器/方法引用目标，IR 比图更完整）、edge_coverage 1.0、forbidden_hit 0.0、ambiguous 0.55（外部依赖边界）。
 - Added the explicit Java IR boundary with relation candidates projected through the same resolver as the graph, plus a differential gate proving IR does not regress anchor/edge coverage or forbidden-hit before any switch.
 
 ## 4.5.3 Generation-Local Staging / 代际本地暂存与发布合并
@@ -840,7 +860,7 @@ Field fixes from a real-session retrospective (see LOOKUP_ARCHITECTURE_HANDOFF_P
 
 - resolver 新增 Lombok `@Builder` 解析：`X.builder()` 静态工厂解析为 `*_lombok_builder`（0.85）；`X.builder().field(...)` 链式 setter 解析为 `chain_lombok_builder_setter`（0.78），`X.builder().build()` 解析为 `chain_lombok_builder_build`（0.80），均标记 `inferred_target`。
 - 仅当类带 `@Builder` 注解且 setter 名与声明字段一致时推断，无注解类不误报（新增 4 个单元测试覆盖正/负场景）。
-- 真实工作空间验证：未解析率 52.26% → 48.34%；`missing_method_or_polymorphism` 类别 10,671 → 2,768。
+- 真实工作空间验证：未解析率 52.26% → 48.34%；`missing_method_or_polymorphism` 类别数量显著下降。
 - 新增 3 个私有锚点 case（`java-call-resolution-lombok-builder-v4390.yaml`），门禁 3/3 通过（recall 1.0、resolution_level 全命中）。
 
 ### Session replay 匹配器校准 / Session replay matcher calibration
@@ -851,7 +871,7 @@ Field fixes from a real-session retrospective (see LOOKUP_ARCHITECTURE_HANDOFF_P
 
 ### 向量检索默认开启评估（真实基线对比）/ Vector default-on evaluation against real baseline
 
-- 真实工作区完成 dense 向量链路验证：`sentence-transformers`（all-MiniLM-L6-v2）selective scope 构建 49,897 embeddings；安装 `semantic-ann` 可选依赖（hnswlib）后 `vector_ann_rebuild` + `vector_ann_tune` 就绪（self_recall 1.0，ANN 查询 p95 0.12ms）。
+- 真实工作区完成 dense 向量链路验证：`sentence-transformers`（all-MiniLM-L6-v2）selective scope 构建 embeddings；安装 `semantic-ann` 可选依赖（hnswlib）后 `vector_ann_rebuild` + `vector_ann_tune` 就绪（self_recall 1.0，ANN 查询 p95 0.12ms）。
 - 对比结论（retrieval-quality 私有套件，sparse 基线 5/5 通过）：vector-on 下 config 语义查询保持 recall 1.0（延迟 188→440ms），但 MQ 契约查询 anchor recall 1.0 → 0.0——向量泛化匹配把大量 Consumer 方法推入前排，稀释契约锚点。
 - 决策：**维持 `enable_vector=False` 默认**（MCP/CLI 行为不变）。默认开启的前置条件：带证据人工验证样本完成融合权重校准（当前 `insufficient_replay`），使契约类锚点在 vector-on 下不掉出 top-N。
 
@@ -882,7 +902,6 @@ Field fixes from a real-session retrospective (see LOOKUP_ARCHITECTURE_HANDOFF_P
   - 附录 D：技术选型理由（SQLite、混合检索、generation、部分成功、不训练权重）
   - 附录 E：用户可感知能力（日常定位、影响分析、长任务、新鲜度、质量治理）
   - 附录 F：性能设计原则（热路径规则、风险处理策略表）
-  - 附录 G：三种讲法与面试结构（客户/面试/内部分享 + 15 分钟面试结构）
   - 附录 I：常见问题（8 个 FAQ）
 - 将 `SPECIAL_NOTES.md` 的关键设计决策整合入 ARCHITECTURE 附录 H（10 条常见设计误解）。
 - 将 `SPECS.md` 合并入 `REFERENCE.md` §6（schema、workspace、规则、hooks、记忆目录、Bridge 策略、兼容性）。
@@ -900,7 +919,7 @@ Field fixes from a real-session retrospective (see LOOKUP_ARCHITECTURE_HANDOFF_P
 - 删除 `UNIFIED_BACKEND_READ_PATHS.md`（已被 ARCHITECTURE §6 完整覆盖）；原文件归档。
 - 更新 ARCHITECTURE §8 编排层模块表，反映 ADR-0002 拆分后的新模块（`ranking.py`、`session_payloads.py`、`rules.py`、`symbol_ranking.py`、`guidance.py`、`contract_filter.py`）。
 - 更新 ARCHITECTURE §9.2 CLI 章节，反映 155 个命令拆至 16 个 `cli/commands/<family>.py` 家族模块。
-- 更新 NEXT_PHASE_MASTER_PLAN 补充 ADR-0002 内部重构为已交付。
+- 更新内部开发路线文档，补充 ADR-0002 内部重构为已交付。
 - 同步更新 README、USER_GUIDE、SPECIAL_NOTES、PRODUCT_TECHNICAL_OVERVIEW 中对已归档文档的引用。
 
 ### 按 ADR-0002 拆分 cli/main.py 命令族 / Split cli/main.py command families per ADR-0002
@@ -1027,7 +1046,7 @@ Field fixes from a real-session retrospective (see LOOKUP_ARCHITECTURE_HANDOFF_P
 
 - Git co-change v3 按仓库提交时间从旧到新执行：每个评估提交只能读取更早提交形成的文件对，当前图仅作为诊断对照，不参与校准，消除未来提交与当前图快照泄漏。
 - 新增过去热门文件基线和应用门禁；至少 5 个评估提交、20 个 case，且 Precision/Recall 均不低于基线时，才允许 CLI `--apply` 或 MCP `force=true` 写入共变先验。
-- 共变先验只保存 24 位路径哈希、支持度和归一化分数；查询只对现有图候选增加最多 0.12 的有界排序增益，不引入无图证据文件。真实工作区应用 546 条先验，100 次候选排序平均增加后的总耗时约 `0.266ms/次`。
+- 共变先验只保存 24 位路径哈希、支持度和归一化分数；查询只对现有图候选增加最多 0.12 的有界排序增益，不引入无图证据文件。真实工作区应用共变先验，100 次候选排序平均增加后的总耗时约 `0.266ms/次`。
 - 检索 replay 按任务或证据指纹去重，按时间切分训练集和后 25% 留出集；提案只使用更早样本，只有留出集 Brier score 不退化且训练/验证样本门槛满足时才允许应用。
 - 真实共变 66 个 walk-forward case 上 Precision `0.2284`、Recall `0.4539`，高于过去热门文件基线 `0.1742 / 0.4261`；真实检索 replay 当前为 0 条验证样本，因此保持 `insufficient_replay`，未写入权重。
 
@@ -1061,7 +1080,7 @@ Field fixes from a real-session retrospective (see LOOKUP_ARCHITECTURE_HANDOFF_P
 - resolver 新增 `generated_enum_method_out_of_scope`、`chain_return_type_not_indexed`，并递归识别“本地父接口继续继承外部框架接口”的方法。Enum 编译器方法、外部集合链式方法、MyBatis 继承方法不再污染本地多态修复 campaign，也不会生成猜测边。
 - 真实工作区建立 3 个私有链式逻辑锚点并定向刷新 14 个相关文件；edge recall、置信率、resolution-level rate 均为 `1.0`，unexpected/forbidden 高置信边均为 `0`。
 - co-change 文件候选从无序 `DISTINCT LIMIT` 升级为有界边投影上的确定性加权排序，默认候选从 24 收敛为 8。真实工作区 66 个 case 上 Precision 从 `0.0438` 提升到 `0.0706`，Recall 从 `0.2191` 提升到 `0.2229`，评测约 `37ms`。
-- 大图原型曾使用全量 SQL 聚合，但真实 17GB 图超过 30 秒，已移除；正式实现最多读取 1600 条邻接边后在内存聚合，不扫描完整文件子图。
+- 大图原型曾使用全量 SQL 聚合，但真实大图超过 30 秒，已移除；正式实现最多读取 1600 条邻接边后在内存聚合，不扫描完整文件子图。
 
 ## 4.3.78 Java Call Classification and Co-change Ranking
 
@@ -1069,7 +1088,7 @@ Field fixes from a real-session retrospective (see LOOKUP_ARCHITECTURE_HANDOFF_P
 - Added explicit unresolved reasons for generated enum methods and external chain return types, plus cycle-safe recursive detection of local parents that ultimately inherit external framework APIs. These calls no longer pollute local polymorphism campaigns or create guessed edges.
 - Added three private real-workspace chain anchors and refreshed only 14 related files. Edge recall, confidence rate, and resolution-level rate are all `1.0`, with zero unexpected or forbidden high-confidence edges.
 - Replaced unordered co-change file candidates with deterministic weighted ranking over a bounded edge projection and reduced the default candidate set from 24 to 8. Across 66 real-workspace cases, precision improved from `0.0438` to `0.0706`, recall from `0.2191` to `0.2229`, with evaluation around `37ms`.
-- Removed a full SQL aggregation prototype after it exceeded 30 seconds on the real 17GB graph. The shipped path reads at most 1,600 adjacent edges and aggregates only that bounded slice.
+- Removed a full SQL aggregation prototype after it exceeded 30 seconds on a real large graph. The shipped path reads at most 1,600 adjacent edges and aggregates only that bounded slice.
 
 ## 4.3.77 图感知变更审查闭环 / Graph-Aware Change Review
 
@@ -2141,16 +2160,16 @@ Field fixes from a real-session retrospective (see LOOKUP_ARCHITECTURE_HANDOFF_P
 
 ### P1 Java Call Resolver Self-Loop Fix / Java 调用解析自环修复
 
-- 真实工作区上发现 ~13K `CALLS_METHOD` self-loop 假边
+- 真实工作区上发现大量 `CALLS_METHOD` self-loop 假边
   (`Service:m -> Service:m`),根因是 `RegexJavaParser` 把抽象 interface
   方法声明也当成 method body。bare-call 正则在 `start..end` 内匹配到方法
   自身签名,被 `_same_class_candidates` 解析成 self-call。
 - 修复:`_parse_interface_methods` 给抽象方法 span 加 `is_declaration=True`
   标记;`_parse_method_calls` 跳过 declaration-only span。
-- 真实工作区效果:self-loop CALLS_METHOD 12,812 -> 795
+- 真实工作区效果:self-loop CALLS_METHOD 假边大幅减少
   (-94%,残留 795 条是真实递归调用如 `RedisServiceImpl:hSet` 重载 dispatch);
-  CALLS_METHOD 总量 294,230 -> 279,542(-14,688 条假边消除);
-  same_class resolution_level 边 30,578 -> 18,558(全部去掉的都是 self-loop)。
+  CALLS_METHOD 总量明显下降(消除的均为假边);
+  same_class resolution_level 边同步下降(全部去掉的都是 self-loop)。
 - Java call resolution gate (15 cases) 保持全过;不影响合法 same_class
   fluent chain (`ServiceImpl#download -> ServiceImpl#buildObjectKey`)。
 - 新增 `tests/test_p1_call_resolution_and_vector_gate.py` 锁住 interface
@@ -2175,9 +2194,8 @@ Field fixes from a real-session retrospective (see LOOKUP_ARCHITECTURE_HANDOFF_P
 - `GoldenCase` schema 新增可选字段 `enable_vector`(默认 False),让概念
   query 类型 case 可以显式声明走 ANN 路径。`memory_query_hybrid` 在
   hybrid mode 下读取此字段并传给 retrieval policy。
-- `golden/cases.yaml` 新增两个 vector-aware case 把
-  [P0_5_VECTOR_VALIDATION.md](./benchmarks/P0_5_VECTOR_VALIDATION.md) 的
-  收益锁进 long-term gate:
+- `golden/cases.yaml` 新增两个 vector-aware case，把向量验证基准记录
+  （内部资料，不随公开仓库发布）中的收益锁进 long-term gate:
   - `vector-feign-auth-interceptor`("Feign 调用的鉴权拦截器" ->
     `FeignConfig#feignDecoder` + `FeignSpringFormConfiguration#feignContract` + ...)
   - `vector-kafka-consumer-handler`("Kafka 消费者解析消息" ->
@@ -2190,13 +2208,13 @@ Field fixes from a real-session retrospective (see LOOKUP_ARCHITECTURE_HANDOFF_P
   把 dense vectors 抹掉。新行为:`dense_items` 为空时保留现有 VectorIndex。
 - Vector 增量同步完成真实验证:partial semantic rebuild 只重 encode 1 个
   changed dense candidate;VectorIndex `vector_sync_mode=partial`,只 delete/upsert
-  该 changed node,embedding_count 保持 47,633。当前 partial sync 仍耗时 ~23s,
+  该 changed node,embedding_count 保持不变。当前 partial sync 仍耗时 ~23s,
   主因是 BM25 仍全量 rebuild,后续可作为 P2 性能项单独优化。
 
 ### Vector Retrieval Real Validation / 向量检索真实场景验证
 
-- 新增 [docs/benchmarks/P0_5_VECTOR_VALIDATION.md](./benchmarks/P0_5_VECTOR_VALIDATION.md):
-  在真实工作区 (316,696 nodes / 47,633 vector candidates)
+- 新增向量验证基准记录（内部资料，不随公开仓库发布）:
+  在真实工作区
   上端到端验证 `MEMORY_CENTER_SEMANTIC_BACKEND=sentence-transformers`
   + `selective` scope + ANN retrieval 全流程。`vector_status: ready`,
   query "Feign 鉴权拦截器" elapsed 13.2s -> 2.8s(-78%),top1 命中从
@@ -2206,7 +2224,7 @@ Field fixes from a real-session retrospective (see LOOKUP_ARCHITECTURE_HANDOFF_P
   (user 请求),让宿主能解释"开了 vector 却没用"或"自动 policy
   选择 vector"等情况。
 - 默认仍是 `sparse` backend;`sentence-transformers` / `sqlite-vec`
-  保持 optional 依赖,47K x 384 维 numpy brute_force 已经 sub-100ms,
+  保持 optional 依赖,384 维 numpy brute_force 已经 sub-100ms,
   当前规模不需要额外向量数据库。
 
 ### Vector Observability / 向量可观测性
@@ -2224,13 +2242,13 @@ Field fixes from a real-session retrospective (see LOOKUP_ARCHITECTURE_HANDOFF_P
 
 ### P0 Index Hot Path / 索引热路径修复
 
-- 新增 [docs/benchmarks/P0_INDEX_HOT_PATH_DESIGN.md](./benchmarks/P0_INDEX_HOT_PATH_DESIGN.md):
+- 新增索引热路径设计记录（内部资料，不随公开仓库发布）:
   P0-0 CBM 参考对齐后的索引热路径设计,锁定三个修复的共享契约(MCP /
   CLI / HTTP schema 零变化、parser 行为可观测可回滚、`RegexJavaParser`
   保留为 fallback / differential oracle、真实工作区 reindex 不慢于基线)。
 - `JavaSymbol.to_dict()` 手写浅拷贝;`core.models.to_dict` 优先调用
   对象自带 `to_dict`,回退 `dataclasses.asdict`。输出键集合、键序、
-  值与 `asdict` 完全一致;本地微基准 22K JavaSymbol 实例提速 ~97x。
+  值与 `asdict` 完全一致;本地微基准提速 ~97x。
 - 新增 `memory_center/core/storage/metadata.py`:`metadata_json` 在
   metadata 为空/`None` 时直接返回字面量 `'{}'`,非空才走 `json.dumps`。
   `GraphStore.rebuild` / `bulk_write` / `partial_rebuild` /
@@ -2258,10 +2276,9 @@ Field fixes from a real-session retrospective (see LOOKUP_ARCHITECTURE_HANDOFF_P
   performance_gate=pass、anchor_recall 0.8286 与 legacy 持平;Doctor 53
   checks 0 fail;Walkthrough state=complete 5 层全部命中;Reindex 一次
   冷启动 140.6s → 139.0s(wall-clock 持平,IO 抖动主导),graph
-  316,695 nodes / 1,023,066 edges(比 legacy 多 ~1.7K 节点,因为
+  节点/边覆盖更全(比 legacy 略多,因为
   tree-sitter 节点覆盖更全 + fast 路径跳过了 SQL 字符串里的 false
-  positive)。详情见
-  [docs/benchmarks/P0_INDEX_HOT_PATH_DESIGN.md §5](./benchmarks/P0_INDEX_HOT_PATH_DESIGN.md)。
+  positive)。详情见索引热路径设计记录 §5（内部资料，不随公开仓库发布）。
 - `tests/test_parser_differential.py`、
   `tests/test_java_call_resolution_benchmark.py`、
   `tests/test_golden_benchmark.py`、`tests/test_graph_rebuild_perf.py`、
@@ -2317,15 +2334,14 @@ Field fixes from a real-session retrospective (see LOOKUP_ARCHITECTURE_HANDOFF_P
 - 新增 CLI `memory-center bench-profile --workspace <yaml>`,默认 top 50
   按 cumulative 排序,支持 `--by-module` 滚动 / `--label` 给 `.prof`
   文件起名 / `--sort-by` 切换排序键。
-- 在真实工作区上跑出第一份诊断报告:
-  [`docs/benchmarks/P1_0_JAVA_PARSING_PROFILE.md`](./benchmarks/P1_0_JAVA_PARSING_PROFILE.md)
-  。原始 pstats 由 `bench-profile` 本地生成到工作区 `.memory-center/perf-profiles/`,
+- 在真实工作区上跑出第一份诊断报告（内部资料，不随公开仓库发布）。
+  原始 pstats 由 `bench-profile` 本地生成到工作区 `.memory-center/perf-profiles/`,
   不提交到仓库。识别出三个真实瓶颈:
   - **Java parser 双轨开销 ~58s**:`TreeSitterJavaParser.parse` 即使
     tree-sitter 成功也仍然全量跑一遍 `RegexJavaParser`(~44% 总耗时)
-  - **`dataclasses.asdict` 调用爆炸 ~20.8s**:22,809 个 JavaSymbol →
-    13.5M 次 `_asdict_inner` 递归
-  - **`json.dumps` 4.59M 次 ~14.2s**:graph metadata 序列化次数过多
+  - **`dataclasses.asdict` 调用爆炸 ~20.8s**:大量 JavaSymbol 触发海量
+    `_asdict_inner` 递归
+  - **`json.dumps` 调用次数过多 ~14.2s**:graph metadata 序列化开销过大
 - 3 个新测试覆盖 profile 输出契约(pstats 文件被写、top_n 影响 summary
   长度、模块 rollup 按 cumulative 降序)。全量套件零回归。
 - English summary: P1-0 introduces a cProfile-based reindex profiler
@@ -2418,10 +2434,10 @@ Field fixes from a real-session retrospective (see LOOKUP_ARCHITECTURE_HANDOFF_P
   回退到旧 Spring 模板;`--dry-run` 仅预览不写文件),按子目录构建标记
   匹配 kind,并对 `*-api` / `*-common` / `*-core` 命名自动加 contract /
   common 标签。
-- 真实验证:对 C 项目 `codebase-memory-mcp` 跑 `init --dry-run` 不再写入
+- 真实验证:对参考开源项目跑 `init --dry-run` 不再写入
   3 个虚假 Spring service,只识别 `graph-ui` (`node-app`)。
 - 新增长期演进计划 `docs/archive/CBM_INSPIRED_EVOLUTION_PLAN.md`,记录 P0/P1/
-  P2/P3 各阶段从 codebase-memory-mcp 学到的设计借鉴(多语言 parser、
+  P2/P3 各阶段从参考开源项目学到的设计借鉴(多语言 parser、
   RAM-first 索引、跨服务边抽象、团队共享 graph artifact 等)。
 - English summary: introduced a service kind registry that decouples
   memory-center from the Spring-only assumption (11 kinds across JVM /
@@ -2438,7 +2454,7 @@ Field fixes from a real-session retrospective (see LOOKUP_ARCHITECTURE_HANDOFF_P
 - Golden Benchmark 新增 portable coverage summary；真实场景脚本现在输出 case mode 分布、anchor/edge 覆盖和建议补齐方向。
 - `workspace_next_actions` 保留兼容的字符串 `actions`，同时新增证据化 `action_items`，每条包含 action、reason、evidence、command、priority。
 - 热路径索引读取改为文件快读 + backend fallback，并保留 `read_json_observed()` 做显式一致性双读；真实工作区 walkthrough latency 从 3.5.7 基线 `2433.243ms` 降到本次验收 `313.382ms`。
-- 真实工作区回归通过：tree-sitter active reindex `native_success_count=16304`、`fallback_count=0`、`critical_disagreement_count=0`；私有 Golden 扩展到 7 条，覆盖 walkthrough / hybrid / MQ / config，anchor recall `1.0`、edge recall `1.0`、forbidden hit rate `0.0`，完整链路 `completion_status=complete`。
+- 真实工作区回归通过：tree-sitter active reindex `fallback_count=0`、`critical_disagreement_count=0`；私有 Golden 扩展到 7 条，覆盖 walkthrough / hybrid / MQ / config，anchor recall `1.0`、edge recall `1.0`、forbidden hit rate `0.0`，完整链路 `completion_status=complete`。
 
 English summary: the next release continues Ruff modernization, makes parser precision visible across indexing/retrieval/reasoning, preserves Typer compatibility on Python 3.9, and improves real-workspace walkthrough latency while passing the no-regression Golden gate.
 
@@ -2448,7 +2464,7 @@ English summary: the next release continues Ruff modernization, makes parser pre
 - 统一 import 排序：`I001` 已通过，后续 diff 更容易聚焦真实逻辑变化。
 - 修复 bugbear 风险项：`B006/B008/B904` 已通过，包含可变默认参数、Typer list 参数默认值和异常链处理。
 - 本地安装版本提升至 `3.5.9`，并继续通过真实场景验收脚本与 performance gate。
-- 下一步计划已统一收敛到 `docs/NEXT_PHASE_MASTER_PLAN.md`：优先做 Java reindex 性能热点修复，其次推进 Java Parser / Call Resolver 真实精度深化，再继续 Retrieval / Reasoning 质量闭环与输出体验产品化。
+- 下一步计划已统一收敛到内部开发路线文档：优先做 Java reindex 性能热点修复，其次推进 Java Parser / Call Resolver 真实精度深化，再继续 Retrieval / Reasoning 质量闭环与输出体验产品化。
 
 English summary: 3.5.9 establishes a practical Ruff governance baseline (`F/E9/I001/B006/B008/B904`) and documents the next staged cleanup and product-quality work.
 
@@ -2667,7 +2683,7 @@ English summary: reasoning now has one evidence-bounded pipeline, additive facad
 
 ## 3.0.0
 
-### NEXT_PHASE_MASTER_PLAN.md 全量实现 / Full Implementation
+### 开发路线全量实现 / Full Implementation
 
 #### Phase A: Ontology 约束层 / Ontology Constraint Layer
 - `hybrid_retrieve` 返回结果增加 `semantic_strength` (fact/inferred/derived) 和 `confidence_label` (high/medium/low)
@@ -2779,11 +2795,11 @@ English summary: reasoning now has one evidence-bounded pipeline, additive facad
 - **文档更新**
   - README.md 增加 Vue 前端安装和使用说明
   - ARCHITECTURE.md 增加 Vue 前端模块架构
-  - NEXT_PHASE_MASTER_PLAN.md 标记已实现项
+  - 内部开发路线文档标记已实现项
 
 ## 2.2.0
 
-- **NEXT_PHASE 已实现能力完成收口**
+- **开发路线已实现能力完成收口**
   - 完成并接入主链路：hybrid retrieval、benchmark trending、unified backend query、drill-down navigation、completion audit
   - CLI / MCP / HTTP 入口同步可用
 - **混合检索**
@@ -2804,9 +2820,9 @@ English summary: reasoning now has one evidence-bounded pipeline, additive facad
   - 支持文档、测试、实现、设计一致性检查与建议生成
 - **文档结构继续收敛**
   - 删除阶段性文档 `docs/V3_PLAN.md`
-  - 删除阶段性文档 `docs/NEXT_PHASE_IMPLEMENTATION_REPORT.md`
+  - 删除阶段性实施报告文档
   - 删除单版本文档 `docs/CHANGELOG_v2.2.0.md`
-  - 剩余计划统一并入 `docs/NEXT_PHASE_MASTER_PLAN.md`
+  - 剩余计划统一并入内部开发路线文档
 - **本体与治理方向转入下一阶段**
   - 近期重点转为 ontology、检索质量继续收口、SQLite 主读路径推进、audit 产品化与 drill-down 体验增强
 
@@ -2827,7 +2843,7 @@ English summary: reasoning now has one evidence-bounded pipeline, additive facad
 ## 2.1.3
 
 - **文档体系重构**
-  - 补回根目录维护者文档：`TECHNICAL_GUIDE.md`、`NEXT_PHASE_MASTER_PLAN.md`
+  - 补回根目录维护者文档：`TECHNICAL_GUIDE.md`、内部开发路线文档
   - `README.md`、`docs/archive/ROADMAP.md`、`docs/RELEASE.md` 与技术/计划文档重新串联
   - 调整文档分层：对外使用线与对内维护线并存
 

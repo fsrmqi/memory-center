@@ -56,12 +56,6 @@ def test_acceptance_validation_design_is_discoverable() -> None:
     assert "enforce_evidence_contract" in _read("docs/ARCHITECTURE.md")
 
 
-def test_active_plan_has_no_stale_completed_execution_sequence() -> None:
-    content = _read("docs/NEXT_PHASE_MASTER_PLAN.md")
-    assert "建议实施顺序" not in content
-    assert "P1：Java Parser / Call Resolver 真实精度深化" in content
-
-
 def test_ontology_evolution_plan_is_discoverable_and_actionable() -> None:
     content = _read("docs/ONTOLOGY.md")
     for required in ("Assertion", "开放世界假设", "NOT_FOUND", "UNKNOWN", "STALE", "REJECTED", "generation", "实体稳定", "断言可变", "O1", "O5"):
