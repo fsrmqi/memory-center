@@ -3,9 +3,9 @@
 > **状态 / Status**：Phase A–D 已实施并经 4.5–4.6 真实回放、分桶刷新与质量门禁验证；Phase E 挂起待真实需求触发
 > **文档类型 / Type**：决策 + 实施规格（Decision + implementation specification）  
 > **适用范围 / Scope**：Memory Center 的索引、图查询、局部刷新和本地运行治理  
-> **不替代 / Does not replace**：[NEXT_PHASE_MASTER_PLAN.md](../NEXT_PHASE_MASTER_PLAN.md) 仍是唯一活跃开发路线；本文件给出其中相关工作在获准后应如何实现、验证和回滚。  
-> **参考 / Reference**：[codebase-memory-mcp.md](../references/codebase-memory-mcp.md)；该参考只提供设计启发，不构成运行时依赖或兼容目标。  
-> **实施记录 / Implementation**：Phase A–D 从 4.5.0 起实施，随后完成 Java IR/差分门禁、generation-local staging、跨服务主链、真实 retrieval replay、覆盖语义校准与分桶刷新预算。见 [验证回执](../implementation-receipts/code-graph-foundation.md)、[检索回放](../implementation-receipts/retrieval-replay-calibration.md) 与 [刷新性能](../implementation-receipts/scoped-refresh-performance.md)。Phase E（通用语言 adapter 试点）维持 P2 并等待真实非 Java workspace 需求与可脱敏评测集。
+> **不替代 / Does not replace**：本文件是代码图谱基础设施的决策与实施规格，不替代 CHANGELOG 与 ADR 中的决策记录；它给出相关工作应如何实现、验证和回滚。  
+> **参考 / Reference**：同类代码智能工具与内部设计笔记；该参考只提供设计启发，不构成运行时依赖或兼容目标。  
+> **实施记录 / Implementation**：Phase A–D 从 4.5.0 起实施，随后完成 Java IR/差分门禁、generation-local staging、跨服务主链、真实 retrieval replay、覆盖语义校准与分桶刷新预算。验证记录、检索回放与刷新性能数据见内部实施回执（内部资料，不随公开仓库发布）。Phase E（通用语言 adapter 试点）保持待触发，等待真实非 Java workspace 需求与可脱敏评测集。
 
 ---
 
@@ -599,7 +599,7 @@ deadline。任何上限触发都返回可读诊断和 `next_action`，而不是�
 - 新规则提升目标失败类别且不降低 forbidden-hit/precision；
 - 不可证明的目标维持 UNKNOWN/AMBIGUOUS。
 
-### Phase E：通用语言 adapter 试点（P2，按数据触发）
+### Phase E：通用语言 adapter 试点（按数据触发）
 
 **前置条件**
 
@@ -777,7 +777,7 @@ generation 审计。
 
 开发者开始每个任务前：
 
-- [ ] 阅读本文件、`ARCHITECTURE.md`、`MCP_GUIDE.md`、`NEXT_PHASE_MASTER_PLAN.md`；
+- [ ] 阅读本文件、`ARCHITECTURE.md`、`MCP_GUIDE.md` 与相关 ADR；
 - [ ] 说明改动属于哪个 phase 与任务包；
 - [ ] 确认不会新增平行 MCP facade 或破坏旧 schema；
 - [ ] 写出可证伪的性能/质量假设与 stop condition；

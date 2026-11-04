@@ -30,7 +30,9 @@ from memory_center.core.indexing.ir import (
     EVIDENCE_AMBIGUOUS,
     EVIDENCE_EXTRACTED,
     EVIDENCE_INFERRED,
+    FileRecord,
     RelationCandidate,
+    SymbolRecord,
     stable_id,
 )
 from memory_center.core.indexing.java_call_resolver import JavaCallResolver, build_java_class_index
@@ -48,7 +50,6 @@ def _evidence_level(resolved) -> str:
 
 def symbol_to_file_record(sym: dict[str, Any], *, parse_status: str = "parsed") -> "FileRecord":
     """Project one java-symbol row into a FileRecord."""
-    from memory_center.core.indexing.ir import FileRecord
 
     return FileRecord(
         path=str(sym.get("file", "")),
@@ -60,7 +61,6 @@ def symbol_to_file_record(sym: dict[str, Any], *, parse_status: str = "parsed") 
 
 def symbol_to_symbol_records(sym: dict[str, Any]) -> list["SymbolRecord"]:
     """Project one java-symbol row into its SymbolRecords (classes/ifaces/methods)."""
-    from memory_center.core.indexing.ir import SymbolRecord
 
     project = str(sym.get("project", "") or "")
     file = str(sym.get("file", "") or "")

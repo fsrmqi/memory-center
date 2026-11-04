@@ -36,10 +36,10 @@ def workspace_file(tmp_path: Path) -> str:
 
 def test_start_task_sync_false_never_binds_even_with_direct_anchor(workspace_file: str) -> None:
     """P0-1: sync_task_space=false + title_exact 候选 => shadow_only，无绑定。"""
-    create_task_space(workspace_file, title="预警发送-消息推送架构治理", tags=["预警发送"])
+    create_task_space(workspace_file, title="通知发送-消息推送架构治理", tags=["通知发送"])
     result = start_task(
         workspace_file,
-        intent="继续 预警发送-消息推送架构治理 的工作",
+        intent="继续 通知发送-消息推送架构治理 的工作",
         limit=8,
         auto_sync_mode="balanced",
         sync_task_space=False,
@@ -63,10 +63,10 @@ def test_start_task_sync_false_never_binds_even_with_direct_anchor(workspace_fil
 
 def test_start_task_sync_true_with_direct_anchor_binds(workspace_file: str) -> None:
     """P0-1: sync_task_space=true + title_exact 仍允许 auto_direct_anchor。"""
-    create_task_space(workspace_file, title="预警发送-消息推送架构治理", tags=["预警发送"])
+    create_task_space(workspace_file, title="通知发送-消息推送架构治理", tags=["通知发送"])
     result = start_task(
         workspace_file,
-        intent="继续 预警发送-消息推送架构治理 的工作",
+        intent="继续 通知发送-消息推送架构治理 的工作",
         limit=8,
         auto_sync_mode="balanced",
         sync_task_space=True,

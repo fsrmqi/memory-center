@@ -1,6 +1,6 @@
 # Memory Center / 记忆中心
 
-> **当前版本 5.0.0b26（开发测试版）** — 一次安装、常驻运行的多项目上下文与记忆服务。
+> **当前版本 5.0.0b27（开发测试版）** — 一次安装、常驻运行的多项目上下文与记忆服务。
 >
 > 入口：服务 `memory-center-service`（`memory-center` 现指向同一服务）、stdio 代理 `memory-center-mcp`、维护 `memory-center-maintenance`、宿主集成 `memory-center-integrations`。地址：管理页 `/admin/`、就绪 `/health/ready`、MCP `/mcp`。
 >
@@ -57,23 +57,21 @@ Memory Center precomputes these relationships before the agent starts editing.
 - [docs/REFERENCE.md](docs/REFERENCE.md) — 命令、参数、schema 参考
 - [docs/ONTOLOGY.md](docs/ONTOLOGY.md) — 轻量本体与演进计划
 - [docs/CHANGELOG.md](docs/CHANGELOG.md) — 变更记录
-- [docs/NEXT_PHASE_MASTER_PLAN.md](docs/NEXT_PHASE_MASTER_PLAN.md) — 开发路线
 - [docs/TECHNICAL_DESIGN_AGENT_PROPOSAL.md](docs/TECHNICAL_DESIGN_AGENT_PROPOSAL.md) — 技术方案设计 Agent 的证据优先落地提案（部分基础已落地）
-- [docs/THREE_SYSTEM_KNOWLEDGE_LOOP.md](docs/THREE_SYSTEM_KNOWLEDGE_LOOP.md) — DSH、Memory Center 与 Personal Wiki 协同闭环
-- [docs/KNOWLEDGE_LINK_INTEGRATION_PLAN.md](docs/KNOWLEDGE_LINK_INTEGRATION_PLAN.md) — DSH、Memory Center 与 Personal Wiki 的受控 KnowledgeLink 交互计划
-- [docs/DSH_WORKBENCH_PRODUCTIZATION_ROADMAP.md](docs/DSH_WORKBENCH_PRODUCTIZATION_ROADMAP.md) — DSH 工作台产品化实施路线
-- [docs/DSH_LOCAL_TELEMETRY.md](docs/DSH_LOCAL_TELEMETRY.md) — DSH 本地执行观测接入
-- [docs/HTTP_DISPLAY_MIGRATION.md](docs/HTTP_DISPLAY_MIGRATION.md) — 内置 Workbench 下线与 DSH/JSON 迁移说明
+- [docs/THREE_SYSTEM_KNOWLEDGE_LOOP.md](docs/THREE_SYSTEM_KNOWLEDGE_LOOP.md) — Memory Center 与外部长期知识库、宿主插件的协同闭环
+- [docs/KNOWLEDGE_LINK_INTEGRATION_PLAN.md](docs/KNOWLEDGE_LINK_INTEGRATION_PLAN.md) — 受控 KnowledgeLink 交互计划与安全门禁
+- [docs/DSH_LOCAL_TELEMETRY.md](docs/DSH_LOCAL_TELEMETRY.md) — 可选宿主执行元数据的接入边界
+- [docs/HTTP_DISPLAY_MIGRATION.md](docs/HTTP_DISPLAY_MIGRATION.md) — 内置 Workbench 下线与 JSON 读模型/管理页迁移说明
 - [docs/DOCUMENT_CONSTITUTION.md](docs/DOCUMENT_CONSTITUTION.md) — 文档治理与发布清单
 - [docs/DOCUMENT_STATUS.md](docs/DOCUMENT_STATUS.md) — 当前/决策/历史文档状态目录
 
 ### Current release / 当前版本
 
-当前包版本为 **5.0.0b26**（开发测试版）。Memory Center 已重构为常驻服务：多项目登记、统一 MCP 入口、后台索引、知识库 / Wiki / 长期记忆与知识治理 / Skill 管理全部由同一服务承载，入口与能力边界以 [5.0 平台指南](docs/V5_PLATFORM_GUIDE.md) 为准。
+当前包版本为 **5.0.0b27**（开发测试版）。Memory Center 已重构为常驻服务：多项目登记、统一 MCP 入口、后台索引、知识库 / Wiki / 长期记忆与知识治理 / Skill 管理全部由同一服务承载，入口与能力边界以 [5.0 平台指南](docs/V5_PLATFORM_GUIDE.md) 为准。
 
 4.x 的稳定能力（可信查询、Java IR 差分、跨服务调用链、检索回放、发布质量门禁）作为核心算法背景保留；5.0 实际复用其中哪些部分，由平台指南与代码事实定义，不以本文的历史叙述为准。4.6.30 保留在 `codex/release-4.6.30` 分支供源码追溯，5.0 不读取其 workspace、registry、索引与记忆。
 
-The current package version is **5.0.0b26** (development beta). Memory Center now runs as a standalone always-on service hosting multi-project registration, a unified MCP endpoint, background indexing, knowledge/Wiki/long-term memory, and knowledge/skill governance. The 4.x engine capabilities are retained as algorithmic background; which parts the 5.0 service actually reuses is defined by the platform guide and the code, not by this historical narrative.
+The current package version is **5.0.0b27** (development beta). Memory Center now runs as a standalone always-on service hosting multi-project registration, a unified MCP endpoint, background indexing, knowledge/Wiki/long-term memory, and knowledge/skill governance. The 4.x engine capabilities are retained as algorithmic background; which parts the 5.0 service actually reuses is defined by the platform guide and the code, not by this historical narrative.
 
 ---
 
@@ -237,7 +235,7 @@ Detailed local setup and multi-service workflow / 详细本地初始化与多服
 - [docs/USER_GUIDE.md](./docs/USER_GUIDE.md)
 - [docs/MCP_GUIDE.md](./docs/MCP_GUIDE.md)
 - [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)
-- [docs/NEXT_PHASE_MASTER_PLAN.md](./docs/NEXT_PHASE_MASTER_PLAN.md)
+- [docs/adr/0004-service-platform-and-admin.md](./docs/adr/0004-service-platform-and-admin.md)
 
 ---
 
@@ -1589,13 +1587,13 @@ Mutation examples: `POST /workspace/asset/register`, `POST /workspace/artifact/u
 
 ## Documentation Status / 文档状态
 
-5.0 采用全新安装策略：重新登记源码项目、重新建立索引和记忆，不导入旧 workspace 或保留 4.x 接口兼容层。当前已经实现 S0 服务运行与 S1 项目目录 API、状态管理页和安装包，包版本为 5.0.0a2，项目 MCP、后台索引与完整页面仍待后续切片接入；历史数据清理由用户自行处理。运行架构确定为 FastAPI/Uvicorn 模块化单体、官方 Python MCP SDK、Vue 管理页面、SQLite 与有界进程 Worker，服务依赖已按 S0 验证版本锁定。
+5.0 采用全新安装策略：重新登记源码项目、重新建立索引和记忆，不导入旧 workspace 或保留 4.x 接口兼容层。当前包版本为 5.0.0b27，已提供独立常驻服务、项目目录 API、管理页、项目 MCP 与后台索引；历史数据清理由用户自行处理。运行架构为 FastAPI/Uvicorn 模块化单体、官方 Python MCP SDK、Vue 管理页面、SQLite 与有界进程 Worker。
 
-`codex/service-platform` 分支以 **5.0.0** 为目标发行版，从 4.6.30 改造为独立常驻服务、多项目接入与管理页面，后续扩展文档知识库、Wiki 和长期记忆。S1 已实施，项目操作见 [项目目录管理指南](docs/V5_CATALOG_GUIDE.md)，运行事实见 [5.0 服务运行指南](docs/V5_SERVICE_GUIDE.md)。原有 CLI/MCP/HTTP 源码暂留用于后续能力拆分，不提供兼容承诺。改造流程、WeKnora 参考映射与全新安装验收见 [5.0 改造流程方案](docs/V5_IMPLEMENTATION_PLAN.md)，技术设计见 [服务化技术方案](docs/SERVICE_PLATFORM_TECHNICAL_PLAN.md) 和 [ADR-0004](docs/adr/0004-service-platform-and-admin.md)；开发优先级由主计划的分支说明统一维护。
+5.0 以 **5.0.0** 为目标发行版：从 4.x 引擎改造为独立常驻服务、多项目接入与管理页面，并扩展文档知识库、Wiki 和长期记忆。项目操作见 [项目目录管理指南](docs/V5_CATALOG_GUIDE.md)，运行事实见 [5.0 服务运行指南](docs/V5_SERVICE_GUIDE.md)，架构决策见 [ADR-0004](docs/adr/0004-service-platform-and-admin.md)。原有 CLI/MCP/HTTP 源码暂留用于后续能力拆分，不提供兼容承诺。
 
 - 当前对外说明以 [docs/DOCUMENT_CONSTITUTION.md](docs/DOCUMENT_CONSTITUTION.md) 为准。
 - 当前实现状态、最近改动和版本变化以 [docs/CHANGELOG.md](docs/CHANGELOG.md) 为准。
-- 当前唯一活跃开发路线以 [docs/NEXT_PHASE_MASTER_PLAN.md](docs/NEXT_PHASE_MASTER_PLAN.md) 为准。
+- 架构与设计取舍以 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)、[docs/adr/](docs/adr/) 与 [docs/decisions/](docs/decisions/) 为准。
 - 每份文档的 current / decision / historical 状态以 [docs/DOCUMENT_STATUS.md](docs/DOCUMENT_STATUS.md) 为准。
 
 ---
@@ -1606,14 +1604,16 @@ Memory Center is local-first and read-only by default. Query/context/impact/cont
 
 记忆中心默认本地优先、只读优先。查询、上下文、影响分析、契约查看不会修改业务源码；写入类工具只写记忆、Skill 等 Memory Center 产物。详见 `docs/MCP_GUIDE.md`。
 
+## Contributing / 贡献
+
+贡献流程、代码风格、测试要求与真实工作区验证约定见 [AI_DEV_GUIDE.md](AI_DEV_GUIDE.md) 与 [docs/PUBLISHING.md](docs/PUBLISHING.md)。
+
+Contribution workflow, code style, testing requirements and private-workspace conventions are documented in [AI_DEV_GUIDE.md](AI_DEV_GUIDE.md); the release process is in [docs/PUBLISHING.md](docs/PUBLISHING.md).
+
 ## License / 许可证
 
-Apache-2.0
+Released under the **Apache License 2.0** — see [LICENSE](LICENSE) and [NOTICE](NOTICE).
+Copyright 2026 Memory Center Contributors.
 
-开发更新 b15 的参考吸收清单、管理页操作和验证边界见 [实施回执](docs/implementation-receipts/V5_REFERENCE_ADOPTION.md)。未发版、未部署。
-
-b16 在项目管理中新增项目空间占用明细，支持当前／其他索引代际、解析／向量缓存及项目数据库载荷统计。共享数据库物理空间不分摊；统计口径与入口见 [平台指南](docs/V5_PLATFORM_GUIDE.md)。Project Management now reports per-project file and database payload accounting with explicit shared-storage limitations.
-
-b17 在项目空间面板新增按项目的存储治理，保留策略、分页清理预览和确认执行；SQLite 向量检索使用流式 Top-K 并支持可选扫描上限。Project storage governance and bounded-memory exact vector scanning are available; details are in the platform guide.
-
-项目管理中的“向量化范围”可按项目选择跟随全局、全部内容、仅 Wiki／记忆或关闭；代码图与关键词索引独立运行。设置保存不自动重建，范围扩大后需手动索引，见 [项目向量化指南](docs/V5_PLATFORM_GUIDE.md)。
+本项目以 **Apache License 2.0** 发布，见 [LICENSE](LICENSE) 与 [NOTICE](NOTICE)（第三方组件声明）。
+Copyright 2026 Memory Center Contributors.

@@ -1112,7 +1112,7 @@ def test_resume_context_uses_cjk_bigram_fallback_for_long_intent(tmp_path: Path)
     workspace = copy_demo_workspace(tmp_path)
     workspace_record_case(
         workspace,
-        "实现多次接单任务的数据自动隔离",
+        "实现多任务场景的数据自动隔离",
         ["task-service"],
         ["TaskIsolation.java"],
         source_session_id="session-cjk-fallback",

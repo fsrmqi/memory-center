@@ -1,1 +1,0 @@
-[{"project": "common-api", "file": "common-api/src/main/java/com/example/api/ArticleFeignClient.java", "interface": "ArticleFeignClient", "target_service": "article-service", "base_path": "/article", "methods": [{"method_name": "moveArticle", "http_method": "POST", "path": "/article/move"}]}]

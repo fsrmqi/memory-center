@@ -1,14 +1,14 @@
 # Lookup Architecture Completion Handoff Plan / 查询架构收口交接计划
 
-> 状态 / Status：P1/P2 field fixes 已实施（2026-09-03）；Phase A–F 架构收口待续
+> 文档类型：架构契约与验收设计（decision）。
 >
-> 已完成 / Done：P1-A chain 锚定负向结论门禁（`chain_anchor_gate.py` + `evaluate_claim_boundary(chain_gate=...)` + 路由 camelCase 拆词）；P1-B 任务解析保守写入门禁（匹配来源分类 + `resolution_confidence` / `auto_write_allowed` + sync 停写 + mc_close 复用会话绑定）；P2-C freshness generation 快照（`observed_generation` / `refresh_in_flight` / `freshness_transition`）；P2-D AGENTS 协议 chain 失败回退与硬锚推荐。
+> 目标 / Goal：在不改变 CLI、HTTP、MCP 公开契约的前提下，定义查询层的依赖反转边界、行为回放门禁与本地样本治理规则。
 >
-> 目标 / Goal：在不改变 CLI、HTTP、MCP 公开契约的前提下，完成查询层依赖反转、行为回放门禁和私有样本治理。
+> 已落地的字段门禁 / Shipped gates：chain 锚定负向结论门禁（`chain_anchor_gate.py` + `evaluate_claim_boundary(chain_gate=...)` + 路由 camelCase 拆词）；任务解析保守写入门禁（匹配来源分类 + `resolution_confidence` / `auto_write_allowed` + sync 停写 + mc_close 复用会话绑定）；freshness generation 快照（`observed_generation` / `refresh_in_flight` / `freshness_transition`）；AGENTS 协议的 chain 失败回退与硬锚推荐。回归测试见 `tests/domain/test_chain_anchor_gate.py`、`tests/domain/test_task_resolution_write_gate.py`。
 
-## 1. 当前状态 / Current State
+## 1. 模块边界 / Module Boundaries
 
-已完成：hybrid lookup 的 scope、execution、decorator、contracts、response 拆分；context、symbol、navigation、diagnostics API 拆分；JSONL projection watermark/repair；core/facade contract 回放；feature-scoped lookup Port。
+hybrid lookup 的 scope、execution、decorator、contracts、response 已拆分；context、symbol、navigation、diagnostics API 已拆分；JSONL projection 提供 watermark/repair；core/facade contract 可回放；lookup Port 按功能切分。
 
 Completed: hybrid pipeline extraction, API aggregation extraction, JSONL projection recovery, core/facade contract replay, and feature-scoped lookup ports.
 
@@ -33,7 +33,7 @@ Completed: hybrid pipeline extraction, API aggregation extraction, JSONL project
 5. baseline 必须显式保存；未批准语义漂移必须可见。
 6. 发布报告不得包含 query 正文、绝对路径、原始 payload 或结果正文。
 
-## 3. 后续实施阶段 / Remaining Phases
+## 3. 架构收口阶段 / Consolidation Phases
 
 ### A. Presentation Layer Finalization
 
@@ -116,9 +116,9 @@ Port 只保留 runtime/facade 依赖：
 
 ## 5. 高优先级实测修复 / High-Priority Field Fixes
 
-以下问题来自真实会话复盘。它们优先级高于展示层重构，因为会产生错误的负向结论或污染追加保护工件。
+以下问题来自真实会话复盘（已脱敏）。它们高于展示层重构，因为会产生错误的负向结论或污染追加保护工件。
 
-### P1-A. Chain 锚定失败不得产生 VERIFIED_NEGATIVE ✅
+### P1-A. Chain 锚定失败不得产生 VERIFIED_NEGATIVE
 
 **现象**：`mc_lookup(mode="chain")` 可能将包含明确类名的 query 锚定到不相关符号；路由分片也可能遗漏目标类所在项目。若 chain 为空且 index freshness/coverage 正常，当前通用 claim boundary 仍可能产生 `VERIFIED_NEGATIVE`。
 
@@ -165,7 +165,7 @@ Port 只保留 runtime/facade 依赖：
 - 中文意图词混入 query，但显式 `symbol` 正确：仍匹配；
 - 空 chain 不得自动生成“确认不存在调用方”文案。
 
-### P1-B. 任务空间解析的保守写入门禁 ✅
+### P1-B. 任务空间解析的保守写入门禁
 
 **现象**：当前 task resolver 主要把完全同分当作歧义；低分且相近的候选仍可能被自动选中，进而让 `mc_start` / `mc_close` 写入错误 task space。
 
@@ -196,7 +196,7 @@ Port 只保留 runtime/facade 依赖：
 - 同 session start/close 默认使用同一 task；
 - 不确定解析下，断言所有 task artifact 文件保持未修改。
 
-### P2-C. Freshness 快照需要 generation 关联 ✅
+### P2-C. Freshness 快照需要 generation 关联
 
 **现象**：`mc_start` 的 stale banner 是启动时快照；后台定向刷新完成后，后续 `mc_lookup.index_context` 可能已 fresh，调用者无法判断两个状态属于不同 generation。
 
@@ -209,7 +209,7 @@ Port 只保留 runtime/facade 依赖：
 
 **验收**：一次 start 后后台刷新、随后 lookup 的输出能清楚表达 generation 变化，Agent 不会把旧 stale banner 当作当前查询事实。
 
-### P2-D. AGENTS 协议增加 chain 失败回退 ✅
+### P2-D. AGENTS 协议增加 chain 失败回退
 
 在 `core/governance/instructions.py` 的调用链规则后追加：
 
@@ -228,15 +228,11 @@ mc_lookup(
 
 中文意图可放 `intent` 或说明文本，但 `symbol` 必须是待验证的类/方法标识。
 
-## 6. 推荐执行顺序 / Revised Execution Order
+## 6. 执行顺序 / Execution Order
 
-1. ✅ P1-A chain anchor/scope negative-claim gate（已完成：见顶部状态）；
-2. ✅ P1-B task resolution write gate（已完成）；
-3. ✅ P2-C freshness generation snapshot（已完成）；
-4. ✅ P2-D AGENTS fallback（已完成）；
-5. 待续：原 Phase A presentation layer 与后续架构收口。
+字段门禁先于展示层收口落地：chain 锚定/范围负向结论门禁 → 任务解析写入门禁 → freshness generation 快照 → AGENTS 失败回退。展示层与 Port 收口按 Phase A→F 推进。
 
-每个 P1 修复必须先补真实失败回归 case，再允许调整排序或负向结论逻辑。（P1 回归测试：`tests/domain/test_chain_anchor_gate.py`、`tests/domain/test_task_resolution_write_gate.py`。）
+每一项门禁都必须先补可复现的失败回归 case，再允许调整排序或负向结论逻辑。
 
 ## 7. 测试矩阵 / Test Matrix
 
@@ -261,16 +257,16 @@ mc_lookup(
 
 若完整 suite 因受保护 demo workspace 的 SQLite WAL/SHM 产生 fixture 污染，应使用临时 workspace 副本。不得提交测试产生的 WAL/SHM/graph.db 改动。
 
-## 8. Definition of Done
+## 8. 验收矩阵 / Acceptance Matrix
 
-- [ ] query 内无 legacy query API；leaf module 无反向 facade import。（待 Phase A/B）
-- [ ] 各 Port 仅含必要 runtime 依赖，字段规模测试通过。（待 Phase B）
-- [ ] private core/facade case 达到最小覆盖集合。（待 Phase C，需要私有 case）
-- [ ] 批准 baseline 的漂移能阻断 release gate。（待 Phase D）
-- [ ] JSONL 故障、恢复、并发、幂等测试通过。（待 Phase E）
-- [ ] 文档、版本、本地安装一致。（待 Phase F）
-- [ ] 仓库不含私有 query、路径、payload、真实 session ID 或 baseline。
-- [x] P1-A chain 锚定/范围负向结论门禁（2026-09-03，含回归 `tests/domain/test_chain_anchor_gate.py`）。
-- [x] P1-B 任务解析保守写入门禁（2026-09-03，含回归 `tests/domain/test_task_resolution_write_gate.py`；显式 task_id 直接绑定）。
-- [x] P2-C freshness generation 快照与 `freshness_transition`（2026-09-03）。
-- [x] P2-D AGENTS 协议 chain 失败回退与硬锚推荐（2026-09-03）。
+| 验收项 | 验证方式 |
+|---|---|
+| query 内无 legacy query API；leaf module 无反向 facade import | `tests/domain/test_lookup_module_boundaries.py` |
+| 各 Port 仅含必要 runtime 依赖，字段规模受测试约束 | Port 字段规模测试 |
+| core/facade case 达到最小覆盖集合 | 维护者本地 case 集合，不入库 |
+| 批准 baseline 的漂移能阻断 release gate | release-gate 的 `fail` 条件 |
+| JSONL 故障、恢复、并发、幂等可复现 | projection/repair 回归测试 |
+| 文档、版本、本地安装一致 | 发布清单 |
+| 仓库不含私有 query、路径、payload、真实 session ID 或 baseline | 发布前 grep 与人工复核 |
+
+私有 case 与 baseline 只由维护者在本地提供、不入库；仓库中只能出现脱敏的 schema 示例。

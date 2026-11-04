@@ -1,26 +1,26 @@
-# Memory Enrichment Design / 记忆增强设计：借鉴 MemOS / claude-mem / MemoraX
+# Memory Enrichment Design / 记忆增强设计：可借鉴的四项记忆能力
 
-> **状态 / Status**：A（Evidence Index）与 B（Session Notes）**已实现**（2026-09-04，见 [CHANGELOG Unreleased](CHANGELOG.md)），D（四类记忆用户模型）已落入 [USER_GUIDE](USER_GUIDE.md) "Memory boundaries" 小节；C（Memory Cube）仍为 P2 草案待评审。设计与实现差异见文末"实现差异记录"。
+> **状态 / Status**：A（Evidence Index）与 B（Session Notes）**已实现**（2026-09-04，见 [CHANGELOG](CHANGELOG.md)），D（四类记忆用户模型）已落入 [USER_GUIDE](USER_GUIDE.md) "Memory boundaries" 小节；C（Memory Cube）仍为草案。设计与实现差异见文末"实现差异记录"。
 > **日期 / Date**：2026-09-04
-> **来源 / Sources**：对三个 AML 高分记忆系统的调研——
-> - [MemOS 2.0（MemTensor/MemOS，~11k★）](https://github.com/MemTensor/MemOS)：记忆操作系统，图存储、混合检索、L1/L2/L3/Skills 分层、OmniMemEval 评测叙事。
-> - [claude-mem / Grok Mem（thedotmack/claude-mem，~93k★）](https://github.com/thedotmack/claude-mem)：捕获-压缩-注入三件套，SQLite FTS5 + 向量混合检索，三层渐进式披露（search → timeline → get_observations），宣称约 10× token 节省。
-> - [MemoraX Code（memorax-ai/memorax-code，~1.2k★）](https://github.com/memorax-ai/memorax-code)：四类记忆边界（Coding / Repo / Personal / Procedure）+ NL 去重/更新/遗忘语义 + 默认关闭自动检索。
+> **来源 / Sources**：对三个公开记忆系统的机制调研（仅作设计启发，不构成运行时依赖或兼容目标）——
+> - [MemOS（MemTensor/MemOS）](https://github.com/MemTensor/MemOS)：记忆操作系统，图存储、混合检索、L1/L2/L3/Skills 分层。
+> - [claude-mem](https://github.com/thedotmack/claude-mem)：捕获-压缩-注入三件套，SQLite FTS5 + 向量混合检索，三层渐进式披露（search → timeline → get_observations）；其 README 自述约 10× token 节省（厂商口径，未经本项目验证）。
+> - [MemoraX Code（memorax-ai/memorax-code）](https://github.com/memorax-ai/memorax-code)：四类记忆边界（Coding / Repo / Personal / Procedure）+ NL 去重/更新/遗忘语义 + 默认关闭自动检索。
 >
-> **范围 / Scope**：只覆盖调研结论中"值得借鉴且 MC 当前没有"的中高优先级能力，共四项。低优先级（NL 修正入口）与明确不借鉴项（云端账号制、自动注入、无方法背书的分数）不在本文档范围内，见文末"明确不做"。
+> **范围 / Scope**：只覆盖调研结论中"值得借鉴且当前尚未具备"的能力，共四项。其余方向（NL 修正入口）与明确不借鉴项（云端账号制、自动注入、无方法背书的分数）不在本文档范围内，见文末"明确不做"。
 
 ---
 
 ## 0. 结论摘要 / Executive Summary
 
-| # | 能力 | 来源启发 | 优先级 | 核心改动 | 主要收益 |
+| # | 能力 | 来源启发 | 状态 | 核心改动 | 主要收益 |
 |---|---|---|---|---|---|
-| A | **Evidence Index 渐进式披露** | claude-mem 三层工具 + AML `selected` 契约 | P0 | `mc_lookup` 新增 `view="evidence-index"` 只读输出模式 | 降 token、AML Textual 适配、Workbench 紧凑证据 |
-| B | **叙事记忆层（Session Notes）** | claude-mem observations / MemOS 自演进 | P1 | L0.5 新存储集合 + 确定性 draft + 独立检索 | 跨任务"我们决定了什么/下一步"记忆；AML 叙事题 |
-| C | **Memory Cube 隔离与受控共享** | MemOS multi-cube | P2 | workspace 级 cube 注册表 + 读写 ACL + 跨 cube 只读引用 | 多项目/多团队隔离、受控联邦 |
-| D | **四类记忆用户模型（文档层）** | MemoraX 四边界 | P2 | 把现有 L3 块映射为四类边界的用户文档 | 用户可决策"记什么到哪层"；零代码 |
+| A | **Evidence Index 渐进式披露** | claude-mem 三层工具 + 人工评测的 `selected` 契约 | 已实现 | `mc_lookup` 新增 `view="evidence-index"` 只读输出模式 | 降 token、紧凑证据视图 |
+| B | **叙事记忆层（Session Notes）** | claude-mem observations / MemOS 自演进 | 已实现 | L0.5 新存储集合 + 确定性 draft + 独立检索 | 跨任务"我们决定了什么/下一步"记忆 |
+| C | **Memory Cube 隔离与受控共享** | MemOS multi-cube | 草案 | workspace 级 cube 注册表 + 读写 ACL + 跨 cube 只读引用 | 多项目/多团队隔离、受控联邦 |
+| D | **四类记忆用户模型（文档层）** | MemoraX 四边界 | 已落地（文档） | 把现有 L3 块映射为四类边界的用户文档 | 用户可决策"记什么到哪层"；零代码 |
 
-实现顺序即优先级顺序：A 是纯输出层改动、无新存储、风险最低；B 需要新存储与确定性 draft、收益最大；C 是多工作区治理演进；D 是纯文档。B 不引入模型驱动的会话压缩管线，原因见第 3.4 节。
+实施顺序按改动成本与风险排列：A 是纯输出层改动、无新存储、风险最低；B 需要新存储与确定性 draft、收益最大；C 是多工作区治理演进；D 是纯文档。B 不引入模型驱动的会话压缩管线，原因见第 3.4 节。
 
 ---
 
@@ -37,11 +37,11 @@
 
 ---
 
-## 2. 能力 A：Evidence Index 渐进式披露（P0）
+## 2. 能力 A：Evidence Index 渐进式披露（已实现）
 
 ### 2.1 问题
 
-`mc_lookup` 一次返回全部富块（evidence + guidance + next steps + chain 分析）。对于"先扫一眼有什么、再深入某几条"的用法，这是浪费：agent 端要在大响应里自行挑拣；AML 评测侧则完全无法消费（AML pipeline 只把有序的 `selected: [{created_at, text}]` 渲染进 `{{memories}}`）。claude-mem 用 `search(~100 tok) → timeline → get_observations(~1k tok)` 三层把"先过滤再展开"做成了产品级模式。
+`mc_lookup` 一次返回全部富块（evidence + guidance + next steps + chain 分析）。对于"先扫一眼有什么、再深入某几条"的用法，这是浪费：agent 端要在大响应里自行挑拣；外部记忆评测侧则完全无法消费（多数评测管线只消费有序的 `selected: [{created_at, text}]` 列表）。claude-mem 用 `search(~100 tok) → timeline → get_observations(~1k tok)` 三层把"先过滤再展开"做成了产品级模式。
 
 ### 2.2 设计
 
@@ -81,7 +81,7 @@ mc_lookup(query=..., mode="query", view="evidence-index")
 2. **展开路径**：第二跳用现有 `mc_lookup(mode="ref", ref_ids=[...])` 拉详情；`view="full"` 保留当前富输出作为兼容默认。**默认值不变**（`view` 缺省 = 现行为），保证 MCP schema 向后兼容。
 3. **`approx_tokens`**：按 `len(text)//4` 估算，标注 `estimated: true`；不引入 tokenizer 依赖。
 4. **`claim_boundary` 保留**：evidence-index 响应仍携带 `claim_boundary` 与 `knowledge_state`（压缩为两个标量字段而非完整块），因为"空结果不等于不存在"的负向门禁在紧凑视图下同样必须成立。
-5. **AML 适配复用**：未来 AML 适配器只需消费此视图（Add→既有写入面，Search→`view="evidence-index"`），不需要为评测单独开检索路径。
+5. **评测适配复用**：外部记忆评测适配器只需消费此视图（Add→既有写入面，Search→`view="evidence-index"`），不需要为评测单独开检索路径。
 
 ### 2.3 验收标准
 
@@ -98,11 +98,11 @@ mc_lookup(query=..., mode="query", view="evidence-index")
 
 ---
 
-## 3. 能力 B：叙事记忆层 Session Notes（P1）
+## 3. 能力 B：叙事记忆层 Session Notes（已实现）
 
 ### 3.1 问题
 
-MC 的 L0 是结构化事件（tool 名、turn、耗时），L1 case 是"可复用工程单元"，L3 是稳定治理块。**缺的是中间态**："这次会话我们决定了什么、为什么、下一步做什么"的自然语言记忆——跨任务可检索、可修正、可遗忘。三个对标项目全部把这个作为产品核心（claude-mem 的 observations、MemOS 的自演进记忆、MemoraX 的四边界），AML Textual track 的时间/偏好/规则题也直接考察它。
+MC 的 L0 是结构化事件（tool 名、turn、耗时），L1 case 是"可复用工程单元"，L3 是稳定治理块。**缺的是中间态**："这次会话我们决定了什么、为什么、下一步做什么"的自然语言记忆——跨任务可检索、可修正、可遗忘。三个对标项目全部把这个作为产品核心（claude-mem 的 observations、MemOS 的自演进记忆、MemoraX 的四边界）；外部记忆评测中的时间、偏好与规则类问题也直接考察它。
 
 ### 3.2 设计
 
@@ -170,7 +170,7 @@ MC 的 L0 是结构化事件（tool 名、turn、耗时），L1 case 是"可复�
 
 ---
 
-## 4. 能力 C：Memory Cube 隔离与受控共享（P2）
+## 4. 能力 C：Memory Cube 隔离与受控共享（草案）
 
 ### 4.1 问题
 
@@ -195,7 +195,7 @@ MC 目前只有 workspace 单层边界 + 子目录向上聚合（`workspace_esca
 
 ---
 
-## 5. 能力 D：四类记忆用户模型（P2，纯文档）
+## 5. 能力 D：四类记忆用户模型（已落地，纯文档）
 
 ### 5.1 内容
 
@@ -220,12 +220,12 @@ MC 目前只有 workspace 单层边界 + 子目录向上聚合（`workspace_esca
 ## 6. 实施顺序与依赖
 
 ```
-A evidence-index (P0) ──► B session notes (P1) ──► C memory cubes (P2)
-                                    │
-                                    └──► D 四边界文档 (P2, 随时可做)
+A evidence-index ──► B session notes ──► C memory cubes
+                            │
+                            └──► D 四边界文档（独立，可随时合入）
 ```
 
-- A 先行：零存储变更、AML 适配的前置、token 收益直接；
+- A 先行：零存储变更、评测适配的前置、token 收益直接；
 - B 依赖 A 的视图作为检索出口之一；
 - C 依赖 B 的数据结构（cube 标签挂在 note/case 上）；
 - D 独立，可在任意时点合入。
@@ -234,14 +234,14 @@ A evidence-index (P0) ──► B session notes (P1) ──► C memory cubes (P
 
 - **云端记忆同步/账号体系**（claude-mem cmem.ai、MemOS Cloud 的产品形态）：违反本地优先与不出私有数据的原则；
 - **自动检索注入**（SessionStart 自动拉记忆进上下文）：削弱显式查询与证据边界的可证伪性；MC 的等价物是 `mc_start` 的 sniff + 上下文包，由 agent 显式调用；
-- **未给方法的 benchmark 分数**：MC 参与外部评测（如 AML）时必须附可复现评测配置；对内继续用 `eval_retrieval_replay` / `eval_golden` 体系；
+- **未给方法的 benchmark 分数**：参与外部评测时必须附可复现的评测配置；对内继续用 `eval_retrieval_replay` / `eval_golden` 体系；
 - **AI 自动压缩与宿主 token 预算控制**：宿主是完整会话的唯一权威方；MC 不保存完整对话，也不通过阈值自动触发摘要。即使获得成本证据，也必须先有新的产品决策和 ADR，不能作为既有 Session Notes 的扩展项默认为用户启用。
 
 ## 8. 失效条件 / Revisit Triggers
 
-- AML Coding track 发布且其检索契约与 `evidence-index` 不兼容 → 重评 A 的输出形状；
+- 公开编码基准的检索契约与 `evidence-index` 不兼容 → 重评 A 的输出形状；
 - Session Notes 规模超过 5 万条且 FTS 延迟不可接受 → 评估向量/ANN（届时按 AGENTS.md 规则走 `vector_ann` 管理流程）；
-- 出现真实的跨团队共享需求 → C 从 P2 提级并做完整 ADR。
+- 出现真实的跨团队共享需求 → 推进 C 并补一份完整 ADR。
 
 ## 9. 实现差异记录 / Implementation Notes（2026-09-04）
 
@@ -251,13 +251,3 @@ A evidence-index (P0) ──► B session notes (P1) ──► C memory cubes (P
 - **B 检索**：v1 用 token 重叠评分（`search_notes`），非 FTS5 索引；规模触发条件见第 8 节。
 - **A 展开第二跳**：`mc_lookup(mode="ref")` 现有 ref 机制对 `node:`/`note:` 前缀的解析在后续迭代补齐；当前 `ref_id` 作为稳定标识返回。
 - **L0.5 层常量**：`LAYER_L0_5 = "L0.5_session_notes"` 已加入 `MEMORY_LAYER_ORDER`（展示排序），workspace overview 的 `memory_layers` 输出含 `note_count`/`active_note_count`；写入门禁语义不变。
-
-### 真实工作区验证回执（ucap，~2 万文件级，2026-09-04）
-
-- note 生命周期：record → fingerprint no-op → search 命中 → supersede 审计链 → forget 只隐藏具名条，全部通过。
-- evidence-index（真实图谱混合）：11 条 selected（36 候选），note 命中与真实图谱方法并列，`knowledge_state=FOUND`；默认视图逐字节兼容。
-- `mode="query"` note 合并：命中 note 的查询返回 `note_matches`，已 forget 的词返回空（隐藏语义正确）。
-- 隐私门：绝对路径 `absolute_path_rejected`；密钥形态 `secret_shape_rejected`；`<private>` 片段剥除为 `[已省略私有片段]` 后入库。
-- `mc_close` 草稿：真实 DSH session 的 intent 正确抽出 decision 草稿，未确认 0 条落盘。
-- CLI `query --view evidence-index` 与 HTTP `/workspace/query?view=evidence-index` 冒烟通过。
-- 验证数据已清理：notes 从 JSONL 与 backend 全删，常态内容（session-events 1243 行、case 14 行）零污染；追加式 L0.5 write receipts 按审计语义保留。

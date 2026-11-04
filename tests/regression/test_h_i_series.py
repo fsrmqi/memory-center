@@ -369,9 +369,11 @@ class TestI01Documentation:
         doc = Path("docs/MCP_GUIDE.md")
         assert doc.exists()
 
-    def test_next_phase_master_plan_exists(self):
-        doc = Path("docs/NEXT_PHASE_MASTER_PLAN.md")
-        assert doc.exists()
+    def test_architecture_decision_records_exist(self):
+        # 公开面不再包含内部开发计划；架构决策以 ADR 为准。
+        docs_dir = Path("docs")
+        assert any((docs_dir / "adr").glob("*.md"))
+        assert (docs_dir / "CHANGELOG.md").exists()
 
     def test_document_constitution_exists(self):
         doc = Path("docs/DOCUMENT_CONSTITUTION.md")

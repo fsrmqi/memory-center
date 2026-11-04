@@ -1,9 +1,15 @@
 # Reference / 参考手册
 
-> 2026-10-09 当前实施更新：5.0.0b1 已接入多项目授权 MCP、后台索引、知识库/Wiki/记忆管理与 PG/向量后端，已完成本地测试版验收；正式发行仍需真实模型语义与规模评测。用户已授权连续实施。本轮证据见 [实施回执](implementation-receipts/V5_PLATFORM.md)，当前入口与合同见 [5.0 平台指南](V5_PLATFORM_GUIDE.md)。下方较早的 S1/S2 等待确认记录仅保留决策演进背景。
+> **适用版本 / Version**：5.0.0b27。当前入口与合同见 [5.0 平台指南](V5_PLATFORM_GUIDE.md)，用户可感知的变化见 [CHANGELOG](CHANGELOG.md)。4.x 引擎的命令、参数与 schema 保留作兼容参考，不代表 5.0 服务入口；以代码、`--help`、路由与 MCP schema 为准。
+>
+> **Version**: 5.0.0b27. See the [platform guide](V5_PLATFORM_GUIDE.md) for current entry points and the [CHANGELOG](CHANGELOG.md) for user-visible changes. Legacy 4.x command/parameter references are kept as compatibility background only; code, `--help`, routes and MCP schema are authoritative.
 
 
-> **5.0.0a2 / S1 当前入口**：`memory-center-service` 独立服务，管理页 `/admin/`、MCP `/mcp`，当前只提供 `mc_service_status`。FastAPI 外层生命周期管理官方 SDK；项目目录 API 已完成（含管理员令牌），见 [项目目录管理指南](V5_CATALOG_GUIDE.md)；项目 MCP 授权与 Worker 尚待 S2–S3。实际参数、状态/错误合同、安装与关闭见 [5.0 服务运行指南](V5_SERVICE_GUIDE.md)。下文旧入口说明属于尚未接入的新服务底层能力，不构成 5.0 兼容承诺。
+> **当前入口 / Current entry**：`memory-center-service` 独立常驻服务，管理页 `/admin/`、MCP `/mcp`、项目目录 API `/api/v1/workspaces`。服务生命周期、状态与错误合同、安装与关闭见 [5.0 服务运行指南](V5_SERVICE_GUIDE.md)；项目登记与管理见 [项目目录管理指南](V5_CATALOG_GUIDE.md)。下文 4.x CLI/HTTP 参考属于保留的引擎能力，不构成 5.0 兼容承诺。
+
+> **只读状态 / Read-only status**：MCP 的 `mc_service_status` 无参数、只读，返回服务就绪状态、版本、能力、存储与索引预算；也可用 `GET /health/live`、`GET /health/ready` 与状态 API。完整 tool 合同见 [MCP 接入指南](MCP_GUIDE.md)。
+>
+> `mc_service_status` is the parameterless, read-only MCP tool returning readiness, version, capabilities, storage and index budgets; `GET /health/live`, `GET /health/ready` and the status API expose the same facts. See the [MCP guide](MCP_GUIDE.md) for the full contract.
 
 ## 1. CLI Command Groups / CLI 命令分组
 
@@ -63,11 +69,11 @@
 - `case-reinstate`：恢复曾被替代的 case 为 current truth；已是 current truth 时返回 no-op。 / reinstate a superseded case as current truth; already-current cases are no-ops.
 - `case-decisions`：按 `--case-id` 过滤列出替代/恢复决策行（最新在前）。 / list supersede/reinstate decision rows, latest first.
 - `eval-session-recall`：读取工作区外的私有 YAML case，通过实际 resume 链路评测 L1 case 召回；仅输出 case ID 与 query/session 哈希，分类为 `hit`、`case_not_indexed`、`retrieval_miss`、`ranking_miss` 或 `evidence_insufficient`，不修改检索策略或工作区状态。
-- `agent-execution-import`：显式、幂等导入 DSH 本地插件写入的脱敏 NDJSON inbox；不读取 prompt、工具参数/结果或 cwd。
-- `agent-execution-summary`：按 DSH session 聚合 turn/step/model/tool 耗时、首 Token、Token 数与失败；session ID 仅返回哈希。
-- `dsh-delivery-capture`：写入一条 completion-signalled DSH 最终摘要为独立 L0 会话；输入为 `workspace`、`source-session-id`、`summary` 与可选 `turn/step`，最多保存 1400 字符，不写入完整 transcript 或自动发布 Case。
-- `wiki-assets-sync`：将指定 Personal Assistant Wiki 根目录中的明确入口登记为私有 Wiki 资产；输入 `workspace`、`wiki-root`、`owner` 与可选 `scope`，只持久化 `pawiki:` 反向引用、内容哈希和范围。
-- `wiki-promotion-preview|wiki-promotion-confirm`：前者从已捕获的 DSH 交付摘要生成长期知识预览且不写 Wiki；后者必须显式提供 `owner`，确认后才调用 Personal Wiki 晋升并登记新的反向资产链接。
+- `agent-execution-import`：显式、幂等导入可选宿主适配器写入的脱敏 NDJSON inbox；不读取 prompt、工具参数/结果或 cwd。
+- `agent-execution-summary`：按宿主 session 聚合 turn/step/model/tool 耗时、首 Token、Token 数与失败；session ID 仅返回哈希。
+- `dsh-delivery-capture`：写入一条 completion-signalled 宿主最终摘要为独立 L0 会话；输入为 `workspace`、`source-session-id`、`summary` 与可选 `turn/step`，最多保存 1400 字符，不写入完整 transcript 或自动发布 Case。
+- `wiki-assets-sync`：将指定外部长期知识库根目录中的明确入口登记为私有 Wiki 资产；输入 `workspace`、`wiki-root`、`owner` 与可选 `scope`，只持久化 `pawiki:` 反向引用、内容哈希和范围。
+- `wiki-promotion-preview|wiki-promotion-confirm`：前者从已捕获的宿主交付摘要生成长期知识预览且不写知识库；后者必须显式提供 `owner`，确认后才调用外部知识库晋升并登记新的反向资产链接。
 - `sync-sniff-artifacts`
 - `sync-case-artifacts`
 - `ref-get`
@@ -284,7 +290,7 @@ memory-center eval-reasoning-prompts \
 - `ref`
 - `backend`
 
-`project` 参数：当同名符号存在于多个模块时，用 `project` 消歧。支持 FQN 自动推断（如 `cn.kaipuyun.cloud.openapi...ServiceImpl` → `ucap-cloud-open-api`）。
+`project` 参数：当同名符号存在于多个模块时，用 `project` 消歧。支持 FQN 自动推断（如 `com.example.billing.api...ServiceImpl` → `example-billing-api`）。
 
 chain 模式（`chain_direction=callers|callees`）建议显式传 `symbol` 作为硬锚；响应携带 additive 门禁字段：
 
@@ -736,5 +742,5 @@ MCP facade schema兼容优先；破坏性变更必须同步 README/docs/changelo
 
 主线使用请优先看：
 
-- [USER_GUIDE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/USER_GUIDE.md)
-- [MCP_GUIDE.md](/Users/cuijiaqi/Ai-common-skills/memory-center/docs/MCP_GUIDE.md)
+- [USER_GUIDE.md](./USER_GUIDE.md)
+- [MCP_GUIDE.md](./MCP_GUIDE.md)

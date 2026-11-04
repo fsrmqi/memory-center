@@ -1,6 +1,6 @@
 # 5.0 多项目知识服务使用指南
 
-> 当前：5.0.0b26，开发测试版本；不兼容 4.x 接入或导入历史数据。
+> 当前：5.0.0b27，开发测试版本；不兼容 4.x 接入或导入历史数据。
 
 ## 项目向量化范围 / Per-project vector scope
 
@@ -29,13 +29,13 @@ English: b17 adds per-project retention of successful historical generations and
 “已统计数据量”为项目文件大小加数据库载荷，**不是项目实际磁盘占用**。SQLite 主库、目录库及 WAL／SHM 的共享文件大小单独显示，不分摊到项目；PostgreSQL 物理页与向量索引也不分摊。不跟随符号链接，读取失败或跳过链接会显示统计不完整。统计期间文件可能改变，以显示时间的观察结果为准；切换项目不会套用上一个项目的响应。
 
 English: Select a project in Project Management to view its storage accounting and refresh on demand. File logical sizes and scoped database text/native-vector payloads are reported separately. Shared database pages, indexes and overhead are not attributed; source trees and external Wiki mounts are excluded. The accounted total is not physical disk consumption. Symlinks are skipped, partial results are visible, and indexing may change files during observation.
-> 用户已授权连续完成方案，无需每个切片再次确认。此指南描述当前服务入口；旧版文档仅作为核心算法背景。
+> 本指南描述当前服务入口；旧版文档仅作为核心算法背景。
 
 ## 安装与运行
 
 ```sh
 python3 -m venv .venv
-.venv/bin/python -m pip install /path/to/memory_center-5.0.0b23-py3-none-any.whl
+.venv/bin/python -m pip install /path/to/memory_center-<version>-py3-none-any.whl
 .venv/bin/memory-center-service --data-dir /path/to/new-service-data
 ```
 
@@ -85,7 +85,7 @@ docker compose -f compose.yaml -f compose.postgres.yaml up -d
 
 未配置模型时，关键词/代码检索可用，向量模式明确拒绝。模型身份与参数形成档案；即便维度相同，不同模型也不混用旧向量。修改模型后重新索引。嵌入失败不发布新的索引；源码和文档会发送到管理员配置的模型地址。
 
-关键词使用英文/标识符词项与中文 bigram 倒排，BM25 计算文档频率与平均长度，融合用 RRF。该实现没有引入 ParadeDB，不声称与 WeKnora 的中文分词或检索性能等同。候选召回有预算，结果空或来源陈旧不能据此断言项目不存在相关信息。
+关键词使用英文/标识符词项与中文 bigram 倒排，BM25 计算文档频率与平均长度，融合用 RRF。该实现没有引入 ParadeDB，也不对任何第三方实现的中文分词或检索性能作等同声明。候选召回有预算，结果空或来源陈旧不能据此断言项目不存在相关信息。
 
 ## 文档、Wiki 与长期记忆
 
@@ -150,7 +150,7 @@ docker compose -f compose.yaml -f compose.postgres.yaml exec -T postgres pg_dump
 
 ## 多语言代码查询（5.0.0b10）
 
-借鉴 GitNexus 的语言注册、Vue 脚本块提取和分阶段引用解析。每次索引先提取声明与导入绑定，再连接调用，写入 generation 的 `code-graph.json`；文件路径、符号类型、限定名和声明行组成符号身份，避免多个文件的同名函数覆盖。Java 的 Spring/Feign/MQ 专用分析继续保留。
+借鉴同类代码智能工具的语言注册、Vue 脚本块提取和分阶段引用解析。每次索引先提取声明与导入绑定，再连接调用，写入 generation 的 `code-graph.json`；文件路径、符号类型、限定名和声明行组成符号身份，避免多个文件的同名函数覆盖。Java 的 Spring/Feign/MQ 专用分析继续保留。
 
 | 语言 | 默认结构解析与调用范围 |
 | --- | --- |
@@ -248,7 +248,7 @@ English: Job progress is explicitly per-phase, with real counters and indetermin
 
 ## b15 新能力 / b15 additions
 
-独立知识刷新、全库整理、可选重排、受控会话候选、人工答案键评测、任务诊断和 Skill 成本估算的入口与限制，见 [参考能力实施回执](implementation-receipts/V5_REFERENCE_ADOPTION.md)。本轮为未发版开发更新。
+独立知识刷新、全库整理、可选重排、受控会话候选、人工答案键评测、任务诊断和 Skill 成本估算的入口与限制，见下文各节与 [CHANGELOG](./CHANGELOG.md)。
 
 ## 智能治理：语义重复与潜在冲突 / Semantic governance
 
@@ -280,7 +280,7 @@ English: Semantic governance uses the chat model independently of embeddings. Sm
 
 索引按源码内容 SHA-256、文件归属和项目分析配置比较上一代清单。未变化服务复用事实；变化服务统一解析一次，再在完整合并事实上统一重建跨文件关系。无变化时跳过服务事实构建。删除文件会移除旧事实与覆盖记录。基线缺失、损坏、项目配置或分析器版本变化时完整构建；因此升级后的首次索引仍是完整构建。源码在构建期间变化会阻止发布，需要手动重试。
 
-这是参考 GitNexus 哈希增量思路的本地实现，不调用 GitNexus CLI，也不要求源码目录存在 Git 仓库。通用代码图复用已有文件解析缓存，关系解析、关键词和知识发布仍会运行；不承诺整项任务仅处理变化文件。
+这是参考同类代码智能工具哈希增量思路的本地实现，不调用其 CLI，也不要求源码目录存在 Git 仓库。通用代码图复用已有文件解析缓存，关系解析、关键词和知识发布仍会运行；不承诺整项任务仅处理变化文件。
 
 后台任务列表与详情显示开始、结束、总处理时间，排队显示未开始，运行显示未结束，终态缺失结束时间明确标注未记录。处理耗时不包含排队时间。任务操作防止重复点击，删除记录需确认；失败不会自动重试。详情可查看本轮复用／变化服务数量和新增／修改／删除文件数。
 
@@ -312,7 +312,7 @@ English: Per-project automatic source polling is disabled by default. Content ha
 
 管理员接口：GET `/api/v1/call-traces`（分页／筛选）、`/call-traces/statistics`、`/call-traces/{id}`。凭据模式下普通 MCP 凭据不能读取全局监控。
 
-设计参考 dsh-context 对实际计量／未知计量的区分，以及工具来源归属，不把未观测的宿主时间补造成模型耗时。English: One MCP aspect records structured timing and identity metadata. Request and background-task outcomes are distinct. Client claims are unverified in local mode, raw payloads are excluded, and interrupted or missing telemetry is reported explicitly.
+设计参考同类工具对实际计量／未知计量的区分，以及工具来源归属，不把未观测的宿主时间补造成模型耗时。English: One MCP aspect records structured timing and identity metadata. Request and background-task outcomes are distinct. Client claims are unverified in local mode, raw payloads are excluded, and interrupted or missing telemetry is reported explicitly.
 
 ### b23 知识交互 / Knowledge interaction
 
